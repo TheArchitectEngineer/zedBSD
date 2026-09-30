@@ -3,76 +3,68 @@
 # WS103: compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001〜p006 cleared）
+Status: completed（2026-10-01）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q514（ws103-p007）
-Resume point: 2026-10-01 p006 cleared（compositor は GPU の fd と GPU の UAPI を持たない、V1 PASS）。次は p007（規約の全文、回帰、5330、V4 の計測）。自走中
+Queue: なし（最後は q514）
+Resume point: 完了。Linux・FreeBSD の backend は [F-065](../future/F-065-keiland-portable.md)
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
 
 ユーザー:「私はKeilandコンポジターがlibvulkanのみを使用していると思っていたのですが、ioctlを使ってしまっているのですか？」→ Q1 が残っている直の ioctl を
-説明し、「規則にして今移す」を選んだ。規則は [Guardrail](../guardrail.md)。
+説明し、「規則にして今移す」を選んだ。規則は [Guardrail](../guardrail.md)。同日 夜にユーザーが最優先の WS にし、「ws103完了まで自走してください。phaseごとにコミットしてください。」で p005〜p007 を自走した。
 
-## 背景: Linux と FreeBSD への移植（2026-09-30 ユーザー）
-
-ユーザー:「Keilandデスクトップ一式を、LinuxとFreeBSDでも動くようにしようと思っているからです。」→ WS103 の設計（p001）は、Linux・FreeBSD の
-Mesa の Vulkan でも同じ code が動く形を前提にする。zedBSD の libvulkan に独自の拡張を足して逃げず、Mesa が持つ標準の拡張
-（VK_KHR_display、VK_KHR_external_memory_fd と VK_EXT_external_memory_dma_buf・VK_EXT_image_drm_format_modifier、VK_KHR_external_fence_fd・
-VK_KHR_external_semaphore_fd、VK_EXT_acquire_drm_display など）の範囲で設計し、zedBSD の libvulkan に足りない物はその標準の拡張として足す。
-
-2026-09-30 夜の更新: Linux・FreeBSD の構成はユーザーの決定で [F-065](../future/F-065-keiland-portable.md) に記録した。app は我々の WSI を持つ libvulkan を使い、後段の system の libvulkan（Mesa やベンダーの物）に chain する（後段の WSI は使わない）。
-client と compositor の間は全 OS で我々の独自の protocol 1 本で、運ぶ中身（zedBSD は kernel handle、Linux・FreeBSD は dma-buf と sync_file）だけが OS で変わる。
-このため上の「Mesa の標準の拡張の範囲」は、compositor の buffer・fence の受け側を OS の backend の境界の後ろに置く、という形で p001 の設計に反映する（p001 で見直す）。
-
-## 今の直の ioctl（2026-09-30 main の調べ）
-
-| 何のために | ioctl | 場所 |
-| --- | --- | --- |
-| 起動時の表示の情報とモード | `GPU_GET_INFO`・`GPU_DISPLAY_QUERY`・`GPU_DISPLAY_MODE` | display.c `zwl_gpu_open` |
-| app の buffer の記述を kernel の値で確かめる | `GPU_RESOURCE_IMPORT`・`GPU_RESOURCE_DESTROY` | display.c `zwl_gpu_import`（protocol.c から buffer ごと）・objects.c |
-| app の fence が済んだかを待たずに確かめる | `GPU_FENCE_QUERY` | display.c `zwl_fence_ready`・protocol.c |
-| greeter と session の間の表示の受け渡し | `GPU_DISPLAY_CLAIM`・`GPU_DISPLAY_RELEASE` | display.c `claim_display`・`zwl_unscan`（handoff.c・objects.c・main.c） |
-| Vulkan の device が無いときの予備の表示 | `GPU_DISPLAY_PRESENT` | display.c `schedule_direct`・`zwl_present` |
-
-入力（evdev）の ioctl は対象の外。全画面モード（WS035 の D0）は ws099-p015 で消したので、直の表示を持つ理由はもう無い。
+Linux・FreeBSD の構成（2026-09-30 ユーザーの決定）は [F-065](../future/F-065-keiland-portable.md): app は我々の WSI を持つ libvulkan を使い後段の system の libvulkan に chain する。
+client と compositor の間は我々の protocol 1 本で、運ぶ中身だけが OS で変わる。WS103 はその compositor の側の OS の境界を作った（Linux・FreeBSD の backend は作らない、D1）。
 
 ## 決定（2026-09-30 夜 ユーザー）
 
 | # | 判断 | 決定 |
 | --- | --- | --- |
-| D1 | 範囲 | **案 A**: zedBSD の上で GPU の直の ioctl を全て消し、buffer・fence の OS 固有の部分（記述の型 `gpu_image_descriptor`、OPAQUE_FD、fence の世代）を OS の backend の境界の後ろ（zedBSD の macro か module）に閉じ込める。Linux・FreeBSD の backend は作らない（[F-065](../future/F-065-keiland-portable.md)） |
-| D2 | `--direct` と、Vulkan が開けないときにそれへ落ちる道 | **消す**。`GPU_DISPLAY_CLAIM`・`PRESENT`・`RELEASE` と `schedule_direct`・`zwl_present`・`zwl_unscan` が無くなる。Vulkan が開けなければ compositor は起動を失敗させる（greeter と同じ）。Q1 の説明（WS014 p006 の合成しない最初の compositor の名残、repository に `--direct` を渡すものは無い）の後に決定 |
-| D3 | buffer の記述の安全の確かめ（V3） | **libvulkan の中へ**: import した memory に image を bind するとき、libvulkan が kernel の記述と image の作り方（幅・高さ・形式・stride）を照らす。compositor は ioctl を持たない |
+| D1 | 範囲 | 案 A: zedBSD の上で GPU の直の ioctl を全て消し、buffer・fence の OS 固有の部分を OS の backend の境界の後ろに閉じる。Linux・FreeBSD の backend は作らない |
+| D2 | `--direct` と Vulkan が開けないときに落ちる道 | 消す（Vulkan が開けなければ起動の失敗） |
+| D3 | buffer の記述の安全の確かめ | libvulkan の中へ。規格の戻り値の制約から、dedicated の import（`vkAllocateMemory`）で照らし、bind でも守る形に具体化した（design §2.3） |
+| — | 達成基準 V1・V4 の言い回し | 2026-09-30 夜 ユーザー「書き直してOKです」: macro でなく OS ごとの module、V4 は前後の比較 |
 
-## 調べた事（2026-09-30 夜 Q1、コードの読み）
+## 結果
 
-- window mode の表示は既に Vulkan だけ（VK_KHR_display と swapchain）。画面の claim・release は libvulkan の swapchain の作成・破棄の中（`libvulkan/wsi-display.c`、`wsi-swapchain.c`）。compositor の CLAIM・PRESENT・RELEASE は `--direct` の道だけ。
-- `GPU_GET_INFO`・`DISPLAY_QUERY`・`DISPLAY_MODE` は起動時に 1 回、大きさと refresh を得るだけ（`display.c:55-91`）。VK_KHR_display の問い合わせで代わる。
-- `RESOURCE_IMPORT` は buffer ごとの記述の照合（`display.c:124-129`、`memcmp`）。libvulkan の OPAQUE_FD の import（`libvulkan/memory.c:820-900`）も内部で同じ ioctl を呼ぶが、確かめるのは memory type と大きさだけ。
-- `FENCE_QUERY` は commit のたびに世代の照合（`display.c:316`、`protocol.c:1645`）。`vkImportFenceFdKHR`（OPAQUE_FD）と `vkGetFenceStatus` で代われるが、世代は標準の Vulkan から見えない。i915 の native で external fence が出るか（`GPU_CAP_FENCE`）は未確認。
-- UAPI の型は `zwl.h` の構造体（`struct gpu_resource_import`、`struct gpu_display_info`、`lease`）と `keiland_gpu_buffer_v1` の wire（64 byte の記述）に入っている。
-
-## 達成基準
-
-| # | 基準 | 確かめ方 |
+| 基準 | 判定 | 証拠 |
 | --- | --- | --- |
-| V1 | GPU の直の ioctl は Vulkan の API（zedBSD では libvulkan）へ移す。OS 固有の部分は OS ごとの source の module（zedBSD は `gpu-zedbsd.c`）に閉じ、それ以外の `userland/desktop/wayland/` の source は GPU の UAPI を include せず、GPU の ioctl を呼ばない。compositor は GPU の fd を持たない。evdev の ioctl は対象の外（2026-09-30 ユーザーの決め。module の入れ替えへの言い回しの改訂は 2026-09-30 夜 ユーザー「書き直してOKです」） | `plan/ws103/tests/v1-check.sh`（grep と、GPU の UAPI の header を `#error` にした `-fsyntax-only`。design §2.6）と、build・試験 |
-| V2 | 起動・login・Log Out・Shut Down（WS099 の C1）、app の起動と窓の操作、全画面、keyboard が今と同じに動く | C1・C9・WS079-p010・boot test（QEMU の Venus）、5330 の passthrough |
-| V3 | 安全の確かめ（buffer の記述と実物の一致、他の client の画像を読めない）が libvulkan の import の側で保たれる | host か guest の試験（偽の記述の buffer を拒む） |
-| V4 | 性能が落ちない（C6 と app の最初の frame、Venus の client の present と compositor の frame の間隔）。p002 の前（基準）と p006 の後を比べる（言い回しの改訂は同上） | WS075 の measure-apps と WS099 の import-launch、QEMU の Venus と 5330 の passthrough（design §2.7） |
+| **V1** GPU の直の ioctl を Vulkan へ、OS 固有は module に、compositor は GPU の fd を持たない | 満たす | `plan/tools/gpu-boundary/v1-check.sh` PASS: GPU の UAPI を include するのは `gpu-zedbsd.c` だけ、GPU の ioctl は 0、GPU の UAPI の header を `#error` にして compositor の 51 個の source が compile できる（対照: `gpu-zedbsd.c` は失敗する）、`/dev/gpu` と `--gpu` は無い。evdev の ioctl は対象の外 |
+| **V2** 起動・login・Log Out・Shut Down、app と窓の操作、全画面、keyboard が今と同じ | 満たす（QEMU・5330 の passthrough） | QEMU の Venus: WS099 の C1（2 本）・C2・C9 の 10 本（p052・p053・p072・p076・p126・p128・p134・p137・p138・cursor-owner）・Notes の右上の swipe・boot test。5330 の passthrough: 起動・login・10 個の app・App Home と Wiseview の開閉（`c5-hw.sh`、各 Phase で PASS）。**5330 を USB から単独で起動する実機の確かめは未実施** |
+| **V3** buffer の記述と実物の一致が libvulkan の側で保たれる | 満たす | libvulkan の dedicated の import の照合（`dedicated.c`、host の試験 18 件）、compositor の wire の値の確かめ（`gpu-zedbsd.c`、host の試験 17 件）、偽の buffer（allocation の capability を image として送る）を断り compositor は動き続ける（`forge-guest.sh`、QEMU の Venus）。本物の image の capability に偽の記述を付ける端から端までの試験は、image の capability を公開の API で作れないため無い（host の試験で確かめた） |
+| **V4** 性能が落ちない | 満たす | QEMU の Venus の app の起動から最初の画像: Model viewer 前 4015〜4241 ms・後 3905〜4008 ms、Files 前 2111〜2272・後 2080〜2187 ms（最初の計測で見えた約 130 ms の遅れは、libvulkan が image の問い合わせの答えを覚える形にして解消）。wltest の 600 present の時間は変わらない。5330 の passthrough: frame の率（60/s・窓 10 個 22〜23/s）は同じ、C6 は試料 200 個ずつで中央値 前 56.4 ms・後 58.8 ms、Mann-Whitney z = −0.82（ばらつきの内） |
 
-## Phase（案）
+変わった所（要点）:
 
-| Phase | 目的 | Status | 依存 |
+- compositor（`userland/desktop/wayland/`）: 起動の問い合わせは VK_KHR_display（`compose_display`・`compose_refresh`、wl_output の refresh も Vulkan の mode から）。`--direct` と
+  表示の claim・present・release の削除。client の buffer は OS の backend（`gpu-zedbsd.c`・`zwl-gpu.h`）で wire の値を確かめてから dedicated の import。fence は poll だけ。
+  `/dev/gpu0`・`--gpu`・GPU の UAPI の include を削除。`--log-frames` に `ZWL ACQUIRE_FENCE`、`ZWL DISPLAY` の行、`ZWL IMPORT` の行の形の変更、`ZWL PERF` から直の present の計数を削除。
+- libvulkan: `VK_KHR_get_memory_requirements2`・`VK_KHR_dedicated_allocation`（公開の header は pinned の宣言から道具で生成、command 170 → 173）、image の capability の
+  dedicated の import の照合と bind の守り、dedicated の無い import と allocation の capability の dedicated の import を拒む、WSI は Wayland の present ごとに新しい fence
+  （slot の `sent`）、新しい fence の最初の submit の host の reset を省く、image の memory の要求と色の配置の答えを覚える。
+- kernel・HAL・toolchain・protocol は変えていない。
+
+## 制限と移管
+
+- Linux・FreeBSD の backend（dma-buf・modifier・sync_file、KMS の画面の出力、後段の libvulkan への chain）は [F-065](../future/F-065-keiland-portable.md)。
+- 5330 を USB から単独で起動する実機の確かめは未実施（passthrough の証拠だけ）。
+- 本物の image の capability に偽の記述を付ける端から端までの試験は無い（上の V3）。bind の守り（別の image の bind を拒む）は正しい利用では通らない道で、端から端では試していない。
+- p002 の途中で見つけた範囲の外の件: `plan/ws014/tests/wayland-qemu.py` の直の表示の試験（`ZWL PRESENT` を読む）は直の道の削除で使えなくなった（WS014 の file、変えていない）。
+  toolchain の lock と libcxx の複写は [BUG-126](../bugs/BUG-126.md)。
+- 試験は `plan/tools/gpu-boundary/` に移した（master の Tools 節）。設計は [design.md](design.md)（改訂 3、design-reviewer 2 回）。Phase の directory は削除した（git の履歴に残る）。
+
+## Phase
+
+| Phase | 目的 | 結果 | Queue |
 | --- | --- | --- | --- |
-| [ws103-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | cleared（q508） | — |
-| [ws103-p002](phase002/phase.md) | compositor: 起動の問い合わせを VK_KHR_display へ、`--direct` の削除（design §2.1・2.2） | uncleared（q509: 5330 の smoke が未達、変更の前も同じく失敗。QEMU の C1・C2・boot test は PASS） | — |
-| [ws103-p003](phase003/phase.md) | libvulkan: dedicated allocation と import の記述の照合、bind の守り（§2.3） | cleared（q510） | — |
-| [ws103-p004](phase004/phase.md) | compositor: dedicated の import、wire の値の確かめ、`RESOURCE_IMPORT`・`DESTROY` を消す、`gpu-zedbsd.c` の buffer の部分（§2.3・2.5）。libvulkan の dedicated の無い image の capability の import を拒む処理も同時に（p003 から移した） | cleared（q511） | p002、p003 |
-| [ws103-p005](phase005/phase.md) | libvulkan: WSI が Wayland の present ごとに新しい fence を送る（§2.4） | cleared（q512） | — |
-| [ws103-p006](phase006/phase.md) | compositor: fence を poll だけに、`/dev/gpu0` と `--gpu` を消す、UAPI の型を閉じる、`v1-check.sh`（§2.4〜2.6） | cleared（q513） | p004、p005 |
-| [ws103-p007](phase007/phase.md) | 規約の全文、回帰、5330、V4 の計測（§3） | cleared（q514） | p002〜p006 |
+| ws103-p001 | 調査と設計（design.md） | cleared | q508 |
+| ws103-p002 | 起動の問い合わせを VK_KHR_display へ、`--direct` の削除 | cleared（attempt は uncleared: 5330 の smoke の失敗は試験の image の `login=graphical` の重複と特定、既定の boot の行で PASS、ユーザーの指示で COM1 の mirror を解析に使った） | q509 |
+| ws103-p003 | libvulkan: dedicated allocation と import の記述の照合、bind の守り | cleared | q510 |
+| ws103-p004 | compositor の dedicated の import、`RESOURCE_IMPORT`・`DESTROY` の削除、OS の backend、allocation の capability の穴の修正、偽の buffer の probe | cleared | q511 |
+| ws103-p005 | WSI が Wayland の present ごとに新しい fence を送る | cleared | q512 |
+| ws103-p006 | fence を poll だけに、GPU の fd と UAPI を無くす、V1 の確かめ | cleared | q513 |
+| ws103-p007 | 規約の全文の見直し、回帰、V4（問い合わせの答えを覚える対策） | cleared | q514 |

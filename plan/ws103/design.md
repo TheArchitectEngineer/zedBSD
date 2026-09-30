@@ -157,7 +157,7 @@ compositor の OS 固有の部分を 1 つの source の module に集める（m
 
 ### 2.6 macro を外した build の確かめ方（V1）
 
-Linux の build はまだ無いので、次の script（`plan/ws103/tests/v1-check.sh`）で確かめる。
+Linux の build はまだ無いので、次の script（`plan/tools/gpu-boundary/v1-check.sh`）で確かめる。
 
 1. grep: `userland/desktop/wayland/` の中で `uapi/gpu` の include と、`ioctl(` の第 2 引数が `GPU_` で始まる呼び出しが無い（文字列の中の `"ZWL GPU_ERROR"` などの
    log は数えない。`<sys/ioctl.h>` は evdev の `input.c`・`tablet.c`・`touch.c` に残る）。`gpu-zedbsd.c` は UAPI の型を読むが ioctl は呼ばない。

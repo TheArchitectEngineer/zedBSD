@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: q514（ws103-p007、メインのエージェントが自走）。Last finished Queue: q513（ws103-p006 cleared: compositor は GPU の fd と UAPI を持たない）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
+Active Queue: なし。Last finished Queue: q514（ws103-p007 cleared: WS103 完了）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
 Next（2026-09-30 夕に更新）: 週間の使用量のためサブエージェントは全てラップアップ（N=0）。統合の試験（demo-s8-s9.sh、QEMU、`build/integ-0930/`）PASS。次の候補: 5330 の実機の新しい demo の image（今日の変更を全て入れる）、ユーザーの実機の確認、WS103（ユーザーの指示の後）。 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）のユーザー確認も残る。
 IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。
-優先順位（2026-09-30 夜 ユーザー）: WS103（compositor を libvulkan だけに）が最優先、次に WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102、WS074 はデモ critical の中位。
+優先順位（2026-09-30 夜 ユーザー）: 最優先の WS103 は 2026-10-01 に完了。次は WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102、WS074 はデモ critical の中位。
 <!-- awesome-plan-current:end -->
 
 # zedBSD Master
@@ -200,7 +200,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | 2026-09-30: L1 がそろった（A1〜A6、Settings の Sound の頁）。L2 は 5330 の実機（A7、ユーザー）。L3 の p008 cleared: 確かめの音の遅れは QEMU の guest の中で中央値 31〜37 ms（≤ 50 ms、合否は実機で）。kernel の fragment を小さくする直しは実機で 50 ms を超えたとき |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | 2026-09-30: L1 で S13 が 5330 で通った。L2: p016（時間の分解）cleared、p017（buffer の使い回しと copy の削減、QEMU の GPU の call 835 → 212 ms、CPU の 10.6 倍遅い）uncleared。ユーザーの判断「今のまま」で S13 は今の見本、最適化はここで止める（5330 の p017 の値は P1 が追記） |
 | [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 を満たした。L2: p006・p007・p008・p009・p015・p016（右の列の道具の面）・p017・p018・p020・p021・p023・p024（履歴の tab。受け入れの手順だけ PASS、全手順の回帰・C9・boot test は未実施）、L3 の p019（色付きの絵文字）cleared（QEMU）。ユーザーの指示で優先を下げてラップアップ（2026-09-30 夕）。保留: p022（絵文字の tab）・BUG-125・p010・p011（速さ）・p012（IME、人間） |
-| [WS103](ws103/ws.md) | MG006 | compositor を libvulkan だけにする: GPU の UAPI の直の ioctl（起動時の表示の問い合わせ・buffer の import の確かめ・fence・表示の claim と release・Vulkan の無い予備の表示）を libvulkan の API と拡張へ移す（2026-09-30 ユーザー「規則にして今移す」、規則は Guardrail） | planning | 2026-09-30 に立てた。**2026-09-30 夜 ユーザーの指示で最優先**（優先順位の節）。p001 cleared（q508、[design.md](ws103/design.md)）。p002〜p006 cleared（q509〜q513、V1 PASS）。次は p007（自走中） |
+| [WS103](ws103/ws.md) | MG006 | compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）（2026-09-30 ユーザー「規則にして今移す」、規則は Guardrail） | completed | 2026-10-01 完了（p001〜p007、q508〜q514）: V1〜V4 を満たす（QEMU の Venus と 5330 の passthrough、単独の実機の起動は未実施）。Linux・FreeBSD の backend は F-065。試験は plan/tools/gpu-boundary |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -235,8 +235,7 @@ WS074 はデモ critical の中位。WS035（完了）の名指しは後継の W
 **運用（ユーザー、2026-09-27〜30）**: 作業用のサブエージェントを N=0〜9（2026-09-29 は N=9、1 時間に 5 時間の枠の約 25%）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
 N=0 になったら実装をまとめて計画（master・ws.md・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。effort は判断の表の「サブエージェントの effort」。
 
-1. **最優先: WS103**（Keiland の compositor の GPU の直の ioctl を除き libvulkan だけにし、移せない所は zedBSD だけの macro で囲む。規則は Guardrail）。2026-09-30 夜 ユーザー。
-   次は p001（調査と設計、High）。最優先は Queue の承認ではない。
+1. **最優先: WS103**（compositor を libvulkan だけに）。2026-09-30 夜 ユーザー。**2026-10-01 完了**（ユーザーの自走の指示で p005〜p007）。次の最優先はユーザーの指示を待つ（下の 2 が並ぶ）。
 2. **デモ critical の上位**（この順、2026-09-30 夜 ユーザー）: WS099（Keiland の compositor、WS035 の後継）、WS079（Notes・PDF Viewer）、WS090（libkeiui）、
    WS089（Settings）、WS094（デスクトップの icon）、WS100（音量）、WS078（Kei への改名）、WS102（スクリーンキーボード）。
 3. **デモ critical の中位**: WS074（ブラウザ。ある程度動く。p100 Acid3 が次の候補）。
@@ -276,6 +275,7 @@ N=0 になったら実装をまとめて計画（master・ws.md・Future Work・
 | --- | --- | --- |
 | `plan/tools/toolchain-lock.sh` | 共有の toolchain の tree（`build/llvm`・`llvm-source`・`llvm-build`・`NoctLang`）の directory を読み取り専用にして、許可の無い変更を防ぐ（BUG-096） | `lock`・`unlock`（main が許可した toolchain の変更の間だけ）・`status` |
 | [boot-test.sh](tools/boot-test.sh)（`boot-test.py`） | 起動の確認。OVMF の USB（amd64）か BIOS の IDE（i386）で起動し、画面を QMP で撮って login prompt を読む | `plan/tools/boot-test.sh [IMAGE]`。`OUTPUT`（既定 `build/boot-test`）、`BOOT_TIMEOUT`、`BOOT_MODE=uefi-usb` か `bios-ide` |
+| GPU の境界の試験（[tools/gpu-boundary](tools/gpu-boundary/)、WS103 から移した） | compositor が GPU を Vulkan だけで扱うことの確かめ: `v1-check.sh`（GPU の UAPI の include と ioctl が `gpu-zedbsd.c` の外に無い、GPU の UAPI の header を `#error` にして compositor が compile できる、`/dev/gpu`・`--gpu` が無い）、host の `run-dedicated-host.sh`（libvulkan の dedicated の import の照合）・`run-gpu-zedbsd-host.sh`（compositor の wire の値の確かめ）、guest の `forge-guest.sh`（偽の buffer を断る、`/bin/gpu-forge-test`）・`fence-guest.sh`（Wayland の present ごとの新しい fence、`--log-frames` の `ZWL ACQUIRE_FENCE`）。guest の image は `build-forge-image.sh`（`config-amd64-forge.mk`: 基準の image に gpu-forge-test・wltest・acquire-fence-test） | 各 script の先頭の使い方 |
 | [pc98-boot.py](tools/pc98-boot.py) | pc98 の起動の確認（`boot-test.sh` に PC-98 の mode が無いため）。PC-98 fork の QEMU で起動し、text VRAM で login prompt を読み、root で login して `uname -a`。画面を text と PNG で残す。WS053 から移した | `pc98-boot.py ~/qemu-pc98/build/qemu-system-i386 IMAGE OUTPUT`（`clock/pc98-sleep.py` の `Guest` を使う） |
 | [guest/guest.sh](tools/guest/guest.sh) | SSH による guest の操作（USB CDC-ECM、KVM）。コマンドの実行・file の送受・lldb・kgdb・画面 | `start IMAGE`・`wait`・`run CMD`・`put`・`get`・`lldb`・`kgdb`・`screenshot`・`stop`。image は `extra-files` の出力を eval して作る。`GUEST_RUNTIME=<dir>` で別の guest を並べて動かせる（既定 `build/guest`） |
 | [guest/serial.py](tools/guest/serial.py) | シリアルの console と対話する（sshd が上がる前。`CONFIG_PCAT_SERIAL_MIRROR=y`） | `serial.py --socket S run 'CMD'`（終了状態を返す）、`login` |

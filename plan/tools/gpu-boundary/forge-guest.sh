@@ -1,12 +1,12 @@
 #!/bin/sh
-# ws103-p004 (V3): on the Venus guest of the forgery image (plan/ws103/tests/build-forge-image.sh), zdesktop must refuse a
+# ws103-p004 (V3): on the Venus guest of the forgery image (plan/tools/gpu-boundary/build-forge-image.sh), zdesktop must refuse a
 # GPU buffer whose fd is an allocation capability sent as an image (/bin/gpu-forge-test: "gpu-forge: PASS", the
 # connection ended with a protocol error, "ZWL IMPORT_ERROR" in zdesktop's log), keep running, and then import a real
 # client's buffers (wltest through the Vulkan WSI: "ZWL IMPORT client" lines after the refusal, frames drawn).
 # Prints "forge-guest: PASS" or "forge-guest: FAIL ...".
 #
 #   plan/ws035/tests/zdesktop-guest.sh start build/ws103/p004-forge.img      (the guest must be up)
-#   plan/ws103/tests/forge-guest.sh [OUTDIR]
+#   plan/tools/gpu-boundary/forge-guest.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

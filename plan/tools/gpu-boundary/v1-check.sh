@@ -7,7 +7,7 @@
 #     that reads a GPU UAPI header, directly or through another header, fails.
 #  3. the compositor opens no GPU node and has no --gpu option.
 # Prints "v1-check: PASS" or "v1-check: FAIL ...".
-#   sh plan/ws103/tests/v1-check.sh [BUILD]     (BUILD for the sysroot, default build/amd64)
+#   sh plan/tools/gpu-boundary/v1-check.sh [BUILD]     (BUILD for the sysroot, default build/amd64)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

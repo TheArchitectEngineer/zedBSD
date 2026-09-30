@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws103-p005: on the Venus guest of the forgery image (plan/ws103/tests/build-forge-image.sh), a Vulkan Wayland client
+# ws103-p005: on the Venus guest of the forgery image (plan/tools/gpu-boundary/build-forge-image.sh), a Vulkan Wayland client
 # (wltest) sends each present's own new fence: every acquire fence zdesktop receives is at its first generation
 # ("ZWL ACQUIRE_FENCE ... generation=1"; before ws103-p005 the reused slot fence advanced 1, 2, 3, ...).  Also times
 # FRAMES presents of wltest without delay, to compare with an image before the change.
@@ -7,7 +7,7 @@
 # or "fence-guest: FAIL ..." (with EXPECT=advancing the check is the old behaviour's, for the image before the change).
 #
 #   plan/ws035/tests/zdesktop-guest.sh start IMAGE      (the guest must be up)
-#   plan/ws103/tests/fence-guest.sh [OUTDIR] [FRAMES]
+#   plan/tools/gpu-boundary/fence-guest.sh [OUTDIR] [FRAMES]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

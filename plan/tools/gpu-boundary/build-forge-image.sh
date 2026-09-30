@@ -1,9 +1,9 @@
 #!/bin/sh
-# ws103-p004: builds the criteria image with the forgery test (plan/ws103/tests/config-amd64-forge.mk) like plan/ws035/tests/build-login-image.sh's
+# ws103-p004: builds the criteria image with the forgery test (plan/tools/gpu-boundary/config-amd64-forge.mk) like plan/ws035/tests/build-login-image.sh's
 # graphical one, with the generated wallpapers in /usr/share/keiland/wallpapers (userland/desktop/wallpapers/generate.py,
 # as the demonstration image and plan/ws089/tests/build-settings-image.sh have them).
 #
-#   plan/ws103/tests/build-forge-image.sh [BUILD]     (default build/amd64)
+#   plan/tools/gpu-boundary/build-forge-image.sh [BUILD]     (default build/amd64)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
@@ -20,5 +20,5 @@ python3 userland/desktop/wallpapers/generate.py "$build/wallpapers" >/dev/null
 for picture in "$build"/wallpapers/*.ppm; do
 	extra="$extra --file /usr/share/keiland/wallpapers/$(basename "$picture")=$picture"
 done
-exec make -j"$(nproc)" ZEDBSD_CONFIG=plan/ws103/tests/config-amd64-forge.mk BUILD="$build" \
+exec make -j"$(nproc)" ZEDBSD_CONFIG=plan/tools/gpu-boundary/config-amd64-forge.mk BUILD="$build" \
     "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image
