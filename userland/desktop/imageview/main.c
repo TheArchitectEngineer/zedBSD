@@ -785,6 +785,8 @@ main_choose(void)
 			kui_file_chooser_destroy(main_chooser);
 			main_chooser = NULL;
 		}
+
+		/* Nothing to show. */
 		return;
 	}
 
