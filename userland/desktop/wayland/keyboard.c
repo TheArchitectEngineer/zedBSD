@@ -21,6 +21,14 @@
  * keyboard's before Wiseview's bottom edge and the desktops' side edges
  * (shell.c asks the keyboard first), so those gestures start outside them.
  *
+ * The panels are built into the screen's edges (ws102-p021, design §2.3):
+ * the flick panel is the whole right column under the system bar, the
+ * QWERTY and handwriting panel the whole bottom row, without a margin, an
+ * outer corner radius or a shadow, a 1-pixel line on the side facing the
+ * windows (as the system bar is the top edge's band).  A panel grows out
+ * of its edge when it opens and goes back into it when it closes, in
+ * KEYBOARD_SLIDE_MS, eased out.
+ *
  * The same swipe again closes the panel it opened; the other corner's
  * swipe changes panels; the panel's close key closes it, and so does a
  * drag of its title band KEYBOARD_SWIPE_CLOSE pixels towards its edge (the
@@ -104,9 +112,8 @@
 /* How many recent points of the contact are kept for its speed. */
 #define KEYBOARD_SAMPLES	16U
 
-/* The panels' margin from the screen's edges, the corner radius and the title band's height. */
+/* The margin inside a panel's title band (around its title and buttons), and the band's height. */
 #define KEYBOARD_MARGIN		12
-#define KEYBOARD_RADIUS		18.0f
 #define KEYBOARD_BAND		36
 
 /* The flick panel's keys: a key's side (a share of the screen's height, within limits) and the gap. */
@@ -158,11 +165,17 @@
 #define KEYBOARD_INK_DOT	4.0f
 #define KEYBOARD_INK_STEP	2.0f
 
+/* The opacity of the line on the side of a panel facing the windows (the system bar's line's). */
+#define KEYBOARD_EDGE_ALPHA	0.18f
+
 /* The Shift bit of the depressed modifiers (server->modifiers). */
 #define KEYBOARD_SHIFT		1U
 
 /* The close key's side, at the right of the title band. */
 #define KEYBOARD_CLOSE		28
+
+/* How long a panel takes to grow out of its edge or to go back into it (design §2.8's time). */
+#define KEYBOARD_SLIDE_MS	200U
 
 /* How far the title band is dragged towards the panel's edge to close it. */
 #define KEYBOARD_SWIPE_CLOSE	80
@@ -231,7 +244,9 @@ struct keyboard_contact {
  * being written, when the last stroke ended, whether the ink was
  * recognized and the answer, the key held at the right (hand_key), and a
  * point waiting to be drawn (its input time, for the lag) with the time of
- * the last frame that drew one.
+ * the last frame that drew one.  slide_ms is when the panel began growing
+ * out of its edge, or going back into it; leaving is the panel going back
+ * (already closed for everything but its drawing, PANEL_NONE when none).
  */
 
 /*
@@ -274,6 +289,8 @@ struct keyboard_state {
 	unsigned lag_pending;
 	uint64_t lag_input_ms;
 	uint64_t lag_frame_ms;
+	uint64_t slide_ms;
+	enum keyboard_kind leaving;
 };
 
 /*
@@ -335,6 +352,7 @@ static void keyboard_remember(const char *text, unsigned sent);
 static void keyboard_close_rect(int32_t *rect);
 static void keyboard_draw_panel(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
 static void keyboard_draw_hint(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_sliding(struct zwl_server *server, VkCommandBuffer command, int leaving);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum zwl_contact_source source);
 
@@ -367,13 +385,13 @@ zwl_keyboard_button(
 		return taken;
 	}
 
-	/* A press on the open panel is the panel's. */
-	taken = keyboard_panel_button(server, button, state);
+	/* A press in a bottom corner begins the corner's gesture, also where an open panel reaches the corner. */
+	taken = keyboard_contact_begin(server, server->pointer_x, server->pointer_y, server->input_time);
 	if (taken)
 		return 1;
 
-	/* Succeeded: a press may begin the corner's gesture. */
-	taken = keyboard_contact_begin(server, server->pointer_x, server->pointer_y, server->input_time);
+	/* Succeeded: a press on the open panel is the panel's. */
+	taken = keyboard_panel_button(server, button, state);
 	return taken;
 }
 
@@ -455,6 +473,14 @@ zwl_keyboard_tick(
 		printf("ZWL OSK cancel reason=timeout\n");
 	}
 
+	/* A panel growing out of its edge or going back into it is drawn every frame; one gone back is done with. */
+	if (now - keyboard.slide_ms < KEYBOARD_SLIDE_MS) {
+		server->dirty = 1;
+	} else if (keyboard.leaving != PANEL_NONE) {
+		keyboard.leaving = PANEL_NONE;
+		server->dirty = 1;
+	}
+
 	/* Nothing more without an open panel. */
 	if (keyboard.open == PANEL_NONE)
 		return;
@@ -502,8 +528,8 @@ int
 zwl_keyboard_showing(
 	void)
 {
-	/* An open panel. */
-	if (keyboard.open != PANEL_NONE)
+	/* An open panel, or one going back into its edge. */
+	if (keyboard.open != PANEL_NONE || keyboard.leaving != PANEL_NONE)
 		return 1;
 
 	/* An armed contact that has not timed out. */
@@ -548,8 +574,10 @@ zwl_keyboard_close(
 	if (keyboard.open == PANEL_NONE)
 		return;
 
-	/* The panel goes. */
+	/* The panel goes, going back into its edge (drawn until it is in). */
 	printf("ZWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
+	keyboard.leaving = keyboard.open;
+	keyboard.slide_ms = zwl_milliseconds();
 	keyboard.open = PANEL_NONE;
 	keyboard.pressing = 0;
 	keyboard.key_active = 0;
@@ -571,9 +599,16 @@ zwl_keyboard_draw(
 	struct zwl_server *server,
 	VkCommandBuffer command)
 {
-	/* The open panel. */
+	/* The open panel, grown out of its edge as far as its slide has come. */
 	if (keyboard.open != PANEL_NONE)
-		keyboard_draw_panel(server, command, keyboard.panel, 1.0f);
+		keyboard_draw_sliding(server, command, 0);
+
+	/* A panel going back into its edge, drawn as it was (its face), further in each frame. */
+	if (keyboard.leaving != PANEL_NONE) {
+		keyboard.open = keyboard.leaving;
+		keyboard_draw_sliding(server, command, 1);
+		keyboard.open = PANEL_NONE;
+	}
 
 	/* The hint of an armed contact. */
 	if (keyboard.contact.active &&
@@ -926,8 +961,10 @@ keyboard_open(
 	struct zwl_server *server,
 	enum keyboard_kind kind)
 {
-	/* The panel and its rectangle. */
+	/* The panel and its rectangle, growing out of its edge from now (one going back is done with). */
 	keyboard.open = kind;
+	keyboard.leaving = PANEL_NONE;
+	keyboard.slide_ms = zwl_milliseconds();
 	keyboard.pressing = 0;
 	keyboard_place(server, kind, keyboard.panel);
 	server->dirty = 1;
@@ -940,8 +977,9 @@ keyboard_open(
 
 /*
  * Works out a panel's rectangle (x, y, width, height) for the screen's
- * size: the flick panel at the bottom of the right side, its keys a share
- * of the height; the QWERTY panel along the bottom, a share of the height.
+ * size, against its edges: the flick panel the right column under the
+ * system bar (as wide as its keys, a share of the height); the QWERTY
+ * panel the bottom row (a share of the height).
  */
 static void
 keyboard_place(
@@ -957,27 +995,27 @@ keyboard_place(
 	width = (int32_t)server->width;
 	height = (int32_t)server->height;
 
-	/* The QWERTY panel: the full width within the margins, a share of the height. */
+	/* The QWERTY panel: the whole bottom row, a share of the height. */
 	if (kind == PANEL_QWERTY) {
 		rect[3] = height * KEYBOARD_QWERTY_SHARE / 100;
 		if (rect[3] < KEYBOARD_QWERTY_MIN)
 			rect[3] = KEYBOARD_QWERTY_MIN;
 		if (rect[3] > KEYBOARD_QWERTY_MAX)
 			rect[3] = KEYBOARD_QWERTY_MAX;
-		rect[2] = width - 2 * KEYBOARD_MARGIN;
-		rect[0] = KEYBOARD_MARGIN;
-		rect[1] = height - KEYBOARD_MARGIN - rect[3];
+		rect[2] = width;
+		rect[0] = 0;
+		rect[1] = height - rect[3];
 		return;
 	}
 
 	/* The flick panel's key side. */
 	key = keyboard_key_size(server);
 
-	/* Its keys and gaps, the title band above them, at the bottom right. */
+	/* The whole right column under the system bar, as wide as the keys and their gaps. */
 	rect[2] = KEYBOARD_FLICK_COLUMNS * key + (KEYBOARD_FLICK_COLUMNS + 1) * KEYBOARD_KEY_GAP;
-	rect[3] = KEYBOARD_BAND + KEYBOARD_FLICK_ROWS * key + (KEYBOARD_FLICK_ROWS + 1) * KEYBOARD_KEY_GAP;
-	rect[0] = width - KEYBOARD_MARGIN - rect[2];
-	rect[1] = height - KEYBOARD_MARGIN - rect[3];
+	rect[3] = height - ZWL_GLASS_BAR;
+	rect[0] = width - rect[2];
+	rect[1] = ZWL_GLASS_BAR;
 }
 
 /*
@@ -1151,8 +1189,9 @@ keyboard_close_rect(
 }
 
 /*
- * Draws a panel: its shadow, the white glass (as the volume's popup), the
- * title at the left of the band and the close key at its right.
+ * Draws a panel: its glass, square against the screen's edges, the line
+ * on its side facing the windows, the title at the left of the band and
+ * the close key at its right.
  */
 static void
 keyboard_draw_panel(
@@ -1165,39 +1204,31 @@ keyboard_draw_panel(
 	static const float key[4] = { 0.12f, 0.16f, 0.24f, 0.08f };
 	struct glass_shape shape;
 	static const float key_ground[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
+	float edge_line[4] = { 0.12f, 0.16f, 0.24f, 0.0f };
 	int32_t close[4];
 	int32_t button[4];
 	int32_t advance;
 	const char *title;
 	const char *label;
 
-	/* The shadow. */
-	glass_shape_init(&shape, (float)rect[0], (float)rect[1] + 6.0f, (float)rect[2], (float)rect[3]);
-	shape.quad[0] -= 40.0f;
-	shape.quad[1] -= 40.0f;
-	shape.quad[2] += 80.0f;
-	shape.quad[3] += 80.0f;
-	shape.mode = MODE_SHADOW;
-	shape.radius = KEYBOARD_RADIUS;
-	shape.soft = 18.0f;
-	shape.color[0] = 0.10f;
-	shape.color[1] = 0.18f;
-	shape.color[2] = 0.35f;
-	shape.color[3] = 0.24f;
-	shape.opacity = opacity;
-	glass_shape_draw(server, command, &shape);
-
-	/* The glass, as white as the volume's popup. */
+	/* The glass, square against the screen's edges (the band of an edge, as the system bar). */
 	glass_shape_init(&shape, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3]);
 	shape.mode = MODE_GLASS;
-	shape.radius = KEYBOARD_RADIUS;
+	shape.radius = 0.0f;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
 	shape.color[3] = 0.86f;
-	shape.edge = 0.85f;
 	shape.opacity = opacity;
 	glass_shape_draw(server, command, &shape);
+
+	/* The line on the side facing the windows: a column's (the flick panel's) left, a row's (the QWERTY panel's) top. */
+	edge_line[3] = KEYBOARD_EDGE_ALPHA * opacity;
+	if (rect[2] < rect[3]) {
+		glass_draw_solid(server, command, (float)rect[0], (float)rect[1], 1.0f, (float)rect[3], 0.0f, edge_line);
+	} else {
+		glass_draw_solid(server, command, (float)rect[0], (float)rect[1], (float)rect[2], 1.0f, 0.0f, edge_line);
+	}
 
 	/* The hint draws the glass alone. */
 	if (opacity < 1.0f)
@@ -1272,6 +1303,45 @@ keyboard_draw_hint(
 	keyboard_draw_panel(server, command, rect, 0.2f + 0.6f * progress);
 }
 
+/*
+ * Draws the open panel (or, leaving, the one going back) moved towards
+ * its edge by what is left of its slide: the flick panel to the right, the
+ * QWERTY panel down.  The panel's rectangle is moved for the drawing and
+ * put back after it, so that its keys are drawn where the panel is.
+ */
+static void
+keyboard_draw_sliding(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	int leaving)
+{
+	int32_t kept[4];
+	uint64_t elapsed;
+	float t;
+	float out;
+
+	/* How far the slide has come, eased out (0 at its start, 1 at its end). */
+	elapsed = zwl_milliseconds() - keyboard.slide_ms;
+	t = 1.0f;
+	if (elapsed < KEYBOARD_SLIDE_MS)
+		t = (float)elapsed / (float)KEYBOARD_SLIDE_MS;
+	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+
+	/* How much of the panel is still (or already) in its edge. */
+	out = 1.0f - t;
+	if (leaving)
+		out = t;
+
+	/* The panel moved by that much of its size towards its edge, drawn, and put back. */
+	memcpy(kept, keyboard.panel, sizeof(kept));
+	if (keyboard.open == PANEL_FLICK)
+		keyboard.panel[0] += (int32_t)(out * (float)keyboard.panel[2]);
+	else
+		keyboard.panel[1] += (int32_t)(out * (float)keyboard.panel[3]);
+	keyboard_draw_panel(server, command, keyboard.panel, 1.0f);
+	memcpy(keyboard.panel, kept, sizeof(kept));
+}
+
 /* Works out the flick panel's key side for the screen's height (a share of it, within limits). */
 static int
 keyboard_key_size(
@@ -1290,7 +1360,7 @@ keyboard_key_size(
 	return key;
 }
 
-/* Works out a key's rectangle on the open flick panel, under its title band. */
+/* Works out a key's rectangle on the open flick panel: the keys fill the bottom of its column. */
 static void
 keyboard_key_rect(
 	struct zwl_server *server,
@@ -1300,10 +1370,10 @@ keyboard_key_rect(
 {
 	int key;
 
-	/* The key's side, and its place in the grid. */
+	/* The key's side, and its place in the grid at the bottom of the column (the tools' area above it, §2.10). */
 	key = keyboard_key_size(server);
 	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)column * (key + KEYBOARD_KEY_GAP);
-	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP + (int32_t)row * (key + KEYBOARD_KEY_GAP);
+	rect[1] = keyboard.panel[1] + keyboard.panel[3] - (int32_t)(ZWL_FLICK_ROWS - row) * (key + KEYBOARD_KEY_GAP);
 	rect[2] = key;
 	rect[3] = key;
 }
