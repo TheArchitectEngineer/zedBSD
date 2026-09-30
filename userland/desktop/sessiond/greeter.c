@@ -47,6 +47,9 @@
 /* The greeter's output. */
 #define GREETER_LOG_PATH	"/var/log/greeter.log"
 
+/* How much of the end of the greeter's log is searched for its last word (ZWL EXIT) after a failure. */
+#define GREETER_REASON_BYTES	8192
+
 /* A greeter that ends with an error within this many seconds of its start has failed. */
 #define GREETER_QUICK_SECONDS	20
 
@@ -85,6 +88,7 @@ static void greeter_power(struct greeter *greeter, const char *what);
 static void greeter_reply(struct greeter *greeter, const char *reply);
 static enum sessiond_greeter_end greeter_wait(struct greeter *greeter);
 static void greeter_kill(struct greeter *greeter);
+static void greeter_reason(void);
 
 /*
  * Runs one greeter until a user logs in, it ends, or sessiond stops.
@@ -689,8 +693,10 @@ greeter_wait(
 		failed = 1;
 	else if (code != 0)
 		failed = 1;
-	if (failed && now - greeter->started < GREETER_QUICK_SECONDS)
+	if (failed && now - greeter->started < GREETER_QUICK_SECONDS) {
+		greeter_reason();
 		return SESSIOND_GREETER_FAILED;
+	}
 
 	/* Succeeded: the greeter ended by itself. */
 	return SESSIOND_GREETER_ENDED;
@@ -719,4 +725,65 @@ greeter_kill(
 	/* Then makes it go. */
 	(void)kill(greeter->pid, SIGKILL);
 	(void)waitpid(greeter->pid, &status, 0);
+}
+
+/*
+ * Puts the reason a greeter failed into sessiond's log (BUG-122): the last
+ * line of its own log that says how it exited (ZWL EXIT … error=), or its
+ * last line when it wrote none.
+ */
+static void
+greeter_reason(void)
+{
+	char tail[GREETER_REASON_BYTES + 1];
+	char *line;
+	char *found;
+	char *end;
+	off_t size;
+	ssize_t count;
+	int descriptor;
+
+	/* The end of the log. */
+	descriptor = open(GREETER_LOG_PATH, O_RDONLY | O_CLOEXEC);
+	if (descriptor < 0)
+		return;
+	size = lseek(descriptor, 0, SEEK_END);
+	if (size > (off_t)GREETER_REASON_BYTES)
+		(void)lseek(descriptor, size - (off_t)GREETER_REASON_BYTES, SEEK_SET);
+	else
+		(void)lseek(descriptor, 0, SEEK_SET);
+	count = read(descriptor, tail, GREETER_REASON_BYTES);
+	(void)close(descriptor);
+	if (count <= 0)
+		return;
+	tail[count] = '\0';
+
+	/* The last ZWL EXIT line, else the last line. */
+	found = NULL;
+	line = strstr(tail, "ZWL EXIT");
+	while (line != NULL) {
+		found = line;
+		line = strstr(line + 1, "ZWL EXIT");
+	}
+
+	/* No such line: the last line, without the line ends after it. */
+	if (found == NULL) {
+		while (count > 0 && tail[count - 1] == '\n') {
+			count--;
+			tail[count] = '\0';
+		}
+
+		/* After the line end before it. */
+		found = strrchr(tail, '\n');
+		if (found == NULL)
+			found = tail;
+		else
+			found++;
+	}
+
+	/* One line of it. */
+	end = strchr(found, '\n');
+	if (end != NULL)
+		*end = '\0';
+	sessiond_log("SESSIOND GREETER failed reason=\"%.200s\"", found);
 }

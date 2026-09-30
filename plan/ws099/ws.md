@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001 cleared（2026-09-30）: 一括の試験 `plan/ws099/tests/criteria.sh`。FAIL は C5（QEMU）、範囲の不足は C1・C7、C6 は実機。直す Phase の案 p002〜p006 を下の表に。基準の案はユーザーの確認待ち
+Resume point: p010（BUG-122）cleared（2026-09-30）。L1（QEMU の基準と落ちた後の回復）がそろった（下の「段の計画」）。次は L2（BUG-121・C5・C1 の実機・BUG-119）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -58,3 +58,17 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p008](phase008/phase.md) | BUG-119: Shut Down で電源が切れない。QEMU の monitor で確認（VM running、CPU は全て HLT）、原因（init が poweroff を HALT にし、PC の kernel に ACPI の S5 が無い）と直し方の案（UAPI・system-device・platform・ACPI の driver・init、HAL の API は変えない）、greeter の「Shutting down…」の案 | cleared（2026-09-30、確認と案まで。実装は別に割り当て） | p004 |
 | [ws099-p009](phase009/phase.md) | greeter の Shut Down・Restart で「Shutting down...」「Restarting...」と spinner を出し、その絵の後に POWER を送る。c1-boot-shutdown.sh に最後の絵の判定と QEMU の終わりの判定（今は WARN） | cleared（2026-09-30: 変更前 FAIL・変更後 PASS、C9 PASS（p076 は 1 回の不安定さの後 2 回 PASS）） | p008 |
 | ws099-p006（案） | C6: 実機（5330）の pointer の遅延の計測（WS075 の measure-apps.sh）。WS075 の p023 と合わせる | planning | p001・WS075 |
+| [ws099-p010](phase010/phase.md) | BUG-122: compositor が落ちた後に greeter が 3 回の失敗で文字の console に落ちる。sessiond の起こし直しを延ばす（6 回、待ちを 1〜16 秒に伸ばす）、失敗の理由を sessiond の log に。試験 `bug122-recovery.sh` | cleared（2026-09-30: `bug122-recovery.sh` 直しの前 FAIL・後 PASS、C1 PASS、boot PASS。5330 は未確認） | p001 |
+
+## 段の計画（2026-09-30 main 経由のユーザーの方針「広く浅く」: まず動く段をそろえ、磨き込みは段ごとの数値目標の小さな Phase）
+
+| 段 | 内容 | Phase | 数値目標 | 測り方 |
+| --- | --- | --- | --- | --- |
+| **L1（まず動く、QEMU）** | 基準の QEMU で測れる分と、落ちた後の回復 | p001・p003・p004・p005・p007・p009（cleared）、**p010（BUG-122）** | `criteria.sh` の C1〜C4・C7〜C10 が全て PASS。compositor（session・greeter）が 5 回続けて落ちても graphical の login に戻り、console に落ちない | `plan/ws099/tests/criteria.sh`、`bug122-recovery.sh`（QEMU の Venus） |
+| L2（実機でそろう） | 実機の不具合と C5 | p011: BUG-121（窓の角の drag で窓が消える）の切り分け（QEMU の resize の stress 100 回、実機の passthrough 20 回）と直し<br>p002: C5 の実機の計測と短縮<br>p012: C1 の実機の目視<br>p013: BUG-119 の電源断の実装（p008 の案） | BUG-121: resize 100 回で窓の消失 0。C5: App Home・Wiseview の開閉の最初の frame まで 100 ms 以内（窓 10 個、5330）。C1: 黒・文字の画面 0 枚（5330）。BUG-119: Shut Down から電源断まで 10 秒以内（QEMU の終了、5330） | stress の script、WS075 の計測、ユーザーの目視、QEMU の終了の時刻 |
+| L3（磨き込み、実機） | 実機の応答と長時間 | p006: C6 の実機（WS075 の p023 と）<br>p014: C10 の実機の 1 時間 | C6: 窓 10 個で pointer の移動から表示まで中央値 50 ms 以内（5330）。C10: 実機で 1 時間、zdesktop が落ちず `ZWL ERROR` 0 | WS075 の `measure-apps.sh`、`c10-soak.sh` を実機で |
+| L4（後） | 基準の外（Future Work） | — | — | — |
+
+- L2 以降は実機とユーザーの時間が要る。各 Phase は前の段がそろってから Queue に入れる。
+- BUG-122 の 5330 での元の失敗（`ZWL EXIT error=21`、EOPNOTSUPP）の原因は QEMU では再現できない（i915 の GPU の状態）。p010 は起こし直しを延ばして
+  理由を log に残す。5330 で再び起きたら、sessiond の log の `SESSIOND GREETER failed reason=` を読んで L2 で直す。

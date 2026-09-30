@@ -19,7 +19,9 @@
  *
  * It keeps to the console when the boot parameters do not ask for the
  * graphical login (login=graphical), when there is no greeter or no display,
- * and after the greeter has failed three times in a row: it exits 0, and
+ * and after the greeter has failed six times in a row, the waits between
+ * the tries growing from 1 to 16 seconds (BUG-122: a GPU that a crashed
+ * compositor left behind may take a while to be usable again): it exits 0, and
  * init starts the console's getty that the greeter service replaces.  A GPU
  * driver may publish the display (/dev/gpu0) a moment after init has started
  * the services; while the kernel reports a GPU device still attaching
@@ -42,8 +44,12 @@
 #include <time.h>
 #include <unistd.h>
 
-/* How many greeters in a row may fail before sessiond gives the console back. */
-#define MAIN_GREETER_FAILURES	3
+/* How many greeters in a row may fail before sessiond gives the console back (BUG-122: six, about half a minute in all). */
+#define MAIN_GREETER_FAILURES	6
+
+/* The wait before the second try, in seconds, doubled for each failure after it up to the longest. */
+#define MAIN_RETRY_FIRST	1U
+#define MAIN_RETRY_LONGEST	16U
 
 /* The log sessiond writes its lines to. */
 #define MAIN_LOG_PATH		"/var/log/sessiond.log"
@@ -69,6 +75,7 @@
 /* Set by SIGTERM and SIGINT: sessiond ends its greeter or session and stops. */
 volatile sig_atomic_t sessiond_stopping;
 
+static unsigned main_retry_delay(unsigned failures);
 static int main_options(struct sessiond *daemon, int count, char **arguments, int *graphical, int *console);
 static int main_boot_graphical(void);
 static int main_ready(struct sessiond *daemon);
@@ -91,6 +98,7 @@ main(
 	enum sessiond_greeter_end end;
 	struct sigaction action;
 	unsigned failures;
+	unsigned delay;
 	int graphical;
 	int console;
 	uid_t uid;
@@ -166,7 +174,7 @@ main(
 		if (end == SESSIOND_GREETER_STOP)
 			break;
 
-		/* A greeter that failed: after three in a row the console's login takes over. */
+		/* A greeter that failed: after MAIN_GREETER_FAILURES in a row the console's login takes over. */
 		if (end == SESSIOND_GREETER_FAILED) {
 			failures++;
 			if (failures >= MAIN_GREETER_FAILURES) {
@@ -176,8 +184,10 @@ main(
 				return 0;
 			}
 
-			/* Another try after a moment. */
-			sleep(1);
+			/* Another try after a wait that grows with the failures (the GPU may still be recovering). */
+			delay = main_retry_delay(failures);
+			sessiond_log("SESSIOND GREETER retry failures=%u delay=%u", failures, delay);
+			sleep(delay);
 			continue;
 		}
 
@@ -569,4 +579,23 @@ main_autologin(
 
 	/* Succeeded: the account to log in. */
 	return 0;
+}
+
+/* Reports the wait before the next greeter after some failures in a row: 1, 2, 4, 8, then 16 seconds. */
+static unsigned
+main_retry_delay(
+	unsigned failures)
+{
+	unsigned delay;
+	unsigned count;
+
+	/* Doubled for each failure after the first, up to the longest. */
+	delay = MAIN_RETRY_FIRST;
+	for (count = 1; count < failures && delay < MAIN_RETRY_LONGEST; count++)
+		delay *= 2U;
+	if (delay > MAIN_RETRY_LONGEST)
+		delay = MAIN_RETRY_LONGEST;
+
+	/* The wait. */
+	return delay;
 }
