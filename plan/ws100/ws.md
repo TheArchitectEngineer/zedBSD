@@ -69,6 +69,7 @@ legacy の HDA が 5330 の firmware の設定で無効にされていないか�
 | [ws100-p005](phase005/phase.md) | Settings の Sound の頁に slider と mute（2026-09-30 朝ユーザー「入れる」） | cleared（2026-09-30: `volume-p005.sh` PASS: Settings → audiod・desktop.conf・system bar、system bar → Settings（数秒以内）、確かめの音の規則。WS089 の回帰、boot） | p003 |
 | ws100-p006（案） | 5330: Kei を直に起動して pci-hda の codec と pin を読み、鳴るかをユーザーが聞く（A7、デモに必須ではない） | planning | p002、実機 |
 | [ws100-p007](phase007/phase.md) | 規約（coding-style の全文）への合わせと全体の確かめ（audiod は WS100 で変えた関数とその周りだけ） | cleared（2026-09-30: 変えた関数と新しい code は style-check 0（sigsetjmp の例外 1）、audiod の残り 89 件は一覧、audiod-qemu・volume-p004・host-audio PASS） | p002〜p004 |
+| [ws100-p008](phase008/phase.md) | L3: 確かめの音の遅れの計測と短縮（操作から音の始まりまで 50 ms 以内） | uncleared（2026-09-30、QEMU: guest の中（変更 → device がその byte を取る）は中央値 31〜37 ms で以内。host の WAV（QMP → 音）は 106〜111 ms で超過、差は QEMU の codec の buffer（8 KiB）と USB の入力の経路。直しは入れていない（kernel の fragment の案）。判定の扱いは main の判断待ち） | p004 |
 
 ## 段の計画（2026-09-30 main 経由のユーザーの方針「広く浅く」: まず動く段をそろえ、磨き込みは段ごとの数値目標の小さな Phase）
 

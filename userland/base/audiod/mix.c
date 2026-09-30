@@ -567,6 +567,10 @@ feedback_mix(
 	if (device->feedback == NULL)
 		return;
 
+	/* The period that starts it (its device byte is noted once the period is placed, device.c). */
+	if (device->feedback_step == 1U && device->feedback_next == 0U)
+		device->feedback_step = 2U;
+
 	/* Each frame of the period, while the sound lasts. */
 	for (index = 0U; index < frames && device->feedback_next < device->feedback_length; index++) {
 		mix[index * 2U] += device->feedback[device->feedback_next * 2U];

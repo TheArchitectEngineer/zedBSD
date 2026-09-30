@@ -23,6 +23,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -37,6 +39,8 @@ static void fill_written(struct audiod_device *device);
 static void read_capture(struct audiod_device *device);
 static void finish_drains(struct audiod_device *device);
 static int allocate_buffers(struct audiod_device *device);
+static void feedback_track(struct audiod_device *device, uint64_t period_byte);
+static void feedback_played(struct audiod_device *device);
 
 /*
  * Opens /dev/dsp0 and /dev/mixer0.  A missing device is not an error:
@@ -325,6 +329,92 @@ audiod_device_feedback(
 
 	/* From its first frame, mixed from the next period on (mix.c). */
 	device->feedback_next = 0;
+
+	/* Its way to the device, when timed (ws100-p008). */
+	device->feedback_asked_ns = audiod_now_ns();
+	device->feedback_step = 1U;
+	audiod_timing("feedback asked at_ms=%lld consumed=%llu written=%llu", (long long)(device->feedback_asked_ns / 1000000),
+	    (unsigned long long)device->consumed, (unsigned long long)device->written);
+}
+
+/*
+ * Writes one line of the feedback sound's timing to the file
+ * AUDIOD_TIMING_LOG names (ws100-p008); nothing without it.
+ */
+void
+audiod_timing(
+	const char *format,
+	...)
+{
+	static FILE *file;
+	static int opened;
+	const char *path;
+	va_list arguments;
+
+	/* The file, opened once. */
+	if (!opened) {
+		opened = 1;
+		path = getenv("AUDIOD_TIMING_LOG");
+		if (path != NULL)
+			file = fopen(path, "a");
+	}
+
+	/* Nothing asked for. */
+	if (file == NULL)
+		return;
+
+	/* The line. */
+	fprintf(file, "AUDIOD timing ");
+	va_start(arguments, format);
+	vfprintf(file, format, arguments);
+	va_end(arguments);
+	fprintf(file, "\n");
+	fflush(file);
+}
+
+/*
+ * Notes the device byte of the feedback sound's first frame once the period
+ * that starts it is placed at a device byte, and logs when the device takes
+ * that byte (ws100-p008).
+ */
+static void
+feedback_track(
+	struct audiod_device *device,
+	uint64_t period_byte)
+{
+	int64_t now_ns;
+
+	/* The period just placed started the sound. */
+	now_ns = audiod_now_ns();
+	if (device->feedback_step == 2U) {
+		device->feedback_byte = period_byte;
+		device->feedback_step = 3U;
+		audiod_timing("feedback mixed at_ms=%lld byte=%llu consumed=%llu ahead_ms=%llu", (long long)(now_ns / 1000000),
+		    (unsigned long long)period_byte, (unsigned long long)device->consumed,
+		    (unsigned long long)((period_byte - device->consumed) * 1000U / ((uint64_t)device->rate * device->frame_bytes)));
+	}
+}
+
+/* Logs when the device has taken the feedback sound's first byte, estimated back from the byte it is at (ws100-p008). */
+static void
+feedback_played(
+	struct audiod_device *device)
+{
+	uint64_t past_ms;
+	int64_t now_ns;
+
+	/* Only a sound mixed and not yet reached. */
+	if (device->feedback_step != 3U || device->consumed < device->feedback_byte)
+		return;
+
+	/* The time the device reached the byte: now less the bytes it has taken since. */
+	now_ns = audiod_now_ns();
+	past_ms = (device->consumed - device->feedback_byte) * 1000U / ((uint64_t)device->rate * device->frame_bytes);
+	device->feedback_step = 0U;
+	audiod_timing("feedback played at_ms=%lld seen_ms=%lld asked_ms=%lld byte=%llu consumed=%llu",
+	    (long long)(now_ns / 1000000 - (int64_t)past_ms), (long long)(now_ns / 1000000),
+	    (long long)(device->feedback_asked_ns / 1000000), (unsigned long long)device->feedback_byte,
+	    (unsigned long long)device->consumed);
 }
 
 /*
@@ -344,10 +434,12 @@ fill_mapped(
 	device->consumed = position.bytes;
 	if (device->written < position.bytes)
 		device->written = position.bytes;
+	feedback_played(device);
 	target = position.bytes + AUDIOD_FILL_FRAGMENTS * device->fragment_bytes;
 	while (device->written < target) {
 		audiod_mix_period(device,
 		    device->map + device->written % device->map_bytes);
+		feedback_track(device, device->written);
 		device->written += device->fragment_bytes;
 	}
 }
@@ -364,11 +456,13 @@ fill_written(
 		if (ioctl(device->dsp, KERN_AUDIO_GET_OSPACE, &space) != 0)
 			return;
 		device->consumed = space.transferred;
+		feedback_played(device);
 		if (space.bytes < device->fragment_bytes ||
 		    device->written - space.transferred >=
 		    AUDIOD_FILL_FRAGMENTS * device->fragment_bytes)
 			return;
 		audiod_mix_period(device, device->scratch);
+		feedback_track(device, device->written);
 		count = write(device->dsp, device->scratch, device->fragment_bytes);
 		if (count != (ssize_t)device->fragment_bytes)
 			return;
