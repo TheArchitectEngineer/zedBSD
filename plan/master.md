@@ -69,7 +69,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | S5 | 画像 | Files から png・jpg → Image Viewer、拡大・pan・前後 | WS091（完了） |
 | S6 | text | Files から txt → Text Editor、編集・保存（Save As） | WS092（完了）、WS090 |
 | S7 | Settings | 壁紙の差し替え、窓の透明度、検索 | WS089 |
-| S8 | Notes | 右上の角の swipe で Notes、pen で書く、Esc で窓に | WS079、WS099 |
+| S8 | Notes | 右上の角の swipe で Notes、pen で書く、下の端から上への swipe（か Esc）で窓に（2026-09-30 ユーザー、ws099-p015） | WS079、WS099 |
 | S9 | PDF Viewer | PDF の頁送り・拡大 | WS079 |
 | S10 | Terminal | `ls`・矢印の履歴・Tab の補完・`less` | WS086・WS087（完了） |
 | S11 | 窓の操作 | 10 個ほどの窓で移動・resize・Wiseview・最大化 | WS099、WS075 |
@@ -198,7 +198,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: 段 L1（QEMU の基準 C1〜C4・C7〜C10、BUG-115・118・122）を満たした。L2（BUG-121、C5 の実機、C1 の実機の目視）・L3（C6・C10 の実機）は広く浅くの順で後 |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001〜p005・p007 cleared 2026-09-30（QEMU）: 段 L1（system bar の音量の icon・slider・mute・wheel・確かめの音・保存、Settings の Sound の頁、両者の同期）を満たした。次の段 L2（5330 の実機で鳴る、p006-a〜c）・L3（確かめの音の遅れ 50 ms・音量の曲線 ±3 dB、ユーザーが確定） |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p011・p015 cleared 2026-09-30: i915 の実機（passthrough）で Vulkan・GLES 3.1 の compute、Noct の GPU の自動並列化（G3）が CPU と一致。**デモの image で S13 が通った**（CPU 9 ms・GPU 249 ms、「The CPU is 27.7 times as fast」）。L1 で区切り。最適化（p016・p017）はユーザーの判断で優先を下げた |
-| [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | p001（設計）cleared 2026-09-30: compositor の keyboard.c、英数は evdev の key、かなは text-input-v3 の commit（ime.h の公開の API だけ）、段 L1〜L4 と数値目標。次は p002（L1: flick の panel）。D1 は「libkeiui に text-input-v3 の受け口」（WS090 の Phase）、D2 は「IME にかなの口を足す」（L3、人間の IME の作業と調整）で決定 |
+| [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 の p002〜p004 cleared（右下の swipe で flick の panel、かな・英字・数字の face、Text Editor へ「aiueO123」、ime-probe へ「あいうえおかが」）。次は p005（L1 の仕上げと回帰） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
