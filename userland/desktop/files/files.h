@@ -284,6 +284,15 @@ struct fm_desktop_saved {
  * dragged (band, from its start to the pointer), the last left click (for
  * a double click: its item and time), and the number of items the last
  * logged layout had plus one (0 before the first).
+ *
+ * The drag of items (ws094-p006): a left press held on an item (pressing,
+ * the item and where; press_alone when a plain click on a selected item
+ * selects it alone at the release instead of at the press), which becomes zdesktop's drag and drop once it
+ * moves (dragging, until the drag's end); a drop over the desktop has its
+ * target in drop_item (a folder item, or -1 for the desktop itself) and
+ * drop_column and drop_row (the cell under it, -1 for none); drop_place
+ * says a drop of the desktop's own items on the desktop moves them to
+ * cells (no file moves), carried out with the drop.
  */
 struct fm_desktop {
 	struct fm_desktop_place *places;
@@ -306,6 +315,16 @@ struct fm_desktop {
 	int click_index;
 	uint64_t click_ms;
 	int logged;
+	int pressing;
+	int press_alone;
+	int press_index;
+	int press_x;
+	int press_y;
+	int dragging;
+	int drop_item;
+	int drop_column;
+	int drop_row;
+	int drop_place;
 };
 
 /*
@@ -1276,6 +1295,15 @@ void fm_desktop_event(struct fm_app *app, const struct fm_event *event);
 void fm_desktop_open_selected(struct fm_app *app);
 int fm_desktop_item_at(struct fm_app *app, int x, int y);
 
+/* The desktop's drag of items and the drops on it (ui-desktop-drag.c, ws094-p006). */
+void fm_desktop_drag_press(struct fm_app *app, int index, int x, int y);
+int fm_desktop_drag_motion(struct fm_app *app, int x, int y);
+void fm_desktop_drag_release(struct fm_app *app);
+void fm_desktop_drop_event(struct fm_app *app, const struct fm_event *event);
+void fm_desktop_drop_draw(struct fm_app *app, struct fm_canvas *canvas);
+int fm_desktop_drop_place(struct fm_app *app);
+void fm_desktop_dropped(struct fm_app *app, char *const *paths, size_t count);
+
 /* The desktop's context menus' actions and its keys for the file operations (ui-desktop-actions.c, ws094-p005). */
 void fm_desktop_action(struct fm_app *app, unsigned action);
 int fm_desktop_operation_key(struct fm_app *app, const struct fm_event *event);
@@ -1285,6 +1313,7 @@ int fm_desktop_can_change_wallpaper(void);
 /* The desktop's grid and its layout file (desktop-layout.c, ws094-p004). */
 void fm_desktop_grid(int width, int height, int *columns, int *rows);
 int fm_desktop_cell_rect(int column, int row, int width, int height, struct fm_rect *rect);
+int fm_desktop_cell_at(int x, int y, int width, int height, int *column, int *row);
 void fm_desktop_arrange(const char *const *names, size_t count, const struct fm_desktop_saved *saved, size_t saved_count, int width, int height, struct fm_desktop_place *places);
 int fm_desktop_layout_path(char *path, size_t size);
 int fm_desktop_layout_read(const char *path, struct fm_desktop_saved **saved, size_t *count);

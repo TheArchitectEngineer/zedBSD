@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: main の依頼（worktree `.claude/worktrees/ws094-desktop`、branch `wt/ws094`）
-Resume point: p006（drag: desktop の中の移動・folder へ・Files の窓との DnD・touch）。p005 は 2026-09-30 に cleared
+Resume point: L2 まで済み（p006 は 2026-09-30 に cleared）。次は L3 の p008（100 項目の計測）。段の計画は下の「段（L1〜L5）」
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -28,5 +28,28 @@ Resume point: p006（drag: desktop の中の移動・folder へ・Files の窓�
 | [ws094-p003](phase003/phase.md) | libkeiland の client の API と Files の `--desktop` の骨組み（`~/Desktop` の icon を右上から描く、監視） | cleared（2026-09-30） | p002、main の許可（libkeiland） |
 | [ws094-p004](phase004/phase.md) | 選択・開く（WS093）・keyboard・配置の保存と Clean Up | cleared（2026-09-30、2 回目: 保存した場所への配置 PASS、band の撮り直し、回帰（probe・files-open・host）と boot test PASS。probe の試験の順の誤りを直した） | p003 |
 | [ws094-p005](phase005/phase.md) | context menu（項目・空いた所）・名前の変更・Trash・Copy・Paste・New Folder・Show in Files | cleared（2026-09-30: menu の手順 PASS、p003・p004 の手順・probe・files-open・host・C9（10 本）・boot test PASS。compositor の menu-shell.c の desktop の menu の閉じ方を直した（main 了解）） | p004 |
-| ws094-p006 | drag（desktop の中・folder へ・Files の窓との DnD）と touch | planned | p005 |
-| ws094-p007 | 全文の規約と回帰 | planned | p006 |
+| [ws094-p006](phase006/phase.md) | drag（desktop の中・folder へ・Files の窓との DnD）と touch | cleared（2026-09-30: drag・touch の手順 PASS、p003〜p005 の手順・files-open・host・boot test PASS。probe の restart は試験の probe が時々終わらない（下の注）） | p005 |
+| ws094-p008 | L3a: 100 項目の計測の道具と基準値（計測だけ） | planned | p006 |
+| ws094-p009 | L3b: 100 項目で L3 の数値目標に入れる | planned | p008 |
+| ws094-p010 | L4a: 長い名前（2 行、中を省く）と画面の大きさの変更 | planned | p006 |
+| ws094-p011 | L4b: 置き場の溢れ（grid より多い項目）と、無い名前の保存の行の掃除 | planned | p010 |
+| ws094-p012 | L5: 実機（5330）での L1〜L3 の確認 | planned | p009、実機 |
+| ws094-p007 | 全文の規約と回帰（WS の最後。選んだ段の Phase の後） | planned | 最後の段の Phase |
+
+注（p006）: `desktop-guest.sh` の restart の手順で、試験用の probe（`--timeout-s=3`）が時々終わらず、起動の上限の行が出ないことがある（p002 で 1 回観察、
+p006 で 2 回再現、別の 2 回は再現せず）。compositor は role と ack を正しく扱っている。p006 は Files だけを変えており、compositor は p005 と同じ。
+probe の側（または libc・kernel の poll や time）の原因は未調査。main に報告済み（bug の起票は main の判断）。
+
+## 段（L1〜L5、2026-09-30 main の方針「広く浅く」）
+
+各段は「まず動く」から磨き込みへ進む。1 つの段を小さな Phase に分け、数値目標と測り方を持つ。確かめるのは QEMU の Venus（L5 だけ実機）。
+
+| 段 | 内容 | 数値目標 | 測り方 | Phase | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| L1 | icon の表示・開く・選択・menu・名前の変更・Trash・Copy・Paste・New Folder・Clean Up | 手順 show・input・saved・menu が PASS（誤りの log 0） | `files-desktop-guest.sh install show watch input saved menu` | p002〜p005 | 済み |
+| L2 | drag（desktop の中・folder へ）、Files の窓との DnD（両方向）、touch（double tap・long press・long press の後の drag） | 手順 drag・touch が PASS | `files-desktop-guest.sh install show drag`（base image）、`… install show touch`（pen image） | p006 | 済み |
+| L3 | 項目が多いときの速さ | `~/Desktop` に 100 項目（画像 20 を含む）で、(a) `files --desktop` の起動から `DESKTOP ready` まで 1500 ms 以内、(b) file を 1 つ足してから表示まで 2500 ms 以内（今の監視は 2 秒ごと）、(c) click から選択の frame まで 50 ms 以内（`SLOW-FRAME` の行が 0） | p008 で作る計測の手順（Files の log の時刻と `SLOW-FRAME`、3 回の中央値） | p008（計測）・p009（直し） | 未着手 |
+| L4 | 見た目と端の場合 | (a) 40 文字の名前が 2 行に収まり中を省く（画面で確認）、(b) 1280x800 から 1920x1280 に変えても保存の場所を保ち、外れた項目が空いた cell に入る（log）、(c) grid の cell より多い項目は描かずに数を log、保存の行の無い名前は次の保存で消える | host の試験と guest の画面・log | p010・p011 | 未着手 |
+| L5 | 実機 | 実機（5330）で L1 の手順と L3 の (a)(c) が QEMU の目標以内 | 実機の手順（p012 で決める） | p012 | 未着手（実機が要る） |
+
+WS の完了の条件（design §7 の受け入れ）は L1・L2 で満たした。L3 以降は磨き込みで、main が順番と止め時を決める。p007（全文の規約と回帰）は、選んだ最後の段の後に行う。
