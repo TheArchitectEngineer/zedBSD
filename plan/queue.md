@@ -3,28 +3,27 @@
 # Queue
 
 <!-- awesome-plan-current:start -->
-Status: idle（2026-09-30）
-Active Queue: なし
+Status: active（2026-09-30）
+Active Queue: q510
 Last finished Queue: [q509](history/queue-q509.md)（ws103-p002: attempt は uncleared、同日の追いの確かめで Phase は cleared）
 <!-- awesome-plan-current:end -->
 
-## q509
+## q510
 
-- Purpose: WS103 の p002（compositor の起動の問い合わせを VK_KHR_display へ、`--direct` の削除）。
+- Purpose: WS103 の p003（libvulkan: VK_KHR_dedicated_allocation と VK_KHR_get_memory_requirements2、image の capability の import での記述の照合、bind の守り）。
 - Timebox: この session。
 - Focus: WS103（最優先）。
-- Approval: current user, 2026-09-30 夜、「書き直してOKです。p002を実行してください。」
-- Exact approved scope: [ws103-p002](ws103/phase002/phase.md) だけ（[design](ws103/design.md) §2.1・2.2 と §3 の p002 の行）。`userland/desktop/wayland/` の
-  `GPU_GET_INFO`・`GPU_DISPLAY_QUERY`・`GPU_DISPLAY_MODE`・`GPU_DISPLAY_CLAIM`・`GPU_DISPLAY_PRESENT`・`GPU_DISPLAY_RELEASE` と `--direct` の道を消し、
-  それを読む試験を直すか退役させる。buffer の import（`RESOURCE_IMPORT`）と fence（`FENCE_QUERY`）、libvulkan、HAL、toolchain は範囲の外。
+- Approval: current user, 2026-09-30 夜、「消して作り直してOKです。次に進みましょう。」（Q1 が「独立して進められるのは p003 と p005、進める場合は Queue を作る」と示した後）。
+  Q1 は p004 の前提の p003 を選んだ。
+- Exact approved scope: [ws103-p003](ws103/phase003/phase.md) だけ（[design](ws103/design.md) §2.3 の libvulkan の側の 1〜5 と §3 の p003 の行）。compositor の変更（p004）、fence（p005）、HAL、toolchain は範囲の外。
 - Executor: メインのエージェント（Q1）。
 
 | Attempt | Phase | Status | Dependency | Selection reason |
 | --- | --- | --- | --- | --- |
-| q509-i01 | [ws103-p002](ws103/phase002/phase.md) | uncleared（追い: 2026-09-30 夜に基準 6 を満たし Phase は cleared） | ws103-p001 cleared（design） | 最優先の WS103 の、依存の無い最初の実装の Phase。ユーザーが実行を指示 |
+| q510-i01 | [ws103-p003](ws103/phase003/phase.md) | in-progress | ws103-p001 cleared（design） | p004 の前提。p002 と独立 |
 
-Dependency graph: `ws103-p001 (cleared) -> q509-i01/ws103-p002`。
+Dependency graph: `ws103-p001 (cleared) -> q510-i01/ws103-p003 -> (future) ws103-p004`。
 
 ## Upcoming Work Outlook
 
-WS103 の p003（libvulkan の import の照合）・p005（WSI の fence）、p002 の後の p004。どれも Queue で承認が要る。
+WS103 の p005（WSI の fence）、p003 の後の p004。どれも Queue で承認が要る。
