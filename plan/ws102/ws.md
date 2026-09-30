@@ -26,7 +26,7 @@ Resume point: p004 cleared 2026-09-30。次は L1 の p005（仕上げと回帰�
 | K2 | flick の panel で、アルファベット（大文字・小文字）、数字と記号、日本語（かな）を flick で打てる。種類の切り替えの key がある | 注入の touch で打った文字が app（Text Editor・Terminal）に届く |
 | K3 | 画面の左下の角から内へ swipe すると、画面の下側に QWERTY の keyboard が出る。shift・記号・数字・backspace・enter・矢印がある | 同上 |
 | K4 | QWERTY の panel から手書きの入力の面に切り替えられる。書いた線を描き、認識は stub（「認識はまだ」と出すか、決まった候補を返す）でよい | 画面 |
-| K5 | keyboard が出ている間、focus の app の窓が隠れないように、作業の領域を縮めるか、窓を上へ寄せる | 画面（Text Editor の caret が見える） |
+| K5 | keyboard が出ている間、作業の領域を keyboard の無い範囲に縮める。最大化の窓は animation で縮み、浮いた窓は animation で収まる位置へ動く（はみ出た分はそのまま）（2026-09-30 ユーザー） | 画面（Text Editor の caret が見える） |
 | K6 | 見た目は Kei のすりガラスと部品（system bar・menu）に揃い、compositor の一部として描く（別の process の app ではない） | 画面、ユーザーの目視 |
 | K7 | 既存の角と端の gesture（左上の App Home、右上の Notes、下端の上への swipe）とぶつからない | 回帰の試験（WS099 の C9） |
 | K8 | 文字の送り先は focus の app。日本語は IME（WS095）があれば IME を通して変換でき、無ければかなをそのまま送る | 注入の touch |
@@ -55,13 +55,19 @@ Resume point: p004 cleared 2026-09-30。次は L1 の p005（仕上げと回帰�
 | [ws102-p004](phase004/phase.md) | L1 | 文字の送出（evdev と Shift、text-input の commit、組み立て中・text-input の無い app）、guest の試験（Text Editor・ime-probe） | cleared（2026-09-30: Text Editor の file が「aiueO123」、ime-probe の text が「あいうえおかが」（濁点の置き換えを含む）、text-input の無い app へは送らない。host PASS） | p003 |
 | ws102-p005 | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | planned | p004 |
 | ws102-p006 | L2 | QWERTY の面と左下の gesture | planned | p005 |
-| ws102-p007 | L2 | 作業の領域（`zwl_keyboard_reserved`、置き場・最大化・desktop・浮いた窓の寄せと戻し） | planned | p006 |
+| ws102-p007 | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | planned | p006 |
+| ws102-p015 | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: Keiland の独自の protocol で、keyboard のために大きさ・位置を変える窓へ configure の前に知らせ、libkeiui が caret の行を見える範囲の中央に寄せる。Text Editor の長い文書で QWERTY を開き、caret が keyboard の上の範囲の中央付近（±1 行）に見える | planned | p007 |
 | ws102-p008 | L2 | 手書きの面（線・stub の認識・候補） | planned | p006 |
 | ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
 | ws102-p010 | L3 | 計測の道具と基準値（遅れ・開く動き） | planned | p009 |
 | ws102-p011 | L3 | 数値目標への直し | planned | p010 |
-| ws102-p012 | L3 | IME と組んだ日本語の変換 | planned | p005、D2、WS095 |
+| ws102-p012 | L3 | IME と組んだ日本語の変換、右の列の変換候補（独自の拡張、design.md §2.10） | planned | p005、D2、WS095 |
 | ws102-p013 | L4 | Windows の上の QEMU（WS085）での物理の touch の確認 | planned | p009、WS085 |
+| ws102-p016 | L2 | 右の列の全体の panel と道具の面の枠（design.md §2.10）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | planning | p007 |
+| ws102-p017 | L2 | 編集の操作の拡張 `keiland_edit_v1`（libkeiland・libkeiui の `kui_text`、状態で button を灰色に）、拡張の無い窓の key への落とし（Terminal は app の表） | planning | p016 |
+| ws102-p018 | L3 | クリップボードの履歴（記憶の中だけ、10 件、password の欄は残さない、lock・Log Out で消す） | planning | p016 |
+| ws102-p019 | L3 | 絵文字の面（font の選定と license の監査、text-input の commit） | planning | p016、絵文字の font の判断 |
+| ws102-p020 | L2 | QWERTY の面の補助の key の列（Esc・Tab・Ctrl・`|`・`~`・矢印、一度だけ効く修飾） | planning | p006 |
 | ws102-p014 | — | 全文の規約と回帰（WS の最後） | planned | 最後の段 |
 
 ## 段（詳しくは [design.md](design.md) §3）
