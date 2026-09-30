@@ -53,3 +53,11 @@ probe の側（または libc・kernel の poll や time）の原因は未調査
 | L5 | 実機 | 実機（5330）で L1 の手順と L3 の (a)(c) が QEMU の目標以内 | 実機の手順（p012 で決める） | p012 | 未着手（実機が要る） |
 
 WS の完了の条件（design §7 の受け入れ）は L1・L2 で満たした。L3 以降は磨き込みで、main が順番と止め時を決める。p007（全文の規約と回帰）は、選んだ最後の段の後に行う。
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **L3 の作業像**: まず計測だけの Phase（p008）で、100 項目の `~/Desktop` を作る script（`plan/tools/files/make-home.sh` を広げ、画像 20 を含む）と、
+  `files --desktop` の log の時刻（`DESKTOP ready`、file の追加から表示、`SLOW-FRAME`）を集める script を作り、3 つの数値を出す。直すのは p009 で、
+  一番遠い目標から 1 つずつ（例: thumbnail の作成を後回しにして ready を早める）。
+- **ハーネス**: 既存の `plan/ws094/tests/files-desktop-guest.sh` に手順 `perf100` を足す。判定は log の時刻だけで行い、画面は確かめの 1 枚。
+- L4・L5 は、他の WS が L2・L3 にそろってから。

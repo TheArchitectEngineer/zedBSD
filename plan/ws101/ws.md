@@ -98,3 +98,15 @@ SSBO の atomic は p002・p005 に入れた）ので、p006・p007 が遅れた
 - D3: G3 の N = 4,000,000（Noct は group の数 ⌈N/64⌉ が device の上限 65535 を越えると error）と倍率（素の 5330 で GPU が 3 倍以上、伸び 10 倍。CPU の時間を測ってから決め直す）。
 - D5: デモの見本は整数だけでよいか（Noct の GLES の backend は float の program を GPU に出さず CPU で走らせる）。代案は Noct に float を許す patch（Noct の意味の変更、toolchain の変更）。
 - D4（main）: ws068 の ws.md の p035 の行に、GLES 3.1 の compute の部分集合を WS101 へ移したと記録する。p008 の前。
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **L1 の作業像**: 新しい compute の機能は足さない。`mix.nct` を CPU と GPU で 1 回ずつ走らせ、全要素の一致と「GPU で走った証拠」を取る。
+  証拠は 2 つ重ねる: (1) Noct の accel の log（backend の選択の行）、(2) i915 の kernel の log の compute の dispatch の数が run の前後で増えること。
+  どちらか片方だけでは「CPU に fall back したが結果は合った」を見分けられない。
+- **ハーネス**: `plan/ws101/tests/hw/gles-hw.sh` と同じ形（lock の外で image を build → lock の下で passthrough に写して実行 → guest の disk の log を
+  `ufs-cat.py` で読む）で `noct-hw.sh` を作る。lock を持つ時間は 1 回 10 分以内。
+- **S13 の手順**: デモで打つ命令を 1 つの script（`/usr/share/kei/demo/noct-gpu.sh`: CPU の時間 → GPU の時間 → 倍率を大きな文字で出す）にし、
+  台本では Terminal でそれを打つだけにする。デモ中の失敗の余地を減らすため。
+- **L2 の作業像**: 素の 5330 で測るので、ユーザーの起動が 1 回要る。その後は ssh で `noct-gpu.sh` を 5 回走らせる。3 倍に届かなければ、
+  p016 で時間を分解（upload・dispatch・readback・JIT）して一番大きいものから直す。

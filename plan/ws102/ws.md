@@ -82,3 +82,14 @@ Resume point: p001（設計）cleared 2026-09-30（[design.md](design.md)）。�
 
 - **D1**: 「libkeiui に入れる」。text-input-v3 の受け口を libkeiui の窓の土台（`kui_window`）に入れ、Text Editor と今後の libkeiui の app がかなを受け取れるようにする（WS090 の Phase。IME の file は変えない）。
 - **D2**: 「IME にかなの口を足す」。IME に「かなを入力として受け取る」口を足し、keyboard はかなをそのまま渡す。IME の変更なので、人間の作業（WS095）と調整してから（L3）。
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **L1 の作業像**: まず panel が出る・消える（p002）→ flick の表と face（p003）→ 送出（p004）→ 回帰（p005）の順に、毎 Phase で「画面に出て、
+  何かが届く」ところまで動かす。見た目の細部は L1 では後回し（すりガラスと文字の大きさは既存の system bar の部品を流用）。
+- **ハーネス**: Linux の QEMU の注入の touch（`build/main-pen` の image と touchinject）で swipe と flick を打つ script（`plan/ws102/tests/kbd-guest.sh`）。
+  判定は 2 つ: (1) compositor の log の `ZWL KEYBOARD` の行（開く・閉じる・送った文字）、(2) 受け取った側の記録（英数は Text Editor の保存の file、
+  かなは ime-probe の log）。画面は各 Phase で撮る。
+- **L4 の作業像**: Windows の QEMU（WS085 の boot.bat と usb-multitouch）で、ユーザーが台本 S14 を 3 回通す。エージェントは手順の 1 枚を用意する。
+  WS081 の L2（物理の touch が届くことの確認）が先に済んでいる必要がある。
+- **危険の早めの確かめ**: 下の角と Wiseview・desktop の swipe の衝突（D3）は p002 の回帰で先に見る。ここで問題が出ると角の位置の設計を変えるため。

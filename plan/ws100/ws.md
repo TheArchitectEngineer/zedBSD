@@ -84,3 +84,13 @@ legacy の HDA が 5330 の firmware の設定で無効にされていないか�
 ## ユーザーの判断（2026-09-30 朝）
 
 L3 の数値目標（操作から確かめの音が鳴り始めるまで 50 ms 以内、実機の音量の曲線 25・50・75・100% が -30・-15・-7・0 dB ± 3 dB）は「案のまま」で確定。
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **L2（実機で鳴る）の作業像**: p006-a で pci-hda に codec・widget・pin の一覧を dmesg に出す診断を足す（QEMU で形を確かめる）。
+  p006-b はユーザーが demo の image を 5330 で起動し、エージェントが ssh で dmesg を読んで speaker・headphone の pin と amplifier を特定し、
+  `audiod-feedback`（試験の client）で確かめの音を鳴らす。聞くのはユーザー。鳴らなければ p006-c で codec の pin の設定か GPIO の quirk を足す。
+- **L3 の音量の曲線は、実機でも mic 無しで測れる見込み**: codec の amplifier の capability（step の数と 1 step の dB）を読めば、百分率ごとの
+  gain は計算で出る。実機で要るのは「codec の値が意図どおりに書かれたこと」の確かめ（ssh で codec の amp の値を読み戻す）だけ。
+  software の音量の側は QEMU の wav で測れる（p002 の `audiod-qemu.sh` と同じ）。
+- **L3 の遅れの測り方**: QEMU の wav の音の始まりの時刻と、zdesktop の log の操作の時刻（同じ clock に揃える）の差。
