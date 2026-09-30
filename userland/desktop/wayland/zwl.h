@@ -1080,6 +1080,10 @@ void zwl_keyboard_tick(struct zwl_server *server);
 int zwl_keyboard_showing(void);
 int zwl_keyboard_at(int32_t x, int32_t y);
 void zwl_keyboard_close(struct zwl_server *server, const char *reason);
+int zwl_keyboard_touch_down(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
+int zwl_keyboard_touch_motion(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
+int zwl_keyboard_touch_up(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
+void zwl_keyboard_touch_cancel(struct zwl_server *server, uint32_t id);
 void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
 
 /* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */

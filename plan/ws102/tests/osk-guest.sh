@@ -36,6 +36,10 @@
 #   extra     (p020) the QWERTY panel's extra keys' row: in Text Editor "bc", Home, "a", End, "|" (from the extra
 #             row), Tab: "abc|<tab>"; then Ctrl (held for one key) and a select all, "z" replaces it: the file is "z";
 #             Alt then Esc lets go of Alt with the key (extra.png)
+#   roll      (p009; the pen image) two fingers typing on the QWERTY panel into Text Editor (/root/roll.txt): f and j
+#             in turn, 100 taps, each finger touching 50 ms before the other lifts (touch.c's ROUTE_OSK: each finger its
+#             own press, the second's touch makes the first's key act); the file is "fj" 50 times, 100 keys logged,
+#             99 rollovers, none lost (roll.png)
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -582,6 +586,64 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		sleep 1
 		pointer move $((width / 3)) 300 sleep 400
 		shot "maximized-flick-${width}x${height}.png"
+		;;
+	roll)
+		compositor
+		guest 'rm -f /root/roll.txt; touch /root/roll.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/roll.txt > /tmp/te.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		expect_log 'ZWL MAP client='
+		swipe 6 792 150 650
+		expect_log 'ZWL OSK open kind=qwerty'
+		qkey_refresh
+		fplace=$(awk '$NF == "label=f"' "$out/qrect-now.txt" | tail -1 | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+		jplace=$(awk '$NF == "label=j"' "$out/qrect-now.txt" | tail -1 | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+		set -- $fplace $jplace
+		if [ $# -ne 8 ]; then
+			echo "roll: no places of f and j MISSING"
+			status=1
+		else
+			fx=$(( $1 + $3 / 2 )) fy=$(( $2 + $4 / 2 )) jx=$(( $5 + $7 / 2 )) jy=$(( $6 + $8 / 2 ))
+			# 100 taps, f and j in turn: each touch 50 ms before the other finger lifts, 50 ms more to the next touch.
+			script="size 1279 799 2
+wait 2600
+down 1 $fx $fy
+hold 50"
+			i=1
+			while [ $i -lt 100 ]; do
+				if [ $((i % 2)) -eq 1 ]; then
+					script="$script
+down 2 $jx $jy
+hold 50
+up 1
+hold 50"
+				else
+					script="$script
+down 1 $fx $fy
+hold 50
+up 2
+hold 50"
+				fi
+				i=$((i + 1))
+			done
+			script="$script
+up 2
+hold 800"
+			before=$(count 'ZWL OSK qkey')
+			rolled=$(count 'ZWL OSK touch down .* rollover=1')
+			touch_replay roll "$script"
+			sleep 1
+			pointer move 700 200 sleep 300
+			shot roll.png
+			python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+			sleep 2
+			saved=$(guest 'cat /root/roll.txt' | tail -1)
+			want=$(printf 'fj%.0s' $(seq 1 50))
+			[ "$saved" = "$want" ] && echo "roll: 100 taps typed fj x50 ok" || { echo "roll: (${#saved} characters: $saved) MISSING"; status=1; }
+			after=$(count 'ZWL OSK qkey')
+			[ $((after - before)) -eq 100 ] && echo "roll: 100 keys logged ok" || { echo "roll: $((after - before)) keys logged (expected 100) MISSING"; status=1; }
+			rolls=$(( $(count 'ZWL OSK touch down .* rollover=1') - rolled ))
+			[ "$rolls" -eq 99 ] && echo "roll: 99 rollovers ok" || { echo "roll: $rolls rollovers (expected 99) MISSING"; status=1; }
+		fi
 		;;
 	edges)
 		compositor
