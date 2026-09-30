@@ -17,7 +17,7 @@ ONCE = ('egl-initialize', 'egl-create-context', 'egl-create-pbuffer', 'egl-make-
 # The parts of a call, in order: what each sums (steps inside others are not added twice).
 PARTS = (
 	('buffer-data', ('buffer-data',), 'copy into libGLESv2 (malloc, clear, copy of the input and output)'),
-	('device-buffer', ('device-buffer',), 'device buffer made (vkCreateBuffer, vkAllocateMemory, map)'),
+	('device-buffer', ('device-buffer', 'data-device-buffer'), 'device buffer made (vkCreateBuffer, vkAllocateMemory, map) or a spare taken (ws101-p017)'),
 	('upload', ('upload', 'upload-in-place'), 'copy into the device buffer'),
 	('record', (), 'dispatch recorded (dispatch-record minus device-buffer and upload)'),
 	('gpu-wait', (), 'submit and wait for the GPU (frame-wait minus collect, which runs inside it)'),
@@ -75,7 +75,8 @@ def parts(segment):
 	result = {}
 	for part, names, _ in PARTS:
 		result[part] = sum(total.get(name, 0.0) for name in names)
-	result['record'] = total.get('dispatch-record', 0.0) - result['device-buffer'] - result['upload']
+	result['buffer-data'] = total.get('buffer-data', 0.0) - total.get('data-device-buffer', 0.0)
+	result['record'] = total.get('dispatch-record', 0.0) - total.get('device-buffer', 0.0) - result['upload']
 	result['gpu-wait'] = total.get('frame-wait', 0.0) - result['collect']
 	result['map-other'] = total.get('map-buffer', 0.0) - total.get('frame-wait', 0.0) - result['readback']
 	result['libgles'] = sum(result[part] for part, _, _ in PARTS)

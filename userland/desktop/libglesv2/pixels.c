@@ -187,6 +187,7 @@ gles_pack_target(
 	size_t extent;
 	size_t type_size;
 	GLint row_length;
+	int status;
 
 	/* The bytes of one pixel (the caller checked the format and type). */
 	layout.pixel = gles_pixel_size(format, type);
@@ -217,6 +218,11 @@ gles_pack_target(
 	extent = pixels_extent(&layout, width, height, 1);
 	if (offset > buffer->size || extent > buffer->size - offset)
 		return GL_INVALID_OPERATION;
+
+	/* Bytes in a device copy this frame reads move to the CPU first (ws101-p017). */
+	status = gles_buffer_writable(state, buffer);
+	if (status != 0)
+		return GL_OUT_OF_MEMORY;
 
 	/* The buffer's bytes change: its device copy is stale. */
 	buffer->dirty = 1;

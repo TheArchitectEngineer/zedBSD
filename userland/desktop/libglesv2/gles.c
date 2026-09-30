@@ -1677,8 +1677,9 @@ gles_release(
 	gles_framebuffers_release(state);
 	gles_vertex_arrays_release(state);
 
-	/* The garbage, which the frees above added to. */
+	/* The garbage, which the frees above added to, and the spare device copies it left (ws101-p017). */
 	gles_collect(state);
+	gles_spares_release(state);
 
 	/* The pipelines, samplers, descriptor pools and stream. */
 	while (state->pipelines != NULL) {
