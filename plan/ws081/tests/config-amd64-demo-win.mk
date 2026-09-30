@@ -1,0 +1,26 @@
+# ws081-p018: the demonstration image for the QEMU on Windows (WS085: WHPX, Venus through virtio-gpu, SDL, the
+# usb-multitouch screen, the network by usb-net): the 5330 demonstration's applications
+# (plan/ws075/demo/config-demo-hdmi.mk) on the Venus driver instead of i915, with touchlog (WS081's L2 measurement,
+# plan/ws081/tests/windows-touch.md).  Not the 5330's: no i915 or its firmware, no display= (QEMU has one output).
+# Build: plan/ws081/tests/build-demo-win.sh [BUILD]   (default build/ws081-demo-win)
+include plan/ws035/tests/config-amd64-userland.mk
+CONFIG_GPU_JOB_RESERVATION_MS := 10000
+CONFIG_GPU_JOB_EXECUTION_MS := 60000
+CONFIG_GPU_JOB_STOP_MS := 10000
+CONFIG_GPU_CONTROL_MS := 10000
+CONFIG_DRIVER_PCI_VENUS := y
+# The desktop, the libraries and the applications of App Home (plan/ws035/demo/apps.conf), as the 5330's image.
+ZEDBSD_USER_PROGRAMS += libvulkan libwayland-client libwayland-egl libegl libglesv2 libtruetype wltest wlshm mview terminal egltest libgl glxtest zgears wayland xserver
+ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat files browser
+ZEDBSD_USER_PROGRAMS += libjpeg-compat libpdf notes pdfviewer
+ZEDBSD_USER_PROGRAMS += libgif-compat imageview
+ZEDBSD_USER_PROGRAMS += settings audiod libkeiui textedit
+ZEDBSD_USER_PROGRAMS += openssl openssh
+ZEDBSD_NOCT_ACCEL := y
+ZEDBSD_USER_PROGRAMS += gpudemo
+ZEDBSD_GRAPHICAL_BOOT := y
+# touchlog (build-touchlog.sh) in /usr/bin when it is built.
+ifneq ($(wildcard build/ws081-tests/touchlog),)
+ZEDBSD_EXTRA_INPUTS += build/ws081-tests/touchlog
+ZEDBSD_EXTRA_FILES += --file /usr/bin/touchlog=build/ws081-tests/touchlog
+endif

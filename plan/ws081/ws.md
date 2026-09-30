@@ -56,6 +56,7 @@ p005 を scroller・gesture の library と app ごとの適用に分ける、p0
 | [ws081-p013](phase013/phase.md) | Notes の指の scroll・pinch・double tap・toolbar の tap と掌の判定（ペンは線。design §3.8 の指の線は main の指示で取りやめ、§5.6） | cleared | p005 |
 | [ws081-p015](phase015/phase.md) | Notes の「指で書く」の切り替え（2026-09-29 ユーザーの決定: 既定は今のまま指は scroll・pinch。toolbar に切り替えを足し、入れた間は一本指で線、二本指で scroll・pinch。実機でペンが使えない場合のデモの備え） | cleared | p013 |
 | [ws081-p016](phase016/phase.md) | L2 の準備: touch の報告の記録の道具（`touchlog`）と集計、注入の touch での確かめ、Windows の手順（`windows-touch.md`）、画面の反応の時間の script（`touch-latency.py`、p017 用） | cleared（2026-09-30: `touchlog-check.sh` PASS（60 Hz・90 Hz の揺れ・3 つの欠けを正しく数える）。Windows の計測はユーザー） | p015 |
+| [ws081-p018](phase018/phase.md) | Windows の QEMU 用の demo の image（`config-amd64-demo-win.mk`・`build-demo-win.sh`: 5330 の demo の app の一式を Venus で、touchlog、Text Editor）と `windows-touch.md` の用意 | cleared（2026-09-30: `build/ws081-demo-win/hdd-image.img`、boot-test PASS、Venus で session と ssh の password の 1 行の touchlog の SUMMARY。Windows は未実施） | p016 |
 | [ws081-p006](phase006/phase.md) | ブラウザの慣性の scroll と touch の入力（browser の shell） | cleared | p005、WS074（`browser.h` の scroll の範囲・overscroll。main の判断でこの Phase が足した） |
 | ws081-p007 | touch の実物での調整（報告の率の実測、係数の調整）。**2026-09-30 ユーザー: デモの touch は Windows 上の QEMU（WS085）で行う。外付けの touch LCD は間に合えば別の計画**。まず Windows の QEMU の touch の経路（host の touch → QEMU の入力 device → Kei）で報告の率と遅れを測る | planning | p005、p006、touch の USB |
 | ws081-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |

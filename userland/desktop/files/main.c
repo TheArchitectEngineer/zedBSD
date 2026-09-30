@@ -580,6 +580,12 @@ main_frame(void)
 		result = fm_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width);
 		shown = fm_clock();
 
+		/* The desktop's selection shown: the time from the press that selected (ws094-p008). */
+		if (main_app.desktop && main_app.desk.select_ms != 0U && result == VK_SUCCESS) {
+			fm_log("DESKTOP select-frame ms=%lu", (unsigned long)(shown - main_app.desk.select_ms));
+			main_app.desk.select_ms = 0U;
+		}
+
 		/* A slow frame is logged (a diagnostic: where the time of a frame goes). */
 		if (shown - started > MAIN_SLOW_FRAME_MS)
 			fm_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u", (unsigned long)(drawn - started), (unsigned long)(shown - drawn), main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms);

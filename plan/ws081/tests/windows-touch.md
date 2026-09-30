@@ -22,14 +22,20 @@
 - `scan_gaps` が 0 で `arrival_gaps` だけ多いなら、Kei の側（USB の poll、evdev の読み）を疑う。
 - `touchlog: no touch screen` なら、QEMU の `usb-multitouch` が付いていない（boot.bat の `-device usb-multitouch,bus=xhci.0,port=1`）。
 
-## 用意（エージェントか Q1、ユーザーの手順の前に 1 回）
+## 用意（ユーザーの手順の前に 1 回。自分で確かめられる形）
 
-- image に `touchlog` を入れる: `sh plan/ws081/tests/build-touchlog.sh build/amd64` で `build/ws081-tests/touchlog` を作り、Windows に置く
-  image の config に `ZEDBSD_EXTRA_FILES += --file /usr/bin/touchlog=build/ws081-tests/touchlog` を足して build する（`config-amd64-touchlog.mk` と同じ形）。
-  その image を `C:\Work\winq-zedbsd\data\hdd-image.img` に置く。
-- SSH: image に `openssh` があること（既定の image にはある）と、boot.bat の QEMU の network に `hostfwd=tcp::2222-:22` があること。
-  無ければ boot.bat の `-nic`（または `-netdev user`）にそれを足す。
-- 道具の確かめ（Linux の QEMU、注入の touch）: `plan/ws081/tests/touchlog-check.sh`（60 Hz・90 Hz の揺れ・3 つの欠けを正しく数える）。
+1. **image**: Q1 が置く demo の image（`build/ws081-demo-win/hdd-image.img` を main の `build/` に複写したもの。touchlog・Notes・PDF Viewer・
+   Text Editor・スクリーンキーボードの入った Windows の QEMU 用）を、`C:\Work\winq-zedbsd\data\hdd-image.img` に上書きで複写する
+   （元の image を残したいなら先に名前を変えておく）。
+2. **boot.bat の ssh の転送**: `C:\Work\winq-zedbsd\boot.bat` をメモ帳で開き、QEMU の行に `hostfwd=tcp::2222-:22` があるかを見る。
+   - ある: そのままでよい。
+   - 無い: network の引数に足す。例（usb-net を使う場合、QEMU の行の最後に 1 つ足す）:
+     `-netdev user,id=net0,hostfwd=tcp::2222-:22 -device usb-net,bus=xhci.0,port=2,netdev=net0`
+     （既に `-netdev user,id=…` があれば、その後ろに `,hostfwd=tcp::2222-:22` だけを足す）。
+3. **確かめ**: boot.bat で起動し、Kei の desktop が出たら PowerShell で `ssh -p 2222 root@127.0.0.1 touchlog --seconds=3` を打つ（password `root`）。
+   - 「touchlog: recording /dev/input/event…」の後に `SUMMARY` の行が出れば用意は済み（触らなければ `touching=0` でよい）。
+   - `Connection refused` なら 2 の転送が無い。`touchlog: not found` なら 1 の image が古い。`touchlog: no touch screen` なら boot.bat に
+     `-device usb-multitouch,bus=xhci.0,port=1` が無い。
 
 ## 参考: 画面の反応までの時間（L3、p017）
 
