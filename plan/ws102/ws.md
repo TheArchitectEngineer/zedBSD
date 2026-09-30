@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: L1 を満たした。L2 の p006・p008・p021・p020・p015・p017 cleared 2026-09-30。次は p007（作業の領域。configure の前に `zwl_keyboard_inset_notify` を呼ぶ、p015 の phase.md の制限）
+Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p016・p017・p020・p021 cleared 2026-09-30。次は main の指示
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -63,7 +63,7 @@ Resume point: L1 を満たした。L2 の p006・p008・p021・p020・p015・p01
 | ws102-p011 | L3 | 数値目標への直し | planned | p010 |
 | ws102-p012 | L3 | IME と組んだ日本語の変換、右の列の変換候補（独自の拡張、design.md §2.10） | planned | p005、D2、WS095 |
 | ws102-p013 | L4 | Windows の上の QEMU（WS085）での物理の touch の確認 | planned | p009、WS085 |
-| ws102-p016 | L2 | 右の列の道具の面（design.md §2.10、列の配置は p021 で済み）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | planning | p007 |
+| [ws102-p016](phase016/phase.md) | L2 | 右の列の道具の面（design.md §2.10、列の配置は p021 で済み）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | cleared（2026-09-30: 道具の面（前の app・Del・tab・編集の面）、「選択 → → ×5 → コピー → 前の app → 貼り付け」を 3 回で b.txt が hellohellohello。p007 の直に替えた時の元の位置も直した。全手順・p010・boot PASS、C9 は p076 の画面の判定が不安定（単独 4/5）） | p007 |
 | [ws102-p017](phase017/phase.md) | L2 | 編集の操作の拡張 `keiland_edit_v1`（libkeiland の wrapper（KEILAND_VERSION 19）・libkeiui（KUI_VERSION 8）、状態で button を灰色に）、拡張の無い窓の key への落とし（Terminal は app の表）、compositor の `zwl_edit_action`・`zwl_edit_state`・`zwl_focus_previous`（直前の app）。試験の口は Super+Alt の key。keyboard の button は p016 | cleared（2026-09-30 P6: Text Editor A で select_begin → → ×5 → copy → 直前の app → B で paste、B に "HELLO"、Terminal は Ctrl+Shift+C、状態の flag、host・WS079-p010・boot PASS、C9 は p076 の 1 回の不安定さの後 2 回 PASS。実機は未実施） | p015 |
 | ws102-p018 | L3 | クリップボードの履歴（記憶の中だけ、10 件、password の欄は残さない、lock・Log Out で消す） | planned（P6、2026-09-30）| p017 |
 | ws102-p023 | L2 | Text Editor が本当の編集の状態（選択がある・取り消せる・やり直せる）を `kui_window_edit_state` で言う（p017 の灰色の表示を正しくする） | planned（P6、2026-09-30） | p017 |
