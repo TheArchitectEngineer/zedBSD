@@ -1,0 +1,22 @@
+diff --git a/src/drivers/gpu/i915/render/heap.h b/src/drivers/gpu/i915/render/heap.h
+index 96d8841d..f5f3d668 100644
+--- a/src/drivers/gpu/i915/render/heap.h
++++ b/src/drivers/gpu/i915/render/heap.h
+@@ -38,7 +38,7 @@
+ 
+ /* The size of one operation's slot, and how many slots the state object has. */
+ #define I915_GFX_SLOT_BYTES		0x4000U
+-#define I915_GFX_SLOTS			128U
++#define I915_GFX_SLOTS			512U
+ 
+ /* The size of the state object. */
+ #define I915_GFX_STATE_BYTES		(I915_GFX_SLOTS * I915_GFX_SLOT_BYTES)
+@@ -106,7 +106,7 @@
+  * into, and the room one operation may take at most; an operation that
+  * does not find that much room left first runs what is recorded.
+  */
+-#define I915_GFX_BATCH_BYTES		(1024U * 1024U)
++#define I915_GFX_BATCH_BYTES		(4U * 1024U * 1024U)
+ #define I915_GFX_OP_MAX_DWORDS		4096U
+ 
+ /*
