@@ -3,25 +3,25 @@
 # Queue
 
 <!-- awesome-plan-current:start -->
-Status: idle（2026-10-01）
-Active Queue: なし
+Status: active（2026-10-01）
+Active Queue: q514
 Last finished Queue: [q513](history/queue-q513.md)（ws103-p006 cleared）
 <!-- awesome-plan-current:end -->
 
-## q513
+## q514
 
-- Purpose: WS103 の p006（compositor の fence を poll だけに、`/dev/gpu0` と `--gpu` の削除、GPU の UAPI を `gpu-zedbsd.c` に閉じる、V1 の確かめ）。
+- Purpose: WS103 の p007（規約の全文で WS の全 source の変更を見直す、回帰、5330、V4 の性能の計測）。WS103 の最後の Phase。
 - Timebox: この session。
 - Focus: WS103（最優先）。
 - Approval: current user, 2026-09-30 夜、「ws103完了まで自走してください。phaseごとにコミットしてください。」
-- Exact approved scope: [ws103-p006](ws103/phase006/phase.md) だけ（[design](ws103/design.md) §2.4 の compositor の側・§2.5・§2.6）。libvulkan、HAL、toolchain、kernel、evdev は範囲の外。
-- Executor: メインのエージェント（Q1）。
+- Exact approved scope: [ws103-p007](ws103/phase007/phase.md) だけ。見直しで見つけた規約の違反の修正は範囲に入る。新しい機能、HAL、toolchain は範囲の外。
+- Executor: メインのエージェント（Q1）。規約の見直しは読むだけの subagent に並行で頼む。
 
 | Attempt | Phase | Status | Dependency | Selection reason |
 | --- | --- | --- | --- | --- |
-| q513-i01 | [ws103-p006](ws103/phase006/phase.md) | cleared | ws103-p004・p005 cleared | 設計の順。ユーザーの自走の指示 |
+| q514-i01 | [ws103-p007](ws103/phase007/phase.md) | in-progress | ws103-p002〜p006 cleared | WS103 の最後の Phase。ユーザーの自走の指示 |
 
-Dependency graph: `ws103-p004 (cleared), ws103-p005 (cleared) -> q513-i01/ws103-p006 -> (future) ws103-p007`。
+Dependency graph: `ws103-p002..p006 (cleared) -> q514-i01/ws103-p007`。
 
 ## Upcoming Work Outlook
 
