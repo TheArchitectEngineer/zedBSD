@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p004 cleared 2026-09-30。次は L1 の p005（仕上げと回帰）
+Resume point: L1 を満たした（p002〜p005 cleared 2026-09-30）。次は L2 の p006（広く浅くの順で、main の判断）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -53,7 +53,7 @@ Resume point: p004 cleared 2026-09-30。次は L1 の p005（仕上げと回帰�
 | [ws102-p002](phase002/phase.md) | L1 | `keyboard.c` の骨組み: 右下・左下の角の認識器（pointer と touch）、下端の Wiseview と desktop の swipe から角を除く、開閉、空の glass の panel、overlay と scanout、log | cleared（2026-09-30: osk-guest の pointer・edges・touch PASS（注入の swipe 10/10、真上 0/10）、WS079-p010・C9（10 本）・boot test PASS） | p001 |
 | [ws102-p003](phase003/phase.md) | L1 | `keyboard-layout.c`（flick の 3 つの face の表、方向の判定、濁点の巡り）、key と花びらの描画、host の試験 | cleared（2026-09-30: host PASS（表の網羅: かな 46＋ー・英字 26・数字 10・記号 32・空白、重複 0、方向・濁点・大小）、guest の flick の手順 PASS（pointer と指）） | p002 |
 | [ws102-p004](phase004/phase.md) | L1 | 文字の送出（evdev と Shift、text-input の commit、組み立て中・text-input の無い app）、guest の試験（Text Editor・ime-probe） | cleared（2026-09-30: Text Editor の file が「aiueO123」、ime-probe の text が「あいうえおかが」（濁点の置き換えを含む）、text-input の無い app へは送らない。host PASS） | p003 |
-| ws102-p005 | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | planned | p004 |
+| [ws102-p005](phase005/phase.md) | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | cleared（2026-09-30: 帯の swipe で閉じる・Home・Wiseview で閉じる、1920x1080 の配置、osk-guest 全手順・WS079-p010・C9（10 本）・boot test PASS。**L1 の (a)〜(d) を満たした**。lock は試験の compositor が session でないので未確認） | p004 |
 | ws102-p006 | L2 | QWERTY の面と左下の gesture | planned | p005 |
 | ws102-p007 | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | planned | p006 |
 | ws102-p015 | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: Keiland の独自の protocol で、keyboard のために大きさ・位置を変える窓へ configure の前に知らせ、libkeiui が caret の行を見える範囲の中央に寄せる。Text Editor の長い文書で QWERTY を開き、caret が keyboard の上の範囲の中央付近（±1 行）に見える | planned | p007 |
