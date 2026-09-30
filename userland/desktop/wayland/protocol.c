@@ -23,7 +23,6 @@
 #include "panels.h"
 #include "tablet.h"
 #include "ime.h"
-#include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
@@ -1613,7 +1612,9 @@ commit_damage(
 /*
  * Takes an acquire fence of a surface's next commit (set_acquire_fence of
  * keiland_gpu_buffer_v1 revision two): the fence fd and its payload generation.
- * A commit waits for all its fences, at most ZWL_FENCE_MAX of them.
+ * A commit waits for all its fences, at most ZWL_FENCE_MAX of them.  The fd is
+ * only polled (zwl_fence_ready): an fd that is no fence stalls its own
+ * surface and nothing else, so it is not checked here (ws103-p006).
  */
 static int
 factory_fence(
@@ -1621,11 +1622,9 @@ factory_fence(
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct gpu_fence_state state;
 	struct zwl_object *surface;
 	uint64_t generation;
 	int descriptor;
-	int error;
 
 	/* The surface and the generation in two words; the fd beside them. */
 	if (factory->version < 2U || size != 12U)
@@ -1643,14 +1642,9 @@ factory_fence(
 		return EPROTO;
 	}
 
-	/* The fence must be one of this GPU's, and the generation a real one. */
+	/* The generation must be a real one (a fence's first is 1); readiness is the fd's own. */
 	generation = ((uint64_t)word_at(bytes, 4) << 32) | word_at(bytes, 8);
-	memset(&state, 0, sizeof(state));
-	state.version = GPU_ABI_VERSION;
-	state.size = sizeof(state);
-	state.fd = descriptor;
-	error = ioctl(factory->client->server->gpu, GPU_FENCE_QUERY, &state);
-	if (error != 0 || generation == 0) {
+	if (generation == 0) {
 		close(descriptor);
 		return EPROTO;
 	}

@@ -63,11 +63,9 @@ main(
 	/* Every descriptor starts invalid so partial initialization can use ordinary cleanup. */
 	memset(&server, 0, sizeof(server));
 	server.listener = -1;
-	server.gpu = -1;
 	server.frame_fd = -1;
 	server.auth_fd = -1;
 	server.control_fd = -1;
-	server.gpu_path = "/dev/gpu0";
 	server.font_path = "/usr/share/fonts/keiland.ttf";
 	server.fallback_font_path = "/usr/share/fonts/keiland-fallback.ttf";
 	server.window_opacity = 1.0f;
@@ -81,7 +79,7 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -128,10 +126,8 @@ main(
 	/* The wallpaper's file is read on a thread while the device is made (ws035-p133). */
 	zwl_glass_prefetch(&server);
 
-	/* Open an independent GPU context before publishing a usable Wayland endpoint (client images are checked in it). */
+	/* The start is timed from the Vulkan device on (ZWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
 	step_start = zwl_milliseconds();
-	error = zwl_gpu_open(&server);
-	step_start = startup_step("gpu", step_start);
 
 	/*
 	 * Window mode's Vulkan device, which also gives the display's size and
@@ -255,18 +251,6 @@ parse_options(
 
 			/* Absolute paths make socket-generation ownership explicit. */
 			strcpy(server->socket_path, text);
-			continue;
-		}
-
-		/* The renderer node is selected independently of the Wayland endpoint. */
-		match = strncmp(argument, "--gpu=", 6);
-		if (match == 0) {
-			/* GPU selection uses an explicit device path independent of current directory. */
-			if (argument[6] != '/')
-				return EINVAL;
-
-			/* Keep the immutable argv storage for the duration of this process. */
-			server->gpu_path = argument + 6;
 			continue;
 		}
 
@@ -695,9 +679,19 @@ event_loop(
 			count++;
 		}
 
-		/* The acquire fences of committed images are polled last. */
+		/*
+		 * The acquire fences of committed images are polled last.  A fatal
+		 * client's are not: its commits are never taken, and a fence that is
+		 * always readable (any fd a client sent) would wake the loop until the
+		 * client is retired (ws103-p006).
+		 */
 		first_fence = count;
 		for (client = server->clients; client != NULL; client = client->next) {
+			/* A connection being retired contributes no fence. */
+			if (client->fatal)
+				continue;
+
+			/* Each live surface's pending fences. */
 			for (surface = client->objects; surface != NULL; surface = surface->next) {
 				if (surface->kind == ZWL_SURFACE && !surface->dead)
 					count += surface->fence_count;
@@ -758,6 +752,11 @@ event_loop(
 		/* An acquire fence wakes the loop when its image is rendered; the scheduler then takes it. */
 		index = first_fence;
 		for (client = server->clients; client != NULL; client = client->next) {
+			/* A connection being retired contributes no fence (counted the same way above). */
+			if (client->fatal)
+				continue;
+
+			/* Each live surface's pending fences. */
 			for (surface = client->objects; surface != NULL; surface = surface->next) {
 				if (surface->kind != ZWL_SURFACE || surface->dead)
 					continue;
@@ -929,13 +928,7 @@ service_cleanup(
 	/* The user's preferences are not read any more. */
 	zwl_preferences_close(server);
 
-	/* Closing the independent renderer session completes all remaining native cleanup. */
-	if (server->gpu >= 0) {
-		close(server->gpu);
-		server->gpu = -1;
-	}
-
-	/* Succeeded: the service retains no listener, client or GPU descriptor. */
+	/* Succeeded: the service retains no listener, client or Vulkan object. */
 	return;
 }
 

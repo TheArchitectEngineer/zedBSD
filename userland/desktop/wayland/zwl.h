@@ -41,8 +41,6 @@
 #define ZWL_H
 
 #include "zwl-gpu.h"
-#include <uapi/gpu.h>
-#include <uapi/gpu-fence.h>
 #include <uapi/input.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -598,8 +596,6 @@ struct keiland_preferences;
 struct zwl_server {
 	struct zwl_perf perf;
 	int listener;
-	int gpu;
-	const char *gpu_path;
 	char socket_path[108];
 	dev_t socket_device;
 	ino_t socket_inode;
@@ -1037,7 +1033,6 @@ void zwl_buffer_get(struct zwl_object *buffer);
 void zwl_buffer_put(struct zwl_object *buffer);
 void zwl_buffer_size(const struct zwl_object *buffer, uint32_t *width, uint32_t *height);
 void zwl_callbacks_done(struct zwl_object **callbacks);
-int zwl_gpu_open(struct zwl_server *server);
 void zwl_schedule(struct zwl_server *server);
 void zwl_transition_request(struct zwl_server *server, const char *what);
 void zwl_frame_done(struct zwl_server *server);

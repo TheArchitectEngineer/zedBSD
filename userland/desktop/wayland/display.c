@@ -12,10 +12,13 @@
  * The display is taken and shown only through Vulkan (the VK_KHR_display
  * swapchain of compose.c): the compositor that showed one surface directly
  * without composing (--direct, the compositor before WS035) was removed in
- * ws103-p002.  Every window, a fullscreen one too, is composed: the direct scanout of a fullscreen window's image (fullscreen
- * mode) was removed in ws099-p015 (the 2026-09-30 user decision), so the
- * edges' gestures and their feedback draw over a fullscreen window as over
- * any other.
+ * ws103-p002.  Every window, a fullscreen one too, is composed: the direct
+ * scanout of a fullscreen window's image (fullscreen mode) was removed in
+ * ws099-p015 (the 2026-09-30 user decision), so the edges' gestures and
+ * their feedback draw over a fullscreen window as over any other.
+ *
+ * The compositor holds no GPU fd of its own (ws103-p006): client images come
+ * in through Vulkan (import.c) and a client's acquire fence is only polled.
  */
 
 #include "desktop.h"
@@ -23,8 +26,7 @@
 #include "popup.h"
 #include "toplevel.h"
 #include "extras.h"
-#include <sys/ioctl.h>
-#include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
@@ -35,39 +37,24 @@ static void place_window(struct zwl_server *server, struct zwl_object *surface);
 static int enter_window_mode(struct zwl_server *server);
 
 /*
- * Opens the compositor's own GPU context, in which client fences are checked.
- *
- * The display's size and refresh come from Vulkan (compose.c), and client
- * buffers are imported through Vulkan (import.c); this fd only checks client
- * fences against the kernel until that check goes too (WS103).
- */
-int
-zwl_gpu_open(
-	struct zwl_server *server)
-{
-	/* The compositor obtains its own GPU fd; no producer session fd is accepted. */
-	server->gpu = open(server->gpu_path, O_RDWR | O_CLOEXEC);
-	if (server->gpu < 0)
-		return errno;
-
-	/* Succeeded: client fences can be checked in the compositor's own context. */
-	return 0;
-}
-
-/*
  * Reports whether a surface's queued image may be used: each of its acquire
- * fences is done (a later generation, or the same one signaled or failed).
- * Done fences are closed.  Nothing is waited for.
+ * fences is done.  Done fences are closed.  Nothing is waited for.
+ *
+ * A fence fd stands for its present alone (the WSI sends a new fence for each
+ * present, ws103-p005) and becomes readable when the present's rendering is
+ * done, or reports an error or a hang-up when it failed or cannot be read;
+ * any of these is done, as a fence that can no longer be read is not waited
+ * for.  The same holds for a sync_file on other systems.
  */
 int
 zwl_fence_ready(
 	struct zwl_server *server,
 	struct zwl_object *surface)
 {
-	struct gpu_fence_state state;
+	struct pollfd check;
 	unsigned index;
 	unsigned kept;
-	int error;
+	int ready;
 
 	/* A commit without fences is ready at once. */
 	if (surface->fence_count == 0)
@@ -76,24 +63,20 @@ zwl_fence_ready(
 	/* Each fence still pending is kept; the others are closed. */
 	kept = 0;
 	for (index = 0; index < surface->fence_count; index++) {
-		/* Generation zero reads the fence's current generation and state. */
-		memset(&state, 0, sizeof(state));
-		state.version = GPU_ABI_VERSION;
-		state.size = sizeof(state);
-		state.fd = surface->fences[index].fd;
-		error = ioctl(server->gpu, GPU_FENCE_QUERY, &state);
+		/* The fence's readiness now, without waiting. */
+		check.fd = surface->fences[index].fd;
+		check.events = POLLIN;
+		check.revents = 0;
+		ready = poll(&check, 1U, 0);
 
-		/* Still rendering: the generation, or an earlier one, is pending. */
-		if ((error == 0 && state.generation < surface->fences[index].generation) ||
-		    (error == 0 &&
-		     state.generation == surface->fences[index].generation &&
-		     state.state == GPU_FENCE_PENDING)) {
+		/* Still rendering: nothing to report yet (an interrupted poll is asked again on a later pass). */
+		if (ready == 0 || (ready < 0 && errno == EINTR)) {
 			surface->fences[kept] = surface->fences[index];
 			kept++;
 			continue;
 		}
 
-		/* Done, or a fence that can no longer be read, which is not waited for. */
+		/* Done, failed, or a fence that can no longer be read, which is not waited for. */
 		close(surface->fences[index].fd);
 	}
 

@@ -24,7 +24,6 @@
 #include "tablet.h"
 #include "ime.h"
 #include "touch.h"
-#include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
