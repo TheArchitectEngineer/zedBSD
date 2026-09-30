@@ -620,17 +620,23 @@ desktop_place(
 	int32_t *width,
 	int32_t *height)
 {
-	/* The left edge, the whole width. */
+	int32_t right;
+	int32_t bottom;
+
+	/* What the on-screen keyboard's panel takes at the right or the bottom (keyboard.c, ws102-p007). */
+	zwl_keyboard_reserved(&right, &bottom);
+
+	/* The left edge, the whole width less the keyboard's column. */
 	*x = 0;
-	*width = (int32_t)server->width;
+	*width = (int32_t)server->width - right;
 
 	/* Under the system bar in the glass look. */
 	*y = 0;
 	if (server->glass)
 		*y = ZWL_GLASS_BAR;
 
-	/* The rest of the height. */
-	*height = (int32_t)server->height - *y;
+	/* The rest of the height, less the keyboard's row. */
+	*height = (int32_t)server->height - *y - bottom;
 }
 
 /* Tells the desktop surface its place (configure) and moves it there. */

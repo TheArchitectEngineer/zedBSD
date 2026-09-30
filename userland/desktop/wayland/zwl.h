@@ -81,6 +81,9 @@
 #define ZWL_GLASS_GAP		8
 #define ZWL_GLASS_MARGIN	12
 #define ZWL_GLASS_TOP		(ZWL_GLASS_BAR + ZWL_GLASS_MARGIN + ZWL_GLASS_TITLE + ZWL_GLASS_GAP)
+
+/* Where a docked (maximized) window's body starts: just under the system bar (shell.c, keyboard.c). */
+#define ZWL_GLASS_DOCK_TOP	(ZWL_GLASS_BAR + 4)
 #define ZWL_BUTTON_LEFT		0x110U
 #define ZWL_TITLE_MAX		64U
 
@@ -1106,6 +1109,8 @@ void zwl_keyboard_tick(struct zwl_server *server);
 int zwl_keyboard_showing(void);
 int zwl_keyboard_at(int32_t x, int32_t y);
 void zwl_keyboard_close(struct zwl_server *server, const char *reason);
+void zwl_keyboard_reserved(int32_t *right, int32_t *bottom);
+void zwl_keyboard_reserved_now(int32_t *right, int32_t *bottom);
 int zwl_keyboard_touch_down(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 int zwl_keyboard_touch_motion(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 int zwl_keyboard_touch_up(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);

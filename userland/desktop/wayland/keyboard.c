@@ -29,6 +29,18 @@
  * of its edge when it opens and goes back into it when it closes, in
  * KEYBOARD_SLIDE_MS, eased out.
  *
+ * While a panel is out, the work area is the screen less the panel
+ * (ws102-p007, design §2.8): zwl_keyboard_reserved gives the column or row
+ * a panel takes, which the glass look's space and the desktop take away,
+ * and zwl_keyboard_reserved_now the part of it out at this moment of the
+ * slide, which the docked windows' place takes away (so that a docked
+ * window narrows or shortens with the panel).  When the panel comes or goes,
+ * every docked window is told its new size once; a floating window that
+ * would reach under the panel is moved, at its size, into the work area
+ * during the slide (its title bar kept at the area's top and left when it
+ * is too large), and moved back when the panel goes, unless it was moved
+ * or resized in the meantime.  Fullscreen windows keep their size.
+ *
  * The same swipe again closes the panel it opened; the other corner's
  * swipe changes panels; the panel's close key closes it, and so does a
  * drag of its title band KEYBOARD_SWIPE_CLOSE pixels towards its edge (the
@@ -77,6 +89,8 @@
  * last (delete, then the other case).
  */
 
+#include "desktop.h"
+#include "extras.h"
 #include "glass.h"
 #include "ime.h"
 #include "keyboard.h"
@@ -173,6 +187,9 @@
 /* The opacity of the line on the side of a panel facing the windows (the system bar's line's). */
 #define KEYBOARD_EDGE_ALPHA	0.18f
 
+/* The most floating windows the work area moves at once. */
+#define KEYBOARD_MOVES		32U
+
 /* The Shift bit of the depressed modifiers (server->modifiers). */
 #define KEYBOARD_SHIFT		1U
 
@@ -234,6 +251,23 @@ struct keyboard_contact {
 };
 
 /*
+ * A floating window the work area moved: the window (only compared with
+ * the live windows, never followed unless found among them), where it was
+ * before (to go back to), where its move started and where it ends, and
+ * whether it is going back.
+ */
+struct keyboard_move {
+	struct zwl_object *surface;
+	int32_t home_x;
+	int32_t home_y;
+	int32_t from_x;
+	int32_t from_y;
+	int32_t to_x;
+	int32_t to_y;
+	unsigned back;
+};
+
+/*
  * The keyboard's whole state: the contact of the corner's gesture, the
  * panel open (and its rectangle on the output), a press that began on the
  * panel (it is the panel's until its release), whether the corners'
@@ -253,6 +287,9 @@ struct keyboard_contact {
  * the last frame that drew one.  slide_ms is when the panel began growing
  * out of its edge, or going back into it; leaving is the panel going back
  * (already closed for everything but its drawing, PANEL_NONE when none).
+ * reserved_right and reserved_bottom are what the open panel takes from
+ * the work area; moves are the floating windows the work area moved, and
+ * moving says they are on their way (during the slide).
  * touch_owner is the finger (its id + 1, 0 for none) whose press the panel
  * holds when fingers come by touch.c's ROUTE_OSK (ws102-p009), and
  * touch_x, touch_y where it was last.
@@ -301,6 +338,11 @@ struct keyboard_state {
 	uint64_t lag_frame_ms;
 	uint64_t slide_ms;
 	enum keyboard_kind leaving;
+	int32_t reserved_right;
+	int32_t reserved_bottom;
+	struct keyboard_move moves[KEYBOARD_MOVES];
+	unsigned move_count;
+	unsigned moving;
 	uint32_t touch_owner;
 	int32_t touch_x;
 	int32_t touch_y;
@@ -366,6 +408,14 @@ static void keyboard_close_rect(int32_t *rect);
 static void keyboard_draw_panel(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
 static void keyboard_draw_hint(struct zwl_server *server, VkCommandBuffer command);
 static void keyboard_draw_sliding(struct zwl_server *server, VkCommandBuffer command, int leaving);
+static float keyboard_slide(void);
+static void keyboard_work_area(struct zwl_server *server);
+static int keyboard_is_window(const struct zwl_object *surface);
+static void keyboard_fit_floating(struct zwl_server *server, struct zwl_object *surface);
+static void keyboard_move_back(struct zwl_server *server);
+static void keyboard_move_step(struct zwl_server *server, float t);
+static int keyboard_window_live(struct zwl_server *server, const struct zwl_object *window);
+static void keyboard_moves_at_end(int end);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum zwl_contact_source source);
 static int keyboard_touch_button(struct zwl_server *server, int32_t x, int32_t y, uint32_t state);
@@ -616,6 +666,7 @@ zwl_keyboard_tick(
 {
 	int32_t rect[4];
 	uint64_t now;
+	float slide;
 	float home;
 	int same;
 
@@ -645,6 +696,14 @@ zwl_keyboard_tick(
 	    now - keyboard.contact.start_clock_ms > KEYBOARD_ARM_MS) {
 		keyboard.contact.expired = 1;
 		printf("ZWL OSK cancel reason=timeout\n");
+	}
+
+	/* The windows the work area moves follow the slide, and are left at their ends once it is over. */
+	if (keyboard.moving) {
+		slide = keyboard_slide();
+		keyboard_move_step(server, slide);
+		if (slide >= 1.0f)
+			keyboard.moving = 0;
 	}
 
 	/* A panel growing out of its edge or going back into it is drawn every frame; one gone back is done with. */
@@ -750,10 +809,10 @@ zwl_keyboard_close(
 
 	/* The panel goes, going back into its edge (drawn until it is in). */
 	printf("ZWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
-	zwl_keyboard_inset_notify(server, NULL);
 	keyboard.leaving = keyboard.open;
 	keyboard.slide_ms = zwl_milliseconds();
 	keyboard.open = PANEL_NONE;
+	keyboard_work_area(server);
 	keyboard.held = 0;
 	keyboard.pressing = 0;
 	keyboard.touch_owner = 0U;
@@ -765,6 +824,59 @@ zwl_keyboard_close(
 	keyboard.recognized = 0;
 	memset(&keyboard.result, 0, sizeof(keyboard.result));
 	server->dirty = 1;
+}
+
+/*
+ * Gives what the open panel takes from the work area: the flick panel's
+ * width at the right, the QWERTY panel's height at the bottom (0 without a
+ * panel).  The glass look's space and the desktop's place take these away.
+ */
+void
+zwl_keyboard_reserved(
+	int32_t *right,
+	int32_t *bottom)
+{
+	/* The panel's column or row, whole. */
+	*right = keyboard.reserved_right;
+	*bottom = keyboard.reserved_bottom;
+}
+
+/*
+ * Gives what the panel takes from the screen at this moment of its slide:
+ * a growing share while it comes out, a shrinking one while it goes back.
+ * The docked windows' place takes these away, so that they narrow and
+ * shorten with the panel.
+ */
+void
+zwl_keyboard_reserved_now(
+	int32_t *right,
+	int32_t *bottom)
+{
+	enum keyboard_kind kind;
+	float out;
+
+	/* Nothing out. */
+	*right = 0;
+	*bottom = 0;
+
+	/* The panel out or going back: none is nothing. */
+	kind = keyboard.open;
+	if (kind == PANEL_NONE)
+		kind = keyboard.leaving;
+	if (kind == PANEL_NONE)
+		return;
+
+	/* The share out: growing while it comes, shrinking while it goes back. */
+	out = keyboard_slide();
+	if (keyboard.leaving != PANEL_NONE)
+		out = 1.0f - out;
+
+	/* The flick panel's width at the right, the QWERTY panel's height at the bottom. */
+	if (kind == PANEL_FLICK) {
+		*right = (int32_t)(out * (float)keyboard.panel[2]);
+	} else {
+		*bottom = (int32_t)(out * (float)keyboard.panel[3]);
+	}
 }
 
 /*
@@ -1148,7 +1260,9 @@ keyboard_open(
 
 	/* The log line the tests read, and the QWERTY panel's keys' places. */
 	printf("ZWL OSK open kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(kind), keyboard.panel[0], keyboard.panel[1], keyboard.panel[2], keyboard.panel[3]);
-	zwl_keyboard_inset_notify(server, keyboard.panel);
+
+	/* The work area less the panel; the windows follow it (their insets told before their configures, inset.c). */
+	keyboard_work_area(server);
 	if (kind == PANEL_QWERTY)
 		keyboard_qwerty_log(server);
 }
@@ -2722,6 +2836,341 @@ keyboard_draw_hand(
 	printf("ZWL OSK hand frame lag_ms=%llu gap_ms=%llu points=%u\n", (unsigned long long)(now - keyboard.lag_input_ms), (unsigned long long)(now - keyboard.lag_frame_ms), zwl_hand_points(&keyboard_ink));
 	keyboard.lag_pending = 0;
 	keyboard.lag_frame_ms = now;
+}
+
+/* Tells how far the panel's slide has come, eased out: 0 at its start, 1 at its end and after. */
+static float
+keyboard_slide(void)
+{
+	uint64_t elapsed;
+	float t;
+
+	/* The time since the slide began, a share of its length. */
+	elapsed = zwl_milliseconds() - keyboard.slide_ms;
+	if (elapsed >= KEYBOARD_SLIDE_MS)
+		return 1.0f;
+	t = (float)elapsed / (float)KEYBOARD_SLIDE_MS;
+
+	/* Eased out: quick at first, slow at the end. */
+	return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+}
+
+/*
+ * Works out the work area for the panel open now (or none), and has the
+ * windows follow it: each docked window told its new size, each floating
+ * window that would reach under the panel moved into the area, and those
+ * moved before moved back when the panel is gone.
+ */
+static void
+keyboard_work_area(
+	struct zwl_server *server)
+{
+	struct zwl_client *client;
+	struct zwl_object *surface;
+	int32_t right;
+	int32_t bottom;
+	int window;
+
+	/* What the panel takes: its column or row, or nothing. */
+	right = 0;
+	bottom = 0;
+	if (keyboard.open == PANEL_FLICK)
+		right = keyboard.panel[2];
+	if (keyboard.open == PANEL_QWERTY)
+		bottom = keyboard.panel[3];
+
+	/* An unchanged area moves nothing. */
+	if (right == keyboard.reserved_right && bottom == keyboard.reserved_bottom)
+		return;
+	keyboard.reserved_right = right;
+	keyboard.reserved_bottom = bottom;
+	keyboard.moving = 1;
+	printf("ZWL OSK work-area right=%d bottom=%d\n", right, bottom);
+
+	/* Without a panel, the windows moved before go back. */
+	if (right == 0 && bottom == 0)
+		keyboard_move_back(server);
+
+	/* Each window's end: a docked one's new size, a floating one's place in the area when it reaches under the panel. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only windows; a fullscreen one keeps its size (the panel is over it). */
+			window = keyboard_is_window(surface);
+			if (!window || surface->fullscreen)
+				continue;
+
+			/* A docked window: the docked size less the panel (or whole again). */
+			if (surface->maximized) {
+				surface->window_width = server->width - (uint32_t)right;
+				surface->window_height = server->height - ZWL_GLASS_DOCK_TOP - (uint32_t)bottom;
+				continue;
+			}
+
+			/* A floating window, moved in when it must be (not when the panel went). */
+			if (right != 0 || bottom != 0)
+				keyboard_fit_floating(server, surface);
+		}
+	}
+
+	/*
+	 * The windows with an inset are told what the panel covers of them at
+	 * their ends (inset.c), before their configures: the moved windows are
+	 * put at their ends for it, and back where their moves start after.
+	 */
+	keyboard_moves_at_end(1);
+	if (right != 0 || bottom != 0) {
+		zwl_keyboard_inset_notify(server, keyboard.panel);
+	} else {
+		zwl_keyboard_inset_notify(server, NULL);
+	}
+
+	/* The moved windows back where their moves start. */
+	keyboard_moves_at_end(0);
+
+	/* Each docked window told its new size, once. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only docked windows (not fullscreen). */
+			window = keyboard_is_window(surface);
+			if (!window || surface->fullscreen || !surface->maximized)
+				continue;
+
+			/* The configure, and the log line the tests read. */
+			(void)zwl_window_send_configure(surface);
+			printf("ZWL OSK work docked surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
+		}
+	}
+}
+
+/*
+ * Puts the moved windows at the ends of their moves (end), or back where
+ * their moves start (the slide then moves them), for what the insets are
+ * told.
+ */
+static void
+keyboard_moves_at_end(
+	int end)
+{
+	struct keyboard_move *move;
+	unsigned index;
+
+	/* Each move's window at one of its places. */
+	for (index = 0; index < keyboard.move_count; index++) {
+		move = &keyboard.moves[index];
+		if (end) {
+			move->surface->x = move->to_x;
+			move->surface->y = move->to_y;
+		} else {
+			move->surface->x = move->from_x;
+			move->surface->y = move->from_y;
+		}
+	}
+}
+
+/*
+ * Tells whether a window remembered by its address is still one of the
+ * live windows (the address is only compared, never followed, until it is
+ * found among them).
+ */
+static int
+keyboard_window_live(
+	struct zwl_server *server,
+	const struct zwl_object *window)
+{
+	struct zwl_client *client;
+	struct zwl_object *surface;
+	int alive;
+
+	/* Each client's objects. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Another object. */
+			if (surface != window)
+				continue;
+
+			/* The object; it must still be a window. */
+			alive = keyboard_is_window(surface);
+			return alive;
+		}
+	}
+
+	/* Not among them. */
+	return 0;
+}
+
+/* Tells whether an object is a window (a mapped toplevel's surface, not the desktop's). */
+static int
+keyboard_is_window(
+	const struct zwl_object *surface)
+{
+	int desktop;
+
+	/* Only a live, mapped surface with a toplevel. */
+	if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped)
+		return 0;
+	if (surface->role == NULL || surface->role->top == NULL)
+		return 0;
+
+	/* The desktop's icons are not a window. */
+	desktop = zwl_desktop_is(surface);
+	if (desktop)
+		return 0;
+
+	/* A window. */
+	return 1;
+}
+
+/*
+ * Moves a floating window into the work area when it reaches under the
+ * panel: its right and bottom edges inside the area, but its title bar
+ * never above the area's top nor its left edge left of the area (a window
+ * too large overhangs under the panel).  The move follows the slide.
+ */
+static void
+keyboard_fit_floating(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	struct keyboard_move *move;
+	uint32_t image_width;
+	uint32_t image_height;
+	int32_t right_edge;
+	int32_t bottom_edge;
+	int32_t width;
+	int32_t height;
+	int32_t x;
+	int32_t y;
+
+	/* The window's size (its image's), and the area's right and bottom edges for a body. */
+	if (surface->current == NULL)
+		return;
+	zwl_surface_size(surface, &image_width, &image_height);
+	width = (int32_t)image_width;
+	height = (int32_t)image_height;
+	if (width <= 0 || height <= 0)
+		return;
+	right_edge = (int32_t)server->width - ZWL_GLASS_MARGIN - keyboard.reserved_right;
+	bottom_edge = (int32_t)server->height - ZWL_GLASS_MARGIN - keyboard.reserved_bottom;
+
+	/* The place inside them, not above nor left of the area. */
+	x = surface->x;
+	y = surface->y;
+	if (x + width > right_edge)
+		x = right_edge - width;
+	if (y + height > bottom_edge)
+		y = bottom_edge - height;
+	if (x < ZWL_GLASS_MARGIN)
+		x = ZWL_GLASS_MARGIN;
+	if (y < ZWL_GLASS_TOP)
+		y = ZWL_GLASS_TOP;
+
+	/* A window already inside stays. */
+	if (x == surface->x && y == surface->y)
+		return;
+
+	/* No room to remember another move: it stays. */
+	if (keyboard.move_count >= KEYBOARD_MOVES)
+		return;
+
+	/* The move, from where it is to the place inside, remembered to go back. */
+	move = &keyboard.moves[keyboard.move_count];
+	keyboard.move_count++;
+	move->surface = surface;
+	move->home_x = surface->x;
+	move->home_y = surface->y;
+	move->from_x = surface->x;
+	move->from_y = surface->y;
+	move->to_x = x;
+	move->to_y = y;
+	move->back = 0;
+	printf("ZWL OSK work moved surface=%u from=%d,%d to=%d,%d\n", surface->id, surface->x, surface->y, x, y);
+}
+
+/*
+ * Turns the moves back: each window the work area moved goes back to
+ * where it was, unless it was moved or resized since (it is then left
+ * where it is, and forgotten).
+ */
+static void
+keyboard_move_back(
+	struct zwl_server *server)
+{
+	struct keyboard_move *move;
+	unsigned index;
+	unsigned kept;
+	int found;
+
+	/* Each move. */
+	kept = 0;
+	for (index = 0; index < keyboard.move_count; index++) {
+		/* The window must still be one (a closed window is forgotten). */
+		move = &keyboard.moves[index];
+		found = keyboard_window_live(server, move->surface);
+		if (!found)
+			continue;
+
+		/* A window moved by the user since (not where the move left it) stays where it is. */
+		if (move->surface->x != move->to_x || move->surface->y != move->to_y || move->surface->maximized) {
+			printf("ZWL OSK work kept surface=%u\n", move->surface->id);
+			continue;
+		}
+
+		/* Back where it was, following the slide. */
+		move->from_x = move->to_x;
+		move->from_y = move->to_y;
+		move->to_x = move->home_x;
+		move->to_y = move->home_y;
+		move->back = 1;
+		keyboard.moves[kept] = *move;
+		kept++;
+		printf("ZWL OSK work back surface=%u to=%d,%d\n", move->surface->id, move->home_x, move->home_y);
+	}
+
+	/* The moves still to be drawn. */
+	keyboard.move_count = kept;
+}
+
+/*
+ * Places the moved windows a share of the way along their moves (t, the
+ * slide's).  At the end, the moves back are forgotten; the moves in stay
+ * remembered for going back.
+ */
+static void
+keyboard_move_step(
+	struct zwl_server *server,
+	float t)
+{
+	struct keyboard_move *move;
+	unsigned index;
+	unsigned kept;
+	int found;
+
+	/* Each move, its window between its two places (its end past the slide); a window gone is forgotten. */
+	kept = 0;
+	for (index = 0; index < keyboard.move_count; index++) {
+		move = &keyboard.moves[index];
+		found = keyboard_window_live(server, move->surface);
+		if (!found)
+			continue;
+		move->surface->x = move->from_x + (int32_t)((float)(move->to_x - move->from_x) * t);
+		move->surface->y = move->from_y + (int32_t)((float)(move->to_y - move->from_y) * t);
+		server->dirty = 1;
+
+		/* A move back that is over is forgotten; one in stays for going back. */
+		if (t >= 1.0f && move->back)
+			continue;
+		if (t >= 1.0f) {
+			move->from_x = move->to_x;
+			move->from_y = move->to_y;
+		}
+
+		/* The move is kept. */
+		keyboard.moves[kept] = *move;
+		kept++;
+	}
+
+	/* The moves left. */
+	keyboard.move_count = kept;
 }
 
 /* Counts the characters of a UTF-8 text (the bytes that do not continue one). */
