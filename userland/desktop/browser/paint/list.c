@@ -60,6 +60,11 @@
 /* The most tiles one background image is painted in (a tiny tile over a huge page stops there). */
 #define LIST_TILES_MAX		16384U
 
+/* Which part of a block is being painted while inline content is deferred past sibling floats. */
+#define LIST_BOX_FULL		0
+#define LIST_BOX_DECORATION	1
+#define LIST_BOX_INLINE		2
+
 /*
  * The colors of the form controls' own look, as Chromium draws them
  * (0xAARRGGBB): a checkbox's frame and inside, a checked one's fill, and a
@@ -98,6 +103,8 @@ struct list_walk {
 	struct paint_list *list;
 	struct text_system *text;
 	const struct layout_box *canvas_box;
+	layout_unit viewport_width;
+	layout_unit viewport_height;
 	int error;
 };
 
@@ -126,7 +133,8 @@ struct list_area {
 
 static const struct layout_box *list_canvas(const struct layout_tree *tree, uint32_t *color);
 static void list_box(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
-static void list_box_own(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
+static void list_box_part(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth, int part);
+static void list_box_own(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth, int part);
 static void list_fade(struct list_walk *walk, size_t first, float opacity);
 static int list_border_shape(const struct layout_box *box, struct list_shape *shape);
 static void list_round_fill(struct list_walk *walk, const struct list_shape *shape, uint32_t color);
@@ -140,6 +148,7 @@ static void list_outline(struct list_walk *walk, const struct layout_box *box);
 static float list_inline_opacity(const struct layout_box *box);
 static int list_clip_path(struct list_walk *walk, const struct layout_box *box);
 static void list_borders(struct list_walk *walk, const struct layout_box *box);
+static int list_point_borders(struct list_walk *walk, const struct layout_box *box);
 static void list_inline_floats(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_lines(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
@@ -200,6 +209,8 @@ paint_build(
 	walk.list = list;
 	walk.text = tree->text;
 	walk.canvas_box = list_canvas(tree, &list->canvas_color);
+	walk.viewport_width = tree->viewport_width;
+	walk.viewport_height = tree->viewport_height;
 
 	/* An empty document paints only the canvas. */
 	if (tree->root == NULL)
@@ -581,6 +592,19 @@ list_box(
 	const struct layout_box *layer,
 	int depth)
 {
+	/* The complete box in its normal turn. */
+	list_box_part(walk, box, layer, depth, LIST_BOX_FULL);
+}
+
+/* Adds all or one painting-order part of a block and applies its common clipping, outline and opacity. */
+static void
+list_box_part(
+	struct list_walk *walk,
+	const struct layout_box *box,
+	const struct layout_box *layer,
+	int depth,
+	int part)
+{
 	size_t first;
 	int positioned;
 	int clipped;
@@ -605,8 +629,8 @@ list_box(
 	/* The box and its content inside its clip-path, then its outline over them. */
 	first = walk->list->items.count;
 	clipped = list_clip_path(walk, box);
-	list_box_own(walk, box, layer, depth);
-	if (box->style.visibility != LIST_VISIBILITY_HIDDEN)
+	list_box_own(walk, box, layer, depth, part);
+	if (part != LIST_BOX_DECORATION && box->style.visibility != LIST_VISIBILITY_HIDDEN)
 		list_outline(walk, box);
 	if (clipped)
 		list_unclip(walk);
@@ -670,7 +694,8 @@ list_box_own(
 	struct list_walk *walk,
 	const struct layout_box *box,
 	const struct layout_box *layer,
-	int depth)
+	int depth,
+	int part)
 {
 	const struct layout_box *child;
 	struct list_shape shape;
@@ -679,6 +704,7 @@ list_box_own(
 	int rounded;
 	int visible;
 	int clips;
+	int positioned;
 
 	/* A hidden box paints nothing of its own, but its children may be visible. */
 	visible = 1;
@@ -686,20 +712,20 @@ list_box_own(
 		visible = 0;
 
 	/* A form control standing as a block draws itself from its state. */
-	if (visible && box->control != DOM_CONTROL_NONE) {
+	if (part != LIST_BOX_INLINE && visible && box->control != DOM_CONTROL_NONE) {
 		list_control(walk, box);
 		return;
 	}
 
 	/* The shadows go under the box. */
-	if (visible)
+	if (part != LIST_BOX_INLINE && visible)
 		list_shadows(walk, box);
 
 	/* The background fills the border box, rounded as its corners are, unless it went to the canvas. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
 	rounded = list_border_shape(box, &shape);
-	if (visible && box != walk->canvas_box && (box->style.background_color >> 24) != 0) {
+	if (part != LIST_BOX_INLINE && visible && box != walk->canvas_box && (box->style.background_color >> 24) != 0) {
 		if (rounded) {
 			list_round_fill(walk, &shape, box->style.background_color);
 		} else {
@@ -708,21 +734,25 @@ list_box_own(
 	}
 
 	/* The background image over the color, unless it went to the canvas. */
-	if (visible && box != walk->canvas_box)
+	if (part != LIST_BOX_INLINE && visible && box != walk->canvas_box)
 		list_box_background(walk, box);
 
 	/* The borders go over the background. */
-	if (visible && rounded) {
+	if (part != LIST_BOX_INLINE && visible && rounded) {
 		list_round_borders(walk, box, &shape);
-	} else if (visible) {
+	} else if (part != LIST_BOX_INLINE && visible) {
 		list_borders(walk, box);
 	}
 
 	/* A replaced block's image fills its content box. */
-	if (visible && box->replaced) {
+	if (part != LIST_BOX_INLINE && visible && box->replaced) {
 		list_image(walk, box, box->x + box->border[CSS_LEFT] + box->padding[CSS_LEFT], box->y + box->border[CSS_TOP] + box->padding[CSS_TOP]);
 		return;
 	}
+
+	/* The decoration pass stops before the content, which is painted after sibling floats. */
+	if (part == LIST_BOX_DECORATION)
+		return;
 
 	/* A box that clips its overflow clips its content to its padding box. */
 	clips = layout_clips(box);
@@ -734,16 +764,29 @@ list_box_own(
 		list_inline_floats(walk, box, layer, depth + 1);
 		list_lines(walk, box, layer, depth + 1);
 	} else {
-		/* A block of blocks paints its children in order, the floats after the others. */
+		/* Block decorations precede floats; their inline contents follow the floats. */
 		for (child = box->first_child; child != NULL; child = child->next) {
-			if (child->floating == CSS_FLOAT_NONE)
+			if (child->floating != CSS_FLOAT_NONE)
+				continue;
+			positioned = layout_is_positioned(child);
+			if (child->children_inline && !positioned && child->style.opacity >= 1.0f) {
+				list_box_part(walk, child, layer, depth + 1, LIST_BOX_DECORATION);
+			} else {
 				list_box(walk, child, layer, depth + 1);
+			}
 		}
 
 		/* Then the floats, over the backgrounds of the blocks beside them. */
 		for (child = box->first_child; child != NULL; child = child->next) {
 			if (child->floating != CSS_FLOAT_NONE)
 				list_box(walk, child, layer, depth + 1);
+		}
+
+		/* Inline contents of the in-flow blocks paint over those floats. */
+		for (child = box->first_child; child != NULL; child = child->next) {
+			positioned = layout_is_positioned(child);
+			if (child->floating == CSS_FLOAT_NONE && child->children_inline && !positioned && child->style.opacity >= 1.0f)
+				list_box_part(walk, child, layer, depth + 1, LIST_BOX_INLINE);
 		}
 	}
 
@@ -795,6 +838,12 @@ list_borders(
 	layout_unit width;
 	layout_unit height;
 	layout_unit inner;
+	int pointed;
+
+	/* Four borders around an empty point meet diagonally instead of covering one another as bands. */
+	pointed = list_point_borders(walk, box);
+	if (pointed)
+		return;
 
 	/* The border box, and the height between the top and bottom borders. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
@@ -830,6 +879,70 @@ list_borders(
 			inner,
 			box->style.border_color[CSS_RIGHT]);
 	}
+}
+
+/*
+ * Paints borders whose padding box is a point as four triangles, one
+ * pixel row at a time.  This is the CSS border construction used for
+ * arrows and other generated shapes; ordinary boxes use the rectangular
+ * fast path above.
+ */
+static int
+list_point_borders(
+	struct list_walk *walk,
+	const struct layout_box *box)
+{
+	layout_unit width;
+	layout_unit height;
+	layout_unit row;
+	layout_unit row_height;
+	layout_unit left;
+	layout_unit right;
+	layout_unit distance;
+	layout_unit span;
+	uint32_t middle;
+
+	/* Only a zero-sized padding box has all four border edges meet at one point. */
+	if (box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] != 0)
+		return 0;
+	if (box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] != 0)
+		return 0;
+
+	/* Its outer dimensions; an entirely empty border needs no special painting. */
+	width = box->border[CSS_LEFT] + box->border[CSS_RIGHT];
+	height = box->border[CSS_TOP] + box->border[CSS_BOTTOM];
+	if (width <= 0 || height <= 0)
+		return 0;
+
+	/* Each row is split at the diagonals from the outer corners to the padding point. */
+	for (row = 0; row < height; row += LAYOUT_UNIT) {
+		row_height = LAYOUT_UNIT;
+		if (row + row_height > height)
+			row_height = height - row;
+
+		/* Above the point the top border narrows; below it the bottom border widens. */
+		if (row < box->border[CSS_TOP]) {
+			distance = row;
+			span = box->border[CSS_TOP];
+			left = (layout_unit)((int64_t)box->border[CSS_LEFT] * distance / span);
+			right = width - (layout_unit)((int64_t)box->border[CSS_RIGHT] * distance / span);
+			middle = box->style.border_color[CSS_TOP];
+		} else {
+			distance = row - box->border[CSS_TOP];
+			span = box->border[CSS_BOTTOM];
+			left = box->border[CSS_LEFT] - (layout_unit)((int64_t)box->border[CSS_LEFT] * distance / span);
+			right = box->border[CSS_LEFT] + (layout_unit)((int64_t)box->border[CSS_RIGHT] * distance / span);
+			middle = box->style.border_color[CSS_BOTTOM];
+		}
+
+		/* The left, vertical, and right triangles partition the row without overlap. */
+		list_rect(walk, box->x, box->y + row, left, row_height, box->style.border_color[CSS_LEFT]);
+		list_rect(walk, box->x + left, box->y + row, right - left, row_height, middle);
+		list_rect(walk, box->x + right, box->y + row, width - right, row_height, box->style.border_color[CSS_RIGHT]);
+	}
+
+	/* The point-border path painted the box. */
+	return 1;
 }
 
 /* Adds the text of a block's lines, and the inline blocks on them. */
@@ -1010,7 +1123,8 @@ list_replaced(
 	if ((box->style.background_color >> 24) != 0)
 		list_rect(walk, placed.x, placed.y, width, height, box->style.background_color);
 
-	/* The borders, then the image in the content box. */
+	/* The background image and borders, then the replaced image in the content box. */
+	list_box_background(walk, &placed);
 	list_borders(walk, &placed);
 	list_image(walk, box, placed.x + box->border[CSS_LEFT] + box->padding[CSS_LEFT], placed.y + box->border[CSS_TOP] + box->padding[CSS_TOP]);
 }
@@ -1768,6 +1882,8 @@ list_background_image(
 	const struct list_area *painting)
 {
 	const struct img_bitmap *image;
+	struct list_area fixed;
+	const struct list_area *positioning;
 	layout_unit tile_width;
 	layout_unit tile_height;
 	layout_unit start_x;
@@ -1787,14 +1903,24 @@ list_background_image(
 	if (area->width <= 0 || area->height <= 0 || painting->width <= 0 || painting->height <= 0)
 		return;
 
+	/* A fixed image is sized and positioned against the viewport at the document origin. */
+	positioning = area;
+	if (box->style.background_attachment == CSS_BACKGROUND_FIXED) {
+		fixed.x = 0;
+		fixed.y = 0;
+		fixed.width = walk->viewport_width;
+		fixed.height = walk->viewport_height;
+		positioning = &fixed;
+	}
+
 	/* The size of one tile; an empty one paints nothing. */
-	list_background_size(box, image, area, &tile_width, &tile_height);
+	list_background_size(box, image, positioning, &tile_width, &tile_height);
 	if (tile_width <= 0 || tile_height <= 0)
 		return;
 
 	/* The first tile's place, from the position in the room the area leaves. */
-	start_x = area->x + list_background_offset(&box->style.background_position[0], area->width - tile_width);
-	start_y = area->y + list_background_offset(&box->style.background_position[1], area->height - tile_height);
+	start_x = positioning->x + list_background_offset(&box->style.background_position[0], positioning->width - tile_width);
+	start_y = positioning->y + list_background_offset(&box->style.background_position[1], positioning->height - tile_height);
 
 	/* A repeating axis starts at the tile before the painting area and ends past it; another has one tile. */
 	repeat_x = box->style.background_repeat == CSS_REPEAT_BOTH || box->style.background_repeat == CSS_REPEAT_X;

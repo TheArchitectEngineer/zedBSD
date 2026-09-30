@@ -38,6 +38,7 @@ Resume point: p013（text-input-v3 の受け口、KUI_VERSION 6）cleared（2026
 | ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
 | ws090-p011 | Terminal・Notes: 窓（見せ方は無し）と scroll の model | planning | p004 |
 | [ws090-p013](phase013/phase.md) | `kui_window` の text-input-v3 の受け口と Text Editor（WS102 の D1、2026-09-30 ユーザー） | cleared（2026-09-30。KUI_VERSION 6、QEMU の IME で `漢字`・`かな` が Text Editor に入り保存、host の回帰、boot PASS。WS102 の keyboard は未 merge で未実施） | p004 |
+| ws090-p014 | file chooser を親の窓の title bar にぶら下がる sheet にする（2026-09-30 ユーザー、下の節）: compositor が `xdg_toplevel.set_parent` の親を覚え、libkeiui の chooser が sheet を求めた子の窓を、自分の title bar を持たず親の title bar の下に付けて前面に出す（親と一緒に動く・前に出る・最小化する、親への入力は sheet が閉じるまで止める、開閉の動き）。親が無いときは今の独立の窓 | planned（P4、2026-09-30） | p006 |
 | ws090-p012 | 規約の全文との照合と回帰 | planning | 全て |
 
 p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 までに移し終えたものだけ残す（design.md J5）。
@@ -46,3 +47,16 @@ p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 まで
 
 - WS089（Settings）は files の `canvas.c`・`text.c`・`icons.c` と `artwork/mark.c` を source のまま共有して compile している（ws089-p002）。files に target 別の CPPFLAGS が付くと中身が変わりうる。共有の library にするときの最初の対象の候補（F-038 を昇格したもの）。
 - 2026-09-29 ユーザー:「テキストエディタのファイルピッカーは、KeiのUIライブラリに入れるのがいいと思いました。」→ 最初の共有の部品はファイルピッカー（Open・Save As の chooser）。今は libkeiland に `keiland_file_chooser_*` として置き（WS092 のエージェントが作る）、WS090 の library の設計の時にそこへ移す。
+
+### ユーザーの要望（2026-09-30、file chooser の sheet）
+
+「File Pickerは、独立したタイトルバーを持つウィンドウではなく、親ウィンドウのタイトルバーにぶらさがって前面に表示されるスタイルにしたいです。
+親ウィンドウがない場合は独立にします。可能でしょうか？」→ ws090-p014。
+
+- libkeiui の `kui_file_chooser_open` は既に親の `xdg_toplevel` に `set_parent` している。zdesktop の `toplevel_set_parent`（toplevel.c）は親を確かめるだけで
+  覚えず、窓は独立に置いている。
+- Q1 の案: sheet は opt-in（Keiland の protocol の flag。他の toolkit の `set_parent` の dialog は今のまま）。sheet の窓は、自分の title bar を持たず、親の浮いた
+  title bar の下辺に上端を付けて親の横の中央に置き（幅は親より狭く）、上から滑り出す。親を動かす・前に出す・最小化する・Wiseview では一緒に扱う。
+  sheet が開いている間は、親の本体への入力を止める（親の title bar の drag だけは効く）。
+- 同日の追加（ユーザー）:「File Chooserは透過ウィンドウをやめましょう。」→ p014 の中で、file chooser の窓（sheet・独立の両方）を不透明の地にする。
+

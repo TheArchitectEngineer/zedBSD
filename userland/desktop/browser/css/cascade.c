@@ -838,6 +838,7 @@ css_initial_style(
 	style->background_color = 0;
 	style->background_image = NULL;
 	style->background_repeat = CSS_REPEAT_BOTH;
+	style->background_attachment = CSS_BACKGROUND_SCROLL;
 	style->background_position[0].unit = CSS_UNIT_PERCENT;
 	style->background_position[0].value = 0;
 	style->background_position[1].unit = CSS_UNIT_PERCENT;
@@ -3257,6 +3258,9 @@ cascade_apply(
 	case CSS_PROP_BACKGROUND_REPEAT:
 		style->background_repeat = value->keyword;
 		break;
+	case CSS_PROP_BACKGROUND_ATTACHMENT:
+		style->background_attachment = value->keyword;
+		break;
 	case CSS_PROP_BACKGROUND_POSITION_X:
 	case CSS_PROP_BACKGROUND_POSITION_Y:
 		style->background_position[property - CSS_PROP_BACKGROUND_POSITION_X] = cascade_length(engine, value, style->font_size);
@@ -3663,6 +3667,9 @@ cascade_inherit(
 		break;
 	case CSS_PROP_BACKGROUND_REPEAT:
 		style->background_repeat = parent->background_repeat;
+		break;
+	case CSS_PROP_BACKGROUND_ATTACHMENT:
+		style->background_attachment = parent->background_attachment;
 		break;
 	case CSS_PROP_BACKGROUND_POSITION_X:
 	case CSS_PROP_BACKGROUND_POSITION_Y:

@@ -349,13 +349,14 @@ box_build_element(
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_BR)
 		kind = LAYOUT_LINE_BREAK;
 
-	/* An <img> is a replaced box: an atomic piece of its line when it is inline or an inline block. */
+	/* An <img>, or an <object> whose data decoded as an image, is a replaced box. */
 	replaced = 0;
-	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG) {
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG)
 		replaced = 1;
-		if (kind == LAYOUT_INLINE || style->display == CSS_DISPLAY_INLINE_BLOCK)
-			kind = LAYOUT_REPLACED;
-	}
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_OBJECT && tree->image_lookup != NULL)
+		replaced = tree->image_lookup(tree->image_context, element) != NULL;
+	if (replaced && (kind == LAYOUT_INLINE || style->display == CSS_DISPLAY_INLINE_BLOCK))
+		kind = LAYOUT_REPLACED;
 
 	/*
 	 * An <input> or a <textarea> is a replaced box too, drawn by the

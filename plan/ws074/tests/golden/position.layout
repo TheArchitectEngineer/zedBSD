@@ -53,6 +53,25 @@ block <html> 0.00 0.00 1024.00 428.00
           text 409.39 w 4.50 16px " "
           text 413.89 w 6.52 16px "1"
       block <div> 582.00 272.00 400.00 40.00
+      block <div> 422.00 122.00 216.05 58.00
+        anonymous 431.00 131.00 198.05 20.00
+          line 431.00 131.00 height 20.00 baseline 147.00
+            inline-block 431.00 w 198.05 h 16.00
+          block <a> 431.00 131.00 198.05 20.00
+            line 505.31 131.00 height 20.00 baseline 147.00
+              text 505.31 w 31.59 16px "sign"
+              text 536.91 w 4.50 16px " "
+              text 541.41 w 13.33 16px "in"
+        block <div> 431.00 151.00 198.05 20.00
+          line 431.00 151.00 height 20.00 baseline 167.00
+            text 431.00 w 31.88 16px "new"
+            text 462.88 w 4.50 16px " "
+            text 467.38 w 71.27 16px "customer"
+            text 538.64 w 4.50 16px " "
+            text 543.14 w 85.91 16px "registration"
+      block <div> 522.00 52.00 60.00 60.00
+        block <div> 562.00 52.00 60.00 60.00
+      block <div> 562.00 52.00 60.00 60.00
     block <p> 50.00 352.00 300.00 40.00
       line 50.00 352.00 height 20.00 baseline 368.00
         text 50.00 w 32.12 16px "This"

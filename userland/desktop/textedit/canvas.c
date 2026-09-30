@@ -223,6 +223,49 @@ te_canvas_mask(
 	}
 }
 
+/*
+ * Blends premultiplied 0xAARRGGBB pixels (a colour glyph, ws102-p019),
+ * width a row, with their top left at a place.
+ */
+void
+te_canvas_pixels(
+	struct te_canvas *canvas,
+	int x,
+	int y,
+	const uint32_t *pixels,
+	int width,
+	int height)
+{
+	uint32_t *pixel;
+	uint32_t source;
+	uint32_t result;
+	unsigned keep;
+	unsigned shift;
+	int line;
+	int column;
+	int inside;
+
+	/* Each pixel within the clip: the source over what its alpha leaves of the canvas. */
+	for (line = 0; line < height; line++) {
+		for (column = 0; column < width; column++) {
+			inside = clip_inside(canvas, x + column, y + line);
+			if (!inside)
+				continue;
+			source = pixels[(size_t)line * (size_t)width + (size_t)column];
+			if ((source >> 24) == 0U)
+				continue;
+
+			/* Each channel of the premultiplied source over the premultiplied pixel. */
+			pixel = canvas->pixels + (size_t)(y + line) * canvas->stride + (size_t)(x + column);
+			keep = 255U - (source >> 24);
+			result = 0;
+			for (shift = 0; shift < 32U; shift += 8U)
+				result |= (((source >> shift) & 0xffU) + (((*pixel >> shift) & 0xffU) * keep + 127U) / 255U) << shift;
+			*pixel = result;
+		}
+	}
+}
+
 /* Cuts a rectangle to the clip; an empty result has no width or height. */
 static void
 clip_span(

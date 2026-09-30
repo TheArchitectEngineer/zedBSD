@@ -22,6 +22,9 @@
  * rendered when it is first drawn, from that font or else from the fallback
  * font (server->fallback_font_path, for Japanese), into a cell of the
  * atlas's cache, the least recently drawn cell making room; text is UTF-8.
+ * A character neither font has is looked for in the colour emoji font
+ * (GLASS_EMOJI_FONT, opened on the first such character, ws102-p019),
+ * whose colour glyph goes into the cell as it is and is drawn as an image.
  * The titlebar's icons (icons.c) are rendered into the atlas once, at two
  * sizes, App Home's pictures (icons.c, ws035-p123) at the size its tiles
  * draw them and small for the windows' marks (ws035-p124), and so are the
@@ -31,6 +34,7 @@
 
 #include "glass.h"
 #include "../artwork/mark.h"
+#include "../picture/color-glyph.h"
 
 #include <truetype.h>
 
@@ -56,8 +60,9 @@
 #define GLASS_ATLAS_HEIGHT	1024U
 #define GLASS_FILE_MAX		(16U * 1024U * 1024U)
 
-/* The fonts kept open: the first font and the fallback. */
-#define GLASS_FACES		2U
+/* The fonts kept open: the first font, the fallback and the colour emoji font (ws102-p019). */
+#define GLASS_FACES		3U
+#define GLASS_EMOJI_FONT	"/usr/share/fonts/keiland-emoji.ttf"
 
 /* The icons' two sizes in pixels, and how many there are. */
 #define GLASS_ICON_SIZES	2U
@@ -128,6 +133,7 @@ struct glass_glyph {
 	int32_t left;
 	int32_t top;
 	int32_t advance;
+	uint32_t color;
 };
 
 /*
@@ -168,6 +174,8 @@ struct zwl_glass {
 	unsigned face_count;
 	const char *fallback_path;
 	unsigned fallback_tried;
+	unsigned emoji_tried;
+	int emoji_face;
 	struct glass_cached cache[GLASS_CELLS];
 	uint32_t cache_top;
 	unsigned cache_count;
@@ -199,6 +207,7 @@ static void atlas_put(struct zwl_glass *glass, const uint8_t *bitmap, uint32_t x
 static int glass_open_face(struct zwl_glass *glass, const char *path);
 static const struct glass_glyph *glass_glyph_of(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
 static const struct glass_glyph *glass_cache_glyph(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
+static const struct glass_glyph *glass_cache_color(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint, unsigned id, unsigned slot);
 static uint32_t glass_utf8_next(const char **text);
 static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
@@ -2014,6 +2023,7 @@ glass_cache_glyph(
 	uint32_t codepoint)
 {
 	static uint8_t bitmap[GLASS_BITMAP * GLASS_BITMAP];
+	const struct glass_glyph *glyph;
 	struct truetype_glyph metrics;
 	struct truetype_face *face;
 	struct glass_cached *cell;
@@ -2069,6 +2079,25 @@ glass_cache_glyph(
 		}
 	}
 
+	/* No font has it yet: the colour emoji font, opened once on the first such character (ws102-p019). */
+	if (id == 0U && glass->emoji_tried == 0U) {
+		glass->emoji_tried = 1;
+		glass->emoji_face = -1;
+		error = glass_open_face(glass, GLASS_EMOJI_FONT);
+		if (error == 0)
+			glass->emoji_face = (int)glass->face_count - 1;
+		printf("ZWL GLASS emoji font: path=%s errno=%d\n", GLASS_EMOJI_FONT, error);
+	}
+
+	/* The emoji font's colour glyph, when it has the character. */
+	if (id == 0U && glass->emoji_tried != 0U && glass->emoji_face >= 0) {
+		id = truetype_glyph_index(glass->faces[glass->emoji_face], codepoint);
+		if (id != 0U) {
+			glyph = glass_cache_color(glass, size, codepoint, id, oldest);
+			return glyph;
+		}
+	}
+
 	/* No font has it: the first font's box. */
 	if (id == 0U)
 		which = 0;
@@ -2103,6 +2132,7 @@ glass_cache_glyph(
 	/* The cell now holds this character's glyph. */
 	cell->codepoint = codepoint;
 	cell->size = (unsigned)size;
+	cell->glyph.color = 0;
 	cell->glyph.width = metrics.width;
 	cell->glyph.height = metrics.height;
 	cell->glyph.left = metrics.left;
@@ -2113,6 +2143,64 @@ glass_cache_glyph(
 	printf("ZWL GLASS glyph codepoint=U+%04X size=%u face=%u cell=%u\n", codepoint, (unsigned)size, which, oldest);
 
 	/* Succeeded: the glyph. */
+	return &cell->glyph;
+}
+
+/*
+ * Draws a character's colour glyph of the emoji font into a cell of the
+ * cache (its premultiplied colours as they are), for glass_draw_glyph_at
+ * to draw as an image (ws102-p019); NULL when it cannot be drawn or is
+ * larger than a cell.
+ */
+static const struct glass_glyph *
+glass_cache_color(
+	struct zwl_glass *glass,
+	enum glass_size size,
+	uint32_t codepoint,
+	unsigned id,
+	unsigned slot)
+{
+	struct keiland_color_image image;
+	struct glass_cached *cell;
+	uint32_t *row;
+	unsigned per_row;
+	int error;
+	int line;
+
+	/* The glyph's colours at the size, which must fit a cell. */
+	error = keiland_color_glyph(glass->faces[glass->emoji_face], id, glass_pixels[size], &image);
+	if (error != 0)
+		return NULL;
+	if (image.width > (int)GLASS_CELL || image.height > (int)GLASS_CELL) {
+		free(image.pixels);
+		return NULL;
+	}
+
+	/* The cell's place in the atlas, and the colours into it row by row. */
+	cell = &glass->cache[slot];
+	per_row = GLASS_ATLAS_WIDTH / GLASS_CELL;
+	cell->glyph.x = (slot % per_row) * GLASS_CELL;
+	cell->glyph.y = glass->cache_top + (slot / per_row) * GLASS_CELL;
+	for (line = 0; line < image.height; line++) {
+		row = (uint32_t *)((unsigned char *)glass->atlas.map + (size_t)(cell->glyph.y + (uint32_t)line) * glass->atlas.row_pitch);
+		memcpy(row + cell->glyph.x, image.pixels + (size_t)line * (size_t)image.width, (size_t)image.width * sizeof(uint32_t));
+	}
+
+	/* The colours are in the atlas now. */
+	free(image.pixels);
+
+	/* Succeeded: the cell holds the character's colour glyph. */
+	cell->codepoint = codepoint;
+	cell->size = (unsigned)size;
+	cell->glyph.width = (uint32_t)image.width;
+	cell->glyph.height = (uint32_t)image.height;
+	cell->glyph.left = image.left;
+	cell->glyph.top = image.top;
+	cell->glyph.advance = image.advance;
+	cell->glyph.color = 1;
+	glass->clock++;
+	cell->used = glass->clock;
+	printf("ZWL GLASS glyph codepoint=U+%04X size=%u face=emoji cell=%u color=1\n", codepoint, (unsigned)size, slot);
 	return &cell->glyph;
 }
 
@@ -2182,9 +2270,11 @@ glass_draw_glyph_at(
 	if (glyph->width == 0U || glyph->height == 0U)
 		return;
 
-	/* The glyph's pixels. */
+	/* The glyph's pixels: coverage in the colour, or a colour glyph as an image (ws102-p019). */
 	glass_shape_init(&shape, (float)(x + glyph->left), (float)(baseline - glyph->top), (float)glyph->width, (float)glyph->height);
 	shape.mode = MODE_TEXT;
+	if (glyph->color)
+		shape.mode = MODE_IMAGE;
 	shape.uv[0] = (float)glyph->x / (float)GLASS_ATLAS_WIDTH;
 	shape.uv[1] = (float)glyph->y / (float)GLASS_ATLAS_HEIGHT;
 	shape.uv[2] = (float)(glyph->x + glyph->width) / (float)GLASS_ATLAS_WIDTH;

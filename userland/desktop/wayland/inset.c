@@ -207,6 +207,12 @@ inset_covered(
 		(void)zwl_glass_body_origin(server, surface, &x, &y);
 	zwl_surface_size(surface, &width, &height);
 
+	/* A docked window: the size it is being told (the work area's, ws102-p007), not its image's yet. */
+	if (surface->maximized && surface->window_width != 0U) {
+		width = surface->window_width;
+		height = surface->window_height;
+	}
+
 	/* Not under the panel at all. */
 	if (panel[0] >= x + (int32_t)width || panel[0] + panel[2] <= x)
 		return;

@@ -15,7 +15,7 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 	userland/desktop/wayland/handoff.c userland/desktop/wayland/network.c userland/desktop/wayland/preferences.c userland/desktop/wayland/volume.c \
 	userland/desktop/wayland/text-input.c userland/desktop/wayland/input-method.c \
 	userland/desktop/wayland/desktop.c userland/desktop/wayland/inset.c userland/desktop/wayland/edit.c userland/desktop/wayland/clipboard.c \
-	userland/desktop/vkdemo/display.c userland/desktop/artwork/mark.c
+	userland/desktop/vkdemo/display.c userland/desktop/artwork/mark.c userland/desktop/picture/color-glyph.c
 # App Home starts X11 applications through zdesktop-x11, which starts xserver when it is needed.
 ZEDBSD_PACKAGE_INPUTS += userland/desktop/wayland/keiland-x11
 ZEDBSD_PACKAGE_FILES += $(if $(filter wayland,$(ZEDBSD_USER_PROGRAMS)),--file /usr/libexec/keiland-x11=userland/desktop/wayland/keiland-x11)
@@ -26,4 +26,4 @@ KEILAND_FONT_DATA := /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Inter.t
 	/usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt=userland/desktop/fonts/JetBrainsMono-OFL.txt \
 	/usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt=userland/desktop/fonts/DroidSansFallback-LICENSE.txt \
 	/usr/share/licenses/keiland-fonts/Apache-2.0.txt=userland/desktop/fonts/Apache-2.0.txt
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor,amd64,y,basic,$(KEILAND_SOURCES),y,desktop,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond,0755,program,$(KEILAND_FONT_DATA),,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor,amd64,y,basic,$(KEILAND_SOURCES),y,desktop,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond base/libpng-compat base/libz-compat fonts/noto-color-emoji,0755,program,$(KEILAND_FONT_DATA),,bin))

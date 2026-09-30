@@ -9,8 +9,10 @@
  * Reading a TrueType font and drawing its glyphs.
  *
  * This reads the tables a screen needs and no more: the character map, the
- * outlines, and the advance widths.  Hinting, kerning, colour and layout are
- * not here; what is here is enough to put readable text on a display.
+ * outlines, and the advance widths.  Hinting, kerning and layout are not
+ * here; what is here is enough to put readable text on a display.  Colour
+ * glyphs are found as the PNG images a colour emoji font stores
+ * (truetype_color_glyph); decoding them is the caller's.
  *
  * A face is opened over memory the caller owns and keeps.  Nothing is copied
  * out of the file, so the memory must outlive the face.
@@ -206,6 +208,35 @@ int truetype_glyph_outline(const struct truetype_face *face, unsigned glyph,
  */
 int truetype_open_embedded(const void *data, size_t size,
 			   struct truetype_face **face);
+
+/*
+ * A colour glyph kept as a bitmap (the CBDT and CBLC tables of a colour
+ * emoji font, ws102-p019): its image as the PNG file the font stores
+ * (inside the font's memory; the caller decodes it), the image's size in
+ * pixels, where its top-left corner sits from the pen (left, and top up
+ * from the baseline) and how far the pen moves, all at the size of the
+ * font's strike, ppem pixels per em.  A caller drawing at another size
+ * scales them by its size over ppem.
+ */
+struct truetype_color_glyph {
+	const uint8_t *png;
+	size_t png_size;
+	unsigned width;
+	unsigned height;
+	int left;
+	int top;
+	int advance;
+	unsigned ppem;
+};
+
+/*
+ * Finds a glyph's colour image at the strike nearest the face's pixel
+ * size (the smallest at least as large, else the largest).  Returns 0,
+ * ENOENT when the face or the glyph has none, or EINVAL for a damaged
+ * table.
+ */
+int truetype_color_glyph(const struct truetype_face *face, unsigned glyph,
+			 struct truetype_color_glyph *out);
 
 /*
  * Looks a code up in the cmap subtable of one platform and encoding, such

@@ -11,5 +11,5 @@ TEXTEDIT_SOURCES := userland/desktop/textedit/main.c userland/desktop/textedit/q
 	userland/desktop/textedit/buffer.c userland/desktop/textedit/undo.c \
 	userland/desktop/textedit/file.c userland/desktop/textedit/layout.c \
 	userland/desktop/textedit/find.c userland/desktop/textedit/canvas.c \
-	userland/desktop/textedit/text.c
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,textedit,Text Editor,amd64,y,basic,$(TEXTEDIT_SOURCES),y,desktop,desktop/textedit,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libkeiui desktop/libtruetype,0755,program,,,bin))
+	userland/desktop/textedit/text.c userland/desktop/picture/color-glyph.c
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,textedit,Text Editor,amd64,y,basic,$(TEXTEDIT_SOURCES),y,desktop,desktop/textedit,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libkeiui desktop/libtruetype base/libpng-compat base/libz-compat,0755,program,,,bin))

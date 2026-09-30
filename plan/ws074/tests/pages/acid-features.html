@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Acid2 feature regressions</title>
+<!-- ws074-p099: conflicting height constraints, object image fallback and point borders. -->
+<style>
+body { margin: 0; background: white; }
+.height { width: 20px; height: 8px; min-height: 12px; max-height: 2px; background: black; }
+.point { width: 0; height: 0; border-style: none solid solid; border-width: 10px; border-color: red yellow black; }
+.indefinite { margin: 12px; height: 10%; background: #ccc; }
+.indefinite div { margin-bottom: -8px; }
+.invalid { width: 20px; height: 10px; background: yellow; background: red pink; }
+.fixed { width: 20px; height: 10px; background: fixed url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAABnRSTlMAAAAAAABupgeRAAAABmJLR0QA%2FwD%2FAP%2BgvaeTAAAAEUlEQVR42mP4%2F58BCv7%2FZwAAHfAD%2FabwPj4AAAAASUVORK5CYII%3D); }
+object { display: inline; }
+</style>
+</head>
+<body>
+<div class="height"></div>
+<div class="point"></div>
+<div class="indefinite"><div></div></div>
+<div class="invalid"></div>
+<div class="fixed"></div>
+<object data="data:application/x-unknown,no-image"><span>fallback</span></object>
+<object data="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAYAAAEhL4UpAAAAIElEQVR42mP4z8AAREACxAARDGCRBhDnAEjUASwLZAEAexQScCxWt74AAAAASUVORK5CYII="><span>hidden</span></object>
+</body>
+</html>

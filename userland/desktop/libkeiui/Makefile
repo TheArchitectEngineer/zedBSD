@@ -17,7 +17,8 @@ LIBKEIUI_SOURCES := userland/desktop/libkeiui/version.c userland/desktop/libkeiu
 	userland/desktop/libkeiui/primary.c userland/desktop/libkeiui/text-input.c userland/desktop/libkeiui/edit.c userland/desktop/libkeiui/widgets.c \
 	userland/desktop/libkeiui/field.c userland/desktop/libkeiui/list.c \
 	userland/desktop/libkeiui/cards.c userland/desktop/libkeiui/chooser.c \
-	userland/desktop/libkeiui/chooser-model.c userland/desktop/libkeiui/chooser-view.c
+	userland/desktop/libkeiui/chooser-model.c userland/desktop/libkeiui/chooser-view.c \
+	userland/desktop/picture/color-glyph.c
 
 LIBKEIUI_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiui.so=$(BUILD)/dynamic/libkeiui.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiui,Desktop widgets,amd64,y,library,$(LIBKEIUI_SOURCES),y,desktop,desktop/libkeiui,desktop/libtruetype desktop/libkeiland desktop/libwayland desktop/libvulkan,,shared-library,$(LIBKEIUI_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiui,Desktop widgets,amd64,y,library,$(LIBKEIUI_SOURCES),y,desktop,desktop/libkeiui,desktop/libtruetype desktop/libkeiland desktop/libwayland desktop/libvulkan base/libpng-compat base/libz-compat,,shared-library,$(LIBKEIUI_IMAGE_DATA),,lib))
