@@ -253,6 +253,9 @@ struct keyboard_contact {
  * the last frame that drew one.  slide_ms is when the panel began growing
  * out of its edge, or going back into it; leaving is the panel going back
  * (already closed for everything but its drawing, PANEL_NONE when none).
+ * touch_owner is the finger (its id + 1, 0 for none) whose press the panel
+ * holds when fingers come by touch.c's ROUTE_OSK (ws102-p009), and
+ * touch_x, touch_y where it was last.
  */
 
 /*
@@ -298,6 +301,9 @@ struct keyboard_state {
 	uint64_t lag_frame_ms;
 	uint64_t slide_ms;
 	enum keyboard_kind leaving;
+	uint32_t touch_owner;
+	int32_t touch_x;
+	int32_t touch_y;
 };
 
 /*
@@ -362,6 +368,7 @@ static void keyboard_draw_hint(struct zwl_server *server, VkCommandBuffer comman
 static void keyboard_draw_sliding(struct zwl_server *server, VkCommandBuffer command, int leaving);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum zwl_contact_source source);
+static int keyboard_touch_button(struct zwl_server *server, int32_t x, int32_t y, uint32_t state);
 
 /*
  * Feeds the left pointer button (the mouse's, or a finger's passed as the
@@ -439,6 +446,166 @@ zwl_keyboard_motion(
 }
 
 /*
+ * A finger touches the open panel (touch.c's ROUTE_OSK, ws102-p009): its
+ * own press, at its place, while other fingers may be anywhere.  A finger
+ * that still holds the panel's press lets it go first where it was last
+ * (the key it held acts), so that fingers overlapping in time (two thumbs
+ * typing) each type their key once.  Returns 1 when the panel took the
+ * finger.
+ */
+int
+zwl_keyboard_touch_down(
+	struct zwl_server *server,
+	uint32_t id,
+	int32_t x,
+	int32_t y,
+	uint32_t time)
+{
+	int rolled;
+	int taken;
+
+	/* A press of the mouse holds the panel: the finger is not taken. */
+	(void)time;
+	if (keyboard.pressing && keyboard.touch_owner == 0U)
+		return 0;
+
+	/* The finger holding the press lets it go first. */
+	rolled = 0;
+	if (keyboard.pressing && keyboard.touch_owner != 0U) {
+		rolled = 1;
+		(void)keyboard_touch_button(server, keyboard.touch_x, keyboard.touch_y, 0U);
+		keyboard.touch_owner = 0U;
+	}
+
+	/* The finger's press, at its place. */
+	taken = keyboard_touch_button(server, x, y, 1U);
+	if (taken) {
+		keyboard.touch_owner = id + 1U;
+		keyboard.touch_x = x;
+		keyboard.touch_y = y;
+	}
+
+	/* Succeeded: said for the tests. */
+	printf("ZWL OSK touch down id=%u x=%d y=%d taken=%d rollover=%d\n", id, x, y, taken, rolled);
+	return taken;
+}
+
+/*
+ * A finger of the panel moves: the press follows it while the finger
+ * holds it (a flick's petals, a stroke).  Returns 1.
+ */
+int
+zwl_keyboard_touch_motion(
+	struct zwl_server *server,
+	uint32_t id,
+	int32_t x,
+	int32_t y,
+	uint32_t time)
+{
+	int32_t saved_x;
+	int32_t saved_y;
+
+	/* Only the finger holding the press moves it. */
+	(void)time;
+	if (keyboard.touch_owner != id + 1U || !keyboard.pressing)
+		return 1;
+
+	/* The press follows the finger (the pointer's place for keyboard.c's handlers, the pointer itself stays). */
+	keyboard.touch_x = x;
+	keyboard.touch_y = y;
+	saved_x = server->pointer_x;
+	saved_y = server->pointer_y;
+	server->pointer_x = x;
+	server->pointer_y = y;
+	(void)zwl_keyboard_motion(server);
+	server->pointer_x = saved_x;
+	server->pointer_y = saved_y;
+	return 1;
+}
+
+/*
+ * A finger of the panel lifts: the press it holds ends there (the key
+ * acts); a finger whose press another finger already ended does nothing.
+ * Returns 1.
+ */
+int
+zwl_keyboard_touch_up(
+	struct zwl_server *server,
+	uint32_t id,
+	int32_t x,
+	int32_t y,
+	uint32_t time)
+{
+	int acted;
+
+	/* A finger that does not hold the press. */
+	(void)time;
+	acted = 0;
+	if (keyboard.touch_owner == id + 1U && keyboard.pressing) {
+		(void)keyboard_touch_button(server, x, y, 0U);
+		acted = 1;
+	}
+
+	/* The press is no finger's now. */
+	if (keyboard.touch_owner == id + 1U)
+		keyboard.touch_owner = 0U;
+	printf("ZWL OSK touch up id=%u x=%d y=%d acted=%d\n", id, x, y, acted);
+	return 1;
+}
+
+/*
+ * A finger of the panel is given up (its screen went): the press it holds
+ * ends without acting.
+ */
+void
+zwl_keyboard_touch_cancel(
+	struct zwl_server *server,
+	uint32_t id)
+{
+	/* Only the finger holding the press. */
+	if (keyboard.touch_owner != id + 1U)
+		return;
+
+	/* The press ends; a stroke being written ends as a stroke. */
+	keyboard.touch_owner = 0U;
+	if (keyboard.writing)
+		keyboard_hand_release(server);
+	keyboard.pressing = 0;
+	keyboard.key_active = 0;
+	keyboard.band_active = 0;
+	keyboard.hand_key_active = 0;
+	server->dirty = 1;
+	printf("ZWL OSK touch cancel id=%u\n", id);
+}
+
+/*
+ * Feeds a finger's press or release to the panel as the pointer's left
+ * button at the finger's place; the pointer itself stays where it is.
+ * Returns 1 when the panel took it.
+ */
+static int
+keyboard_touch_button(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	uint32_t state)
+{
+	int32_t saved_x;
+	int32_t saved_y;
+	int taken;
+
+	/* The finger's place as the pointer's for the panel's handler. */
+	saved_x = server->pointer_x;
+	saved_y = server->pointer_y;
+	server->pointer_x = x;
+	server->pointer_y = y;
+	taken = keyboard_panel_button(server, ZWL_BUTTON_LEFT, state);
+	server->pointer_x = saved_x;
+	server->pointer_y = saved_y;
+	return taken;
+}
+
+/*
  * Keeps the keyboard's time: the corners' places are logged once, a
  * contact whose release never came ends, and one that does not arm in time
  * is let go.  The panel follows a change of the screen's size.
@@ -466,8 +633,8 @@ zwl_keyboard_tick(
 		printf("ZWL OSK cancel reason=lost\n");
 	}
 
-	/* So does a press on the panel. */
-	if (keyboard.pressing && (server->buttons_down & 1U) == 0U)
+	/* So does a press on the panel (not a finger's, which touch.c ends, ws102-p009). */
+	if (keyboard.pressing && keyboard.touch_owner == 0U && (server->buttons_down & 1U) == 0U)
 		keyboard.pressing = 0;
 
 	/* A contact still waiting to arm times out. */
@@ -589,6 +756,7 @@ zwl_keyboard_close(
 	keyboard.open = PANEL_NONE;
 	keyboard.held = 0;
 	keyboard.pressing = 0;
+	keyboard.touch_owner = 0U;
 	keyboard.key_active = 0;
 	keyboard.band_active = 0;
 	keyboard.writing = 0;
