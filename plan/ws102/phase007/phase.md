@@ -34,6 +34,16 @@ design §2.8（2026-09-30 ユーザーの方針）の作業の領域を作る。
 
 IME の file と seat.c は変えていない。
 
+main の取り込みの後（P6 の p015、inset の知らせ）に、次の順にした。p015 の phase.md の引き継ぎどおり。
+
+1. 窓ごとの終わりを決める（最大化の窓の大きさ、浮いた窓の行き先）。
+2. `zwl_keyboard_inset_notify(server, panel)` で inset を知らせる（閉じる時は NULL）。動く窓は、この間だけ行き先に置いて計算させる。
+3. 最大化の窓に configure を送る。
+
+`keyboard_open`・`zwl_keyboard_close` に P6 が足した notify の行は、`keyboard_work_area` の中の 1 回に一本化した。両方を残すと 2 回知らせることになるため。
+
+`inset.c` の `inset_covered` は、最大化の窓では、configure で伝える大きさ（`window_width/height`）で覆う幅を計算する。image はまだ前の大きさなので（Q1 の了解: 関数を広げてよい）。
+
 ## 確認
 
 | 確認 | 命令 | 結果 |
@@ -42,7 +52,8 @@ IME の file と seat.c は変えていない。
 | style | `plan/tools/style-check.py keyboard.c shell.c desktop.c`、`git diff --check` | 0 件 |
 | guest: 作業の領域（新しい手順 workarea、pen image の複写） | `osk-guest.sh build/ws102-shots/p007-final install start pointer flick edges touch send close qwerty hand extra workarea` | PASS（それまでの全ての手順を含む） |
 | guest（1920x1080） | `… install large` | PASS |
-| 回帰 | WS079-p010、WS099 の C9（10 本）、boot test | PASS |
+| 回帰 | WS079-p010、WS099 の C9（10 本）、boot test | PASS（main の取り込みの後にもう一度: `build/ws102-shots/p007-final2`、PASS） |
+| p015 の inset の試験（取り込みの後） | pen image の複写にこの compositor と Text Editor・library を入れ、`plan/ws102/tests/inset-guest.sh build/ws102-inset.img build/ws102-shots/p007-inset` | PASS: QWERTY で `ZWL INSET … bottom=314 reason=2`、caret の行は keyboard の上の範囲の中央から 0.54 行（±1 行以内）、閉じて `reason=0`、wlshm は inset 無しで動く |
 
 手順 workarea で確かめたこと（Text Editor を最大化し、その上に浮いた wltest 500x400）:
 

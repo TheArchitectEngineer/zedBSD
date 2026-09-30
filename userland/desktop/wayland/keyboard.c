@@ -409,6 +409,7 @@ static void keyboard_fit_floating(struct zwl_server *server, struct zwl_object *
 static void keyboard_move_back(struct zwl_server *server);
 static void keyboard_move_step(struct zwl_server *server, float t);
 static int keyboard_window_live(struct zwl_server *server, const struct zwl_object *window);
+static void keyboard_moves_at_end(int end);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum zwl_contact_source source);
 
@@ -1092,7 +1093,7 @@ keyboard_open(
 	/* The log line the tests read, and the QWERTY panel's keys' places. */
 	printf("ZWL OSK open kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(kind), keyboard.panel[0], keyboard.panel[1], keyboard.panel[2], keyboard.panel[3]);
 
-	/* The work area less the panel; the windows follow it. */
+	/* The work area less the panel; the windows follow it (their insets told before their configures, inset.c). */
 	keyboard_work_area(server);
 	if (kind == PANEL_QWERTY)
 		keyboard_qwerty_log(server);
@@ -2722,7 +2723,7 @@ keyboard_work_area(
 	if (right == 0 && bottom == 0)
 		keyboard_move_back(server);
 
-	/* Each window: a docked one told its new size, a floating one moved in when it reaches under the panel. */
+	/* Each window's end: a docked one's new size, a floating one's place in the area when it reaches under the panel. */
 	for (client = server->clients; client != NULL; client = client->next) {
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only windows; a fullscreen one keeps its size (the panel is over it). */
@@ -2730,18 +2731,70 @@ keyboard_work_area(
 			if (!window || surface->fullscreen)
 				continue;
 
-			/* A docked window: the docked size less the panel (or whole again), once. */
+			/* A docked window: the docked size less the panel (or whole again). */
 			if (surface->maximized) {
 				surface->window_width = server->width - (uint32_t)right;
 				surface->window_height = server->height - ZWL_GLASS_DOCK_TOP - (uint32_t)bottom;
-				(void)zwl_window_send_configure(surface);
-				printf("ZWL OSK work docked surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
 				continue;
 			}
 
 			/* A floating window, moved in when it must be (not when the panel went). */
 			if (right != 0 || bottom != 0)
 				keyboard_fit_floating(server, surface);
+		}
+	}
+
+	/*
+	 * The windows with an inset are told what the panel covers of them at
+	 * their ends (inset.c), before their configures: the moved windows are
+	 * put at their ends for it, and back where their moves start after.
+	 */
+	keyboard_moves_at_end(1);
+	if (right != 0 || bottom != 0) {
+		zwl_keyboard_inset_notify(server, keyboard.panel);
+	} else {
+		zwl_keyboard_inset_notify(server, NULL);
+	}
+
+	/* The moved windows back where their moves start. */
+	keyboard_moves_at_end(0);
+
+	/* Each docked window told its new size, once. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only docked windows (not fullscreen). */
+			window = keyboard_is_window(surface);
+			if (!window || surface->fullscreen || !surface->maximized)
+				continue;
+
+			/* The configure, and the log line the tests read. */
+			(void)zwl_window_send_configure(surface);
+			printf("ZWL OSK work docked surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
+		}
+	}
+}
+
+/*
+ * Puts the moved windows at the ends of their moves (end), or back where
+ * their moves start (the slide then moves them), for what the insets are
+ * told.
+ */
+static void
+keyboard_moves_at_end(
+	int end)
+{
+	struct keyboard_move *move;
+	unsigned index;
+
+	/* Each move's window at one of its places. */
+	for (index = 0; index < keyboard.move_count; index++) {
+		move = &keyboard.moves[index];
+		if (end) {
+			move->surface->x = move->to_x;
+			move->surface->y = move->to_y;
+		} else {
+			move->surface->x = move->from_x;
+			move->surface->y = move->from_y;
 		}
 	}
 }

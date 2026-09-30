@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser). */
-#define KEILAND_VERSION	16U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset). */
+#define KEILAND_VERSION	18U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -546,6 +546,15 @@ struct keiland_glass *keiland_glass_create(struct wl_display *display, struct wl
  * Sets the surface's panels for its next commit (count 0: none).
  */
 int keiland_glass_set_panels(struct keiland_glass *glass, const struct keiland_glass_panel *panels, size_t count);
+
+/*
+ * Chooses whether the surface's glass (its panels and its title bar) shows
+ * the windows under it blurred (enabled) or only the blurred wallpaper (the
+ * default: the compositor draws nothing again for it), from the surface's
+ * next commit (KEILAND_VERSION 17).  Returns ENOTSUP when the compositor's
+ * glass has no choice.
+ */
+int keiland_glass_set_blur(struct keiland_glass *glass, int enabled);
 
 /*
  * Takes the glass away: the surface's next commit shows it without panels.
@@ -1227,6 +1236,39 @@ int keiland_audio_set_volume(struct keiland_audio *audio, unsigned left, unsigne
  * sending.
  */
 int keiland_audio_feedback(struct keiland_audio *audio);
+
+/*
+ * The keyboard inset (KEILAND_VERSION 18, ws102-p015).
+ *
+ * A window hears how much of it the on-screen keyboard covers, in the
+ * window's pixels from its right edge (the flick panel's column) and from
+ * its bottom edge (the QWERTY row), when the keyboard opens, closes or
+ * changes the window's size or place (before that configure).  The window
+ * may then keep what matters -- the caret -- where it can be seen.  Both
+ * are 0 when the keyboard has closed or does not cover the window.
+ */
+struct keiland_keyboard_inset;
+struct xdg_toplevel;
+
+/* Why the inset changed: no keyboard, the right column's, the bottom row's. */
+#define KEILAND_KEYBOARD_INSET_NONE	0U
+#define KEILAND_KEYBOARD_INSET_RIGHT	1U
+#define KEILAND_KEYBOARD_INSET_BOTTOM	2U
+
+/* The application's callback: the covered widths from the right and bottom edges, and the reason. */
+typedef void (*keiland_keyboard_inset_fn)(void *data, int32_t right, int32_t bottom, uint32_t reason);
+
+/*
+ * Asks for a window's keyboard inset; callback runs on the application's
+ * default queue.  Returns NULL with errno set: ENOTSUP for a compositor
+ * without it (nothing more to do), EINVAL, ENOMEM.
+ */
+struct keiland_keyboard_inset *keiland_keyboard_inset_create(struct wl_display *display, struct xdg_toplevel *toplevel, keiland_keyboard_inset_fn callback, void *data);
+
+/*
+ * Stops hearing the keyboard.
+ */
+void keiland_keyboard_inset_destroy(struct keiland_keyboard_inset *inset);
 
 #ifdef __cplusplus
 }

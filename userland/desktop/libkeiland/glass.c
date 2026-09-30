@@ -24,8 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The version of the protocol this library speaks. */
-#define GLASS_VERSION		1U
+/* The version of the protocol this library speaks (2: set_blur, ws075-p029). */
+#define GLASS_VERSION		2U
 
 /* One panel on the wire: six words. */
 #define GLASS_PANEL_WORDS	6U
@@ -35,14 +35,16 @@
  */
 struct keiland_glass {
 	struct keiland_glass_v1 *proxy;
+	uint32_t version;
 };
 
-/* What the registry search found: the manager's global name, 0 for none. */
+/* What the registry search found: the manager's global name (0 for none) and version. */
 struct glass_search {
 	uint32_t name;
+	uint32_t version;
 };
 
-static struct keiland_glass_manager_v1 *glass_bind(struct wl_display *display);
+static struct keiland_glass_manager_v1 *glass_bind(struct wl_display *display, uint32_t *version);
 static void glass_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void glass_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static int glass_check(const struct keiland_glass_panel *panel);
@@ -64,9 +66,10 @@ keiland_glass_create(
 {
 	struct keiland_glass_manager_v1 *manager;
 	struct keiland_glass *glass;
+	uint32_t version;
 
 	/* zdesktop's manager, bound for this surface. */
-	manager = glass_bind(display);
+	manager = glass_bind(display, &version);
 	if (manager == NULL)
 		return NULL;
 
@@ -78,7 +81,8 @@ keiland_glass_create(
 		return NULL;
 	}
 
-	/* The protocol object; the binding is not needed after it (the glass stays). */
+	/* The protocol object (of the manager's version); the binding is not needed after it (the glass stays). */
+	glass->version = version;
 	glass->proxy = keiland_glass_manager_v1_get_glass(manager, surface);
 	keiland_glass_manager_v1_destroy(manager);
 	if (glass->proxy == NULL) {
@@ -133,6 +137,33 @@ keiland_glass_set_panels(
 }
 
 /*
+ * Chooses whether the surface's glass shows the windows under it blurred
+ * (enabled) or only the blurred wallpaper (the default, which costs the
+ * compositor nothing per frame), from the surface's next commit
+ * (ws075-p029).  Returns ENOTSUP when the compositor's glass is older.
+ */
+int
+keiland_glass_set_blur(
+	struct keiland_glass *glass,
+	int enabled)
+{
+	uint32_t value;
+
+	/* A compositor whose glass has no choice. */
+	if (glass->version < KEILAND_GLASS_V1_SET_BLUR_SINCE_VERSION)
+		return ENOTSUP;
+
+	/* The choice, for the next commit. */
+	value = 0U;
+	if (enabled != 0)
+		value = 1U;
+	keiland_glass_v1_set_blur(glass->proxy, value);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Takes the glass away; the surface's next commit shows it without panels.
  */
 void
@@ -151,7 +182,8 @@ keiland_glass_destroy(
 /* Binds zdesktop's glass manager through a registry of the library's own. */
 static struct keiland_glass_manager_v1 *
 glass_bind(
-	struct wl_display *display)
+	struct wl_display *display,
+	uint32_t *version)
 {
 	struct keiland_glass_manager_v1 *manager;
 	struct glass_search search;
@@ -180,6 +212,7 @@ glass_bind(
 
 	/* The globals, announced to this search alone. */
 	search.name = 0;
+	search.version = 0;
 	registry = wl_display_get_registry(wrapper);
 	if (registry != NULL) {
 		status = wl_registry_add_listener(registry, &glass_registry_listener, &search);
@@ -187,10 +220,13 @@ glass_bind(
 			(void)wl_display_roundtrip_queue(display, queue);
 	}
 
-	/* The manager, bound when announced, is moved to the application's default queue. */
+	/* The manager, bound when announced at the version both speak, is moved to the application's default queue. */
 	manager = NULL;
+	*version = search.version;
+	if (*version > GLASS_VERSION)
+		*version = GLASS_VERSION;
 	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &keiland_glass_manager_v1_interface, GLASS_VERSION);
+		manager = wl_registry_bind(registry, search.name, &keiland_glass_manager_v1_interface, *version);
 		if (manager != NULL)
 			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
 	}
@@ -231,11 +267,12 @@ glass_global(
 
 	/* Only zdesktop's glass manager is looked for. */
 	(void)registry;
-	(void)version;
 	search = data;
 	match = strcmp(interface, "keiland_glass_manager_v1");
-	if (match == 0)
+	if (match == 0) {
 		search->name = name;
+		search->version = version;
+	}
 }
 
 /* A global going away during the short search changes nothing. */

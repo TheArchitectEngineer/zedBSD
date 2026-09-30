@@ -348,6 +348,8 @@ zwl_glass_draw(
 	int shown;
 	int whole;
 	float progress;
+	unsigned blur;
+	int showing;
 	float home;
 	float position;
 
@@ -443,9 +445,20 @@ zwl_glass_draw(
 		if (!shown)
 			continue;
 
-		/* The glass of a window over others shows them blurred (backdrop.c), not only the wallpaper (not while Home has the layer). */
-		if (drawn > 0U && home <= 0.0f)
+		/*
+		 * The glass of a window over others that asked for it (set_blur,
+		 * ws075-p029) shows them blurred (backdrop.c), not while Home has the
+		 * layer; any other window's glass shows the blurred wallpaper alone,
+		 * which costs nothing more (the default).
+		 */
+		blur = zwl_panels_blur(windows[index]);
+		if (drawn > 0U && home <= 0.0f && blur) {
 			draw_backdrop(server, command, windows, index, position);
+		} else {
+			zwl_backdrop_reset(server);
+		}
+
+		/* One more window drawn. */
 		drawn++;
 
 		/* Shifted with the layer, when Home does not have it. */
@@ -485,8 +498,16 @@ zwl_glass_draw(
 	/* The top-right corner's hint, while its swipe is followed or settles (corner.c). */
 	zwl_corner_draw(server, command);
 
-	/* The on-screen keyboard over everything (keyboard.c, ws102). */
+	/*
+	 * The on-screen keyboard over everything (keyboard.c, ws102).  Its glass
+	 * shows the scene under it blurred when zdesktop was started so
+	 * (--keyboard-blur, ws075-p029), else the blurred wallpaper.
+	 */
+	showing = zwl_keyboard_showing();
+	if (server->keyboard_blur && showing && home <= 0.0f)
+		draw_backdrop(server, command, windows, count, position);
 	zwl_keyboard_draw(server, command);
+	zwl_backdrop_reset(server);
 
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)

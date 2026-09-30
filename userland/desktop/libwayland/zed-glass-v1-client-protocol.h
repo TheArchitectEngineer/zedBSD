@@ -49,8 +49,11 @@ struct keiland_glass_v1 *keiland_glass_manager_v1_get_glass(struct keiland_glass
 #define KEILAND_GLASS_V1_RADIUS_MAX 64
 #define KEILAND_GLASS_V1_DESTROY 0U
 #define KEILAND_GLASS_V1_SET_PANELS 1U
+#define KEILAND_GLASS_V1_SET_BLUR 2U
+#define KEILAND_GLASS_V1_SET_BLUR_SINCE_VERSION 2U
 void keiland_glass_v1_destroy(struct keiland_glass_v1 *object);
 void keiland_glass_v1_set_panels(struct keiland_glass_v1 *object, struct wl_array *panels);
+void keiland_glass_v1_set_blur(struct keiland_glass_v1 *object, uint32_t enabled);
 
 #ifdef __cplusplus
 }

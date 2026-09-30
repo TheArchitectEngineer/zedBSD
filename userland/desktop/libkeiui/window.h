@@ -34,6 +34,7 @@
 #define KEIUI_SHM_BUFFERS	2
 
 struct zwp_primary_selection_device_manager_v1;
+struct keiland_keyboard_inset;
 struct zwp_primary_selection_device_v1;
 struct zwp_primary_selection_source_v1;
 struct zwp_primary_selection_offer_v1;
@@ -247,6 +248,17 @@ struct kui_window {
 	void (*notify)(void *data);
 	void *notify_data;
 	struct wl_callback *notify_sync;
+
+	/*
+	 * The on-screen keyboard's inset (KUI_VERSION 7, ws102-p015): libkeiland's
+	 * object (NULL with a compositor without it), the covered widths from
+	 * the right and bottom edges last heard, and the application's callback.
+	 */
+	struct keiland_keyboard_inset *inset;
+	int inset_right;
+	int inset_bottom;
+	kui_keyboard_inset_fn inset_callback;
+	void *inset_data;
 };
 
 /* A window on the application's connection, and its owner's wake-up (window.c). */

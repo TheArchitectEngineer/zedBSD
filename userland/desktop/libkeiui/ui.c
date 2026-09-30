@@ -146,7 +146,29 @@ struct kui_ui {
 
 	/* The time of the frame being drawn (kui_ui_begin's). */
 	uint64_t now_us;
+
+	/* The keyboard inset last acted on (ui_inset's serial, ws102-p015). */
+	unsigned inset_serial;
 };
+
+/*
+ * The on-screen keyboard's inset a window heard last (window.c,
+ * keiui_ui_inset_note; ws102-p015): a serial counted up with each, the
+ * window's size, the widths covered from its right and bottom edges, and
+ * the reason (KUI_KEYBOARD_INSET_*), and the caret's rectangle in the
+ * window the application told (kui_window_text_cursor; height 0 when it
+ * has not).  Each window's input acts on a serial
+ * once (kui_ui_end).  The library runs on one thread.
+ */
+static struct {
+	unsigned serial;
+	uint32_t width;
+	uint32_t height;
+	int right;
+	int bottom;
+	unsigned reason;
+	int32_t caret[4];
+} ui_inset;
 
 static const struct ui_record *ui_find(const struct kui_ui *ui, double x, double y, int regions);
 static int ui_inside(const struct kui_rect *rect, double x, double y);
@@ -162,6 +184,7 @@ static void ui_record(struct kui_ui *ui, enum ui_kind kind, uint32_t id, uint32_
 static void ui_focus_press(struct kui_ui *ui, const struct ui_record *record, double x, double y);
 static const struct ui_record *ui_focus_owner(const struct ui_key *key, const struct kui_ui *ui, double x, double y);
 static int ui_focus_move(struct kui_ui *ui, int backward);
+static int ui_inset_center(struct kui_ui *ui, uint64_t now_us);
 
 /*
  * Makes a window's input state.
@@ -605,6 +628,7 @@ kui_ui_end(
 	int delivered;
 	int held;
 	int lit;
+	int moved;
 
 	/* The frame drawn is the one on the screen now. */
 	swap = ui->shown;
@@ -660,6 +684,16 @@ kui_ui_end(
 		lit = kui_ui_pointer_motion(ui, ui->pointer_x, ui->pointer_y);
 		if (lit)
 			moving = 1;
+	}
+
+	/* A keyboard that came or changed keeps the text view's caret in sight (the frame just drawn has the view). */
+	if (ui->inset_serial != ui_inset.serial) {
+		ui->inset_serial = ui_inset.serial;
+		if (ui_inset.reason != KUI_KEYBOARD_INSET_NONE) {
+			moved = ui_inset_center(ui, now_us);
+			if (moved)
+				moving = 1;
+		}
 	}
 
 	/* So do scrolls that glide, fly, or whose bars fade. */
@@ -1538,4 +1572,108 @@ ui_focus_move(
 
 	/* Nothing takes the keyboard. */
 	return 0;
+}
+
+/*
+ * Notes the on-screen keyboard's inset a window heard (window.c): each
+ * window's input acts on it in its next kui_ui_end.
+ */
+void
+keiui_ui_inset_note(
+	uint32_t width,
+	uint32_t height,
+	int right,
+	int bottom,
+	unsigned reason,
+	const int32_t *caret)
+{
+	/* A new serial, and what came with it. */
+	ui_inset.serial++;
+	ui_inset.width = width;
+	ui_inset.height = height;
+	ui_inset.right = right;
+	ui_inset.bottom = bottom;
+	ui_inset.reason = reason;
+	memcpy(ui_inset.caret, caret, sizeof(ui_inset.caret));
+}
+
+/*
+ * Moves the scroll of the frame's text view (the focused one, else the
+ * last recorded) so that the caret's line is in the middle of the part of
+ * the view the keyboard leaves, as far as the scroll goes.  Returns 1 when
+ * the scroll moved.
+ */
+static int
+ui_inset_center(
+	struct kui_ui *ui,
+	uint64_t now_us)
+{
+	const struct ui_record *record;
+	struct kui_text_touch *touch;
+	struct kui_scroll *scroll;
+	struct kui_rect caret;
+	size_t index;
+	double largest;
+	double middle;
+	double target;
+	int visible;
+	int bottom;
+
+	/* The text view: the one with the focus, else the last recorded. */
+	record = NULL;
+	for (index = 0; index < ui->shown_count; index++) {
+		if (ui->shown[index].kind != UI_KIND_TEXT)
+			continue;
+		if (record != NULL && ui->focus.valid && record->id == ui->focus.id)
+			continue;
+		record = &ui->shown[index];
+	}
+
+	/* None, or one without a scroll or a view to ask for the caret. */
+	if (record == NULL || record->scroll == NULL || record->touch == NULL)
+		return 0;
+	touch = record->touch;
+	scroll = record->scroll;
+	if (touch->view == NULL || touch->view->caret_rect == NULL)
+		return 0;
+
+	/* A view that does not scroll down stays. */
+	largest = scroll->content_height - scroll->viewport_height;
+	if ((scroll->axes & KUI_SCROLL_Y) == 0U || largest <= 0.0)
+		return 0;
+
+	/* The part of the view the keyboard leaves: from its top down to the keyboard's top edge. */
+	bottom = record->rect.y + record->rect.height;
+	if (ui_inset.bottom > 0 && (int)ui_inset.height - ui_inset.bottom < bottom)
+		bottom = (int)ui_inset.height - ui_inset.bottom;
+	visible = bottom - record->rect.y;
+	if (visible <= 0)
+		return 0;
+
+	/*
+	 * The caret's line in the middle of that part, not past the text's
+	 * ends: from the caret the application told in the window (drawn at the
+	 * scroll now), else from the view at the fingers' caret (content
+	 * coordinates).
+	 */
+	if (ui_inset.caret[3] > 0) {
+		middle = (double)ui_inset.caret[1] + (double)ui_inset.caret[3] / 2.0 - (double)record->rect.y + scroll->y;
+	} else {
+		memset(&caret, 0, sizeof(caret));
+		touch->view->caret_rect(touch->data, touch->caret, &caret);
+		middle = (double)caret.y + (double)caret.height / 2.0;
+	}
+	target = middle - (double)visible / 2.0;
+	if (target > largest)
+		target = largest;
+	if (target < 0.0)
+		target = 0.0;
+
+	/* Already there. */
+	if (target == scroll->y)
+		return 0;
+
+	/* Succeeded: the scroll goes there at once. */
+	kui_scroll_move_to(scroll, scroll->x, target, 0, now_us);
+	return 1;
 }

@@ -159,6 +159,9 @@ enum zwl_kind {
 	/* The desktop surface (desktop.c, ws094-p002). */
 	ZWL_DESKTOP_MANAGER,
 	ZWL_DESKTOP_SURFACE,
+	/* The keyboard inset (inset.c, ws102-p015). */
+	ZWL_KEYBOARD_INSET_MANAGER,
+	ZWL_KEYBOARD_INSET,
 };
 
 /*
@@ -658,6 +661,8 @@ struct zwl_server {
 	 * (WS099's C6, the pointer's move to its display; ws075-p026).
 	 */
 	unsigned pointer_moved;
+	/* The on-screen keyboard's glass shows the scene under it blurred (--keyboard-blur, ws075-p029). */
+	unsigned keyboard_blur;
 	/* The glass look: on, its font, the window being moved and where it was taken, the clock's minute. */
 	unsigned glass;
 	const char *font_path;
@@ -1080,6 +1085,7 @@ int zwl_keyboard_at(int32_t x, int32_t y);
 void zwl_keyboard_close(struct zwl_server *server, const char *reason);
 void zwl_keyboard_reserved(int32_t *right, int32_t *bottom);
 void zwl_keyboard_reserved_now(int32_t *right, int32_t *bottom);
+void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
 
 /* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */
 int zwl_glass_fullscreen_input(struct zwl_server *server);
