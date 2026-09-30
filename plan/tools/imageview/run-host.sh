@@ -20,7 +20,7 @@ mkdir -p "$out/include"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 "$cc" -O1 -g -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -I"$out/include" -o "$out/host-imageview" \
-    plan/tools/imageview/host-imageview.c userland/desktop/imageview/image.c userland/desktop/imageview/folder.c \
+    plan/tools/imageview/host-imageview.c userland/desktop/imageview/image.c userland/desktop/picture/picture.c userland/desktop/imageview/folder.c \
     userland/desktop/imageview/view.c userland/desktop/imageview/chooser.c \
     userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
     userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \

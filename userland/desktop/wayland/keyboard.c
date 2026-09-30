@@ -44,6 +44,15 @@
  * (KEYBOARD_QWERTY_EXTRA_ROWS, p020).  The work area comes in a later
  * phase.
  *
+ * The QWERTY panel's band has a button to the handwriting face (ws102-p008)
+ * and back: a writing area at the left, where the pen or finger's strokes
+ * are drawn as they are written, and at the right the recognizer's
+ * candidates (keyboard-hand.c, a stub for now) over clear, delete, space
+ * and enter.  The ink is recognized KEYBOARD_HAND_WAIT_MS after the last
+ * stroke ends; a candidate tapped is sent as a character and the ink
+ * cleared.  The time from a point's input to the frame that draws it is
+ * logged (the lag of the line behind the finger).
+ *
  * What a key types goes to the focused application (ws102-p004, design
  * §2.5) by one of two ways, without the input method's own files changing:
  * a character of the US layout (letters, digits, ASCII symbols, space,
@@ -64,6 +73,7 @@
 #include "keyboard.h"
 #include "menu.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -128,6 +138,25 @@
 
 /* The rows kept above the QWERTY panel's for the extra keys' row (p020; none yet). */
 #define KEYBOARD_QWERTY_EXTRA_ROWS	0U
+
+/* The handwriting face: the wait after the last stroke before recognizing, the side column's width and a candidate row's height. */
+#define KEYBOARD_HAND_WAIT_MS	600U
+#define KEYBOARD_HAND_SIDE	300
+#define KEYBOARD_HAND_NOTE	24
+
+/* The band's button to the handwriting face and back: its width. */
+#define KEYBOARD_BAND_BUTTON	84
+
+/* The handwriting face's keys at the right: three candidates, clear, delete, space, enter. */
+#define KEYBOARD_HAND_KEYS	7U
+#define KEYBOARD_HAND_CLEAR	3U
+#define KEYBOARD_HAND_DELETE	4U
+#define KEYBOARD_HAND_SPACE	5U
+#define KEYBOARD_HAND_ENTER	6U
+
+/* A stroke's line: the dots' side and the step between them, in pixels. */
+#define KEYBOARD_INK_DOT	4.0f
+#define KEYBOARD_INK_STEP	2.0f
 
 /* The Shift bit of the depressed modifiers (server->modifiers). */
 #define KEYBOARD_SHIFT		1U
@@ -198,8 +227,21 @@ struct keyboard_contact {
  * panel when dragged far enough towards its edge, and the QWERTY panel's
  * face (ZWL_QWERTY_*) and Shift (KEYBOARD_SHIFT_*, and when it was last
  * pressed).  On the QWERTY panel the key held is key_row and key_column
- * (the key's place in its row).
+ * (the key's place in its row).  The handwriting face (hand): a stroke
+ * being written, when the last stroke ended, whether the ink was
+ * recognized and the answer, the key held at the right (hand_key), and a
+ * point waiting to be drawn (its input time, for the lag) with the time of
+ * the last frame that drew one.
  */
+
+/*
+ * The ink written on the handwriting face, for the one compositor in this
+ * process.  It is empty at start-up, filled by the pointer's or finger's
+ * movement on the writing area, and cleared by the clear key, a candidate,
+ * or the panel closing; only the compositor's thread touches it.
+ */
+static struct zwl_hand_ink keyboard_ink;
+
 struct keyboard_state {
 	struct keyboard_contact contact;
 	enum keyboard_kind open;
@@ -222,6 +264,16 @@ struct keyboard_state {
 	unsigned qface;
 	unsigned shift;
 	uint64_t shift_ms;
+	unsigned hand;
+	unsigned writing;
+	uint64_t stroke_end_ms;
+	unsigned recognized;
+	struct zwl_hand_result result;
+	unsigned hand_key_active;
+	unsigned hand_key;
+	unsigned lag_pending;
+	uint64_t lag_input_ms;
+	uint64_t lag_frame_ms;
 };
 
 /*
@@ -264,6 +316,16 @@ static void keyboard_qwerty_shift(void);
 static void keyboard_qwerty_log(struct zwl_server *server);
 static void keyboard_draw_qwerty(struct zwl_server *server, VkCommandBuffer command);
 static void keyboard_draw_bubble(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_band_button_rect(int32_t *rect);
+static void keyboard_hand_area(int32_t *rect);
+static void keyboard_hand_key_rect(unsigned key, int32_t *rect);
+static int keyboard_hand_key_at(int32_t x, int32_t y, unsigned *key);
+static void keyboard_hand_toggle(struct zwl_server *server);
+static void keyboard_hand_point(struct zwl_server *server, int32_t x, int32_t y, int begin);
+static void keyboard_hand_release(struct zwl_server *server);
+static void keyboard_hand_key_release(struct zwl_server *server);
+static void keyboard_hand_recognize(struct zwl_server *server);
+static void keyboard_draw_hand(struct zwl_server *server, VkCommandBuffer command);
 static void keyboard_send(struct zwl_server *server, const char *text);
 static int keyboard_send_key(struct zwl_server *server, unsigned code, int shift);
 static int keyboard_send_commit(struct zwl_server *server, const char *text, uint32_t before);
@@ -333,6 +395,10 @@ zwl_keyboard_motion(
 			keyboard.key_y = server->pointer_y;
 			server->dirty = 1;
 		}
+
+		/* A stroke being written follows the pointer. */
+		if (keyboard.writing)
+			keyboard_hand_point(server, server->pointer_x, server->pointer_y, 0);
 
 		/* The movement is the panel's. */
 		return 1;
@@ -409,6 +475,14 @@ zwl_keyboard_tick(
 		return;
 	}
 
+	/* The handwriting's ink is recognized a while after its last stroke. */
+	if (keyboard.hand &&
+	    !keyboard.writing &&
+	    !keyboard.recognized &&
+	    keyboard_ink.count > 0U &&
+	    now - keyboard.stroke_end_ms >= KEYBOARD_HAND_WAIT_MS)
+		keyboard_hand_recognize(server);
+
 	/* The open panel's place for the screen's size now. */
 	keyboard_place(server, keyboard.open, rect);
 	same = memcmp(rect, keyboard.panel, sizeof(rect));
@@ -480,6 +554,11 @@ zwl_keyboard_close(
 	keyboard.pressing = 0;
 	keyboard.key_active = 0;
 	keyboard.band_active = 0;
+	keyboard.writing = 0;
+	keyboard.hand_key_active = 0;
+	zwl_hand_clear(&keyboard_ink);
+	keyboard.recognized = 0;
+	memset(&keyboard.result, 0, sizeof(keyboard.result));
 	server->dirty = 1;
 }
 
@@ -936,6 +1015,18 @@ keyboard_panel_button(
 			}
 		}
 
+		/* A stroke ends. */
+		if (keyboard.writing) {
+			keyboard_hand_release(server);
+			return 1;
+		}
+
+		/* A key of the handwriting face acts. */
+		if (keyboard.hand_key_active) {
+			keyboard_hand_key_release(server);
+			return 1;
+		}
+
 		/* A key held: what the release means, on either panel. */
 		if (keyboard.key_active) {
 			keyboard.key_x = server->pointer_x;
@@ -947,6 +1038,14 @@ keyboard_panel_button(
 			}
 
 			/* The release was the key's. */
+			return 1;
+		}
+
+		/* On the QWERTY panel's band button, the handwriting face comes or goes. */
+		keyboard_band_button_rect(close);
+		inside = keyboard_contains(close, server->pointer_x, server->pointer_y);
+		if (inside && keyboard.open == PANEL_QWERTY) {
+			keyboard_hand_toggle(server);
 			return 1;
 		}
 
@@ -977,8 +1076,33 @@ keyboard_panel_button(
 	found = 0;
 	if (keyboard.open == PANEL_FLICK)
 		found = keyboard_key_at(server, server->pointer_x, server->pointer_y, &row, &column);
-	if (keyboard.open == PANEL_QWERTY)
+	if (keyboard.open == PANEL_QWERTY && !keyboard.hand)
 		found = keyboard_qwerty_at(server, server->pointer_x, server->pointer_y, &row, &column);
+
+	/* On the handwriting face: a stroke begins on the writing area, a key at the right is held. */
+	if (keyboard.open == PANEL_QWERTY && keyboard.hand) {
+		keyboard_hand_area(close);
+		inside = keyboard_contains(close, server->pointer_x, server->pointer_y);
+		if (inside) {
+			keyboard_hand_point(server, server->pointer_x, server->pointer_y, 1);
+			printf("ZWL OSK hand stroke-begin x=%d y=%d\n", server->pointer_x, server->pointer_y);
+			return 1;
+		}
+
+		/* A key at the right. */
+		found = keyboard_hand_key_at(server->pointer_x, server->pointer_y, &row);
+		if (found) {
+			keyboard.hand_key_active = 1;
+			keyboard.hand_key = row;
+			server->dirty = 1;
+			return 1;
+		}
+
+		/* Anywhere else on the face (the gaps), nothing is held. */
+		found = 0;
+	}
+
+	/* A key found on the flick or the QWERTY panel is held. */
 	if (found) {
 		keyboard.key_active = 1;
 		keyboard.key_row = row;
@@ -1040,9 +1164,12 @@ keyboard_draw_panel(
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float key[4] = { 0.12f, 0.16f, 0.24f, 0.08f };
 	struct glass_shape shape;
+	static const float key_ground[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
 	int32_t close[4];
+	int32_t button[4];
 	int32_t advance;
 	const char *title;
+	const char *label;
 
 	/* The shadow. */
 	glass_shape_init(&shape, (float)rect[0], (float)rect[1] + 6.0f, (float)rect[2], (float)rect[3]);
@@ -1086,10 +1213,14 @@ keyboard_draw_panel(
 		title = "ABC";
 	if (keyboard.open == PANEL_QWERTY && keyboard.qface == ZWL_QWERTY_SYMBOLS)
 		title = "?123";
+	if (keyboard.open == PANEL_QWERTY && keyboard.hand)
+		title = "手書き";
 	glass_draw_text(server, command, SIZE_TITLE, rect[0] + KEYBOARD_MARGIN + 4, rect[1] + KEYBOARD_BAND - 6, title, rect[2] - 3 * KEYBOARD_MARGIN - KEYBOARD_CLOSE, dark);
 
 	/* The panel's keys: the QWERTY panel's with the held key's bubble, the flick panel's with its petals. */
-	if (keyboard.open == PANEL_QWERTY) {
+	if (keyboard.open == PANEL_QWERTY && keyboard.hand) {
+		keyboard_draw_hand(server, command);
+	} else if (keyboard.open == PANEL_QWERTY) {
 		keyboard_draw_qwerty(server, command);
 		keyboard_draw_bubble(server, command);
 	} else if (keyboard.open == PANEL_FLICK) {
@@ -1100,6 +1231,16 @@ keyboard_draw_panel(
 	/* The close key: a pale round key with the multiplication sign. */
 	keyboard_close_rect(close);
 	glass_draw_solid(server, command, (float)close[0], (float)close[1], (float)close[2], (float)close[3], (float)close[2] / 2.0f, key);
+	/* The QWERTY panel's band button: to the handwriting face, or back to the keys. */
+	if (keyboard.open == PANEL_QWERTY) {
+		keyboard_band_button_rect(button);
+		label = "手書き";
+		if (keyboard.hand)
+			label = "ABC";
+		keyboard_draw_key(server, command, button, label, key_ground, dark, SIZE_TITLE);
+	}
+
+	/* The close key's sign. */
 	advance = glass_glyph_advance(server, SIZE_SIGN, GLASS_CLOSE_GLYPH);
 	glass_draw_glyph(server, command, SIZE_SIGN, GLASS_CLOSE_GLYPH, close[0] + (close[2] - advance) / 2, close[1] + close[3] / 2 + 7, dark);
 }
@@ -1948,6 +2089,364 @@ keyboard_draw_bubble(
 	if (keyboard.shift != KEYBOARD_SHIFT_OFF)
 		label = key->shifted_label;
 	keyboard_draw_key(server, command, bubble, label, white, dark, SIZE_SEARCH);
+}
+
+/* Works out the QWERTY panel's band button's rectangle, left of the close key. */
+static void
+keyboard_band_button_rect(
+	int32_t *rect)
+{
+	int32_t close[4];
+
+	/* As high as the close key, KEYBOARD_BAND_BUTTON wide, a margin to its left. */
+	keyboard_close_rect(close);
+	rect[2] = KEYBOARD_BAND_BUTTON;
+	rect[3] = close[3];
+	rect[0] = close[0] - KEYBOARD_MARGIN - rect[2];
+	rect[1] = close[1];
+}
+
+/* Works out the handwriting face's writing area: the panel under its band, but the side column. */
+static void
+keyboard_hand_area(
+	int32_t *rect)
+{
+	/* From the left, under the band, to the side column. */
+	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP;
+	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP;
+	rect[2] = keyboard.panel[2] - 3 * KEYBOARD_KEY_GAP - KEYBOARD_HAND_SIDE;
+	rect[3] = keyboard.panel[3] - KEYBOARD_BAND - 2 * KEYBOARD_KEY_GAP;
+}
+
+/*
+ * Works out a key of the handwriting face's side column: the note's line
+ * on top, then a row of the three candidates, a row of clear and delete, a
+ * row of space and enter.
+ */
+static void
+keyboard_hand_key_rect(
+	unsigned key,
+	int32_t *rect)
+{
+	int32_t area[4];
+	int32_t left;
+	int32_t top;
+	int32_t height;
+	int32_t width;
+
+	/* The side column, and its rows' height under the note. */
+	keyboard_hand_area(area);
+	left = area[0] + area[2] + KEYBOARD_KEY_GAP;
+	top = area[1] + KEYBOARD_HAND_NOTE + KEYBOARD_KEY_GAP;
+	height = (area[3] - KEYBOARD_HAND_NOTE - 3 * KEYBOARD_KEY_GAP) / 3;
+
+	/* The candidates: a third of the column each. */
+	if (key < KEYBOARD_HAND_CLEAR) {
+		width = (KEYBOARD_HAND_SIDE - 2 * KEYBOARD_KEY_GAP) / 3;
+		rect[0] = left + (int32_t)key * (width + KEYBOARD_KEY_GAP);
+		rect[1] = top;
+		rect[2] = width;
+		rect[3] = height;
+		return;
+	}
+
+	/* The other keys: half the column each, two rows. */
+	width = (KEYBOARD_HAND_SIDE - KEYBOARD_KEY_GAP) / 2;
+	rect[0] = left + (int32_t)((key - KEYBOARD_HAND_CLEAR) % 2U) * (width + KEYBOARD_KEY_GAP);
+	rect[1] = top + (int32_t)(1U + (key - KEYBOARD_HAND_CLEAR) / 2U) * (height + KEYBOARD_KEY_GAP);
+	rect[2] = width;
+	rect[3] = height;
+}
+
+/* Finds the handwriting face's key at a point.  Returns 1 with the key, or 0. */
+static int
+keyboard_hand_key_at(
+	int32_t x,
+	int32_t y,
+	unsigned *key)
+{
+	int32_t rect[4];
+	unsigned index;
+	int inside;
+
+	/* Each key of the side column. */
+	for (index = 0; index < KEYBOARD_HAND_KEYS; index++) {
+		/* The point on this key. */
+		keyboard_hand_key_rect(index, rect);
+		inside = keyboard_contains(rect, x, y);
+		if (!inside)
+			continue;
+
+		/* Succeeded: the key. */
+		*key = index;
+		return 1;
+	}
+
+	/* No key there. */
+	return 0;
+}
+
+/* Changes the QWERTY panel to the handwriting face or back; the ink and its answer go. */
+static void
+keyboard_hand_toggle(
+	struct zwl_server *server)
+{
+	int32_t area[4];
+
+	/* The other face, with no ink. */
+	keyboard.hand = !keyboard.hand;
+	keyboard.writing = 0;
+	keyboard.recognized = 0;
+	zwl_hand_clear(&keyboard_ink);
+	memset(&keyboard.result, 0, sizeof(keyboard.result));
+	server->dirty = 1;
+
+	/* The log line the tests read, with the writing area's place. */
+	if (keyboard.hand) {
+		keyboard_hand_area(area);
+		printf("ZWL OSK hand on area=%d,%d,%d,%d\n", area[0], area[1], area[2], area[3]);
+		return;
+	}
+
+	/* Back to the keys. */
+	printf("ZWL OSK hand off\n");
+}
+
+/*
+ * Adds a point of the pointer to the ink (begin: the first of a stroke),
+ * kept within the writing area; the point waits for the frame that draws
+ * it, whose lag is logged.
+ */
+static void
+keyboard_hand_point(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	int begin)
+{
+	int32_t area[4];
+	int kept;
+
+	/* The point, kept within the writing area. */
+	keyboard_hand_area(area);
+	if (x < area[0])
+		x = area[0];
+	if (x >= area[0] + area[2])
+		x = area[0] + area[2] - 1;
+	if (y < area[1])
+		y = area[1];
+	if (y >= area[1] + area[3])
+		y = area[1] + area[3] - 1;
+
+	/* The first point of a stroke, or the next one. */
+	if (begin) {
+		kept = zwl_hand_begin(&keyboard_ink, x, y);
+		keyboard.writing = 1;
+		keyboard.recognized = 0;
+	} else {
+		kept = zwl_hand_add(&keyboard_ink, x, y);
+	}
+
+	/* A point not kept (no move, no room) draws nothing new. */
+	if (!kept)
+		return;
+
+	/* A kept point is drawn in the next frame; its input time is kept for the lag (the oldest waiting). */
+	if (!keyboard.lag_pending) {
+		keyboard.lag_pending = 1;
+		keyboard.lag_input_ms = zwl_milliseconds();
+	}
+
+	/* The frame. */
+	server->dirty = 1;
+}
+
+/* Ends the stroke being written; the ink is recognized after a wait. */
+static void
+keyboard_hand_release(
+	struct zwl_server *server)
+{
+	/* The stroke is over, and when. */
+	keyboard.writing = 0;
+	keyboard.stroke_end_ms = zwl_milliseconds();
+	server->dirty = 1;
+	printf("ZWL OSK hand stroke-end strokes=%u points=%u\n", keyboard_ink.count, zwl_hand_points(&keyboard_ink));
+}
+
+/*
+ * Acts on the release of a key of the handwriting face: a candidate is
+ * sent and the ink cleared; clear clears it; delete, space and enter are
+ * sent as keys.
+ */
+static void
+keyboard_hand_key_release(
+	struct zwl_server *server)
+{
+	unsigned key;
+	int sent;
+
+	/* The key. */
+	keyboard.hand_key_active = 0;
+	key = keyboard.hand_key;
+	server->dirty = 1;
+	printf("ZWL OSK hand key=%u\n", key);
+
+	/* A candidate there is: sent, and the ink and the answer go. */
+	if (key < KEYBOARD_HAND_CLEAR) {
+		if (key >= keyboard.result.count)
+			return;
+		keyboard_send(server, keyboard.result.candidates[key]);
+		zwl_hand_clear(&keyboard_ink);
+		keyboard.recognized = 0;
+		memset(&keyboard.result, 0, sizeof(keyboard.result));
+		return;
+	}
+
+	/* The other keys. */
+	switch (key) {
+	case KEYBOARD_HAND_CLEAR:
+		/* The ink and the answer go. */
+		zwl_hand_clear(&keyboard_ink);
+		keyboard.recognized = 0;
+		memset(&keyboard.result, 0, sizeof(keyboard.result));
+		printf("ZWL OSK hand clear\n");
+		break;
+	case KEYBOARD_HAND_DELETE:
+		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		if (sent)
+			keyboard_remember("", KEYBOARD_SENT_NONE);
+		break;
+	case KEYBOARD_HAND_SPACE:
+		keyboard_send(server, " ");
+		break;
+	default:
+		keyboard_send(server, "\n");
+		break;
+	}
+}
+
+/* Recognizes the ink (keyboard-hand.c) and shows the candidates. */
+static void
+keyboard_hand_recognize(
+	struct zwl_server *server)
+{
+	const char *first;
+	int32_t bounds[4];
+
+	/* The answer, once for this ink. */
+	zwl_hand_recognize(&keyboard_ink, &keyboard.result);
+	keyboard.recognized = 1;
+	server->dirty = 1;
+
+	/* The log line the tests read: the ink measured, and the answer (its first candidate). */
+	zwl_hand_bounds(&keyboard_ink, bounds);
+	first = "";
+	if (keyboard.result.count > 0U)
+		first = keyboard.result.candidates[0];
+	printf("ZWL OSK hand recognize strokes=%u points=%u box=%d,%d,%d,%d candidates=%u first=%s note=%s\n", keyboard_ink.count, zwl_hand_points(&keyboard_ink), bounds[0], bounds[1], bounds[2], bounds[3], keyboard.result.count, first, keyboard.result.note);
+}
+
+/*
+ * Draws the handwriting face: the writing area with a faint cross in its
+ * middle, the ink's strokes as rows of round dots, the note, the
+ * candidates and the keys.  A frame that draws a waiting point logs its
+ * lag behind the input.
+ */
+static void
+keyboard_draw_hand(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float paper[4] = { 1.0f, 1.0f, 1.0f, 0.80f };
+	static const float guide[4] = { 0.12f, 0.16f, 0.24f, 0.10f };
+	static const float ink[4] = { 0.10f, 0.20f, 0.45f, 1.0f };
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	static const char *const labels[KEYBOARD_HAND_KEYS] = { "", "", "", "消す", "Del", "space", "Enter" };
+	const struct zwl_hand_stroke *stroke;
+	const float *ground;
+	const float *text_ink;
+	const char *label;
+	int32_t area[4];
+	int32_t rect[4];
+	uint64_t now;
+	unsigned index;
+	unsigned point;
+	float dx;
+	float dy;
+	float length;
+	float step;
+	float x;
+	float y;
+
+	/* The writing area and its cross. */
+	keyboard_hand_area(area);
+	glass_draw_solid(server, command, (float)area[0], (float)area[1], (float)area[2], (float)area[3], KEYBOARD_KEY_RADIUS, paper);
+	glass_draw_solid(server, command, (float)(area[0] + area[2] / 2), (float)area[1] + 8.0f, 1.0f, (float)area[3] - 16.0f, 0.0f, guide);
+	glass_draw_solid(server, command, (float)area[0] + 8.0f, (float)(area[1] + area[3] / 2), (float)area[2] - 16.0f, 1.0f, 0.0f, guide);
+
+	/* Each stroke: dots along each of its segments. */
+	for (index = 0; index < keyboard_ink.count; index++) {
+		stroke = &keyboard_ink.strokes[index];
+		for (point = 0; point < stroke->count; point++) {
+			/* The first point is a dot of its own. */
+			x = (float)stroke->points[point].x;
+			y = (float)stroke->points[point].y;
+			if (point == 0U) {
+				glass_draw_solid(server, command, x - KEYBOARD_INK_DOT / 2.0f, y - KEYBOARD_INK_DOT / 2.0f, KEYBOARD_INK_DOT, KEYBOARD_INK_DOT, KEYBOARD_INK_DOT / 2.0f, ink);
+				continue;
+			}
+
+			/* The segment from the point before: a dot every KEYBOARD_INK_STEP. */
+			dx = x - (float)stroke->points[point - 1U].x;
+			dy = y - (float)stroke->points[point - 1U].y;
+			length = sqrtf(dx * dx + dy * dy);
+			for (step = KEYBOARD_INK_STEP; step < length + KEYBOARD_INK_STEP; step += KEYBOARD_INK_STEP) {
+				if (step > length)
+					step = length;
+				glass_draw_solid(server, command, x - dx + dx * step / length - KEYBOARD_INK_DOT / 2.0f, y - dy + dy * step / length - KEYBOARD_INK_DOT / 2.0f, KEYBOARD_INK_DOT, KEYBOARD_INK_DOT, KEYBOARD_INK_DOT / 2.0f, ink);
+			}
+		}
+	}
+
+	/* The note over the candidates. */
+	keyboard_hand_key_rect(0U, rect);
+	glass_draw_text(server, command, SIZE_BAR, rect[0], rect[1] - KEYBOARD_KEY_GAP - 6, keyboard.result.note, KEYBOARD_HAND_SIDE, soft);
+
+	/* The keys: the candidates (empty without an answer), clear, delete, space, enter; the held one blue. */
+	for (index = 0; index < KEYBOARD_HAND_KEYS; index++) {
+		keyboard_hand_key_rect(index, rect);
+		label = labels[index];
+		ground = grey;
+		text_ink = dark;
+		if (index < KEYBOARD_HAND_CLEAR) {
+			ground = white;
+			label = "";
+			if (index < keyboard.result.count)
+				label = keyboard.result.candidates[index];
+		}
+
+		/* The held key is blue. */
+		if (keyboard.hand_key_active && keyboard.hand_key == index) {
+			ground = blue;
+			text_ink = light;
+		}
+
+		/* The key. */
+		keyboard_draw_key(server, command, rect, label, ground, text_ink, SIZE_SIGN);
+	}
+
+	/* A frame that draws a waiting point: its lag behind the input, and the time since the last such frame. */
+	if (!keyboard.lag_pending)
+		return;
+	now = zwl_milliseconds();
+	printf("ZWL OSK hand frame lag_ms=%llu gap_ms=%llu points=%u\n", (unsigned long long)(now - keyboard.lag_input_ms), (unsigned long long)(now - keyboard.lag_frame_ms), zwl_hand_points(&keyboard_ink));
+	keyboard.lag_pending = 0;
+	keyboard.lag_frame_ms = now;
 }
 
 /* Counts the characters of a UTF-8 text (the bytes that do not continue one). */

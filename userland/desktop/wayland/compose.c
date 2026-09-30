@@ -337,6 +337,9 @@ zwl_compose_draw(
 		return EIO;
 	}
 
+	/* The new images' layouts went with the frame. */
+	zwl_import_layouts_done(compose);
+
 	/* The CPU time of recording and submitting the frame. */
 	server->perf.compose_draw_cycles += zwl_cycles() - compose->frame_start_cycles;
 
@@ -1504,6 +1507,9 @@ compose_record(
 	result = vkBeginCommandBuffer(compose->command, &begin);
 	if (result != VK_SUCCESS)
 		return result;
+
+	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
+	zwl_import_layouts_record(compose, compose->command);
 
 	/* The pass clears the image to the background. */
 	memset(&clear, 0, sizeof(clear));

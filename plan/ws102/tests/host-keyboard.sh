@@ -8,5 +8,5 @@ cd "$(dirname -- "$0")/../../.."
 out=build/ws102-host
 mkdir -p "$out"
 ${CC:-cc} -O2 -g -Wall -Wextra -Werror -Iuserland/desktop/wayland -o "$out/host-keyboard" \
-    plan/ws102/tests/host-keyboard.c userland/desktop/wayland/keyboard-layout.c || exit 1
+    plan/ws102/tests/host-keyboard.c userland/desktop/wayland/keyboard-layout.c userland/desktop/wayland/keyboard-hand.c || exit 1
 "$out/host-keyboard"
