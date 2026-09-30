@@ -159,7 +159,30 @@ enum zwl_kind {
 	/* The keyboard inset (inset.c, ws102-p015). */
 	ZWL_KEYBOARD_INSET_MANAGER,
 	ZWL_KEYBOARD_INSET,
+	/* The editing operations (edit.c, ws102-p017). */
+	ZWL_EDIT_MANAGER,
+	ZWL_EDIT,
 };
+
+/*
+ * The editing operations (edit.c, ws102-p017; keiland_edit_v1's actions,
+ * in its order) and a window's state's bits (keiland_edit_v1.set_state).
+ */
+#define ZWL_EDIT_COPY			0U
+#define ZWL_EDIT_CUT			1U
+#define ZWL_EDIT_PASTE			2U
+#define ZWL_EDIT_UNDO			3U
+#define ZWL_EDIT_REDO			4U
+#define ZWL_EDIT_SELECT_ALL		5U
+#define ZWL_EDIT_SELECT_BEGIN		6U
+#define ZWL_EDIT_SELECT_END		7U
+#define ZWL_EDIT_ACTIONS		8U
+#define ZWL_EDIT_HAS_SELECTION		1U
+#define ZWL_EDIT_CAN_PASTE		2U
+#define ZWL_EDIT_CAN_UNDO		4U
+#define ZWL_EDIT_CAN_REDO		8U
+#define ZWL_EDIT_SELECTING		16U
+#define ZWL_EDIT_FLAGS_ALL		31U
 
 /*
  * Where a contact the edge gestures hear comes from (ws079-p010): the
@@ -312,6 +335,9 @@ struct zwl_object {
 	/* The glass look: the toplevel's title and application ID, and a maximized window's place and size to go back to. */
 	char title[ZWL_TITLE_MAX];
 	char app_id[64];
+	/* A keiland_edit_v1's operations (bit 1 << ZWL_EDIT_*) and state (ZWL_EDIT_HAS_SELECTION ...; edit.c). */
+	uint32_t edit_actions;
+	uint32_t edit_flags;
 	unsigned maximized;
 	int32_t restore_x;
 	int32_t restore_y;
@@ -1085,6 +1111,11 @@ int zwl_keyboard_touch_motion(struct zwl_server *server, uint32_t id, int32_t x,
 int zwl_keyboard_touch_up(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 void zwl_keyboard_touch_cancel(struct zwl_server *server, uint32_t id);
 void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
+
+/* The editing operations and the previous application, for the keyboard's tool face (edit.c, ws102-p017). */
+int zwl_edit_action(struct zwl_server *server, unsigned action);
+int zwl_edit_state(struct zwl_server *server, uint32_t *enabled);
+int zwl_focus_previous(struct zwl_server *server);
 
 /* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */
 int zwl_glass_fullscreen_input(struct zwl_server *server);

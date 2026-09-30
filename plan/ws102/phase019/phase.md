@@ -67,7 +67,7 @@ COLRv1 は、大きな絵文字（例: keyboard の絵文字の面の大きな k
   - 主と fallback の font に無い文字が最初に出たときに開く（絵文字を描かない app は読み込まない）。
   - cache の key の face を 2 bit に広げた。
   - `kui_glyph.pixels` に色を持ち、`kui_text_draw` は `kui_canvas_image` で 1:1 に描く（文字の色の alpha を不透明度にする）。
-  - **KUI_VERSION 8**（main の最新 7 の次）。`struct kui_glyph`・`struct kui_text` の大きさが変わる。
+  - **KUI_VERSION 9**（main の最新 8 の次。作業の途中は 8 だったが、main が p017 で 8 にしたので、報告の前の merge で 9 にした）。`struct kui_glyph`・`struct kui_text` の大きさが変わる。
 - **compositor**（`glass.c`、P1 の範囲なので最小の差分）:
   - 主と fallback に無い文字が最初に出たときに、絵文字の font を開く（`GLASS_FACES` 3）。
   - 色の glyph は、atlas の cache の cell に乗算済みの色のまま置き、`glass_glyph.color` を立てる。
@@ -108,5 +108,5 @@ host-emoji.sh で確かめたこと:
   - 肌の色の修飾
 - Text Editor の等幅の本文では、1 文字 1 cell（幅の広い文字は 2 cell）で、絵文字の幅（文字の大きさの約 1.25 倍）が隣に少しかかる。
 - compositor の絵文字は、窓の title の文字の不透明度に従わない（`MODE_IMAGE` は色の alpha を使わない）。
-- libkeiui の新しい struct の大きさ（KUI_VERSION 8）なので、libkeiui を使う app は同じ build で揃える必要がある（image は揃う）。
+- libkeiui の新しい struct の大きさ（KUI_VERSION 9）なので、libkeiui を使う app は同じ build で揃える必要がある（image は揃う）。
 - 実機での確認は未実施。keyboard の絵文字の面は p022。

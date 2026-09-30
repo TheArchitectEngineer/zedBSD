@@ -14,7 +14,7 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 	userland/desktop/wayland/panels.c userland/desktop/wayland/backdrop.c userland/desktop/wayland/damage.c userland/desktop/wayland/greeter.c userland/desktop/wayland/primary.c \
 	userland/desktop/wayland/handoff.c userland/desktop/wayland/network.c userland/desktop/wayland/preferences.c userland/desktop/wayland/volume.c \
 	userland/desktop/wayland/text-input.c userland/desktop/wayland/input-method.c \
-	userland/desktop/wayland/desktop.c userland/desktop/wayland/inset.c \
+	userland/desktop/wayland/desktop.c userland/desktop/wayland/inset.c userland/desktop/wayland/edit.c \
 	userland/desktop/vkdemo/display.c userland/desktop/artwork/mark.c userland/desktop/picture/color-glyph.c
 # App Home starts X11 applications through zdesktop-x11, which starts xserver when it is needed.
 ZEDBSD_PACKAGE_INPUTS += userland/desktop/wayland/keiland-x11

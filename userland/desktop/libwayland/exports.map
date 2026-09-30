@@ -17,6 +17,8 @@
 		keiland_ime_status_v1_*;
 		keiland_keyboard_inset_manager_v1_*;
 		keiland_keyboard_inset_v1_*;
+		keiland_edit_manager_v1_*;
+		keiland_edit_v1_*;
 	local:
 		*;
 };

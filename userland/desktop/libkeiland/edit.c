@@ -1,0 +1,281 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The editing operations (ws102-p017, plan/ws102/design.md section 2.10):
+ * the wrapper of zdesktop's keiland_edit_v1 protocol.  A window says which
+ * editing operations it carries out and its state, and hears the
+ * operations the on-screen keyboard's buttons ask for.  With a compositor
+ * that does not have the protocol nothing is made (ENOTSUP) and the
+ * keyboard sends such a window the keys instead.
+ */
+
+#include <keiland.h>
+
+#include <wayland-client.h>
+#include "userland/desktop/libwayland/zed-edit-v1-client-protocol.h"
+
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* The version of the protocol this library speaks. */
+#define EDIT_VERSION		1U
+
+/*
+ * One window's edit object: its keiland_edit_v1, the application's
+ * callback and its data, and the operations and the state last sent (so
+ * that an unchanged state is not sent again).
+ */
+struct keiland_edit {
+	struct keiland_edit_v1 *proxy;
+	keiland_edit_fn callback;
+	void *data;
+	int sent;
+	uint32_t actions;
+	uint32_t state;
+};
+
+/* What the registry search found: the manager's global name, 0 for none. */
+struct edit_search {
+	uint32_t name;
+};
+
+static struct keiland_edit_manager_v1 *edit_bind(struct wl_display *display);
+static void edit_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
+static void edit_global_remove(void *data, struct wl_registry *registry, uint32_t name);
+static void edit_event(void *data, struct keiland_edit_v1 *object, uint32_t action);
+
+/* The registry's callbacks while the manager is looked for. */
+static const struct wl_registry_listener edit_registry_listener = {
+	edit_global, edit_global_remove
+};
+
+/* The edit object's callback. */
+static const struct keiland_edit_v1_listener edit_listener = {
+	edit_event
+};
+
+/*
+ * Asks for a window's edit object: callback hears each operation on the
+ * application's default queue.  The window takes no operation until
+ * keiland_edit_set_state says which.  Returns NULL with errno set: ENOTSUP
+ * for a compositor without the protocol, EINVAL, ENOMEM.
+ */
+struct keiland_edit *
+keiland_edit_create(
+	struct wl_display *display,
+	struct xdg_toplevel *toplevel,
+	keiland_edit_fn callback,
+	void *data)
+{
+	struct keiland_edit_manager_v1 *manager;
+	struct keiland_edit *edit;
+	int error;
+
+	/* A window and a callback. */
+	if (display == NULL || toplevel == NULL || callback == NULL) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* zdesktop's manager, bound for this window. */
+	manager = edit_bind(display);
+	if (manager == NULL)
+		return NULL;
+
+	/* The record. */
+	edit = calloc(1, sizeof(*edit));
+	if (edit == NULL) {
+		keiland_edit_manager_v1_destroy(manager);
+		errno = ENOMEM;
+		return NULL;
+	}
+	edit->callback = callback;
+	edit->data = data;
+
+	/* The protocol object; the binding is not needed after it (the edit object stays). */
+	edit->proxy = keiland_edit_manager_v1_get_edit(manager, toplevel);
+	keiland_edit_manager_v1_destroy(manager);
+	if (edit->proxy == NULL) {
+		free(edit);
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* Its events come to the callback. */
+	error = keiland_edit_v1_add_listener(edit->proxy, &edit_listener, edit);
+	if (error != 0) {
+		keiland_edit_v1_destroy(edit->proxy);
+		free(edit);
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* Succeeded: the window can say what it does. */
+	return edit;
+}
+
+/*
+ * Says which operations the window carries out (bit 1 <<
+ * KEILAND_EDIT_*) and its state (KEILAND_EDIT_HAS_SELECTION ...); an
+ * unchanged pair is not sent again.
+ */
+void
+keiland_edit_set_state(
+	struct keiland_edit *edit,
+	uint32_t actions,
+	uint32_t state)
+{
+	/* No edit object, or nothing new. */
+	if (edit == NULL)
+		return;
+	if (edit->sent && edit->actions == actions && edit->state == state)
+		return;
+
+	/* Sent, and kept. */
+	keiland_edit_v1_set_state(edit->proxy, actions, state);
+	edit->sent = 1;
+	edit->actions = actions;
+	edit->state = state;
+}
+
+/*
+ * Stops taking operations: the protocol object and the record go.
+ */
+void
+keiland_edit_destroy(
+	struct keiland_edit *edit)
+{
+	/* No edit object, nothing to destroy. */
+	if (edit == NULL)
+		return;
+
+	/* The protocol object, then the record. */
+	keiland_edit_v1_destroy(edit->proxy);
+	free(edit);
+}
+
+/* Passes an operation to the application's callback. */
+static void
+edit_event(
+	void *data,
+	struct keiland_edit_v1 *object,
+	uint32_t action)
+{
+	struct keiland_edit *edit;
+
+	/* The record the listener was given. */
+	(void)object;
+	edit = data;
+
+	/* The callback. */
+	edit->callback(edit->data, action);
+}
+
+/* Binds zdesktop's edit manager through a registry of the library's own. */
+static struct keiland_edit_manager_v1 *
+edit_bind(
+	struct wl_display *display)
+{
+	struct keiland_edit_manager_v1 *manager;
+	struct edit_search search;
+	struct wl_event_queue *queue;
+	struct wl_display *wrapper;
+	struct wl_registry *registry;
+	int status;
+
+	/* The search's own queue, and the display as seen from it. */
+	queue = wl_display_create_queue(display);
+	if (queue == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* The display as the search sees it. */
+	wrapper = wl_proxy_create_wrapper(display);
+	if (wrapper == NULL) {
+		wl_event_queue_destroy(queue);
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* What the wrapper makes lives on the search's queue. */
+	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
+
+	/* The globals, announced to this search alone. */
+	search.name = 0;
+	registry = wl_display_get_registry(wrapper);
+	if (registry != NULL) {
+		status = wl_registry_add_listener(registry, &edit_registry_listener, &search);
+		if (status == 0)
+			(void)wl_display_roundtrip_queue(display, queue);
+	}
+
+	/* The manager, bound when announced, is moved to the application's default queue. */
+	manager = NULL;
+	if (registry != NULL && search.name != 0U) {
+		manager = wl_registry_bind(registry, search.name, &keiland_edit_manager_v1_interface, EDIT_VERSION);
+		if (manager != NULL)
+			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
+	}
+
+	/* The search's objects go. */
+	if (registry != NULL)
+		wl_registry_destroy(registry);
+	wl_proxy_wrapper_destroy(wrapper);
+	wl_event_queue_destroy(queue);
+
+	/* A compositor without the protocol. */
+	if (search.name == 0U) {
+		errno = ENOTSUP;
+		return NULL;
+	}
+
+	/* The binding could not be made. */
+	if (manager == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* Succeeded: the manager. */
+	return manager;
+}
+
+/* Notes the manager's global name when the registry announces it. */
+static void
+edit_global(
+	void *data,
+	struct wl_registry *registry,
+	uint32_t name,
+	const char *interface,
+	uint32_t version)
+{
+	struct edit_search *search;
+	int match;
+
+	/* Only zdesktop's edit manager is looked for. */
+	(void)registry;
+	(void)version;
+	search = data;
+	match = strcmp(interface, "keiland_edit_manager_v1");
+	if (match == 0)
+		search->name = name;
+}
+
+/* A global going away during the short search changes nothing. */
+static void
+edit_global_remove(
+	void *data,
+	struct wl_registry *registry,
+	uint32_t name)
+{
+	/* Nothing to forget. */
+	(void)data;
+	(void)registry;
+	(void)name;
+}

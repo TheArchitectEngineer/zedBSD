@@ -72,6 +72,7 @@
 #include "subsurface.h"
 #include "panels.h"
 #include "touch.h"
+#include "edit.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1881,6 +1882,11 @@ zwl_glass_key(
 			wiseview_open_key(server);
 		return 1;
 	}
+
+	/* Super+Alt with a letter: the editing operations and the previous application (edit.c, ws102-p017). */
+	taken = zwl_edit_key(server, key, state);
+	if (taken)
+		return 1;
 
 	/* Only with Control and Alt held, and only the two arrows. */
 	if ((server->modifiers & MODIFIERS_CONTROL_ALT) != MODIFIERS_CONTROL_ALT)

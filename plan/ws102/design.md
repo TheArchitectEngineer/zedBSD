@@ -224,7 +224,7 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
 | --- | --- | --- |
 | 常に出る列 | 直前の app、BS、道具の面の tab（候補・編集・履歴・絵文字） | — |
 | 編集の面 | ← → ↑ ↓、行頭・行末、頁の上・下、選択（toggle）、コピー・切り取り・貼り付け、取り消し・やり直し、全選択 | 移動は evdev の key（Home・End・PgUp・PgDn）。選択の間は移動に Shift を付ける。編集の操作は下の拡張、無い窓は key に落とす |
-| 編集の操作の拡張 | `keiland_edit_v1`（仮）: 窓ごとの object。app が出来る操作と状態（選択がある・貼り付けられる・取り消せる）を知らせ、compositor が `action(copy/cut/paste/undo/redo/select_all/select_begin/select_end)` を送る。button は状態で灰色にする | libkeiland の wrapper と libkeiui の `kui_text`。拡張の無い窓は Ctrl+C・X・V・Z・Y・A の key に落とす（Terminal のように意味が違う app は app の id の表で Ctrl+Shift+C・V に） |
+| 編集の操作の拡張 | `keiland_edit_v1`（ws102-p017 で実装、KEILAND_VERSION 19・KUI_VERSION 8。試験の口は Super+Alt+C・X・V・Z・Y・A・S・E・P・Q）: 窓ごとの object。app が出来る操作と状態（選択がある・貼り付けられる・取り消せる）を知らせ、compositor が `action(copy/cut/paste/undo/redo/select_all/select_begin/select_end)` を送る。button は状態で灰色にする | libkeiland の wrapper と libkeiui の `kui_text`。拡張の無い窓は Ctrl+C・X・V・Z・Y・A の key に落とす（Terminal のように意味が違う app は app の id の表で Ctrl+Shift+C・V に） |
 | 直前の app | compositor の focus の履歴（新しい順）の 2 番目の窓を前へ出し focus を移す。もう一度押すと戻る。長押しで最近の窓の一覧（後） | compositor の中だけ。keyboard は開いたまま |
 | クリップボードの履歴 | 履歴の tab → 一覧（text だけ、最近 10 件）→ tap で貼る（2 段） | compositor の `data.c` が selection の text を記憶の中だけに持つ。password の欄（text-input の purpose）からの複写は残さない。lock・Log Out で消す |
 | 絵文字 | 種類の tab と格子、tap で送る | text-input の commit（text-input の無い app へは送らない）。font が要る（下の判断） |
