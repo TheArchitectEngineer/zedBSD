@@ -76,12 +76,15 @@ glDispatchCompute(
 	GLuint num_groups_z)
 {
 	GLuint groups[3];
+	uint64_t started;
 
-	/* The grid's three counts. */
+	/* The grid's three counts; the recording is timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
 	groups[0] = num_groups_x;
 	groups[1] = num_groups_y;
 	groups[2] = num_groups_z;
+	started = gles_time_begin();
 	compute_dispatch(groups, 0, 0);
+	gles_time_end("dispatch-record", started, 0U);
 }
 
 /*
@@ -488,7 +491,7 @@ compute_memory_barrier(
 		gles_error(context, GL_INVALID_VALUE);
 }
 
-/* Writes one line on stderr for a recorded dispatch when KEI_GLES_COMPUTE_TRACE is set. */
+/* Writes one line on stderr for a recorded dispatch when KEI_GLES_COMPUTE_TRACE is set (any value; 2 also times the steps, gles.c). */
 static void
 compute_trace(
 	const GLuint *groups,

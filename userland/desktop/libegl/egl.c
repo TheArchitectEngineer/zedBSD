@@ -22,8 +22,10 @@
 
 #include <dlfcn.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* The client extensions, which eglQueryString reports for EGL_NO_DISPLAY. */
 #define EGL_CLIENT_EXTENSIONS_STRING \
@@ -80,6 +82,12 @@ static struct egl_thread egl_fallback = { EGL_SUCCESS, NULL, NULL, EGL_OPENGL_ES
 static void *egl_program;
 
 static struct egl_thread *egl_thread(void);
+static uint64_t egl_time_begin(void);
+static void egl_time_end(const char *step, uint64_t started);
+static EGLBoolean timed_initialize(EGLDisplay dpy, EGLint *major, EGLint *minor);
+static EGLSurface timed_create_pbuffer_surface(EGLDisplay dpy, EGLConfig config, const EGLint *attrib_list);
+static EGLContext timed_create_context(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint *attrib_list);
+static EGLBoolean timed_make_current(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
 static void egl_key_make(void);
 static void egl_thread_free(void *state);
 static EGLBoolean egl_fail(EGLint error);
@@ -199,10 +207,29 @@ eglGetPlatformDisplayEXT(
 }
 
 /*
- * Makes a display ready: its Vulkan device and its configs.
+ * eglInitialize, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_initialize).
  */
 EGLBoolean EGLAPIENTRY
 eglInitialize(
+	EGLDisplay dpy,
+	EGLint *major,
+	EGLint *minor)
+{
+	uint64_t started;
+	EGLBoolean result;
+
+	/* The call and its time. */
+	started = egl_time_begin();
+	result = timed_initialize(dpy, major, minor);
+	egl_time_end("egl-initialize", started);
+	return result;
+}
+
+/*
+ * Makes a display ready: its Vulkan device and its configs.
+ */
+static EGLBoolean
+timed_initialize(
 	EGLDisplay dpy,
 	EGLint *major,
 	EGLint *minor)
@@ -513,11 +540,30 @@ eglCreatePlatformWindowSurfaceEXT(
 }
 
 /*
- * Makes a pbuffer: an offscreen colour image (and depth buffer) of
- * EGL_WIDTH x EGL_HEIGHT (at least 1 x 1).
+ * eglCreatePbufferSurface, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_create_pbuffer_surface).
  */
 EGLSurface EGLAPIENTRY
 eglCreatePbufferSurface(
+	EGLDisplay dpy,
+	EGLConfig config,
+	const EGLint *attrib_list)
+{
+	uint64_t started;
+	EGLSurface result;
+
+	/* The call and its time. */
+	started = egl_time_begin();
+	result = timed_create_pbuffer_surface(dpy, config, attrib_list);
+	egl_time_end("egl-create-pbuffer", started);
+	return result;
+}
+
+/*
+ * Makes a pbuffer: an offscreen colour image (and depth buffer) of
+ * EGL_WIDTH x EGL_HEIGHT (at least 1 x 1).
+ */
+static EGLSurface
+timed_create_pbuffer_surface(
 	EGLDisplay dpy,
 	EGLConfig config,
 	const EGLint *attrib_list)
@@ -744,10 +790,30 @@ eglQueryAPI(void)
 }
 
 /*
- * Makes an OpenGL ES 2 or 3 context.
+ * eglCreateContext, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_create_context).
  */
 EGLContext EGLAPIENTRY
 eglCreateContext(
+	EGLDisplay dpy,
+	EGLConfig config,
+	EGLContext share_context,
+	const EGLint *attrib_list)
+{
+	uint64_t started;
+	EGLContext result;
+
+	/* The call and its time. */
+	started = egl_time_begin();
+	result = timed_create_context(dpy, config, share_context, attrib_list);
+	egl_time_end("egl-create-context", started);
+	return result;
+}
+
+/*
+ * Makes an OpenGL ES 2 or 3 context.
+ */
+static EGLContext
+timed_create_context(
 	EGLDisplay dpy,
 	EGLConfig config,
 	EGLContext share_context,
@@ -833,11 +899,31 @@ eglDestroyContext(
 }
 
 /*
- * Makes a context current on the calling thread with its draw and read
- * surfaces, or releases the current one.
+ * eglMakeCurrent, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_make_current).
  */
 EGLBoolean EGLAPIENTRY
 eglMakeCurrent(
+	EGLDisplay dpy,
+	EGLSurface draw,
+	EGLSurface read,
+	EGLContext ctx)
+{
+	uint64_t started;
+	EGLBoolean result;
+
+	/* The call and its time. */
+	started = egl_time_begin();
+	result = timed_make_current(dpy, draw, read, ctx);
+	egl_time_end("egl-make-current", started);
+	return result;
+}
+
+/*
+ * Makes a context current on the calling thread with its draw and read
+ * surfaces, or releases the current one.
+ */
+static EGLBoolean
+timed_make_current(
 	EGLDisplay dpy,
 	EGLSurface draw,
 	EGLSurface read,
@@ -1520,4 +1606,53 @@ egl_window_surface(
 	/* Succeeded: the surface. */
 	(void)egl_succeed();
 	return (EGLSurface)surface;
+}
+
+/*
+ * Starts timing a step when KEI_GLES_COMPUTE_TRACE is 2 or more
+ * (ws101-p016): the monotonic time in microseconds, else 0.
+ */
+static uint64_t
+egl_time_begin(void)
+{
+	static int timing = -1;
+	const char *setting;
+	struct timespec now;
+	int level;
+
+	/* The environment, read once. */
+	if (timing < 0) {
+		setting = getenv("KEI_GLES_COMPUTE_TRACE");
+		level = 0;
+		if (setting != NULL)
+			level = atoi(setting);
+		timing = 0;
+		if (level >= 2)
+			timing = 1;
+	}
+
+	/* Nothing timed. */
+	if (!timing)
+		return 0U;
+
+	/* The monotonic time. */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
+}
+
+/* Ends timing a step: one line on stderr with its name and microseconds. */
+static void
+egl_time_end(
+	const char *step,
+	uint64_t started)
+{
+	uint64_t ended;
+
+	/* Nothing was timed. */
+	if (started == 0U)
+		return;
+
+	/* The line. */
+	ended = egl_time_begin();
+	fprintf(stderr, "egl: time step=%s us=%llu\n", step, (unsigned long long)(ended - started));
 }
