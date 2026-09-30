@@ -41,6 +41,15 @@
  * is too large), and moved back when the panel goes, unless it was moved
  * or resized in the meantime.  Fullscreen windows keep their size.
  *
+ * Above the flick panel's keys are its tools (ws102-p016, design §2.10):
+ * a row that is always there (the application used before, delete), the
+ * tools' tabs (edit now; candidates, history and emoji to come), and the
+ * edit tools -- the arrows, line start and end, page up and down (keys,
+ * with Shift while selecting), selecting (a toggle), select all, undo,
+ * redo, copy, cut and paste (zwl_edit_action, edit.c: the window's own edit
+ * operations, or their keys).  A tool the focused window cannot do now is
+ * drawn faint (zwl_edit_state).
+ *
  * The same swipe again closes the panel it opened; the other corner's
  * swipe changes panels; the panel's close key closes it, and so does a
  * drag of its title band KEYBOARD_SWIPE_CLOSE pixels towards its edge (the
@@ -187,6 +196,35 @@
 /* The opacity of the line on the side of a panel facing the windows (the system bar's line's). */
 #define KEYBOARD_EDGE_ALPHA	0.18f
 
+/* The flick panel's tools (p016): what each does. */
+enum keyboard_tool_kind {
+	TOOL_PREVIOUS,
+	TOOL_DELETE,
+	TOOL_TAB_EDIT,
+	TOOL_TAB_CANDIDATES,
+	TOOL_TAB_HISTORY,
+	TOOL_TAB_EMOJI,
+	TOOL_LEFT,
+	TOOL_UP,
+	TOOL_DOWN,
+	TOOL_RIGHT,
+	TOOL_LINE_START,
+	TOOL_LINE_END,
+	TOOL_PAGE_UP,
+	TOOL_PAGE_DOWN,
+	TOOL_SELECT,
+	TOOL_SELECT_ALL,
+	TOOL_UNDO,
+	TOOL_REDO,
+	TOOL_COPY,
+	TOOL_CUT,
+	TOOL_PASTE
+};
+
+/* The tools' rows: the row always there, the tabs' row (lower), and the edit tools' rows. */
+#define KEYBOARD_TOOL_ROW	44
+#define KEYBOARD_TOOL_TABS	30
+
 /* The most floating windows the work area moves at once. */
 #define KEYBOARD_MOVES		32U
 
@@ -251,6 +289,20 @@ struct keyboard_contact {
 };
 
 /*
+ * One tool of the flick panel: its label, what it does, its row (0 the
+ * row always there, 1 the tabs, 2 and on the edit tools), the first of the
+ * row's columns it takes, how many, and how many columns its row has.
+ */
+struct keyboard_tool {
+	const char *label;
+	enum keyboard_tool_kind kind;
+	unsigned row;
+	unsigned column;
+	unsigned span;
+	unsigned columns;
+};
+
+/*
  * A floating window the work area moved: the window (only compared with
  * the live windows, never followed unless found among them), where it was
  * before (to go back to), where its move started and where it ends, and
@@ -292,7 +344,9 @@ struct keyboard_move {
  * moving says they are on their way (during the slide).
  * touch_owner is the finger (its id + 1, 0 for none) whose press the panel
  * holds when fingers come by touch.c's ROUTE_OSK (ws102-p009), and
- * touch_x, touch_y where it was last.
+ * touch_x, touch_y where it was last.  tool_active and tool are the flick
+ * panel's tool held (its index in keyboard_tools), selecting the edit
+ * tools' selection toggle (the movements go with Shift).
  */
 
 /*
@@ -302,6 +356,34 @@ struct keyboard_move {
  * or the panel closing; only the compositor's thread touches it.
  */
 static struct zwl_hand_ink keyboard_ink;
+
+/*
+ * The flick panel's tools, row by row (fixed; they live as long as the
+ * program).
+ */
+static const struct keyboard_tool keyboard_tools[] = {
+	{ "前の app", TOOL_PREVIOUS, 0U, 0U, 2U, 4U },
+	{ "Del", TOOL_DELETE, 0U, 2U, 2U, 4U },
+	{ "編集", TOOL_TAB_EDIT, 1U, 0U, 1U, 4U },
+	{ "候補", TOOL_TAB_CANDIDATES, 1U, 1U, 1U, 4U },
+	{ "履歴", TOOL_TAB_HISTORY, 1U, 2U, 1U, 4U },
+	{ "絵文字", TOOL_TAB_EMOJI, 1U, 3U, 1U, 4U },
+	{ "←", TOOL_LEFT, 2U, 0U, 1U, 4U },
+	{ "↑", TOOL_UP, 2U, 1U, 1U, 4U },
+	{ "↓", TOOL_DOWN, 2U, 2U, 1U, 4U },
+	{ "→", TOOL_RIGHT, 2U, 3U, 1U, 4U },
+	{ "行頭", TOOL_LINE_START, 3U, 0U, 1U, 4U },
+	{ "行末", TOOL_LINE_END, 3U, 1U, 1U, 4U },
+	{ "PgUp", TOOL_PAGE_UP, 3U, 2U, 1U, 4U },
+	{ "PgDn", TOOL_PAGE_DOWN, 3U, 3U, 1U, 4U },
+	{ "選択", TOOL_SELECT, 4U, 0U, 1U, 4U },
+	{ "全選択", TOOL_SELECT_ALL, 4U, 1U, 1U, 4U },
+	{ "取消", TOOL_UNDO, 4U, 2U, 1U, 4U },
+	{ "やり直し", TOOL_REDO, 4U, 3U, 1U, 4U },
+	{ "コピー", TOOL_COPY, 5U, 0U, 1U, 3U },
+	{ "切り取り", TOOL_CUT, 5U, 1U, 1U, 3U },
+	{ "貼り付け", TOOL_PASTE, 5U, 2U, 1U, 3U }
+};
 
 struct keyboard_state {
 	struct keyboard_contact contact;
@@ -346,6 +428,9 @@ struct keyboard_state {
 	uint32_t touch_owner;
 	int32_t touch_x;
 	int32_t touch_y;
+	unsigned tool_active;
+	unsigned tool;
+	unsigned selecting;
 };
 
 /*
@@ -415,7 +500,14 @@ static void keyboard_fit_floating(struct zwl_server *server, struct zwl_object *
 static void keyboard_move_back(struct zwl_server *server);
 static void keyboard_move_step(struct zwl_server *server, float t);
 static int keyboard_window_live(struct zwl_server *server, const struct zwl_object *window);
-static void keyboard_moves_at_end(int end);
+static void keyboard_moves_at_end(struct zwl_server *server, int end);
+static void keyboard_tool_rect(struct zwl_server *server, unsigned index, int32_t *rect);
+static int keyboard_tool_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *index);
+static int keyboard_tool_enabled(struct zwl_server *server, unsigned index, uint32_t enabled, int state);
+static void keyboard_tool_release(struct zwl_server *server);
+static void keyboard_tool_move(struct zwl_server *server, unsigned code);
+static void keyboard_tool_edit(struct zwl_server *server, unsigned action);
+static void keyboard_draw_tools(struct zwl_server *server, VkCommandBuffer command);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum zwl_contact_source source);
 static int keyboard_touch_button(struct zwl_server *server, int32_t x, int32_t y, uint32_t state);
@@ -812,6 +904,8 @@ zwl_keyboard_close(
 	keyboard.leaving = keyboard.open;
 	keyboard.slide_ms = zwl_milliseconds();
 	keyboard.open = PANEL_NONE;
+	keyboard.tool_active = 0;
+	keyboard.selecting = 0;
 	keyboard_work_area(server);
 	keyboard.held = 0;
 	keyboard.pressing = 0;
@@ -1351,6 +1445,12 @@ keyboard_panel_button(
 			return 1;
 		}
 
+		/* A tool of the flick panel acts. */
+		if (keyboard.tool_active) {
+			keyboard_tool_release(server);
+			return 1;
+		}
+
 		/* A key of the handwriting face acts. */
 		if (keyboard.hand_key_active) {
 			keyboard_hand_key_release(server);
@@ -1400,6 +1500,17 @@ keyboard_panel_button(
 		keyboard.band_active = 1;
 		keyboard.band_x = server->pointer_x;
 		keyboard.band_y = server->pointer_y;
+	}
+
+	/* On the flick panel's tools, the tool is held. */
+	if (keyboard.open == PANEL_FLICK) {
+		found = keyboard_tool_at(server, server->pointer_x, server->pointer_y, &row);
+		if (found) {
+			keyboard.tool_active = 1;
+			keyboard.tool = row;
+			server->dirty = 1;
+			return 1;
+		}
 	}
 
 	/* On a key, the key is held (the flick panel's petals, the QWERTY panel's bubble show). */
@@ -1547,6 +1658,7 @@ keyboard_draw_panel(
 		keyboard_draw_qwerty(server, command);
 		keyboard_draw_bubble(server, command);
 	} else if (keyboard.open == PANEL_FLICK) {
+		keyboard_draw_tools(server, command);
 		keyboard_draw_keys(server, command);
 		keyboard_draw_petals(server, command);
 	}
@@ -2917,7 +3029,7 @@ keyboard_work_area(
 	 * their ends (inset.c), before their configures: the moved windows are
 	 * put at their ends for it, and back where their moves start after.
 	 */
-	keyboard_moves_at_end(1);
+	keyboard_moves_at_end(server, 1);
 	if (right != 0 || bottom != 0) {
 		zwl_keyboard_inset_notify(server, keyboard.panel);
 	} else {
@@ -2925,7 +3037,7 @@ keyboard_work_area(
 	}
 
 	/* The moved windows back where their moves start. */
-	keyboard_moves_at_end(0);
+	keyboard_moves_at_end(server, 0);
 
 	/* Each docked window told its new size, once. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -2949,14 +3061,19 @@ keyboard_work_area(
  */
 static void
 keyboard_moves_at_end(
+	struct zwl_server *server,
 	int end)
 {
 	struct keyboard_move *move;
 	unsigned index;
+	int found;
 
-	/* Each move's window at one of its places. */
+	/* Each move's window (still one) at one of its places. */
 	for (index = 0; index < keyboard.move_count; index++) {
 		move = &keyboard.moves[index];
+		found = keyboard_window_live(server, move->surface);
+		if (!found)
+			continue;
 		if (end) {
 			move->surface->x = move->to_x;
 			move->surface->y = move->to_y;
@@ -3034,6 +3151,7 @@ keyboard_fit_floating(
 	struct keyboard_move *move;
 	uint32_t image_width;
 	uint32_t image_height;
+	unsigned index;
 	int32_t right_edge;
 	int32_t bottom_edge;
 	int32_t width;
@@ -3052,9 +3170,32 @@ keyboard_fit_floating(
 	right_edge = (int32_t)server->width - ZWL_GLASS_MARGIN - keyboard.reserved_right;
 	bottom_edge = (int32_t)server->height - ZWL_GLASS_MARGIN - keyboard.reserved_bottom;
 
-	/* The place inside them, not above nor left of the area. */
+	/*
+	 * A window the work area moved before (another panel was out), and
+	 * not moved by the user since, is placed from where it was at first,
+	 * so that closing brings it back there (ws102-p016, p007's limit).
+	 */
+	move = NULL;
+	for (index = 0; index < keyboard.move_count; index++) {
+		if (keyboard.moves[index].surface == surface)
+			move = &keyboard.moves[index];
+	}
+
+	/* A window the user moved since is placed afresh (its old move forgotten). */
+	if (move != NULL && (surface->x != move->to_x || surface->y != move->to_y)) {
+		move->surface = NULL;
+		move = NULL;
+	}
+
+	/* The place inside them, not above nor left of the area, from its first place. */
 	x = surface->x;
 	y = surface->y;
+	if (move != NULL) {
+		x = move->home_x;
+		y = move->home_y;
+	}
+
+	/* Its right and bottom edges inside the area, never above nor left of it. */
 	if (x + width > right_edge)
 		x = right_edge - width;
 	if (y + height > bottom_edge)
@@ -3063,6 +3204,19 @@ keyboard_fit_floating(
 		x = ZWL_GLASS_MARGIN;
 	if (y < ZWL_GLASS_TOP)
 		y = ZWL_GLASS_TOP;
+
+	/* A window moved before goes on from where it is to the new place (back to its first one if that fits now). */
+	if (move != NULL) {
+		move->from_x = surface->x;
+		move->from_y = surface->y;
+		move->to_x = x;
+		move->to_y = y;
+		move->back = 0;
+		if (x == move->home_x && y == move->home_y)
+			move->back = 1;
+		printf("ZWL OSK work moved surface=%u from=%d,%d to=%d,%d\n", surface->id, surface->x, surface->y, x, y);
+		return;
+	}
 
 	/* A window already inside stays. */
 	if (x == surface->x && y == surface->y)
@@ -3171,6 +3325,297 @@ keyboard_move_step(
 
 	/* The moves left. */
 	keyboard.move_count = kept;
+}
+
+/*
+ * Works out a tool's rectangle: the tools fill the flick panel's column
+ * under its title band, down to its keys; a row has as many columns as its
+ * tools say, the tabs' row is lower than the others.
+ */
+static void
+keyboard_tool_rect(
+	struct zwl_server *server,
+	unsigned index,
+	int32_t *rect)
+{
+	const struct keyboard_tool *tool;
+	int32_t width;
+	int32_t column;
+	int32_t top;
+
+	/* The tool, and the column's width for its row's columns. */
+	(void)server;
+	tool = &keyboard_tools[index];
+	width = (keyboard.panel[2] - (int32_t)(tool->columns + 1U) * KEYBOARD_KEY_GAP) / (int32_t)tool->columns;
+	column = width + KEYBOARD_KEY_GAP;
+
+	/* Its row's top: the row always there, the tabs, then the edit tools' rows. */
+	top = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP;
+	if (tool->row >= 1U)
+		top += KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP;
+	if (tool->row >= 2U)
+		top += KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP + (int32_t)(tool->row - 2U) * (KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP);
+
+	/* The rectangle, over its columns. */
+	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)tool->column * column;
+	rect[1] = top;
+	rect[2] = (int32_t)tool->span * column - KEYBOARD_KEY_GAP;
+	rect[3] = KEYBOARD_TOOL_ROW;
+	if (tool->row == 1U)
+		rect[3] = KEYBOARD_TOOL_TABS;
+}
+
+/* Finds the flick panel's tool at a point.  Returns 1 with its index, or 0. */
+static int
+keyboard_tool_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	unsigned *index)
+{
+	int32_t rect[4];
+	unsigned tool;
+	int inside;
+
+	/* Each tool. */
+	for (tool = 0; tool < sizeof(keyboard_tools) / sizeof(keyboard_tools[0]); tool++) {
+		/* The point on this tool. */
+		keyboard_tool_rect(server, tool, rect);
+		inside = keyboard_contains(rect, x, y);
+		if (!inside)
+			continue;
+
+		/* Succeeded: the tool. */
+		*index = tool;
+		return 1;
+	}
+
+	/* No tool there. */
+	return 0;
+}
+
+/*
+ * Tells whether a tool can do something now: the tabs to come cannot; an
+ * edit operation only when the focused window can do it (enabled, the bits
+ * zwl_edit_state gave; state is its answer, -1 without a focused window).
+ */
+static int
+keyboard_tool_enabled(
+	struct zwl_server *server,
+	unsigned index,
+	uint32_t enabled,
+	int state)
+{
+	unsigned action;
+
+	/* The tabs of later phases cannot yet. */
+	(void)server;
+	switch (keyboard_tools[index].kind) {
+	case TOOL_TAB_CANDIDATES:
+	case TOOL_TAB_HISTORY:
+	case TOOL_TAB_EMOJI:
+		return 0;
+	case TOOL_UNDO:
+		action = ZWL_EDIT_UNDO;
+		break;
+	case TOOL_REDO:
+		action = ZWL_EDIT_REDO;
+		break;
+	case TOOL_COPY:
+		action = ZWL_EDIT_COPY;
+		break;
+	case TOOL_CUT:
+		action = ZWL_EDIT_CUT;
+		break;
+	case TOOL_PASTE:
+		action = ZWL_EDIT_PASTE;
+		break;
+	case TOOL_SELECT_ALL:
+		action = ZWL_EDIT_SELECT_ALL;
+		break;
+	default:
+		return 1;
+	}
+
+	/* Without a focused window no operation can be done. */
+	if (state < 0)
+		return 0;
+
+	/* The operation, when the window can do it now. */
+	if ((enabled & (1U << action)) != 0U)
+		return 1;
+	return 0;
+}
+
+/*
+ * Acts on the release of the held tool: the application before comes up,
+ * delete is sent, the movements are sent as keys (with Shift while
+ * selecting), selecting turns on or off, the edit operations go to the
+ * focused window (copy and cut end the selecting).
+ */
+static void
+keyboard_tool_release(
+	struct zwl_server *server)
+{
+	const struct keyboard_tool *tool;
+	int error;
+
+	/* The tool. */
+	keyboard.tool_active = 0;
+	server->dirty = 1;
+	tool = &keyboard_tools[keyboard.tool];
+	printf("ZWL OSK tool label=%s\n", tool->label);
+
+	/* What it does. */
+	switch (tool->kind) {
+	case TOOL_PREVIOUS:
+		error = zwl_focus_previous(server);
+		printf("ZWL OSK tool previous error=%d\n", error);
+		break;
+	case TOOL_DELETE:
+		(void)keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		break;
+	case TOOL_LEFT:
+		keyboard_tool_move(server, ZWL_KEY_LEFT);
+		break;
+	case TOOL_UP:
+		keyboard_tool_move(server, ZWL_KEY_UP);
+		break;
+	case TOOL_DOWN:
+		keyboard_tool_move(server, ZWL_KEY_DOWN);
+		break;
+	case TOOL_RIGHT:
+		keyboard_tool_move(server, ZWL_KEY_RIGHT);
+		break;
+	case TOOL_LINE_START:
+		keyboard_tool_move(server, ZWL_KEY_HOME);
+		break;
+	case TOOL_LINE_END:
+		keyboard_tool_move(server, ZWL_KEY_END);
+		break;
+	case TOOL_PAGE_UP:
+		keyboard_tool_move(server, ZWL_KEY_PAGE_UP);
+		break;
+	case TOOL_PAGE_DOWN:
+		keyboard_tool_move(server, ZWL_KEY_PAGE_DOWN);
+		break;
+	case TOOL_SELECT:
+		/* Selecting on or off: the movements go with Shift while it is on. */
+		keyboard.selecting = !keyboard.selecting;
+		printf("ZWL OSK tool selecting=%u\n", keyboard.selecting);
+		break;
+	case TOOL_SELECT_ALL:
+		keyboard_tool_edit(server, ZWL_EDIT_SELECT_ALL);
+		break;
+	case TOOL_UNDO:
+		keyboard_tool_edit(server, ZWL_EDIT_UNDO);
+		break;
+	case TOOL_REDO:
+		keyboard_tool_edit(server, ZWL_EDIT_REDO);
+		break;
+	case TOOL_COPY:
+		keyboard.selecting = 0;
+		keyboard_tool_edit(server, ZWL_EDIT_COPY);
+		break;
+	case TOOL_CUT:
+		keyboard.selecting = 0;
+		keyboard_tool_edit(server, ZWL_EDIT_CUT);
+		break;
+	case TOOL_PASTE:
+		keyboard_tool_edit(server, ZWL_EDIT_PASTE);
+		break;
+	default:
+		/* The edit tab is the one shown; the others are to come. */
+		break;
+	}
+}
+
+/* Sends a movement's key to the focused window, with Shift while selecting (the selection grows). */
+static void
+keyboard_tool_move(
+	struct zwl_server *server,
+	unsigned code)
+{
+	int shift;
+
+	/* Shift while selecting. */
+	shift = 0;
+	if (keyboard.selecting)
+		shift = 1;
+
+	/* The key. */
+	(void)keyboard_send_key(server, code, shift);
+}
+
+/* Sends an edit operation to the focused window (edit.c: its own operation, or its key). */
+static void
+keyboard_tool_edit(
+	struct zwl_server *server,
+	unsigned action)
+{
+	int error;
+
+	/* The operation, and the log line the tests read. */
+	error = zwl_edit_action(server, action);
+	printf("ZWL OSK tool edit action=%u error=%d\n", action, error);
+}
+
+/*
+ * Draws the flick panel's tools over its keys' column: the row always
+ * there, the tabs (edit lit), the edit tools; selecting lit while on, a
+ * tool the focused window cannot do now faint, the held tool blue.
+ */
+static void
+keyboard_draw_tools(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
+	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float faint[4] = { 0.12f, 0.16f, 0.24f, 0.30f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	const struct keyboard_tool *tool;
+	const float *ground;
+	const float *ink;
+	int32_t rect[4];
+	uint32_t enabled;
+	unsigned index;
+	int state;
+	int usable;
+
+	/* What the focused window can do now. */
+	enabled = 0;
+	state = zwl_edit_state(server, &enabled);
+
+	/* Each tool. */
+	for (index = 0; index < sizeof(keyboard_tools) / sizeof(keyboard_tools[0]); index++) {
+		/* Its place and colours: the row always there grey, the edit tab and selecting while on pale, faint when it cannot. */
+		tool = &keyboard_tools[index];
+		keyboard_tool_rect(server, index, rect);
+		ground = white;
+		ink = dark;
+		if (tool->row == 0U)
+			ground = grey;
+		if (tool->kind == TOOL_TAB_EDIT)
+			ground = pale;
+		if (tool->kind == TOOL_SELECT && keyboard.selecting)
+			ground = pale;
+		usable = keyboard_tool_enabled(server, index, enabled, state);
+		if (!usable)
+			ink = faint;
+
+		/* The held tool is blue. */
+		if (keyboard.tool_active && keyboard.tool == index) {
+			ground = blue;
+			ink = light;
+		}
+
+		/* The tool. */
+		keyboard_draw_key(server, command, rect, tool->label, ground, ink, SIZE_TITLE);
+	}
 }
 
 /* Counts the characters of a UTF-8 text (the bytes that do not continue one). */
