@@ -16,7 +16,10 @@
  * q destroys its source (the clipboard is then empty).  Every event is one
  * line: DATAPROBE <what> ...
  *
- *   data-probe [--text=TEXT] [--color=RRGGBB] [--timeout-s=N] [--token=NAME]
+ *   data-probe [--text=TEXT] [--color=RRGGBB] [--timeout-s=N] [--token=NAME] [--secret]
+ *
+ * --secret (ws102-p018) also offers x-kde-passwordManagerHint, the type a
+ * password manager marks a secret with.
  */
 
 #include <wayland-client.h>
@@ -46,6 +49,7 @@
 /* The text types offered and looked for. */
 #define PROBE_TYPE_UTF8		"text/plain;charset=utf-8"
 #define PROBE_TYPE_PLAIN	"text/plain"
+#define PROBE_TYPE_SECRET	"x-kde-passwordManagerHint"
 
 /* The most text received, and how long a receive may wait for its writer. */
 #define PROBE_TEXT_MAX		4096U
@@ -80,6 +84,8 @@ struct probe {
 	int configured;
 	int closed;
 	const char *token;
+	/* Whether the text is secret (--secret: the source also offers the password managers' hint, ws102-p018). */
+	int secret;
 };
 
 static int probe_options(int count, char **arguments, struct probe *probe, unsigned *timeout);
@@ -206,7 +212,7 @@ main(
 	memset(&probe, 0, sizeof(probe));
 	error = probe_options(count, arguments, &probe, &timeout);
 	if (error != 0) {
-		fprintf(stderr, "usage: data-probe [--text=TEXT] [--color=RRGGBB] [--timeout-s=N] [--token=NAME]\n");
+		fprintf(stderr, "usage: data-probe [--text=TEXT] [--color=RRGGBB] [--timeout-s=N] [--token=NAME] [--secret]\n");
 		return 2;
 	}
 
@@ -251,7 +257,7 @@ main(
 	return 0;
 }
 
-/* Reads the options: --text=TEXT, --color=RRGGBB, --timeout-s=N (default 120) and --token=NAME. */
+/* Reads the options: --text=TEXT, --color=RRGGBB, --timeout-s=N (default 120), --token=NAME and --secret. */
 static int
 probe_options(
 	int count,
@@ -272,6 +278,13 @@ probe_options(
 
 	/* Each option. */
 	for (index = 1; index < count; index++) {
+		/* A secret text. */
+		same = strcmp(arguments[index], "--secret");
+		if (same == 0) {
+			probe->secret = 1;
+			continue;
+		}
+
 		/* The name in the log. */
 		same = strncmp(arguments[index], "--token=", 8);
 		if (same == 0) {
@@ -429,6 +442,8 @@ probe_set_selection(
 	wl_data_source_add_listener(probe->source, &source_listener, probe);
 	wl_data_source_offer(probe->source, PROBE_TYPE_UTF8);
 	wl_data_source_offer(probe->source, PROBE_TYPE_PLAIN);
+	if (probe->secret)
+		wl_data_source_offer(probe->source, PROBE_TYPE_SECRET);
 
 	/* The selection, named by the serial of the key that asked. */
 	wl_data_device_set_selection(probe->device, probe->source, probe->serial);

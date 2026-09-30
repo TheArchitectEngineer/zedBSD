@@ -173,6 +173,7 @@ static void main_preedit_draw(const struct kui_style *style);
 static int main_canvas_make(void);
 static void main_state(struct te_state *state);
 static void main_title_refresh(void);
+static void main_edit_state(const struct te_state *state);
 static void main_opened(void);
 static void main_host(struct te_app *app);
 static void main_copy(void *data, const char *text, size_t length);
@@ -578,6 +579,7 @@ main_loop(
 		/* Time passes for the editor; the menus and the titlebar show its state. */
 		(void)te_app_tick(&main_app, now);
 		main_state(&state);
+		main_edit_state(&state);
 		te_menu_refresh(&main_menu, &state);
 		te_titlebar_refresh(&main_titlebar, &state);
 
@@ -820,6 +822,35 @@ main_state(
 	state->modified = te_app_modified(&main_app);
 	state->line_numbers = main_app.line_numbers;
 	state->wrap = main_app.wrap;
+}
+
+/*
+ * Tells the window's editing state -- a selection, something to paste,
+ * something to undo or redo -- which the on-screen keyboard's editing
+ * buttons follow (KUI_VERSION 8, ws102-p023); the library sends it only
+ * when it changed.
+ */
+static void
+main_edit_state(
+	const struct te_state *state)
+{
+	unsigned flags;
+	int paste;
+
+	/* The state's bits. */
+	flags = 0U;
+	if (state->selected)
+		flags |= KUI_EDIT_HAS_SELECTION;
+	if (state->can_undo)
+		flags |= KUI_EDIT_CAN_UNDO;
+	if (state->can_redo)
+		flags |= KUI_EDIT_CAN_REDO;
+	paste = kui_window_can_paste(main_window.kui);
+	if (paste)
+		flags |= KUI_EDIT_CAN_PASTE;
+
+	/* Succeeded: the window tells it before its next wait. */
+	kui_window_edit_state(main_window.kui, flags);
 }
 
 /* Sets the window's title when it changed: "• " for unsaved changes, the document's name and the application's. */

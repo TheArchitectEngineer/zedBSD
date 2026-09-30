@@ -473,6 +473,8 @@ struct zwl_object {
 	char **mime_types;
 	unsigned mime_count;
 	struct zwl_object *data_source;
+	/* An offer of zdesktop's own selection, an item of the clipboard's history (clipboard.c). */
+	unsigned data_offered;
 	/*
 	 * Drag and drop (data.c, ws035-p084): a source's actions (set_actions),
 	 * and for an offer made for a drag: the actions its target takes and
@@ -930,6 +932,8 @@ struct zwl_server {
 	 */
 	struct zwl_object *selection;
 	uint64_t selection_client;
+	/* Whether the selection is zdesktop's own, an item of the clipboard's history (clipboard.c, ws102-p018; selection is NULL then). */
+	unsigned selection_offered;
 	/*
 	 * The primary selection (primary.c, ws035-p100): the source set as it
 	 * (NULL for none), and the number of the client last told it (0 for
@@ -1133,6 +1137,20 @@ void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
 int zwl_edit_action(struct zwl_server *server, unsigned action);
 int zwl_edit_state(struct zwl_server *server, uint32_t *enabled);
 int zwl_focus_previous(struct zwl_server *server);
+
+/*
+ * The clipboard's history (clipboard.c, ws102-p018): the last
+ * ZWL_CLIPBOARD_HISTORY selections' text, newest first, in memory only, for
+ * the keyboard's history tab; an item is pasted by making it the
+ * selection and sending the paste operation.  The lock screen and Log Out
+ * empty it.
+ */
+#define ZWL_CLIPBOARD_HISTORY		10U
+#define ZWL_CLIPBOARD_TEXT_MAX		(64U * 1024U)
+unsigned zwl_clipboard_history_count(struct zwl_server *server);
+const char *zwl_clipboard_history_get(struct zwl_server *server, unsigned index, size_t *length);
+int zwl_clipboard_history_paste(struct zwl_server *server, unsigned index);
+void zwl_clipboard_history_clear(struct zwl_server *server, const char *reason);
 
 /* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */
 int zwl_glass_fullscreen_input(struct zwl_server *server);

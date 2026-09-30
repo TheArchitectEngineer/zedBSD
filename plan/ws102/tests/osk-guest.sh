@@ -40,6 +40,9 @@
 #             in turn, 100 taps, each finger touching 50 ms before the other lifts (touch.c's ROUTE_OSK: each finger its
 #             own press, the second's touch makes the first's key act); the file is "fj" 50 times, 100 keys logged,
 #             99 rollovers, none lost (roll.png)
+#   tools     (p016) the flick panel's tools: select, right x5, copy, the application before, paste, three times, from
+#             one Text Editor into another: "hellohellohello"
+#   history   (p024) the history tab: three copies ("alpha", "bravo", "charlie"), the second row pasted: "bravo"
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -174,6 +177,9 @@ qkey_tap() {
 	fi
 }
 
+# A tap on a tool of the flick panel.
+tool_tap() { pointer move "$1" "$2" sleep 120 down sleep 50 up sleep 350; }
+
 # A tap on a key, and a flick of one (dx, dy) in steps.
 key_tap() { pointer move "$1" "$2" sleep 150 down sleep 60 up sleep 350; }
 key_flick() {
@@ -194,9 +200,12 @@ for step in "$@"; do
 			[ -f "$bin/bin/$program" ] && put "$bin/bin/$program" "/bin/$program"
 		done
 		guest 'chmod 755 /bin/textedit /bin/ime-probe /bin/wltest 2>/dev/null' >/dev/null
-		for library in libkeiland libkeiui libvulkan libtruetype libwayland-client; do
-			[ -f "$bin/dynamic/$library.so" ] && put "$bin/dynamic/$library.so" "/lib/$library.so"
+		for library in $(cd "$bin/dynamic" && ls *.so | grep -vE '^(libc|ld)\.so$'); do
+			put "$bin/dynamic/$library" "/lib/$library"
 		done
+		# The colour emoji font (ws102-p019), which the compositor and libkeiui open.
+		emoji=build/distfiles/NotoColorEmoji-2.047.ttf
+		[ -f "$emoji" ] && put "$emoji" /usr/share/fonts/keiland-emoji.ttf
 		guest 'chmod 755 /bin/wayland' >/dev/null
 		;;
 	start)
@@ -634,6 +643,23 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		expect_log "ZWL GLASS moved surface=$wl "
 		pointer move 1254 488 sleep 200 down sleep 60 up sleep 900
 		expect_log "ZWL OSK work kept surface=$wl"
+		# (p016, p007's limit) The floating window dragged right (its right edge past the flick column); the flick panel
+		# moves it left, the QWERTY panel opened in its place moves it from its first place (not the flick panel's), and
+		# closing brings it back to that first place.
+		set -- $(guest "grep -a 'ZWL GLASS moved surface=$wl ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		mx=${1:-0}; my=${2:-0}
+		pointer move $((mx + 150)) $((my - 22)) sleep 200 down sleep 60 move $((mx + 250)) $((my - 22)) sleep 60 move $((mx + 390)) $((my - 22)) sleep 150 up sleep 600
+		set -- $(guest "grep -a 'ZWL GLASS moved surface=$wl ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		hx=${1:-0}; hy=${2:-0}
+		echo "floating window at $hx,$hy"
+		swipe 1272 792 1130 650
+		expect_log "ZWL OSK work moved surface=$wl from=$hx,$hy to=450,$hy"
+		sleep 1
+		swipe 6 792 150 650
+		expect_log "ZWL OSK work moved surface=$wl from=450,$hy to=$hx,98"
+		sleep 1
+		pointer move 1254 488 sleep 200 down sleep 60 up sleep 900
+		expect_log "ZWL OSK work back surface=$wl to=$hx,$hy"
 		;;
 	roll)
 		compositor
@@ -692,6 +718,69 @@ hold 800"
 			rolls=$(( $(count 'ZWL OSK touch down .* rollover=1') - rolled ))
 			[ "$rolls" -eq 99 ] && echo "roll: 99 rollovers ok" || { echo "roll: $rolls rollovers (expected 99) MISSING"; status=1; }
 		fi
+		;;
+	tools)
+		# (p016) The flick panel's tools: two Text Editors (a.txt "hello world" on top, b.txt empty); three times: line
+		# start, select, right x5, copy, the application before (b.txt), paste (and back to a.txt for the next time).
+		# b.txt saved by Ctrl+S is "hellohellohello" (tools.png, tools-pasted.png).
+		compositor
+		guest 'printf "hello world\n" > /root/a.txt; rm -f /root/b.txt; touch /root/b.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=900 /root/b.txt > /tmp/teb.log 2>&1 </dev/null & sleep 5; /bin/textedit --timeout-s=900 /root/a.txt > /tmp/tea.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		expect_count 'ZWL MAP client=' 2
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK open kind=flick'
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot tools.png
+		round=1
+		while [ $round -le 3 ]; do
+			tool_tap 1004 234
+			tool_tap 1004 284
+			n=0
+			while [ $n -lt 5 ]; do tool_tap 1238 184; n=$((n + 1)); done
+			tool_tap 1017 334
+			tool_tap 1043 98
+			tool_tap 1225 334
+			[ $round -lt 3 ] && tool_tap 1043 98
+			round=$((round + 1))
+		done
+		expect_count 'ZWL OSK tool edit action=0 error=0' 3
+		expect_count 'ZWL OSK tool edit action=2 error=0' 3
+		expect_count 'ZWL OSK tool previous error=0' 5
+		pointer move 400 300 sleep 300
+		shot tools-pasted.png
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		saved=$(read_file /root/b.txt)
+		[ "$saved" = "hellohellohello" ] && echo "tools: hellohellohello pasted into b.txt ok" || { echo "tools: ($saved) MISSING"; status=1; }
+		;;
+	history)
+		# (p024) The clipboard's history in the flick panel's history tab: three Text Editors copy "alpha", "bravo" and
+		# "charlie" (Ctrl+A, Ctrl+C), a fourth (empty) takes the history's second row ("bravo") pasted
+		# (history.png, history-pasted.png).
+		compositor
+		for word in alpha bravo charlie; do
+			guest "printf '$word' > /root/$word.txt; export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=900 /root/$word.txt > /tmp/te-$word.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+			python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-a>' '<ctrl-c>' >/dev/null
+			sleep 1
+		done
+		guest "rm -f /root/receive.txt; touch /root/receive.txt; export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=900 /root/receive.txt > /tmp/te-receive.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK open kind=flick'
+		tool_tap 1160 141
+		expect_log 'ZWL OSK tool face=history items=3'
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot history.png
+		tool_tap 1121 213
+		expect_log 'ZWL OSK history paste index=1 error=0'
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot history-pasted.png
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		saved=$(read_file /root/receive.txt)
+		[ "$saved" = "bravo" ] && echo "history: the second row (bravo) pasted ok" || { echo "history: ($saved) MISSING"; status=1; }
 		;;
 	edges)
 		compositor
