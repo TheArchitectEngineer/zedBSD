@@ -24,7 +24,8 @@
  * A name being changed is a field in place of the name.  The file
  * manager's messages show in a pill at the bottom, and its questions (a
  * name taken by a paste) on a card in the middle, over the dimmed desktop.
- * The rest of the surface is clear.
+ * A press held on an item drags the selection, and drops come over the
+ * desktop (ui-desktop-drag.c).  The rest of the surface is clear.
  */
 
 #include "files.h"
@@ -153,6 +154,9 @@ fm_desktop_draw(
 		fm_canvas_round_border(canvas, (float)band.x, (float)band.y, (float)band.width, (float)band.height, 0.0f, 1.0f, DESKTOP_BAND_EDGE);
 	}
 
+	/* The target of a drop over the desktop. */
+	fm_desktop_drop_draw(app, canvas);
+
 	/* The file manager's message, and its question over everything. */
 	desktop_message(app, canvas);
 	fm_overlay_draw(app, canvas);
@@ -177,9 +181,24 @@ fm_desktop_event(
 	const struct fm_event *event)
 {
 	struct fm_desktop *desk;
+	int dragging;
+
+	/* A drag and drop over the desktop, or the end of its own (ui-desktop-drag.c). */
+	desk = &app->desk;
+	switch (event->type) {
+	case FM_EVENT_DROP_ENTER:
+	case FM_EVENT_DROP_MOTION:
+	case FM_EVENT_DROP_LEAVE:
+	case FM_EVENT_DROP:
+	case FM_EVENT_DROP_ACTION:
+	case FM_EVENT_DRAG_DONE:
+		fm_desktop_drop_event(app, event);
+		return;
+	default:
+		break;
+	}
 
 	/* A question takes the pointer and the keys until it is answered (its card is the file manager's). */
-	desk = &app->desk;
 	if (app->dialog != FM_DIALOG_NONE && event->type != FM_EVENT_ACTION) {
 		fm_ui_event(app, event);
 		return;
@@ -203,9 +222,11 @@ fm_desktop_event(
 		if (event->button != FM_BUTTON_LEFT)
 			break;
 
-		/* A press, or the release of a band. */
+		/* A press, the release of a press on an item, or of a band. */
 		if (event->pressed) {
 			desktop_press(app, event);
+		} else if (desk->pressing) {
+			fm_desktop_drag_release(app);
 		} else if (desk->band) {
 			desk->band = 0;
 			app->dirty = 1;
@@ -215,6 +236,11 @@ fm_desktop_event(
 		/* Nothing more for a button. */
 		break;
 	case FM_EVENT_MOTION:
+		/* A press held on an item may become a drag. */
+		dragging = fm_desktop_drag_motion(app, event->x, event->y);
+		if (dragging)
+			break;
+
 		/* A band follows the pointer and selects what it touches. */
 		if (desk->band) {
 			desktop_band_select(app);
@@ -407,9 +433,9 @@ desktop_item(
 	if (entry->selected)
 		fm_canvas_round(canvas, left - 6.0f, top - 4.0f, (float)DESKTOP_ICON + 12.0f, (float)DESKTOP_ICON + 8.0f, 10.0f, DESKTOP_GROUND_COLOR);
 
-	/* The icon, faded when the item is cut. */
+	/* The icon, faded when the item is cut or dragged. */
 	fm_grid_entry_icon(app, canvas, entry, left, top, (float)DESKTOP_ICON);
-	if (entry->cut != 0)
+	if (entry->cut != 0 || (app->desk.dragging && entry->selected != 0))
 		fm_canvas_round(canvas, left, top, (float)DESKTOP_ICON, (float)DESKTOP_ICON, 8.0f, FM_RGBA(0xffffff, 150));
 
 	/* The name under it, or the field of the name being changed. */
@@ -742,17 +768,29 @@ desktop_press(
 	desk->click_index = index;
 	desk->click_ms = event->time;
 
-	/* Ctrl adds or takes away, Shift selects from the anchor, a plain click selects the item alone. */
+	/*
+	 * Ctrl adds or takes away, Shift selects from the anchor, a plain click
+	 * selects the item alone; on an item already selected the selection
+	 * stays until the release (it may be dragged), which then selects the
+	 * item alone (press_alone).
+	 */
+	desk->press_alone = 0;
 	if ((event->modifiers & FM_MOD_CTRL) != 0U) {
 		fm_select_toggle(tab, index);
 	} else if ((event->modifiers & FM_MOD_SHIFT) != 0U) {
 		fm_select_range(tab, tab->anchor, index);
+	} else if (tab->listing.entries[index].selected != 0) {
+		desk->press_alone = 1;
 	} else {
 		fm_select_only(tab, index);
 	}
 
 	/* The log line the tests read. */
 	fm_log("DESKTOP select name=%s selected=%d", tab->listing.entries[index].name, tab->listing.entries[index].selected);
+
+	/* A press held on a selected item may become a drag of the selection. */
+	if (tab->listing.entries[index].selected != 0)
+		fm_desktop_drag_press(app, index, event->x, event->y);
 }
 
 /* Handles a key: Enter opens, the arrows move, Ctrl+A selects all, Esc nothing. */

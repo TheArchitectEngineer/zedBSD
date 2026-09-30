@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p007（規約と全体）cleared（2026-09-30）。A1〜A6 は QEMU で満たす。残りは p006（5330 の実機、A7、ユーザーが起きてから）と p005（ユーザーの判断、既定は入れない）基準の案はユーザーの確認待ち
+Resume point: p005 cleared（2026-09-30、Settings の Sound の頁）。L1（まず動く）がそろった（下の「段の計画」）。次は L2 の p006（5330 の実機、A7、ユーザー）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -66,6 +66,31 @@ legacy の HDA が 5330 の firmware の設定で無効にされていないか�
 | [ws100-p002](phase002/phase.md) | audiod: `AUDIOD_FEEDBACK`（約 100 ms の内蔵の音、重ならない）と、amplifier の無い device の software の音量。audiod-feedback と QEMU の wav | cleared（2026-09-30: `audiod-qemu.sh` PASS: 音 -12 dBFS、連打で重ならない、soft 100/50/10/0 = 0/-30/-54 dB/無音、mute、device なし） | p001 |
 | [ws100-p003](phase003/phase.md) | libkeiland: `keiland_audio_*`（WS089 の案 + `keiland_audio_feedback`）、KEILAND_VERSION 15、host の試験 | cleared（2026-09-30: host 14/14、target の build warning 0） | p002 |
 | [ws100-p004](phase004/phase.md) | zdesktop: icon・popup・wheel・確かめの音・設定の保存（`sound.volume`・`sound.muted`）、QEMU の試験（A1〜A6）、WS099 の C9 | cleared（2026-09-30: `volume-p004.sh` PASS（A1〜A6）、WS099 の C7・C8・C9 PASS） | p003 |
-| ws100-p005（案） | Settings の Sound の頁に slider と mute（基準の外、ユーザーの判断） | planning | p003 |
+| [ws100-p005](phase005/phase.md) | Settings の Sound の頁に slider と mute（2026-09-30 朝ユーザー「入れる」） | cleared（2026-09-30: `volume-p005.sh` PASS: Settings → audiod・desktop.conf・system bar、system bar → Settings（数秒以内）、確かめの音の規則。WS089 の回帰、boot） | p003 |
 | ws100-p006（案） | 5330: Kei を直に起動して pci-hda の codec と pin を読み、鳴るかをユーザーが聞く（A7、デモに必須ではない） | planning | p002、実機 |
 | [ws100-p007](phase007/phase.md) | 規約（coding-style の全文）への合わせと全体の確かめ（audiod は WS100 で変えた関数とその周りだけ） | cleared（2026-09-30: 変えた関数と新しい code は style-check 0（sigsetjmp の例外 1）、audiod の残り 89 件は一覧、audiod-qemu・volume-p004・host-audio PASS） | p002〜p004 |
+
+## 段の計画（2026-09-30 main 経由のユーザーの方針「広く浅く」: まず動く段をそろえ、磨き込みは段ごとの数値目標の小さな Phase）
+
+| 段 | 内容 | Phase（案） | 数値目標 | 測り方 |
+| --- | --- | --- | --- | --- |
+| **L1（まず動く）** | A1〜A6 と Settings の Sound の頁 | p001〜p005・p007（cleared） | A1〜A6 の PASS、Settings と system bar の同期 3 秒以内 | `volume-p004.sh`・`volume-p005.sh`（QEMU） |
+| L2（実機で鳴る） | 5330 の内蔵の speaker と headphone（A7、デモに必須ではない） | p006-a: pci-hda の codec・pin の log（diagnostics）<br>p006-b: 5330 で直に起動して読む、鳴るかをユーザーが聞く<br>p006-c（要れば）: Intel 固有の設定（TCSEL・snoop・EM2）か codec の quirk | 5330 で確かめの音が speaker と headphone の両方から聞こえる。codec の log が 1 行以上 | 実機（ユーザーの耳）、SSH の kernel log |
+| L3（磨き込み） | 確かめの音の遅れ、音量の曲線 | p008: 確かめの音の遅れの計測と短縮<br>p009: 音量の曲線の実機の調整 | 操作（release・wheel の notch）から音の始まりまで **50 ms 以内**（QEMU の wav と log の時刻）。0〜100% の段ごとの大きさの差が耳で等しく聞こえる（実機で 25・50・75・100% の dB が -30・-15・-7・0 dB ± 3 dB） | QEMU: `hda-wav-check.py` の時刻と zdesktop の log の時刻の差。実機: 録音か騒音計（ユーザー） |
+| L4（後） | app ごとの音量、出力の選択（headphone・HDMI）、動画の音 | 範囲の外（デモの後） | — | — |
+
+- 各段の Phase は、前の段がそろってから Queue に入れる（L1 は済み）。L2 は実機とユーザーの時間が要る。L3 の数値は案で、ユーザーの確認が要る。
+
+## ユーザーの判断（2026-09-30 朝）
+
+L3 の数値目標（操作から確かめの音が鳴り始めるまで 50 ms 以内、実機の音量の曲線 25・50・75・100% が -30・-15・-7・0 dB ± 3 dB）は「案のまま」で確定。
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **L2（実機で鳴る）の作業像**: p006-a で pci-hda に codec・widget・pin の一覧を dmesg に出す診断を足す（QEMU で形を確かめる）。
+  p006-b はユーザーが demo の image を 5330 で起動し、エージェントが ssh で dmesg を読んで speaker・headphone の pin と amplifier を特定し、
+  `audiod-feedback`（試験の client）で確かめの音を鳴らす。聞くのはユーザー。鳴らなければ p006-c で codec の pin の設定か GPIO の quirk を足す。
+- **L3 の音量の曲線は、実機でも mic 無しで測れる見込み**: codec の amplifier の capability（step の数と 1 step の dB）を読めば、百分率ごとの
+  gain は計算で出る。実機で要るのは「codec の値が意図どおりに書かれたこと」の確かめ（ssh で codec の amp の値を読み戻す）だけ。
+  software の音量の側は QEMU の wav で測れる（p002 の `audiod-qemu.sh` と同じ）。
+- **L3 の遅れの測り方**: QEMU の wav の音の始まりの時刻と、zdesktop の log の操作の時刻（同じ clock に揃える）の差。

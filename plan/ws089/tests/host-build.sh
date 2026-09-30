@@ -32,6 +32,10 @@ for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userla
 	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -c "$file" -o "$object"
 	objects="$objects $object"
 done
+# The sound page's link to audiod (ws100-p005): libkeiland's audio.c (no audiod on the host: the page shows no sound).
+object="$out/obj/shared-audio.o"
+"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -c userland/desktop/libkeiland/audio.c -o "$object"
+objects="$objects $object"
 for file in $src/*.c; do
 	case $(basename "$file") in
 	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|network.c) continue ;;

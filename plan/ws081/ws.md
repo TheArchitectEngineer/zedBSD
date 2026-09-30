@@ -66,3 +66,29 @@ touchpad の二本指の scroll（目標 1）の Phase は、design §10 の 4 �
 | 項目 | 決定 | 記録先 |
 | --- | --- | --- |
 | Notes の指（2026-09-29） | 実機の AES ペンがまだ認識されていない件で、Notes の指の扱いをユーザーに確認:「切り替えを付ける」→ 既定は指で scroll・pinch（掌の誤りの線を防ぐ）、toolbar の切り替えで一本指で線を引ける（その間は二本指で scroll・pinch）。ws081-p015 |
+
+## 段の計画（2026-09-30 Q1、広く浅くの方針）
+
+デモの touch は Windows の上の QEMU（WS085 の Venus）で見せる（ユーザー、2026-09-30）。どの段で止まっても、それまでの段は Files・Terminal・
+PDF Viewer・Notes・Text Editor・デスクトップの icon で動いていること。
+
+| 段 | 数値目標 | 測り方 | Phase |
+| --- | --- | --- | --- |
+| L1（済み） | Linux の QEMU の注入の touch で、tap・double tap・長押し・慣性の scroll・pinch が 6 app で動く | 各 WS の touch の試験 | p001〜p006・p010〜p015 |
+| L2 | Windows の QEMU で、host の touch が Kei に届く。報告の率 ≥ 60 Hz、報告の欠け 0（10 秒の drag） | Kei の evdev の時刻の列（MSC_TIMESTAMP）を記録する試験 | p016（経路の確立と計測。Windows の機械の操作はユーザー） |
+| L3 | Windows の QEMU で、指を置いてから画面の反応まで p95 ≤ 50 ms、慣性の scroll の frame の間隔の最大 ≤ 33 ms | compositor の log の時刻と画面の撮影 | p017（計測）、p018（係数の調整） |
+| L4 | 外付けの touch LCD（間に合えば。ユーザーが別に計画） | — | p007 |
+| 最後 | 全文の規約と回帰 | — | p009 |
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **土台はある**: WS085-p001 で、Windows の QEMU の fork の SDL に `SDL_FINGERDOWN/MOTION/UP` を足し、仮想の `usb-multitouch`（10 指、Scan Time 付き、
+  63 byte の report）へ渡す経路ができている。起動は `C:\Work\winq-zedbsd\boot.bat`。QMP の 2 指の注入で Home が開くことまでは確かめてある。
+  **物理の Windows の touch panel からの SDL の event は未試験** — L2 の最初の確かめはここ。
+- **p016（L2）の作業**: Kei の側で evdev の時刻を記録する道具（`plan/ws084/tests/evlat.c` を元に、`MSC_TIMESTAMP` と到着の時刻を並べる）を作り、
+  ユーザーが Windows の touch panel で 10 秒 drag する。道具の出力（報告の数・間隔・欠け）を ssh で読む。Windows の側の操作はユーザー、
+  Kei の側の記録と集計はエージェント。報告の率が 60 Hz を下回ったら、SDL の event の間引き（QEMU の fork）を疑う。
+- **p017（L3）の作業**: compositor の log（`ZWL TOUCH` の down の時刻と、その指で動いた最初の frame の時刻）から p95 を出す script。
+  慣性の scroll の frame の間隔は `--log-frames` の `ZWL COMPOSE at_ms=`（ws099-p001 で足した時刻）で測る。
+- **ハーネスの置き場所**: `plan/ws081/tests/` に Windows の手順書（`windows-touch.md`: boot.bat の起動 → Kei の記録を始める ssh の命令 → drag →
+  記録を止める）と集計の script。Windows の機械はエージェントが操作できないので、ユーザーの手順は 3 行以内に収める。
