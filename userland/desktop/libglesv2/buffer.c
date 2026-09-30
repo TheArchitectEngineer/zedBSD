@@ -36,6 +36,10 @@
 #define GLES_UPLOAD_TIMEOUT	10000000000ULL
 
 static struct gles_buffer **buffer_slot(struct gles_state *state, GLenum target);
+static void timed_delete_buffers(GLsizei n, const GLuint *buffers);
+static void timed_buffer_data(GLenum target, GLsizeiptr size, const void *data, GLenum usage);
+static void *timed_map_buffer_range(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access);
+static GLboolean timed_unmap_buffer(GLenum target);
 static struct gles_buffer *buffer_bound(struct zegl_context *context, GLenum target);
 static struct gles_buffer *buffer_named(struct zegl_context *context, struct gles_state *state, GLuint name);
 static int buffer_parameter(struct zegl_context *context, GLenum target, GLenum pname, GLint64 *value);
@@ -278,8 +282,10 @@ gles_collect(
 	struct gles_garbage *garbage;
 	struct gles_chunk *chunk;
 	struct gles_pool *pool;
+	uint64_t started;
 
-	/* The garbage. */
+	/* The garbage (the step is timed, ws101-p016). */
+	started = gles_time_begin();
 	while (state->garbage != NULL) {
 		garbage = state->garbage;
 		state->garbage = garbage->next;
@@ -304,6 +310,7 @@ gles_collect(
 	for (pool = state->pools; pool != NULL; pool = pool->next)
 		(void)vkResetDescriptorPool(state->device, pool->pool, 0U);
 	memset(&state->set_cache, 0, sizeof(state->set_cache));
+	gles_time_end("collect", started, 0U);
 }
 
 /*
@@ -318,6 +325,7 @@ gles_buffer_sync(
 {
 	VkBuffer device_buffer;
 	VkDeviceMemory memory;
+	uint64_t started;
 	void *mapped;
 	int status;
 
@@ -326,9 +334,11 @@ gles_buffer_sync(
 		return 0;
 
 	/* In place: the copy is large enough and this frame has not drawn from it. */
+	started = gles_time_begin();
 	if (buffer->buffer != VK_NULL_HANDLE && buffer->device_size >= buffer->size && buffer->used != state->frame) {
 		memcpy(buffer->mapped, buffer->data, buffer->size);
 		buffer->dirty = 0;
+		gles_time_end("upload-in-place", started, buffer->size);
 		return 0;
 	}
 
@@ -346,10 +356,13 @@ gles_buffer_sync(
 	if (status != 0)
 		return -1;
 	gles_throw_away(state, buffer->buffer, VK_NULL_HANDLE, VK_NULL_HANDLE, buffer->memory);
+	gles_time_end("device-buffer", started, buffer->size);
 
 	/* Succeeded: the bytes in the new buffer. */
+	started = gles_time_begin();
 	if (buffer->size != 0U)
 		memcpy(mapped, buffer->data, buffer->size);
+	gles_time_end("upload", started, buffer->size);
 	buffer->buffer = device_buffer;
 	buffer->memory = memory;
 	buffer->mapped = mapped;
@@ -531,10 +544,26 @@ glGenBuffers(
 }
 
 /*
- * Deletes buffer objects, unbinding them.
+ * Deletes buffer objects (timed, timed_delete_buffers).
  */
 GL_APICALL void GL_APIENTRY
 glDeleteBuffers(
+	GLsizei n,
+	const GLuint *buffers)
+{
+	uint64_t started;
+
+	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	started = gles_time_begin();
+	timed_delete_buffers(n, buffers);
+	gles_time_end("delete-buffers", started, 0U);
+}
+
+/*
+ * Deletes buffer objects, unbinding them.
+ */
+static void
+timed_delete_buffers(
 	GLsizei n,
 	const GLuint *buffers)
 {
@@ -667,11 +696,29 @@ glBindBuffer(
 }
 
 /*
- * Gives the buffer bound to a target new bytes (or a size of undefined
- * bytes).
+ * Gives the buffer bound to a target new bytes (timed, timed_buffer_data).
  */
 GL_APICALL void GL_APIENTRY
 glBufferData(
+	GLenum target,
+	GLsizeiptr size,
+	const void *data,
+	GLenum usage)
+{
+	uint64_t started;
+
+	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	started = gles_time_begin();
+	timed_buffer_data(target, size, data, usage);
+	gles_time_end("buffer-data", started, (size_t)size);
+}
+
+/*
+ * Gives the buffer bound to a target new bytes (or a size of undefined
+ * bytes).
+ */
+static void
+timed_buffer_data(
 	GLenum target,
 	GLsizeiptr size,
 	const void *data,
@@ -829,12 +876,32 @@ glGetBufferParameteri64v(
 }
 
 /*
+ * Maps a range of the buffer bound to a target (timed, timed_map_buffer_range).
+ */
+GL_APICALL void *GL_APIENTRY
+glMapBufferRange(
+	GLenum target,
+	GLintptr offset,
+	GLsizeiptr length,
+	GLbitfield access)
+{
+	uint64_t started;
+	void *result;
+
+	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	started = gles_time_begin();
+	result = timed_map_buffer_range(target, offset, length, access);
+	gles_time_end("map-buffer", started, (size_t)length);
+	return result;
+}
+
+/*
  * Maps a range of the bytes of the buffer bound to a target: the CPU
  * bytes themselves.  Returns the range's first byte, or NULL with the
  * error recorded.
  */
-GL_APICALL void *GL_APIENTRY
-glMapBufferRange(
+static void *
+timed_map_buffer_range(
 	GLenum target,
 	GLintptr offset,
 	GLsizeiptr length,
@@ -901,12 +968,29 @@ glMapBufferRange(
 }
 
 /*
+ * Ends the mapping of the buffer bound to a target (timed, timed_unmap_buffer).
+ */
+GL_APICALL GLboolean GL_APIENTRY
+glUnmapBuffer(
+	GLenum target)
+{
+	uint64_t started;
+	GLboolean result;
+
+	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	started = gles_time_begin();
+	result = timed_unmap_buffer(target);
+	gles_time_end("unmap-buffer", started, 0U);
+	return result;
+}
+
+/*
  * Ends the mapping of the buffer bound to a target.  Returns GL_TRUE (the
  * bytes cannot have been lost), or GL_FALSE with the error recorded when
  * the buffer was not mapped.
  */
-GL_APICALL GLboolean GL_APIENTRY
-glUnmapBuffer(
+static GLboolean
+timed_unmap_buffer(
 	GLenum target)
 {
 	struct zegl_context *context;

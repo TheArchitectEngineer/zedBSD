@@ -1417,6 +1417,8 @@ struct zegl_context *gles_context(void);
 struct gles_state *gles_state(struct zegl_context *context);
 void gles_error(struct zegl_context *context, GLenum error);
 void gles_report(const char *what, int code);
+uint64_t gles_time_begin(void);
+void gles_time_end(const char *step, uint64_t started, size_t bytes);
 int gles_names_add(struct gles_names *names, GLuint name, void *object);
 GLuint gles_names_free(struct gles_names *names);
 void *gles_names_get(struct gles_names *names, GLuint name);
