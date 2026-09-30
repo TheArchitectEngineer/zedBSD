@@ -308,6 +308,7 @@ struct pv_app {
 	int opened;
 	uint64_t now;
 	int dirty;
+	uint64_t turn_at;
 	unsigned shown_flags;
 	int notice_shown;
 	int thumbnails;

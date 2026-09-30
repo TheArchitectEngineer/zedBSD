@@ -6,7 +6,7 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 	userland/desktop/wayland/objects.c userland/desktop/wayland/protocol.c userland/desktop/wayland/display.c \
 	userland/desktop/wayland/seat.c userland/desktop/wayland/input.c userland/desktop/wayland/tablet.c userland/desktop/wayland/touch.c \
 	userland/desktop/wayland/compose.c userland/desktop/wayland/import.c userland/desktop/wayland/shm.c \
-	userland/desktop/wayland/glass.c userland/desktop/wayland/shell.c userland/desktop/wayland/home.c userland/desktop/wayland/corner.c userland/desktop/wayland/keyboard.c \
+	userland/desktop/wayland/glass.c userland/desktop/wayland/shell.c userland/desktop/wayland/home.c userland/desktop/wayland/corner.c userland/desktop/wayland/keyboard.c userland/desktop/wayland/keyboard-layout.c \
 	userland/desktop/wayland/menu.c userland/desktop/wayland/menu-shell.c userland/desktop/wayland/titlebar.c \
 	userland/desktop/wayland/popup.c userland/desktop/wayland/toplevel.c userland/desktop/wayland/subsurface.c userland/desktop/wayland/keymap.c userland/desktop/wayland/data.c \
 	userland/desktop/wayland/icons.c userland/desktop/wayland/titlebar-shell.c \

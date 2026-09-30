@@ -161,12 +161,66 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
 
 ### 2.8 作業の領域（K5）
 
-- `zwl_keyboard_reserved(server, &right, &bottom)` を作る。QWERTY・手書きの面が出ている間は、その高さを bottom に返す。flick の panel は right を 0 にする（panel は小さく右端にあり、窓の置き場は縮めない）。
-- `zwl_glass_space`・`docked_rect`・全幅の configure・`desktop_place` から bottom を差し引く。
-  - 最大化した窓は configure で高さが縮む。
-  - 浮いた窓で下端が keyboard に隠れるものは、keyboard の上端から 12 px 上へ寄せる（上端が system bar に当たるなら高さも縮める）。keyboard を閉じると元の位置と大きさに戻す。
-- flick の panel は、focus の窓の text-input の cursor の矩形（`zwl_text_input` の `rectangle`、`ime.h` の公開の field）と重なるときだけ、その窓を左へ寄せる（L2）。text-input の無い窓は寄せない。
-- 全画面の窓は大きさを変えない。keyboard はその上に重ね（`zwl_glass_overlay` を 1 にする）、caret の位置は保証しない（制限として書く）。
+**2026-09-30 ユーザーの方針で改めた**（前の案は flick の panel では縮めず、浮いた窓は高さも縮めた）。ユーザー:「スクリーンキーボードを表示したとき、
+デスクトップの表示領域をキーボードのない範囲に狭めて、ウィンドウをアニメーションで移動、リサイズしましょう。タッチを活用するケースでは、ウィンドウは
+最大化されていることが多いと思うので、最大化のままアニメーションで幅が狭まるのがいいですね。また、ウィンドウが最大化されていないなら、描画エリアから
+はみでないように移動して、どうしてもはみ出た分はそのままにするのがいいと思います。」
+
+- `zwl_keyboard_reserved(server, &right, &bottom)` を作る。flick の panel が出ている間は panel の幅を right に、QWERTY・手書きの面が出ている間は
+  その高さを bottom に返す。**どちらの keyboard でも作業の領域を縮める。**
+- `zwl_glass_space`・`docked_rect`・`desktop_place` から right と bottom を差し引く。desktop の層（icon）も縮んだ領域に置く。
+- **最大化した窓**: 最大化のまま、縮んだ領域いっぱいの大きさへ animation で縮める（flick では幅、QWERTY では高さ）。閉じると animation で元に戻す。
+- **浮いた窓**: 大きさは変えず、縮んだ領域に収まるよう animation で移動する。収まらない（窓が領域より大きい）ときは、上端（title bar）を領域の上端に、
+  左端を領域の左端に合わせ、はみ出た分はそのまま keyboard の下に隠す。keyboard を閉じると、compositor が動かした窓だけ元の位置へ animation で戻す
+  （keyboard が出ている間に利用者が動かした・大きさを変えた窓は戻さない）。
+- **animation の方式**: keyboard の出る動き（同じ時間、既定 200 ms、同じ easing）と同時に、compositor が窓の矩形を補間して描く。大きさの変わる窓には
+  **最初に 1 回だけ**最終の大きさの configure を送り、animation の間は今の buffer を補間の矩形に合わせて描く（伸縮か切り取り）。client の新しい buffer が
+  届いたらそれに替える。frame ごとに configure を送らない（遅い client・Vulkan の client で animation が止まらないように）。既存の dock の animation
+  （`anim_from`・`anim_to`、1 つの窓）を複数の窓へ広げる。
+- **全画面の窓**は大きさを変えない。keyboard はその上に重ね、caret の位置は保証しない（制限として書く）。
+- flick の panel の cursor の矩形による寄せ（前の案）は、作業の領域を縮めるので要らない。
+- **keyboard による大きさの変更の知らせ（2026-09-30 ユーザー）**:「スクリーンキーボードの表示でサイズが変更されるとき、念のためウィンドウに特殊な
+  XDGメッセージを送りましょう。対応しているウィンドウであれば、現在のキャレットを画面の中心など見やすい位置にセンタリングできる、という寸法です。
+  libkeiuiの機能にしましょう。」
+  - 標準の xdg-shell には独自の event を足せないので、title bar（`keiland_titlebar_v1`）と同じ形の Keiland の独自の protocol を窓ごとに作る
+    （例 `keiland_keyboard_inset_v1`: manager の global と、xdg_toplevel ごとの object。`libwayland/*-protocol.c` に手書き、zdesktop の `protocol.c`）。
+  - event `inset(right, bottom, reason)`: keyboard が出る・閉じるために compositor がその窓の大きさか位置を変えるとき、最終の大きさの
+    `xdg_toplevel.configure` の**前に**送る。client は同じ configure の列で新しい大きさと一緒に受け取り、新しい大きさで描くときに caret を寄せる。
+    keyboard を閉じて戻すときも送る（right・bottom は 0）。大きさも位置も変えない窓（全画面）にも、keyboard が上に重なることを知らせるため送る。
+  - libkeiland: 薄い wrapper（`keiland_keyboard_inset_*`、KEILAND_VERSION 17）。bind できない compositor では何もしない。
+  - libkeiui（KUI_VERSION 7）: `kui_window` が object を作って event を受け、app の callback（任意）に渡す。既定の動き: focus を持つ編集の text の
+    view（`kui_text`）が、次の描画で caret の行を view の見えている範囲の縦の中央に寄せる（文書の先頭・末尾で寄せられない分は寄せない、
+    view が scroll できないときは何もしない）。全画面で keyboard が重なるときは、重ならない範囲の中央に寄せる。
+  - 対応していない窓（libkeiui を使わない app、他の toolkit）はこの object を作らず、今までどおり configure だけを受ける。
+
+### 2.10 右の列の道具の面（2026-09-30 ユーザーとの議論、案）
+
+ユーザー:「フリック入力のパネルは、画面右側を1列全体、占有します。」flick の panel は右の列の全体（system bar の下から画面の下まで）を占め、
+下に今の 4×4 の flick、上に**道具の面**を置く。作業の領域（§2.8）は列の幅を差し引く。
+
+ユーザーの要望（同日）:
+- 変換候補・予測の列（Wayland の input-method に標準の口が無いので独自の拡張）
+- カーソルの移動（矢印、行頭へ・行末へ、頁の上下）
+- 範囲の選択の開始の button。選択の間はカーソルの key で範囲を広げ縮め、コピーか切り取りで終わる
+- 編集の操作（独自の Wayland の拡張）
+- クリップボードの履歴（常には出さず、button から何段かの操作で）
+- バックスペース
+- Unicode の絵文字
+- 直前の app に切り替える窓の操作（app をまたいだコピーと貼り付けのため）
+- Termux のような補助の key（Esc・Tab・Ctrl・`|`・`~`・矢印）は QWERTY の面に置く（「Termuxの補助キーは、AWERTYの方がいいかも。」、AWERTY は QWERTY の意）
+
+| 部品 | 中身 | 仕組み |
+| --- | --- | --- |
+| 常に出る列 | 直前の app、BS、道具の面の tab（候補・編集・履歴・絵文字） | — |
+| 編集の面 | ← → ↑ ↓、行頭・行末、頁の上・下、選択（toggle）、コピー・切り取り・貼り付け、取り消し・やり直し、全選択 | 移動は evdev の key（Home・End・PgUp・PgDn）。選択の間は移動に Shift を付ける。編集の操作は下の拡張、無い窓は key に落とす |
+| 編集の操作の拡張 | `keiland_edit_v1`（仮）: 窓ごとの object。app が出来る操作と状態（選択がある・貼り付けられる・取り消せる）を知らせ、compositor が `action(copy/cut/paste/undo/redo/select_all/select_begin/select_end)` を送る。button は状態で灰色にする | libkeiland の wrapper と libkeiui の `kui_text`。拡張の無い窓は Ctrl+C・X・V・Z・Y・A の key に落とす（Terminal のように意味が違う app は app の id の表で Ctrl+Shift+C・V に） |
+| 直前の app | compositor の focus の履歴（新しい順）の 2 番目の窓を前へ出し focus を移す。もう一度押すと戻る。長押しで最近の窓の一覧（後） | compositor の中だけ。keyboard は開いたまま |
+| クリップボードの履歴 | 履歴の tab → 一覧（text だけ、最近 10 件）→ tap で貼る（2 段） | compositor の `data.c` が selection の text を記憶の中だけに持つ。password の欄（text-input の purpose）からの複写は残さない。lock・Log Out で消す |
+| 絵文字 | 種類の tab と格子、tap で送る | text-input の commit（text-input の無い app へは送らない）。font が要る（下の判断） |
+| 変換候補 | 縦の列に 8〜10 候補、tap で確定 | 独自の拡張（例 `keiland_input_method_candidates_v1`: IME が候補の一覧と選択を compositor へ送り、compositor が選択を返す。keyboard が出ている間は IME の popup を出さない）。**IME（WS095）は人間の作業中**なので、設計だけ先に置き、実装は IME を戻してから D2 と一緒に（p012） |
+
+- 特許: 画面の keyboard の矢印・Home・End の key は古くから広くある（例: Windows XP Tablet PC Edition の入力 panel、X の xvkbd、GNOME の onboard）。特定の gesture（空白の長押しで trackpad など）は避け、普通の button にする。法的な判断ではない。
+- 絵文字の font（判断待ち）: 白黒の Noto Emoji（OFL-1.1、今の libtruetype で描ける）か、色付き（Noto Color Emoji の CBDT、または COLRv1。libtruetype と各 app の文字の描画に色の glyph の対応が要る）。
 
 ### 2.9 試験（QEMU、Windows の QEMU）
 
@@ -182,7 +236,7 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
 | 段 | 内容 | 数値目標 | 測り方 |
 | --- | --- | --- | --- |
 | **L1 まず動く** | 右下の swipe で flick の panel、かな・英字・数字の face、英数は Text Editor へ、かなは text-input の app（ime-probe）へ、閉じる、既存の gesture と区別 | (a) 注入した右下の swipe 10 回で 10 回開く。右下から真上への swipe 10 回で 0 回開く。(b) かな 46 字・英字 26・数字 10 の全てを、表の上で flick で出せる（host）。(c) 注入の flick で打った「aiueo123」が Text Editor の file に、「あいうえお」が ime-probe の log に、そのまま届く（誤り 0）。(d) C9 の 10 本が PASS | host の試験、`osk-guest.sh`（pen image）、`criteria.sh C9` |
-| **L2 面を揃える** | 左下の swipe で QWERTY（shift・記号・数字・⌫・⏎・矢印）、手書きの面（線と stub の候補）、作業の領域（K5）、2 本指の連打（`ROUTE_OSK`） | (a) QWERTY で注入の 30 文字（英大小・記号を含む）を 5 文字/秒で打って誤り 0。(b) 2 本指を 50 ms ずつ重ねた 100 打鍵で取りこぼし 0。(c) 手書きの線が指に 1 frame（60 Hz で 17 ms）以内で追いつく（frame の時刻の log）。(d) QWERTY を開くと、最大化した Text Editor の下端が keyboard の上端より上になる（log の configure と画面） | 同上と frame の log |
+| **L2 面を揃える** | 左下の swipe で QWERTY（shift・記号・数字・⌫・⏎・矢印）、手書きの面（線と stub の候補）、作業の領域（K5）、2 本指の連打（`ROUTE_OSK`） | (a) QWERTY で注入の 30 文字（英大小・記号を含む）を 5 文字/秒で打って誤り 0。(b) 2 本指を 50 ms ずつ重ねた 100 打鍵で取りこぼし 0。(c) 手書きの線が指に 1 frame（60 Hz で 17 ms）以内で追いつく（frame の時刻の log）。(d) QWERTY・flick を開くと、最大化した Text Editor が keyboard に重ならない大きさに縮み（log の configure と画面）、浮いた窓は収まる位置へ動く。animation の frame の間隔 ≤ 20 ms、client の新しい buffer が animation の終わりから 100 ms 以内に出る（L3 で測る） | 同上と frame の log |
 | **L3 速さと日本語** | 打鍵から app までの遅れ、開く動きの滑らかさ、IME と組んだ変換（§5 の D2 の決定の後） | (a) key の離しから compositor の送出まで p95 ≤ 5 ms、app の frame まで p95 ≤ 50 ms（QEMU の Venus）。(b) 開く動きの frame の間隔が全て ≤ 20 ms。(c) D2 が決まれば、flick で打った「きょうはいいてんき」を変換して、第 1 候補が「今日はいい天気」 | 計測の道具（L3 の最初の Phase で作る）、log の時刻の中央値と p95（3 回） |
 | **L4 デモの場** | Windows の上の QEMU（WS085）で、物理の touch で L1・L2 の操作 | 台本 S14 の操作が、物理の touch で最後まで通る（3 回中 3 回） | ユーザーと目視、WS085 の QMP の多指の注入 |
 | （後） | 本物の手書きの認識、予測の候補、key の音、配列の設定 | — | Future |
@@ -196,7 +250,8 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
 | p004 | L1 | 文字の送出（§2.5）: evdev と Shift、text-input の commit、組み立て中と text-input の無い app の扱い。guest の試験（Text Editor・ime-probe） | p003 | keyboard.c |
 | p005 | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる。K7 の回帰（C9・Notes の角・Wiseview）。1920x1080 の配置 | p004 | keyboard.c・shell.c |
 | p006 | L2 | QWERTY の面（shift の latch・記号・数字・矢印）と左下の gesture | p005 | keyboard.c・keyboard-layout.c |
-| p007 | L2 | 作業の領域（`zwl_keyboard_reserved` と、置き場・最大化・desktop・浮いた窓の寄せと戻し） | p006 | shell.c・desktop.c・protocol.c |
+| p007 | L2 | 作業の領域（`zwl_keyboard_reserved`（right と bottom）、最大化の窓の animation の縮みと戻し、浮いた窓の animation の移動と戻し、desktop の層、§2.8） |
+| p015 | L2 | keyboard の inset の知らせ（`keiland_keyboard_inset_v1`、libkeiland の wrapper、libkeiui の `kui_window` の受け口と `kui_text` の caret の中央寄せ、Text Editor で確かめる、§2.8） | p007 | libwayland・protocol.c・libkeiland・libkeiui | p006 | shell.c・desktop.c・protocol.c |
 | p008 | L2 | 手書きの面（線・stub の `zwl_hand_recognize`・候補） | p006 | keyboard-hand.c |
 | p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | p006 | touch.c |
 | p010 | L3 | 計測の道具と基準値（遅れ・開く動きの frame） | p009 | plan/ws102/tests |

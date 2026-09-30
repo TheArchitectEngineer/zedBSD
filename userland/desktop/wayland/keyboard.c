@@ -26,12 +26,30 @@
  * pointer's left button or a finger, which touch.c passes through the shell
  * as the pointer (server->shell_source says which).
  *
- * This first step (p002) has the panels empty: their glass, a title and
- * the close key.  The keys, what they type and the work area come in the
+ * The flick panel has the faces of keyboard-layout.c (ws102-p003): a press
+ * on a key shows its characters around it as petals, the one the movement
+ * points at lit, and the release types that character (the face key goes
+ * to the next face).  The QWERTY panel's keys and the work area come in
  * later phases.
+ *
+ * What a key types goes to the focused application (ws102-p004, design
+ * §2.5) by one of two ways, without the input method's own files changing:
+ * a character of the US layout (letters, digits, ASCII symbols, space,
+ * enter, delete) as the key's press and release (zwl_seat_key_deliver,
+ * Shift held around it when needed), which every application hears; any
+ * other character (kana, full-width signs) as the commit of the focused
+ * field's text input (text-input-v3, zwl_text_input_current and
+ * zwl_text_input_deliver of ime.h).  A field without a text input cannot
+ * take such a character, nor can one the input method is composing in;
+ * the keyboard then says so in the log and sends nothing.  The voice key
+ * replaces the kana it sent last by its next form (the text input deletes
+ * the one before and commits the other), the case key the letter it sent
+ * last (delete, then the other case).
  */
 
 #include "glass.h"
+#include "ime.h"
+#include "keyboard.h"
 #include "menu.h"
 
 #include <stdio.h>
@@ -82,8 +100,21 @@
 #define KEYBOARD_QWERTY_MIN	260
 #define KEYBOARD_QWERTY_MAX	420
 
+/* The longest text the keyboard remembers as the last it sent (one character), and the ways it was sent. */
+#define KEYBOARD_LAST		16
+#define KEYBOARD_SENT_NONE	0U
+#define KEYBOARD_SENT_KEY	1U
+#define KEYBOARD_SENT_COMMIT	2U
+
+/* The Shift bit of the depressed modifiers (server->modifiers). */
+#define KEYBOARD_SHIFT		1U
+
 /* The close key's side, at the right of the title band. */
 #define KEYBOARD_CLOSE		28
+
+/* A key's corner radius, and a petal's side as a share of a key's (in tenths). */
+#define KEYBOARD_KEY_RADIUS	10.0f
+#define KEYBOARD_PETAL_TENTHS	8
 
 /*
  * Which panel: none, the flick panel at the right side (the bottom-right
@@ -132,8 +163,11 @@ struct keyboard_contact {
 /*
  * The keyboard's whole state: the contact of the corner's gesture, the
  * panel open (and its rectangle on the output), a press that began on the
- * panel (it is the panel's until its release), and whether the corners'
- * places have been logged (once, for the tests).
+ * panel (it is the panel's until its release), whether the corners'
+ * places have been logged (once, for the tests), the flick panel's face
+ * (ZWL_FLICK_*), the key held (key_active: its row and column, where
+ * the press began and where the pointer is now), and the last character
+ * sent and how (KEYBOARD_SENT_*), which the voice and case keys change.
  */
 struct keyboard_state {
 	struct keyboard_contact contact;
@@ -141,6 +175,16 @@ struct keyboard_state {
 	int32_t panel[4];
 	unsigned pressing;
 	unsigned zones_logged;
+	unsigned face;
+	unsigned key_active;
+	unsigned key_row;
+	unsigned key_column;
+	int32_t key_start_x;
+	int32_t key_start_y;
+	int32_t key_x;
+	int32_t key_y;
+	char last[KEYBOARD_LAST];
+	unsigned last_sent;
 };
 
 /*
@@ -165,6 +209,21 @@ static void keyboard_open(struct zwl_server *server, enum keyboard_kind kind);
 static void keyboard_place(struct zwl_server *server, enum keyboard_kind kind, int32_t *rect);
 static int keyboard_panel_button(struct zwl_server *server, uint32_t button, uint32_t state);
 static int keyboard_contains(const int32_t *rect, int32_t x, int32_t y);
+static int keyboard_key_size(struct zwl_server *server);
+static void keyboard_key_rect(struct zwl_server *server, unsigned row, unsigned column, int32_t *rect);
+static int keyboard_key_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *column);
+static unsigned keyboard_key_direction(struct zwl_server *server);
+static void keyboard_key_release(struct zwl_server *server);
+static void keyboard_draw_keys(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_key(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, const float *ground, const float *ink, enum glass_size size);
+static void keyboard_draw_petals(struct zwl_server *server, VkCommandBuffer command);
+static unsigned keyboard_characters(const char *text);
+static void keyboard_send(struct zwl_server *server, const char *text);
+static int keyboard_send_key(struct zwl_server *server, unsigned code, int shift);
+static int keyboard_send_commit(struct zwl_server *server, const char *text, uint32_t before);
+static void keyboard_voice(struct zwl_server *server);
+static void keyboard_case(struct zwl_server *server);
+static void keyboard_remember(const char *text, unsigned sent);
 static void keyboard_close_rect(int32_t *rect);
 static void keyboard_draw_panel(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
 static void keyboard_draw_hint(struct zwl_server *server, VkCommandBuffer command);
@@ -221,9 +280,17 @@ zwl_keyboard_motion(
 {
 	int taken;
 
-	/* A press held on the panel keeps the pointer's movement. */
-	if (keyboard.pressing)
+	/* A press held on the panel keeps the pointer's movement; a key held follows it (its petals). */
+	if (keyboard.pressing) {
+		if (keyboard.key_active) {
+			keyboard.key_x = server->pointer_x;
+			keyboard.key_y = server->pointer_y;
+			server->dirty = 1;
+		}
+
+		/* The movement is the panel's. */
 		return 1;
+	}
 
 	/* Only the contact of the source moving the pointer now. */
 	if (!keyboard.contact.active || keyboard.contact.source != server->shell_source)
@@ -346,6 +413,7 @@ zwl_keyboard_close(
 	printf("ZWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
 	keyboard.open = PANEL_NONE;
 	keyboard.pressing = 0;
+	keyboard.key_active = 0;
 	server->dirty = 1;
 }
 
@@ -756,11 +824,7 @@ keyboard_place(
 	}
 
 	/* The flick panel's key side. */
-	key = height / KEYBOARD_KEY_DIVISOR;
-	if (key < KEYBOARD_KEY_MIN)
-		key = KEYBOARD_KEY_MIN;
-	if (key > KEYBOARD_KEY_MAX)
-		key = KEYBOARD_KEY_MAX;
+	key = keyboard_key_size(server);
 
 	/* Its keys and gaps, the title band above them, at the bottom right. */
 	rect[2] = KEYBOARD_FLICK_COLUMNS * key + (KEYBOARD_FLICK_COLUMNS + 1) * KEYBOARD_KEY_GAP;
@@ -781,14 +845,25 @@ keyboard_panel_button(
 	uint32_t state)
 {
 	int32_t close[4];
+	unsigned row;
+	unsigned column;
 	int inside;
+	int found;
 
-	/* The release of a press the panel took. */
+	/* The release of a press the panel took: a key held acts, the close key closes. */
 	(void)button;
 	if (state == 0) {
 		if (!keyboard.pressing)
 			return 0;
 		keyboard.pressing = 0;
+
+		/* A key held: what the release means. */
+		if (keyboard.key_active) {
+			keyboard.key_x = server->pointer_x;
+			keyboard.key_y = server->pointer_y;
+			keyboard_key_release(server);
+			return 1;
+		}
 
 		/* On the close key, the panel closes. */
 		keyboard_close_rect(close);
@@ -803,9 +878,27 @@ keyboard_panel_button(
 	if (!inside)
 		return 0;
 
-	/* Succeeded: the press is the panel's until its release. */
+	/* The press is the panel's until its release. */
 	keyboard.pressing = 1;
-	printf("ZWL OSK panel-press x=%d y=%d\n", server->pointer_x, server->pointer_y);
+	keyboard.key_active = 0;
+
+	/* On a key of the flick panel, the key is held (its petals show). */
+	found = 0;
+	if (keyboard.open == PANEL_FLICK)
+		found = keyboard_key_at(server, server->pointer_x, server->pointer_y, &row, &column);
+	if (found) {
+		keyboard.key_active = 1;
+		keyboard.key_row = row;
+		keyboard.key_column = column;
+		keyboard.key_start_x = server->pointer_x;
+		keyboard.key_start_y = server->pointer_y;
+		keyboard.key_x = server->pointer_x;
+		keyboard.key_y = server->pointer_y;
+		server->dirty = 1;
+	}
+
+	/* Succeeded: the press is the panel's. */
+	printf("ZWL OSK panel-press x=%d y=%d key=%d\n", server->pointer_x, server->pointer_y, found);
 	return 1;
 }
 
@@ -852,7 +945,7 @@ keyboard_draw_panel(
 	float opacity)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float key[4] = { 1.0f, 1.0f, 1.0f, 0.55f };
+	static const float key[4] = { 0.12f, 0.16f, 0.24f, 0.08f };
 	struct glass_shape shape;
 	int32_t close[4];
 	int32_t advance;
@@ -890,11 +983,21 @@ keyboard_draw_panel(
 	if (opacity < 1.0f)
 		return;
 
-	/* The title at the left of the band. */
-	title = "Flick";
+	/* The title at the left of the band: the flick panel's face, or the keyboard. */
+	title = "かな";
+	if (keyboard.face == ZWL_FLICK_ALPHA)
+		title = "ABC";
+	if (keyboard.face == ZWL_FLICK_NUMBER)
+		title = "123";
 	if (keyboard.open == PANEL_QWERTY)
 		title = "Keyboard";
 	glass_draw_text(server, command, SIZE_TITLE, rect[0] + KEYBOARD_MARGIN + 4, rect[1] + KEYBOARD_BAND - 6, title, rect[2] - 3 * KEYBOARD_MARGIN - KEYBOARD_CLOSE, dark);
+
+	/* The flick panel's keys, and the held key's petals over them. */
+	if (keyboard.open == PANEL_FLICK) {
+		keyboard_draw_keys(server, command);
+		keyboard_draw_petals(server, command);
+	}
 
 	/* The close key: a pale round key with the multiplication sign. */
 	keyboard_close_rect(close);
@@ -928,6 +1031,512 @@ keyboard_draw_hint(
 	/* The corner's panel at its place, faint. */
 	keyboard_place(server, keyboard.contact.corner, rect);
 	keyboard_draw_panel(server, command, rect, 0.2f + 0.6f * progress);
+}
+
+/* Works out the flick panel's key side for the screen's height (a share of it, within limits). */
+static int
+keyboard_key_size(
+	struct zwl_server *server)
+{
+	int key;
+
+	/* A share of the height. */
+	key = (int)server->height / KEYBOARD_KEY_DIVISOR;
+	if (key < KEYBOARD_KEY_MIN)
+		key = KEYBOARD_KEY_MIN;
+	if (key > KEYBOARD_KEY_MAX)
+		key = KEYBOARD_KEY_MAX;
+
+	/* The side. */
+	return key;
+}
+
+/* Works out a key's rectangle on the open flick panel, under its title band. */
+static void
+keyboard_key_rect(
+	struct zwl_server *server,
+	unsigned row,
+	unsigned column,
+	int32_t *rect)
+{
+	int key;
+
+	/* The key's side, and its place in the grid. */
+	key = keyboard_key_size(server);
+	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)column * (key + KEYBOARD_KEY_GAP);
+	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP + (int32_t)row * (key + KEYBOARD_KEY_GAP);
+	rect[2] = key;
+	rect[3] = key;
+}
+
+/* Finds the flick panel's key at a point.  Returns 1 with its row and column, or 0 (a gap, the band). */
+static int
+keyboard_key_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	unsigned *row,
+	unsigned *column)
+{
+	int32_t rect[4];
+	unsigned r;
+	unsigned c;
+	int inside;
+
+	/* Each key of the grid. */
+	for (r = 0; r < ZWL_FLICK_ROWS; r++) {
+		for (c = 0; c < ZWL_FLICK_COLUMNS; c++) {
+			/* The point on this key. */
+			keyboard_key_rect(server, r, c, rect);
+			inside = keyboard_contains(rect, x, y);
+			if (!inside)
+				continue;
+
+			/* Succeeded: the key. */
+			*row = r;
+			*column = c;
+			return 1;
+		}
+	}
+
+	/* No key there. */
+	return 0;
+}
+
+/* Works out the direction the held key's press has moved (the flick), from where it began. */
+static unsigned
+keyboard_key_direction(
+	struct zwl_server *server)
+{
+	unsigned direction;
+	int dx;
+	int dy;
+	int key;
+
+	/* The movement from the press, and the key's side. */
+	dx = keyboard.key_x - keyboard.key_start_x;
+	dy = keyboard.key_y - keyboard.key_start_y;
+	key = keyboard_key_size(server);
+
+	/* The flick's direction (keyboard-layout.c). */
+	direction = zwl_flick_direction(dx, dy, key);
+	return direction;
+}
+
+/*
+ * Acts on the release of the held key: the face key goes to the next
+ * face, delete sends the delete key, the voice and case keys change the
+ * last character, and any other key sends its character in the flick's
+ * direction (none where the direction has none).
+ */
+static void
+keyboard_key_release(
+	struct zwl_server *server)
+{
+	const struct zwl_flick_key *key;
+	const char *text;
+	const char *shown;
+	unsigned direction;
+	int newline;
+	int sent;
+
+	/* The key and the flick's direction. */
+	keyboard.key_active = 0;
+	server->dirty = 1;
+	key = zwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
+	if (key == NULL)
+		return;
+	direction = keyboard_key_direction(server);
+
+	/* The character in that direction (a newline is logged as \n), for the log line the tests read. */
+	text = zwl_flick_text(key, direction);
+	shown = text;
+	if (shown == NULL)
+		shown = "";
+	newline = strcmp(shown, "\n");
+	if (newline == 0)
+		shown = "\\n";
+	printf("ZWL OSK key face=%s row=%u column=%u dir=%s action=%u text=%s\n", zwl_flick_face_name(keyboard.face), keyboard.key_row, keyboard.key_column, zwl_flick_direction_name(direction), key->action, shown);
+
+	/* What the key does. */
+	switch (key->action) {
+	case ZWL_FLICK_FACE:
+		/* The next face. */
+		keyboard.face = zwl_flick_face_next(keyboard.face);
+		printf("ZWL OSK face name=%s\n", zwl_flick_face_name(keyboard.face));
+		break;
+	case ZWL_FLICK_BACKSPACE:
+		/* The delete key; the last character is gone. */
+		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		if (sent)
+			keyboard_remember("", KEYBOARD_SENT_NONE);
+		break;
+	case ZWL_FLICK_VOICE:
+		keyboard_voice(server);
+		break;
+	case ZWL_FLICK_CASE:
+		keyboard_case(server);
+		break;
+	default:
+		/* A character, when the direction has one. */
+		if (text != NULL)
+			keyboard_send(server, text);
+		break;
+	}
+}
+
+/* Draws the flick panel's keys: character keys pale white, the fixed keys a little darker, the held one blue. */
+static void
+keyboard_draw_keys(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	const struct zwl_flick_key *key;
+	const float *ground;
+	const float *ink;
+	enum glass_size size;
+	int32_t rect[4];
+	unsigned characters;
+	unsigned row;
+	unsigned column;
+
+	/* Each key of the face. */
+	for (row = 0; row < ZWL_FLICK_ROWS; row++) {
+		for (column = 0; column < ZWL_FLICK_COLUMNS; column++) {
+			/* The key, its place, its colours: the held one blue, the acting ones grey. */
+			key = zwl_flick_key(keyboard.face, row, column);
+			keyboard_key_rect(server, row, column, rect);
+			ground = white;
+			ink = dark;
+			if (key->action != ZWL_FLICK_TYPE)
+				ground = grey;
+			if (keyboard.key_active && keyboard.key_row == row && keyboard.key_column == column) {
+				ground = blue;
+				ink = light;
+			}
+
+			/* A single character large, a longer label a size smaller (the same for all of them). */
+			size = SIZE_SEARCH;
+			characters = keyboard_characters(key->label);
+			if (characters > 1U)
+				size = SIZE_SIGN;
+			keyboard_draw_key(server, command, rect, key->label, ground, ink, size);
+		}
+	}
+}
+
+/* Draws one key: its rounded ground and its label in the middle. */
+static void
+keyboard_draw_key(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const int32_t *rect,
+	const char *label,
+	const float *ground,
+	const float *ink,
+	enum glass_size size)
+{
+	int32_t width;
+	int32_t baseline;
+
+	/* The ground. */
+	glass_draw_solid(server, command, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3], KEYBOARD_KEY_RADIUS, ground);
+
+	/* The label, centred (the baseline a little under the middle). */
+	width = glass_text_width(server, size, label);
+	baseline = rect[1] + rect[3] / 2 + 8;
+	if (size == SIZE_SIGN)
+		baseline = rect[1] + rect[3] / 2 + 7;
+	glass_draw_text(server, command, size, rect[0] + (rect[2] - width) / 2, baseline, label, rect[2], ink);
+}
+
+/*
+ * Draws the held key's petals: its characters to the left, above, to the
+ * right and below it, the one the flick points at blue (the key itself is
+ * blue while the press has not moved far enough).
+ */
+static void
+keyboard_draw_petals(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	struct glass_shape shape;
+	const struct zwl_flick_key *key;
+	const char *text;
+	unsigned direction;
+	unsigned side;
+	int32_t rect[4];
+	int32_t petal[4];
+	int32_t size;
+
+	/* Only a held character key. */
+	if (!keyboard.key_active)
+		return;
+	key = zwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
+	if (key == NULL || key->action != ZWL_FLICK_TYPE)
+		return;
+
+	/* The key, the petals' side and the direction pointed at. */
+	keyboard_key_rect(server, keyboard.key_row, keyboard.key_column, rect);
+	size = rect[2] * KEYBOARD_PETAL_TENTHS / 10;
+	direction = keyboard_key_direction(server);
+
+	/* Each side's petal that has a character. */
+	for (side = ZWL_FLICK_LEFT; side < ZWL_FLICK_DIRECTIONS; side++) {
+		/* A side without a character has no petal. */
+		text = zwl_flick_text(key, side);
+		if (text == NULL)
+			continue;
+
+		/* The petal next to the key on that side, centred on it. */
+		petal[2] = size;
+		petal[3] = size;
+		petal[0] = rect[0] + (rect[2] - size) / 2;
+		petal[1] = rect[1] + (rect[3] - size) / 2;
+		if (side == ZWL_FLICK_LEFT)
+			petal[0] = rect[0] - size - 2;
+		else if (side == ZWL_FLICK_RIGHT)
+			petal[0] = rect[0] + rect[2] + 2;
+		else if (side == ZWL_FLICK_UP)
+			petal[1] = rect[1] - size - 2;
+		else
+			petal[1] = rect[1] + rect[3] + 2;
+
+		/* A soft shadow under it, so it stands out from the keys it covers. */
+		glass_shape_init(&shape, (float)petal[0], (float)petal[1] + 3.0f, (float)petal[2], (float)petal[3]);
+		shape.quad[0] -= 16.0f;
+		shape.quad[1] -= 16.0f;
+		shape.quad[2] += 32.0f;
+		shape.quad[3] += 32.0f;
+		shape.mode = MODE_SHADOW;
+		shape.radius = KEYBOARD_KEY_RADIUS;
+		shape.soft = 8.0f;
+		shape.color[0] = 0.10f;
+		shape.color[1] = 0.18f;
+		shape.color[2] = 0.35f;
+		shape.color[3] = 0.30f;
+		glass_shape_draw(server, command, &shape);
+
+		/* Blue when the flick points at it. */
+		if (side == direction) {
+			keyboard_draw_key(server, command, petal, text, blue, light, SIZE_SEARCH);
+		} else {
+			keyboard_draw_key(server, command, petal, text, white, dark, SIZE_SEARCH);
+		}
+	}
+}
+
+/*
+ * Sends a character to the focused application: as the key of the US
+ * layout that types it, else as the commit of the focused field's text
+ * input.  The character is remembered for the voice and case keys.
+ */
+static void
+keyboard_send(
+	struct zwl_server *server,
+	const char *text)
+{
+	unsigned code;
+	int shift;
+	int found;
+	int sent;
+
+	/* A character of the US layout: its key. */
+	found = zwl_flick_us_key(text, &code, &shift);
+	if (found) {
+		sent = keyboard_send_key(server, code, shift);
+		if (sent)
+			keyboard_remember(text, KEYBOARD_SENT_KEY);
+		return;
+	}
+
+	/* Any other: the text input's commit. */
+	sent = keyboard_send_commit(server, text, 0);
+	if (sent)
+		keyboard_remember(text, KEYBOARD_SENT_COMMIT);
+}
+
+/*
+ * Sends a key's press and release to the focused application, Shift held
+ * around them when asked (the physical modifiers are restored after).
+ * Returns 1 when there was an application to hear it.
+ */
+static int
+keyboard_send_key(
+	struct zwl_server *server,
+	unsigned code,
+	int shift)
+{
+	uint32_t modifiers;
+	uint32_t time;
+
+	/* Without a focused application the key reaches nobody. */
+	if (server->focus == NULL) {
+		printf("ZWL OSK refused reason=no-focus code=%u\n", code);
+		return 0;
+	}
+
+	/* Shift, held for the key when it needs it (only while not already held). */
+	modifiers = server->modifiers;
+	if (shift && (modifiers & KEYBOARD_SHIFT) == 0U) {
+		server->modifiers = modifiers | KEYBOARD_SHIFT;
+		zwl_seat_modifiers(server);
+	}
+
+	/* The press and the release, at the compositor's time. */
+	time = (uint32_t)zwl_milliseconds();
+	zwl_seat_key_deliver(server, time, code, 1U);
+	zwl_seat_key_deliver(server, time, code, 0U);
+
+	/* The modifiers as they were. */
+	if (server->modifiers != modifiers) {
+		server->modifiers = modifiers;
+		zwl_seat_modifiers(server);
+	}
+
+	/* Succeeded: the key was sent. */
+	printf("ZWL OSK send via=key code=%u shift=%d\n", code, shift);
+	return 1;
+}
+
+/*
+ * Commits a text to the focused field's text input, deleting some bytes
+ * before the cursor first (the voice key's replacement).  A field without
+ * a text input, or one the input method is composing in, takes nothing.
+ * Returns 1 when the text was committed.
+ */
+static int
+keyboard_send_commit(
+	struct zwl_server *server,
+	const char *text,
+	uint32_t before)
+{
+	struct zwl_text_input *input;
+
+	/* The focused field's text input. */
+	input = zwl_text_input_current(server);
+	if (input == NULL) {
+		printf("ZWL OSK refused reason=no-text-input text=%s\n", text);
+		return 0;
+	}
+
+	/* A composition of the input method is left alone (its preedit would be lost). */
+	if (server->ime != NULL && server->ime->composing) {
+		printf("ZWL OSK refused reason=composing text=%s\n", text);
+		return 0;
+	}
+
+	/* The deletion and the commit, applied together. */
+	zwl_text_input_deliver(input, NULL, 0, 0, text, before, 0U);
+
+	/* Succeeded: the field has the text. */
+	printf("ZWL OSK send via=commit text=%s before=%u\n", text, before);
+	return 1;
+}
+
+/* Replaces the last kana sent (committed) by its next voiced, half-voiced or small form. */
+static void
+keyboard_voice(
+	struct zwl_server *server)
+{
+	char next[KEYBOARD_LAST];
+	int found;
+	int sent;
+
+	/* Only a kana that was committed. */
+	if (keyboard.last_sent != KEYBOARD_SENT_COMMIT) {
+		printf("ZWL OSK voice none\n");
+		return;
+	}
+
+	/* Its next form, if it has one. */
+	found = zwl_flick_voice(keyboard.last, next, sizeof(next));
+	if (!found) {
+		printf("ZWL OSK voice none\n");
+		return;
+	}
+
+	/* The kana before the cursor replaced by it. */
+	sent = keyboard_send_commit(server, next, (uint32_t)strlen(keyboard.last));
+	if (sent)
+		keyboard_remember(next, KEYBOARD_SENT_COMMIT);
+}
+
+/* Replaces the last letter sent (as a key) by its other case: the delete key, then the letter's key. */
+static void
+keyboard_case(
+	struct zwl_server *server)
+{
+	char next[KEYBOARD_LAST];
+	unsigned code;
+	int shift;
+	int found;
+	int sent;
+
+	/* Only a letter that was sent as a key. */
+	if (keyboard.last_sent != KEYBOARD_SENT_KEY) {
+		printf("ZWL OSK case none\n");
+		return;
+	}
+
+	/* Its other case, if it is a letter. */
+	found = zwl_flick_case(keyboard.last, next, sizeof(next));
+	if (!found) {
+		printf("ZWL OSK case none\n");
+		return;
+	}
+
+	/* The letter before the cursor deleted, and the other one typed. */
+	sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+	if (!sent)
+		return;
+	found = zwl_flick_us_key(next, &code, &shift);
+	if (!found)
+		return;
+	sent = keyboard_send_key(server, code, shift);
+	if (sent)
+		keyboard_remember(next, KEYBOARD_SENT_KEY);
+}
+
+/* Remembers the last character sent and how, for the voice and case keys. */
+static void
+keyboard_remember(
+	const char *text,
+	unsigned sent)
+{
+	/* The character (cut to the room) and the way. */
+	(void)snprintf(keyboard.last, sizeof(keyboard.last), "%s", text);
+	keyboard.last_sent = sent;
+}
+
+/* Counts the characters of a UTF-8 text (the bytes that do not continue one). */
+static unsigned
+keyboard_characters(
+	const char *text)
+{
+	const unsigned char *byte;
+	unsigned count;
+
+	/* Each byte that starts a character. */
+	count = 0;
+	for (byte = (const unsigned char *)text;
+	     *byte != '\0';
+	     byte++) {
+		if ((*byte & 0xc0U) != 0x80U)
+			count++;
+	}
+
+	/* The characters. */
+	return count;
 }
 
 /* Names a panel (or a corner) for the log. */

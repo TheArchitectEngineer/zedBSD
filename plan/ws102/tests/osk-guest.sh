@@ -12,6 +12,14 @@
 #   edges     (p002, D3) the corners do not take the other gestures' strokes: a straight-up stroke from the bottom-right
 #             corner opens nothing; the bottom edge's swipe up in the middle still opens Wiseview; a swipe right from
 #             the left edge just above the corner still switches the desktop
+#   flick     (p003) the flick panel's keys (72 px at 956,476 and every 78 px): a tap on あ, a flick left on か (き),
+#             a flick up held on な (the petals, petals.png; ぬ), the face key to the alpha face (abc: a, flick up c) and
+#             the number face (1, 2 flicked down >), back to kana; a finger's flick right on あ (え)
+#   send      (p004) what the keys type reaches the focused application: in Text Editor (/root/osk.txt) the alpha face's
+#             a i u e o, the case key (O) and the number face's 1 2 3 as keys, saved by Ctrl+S: the file is
+#             "aiueO123"; in ime-probe (a text input) the kana face's あ い う え お and か with the voice key (が)
+#             as commits: its text is "あいうえおかが" with a deletion of 3 bytes before が; in wltest (no text input)
+#             a kana is refused; in Text Editor a kana (WS090's text input) is also tried, and noted
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -57,6 +65,26 @@ expect_log() {
 	fi
 }
 
+# Fails the run unless zdesktop's keyboard lines have a fixed text (compared on the host: UTF-8 through the guest's
+# shell is not reliable).
+expect_text() {
+	tries=0
+	found=0
+	while [ $tries -lt 8 ]; do
+		guest "grep -a 'ZWL OSK' /tmp/zdesktop.log" > "$out/osk-now.txt"
+		found=$(grep -cF "$1" "$out/osk-now.txt")
+		[ "$found" -gt 0 ] 2>/dev/null && break
+		tries=$((tries + 1))
+		sleep 1
+	done
+	if [ "$found" -gt 0 ] 2>/dev/null; then
+		echo "text: $1 ok"
+	else
+		echo "text: $1 MISSING"
+		status=1
+	fi
+}
+
 # Fails the run unless a pattern's count is exactly the one given.
 expect_count() {
 	found=$(count "$1")
@@ -84,6 +112,12 @@ touch_replay() {
 	printf '%s\n' "$result" | grep -q '^replay=0$' || { echo "touchinject $1: FAILED"; status=1; }
 }
 
+# A tap on a key, and a flick of one (dx, dy) in steps.
+key_tap() { pointer move "$1" "$2" sleep 150 down sleep 60 up sleep 350; }
+key_flick() {
+	pointer move "$1" "$2" sleep 150 down sleep 50 move $(( $1 + $3 / 2 )) $(( $2 + $4 / 2 )) sleep 50 move $(( $1 + $3 )) $(( $2 + $4 )) sleep 80 up sleep 350
+}
+
 # A swipe of the pointer from one point to another in steps, the button held.
 swipe() {
 	pointer move "$1" "$2" sleep 200 down sleep 80 move $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) sleep 60 move "$3" "$4" sleep 120 up sleep 700
@@ -93,7 +127,12 @@ for step in "$@"; do
 	case "$step" in
 	install)
 		put "$bin/bin/wayland" /bin/wayland
-		for library in libkeiland libvulkan libtruetype libwayland-client; do
+		put userland/desktop/fonts/DroidSansFallbackFull.ttf /usr/share/fonts/keiland-fallback.ttf
+		for program in textedit ime-probe wltest; do
+			[ -f "$bin/bin/$program" ] && put "$bin/bin/$program" "/bin/$program"
+		done
+		guest 'chmod 755 /bin/textedit /bin/ime-probe /bin/wltest 2>/dev/null' >/dev/null
+		for library in libkeiland libkeiui libvulkan libtruetype libwayland-client; do
 			[ -f "$bin/dynamic/$library.so" ] && put "$bin/dynamic/$library.so" "/lib/$library.so"
 		done
 		guest 'chmod 755 /bin/wayland' >/dev/null
@@ -131,6 +170,111 @@ for step in "$@"; do
 		expect_count 'ZWL OSK open kind=flick' 3
 		pointer move 1242 456 sleep 200 down sleep 60 up sleep 600
 		expect_count 'ZWL OSK close kind=flick reason=key' 2
+		;;
+	flick)
+		compositor
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK open kind=flick x=950 y=434'
+		# A tap on あ, a flick left on か.
+		pointer move 992 512 sleep 200 down sleep 80 up sleep 500
+		expect_text 'ZWL OSK key face=kana row=0 column=0 dir=center action=0 text=あ'
+		pointer move 1070 512 sleep 200 down sleep 60 move 1050 512 sleep 60 move 1030 514 sleep 80 up sleep 500
+		expect_text 'ZWL OSK key face=kana row=0 column=1 dir=left action=0 text=き'
+		# A flick up held on な: its petals, then ぬ.
+		pointer move 1070 590 sleep 200 down sleep 60 move 1070 575 sleep 60 move 1071 556 sleep 600
+		shot petals.png
+		pointer up sleep 500
+		expect_text 'ZWL OSK key face=kana row=1 column=1 dir=up action=0 text=ぬ'
+		# The face key: the alpha face; abc tapped (a) and flicked up (c).
+		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK face name=alpha'
+		pointer move 1070 512 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK key face=alpha row=0 column=1 dir=center action=0 text=a'
+		pointer move 1070 512 sleep 200 down sleep 60 move 1070 495 sleep 60 move 1070 478 sleep 80 up sleep 500
+		expect_log 'ZWL OSK key face=alpha row=0 column=1 dir=up action=0 text=c'
+		pointer move 700 300 sleep 400
+		shot alpha.png
+		# The number face: 1 tapped, 2 flicked down (>), back to kana.
+		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK face name=number'
+		pointer move 992 512 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK key face=number row=0 column=0 dir=center action=0 text=1'
+		pointer move 1070 512 sleep 200 down sleep 60 move 1070 530 sleep 60 move 1070 550 sleep 80 up sleep 500
+		expect_log 'ZWL OSK key face=number row=0 column=1 dir=down action=0 text=>'
+		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK face name=kana'
+		# A finger's flick right on あ.
+		touch_replay flick-right 'size 1279 799 2
+wait 2600
+down 1 992 512
+swipe 40 0 8 16
+up 1
+hold 800'
+		expect_text 'ZWL OSK key face=kana row=0 column=0 dir=right action=0 text=え'
+		;;
+	send)
+		compositor
+		# Text Editor on an empty file, on top with the keyboard.
+		guest 'rm -f /root/osk.txt /tmp/te.log; touch /root/osk.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/osk.txt > /tmp/te.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		expect_log 'ZWL MAP client='
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK open kind=flick'
+		# The alpha face: a (abc), i (ghi up), u (tuv left), e (def left), o (mno up), then the case key (O).
+		key_tap 1226 746
+		key_tap 1070 512
+		key_flick 992 590 0 -30
+		key_flick 1070 668 -30 0
+		key_flick 1148 512 -30 0
+		key_flick 1148 590 0 -30
+		key_tap 992 746
+		# The number face: 1 2 3.
+		key_tap 1226 746
+		key_tap 992 512
+		key_tap 1070 512
+		key_tap 1148 512
+		expect_log 'ZWL OSK send via=key code=30 shift=0'
+		expect_log 'ZWL OSK send via=key code=24 shift=1'
+		expect_log 'ZWL OSK send via=key code=4 shift=0'
+		pointer move 400 300 sleep 300
+		shot send-textedit.png
+		# Saved with the physical keyboard's Ctrl+S; the file read back.
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		saved=$(guest 'cat /root/osk.txt' | tail -1)
+		[ "$saved" = "aiueO123" ] && echo "textedit: aiueO123 ok" || { echo "textedit: ($saved) MISSING"; status=1; }
+		# ime-probe (a text input) on top: the kana face (the face key once more), あいうえお, か and the voice key.
+		guest 'for p in $(ps -A -o pid,args | grep "[t]extedit" | awk "{print \$1}"); do kill $p; done; rm -f /tmp/ime-probe.log' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/ime-probe --log=/tmp/ime-probe.log --seconds=300 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+		key_tap 1226 746
+		key_tap 992 512
+		key_flick 992 512 -30 0
+		key_flick 992 512 0 -30
+		key_flick 992 512 30 0
+		key_flick 992 512 0 30
+		key_tap 1070 512
+		key_tap 992 746
+		sleep 1
+		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe.log"
+		grep -qF 'PROBE TEXT text=あいうえおかが' "$out/ime-probe.log" && echo "ime-probe: あいうえおかが ok" || { echo "ime-probe: text MISSING"; status=1; }
+		grep -qF 'PROBE DELETE before=3 after=0' "$out/ime-probe.log" && echo "ime-probe: delete 3 before が ok" || { echo "ime-probe: delete MISSING"; status=1; }
+		expect_text 'ZWL OSK send via=commit text=が before=3'
+		shot send-probe.png
+		# wltest (no text input) on top: a kana is refused.
+		guest 'for p in $(ps -A -o pid,args | grep "[i]me-probe" | awk "{print \$1}"); do kill $p; done' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp; /bin/wltest --windowed --frames=3600 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+		key_tap 992 512
+		expect_log 'ZWL OSK refused reason=no-text-input'
+		guest 'for p in $(ps -A -o pid,args | grep "[w]ltest" | awk "{print \$1}"); do kill $p; done' >/dev/null
+		# (noted, not required in L1) Text Editor with WS090's text input: あい, saved.
+		guest 'rm -f /root/osk2.txt; touch /root/osk2.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/osk2.txt > /tmp/te2.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		key_tap 992 512
+		key_flick 992 512 -30 0
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		guest 'cat /root/osk2.txt' > "$out/osk2.txt"
+		grep -qF 'あい' "$out/osk2.txt" && echo "note: Text Editor took あい by its text input" || echo "note: Text Editor did not take the kana ($(cat "$out/osk2.txt"))"
 		;;
 	edges)
 		compositor
