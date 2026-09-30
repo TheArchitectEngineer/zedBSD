@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-09-30 に立てた。次は p001（調査と設計）
+Resume point: 2026-09-30 に立てた。**始める時期はユーザーが指示する**（2026-09-30 ユーザー「この標準Vulkan化の作業は、タイミングを見て実行を指示させてください。WSとして作成しておいてください。」）。指示の後は p001（調査と設計、High）から
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
