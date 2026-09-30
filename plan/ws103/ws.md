@@ -3,12 +3,12 @@
 # WS103: compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）
 
 <!-- awesome-plan-current:start -->
-Status: planning（p001 cleared、p002〜p007 planned）
+Status: incomplete（p001 cleared、p002 実行中）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: なし（q508 finished）
+Queue: q509（ws103-p002）
 Resume point: 2026-09-30 夜 p001 cleared（q508、[design.md](design.md) 改訂 3）。次は p002（起動の問い合わせを VK_KHR_display へ、`--direct` の削除）か、独立の p003・p005。実行は Queue の承認の後。V1・V4 は 2026-09-30 夜に改訂（ユーザー承認）
 <!-- awesome-plan-current:end -->
 
