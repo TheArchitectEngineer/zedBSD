@@ -102,6 +102,41 @@ fm_desktop_cell_rect(
 }
 
 /*
+ * Finds the cell of the grid at a point of a desktop of a size.  Returns 1
+ * with its column and row, or 0 when the point is in no cell (the margin).
+ */
+int
+fm_desktop_cell_at(
+	int x,
+	int y,
+	int width,
+	int height,
+	int *column,
+	int *row)
+{
+	int columns;
+	int rows;
+	int from_right;
+	int from_top;
+
+	/* The point's distance from the grid's top-right corner; the margin has no cell. */
+	from_right = width - LAYOUT_MARGIN - x;
+	from_top = y - LAYOUT_MARGIN;
+	if (from_right <= 0 || from_top < 0)
+		return 0;
+
+	/* The cell it falls in, which must be in the grid. */
+	fm_desktop_grid(width, height, &columns, &rows);
+	*column = (from_right - 1) / LAYOUT_CELL_WIDTH;
+	*row = from_top / LAYOUT_CELL_HEIGHT;
+	if (*column >= columns || *row >= rows)
+		return 0;
+
+	/* Succeeded: the cell. */
+	return 1;
+}
+
+/*
  * Places the items of a list of names on a desktop of a size: each saved
  * place that is in the grid and not taken first, then the others in the
  * free cells from the top-right corner down.  An item without a cell gets
