@@ -24,7 +24,8 @@
 #             desktop (moved into ~/Desktop, placed at the cell of the drop; drop-in.png); the desktop's report.pdf onto the
 #             Files window (moved into its folder; drop-out.png)
 #   perf100   (ws094-p008, L3) the desktop with 100 items: start to ready, a file added to shown, a click to the selection's
-#             frame, three rounds (perf100.txt: the rounds, the medians against the targets; perf100.png)
+#             frame, three rounds (perf100.txt: the rounds, the medians against the targets; perf100.png); ws094-p009: start to
+#             zdesktop's first drawing of the desktop, and the steps of Files' start (perf100-steps.txt)
 #   touch     (ws094-p006, after show; the pen image, /bin/touchinject) a double tap on Projects opens it, a long press on
 #             report.pdf opens its context menu (touch-menu.png), a long press that moves drags script.sh to an empty cell
 #             (touch-moved.png)
@@ -413,7 +414,8 @@ hold 2000'
 		# to ZFILES DESKTOP ready items=100 (at_ms); (b) a file added to the ready desktop: the age of the newest item when
 		# it is shown (ready items=101 newest_age_ms); (c) three clicks on items: the press to the selection's frame
 		# (DESKTOP select-frame ms).  The medians against L3's targets (PERF_START_MS, PERF_ADDED_MS, PERF_SELECT_MS),
-		# and the SLOW-FRAME lines counted (perf100.txt, perf100.png).
+		# and the SLOW-FRAME lines counted (perf100.txt, perf100.png).  ws094-p009: (a') zdesktop's first drawing of the
+		# desktop's image (ZWL DESKTOP drawn at_ms), and the steps of Files' start (perf100-steps.txt).
 		start_limit=${PERF_START_MS:-1500}; added_limit=${PERF_ADDED_MS:-2500}; select_limit=${PERF_SELECT_MS:-50}
 		python3 plan/tools/imageview/make-images.py build/ws094-images >/dev/null
 		guest 'rm -rf /tmp/dhome100; mkdir -p /tmp/dhome100/Desktop /tmp/p100' >/dev/null
@@ -434,6 +436,10 @@ i=0; while ! grep -aq 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log && [ \
 			ready=$(guest "grep -a 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log | head -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
 			start_ms=$(( ${ready:-0} - ${began:-0} ))
 			[ -n "$began" ] && [ -n "$ready" ] || start_ms=-1
+			# (a') zdesktop's first drawing of the desktop's image (ws094-p009): what the screen shows, not only Files' frame.
+			drawn=$(guest "grep -a 'ZWL DESKTOP drawn ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
+			drawn_ms=$(( ${drawn:-0} - ${began:-0} ))
+			[ -n "$began" ] && [ -n "$drawn" ] || drawn_ms=-1
 			guest "printf 'new\n' > /tmp/dhome100/Desktop/added-$round.txt" >/dev/null
 			tries=0; line=
 			while [ $tries -lt 20 ] && [ -z "$line" ]; do
@@ -449,7 +455,11 @@ i=0; while ! grep -aq 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log && [ \
 			sleep 1
 			selects=$(guest "grep -a 'ZFILES DESKTOP select-frame ms=' /tmp/zdesktop.log" | sed -n 's/.* ms=\([0-9]*\).*/\1/p' | tr '\n' ' ')
 			slow=$(guest "grep -ac 'ZFILES SLOW-FRAME' /tmp/zdesktop.log" | tail -1)
-			echo "round=$round start_ms=$start_ms added_ms=$added_ms select_ms=$selects slow_frames=${slow:-?}" | tee -a "$out/perf100.txt"
+			echo "round=$round start_ms=$start_ms drawn_ms=$drawn_ms added_ms=$added_ms select_ms=$selects slow_frames=${slow:-?}" | tee -a "$out/perf100.txt"
+			# The steps of the start (ws094-p009): exec is from zdesktop's start to Files' main(), the rest from Files' log.
+			steps=$(guest "grep -a 'ZFILES DESKTOP startup ' /tmp/zdesktop.log | head -1")
+			entered=$(printf '%s\n' "$steps" | sed -n 's/.* entered_ms=\([0-9]*\).*/\1/p')
+			[ -n "$entered" ] && [ -n "$began" ] && echo "steps round=$round exec=$((entered - began)) $(printf '%s\n' "$steps" | sed 's/.* entered_ms=[0-9]* //')" | tee -a "$out/perf100-steps.txt"
 			[ $round = 1 ] && shot perf100.png
 			guest "grep -a 'SLOW-FRAME' /tmp/zdesktop.log" >> "$out/perf100-slow.txt"
 			guest "rm -f /tmp/dhome100/Desktop/added-$round.txt" >/dev/null
@@ -459,6 +469,7 @@ i=0; while ! grep -aq 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log && [ \
 import re, statistics, sys
 text = open(sys.argv[1]).read()
 starts = [int(v) for v in re.findall(r"start_ms=(-?\d+)", text)]
+drawns = [int(v) for v in re.findall(r"drawn_ms=(-?\d+)", text)]
 added = [int(v) for v in re.findall(r"added_ms=(-?\d+)", text)]
 selects = [int(v) for part in re.findall(r"select_ms=([\d ]*) slow", text) for v in part.split()]
 slow = sum(int(v) for v in re.findall(r"slow_frames=(\d+)", text))
@@ -466,7 +477,7 @@ def median(values):
     return int(statistics.median(values)) if values and min(values) >= 0 else -1
 a, b, c = median(starts), median(added), median(selects)
 limits = [int(v) for v in sys.argv[2:5]]
-print("RESULT start_ms=%d added_ms=%d select_ms=%d slow_frames=%d (targets %d %d %d, slow 0)" % (a, b, c, slow, *limits))
+print("RESULT start_ms=%d drawn_ms=%d added_ms=%d select_ms=%d slow_frames=%d (targets %d %d %d, slow 0)" % (a, median(drawns), b, c, slow, *limits))
 for name, value, limit in (("a start", a, limits[0]), ("b added", b, limits[1]), ("c select", c, limits[2])):
     print("L3 %s: %d ms %s" % (name, value, "within" if 0 <= value <= limit else "OVER"))
 print("L3 slow frames: %d %s" % (slow, "none" if slow == 0 else "SOME"))
