@@ -20,6 +20,17 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 - kernel と libc（2026-09-23 ユーザー明確化）: kernel と libc はモノリシック。kernel・driver・HAL が include してよい libc の header は
   `libc/vulkan/*` だけ。ioctl・errno などの ABI は UAPI に分ける。kernel は標準 C の header 名を暗黙に読まず、libc の object を link
   しない（kcrt を使う）。`userland/desktop/libvulkan` は必須の構成要素。SPIR-V の compile は kernel 空間の driver が行う。この構成は変えない。
+- **compositor は libvulkan だけを使う（2026-09-30 ユーザー）**: Keiland の compositor（zdesktop、`userland/desktop/wayland/`）は、GPU と表示を
+  libvulkan（Vulkan の API と拡張）だけで扱い、GPU の UAPI（`include/uapi/gpu*.h`）を ioctl で直接呼ばない。入力の device の evdev の ioctl は
+  対象の外。今残る直の ioctl（起動時の表示の問い合わせ、buffer の import の確かめ、fence の問い合わせ、表示の claim・release、Vulkan の無い
+  予備の表示）は [WS103](ws103/ws.md) で移す。ユーザーの問い「私はKeilandコンポジターがlibvulkanのみを使用していると思っていたのですが、
+  ioctlを使ってしまっているのですか？」への Q1 の説明の後、「規則にして今移す」を選んだ。
+  同日の補い（ユーザー）:「どうしても最適化に必要なところは、opt-outできるようにマクロで囲めますか？必須機能では使っていない気がします。」→
+  必須の機能は libvulkan だけで動かす。最適化のためにどうしても要る直の ioctl だけは、compositor の build の macro（例 `ZWL_GPU_DIRECT`、既定は有効）で
+  囲み、macro を無効にした build でも全ての機能が動くようにする（WS103 の V1）。
+  同日の決め（ユーザー）:「では、まずioctlを可能な限りやめて、Vulkan APIでlibvulkanで行うようにします。移行できない部分は、マクロで囲って、
+  zedBSDでのみ行うようにします。evdevはLinuxにもあるので、ひとまずノータッチでよいです。」→ 直の GPU の ioctl はできる限り Vulkan の API（zedBSD では
+  libvulkan）へ移す。移せない物は zedBSD の時だけ build される macro で囲む（Linux・FreeBSD の build では入らない）。evdev の ioctl は今は変えない。
 - kernel の実装を userland の build の依存へ写さない。`mkfs` などの tool は単独で使える形を保つ。
 - base system の実装とライセンスの境界: [設計方針](master-design-policy.md)。
 - 外部 package（`userland/packages/`）はソースツリーへ取り込まず、tarball を取得・検証して patch する。ライセンスは

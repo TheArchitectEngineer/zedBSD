@@ -8,8 +8,8 @@
 #  2. In A: select_begin, Right five times, copy (both through the protocol: ZWL EDIT action=... via=protocol); A's
 #     state showed a selection being made (flags with 0x10) and then something to paste (0x2).
 #  3. The previous application again (B), paste; B saved with Ctrl+S holds "HELLO".
-#  The state the buttons would show (Super+Alt+Q, zwl_edit_state): while selecting 0xbb (no paste, no select_begin),
-#  after the copy 0x7f (no select_end); Terminal 0x5 (copy, paste), wlshm 0x3f (the operations with keys).
+#  The state the buttons would show (Super+Alt+Q, zwl_edit_state; Text Editor's real state since ws102-p023): while
+#  selecting 0xa3 (copy, cut, select all, select end), after the copy 0x67 (copy, cut, paste, select all, begin); Terminal 0x5 (copy, paste), wlshm 0x3f (the operations with keys).
 #  4. Terminal (no protocol, a terminal): copy is Ctrl+Shift+C (via=keys ... modifiers=0x5 terminal=1), cut has no keys
 #     (via=none); wlshm (no protocol): copy is Ctrl+C (modifiers=0x4 terminal=0); both keep running.
 # Prints "edit-guest: PASS" or "edit-guest: FAIL".
@@ -74,12 +74,12 @@ expect_more 'ZWL EDIT state client=[0-9]+ edit=[0-9]+ actions=0xff flags=0x1[0-9
 for n in 1 2 3 4 5; do keys '<right>'; done
 shot selected.png
 keys '<super-alt-q>'
-expect_more 'ZWL EDIT enabled=0xbb protocol=1' 0
+expect_more 'ZWL EDIT enabled=0xa3 protocol=1' 0
 keys '<super-alt-c>'
 expect_more 'ZWL EDIT action=copy via=protocol' 0
 sleep 1
 keys '<super-alt-q>'
-expect_more 'ZWL EDIT enabled=0x7f protocol=1' 0
+expect_more 'ZWL EDIT enabled=0x67 protocol=1' 0
 
 # 3. B, paste, save.
 keys '<super-alt-p>'

@@ -1,4 +1,45 @@
 canvas 1024.00 x 768.00 #ffffffff
+rect 16.00 190.00 992.00 28.00 #ffdfe8d0
+rect 16.00 226.00 992.00 56.00 #fff0f0f0
+rect 16.00 290.00 992.00 92.00 #fff0f0f0
+rect 24.00 346.00 976.00 28.00 #ffdfe8d0
+rect 28.00 302.00 100.00 40.00 #ff9fd5b4
+rect 136.00 302.00 100.00 40.00 #ff9fd5b4
+rect 244.00 302.00 100.00 40.00 #ff9fd5b4
+rect 352.00 302.00 100.00 40.00 #ff9fd5b4
+rect 460.00 302.00 100.00 40.00 #ff9fd5b4
+rect 568.00 302.00 100.00 40.00 #ff9fd5b4
+rect 676.00 302.00 100.00 40.00 #ff9fd5b4
+rect 784.00 302.00 100.00 40.00 #ff9fd5b4
+text 28.00 366.00 16px face 0 bold 0 #ff1f2a37 "After"
+text 65.56 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 70.06 366.00 16px face 0 bold 0 #ff1f2a37 "the"
+text 94.09 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 98.59 366.00 16px face 0 bold 0 #ff1f2a37 "tiles,"
+text 133.97 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 138.47 366.00 16px face 0 bold 0 #ff1f2a37 "which"
+text 183.52 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 188.02 366.00 16px face 0 bold 0 #ff1f2a37 "wrap"
+text 225.92 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 230.42 366.00 16px face 0 bold 0 #ff1f2a37 "onto"
+text 264.30 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 268.80 366.00 16px face 0 bold 0 #ff1f2a37 "a"
+text 277.78 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 282.28 366.00 16px face 0 bold 0 #ff1f2a37 "second"
+text 338.05 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 342.55 366.00 16px face 0 bold 0 #ff1f2a37 "row"
+text 371.27 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 375.77 366.00 16px face 0 bold 0 #ff1f2a37 "when"
+text 417.11 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 421.61 366.00 16px face 0 bold 0 #ff1f2a37 "the"
+text 445.64 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 450.14 366.00 16px face 0 bold 0 #ff1f2a37 "first"
+text 479.66 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 484.16 366.00 16px face 0 bold 0 #ff1f2a37 "is"
+text 496.48 366.00 16px face 0 bold 0 #ff1f2a37 " "
+text 500.98 366.00 16px face 0 bold 0 #ff1f2a37 "full."
+rect 16.00 50.00 120.00 90.00 #ff6aa0e8
+rect 858.00 50.00 150.00 60.00 #ffe89c6a
 text 16.00 37.00 22px face 0 bold 1 #ff1f2a37 "Floats"
 text 148.00 66.00 16px face 0 bold 0 #ff1f2a37 "The"
 text 177.12 66.00 16px face 0 bold 0 #ff1f2a37 " "
@@ -192,7 +233,6 @@ text 172.70 176.00 16px face 0 bold 0 #ff1f2a37 " "
 text 177.20 176.00 16px face 0 bold 0 #ff1f2a37 "left"
 text 201.56 176.00 16px face 0 bold 0 #ff1f2a37 " "
 text 206.06 176.00 16px face 0 bold 0 #ff1f2a37 "edge."
-rect 16.00 190.00 992.00 28.00 #ffdfe8d0
 text 20.00 210.00 16px face 0 bold 0 #ff1f2a37 "This"
 text 52.12 210.00 16px face 0 bold 0 #ff1f2a37 " "
 text 56.62 210.00 16px face 0 bold 0 #ff1f2a37 "block"
@@ -218,7 +258,6 @@ text 443.55 210.00 16px face 0 bold 0 #ff1f2a37 " "
 text 448.05 210.00 16px face 0 bold 0 #ff1f2a37 "the"
 text 472.08 210.00 16px face 0 bold 0 #ff1f2a37 " "
 text 476.58 210.00 16px face 0 bold 0 #ff1f2a37 "two."
-rect 16.00 226.00 992.00 56.00 #fff0f0f0
 rect 853.52 234.00 146.48 32.00 #fff3e3a2
 text 863.52 256.00 16px face 0 bold 0 #ff1f2a37 "a"
 text 872.50 256.00 16px face 0 bold 0 #ff1f2a37 " "
@@ -287,42 +326,3 @@ text 61.91 270.00 16px face 0 bold 0 #ff1f2a37 " "
 text 66.41 270.00 16px face 0 bold 0 #ff1f2a37 "around"
 text 119.73 270.00 16px face 0 bold 0 #ff1f2a37 " "
 text 124.23 270.00 16px face 0 bold 0 #ff1f2a37 "it."
-rect 16.00 290.00 992.00 92.00 #fff0f0f0
-rect 24.00 346.00 976.00 28.00 #ffdfe8d0
-text 28.00 366.00 16px face 0 bold 0 #ff1f2a37 "After"
-text 65.56 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 70.06 366.00 16px face 0 bold 0 #ff1f2a37 "the"
-text 94.09 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 98.59 366.00 16px face 0 bold 0 #ff1f2a37 "tiles,"
-text 133.97 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 138.47 366.00 16px face 0 bold 0 #ff1f2a37 "which"
-text 183.52 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 188.02 366.00 16px face 0 bold 0 #ff1f2a37 "wrap"
-text 225.92 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 230.42 366.00 16px face 0 bold 0 #ff1f2a37 "onto"
-text 264.30 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 268.80 366.00 16px face 0 bold 0 #ff1f2a37 "a"
-text 277.78 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 282.28 366.00 16px face 0 bold 0 #ff1f2a37 "second"
-text 338.05 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 342.55 366.00 16px face 0 bold 0 #ff1f2a37 "row"
-text 371.27 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 375.77 366.00 16px face 0 bold 0 #ff1f2a37 "when"
-text 417.11 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 421.61 366.00 16px face 0 bold 0 #ff1f2a37 "the"
-text 445.64 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 450.14 366.00 16px face 0 bold 0 #ff1f2a37 "first"
-text 479.66 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 484.16 366.00 16px face 0 bold 0 #ff1f2a37 "is"
-text 496.48 366.00 16px face 0 bold 0 #ff1f2a37 " "
-text 500.98 366.00 16px face 0 bold 0 #ff1f2a37 "full."
-rect 28.00 302.00 100.00 40.00 #ff9fd5b4
-rect 136.00 302.00 100.00 40.00 #ff9fd5b4
-rect 244.00 302.00 100.00 40.00 #ff9fd5b4
-rect 352.00 302.00 100.00 40.00 #ff9fd5b4
-rect 460.00 302.00 100.00 40.00 #ff9fd5b4
-rect 568.00 302.00 100.00 40.00 #ff9fd5b4
-rect 676.00 302.00 100.00 40.00 #ff9fd5b4
-rect 784.00 302.00 100.00 40.00 #ff9fd5b4
-rect 16.00 50.00 120.00 90.00 #ff6aa0e8
-rect 858.00 50.00 150.00 60.00 #ffe89c6a

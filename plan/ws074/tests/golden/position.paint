@@ -68,6 +68,18 @@ text 414.97 162.00 16px face 0 bold 0 #ffffffff "to"
 text 429.80 162.00 16px face 0 bold 0 #ffffffff " "
 text 434.30 162.00 16px face 0 bold 0 #ffffffff "fit"
 rect 582.00 272.00 400.00 40.00 #ff9e9e9e
+rect 422.00 122.00 216.05 1.00 #ff222222
+rect 422.00 179.00 216.05 1.00 #ff222222
+rect 422.00 123.00 1.00 56.00 #ff222222
+rect 637.05 123.00 1.00 56.00 #ff222222
+text 505.31 147.00 16px face 0 bold 0 #ff222222 "sign"
+text 536.91 147.00 16px face 0 bold 0 #ff222222 " "
+text 541.41 147.00 16px face 0 bold 0 #ff222222 "in"
+text 431.00 167.00 16px face 0 bold 0 #ff222222 "new"
+text 462.88 167.00 16px face 0 bold 0 #ff222222 " "
+text 467.38 167.00 16px face 0 bold 0 #ff222222 "customer"
+text 538.64 167.00 16px face 0 bold 0 #ff222222 " "
+text 543.14 167.00 16px face 0 bold 0 #ff222222 "registration"
 rect 50.00 352.00 300.00 40.00 #ffefe4c9
 text 50.00 368.00 16px face 0 bold 0 #ff222222 "This"
 text 82.12 368.00 16px face 0 bold 0 #ff222222 " "
@@ -99,3 +111,6 @@ rect 272.00 172.00 200.00 100.00 #ffc77dd8
 text 272.00 188.00 16px face 0 bold 0 #ff222222 "z-index"
 text 329.39 188.00 16px face 0 bold 0 #ff222222 " "
 text 333.89 188.00 16px face 0 bold 0 #ff222222 "2"
+rect 562.00 52.00 60.00 60.00 #ff2675b8
+rect 522.00 52.00 60.00 60.00 #ff6c4da3
+rect 562.00 52.00 60.00 60.00 #fff2d13d
