@@ -146,6 +146,18 @@
 #define GLES_UNITS		16U
 #define GLES_LEVELS		15U
 
+/*
+ * The buffer objects' device copies kept for reuse (ws101-p017): at most
+ * GLES_SPARES of them and GLES_SPARE_BYTES in all; one not reused within
+ * GLES_SPARE_FRAMES frames is freed.  A buffer object's bytes of
+ * GLES_ON_DEVICE_MIN or more live in its device copy
+ * (gles_buffer.on_device); smaller ones stay on the CPU and are copied.
+ */
+#define GLES_SPARES		8U
+#define GLES_SPARE_BYTES	(64UL * 1024UL * 1024UL)
+#define GLES_SPARE_FRAMES	8U
+#define GLES_ON_DEVICE_MIN	(64UL * 1024UL)
+
 /* The faces of a cube map (a 2D texture uses the first). */
 #define GLES_FACES		6U
 
@@ -232,6 +244,15 @@ struct gles_buffer {
 
 	/* Nonzero when the device wrote the device copy (transform feedback) since the bytes were read back from it. */
 	int gpu_written;
+
+	/*
+	 * Nonzero when the bytes are the device copy's mapping itself
+	 * (ws101-p017: glBufferData of a large buffer writes them there, and
+	 * nothing is copied to or from the device); a write while this frame
+	 * reads the copy moves the bytes back to the CPU first
+	 * (gles_buffer_writable).
+	 */
+	int on_device;
 
 	/* The device copy (host visible), its size, where it is mapped, and the frame that last drew from it. */
 	VkBuffer buffer;
@@ -975,8 +996,29 @@ struct gles_garbage {
 	VkRenderPass pass;
 	VkFramebuffer framebuffer;
 
+	/*
+	 * A buffer object's device copy (ws101-p017): where its memory is
+	 * mapped and its size, so that it can be kept as a spare
+	 * (gles_garbage_destroy) instead of freed.
+	 */
+	void *mapped;
+	size_t size;
+
 	/* The next object waiting. */
 	struct gles_garbage *next;
+};
+
+/*
+ * A buffer object's device copy that was freed and is kept for the next
+ * glBufferData of the same size (ws101-p017): its buffer, memory (mapped)
+ * and size, and the frame it was kept in.
+ */
+struct gles_spare {
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	void *mapped;
+	size_t size;
+	uint64_t frame;
 };
 
 /*
@@ -1325,6 +1367,10 @@ struct gles_state {
 	struct gles_pool *pools;
 	struct gles_garbage *garbage;
 
+	/* The buffer objects' device copies kept for reuse (ws101-p017, gles_spare). */
+	struct gles_spare spares[GLES_SPARES];
+	unsigned spare_count;
+
 	/* The last draw's descriptor set. */
 	struct gles_set_cache set_cache;
 
@@ -1434,6 +1480,8 @@ void gles_garbage_destroy(struct gles_state *state, const struct gles_garbage *o
 void gles_collect(struct gles_state *state);
 int gles_buffer_sync(struct gles_state *state, struct gles_buffer *buffer);
 void gles_buffer_free(struct gles_state *state, struct gles_buffer *buffer);
+int gles_buffer_writable(struct gles_state *state, struct gles_buffer *buffer);
+void gles_spares_release(struct gles_state *state);
 void gles_vertex_arrays_release(struct gles_state *state);
 int gles_upload_begin(struct gles_state *state);
 int gles_upload_end(struct gles_state *state);

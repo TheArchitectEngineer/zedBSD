@@ -37,6 +37,11 @@
 
 static struct gles_buffer **buffer_slot(struct gles_state *state, GLenum target);
 static void timed_delete_buffers(GLsizei n, const GLuint *buffers);
+static int buffer_device_copy(struct gles_state *state, size_t size, VkBuffer *device_buffer, VkDeviceMemory *memory, void **mapped);
+static void buffer_throw_copy_away(struct gles_state *state, struct gles_buffer *buffer);
+static int buffer_spare_keep(struct gles_state *state, const struct gles_garbage *objects);
+static void buffer_spare_free(struct gles_state *state, unsigned index);
+static int buffer_data_on_device(struct gles_state *state, struct gles_buffer *buffer, size_t size, const void *data);
 static void timed_buffer_data(GLenum target, GLsizeiptr size, const void *data, GLenum usage);
 static void *timed_map_buffer_range(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access);
 static GLboolean timed_unmap_buffer(GLenum target);
@@ -240,9 +245,15 @@ gles_garbage_destroy(
 {
 	VkDevice device;
 	unsigned index;
+	int kept;
+
+	/* A buffer object's device copy may be kept for reuse instead (ws101-p017). */
+	device = state->device;
+	kept = buffer_spare_keep(state, objects);
+	if (kept)
+		return;
 
 	/* Views before images, objects before their memory. */
-	device = state->device;
 	if (objects->buffer_view != VK_NULL_HANDLE)
 		vkDestroyBufferView(device, objects->buffer_view, NULL);
 	if (objects->pipeline != VK_NULL_HANDLE)
@@ -283,6 +294,7 @@ gles_collect(
 	struct gles_chunk *chunk;
 	struct gles_pool *pool;
 	uint64_t started;
+	unsigned index;
 
 	/* The garbage (the step is timed, ws101-p016). */
 	started = gles_time_begin();
@@ -310,6 +322,20 @@ gles_collect(
 	for (pool = state->pools; pool != NULL; pool = pool->next)
 		(void)vkResetDescriptorPool(state->device, pool->pool, 0U);
 	memset(&state->set_cache, 0, sizeof(state->set_cache));
+
+	/* The spares not reused for GLES_SPARE_FRAMES frames go (ws101-p017). */
+	index = 0U;
+	while (index < state->spare_count) {
+		if (state->frame - state->spares[index].frame > GLES_SPARE_FRAMES) {
+			buffer_spare_free(state, index);
+			continue;
+		}
+
+		/* A spare still young stays. */
+		index++;
+	}
+
+	/* The step's time. */
 	gles_time_end("collect", started, 0U);
 }
 
@@ -329,7 +355,13 @@ gles_buffer_sync(
 	void *mapped;
 	int status;
 
-	/* A copy that is up to date stays. */
+	/* A copy that is up to date stays; bytes that live in the copy are always up to date (ws101-p017). */
+	if (buffer->on_device) {
+		buffer->dirty = 0;
+		return 0;
+	}
+
+	/* A copy on the CPU's side that is up to date stays too. */
 	if (!buffer->dirty && buffer->buffer != VK_NULL_HANDLE)
 		return 0;
 
@@ -347,15 +379,10 @@ gles_buffer_sync(
 	 * buffer object: texels, shader storage and dispatch sizes too), the
 	 * old one kept for the frame.
 	 */
-	status = gles_device_buffer(state, buffer->size,
-				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-				    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
-				    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-				    &device_buffer, &memory, &mapped);
+	status = buffer_device_copy(state, buffer->size, &device_buffer, &memory, &mapped);
 	if (status != 0)
 		return -1;
-	gles_throw_away(state, buffer->buffer, VK_NULL_HANDLE, VK_NULL_HANDLE, buffer->memory);
+	buffer_throw_copy_away(state, buffer);
 	gles_time_end("device-buffer", started, buffer->size);
 
 	/* Succeeded: the bytes in the new buffer. */
@@ -379,9 +406,10 @@ gles_buffer_free(
 	struct gles_state *state,
 	struct gles_buffer *buffer)
 {
-	/* The device copy, then the bytes and the object. */
-	gles_throw_away(state, buffer->buffer, VK_NULL_HANDLE, VK_NULL_HANDLE, buffer->memory);
-	free(buffer->data);
+	/* The device copy (with the bytes when they live in it), then the bytes and the object. */
+	if (!buffer->on_device)
+		free(buffer->data);
+	buffer_throw_copy_away(state, buffer);
 	free(buffer);
 }
 
@@ -725,8 +753,10 @@ timed_buffer_data(
 	GLenum usage)
 {
 	struct zegl_context *context;
+	struct gles_state *state;
 	struct gles_buffer *buffer;
 	unsigned char *bytes;
+	int status;
 
 	/* The bound buffer. */
 	context = gles_context();
@@ -738,6 +768,16 @@ timed_buffer_data(
 		return;
 	}
 
+	/* Large bytes are written into a device copy directly (ws101-p017); without one they stay on the CPU. */
+	state = gles_state(context);
+	if (state != NULL && (size_t)size >= GLES_ON_DEVICE_MIN) {
+		status = buffer_data_on_device(state, buffer, (size_t)size, data);
+		if (status == 0) {
+			buffer->usage = usage;
+			return;
+		}
+	}
+
 	/* The new bytes (a mapping of the old ones ends). */
 	bytes = malloc((size_t)size + 1U);
 	if (bytes == NULL) {
@@ -745,13 +785,18 @@ timed_buffer_data(
 		return;
 	}
 
-	/* Cleared, then filled from the application's bytes when it gave some. */
-	memset(bytes, 0, (size_t)size + 1U);
-	if (data != NULL)
+	/* Filled from the application's bytes when it gave some, else cleared; the extra byte is 0. */
+	if (data != NULL) {
 		memcpy(bytes, data, (size_t)size);
+		bytes[size] = 0U;
+	} else {
+		memset(bytes, 0, (size_t)size + 1U);
+	}
 
 	/* Succeeded: they replace the old ones (what the device wrote too), and the device copy is stale. */
-	free(buffer->data);
+	if (!buffer->on_device)
+		free(buffer->data);
+	buffer->on_device = 0;
 	buffer->data = bytes;
 	buffer->size = (size_t)size;
 	buffer->usage = usage;
@@ -797,6 +842,13 @@ glBufferSubData(
 	status = gles_buffer_fetch(context, buffer);
 	if (status != 0)
 		return;
+
+	/* Bytes in a device copy this frame reads move to the CPU first (ws101-p017). */
+	status = gles_buffer_writable(gles_state(context), buffer);
+	if (status != 0) {
+		gles_error(context, GL_OUT_OF_MEMORY);
+		return;
+	}
 
 	/* The bytes change; the device copy is stale. */
 	if (size != 0 && data != NULL)
@@ -948,10 +1000,19 @@ timed_map_buffer_range(
 		return NULL;
 	}
 
-	/* What the device wrote into it (transform feedback) read back first. */
+	/* What the device wrote into it read back first (bytes in the device copy only wait for the device). */
 	status = gles_buffer_fetch(context, buffer);
 	if (status != 0)
 		return NULL;
+
+	/* A mapping to write bytes in a device copy this frame reads moves them to the CPU first (ws101-p017). */
+	if ((access & GL_MAP_WRITE_BIT) != 0U) {
+		status = gles_buffer_writable(gles_state(context), buffer);
+		if (status != 0) {
+			gles_error(context, GL_OUT_OF_MEMORY);
+			return NULL;
+		}
+	}
 
 	/*
 	 * The mapping is the CPU bytes: the device copy is made from them
@@ -1154,6 +1215,13 @@ glCopyBufferSubData(
 		status = gles_buffer_fetch(context, destination);
 	if (status != 0)
 		return;
+
+	/* A destination in a device copy this frame reads moves to the CPU first (ws101-p017). */
+	status = gles_buffer_writable(gles_state(context), destination);
+	if (status != 0) {
+		gles_error(context, GL_OUT_OF_MEMORY);
+		return;
+	}
 
 	/* The bytes are copied on the CPU; the destination's device copy is stale. */
 	if (length != 0U)
@@ -1849,4 +1917,228 @@ buffer_chunk(
 		continue;
 	*last = chunk;
 	return chunk;
+}
+
+/*
+ * Makes sure the bytes of a buffer object may be written now: bytes that
+ * live in its device copy while the frame being recorded reads that copy
+ * move to the CPU (the copy is left to the frame, and a new one is made
+ * when the frame next uses the buffer).  Returns 0, or -1 when there is no
+ * memory.
+ */
+int
+gles_buffer_writable(
+	struct gles_state *state,
+	struct gles_buffer *buffer)
+{
+	unsigned char *bytes;
+
+	/* Bytes on the CPU, or a copy the frame does not read, are written in place. */
+	if (!buffer->on_device || state == NULL || buffer->used != state->frame)
+		return 0;
+
+	/* The bytes on the CPU; the copy keeps them for the frame. */
+	bytes = malloc(buffer->size + 1U);
+	if (bytes == NULL)
+		return -1;
+	memcpy(bytes, buffer->data, buffer->size);
+	bytes[buffer->size] = 0U;
+	buffer->data = bytes;
+	buffer->on_device = 0;
+	return 0;
+}
+
+/*
+ * Frees the spare device copies (the state goes).
+ */
+void
+gles_spares_release(
+	struct gles_state *state)
+{
+	/* Each spare, from the last. */
+	while (state->spare_count > 0U)
+		buffer_spare_free(state, state->spare_count - 1U);
+}
+
+/*
+ * Gives a buffer object a device copy of a size: a spare of that size, or
+ * a new one.  Returns 0, or -1 when the device has no memory.
+ */
+static int
+buffer_device_copy(
+	struct gles_state *state,
+	size_t size,
+	VkBuffer *device_buffer,
+	VkDeviceMemory *memory,
+	void **mapped)
+{
+	struct gles_spare *spare;
+	unsigned index;
+	int status;
+
+	/* A spare of the same size, taken out of the spares. */
+	for (index = 0U; index < state->spare_count; index++) {
+		spare = &state->spares[index];
+		if (spare->size != size)
+			continue;
+		*device_buffer = spare->buffer;
+		*memory = spare->memory;
+		*mapped = spare->mapped;
+		state->spare_count--;
+		state->spares[index] = state->spares[state->spare_count];
+		return 0;
+	}
+
+	/* A new one, for any use a draw or a dispatch makes of a buffer object: texels, shader storage and dispatch sizes too. */
+	status = gles_device_buffer(state, size,
+				    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+				    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+				    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
+				    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+				    device_buffer, memory, mapped);
+	return status;
+}
+
+/*
+ * Puts a buffer object's device copy aside until the frame being recorded
+ * is done, with its mapping and size so that it may become a spare then;
+ * the object has no copy afterwards.
+ */
+static void
+buffer_throw_copy_away(
+	struct gles_state *state,
+	struct gles_buffer *buffer)
+{
+	struct gles_garbage objects;
+
+	/* The copy, kept as one entry. */
+	memset(&objects, 0, sizeof(objects));
+	objects.buffer = buffer->buffer;
+	objects.memory = buffer->memory;
+	objects.mapped = buffer->mapped;
+	objects.size = buffer->device_size;
+	gles_garbage_keep(state, &objects);
+
+	/* No copy now. */
+	buffer->buffer = VK_NULL_HANDLE;
+	buffer->memory = VK_NULL_HANDLE;
+	buffer->mapped = NULL;
+	buffer->device_size = 0U;
+}
+
+/*
+ * Keeps a freed buffer object's device copy as a spare when there is room (making room from the oldest spares within
+ * GLES_SPARE_BYTES).  Returns 1 when it was kept, 0 when it is to be freed.
+ */
+static int
+buffer_spare_keep(
+	struct gles_state *state,
+	const struct gles_garbage *objects)
+{
+	struct gles_spare *spare;
+	size_t total;
+	unsigned index;
+	unsigned oldest;
+
+	/* Only a buffer object's copy (a buffer and its mapped memory) of a size the spares hold. */
+	if (objects->buffer == VK_NULL_HANDLE || objects->memory == VK_NULL_HANDLE || objects->mapped == NULL)
+		return 0;
+	if (objects->size == 0U || objects->size > GLES_SPARE_BYTES)
+		return 0;
+
+	/* Room: the oldest spares go while there are too many or too many bytes. */
+	while (state->spare_count > 0U) {
+		total = objects->size;
+		oldest = 0U;
+		for (index = 0U; index < state->spare_count; index++) {
+			total += state->spares[index].size;
+			if (state->spares[index].frame < state->spares[oldest].frame)
+				oldest = index;
+		}
+
+		/* Room enough, or the oldest goes. */
+		if (state->spare_count < GLES_SPARES && total <= GLES_SPARE_BYTES)
+			break;
+		buffer_spare_free(state, oldest);
+	}
+
+	/* Succeeded: kept from this frame. */
+	spare = &state->spares[state->spare_count];
+	spare->buffer = objects->buffer;
+	spare->memory = objects->memory;
+	spare->mapped = objects->mapped;
+	spare->size = objects->size;
+	spare->frame = state->frame;
+	state->spare_count++;
+	return 1;
+}
+
+/* Frees a spare device copy and takes it out of the spares. */
+static void
+buffer_spare_free(
+	struct gles_state *state,
+	unsigned index)
+{
+	/* The buffer, then its memory. */
+	vkDestroyBuffer(state->device, state->spares[index].buffer, NULL);
+	vkFreeMemory(state->device, state->spares[index].memory, NULL);
+
+	/* The last spare takes its place. */
+	state->spare_count--;
+	state->spares[index] = state->spares[state->spare_count];
+}
+
+/*
+ * Gives a buffer object new bytes of a size in a device copy (a spare or
+ * a new one): the application's bytes copied in, or zeros.  The old copy
+ * goes to the frame's garbage.  Returns 0, or -1 when the device has no
+ * memory (the object is then as it was).
+ */
+static int
+buffer_data_on_device(
+	struct gles_state *state,
+	struct gles_buffer *buffer,
+	size_t size,
+	const void *data)
+{
+	VkBuffer device_buffer;
+	VkDeviceMemory memory;
+	void *mapped;
+	uint64_t started;
+	int status;
+
+	/* The copy. */
+	started = gles_time_begin();
+	status = buffer_device_copy(state, size, &device_buffer, &memory, &mapped);
+	gles_time_end("data-device-buffer", started, size);
+	if (status != 0)
+		return -1;
+
+	/* The bytes, written once. */
+	if (data != NULL) {
+		memcpy(mapped, data, size);
+	} else {
+		memset(mapped, 0, size);
+	}
+
+	/* The old bytes and copy go (a frame that read the copy keeps it). */
+	if (!buffer->on_device)
+		free(buffer->data);
+	buffer_throw_copy_away(state, buffer);
+
+	/* Succeeded: the bytes are the copy's, which is up to date. */
+	buffer->data = mapped;
+	buffer->on_device = 1;
+	buffer->buffer = device_buffer;
+	buffer->memory = memory;
+	buffer->mapped = mapped;
+	buffer->device_size = size;
+	buffer->size = size;
+	buffer->dirty = 0;
+	buffer->gpu_written = 0;
+	buffer->map_active = 0;
+	buffer->map_access = 0U;
+	buffer->map_offset = 0U;
+	buffer->map_length = 0U;
+	return 0;
 }
