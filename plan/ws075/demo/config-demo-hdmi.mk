@@ -27,3 +27,5 @@ ZEDBSD_USER_PROGRAMS += libkeiui
 # ws101-p011 (D2, the user's permission 2026-09-30): /bin/noct with its OpenGL ES accelerator (Noct's automatic
 # parallelization on the GPU, --gpu); the image has libegl and libglesv2 (config-zdesktop-hw.mk).
 ZEDBSD_NOCT_ACCEL := y
+# GPU compute demo (ws101-p011): /usr/share/gpudemo/mix.nct and s13.sh for scene S13.
+ZEDBSD_USER_PROGRAMS += gpudemo
