@@ -84,8 +84,8 @@ keiland_glass_manager_v1_get_glass(
 	arguments[0].n = 0;
 	arguments[1].o = (struct wl_object *)surface;
 
-	/* Queues the request together with the new proxy. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_GLASS_MANAGER_V1_GET_GLASS, &keiland_glass_v1_interface, 1U, 0, arguments);
+	/* Queues the request together with the new proxy, of the manager's version (2 has set_blur). */
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_GLASS_MANAGER_V1_GET_GLASS, &keiland_glass_v1_interface, wl_proxy_get_version((struct wl_proxy *)object), 0, arguments);
 	if (created == NULL)
 		return NULL;
 
