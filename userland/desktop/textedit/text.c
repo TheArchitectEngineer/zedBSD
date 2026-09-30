@@ -15,9 +15,15 @@
  * regular one widened by a pixel, since the fonts come in one weight.
  * There is no kerning and no shaping: characters are set one after
  * another, and the document's text one character to its cell.
+ *
+ * A character neither font has is looked for in the colour emoji font
+ * (TE_TEXT_EMOJI, opened the first time one is drawn, ws102-p019) and
+ * drawn in its colours (userland/desktop/picture/color-glyph.c).
  */
 
 #include "textedit.h"
+
+#include "../picture/color-glyph.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -45,6 +51,7 @@ static struct te_glyph *text_slot(struct te_text *text, uint32_t key);
 static int text_render(struct te_text *text, int face_index, unsigned glyph_index, unsigned pixels, int bold, struct te_glyph *glyph);
 static int text_set_size(struct te_text_face *face, unsigned pixels);
 static void text_clear(struct te_text *text);
+static int text_render_color(struct te_text *text, unsigned glyph_index, unsigned pixels, struct te_glyph *glyph);
 
 /*
  * Opens the main font and, when a path is given and readable, the fallback.
@@ -228,9 +235,13 @@ te_text_draw(
 		if (glyph == NULL)
 			continue;
 
-		/* The glyph's coverage, in the color. */
+		/* The glyph's coverage, in the color; a colour glyph in its own colours. */
 		if (glyph->bitmap != NULL)
 			te_canvas_mask(canvas, pen + glyph->left, baseline - glyph->top, glyph->bitmap, glyph->width, glyph->height, (size_t)glyph->width, color);
+		if (glyph->pixels != NULL)
+			te_canvas_pixels(canvas, pen + glyph->left, baseline - glyph->top, glyph->pixels, glyph->width, glyph->height);
+
+		/* The pen moves past it. */
 		pen += glyph->advance;
 	}
 
@@ -367,9 +378,17 @@ te_text_draw_char(
 {
 	const struct te_glyph *glyph;
 
-	/* The glyph, from the cache or drawn now; a blank one draws nothing. */
+	/* The glyph, from the cache or drawn now; a blank one draws nothing, a colour one its colours. */
 	glyph = text_glyph(text, codepoint, pixels, 0);
-	if (glyph == NULL || glyph->bitmap == NULL)
+	if (glyph == NULL)
+		return;
+	if (glyph->pixels != NULL) {
+		te_canvas_pixels(canvas, x + glyph->left, baseline - glyph->top, glyph->pixels, glyph->width, glyph->height);
+		return;
+	}
+
+	/* A blank glyph. */
+	if (glyph->bitmap == NULL)
 		return;
 
 	/* Its coverage, in the colour. */
@@ -543,11 +562,24 @@ text_glyph(
 			face_index = 1;
 	}
 
+	/* Neither has it: the emoji font, opened the first time (a program without one draws the main font's box). */
+	if (glyph_index == 0U && !text->emoji_tried) {
+		text->emoji_tried = 1;
+		(void)text_face_open(&text->faces[2], TE_TEXT_EMOJI);
+	}
+
+	/* The emoji font's glyph, when it has the character. */
+	if (glyph_index == 0U && text->faces[2].face != NULL) {
+		glyph_index = truetype_glyph_index(text->faces[2].face, codepoint);
+		if (glyph_index != 0U)
+			face_index = 2;
+	}
+
 	/* The key: glyph, size, face and weight (never zero, which marks an empty slot). */
 	weight = 0U;
 	if (bold != 0)
 		weight = 1U;
-	key = (glyph_index & 0xffffU) | ((uint32_t)pixels << 16) | ((uint32_t)face_index << 23) | (weight << 24) | 0x80000000U;
+	key = (glyph_index & 0xffffU) | ((uint32_t)pixels << 16) | ((uint32_t)face_index << 23) | (weight << 25) | 0x80000000U;
 
 	/* A glyph drawn before is in its slot. */
 	glyph = text_slot(text, key);
@@ -607,6 +639,12 @@ text_render(
 	int y;
 	int width;
 
+	/* A colour glyph of the emoji font. */
+	if (face_index == 2) {
+		error = text_render_color(text, glyph_index, pixels, glyph);
+		return error;
+	}
+
 	/* The face at the size. */
 	face = &text->faces[face_index];
 	error = text_set_size(face, pixels);
@@ -647,6 +685,7 @@ text_render(
 	if (bold != 0)
 		glyph->advance++;
 	glyph->bitmap = NULL;
+	glyph->pixels = NULL;
 
 	/* A blank glyph (a space) needs no bitmap. */
 	if (needed == 0U)
@@ -710,9 +749,38 @@ text_clear(
 	/* Every slot's bitmap goes and the slot is empty. */
 	for (slot = 0; slot < text->cache_size; slot++) {
 		free(text->cache[slot].bitmap);
+		free(text->cache[slot].pixels);
 		memset(&text->cache[slot], 0, sizeof(text->cache[slot]));
 	}
 
 	/* No slot is used. */
 	text->cache_used = 0;
+}
+
+/* Draws a colour glyph of the emoji font at a size into a cache slot (bold draws it as it is). */
+static int
+text_render_color(
+	struct te_text *text,
+	unsigned glyph_index,
+	unsigned pixels,
+	struct te_glyph *glyph)
+{
+	struct keiland_color_image image;
+	int error;
+
+	/* The glyph's colours at the size (the face's size changes with it). */
+	error = keiland_color_glyph(text->faces[2].face, glyph_index, pixels, &image);
+	text->faces[2].pixels = pixels;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the slot holds the colours. */
+	glyph->bitmap = NULL;
+	glyph->pixels = image.pixels;
+	glyph->width = image.width;
+	glyph->height = image.height;
+	glyph->left = image.left;
+	glyph->top = image.top;
+	glyph->advance = image.advance;
+	return 0;
 }

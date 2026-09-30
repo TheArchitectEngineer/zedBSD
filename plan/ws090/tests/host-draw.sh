@@ -10,12 +10,14 @@ out=${1:-build/ws090/host-draw}
 shots=build/ws090-shots
 mkdir -p "$(dirname "$out")/inc" "$shots"
 cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
+ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
 U=userland/desktop
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiui -I$U/libtruetype \
 	plan/ws090/tests/host-draw.c \
 	$U/libkeiui/version.c $U/libkeiui/canvas.c $U/libkeiui/text.c $U/libkeiui/icons.c $U/libkeiui/icons-line.c $U/libkeiui/theme.c \
 	$U/files/canvas.c $U/files/text.c $U/files/icons.c $U/settings/glyphs.c \
-	$U/libtruetype/*.c -lm -o "$out"
+	$U/libtruetype/*.c $U/picture/color-glyph.c \
+	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"
 F=$U/fonts
 "$out" $F/Inter.ttf $F/DroidSansFallbackFull.ttf "$shots/host-draw"
 for p in "$shots"/host-draw-*.ppm; do

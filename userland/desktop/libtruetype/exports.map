@@ -20,6 +20,7 @@
 		truetype_glyph_outline;
 		truetype_open_embedded;
 		truetype_cmap_lookup;
+		truetype_color_glyph;
 	local:
 		*;
 };

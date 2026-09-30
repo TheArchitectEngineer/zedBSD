@@ -33,6 +33,7 @@ static int read_maxp(struct truetype_face *face);
 static int read_hhea(struct truetype_face *face);
 static int open_face(const void *data, size_t size, unsigned index, int map_required, struct truetype_face **result);
 static int read_map(struct truetype_face *face, int map_required);
+static void read_color(struct truetype_face *face);
 
 /*
  * Reads one big-endian value.  A font is big-endian whatever the machine is.
@@ -314,15 +315,29 @@ open_face(
 		error = find_table(face, TRUETYPE_TAG('h', 'm', 't', 'x'),
 				   &face->hmtx, &face->hmtx_size);
 
-	/* Handles the hmtx table failure. */
+	/* The colour bitmaps, when the face has both of their tables (ws102-p019). */
 	if (error == 0)
+		read_color(face);
+
+	/* Handles the hmtx table failure. */
+	if (error == 0) {
 		error = find_table(face, TRUETYPE_TAG('l', 'o', 'c', 'a'),
 				   &face->loca, &face->loca_size);
 
-	/* Handles the loca table failure. */
-	if (error == 0)
-		error = find_table(face, TRUETYPE_TAG('g', 'l', 'y', 'f'),
-				   &face->glyf, &face->glyf_size);
+		/* Handles the loca table failure. */
+		if (error == 0)
+			error = find_table(face, TRUETYPE_TAG('g', 'l', 'y', 'f'),
+					   &face->glyf, &face->glyf_size);
+
+		/* A face of colour bitmaps alone has no outlines: its glyphs are only its colour ones. */
+		if (error != 0 && face->cblc != NULL) {
+			face->loca = NULL;
+			face->loca_size = 0;
+			face->glyf = NULL;
+			face->glyf_size = 0;
+			error = 0;
+		}
+	}
 
 	/* Handles the glyf table failure. */
 	if (error == 0)
@@ -448,4 +463,32 @@ truetype_metrics(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Finds the colour bitmaps' two tables (CBLC and CBDT, ws102-p019); a face
+ * without both keeps neither.
+ */
+static void
+read_color(
+	struct truetype_face *face)
+{
+	int error;
+
+	/* The index. */
+	error = find_table(face, TRUETYPE_TAG('C', 'B', 'L', 'C'), &face->cblc, &face->cblc_size);
+	if (error != 0) {
+		face->cblc = NULL;
+		face->cblc_size = 0;
+		return;
+	}
+
+	/* The images, without which the index is of no use. */
+	error = find_table(face, TRUETYPE_TAG('C', 'B', 'D', 'T'), &face->cbdt, &face->cbdt_size);
+	if (error != 0) {
+		face->cblc = NULL;
+		face->cblc_size = 0;
+		face->cbdt = NULL;
+		face->cbdt_size = 0;
+	}
 }
