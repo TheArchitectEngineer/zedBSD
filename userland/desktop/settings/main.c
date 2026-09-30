@@ -157,6 +157,7 @@ main(
 	/* The network's watch (a daemon not running yet is found later), and the user's preferences. */
 	se_network_open(&main_app);
 	se_look_open(&main_app);
+	se_sound_open(&main_app);
 
 	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */
 	main_app.glass = se_glass_open(&main_glass, &main_window, &main_present);
@@ -188,6 +189,7 @@ main(
 
 	/* Everything goes, the network's watch, then the titlebar, the menus and the glass before the window they belong to. */
 	se_network_close(&main_app);
+	se_sound_close(&main_app);
 	se_look_close(&main_app);
 	se_titlebar_close(&main_titlebar);
 	se_menu_close(&main_menu);
@@ -407,6 +409,7 @@ main_loop(
 		se_ui_tick(&main_app, now);
 		se_network_poll(&main_app, now);
 		se_look_poll(&main_app, now);
+		se_sound_poll(&main_app, now);
 		if (main_app.dirty != 0)
 			inputs++;
 
@@ -542,6 +545,7 @@ main_timeout(
 {
 	uint64_t wait;
 	int network;
+	int sound;
 	int limit;
 
 	/* A frame the last one asked for (a scroll it corrected) is drawn at once. */
@@ -553,6 +557,11 @@ main_timeout(
 	network = se_network_wait(&main_app);
 	if (network >= 0 && network < limit)
 		limit = network;
+
+	/* And while the sound holds something back, or its page follows audiod. */
+	sound = se_sound_wait(&main_app);
+	if (sound >= 0 && sound < limit)
+		limit = sound;
 
 	/* No key is held: the limit. */
 	if (main_window.repeat_key == 0U)

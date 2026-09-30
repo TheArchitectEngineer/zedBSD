@@ -10,7 +10,8 @@
  *
  *   Mouse     the pointer's speed and natural scrolling;
  *   Keyboard  how fast a held key repeats and how long before it starts;
- *   Sound     whether the sound service runs (the volume comes later).
+ *   Sound     the volume and mute (the system bar's, sound.c, ws100-p005) and
+ *             whether the sound service runs.
  *
  * The sliders are saved when let go, the switch when clicked, into the
  * user's preferences (look.c), which zdesktop follows within a second.
@@ -153,8 +154,9 @@ se_keyboard_draw(
 }
 
 /*
- * Draws the Sound page: whether the sound service runs.  Returns the edge
- * below it.
+ * Draws the Sound page: the volume's slider and the mute switch (the
+ * system bar's volume, ws100-p005), and whether the sound service runs.
+ * Returns the edge below it.
  */
 int
 se_sound_draw(
@@ -164,22 +166,64 @@ se_sound_draw(
 	int top,
 	int width)
 {
+	struct fm_text_line line;
+	const char *service;
+	const char *note;
+	char value[32];
+	int available;
 	int running;
+	int value_width;
+	int height;
+	int card;
 	int y;
 
-	/* The service's state now. */
+	/* A line about saving first, when nothing can be saved. */
+	card = input_saving(app, canvas, x, top, width);
+
+	/* The volume's card: its label and value, the slider, the words at its ends, then the mute switch. */
+	available = se_sound_available(app);
+	height = se_card_height(0, 1) + INPUT_BLOCK + 56;
+	y = se_card_begin(app, canvas, x, card, width, height, "Volume", NULL);
+	fm_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
+	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + line.ascent, "Output volume", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	if (app->sound.muted)
+		(void)snprintf(value, sizeof(value), "Muted");
+	else
+		(void)snprintf(value, sizeof(value), "%d%%", app->sound.value);
+	value_width = fm_text_width(app->text, value, strlen(value), INPUT_TEXT_TITLE, 0);
+	(void)fm_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + line.ascent, value, strlen(value), INPUT_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
+	se_slider_draw(app, canvas, x + INPUT_PAD + 14, y + 24, width - 2 * INPUT_PAD - 28, (float)app->sound.value / 100.0f, available, SE_SOUND_VOLUME, &app->sound.slider);
+
+	/* The ends' words. */
+	fm_text_metrics(app->text, INPUT_TEXT_SMALL, &line);
+	(void)fm_text_draw(app->text, canvas, x + INPUT_PAD + 2, y + 62 + line.ascent, "Quiet", 5U, INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	value_width = fm_text_width(app->text, "Loud", 4U, INPUT_TEXT_SMALL, 0);
+	(void)fm_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + 62 + line.ascent, "Loud", 4U, INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	y += INPUT_BLOCK;
+
+	/* Mute: its label and line at the left, the switch at the right. */
+	fm_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
+	fm_canvas_line(canvas, (float)(x + INPUT_PAD), (float)y - 0.5f, (float)(x + width - INPUT_PAD), (float)y - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
+	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 10 + line.ascent, "Mute", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 32 + line.ascent, "No sound plays while it is on.", INPUT_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+	se_toggle_draw(app, canvas, x + width - INPUT_PAD - 44, y + 16, app->sound.muted, available, SE_SOUND_MUTE);
+
+	/* The output's card: the service's state. */
+	card += height + INPUT_GAP;
 	running = se_look_sound();
+	service = "Not running";
+	if (running != 0 && app->sound.state.reachable && !app->sound.state.device)
+		service = "Running, no sound output";
+	else if (running != 0)
+		service = "Running";
+	y = se_card_begin(app, canvas, x, card, width, se_card_height(1, 1), "Output", NULL);
+	(void)se_row_value(app, canvas, x, y, width, "Sound service", service, 1);
 
-	/* The card of the output. */
-	y = se_card_begin(app, canvas, x, top, width, se_card_height(1, 1), "Output", NULL);
-	if (running != 0) {
-		(void)se_row_value(app, canvas, x, y, width, "Sound service", "Running", 1);
-	} else {
-		(void)se_row_value(app, canvas, x, y, width, "Sound service", "Not running", 1);
-	}
-
-	/* What comes later. */
-	y = input_note(app, canvas, x, top + se_card_height(1, 1) + INPUT_GAP, width, "Volume and the choice of the output are coming in a later version of Kei.");
+	/* What the volume is, and why it cannot be changed now. */
+	note = "The system bar's volume icon changes the same volume.";
+	if (!available)
+		note = "The volume can be changed when the sound service runs with a sound output.";
+	y = input_note(app, canvas, x, card + se_card_height(1, 1) + INPUT_GAP, width, note);
 
 	/* The edge below the cards. */
 	return y;

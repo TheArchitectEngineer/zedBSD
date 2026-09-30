@@ -31,7 +31,7 @@ const struct se_page se_pages[SE_PAGES] = {
 	{ SE_PAGE_APPEARANCE, SE_GROUP_PERSONALIZATION, SE_GLYPH_PALETTE, "Appearance", "The look of windows and the desktop.", "appearance", "appearance look theme transparency opacity glass", 1, se_appearance_draw, NULL, NULL, se_look_drag },
 	{ SE_PAGE_WALLPAPER, SE_GROUP_PERSONALIZATION, SE_GLYPH_PICTURE, "Wallpaper", "The picture behind your windows.", "wallpaper", "wallpaper background picture desktop", 1, se_wallpaper_draw, se_look_press, NULL, NULL },
 	{ SE_PAGE_NOTIFICATIONS, SE_GROUP_PERSONALIZATION, SE_GLYPH_BELL, "Notifications", "Choose which applications may notify you.", "notifications", "notifications alerts banners", 0, se_soon_draw, NULL, NULL, NULL },
-	{ SE_PAGE_SOUND, SE_GROUP_PERSONALIZATION, SE_GLYPH_SPEAKER, "Sound", "Volume and the sound output.", "sound", "sound volume audio speaker mute", 1, se_sound_draw, NULL, NULL, NULL },
+	{ SE_PAGE_SOUND, SE_GROUP_PERSONALIZATION, SE_GLYPH_SPEAKER, "Sound", "Volume and the sound output.", "sound", "sound volume audio speaker mute", 1, se_sound_draw, se_sound_press, NULL, se_sound_drag },
 	{ SE_PAGE_DISPLAY, SE_GROUP_PERSONALIZATION, SE_GLYPH_MONITOR, "Display", "Resolution and the screens.", "display", "display screen resolution monitor scale", 1, se_display_draw, NULL, NULL, NULL },
 	{ SE_PAGE_STORAGE, SE_GROUP_DEVICES, SE_GLYPH_DISK, "Storage", "How the disks are used.", "storage", "storage disk space usage free", 1, se_storage_draw, NULL, NULL, NULL },
 	{ SE_PAGE_BATTERY, SE_GROUP_DEVICES, SE_GLYPH_BATTERY, "Battery", "Charge and power saving.", "battery", "battery power charge energy", 0, se_soon_draw, NULL, NULL, NULL },

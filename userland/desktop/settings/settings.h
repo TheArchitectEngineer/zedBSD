@@ -586,6 +586,27 @@ struct se_look {
 };
 
 /*
+ * The sound's volume as the Sound page shows and sets it (ws100-p005,
+ * sound.c): the link to audiod (libkeiland's keiland_audio, NULL without
+ * memory) and what it last reported, the volume and mute shown (audiod's,
+ * or the one being set), a drag in progress, a volume or a feedback sound
+ * held back (at most one every 50 and 250 milliseconds while dragging, as
+ * the system bar does), and the slider's place in the last frame.
+ */
+struct se_sound {
+	struct keiland_audio *audio;
+	struct keiland_audio_state state;
+	int value;
+	int muted;
+	int dragging;
+	int send_waiting;
+	int feedback_waiting;
+	uint64_t sent_at;
+	uint64_t feedback_at;
+	struct fm_rect slider;
+};
+
+/*
  * Settings in one window: the page shown and its history, the list's and
  * the page's scroll, what the last frame drew, and what the pointer is
  * doing.
@@ -659,6 +680,9 @@ struct se_app {
 
 	/* The desktop's look and the user's preferences. */
 	struct se_look look;
+
+	/* The sound's volume (ws100-p005). */
+	struct se_sound sound;
 };
 
 /* The table of pages (pages.c). */
@@ -744,6 +768,17 @@ int se_keyboard_draw(struct se_app *app, struct fm_canvas *canvas, int x, int to
 int se_sound_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 void se_input_press(struct se_app *app, int index);
 void se_input_drag(struct se_app *app, int index, int x, unsigned phase);
+
+/* The sound's volume (sound.c, ws100-p005), and its page's controls (hit indices). */
+#define SE_SOUND_VOLUME		6
+#define SE_SOUND_MUTE		7
+void se_sound_open(struct se_app *app);
+void se_sound_poll(struct se_app *app, uint64_t now);
+int se_sound_wait(const struct se_app *app);
+void se_sound_close(struct se_app *app);
+void se_sound_press(struct se_app *app, int index);
+void se_sound_drag(struct se_app *app, int index, int x, unsigned phase);
+int se_sound_available(const struct se_app *app);
 
 /* A slider (widgets.c). */
 void se_slider_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width, float fraction, int enabled, int index, struct fm_rect *rect);
