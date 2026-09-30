@@ -26,12 +26,15 @@
  *
  * Until the tool face exists, Super+Alt with C, X, V, Z, Y, A, S (select
  * begin), E (select end) and P (the previous application) call these, and
- * Super+Alt+Q logs what zwl_edit_state reads (the tests use them).
+ * Super+Alt+Q logs what zwl_edit_state reads; Super+Alt+H logs the
+ * clipboard's history and Super+Alt+1 ... 0 pastes its items 1 ... 10
+ * (clipboard.c; the tests use them).
  */
 
 #include "edit.h"
 #include "desktop.h"
 #include "menu.h"
+#include "data.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -56,6 +59,9 @@
 #define EDIT_KEY_E			18U
 #define EDIT_KEY_P			25U
 #define EDIT_KEY_Q			16U
+#define EDIT_KEY_H			35U
+#define EDIT_KEY_1			2U
+#define EDIT_KEY_0			11U
 #define EDIT_KEY_S			31U
 #define EDIT_KEY_V			47U
 #define EDIT_KEY_X			45U
@@ -350,7 +356,9 @@ zwl_focus_previous(
 /*
  * Takes the shortcuts that stand in for the tool face's buttons: Super+Alt
  * with C, X, V, Z, Y, A, S, E (the operations), P (the previous
- * application) and Q (the state, logged).  Returns 1 when the key was one.
+ * application), Q (the state, logged), H (the clipboard's history,
+ * logged) and 1 ... 0 (an item of it pasted).  Returns 1 when the key was
+ * one.
  */
 int
 zwl_edit_key(
@@ -370,6 +378,20 @@ zwl_edit_key(
 	if (key == EDIT_KEY_P) {
 		if (state != 0U)
 			(void)zwl_focus_previous(server);
+		return 1;
+	}
+
+	/* H: the clipboard's history, logged on the press (clipboard.c). */
+	if (key == EDIT_KEY_H) {
+		if (state != 0U)
+			zwl_clipboard_history_log(server);
+		return 1;
+	}
+
+	/* 1 ... 9 and 0: the history's items 0 ... 9 pasted, on the press. */
+	if (key >= EDIT_KEY_1 && key <= EDIT_KEY_0) {
+		if (state != 0U)
+			(void)zwl_clipboard_history_paste(server, key - EDIT_KEY_1);
 		return 1;
 	}
 

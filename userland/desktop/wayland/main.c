@@ -14,6 +14,7 @@
 #include "toplevel.h"
 #include "keymap.h"
 #include "ime.h"
+#include "data.h"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -871,6 +872,9 @@ event_loop(
 				zwl_client_destroy(client);
 			}
 		}
+
+		/* The clipboard's history reads what a source has written so far (clipboard.c; the pass is at most 10 ms). */
+		zwl_clipboard_poll(server);
 
 		/* The snapshot contains no ownership references beyond this iteration. */
 		free(clients);

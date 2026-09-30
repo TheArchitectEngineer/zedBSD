@@ -169,6 +169,9 @@ zwl_handoff_logout(
 	if (count != 7)
 		return 0;
 
+	/* The clipboard's history goes (clipboard.c). */
+	zwl_clipboard_history_clear(server, "logout");
+
 	/* Succeeded: QUIT will come. */
 	server->logout_ms = zwl_milliseconds();
 	printf("ZWL HANDOFF logout at_ms=%llu\n", (unsigned long long)server->logout_ms);
