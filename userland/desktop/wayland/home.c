@@ -749,6 +749,9 @@ zwl_home_launched(
 	if (waited > HOME_LAUNCH_WAIT_MS)
 		return 0;
 
+	/* The time from the icon's click to the window's first image (ws099-p016 measures it). */
+	printf("ZWL HOME launched waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)zwl_milliseconds());
+
 	/* Succeeded: the icon's place. */
 	memcpy(rect, server->home_launch_rect, sizeof(server->home_launch_rect));
 	return 1;

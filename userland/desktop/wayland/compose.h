@@ -67,6 +67,8 @@ struct zwl_import {
 	/* A host-written image (wl_shm, the arrow): its mapping and the length of a row in it. */
 	void *map;
 	VkDeviceSize row_pitch;
+	/* A client's image waiting for its move to the general layout in the next frame (ws099-p016). */
+	unsigned layout_pending;
 };
 
 /* The glass look's images and glyphs (glass.c). */
@@ -95,6 +97,9 @@ struct zwl_backdrop {
 	VkRenderPass pass;
 	struct zwl_backdrop_target targets[2];
 };
+
+/* How many new client images wait at most for their move to the general layout in the next frame (ws099-p016). */
+#define ZWL_LAYOUTS_MAX		32U
 
 /* How many frames' damage is kept, for images that missed that many frames. */
 #define ZWL_DAMAGE_HISTORY	8U
@@ -181,6 +186,15 @@ struct zwl_compose {
 	unsigned history_whole[ZWL_DAMAGE_HISTORY];
 	VkRenderPass pass_load;
 	VkRect2D scissor_now;
+	/*
+	 * The clients' images imported since the last frame (ws099-p016): their
+	 * move to the general layout is recorded at the start of the next
+	 * frame's commands (zwl_import_layouts_record) instead of being
+	 * submitted and waited for at the import, and they are forgotten once
+	 * that frame is submitted (zwl_import_layouts_done).
+	 */
+	struct zwl_import *layouts[ZWL_LAYOUTS_MAX];
+	unsigned layout_count;
 };
 
 /* Host-written images (shm.c), sampled with the given sampler. */
@@ -210,6 +224,10 @@ int zwl_backdrop_begin(struct zwl_server *server, VkCommandBuffer command);
 void zwl_backdrop_end(struct zwl_server *server, VkCommandBuffer command);
 void zwl_backdrop_reset(struct zwl_server *server);
 void zwl_backdrop_destroy(struct zwl_compose *compose);
+
+/* The clients' new images' move to the general layout, in the next frame (import.c). */
+void zwl_import_layouts_record(struct zwl_compose *compose, VkCommandBuffer command);
+void zwl_import_layouts_done(struct zwl_compose *compose);
 
 /* The image window mode samples for a surface (compose.c). */
 const struct zwl_import *zwl_compose_surface_image(const struct zwl_object *surface);

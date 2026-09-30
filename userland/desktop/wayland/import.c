@@ -11,6 +11,11 @@
  * standard OPAQUE_FD import of the buffer's fd), a view and a descriptor
  * set are made when the buffer is created, so a commit costs no allocation
  * and no ioctl.
+ *
+ * The image's move to the general layout is not submitted and waited for
+ * at the import (a client's swapchain of three images waited three times
+ * for the frame in flight, ws094-p009): it is recorded at the start of the
+ * next frame, which is the first that can sample the image (ws099-p016).
  */
 
 #include "compose.h"
@@ -234,10 +239,19 @@ import_image(
 	if (result != VK_SUCCESS)
 		return result;
 
-	/* The image goes to the layout it is sampled in, once. */
-	result = import_layout(compose, import);
-	if (result != VK_SUCCESS)
-		return result;
+	/*
+	 * The image goes to the layout it is sampled in, once: in the next
+	 * frame's commands, or now when too many images wait.
+	 */
+	if (compose->layout_count < ZWL_LAYOUTS_MAX) {
+		compose->layouts[compose->layout_count] = import;
+		compose->layout_count++;
+		import->layout_pending = 1U;
+	} else {
+		result = import_layout(compose, import);
+		if (result != VK_SUCCESS)
+			return result;
+	}
 
 	/* Its descriptor set (a spare one when there is one). */
 	result = zwl_compose_set_get(compose, &import->set);
@@ -333,6 +347,22 @@ import_release(
 	struct zwl_compose *compose,
 	struct zwl_import *import)
 {
+	unsigned index;
+
+	/* An image still waiting for its layout is no longer waited for. */
+	if (import->layout_pending) {
+		for (index = 0; index < compose->layout_count; index++) {
+			if (compose->layouts[index] != import)
+				continue;
+			compose->layout_count--;
+			compose->layouts[index] = compose->layouts[compose->layout_count];
+			break;
+		}
+
+		/* It waits no more. */
+		import->layout_pending = 0U;
+	}
+
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
 		zwl_compose_set_put(compose, import->set);
@@ -345,4 +375,59 @@ import_release(
 	if (import->memory != VK_NULL_HANDLE)
 		vkFreeMemory(compose->device, import->memory, NULL);
 	memset(import, 0, sizeof(*import));
+}
+
+/*
+ * Records the move of the images imported since the last frame to the
+ * general layout, where they are sampled while their clients keep writing
+ * them through their own images of the same memory.  It is recorded
+ * before the frame's pass, which is the first to sample them.
+ */
+void
+zwl_import_layouts_record(
+	struct zwl_compose *compose,
+	VkCommandBuffer command)
+{
+	VkImageMemoryBarrier barriers[ZWL_LAYOUTS_MAX];
+	unsigned index;
+
+	/* No image waits. */
+	if (compose->layout_count == 0U)
+		return;
+
+	/* One barrier for each waiting image. */
+	memset(barriers, 0, sizeof(barriers));
+	for (index = 0; index < compose->layout_count; index++) {
+		barriers[index].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barriers[index].srcAccessMask = 0U;
+		barriers[index].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barriers[index].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barriers[index].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barriers[index].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barriers[index].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barriers[index].image = compose->layouts[index]->image;
+		barriers[index].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barriers[index].subresourceRange.levelCount = 1U;
+		barriers[index].subresourceRange.layerCount = 1U;
+	}
+
+	/* All of them before the fragment shaders sample anything. */
+	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL,
+	    compose->layout_count, barriers);
+}
+
+/*
+ * Forgets the images whose move was recorded, once the frame that records
+ * it is submitted (a frame not submitted records them again next time).
+ */
+void
+zwl_import_layouts_done(
+	struct zwl_compose *compose)
+{
+	unsigned index;
+
+	/* Each image is in the general layout from now on. */
+	for (index = 0; index < compose->layout_count; index++)
+		compose->layouts[index]->layout_pending = 0U;
+	compose->layout_count = 0U;
 }
