@@ -3,7 +3,7 @@
 # ws103-p002: 起動の問い合わせを VK_KHR_display へ、`--direct` の削除
 
 - Parent: [WS103](../ws.md)
-- Status: uncleared（基準 6 の 5330 の smoke が未達。変更の前の compositor でも同じく失敗し、原因は p002 の外。ユーザーの判断待ち）
+- Status: cleared（2026-09-30 夜。q509-i01 は uncleared で終え、同日の追いの確かめで基準 6 を満たした）
 - Disposition: normal
 - Queue: q509-i01
 - Design: [design.md](../design.md) §2.1・2.2、§3 の p002
@@ -62,6 +62,21 @@ passthrough の image の作り方: `plan/ws075/demo/build-demo-image.sh build/a
 `ZEDBSD_NOCT_ACCEL=n` は、`userland/base/noct/noct/build-zedbsd-amd64` の CMake の cache が別の checkout（`/home/awe/zedBSD-rpi4`）で作られていて、新しい build directory では
 Noct の build が失敗するため（toolchain の範囲なので触れていない。compositor の smoke には Noct の GPU 版は関係しない）。
 
-### 再開の条件
+### 追いの確かめ（2026-09-30 夜、q509 の後、ユーザーの指示の下で）
+
+- ユーザーの指示「シリアルCOM1にdmesgをコピー出力するコンフィグがあります。それを使えば、エラーをつかめると思います。」により、この切り分けに限り
+  AGENTS.md の「serial の log を読んで判定しない（解析を含む）」の例外として、`CONFIG_PCAT_SERIAL_MIRROR=y`・`ZEDBSD_BOOT_KERNEL_MESSAGES=y` の image
+  （`build/ws103/p002-pt-mirror.img`）の COM1 の log（`build/ws103/p002-hw-mirror/kernel.log`）を解析に使った。判定には使っていない。
+- 原因: **試験の image の作り方の誤り**。`ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical` を graphical boot（`ZEDBSD_GRAPHICAL_BOOT=y`、`login=graphical` を自分で足す）と
+  組み合わせたため `login=graphical` が 2 回になり、kernel が `boot: parameter parsing failed (16); entering idle.` で止まっていた。Guardrail のその書き方は
+  `ZEDBSD_GRAPHICAL_BOOT=n` と組にする物。変更の前の image（`p002-pt-before.img`）も同じ作り方だったので同じく止まった。main と p002 の不具合ではない。
+  （同じ時に、ユーザーの見た 640x480 は古い overlay の layout の image によるもので、main・CI・nightly-143 は native の layout と graphical boot で正しいことを確かめた。）
+- 作り直し: `plan/ws075/demo/build-demo-image.sh build/amd64 passthrough ZEDBSD_NOCT_ACCEL=n`（boot の行は config の既定 `display=edp`）→ `build/ws103/p002-pt2.img`、warning 0。
+- `plan/ws099/tests/c5-hw.sh build/ws103/p002-pt2.img build/ws103/p002-hw2 3`: **PASS**（`ZWL FIRST_FRAME` 34 回、最大 48 ms、100 ms 超え 0）。session の log に
+  `ZWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011`、`ZWL ERROR`・`GPU_ERROR`・`VULKAN_ERROR` 0。画面 `build/ws103/p002-hw2/shots/wiseview-live.png`
+  （10 個の窓の Wiseview）。ユーザーも i915 の実機（passthrough）で表示を確かめた（「i915実機で表示されています。」）。
+- 基準 6 を満たし、Phase は cleared。これは QEMU の passthrough の証拠で、5330 を USB から単独で起動した実機の確かめは未実施。
+
+### 再開の条件（q509 の終わりの時点の記録、上の追いの確かめで満たした）
 
 5330 の passthrough で今の main（変更の前）の demo の image が greeter まで進むようになるか、別の確かめ方（実機の USB の起動など）をユーザーが決めたら、基準 6 だけを確かめて clear する。

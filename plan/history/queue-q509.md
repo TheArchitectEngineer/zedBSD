@@ -24,3 +24,8 @@ Dependency graph: `ws103-p001 (cleared) -> q509-i01/ws103-p002`。
 - q509-i01 / ws103-p002: **uncleared**。compositor の `GPU_GET_INFO`・`GPU_DISPLAY_QUERY`・`GPU_DISPLAY_MODE`・`GPU_DISPLAY_CLAIM`・`GPU_DISPLAY_PRESENT`・`GPU_DISPLAY_RELEASE` と `--direct` を削除（commit `e27565f3` ほか）。
   build warning 0、QEMU の Venus で C1（2 件）・C2 PASS、boot test PASS。5330 の passthrough の smoke（`c5-hw.sh`）は FAIL だが、変更の前の compositor の image でも同じく FAIL（原因は p002 の外、未確認）。
 - 再開の条件: [phase.md](../ws103/phase002/phase.md) の「再開の条件」。GitHub へは未公開。
+
+## 追い（2026-09-30 夜、後の記録。上の結果は書き換えない）
+
+5330 の smoke の失敗は試験の image の作り方の誤り（`login=graphical` の重複で kernel が boot の parameter を拒んだ）だった。既定の boot の行で作り直した image で
+`c5-hw.sh` PASS（34 回、最大 48 ms）。ws103-p002 は cleared。詳細は [phase.md](../ws103/phase002/phase.md) の「追いの確かめ」。

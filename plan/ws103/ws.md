@@ -3,13 +3,13 @@
 # WS103: compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001 cleared、p002 uncleared）
+Status: incomplete（p001・p002 cleared）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし（q509 finished）
-Resume point: 2026-09-30 夜 p002 は実装と QEMU の確かめ（C1・C2・boot test）まで済み、5330 の passthrough の smoke だけ未達（変更の前の compositor でも同じく起動画面で止まる。原因は p002 の外）。基準 6 の扱いはユーザーの判断待ち。p003・p005 は独立に進められる
+Resume point: 2026-09-30 夜 p002 cleared（起動の問い合わせを VK_KHR_display へ、`--direct` の削除。QEMU と 5330 の passthrough で確かめた）。次は独立の p003（libvulkan の import の照合）・p005（WSI の fence）、その後 p004。実行は Queue の承認の後
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）

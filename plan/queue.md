@@ -5,7 +5,7 @@
 <!-- awesome-plan-current:start -->
 Status: idle（2026-09-30）
 Active Queue: なし
-Last finished Queue: [q509](history/queue-q509.md)（ws103-p002 uncleared: 実装と QEMU の確かめは済み、5330 の smoke が未達（変更の前も同じく失敗））
+Last finished Queue: [q509](history/queue-q509.md)（ws103-p002: attempt は uncleared、同日の追いの確かめで Phase は cleared）
 <!-- awesome-plan-current:end -->
 
 ## q509
@@ -21,7 +21,7 @@ Last finished Queue: [q509](history/queue-q509.md)（ws103-p002 uncleared: 実�
 
 | Attempt | Phase | Status | Dependency | Selection reason |
 | --- | --- | --- | --- | --- |
-| q509-i01 | [ws103-p002](ws103/phase002/phase.md) | uncleared | ws103-p001 cleared（design） | 最優先の WS103 の、依存の無い最初の実装の Phase。ユーザーが実行を指示 |
+| q509-i01 | [ws103-p002](ws103/phase002/phase.md) | uncleared（追い: 2026-09-30 夜に基準 6 を満たし Phase は cleared） | ws103-p001 cleared（design） | 最優先の WS103 の、依存の無い最初の実装の Phase。ユーザーが実行を指示 |
 
 Dependency graph: `ws103-p001 (cleared) -> q509-i01/ws103-p002`。
 

@@ -2,7 +2,7 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q509](queue-q509.md)（ws103-p002 uncleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q509](queue-q509.md)（ws103-p002: attempt uncleared、追いの確かめで cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
@@ -10,7 +10,7 @@ Last finished Queue: [q509](queue-q509.md)（ws103-p002 uncleared）。2026-09-2
 ## 最新: 2026-09-30 q509
 
 [q509](queue-q509.md): WS103 p002 uncleared。compositor の起動の問い合わせを VK_KHR_display へ移し、`--direct` と表示の claim・present・release の ioctl を削除。QEMU の Venus で
-C1・C2・boot test PASS。5330 の passthrough の smoke は、変更の前の compositor でも同じく起動画面で止まり未達（13:38 の後の main の変更か環境を疑う、未確認）。GitHub へは未公開。
+C1・C2・boot test PASS。5330 の passthrough の smoke は最初 FAIL（試験の image で `login=graphical` が重複し kernel が boot の parameter を拒んでいた。COM1 の mirror で特定、ユーザー指示の例外）。既定の boot の行で作り直して PASS（34 回、最大 48 ms）、Phase は cleared（追い）。GitHub へは未公開。
 
 ## 2026-09-30 q508
 
