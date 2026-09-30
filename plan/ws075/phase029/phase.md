@@ -4,7 +4,7 @@
 
 Phase ID: `ws075-p029`
 Parent: [WS075](../ws.md)
-Status: in-progress（2026-09-30、P1）
+Status: cleared（2026-09-30、P1。blur は窓ごとに選べ既定は無効、Settings は有効。L2 を満たす: 10 app（Settings を含む）で C6 中央値 67.3 ms・p90 102.6 ms（5 run）、stress 100 回で停止 0。Settings を 9 窓の上に出した参考 71.3 ms。C7 PASS（最小 4.68）・C9 10/10・boot test PASS。Files と keyboard の既定はユーザーが画面で決める）
 Phase disposition: normal
 承認: 2026-09-30 Q1 の指示。ユーザーの判断は ws.md の「ユーザーの判断（2026-09-30、すりガラス）」（最初は「blur をやめる」、同日に「窓ごとに
 選べ、既定は無効、Settings は有効、Files と keyboard は比べて決める」に改めた）。
@@ -60,3 +60,32 @@ zdesktop `--keyboard-blur`。
 - App Home・Wiseview: `build/ws075-shots/p029b/home-wiseview-off-on.png`（off と on で上の bar の下は画素まで同じ）。
 
 Files と keyboard の既定（有効・無効）はユーザーが見比べて決める（今は両方とも無効）。
+
+## 検証（2026-09-30）
+
+最終の tree 8bdc6f4b（main の ws099-p016: import の barrier を合成の command buffer の頭で記録する変更を取り込んだ後）。
+
+| 確認 | 結果 |
+| --- | --- |
+| build（compositor・libkeiland・libwayland・settings・demo の image） | warning 0 |
+| libwayland の host の試験（ws014 の wayland-client、path を直した命令） | PASS |
+| style-check（変えた file、前との差分） | 新しい指摘 0（直した） |
+| C7（`plan/ws099/tests/criteria.sh ... C7`、QEMU の Venus、この tree の criteria の image、既定と生成の 5 枚の壁紙） | PASS: 72 箇所 fail 0、最小 contrast 4.68（基準 4.5） |
+| C9（同 C9、10 本） | 10/10 PASS。p076 は変更の前の最初の実行で 1 回 FAIL（move・resize の手順）、同じ image と変更を除いた image で再実行して両方 PASS: 変更と無関係の揺れ |
+| QEMU の boot test（demo の image の複写） | PASS（`build/ws075-p029/boot-test/login.png`） |
+| 5330 の passthrough: stress-117 の 100 回 | 停止 0（3 s に最少 50 flip）、draw の拒否 0・set の消失 0 |
+| 5330 の passthrough: C6（measure-apps 5 run、10 app に Settings（blur 有効）を含む、`c6.py`） | **中央値 67.3 ms**・p90 102.6 ms、run の中央値 60.7〜73.8 ms（標準偏差 5.1 ms）、10 app の flip 17.1〜19.1/s、compositor の 1 run 6.4〜6.9 ms、draw の拒否 0 |
+| 参考: Settings（blur 有効）を 9 窓の上に出した 1 run | C6 中央値 71.3 ms・p90 114.9 ms、flip 18.8/s、compositor の占有 62.8%（Settings の glass は下の 9 窓の blur を透かす: `build/ws075-shots/ws075-p029-settings-raised.png`） |
+| 新しく開いた app の中身（ws099-p016 の影響、i915 の実行器で UNDEFINED → GENERAL の barrier が描いた後） | 5330 で 10 app を順に開いた撮影で全て正しい中身（`build/ws075-shots/ws075-p029-apps.png`: Files・Notes・Settings・Terminal・PDF・Images・Browser・Model viewer・Gears・X terminal） |
+| App Home から Files の最初の frame まで | QEMU の Venus（`import-launch.sh`、3 回の中央値）: 窓の最初の image まで 2298 ms、次の合成の frame まで 2418 ms。5330 は未実施（session の log の取り出しの click が Terminal でなく Settings に当たった） |
+
+判定: L2（C6 中央値 75 ms 以内）を満たす（5 run）。C6（50 ms）は L3。
+
+QEMU と実機: C7・C9・画面の比較・boot test・Files の起動の時間は QEMU（Venus）、stress・C6・app の中身は 5330 の passthrough。素の 5330 は未実施。
+
+## 残り
+
+- Files と keyboard の panel の blur の既定（今は両方とも無効）: ユーザーが `files-glass-off-on.png`・`keyboard-glass-off-on.png` を見て決める。keyboard を
+  有効にするなら zdesktop の起動（sessiond の session の引数）に `--keyboard-blur` を足すか、設定の口にする（Q1・ユーザー）。
+- 5330 での Files の起動の時間。
+- ws035 の `zdesktop-p057.sh`（backdrop が下の窓を見せることの試験）は、今は blur を有効にした窓（Settings）でだけ成り立つ（C9 の一覧には無い）。
