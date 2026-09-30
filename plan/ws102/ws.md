@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: L1 を満たした。L2 の p006・p008・p021・p020 cleared 2026-09-30。次は p007（作業の領域）
+Resume point: L1 を満たした。L2 の p006・p008・p021・p020・p015 cleared 2026-09-30。次は p007（作業の領域。configure の前に `zwl_keyboard_inset_notify` を呼ぶ、p015 の phase.md の制限）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -56,15 +56,15 @@ Resume point: L1 を満たした。L2 の p006・p008・p021・p020 cleared 2026
 | [ws102-p005](phase005/phase.md) | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | cleared（2026-09-30: 帯の swipe で閉じる・Home・Wiseview で閉じる、1920x1080 の配置、osk-guest 全手順・WS079-p010・C9（10 本）・boot test PASS。**L1 の (a)〜(d) を満たした**。lock は試験の compositor が session でないので未確認） | p004 |
 | [ws102-p006](phase006/phase.md) | L2 | QWERTY の面と左下の gesture | cleared（2026-09-30: 注入の 30 文字「Hello, World! Kei 2026 (a+b)=c」を 4.9 秒で Text Editor に誤り 0（L2 の (a)）、Shift の lock・矢印、C9（10 本）・WS079-p010・boot test PASS） | p005 |
 | ws102-p007 | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | planned | p006 |
-| ws102-p015 | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: Keiland の独自の protocol で、keyboard のために大きさ・位置を変える窓へ configure の前に知らせ、libkeiui が caret の行を見える範囲の中央に寄せる。Text Editor の長い文書で QWERTY を開き、caret が keyboard の上の範囲の中央付近（±1 行）に見える | planned | p007 |
+| [ws102-p015](phase015/phase.md) | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: `keiland_keyboard_inset_v1`（zdesktop の inset.c、libwayland、libkeiland の wrapper（KEILAND_VERSION 18）、libkeiui の `kui_window` の受け口と callback と caret の中央寄せ（KUI_VERSION 7））。keyboard の開閉で知らせ、p007 は configure の前に `zwl_keyboard_inset_notify` を呼ぶ | cleared（2026-09-30 P6: Text Editor の 200 行の文書で QWERTY を開くと caret の行が keyboard の上の範囲の中央から 0.54 行、wlshm は変わらず、host 10/10、C9・WS079-p010・boot PASS。実機は未実施） | p007 |
 | [ws102-p008](phase008/phase.md) | L2 | 手書きの面（線・stub の認識・候補） | cleared（2026-09-30: 手書きの面・線・stub の認識・候補の送出、guest PASS。(c): 点は入力の後の最初の frame で描かれる（9/9、lag 20〜53 ms）。QEMU の frame の間隔は 130〜143 ms で、60 Hz の 17 ms は実機か Windows の QEMU で測る） | p006 |
 | ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
 | ws102-p010 | L3 | 計測の道具と基準値（遅れ・開く動き） | planned | p009 |
 | ws102-p011 | L3 | 数値目標への直し | planned | p010 |
 | ws102-p012 | L3 | IME と組んだ日本語の変換、右の列の変換候補（独自の拡張、design.md §2.10） | planned | p005、D2、WS095 |
 | ws102-p013 | L4 | Windows の上の QEMU（WS085）での物理の touch の確認 | planned | p009、WS085 |
-| ws102-p016 | L2 | 右の列の全体の panel と道具の面の枠（design.md §2.10）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | planning | p007 |
-| ws102-p017 | L2 | 編集の操作の拡張 `keiland_edit_v1`（libkeiland・libkeiui の `kui_text`、状態で button を灰色に）、拡張の無い窓の key への落とし（Terminal は app の表） | planning | p016 |
+| ws102-p016 | L2 | 右の列の道具の面（design.md §2.10、列の配置は p021 で済み）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | planning | p007 |
+| ws102-p017 | L2 | 編集の操作の拡張 `keiland_edit_v1`（libkeiland・libkeiui の `kui_text`、状態で button を灰色に）、拡張の無い窓の key への落とし（Terminal は app の表）、compositor の `zwl_edit_action`・`zwl_edit_state`・`zwl_focus_previous`（直前の app）。keyboard の button は p016 | planned（P6、2026-09-30） | p015 |
 | ws102-p018 | L3 | クリップボードの履歴（記憶の中だけ、10 件、password の欄は残さない、lock・Log Out で消す） | planning | p016 |
 | ws102-p019 | L3 | 色付きの絵文字（2026-09-30 ユーザー「色付きにする」）: font の選定（Noto Color Emoji の CBDT か COLRv1）と license の監査、libtruetype の色の glyph、keyboard の絵文字の面、libkeiui の文字の描画、text-input の commit。大きいので始める前に分ける | planning | p016 |
 | [ws102-p021](phase021/phase.md) | L2 | 縁に組み込んだ見た目（design.md §2.3 の改め、2026-09-30 ユーザー）: flick の panel を右の列の全体に、QWERTY・手書きを下端の全幅に、余白・外の角丸・影をやめ内側に 1 px の区切り、縁から伸び出す動き。1280x800・1920x1080 で panel の外の辺が画面の縁と 0 px で接する（log の矩形と画面） | cleared（2026-09-30: flick は右の列の全体（1280x800 で 962,34 318×766）、QWERTY・手書きは下端の全幅（0,496 1280×304）、1920x1080 も縁に 0 px。影・外の角丸をやめ内側に 1 px の線、200 ms の伸び出し。全手順・p010・C9・boot test PASS） | p008 |

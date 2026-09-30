@@ -156,6 +156,9 @@ enum zwl_kind {
 	/* The desktop surface (desktop.c, ws094-p002). */
 	ZWL_DESKTOP_MANAGER,
 	ZWL_DESKTOP_SURFACE,
+	/* The keyboard inset (inset.c, ws102-p015). */
+	ZWL_KEYBOARD_INSET_MANAGER,
+	ZWL_KEYBOARD_INSET,
 };
 
 /*
@@ -1077,6 +1080,7 @@ void zwl_keyboard_tick(struct zwl_server *server);
 int zwl_keyboard_showing(void);
 int zwl_keyboard_at(int32_t x, int32_t y);
 void zwl_keyboard_close(struct zwl_server *server, const char *reason);
+void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
 
 /* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */
 int zwl_glass_fullscreen_input(struct zwl_server *server);

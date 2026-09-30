@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends). */
-#define KUI_VERSION	6U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight). */
+#define KUI_VERSION	7U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -741,6 +741,31 @@ int kui_window_can_paste(const struct kui_window *window);
 void kui_window_text_input(struct kui_window *window, int enabled);
 void kui_window_text_cursor(struct kui_window *window, int x, int y, int width, int height);
 void kui_window_select(struct kui_window *window, const char *text, size_t length);
+
+/*
+ * KUI_VERSION 7 (ws102-p015, plan/ws102/design.md section 2.8): the
+ * on-screen keyboard's inset.  zdesktop tells a window how much of it the
+ * keyboard covers, in the window's pixels from its right edge (the flick
+ * panel's column) and from its bottom edge (the QWERTY row), when the
+ * keyboard opens, closes or changes the window (before that configure);
+ * both are 0 when it has closed or does not cover the window.  With a
+ * compositor that does not tell, nothing happens.
+ *
+ * By default the caret is kept in sight: when the keyboard comes or
+ * changes, the next kui_ui_end moves the scroll of the frame's text view
+ * (kui_ui_text_region; the one with the keyboard's focus, else the last
+ * recorded) so that the caret's line is in the middle of the part of the
+ * view the keyboard leaves, as far as the scroll goes (not past the text's
+ * start or end; a view that does not scroll stays).  The application may
+ * hear the inset first: its callback returns 1 when it took care of it
+ * itself (the default is skipped), 0 to keep the default.
+ */
+#define KUI_KEYBOARD_INSET_NONE		0U
+#define KUI_KEYBOARD_INSET_RIGHT	1U
+#define KUI_KEYBOARD_INSET_BOTTOM	2U
+typedef int (*kui_keyboard_inset_fn)(void *data, int right, int bottom, unsigned reason);
+void kui_window_on_keyboard_inset(struct kui_window *window, kui_keyboard_inset_fn callback, void *data);
+void kui_window_keyboard_inset(const struct kui_window *window, int *right, int *bottom);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
 uint64_t kui_clock_us(void);
 

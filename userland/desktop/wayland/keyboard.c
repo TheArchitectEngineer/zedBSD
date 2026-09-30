@@ -583,6 +583,7 @@ zwl_keyboard_close(
 
 	/* The panel goes, going back into its edge (drawn until it is in). */
 	printf("ZWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
+	zwl_keyboard_inset_notify(server, NULL);
 	keyboard.leaving = keyboard.open;
 	keyboard.slide_ms = zwl_milliseconds();
 	keyboard.open = PANEL_NONE;
@@ -979,6 +980,7 @@ keyboard_open(
 
 	/* The log line the tests read, and the QWERTY panel's keys' places. */
 	printf("ZWL OSK open kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(kind), keyboard.panel[0], keyboard.panel[1], keyboard.panel[2], keyboard.panel[3]);
+	zwl_keyboard_inset_notify(server, keyboard.panel);
 	if (kind == PANEL_QWERTY)
 		keyboard_qwerty_log(server);
 }
