@@ -35,6 +35,11 @@
 #define ZWL_FLICK_DOWN		4U
 #define ZWL_FLICK_DIRECTIONS	5U
 
+/* The evdev codes of the keys the keyboard sends besides the characters'. */
+#define ZWL_FLICK_KEY_BACKSPACE	14U
+#define ZWL_FLICK_KEY_ENTER	28U
+#define ZWL_FLICK_KEY_SPACE	57U
+
 /*
  * What a key does besides typing its characters: nothing more (a
  * character key), delete the character before the cursor, a space, a new
@@ -67,5 +72,7 @@ const char *zwl_flick_text(const struct zwl_flick_key *key, unsigned direction);
 int zwl_flick_voice(const char *previous, char *next, size_t size);
 int zwl_flick_case(const char *previous, char *next, size_t size);
 const char *zwl_flick_direction_name(unsigned direction);
+int zwl_flick_us_key(const char *text, unsigned *code, int *shift);
+
 
 #endif

@@ -25,6 +25,7 @@ static int failures;
 static void check(int condition, const char *text);
 static int face_has(unsigned face, const char *text);
 static int face_repeats(unsigned face);
+static int face_keys(unsigned face);
 
 /* The 46 plain kana (UTF-8, three bytes each). */
 static const char host_kana[] = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
@@ -38,6 +39,8 @@ main(void)
 {
 	char one[8];
 	char next[8];
+	unsigned code;
+	int shift;
 	size_t index;
 	int missing;
 	int found;
@@ -128,6 +131,33 @@ main(void)
 	check(found && strcmp(next, "z") == 0, "Z -> z");
 	found = zwl_flick_case("1", next, sizeof(next));
 	check(!found, "1 has no case");
+
+	/* The US layout's keys (ws102-p004): a, A, 1, !, space, newline, backslash, bar; none for あ. */
+	found = zwl_flick_us_key("a", &code, &shift);
+	check(found && code == 30U && !shift, "a: key 30");
+	found = zwl_flick_us_key("A", &code, &shift);
+	check(found && code == 30U && shift, "A: key 30 with Shift");
+	found = zwl_flick_us_key("1", &code, &shift);
+	check(found && code == 2U && !shift, "1: key 2");
+	found = zwl_flick_us_key("!", &code, &shift);
+	check(found && code == 2U && shift, "!: key 2 with Shift");
+	found = zwl_flick_us_key(" ", &code, &shift);
+	check(found && code == 57U && !shift, "space: key 57");
+	found = zwl_flick_us_key("\n", &code, &shift);
+	check(found && code == 28U && !shift, "newline: key 28");
+	found = zwl_flick_us_key("\\", &code, &shift);
+	check(found && code == 43U && !shift, "backslash: key 43");
+	found = zwl_flick_us_key("|", &code, &shift);
+	check(found && code == 43U && shift, "bar: key 43 with Shift");
+	found = zwl_flick_us_key("あ", &code, &shift);
+	check(!found, "あ: no key");
+
+	/* Every character of the alpha and number faces but the non-ASCII ones has a key. */
+	missing = 0;
+	for (index = 0; index < 2U; index++) {
+		missing += face_keys(ZWL_FLICK_ALPHA + (unsigned)index);
+	}
+	check(missing == 0, "every ASCII character of the alpha and number faces has a key");
 
 	/* The outcome. */
 	if (failures != 0) {
@@ -226,4 +256,41 @@ face_repeats(
 
 	/* The repeats. */
 	return repeats;
+}
+
+/* Counts the ASCII characters of a face that no key of the US layout types. */
+static int
+face_keys(
+	unsigned face)
+{
+	const struct zwl_flick_key *key;
+	const char *typed;
+	unsigned row;
+	unsigned column;
+	unsigned direction;
+	unsigned code;
+	int shift;
+	int found;
+	int missing;
+
+	/* Each ASCII text of the face. */
+	missing = 0;
+	for (row = 0; row < ZWL_FLICK_ROWS; row++) {
+		for (column = 0; column < ZWL_FLICK_COLUMNS; column++) {
+			key = zwl_flick_key(face, row, column);
+			for (direction = 0; direction < ZWL_FLICK_DIRECTIONS; direction++) {
+				typed = zwl_flick_text(key, direction);
+				if (typed == NULL || (unsigned char)typed[0] >= 0x80U)
+					continue;
+				found = zwl_flick_us_key(typed, &code, &shift);
+				if (!found) {
+					printf("no key: %s\n", typed);
+					missing++;
+				}
+			}
+		}
+	}
+
+	/* The ones without a key. */
+	return missing;
 }
