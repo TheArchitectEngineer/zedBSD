@@ -3,13 +3,13 @@
 # WS102: スクリーンキーボード（compositor に直接、flick と QWERTY と手書き）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から
+Resume point: p001（設計）cleared 2026-09-30（[design.md](design.md)）。次は L1 の p002（角の認識器と空の panel）。判断待ち: D1（Text Editor へのかな）、D2（日本語の変換）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -47,6 +47,33 @@ Resume point: p001（設計）から
 
 ## Phase（案）
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| ws102-p001 | 設計（上の決めること） | planning | — |
+| Phase | 段 | 目的 | Status | 依存 |
+| --- | --- | --- | --- | --- |
+| ws102-p001 | — | 設計（[design.md](design.md): compositor の `keyboard.c`、IME の file を変えない送出、角の gesture、配列、作業の領域、段と数値目標） | cleared（2026-09-30） | — |
+| ws102-p002 | L1 | `keyboard.c` の骨組み: 右下・左下の角の認識器（pointer と touch）、下端の Wiseview と desktop の swipe から角を除く、開閉、空の glass の panel、overlay と scanout、log | planned | p001 |
+| ws102-p003 | L1 | `keyboard-layout.c`（flick の 3 つの face の表、方向の判定、濁点の巡り）、key と花びらの描画、host の試験 | planned | p002 |
+| ws102-p004 | L1 | 文字の送出（evdev と Shift、text-input の commit、組み立て中・text-input の無い app）、guest の試験（Text Editor・ime-probe） | planned | p003 |
+| ws102-p005 | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | planned | p004 |
+| ws102-p006 | L2 | QWERTY の面と左下の gesture | planned | p005 |
+| ws102-p007 | L2 | 作業の領域（`zwl_keyboard_reserved`、置き場・最大化・desktop・浮いた窓の寄せと戻し） | planned | p006 |
+| ws102-p008 | L2 | 手書きの面（線・stub の認識・候補） | planned | p006 |
+| ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
+| ws102-p010 | L3 | 計測の道具と基準値（遅れ・開く動き） | planned | p009 |
+| ws102-p011 | L3 | 数値目標への直し | planned | p010 |
+| ws102-p012 | L3 | IME と組んだ日本語の変換 | planned | p005、D2、WS095 |
+| ws102-p013 | L4 | Windows の上の QEMU（WS085）での物理の touch の確認 | planned | p009、WS085 |
+| ws102-p014 | — | 全文の規約と回帰（WS の最後） | planned | 最後の段 |
+
+## 段（詳しくは [design.md](design.md) §3）
+
+| 段 | 内容 | 数値目標（要約） |
+| --- | --- | --- |
+| L1 | 右下の swipe で flick の panel。かな・英字・数字の face。英数は Text Editor、かなは text-input の app へ | 注入の右下の swipe 10/10 で開き、真上への swipe 0/10。表の網羅（host）。「aiueo123」「あいうえお」が誤り 0 で届く。C9 の 10 本 PASS |
+| L2 | QWERTY・手書き（stub）・作業の領域・多指の連打 | 30 文字を 5 文字/秒で誤り 0。2 本指の 100 打鍵で取りこぼし 0。線の遅れ 1 frame 以内。最大化の窓が keyboard の上に収まる |
+| L3 | 速さと日本語の変換 | 送出まで p95 ≤ 5 ms、app の frame まで p95 ≤ 50 ms。開く動きの frame の間隔 ≤ 20 ms。D2 の後、「きょうはいいてんき」→「今日はいい天気」 |
+| L4 | Windows の上の QEMU で物理の touch | 台本 S14 の操作が 3/3 通る |
+
+## 判断待ち（design.md §5）
+
+- D1: Text Editor・Terminal は text-input-v3 を持たないので、かなを送れない。WS095-p007 を待つか、WS102 で Text Editor に text-input-v3 を入れてよいか（ユーザー）。
+- D2: 日本語の変換を IME とどう組むか（L3、WS095 の担当と）。
