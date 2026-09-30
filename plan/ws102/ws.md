@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p017・p020・p021 cleared 2026-09-30。作業中: p016（P3）、p018・p023（P6）、p019（P4）
+Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p017・p020・p021 と L3 の p019 cleared 2026-09-30。作業中: p016（P3）、p018・p023（P6）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
