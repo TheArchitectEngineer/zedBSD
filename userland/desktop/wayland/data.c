@@ -633,6 +633,13 @@ offer_request(
 	if (descriptor < 0)
 		return EAGAIN;
 
+	/* An offer of zdesktop's own selection: zdesktop writes the text (clipboard.c). */
+	if (offer->data_offered) {
+		printf("ZWL DATA receive client=%llu mime=%s source=history\n", (unsigned long long)offer->client->number, text);
+		zwl_clipboard_offer_write(descriptor);
+		return 0;
+	}
+
 	/* An offer whose source has gone has nothing to send; the descriptor is closed (the reader sees its end). */
 	source = offer->data_source;
 	if (source == NULL || source->dead || source->client->fatal) {
@@ -645,6 +652,50 @@ offer_request(
 	printf("ZWL DATA receive client=%llu mime=%s source=%llu\n", (unsigned long long)offer->client->number, text, (unsigned long long)source->client->number);
 	(void)emit_string(source->client, source->id, SOURCE_SEND, text, descriptor);
 	return 0;
+}
+
+/*
+ * Asks a source's client to write a type into a descriptor (the clipboard's
+ * history reads the text so, clipboard.c); the event takes the descriptor.
+ */
+int
+zwl_data_send(
+	struct zwl_object *source,
+	const char *type,
+	int descriptor)
+{
+	int error;
+
+	/* The source's send event. */
+	error = emit_string(source->client, source->id, SOURCE_SEND, type, descriptor);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the client writes. */
+	return 0;
+}
+
+/*
+ * Makes zdesktop's own text (an item of the clipboard's history,
+ * clipboard.c) the selection: the source it replaces is cancelled, and the
+ * client with the keyboard hears it.
+ */
+void
+zwl_data_select_offered(
+	struct zwl_server *server)
+{
+	struct zwl_object *previous;
+
+	/* The source replaced hears that it is not the selection any more. */
+	previous = server->selection;
+	if (previous != NULL && !previous->dead)
+		(void)zwl_emit(previous->client, previous->id, SOURCE_CANCELLED, NULL, 0U);
+
+	/* zdesktop's selection, told to the client with the keyboard. */
+	server->selection = NULL;
+	server->selection_offered = 1;
+	printf("ZWL DATA selection history\n");
+	selection_changed(server);
 }
 
 /* Sets the selection from a client's device: a source of the client, or none; the replaced source is cancelled. */
@@ -678,11 +729,15 @@ set_selection(
 
 	/* The new selection (with how many types it has), and the client with the keyboard hears it. */
 	server->selection = source;
+	server->selection_offered = 0;
 	types = 0;
 	if (source != NULL)
 		types = source->mime_count;
 	printf("ZWL DATA selection client=%llu source=%u types=%u\n", (unsigned long long)device->client->number, source_id, types);
 	selection_changed(server);
+
+	/* Its text joins the clipboard's history (clipboard.c). */
+	zwl_clipboard_selected(server, source);
 
 	/* Succeeded: the clipboard holds the source. */
 	return 0;
@@ -739,9 +794,24 @@ send_device_selection(
 	uint32_t word;
 	unsigned index;
 
-	/* An empty clipboard: the selection names no offer. */
+	/* zdesktop's own selection, an item of the clipboard's history, is offered as text. */
 	source = server->selection;
 	word = 0;
+	if (source == NULL && server->selection_offered) {
+		offer = zwl_create_server(device->client, ZWL_DATA_OFFER, device->version);
+		if (offer == NULL)
+			return;
+		offer->data_offered = 1;
+		word = offer->id;
+		(void)zwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
+		(void)emit_string(device->client, offer->id, OFFER_OFFER, "text/plain;charset=utf-8", -1);
+		(void)emit_string(device->client, offer->id, OFFER_OFFER, "text/plain", -1);
+		(void)zwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
+		printf("ZWL DATA offer client=%llu offer=%u types=2 history=1\n", (unsigned long long)device->client->number, offer->id);
+		return;
+	}
+
+	/* An empty clipboard: the selection names no offer. */
 	if (source == NULL || source->dead) {
 		(void)zwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
 		return;

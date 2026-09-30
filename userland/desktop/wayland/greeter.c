@@ -268,6 +268,9 @@ zwl_lock(
 	greeter_waiting = 0U;
 	greeter_starting = 0U;
 
+	/* The clipboard's history goes (clipboard.c). */
+	zwl_clipboard_history_clear(server, "lock");
+
 	/* Succeeded: the lock screen shows. */
 	server->locked = 1U;
 	server->dirty = 1;
