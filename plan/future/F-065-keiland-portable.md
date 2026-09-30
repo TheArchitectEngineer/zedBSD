@@ -55,6 +55,10 @@ Future Work の詳細。実行の許可ではない。着手するときは新�
    - 確かめ 1: 後段が自分の公開の `vk*` の address を内部で使う場合（例 `vkGetInstanceProcAddr` が自分の `vkCreateDevice` を返す）、
      それが先に載った我々の同名の関数に解決されると前段と後段が循環する。Khronos の loader は `-Bsymbolic` で防いでいると Q1 は記憶しているが未確認。
      ベンダーの単体の libvulkan は不明。起きたら `RTLD_DEEPBIND` などで対処する。
+     ELF の既定では同じ module の中は優先されない（symbol の interposition）。2026-09-30 Q1 の host（Debian、glibc）の試験: 後段の中から自分の同名の関数を呼ぶと、
+     gcc の既定（`-O0`・`-O2`）では先に載った前段の物が呼ばれ、gcc `-Wl,-Bsymbolic` と clang `-O2` の既定では後段の物が呼ばれた。
+     同じ module が勝つのは `-Bsymbolic`、hidden・protected の visibility、compiler が割り込み無しと見なした場合（clang の既定、gcc の
+     `-fno-semantic-interposition`）。作業のときに、使う後段ごとに確かめる（ユーザー「作業時に確かめる点として記録します」）。
    - 確かめ 2: 後段が実際に呼ぶ library（Mesa は zlib を shader の cache、expat を driconf に使う）を我々も同じ symbol の名前で持つと、我々の物が呼ばれる。
      我々の compat の library が ABI まで互換なら問題ない。
 2. **compositor の画面の出力（VK_KHR_display）も WSI の一部である。** 次のどちらにするか。
