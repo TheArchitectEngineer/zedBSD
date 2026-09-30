@@ -3,7 +3,7 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし。Last finished Queue: q514（ws103-p007 cleared: WS103 完了）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
-Next（2026-09-30 夕に更新）: 週間の使用量のためサブエージェントは全てラップアップ（N=0）。統合の試験（demo-s8-s9.sh、QEMU、`build/integ-0930/`）PASS。次の候補: 5330 の実機の新しい demo の image（今日の変更を全て入れる）、ユーザーの実機の確認、WS103（ユーザーの指示の後）。 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）のユーザー確認も残る。
+Next（2026-10-01 に更新）: WS103（compositor を libvulkan だけに）は 2026-10-01 に完了（q508〜q514、ユーザーの自走の指示）。次の最優先はユーザーの指示を待つ。候補: デモ critical の上位（WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102）、5330 の実機の新しい demo の image とユーザーの実機の確認。サブエージェントは N=0。
 IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。
 優先順位（2026-09-30 夜 ユーザー）: 最優先の WS103 は 2026-10-01 に完了。次は WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102、WS074 はデモ critical の中位。
 <!-- awesome-plan-current:end -->
