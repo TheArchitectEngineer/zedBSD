@@ -58,7 +58,7 @@ Resume point: L1 を満たした。L2 の p006・p008・p021 cleared 2026-09-30�
 | ws102-p007 | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | planned | p006 |
 | ws102-p015 | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: Keiland の独自の protocol で、keyboard のために大きさ・位置を変える窓へ configure の前に知らせ、libkeiui が caret の行を見える範囲の中央に寄せる。Text Editor の長い文書で QWERTY を開き、caret が keyboard の上の範囲の中央付近（±1 行）に見える | planned | p007 |
 | [ws102-p008](phase008/phase.md) | L2 | 手書きの面（線・stub の認識・候補） | cleared（2026-09-30: 手書きの面・線・stub の認識・候補の送出、guest PASS。(c): 点は入力の後の最初の frame で描かれる（9/9、lag 20〜53 ms）。QEMU の frame の間隔は 130〜143 ms で、60 Hz の 17 ms は実機か Windows の QEMU で測る） | p006 |
-| ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
+| [ws102-p009](phase009/phase.md) | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | cleared（2026-09-30、QEMU: 2 本指 50 ms の重なり 100 打鍵で取りこぼし 0（変更の前は 50）、L1・L2 の全ての手順・C9・WS079-p010・boot PASS） | p006 |
 | ws102-p010 | L3 | 計測の道具と基準値（遅れ・開く動き） | planned | p009 |
 | ws102-p011 | L3 | 数値目標への直し | planned | p010 |
 | ws102-p012 | L3 | IME と組んだ日本語の変換、右の列の変換候補（独自の拡張、design.md §2.10） | planned | p005、D2、WS095 |
