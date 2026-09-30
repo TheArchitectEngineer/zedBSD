@@ -3,12 +3,12 @@
 # WS103: compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（p001 実行中）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: なし
+Queue: q508（ws103-p001）
 Resume point: 2026-09-30 に立てた。**始める時期はユーザーが指示する**（2026-09-30 ユーザー「この標準Vulkan化の作業は、タイミングを見て実行を指示させてください。WSとして作成しておいてください。」）。指示の後は p001（調査と設計、High）から。2026-09-30 夜 ユーザーが最優先の WS にした（master の優先順位の節）。実行の指示（Queue の承認）はまだ
 <!-- awesome-plan-current:end -->
 
@@ -69,5 +69,5 @@ client と compositor の間は全 OS で我々の独自の protocol 1 本で、
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws103-p001 | 調査と設計（D1〜D3 の上で）: 各 ioctl の置き換え（起動の問い合わせ → VK_KHR_display、記述の照合 → libvulkan の bind、fence → import と状態、`--direct` の削除）、fence の世代の照合を libvulkan の import に移す方法と i915 の native の external fence の有無、OS の backend の境界の形（protocol・import・fence の組、F-065 の Linux の組が後で入る形）、macro を外した build の確かめ方（Linux の build は無いので host の compile だけ等）、buffer ごとの import の費用（V4）。Phase の分け方。design-reviewer のレビュー | planned | — |
+| [ws103-p001](phase001/phase.md) | 調査と設計（D1〜D3 の上で）: 各 ioctl の置き換え（起動の問い合わせ → VK_KHR_display、記述の照合 → libvulkan の bind、fence → import と状態、`--direct` の削除）、fence の世代の照合を libvulkan の import に移す方法と i915 の native の external fence の有無、OS の backend の境界の形（protocol・import・fence の組、F-065 の Linux の組が後で入る形）、macro を外した build の確かめ方（Linux の build は無いので host の compile だけ等）、buffer ごとの import の費用（V4）。Phase の分け方。design-reviewer のレビュー | in-progress（q508） | — |
 | ws103-p002 以降 | p001 で決める（例: 起動の問い合わせ → fence → import の確かめ → 表示の受け渡し → 予備の経路の削除 → 試験と 5330） | planning | p001 |
