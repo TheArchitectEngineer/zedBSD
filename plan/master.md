@@ -195,10 +195,10 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
-| [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: L1 がそろった。L2: p011（BUG-121）cleared（5330 の角の drag 20 回で窓の消失 6 → 0）、p016 cleared（buffer の import の待ちを次の合成の barrier に、QEMU で app の最初の frame まで約 250〜330 ms 短縮、5330 は未確認）。作業中: p015（全画面を常に合成、下からの swipe、P6）。C5（App Home・Wiseview の開閉の最初の frame 215 ms）は残り |
+| [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: L1 がそろった。L2: p011（BUG-121、5330 の角の drag 20 回で消失 6 → 0）、p015（全画面を常に合成、下からの swipe で窓に戻す、全画面の上にも矢印、全画面の上の Wiseview は Super+Tab だけ。QEMU の pen の遅れ 74 → 117 ms）、p016（import の待ちを無くす、app の最初の frame まで −250〜330 ms）cleared。作業中: p002（C5、P6） |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001〜p005・p007 cleared 2026-09-30（QEMU）: 段 L1（system bar の音量の icon・slider・mute・wheel・確かめの音・保存、Settings の Sound の頁、両者の同期）を満たした。次の段 L2（5330 の実機で鳴る、p006-a〜c）・L3（確かめの音の遅れ 50 ms・音量の曲線 ±3 dB、ユーザーが確定） |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | 2026-09-30: L1 で S13 が 5330 で通った（CPU 9 ms・GPU 249 ms）。最適化は優先リストの中で低い（ユーザー）。L2 の p016（時間の分解、QEMU）cleared: GPU の call の中央値 835 ms のうち計算は約 8 %、残りは device の buffer の作成・解放（約 6 割）と 16 MB の copy 5 回。次は p017（buffer の使い回しと copy を減らす、libGLESv2 の中だけ、P4） |
-| [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 を満たした（p002〜p005）。L2 の p006（QWERTY と記号の面）cleared: 30 文字を 4.9 秒で誤り 0（QEMU）。次は p008（手書き）→ p020（補助の key の列）、p007（作業の領域）は P6 の後。右の列の道具の面と inset の知らせを設計に追加（design.md §2.8・§2.10） |
+| [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 を満たした（p002〜p005）。L2: p006（QWERTY、30 文字 4.9 秒で誤り 0）、p008（手書き、認識は stub）、p021（縁に組み込んだ見た目）cleared（QEMU）。次は p020（補助の key の列）→ p007（作業の領域）（P3） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -214,7 +214,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 **WS101 の最適化の優先を下げる（2026-09-30 ユーザー）**:「WS101ですが、GPUでは疎通できたので、最適化の優先度を下げます。優先リストにはあるものの、その中では優先度が低いことにしてスケジューリングしてください。」→ WS101 は p015（S13 を demo の image で通す）までを済ませ、L2（p016 の内訳・p017 の 3 倍）以降はデモ critical の中で一番低い優先にする。
 
-**エージェントの呼称（2026-09-30 ユーザー）**: メインのエージェントは **Q1**（クイーン 1）、サブエージェントは **P1**・**P2**…（ポーン）。2026-09-30 の割り当て: P1 = WS075（i915、High）、P2 = WS101（High、p015 で終了）、P3 = WS102（スクリーンキーボード、Mid）、P4 = WS079 L2 → WS081 → WS094（Mid）、P5 = WS099 の BUG-121（Mid、P2 の後継、p011 で終了）、P6 = WS099 の p015（Mid、P5 の後継）。新しいサブエージェントは次の番号から。
+**エージェントの呼称（2026-09-30 ユーザー）**: メインのエージェントは **Q1**（クイーン 1）、サブエージェントは **P1**・**P2**…（ポーン）。2026-09-30 の割り当て: P1 = WS075（i915、High）、P2 = WS101（High、p015 で終了）、P3 = WS102（スクリーンキーボード、Mid）、P4 = WS079 L2 → WS081 → WS094（Mid）、P5 = WS099 の BUG-121（Mid、P2 の後継、p011 で終了）、P6 = WS099 の p015 → p002（Mid、P5 の後継）。新しいサブエージェントは次の番号から。
 
 **広く浅く進める（2026-09-30 朝 ユーザー）**:「デモcriticalなWSについては、幅広く設計を進めて、広く浅く実装をすすめて、ブラッシュアップも段階的に具体的な数値目標を設定しておくことでphaseをたくさんわけておき、広く浅く全体を改善していくことにしたいです。Claudeのトークンになるべく多く課金して実装を進めたいですが、途中で資金が尽きてもデモ全体への影響を小さくしたいからです。」→ デモ critical の WS は、(1) 設計を全体に先に広げる、(2) 各 WS を「まず動く」の段まで浅く実装してそろえる、(3) 磨き込みは段（L1・L2・L3…）ごとに具体的な数値目標を持つ小さな Phase に分け、全 WS の同じ段をそろえてから次の段へ進む。1 つの WS を深く掘り続けない。どこで止まっても、デモの全場面がその時点の段で動いている状態を保つ。
 
