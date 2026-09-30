@@ -40,6 +40,7 @@
 #ifndef ZWL_H
 #define ZWL_H
 
+#include "zwl-gpu.h"
 #include <uapi/gpu.h>
 #include <uapi/gpu-fence.h>
 #include <uapi/input.h>
@@ -288,7 +289,8 @@ struct zwl_object {
 	unsigned dead;
 	unsigned holds;
 	unsigned busy;
-	struct gpu_resource_import image;
+	/* A GPU buffer's image as its description states it (zwl-gpu.h); zero for other objects. */
+	struct zwl_buffer_layout layout;
 	struct zwl_object *surface;
 	struct zwl_object *role;
 	struct zwl_object *top;
@@ -612,6 +614,8 @@ struct zwl_server {
 	uint32_t height;
 	/* The display mode's refresh in millihertz (from Vulkan, compose.c), told to clients by wl_output. */
 	uint32_t refresh;
+	/* What the Vulkan device can take, against which a GPU buffer's description is checked (compose.c fills it). */
+	struct zwl_gpu_limits gpu_limits;
 	uint64_t timeout_ms;
 	uint64_t max_frames;
 	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
@@ -1034,7 +1038,6 @@ void zwl_buffer_put(struct zwl_object *buffer);
 void zwl_buffer_size(const struct zwl_object *buffer, uint32_t *width, uint32_t *height);
 void zwl_callbacks_done(struct zwl_object **callbacks);
 int zwl_gpu_open(struct zwl_server *server);
-int zwl_gpu_import(struct zwl_object *buffer, int descriptor, const struct gpu_image_descriptor *image);
 void zwl_schedule(struct zwl_server *server);
 void zwl_transition_request(struct zwl_server *server, const char *what);
 void zwl_frame_done(struct zwl_server *server);

@@ -35,11 +35,11 @@ static void place_window(struct zwl_server *server, struct zwl_object *surface);
 static int enter_window_mode(struct zwl_server *server);
 
 /*
- * Opens the compositor's own GPU context, in which client images are checked.
+ * Opens the compositor's own GPU context, in which client fences are checked.
  *
- * The display's size and refresh come from Vulkan (compose.c); this fd only
- * checks each client buffer and fence against the kernel until those checks
- * move into libvulkan (WS103).
+ * The display's size and refresh come from Vulkan (compose.c), and client
+ * buffers are imported through Vulkan (import.c); this fd only checks client
+ * fences against the kernel until that check goes too (WS103).
  */
 int
 zwl_gpu_open(
@@ -50,40 +50,7 @@ zwl_gpu_open(
 	if (server->gpu < 0)
 		return errno;
 
-	/* Succeeded: client images can be checked in the compositor's own context. */
-	return 0;
-}
-
-/*
- * Imports a typed capability and compares authoritative metadata with its wire claim.
- */
-int
-zwl_gpu_import(
-	struct zwl_object *buffer,
-	int descriptor,
-	const struct gpu_image_descriptor *image)
-{
-	int error;
-	int mismatch;
-
-	/* K accepts only fd input and supplies every native identity and metadata field. */
-	memset(&buffer->image, 0, sizeof(buffer->image));
-	buffer->image.version = GPU_ABI_VERSION;
-	buffer->image.size = sizeof(buffer->image);
-	buffer->image.fd = descriptor;
-	error = ioctl(buffer->client->server->gpu, GPU_RESOURCE_IMPORT, &buffer->image);
-	if (error != 0)
-		return errno;
-
-	/* Userspace metadata cannot reinterpret a capability's storage or device identity. */
-	mismatch = memcmp(&buffer->image.image, image, sizeof(*image));
-	if (mismatch != 0)
-		return EINVAL;
-
-	/* Import reports the native allocation identity shared across independent contexts. */
-	printf("ZWL IMPORT client=%llu buffer=%u gpu_fd=%d resource=%u handle=%llu device=%llu bytes=%llu\n", (unsigned long long)buffer->client->number, buffer->id, buffer->client->server->gpu, buffer->image.resource_id, (unsigned long long)buffer->image.handle, (unsigned long long)image->device_id, (unsigned long long)image->allocation_bytes);
-
-	/* Succeeded: this wl_buffer owns a distinct consumer resource handle. */
+	/* Succeeded: client fences can be checked in the compositor's own context. */
 	return 0;
 }
 

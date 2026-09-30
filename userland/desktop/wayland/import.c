@@ -26,7 +26,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static VkResult import_image(struct zwl_compose *compose, const struct gpu_image_descriptor *image, int descriptor, struct zwl_import *import);
+static VkResult import_image(struct zwl_compose *compose, const struct zwl_buffer_layout *image, int descriptor, struct zwl_import *import);
 static VkResult import_layout(struct zwl_compose *compose, struct zwl_import *import);
 static void import_release(struct zwl_compose *compose, struct zwl_import *import);
 
@@ -60,7 +60,7 @@ zwl_import_create(
 	}
 
 	/* The image bound to the imported memory, its view and descriptor set. */
-	result = import_image(compose, &buffer->image.image, copy, import);
+	result = import_image(compose, &buffer->layout, copy, import);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)result);
 		import_release(compose, import);
@@ -124,7 +124,7 @@ zwl_import_destroy(
 static VkResult
 import_image(
 	struct zwl_compose *compose,
-	const struct gpu_image_descriptor *image,
+	const struct zwl_buffer_layout *image,
 	int descriptor,
 	struct zwl_import *import)
 {
@@ -133,6 +133,7 @@ import_image(
 	VkMemoryRequirements requirements;
 	VkImageSubresource subresource;
 	VkSubresourceLayout layout;
+	VkMemoryDedicatedAllocateInfo dedicated;
 	VkImportMemoryFdInfoKHR import_info;
 	VkMemoryAllocateInfo allocate;
 	VkImageViewCreateInfo view;
@@ -141,21 +142,8 @@ import_image(
 	VkFormat format;
 	VkResult result;
 
-	/* Only linear images of the two four-channel formats are shared today. */
-	if (image->tiling != GPU_IMAGE_LINEAR) {
-		close(descriptor);
-		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-	}
-
-	/* The channel order is the client's. */
-	if (image->format == GPU_PIXEL_BGRA8888) {
-		format = VK_FORMAT_B8G8R8A8_UNORM;
-	} else if (image->format == GPU_PIXEL_RGBA8888) {
-		format = VK_FORMAT_R8G8B8A8_UNORM;
-	} else {
-		close(descriptor);
-		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-	}
+	/* The channel order is the client's (a linear four-channel format, checked by zwl_gpu_buffer_decode). */
+	format = image->format;
 
 	/* The image, sampled, with external memory. */
 	import->width = image->width;
@@ -163,7 +151,7 @@ import_image(
 	import->draw = ZWL_DRAW_OPAQUE;
 	memset(&external, 0, sizeof(external));
 	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
-	external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+	external.handleTypes = zwl_gpu_buffer_handle_type();
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	create.pNext = &external;
@@ -203,10 +191,20 @@ import_image(
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 	}
 
-	/* The memory is the client's allocation, imported through its fd (consumed on success). */
+	/*
+	 * The memory is the client's allocation, imported through its fd
+	 * (consumed on success) for this image alone: a dedicated import, which
+	 * libvulkan checks against the kernel's record of the fd, so that the
+	 * description the client sent cannot make this image read the allocation
+	 * as another one.
+	 */
+	memset(&dedicated, 0, sizeof(dedicated));
+	dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+	dedicated.image = import->image;
 	memset(&import_info, 0, sizeof(import_info));
 	import_info.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
-	import_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+	import_info.pNext = &dedicated;
+	import_info.handleType = zwl_gpu_buffer_handle_type();
 	import_info.fd = descriptor;
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;

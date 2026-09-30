@@ -31,6 +31,7 @@
 
 static VkResult compose_device(struct zwl_compose *compose);
 static VkResult compose_display(struct zwl_server *server);
+static void compose_limits(struct zwl_server *server);
 static VkResult compose_refresh(struct zwl_server *server, VkDisplayKHR display, uint32_t *refresh);
 static VkResult compose_objects(struct zwl_compose *compose);
 static VkResult compose_pass(struct zwl_compose *compose);
@@ -82,6 +83,9 @@ zwl_compose_open(
 		printf("ZWL VULKAN_ERROR operation=display result=%d\n", (int)result);
 		return EIO;
 	}
+
+	/* What the device can take, against which each client buffer's description is checked. */
+	compose_limits(server);
 
 	/* How long the device took (ZWL STARTUP, ws035-p129). */
 	printf("ZWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
@@ -572,10 +576,18 @@ compose_device(
 		VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
 		VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME
 	};
+	/*
+	 * The first five are always enabled: the dedicated allocation (and the
+	 * requirement queries it depends on) is how a client's buffer is
+	 * imported (import.c, WS103).  The external fence pair follows when the
+	 * device has it.
+	 */
 	static const char *const device_extensions[] = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
 		VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
+		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
 		VK_KHR_EXTERNAL_FENCE_EXTENSION_NAME,
 		VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME
 	};
@@ -659,9 +671,9 @@ compose_device(
 	device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device.queueCreateInfoCount = 1U;
 	device.pQueueCreateInfos = &queue;
-	device.enabledExtensionCount = 3U;
+	device.enabledExtensionCount = 5U;
 	if (compose->fence_fd)
-		device.enabledExtensionCount = 5U;
+		device.enabledExtensionCount = 7U;
 	device.ppEnabledExtensionNames = device_extensions;
 	result = vkCreateDevice(compose->physical, &device, NULL, &compose->device);
 	if (result != VK_SUCCESS)
@@ -763,6 +775,26 @@ compose_display(
 
 	/* Succeeded: the output's size and refresh are known. */
 	return VK_SUCCESS;
+}
+
+/* Records the device's largest 2D image and its number of memory types, which bound a client buffer's description. */
+static void
+compose_limits(
+	struct zwl_server *server)
+{
+	VkPhysicalDeviceProperties device;
+	VkPhysicalDeviceMemoryProperties memory;
+
+	/* The largest width and height of a 2D image. */
+	vkGetPhysicalDeviceProperties(server->compose->physical, &device);
+	server->gpu_limits.max_dimension = device.limits.maxImageDimension2D;
+
+	/* The memory types a buffer's memory may be one of. */
+	vkGetPhysicalDeviceMemoryProperties(server->compose->physical, &memory);
+	server->gpu_limits.memory_type_count = memory.memoryTypeCount;
+
+	/* Succeeded: descriptions are checked against these. */
+	return;
 }
 
 /*

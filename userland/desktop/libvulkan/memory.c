@@ -53,6 +53,7 @@ static VkResult memory_ranges(struct VkDevice_T *device, uint32_t count, const V
 static VkResult memory_import_fd(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, int fd, VkDeviceMemory *memory);
 static VkResult memory_import_image_fd(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, int fd, VkDeviceMemory *memory);
 static VkResult memory_dedicated_check(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, VkImage image, const struct gpu_image_descriptor *described);
+static VkImage memory_dedicated_image(const VkMemoryAllocateInfo *info);
 static VkResult memory_mapping_token(struct VkDevice_T *device, struct memory_allocation *allocation);
 
 /*
@@ -724,6 +725,7 @@ memory_import_fd(
 	struct vulkan_memory *storage;
 	VkPhysicalDeviceIDProperties identity;
 	VkMemoryAllocateInfo native_info;
+	VkImage dedicated;
 	VkResult status;
 	VkResult cleanup;
 	int error;
@@ -734,6 +736,15 @@ memory_import_fd(
 	 * import; the fd can only be an image capability.
 	 */
 	if (!(device->object.context->capabilities & GPU_CAP_ALLOCATION_SHARE))
+		return memory_import_image_fd(device, info, allocator, fd, memory);
+
+	/*
+	 * An import for one named image is checked against the kernel's record of
+	 * an image capability, which an allocation capability does not have, so
+	 * only an image capability is taken for it (ws103-p004).
+	 */
+	dedicated = memory_dedicated_image(info);
+	if (dedicated != VK_NULL_HANDLE)
 		return memory_import_image_fd(device, info, allocator, fd, memory);
 
 	/* Resolve the receiver's actual device/driver before attaching any foreign resource. */
@@ -835,10 +846,10 @@ memory_import_fd(
  * The kernel checks the device and returns the image's description; the
  * requested memory type must be the image's and the requested size must fit
  * its allocation.  The caller binds its own image of the described layout.
- * A dedicated import (VkMemoryDedicatedAllocateInfo naming an image) is also
- * checked against that image, so that a description a client claims cannot
- * make the importer read the allocation as another image (ws103-p003), and
- * only that image may then be bound to the memory.
+ * The import must be a dedicated one (VkMemoryDedicatedAllocateInfo naming an
+ * image), checked against that image, so that a description a client claims
+ * cannot make the importer read the allocation as another image
+ * (ws103-p003, p004), and only that image may then be bound to the memory.
  */
 static VkResult
 memory_import_image_fd(
@@ -851,23 +862,16 @@ memory_import_image_fd(
 	struct gpu_resource_import request;
 	struct memory_allocation *allocation;
 	struct vulkan_memory *storage;
-	const VkBaseInStructure *next;
 	VkMemoryAllocateInfo native_info;
 	VkImage dedicated;
 	VkResult status;
 	VkResult cleanup;
 	int error;
 
-	/* The image a dedicated import is for, if the chain names one. */
-	dedicated = VK_NULL_HANDLE;
-	for (next = info->pNext; next != NULL; next = next->pNext) {
-		/* Other entries do not name the imported image. */
-		if (next->sType != VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO)
-			continue;
-
-		/* A dedicated buffer allocation leaves the image unnamed. */
-		dedicated = ((const VkMemoryDedicatedAllocateInfo *)next)->image;
-	}
+	/* An image capability is imported only for the one image it is checked against. */
+	dedicated = memory_dedicated_image(info);
+	if (dedicated == VK_NULL_HANDLE)
+		return VK_ERROR_INVALID_EXTERNAL_HANDLE;
 
 	/* Image capabilities travel only between contexts that share images. */
 	if (!(device->object.context->capabilities & GPU_CAP_SHARE))
@@ -899,8 +903,8 @@ memory_import_image_fd(
 	    request.resource_id != 0U)
 		status = VK_SUCCESS;
 
-	/* A dedicated import must describe the named image exactly as the kernel describes the allocation. */
-	if (status == VK_SUCCESS && dedicated != VK_NULL_HANDLE)
+	/* The named image must read the allocation exactly as the kernel describes it. */
+	if (status == VK_SUCCESS)
 		status = memory_dedicated_check(device, info, dedicated, &request.image);
 
 	/* The memory references the whole native allocation, as an OPAQUE import does. */
@@ -1512,4 +1516,27 @@ memory_dedicated_check(
 
 	/* Succeeded: the image reads the allocation as the kernel describes it. */
 	return VK_SUCCESS;
+}
+
+/* Finds the image an allocation's chain dedicates it to, or VK_NULL_HANDLE. */
+static VkImage
+memory_dedicated_image(
+	const VkMemoryAllocateInfo *info)
+{
+	const VkBaseInStructure *next;
+	VkImage image;
+
+	/* The last dedicated-allocation entry of the chain names the image. */
+	image = VK_NULL_HANDLE;
+	for (next = info->pNext; next != NULL; next = next->pNext) {
+		/* Other entries do not name the imported image. */
+		if (next->sType != VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO)
+			continue;
+
+		/* A dedicated buffer allocation leaves the image unnamed. */
+		image = ((const VkMemoryDedicatedAllocateInfo *)next)->image;
+	}
+
+	/* Succeeded: the named image, if any. */
+	return image;
 }

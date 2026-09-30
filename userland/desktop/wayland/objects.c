@@ -184,8 +184,8 @@ zwl_buffer_size(
 	}
 
 	/* A GPU buffer's size is its image's. */
-	*width = buffer->image.image.width;
-	*height = buffer->image.image.height;
+	*width = buffer->layout.width;
+	*height = buffer->layout.height;
 }
 
 /*
@@ -219,7 +219,7 @@ zwl_buffer_put(
 
 		/* Names the release when the per-frame lines were asked for. */
 		if (buffer->client->server->log_frames)
-			printf("ZWL RELEASE client=%llu buffer=%u resource=%u dead=%u\n", (unsigned long long)buffer->client->number, buffer->id, buffer->image.resource_id, buffer->dead);
+			printf("ZWL RELEASE client=%llu buffer=%u dead=%u\n", (unsigned long long)buffer->client->number, buffer->id, buffer->dead);
 
 		/* Only a surviving protocol identity may tell its producer to reuse storage. */
 		if (!buffer->dead && !buffer->client->fatal) {
@@ -548,15 +548,13 @@ zwl_client_destroy(
 	return;
 }
 
-/* Releases an unborrowed object and its independent GPU import, then withdraws list ownership. */
+/* Releases an unborrowed object and its Vulkan import, then withdraws list ownership. */
 static void
 object_free(
 	struct zwl_object *object)
 {
 	struct zwl_object **link;
-	struct gpu_resource_destroy request;
 	struct zwl_client *client;
-	int error;
 
 	/* Window mode's Vulkan image goes with the buffer; a wl_shm buffer or pool drops its pool's memory. */
 	client = object->client;
@@ -571,20 +569,6 @@ object_free(
 	if (object->pool != NULL) {
 		zwl_pool_put(object->pool);
 		object->pool = NULL;
-	}
-
-	/* Imported resource handles belong exclusively to the compositor's GPU open. */
-	if (object->image.handle != 0 && client->server->gpu >= 0) {
-		/* The import handle is local to this compositor open and no longer borrowed. */
-		memset(&request, 0, sizeof(request));
-		request.version = GPU_ABI_VERSION;
-		request.size = sizeof(request);
-		request.handle = object->image.handle;
-		error = ioctl(client->server->gpu, GPU_RESOURCE_DESTROY, &request);
-		if (error != 0) {
-			printf("ZWL GPU_ERROR operation=destroy errno=%d\n", errno);
-			client->server->failed = 1;
-		}
 	}
 
 	/* Retired IDs can coexist with a newly created object of the same numeric ID. */

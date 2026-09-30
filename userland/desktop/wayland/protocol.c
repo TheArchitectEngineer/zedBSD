@@ -1158,7 +1158,7 @@ shell_request(
 	return 0;
 }
 
-/* Creates an ordinary wl_buffer from exactly one typed allocation capability and metadata array. */
+/* Creates an ordinary wl_buffer from exactly one GPU buffer fd and the description of its image. */
 static int
 factory_request(
 	struct zwl_object *factory,
@@ -1167,7 +1167,7 @@ factory_request(
 	size_t size)
 {
 	struct zwl_object *buffer;
-	struct gpu_image_descriptor image;
+	size_t wire_bytes;
 	uint32_t id;
 	uint32_t length;
 	int descriptor;
@@ -1192,12 +1192,13 @@ factory_request(
 	}
 
 	/* The nha signature has new_id and array bytes; h contributes no wire word. */
-	if (opcode != 1U || size != 8U + sizeof(image))
+	wire_bytes = zwl_gpu_buffer_wire_bytes();
+	if (opcode != 1U || size != 8U + wire_bytes)
 		return EPROTO;
 
 	/* The array describes one complete immutable image record. */
 	length = word_at(bytes, 4);
-	if (length != sizeof(image))
+	if (length != wire_bytes)
 		return EPROTO;
 
 	/* Consume the fd only after the complete byte payload has passed framing checks. */
@@ -1213,11 +1214,14 @@ factory_request(
 		return EPROTO;
 	}
 
-	/* The consumer imports into its own context and never receives the producer session. */
-	memcpy(&image, bytes + 8U, sizeof(image));
-	error = zwl_gpu_import(buffer, descriptor, &image);
+	/* The description's values, each checked before any reaches Vulkan (gpu-zedbsd.c). */
+	error = zwl_gpu_buffer_decode(bytes + 8U, length, &factory->client->server->gpu_limits, &buffer->layout);
 
-	/* Window mode's Vulkan image, made once for the buffer's lifetime (design D2). */
+	/*
+	 * Window mode's Vulkan image, made once for the buffer's lifetime (design
+	 * D2).  Its memory is imported for that image alone, and libvulkan checks
+	 * the description against the kernel's record of the fd (WS103).
+	 */
 	if (error == 0)
 		error = zwl_import_create(buffer, descriptor);
 	close(descriptor);
@@ -1226,6 +1230,9 @@ factory_request(
 		zwl_object_destroy(buffer);
 		return EPROTO;
 	}
+
+	/* The machine log counts the imports (plan/ws099/tests/import-launch.sh reads the prefix). */
+	printf("ZWL IMPORT client=%llu buffer=%u width=%u height=%u bytes=%llu\n", (unsigned long long)factory->client->number, buffer->id, buffer->layout.width, buffer->layout.height, (unsigned long long)buffer->layout.allocation_bytes);
 
 	/* Succeeded: the wl_buffer owns its independently imported resource. */
 	return 0;
