@@ -21,7 +21,7 @@ Queue: なし（2026-09-30 Q1 の割り当て「BUG-121 を ws099-p011 として
 - `resize-stress.sh [APP] [COUNT] [OUTDIR]`（QEMU の Venus、criteria の image、1920x1280）: 角を 4 つ順に、外へ 60〜196 px、次に同じだけ戻す
   （8 段、16 ms 間隔）。drag ごとに compositor の log の `ZWL RESIZE start`・`settled` が 1 つ増えるか、app の process と
   `ZWL UNMAP`・`ZWL CLIENT gone` を見る。消えた回（vanished）、resize にならなかった回（missed: press が他の物に行った）、error を数え、消えた時は
-  app と compositor の行を順に保存して app を起こし直す。`CROWD="Files,PDF Viewer"` は先に他の app を開き、窓を他の窓の上に置く。
+  app と compositor の行を順に保存して app を起こし直す（窓の位置は今の client の MAP より後の行から読む）。`CROWD="Files,PDF Viewer"` は先に他の app を開き、窓を他の窓の上に置く。
   APP は `mview`（App Home から、デモと同じ経路）と `wlshm`（SSH から session の socket に、`--band --hold`）。
 - `resize-hw.sh IMAGE OUTDIR [COUNT]`（5330 の passthrough、WS075 の `hdmi-h4-hw.sh`、flock の下、QEMU は 10 分まで）: App Home の 10 app を
   p025 と同じ順（`hdmi/apps8.sh`、Model viewer は 8 番目）に開き、最初の画面から Model viewer の本体（灰色 0x333333）を求め、角を内へ縮めて
@@ -71,10 +71,10 @@ libvulkan・Venus の側（この Phase の修正範囲の外）なので、main
 | 実機 hw2（直しの前、p025 の並び、20 回） | **FAIL**: 消失 6（左上の角、原因 1）、`RESIZE start` 14 回（`build/ws099/hw2.log`） |
 | 実機 hw3（直しの後、p025 の並び、20 回） | **PASS**: 消失 0、`RESIZE start` 20 回、MVIEW FAILED・ERROR 0（`build/ws099/hw3.log`、`hw3/session.log`） |
 | QEMU 直しの前: Model viewer 100 回・wlshm 100 回 | 消失 0・missed 0・error 0（`build/ws099/before-mview.log`・`before-wlshm.log`） |
-| QEMU 直しの後: Model viewer 100 回・wlshm 100 回 | Model viewer: 消失 0・missed 0・error 0（`build/ws099/after-mview.log`）。wlshm: RESULT_WLSHM |
-| QEMU `CROWD="Files,PDF Viewer"` 40 回 | 前: 13 回で消失 6（全て swapchain の失敗）。後: 消失 5・missed 4（swapchain の失敗と、その後の起こし直しの窓）。hostmem=1G: RESULT_HM |
-| 回帰 `criteria.sh` C2・C9 | RESULT_REG |
-| boot test | RESULT_BOOT |
+| QEMU 直しの後: Model viewer 100 回・wlshm 100 回 | Model viewer: 消失 0・missed 0・error 0（`build/ws099/after-mview.log`）。wlshm: 消失 0・missed 0・error 0（`build/ws099/after-wlshm.log`） |
+| QEMU `CROWD="Files,PDF Viewer"` 40 回 | 前: 13 回で消失 6（全て swapchain の失敗）。後: 消失 5・missed 4（swapchain の失敗と、その後の起こし直しの窓）。hostmem=1G（試験用の起動 script の複製）では session が起動せず比べられなかった |
+| 回帰 `criteria.sh` C2・C9（直しの後の image） | **PASS**: C2 14/14、C9 10 本（p052・p053・p072・p076・p126・p128・p134・p137・p138・cursor-owner）全て PASS（`build/ws099/criteria-p011/results.txt`） |
+| boot test（`build-ssh-image.sh build/ws099-ssh`、warning 0） | **PASS**（`build/ws099/boot-p011/login.png`） |
 
 画面: `build/ws099-shots/after-mview/final.png`（QEMU）、`build/ws099/hw3/shots/drag-*-live.png`（実機）、`build/ws099/hw2/shots/drag-2-live.png`
 （直しの前、PDF Viewer が前に出た）、`build/ws099/hw1/shots/drag-6-live.png`（直しの前、左下の角の drag で Wiseview）。
