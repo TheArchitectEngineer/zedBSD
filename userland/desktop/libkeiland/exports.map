@@ -22,6 +22,7 @@
 		keiland_preferences_*;
 		keiland_desktop_*;
 		keiland_audio_*;
+		keiland_keyboard_inset_*;
 	local:
 		*;
 };

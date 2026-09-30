@@ -12,7 +12,7 @@
  * of the surface's panels -- cards floating in the window -- under which
  * zdesktop draws the system's frosted glass.  The protocol is zdesktop's own; its header is private and
  * applications use it through libkeiland.  plan/ws035/glass-design.md
- * defines every request.
+ * defines every request.  Version 2 adds keiland_glass_v1.set_blur (ws075-p029).
  */
 
 #include "internal.h"
@@ -28,6 +28,11 @@ static const struct wl_interface *glass_manager_get_types[] = {
 	&wl_surface_interface,
 };
 
+/* The argument of keiland_glass_v1.set_blur (since version 2) names no interface. */
+static const struct wl_interface *glass_blur_types[] = {
+	NULL,
+};
+
 /* The requests of keiland_glass_manager_v1, in wire order. */
 static const struct wl_message glass_manager_requests[] = {
 	{ "destroy", "", NULL },
@@ -36,7 +41,7 @@ static const struct wl_message glass_manager_requests[] = {
 
 /* Describes the global that gives surfaces their glass. */
 const struct wl_interface keiland_glass_manager_v1_interface = {
-	"keiland_glass_manager_v1", 1, 2, glass_manager_requests,
+	"keiland_glass_manager_v1", 2, 2, glass_manager_requests,
 	0, NULL
 };
 
@@ -44,11 +49,12 @@ const struct wl_interface keiland_glass_manager_v1_interface = {
 static const struct wl_message glass_requests[] = {
 	{ "destroy", "", NULL },
 	{ "set_panels", "a", glass_plain_types },
+	{ "set_blur", "2u", glass_blur_types },
 };
 
 /* Describes one surface's glass. */
 const struct wl_interface keiland_glass_v1_interface = {
-	"keiland_glass_v1", 1, 2, glass_requests,
+	"keiland_glass_v1", 2, 3, glass_requests,
 	0, NULL
 };
 
@@ -78,8 +84,8 @@ keiland_glass_manager_v1_get_glass(
 	arguments[0].n = 0;
 	arguments[1].o = (struct wl_object *)surface;
 
-	/* Queues the request together with the new proxy. */
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_GLASS_MANAGER_V1_GET_GLASS, &keiland_glass_v1_interface, 1U, 0, arguments);
+	/* Queues the request together with the new proxy, of the manager's version (2 has set_blur). */
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_GLASS_MANAGER_V1_GET_GLASS, &keiland_glass_v1_interface, wl_proxy_get_version((struct wl_proxy *)object), 0, arguments);
 	if (created == NULL)
 		return NULL;
 
@@ -113,4 +119,21 @@ keiland_glass_v1_set_panels(
 	/* The list of panels. */
 	arguments[0].a = panels;
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_GLASS_V1_SET_PANELS, NULL, 0, 0, arguments);
+}
+
+/*
+ * Sends keiland_glass_v1.set_blur (since version 2): whether the surface's
+ * glass shows the windows under it blurred (1) or only the blurred wallpaper
+ * (0, the default), from its next commit.
+ */
+void
+keiland_glass_v1_set_blur(
+	struct keiland_glass_v1 *object,
+	uint32_t enabled)
+{
+	union wl_argument arguments[1];
+
+	/* The choice. */
+	arguments[0].u = enabled;
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_GLASS_V1_SET_BLUR, NULL, 0, 0, arguments);
 }

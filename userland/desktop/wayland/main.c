@@ -80,7 +80,7 @@ main(
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--gpu=/dev/gpu0] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--keyboard-blur] [--direct] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -332,6 +332,13 @@ parse_options(
 
 			/* Only completed GPU presentations count toward this bound. */
 			server->max_frames = number;
+			continue;
+		}
+
+		/* The on-screen keyboard's glass on the scene under it, blurred (ws075-p029; the default is the blurred wallpaper). */
+		match = strcmp(argument, "--keyboard-blur");
+		if (match == 0) {
+			server->keyboard_blur = 1;
 			continue;
 		}
 

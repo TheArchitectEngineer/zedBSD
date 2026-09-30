@@ -156,6 +156,9 @@ enum zwl_kind {
 	/* The desktop surface (desktop.c, ws094-p002). */
 	ZWL_DESKTOP_MANAGER,
 	ZWL_DESKTOP_SURFACE,
+	/* The keyboard inset (inset.c, ws102-p015). */
+	ZWL_KEYBOARD_INSET_MANAGER,
+	ZWL_KEYBOARD_INSET,
 };
 
 /*
@@ -633,6 +636,14 @@ struct zwl_server {
 	uint32_t windows;
 	uint64_t mode_switch_ms;
 	/*
+	 * An opening or closing of App Home or Wiseview waiting for its first
+	 * frame (ws099-p002, C5): what it is (NULL for none) and when it was
+	 * asked for.  The next frame is drawn without the frame pacing's wait,
+	 * and its submission is logged once (ZWL FIRST_FRAME).
+	 */
+	const char *transition;
+	uint64_t transition_ms;
+	/*
 	 * Frame pacing: after a frame, the windows it told are waited for, until
 	 * all have committed or half the last frame's time (at most 50 ms) has
 	 * passed, so that a quick client does not start the next frame without
@@ -647,6 +658,8 @@ struct zwl_server {
 	 * (WS099's C6, the pointer's move to its display; ws075-p026).
 	 */
 	unsigned pointer_moved;
+	/* The on-screen keyboard's glass shows the scene under it blurred (--keyboard-blur, ws075-p029). */
+	unsigned keyboard_blur;
 	/* The glass look: on, its font, the window being moved and where it was taken, the clock's minute. */
 	unsigned glass;
 	const char *font_path;
@@ -988,6 +1001,7 @@ int zwl_gpu_import(struct zwl_object *buffer, int descriptor, const struct gpu_i
 int zwl_present(struct zwl_object *surface);
 int zwl_unscan(struct zwl_server *server);
 void zwl_schedule(struct zwl_server *server);
+void zwl_transition_request(struct zwl_server *server, const char *what);
 void zwl_frame_done(struct zwl_server *server);
 int zwl_compose_open(struct zwl_server *server);
 int zwl_compose_output_prepare(struct zwl_server *server);
@@ -1070,6 +1084,7 @@ int zwl_keyboard_touch_down(struct zwl_server *server, uint32_t id, int32_t x, i
 int zwl_keyboard_touch_motion(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 int zwl_keyboard_touch_up(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 void zwl_keyboard_touch_cancel(struct zwl_server *server, uint32_t id);
+void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
 
 /* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */
 int zwl_glass_fullscreen_input(struct zwl_server *server);

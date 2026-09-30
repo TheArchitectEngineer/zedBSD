@@ -137,11 +137,27 @@ static const struct zwl_flick_key layout_keys[ZWL_FLICK_FACES][ZWL_FLICK_ROWS][Z
 };
 
 /*
- * The QWERTY panel's keys, face by face, row by row (ws102-p006): label,
+ * The QWERTY panel's keys, face by face, row by row (ws102-p006; the extra
+ * keys' row on top of both faces, p020): label,
  * label with Shift, text, text with Shift, action, arrow code, width in
  * quarter keys.  The rows are LAYOUT_QWERTY_* long; a row narrower than
  * ZWL_QWERTY_ROW_UNITS is centred.
  */
+
+static const struct zwl_qwerty_key layout_extra[] = {
+	{ "Esc", "Esc", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_ESC, 4U },
+	{ "Tab", "Tab", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_TAB, 4U },
+	{ "Ctrl", "Ctrl", NULL, NULL, ZWL_FLICK_CTRL, 0U, 4U },
+	{ "Alt", "Alt", NULL, NULL, ZWL_FLICK_ALT, 0U, 4U },
+	{ "|", "|", "|", "|", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "~", "~", "~", "~", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "/", "/", "/", "/", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "-", "-", "-", "-", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "Home", "Home", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_HOME, 3U },
+	{ "End", "End", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_END, 3U },
+	{ "PgUp", "PgUp", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_PAGE_UP, 3U },
+	{ "PgDn", "PgDn", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_PAGE_DOWN, 3U }
+};
 
 static const struct zwl_qwerty_key layout_digits[] = {
 	{ "1", "!", "1", "!", ZWL_FLICK_TYPE, 0U, 4U },
@@ -215,6 +231,7 @@ static const struct zwl_qwerty_key layout_symbols_space[] = {
 
 static const struct layout_qwerty_row layout_qwerty[ZWL_QWERTY_FACES][ZWL_QWERTY_ROWS] = {
 	{
+		LAYOUT_ROW(layout_extra),
 		LAYOUT_ROW(layout_digits),
 		LAYOUT_ROW(layout_letters_top),
 		LAYOUT_ROW(layout_letters_middle),
@@ -222,6 +239,7 @@ static const struct layout_qwerty_row layout_qwerty[ZWL_QWERTY_FACES][ZWL_QWERTY
 		LAYOUT_ROW(layout_letters_space)
 	},
 	{
+		LAYOUT_ROW(layout_extra),
 		LAYOUT_ROW(layout_digits),
 		LAYOUT_ROW(layout_symbols_top),
 		LAYOUT_ROW(layout_symbols_middle),

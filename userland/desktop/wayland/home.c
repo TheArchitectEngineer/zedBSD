@@ -653,6 +653,14 @@ zwl_home_tick(
 	pid_t child;
 	int status;
 
+	/*
+	 * The applications' list is read ahead once the output shows
+	 * (ws099-p002, C5): Home's first opening does not wait for the file
+	 * and for each program to be looked up.
+	 */
+	if (server->windowed)
+		home_read_apps(server);
+
 	/* Every ended child is collected, so none is left a zombie. */
 	for (;;) {
 		child = waitpid(-1, &status, WNOHANG);
@@ -1404,6 +1412,7 @@ home_open(
 	server->home_page_press = 0;
 	server->drag = NULL;
 	printf("ZWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
+	zwl_transition_request(server, "home-open");
 	home_settle(server, from, 1.0f);
 }
 
@@ -1418,6 +1427,7 @@ home_close(
 	server->home_query_length = 0U;
 	server->home_query[0] = '\0';
 	printf("ZWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
+	zwl_transition_request(server, "home-close");
 	home_settle(server, from, 0.0f);
 }
 

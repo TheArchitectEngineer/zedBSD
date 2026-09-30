@@ -1,0 +1,14 @@
+diff --git a/userland/desktop/files/glass.c b/userland/desktop/files/glass.c
+index ff54ce51..885d4434 100644
+--- a/userland/desktop/files/glass.c
++++ b/userland/desktop/files/glass.c
+@@ -52,6 +52,9 @@ fm_glass_open(
+ 		return 0;
+ 	}
+ 
++	/* ws075-p029 screenshot build: the glass shows the windows under it blurred. */
++	(void)keiland_glass_set_blur(glass->glass, 1);
++
+ 	/* Succeeded: the window is glass. */
+ 	fm_log("GLASS on");
+ 	return 1;

@@ -411,9 +411,16 @@ zwl_schedule(
 	/* wl_shm images are copied, and their buffers released, while no frame is in flight. */
 	(void)zwl_shm_upload(server);
 
-	/* The windows the last frame told get a moment to commit (frame pacing), unless the pointer moved and waits to be shown. */
+	/*
+	 * The windows the last frame told get a moment to commit (frame
+	 * pacing), unless the pointer moved and waits to be shown, or App Home
+	 * or Wiseview was asked to open or close (ws099-p002).
+	 */
 	now = zwl_milliseconds();
-	if (server->awaiting != 0 && !server->pointer_moved && now - server->frame_done_ms < server->frame_wait_ms)
+	if (server->awaiting != 0 &&
+	    !server->pointer_moved &&
+	    server->transition == NULL &&
+	    now - server->frame_done_ms < server->frame_wait_ms)
 		return;
 
 	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
@@ -424,6 +431,22 @@ zwl_schedule(
 			server->failed = 1;
 		}
 	}
+}
+
+/*
+ * Notes that App Home or Wiseview was asked to open or close: the next
+ * frame is drawn without waiting for the windows (frame pacing), and the
+ * time from the request to its submission is logged (ws099-p002, C5).
+ */
+void
+zwl_transition_request(
+	struct zwl_server *server,
+	const char *what)
+{
+	/* The request, the latest one if two come before a frame. */
+	server->transition = what;
+	server->transition_ms = zwl_milliseconds();
+	server->dirty = 1;
 }
 
 /*
