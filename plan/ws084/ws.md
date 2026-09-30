@@ -163,3 +163,11 @@ vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まら�
 段に分けるほどの残りは無い（takeover は 9/29 に素の 5330 で動いた）。残りは確かめだけ。
 - L1（済み）: 素の 5330 で firmware の画面から Kei の LCD へ引き継ぐ。
 - L2: 素の 5330 で、demo の image（最新）の起動が 10 回中 10 回、黒い画面や固まりなく greeter まで届く。ユーザーの実機の試験（demo-lcd9 以降）。
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **L2 の 10 回の起動は自動にできる見込み**: demo の image は sshd を持つ。ユーザーが USB から 1 回起動した後、エージェントが ssh で
+  `reboot` を 10 回繰り返し、毎回 (1) ssh が戻るまでの時間、(2) greeter の process が居ること、(3) i915 の pipe の状態（kernel の log の
+  takeover の行と、`/dev/gpu` の display の情報）を読む script（`plan/ws084/tests/reboot-loop.sh`）。画面そのものは見えないので、
+  最初と最後の 1 回だけユーザーが目で確かめる。
+- 注意: firmware の boot の順が USB を先に選ぶ設定であること（ユーザーの機械の設定）。reboot が NVMe の別の OS に戻るなら、この自動化はできない。

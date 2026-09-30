@@ -79,3 +79,16 @@ PDF Viewer・Notes・Text Editor・デスクトップの icon で動いている
 | L3 | Windows の QEMU で、指を置いてから画面の反応まで p95 ≤ 50 ms、慣性の scroll の frame の間隔の最大 ≤ 33 ms | compositor の log の時刻と画面の撮影 | p017（計測）、p018（係数の調整） |
 | L4 | 外付けの touch LCD（間に合えば。ユーザーが別に計画） | — | p007 |
 | 最後 | 全文の規約と回帰 | — | p009 |
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **土台はある**: WS085-p001 で、Windows の QEMU の fork の SDL に `SDL_FINGERDOWN/MOTION/UP` を足し、仮想の `usb-multitouch`（10 指、Scan Time 付き、
+  63 byte の report）へ渡す経路ができている。起動は `C:\Work\winq-zedbsd\boot.bat`。QMP の 2 指の注入で Home が開くことまでは確かめてある。
+  **物理の Windows の touch panel からの SDL の event は未試験** — L2 の最初の確かめはここ。
+- **p016（L2）の作業**: Kei の側で evdev の時刻を記録する道具（`plan/ws084/tests/evlat.c` を元に、`MSC_TIMESTAMP` と到着の時刻を並べる）を作り、
+  ユーザーが Windows の touch panel で 10 秒 drag する。道具の出力（報告の数・間隔・欠け）を ssh で読む。Windows の側の操作はユーザー、
+  Kei の側の記録と集計はエージェント。報告の率が 60 Hz を下回ったら、SDL の event の間引き（QEMU の fork）を疑う。
+- **p017（L3）の作業**: compositor の log（`ZWL TOUCH` の down の時刻と、その指で動いた最初の frame の時刻）から p95 を出す script。
+  慣性の scroll の frame の間隔は `--log-frames` の `ZWL COMPOSE at_ms=`（ws099-p001 で足した時刻）で測る。
+- **ハーネスの置き場所**: `plan/ws081/tests/` に Windows の手順書（`windows-touch.md`: boot.bat の起動 → Kei の記録を始める ssh の命令 → drag →
+  記録を止める）と集計の script。Windows の機械はエージェントが操作できないので、ユーザーの手順は 3 行以内に収める。

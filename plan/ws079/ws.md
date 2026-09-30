@@ -98,3 +98,12 @@ mouse の部分は touch を待たずに先に入れてよい。
 | L1（済み） | QEMU で Notes の書き込み・PDF の注釈・PDF Viewer の頁送りと拡大が動く（p002〜p015） | 各 Phase の試験 | 済み |
 | L2 | デモの台本 S8・S9 が 5330 の実機（mouse）と Windows の QEMU（touch）で通る。PDF の頁送り 1 回の描画 ≤ 200 ms（A4 の文書 10 頁） | 実機はユーザーの目視、時間は PDF Viewer の log | p016 |
 | L3 | 実機のペン（外付けの touch LCD + AES pen、間に合えば）の筆圧・傾き・消しゴム | ユーザー | 完了の条件 2 |
+
+### 進め方とハーネス（2026-09-30 Q1 の補足）
+
+- **p016（L2）**: 新しい実装は無く、台本の S8（Notes の swipe・書く・Esc）と S9（PDF の頁送りと拡大）の通しの試験を作る。
+  - Linux の QEMU: 注入の touch（`build/main-pen` の image、touchinject）で S8・S9 を自動で通し、画面を撮る script（`plan/ws079/tests/demo-s8-s9.sh`）。
+  - 頁送りの時間: PDF Viewer の log の描画の時刻（無ければ 1 行足す）で、A4 の 10 頁の文書の頁送り 10 回の最大を出す。200 ms を超えたら、
+    描画の cache（次の頁の先読み）を小さな Phase で足す。
+  - 実機（mouse）と Windows の QEMU（touch）はユーザーが台本どおりに触る。エージェントは手順の 1 枚を用意する。
+- **L3（実機のペン）** は外付けの touch LCD の計画次第。今は動かない。
