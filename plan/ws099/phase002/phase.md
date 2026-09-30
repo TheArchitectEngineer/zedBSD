@@ -2,7 +2,7 @@
 
 # ws099-p002: C5 App Home と Wiseview の開閉の最初の frame を早める
 
-Status: HW_STATUS
+Status: cleared（2026-09-30、サブエージェント P6、worktree `ws035-keiland`（branch `wt/ws035`）。5330 の i915 passthrough で開閉 34 回とも 100 ms 以内（最大 55 ms）。QEMU の Venus でも 102〜105 → 90〜95 ms（App Home の最初の開きだけ 201 ms、QEMU の値は参考）
 Disposition: normal
 Parent: [WS099](../ws.md)
 Queue: なし（2026-09-30 Q1 の割り当て）
@@ -67,7 +67,13 @@ Queue: なし（2026-09-30 Q1 の割り当て）
 
 ## 実機（5330）
 
-HW_RESULT
+`c5-hw.sh build/ws099/p002-pt.img build/ws099/p002-hw`（passthrough の demo の image、1920x1080、13:38 に lock が空いてから 1 run）: **PASS**。
+
+- `ZWL FIRST_FRAME` 34 回（10 個の app を開く時の App Home の開閉 20 回、Wiseview と App Home の開閉を 3 回ずつで 12 回、最後の Terminal の開閉 2 回）: **全て 100 ms 以内、最大 55 ms**。
+- 窓が 10 個そろった後の値: Wiseview の開き 42〜55 ms、閉じ 23〜30 ms、App Home の開き 40〜54 ms、閉じ 21〜38 ms。窓が少ない間の App Home の開閉は 12〜43 ms。
+  App Home の最初の開きは 12 ms で、QEMU の 116 ms の上乗せは実機では出ない。
+- `ZWL ERROR`・`GPU_ERROR` 0。画面 `build/ws099/p002-hw/shots/wiseview-live.png`（10 個の窓の Wiseview）・`home-live.png`・`opened-live.png`、log `build/ws099/p002-hw/session.log`・`first-frames.txt`。
+- 実機では変更前の値を取っていない（変更前の image には `ZWL FIRST_FRAME` が無く、`--log-frames` は session で使っていない）。基準（100 ms）は変更後の値で満たした。
 
 ## 回帰
 
@@ -80,5 +86,5 @@ HW_RESULT
 
 ## 残り
 
-- App Home の最初の開きの 116 ms（QEMU の `vkEndCommandBuffer`）。ホスト側の一度だけの費用と見ているが、未確定。実機で出なければ QEMU だけの問題として扱う。
+- App Home の最初の開きの 116 ms（QEMU の `vkEndCommandBuffer`）は QEMU だけで起きる（実機では 12 ms）。原因は特定していない。QEMU の C5 は、この 1 回だけ 100 ms を超える。
 - 実機の frame pacing の待ちは、開閉の最初の frame だけ免除した。開閉の途中の frame の間隔は今までどおり。

@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p015（全画面の常時合成と下からの swipe）は実装と C3 まで済み、uncleared（2026-09-30 P6）。main が ws079 p010・ws035 p052・p053 の試験の直し（`plan/ws099/phase015/proposed-*.diff`）を適用し、C9 を流し直せば clear。次は L2 の残り（C5・C1 の実機・BUG-119）
+Resume point: p002（C5）cleared（2026-09-30 P6、5330 で最大 55 ms）。次は L2 の残り（C1 の実機・BUG-119）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -50,7 +50,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws099-p001](phase001/phase.md) | C1〜C10 を確かめる一括の試験（`plan/ws099/tests/criteria.sh`、新しい C2・C5・C7・C10）、今の状態での実行と不足の一覧、BUG-115 の切り分け | cleared（2026-09-30、QEMU の Venus: C1〜C4・C7〜C10 PASS（C1・C7 は範囲が一部）、C5 FAIL（最初の frame まで 102〜215 ms）、C6 未実施（実機）。BUG-115 は試験の固定の待ち（古い image の起動 6 秒超）） | — |
-| ws099-p002（案） | C5: App Home と Wiseview の開閉の最初の frame を早める（QEMU で要求から最初の frame まで 102〜215 ms、frame の間隔 約 130〜140 ms）。まず実機（WS075）で測り、100 ms を超えるなら、開閉の要求を受けた pass で frame を出す（次の frame の pacing を待たない）など。QEMU の数を基準にするかはユーザーの判断 | planning | p001 |
+| [ws099-p002](phase002/phase.md) | C5: App Home と Wiseview の開閉の最初の frame を早める。開閉の要求で次の frame を frame pacing の待ち無しに描き、`ZWL FIRST_FRAME` を log に出す。アプリの一覧は先に読み、`vkResetCommandBuffer` は呼ばない。試験 `c5-hw.sh` | cleared（2026-09-30 P6: 5330 で 34 回とも 100 ms 以内、最大 55 ms。QEMU は 102〜105 → 90〜95 ms（App Home の最初の開きだけ 201 ms、QEMU だけ）。C3・C9・WS079-p010・boot PASS） | p001 |
 | [ws099-p003](phase003/phase.md) | BUG-115: `plan/ws035/tests/` の固定の `sleep N`（42 本・43 箇所）を、compositor の log の `ZWL READY` を待つ形に（試験の側の直し） | cleared（2026-09-30: 古い image で p072 PASS（前は FAIL）、C9 の 9 本 PASS） | p001 |
 | [ws099-p004](phase004/phase.md) | C1 の残り: 起動と Shut Down の替わり目を両方の画面（VGA と Venus）で撮る試験（`c1-watch.py`・`c1-boot-shutdown.sh`）、criteria.sh の C1 に入れ、p126 に `--no-black` | cleared（2026-09-30: 起動・Shut Down とも黒 0・文字 0、Shut Down の後は greeter の絵のまま機械が止まる） | p001 |
 | [ws099-p005](phase005/phase.md) | C7 の残り: client が描くガラスの上の文字の contrast を測る（c7-contrast.sh に Settings と Files）。compositor のガラスに明るさの下限（panel.frag）、Settings・Files・libkeiui の副次の文字の色 `0x6b7585` → `0x56606f`（main の許可） | cleared（2026-09-30: C7 72/72 が 4.5 以上、最小 4.68（前 1.91）） | p001 |
