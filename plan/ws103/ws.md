@@ -40,6 +40,22 @@ client と compositor の間は全 OS で我々の独自の protocol 1 本で、
 
 入力（evdev）の ioctl は対象の外。全画面モード（WS035 の D0）は ws099-p015 で消したので、直の表示を持つ理由はもう無い。
 
+## 決定（2026-09-30 夜 ユーザー）
+
+| # | 判断 | 決定 |
+| --- | --- | --- |
+| D1 | 範囲 | **案 A**: zedBSD の上で GPU の直の ioctl を全て消し、buffer・fence の OS 固有の部分（記述の型 `gpu_image_descriptor`、OPAQUE_FD、fence の世代）を OS の backend の境界の後ろ（zedBSD の macro か module）に閉じ込める。Linux・FreeBSD の backend は作らない（[F-065](../future/F-065-keiland-portable.md)） |
+| D2 | `--direct` と、Vulkan が開けないときにそれへ落ちる道 | **消す**。`GPU_DISPLAY_CLAIM`・`PRESENT`・`RELEASE` と `schedule_direct`・`zwl_present`・`zwl_unscan` が無くなる。Vulkan が開けなければ compositor は起動を失敗させる（greeter と同じ）。Q1 の説明（WS014 p006 の合成しない最初の compositor の名残、repository に `--direct` を渡すものは無い）の後に決定 |
+| D3 | buffer の記述の安全の確かめ（V3） | **libvulkan の中へ**: import した memory に image を bind するとき、libvulkan が kernel の記述と image の作り方（幅・高さ・形式・stride）を照らす。compositor は ioctl を持たない |
+
+## 調べた事（2026-09-30 夜 Q1、コードの読み）
+
+- window mode の表示は既に Vulkan だけ（VK_KHR_display と swapchain）。画面の claim・release は libvulkan の swapchain の作成・破棄の中（`libvulkan/wsi-display.c`、`wsi-swapchain.c`）。compositor の CLAIM・PRESENT・RELEASE は `--direct` の道だけ。
+- `GPU_GET_INFO`・`DISPLAY_QUERY`・`DISPLAY_MODE` は起動時に 1 回、大きさと refresh を得るだけ（`display.c:55-91`）。VK_KHR_display の問い合わせで代わる。
+- `RESOURCE_IMPORT` は buffer ごとの記述の照合（`display.c:124-129`、`memcmp`）。libvulkan の OPAQUE_FD の import（`libvulkan/memory.c:820-900`）も内部で同じ ioctl を呼ぶが、確かめるのは memory type と大きさだけ。
+- `FENCE_QUERY` は commit のたびに世代の照合（`display.c:316`、`protocol.c:1645`）。`vkImportFenceFdKHR`（OPAQUE_FD）と `vkGetFenceStatus` で代われるが、世代は標準の Vulkan から見えない。i915 の native で external fence が出るか（`GPU_CAP_FENCE`）は未確認。
+- UAPI の型は `zwl.h` の構造体（`struct gpu_resource_import`、`struct gpu_display_info`、`lease`）と `keiland_gpu_buffer_v1` の wire（64 byte の記述）に入っている。
+
 ## 達成基準（案）
 
 | # | 基準 | 確かめ方 |
@@ -53,5 +69,5 @@ client と compositor の間は全 OS で我々の独自の protocol 1 本で、
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws103-p001 | 調査と設計: libvulkan（i915・Venus の両方の経路）が持つ拡張（VK_KHR_display の問い合わせ、VK_KHR_external_memory_fd の import での記述の確かめ、VK_KHR_external_fence_fd、display の取得と解放と process の間の受け渡し）を調べ、足りない物を libvulkan に足す設計。Vulkan の無い予備の経路を消してよいかの確認。各 ioctl を「Vulkan の API へ移す」と「移せない（zedBSD の macro で囲む）」に分け、理由を書く。Phase の分け方 | planned | — |
+| ws103-p001 | 調査と設計（D1〜D3 の上で）: 各 ioctl の置き換え（起動の問い合わせ → VK_KHR_display、記述の照合 → libvulkan の bind、fence → import と状態、`--direct` の削除）、fence の世代の照合を libvulkan の import に移す方法と i915 の native の external fence の有無、OS の backend の境界の形（protocol・import・fence の組、F-065 の Linux の組が後で入る形）、macro を外した build の確かめ方（Linux の build は無いので host の compile だけ等）、buffer ごとの import の費用（V4）。Phase の分け方。design-reviewer のレビュー | planned | — |
 | ws103-p002 以降 | p001 で決める（例: 起動の問い合わせ → fence → import の確かめ → 表示の受け渡し → 予備の経路の削除 → 試験と 5330） | planning | p001 |
