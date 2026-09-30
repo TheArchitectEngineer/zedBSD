@@ -26,6 +26,9 @@ static void check(int condition, const char *text);
 static int face_has(unsigned face, const char *text);
 static int face_repeats(unsigned face);
 static int face_keys(unsigned face);
+static int qwerty_has(const char *text);
+static int qwerty_keys(void);
+static int qwerty_widths(void);
 
 /* The 46 plain kana (UTF-8, three bytes each). */
 static const char host_kana[] = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
@@ -158,6 +161,33 @@ main(void)
 		missing += face_keys(ZWL_FLICK_ALPHA + (unsigned)index);
 	}
 	check(missing == 0, "every ASCII character of the alpha and number faces has a key");
+
+	/* The QWERTY panel (ws102-p006): every letter in both cases, digit, ASCII symbol and the space, each with a key of the US layout. */
+	missing = 0;
+	for (index = 0; index < 26U + 26U + 10U + 32U + 1U; index++) {
+		if (index < 26U) {
+			one[0] = (char)('a' + index);
+		} else if (index < 52U) {
+			one[0] = (char)('A' + index - 26U);
+		} else if (index < 62U) {
+			one[0] = (char)('0' + index - 52U);
+		} else if (index < 94U) {
+			one[0] = host_symbols[index - 62U];
+		} else {
+			one[0] = ' ';
+		}
+		one[1] = '\0';
+		found = qwerty_has(one);
+		if (!found) {
+			printf("qwerty missing: %s\n", one);
+			missing++;
+		}
+	}
+	check(missing == 0, "QWERTY: 52 letters, 10 digits, 32 symbols and the space");
+	missing = qwerty_keys();
+	check(missing == 0, "QWERTY: every character has a key of the US layout");
+	missing = qwerty_widths();
+	check(missing == 0, "QWERTY: no row wider than 40 quarters, at most 12 keys");
 
 	/* The outcome. */
 	if (failures != 0) {
@@ -293,4 +323,94 @@ face_keys(
 
 	/* The ones without a key. */
 	return missing;
+}
+
+/* Tells whether a QWERTY face types a text (with or without Shift). */
+static int
+qwerty_has(
+	const char *text)
+{
+	const struct zwl_qwerty_key *keys;
+	unsigned face;
+	unsigned row;
+	unsigned count;
+	unsigned index;
+
+	/* Each key of each row of each face, without and with Shift. */
+	for (face = 0; face < ZWL_QWERTY_FACES; face++) {
+		for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
+			keys = zwl_qwerty_row(face, row, &count);
+			for (index = 0; index < count; index++) {
+				if (keys[index].text != NULL && strcmp(keys[index].text, text) == 0)
+					return 1;
+				if (keys[index].shifted != NULL && strcmp(keys[index].shifted, text) == 0)
+					return 1;
+			}
+		}
+	}
+
+	/* No key types it. */
+	return 0;
+}
+
+/* Counts the QWERTY characters (with and without Shift) that no key of the US layout types. */
+static int
+qwerty_keys(void)
+{
+	const struct zwl_qwerty_key *keys;
+	unsigned face;
+	unsigned row;
+	unsigned count;
+	unsigned index;
+	unsigned code;
+	int shift;
+	int missing;
+
+	/* Each character of each key. */
+	missing = 0;
+	for (face = 0; face < ZWL_QWERTY_FACES; face++) {
+		for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
+			keys = zwl_qwerty_row(face, row, &count);
+			for (index = 0; index < count; index++) {
+				if (keys[index].text != NULL && !zwl_flick_us_key(keys[index].text, &code, &shift))
+					missing++;
+				if (keys[index].shifted != NULL && !zwl_flick_us_key(keys[index].shifted, &code, &shift))
+					missing++;
+			}
+		}
+	}
+
+	/* The ones without a key. */
+	return missing;
+}
+
+/* Counts the QWERTY rows wider than the panel's quarters or with more keys than a row has. */
+static int
+qwerty_widths(void)
+{
+	const struct zwl_qwerty_key *keys;
+	unsigned face;
+	unsigned row;
+	unsigned count;
+	unsigned index;
+	unsigned units;
+	int wrong;
+
+	/* Each row of each face. */
+	wrong = 0;
+	for (face = 0; face < ZWL_QWERTY_FACES; face++) {
+		for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
+			keys = zwl_qwerty_row(face, row, &count);
+			units = 0;
+			for (index = 0; index < count; index++)
+				units += keys[index].width;
+			if (units > ZWL_QWERTY_ROW_UNITS || count > ZWL_QWERTY_ROW_KEYS) {
+				printf("row %u of %s: %u quarters, %u keys\n", row, zwl_qwerty_face_name(face), units, count);
+				wrong++;
+			}
+		}
+	}
+
+	/* The wrong rows. */
+	return wrong;
 }

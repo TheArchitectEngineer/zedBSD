@@ -24,6 +24,10 @@
 #             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here)
 #   large     (p005; the guest started with VENUS_SIZE=1920x1080, OSK_WIDTH=1920 OSK_HEIGHT=1080) the flick panel is
 #             414x450 at 1494,618 (keys 96 px), the QWERTY panel 1896x410 at 12,658 (large-flick.png, large-qwerty.png)
+#   qwerty    (p006) the QWERTY panel: the 30 characters "Hello, World! Kei 2026 (a+b)=c" (capitals by Shift, symbols
+#             by Shift on the digits and by the symbols face) tapped into Text Editor within 6 s (5 characters a second,
+#             qwerty-plan.py), saved by Ctrl+S: the file is the text; Shift twice locks it (ABC typed as capitals);
+#             an arrow key moves the caret (qwerty.png, qwerty-symbols.png)
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -114,6 +118,29 @@ touch_replay() {
 	put "$out/$1.script" "/tmp/$1.script"
 	result=$(guest "/bin/touchinject /tmp/$1.script 2>&1; echo replay=\$?")
 	printf '%s\n' "$result" | grep -q '^replay=0$' || { echo "touchinject $1: FAILED"; status=1; }
+}
+
+# Reads the QWERTY keys' places from zdesktop's log once (qkey_tap uses them).
+qkey_refresh() {
+	guest "grep -a 'ZWL OSK qrect' /tmp/zdesktop.log" > "$out/qrect-now.txt"
+}
+
+# A tap (twice quickly when the second argument is 2) on the QWERTY key with a label, at its latest place read by
+# qkey_refresh; a label not found fails the run and taps nothing.
+qkey_tap() {
+	place=$(awk -v l="label=$1" '$NF == l' "$out/qrect-now.txt" | tail -1 | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	taps=${2:-1}
+	if [ -z "$place" ]; then
+		echo "qkey $1: no place MISSING"
+		status=1
+		return
+	fi
+	set -- $place
+	if [ "$taps" = 2 ]; then
+		pointer move $(( $1 + $3 / 2 )) $(( $2 + $4 / 2 )) sleep 150 down sleep 40 up sleep 120 down sleep 40 up sleep 400
+	else
+		pointer move $(( $1 + $3 / 2 )) $(( $2 + $4 / 2 )) sleep 150 down sleep 60 up sleep 400
+	fi
 }
 
 # A tap on a key, and a flick of one (dx, dy) in steps.
@@ -313,6 +340,57 @@ hold 800'
 		expect_log 'ZWL OSK open kind=qwerty x=12 y=658 width=1896 height=410'
 		pointer move 900 300 sleep 400
 		shot large-qwerty.png
+		;;
+	qwerty)
+		compositor
+		guest 'rm -f /root/q.txt; touch /root/q.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/q.txt > /tmp/te.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		expect_log 'ZWL MAP client='
+		swipe 6 792 150 650
+		expect_log 'ZWL OSK open kind=qwerty'
+		# The symbols face and back, so that both faces' keys are in the log.
+		qkey_refresh
+		qkey_tap '?123'
+		expect_log 'ZWL OSK qface name=symbols'
+		pointer move 700 200 sleep 300
+		shot qwerty-symbols.png
+		qkey_refresh
+		qkey_tap 'ABC'
+		expect_log 'ZWL OSK qface name=letters'
+		# The 30 characters within 6 s.
+		text='Hello, World! Kei 2026 (a+b)=c'
+		guest "grep -a 'ZWL OSK' /tmp/zdesktop.log" > "$out/qwerty-keys.txt"
+		plan=$(python3 plan/ws102/tests/qwerty-plan.py "$out/qwerty-keys.txt" "$text" 4800) || { echo "qwerty-plan: FAILED"; status=1; }
+		before=$(count 'ZWL OSK qkey')
+		pointer $plan
+		sleep 1
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		saved=$(guest 'cat /root/q.txt' | tail -1)
+		[ "$saved" = "$text" ] && echo "qwerty: typed \"$text\" ok" || { echo "qwerty: ($saved) MISSING"; status=1; }
+		guest "grep -a 'ZWL OSK qkey' /tmp/zdesktop.log" > "$out/qwerty-qkeys.txt"
+		first=$(sed -n "$((before + 1))p" "$out/qwerty-qkeys.txt" | sed -n 's/.* ms=\([0-9]*\).*/\1/p')
+		last=$(tail -1 "$out/qwerty-qkeys.txt" | sed -n 's/.* ms=\([0-9]*\).*/\1/p')
+		elapsed=$(( ${last:-0} - ${first:-0} ))
+		[ "$elapsed" -gt 0 ] && [ "$elapsed" -le 6000 ] && echo "qwerty: 30 characters in $elapsed ms (5 a second or faster) ok" || { echo "qwerty: $elapsed ms MISSING"; status=1; }
+		pointer move 700 200 sleep 300
+		shot qwerty.png
+		# Shift twice locks it: A B C as capitals; once more unlocks it.
+		qkey_refresh
+		qkey_tap 'Shift' 2
+		expect_log 'ZWL OSK shift state=2'
+		qkey_tap 'a'
+		qkey_tap 'b'
+		qkey_tap 'c'
+		qkey_tap 'Shift'
+		expect_log 'ZWL OSK shift state=0'
+		# The left arrow (key 105).
+		qkey_tap '←'
+		expect_log 'ZWL OSK send via=key code=105 shift=0'
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		saved=$(guest 'cat /root/q.txt' | tail -1)
+		[ "$saved" = "${text}ABC" ] && echo "qwerty: Shift locked: ABC ok" || { echo "qwerty: ($saved) MISSING"; status=1; }
 		;;
 	edges)
 		compositor

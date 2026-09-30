@@ -53,6 +53,29 @@
 #define ZWL_FLICK_FACE		4U
 #define ZWL_FLICK_VOICE		5U
 #define ZWL_FLICK_CASE		6U
+#define ZWL_FLICK_SHIFT		7U
+#define ZWL_FLICK_ARROW		8U
+
+/*
+ * The QWERTY panel's faces (ws102-p006): the letters (with Shift, the
+ * capitals and the digits' symbols) and the symbols; its rows, the most
+ * keys a row has, and a row's width in quarter keys.  The rows count from
+ * the top: the digits, three rows of letters (or symbols) and the space
+ * row.  A row of extra keys (Esc, Tab, Ctrl, ... p020) is to come above
+ * them.
+ */
+#define ZWL_QWERTY_LETTERS	0U
+#define ZWL_QWERTY_SYMBOLS	1U
+#define ZWL_QWERTY_FACES	2U
+#define ZWL_QWERTY_ROWS		5U
+#define ZWL_QWERTY_ROW_KEYS	12U
+#define ZWL_QWERTY_ROW_UNITS	40U
+
+/* The evdev codes of the arrow keys. */
+#define ZWL_KEY_UP		103U
+#define ZWL_KEY_LEFT		105U
+#define ZWL_KEY_RIGHT		106U
+#define ZWL_KEY_DOWN		108U
 
 /*
  * One key of a face: its label, what it does, and the characters (UTF-8)
@@ -64,6 +87,22 @@ struct zwl_flick_key {
 	const char *text[ZWL_FLICK_DIRECTIONS];
 };
 
+/*
+ * One key of the QWERTY panel: its label and its label with Shift, what it
+ * types without and with Shift (NULL for a key that only acts), what it
+ * does (ZWL_FLICK_*), the evdev code of an arrow, and its width in quarter
+ * keys.
+ */
+struct zwl_qwerty_key {
+	const char *label;
+	const char *shifted_label;
+	const char *text;
+	const char *shifted;
+	unsigned action;
+	unsigned code;
+	unsigned width;
+};
+
 const struct zwl_flick_key *zwl_flick_key(unsigned face, unsigned row, unsigned column);
 const char *zwl_flick_face_name(unsigned face);
 unsigned zwl_flick_face_next(unsigned face);
@@ -73,6 +112,8 @@ int zwl_flick_voice(const char *previous, char *next, size_t size);
 int zwl_flick_case(const char *previous, char *next, size_t size);
 const char *zwl_flick_direction_name(unsigned direction);
 int zwl_flick_us_key(const char *text, unsigned *code, int *shift);
+const struct zwl_qwerty_key *zwl_qwerty_row(unsigned face, unsigned row, unsigned *count);
+const char *zwl_qwerty_face_name(unsigned face);
 
 
 #endif
