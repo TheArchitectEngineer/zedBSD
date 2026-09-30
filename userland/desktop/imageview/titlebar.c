@@ -98,7 +98,7 @@ iv_titlebar_open(
 	titlebar->window = window;
 
 	/* The window's titlebar object; a compositor without one leaves the menus and the keys. */
-	titlebar->titlebar = keiland_titlebar_create(window->display, window->toplevel, &titlebar_listener, titlebar);
+	titlebar->titlebar = keiland_titlebar_create(kui_window_display(window->kui), kui_window_toplevel(window->kui), &titlebar_listener, titlebar);
 	if (titlebar->titlebar == NULL) {
 		iv_log("TITLEBAR none errno=%d", errno);
 		return 0;

@@ -7,10 +7,11 @@
 
 /*
  * The parts of Image Viewer that speak Wayland, Vulkan and zdesktop's
- * extensions: the window (window.c), the presenter of the image and the
- * drawn canvas (present.c), the menus (menu.c), the titlebar's controls
- * (titlebar.c) and the window's glass (glass.c).  The host tests build the
- * rest of the program without them.
+ * extensions: the window (libkeiui's kui_window since ws090-p008: the
+ * toplevel and the seat's input; its surface is left to the presenter),
+ * the presenter of the image and the drawn canvas (present.c), the menus
+ * (menu.c), the titlebar's controls (titlebar.c) and the window's glass
+ * (glass.c).  The host tests build the rest of the program without them.
  */
 
 #ifndef IMAGEVIEW_WINDOW_H
@@ -24,76 +25,19 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 #include <keiland.h>
-
-/* How many inputs wait for the main loop at most. */
-#define IV_WINDOW_EVENTS	256U
-
-/* How many touch inputs wait for the main loop at most (ws081-p012). */
-#define IV_WINDOW_TOUCHES	256U
+#include <keiui.h>
 
 /*
- * The Wayland window: its globals, its surface and roles, the size the
- * compositor gave it, and the input waiting for the viewer.
+ * The window: libkeiui's window, which queues the input (the menus' and
+ * the titlebar's actions among it, posted in the order they came).  The
+ * viewer's own presenter draws on its surface (KUI_PRESENT_NONE): the
+ * image is a texture under the canvas, which libkeiui's presenter does not
+ * have.
  *
  * One lives for the whole run.
  */
 struct iv_window {
-	/* The connection and the globals bound from it. */
-	struct wl_display *display;
-	struct wl_registry *registry;
-	struct wl_compositor *compositor;
-	struct xdg_wm_base *shell;
-	struct wl_seat *seat;
-	struct wl_pointer *pointer;
-	struct wl_keyboard *keyboard;
-	struct wl_touch *touch;
-
-	/* The window: its surface and roles. */
-	struct wl_surface *surface;
-	struct xdg_surface *role;
-	struct xdg_toplevel *toplevel;
-
-	/* The size the compositor asked for, and whether it changed since it was last taken. */
-	uint32_t width;
-	uint32_t height;
-	int resized;
-
-	/* The largest size the window may choose for itself (xdg-shell's bounds; 0 when not known), and the size it would like. */
-	uint32_t bounds_width;
-	uint32_t bounds_height;
-	uint32_t preferred_width;
-	uint32_t preferred_height;
-
-	/* Whether the first configure arrived, and whether the compositor asked to close. */
-	int configured;
-	int closed;
-
-	/* Whether the compositor last configured the window fullscreen. */
-	int fullscreen;
-
-	/* The serial of the last press (a button or a finger), which a context menu is opened with. */
-	uint32_t press_serial;
-
-	/* The pointer's place and the modifiers held (IV_MOD_*). */
-	int pointer_x;
-	int pointer_y;
-	uint32_t modifiers;
-
-	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
-	uint32_t repeat_key;
-	uint64_t repeat_at;
-	uint32_t repeat_delay;
-	uint32_t repeat_interval;
-
-	/* The inputs waiting, a ring: the oldest's slot and how many. */
-	struct iv_event events[IV_WINDOW_EVENTS];
-	unsigned event_first;
-	unsigned event_count;
-
-	/* The touch inputs waiting, a ring of their own (ws081-p012): the oldest's slot and how many. */
-	struct iv_touch_event touches[IV_WINDOW_TOUCHES];
-	unsigned touch_first;
-	unsigned touch_count;
+	struct kui_window *kui;
 };
 
 /*
@@ -250,17 +194,8 @@ struct iv_titlebar {
 	int sent;
 };
 
-/* The window (window.c). */
-int iv_window_open(struct iv_window *window, const char *display, uint32_t width, uint32_t height, const char *title, const char *application);
-int iv_window_dispatch(struct iv_window *window, int timeout);
-int iv_window_take(struct iv_window *window, struct iv_event *event);
-int iv_window_take_touch(struct iv_window *window, struct iv_touch_event *event);
-int iv_window_repeat(struct iv_window *window, uint64_t now);
-int iv_window_repeat_wait(const struct iv_window *window, uint64_t now);
+/* The window's actions: the menus' and the titlebar's choices, queued among the input. */
 void iv_window_action(struct iv_window *window, uint32_t action);
-void iv_window_title(struct iv_window *window, const char *title);
-void iv_window_fullscreen(struct iv_window *window, int fullscreen);
-void iv_window_close(struct iv_window *window);
 
 /* The menus (menu.c). */
 int iv_menu_open(struct iv_menu *menu, struct iv_window *window, const struct iv_state *state);

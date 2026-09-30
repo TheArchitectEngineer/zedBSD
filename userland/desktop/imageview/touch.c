@@ -14,6 +14,8 @@
  * shows it), and a move made elsewhere in the meantime (a key, the wheel,
  * an action, a resize) is taken over rather than undone.  The view is
  * placed at the frame's time, from the fingers' motion resampled for it.
+ * The fingers come from libkeiui's window (ws090-p008), their times already
+ * turned into microseconds of CLOCK_MONOTONIC.
  */
 
 #include "touch.h"
@@ -21,7 +23,6 @@
 #include <errno.h>
 #include <math.h>
 #include <string.h>
-#include <time.h>
 
 /* What a drag does: nothing yet, move the image, or swipe to the next or the previous image. */
 #define TOUCH_DRAG_NONE		0
@@ -34,18 +35,14 @@
 /* How often the view is placed while fingers are down or the content glides, in milliseconds. */
 #define TOUCH_TICK_MS		16
 
-/* The oldest a wl_touch time may be and still be taken (older is another clock), in milliseconds. */
-#define TOUCH_TIME_BEHIND	2000U
-
 /* How much a double tap zooms in. */
 #define TOUCH_DOUBLE_TAP_ZOOM	2.0
 
 /* The share a swipe keeps of the finger's movement past the first and the last image (as the pointer's). */
 #define TOUCH_SWIPE_RESIST	3.0
 
-static uint64_t touch_time(const struct iv_touch_event *event);
-static int touch_for_pointer(const struct iv_app *app, const struct iv_touch_event *event);
-static void touch_pointer(struct iv_touch *touch, struct iv_app *app, const struct iv_touch_event *event);
+static int touch_for_pointer(const struct iv_app *app, const struct kui_window_event *event);
+static void touch_pointer(struct iv_touch *touch, struct iv_app *app, const struct kui_window_event *event);
 static void touch_press(struct iv_touch *touch, struct iv_app *app, uint64_t now);
 static void touch_gestures(struct iv_touch *touch, struct iv_app *app, uint64_t now);
 static void touch_drag_begin(struct iv_touch *touch, struct iv_app *app, uint64_t now);
@@ -103,15 +100,15 @@ iv_touch_close(
 }
 
 /*
- * Takes one touch input of the window: a finger over the chooser or the
- * empty window plays the pointer; the image's fingers go to the gestures,
- * and the first of them presses the scroller.
+ * Takes one touch input of the window: a finger over the empty window
+ * plays the pointer; the image's fingers go to the gestures, and the first
+ * of them presses the scroller.
  */
 void
 iv_touch_event(
 	struct iv_touch *touch,
 	struct iv_app *app,
-	const struct iv_touch_event *event)
+	const struct kui_window_event *event)
 {
 	uint64_t time;
 	int error;
@@ -127,9 +124,9 @@ iv_touch_event(
 		return;
 	}
 
-	/* A first finger over the chooser or the empty window starts playing the pointer. */
+	/* A first finger over the empty window starts playing the pointer. */
 	for_pointer = touch_for_pointer(app, event);
-	if (event->type == IV_TOUCH_DOWN &&
+	if (event->kind == KUI_WINDOW_TOUCH_DOWN &&
 	    touch->fingers == 0U &&
 	    for_pointer) {
 		touch_pointer(touch, app, event);
@@ -137,32 +134,32 @@ iv_touch_event(
 	}
 
 	/* The event's time. */
-	time = touch_time(event);
+	time = event->time_us;
 
 	/* Hands the finger to the gestures. */
-	switch (event->type) {
-	case IV_TOUCH_DOWN:
+	switch (event->kind) {
+	case KUI_WINDOW_TOUCH_DOWN:
 		/* The first finger presses the scroller. */
 		if (touch->fingers == 0U)
-			touch_press(touch, app, event->arrival);
+			touch_press(touch, app, event->arrival_us);
 
 		/* The finger joins the gestures, and counts once they took it. */
-		error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival, event->x, event->y);
+		error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival_us, event->x, event->y);
 		if (error == 0)
 			touch->fingers++;
 		break;
-	case IV_TOUCH_MOTION:
+	case KUI_WINDOW_TOUCH_MOTION:
 		/* The finger's new place; the tick places the view from it. */
-		(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
+		(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival_us, event->x, event->y);
 		break;
-	case IV_TOUCH_UP:
+	case KUI_WINDOW_TOUCH_UP:
 		/* The finger leaves the gestures, and the count once they let it go. */
 		error = keiland_gesture_up(touch->gesture, event->id, time);
 		if (error == 0 &&
 		    touch->fingers > 0U)
 			touch->fingers--;
 		break;
-	case IV_TOUCH_CANCEL:
+	case KUI_WINDOW_TOUCH_CANCEL:
 		/* Every finger is gone at once. */
 		keiland_gesture_cancel(touch->gesture);
 		touch->fingers = 0;
@@ -170,7 +167,7 @@ iv_touch_event(
 	}
 
 	/* What the fingers mean so far. */
-	touch_gestures(touch, app, event->arrival);
+	touch_gestures(touch, app, event->arrival_us);
 }
 
 /*
@@ -305,57 +302,15 @@ iv_touch_tick(
 	return -1;
 }
 
-/*
- * Reports the monotonic clock in microseconds, the clock of the touch
- * events' arrival and of iv_touch_tick.
- */
-uint64_t
-iv_touch_clock(void)
-{
-	struct timespec now;
-
-	/* The monotonic clock. */
-	(void)clock_gettime(CLOCK_MONOTONIC, &now);
-
-	/* Reports it in microseconds. */
-	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
-}
-
-/*
- * Turns a wl_touch time (the compositor's milliseconds, the low 32 bits)
- * into microseconds of the full clock, by the time the event was read; a
- * time far behind or ahead of that is taken as the reading's time.
- */
-static uint64_t
-touch_time(
-	const struct iv_touch_event *event)
-{
-	uint64_t arrival_ms;
-	uint32_t behind;
-
-	/* How far the event's time is behind its reading, modulo 2^32 milliseconds. */
-	arrival_ms = event->arrival / 1000U;
-	behind = (uint32_t)arrival_ms - event->time;
-
-	/* Another clock, or a time ahead: the reading's time. */
-	if (behind > TOUCH_TIME_BEHIND)
-		return event->arrival;
-
-	/* Reports the event's time. */
-	return (arrival_ms - behind) * 1000U;
-}
-
-/* Tells whether a finger touches where the pointer's button is the way in: the chooser, the empty window. */
+/* Tells whether a finger touches where the pointer's button is the way in: the empty window. */
 static int
 touch_for_pointer(
 	const struct iv_app *app,
-	const struct iv_touch_event *event)
+	const struct kui_window_event *event)
 {
 	UNUSED_PARAMETER(event);
 
-	/* The chooser takes every touch, and so does the empty window (its Open button). */
-	if (app->chooser_open)
-		return 1;
+	/* The empty window takes every touch (its Open button). */
 	if (!app->has_image)
 		return 1;
 
@@ -372,13 +327,13 @@ static void
 touch_pointer(
 	struct iv_touch *touch,
 	struct iv_app *app,
-	const struct iv_touch_event *event)
+	const struct kui_window_event *event)
 {
 	struct iv_event pointer;
 
 	/* Only the finger that plays it, once it plays it. */
 	if (touch->pointer &&
-	    event->type != IV_TOUCH_CANCEL &&
+	    event->kind != KUI_WINDOW_TOUCH_CANCEL &&
 	    event->id != touch->pointer_id)
 		return;
 
@@ -386,8 +341,8 @@ touch_pointer(
 	memset(&pointer, 0, sizeof(pointer));
 	pointer.x = touch->pointer_x;
 	pointer.y = touch->pointer_y;
-	if (event->type == IV_TOUCH_DOWN ||
-	    event->type == IV_TOUCH_MOTION) {
+	if (event->kind == KUI_WINDOW_TOUCH_DOWN ||
+	    event->kind == KUI_WINDOW_TOUCH_MOTION) {
 		pointer.x = (int)floor(event->x);
 		pointer.y = (int)floor(event->y);
 		touch->pointer_x = pointer.x;
@@ -396,11 +351,11 @@ touch_pointer(
 
 	/* The left button, at the time the finger was read. */
 	pointer.button = IV_BUTTON_LEFT;
-	pointer.time = event->arrival / 1000U;
+	pointer.time = event->arrival_us / 1000U;
 
 	/* Plays the pointer by the kind of touch. */
-	switch (event->type) {
-	case IV_TOUCH_DOWN:
+	switch (event->kind) {
+	case KUI_WINDOW_TOUCH_DOWN:
 		/* The pointer comes, and presses. */
 		touch->pointer = 1;
 		touch->pointer_id = event->id;
@@ -412,18 +367,18 @@ touch_pointer(
 		pointer.pressed = 1;
 		iv_app_event(app, &pointer);
 		break;
-	case IV_TOUCH_MOTION:
+	case KUI_WINDOW_TOUCH_MOTION:
 		/* The pointer follows the finger. */
 		pointer.type = IV_EVENT_MOTION;
 		iv_app_event(app, &pointer);
 		break;
-	case IV_TOUCH_UP:
+	case KUI_WINDOW_TOUCH_UP:
 		/* Released where the finger last was. */
 		touch->pointer = 0;
 		pointer.type = IV_EVENT_BUTTON;
 		iv_app_event(app, &pointer);
 		break;
-	case IV_TOUCH_CANCEL:
+	case KUI_WINDOW_TOUCH_CANCEL:
 		/* Let go without a release, so that nothing is clicked. */
 		touch->pointer = 0;
 		app->pressed = 0;

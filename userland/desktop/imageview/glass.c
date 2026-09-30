@@ -49,7 +49,7 @@ iv_glass_open(
 	}
 
 	/* zdesktop's glass for the window's surface. */
-	glass->glass = keiland_glass_create(window->display, window->surface);
+	glass->glass = keiland_glass_create(kui_window_display(window->kui), kui_window_surface(window->kui));
 	if (glass->glass == NULL) {
 		iv_log("GLASS off reason=compositor errno=%d", errno);
 		return 0;

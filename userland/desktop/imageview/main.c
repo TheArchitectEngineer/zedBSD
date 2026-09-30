@@ -16,7 +16,9 @@
  * folder to go through), or with File > Open (Ctrl+O).  The outcome is
  * one line on standard error: IMAGEVIEW DONE with the reason, or
  * IMAGEVIEW FAILED naming what failed; IMAGEVIEW READY says the first
- * frame is shown, and IMAGEVIEW SHOW each image shown.
+ * frame is shown, and IMAGEVIEW SHOW each image shown.  ws090-p008: the
+ * window and its input are libkeiui's (kui_window); the viewer's own
+ * presenter draws the image and the canvas on its surface.
  */
 
 #include "window.h"
@@ -59,12 +61,16 @@ struct main_options {
 
 /*
  * The program's parts, for the whole run.  They are file-scope because
- * the window's input queue and the viewer are too large for the stack.
+ * the viewer is too large for the stack.
  *
- * The window: the Wayland connection and surface, and the input queue,
- * from the start of the run to its end.
+ * The window: libkeiui's window (the Wayland connection, the surface and
+ * the input queue), from the start of the run to its end.
  */
 static struct iv_window main_window;
+
+/* Whether the compositor gave a new size, or asked to close, since the loop last looked. */
+static int main_resized;
+static int main_closed;
 
 /* The presenter: Vulkan's swapchain over the window, made after it and closed before it. */
 static struct iv_present main_present;
@@ -91,6 +97,21 @@ static struct iv_glass main_glass;
 static struct iv_touch main_touch;
 
 /*
+ * libkeiui's file chooser while the viewer waits for it (File > Open), a
+ * window of its own over the viewer's; NULL otherwise.
+ */
+static struct kui_file_chooser *main_chooser;
+
+/* The font the chooser draws with: the viewer's own. */
+static const char *main_font;
+
+/* The files the chooser offers: the images the viewer reads first, or every file. */
+static const struct kui_file_filter main_filters[] = {
+	{ "Images", "png jpg jpeg jpe gif" },
+	{ "All Files", NULL }
+};
+
+/*
  * The canvas's memory: ordinary memory the size of the swapchain, remade
  * (and the canvas with it) when the window changes size.
  */
@@ -107,6 +128,11 @@ static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
+static int main_resize(void);
+static void main_window_event(const struct kui_window_event *event);
+static void main_event(enum iv_event_type type, const struct kui_window_event *event, struct iv_event *input);
+static void main_choose(void);
+static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static int main_canvas_make(void);
 static void main_state(struct iv_state *state);
 static void main_opened(void);
@@ -122,6 +148,7 @@ main(
 	char **argv)
 {
 	struct main_options options;
+	struct kui_window_options window_options;
 	struct iv_state state;
 	VkResult result;
 	int status;
@@ -139,10 +166,18 @@ main(
 	error = iv_text_open(&main_text, options.font);
 	if (error != 0)
 		iv_log("FONT missing path=%s error=%d", options.font, error);
+	main_font = options.font;
 
-	/* The window. */
-	status = iv_window_open(&main_window, options.display, options.width, options.height, "Image Viewer", MAIN_APPLICATION);
-	if (status != 0) {
+	/* The window, whose surface the viewer's own presenter draws on. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.display = options.display;
+	window_options.title = "Image Viewer";
+	window_options.application = MAIN_APPLICATION;
+	window_options.width = options.width;
+	window_options.height = options.height;
+	window_options.present = KUI_PRESENT_NONE;
+	main_window.kui = kui_window_open(&window_options);
+	if (main_window.kui == NULL) {
 		fprintf(stderr, "IMAGEVIEW FAILED operation=window error=%d\n", errno);
 		iv_text_close(&main_text);
 		return 1;
@@ -153,7 +188,7 @@ main(
 	if (result != VK_SUCCESS) {
 		fprintf(stderr, "IMAGEVIEW FAILED operation=%s result=%d\n", main_present.operation, (int)result);
 		iv_present_close(&main_present);
-		iv_window_close(&main_window);
+		kui_window_close(main_window.kui);
 		iv_text_close(&main_text);
 		return 1;
 	}
@@ -190,12 +225,14 @@ main(
 
 	/* Fullscreen from the start, when asked. */
 	if (options.fullscreen)
-		iv_window_fullscreen(&main_window, 1);
+		kui_window_set_fullscreen(main_window.kui, 1);
 
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the titlebar, the menus, the glass and the viewer before the window they belong to. */
+	/* Everything goes, the chooser, the titlebar, the menus, the glass and the viewer before the window they belong to. */
+	kui_file_chooser_destroy(main_chooser);
+	main_chooser = NULL;
 	iv_titlebar_close(&main_titlebar);
 	iv_menu_close(&main_menu);
 	iv_glass_close(&main_glass);
@@ -203,7 +240,7 @@ main(
 	iv_app_release(&main_app);
 	free(main_pixels);
 	iv_present_close(&main_present);
-	iv_window_close(&main_window);
+	kui_window_close(main_window.kui);
 	iv_text_close(&main_text);
 
 	/* Reports how the run ended. */
@@ -212,6 +249,19 @@ main(
 
 	/* Succeeded: the window was closed. */
 	return 0;
+}
+
+/*
+ * Queues an action of the menus or the titlebar among the window's inputs,
+ * so that it is carried out in the order it came.
+ */
+void
+iv_window_action(
+	struct iv_window *window,
+	uint32_t action)
+{
+	/* Posted into the window's queue. */
+	kui_window_post(window->kui, action);
 }
 
 /* Reads the command line into the options; returns nonzero for a malformed one. */
@@ -350,8 +400,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
-	struct iv_touch_event touch;
-	struct iv_event event;
+	struct kui_window_event event;
 	struct iv_state state;
 	uint64_t started;
 	uint64_t now;
@@ -392,12 +441,12 @@ main_loop(
 			timeout = due;
 
 		/* Nor than the next repeat of a key held. */
-		due = iv_window_repeat_wait(&main_window, now);
+		due = kui_window_repeat_wait(main_window.kui, kui_clock_us());
 		if (due >= 0 && due < timeout)
 			timeout = due;
 
 		/* Nor than the fingers' next step (a fling, a long press). */
-		due = iv_touch_tick(&main_touch, &main_app, iv_touch_clock());
+		due = iv_touch_tick(&main_touch, &main_app, kui_clock_us());
 		if (due >= 0 && due < timeout)
 			timeout = due;
 
@@ -413,7 +462,7 @@ main_loop(
 		}
 
 		/* Waits; a lost connection ends the run. */
-		status = iv_window_dispatch(&main_window, timeout);
+		status = kui_window_dispatch(main_window.kui, timeout);
 		if (status != 0) {
 			iv_log("DONE reason=disconnected");
 			return 0;
@@ -422,23 +471,18 @@ main_loop(
 		/* A key held repeats once the compositor's input is in, so that its release is seen first. */
 		now = iv_clock();
 		main_app.now = now;
-		(void)iv_window_repeat(&main_window, now);
+		(void)kui_window_repeat(main_window.kui, kui_clock_us());
 
-		/* Every input queued (the menus' and the titlebar's choices among them). */
+		/* Every input queued, in the order it came (the menus' and the titlebar's choices and the fingers among them). */
 		for (;;) {
-			taken = iv_window_take(&main_window, &event);
+			taken = kui_window_take(main_window.kui, &event);
 			if (taken == 0)
 				break;
-			iv_app_event(&main_app, &event);
+			main_window_event(&event);
 		}
 
-		/* Every touch queued. */
-		for (;;) {
-			taken = iv_window_take_touch(&main_window, &touch);
-			if (taken == 0)
-				break;
-			iv_touch_event(&main_touch, &main_app, &touch);
-		}
+		/* The chooser the viewer asked for (File > Open), or one it no longer waits for closed. */
+		main_choose();
 
 		/* An image opened: its title and the recent files; the full screen asked for or given. */
 		main_opened();
@@ -446,7 +490,7 @@ main_loop(
 
 		/* Time passes for the viewer and the fingers; the menus and the titlebar show its state. */
 		(void)iv_app_tick(&main_app, now);
-		(void)iv_touch_tick(&main_touch, &main_app, iv_touch_clock());
+		(void)iv_touch_tick(&main_touch, &main_app, kui_clock_us());
 		main_state(&state);
 		iv_menu_refresh(&main_menu, &state);
 		iv_titlebar_refresh(&main_titlebar, &state);
@@ -458,7 +502,7 @@ main_loop(
 		}
 
 		/* The close button, Quit, or Close on an empty window end the run. */
-		if (main_window.closed != 0 || main_app.want_close != 0) {
+		if (main_closed != 0 || main_app.want_close != 0) {
 			iv_log("DONE reason=close");
 			return 0;
 		}
@@ -470,21 +514,11 @@ main_loop(
 		}
 
 		/* A new size: a new swapchain and canvas, and a frame. */
-		if (main_window.resized != 0) {
-			main_window.resized = 0;
-			status = iv_present_resize(&main_present, main_window.width, main_window.height);
-			if (status != VK_SUCCESS) {
-				fprintf(stderr, "IMAGEVIEW FAILED operation=%s result=%d\n", main_present.operation, status);
-				return -1;
-			}
-
-			/* A canvas of the new size. */
-			status = main_canvas_make();
+		if (main_resized != 0) {
+			main_resized = 0;
+			status = main_resize();
 			if (status != 0)
 				return -1;
-
-			/* The viewer lays itself out at the new size. */
-			iv_app_resize(&main_app, (int)main_present.extent.width, (int)main_present.extent.height);
 		}
 
 		/* A frame when something changed. */
@@ -546,24 +580,127 @@ main_frame(void)
 		}
 
 		/* A stale swapchain is remade at the window's size, with a canvas to match. */
-		result = iv_present_resize(&main_present, main_window.width, main_window.height);
-		if (result != VK_SUCCESS) {
-			fprintf(stderr, "IMAGEVIEW FAILED operation=%s result=%d\n", main_present.operation, (int)result);
-			return -1;
-		}
-
-		/* A canvas of the swapchain's size. */
-		status = main_canvas_make();
+		status = main_resize();
 		if (status != 0)
 			return -1;
-
-		/* The viewer lays itself out at the swapchain's size. */
-		iv_app_resize(&main_app, (int)main_present.extent.width, (int)main_present.extent.height);
 	}
 
 	/* The swapchain stayed out of date. */
 	fprintf(stderr, "IMAGEVIEW FAILED operation=stale-swapchain\n");
 	return -1;
+}
+
+/* Remakes the swapchain at the window's size, with a canvas to match, and lays the viewer out in it; nonzero when it cannot. */
+static int
+main_resize(void)
+{
+	uint32_t width;
+	uint32_t height;
+	VkResult result;
+	int status;
+
+	/* The swapchain at the size the compositor gave. */
+	kui_window_size(main_window.kui, &width, &height);
+	result = iv_present_resize(&main_present, width, height);
+	if (result != VK_SUCCESS) {
+		fprintf(stderr, "IMAGEVIEW FAILED operation=%s result=%d\n", main_present.operation, (int)result);
+		return -1;
+	}
+
+	/* A canvas of the swapchain's size. */
+	status = main_canvas_make();
+	if (status != 0)
+		return -1;
+
+	/* The viewer lays itself out at the swapchain's size. */
+	iv_app_resize(&main_app, (int)main_present.extent.width, (int)main_present.extent.height);
+
+	/* Succeeded: frames are drawn at the new size. */
+	return 0;
+}
+
+/*
+ * Takes one input of the window: the pointer, the wheel, the keys and the
+ * menus' and the titlebar's actions become the viewer's inputs, the
+ * fingers go to the touch screen, and a new size or a close request is
+ * noted for the loop.
+ */
+static void
+main_window_event(
+	const struct kui_window_event *event)
+{
+	struct iv_event input;
+
+	/* What it is. */
+	switch (event->kind) {
+	case KUI_WINDOW_MOTION:
+		main_event(IV_EVENT_MOTION, event, &input);
+		iv_app_event(&main_app, &input);
+		break;
+	case KUI_WINDOW_LEAVE:
+		main_event(IV_EVENT_LEAVE, event, &input);
+		iv_app_event(&main_app, &input);
+		break;
+	case KUI_WINDOW_BUTTON:
+		/* The button and whether it went down. */
+		main_event(IV_EVENT_BUTTON, event, &input);
+		input.button = event->code;
+		input.pressed = event->pressed;
+		iv_app_event(&main_app, &input);
+		break;
+	case KUI_WINDOW_AXIS:
+		/* Only the vertical wheel zooms or moves the image. */
+		if (event->dy == 0.0)
+			break;
+		main_event(IV_EVENT_AXIS, event, &input);
+		input.scroll = (int)event->dy;
+		iv_app_event(&main_app, &input);
+		break;
+	case KUI_WINDOW_KEY:
+		/* The key, whether it went down, and whether it is a held key's repeat. */
+		main_event(IV_EVENT_KEY, event, &input);
+		input.key = event->code;
+		input.pressed = event->pressed;
+		input.repeat = event->repeated;
+		iv_app_event(&main_app, &input);
+		break;
+	case KUI_WINDOW_POST:
+		/* An action of the menus or the titlebar, in its place among the keys. */
+		main_event(IV_EVENT_ACTION, event, &input);
+		input.action = event->code;
+		iv_app_event(&main_app, &input);
+		break;
+	case KUI_WINDOW_TOUCH_DOWN:
+	case KUI_WINDOW_TOUCH_MOTION:
+	case KUI_WINDOW_TOUCH_UP:
+	case KUI_WINDOW_TOUCH_CANCEL:
+		iv_touch_event(&main_touch, &main_app, event);
+		break;
+	case KUI_WINDOW_RESIZE:
+		main_resized = 1;
+		break;
+	case KUI_WINDOW_CLOSE:
+		main_closed = 1;
+		break;
+	default:
+		break;
+	}
+}
+
+/* Fills a viewer's input of a kind with what every input carries: the pointer's place, the modifiers held and the time it was read. */
+static void
+main_event(
+	enum iv_event_type type,
+	const struct kui_window_event *event,
+	struct iv_event *input)
+{
+	/* The modifiers are the same bits as the viewer's; the time is in milliseconds of the same clock. */
+	memset(input, 0, sizeof(*input));
+	input->type = type;
+	input->x = (int)event->x;
+	input->y = (int)event->y;
+	input->modifiers = event->modifiers;
+	input->time = event->arrival_us / 1000U;
 }
 
 /*
@@ -630,6 +767,73 @@ main_canvas_make(void)
 	return 0;
 }
 
+/*
+ * Shows libkeiui's file chooser when the viewer asks for it, at the folder
+ * it names, and closes one it no longer waits for.
+ */
+static void
+main_choose(void)
+{
+	struct kui_file_chooser_options options;
+	static const struct kui_file_chooser_listener listener = {
+		main_chosen
+	};
+
+	/* A chooser the viewer no longer waits for goes. */
+	if (!main_app.chooser_open) {
+		if (main_chooser != NULL) {
+			kui_file_chooser_destroy(main_chooser);
+			main_chooser = NULL;
+		}
+
+		/* Nothing to show. */
+		return;
+	}
+
+	/* One already shown answers in its time. */
+	if (main_chooser != NULL)
+		return;
+
+	/* Open, at the viewer's folder, with the images shown first, in the viewer's font. */
+	memset(&options, 0, sizeof(options));
+	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.application = MAIN_APPLICATION;
+	options.folder = main_app.chooser_folder;
+	options.filters = main_filters;
+	options.filter_count = sizeof(main_filters) / sizeof(main_filters[0]);
+	options.filter = 0;
+	options.font = main_font;
+
+	/* The chooser's window over the viewer's; without it the viewer stops waiting. */
+	main_chooser = kui_file_chooser_open(kui_window_display(main_window.kui), kui_window_toplevel(main_window.kui), &options, &listener, &main_app);
+	if (main_chooser == NULL) {
+		iv_log("CHOOSER failed errno=%d", errno);
+		iv_app_message(&main_app, "The file chooser could not be shown.", 4000U);
+		iv_app_chosen(&main_app, NULL);
+	}
+}
+
+/* The chooser answered: the path (empty when cancelled) goes to the viewer, and the chooser goes. */
+static void
+main_chosen(
+	void *data,
+	struct kui_file_chooser *chooser,
+	unsigned result,
+	const char *path,
+	size_t filter)
+{
+	/* The answer, cancelled unless a file was chosen. */
+	(void)filter;
+	if (result != KUI_FILE_CHOOSER_CHOSEN)
+		path = NULL;
+	iv_app_chosen(data, path);
+
+	/* The chooser is spent. */
+	kui_file_chooser_destroy(chooser);
+	if (chooser == main_chooser)
+		main_chooser = NULL;
+}
+
 /* Gathers what the menus and the titlebar show. */
 static void
 main_state(
@@ -678,7 +882,7 @@ main_opened(void)
 
 	/* Without an image, the application's name. */
 	if (!main_app.has_image || main_app.current == NULL) {
-		iv_window_title(&main_window, "Image Viewer");
+		kui_window_set_title(main_window.kui, "Image Viewer");
 		return;
 	}
 
@@ -691,7 +895,7 @@ main_opened(void)
 
 	/* The title: the file's name and the application's. */
 	snprintf(title, sizeof(title), "%s \xe2\x80\x94 Image Viewer", name);
-	iv_window_title(&main_window, title);
+	kui_window_set_title(main_window.kui, title);
 
 	/* The recent files, by the absolute path. */
 	absolute = realpath(main_app.current->path, resolved);
@@ -711,24 +915,27 @@ main_opened(void)
 static void
 main_fullscreen(void)
 {
+	int fullscreen;
 	int wanted;
 
 	/* A request: the opposite of how the window is now. */
 	if (main_app.want_fullscreen) {
 		/* The full screen for a window that is not in it, and out of it for one that is. */
 		wanted = 1;
-		if (main_window.fullscreen)
+		fullscreen = kui_window_fullscreen(main_window.kui);
+		if (fullscreen)
 			wanted = 0;
 
 		/* The request goes to the compositor, which answers with a configure. */
 		main_app.want_fullscreen = 0;
-		iv_window_fullscreen(&main_window, wanted);
+		kui_window_set_fullscreen(main_window.kui, wanted);
 		iv_log("FULLSCREEN request=%d", wanted);
 	}
 
 	/* The compositor's answer: the layout (and the glass) follow it. */
-	if (main_app.fullscreen != main_window.fullscreen) {
-		main_app.fullscreen = main_window.fullscreen;
+	fullscreen = kui_window_fullscreen(main_window.kui);
+	if (main_app.fullscreen != fullscreen) {
+		main_app.fullscreen = fullscreen;
 		iv_app_layout(&main_app);
 		iv_log("FULLSCREEN state=%d", main_app.fullscreen);
 	}

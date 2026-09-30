@@ -81,6 +81,8 @@ iv_present_open(
 	VkInstanceCreateInfo instance;
 	VkWaylandSurfaceCreateInfoKHR surface;
 	const char *extensions[2];
+	uint32_t width;
+	uint32_t height;
 	VkResult error;
 
 	/* Nothing is owned yet. */
@@ -106,8 +108,8 @@ iv_present_open(
 	/* The window's surface. */
 	memset(&surface, 0, sizeof(surface));
 	surface.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-	surface.display = window->display;
-	surface.surface = window->surface;
+	surface.display = kui_window_display(window->kui);
+	surface.surface = kui_window_surface(window->kui);
 	present->operation = "vkCreateWaylandSurfaceKHR";
 	error = vkCreateWaylandSurfaceKHR(present->instance, &surface, NULL, &present->surface);
 	if (error != VK_SUCCESS)
@@ -119,7 +121,8 @@ iv_present_open(
 		return error;
 
 	/* The swapchain at the window's size. */
-	error = present_swapchain(present, window->width, window->height, VK_NULL_HANDLE);
+	kui_window_size(window->kui, &width, &height);
+	error = present_swapchain(present, width, height, VK_NULL_HANDLE);
 	if (error != VK_SUCCESS)
 		return error;
 

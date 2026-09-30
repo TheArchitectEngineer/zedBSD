@@ -9,8 +9,8 @@
  * The frame of PDF Viewer: the sidebar of thumbnails on the left while it
  * is shown, and beside it the pages where the view lays them out, the page
  * indicator, the notice that a page drawn has content libpdf could not
- * show, the message, and the file chooser over them; the password card over
- * everything.
+ * show and the message over them; the password card over everything (the
+ * file chooser is libkeiui's window of its own, ws090-p008).
  *
  * The pages come from the document's cache of rasters (document.c), made
  * when a page is first drawn at the scale in force.  The pages' part of the
@@ -36,9 +36,6 @@
 #define DRAW_TITLE		0xff2a2f3aU
 #define DRAW_DIM		0x66000000U
 #define DRAW_CARD		0xfff7f8faU
-#define DRAW_SELECTED		0x332f7cf6U
-#define DRAW_FOLDER		0xff2f7cf6U
-#define DRAW_FILE		0xffd9534fU
 #define DRAW_MESSAGE		0xf0ffffffU
 #define DRAW_MESSAGE_TEXT	0xff8a1f1fU
 #define DRAW_NOTICE		0xf2f7f8faU
@@ -70,7 +67,6 @@ static void draw_empty(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_indicator(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_notice(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_message(struct pv_app *app, struct pv_canvas *canvas);
-static void draw_chooser(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_centred(struct pv_app *app, struct pv_canvas *canvas, int baseline, const char *text, unsigned pixels, uint32_t color);
 static void draw_sidebar(struct pv_app *app, struct pv_canvas *canvas, int width);
 static void draw_thumbnail(struct pv_app *app, struct pv_canvas *canvas, size_t index, size_t current);
@@ -114,16 +110,12 @@ pv_draw(
 		draw_single(app, &pages);
 	}
 
-	/* The page indicator, the notice, the message and the chooser over the pages (the chooser dims the sidebar too). */
+	/* The page indicator, the notice and the message over the pages. */
 	if (app->has_document && app->indicator_until != 0)
 		draw_indicator(app, &pages);
 	draw_notice(app, &pages);
 	if (app->message[0] != '\0')
 		draw_message(app, &pages);
-	if (app->choosing) {
-		pv_canvas_blend(canvas, 0, 0, sidebar, canvas->height, DRAW_DIM);
-		draw_chooser(app, &pages);
-	}
 
 	/* The password card over everything. */
 	if (app->asking_password)
@@ -422,78 +414,6 @@ draw_message(
 	pv_canvas_round(canvas, x + 1, y + 2, width, height, 10, DRAW_SHADOW);
 	pv_canvas_round(canvas, x, y, width, height, 10, DRAW_MESSAGE);
 	pv_text_draw(app->text, canvas, x + 16, y + 26, app->message, DRAW_TEXT, DRAW_MESSAGE_TEXT);
-}
-
-/* Draws the file chooser: the frame dimmed, a card with the folder and its entries. */
-static void
-draw_chooser(
-	struct pv_app *app,
-	struct pv_canvas *canvas)
-{
-	char line[300];
-	const struct pv_entry *entry;
-	const char *folder;
-	size_t rows;
-	size_t row;
-	size_t index;
-	int x;
-	int y;
-	int width;
-	int height;
-	int row_y;
-	int folder_width;
-	int differs;
-
-	/* The frame dimmed, and the card. */
-	pv_canvas_blend(canvas, 0, 0, canvas->width, canvas->height, DRAW_DIM);
-	pv_chooser_layout(app, &x, &y, &width, &height, &rows);
-	pv_canvas_round(canvas, x, y, width, height, 14, DRAW_CARD);
-
-	/* The header: what the card is for, and the folder (its end, when too long). */
-	pv_text_draw(app->text, canvas, x + 18, y + 24, "Open a PDF", DRAW_TEXT, DRAW_TITLE);
-	folder = app->chooser.folder;
-	while (folder[0] != '\0') {
-		folder_width = pv_text_width(app->text, folder, 13U);
-		if (folder_width <= width - 36)
-			break;
-		folder++;
-	}
-
-	/* The folder, and a line under the header. */
-	pv_text_draw(app->text, canvas, x + 18, y + 44, folder, 13U, DRAW_HINT);
-	pv_canvas_fill(canvas, x + 12, y + PV_CHOOSER_HEADER - 1, width - 24, 1, 0xffd4d7dcU);
-
-	/* The rows in view. */
-	for (row = 0; row < rows; row++) {
-		index = app->chooser.first + row;
-		if (index >= app->chooser.count)
-			break;
-		entry = &app->chooser.entries[index];
-		row_y = y + PV_CHOOSER_HEADER + (int)row * PV_CHOOSER_ROW;
-
-		/* The selection's band. */
-		if (index == app->chooser.selected)
-			pv_canvas_round(canvas, x + 8, row_y + 2, width - 16, PV_CHOOSER_ROW - 4, 8, DRAW_SELECTED);
-
-		/* A mark of the kind (a blue folder or a red page) and the name. */
-		if (entry->folder) {
-			pv_canvas_round(canvas, x + 20, row_y + 11, 18, 13, 3, DRAW_FOLDER);
-			snprintf(line, sizeof(line), "%s/", entry->name);
-			differs = strcmp(entry->name, "..");
-			if (differs == 0)
-				snprintf(line, sizeof(line), "Parent folder");
-		} else {
-			pv_canvas_round(canvas, x + 22, row_y + 8, 14, 18, 2, DRAW_FILE);
-			snprintf(line, sizeof(line), "%s", entry->name);
-		}
-
-		/* The entry's name. */
-		pv_text_draw(app->text, canvas, x + 48, row_y + 22, line, DRAW_TEXT, DRAW_TITLE);
-	}
-
-	/* An empty folder says so. */
-	if (app->chooser.count == 0)
-		pv_text_draw(app->text, canvas, x + 18, y + PV_CHOOSER_HEADER + 24, "No PDF files here", DRAW_TEXT, DRAW_HINT);
 }
 
 /*

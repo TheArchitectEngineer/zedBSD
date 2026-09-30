@@ -14,7 +14,7 @@
  * It holds the empty window (the Kei mark, what to do, the Open button),
  * the card of an image that cannot be shown, the chip at the bottom (the
  * image's name, its place in the folder, its size and the zoom), a
- * message, and the file chooser over everything.
+ * message (the file chooser is libkeiui's window of its own, ws090-p008).
  */
 
 #include "imageview.h"
@@ -36,10 +36,6 @@
 #define DRAW_CHIP_TEXT_DARK	0xffffffffU
 #define DRAW_BUTTON		0xff2f7cf6U
 #define DRAW_BUTTON_TEXT	0xffffffffU
-#define DRAW_DIM		0x66000000U
-#define DRAW_SELECTED		0x332f7cf6U
-#define DRAW_FOLDER		0xff2f7cf6U
-#define DRAW_FILE		0xff3fa36bU
 #define DRAW_MESSAGE		0xf0ffffffU
 #define DRAW_MESSAGE_TEXT	0xff334155U
 #define DRAW_WARNING		0xffe0a526U
@@ -61,7 +57,6 @@ static void draw_empty(struct iv_app *app, struct iv_canvas *canvas);
 static void draw_failed(struct iv_app *app, struct iv_canvas *canvas);
 static void draw_chip(struct iv_app *app, struct iv_canvas *canvas);
 static void draw_message(struct iv_app *app, struct iv_canvas *canvas);
-static void draw_chooser(struct iv_app *app, struct iv_canvas *canvas);
 static void draw_mark(struct iv_canvas *canvas, int x, int y, unsigned pixels);
 static void draw_centred(struct iv_app *app, struct iv_canvas *canvas, int baseline, const char *text, unsigned pixels, uint32_t color);
 static uint32_t draw_fade(uint32_t color, double opacity);
@@ -92,10 +87,6 @@ iv_draw(
 	/* The message, when there is one. */
 	if (app->message[0] != '\0')
 		draw_message(app, canvas);
-
-	/* The chooser over everything. */
-	if (app->chooser_open)
-		draw_chooser(app, canvas);
 
 	/* The canvas matches the viewer until its words or cards change again. */
 	app->ui_dirty = 0;
@@ -259,85 +250,6 @@ draw_message(
 	iv_canvas_round(canvas, x + 1, y + 2, width, height, 12, DRAW_SHADOW);
 	iv_canvas_round(canvas, x, y, width, height, 12, DRAW_MESSAGE);
 	iv_text_draw(app->text, canvas, x + 16, y + 26, app->message, DRAW_TEXT, DRAW_MESSAGE_TEXT);
-}
-
-/* Draws the file chooser: the window dimmed, a card with the folder and its entries. */
-static void
-draw_chooser(
-	struct iv_app *app,
-	struct iv_canvas *canvas)
-{
-	char line[IV_NAME_MAX + 8];
-	const struct iv_entry *entry;
-	const char *folder;
-	size_t rows;
-	size_t row;
-	size_t index;
-	int x;
-	int y;
-	int width;
-	int height;
-	int row_y;
-	int folder_width;
-	int differs;
-
-	/* The window dimmed, and the card. */
-	iv_canvas_blend(canvas, 0, 0, canvas->width, canvas->height, DRAW_DIM);
-	iv_chooser_layout(app, &x, &y, &width, &height, &rows);
-	iv_canvas_round(canvas, x, y, width, height, 16, DRAW_CARD);
-
-	/* The header: what the card is for, and the folder (its end, when too long). */
-	iv_text_draw(app->text, canvas, x + 18, y + 24, "Open an image", DRAW_TEXT, DRAW_TITLE);
-	folder = app->chooser.folder;
-	while (folder[0] != '\0') {
-		folder_width = iv_text_width(app->text, folder, DRAW_TEXT_SMALL);
-		if (folder_width <= width - 36)
-			break;
-
-		/* One character less of the folder's start. */
-		folder++;
-	}
-
-	/* The folder, and a line under the header. */
-	iv_text_draw(app->text, canvas, x + 18, y + 44, folder, DRAW_TEXT_SMALL, DRAW_HINT);
-	iv_canvas_fill(canvas, x + 12, y + IV_CHOOSER_HEADER - 1, width - 24, 1, 0xffd4d7dcU);
-
-	/* The rows in view. */
-	for (row = 0; row < rows; row++) {
-		/* The entry of the row; the list may end before the rows do. */
-		index = app->chooser.first + row;
-		if (index >= app->chooser.count)
-			break;
-
-		/* The entry and the row's top. */
-		entry = &app->chooser.entries[index];
-		row_y = y + IV_CHOOSER_HEADER + (int)row * IV_CHOOSER_ROW;
-
-		/* The selection's band. */
-		if (index == app->chooser.selected)
-			iv_canvas_round(canvas, x + 8, row_y + 2, width - 16, IV_CHOOSER_ROW - 4, 8, DRAW_SELECTED);
-
-		/* A mark of the kind (a blue folder or a green picture) and the name. */
-		if (entry->folder) {
-			iv_canvas_round(canvas, x + 20, row_y + 11, 18, 13, 3, DRAW_FOLDER);
-			snprintf(line, sizeof(line), "%s/", entry->name);
-
-			/* The parent folder is named in words. */
-			differs = strcmp(entry->name, "..");
-			if (differs == 0)
-				snprintf(line, sizeof(line), "Parent folder");
-		} else {
-			iv_canvas_round(canvas, x + 20, row_y + 10, 18, 15, 3, DRAW_FILE);
-			snprintf(line, sizeof(line), "%s", entry->name);
-		}
-
-		/* The entry's name. */
-		iv_text_draw(app->text, canvas, x + 48, row_y + 22, line, DRAW_TEXT, DRAW_TITLE);
-	}
-
-	/* An empty folder says so. */
-	if (app->chooser.count == 0)
-		iv_text_draw(app->text, canvas, x + 18, y + IV_CHOOSER_HEADER + 24, "No images here", DRAW_TEXT, DRAW_HINT);
 }
 
 /*

@@ -158,7 +158,7 @@ iv_menu_open(
 	menu->window = window;
 
 	/* The connection's menu service; a compositor without one leaves the viewer without menus. */
-	menu->service = keiland_menu_service_open(window->display);
+	menu->service = keiland_menu_service_open(kui_window_display(window->kui));
 	if (menu->service == NULL) {
 		iv_log("MENU none errno=%d", errno);
 		return 0;
@@ -170,7 +170,7 @@ iv_menu_open(
 		return errno;
 
 	/* The window's place for a menu, which tells the viewer what is chosen. */
-	menu->window_menu = keiland_window_menu_create(menu->service, window->toplevel, &menu_listener, menu);
+	menu->window_menu = keiland_window_menu_create(menu->service, kui_window_toplevel(window->kui), &menu_listener, menu);
 	if (menu->window_menu == NULL)
 		return errno;
 
@@ -259,11 +259,11 @@ iv_menu_context(
 	/* zdesktop shows it at the press. */
 	menu->popup = keiland_menu_popup(menu->service,
 					 menu->context,
-					 menu->window->surface,
+					 kui_window_surface(menu->window->kui),
 					 x,
 					 y,
-					 menu->window->seat,
-					 menu->window->press_serial,
+					 kui_window_seat(menu->window->kui),
+					 kui_window_press_serial(menu->window->kui),
 					 &menu_context_listener,
 					 menu);
 	if (menu->popup == NULL) {
@@ -272,7 +272,7 @@ iv_menu_context(
 	}
 
 	/* The log line the tests read. */
-	iv_log("CONTEXT-MENU open x=%d y=%d serial=%u", x, y, menu->window->press_serial);
+	iv_log("CONTEXT-MENU open x=%d y=%d serial=%u", x, y, kui_window_press_serial(menu->window->kui));
 }
 
 /*

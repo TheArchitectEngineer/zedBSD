@@ -128,7 +128,7 @@ pv_menu_open(
 	menu->window = window;
 
 	/* The connection's menu service; a compositor without one leaves the viewer without menus. */
-	menu->service = keiland_menu_service_open(window->display);
+	menu->service = keiland_menu_service_open(kui_window_display(window->kui));
 	if (menu->service == NULL) {
 		pv_log("MENU none errno=%d", errno);
 		return 0;
@@ -140,7 +140,7 @@ pv_menu_open(
 		return errno;
 
 	/* The window's place for a menu, which tells the viewer what is chosen. */
-	menu->window_menu = keiland_window_menu_create(menu->service, window->toplevel, &menu_listener, menu);
+	menu->window_menu = keiland_window_menu_create(menu->service, kui_window_toplevel(window->kui), &menu_listener, menu);
 	if (menu->window_menu == NULL)
 		return errno;
 

@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons; 9: colour emoji from the emoji font, a third face). */
-#define KUI_VERSION	9U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons; 9: colour emoji from the emoji font, a third face; 10: the window's full screen, asked for and as configured). */
+#define KUI_VERSION	10U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -809,6 +809,14 @@ void kui_window_on_edit(struct kui_window *window, kui_edit_fn callback, void *d
 void kui_window_edit_state(struct kui_window *window, unsigned state);
 int kui_window_selecting(const struct kui_window *window);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
+
+/*
+ * KUI_VERSION 10 (ws090-p008, Image Viewer): the full screen.  An
+ * application asks the compositor for it (or out of it), and learns from
+ * the configure whether the window is fullscreen.
+ */
+void kui_window_set_fullscreen(struct kui_window *window, int fullscreen);
+int kui_window_fullscreen(const struct kui_window *window);
 uint64_t kui_clock_us(void);
 
 /*

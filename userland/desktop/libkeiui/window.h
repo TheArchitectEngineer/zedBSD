@@ -147,8 +147,9 @@ struct kui_window {
 	uint32_t preferred_width;
 	uint32_t preferred_height;
 
-	/* Whether the first configure arrived. */
+	/* Whether the first configure arrived, and whether the last one made the window fullscreen (KUI_VERSION 10). */
 	int configured;
+	int fullscreen;
 
 	/*
 	 * The pointer's place, the modifiers held (KUI_MOD_*), the serial of

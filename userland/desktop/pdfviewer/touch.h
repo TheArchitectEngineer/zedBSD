@@ -13,8 +13,8 @@
  * touch catches them.  Two fingers zoom about the point between them.  In
  * the page mode a sideways drag of a page that fits across swipes to the
  * next or the previous page.  A double tap zooms in to twice the scale, or
- * back to the mode's fit.  Over the sidebar, the file chooser and the
- * password card a finger plays the pointer's left button.
+ * back to the mode's fit.  Over the sidebar and the password card a
+ * finger plays the pointer's left button.
  */
 
 #ifndef PDFVIEWER_TOUCH_H
@@ -23,38 +23,14 @@
 #include "viewer.h"
 
 #include <keiland.h>
-
-/*
- * The kinds of touch input the window queues.
- */
-enum pv_touch_type {
-	PV_TOUCH_DOWN = 0,
-	PV_TOUCH_MOTION,
-	PV_TOUCH_UP,
-	PV_TOUCH_CANCEL
-};
-
-/*
- * One touch input: its kind, the finger (wl_touch's id), where in the
- * window (surface pixels; not for UP and CANCEL), the compositor's time
- * (milliseconds of CLOCK_MONOTONIC, the low 32 bits; not for CANCEL), and
- * when the window read it (microseconds of the same clock).
- */
-struct pv_touch_event {
-	enum pv_touch_type type;
-	int32_t id;
-	double x;
-	double y;
-	uint32_t time;
-	uint64_t arrival;
-};
+#include <keiui.h>
 
 /*
  * The fingers and what they are doing: the gestures of the pages, the
  * scroller that moves the view, and the state between them.
  *
  * pointer says a finger plays the pointer (pointer_id, last at pointer_x,
- * pointer_y) over the sidebar, the chooser or the password card; other
+ * pointer_y) over the sidebar or the password card; other
  * fingers are then left alone.
  * fingers counts the fingers on the pages.  pressed says the scroller
  * holds a touch that has not been let go; moving that the scroller owns
@@ -97,8 +73,7 @@ struct pv_touch {
 /* The touch screen (touch.c). */
 int pv_touch_open(struct pv_touch *touch);
 void pv_touch_close(struct pv_touch *touch);
-void pv_touch_event(struct pv_touch *touch, struct pv_app *app, const struct pv_touch_event *event);
+void pv_touch_event(struct pv_touch *touch, struct pv_app *app, const struct kui_window_event *event);
 int pv_touch_tick(struct pv_touch *touch, struct pv_app *app, uint64_t now);
-uint64_t pv_touch_clock(void);
 
 #endif

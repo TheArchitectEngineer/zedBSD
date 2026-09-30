@@ -103,9 +103,6 @@ static void handle_key(struct pv_app *app, const struct pv_event *event);
 static void handle_button(struct pv_app *app, const struct pv_event *event);
 static void handle_motion(struct pv_app *app, const struct pv_event *event);
 static void handle_axis(struct pv_app *app, const struct pv_event *event);
-static void chooser_key(struct pv_app *app, uint32_t key);
-static void chooser_click(struct pv_app *app, int x, int y);
-static void chooser_choose(struct pv_app *app);
 static void open_chooser(struct pv_app *app);
 static const char *reason_of(int error);
 static double page_mode_top(const struct pv_app *app);
@@ -148,7 +145,7 @@ pv_app_init(
 }
 
 /*
- * Frees the document and the chooser.
+ * Frees the document.
  */
 void
 pv_app_release(
@@ -156,7 +153,6 @@ pv_app_release(
 {
 	/* Closes what is open, and forgets a password being typed. */
 	pv_app_close_document(app);
-	pv_chooser_close(&app->chooser);
 	forget_password(app);
 }
 
@@ -774,34 +770,27 @@ pv_app_message(
 }
 
 /*
- * Places the file chooser's card in the window and reports how many rows
- * it shows.
+ * Takes the file chooser's answer: the path chosen opens in place of the
+ * document shown; NULL or an empty path says the chooser was cancelled.
  */
 void
-pv_chooser_layout(
-	const struct pv_app *app,
-	int *x,
-	int *y,
-	int *width,
-	int *height,
-	size_t *rows)
+pv_app_chosen(
+	struct pv_app *app,
+	const char *path)
 {
-	/* A card of at most 560 by 480 pixels, in the middle. */
-	*width = app->width - 48;
-	if (*width > 560)
-		*width = 560;
-	*height = app->height - 48;
-	if (*height > 480)
-		*height = 480;
-	if (*width < 120)
-		*width = 120;
-	if (*height < PV_CHOOSER_HEADER + PV_CHOOSER_ROW + 12)
-		*height = PV_CHOOSER_HEADER + PV_CHOOSER_ROW + 12;
-	*x = (app->width - *width) / 2;
-	*y = (app->height - *height) / 2;
+	/* The viewer no longer waits for the chooser. */
+	app->choosing = 0;
+	app->dirty = 1;
 
-	/* The rows under the header. */
-	*rows = (size_t)((*height - PV_CHOOSER_HEADER - 12) / PV_CHOOSER_ROW);
+	/* Cancelled: the document shown stays. */
+	if (path == NULL || path[0] == '\0') {
+		pv_log("CHOOSER cancelled");
+		return;
+	}
+
+	/* A file chosen is opened. */
+	pv_log("CHOOSER chose path=%s", path);
+	(void)pv_app_open(app, path);
 }
 
 /*
@@ -893,7 +882,8 @@ pv_thumbnail_place(
 }
 
 /*
- * Places the password card in the middle of the window.
+ * Places the password card in the middle of the window, or of the part
+ * of it the on-screen keyboard leaves (ws090-p008).
  */
 void
 pv_password_layout(
@@ -903,15 +893,26 @@ pv_password_layout(
 	int *width,
 	int *height)
 {
-	/* The card's size, within the window less a margin. */
+	int shown_width;
+	int shown_height;
+
+	/* The part of the window the on-screen keyboard leaves (all of it without the keyboard). */
+	shown_width = app->window_width - app->keyboard_right;
+	shown_height = app->height - app->keyboard_bottom;
+	if (shown_width < PV_PASSWORD_WIDTH / 2)
+		shown_width = app->window_width;
+	if (shown_height < PV_PASSWORD_HEIGHT)
+		shown_height = app->height;
+
+	/* The card's size, within that part less a margin. */
 	*width = PV_PASSWORD_WIDTH;
-	if (*width > app->window_width - 24)
-		*width = app->window_width - 24;
+	if (*width > shown_width - 24)
+		*width = shown_width - 24;
 	*height = PV_PASSWORD_HEIGHT;
 
-	/* In the middle. */
-	*x = (app->window_width - *width) / 2;
-	*y = (app->height - *height) / 2;
+	/* In its middle. */
+	*x = (shown_width - *width) / 2;
+	*y = (shown_height - *height) / 2;
 }
 
 /*
@@ -1393,12 +1394,6 @@ handle_key(
 	int fits_across;
 	int fits_down;
 
-	/* The chooser takes the keys while it is open. */
-	if (app->choosing) {
-		chooser_key(app, event->key);
-		return;
-	}
-
 	/* The shortcuts with Control (the menus choose them first when zdesktop has menus). */
 	if ((event->modifiers & PV_MOD_CTRL) != 0) {
 		switch (event->key) {
@@ -1523,14 +1518,8 @@ handle_button(
 	if (event->button != PV_BUTTON_LEFT)
 		return;
 
-	/* A press in the chooser chooses; elsewhere it starts a drag. */
+	/* A press starts a drag from where the view is. */
 	if (event->pressed) {
-		if (app->choosing) {
-			chooser_click(app, event->x, event->y);
-			return;
-		}
-
-		/* A press elsewhere starts a drag from where the view is. */
 		app->pressed = 1;
 		app->dragging = 0;
 		app->press_x = event->x;
@@ -1630,15 +1619,6 @@ handle_axis(
 {
 	double largest;
 
-	/* The chooser scrolls its list. */
-	if (app->choosing) {
-		if (event->scroll > 0)
-			chooser_key(app, PV_KEY_DOWN);
-		if (event->scroll < 0)
-			chooser_key(app, PV_KEY_UP);
-		return;
-	}
-
 	/* Control and the wheel zoom. */
 	if ((event->modifiers & PV_MOD_CTRL) != 0) {
 		if (event->scroll < 0)
@@ -1679,133 +1659,10 @@ handle_axis(
 	app->dirty = 1;
 }
 
-/* Handles a key in the file chooser: moving, choosing, going up a folder, closing. */
-static void
-chooser_key(
-	struct pv_app *app,
-	uint32_t key)
-{
-	struct pv_chooser *chooser;
-	int x;
-	int y;
-	int width;
-	int height;
-	int differs;
-	size_t rows;
-
-	/* Moves the selection, keeping it in view. */
-	chooser = &app->chooser;
-	pv_chooser_layout(app, &x, &y, &width, &height, &rows);
-	switch (key) {
-	case PV_KEY_UP:
-		if (chooser->selected > 0)
-			chooser->selected--;
-		break;
-	case PV_KEY_DOWN:
-		if (chooser->selected + 1 < chooser->count)
-			chooser->selected++;
-		break;
-	case PV_KEY_ENTER:
-		chooser_choose(app);
-		return;
-	case PV_KEY_BACKSPACE:
-		/* The parent folder is the first entry (the root has none). */
-		if (chooser->count == 0)
-			return;
-		differs = strcmp(chooser->entries[0].name, "..");
-		if (differs != 0)
-			return;
-		chooser->selected = 0;
-		chooser_choose(app);
-		return;
-	case PV_KEY_ESCAPE:
-		app->choosing = 0;
-		pv_log("CHOOSER closed");
-		break;
-	default:
-		break;
-	}
-
-	/* The selection stays among the rows shown. */
-	if (chooser->selected < chooser->first)
-		chooser->first = chooser->selected;
-	if (rows > 0 && chooser->selected >= chooser->first + rows)
-		chooser->first = chooser->selected - rows + 1;
-	app->dirty = 1;
-}
-
-/* Handles a click in the file chooser: an entry is chosen, a click outside the card closes it. */
-static void
-chooser_click(
-	struct pv_app *app,
-	int click_x,
-	int click_y)
-{
-	int x;
-	int y;
-	int width;
-	int height;
-	size_t rows;
-	size_t row;
-
-	/* A click outside the card closes the chooser. */
-	pv_chooser_layout(app, &x, &y, &width, &height, &rows);
-	if (click_x < x ||
-	    click_x >= x + width ||
-	    click_y < y ||
-	    click_y >= y + height) {
-		app->choosing = 0;
-		app->dirty = 1;
-		pv_log("CHOOSER closed");
-		return;
-	}
-
-	/* A click on a row chooses its entry. */
-	if (click_y < y + PV_CHOOSER_HEADER)
-		return;
-	row = (size_t)((click_y - y - PV_CHOOSER_HEADER) / PV_CHOOSER_ROW);
-	if (row >= rows || app->chooser.first + row >= app->chooser.count)
-		return;
-	app->chooser.selected = app->chooser.first + row;
-	chooser_choose(app);
-}
-
-/* Chooses the selected entry: a folder is shown, a file is opened. */
-static void
-chooser_choose(
-	struct pv_app *app)
-{
-	char path[PV_PATH_MAX];
-	const struct pv_entry *entry;
-	int error;
-
-	/* Nothing to choose in an empty folder. */
-	if (app->chooser.count == 0)
-		return;
-	entry = &app->chooser.entries[app->chooser.selected];
-
-	/* The entry's path. */
-	error = pv_chooser_path(&app->chooser, app->chooser.selected, path, sizeof(path));
-	if (error != 0)
-		return;
-
-	/* A folder replaces the list. */
-	if (entry->folder) {
-		error = pv_chooser_open(&app->chooser, path);
-		if (error != 0)
-			pv_app_message(app, "Cannot read that folder.", VIEW_MESSAGE_MS);
-		app->dirty = 1;
-		return;
-	}
-
-	/* A file is opened and the chooser closes. */
-	app->choosing = 0;
-	pv_log("CHOOSER chose path=%s", path);
-	(void)pv_app_open(app, path);
-	app->dirty = 1;
-}
-
-/* Opens the file chooser at the open document's folder, or the home folder. */
+/*
+ * Asks for the file chooser (libkeiui's, which the window shows: main.c) at
+ * the open document's folder, or the home folder.
+ */
 static void
 open_chooser(
 	struct pv_app *app)
@@ -1813,7 +1670,6 @@ open_chooser(
 	char folder[PV_PATH_MAX];
 	const char *home;
 	char *slash;
-	int error;
 
 	/* The document's folder, the home folder, or the root. */
 	folder[0] = '\0';
@@ -1834,19 +1690,11 @@ open_chooser(
 		snprintf(folder, sizeof(folder), "%s", home);
 	}
 
-	/* Lists it; a folder that cannot be read falls back to the root. */
-	error = pv_chooser_open(&app->chooser, folder);
-	if (error != 0)
-		error = pv_chooser_open(&app->chooser, "/");
-	if (error != 0) {
-		pv_app_message(app, "Cannot list any folder.", VIEW_MESSAGE_MS);
-		return;
-	}
-
-	/* The chooser is shown. */
+	/* The viewer waits for the chooser's answer (pv_app_chosen); the chooser starts in that folder. */
+	snprintf(app->chooser_folder, sizeof(app->chooser_folder), "%s", folder);
 	app->choosing = 1;
 	app->dirty = 1;
-	pv_log("CHOOSER open folder=%s entries=%lu", app->chooser.folder, (unsigned long)app->chooser.count);
+	pv_log("CHOOSER open folder=%s", app->chooser_folder);
 }
 
 /* Says in words why a file could not be opened. */
@@ -1979,8 +1827,8 @@ relayout(
 
 /*
  * Tells whether a pointer input is the sidebar's: a press on it (not while
- * the chooser is open or the pages are dragged), the moves and the release
- * of that press, and the wheel over it.
+ * the pages are dragged), the moves and the release of that press, and the
+ * wheel over it.
  */
 static int
 sidebar_takes(
@@ -1988,10 +1836,8 @@ sidebar_takes(
 	const struct pv_event *event,
 	int sidebar)
 {
-	/* No sidebar, or the chooser in front, takes nothing. */
+	/* No sidebar takes nothing. */
 	if (sidebar == 0)
-		return 0;
-	if (app->choosing)
 		return 0;
 
 	/* A press the sidebar took keeps its moves and its release. */

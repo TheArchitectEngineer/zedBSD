@@ -14,8 +14,8 @@
  * the point between them (below the fit, it springs back to the fit).  A
  * sideways drag of a fitted image swipes to the next or the previous
  * image.  A double tap zooms in (100 %, or twice the fit), or back to the
- * fit; a long press opens the context menu.  Over the file chooser and the
- * empty window a finger plays the pointer's left button.
+ * fit; a long press opens the context menu.  Over the empty window a
+ * finger plays the pointer's left button.
  */
 
 #ifndef IMAGEVIEW_TOUCH_H
@@ -24,39 +24,14 @@
 #include "imageview.h"
 
 #include <keiland.h>
-
-/*
- * The kinds of touch input the window queues.
- */
-enum iv_touch_type {
-	IV_TOUCH_DOWN = 0,
-	IV_TOUCH_MOTION,
-	IV_TOUCH_UP,
-	IV_TOUCH_CANCEL
-};
-
-/*
- * One touch input: its kind, the finger (wl_touch's id), where in the
- * window (surface pixels; not for UP and CANCEL), the compositor's time
- * (milliseconds of CLOCK_MONOTONIC, the low 32 bits; not for CANCEL), and
- * when the window read it (microseconds of the same clock).
- */
-struct iv_touch_event {
-	enum iv_touch_type type;
-	int32_t id;
-	double x;
-	double y;
-	uint32_t time;
-	uint64_t arrival;
-};
+#include <keiui.h>
 
 /*
  * The fingers and what they are doing: the gestures over the image, the
  * scroller that moves the view, and the state between them.
  *
  * pointer says a finger plays the pointer (pointer_id, last at pointer_x,
- * pointer_y) over the chooser or the empty window; other fingers are then
- * left alone.
+ * pointer_y) over the empty window; other fingers are then left alone.
  * fingers counts the fingers on the image.  pressed says the scroller
  * holds a touch that has not been let go; moving that the scroller owns
  * the view (from a touch until the content rests), and written the view's
@@ -98,8 +73,7 @@ struct iv_touch {
 /* The touch screen (touch.c). */
 int iv_touch_open(struct iv_touch *touch);
 void iv_touch_close(struct iv_touch *touch);
-void iv_touch_event(struct iv_touch *touch, struct iv_app *app, const struct iv_touch_event *event);
+void iv_touch_event(struct iv_touch *touch, struct iv_app *app, const struct kui_window_event *event);
 int iv_touch_tick(struct iv_touch *touch, struct iv_app *app, uint64_t now);
-uint64_t iv_touch_clock(void);
 
 #endif
