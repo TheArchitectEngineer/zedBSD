@@ -12,6 +12,9 @@
 #   edges     (p002, D3) the corners do not take the other gestures' strokes: a straight-up stroke from the bottom-right
 #             corner opens nothing; the bottom edge's swipe up in the middle still opens Wiseview; a swipe right from
 #             the left edge just above the corner still switches the desktop
+#   flick     (p003) the flick panel's keys (72 px at 956,476 and every 78 px): a tap on あ, a flick left on か (き),
+#             a flick up held on な (the petals, petals.png; ぬ), the face key to the alpha face (abc: a, flick up c) and
+#             the number face (1, 2 flicked down >), back to kana; a finger's flick right on あ (え)
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -57,6 +60,26 @@ expect_log() {
 	fi
 }
 
+# Fails the run unless zdesktop's keyboard lines have a fixed text (compared on the host: UTF-8 through the guest's
+# shell is not reliable).
+expect_text() {
+	tries=0
+	found=0
+	while [ $tries -lt 8 ]; do
+		guest "grep -a 'ZWL OSK' /tmp/zdesktop.log" > "$out/osk-now.txt"
+		found=$(grep -cF "$1" "$out/osk-now.txt")
+		[ "$found" -gt 0 ] 2>/dev/null && break
+		tries=$((tries + 1))
+		sleep 1
+	done
+	if [ "$found" -gt 0 ] 2>/dev/null; then
+		echo "text: $1 ok"
+	else
+		echo "text: $1 MISSING"
+		status=1
+	fi
+}
+
 # Fails the run unless a pattern's count is exactly the one given.
 expect_count() {
 	found=$(count "$1")
@@ -93,6 +116,7 @@ for step in "$@"; do
 	case "$step" in
 	install)
 		put "$bin/bin/wayland" /bin/wayland
+		put userland/desktop/fonts/DroidSansFallbackFull.ttf /usr/share/fonts/keiland-fallback.ttf
 		for library in libkeiland libvulkan libtruetype libwayland-client; do
 			[ -f "$bin/dynamic/$library.so" ] && put "$bin/dynamic/$library.so" "/lib/$library.so"
 		done
@@ -131,6 +155,47 @@ for step in "$@"; do
 		expect_count 'ZWL OSK open kind=flick' 3
 		pointer move 1242 456 sleep 200 down sleep 60 up sleep 600
 		expect_count 'ZWL OSK close kind=flick reason=key' 2
+		;;
+	flick)
+		compositor
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK open kind=flick x=950 y=434'
+		# A tap on あ, a flick left on か.
+		pointer move 992 512 sleep 200 down sleep 80 up sleep 500
+		expect_text 'ZWL OSK key face=kana row=0 column=0 dir=center action=0 text=あ'
+		pointer move 1070 512 sleep 200 down sleep 60 move 1050 512 sleep 60 move 1030 514 sleep 80 up sleep 500
+		expect_text 'ZWL OSK key face=kana row=0 column=1 dir=left action=0 text=き'
+		# A flick up held on な: its petals, then ぬ.
+		pointer move 1070 590 sleep 200 down sleep 60 move 1070 575 sleep 60 move 1071 556 sleep 600
+		shot petals.png
+		pointer up sleep 500
+		expect_text 'ZWL OSK key face=kana row=1 column=1 dir=up action=0 text=ぬ'
+		# The face key: the alpha face; abc tapped (a) and flicked up (c).
+		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK face name=alpha'
+		pointer move 1070 512 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK key face=alpha row=0 column=1 dir=center action=0 text=a'
+		pointer move 1070 512 sleep 200 down sleep 60 move 1070 495 sleep 60 move 1070 478 sleep 80 up sleep 500
+		expect_log 'ZWL OSK key face=alpha row=0 column=1 dir=up action=0 text=c'
+		pointer move 700 300 sleep 400
+		shot alpha.png
+		# The number face: 1 tapped, 2 flicked down (>), back to kana.
+		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK face name=number'
+		pointer move 992 512 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK key face=number row=0 column=0 dir=center action=0 text=1'
+		pointer move 1070 512 sleep 200 down sleep 60 move 1070 530 sleep 60 move 1070 550 sleep 80 up sleep 500
+		expect_log 'ZWL OSK key face=number row=0 column=1 dir=down action=0 text=>'
+		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK face name=kana'
+		# A finger's flick right on あ.
+		touch_replay flick-right 'size 1279 799 2
+wait 2600
+down 1 992 512
+swipe 40 0 8 16
+up 1
+hold 800'
+		expect_text 'ZWL OSK key face=kana row=0 column=0 dir=right action=0 text=え'
 		;;
 	edges)
 		compositor
