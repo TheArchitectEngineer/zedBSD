@@ -67,6 +67,7 @@ Resume point: L1 を満たした。L2 の p006 cleared 2026-09-30。次は L2 �
 | ws102-p017 | L2 | 編集の操作の拡張 `keiland_edit_v1`（libkeiland・libkeiui の `kui_text`、状態で button を灰色に）、拡張の無い窓の key への落とし（Terminal は app の表） | planning | p016 |
 | ws102-p018 | L3 | クリップボードの履歴（記憶の中だけ、10 件、password の欄は残さない、lock・Log Out で消す） | planning | p016 |
 | ws102-p019 | L3 | 色付きの絵文字（2026-09-30 ユーザー「色付きにする」）: font の選定（Noto Color Emoji の CBDT か COLRv1）と license の監査、libtruetype の色の glyph、keyboard の絵文字の面、libkeiui の文字の描画、text-input の commit。大きいので始める前に分ける | planning | p016 |
+| ws102-p021 | L2 | 縁に組み込んだ見た目（design.md §2.3 の改め、2026-09-30 ユーザー）: flick の panel を右の列の全体に、QWERTY・手書きを下端の全幅に、余白・外の角丸・影をやめ内側に 1 px の区切り、縁から伸び出す動き。1280x800・1920x1080 で panel の外の辺が画面の縁と 0 px で接する（log の矩形と画面） | planned | p008 |
 | ws102-p020 | L2 | QWERTY の面の補助の key の列（Esc・Tab・Ctrl・`|`・`~`・矢印、一度だけ効く修飾） | planning | p006 |
 | ws102-p014 | — | 全文の規約と回帰（WS の最後） | planned | 最後の段 |
 
