@@ -2,10 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q506](queue-q506.md)（ws074-p097 cleared。公開site比較、WPT reftest、Acid2・Acid3、人間の session）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q507](queue-q507.md)（ws074-p099 cleared。Acid2 100.00% exact pixel match）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-09-30 q507
+
+[q507](queue-q507.md): WS074 p099 cleared。固定 WPT の Acid2 を 90.56% から byte-identical な 100.00% へ改善。一般化した CSS・layout・object image/Adam7・paint order・border・compositing の修正を plain/ASan と focused regression で確認。Acid3 は p100 に残し、GitHub へは未公開。
 
 ## 最新: 2026-09-29〜30 の周期（subagent N=6〜9、worktree の branch を main が merge、Queue の外）
 

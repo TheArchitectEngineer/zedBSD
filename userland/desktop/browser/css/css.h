@@ -287,6 +287,12 @@ enum css_background_repeat {
 	CSS_REPEAT_NONE
 };
 
+/* The values of background-attachment that affect painting. */
+enum css_background_attachment {
+	CSS_BACKGROUND_SCROLL,
+	CSS_BACKGROUND_FIXED
+};
+
 /*
  * The keywords of background-size (a size of lengths is none of them);
  * numbered past the units, as the declared width's keyword carries them.
@@ -437,6 +443,7 @@ struct css_style {
 	 */
 	struct vm_string *background_image;
 	int background_repeat;
+	int background_attachment;
 	struct css_length background_position[2];
 	int background_size_keyword;
 	struct css_length background_size[2];

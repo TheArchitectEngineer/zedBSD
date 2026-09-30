@@ -11,8 +11,8 @@
  * start; the pixels are decompressed (libz-compat), unfiltered and turned
  * into the caller's 8-bit format when the image is finished.
  *
- * Every colour type and bit depth is read; an interlaced (Adam7) file is
- * refused.  16-bit components keep their high byte.  Alpha is straight
+ * Every colour type and bit depth is read, including Adam7 interlacing.
+ * 16-bit components keep their high byte.  Alpha is straight
  * (not premultiplied), as libpng gives it.
  */
 
@@ -55,6 +55,7 @@ struct png_control {
 	png_uint_32 height;
 	unsigned depth;
 	unsigned type;
+	int interlaced;
 	unsigned char palette[256][3];
 	unsigned palette_count;
 	unsigned char palette_alpha[256];
@@ -165,16 +166,33 @@ png_image_finish_read(
 	png_int_32 row_stride,
 	void *colormap)
 {
+	static const png_uint_32 pass_x[] = { 0U, 4U, 0U, 2U, 0U, 1U, 0U };
+	static const png_uint_32 pass_y[] = { 0U, 0U, 4U, 0U, 2U, 0U, 1U };
+	static const png_uint_32 pass_dx[] = { 8U, 8U, 4U, 4U, 2U, 2U, 1U };
+	static const png_uint_32 pass_dy[] = { 8U, 8U, 8U, 4U, 4U, 2U, 2U };
 	struct png_control *control;
 	unsigned char *raw;
+	unsigned char *pass_raw;
 	unsigned char *out;
 	unsigned char rgba[4];
 	uLongf raw_length;
+	size_t expected_length;
 	size_t row_bytes;
 	size_t pixel_bytes;
 	size_t stride;
+	size_t raw_at;
 	unsigned channels;
 	unsigned bits;
+	unsigned pass;
+	unsigned pass_count;
+	png_uint_32 start_x;
+	png_uint_32 start_y;
+	png_uint_32 step_x;
+	png_uint_32 step_y;
+	png_uint_32 pass_width;
+	png_uint_32 pass_height;
+	png_uint_32 image_x;
+	png_uint_32 image_y;
 	png_uint_32 x;
 	png_uint_32 y;
 	int result;
@@ -195,15 +213,44 @@ png_image_finish_read(
 		return png_fail(image, "no buffer");
 	}
 
-	/* The rows: a filter byte and the pixels' bits each. */
+	/* The samples in a pixel and the bytes the filters look left by. */
 	channels = png_channels(control->type);
 	bits = channels * control->depth;
-	row_bytes = ((size_t)control->width * bits + 7U) / 8U;
 	pixel_bytes = (bits + 7U) / 8U;
 
+	/* The decompressed size is one filtered row for the image, or for each nonempty Adam7 pass. */
+	pass_count = 1U;
+	if (control->interlaced)
+		pass_count = 7U;
+	expected_length = 0;
+	for (pass = 0; pass < pass_count; pass++) {
+		start_x = 0U;
+		start_y = 0U;
+		step_x = 1U;
+		step_y = 1U;
+		if (control->interlaced) {
+			start_x = pass_x[pass];
+			start_y = pass_y[pass];
+			step_x = pass_dx[pass];
+			step_y = pass_dy[pass];
+		}
+
+		/* The number of samples in each direction of this pass. */
+		pass_width = 0U;
+		pass_height = 0U;
+		if (control->width > start_x)
+			pass_width = (control->width - start_x + step_x - 1U) / step_x;
+		if (control->height > start_y)
+			pass_height = (control->height - start_y + step_y - 1U) / step_y;
+		if (pass_width == 0U || pass_height == 0U)
+			continue;
+		row_bytes = ((size_t)pass_width * bits + 7U) / 8U;
+		expected_length += (row_bytes + 1U) * pass_height;
+	}
+
 	/* The pixels decompressed. */
-	raw_length = (uLongf)((row_bytes + 1U) * control->height);
-	raw = malloc((size_t)raw_length);
+	raw_length = (uLongf)expected_length;
+	raw = malloc(expected_length);
 	if (raw == NULL) {
 		png_image_free(image);
 		return png_fail(image, "out of memory");
@@ -211,34 +258,67 @@ png_image_finish_read(
 
 	/* The pixels, exactly as many bytes as the rows take. */
 	result = uncompress(raw, &raw_length, control->compressed, (uLong)control->compressed_length);
-	if (result != Z_OK || raw_length != (uLongf)((row_bytes + 1U) * control->height)) {
+	if (result != Z_OK || raw_length != (uLongf)expected_length) {
 		free(raw);
 		png_image_free(image);
 		return png_fail(image, "the pixel data is damaged");
 	}
 
-	/* Unfiltered. */
-	result = png_unfilter(raw, row_bytes, control->height, pixel_bytes);
-	if (result != 0) {
-		free(raw);
-		png_image_free(image);
-		return png_fail(image, "unknown row filter");
-	}
-
-	/* Each pixel into the caller's format, row by row (a negative stride goes up from the last row). */
+	/* The caller's row stride (a negative stride goes up from the last row). */
 	stride = (size_t)PNG_IMAGE_SAMPLE_CHANNELS(image->format) * control->width;
 	if (row_stride > 0)
 		stride = (size_t)row_stride;
 	if (row_stride < 0)
 		stride = (size_t)(-(long)row_stride);
-	for (y = 0; y < control->height; y++) {
-		out = (unsigned char *)buffer + (size_t)y * stride;
-		if (row_stride < 0)
-			out = (unsigned char *)buffer + (size_t)(control->height - 1U - y) * stride;
-		for (x = 0; x < control->width; x++) {
-			png_pixel(control, raw + (size_t)y * (row_bytes + 1U) + 1U, x, rgba);
-			png_store(image->format, rgba, background, out + (size_t)x * PNG_IMAGE_SAMPLE_CHANNELS(image->format));
+
+	/* Each pass is unfiltered alone, then its pixels are scattered into their full-image rows and columns. */
+	raw_at = 0;
+	for (pass = 0; pass < pass_count; pass++) {
+		start_x = 0U;
+		start_y = 0U;
+		step_x = 1U;
+		step_y = 1U;
+		if (control->interlaced) {
+			start_x = pass_x[pass];
+			start_y = pass_y[pass];
+			step_x = pass_dx[pass];
+			step_y = pass_dy[pass];
 		}
+
+		/* The number of samples in each direction of this pass. */
+		pass_width = 0U;
+		pass_height = 0U;
+		if (control->width > start_x)
+			pass_width = (control->width - start_x + step_x - 1U) / step_x;
+		if (control->height > start_y)
+			pass_height = (control->height - start_y + step_y - 1U) / step_y;
+		if (pass_width == 0U || pass_height == 0U)
+			continue;
+		row_bytes = ((size_t)pass_width * bits + 7U) / 8U;
+		pass_raw = raw + raw_at;
+		result = png_unfilter(pass_raw, row_bytes, pass_height, pixel_bytes);
+		if (result != 0) {
+			free(raw);
+			png_image_free(image);
+			return png_fail(image, "unknown row filter");
+		}
+
+		/* The pass's pixels at their Adam7 coordinates. */
+		for (y = 0; y < pass_height; y++) {
+			image_y = start_y + y * step_y;
+			out = (unsigned char *)buffer + (size_t)image_y * stride;
+			if (row_stride < 0)
+				out = (unsigned char *)buffer + (size_t)(control->height - 1U - image_y) * stride;
+			for (x = 0; x < pass_width; x++) {
+				image_x = start_x + x * step_x;
+				png_pixel(control, pass_raw + (size_t)y * (row_bytes + 1U) + 1U, x, rgba);
+				png_store(image->format, rgba, background,
+				    out + (size_t)image_x * PNG_IMAGE_SAMPLE_CHANNELS(image->format));
+			}
+		}
+
+		/* The next pass starts after these filtered rows. */
+		raw_at += (row_bytes + 1U) * pass_height;
 	}
 
 	/* The raw pixels and the image go. */
@@ -494,7 +574,7 @@ png_transparency(
 	return 1;
 }
 
-/* Reads IHDR: the size, and a bit depth that goes with the colour type; no interlace. */
+/* Reads IHDR: the size, a bit depth that goes with the colour type, and the interlace method. */
 static int
 png_header(
 	png_imagep image,
@@ -529,15 +609,16 @@ png_header(
 	if (!allowed)
 		return png_fail(image, "a colour type and bit depth that do not go together");
 
-	/* deflate, the adaptive filters, and no interlace. */
+	/* Deflate, the adaptive filters, and either plain rows or Adam7. */
 	if (data[10] != 0U || data[11] != 0U)
 		return png_fail(image, "an unknown compression or filter method");
-	if (data[12] != 0U)
-		return png_fail(image, "interlaced PNG is not read");
+	if (data[12] > 1U)
+		return png_fail(image, "an unknown interlace method");
 
 	/* Succeeded. */
 	control->depth = depth;
 	control->type = type;
+	control->interlaced = data[12] == 1U;
 	return 1;
 }
 

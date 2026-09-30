@@ -120,11 +120,15 @@ layout_block(
 		tree->containing_height_definite = height_definite;
 	}
 
-	/* Flex and grid need to see a resolved percentage as a definite pixel height while laying out their contents. */
+	/* Descendants see a resolved percentage as pixels, or an indefinite percentage as auto. */
 	saved_style_height = box->style.height;
 	if (height_definite && saved_style_height.unit == CSS_UNIT_PERCENT) {
 		box->style.height.unit = CSS_UNIT_PX;
 		box->style.height.value = layout_to_px(specified_height + sizing);
+		box->style.height.offset = 0;
+	} else if (!height_definite && saved_style_height.unit == CSS_UNIT_PERCENT) {
+		box->style.height.unit = CSS_UNIT_AUTO;
+		box->style.height.value = 0;
 		box->style.height.offset = 0;
 	}
 
@@ -164,18 +168,7 @@ layout_block(
 	if (height_definite)
 		box->height = specified_height;
 
-	/* min-height raises a shorter box. */
-	if (box->style.min_height.unit == CSS_UNIT_PX ||
-	    (box->style.min_height.unit == CSS_UNIT_PERCENT && saved_height_definite)) {
-		basis = 0;
-		if (box->style.min_height.unit == CSS_UNIT_PERCENT)
-			basis = saved_containing_height;
-		height = block_resolve(&box->style.min_height, basis) - sizing;
-		if (box->height < height)
-			box->height = height;
-	}
-
-	/* max-height lowers a taller box. */
+	/* max-height lowers a taller box before min-height, which wins when the constraints conflict. */
 	if (box->style.max_height.unit == CSS_UNIT_PX ||
 	    (box->style.max_height.unit == CSS_UNIT_PERCENT && saved_height_definite)) {
 		basis = 0;
@@ -185,6 +178,17 @@ layout_block(
 		if (height < 0)
 			height = 0;
 		if (box->height > height)
+			box->height = height;
+	}
+
+	/* min-height raises a shorter box, including one lowered by a smaller max-height. */
+	if (box->style.min_height.unit == CSS_UNIT_PX ||
+	    (box->style.min_height.unit == CSS_UNIT_PERCENT && saved_height_definite)) {
+		basis = 0;
+		if (box->style.min_height.unit == CSS_UNIT_PERCENT)
+			basis = saved_containing_height;
+		height = block_resolve(&box->style.min_height, basis) - sizing;
+		if (box->height < height)
 			box->height = height;
 	}
 

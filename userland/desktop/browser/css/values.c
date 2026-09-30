@@ -182,6 +182,7 @@ static const struct values_name values_names[] = {
 	{ "background-color", CSS_PROP_BACKGROUND_COLOR },
 	{ "background-image", CSS_PROP_BACKGROUND_IMAGE },
 	{ "background-repeat", CSS_PROP_BACKGROUND_REPEAT },
+	{ "background-attachment", CSS_PROP_BACKGROUND_ATTACHMENT },
 	{ "background-position-x", CSS_PROP_BACKGROUND_POSITION_X },
 	{ "background-position-y", CSS_PROP_BACKGROUND_POSITION_Y },
 	{ "font-size", CSS_PROP_FONT_SIZE },
@@ -610,6 +611,14 @@ static const struct values_keyword values_repeat[] = {
 	{ "no-repeat", CSS_REPEAT_NONE },
 	{ "space", CSS_REPEAT_BOTH },
 	{ "round", CSS_REPEAT_BOTH },
+	{ NULL, 0 }
+};
+
+/* The values of background-attachment (local currently scrolls with its box). */
+static const struct values_keyword values_attachment[] = {
+	{ "scroll", CSS_BACKGROUND_SCROLL },
+	{ "fixed", CSS_BACKGROUND_FIXED },
+	{ "local", CSS_BACKGROUND_SCROLL },
 	{ NULL, 0 }
 };
 
@@ -1450,6 +1459,16 @@ values_single(
 		return error;
 	}
 
+	/* background-attachment takes one scrolling keyword. */
+	if (property == CSS_PROP_BACKGROUND_ATTACHMENT) {
+		found = values_keyword(values_attachment, &tokens[0], &keyword);
+		if (!found || count != 1)
+			return EINVAL;
+		value->kind = CSS_VALUE_KEYWORD;
+		value->keyword = keyword;
+		return 0;
+	}
+
 	/* content takes a list of strings and functions. */
 	if (property == CSS_PROP_CONTENT)
 		return values_content(parse, tokens, count, value);
@@ -2238,6 +2257,7 @@ values_background(
 	struct css_value color;
 	struct css_value image;
 	struct css_value repeat;
+	struct css_value attachment;
 	struct css_value x;
 	struct css_value y;
 	struct css_value width;
@@ -2248,6 +2268,9 @@ values_background(
 	size_t index;
 	size_t rest;
 	int after_slash;
+	int attachment_seen;
+	int color_seen;
+	int image_seen;
 	int is_url;
 	int named;
 	int keyword;
@@ -2259,10 +2282,16 @@ values_background(
 	color.kind = CSS_VALUE_COLOR;
 	memset(&image, 0, sizeof(image));
 	image.kind = CSS_VALUE_KEYWORD;
+	memset(&attachment, 0, sizeof(attachment));
+	attachment.kind = CSS_VALUE_KEYWORD;
+	attachment.keyword = CSS_BACKGROUND_SCROLL;
 	position_count = 0;
 	size_count = 0;
 	repeat_count = 0;
 	after_slash = 0;
+	attachment_seen = 0;
+	color_seen = 0;
+	image_seen = 0;
 
 	/* Each component, token by token (a function with its arguments). */
 	index = 0;
@@ -2291,9 +2320,12 @@ values_background(
 		if (tokens[index].type == CSS_TOKEN_FUNCTION && named)
 			is_url = 1;
 		if (is_url) {
+			if (image_seen)
+				return EINVAL;
 			error = values_url(parse, tokens + index, rest, &image);
 			if (error != 0)
 				return error;
+			image_seen = 1;
 			index += rest;
 			continue;
 		}
@@ -2301,8 +2333,22 @@ values_background(
 		/* none is no image. */
 		named = css_ident_equal(&tokens[index], "none");
 		if (named) {
+			if (image_seen)
+				return EINVAL;
 			image.kind = CSS_VALUE_KEYWORD;
 			image.keyword = 0;
+			image_seen = 1;
+			index += rest;
+			continue;
+		}
+
+		/* The attachment controls whether positioning uses the box or the viewport. */
+		named = values_keyword(values_attachment, &tokens[index], &keyword);
+		if (named) {
+			if (attachment_seen)
+				return EINVAL;
+			attachment_seen = 1;
+			attachment.keyword = keyword;
 			index += rest;
 			continue;
 		}
@@ -2336,9 +2382,12 @@ values_background(
 		}
 
 		/* Anything else must be the color. */
+		if (color_seen)
+			return EINVAL;
 		error = css_parse_color(&tokens[index], rest, &color.color);
 		if (error != 0)
 			return EINVAL;
+		color_seen = 1;
 		index += rest;
 	}
 
@@ -2357,6 +2406,7 @@ values_background(
 	values_add(out, made, CSS_PROP_BACKGROUND_COLOR, &color);
 	values_add(out, made, CSS_PROP_BACKGROUND_IMAGE, &image);
 	values_add(out, made, CSS_PROP_BACKGROUND_REPEAT, &repeat);
+	values_add(out, made, CSS_PROP_BACKGROUND_ATTACHMENT, &attachment);
 	values_add(out, made, CSS_PROP_BACKGROUND_POSITION_X, &x);
 	values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, &y);
 	values_add(out, made, CSS_PROP_BACKGROUND_SIZE_WIDTH, &width);

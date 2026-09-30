@@ -6,8 +6,8 @@
 #     damaged streams (a wrong Adler-32, a cut stream) are refused.
 #  2. PNG: files PIL wrote -- gray 1, 2, 4, 8 and 16 bits, gray with alpha, RGB 8 and 16, RGBA 8 and 16,
 #     palette 1, 2, 4 and 8 bits with and without tRNS, each filter type -- read into RGBA equal PIL's reading
-#     (16-bit channels: their high byte), and into gray, RGB, BGRA and ARGB in their orders; an interlaced
-#     file and a damaged CRC are refused.
+#     (16-bit channels: their high byte), and into gray, RGB, BGRA and ARGB in their orders; an Adam7
+#     interlaced RGBA file is reconstructed, and a damaged CRC is refused.
 #
 #   plan/tools/files/host-png.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -148,14 +148,24 @@ gray = open(os.path.join(out, "gray8.rgba"), "rb").read()
 done = run("png", os.path.join(out, "gray8.png"), os.path.join(out, "gray8.gray"), "gray")
 report("png gray8 gray", done.returncode == 0 and open(os.path.join(out, "gray8.gray"), "rb").read() == gray[0::4])
 
-# Refused: interlaced, a damaged CRC.
+# Adam7 interlacing: write the seven filtered passes directly and reconstruct the original RGBA image.
 path = os.path.join(out, "interlaced.png")
-data = bytearray(open(os.path.join(out, "rgba8.png"), "rb").read())
-data[28] = 1
-data[29:33] = struct.pack(">I", zlib.crc32(bytes(data[12:29])) & 0xffffffff)
-open(path, "wb").write(bytes(data))
+starts = ((0, 0), (4, 0), (0, 4), (2, 0), (0, 2), (1, 0), (0, 1))
+steps = ((8, 8), (8, 8), (4, 8), (4, 4), (2, 4), (2, 2), (1, 2))
+pixels = base.convert("RGBA").load()
+rows = bytearray()
+for (start_x, start_y), (step_x, step_y) in zip(starts, steps):
+	for y in range(start_y, base.height, step_y):
+		rows.append(0)
+		for x in range(start_x, base.width, step_x):
+			rows.extend(pixels[x, y])
+data = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", base.width, base.height, 8, 6, 0, 0, 1))
+data += chunk(b"IDAT", zlib.compress(bytes(rows), 6)) + chunk(b"IEND", b"")
+open(path, "wb").write(data)
 done = run("png", path, os.path.join(out, "interlaced.rgba"), "rgba")
-report("interlaced refused", done.returncode != 0 and "interlaced" in done.stdout, done.stdout.strip())
+same = done.returncode == 0 and open(os.path.join(out, "interlaced.rgba"), "rb").read() == base.convert("RGBA").tobytes()
+report("interlaced rgba", same, done.stdout.strip() if not same else "")
+# Refused: a damaged CRC.
 data = bytearray(open(os.path.join(out, "rgb8.png"), "rb").read())
 data[40] ^= 0x55
 open(os.path.join(out, "crc.png"), "wb").write(bytes(data))

@@ -1,5 +1,6 @@
 canvas 1024.00 x 768.00 #ffffffff
 rect 8.00 8.00 1008.00 20.00 #ffeeeeff
+rect 8.00 54.00 1008.00 20.00 #ffeeeeff
 text 18.00 24.00 16px face 0 bold 0 #ff3366cc ":is()"
 text 46.62 24.00 16px face 0 bold 0 #ff3366cc " "
 text 51.12 24.00 16px face 0 bold 0 #ff3366cc "and"
@@ -34,7 +35,6 @@ text 296.25 47.00 16px face 0 bold 0 #ff3366cc " "
 text 300.75 47.00 16px face 0 bold 0 #ff3366cc "color"
 text 338.98 47.00 16px face 0 bold 0 #ff3366cc " "
 text 343.48 47.00 16px face 0 bold 0 #ff3366cc "only."
-rect 8.00 54.00 1008.00 20.00 #ffeeeeff
 text 18.00 70.00 16px face 0 bold 0 #ff000000 ":where()"
 text 81.55 70.00 16px face 0 bold 0 #ff000000 " "
 text 86.05 70.00 16px face 0 bold 0 #ff000000 "has"
@@ -52,24 +52,53 @@ text 355.75 70.00 16px face 0 bold 0 #ff000000 " "
 text 360.25 70.00 16px face 0 bold 0 #ff000000 "wins."
 rect 8.00 77.00 1008.00 20.00 #ffeeffee
 rect 8.00 77.00 4.00 20.00 #ff339933
+rect 8.00 123.00 1008.00 20.00 #ffeeffee
+rect 8.00 146.00 4.00 20.00 #ff339933
+rect 8.00 169.00 1008.00 20.00 #ffffeedd
 text 12.00 93.00 16px face 0 bold 1 #ff000000 "Row"
 text 47.98 93.00 16px face 0 bold 1 #ff000000 " "
 text 53.48 93.00 16px face 0 bold 1 #ff000000 "1"
 text 8.00 116.00 16px face 0 bold 1 #ff000000 "Row"
 text 43.98 116.00 16px face 0 bold 1 #ff000000 " "
 text 49.48 116.00 16px face 0 bold 1 #ff000000 "2"
-rect 8.00 123.00 1008.00 20.00 #ffeeffee
 text 8.00 139.00 16px face 0 bold 0 #ff000000 "Row"
 text 40.98 139.00 16px face 0 bold 0 #ff000000 " "
 text 45.48 139.00 16px face 0 bold 0 #ff000000 "3"
-rect 8.00 146.00 4.00 20.00 #ff339933
 text 12.00 162.00 16px face 0 bold 0 #ff000000 "Row"
 text 44.98 162.00 16px face 0 bold 0 #ff000000 " "
 text 49.48 162.00 16px face 0 bold 0 #ff000000 "4"
-rect 8.00 169.00 1008.00 20.00 #ffffeedd
 text 8.00 185.00 16px face 0 bold 0 #ff000000 "Row"
 text 40.98 185.00 16px face 0 bold 0 #ff000000 " "
 text 45.48 185.00 16px face 0 bold 0 #ff000000 "5"
+rect 8.00 216.00 1008.00 2.00 #ff339933
+rect 8.00 250.00 1008.00 2.00 #ff339933
+rect 8.00 218.00 2.00 32.00 #ff339933
+rect 1014.00 218.00 2.00 32.00 #ff339933
+rect 8.00 256.00 1008.00 28.00 #ffffdddd
+rect 8.00 316.00 1008.00 3.00 #ff993399
+text 8.00 410.00 16px face 0 bold 1 #ff000000 "Name:"
+text 62.00 410.00 16px face 0 bold 1 #ff000000 " "
+text 67.50 410.00 16px face 0 bold 0 #ff000000 "generated"
+text 144.80 410.00 16px face 0 bold 0 #ff000000 " "
+text 149.30 410.00 16px face 0 bold 0 #ff000000 "from"
+text 184.86 410.00 16px face 0 bold 0 #ff000000 " "
+text 189.36 410.00 16px face 0 bold 0 #ff000000 "an"
+text 207.80 410.00 16px face 0 bold 0 #ff000000 " "
+text 212.30 410.00 16px face 0 bold 0 #ff000000 "attribute."
+text 8.00 430.00 16px face 0 bold 0 #ff666666 "Name"
+rect 8.00 460.00 60.00 30.00 #ff99ccff
+text 68.00 476.00 16px face 0 bold 0 #ff000000 "A"
+text 79.05 476.00 16px face 0 bold 0 #ff000000 " "
+text 83.55 476.00 16px face 0 bold 0 #ff000000 "float"
+text 117.16 476.00 16px face 0 bold 0 #ff000000 " "
+text 121.66 476.00 16px face 0 bold 0 #ff000000 "cleared"
+text 178.14 476.00 16px face 0 bold 0 #ff000000 " "
+text 182.64 476.00 16px face 0 bold 0 #ff000000 "by"
+text 201.44 476.00 16px face 0 bold 0 #ff000000 " "
+text 205.94 476.00 16px face 0 bold 0 #ff000000 "a"
+text 214.92 476.00 16px face 0 bold 0 #ff000000 " "
+text 219.42 476.00 16px face 0 bold 0 #ff000000 "::after."
+rect 8.00 516.00 1008.00 20.00 #ffccffcc
 text 8.00 208.00 16px face 0 bold 0 #ffcc0000 "first"
 text 37.52 208.00 16px face 0 bold 0 #ffcc0000 " "
 text 42.02 208.00 16px face 0 bold 0 #ffcc0000 "span"
@@ -88,10 +117,6 @@ text 244.42 208.00 16px face 0 bold 0 #ff000000 " "
 text 248.92 208.00 16px face 0 bold 0 #ff0000cc "last"
 text 275.47 208.00 16px face 0 bold 0 #ff0000cc " "
 text 279.97 208.00 16px face 0 bold 0 #ff0000cc "span"
-rect 8.00 216.00 1008.00 2.00 #ff339933
-rect 8.00 250.00 1008.00 2.00 #ff339933
-rect 8.00 218.00 2.00 32.00 #ff339933
-rect 1014.00 218.00 2.00 32.00 #ff339933
 text 34.00 242.00 16px face 0 bold 0 #ff000000 " "
 text 38.50 242.00 16px face 0 bold 0 #ff000000 "A"
 text 49.55 242.00 16px face 0 bold 0 #ff000000 " "
@@ -104,7 +129,6 @@ text 147.11 242.00 16px face 0 bold 0 #ff000000 " "
 text 151.61 242.00 16px face 0 bold 0 #ff000000 "image"
 text 197.62 242.00 16px face 0 bold 0 #ff000000 " "
 text 202.12 242.00 16px face 0 bold 0 #ff000000 "child."
-rect 8.00 256.00 1008.00 28.00 #ffffdddd
 text 12.00 276.00 16px face 0 bold 0 #ff000000 "flag"
 text 40.59 276.00 16px face 0 bold 0 #ff000000 " "
 text 45.09 276.00 16px face 0 bold 0 #ff000000 "A"
@@ -118,7 +142,6 @@ text 144.25 276.00 16px face 0 bold 0 #ff000000 " "
 text 148.75 276.00 16px face 0 bold 0 #ff000000 "flag"
 text 177.34 276.00 16px face 0 bold 0 #ff000000 " "
 text 181.84 276.00 16px face 0 bold 0 #ff000000 "inside."
-rect 8.00 316.00 1008.00 3.00 #ff993399
 text 12.00 308.00 16px face 0 bold 0 #ff000000 "A"
 text 23.05 308.00 16px face 0 bold 0 #ff000000 " "
 text 27.55 308.00 16px face 0 bold 0 #ff000000 "card"
@@ -163,16 +186,6 @@ text 15.05 387.00 16px face 0 bold 0 #ff000000 "Quoted"
 text 70.70 387.00 16px face 0 bold 0 #ff000000 " "
 text 75.20 387.00 16px face 0 bold 0 #ff000000 "text."
 text 108.34 387.00 16px face 0 bold 0 #ff999999 "”"
-text 8.00 410.00 16px face 0 bold 1 #ff000000 "Name:"
-text 62.00 410.00 16px face 0 bold 1 #ff000000 " "
-text 67.50 410.00 16px face 0 bold 0 #ff000000 "generated"
-text 144.80 410.00 16px face 0 bold 0 #ff000000 " "
-text 149.30 410.00 16px face 0 bold 0 #ff000000 "from"
-text 184.86 410.00 16px face 0 bold 0 #ff000000 " "
-text 189.36 410.00 16px face 0 bold 0 #ff000000 "an"
-text 207.80 410.00 16px face 0 bold 0 #ff000000 " "
-text 212.30 410.00 16px face 0 bold 0 #ff000000 "attribute."
-text 8.00 430.00 16px face 0 bold 0 #ff666666 "Name"
 text 8.00 453.00 16px face 0 bold 0 #ffcc0000 "*"
 text 16.02 453.00 16px face 0 bold 0 #ffcc0000 " "
 text 20.52 453.00 16px face 0 bold 0 #ff000000 "A"
@@ -182,19 +195,6 @@ text 86.20 453.00 16px face 0 bold 0 #ff000000 " "
 text 90.70 453.00 16px face 0 bold 0 #ff000000 "single-colon"
 text 184.52 453.00 16px face 0 bold 0 #ff000000 " "
 text 189.02 453.00 16px face 0 bold 0 #ff000000 ":before."
-text 68.00 476.00 16px face 0 bold 0 #ff000000 "A"
-text 79.05 476.00 16px face 0 bold 0 #ff000000 " "
-text 83.55 476.00 16px face 0 bold 0 #ff000000 "float"
-text 117.16 476.00 16px face 0 bold 0 #ff000000 " "
-text 121.66 476.00 16px face 0 bold 0 #ff000000 "cleared"
-text 178.14 476.00 16px face 0 bold 0 #ff000000 " "
-text 182.64 476.00 16px face 0 bold 0 #ff000000 "by"
-text 201.44 476.00 16px face 0 bold 0 #ff000000 " "
-text 205.94 476.00 16px face 0 bold 0 #ff000000 "a"
-text 214.92 476.00 16px face 0 bold 0 #ff000000 " "
-text 219.42 476.00 16px face 0 bold 0 #ff000000 "::after."
-rect 8.00 460.00 60.00 30.00 #ff99ccff
-rect 8.00 516.00 1008.00 20.00 #ffccffcc
 text 8.00 532.00 16px face 0 bold 0 #ff000000 "@supports"
 text 90.28 532.00 16px face 0 bold 0 #ff000000 " "
 text 94.78 532.00 16px face 0 bold 0 #ff000000 "selector(:has())."

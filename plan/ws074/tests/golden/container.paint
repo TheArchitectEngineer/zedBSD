@@ -6,8 +6,8 @@ rect 8.00 148.00 85.00 20.00 #ff99cc99
 rect 8.00 178.00 500.00 40.00 #ffeeeeee
 rect 8.00 178.00 250.00 20.00 #ffccddee
 rect 8.00 198.00 125.00 20.00 #ffccccee
-text 8.00 212.00 14px face 0 bold 0 #ff000000 "25cqi"
 rect 137.00 198.00 371.00 20.00 #ffccccee
+text 8.00 212.00 14px face 0 bold 0 #ff000000 "25cqi"
 text 137.00 212.00 14px face 0 bold 0 #ff000000 "the"
 text 158.02 212.00 14px face 0 bold 0 #ff000000 " "
 text 161.95 212.00 14px face 0 bold 0 #ff000000 "rest"

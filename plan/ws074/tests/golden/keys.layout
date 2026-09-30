@@ -60,7 +60,9 @@ block <html> 0.00 0.00 1024.00 1929.00
             text 230.02 w 74.56 16px "focusable"
           block <button> 49.00 132.00 69.61 22.00
             line 57.00 135.00 height 16.00 baseline 148.00
-              text 57.00 w 53.61 13px "A button"
+              text 57.00 w 9.20 13px "A"
+              text 66.20 w 3.75 13px " "
+              text 69.95 w 40.66 13px "button"
         block <p> 49.00 170.00 926.00 18.00
           line 49.00 170.00 height 18.00 baseline 184.00
             text 49.00 w 16.81 14px "No"
