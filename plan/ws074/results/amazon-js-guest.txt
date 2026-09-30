@@ -1,0 +1,24 @@
+ws074-p097 Amazon guest JavaScript evidence correction (2026-09-30)
+
+page: http://10.0.2.2:8075/top-local.html
+source: script-enabled fixed Amazon.co.jp capture in C:/Work/winq-zedbsd/data/amazon-demo
+guest screen: 1280x800
+browser window: 1200x690
+user agent: the fixed Chrome user agent used by the p097 capture
+settle observation: 70 seconds
+process at observation: alive (/bin/browser)
+
+Visible post-script evidence:
+- sign-in flyout with the yellow login button
+- sale/product cards with decoded images and discount badges
+- the "recently viewed and recommended" section heading
+
+Correction made while producing the evidence:
+- a sparse numeric property on an ordinary object incorrectly advanced the dense-elements watermark
+- later numeric keys were consequently allocated as a multi-gigabyte dense array and the guest browser faulted
+- vm_object_define now advances a sparse numeric slot's length only for Arrays
+- host-object carries the two-step sparse-key regression
+
+Known console failures remain (unsupported Amazon APIs and failed network fetches).  The screenshot proves that JavaScript was enabled and reached the dynamic redraw; it does not claim complete Amazon compatibility.
+
+user-facing artifact: zedbsd-amazon-full-screen.png

@@ -56,6 +56,16 @@ Acid2・Acid3の履歴的診断もこのattemptへ加えた。修正数の上限
 - 10 URLのうち9件はHTTP 200でchallenge signalなし。MediumだけはHTTP 403・challenge signal 2件で固定版を作れず、比較から除外した。
   阿部寛のページはCP932を正しく読み、2つのframeを1ページへ固定した。GitHubの`zedBSD` URLは現在のrepository名`Kei`へ到達した。
 
+### Amazonデモ画像の訂正（2026-09-30）
+
+初回に成果物としたAmazon画像はJavaScript完了後の表示を示しておらず、証跡として無効だった。現行のguest browserでscript付き固定版を再実行すると、
+普通のJavaScript objectへ大きな数値keyを定義した後にdense elementsを数GiBへ誤拡張し、SIGSEGVでwindowが閉じる問題を再現した。
+`vm_object_define`でsparse numeric slotがdense rangeの`length`を進める処理をArrayだけに限定し、同じ並びの回帰を`host-object`へ加えた。
+
+修正後は1280x800のguest画面、1200x690のbrowser windowで70秒後もprocessが生存した。JavaScript再描画後のlogin flyout、sale card、discount badge、
+「最近閲覧した商品とおすすめ商品」を目視し、画面全体を`zedbsd-amazon-full-screen.png`へ差し替えた。consoleには未対応API等によるTypeErrorとfetch失敗が残るため、
+この画像はJavaScript有効・再描画到達の証跡であり、Amazon互換の完了を示すものではない。詳細は`results/amazon-js-guest.txt`。
+
 ## Chromium比較
 
 両engineへ同じ固定HTML・font・locale・Chrome User-Agentを渡した。DOMはnode種別・tag・属性・textのJSONLへ正規化し、順序を保つ一致率を取った。
@@ -106,6 +116,7 @@ module graphの取得・link・評価と、`performance`等の後続APIをws074-
 
 ## 回帰と結果
 
+- Amazon訂正の`host-object`はplain・ASanとも100 checks、0 failed。guestの同じscript付き固定版は70秒後もbrowser processが生存し、追加のSIGSEGVは無かった。
 - host buildはplain・ASanともwarning 0。DOM 22/22（MessageEventと非同期postMessageを含む）、position 22 checksを両方で通した。
 - `intrinsic`・`tables`のDOM/style/layout/paint goldenはplain・ASanで16/16一致。tableの専用画像はpixel 97.56%/ink 91.73%。
 - Python 5本は`py_compile`、変更したC/headerは`style-check.py` 0件、`git diff --check` 0件。
