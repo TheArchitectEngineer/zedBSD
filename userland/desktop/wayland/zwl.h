@@ -633,6 +633,14 @@ struct zwl_server {
 	uint32_t windows;
 	uint64_t mode_switch_ms;
 	/*
+	 * An opening or closing of App Home or Wiseview waiting for its first
+	 * frame (ws099-p002, C5): what it is (NULL for none) and when it was
+	 * asked for.  The next frame is drawn without the frame pacing's wait,
+	 * and its submission is logged once (ZWL FIRST_FRAME).
+	 */
+	const char *transition;
+	uint64_t transition_ms;
+	/*
 	 * Frame pacing: after a frame, the windows it told are waited for, until
 	 * all have committed or half the last frame's time (at most 50 ms) has
 	 * passed, so that a quick client does not start the next frame without
@@ -988,6 +996,7 @@ int zwl_gpu_import(struct zwl_object *buffer, int descriptor, const struct gpu_i
 int zwl_present(struct zwl_object *surface);
 int zwl_unscan(struct zwl_server *server);
 void zwl_schedule(struct zwl_server *server);
+void zwl_transition_request(struct zwl_server *server, const char *what);
 void zwl_frame_done(struct zwl_server *server);
 int zwl_compose_open(struct zwl_server *server);
 int zwl_compose_output_prepare(struct zwl_server *server);
