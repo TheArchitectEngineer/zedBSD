@@ -3,13 +3,13 @@
 # WS103: compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001 cleared、p002 実行中）
+Status: incomplete（p001 cleared、p002 uncleared）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q509（ws103-p002）
-Resume point: 2026-09-30 夜 p001 cleared（q508、[design.md](design.md) 改訂 3）。次は p002（起動の問い合わせを VK_KHR_display へ、`--direct` の削除）か、独立の p003・p005。実行は Queue の承認の後。V1・V4 は 2026-09-30 夜に改訂（ユーザー承認）
+Queue: なし（q509 finished）
+Resume point: 2026-09-30 夜 p002 は実装と QEMU の確かめ（C1・C2・boot test）まで済み、5330 の passthrough の smoke だけ未達（変更の前の compositor でも同じく起動画面で止まる。原因は p002 の外）。基準 6 の扱いはユーザーの判断待ち。p003・p005 は独立に進められる
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -70,7 +70,7 @@ client と compositor の間は全 OS で我々の独自の protocol 1 本で、
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws103-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | cleared（q508） | — |
-| [ws103-p002](phase002/phase.md) | compositor: 起動の問い合わせを VK_KHR_display へ、`--direct` の削除（design §2.1・2.2） | in-progress（q509） | — |
+| [ws103-p002](phase002/phase.md) | compositor: 起動の問い合わせを VK_KHR_display へ、`--direct` の削除（design §2.1・2.2） | uncleared（q509: 5330 の smoke が未達、変更の前も同じく失敗。QEMU の C1・C2・boot test は PASS） | — |
 | ws103-p003 | libvulkan: dedicated allocation と import の記述の照合、bind の守り（§2.3） | planned | — |
 | ws103-p004 | compositor: dedicated の import、wire の値の確かめ、`RESOURCE_IMPORT`・`DESTROY` を消す、`gpu-zedbsd.c` の buffer の部分（§2.3・2.5） | planned | p002、p003 |
 | ws103-p005 | libvulkan: WSI が Wayland の present ごとに新しい fence を送る（§2.4） | planned | — |

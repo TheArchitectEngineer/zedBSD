@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: q509（ws103-p002、メインのエージェントが実行）。Last finished Queue: q508（ws103-p001 cleared: WS103 の設計）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
+Active Queue: なし。Last finished Queue: q509（ws103-p002 uncleared: 5330 の passthrough の smoke が変更の前の compositor でも失敗）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
 Next（2026-09-30 夕に更新）: 週間の使用量のためサブエージェントは全てラップアップ（N=0）。統合の試験（demo-s8-s9.sh、QEMU、`build/integ-0930/`）PASS。次の候補: 5330 の実機の新しい demo の image（今日の変更を全て入れる）、ユーザーの実機の確認、WS103（ユーザーの指示の後）。 実機の image `build/demo-lcd8/hdd-image.img`（ロゴ無効）のユーザー確認も残る。
 IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。
@@ -200,7 +200,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | 2026-09-30: L1 がそろった（A1〜A6、Settings の Sound の頁）。L2 は 5330 の実機（A7、ユーザー）。L3 の p008 cleared: 確かめの音の遅れは QEMU の guest の中で中央値 31〜37 ms（≤ 50 ms、合否は実機で）。kernel の fragment を小さくする直しは実機で 50 ms を超えたとき |
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | 2026-09-30: L1 で S13 が 5330 で通った。L2: p016（時間の分解）cleared、p017（buffer の使い回しと copy の削減、QEMU の GPU の call 835 → 212 ms、CPU の 10.6 倍遅い）uncleared。ユーザーの判断「今のまま」で S13 は今の見本、最適化はここで止める（5330 の p017 の値は P1 が追記） |
 | [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 を満たした。L2: p006・p007・p008・p009・p015・p016（右の列の道具の面）・p017・p018・p020・p021・p023・p024（履歴の tab。受け入れの手順だけ PASS、全手順の回帰・C9・boot test は未実施）、L3 の p019（色付きの絵文字）cleared（QEMU）。ユーザーの指示で優先を下げてラップアップ（2026-09-30 夕）。保留: p022（絵文字の tab）・BUG-125・p010・p011（速さ）・p012（IME、人間） |
-| [WS103](ws103/ws.md) | MG006 | compositor を libvulkan だけにする: GPU の UAPI の直の ioctl（起動時の表示の問い合わせ・buffer の import の確かめ・fence・表示の claim と release・Vulkan の無い予備の表示）を libvulkan の API と拡張へ移す（2026-09-30 ユーザー「規則にして今移す」、規則は Guardrail） | planning | 2026-09-30 に立てた。**2026-09-30 夜 ユーザーの指示で最優先**（優先順位の節）。p001 cleared（q508、[design.md](ws103/design.md)）。次は p002、独立の p003・p005。V1・V4 は改訂済み |
+| [WS103](ws103/ws.md) | MG006 | compositor を libvulkan だけにする: GPU の UAPI の直の ioctl（起動時の表示の問い合わせ・buffer の import の確かめ・fence・表示の claim と release・Vulkan の無い予備の表示）を libvulkan の API と拡張へ移す（2026-09-30 ユーザー「規則にして今移す」、規則は Guardrail） | planning | 2026-09-30 に立てた。**2026-09-30 夜 ユーザーの指示で最優先**（優先順位の節）。p001 cleared（q508、[design.md](ws103/design.md)）。p002 uncleared（q509: 実装と QEMU は済み、5330 の smoke が未達で変更の前も同じ）。独立の p003・p005 が次の候補 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 

@@ -2,12 +2,17 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q508](queue-q508.md)（ws103-p001 cleared。WS103 の設計）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q509](queue-q509.md)（ws103-p002 uncleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q508
+## 最新: 2026-09-30 q509
+
+[q509](queue-q509.md): WS103 p002 uncleared。compositor の起動の問い合わせを VK_KHR_display へ移し、`--direct` と表示の claim・present・release の ioctl を削除。QEMU の Venus で
+C1・C2・boot test PASS。5330 の passthrough の smoke は、変更の前の compositor でも同じく起動画面で止まり未達（13:38 の後の main の変更か環境を疑う、未確認）。GitHub へは未公開。
+
+## 2026-09-30 q508
 
 [q508](queue-q508.md): WS103（compositor を libvulkan だけに）の p001 cleared。GPU の直の ioctl の置き換えを設計した（起動の問い合わせ → VK_KHR_display、`--direct` の削除、
 buffer の記述の照合 → libvulkan の dedicated の import、fence → present ごとに新しい fence と poll）。design-reviewer 2 回。同日、優先順位の書き直し（WS103 が最優先）と

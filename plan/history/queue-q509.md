@@ -1,14 +1,7 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- awesome-plan project=zedbsd record=q509 -->
 
-# Queue
+# q509（finished 2026-09-30）
 
-<!-- awesome-plan-current:start -->
-Status: idle（2026-09-30）
-Active Queue: なし
-Last finished Queue: [q509](history/queue-q509.md)（ws103-p002 uncleared: 実装と QEMU の確かめは済み、5330 の smoke が未達（変更の前も同じく失敗））
-<!-- awesome-plan-current:end -->
-
-## q509
 
 - Purpose: WS103 の p002（compositor の起動の問い合わせを VK_KHR_display へ、`--direct` の削除）。
 - Timebox: この session。
@@ -25,6 +18,9 @@ Last finished Queue: [q509](history/queue-q509.md)（ws103-p002 uncleared: 実�
 
 Dependency graph: `ws103-p001 (cleared) -> q509-i01/ws103-p002`。
 
-## Upcoming Work Outlook
 
-WS103 の p003（libvulkan の import の照合）・p005（WSI の fence）、p002 の後の p004。どれも Queue で承認が要る。
+## Outcome
+
+- q509-i01 / ws103-p002: **uncleared**。compositor の `GPU_GET_INFO`・`GPU_DISPLAY_QUERY`・`GPU_DISPLAY_MODE`・`GPU_DISPLAY_CLAIM`・`GPU_DISPLAY_PRESENT`・`GPU_DISPLAY_RELEASE` と `--direct` を削除（commit `e27565f3` ほか）。
+  build warning 0、QEMU の Venus で C1（2 件）・C2 PASS、boot test PASS。5330 の passthrough の smoke（`c5-hw.sh`）は FAIL だが、変更の前の compositor の image でも同じく FAIL（原因は p002 の外、未確認）。
+- 再開の条件: [phase.md](../ws103/phase002/phase.md) の「再開の条件」。GitHub へは未公開。
