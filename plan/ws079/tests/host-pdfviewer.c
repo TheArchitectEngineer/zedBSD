@@ -7,7 +7,8 @@
 
 /*
  * The host test of PDF Viewer's core (ws079-p006): the view, the frame,
- * the document cache and the chooser, without Wayland and Vulkan.
+ * the document cache and the chooser's request and answer, without Wayland
+ * and Vulkan.
  *
  *   host-pdfviewer FONT DOCUMENT.pdf OUTDIR [SKIPPED.pdf [PASSWORD.pdf]]
  *
@@ -64,6 +65,8 @@ main(
 	int card_width;
 	int card_height;
 	int error;
+	size_t folder_length;
+	const char *slash;
 
 	if (argc < 4 || argc > 6) {
 		fprintf(stderr, "usage: host-pdfviewer FONT DOCUMENT.pdf OUTDIR [SKIPPED.pdf [PASSWORD.pdf]]\n");
@@ -168,12 +171,26 @@ main(
 	key(PV_KEY_E, PV_MOD_CTRL);
 	check(app.want_annotate == 1, "Ctrl+E asks to annotate");
 
-	/* The chooser. */
+	/*
+	 * The chooser (ws090-p008: libkeiui's file chooser, a window of its own
+	 * that the program shows while the viewer waits for it): Ctrl+O asks for
+	 * it at the document's folder, a cancel leaves the document, and the path
+	 * chosen opens.
+	 */
 	key(PV_KEY_O, PV_MOD_CTRL);
-	check(app.choosing == 1, "Ctrl+O opens the chooser");
+	slash = strrchr(argv[2], '/');
+	folder_length = 0U;
+	if (slash != NULL)
+		folder_length = (size_t)(slash - argv[2]);
+	check(app.choosing == 1 && strlen(app.chooser_folder) == folder_length &&
+	    strncmp(app.chooser_folder, argv[2], folder_length) == 0, "Ctrl+O asks for the chooser at the document's folder");
 	frame("12-chooser");
-	key(PV_KEY_ESCAPE, 0);
-	check(app.choosing == 0, "Escape closes the chooser");
+	pv_app_chosen(&app, NULL);
+	check(app.choosing == 0 && app.has_document && app.document.count == 3, "a cancelled chooser leaves the document");
+	key(PV_KEY_O, PV_MOD_CTRL);
+	pv_app_chosen(&app, argv[2]);
+	check(app.choosing == 0 && app.has_document && app.document.count == 3 && strcmp(app.document.path, argv[2]) == 0,
+	    "the file chosen opens");
 
 	/* ws079-p015: the sidebar of thumbnails, from the first page of the scroll mode. */
 	key(PV_KEY_HOME, 0);

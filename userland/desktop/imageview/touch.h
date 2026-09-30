@@ -14,8 +14,8 @@
  * the point between them (below the fit, it springs back to the fit).  A
  * sideways drag of a fitted image swipes to the next or the previous
  * image.  A double tap zooms in (100 %, or twice the fit), or back to the
- * fit; a long press opens the context menu.  Over the file chooser and the
- * empty window a finger plays the pointer's left button.
+ * fit; a long press opens the context menu.  Over the empty window a
+ * finger plays the pointer's left button.
  */
 
 #ifndef IMAGEVIEW_TOUCH_H
@@ -31,8 +31,7 @@
  * scroller that moves the view, and the state between them.
  *
  * pointer says a finger plays the pointer (pointer_id, last at pointer_x,
- * pointer_y) over the chooser or the empty window; other fingers are then
- * left alone.
+ * pointer_y) over the empty window; other fingers are then left alone.
  * fingers counts the fingers on the image.  pressed says the scroller
  * holds a touch that has not been let go; moving that the scroller owns
  * the view (from a touch until the content rests), and written the view's

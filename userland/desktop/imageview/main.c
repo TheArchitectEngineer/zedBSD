@@ -97,6 +97,21 @@ static struct iv_glass main_glass;
 static struct iv_touch main_touch;
 
 /*
+ * libkeiui's file chooser while the viewer waits for it (File > Open), a
+ * window of its own over the viewer's; NULL otherwise.
+ */
+static struct kui_file_chooser *main_chooser;
+
+/* The font the chooser draws with: the viewer's own. */
+static const char *main_font;
+
+/* The files the chooser offers: the images the viewer reads first, or every file. */
+static const struct kui_file_filter main_filters[] = {
+	{ "Images", "png jpg jpeg jpe gif" },
+	{ "All Files", NULL }
+};
+
+/*
  * The canvas's memory: ordinary memory the size of the swapchain, remade
  * (and the canvas with it) when the window changes size.
  */
@@ -116,6 +131,8 @@ static int main_frame(void);
 static int main_resize(void);
 static void main_window_event(const struct kui_window_event *event);
 static void main_event(enum iv_event_type type, const struct kui_window_event *event, struct iv_event *input);
+static void main_choose(void);
+static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static int main_canvas_make(void);
 static void main_state(struct iv_state *state);
 static void main_opened(void);
@@ -149,6 +166,7 @@ main(
 	error = iv_text_open(&main_text, options.font);
 	if (error != 0)
 		iv_log("FONT missing path=%s error=%d", options.font, error);
+	main_font = options.font;
 
 	/* The window, whose surface the viewer's own presenter draws on. */
 	memset(&window_options, 0, sizeof(window_options));
@@ -212,7 +230,9 @@ main(
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the titlebar, the menus, the glass and the viewer before the window they belong to. */
+	/* Everything goes, the chooser, the titlebar, the menus, the glass and the viewer before the window they belong to. */
+	kui_file_chooser_destroy(main_chooser);
+	main_chooser = NULL;
 	iv_titlebar_close(&main_titlebar);
 	iv_menu_close(&main_menu);
 	iv_glass_close(&main_glass);
@@ -460,6 +480,9 @@ main_loop(
 				break;
 			main_window_event(&event);
 		}
+
+		/* The chooser the viewer asked for (File > Open), or one it no longer waits for closed. */
+		main_choose();
 
 		/* An image opened: its title and the recent files; the full screen asked for or given. */
 		main_opened();
@@ -742,6 +765,71 @@ main_canvas_make(void)
 
 	/* Succeeded: frames can be drawn. */
 	return 0;
+}
+
+/*
+ * Shows libkeiui's file chooser when the viewer asks for it, at the folder
+ * it names, and closes one it no longer waits for.
+ */
+static void
+main_choose(void)
+{
+	struct kui_file_chooser_options options;
+	static const struct kui_file_chooser_listener listener = {
+		main_chosen
+	};
+
+	/* A chooser the viewer no longer waits for goes. */
+	if (!main_app.chooser_open) {
+		if (main_chooser != NULL) {
+			kui_file_chooser_destroy(main_chooser);
+			main_chooser = NULL;
+		}
+		return;
+	}
+
+	/* One already shown answers in its time. */
+	if (main_chooser != NULL)
+		return;
+
+	/* Open, at the viewer's folder, with the images shown first, in the viewer's font. */
+	memset(&options, 0, sizeof(options));
+	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.application = MAIN_APPLICATION;
+	options.folder = main_app.chooser_folder;
+	options.filters = main_filters;
+	options.filter_count = sizeof(main_filters) / sizeof(main_filters[0]);
+	options.filter = 0;
+	options.font = main_font;
+
+	/* The chooser's window over the viewer's; without it the viewer stops waiting. */
+	main_chooser = kui_file_chooser_open(kui_window_display(main_window.kui), kui_window_toplevel(main_window.kui), &options, &listener, &main_app);
+	if (main_chooser == NULL) {
+		iv_log("CHOOSER failed errno=%d", errno);
+		iv_app_message(&main_app, "The file chooser could not be shown.", 4000U);
+		iv_app_chosen(&main_app, NULL);
+	}
+}
+
+/* The chooser answered: the path (empty when cancelled) goes to the viewer, and the chooser goes. */
+static void
+main_chosen(
+	void *data,
+	struct kui_file_chooser *chooser,
+	unsigned result,
+	const char *path,
+	size_t filter)
+{
+	/* The answer, cancelled unless a file was chosen. */
+	(void)filter;
+	if (result != KUI_FILE_CHOOSER_CHOSEN)
+		path = NULL;
+	iv_app_chosen(data, path);
+
+	/* The chooser is spent. */
+	kui_file_chooser_destroy(chooser);
+	if (chooser == main_chooser)
+		main_chooser = NULL;
 }
 
 /* Gathers what the menus and the titlebar show. */

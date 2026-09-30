@@ -100,9 +100,9 @@ iv_touch_close(
 }
 
 /*
- * Takes one touch input of the window: a finger over the chooser or the
- * empty window plays the pointer; the image's fingers go to the gestures,
- * and the first of them presses the scroller.
+ * Takes one touch input of the window: a finger over the empty window
+ * plays the pointer; the image's fingers go to the gestures, and the first
+ * of them presses the scroller.
  */
 void
 iv_touch_event(
@@ -124,7 +124,7 @@ iv_touch_event(
 		return;
 	}
 
-	/* A first finger over the chooser or the empty window starts playing the pointer. */
+	/* A first finger over the empty window starts playing the pointer. */
 	for_pointer = touch_for_pointer(app, event);
 	if (event->kind == KUI_WINDOW_TOUCH_DOWN &&
 	    touch->fingers == 0U &&
@@ -302,7 +302,7 @@ iv_touch_tick(
 	return -1;
 }
 
-/* Tells whether a finger touches where the pointer's button is the way in: the chooser, the empty window. */
+/* Tells whether a finger touches where the pointer's button is the way in: the empty window. */
 static int
 touch_for_pointer(
 	const struct iv_app *app,
@@ -310,9 +310,7 @@ touch_for_pointer(
 {
 	UNUSED_PARAMETER(event);
 
-	/* The chooser takes every touch, and so does the empty window (its Open button). */
-	if (app->chooser_open)
-		return 1;
+	/* The empty window takes every touch (its Open button). */
 	if (!app->has_image)
 		return 1;
 

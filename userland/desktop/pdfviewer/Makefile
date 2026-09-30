@@ -8,6 +8,6 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 PDFVIEWER_SOURCES := userland/desktop/pdfviewer/main.c userland/desktop/pdfviewer/menu.c \
 	userland/desktop/pdfviewer/titlebar.c userland/desktop/pdfviewer/view.c \
 	userland/desktop/pdfviewer/draw.c userland/desktop/pdfviewer/document.c \
-	userland/desktop/pdfviewer/chooser.c userland/desktop/pdfviewer/canvas.c \
+	userland/desktop/pdfviewer/canvas.c \
 	userland/desktop/pdfviewer/text.c userland/desktop/pdfviewer/touch.c
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,pdfviewer,PDF Viewer,amd64,y,basic,$(PDFVIEWER_SOURCES),y,desktop,desktop/pdfviewer,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libkeiui desktop/libtruetype base/libpdf,0755,program,,,bin))

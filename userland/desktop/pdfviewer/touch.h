@@ -13,8 +13,8 @@
  * touch catches them.  Two fingers zoom about the point between them.  In
  * the page mode a sideways drag of a page that fits across swipes to the
  * next or the previous page.  A double tap zooms in to twice the scale, or
- * back to the mode's fit.  Over the sidebar, the file chooser and the
- * password card a finger plays the pointer's left button.
+ * back to the mode's fit.  Over the sidebar and the password card a
+ * finger plays the pointer's left button.
  */
 
 #ifndef PDFVIEWER_TOUCH_H
@@ -30,7 +30,7 @@
  * scroller that moves the view, and the state between them.
  *
  * pointer says a finger plays the pointer (pointer_id, last at pointer_x,
- * pointer_y) over the sidebar, the chooser or the password card; other
+ * pointer_y) over the sidebar or the password card; other
  * fingers are then left alone.
  * fingers counts the fingers on the pages.  pressed says the scroller
  * holds a touch that has not been let go; moving that the scroller owns

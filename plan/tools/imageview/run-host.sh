@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws091-p002: Image Viewer's decoding, folder and view on the host, against PIL.
-# Builds build/ws091-host/host-imageview (host-imageview.c with image.c, folder.c, view.c, chooser.c and the
+# Builds build/ws091-host/host-imageview (host-imageview.c with image.c, folder.c, view.c and the
 # sources of libz-compat, libpng-compat, libjpeg-compat and libgif-compat) and checks:
 #  1. unit: the folder's order (digits as numbers), the names shown, the EXIF orientation in both byte orders.
 #  2. PNG: RGB, RGBA (over the checkerboard), gray 16-bit and a palette with a transparent colour decode to what PIL
@@ -11,6 +11,7 @@
 #     composed frames over the checkerboard, with their delays.
 #  5. view: fit, zoom about a point, turns, the quad, next and previous, the neighbours decoded ahead, a swipe.
 #
+# ws090-p008: the chooser is libkeiui's file chooser (a window of its own), so chooser.c is gone.
 #   plan/tools/imageview/run-host.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -21,7 +22,7 @@ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 "$cc" -O1 -g -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -I"$out/include" -o "$out/host-imageview" \
     plan/tools/imageview/host-imageview.c userland/desktop/imageview/image.c userland/desktop/picture/picture.c userland/desktop/imageview/folder.c \
-    userland/desktop/imageview/view.c userland/desktop/imageview/chooser.c \
+    userland/desktop/imageview/view.c \
     userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
     userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \
     userland/base/libjpeg-compat/idct.c userland/base/libjpeg-compat/marker.c userland/base/libjpeg-compat/memory.c \

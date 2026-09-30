@@ -98,9 +98,6 @@ static void view_button(struct iv_app *app, const struct iv_event *event);
 static void view_motion(struct iv_app *app, const struct iv_event *event);
 static void view_axis(struct iv_app *app, const struct iv_event *event);
 static int view_can_swipe(const struct iv_app *app);
-static void chooser_key(struct iv_app *app, uint32_t key);
-static void chooser_click(struct iv_app *app, int x, int y);
-static void chooser_choose(struct iv_app *app);
 static void open_chooser(struct iv_app *app);
 
 /*
@@ -126,7 +123,7 @@ iv_app_init(
 }
 
 /*
- * Frees the images, the folder and the chooser.
+ * Frees the images and the folder.
  */
 void
 iv_app_release(
@@ -134,9 +131,6 @@ iv_app_release(
 {
 	/* The images and the folder. */
 	iv_app_close_image(app);
-
-	/* The chooser's entries. */
-	iv_chooser_close(&app->chooser);
 }
 
 /*
@@ -765,34 +759,29 @@ iv_app_open_button(
 }
 
 /*
- * Places the file chooser's card in the window and reports how many rows
- * it shows.
+ * Takes the file chooser's answer: the file chosen (or the first image of
+ * a folder) is shown with its folder's images; NULL or an empty path says
+ * the chooser was cancelled.
  */
 void
-iv_chooser_layout(
-	const struct iv_app *app,
-	int *x,
-	int *y,
-	int *width,
-	int *height,
-	size_t *rows)
+iv_app_chosen(
+	struct iv_app *app,
+	const char *path)
 {
-	/* A card of at most 560 by 480 pixels, in the middle. */
-	*width = app->window_width - 48;
-	if (*width > 560)
-		*width = 560;
-	*height = app->window_height - 48;
-	if (*height > 480)
-		*height = 480;
-	if (*width < 120)
-		*width = 120;
-	if (*height < IV_CHOOSER_HEADER + IV_CHOOSER_ROW + 12)
-		*height = IV_CHOOSER_HEADER + IV_CHOOSER_ROW + 12;
-	*x = (app->window_width - *width) / 2;
-	*y = (app->window_height - *height) / 2;
+	/* The viewer no longer waits for the chooser. */
+	app->chooser_open = 0;
 
-	/* The rows under the header. */
-	*rows = (size_t)((*height - IV_CHOOSER_HEADER - 12) / IV_CHOOSER_ROW);
+	/* Cancelled: what is shown stays. */
+	if (path == NULL || path[0] == '\0') {
+		iv_log("CHOOSER cancelled");
+		return;
+	}
+
+	/* A file chosen is shown. */
+	iv_log("CHOOSER chose path=%s", path);
+	(void)iv_app_open(app, path);
+	app->dirty = 1;
+	app->ui_dirty = 1;
 }
 
 /*
@@ -1517,7 +1506,7 @@ view_min_scale(
 	return fit * VIEW_SCALE_UNDER;
 }
 
-/* Handles a key: the chooser's keys while it is open, otherwise the viewer's. */
+/* Handles a key of the viewer's. */
 static void
 view_key(
 	struct iv_app *app,
@@ -1543,12 +1532,6 @@ view_key(
 	toggle = view_toggle_key(event->key);
 	if (event->repeat && toggle)
 		return;
-
-	/* The chooser takes the keys while it is open. */
-	if (app->chooser_open) {
-		chooser_key(app, event->key);
-		return;
-	}
 
 	/* Whether Ctrl is held, which the file's keys need. */
 	control = 0;
@@ -1710,7 +1693,7 @@ view_pan_key(
 		view_step(app, direction);
 }
 
-/* Handles a button: the chooser's and the Open button's clicks, a drag or a swipe, a double click, the context menu. */
+/* Handles a button: the Open button's click, a drag or a swipe, a double click, the context menu. */
 static void
 view_button(
 	struct iv_app *app,
@@ -1727,7 +1710,7 @@ view_button(
 
 	/* The right button asks for the context menu where it was pressed. */
 	if (event->button == IV_BUTTON_RIGHT) {
-		if (event->pressed && !app->chooser_open) {
+		if (event->pressed) {
 			app->want_context = 1;
 			app->context_x = event->x;
 			app->context_y = event->y;
@@ -1740,13 +1723,6 @@ view_button(
 	/* Only the left button does anything else. */
 	if (event->button != IV_BUTTON_LEFT)
 		return;
-
-	/* A press in the chooser chooses (or closes it). */
-	if (app->chooser_open) {
-		if (event->pressed)
-			chooser_click(app, event->x, event->y);
-		return;
-	}
 
 	/* A press on the empty window's Open button opens the chooser. */
 	if (!app->has_image) {
@@ -1826,8 +1802,7 @@ view_motion(
 
 	/* The pointer moving over an image shows its chip. */
 	if (app->has_image &&
-	    !app->pressed &&
-	    !app->chooser_open)
+	    !app->pressed)
 		iv_app_show_chip(app);
 
 	/* Nothing more without a press. */
@@ -1885,16 +1860,6 @@ view_axis(
 	double target;
 	double fit;
 
-	/* The chooser scrolls its list. */
-	if (app->chooser_open) {
-		/* Down moves the selection down the list, up moves it up. */
-		if (event->scroll > 0)
-			chooser_key(app, IV_KEY_DOWN);
-		else if (event->scroll < 0)
-			chooser_key(app, IV_KEY_UP);
-		return;
-	}
-
 	/* Nothing to zoom without an image to show, or without a turn of the wheel. */
 	if (!app->has_image ||
 	    app->current == NULL ||
@@ -1930,163 +1895,16 @@ view_can_swipe(
 	return 1;
 }
 
-/* Handles a key in the file chooser: moving, choosing, going up a folder, closing. */
-static void
-chooser_key(
-	struct iv_app *app,
-	uint32_t key)
-{
-	struct iv_chooser *chooser;
-	int x;
-	int y;
-	int width;
-	int height;
-	int differs;
-	size_t rows;
-
-	/* The chooser and how many rows its card shows. */
-	chooser = &app->chooser;
-	iv_chooser_layout(app, &x, &y, &width, &height, &rows);
-
-	/* Moves the selection, chooses, goes up a folder or closes. */
-	switch (key) {
-	case IV_KEY_UP:
-		/* Up stops at the first entry. */
-		if (chooser->selected > 0)
-			chooser->selected--;
-		break;
-	case IV_KEY_DOWN:
-		/* Down stops at the last entry. */
-		if (chooser->selected + 1 < chooser->count)
-			chooser->selected++;
-		break;
-	case IV_KEY_ENTER:
-	case IV_KEY_KP_ENTER:
-		chooser_choose(app);
-		return;
-	case IV_KEY_BACKSPACE:
-		/* The parent folder is the first entry (the root has none). */
-		if (chooser->count == 0)
-			return;
-
-		/* A first entry other than the parent means there is no folder above. */
-		differs = strcmp(chooser->entries[0].name, "..");
-		if (differs != 0)
-			return;
-
-		/* The parent folder is chosen. */
-		chooser->selected = 0;
-		chooser_choose(app);
-		return;
-	case IV_KEY_ESCAPE:
-		app->chooser_open = 0;
-		iv_log("CHOOSER closed");
-		break;
-	default:
-		break;
-	}
-
-	/* The selection stays among the rows shown: the first row follows it up or down. */
-	if (chooser->selected < chooser->first)
-		chooser->first = chooser->selected;
-	if (rows > 0 && chooser->selected >= chooser->first + rows)
-		chooser->first = chooser->selected - rows + 1;
-
-	/* The list is drawn again. */
-	app->dirty = 1;
-	app->ui_dirty = 1;
-}
-
-/* Handles a click in the file chooser: an entry is chosen, a click outside the card closes it. */
-static void
-chooser_click(
-	struct iv_app *app,
-	int click_x,
-	int click_y)
-{
-	int x;
-	int y;
-	int width;
-	int height;
-	size_t rows;
-	size_t row;
-
-	/* A click outside the card closes the chooser. */
-	iv_chooser_layout(app, &x, &y, &width, &height, &rows);
-	if (click_x < x ||
-	    click_x >= x + width ||
-	    click_y < y ||
-	    click_y >= y + height) {
-		app->chooser_open = 0;
-		app->dirty = 1;
-		app->ui_dirty = 1;
-		iv_log("CHOOSER closed");
-		return;
-	}
-
-	/* A click on the header chooses nothing. */
-	if (click_y < y + IV_CHOOSER_HEADER)
-		return;
-
-	/* The row clicked, which must hold an entry. */
-	row = (size_t)((click_y - y - IV_CHOOSER_HEADER) / IV_CHOOSER_ROW);
-	if (row >= rows || app->chooser.first + row >= app->chooser.count)
-		return;
-
-	/* The row's entry is chosen. */
-	app->chooser.selected = app->chooser.first + row;
-	chooser_choose(app);
-}
-
-/* Chooses the selected entry: a folder is shown, a file is opened. */
-static void
-chooser_choose(
-	struct iv_app *app)
-{
-	char path[IV_PATH_MAX];
-	const struct iv_entry *entry;
-	int error;
-
-	/* Nothing to choose in an empty folder. */
-	if (app->chooser.count == 0)
-		return;
-
-	/* The entry selected. */
-	entry = &app->chooser.entries[app->chooser.selected];
-
-	/* The entry's path. */
-	error = iv_chooser_path(&app->chooser, app->chooser.selected, path, sizeof(path));
-	if (error != 0)
-		return;
-
-	/* A folder replaces the list. */
-	if (entry->folder) {
-		error = iv_chooser_open(&app->chooser, path);
-		if (error != 0)
-			iv_app_message(app, "Cannot read that folder.", VIEW_MESSAGE_MS);
-
-		/* The list is drawn again, whichever folder it shows. */
-		app->dirty = 1;
-		app->ui_dirty = 1;
-		return;
-	}
-
-	/* A file is opened and the chooser closes. */
-	app->chooser_open = 0;
-	iv_log("CHOOSER chose path=%s", path);
-	(void)iv_app_open(app, path);
-	app->dirty = 1;
-	app->ui_dirty = 1;
-}
-
-/* Opens the file chooser at the shown image's folder, or the home folder. */
+/*
+ * Asks for the file chooser (libkeiui's, which the window shows: main.c) at
+ * the shown image's folder, or the home folder.
+ */
 static void
 open_chooser(
 	struct iv_app *app)
 {
 	char folder[IV_PATH_MAX];
 	const char *home;
-	int error;
 
 	/* The shown image's folder, or the home folder, or the root. */
 	folder[0] = '\0';
@@ -2101,20 +1919,8 @@ open_chooser(
 		snprintf(folder, sizeof(folder), "%s", home);
 	}
 
-	/* Lists it; a folder that cannot be read falls back to the root. */
-	error = iv_chooser_open(&app->chooser, folder);
-	if (error != 0)
-		error = iv_chooser_open(&app->chooser, "/");
-
-	/* Not even the root could be listed. */
-	if (error != 0) {
-		iv_app_message(app, "Cannot list any folder.", VIEW_MESSAGE_MS);
-		return;
-	}
-
-	/* The chooser is shown. */
+	/* The viewer waits for the chooser's answer (iv_app_chosen); the chooser starts in that folder. */
+	snprintf(app->chooser_folder, sizeof(app->chooser_folder), "%s", folder);
 	app->chooser_open = 1;
-	app->dirty = 1;
-	app->ui_dirty = 1;
-	iv_log("CHOOSER open folder=%s entries=%lu", app->chooser.folder, (unsigned long)app->chooser.count);
+	iv_log("CHOOSER open folder=%s", app->chooser_folder);
 }

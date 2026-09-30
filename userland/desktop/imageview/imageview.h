@@ -221,31 +221,6 @@ struct iv_folder {
 	time_t modified;
 };
 
-/* The most entries the file chooser lists. */
-#define IV_CHOOSER_ENTRIES	512
-
-/*
- * One entry of the file chooser: a folder or an image file of the folder
- * shown.
- */
-struct iv_entry {
-	char name[IV_NAME_MAX];
-	int folder;
-};
-
-/*
- * The file chooser: the folder shown, its folders and image files
- * (folders first, each group by name), the entry selected, and the first
- * entry in view.
- */
-struct iv_chooser {
-	char folder[IV_PATH_MAX];
-	struct iv_entry *entries;
-	size_t count;
-	size_t selected;
-	size_t first;
-};
-
 /*
  * Where the image is drawn in the window this frame: the window pixel of
  * each of its corners (in the image's own order: top left, top right,
@@ -283,8 +258,10 @@ struct iv_animation {
 
 /*
  * The viewer: the images, the folder, how the image is shown, the pointer's
- * drag, the swipe to the next image, the chip and the message, the file
- * chooser, and what the window is asked to do.
+ * drag, the swipe to the next image, the chip and the message, whether the
+ * file chooser is asked for (chooser_open: the viewer waits for the answer
+ * of libkeiui's chooser, which the window shows starting at chooser_folder,
+ * ws090-p008), and what the window is asked to do.
  *
  * The view: the image is turned by rotation quarter turns clockwise and
  * drawn at scale window pixels to an image pixel (level 0's).  The turned
@@ -357,7 +334,7 @@ struct iv_app {
 	int chip_width;
 	int chip_height;
 	int chooser_open;
-	struct iv_chooser chooser;
+	char chooser_folder[IV_PATH_MAX];
 	int want_close;
 	int want_context;
 	int context_x;
@@ -428,19 +405,10 @@ void iv_app_show_chip(struct iv_app *app);
 double iv_app_chip_opacity(const struct iv_app *app);
 void iv_app_open_button(const struct iv_app *app, int *x, int *y, int *width, int *height);
 void iv_app_layout(struct iv_app *app);
-void iv_chooser_layout(const struct iv_app *app, int *x, int *y, int *width, int *height, size_t *rows);
-
-/* The sizes of the chooser, which the view and the frame share. */
-#define IV_CHOOSER_HEADER	52
-#define IV_CHOOSER_ROW		34
+void iv_app_chosen(struct iv_app *app, const char *path);
 
 /* The canvas of words and cards (draw.c). */
 void iv_draw(struct iv_app *app, struct iv_canvas *canvas);
-
-/* The file chooser (chooser.c). */
-int iv_chooser_open(struct iv_chooser *chooser, const char *folder);
-void iv_chooser_close(struct iv_chooser *chooser);
-int iv_chooser_path(const struct iv_chooser *chooser, size_t index, char *path, size_t size);
 
 /* The canvas (canvas.c). */
 void iv_canvas_fill(struct iv_canvas *canvas, int x, int y, int width, int height, uint32_t color);

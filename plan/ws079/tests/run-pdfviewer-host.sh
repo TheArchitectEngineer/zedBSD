@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws079-p006: builds PDF Viewer's core (view, frame, document cache, chooser, canvas, text) with libpdf and
+# ws079-p006: builds PDF Viewer's core (view, frame, document cache, canvas, text; the chooser is libkeiui's since ws090-p008) with libpdf and
 # libtruetype for the host (plain and ASan), and runs host-pdfviewer on the Notes-like document of
 # run-pdf-render.sh: the scroll mode, the page mode's swipe and keys, the zoom, the chooser.  The frames are
 # written to build/ws079-p006-host/viewer-*/ as PPM and converted to PNG.  ws079-p015: the sidebar of thumbnails and the
@@ -28,7 +28,7 @@ libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/ba
 	userland/base/libpdf/shading.c
 	userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c"
 viewer="userland/desktop/pdfviewer/view.c userland/desktop/pdfviewer/draw.c userland/desktop/pdfviewer/document.c
-	userland/desktop/pdfviewer/chooser.c userland/desktop/pdfviewer/canvas.c userland/desktop/pdfviewer/text.c"
+	userland/desktop/pdfviewer/canvas.c userland/desktop/pdfviewer/text.c"
 # ws079-p007: a page with a JBIG2 image (libpdf leaves it out) for the notice.
 python3 -c "
 import sys

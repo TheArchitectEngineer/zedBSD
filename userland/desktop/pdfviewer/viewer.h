@@ -212,35 +212,10 @@ struct pv_document {
 	unsigned flags;
 };
 
-/* The most entries the file chooser lists. */
-#define PV_CHOOSER_ENTRIES	512
-
-/*
- * One entry of the file chooser: a folder or a PDF file of the folder
- * shown.
- */
-struct pv_entry {
-	char name[256];
-	int folder;
-};
-
-/*
- * The file chooser: the folder shown, its folders and PDF files (folders
- * first, each group by name), the entry selected, and the first entry in
- * view.
- */
-struct pv_chooser {
-	char folder[PV_PATH_MAX];
-	struct pv_entry *entries;
-	size_t count;
-	size_t selected;
-	size_t first;
-};
-
 /*
  * The viewer: the document, how it is laid out and where the view is, the
  * pointer's drag or swipe, the page turn in progress, the message shown,
- * the file chooser, and what the window is asked to do.
+ * whether the file chooser is asked for, and what the window is asked to do.
  *
  * scroll_y is the top of the view in the laid-out document, in pixels (the
  * scroll mode's whole column of pages, or the page mode's one page);
@@ -269,7 +244,9 @@ struct pv_chooser {
  * while zooming, the frame shows the pages' rasters stretched to the new
  * scale instead of drawing them again, until the fingers stop.
  *
- * ws090-p008: keyboard_right and keyboard_bottom are how much of the
+ * ws090-p008: choosing says the viewer waits for the answer of libkeiui's
+ * file chooser, which the window shows starting at chooser_folder
+ * (pv_app_chosen takes the answer).  keyboard_right and keyboard_bottom are how much of the
  * window the on-screen keyboard covers from its right and its bottom edge
  * (0 without it); the password card stays in the part it leaves.
  */
@@ -306,7 +283,7 @@ struct pv_app {
 	uint64_t message_until;
 	uint64_t indicator_until;
 	int choosing;
-	struct pv_chooser chooser;
+	char chooser_folder[PV_PATH_MAX];
 	int want_close;
 	int want_annotate;
 	int opened;
@@ -369,7 +346,7 @@ double pv_app_page_top(const struct pv_app *app, size_t index);
 double pv_app_content_height(const struct pv_app *app);
 double pv_app_content_width(const struct pv_app *app);
 void pv_app_message(struct pv_app *app, const char *message, uint64_t duration);
-void pv_chooser_layout(const struct pv_app *app, int *x, int *y, int *width, int *height, size_t *rows);
+void pv_app_chosen(struct pv_app *app, const char *path);
 int pv_app_sidebar_width(const struct pv_app *app);
 void pv_app_clamp(struct pv_app *app);
 void pv_app_zoom_to(struct pv_app *app, double scale);
@@ -384,8 +361,6 @@ void pv_password_layout(const struct pv_app *app, int *x, int *y, int *width, in
 /* The sizes of the layout, which the view and the frame share. */
 #define PV_MARGIN		16
 #define PV_GAP			16
-#define PV_CHOOSER_HEADER	52
-#define PV_CHOOSER_ROW		34
 
 /*
  * The sidebar of thumbnails: its width, the box a thumbnail fits in, the
@@ -409,11 +384,6 @@ void pv_password_layout(const struct pv_app *app, int *x, int *y, int *width, in
 
 /* The frame (draw.c). */
 void pv_draw(struct pv_app *app, struct pv_canvas *canvas);
-
-/* The file chooser (chooser.c). */
-int pv_chooser_open(struct pv_chooser *chooser, const char *folder);
-void pv_chooser_close(struct pv_chooser *chooser);
-int pv_chooser_path(const struct pv_chooser *chooser, size_t index, char *path, size_t size);
 
 /* The canvas (canvas.c). */
 void pv_canvas_fill(struct pv_canvas *canvas, int x, int y, int width, int height, uint32_t color);

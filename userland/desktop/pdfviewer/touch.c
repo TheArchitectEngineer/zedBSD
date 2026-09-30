@@ -102,9 +102,9 @@ pv_touch_close(
 }
 
 /*
- * Takes one touch input of the window: a finger over the sidebar, the
- * chooser or the password card plays the pointer; the pages' fingers go to
- * the gestures, and the first of them presses the scroller.
+ * Takes one touch input of the window: a finger over the sidebar or the
+ * password card plays the pointer; the pages' fingers go to the gestures,
+ * and the first of them presses the scroller.
  */
 void
 pv_touch_event(
@@ -128,7 +128,7 @@ pv_touch_event(
 		return;
 	}
 
-	/* A first finger over the sidebar, the chooser or the card starts playing the pointer. */
+	/* A first finger over the sidebar or the card starts playing the pointer. */
 	for_pointer = touch_for_pointer(app, event);
 	if (event->kind == KUI_WINDOW_TOUCH_DOWN &&
 	    touch->fingers == 0U &&
@@ -304,7 +304,7 @@ pv_touch_tick(
 	return -1;
 }
 
-/* Tells whether a finger touches where the pointer's button is the way in: the card, the chooser, the sidebar. */
+/* Tells whether a finger touches where the pointer's button is the way in: the card, the sidebar. */
 static int
 touch_for_pointer(
 	const struct pv_app *app,
@@ -312,10 +312,8 @@ touch_for_pointer(
 {
 	int sidebar;
 
-	/* The password card and the chooser take every touch. */
+	/* The password card takes every touch. */
 	if (app->asking_password)
-		return 1;
-	if (app->choosing)
 		return 1;
 
 	/* So does the sidebar, where it is. */
