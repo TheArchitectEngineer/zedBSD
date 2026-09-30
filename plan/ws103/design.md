@@ -74,7 +74,8 @@ libvulkan の変更:
    その image の local の値を照らす: 2D、mip 1、layer 1、sample 1、`VK_IMAGE_TILING_LINEAR`、extent が記述の幅・高さ、format が記述の形式
    （`GPU_PIXEL_BGRA8888` ↔ `VK_FORMAT_B8G8R8A8_UNORM`、`GPU_PIXEL_RGBA8888` ↔ `VK_FORMAT_R8G8B8A8_UNORM`。今の `import.c` の対応と同じ）、
    `vkGetImageSubresourceLayout` の offset と rowPitch が記述の offset と stride、image の memory の大きさが allocation の中に収まる。
-   さらに kernel の記述の側の `tiling` が linear（`GPU_IMAGE_LINEAR`）で、`usage` が sampling を許すこと（再レビュー A2。今の `memcmp` は 64 byte の全て、
+   さらに kernel の記述の側の `tiling` が linear（`GPU_IMAGE_LINEAR`）で、`usage`（export した側の `VkImageUsageFlags` が入る、`libvulkan/wsi-image.c:176`）が `VK_IMAGE_USAGE_SAMPLED_BIT` を含むこと
+   （含まない export が今あれば p003 で export の側を直す）（再レビュー A2。今の `memcmp` は 64 byte の全て、
    `tiling`・`usage` を含めて比べている）。
    `allocationSize` がその image の memory の要求の大きさと等しいこと（部分の import は拒む）。合わなければ alias を捨てて `VK_ERROR_INVALID_EXTERNAL_HANDLE`。
 3. dedicated の情報の無い image の capability の import は**拒む**（`VK_ERROR_INVALID_EXTERNAL_HANDLE`）。image の capability を import するのは compositor だけで
