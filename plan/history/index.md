@@ -2,12 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q505](queue-q505.md)（ws074-p096 cleared。Mozilla日本語siteの固定比較corpusと一般化修正）
+Last finished Queue: [q506](queue-q506.md)（ws074-p097 cleared。公開site比較、WPT reftest、Acid2・Acid3）
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q505
+## 最新: 2026-09-30 q506
+
+[q506](queue-q506.md): 9公開siteを固定Chrome User-Agentと現実的な2 viewportで画像・box・DOM比較し、Mediumのchallengeを記録。intrinsic auto margin、HTML presentational hint、table rowspan、非同期`postMessage`を修正した。WPT CSS2 reftestは44/100、Acid2は90.56%、Acid3は9/100。GitHubのES module実行はp098候補。GitHubへは未公開。
+
+## 2026-09-30 q505
 
 [q505](queue-q505.md): Mozilla日本語topと直接linkされた3 pageを固定Chrome User-Agentでcaptureし、Chromiumと比較。custom-propertyの`@supports`とbutton内の空白を修正し、topは70.71%/ink 62.52%から78.23%/ink 69.54%へ改善。GitHubへは未公開。
 

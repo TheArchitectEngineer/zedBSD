@@ -124,6 +124,10 @@ text 85.56 468.00 14px face 0 bold 0 #ff000000 " "
 text 89.50 468.00 14px face 0 bold 0 #ff000000 "100%"
 text 126.59 468.00 14px face 0 bold 0 #ff000000 " "
 text 130.53 468.00 14px face 0 bold 0 #ff000000 "below"
+rect 8.00 493.00 300.00 50.00 #ffeeeeee
+rect 30.00 493.00 50.00 50.00 #ffff9999
+rect 90.00 498.50 120.00 20.00 #ff99ccff
+rect 100.00 523.50 100.00 14.00 #ff99ccff
 rect 8.00 397.00 147.09 17.00 #ffccffcc
 text 8.00 411.00 14px face 0 bold 0 #ff000000 "a"
 text 15.86 411.00 14px face 0 bold 0 #ff000000 " "

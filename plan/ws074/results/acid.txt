@@ -1,0 +1,1 @@
+2026-09-30 acid2 exact-pixel-pass 0 agreement 90.56% acid3 9/100 exact-pixel-pass 0 agreement 40.35% historical-diagnostic suite=wpt-2d66b9b7

@@ -434,7 +434,7 @@ DataView、BigInt、Iterator の helper（後）、Intl は後（§16）。
 | suite | 取得 | ライセンス（取得のときに LICENSE を確かめる） | 使い方 |
 | --- | --- | --- | --- |
 | html5lib-tests | git の固定 commit | MIT | tokenizer・tree-construction |
-| WPT（web-platform-tests） | sparse の git clone（`css/`・`url/`・`dom/`・`html/syntax/`・`encoding/`・`resources/`・`fonts/`）の固定 commit | BSD 3-Clause | reftest、testharness、urltestdata |
+| WPT（web-platform-tests） | sparse の git clone（`acid/`・`css/`・`url/`・`dom/`・`html/syntax/`・`encoding/`・`resources/`・`fonts/`）の固定 commit | BSD 3-Clause | reftest、Acidの履歴的診断、testharness、urltestdata |
 | test262 | git の固定 commit（`test/`・`harness/`） | BSD 3-Clause（Ecma） | JS |
 | WebAssembly/spec の test | git の固定 commit（`test/core/`） | Apache-2.0 | `.wast` を host の `wast2json`（Debian の wabt の package）で JSON と `.wasm` に |
 | Ahem の font | WPT の `fonts/Ahem.ttf` | WPT の中の表示に従う | CSS の reftest |
@@ -452,6 +452,10 @@ DataView、BigInt、Iterator の helper（後）、Intl は後（§16）。
 
 test と reference を **両方とも自分の engine で描いて** 比べる（`<meta name=fuzzy>` の許容を守る）。font の rasterize の差が
 Chrome と違っても、自分の中で一致すれば通る。JS を使う reftest（`reftest-wait` など）は JS の後に数に入れる。
+
+`run-wpt-reftests.py`は同じlocal HTTP originからresourceとAhemを配り、scriptを使わないtestをdirectoryごとのround-robinで固定抽出する。
+`run-acid-tests.py`はWPTに保存されたAcid2・Acid3を履歴的な診断として描画する。Acid2は対話用の説明を隠して顔をviewportへ出すharnessだけを足し、
+test rule自体は変えない。Acid3は変更せずscoreと例外を記録する。これらは現在の標準への適合証明には使わない。
 
 ### 14.5 Chrome との比較
 

@@ -22,6 +22,15 @@ body { font-family: sans-serif; font-size: 14px; margin: 8px; }
 .floats li { float: left; width: calc((clamp(300px, 50vw, 600px) - 20px) / 4); height: 30px; margin-right: 6px; background: #9cf; }
 .pic { width: max-content; background: #efe; padding: 2px; }
 .pic img { width: 100%; height: 20px; display: block; }
+.flex-logo { display: flex; width: 300px; height: 50px; background: #eee; }
+.flex-logo-start { display: flex; }
+.flex-logo-menu { width: 22px; }
+.flex-logo-link { display: flex; height: 100%; align-items: center; }
+.flex-logo-icon { width: 50px; height: 50px; margin-right: 10px; background: #f99; }
+.flex-logo-words { max-width: none; }
+.flex-logo-words span { display: block; margin: 0 auto; background: #9cf; }
+.flex-logo-wordmark { width: 120px; height: 20px; }
+.flex-logo-tagline { width: 100px; height: 14px; margin-top: 5px !important; }
 </style>
 </head>
 <body>
@@ -37,5 +46,6 @@ body { font-family: sans-serif; font-size: 14px; margin: 8px; }
 <ul class="floats"><li>a</li><li>b</li><li>c</li></ul>
 <div class="clear"></div>
 <div class="pic">a picture of 100% below <img alt=""></div>
+<div class="flex-logo"><div class="flex-logo-start"><span class="flex-logo-menu"></span><a class="flex-logo-link"><span class="flex-logo-icon"></span><span class="flex-logo-words"><span class="flex-logo-wordmark"></span><span class="flex-logo-tagline"></span></span></a></div></div>
 </body>
 </html>

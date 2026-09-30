@@ -25,6 +25,7 @@ import sys
 import tempfile
 
 from comparison_config import CHROME_USER_AGENT
+from structure_compare import compare_page_structure
 
 try:
     from PIL import Image, ImageChops
@@ -172,6 +173,7 @@ def render_chromium(chromium, page, width, height, output, font_config, work):
         "--no-sandbox",
         "--disable-gpu",
         "--hide-scrollbars",
+        "--allow-file-access-from-files",
         "--disable-background-networking",
         "--disable-component-update",
         "--disable-default-apps",
@@ -282,6 +284,7 @@ def main():
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--refresh-capture", action="store_true")
     parser.add_argument("--dynamic", action="store_true")
+    parser.add_argument("--structure", action="store_true")
     parser.add_argument("--page", action="append", metavar="TAG=PATH")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=900)
@@ -365,6 +368,11 @@ def main():
                 output,
             )
             metrics = compare_images(ours, reference, side)
+            if args.structure:
+                metrics["structure"] = compare_page_structure(
+                    program, chromium, page, args.width, args.height, fonts,
+                    font_config, output / "structure-profile", output / tag,
+                )
             metrics.update(
                 {
                     "tag": tag,

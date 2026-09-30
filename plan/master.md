@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: q506（ws074-p097: 複数の公開siteの画像・DOM比較とlayout改善）。
+Active Queue: なし。Last finished Queue: q506（ws074-p097 cleared: 公開site比較、WPT reftest、Acid2・Acid3）。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（5330 + HDMI の 10 インチの touch LCD + AES pen）。
 Next（2026-09-29 夕に更新）: **素の 5330 で firmware の画面の takeover → 内蔵 LCD の Keiland が動作**（WS084 p001・p002 cleared、image `build/demo-lcd3/hdd-image.img`、ユーザー「完璧です」）。HDMI の LCD はいったん外し LCD のみの構成（demo の既定 `display=edp`）。GT は RP0 の要求で操作中 24.5 present/s（RPS の割込みは F-054）。
 次の周期（demo critical）: WS074 の direction → p072 → p037（[amazon-goal.md](ws074/amazon-goal.md)）、WS079 p009（規約）と CCITTFax・password の入力・thumbnail、
@@ -137,7 +137,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | completed | completed（2026-09-27）: zdesktop-files の最初の版（すりガラスの付箋の pane、タブ、titlebar の CONTROLS、context menu、PNG の thumbnail、DnD、configure_bounds）。残りは Future Work（F-032〜F-041・F-044）、i915 実機は WS075、窓の外への DnD は WS035 |
 | [WS072](ws072/ws.md) | MG004 | write cached の UFS の format の lease（BUG-060）と、NVMe の timeout の後の回復で root の mount が ETIMEDOUT になる（BUG-059）（2026-09-27、サブエージェント） | completed | 2026-09-27 完了（p001 BUG-060: write cached の format の lease、p002 BUG-059: NVMe の timeout の後の再発行） |
 | [WS073](ws073/ws.md) | MG002 | Bug Board の bug の解消（2026-09-27 ユーザー「バグリストに載っているものを解決するサブエージェントを1つ追加しましょう。」）。WS072・WS056（BUG-046）・WS001（BUG-050）の担当と性能の bug（BUG-027・033）を除く | incomplete | 2026-09-29: BUG-100・102（ping）・104（less）・051（signal の frame が amd64 の red zone を壊していた、`src/kern/signal.c`、QEMU で 1092 session 失敗 0）を解決、BUG-105（USB マウスの HID）は実機待ち、BUG-106 は調査中（BUG-051 の現れか）。次: BUG-039・031、BUG-107。BUG-093 は toolchain のため main の許可待ち。2026-09-29 夜: p040（BUG-030）uncleared: `plan/ws073/tests/usb-stress.sh` で起動の途中の BOT CSW の時間切れを再現（TCG 2 回に 1 回）、xHCI の完了の event の取りこぼしを疑う（未確認）。Resume は phase040 の「次にすること」 |
-| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-30: p097 in-progress（q506）。阿部寛のホームページのguest full-screenデモを先に作り、10公開siteの画像・box・DOM比較と一般化修正を行う |
+| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | 2026-09-30: p097 cleared（q506）。10公開siteを2 viewportで固定比較。WPT reftest 44/100、Acid2 90.56%、Acid3 9/100。GitHubのES module実行はp098候補 |
 | [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-29 夜: p019（FIFO の先行、58/s）・p020（RPS）・p021（compiler: 分岐の中の texture の send を IF で飛ぶ。10 app の latency 中央値 132 → 32 ms）cleared、いずれも 5330 の passthrough。MAILBOX・IMMEDIATE はデモの後（F-057）。次: p022（encoder の scoreboard の緩和）→ p023（分岐の中の ALU を飛ぶ）。素の 5330 は demo-lcd7 で。デモの image: `plan/ws075/demo/build-demo-image.sh` |
 | [WS076](ws076/ws.md) | MG002 | libc の libm を自前で正しく書き直す（src/libc、誤差 1 ulp 以内、fmod 等は正確）（2026-09-28 ユーザー「libmは独自に書いてください。libcのツリーに入れてください。」） | completed | 2026-09-28 完了（`src/libc/math/`、群 B は全件で正しく丸め、BUG-078 解決）。F-046・F-047 へ移管 |
 | [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | planning | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
@@ -169,7 +169,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 
 依存による実行順とは別のもの。Queue の権限は変えない。2026-09-28 に整理（それ以前の順は git の履歴にある）。
 
-0. **現在のユーザー指示**: WS074（q506 / p097）。阿部寛のホームページのguest full-screenデモを先に作り、指定された10公開siteを画像・box・DOM treeでChromiumと比較して改善する。
+0. **直前のユーザー指示**: WS074（q506 / p097）はcleared。公開site比較、WPT reftest、Acid2・Acid3まで記録した。次のQueueは未選択で、候補はp036・p047・p098。
 
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 

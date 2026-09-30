@@ -1,4 +1,4 @@
-canvas 1024.00 x 768.00 #ffffffff
+canvas 1024.00 x 775.00 #ffffffff
 text 72.91 22.00 14px face 0 bold 0 #ff000000 "A"
 text 82.56 22.00 14px face 0 bold 0 #ff000000 " "
 text 86.50 22.00 14px face 0 bold 0 #ff000000 "caption"
@@ -322,3 +322,26 @@ text 814.48 653.00 14px face 0 bold 0 #ff000000 " "
 text 818.42 653.00 14px face 0 bold 0 #ff000000 "aute"
 text 847.30 653.00 14px face 0 bold 0 #ff000000 " "
 text 851.23 653.00 14px face 0 bold 0 #ff000000 "irure"
+rect 159.20 672.00 705.59 93.00 #ffeef5ff
+rect 164.20 677.00 98.00 83.00 #ffffddee
+rect 164.20 677.00 98.00 1.00 #ff557799
+rect 164.20 759.00 98.00 1.00 #ff557799
+rect 164.20 678.00 1.00 81.00 #ff557799
+rect 261.20 678.00 1.00 81.00 #ff557799
+text 168.20 753.00 14px face 0 bold 0 #ff000000 "two"
+text 192.62 753.00 14px face 0 bold 0 #ff000000 " "
+text 196.56 753.00 14px face 0 bold 0 #ff000000 "rows"
+rect 267.20 677.00 592.59 1.00 #ff557799
+rect 267.20 701.00 592.59 1.00 #ff557799
+rect 267.20 678.00 1.00 23.00 #ff557799
+rect 858.80 678.00 1.00 23.00 #ff557799
+text 271.20 695.00 14px face 0 bold 0 #ff000000 "top"
+text 292.75 695.00 14px face 0 bold 0 #ff000000 " "
+text 296.69 695.00 14px face 0 bold 0 #ff000000 "right"
+rect 267.20 707.00 592.59 1.00 #ff557799
+rect 267.20 759.00 592.59 1.00 #ff557799
+rect 267.20 708.00 1.00 51.00 #ff557799
+rect 858.80 708.00 1.00 51.00 #ff557799
+text 774.97 739.00 14px face 0 bold 0 #ff000000 "bottom"
+text 821.75 739.00 14px face 0 bold 0 #ff000000 " "
+text 825.69 739.00 14px face 0 bold 0 #ff000000 "right"

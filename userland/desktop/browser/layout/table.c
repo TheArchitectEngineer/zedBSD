@@ -15,14 +15,15 @@
  * that width and one with a percentage at that share of the table while
  * the others take the rest (an auto table widens to let the percentages
  * hold), the spacing between the
- * cells, each row as tall as its tallest cell, and a cell's content moved
- * down in it by its vertical-align (middle, bottom).  A table of an auto
+ * cells, each row as tall as its tallest cell, cells spanning rows holding
+ * enough height across those rows, and a cell's content moved down in it by
+ * its vertical-align (middle, bottom).  A table of an auto
  * width is as wide as its columns want, at most its containing block's
  * width.  Collapsed borders are approximated: the cells overlap by the
  * first cell's border (one line where they meet, when the borders are
- * alike) and the table's edges have no spacing.  Not in this pass:
- * rowspan, the fixed layout, the resolution of collapsed borders, column
- * boxes and baselines.
+ * alike) and the table's edges have no spacing.  Not in this pass: the
+ * fixed layout, the resolution of collapsed borders, column boxes and
+ * baselines.
  */
 
 #include "layout/layout.h"
@@ -43,6 +44,8 @@ struct table_cell {
 	size_t row;
 	int column;
 	int span;
+	int row_span;
+	layout_unit wanted;
 };
 
 /*
@@ -84,7 +87,8 @@ struct table_sizes {
 
 static int table_collect(struct layout_box *box, struct table_state *state);
 static int table_collect_row(struct layout_box *row, struct table_state *state);
-static int table_span(const struct layout_box *cell);
+static int table_slot_taken(const struct table_state *state, size_t row, int column);
+static int table_span(const struct layout_box *cell, const char *name);
 static int table_measure(struct layout_tree *tree, struct layout_box *box, struct table_state *state);
 static int table_cell_widths(struct layout_tree *tree, struct layout_box *cell, layout_unit containing, layout_unit *least, layout_unit *most, int *fixed, float *percent);
 static layout_unit table_wanted(const struct table_state *state, layout_unit spacing, layout_unit sum_most);
@@ -252,23 +256,51 @@ table_collect_row(
 {
 	struct table_cell cell;
 	struct layout_box *child;
+	size_t row_number;
+	int offset;
 	int column;
+	int taken;
 	int error;
 
 	/* The row. */
 	error = wb_vector_push(&state->rows, &row);
 	if (error != 0)
 		return error;
+	row_number = state->rows.count - 1U;
 
 	/* Its cells. */
 	column = 0;
 	for (child = row->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow || child->floating != CSS_FLOAT_NONE)
 			continue;
+		cell.span = table_span(child, "colspan");
+		for (;;) {
+			/* Skips columns occupied by a cell from an earlier row. */
+			taken = table_slot_taken(state, row_number, column);
+			while (taken) {
+				column++;
+				taken = table_slot_taken(state, row_number, column);
+			}
+
+			/* Finds whether the complete colspan is free here. */
+			for (offset = 0; offset < cell.span; offset++) {
+				taken = table_slot_taken(state, row_number, column + offset);
+				if (taken)
+					break;
+			}
+
+			/* A free run is the cell's place; otherwise resumes after the obstruction. */
+			if (offset == cell.span)
+				break;
+			column += offset + 1;
+		}
+
+		/* Remembers the cell and the rows and columns it covers. */
 		cell.box = child;
-		cell.row = state->rows.count - 1U;
+		cell.row = row_number;
 		cell.column = column;
-		cell.span = table_span(child);
+		cell.row_span = table_span(child, "rowspan");
+		cell.wanted = 0;
 		error = wb_vector_push(&state->cells, &cell);
 		if (error != 0)
 			return error;
@@ -278,15 +310,43 @@ table_collect_row(
 	/* The columns. */
 	if (column > state->columns)
 		state->columns = column;
+
+	/* Succeeded: the row and its cells are gathered. */
 	return 0;
 }
 
-/* Reads the number of columns a cell spans: its element's colspan, or one. */
+/* Says whether a column in a row is already covered by a cell. */
+static int
+table_slot_taken(
+	const struct table_state *state,
+	size_t row,
+	int column)
+{
+	const struct table_cell *cell;
+	size_t index;
+
+	/* A cell covers its columns from its first row through its row span. */
+	for (index = 0; index < state->cells.count; index++) {
+		cell = wb_vector_at(&state->cells, index);
+		if (cell->row > row)
+			break;
+		if (row - cell->row >= (size_t)cell->row_span)
+			continue;
+		if (column >= cell->column && column < cell->column + cell->span)
+			return 1;
+	}
+
+	/* No preceding cell covers the slot. */
+	return 0;
+}
+
+/* Reads the number of columns or rows a cell spans: its attribute, or one. */
 static int
 table_span(
-	const struct layout_box *cell)
+	const struct layout_box *cell,
+	const char *name)
 {
-	const struct vm_string *colspan;
+	const struct vm_string *attribute;
 	size_t index;
 	uint16_t unit;
 	int span;
@@ -294,14 +354,14 @@ table_span(
 	/* An anonymous cell, or a cell without the attribute, spans one. */
 	if (cell->node == NULL || cell->node->type != DOM_ELEMENT)
 		return 1;
-	colspan = dom_attribute_ascii((const struct dom_element *)cell->node, "colspan");
-	if (colspan == NULL)
+	attribute = dom_attribute_ascii((const struct dom_element *)cell->node, name);
+	if (attribute == NULL)
 		return 1;
 
 	/* The digits at its start. */
 	span = 0;
-	for (index = 0; index < colspan->length; index++) {
-		unit = vm_string_at(colspan, index);
+	for (index = 0; index < attribute->length; index++) {
+		unit = vm_string_at(attribute, index);
 		if (unit < '0' || unit > '9')
 			break;
 		span = span * 10 + (int)(unit - '0');
@@ -661,71 +721,84 @@ table_lay_rows(
 {
 	struct table_cell *cell;
 	struct layout_box *row;
+	layout_unit *heights;
 	layout_unit x;
 	layout_unit width;
 	layout_unit height;
 	layout_unit wanted;
 	layout_unit target;
 	layout_unit offset;
+	layout_unit have;
+	layout_unit missing;
 	size_t index;
-	size_t first;
-	size_t last;
 	size_t number;
+	size_t last_row;
 	int column;
 	int align;
 	int error;
+
+	/* Each row starts at the height it explicitly asks for. */
+	heights = calloc(state->rows.count + 1U, sizeof(*heights));
+	if (heights == NULL)
+		return ENOMEM;
+	for (number = 0; number < state->rows.count; number++) {
+		row = *(struct layout_box **)wb_vector_at(&state->rows, number);
+		if (row->style.height.unit == CSS_UNIT_PX)
+			heights[number] = layout_from_px(row->style.height.value);
+	}
+
+	/* Lay every cell out at its width, and let one-row cells size their row. */
+	for (index = 0; index < state->cells.count; index++) {
+		cell = wb_vector_at(&state->cells, index);
+		x = 0;
+		for (column = 0; column < cell->column; column++)
+			x += state->widths[column] + state->across;
+		width = state->across * (layout_unit)(cell->span - 1);
+		for (column = cell->column;
+		    column < cell->column + cell->span && column < state->columns;
+		    column++)
+			width += state->widths[column];
+		error = table_lay_cell(tree, cell->box, width, &wanted);
+		if (error != 0) {
+			free(heights);
+			return error;
+		}
+
+		/* Keeps the cell at its horizontal grid position until rows are placed. */
+		cell->box->x = x;
+		cell->box->y = 0;
+		if (wanted < cell->box->height)
+			wanted = cell->box->height;
+		cell->wanted = wanted + table_frame_down(cell->box);
+		if (cell->row_span == 1 && cell->wanted > heights[cell->row])
+			heights[cell->row] = cell->wanted;
+	}
+
+	/* A spanning cell may make the last row it reaches taller. */
+	for (index = 0; index < state->cells.count; index++) {
+		cell = wb_vector_at(&state->cells, index);
+		if (cell->row_span == 1)
+			continue;
+		last_row = cell->row + (size_t)cell->row_span;
+		if (last_row > state->rows.count)
+			last_row = state->rows.count;
+		have = state->down * (layout_unit)(last_row - cell->row - 1U);
+		for (number = cell->row; number < last_row; number++)
+			have += heights[number];
+		if (have < cell->wanted) {
+			missing = cell->wanted - have;
+			heights[last_row - 1U] += missing;
+		}
+	}
 
 	/* The spacing above the first row. */
 	if (state->rows.count != 0)
 		*cursor += state->edge_y;
 
-	/* Each row, with the cells from first up to the next row's. */
-	first = 0;
+	/* Place the rows from top to bottom. */
 	for (number = 0; number < state->rows.count; number++) {
 		row = *(struct layout_box **)wb_vector_at(&state->rows, number);
-		height = 0;
-		if (row->style.height.unit == CSS_UNIT_PX)
-			height = layout_from_px(row->style.height.value);
-		for (last = first; last < state->cells.count; last++) {
-			cell = wb_vector_at(&state->cells, last);
-			if (cell->row != number)
-				break;
-
-			/* The cell's place and width across its columns and the spacing between them. */
-			x = 0;
-			for (column = 0; column < cell->column; column++)
-				x += state->widths[column] + state->across;
-			width = state->across * (layout_unit)(cell->span - 1);
-			for (column = cell->column; column < cell->column + cell->span && column < state->columns; column++)
-				width += state->widths[column];
-			error = table_lay_cell(tree, cell->box, width, &wanted);
-			if (error != 0)
-				return error;
-			cell->box->x = x;
-			cell->box->y = 0;
-
-			/* The row is as tall as its tallest cell (its content, or its own height when that is taller). */
-			if (wanted < cell->box->height)
-				wanted = cell->box->height;
-			wanted += table_frame_down(cell->box);
-			if (wanted > height)
-				height = wanted;
-		}
-
-		/* Each cell fills the row's height, its content moved down as its vertical-align says. */
-		for (index = first; index < last; index++) {
-			cell = wb_vector_at(&state->cells, index);
-			target = height - table_frame_down(cell->box);
-			offset = 0;
-			align = cell->box->style.vertical_align;
-			if (align == CSS_VALIGN_MIDDLE)
-				offset = (target - cell->box->height) / 2;
-			if (align == CSS_VALIGN_BOTTOM)
-				offset = target - cell->box->height;
-			if (offset > 0)
-				table_shift(cell->box, offset);
-			cell->box->height = target;
-		}
+		height = heights[number];
 
 		/* The row's box, in the table's content box inside the spacing, with no margins, borders or paddings of its own. */
 		memset(row->margin, 0, sizeof(row->margin));
@@ -745,10 +818,33 @@ table_lay_rows(
 		} else {
 			*cursor += state->edge_y;
 		}
-
-		/* The next row's cells. */
-		first = last;
 	}
+
+	/* Each cell fills all the rows it spans, with its content vertically aligned. */
+	for (index = 0; index < state->cells.count; index++) {
+		cell = wb_vector_at(&state->cells, index);
+		last_row = cell->row + (size_t)cell->row_span;
+		if (last_row > state->rows.count)
+			last_row = state->rows.count;
+		height = state->down * (layout_unit)(last_row - cell->row - 1U);
+		for (number = cell->row; number < last_row; number++)
+			height += heights[number];
+		target = height - table_frame_down(cell->box);
+		if (target < 0)
+			target = 0;
+		offset = 0;
+		align = cell->box->style.vertical_align;
+		if (align == CSS_VALIGN_MIDDLE)
+			offset = (target - cell->box->height) / 2;
+		if (align == CSS_VALIGN_BOTTOM)
+			offset = target - cell->box->height;
+		if (offset > 0)
+			table_shift(cell->box, offset);
+		cell->box->height = target;
+	}
+
+	/* The row heights are no longer needed. */
+	free(heights);
 
 	/* Succeeded: the rows are laid out. */
 	return 0;

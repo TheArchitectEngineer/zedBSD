@@ -1,0 +1,1 @@
+2026-09-30 css2-static-reftest-sample 44/100 (44.0%) errors 0 eligible 5904 selection=first-level-round-robin suite=wpt-2d66b9b7

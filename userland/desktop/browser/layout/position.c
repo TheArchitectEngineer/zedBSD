@@ -355,8 +355,16 @@ layout_content_width(
 			width = layout_content_width(child, depth + 1);
 		}
 
-		/* The child's margins, borders and paddings go around it. */
-		width += child->margin[CSS_LEFT] + position_frame(child) + child->margin[CSS_RIGHT];
+		/*
+		 * The child's margins, borders and paddings go around it.  An auto
+		 * margin contributes zero to an intrinsic size; its resolved value
+		 * only places the child in the deliberately very wide measuring box.
+		 */
+		if (child->style.margin[CSS_LEFT].unit != CSS_UNIT_AUTO)
+			width += child->margin[CSS_LEFT];
+		width += position_frame(child);
+		if (child->style.margin[CSS_RIGHT].unit != CSS_UNIT_AUTO)
+			width += child->margin[CSS_RIGHT];
 
 		/*
 		 * Floats stand side by side (ws074-p074): a right one adds its margin

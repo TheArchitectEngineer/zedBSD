@@ -1,6 +1,6 @@
-viewport 1024.00 x 768.00, document height 501.00
-block <html> 0.00 0.00 1024.00 501.00
-  block <body> 8.00 8.00 1008.00 485.00
+viewport 1024.00 x 768.00, document height 551.00
+block <html> 0.00 0.00 1024.00 551.00
+  block <body> 8.00 8.00 1008.00 535.00
     block <div> 8.00 8.00 304.69 29.00
       line 14.00 14.00 height 17.00 baseline 28.00
         text 14.00 w 88.47 14px "max-content:"
@@ -146,3 +146,11 @@ block <html> 0.00 0.00 1024.00 501.00
           text 126.59 w 3.94 14px " "
           text 130.53 w 39.97 14px "below"
       block <img> 10.00 471.00 160.50 20.00
+    block <div> 8.00 493.00 300.00 50.00
+      block <div> 8.00 493.00 202.00 50.00
+        block <span> 8.00 493.00 22.00 50.00
+        block <a> 30.00 493.00 180.00 50.00
+          block <span> 30.00 493.00 50.00 50.00
+          block <span> 90.00 498.50 120.00 39.00
+            block <span> 90.00 498.50 120.00 20.00
+            block <span> 100.00 523.50 100.00 14.00

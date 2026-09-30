@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: q506（ws074-p097）
-Resume point: 2026-09-30: p097 in-progress。最初に阿部寛のホームページをguest browserで開いたfull-screenデモ画像を作る。その後、指定10公開siteの画像・box・DOM tree比較を確立し、一般化できる差を最大4件修正する。
+Queue: なし
+Resume point: 2026-09-30: p097 cleared。10公開siteの固定画像・box・DOM比較、現実的な2 viewport、WPT reftest、Acid2・Acid3を記録した。次のQueueは未選択。候補はp036（CSS2 reftest）、p047（DOM testharness）、p098（ES module script）。
 <!-- awesome-plan-current:end -->
 
 ## デモの目標（2026-09-28 ユーザー、同日に amazon.co.jp へ変更）
@@ -189,7 +189,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p094](phase094/phase.md) | Chromiumとの再現可能な比較手順: 固定capture、隔離profile、入力・環境・出力のhash、JSON reportとbaseline回帰 | **cleared**（2026-09-30。top 82.96%/ink 79.01%、search 75.85%/ink 32.97%） | p067 |
 | [ws074-p095](phase095/phase.md) | Amazon検索欄の文字の位置: flex itemのcross-axisのbox sizing、form controlの`text-indent` | **cleared**（2026-09-30。検索文字の範囲がChromiumと同じ`x=435..574, y=22..36`） | p035、p032、p092 |
 | [ws074-p096](phase096/phase.md) | 公開サイトの固定比較corpus: Mozilla日本語topから同一originのpageをたどり、固定Chrome User-AgentでChromiumと比較して一般化できる差を最大2件修正 | **cleared**（2026-09-30。4 page、`@supports`、button空白。top 78.23%/ink 69.54%） | p094、p095 |
-| [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、一般化できる差を最大4件修正 | **in-progress**（q506） | p094、p096 |
+| [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、WPT reftestとAcid、一般化できる差を最大4件修正 | **cleared**（2026-09-30。WPT 44/100、Acid2 90.56%、Acid3 9/100。`postMessage`、table rowspan、presentational hint、intrinsic auto margin） | p094、p096 |
+| ws074-p098 | ES module scriptのgraph取得・link・評価、`import`・`export`、GitHubのhydration比較 | planned | p087、p088、p097 |
 
 ## 後の WS・Future Work の候補
 
