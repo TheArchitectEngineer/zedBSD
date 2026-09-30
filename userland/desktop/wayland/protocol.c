@@ -14,6 +14,7 @@
 #include "menu.h"
 #include "titlebar.h"
 #include "inset.h"
+#include "edit.h"
 #include "popup.h"
 #include "toplevel.h"
 #include "subsurface.h"
@@ -67,6 +68,7 @@ static const struct zwl_global globals[] = {
 	{ 20, "keiland_ime_status_manager_v1", 1, ZWL_IME_STATUS_MANAGER },
 	{ 21, "keiland_desktop_manager_v1", 1, ZWL_DESKTOP_MANAGER },
 	{ 22, "keiland_keyboard_inset_manager_v1", 1, ZWL_KEYBOARD_INSET_MANAGER },
+	{ 23, "keiland_edit_manager_v1", 1, ZWL_EDIT_MANAGER },
 };
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
@@ -301,6 +303,11 @@ zwl_dispatch(
 	case ZWL_KEYBOARD_INSET:
 		/* The keyboard inset (inset.c, ws102-p015). */
 		error = zwl_inset_request(object, opcode, bytes, size);
+		break;
+	case ZWL_EDIT_MANAGER:
+	case ZWL_EDIT:
+		/* The editing operations (edit.c, ws102-p017). */
+		error = zwl_edit_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */

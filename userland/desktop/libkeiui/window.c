@@ -221,8 +221,9 @@ kui_window_close(
 	if (window == NULL)
 		return;
 
-	/* The keyboard's inset before the toplevel it names. */
+	/* The keyboard's inset and the editing operations before the toplevel they name. */
 	keiland_keyboard_inset_destroy(window->inset);
+	keiui_edit_close(window);
 
 	/* The presenter before the surface it shows on. */
 	if (window->present == KUI_PRESENT_VULKAN)
@@ -287,6 +288,9 @@ kui_window_dispatch(
 {
 	struct pollfd descriptor;
 	int status;
+
+	/* The editing state as it is now goes out with what is flushed (edit.c). */
+	keiui_edit_update(window);
 
 	/* Runs what is queued until a read of new events can be reserved. */
 	for (;;) {
@@ -415,6 +419,7 @@ kui_window_repeat(
 		event->code = window->repeat_key;
 		event->pressed = 1;
 		event->repeated = 1;
+		keiui_edit_key(window, event);
 	}
 
 	/* The next repeat is one interval later. */
@@ -842,6 +847,9 @@ window_setup(
 
 	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told). */
 	window->inset = keiland_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
+
+	/* The editing operations of the keyboard's buttons, where the compositor has them (KUI_VERSION 8). */
+	keiui_edit_start(window);
 	wl_surface_commit(window->surface);
 
 	/* The first configure (and the seat's devices) before anything is drawn. */
@@ -1655,6 +1663,7 @@ window_keyboard_key(
 		event->pressed = 0;
 		if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
 			event->pressed = 1;
+		keiui_edit_key(window, event);
 	}
 
 	/* A release of the repeating key stops it. */

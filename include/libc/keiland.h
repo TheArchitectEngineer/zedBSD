@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset). */
-#define KEILAND_VERSION	18U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations). */
+#define KEILAND_VERSION	19U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1269,6 +1269,56 @@ struct keiland_keyboard_inset *keiland_keyboard_inset_create(struct wl_display *
  * Stops hearing the keyboard.
  */
 void keiland_keyboard_inset_destroy(struct keiland_keyboard_inset *inset);
+
+/*
+ * The editing operations (KEILAND_VERSION 19, ws102-p017).
+ *
+ * A window says which editing operations it carries out and its state --
+ * whether it has a selection, something to paste, something to undo or to
+ * redo, whether a selection is being made -- and hears the operations the
+ * on-screen keyboard's buttons ask for (the buttons are grey when the
+ * state rules one out).  A window without it is sent the keys instead
+ * (Ctrl+C, X, V, Z, Y, A).
+ */
+struct keiland_edit;
+
+/* The operations, as the callback hears them; a window's operations are the bits 1 << operation. */
+#define KEILAND_EDIT_COPY		0U
+#define KEILAND_EDIT_CUT		1U
+#define KEILAND_EDIT_PASTE		2U
+#define KEILAND_EDIT_UNDO		3U
+#define KEILAND_EDIT_REDO		4U
+#define KEILAND_EDIT_SELECT_ALL		5U
+#define KEILAND_EDIT_SELECT_BEGIN	6U
+#define KEILAND_EDIT_SELECT_END		7U
+
+/* The state's bits. */
+#define KEILAND_EDIT_HAS_SELECTION	1U
+#define KEILAND_EDIT_CAN_PASTE		2U
+#define KEILAND_EDIT_CAN_UNDO		4U
+#define KEILAND_EDIT_CAN_REDO		8U
+#define KEILAND_EDIT_SELECTING		16U
+
+/* The application's callback: the operation asked for. */
+typedef void (*keiland_edit_fn)(void *data, uint32_t operation);
+
+/*
+ * Asks for a window's edit object; callback runs on the application's
+ * default queue.  Returns NULL with errno set: ENOTSUP for a compositor
+ * without it, EINVAL, ENOMEM.
+ */
+struct keiland_edit *keiland_edit_create(struct wl_display *display, struct xdg_toplevel *toplevel, keiland_edit_fn callback, void *data);
+
+/*
+ * Says the operations the window carries out (bits 1 << KEILAND_EDIT_*) and
+ * its state (KEILAND_EDIT_HAS_SELECTION ...); an unchanged pair is not sent.
+ */
+void keiland_edit_set_state(struct keiland_edit *edit, uint32_t operations, uint32_t state);
+
+/*
+ * Stops taking operations.
+ */
+void keiland_edit_destroy(struct keiland_edit *edit);
 
 #ifdef __cplusplus
 }

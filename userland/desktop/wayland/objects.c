@@ -20,6 +20,7 @@
 #include "extras.h"
 #include "panels.h"
 #include "inset.h"
+#include "edit.h"
 #include "tablet.h"
 #include "ime.h"
 #include "touch.h"
@@ -319,6 +320,10 @@ zwl_object_destroy(
 	/* A toplevel's keyboard insets name nothing (inset.c). */
 	if (object->kind == ZWL_TOPLEVEL)
 		zwl_inset_object_gone(object);
+
+	/* A toplevel's edit objects name nothing (edit.c). */
+	if (object->kind == ZWL_TOPLEVEL)
+		zwl_edit_object_gone(object);
 
 	/* A data source leaves the clipboard and its offers, and a drag loses what goes (data.c). */
 	if (object->kind == ZWL_DATA_SOURCE ||
