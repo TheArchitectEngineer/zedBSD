@@ -197,7 +197,7 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | 2026-09-30: 段 L1（QEMU の基準 C1〜C4・C7〜C10、BUG-115・118・122）を満たした。L2（BUG-121、C5 の実機、C1 の実機の目視）・L3（C6・C10 の実機）は広く浅くの順で後 |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | p001〜p005・p007 cleared 2026-09-30（QEMU）: 段 L1（system bar の音量の icon・slider・mute・wheel・確かめの音・保存、Settings の Sound の頁、両者の同期）を満たした。次の段 L2（5330 の実機で鳴る、p006-a〜c）・L3（確かめの音の遅れ 50 ms・音量の曲線 ±3 dB、ユーザーが確定） |
-| [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p011 cleared 2026-09-30: i915 の実機（passthrough）で Vulkan の compute（vkcs 21/21）・GLES 3.1 の compute・**Noct の GPU の自動並列化（G3）が CPU と全要素一致で動いた**（dispatch 8 回）。ただし GPU は 260 ms、CPU は 10 ms（26 倍遅い）。次: p015（S13 を demo の image で）、L2 の p016（260 ms の内訳）・p017（3 倍） |
+| [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | p001〜p011 cleared 2026-09-30: i915 の実機（passthrough）で Vulkan の compute（vkcs 21/21）・GLES 3.1 の compute・**Noct の GPU の自動並列化（G3）が CPU と全要素一致で動いた**（dispatch 8 回）。ただし GPU は 260 ms、CPU は 10 ms（26 倍遅い）。次: p015（S13 を demo の image で）。L2 の p016（260 ms の内訳）・p017（3 倍）はユーザーの判断で優先を下げた（デモ critical の中で最も低い） |
 | [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | p001（設計）cleared 2026-09-30: compositor の keyboard.c、英数は evdev の key、かなは text-input-v3 の commit（ime.h の公開の API だけ）、段 L1〜L4 と数値目標。次は p002（L1: flick の panel）。D1 は「libkeiui に text-input-v3 の受け口」（WS090 の Phase）、D2 は「IME にかなの口を足す」（L3、人間の IME の作業と調整）で決定 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
@@ -211,6 +211,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 **デモまでの期間（2026-09-29 ユーザー）**: 10-10 ごろまで新規実装を進め、10-10 ごろ〜10-17 は bug の修正と実機での調整だけにする。
 
 **優先の調整（2026-09-29 夜 ユーザー）**:「IMEはとりあえず変換できるようになったら、ブラッシュアップは後回しにして、Keilandを優先しましょう。Bug-030も優先です。Settingsはある程度動いたらブラッシュアップは後回しにします。」→ WS035（Keiland）と BUG-030（WS073）を先に。WS095 は p004（変換と確定）で一区切りにし、候補の窓の残り・辞書の拡張（p012）ほかは後回し。WS089 は p006 の後のブラッシュアップを後回し。
+
+**WS101 の最適化の優先を下げる（2026-09-30 ユーザー）**:「WS101ですが、GPUでは疎通できたので、最適化の優先度を下げます。優先リストにはあるものの、その中では優先度が低いことにしてスケジューリングしてください。」→ WS101 は p015（S13 を demo の image で通す）までを済ませ、L2（p016 の内訳・p017 の 3 倍）以降はデモ critical の中で一番低い優先にする。
 
 **エージェントの呼称（2026-09-30 ユーザー）**: メインのエージェントは **Q1**（クイーン 1）、サブエージェントは **P1**・**P2**…（ポーン）。2026-09-30 の割り当て: P1 = WS075（i915、High）、P2 = WS101（GPU の compute、High）、P3 = WS094（デスクトップの icon、Mid、前は WS099・WS100）、P4 = WS100 p005（Mid、前は WS090）。新しいサブエージェントは次の番号から。
 
