@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser). */
-#define KEILAND_VERSION	16U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur). */
+#define KEILAND_VERSION	17U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -546,6 +546,15 @@ struct keiland_glass *keiland_glass_create(struct wl_display *display, struct wl
  * Sets the surface's panels for its next commit (count 0: none).
  */
 int keiland_glass_set_panels(struct keiland_glass *glass, const struct keiland_glass_panel *panels, size_t count);
+
+/*
+ * Chooses whether the surface's glass (its panels and its title bar) shows
+ * the windows under it blurred (enabled) or only the blurred wallpaper (the
+ * default: the compositor draws nothing again for it), from the surface's
+ * next commit (KEILAND_VERSION 17).  Returns ENOTSUP when the compositor's
+ * glass has no choice.
+ */
+int keiland_glass_set_blur(struct keiland_glass *glass, int enabled);
 
 /*
  * Takes the glass away: the surface's next commit shows it without panels.

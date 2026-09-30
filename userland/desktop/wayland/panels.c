@@ -18,6 +18,11 @@
  * set_panels changes the pending list, and the surface's commit applies
  * it (zwl_panels_commit), so a window's panels move with the frame drawn
  * for them.  The client says what the parts are, not how glass looks.
+ *
+ * Version 2 (ws075-p029): set_blur chooses whether the window's glass (its
+ * panels and its title bar) shows the windows under it blurred, which
+ * costs a drawing of the scene under the window every frame (backdrop.c),
+ * or only the blurred wallpaper (the default).  It is double-buffered too.
  */
 
 #include "panels.h"
@@ -32,6 +37,7 @@
 #define GLASS_MANAGER_GET_GLASS		1U
 #define GLASS_DESTROY			0U
 #define GLASS_SET_PANELS		1U
+#define GLASS_SET_BLUR			2U
 
 /* The errors: a surface with glass already; a list of panels that is not one; glass whose surface has gone. */
 #define GLASS_MANAGER_ERROR_EXISTS	0U
@@ -101,6 +107,15 @@ zwl_panels_request(
 		return EPROTO;
 	}
 
+	/* The choice of blur for the next commit (version 2): one word, 0 or 1. */
+	if (opcode == GLASS_SET_BLUR) {
+		if (size != 4U || surface->panels == NULL)
+			return EPROTO;
+		surface->panels->pending_blur = panels_word(bytes, 0U) != 0U;
+		surface->panels->changed = 1;
+		return 0;
+	}
+
 	/* The panels for the next commit. */
 	if (opcode != GLASS_SET_PANELS)
 		return EPROTO;
@@ -128,9 +143,14 @@ zwl_panels_commit(
 	if (panels == NULL || !panels->changed)
 		return;
 
-	/* The pending panels become the surface's, drawn from the next frame. */
+	/* A change of the blur, logged on its own line. */
+	if (panels->blur != panels->pending_blur)
+		printf("ZWL GLASS client=%llu surface=%u blur=%u\n", (unsigned long long)surface->client->number, surface->id, panels->pending_blur);
+
+	/* The pending panels and blur become the surface's, drawn from the next frame. */
 	memcpy(panels->current, panels->pending, sizeof(panels->current));
 	panels->count = panels->pending_count;
+	panels->blur = panels->pending_blur;
 	panels->changed = 0;
 	surface->client->server->dirty = 1;
 
@@ -165,6 +185,7 @@ zwl_panels_object_gone(
 		surface->glass = NULL;
 		if (surface->panels != NULL) {
 			surface->panels->pending_count = 0;
+			surface->panels->pending_blur = 0U;
 			surface->panels->changed = 1;
 		}
 
@@ -198,6 +219,22 @@ zwl_panels_count(
 
 	/* The committed panels. */
 	return surface->panels->count;
+}
+
+/*
+ * Returns whether a surface's last commit asked its glass to show the
+ * windows under it blurred (set_blur); 0 for a surface without glass.
+ */
+unsigned
+zwl_panels_blur(
+	const struct zwl_object *surface)
+{
+	/* No glass, the blurred wallpaper. */
+	if (surface->panels == NULL)
+		return 0;
+
+	/* The committed choice. */
+	return surface->panels->blur;
 }
 
 /*

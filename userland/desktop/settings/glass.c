@@ -36,6 +36,8 @@ se_glass_open(
 	struct se_window *window,
 	const struct se_present *present)
 {
+	int error;
+
 	/* Nothing sent yet. */
 	memset(glass, 0, sizeof(*glass));
 
@@ -51,6 +53,14 @@ se_glass_open(
 		se_log("GLASS off reason=compositor errno=%d", errno);
 		return 0;
 	}
+
+	/*
+	 * Settings is not open all the time, so its glass shows the windows
+	 * under it blurred (the user's choice of 2026-09-30, ws075-p029); a
+	 * compositor whose glass has no such choice shows the blurred wallpaper.
+	 */
+	error = keiland_glass_set_blur(glass->glass, 1);
+	se_log("GLASS blur=%d", error == 0);
 
 	/* Succeeded: the window is glass. */
 	se_log("GLASS on");

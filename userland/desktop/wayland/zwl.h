@@ -650,6 +650,8 @@ struct zwl_server {
 	 * (WS099's C6, the pointer's move to its display; ws075-p026).
 	 */
 	unsigned pointer_moved;
+	/* The on-screen keyboard's glass shows the scene under it blurred (--keyboard-blur, ws075-p029). */
+	unsigned keyboard_blur;
 	/* The glass look: on, its font, the window being moved and where it was taken, the clock's minute. */
 	unsigned glass;
 	const char *font_path;
