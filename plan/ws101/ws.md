@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p011（L1）cleared（2026-09-30）: 5330 の passthrough で G3（N = 4,000,000）が CPU と全要素一致、GPU の dispatch の証拠、S13 の script が通る。**時間は CPU 10 ms、GPU 260 ms（GPU が 26 倍遅い）**。次は L1 の残り p014・p015（demo の image への gpudemo の追加は main）、その後 L2 の p016（260 ms の内訳）。D3 の見直しが要るかもしれない
+Resume point: **L1 で区切り**。p015（S13 を demo の image で）cleared（2026-09-30、5330 の passthrough、kei の Terminal で s13.sh が通った）。**2026-09-30 ユーザーの判断で最適化（p016・p017）の優先を下げた**（「GPUでは疎通できたので、最適化の優先度を下げます」）。再開するなら p016 から（phase015 の Resume point に測り方の案）。p017 の候補は下の「段の計画」の後の節
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -67,7 +67,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p010](phase010/phase.md) | GLES の compute の i915 での G2（passthrough）。基本は p005 の後、shared・barrier は p006、indirect は p007 の後 | cleared（2026-09-30。5330 の passthrough で glescompute PASS（indirect は SKIP、p007 の後に再実行）、egl-p030・p027 の場面 PASS） | p009、p005（p006・p007 の分は後） |
 | [ws101-p011](phase011/phase.md) | **L1** Noct の toolchain の差分（design §4.1、D2 の形: target だけの patch の一覧と level、`ZEDBSD_NOCT_ACCEL`）を `plan/ws101/p011-toolchain/` に用意し main が当てる。WS101 の分: G3 の見本 `mix.nct`（N = 4,000,000、整数）、型名と offload の確認の方法、CPU と GPU の時間の測り方、試験の script | cleared（2026-09-30。main が当てた（189c3bf1）。5330 の passthrough で G3 が CPU と全要素一致・dispatch 8・S13 の script PASS、Venus も一致。時間: CPU 10 ms、GPU 260 ms） | p010、D2・D3・D5（決定済み） |
 | ws101-p014 | **L1** G3 が動く: 5330 の passthrough で `noct --gpu mix.nct` の結果が CPU の run と全要素で一致し、offload が起きた（DECLINED で CPU に戻っていない）証拠がある。Venus でも一致 | p011 の中で満たした（2026-09-30、[phase011](phase011/phase.md)）。残りは無い | p011（main の適用） |
-| ws101-p015 | **L1** デモの場面 S13: デモの image（`ZEDBSD_NOCT_ACCEL := y`、main が構成に `gpudemo` を足す）の Terminal から `sh /usr/share/gpudemo/s13.sh` が passthrough で通る（script は p011 で作り、試験の image で通った） | planned | p011、main の構成の変更 |
+| [ws101-p015](phase015/phase.md) | **L1** デモの場面 S13: デモの image（`ZEDBSD_NOCT_ACCEL := y`、main が構成に `gpudemo` を足す）の Terminal から `sh /usr/share/gpudemo/s13.sh` が passthrough で通る（script は p011 で作り、試験の image で通った） | cleared（2026-09-30。kei の Terminal で通った、表示「The CPU is 27.7 times as fast as the GPU.」「The results are the same」） | p011、main の構成の変更 |
 | ws101-p016 | **L2** 時間の分解: CPU の run と GPU の run の各部分（EGL の初期化、shader の compile、upload、dispatch、readback）を passthrough と素の 5330 で測り、3 倍に何が足りないかを出す | planned | p015 |
 | ws101-p017 | **L2** 3 倍: p016 で最も大きい 1 つか 2 つを直す（例: 呼び出しごとの buffer の作り直し、readback の経路、barrier の数）。素の 5330 で GPU の中央値 ≤ CPU の中央値 / 3 | planned | p016 |
 | ws101-p012 | **L3** 素の 5330: G1 の受け入れの残り（vkcs 21 step を素の機械で）、G3 の時間、GPU が固まったときの回復の手順。ユーザーの確認 | planned | p017 |
@@ -86,6 +86,18 @@ G3 が動けば「まず動く」の段（L1）に届く。
 | L3 | 10 倍（D3 の伸び）・素の 5330 で G1 の受け入れ | 同じ測り方で GPU ≤ CPU / 10。G1 は vkcs 21 step の素の機械での PASS | p012、p018 |
 
 各段の終わりに p013 の照合と回帰を、その段で変えた範囲について行う。
+
+### L2 の候補（2026-09-30。最適化はユーザーの判断で優先を下げた。再開のときに比べて選ぶ）
+
+p011 の測定: CPU 10 ms、GPU 260 ms（N = 4,000,000、1 要素 32 演算）。D3（GPU ≤ CPU / 3）には GPU を約 3 ms にする必要がある。
+
+- **転送を減らす**（見本は変えない）: Noct は call ごとに buffer を作り直し、16 MB の upload と readback をする。libglesv2 の側で
+  (a) 削除された device の buffer を同じ大きさの次の glBufferData に使い回す（GEM の 16 MB の確保・解放を省く）、(b) glBufferData の memset と
+  memcpy の二重の書きを 1 回に、(c) `glMapBufferRange(READ)` で device の写像を直接返し CPU の写しへの memcpy を省く、など。Noct 側の
+  「連続の call で buffer を GPU に置いたまま」は Noct の変更（toolchain、D5 と同じ扱い）。p016 の内訳で効く所を選ぶ。
+- **計算の密度の高い見本**（Q1 の意見。見本の中身を変えるので**ユーザーの確認が要る**）: 1 要素 1000 演算の反復の hash（loop の中の局所変数は
+  Noct の書き換えを断るので、`output[i]` を使う直線の形で書く）や、整数の固定小数点の Mandelbrot（data に依る loop の出口は Noct が断る見込み、
+  回数固定の展開なら可）。転送の量は同じで計算が 30 倍になるので、GPU の 80 EU が効き「GPU が速い」を示しやすい。
 
 依存の図と日程の目安は [design.md](design.md) §6。G3 に要るのは p002〜p005・p008〜p011（Noct の DOALL は shared・barrier・indirect を使わない。
 SSBO の atomic は p002・p005 に入れた）ので、p006・p007 が遅れたら G3 の経路を先にする。
