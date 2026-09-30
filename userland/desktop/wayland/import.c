@@ -75,7 +75,7 @@ zwl_import_create(
 /*
  * Sets how window mode draws a GPU buffer's image: covering what is under
  * it (alpha 0) or blended by its premultiplied alpha (alpha 1).  A buffer
- * with no image (fullscreen mode) has nothing to change.
+ * with no image (the compositor without Vulkan) has nothing to change.
  */
 void
 zwl_import_set_alpha(

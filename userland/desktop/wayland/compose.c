@@ -234,7 +234,7 @@ zwl_compose_output_open(
 
 /*
  * Destroys the swapchain and the display surface once the device is idle,
- * which gives the display back (entering fullscreen mode, or at exit).
+ * which gives the display back (to the greeter's hand-over, or at exit).
  */
 void
 zwl_compose_output_close(
@@ -345,8 +345,10 @@ zwl_compose_draw(
 	server->dirty = 0;
 	server->damaged = 0;
 	server->frame++;
-	if (server->log_frames)
+	if (server->log_frames) {
 		printf("ZWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)zwl_milliseconds());
+		printf("ZWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)zwl_microseconds());
+	}
 
 	/* Succeeded: one frame is in flight. */
 	return 0;
@@ -392,6 +394,8 @@ zwl_compose_complete(
 	compose->held_count = 0;
 	zwl_callbacks_done(&compose->callbacks);
 	compose->in_flight = 0;
+	if (server->log_frames)
+		printf("ZWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)zwl_microseconds());
 
 	/* The time from the start of the frame to its completion (reported by ZWL PERF). */
 	elapsed = zwl_cycles() - compose->frame_start_cycles;

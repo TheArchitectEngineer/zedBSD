@@ -58,8 +58,9 @@
  * bottom edge Wiseview (over Home the same swipe closes Home instead,
  * home.c).  Each counts only when it starts in its corner or edge, so a
  * stroke that starts inside a window never becomes one.  They work over a
- * fullscreen window too (zwl_glass_edge_button): a gesture that shows
- * something makes the output composed again while it shows.
+ * fullscreen window too (zwl_glass_edge_button), except that there the
+ * bottom edge's swipe takes the window back to a window instead of opening
+ * Wiseview (ws099-p015).  A fullscreen window is composed like any other.
  */
 
 #include "desktop.h"
@@ -166,6 +167,13 @@
 #define WISEVIEW_DISTANCE	240.0f
 #define WISEVIEW_THRESHOLD	0.35f
 #define WISEVIEW_MS		200U
+
+/*
+ * The bottom edge's swipe over a fullscreen window (ws099-p015, the
+ * 2026-09-30 user decision): a contact that starts in the bottom edge
+ * (WISEVIEW_EDGE) and moves up this far takes the window back to a window.
+ */
+#define UNFULLSCREEN_DISTANCE	80
 
 /* Wiseview's grid: side, top (under the header) and bottom margins, the gutter, the label under a tile. */
 #define WISEVIEW_SIDE		56
@@ -298,6 +306,21 @@ static int wiseview_edge_press(struct zwl_server *server, uint32_t button, uint3
 
 /* Whether where the desktops' pictures are has been logged (once, for the tests that click them). */
 static unsigned shell_desktops_logged;
+
+/*
+ * The bottom edge's swipe over a fullscreen window: whether a contact that
+ * began in the bottom edge holds it (until its release, even once the
+ * window has left fullscreen), where it began, and whether it has taken the
+ * window back already.  Only the event loop touches it.
+ */
+static struct {
+	int pressing;
+	int done;
+	int32_t start_y;
+} unfullscreen_swipe;
+static struct zwl_object *fullscreen_top(struct zwl_server *server);
+static int unfullscreen_press(struct zwl_server *server, uint32_t button, uint32_t state);
+static int unfullscreen_motion(struct zwl_server *server);
 static float desktop_position(struct zwl_server *server);
 static void desktop_turn(struct zwl_server *server, int target, const char *via);
 static void desktop_release(struct zwl_server *server);
@@ -721,11 +744,12 @@ zwl_glass_motion(
 }
 
 /*
- * Handles a pointer button over a fullscreen window, which the rest of the
- * glass look does not see: only the edges' gestures (the top-left corner's
- * App Home, the top-right corner's Notes, the bottom edge's Wiseview) and
- * what they opened.  Returns 1 when the button is zdesktop's, 0 when it goes
- * to the fullscreen window.
+ * Handles a pointer button over a fullscreen window (zwl_glass_fullscreen_input),
+ * which the rest of the glass look does not see: only the edges' gestures
+ * (the top-left corner's App Home, the top-right corner's Notes, the bottom
+ * corners' keyboard, the bottom edge's swipe back to a window) and what
+ * they opened.  Returns 1 when the button is zdesktop's, 0 when it goes to
+ * the fullscreen window.
  */
 int
 zwl_glass_edge_button(
@@ -741,7 +765,13 @@ zwl_glass_edge_button(
 	if (server->greeter)
 		return 0;
 
-	/* Wiseview, opened from the bottom edge, takes every button. */
+	/* The bottom edge's swipe holds its contact until the release, also once the window has left fullscreen. */
+	if (unfullscreen_swipe.pressing) {
+		pressed = unfullscreen_press(server, button, state);
+		return pressed;
+	}
+
+	/* Wiseview, opened from the keyboard (Super+Tab), takes every button. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
 		pressed = wiseview_button(server, button, state);
 		return pressed;
@@ -752,7 +782,7 @@ zwl_glass_edge_button(
 	if (pressed)
 		return 1;
 
-	/* The on-screen keyboard's panel and its bottom corners' swipe (keyboard.c). */
+	/* The on-screen keyboard's panel and its bottom corners' swipe (keyboard.c), before the bottom edge's swipe. */
 	pressed = zwl_keyboard_button(server, button, state);
 	if (pressed)
 		return 1;
@@ -780,8 +810,8 @@ zwl_glass_edge_button(
 		return pressed;
 	}
 
-	/* A left press at the bottom edge starts opening Wiseview. */
-	pressed = wiseview_edge_press(server, button, state);
+	/* A left press at the bottom edge starts the swipe that takes the window back (not Wiseview, ws099-p015). */
+	pressed = unfullscreen_press(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -803,7 +833,12 @@ zwl_glass_edge_motion(
 	if (server->greeter)
 		return 0;
 
-	/* Wiseview follows its gesture (the output is composed again once it shows). */
+	/* The bottom edge's swipe follows its contact. */
+	taken = unfullscreen_motion(server);
+	if (taken)
+		return 1;
+
+	/* Wiseview follows its gesture. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
 		server->dirty = 1;
 		return 1;
@@ -829,9 +864,139 @@ zwl_glass_edge_motion(
 }
 
 /*
+ * Tells whether the pointer and the fingers go to the fullscreen window
+ * with only the edges' gestures for zdesktop (zwl_glass_edge_button): the
+ * top window is fullscreen and nothing shows over it, or the bottom edge's
+ * swipe holds its contact.  seat.c chooses by it (until ws099-p015 it
+ * chose by fullscreen mode, the direct scanout, which is gone).
+ */
+int
+zwl_glass_fullscreen_input(
+	struct zwl_server *server)
+{
+	struct zwl_object *top;
+
+	/* The swipe's contact stays the edges' until its release. */
+	if (unfullscreen_swipe.pressing)
+		return 1;
+
+	/* A fullscreen window on top. */
+	top = fullscreen_top(server);
+	if (top == NULL)
+		return 0;
+
+	/* Succeeded: the input is the fullscreen window's. */
+	return 1;
+}
+
+/* Finds the top window when it is fullscreen with nothing shown over it; NULL otherwise. */
+static struct zwl_object *
+fullscreen_top(
+	struct zwl_server *server)
+{
+	struct zwl_object *top;
+	int overlay;
+
+	/* Only the glass look's composed output, not the login or the lock screen. */
+	if (!server->glass || !server->windowed)
+		return NULL;
+	if (server->greeter || server->locked)
+		return NULL;
+
+	/* An edge's gesture showing something (App Home, Wiseview, the hints, the keyboard) has the input as in window mode. */
+	overlay = zwl_glass_overlay(server);
+	if (overlay)
+		return NULL;
+
+	/* The top window, fullscreen with an image. */
+	top = zwl_top_window(server);
+	if (top == NULL || !top->fullscreen || top->current == NULL)
+		return NULL;
+
+	/* Succeeded: that window. */
+	return top;
+}
+
+/*
+ * Starts and ends the bottom edge's swipe over a fullscreen window: a left
+ * press in the bottom edge starts it, the release ends it.  Returns 1 when
+ * the button was the swipe's.
+ */
+static int
+unfullscreen_press(
+	struct zwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	/* Another button while the swipe holds its contact is the swipe's too. */
+	if (button != ZWL_BUTTON_LEFT)
+		return unfullscreen_swipe.pressing;
+
+	/* The release ends it. */
+	if (state == 0U) {
+		if (!unfullscreen_swipe.pressing)
+			return 0;
+		unfullscreen_swipe.pressing = 0;
+		printf("ZWL GLASS unfullscreen-swipe end done=%d\n", unfullscreen_swipe.done);
+		return 1;
+	}
+
+	/* Only a press in the bottom edge starts it: a stroke that starts above it is the window's. */
+	if (server->pointer_y < (int32_t)server->height - WISEVIEW_EDGE)
+		return 0;
+
+	/* The contact is the swipe's from now on. */
+	unfullscreen_swipe.pressing = 1;
+	unfullscreen_swipe.done = 0;
+	unfullscreen_swipe.start_y = server->pointer_y;
+	printf("ZWL GLASS unfullscreen-swipe start y=%d source=%d\n", server->pointer_y, (int)server->shell_source);
+
+	/* Succeeded: the press is the swipe's. */
+	return 1;
+}
+
+/*
+ * Follows the bottom edge's swipe: once its contact has moved up
+ * UNFULLSCREEN_DISTANCE, the fullscreen window goes back to a window, where
+ * zwl_window_leave_fullscreen puts it (BUG-114's rule).  Returns 1 while the
+ * swipe holds the contact.
+ */
+static int
+unfullscreen_motion(
+	struct zwl_server *server)
+{
+	struct zwl_object *top;
+	int error;
+
+	/* No swipe, or one that has done its work already. */
+	if (!unfullscreen_swipe.pressing)
+		return 0;
+	if (unfullscreen_swipe.done)
+		return 1;
+
+	/* Not far enough up yet. */
+	if (unfullscreen_swipe.start_y - server->pointer_y < UNFULLSCREEN_DISTANCE)
+		return 1;
+
+	/* The window that is fullscreen on top now; one that went away meanwhile ends the swipe's work. */
+	unfullscreen_swipe.done = 1;
+	top = fullscreen_top(server);
+	if (top == NULL)
+		return 1;
+
+	/* It becomes a window again. */
+	error = zwl_window_leave_fullscreen(top);
+	printf("ZWL GLASS unfullscreen surface=%u via=swipe errno=%d at_ms=%llu\n", top->id, error, (unsigned long long)zwl_milliseconds());
+
+	/* Succeeded: the contact stays the swipe's until its release. */
+	return 1;
+}
+
+/*
  * Tells whether an edge's gesture shows something over the windows (the
- * top-right corner's hint, App Home, Wiseview), so that the output is
- * composed even while the top window is fullscreen (display.c).
+ * top-right corner's hint, App Home, Wiseview, the keyboard), so that the
+ * input goes to it as in window mode even while the top window is
+ * fullscreen (zwl_glass_fullscreen_input).
  */
 int
 zwl_glass_overlay(
@@ -947,6 +1112,7 @@ zwl_glass_title_at(
 	struct zwl_object *surface;
 	enum shell_hit hit;
 	float home;
+	int fullscreen;
 	int open;
 
 	/* Only the glass look's window mode has floating title bars. */
@@ -957,6 +1123,11 @@ zwl_glass_title_at(
 	if (server->greeter || server->locked || server->dnd_active)
 		return NULL;
 	if (server->popup_grab != NULL)
+		return NULL;
+
+	/* A fullscreen window has no title bar; only the edges' gestures are over it. */
+	fullscreen = zwl_glass_fullscreen_input(server);
+	if (fullscreen)
 		return NULL;
 
 	/* Wiseview, open or being opened, takes every press. */

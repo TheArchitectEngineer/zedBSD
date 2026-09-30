@@ -6,8 +6,12 @@
  */
 
 /*
- * Independent GPU import, the choice between window mode and fullscreen mode
- * (WS035 compositing design, D0), and fullscreen mode's direct scanout.
+ * Independent GPU import and the scheduling of window mode (WS035
+ * compositing design, D0).  Every window, a fullscreen one too, is
+ * composed: the direct scanout of a fullscreen window's image (fullscreen
+ * mode) was removed in ws099-p015 (the 2026-09-30 user decision), so the
+ * edges' gestures and their feedback draw over a fullscreen window as over
+ * any other.
  */
 
 #include "desktop.h"
@@ -26,10 +30,7 @@ static int claim_display(struct zwl_server *server);
 static void schedule_direct(struct zwl_server *server);
 static void adopt_commit(struct zwl_server *server, struct zwl_object *surface);
 static void place_window(struct zwl_server *server, struct zwl_object *surface);
-static int enter_fullscreen(struct zwl_server *server);
 static int enter_window_mode(struct zwl_server *server);
-static int present_current(struct zwl_server *server, struct zwl_object *surface);
-static void hidden_callbacks(struct zwl_server *server, struct zwl_object *shown);
 
 /*
  * Opens the compositor's independent renderer context and queries its display.
@@ -128,13 +129,6 @@ zwl_gpu_import(
 	mismatch = memcmp(&buffer->image.image, image, sizeof(*image));
 	if (mismatch != 0)
 		return EINVAL;
-
-	/* Only an image the size of the output can be scanned out in fullscreen mode. */
-	buffer->scanout = 0;
-	if (image->width == buffer->client->server->width &&
-	    image->height == buffer->client->server->height &&
-	    image->tiling == GPU_IMAGE_LINEAR)
-		buffer->scanout = 1;
 
 	/* Import reports the native allocation identity shared across independent contexts. */
 	printf("ZWL IMPORT client=%llu buffer=%u gpu_fd=%d resource=%u handle=%llu device=%llu bytes=%llu\n", (unsigned long long)buffer->client->number, buffer->id, buffer->client->server->gpu, buffer->image.resource_id, (unsigned long long)buffer->image.handle, (unsigned long long)image->device_id, (unsigned long long)image->allocation_bytes);
@@ -351,9 +345,8 @@ zwl_fence_ready(
 }
 
 /*
- * Applies the commits of this event-loop pass, chooses the mode from the
- * topmost window, and shows the result: a frame in window mode, or the
- * fullscreen window's image in fullscreen mode.
+ * Applies the commits of this event-loop pass and shows the result: a
+ * composed frame of window mode, fullscreen windows included.
  */
 void
 zwl_schedule(
@@ -362,9 +355,7 @@ zwl_schedule(
 	struct zwl_client *client;
 	struct zwl_object *surface;
 	struct zwl_object *top;
-	unsigned fullscreen;
 	uint64_t now;
-	int overlay;
 	int ready;
 	int error;
 
@@ -399,56 +390,18 @@ zwl_schedule(
 		}
 	}
 
-	/*
-	 * Fullscreen mode when the topmost window is fullscreen with an image
-	 * that can be the output, no sub-surface to draw with it, no viewport
-	 * that would crop or scale it (viewport.c), and no edge gesture showing
-	 * something over it (the corner's hint, App Home, Wiseview: shell.c).
-	 */
+	/* The first pass enters window mode, which the compositor stays in (a fullscreen window is composed too). */
 	top = zwl_top_window(server);
-	overlay = zwl_glass_overlay(server);
-	fullscreen = 0;
-	if (top != NULL &&
-	    !server->locked &&
-	    !overlay &&
-	    top->fullscreen &&
-	    top->current != NULL &&
-	    top->current->scanout &&
-	    top->sub_children == NULL &&
-	    top->source[2] <= 0 &&
-	    top->destination[0] <= 0)
-		fullscreen = 1;
-
-	/* The mode, switched when it changes. */
-	if (fullscreen && server->windowed)
-		error = enter_fullscreen(server);
-	else if (!fullscreen && !server->windowed)
-		error = enter_window_mode(server);
-	else
-		error = 0;
-	if (error != 0) {
-		/* A switch waiting for the frame in flight is tried again on a later pass. */
-		if (error == EAGAIN)
-			return;
-		printf("ZWL MODE_ERROR errno=%d\n", error);
-		server->failed = 1;
-		return;
-	}
-
-	/* Fullscreen mode shows the window's newest image directly (hidden wl_shm windows are still copied). */
 	if (!server->windowed) {
-		(void)zwl_shm_upload(server);
-		if (top->fresh || server->front_surface != top) {
-			error = present_current(server, top);
-			if (error != 0) {
-				printf("ZWL GPU_ERROR operation=present errno=%d\n", error);
-				(void)zwl_error(top->client, top->id, "GPU presentation failed");
-			}
+		error = enter_window_mode(server);
+		if (error != 0) {
+			/* A switch waiting for the frame in flight is tried again on a later pass. */
+			if (error == EAGAIN)
+				return;
+			printf("ZWL MODE_ERROR errno=%d\n", error);
+			server->failed = 1;
+			return;
 		}
-
-		/* The windows under it get their frame callbacks. */
-		hidden_callbacks(server, top);
-		return;
 	}
 
 	/* Input goes to the topmost window, or to the desktop pressed last (desktop.c). */
@@ -639,6 +592,10 @@ adopt_commit(
 	if (surface->current != NULL && surface->current->shm != NULL)
 		surface->shm_upload = 1;
 
+	/* The time the image was taken, when the per-frame lines were asked for (ws099-p015's pen latency). */
+	if (server->log_frames)
+		printf("ZWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)zwl_microseconds());
+
 	/* An awaited window has committed. */
 	if (surface->awaited) {
 		surface->awaited = 0;
@@ -750,34 +707,8 @@ place_window(
 }
 
 /*
- * Leaves window mode: once no frame is in flight, the swapchain and surface
- * are destroyed, which gives the display back.  Returns EAGAIN while a
- * frame is still in flight.
- */
-static int
-enter_fullscreen(
-	struct zwl_server *server)
-{
-	uint64_t start;
-
-	/* The frame in flight finishes first. */
-	if (server->frame_fd >= 0)
-		return EAGAIN;
-
-	/* The output goes; the display is then claimed by the first present. */
-	start = zwl_milliseconds();
-	zwl_compose_output_close(server);
-	server->windowed = 0;
-	server->mode_switch_ms = zwl_milliseconds() - start;
-	printf("ZWL MODE fullscreen switch_ms=%llu\n", (unsigned long long)server->mode_switch_ms);
-
-	/* Succeeded. */
-	return 0;
-}
-
-/*
- * Enters window mode: the display lease of fullscreen mode is released and
- * the swapchain is made again.
+ * Enters window mode, once at the start: a directly scanned-out image and
+ * its lease, if there is one, are released and the swapchain is made.
  */
 static int
 enter_window_mode(
@@ -813,93 +744,6 @@ enter_window_mode(
 	server->mode_switch_ms = zwl_milliseconds() - start;
 	printf("ZWL MODE window switch_ms=%llu at_ms=%llu\n", (unsigned long long)server->mode_switch_ms, (unsigned long long)zwl_milliseconds());
 	return 0;
-}
-
-/*
- * Presents a surface's current image as the whole output (fullscreen mode):
- * no copy, the client's image is what the display scans out.
- */
-static int
-present_current(
-	struct zwl_server *server,
-	struct zwl_object *surface)
-{
-	struct gpu_display_present present;
-	struct gpu_image_descriptor *image;
-	struct zwl_object *buffer;
-	struct zwl_object *previous;
-	uint64_t mark;
-	int error;
-
-	/* The display is this compositor's. */
-	error = claim_display(server);
-	if (error != 0)
-		return error;
-
-	/* The image as it is: linear storage, blob scanout. */
-	buffer = surface->current;
-	image = &buffer->image.image;
-	memset(&present, 0, sizeof(present));
-	present.version = GPU_ABI_VERSION;
-	present.size = sizeof(present);
-	present.lease = server->lease;
-	present.handle = buffer->image.handle;
-	present.offset = image->offset;
-	present.frame = server->frame + 1U;
-	present.width = image->width;
-	present.height = image->height;
-	present.stride = image->stride;
-	present.format = image->format;
-	present.refresh_millihz = server->refresh;
-	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
-	present.generation = server->display.generation;
-	mark = zwl_cycles();
-	error = ioctl(server->gpu, GPU_DISPLAY_PRESENT, &present);
-	server->perf.present_cycles += zwl_cycles() - mark;
-	server->perf.presents++;
-	if (error != 0)
-		return errno;
-
-	/* The display holds the new image; the one it replaces is released. */
-	previous = server->front;
-	zwl_buffer_get(buffer);
-	server->front = buffer;
-	server->front_surface = surface;
-	server->frame++;
-	surface->fresh = 0;
-	zwl_buffer_put(previous);
-
-	/* Names the presentation when the per-frame lines were asked for. */
-	if (server->log_frames)
-		printf("ZWL PRESENT client=%llu surface=%u buffer=%u resource=%u frame=%llu sequence=%llu width=%u height=%u flags=%u refresh=%u direct=1\n", (unsigned long long)surface->client->number, surface->id, buffer->id, buffer->image.resource_id, (unsigned long long)server->frame, (unsigned long long)present.sequence, image->width, image->height, present.flags, present.refresh_millihz);
-
-	/* Input follows the fullscreen window; its frame callbacks are done. */
-	zwl_seat_focus(server);
-	zwl_callbacks_done(&surface->committed_callbacks);
-
-	/* Succeeded. */
-	return 0;
-}
-
-/*
- * Sends the frame callbacks of the windows fullscreen mode hides, so that
- * their clients are not held waiting for a frame that never shows them.
- */
-static void
-hidden_callbacks(
-	struct zwl_server *server,
-	struct zwl_object *shown)
-{
-	struct zwl_client *client;
-	struct zwl_object *surface;
-
-	/* Every surface but the one shown. */
-	for (client = server->clients; client != NULL; client = client->next) {
-		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			if (surface->kind == ZWL_SURFACE && surface != shown)
-				zwl_callbacks_done(&surface->committed_callbacks);
-		}
-	}
 }
 
 /* Claims an idle display lease while preserving its generation and exclusive owner. */
