@@ -58,27 +58,36 @@
 #define ZWL_FLICK_CASE		6U
 #define ZWL_FLICK_SHIFT		7U
 #define ZWL_FLICK_ARROW		8U
+#define ZWL_FLICK_CTRL		9U
+#define ZWL_FLICK_ALT		10U
 
 /*
  * The QWERTY panel's faces (ws102-p006): the letters (with Shift, the
  * capitals and the digits' symbols) and the symbols; its rows, the most
  * keys a row has, and a row's width in quarter keys.  The rows count from
- * the top: the digits, three rows of letters (or symbols) and the space
- * row.  A row of extra keys (Esc, Tab, Ctrl, ... p020) is to come above
- * them.
+ * the top: the extra keys (Esc, Tab, Ctrl, Alt, a few symbols, Home, End,
+ * PgUp, PgDn; ws102-p020), the digits, three rows of letters (or symbols)
+ * and the space row.
  */
 #define ZWL_QWERTY_LETTERS	0U
 #define ZWL_QWERTY_SYMBOLS	1U
 #define ZWL_QWERTY_FACES	2U
-#define ZWL_QWERTY_ROWS		5U
+#define ZWL_QWERTY_ROWS		6U
+#define ZWL_QWERTY_EXTRA_ROW	0U
 #define ZWL_QWERTY_ROW_KEYS	12U
 #define ZWL_QWERTY_ROW_UNITS	40U
 
-/* The evdev codes of the arrow keys. */
+/* The evdev codes of the keys sent by their code (ZWL_FLICK_ARROW): the arrows, Esc, Tab, Home, End, PgUp, PgDn. */
+#define ZWL_KEY_ESC		1U
+#define ZWL_KEY_TAB		15U
+#define ZWL_KEY_HOME		102U
 #define ZWL_KEY_UP		103U
+#define ZWL_KEY_PAGE_UP		104U
 #define ZWL_KEY_LEFT		105U
 #define ZWL_KEY_RIGHT		106U
+#define ZWL_KEY_END		107U
 #define ZWL_KEY_DOWN		108U
+#define ZWL_KEY_PAGE_DOWN	109U
 
 /*
  * One key of a face: its label, what it does, and the characters (UTF-8)
@@ -93,8 +102,8 @@ struct zwl_flick_key {
 /*
  * One key of the QWERTY panel: its label and its label with Shift, what it
  * types without and with Shift (NULL for a key that only acts), what it
- * does (ZWL_FLICK_*), the evdev code of an arrow, and its width in quarter
- * keys.
+ * does (ZWL_FLICK_*), the evdev code of a key sent by its code (an arrow,
+ * Esc, Tab, ...), and its width in quarter keys.
  */
 struct zwl_qwerty_key {
 	const char *label;

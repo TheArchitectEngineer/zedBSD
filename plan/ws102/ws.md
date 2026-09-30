@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: L1 を満たした。L2 の p006・p008・p021 cleared 2026-09-30。次は p020（QWERTY の補助の key の列）
+Resume point: L1 を満たした。L2 の p006・p008・p021・p020 cleared 2026-09-30。次は p007（作業の領域）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -68,7 +68,7 @@ Resume point: L1 を満たした。L2 の p006・p008・p021 cleared 2026-09-30�
 | ws102-p018 | L3 | クリップボードの履歴（記憶の中だけ、10 件、password の欄は残さない、lock・Log Out で消す） | planning | p016 |
 | ws102-p019 | L3 | 色付きの絵文字（2026-09-30 ユーザー「色付きにする」）: font の選定（Noto Color Emoji の CBDT か COLRv1）と license の監査、libtruetype の色の glyph、keyboard の絵文字の面、libkeiui の文字の描画、text-input の commit。大きいので始める前に分ける | planning | p016 |
 | [ws102-p021](phase021/phase.md) | L2 | 縁に組み込んだ見た目（design.md §2.3 の改め、2026-09-30 ユーザー）: flick の panel を右の列の全体に、QWERTY・手書きを下端の全幅に、余白・外の角丸・影をやめ内側に 1 px の区切り、縁から伸び出す動き。1280x800・1920x1080 で panel の外の辺が画面の縁と 0 px で接する（log の矩形と画面） | cleared（2026-09-30: flick は右の列の全体（1280x800 で 962,34 318×766）、QWERTY・手書きは下端の全幅（0,496 1280×304）、1920x1080 も縁に 0 px。影・外の角丸をやめ内側に 1 px の線、200 ms の伸び出し。全手順・p010・C9・boot test PASS） | p008 |
-| ws102-p020 | L2 | QWERTY の面の補助の key の列（Esc・Tab・Ctrl・`|`・`~`・矢印、一度だけ効く修飾） | planning | p006 |
+| [ws102-p020](phase020/phase.md) | L2 | QWERTY の面の補助の key の列（Esc・Tab・Ctrl・`|`・`~`・矢印、一度だけ効く修飾） | cleared（2026-09-30: 補助の列 Esc・Tab・Ctrl・Alt・\|・~・/・-・Home・End・PgUp・PgDn、Ctrl・Alt は次の 1 key だけ。Text Editor で abc\|<tab>、Ctrl+A → z で z。全手順・p010・C9・boot test PASS） | p006 |
 | ws102-p014 | — | 全文の規約と回帰（WS の最後） | planned | 最後の段 |
 
 ## 段（詳しくは [design.md](design.md) §3）

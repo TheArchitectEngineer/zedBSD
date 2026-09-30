@@ -48,9 +48,10 @@
  * Shift once makes the next letter a capital (and the digits' row its
  * symbols); twice within KEYBOARD_SHIFT_LOCK_MS locks it until it is
  * pressed again.  A pressed key that types shows its character in a
- * bubble above it.  Room is kept above the rows for a row of extra keys
- * (KEYBOARD_QWERTY_EXTRA_ROWS, p020).  The work area comes in a later
- * phase.
+ * bubble above it.  Above the digits is a thinner row of extra keys
+ * (ws102-p020): Esc, Tab, Home, End, PgUp and PgDn sent by their codes, a
+ * few symbols, and Ctrl and Alt, which hold for the next key only (a second
+ * press lets go of them).  The work area comes in a later phase.
  *
  * The QWERTY panel's band has a button to the handwriting face (ws102-p008)
  * and back: a writing area at the left, where the pen or finger's strokes
@@ -125,9 +126,9 @@
 #define KEYBOARD_FLICK_ROWS	4
 
 /* The QWERTY panel's height: a share of the screen's height (in hundredths), within limits. */
-#define KEYBOARD_QWERTY_SHARE	38
+#define KEYBOARD_QWERTY_SHARE	42
 #define KEYBOARD_QWERTY_MIN	260
-#define KEYBOARD_QWERTY_MAX	420
+#define KEYBOARD_QWERTY_MAX	460
 
 /* The longest text the keyboard remembers as the last it sent (one character), and the ways it was sent. */
 #define KEYBOARD_LAST		16
@@ -143,8 +144,12 @@
 #define KEYBOARD_SHIFT_ONCE	1U
 #define KEYBOARD_SHIFT_LOCKED	2U
 
-/* The rows kept above the QWERTY panel's for the extra keys' row (p020; none yet). */
-#define KEYBOARD_QWERTY_EXTRA_ROWS	0U
+/* The extra keys' row's height as a share of another row's (p020). */
+#define KEYBOARD_EXTRA_SHARE	0.7f
+
+/* Ctrl and Alt for the next key only (p020): their bits of the depressed modifiers. */
+#define KEYBOARD_CTRL		4U
+#define KEYBOARD_ALT		8U
 
 /* The handwriting face: the wait after the last stroke before recognizing, the side column's width and a candidate row's height. */
 #define KEYBOARD_HAND_WAIT_MS	600U
@@ -239,7 +244,8 @@ struct keyboard_contact {
  * a press held on the title band (where it began), which closes the
  * panel when dragged far enough towards its edge, and the QWERTY panel's
  * face (ZWL_QWERTY_*) and Shift (KEYBOARD_SHIFT_*, and when it was last
- * pressed).  On the QWERTY panel the key held is key_row and key_column
+ * pressed), and Ctrl and Alt held for the next key (held, their modifier
+ * bits).  On the QWERTY panel the key held is key_row and key_column
  * (the key's place in its row).  The handwriting face (hand): a stroke
  * being written, when the last stroke ended, whether the ink was
  * recognized and the answer, the key held at the right (hand_key), and a
@@ -279,6 +285,7 @@ struct keyboard_state {
 	unsigned qface;
 	unsigned shift;
 	uint64_t shift_ms;
+	uint32_t held;
 	unsigned hand;
 	unsigned writing;
 	uint64_t stroke_end_ms;
@@ -579,6 +586,7 @@ zwl_keyboard_close(
 	keyboard.leaving = keyboard.open;
 	keyboard.slide_ms = zwl_milliseconds();
 	keyboard.open = PANEL_NONE;
+	keyboard.held = 0;
 	keyboard.pressing = 0;
 	keyboard.key_active = 0;
 	keyboard.band_active = 0;
@@ -1686,6 +1694,8 @@ keyboard_send_key(
 	int shift)
 {
 	uint32_t modifiers;
+	uint32_t wanted;
+	uint32_t used;
 	uint32_t time;
 
 	/* Without a focused application the key reaches nobody. */
@@ -1694,10 +1704,15 @@ keyboard_send_key(
 		return 0;
 	}
 
-	/* Shift, held for the key when it needs it (only while not already held). */
+	/* Shift when the key needs it, and Ctrl and Alt held for this key (they are used up). */
 	modifiers = server->modifiers;
-	if (shift && (modifiers & KEYBOARD_SHIFT) == 0U) {
-		server->modifiers = modifiers | KEYBOARD_SHIFT;
+	wanted = modifiers | keyboard.held;
+	if (shift)
+		wanted |= KEYBOARD_SHIFT;
+	used = keyboard.held;
+	keyboard.held = 0;
+	if (wanted != modifiers) {
+		server->modifiers = wanted;
 		zwl_seat_modifiers(server);
 	}
 
@@ -1713,7 +1728,7 @@ keyboard_send_key(
 	}
 
 	/* Succeeded: the key was sent. */
-	printf("ZWL OSK send via=key code=%u shift=%d\n", code, shift);
+	printf("ZWL OSK send via=key code=%u shift=%d held=%u\n", code, shift, used);
 	return 1;
 }
 
@@ -1869,6 +1884,7 @@ keyboard_qwerty_rect(
 	unsigned key;
 	float unit;
 	int32_t height;
+	int32_t extra;
 	int32_t left;
 
 	/* The row's keys: the whole row's width in quarters, and the quarters before the key. */
@@ -1887,15 +1903,20 @@ keyboard_qwerty_rect(
 	unit = (float)(keyboard.panel[2] - KEYBOARD_KEY_GAP) / (float)ZWL_QWERTY_ROW_UNITS;
 	left = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)((float)(ZWL_QWERTY_ROW_UNITS - units) * unit / 2.0f);
 
-	/* The rows' height under the band, the extra keys' rows counted. */
-	rows = ZWL_QWERTY_ROWS + KEYBOARD_QWERTY_EXTRA_ROWS;
-	height = (keyboard.panel[3] - KEYBOARD_BAND - (int32_t)(rows + 1U) * KEYBOARD_KEY_GAP) / (int32_t)rows;
+	/* The rows' height under the band: the extra keys' row a share of the others'. */
+	rows = ZWL_QWERTY_ROWS;
+	height = (int32_t)((float)(keyboard.panel[3] - KEYBOARD_BAND - (int32_t)(rows + 1U) * KEYBOARD_KEY_GAP) / ((float)(rows - 1U) + KEYBOARD_EXTRA_SHARE));
+	extra = (int32_t)((float)height * KEYBOARD_EXTRA_SHARE);
 
-	/* The key. */
+	/* The key: the extra row on top, the others under it. */
 	rect[0] = left + (int32_t)((float)before * unit);
-	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP + (int32_t)(row + KEYBOARD_QWERTY_EXTRA_ROWS) * (height + KEYBOARD_KEY_GAP);
+	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP;
 	rect[2] = (int32_t)((float)keys[index].width * unit) - KEYBOARD_KEY_GAP;
-	rect[3] = height;
+	rect[3] = extra;
+	if (row != ZWL_QWERTY_EXTRA_ROW) {
+		rect[1] += extra + KEYBOARD_KEY_GAP + (int32_t)(row - 1U) * (height + KEYBOARD_KEY_GAP);
+		rect[3] = height;
+	}
 }
 
 /* Finds the QWERTY key at a point.  Returns 1 with its row and its place in the row, or 0. */
@@ -1996,6 +2017,16 @@ keyboard_qwerty_release(
 	case ZWL_FLICK_ARROW:
 		(void)keyboard_send_key(server, key->code, 0);
 		break;
+	case ZWL_FLICK_CTRL:
+		/* Ctrl for the next key, or no more. */
+		keyboard.held ^= KEYBOARD_CTRL;
+		printf("ZWL OSK held=%u\n", keyboard.held);
+		break;
+	case ZWL_FLICK_ALT:
+		/* Alt for the next key, or no more. */
+		keyboard.held ^= KEYBOARD_ALT;
+		printf("ZWL OSK held=%u\n", keyboard.held);
+		break;
 	default:
 		/* A character: its Shift form while Shift is on (a single Shift is used up). */
 		text = key->text;
@@ -2091,6 +2122,10 @@ keyboard_draw_qwerty(
 			if (keys[index].action != ZWL_FLICK_TYPE)
 				ground = grey;
 			if (keys[index].action == ZWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_ONCE)
+				ground = pale;
+			if (keys[index].action == ZWL_FLICK_CTRL && (keyboard.held & KEYBOARD_CTRL) != 0U)
+				ground = pale;
+			if (keys[index].action == ZWL_FLICK_ALT && (keyboard.held & KEYBOARD_ALT) != 0U)
 				ground = pale;
 			if (keys[index].action == ZWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_LOCKED) {
 				ground = blue;
