@@ -176,6 +176,7 @@ zwl_volume_tick(
 		volume_view.feedback_waiting = 0U;
 		volume_view.feedback_ms = now;
 		(void)keiland_audio_feedback(volume_view.audio);
+		printf("ZWL VOLUME feedback at_ms=%llu via=held\n", (unsigned long long)now);
 	}
 
 	/* A settled change is kept. */
@@ -612,7 +613,7 @@ volume_set(
 	volume_view.muted = muted;
 	volume_view.send_waiting = 1U;
 	server->dirty = 1;
-	printf("ZWL VOLUME set value=%u muted=%u via=%s final=%u\n", value, muted, via, final);
+	printf("ZWL VOLUME set value=%u muted=%u via=%s final=%u at_ms=%llu\n", value, muted, via, final, (unsigned long long)zwl_milliseconds());
 
 	/* Sent now when final, or when a drag's wait is over. */
 	now = zwl_milliseconds();
@@ -625,6 +626,7 @@ volume_set(
 			volume_view.feedback_waiting = 0U;
 			volume_view.feedback_ms = now;
 			(void)keiland_audio_feedback(volume_view.audio);
+			printf("ZWL VOLUME feedback at_ms=%llu via=%s\n", (unsigned long long)now, via);
 		} else {
 			volume_view.feedback_waiting = 1U;
 		}

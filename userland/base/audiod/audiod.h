@@ -110,6 +110,17 @@ struct audiod_device {
 	int32_t *feedback;
 	uint32_t feedback_length;
 	uint32_t feedback_next;
+
+	/*
+	 * The feedback sound's way to the device, logged when AUDIOD_TIMING_LOG
+	 * names a file (ws100-p008): when it was asked for (ns), the device
+	 * byte its first frame was mixed at, and where it is: 0 idle, 1 asked
+	 * for, 2 being mixed into the period in hand, 3 mixed and not played
+	 * yet.
+	 */
+	int64_t feedback_asked_ns;
+	uint64_t feedback_byte;
+	unsigned feedback_step;
 };
 
 extern struct audiod_client *audiod_clients;
@@ -133,6 +144,7 @@ int audiod_device_open(struct audiod_device *device);
 int audiod_device_fd(const struct audiod_device *device, short *events);
 int audiod_device_timeout_ms(const struct audiod_device *device);
 void audiod_device_service(struct audiod_device *device, short revents);
+void audiod_timing(const char *format, ...);
 void audiod_device_start_capture(struct audiod_device *device);
 void audiod_device_set_volume(struct audiod_device *device, uint32_t left, uint32_t right, uint32_t muted);
 void audiod_device_get_volume(struct audiod_device *device, uint32_t *left, uint32_t *right, uint32_t *muted);
