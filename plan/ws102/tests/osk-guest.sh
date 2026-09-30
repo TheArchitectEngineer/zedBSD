@@ -5,14 +5,14 @@
 # (the pen image's injected touch screen, 1280x800 screen pixels).
 #   install   the compositor and its libraries into the guest
 #   start     zdesktop --glass 1280x800 (started again by each step that needs a fresh one)
-#   pointer   (p002) the pointer's swipes: the bottom-right corner's opens the flick panel (318x354 at 950,434;
+#   pointer   (p002) the pointer's swipes: the bottom-right corner's opens the flick panel (318x766 at 962,34, the right column;
 #             flick-open.png), its close key closes it; the same swipe twice opens and closes it; the bottom-left
-#             corner's opens the QWERTY panel (1256x304 at 12,484; qwerty-open.png) and the bottom-right's then changes
+#             corner's opens the QWERTY panel (1280x304 at 0,496, the bottom row; qwerty-open.png) and the bottom-right's then changes
 #             to the flick panel
 #   edges     (p002, D3) the corners do not take the other gestures' strokes: a straight-up stroke from the bottom-right
 #             corner opens nothing; the bottom edge's swipe up in the middle still opens Wiseview; a swipe right from
 #             the left edge just above the corner still switches the desktop
-#   flick     (p003) the flick panel's keys (72 px at 956,476 and every 78 px): a tap on あ, a flick left on か (き),
+#   flick     (p003) the flick panel's keys (72 px at 968,488 and every 78 px): a tap on あ, a flick left on か (き),
 #             a flick up held on な (the petals, petals.png; ぬ), the face key to the alpha face (abc: a, flick up c) and
 #             the number face (1, 2 flicked down >), back to kana; a finger's flick right on あ (え)
 #   send      (p004) what the keys type reaches the focused application: in Text Editor (/root/osk.txt) the alpha face's
@@ -23,13 +23,13 @@
 #   close     (p005) the title band dragged 100 px right closes the flick panel, 100 px down the QWERTY panel; App
 #             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here)
 #   large     (p005; the guest started with VENUS_SIZE=1920x1080, OSK_WIDTH=1920 OSK_HEIGHT=1080) the flick panel is
-#             414x450 at 1494,618 (keys 96 px), the QWERTY panel 1896x410 at 12,658 (large-flick.png, large-qwerty.png)
+#             414x1046 at 1506,34 (keys 96 px), the QWERTY panel 1920x410 at 0,670 (large-flick.png, large-qwerty.png)
 #   qwerty    (p006) the QWERTY panel: the 30 characters "Hello, World! Kei 2026 (a+b)=c" (capitals by Shift, symbols
 #             by Shift on the digits and by the symbols face) tapped into Text Editor within 6 s (5 characters a second,
 #             qwerty-plan.py), saved by Ctrl+S: the file is the text; Shift twice locks it (ABC typed as capitals);
 #             an arrow key moves the caret (qwerty.png, qwerty-symbols.png)
-#   hand      (p008) the QWERTY panel's band button (1132,492 84x28) opens the handwriting face (writing area 938x256 at
-#             18,526): two strokes of the pointer and one of a finger are drawn (hand.png), the stub recognizes them
+#   hand      (p008) the QWERTY panel's band button (1144,504 84x28) opens the handwriting face (writing area 962x256 at
+#             6,538): two strokes of the pointer and one of a finger are drawn (hand.png), the stub recognizes them
 #             600 ms after the last (3 candidates, あ first, its note); every frame that draws new points does so within
 #             17 ms of their input (the lag logged by zdesktop); the candidate あ is sent to ime-probe; clear empties the
 #             ink; the band button goes back to the keys
@@ -185,11 +185,11 @@ for step in "$@"; do
 		expect_log 'ZWL OSK press corner=flick source=pointer x=1272 y=792'
 		expect_log 'ZWL OSK armed corner=flick'
 		expect_log 'ZWL OSK commit corner=flick via=(distance|flick)'
-		expect_log 'ZWL OSK open kind=flick x=950 y=434 width=318 height=354'
+		expect_log 'ZWL OSK open kind=flick x=962 y=34 width=318 height=766'
 		pointer move 700 300 sleep 400
 		shot flick-open.png
 		# Its close key (1228,442 28x28).
-		pointer move 1242 456 sleep 200 down sleep 60 up sleep 600
+		pointer move 1254 56 sleep 200 down sleep 60 up sleep 600
 		expect_log 'ZWL OSK close kind=flick reason=key'
 		# The same swipe twice: open, then closed by the gesture.
 		swipe 1272 792 1130 650
@@ -198,51 +198,51 @@ for step in "$@"; do
 		# The bottom-left corner's swipe up and right: the QWERTY panel.
 		swipe 6 792 150 650
 		expect_log 'ZWL OSK press corner=qwerty source=pointer x=6 y=792'
-		expect_log 'ZWL OSK open kind=qwerty x=12 y=484 width=1256 height=304'
+		expect_log 'ZWL OSK open kind=qwerty x=0 y=496 width=1280 height=304'
 		pointer move 700 200 sleep 400
 		shot qwerty-open.png
 		# The bottom-right corner's swipe changes to the flick panel; its close key closes it.
 		swipe 1272 792 1130 650
 		expect_count 'ZWL OSK open kind=flick' 3
-		pointer move 1242 456 sleep 200 down sleep 60 up sleep 600
+		pointer move 1254 56 sleep 200 down sleep 60 up sleep 600
 		expect_count 'ZWL OSK close kind=flick reason=key' 2
 		;;
 	flick)
 		compositor
 		swipe 1272 792 1130 650
-		expect_log 'ZWL OSK open kind=flick x=950 y=434'
+		expect_log 'ZWL OSK open kind=flick x=962 y=34'
 		# A tap on あ, a flick left on か.
-		pointer move 992 512 sleep 200 down sleep 80 up sleep 500
+		pointer move 1004 524 sleep 200 down sleep 80 up sleep 500
 		expect_text 'ZWL OSK key face=kana row=0 column=0 dir=center action=0 text=あ'
-		pointer move 1070 512 sleep 200 down sleep 60 move 1050 512 sleep 60 move 1030 514 sleep 80 up sleep 500
+		pointer move 1082 524 sleep 200 down sleep 60 move 1062 524 sleep 60 move 1042 526 sleep 80 up sleep 500
 		expect_text 'ZWL OSK key face=kana row=0 column=1 dir=left action=0 text=き'
 		# A flick up held on な: its petals, then ぬ.
-		pointer move 1070 590 sleep 200 down sleep 60 move 1070 575 sleep 60 move 1071 556 sleep 600
+		pointer move 1082 602 sleep 200 down sleep 60 move 1082 587 sleep 60 move 1083 568 sleep 600
 		shot petals.png
 		pointer up sleep 500
 		expect_text 'ZWL OSK key face=kana row=1 column=1 dir=up action=0 text=ぬ'
 		# The face key: the alpha face; abc tapped (a) and flicked up (c).
-		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		pointer move 1238 758 sleep 200 down sleep 60 up sleep 500
 		expect_log 'ZWL OSK face name=alpha'
-		pointer move 1070 512 sleep 200 down sleep 60 up sleep 500
+		pointer move 1082 524 sleep 200 down sleep 60 up sleep 500
 		expect_log 'ZWL OSK key face=alpha row=0 column=1 dir=center action=0 text=a'
-		pointer move 1070 512 sleep 200 down sleep 60 move 1070 495 sleep 60 move 1070 478 sleep 80 up sleep 500
+		pointer move 1082 524 sleep 200 down sleep 60 move 1082 507 sleep 60 move 1082 490 sleep 80 up sleep 500
 		expect_log 'ZWL OSK key face=alpha row=0 column=1 dir=up action=0 text=c'
 		pointer move 700 300 sleep 400
 		shot alpha.png
 		# The number face: 1 tapped, 2 flicked down (>), back to kana.
-		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		pointer move 1238 758 sleep 200 down sleep 60 up sleep 500
 		expect_log 'ZWL OSK face name=number'
-		pointer move 992 512 sleep 200 down sleep 60 up sleep 500
+		pointer move 1004 524 sleep 200 down sleep 60 up sleep 500
 		expect_log 'ZWL OSK key face=number row=0 column=0 dir=center action=0 text=1'
-		pointer move 1070 512 sleep 200 down sleep 60 move 1070 530 sleep 60 move 1070 550 sleep 80 up sleep 500
+		pointer move 1082 524 sleep 200 down sleep 60 move 1082 542 sleep 60 move 1082 562 sleep 80 up sleep 500
 		expect_log 'ZWL OSK key face=number row=0 column=1 dir=down action=0 text=>'
-		pointer move 1226 746 sleep 200 down sleep 60 up sleep 500
+		pointer move 1238 758 sleep 200 down sleep 60 up sleep 500
 		expect_log 'ZWL OSK face name=kana'
 		# A finger's flick right on あ.
 		touch_replay flick-right 'size 1279 799 2
 wait 2600
-down 1 992 512
+down 1 1004 524
 swipe 40 0 8 16
 up 1
 hold 800'
@@ -257,18 +257,18 @@ hold 800'
 		swipe 1272 792 1130 650
 		expect_log 'ZWL OSK open kind=flick'
 		# The alpha face: a (abc), i (ghi up), u (tuv left), e (def left), o (mno up), then the case key (O).
-		key_tap 1226 746
-		key_tap 1070 512
-		key_flick 992 590 0 -30
-		key_flick 1070 668 -30 0
-		key_flick 1148 512 -30 0
-		key_flick 1148 590 0 -30
-		key_tap 992 746
+		key_tap 1238 758
+		key_tap 1082 524
+		key_flick 1004 602 0 -30
+		key_flick 1082 680 -30 0
+		key_flick 1160 524 -30 0
+		key_flick 1160 602 0 -30
+		key_tap 1004 758
 		# The number face: 1 2 3.
-		key_tap 1226 746
-		key_tap 992 512
-		key_tap 1070 512
-		key_tap 1148 512
+		key_tap 1238 758
+		key_tap 1004 524
+		key_tap 1082 524
+		key_tap 1160 524
 		expect_log 'ZWL OSK send via=key code=30 shift=0'
 		expect_log 'ZWL OSK send via=key code=24 shift=1'
 		expect_log 'ZWL OSK send via=key code=4 shift=0'
@@ -282,14 +282,14 @@ hold 800'
 		# ime-probe (a text input) on top: the kana face (the face key once more), あいうえお, か and the voice key.
 		guest 'for p in $(ps -A -o pid,args | grep "[t]extedit" | awk "{print \$1}"); do kill $p; done; rm -f /tmp/ime-probe.log' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/ime-probe --log=/tmp/ime-probe.log --seconds=300 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-		key_tap 1226 746
-		key_tap 992 512
-		key_flick 992 512 -30 0
-		key_flick 992 512 0 -30
-		key_flick 992 512 30 0
-		key_flick 992 512 0 30
-		key_tap 1070 512
-		key_tap 992 746
+		key_tap 1238 758
+		key_tap 1004 524
+		key_flick 1004 524 -30 0
+		key_flick 1004 524 0 -30
+		key_flick 1004 524 30 0
+		key_flick 1004 524 0 30
+		key_tap 1082 524
+		key_tap 1004 758
 		sleep 1
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe.log"
 		grep -qF 'PROBE TEXT text=あいうえおかが' "$out/ime-probe.log" && echo "ime-probe: あいうえおかが ok" || { echo "ime-probe: text MISSING"; status=1; }
@@ -299,14 +299,14 @@ hold 800'
 		# wltest (no text input) on top: a kana is refused.
 		guest 'for p in $(ps -A -o pid,args | grep "[i]me-probe" | awk "{print \$1}"); do kill $p; done' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp; /bin/wltest --windowed --frames=3600 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-		key_tap 992 512
+		key_tap 1004 524
 		expect_log 'ZWL OSK refused reason=no-text-input'
 		guest 'for p in $(ps -A -o pid,args | grep "[w]ltest" | awk "{print \$1}"); do kill $p; done' >/dev/null
 		# (noted, not required in L1) Text Editor with WS090's text input: あい, saved.
 		guest 'rm -f /root/osk2.txt; touch /root/osk2.txt' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/osk2.txt > /tmp/te2.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
-		key_tap 992 512
-		key_flick 992 512 -30 0
+		key_tap 1004 524
+		key_flick 1004 524 -30 0
 		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
 		sleep 2
 		guest 'cat /root/osk2.txt' > "$out/osk2.txt"
@@ -316,7 +316,7 @@ hold 800'
 		compositor
 		# The flick panel's band dragged right, the QWERTY panel's band dragged down.
 		swipe 1272 792 1130 650
-		pointer move 1000 452 sleep 200 down sleep 60 move 1050 452 sleep 60 move 1100 452 sleep 80 up sleep 600
+		pointer move 1000 52 sleep 200 down sleep 60 move 1050 52 sleep 60 move 1100 52 sleep 80 up sleep 600
 		expect_log 'ZWL OSK close kind=flick reason=swipe'
 		swipe 6 792 150 650
 		pointer move 400 500 sleep 200 down sleep 60 move 400 550 sleep 60 move 400 600 sleep 80 up sleep 600
@@ -338,11 +338,11 @@ hold 800'
 	large)
 		compositor
 		swipe 1912 1072 1770 930
-		expect_log 'ZWL OSK open kind=flick x=1494 y=618 width=414 height=450'
+		expect_log 'ZWL OSK open kind=flick x=1506 y=34 width=414 height=1046'
 		pointer move 900 400 sleep 400
 		shot large-flick.png
 		swipe 6 1072 150 930
-		expect_log 'ZWL OSK open kind=qwerty x=12 y=658 width=1896 height=410'
+		expect_log 'ZWL OSK open kind=qwerty x=0 y=670 width=1920 height=410'
 		pointer move 900 300 sleep 400
 		shot large-qwerty.png
 		;;
@@ -402,9 +402,9 @@ hold 800'
 		guest 'rm -f /tmp/ime-probe.log' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/ime-probe --log=/tmp/ime-probe.log --seconds=300 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 		swipe 6 792 150 650
-		expect_log 'ZWL OSK open kind=qwerty x=12 y=484 width=1256 height=304'
-		pointer move 1174 506 sleep 200 down sleep 60 up sleep 500
-		expect_log 'ZWL OSK hand on area=18,526,938,256'
+		expect_log 'ZWL OSK open kind=qwerty x=0 y=496 width=1280 height=304'
+		pointer move 1186 518 sleep 200 down sleep 60 up sleep 500
+		expect_log 'ZWL OSK hand on area=6,538,962,256'
 		# Two strokes of the pointer, moving every 16 ms.
 		pointer move 200 580 sleep 150 down sleep 16 move 220 590 sleep 16 move 240 600 sleep 16 move 260 612 sleep 16 move 280 625 sleep 16 \
 			move 300 640 sleep 16 move 320 655 sleep 16 move 340 668 sleep 16 move 360 680 sleep 16 move 380 690 sleep 16 move 400 700 sleep 60 up sleep 150
@@ -432,17 +432,17 @@ hold 1500'
 		gaps=$(sed -n 's/.*gap_ms=\([0-9]*\).*/\1/p' "$out/hand-frames.txt" | sort -n | awk '{ a[NR] = $1 } END { print a[int((NR + 1) / 2)] }')
 		[ "${frames:-0}" -ge 5 ] && [ "${late:-1}" = 0 ] && echo "hand: $frames frames, each within one frame of its input (worst lag $worst ms, median frame interval $gaps ms) ok" || { echo "hand: $frames frames, $late late (worst lag $worst ms, median interval $gaps ms) MISSING"; status=1; }
 		# The candidate あ (1010,591) to ime-probe; the ink is cleared.
-		pointer move 1010 591 sleep 200 down sleep 60 up sleep 800
+		pointer move 1022 603 sleep 200 down sleep 60 up sleep 800
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe-hand.log"
 		grep -qF 'PROBE TEXT text=あ' "$out/ime-probe-hand.log" && echo "hand: あ sent ok" || { echo "hand: あ MISSING"; status=1; }
 		# A stroke, then clear (1035,668): no recognition follows.
 		recognized=$(count 'ZWL OSK hand recognize')
 		pointer move 300 600 sleep 150 down sleep 16 move 330 610 sleep 16 move 360 620 sleep 60 up sleep 150
-		pointer move 1035 668 sleep 200 down sleep 60 up sleep 1200
+		pointer move 1047 680 sleep 200 down sleep 60 up sleep 1200
 		expect_log 'ZWL OSK hand clear'
 		expect_count 'ZWL OSK hand recognize' "$recognized"
 		# Back to the keys.
-		pointer move 1174 506 sleep 200 down sleep 60 up sleep 500
+		pointer move 1186 518 sleep 200 down sleep 60 up sleep 500
 		expect_log 'ZWL OSK hand off'
 		;;
 	edges)
