@@ -198,7 +198,7 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
   - event `inset(right, bottom, reason)`: keyboard が出る・閉じるために compositor がその窓の大きさか位置を変えるとき、最終の大きさの
     `xdg_toplevel.configure` の**前に**送る。client は同じ configure の列で新しい大きさと一緒に受け取り、新しい大きさで描くときに caret を寄せる。
     keyboard を閉じて戻すときも送る（right・bottom は 0）。大きさも位置も変えない窓（全画面）にも、keyboard が上に重なることを知らせるため送る。
-  - libkeiland: 薄い wrapper（`keiland_keyboard_inset_*`、KEILAND_VERSION 17）。bind できない compositor では何もしない。
+  - libkeiland: 薄い wrapper（`keiland_keyboard_inset_*`、KEILAND_VERSION 18。17 は ws075-p029 の `keiland_glass_set_blur` が先に使った）。bind できない compositor では何もしない。
   - libkeiui（KUI_VERSION 7）: `kui_window` が object を作って event を受け、app の callback（任意）に渡す。既定の動き: focus を持つ編集の text の
     view（`kui_text`）が、次の描画で caret の行を view の見えている範囲の縦の中央に寄せる（文書の先頭・末尾で寄せられない分は寄せない、
     view が scroll できないときは何もしない）。全画面で keyboard が重なるときは、重ならない範囲の中央に寄せる。
