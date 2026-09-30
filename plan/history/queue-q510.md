@@ -1,14 +1,7 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- awesome-plan project=zedbsd record=q510 -->
 
-# Queue
+# q510（finished 2026-09-30）
 
-<!-- awesome-plan-current:start -->
-Status: idle（2026-09-30）
-Active Queue: なし
-Last finished Queue: [q510](history/queue-q510.md)（ws103-p003 cleared）
-<!-- awesome-plan-current:end -->
-
-## q510
 
 - Purpose: WS103 の p003（libvulkan: VK_KHR_dedicated_allocation と VK_KHR_get_memory_requirements2、image の capability の import での記述の照合、bind の守り）。
 - Timebox: この session。
@@ -24,6 +17,10 @@ Last finished Queue: [q510](history/queue-q510.md)（ws103-p003 cleared）
 
 Dependency graph: `ws103-p001 (cleared) -> q510-i01/ws103-p003 -> (future) ws103-p004`。
 
-## Upcoming Work Outlook
 
-WS103 の p004（compositor の dedicated の import）、独立の p005（WSI の fence）。どれも Queue で承認が要る。
+## Outcome
+
+- q510-i01 / ws103-p003: **cleared**。libvulkan に VK_KHR_get_memory_requirements2・VK_KHR_dedicated_allocation（公開の header は pinned の宣言から道具で生成）、
+  image の capability の dedicated の import での照合（`dedicated.c`）、bind の守り。host の試験 18 件 PASS（通常・ASan/UBSan）、QEMU の C1・C2・boot test PASS、
+  5330 の passthrough の smoke PASS。dedicated の無い import を拒む処理は p004 へ移した。
+- 準備: 別の checkout を指す CMake の cache を消して作り直した（ユーザー許可）。BUG-126 を記録。GitHub へは未公開。

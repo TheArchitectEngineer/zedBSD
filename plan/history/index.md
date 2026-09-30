@@ -2,12 +2,18 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q509](queue-q509.md)（ws103-p002: attempt uncleared、追いの確かめで cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q510](queue-q510.md)（ws103-p003 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q509
+## 最新: 2026-09-30 q510
+
+[q510](queue-q510.md): WS103 p003 cleared。libvulkan に VK_KHR_get_memory_requirements2・VK_KHR_dedicated_allocation を足し、image の capability の dedicated の
+import で kernel の記述と image を照らす（host の試験 18 件）。QEMU の C1・C2・boot test と 5330 の passthrough の smoke PASS。準備として別の checkout を指す
+CMake の cache を作り直し（ユーザー許可）、BUG-126（toolchain の lock と libcxx の複写）を記録。GitHub へは未公開。
+
+## 2026-09-30 q509
 
 [q509](queue-q509.md): WS103 p002 uncleared。compositor の起動の問い合わせを VK_KHR_display へ移し、`--direct` と表示の claim・present・release の ioctl を削除。QEMU の Venus で
 C1・C2・boot test PASS。5330 の passthrough の smoke は最初 FAIL（試験の image で `login=graphical` が重複し kernel が boot の parameter を拒んでいた。COM1 の mirror で特定、ユーザー指示の例外）。既定の boot の行で作り直して PASS（34 回、最大 48 ms）、Phase は cleared（追い）。GitHub へは未公開。
