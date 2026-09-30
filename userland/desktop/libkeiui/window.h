@@ -214,6 +214,29 @@ struct kui_window {
 	size_t primary_length;
 
 	/*
+	 * The text input (text-input.c, KUI_VERSION 6): the compositor's
+	 * manager and the seat's text input, whether the application asks for
+	 * it and whether the text input is on the window's surface (enabled
+	 * when both), the commits made (the done's serial), the caret's
+	 * rectangle, and what the events before a done carried.
+	 */
+	struct zwp_text_input_manager_v3 *text_manager;
+	struct zwp_text_input_v3 *text_input;
+	int text_wanted;
+	int text_entered;
+	int text_enabled;
+	uint32_t text_commits;
+	int32_t text_cursor[4];
+	char text_commit[KUI_WINDOW_TEXT_MAX];
+	char text_preedit[KUI_WINDOW_TEXT_MAX];
+	int32_t text_preedit_begin;
+	int32_t text_preedit_end;
+	int text_preedit_set;
+	int text_preedit_shown;
+	uint32_t text_before;
+	uint32_t text_after;
+
+	/*
 	 * A window on another's connection (a file chooser's, ws090-p006): the
 	 * connection is the application's and stays open, and the owner hears
 	 * of queued input and of a buffer given back from a wl_display.sync
@@ -251,5 +274,11 @@ void keiui_clipboard_close(struct kui_window *window);
 void keiui_primary_bind(struct kui_window *window, struct wl_registry *registry, uint32_t name);
 void keiui_primary_start(struct kui_window *window);
 void keiui_primary_close(struct kui_window *window);
+
+/* The text input (text-input.c). */
+void keiui_text_input_bind(struct kui_window *window, struct wl_registry *registry, uint32_t name);
+void keiui_text_input_start(struct kui_window *window);
+void keiui_text_input_close(struct kui_window *window);
+struct kui_window_event *keiui_window_push(struct kui_window *window, unsigned kind);
 
 #endif

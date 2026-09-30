@@ -14,7 +14,7 @@ LIBKEIUI_SOURCES := userland/desktop/libkeiui/version.c userland/desktop/libkeiu
 	userland/desktop/libkeiui/text-touch.c userland/desktop/libkeiui/ui.c \
 	userland/desktop/libkeiui/window.c userland/desktop/libkeiui/present.c \
 	userland/desktop/libkeiui/present-shm.c userland/desktop/libkeiui/clipboard.c \
-	userland/desktop/libkeiui/primary.c userland/desktop/libkeiui/widgets.c \
+	userland/desktop/libkeiui/primary.c userland/desktop/libkeiui/text-input.c userland/desktop/libkeiui/widgets.c \
 	userland/desktop/libkeiui/field.c userland/desktop/libkeiui/list.c \
 	userland/desktop/libkeiui/cards.c userland/desktop/libkeiui/chooser.c \
 	userland/desktop/libkeiui/chooser-model.c userland/desktop/libkeiui/chooser-view.c

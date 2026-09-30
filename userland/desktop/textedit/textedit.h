@@ -99,7 +99,9 @@ enum te_event_type {
 	TE_EVENT_FOCUS,
 	TE_EVENT_FIND_TEXT,
 	TE_EVENT_FIND_DONE,
-	TE_EVENT_CHOSEN
+	TE_EVENT_CHOSEN,
+	TE_EVENT_TEXT,
+	TE_EVENT_TEXT_DELETE
 };
 
 /*
@@ -583,6 +585,7 @@ void te_app_clamp(struct te_app *app);
 int te_app_sync_scroll(struct te_app *app, uint64_t now_us);
 void te_app_touch(struct te_app *app);
 void te_app_text_rect(const struct te_app *app, struct te_rect *rect);
+void te_app_caret_rect(const struct te_app *app, struct te_rect *rect);
 void te_app_card(const struct te_app *app, struct te_rect *rect);
 double te_app_max_scroll_x(const struct te_app *app);
 double te_app_max_scroll_y(const struct te_app *app);

@@ -225,6 +225,7 @@ kui_window_close(
 	/* The clipboard and the primary selection before the seat they belong to. */
 	keiui_clipboard_close(window);
 	keiui_primary_close(window);
+	keiui_text_input_close(window);
 	free(window->clipboard);
 	free(window->primary_text);
 
@@ -799,6 +800,7 @@ window_setup(
 	/* The clipboard and the primary selection, through the seat (without them the window keeps its own copies). */
 	keiui_clipboard_start(window);
 	keiui_primary_start(window);
+	keiui_text_input_start(window);
 
 	/* A window needs a compositor and a shell, and shared memory to show frames through it. */
 	if (window->compositor == NULL || window->shell == NULL)
@@ -1053,6 +1055,22 @@ window_woken(
 }
 
 /*
+ * Queues a new input of a kind for the library's other parts (the text
+ * input); NULL when the queue is full.
+ */
+struct kui_window_event *
+keiui_window_push(
+	struct kui_window *window,
+	unsigned kind)
+{
+	struct kui_window_event *event;
+
+	/* As the window's own inputs. */
+	event = window_push(window, kind);
+	return event;
+}
+
+/*
  * Queues a new input of a kind at the pointer's place with the modifiers
  * held; NULL when the queue is full (the input is dropped).
  */
@@ -1134,6 +1152,13 @@ window_global(
 	match = strcmp(interface, "wl_data_device_manager");
 	if (match == 0 && window->data_manager == NULL) {
 		keiui_clipboard_bind(window, registry, name, version);
+		return;
+	}
+
+	/* The text input's manager (an input method's and the on-screen keyboard's text). */
+	match = strcmp(interface, "zwp_text_input_manager_v3");
+	if (match == 0 && window->text_manager == NULL) {
+		keiui_text_input_bind(window, registry, name);
 		return;
 	}
 
