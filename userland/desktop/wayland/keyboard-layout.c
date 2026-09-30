@@ -148,6 +148,17 @@ static const char *const layout_voice_cycles[] = {
 	"やゃ", "ゆゅ", "よょ", "わゎ"
 };
 
+/*
+ * The keys of the US layout (zdesktop's keymap, keymap.c) by evdev code,
+ * as the characters they type without and with Shift: the code of a
+ * character is its place in one of the two strings, 0 where a code types
+ * none.  The codes run from 0 to 57 (the space bar).
+ */
+static const char layout_us_plain[] =
+	"\0\0" "1234567890-=" "\0\0" "qwertyuiop[]" "\0\0" "asdfghjkl;'`" "\0\\" "zxcvbnm,./" "\0\0\0 ";
+static const char layout_us_shifted[] =
+	"\0\0" "!@#$%^&*()_+" "\0\0" "QWERTYUIOP{}" "\0\0" "ASDFGHJKL:\"~" "\0|" "ZXCVBNM<>?" "\0\0\0 ";
+
 /* The bytes of one kana in UTF-8 (all of them are three). */
 #define LAYOUT_KANA_BYTES	3U
 
@@ -358,4 +369,51 @@ zwl_flick_direction_name(
 
 	/* The name. */
 	return layout_direction_names[direction];
+}
+
+/*
+ * Finds the key of the US layout that types a text of one ASCII character
+ * (a newline is the enter key).  Returns 1 with its evdev code and whether
+ * Shift must be held, or 0 when no key types it (any other text).
+ */
+int
+zwl_flick_us_key(
+	const char *text,
+	unsigned *code,
+	int *shift)
+{
+	unsigned index;
+	char character;
+
+	/* Only one character. */
+	character = text[0];
+	if (character == '\0' || text[1] != '\0')
+		return 0;
+
+	/* A newline is the enter key. */
+	if (character == '\n') {
+		*code = ZWL_FLICK_KEY_ENTER;
+		*shift = 0;
+		return 1;
+	}
+
+	/* The code whose key types it, without Shift or with it. */
+	for (index = 0; index < sizeof(layout_us_plain) - 1U; index++) {
+		/* Without Shift. */
+		if (layout_us_plain[index] == character) {
+			*code = index;
+			*shift = 0;
+			return 1;
+		}
+
+		/* With Shift (the space bar types a space either way, found above). */
+		if (layout_us_shifted[index] == character) {
+			*code = index;
+			*shift = 1;
+			return 1;
+		}
+	}
+
+	/* No key types it. */
+	return 0;
 }
