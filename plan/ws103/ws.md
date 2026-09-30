@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし（q508 finished）
-Resume point: 2026-09-30 夜 p001 cleared（q508、[design.md](design.md) 改訂 3）。次は p002（起動の問い合わせを VK_KHR_display へ、`--direct` の削除）か、独立の p003・p005。実行は Queue の承認の後。V1・V4 の言い回しの改訂はユーザーの確認待ち
+Resume point: 2026-09-30 夜 p001 cleared（q508、[design.md](design.md) 改訂 3）。次は p002（起動の問い合わせを VK_KHR_display へ、`--direct` の削除）か、独立の p003・p005。実行は Queue の承認の後。V1・V4 は 2026-09-30 夜に改訂（ユーザー承認）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -56,14 +56,14 @@ client と compositor の間は全 OS で我々の独自の protocol 1 本で、
 - `FENCE_QUERY` は commit のたびに世代の照合（`display.c:316`、`protocol.c:1645`）。`vkImportFenceFdKHR`（OPAQUE_FD）と `vkGetFenceStatus` で代われるが、世代は標準の Vulkan から見えない。i915 の native で external fence が出るか（`GPU_CAP_FENCE`）は未確認。
 - UAPI の型は `zwl.h` の構造体（`struct gpu_resource_import`、`struct gpu_display_info`、`lease`）と `keiland_gpu_buffer_v1` の wire（64 byte の記述）に入っている。
 
-## 達成基準（案）
+## 達成基準
 
 | # | 基準 | 確かめ方 |
 | --- | --- | --- |
-| V1 | GPU の直の ioctl はできる限り Vulkan の API（zedBSD では libvulkan）へ移す。移せない物だけを zedBSD の時だけ build される macro で囲み、macro を外した build（Linux・FreeBSD を想定）では `userland/desktop/wayland/` に GPU の UAPI の include と ioctl が 0。evdev の ioctl は対象の外（2026-09-30 ユーザーの決め） | grep、macro の有り・無しの両方の build と、有りの build の試験 |
+| V1 | GPU の直の ioctl は Vulkan の API（zedBSD では libvulkan）へ移す。OS 固有の部分は OS ごとの source の module（zedBSD は `gpu-zedbsd.c`）に閉じ、それ以外の `userland/desktop/wayland/` の source は GPU の UAPI を include せず、GPU の ioctl を呼ばない。compositor は GPU の fd を持たない。evdev の ioctl は対象の外（2026-09-30 ユーザーの決め。module の入れ替えへの言い回しの改訂は 2026-09-30 夜 ユーザー「書き直してOKです」） | `plan/ws103/tests/v1-check.sh`（grep と、GPU の UAPI の header を `#error` にした `-fsyntax-only`。design §2.6）と、build・試験 |
 | V2 | 起動・login・Log Out・Shut Down（WS099 の C1）、app の起動と窓の操作、全画面、keyboard が今と同じに動く | C1・C9・WS079-p010・boot test（QEMU の Venus）、5330 の passthrough |
 | V3 | 安全の確かめ（buffer の記述と実物の一致、他の client の画像を読めない）が libvulkan の import の側で保たれる | host か guest の試験（偽の記述の buffer を拒む） |
-| V4 | 性能が落ちない（C6 と app の最初の frame）。macro を有効にした build と無効にした build の差を測り、差の無い直の ioctl は macro で残さず消す | WS075 の measure-apps と WS099 の import-launch |
+| V4 | 性能が落ちない（C6 と app の最初の frame、Venus の client の present と compositor の frame の間隔）。p002 の前（基準）と p006 の後を比べる（言い回しの改訂は同上） | WS075 の measure-apps と WS099 の import-launch、QEMU の Venus と 5330 の passthrough（design §2.7） |
 
 ## Phase（案）
 
