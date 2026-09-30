@@ -193,6 +193,35 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
     view が scroll できないときは何もしない）。全画面で keyboard が重なるときは、重ならない範囲の中央に寄せる。
   - 対応していない窓（libkeiui を使わない app、他の toolkit）はこの object を作らず、今までどおり configure だけを受ける。
 
+### 2.10 右の列の道具の面（2026-09-30 ユーザーとの議論、案）
+
+ユーザー:「フリック入力のパネルは、画面右側を1列全体、占有します。」flick の panel は右の列の全体（system bar の下から画面の下まで）を占め、
+下に今の 4×4 の flick、上に**道具の面**を置く。作業の領域（§2.8）は列の幅を差し引く。
+
+ユーザーの要望（同日）:
+- 変換候補・予測の列（Wayland の input-method に標準の口が無いので独自の拡張）
+- カーソルの移動（矢印、行頭へ・行末へ、頁の上下）
+- 範囲の選択の開始の button。選択の間はカーソルの key で範囲を広げ縮め、コピーか切り取りで終わる
+- 編集の操作（独自の Wayland の拡張）
+- クリップボードの履歴（常には出さず、button から何段かの操作で）
+- バックスペース
+- Unicode の絵文字
+- 直前の app に切り替える窓の操作（app をまたいだコピーと貼り付けのため）
+- Termux のような補助の key（Esc・Tab・Ctrl・`|`・`~`・矢印）は QWERTY の面に置く（「Termuxの補助キーは、QWERTYの方がいいかも。」）
+
+| 部品 | 中身 | 仕組み |
+| --- | --- | --- |
+| 常に出る列 | 直前の app、BS、道具の面の tab（候補・編集・履歴・絵文字） | — |
+| 編集の面 | ← → ↑ ↓、行頭・行末、頁の上・下、選択（toggle）、コピー・切り取り・貼り付け、取り消し・やり直し、全選択 | 移動は evdev の key（Home・End・PgUp・PgDn）。選択の間は移動に Shift を付ける。編集の操作は下の拡張、無い窓は key に落とす |
+| 編集の操作の拡張 | `keiland_edit_v1`（仮）: 窓ごとの object。app が出来る操作と状態（選択がある・貼り付けられる・取り消せる）を知らせ、compositor が `action(copy/cut/paste/undo/redo/select_all/select_begin/select_end)` を送る。button は状態で灰色にする | libkeiland の wrapper と libkeiui の `kui_text`。拡張の無い窓は Ctrl+C・X・V・Z・Y・A の key に落とす（Terminal のように意味が違う app は app の id の表で Ctrl+Shift+C・V に） |
+| 直前の app | compositor の focus の履歴（新しい順）の 2 番目の窓を前へ出し focus を移す。もう一度押すと戻る。長押しで最近の窓の一覧（後） | compositor の中だけ。keyboard は開いたまま |
+| クリップボードの履歴 | 履歴の tab → 一覧（text だけ、最近 10 件）→ tap で貼る（2 段） | compositor の `data.c` が selection の text を記憶の中だけに持つ。password の欄（text-input の purpose）からの複写は残さない。lock・Log Out で消す |
+| 絵文字 | 種類の tab と格子、tap で送る | text-input の commit（text-input の無い app へは送らない）。font が要る（下の判断） |
+| 変換候補 | 縦の列に 8〜10 候補、tap で確定 | 独自の拡張（例 `keiland_input_method_candidates_v1`: IME が候補の一覧と選択を compositor へ送り、compositor が選択を返す。keyboard が出ている間は IME の popup を出さない）。**IME（WS095）は人間の作業中**なので、設計だけ先に置き、実装は IME を戻してから D2 と一緒に（p012） |
+
+- 特許: 画面の keyboard の矢印・Home・End の key は古くから広くある（例: Windows XP Tablet PC Edition の入力 panel、X の xvkbd、GNOME の onboard）。特定の gesture（空白の長押しで trackpad など）は避け、普通の button にする。法的な判断ではない。
+- 絵文字の font（判断待ち）: 白黒の Noto Emoji（OFL-1.1、今の libtruetype で描ける）か、色付き（Noto Color Emoji の CBDT、または COLRv1。libtruetype と各 app の文字の描画に色の glyph の対応が要る）。
+
 ### 2.9 試験（QEMU、Windows の QEMU）
 
 | 何 | どこで | どう |
