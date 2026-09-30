@@ -76,7 +76,11 @@ for criterion in $criteria; do
 		echo "C1 c1-boot-shutdown $verdict seconds=$(($(date +%s) - began)) $(grep -E 'RESULT' "$out/c1-boot-shutdown.log" | tail -1)" | tee -a "$results"
 		;;
 	C2) run C2 c2-geometry 1920x1280 sh plan/ws099/tests/c2-geometry.sh "$out/c2" ;;
-	C3) run C3 p138 1280x800 sh plan/ws035/tests/zdesktop-p138.sh "$out/c3" ;;
+	C3)
+		# Esc (p138), and the bottom edge's swipe back from fullscreen (ws099-p015).
+		run C3 p138 1280x800 sh plan/ws035/tests/zdesktop-p138.sh "$out/c3"
+		run C3 c3-swipe-back 1280x800 sh plan/ws099/tests/c3-swipe-back.sh "$out/c3-swipe-back"
+		;;
 	C4) run C4 p137 1280x800 sh plan/ws035/tests/zdesktop-p137.sh "$out/c4" ;;
 	C5) run C5 c5-transitions 1280x800 sh plan/ws099/tests/c5-transitions.sh "$out/c5" ;;
 	C6) echo "C6 measure-apps NOT-RUN the machine's measure (plan/ws075/tests/hdmi/measure-apps.sh on the 5330)" | tee -a "$results" ;;
