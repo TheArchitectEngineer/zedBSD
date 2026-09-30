@@ -1,0 +1,15 @@
+diff --git a/userland/desktop/wayland/glass.c b/userland/desktop/wayland/glass.c
+index 206a49c9..71a183cc 100644
+--- a/userland/desktop/wayland/glass.c
++++ b/userland/desktop/wayland/glass.c
+@@ -1337,6 +1337,10 @@ glass_shape_draw(
+ 	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
+ 	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+ 	vkCmdDraw(command, ZWL_QUAD_VERTICES, 1U, 0U, 0U);
++
++	/* ws075-p030 experiment: a small shape (64x64 or less: text) drawn once more, for the fixed cost of a draw. */
++	if (quad[2] * quad[3] <= 4096.0f)
++		vkCmdDraw(command, ZWL_QUAD_VERTICES, 1U, 0U, 0U);
+ }
+ 
+ /* Draws a rounded rectangle in a solid color. */
