@@ -19,11 +19,13 @@
  */
 
 #include "zwl.h"
+#include "popup.h"
 
 /* How far around the pointer a cursor may draw (zdesktop's shapes and arrow are smaller). */
 #define DAMAGE_CURSOR		64
 
 static void damage_add(struct zwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
+static int cursor_unseen(struct zwl_server *server, int32_t x, int32_t y);
 
 /*
  * Marks the damage of the pointer's move from an old place: the cursor's
@@ -36,7 +38,19 @@ zwl_damage_pointer(
 	int32_t old_x,
 	int32_t old_y)
 {
+	int unseen;
 	int calm;
+
+	/*
+	 * A cursor the window's client hid, over that client's window at both
+	 * places, draws nothing (ws099-p015: the pen over fullscreen Notes
+	 * would otherwise redraw the output for each of its places).
+	 */
+	unseen = cursor_unseen(server, old_x, old_y);
+	if (unseen)
+		unseen = cursor_unseen(server, server->pointer_x, server->pointer_y);
+	if (unseen)
+		return;
 
 	/* The next frame shows the move without waiting for the windows (frame pacing, display.c). */
 	server->pointer_moved = 1U;
@@ -147,4 +161,43 @@ damage_add(
 		server->damage[2] = right;
 	if (bottom > server->damage[3])
 		server->damage[3] = bottom;
+}
+
+/*
+ * Tells whether the cursor draws nothing at a point: the glass look's
+ * still windows, the client that hid its cursor (with no resize arrow, no
+ * drag, no popup's grab) owning the window body there (compose.c's
+ * cursor, BUG-118).
+ */
+static int
+cursor_unseen(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct zwl_object *window;
+	int calm;
+
+	/* A hidden client's cursor, and nothing else that follows the pointer. */
+	if (!server->glass ||
+	    server->cursor_client == NULL ||
+	    !server->cursor_hidden ||
+	    server->cursor_surface != NULL ||
+	    server->frame_edges != 0U ||
+	    server->dnd_active ||
+	    server->pointer_grabbed)
+		return 0;
+
+	/* Over a window's body in a still look. */
+	calm = zwl_glass_pointer_calm(server, x, y);
+	if (!calm)
+		return 0;
+
+	/* The client's own window. */
+	window = zwl_glass_body_at(server, x, y);
+	if (window == NULL || window->client != server->cursor_client)
+		return 0;
+
+	/* Succeeded: nothing is drawn there. */
+	return 1;
 }

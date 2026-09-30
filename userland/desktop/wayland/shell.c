@@ -319,6 +319,7 @@ static struct {
 	int32_t start_y;
 } unfullscreen_swipe;
 static struct zwl_object *fullscreen_top(struct zwl_server *server);
+static int fullscreen_whole(struct zwl_server *server, float home);
 static int unfullscreen_press(struct zwl_server *server, uint32_t button, uint32_t state);
 static int unfullscreen_motion(struct zwl_server *server);
 static float desktop_position(struct zwl_server *server);
@@ -345,6 +346,7 @@ zwl_glass_draw(
 	unsigned focused;
 	unsigned drawn;
 	int shown;
+	int whole;
 	float progress;
 	float home;
 	float position;
@@ -385,6 +387,22 @@ zwl_glass_draw(
 		shape.color[3] = 0.40f * home;
 		glass_shape_draw(server, command, &shape);
 		server->layer_on = 1;
+	}
+
+	/*
+	 * A fullscreen window on top that covers the output with an opaque
+	 * image is all there is under the cursor (ws099-p015): the wallpaper,
+	 * the desktop and the windows under it are not drawn.
+	 */
+	whole = fullscreen_whole(server, home);
+	if (whole) {
+		top = zwl_top_window(server);
+		window_layer(server, top, home, (float)server->desktop);
+		draw_window(server, command, top, 1U, NULL);
+		server->layer_on = 0;
+		zwl_backdrop_reset(server);
+		zwl_popup_draw(server, command);
+		return;
 	}
 
 	/* The wallpaper over the whole output (with round corners while it is pushed aside). */
@@ -915,6 +933,53 @@ fullscreen_top(
 
 	/* Succeeded: that window. */
 	return top;
+}
+
+/*
+ * Tells whether a frame draws only the fullscreen window on top
+ * (zwl_glass_draw): with nothing shown over it or moving, it covers the
+ * output with an opaque image, so what is under it is not seen.
+ */
+static int
+fullscreen_whole(
+	struct zwl_server *server,
+	float home)
+{
+	struct zwl_object *top;
+	const struct zwl_import *image;
+	struct shell_rect body;
+	float progress;
+	int still;
+
+	/* The fullscreen window on top with nothing over it (fullscreen_top), App Home and Wiseview gone. */
+	top = fullscreen_top(server);
+	if (top == NULL || home > 0.0f || server->home_to > 0.0f)
+		return 0;
+	progress = wiseview_progress(server);
+	if (progress > 0.0f)
+		return 0;
+
+	/* Nothing moves or is open over it: no animation, drag, sliding desktops, popup or menu (zwl_glass_still). */
+	still = zwl_glass_still(server);
+	if (!still)
+		return 0;
+
+	/* Its image is opaque, with no sub-surfaces under it and no glass panels. */
+	image = zwl_compose_surface_image(top);
+	if (image == NULL || image->draw != ZWL_DRAW_OPAQUE)
+		return 0;
+	if (top->sub_children != NULL || zwl_panels_count(top) > 0U)
+		return 0;
+
+	/* It covers the output. */
+	body_rect(server, top, &body);
+	if (body.x > 0 || body.y > 0 ||
+	    body.x + body.width < (int32_t)server->width ||
+	    body.y + body.height < (int32_t)server->height)
+		return 0;
+
+	/* Succeeded: only that window is drawn. */
+	return 1;
 }
 
 /*
@@ -2157,6 +2222,12 @@ draw_window(
 		return;
 	}
 
+	/* A fullscreen window has only its body, whole (draw_body). */
+	if (surface->fullscreen) {
+		draw_body(server, command, surface, &body, 0, focused);
+		return;
+	}
+
 	/* A floating window. */
 	draw_body(server, command, surface, &body, 0, focused);
 	floating_title(&body, &panel);
@@ -2188,6 +2259,7 @@ draw_body(
 	float soft;
 	float radius;
 	unsigned square;
+	int whole;
 	float scale_x;
 	float scale_y;
 
@@ -2219,6 +2291,17 @@ draw_body(
 	if (square)
 		radius = 0.0f;
 
+	/*
+	 * A fullscreen window (not while it animates) is its image alone, as
+	 * the output's (ws099-p015, as its direct scanout showed it before):
+	 * square corners, no shadow, no frosted glass, not see-through.
+	 */
+	whole = 0;
+	if (surface->fullscreen && server->anim != surface && panels == 0U) {
+		whole = 1;
+		radius = 0.0f;
+	}
+
 	/* The shadow, deeper for the focused window. */
 	soft = 22.0f;
 	if (focused)
@@ -2235,11 +2318,11 @@ draw_body(
 	shape.color[1] = 0.18f;
 	shape.color[2] = 0.35f;
 	shape.color[3] = 0.20f;
-	if (panels == 0U)
+	if (panels == 0U && !whole)
 		glass_shape_draw(server, command, &shape);
 
 	/* A see-through body lies on frosted glass (a window with panels has its own). */
-	if (server->window_opacity < 1.0f && panels == 0U) {
+	if (server->window_opacity < 1.0f && panels == 0U && !whole) {
 		glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 		if (docked)
 			shape.box[3] += 2.0f * radius;
@@ -2262,6 +2345,8 @@ draw_body(
 		shape.box[3] += 2.0f * radius;
 	zwl_viewport_source(surface, shape.uv);
 	shape.opacity = server->window_opacity;
+	if (whole)
+		shape.opacity = 1.0f;
 	shape.mode = MODE_IMAGE;
 	shape.radius = radius;
 	shape.set = image->set;

@@ -52,7 +52,11 @@ PEN
 
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 timeout 180 sh plan/ws035/tests/zdesktop-guest.sh start "$image" >/dev/null 2>&1
-sleep 20
+tries=0
+until guest 'echo up' | grep -q '^up$' || [ $tries -ge 24 ]; do
+	tries=$((tries + 1))
+	sleep 5
+done
 put "$out/lat.pen" /tmp/lat.pen
 guest 'service stop greeter >/dev/null 2>&1; rm -rf /tmp/notes-lat /root/.local/share/keiland/notes; mkdir -p /tmp/notes-lat; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
@@ -64,6 +68,7 @@ guest 'timeout 120 /bin/peninject /tmp/lat.pen; echo peninject=$?' | tail -1
 sleep 2
 python3 plan/ws035/tests/zdesktop-check.py "$out/strokes.png" --runtime "$GUEST_RUNTIME" >/dev/null 2>&1
 guest 'grep -E "^ZWL (LAT|MODE)" /tmp/zdesktop.log' > "$out/lat.log"
+guest "cat /tmp/zdesktop.log" > "$out/zdesktop-full.log"
 guest 'grep -E "^NOTES (START|STROKE|FRAMES)" /tmp/notes-lat.log' > "$out/notes.log"
 guest 'grep -cE "ZWL ERROR" /tmp/zdesktop.log' | tail -1 > "$out/errors.txt"
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
