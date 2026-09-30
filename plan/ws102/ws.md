@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）cleared 2026-09-30（[design.md](design.md)）。次は L1 の p002（角の認識器と空の panel）。判断待ち: D1（Text Editor へのかな）、D2（日本語の変換）
+Resume point: p002 cleared 2026-09-30。次は L1 の p003（flick の表と key の描画）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -50,7 +50,7 @@ Resume point: p001（設計）cleared 2026-09-30（[design.md](design.md)）。�
 | Phase | 段 | 目的 | Status | 依存 |
 | --- | --- | --- | --- | --- |
 | ws102-p001 | — | 設計（[design.md](design.md): compositor の `keyboard.c`、IME の file を変えない送出、角の gesture、配列、作業の領域、段と数値目標） | cleared（2026-09-30） | — |
-| ws102-p002 | L1 | `keyboard.c` の骨組み: 右下・左下の角の認識器（pointer と touch）、下端の Wiseview と desktop の swipe から角を除く、開閉、空の glass の panel、overlay と scanout、log | planned | p001 |
+| [ws102-p002](phase002/phase.md) | L1 | `keyboard.c` の骨組み: 右下・左下の角の認識器（pointer と touch）、下端の Wiseview と desktop の swipe から角を除く、開閉、空の glass の panel、overlay と scanout、log | cleared（2026-09-30: osk-guest の pointer・edges・touch PASS（注入の swipe 10/10、真上 0/10）、WS079-p010・C9（10 本）・boot test PASS） | p001 |
 | ws102-p003 | L1 | `keyboard-layout.c`（flick の 3 つの face の表、方向の判定、濁点の巡り）、key と花びらの描画、host の試験 | planned | p002 |
 | ws102-p004 | L1 | 文字の送出（evdev と Shift、text-input の commit、組み立て中・text-input の無い app）、guest の試験（Text Editor・ime-probe） | planned | p003 |
 | ws102-p005 | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | planned | p004 |

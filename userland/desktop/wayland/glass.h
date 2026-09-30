@@ -104,4 +104,7 @@ void zwl_volume_draw_popup(struct zwl_server *server, VkCommandBuffer command);
 void zwl_home_draw(struct zwl_server *server, VkCommandBuffer command, float progress);
 void zwl_corner_draw(struct zwl_server *server, VkCommandBuffer command);
 
+/* The on-screen keyboard over everything (keyboard.c). */
+void zwl_keyboard_draw(struct zwl_server *server, VkCommandBuffer command);
+
 #endif
