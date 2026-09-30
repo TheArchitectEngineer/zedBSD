@@ -71,6 +71,7 @@ design §2.6・§3 の L2 の (b)。`touch.c` に `ROUTE_OSK` を足す。
 | 回帰: C9 | `plan/ws099/tests/criteria.sh build/ws102-p009-criteria.img build/ws102-p009/criteria C9`（`build-criteria-image.sh` で作った image） | 10 本すべて PASS |
 | 回帰: WS079-p010 | `plan/ws079/tests/zdesktop-p010.sh build/amd64 …`（criteria の image の guest） | PASS |
 | boot test | `OUTPUT=build/ws102-p009-boot plan/tools/boot-test.sh build/ws102-p009-criteria.img` | PASS |
+| main の取り込みの後（p020 の補助の key の列・p007 の作業の領域を含む） | build（warning 0、style 0 件）と `osk-guest.sh build/ws102-shots/p009-merged install start pointer flick send close qwerty hand extra maxshot maxflick roll edges touch`（pen の image） | PASS（roll: fj × 50、key 100 行、rollover 99。`roll.png`）。C9・WS079-p010・boot test は取り込みの前の code で行った |
 
 回帰の途中の失敗（どちらも直さずに解けた）:
 - 全ての手順の 1 回目で、手順 qwerty が失敗した。記号の面の key の位置の log（`qrect face=symbols`）が 1 行も出ず、qwerty-plan.py が「+」を見つけられなかった。この手順は pointer を使うので、この Phase の変更は通らない。qwerty だけの run 2 回と、全ての手順の 2 回目は PASS。1 回だけの不安定さとして記録する。
