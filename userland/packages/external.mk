@@ -115,14 +115,26 @@ ZEDBSD_EXTERNAL_LLVM_SOURCE := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm-sour
 ZEDBSD_EXTERNAL_LLVM_VERIFIED = \
 	$(ZEDBSD_EXTERNAL_LLVM_SOURCE)/.zedbsd-source-verified-$(ZEDBSD_LLVM_VERSION)-$(ZEDBSD_LLVM_PATCH_LEVEL)
 
+# The toolchain's directories are kept read-only (plan/tools/toolchain-lock.sh)
+# and cp -a copies their modes, so the copy's directories are made writable
+# before patch creates files in them, and before an earlier copy is removed.
+# Only directories: a file is a link to the toolchain's own and shares its
+# mode (BUG-126).
+#
 # $(1) = the copy, $(2) = the patches, applied in order.  A changed patch set
 # or LLVM release makes a new copy from the verified tree.
 define ZEDBSD_EXTERNAL_LLVM_COPY
 	@set -eu; \
 	copy='$(1)'; \
+	for old in "$$copy" "$$copy.tmp"; do \
+		if [ -d "$$old" ] && [ ! -L "$$old" ]; then \
+			find "$$old" -type d -exec chmod u+w {} +; \
+		fi; \
+	done; \
 	rm -rf "$$copy" "$$copy.tmp"; \
 	mkdir -p "$${copy%/*}"; \
 	cp -al '$(ZEDBSD_EXTERNAL_LLVM_SOURCE)/.' "$$copy.tmp"; \
+	find "$$copy.tmp" -type d -exec chmod u+w {} +; \
 	for patch in $(2); do \
 		patch -p1 --batch --forward --fuzz=0 -d "$$copy.tmp" < "$$patch"; \
 	done; \

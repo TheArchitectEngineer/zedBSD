@@ -2,7 +2,8 @@
 # Locks or unlocks the shared toolchain trees of the main checkout, so that nothing but the main agent
 # (with the lock taken off on purpose) can write into them.  Directories are made read-only, files are left
 # alone: a package build that hard-links the LLVM source into its own copy (cp -al) and patches the copy still
-# works, because the copy's directories are its own, but nothing can create, rename or delete files inside
+# works, because the copy's directories are its own (cp -a copies the read-only mode, so the package rule makes
+# them writable, BUG-126), but nothing can create, rename or delete files inside
 # the shared trees, which is what a patch or an install into them would do (the 2026-09-28 incident).
 #
 #   plan/tools/toolchain-lock.sh lock|unlock|status
