@@ -42,6 +42,10 @@
 #define DESKTOP_TEXT		13U
 #define DESKTOP_TEXT_BASELINE	(DESKTOP_ICON + 24)
 
+/* A two-line name's first baseline and the distance between its lines (both lines in the 104-pixel cell). */
+#define DESKTOP_TEXT_BASELINE_TWO	(DESKTOP_ICON + 20)
+#define DESKTOP_TEXT_LINE		15
+
 /* The name's colours: dark text, a white halo; a selected name's pill and text. */
 #define DESKTOP_TEXT_COLOR	FM_RGB(0x1e293b)
 #define DESKTOP_HALO_COLOR	FM_RGBA(0xffffff, 150)
@@ -88,7 +92,9 @@ static void desktop_painted_record(struct fm_app *app, const struct fm_entry *en
 static void desktop_painted_keep(struct fm_app *app, struct fm_canvas *canvas);
 static void desktop_clear_rect(struct fm_canvas *canvas, const struct fm_rect *rect);
 static void desktop_item(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, const struct fm_rect *cell);
+static void desktop_log_moved(const struct fm_desktop *desk, const char *const *names, size_t count, const struct fm_desktop_saved *known, size_t known_count);
 static void desktop_name(struct fm_app *app, struct fm_canvas *canvas, const char *name, const struct fm_rect *cell, int selected);
+static void desktop_name_line(struct fm_app *app, struct fm_canvas *canvas, const char *line, const struct fm_rect *cell, int baseline, int available, int selected);
 static void desktop_field(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *cell);
 static void desktop_message(struct fm_app *app, struct fm_canvas *canvas);
 static int desktop_renaming(const struct fm_app *app, const struct fm_entry *entry);
@@ -570,6 +576,8 @@ desktop_layout(
 	size_t known_count;
 	size_t index;
 	uint32_t names_hash;
+	int columns;
+	int rows;
 	int error;
 
 	/* The saved places, once. */
@@ -622,6 +630,13 @@ desktop_layout(
 	for (index = 0; index < tab->listing.count; index++)
 		names[index] = tab->listing.entries[index].name;
 	fm_desktop_arrange(names, tab->listing.count, known, known_count, width, height, desk->places);
+
+	/* A new size is logged with its grid, and each item that could not keep its place (ws094-p010). */
+	if (desk->width != width || desk->height != height) {
+		fm_desktop_grid(width, height, &columns, &rows);
+		fm_log("DESKTOP grid width=%d height=%d columns=%d rows=%d", width, height, columns, rows);
+	}
+	desktop_log_moved(desk, names, tab->listing.count, known, known_count);
 	free(known);
 
 	/* The places shown now, remembered for the next layout. */
@@ -638,6 +653,41 @@ desktop_layout(
 	desk->laid_modified = tab->listing.modified;
 	desk->laid_names = names_hash;
 	desk->logged = 0;
+}
+
+/*
+ * Logs each item a layout put elsewhere than its known place (saved, or
+ * shown before; the first of its name counts): a place outside a smaller
+ * desktop's grid, or taken, gives the item a free cell (column -1: none).
+ */
+static void
+desktop_log_moved(
+	const struct fm_desktop *desk,
+	const char *const *names,
+	size_t count,
+	const struct fm_desktop_saved *known,
+	size_t known_count)
+{
+	size_t index;
+	size_t other;
+	int same;
+
+	/* Each item with a known place. */
+	for (index = 0; index < count; index++) {
+		for (other = 0; other < known_count; other++) {
+			same = strcmp(known[other].name, names[index]);
+			if (same == 0)
+				break;
+		}
+		if (other == known_count)
+			continue;
+
+		/* Where it was and where it is now, when they differ. */
+		if (known[other].column == desk->places[index].column && known[other].row == desk->places[index].row)
+			continue;
+		fm_log("DESKTOP moved name=%s from=%d,%d to=%d,%d saved=%d", names[index], known[other].column, known[other].row,
+		       desk->places[index].column, desk->places[index].row, other < desk->saved_count);
+	}
 }
 
 /* Draws one item in its cell: the ground of a selected one, its icon, centred at the top, and its name under it. */
@@ -675,9 +725,12 @@ desktop_item(
 }
 
 /*
- * Draws an item's name centred under its icon, cut to the cell with an
- * ellipsis: white on a blue pill when selected, otherwise dark over a soft
- * white halo (the text drawn around it a pixel each way).
+ * Draws an item's name centred under its icon, in one or two lines
+ * (fm_desktop_label: a long name broken, a longer one with its middle left
+ * out): white on a blue pill when selected, otherwise dark over a soft
+ * white halo (the text drawn around it a pixel each way).  A selected
+ * name is shown the same way, not whole: the cell is drawn again alone
+ * (ws094-p009), so nothing is drawn outside it.
  */
 static void
 desktop_name(
@@ -687,35 +740,78 @@ desktop_name(
 	const struct fm_rect *cell,
 	int selected)
 {
+	char first[FM_DESKTOP_LABEL_MAX];
+	char second[FM_DESKTOP_LABEL_MAX];
 	int available;
+	int widest;
 	int width;
-	int left;
 	int pill_left;
 	int pill_right;
+	int pill_top;
 	int baseline;
+	int lines;
+
+	/* The lines, no wider than the cell. */
+	available = cell->width - 8;
+	fm_desktop_label(app->text, name, available, DESKTOP_TEXT, first, second);
+	lines = 1;
+	if (second[0] != '\0')
+		lines = 2;
+
+	/* The first baseline: under the icon, a little higher with two lines so both stay in the cell. */
+	baseline = cell->y + DESKTOP_TEXT_BASELINE;
+	if (lines == 2)
+		baseline = cell->y + DESKTOP_TEXT_BASELINE_TWO;
+
+	/* A selected name: its pill behind both lines, kept in the cell. */
+	if (selected) {
+		widest = fm_text_width(app->text, first, strlen(first), DESKTOP_TEXT, 0);
+		width = fm_text_width(app->text, second, strlen(second), DESKTOP_TEXT, 0);
+		if (width > widest)
+			widest = width;
+		if (widest > available)
+			widest = available;
+		pill_left = cell->x + (cell->width - widest) / 2 - 5;
+		if (pill_left < cell->x)
+			pill_left = cell->x;
+		pill_right = cell->x + (cell->width + widest) / 2 + 5;
+		if (pill_right > cell->x + cell->width)
+			pill_right = cell->x + cell->width;
+		pill_top = baseline - 13;
+		fm_canvas_round(canvas, (float)pill_left, (float)pill_top, (float)(pill_right - pill_left), (float)(18 + (lines - 1) * DESKTOP_TEXT_LINE), 9.0f, DESKTOP_PILL_COLOR);
+	}
+
+	/* Each line, centred. */
+	desktop_name_line(app, canvas, first, cell, baseline, available, selected);
+	if (lines == 2)
+		desktop_name_line(app, canvas, second, cell, baseline + DESKTOP_TEXT_LINE, available, selected);
+}
+
+/* Draws one line of a name centred across a cell: white on the pill when selected, otherwise dark over its halo. */
+static void
+desktop_name_line(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	const char *line,
+	const struct fm_rect *cell,
+	int baseline,
+	int available,
+	int selected)
+{
+	int width;
+	int left;
 	int dx;
 	int dy;
 
-	/* The width the name takes, no more than the cell's. */
-	available = cell->width - 8;
-	width = fm_text_width(app->text, name, strlen(name), DESKTOP_TEXT, 0);
+	/* Centred across the cell. */
+	width = fm_text_width(app->text, line, strlen(line), DESKTOP_TEXT, 0);
 	if (width > available)
 		width = available;
-
-	/* Centred across the cell, under the icon. */
 	left = cell->x + (cell->width - width) / 2;
-	baseline = cell->y + DESKTOP_TEXT_BASELINE;
 
-	/* A selected name: white on its pill, which stays in the cell (a cell is drawn again alone, ws094-p009). */
+	/* On the pill. */
 	if (selected) {
-		pill_left = left - 5;
-		if (pill_left < cell->x)
-			pill_left = cell->x;
-		pill_right = left + width + 5;
-		if (pill_right > cell->x + cell->width)
-			pill_right = cell->x + cell->width;
-		fm_canvas_round(canvas, (float)pill_left, (float)baseline - 13.0f, (float)(pill_right - pill_left), 18.0f, 9.0f, DESKTOP_PILL_COLOR);
-		(void)fm_text_draw_fit(app->text, canvas, left, baseline, name, DESKTOP_TEXT, 0, available, DESKTOP_PILL_TEXT);
+		(void)fm_text_draw_fit(app->text, canvas, left, baseline, line, DESKTOP_TEXT, 0, available, DESKTOP_PILL_TEXT);
 		return;
 	}
 
@@ -725,12 +821,12 @@ desktop_name(
 			/* The centre is the text itself, drawn last. */
 			if (dx == 0 && dy == 0)
 				continue;
-			(void)fm_text_draw_fit(app->text, canvas, left + dx, baseline + dy, name, DESKTOP_TEXT, 0, available, DESKTOP_HALO_COLOR);
+			(void)fm_text_draw_fit(app->text, canvas, left + dx, baseline + dy, line, DESKTOP_TEXT, 0, available, DESKTOP_HALO_COLOR);
 		}
 	}
 
 	/* The text over it. */
-	(void)fm_text_draw_fit(app->text, canvas, left, baseline, name, DESKTOP_TEXT, 0, available, DESKTOP_TEXT_COLOR);
+	(void)fm_text_draw_fit(app->text, canvas, left, baseline, line, DESKTOP_TEXT, 0, available, DESKTOP_TEXT_COLOR);
 }
 
 /* Draws the field of the name being changed under an item's icon: white, with the accent's edge, as wide as the name (up to two cells). */

@@ -1344,6 +1344,10 @@ void fm_desktop_grid(int width, int height, int *columns, int *rows);
 int fm_desktop_cell_rect(int column, int row, int width, int height, struct fm_rect *rect);
 int fm_desktop_cell_at(int x, int y, int width, int height, int *column, int *row);
 void fm_desktop_arrange(const char *const *names, size_t count, const struct fm_desktop_saved *saved, size_t saved_count, int width, int height, struct fm_desktop_place *places);
+
+/* An item's name as the desktop shows it under its icon: one or two lines, the middle left out of a longer one (desktop-layout.c, ws094-p010). */
+#define FM_DESKTOP_LABEL_MAX	256U
+void fm_desktop_label(struct fm_text *text, const char *name, int width, unsigned pixels, char *first, char *second);
 int fm_desktop_layout_path(char *path, size_t size);
 int fm_desktop_layout_read(const char *path, struct fm_desktop_saved **saved, size_t *count);
 int fm_desktop_layout_write(const char *path, const struct fm_desktop_saved *saved, size_t count);

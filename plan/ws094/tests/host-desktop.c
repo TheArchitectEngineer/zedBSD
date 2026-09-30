@@ -49,6 +49,8 @@ static void check_drag(const char *temporary);
 static void check_partial(const char *temporary);
 static int partial_same(struct fm_app *app, struct fm_canvas *canvas, uint32_t *whole, const char *text);
 static int saved_at(const struct fm_desktop *desk, const char *name, int column, int row);
+static void check_label(void);
+static void check_resize(void);
 
 /* Runs the checks. */
 int
@@ -142,6 +144,10 @@ main(
 	check_menus(argv[1]);
 	check_drag(argv[1]);
 	check_partial(argv[1]);
+
+	/* ws094-p010: the names in two lines, and a desktop of another size. */
+	check_label();
+	check_resize();
 
 	/* The outcome. */
 	if (failures != 0) {
@@ -535,4 +541,113 @@ partial_same(
 	same = memcmp(whole, canvas->pixels, size) == 0;
 	check(kept && same, text);
 	return kept && same;
+}
+
+/*
+ * ws094-p010 (a): a name that fits is one line; a longer one is broken
+ * into two, after a space; a 40-character one keeps its start on the
+ * first line and "..." with its end -- the extension -- on the second;
+ * every line fits the 88 pixels of a cell at 13 pixels.
+ */
+static void
+check_label(void)
+{
+	static const char *const names[] = {
+		"notes.txt",
+		"Budget notes 2026.pdf",
+		"Quarterly report draft.pdf",
+		"a_forty_character_file_name_for_tests.txt",
+		"\xe9\x95\xb7\xe3\x81\x84\xe5\x90\x8d\xe5\x89\x8d\xe3\x81\xae\xe3\x83\x95\xe3\x82\xa1\xe3\x82\xa4\xe3\x83\xab\xe3\x81\xae\xe4\xbe\x8b\xe3\x81\xa7\xe3\x81\x99\xe4\xbb\x8a\xe6\x97\xa5\xe3\x81\xae\xe4\xbc\x9a\xe8\xad\xb0\xe3\x81\xae\xe8\xa8\x98\xe9\x8c\xb2\xe3\x81\xa8\xe6\x9c\xab\xe5\xb0\xbe.txt",
+	};
+	char first[FM_DESKTOP_LABEL_MAX];
+	char second[FM_DESKTOP_LABEL_MAX];
+	struct fm_text text;
+	size_t index;
+	size_t length;
+	int fits;
+	int error;
+
+	/* The desktop's font (the fallback for the Japanese name). */
+	error = fm_text_open(&text, "build/ws035-fonts/Inter.ttf", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf");
+	check(error == 0, "label: the fonts");
+	if (error != 0)
+		return;
+
+	/* Each name, as the desktop shows it. */
+	for (index = 0; index < sizeof(names) / sizeof(names[0]); index++) {
+		fm_desktop_label(&text, names[index], 88, 13U, first, second);
+		fits = fm_text_width(&text, first, strlen(first), 13U, 0) <= 88 && fm_text_width(&text, second, strlen(second), 13U, 0) <= 88;
+		printf("label %zu: \"%s\" / \"%s\"\n", index, first, second);
+		check(fits, "label: both lines fit the cell");
+		check(first[0] != '\0', "label: a first line");
+	}
+
+	/* The short name in one line. */
+	fm_desktop_label(&text, names[0], 88, 13U, first, second);
+	check(strcmp(first, "notes.txt") == 0 && second[0] == '\0', "label: a short name in one line");
+
+	/* A longer one in two, whole, broken after a space. */
+	fm_desktop_label(&text, names[1], 88, 13U, first, second);
+	check(strcmp(first, "Budget notes") == 0 && strcmp(second, "2026.pdf") == 0, "label: a longer name in two lines, broken at a space");
+
+	/* One whose rest does not fit after the space: broken where the first line is full, still whole. */
+	fm_desktop_label(&text, names[2], 88, 13U, first, second);
+	check(strlen(first) + strlen(second) == strlen(names[2]) && strncmp(second, "\xe2\x80\xa6", 3U) != 0, "label: broken where the first line is full, whole");
+
+	/* The 40-character ones: the start, then the ellipsis and the end with its extension. */
+	for (index = 3; index < 5; index++) {
+		fm_desktop_label(&text, names[index], 88, 13U, first, second);
+		length = strlen(second);
+		check(strncmp(names[index], first, strlen(first)) == 0, "label: the first line is the name's start");
+		check(strncmp(second, "\xe2\x80\xa6", 3U) == 0, "label: the second line starts with the ellipsis");
+		check(length > 7U && strcmp(second + length - 4U, ".txt") == 0, "label: the second line ends with the extension");
+		check(strlen(first) + length - 3U < strlen(names[index]), "label: the middle is left out");
+	}
+
+	/* The fonts are done with. */
+	fm_text_close(&text);
+}
+
+/*
+ * ws094-p010 (b): a desktop made larger (1280x766 to 1920x1046) keeps the
+ * places saved; made smaller, an item saved past its grid takes a free
+ * cell, and made larger again it is back where it was saved (the layout
+ * file is not changed by a size).
+ */
+static void
+check_resize(void)
+{
+	static const char *const names[] = { "left.txt", "far.txt", "new.txt" };
+	struct fm_desktop_place places[3];
+	struct fm_desktop_saved saved[2];
+	int columns;
+	int rows;
+
+	/* The grids: 13 x 7 and 19 x 9. */
+	fm_desktop_grid(1920, 1046, &columns, &rows);
+	check(columns == 19 && rows == 9, "resize: the 1920x1046 grid is 19 x 9");
+
+	/* left.txt saved at 3,2 (in both grids), far.txt at 16,8 (only in the larger one). */
+	snprintf(saved[0].name, sizeof(saved[0].name), "left.txt");
+	saved[0].column = 3;
+	saved[0].row = 2;
+	snprintf(saved[1].name, sizeof(saved[1].name), "far.txt");
+	saved[1].column = 16;
+	saved[1].row = 8;
+
+	/* Larger: both where they were saved, the new item in the first free cell. */
+	fm_desktop_arrange(names, 3U, saved, 2U, 1920, 1046, places);
+	check(places[0].column == 3 && places[0].row == 2, "resize: 1920, left.txt at its saved 3,2");
+	check(places[1].column == 16 && places[1].row == 8, "resize: 1920, far.txt at its saved 16,8");
+	check(places[2].column == 0 && places[2].row == 0, "resize: 1920, new.txt in the first free cell");
+
+	/* Smaller: left.txt kept, far.txt (past the grid) in a free cell. */
+	fm_desktop_arrange(names, 3U, saved, 2U, 1280, 766, places);
+	check(places[0].column == 3 && places[0].row == 2, "resize: 1280, left.txt still at 3,2");
+	check(places[1].column == 0 && places[1].row == 0, "resize: 1280, far.txt in the first free cell");
+	check(places[2].column == 0 && places[2].row == 1, "resize: 1280, new.txt in the next");
+
+	/* Larger again: far.txt back at its saved place. */
+	fm_desktop_arrange(names, 3U, saved, 2U, 1920, 1046, places);
+	check(places[1].column == 16 && places[1].row == 8, "resize: 1920 again, far.txt back at 16,8");
 }

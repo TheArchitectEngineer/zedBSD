@@ -22,6 +22,12 @@
  * (ws094-p005), and a new layout keeps them after the saved ones, so that
  * an item made or pasted takes a free cell and the others stay where they
  * were; a renamed item keeps its cell under its new name.
+ *
+ * An item's name is shown in one or two lines under its icon (ws094-p010):
+ * a name that does not fit one line is broken into two, and one too long
+ * for two keeps its start on the first line and its end -- the
+ * extension with it -- on the second, after an ellipsis ("A long name
+ * of" / "...the end.txt").
  */
 
 #include "files.h"
@@ -46,6 +52,10 @@
 #define LAYOUT_LINE		(FM_NAME_MAX + 32)
 
 static int layout_saved_index(const struct fm_desktop_saved *saved, size_t count, const char *name);
+static size_t label_prefix(struct fm_text *text, const char *name, size_t length, int width, unsigned pixels);
+static size_t label_suffix(struct fm_text *text, const char *name, size_t length, size_t from, int width, unsigned pixels);
+static size_t label_next(const char *name, size_t length, size_t at);
+static size_t label_previous(const char *name, size_t at);
 
 /*
  * Works out how many columns and rows of cells a desktop of a size has (at
@@ -614,4 +624,201 @@ layout_saved_index(
 
 	/* Not saved. */
 	return -1;
+}
+
+/* The ellipsis put where the middle of a long name is left out (UTF-8). */
+#define LABEL_ELLIPSIS		"\xe2\x80\xa6"
+
+/*
+ * Works out how an item's name is shown under its icon, in lines at most
+ * width pixels wide at a size: the whole name on the first line when it
+ * fits (second empty); otherwise broken into two lines, at a space just
+ * after what fits the first line or in its second half when the rest then
+ * fits, else where the first line is full; and when even two lines are too
+ * few, the start that fits on the first line and, on the second, an
+ * ellipsis and as much of the end as fits there (so the extension, at the
+ * very end, shows).  first and second hold FM_DESKTOP_LABEL_MAX bytes each.
+ */
+void
+fm_desktop_label(
+	struct fm_text *text,
+	const char *name,
+	int width,
+	unsigned pixels,
+	char *first,
+	char *second)
+{
+	size_t length;
+	size_t head;
+	size_t space;
+	size_t tail;
+	int wide;
+
+	/* Nothing yet; a name longer than the lines hold is cut there. */
+	first[0] = '\0';
+	second[0] = '\0';
+	length = strlen(name);
+	if (length >= FM_DESKTOP_LABEL_MAX - sizeof(LABEL_ELLIPSIS))
+		length = label_previous(name, FM_DESKTOP_LABEL_MAX - sizeof(LABEL_ELLIPSIS));
+
+	/* The whole name on one line. */
+	wide = fm_text_width(text, name, length, pixels, 0);
+	if (wide <= width) {
+		memcpy(first, name, length);
+		first[length] = '\0';
+		return;
+	}
+
+	/*
+	 * The start that fits the first line, broken at a space when one is
+	 * just after it or in its second half (the space is shown on neither
+	 * line), with the rest on the second line when it fits there.
+	 */
+	head = label_prefix(text, name, length, width, pixels);
+	space = head;
+	if (head < length && name[head] != ' ') {
+		while (space > head / 2U && name[space - 1U] != ' ')
+			space--;
+		if (space > head / 2U)
+			space--;
+		else
+			space = head;
+	}
+	if (space < length && name[space] == ' ' && space > 0U) {
+		wide = fm_text_width(text, name + space + 1U, length - space - 1U, pixels, 0);
+		if (wide <= width) {
+			memcpy(first, name, space);
+			first[space] = '\0';
+			memcpy(second, name + space + 1U, length - space - 1U);
+			second[length - space - 1U] = '\0';
+			return;
+		}
+	}
+
+	/* Otherwise the first line is the whole start that fits (not broken at a space), and the rest on the second when it fits. */
+	if (head == 0U)
+		head = label_next(name, length, 0U);
+	memcpy(first, name, head);
+	first[head] = '\0';
+	wide = fm_text_width(text, name + head, length - head, pixels, 0);
+	if (wide <= width) {
+		memcpy(second, name + head, length - head);
+		second[length - head] = '\0';
+		return;
+	}
+
+	/* Too long for two lines: the second line is the ellipsis and the end. */
+	tail = label_suffix(text, name, length, head, width, pixels);
+	memcpy(second, LABEL_ELLIPSIS, sizeof(LABEL_ELLIPSIS) - 1U);
+	memcpy(second + sizeof(LABEL_ELLIPSIS) - 1U, name + tail, length - tail);
+	second[sizeof(LABEL_ELLIPSIS) - 1U + length - tail] = '\0';
+}
+
+/* Finds how many bytes of a name's start fit a width (whole characters; 0 when not even one does). */
+static size_t
+label_prefix(
+	struct fm_text *text,
+	const char *name,
+	size_t length,
+	int width,
+	unsigned pixels)
+{
+	size_t fits;
+	size_t next;
+	int wide;
+
+	/* One character more each time, while the start fits. */
+	fits = 0U;
+	for (;;) {
+		next = label_next(name, length, fits);
+		if (next == fits)
+			break;
+		wide = fm_text_width(text, name, next, pixels, 0);
+		if (wide > width)
+			break;
+		fits = next;
+	}
+
+	/* Succeeded: the bytes that fit. */
+	return fits;
+}
+
+/*
+ * Finds where the end of a name shown after an ellipsis starts: as much of
+ * the end as fits a width with the ellipsis, not before from.  Returns the
+ * byte it starts at.
+ */
+static size_t
+label_suffix(
+	struct fm_text *text,
+	const char *name,
+	size_t length,
+	size_t from,
+	int width,
+	unsigned pixels)
+{
+	char line[FM_DESKTOP_LABEL_MAX];
+	size_t start;
+	size_t earlier;
+	size_t ellipsis;
+	int wide;
+
+	/* The ellipsis, then the end put after it. */
+	ellipsis = sizeof(LABEL_ELLIPSIS) - 1U;
+	memcpy(line, LABEL_ELLIPSIS, ellipsis);
+
+	/* One character more of the end each time, while it fits. */
+	start = length;
+	for (;;) {
+		earlier = label_previous(name, start);
+		if (earlier == start || earlier < from)
+			break;
+		memcpy(line + ellipsis, name + earlier, length - earlier);
+		wide = fm_text_width(text, line, ellipsis + length - earlier, pixels, 0);
+		if (wide > width)
+			break;
+		start = earlier;
+	}
+
+	/* Succeeded: where the end starts. */
+	return start;
+}
+
+/* Gives the byte after the UTF-8 character at a place (the length at the end). */
+static size_t
+label_next(
+	const char *name,
+	size_t length,
+	size_t at)
+{
+	/* The end. */
+	if (at >= length)
+		return length;
+
+	/* Past the character's lead byte and its continuation bytes. */
+	at++;
+	while (at < length && ((unsigned char)name[at] & 0xc0U) == 0x80U)
+		at++;
+
+	/* Succeeded. */
+	return at;
+}
+
+/* Gives the start of the UTF-8 character before a place (0 at the start). */
+static size_t
+label_previous(
+	const char *name,
+	size_t at)
+{
+	/* The start. */
+	if (at == 0U)
+		return 0U;
+
+	/* Back over continuation bytes to the lead byte. */
+	at--;
+	while (at > 0U && ((unsigned char)name[at] & 0xc0U) == 0x80U)
+		at--;
+
+	/* Succeeded. */
+	return at;
 }
