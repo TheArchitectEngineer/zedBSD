@@ -2,12 +2,17 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q512](queue-q512.md)（ws103-p005 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q513](queue-q513.md)（ws103-p006 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q512
+## 最新: 2026-10-01 q513
+
+[q513](queue-q513.md): WS103 p006 cleared。compositor は GPU の fd を持たず、fence は poll だけ、GPU の UAPI は `gpu-zedbsd.c` だけ（V1 の `v1-check.sh` PASS）。
+fence・p054・forge・Notes・C1・C2・boot test・5330 PASS。GitHub へは未公開。
+
+## 2026-09-30 q512
 
 [q512](queue-q512.md): WS103 p005 cleared。WSI が Wayland の present ごとに新しい fence を送る（前は slot の fence を再利用して世代が進んだ）。QEMU の Venus で 600 個が全て世代 1、
 時間は変わらず。p054・C1・C2・boot test・5330 PASS。GitHub へは未公開。

@@ -1,14 +1,7 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- awesome-plan project=zedbsd record=q513 -->
 
-# Queue
+# q513（finished 2026-10-01）
 
-<!-- awesome-plan-current:start -->
-Status: idle（2026-10-01）
-Active Queue: なし
-Last finished Queue: [q513](history/queue-q513.md)（ws103-p006 cleared）
-<!-- awesome-plan-current:end -->
-
-## q513
 
 - Purpose: WS103 の p006（compositor の fence を poll だけに、`/dev/gpu0` と `--gpu` の削除、GPU の UAPI を `gpu-zedbsd.c` に閉じる、V1 の確かめ）。
 - Timebox: この session。
@@ -23,6 +16,8 @@ Last finished Queue: [q513](history/queue-q513.md)（ws103-p006 cleared）
 
 Dependency graph: `ws103-p004 (cleared), ws103-p005 (cleared) -> q513-i01/ws103-p006 -> (future) ws103-p007`。
 
-## Upcoming Work Outlook
 
-WS103 の p007（規約と回帰、V4）。
+## Outcome
+
+- q513-i01 / ws103-p006: **cleared**。compositor の fence は poll だけ、`GPU_FENCE_QUERY`・`/dev/gpu0`・`--gpu` を削除、GPU の UAPI を読むのは `gpu-zedbsd.c` だけ。
+  `v1-check.sh`（V1）PASS。fence・p054・forge・Notes・C1・C2・boot test・5330 PASS。GitHub へは未公開。
