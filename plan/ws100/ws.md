@@ -69,7 +69,7 @@ legacy の HDA が 5330 の firmware の設定で無効にされていないか�
 | [ws100-p005](phase005/phase.md) | Settings の Sound の頁に slider と mute（2026-09-30 朝ユーザー「入れる」） | cleared（2026-09-30: `volume-p005.sh` PASS: Settings → audiod・desktop.conf・system bar、system bar → Settings（数秒以内）、確かめの音の規則。WS089 の回帰、boot） | p003 |
 | ws100-p006（案） | 5330: Kei を直に起動して pci-hda の codec と pin を読み、鳴るかをユーザーが聞く（A7、デモに必須ではない） | planning | p002、実機 |
 | [ws100-p007](phase007/phase.md) | 規約（coding-style の全文）への合わせと全体の確かめ（audiod は WS100 で変えた関数とその周りだけ） | cleared（2026-09-30: 変えた関数と新しい code は style-check 0（sigsetjmp の例外 1）、audiod の残り 89 件は一覧、audiod-qemu・volume-p004・host-audio PASS） | p002〜p004 |
-| [ws100-p008](phase008/phase.md) | L3: 確かめの音の遅れの計測と短縮（操作から音の始まりまで 50 ms 以内） | uncleared（2026-09-30、QEMU: guest の中（変更 → device がその byte を取る）は中央値 31〜37 ms で以内。host の WAV（QMP → 音）は 106〜111 ms で超過、差は QEMU の codec の buffer（8 KiB）と USB の入力の経路。直しは入れていない（kernel の fragment の案）。判定の扱いは main の判断待ち） | p004 |
+| [ws100-p008](phase008/phase.md) | L3: 確かめの音の遅れの計測と短縮（操作から音の始まりまで 50 ms 以内） | cleared（2026-09-30 Q1 の判断で。P4 は判定の扱いを待って uncleared で報告。QEMU の guest の中の経路（音量の変更から HDA の DMA がその byte を取るまで）の中央値 31〜37 ms・最大 42 ms で 50 ms 以内。host の WAV（QEMU の codec の buffer 42.7 ms と USB の経路を含む）は 106〜111 ms で参考。直しは入れていない。5330 は未実施） | p004 |
 
 ## 段の計画（2026-09-30 main 経由のユーザーの方針「広く浅く」: まず動く段をそろえ、磨き込みは段ごとの数値目標の小さな Phase）
 
@@ -95,3 +95,12 @@ L3 の数値目標（操作から確かめの音が鳴り始めるまで 50 ms �
   gain は計算で出る。実機で要るのは「codec の値が意図どおりに書かれたこと」の確かめ（ssh で codec の amp の値を読み戻す）だけ。
   software の音量の側は QEMU の wav で測れる（p002 の `audiod-qemu.sh` と同じ）。
 - **L3 の遅れの測り方**: QEMU の wav の音の始まりの時刻と、zdesktop の log の操作の時刻（同じ clock に揃える）の差。
+
+### Q1 の判断（2026-09-30、p008）
+
+- L3 の確かめの音の遅れは、QEMU では **guest の中の経路**（zdesktop の音量の変更から HDA の DMA がその byte を取るまで、`feedback-latency.sh`）で判定する。
+  host の WAV の値は、QEMU の hda-codec の 8 KiB（42.7 ms）と host → usb-tablet の経路を含み、実機に無い分なので参考にする。合否は 5330 の実機で
+  （guest の log の部分はそのまま使える）。これは WS094・WS102 の判断（QEMU の値は参考、実機で判定）と同じ扱い。
+- kernel の audio の fragment（4096 byte = 21.3 ms）を小さくする直しは、今は入れない（割り込みの増加、lead と drain tail の直し、QEMU で途切れる恐れ。
+  音はデモに必須ではない）。再検討のきっかけ: 5330 の実機で操作から音まで 50 ms を超えたとき。
+
