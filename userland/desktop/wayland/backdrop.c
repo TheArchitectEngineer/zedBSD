@@ -85,8 +85,7 @@ zwl_backdrop_begin(
 	/* The scene's glass samples the blurred wallpaper while the scene is drawn (not the image being drawn). */
 	compose->backdrop_set = VK_NULL_HANDLE;
 
-	/* The output's pass ends (after the glyphs waiting, ws075-p031), and the scene is drawn small. */
-	zwl_text_flush(server, command);
+	/* The output's pass ends, and the scene is drawn small. */
 	vkCmdEndRenderPass(command);
 	backdrop_begin_small(server, command, &backdrop->targets[0]);
 
@@ -109,10 +108,9 @@ zwl_backdrop_end(
 	VkRenderPassBeginInfo pass;
 	unsigned round;
 
-	/* The scene's pass ends (after the glyphs waiting, ws075-p031). */
+	/* The scene's pass ends. */
 	compose = server->compose;
 	backdrop = &compose->backdrop;
-	zwl_text_flush(server, command);
 	vkCmdEndRenderPass(command);
 
 	/* Blurred across into the second image, then down back into the first, a few times over. */

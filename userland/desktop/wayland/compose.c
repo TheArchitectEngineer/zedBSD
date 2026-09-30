@@ -32,9 +32,7 @@
 static VkResult compose_device(struct zwl_compose *compose);
 static VkResult compose_objects(struct zwl_compose *compose);
 static VkResult compose_pass(struct zwl_compose *compose);
-static VkResult compose_pipeline(struct zwl_compose *compose, enum zwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *text_input, VkPipeline *pipeline);
-static VkResult compose_text_pipeline(struct zwl_compose *compose);
-static VkResult compose_text_buffer(struct zwl_compose *compose);
+static VkResult compose_pipeline(struct zwl_compose *compose, enum zwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, VkPipeline *pipeline);
 static VkResult compose_panel_pipeline(struct zwl_compose *compose);
 static VkResult compose_corners(struct zwl_compose *compose);
 static VkResult compose_targets(struct zwl_compose *compose);
@@ -534,14 +532,6 @@ zwl_compose_close(
 		vkDestroyBuffer(compose->device, compose->corners, NULL);
 		vkFreeMemory(compose->device, compose->corners_memory, NULL);
 
-		/* The text batches' pipeline and vertex buffer (ws075-p031). */
-		if (compose->text_pipeline != VK_NULL_HANDLE)
-			vkDestroyPipeline(compose->device, compose->text_pipeline, NULL);
-		if (compose->text_buffer != VK_NULL_HANDLE)
-			vkDestroyBuffer(compose->device, compose->text_buffer, NULL);
-		if (compose->text_memory != VK_NULL_HANDLE)
-			vkFreeMemory(compose->device, compose->text_memory, NULL);
-
 		/* The pass, layouts, sampler, pools and synchronization. */
 		vkDestroyRenderPass(compose->device, compose->pass, NULL);
 		vkDestroyPipelineLayout(compose->device, compose->layout, NULL);
@@ -800,11 +790,6 @@ compose_objects(
 
 	/* The quad's corners. */
 	result = compose_corners(compose);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* The text batches' vertex buffer (ws075-p031). */
-	result = compose_text_buffer(compose);
 	return result;
 }
 
@@ -870,70 +855,6 @@ compose_corners(
 	vkUnmapMemory(compose->device, compose->corners_memory);
 
 	/* Succeeded. */
-	return VK_SUCCESS;
-}
-
-/*
- * Creates the text batches' vertex buffer (ws075-p031): room for
- * ZWL_TEXT_GLYPHS glyphs of six corners, in host-visible, coherent memory
- * mapped for good.
- */
-static VkResult
-compose_text_buffer(
-	struct zwl_compose *compose)
-{
-	VkPhysicalDeviceMemoryProperties memory;
-	VkMemoryRequirements requirements;
-	VkMemoryAllocateInfo allocate;
-	VkBufferCreateInfo buffer;
-	VkMemoryPropertyFlags wanted;
-	VkDeviceSize bytes;
-	uint32_t index;
-	VkResult result;
-	void *map;
-
-	/* The buffer. */
-	bytes = (VkDeviceSize)ZWL_TEXT_GLYPHS * ZWL_QUAD_VERTICES * ZWL_TEXT_FLOATS * sizeof(float);
-	memset(&buffer, 0, sizeof(buffer));
-	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer.size = bytes;
-	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	result = vkCreateBuffer(compose->device, &buffer, NULL, &compose->text_buffer);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* Host-visible, coherent memory for it. */
-	vkGetBufferMemoryRequirements(compose->device, compose->text_buffer, &requirements);
-	vkGetPhysicalDeviceMemoryProperties(compose->physical, &memory);
-	wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	for (index = 0; index < memory.memoryTypeCount; index++) {
-		if ((requirements.memoryTypeBits & (1U << index)) != 0U &&
-		    (memory.memoryTypes[index].propertyFlags & wanted) == wanted)
-			break;
-	}
-
-	/* Without such memory the glyphs cannot be written. */
-	if (index == memory.memoryTypeCount)
-		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-
-	/* The memory, bound and mapped for good. */
-	memset(&allocate, 0, sizeof(allocate));
-	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocate.allocationSize = requirements.size;
-	allocate.memoryTypeIndex = index;
-	result = vkAllocateMemory(compose->device, &allocate, NULL, &compose->text_memory);
-	if (result != VK_SUCCESS)
-		return result;
-	result = vkBindBufferMemory(compose->device, compose->text_buffer, compose->text_memory, 0U);
-	if (result != VK_SUCCESS)
-		return result;
-	result = vkMapMemory(compose->device, compose->text_memory, 0U, bytes, 0U, &map);
-	if (result != VK_SUCCESS)
-		return result;
-	compose->text_map = map;
-
-	/* Succeeded: the frames can batch their glyphs. */
 	return VK_SUCCESS;
 }
 
@@ -1006,9 +927,9 @@ compose_pass(
 	}
 
 	/* The opaque and the alpha pipelines. */
-	result = compose_pipeline(compose, ZWL_DRAW_OPAQUE, vertex, fragment, compose->layout, NULL, &compose->pipelines[ZWL_DRAW_OPAQUE]);
+	result = compose_pipeline(compose, ZWL_DRAW_OPAQUE, vertex, fragment, compose->layout, &compose->pipelines[ZWL_DRAW_OPAQUE]);
 	if (result == VK_SUCCESS)
-		result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->layout, NULL, &compose->pipelines[ZWL_DRAW_ALPHA]);
+		result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->layout, &compose->pipelines[ZWL_DRAW_ALPHA]);
 	vkDestroyShaderModule(compose->device, vertex, NULL);
 	vkDestroyShaderModule(compose->device, fragment, NULL);
 	if (result != VK_SUCCESS)
@@ -1016,11 +937,6 @@ compose_pass(
 
 	/* The glass look's pipeline. */
 	result = compose_panel_pipeline(compose);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* The glass look's text pipeline (ws075-p031). */
-	result = compose_text_pipeline(compose);
 	return result;
 }
 
@@ -1051,82 +967,13 @@ compose_panel_pipeline(
 	}
 
 	/* Every shape is blended: the shader's output is premultiplied. */
-	result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, NULL, &compose->panel_pipeline);
+	result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, &compose->panel_pipeline);
 	vkDestroyShaderModule(compose->device, vertex, NULL);
 	vkDestroyShaderModule(compose->device, fragment, NULL);
 	return result;
 }
 
-/*
- * Creates the glass look's text pipeline (ws075-p031): text.vert and
- * text.frag, blended with premultiplied alpha like the panel pipeline, its
- * vertices a glyph's corners (ZWL_TEXT_FLOATS floats each).
- */
-static VkResult
-compose_text_pipeline(
-	struct zwl_compose *compose)
-{
-	VkVertexInputAttributeDescription attributes[4];
-	VkVertexInputBindingDescription binding;
-	VkPipelineVertexInputStateCreateInfo input;
-	VkShaderModuleCreateInfo module;
-	VkShaderModule vertex;
-	VkShaderModule fragment;
-	VkResult result;
-
-	/* One vertex buffer: the place, the place in the atlas, the color and the opacity. */
-	memset(&binding, 0, sizeof(binding));
-	binding.binding = 0U;
-	binding.stride = ZWL_TEXT_FLOATS * sizeof(float);
-	binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-	memset(attributes, 0, sizeof(attributes));
-	attributes[0].location = 0U;
-	attributes[0].format = VK_FORMAT_R32G32_SFLOAT;
-	attributes[0].offset = 0U;
-	attributes[1].location = 1U;
-	attributes[1].format = VK_FORMAT_R32G32_SFLOAT;
-	attributes[1].offset = 2U * sizeof(float);
-	attributes[2].location = 2U;
-	attributes[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	attributes[2].offset = 4U * sizeof(float);
-	attributes[3].location = 3U;
-	attributes[3].format = VK_FORMAT_R32_SFLOAT;
-	attributes[3].offset = 8U * sizeof(float);
-	memset(&input, 0, sizeof(input));
-	input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	input.vertexBindingDescriptionCount = 1U;
-	input.pVertexBindingDescriptions = &binding;
-	input.vertexAttributeDescriptionCount = 4U;
-	input.pVertexAttributeDescriptions = attributes;
-
-	/* The shaders, needed only while the pipeline is created. */
-	memset(&module, 0, sizeof(module));
-	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	module.codeSize = sizeof(zwl_text_vert);
-	module.pCode = zwl_text_vert;
-	result = vkCreateShaderModule(compose->device, &module, NULL, &vertex);
-	if (result != VK_SUCCESS)
-		return result;
-	module.codeSize = sizeof(zwl_text_frag);
-	module.pCode = zwl_text_frag;
-	result = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
-	if (result != VK_SUCCESS) {
-		vkDestroyShaderModule(compose->device, vertex, NULL);
-		return result;
-	}
-
-	/* The glyphs are blended: the shader's output is premultiplied (the panel pipeline's layout, its set the atlas). */
-	result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, &input, &compose->text_pipeline);
-	vkDestroyShaderModule(compose->device, vertex, NULL);
-	vkDestroyShaderModule(compose->device, fragment, NULL);
-	return result;
-}
-
-/*
- * Creates a pipeline that draws a quad the given way, with the given layout;
- * text_input, when given, is the text pipeline's vertex input (the quad's
- * corners otherwise).
- */
+/* Creates a pipeline that draws a quad the given way, with the given layout. */
 static VkResult
 compose_pipeline(
 	struct zwl_compose *compose,
@@ -1134,7 +981,6 @@ compose_pipeline(
 	VkShaderModule vertex,
 	VkShaderModule fragment,
 	VkPipelineLayout layout,
-	const VkPipelineVertexInputStateCreateInfo *text_input,
 	VkPipeline *result)
 {
 	static const VkDynamicState dynamic[] = {
@@ -1233,8 +1079,6 @@ compose_pipeline(
 	pipeline.stageCount = 2U;
 	pipeline.pStages = stages;
 	pipeline.pVertexInputState = &input;
-	if (text_input != NULL)
-		pipeline.pVertexInputState = text_input;
 	pipeline.pInputAssemblyState = &assembly;
 	pipeline.pViewportState = &viewport;
 	pipeline.pRasterizationState = &raster;
@@ -1548,9 +1392,6 @@ compose_quad_part(
 	float width;
 	float height;
 
-	/* The glyphs waiting (the glass look's text, ws075-p031) are drawn first, under the image. */
-	zwl_text_flush(server, command);
-
 	/* The rectangle in normalized device coordinates, and the part of the image. */
 	width = (float)server->width;
 	height = (float)server->height;
@@ -1725,10 +1566,9 @@ compose_record(
 	compose->scissor_now = scissor;
 	vkCmdSetScissor(compose->command, 0U, 1U, &scissor);
 
-	/* Every quad's corners; no glyph of the frame is batched yet (ws075-p031). */
+	/* Every quad's corners. */
 	offset = 0U;
 	vkCmdBindVertexBuffers(compose->command, 0U, 1U, &compose->corners, &offset);
-	zwl_text_frame(compose);
 
 	/*
 	 * The windows, bottom to top (painter's order): plainly, or in the glass
@@ -1753,8 +1593,7 @@ compose_record(
 		zwl_popup_draw(server, compose->command);
 	}
 
-	/* The cursor over everything, after the glyphs still waiting. */
-	zwl_text_flush(server, compose->command);
+	/* The cursor over everything. */
 	compose_cursor(server, compose->command);
 	vkCmdEndRenderPass(compose->command);
 
