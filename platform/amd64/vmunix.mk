@@ -884,14 +884,16 @@ $(DYNAMIC_DIR)/libtruetype.so: $(DYNAMIC_TRUETYPE_OBJS) $(DYNAMIC_DIR)/libc.so \
 DYNAMIC_KEIUI_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libkeiui)
 
 $(DYNAMIC_DIR)/libkeiui.so: $(DYNAMIC_KEIUI_OBJS) $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libkeiland.so \
-	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libkeiui/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libkeiui.so --hash-style=both \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libkeiui/exports.map \
- $(DYNAMIC_KEIUI_OBJS) -L$(DYNAMIC_DIR) -l:libtruetype.so -l:libkeiland.so -l:libwayland-client.so -l:libvulkan.so -l:libc.so -o $@
+ $(DYNAMIC_KEIUI_OBJS) -L$(DYNAMIC_DIR) -l:libtruetype.so -l:libkeiland.so -l:libwayland-client.so -l:libvulkan.so \
+ -l:libpng-compat.so -l:libz-compat.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
- --needed libtruetype.so --needed libkeiland.so --needed libwayland-client.so --needed libvulkan.so --needed libc.so --soname libkeiui.so $@
+ --needed libtruetype.so --needed libkeiland.so --needed libwayland-client.so --needed libvulkan.so --needed libpng-compat.so \
+ --needed libz-compat.so --needed libc.so --soname libkeiui.so $@
 
 # libz-compat (ws071-p010): the zlib interface of the base programs; it needs nothing but the C library.
 DYNAMIC_Z_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libz-compat)
@@ -1044,7 +1046,7 @@ DYNAMIC_ZDESKTOP_PROGRAM_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/o
 
 $(BUILD)/bin/wayland: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libtruetype.so \
-	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libc.so \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -1053,9 +1055,9 @@ $(BUILD)/bin/wayland: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libtruetype.so -l:libkeiland.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libtruetype.so -l:libkeiland.so -l:libpng-compat.so -l:libz-compat.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
- --needed libvulkan.so --needed libtruetype.so --needed libkeiland.so --needed libc.so $@
+ --needed libvulkan.so --needed libtruetype.so --needed libkeiland.so --needed libpng-compat.so --needed libz-compat.so --needed libc.so $@
 
 # The test application imports only standard Wayland and Vulkan entry points.
 DYNAMIC_WLTEST_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,wltest)
@@ -1426,6 +1428,7 @@ DYNAMIC_TEXTEDIT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,texte
 $(BUILD)/bin/textedit: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_TEXTEDIT_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
 	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libkeiui.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -1434,10 +1437,10 @@ $(BUILD)/bin/textedit: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TEXTEDIT_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libkeiui.so -l:libtruetype.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libkeiui.so -l:libtruetype.so -l:libpng-compat.so -l:libz-compat.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libkeiui.so --needed libtruetype.so \
- --needed libc.so $@
+ --needed libpng-compat.so --needed libz-compat.so --needed libc.so $@
 
 # The widgets' sampler (WS090 ws090-p005, the test image only) imports standard Wayland, Vulkan, TrueType
 # and C library entry points, libkeiui's widgets and window, and zdesktop's glass through libkeiland.

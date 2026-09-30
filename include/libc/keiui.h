@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the window's full screen, asked for and as configured). */
-#define KUI_VERSION	8U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons; 9: colour emoji from the emoji font, a third face; 10: the window's full screen, asked for and as configured). */
+#define KUI_VERSION	10U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -64,8 +64,13 @@ unsigned kui_version(void);
 /* The most corners a polygon may have. */
 #define KUI_POLYGON_POINTS	96
 
-/* How many fonts the text draws from: the main one and a fallback. */
-#define KUI_TEXT_FACES		2
+/*
+ * How many fonts the text draws from: the main one, a fallback, and the
+ * colour emoji font (KUI_TEXT_EMOJI, opened the first time a character
+ * neither of the others has is drawn; version 9).
+ */
+#define KUI_TEXT_FACES		3
+#define KUI_TEXT_EMOJI		"/usr/share/fonts/keiland-emoji.ttf"
 
 /* A color as 0xAARRGGBB, not premultiplied. */
 typedef uint32_t kui_color;
@@ -128,7 +133,9 @@ struct kui_canvas {
 /*
  * One glyph drawn at one size, kept for the next time.
  *
- * key is zero for an empty slot; the bitmap is the glyph's coverage.
+ * key is zero for an empty slot; the bitmap is the glyph's coverage, or
+ * pixels its colour (premultiplied 0xAARRGGBB, a colour emoji, version 9)
+ * with bitmap NULL.
  */
 struct kui_glyph {
 	uint32_t key;
@@ -138,6 +145,7 @@ struct kui_glyph {
 	int top;
 	int advance;
 	uint8_t *bitmap;
+	uint32_t *pixels;
 };
 
 /*
@@ -154,11 +162,13 @@ struct kui_text_face {
  * The text of the window: the fonts and every glyph drawn so far.
  *
  * One lives for the whole program.  The cache is emptied when it fills up,
- * which only costs drawing the glyphs again.
+ * which only costs drawing the glyphs again.  emoji_tried says the emoji
+ * font (faces[2]) was looked for (version 9).
  */
 struct kui_text {
 	struct kui_text_face faces[KUI_TEXT_FACES];
 	int face_count;
+	int emoji_tried;
 	struct kui_glyph *cache;
 	unsigned cache_size;
 	unsigned cache_used;
@@ -766,10 +776,42 @@ void kui_window_select(struct kui_window *window, const char *text, size_t lengt
 typedef int (*kui_keyboard_inset_fn)(void *data, int right, int bottom, unsigned reason);
 void kui_window_on_keyboard_inset(struct kui_window *window, kui_keyboard_inset_fn callback, void *data);
 void kui_window_keyboard_inset(const struct kui_window *window, int *right, int *bottom);
+
+/*
+ * KUI_VERSION 8 (ws102-p017, plan/ws102/design.md section 2.10): the
+ * editing operations the on-screen keyboard's buttons ask for.  A window
+ * tells zdesktop it carries all of them out and its state, and hears them.
+ * By default each becomes the keys it stands for, queued as the window's
+ * own key inputs (copy Ctrl+C, cut Ctrl+X, paste Ctrl+V, undo Ctrl+Z, redo
+ * Ctrl+Shift+Z, select all Ctrl+A), and select_begin and select_end start
+ * and end a selection: while it is made, the keys that move the caret
+ * (the arrows, Home, End, Page Up and Page Down) come with Shift, and a
+ * copy or a cut ends it.  An application that knows its state tells it
+ * (kui_window_edit_state: KUI_EDIT_HAS_SELECTION ...); otherwise a
+ * selection, undo and redo are taken to be there and paste follows the
+ * clipboard.  The application may hear an operation first: its callback
+ * returns 1 when it carried it out itself (the default is skipped).
+ */
+#define KUI_EDIT_COPY		0U
+#define KUI_EDIT_CUT		1U
+#define KUI_EDIT_PASTE		2U
+#define KUI_EDIT_UNDO		3U
+#define KUI_EDIT_REDO		4U
+#define KUI_EDIT_SELECT_ALL	5U
+#define KUI_EDIT_SELECT_BEGIN	6U
+#define KUI_EDIT_SELECT_END	7U
+#define KUI_EDIT_HAS_SELECTION	1U
+#define KUI_EDIT_CAN_PASTE	2U
+#define KUI_EDIT_CAN_UNDO	4U
+#define KUI_EDIT_CAN_REDO	8U
+typedef int (*kui_edit_fn)(void *data, unsigned operation);
+void kui_window_on_edit(struct kui_window *window, kui_edit_fn callback, void *data);
+void kui_window_edit_state(struct kui_window *window, unsigned state);
+int kui_window_selecting(const struct kui_window *window);
 size_t kui_window_paste_primary(struct kui_window *window, char *text, size_t size);
 
 /*
- * KUI_VERSION 8 (ws090-p008, Image Viewer): the full screen.  An
+ * KUI_VERSION 10 (ws090-p008, Image Viewer): the full screen.  An
  * application asks the compositor for it (or out of it), and learns from
  * the configure whether the window is fullscreen.
  */
