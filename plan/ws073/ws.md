@@ -108,3 +108,11 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
   （[phase](phase015/phase.md)）。
 - ws073-p010（既定を選んだ、可逆）: FAT での file の作成は要求の mode を捨て、mount が見せる mode（0755 root:wheel）で見せる（msdosfs と同じ）。
   以前の「一致しなければ EOPNOTSUPP」に戻すなら fat.c の 2 つの関数を戻す（[phase](phase010/phase.md)）。
+
+## 段の計画（2026-09-30 Q1、広く浅くの方針）
+
+bug の WS は ticket ごとに直す形のままにする（数値目標は各 ticket の再現の試験の回数と結果: 例 BUG-030・116 は TCG と KVM の 2×20 で 0）。
+段は「デモへの影響」で分ける。
+- L1: デモの台本の場面を止める bug が 0（BUG-117・119・116 は済み）。今の対象: BUG-122（WS099）、BUG-121（WS099）。
+- L2: デモの操作で稀に出る bug の再現の試験（BUG-036 の 2 台目の usb-storage、BUG-123 の poll の時間切れ）。
+- L3: デモの外の bug（BUG-120 の窓 30 個、BUG-058 の間欠）。

@@ -66,3 +66,16 @@ touchpad の二本指の scroll（目標 1）の Phase は、design §10 の 4 �
 | 項目 | 決定 | 記録先 |
 | --- | --- | --- |
 | Notes の指（2026-09-29） | 実機の AES ペンがまだ認識されていない件で、Notes の指の扱いをユーザーに確認:「切り替えを付ける」→ 既定は指で scroll・pinch（掌の誤りの線を防ぐ）、toolbar の切り替えで一本指で線を引ける（その間は二本指で scroll・pinch）。ws081-p015 |
+
+## 段の計画（2026-09-30 Q1、広く浅くの方針）
+
+デモの touch は Windows の上の QEMU（WS085 の Venus）で見せる（ユーザー、2026-09-30）。どの段で止まっても、それまでの段は Files・Terminal・
+PDF Viewer・Notes・Text Editor・デスクトップの icon で動いていること。
+
+| 段 | 数値目標 | 測り方 | Phase |
+| --- | --- | --- | --- |
+| L1（済み） | Linux の QEMU の注入の touch で、tap・double tap・長押し・慣性の scroll・pinch が 6 app で動く | 各 WS の touch の試験 | p001〜p006・p010〜p015 |
+| L2 | Windows の QEMU で、host の touch が Kei に届く。報告の率 ≥ 60 Hz、報告の欠け 0（10 秒の drag） | Kei の evdev の時刻の列（MSC_TIMESTAMP）を記録する試験 | p016（経路の確立と計測。Windows の機械の操作はユーザー） |
+| L3 | Windows の QEMU で、指を置いてから画面の反応まで p95 ≤ 50 ms、慣性の scroll の frame の間隔の最大 ≤ 33 ms | compositor の log の時刻と画面の撮影 | p017（計測）、p018（係数の調整） |
+| L4 | 外付けの touch LCD（間に合えば。ユーザーが別に計画） | — | p007 |
+| 最後 | 全文の規約と回帰 | — | p009 |

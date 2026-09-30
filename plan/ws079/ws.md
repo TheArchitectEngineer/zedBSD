@@ -90,3 +90,11 @@ mouse の部分は touch を待たずに先に入れてよい。
 | 項目 | 決定 | 記録先 |
 | --- | --- | --- |
 | 手書きノートと PDF Viewer（2026-09-28） | ユーザーの指示（[WS079](ws079/ws.md) に原文）と回答: ペンは USB のペンタブレット、PDF Viewer は段階を切る（① Notes の PDF → ② 一般の図形・画像・TrueType → ③ CFF・Type1・暗号化）、名前は notes・pdfviewer・libpdf |
+
+## 段の計画（2026-09-30 Q1、広く浅くの方針）
+
+| 段 | 数値目標 | 測り方 | Phase |
+| --- | --- | --- | --- |
+| L1（済み） | QEMU で Notes の書き込み・PDF の注釈・PDF Viewer の頁送りと拡大が動く（p002〜p015） | 各 Phase の試験 | 済み |
+| L2 | デモの台本 S8・S9 が 5330 の実機（mouse）と Windows の QEMU（touch）で通る。PDF の頁送り 1 回の描画 ≤ 200 ms（A4 の文書 10 頁） | 実機はユーザーの目視、時間は PDF Viewer の log | p016 |
+| L3 | 実機のペン（外付けの touch LCD + AES pen、間に合えば）の筆圧・傾き・消しゴム | ユーザー | 完了の条件 2 |
