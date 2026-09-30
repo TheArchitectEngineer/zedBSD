@@ -457,7 +457,7 @@ vkEnumerateDeviceExtensionProperties(
 	VkExtensionProperties *pProperties)
 {
 	struct VkPhysicalDevice_T *physical;
-	VkExtensionProperties available[6];
+	VkExtensionProperties available[8];
 	uint32_t count;
 	VkResult status;
 
@@ -501,6 +501,20 @@ vkEnumerateDeviceExtensionProperties(
 	if (physical->supported_extensions & VULKAN_DEVICE_EXTERNAL_FENCE_FD) {
 		strcpy(available[count].extensionName, VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
 		available[count].specVersion = VK_KHR_EXTERNAL_FENCE_FD_SPEC_VERSION;
+		count++;
+	}
+
+	/* Memory requirements with extensible output, answered locally from the 1.0 queries. */
+	if (physical->supported_extensions & VULKAN_DEVICE_MEMORY_REQUIREMENTS2) {
+		strcpy(available[count].extensionName, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_GET_MEMORY_REQUIREMENTS_2_SPEC_VERSION;
+		count++;
+	}
+
+	/* An allocation, an imported one above all, can name the one image it is for. */
+	if (physical->supported_extensions & VULKAN_DEVICE_DEDICATED_ALLOCATION) {
+		strcpy(available[count].extensionName, VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_DEDICATED_ALLOCATION_SPEC_VERSION;
 		count++;
 	}
 
@@ -1059,6 +1073,13 @@ physical_load(
 
 	/* Local WSI can pair a renderer with a separate display node or a Wayland connection. */
 	physical->supported_extensions = VULKAN_DEVICE_SWAPCHAIN | VULKAN_DEVICE_DISPLAY_SWAPCHAIN;
+
+	/*
+	 * The memory requirement queries of VK_KHR_get_memory_requirements2 and
+	 * the dedicated allocation that depends on them are answered in this
+	 * library, on every renderer (ws103-p003).
+	 */
+	physical->supported_extensions |= VULKAN_DEVICE_MEMORY_REQUIREMENTS2 | VULKAN_DEVICE_DEDICATED_ALLOCATION;
 
 	/*
 	 * Per-resource format queries determine the actual external memory

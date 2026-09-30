@@ -1,5 +1,5 @@
 /*
- * Vulkan external-memory/fence and capability-query declarations.
+ * Vulkan external-memory/fence, capability-query and memory-requirement declarations.
  * Copyright 2015-2023 The Khronos Group Inc.
  * SPDX-License-Identifier: Apache-2.0
  * See API-PROVENANCE.md and LICENSE-API for the pinned declaration source.
@@ -86,6 +86,57 @@ typedef enum VkFenceImportFlagBits {
     VK_FENCE_IMPORT_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
 } VkFenceImportFlagBits;
 typedef VkFlags VkFenceImportFlags;
+
+/* Preserves the registry ABI of VkMemoryDedicatedRequirements. */
+typedef struct VkMemoryDedicatedRequirements {
+    VkStructureType    sType;
+    void*              pNext;
+    VkBool32           prefersDedicatedAllocation;
+    VkBool32           requiresDedicatedAllocation;
+} VkMemoryDedicatedRequirements;
+
+/* Preserves the registry ABI of VkMemoryDedicatedAllocateInfo. */
+typedef struct VkMemoryDedicatedAllocateInfo {
+    VkStructureType    sType;
+    const void*        pNext;
+    VkImage            image;
+    VkBuffer           buffer;
+} VkMemoryDedicatedAllocateInfo;
+
+/* Preserves the registry ABI of VkBufferMemoryRequirementsInfo2. */
+typedef struct VkBufferMemoryRequirementsInfo2 {
+    VkStructureType    sType;
+    const void*        pNext;
+    VkBuffer           buffer;
+} VkBufferMemoryRequirementsInfo2;
+
+/* Preserves the registry ABI of VkImageMemoryRequirementsInfo2. */
+typedef struct VkImageMemoryRequirementsInfo2 {
+    VkStructureType    sType;
+    const void*        pNext;
+    VkImage            image;
+} VkImageMemoryRequirementsInfo2;
+
+/* Preserves the registry ABI of VkImageSparseMemoryRequirementsInfo2. */
+typedef struct VkImageSparseMemoryRequirementsInfo2 {
+    VkStructureType    sType;
+    const void*        pNext;
+    VkImage            image;
+} VkImageSparseMemoryRequirementsInfo2;
+
+/* Preserves the registry ABI of VkMemoryRequirements2. */
+typedef struct VkMemoryRequirements2 {
+    VkStructureType         sType;
+    void*                   pNext;
+    VkMemoryRequirements    memoryRequirements;
+} VkMemoryRequirements2;
+
+/* Preserves the registry ABI of VkSparseImageMemoryRequirements2. */
+typedef struct VkSparseImageMemoryRequirements2 {
+    VkStructureType                    sType;
+    void*                              pNext;
+    VkSparseImageMemoryRequirements    memoryRequirements;
+} VkSparseImageMemoryRequirements2;
 
 /* Preserves the registry ABI of VkPhysicalDeviceFeatures2. */
 typedef struct VkPhysicalDeviceFeatures2 {
@@ -467,6 +518,51 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetFenceFdKHR(
     VkDevice                                    device,
     const VkFenceGetFdInfoKHR*                  pGetFdInfo,
     int*                                        pFd);
+#endif
+
+
+#define VK_KHR_dedicated_allocation 1
+#define VK_KHR_DEDICATED_ALLOCATION_SPEC_VERSION 3
+#define VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME "VK_KHR_dedicated_allocation"
+typedef VkMemoryDedicatedRequirements VkMemoryDedicatedRequirementsKHR;
+
+typedef VkMemoryDedicatedAllocateInfo VkMemoryDedicatedAllocateInfoKHR;
+
+
+
+#define VK_KHR_get_memory_requirements2 1
+#define VK_KHR_GET_MEMORY_REQUIREMENTS_2_SPEC_VERSION 1
+#define VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME "VK_KHR_get_memory_requirements2"
+typedef VkBufferMemoryRequirementsInfo2 VkBufferMemoryRequirementsInfo2KHR;
+
+typedef VkImageMemoryRequirementsInfo2 VkImageMemoryRequirementsInfo2KHR;
+
+typedef VkImageSparseMemoryRequirementsInfo2 VkImageSparseMemoryRequirementsInfo2KHR;
+
+typedef VkMemoryRequirements2 VkMemoryRequirements2KHR;
+
+typedef VkSparseImageMemoryRequirements2 VkSparseImageMemoryRequirements2KHR;
+
+typedef void (VKAPI_PTR *PFN_vkGetImageMemoryRequirements2KHR)(VkDevice device, const VkImageMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+typedef void (VKAPI_PTR *PFN_vkGetBufferMemoryRequirements2KHR)(VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+typedef void (VKAPI_PTR *PFN_vkGetImageSparseMemoryRequirements2KHR)(VkDevice device, const VkImageSparseMemoryRequirementsInfo2* pInfo, uint32_t* pSparseMemoryRequirementCount, VkSparseImageMemoryRequirements2* pSparseMemoryRequirements);
+
+#ifndef VK_NO_PROTOTYPES
+VKAPI_ATTR void VKAPI_CALL vkGetImageMemoryRequirements2KHR(
+    VkDevice                                    device,
+    const VkImageMemoryRequirementsInfo2*       pInfo,
+    VkMemoryRequirements2*                      pMemoryRequirements);
+
+VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements2KHR(
+    VkDevice                                    device,
+    const VkBufferMemoryRequirementsInfo2*      pInfo,
+    VkMemoryRequirements2*                      pMemoryRequirements);
+
+VKAPI_ATTR void VKAPI_CALL vkGetImageSparseMemoryRequirements2KHR(
+    VkDevice                                    device,
+    const VkImageSparseMemoryRequirementsInfo2* pInfo,
+    uint32_t*                                   pSparseMemoryRequirementCount,
+    VkSparseImageMemoryRequirements2*           pSparseMemoryRequirements);
 #endif
 
 

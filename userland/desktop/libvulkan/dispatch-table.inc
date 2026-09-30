@@ -179,3 +179,6 @@
 	{"vkGetPhysicalDeviceExternalFencePropertiesKHR", (PFN_vkVoidFunction)vkGetPhysicalDeviceExternalFencePropertiesKHR, VULKAN_ENTRY_INSTANCE, VULKAN_INSTANCE_EXTERNAL_FENCE},
 	{"vkImportFenceFdKHR", (PFN_vkVoidFunction)vkImportFenceFdKHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_EXTERNAL_FENCE_FD},
 	{"vkGetFenceFdKHR", (PFN_vkVoidFunction)vkGetFenceFdKHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_EXTERNAL_FENCE_FD},
+	{"vkGetImageMemoryRequirements2KHR", (PFN_vkVoidFunction)vkGetImageMemoryRequirements2KHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_MEMORY_REQUIREMENTS2},
+	{"vkGetBufferMemoryRequirements2KHR", (PFN_vkVoidFunction)vkGetBufferMemoryRequirements2KHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_MEMORY_REQUIREMENTS2},
+	{"vkGetImageSparseMemoryRequirements2KHR", (PFN_vkVoidFunction)vkGetImageSparseMemoryRequirements2KHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_MEMORY_REQUIREMENTS2},

@@ -129,3 +129,27 @@ The expanded ABI fixture checks 148 structures, 942 fields and 2394 enum constan
 against independently compiled ILP32/LP64 declarations. The full 170-command
 dispatch fixture checks extension gating against its independent command list.
 Runtime acceptance and remaining limitations belong to WS014 p007.
+
+## Memory-requirement and dedicated-allocation declarations (ws103-p003)
+
+`vulkan_external.h` additionally selects `VK_KHR_get_memory_requirements2` and
+`VK_KHR_dedicated_allocation` from the same pinned `vulkan_core.h` (input SHA-256
+above, fetched again from the pinned commit and verified on 2026-09-30), with
+the 1.1 structures they alias: `VkBufferMemoryRequirementsInfo2`,
+`VkImageMemoryRequirementsInfo2`, `VkImageSparseMemoryRequirementsInfo2`,
+`VkMemoryRequirements2`, `VkSparseImageMemoryRequirements2`,
+`VkMemoryDedicatedRequirements` and `VkMemoryDedicatedAllocateInfo`. The tool
+change is the extension and type lists of `maintain-external.noct`; the output
+differs from the previous header only by these additions and its first comment
+line.
+
+The public command set is now 173: the three `VK_KHR_get_memory_requirements2`
+commands (`vkGetBufferMemoryRequirements2KHR`, `vkGetImageMemoryRequirements2KHR`,
+`vkGetImageSparseMemoryRequirements2KHR`). `VK_KHR_dedicated_allocation` adds no
+command. `maintain-dispatch.noct` regenerated `dispatch-table.inc` and
+`api-commands.tsv` with these records; it was run with the pinned
+`src/venus/venus-protocol/vn_protocol_renderer_defines.h` of the same commit
+(SHA-256 `ff73828cb8b5b0364d701cc0baea1d99e233410c4eec8f4af4a24616bcd67743`), and
+`opcodes.h` came out identical to the tree. The three commands are answered in
+the library from the 1.0 queries and need no wire identifier. Core Vulkan
+remains 1.0.

@@ -338,6 +338,18 @@ device_validate(
 			continue;
 		}
 
+		/* Selects the extensible memory requirement queries and the dedicated allocation. */
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_MEMORY_REQUIREMENTS2;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_DEDICATED_ALLOCATION;
+			continue;
+		}
+
 		/* Does not forward renderer-private extensions as guest capabilities. */
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	}
@@ -364,6 +376,10 @@ device_validate(
 	if ((bits & VULKAN_DEVICE_EXTERNAL_MEMORY) && !(physical->instance->enabled_extensions & VULKAN_INSTANCE_EXTERNAL_MEMORY))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	if ((bits & VULKAN_DEVICE_EXTERNAL_FENCE) && !(physical->instance->enabled_extensions & VULKAN_INSTANCE_EXTERNAL_FENCE))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+	/* A dedicated allocation reports its preference through the extensible requirement queries. */
+	if ((bits & VULKAN_DEVICE_DEDICATED_ALLOCATION) && !(bits & VULKAN_DEVICE_MEMORY_REQUIREMENTS2))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Counts actual requested queues without imposing a library object-array ceiling. */

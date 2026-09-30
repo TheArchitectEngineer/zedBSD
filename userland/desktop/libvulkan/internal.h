@@ -167,6 +167,13 @@ struct vulkan_memory {
 	void *mapped_base;
 	VkDeviceSize mapped_offset;
 	VkDeviceSize mapped_bytes;
+	/*
+	 * The image a dedicated import of an image capability was checked
+	 * against (VK_KHR_dedicated_allocation), or 0.  Only that image may be
+	 * bound to the memory, at offset 0, so the kernel's description the
+	 * import compared stays the description of what is bound.
+	 */
+	uint64_t dedicated_image;
 };
 
 /* Retains ordinary image properties required by resource and WSI operations. */
@@ -232,7 +239,9 @@ enum vulkan_device_extension_bits {
 	VULKAN_DEVICE_EXTERNAL_MEMORY = 4,
 	VULKAN_DEVICE_EXTERNAL_MEMORY_FD = 8,
 	VULKAN_DEVICE_EXTERNAL_FENCE = 16,
-	VULKAN_DEVICE_EXTERNAL_FENCE_FD = 32
+	VULKAN_DEVICE_EXTERNAL_FENCE_FD = 32,
+	VULKAN_DEVICE_MEMORY_REQUIREMENTS2 = 64,
+	VULKAN_DEVICE_DEDICATED_ALLOCATION = 128
 };
 
 /* Owns a completed reply after the transport transaction unlocks. */
@@ -342,6 +351,17 @@ vulkan_image(
 struct vulkan_memory *
 vulkan_memory(
 	VkDeviceMemory memory);
+
+/* The kernel's description of an image capability (uapi/gpu.h). */
+struct gpu_image_descriptor;
+
+VkResult
+vulkan_dedicated_check(
+	const struct vulkan_image *image,
+	const VkMemoryAllocateInfo *info,
+	const VkMemoryRequirements *requirements,
+	const VkSubresourceLayout *layout,
+	const struct gpu_image_descriptor *described);
 
 struct vulkan_object *
 vulkan_nondispatchable_object(

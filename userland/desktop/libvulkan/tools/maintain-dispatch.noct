@@ -33,6 +33,8 @@ func main(args) {
         if (line == "#define VK_KHR_external_fence_capabilities 1") { extension = "VULKAN_INSTANCE_EXTERNAL_FENCE"; }
         if (line == "#define VK_KHR_external_memory_fd 1") { extension = "VULKAN_DEVICE_EXTERNAL_MEMORY_FD"; }
         if (line == "#define VK_KHR_external_fence_fd 1") { extension = "VULKAN_DEVICE_EXTERNAL_FENCE_FD"; }
+        if (line == "#define VK_KHR_get_memory_requirements2 1") { extension = "VULKAN_DEVICE_MEMORY_REQUIREMENTS2"; }
+        if (line == "#define VK_KHR_dedicated_allocation 1") { extension = "VULKAN_DEVICE_DEDICATED_ALLOCATION"; }
         var at = String.indexOf(line, "(VKAPI_PTR *PFN_vk");
         if (at < 0) { continue; }
         var rest = String.substring(line, at + 16, -1);
@@ -48,7 +50,7 @@ func main(args) {
         manifest = manifest + name + "\t" + scope + "\t" + extension + "\n";
         count = count + 1;
     }
-    if (count != 170) { System.error("expected 170 public command records, got " + count); }
+    if (count != 173) { System.error("expected 173 public command records, got " + count); }
     var protocol = lines(FileUtil.readText(args[1]));
     var opcodes = banner + "/*\n * Numeric declarations selected from virglrenderer 1.1.0 Venus protocol.\n * Copyright 2020 Google LLC; SPDX-License-Identifier: MIT.\n * See LICENSE-PROTOCOL for the retained upstream license.\n */\n\n/*\n * Maintained protocol IDs, no renderer implementation is included.\n */\n\n#ifndef VULKAN_OPCODES_H\n#define VULKAN_OPCODES_H\n\n/* Identifies commands in pinned Venus wire-format 1. */\nenum vulkan_opcode {\n";
     var core = 0;
@@ -72,5 +74,5 @@ func main(args) {
     FileUtil.writeText(args[2] + "/dispatch-table.inc", table);
     FileUtil.writeText(args[2] + "/api-commands.tsv", manifest);
     FileUtil.writeText(args[2] + "/opcodes.h", opcodes);
-    print("maintained 170 dispatch records and 145 pinned wire identifiers");
+    print("maintained 173 dispatch records and 145 pinned wire identifiers");
 }

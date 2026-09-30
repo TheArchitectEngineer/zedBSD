@@ -9,7 +9,8 @@ LIBVULKAN_SOURCES := userland/desktop/libvulkan/objects.c \
 	userland/desktop/libvulkan/external-properties.c userland/desktop/libvulkan/external-fence.c \
 	userland/desktop/libvulkan/resources.c userland/desktop/libvulkan/pipeline.c \
 	userland/desktop/libvulkan/descriptors.c userland/desktop/libvulkan/commands.c \
-	userland/desktop/libvulkan/memory.c userland/desktop/libvulkan/sync.c \
+	userland/desktop/libvulkan/memory.c userland/desktop/libvulkan/dedicated.c \
+	userland/desktop/libvulkan/sync.c \
 	userland/desktop/libvulkan/queue.c userland/desktop/libvulkan/query.c \
 	userland/desktop/libvulkan/wsi.c userland/desktop/libvulkan/wsi-display.c \
 	userland/desktop/libvulkan/wsi-swapchain.c userland/desktop/libvulkan/wsi-wayland.c \

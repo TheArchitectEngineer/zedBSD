@@ -25,6 +25,7 @@ struct vulkan_render_pass {
 static VkResult resource_allocate(struct VkDevice_T *device, enum vulkan_object_kind kind, size_t bytes, const VkAllocationCallbacks *allocator, struct vulkan_object **result);
 static void resource_destroy(struct VkDevice_T *device, uint64_t handle, uint32_t opcode, const VkAllocationCallbacks *allocator);
 static VkResult resource_bind(struct VkDevice_T *device, uint64_t resource, VkDeviceMemory memory, VkDeviceSize offset, uint32_t opcode);
+static void resource_dedicated_requirements(void *next);
 static void resource_requirements(struct VkDevice_T *device, uint64_t resource, uint32_t opcode, VkMemoryRequirements *requirements);
 static VkResult render_pass_metadata(struct vulkan_render_pass *pass, const VkRenderPassCreateInfo *info);
 static void render_pass_free(struct vulkan_render_pass *pass);
@@ -376,6 +377,100 @@ vkGetImageSparseMemoryRequirements(
 }
 
 /*
+ * Returns a buffer's memory requirements through the extensible query.
+ *
+ * The requirements are those of the 1.0 query; a dedicated allocation is
+ * neither required nor preferred for a buffer.
+ */
+VKAPI_ATTR void VKAPI_CALL
+vkGetBufferMemoryRequirements2KHR(
+	VkDevice device,
+	const VkBufferMemoryRequirementsInfo2 *pInfo,
+	VkMemoryRequirements2 *pMemoryRequirements)
+{
+	/* The requirements of the created buffer. */
+	vkGetBufferMemoryRequirements(device, pInfo->buffer, &pMemoryRequirements->memoryRequirements);
+
+	/* The chained dedicated-allocation answer. */
+	resource_dedicated_requirements(pMemoryRequirements->pNext);
+
+	/* Succeeded: every recognized output structure is filled. */
+	return;
+}
+
+/*
+ * Returns an image's memory requirements through the extensible query.
+ *
+ * The requirements are those of the 1.0 query.  An image's memory may be a
+ * dedicated allocation (an imported image capability is imported that way),
+ * but none is required or preferred.
+ */
+VKAPI_ATTR void VKAPI_CALL
+vkGetImageMemoryRequirements2KHR(
+	VkDevice device,
+	const VkImageMemoryRequirementsInfo2 *pInfo,
+	VkMemoryRequirements2 *pMemoryRequirements)
+{
+	/* The requirements of the created image. */
+	vkGetImageMemoryRequirements(device, pInfo->image, &pMemoryRequirements->memoryRequirements);
+
+	/* The chained dedicated-allocation answer. */
+	resource_dedicated_requirements(pMemoryRequirements->pNext);
+
+	/* Succeeded: every recognized output structure is filled. */
+	return;
+}
+
+/*
+ * Returns an image's sparse memory requirements through the extensible query.
+ */
+VKAPI_ATTR void VKAPI_CALL
+vkGetImageSparseMemoryRequirements2KHR(
+	VkDevice device,
+	const VkImageSparseMemoryRequirementsInfo2 *pInfo,
+	uint32_t *pSparseMemoryRequirementCount,
+	VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements)
+{
+	struct VkDevice_T *owner;
+	VkSparseImageMemoryRequirements *plain;
+	uint32_t count;
+	uint32_t index;
+
+	/* A count-only call is the 1.0 count-only call. */
+	if (pSparseMemoryRequirements == NULL) {
+		vkGetImageSparseMemoryRequirements(device, pInfo->image, pSparseMemoryRequirementCount, NULL);
+		return;
+	}
+
+	/* An empty caller array receives nothing. */
+	count = *pSparseMemoryRequirementCount;
+	if (count == 0U)
+		return;
+
+	/* The 1.0 answers are gathered into storage of the plain structure first. */
+	owner = vulkan_device(device);
+	plain = vulkan_allocate(&owner->object.allocator, (size_t)count * sizeof(*plain), __alignof__(VkSparseImageMemoryRequirements), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+	if (plain == NULL) {
+		*pSparseMemoryRequirementCount = 0U;
+		return;
+	}
+
+	/* The answers of the created image, at most the caller's count of them. */
+	vkGetImageSparseMemoryRequirements(device, pInfo->image, &count, plain);
+
+	/* Each answer goes into the caller's extensible structure. */
+	for (index = 0U; index < count; index++)
+		pSparseMemoryRequirements[index].memoryRequirements = plain[index];
+
+	/* The number written, and the gathering storage goes. */
+	*pSparseMemoryRequirementCount = count;
+	vulkan_free(&owner->object.allocator, plain);
+
+	/* Succeeded: the caller's array holds the written answers. */
+	return;
+}
+
+/*
  * Enumerates sparse image format properties for arbitrary standard input combinations.
  */
 VKAPI_ATTR void VKAPI_CALL
@@ -587,7 +682,26 @@ resource_bind(
 {
 	struct vulkan_writer writer;
 	struct vulkan_reader reader;
+	struct vulkan_memory *storage;
 	VkResult status;
+
+	/*
+	 * Memory imported for one image (a dedicated import, whose kernel
+	 * description was checked against that image) takes only that image, at
+	 * its start.  Binding anything else is the caller's error and is refused
+	 * instead of letting a resource read an allocation it was not checked
+	 * against; the refusal uses the one failure vkBind*Memory may report.
+	 */
+	storage = vulkan_memory(memory);
+	if (storage != NULL && storage->dedicated_image != 0U) {
+		/* Another resource is not the image the import was checked against. */
+		if (resource != storage->dedicated_image)
+			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+		/* The checked layout begins at the allocation's start. */
+		if (offset != 0U)
+			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
 
 	/* Retains original memory type indices by using the actual native memory object. */
 	vulkan_writer_init_for_object(&writer, &device->object);
@@ -724,5 +838,29 @@ render_pass_free(
 	vulkan_object_free(&pass->object);
 
 	/* Succeeded: no render-pass metadata remains allocated after local destruction. */
+	return;
+}
+
+/* Answers a chained VkMemoryDedicatedRequirements: a dedicated allocation is neither required nor preferred. */
+static void
+resource_dedicated_requirements(
+	void *next)
+{
+	VkBaseOutStructure *chain;
+	VkMemoryDedicatedRequirements *dedicated;
+
+	/* Fills every dedicated-requirements structure in the output chain. */
+	for (chain = next; chain != NULL; chain = chain->pNext) {
+		/* Other output structures are not known to this query. */
+		if (chain->sType != VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS)
+			continue;
+
+		/* No resource of this library needs its own allocation. */
+		dedicated = (VkMemoryDedicatedRequirements *)chain;
+		dedicated->prefersDedicatedAllocation = VK_FALSE;
+		dedicated->requiresDedicatedAllocation = VK_FALSE;
+	}
+
+	/* Succeeded: the chain is answered. */
 	return;
 }

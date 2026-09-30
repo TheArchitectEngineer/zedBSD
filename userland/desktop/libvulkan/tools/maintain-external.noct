@@ -20,9 +20,9 @@ func main(args) {
     var input = FileUtil.readText(args[0]);
     if (String.indexOf(input, "#define VK_HEADER_VERSION 269\n") < 0) { System.error("expected pinned 1.3.269 declarations"); }
     var source = lines(input);
-    var types = ["VkExternalMemoryHandleTypeFlagBits", "VkExternalMemoryFeatureFlagBits", "VkExternalFenceHandleTypeFlagBits", "VkExternalFenceFeatureFlagBits", "VkFenceImportFlagBits", "VkPhysicalDeviceFeatures2", "VkPhysicalDeviceProperties2", "VkFormatProperties2", "VkImageFormatProperties2", "VkPhysicalDeviceImageFormatInfo2", "VkQueueFamilyProperties2", "VkPhysicalDeviceMemoryProperties2", "VkSparseImageFormatProperties2", "VkPhysicalDeviceSparseImageFormatInfo2", "VkExternalMemoryProperties", "VkPhysicalDeviceExternalImageFormatInfo", "VkExternalImageFormatProperties", "VkPhysicalDeviceExternalBufferInfo", "VkExternalBufferProperties", "VkPhysicalDeviceIDProperties", "VkExternalMemoryImageCreateInfo", "VkExternalMemoryBufferCreateInfo", "VkExportMemoryAllocateInfo", "VkPhysicalDeviceExternalFenceInfo", "VkExternalFenceProperties", "VkExportFenceCreateInfo"];
+    var types = ["VkExternalMemoryHandleTypeFlagBits", "VkExternalMemoryFeatureFlagBits", "VkExternalFenceHandleTypeFlagBits", "VkExternalFenceFeatureFlagBits", "VkFenceImportFlagBits", "VkPhysicalDeviceFeatures2", "VkPhysicalDeviceProperties2", "VkFormatProperties2", "VkImageFormatProperties2", "VkPhysicalDeviceImageFormatInfo2", "VkQueueFamilyProperties2", "VkPhysicalDeviceMemoryProperties2", "VkSparseImageFormatProperties2", "VkPhysicalDeviceSparseImageFormatInfo2", "VkExternalMemoryProperties", "VkPhysicalDeviceExternalImageFormatInfo", "VkExternalImageFormatProperties", "VkPhysicalDeviceExternalBufferInfo", "VkExternalBufferProperties", "VkPhysicalDeviceIDProperties", "VkExternalMemoryImageCreateInfo", "VkExternalMemoryBufferCreateInfo", "VkExportMemoryAllocateInfo", "VkPhysicalDeviceExternalFenceInfo", "VkExternalFenceProperties", "VkExportFenceCreateInfo", "VkBufferMemoryRequirementsInfo2", "VkImageMemoryRequirementsInfo2", "VkImageSparseMemoryRequirementsInfo2", "VkMemoryRequirements2", "VkSparseImageMemoryRequirements2", "VkMemoryDedicatedRequirements", "VkMemoryDedicatedAllocateInfo"];
     var flags = ["VkExternalMemoryHandleTypeFlags", "VkExternalMemoryFeatureFlags", "VkExternalFenceHandleTypeFlags", "VkExternalFenceFeatureFlags", "VkFenceImportFlags"];
-    var extensions = ["VK_KHR_get_physical_device_properties2", "VK_KHR_external_memory_capabilities", "VK_KHR_external_memory", "VK_KHR_external_memory_fd", "VK_KHR_external_fence_capabilities", "VK_KHR_external_fence", "VK_KHR_external_fence_fd"];
+    var extensions = ["VK_KHR_get_physical_device_properties2", "VK_KHR_external_memory_capabilities", "VK_KHR_external_memory", "VK_KHR_external_memory_fd", "VK_KHR_external_fence_capabilities", "VK_KHR_external_fence", "VK_KHR_external_fence_fd", "VK_KHR_get_memory_requirements2", "VK_KHR_dedicated_allocation"];
     var body = ""; var active = false; var selected = false; var count = 0; var commands = 0;
     for (i in 0..Array.size(source)) {
         var line = source[i];
@@ -53,8 +53,8 @@ func main(args) {
             if (starts(line, "}")) { active = false; }
         }
     }
-    if (count != Array.size(types) || commands != 13) { System.error("unexpected selected declarations: " + count + " types and " + commands + " commands"); }
-    var preamble = "/*\n * Vulkan external-memory/fence and capability-query declarations.\n * Copyright 2015-2023 The Khronos Group Inc.\n * SPDX-License-Identifier: Apache-2.0\n * See API-PROVENANCE.md and LICENSE-API for the pinned declaration source.\n */\n\n#ifndef VULKAN_EXTERNAL_H_\n#define VULKAN_EXTERNAL_H_ 1\n\n#include \"vulkan_core.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define VK_LUID_SIZE 8U\n";
+    if (count != Array.size(types) || commands != 16) { System.error("unexpected selected declarations: " + count + " types and " + commands + " commands"); }
+    var preamble = "/*\n * Vulkan external-memory/fence, capability-query and memory-requirement declarations.\n * Copyright 2015-2023 The Khronos Group Inc.\n * SPDX-License-Identifier: Apache-2.0\n * See API-PROVENANCE.md and LICENSE-API for the pinned declaration source.\n */\n\n#ifndef VULKAN_EXTERNAL_H_\n#define VULKAN_EXTERNAL_H_ 1\n\n#include \"vulkan_core.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#define VK_LUID_SIZE 8U\n";
     FileUtil.writeText(args[1], preamble + body + "\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n");
-    print("maintained 13 external-memory/fence and properties2 commands");
+    print("maintained 16 external-memory/fence, properties2 and memory-requirements2 commands");
 }

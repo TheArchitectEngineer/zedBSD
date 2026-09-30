@@ -52,6 +52,7 @@ static void memory_lost(struct VkDevice_T *device);
 static VkResult memory_ranges(struct VkDevice_T *device, uint32_t count, const VkMappedMemoryRange *ranges);
 static VkResult memory_import_fd(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, int fd, VkDeviceMemory *memory);
 static VkResult memory_import_image_fd(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, const VkAllocationCallbacks *allocator, int fd, VkDeviceMemory *memory);
+static VkResult memory_dedicated_check(struct VkDevice_T *device, const VkMemoryAllocateInfo *info, VkImage image, const struct gpu_image_descriptor *described);
 static VkResult memory_mapping_token(struct VkDevice_T *device, struct memory_allocation *allocation);
 
 /*
@@ -70,6 +71,7 @@ vkAllocateMemory(
 	const VkImportMemoryFdInfoKHR *import;
 	const VkExportMemoryAllocateInfo *export;
 	VkExternalMemoryHandleTypeFlags types;
+	VkBool32 dedicated;
 	VkResult status;
 
 	/* A failed public allocation never publishes an object or consumes an import fd. */
@@ -85,6 +87,7 @@ vkAllocateMemory(
 	/* Standard export and import declarations are independent entries in the pNext chain. */
 	import = NULL;
 	export = NULL;
+	dedicated = VK_FALSE;
 	for (next = info->pNext; next != NULL; next = next->pNext) {
 		/* The import entry retains the caller's fd until native allocation succeeds. */
 		if (next->sType == VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR)
@@ -93,7 +96,15 @@ vkAllocateMemory(
 		/* Export permission is independent from an import elsewhere in the chain. */
 		if (next->sType == VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO)
 			export = (const VkExportMemoryAllocateInfo *)next;
+
+		/* A dedicated allocation names the one resource the memory is for. */
+		if (next->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO)
+			dedicated = VK_TRUE;
 	}
+
+	/* A dedicated allocation belongs to its explicitly enabled extension. */
+	if (dedicated && !(owner->enabled_extensions & VULKAN_DEVICE_DEDICATED_ALLOCATION))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* An absent export declaration grants no later external fd export. */
 	types = 0U;
@@ -824,6 +835,10 @@ memory_import_fd(
  * The kernel checks the device and returns the image's description; the
  * requested memory type must be the image's and the requested size must fit
  * its allocation.  The caller binds its own image of the described layout.
+ * A dedicated import (VkMemoryDedicatedAllocateInfo naming an image) is also
+ * checked against that image, so that a description a client claims cannot
+ * make the importer read the allocation as another image (ws103-p003), and
+ * only that image may then be bound to the memory.
  */
 static VkResult
 memory_import_image_fd(
@@ -836,10 +851,23 @@ memory_import_image_fd(
 	struct gpu_resource_import request;
 	struct memory_allocation *allocation;
 	struct vulkan_memory *storage;
+	const VkBaseInStructure *next;
 	VkMemoryAllocateInfo native_info;
+	VkImage dedicated;
 	VkResult status;
 	VkResult cleanup;
 	int error;
+
+	/* The image a dedicated import is for, if the chain names one. */
+	dedicated = VK_NULL_HANDLE;
+	for (next = info->pNext; next != NULL; next = next->pNext) {
+		/* Other entries do not name the imported image. */
+		if (next->sType != VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO)
+			continue;
+
+		/* A dedicated buffer allocation leaves the image unnamed. */
+		dedicated = ((const VkMemoryDedicatedAllocateInfo *)next)->image;
+	}
 
 	/* Image capabilities travel only between contexts that share images. */
 	if (!(device->object.context->capabilities & GPU_CAP_SHARE))
@@ -870,6 +898,10 @@ memory_import_image_fd(
 	    request.image.allocation_bytes <= SIZE_MAX &&
 	    request.resource_id != 0U)
 		status = VK_SUCCESS;
+
+	/* A dedicated import must describe the named image exactly as the kernel describes the allocation. */
+	if (status == VK_SUCCESS && dedicated != VK_NULL_HANDLE)
+		status = memory_dedicated_check(device, info, dedicated, &request.image);
 
 	/* The memory references the whole native allocation, as an OPAQUE import does. */
 	if (status == VK_SUCCESS) {
@@ -904,6 +936,9 @@ memory_import_image_fd(
 	storage->bytes = info->allocationSize;
 	allocation = storage->backing_private;
 	allocation->view_bytes = (size_t)request.image.allocation_bytes;
+
+	/* Only the checked image may be bound to a dedicated import (resource_bind). */
+	storage->dedicated_image = (uint64_t)dedicated;
 	error = close(fd);
 	(void)error;
 
@@ -1440,5 +1475,41 @@ memory_ranges(
 	}
 
 	/* Succeeded: every range lies inside coherent mapped storage. */
+	return VK_SUCCESS;
+}
+
+/* Gathers a dedicated import's image, memory requirements and row layout, and checks them against the kernel's description. */
+static VkResult
+memory_dedicated_check(
+	struct VkDevice_T *device,
+	const VkMemoryAllocateInfo *info,
+	VkImage image,
+	const struct gpu_image_descriptor *described)
+{
+	struct vulkan_image *object;
+	VkMemoryRequirements requirements;
+	VkImageSubresource subresource;
+	VkSubresourceLayout layout;
+	VkResult status;
+
+	/* The image the caller created. */
+	object = vulkan_image(image);
+	if (object == NULL)
+		return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+
+	/* The renderer's memory requirements of that image. */
+	vkGetImageMemoryRequirements((VkDevice)device, image, &requirements);
+
+	/* The renderer's layout of its one color subresource. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	vkGetImageSubresourceLayout((VkDevice)device, image, &subresource, &layout);
+
+	/* The image, its memory and its rows against the capability. */
+	status = vulkan_dedicated_check(object, info, &requirements, &layout, described);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image reads the allocation as the kernel describes it. */
 	return VK_SUCCESS;
 }
