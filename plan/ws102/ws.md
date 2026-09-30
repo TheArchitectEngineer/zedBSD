@@ -61,8 +61,13 @@ Resume point: p004 cleared 2026-09-30。次は L1 の p005（仕上げと回帰�
 | ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
 | ws102-p010 | L3 | 計測の道具と基準値（遅れ・開く動き） | planned | p009 |
 | ws102-p011 | L3 | 数値目標への直し | planned | p010 |
-| ws102-p012 | L3 | IME と組んだ日本語の変換 | planned | p005、D2、WS095 |
+| ws102-p012 | L3 | IME と組んだ日本語の変換、右の列の変換候補（独自の拡張、design.md §2.10） | planned | p005、D2、WS095 |
 | ws102-p013 | L4 | Windows の上の QEMU（WS085）での物理の touch の確認 | planned | p009、WS085 |
+| ws102-p016 | L2 | 右の列の全体の panel と道具の面の枠（design.md §2.10）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | planning | p007 |
+| ws102-p017 | L2 | 編集の操作の拡張 `keiland_edit_v1`（libkeiland・libkeiui の `kui_text`、状態で button を灰色に）、拡張の無い窓の key への落とし（Terminal は app の表） | planning | p016 |
+| ws102-p018 | L3 | クリップボードの履歴（記憶の中だけ、10 件、password の欄は残さない、lock・Log Out で消す） | planning | p016 |
+| ws102-p019 | L3 | 絵文字の面（font の選定と license の監査、text-input の commit） | planning | p016、絵文字の font の判断 |
+| ws102-p020 | L2 | QWERTY の面の補助の key の列（Esc・Tab・Ctrl・`|`・`~`・矢印、一度だけ効く修飾） | planning | p006 |
 | ws102-p014 | — | 全文の規約と回帰（WS の最後） | planned | 最後の段 |
 
 ## 段（詳しくは [design.md](design.md) §3）
