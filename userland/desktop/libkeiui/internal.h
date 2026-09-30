@@ -47,6 +47,16 @@ int keiui_ui_focused(const struct kui_ui *ui, uint32_t *id, uint32_t *index);
 /* Tells whether the focus's ring shows (ui.c): the keyboard moved the focus, not a click, a tap or the application. */
 int keiui_ui_focus_ring(const struct kui_ui *ui);
 
+/*
+ * Notes the on-screen keyboard's inset a window heard (ui.c, from
+ * window.c; ws102-p015): the window's size, the covered widths from its
+ * right and bottom edges, the reason, and the caret's rectangle in the
+ * window as the application last told it (kui_window_text_cursor; height 0
+ * when it has not).  The next kui_ui_end of each window's input keeps its
+ * text view's caret in sight (the library runs on one thread).
+ */
+void keiui_ui_inset_note(uint32_t width, uint32_t height, int right, int bottom, unsigned reason, const int32_t *caret);
+
 /* Reports the time of the frame being drawn (ui.c, the time kui_ui_begin was given). */
 uint64_t keiui_ui_now(const struct kui_ui *ui);
 

@@ -21,6 +21,9 @@
  */
 
 #include "window.h"
+#include "internal.h"
+
+#include <keiland.h>
 
 #include <errno.h>
 #include <poll.h>
@@ -96,6 +99,7 @@ static int window_setup(struct kui_window *window, const struct kui_window_optio
 static int window_setup_shared(struct kui_window *window, struct xdg_toplevel *parent, const struct kui_window_options *options, uint32_t min_width, uint32_t min_height);
 static void window_search(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void window_woken(void *data, struct wl_callback *callback, uint32_t time);
+static void window_inset(void *data, int32_t right, int32_t bottom, uint32_t reason);
 
 /*
  * The globals a window on another's connection finds through a registry of
@@ -216,6 +220,9 @@ kui_window_close(
 	/* No window, nothing to close. */
 	if (window == NULL)
 		return;
+
+	/* The keyboard's inset before the toplevel it names. */
+	keiland_keyboard_inset_destroy(window->inset);
 
 	/* The presenter before the surface it shows on. */
 	if (window->present == KUI_PRESENT_VULKAN)
@@ -832,6 +839,9 @@ window_setup(
 		xdg_toplevel_set_title(window->toplevel, options->title);
 	if (options->application != NULL)
 		xdg_toplevel_set_app_id(window->toplevel, options->application);
+
+	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told). */
+	window->inset = keiland_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
 	wl_surface_commit(window->surface);
 
 	/* The first configure (and the seat's devices) before anything is drawn. */
@@ -1896,4 +1906,66 @@ window_touch_foreign(
 
 	/* One of the window's own. */
 	return 0;
+}
+
+/*
+ * Lets the application hear the on-screen keyboard's inset (KUI_VERSION 7):
+ * callback runs during kui_window_dispatch and returns 1 when the
+ * application kept its caret in sight itself (the default is skipped).
+ */
+void
+kui_window_on_keyboard_inset(
+	struct kui_window *window,
+	kui_keyboard_inset_fn callback,
+	void *data)
+{
+	/* The callback (NULL: none) and its data. */
+	window->inset_callback = callback;
+	window->inset_data = data;
+}
+
+/*
+ * Reports how much of the window the on-screen keyboard covers now, from
+ * its right and bottom edges (0 each without a keyboard).
+ */
+void
+kui_window_keyboard_inset(
+	const struct kui_window *window,
+	int *right,
+	int *bottom)
+{
+	/* The widths last heard. */
+	*right = window->inset_right;
+	*bottom = window->inset_bottom;
+}
+
+/*
+ * Hears the on-screen keyboard's inset: kept, told to the application, and
+ * (unless the application took care of it) noted for the text view's caret
+ * (ui.c).
+ */
+static void
+window_inset(
+	void *data,
+	int32_t right,
+	int32_t bottom,
+	uint32_t reason)
+{
+	struct kui_window *window;
+	int handled;
+
+	/* The widths, kept for kui_window_keyboard_inset. */
+	window = data;
+	window->inset_right = right;
+	window->inset_bottom = bottom;
+
+	/* The application first, when it listens. */
+	handled = 0;
+	if (window->inset_callback != NULL)
+		handled = window->inset_callback(window->inset_data, right, bottom, reason);
+	if (handled)
+		return;
+
+	/* The default: the next frame keeps the caret in sight. */
+	keiui_ui_inset_note(window->width, window->height, right, bottom, reason, window->text_cursor);
 }
