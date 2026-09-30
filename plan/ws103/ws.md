@@ -3,13 +3,13 @@
 # WS103: compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001〜p004 cleared）
+Status: incomplete（p001〜p005 cleared）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q512（ws103-p005）
-Resume point: 2026-09-30 夜 p004 cleared（compositor は dedicated の import、`RESOURCE_IMPORT`・`DESTROY` を削除、偽の buffer を断る）。残りは p005（WSI の fence）→ p006（fence を poll に、UAPI を閉じる、V1）→ p007。実行は Queue の承認の後
+Queue: なし（q512 finished）
+Resume point: 2026-09-30 夜 p005 cleared（WSI は Wayland の present ごとに新しい fence）。次は p006（compositor の fence を poll に、`/dev/gpu0`・`--gpu` の削除、UAPI を閉じる、V1）→ p007。自走中
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -73,6 +73,6 @@ client と compositor の間は全 OS で我々の独自の protocol 1 本で、
 | [ws103-p002](phase002/phase.md) | compositor: 起動の問い合わせを VK_KHR_display へ、`--direct` の削除（design §2.1・2.2） | uncleared（q509: 5330 の smoke が未達、変更の前も同じく失敗。QEMU の C1・C2・boot test は PASS） | — |
 | [ws103-p003](phase003/phase.md) | libvulkan: dedicated allocation と import の記述の照合、bind の守り（§2.3） | cleared（q510） | — |
 | [ws103-p004](phase004/phase.md) | compositor: dedicated の import、wire の値の確かめ、`RESOURCE_IMPORT`・`DESTROY` を消す、`gpu-zedbsd.c` の buffer の部分（§2.3・2.5）。libvulkan の dedicated の無い image の capability の import を拒む処理も同時に（p003 から移した） | cleared（q511） | p002、p003 |
-| [ws103-p005](phase005/phase.md) | libvulkan: WSI が Wayland の present ごとに新しい fence を送る（§2.4） | in-progress（q512） | — |
+| [ws103-p005](phase005/phase.md) | libvulkan: WSI が Wayland の present ごとに新しい fence を送る（§2.4） | cleared（q512） | — |
 | ws103-p006 | compositor: fence を poll だけに、`/dev/gpu0` と `--gpu` を消す、UAPI の型を閉じる、`v1-check.sh`（§2.4〜2.6） | planned | p004、p005 |
 | ws103-p007 | 規約の全文、回帰、5330、V4 の計測（§3） | planned | p002〜p006 |

@@ -2,12 +2,17 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q511](queue-q511.md)（ws103-p004 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q512](queue-q512.md)（ws103-p005 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
 
-## 最新: 2026-09-30 q511
+## 最新: 2026-09-30 q512
+
+[q512](queue-q512.md): WS103 p005 cleared。WSI が Wayland の present ごとに新しい fence を送る（前は slot の fence を再利用して世代が進んだ）。QEMU の Venus で 600 個が全て世代 1、
+時間は変わらず。p054・C1・C2・boot test・5330 PASS。GitHub へは未公開。
+
+## 2026-09-30 q511
 
 [q511](queue-q511.md): WS103 p004 cleared。compositor の client の buffer の取り込みを dedicated の import にし、`GPU_RESOURCE_IMPORT`・`GPU_RESOURCE_DESTROY` を削除。
 OS の backend（`gpu-zedbsd.c`・`zwl-gpu.h`）で wire の値を確かめる。libvulkan は dedicated の無い import と allocation の capability の dedicated の import を拒む（実行の前に見つけた穴）。

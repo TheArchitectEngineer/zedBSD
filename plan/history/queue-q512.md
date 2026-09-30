@@ -1,14 +1,7 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- awesome-plan project=zedbsd record=q512 -->
 
-# Queue
+# q512（finished 2026-09-30）
 
-<!-- awesome-plan-current:start -->
-Status: idle（2026-09-30）
-Active Queue: なし
-Last finished Queue: [q512](history/queue-q512.md)（ws103-p005 cleared）
-<!-- awesome-plan-current:end -->
-
-## q512
 
 - Purpose: WS103 の p005（libvulkan の WSI が、Wayland の target の present ごとに新しい fence を作って送る）。
 - Timebox: この session。
@@ -24,6 +17,8 @@ Last finished Queue: [q512](history/queue-q512.md)（ws103-p005 cleared）
 
 Dependency graph: `ws103-p001 (cleared) -> q512-i01/ws103-p005 -> (future) ws103-p006`。
 
-## Upcoming Work Outlook
 
-WS103 の p005（WSI の fence）→ p006（fence を poll に、UAPI を閉じる）→ p007（規約と回帰）。どれも Queue で承認が要る。
+## Outcome
+
+- q512-i01 / ws103-p005: **cleared**。libvulkan の WSI は Wayland の target の present ごとに新しい fence を作って送る（slot の `sent` で display の job と分ける）。
+  新しい fence の最初の submit の host の reset を省く。QEMU の Venus で fence 600 個が全て世代 1（前は 598 まで進んだ）、時間は同じ。p054・C1・C2・boot test・5330 PASS。GitHub へは未公開。
