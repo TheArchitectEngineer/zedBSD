@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws099-p011 (BUG-121): the corner drags of resize-stress.sh on the 5330's i915 passthrough (WS075's harness,
 # plan/ws075/tests/hdmi-h4-hw.sh, which takes the machine under flock /tmp/i915-hw.lock), in the case BUG-121 was
-# seen in (ws075-p025): the ten applications of App Home open (Model viewer last, so it is on top), then COUNT drags
+# seen in (ws075-p025): the ten applications of App Home open in hdmi/apps8.sh's order (Model viewer eighth, as in
+# p025; ORDER=top opens it last, so it is on top and, on the 1920x1080 panel, reaches the bottom edge), then COUNT drags
 # of Model viewer's corners, in pairs (inwards, then back by the same distance, so its outline comes back and the
 # drags need no log to aim).  Its body is found on the first shot (the viewer's grey, 0x333333).  Every drag is
 # photographed; a shot without the grey body is a vanished window.  At the end Terminal copies the session's log
@@ -54,8 +55,12 @@ drag() {
 # The machine, the session and the applications (App Home on the 1920x1080 panel, hdmi/apps8.sh's tiles).
 "$h4" start "$image" "$out" || exit 1
 sleep 75
-for tile in files:600:386 notes:743:386 settings:887:386 terminal:1031:386 pdf:1175:386 images:1319:386 \
-    browser:600:538 gears:887:538 xterm:1031:538 mview:743:538; do
+if [ "${ORDER:-p025}" = top ]; then
+	tiles="files:600:386 notes:743:386 settings:887:386 terminal:1031:386 pdf:1175:386 images:1319:386 browser:600:538 gears:887:538 xterm:1031:538 mview:743:538"
+else
+	tiles="files:600:386 notes:743:386 settings:887:386 terminal:1031:386 pdf:1175:386 images:1319:386 browser:600:538 mview:743:538 gears:887:538 xterm:1031:538"
+fi
+for tile in $tiles; do
 	set -- $(echo "$tile" | tr : ' ')
 	ctl pointer move 22 16 sleep 100 down up sleep 1500 move "$2" "$3" sleep 150 down up sleep 8000 > /dev/null
 done
@@ -96,7 +101,7 @@ done
 
 # The session's log onto the disk: Terminal (App Home), a command, and the log read from the image.
 ctl pointer move 22 16 sleep 100 down up sleep 1500 move 1031 386 sleep 150 down up sleep 6000 > /dev/null
-ctl keys 'cp /run/user/1000/session.log /home/kei/resize-hw.log; sync\n' > /dev/null
+ctl keys "'cp /run/user/1000/session.log /home/kei/resize-hw.log; sync\\n'" > /dev/null
 sleep 4
 ctl shot saved > /dev/null
 ssh "$host" "sudo -n python3 bigbang/h4/h4-ctl.py quit" > /dev/null 2>&1

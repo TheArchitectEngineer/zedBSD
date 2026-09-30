@@ -6,13 +6,17 @@
 # Drag N takes corner (N / 2) % 4 (bottom-right, top-left, top-right, bottom-left) outwards on even N and back
 # inwards on odd N, by 60 to 196 pixels, in 8 steps 16 ms apart (a hand's drag sends many motions, so the client
 # gets many configures while it recreates its swapchain).  After each drag:
-#   - zdesktop's log must have one more "ZWL RESIZE settled" of the window (else "no-settle");
+#   - zdesktop's log must have one more "ZWL RESIZE start" of the window (else "missed": the press went to something
+#     else, another window's title bar control under the frame's band (BUG-121 on the 5330) or an edge's gesture, and
+#     the window may be hidden behind another one) and one more "ZWL RESIZE settled" (else "no-settle");
 #   - the window vanished when its process is gone or zdesktop's log has "ZWL UNMAP" of it or "ZWL CLIENT gone" of
 #     its client; then the lines about it (the app's MVIEW/WLSHM lines, zdesktop's ERROR/GPU_ERROR/UNMAP/CLIENT gone)
 #     are saved in their order, which tells whether the app failed first or zdesktop dropped it, and the app is
 #     started again.
-# Every 10th drag and each vanishing photograph the screen.  Prints "RESIZE-STRESS RESULT app=APP drags=N
-# vanished=V no-settle=S errors=E" and "resize-stress: PASS" (V = 0 and E = 0) or "resize-stress: FAIL".
+# CROWD="Files,PDF Viewer,..." opens those App Home applications first, so the window is over others (as in the ten
+# windows of ws075-p025) and its frame's bands lie over their title bars.
+# Every 10th drag, each missed one and each vanishing photograph the screen.  Prints "RESIZE-STRESS RESULT app=APP
+# drags=N vanished=V missed=M no-settle=S errors=E" and "resize-stress: PASS" (V, M and E 0) or "resize-stress: FAIL".
 #
 #   VENUS_SIZE=1920x1280 plan/ws035/tests/zdesktop-guest.sh start build/ws099-criteria.img
 #   VENUS_SIZE=1920x1280 plan/ws099/tests/resize-stress.sh [APP] [COUNT] [OUTDIR]
@@ -33,6 +37,7 @@ guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null
 pointer() { python3 plan/ws035/tests/qmp-pointer.py --width "$screen_w" --height "$screen_h" "$GUEST_RUNTIME/qmp.sock" "$@"; }
 shot() { python3 plan/ws035/tests/zdesktop-check.py "$out/$1.png" --runtime "$GUEST_RUNTIME" >/dev/null 2>&1; }
 vanished=0
+missed=0
 nosettle=0
 restarts=0
 : > "$out/vanished.txt"
@@ -89,9 +94,10 @@ open_app() {
 	return 0
 }
 
-# Reads the window's outline (the body; its title bar is 52 pixels above it) from its last settled resize, or its map.
+# Reads the window's outline (the body; its title bar is 52 pixels above it) from its last settled resize since its
+# client's map (a window started again may have the surface number of the one before), or its map.
 geometry() {
-	line=$(last "ZWL RESIZE settled surface=$surface ")
+	line=$(guest "awk '/ZWL MAP client=$client surface=$surface /{f=1} f && /ZWL RESIZE settled surface=$surface /{l=\$0} END{print l}' $log")
 	case $line in
 	*settled*) set -- $(echo "$line" | sed -n 's/.* x=\(-*[0-9]*\) y=\(-*[0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p') ;;
 	*) set -- "$start_x" "$start_y" "$start_w" "$start_h" ;;
@@ -123,9 +129,16 @@ vanish() {
 	open_app
 }
 
-# kei's session, then the app.
+# kei's session, the crowd, then the app.
 wait_more 'ZWL HANDOFF go=1' 0 90 || { echo "no session"; echo "resize-stress: FAIL"; exit 1; }
 sleep 3
+echo "${CROWD:-}" | tr ',' '\n' | while read -r name; do
+	[ -n "$name" ] || continue
+	pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
+	set -- $(last "ZWL HOME icon name=\"$name\"" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || { echo "no $name icon in App Home"; continue; }
+	pointer move "$1" "$2" sleep 200 down sleep 60 up sleep 5000
+done
 errors_before=$(count 'ZWL (ERROR|GPU_ERROR|MODE_ERROR)|MVIEW FAILED')
 open_app || { echo "RESIZE-STRESS RESULT app=$app drags=0 vanished=0 no-settle=0 errors=?"; echo "resize-stress: FAIL"; exit 1; }
 shot opened
@@ -138,6 +151,7 @@ while [ $n -lt "$total" ]; do
 	sign=1
 	[ $((n % 2)) -eq 1 ] && sign=-1
 	settles=$(count "ZWL RESIZE settled surface=$surface ")
+	starts=$(count "ZWL RESIZE start surface=$surface ")
 	case $(((n / 2) % 4)) in
 	0) drag $((right + 3)) $((bottom + 3)) $((sign * distance)) $((sign * distance)) ;;
 	1) drag $((left - 4)) $((top - 4)) $((-sign * distance)) $((-sign * distance)) ;;
@@ -162,6 +176,12 @@ while [ $n -lt "$total" ]; do
 		vanish "$n" "process gone" || break
 	elif [ "${3:-0}" -gt 0 ] 2>/dev/null; then
 		vanish "$n" "zdesktop unmapped it or dropped its client" || break
+	elif [ "$(count "ZWL RESIZE start surface=$surface ")" -le "$starts" ] 2>/dev/null; then
+		missed=$((missed + 1))
+		echo "drag $n: MISSED (no resize started)"
+		shot "missed-$n"
+		# The window back on top (a click on its body) for the next drag.
+		pointer move $(((left + right) / 2)) $(((top + bottom) / 2)) sleep 200 down sleep 60 up sleep 400
 	elif [ "${2:-0}" -le "$settles" ] 2>/dev/null; then
 		nosettle=$((nosettle + 1))
 		echo "drag $n: no settle"
@@ -174,8 +194,8 @@ errors_after=$(count 'ZWL (ERROR|GPU_ERROR|MODE_ERROR)|MVIEW FAILED')
 errors=$((${errors_after:-0} - ${errors_before:-0}))
 shot final
 guest "grep -E 'ZWL (ERROR|GPU_ERROR|MODE_ERROR)|MVIEW FAILED|ZWL CLIENT gone' $log" > "$out/errors.txt"
-echo "RESIZE-STRESS RESULT app=$app drags=$n vanished=$vanished no-settle=$nosettle errors=$errors"
-if [ "$vanished" -eq 0 ] && [ "$errors" -eq 0 ] && [ "$n" -eq "$total" ]; then
+echo "RESIZE-STRESS RESULT app=$app drags=$n vanished=$vanished missed=$missed no-settle=$nosettle errors=$errors"
+if [ "$vanished" -eq 0 ] && [ "$missed" -eq 0 ] && [ "$errors" -eq 0 ] && [ "$n" -eq "$total" ]; then
 	echo "resize-stress: PASS"
 	exit 0
 fi
