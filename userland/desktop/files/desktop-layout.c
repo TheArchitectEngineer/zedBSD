@@ -590,6 +590,7 @@ fm_desktop_release(
 	free(desk->places);
 	free(desk->saved);
 	free(desk->shown);
+	free(desk->painted_cells);
 	memset(desk, 0, sizeof(*desk));
 }
 

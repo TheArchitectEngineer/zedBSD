@@ -273,6 +273,20 @@ struct fm_desktop_saved {
 };
 
 /*
+ * What a desktop cell was last drawn with (ws094-p009): its place, whether
+ * it was selected or faded (cut), and its thumbnail (NULL for none).  A
+ * frame redraws only the cells whose record changed, when nothing else
+ * did.
+ */
+struct fm_desktop_painted {
+	const struct fm_image *thumb;
+	int column;
+	int row;
+	int selected;
+	int cut;
+};
+
+/*
  * The desktop's state (files --desktop, ws094-p004, p005): each item's
  * place (places, one an entry of the tab's listing, remade when the
  * listing or the size changes), the saved places read from the layout file
@@ -293,6 +307,12 @@ struct fm_desktop_saved {
  * drop_column and drop_row (the cell under it, -1 for none); drop_place
  * says a drop of the desktop's own items on the desktop moves them to
  * cells (no file moves), carried out with the drop.
+ *
+ * The frame kept in the canvas (ws094-p009): painted says the canvas holds
+ * a whole frame of the listing (its count, time and names' hash) at
+ * painted_width by painted_height with nothing over the items (no band,
+ * drop target, message, question or field), and painted_cells what each
+ * item's cell was drawn with; fm_desktop_repaint forgets it.
  */
 struct fm_desktop {
 	struct fm_desktop_place *places;
@@ -326,6 +346,13 @@ struct fm_desktop {
 	int drop_column;
 	int drop_row;
 	int drop_place;
+	int painted;
+	int painted_width;
+	int painted_height;
+	size_t painted_count;
+	time_t painted_modified;
+	uint32_t painted_names;
+	struct fm_desktop_painted *painted_cells;
 };
 
 /*
@@ -1292,6 +1319,7 @@ void fm_ui_draw(struct fm_app *app, struct fm_canvas *canvas);
 
 /* The desktop's icons and their input (ui-desktop.c, ws094-p003, p004). */
 void fm_desktop_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_desktop_repaint(struct fm_desktop *desk);
 void fm_desktop_event(struct fm_app *app, const struct fm_event *event);
 void fm_desktop_open_selected(struct fm_app *app);
 int fm_desktop_item_at(struct fm_app *app, int x, int y);

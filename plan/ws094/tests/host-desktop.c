@@ -23,6 +23,10 @@
  * cell moving them there (a taken cell keeping them), and a drop of
  * another window's items placing them from the drop's cell.
  *
+ * ws094-p009: a click's frame draws only the cells that changed; the
+ * picture is the same as a whole frame's (and the rest of the canvas is
+ * not drawn again).
+ *
  *   host-desktop TEMPORARY-FOLDER
  */
 
@@ -42,6 +46,8 @@ static void check_shown(void);
 static void check_menus(const char *temporary);
 static int context_has(const struct fm_context *context, const char *label);
 static void check_drag(const char *temporary);
+static void check_partial(const char *temporary);
+static int partial_same(struct fm_app *app, struct fm_canvas *canvas, uint32_t *whole, const char *text);
 static int saved_at(const struct fm_desktop *desk, const char *name, int column, int row);
 
 /* Runs the checks. */
@@ -135,6 +141,7 @@ main(
 	check_shown();
 	check_menus(argv[1]);
 	check_drag(argv[1]);
+	check_partial(argv[1]);
 
 	/* The outcome. */
 	if (failures != 0) {
@@ -401,4 +408,131 @@ saved_at(
 
 	/* No place for the name. */
 	return 0;
+}
+
+/*
+ * ws094-p009: the desktop over a folder of files, folders and a long name
+ * drawn whole, then with one item selected, another selected with Ctrl,
+ * and none: each frame draws only the changed cells, and matches a whole
+ * frame of the same state.
+ */
+static void
+check_partial(
+	const char *temporary)
+{
+	static struct fm_app app;
+	static struct fm_text text;
+	struct fm_canvas canvas;
+	struct fm_tab *tab;
+	char folder[1024];
+	char file[1200];
+	uint32_t *pixels;
+	uint32_t *whole;
+	const char *stem;
+	FILE *made;
+	int index;
+	int error;
+	int differs;
+
+	/* Nine items: files, folders and a name longer than a cell. */
+	snprintf(folder, sizeof(folder), "%s/partial", temporary);
+	(void)mkdir(folder, 0755);
+	for (index = 0; index < 9; index++) {
+		if (index % 3 == 2) {
+			snprintf(file, sizeof(file), "%s/folder-%d", folder, index);
+			(void)mkdir(file, 0755);
+			continue;
+		}
+
+		/* A file, the fifth with a long name. */
+		stem = "note";
+		if (index == 4)
+			stem = "a-name-much-longer-than-its-cell";
+		snprintf(file, sizeof(file), "%s/%s-%d.txt", folder, stem, index);
+		made = fopen(file, "w");
+		if (made != NULL)
+			fclose(made);
+	}
+
+	/* The fonts, a 1280x766 canvas and the model in the desktop mode. */
+	error = fm_text_open(&text, "build/ws035-fonts/Inter.ttf", NULL);
+	check(error == 0, "partial: the font");
+	if (error != 0)
+		return;
+	pixels = calloc(1280U * 766U, sizeof(uint32_t));
+	whole = calloc(1280U * 766U, sizeof(uint32_t));
+	error = pixels == NULL || whole == NULL || fm_canvas_init(&canvas, pixels, 1280U, 1280, 766) != 0;
+	check(error == 0, "partial: the canvas");
+	if (error != 0)
+		return;
+	app.now = 1000U;
+	error = fm_app_init(&app, &text, folder);
+	check(error == 0, "partial: the model");
+	if (error != 0)
+		return;
+	app.desktop = 1;
+	tab = fm_ui_tab(&app);
+	check(tab->listing.count == 9U, "partial: nine items");
+
+	/* The first frame is whole, and kept. */
+	fm_desktop_draw(&app, &canvas);
+	check(app.desk.painted == 1, "partial: the first frame is kept");
+
+	/* One item selected, another added with Ctrl (the long name), and none. */
+	fm_select_only(tab, 0);
+	partial_same(&app, &canvas, whole, "partial: one item selected");
+	for (index = 0; index < (int)tab->listing.count; index++) {
+		differs = strncmp(tab->listing.entries[index].name, "a-name", 6);
+		if (differs == 0)
+			fm_select_toggle(tab, index);
+	}
+
+	/* The long name's pill is kept in its cell. */
+	partial_same(&app, &canvas, whole, "partial: the long name added");
+	fm_select_none(tab);
+	partial_same(&app, &canvas, whole, "partial: none selected");
+
+	/* The model and the canvas are done with. */
+	fm_desktop_release(&app.desk);
+	fm_app_release(&app);
+	fm_canvas_release(&canvas);
+	free(pixels);
+	free(whole);
+	fm_text_close(&text);
+}
+
+/*
+ * Draws a frame after a change of the selection, with a mark in a corner
+ * no cell has: the mark stays (only cells were drawn), and without it the
+ * picture is the one a whole frame draws.  Returns 1 when both hold.
+ */
+static int
+partial_same(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	uint32_t *whole,
+	const char *text)
+{
+	uint32_t *corner;
+	size_t size;
+	int kept;
+	int same;
+
+	/* The mark, in the bottom-left corner. */
+	corner = canvas->pixels + (size_t)765 * canvas->stride;
+	corner[0] = 0x12345678U;
+
+	/* The changed cells only: the mark stays. */
+	fm_desktop_draw(app, canvas);
+	kept = corner[0] == 0x12345678U;
+	corner[0] = 0U;
+
+	/* The same state drawn whole, for the comparison. */
+	size = (size_t)canvas->height * canvas->stride * sizeof(uint32_t);
+	memcpy(whole, canvas->pixels, size);
+	fm_desktop_repaint(&app->desk);
+	fm_desktop_draw(app, canvas);
+	same = memcmp(whole, canvas->pixels, size) == 0;
+	check(kept && same, text);
+	return kept && same;
 }

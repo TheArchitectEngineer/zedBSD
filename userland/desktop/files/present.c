@@ -49,19 +49,18 @@ static VkResult present_module(struct fm_present *present, const uint32_t *code,
 static void present_record(struct fm_present *present, uint32_t image);
 
 /*
- * Makes the Vulkan objects of the window: the device, the swapchain, the
- * canvas image and the pipeline that shows it.
+ * Makes the Vulkan instance, with the surface extensions a Wayland window
+ * needs.  It is made by fm_present_open when not made before; the desktop
+ * makes it before its surface, while zdesktop is still opening its output
+ * (ws094-p009).
  */
 VkResult
-fm_present_open(
-	struct fm_present *present,
-	struct fm_window *window)
+fm_present_instance(
+	struct fm_present *present)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
-	VkWaylandSurfaceCreateInfoKHR surface;
 	const char *extensions[2];
-	VkResult error;
 
 	/* Nothing is owned yet. */
 	memset(present, 0, sizeof(*present));
@@ -79,9 +78,28 @@ fm_present_open(
 	instance.enabledExtensionCount = 2U;
 	instance.ppEnabledExtensionNames = extensions;
 	present->operation = "vkCreateInstance";
-	error = vkCreateInstance(&instance, NULL, &present->instance);
-	if (error != VK_SUCCESS)
-		return error;
+	return vkCreateInstance(&instance, NULL, &present->instance);
+}
+
+/*
+ * Makes the Vulkan objects of the window: the instance unless it was made
+ * (fm_present_instance), the device, the swapchain, the canvas image and
+ * the pipeline that shows it.
+ */
+VkResult
+fm_present_open(
+	struct fm_present *present,
+	struct fm_window *window)
+{
+	VkWaylandSurfaceCreateInfoKHR surface;
+	VkResult error;
+
+	/* The instance, unless it was made before the window. */
+	if (present->instance == VK_NULL_HANDLE) {
+		error = fm_present_instance(present);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 
 	/* The window's surface. */
 	memset(&surface, 0, sizeof(surface));
@@ -220,6 +238,7 @@ fm_present_frame(
 		return error;
 
 	/* The frame's commands. */
+	started = fm_clock();
 	present->operation = "vkResetCommandBuffer";
 	error = vkResetCommandBuffer(present->command, 0U);
 	if (error != VK_SUCCESS)
@@ -253,6 +272,10 @@ fm_present_frame(
 	error = vkQueueSubmit(present->queue, 1U, &submit, present->fence);
 	if (error != VK_SUCCESS)
 		return error;
+
+
+	/* The time the commands took to record and submit. */
+	present->submit_ms = (unsigned)(fm_clock() - started);
 
 	/* Presents the image to the window. */
 	memset(&info, 0, sizeof(info));
