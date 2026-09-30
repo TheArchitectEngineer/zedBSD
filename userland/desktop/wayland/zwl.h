@@ -335,6 +335,13 @@ struct zwl_object {
 	unsigned place_pending;
 	/* A surface whose current image has not been shown yet. */
 	unsigned fresh;
+	/*
+	 * A window's parent (xdg_toplevel.set_parent: the parent's surface,
+	 * NULL for none or once it has gone), and for a sheet (ws090-p014,
+	 * sheet.c) when it began to show under the parent (0: not shown yet).
+	 */
+	struct zwl_object *parent_window;
+	uint64_t sheet_ms;
 	/* The glass look: the toplevel's title and application ID, and a maximized window's place and size to go back to. */
 	char title[ZWL_TITLE_MAX];
 	char app_id[64];
@@ -1115,6 +1122,11 @@ int zwl_keyboard_at(int32_t x, int32_t y);
 void zwl_keyboard_close(struct zwl_server *server, const char *reason);
 void zwl_keyboard_reserved(int32_t *right, int32_t *bottom);
 void zwl_keyboard_reserved_now(int32_t *right, int32_t *bottom);
+/* A window hung under its parent's title bar (sheet.c, ws090-p014). */
+struct zwl_object *zwl_sheet_parent(const struct zwl_object *surface);
+struct zwl_object *zwl_sheet_of(const struct zwl_object *parent);
+void zwl_sheet_set_parent(struct zwl_object *surface, struct zwl_object *parent);
+void zwl_sheet_surface_gone(struct zwl_object *surface);
 int zwl_keyboard_touch_down(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 int zwl_keyboard_touch_motion(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 int zwl_keyboard_touch_up(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);

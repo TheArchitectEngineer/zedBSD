@@ -11,11 +11,11 @@
  *
  * The chooser is a toplevel window of its own on the application's
  * connection (a kui_window made by keiui_window_open_shared), drawn with
- * the widgets on the CPU into wl_shm buffers, standing on the system's
- * glass when zdesktop has it.  Its objects live on the application's
- * default queue, so the chooser's input, configures and frames run while
- * the application dispatches that queue; the application needs no timer
- * for it.  The window wakes the chooser after the events that queued its
+ * the widgets on the CPU into wl_shm buffers, opaque on Files' pale
+ * ground (no glass shows through it, ws090-p014).  Its objects live on the
+ * application's default queue, so the chooser's input, configures and
+ * frames run while the application dispatches that queue; the application
+ * needs no timer for it.  The window wakes the chooser after the events that queued its
  * input; the chooser draws at most once a frame (a frame callback) and
  * keeps asking for frames while the list glides or a finger is down.
  *
@@ -51,9 +51,8 @@ struct kui_file_chooser {
 	struct wl_display *display;
 	struct kui_window *window;
 	struct kui_ui *ui;
-	struct keiland_glass *glass;
-	struct kui_rect shown[2];
-	int glass_sent;
+	/* Its titlebar in the sheet mode, hung under the parent's title bar (ws090-p014; NULL for a window of its own). */
+	struct keiland_titlebar *sheet;
 
 	/* The frame: its pixels and size, the canvas over them, the style, the frame asked for, and whether another is due. */
 	uint32_t *pixels;
@@ -72,10 +71,10 @@ struct kui_file_chooser {
 };
 
 static void chooser_woken(void *data);
+static void chooser_sheet(struct kui_file_chooser *chooser);
 static void chooser_event(struct kui_file_chooser *chooser, const struct kui_window_event *event);
 static void chooser_draw(struct kui_file_chooser *chooser);
 static int chooser_canvas(struct kui_file_chooser *chooser);
-static void chooser_glass(struct kui_file_chooser *chooser);
 static void chooser_answered(struct kui_file_chooser *chooser);
 static void chooser_window_gone(struct kui_file_chooser *chooser);
 static void chooser_frame_done(void *data, struct wl_callback *callback, uint32_t time);
@@ -177,13 +176,14 @@ kui_file_chooser_open(
 	/* It wakes the chooser for its input. */
 	keiui_window_set_notify(chooser->window, chooser_woken, chooser);
 
-	/* The glass under its cards, when zdesktop has glass. */
-	chooser->glass = keiland_glass_create(display, kui_window_surface(chooser->window));
+	/* Over a parent it is a sheet under the parent's title bar, where zdesktop has sheets; otherwise a window of its own (ws090-p014). */
+	if (parent != NULL)
+		chooser_sheet(chooser);
+
+	/* Opaque, without glass under it: the theme's pale ground and white cards (ws090-p014). */
 	chooser->style.text = &chooser->text;
 	chooser->style.theme = kui_theme_default();
 	chooser->style.glass = 0;
-	if (chooser->glass != NULL)
-		chooser->style.glass = 1;
 
 	/* Succeeded: the chooser shows itself once configured. */
 	(void)wl_display_flush(display);
@@ -329,8 +329,7 @@ chooser_draw(
 		return;
 	}
 
-	/* The glass under the cards, the next frame asked for while something moves, and the frame shown. */
-	chooser_glass(chooser);
+	/* The next frame asked for while something moves, and the frame shown. */
 	if (again && chooser->frame == NULL) {
 		chooser->frame = wl_surface_frame(kui_window_surface(chooser->window));
 		if (chooser->frame != NULL)
@@ -375,46 +374,6 @@ chooser_canvas(
 	return 0;
 }
 
-/* Sends the glass panels under the two cards when they changed. */
-static void
-chooser_glass(
-	struct kui_file_chooser *chooser)
-{
-	struct keiland_glass_panel panels[2];
-	struct kui_rect cards[2];
-	size_t index;
-	int same;
-	int error;
-
-	/* A window without glass has no panels. */
-	if (chooser->glass == NULL)
-		return;
-
-	/* The cards at this size, only when they changed. */
-	(void)keiui_chooser_panels((int)chooser->width, (int)chooser->height, cards, 2U);
-	same = memcmp(cards, chooser->shown, sizeof(cards));
-	if (chooser->glass_sent && same == 0)
-		return;
-
-	/* In zdesktop's terms. */
-	memset(panels, 0, sizeof(panels));
-	for (index = 0; index < 2U; index++) {
-		panels[index].x = cards[index].x;
-		panels[index].y = cards[index].y;
-		panels[index].width = cards[index].width;
-		panels[index].height = cards[index].height;
-		panels[index].radius = 16;
-		panels[index].kind = KEILAND_GLASS_CARD;
-	}
-
-	/* Sent with the frame. */
-	error = keiland_glass_set_panels(chooser->glass, panels, 2U);
-	if (error != 0)
-		return;
-	memcpy(chooser->shown, cards, sizeof(cards));
-	chooser->glass_sent = 1;
-}
-
 /* The answer is known: the window goes, and the answer is told after a roundtrip. */
 static void
 chooser_answered(
@@ -443,10 +402,10 @@ chooser_window_gone(
 		chooser->frame = NULL;
 	}
 
-	/* The glass before the surface it is on. */
-	if (chooser->glass != NULL) {
-		keiland_glass_destroy(chooser->glass);
-		chooser->glass = NULL;
+	/* The sheet's titlebar before its window. */
+	if (chooser->sheet != NULL) {
+		keiland_titlebar_destroy(chooser->sheet);
+		chooser->sheet = NULL;
 	}
 
 	/* The window, with its own shell (zdesktop lets a binding go alone, BUG-112). */
@@ -491,4 +450,34 @@ chooser_tell_done(
 
 	/* The answer, last: nothing of the chooser is touched after it. */
 	chooser->listener->done(chooser->data, chooser, chooser->model.result, chooser->model.answer, chooser->model.filter);
+}
+
+/*
+ * Asks zdesktop to hang the chooser under its parent's title bar: its
+ * titlebar in the sheet mode (KEILAND_VERSION 20).  A compositor without
+ * sheets leaves it a window of its own.
+ */
+static void
+chooser_sheet(
+	struct kui_file_chooser *chooser)
+{
+	int error;
+
+	/* The window's titlebar presentation. */
+	chooser->sheet = keiland_titlebar_create(chooser->display, chooser->window->toplevel, NULL, NULL);
+	if (chooser->sheet == NULL)
+		return;
+
+	/* The sheet mode, in one transaction. */
+	error = keiland_titlebar_begin(chooser->sheet);
+	if (error == 0)
+		error = keiland_titlebar_set_mode(chooser->sheet, KEILAND_TITLEBAR_SHEET);
+	if (error == 0)
+		error = keiland_titlebar_commit(chooser->sheet);
+
+	/* Refused: a window of its own, as before. */
+	if (error != 0) {
+		keiland_titlebar_destroy(chooser->sheet);
+		chooser->sheet = NULL;
+	}
 }

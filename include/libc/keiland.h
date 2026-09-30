@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations). */
-#define KEILAND_VERSION	19U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode). */
+#define KEILAND_VERSION	20U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -293,10 +293,17 @@ void keiland_context_menu_destroy(struct keiland_context_menu *context_menu);
  */
 struct keiland_titlebar;
 
-/* The presentation modes. */
+/*
+ * The presentation modes.  A sheet (KEILAND_VERSION 20, ws090-p014) has no
+ * titlebar of its own: the window hangs under its parent's titlebar
+ * (xdg_toplevel_set_parent), in front of the parent, which takes no input
+ * but its titlebar's while the sheet is open.  A compositor older than the
+ * sheet refuses it (ENOTSUP) and the window stays a window of its own.
+ */
 #define KEILAND_TITLEBAR_MENU		0U
 #define KEILAND_TITLEBAR_CONTROLS	1U
 #define KEILAND_TITLEBAR_TABS		2U
+#define KEILAND_TITLEBAR_SHEET		3U
 
 /* The controls' roles, which decide how zdesktop draws them. */
 #define KEILAND_CONTROL_BACK		1U

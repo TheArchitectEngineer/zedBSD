@@ -28,7 +28,7 @@
 /* The highest role, priority, mode, tab flags, tab strip options and focus mode. */
 #define TITLEBAR_ROLE_LAST		16U
 #define TITLEBAR_PRIORITY_LAST		2U
-#define TITLEBAR_MODE_LAST		2U
+#define TITLEBAR_MODE_LAST		3U
 #define TITLEBAR_FLAGS_ALL		7U
 #define TITLEBAR_OPTIONS_ALL		1U
 #define TITLEBAR_FOCUS_EDIT		1U
@@ -665,7 +665,7 @@ titlebar_edit(
 			return EPROTO;
 		value = titlebar_word(bytes, 0U);
 
-		/* The mode, one of the three. */
+		/* The mode, one of the four (the sheet's, ws090-p014, from version 3). */
 		if (opcode == REQUEST_SET_MODE) {
 			if (value > TITLEBAR_MODE_LAST) {
 				error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "an unknown mode");

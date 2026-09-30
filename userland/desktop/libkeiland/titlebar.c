@@ -30,6 +30,7 @@
 /* The oldest version of the protocol this library speaks, and the newest (2: drop_target). */
 #define TITLEBAR_VERSION	1U
 #define TITLEBAR_VERSION_DROP	2U
+#define TITLEBAR_VERSION_SHEET	3U
 
 /* The compositor's bounds of one titlebar (plan/ws070/titlebar-design.md section 2.2). */
 #define TITLEBAR_CONTROLS_MAX	64U
@@ -38,7 +39,7 @@
 #define TITLEBAR_TEXT_MAX	1023U
 #define TITLEBAR_ROLE_LAST	16U
 #define TITLEBAR_PRIORITY_LAST	2U
-#define TITLEBAR_MODE_LAST	2U
+#define TITLEBAR_MODE_LAST	3U
 #define TITLEBAR_FLAGS_ALL	7U
 #define TITLEBAR_OPTIONS_ALL	1U
 
@@ -236,9 +237,16 @@ keiland_titlebar_set_mode(
 	struct keiland_titlebar *titlebar,
 	unsigned mode)
 {
-	/* Inside a transaction, one of the three modes. */
+	uint32_t version;
+
+	/* Inside a transaction, one of the four modes. */
 	if (titlebar->updating == 0U || mode > TITLEBAR_MODE_LAST)
 		return EINVAL;
+
+	/* The sheet only where zdesktop knows it (ws090-p014). */
+	version = wl_proxy_get_version((struct wl_proxy *)titlebar->proxy);
+	if (mode == KEILAND_TITLEBAR_SHEET && version < TITLEBAR_VERSION_SHEET)
+		return ENOTSUP;
 
 	/* Succeeded: the request is sent. */
 	keiland_titlebar_v1_set_mode(titlebar->proxy, mode);
@@ -696,6 +704,8 @@ titlebar_bind(
 	version = TITLEBAR_VERSION;
 	if (search.version >= TITLEBAR_VERSION_DROP)
 		version = TITLEBAR_VERSION_DROP;
+	if (search.version >= TITLEBAR_VERSION_SHEET)
+		version = TITLEBAR_VERSION_SHEET;
 
 	/* The manager, bound when announced, is moved to the application's default queue. */
 	manager = NULL;
