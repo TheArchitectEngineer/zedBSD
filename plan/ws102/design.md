@@ -179,6 +179,19 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
   （`anim_from`・`anim_to`、1 つの窓）を複数の窓へ広げる。
 - **全画面の窓**は大きさを変えない。keyboard はその上に重ね、caret の位置は保証しない（制限として書く）。
 - flick の panel の cursor の矩形による寄せ（前の案）は、作業の領域を縮めるので要らない。
+- **keyboard による大きさの変更の知らせ（2026-09-30 ユーザー）**:「スクリーンキーボードの表示でサイズが変更されるとき、念のためウィンドウに特殊な
+  XDGメッセージを送りましょう。対応しているウィンドウであれば、現在のキャレットを画面の中心など見やすい位置にセンタリングできる、という寸法です。
+  libkeiuiの機能にしましょう。」
+  - 標準の xdg-shell には独自の event を足せないので、title bar（`keiland_titlebar_v1`）と同じ形の Keiland の独自の protocol を窓ごとに作る
+    （例 `keiland_keyboard_inset_v1`: manager の global と、xdg_toplevel ごとの object。`libwayland/*-protocol.c` に手書き、zdesktop の `protocol.c`）。
+  - event `inset(right, bottom, reason)`: keyboard が出る・閉じるために compositor がその窓の大きさか位置を変えるとき、最終の大きさの
+    `xdg_toplevel.configure` の**前に**送る。client は同じ configure の列で新しい大きさと一緒に受け取り、新しい大きさで描くときに caret を寄せる。
+    keyboard を閉じて戻すときも送る（right・bottom は 0）。大きさも位置も変えない窓（全画面）にも、keyboard が上に重なることを知らせるため送る。
+  - libkeiland: 薄い wrapper（`keiland_keyboard_inset_*`、KEILAND_VERSION 17）。bind できない compositor では何もしない。
+  - libkeiui（KUI_VERSION 7）: `kui_window` が object を作って event を受け、app の callback（任意）に渡す。既定の動き: focus を持つ編集の text の
+    view（`kui_text`）が、次の描画で caret の行を view の見えている範囲の縦の中央に寄せる（文書の先頭・末尾で寄せられない分は寄せない、
+    view が scroll できないときは何もしない）。全画面で keyboard が重なるときは、重ならない範囲の中央に寄せる。
+  - 対応していない窓（libkeiui を使わない app、他の toolkit）はこの object を作らず、今までどおり configure だけを受ける。
 
 ### 2.9 試験（QEMU、Windows の QEMU）
 
@@ -208,7 +221,8 @@ key は 4 列 × 4 行。左の 3 列が 12 key、右の列が ⌫・空白・�
 | p004 | L1 | 文字の送出（§2.5）: evdev と Shift、text-input の commit、組み立て中と text-input の無い app の扱い。guest の試験（Text Editor・ime-probe） | p003 | keyboard.c |
 | p005 | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる。K7 の回帰（C9・Notes の角・Wiseview）。1920x1080 の配置 | p004 | keyboard.c・shell.c |
 | p006 | L2 | QWERTY の面（shift の latch・記号・数字・矢印）と左下の gesture | p005 | keyboard.c・keyboard-layout.c |
-| p007 | L2 | 作業の領域（`zwl_keyboard_reserved`（right と bottom）、最大化の窓の animation の縮みと戻し、浮いた窓の animation の移動と戻し、desktop の層、§2.8） | p006 | shell.c・desktop.c・protocol.c |
+| p007 | L2 | 作業の領域（`zwl_keyboard_reserved`（right と bottom）、最大化の窓の animation の縮みと戻し、浮いた窓の animation の移動と戻し、desktop の層、§2.8） |
+| p015 | L2 | keyboard の inset の知らせ（`keiland_keyboard_inset_v1`、libkeiland の wrapper、libkeiui の `kui_window` の受け口と `kui_text` の caret の中央寄せ、Text Editor で確かめる、§2.8） | p007 | libwayland・protocol.c・libkeiland・libkeiui | p006 | shell.c・desktop.c・protocol.c |
 | p008 | L2 | 手書きの面（線・stub の `zwl_hand_recognize`・候補） | p006 | keyboard-hand.c |
 | p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | p006 | touch.c |
 | p010 | L3 | 計測の道具と基準値（遅れ・開く動きの frame） | p009 | plan/ws102/tests |

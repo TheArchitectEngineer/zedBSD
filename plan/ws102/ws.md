@@ -56,6 +56,7 @@ Resume point: p004 cleared 2026-09-30。次は L1 の p005（仕上げと回帰�
 | ws102-p005 | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | planned | p004 |
 | ws102-p006 | L2 | QWERTY の面と左下の gesture | planned | p005 |
 | ws102-p007 | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | planned | p006 |
+| ws102-p015 | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: Keiland の独自の protocol で、keyboard のために大きさ・位置を変える窓へ configure の前に知らせ、libkeiui が caret の行を見える範囲の中央に寄せる。Text Editor の長い文書で QWERTY を開き、caret が keyboard の上の範囲の中央付近（±1 行）に見える | planned | p007 |
 | ws102-p008 | L2 | 手書きの面（線・stub の認識・候補） | planned | p006 |
 | ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
 | ws102-p010 | L3 | 計測の道具と基準値（遅れ・開く動き） | planned | p009 |
