@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p013（text-input-v3 の受け口、KUI_VERSION 6）cleared（2026-09-30）。次は p007（WS089 の完了の後）・p008
+Resume point: p008（PDF Viewer・Image Viewer、KUI_VERSION 10）cleared（2026-09-30）。次は p011（Terminal・Notes）、p009・p010（Files）、p007（WS089 の完了の後）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -33,7 +33,7 @@ Resume point: p013（text-input-v3 の受け口、KUI_VERSION 6）cleared（2026
 | [ws090-p005](phase005/phase.md) | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | cleared（2026-09-30。KUI_VERSION 4、host 94/94、QEMU で pointer・key・touch・dialog と Text Editor の回帰、boot PASS） | p003 |
 | [ws090-p006](phase006/phase.md) | file chooser を libkeiui へ、libkeiland から取り除く（KEILAND_VERSION）、Text Editor の chooser・dialog・chip | cleared（2026-09-30。KUI_VERSION 5・KEILAND_VERSION 16、host-chooser 85/85、QEMU で Open・Save As・上書き・取り消し・BUG-112 の回避なしの開閉 13 回・dialog、boot PASS） | p004・p005 |
 | ws090-p007 | Settings を libkeiui へ（描画の層の共有の置き換えを含む） | planning | p005、WS089 の完了 |
-| ws090-p008 | PDF Viewer・Image Viewer を移す | planning | p006 |
+| [ws090-p008](phase008/phase.md) | PDF Viewer・Image Viewer を移す | cleared（2026-09-30。`kui_window`（Image Viewer は自前の画像の present を残し `KUI_PRESENT_NONE`）、`kui_file_chooser`、KUI_VERSION 10（全画面）、PDF の password の card は keyboard の inset で上へ。demo-s8-s9 前後 PASS、Image Viewer の guest 試験と touch-guest PASS、C9 10/10（2 件は再実行）、boot PASS） | p006 |
 | ws090-p009 | Files（その 1）: 描画の層と scroll | planning | p003、**WS094 の完了**（Files に `--desktop` を足している、2026-09-29 main） |
 | ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
 | ws090-p011 | Terminal・Notes: 窓（見せ方は無し）と scroll の model | planning | p004 |
