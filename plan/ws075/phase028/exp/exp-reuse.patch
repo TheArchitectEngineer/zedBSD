@@ -1,0 +1,267 @@
+diff --git a/userland/desktop/wayland/backdrop.c b/userland/desktop/wayland/backdrop.c
+index 98c623ac..8e79f450 100644
+--- a/userland/desktop/wayland/backdrop.c
++++ b/userland/desktop/wayland/backdrop.c
+@@ -134,6 +134,95 @@ zwl_backdrop_end(
+ 	compose->backdrop_set = backdrop->targets[0].set;
+ }
+ 
++/*
++ * ws075-p028 experiment: uses the blurred scene kept for this place of the
++ * window list when what it showed is unchanged (the signature); the glass
++ * drawn from now on samples it.  Returns 1 when it was used.
++ */
++int
++zwl_backdrop_reuse(
++	struct zwl_server *server,
++	unsigned place,
++	uint64_t signature)
++{
++	struct zwl_backdrop *backdrop;
++
++	/* Only a kept scene of the same signature. */
++	backdrop = &server->compose->backdrop;
++	if (backdrop->state != BACKDROP_READY || place >= ZWL_BACKDROP_CACHE)
++		return 0;
++	if (!backdrop->cache_valid[place] || backdrop->cache_signature[place] != signature)
++		return 0;
++
++	/* The glass from now on is on it. */
++	server->compose->backdrop_set = backdrop->cache[place].set;
++	backdrop->reused++;
++	return 1;
++}
++
++/*
++ * ws075-p028 experiment: zwl_backdrop_end, whose last pass writes the
++ * blurred scene into the kept image of this place of the window list.
++ */
++void
++zwl_backdrop_end_cached(
++	struct zwl_server *server,
++	VkCommandBuffer command,
++	unsigned place,
++	uint64_t signature)
++{
++	struct zwl_compose *compose;
++	struct zwl_backdrop *backdrop;
++	struct zwl_backdrop_target *last;
++	VkRenderPassBeginInfo pass;
++	unsigned round;
++	VkResult result;
++
++	/* The kept image of the place, made the first time. */
++	compose = server->compose;
++	backdrop = &compose->backdrop;
++	last = &backdrop->targets[0];
++	if (place < ZWL_BACKDROP_CACHE) {
++		if (!backdrop->cache_made[place]) {
++			result = backdrop_target(compose, &backdrop->cache[place]);
++			if (result == VK_SUCCESS)
++				backdrop->cache_made[place] = 1U;
++		}
++		if (backdrop->cache_made[place])
++			last = &backdrop->cache[place];
++	}
++
++	/* The scene's pass ends; blurred across and down, the last pass into the kept image. */
++	vkCmdEndRenderPass(command);
++	for (round = 0; round < BACKDROP_ROUNDS; round++) {
++		backdrop_blur(server, command, &backdrop->targets[0], &backdrop->targets[1], BACKDROP_SPREAD / (float)backdrop->width, 0.0f);
++		if (round + 1U == BACKDROP_ROUNDS) {
++			backdrop_blur(server, command, &backdrop->targets[1], last, 0.0f, BACKDROP_SPREAD / (float)backdrop->height);
++		} else {
++			backdrop_blur(server, command, &backdrop->targets[1], &backdrop->targets[0], 0.0f, BACKDROP_SPREAD / (float)backdrop->height);
++		}
++	}
++
++	/* The output's pass again, keeping what was drawn. */
++	memset(&pass, 0, sizeof(pass));
++	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
++	pass.renderPass = compose->pass_load;
++	pass.framebuffer = compose->framebuffer_now;
++	pass.renderArea.extent.width = compose->output.width;
++	pass.renderArea.extent.height = compose->output.height;
++	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
++	backdrop_viewport(command, compose->output.width, compose->output.height);
++	vkCmdSetScissor(command, 0U, 1U, &compose->scissor_now);
++
++	/* The glass from now on is on the blurred scene, kept for the next frames. */
++	compose->backdrop_set = last->set;
++	if (last != &backdrop->targets[0]) {
++		backdrop->cache_valid[place] = 1U;
++		backdrop->cache_signature[place] = signature;
++	}
++	backdrop->drawn++;
++}
++
+ /*
+  * Lets the glass drawn from now on (the system bar, the menus) sample the
+  * blurred wallpaper again.
+@@ -170,6 +259,17 @@ zwl_backdrop_destroy(
+ 		if (backdrop->targets[index].set != VK_NULL_HANDLE)
+ 			zwl_compose_set_put(compose, backdrop->targets[index].set);
+ 	}
++	for (index = 0; index < ZWL_BACKDROP_CACHE; index++) {
++		if (!backdrop->cache_made[index])
++			continue;
++		vkDestroyFramebuffer(compose->device, backdrop->cache[index].framebuffer, NULL);
++		vkDestroyImageView(compose->device, backdrop->cache[index].view, NULL);
++		vkDestroyImage(compose->device, backdrop->cache[index].image, NULL);
++		vkFreeMemory(compose->device, backdrop->cache[index].memory, NULL);
++		zwl_compose_set_put(compose, backdrop->cache[index].set);
++		backdrop->cache_made[index] = 0U;
++		backdrop->cache_valid[index] = 0U;
++	}
+ 
+ 	/* The passes (the output's loading one is the damage's too, made again with the next output). */
+ 	if (backdrop->pass != VK_NULL_HANDLE)
+diff --git a/userland/desktop/wayland/compose.h b/userland/desktop/wayland/compose.h
+index 34719929..05d4d5f7 100644
+--- a/userland/desktop/wayland/compose.h
++++ b/userland/desktop/wayland/compose.h
+@@ -88,12 +88,21 @@ struct zwl_backdrop_target {
+  * blur; pass draws them (compose->pass_load takes the output's pass up again).  It is
+  * made the first time a frame needs it and lives as long as the output.
+  */
++#define ZWL_BACKDROP_CACHE	16U
++
+ struct zwl_backdrop {
+ 	unsigned state;
+ 	uint32_t width;
+ 	uint32_t height;
+ 	VkRenderPass pass;
+ 	struct zwl_backdrop_target targets[2];
++	/* ws075-p028 experiment: the blurred scene under the window at each place of the list, and what it showed. */
++	struct zwl_backdrop_target cache[ZWL_BACKDROP_CACHE];
++	uint64_t cache_signature[ZWL_BACKDROP_CACHE];
++	unsigned cache_valid[ZWL_BACKDROP_CACHE];
++	unsigned cache_made[ZWL_BACKDROP_CACHE];
++	uint32_t reused;
++	uint32_t drawn;
+ };
+ 
+ /* How many frames' damage is kept, for images that missed that many frames. */
+@@ -208,6 +217,8 @@ VkResult zwl_compose_load_pass(struct zwl_compose *compose);
+ /* The backdrop of the glass (backdrop.c). */
+ int zwl_backdrop_begin(struct zwl_server *server, VkCommandBuffer command);
+ void zwl_backdrop_end(struct zwl_server *server, VkCommandBuffer command);
++int zwl_backdrop_reuse(struct zwl_server *server, unsigned place, uint64_t signature);
++void zwl_backdrop_end_cached(struct zwl_server *server, VkCommandBuffer command, unsigned place, uint64_t signature);
+ void zwl_backdrop_reset(struct zwl_server *server);
+ void zwl_backdrop_destroy(struct zwl_compose *compose);
+ 
+diff --git a/userland/desktop/wayland/main.c b/userland/desktop/wayland/main.c
+index 0c811efb..b4401bd6 100644
+--- a/userland/desktop/wayland/main.c
++++ b/userland/desktop/wayland/main.c
+@@ -9,6 +9,7 @@
+  * A finite, fullscreen Wayland service using independent shared GPU resources.
+  */
+ 
++#include "compose.h"
+ #include "desktop.h"
+ #include "zwl.h"
+ #include "toplevel.h"
+@@ -1013,6 +1014,13 @@ zwl_perf_report(
+ 		    (double)perf->compose_cycles / per_ms / (double)perf->compose_frames);
+ 	}
+ 
++	/* ws075-p028 experiment: the backdrops kept and used again, and drawn. */
++	if (server->compose != NULL) {
++		printf("ZWL PERF backdrop reused=%u drawn=%u\n", server->compose->backdrop.reused, server->compose->backdrop.drawn);
++		server->compose->backdrop.reused = 0U;
++		server->compose->backdrop.drawn = 0U;
++	}
++
+ 	/* wl_shm's copies: how many, and the CPU time of one. */
+ 	if (perf->shm_copies != 0) {
+ 		printf("ZWL PERF shm copies=%u copy_ms=%.3f\n",
+diff --git a/userland/desktop/wayland/protocol.c b/userland/desktop/wayland/protocol.c
+index e718abee..30c29f1c 100644
+--- a/userland/desktop/wayland/protocol.c
++++ b/userland/desktop/wayland/protocol.c
+@@ -749,6 +749,9 @@ surface_commit(
+ 	uint32_t replaced;
+ 	int error;
+ 
++	/* ws075-p028 experiment: the client's content changed (the backdrop's reuse). */
++	surface->client->commits++;
++
+ 	/* The viewport's pending source and destination apply with the commit (viewport.c). */
+ 	zwl_viewport_commit(surface);
+ 
+diff --git a/userland/desktop/wayland/shell.c b/userland/desktop/wayland/shell.c
+index 81ff1b1a..adbc33c9 100644
+--- a/userland/desktop/wayland/shell.c
++++ b/userland/desktop/wayland/shell.c
+@@ -1806,10 +1806,45 @@ draw_backdrop(
+ 	float position)
+ {
+ 	struct glass_shape shape;
++	struct shell_rect body;
++	uint64_t signature;
++	uint64_t words[8];
+ 	unsigned index;
++	unsigned word;
+ 	int started;
+ 	int shown;
+ 
++	/*
++	 * ws075-p028 experiment: what the scene shows (the output, the desktops'
++	 * place, each window below: its place and size, its client's commits,
++	 * its image), hashed; the scene kept for this place of the list is used
++	 * again when that is unchanged.
++	 */
++	signature = 1469598103934665603ULL;
++	words[0] = server->width;
++	words[1] = server->height;
++	memcpy(&words[2], &position, sizeof(position));
++	for (word = 0; word < 3U; word++)
++		signature = (signature ^ words[word]) * 1099511628211ULL;
++	for (index = 0; index < below; index++) {
++		shown = window_shown(server, windows[index], 0.0f, position);
++		if (!shown)
++			continue;
++		body_rect(server, windows[index], &body);
++		words[0] = (uint64_t)(uintptr_t)windows[index];
++		words[1] = (uint64_t)(uint32_t)body.x | ((uint64_t)(uint32_t)body.y << 32);
++		words[2] = (uint64_t)(uint32_t)body.width | ((uint64_t)(uint32_t)body.height << 32);
++		words[3] = windows[index]->client->commits;
++		words[4] = (uint64_t)(uintptr_t)windows[index]->current;
++		words[5] = windows[index]->maximized;
++		words[6] = windows[index]->desktop;
++		words[7] = index;
++		for (word = 0; word < 8U; word++)
++			signature = (signature ^ words[word]) * 1099511628211ULL;
++	}
++	if (zwl_backdrop_reuse(server, below, signature))
++		return;
++
+ 	/* The backdrop's pass; a device without it keeps the blurred wallpaper. */
+ 	started = zwl_backdrop_begin(server, command);
+ 	if (!started)
+@@ -1835,8 +1870,8 @@ draw_backdrop(
+ 		draw_window_blurred(server, command, windows[index]);
+ 	}
+ 
+-	/* The output's pass again, and the scene blurred for the glass. */
+-	zwl_backdrop_end(server, command);
++	/* The output's pass again, and the scene blurred for the glass (kept for the next frames, ws075-p028 experiment). */
++	zwl_backdrop_end_cached(server, command, below, signature);
+ }
+ 
+ /*
+diff --git a/userland/desktop/wayland/zwl.h b/userland/desktop/wayland/zwl.h
+index 70bd1a76..fab90dcb 100644
+--- a/userland/desktop/wayland/zwl.h
++++ b/userland/desktop/wayland/zwl.h
+@@ -494,6 +494,8 @@ struct zwl_client {
+ 	struct zwl_server *server;
+ 	int fd;
+ 	uint64_t number;
++	/* ws075-p028 experiment: how many surface commits the client made (the backdrop's reuse). */
++	uint64_t commits;
+ 	unsigned fatal;
+ 	uint64_t fatal_time;
+ 	struct zwl_object *objects;
