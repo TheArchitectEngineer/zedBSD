@@ -1660,7 +1660,11 @@ factory_fence(
 	surface->acquire[surface->acquire_count].generation = generation;
 	surface->acquire_count++;
 
-	/* Succeeded. */
+	/* Names the fence when the per-frame lines were asked for (a present's own fence is at its first generation, ws103-p005). */
+	if (factory->client->server->log_frames)
+		printf("ZWL ACQUIRE_FENCE client=%llu surface=%u generation=%llu\n", (unsigned long long)factory->client->number, surface->id, (unsigned long long)generation);
+
+	/* Succeeded: the next commit waits for this fence too. */
 	return 0;
 }
 

@@ -62,6 +62,14 @@ vkCreateFence(
 		return status;
 	}
 
+	/*
+	 * An unsignaled new native fence needs no reset before its first
+	 * submission (vulkan_external_fence_prepare_locked), which spares the
+	 * WSI's per-present fences a renderer round trip (ws103-p005).
+	 */
+	if ((pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) == 0U)
+		sync->native_unsubmitted = VK_TRUE;
+
 	/* Publish the standard ABI handle only after native creation succeeds. */
 	handle = vulkan_nondispatchable_handle(&sync->object);
 	*pFence = (VkFence)(uintptr_t)handle;

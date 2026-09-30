@@ -96,6 +96,13 @@ struct wsi_present_fence {
 	VkFence fence;
 	int fd;
 	VkBool32 shared;
+	/*
+	 * True for a slot whose fences are sent to a Wayland compositor: each
+	 * present makes a new fence there and none is reset (ws103-p005).  A slot
+	 * keeps this for its lifetime, so a display job never resets a fence a
+	 * compositor may still be polling.
+	 */
+	VkBool32 sent;
 	VkBool32 busy;
 };
 
@@ -1893,6 +1900,7 @@ present_fence_prepare(
 	struct gpu_fence_state state;
 	const VkAllocationCallbacks *allocator;
 	VkBool32 shared_fence;
+	VkBool32 fresh;
 	VkResult error;
 	uint32_t index;
 	int status;
@@ -1908,13 +1916,37 @@ present_fence_prepare(
 		}
 	}
 
+	/*
+	 * A fence sent to a Wayland compositor stands for this present alone
+	 * (ws103-p005): the compositor keeps its fd and decides readiness by
+	 * polling it, which a later reset of a reused fence would mislead.  So a
+	 * job with a Wayland target does not reuse a slot's fence: it takes a slot
+	 * whose fences are sent, gives up the previous present's fence there
+	 * (signaled, as that job retired) and the fd sent with it, the
+	 * compositor's copy of the fd keeping the kernel fence alive, and makes a
+	 * new fence below.  A job for the display alone keeps reusing the fence
+	 * of a slot whose fences are never sent, its generation never leaving
+	 * this library.
+	 */
+	fresh = VK_FALSE;
+	if (shared_fence != VK_FALSE) {
+		/* Looks for a Wayland target among the job's swapchains. */
+		for (index = 0U; index < job->count; index++) {
+			/* A Wayland target is the one whose compositor takes the fence with an early commit. */
+			if (job->chains[index]->surface->platform->commit_early != NULL)
+				fresh = VK_TRUE;
+		}
+	}
+
 	/* Only idle slots of the right payload type can be borrowed by a new job. */
 	pthread_mutex_lock(&swapchain_mutex);
 
 	/* Cache reuse is exclusive until the previous job has retired every native request. */
 	for (completion = job->worker->fences; completion != NULL; completion = completion->next) {
-		/* Payload type cannot change while a cached native fence and fd remain alive. */
-		if (completion->busy == VK_FALSE && completion->shared == shared_fence)
+		/* Payload type, and whether its fences are sent, cannot change while a cached native fence and fd remain alive. */
+		if (completion->busy == VK_FALSE &&
+		    completion->shared == shared_fence &&
+		    completion->sent == fresh)
 			break;
 	}
 
@@ -1934,6 +1966,7 @@ present_fence_prepare(
 		memset(completion, 0, sizeof(*completion));
 		completion->fd = -1;
 		completion->shared = shared_fence;
+		completion->sent = fresh;
 		completion->busy = VK_TRUE;
 
 		/* The cache retains this candidate even if its later native fence creation fails. */
@@ -1949,7 +1982,19 @@ present_fence_prepare(
 	job->completion = completion;
 	allocator = swapchain_allocator(&job->allocator);
 
-	/* First use constructs native ownership; later uses advance the completed payload generation. */
+	/* Gives up the previous present's fence of a reused slot whose fences are sent. */
+	if (fresh != VK_FALSE && completion->fence != VK_NULL_HANDLE) {
+		vkDestroyFence((VkDevice)job->queue->device, completion->fence, allocator);
+		completion->fence = VK_NULL_HANDLE;
+	}
+
+	/* Gives up this library's fd of it; the compositor holds its own. */
+	if (fresh != VK_FALSE && completion->fd >= 0) {
+		close(completion->fd);
+		completion->fd = -1;
+	}
+
+	/* First use (and every Wayland present) constructs native ownership; later display uses advance the completed payload generation. */
 	if (completion->fence == VK_NULL_HANDLE) {
 		/* Ordinary Vulkan creation owns the optional shared completion payload. */
 		memset(&fence, 0, sizeof(fence));

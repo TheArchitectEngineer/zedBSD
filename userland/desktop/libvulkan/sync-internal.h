@@ -23,6 +23,12 @@ struct vulkan_sync {
 	uint64_t notification;
 	VkExternalFenceHandleTypeFlags export_types;
 	struct vulkan_external_fence *external;
+	/*
+	 * True from the creation of an unsignaled fence until its first
+	 * submission is prepared: the native fence was never signaled, so the
+	 * preparation needs no native reset.
+	 */
+	VkBool32 native_unsubmitted;
 };
 
 /* These helpers never acquire a device mutex; their caller already owns it. */

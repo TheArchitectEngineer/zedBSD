@@ -389,6 +389,17 @@ vulkan_external_fence_prepare_locked(
 		return VK_SUCCESS;
 	}
 
+	/*
+	 * A native fence never submitted since its unsignaled creation has
+	 * nothing to reset; its first preparation ends that state.
+	 */
+	if (sync->native_unsubmitted) {
+		sync->native_unsubmitted = VK_FALSE;
+		*fd = descriptor;
+		*generation = state.generation;
+		return VK_SUCCESS;
+	}
+
 	/* An imported alias may have reset the shared payload without resetting this native object. */
 	vulkan_writer_init_for_object(&writer, &sync->object);
 	vulkan_command_begin(&writer, VULKAN_OPCODE_vkResetFences);
