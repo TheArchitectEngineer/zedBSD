@@ -108,3 +108,38 @@ p016 の候補 2 つを libGLESv2 の中だけで実装する。toolchain と No
   - (a) Noct の map の後の copy（95 ms の大部分）を無くす: 連続の call で buffer を GPU に置いたままにする。Noct の変更で、toolchain・D5 の扱い。
   - (b) 見本を計算の密度の高いものにする。ユーザーの確認が要る（ws.md の L2 の候補）。
 - 目標の向きの確認: ws.md は「GPU ≤ CPU / 3」、Q1 の依頼の文は「GPU ≤ CPU × 3」。QEMU ではどちらにも届いていない。
+
+## 5330 の追記（2026-09-30、P1 が Q1 の依頼で計測）
+
+5330 の QEMU の VFIO passthrough（`plan/ws075/tests/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock` の下）。素の 5330 ではない。
+
+- image: `plan/ws101/tests/demo/build-s13-image.sh` と同じ中身を、main（p017 を取り込んだ後、wt/ws075 の 6b409c04）から `build/ws075-s13` に作った。
+  accel 付きの Noct は `.claude/worktrees/ws101-compute/build/ws101-p011-hw/rootfs/bin/noct`（Noct と toolchain は build していない）。
+  - 注: 同じ directory の `bin/noct` は accel 無しの build（「GPU acceleration is not available in this build.」、1 回目の run で判明）。accel 付きは
+    `rootfs/bin/noct`（libGLESv2 を読む）。
+  - 注: `build-s13-image.sh` に `NOCT=...` を環境変数で渡すと、make が同じ名前の変数（host の noct）として使い、image の build が
+    `native-swap-1024m.img` で失敗する（guest の ELF を host で実行しようとする）。script の中の変数名を変えた複写で build した（元の file は変えていない）。
+- 手順（`build/ws075-p029/s13-run.sh`）: session → App Home → Terminal に `sh /usr/share/gpudemo/s13.sh`（s13-hw.sh と同じ）。続けて同じ Terminal で
+  time-split.sh の 2 つの run（`/bin/noct -O2 -j --gc-tenure-size=100000000 [--gpu] /usr/share/gpudemo/mix.nct 4000000 6`、GPU は
+  `KEI_GLES_COMPUTE_TRACE=2`）を /home/kei に書かせ、stop の後に image から読んで `plan/ws101/tests/time-split.py` で分けた。
+
+**S13（5330、1 回）**: 「CPU: 10 ms a run」「GPU: 221 ms a run (6 kernels ran on the GPU)」「The CPU is 22.1 times as fast as the GPU.」
+「The results are the same on the CPU and the GPU.」（画面 `build/ws075-shots/ws101-p017-5330-s13.png`、wt/ws075 の worktree）。
+p015 の実機は 27.7 倍（p011 の GPU 260 ms / CPU 10 ms）。
+
+**GPU の内訳（time-split、5330、1 回、4000000 × 6 call）**: checksum は CPU と同じ（sum=-1291579143 xor=757251536）、check wrong=0。
+
+| call | total | libGLESv2 | 外（Noct） | buffer-data | device-buffer | record | gpu-wait |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0（最初） | 373 | 328 | 45 | 9 | 15 | 0 | 303 |
+| 1 | 229 | 192 | 37 | 20 | 5 | 0 | 167 |
+| 2〜5 | 210〜218 | 175〜183 | 35〜36 | 8 | 0 | 0〜1 | 167〜174 |
+| 中央値（最初を除く） | **215** | 180 | 35 | 8 | **0** | 0 | **167** |
+
+（ms。upload・readback・map-other・delete・collect は全て 0〜1。one-time: egl-initialize 1、create-pbuffer 2、compile-shader 1、link-program 1）
+
+- p017 の device buffer の使い回しは実機でも効いている（2 回目の call から device-buffer 0 ms）。
+- 1 call の 215 ms のうち 167 ms（78%）は GPU の submit と完了の待ち（gpu-wait）。Noct 自身は 35 ms、libGLESv2 の copy は 8 ms。
+  QEMU（Venus）の 212 ms と同じくらいだが、内訳は GPU の待ちが大半（QEMU は Noct 95・待ち 70〜79）。
+- CPU は 1 run 10 ms（CPU の 22 倍の遅さ）。GPU の待ちの中身（i915 の実行器の compute の dispatch の実行時間か、同期の往復か）は
+  この計測では分からない。次の切り分けは i915 の engine の時間（`plan/ws075/tests/hdmi/engine-gdb.sh` の session ごとの engine・queue・round）。
