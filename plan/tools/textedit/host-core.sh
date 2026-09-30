@@ -9,10 +9,12 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/textedit/host-core}
 mkdir -p "$(dirname "$out")/inc"
 cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
+ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
 D=userland/desktop/textedit
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -I$D -I"$(dirname "$out")/inc" -Iuserland/desktop/libtruetype \
 	plan/tools/textedit/host-core.c $D/buffer.c $D/undo.c $D/file.c $D/layout.c $D/find.c $D/edit.c \
 	$D/app.c $D/draw.c $D/canvas.c $D/text.c userland/desktop/libtruetype/*.c \
 	userland/desktop/libkeiui/input.c userland/desktop/libkeiui/scroll.c userland/desktop/libkeiui/text-touch.c \
-	userland/desktop/libkeiui/canvas.c userland/desktop/libkeiland/scroll.c -lm -o "$out"
+	userland/desktop/libkeiui/canvas.c userland/desktop/libkeiland/scroll.c userland/desktop/picture/color-glyph.c \
+	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"
 "$out"

@@ -58,4 +58,5 @@ p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 まで
 - Q1 の案: sheet は opt-in（Keiland の protocol の flag。他の toolkit の `set_parent` の dialog は今のまま）。sheet の窓は、自分の title bar を持たず、親の浮いた
   title bar の下辺に上端を付けて親の横の中央に置き（幅は親より狭く）、上から滑り出す。親を動かす・前に出す・最小化する・Wiseview では一緒に扱う。
   sheet が開いている間は、親の本体への入力を止める（親の title bar の drag だけは効く）。
+- 同日の追加（ユーザー）:「File Chooserは透過ウィンドウをやめましょう。」→ p014 の中で、file chooser の窓（sheet・独立の両方）を不透明の地にする。
 
