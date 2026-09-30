@@ -1215,11 +1215,18 @@ show_page(
 	struct pv_app *app,
 	size_t index)
 {
+	size_t current;
+
 	/* Only a page the document has. */
 	if (!app->has_document)
 		return;
 	if (index >= app->document.count)
 		index = app->document.count - 1;
+
+	/* Another page than the one shown: the turn's time starts (main.c logs when its frame is shown). */
+	current = pv_app_current_page(app);
+	if (index != current && app->turn_at == 0U)
+		app->turn_at = pv_clock();
 
 	/* Scrolls or switches to it. */
 	if (app->mode == PV_MODE_SCROLL) {
@@ -1267,6 +1274,8 @@ start_turn(
 	if (direction < 0)
 		distance = pv_app_neighbour_distance(app, app->page - 1);
 	app->turning = 1;
+	if (direction != 0 && app->turn_at == 0U)
+		app->turn_at = pv_clock();
 	app->turn_from = app->swipe;
 	app->turn_to = -(double)direction * distance;
 	app->turn_direction = direction;
