@@ -220,6 +220,7 @@ gles_buffer_fetch(
 	struct gles_buffer *buffer)
 {
 	struct gles_state *state;
+	uint64_t started;
 	int status;
 
 	/* Nothing written by the device. */
@@ -230,13 +231,17 @@ gles_buffer_fetch(
 	state = gles_state(context);
 	if (state == NULL)
 		return -1;
+	started = gles_time_begin();
 	status = gles_frame_wait(context, state, buffer->used);
+	gles_time_end("frame-wait", started, 0U);
 	if (status != 0)
 		return -1;
 
-	/* The device copy's bytes (host visible) are the buffer's. */
-	if (buffer->mapped != NULL && buffer->device_size >= buffer->size && buffer->size != 0U)
+	/* The device copy's bytes (host visible) are the buffer's, unless they live in it (ws101-p017). */
+	started = gles_time_begin();
+	if (!buffer->on_device && buffer->mapped != NULL && buffer->device_size >= buffer->size && buffer->size != 0U)
 		memcpy(buffer->data, buffer->mapped, buffer->size);
+	gles_time_end("readback", started, buffer->size);
 
 	/* Succeeded: the bytes are the newest again. */
 	buffer->gpu_written = 0;

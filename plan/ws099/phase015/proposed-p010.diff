@@ -1,0 +1,38 @@
+--- a/plan/ws079/tests/zdesktop-p010.sh	2026-09-29 19:04:30.904654527 +0900
++++ b/plan/ws079/tests/zdesktop-p010.sh	2026-09-30 12:07:31.202315899 +0900
+@@ -16,7 +16,7 @@
+ #     fullscreen (the compositor's configure).
+ #  5. App Home opened over fullscreen Notes; the top-right swipe closes Home
+ #     and leaves Notes (already on top and fullscreen).
+-#  6. Over fullscreen Notes the bottom edge's swipe opens Wiseview.
++#  6. Over fullscreen Notes the bottom edge's swipe takes it back to a window (ws099-p015), not Wiseview.
+ #  7. App Home open without Notes: the top-right swipe closes Home and starts it.
+ #  8. On App Home the bottom edge's swipe closes Home and does not open Wiseview.
+ #  9. On the desktop the bottom edge's swipe opens Wiseview; a stroke that
+@@ -135,7 +135,7 @@
+ pointer up sleep 8000
+ expect_log 'CORNER commit via=distance'
+ expect_log 'CORNER notes launch pid='
+-expect_log 'MODE fullscreen'
++expect_log 'CONFIGURE client=[0-9]+ surface=[0-9]+ serial=[0-9]+ width=1280 height=800 fullscreen=1'
+ expect_count "stand-ins after the swipe" "$(notes_running)" 1
+ shot notes-fullscreen --expect 640,400,fdf6e3 --expect 1275,4,fdf6e3 --expect 4,796,fdf6e3 || status=1
+ 
+@@ -171,12 +171,13 @@
+ expect_count "already, after the swipe on Home" "$(count 'CORNER notes surface=[0-9]* already')" $((already + 1))
+ shot home-to-notes --expect 640,400,fdf6e3 || status=1
+ 
+-# 6. Over fullscreen Notes the bottom edge opens Wiseview; a click beside the tiles closes it.
++# 6. Over fullscreen Notes the bottom edge's swipe takes it back to a window (ws099-p015), and Wiseview does not open.
+ opening=$(count 'WISEVIEW opening')
++backs=$(count 'GLASS unfullscreen surface=[0-9]+ via=swipe errno=0')
+ pointer $(stroke 640 796 640 476 10 30) up sleep 1500
+-expect_count "Wiseview over fullscreen Notes" "$(count 'WISEVIEW opening')" $((opening + 1))
+-shot wiseview-over-notes >/dev/null
+-pointer move 20 700 sleep 200 down sleep 60 up sleep 1500
++expect_count "Wiseview over fullscreen Notes" "$(count 'WISEVIEW opening')" "$opening"
++expect_count "fullscreen Notes back to a window" "$(count 'GLASS unfullscreen surface=[0-9]+ via=swipe errno=0')" $((backs + 1))
++shot notes-swiped-back >/dev/null
+ 
+ # 7. App Home open without Notes: the top-right swipe closes Home and starts Notes.
+ guest "$stop_notes" >/dev/null

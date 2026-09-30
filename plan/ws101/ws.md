@@ -68,8 +68,8 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p011](phase011/phase.md) | **L1** Noct の toolchain の差分（design §4.1、D2 の形: target だけの patch の一覧と level、`ZEDBSD_NOCT_ACCEL`）を `plan/ws101/p011-toolchain/` に用意し main が当てる。WS101 の分: G3 の見本 `mix.nct`（N = 4,000,000、整数）、型名と offload の確認の方法、CPU と GPU の時間の測り方、試験の script | cleared（2026-09-30。main が当てた（189c3bf1）。5330 の passthrough で G3 が CPU と全要素一致・dispatch 8・S13 の script PASS、Venus も一致。時間: CPU 10 ms、GPU 260 ms） | p010、D2・D3・D5（決定済み） |
 | ws101-p014 | **L1** G3 が動く: 5330 の passthrough で `noct --gpu mix.nct` の結果が CPU の run と全要素で一致し、offload が起きた（DECLINED で CPU に戻っていない）証拠がある。Venus でも一致 | p011 の中で満たした（2026-09-30、[phase011](phase011/phase.md)）。残りは無い | p011（main の適用） |
 | [ws101-p015](phase015/phase.md) | **L1** デモの場面 S13: デモの image（`ZEDBSD_NOCT_ACCEL := y`、main が構成に `gpudemo` を足す）の Terminal から `sh /usr/share/gpudemo/s13.sh` が passthrough で通る（script は p011 で作り、試験の image で通った） | cleared（2026-09-30。kei の Terminal で通った、表示「The CPU is 27.7 times as fast as the GPU.」「The results are the same」） | p011、main の構成の変更 |
-| ws101-p016 | **L2** 時間の分解: CPU の run と GPU の run の各部分（EGL の初期化、shader の compile、upload、dispatch、readback）を passthrough と素の 5330 で測り、3 倍に何が足りないかを出す | planned | p015 |
-| ws101-p017 | **L2** 3 倍: p016 で最も大きい 1 つか 2 つを直す（例: 呼び出しごとの buffer の作り直し、readback の経路、barrier の数）。素の 5330 で GPU の中央値 ≤ CPU の中央値 / 3 | planned | p016 |
+| [ws101-p016](phase016/phase.md) | **L2** 時間の分解: CPU の run と GPU の run の各部分（EGL の初期化、shader の compile、upload、dispatch、readback）を passthrough と素の 5330 で測り、3 倍に何が足りないかを出す | cleared（2026-09-30、QEMU の Venus だけ。道具 `KEI_GLES_COMPUTE_TRACE=2`・`time-split.sh`。GPU の call 835 ms のうち buffer の解放 341・作成 144・16 MB の copy 195、計算の待ち 70。5330 は lock が使用中で未実施） | p015 |
+| [ws101-p017](phase017/phase.md) | **L2** 3 倍: p016 で最も大きい 1 つか 2 つを直す（例: 呼び出しごとの buffer の作り直し、readback の経路、barrier の数）。素の 5330 で GPU の中央値 ≤ CPU の中央値 / 3 | uncleared（2026-09-30。libGLESv2 の device の copy の使い回しと device の上の bytes を実装、QEMU の GPU の call 835 → 212 ms（CPU 23 ms、約 9 倍の差）。判定の 5330 は lock が使用中で未実施） | p016 |
 | ws101-p012 | **L3** 素の 5330: G1 の受け入れの残り（vkcs 21 step を素の機械で）、G3 の時間、GPU が固まったときの回復の手順。ユーザーの確認 | planned | p017 |
 | ws101-p018 | **L3** 10 倍: 素の 5330 で GPU の中央値 ≤ CPU の中央値 / 10（届かなければ到達した倍率と理由を記録して段を閉じる） | planned | p012 |
 | ws101-p013 | 規約の全文との照合（WS101 の全ての変更）と回帰（host、vkx・vke1・vke2・vkc・vkcs・GLES、boot test） | planned | 各段の終わりに部分的に、最後に全体 |
@@ -122,3 +122,11 @@ SSBO の atomic は p002・p005 に入れた）ので、p006・p007 が遅れた
   台本では Terminal でそれを打つだけにする。デモ中の失敗の余地を減らすため。
 - **L2 の作業像**: 素の 5330 で測るので、ユーザーの起動が 1 回要る。その後は ssh で `noct-gpu.sh` を 5 回走らせる。3 倍に届かなければ、
   p016 で時間を分解（upload・dispatch・readback・JIT）して一番大きいものから直す。
+
+### ユーザーの判断（2026-09-30、p017 の後）
+
+p017 で QEMU の GPU の call は 835 → 212 ms（CPU 23 ms、S13 は「The CPU is 10.6 times as fast as the GPU」）。見本は 16 MB の copy が主で計算が軽く、
+L2 の「GPU ≤ CPU / 3」には届かない。次の手（計算の重い見本に替える・Noct の copy を減らす・両方・今のまま）を尋ね、ユーザーの答えは **「今のまま」**。
+S13 は今の見本のまま「動くこと」を見せ、WS101 の最適化はここで止める。p017 は uncleared（到達した倍率と理由は phase017/phase.md）のまま段を閉じ、
+p012・p018 は再検討のきっかけ（ユーザーが再開を言うとき）まで保留。5330 の p017 の値は P1 の実機の run で追記する。
+

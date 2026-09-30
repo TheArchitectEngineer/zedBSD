@@ -8,13 +8,11 @@
 /*
  * Shared state for the Wayland compositor.
  *
- * zdesktop has two modes (WS035 compositing design, D0).  In window mode it draws
- * a background and every window, bottom to top, with Vulkan into a
+ * zdesktop draws in window mode (WS035 compositing design, D0): a background
+ * and every window, bottom to top, fullscreen ones too, with Vulkan into a
  * VK_KHR_display swapchain (compose.c); a window's image is imported once
- * per wl_buffer (import.c).  When the topmost window is fullscreen and its
- * image can be scanned out as the whole output, it enters fullscreen mode:
- * the swapchain is destroyed and that image is presented directly with
- * GPU_DISPLAY_PRESENT (display.c).  The WS014/WS029 scope had
+ * per wl_buffer (import.c).  The direct scanout of a fullscreen window's
+ * image (fullscreen mode) was removed in ws099-p015.  The WS014/WS029 scope had
  * no input; WS031 p013 extends it with one seat ("seat0", wl_seat v5):
  *
  * - Every /dev/input/eventN reporting REL_X+REL_Y or ABS_X+ABS_Y is a
@@ -285,9 +283,8 @@ struct zwl_object {
 	unsigned acknowledged;
 	uint32_t configure_serial;
 	uint64_t commit_order;
-	/* A buffer's Vulkan image for window mode, and whether it can be the whole output. */
+	/* A buffer's Vulkan image for window mode. */
 	struct zwl_import *import;
-	unsigned scanout;
 	/* A surface's window: place, stacking (map order, lowest at the bottom), virtual desktop and fullscreen state. */
 	unsigned mapped;
 	uint64_t map_order;
@@ -636,6 +633,14 @@ struct zwl_server {
 	uint32_t windows;
 	uint64_t mode_switch_ms;
 	/*
+	 * An opening or closing of App Home or Wiseview waiting for its first
+	 * frame (ws099-p002, C5): what it is (NULL for none) and when it was
+	 * asked for.  The next frame is drawn without the frame pacing's wait,
+	 * and its submission is logged once (ZWL FIRST_FRAME).
+	 */
+	const char *transition;
+	uint64_t transition_ms;
+	/*
 	 * Frame pacing: after a frame, the windows it told are waited for, until
 	 * all have committed or half the last frame's time (at most 50 ms) has
 	 * passed, so that a quick client does not start the next frame without
@@ -957,6 +962,7 @@ struct zwl_server {
 };
 
 uint64_t zwl_milliseconds(void);
+uint64_t zwl_microseconds(void);
 void zwl_request_stop(void);
 int zwl_greeter_open(struct zwl_server *server);
 int zwl_greeter_button(struct zwl_server *server, uint32_t button, uint32_t state);
@@ -992,6 +998,7 @@ int zwl_gpu_import(struct zwl_object *buffer, int descriptor, const struct gpu_i
 int zwl_present(struct zwl_object *surface);
 int zwl_unscan(struct zwl_server *server);
 void zwl_schedule(struct zwl_server *server);
+void zwl_transition_request(struct zwl_server *server, const char *what);
 void zwl_frame_done(struct zwl_server *server);
 int zwl_compose_open(struct zwl_server *server);
 int zwl_compose_output_prepare(struct zwl_server *server);
@@ -1071,7 +1078,8 @@ int zwl_keyboard_showing(void);
 int zwl_keyboard_at(int32_t x, int32_t y);
 void zwl_keyboard_close(struct zwl_server *server, const char *reason);
 
-/* The edge gestures over a fullscreen window, and whether one needs the output composed (shell.c). */
+/* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */
+int zwl_glass_fullscreen_input(struct zwl_server *server);
 int zwl_glass_edge_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_glass_edge_motion(struct zwl_server *server);
 int zwl_glass_overlay(struct zwl_server *server);

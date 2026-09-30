@@ -38,6 +38,8 @@ def where(character, faces):
     symbols = faces.get('symbols', {})
     if character == ' ':
         return ('letters', 'space', False)
+    if character == '\n':
+        return ('letters', 'Enter', False)
     if character.islower() and character in letters:
         return ('letters', character, False)
     if character.isupper() and character.lower() in letters:

@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* The extensions this library offers (glGetString's list; gles_extension_names has the same names one by one). */
 #define GLES_EXTENSIONS \
@@ -219,6 +220,64 @@ gles_report(
 
 	/* The line. */
 	fprintf(stderr, "GLES: %s failed (%d)\n", what, code);
+}
+
+/*
+ * Whether the calls of a compute run are timed (KEI_GLES_COMPUTE_TRACE=2,
+ * ws101-p016): -1 until the environment is read.
+ */
+static int gles_timing = -1;
+
+/*
+ * Starts timing a step: the time in microseconds when steps are timed,
+ * else 0 (nothing is timed).
+ */
+uint64_t
+gles_time_begin(void)
+{
+	const char *setting;
+	struct timespec now;
+	int level;
+
+	/* The environment, read once: level 2 or more times the steps. */
+	if (gles_timing < 0) {
+		setting = getenv("KEI_GLES_COMPUTE_TRACE");
+		level = 0;
+		if (setting != NULL)
+			level = atoi(setting);
+		gles_timing = 0;
+		if (level >= 2)
+			gles_timing = 1;
+	}
+
+	/* Nothing timed. */
+	if (!gles_timing)
+		return 0U;
+
+	/* The monotonic time. */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
+}
+
+/*
+ * Ends timing a step begun by gles_time_begin: one line on stderr with its
+ * name, its microseconds and the bytes it moved (0 when none).
+ */
+void
+gles_time_end(
+	const char *step,
+	uint64_t started,
+	size_t bytes)
+{
+	uint64_t ended;
+
+	/* Nothing was timed. */
+	if (started == 0U)
+		return;
+
+	/* The line. */
+	ended = gles_time_begin();
+	fprintf(stderr, "gles: time step=%s us=%llu bytes=%lu\n", step, (unsigned long long)(ended - started), (unsigned long)bytes);
 }
 
 /*
@@ -1618,8 +1677,9 @@ gles_release(
 	gles_framebuffers_release(state);
 	gles_vertex_arrays_release(state);
 
-	/* The garbage, which the frees above added to. */
+	/* The garbage, which the frees above added to, and the spare device copies it left (ws101-p017). */
 	gles_collect(state);
+	gles_spares_release(state);
 
 	/* The pipelines, samplers, descriptor pools and stream. */
 	while (state->pipelines != NULL) {

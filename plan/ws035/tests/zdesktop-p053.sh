@@ -9,7 +9,8 @@
 #     window 200x150 on top, and zdesktop's arrow at the pointer (100,100).
 #  2. A wl_shm window that sets its own 8x8 yellow cursor (hotspot 4,4).
 #  3. A wl_shm window that hides the cursor.
-#  4. Fullscreen mode (wltest): no cursor at the pointer.
+#  4. A fullscreen window (wltest), composed since ws099-p015: zdesktop's arrow at the pointer over it (the direct
+#     scanout before it drew no cursor).
 #
 #   plan/ws035/tests/zdesktop-guest.sh start     (the guest must be up)
 #   plan/ws035/tests/zdesktop-p053.sh [OUTDIR]
@@ -64,11 +65,11 @@ start '/bin/wlshm --size=400x300 --color=ffff0000 --frames=3000 --hide-cursor --
 point 640 400
 check "$out/hidden.png" --expect 640,400,ff0000 --expect 641,402,ff0000 || status=1
 
-# 4. Fullscreen mode draws no cursor (the pointer is over the blue quadrant).
+# 4. A fullscreen window is composed with zdesktop's arrow over it (the pointer is over the blue quadrant).
 start '/bin/wltest --frames=3000 --token=f > /tmp/f.log 2>&1 </dev/null &'
 point 100 700
-check "$out/fullscreen.png" --expect 100,700,0000ff --expect 101,702,0000ff \
-    --expect 640,200,00ff00 || status=1
+check "$out/fullscreen.png" --expect 100,700,000000 --expect 101,702,ffffff \
+    --expect 110,720,0000ff --expect 640,200,00ff00 || status=1
 guest 'grep -E "MODE" /tmp/zdesktop.log | tail -1'
 
 guest "$stop_all" >/dev/null

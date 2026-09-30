@@ -64,6 +64,8 @@
 static uint64_t program_serial = 1U;
 
 static struct gles_shader *program_shader(struct zegl_context *context, GLuint name);
+static void timed_compile_shader(GLuint name);
+static void timed_link_program(GLuint name);
 static struct gles_program *program_get(struct zegl_context *context, GLuint name);
 static int program_link(struct gles_state *state, struct gles_program *program, char *log);
 static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, const uint32_t *geometry_input, size_t geometry_words, char *log);
@@ -274,11 +276,26 @@ glShaderSource(
 }
 
 /*
- * Compiles a shader's GLSL source (a shader given only a SPIR-V binary
- * stays compiled).  The log says what the compiler found.
+ * Compiles a shader's source (timed, timed_compile_shader).
  */
 GL_APICALL void GL_APIENTRY
 glCompileShader(
+	GLuint name)
+{
+	uint64_t started;
+
+	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	started = gles_time_begin();
+	timed_compile_shader(name);
+	gles_time_end("compile-shader", started, 0U);
+}
+
+/*
+ * Compiles a shader's GLSL source (a shader given only a SPIR-V binary
+ * stays compiled).  The log says what the compiler found.
+ */
+static void
+timed_compile_shader(
 	GLuint name)
 {
 	struct zegl_context *context;
@@ -737,10 +754,25 @@ glDetachShader(
 }
 
 /*
- * Links a program's shaders.
+ * Links a program's shaders (timed, timed_link_program).
  */
 GL_APICALL void GL_APIENTRY
 glLinkProgram(
+	GLuint name)
+{
+	uint64_t started;
+
+	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	started = gles_time_begin();
+	timed_link_program(name);
+	gles_time_end("link-program", started, 0U);
+}
+
+/*
+ * Links a program's shaders.
+ */
+static void
+timed_link_program(
 	GLuint name)
 {
 	struct zegl_context *context;

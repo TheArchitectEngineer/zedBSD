@@ -234,7 +234,7 @@ zwl_compose_output_open(
 
 /*
  * Destroys the swapchain and the display surface once the device is idle,
- * which gives the display back (entering fullscreen mode, or at exit).
+ * which gives the display back (to the greeter's hand-over, or at exit).
  */
 void
 zwl_compose_output_close(
@@ -280,6 +280,7 @@ zwl_compose_draw(
 	const VkRect2D *region_drawn;
 	VkRect2D region;
 	uint64_t mark;
+	uint64_t now;
 	uint32_t image;
 	unsigned count;
 	unsigned popups;
@@ -306,6 +307,10 @@ zwl_compose_draw(
 	/* The sub-surfaces follow them, held and told like them (subsurface.c draws them with their parents). */
 	subsurfaces = zwl_subsurface_collect(server, windows + count + popups, ZWL_FRAME_WINDOWS - count - popups);
 
+	/* The frame's start, when the per-frame lines were asked for (ws099-p002's parts of a frame). */
+	if (server->log_frames)
+		printf("ZWL LAT draw frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)zwl_microseconds());
+
 	/* The next swapchain image (the wait for it is measured apart). */
 	mark = zwl_cycles();
 	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, UINT64_MAX, compose->acquired, VK_NULL_HANDLE, &image);
@@ -314,6 +319,8 @@ zwl_compose_draw(
 		printf("ZWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
 		return EIO;
 	}
+	if (server->log_frames)
+		printf("ZWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)zwl_microseconds());
 
 	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
 	partial = compose_region(server, image, &region);
@@ -327,6 +334,8 @@ zwl_compose_draw(
 		printf("ZWL VULKAN_ERROR operation=record result=%d\n", (int)result);
 		return EIO;
 	}
+	if (server->log_frames)
+		printf("ZWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)zwl_microseconds());
 
 	/* Submitted and presented; the fence fd tells the event loop when it is done. */
 	mark = zwl_cycles();
@@ -348,8 +357,17 @@ zwl_compose_draw(
 	server->dirty = 0;
 	server->damaged = 0;
 	server->frame++;
-	if (server->log_frames)
+	/* The first frame after App Home or Wiseview was asked to open or close, logged once (C5, also without --log-frames). */
+	if (server->transition != NULL) {
+		now = zwl_milliseconds();
+		printf("ZWL FIRST_FRAME what=%s frame=%llu request_ms=%llu ms=%llu\n", server->transition, (unsigned long long)server->frame,
+		       (unsigned long long)server->transition_ms, (unsigned long long)(now - server->transition_ms));
+		server->transition = NULL;
+	}
+	if (server->log_frames) {
 		printf("ZWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)zwl_milliseconds());
+		printf("ZWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)zwl_microseconds());
+	}
 
 	/* Succeeded: one frame is in flight. */
 	return 0;
@@ -395,6 +413,8 @@ zwl_compose_complete(
 	compose->held_count = 0;
 	zwl_callbacks_done(&compose->callbacks);
 	compose->in_flight = 0;
+	if (server->log_frames)
+		printf("ZWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)zwl_microseconds());
 
 	/* The time from the start of the frame to its completion (reported by ZWL PERF). */
 	elapsed = zwl_cycles() - compose->frame_start_cycles;
@@ -1496,11 +1516,12 @@ compose_record(
 	unsigned index;
 	VkResult result;
 
-	/* A fresh recording. */
+	/*
+	 * A fresh recording: beginning the command buffer resets it (its pool
+	 * has VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT), without a call
+	 * of its own (a round trip less under Venus, ws099-p002).
+	 */
 	compose = server->compose;
-	result = vkResetCommandBuffer(compose->command, 0U);
-	if (result != VK_SUCCESS)
-		return result;
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

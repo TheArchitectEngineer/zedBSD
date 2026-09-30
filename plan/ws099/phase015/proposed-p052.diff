@@ -1,0 +1,29 @@
+--- a/plan/ws035/tests/zdesktop-p052.sh	2026-09-30 03:47:45.527356338 +0900
++++ b/plan/ws035/tests/zdesktop-p052.sh	2026-09-30 12:22:30.275760490 +0900
+@@ -1,5 +1,6 @@
+ #!/bin/sh
+-# ws035-p052: the two modes of the compositor, checked on the Venus guest.
++# ws035-p052: a fullscreen window and back, checked on the Venus guest (the two modes until ws099-p015, which
++# removed the direct scanout: the fullscreen window is composed).
+ #
+ # zdesktop runs at 1280x800.  Client a is a red 400x300 window, client b a green
+ # 300x200 window that asks for fullscreen before its frame FULL and leaves
+@@ -49,14 +50,14 @@
+     --expect 530,340,00ff00 --expect 810,520,00ff00 --expect 830,545,ff0000 \
+     --expect 850,540,203040 || status=1
+ 
+-# Fullscreen mode: client b's image is the output.
+-wait_for 'grep "MODE fullscreen" /tmp/zdesktop.log' || status=1
++# Fullscreen: client b's image is the whole output, composed (the direct scanout went in ws099-p015).
++wait_for 'grep -E "CONFIGURE .*fullscreen=1" /tmp/zdesktop.log' || status=1
+ sleep 2
+ check "$out/fullscreen.png" --expect 10,10,00ff00 --expect 640,400,00ff00 \
+     --expect 1270,790,00ff00 --expect 450,260,00ff00 || status=1
+ 
+-# Back in window mode, at the same places.
+-wait_for 'grep "MODE window" /tmp/zdesktop.log | sed -n 2p' || status=1
++# Back to a window, at the same places.
++wait_for 'sed -n "/CONFIGURE .*fullscreen=1/,\$p" /tmp/zdesktop.log | grep -E "CONFIGURE .*fullscreen=0"' || status=1
+ sleep 2
+ check "$out/back.png" --expect 10,10,203040 --expect 450,260,ff0000 \
+     --expect 530,340,00ff00 --expect 810,520,00ff00 --expect 850,540,203040 || status=1
