@@ -90,6 +90,7 @@ COLRv1 は、大きな絵文字（例: keyboard の絵文字の面の大きな k
 | **guest: Text Editor** | Venus の guest に新しい library・wayland・textedit・font を入れ、`/root/emoji-😀.txt`（絵文字の 3 行）を開く | 本文の絵文字、compositor の title の 😀、libkeiui の file chooser の file 名の 😀 が、どれも色で出た（`textedit-emoji.png`・`chooser-emoji.png`） |
 | 回帰: C7・C9 | `plan/ws099/tests/criteria.sh build/ws102-p019-criteria.img build/ws102-p019/criteria C7 C9`（emoji の font の入った criteria の image） | C7 PASS（72 の組、最小の contrast 4.68）、C9 の 10 本すべて PASS |
 | boot test | `OUTPUT=build/ws102-p019-boot plan/tools/boot-test.sh build/ws102-p019-criteria.img` | PASS（`build/ws102-p019-boot/login.png`） |
+| main の取り込みの後（KUI_VERSION 9） | build（warning 0）、host-emoji・host-draw・host-chooser、guest で同じ Text Editor の画面 | PASS、13/13、85/85、絵文字が色で出る（`textedit-emoji-merged.png`）。C7・C9・boot は取り込みの前の code で行った |
 | image の大きさ | criteria の image の rootfs（`du -sb build/amd64/rootfs`）の前後 | 117,667,984 → 128,328,532 byte（+10,660,548 byte、ほぼ font の 10,643,852 byte）。disk image は固定の大きさ（2.2 GB）で変わらない |
 
 host-emoji.sh で確かめたこと:
