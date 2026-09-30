@@ -77,3 +77,8 @@ Resume point: p001（設計）cleared 2026-09-30（[design.md](design.md)）。�
 
 - D1: Text Editor・Terminal は text-input-v3 を持たないので、かなを送れない。WS095-p007 を待つか、WS102 で Text Editor に text-input-v3 を入れてよいか（ユーザー）。
 - D2: 日本語の変換を IME とどう組むか（L3、WS095 の担当と）。
+
+## ユーザーの判断（2026-09-30）
+
+- **D1**: 「libkeiui に入れる」。text-input-v3 の受け口を libkeiui の窓の土台（`kui_window`）に入れ、Text Editor と今後の libkeiui の app がかなを受け取れるようにする（WS090 の Phase。IME の file は変えない）。
+- **D2**: 「IME にかなの口を足す」。IME に「かなを入力として受け取る」口を足し、keyboard はかなをそのまま渡す。IME の変更なので、人間の作業（WS095）と調整してから（L3）。
