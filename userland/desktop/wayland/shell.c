@@ -134,7 +134,7 @@
 #define PULL_DISTANCE		140
 
 /* A docked body starts this far under the top of the output. */
-#define DOCK_TOP		(ZWL_GLASS_BAR + 4)
+#define DOCK_TOP		ZWL_GLASS_DOCK_TOP
 
 /* The virtual desktops: how many, and the size of each picture. */
 #define DESKTOPS		4
@@ -1741,14 +1741,19 @@ zwl_glass_space(
 {
 	int32_t space_width;
 	int32_t space_height;
+	int32_t right;
+	int32_t bottom;
 
-	/* The output less a margin at each side. */
-	space_width = (int32_t)server->width - 2 * ZWL_GLASS_MARGIN;
+	/* What the on-screen keyboard's panel takes at the right or the bottom (keyboard.c, ws102-p007). */
+	zwl_keyboard_reserved(&right, &bottom);
+
+	/* The output less a margin at each side, and the keyboard's column. */
+	space_width = (int32_t)server->width - 2 * ZWL_GLASS_MARGIN - right;
 	if (space_width < 0)
 		space_width = 0;
 
-	/* The output under the system bar and a title bar, less the bottom margin. */
-	space_height = (int32_t)server->height - ZWL_GLASS_TOP - ZWL_GLASS_MARGIN;
+	/* The output under the system bar and a title bar, less the bottom margin and the keyboard's row. */
+	space_height = (int32_t)server->height - ZWL_GLASS_TOP - ZWL_GLASS_MARGIN - bottom;
 	if (space_height < 0)
 		space_height = 0;
 
@@ -3113,11 +3118,17 @@ docked_rect(
 	struct zwl_server *server,
 	struct shell_rect *body)
 {
-	/* Edge to edge, from just under the bar to the bottom. */
+	int32_t right;
+	int32_t bottom;
+
+	/* What the on-screen keyboard's panel takes now, as it slides (keyboard.c, ws102-p007). */
+	zwl_keyboard_reserved_now(&right, &bottom);
+
+	/* Edge to edge, from just under the bar to the bottom, less the keyboard's column or row. */
 	body->x = 0;
 	body->y = DOCK_TOP;
-	body->width = (int32_t)server->width;
-	body->height = (int32_t)server->height - DOCK_TOP;
+	body->width = (int32_t)server->width - right;
+	body->height = (int32_t)server->height - DOCK_TOP - bottom;
 }
 
 /* The floating title bar of a body: as wide as it, a gap above it. */

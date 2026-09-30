@@ -583,6 +583,54 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		pointer move $((width / 3)) 300 sleep 400
 		shot "maximized-flick-${width}x${height}.png"
 		;;
+	workarea)
+		# (p007) The work area: Text Editor docked, a floating wltest 500x400 over it; the QWERTY panel shortens the
+		# docked window (told 1280x426 once) and moves the floating one up to the area's top (its bottom overhangs);
+		# the flick panel narrows the docked window (962x762); closing gives the docked window its size back and moves
+		# the floating one back; one moved by the user while the panel is out stays where it was put.
+		compositor
+		guest 'rm -f /root/w.txt; printf "The work area.\n" > /root/w.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/w.txt > /tmp/te.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		expect_log 'ZWL MAP client='
+		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+		te=${1:-0}; wx=${2:-0}; wy=${3:-0}
+		pointer move $((wx + 200)) $((wy - 38)) sleep 200 down sleep 40 up sleep 120 down sleep 40 up sleep 1500
+		expect_log 'ZWL GLASS dock'
+		guest "export XDG_RUNTIME_DIR=/tmp; /bin/wltest --windowed --size=500x400 --frames=3600 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+		wl=${1:-0}; lx=${2:-0}; ly=${3:-0}
+		echo "docked surface $te, floating surface $wl at $lx,$ly"
+		# The QWERTY panel: the docked window 1280x426, the floating one up to y=98 (the area's top).
+		swipe 6 792 150 650
+		expect_log 'ZWL OSK work-area right=0 bottom=336'
+		expect_log "ZWL OSK work docked surface=$te width=1280 height=426"
+		expect_log "ZWL OSK work moved surface=$wl from=$lx,$ly to=$lx,98"
+		sleep 1
+		pointer move 640 200 sleep 300
+		shot workarea-qwerty.png
+		# Closed: the docked window whole again, the floating one back.
+		pointer move 1254 488 sleep 200 down sleep 60 up sleep 900
+		expect_log 'ZWL OSK work-area right=0 bottom=0'
+		expect_log "ZWL OSK work docked surface=$te width=1280 height=762"
+		expect_log "ZWL OSK work back surface=$wl to=$lx,$ly"
+		# The flick panel: the docked window 962x762 (the floating one fits already, or moves left).
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK work-area right=318 bottom=0'
+		expect_log "ZWL OSK work docked surface=$te width=962 height=762"
+		sleep 1
+		pointer move 400 200 sleep 300
+		shot workarea-flick.png
+		swipe 1272 792 1130 650
+		expect_count 'ZWL OSK work-area right=0 bottom=0' 2
+		# The QWERTY panel again; the floating window moved by the user (its title bar dragged) stays where it was put.
+		swipe 6 792 150 650
+		expect_count "ZWL OSK work moved surface=$wl " 2
+		sleep 1
+		pointer move $((lx + 150)) 76 sleep 200 down sleep 60 move $((lx + 120)) 86 sleep 60 move $((lx + 60)) 106 sleep 60 move $((lx + 40)) 116 sleep 150 up sleep 600
+		expect_log "ZWL GLASS moved surface=$wl "
+		pointer move 1254 488 sleep 200 down sleep 60 up sleep 900
+		expect_log "ZWL OSK work kept surface=$wl"
+		;;
 	edges)
 		compositor
 		# A straight-up stroke from the bottom-right corner: no panel, no Wiseview.

@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: L1 を満たした。L2 の p006・p008・p021・p020 cleared 2026-09-30。次は p007（作業の領域）
+Resume point: L1 を満たした。L2 の p006・p007・p008・p020・p021 cleared 2026-09-30。次は main の指示
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -55,7 +55,7 @@ Resume point: L1 を満たした。L2 の p006・p008・p021・p020 cleared 2026
 | [ws102-p004](phase004/phase.md) | L1 | 文字の送出（evdev と Shift、text-input の commit、組み立て中・text-input の無い app）、guest の試験（Text Editor・ime-probe） | cleared（2026-09-30: Text Editor の file が「aiueO123」、ime-probe の text が「あいうえおかが」（濁点の置き換えを含む）、text-input の無い app へは送らない。host PASS） | p003 |
 | [ws102-p005](phase005/phase.md) | L1 | L1 の仕上げ: 閉じる gesture と toggle、lock・Home・Wiseview で閉じる、K7 の回帰（C9・Notes の角・Wiseview）、1920x1080 | cleared（2026-09-30: 帯の swipe で閉じる・Home・Wiseview で閉じる、1920x1080 の配置、osk-guest 全手順・WS079-p010・C9（10 本）・boot test PASS。**L1 の (a)〜(d) を満たした**。lock は試験の compositor が session でないので未確認） | p004 |
 | [ws102-p006](phase006/phase.md) | L2 | QWERTY の面と左下の gesture | cleared（2026-09-30: 注入の 30 文字「Hello, World! Kei 2026 (a+b)=c」を 4.9 秒で Text Editor に誤り 0（L2 の (a)）、Shift の lock・矢印、C9（10 本）・WS079-p010・boot test PASS） | p005 |
-| ws102-p007 | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | planned | p006 |
+| [ws102-p007](phase007/phase.md) | L2 | 作業の領域（design.md §2.8、2026-09-30 ユーザーの方針: flick・QWERTY のどちらでも縮める、最大化の窓は animation で縮めて戻す、浮いた窓は大きさを変えず animation で収まる位置へ動かし、はみ出た分はそのまま） | cleared（2026-09-30: QWERTY で最大化の Text Editor に 1280x426 の configure、浮いた窓は 390,243→390,98、閉じて戻す、flick で 962x762、利用者が動かした窓は戻さない。shell.c は reserved を引く 2 か所だけ。全手順・p010・C9・boot test PASS。animation の間隔は L3） | p006 |
 | ws102-p015 | L2 | keyboard の inset の知らせ（design.md §2.8、2026-09-30 ユーザー）: Keiland の独自の protocol で、keyboard のために大きさ・位置を変える窓へ configure の前に知らせ、libkeiui が caret の行を見える範囲の中央に寄せる。Text Editor の長い文書で QWERTY を開き、caret が keyboard の上の範囲の中央付近（±1 行）に見える | planned | p007 |
 | [ws102-p008](phase008/phase.md) | L2 | 手書きの面（線・stub の認識・候補） | cleared（2026-09-30: 手書きの面・線・stub の認識・候補の送出、guest PASS。(c): 点は入力の後の最初の frame で描かれる（9/9、lag 20〜53 ms）。QEMU の frame の間隔は 130〜143 ms で、60 Hz の 17 ms は実機か Windows の QEMU で測る） | p006 |
 | ws102-p009 | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | planned | p006 |
