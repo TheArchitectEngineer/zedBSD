@@ -402,6 +402,9 @@ test_recording(void)
 	struct i915_gfx_cmdbuf *cmdbuf;
 	struct i915_gfx_op op;
 	struct i915_gfx_dset set;
+	struct i915_gem_object object;
+	struct i915_gfx_memory memory;
+	struct i915_gfx_buffer buffer;
 	unsigned long mark;
 	int error;
 
@@ -531,6 +534,48 @@ test_recording(void)
 	error = i915_command_buffer_execute(stub_session, cmdbuf);
 	assert(error == 0 && stub_dispatch_calls == 2U);
 	assert(stub_last_dispatch[0] == 4U && stub_last_dispatch[1] == 2U && stub_last_dispatch[2] == 1U);
+	assert(stub_last_indirect_va == 0U);
+
+	/*
+	 * An indirect dispatch (ws101-p007): refused without a compute
+	 * pipeline, for an unbound buffer, an offset that is not a word's or
+	 * counts past the buffer's end; otherwise dispatched at the counts'
+	 * address, whatever they hold.
+	 */
+	memset(&object, 0, sizeof(object));
+	memset(&memory, 0, sizeof(memory));
+	memset(&buffer, 0, sizeof(buffer));
+	object.va = 0x0000000500000000ULL;
+	memory.object = &object;
+	memory.size = 0x10000U;
+	buffer.size = 64U;
+	buffer.offset = 0x100U;
+	memset(&op, 0, sizeof(op));
+	op.kind = I915_GFX_OP_DISPATCH_INDIRECT;
+	op.u.dispatch_indirect.buffer = &buffer;
+	op.u.dispatch_indirect.offset = 16U;
+	state.compute_pipeline = NULL;
+	error = i915_execute_dispatch_indirect(stub_session, &state, &op);
+	assert(error == EINVAL);
+	state.compute_pipeline = compute;
+	error = i915_execute_dispatch_indirect(stub_session, &state, &op);
+	assert(error == EINVAL);
+	buffer.memory = &memory;
+	op.u.dispatch_indirect.offset = 18U;
+	error = i915_execute_dispatch_indirect(stub_session, &state, &op);
+	assert(error == EINVAL);
+	op.u.dispatch_indirect.offset = 56U;
+	error = i915_execute_dispatch_indirect(stub_session, &state, &op);
+	assert(error == EINVAL);
+	op.u.dispatch_indirect.offset = 0xfffffffffffffff0ULL;
+	error = i915_execute_dispatch_indirect(stub_session, &state, &op);
+	assert(error == EINVAL);
+	assert(stub_dispatch_calls == 2U);
+	op.u.dispatch_indirect.offset = 52U;
+	error = i915_execute_dispatch_indirect(stub_session, &state, &op);
+	assert(error == 0 && stub_dispatch_calls == 3U);
+	assert(stub_last_indirect_va == 0x0000000500000000ULL + 0x100U + 52U);
+	printf("  indirect dispatch: refused without a pipeline, a bound buffer, a word's offset or room for three counts; dispatched at the counts' address\n");
 	stub_session_close();
 	assert(stub_live_since(mark) == 0U);
 	printf("  dispatch: refused without a compute pipeline or past 65535 groups, nothing for zero groups, otherwise dispatched with its groups\n");

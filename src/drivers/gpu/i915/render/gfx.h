@@ -109,7 +109,8 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_QUERY_RESET,
 	I915_GFX_OP_SET_STENCIL,
 	I915_GFX_OP_RESOLVE_IMAGE,
-	I915_GFX_OP_DISPATCH
+	I915_GFX_OP_DISPATCH,
+	I915_GFX_OP_DISPATCH_INDIRECT
 };
 
 /* An occlusion query pool (fence.c). */
@@ -698,6 +699,12 @@ struct i915_gfx_op {
 		struct {
 			uint32_t groups[3];
 		} dispatch;
+
+		/* A dispatch whose three group counts are in a buffer at an offset (vkCmdDispatchIndirect, ws101-p007). */
+		struct {
+			struct i915_gfx_buffer *buffer;
+			uint64_t offset;
+		} dispatch_indirect;
 
 		/* A copy of one region between two buffers. */
 		struct {

@@ -11,6 +11,21 @@
 #   window    a Files window opens over the icons (window.png)
 #   saved     (ws094-p004) the layout file placed before the desktop starts puts notes.txt at column 2 row 3 (its saved
 #             place), the other items in the free cells (saved.png)
+#   menu      (ws094-p005, after show) the context menus chosen with the pointer: the empty desktop's New Folder named
+#             Plans in its field (the new item in the free cell, kept there under the new name); notes.txt renamed to
+#             todo.txt from its menu (it keeps its cell); photo.png copied and pasted on the empty desktop (the name is
+#             taken: the question over the desktop, Enter keeps both); script.sh moved to the trash with Delete; Show in
+#             Files on report.pdf (a Files window on ~/Desktop; the desktop's menu stays open beside it, and closes at a
+#             press on the window and when a new window maps); Clean Up (the items in order again); Change Wallpaper
+#             when Settings is installed (menu-empty.png, rename-field.png, menu-item.png, collision.png, trash.png,
+#             show-in-files.png, cleanup.png)
+#   drag      (ws094-p006, after show) the pointer drags: notes.txt to an empty cell (moved there and saved; drag-over.png,
+#             drag-moved.png); photo.png onto the folder Projects (moved into it); a Files window's note.txt out to the
+#             desktop (moved into ~/Desktop, placed at the cell of the drop; drop-in.png); the desktop's report.pdf onto the
+#             Files window (moved into its folder; drop-out.png)
+#   touch     (ws094-p006, after show; the pen image, /bin/touchinject) a double tap on Projects opens it, a long press on
+#             report.pdf opens its context menu (touch-menu.png), a long press that moves drags script.sh to an empty cell
+#             (touch-moved.png)
 # The steps read zdesktop's log (Files, started by zdesktop, writes there too) through SSH, and the pictures; nothing
 # reads the console.
 #   GUEST_RUNTIME=$PWD/build/ws094-run BIN=build/ws094-amd64 plan/ws094/tests/files-desktop-guest.sh OUTDIR STEP...
@@ -32,6 +47,30 @@ shot() {
 	echo "shot $1"
 }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[f]iles" | awk "{print \$1}"); do kill $p; done; sleep 1'
+
+# The middle (y) of the latest popup row of an item, and the latest popup's left edge (depth 1 or 2), from zdesktop's log.
+row_y() {
+	guest "grep -a 'MENU row item=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* y=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p' | { read y h; echo $(( ${y:-0} + ${h:-0} / 2 )); }
+}
+popup_x() {
+	guest "grep -a 'MENU open .* depth=${1:-1} ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=.*/\1/p'
+}
+
+# Replays a touch script (the pen image's injected touch screen), screen pixels of 1280x800.
+touch_replay() {
+	printf '%s\n' "$2" > "$out/$1.script"
+	put "$out/$1.script" "/tmp/$1.script"
+	result=$(guest "/bin/touchinject /tmp/$1.script 2>&1; echo replay=\$?")
+	printf '%s\n' "$result" | grep -q '^replay=0$' || { echo "touchinject $1: FAILED"; status=1; }
+}
+
+# Clicks and right-clicks a screen point; choose clicks a row of the open context menu (by its item number).
+click() { pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 down sleep 60 up sleep "${3:-900}"; }
+rclick() { pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 right-down sleep 60 right-up sleep 1200; }
+choose() {
+	x=$(popup_x 1)
+	click $(( ${x:-0} + 60 )) "$(row_y "$1")" 1500
+}
 
 # Fails the run unless a log has a line matching a pattern (within a few seconds).
 expect_log() {
@@ -146,6 +185,220 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		shot saved.png
 		guest "grep -a 'ZFILES DESKTOP place' /tmp/zdesktop.log" > "$out/saved-places.txt"
 		guest 'rm -f /tmp/dhome/.config/keiland/desktop-layout' >/dev/null
+		;;
+	menu)
+		# The desktop surface is at y=34: a screen point's surface y is 34 less.  Icons from the top right:
+		# Projects (1216,90), notes.txt (1216,194), photo.png (1216,298), report.pdf (1216,402), script.sh (1216,506).
+		# Rows are numbered 1000 + the action: New Folder 1002, Copy 1010, Paste 1011, Rename 1014, Show in Files 1055,
+		# Clean Up 1056, Change Wallpaper 1057.
+		guest 'rm -rf /tmp/dhome/.local/share/Trash; rm -f /tmp/files.clipboard' >/dev/null
+		rclick 700 400
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=700 y=366'
+		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1056 depth=1 '
+		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1055 depth=1 '
+		shot menu-empty.png
+		choose 1002
+		expect_log /tmp/zdesktop.log 'ZFILES NEWFOLDER path=/tmp/dhome/Desktop/untitled folder'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=untitled folder column=0 row=5 '
+		sleep 1
+		shot rename-field.png
+		keys 'Plans' '<ret>'
+		expect_log /tmp/zdesktop.log 'ZFILES RENAME from=/tmp/dhome/Desktop/untitled folder to=/tmp/dhome/Desktop/Plans'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP rename from=untitled folder to=Plans error=0'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=Plans column=0 row=5 '
+		# notes.txt's menu: Rename; the stem is selected, so "todo" makes todo.txt, which keeps the cell.
+		rclick 1216 194
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context name=notes.txt'
+		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1014 depth=1 '
+		shot menu-item.png
+		choose 1014
+		keys 'todo' '<ret>'
+		expect_log /tmp/zdesktop.log 'ZFILES RENAME from=/tmp/dhome/Desktop/notes.txt to=/tmp/dhome/Desktop/todo.txt'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=todo.txt column=0 row=1 '
+		# photo.png copied and pasted on the empty desktop: into its own folder the copy is "photo 2.png".
+		rclick 1216 298
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context name=photo.png'
+		choose 1010
+		expect_log /tmp/zdesktop.log 'ZFILES CLIPBOARD mode=[0-9]+ items=1'
+		rclick 700 400
+		choose 1011
+		expect_log /tmp/zdesktop.log 'ZFILES TASK done id=[0-9]+ kind=copy state=done files=1 '
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=7 cells=7'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=photo 2.png column=0 row=6 '
+		# Another folder's report.pdf on the clipboard (Files' clipboard file), pasted: the name is taken, the
+		# question is over the desktop, and Enter keeps both.
+		guest 'mkdir -p /tmp/dhome/Other; printf "other\n" > /tmp/dhome/Other/report.pdf; printf "copy\n/tmp/dhome/Other/report.pdf\n" > /tmp/files.clipboard' >/dev/null
+		rclick 700 400
+		choose 1011
+		expect_log /tmp/zdesktop.log 'ZFILES DIALOG collision index=0 name=report.pdf'
+		sleep 1
+		shot collision.png
+		keys '<ret>'
+		expect_log /tmp/zdesktop.log 'ZFILES COLLISION answer='
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=8 cells=8'
+		# script.sh to the trash with Delete (the ready line of 7 items again, after the 8).
+		click 1216 506
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP select name=script.sh selected=1'
+		keys '<delete>'
+		sleep 2
+		sevens=$(guest "grep -ac 'ZFILES DESKTOP ready items=7 cells=7' /tmp/zdesktop.log" | tail -1)
+		[ "${sevens:-0}" -ge 2 ] 2>/dev/null && echo "trash: 7 items again ok" || { echo "trash: 7 items again MISSING"; status=1; }
+		trashed=$(guest 'ls /tmp/dhome/.local/share/Trash/files/ 2>/dev/null | grep -c "^script.sh"' | tail -1)
+		[ "${trashed:-0}" -ge 1 ] 2>/dev/null && echo "trash: script.sh in the trash ok" || { echo "trash: script.sh MISSING"; status=1; }
+		sleep 1
+		shot trash.png
+		# Show in Files from report.pdf's menu: a Files window on ~/Desktop, closed by Ctrl+W.
+		maps=$(guest "grep -ac 'ZWL MAP client=' /tmp/zdesktop.log" | tail -1)
+		rclick 1216 402
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context name=report.pdf'
+		choose 1055
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP show-in-files path=/tmp/dhome/Desktop error=0'
+		sleep 4
+		now=$(guest "grep -ac 'ZWL MAP client=' /tmp/zdesktop.log" | tail -1)
+		[ "${now:-0}" -gt "${maps:-0}" ] 2>/dev/null && echo "show-in-files: a window ok" || { echo "show-in-files: no window MISSING"; status=1; }
+		pointer move 640 780 sleep 300
+		shot show-in-files.png
+		# With that window on top, the desktop's menu (at 40,500, left of the window) stays open, and closes without a
+		# choice at a press on the window, and when another window maps.
+		done=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		rclick 40 500
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=40 y=466'
+		sleep 1
+		open=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		[ "${open:-0}" = "${done:-0}" ] && echo "desktop menu over a window: stays open ok" || { echo "desktop menu over a window: closed MISSING"; status=1; }
+		shot menu-over-window.png
+		click 700 500
+		now=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		[ "${now:-0}" -gt "${open:-0}" ] 2>/dev/null && echo "desktop menu: a press on the window closes it ok" || { echo "desktop menu: press on the window MISSING"; status=1; }
+		rclick 40 500
+		open=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; /bin/files --token=m --timeout-s=300 --width=600 --height=400 /tmp/dhome > /tmp/f3.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+		now=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		[ "${now:-0}" -gt "${open:-0}" ] 2>/dev/null && echo "desktop menu: a new window closes it ok" || { echo "desktop menu: new window MISSING"; status=1; }
+		keys '<ctrl-w>'
+		sleep 1
+		keys '<ctrl-w>'
+		sleep 1
+		# Clean Up: the items in order down the first column again (the trashed item's cell is taken back).
+		rclick 700 400
+		choose 1056
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP clean-up error=0'
+		sleep 1
+		rows=$(guest "awk '/DESKTOP clean-up/{f=1} f && /DESKTOP place/' /tmp/zdesktop.log | sed -n 's/.* column=\\([0-9]*\\) row=\\([0-9]*\\) .*/\\1,\\2/p' | sort | tr '\\n' ' '" | tail -1)
+		[ "$rows" = "0,0 0,1 0,2 0,3 0,4 0,5 0,6 " ] && echo "clean-up: in order ok" || { echo "clean-up: ($rows) MISSING"; status=1; }
+		pointer move 640 600 sleep 300
+		shot cleanup.png
+		# Change Wallpaper, when the menu has it (Settings installed).
+		rclick 700 400
+		wallpaper=$(guest "grep -ac 'MENU row item=1057 ' /tmp/zdesktop.log" | tail -1)
+		if [ "${wallpaper:-0}" -gt 0 ] 2>/dev/null; then
+			choose 1057
+			expect_log /tmp/zdesktop.log 'ZFILES DESKTOP change-wallpaper error=0'
+			sleep 5
+			shot wallpaper.png
+			guest 'for p in $(ps -A -o pid,args | grep "[s]ettings" | awk "{print \$1}"); do kill $p; done' >/dev/null
+		else
+			keys '<esc>'
+			echo "change-wallpaper: no Settings on the image (not offered)"
+		fi
+		;;
+	drag)
+		# A cell's column counts from the right edge: the surface point (x, y - 34) is in column
+		# (1280 - 16 - x - 1) / 96 and row (y - 34 - 16) / 104.
+		# 1. notes.txt (1216,194) to (900,400): the cell 3,3.
+		pointer move 1216 194 sleep 300 down sleep 150 move 1205 200 sleep 100 move 1150 240 sleep 100 move 1050 300 sleep 100 \
+			move 950 370 sleep 100 move 900 400 sleep 900
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drag start name=notes.txt'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drop enter self=1 files=1'
+		shot drag-over.png
+		pointer up sleep 1500
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drop place column=3 row=3'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP move name=notes.txt column=3 row=3 error=0'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drag done'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=notes.txt column=3 row=3 '
+		pointer move 640 600 sleep 300
+		shot drag-moved.png
+		# 2. photo.png (1216,298) onto the folder Projects (1216,90): moved into it.
+		pointer move 1216 298 sleep 300 down sleep 150 move 1210 290 sleep 100 move 1200 220 sleep 100 move 1210 140 sleep 100 \
+			move 1216 95 sleep 900 up sleep 2000
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drop target=/tmp/dhome/Desktop/Projects'
+		expect_log /tmp/zdesktop.log 'ZFILES DROP operation=move items=1 destination=/tmp/dhome/Desktop/Projects'
+		moved=$(guest 'ls /tmp/dhome/Desktop/Projects/photo.png /tmp/dhome/Desktop/photo.png 2>/dev/null | tr "\n" " "' | tail -1)
+		[ "$moved" = "/tmp/dhome/Desktop/Projects/photo.png " ] && echo "folder: photo.png moved into Projects ok" || { echo "folder: ($moved) MISSING"; status=1; }
+		# 3. A Files window on ~/Docs (list view): its note.txt dragged out to (60,600), the cell 12,5.
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; mkdir -p /tmp/dhome/Docs; echo hello > /tmp/dhome/Docs/note.txt; /bin/files --token=f2 --timeout-s=800 --width=700 --height=500 /tmp/dhome/Docs > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+		expect_log /tmp/f2.log 'ZFILES READY'
+		keys '<ctrl-2>'
+		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		wx=${1:-0}; wy=${2:-0}
+		echo "files window at $wx,$wy"
+		pointer move $((wx + 400)) $((wy + 114)) sleep 300 down sleep 100 move $((wx + 380)) $((wy + 120)) sleep 80 move $((wx + 300)) $((wy + 200)) sleep 80 \
+			move $((wx - 40)) 500 sleep 150 move 100 580 sleep 150 move 60 600 sleep 900
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drop enter self=0 files=1'
+		shot drop-in.png
+		pointer up sleep 2000
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drop self=0 destination=/tmp/dhome/Desktop action=[0-9]+ column=12 row=5'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP dropped name=note.txt column=12 row=5 error=0'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=note.txt column=12 row=5 '
+		there=$(guest 'ls /tmp/dhome/Desktop/note.txt 2>/dev/null' | tail -1)
+		[ "$there" = /tmp/dhome/Desktop/note.txt ] && echo "drop in: note.txt in ~/Desktop ok" || { echo "drop in: note.txt MISSING"; status=1; }
+		# 4. The desktop's report.pdf (1216,402) onto the Files window: moved into ~/Docs.
+		pointer move 1216 402 sleep 300 down sleep 150 move 1200 400 sleep 100 move 1100 380 sleep 100 move $((wx + 500)) $((wy + 300)) sleep 150 \
+			move $((wx + 350)) $((wy + 300)) sleep 900
+		shot drop-out.png
+		pointer up sleep 2000
+		expect_log /tmp/f2.log 'ZFILES DROP operation=move items=1 destination=/tmp/dhome/Docs'
+		there=$(guest 'ls /tmp/dhome/Docs/report.pdf 2>/dev/null' | tail -1)
+		[ "$there" = /tmp/dhome/Docs/report.pdf ] && echo "drop out: report.pdf in ~/Docs ok" || { echo "drop out: report.pdf MISSING"; status=1; }
+		pointer move $((wx + 350)) $((wy + 300)) sleep 200 down sleep 60 up sleep 500
+		keys '<ctrl-w>'
+		sleep 1
+		;;
+	touch)
+		# 1. A double tap on Projects (1216,90): a new Files window on it, closed by Ctrl+W.
+		touch_replay tap-projects 'size 1279 799 2
+wait 2600
+down 1 1216 90
+wait 60
+up 1
+wait 120
+down 1 1216 90
+wait 60
+up 1
+hold 2500'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open name=Projects via=double-click'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open-folder path=/tmp/dhome/Desktop/Projects error=0'
+		sleep 2
+		keys '<ctrl-w>'
+		sleep 1
+		# 2. A long press on report.pdf (1216,402): its context menu.
+		touch_replay press-report 'size 1279 799 2
+wait 2600
+down 1 1216 402
+hold 1000
+up 1
+hold 1500'
+		expect_log /tmp/zdesktop.log 'ZFILES TOUCH long-press'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context name=report.pdf'
+		expect_log /tmp/zdesktop.log 'ZFILES CONTEXT-MENU open rows=[0-9]+ x=1216 y=368 '
+		shot touch-menu.png
+		keys '<esc>'
+		sleep 1
+		# 3. A long press on script.sh (1216,506) that moves to (800,500): dragged to the cell 4,4.
+		touch_replay drag-script 'size 1279 799 2
+wait 2600
+down 1 1216 506
+hold 1000
+swipe -416 -6 26 16
+hold 600
+up 1
+hold 2000'
+		expect_log /tmp/zdesktop.log 'ZFILES TOUCH hold'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP drag start name=script.sh'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP move name=script.sh column=4 row=4 error=0'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=script.sh column=4 row=4 '
+		pointer move 640 700 sleep 300
+		shot touch-moved.png
 		;;
 	stop)
 		guest "$stop_all" >/dev/null

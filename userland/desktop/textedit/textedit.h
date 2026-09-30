@@ -99,7 +99,9 @@ enum te_event_type {
 	TE_EVENT_FOCUS,
 	TE_EVENT_FIND_TEXT,
 	TE_EVENT_FIND_DONE,
-	TE_EVENT_CHOSEN
+	TE_EVENT_CHOSEN,
+	TE_EVENT_TEXT,
+	TE_EVENT_TEXT_DELETE
 };
 
 /*
@@ -447,10 +449,9 @@ struct te_app {
 	char message[160];
 	uint64_t message_until;
 
-	/* The dialog shown, what waits for it, and the button the pointer is over. */
+	/* The dialog shown (drawn and answered by libkeiui's kui_dialog in main.c), and what waits for it. */
 	enum te_dialog dialog;
 	enum te_after after;
-	int dialog_hover;
 
 	/* Whether the file chooser is open, and for Save As. */
 	int choosing;
@@ -584,6 +585,7 @@ void te_app_clamp(struct te_app *app);
 int te_app_sync_scroll(struct te_app *app, uint64_t now_us);
 void te_app_touch(struct te_app *app);
 void te_app_text_rect(const struct te_app *app, struct te_rect *rect);
+void te_app_caret_rect(const struct te_app *app, struct te_rect *rect);
 void te_app_card(const struct te_app *app, struct te_rect *rect);
 double te_app_max_scroll_x(const struct te_app *app);
 double te_app_max_scroll_y(const struct te_app *app);
@@ -591,7 +593,8 @@ const char *te_app_name(const struct te_app *app);
 int te_app_modified(const struct te_app *app);
 void te_app_publish_primary(struct te_app *app);
 void te_app_tap(struct te_app *app, int x, int y, int count);
-void te_app_dialog_layout(const struct te_app *app, struct te_rect *card, struct te_rect *buttons, int *count);
+void te_app_dialog_choose(struct te_app *app, int button);
+void te_app_dialog_words(const struct te_app *app, char *title, size_t size, const char **words, const char *const **labels, int *count);
 
 /* The frame (draw.c). */
 void te_draw(struct te_app *app, struct te_canvas *canvas);
@@ -606,10 +609,6 @@ uint64_t te_clock(void);
 #define TE_TEXT_SIDE		16
 #define TE_TEXT_TOP		12
 #define TE_GUTTER_PAD		12
-#define TE_DIALOG_WIDTH		440
-#define TE_DIALOG_HEIGHT	156
-#define TE_BUTTON_WIDTH		104
-#define TE_BUTTON_HEIGHT	32
 
 /* The text's sizes: the body's default, smallest and largest, and the interface's. */
 #define TE_PIXELS_DEFAULT	15U

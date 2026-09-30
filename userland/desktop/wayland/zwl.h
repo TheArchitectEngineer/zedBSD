@@ -1056,6 +1056,19 @@ int zwl_corner_motion(struct zwl_server *server);
 void zwl_corner_tick(struct zwl_server *server);
 int zwl_corner_showing(void);
 
+/*
+ * The on-screen keyboard (keyboard.c, ws102; the drawing is in glass.h):
+ * its bottom corners' swipe, its panel, and the side of the square in each
+ * bottom corner where the swipe starts.
+ */
+#define ZWL_KEYBOARD_ZONE	28
+int zwl_keyboard_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_keyboard_motion(struct zwl_server *server);
+void zwl_keyboard_tick(struct zwl_server *server);
+int zwl_keyboard_showing(void);
+int zwl_keyboard_at(int32_t x, int32_t y);
+void zwl_keyboard_close(struct zwl_server *server, const char *reason);
+
 /* The edge gestures over a fullscreen window, and whether one needs the output composed (shell.c). */
 int zwl_glass_edge_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_glass_edge_motion(struct zwl_server *server);

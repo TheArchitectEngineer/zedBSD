@@ -99,7 +99,7 @@ cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_AB
 	-I"$repo/include" -I"$repo" -idirafter "$repo/include/libc" -o "$work/batch" "$here/compute-batch-test.c" \
 	$executor "$driver/render/command.c" -lm || exit 1
 "$work/batch" "$work" "$work/dispatch" || status=1
-for name in add ids reduce; do
+for name in add ids indirect reduce; do
 	python3 "$here/genxml-check.py" "$genxml" "$work/dispatch-$name" || status=1
 done
 

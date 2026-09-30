@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/sh
+arguments=/etc/keiland/run-poweroff.sh
+after=g3run
+restart=no
+required=NO

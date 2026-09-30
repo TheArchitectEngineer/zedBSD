@@ -33,7 +33,7 @@ Resume point: 完了。実機（5330 の touch・慣性・clipboard）の確認�
 - touch の drag での選択（long press の後の drag・つまみ）は作っていない（design J10）。
 - chooser の WS090 への移動、複数選択、新しい folder、chooser の key の repeat は、使う app が来たときに足す。
 - libkeiland は xdg_wm_base の binding を process に 1 つ持ち続ける（BUG-112 の回避）。BUG-112 は ws035-p132 で直ったので、外すかは後の判断。
-- 試験は `plan/tools/keiland/host-chooser.sh`・`plan/tools/textedit/host-core.sh`・`plan/tools/textedit/qmp-keys.py`（master の Tools 節）。
+- 試験は `plan/tools/keiui/host-chooser.sh`（2026-09-30 ws090-p006 で libkeiui へ移った）・`plan/tools/textedit/host-core.sh`・`plan/tools/textedit/qmp-keys.py`（master の Tools 節）。
 
 ## Phase
 

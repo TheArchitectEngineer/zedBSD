@@ -96,4 +96,21 @@ function(noct_configure_zedbsd_target target)
     "${runtime_bundle}"
     "${llvm_builtins}"
   )
+
+  # ws101-p011: the OpenGL ES accelerator backend calls the build's libEGL
+  # and libGLESv2 (NOCT_ENABLE_ACCEL, which userland/base/noct/Makefile sets
+  # for an amd64 configuration with ZEDBSD_NOCT_ACCEL := y); a new library
+  # links the interpreter again.
+  if(NOCT_ENABLE_ACCEL)
+    set(accel_libraries
+        "$ENV{ZEDBSD_DYNAMIC_DIR}/libEGL.so"
+        "$ENV{ZEDBSD_DYNAMIC_DIR}/libGLESv2.so")
+    foreach(input IN LISTS accel_libraries)
+      if(NOT EXISTS "${input}")
+        message(FATAL_ERROR "zedBSD Noct accelerator library is missing: ${input}")
+      endif()
+    endforeach()
+    target_link_libraries("${target}" PRIVATE ${accel_libraries})
+    set_property(TARGET "${target}" APPEND PROPERTY LINK_DEPENDS ${accel_libraries})
+  endif()
 endfunction()

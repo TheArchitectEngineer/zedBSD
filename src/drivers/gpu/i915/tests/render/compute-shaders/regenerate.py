@@ -35,6 +35,9 @@ SHADERS = (
     ('refuse/big.comp', 'compute', 'i915_vkcs_refuse_big_comp', '-O0'),
     ('refuse/retbar.comp', 'compute', 'i915_vkcs_refuse_retbar_comp', '-O0'),
     ('refuse/loopbar.comp', 'compute', 'i915_vkcs_refuse_loopbar_comp', '-O0'),
+    # ws101-p007: the counts of an indirect dispatch written by the GPU, and the lengths of run-time arrays.
+    ('grid.comp', 'compute', 'i915_vkcs_grid_comp', '-O0'),
+    ('length.comp', 'compute', 'i915_vkcs_length_comp', '-O0'),
 )
 
 # The spill step: this many values live at once, each x * (k + 1) + y; the sum pairs value k with value

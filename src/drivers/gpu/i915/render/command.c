@@ -201,6 +201,8 @@ static int i915_execute_draw(struct i915_render_session *session, const struct i
 static void i915_execute_bind_pipeline(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static void i915_execute_bind_set(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_execute_dispatch(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
+static int i915_execute_dispatch_indirect(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
+static int i915_dispatch_ready(const struct i915_gfx_draw_state *state);
 static int i915_command_buffer_execute(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf);
 static int i915_queue_submit(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 
@@ -1937,6 +1939,13 @@ i915_record_command(
 		op->u.dispatch.groups[1] = drv_i915_wire_read_u32(reader);
 		op->u.dispatch.groups[2] = drv_i915_wire_read_u32(reader);
 		break;
+	case 111U:
+		/* vkCmdDispatchIndirect: [buffer][offset] (ws101-p007). */
+		op = i915_command_op(cmdbuf, I915_GFX_OP_DISPATCH_INDIRECT);
+		identity = drv_i915_wire_read_u64(reader);
+		op->u.dispatch_indirect.buffer = drv_i915_object_lookup(session, I915_VK_OBJ_BUFFER, identity);
+		op->u.dispatch_indirect.offset = drv_i915_wire_read_u64(reader);
+		break;
 	case 107U:
 		/* vkCmdDrawIndexed: [indices][instances][first index][vertex offset][first instance]. */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_DRAW_INDEXED);
@@ -3340,6 +3349,9 @@ i915_command_buffer_execute(
 		case I915_GFX_OP_DISPATCH:
 			error = i915_execute_dispatch(session, &state, op);
 			break;
+		case I915_GFX_OP_DISPATCH_INDIRECT:
+			error = i915_execute_dispatch_indirect(session, &state, op);
+			break;
 		default:
 			error = EINVAL;
 			break;
@@ -3577,14 +3589,14 @@ i915_execute_dispatch(
 	const struct i915_gfx_draw_state *state,
 	const struct i915_gfx_op *op)
 {
+	struct i915_gfx_grid grid;
 	const uint32_t *groups;
 	int error;
 
 	/* Refuses a dispatch with no prepared compute pipeline bound. */
-	if (state->compute_pipeline == NULL || state->compute_pipeline->kernels_ready == 0) {
-		kern_logf("i915: vk: dispatch refused: no compute pipeline is bound\n");
-		return EINVAL;
-	}
+	error = i915_dispatch_ready(state);
+	if (error != 0)
+		return error;
 
 	/* Refuses group counts past the device's (maxComputeWorkGroupCount). */
 	groups = op->u.dispatch.groups;
@@ -3597,11 +3609,87 @@ i915_execute_dispatch(
 	if (groups[0] == 0U || groups[1] == 0U || groups[2] == 0U)
 		return 0;
 
-	/* Records the dispatch into the submission's batch. */
-	error = drv_i915_gfx_dispatch(session, state, groups);
+	/* Records the dispatch of the counts into the submission's batch. */
+	kern_memset(&grid, 0, sizeof(grid));
+	kern_memcpy(grid.groups, groups, sizeof(grid.groups));
+	error = drv_i915_gfx_dispatch(session, state, &grid);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the dispatch is recorded. */
+	return 0;
+}
+
+/*
+ * Runs a recorded vkCmdDispatchIndirect (ws101-p007): the bound compute
+ * pipeline over the three group counts the buffer holds at the offset,
+ * which the GPU reads when the dispatch runs (an earlier operation of the
+ * submission may write them).
+ *
+ * Counts of zero run nothing and counts past the device's are the
+ * application's error (Vulkan leaves them undefined); neither is known
+ * here.  Returns EINVAL for a dispatch without a pipeline, or of a buffer
+ * that is not bound, an offset that is not a word's or three counts that
+ * do not fit the buffer, or the error of recording or running it.
+ */
+static int
+i915_execute_dispatch_indirect(
+	struct i915_render_session *session,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_op *op)
+{
+	struct i915_gfx_buffer *buffer;
+	struct i915_gfx_grid grid;
+	uint64_t offset;
+	int error;
+
+	/* Refuses a dispatch with no prepared compute pipeline bound. */
+	error = i915_dispatch_ready(state);
+	if (error != 0)
+		return error;
+
+	/* Refuses a buffer that is not bound to memory. */
+	buffer = op->u.dispatch_indirect.buffer;
+	offset = op->u.dispatch_indirect.offset;
+	if (buffer == NULL || buffer->memory == NULL) {
+		kern_logf("i915: vk: indirect dispatch refused: no bound buffer\n");
+		return EINVAL;
+	}
+
+	/* Refuses an offset that is not a word's, or counts past the buffer's end. */
+	if ((offset % 4U) != 0U || offset > buffer->size || buffer->size - offset < 12U) {
+		kern_logf("i915: vk: indirect dispatch refused: offset %u in a buffer of %u bytes\n",
+			  (unsigned)offset,
+			  (unsigned)buffer->size);
+		return EINVAL;
+	}
+
+	/* Resolves the counts to their GPU address. */
+	kern_memset(&grid, 0, sizeof(grid));
+	grid.indirect_va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset + offset);
+	if (grid.indirect_va == 0U)
+		return EINVAL;
+
+	/* Records the dispatch of the buffer's counts into the submission's batch. */
+	error = drv_i915_gfx_dispatch(session, state, &grid);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the dispatch is recorded. */
+	return 0;
+}
+
+/* Reports whether a prepared compute pipeline is bound: 0, or EINVAL (logged) when none is. */
+static int
+i915_dispatch_ready(
+	const struct i915_gfx_draw_state *state)
+{
+	/* A pipeline whose kernel was compiled. */
+	if (state->compute_pipeline == NULL || state->compute_pipeline->kernels_ready == 0) {
+		kern_logf("i915: vk: dispatch refused: no compute pipeline is bound\n");
+		return EINVAL;
+	}
+
+	/* Succeeded: the dispatch can run. */
 	return 0;
 }

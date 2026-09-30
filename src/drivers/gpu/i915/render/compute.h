@@ -14,7 +14,8 @@
  * CURBE) and appends its commands, which switch the pipeline to GPGPU and
  * back to 3D.  drv_i915_gfx_dispatch() does both for the executor;
  * drv_i915_gfx_dispatch_write() and drv_i915_gfx_dispatch_build() are the
- * two halves, which the host tests drive on their own.
+ * two halves, which the host tests drive on their own.  An indirect
+ * dispatch (ws101-p007) reads its group counts from a buffer when it runs.
  */
 
 #ifndef DRIVERS_GPU_I915_RENDER_COMPUTE_H
@@ -29,8 +30,18 @@ struct i915_gfx_op_space;
 struct i915_gfx_pipeline;
 struct i915_render_session;
 
-int drv_i915_gfx_dispatch(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const uint32_t groups[3]);
-int drv_i915_gfx_dispatch_write(uint8_t *slot, uint64_t slot_va, const struct i915_gfx_draw_state *state, const uint32_t groups[3]);
-void drv_i915_gfx_dispatch_build(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_pipeline *pipeline, const struct i915_gfx_kernels *kernels, const uint32_t groups[3], uint32_t dss_count, uint32_t mocs);
+/*
+ * The grid of one dispatch: its three group counts (vkCmdDispatch), or,
+ * when indirect_va is not zero, the GPU address of the three counts a
+ * vkCmdDispatchIndirect reads when it runs (ws101-p007; groups unused).
+ */
+struct i915_gfx_grid {
+	uint32_t groups[3];
+	uint64_t indirect_va;
+};
+
+int drv_i915_gfx_dispatch(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_grid *grid);
+int drv_i915_gfx_dispatch_write(uint8_t *slot, uint64_t slot_va, const struct i915_gfx_draw_state *state, const struct i915_gfx_grid *grid);
+void drv_i915_gfx_dispatch_build(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_pipeline *pipeline, const struct i915_gfx_kernels *kernels, const struct i915_gfx_grid *grid, uint32_t dss_count, uint32_t mocs);
 
 #endif

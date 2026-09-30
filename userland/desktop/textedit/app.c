@@ -46,13 +46,9 @@
 #define APP_UNIT_WORD		1
 #define APP_UNIT_LINE		2
 
-/* The buttons of the dialogs, as te_app_dialog_layout numbers them (the first is the default). */
+/* The buttons of the dialogs, as te_app_dialog_words lists them (the first is the default). */
 #define APP_BUTTON_FIRST	0
 #define APP_BUTTON_SECOND	1
-#define APP_BUTTON_THIRD	2
-
-/* The most buttons a dialog has. */
-#define APP_BUTTONS		3
 
 static void app_measure(struct te_app *app);
 static int app_gutter(const struct te_app *app);
@@ -65,6 +61,7 @@ static void app_drag(struct te_app *app);
 static void app_wheel(struct te_app *app, const struct te_event *event);
 static size_t app_view_position(void *data, double x, double y);
 static void app_view_caret(void *data, size_t position, struct kui_rect *rect);
+static void app_text(struct te_app *app, const struct te_event *event);
 static void app_view_word(void *data, size_t position, size_t *start, size_t *end);
 static void app_key(struct te_app *app, const struct te_event *event);
 static void app_find_text(struct te_app *app, const struct te_event *event);
@@ -74,9 +71,6 @@ static void app_save(struct te_app *app);
 static int app_save_to(struct te_app *app, const char *path);
 static void app_size(struct te_app *app, int step);
 static void app_dialog(struct te_app *app, enum te_dialog dialog);
-static void app_dialog_key(struct te_app *app, const struct te_event *event);
-static void app_dialog_press(struct te_app *app, const struct te_event *event);
-static void app_dialog_choose(struct te_app *app, int button);
 static int app_dialog_buttons(const struct te_app *app);
 static void app_choose(struct te_app *app, int saving);
 static void app_chosen(struct te_app *app, const struct te_event *event);
@@ -312,6 +306,10 @@ te_app_event(
 		break;
 	case TE_EVENT_CHOSEN:
 		app_chosen(app, event);
+		break;
+	case TE_EVENT_TEXT:
+	case TE_EVENT_TEXT_DELETE:
+		app_text(app, event);
 		break;
 	}
 
@@ -799,40 +797,6 @@ te_app_tap(
 	te_app_event(app, &event);
 }
 
-/*
- * Gives the dialog's card and its buttons (the first is the default), and
- * how many buttons it has.
- */
-void
-te_app_dialog_layout(
-	const struct te_app *app,
-	struct te_rect *card,
-	struct te_rect *buttons,
-	int *count)
-{
-	int index;
-	int right;
-
-	/* The card in the middle of the frame. */
-	card->width = TE_DIALOG_WIDTH;
-	card->height = TE_DIALOG_HEIGHT;
-	if (card->width > app->width - 2 * TE_CARD_INSET)
-		card->width = app->width - 2 * TE_CARD_INSET;
-	card->x = (app->width - card->width) / 2;
-	card->y = (app->height - card->height) / 2;
-
-	/* The buttons along its bottom, from the right: the default, then the others. */
-	*count = app_dialog_buttons(app);
-	right = card->x + card->width - 20;
-	for (index = 0; index < *count; index++) {
-		buttons[index].width = TE_BUTTON_WIDTH;
-		buttons[index].height = TE_BUTTON_HEIGHT;
-		buttons[index].x = right - TE_BUTTON_WIDTH;
-		buttons[index].y = card->y + card->height - 20 - TE_BUTTON_HEIGHT;
-		right -= TE_BUTTON_WIDTH + 10;
-	}
-}
-
 /* Measures the body's text at its size: the cell's width, the row's height and the baseline. */
 static void
 app_measure(
@@ -965,11 +929,9 @@ app_pointer(
 	app->pointer_x = event->x;
 	app->pointer_y = event->y;
 
-	/* A dialog takes the pointer. */
-	if (app->dialog != TE_DIALOG_NONE) {
-		app_dialog_press(app, event);
+	/* A dialog takes the pointer (libkeiui's, through main.c). */
+	if (app->dialog != TE_DIALOG_NONE)
 		return;
-	}
 
 	/* The pointer left: a drag in progress ends. */
 	if (event->type == TE_EVENT_LEAVE)
@@ -1172,11 +1134,9 @@ app_key(
 	if (!event->pressed)
 		return;
 
-	/* A dialog takes the keys. */
-	if (app->dialog != TE_DIALOG_NONE) {
-		app_dialog_key(app, event);
+	/* A dialog takes the keys (libkeiui's, through main.c). */
+	if (app->dialog != TE_DIALOG_NONE)
 		return;
-	}
 
 	/* F3 finds again (Shift: backward). */
 	if (event->key == TE_KEY_F3) {
@@ -1372,72 +1332,19 @@ app_dialog(
 	struct te_app *app,
 	enum te_dialog dialog)
 {
-	/* The dialog, nothing under the pointer yet. */
+	/* The dialog. */
 	app->dialog = dialog;
-	app->dialog_hover = -1;
 	app->selecting = 0;
 	app->dirty = 1;
 	te_log("DIALOG %d", (int)dialog);
 }
 
-/* A key in a dialog: Enter chooses the default button, Esc the last (Cancel). */
-static void
-app_dialog_key(
-	struct te_app *app,
-	const struct te_event *event)
-{
-	int count;
-
-	/* The buttons. */
-	count = app_dialog_buttons(app);
-
-	/* Enter: the default. */
-	if (event->key == TE_KEY_ENTER || event->key == TE_KEY_KP_ENTER) {
-		app_dialog_choose(app, APP_BUTTON_FIRST);
-		return;
-	}
-
-	/* Esc: the last, which cancels. */
-	if (event->key == TE_KEY_ESCAPE)
-		app_dialog_choose(app, count - 1);
-}
-
-/* The pointer over a dialog: a button under it is lit, and a click on one chooses it. */
-static void
-app_dialog_press(
-	struct te_app *app,
-	const struct te_event *event)
-{
-	struct te_rect buttons[APP_BUTTONS];
-	struct te_rect card;
-	int count;
-	int index;
-	int inside;
-	int hover;
-
-	/* The button under the pointer (-1 for none). */
-	te_app_dialog_layout(app, &card, buttons, &count);
-	hover = -1;
-	for (index = 0; index < count; index++) {
-		inside = app_inside(&buttons[index], event->x, event->y);
-		if (inside)
-			hover = index;
-	}
-
-	/* Lit when it changes. */
-	if (hover != app->dialog_hover) {
-		app->dialog_hover = hover;
-		app->dirty = 1;
-	}
-
-	/* A left release on a button chooses it. */
-	if (event->type == TE_EVENT_BUTTON && !event->pressed && event->button == TE_BUTTON_LEFT && hover >= 0)
-		app_dialog_choose(app, hover);
-}
-
-/* Carries out a dialog's button. */
-static void
-app_dialog_choose(
+/*
+ * Carries out a dialog's button (the first is the default, the last
+ * cancels).
+ */
+void
+te_app_dialog_choose(
 	struct te_app *app,
 	int button)
 {
@@ -1494,6 +1401,47 @@ app_dialog_buttons(
 
 	/* The others: the action and Cancel. */
 	return 2;
+}
+
+/*
+ * Gives the shown dialog's title (written into title), its words, its
+ * buttons' labels (the first the default, the last the one that cancels)
+ * and how many there are.
+ */
+void
+te_app_dialog_words(
+	const struct te_app *app,
+	char *title,
+	size_t size,
+	const char **words,
+	const char *const **labels,
+	int *count)
+{
+	static const char *const unsaved[] = { "Save", "Don't Save", "Cancel" };
+	static const char *const changed[] = { "Overwrite", "Cancel" };
+	static const char *const about[] = { "OK" };
+	const char *name;
+
+	/* The dialog's words and buttons. */
+	name = te_app_name(app);
+	*count = app_dialog_buttons(app);
+	switch (app->dialog) {
+	case TE_DIALOG_UNSAVED:
+		snprintf(title, size, "Save changes to \"%s\"?", name);
+		*words = "Your changes will be lost if you don't save them.";
+		*labels = unsaved;
+		break;
+	case TE_DIALOG_CHANGED:
+		snprintf(title, size, "\"%s\" changed on disk.", name);
+		*words = "Overwrite it with the text here?";
+		*labels = changed;
+		break;
+	default:
+		snprintf(title, size, "Text Editor");
+		*words = "A simple editor of plain text for Kei.";
+		*labels = about;
+		break;
+	}
 }
 
 /*
@@ -1689,4 +1637,74 @@ app_view_word(
 {
 	/* The editor's word (a run of one kind of character). */
 	te_edit_word(data, position, start, end);
+}
+
+/*
+ * Reports the caret's rectangle in the window (a row tall), where an input
+ * method's candidates and the text being composed are shown.
+ */
+void
+te_app_caret_rect(
+	const struct te_app *app,
+	struct te_rect *rect)
+{
+	struct kui_rect caret;
+	struct te_rect text;
+
+	/* The caret in the text's content, then moved by the view's place and scroll. */
+	app_view_caret((void *)app, app->cursor, &caret);
+	te_app_text_rect(app, &text);
+	rect->x = text.x + caret.x - (int)app->scroll_x;
+	rect->y = text.y + caret.y - (int)app->scroll_y;
+	rect->width = caret.width;
+	rect->height = caret.height;
+}
+
+/*
+ * Takes text from the window's text input (an input method, the on-screen
+ * keyboard, ws090-p013): bytes around the caret deleted, or text inserted
+ * in place of the selection, as typing is.
+ */
+static void
+app_text(
+	struct te_app *app,
+	const struct te_event *event)
+{
+	size_t length;
+	size_t start;
+	size_t end;
+	size_t total;
+	int error;
+
+	/* Not while a dialog or the chooser asks. */
+	if (app->dialog != TE_DIALOG_NONE || app->choosing)
+		return;
+
+	/* Bytes before and after the caret: selected, then deleted. */
+	if (event->type == TE_EVENT_TEXT_DELETE) {
+		total = te_buffer_length(&app->buffer);
+		start = 0;
+		if (app->cursor > (size_t)event->key)
+			start = app->cursor - (size_t)event->key;
+		end = app->cursor + (size_t)event->button;
+		if (end > total)
+			end = total;
+		te_edit_select(app, start, end);
+		(void)te_edit_insert_text(app, "", 0U, TE_MERGE_NONE);
+		te_edit_reveal(app);
+		app->dirty = 1;
+		te_log("TEXT delete before=%u after=%u", (unsigned)event->key, (unsigned)event->button);
+		return;
+	}
+
+	/* The text, in place of the selection. */
+	length = strlen(event->text);
+	if (length == 0U)
+		return;
+	error = te_edit_insert_text(app, event->text, length, TE_MERGE_NONE);
+	if (error != 0)
+		te_app_message(app, "Not enough memory.");
+	te_edit_reveal(app);
+	app->dirty = 1;
+	te_log("TEXT commit bytes=%lu text=%s", (unsigned long)length, event->text);
 }

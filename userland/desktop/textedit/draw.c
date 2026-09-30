@@ -39,25 +39,12 @@
 #define DRAW_CHIP		0xecffffffU
 #define DRAW_CHIP_EDGE		0x1f334155U
 #define DRAW_CHIP_TEXT		0xff475569U
-#define DRAW_MESSAGE		0xe8334155U
-#define DRAW_MESSAGE_TEXT	0xffffffffU
-#define DRAW_SHADE		0x33101828U
-#define DRAW_PANEL		0xfffdfdfeU
-#define DRAW_PANEL_EDGE		0x26334155U
-#define DRAW_TITLE		0xff0f172aU
-#define DRAW_BODY		0xff475569U
-#define DRAW_PRIMARY		0xff2563ebU
-#define DRAW_PRIMARY_LIT	0xff1d4ed8U
-#define DRAW_BUTTON		0xffeef2f6U
-#define DRAW_BUTTON_LIT		0xffe2e8f0U
-#define DRAW_BUTTON_TEXT	0xff1e293bU
 
 /* How long the cursor shows and hides, in milliseconds (as the editor's). */
 #define DRAW_BLINK_MS		530U
 
-/* The interface's small text size, and the status chip's. */
+/* The status chip's text size. */
 #define DRAW_SMALL_PIXELS	12U
-#define DRAW_TITLE_PIXELS	15U
 
 /* The scroll bar's width and shortest thumb. */
 #define DRAW_SCROLL_WIDTH	4
@@ -72,9 +59,6 @@ static void draw_numbers(struct te_app *app, struct te_canvas *canvas, const str
 static void draw_cursor(struct te_app *app, struct te_canvas *canvas, const struct te_rect *text);
 static void draw_scroll(struct te_app *app, struct te_canvas *canvas, const struct te_rect *text);
 static void draw_status(struct te_app *app, struct te_canvas *canvas);
-static void draw_message(struct te_app *app, struct te_canvas *canvas);
-static void draw_dialog(struct te_app *app, struct te_canvas *canvas);
-static void draw_button(struct te_app *app, struct te_canvas *canvas, const struct te_rect *rect, const char *label, int primary, int lit);
 static void draw_chip(struct te_app *app, struct te_canvas *canvas, int x, int y, const char *text, uint32_t fill, uint32_t color);
 static size_t draw_count(struct te_app *app);
 
@@ -111,14 +95,9 @@ te_draw(
 	draw_cursor(app, canvas, &text);
 	te_canvas_unclip(canvas);
 
-	/* The scroll bar, the status and a message. */
+	/* The scroll bar and the status (a message's chip and a dialog are libkeiui's, drawn over the frame by main.c). */
 	draw_scroll(app, canvas, &text);
 	draw_status(app, canvas);
-	draw_message(app, canvas);
-
-	/* A dialog over everything. */
-	if (app->dialog != TE_DIALOG_NONE)
-		draw_dialog(app, canvas);
 
 	/* The frame is drawn. */
 	app->dirty = 0;
@@ -491,113 +470,6 @@ draw_status(
 	draw_chip(app, canvas, card.x + card.width - 14 - width, card.y + card.height - 12 - 24, status, DRAW_CHIP, DRAW_CHIP_TEXT);
 }
 
-/* Draws the message, when there is one, at the bottom middle of the card. */
-static void
-draw_message(
-	struct te_app *app,
-	struct te_canvas *canvas)
-{
-	struct te_rect card;
-	int width;
-
-	/* Nothing to say. */
-	if (app->message[0] == '\0')
-		return;
-
-	/* A dark chip in the middle. */
-	te_app_card(app, &card);
-	width = te_text_width(app->ui, app->message, strlen(app->message), TE_UI_PIXELS, 0) + 24;
-	draw_chip(app, canvas, card.x + (card.width - width) / 2, card.y + card.height - 12 - 24 - 36, app->message, DRAW_MESSAGE, DRAW_MESSAGE_TEXT);
-}
-
-/* Draws the dialog shown: a shade over the card, and a panel with its title, its words and its buttons. */
-static void
-draw_dialog(
-	struct te_app *app,
-	struct te_canvas *canvas)
-{
-	static const char *const unsaved[] = { "Save", "Don't Save", "Cancel" };
-	static const char *const changed[] = { "Overwrite", "Cancel" };
-	static const char *const about[] = { "OK" };
-	struct te_rect buttons[3];
-	struct te_rect card;
-	struct te_rect window_card;
-	const char *const *labels;
-	char title[TE_PATH_MAX + 64];
-	const char *words;
-	const char *name;
-	int count;
-	int index;
-
-	/* The shade over the window's card (the desktop around it stays clear), and the panel. */
-	te_app_card(app, &window_card);
-	te_canvas_round(canvas, window_card.x, window_card.y, window_card.width, window_card.height, TE_CARD_RADIUS, DRAW_SHADE);
-	te_app_dialog_layout(app, &card, buttons, &count);
-	te_canvas_round(canvas, card.x - 1, card.y - 1, card.width + 2, card.height + 2, 15, DRAW_PANEL_EDGE);
-	te_canvas_round(canvas, card.x, card.y, card.width, card.height, 14, DRAW_PANEL);
-
-	/* The dialog's words and buttons. */
-	name = te_app_name(app);
-	labels = about;
-	words = "";
-	switch (app->dialog) {
-	case TE_DIALOG_UNSAVED:
-		snprintf(title, sizeof(title), "Save changes to \"%s\"?", name);
-		words = "Your changes will be lost if you don't save them.";
-		labels = unsaved;
-		break;
-	case TE_DIALOG_CHANGED:
-		snprintf(title, sizeof(title), "\"%s\" changed on disk.", name);
-		words = "Overwrite it with the text here?";
-		labels = changed;
-		break;
-	default:
-		snprintf(title, sizeof(title), "Text Editor");
-		words = "A simple editor of plain text for Kei.";
-		break;
-	}
-
-	/* The title and the words. */
-	(void)te_text_draw_fit(app->ui, canvas, card.x + 22, card.y + 40, title, DRAW_TITLE_PIXELS, 1, card.width - 44, DRAW_TITLE);
-	(void)te_text_draw_fit(app->ui, canvas, card.x + 22, card.y + 68, words, TE_UI_PIXELS, 0, card.width - 44, DRAW_BODY);
-
-	/* The buttons, the first the default. */
-	for (index = 0; index < count; index++)
-		draw_button(app, canvas, &buttons[index], labels[index], index == 0, index == app->dialog_hover);
-}
-
-/* Draws a button: the default one blue, the others pale; lit under the pointer. */
-static void
-draw_button(
-	struct te_app *app,
-	struct te_canvas *canvas,
-	const struct te_rect *rect,
-	const char *label,
-	int primary,
-	int lit)
-{
-	uint32_t fill;
-	uint32_t color;
-	int width;
-
-	/* The colours of its kind. */
-	fill = DRAW_BUTTON;
-	color = DRAW_BUTTON_TEXT;
-	if (lit)
-		fill = DRAW_BUTTON_LIT;
-	if (primary) {
-		fill = DRAW_PRIMARY;
-		color = 0xffffffffU;
-		if (lit)
-			fill = DRAW_PRIMARY_LIT;
-	}
-
-	/* The pill and its label in the middle. */
-	te_canvas_round(canvas, rect->x, rect->y, rect->width, rect->height, rect->height / 2, fill);
-	width = te_text_width(app->ui, label, strlen(label), TE_UI_PIXELS, 0);
-	(void)te_text_draw(app->ui, canvas, rect->x + (rect->width - width) / 2, te_text_center(TE_UI_PIXELS, rect->y, rect->height), label, strlen(label), TE_UI_PIXELS, 0, color);
-}
-
 /* Draws a chip: a rounded pill with a hairline edge and its words. */
 static void
 draw_chip(
@@ -615,14 +487,8 @@ draw_chip(
 
 	/* The chip's size for its words. */
 	pixels = DRAW_SMALL_PIXELS;
-	if (fill == DRAW_MESSAGE)
-		pixels = TE_UI_PIXELS;
 	width = te_text_width(app->ui, text, strlen(text), pixels, 0) + 20;
 	height = 24;
-	if (fill == DRAW_MESSAGE) {
-		width += 4;
-		height = 30;
-	}
 
 	/* The edge, the pill and the words. */
 	te_canvas_round(canvas, x - 1, y - 1, width + 2, height + 2, height / 2 + 1, DRAW_CHIP_EDGE);

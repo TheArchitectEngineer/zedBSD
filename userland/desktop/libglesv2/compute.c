@@ -24,10 +24,16 @@
  * its writes to every later use (vertices, indices, uniforms, storage,
  * indirect sizes, copies, the host).  glMemoryBarrier has nothing left to
  * order and only checks its bits.
+ *
+ * With KEI_GLES_COMPUTE_TRACE set in the environment, each dispatch recorded
+ * says so on stderr (ws101-p011: the evidence that a program such as Noct's
+ * accelerator ran its kernel on the GPU and did not fall back to the CPU).
  */
 
 #include "gles.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The bytes of a dispatch's three workgroup counts read from GL_DISPATCH_INDIRECT_BUFFER. */
@@ -52,6 +58,13 @@ static int compute_indirect_check(struct zegl_context *context, struct gles_stat
 static int compute_storages(struct zegl_context *context, struct gles_state *state, const struct gles_program *program, VkDescriptorBufferInfo *storages);
 static void compute_barriers(VkCommandBuffer command, int after);
 static void compute_memory_barrier(GLbitfield barriers, GLbitfield allowed);
+static void compute_trace(const GLuint *groups, GLintptr indirect, int is_indirect);
+
+/*
+ * Whether dispatches are traced: -1 until the environment is read, then 0
+ * or 1 for the life of the process.
+ */
+static int compute_tracing = -1;
 
 /*
  * Runs the current compute program over a grid of workgroups.
@@ -240,6 +253,9 @@ compute_dispatch(
 	/* The dispatch's writes seen by what comes after. */
 	compute_barriers(surface->command, 1);
 	surface->recorded = 1;
+
+	/* Says so when asked to. */
+	compute_trace(groups, indirect, is_indirect);
 
 	/*
 	 * A buffer bound to a block the shader may write is newer on the
@@ -470,4 +486,35 @@ compute_memory_barrier(
 	/* Every bit, or bits of the allowed ones. */
 	if (barriers != GL_ALL_BARRIER_BITS && (barriers & ~allowed) != 0U)
 		gles_error(context, GL_INVALID_VALUE);
+}
+
+/* Writes one line on stderr for a recorded dispatch when KEI_GLES_COMPUTE_TRACE is set. */
+static void
+compute_trace(
+	const GLuint *groups,
+	GLintptr indirect,
+	int is_indirect)
+{
+	const char *setting;
+
+	/* The environment, read once. */
+	if (compute_tracing < 0) {
+		setting = getenv("KEI_GLES_COMPUTE_TRACE");
+		compute_tracing = 0;
+		if (setting != NULL)
+			compute_tracing = 1;
+	}
+
+	/* Nothing unless asked. */
+	if (!compute_tracing)
+		return;
+
+	/* The grid, or the indirect offset. */
+	if (is_indirect) {
+		fprintf(stderr, "gles: compute dispatch indirect offset=%ld\n", (long)indirect);
+		return;
+	}
+
+	/* A direct dispatch's groups. */
+	fprintf(stderr, "gles: compute dispatch groups=%u,%u,%u\n", groups[0], groups[1], groups[2]);
 }

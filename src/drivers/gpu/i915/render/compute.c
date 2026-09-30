@@ -25,6 +25,13 @@
  * the kernel's cross-thread push data (the push constants, the uniform
  * blocks' ranges and the storage buffers' addresses, from the compute bind
  * point's sets), then the pipeline's table of each thread's IDs.
+ *
+ * An indirect dispatch (ws101-p007) loads the walker's three counts from the
+ * application's buffer with MI_LOAD_REGISTER_MEM when it runs (as anv's
+ * compute_load_indirect_params), and gl_NumWorkGroups reads that buffer's
+ * three words in place of the slot's.  Counts of zero need nothing of their
+ * own on Gen8 and later (Mesa's i965 predicated the walker off on Gen7
+ * only).
  */
 
 #include "compute.h"
@@ -78,12 +85,13 @@ static uint64_t i915_compute_scratch(uint32_t per_thread_bytes, uint64_t offset)
 static uint32_t i915_compute_slm_size(uint32_t bytes);
 
 /*
- * Records one dispatch of the bound compute pipeline over groups[0] by
- * groups[1] by groups[2] workgroups into the submission's batch, or runs it
- * to its end outside a submission.
+ * Records one dispatch of the bound compute pipeline over the grid's
+ * workgroups into the submission's batch, or runs it to its end outside a
+ * submission.
  *
- * The caller has checked that a prepared compute pipeline is bound and
- * that the counts are nonzero and within the device's limit.  Returns
+ * The caller has checked that a prepared compute pipeline is bound, and
+ * that direct counts are nonzero and within the device's limit or that
+ * the indirect counts lie in a bound buffer.  Returns
  * ENOMEM when the session's objects cannot be made, EINVAL when the bound
  * sets do not give the kernel its buffers, ENOSPC when the dispatch does
  * not fit a batch, or the error of a GPU run.
@@ -92,7 +100,7 @@ int
 drv_i915_gfx_dispatch(
 	struct i915_render_session *session,
 	const struct i915_gfx_draw_state *state,
-	const uint32_t groups[3])
+	const struct i915_gfx_grid *grid)
 {
 	struct i915_gfx_pipeline *pipeline;
 	const struct i915_shader_binary *binary;
@@ -157,17 +165,18 @@ drv_i915_gfx_dispatch(
 
 	/* Writes the interface descriptor, the group counts and the CURBE, then the dispatch's commands. */
 	dss_count = i915_compute_dss_count(session);
-	error = drv_i915_gfx_dispatch_write(space.slot, space.slot_va, state, groups);
+	error = drv_i915_gfx_dispatch_write(space.slot, space.slot_va, state, grid);
 	if (error == 0)
-		drv_i915_gfx_dispatch_build(space.batch, &space, pipeline, &kernels, groups, dss_count, mocs);
+		drv_i915_gfx_dispatch_build(space.batch, &space, pipeline, &kernels, grid, dss_count, mocs);
 
 	/* Keeps the dispatch in the batch, or takes it back; outside a submission it runs now. */
 	error = drv_i915_gfx_op_end(session, work, error);
 	if (error != 0) {
-		kern_logf("i915: vk: dispatch of %u x %u x %u groups failed: error %d\n",
-			  groups[0],
-			  groups[1],
-			  groups[2],
+		kern_logf("i915: vk: dispatch of %u x %u x %u groups (indirect at 0x%llx) failed: error %d\n",
+			  grid->groups[0],
+			  grid->groups[1],
+			  grid->groups[2],
+			  (unsigned long long)grid->indirect_va,
 			  error);
 		return error;
 	}
@@ -190,16 +199,17 @@ drv_i915_gfx_dispatch(
  * IDs.
  *
  * The push data comes from the compute bind point's sets.  The system
- * storage buffer (I915_IR_SYSTEM_SET) points at the group counts in the
- * slot.  Returns EINVAL when the sets do not give the kernel its buffers or
- * the CURBE does not fit the slot.
+ * storage buffer (I915_IR_SYSTEM_SET) points at the group counts: the
+ * slot's, or an indirect dispatch's in its buffer.  Returns EINVAL when the
+ * sets do not give the kernel its buffers or the CURBE does not fit the
+ * slot.
  */
 int
 drv_i915_gfx_dispatch_write(
 	uint8_t *slot,
 	uint64_t slot_va,
 	const struct i915_gfx_draw_state *state,
-	const uint32_t groups[3])
+	const struct i915_gfx_grid *grid)
 {
 	const struct i915_gfx_pipeline *pipeline;
 	const struct i915_shader_binary *binary;
@@ -243,8 +253,13 @@ drv_i915_gfx_dispatch_write(
 		descriptor[6] |= GEN12_IDD_BARRIER_ENABLE;
 	descriptor[7] = binary->cross_thread_regs;
 
-	/* The group counts gl_NumWorkGroups reads. */
-	kern_memcpy(dynamic + I915_GFX_DYN_GROUP_COUNTS, groups, I915_COMPUTE_GROUP_COUNT_BYTES);
+	/* The group counts gl_NumWorkGroups reads: in the slot, or an indirect dispatch's where the walker reads them. */
+	counts_va = slot_va + I915_GFX_DYNAMIC_HEAP + I915_GFX_DYN_GROUP_COUNTS;
+	if (grid->indirect_va != 0U) {
+		counts_va = grid->indirect_va;
+	} else {
+		kern_memcpy(dynamic + I915_GFX_DYN_GROUP_COUNTS, grid->groups, I915_COMPUTE_GROUP_COUNT_BYTES);
+	}
 
 	/* Sees the compute bind point's sets where the push data looks for the graphics ones. */
 	view = *state;
@@ -264,7 +279,6 @@ drv_i915_gfx_dispatch_write(
 		return error;
 
 	/* Points the system storage buffer at the group counts: their address and their bytes. */
-	counts_va = slot_va + I915_GFX_DYNAMIC_HEAP + I915_GFX_DYN_GROUP_COUNTS;
 	address[0] = (uint32_t)counts_va;
 	address[1] = (uint32_t)(counts_va >> 32);
 	address[2] = I915_COMPUTE_GROUP_COUNT_BYTES;
@@ -286,8 +300,9 @@ drv_i915_gfx_dispatch_write(
 /*
  * Appends the commands of one dispatch to the batch: the context setup in
  * 3D at the dispatch's slot and window, the switch to GPGPU, the VFE, the
- * CURBE and the interface descriptor, the walker over the groups, and the
- * switch back to 3D behind the flushes.
+ * CURBE and the interface descriptor, an indirect dispatch's loads of its
+ * counts, the walker over the groups, and the switch back to 3D behind the
+ * flushes.
  */
 void
 drv_i915_gfx_dispatch_build(
@@ -295,11 +310,19 @@ drv_i915_gfx_dispatch_build(
 	const struct i915_gfx_op_space *space,
 	const struct i915_gfx_pipeline *pipeline,
 	const struct i915_gfx_kernels *kernels,
-	const uint32_t groups[3],
+	const struct i915_gfx_grid *grid,
 	uint32_t dss_count,
 	uint32_t mocs)
 {
+	static const uint32_t dimensions[3] = {
+		GEN12_GPGPU_DISPATCHDIMX,
+		GEN12_GPGPU_DISPATCHDIMY,
+		GEN12_GPGPU_DISPATCHDIMZ,
+	};
 	const struct i915_shader_binary *binary;
+	uint64_t address;
+	uint32_t walker;
+	uint32_t index;
 	uint64_t scratch;
 	uint32_t curbe_regs;
 	uint32_t curbe_allocation;
@@ -357,23 +380,43 @@ drv_i915_gfx_dispatch_build(
 	drv_i915_batch_emit(batch, I915_GFX_DYN_INTERFACE);
 
 	/*
+	 * An indirect dispatch: the walker's three counts loaded from the
+	 * buffer (a PPGTT address, as the rest of the batch's) when the
+	 * commands run, after the operations before them have written it.
+	 */
+	walker = GEN12_GPGPU_WALKER_HEADER;
+	if (grid->indirect_va != 0U) {
+		for (index = 0U; index < 3U; index++) {
+			address = grid->indirect_va + (uint64_t)index * 4U;
+			drv_i915_batch_emit(batch, MI_LOAD_REGISTER_MEM_GEN8);
+			drv_i915_batch_emit(batch, dimensions[index]);
+			drv_i915_batch_emit(batch, (uint32_t)address);
+			drv_i915_batch_emit(batch, (uint32_t)(address >> 32));
+		}
+
+		/* The walker takes its counts from the registers. */
+		walker |= GEN12_WALKER_INDIRECT;
+	}
+
+	/*
 	 * GPGPU_WALKER: descriptor 0, SIMD8, the group's threads, the groups
-	 * from the origin along x, y and z, the channels of the group's last
+	 * from the origin along x, y and z (an indirect walker takes them from
+	 * the registers and these are zero), the channels of the group's last
 	 * thread, every row.
 	 */
-	drv_i915_batch_emit(batch, GEN12_GPGPU_WALKER_HEADER);
+	drv_i915_batch_emit(batch, walker);
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, (GEN12_WALKER_SIMD8 << GEN12_WALKER_SIMD_SHIFT) | (pipeline->threads - 1U));
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, groups[0]);
+	drv_i915_batch_emit(batch, grid->groups[0]);
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, groups[1]);
+	drv_i915_batch_emit(batch, grid->groups[1]);
 	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, groups[2]);
+	drv_i915_batch_emit(batch, grid->groups[2]);
 	drv_i915_batch_emit(batch, pipeline->right_mask);
 	drv_i915_batch_emit(batch, 0xffffffffU);
 

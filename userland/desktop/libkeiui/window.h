@@ -103,8 +103,9 @@ struct keiui_present {
 	unsigned wait_ms;
 };
 
-/* One wl_shm buffer: the pixels mapped, their size, and whether the compositor still reads it. */
+/* One wl_shm buffer: its window, the pixels mapped, their size, and whether the compositor still reads it. */
 struct keiui_shm_buffer {
+	struct kui_window *window;
 	struct wl_buffer *buffer;
 	uint32_t *pixels;
 	size_t size;
@@ -211,7 +212,47 @@ struct kui_window {
 	int primary_pending_text;
 	char *primary_text;
 	size_t primary_length;
+
+	/*
+	 * The text input (text-input.c, KUI_VERSION 6): the compositor's
+	 * manager and the seat's text input, whether the application asks for
+	 * it and whether the text input is on the window's surface (enabled
+	 * when both), the commits made (the done's serial), the caret's
+	 * rectangle, and what the events before a done carried.
+	 */
+	struct zwp_text_input_manager_v3 *text_manager;
+	struct zwp_text_input_v3 *text_input;
+	int text_wanted;
+	int text_entered;
+	int text_enabled;
+	uint32_t text_commits;
+	int32_t text_cursor[4];
+	char text_commit[KUI_WINDOW_TEXT_MAX];
+	char text_preedit[KUI_WINDOW_TEXT_MAX];
+	int32_t text_preedit_begin;
+	int32_t text_preedit_end;
+	int text_preedit_set;
+	int text_preedit_shown;
+	uint32_t text_before;
+	uint32_t text_after;
+
+	/*
+	 * A window on another's connection (a file chooser's, ws090-p006): the
+	 * connection is the application's and stays open, and the owner hears
+	 * of queued input and of a buffer given back from a wl_display.sync
+	 * after the events that queued it (notify, its data, and the sync
+	 * asked for).
+	 */
+	int shared;
+	void (*notify)(void *data);
+	void *notify_data;
+	struct wl_callback *notify_sync;
 };
+
+/* A window on the application's connection, and its owner's wake-up (window.c). */
+struct kui_window *keiui_window_open_shared(struct wl_display *display, struct xdg_toplevel *parent, const struct kui_window_options *options, uint32_t min_width, uint32_t min_height);
+void keiui_window_set_notify(struct kui_window *window, void (*notify)(void *data), void *data);
+void keiui_window_wake(struct kui_window *window);
 
 /* The window's clock in milliseconds (window.c). */
 uint64_t keiui_clock_ms(void);
@@ -233,5 +274,11 @@ void keiui_clipboard_close(struct kui_window *window);
 void keiui_primary_bind(struct kui_window *window, struct wl_registry *registry, uint32_t name);
 void keiui_primary_start(struct kui_window *window);
 void keiui_primary_close(struct kui_window *window);
+
+/* The text input (text-input.c). */
+void keiui_text_input_bind(struct kui_window *window, struct wl_registry *registry, uint32_t name);
+void keiui_text_input_start(struct kui_window *window);
+void keiui_text_input_close(struct kui_window *window);
+struct kui_window_event *keiui_window_push(struct kui_window *window, unsigned kind);
 
 #endif

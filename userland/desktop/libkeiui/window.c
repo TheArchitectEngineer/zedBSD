@@ -93,6 +93,33 @@ static void window_touch_cancel(void *data, struct wl_touch *touch);
 static int window_touch_foreign(struct kui_window *window, int32_t id, int forget);
 static struct kui_window_event *window_push(struct kui_window *window, unsigned kind);
 static int window_setup(struct kui_window *window, const struct kui_window_options *options);
+static int window_setup_shared(struct kui_window *window, struct xdg_toplevel *parent, const struct kui_window_options *options, uint32_t min_width, uint32_t min_height);
+static void window_search(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
+static void window_woken(void *data, struct wl_callback *callback, uint32_t time);
+
+/*
+ * The globals a window on another's connection finds through a registry of
+ * its own queue: their names and versions (0: not announced).
+ */
+struct window_found {
+	uint32_t compositor;
+	uint32_t compositor_version;
+	uint32_t shm;
+	uint32_t shell;
+	uint32_t shell_version;
+	uint32_t seat;
+	uint32_t seat_version;
+};
+
+/* The registry's callbacks of that search. */
+static const struct wl_registry_listener search_listener = {
+	window_search, window_global_remove
+};
+
+/* The wake-up's sync. */
+static const struct wl_callback_listener woken_listener = {
+	window_woken
+};
 
 /* The registry's callbacks, for as long as the registry lives. */
 static const struct wl_registry_listener registry_listener = {
@@ -198,6 +225,7 @@ kui_window_close(
 	/* The clipboard and the primary selection before the seat they belong to. */
 	keiui_clipboard_close(window);
 	keiui_primary_close(window);
+	keiui_text_input_close(window);
 	free(window->clipboard);
 	free(window->primary_text);
 
@@ -227,9 +255,15 @@ kui_window_close(
 	if (window->registry != NULL)
 		wl_registry_destroy(window->registry);
 
-	/* The connection last, then the record. */
-	if (window->display != NULL)
+	/* The owner's wake-up. */
+	if (window->notify_sync != NULL)
+		wl_callback_destroy(window->notify_sync);
+
+	/* The connection last (unless it is the application's), then the record. */
+	if (window->display != NULL && !window->shared)
 		wl_display_disconnect(window->display);
+	if (window->display != NULL && window->shared)
+		(void)wl_display_flush(window->display);
 	free(window);
 }
 
@@ -627,6 +661,96 @@ kui_clock_us(void)
 /*
  * Reports the monotonic clock in milliseconds.
  */
+/*
+ * Makes a toplevel window on the application's connection (a file
+ * chooser's): its own globals and seat, found through a queue of its own
+ * and heard on the application's default queue, a parent and a smallest
+ * size.  Its first configure comes with the application's next dispatch;
+ * frames are shown through shared memory.
+ *
+ * Returns NULL with errno set: EINVAL, EOPNOTSUPP (no compositor, shell
+ * or shared memory), ENOMEM.
+ */
+struct kui_window *
+keiui_window_open_shared(
+	struct wl_display *display,
+	struct xdg_toplevel *parent,
+	const struct kui_window_options *options,
+	uint32_t min_width,
+	uint32_t min_height)
+{
+	struct kui_window *window;
+	int error;
+
+	/* A connection, and frames through shared memory. */
+	if (display == NULL || options == NULL || options->present != KUI_PRESENT_SHM) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* The record, on the application's connection. */
+	window = calloc(1, sizeof(*window));
+	if (window == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* On the application's connection. */
+	window->display = display;
+	window->shared = 1;
+
+	/* The globals, the surface and its toplevel. */
+	error = window_setup_shared(window, parent, options, min_width, min_height);
+	if (error != 0) {
+		kui_window_close(window);
+		errno = error;
+		return NULL;
+	}
+
+	/* Succeeded: the window waits for its first configure. */
+	return window;
+}
+
+/*
+ * Names who hears of the window's queued input (and of a buffer given back)
+ * on another's connection, once the events that queued it are run.
+ */
+void
+keiui_window_set_notify(
+	struct kui_window *window,
+	void (*notify)(void *data),
+	void *data)
+{
+	/* The owner. */
+	window->notify = notify;
+	window->notify_data = data;
+}
+
+/*
+ * Asks for the owner's wake-up after the events being run (one sync at a
+ * time; nothing without an owner).
+ */
+void
+keiui_window_wake(
+	struct kui_window *window)
+{
+	int status;
+
+	/* No owner, or a wake-up already asked for. */
+	if (window->notify == NULL || window->notify_sync != NULL)
+		return;
+
+	/* A sync, whose answer comes after the events read with it. */
+	window->notify_sync = wl_display_sync(window->display);
+	if (window->notify_sync == NULL)
+		return;
+	status = wl_callback_add_listener(window->notify_sync, &woken_listener, window);
+	if (status != 0) {
+		wl_callback_destroy(window->notify_sync);
+		window->notify_sync = NULL;
+	}
+}
+
 uint64_t
 keiui_clock_ms(void)
 {
@@ -676,6 +800,7 @@ window_setup(
 	/* The clipboard and the primary selection, through the seat (without them the window keeps its own copies). */
 	keiui_clipboard_start(window);
 	keiui_primary_start(window);
+	keiui_text_input_start(window);
 
 	/* A window needs a compositor and a shell, and shared memory to show frames through it. */
 	if (window->compositor == NULL || window->shell == NULL)
@@ -732,6 +857,219 @@ window_setup(
 	return 0;
 }
 
+/* Finds the globals through a queue of the window's own, binds them onto the application's queue, and makes the toplevel; 0 or an errno value. */
+static int
+window_setup_shared(
+	struct kui_window *window,
+	struct xdg_toplevel *parent,
+	const struct kui_window_options *options,
+	uint32_t min_width,
+	uint32_t min_height)
+{
+	struct window_found found;
+	struct wl_event_queue *queue;
+	struct wl_display *wrapper;
+	struct wl_registry *registry;
+	int status;
+
+	/* The size it asks for, and the key repeat's defaults. */
+	window->width = options->width;
+	window->height = options->height;
+	window->preferred_width = options->width;
+	window->preferred_height = options->height;
+	window->repeat_delay = WINDOW_REPEAT_DELAY;
+	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
+	window->present = options->present;
+
+	/* A queue of its own, and the display as seen from it, so that the application's events do not run meanwhile. */
+	queue = wl_display_create_queue(window->display);
+	if (queue == NULL)
+		return ENOMEM;
+	wrapper = wl_proxy_create_wrapper(window->display);
+	if (wrapper == NULL) {
+		wl_event_queue_destroy(queue);
+		return ENOMEM;
+	}
+
+	/* What the wrapper makes lives on that queue. */
+	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
+
+	/* The globals announced to this search alone. */
+	memset(&found, 0, sizeof(found));
+	registry = wl_display_get_registry(wrapper);
+	if (registry == NULL) {
+		wl_proxy_wrapper_destroy(wrapper);
+		wl_event_queue_destroy(queue);
+		return ENOMEM;
+	}
+
+	/* Each global announced is noted. */
+	status = wl_registry_add_listener(registry, &search_listener, &found);
+	if (status == 0)
+		(void)wl_display_roundtrip_queue(window->display, queue);
+
+	/* The compositor, shared memory and a shell of the window's own (zdesktop lets it go alone, BUG-112). */
+	if (found.compositor != 0U && found.shm != 0U && found.shell != 0U) {
+		window->compositor = wl_registry_bind(registry, found.compositor, &wl_compositor_interface, found.compositor_version);
+		window->shm = wl_registry_bind(registry, found.shm, &wl_shm_interface, 1U);
+		window->shell = wl_registry_bind(registry, found.shell, &xdg_wm_base_interface, found.shell_version);
+	}
+
+	/* The first seat, for the window's own pointer, keyboard and touch. */
+	if (found.seat != 0U)
+		window->seat = wl_registry_bind(registry, found.seat, &wl_seat_interface, found.seat_version);
+
+	/* The search's objects go. */
+	wl_registry_destroy(registry);
+	wl_proxy_wrapper_destroy(wrapper);
+
+	/* The bound globals hear their events on the application's queue. */
+	if (window->compositor != NULL)
+		wl_proxy_set_queue((struct wl_proxy *)window->compositor, NULL);
+	if (window->shm != NULL)
+		wl_proxy_set_queue((struct wl_proxy *)window->shm, NULL);
+	if (window->shell != NULL) {
+		wl_proxy_set_queue((struct wl_proxy *)window->shell, NULL);
+		(void)xdg_wm_base_add_listener(window->shell, &shell_listener, window);
+	}
+
+	/* And so does the seat. */
+	if (window->seat != NULL) {
+		wl_proxy_set_queue((struct wl_proxy *)window->seat, NULL);
+		(void)wl_seat_add_listener(window->seat, &seat_listener, window);
+	}
+
+	/* The search's queue is empty and goes. */
+	wl_event_queue_destroy(queue);
+
+	/* A window needs them all. */
+	if (window->compositor == NULL || window->shm == NULL || window->shell == NULL)
+		return EOPNOTSUPP;
+
+	/* The surface, as an xdg surface. */
+	window->surface = wl_compositor_create_surface(window->compositor);
+	if (window->surface == NULL)
+		return ENOMEM;
+	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
+	if (window->role == NULL)
+		return ENOMEM;
+	status = xdg_surface_add_listener(window->role, &surface_listener, window);
+	if (status != 0)
+		return EINVAL;
+
+	/* A toplevel window with its size and close request heard. */
+	window->toplevel = xdg_surface_get_toplevel(window->role);
+	if (window->toplevel == NULL)
+		return ENOMEM;
+	status = xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
+	if (status != 0)
+		return EINVAL;
+
+	/* Its title, its application, its parent and its smallest size. */
+	if (options->title != NULL)
+		xdg_toplevel_set_title(window->toplevel, options->title);
+	if (options->application != NULL)
+		xdg_toplevel_set_app_id(window->toplevel, options->application);
+	if (parent != NULL)
+		xdg_toplevel_set_parent(window->toplevel, parent);
+	xdg_toplevel_set_min_size(window->toplevel, (int32_t)min_width, (int32_t)min_height);
+
+	/* The first commit, which asks for the first configure. */
+	wl_surface_commit(window->surface);
+	window->shm_width = window->width;
+	window->shm_height = window->height;
+
+	/* Succeeded: the window waits for its configure. */
+	return 0;
+}
+
+/* Notes a global a window on another's connection needs. */
+static void
+window_search(
+	void *data,
+	struct wl_registry *registry,
+	uint32_t name,
+	const char *interface,
+	uint32_t version)
+{
+	struct window_found *found;
+	int match;
+
+	/* The compositor, version 4 at most. */
+	(void)registry;
+	found = data;
+	match = strcmp(interface, "wl_compositor");
+	if (match == 0 && found->compositor == 0U) {
+		found->compositor = name;
+		found->compositor_version = version;
+		if (version > 4U)
+			found->compositor_version = 4U;
+		return;
+	}
+
+	/* Shared memory. */
+	match = strcmp(interface, "wl_shm");
+	if (match == 0 && found->shm == 0U) {
+		found->shm = name;
+		return;
+	}
+
+	/* The shell, version 4 at most. */
+	match = strcmp(interface, "xdg_wm_base");
+	if (match == 0 && found->shell == 0U) {
+		found->shell = name;
+		found->shell_version = version;
+		if (version > 4U)
+			found->shell_version = 4U;
+		return;
+	}
+
+	/* The first seat. */
+	match = strcmp(interface, "wl_seat");
+	if (match == 0 && found->seat == 0U) {
+		found->seat = name;
+		found->seat_version = version;
+		if (version > WINDOW_SEAT_VERSION)
+			found->seat_version = WINDOW_SEAT_VERSION;
+	}
+}
+
+/* The wake-up's sync is answered: the owner runs the queued input (it may close the window). */
+static void
+window_woken(
+	void *data,
+	struct wl_callback *callback,
+	uint32_t time)
+{
+	struct kui_window *window;
+
+	/* The sync is used up, and another may be asked for. */
+	(void)time;
+	window = data;
+	wl_callback_destroy(callback);
+	window->notify_sync = NULL;
+
+	/* The owner, last: nothing of the window is touched after it. */
+	if (window->notify != NULL)
+		window->notify(window->notify_data);
+}
+
+/*
+ * Queues a new input of a kind for the library's other parts (the text
+ * input); NULL when the queue is full.
+ */
+struct kui_window_event *
+keiui_window_push(
+	struct kui_window *window,
+	unsigned kind)
+{
+	struct kui_window_event *event;
+
+	/* As the window's own inputs. */
+	event = window_push(window, kind);
+	return event;
+}
+
 /*
  * Queues a new input of a kind at the pointer's place with the modifiers
  * held; NULL when the queue is full (the input is dropped).
@@ -762,6 +1100,9 @@ window_push(
 	event->serial = window->serial;
 	event->arrival_us = kui_clock_us();
 	event->time_us = event->arrival_us;
+
+	/* The owner of a window on another's connection hears of it after the events being run. */
+	keiui_window_wake(window);
 
 	/* Reports the queued input for its details. */
 	return event;
@@ -811,6 +1152,13 @@ window_global(
 	match = strcmp(interface, "wl_data_device_manager");
 	if (match == 0 && window->data_manager == NULL) {
 		keiui_clipboard_bind(window, registry, name, version);
+		return;
+	}
+
+	/* The text input's manager (an input method's and the on-screen keyboard's text). */
+	match = strcmp(interface, "zwp_text_input_manager_v3");
+	if (match == 0 && window->text_manager == NULL) {
+		keiui_text_input_bind(window, registry, name);
 		return;
 	}
 
@@ -870,6 +1218,7 @@ window_configure(
 	window = data;
 	xdg_surface_ack_configure(surface, serial);
 	window->configured = 1;
+	keiui_window_wake(window);
 }
 
 /* Takes the size the compositor gives; a zero size keeps the window's own, within the bounds. */

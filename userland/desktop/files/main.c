@@ -139,6 +139,8 @@ static unsigned main_touch_area(int x, int y);
 static void main_touch_pointer(const struct fm_touch_pointer *made);
 static int main_desktop_prepare(struct main_options *options);
 static int main_open_decorations(void);
+static void main_open_context_menus(void);
+static void main_dispatch(const struct fm_event *event);
 
 /*
  * Runs the file manager.
@@ -218,9 +220,11 @@ main(
 	if (options.wallpaper != NULL)
 		snprintf(main_app.wallpaper, sizeof(main_app.wallpaper), "%s", options.wallpaper);
 
-	/* The desktop has no glass, menus or titlebar: its icons are drawn on the clear surface (ui-desktop.c). */
+	/* The desktop has no glass, window menus or titlebar: its icons are drawn on the clear surface (ui-desktop.c), and it has context menus. */
 	main_app.desktop = options.desktop;
-	if (!options.desktop) {
+	if (options.desktop) {
+		main_open_context_menus();
+	} else {
 		/* A window's glass, menus and titlebar; without zdesktop's titlebar the file manager does not start. */
 		status = main_open_decorations();
 		if (status != 0) {
@@ -463,11 +467,7 @@ main_loop(
 			taken = fm_window_take(&main_window, &event);
 			if (taken == 0)
 				break;
-			if (main_app.desktop) {
-				fm_desktop_event(&main_app, &event);
-			} else {
-				fm_ui_event(&main_app, &event);
-			}
+			main_dispatch(&event);
 			inputs++;
 		}
 
@@ -506,10 +506,8 @@ main_loop(
 		/* Time passes for the file manager. */
 		fm_ui_tick(&main_app, now);
 
-		/* The menus show the state after input at once, and otherwise now and then (a task's end changes it); the desktop has none. */
-		if (main_app.desktop) {
-			menu_checked_at = now;
-		} else if (inputs != 0 || now - menu_checked_at >= MAIN_MENU_CHECK_MS) {
+		/* The menus show the state after input at once, and otherwise now and then (a task's end changes it); the desktop's context menu goes when it closed. */
+		if (inputs != 0 || now - menu_checked_at >= MAIN_MENU_CHECK_MS) {
 			main_menu_update();
 			menu_checked_at = now;
 		}
@@ -751,12 +749,12 @@ main_drag_out(void)
 	if (error == 0)
 		return;
 
-	/* Otherwise the window's drag ends here, as cancelled. */
+	/* Otherwise the window's (or the desktop's) drag ends here, as cancelled. */
 	fm_log("DND failed errno=%d", error);
 	memset(&event, 0, sizeof(event));
 	event.type = FM_EVENT_DRAG_DONE;
 	event.time = fm_clock();
-	fm_ui_event(&main_app, &event);
+	main_dispatch(&event);
 }
 
 /*
@@ -770,7 +768,17 @@ main_drop(void)
 	uint32_t action;
 	char **paths;
 	size_t count;
+	int placed;
 	int error;
+
+	/* The desktop's own items dropped on the desktop move to cells, and no file moves (ui-desktop-drag.c). */
+	if (main_app.desktop) {
+		placed = fm_desktop_drop_place(&main_app);
+		if (placed) {
+			fm_dnd_finish(&main_window, FM_DND_MOVE);
+			return;
+		}
+	}
 
 	/* The paths dropped. */
 	paths = NULL;
@@ -781,9 +789,11 @@ main_drop(void)
 		error = fm_dnd_receive(&main_window, &paths, &count);
 	}
 
-	/* The task into the folder. */
+	/* The task into the folder; on the desktop, the new items' places from the drop's cell. */
 	if (error == 0) {
 		fm_drop_perform(&main_app, paths, count);
+		if (main_app.desktop && main_app.drop_self == 0)
+			fm_desktop_dropped(&main_app, paths, count);
 	} else {
 		fm_log("DROP failed errno=%d", error);
 	}
@@ -886,11 +896,7 @@ main_menu_update(void)
 	fm_ui_titlebar_state(&main_app, &main_titlebar_state);
 	fm_titlebar_refresh(&main_titlebar, &main_titlebar_state);
 
-	/* Without menus there is nothing more to tell. */
-	if (main_menu.menu == NULL)
-		return;
-
-	/* The menus' state now, sent when it differs from what they show. */
+	/* The menus' state now, sent when it differs from what they show (a closed context menu goes, also on the desktop, which has no window's menus). */
 	fm_ui_menu_state(&main_app, &state);
 	fm_menu_refresh(&main_menu, &state);
 }
@@ -978,6 +984,14 @@ main_touch_area(
 	/* A dialog, Quick Look or the information card over everything takes the finger as the pointer. */
 	if (main_app.dialog != 0U)
 		return FM_TOUCH_OTHER;
+
+	/*
+	 * The desktop has the gestures everywhere (it does not scroll): a tap
+	 * clicks, two make a double click, a long press is the context menu
+	 * and a long press that moves drags the items (ws094-p006).
+	 */
+	if (main_app.desktop)
+		return FM_TOUCH_CONTENT;
 	if (main_app.quicklook != 0)
 		return FM_TOUCH_OTHER;
 	if (main_app.info_open != 0)
@@ -1058,10 +1072,10 @@ main_touch_pointer(
 	if (made->kind == FM_TOUCH_POINTER_PRESS)
 		main_window.button_serial = made->serial;
 
-	/* The file manager takes it. */
+	/* The file manager (or the desktop) takes it. */
 	main_window.pointer_x = made->x;
 	main_window.pointer_y = made->y;
-	fm_ui_event(&main_app, &event);
+	main_dispatch(&event);
 }
 
 /*
@@ -1145,4 +1159,35 @@ main_open_decorations(void)
 
 	/* Succeeded: the window has its glass, menus and titlebar. */
 	return 0;
+}
+
+/* Gives the desktop the service its context menus open with (ws094-p005); without it a right press shows none. */
+static void
+main_open_context_menus(void)
+{
+	struct fm_menu_state state;
+	int error;
+
+	/* The service, with no window's menus. */
+	fm_ui_menu_state(&main_app, &state);
+	error = fm_menu_open(&main_menu, &main_window, &state);
+	if (error != 0) {
+		fm_log("MENU failed errno=%d", error);
+		fm_menu_close(&main_menu);
+	}
+}
+
+/* Hands an input to the desktop (files --desktop) or to the window's file manager. */
+static void
+main_dispatch(
+	const struct fm_event *event)
+{
+	/* The desktop's own input (ui-desktop.c). */
+	if (main_app.desktop) {
+		fm_desktop_event(&main_app, event);
+		return;
+	}
+
+	/* The window's. */
+	fm_ui_event(&main_app, event);
 }
