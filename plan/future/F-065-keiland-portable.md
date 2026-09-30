@@ -27,15 +27,17 @@ Future Work の詳細。実行の許可ではない。着手するときは新�
    - Mesa などの driver はディストリビューションが `/usr` に入れる。
    - app は、我々の独自の WSI を持つ libvulkan（`/opt/keiland/`）を使い、そこから後段の `/usr/lib/libvulkan.so`（とその ICD）へ chain する。
    - 後段の WSI は使わない。
+   - 後段は `dlopen` し、`dlsym` で得た `vkGetInstanceProcAddr` から関数の pointer で呼ぶ。symbol の名前は変えない（2026-09-30 ユーザー
+     「シンボルを変える必要はないです。バックエンドのlibvulkanは動的ロードしてシンボルをポインタでロードすればいいだけです。」）。
    - 理由: 組み込みで一般的な、Mesa でない libvulkan も使いたい。ベンダーの Vulkan（Mali・PowerVR・Adreno など）は、
      Khronos の loader と ICD の形ではなく、単体の `libvulkan.so` のことが多い。`/usr/lib/libvulkan.so` を入口にすれば、
      中身が Khronos の loader でもベンダーの単体の libvulkan でも同じに扱える。
 
 ## 7 から出ること（2026-09-30 Q1）
 
-- 後段は Wayland を話さない（WSI を使わないため）。ただし後段の library（ディストリビューションの Mesa の ICD、ベンダーの blob）は
-  libwayland-client などに link していることがあり、同じ process の中で我々の library と名前がぶつかる（未決 1）。
-  衝突を名前の分離で避ければ、我々の libwayland-client は upstream と ABI 互換である必要がない（1 の「core だけ」が通る）。
+- 後段は Wayland を話さない（WSI を使わないため）。後段の library（Mesa の ICD、ベンダーの blob）が libwayland-client に link していて、
+  その `wl_*` の参照が先に載った我々の library に結び付いても、実行されないので害は無い。我々に無い symbol は後ろの system の library で解決され、
+  load も失敗しない。このため我々の libwayland-client は upstream と ABI 互換である必要がない（1 の「core だけ」が通る）。
 - client と compositor の間は、全 OS で我々の独自の protocol 1 本にでき、linux-dmabuf・syncobj は要らない。運ぶ中身だけが OS で変わる。
 
   | OS | buffer | fence |
@@ -48,15 +50,13 @@ Future Work の詳細。実行の許可ではない。着手するときは新�
 
 ## 未決（着手のときに決める）
 
-1. **process の中の library の名前の衝突。**
-   - 同じ process に、我々の `/opt/keiland/lib` の libvulkan・libwayland-client・compat の library と、後段の `/usr/lib/libvulkan.so` とその依存
-     （system の libwayland-client・zlib・expat など）が載る。ELF の symbol は process の中で共通の名前空間にあるので、後段の `wl_*`・`vk*`・`inflate` などの
-     参照が我々の library に結び付きうる（load の順で先にあるため）。多くのディストリビューションは `-z now` なので、足りない symbol は load の失敗になる。
-   - symbol の version を付けるだけでは避けられない見込み（version 無しの参照は既定の version の定義に結び付く）。
-   - Q1 の推奨: 我々の library の公開の symbol の名前を変える（header で標準の名前を我々の名前へ写す。例 `#define wl_display_connect keiland_wl_display_connect`）。
-     `/opt/keiland/` の software は全て我々が build するので source は標準の名前のまま書け、OS と libc によらず効く。
-   - 補助: glibc の `dlmopen`・`RTLD_DEEPBIND`（musl では使えず、FreeBSD は未確認）。
+1. **後段の chain の細部と、同じ process の中の名前の確かめ。**（symbol の名前は変えない。決めたこと 7）
    - 前段が後段を dlopen し、`vkGetInstanceProcAddr` から後段の関数を得る形の細部（instance・device の dispatch の包み方）。
+   - 確かめ 1: 後段が自分の公開の `vk*` の address を内部で使う場合（例 `vkGetInstanceProcAddr` が自分の `vkCreateDevice` を返す）、
+     それが先に載った我々の同名の関数に解決されると前段と後段が循環する。Khronos の loader は `-Bsymbolic` で防いでいると Q1 は記憶しているが未確認。
+     ベンダーの単体の libvulkan は不明。起きたら `RTLD_DEEPBIND` などで対処する。
+   - 確かめ 2: 後段が実際に呼ぶ library（Mesa は zlib を shader の cache、expat を driconf に使う）を我々も同じ symbol の名前で持つと、我々の物が呼ばれる。
+     我々の compat の library が ABI まで互換なら問題ない。
 2. **compositor の画面の出力（VK_KHR_display）も WSI の一部である。** 次のどちらにするか。
    - (a) 我々の libvulkan が KMS を直接使って実装する（「後段の WSI は使わない」に一貫する）。
    - (b) Mesa の VK_KHR_display と `VK_EXT_acquire_drm_display` を例外として通す。
