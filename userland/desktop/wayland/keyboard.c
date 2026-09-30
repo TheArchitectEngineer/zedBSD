@@ -32,8 +32,17 @@
  * The flick panel has the faces of keyboard-layout.c (ws102-p003): a press
  * on a key shows its characters around it as petals, the one the movement
  * points at lit, and the release types that character (the face key goes
- * to the next face).  The QWERTY panel's keys and the work area come in
- * later phases.
+ * to the next face).
+ *
+ * The QWERTY panel (ws102-p006) has the letters face (the digits' row,
+ * three rows of letters, the space row with the arrows) and the symbols
+ * face; its keys are as wide as keyboard-layout.c says, in quarter keys.
+ * Shift once makes the next letter a capital (and the digits' row its
+ * symbols); twice within KEYBOARD_SHIFT_LOCK_MS locks it until it is
+ * pressed again.  A pressed key that types shows its character in a
+ * bubble above it.  Room is kept above the rows for a row of extra keys
+ * (KEYBOARD_QWERTY_EXTRA_ROWS, p020).  The work area comes in a later
+ * phase.
  *
  * What a key types goes to the focused application (ws102-p004, design
  * §2.5) by one of two ways, without the input method's own files changing:
@@ -109,6 +118,17 @@
 #define KEYBOARD_SENT_KEY	1U
 #define KEYBOARD_SENT_COMMIT	2U
 
+/* How soon a second press of Shift locks it, in milliseconds. */
+#define KEYBOARD_SHIFT_LOCK_MS	400U
+
+/* Shift: off, for the next character only, or locked. */
+#define KEYBOARD_SHIFT_OFF	0U
+#define KEYBOARD_SHIFT_ONCE	1U
+#define KEYBOARD_SHIFT_LOCKED	2U
+
+/* The rows kept above the QWERTY panel's for the extra keys' row (p020; none yet). */
+#define KEYBOARD_QWERTY_EXTRA_ROWS	0U
+
 /* The Shift bit of the depressed modifiers (server->modifiers). */
 #define KEYBOARD_SHIFT		1U
 
@@ -174,8 +194,11 @@ struct keyboard_contact {
  * (ZWL_FLICK_*), the key held (key_active: its row and column, where
  * the press began and where the pointer is now), and the last character
  * sent and how (KEYBOARD_SENT_*), which the voice and case keys change,
- * and a press held on the title band (where it began), which closes the
- * panel when dragged far enough towards its edge.
+ * a press held on the title band (where it began), which closes the
+ * panel when dragged far enough towards its edge, and the QWERTY panel's
+ * face (ZWL_QWERTY_*) and Shift (KEYBOARD_SHIFT_*, and when it was last
+ * pressed).  On the QWERTY panel the key held is key_row and key_column
+ * (the key's place in its row).
  */
 struct keyboard_state {
 	struct keyboard_contact contact;
@@ -196,6 +219,9 @@ struct keyboard_state {
 	unsigned band_active;
 	int32_t band_x;
 	int32_t band_y;
+	unsigned qface;
+	unsigned shift;
+	uint64_t shift_ms;
 };
 
 /*
@@ -230,6 +256,14 @@ static void keyboard_draw_key(struct zwl_server *server, VkCommandBuffer command
 static void keyboard_draw_petals(struct zwl_server *server, VkCommandBuffer command);
 static unsigned keyboard_characters(const char *text);
 static int keyboard_band_swiped(int32_t x, int32_t y);
+static void keyboard_qwerty_rect(struct zwl_server *server, unsigned row, unsigned index, int32_t *rect);
+static int keyboard_qwerty_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *index);
+static const struct zwl_qwerty_key *keyboard_qwerty_key(unsigned row, unsigned index);
+static void keyboard_qwerty_release(struct zwl_server *server);
+static void keyboard_qwerty_shift(void);
+static void keyboard_qwerty_log(struct zwl_server *server);
+static void keyboard_draw_qwerty(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_bubble(struct zwl_server *server, VkCommandBuffer command);
 static void keyboard_send(struct zwl_server *server, const char *text);
 static int keyboard_send_key(struct zwl_server *server, unsigned code, int shift);
 static int keyboard_send_commit(struct zwl_server *server, const char *text, uint32_t before);
@@ -819,8 +853,10 @@ keyboard_open(
 	keyboard_place(server, kind, keyboard.panel);
 	server->dirty = 1;
 
-	/* The log line the tests read. */
+	/* The log line the tests read, and the QWERTY panel's keys' places. */
 	printf("ZWL OSK open kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(kind), keyboard.panel[0], keyboard.panel[1], keyboard.panel[2], keyboard.panel[3]);
+	if (kind == PANEL_QWERTY)
+		keyboard_qwerty_log(server);
 }
 
 /*
@@ -900,11 +936,17 @@ keyboard_panel_button(
 			}
 		}
 
-		/* A key held: what the release means. */
+		/* A key held: what the release means, on either panel. */
 		if (keyboard.key_active) {
 			keyboard.key_x = server->pointer_x;
 			keyboard.key_y = server->pointer_y;
-			keyboard_key_release(server);
+			if (keyboard.open == PANEL_QWERTY) {
+				keyboard_qwerty_release(server);
+			} else {
+				keyboard_key_release(server);
+			}
+
+			/* The release was the key's. */
 			return 1;
 		}
 
@@ -931,10 +973,12 @@ keyboard_panel_button(
 		keyboard.band_y = server->pointer_y;
 	}
 
-	/* On a key of the flick panel, the key is held (its petals show). */
+	/* On a key, the key is held (the flick panel's petals, the QWERTY panel's bubble show). */
 	found = 0;
 	if (keyboard.open == PANEL_FLICK)
 		found = keyboard_key_at(server, server->pointer_x, server->pointer_y, &row, &column);
+	if (keyboard.open == PANEL_QWERTY)
+		found = keyboard_qwerty_at(server, server->pointer_x, server->pointer_y, &row, &column);
 	if (found) {
 		keyboard.key_active = 1;
 		keyboard.key_row = row;
@@ -1039,11 +1083,16 @@ keyboard_draw_panel(
 	if (keyboard.face == ZWL_FLICK_NUMBER)
 		title = "123";
 	if (keyboard.open == PANEL_QWERTY)
-		title = "Keyboard";
+		title = "ABC";
+	if (keyboard.open == PANEL_QWERTY && keyboard.qface == ZWL_QWERTY_SYMBOLS)
+		title = "?123";
 	glass_draw_text(server, command, SIZE_TITLE, rect[0] + KEYBOARD_MARGIN + 4, rect[1] + KEYBOARD_BAND - 6, title, rect[2] - 3 * KEYBOARD_MARGIN - KEYBOARD_CLOSE, dark);
 
-	/* The flick panel's keys, and the held key's petals over them. */
-	if (keyboard.open == PANEL_FLICK) {
+	/* The panel's keys: the QWERTY panel's with the held key's bubble, the flick panel's with its petals. */
+	if (keyboard.open == PANEL_QWERTY) {
+		keyboard_draw_qwerty(server, command);
+		keyboard_draw_bubble(server, command);
+	} else if (keyboard.open == PANEL_FLICK) {
 		keyboard_draw_keys(server, command);
 		keyboard_draw_petals(server, command);
 	}
@@ -1586,6 +1635,319 @@ keyboard_band_swiped(
 
 	/* Not far enough. */
 	return 0;
+}
+
+/*
+ * Works out a QWERTY key's rectangle: the panel's width is
+ * ZWL_QWERTY_ROW_UNITS quarter keys, a narrower row is centred, the rows
+ * share the height under the title band (with room for the extra keys'
+ * row above them).
+ */
+static void
+keyboard_qwerty_rect(
+	struct zwl_server *server,
+	unsigned row,
+	unsigned index,
+	int32_t *rect)
+{
+	const struct zwl_qwerty_key *keys;
+	unsigned count;
+	unsigned units;
+	unsigned before;
+	unsigned rows;
+	unsigned key;
+	float unit;
+	int32_t height;
+	int32_t left;
+
+	/* The row's keys: the whole row's width in quarters, and the quarters before the key. */
+	(void)server;
+	keys = zwl_qwerty_row(keyboard.qface, row, &count);
+	units = 0;
+	before = 0;
+	for (key = 0; key < count; key++) {
+		/* The quarters before this key. */
+		if (key == index)
+			before = units;
+		units += keys[key].width;
+	}
+
+	/* A quarter's width across the panel, and the row's left end (a narrower row centred). */
+	unit = (float)(keyboard.panel[2] - KEYBOARD_KEY_GAP) / (float)ZWL_QWERTY_ROW_UNITS;
+	left = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)((float)(ZWL_QWERTY_ROW_UNITS - units) * unit / 2.0f);
+
+	/* The rows' height under the band, the extra keys' rows counted. */
+	rows = ZWL_QWERTY_ROWS + KEYBOARD_QWERTY_EXTRA_ROWS;
+	height = (keyboard.panel[3] - KEYBOARD_BAND - (int32_t)(rows + 1U) * KEYBOARD_KEY_GAP) / (int32_t)rows;
+
+	/* The key. */
+	rect[0] = left + (int32_t)((float)before * unit);
+	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP + (int32_t)(row + KEYBOARD_QWERTY_EXTRA_ROWS) * (height + KEYBOARD_KEY_GAP);
+	rect[2] = (int32_t)((float)keys[index].width * unit) - KEYBOARD_KEY_GAP;
+	rect[3] = height;
+}
+
+/* Finds the QWERTY key at a point.  Returns 1 with its row and its place in the row, or 0. */
+static int
+keyboard_qwerty_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	unsigned *row,
+	unsigned *index)
+{
+	int32_t rect[4];
+	unsigned count;
+	unsigned r;
+	unsigned i;
+	int inside;
+
+	/* Each key of each row. */
+	for (r = 0; r < ZWL_QWERTY_ROWS; r++) {
+		(void)zwl_qwerty_row(keyboard.qface, r, &count);
+		for (i = 0; i < count; i++) {
+			/* The point on this key. */
+			keyboard_qwerty_rect(server, r, i, rect);
+			inside = keyboard_contains(rect, x, y);
+			if (!inside)
+				continue;
+
+			/* Succeeded: the key. */
+			*row = r;
+			*index = i;
+			return 1;
+		}
+	}
+
+	/* No key there. */
+	return 0;
+}
+
+/* Returns a key of the QWERTY panel's face; NULL outside its row. */
+static const struct zwl_qwerty_key *
+keyboard_qwerty_key(
+	unsigned row,
+	unsigned index)
+{
+	const struct zwl_qwerty_key *keys;
+	unsigned count;
+
+	/* The row, and the key in it. */
+	keys = zwl_qwerty_row(keyboard.qface, row, &count);
+	if (keys == NULL || index >= count)
+		return NULL;
+
+	/* The key. */
+	return &keys[index];
+}
+
+/*
+ * Acts on the release of the held QWERTY key: a character (its Shift form
+ * while Shift is on, which a single Shift gives to one character only),
+ * delete, an arrow, Shift, or the other face.
+ */
+static void
+keyboard_qwerty_release(
+	struct zwl_server *server)
+{
+	const struct zwl_qwerty_key *key;
+	const char *text;
+	int sent;
+
+	/* The key. */
+	keyboard.key_active = 0;
+	server->dirty = 1;
+	key = keyboard_qwerty_key(keyboard.key_row, keyboard.key_column);
+	if (key == NULL)
+		return;
+
+	/* The log line the tests read, with the time (the rate of typing). */
+	printf("ZWL OSK qkey face=%s row=%u index=%u label=%s shift=%u ms=%llu\n", zwl_qwerty_face_name(keyboard.qface), keyboard.key_row, keyboard.key_column, key->label, keyboard.shift, (unsigned long long)zwl_milliseconds());
+
+	/* What the key does. */
+	switch (key->action) {
+	case ZWL_FLICK_SHIFT:
+		keyboard_qwerty_shift();
+		break;
+	case ZWL_FLICK_FACE:
+		/* The other face; Shift goes. */
+		keyboard.qface = (keyboard.qface + 1U) % ZWL_QWERTY_FACES;
+		keyboard.shift = KEYBOARD_SHIFT_OFF;
+		printf("ZWL OSK qface name=%s\n", zwl_qwerty_face_name(keyboard.qface));
+		keyboard_qwerty_log(server);
+		break;
+	case ZWL_FLICK_BACKSPACE:
+		/* The delete key; the last character is gone. */
+		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		if (sent)
+			keyboard_remember("", KEYBOARD_SENT_NONE);
+		break;
+	case ZWL_FLICK_ARROW:
+		(void)keyboard_send_key(server, key->code, 0);
+		break;
+	default:
+		/* A character: its Shift form while Shift is on (a single Shift is used up). */
+		text = key->text;
+		if (keyboard.shift != KEYBOARD_SHIFT_OFF)
+			text = key->shifted;
+		if (keyboard.shift == KEYBOARD_SHIFT_ONCE)
+			keyboard.shift = KEYBOARD_SHIFT_OFF;
+		if (text != NULL)
+			keyboard_send(server, text);
+		break;
+	}
+}
+
+/* Presses Shift: off to once; once to locked when pressed again soon, else off; locked to off. */
+static void
+keyboard_qwerty_shift(
+	void)
+{
+	uint64_t now;
+
+	/* The time of this press. */
+	now = zwl_milliseconds();
+
+	/* The next state. */
+	if (keyboard.shift == KEYBOARD_SHIFT_OFF) {
+		keyboard.shift = KEYBOARD_SHIFT_ONCE;
+	} else if (keyboard.shift == KEYBOARD_SHIFT_ONCE && now - keyboard.shift_ms <= KEYBOARD_SHIFT_LOCK_MS) {
+		keyboard.shift = KEYBOARD_SHIFT_LOCKED;
+	} else {
+		keyboard.shift = KEYBOARD_SHIFT_OFF;
+	}
+
+	/* When it was pressed, and the log line the tests read. */
+	keyboard.shift_ms = now;
+	printf("ZWL OSK shift state=%u\n", keyboard.shift);
+}
+
+/* Logs the QWERTY panel's keys' places for its face (the tests find the keys by them). */
+static void
+keyboard_qwerty_log(
+	struct zwl_server *server)
+{
+	const struct zwl_qwerty_key *keys;
+	int32_t rect[4];
+	unsigned count;
+	unsigned row;
+	unsigned index;
+
+	/* Each key of each row. */
+	for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
+		keys = zwl_qwerty_row(keyboard.qface, row, &count);
+		for (index = 0; index < count; index++) {
+			keyboard_qwerty_rect(server, row, index, rect);
+			printf("ZWL OSK qrect face=%s row=%u index=%u x=%d y=%d width=%d height=%d label=%s\n", zwl_qwerty_face_name(keyboard.qface), row, index, rect[0], rect[1], rect[2], rect[3], keys[index].label);
+		}
+	}
+}
+
+/* Draws the QWERTY panel's keys: typing keys white, acting keys grey, Shift blue while on, the held key blue. */
+static void
+keyboard_draw_qwerty(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
+	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	const struct zwl_qwerty_key *keys;
+	const float *ground;
+	const float *ink;
+	const char *label;
+	enum glass_size size;
+	int32_t rect[4];
+	unsigned characters;
+	unsigned count;
+	unsigned row;
+	unsigned index;
+
+	/* Each key of each row. */
+	for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
+		keys = zwl_qwerty_row(keyboard.qface, row, &count);
+		for (index = 0; index < count; index++) {
+			/* The key's place, colours and label (the Shift form while Shift is on). */
+			keyboard_qwerty_rect(server, row, index, rect);
+			ground = white;
+			ink = dark;
+			label = keys[index].label;
+			if (keyboard.shift != KEYBOARD_SHIFT_OFF)
+				label = keys[index].shifted_label;
+			if (keys[index].action != ZWL_FLICK_TYPE)
+				ground = grey;
+			if (keys[index].action == ZWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_ONCE)
+				ground = pale;
+			if (keys[index].action == ZWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_LOCKED) {
+				ground = blue;
+				ink = light;
+			}
+
+			/* The held key is blue. */
+			if (keyboard.key_active && keyboard.key_row == row && keyboard.key_column == index) {
+				ground = blue;
+				ink = light;
+			}
+
+			/* A single character large, a word a size smaller. */
+			size = SIZE_SEARCH;
+			characters = keyboard_characters(label);
+			if (characters > 1U)
+				size = SIZE_SIGN;
+			keyboard_draw_key(server, command, rect, label, ground, ink, size);
+		}
+	}
+}
+
+/* Draws the bubble over the held QWERTY key that types: its character, larger, above it. */
+static void
+keyboard_draw_bubble(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	const struct zwl_qwerty_key *key;
+	struct glass_shape shape;
+	const char *label;
+	int32_t rect[4];
+	int32_t bubble[4];
+
+	/* Only a held key that types a character. */
+	if (!keyboard.key_active)
+		return;
+	key = keyboard_qwerty_key(keyboard.key_row, keyboard.key_column);
+	if (key == NULL || key->action != ZWL_FLICK_TYPE)
+		return;
+
+	/* Above the key, a little wider, as high as it. */
+	keyboard_qwerty_rect(server, keyboard.key_row, keyboard.key_column, rect);
+	bubble[2] = rect[2] + 16;
+	bubble[3] = rect[3] + 12;
+	bubble[0] = rect[0] - 8;
+	bubble[1] = rect[1] - bubble[3] - 4;
+
+	/* Its shadow, and the bubble with the character. */
+	glass_shape_init(&shape, (float)bubble[0], (float)bubble[1] + 3.0f, (float)bubble[2], (float)bubble[3]);
+	shape.quad[0] -= 16.0f;
+	shape.quad[1] -= 16.0f;
+	shape.quad[2] += 32.0f;
+	shape.quad[3] += 32.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = KEYBOARD_KEY_RADIUS;
+	shape.soft = 8.0f;
+	shape.color[0] = 0.10f;
+	shape.color[1] = 0.18f;
+	shape.color[2] = 0.35f;
+	shape.color[3] = 0.30f;
+	glass_shape_draw(server, command, &shape);
+	label = key->label;
+	if (keyboard.shift != KEYBOARD_SHIFT_OFF)
+		label = key->shifted_label;
+	keyboard_draw_key(server, command, bubble, label, white, dark, SIZE_SEARCH);
 }
 
 /* Counts the characters of a UTF-8 text (the bytes that do not continue one). */

@@ -34,6 +34,24 @@
 #define LAYOUT_FLICK_TENTHS	3
 
 /*
+ * One key of the QWERTY panel that types a letter (its lower and upper
+ * case) or a symbol (the same with Shift), a key wide; and one row of the
+ * panel's table from its array of keys.
+ */
+#define LAYOUT_LETTER(lower, upper)	{ lower, upper, lower, upper, ZWL_FLICK_TYPE, 0U, 4U }
+#define LAYOUT_SYMBOL(symbol)		{ symbol, symbol, symbol, symbol, ZWL_FLICK_TYPE, 0U, 4U }
+#define LAYOUT_ROW(keys)		{ keys, sizeof(keys) / sizeof(keys[0]) }
+
+/*
+ * One row of the QWERTY panel: its keys and how many.  The faces' rows
+ * are [face][row].
+ */
+struct layout_qwerty_row {
+	const struct zwl_qwerty_key *keys;
+	unsigned count;
+};
+
+/*
  * The keys of every face, row by row, column by column: [face][row][column].
  * The texts are centre, left, up, right, down.
  */
@@ -116,6 +134,106 @@ static const struct zwl_flick_key layout_keys[ZWL_FLICK_FACES][ZWL_FLICK_ROWS][Z
 			{ "あ", ZWL_FLICK_FACE, { NULL, NULL, NULL, NULL, NULL } }
 		}
 	}
+};
+
+/*
+ * The QWERTY panel's keys, face by face, row by row (ws102-p006): label,
+ * label with Shift, text, text with Shift, action, arrow code, width in
+ * quarter keys.  The rows are LAYOUT_QWERTY_* long; a row narrower than
+ * ZWL_QWERTY_ROW_UNITS is centred.
+ */
+
+static const struct zwl_qwerty_key layout_digits[] = {
+	{ "1", "!", "1", "!", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "2", "@", "2", "@", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "3", "#", "3", "#", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "4", "$", "4", "$", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "5", "%", "5", "%", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "6", "^", "6", "^", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "7", "&", "7", "&", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "8", "*", "8", "*", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "9", "(", "9", "(", ZWL_FLICK_TYPE, 0U, 4U },
+	{ "0", ")", "0", ")", ZWL_FLICK_TYPE, 0U, 4U }
+};
+
+static const struct zwl_qwerty_key layout_letters_top[] = {
+	LAYOUT_LETTER("q", "Q"), LAYOUT_LETTER("w", "W"), LAYOUT_LETTER("e", "E"), LAYOUT_LETTER("r", "R"), LAYOUT_LETTER("t", "T"),
+	LAYOUT_LETTER("y", "Y"), LAYOUT_LETTER("u", "U"), LAYOUT_LETTER("i", "I"), LAYOUT_LETTER("o", "O"), LAYOUT_LETTER("p", "P")
+};
+
+static const struct zwl_qwerty_key layout_letters_middle[] = {
+	LAYOUT_LETTER("a", "A"), LAYOUT_LETTER("s", "S"), LAYOUT_LETTER("d", "D"), LAYOUT_LETTER("f", "F"), LAYOUT_LETTER("g", "G"),
+	LAYOUT_LETTER("h", "H"), LAYOUT_LETTER("j", "J"), LAYOUT_LETTER("k", "K"), LAYOUT_LETTER("l", "L")
+};
+
+static const struct zwl_qwerty_key layout_letters_bottom[] = {
+	{ "Shift", "Shift", NULL, NULL, ZWL_FLICK_SHIFT, 0U, 6U },
+	LAYOUT_LETTER("z", "Z"), LAYOUT_LETTER("x", "X"), LAYOUT_LETTER("c", "C"), LAYOUT_LETTER("v", "V"),
+	LAYOUT_LETTER("b", "B"), LAYOUT_LETTER("n", "N"), LAYOUT_LETTER("m", "M"),
+	{ "Del", "Del", NULL, NULL, ZWL_FLICK_BACKSPACE, 0U, 6U }
+};
+
+static const struct zwl_qwerty_key layout_letters_space[] = {
+	{ "?123", "?123", NULL, NULL, ZWL_FLICK_FACE, 0U, 5U },
+	{ ",", ",", ",", ",", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "space", "space", " ", " ", ZWL_FLICK_SPACE, 0U, 12U },
+	{ ".", ".", ".", ".", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "Enter", "Enter", "\n", "\n", ZWL_FLICK_ENTER, 0U, 5U },
+	{ "←", "←", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_LEFT, 3U },
+	{ "↑", "↑", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_UP, 3U },
+	{ "↓", "↓", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_DOWN, 3U },
+	{ "→", "→", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_RIGHT, 3U }
+};
+
+static const struct zwl_qwerty_key layout_symbols_top[] = {
+	LAYOUT_SYMBOL("-"), LAYOUT_SYMBOL("/"), LAYOUT_SYMBOL(":"), LAYOUT_SYMBOL(";"), LAYOUT_SYMBOL("<"),
+	LAYOUT_SYMBOL(">"), LAYOUT_SYMBOL("["), LAYOUT_SYMBOL("]"), LAYOUT_SYMBOL("{"), LAYOUT_SYMBOL("}")
+};
+
+static const struct zwl_qwerty_key layout_symbols_middle[] = {
+	LAYOUT_SYMBOL("."), LAYOUT_SYMBOL(","), LAYOUT_SYMBOL("?"), LAYOUT_SYMBOL("!"), LAYOUT_SYMBOL("'"),
+	LAYOUT_SYMBOL("\""), LAYOUT_SYMBOL("`"), LAYOUT_SYMBOL("_"), LAYOUT_SYMBOL("\\"), LAYOUT_SYMBOL("|")
+};
+
+static const struct zwl_qwerty_key layout_symbols_bottom[] = {
+	LAYOUT_SYMBOL("~"), LAYOUT_SYMBOL("+"), LAYOUT_SYMBOL("="), LAYOUT_SYMBOL("*"),
+	LAYOUT_SYMBOL("#"), LAYOUT_SYMBOL("%"), LAYOUT_SYMBOL("^"), LAYOUT_SYMBOL("&"),
+	{ "Del", "Del", NULL, NULL, ZWL_FLICK_BACKSPACE, 0U, 8U }
+};
+
+static const struct zwl_qwerty_key layout_symbols_space[] = {
+	{ "ABC", "ABC", NULL, NULL, ZWL_FLICK_FACE, 0U, 5U },
+	{ ",", ",", ",", ",", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "space", "space", " ", " ", ZWL_FLICK_SPACE, 0U, 12U },
+	{ ".", ".", ".", ".", ZWL_FLICK_TYPE, 0U, 3U },
+	{ "Enter", "Enter", "\n", "\n", ZWL_FLICK_ENTER, 0U, 5U },
+	{ "←", "←", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_LEFT, 3U },
+	{ "↑", "↑", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_UP, 3U },
+	{ "↓", "↓", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_DOWN, 3U },
+	{ "→", "→", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_RIGHT, 3U }
+};
+
+static const struct layout_qwerty_row layout_qwerty[ZWL_QWERTY_FACES][ZWL_QWERTY_ROWS] = {
+	{
+		LAYOUT_ROW(layout_digits),
+		LAYOUT_ROW(layout_letters_top),
+		LAYOUT_ROW(layout_letters_middle),
+		LAYOUT_ROW(layout_letters_bottom),
+		LAYOUT_ROW(layout_letters_space)
+	},
+	{
+		LAYOUT_ROW(layout_digits),
+		LAYOUT_ROW(layout_symbols_top),
+		LAYOUT_ROW(layout_symbols_middle),
+		LAYOUT_ROW(layout_symbols_bottom),
+		LAYOUT_ROW(layout_symbols_space)
+	}
+};
+
+/* The QWERTY panel's faces' names, for the log. */
+static const char *const layout_qwerty_names[ZWL_QWERTY_FACES] = {
+	"letters",
+	"symbols"
 };
 
 /* The faces' names, for the log and the title band. */
@@ -416,4 +534,39 @@ zwl_flick_us_key(
 
 	/* No key types it. */
 	return 0;
+}
+
+/*
+ * Returns a row of a QWERTY face and how many keys it has; NULL outside
+ * the faces and rows.
+ */
+const struct zwl_qwerty_key *
+zwl_qwerty_row(
+	unsigned face,
+	unsigned row,
+	unsigned *count)
+{
+	/* Only the faces and their rows. */
+	*count = 0;
+	if (face >= ZWL_QWERTY_FACES || row >= ZWL_QWERTY_ROWS)
+		return NULL;
+
+	/* The row's keys. */
+	*count = layout_qwerty[face][row].count;
+	return layout_qwerty[face][row].keys;
+}
+
+/*
+ * Returns a QWERTY face's name (letters, symbols); "?" for none.
+ */
+const char *
+zwl_qwerty_face_name(
+	unsigned face)
+{
+	/* Only the faces. */
+	if (face >= ZWL_QWERTY_FACES)
+		return "?";
+
+	/* The name. */
+	return layout_qwerty_names[face];
 }
