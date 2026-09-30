@@ -48,7 +48,9 @@
  * with Shift while selecting), selecting (a toggle), select all, undo,
  * redo, copy, cut and paste (zwl_edit_action, edit.c: the window's own edit
  * operations, or their keys).  A tool the focused window cannot do now is
- * drawn faint (zwl_edit_state).
+ * drawn faint (zwl_edit_state).  The history tab (ws102-p024) lists the
+ * clipboard's history (clipboard.c, the newest first, each on one line); a
+ * tap pastes an item into the focused window.
  *
  * The same swipe again closes the panel it opened; the other corner's
  * swipe changes panels; the panel's close key closes it, and so does a
@@ -221,6 +223,14 @@ enum keyboard_tool_kind {
 	TOOL_PASTE
 };
 
+/* The tools' faces under the tabs: the edit tools, the clipboard's history. */
+#define KEYBOARD_FACE_EDIT	0U
+#define KEYBOARD_FACE_HISTORY	1U
+
+/* The history's rows: how many, and the longest text shown of an item (bytes). */
+#define KEYBOARD_HISTORY_ROWS	10U
+#define KEYBOARD_HISTORY_TEXT	160U
+
 /* The tools' rows: the row always there, the tabs' row (lower), and the edit tools' rows. */
 #define KEYBOARD_TOOL_ROW	44
 #define KEYBOARD_TOOL_TABS	30
@@ -346,7 +356,9 @@ struct keyboard_move {
  * holds when fingers come by touch.c's ROUTE_OSK (ws102-p009), and
  * touch_x, touch_y where it was last.  tool_active and tool are the flick
  * panel's tool held (its index in keyboard_tools), selecting the edit
- * tools' selection toggle (the movements go with Shift).
+ * tools' selection toggle (the movements go with Shift).  tools_face is
+ * the face under the tabs (KEYBOARD_FACE_*), history_active and
+ * history_row the history's row held.
  */
 
 /*
@@ -431,6 +443,9 @@ struct keyboard_state {
 	unsigned tool_active;
 	unsigned tool;
 	unsigned selecting;
+	unsigned tools_face;
+	unsigned history_active;
+	unsigned history_row;
 };
 
 /*
@@ -508,6 +523,10 @@ static void keyboard_tool_release(struct zwl_server *server);
 static void keyboard_tool_move(struct zwl_server *server, unsigned code);
 static void keyboard_tool_edit(struct zwl_server *server, unsigned action);
 static void keyboard_draw_tools(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_history_rect(struct zwl_server *server, unsigned row, int32_t *rect);
+static int keyboard_history_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row);
+static void keyboard_history_release(struct zwl_server *server);
+static void keyboard_draw_history(struct zwl_server *server, VkCommandBuffer command);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum zwl_contact_source source);
 static int keyboard_touch_button(struct zwl_server *server, int32_t x, int32_t y, uint32_t state);
@@ -905,6 +924,7 @@ zwl_keyboard_close(
 	keyboard.slide_ms = zwl_milliseconds();
 	keyboard.open = PANEL_NONE;
 	keyboard.tool_active = 0;
+	keyboard.history_active = 0;
 	keyboard.selecting = 0;
 	keyboard_work_area(server);
 	keyboard.held = 0;
@@ -1451,6 +1471,12 @@ keyboard_panel_button(
 			return 1;
 		}
 
+		/* A row of the history is pasted. */
+		if (keyboard.history_active) {
+			keyboard_history_release(server);
+			return 1;
+		}
+
 		/* A key of the handwriting face acts. */
 		if (keyboard.hand_key_active) {
 			keyboard_hand_key_release(server);
@@ -1502,12 +1528,23 @@ keyboard_panel_button(
 		keyboard.band_y = server->pointer_y;
 	}
 
-	/* On the flick panel's tools, the tool is held. */
+	/* On the flick panel's tools, the tool is held; on the history's rows, the row. */
 	if (keyboard.open == PANEL_FLICK) {
 		found = keyboard_tool_at(server, server->pointer_x, server->pointer_y, &row);
 		if (found) {
 			keyboard.tool_active = 1;
 			keyboard.tool = row;
+			server->dirty = 1;
+			return 1;
+		}
+
+		/* A row of the history, when it shows. */
+		found = 0;
+		if (keyboard.tools_face == KEYBOARD_FACE_HISTORY)
+			found = keyboard_history_at(server, server->pointer_x, server->pointer_y, &row);
+		if (found) {
+			keyboard.history_active = 1;
+			keyboard.history_row = row;
 			server->dirty = 1;
 			return 1;
 		}
@@ -1659,6 +1696,8 @@ keyboard_draw_panel(
 		keyboard_draw_bubble(server, command);
 	} else if (keyboard.open == PANEL_FLICK) {
 		keyboard_draw_tools(server, command);
+		if (keyboard.tools_face == KEYBOARD_FACE_HISTORY)
+			keyboard_draw_history(server, command);
 		keyboard_draw_keys(server, command);
 		keyboard_draw_petals(server, command);
 	}
@@ -3377,8 +3416,12 @@ keyboard_tool_at(
 	unsigned tool;
 	int inside;
 
-	/* Each tool. */
+	/* Each tool (the edit tools only on their face). */
 	for (tool = 0; tool < sizeof(keyboard_tools) / sizeof(keyboard_tools[0]); tool++) {
+		/* A tool of another face is not there. */
+		if (keyboard_tools[tool].row >= 2U && keyboard.tools_face != KEYBOARD_FACE_EDIT)
+			continue;
+
 		/* The point on this tool. */
 		keyboard_tool_rect(server, tool, rect);
 		inside = keyboard_contains(rect, x, y);
@@ -3412,9 +3455,10 @@ keyboard_tool_enabled(
 	(void)server;
 	switch (keyboard_tools[index].kind) {
 	case TOOL_TAB_CANDIDATES:
-	case TOOL_TAB_HISTORY:
 	case TOOL_TAB_EMOJI:
 		return 0;
+	case TOOL_TAB_HISTORY:
+		return 1;
 	case TOOL_UNDO:
 		action = ZWL_EDIT_UNDO;
 		break;
@@ -3524,8 +3568,16 @@ keyboard_tool_release(
 	case TOOL_PASTE:
 		keyboard_tool_edit(server, ZWL_EDIT_PASTE);
 		break;
+	case TOOL_TAB_EDIT:
+		keyboard.tools_face = KEYBOARD_FACE_EDIT;
+		printf("ZWL OSK tool face=edit\n");
+		break;
+	case TOOL_TAB_HISTORY:
+		keyboard.tools_face = KEYBOARD_FACE_HISTORY;
+		printf("ZWL OSK tool face=history items=%u\n", zwl_clipboard_history_count(server));
+		break;
 	default:
-		/* The edit tab is the one shown; the others are to come. */
+		/* The tabs of later phases do nothing yet. */
 		break;
 	}
 }
@@ -3599,7 +3651,11 @@ keyboard_draw_tools(
 		ink = dark;
 		if (tool->row == 0U)
 			ground = grey;
-		if (tool->kind == TOOL_TAB_EDIT)
+		if (tool->row >= 2U && keyboard.tools_face != KEYBOARD_FACE_EDIT)
+			continue;
+		if (tool->kind == TOOL_TAB_EDIT && keyboard.tools_face == KEYBOARD_FACE_EDIT)
+			ground = pale;
+		if (tool->kind == TOOL_TAB_HISTORY && keyboard.tools_face == KEYBOARD_FACE_HISTORY)
 			ground = pale;
 		if (tool->kind == TOOL_SELECT && keyboard.selecting)
 			ground = pale;
@@ -3615,6 +3671,143 @@ keyboard_draw_tools(
 
 		/* The tool. */
 		keyboard_draw_key(server, command, rect, tool->label, ground, ink, SIZE_TITLE);
+	}
+}
+
+/*
+ * Works out a row of the history's list: the rows share the flick panel's
+ * column between the tabs and the keys.
+ */
+static void
+keyboard_history_rect(
+	struct zwl_server *server,
+	unsigned row,
+	int32_t *rect)
+{
+	int32_t top;
+	int32_t bottom;
+	int32_t height;
+	int key;
+
+	/* From under the tabs to over the keys. */
+	key = keyboard_key_size(server);
+	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
+	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)ZWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	height = (bottom - top - (int32_t)(KEYBOARD_HISTORY_ROWS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_HISTORY_ROWS;
+
+	/* The row. */
+	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP;
+	rect[1] = top + (int32_t)row * (height + KEYBOARD_KEY_GAP);
+	rect[2] = keyboard.panel[2] - 2 * KEYBOARD_KEY_GAP;
+	rect[3] = height;
+}
+
+/* Finds the history's row at a point (only rows with an item).  Returns 1 with the row, or 0. */
+static int
+keyboard_history_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	unsigned *row)
+{
+	int32_t rect[4];
+	unsigned count;
+	unsigned index;
+	int inside;
+
+	/* Each row with an item. */
+	count = zwl_clipboard_history_count(server);
+	for (index = 0; index < count && index < KEYBOARD_HISTORY_ROWS; index++) {
+		/* The point on this row. */
+		keyboard_history_rect(server, index, rect);
+		inside = keyboard_contains(rect, x, y);
+		if (!inside)
+			continue;
+
+		/* Succeeded: the row. */
+		*row = index;
+		return 1;
+	}
+
+	/* No item there. */
+	return 0;
+}
+
+/* Pastes the held row's item into the focused window (clipboard.c). */
+static void
+keyboard_history_release(
+	struct zwl_server *server)
+{
+	int error;
+
+	/* The item, pasted, and the log line the tests read. */
+	keyboard.history_active = 0;
+	server->dirty = 1;
+	error = zwl_clipboard_history_paste(server, keyboard.history_row);
+	printf("ZWL OSK history paste index=%u error=%d\n", keyboard.history_row, error);
+}
+
+/*
+ * Draws the clipboard's history under the tabs: each item on a row, the
+ * newest first, its text on one line (line breaks and tabs shown as
+ * spaces, cut in the middle when too long); the held row blue; a note when
+ * the history is empty.
+ */
+static void
+keyboard_draw_history(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	char line[KEYBOARD_HISTORY_TEXT + 1U];
+	const float *ground;
+	const float *ink;
+	const char *text;
+	int32_t rect[4];
+	size_t length;
+	size_t byte;
+	unsigned count;
+	unsigned index;
+
+	/* An empty history: a note in the first row's place. */
+	count = zwl_clipboard_history_count(server);
+	if (count == 0U) {
+		keyboard_history_rect(server, 0U, rect);
+		glass_draw_text(server, command, SIZE_BAR, rect[0] + 8, rect[1] + rect[3] / 2 + 5, "履歴はまだありません", rect[2] - 16, soft);
+		return;
+	}
+
+	/* Each item, the newest first. */
+	for (index = 0; index < count && index < KEYBOARD_HISTORY_ROWS; index++) {
+		/* The item's text, on one line (cut to the room of the copy). */
+		text = zwl_clipboard_history_get(server, index, &length);
+		if (text == NULL)
+			continue;
+		if (length > KEYBOARD_HISTORY_TEXT)
+			length = KEYBOARD_HISTORY_TEXT;
+		memcpy(line, text, length);
+		line[length] = '\0';
+		for (byte = 0; byte < length; byte++) {
+			if (line[byte] == '\n' || line[byte] == '\r' || line[byte] == '\t')
+				line[byte] = ' ';
+		}
+
+		/* The row: blue while held. */
+		keyboard_history_rect(server, index, rect);
+		ground = white;
+		ink = dark;
+		if (keyboard.history_active && keyboard.history_row == index) {
+			ground = blue;
+			ink = light;
+		}
+
+		/* Its ground and its text, cut in the middle to the row. */
+		glass_draw_solid(server, command, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3], 6.0f, ground);
+		glass_draw_text_middle(server, command, SIZE_TITLE, rect[0] + 8, rect[1] + rect[3] / 2 + 5, line, rect[2] - 16, ink);
 	}
 }
 

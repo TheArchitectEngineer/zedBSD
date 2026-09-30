@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p016・p017・p018・p020・p021・p023 と L3 の p019 cleared 2026-09-30。次は p024（履歴の面）→ p022（絵文字の面）（P3）
+Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p016・p017・p018・p020・p021・p023 と L3 の p019 cleared 2026-09-30。p024 cleared 2026-09-30（全手順の回帰は未実施）。ユーザーの指示で優先を下げ P3 の担当は終了（2026-09-30）。再開はユーザーが言うとき（次は p022 の絵文字の面、BUG-125）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-30 ユーザー）
@@ -68,7 +68,7 @@ Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p01
 | [ws102-p018](phase018/phase.md) | L3 | クリップボードの履歴（記憶の中だけ、10 件、secret の複写は残さない、lock・Log Out で消す）。`clipboard.c`、口は `zwl_clipboard_history_count`・`_get`・`_paste`、試験の口は Super+Alt+H・数字。一覧の UI は p016 | cleared（2026-09-30 P6: 新しい順・10 件・貼り付け・secret（`x-kde-passwordManagerHint`）の除外・lock と Log Out で消える、C9・WS079-p010・boot PASS。text-input の purpose による除外は IME の file の許可が無く残り、きっかけは IME の作業がエージェントに戻ったとき） | p017 |
 | [ws102-p023](phase023/phase.md) | L2 | Text Editor が本当の編集の状態（選択がある・貼れる・取り消せる・やり直せる）を `kui_window_edit_state` で言う（p017 の灰色の表示を正しくする） | cleared（2026-09-30 P6: 開いた時 0x0 → 全選択 0x1 → 複写 0x3 → 打つ 0x6 → 取り消し 0xb、`edit-guest.sh` の期待値を本当の状態に更新して PASS、inset・host-core PASS） | p017 |
 | [ws102-p019](phase019/phase.md) | L3 | 色付きの絵文字 その 1（2026-09-30 ユーザー「色付きにする」）: font の選定（Noto Color Emoji の CBDT か COLRv1）と license の監査、userland/desktop/fonts への追加、libtruetype の色の glyph、libkeiui と compositor の文字の描画の fallback で色の絵文字を描く。Text Editor に貼った絵文字が色で出る | cleared（2026-09-30、QEMU と host: CBDT の Noto Color Emoji（OFL-1.1、取得と検証の package）、libtruetype の `truetype_color_glyph`、libkeiui（KUI_VERSION 9）・compositor・Text Editor の fallback で色の絵文字、C7・C9・boot PASS、rootfs +10.7 MB） | p016 の前でよい（keyboard に依らない） |
-| ws102-p024 | L2 | 右の列の道具の面の「履歴」の tab（p018 の `zwl_clipboard_history_*` を一覧にし、tap で貼る。2 段の操作） | planned（P3、2026-09-30） | p016・p018 |
+| [ws102-p024](phase024/phase.md) | L2 | 右の列の道具の面の「履歴」の tab（p018 の `zwl_clipboard_history_*` を一覧にし、tap で貼る。2 段の操作） | cleared（2026-09-30 QEMU: 3 つの app で複写 → 履歴の 2 番目を tap で receive.txt が bravo。全手順の回帰・C9・boot はユーザーの指示のラップアップで未実施。優先を下げ、再開はユーザーが言うとき） | p016・p018 |
 | ws102-p022 | L3 | 色付きの絵文字 その 2: keyboard の絵文字の面（種類の tab と格子、tap で text-input の commit、text-input の無い app へは送らない） | planned | p019・p016 |
 | [ws102-p021](phase021/phase.md) | L2 | 縁に組み込んだ見た目（design.md §2.3 の改め、2026-09-30 ユーザー）: flick の panel を右の列の全体に、QWERTY・手書きを下端の全幅に、余白・外の角丸・影をやめ内側に 1 px の区切り、縁から伸び出す動き。1280x800・1920x1080 で panel の外の辺が画面の縁と 0 px で接する（log の矩形と画面） | cleared（2026-09-30: flick は右の列の全体（1280x800 で 962,34 318×766）、QWERTY・手書きは下端の全幅（0,496 1280×304）、1920x1080 も縁に 0 px。影・外の角丸をやめ内側に 1 px の線、200 ms の伸び出し。全手順・p010・C9・boot test PASS） | p008 |
 | [ws102-p020](phase020/phase.md) | L2 | QWERTY の面の補助の key の列（Esc・Tab・Ctrl・`|`・`~`・矢印、一度だけ効く修飾） | cleared（2026-09-30: 補助の列 Esc・Tab・Ctrl・Alt・\|・~・/・-・Home・End・PgUp・PgDn、Ctrl・Alt は次の 1 key だけ。Text Editor で abc\|<tab>、Ctrl+A → z で z。全手順・p010・C9・boot test PASS） | p006 |

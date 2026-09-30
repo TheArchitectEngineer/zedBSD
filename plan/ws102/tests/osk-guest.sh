@@ -42,6 +42,7 @@
 #             99 rollovers, none lost (roll.png)
 #   tools     (p016) the flick panel's tools: select, right x5, copy, the application before, paste, three times, from
 #             one Text Editor into another: "hellohellohello"
+#   history   (p024) the history tab: three copies ("alpha", "bravo", "charlie"), the second row pasted: "bravo"
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -199,9 +200,12 @@ for step in "$@"; do
 			[ -f "$bin/bin/$program" ] && put "$bin/bin/$program" "/bin/$program"
 		done
 		guest 'chmod 755 /bin/textedit /bin/ime-probe /bin/wltest 2>/dev/null' >/dev/null
-		for library in libkeiland libkeiui libvulkan libtruetype libwayland-client; do
-			[ -f "$bin/dynamic/$library.so" ] && put "$bin/dynamic/$library.so" "/lib/$library.so"
+		for library in $(cd "$bin/dynamic" && ls *.so | grep -vE '^(libc|ld)\.so$'); do
+			put "$bin/dynamic/$library" "/lib/$library"
 		done
+		# The colour emoji font (ws102-p019), which the compositor and libkeiui open.
+		emoji=build/distfiles/NotoColorEmoji-2.047.ttf
+		[ -f "$emoji" ] && put "$emoji" /usr/share/fonts/keiland-emoji.ttf
 		guest 'chmod 755 /bin/wayland' >/dev/null
 		;;
 	start)
@@ -749,6 +753,34 @@ hold 800"
 		sleep 2
 		saved=$(read_file /root/b.txt)
 		[ "$saved" = "hellohellohello" ] && echo "tools: hellohellohello pasted into b.txt ok" || { echo "tools: ($saved) MISSING"; status=1; }
+		;;
+	history)
+		# (p024) The clipboard's history in the flick panel's history tab: three Text Editors copy "alpha", "bravo" and
+		# "charlie" (Ctrl+A, Ctrl+C), a fourth (empty) takes the history's second row ("bravo") pasted
+		# (history.png, history-pasted.png).
+		compositor
+		for word in alpha bravo charlie; do
+			guest "printf '$word' > /root/$word.txt; export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=900 /root/$word.txt > /tmp/te-$word.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+			python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-a>' '<ctrl-c>' >/dev/null
+			sleep 1
+		done
+		guest "rm -f /root/receive.txt; touch /root/receive.txt; export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=900 /root/receive.txt > /tmp/te-receive.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK open kind=flick'
+		tool_tap 1160 141
+		expect_log 'ZWL OSK tool face=history items=3'
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot history.png
+		tool_tap 1121 213
+		expect_log 'ZWL OSK history paste index=1 error=0'
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot history-pasted.png
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		saved=$(read_file /root/receive.txt)
+		[ "$saved" = "bravo" ] && echo "history: the second row (bravo) pasted ok" || { echo "history: ($saved) MISSING"; status=1; }
 		;;
 	edges)
 		compositor
