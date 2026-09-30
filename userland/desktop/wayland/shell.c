@@ -948,6 +948,7 @@ fullscreen_whole(
 	struct zwl_object *top;
 	const struct zwl_import *image;
 	struct shell_rect body;
+	unsigned panels;
 	float progress;
 	int still;
 
@@ -968,7 +969,8 @@ fullscreen_whole(
 	image = zwl_compose_surface_image(top);
 	if (image == NULL || image->draw != ZWL_DRAW_OPAQUE)
 		return 0;
-	if (top->sub_children != NULL || zwl_panels_count(top) > 0U)
+	panels = zwl_panels_count(top);
+	if (top->sub_children != NULL || panels > 0U)
 		return 0;
 
 	/* It covers the output. */

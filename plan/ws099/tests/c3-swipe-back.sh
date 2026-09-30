@@ -152,8 +152,13 @@ expect_log 'ZWL OSK close kind=flick'
 # 7. A finger's swipe up from the bottom edge, when the image has the touch injector.
 if [ "$(guest 'test -x /bin/touchinject && echo yes' | tail -1)" = yes ]; then
 	backs=$(count 'ZWL GLASS unfullscreen surface=')
-	printf 'size 1279 799 2\nwait 1500\ndown 1 640 797\nswipe 0 -200 10 30\nup 1\nwait 800\n' > "$out/touch.script"
-	timeout 60 python3 plan/tools/guest/guest.py put "$out/touch.script" /tmp/c3-touch.script >/dev/null 2>&1 </dev/null
+	printf 'size 1279 799 2\nwait 3000\ndown 1 640 797\nswipe 0 -200 10 30\nup 1\nwait 800\n' > "$out/touch.script"
+	tries=0
+	until timeout 60 python3 plan/tools/guest/guest.py put "$out/touch.script" /tmp/c3-touch.script >/dev/null 2>&1 </dev/null &&
+	    [ "$(guest 'test -s /tmp/c3-touch.script && echo put' | tail -1)" = put ] || [ $tries -ge 3 ]; do
+		tries=$((tries + 1))
+		sleep 2
+	done
 	guest 'timeout 60 /bin/touchinject /tmp/c3-touch.script; echo replay=$?' | grep -q '^replay=0$' || { echo "touchinject: FAILED"; status=1; }
 	expect_log 'ZWL GLASS unfullscreen-swipe start y=79[0-9] source=2'
 	expect_log 'ZWL GLASS unfullscreen surface=[0-9]+ via=swipe errno=0' $((backs + 1))
