@@ -79,7 +79,7 @@ QEMU（Venus）の証拠と実機（i915）の証拠は分けて書く。実機�
 | [ws075-p026](phase026/phase.md) | compositor の frame の長さの主因の分析と、縮める手（C6） | cleared（2026-09-30。主因は executor の同期の run（1 frame 約 58 ms、739 draw を 5〜7 run）と frame pacing の待ち（約 31 ms）。pointer が動いた frame は pacing を待たない（compositor）: C6 中央値 121.1 → 92.3 ms・p90 191.7 → 140.8 ms（5 run）、flip 9.5 → 14/s。段の L1 の C6 は満たす） | p025 |
 | [ws075-p027](phase027/phase.md) | L1 の判定: 最終の image で stress-117 の 100 回（停止 0・消失 0）と C6 の 5 run（中央値 100 ms 以内） | cleared（2026-09-30、P1。L1 を満たす: C6 中央値 91.3 ms・p90 135.9 ms（5 run）、stress 100 回で停止 0・拒否 0・消失 0。素の 5330 は未実施） | p026 |
 | [ws075-p028](phase028/phase.md) | L2 の計測: 1 frame の draw のうち backdrop の割合、slot を 512 にした 1 run の実験、backdrop を使い回した 1 run の実験（と blur を切った 1 run） | cleared（2026-09-30、P1。backdrop は draw の 39%。1 run の C6: base 82.5、slot 512 80.9（効かない）、使い回し 65.4（画素まで同じ）、blur を切る 65.9 ms（絵が変わる）。p029 は使い回しを推す） | p027 |
-| ws075-p029 | L2 の実装: backdrop の使い回し（p028 の `exp-reuse.patch` を製品の形に。C6 中央値 75 ms 以内を 5 run で、画素の比較、stress 100 回） | planning | p028 |
+| ws075-p029 | L2 の実装（2026-09-30 ユーザーの判断「blur をやめる」）: 窓のすりガラスは下の窓を描き直して blur せず、blur 済みの壁紙だけを透かす（p028 の blur を切った実験を製品の形に。使われなくなる backdrop の描き直しの code を消す）。C6 中央値 75 ms 以内を 5 run、stress 100 回、C7（すりガラスの上の文字の contrast、生成の壁紙 5 枚）を再測定 | planning | p028 |
 | ws075-p030 | L3 の計測と手の選択（L2 の後の frame の内訳） | planning | p029 |
 | （候補） | GPU の object の枠（128）が 30 窓で尽きる（`gt memory: object pool exhausted`、p025 で観測） | planning | — |
 
@@ -167,3 +167,9 @@ i915 の executor の試験（vkx・vke1・vke2・vkc、gentool、capture の場
   p029 で実装する。どちらも「画面が画素まで同じ」が必須。
 - **ハーネス**: `measure-apps.sh` 5 run と `c6.py`、`stress-117.sh` 100 回、test-hw（vkx・vke1・vke2・vkc）、`engine-gdb.sh` と kernel log の frame の内訳
   （p026 で常設）。実機の passthrough の lock は WS099（P5）・WS101 と共有。
+
+### ユーザーの判断（2026-09-30、すりガラス）
+
+p028 の結果（backdrop が 1 frame の draw の 39%、使い回しで C6 82.5 → 65.4 ms・画素は同じ、blur を切ると 65.9 ms・絵が変わる）を示し、
+「残して使い回しを実装」（Q1 の推奨）・「blur をやめる」・「両方（設定で選ぶ）」を尋ねた。ユーザーの答えは **「blur をやめる」**。
+窓の sidebar と title bar のすりガラスは、下の窓ではなく blur 済みの壁紙を透かす（p028 の図の右）。p029 はこの形で実装する。使い回しの patch（`phase028/exp/`）は使わない。
