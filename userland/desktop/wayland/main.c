@@ -639,6 +639,7 @@ event_loop(
 	int flushed;
 	int error;
 	int remove;
+	const char *why;
 
 	/* A finite monotonic deadline covers both idle service and active clients. */
 	started = zwl_milliseconds();
@@ -820,6 +821,7 @@ event_loop(
 			/* Apply readiness only to this iteration's still-owned connection generation. */
 			client = clients[index];
 			remove = 0;
+			why = "read";
 			if ((descriptors[index].revents & POLLIN) != 0 && !client->fatal) {
 				/* Decode all complete requests while retaining partial bytes and ancillary ownership. */
 				ready = zwl_read(client);
@@ -833,26 +835,34 @@ event_loop(
 			}
 
 			/* A disconnected peer cannot receive queued events or use future GPU imports. */
-			if ((descriptors[index].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+			if (!remove && (descriptors[index].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
 				remove = 1;
+				why = "hangup";
+			}
 
 			/* Flush events produced by requests even when POLLOUT was absent from this snapshot. */
 			if (!remove) {
 				/* Preserve unsent suffixes, but close a stream that can no longer accept events. */
 				ready = zwl_flush(client);
-				if (ready != 0)
+				if (ready != 0) {
 					remove = 1;
+					why = "flush";
+				}
 			}
 
 			/* Protocol errors get a bounded final flush before their namespace is destroyed. */
 			if (client->fatal &&
 			    (client->output_head == NULL ||
-			     (now >= client->fatal_time && now - client->fatal_time >= 2000U)))
+			     (now >= client->fatal_time && now - client->fatal_time >= 2000U))) {
 				remove = 1;
+				why = "error";
+			}
 
-			/* Withdrawal releases unread rights and scanout ownership before fd reuse. */
-			if (remove)
+			/* Withdrawal releases unread rights and scanout ownership before fd reuse (the log line BUG-121's test reads). */
+			if (remove) {
+				printf("ZWL CLIENT gone client=%llu reason=%s\n", (unsigned long long)client->number, why);
 				zwl_client_destroy(client);
+			}
 		}
 
 		/* The snapshot contains no ownership references beyond this iteration. */
