@@ -40,6 +40,7 @@ Queue: なし（2026-09-30 Q1 の割り当て）
 | `edit-guest.sh`（直した期待値、`build/ws102-p023-shots/edit/`） | **PASS**（`0xa3`・`0x67`、"HELLO"、Terminal `0x5`、wlshm `0x3f`） |
 | `inset-guest.sh`（p015） | **PASS**（中央から 0.54 行） |
 | Text Editor の host の試験 `plan/tools/textedit/host-core.sh` | **PASS** 34/34 |
+| main（p007・p009・KUI_VERSION 9 を含む）を merge した後（`build/ws099/p023m.img`） | build exit 0、`edit-guest`・`clip-guest`・`edit-state-guest`・`inset-guest` の 4 本とも **PASS**（`build/ws102-merged-shots/`） |
 | C9・WS079-p010・boot test | compositor は p018 から変わっていないので、p018 の実行（全て PASS）を使う。Text Editor は C9 の image に無い |
 
 画面: `build/ws102-p023-shots/run1/selected.png`（全選択）・`typed.png`（x を打った後、Undo が有効で Redo が灰色）・`undone.png`。
