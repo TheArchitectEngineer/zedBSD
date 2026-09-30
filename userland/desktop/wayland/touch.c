@@ -39,6 +39,10 @@
  *   otherwise as the pointer's left button, the finger moving the pointer.
  * - While a finger has the pointer or the title bar, another finger goes
  *   only to a client with wl_touch under it, or nowhere.
+ * - A finger on the open on-screen keyboard's panel is the keyboard's own
+ *   press (ROUTE_OSK, ws102-p009), whatever the other fingers do: each
+ *   finger presses its key, and a second finger touching while the first
+ *   holds a key makes the first key act (two thumbs typing, keyboard.c).
  *
  * Once the compositor takes a finger for itself, every finger a client was
  * hearing by wl_touch is cancelled (wl_touch.cancel), and the client hears
@@ -89,7 +93,8 @@
 /*
  * Where a finger goes: no finger in the slot, a client by wl_touch, the
  * shell as the pointer's left button, a client as the pointer's left
- * button, a floating title bar's wait or flick, or nowhere.
+ * button, a floating title bar's wait or flick, nowhere, a drag, or the
+ * open on-screen keyboard's own press (ws102-p009).
  */
 #define ROUTE_NONE		0
 #define ROUTE_CLIENT		1
@@ -98,6 +103,7 @@
 #define ROUTE_TITLE		4
 #define ROUTE_IGNORED		5
 #define ROUTE_DRAG		6
+#define ROUTE_OSK		7
 
 /*
  * The title bar's fingers: none; one waiting for a second; two that may
@@ -364,6 +370,8 @@ zwl_touch_remove(
 			zwl_seat_frame(server);
 		} else if (contact->route == ROUTE_DRAG) {
 			zwl_data_drag_cancel(server);
+		} else if (contact->route == ROUTE_OSK) {
+			zwl_keyboard_touch_cancel(server, contact_id(screen, slot));
 		}
 
 		/* The finger no longer has a route of its own. */
@@ -797,6 +805,7 @@ contact_begin(
 	int busy;
 	int bound;
 	int taken;
+	int inside;
 
 	/* Where the finger touched. */
 	contact = &screen->contacts[slot];
@@ -805,6 +814,25 @@ contact_begin(
 	contact->start_x = x;
 	contact->start_y = y;
 	contact->surface = NULL;
+
+	/*
+	 * A finger on the open keyboard's panel is the keyboard's own press,
+	 * whatever other fingers do (ws102-p009); one in a bottom corner is
+	 * the corner's swipe (the shell's, below), also where the panel reaches
+	 * the corner.
+	 */
+	inside = zwl_keyboard_at(x, y);
+	if (y >= (int32_t)server->height - ZWL_KEYBOARD_ZONE &&
+	    (x < ZWL_KEYBOARD_ZONE || x >= (int32_t)server->width - ZWL_KEYBOARD_ZONE))
+		inside = 0;
+	if (inside) {
+		taken = zwl_keyboard_touch_down(server, contact_id(screen, slot), x, y, report->time);
+		if (taken) {
+			contact->route = ROUTE_OSK;
+			printf("ZWL TOUCH osk contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
+			return;
+		}
+	}
 
 	/* A finger joining one that waits on a title bar may make the pair of the flick. */
 	if (title.state == TITLE_HELD) {
@@ -985,6 +1013,10 @@ contact_move(
 		place_pointer(server, contact->place_x / 256, contact->place_y / 256);
 		zwl_data_drag_motion(server, report->time);
 		break;
+	case ROUTE_OSK:
+		/* The keyboard's press follows its finger (ws102-p009). */
+		(void)zwl_keyboard_touch_motion(server, contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256, report->time);
+		break;
 	default:
 		break;
 	}
@@ -1040,6 +1072,10 @@ contact_end(
 		zwl_data_drag_motion(server, report->time);
 		zwl_data_drag_release(server);
 		printf("ZWL TOUCH drag lift contact=%u x=%d y=%d\n", contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256);
+		break;
+	case ROUTE_OSK:
+		/* The keyboard's press ends where the finger was last reported (ws102-p009). */
+		(void)zwl_keyboard_touch_up(server, contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256, report->time);
 		break;
 	default:
 		break;
