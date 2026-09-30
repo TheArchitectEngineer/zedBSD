@@ -4086,6 +4086,7 @@ wiseview_open_key(
 
 	/* Wiseview opens as it does at the end of the gesture. */
 	printf("ZWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+	zwl_transition_request(server, "wiseview-open");
 	wiseview_settle(server, 0.0f, 1.0f);
 }
 
@@ -4197,6 +4198,7 @@ wiseview_close_key(
 
 	/* Wiseview settles closed. */
 	printf("ZWL WISEVIEW close key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+	zwl_transition_request(server, "wiseview-close");
 	wiseview_settle(server, progress, 0.0f);
 }
 
