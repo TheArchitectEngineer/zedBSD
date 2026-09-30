@@ -41,6 +41,15 @@
  * fullscreen window's, and the bar is reached from the edges' gestures,
  * with App Home and Wiseview, which show it.
  *
+ * A sheet (ws090-p014, sheet.c) is a window hung under its parent's title
+ * bar: it has no title bar of its own, sits with its top at the bottom of
+ * the parent's floating title bar (under the system bar when the parent is
+ * docked, at the top of the output when it is fullscreen), in the middle of
+ * the parent's width, and slides down out of the title bar for SHEET_MS.
+ * It moves, comes to the front, hides and leaves Wiseview with its parent;
+ * while it is open the parent's body takes no press (its title bar still
+ * moves it) and the parent passes the focus on to it.
+ *
  * Wiseview (p063, plan/ws035/wiseman-design.md) is the overview of the
  * windows: dragging up from the bottom edge opens it, following the pointer
  * (how far it is open is the distance moved over WISEVIEW_DISTANCE); let go
@@ -105,6 +114,16 @@
 #define GLASS_CASCADE		48
 #define GLASS_CASCADE_ROUNDS	8
 #define GLASS_NEAR		32
+
+/* How long a sheet takes to slide down out of its parent's title bar (ws090-p014). */
+#define SHEET_MS		200U
+
+/* Set while window_lower sends a sheet under the other windows, before its parent (ws090-p014). */
+static unsigned sheet_lowering;
+
+/* How much narrower than its parent's body a sheet is at least asked to be on each side, and the narrowest it is asked to be. */
+#define SHEET_MARGIN		24
+#define SHEET_NARROWEST		320
 
 /* Where a title bar's first letters are, from its left edge (past the mark) and below its middle. */
 #define GLASS_TITLE_START	72
@@ -280,6 +299,11 @@ static int bar_button_at(const struct shell_bar *bar, int32_t x, int32_t y);
 static struct zwl_object *window_at(struct zwl_server *server, int32_t x, int32_t y, enum shell_hit *hit);
 static struct zwl_object *docked_window(struct zwl_server *server);
 static void window_raise(struct zwl_server *server, struct zwl_object *surface);
+static void sheet_place(struct zwl_server *server);
+static struct zwl_object *sheet_owner(struct zwl_object *surface);
+static void sheet_narrow(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *parent, int32_t width, int32_t height);
+static void sheet_anchor(struct zwl_server *server, struct zwl_object *parent, int32_t width, int32_t *x, int32_t *top);
+static void draw_sheet(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, struct zwl_object *parent, unsigned focused);
 static void window_dock(struct zwl_server *server, struct zwl_object *surface, int32_t restore_x, int32_t restore_y, const char *via);
 static void window_undock(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, const char *via);
 static void window_configure(struct zwl_object *surface);
@@ -531,6 +555,7 @@ zwl_glass_button(
 {
 	struct zwl_object *surface;
 	struct zwl_object *cover;
+	struct zwl_object *sheet;
 	enum shell_hit hit;
 	uint32_t edges;
 	unsigned clicks;
@@ -680,6 +705,16 @@ zwl_glass_button(
 			return 0;
 	} else {
 		zwl_desktop_unfocus(server);
+	}
+
+	/* A window with a sheet open takes no press but its title bar's, which still moves it (ws090-p014). */
+	sheet = NULL;
+	if (surface != NULL && hit != HIT_TITLE)
+		sheet = zwl_sheet_of(surface);
+	if (sheet != NULL) {
+		window_raise(server, surface);
+		printf("ZWL GLASS sheet holds surface=%u\n", surface->id);
+		return 1;
 	}
 
 	/* Another button is the client's on a body, zdesktop's elsewhere. */
@@ -1904,7 +1939,7 @@ zwl_glass_key(
 	if (key == SHORTCUT_LEFT)
 		step = -1;
 	if (state != 0U && (server->modifiers & MODIFIER_SHIFT) != 0U) {
-		surface = zwl_top_window(server);
+		surface = sheet_owner(zwl_top_window(server));
 		target = (int)server->desktop + step;
 		if (surface != NULL && target >= 0 && target < DESKTOPS)
 			window_to_desktop(server, surface, (unsigned)target, "key");
@@ -1948,6 +1983,9 @@ zwl_glass_tick(
 	idle = zwl_milliseconds() - server->lock_input_ms;
 	if (server->lock_idle_ms != 0U && idle >= server->lock_idle_ms)
 		(void)zwl_lock(server, "idle");
+
+	/* The sheets where their parents are (ws090-p014). */
+	sheet_place(server);
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);
@@ -2206,7 +2244,15 @@ draw_window(
 	struct shell_rect to;
 	struct shell_rect panel;
 	struct shell_rect slot;
+	struct zwl_object *parent;
 	float t;
+
+	/* A sheet has only its body, under its parent's title bar (ws090-p014). */
+	parent = zwl_sheet_parent(surface);
+	if (parent != NULL) {
+		draw_sheet(server, command, surface, parent, focused);
+		return;
+	}
 
 	/* The body, where it is now. */
 	body_rect(server, surface, &body);
@@ -2273,7 +2319,8 @@ draw_window(
  * a see-through body, and its image with rounded corners (a docked body's
  * lower corners are below the output).  A window with glass panels
  * (panels.c) is not one slab: its panels cast the shadows and stand on the
- * glass, and its image is blended over them by its alpha.
+ * glass, and its image is blended over them by its alpha.  A sheet's upper
+ * corners are square, flush with its parent's title bar (ws090-p014).
  */
 static void
 draw_body(
@@ -2285,6 +2332,7 @@ draw_body(
 	unsigned focused)
 {
 	const struct zwl_import *image;
+	struct zwl_object *parent;
 	struct glass_shape shape;
 	float place[4];
 	unsigned panels;
@@ -2296,6 +2344,7 @@ draw_body(
 	int whole;
 	float scale_x;
 	float scale_y;
+	float raise;
 
 	/* The window's size (its viewport's, else its image's), whose scale to the rectangle stretches it while it changes size. */
 	image = zwl_compose_surface_image(surface);
@@ -2336,6 +2385,12 @@ draw_body(
 		radius = 0.0f;
 	}
 
+	/* A sheet's rounding reaches above its top, so that its upper corners are square. */
+	raise = 0.0f;
+	parent = zwl_sheet_parent(surface);
+	if (parent != NULL)
+		raise = 2.0f * radius;
+
 	/* The shadow, deeper for the focused window. */
 	soft = 22.0f;
 	if (focused)
@@ -2360,6 +2415,8 @@ draw_body(
 		glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 		if (docked)
 			shape.box[3] += 2.0f * radius;
+		shape.box[1] -= raise;
+		shape.box[3] += raise;
 		shape.mode = MODE_GLASS;
 		shape.radius = radius;
 		shape.color[0] = 1.0f;
@@ -2377,6 +2434,8 @@ draw_body(
 	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
 	if (docked)
 		shape.box[3] += 2.0f * radius;
+	shape.box[1] -= raise;
+	shape.box[3] += raise;
 	zwl_viewport_source(surface, shape.uv);
 	shape.opacity = server->window_opacity;
 	if (whole)
@@ -3220,11 +3279,20 @@ window_hit(
 	int32_t y)
 {
 	struct shell_rect body;
+	struct zwl_object *parent;
 	uint32_t edges;
 	int32_t top;
 
-	/* Within the window's columns: its body, or its floating title bar (a docked window's title is in the system bar). */
+	/* A sheet has only its body: no title bar, no frame (ws090-p014). */
 	body_rect(server, surface, &body);
+	parent = zwl_sheet_parent(surface);
+	if (parent != NULL) {
+		if (x >= body.x && x < body.x + body.width && y >= body.y && y < body.y + body.height)
+			return HIT_BODY;
+		return HIT_NONE;
+	}
+
+	/* Within the window's columns: its body, or its floating title bar (a docked window's title is in the system bar). */
 	if (x >= body.x && x < body.x + body.width) {
 		if (y >= body.y && y < body.y + body.height)
 			return HIT_BODY;
@@ -3259,6 +3327,7 @@ frame_edges(
 	int32_t y)
 {
 	struct shell_rect body;
+	struct zwl_object *parent;
 	uint32_t edges;
 	int32_t left;
 	int32_t right;
@@ -3272,6 +3341,11 @@ frame_edges(
 	    surface->role->top == NULL ||
 	    surface->current == NULL ||
 	    server->anim == surface)
+		return 0U;
+
+	/* Nor a sheet (ws090-p014). */
+	parent = zwl_sheet_parent(surface);
+	if (parent != NULL)
 		return 0U;
 
 	/* The window's outline: from the title bar's top to the body's bottom. */
@@ -3476,14 +3550,18 @@ static struct zwl_object *
 docked_window(
 	struct zwl_server *server)
 {
+	struct zwl_object *parent;
 	struct zwl_object *top;
 
 	/* None while Wiseview shows. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
 		return NULL;
 
-	/* The top window. */
+	/* The top window (a sheet's parent for a sheet, ws090-p014). */
 	top = zwl_top_window(server);
+	parent = zwl_sheet_parent(top);
+	if (parent != NULL)
+		top = parent;
 	if (top == NULL || !top->maximized || server->anim == top)
 		return NULL;
 	if (server->pull == top && server->pull_distance > 0)
@@ -3500,18 +3578,220 @@ window_raise(
 	struct zwl_object *surface)
 {
 	struct zwl_object *top;
+	struct zwl_object *parent;
+	struct zwl_object *sheet;
+
+	/* A sheet comes with its parent, and a parent with its sheet, which has the focus (ws090-p014). */
+	parent = zwl_sheet_parent(surface);
+	if (parent != NULL) {
+		sheet = surface;
+		surface = parent;
+	} else {
+		sheet = zwl_sheet_of(surface);
+	}
 
 	/* Already on top. */
 	top = zwl_top_window(server);
-	if (surface == top)
+	if (surface == top || (sheet != NULL && sheet == top))
 		return;
 
-	/* The highest map order, and the focus follows. */
+	/* The highest map order (the sheet's above its parent's), and the focus follows. */
 	server->map_order++;
 	surface->map_order = server->map_order;
 	server->front_surface = surface;
+	if (sheet != NULL) {
+		server->map_order++;
+		sheet->map_order = server->map_order;
+		server->front_surface = sheet;
+	}
+
+	/* The keyboard goes to the front window. */
 	zwl_seat_focus(server);
 	server->dirty = 1;
+}
+
+/*
+ * Keeps each sheet where its parent is (ws090-p014): its top at the bottom
+ * of the parent's title bar (sliding down out of it for SHEET_MS after it
+ * began to show), in the middle of the parent's width, on the parent's
+ * desktop and hidden with it.
+ */
+static void
+sheet_place(
+	struct zwl_server *server)
+{
+	struct zwl_client *client;
+	struct zwl_object *surface;
+	struct zwl_object *parent;
+	uint64_t now;
+	int32_t width;
+	int32_t height;
+	int32_t x;
+	int32_t y;
+	int32_t top;
+	int moved;
+	float t;
+
+	/* Every window that is a sheet now. */
+	now = zwl_milliseconds();
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			if (surface->kind != ZWL_SURFACE)
+				continue;
+			parent = zwl_sheet_parent(surface);
+			if (parent == NULL)
+				continue;
+
+			/* Its time from when it began to show, eased out; one wider than its parent is asked to be narrower. */
+			window_size(surface, &width, &height);
+			if (surface->sheet_ms == 0U) {
+				surface->sheet_ms = now;
+				sheet_narrow(server, surface, parent, width, height);
+				printf("ZWL GLASS sheet surface=%u parent=%u width=%d height=%d\n", surface->id, parent->id, width, height);
+			}
+
+			/* How far it has slid out, eased out, and frames asked for until it has. */
+			t = (float)(now - surface->sheet_ms) / (float)SHEET_MS;
+			if (t < 1.0f)
+				server->dirty = 1;
+			if (t > 1.0f)
+				t = 1.0f;
+			t = 1.0f - (1.0f - t) * (1.0f - t);
+
+			/* Its place: under the parent's title bar, risen by what has not slid out yet. */
+			sheet_anchor(server, parent, width, &x, &top);
+			y = top - (int32_t)((1.0f - t) * (float)height);
+			moved = surface->x != x || surface->y != y;
+			if (moved)
+				server->dirty = 1;
+			surface->x = x;
+			surface->y = y;
+
+			/* Its place once it has slid out, whenever it changes (the tests read it). */
+			if (moved && t >= 1.0f)
+				printf("ZWL GLASS sheet at x=%d y=%d parent=%u\n", x, y, parent->id);
+
+			/* The parent's desktop, shown or hidden with it. */
+			surface->desktop = parent->desktop;
+			surface->minimized = parent->minimized;
+		}
+	}
+}
+
+/* The window a surface is shown with: a sheet's parent, or the surface itself (ws090-p014). */
+static struct zwl_object *
+sheet_owner(
+	struct zwl_object *surface)
+{
+	struct zwl_object *parent;
+
+	/* A sheet is its parent's. */
+	parent = zwl_sheet_parent(surface);
+	if (parent != NULL)
+		return parent;
+	return surface;
+}
+
+/*
+ * Asks a sheet as wide as its parent or wider to be SHEET_MARGIN narrower
+ * on each side than the parent's body, when that is not too narrow for it
+ * (its smallest width, or SHEET_NARROWEST).
+ */
+static void
+sheet_narrow(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	struct zwl_object *parent,
+	int32_t width,
+	int32_t height)
+{
+	struct shell_rect body;
+	int32_t wanted;
+
+	/* The width the parent leaves it. */
+	body_rect(server, parent, &body);
+	wanted = body.width - 2 * SHEET_MARGIN;
+	if (width <= wanted || wanted < SHEET_NARROWEST || wanted < surface->min_width)
+		return;
+
+	/* Its new size, told to it. */
+	surface->window_width = (uint32_t)wanted;
+	surface->window_height = (uint32_t)height;
+	window_configure(surface);
+	printf("ZWL GLASS sheet narrower surface=%u width=%d\n", surface->id, wanted);
+}
+
+/*
+ * The place of a sheet of a width under its parent: the left of its middle
+ * over the parent's body, and its top at the bottom of the parent's title
+ * bar (the top of the body of a docked or fullscreen parent).
+ */
+static void
+sheet_anchor(
+	struct zwl_server *server,
+	struct zwl_object *parent,
+	int32_t width,
+	int32_t *x,
+	int32_t *top)
+{
+	struct shell_rect body;
+
+	/* The parent's body where it is now. */
+	body_rect(server, parent, &body);
+	*x = body.x + (body.width - width) / 2;
+
+	/* A floating parent's title bar ends a gap above its body; a docked or fullscreen one has none there. */
+	*top = body.y - ZWL_GLASS_GAP;
+	if (parent->maximized || parent->fullscreen)
+		*top = body.y;
+}
+
+/*
+ * Draws a sheet (ws090-p014): its body only, cut at the bottom of its
+ * parent's title bar (its shadow does not fall on the title bar, and it
+ * slides down out of it), with a hairline along that seam.
+ */
+static void
+draw_sheet(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	struct zwl_object *parent,
+	unsigned focused)
+{
+	static const float seam[4] = { 0.12f, 0.16f, 0.24f, 0.14f };
+	struct shell_rect body;
+	VkRect2D saved;
+	VkRect2D cut;
+	int32_t x;
+	int32_t top;
+	int32_t bottom;
+
+	/* The body where it is, and where the parent's title bar ends. */
+	body_rect(server, surface, &body);
+	sheet_anchor(server, parent, body.width, &x, &top);
+
+	/* Only below the title bar (its shadow and, while it slides, itself): the frame's scissor cut there. */
+	saved = server->compose->scissor_now;
+	cut = saved;
+	bottom = saved.offset.y + (int32_t)saved.extent.height;
+	if (cut.offset.y < top)
+		cut.offset.y = top;
+	if (bottom < cut.offset.y)
+		bottom = cut.offset.y;
+	cut.extent.height = (uint32_t)(bottom - cut.offset.y);
+	server->compose->scissor_now = cut;
+	vkCmdSetScissor(command, 0U, 1U, &cut);
+
+	/* The body, and a hairline along the seam with the title bar. */
+	draw_body(server, command, surface, &body, 0, focused);
+	glass_draw_solid(server, command, (float)body.x, (float)top, (float)body.width, 1.0f, 0.0f, seam);
+
+	/* The frame's scissor back. */
+	server->compose->scissor_now = saved;
+	vkCmdSetScissor(command, 0U, 1U, &saved);
 }
 
 /*
@@ -3746,6 +4026,24 @@ window_lower(
 	uint32_t next;
 	uint64_t focus_client;
 	uint32_t focus;
+	struct zwl_object *parent;
+	struct zwl_object *sheet;
+
+	/*
+	 * A sheet goes with its parent, and a parent with its sheet (ws090-p014):
+	 * the sheet goes under every window first, then the parent under it.
+	 */
+	if (!sheet_lowering) {
+		parent = zwl_sheet_parent(surface);
+		if (parent != NULL)
+			surface = parent;
+		sheet = zwl_sheet_of(surface);
+		if (sheet != NULL) {
+			sheet_lowering = 1;
+			window_lower(server, sheet, via);
+			sheet_lowering = 0;
+		}
+	}
 
 	/* The lowest place any other mapped surface holds. */
 	found = 0;
@@ -4067,7 +4365,7 @@ wiseview_edge_press(
 	/* The gesture starts; the window on top is the current tile. */
 	server->wiseview_gesture = 1;
 	server->wiseview_start_y = server->pointer_y;
-	server->wiseview_current = zwl_top_window(server);
+	server->wiseview_current = sheet_owner(zwl_top_window(server));
 	server->dirty = 1;
 
 	/* Succeeded: the press is the gesture's. */
@@ -4119,8 +4417,8 @@ static void
 wiseview_open_key(
 	struct zwl_server *server)
 {
-	/* The window on top is the one Enter comes back to. */
-	server->wiseview_current = zwl_top_window(server);
+	/* The window on top is the one Enter comes back to (a sheet's parent for a sheet). */
+	server->wiseview_current = sheet_owner(zwl_top_window(server));
 
 	/* Wiseview opens as it does at the end of the gesture. */
 	printf("ZWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
@@ -4252,6 +4550,7 @@ wiseview_windows(
 {
 	struct zwl_client *client;
 	struct zwl_object *surface;
+	struct zwl_object *parent;
 	unsigned count;
 	unsigned index;
 	unsigned at;
@@ -4270,6 +4569,11 @@ wiseview_windows(
 			    surface->cursor_role ||
 			    surface->current == NULL ||
 			    surface->desktop != server->desktop)
+				continue;
+
+			/* A sheet is not a window of its own there: it comes back with its parent (ws090-p014). */
+			parent = zwl_sheet_parent(surface);
+			if (parent != NULL)
 				continue;
 
 			/* Inserted after those raised later. */

@@ -21,6 +21,7 @@
 #define ZWL_TITLEBAR_MENU		0U
 #define ZWL_TITLEBAR_CONTROLS		1U
 #define ZWL_TITLEBAR_TABS		2U
+#define ZWL_TITLEBAR_SHEET		3U
 
 /* The controls' roles. */
 #define ZWL_CONTROL_BACK		1U

@@ -234,6 +234,9 @@ zwl_toplevel_surface_gone(
 {
 	struct zwl_server *server;
 
+	/* Its sheets have no parent any more (sheet.c). */
+	zwl_sheet_surface_gone(surface);
+
 	/* Only the window being resized has anything to end. */
 	server = surface->client->server;
 	if (server->resize != surface)
@@ -487,7 +490,11 @@ zwl_ping_check(
 	}
 }
 
-/* Takes a dialog's parent (xdg_toplevel.set_parent); zdesktop keeps windows independent. */
+/*
+ * Takes a dialog's parent (xdg_toplevel.set_parent), kept for the window
+ * (ws090-p014): a window that asks for the titlebar's sheet mode hangs
+ * under it (sheet.c); any other window stays independent.
+ */
 static int
 toplevel_set_parent(
 	struct zwl_object *toplevel,
@@ -503,8 +510,10 @@ toplevel_set_parent(
 
 	/* No parent at all. */
 	id = toplevel_word(bytes, 0U);
-	if (id == 0U)
+	if (id == 0U) {
+		zwl_sheet_set_parent(toplevel->surface, NULL);
 		return 0;
+	}
 
 	/* A parent must be another toplevel of the client. */
 	parent = zwl_find(toplevel->client, id);
@@ -515,7 +524,8 @@ toplevel_set_parent(
 		return EPROTO;
 	}
 
-	/* Succeeded: accepted; a new window is on top of its parent anyway. */
+	/* Succeeded: kept (a new window is on top of its parent anyway). */
+	zwl_sheet_set_parent(toplevel->surface, parent->surface);
 	return 0;
 }
 

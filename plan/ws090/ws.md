@@ -38,7 +38,7 @@ Resume point: p008（PDF Viewer・Image Viewer、KUI_VERSION 10）cleared（2026
 | ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
 | ws090-p011 | Terminal・Notes: 窓（見せ方は無し）と scroll の model | planning | p004 |
 | [ws090-p013](phase013/phase.md) | `kui_window` の text-input-v3 の受け口と Text Editor（WS102 の D1、2026-09-30 ユーザー） | cleared（2026-09-30。KUI_VERSION 6、QEMU の IME で `漢字`・`かな` が Text Editor に入り保存、host の回帰、boot PASS。WS102 の keyboard は未 merge で未実施） | p004 |
-| ws090-p014 | file chooser を親の窓の title bar にぶら下がる sheet にする（2026-09-30 ユーザー、下の節）: compositor が `xdg_toplevel.set_parent` の親を覚え、libkeiui の chooser が sheet を求めた子の窓を、自分の title bar を持たず親の title bar の下に付けて前面に出す（親と一緒に動く・前に出る・最小化する、親への入力は sheet が閉じるまで止める、開閉の動き）。親が無いときは今の独立の窓 | planned（P4、2026-09-30） | p006 |
+| ws090-p014 | file chooser を親の窓の title bar にぶら下がる sheet にする（2026-09-30 ユーザー、下の節）: compositor が `xdg_toplevel.set_parent` の親を覚え、libkeiui の chooser が sheet を求めた子の窓を、自分の title bar を持たず親の title bar の下に付けて前面に出す（親と一緒に動く・前に出る・最小化する、親への入力は sheet が閉じるまで止める、開閉の動き）。親が無いときは今の独立の窓 | cleared（2026-09-30、P4、QEMU。[phase.md](phase014/phase.md)。Titlebar の mode 3 SHEET（version 3、KEILAND_VERSION 20）、chooser は不透明） | p006 |
 | ws090-p012 | 規約の全文との照合と回帰 | planning | 全て |
 
 p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 までに移し終えたものだけ残す（design.md J5）。

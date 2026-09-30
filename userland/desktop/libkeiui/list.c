@@ -273,10 +273,8 @@ kui_sidebar_section(
 {
 	kui_color ink;
 
-	/* Faint, a little darker on glass (the desktop shows through). */
-	ink = style->theme->text_faint;
-	if (style->glass)
-		ink = style->theme->text_secondary;
+	/* Secondary, on glass and on an opaque ground alike (the faint ink is under 3:1 on the sidebar, ws090-p014). */
+	ink = style->theme->text_secondary;
 
 	/* The title, small and bold. */
 	(void)kui_text_draw_fit(style->text, style->canvas, x + 8, y + LIST_SECTION - 10, title, LIST_TEXT_SECTION, 1, width - 16, ink);

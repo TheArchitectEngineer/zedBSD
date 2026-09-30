@@ -61,7 +61,7 @@ static const struct zwl_global globals[] = {
 	{ 13, "zwp_text_input_manager_v3", 1, ZWL_TEXT_INPUT_MANAGER },
 	{ 14, "zwp_input_method_manager_v2", 1, ZWL_INPUT_METHOD_MANAGER },
 	{ 15, "zwp_virtual_keyboard_manager_v1", 1, ZWL_VIRTUAL_KEYBOARD_MANAGER },
-	{ 16, "keiland_titlebar_manager_v1", 2, ZWL_TITLEBAR_MANAGER },
+	{ 16, "keiland_titlebar_manager_v1", 3, ZWL_TITLEBAR_MANAGER },
 	{ 17, "keiland_glass_manager_v1", 2, ZWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
 	{ 19, "zwp_tablet_manager_v2", 1, ZWL_TABLET_MANAGER },

@@ -521,7 +521,7 @@ view_list(
 		else
 			snprintf(line, sizeof(line), "This folder is empty");
 		width = kui_text_width(style->text, line, strlen(line), VIEW_TEXT_ROW, 0);
-		(void)kui_text_draw(style->text, style->canvas, layout->list.x + (layout->list.width - width) / 2, kui_text_center(VIEW_TEXT_ROW, layout->list.y, layout->list.height / 2), line, strlen(line), VIEW_TEXT_ROW, 0, theme->text_faint);
+		(void)kui_text_draw(style->text, style->canvas, layout->list.x + (layout->list.width - width) / 2, kui_text_center(VIEW_TEXT_ROW, layout->list.y, layout->list.height / 2), line, strlen(line), VIEW_TEXT_ROW, 0, theme->text_secondary);
 	}
 
 	/* Nothing reported, or a question asked: nothing to do. */
