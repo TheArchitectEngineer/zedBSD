@@ -9,7 +9,7 @@ Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p008（PDF Viewer・Image Viewer、KUI_VERSION 10）cleared（2026-09-30）。次は p011（Terminal・Notes）、p009・p010（Files）、p007（WS089 の完了の後）
+Resume point: p011（Terminal・Notes の窓、KUI_VERSION 11）uncleared（2026-09-30、ユーザーの指示で優先を下げた。main に入れた。残りの試験は未実施、再開はユーザーが言うとき）。p008 cleared。次は p009・p010（Files）、p007（WS089 の完了の後）、p015（案）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）
@@ -36,7 +36,8 @@ Resume point: p008（PDF Viewer・Image Viewer、KUI_VERSION 10）cleared（2026
 | [ws090-p008](phase008/phase.md) | PDF Viewer・Image Viewer を移す | cleared（2026-09-30。`kui_window`（Image Viewer は自前の画像の present を残し `KUI_PRESENT_NONE`）、`kui_file_chooser`、KUI_VERSION 10（全画面）、PDF の password の card は keyboard の inset で上へ。demo-s8-s9 前後 PASS、Image Viewer の guest 試験と touch-guest PASS、C9 10/10（2 件は再実行）、boot PASS） | p006 |
 | ws090-p009 | Files（その 1）: 描画の層と scroll | planning | p003、**WS094 の完了**（Files に `--desktop` を足している、2026-09-29 main） |
 | ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
-| ws090-p011 | Terminal・Notes: 窓（見せ方は無し）と scroll の model | planning | p004 |
+| [ws090-p011](phase011/phase.md) | Terminal・Notes: 窓（見せ方は無し）。scroll の model は p015（案）へ（2026-09-30 Q1） | uncleared（2026-09-30。window.c を `kui_window` に、KUI_VERSION 11。build warning 0、host 3 本、WS081 の guest 試験 4/4、Terminal の zdesktop 回帰 5/6（p088 は未切り分け）。ユーザーの指示で優先を下げ main に入れた。S8・C9・boot は未実施） | p004 |
+| ws090-p015（案） | Terminal・Notes の scroll を `kui_scroll` へ。`kui_scroll` に rubber band の境界と位置の引き継ぎ（`keiland_scroller_set_position` の相当）を足すことを含む。WS081 の host 試験 2 本（`run-termtouch.sh`・`run-notestouch.sh`）の変更が要る（2026-09-30 Q1） | planning | p011 |
 | [ws090-p013](phase013/phase.md) | `kui_window` の text-input-v3 の受け口と Text Editor（WS102 の D1、2026-09-30 ユーザー） | cleared（2026-09-30。KUI_VERSION 6、QEMU の IME で `漢字`・`かな` が Text Editor に入り保存、host の回帰、boot PASS。WS102 の keyboard は未 merge で未実施） | p004 |
 | ws090-p014 | file chooser を親の窓の title bar にぶら下がる sheet にする（2026-09-30 ユーザー、下の節）: compositor が `xdg_toplevel.set_parent` の親を覚え、libkeiui の chooser が sheet を求めた子の窓を、自分の title bar を持たず親の title bar の下に付けて前面に出す（親と一緒に動く・前に出る・最小化する、親への入力は sheet が閉じるまで止める、開閉の動き）。親が無いときは今の独立の窓 | planned（P4、2026-09-30） | p006 |
 | ws090-p012 | 規約の全文との照合と回帰 | planning | 全て |
