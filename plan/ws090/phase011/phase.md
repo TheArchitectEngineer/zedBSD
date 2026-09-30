@@ -2,7 +2,7 @@
 
 # ws090-p011: Terminal・Notes の窓を libkeiui へ
 
-Status: uncleared（2026-09-30、サブエージェント P7、worktree `ws090-kui`。main に入れた。残りの試験は未実施）
+Status: cleared（2026-09-30 統合の試験で合格、下の節）。前の記録: uncleared（2026-09-30、サブエージェント P7、worktree `ws090-kui`。main に入れた。残りの試験は未実施）
 Disposition: normal
 Parent: [WS090](../ws.md)
 Queue: なし（2026-09-30 Q1 の割り当て、p008 の次）
@@ -54,3 +54,11 @@ Queue: なし（2026-09-30 Q1 の割り当て、p008 の次）
   binary での再実行、WS099 の C9、boot test、画面（`build/ws090-shots/`）の確認。
 - 後の候補: p015（案）Terminal・Notes の scroll を `kui_scroll` へ。Terminal の clipboard・PRIMARY を `kui_window` の物へ寄せる（drag and drop を
   `kui_window` が持てば clipboard.c を消せる）。
+
+## 統合の試験（2026-09-30 夕、Q1）
+
+ユーザーの指示「P7の試験については、いまからすべての成果を統合して、1本の試験で動いたら、合格にしましょう。それはメインエージェントQ1でやります」により、
+P4（ws090-p014）・P7（ws090-p008・p011）・P3（ws102-p024）・P6（ws094-p010）を main に統合した tree（722de611）で `plan/ws079/tests/demo-s8-s9.sh` を 1 本流し、
+**PASS**（QEMU の Venus、build/amd64 で image を作り直した）。S8: Notes の全画面・pen の線・窓に戻る、S9: PDF Viewer の scroll の頁送り最長 140 ms、
+page の frame 最長 148 ms、double tap と pinch、`ZWL ERROR` 0。画面と log は main の checkout の `build/integ-0930/`。この試験は Terminal を開かない
+（Terminal の画面と p088 の切り分けは未実施）。実機は未実施。

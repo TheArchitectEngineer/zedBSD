@@ -32,7 +32,7 @@ Resume point: L3 の計測（p008）は 2026-09-30 に cleared。基準値は (a
 | [ws094-p008](phase008/phase.md) | L3a: 100 項目の計測の道具と基準値（計測だけ） | cleared（2026-09-30、QEMU。(a) 2908 ms・(b) 1094 ms・(c) 95 ms・SLOW-FRAME 0） | p006 |
 | [ws094-p009](phase009/phase.md) | L3b: 100 項目で L3 の数値目標に入れる | uncleared（2026-09-30、QEMU。(a) 1954・(c) 90 ms で超過。残りは zdesktop の import と Venus の 10 ms、main の判断待ち） | p008 |
 | [ws094-p013](phase013/phase.md) | L3c: jpg と gif の thumbnail（`fm_image_load` が PPM・PGM・PNG だけ。Image Viewer と同じ libjpeg-compat（EXIF の向き）・libgif-compat（最初の frame）で読む）。100 項目の画像に jpg・gif を混ぜて thumbnail が出る | cleared（2026-09-30、host と QEMU。decoder を `userland/desktop/picture/` に共有） | p009 |
-| [ws094-p010](phase010/phase.md) | L4a: 長い名前（2 行、中を省く）と画面の大きさの変更 | uncleared（2026-09-30 P6: 実装と host の試験・`desktop-p010.sh` は PASS、回帰の C9・boot・files-desktop-guest の既存の手順は未実施。ユーザーの指示で優先を下げた。再開はユーザーが言うとき） | p006 |
+| [ws094-p010](phase010/phase.md) | L4a: 長い名前（2 行、中を省く）と画面の大きさの変更 | cleared（2026-09-30: 統合の試験 demo-s8-s9.sh で合格（ユーザーの指示）、Terminal と p088 は未切り分け、実機は未実施） | p006 |
 | ws094-p011 | L4b: 置き場の溢れ（grid より多い項目）と、無い名前の保存の行の掃除 | planned | p010 |
 | ws094-p012 | L5: 実機（5330）での L1〜L3 の確認 | planned | p009、実機 |
 | ws094-p007 | 全文の規約と回帰（WS の最後。選んだ段の Phase の後） | planned | 最後の段の Phase |

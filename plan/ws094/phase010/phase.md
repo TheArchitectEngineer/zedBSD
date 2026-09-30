@@ -2,7 +2,7 @@
 
 # ws094-p010: L4a 長い名前と画面の大きさの変更
 
-Status: uncleared（2026-09-30、サブエージェント P6、worktree `ws035-keiland`（branch `wt/ws035`）。
+Status: cleared（2026-09-30 統合の試験で合格、下の節）。前の記録: uncleared（2026-09-30、サブエージェント P6、worktree `ws035-keiland`（branch `wt/ws035`）。
 実装、host の試験、QEMU の guest の試験（`desktop-p010.sh`）は済んで PASS。回帰の C9・boot test と、`files-desktop-guest.sh` の既存の手順は未実施。
 止めた理由: ユーザーの指示で優先を下げた（週間の使用量の上限が近いためのラップアップ）。
 再開の条件: ユーザーが再開を言うとき。残るのは回帰の実行だけ。source は途中の状態ではないので戻していない（wip.patch は無い））
@@ -66,3 +66,11 @@ Queue: なし（2026-09-30 Q1 の割り当て）
 ## 再開するとき
 
 - 回帰を流す: `files-desktop-guest.sh` の install・show・saved・drag（BIN は build の dir）、`criteria.sh C9`、`boot-test.sh`。どれも PASS なら cleared にする。
+
+## 統合の試験（2026-09-30 夕、Q1）
+
+ユーザーの指示「P7の試験については、いまからすべての成果を統合して、1本の試験で動いたら、合格にしましょう。それはメインエージェントQ1でやります」により、
+P4（ws090-p014）・P7（ws090-p008・p011）・P3（ws102-p024）・P6（ws094-p010）を main に統合した tree（722de611）で `plan/ws079/tests/demo-s8-s9.sh` を 1 本流し、
+**PASS**（QEMU の Venus、build/amd64 で image を作り直した）。S8: Notes の全画面・pen の線・窓に戻る、S9: PDF Viewer の scroll の頁送り最長 140 ms、
+page の frame 最長 148 ms、double tap と pinch、`ZWL ERROR` 0。画面と log は main の checkout の `build/integ-0930/`。この試験は Terminal を開かない
+（Terminal の画面と p088 の切り分けは未実施）。実機は未実施。

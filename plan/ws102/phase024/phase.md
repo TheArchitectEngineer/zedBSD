@@ -46,3 +46,11 @@ tap した項目を貼る。受け入れ: 3 つの app で複写した後、履�
 
 - ユーザーの指示で優先を下げ、P3 の担当を終えた（2026-09-30）。全手順の回帰は再開の時に `build/ws102-p024-final.sh` で流す。
   再開の条件: ユーザーが再開を言うとき。
+
+## 統合の試験（2026-09-30 夕、Q1）
+
+ユーザーの指示「P7の試験については、いまからすべての成果を統合して、1本の試験で動いたら、合格にしましょう。それはメインエージェントQ1でやります」により、
+P4（ws090-p014）・P7（ws090-p008・p011）・P3（ws102-p024）・P6（ws094-p010）を main に統合した tree（722de611）で `plan/ws079/tests/demo-s8-s9.sh` を 1 本流し、
+**PASS**（QEMU の Venus、build/amd64 で image を作り直した）。S8: Notes の全画面・pen の線・窓に戻る、S9: PDF Viewer の scroll の頁送り最長 140 ms、
+page の frame 最長 148 ms、double tap と pinch、`ZWL ERROR` 0。画面と log は main の checkout の `build/integ-0930/`。この試験は Terminal を開かない
+（Terminal の画面と p088 の切り分けは未実施）。実機は未実施。
