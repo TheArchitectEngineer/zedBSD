@@ -179,7 +179,8 @@ struct te_canvas {
 
 /*
  * One glyph drawn at a size: its cache key (0 for an empty slot), its
- * coverage bitmap (width bytes a row; NULL for a blank glyph), where it
+ * coverage bitmap (width bytes a row; NULL for a blank glyph) or its
+ * colours (premultiplied 0xAARRGGBB, a colour emoji, ws102-p019), where it
  * sits from the pen and the baseline, and how far it moves the pen.
  */
 struct te_glyph {
@@ -190,6 +191,7 @@ struct te_glyph {
 	int top;
 	int advance;
 	uint8_t *bitmap;
+	uint32_t *pixels;
 };
 
 /* One font file: its bytes (kept for the face), the face, and the size set last. */
@@ -200,8 +202,13 @@ struct te_text_face {
 	unsigned pixels;
 };
 
-/* How many faces a text has: the main font and a fallback. */
-#define TE_TEXT_FACES		2
+/*
+ * How many faces a text has: the main font, a fallback, and the colour emoji
+ * font (opened the first time a character neither of the others has is
+ * drawn, ws102-p019).
+ */
+#define TE_TEXT_FACES		3
+#define TE_TEXT_EMOJI		"/usr/share/fonts/keiland-emoji.ttf"
 
 /*
  * The fonts of one kind of text (the body's monospaced font, or the
@@ -211,6 +218,7 @@ struct te_text_face {
 struct te_text {
 	struct te_text_face faces[TE_TEXT_FACES];
 	int face_count;
+	int emoji_tried;
 	struct te_glyph *cache;
 	unsigned cache_size;
 	unsigned cache_used;
@@ -486,6 +494,7 @@ void te_canvas_fill(struct te_canvas *canvas, int x, int y, int width, int heigh
 void te_canvas_blend(struct te_canvas *canvas, int x, int y, int width, int height, uint32_t color);
 void te_canvas_round(struct te_canvas *canvas, int x, int y, int width, int height, int radius, uint32_t color);
 void te_canvas_mask(struct te_canvas *canvas, int x, int y, const unsigned char *mask, int width, int height, size_t stride, uint32_t color);
+void te_canvas_pixels(struct te_canvas *canvas, int x, int y, const uint32_t *pixels, int width, int height);
 
 /* The text (text.c). */
 int te_text_open(struct te_text *text, const char *primary, const char *fallback);

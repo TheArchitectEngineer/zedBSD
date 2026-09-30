@@ -94,6 +94,12 @@ struct truetype_face {
 	const uint8_t *cmap;
 	uint32_t cmap_size;
 
+	/* The colour bitmaps (CBLC's index and CBDT's images, ws102-p019); NULL in a face without them. */
+	const uint8_t *cblc;
+	uint32_t cblc_size;
+	const uint8_t *cbdt;
+	uint32_t cbdt_size;
+
 	/* The chosen cmap subtable, and which format it is. */
 	const uint8_t *cmap_subtable;
 	uint32_t cmap_subtable_size;

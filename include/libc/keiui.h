@@ -47,8 +47,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons). */
-#define KUI_VERSION	8U
+/* The interface version this header describes (1: the drawing -- canvas, text, icons and the theme; 2: the scroll, the input and the text view's touch; 3: the window, the clipboard and the primary selection; 4: the widgets, the keyboard's focus and the theme's controls; 5: the file chooser, moved from libkeiland, and a list's touched rows; 6: the window's text input, text an input method or the on-screen keyboard sends; 7: the on-screen keyboard's inset and the caret kept in sight; 8: the editing operations of the on-screen keyboard's buttons; 9: colour emoji from the emoji font, a third face). */
+#define KUI_VERSION	9U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -64,8 +64,13 @@ unsigned kui_version(void);
 /* The most corners a polygon may have. */
 #define KUI_POLYGON_POINTS	96
 
-/* How many fonts the text draws from: the main one and a fallback. */
-#define KUI_TEXT_FACES		2
+/*
+ * How many fonts the text draws from: the main one, a fallback, and the
+ * colour emoji font (KUI_TEXT_EMOJI, opened the first time a character
+ * neither of the others has is drawn; version 9).
+ */
+#define KUI_TEXT_FACES		3
+#define KUI_TEXT_EMOJI		"/usr/share/fonts/keiland-emoji.ttf"
 
 /* A color as 0xAARRGGBB, not premultiplied. */
 typedef uint32_t kui_color;
@@ -128,7 +133,9 @@ struct kui_canvas {
 /*
  * One glyph drawn at one size, kept for the next time.
  *
- * key is zero for an empty slot; the bitmap is the glyph's coverage.
+ * key is zero for an empty slot; the bitmap is the glyph's coverage, or
+ * pixels its colour (premultiplied 0xAARRGGBB, a colour emoji, version 9)
+ * with bitmap NULL.
  */
 struct kui_glyph {
 	uint32_t key;
@@ -138,6 +145,7 @@ struct kui_glyph {
 	int top;
 	int advance;
 	uint8_t *bitmap;
+	uint32_t *pixels;
 };
 
 /*
@@ -154,11 +162,13 @@ struct kui_text_face {
  * The text of the window: the fonts and every glyph drawn so far.
  *
  * One lives for the whole program.  The cache is emptied when it fills up,
- * which only costs drawing the glyphs again.
+ * which only costs drawing the glyphs again.  emoji_tried says the emoji
+ * font (faces[2]) was looked for (version 9).
  */
 struct kui_text {
 	struct kui_text_face faces[KUI_TEXT_FACES];
 	int face_count;
+	int emoji_tried;
 	struct kui_glyph *cache;
 	unsigned cache_size;
 	unsigned cache_used;
