@@ -3,10 +3,11 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # Wayland compositor: every window composed with Vulkan into a VK_KHR_display swapchain.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 # The operating system's side of the client GPU buffers (zwl-gpu.h, WS103): zedBSD's kernel image capabilities.
-KEILAND_GPU_SOURCES := userland/desktop/wayland/gpu-zedbsd.c
+KEILAND_ZEDBSD_SOURCES := userland/desktop/wayland/zedbsd/gpu-zedbsd.c \
+	userland/desktop/wayland/zedbsd/gpu-buffer-zedbsd.c
 KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire.c \
 	userland/desktop/wayland/objects.c userland/desktop/wayland/protocol.c userland/desktop/wayland/display.c \
-	$(KEILAND_GPU_SOURCES) \
+	$(KEILAND_ZEDBSD_SOURCES) \
 	userland/desktop/wayland/seat.c userland/desktop/wayland/input.c userland/desktop/wayland/tablet.c userland/desktop/wayland/touch.c \
 	userland/desktop/wayland/compose.c userland/desktop/wayland/import.c userland/desktop/wayland/shm.c \
 	userland/desktop/wayland/glass.c userland/desktop/wayland/shell.c userland/desktop/wayland/home.c userland/desktop/wayland/corner.c userland/desktop/wayland/keyboard.c userland/desktop/wayland/keyboard-layout.c userland/desktop/wayland/keyboard-hand.c \

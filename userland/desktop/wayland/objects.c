@@ -11,6 +11,7 @@
 
 #include "desktop.h"
 #include "zwl.h"
+#include "compose.h"
 #include "menu.h"
 #include "titlebar.h"
 #include "popup.h"
@@ -183,8 +184,8 @@ zwl_buffer_size(
 	}
 
 	/* A GPU buffer's size is its image's. */
-	*width = buffer->layout.width;
-	*height = buffer->layout.height;
+	*width = buffer->import->width;
+	*height = buffer->import->height;
 }
 
 /*

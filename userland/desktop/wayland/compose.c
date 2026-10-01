@@ -29,6 +29,9 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Room for the common Vulkan extensions and those requested by the OS. */
+#define COMPOSE_EXTENSIONS_MAX	16U
+
 static VkResult compose_device(struct zwl_compose *compose);
 static VkResult compose_display(struct zwl_server *server);
 static void compose_limits(struct zwl_server *server);
@@ -591,6 +594,12 @@ compose_device(
 		VK_KHR_EXTERNAL_FENCE_EXTENSION_NAME,
 		VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME
 	};
+	const char *instance_names[COMPOSE_EXTENSIONS_MAX];
+	const char *device_names[COMPOSE_EXTENSIONS_MAX];
+	uint32_t instance_count;
+	uint32_t device_count;
+	uint32_t extra;
+	VkExternalFenceHandleTypeFlagBits fence_type;
 	VkExtensionProperties available[32];
 	uint32_t found;
 	uint32_t wanted;
@@ -605,6 +614,14 @@ compose_device(
 	int match;
 	VkResult result;
 
+	/* Append the OS extensions to the existing instance extension list. */
+	memcpy(instance_names, instance_extensions, sizeof(instance_extensions));
+	instance_count = 5U;
+	extra = zwl_gpu_instance_extensions(instance_names + instance_count, COMPOSE_EXTENSIONS_MAX - instance_count);
+	if (extra > COMPOSE_EXTENSIONS_MAX - instance_count)
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	instance_count += extra;
+
 	/* The instance, with the display extensions and those the external fd extensions need (Vulkan 1.0). */
 	memset(&application, 0, sizeof(application));
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -613,8 +630,8 @@ compose_device(
 	memset(&instance, 0, sizeof(instance));
 	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instance.pApplicationInfo = &application;
-	instance.enabledExtensionCount = 5U;
-	instance.ppEnabledExtensionNames = instance_extensions;
+	instance.enabledExtensionCount = instance_count;
+	instance.ppEnabledExtensionNames = instance_names;
 	result = vkCreateInstance(&instance, NULL, &compose->instance);
 	if (result != VK_SUCCESS)
 		return result;
@@ -655,10 +672,21 @@ compose_device(
 			wanted++;
 	}
 
-	/* Both, or neither. */
+	/* Export only when the device and the OS both support frame fence fds. */
+	fence_type = zwl_gpu_frame_fence_type();
 	compose->fence_fd = 0;
-	if (wanted == 2U)
+	if (wanted == 2U && fence_type != 0)
 		compose->fence_fd = 1;
+
+	/* Append the OS extensions after the common device extension list. */
+	device_count = 5U;
+	if (compose->fence_fd)
+		device_count = 7U;
+	memcpy(device_names, device_extensions, device_count * sizeof(device_names[0]));
+	extra = zwl_gpu_device_extensions(compose->physical, device_names + device_count, COMPOSE_EXTENSIONS_MAX - device_count);
+	if (extra > COMPOSE_EXTENSIONS_MAX - device_count)
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	device_count += extra;
 
 	/* The device, with one queue, the swapchain and the external memory (and fence) fd extensions. */
 	priority = 1.0f;
@@ -671,13 +699,19 @@ compose_device(
 	device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device.queueCreateInfoCount = 1U;
 	device.pQueueCreateInfos = &queue;
-	device.enabledExtensionCount = 5U;
-	if (compose->fence_fd)
-		device.enabledExtensionCount = 7U;
-	device.ppEnabledExtensionNames = device_extensions;
+	device.enabledExtensionCount = device_count;
+	device.ppEnabledExtensionNames = device_names;
 	result = vkCreateDevice(compose->physical, &device, NULL, &compose->device);
 	if (result != VK_SUCCESS)
 		return result;
+
+	/* Resolve the optional fence export through the device dispatch table. */
+	compose->get_fence_fd = NULL;
+	if (compose->fence_fd) {
+		compose->get_fence_fd = (PFN_vkGetFenceFdKHR)vkGetDeviceProcAddr(compose->device, "vkGetFenceFdKHR");
+		if (compose->get_fence_fd == NULL)
+			compose->fence_fd = 0;
+	}
 
 	/* Succeeded: the queue the frames are submitted to. */
 	vkGetDeviceQueue(compose->device, compose->family, 0U, &compose->queue);
@@ -973,7 +1007,7 @@ compose_objects(
 	/* The frame's fence, exportable as an fd the event loop polls (design D3). */
 	memset(&export, 0, sizeof(export));
 	export.sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO;
-	export.handleTypes = VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT;
+	export.handleTypes = zwl_gpu_frame_fence_type();
 	memset(&fence, 0, sizeof(fence));
 	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	if (compose->fence_fd)
@@ -1944,9 +1978,9 @@ compose_submit(
 	memset(&fd_info, 0, sizeof(fd_info));
 	fd_info.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
 	fd_info.fence = compose->fence;
-	fd_info.handleType = VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT;
+	fd_info.handleType = zwl_gpu_frame_fence_type();
 	fd = -1;
-	result = vkGetFenceFdKHR(compose->device, &fd_info, &fd);
+	result = compose->get_fence_fd(compose->device, &fd_info, &fd);
 	if (result != VK_SUCCESS)
 		return result;
 

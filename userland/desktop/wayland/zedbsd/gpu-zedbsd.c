@@ -17,7 +17,7 @@
  * reads the kernel's types.
  */
 
-#include "zwl-gpu.h"
+#include "userland/desktop/wayland/zedbsd/gpu-zedbsd.h"
 
 #include <uapi/gpu.h>
 #include <errno.h>

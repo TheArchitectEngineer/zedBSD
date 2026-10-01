@@ -47,7 +47,7 @@ struct zwl_global {
 static const struct zwl_global globals[] = {
 	{ 1, "wl_compositor", 4, ZWL_COMPOSITOR },
 	{ 2, "xdg_wm_base", 4, ZWL_WM },
-	{ 3, "keiland_gpu_buffer_v1", 3, ZWL_FACTORY },
+	{ 3, NULL, 0, ZWL_FACTORY },
 	{ 4, "wl_output", 4, ZWL_OUTPUT },
 	{ 5, "wl_seat", 5, ZWL_SEAT },
 	{ 6, "wl_shm", 1, ZWL_SHM },
@@ -70,6 +70,7 @@ static const struct zwl_global globals[] = {
 	{ 23, "keiland_edit_manager_v1", 1, ZWL_EDIT_MANAGER },
 };
 
+static void global_identity(const struct zwl_global *global, const char **interface, uint32_t *version);
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
 static int string_at(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
 static int registry_events(struct zwl_object *registry);
@@ -79,11 +80,8 @@ static int bind_global(struct zwl_object *registry, const unsigned char *bytes, 
 static int surface_request(struct zwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int surface_commit(struct zwl_object *surface);
 static int shell_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int factory_request(struct zwl_object *factory, uint32_t opcode, const unsigned char *bytes, size_t size);
 static void append_callbacks(struct zwl_object **list, struct zwl_object *callbacks);
 static void add_damage(struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
-static int factory_fence(struct zwl_object *factory, const unsigned char *bytes, size_t size);
-static int factory_alpha(struct zwl_object *factory, const unsigned char *bytes, size_t size);
 static void commit_fence(struct zwl_object *surface, unsigned attached);
 static void commit_damage(struct zwl_object *surface);
 static int send_bounds(struct zwl_object *surface);
@@ -185,7 +183,7 @@ zwl_dispatch(
 
 		break;
 	case ZWL_FACTORY:
-		error = factory_request(object, opcode, bytes, size);
+		error = zwl_gpu_request(object, opcode, bytes, size);
 		break;
 	case ZWL_SHM:
 	case ZWL_SHM_POOL:
@@ -388,11 +386,32 @@ string_at(
 	return 0;
 }
 
+/* Reports a global's interface name and version: the table's, or the OS module's for its GPU buffer global. */
+static void
+global_identity(
+	const struct zwl_global *global,
+	const char **interface,
+	uint32_t *version)
+{
+	/* The OS module names its GPU buffer global (zwl-gpu.h; keiland_gpu_buffer_v1 version 3 on zedBSD). */
+	if (global->kind == ZWL_FACTORY) {
+		*interface = zwl_gpu_global_interface();
+		*version = zwl_gpu_global_version();
+		return;
+	}
+
+	/* Every other global is the table's. */
+	*interface = global->interface;
+	*version = global->version;
+}
+
 /* Announces only the selected protocol globals in stable registry order. */
 static int
 registry_events(
 	struct zwl_object *registry)
 {
+	const char *interface;
+	uint32_t version;
 	unsigned char payload[128];
 	uint32_t word;
 	size_t index;
@@ -408,16 +427,19 @@ registry_events(
 		if (!visible)
 			continue;
 
+		/* Resolve the OS-owned GPU global before encoding its registry event. */
+		global_identity(&globals[index], &interface, &version);
+
 		/* Encode this advertised interface as one canonical registry global event. */
 		memset(payload, 0, sizeof(payload));
 		word = globals[index].name;
 		memcpy(payload, &word, 4);
-		length = strlen(globals[index].interface) + 1U;
+		length = strlen(interface) + 1U;
 		word = (uint32_t)length;
 		memcpy(payload + 4, &word, 4);
-		memcpy(payload + 8, globals[index].interface, length);
+		memcpy(payload + 8, interface, length);
 		offset = 8U + ((length + 3U) & ~(size_t)3U);
-		word = globals[index].version;
+		word = version;
 		memcpy(payload + offset, &word, 4);
 		error = zwl_emit(registry->client, registry->id, 0, payload, offset + 4U);
 		if (error != 0)
@@ -534,6 +556,8 @@ bind_global(
 	size_t size)
 {
 	const char *interface;
+	const char *offered;
+	uint32_t offered_version;
 	struct zwl_object *object;
 	uint32_t name;
 	uint32_t version;
@@ -567,8 +591,9 @@ bind_global(
 			continue;
 
 		/* Names, interface strings and negotiated versions are checked together. */
-		same = strcmp(interface, globals[index].interface);
-		if (same != 0 || version == 0 || version > globals[index].version)
+		global_identity(&globals[index], &offered, &offered_version);
+		same = strcmp(interface, offered);
+		if (same != 0 || version == 0 || version > offered_version)
 			return EPROTO;
 
 		/* A global the connection was not shown cannot be bound (the input method's, input-method.c). */
@@ -1157,85 +1182,6 @@ shell_request(
 	return 0;
 }
 
-/* Creates an ordinary wl_buffer from exactly one GPU buffer fd and the description of its image. */
-static int
-factory_request(
-	struct zwl_object *factory,
-	uint32_t opcode,
-	const unsigned char *bytes,
-	size_t size)
-{
-	struct zwl_object *buffer;
-	size_t wire_bytes;
-	uint32_t id;
-	uint32_t length;
-	int descriptor;
-	int error;
-
-	/* Destroying a binding does not destroy buffers it previously created. */
-	if (opcode == 0 && size == 0) {
-		zwl_object_destroy(factory);
-		return 0;
-	}
-
-	/* Revision two: the acquire fence of a surface's next commit. */
-	if (opcode == 2U) {
-		error = factory_fence(factory, bytes, size);
-		return error;
-	}
-
-	/* Revision three: how a buffer's alpha is read. */
-	if (opcode == 3U) {
-		error = factory_alpha(factory, bytes, size);
-		return error;
-	}
-
-	/* The nha signature has new_id and array bytes; h contributes no wire word. */
-	wire_bytes = zwl_gpu_buffer_wire_bytes();
-	if (opcode != 1U || size != 8U + wire_bytes)
-		return EPROTO;
-
-	/* The array describes one complete immutable image record. */
-	length = word_at(bytes, 4);
-	if (length != wire_bytes)
-		return EPROTO;
-
-	/* Consume the fd only after the complete byte payload has passed framing checks. */
-	descriptor = zwl_take_fd(factory->client);
-	if (descriptor < 0)
-		return EAGAIN;
-
-	/* Creation failure still closes the request-owned descriptor immediately. */
-	id = word_at(bytes, 0);
-	buffer = zwl_create(factory->client, id, ZWL_BUFFER, 1);
-	if (buffer == NULL) {
-		close(descriptor);
-		return EPROTO;
-	}
-
-	/* The description's values, each checked before any reaches Vulkan (gpu-zedbsd.c). */
-	error = zwl_gpu_buffer_decode(bytes + 8U, length, &factory->client->server->gpu_limits, &buffer->layout);
-
-	/*
-	 * Window mode's Vulkan image, made once for the buffer's lifetime (design
-	 * D2).  Its memory is imported for that image alone, and libvulkan checks
-	 * the description against the kernel's record of the fd (WS103).
-	 */
-	if (error == 0)
-		error = zwl_import_create(buffer, descriptor);
-	close(descriptor);
-	if (error != 0) {
-		printf("ZWL IMPORT_ERROR client=%llu buffer=%u errno=%d\n", (unsigned long long)factory->client->number, buffer->id, error);
-		zwl_object_destroy(buffer);
-		return EPROTO;
-	}
-
-	/* The machine log counts the imports (plan/ws099/tests/import-launch.sh reads the prefix). */
-	printf("ZWL IMPORT client=%llu buffer=%u width=%u height=%u bytes=%llu\n", (unsigned long long)factory->client->number, buffer->id, buffer->layout.width, buffer->layout.height, (unsigned long long)buffer->layout.allocation_bytes);
-
-	/* Succeeded: the wl_buffer owns its independently imported resource. */
-	return 0;
-}
 
 /*
  * Tells the windows of xdg-shell version 4 new bounds when the space for
@@ -1561,6 +1507,13 @@ commit_fence(
 {
 	unsigned index;
 
+	/* Give the OS module the attached GPU buffer before moving commit fences. */
+	if (attached &&
+	    surface->queued != NULL &&
+	    surface->queued->import != NULL &&
+	    surface->queued->shm == NULL)
+		zwl_gpu_commit(surface, surface->queued);
+
 	/* The reused image still waits for its own fences. */
 	if (!attached && surface->acquire_count == 0)
 		return;
@@ -1609,93 +1562,7 @@ commit_damage(
 	surface->damaged = 0;
 }
 
-/*
- * Takes an acquire fence of a surface's next commit (set_acquire_fence of
- * keiland_gpu_buffer_v1 revision two): the fence fd and its payload generation.
- * A commit waits for all its fences, at most ZWL_FENCE_MAX of them.  The fd is
- * only polled (zwl_fence_ready): an fd that is no fence stalls its own
- * surface and nothing else, so it is not checked here (ws103-p006).
- */
-static int
-factory_fence(
-	struct zwl_object *factory,
-	const unsigned char *bytes,
-	size_t size)
-{
-	struct zwl_object *surface;
-	uint64_t generation;
-	int descriptor;
 
-	/* The surface and the generation in two words; the fd beside them. */
-	if (factory->version < 2U || size != 12U)
-		return EPROTO;
-	descriptor = zwl_take_fd(factory->client);
-	if (descriptor < 0)
-		return EAGAIN;
-
-	/* The surface must be the client's own. */
-	surface = zwl_find(factory->client, word_at(bytes, 0));
-	if (surface == NULL ||
-	    surface->kind != ZWL_SURFACE ||
-	    surface->acquire_count == ZWL_FENCE_MAX) {
-		close(descriptor);
-		return EPROTO;
-	}
-
-	/* The generation must be a real one (a fence's first is 1); readiness is the fd's own. */
-	generation = ((uint64_t)word_at(bytes, 4) << 32) | word_at(bytes, 8);
-	if (generation == 0) {
-		close(descriptor);
-		return EPROTO;
-	}
-
-	/* The fence joins the others of the next commit. */
-	surface->acquire[surface->acquire_count].fd = descriptor;
-	surface->acquire[surface->acquire_count].generation = generation;
-	surface->acquire_count++;
-
-	/* Names the fence when the per-frame lines were asked for (a present's own fence is at its first generation, ws103-p005). */
-	if (factory->client->server->log_frames)
-		printf("ZWL ACQUIRE_FENCE client=%llu surface=%u generation=%llu\n", (unsigned long long)factory->client->number, surface->id, (unsigned long long)generation);
-
-	/* Succeeded: the next commit waits for this fence too. */
-	return 0;
-}
-
-/*
- * Sets how a GPU buffer's alpha is read (set_alpha of keiland_gpu_buffer_v1
- * revision three): ignored, the buffer being opaque (0, as a buffer starts),
- * or as premultiplied alpha the window is blended by (1), for a Vulkan
- * swapchain made with VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR.
- */
-static int
-factory_alpha(
-	struct zwl_object *factory,
-	const unsigned char *bytes,
-	size_t size)
-{
-	struct zwl_object *buffer;
-	uint32_t alpha;
-
-	/* The buffer and the alpha in two words. */
-	if (factory->version < 3U || size != 8U)
-		return EPROTO;
-	alpha = word_at(bytes, 4);
-	if (alpha > 1U)
-		return EPROTO;
-
-	/* The buffer must be one of the client's GPU buffers. */
-	buffer = zwl_find(factory->client, word_at(bytes, 0));
-	if (buffer == NULL || buffer->kind != ZWL_BUFFER || buffer->shm != NULL)
-		return EPROTO;
-
-	/* The window's drawing blends the buffer by its alpha, or covers what is under it (import.c). */
-	zwl_import_set_alpha(buffer, alpha);
-	factory->client->server->dirty = 1;
-
-	/* Succeeded. */
-	return 0;
-}
 
 /* Preserves callback request order across pending-state commits and mailbox replacement. */
 static void

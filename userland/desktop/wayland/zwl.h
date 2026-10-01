@@ -287,8 +287,6 @@ struct zwl_object {
 	unsigned dead;
 	unsigned holds;
 	unsigned busy;
-	/* A GPU buffer's image as its description states it (zwl-gpu.h); zero for other objects. */
-	struct zwl_buffer_layout layout;
 	struct zwl_object *surface;
 	struct zwl_object *role;
 	struct zwl_object *top;
@@ -1044,7 +1042,7 @@ int zwl_compose_draw(struct zwl_server *server);
 int zwl_compose_complete(struct zwl_server *server);
 void zwl_compose_quiesce(struct zwl_server *server);
 void zwl_compose_close(struct zwl_server *server);
-int zwl_import_create(struct zwl_object *buffer, int descriptor);
+VkResult zwl_import_adopt(struct zwl_object *buffer, VkImage image, VkDeviceMemory memory, uint32_t width, uint32_t height, VkFormat format);
 void zwl_import_destroy(struct zwl_object *buffer);
 void zwl_import_set_alpha(struct zwl_object *buffer, uint32_t alpha);
 int zwl_shm_upload(struct zwl_server *server);

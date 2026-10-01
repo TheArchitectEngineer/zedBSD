@@ -1,9 +1,9 @@
 #!/bin/sh
 # ws103-p006 (WS103 V1): the Keiland compositor (userland/desktop/wayland/) uses the GPU only through Vulkan.
-#  1. grep: no source but the zedBSD backend module (gpu-zedbsd.c) includes a GPU UAPI header (uapi/gpu*.h), and no
+#  1. grep: no source but the zedBSD backend module (zedbsd/gpu-zedbsd.c) includes a GPU UAPI header (uapi/gpu*.h), and no
 #     source calls a GPU ioctl (the evdev ioctls of input.c, tablet.c and touch.c are out of scope).
 #  2. poisoned headers: every GPU UAPI header is replaced by one that is an #error, first on the include path, and every
-#     compositor source but gpu-zedbsd.c is compiled with -fsyntax-only (the zedBSD build's compiler and flags); a source
+#     compositor source but zedbsd/gpu-zedbsd.c is compiled with -fsyntax-only (the zedBSD build's compiler and flags); a source
 #     that reads a GPU UAPI header, directly or through another header, fails.
 #  3. the compositor opens no GPU node and has no --gpu option.
 # Prints "v1-check: PASS" or "v1-check: FAIL ...".
@@ -13,14 +13,15 @@ set -u
 cd "$(dirname -- "$0")/../../.."
 build=${1:-build/amd64}
 dir=userland/desktop/wayland
-backend=$dir/gpu-zedbsd.c
+backend=$dir/zedbsd/gpu-zedbsd.c
+files=$(find "$dir" -name "*.[ch]" | sort)
 failures=0
 fail() { echo "v1-check: FAIL $*"; failures=$((failures + 1)); }
 
 # 1. The GPU UAPI headers only in the backend, and no GPU ioctl anywhere.
-readers=$(grep -ln '#include <uapi/gpu' $dir/*.c $dir/*.h | grep -v "^$backend$")
+readers=$(grep -ln '#include <uapi/gpu' $files | grep -v "^$backend$")
 [ -z "$readers" ] || fail "GPU UAPI included by: $readers"
-calls=$(grep -n 'ioctl([^,]*, *GPU_' $dir/*.c $dir/*.h)
+calls=$(grep -n 'ioctl([^,]*, *GPU_' $files)
 [ -z "$calls" ] || fail "GPU ioctl: $calls"
 backend_calls=$(grep -c 'ioctl(' $backend)
 [ "$backend_calls" = 0 ] || fail "the backend calls ioctl"
@@ -39,7 +40,7 @@ print:
 	@echo $(KEILAND_SOURCES)
 EOF
 )
-[ -n "$sources" ] || sources=$(ls $dir/*.c)
+[ -n "$sources" ] || sources=$(find "$dir" -name "*.c" | sort)
 compiled=0
 for source in $sources; do
 	[ "$source" = "$backend" ] && continue
@@ -55,9 +56,9 @@ done
 echo "v1-check: $compiled sources compiled with the GPU UAPI headers poisoned"
 
 # 3. No GPU node and no --gpu option.
-nodes=$(grep -n '"/dev/gpu' $dir/*.c $dir/*.h)
+nodes=$(grep -n '"/dev/gpu' $files)
 [ -z "$nodes" ] || fail "GPU node: $nodes"
-option=$(grep -n '"--gpu' $dir/*.c)
+option=$(grep -n '"--gpu' $(find "$dir" -name "*.c"))
 [ -z "$option" ] || fail "--gpu option: $option"
 
 [ $failures = 0 ] || exit 1

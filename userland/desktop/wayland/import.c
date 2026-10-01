@@ -7,10 +7,9 @@
 
 /*
  * Imports a client's GPU image into window mode's Vulkan device once per
- * wl_buffer (WS035 compositing design, D2): the image, its memory (the
- * standard OPAQUE_FD import of the buffer's fd), a view and a descriptor
- * set are made when the buffer is created, so a commit costs no allocation
- * and no ioctl.
+ * wl_buffer: the OS module creates the image and its bound memory; this
+ * file adopts them and makes the view and descriptor sets.  A commit
+ * costs no allocation and no ioctl.
  *
  * The image's move to the general layout is not submitted and waited for
  * at the import (a client's swapchain of three images waited three times
@@ -20,59 +19,62 @@
 
 #include "compose.h"
 
-#include <errno.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-static VkResult import_image(struct zwl_compose *compose, const struct zwl_buffer_layout *image, int descriptor, struct zwl_import *import);
+static VkResult import_image(struct zwl_compose *compose, VkFormat format, struct zwl_import *import);
 static VkResult import_layout(struct zwl_compose *compose, struct zwl_import *import);
 static void import_release(struct zwl_compose *compose, struct zwl_import *import);
 
 /*
- * Imports a buffer's image for window mode.  The descriptor stays the
- * caller's; a copy of it is given to Vulkan.
+ * Adopts an image and its bound memory for a GPU buffer.
+ *
+ * The OS module creates them; this function makes the view the shader samples, the move to the
+ * general layout and the descriptor sets.  The image and the memory are
+ * taken: on failure they are destroyed with whatever else was made.
  */
-int
-zwl_import_create(
+VkResult
+zwl_import_adopt(
 	struct zwl_object *buffer,
-	int descriptor)
+	VkImage image,
+	VkDeviceMemory memory,
+	uint32_t width,
+	uint32_t height,
+	VkFormat format)
 {
 	struct zwl_compose *compose;
 	struct zwl_import *import;
-	int copy;
 	VkResult result;
 
-	/* The compositor's Vulkan device the image is imported into. */
+	/* The compositor's Vulkan device the image belongs to. */
 	compose = buffer->client->server->compose;
 
-	/* The import record, owned by the buffer. */
+	/* The import record, owned by the buffer; without it the image and its memory go. */
 	import = calloc(1, sizeof(*import));
-	if (import == NULL)
-		return ENOMEM;
-
-	/* Vulkan consumes the fd it imports, so it gets its own. */
-	copy = dup(descriptor);
-	if (copy < 0) {
-		free(import);
-		return errno;
+	if (import == NULL) {
+		vkDestroyImage(compose->device, image, NULL);
+		vkFreeMemory(compose->device, memory, NULL);
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
 
-	/* The image bound to the imported memory, its view and descriptor set. */
-	result = import_image(compose, &buffer->layout, copy, import);
+	/* The image, its memory and its size, drawn opaque until set_alpha says otherwise. */
+	import->image = image;
+	import->memory = memory;
+	import->width = width;
+	import->height = height;
+	import->draw = ZWL_DRAW_OPAQUE;
+
+	/* The view and descriptor sets that sample it, and its move to the general layout. */
+	result = import_image(compose, format, import);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)result);
 		import_release(compose, import);
 		free(import);
-		return EINVAL;
+		return result;
 	}
 
 	/* Succeeded: the buffer can be drawn in window mode. */
 	buffer->import = import;
-	if (buffer->client->server->log_frames)
-		printf("ZWL VULKAN_IMPORT client=%llu buffer=%u width=%u height=%u\n", (unsigned long long)buffer->client->number, buffer->id, import->width, import->height);
-	return 0;
+	return VK_SUCCESS;
 }
 
 /*
@@ -117,110 +119,17 @@ zwl_import_destroy(
 	buffer->import = NULL;
 }
 
-/*
- * Creates a linear image of the described layout, imports the fd as its
- * memory, and makes the view and descriptor set that sample it.
- */
+/* Makes the view and descriptor sets that sample an imported image. */
 static VkResult
 import_image(
 	struct zwl_compose *compose,
-	const struct zwl_buffer_layout *image,
-	int descriptor,
+	VkFormat format,
 	struct zwl_import *import)
 {
-	VkExternalMemoryImageCreateInfo external;
-	VkImageCreateInfo create;
-	VkMemoryRequirements requirements;
-	VkImageSubresource subresource;
-	VkSubresourceLayout layout;
-	VkMemoryDedicatedAllocateInfo dedicated;
-	VkImportMemoryFdInfoKHR import_info;
-	VkMemoryAllocateInfo allocate;
 	VkImageViewCreateInfo view;
 	VkDescriptorImageInfo image_info;
 	VkWriteDescriptorSet write;
-	VkFormat format;
 	VkResult result;
-
-	/* The channel order is the client's (a linear four-channel format, checked by zwl_gpu_buffer_decode). */
-	format = image->format;
-
-	/* The image, sampled, with external memory. */
-	import->width = image->width;
-	import->height = image->height;
-	import->draw = ZWL_DRAW_OPAQUE;
-	memset(&external, 0, sizeof(external));
-	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
-	external.handleTypes = zwl_gpu_buffer_handle_type();
-	memset(&create, 0, sizeof(create));
-	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	create.pNext = &external;
-	create.imageType = VK_IMAGE_TYPE_2D;
-	create.format = format;
-	create.extent.width = image->width;
-	create.extent.height = image->height;
-	create.extent.depth = 1U;
-	create.mipLevels = 1U;
-	create.arrayLayers = 1U;
-	create.samples = VK_SAMPLE_COUNT_1_BIT;
-	create.tiling = VK_IMAGE_TILING_LINEAR;
-	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
-	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	result = vkCreateImage(compose->device, &create, NULL, &import->image);
-	if (result != VK_SUCCESS) {
-		close(descriptor);
-		return result;
-	}
-
-	/* The client's layout must be the one this image has: same memory type, rows and offset. */
-	vkGetImageMemoryRequirements(compose->device, import->image, &requirements);
-	memset(&subresource, 0, sizeof(subresource));
-	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	vkGetImageSubresourceLayout(compose->device, import->image, &subresource, &layout);
-	if ((requirements.memoryTypeBits & (1U << image->memory_type)) == 0U ||
-	    requirements.size > image->allocation_bytes ||
-	    layout.offset != image->offset ||
-	    layout.rowPitch != image->stride) {
-		printf("ZWL VULKAN_IMPORT_LAYOUT types=0x%x type=%u size=%llu bytes=%llu offset=%llu/%llu pitch=%llu/%u\n",
-		    requirements.memoryTypeBits, image->memory_type,
-		    (unsigned long long)requirements.size, (unsigned long long)image->allocation_bytes,
-		    (unsigned long long)layout.offset, (unsigned long long)image->offset,
-		    (unsigned long long)layout.rowPitch, image->stride);
-		close(descriptor);
-		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-	}
-
-	/*
-	 * The memory is the client's allocation, imported through its fd
-	 * (consumed on success) for this image alone: a dedicated import, which
-	 * libvulkan checks against the kernel's record of the fd, so that the
-	 * description the client sent cannot make this image read the allocation
-	 * as another one.
-	 */
-	memset(&dedicated, 0, sizeof(dedicated));
-	dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
-	dedicated.image = import->image;
-	memset(&import_info, 0, sizeof(import_info));
-	import_info.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
-	import_info.pNext = &dedicated;
-	import_info.handleType = zwl_gpu_buffer_handle_type();
-	import_info.fd = descriptor;
-	memset(&allocate, 0, sizeof(allocate));
-	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocate.pNext = &import_info;
-	allocate.allocationSize = requirements.size;
-	allocate.memoryTypeIndex = image->memory_type;
-	result = vkAllocateMemory(compose->device, &allocate, NULL, &import->memory);
-	if (result != VK_SUCCESS) {
-		close(descriptor);
-		return result;
-	}
-
-	/* The image uses that memory. */
-	result = vkBindImageMemory(compose->device, import->image, import->memory, 0U);
-	if (result != VK_SUCCESS)
-		return result;
 
 	/* The view the shader samples. */
 	memset(&view, 0, sizeof(view));
@@ -257,6 +166,8 @@ import_image(
 	image_info.sampler = compose->sampler;
 	image_info.imageView = import->view;
 	image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	/* Bind the sampled image to the buffer's descriptor set. */
 	memset(&write, 0, sizeof(write));
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	write.dstSet = import->set;
@@ -268,7 +179,11 @@ import_image(
 
 	/* And the same image sampled linearly. */
 	result = zwl_compose_linear_set(compose, import);
-	return result;
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: both sampling modes have descriptor sets. */
+	return VK_SUCCESS;
 }
 
 /*

@@ -162,6 +162,8 @@ struct zwl_compose {
 	 * status each pass (the native i915, which has no kernel fences).
 	 */
 	unsigned fence_fd;
+	/* The export entrypoint resolved once for the device while fence_fd is set. */
+	PFN_vkGetFenceFdKHR get_fence_fd;
 	uint64_t frame_start_cycles;
 	uint64_t frame_start_ms;
 	/*

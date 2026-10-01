@@ -2,10 +2,10 @@
 
 # ws104-p004: compositor の GPU の buffer の境界を引き上げる
 
-Status: planned
+Status: in-progress
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
+Queue: q518 / q518-i01
 実行者: phase-runner（high）
 
 ## 目的
@@ -121,3 +121,5 @@ VkResult zwl_import_adopt(struct zwl_object *buffer, VkImage image, VkDeviceMemo
 ## 結果
 
 （実行の後に書く）
+
+Execution started UTC: 2026-10-01T02:34:59.246799+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。

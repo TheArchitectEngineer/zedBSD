@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q517](../queue.md) finished（ws104-p003 cleared（q517））
-Resume point: ws104-p003 cleared（q517）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
+Queue: [q518](../queue.md) active（ws104-p004 in-progress）
+Resume point: ws104-p004 in-progress。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -83,7 +83,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | [ws104-p001](phase001/phase.md) | desktop の公開の header を `userland/desktop/keiland/` へ移す（sysroot の manifest に 1 directory を足す） | cleared（q515） | なし |
 | [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | cleared（q516） | p001 |
 | [ws104-p003](phase003/phase.md) | libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ | cleared（q517） | p002 |
-| [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | planned | p001 |
+| [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | in-progress | p001 |
 | [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | planned | p004 |
 | [ws104-p006](phase006/phase.md) | compositor の session（`handoff.c`）と OS の hook（`zwl-os.h`）を zedBSD の module に | planned | p005 |
 | [ws104-p007](phase007/phase.md) | install の path を `userland/desktop/paths.h` の macro に | planned | p006、p003 |
@@ -119,3 +119,7 @@ in-progress。current user, 2026-10-01「お、いい調子ですね！その調
 
 cleared（q517）。libkeiland の network・network-link・audio を `zedbsd/*-zedbsd.c` に byte 同一で移動（移動前 hash と照合）。Makefile と host script 2 本の path を更新。共通 C の OS 専用 include は 0。公開 export は前後一致。amd64 build exit 0、自前 warning 0、host audio 14/14、Settings host build、Settings guest 回帰 8 本、boot 全て PASS。移動した 3 file の style-check 0。証拠: `plan/history/ws104/q517/`（hash、export 一覧、回帰 summary、login PNG）。旧 object は共有 build に残し、消していない。実機・Linux は未実施。
  詳細は [Phase](phase003/phase.md)。
+
+### 2026-10-01T02:34:59.246799+00:00 / q518 / ws104-p004
+
+in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase004/phase.md)。

@@ -6,15 +6,9 @@
  */
 
 /*
- * The compositor's operating-system boundary for client GPU buffers (WS103).
- *
- * A client's GPU buffer arrives as an fd and a description of its image
- * (keiland_gpu_buffer_v1.create_buffer).  What the fd is and how the
- * description is written belong to the operating system: on zedBSD the fd is
- * a kernel image capability and the description the kernel's own record of
- * it (gpu-zedbsd.c).  Everything the compositor needs from them is the layout
- * below and the Vulkan handle type the fd is imported as; the rest of the
- * compositor uses only these.
+ * Defines the boundary between the compositor and its OS's GPU module.
+ * The module owns the buffer protocol and image import; the compositor
+ * receives a Vulkan image, its memory, size and format.
  */
 #ifndef ZWL_GPU_H
 #define ZWL_GPU_H
@@ -22,25 +16,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <vulkan/vulkan.h>
-#include <vulkan/vulkan_external.h>
 
-/*
- * The layout of a client's GPU buffer as its description states it.
- *
- * One per wl_buffer, filled when the buffer is created and not changed
- * afterwards.  The image the compositor makes of the buffer has this size,
- * format and row layout; the import checks that the description is the
- * allocation's real one.
- */
-struct zwl_buffer_layout {
-	uint32_t width;
-	uint32_t height;
-	VkFormat format;
-	uint32_t stride;
-	uint64_t offset;
-	uint64_t allocation_bytes;
-	uint32_t memory_type;
-};
+struct zwl_object;
 
 /*
  * What the compositor's Vulkan device can take, against which a description
@@ -51,8 +28,21 @@ struct zwl_gpu_limits {
 	uint32_t memory_type_count;
 };
 
-size_t zwl_gpu_buffer_wire_bytes(void);
-int zwl_gpu_buffer_decode(const unsigned char *bytes, size_t size, const struct zwl_gpu_limits *limits, struct zwl_buffer_layout *layout);
-VkExternalMemoryHandleTypeFlagBits zwl_gpu_buffer_handle_type(void);
+/* Names the OS's Wayland global for GPU buffers. */
+const char *zwl_gpu_global_interface(void);
+/* Reports the version offered for that global. */
+uint32_t zwl_gpu_global_version(void);
+/* Handles a GPU request: 0, EAGAIN for a pending fd, or a client-ending errno. */
+int zwl_gpu_request(struct zwl_object *factory, uint32_t opcode, const unsigned char *bytes, size_t size);
+/* Takes any buffer-owned fence before a surface's commit moves its fences. */
+void zwl_gpu_commit(struct zwl_object *surface, struct zwl_object *buffer);
+/*
+ * Copies up to capacity extension names and returns how many the module
+ * needs; device creation fails when that exceeds capacity.
+ */
+uint32_t zwl_gpu_instance_extensions(const char **names, uint32_t capacity);
+uint32_t zwl_gpu_device_extensions(VkPhysicalDevice physical, const char **names, uint32_t capacity);
+/* Reports the frame fence's exported handle type, or 0 for status polling. */
+VkExternalFenceHandleTypeFlagBits zwl_gpu_frame_fence_type(void);
 
 #endif
