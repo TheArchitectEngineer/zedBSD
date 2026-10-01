@@ -2,12 +2,12 @@
 
 # ws104-p008: 規約の全文の見直し、境界の確かめの script、回帰
 
-Status: planned
+Status: in-progress
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
+Queue: q522 / q522-i01
 依存: p001〜p007
-実行者: phase-runner（high）。script を `plan/tools/` に置くのと master の Tools 節への登録、WS104 の完了の処理は main
+実行者: Codex Q1 / main（現在の Master の N=0 と今回の自律実行指示に従う）。script・Master Tools・WS104 完了の処理も main
 
 ## 目的
 
@@ -60,3 +60,13 @@ WS104 の完了の前の、規約の全文による見直し（Awesome Plan の 
 ## 結果
 
 （実行の後に書く）
+
+Execution started UTC: 2026-10-01T04:42:00.826349+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
+
+### Checkpoint 2026-10-01T04:53:10.487845+00:00 / q522
+
+最終 source 6efb4f2b（WIP）を確定。83 C/header の全文 / 変更範囲 review を保存。変更範囲の機械違反 0、既存周辺 68 件・extern C 宣言の誤検出 52 件は分離し、移動した公開 header の宣言・従来注釈の保持と cleanup 順の理由を記録。literal は file ごとに一致、境界 C1〜C5 PASS、意図的 uapi include は C1 FAIL / exit 1、byte 同一に復元。review build exit 0・自前 warning 0。必須最終 suite を GPU → C1/C2/C9 → glass/pen → Settings/audio → volume の順に実行中。p008 は in-progress。
+
+### Checkpoint 2026-10-01T05:00:49.526826+00:00 / q522
+
+最終実装 6efb4f2b の amd64 build exit 0、自前 / 外部 warning 0。GPU V1 は 54 source、dedicated host 18 case × ordinary / sanitize、decode host 17 case × ordinary / sanitize、forge guest、fence guest（600 fence、generation 1、600 frame / 64 s）、boot 全て PASS。boot PNG を目視してユーザーに提示した。GPU の log / PNG / tools version と final source manifest は plan/history/ws104/q522 に保存。C1/C2/C9 は実行中、その他必須回帰は未完了、p008 は in-progress。

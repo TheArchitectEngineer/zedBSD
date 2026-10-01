@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=past-log -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし
+Active Queue: q522（ws104-p008 in-progress）
 Last finished Queue: [q521](queue-q521.md)（ws104-p007 cleared）
 <!-- awesome-plan-current:end -->
 

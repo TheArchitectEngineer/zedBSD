@@ -1,0 +1,18 @@
+{
+  "implementation": "6efb4f2bbe86e44da74a79f44ec4cf4a4576318c",
+  "commands": "build/ws104-control/final-test.sh; archived reproducible commands in tools/keiland-linux/zedbsd-commands.md",
+  "own_source_warning_lines": 0,
+  "external_warning_lines": 0,
+  "image_bytes": 2216689664,
+  "tools": {
+    "make": "GNU Make 4.4.1",
+    "host_cc": "cc (Debian 14.2.0-19) 14.2.0",
+    "target_cc": "clang version 23.1.0 (git@github.com:awemorris/zedBSD.git d7f1bbaca898fb5f4cc373b082e915ec1a07310f)",
+    "clang_format": "Debian clang-format version 19.1.7 (3+b1)",
+    "qemu": "QEMU emulator version 10.0.11 (Debian 1:10.0.11+ds-0+deb13u1)",
+    "python": "Python 3.13.5",
+    "qpdf": "qpdf version 12.2.0"
+  },
+  "environment": "Linux host; amd64 QEMU / Venus; renderD128 vgem; no physical / Linux compositor acceptance",
+  "status": "in-progress; remaining runtime not yet accepted"
+}

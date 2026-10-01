@@ -1,0 +1,94 @@
+{
+  "userland/desktop/libkeiland/zedbsd/network-zedbsd.c": {
+    "\"userland/base/net/protocol.h\"": 1,
+    "\"%s\"": 6,
+    "\"\"": 1,
+    "'\\0'": 14,
+    "\"wifi \"": 2,
+    "'\\n'": 1,
+    "\"%15s %31s %31s\"": 1,
+    "\"lo\"": 1,
+    "\"online\"": 1,
+    "\"static\"": 1,
+    "\"radios\"": 1,
+    "\"0\"": 1,
+    "\"interface\"": 1,
+    "\"-\"": 2,
+    "\"ssid\"": 2,
+    "\"state\"": 1,
+    "\"disabled\"": 1,
+    "\"auto-searching\"": 1,
+    "\"connecting\"": 1,
+    "\"reconnecting\"": 1,
+    "\"connected\"": 1,
+    "\" bss \"": 1,
+    "\"rssi\"": 1,
+    "\"security\"": 1,
+    "' '": 1,
+    "'='": 1,
+    "\" \"": 1,
+    "\"%2x\"": 1,
+    "'?'": 1
+  },
+  "userland/desktop/libkeiland/zedbsd/audio-zedbsd.c": {
+    "\"userland/base/audiod/protocol.h\"": 1,
+    "\"%s\"": 1
+  },
+  "userland/desktop/libkeiland/zedbsd/network-link-zedbsd.c": {
+    "\"userland/base/net/wifi-store.h\"": 1,
+    "\"/etc/resolv.conf\"": 1,
+    "\"r\"": 1,
+    "\"%31s %31s\"": 1,
+    "\"nameserver\"": 1,
+    "\"%s\"": 3,
+    "'\\0'": 6
+  },
+  "userland/desktop/wayland/zedbsd/gpu-buffer-zedbsd.c": {
+    "\"userland/desktop/wayland/compose.h\"": 1,
+    "\"userland/desktop/wayland/zedbsd/gpu-zedbsd.h\"": 1,
+    "\"keiland_gpu_buffer_v1\"": 1,
+    "\"ZWL IMPORT_ERROR client=%llu buffer=%u errno=%d\\n\"": 1,
+    "\"ZWL IMPORT client=%llu buffer=%u width=%u height=%u bytes=%llu\\n\"": 1,
+    "\"ZWL ACQUIRE_FENCE client=%llu surface=%u generation=%llu\\n\"": 1,
+    "\"ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\\n\"": 2,
+    "\"ZWL VULKAN_IMPORT client=%llu buffer=%u width=%u height=%u\\n\"": 1,
+    "\"ZWL VULKAN_IMPORT_LAYOUT types=0x%x type=%u size=%llu bytes=%llu offset=%llu/%llu pitch=%llu/%u\\n\"": 1
+  },
+  "userland/desktop/wayland/zedbsd/gpu-zedbsd.c": {
+    "\"userland/desktop/wayland/zedbsd/gpu-zedbsd.h\"": 1
+  },
+  "userland/desktop/wayland/zedbsd/input-zedbsd.c": {
+    "\"userland/desktop/wayland/zwl.h\"": 1,
+    "\"/dev/input\"": 1,
+    "\"%s/%s\"": 1,
+    "\"event\"": 1,
+    "'\\0'": 2,
+    "'0'": 1,
+    "'9'": 1
+  },
+  "userland/desktop/wayland/zedbsd/os-zedbsd.c": {
+    "\"userland/desktop/wayland/zwl-os.h\"": 1
+  },
+  "userland/desktop/wayland/zedbsd/handoff-zedbsd.c": {
+    "\"userland/desktop/wayland/zwl.h\"": 1,
+    "\"READY\\n\"": 1,
+    "\"ZWL HANDOFF send errno=%d\\n\"": 1,
+    "'\\n'": 2,
+    "'\\0'": 3,
+    "\"GO\"": 1,
+    "\"ZWL HANDOFF go=%d waited_ms=%llu at_ms=%llu\\n\"": 1,
+    "\"RELEASED\\n\"": 1,
+    "\"ZWL HANDOFF released at_ms=%llu\\n\"": 1,
+    "\"LOGOUT\\n\"": 1,
+    "\"logout\"": 1,
+    "\"ZWL HANDOFF logout at_ms=%llu\\n\"": 1,
+    "\"ZWL HANDOFF logout unanswered\\n\"": 1,
+    "\"ZWL HANDOFF closed\\n\"": 1,
+    "\"QUIT\"": 1,
+    "\"ZWL HANDOFF quit at_ms=%llu\\n\"": 1,
+    "\"ZWL HANDOFF line=%s\\n\"": 1
+  },
+  "userland/desktop/wayland/import.c": {
+    "\"compose.h\"": 1
+  }
+}

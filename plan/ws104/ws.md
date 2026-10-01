@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q521](../queue.md) finished（ws104-p007 cleared（q521））
-Resume point: ws104-p007 cleared（q521）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
+Queue: [q522](../queue.md) active（ws104-p008 in-progress）
+Resume point: ws104-p008 in-progress。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -87,7 +87,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | cleared（q519） | p004 |
 | [ws104-p006](phase006/phase.md) | compositor の session（`handoff.c`）と OS の hook（`zwl-os.h`）を zedBSD の module に | cleared（q520） | p005 |
 | [ws104-p007](phase007/phase.md) | install の path を `userland/desktop/paths.h` の macro に | cleared（q521） | p006、p003 |
-| [ws104-p008](phase008/phase.md) | 規約の全文の見直し、境界の確かめの script、回帰 | planned | p001〜p007 |
+| [ws104-p008](phase008/phase.md) | 規約の全文の見直し、境界の確かめの script、回帰 | in-progress | p001〜p007 |
 
 依存の図: p001 → p002 → p003 ─┐、p001 → p004 → p005 → p006 ─┴→ p007 → p008。p002〜p003 の列と p004〜p006 の列は別の file を触るので、別の agent が同時に進めてよい。
 **ただし image の build（`disk-image` と試験の image）は同時に 1 つだけ**（[commands.md](commands.md) §0）。並べるのは編集と host の試験までで、guest の回帰は順に流す。
@@ -192,3 +192,15 @@ in-progress。current user, 2026-10-01「お、いい調子ですね！その調
 
 cleared（q521）。cleared（q521）。paths.h の BINDIR / LIBEXECDIR / DATADIR / SYSCONFDIR で desktop の install path を指定し、zedBSD の値を保持。26 file の 61 行と include、host script 7 本の -I. を準備済み patch で更新（p006 後の main.c の include hunk のみ手順どおり調整）。旧 install literal の残り 0。amd64 build exit 0、自前 warning 0。bin/* と dynamic/*.so の該当 path 文字列は前後一致。host 7 本 exit 0、desktop は前後 PASS、Textedit 34/34、Files default・thumbnail PASS。paths.h style-check 0、C1/C2/C9 13/13、boot PASS。p072 全 6 PNG と login PNG を目視し login は提示済み。証拠: plan/history/ws104/q521/（boundary-checks.json、strings-before.txt、strings-after.txt、host-summary.txt、criteria-results.txt、login.png）。system shell / 公開 emoji header / Open With の bare directory / OS path / sessiond は合意どおり保持。実装 cec34d3e（WIP）、実行者 main / Codex Q1、未達条件なし。実機・Linux 未実施、GitHub 未公開。
  詳細は [Phase](phase007/phase.md)。
+
+### 2026-10-01T04:42:00.826349+00:00 / q522 / ws104-p008
+
+in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase008/phase.md)。
+
+### Checkpoint 2026-10-01T04:53:10.487845+00:00 / q522
+
+最終 source 6efb4f2b（WIP）を確定。83 C/header の全文 / 変更範囲 review を保存。変更範囲の機械違反 0、既存周辺 68 件・extern C 宣言の誤検出 52 件は分離し、移動した公開 header の宣言・従来注釈の保持と cleanup 順の理由を記録。literal は file ごとに一致、境界 C1〜C5 PASS、意図的 uapi include は C1 FAIL / exit 1、byte 同一に復元。review build exit 0・自前 warning 0。必須最終 suite を GPU → C1/C2/C9 → glass/pen → Settings/audio → volume の順に実行中。p008 は in-progress。
+
+### Checkpoint 2026-10-01T05:00:49.526826+00:00 / q522
+
+最終実装 6efb4f2b の amd64 build exit 0、自前 / 外部 warning 0。GPU V1 は 54 source、dedicated host 18 case × ordinary / sanitize、decode host 17 case × ordinary / sanitize、forge guest、fence guest（600 fence、generation 1、600 frame / 64 s）、boot 全て PASS。boot PNG を目視してユーザーに提示した。GPU の log / PNG / tools version と final source manifest は plan/history/ws104/q522 に保存。C1/C2/C9 は実行中、その他必須回帰は未完了、p008 は in-progress。
