@@ -66,7 +66,7 @@ Q1 と手順を検討して、次の「決定と理由」を確定した。zedBS
 | D22 | Linux の compositor は、自分の frame の fence を fd にしない（`vkGetFenceStatus` の poll の道） | Linux の SYNC_FD の fence の export は fence を reset する（規格の副作用）ので、今の `zwl_compose_complete` の `vkWaitForFences` と合わない。OPAQUE_FD は後段によっては無い | 2026-10-01 Q1 の判断 |
 | D23 | Linux の試験は host（libvulkan-compat の chain と WSI、試験用の Wayland server）と QEMU の Debian 13 の guest（compositor・app・gdm・WiFi・音）で行う。host の画面と入力の device は触らない | host は server（Matrox、3D 無し、Vulkan は lavapipe だけ）。guest なら root で DRM master を取り、gdm を入れてよい | 2026-10-01 Q1 の判断。survey: guest の Venus は host の render node を要るので使わない。guest の image は root 無しで作れる（mmdebstrap の unshare）。試験の QEMU は起動ごとに overlay の qcow2 で、共有の image を書かない（design §7.2） |
 | D24 | Linux の build の flag に `-Wno-format-truncation` を入れる。gcc だけの他の警告（`-Wmaybe-uninitialized` の誤検出）は、共通の code に初期値を入れて直す | 2026-10-01 の host の試しの compile で、gcc 14 は表示の文字列の切れの警告を 10 箇所出した（clang 19 は 0）。文字列は意図して切っている。`-Wmaybe-uninitialized` は clang が option を知らないので flag で抑えられない（2 箇所、design §3.5） | 2026-10-01 Q1 の判断（委ねられた技術の範囲） |
-| D25 | **Linux の guest の起動の確かめは、SSH が通ることと QMP の `screendump` の PNG で行う**（`plan/tools/boot-test.sh` は使わない）。serial の log は判定に使わない | AGENTS.md の「起動の確認は boot-test.sh だけ」は zedBSD の image の UEFI の起動の物で、Linux の guest（QEMU の direct kernel boot）には使えない。**ユーザーの確認を待つ**（2026-10-01 の design-reviewer の指摘: AGENTS.md の規則の読み替えに当たる） | 2026-10-01 Q1 の提案（ユーザーの確認待ち） |
+| D25 | **Linux の guest の起動の確かめは、SSH が通ることと QMP の `screendump` の PNG で行う**（`plan/tools/boot-test.sh` は使わない）。serial の log は判定に使わない | `boot-test.sh` は zedBSD の image の UEFI の起動用。Linux の guest は QEMU の direct kernel boot なので、ホストの `127.0.0.1:2225` から guest の port 22 への転送で SSH を確認し、QMP で画面を見る。AGENTS.md と Guardrail に WS105 限定の例外を記録 | 2026-10-01 ユーザー「許可します」 |
 
 ## 達成基準
 

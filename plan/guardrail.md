@@ -51,6 +51,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 - 集約の `make check` は走らせない。Phase に意味のある絞った確認を行う。
 - build の関門: 選んだ platform の構成で `make -j16`（warning 0）。
 - 起動の確認は `plan/tools/boot-test.sh`（画面の login prompt）。QEMU の console log・serial log を読んで判定しない。
+  WS105 の Debian 13 Linux guest は SSH の疎通と QMP の `screendump` の PNG を用いる（2026-10-01 ユーザー許可、[WS105 D25](ws105/ws.md)）。SSH はホストの loopback から QEMU の転送を経て guest に接続する。zedBSD の image は `boot-test.sh` を使う。
   機能の回帰は guest を起動しない host の試験で行い、guest の操作はシリアル（`plan/tools/guest/serial.py`）か SSH
   （`plan/tools/guest/guest.sh`）で対話する。不具合の解析は QEMU の gdbstub・monitor・QMP で行う。詳細は [Master](master.md) の Tools 節。
 - 回帰の範囲は Phase の性質で決める。コードの意味を変えない refactor は build（warning 0）と最後の boot test だけ。

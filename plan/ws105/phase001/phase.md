@@ -9,6 +9,10 @@ Queue: なし
 依存: なし
 実行者: phase-runner（high）か phase-runner-mid。道具は `plan/tools/keiland-linux/`（main の範囲。subagent は自分の worktree で作り、main が merge して Tools 節に登録する）
 
+## 判断（2026-10-01）
+
+ユーザーは Linux guest の起動を SSH の疎通と QMP の `screendump` の PNG で確認する方法（[WS105 D25](../ws.md)）を許可した。接続はホストの `127.0.0.1:2225` から QEMU の host forwarding を経て、この Phase で作る Debian 13 guest の port 22 に届く。外部の SSH server は使わない。AGENTS.md と Guardrail に WS105 限定の例外を記録した。Queue は未設定。
+
 ## 目的
 
 Keiland の Linux の compositor・app・gdm・WiFi・音を試す場所を作る（決定 D23・D25、[design.md](../design.md) §7）。host（この開発機）の画面と入力は使わない。

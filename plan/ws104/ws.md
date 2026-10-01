@@ -9,7 +9,7 @@ Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 計画済み（2026-10-01、survey と design-reviewer の後の改訂 2）。最初は p001（header の移動。toolchain の範囲の sysroot.mk を含むので main が実行する。ユーザーの許可を確かめる）
+Resume point: 計画済み（2026-10-01、survey と design-reviewer の後の改訂 2）。最初は p001（header の移動。toolchain の範囲の sysroot.mk を含むので main が実行する。2026-10-01 にユーザーが差分を許可。Queue は未設定）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -94,6 +94,6 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 
 ## 実行の体制
 
-- **p001 は main（Q1）が行う**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。subagent は変えない）。開始の前に main はユーザーに
-  toolchain の変更の許可を確かめる（2026-10-01 の計画の時点では、ユーザーの D3 の指示はあるが、sysroot.mk の変更の明示の許可はまだ無い）。
+- **p001 は main（Q1）が行う**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。subagent は変えない）。
+  2026-10-01 にユーザーが [p001-sysroot.patch](patches/p001-sysroot.patch) の適用を許可した。実行には Queue の選定を要する。
 - p002〜p008 は phase-runner（high）に任せてよい。compositor の Phase（p004〜p006）は i915・Keiland の desktop の扱いなので phase-runner（high）を使う。
