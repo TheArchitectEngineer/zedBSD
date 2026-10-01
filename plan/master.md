@@ -3,7 +3,7 @@
 <!-- awesome-plan-current:start -->
 Active Queue: なし。Last finished Queue: q514（ws103-p007 cleared: WS103 完了）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
-Next（2026-10-01 に更新）: WS103（compositor を libvulkan だけに）は 2026-10-01 に完了（q508〜q514、ユーザーの自走の指示）。次の最優先はユーザーの指示を待つ。候補: デモ critical の上位（WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102）、5330 の実機の新しい demo の image とユーザーの実機の確認。サブエージェントは N=0。
+Next（2026-10-01 に更新）: ユーザー「Linux移植を進めます」→ WS104（Keiland の OS の境界の整理、zedBSD の上）と WS105（Keiland を Linux で動かす）を計画した（planned、Queue はまだ無い）。最初は ws104-p001（toolchain の範囲の sysroot.mk の 1 行を含むので main が実行、ユーザーの許可を確かめる）と ws105-p001（Linux の試験の guest）。WS103（compositor を libvulkan だけに）は 2026-10-01 に完了（q508〜q514、ユーザーの自走の指示）。候補: デモ critical の上位（WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102）、5330 の実機の新しい demo の image とユーザーの実機の確認。サブエージェントは N=0。
 IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。
 優先順位（2026-09-30 夜 ユーザー）: 最優先の WS103 は 2026-10-01 に完了。次は WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102、WS074 はデモ critical の中位。
 <!-- awesome-plan-current:end -->
@@ -201,6 +201,8 @@ fg005 有線 LAN、fg007 HAL の可読性、fg009 PowerPC）は定義を残す�
 | [WS101](ws101/ws.md) | MG006 | GPU の compute: i915 の Vulkan の compute（dispatch・shared memory・barrier・atomic）、libglesv2 の GLES 3.1 の compute、Noct の自動並列化（accel_opengles）が 5330 の GPU で動く（2026-09-30 ユーザー、10/17 のデモまで、最優先ではない） | incomplete | 2026-09-30: L1 で S13 が 5330 で通った。L2: p016（時間の分解）cleared、p017（buffer の使い回しと copy の削減、QEMU の GPU の call 835 → 212 ms、CPU の 10.6 倍遅い）uncleared。ユーザーの判断「今のまま」で S13 は今の見本、最適化はここで止める（5330 の p017 の値は P1 が追記） |
 | [WS102](ws102/ws.md) | MG006 | スクリーンキーボード: 右下の角の swipe で右側に flick の panel（英字・記号・日本語）、左下の角の swipe で下側に QWERTY と手書き（認識は stub）。compositor に直接（2026-09-30 ユーザー） | incomplete | 2026-09-30: L1 を満たした。L2: p006・p007・p008・p009・p015・p016（右の列の道具の面）・p017・p018・p020・p021・p023・p024（履歴の tab。受け入れの手順だけ PASS、全手順の回帰・C9・boot test は未実施）、L3 の p019（色付きの絵文字）cleared（QEMU）。ユーザーの指示で優先を下げてラップアップ（2026-09-30 夕）。保留: p022（絵文字の tab）・BUG-125・p010・p011（速さ）・p012（IME、人間） |
 | [WS103](ws103/ws.md) | MG006 | compositor を libvulkan だけにする（GPU の UAPI の直の ioctl を無くす）（2026-09-30 ユーザー「規則にして今移す」、規則は Guardrail） | completed | 2026-10-01 完了（p001〜p007、q508〜q514）: V1〜V4 を満たす（QEMU の Venus と 5330 の passthrough、単独の実機の起動は未実施）。Linux・FreeBSD の backend は F-065。試験は plan/tools/gpu-boundary |
+| [WS104](ws104/ws.md) | MG006 | Keiland の OS の境界の整理: desktop の公開の header を `userland/desktop/keiland/` へ、libkeiland と compositor の OS の部分を `zedbsd/` の module へ、install の path を macro に。zedBSD の振る舞いは変えない（2026-10-01 ユーザー「Linux移植を進めます」、WS105 の準備） | planned | 2026-10-01 計画（p001〜p008）。次は p001（main、sysroot.mk は toolchain の範囲） |
+| [WS105](ws105/ws.md) | MG006 | Keiland を Linux で動かす（`/opt/keiland`）: `make keiland-linux`、libvulkan-compat（独自の WSI から system の libvulkan へ chain）、compositor の Linux の module（KMS・evdev・linux-dmabuf・logind）、主な app、gdm、wpa_supplicant・ALSA（2026-10-01 ユーザー、F-065 の Linux の分） | planned | 2026-10-01 計画（p001〜p011、決定 D1〜D23 と design.md）。p001 は今すぐ、p002 は WS104 の p001・p003・p007 の後 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -235,7 +237,9 @@ WS074 はデモ critical の中位。WS035（完了）の名指しは後継の W
 **運用（ユーザー、2026-09-27〜30）**: 作業用のサブエージェントを N=0〜9（2026-09-29 は N=9、1 時間に 5 時間の枠の約 25%）。5 時間の枠を 1 周期とし、枠の終わりに N を減らし、
 N=0 になったら実装をまとめて計画（master・ws.md・Future Work・Bug Board）を整理する。試験は amd64 だけ、Phase の終わりに。effort は判断の表の「サブエージェントの effort」。
 
-1. **最優先: WS103**（compositor を libvulkan だけに）。2026-09-30 夜 ユーザー。**2026-10-01 完了**（ユーザーの自走の指示で p005〜p007）。次の最優先はユーザーの指示を待つ（下の 2 が並ぶ）。
+1. **Linux への移植: WS104 → WS105**（2026-10-01 ユーザー「Linux移植を進めます」。Q1 がこの位置に置いた。デモ critical との順はユーザーの指示で変える）。
+   WS104 は zedBSD の上での境界の整理、WS105 は Linux の build と module。WS105 の p001（試験の guest）は WS104 と並行してよい。
+   （前の最優先の WS103 は 2026-10-01 に完了。）
 2. **デモ critical の上位**（この順、2026-09-30 夜 ユーザー）: WS099（Keiland の compositor、WS035 の後継）、WS079（Notes・PDF Viewer）、WS090（libkeiui）、
    WS089（Settings）、WS094（デスクトップの icon）、WS100（音量）、WS078（Kei への改名）、WS102（スクリーンキーボード）。
 3. **デモ critical の中位**: WS074（ブラウザ。ある程度動く。p100 Acid3 が次の候補）。

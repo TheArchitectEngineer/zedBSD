@@ -38,7 +38,10 @@ Future Work の詳細。実行の許可ではない。着手するときは新�
 - 後段は Wayland を話さない（WSI を使わないため）。後段の library（Mesa の ICD、ベンダーの blob）が libwayland-client に link していて、
   その `wl_*` の参照が先に載った我々の library に結び付いても、実行されないので害は無い。我々に無い symbol は後ろの system の library で解決され、
   load も失敗しない。このため我々の libwayland-client は upstream と ABI 互換である必要がない（1 の「core だけ」が通る）。
-- client と compositor の間は、全 OS で我々の独自の protocol 1 本にでき、linux-dmabuf・syncobj は要らない。運ぶ中身だけが OS で変わる。
+- ~~client と compositor の間は、全 OS で我々の独自の protocol 1 本にでき、linux-dmabuf・syncobj は要らない。運ぶ中身だけが OS で変わる。~~
+  **2026-10-01 改訂（ユーザー了承、[WS105](../ws105/ws.md) の D6）: Linux では Linux の標準の `zwp_linux_dmabuf_v1` と implicit sync（dma-buf に sync_file を付ける）を使い、
+  `keiland_gpu_buffer_v1` は zedBSD だけの protocol にする。** 理由: libvulkan-compat を他の compositor の上で先に試せる、我々の compositor が普通の Linux の app も表示できる、
+  implicit sync はどの compositor でも動く。下の表の Linux の行の「sync_file」は、protocol で送るのでなく dma-buf に付けて渡す。
 
   | OS | buffer | fence |
   | --- | --- | --- |
@@ -47,6 +50,12 @@ Future Work の詳細。実行の許可ではない。着手するときは新�
 
 - 我々の EGL・GLES（WS068）は我々の libvulkan の上に載るので、後段の GL は要らない。
 - zedBSD の libvulkan も「前段（WSI、OS 共通）」と「後段（zedBSD は Venus と i915、Linux・FreeBSD は system の libvulkan）」に分ける形になる。
+
+## Linux への着手（2026-10-01）
+
+ユーザー「Linux移植を進めます」。**Linux の分は [WS104](../ws104/ws.md)（zedBSD の上での OS の境界の整理）と [WS105](../ws105/ws.md)（Linux への移植）に promote した。**
+決定と理由は WS105 の ws.md の「決定と理由」（D1〜D23）、仕組みは [WS105 の design.md](../ws105/design.md)。FreeBSD はこの file に残る（deferred）。
+下の未決の行き先: 1 → WS105 の D10 と p003 の確かめ、2 → (a)（WS105 の D8）、3 → WS105 の design §4.6・§10 の V3、4 → WS105 の D15、5・6 → まだ未決（WS105 の範囲の外）。
 
 ## 未決（着手のときに決める）
 

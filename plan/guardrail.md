@@ -31,6 +31,12 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
   同日の決め（ユーザー）:「では、まずioctlを可能な限りやめて、Vulkan APIでlibvulkanで行うようにします。移行できない部分は、マクロで囲って、
   zedBSDでのみ行うようにします。evdevはLinuxにもあるので、ひとまずノータッチでよいです。」→ 直の GPU の ioctl はできる限り Vulkan の API（zedBSD では
   libvulkan）へ移す。移せない物は zedBSD の時だけ build される macro で囲む（Linux・FreeBSD の build では入らない）。evdev の ioctl は今は変えない。
+- **Keiland の OS の境界（2026-10-01 ユーザー「Linux移植を進めます」、[WS104](ws104/ws.md)・[WS105](ws105/ws.md)。WS104 の完了から効く）**:
+  desktop（libkeiland・compositor）の OS に固有の code は OS ごとの C の source に分け、`<package>/zedbsd/<役割>-zedbsd.c`・`<package>/linux/<役割>-linux.c`、
+  Linux と FreeBSD で共有する仕組みは `<package>/<仕組み>/<役割>-<仕組み>.c` に置く。共通の source は `<uapi/...>`・`"userland/base/..."` を include せず、
+  OS の macro の block は非常に細かい所だけ（今は `wayland/zwl-evdev.h` の 1 つ、ユーザー「非常に細かい部分ではマクロブロックで分けてよい」）。
+  desktop の公開の header は `userland/desktop/keiland/`（`vulkan/`・EGL・GLES は OS の API として `include/libc/`）。install の path は `userland/desktop/paths.h` の macro。
+  Linux の build は package ごとの `Makefile.linux`（zedBSD の build と完全に別、`make keiland-linux`）。確かめは `plan/tools/keiland-os-boundary/check.sh`（WS104 p008 で作る）。
 - kernel の実装を userland の build の依存へ写さない。`mkfs` などの tool は単独で使える形を保つ。
 - base system の実装とライセンスの境界: [設計方針](master-design-policy.md)。
 - 外部 package（`userland/packages/`）はソースツリーへ取り込まず、tarball を取得・検証して patch する。ライセンスは
