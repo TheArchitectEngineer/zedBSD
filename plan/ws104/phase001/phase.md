@@ -2,15 +2,15 @@
 
 # ws104-p001: desktop の公開の header を `userland/desktop/keiland/` へ移す
 
-Status: planned
+Status: cleared
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: [q515 / q515-i01](../../queue.md) proposed（未承認、未実行）
-実行者: **main（Q1）だけ**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。2026-10-01 にユーザーが `p001-sysroot.patch` の適用を許可。q515 は proposed、実行は未承認）
+Queue: [q515 / q515-i01](../../queue.md) finished（cleared）
+実行者: **main（Q1）だけ**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。2026-10-01 にユーザーが `p001-sysroot.patch` の適用を許可。q515 は finished）
 
 ## 判断（2026-10-01）
 
-ユーザーは [p001-sysroot.patch](../patches/p001-sysroot.patch) の適用を明示して許可した。toolchain の変更の判断は解決した。Phase の範囲・達成基準は変わらず、実行には proposed Queue q515 の承認が要る。
+ユーザーは [p001-sysroot.patch](../patches/p001-sysroot.patch) の適用を明示して許可した。toolchain の変更の判断は解決した。Phase の範囲・達成基準は変わらず、同日、ユーザー「では、Queueを実行してください。」で q515 の実行も承認。
 
 ## 目的
 
@@ -123,4 +123,26 @@ zedBSD の image と sysroot の中では、header は今と同じ名前・同�
 
 ## 結果
 
-（実行の後に書く: 実行日、commit、command と結果、未実施の確かめ）
+2026-10-01 / q515-i01: **cleared**。実装 commit: `12d7efeea05917a0d12c50a93824a6b6dc990c59`（`WIP`）。ユーザーの実行指示で承認された範囲を完了した。所要時間は約 6.0 分（60 分の timebox 内）。
+
+| 確認 | command / 方法 | 結果 |
+| --- | --- | --- |
+| 基準 sysroot | `make -j64 sysroot-amd64` | exit 0 |
+| patch | `git apply --check` の後、p001 の 2 patch を適用 | 成功。sysroot.mk の実差分と承認済み patch の stable patch-id は同一 |
+| ヘッダーの内容 | 移動前の SHA256 と新しい path の内容を比較 | 24 file 全て同一、git rename は全て R100 |
+| amd64 build | `make -j64 disk-image` | exit 0、自前の source の warning 0。外部 package の warning 行 254（Phase の指定 filter で除外） |
+| sysroot | 全 file の名前・SHA256 を前後で比較、completion stamp の mtime 比較 | 241 file 同一、stamp は更新。sysroot が再生成された証拠あり |
+| 旧 path | `.internal/`・build・履歴・WS104 の資料・他 WS の Markdown を除いた指定範囲を `rg` | 0 件 |
+| Text Editor | `timeout 300 sh plan/tools/textedit/host-core.sh` | exit 0、34/34、warning 0 |
+| Files | `timeout 300 sh plan/tools/files/host-build.sh` | exit 0、render/model の build 成功、warning 0 |
+| Settings | `timeout 300 sh plan/ws089/tests/host-build.sh` | exit 0、warning 0 |
+| Audio | `timeout 60 sh plan/ws100/tests/host-audio.sh` | exit 0、14/14、warning 0 |
+| boot | `OUTPUT=build/ws104-p001/boot plan/tools/boot-test.sh build/amd64/hdd-image.img` | exit 0、PASS。PNG で login prompt を確認 |
+| 差分 | `git diff --check`、変更 path の範囲検査 | PASS。準備済み patch の変更 path とヘッダーの移動だけ |
+| toolchain 保護 | `sh plan/tools/toolchain-lock.sh status` | 前後とも共有 4 tree の writable directory は 0 |
+
+証拠: [result.json](evidence/result.json)、[sysroot manifest](evidence/sysroot-include.sha256)、[移動前のヘッダー hash](evidence/headers-original.json)、[起動画面](evidence/login.png)。詳細の build/host/boot の log は `build/ws104-p001/`（ignored、ローカル）。host compiler は GCC 14.2.0、GNU Make 4.4.1。
+
+全文規約を用いて差分を確認した。ヘッダー本文・実行可能な C の処理は変更せず、C source の差分は参照 path のコメントだけ。`clang-format` はこの host に無く、整形は未実施。WS 全体の最終 source の全文規約の確認は p008 に残る。
+
+未実施: pcat・pc98・arm64 と実機。QEMU の証拠を実機の受け入れとは扱わない。残りの Phase p002・p004 が選定可能になった。WS104 は incomplete、p002〜p008 が残る。GitHub の Issue/comment/Project は未公開（publication はユーザー指示待ち）。

@@ -3,13 +3,13 @@
 # WS104: Keiland の OS の境界の整理（zedBSD の上で、振る舞いを変えずに）
 
 <!-- awesome-plan-current:start -->
-Status: planned
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q515](../queue.md) proposed（p001 のみ、未承認）
-Resume point: 計画済み（2026-10-01、survey と design-reviewer の後の改訂 2）。最初は p001（header の移動。toolchain の範囲の sysroot.mk を含むので main が実行する。2026-10-01 にユーザーが差分を許可。q515 は proposed、実行は未承認）
+Queue: [q515](../queue.md) finished（p001 cleared）
+Resume point: 2026-10-01 q515 / p001 cleared（公開 header を移動、sysroot 同一、build・boot・host 4 本 PASS）。次の候補は p002 または p004。p002〜p008 は未実行。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -80,7 +80,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [ws104-p001](phase001/phase.md) | desktop の公開の header を `userland/desktop/keiland/` へ移す（sysroot の manifest に 1 directory を足す） | planned | なし |
+| [ws104-p001](phase001/phase.md) | desktop の公開の header を `userland/desktop/keiland/` へ移す（sysroot の manifest に 1 directory を足す） | cleared（q515） | なし |
 | [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | planned | p001 |
 | [ws104-p003](phase003/phase.md) | libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ | planned | p002 |
 | [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | planned | p001 |
@@ -95,5 +95,9 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 ## 実行の体制
 
 - **p001 は main（Q1）が行う**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。subagent は変えない）。
-  2026-10-01 にユーザーが [p001-sysroot.patch](patches/p001-sysroot.patch) の適用を許可した。実行には proposed Queue q515 の承認を要する。
+  2026-10-01 にユーザーが [p001-sysroot.patch](patches/p001-sysroot.patch) の適用を許可した。同日のユーザー指示で q515 の実行も承認。
 - p002〜p008 は phase-runner（high）に任せてよい。compositor の Phase（p004〜p006）は i915・Keiland の desktop の扱いなので phase-runner（high）を使う。
+
+## 2026-10-01 の結果
+
+p001 を q515 で cleared。公開 header 24 file を内容を保って移動し、sysroot の 241 file の同一性、amd64 build（自前 warning 0）、host 試験 4 本、QEMU boot を確認した。実装 `12d7efeea05917a0d12c50a93824a6b6dc990c59`。詳細は [p001 の結果](phase001/phase.md#結果)。A1 は verified、WS の残りの基準は p002〜p008 に残る。構造・依存は計画どおり。GitHub へは未公開。

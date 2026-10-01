@@ -2,10 +2,14 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q514](queue-q514.md)（ws103-p007 cleared、WS103 完了）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q515](queue-q515.md)（ws104-p001 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-10-01 q515（WS104 の公開ヘッダー分離）
+
+[q515](queue-q515.md): ws104-p001 **cleared**。desktop 公開ヘッダー 24 file を `userland/desktop/keiland/` へ内容を保って移動し、承認済みの sysroot・参照 path の差分を適用した。amd64 build（自前 warning 0）、sysroot の 241 file の同一性と再生成、旧 path 0、host 4 本（textedit 34/34・audio 14/14・Files/Settings build）、boot test PASS。実装 `12d7efeea05917a0d12c50a93824a6b6dc990c59`（WIP）。外部 package の warning は 254 行。実機・他 platform・formatter は未実施。次の候補は ws104-p002 または p004、独立の ws105-p001。WS104 は incomplete。技術判断の許可と Queue 実行のユーザー指示を記録。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q514（WS103 完了）
 
