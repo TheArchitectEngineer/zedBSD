@@ -2,7 +2,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
 # libbrowser (ws074-p057): the Web browser engine as a component, plan/ws074/design.md §19 -- HTML, CSS,
 # the layout, JavaScript, the DOM, the network, the images and the CPU and Vulkan renderers -- behind
-# <browser.h> (include/libc/browser.h).  /bin/browser is its shell; any program can show HTML with it.
+# <browser.h> (userland/desktop/keiland/browser.h).  /bin/browser is its shell; any program can show HTML with it.
 # The sources stay in userland/desktop/browser, one directory per module (plan/ws074/design.md §2), where
 # the tests find them; this Makefile only registers them as the library.  exports.map lets only the calls
 # of <browser.h> out.
@@ -151,4 +151,4 @@ LIBBROWSER_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libbrowser.so=$(BUIL
 	/usr/share/licenses/browser/WHATWG-entities=userland/base/licenses/browser/WHATWG-entities \
 	/usr/share/licenses/browser/Unicode-License-V3=userland/base/licenses/browser/Unicode-License-V3
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libbrowser,Web browser engine library,amd64,n,library,$(LIBBROWSER_SOURCES),y,desktop,desktop/libbrowser,desktop/libtruetype desktop/libvulkan base/libjpeg-compat base/libpng-compat base/libz-compat base/libgif-compat,,shared-library,$(LIBBROWSER_IMAGE_DATA),include/libc/browser.h,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libbrowser,Web browser engine library,amd64,n,library,$(LIBBROWSER_SOURCES),y,desktop,desktop/libbrowser,desktop/libtruetype desktop/libvulkan base/libjpeg-compat base/libpng-compat base/libz-compat base/libgif-compat,,shared-library,$(LIBBROWSER_IMAGE_DATA),userland/desktop/keiland/browser.h,lib))

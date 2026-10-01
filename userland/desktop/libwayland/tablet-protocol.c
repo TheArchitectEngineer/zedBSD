@@ -16,7 +16,7 @@
  * zwp_tablet_pad_v2 is described only so that pad_added names an interface:
  * its group event's pad group is not described, and zdesktop never
  * announces a pad.  The descriptions follow the pinned wayland-protocols
- * description (include/libc/wayland/API-PROVENANCE.md), whose notice is kept
+ * description (userland/desktop/keiland/wayland/API-PROVENANCE.md), whose notice is kept
  * there.
  */
 

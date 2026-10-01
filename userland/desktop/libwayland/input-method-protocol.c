@@ -13,7 +13,7 @@
  * Only the input method zdesktop starts may bind the manager.  The events reach
  * listeners through the generic dispatch (event.c); the keyboard grab's
  * keymap carries a descriptor.  The descriptions follow the pinned wlroots
- * description (include/libc/wayland/API-PROVENANCE.md).
+ * description (userland/desktop/keiland/wayland/API-PROVENANCE.md).
  */
 
 #include "internal.h"

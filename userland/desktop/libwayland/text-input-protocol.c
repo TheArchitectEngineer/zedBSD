@@ -13,7 +13,7 @@
  * keyboard, and hears the input method's preedit, commit and
  * delete_surrounding_text, applied together at done.  The events reach
  * listeners through the generic dispatch (event.c).  The descriptions follow
- * the pinned wayland-protocols description (include/libc/wayland/API-PROVENANCE.md).
+ * the pinned wayland-protocols description (userland/desktop/keiland/wayland/API-PROVENANCE.md).
  */
 
 #include "internal.h"

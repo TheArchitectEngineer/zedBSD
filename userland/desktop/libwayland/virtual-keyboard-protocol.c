@@ -10,7 +10,7 @@
  * (virtual-keyboard-unstable-v1, version 1; ws095-p004):
  * zwp_virtual_keyboard_manager_v1 and zwp_virtual_keyboard_v1.  Only the
  * input method zdesktop starts may bind the manager.  The descriptions follow
- * the pinned wlroots description (include/libc/wayland/API-PROVENANCE.md).
+ * the pinned wlroots description (userland/desktop/keiland/wayland/API-PROVENANCE.md).
  */
 
 #include "internal.h"

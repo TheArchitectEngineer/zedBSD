@@ -12,7 +12,7 @@
  * A sub-surface is a wl_surface placed relative to a parent surface and
  * shown with it: video, GL parts and client-side decorations of toolkits.
  * Neither interface has events.  The descriptions follow the pinned Wayland
- * 1.23.1 core protocol (include/libc/wayland/API-PROVENANCE.md).
+ * 1.23.1 core protocol (userland/desktop/keiland/wayland/API-PROVENANCE.md).
  */
 
 #include "internal.h"

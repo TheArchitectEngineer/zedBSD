@@ -9,7 +9,7 @@ cd "$(dirname -- "$0")/../../.."
 out=build/ws102-host-emoji
 font=${1:-build/distfiles/NotoColorEmoji-2.047.ttf}
 mkdir -p "$out/include"
-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
+ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 ${CC:-cc} -O1 -g -Wall -Wextra -Werror -I"$out/include" -I. -Iuserland/desktop/libtruetype -o "$out/host-emoji" \
     plan/ws102/tests/host-emoji.c userland/desktop/picture/color-glyph.c \

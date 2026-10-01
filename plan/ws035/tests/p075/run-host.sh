@@ -21,9 +21,9 @@ runtime=$(mktemp -d /tmp/p075.XXXXXX)
 trap 'rm -rf "$runtime"' EXIT
 
 # Only the Wayland headers of zedBSD, never its libc's, on the client's include path.
-ln -s "$root/include/libc/wayland" "$out/include/wayland"
+ln -s "$root/userland/desktop/keiland/wayland" "$out/include/wayland"
 for header in wayland-client.h wayland-client-core.h wayland-client-protocol.h wayland-util.h; do
-	ln -s "$root/include/libc/$header" "$out/include/$header"
+	ln -s "$root/userland/desktop/keiland/$header" "$out/include/$header"
 done
 
 # The protocol's code for both ends.

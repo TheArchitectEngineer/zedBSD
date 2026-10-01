@@ -11,7 +11,7 @@
  *
  * The request (release, since 3) and the events down (`uuoiff`), up
  * (`uui`), motion (`uiff`), frame and cancel follow the pinned Wayland
- * 1.23.1 description (include/libc/wayland/API-PROVENANCE.md).  shape and
+ * 1.23.1 description (userland/desktop/keiland/wayland/API-PROVENANCE.md).  shape and
  * orientation are version 6 and are not described; the compositor offers
  * wl_seat version 5.  The events reach listeners through the generic
  * dispatch (event.c).

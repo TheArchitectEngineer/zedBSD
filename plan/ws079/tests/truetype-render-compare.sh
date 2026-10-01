@@ -17,7 +17,7 @@ shift
     /usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf
 out=build/ws079-render-compare
 mkdir -p "$out/include" "$out/old"
-cp include/libc/truetype.h "$out/include/"
+cp userland/desktop/keiland/truetype.h "$out/include/"
 git show "$revision:userland/desktop/libtruetype/outline.c" > "$out/old/outline.c"
 cp userland/desktop/libtruetype/internal.h "$out/old/"
 others="userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/render.c

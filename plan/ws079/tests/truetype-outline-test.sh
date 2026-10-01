@@ -14,7 +14,7 @@ out=${1:-build/ws079-outline-host}
     /usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf /usr/share/fonts/truetype/noto/NotoSansBalinese-Regular.ttf
 mkdir -p "$out/include"
 # Only the public header: the rest of include/libc is the target libc, not the host one.
-cp include/libc/truetype.h "$out/include/"
+cp userland/desktop/keiland/truetype.h "$out/include/"
 src="userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c
      userland/desktop/libtruetype/outline.c userland/desktop/libtruetype/render.c
      userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c

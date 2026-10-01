@@ -7,7 +7,7 @@ set -e
 cd "$(dirname "$0")/../../.."
 out=${1:-build/ws090/host-input}
 mkdir -p "$(dirname "$out")/inc"
-cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
+cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
 U=userland/desktop
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiui \
 	plan/ws090/tests/host-input.c \

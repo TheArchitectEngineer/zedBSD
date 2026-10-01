@@ -2,7 +2,7 @@
 
 `libwayland-client.so` supplies the selected standard client transport for
 Vulkan Wayland WSI and ordinary applications. Public headers live below
-`include/libc/wayland/`; thin `<wayland-client.h>` and
+`userland/desktop/keiland/wayland/`; thin `<wayland-client.h>` and
 `<xdg-shell-client-protocol.h>` entry headers preserve standard include spelling.
 The base package is `libwayland-client` in `desktop/libwayland`, installed at
 `/lib/libwayland-client.so` with the same SONAME.
@@ -42,7 +42,7 @@ permissions are checked by the compositor/GPU layers. Revision two adds
 `set_acquire_fence(surface, fd, generation_hi, generation_lo)`: a kernel fence
 and its payload generation that the surface's next commit waits for.
 
-[API-PROVENANCE.md](../../../include/libc/wayland/API-PROVENANCE.md) records pinned
+[API-PROVENANCE.md](../keiland/wayland/API-PROVENANCE.md) records pinned
 upstream interface facts, hashes, selected scope, limitations and notices.
 Selected core descriptions are wl_display/registry/callback/region/buffer v1,
 wl_compositor/surface/output v4 and wl_seat/pointer/keyboard/touch v5 (wl_touch

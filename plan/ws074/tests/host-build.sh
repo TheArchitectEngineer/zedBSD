@@ -38,9 +38,9 @@ engine=""
 # The base libraries the engine links on zedBSD, built from their sources (their public headers
 # are linked into build/ws074-host/include, since the host's C library does not have them).
 mkdir -p build/ws074-host/include
-ln -sf "$(pwd)/include/libc/truetype.h" build/ws074-host/include/truetype.h
+ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" build/ws074-host/include/truetype.h
 # The engine's own public header (libbrowser, ws074-p057), which the host's C library lacks too.
-ln -sf "$(pwd)/include/libc/browser.h" build/ws074-host/include/browser.h
+ln -sf "$(pwd)/userland/desktop/keiland/browser.h" build/ws074-host/include/browser.h
 for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/outline.c \
     userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c; do
 	object=$out/obj/truetype-$(basename "$file" .c).o

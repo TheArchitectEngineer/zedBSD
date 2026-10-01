@@ -27,7 +27,7 @@ status=0
 
 # 1. The library's exports and the programs' needs.
 $nm -D --defined-only "$build/dynamic/libbrowser.so" | awk '{print $NF}' | sort > "$out/exported.txt"
-sed -n 's/^[a-z].*[ *]\(browser_[a-z_]*\)(.*/\1/p' include/libc/browser.h | sort > "$out/declared.txt"
+sed -n 's/^[a-z].*[ *]\(browser_[a-z_]*\)(.*/\1/p' userland/desktop/keiland/browser.h | sort > "$out/declared.txt"
 if cmp -s "$out/exported.txt" "$out/declared.txt"; then
 	echo "exports: the $(wc -l < "$out/declared.txt") calls <browser.h> declares, and nothing else, ok"
 else

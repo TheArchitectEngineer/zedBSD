@@ -14,7 +14,7 @@
  * Their events reach listeners through the generic dispatch (event.c);
  * wl_data_device.data_offer creates a server-made wl_data_offer.  The
  * descriptions follow the pinned Wayland 1.23.1 core protocol
- * (include/libc/wayland/API-PROVENANCE.md).
+ * (userland/desktop/keiland/wayland/API-PROVENANCE.md).
  */
 
 #include "internal.h"

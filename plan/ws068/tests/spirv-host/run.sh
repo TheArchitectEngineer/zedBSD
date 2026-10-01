@@ -7,7 +7,8 @@ here=$(cd "$(dirname -- "$0")" && pwd)
 root=$here/../../../..
 out=${1:-$root/build/ws068-p008-host}
 mkdir -p "$out/shim"
-for h in EGL GLES2 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
+for h in EGL GLES2 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
+ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
 cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$here/main.c" "$root/userland/desktop/libglesv2/spirv.c"
 status=0
 for stage in vert frag; do

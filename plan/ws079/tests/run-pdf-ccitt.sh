@@ -34,7 +34,7 @@ ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
+ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 liberation=/usr/share/fonts/truetype/liberation
 for family in "keiland:LiberationSans" "keiland-serif:LiberationSerif" "keiland-mono:LiberationMono"; do
 	name=${family%%:*}
