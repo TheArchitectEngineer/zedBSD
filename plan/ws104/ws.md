@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q519](../queue.md) finished（ws104-p005 cleared（q519））
-Resume point: ws104-p005 cleared（q519）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
+Queue: [q520](../queue.md) finished（ws104-p006 cleared（q520））
+Resume point: ws104-p006 cleared（q520）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -85,7 +85,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | [ws104-p003](phase003/phase.md) | libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ | cleared（q517） | p002 |
 | [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | cleared（q518） | p001 |
 | [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | cleared（q519） | p004 |
-| [ws104-p006](phase006/phase.md) | compositor の session（`handoff.c`）と OS の hook（`zwl-os.h`）を zedBSD の module に | planned | p005 |
+| [ws104-p006](phase006/phase.md) | compositor の session（`handoff.c`）と OS の hook（`zwl-os.h`）を zedBSD の module に | cleared（q520） | p005 |
 | [ws104-p007](phase007/phase.md) | install の path を `userland/desktop/paths.h` の macro に | planned | p006、p003 |
 | [ws104-p008](phase008/phase.md) | 規約の全文の見直し、境界の確かめの script、回帰 | planned | p001〜p007 |
 
@@ -162,3 +162,20 @@ glass p059 PASS（hover・drag・最大化・復元・close の全 6 PNG を目�
 
 cleared（q519）。列挙・open・ioctl・read・close を `zedbsd/input-zedbsd.c` へ移し、共通の input.c は capability による分類と event の解釈にした。tablet / touch の軸・name・id は 0/errno の hook を使用。共通 device operation / direct close は 0、UAPI input include は zwl-evdev.h の 1 行。amd64 disk-image build exit 0、自前 warning 0。新 module/header style-check 0、Linux host の C89 header syntax check 0。C1/C2/C9 13/13、glass p059、Notes pen（筆圧・tilt・消しゴム・undo・hover・PDF 保存と qpdf）、touch p013（2 指 event、pointer fallback、cancel、edge gesture、2 指 flick、1 指 drag/tap）、boot 全て PASS。p072 全 6・glass 全 6・Notes 5・touch 主要 8 PNG を目視し、login PNG は提示済み。証拠: `plan/history/ws104/q519/`。ioctl / read の errno、EOF、EAGAIN、EINTR、torn-event EIO と log の形を保った。物理 hotplug は未実施（列挙・再走査は移動して中身を保持、専用試験では仮想 node の追加・指/pen event を確認）。実機・Linux compositor は未実施。未達条件なし。実行者: main / Codex Q1。
  詳細は [Phase](phase005/phase.md)。
+
+### 2026-10-01T03:44:22.362063+00:00 / q520 / ws104-p006
+
+in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase006/phase.md)。
+
+### Checkpoint 2026-10-01T03:58:48.645530+00:00 / q520
+
+実装 3bfe50b9（WIP）。zedBSD OS hook 7 個の空実装と main / compose の呼出しを追加、handoff は include path 以外 byte 同一。display release は成功した acquire と対になり、未 acquire の失敗 / prepare-only では呼ばない。amd64 disk-image exit 0、自前 warning 0、new OS module/header style-check 0。boot PASS、login PNG を目視・提示済み。C1 login/Log Out、boot/shutdown、C2 geometry、C9 p052 PASS、残りの共通回帰を継続中。Phase は in-progress。Master の fg012 は既存の WS104/105 の目的から反映し、fg010 は保持。実機・Linux 未実施、GitHub 未公開。
+
+### 証拠のラベルの訂正（2026-10-01）
+
+q518 の実装 commit は `5d413c08051c50ef856dd81989f15d1989e81438`（WIP）。終了時の HEAD `69f0f2c030becfa426fb98e2be9ad1c324488e4a` は人間の screenshot 追加を含む検証時の checkout であり、WS104 の実装 commit として記したラベルを訂正した。q518 の cleared、試験結果、承認範囲は変わらない。
+
+### 2026-10-01T04:14:16.734002+00:00 / q520 / ws104-p006
+
+cleared（q520）。cleared（q520）。handoff.c を zedbsd/handoff-zedbsd.c へ移動（root からの include path 以外 byte 同一）、zwl-os.h の 7 hook と zedBSD の空実装を追加。main の open/close・poll と compose の display acquire/release が境界を使う。成功した acquire は swapchain / targets の失敗と通常 close で release、未 acquire の failure / prepare-only は release しない。amd64 disk-image exit 0、自前 warning 0。新 OS module/header の style-check 0。C1/C2/C9 13/13 と boot PASS、p072 の全 6 PNG と login PNG を目視し login は提示済み。READY/GO、RELEASED/LOGOUT、wire と既存 log の形式を保持。証拠: `plan/history/ws104/q520/`（boundary-checks.json、criteria-results.txt、login.png）。物理実機・Linux は未実施。WS 全体の全文規約の最終確認は p008。実装 3bfe50b9（WIP）、実行者 main / Codex Q1、未達条件なし。
+ 詳細は [Phase](phase006/phase.md)。

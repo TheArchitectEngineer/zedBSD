@@ -2,10 +2,10 @@
 
 # ws104-p006: compositor の session と OS の hook を zedBSD の module に
 
-Status: planned
+Status: cleared
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
+Queue: q520 / q520-i01
 実行者: phase-runner（high）
 
 ## 目的
@@ -88,8 +88,19 @@ void zwl_os_display_release(struct zwl_server *server, VkPhysicalDevice physical
 
 ## 結果
 
-（実行の後に書く）
+q520-i01 cleared（2026-10-01T04:14:16.734002+00:00）。
+
+cleared（q520）。handoff.c を zedbsd/handoff-zedbsd.c へ移動（root からの include path 以外 byte 同一）、zwl-os.h の 7 hook と zedBSD の空実装を追加。main の open/close・poll と compose の display acquire/release が境界を使う。成功した acquire は swapchain / targets の失敗と通常 close で release、未 acquire の failure / prepare-only は release しない。amd64 disk-image exit 0、自前 warning 0。新 OS module/header の style-check 0。C1/C2/C9 13/13 と boot PASS、p072 の全 6 PNG と login PNG を目視し login は提示済み。READY/GO、RELEASED/LOGOUT、wire と既存 log の形式を保持。証拠: `plan/history/ws104/q520/`（boundary-checks.json、criteria-results.txt、login.png）。物理実機・Linux は未実施。WS 全体の全文規約の最終確認は p008。実装 3bfe50b9（WIP）、実行者 main / Codex Q1、未達条件なし。
+
+
+Implementation: `3bfe50b946aac0d3bcd8a3ff60b0b1bf5cd23906`（WIP）。詳細 log: `build/ws104-p006/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
 
 ### Checkpoint 2026-10-01T03:16:08.789251+00:00 / q520
 
 p006 の実装手順を実際の終了経路に合わせて確認した。OS の display-acquire に失敗した経路と、prepare のみで swapchain を作らなかった経路は display を acquire していないので release しない。acquire が成功した後の swapchain / targets 失敗は surface / swapchain を閉じて release、通常の output_close も swapchain を閉じて release する。7 hook の API・Phase 構造・依存・受け入れ条件は不変。WS104 の自律実行承認内の所有権の対を保つ技術上の補正であり、zedBSD の hook は空実装、振る舞いは不変。後続 WS105 は acquire / release の対を実装する。p006 の開始前 snapshot にこの手順を含める。
+
+Execution started UTC: 2026-10-01T03:44:22.362063+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
+
+### Checkpoint 2026-10-01T03:58:48.645530+00:00 / q520
+
+実装 3bfe50b9（WIP）。zedBSD OS hook 7 個の空実装と main / compose の呼出しを追加、handoff は include path 以外 byte 同一。display release は成功した acquire と対になり、未 acquire の失敗 / prepare-only では呼ばない。amd64 disk-image exit 0、自前 warning 0、new OS module/header style-check 0。boot PASS、login PNG を目視・提示済み。C1 login/Log Out、boot/shutdown、C2 geometry、C9 p052 PASS、残りの共通回帰を継続中。Phase は in-progress。Master の fg012 は既存の WS104/105 の目的から反映し、fg010 は保持。実機・Linux 未実施、GitHub 未公開。

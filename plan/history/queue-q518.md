@@ -32,4 +32,8 @@ WS104 の未 cleared Phase（依存順）、その後 WS105。新規範囲の承
 
 ws104-p004 **cleared**。GPU の wire layout・zedBSD GPU protocol/global・import を OS module に閉じ、共通 import は Vulkan image / memory の adopt だけにした。共通 layout、旧 factory、vulkan_external include、直接 vkGetFenceFdKHR は 0。device proc pointer で fence を呼ぶ。amd64 disk-image build exit 0、自前 warning 0。GPU v1 check（52 source）、dedicated host 18 cases × ordinary/sanitize、decode host 17 cases × ordinary/sanitize、forge guest、600 fence（全て generation 1）と 600 frames、C1/C2/C9 13/13、boot 全て PASS。p072 の全 6 PNG を目視し Wiseview・drag・復元・desktop 移動を確認。login PNG も目視・提示済み。証拠: `plan/history/ws104/q518/`。clang-format 19.1.7 と新 module / common import の style-check を実施（0）。全文規約の最終確認は p008。実機・Linux は未実施。旧 protocol/log と通常 path を保持し、import 失敗時の所有権を module で明示した。未達条件なし。
 
-実装 commit: `69f0f2c030becfa426fb98e2be9ad1c324488e4a`（WIP）。Finished UTC: 2026-10-01T03:10:03.009057+00:00。GitHub へは未公開。
+検証時 checkout HEAD: `69f0f2c030becfa426fb98e2be9ad1c324488e4a`（WIP）。Finished UTC: 2026-10-01T03:10:03.009057+00:00。GitHub へは未公開。
+
+### 証拠のラベルの訂正（2026-10-01）
+
+q518 の実装 commit は `5d413c08051c50ef856dd81989f15d1989e81438`（WIP）。終了時の HEAD `69f0f2c030becfa426fb98e2be9ad1c324488e4a` は人間の screenshot 追加を含む検証時の checkout であり、WS104 の実装 commit として記したラベルを訂正した。q518 の cleared、試験結果、承認範囲は変わらない。

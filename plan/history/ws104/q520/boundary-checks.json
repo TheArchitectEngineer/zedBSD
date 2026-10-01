@@ -1,0 +1,7 @@
+{
+  "old_handoff_exists": false,
+  "handoff_only_include_changed": true,
+  "main_hooks": 5,
+  "compose_hooks": 4,
+  "own_warnings": []
+}

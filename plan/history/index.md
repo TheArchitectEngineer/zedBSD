@@ -2,10 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q519](queue-q519.md)（ws104-p005 cleared）
+Last finished Queue: [q520](queue-q520.md)（ws104-p006 cleared）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-10-01 q520
+
+[q520](queue-q520.md): ws104-p006 **cleared**。cleared（q520）。handoff.c を zedbsd/handoff-zedbsd.c へ移動（root からの include path 以外 byte 同一）、zwl-os.h の 7 hook と zedBSD の空実装を追加。main の open/close・poll と compose の display acquire/release が境界を使う。成功した acquire は swapchain / targets の失敗と通常 close で release、未 acquire の failure / prepare-only は release しない。amd64 disk-image exit 0、自前 warning 0。新 OS module/header の style-check 0。C1/C2/C9 13/13 と boot PASS、p072 の全 6 PNG と login PNG を目視し login は提示済み。READY/GO、RELEASED/LOGOUT、wire と既存 log の形式を保持。証拠: `plan/history/ws104/q520/`（boundary-checks.json、criteria-results.txt、login.png）。物理実機・Linux は未実施。WS 全体の全文規約の最終確認は p008。実装 3bfe50b9（WIP）、実行者 main / Codex Q1、未達条件なし。
+
+実装 `3bfe50b946aac0d3bcd8a3ff60b0b1bf5cd23906`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q519
 
@@ -17,7 +23,7 @@ Last finished Queue: [q519](queue-q519.md)（ws104-p005 cleared）
 
 [q518](queue-q518.md): ws104-p004 **cleared**。GPU の wire layout・zedBSD GPU protocol/global・import を OS module に閉じ、共通 import は Vulkan image / memory の adopt だけにした。共通 layout、旧 factory、vulkan_external include、直接 vkGetFenceFdKHR は 0。device proc pointer で fence を呼ぶ。amd64 disk-image build exit 0、自前 warning 0。GPU v1 check（52 source）、dedicated host 18 cases × ordinary/sanitize、decode host 17 cases × ordinary/sanitize、forge guest、600 fence（全て generation 1）と 600 frames、C1/C2/C9 13/13、boot 全て PASS。p072 の全 6 PNG を目視し Wiseview・drag・復元・desktop 移動を確認。login PNG も目視・提示済み。証拠: `plan/history/ws104/q518/`。clang-format 19.1.7 と新 module / common import の style-check を実施（0）。全文規約の最終確認は p008。実機・Linux は未実施。旧 protocol/log と通常 path を保持し、import 失敗時の所有権を module で明示した。未達条件なし。
 
-実装 `69f0f2c030becfa426fb98e2be9ad1c324488e4a`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
+検証時 checkout HEAD `69f0f2c030becfa426fb98e2be9ad1c324488e4a`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q517
 
@@ -391,3 +397,7 @@ WS070 の merge（2026-09-27、Queue の外、ユーザーの例外の許可で�
 | [q392](queue-q392.md) | configure を guest で（ws042-p005） | finished（2026-09-24。cleared） |
 
 それより前: [全 Queue の一覧](index-all.md)。
+
+### 証拠のラベルの訂正（2026-10-01）
+
+q518 の実装 commit は `5d413c08051c50ef856dd81989f15d1989e81438`（WIP）。終了時の HEAD `69f0f2c030becfa426fb98e2be9ad1c324488e4a` は人間の screenshot 追加を含む検証時の checkout であり、WS104 の実装 commit として記したラベルを訂正した。q518 の cleared、試験結果、承認範囲は変わらない。

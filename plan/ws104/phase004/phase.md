@@ -125,10 +125,14 @@ q518-i01 cleared（2026-10-01T03:10:03.009057+00:00）。
 GPU の wire layout・zedBSD GPU protocol/global・import を OS module に閉じ、共通 import は Vulkan image / memory の adopt だけにした。共通 layout、旧 factory、vulkan_external include、直接 vkGetFenceFdKHR は 0。device proc pointer で fence を呼ぶ。amd64 disk-image build exit 0、自前 warning 0。GPU v1 check（52 source）、dedicated host 18 cases × ordinary/sanitize、decode host 17 cases × ordinary/sanitize、forge guest、600 fence（全て generation 1）と 600 frames、C1/C2/C9 13/13、boot 全て PASS。p072 の全 6 PNG を目視し Wiseview・drag・復元・desktop 移動を確認。login PNG も目視・提示済み。証拠: `plan/history/ws104/q518/`。clang-format 19.1.7 と新 module / common import の style-check を実施（0）。全文規約の最終確認は p008。実機・Linux は未実施。旧 protocol/log と通常 path を保持し、import 失敗時の所有権を module で明示した。未達条件なし。
 
 
-Implementation: `69f0f2c030becfa426fb98e2be9ad1c324488e4a`（WIP）。詳細 log: `build/ws104-p004/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
+Validated checkout HEAD: `69f0f2c030becfa426fb98e2be9ad1c324488e4a`（WIP）。詳細 log: `build/ws104-p004/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
 
 Execution started UTC: 2026-10-01T02:34:59.246799+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
 
 ### Checkpoint 2026-10-01T02:46:06.727450+00:00 / q518
 
 実装 `5d413c08`（WIP）。境界 4 項目の旧参照 0、amd64 build exit 0・自前 warning 0、style-check（新しい GPU module/header・import）0、V1 52 source compile・host 18 case/17 case の ordinary と sanitizer・boot・forge guest・fence guest PASS（600/600 fence、generation 1、600 frames / 64 s）。証拠は `plan/history/ws104/q518/`。C1・C2・C9 を実行中で、p004 は in-progress。p008 で共通 source の既存の規約の差も全文確認する。
+
+### 証拠のラベルの訂正（2026-10-01）
+
+q518 の実装 commit は `5d413c08051c50ef856dd81989f15d1989e81438`（WIP）。終了時の HEAD `69f0f2c030becfa426fb98e2be9ad1c324488e4a` は人間の screenshot 追加を含む検証時の checkout であり、WS104 の実装 commit として記したラベルを訂正した。q518 の cleared、試験結果、承認範囲は変わらない。
