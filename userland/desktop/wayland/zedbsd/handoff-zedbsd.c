@@ -24,7 +24,7 @@
  * after its Log Out asked sessiond for a greeter (LOGOUT).
  */
 
-#include "zwl.h"
+#include "userland/desktop/wayland/zwl.h"
 
 #include <errno.h>
 #include <poll.h>

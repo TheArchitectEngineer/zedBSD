@@ -15,6 +15,7 @@
 #include "keymap.h"
 #include "ime.h"
 #include "data.h"
+#include "zwl-os.h"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -123,8 +124,16 @@ main(
 	if (previous_handler == SIG_ERR)
 		return 1;
 
-	/* The wallpaper's file is read on a thread while the device is made (ws035-p133). */
-	zwl_glass_prefetch(&server);
+	/* Takes the OS's seat resources before Vulkan opens the display. */
+	if (error == 0) {
+		error = zwl_os_open(&server);
+		if (error != 0)
+			printf("ZWL OS unavailable errno=%d\n", error);
+	}
+
+	/* Reads the wallpaper while Vulkan starts, only after OS startup succeeded. */
+	if (error == 0)
+		zwl_glass_prefetch(&server);
 
 	/* The start is timed from the Vulkan device on (ZWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
 	step_start = zwl_milliseconds();
@@ -609,6 +618,8 @@ event_loop(
 	size_t last_input;
 	size_t frame_slot;
 	size_t first_fence;
+	size_t first_os;
+	size_t os_count;
 	unsigned fence;
 	int waiting;
 	unsigned slot;
@@ -698,6 +709,11 @@ event_loop(
 			}
 		}
 
+		/* Counts the OS entries after the input and fence descriptors. */
+		first_os = count;
+		os_count = zwl_os_poll_count(server);
+		count += os_count;
+
 		/* Allocation failure leaves all live clients owned by service cleanup. */
 		descriptors = calloc(count, sizeof(*descriptors));
 		if (descriptors == NULL)
@@ -768,6 +784,9 @@ event_loop(
 			}
 		}
 
+		/* Lets the OS populate its entries in this descriptor snapshot. */
+		zwl_os_poll_fill(server, descriptors + first_os);
+
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
 		mark = zwl_cycles();
 		ready = poll(descriptors, count, timeout);
@@ -809,6 +828,9 @@ event_loop(
 			if (descriptors[index].revents != 0)
 				zwl_input_read(server, devices[index - first_input]);
 		}
+
+		/* Applies the OS events before flushing the client connections. */
+		zwl_os_poll_done(server, descriptors + first_os);
 
 		/* Process only the clients captured by this poll snapshot. */
 		for (index = 1; index < first_input; index++) {
@@ -927,6 +949,9 @@ service_cleanup(
 
 	/* The user's preferences are not read any more. */
 	zwl_preferences_close(server);
+
+	/* Returns the OS resources after input and display cleanup. */
+	zwl_os_close(server);
 
 	/* Succeeded: the service retains no listener, client or Vulkan object. */
 	return;

@@ -18,6 +18,7 @@
 
 #include "desktop.h"
 #include "compose.h"
+#include "zwl-os.h"
 #include "shaders.h"
 #include "popup.h"
 #include "subsurface.h"
@@ -213,6 +214,15 @@ zwl_compose_output_open(
 	if (error != 0)
 		return error;
 
+	/* Gives Vulkan the display permission before creating its swapchain. */
+	result = zwl_os_display_acquire(server, compose->physical, compose->display);
+	if (result != VK_SUCCESS) {
+		printf("ZWL VULKAN_ERROR operation=display-acquire result=%d\n", (int)result);
+		vkdemo_display_close(compose->instance, compose->device, &compose->output);
+		compose->output_prepared = 0;
+		return EIO;
+	}
+
 	/* Its FIFO swapchain, in the format the pipelines were made for. */
 	started = zwl_milliseconds();
 	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
@@ -221,6 +231,7 @@ zwl_compose_output_open(
 	    compose->output.format != compose->format) {
 		printf("ZWL VULKAN_ERROR operation=swapchain result=%d images=%u format=%d\n", (int)result, compose->output.image_count, (int)compose->output.format);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
+		zwl_os_display_release(server, compose->physical, compose->display);
 		compose->output_prepared = 0;
 		return EIO;
 	}
@@ -233,6 +244,7 @@ zwl_compose_output_open(
 		printf("ZWL VULKAN_ERROR operation=targets result=%d\n", (int)result);
 		compose_targets_destroy(compose);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
+		zwl_os_display_release(server, compose->physical, compose->display);
 		compose->output_prepared = 0;
 		return EIO;
 	}
@@ -278,9 +290,17 @@ zwl_compose_output_close(
 	zwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
+
+	/* Gives back the display only after its acquired swapchain is gone. */
+	zwl_os_display_release(server, compose->physical, compose->display);
+
+	/* Marks the output as available for the next handoff. */
 	compose->output_prepared = 0;
 	compose->output_open = 0;
 	printf("ZWL OUTPUT closed\n");
+
+	/* Succeeded: the swapchain and OS display ownership are released. */
+	return;
 }
 
 /*
@@ -775,6 +795,9 @@ compose_display(
 		resolution = properties[index].physicalResolution;
 		break;
 	}
+
+	/* Keeps the chosen display for the OS acquire and release hooks. */
+	compose->display = display;
 
 	/* The display handle stays valid after its properties are freed. */
 	free(properties);

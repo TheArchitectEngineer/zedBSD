@@ -5,7 +5,8 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # The operating system's side of the client GPU buffers (zwl-gpu.h, WS103): zedBSD's kernel image capabilities.
 KEILAND_ZEDBSD_SOURCES := userland/desktop/wayland/zedbsd/gpu-zedbsd.c \
 	userland/desktop/wayland/zedbsd/gpu-buffer-zedbsd.c \
-	userland/desktop/wayland/zedbsd/input-zedbsd.c
+	userland/desktop/wayland/zedbsd/input-zedbsd.c \
+	userland/desktop/wayland/zedbsd/handoff-zedbsd.c userland/desktop/wayland/zedbsd/os-zedbsd.c
 KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire.c \
 	userland/desktop/wayland/objects.c userland/desktop/wayland/protocol.c userland/desktop/wayland/display.c \
 	$(KEILAND_ZEDBSD_SOURCES) \
@@ -17,7 +18,7 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 	userland/desktop/wayland/icons.c userland/desktop/wayland/titlebar-shell.c \
 	userland/desktop/wayland/decoration.c userland/desktop/wayland/cursor.c userland/desktop/wayland/viewport.c \
 	userland/desktop/wayland/panels.c userland/desktop/wayland/backdrop.c userland/desktop/wayland/damage.c userland/desktop/wayland/greeter.c userland/desktop/wayland/primary.c \
-	userland/desktop/wayland/handoff.c userland/desktop/wayland/network.c userland/desktop/wayland/preferences.c userland/desktop/wayland/volume.c \
+	userland/desktop/wayland/network.c userland/desktop/wayland/preferences.c userland/desktop/wayland/volume.c \
 	userland/desktop/wayland/text-input.c userland/desktop/wayland/input-method.c \
 	userland/desktop/wayland/desktop.c userland/desktop/wayland/inset.c userland/desktop/wayland/edit.c userland/desktop/wayland/clipboard.c \
 	userland/desktop/vkdemo/display.c userland/desktop/artwork/mark.c userland/desktop/picture/color-glyph.c

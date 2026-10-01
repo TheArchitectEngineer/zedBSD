@@ -107,6 +107,8 @@ struct zwl_backdrop {
 struct zwl_compose {
 	VkInstance instance;
 	VkPhysicalDevice physical;
+	/* The display chosen before the OS acquires it for the swapchain. */
+	VkDisplayKHR display;
 	VkDevice device;
 	VkQueue queue;
 	uint32_t family;
