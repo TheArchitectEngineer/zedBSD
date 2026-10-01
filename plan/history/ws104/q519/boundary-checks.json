@@ -1,0 +1,8 @@
+{
+  "common_device_operations": 0,
+  "input_header_readers": [
+    "userland/desktop/wayland/zwl-evdev.h"
+  ],
+  "common_input_close": 0,
+  "own_warnings": []
+}

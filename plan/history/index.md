@@ -2,10 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q518](queue-q518.md)（ws104-p004 cleared）
+Last finished Queue: [q519](queue-q519.md)（ws104-p005 cleared）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-10-01 q519
+
+[q519](queue-q519.md): ws104-p005 **cleared**。列挙・open・ioctl・read・close を `zedbsd/input-zedbsd.c` へ移し、共通の input.c は capability による分類と event の解釈にした。tablet / touch の軸・name・id は 0/errno の hook を使用。共通 device operation / direct close は 0、UAPI input include は zwl-evdev.h の 1 行。amd64 disk-image build exit 0、自前 warning 0。新 module/header style-check 0、Linux host の C89 header syntax check 0。C1/C2/C9 13/13、glass p059、Notes pen（筆圧・tilt・消しゴム・undo・hover・PDF 保存と qpdf）、touch p013（2 指 event、pointer fallback、cancel、edge gesture、2 指 flick、1 指 drag/tap）、boot 全て PASS。p072 全 6・glass 全 6・Notes 5・touch 主要 8 PNG を目視し、login PNG は提示済み。証拠: `plan/history/ws104/q519/`。ioctl / read の errno、EOF、EAGAIN、EINTR、torn-event EIO と log の形を保った。物理 hotplug は未実施（列挙・再走査は移動して中身を保持、専用試験では仮想 node の追加・指/pen event を確認）。実機・Linux compositor は未実施。未達条件なし。実行者: main / Codex Q1。
+
+実装 `96d14088b27df63a5a7779efcb7bbc811dd37bf0`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q518
 

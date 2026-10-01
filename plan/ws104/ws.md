@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q518](../queue.md) finished（ws104-p004 cleared（q518））
-Resume point: ws104-p004 cleared（q518）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
+Queue: [q519](../queue.md) finished（ws104-p005 cleared（q519））
+Resume point: ws104-p005 cleared（q519）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -84,7 +84,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | cleared（q516） | p001 |
 | [ws104-p003](phase003/phase.md) | libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ | cleared（q517） | p002 |
 | [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | cleared（q518） | p001 |
-| [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | planned | p004 |
+| [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | cleared（q519） | p004 |
 | [ws104-p006](phase006/phase.md) | compositor の session（`handoff.c`）と OS の hook（`zwl-os.h`）を zedBSD の module に | planned | p005 |
 | [ws104-p007](phase007/phase.md) | install の path を `userland/desktop/paths.h` の macro に | planned | p006、p003 |
 | [ws104-p008](phase008/phase.md) | 規約の全文の見直し、境界の確かめの script、回帰 | planned | p001〜p007 |
@@ -137,3 +137,28 @@ p005 の C9/p053 の touch 表記を訂正。既存の WS079 p013-touch を同�
 
 cleared（q518）。GPU の wire layout・zedBSD GPU protocol/global・import を OS module に閉じ、共通 import は Vulkan image / memory の adopt だけにした。共通 layout、旧 factory、vulkan_external include、直接 vkGetFenceFdKHR は 0。device proc pointer で fence を呼ぶ。amd64 disk-image build exit 0、自前 warning 0。GPU v1 check（52 source）、dedicated host 18 cases × ordinary/sanitize、decode host 17 cases × ordinary/sanitize、forge guest、600 fence（全て generation 1）と 600 frames、C1/C2/C9 13/13、boot 全て PASS。p072 の全 6 PNG を目視し Wiseview・drag・復元・desktop 移動を確認。login PNG も目視・提示済み。証拠: `plan/history/ws104/q518/`。clang-format 19.1.7 と新 module / common import の style-check を実施（0）。全文規約の最終確認は p008。実機・Linux は未実施。旧 protocol/log と通常 path を保持し、import 失敗時の所有権を module で明示した。未達条件なし。
  詳細は [Phase](phase004/phase.md)。
+
+### 2026-10-01T03:10:03.273973+00:00 / q519 / ws104-p005
+
+in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase005/phase.md)。
+
+### Checkpoint 2026-10-01T03:14:53.444762+00:00 / q519
+
+入力の OS 境界の実装を `96d14088`（WIP）で commit。共通 device operation / direct close は 0、UAPI input include は zwl-evdev.h 1 行。amd64 disk-image build exit 0、自前 warning 0、新 module/header の style-check 0。ioctl の失敗 -1/errno を 0/errno の hook に包み、read の whole-event 数と EOF / EAGAIN / EINTR / EIO の log・終了条件を保持。boot PASS、login PNG を目視・提示済み。C1/C2/C9 → glass → Notes pen → touchscreen の専用 image と試験を順次実行中。image build は 1 つずつ。Phase は in-progress。
+
+### Checkpoint 2026-10-01T03:16:08.789251+00:00 / q520
+
+p006 の実装手順を実際の終了経路に合わせて確認した。OS の display-acquire に失敗した経路と、prepare のみで swapchain を作らなかった経路は display を acquire していないので release しない。acquire が成功した後の swapchain / targets 失敗は surface / swapchain を閉じて release、通常の output_close も swapchain を閉じて release する。7 hook の API・Phase 構造・依存・受け入れ条件は不変。WS104 の自律実行承認内の所有権の対を保つ技術上の補正であり、zedBSD の hook は空実装、振る舞いは不変。後続 WS105 は acquire / release の対を実装する。p006 の開始前 snapshot にこの手順を含める。
+
+### Checkpoint 2026-10-01T03:38:10.599640+00:00 / q519
+
+C1/C2/C9 は 13/13 PASS。p072 の全 6 PNG も目視し Wiseview・drag・最小化・復元・desktop 移動が正常。新しい入力境界の header は Linux host の `cc -std=c89 -Wall -Wextra -Werror -Iuserland/desktop/wayland -x c -fsyntax-only -` でも通った（zwl-input.h）。証拠を `plan/history/ws104/q519/`（boundary-checks.json、criteria-results.txt、login.png）に保存。glass → Notes pen → touchscreen は継続中で p005 は in-progress。
+
+### Checkpoint 2026-10-01T03:42:11.663538+00:00 / q519
+
+glass p059 PASS（hover・drag・最大化・復元・close の全 6 PNG を目視）。Notes pen PASS: 筆圧・tilt・消しゴム・undo・hover・PDF 保存、qpdf が正常、compositor ERROR 0。pressure / eraser / PDF render / pen-hover / eraser-hover の 5 PNG を目視し、筆圧で幅が変わる線と細い定圧線、削除後と復元保存、hover の dot / ring を確認。証拠: `plan/history/ws104/q519/notes-pen.txt`・pen-pressure.png・pen-pdf.png・glass-test.txt。touchscreen の専用試験は 2 指 down / motion / up / frame と probe の画面まで PASS、pointer fallback と gesture は継続中。p005 は in-progress。
+
+### 2026-10-01T03:44:22.009214+00:00 / q519 / ws104-p005
+
+cleared（q519）。列挙・open・ioctl・read・close を `zedbsd/input-zedbsd.c` へ移し、共通の input.c は capability による分類と event の解釈にした。tablet / touch の軸・name・id は 0/errno の hook を使用。共通 device operation / direct close は 0、UAPI input include は zwl-evdev.h の 1 行。amd64 disk-image build exit 0、自前 warning 0。新 module/header style-check 0、Linux host の C89 header syntax check 0。C1/C2/C9 13/13、glass p059、Notes pen（筆圧・tilt・消しゴム・undo・hover・PDF 保存と qpdf）、touch p013（2 指 event、pointer fallback、cancel、edge gesture、2 指 flick、1 指 drag/tap）、boot 全て PASS。p072 全 6・glass 全 6・Notes 5・touch 主要 8 PNG を目視し、login PNG は提示済み。証拠: `plan/history/ws104/q519/`。ioctl / read の errno、EOF、EAGAIN、EINTR、torn-event EIO と log の形を保った。物理 hotplug は未実施（列挙・再走査は移動して中身を保持、専用試験では仮想 node の追加・指/pen event を確認）。実機・Linux compositor は未実施。未達条件なし。実行者: main / Codex Q1。
+ 詳細は [Phase](phase005/phase.md)。

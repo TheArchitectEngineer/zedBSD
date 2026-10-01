@@ -2,10 +2,10 @@
 
 # ws104-p005: compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ
 
-Status: planned
+Status: cleared
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
+Queue: q519 / q519-i01
 実行者: phase-runner（high）
 
 ## 目的
@@ -112,8 +112,27 @@ void zwl_input_probe(struct zwl_server *server, int descriptor, const char *path
 
 ## 結果
 
-（実行の後に書く）
+q519-i01 cleared（2026-10-01T03:44:22.009214+00:00）。
+
+列挙・open・ioctl・read・close を `zedbsd/input-zedbsd.c` へ移し、共通の input.c は capability による分類と event の解釈にした。tablet / touch の軸・name・id は 0/errno の hook を使用。共通 device operation / direct close は 0、UAPI input include は zwl-evdev.h の 1 行。amd64 disk-image build exit 0、自前 warning 0。新 module/header style-check 0、Linux host の C89 header syntax check 0。C1/C2/C9 13/13、glass p059、Notes pen（筆圧・tilt・消しゴム・undo・hover・PDF 保存と qpdf）、touch p013（2 指 event、pointer fallback、cancel、edge gesture、2 指 flick、1 指 drag/tap）、boot 全て PASS。p072 全 6・glass 全 6・Notes 5・touch 主要 8 PNG を目視し、login PNG は提示済み。証拠: `plan/history/ws104/q519/`。ioctl / read の errno、EOF、EAGAIN、EINTR、torn-event EIO と log の形を保った。物理 hotplug は未実施（列挙・再走査は移動して中身を保持、専用試験では仮想 node の追加・指/pen event を確認）。実機・Linux compositor は未実施。未達条件なし。実行者: main / Codex Q1。
+
+
+Implementation: `96d14088b27df63a5a7779efcb7bbc811dd37bf0`（WIP）。詳細 log: `build/ws104-p005/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
 
 ## 検証手順の補正（2026-10-01T02:58:03.434367+00:00）
 
 q518 の関連道具の確認で、p053 は touch 注入ではないと判明。C9 の必須確認を保ち、既存の p013-touch を補った。入力の分離の範囲・API・依存・達成する振る舞いは不変。WS104 完了までの自律実行承認内の検証手段の補正。新しい implementation の範囲は追加しない。
+
+Execution started UTC: 2026-10-01T03:10:03.273973+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
+
+### Checkpoint 2026-10-01T03:14:53.444762+00:00 / q519
+
+入力の OS 境界の実装を `96d14088`（WIP）で commit。共通 device operation / direct close は 0、UAPI input include は zwl-evdev.h 1 行。amd64 disk-image build exit 0、自前 warning 0、新 module/header の style-check 0。ioctl の失敗 -1/errno を 0/errno の hook に包み、read の whole-event 数と EOF / EAGAIN / EINTR / EIO の log・終了条件を保持。boot PASS、login PNG を目視・提示済み。C1/C2/C9 → glass → Notes pen → touchscreen の専用 image と試験を順次実行中。image build は 1 つずつ。Phase は in-progress。
+
+### Checkpoint 2026-10-01T03:38:10.599640+00:00 / q519
+
+C1/C2/C9 は 13/13 PASS。p072 の全 6 PNG も目視し Wiseview・drag・最小化・復元・desktop 移動が正常。新しい入力境界の header は Linux host の `cc -std=c89 -Wall -Wextra -Werror -Iuserland/desktop/wayland -x c -fsyntax-only -` でも通った（zwl-input.h）。証拠を `plan/history/ws104/q519/`（boundary-checks.json、criteria-results.txt、login.png）に保存。glass → Notes pen → touchscreen は継続中で p005 は in-progress。
+
+### Checkpoint 2026-10-01T03:42:11.663538+00:00 / q519
+
+glass p059 PASS（hover・drag・最大化・復元・close の全 6 PNG を目視）。Notes pen PASS: 筆圧・tilt・消しゴム・undo・hover・PDF 保存、qpdf が正常、compositor ERROR 0。pressure / eraser / PDF render / pen-hover / eraser-hover の 5 PNG を目視し、筆圧で幅が変わる線と細い定圧線、削除後と復元保存、hover の dot / ring を確認。証拠: `plan/history/ws104/q519/notes-pen.txt`・pen-pressure.png・pen-pdf.png・glass-test.txt。touchscreen の専用試験は 2 指 down / motion / up / frame と probe の画面まで PASS、pointer fallback と gesture は継続中。p005 は in-progress。

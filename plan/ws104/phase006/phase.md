@@ -89,3 +89,7 @@ void zwl_os_display_release(struct zwl_server *server, VkPhysicalDevice physical
 ## 結果
 
 （実行の後に書く）
+
+### Checkpoint 2026-10-01T03:16:08.789251+00:00 / q520
+
+p006 の実装手順を実際の終了経路に合わせて確認した。OS の display-acquire に失敗した経路と、prepare のみで swapchain を作らなかった経路は display を acquire していないので release しない。acquire が成功した後の swapchain / targets 失敗は surface / swapchain を閉じて release、通常の output_close も swapchain を閉じて release する。7 hook の API・Phase 構造・依存・受け入れ条件は不変。WS104 の自律実行承認内の所有権の対を保つ技術上の補正であり、zedBSD の hook は空実装、振る舞いは不変。後続 WS105 は acquire / release の対を実装する。p006 の開始前 snapshot にこの手順を含める。
