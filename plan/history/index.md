@@ -2,10 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q516](queue-q516.md)（ws104-p002 cleared）
+Last finished Queue: [q517](queue-q517.md)（ws104-p003 cleared）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-10-01 q517
+
+[q517](queue-q517.md): ws104-p003 **cleared**。libkeiland の network・network-link・audio を `zedbsd/*-zedbsd.c` に byte 同一で移動（移動前 hash と照合）。Makefile と host script 2 本の path を更新。共通 C の OS 専用 include は 0。公開 export は前後一致。amd64 build exit 0、自前 warning 0、host audio 14/14、Settings host build、Settings guest 回帰 8 本、boot 全て PASS。移動した 3 file の style-check 0。証拠: `plan/history/ws104/q517/`（hash、export 一覧、回帰 summary、login PNG）。旧 object は共有 build に残し、消していない。実機・Linux は未実施。
+
+実装 `78da13872bbef7d62572fadab616ab78043d13f6`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q516
 

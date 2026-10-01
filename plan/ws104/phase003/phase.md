@@ -2,7 +2,7 @@
 
 # ws104-p003: libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ
 
-Status: in-progress
+Status: cleared
 Disposition: normal
 Parent: [WS104](../ws.md)
 Queue: q517 / q517-i01
@@ -67,6 +67,11 @@ WS105 は同じ関数を Linux の source で実装する。
 
 ## 結果
 
-（実行の後に書く）
+q517-i01 cleared（2026-10-01T02:34:59.058808+00:00）。
+
+libkeiland の network・network-link・audio を `zedbsd/*-zedbsd.c` に byte 同一で移動（移動前 hash と照合）。Makefile と host script 2 本の path を更新。共通 C の OS 専用 include は 0。公開 export は前後一致。amd64 build exit 0、自前 warning 0、host audio 14/14、Settings host build、Settings guest 回帰 8 本、boot 全て PASS。移動した 3 file の style-check 0。証拠: `plan/history/ws104/q517/`（hash、export 一覧、回帰 summary、login PNG）。旧 object は共有 build に残し、消していない。実機・Linux は未実施。
+
+
+Implementation: `78da13872bbef7d62572fadab616ab78043d13f6`（WIP）。詳細 log: `build/ws104-p003/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
 
 Execution started UTC: 2026-10-01T02:25:22.606785+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
