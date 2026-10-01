@@ -6,19 +6,17 @@ Status: planned
 Disposition: normal
 Parent: [WS104](../ws.md)
 Queue: なし
-実行者: **main（Q1）だけ**（`toolchain/llvm/sysroot.mk` は toolchain の範囲。始める前にユーザーの許可を確かめる）
+実行者: **main（Q1）だけ**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。始める前にユーザーの許可を確かめる）
 
 ## 目的
 
 決定 D3（[WS105 の ws.md](../../ws105/ws.md)）: `keiland.h` などの desktop の header は C library の物ではない。Linux の build（WS105）は zedBSD の
 libc の header の directory（`include/libc/`）を読めない（glibc と衝突する）ので、desktop の header を libc から分けた場所に置く。
-zedBSD の image と sysroot の中では、header は今と同じ名前・同じ場所（`/usr/include/keiland.h` など）に入り続ける。
+zedBSD の image と sysroot の中では、header は今と同じ名前・同じ場所（`/usr/include/keiland.h` など）に入り続ける（sysroot の manifest に directory を足す）。
 
 ## 移す物と移さない物
 
-`git mv` で `include/libc/` から `userland/desktop/keiland/` へ移す（中身は変えない）:
-
-| 移す物 | 実装している library |
+| 移す物（`include/libc/` → `userland/desktop/keiland/`） | 実装している library |
 | --- | --- |
 | `keiland.h` | libkeiland |
 | `keiui.h` | libkeiui |
@@ -28,61 +26,96 @@ zedBSD の image と sysroot の中では、header は今と同じ名前・同�
 | `wayland-egl.h`・`wayland-egl-core.h` | libwayland-egl |
 | directory `wayland/`（`API-PROVENANCE.md` と 10 個の header） | libwayland |
 
-移さない物（理由）:
+移さない物（理由）: `vulkan/`（OS の API、kernel の i915 も使う）、`EGL/`・`GLES2/`・`GLES3/`・`KHR/`（Khronos のそのままの複写、OS の API の扱い）、`GL/`・`X11/`（userland/retro の物）、
+`pdf.h`（base の libpdf の物）、`compat/`（base の compat の library の物）、`catalog-format.h`・`locale-format.h`（libc の物）。
 
-- `vulkan/`: OS の API と見なす（ユーザー 2026-10-01「zedBSDではこれがOSのAPIです」）。kernel の i915 も使う。
-- `EGL/`・`GLES2/`・`GLES3/`・`KHR/`: Khronos の header のそのままの複写（hash は `include/libc/EGL/API-PROVENANCE.md`）。vulkan と同じく OS の API の扱い。
-- `GL/`・`X11/`: userland/retro の物で desktop ではない。
-- `pdf.h`: `userland/base/libpdf`（base の library）の物。
-- `compat/`: base の compat の library（libz・libpng・libjpeg・libgif）の物。
-- `catalog-format.h`・`locale-format.h`: libc の物。
+## 用意してある物（2026-10-01 の survey、`git apply --check` 済み）
 
-## 手順
+- [`../patches/p001-sysroot.patch`](../patches/p001-sysroot.patch): `toolchain/llvm/sysroot.mk` の 3 箇所（manifest の `find`、`ZEDBSD_SYSROOT_INCLUDE_NAMES` の `patsubst`、header の複写の `case`）。
+- [`../patches/p001-paths.patch`](../patches/p001-paths.patch): 移した path を名指しする 44 file（libwayland の source の注釈 8・README、libbrowser の Makefile の header の引数、host の試験の script 34）。
+  host の試験の script には、header が見つからないと**黙って host の `/usr/include/wayland-*.h` を使ってしまう**物（ws068・ws075・ws101 の GLES の shim、ws073 の
+  `wayland-dispatch-once.sh`、ws035 の `p075/run-host.sh`）があり、それも直してある。
+- survey は copy の tree でこの 2 つを当て、sysroot の `usr/include` の 241 file の hash が前後で同じこと、host の試験 9 本（textedit `host-core` 34/34、files `host-build`、
+  ws089 `host-build`、ws100 `host-audio` 14/14、ws073 `wayland-dispatch-once`、ws068 `spirv-host`、keiui `host-chooser` 85/85、ws089 `host-preferences`、ws035 `p075`）が通ることを確かめた。
 
-1. **前の状態を記録する**（比較の基準）。今の main で sysroot を最新にしてから、中身の hash を取る:
+## 手順（repo の root で、上から順に実行する。`<W>` は `ws104-p001`）
+
+1. 前の状態（比較の基準）:
    ```
-   make -j16 BUILD=build/amd64 build/amd64/sysroot/.zedbsd-sysroot-complete
-   (cd build/amd64/sysroot/usr/include && find . -type f | LC_ALL=C sort | xargs sha256sum) > build/ws104/p001-before.txt
+   mkdir -p build/ws104-p001
+   make -j64 sysroot-amd64
+   (cd build/amd64/sysroot/usr/include && find . -type f | LC_ALL=C sort | xargs sha256sum) > build/ws104-p001/sysroot-before.txt
    ```
-   （`build/ws104/` は自分の作業用。無ければ作る。）
-2. `mkdir -p userland/desktop/keiland` し、上の表の物を `git mv` する（`include/libc/wayland` は directory ごと `git mv include/libc/wayland userland/desktop/keiland/wayland`）。
-3. `toolchain/llvm/sysroot.mk`（toolchain の範囲。ユーザーの許可の後に）:
-   - 89〜90 行の `find include/libc include/libc include/uapi` に `userland/desktop/keiland` を足す。
-   - 97〜98 行の `ZEDBSD_SYSROOT_INCLUDE_NAMES` の `patsubst` に `userland/desktop/keiland/%` → `%` を足す。
-   - 143〜147 行の `case` に `userland/desktop/keiland/*) relative=$$$${header#userland/desktop/keiland/} ;;` を足す。
-   - 他の行（`include/libc` が 2 回書かれている所など）は触らない（範囲の外）。
-   - `plan/tools/toolchain-lock.sh` の lock は build の tree の物で、この file には関係しない。
-4. path を名指しする所を直す。次で探し、出た物を全て直す:
+2. 移す:
    ```
-   grep -rn --exclude-dir=.claude --exclude-dir=build --exclude-dir=.internal --exclude-dir=history \
-     -e 'include/libc/\(keiland\|keiui\|truetype\|browser\|wayland\|xdg-shell\|primary-selection\|tablet-unstable\)' .
+   mkdir -p userland/desktop/keiland
+   git mv include/libc/keiland.h userland/desktop/keiland/keiland.h
+   git mv include/libc/keiui.h userland/desktop/keiland/keiui.h
+   git mv include/libc/truetype.h userland/desktop/keiland/truetype.h
+   git mv include/libc/browser.h userland/desktop/keiland/browser.h
+   git mv include/libc/wayland-client.h userland/desktop/keiland/wayland-client.h
+   git mv include/libc/wayland-client-core.h userland/desktop/keiland/wayland-client-core.h
+   git mv include/libc/wayland-client-protocol.h userland/desktop/keiland/wayland-client-protocol.h
+   git mv include/libc/wayland-util.h userland/desktop/keiland/wayland-util.h
+   git mv include/libc/xdg-shell-client-protocol.h userland/desktop/keiland/xdg-shell-client-protocol.h
+   git mv include/libc/primary-selection-unstable-v1-client-protocol.h userland/desktop/keiland/primary-selection-unstable-v1-client-protocol.h
+   git mv include/libc/tablet-unstable-v2-client-protocol.h userland/desktop/keiland/tablet-unstable-v2-client-protocol.h
+   git mv include/libc/wayland-egl.h userland/desktop/keiland/wayland-egl.h
+   git mv include/libc/wayland-egl-core.h userland/desktop/keiland/wayland-egl-core.h
+   git mv include/libc/wayland userland/desktop/keiland/wayland
    ```
-   直す物の例（2026-10-01 の調査で分かっている物）:
-   - `userland/desktop/libwayland/*.c` の 8 file と `libwayland/README.md` の注釈（`include/libc/wayland/API-PROVENANCE.md` → `userland/desktop/keiland/wayland/API-PROVENANCE.md`）。
-   - `userland/desktop/libbrowser/Makefile:154` の header の引数 `include/libc/browser.h` → `userland/desktop/keiland/browser.h`。
-   - host の試験の script（header を複写・link している）: `plan/tools/files/host-build.sh`・`host-png.sh`・`plan/tools/textedit/host-core.sh`・
-     `plan/tools/keiui/host-chooser.sh`・`plan/tools/imageview/run-host.sh`、`plan/ws0NN/tests/*.sh`（約 30 本、ws035・ws073・ws074・ws079・ws081・ws089・ws090・ws100・ws102）。
-     path の文字列だけを直す。`include/libc/compat` や `vulkan` を指す所は変えない。
-   - `plan/history/` は履歴なので直さない。
-5. build する: `make -j16 BUILD=build/amd64 disk-image`（sysroot が作り直され、desktop の全 object が作り直される）。warning 0。
-6. **後の状態を比べる**:
+3. patch を当てる（ユーザーの toolchain の許可の後）:
    ```
-   (cd build/amd64/sysroot/usr/include && find . -type f | LC_ALL=C sort | xargs sha256sum) > build/ws104/p001-after.txt
-   diff build/ws104/p001-before.txt build/ws104/p001-after.txt   # 差が無いこと
+   git apply plan/ws104/patches/p001-sysroot.patch
+   git apply plan/ws104/patches/p001-paths.patch
    ```
-7. boot test: `plan/tools/boot-test.sh build/amd64/hdd-image.img`（撮れた PNG をユーザーに見せる）。
-8. 4 の host の script のうち、header の path を直した物から 2 本を走らせて通ることを確かめる（例 `sh plan/tools/textedit/host-core.sh`、`sh plan/tools/files/host-build.sh`。使い方は各 script の先頭）。
+4. **sysroot を必ず作り直させる**: `git mv` は file の時刻を変えず、`sysroot.mk` は sysroot の前提でないので、何もしないと sysroot は作り直されず、手順 6 の比較が
+   空しく通ってしまう。
+   ```
+   touch userland/desktop/keiland/keiland.h
+   ```
+5. build（sysroot と全ての desktop の object と外部 package が作り直される。〜15 分）:
+   ```
+   make -j64 disk-image > build/ws104-p001/build.log 2>&1; echo "make exit=$?"
+   grep -E ':[0-9]+:[0-9]+: warning:' build/ws104-p001/build.log | grep -vE '/packages/|^\.\./src/|userland/base/noct/noct/' | wc -l
+   ```
+   `make exit=0` と `0`。
+6. 後の状態を比べる:
+   ```
+   (cd build/amd64/sysroot/usr/include && find . -type f | LC_ALL=C sort | xargs sha256sum) > build/ws104-p001/sysroot-after.txt
+   diff build/ws104-p001/sysroot-before.txt build/ws104-p001/sysroot-after.txt && echo SYSROOT-SAME
+   ls -la --time-style=full-iso build/amd64/sysroot/.zedbsd-sysroot-complete   # 手順 5 の時刻であること（作り直された証拠）
+   ```
+7. 残りの参照が無いこと（他の WS の記録 `plan/**/*.md` は変えないので除く）:
+   ```
+   grep -rn --exclude-dir=.claude --exclude-dir=build --exclude-dir=.internal --exclude-dir=history --exclude-dir=ws104 \
+     -e 'include/libc/\(keiland\|keiui\|truetype\|browser\|wayland\|xdg-shell\|primary-selection\|tablet-unstable\)' . | grep -v '^\./plan/.*\.md:' | wc -l
+   ```
+   `0`。
+8. boot test（[commands.md](../commands.md) §4）:
+   ```
+   OUTPUT=build/ws104-p001/boot plan/tools/boot-test.sh build/amd64/hdd-image.img; echo "exit=$?"
+   ```
+9. host の試験（header の path を直した物から）:
+   ```
+   sh plan/tools/textedit/host-core.sh
+   sh plan/tools/files/host-build.sh
+   sh plan/ws089/tests/host-build.sh
+   sh plan/ws100/tests/host-audio.sh
+   ```
+10. commit: `git commit -m WIP -- userland/desktop/keiland include/libc toolchain/llvm/sysroot.mk userland/desktop/libwayland userland/desktop/libbrowser plan/tools plan/ws0*`
+    （`git status` で他の人の変更を含めていないか確かめてから）。
 
 ## 完了の条件
 
-- `include/libc/` に表の物が無く、`userland/desktop/keiland/` にある（`git status` で rename として見える）。
-- 手順 4 の grep が `plan/history/` の外で 0 件。
-- build の warning 0、手順 6 の diff が空、boot test PASS、手順 8 の 2 本が PASS。
+- 手順 5 の `make exit=0` と warning `0`、手順 6 の `SYSROOT-SAME` と stamp の時刻、手順 7 の `0`、手順 8 の `exit=0` と `boot-test: PASS`（PNG をユーザーに見せる）、
+  手順 9 の 4 本が PASS（`host-audio: N/N passed`、他は exit 0）。
 
 ## 範囲の外
 
 - header の中身の変更、`#include` の書き方の変更（`<keiland.h>` のまま）。
-- pcat・pc98・arm64 の build（同じ sysroot.mk を使うので同じく動くはずだが、この Phase では amd64 だけ確かめる。未実施と書く）。
+- pcat・pc98・arm64 の build（同じ sysroot.mk の manifest を使う。この Phase では amd64 だけ確かめ、他は「未実施」と書く）。
+- `plan/ws045/tests/target-check.sh` の arm64 の行（`-Iinclude/libc` で libpdf の `truetype.h` を探す）は直さない（survey の判断、影響は小さい）。
 
 ## 結果
 

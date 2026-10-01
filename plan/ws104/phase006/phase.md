@@ -49,6 +49,9 @@ void zwl_os_poll_done(struct zwl_server *server, const struct pollfd *descriptor
    (Linux: vkAcquireDrmDisplayEXT with the seat's DRM descriptor).  Returns VK_SUCCESS or the error (startup fails).
    zedBSD: VK_SUCCESS. */
 VkResult zwl_os_display_acquire(struct zwl_server *server, VkPhysicalDevice physical, VkDisplayKHR display);
+
+/* Called after the swapchain is gone: gives the display back (Linux: vkReleaseDisplayEXT).  zedBSD: nothing. */
+void zwl_os_display_release(struct zwl_server *server, VkPhysicalDevice physical, VkDisplayKHR display);
 ```
 
 ## 新しい file
@@ -59,30 +62,29 @@ VkResult zwl_os_display_acquire(struct zwl_server *server, VkPhysicalDevice phys
 | `zedbsd/handoff-zedbsd.c` | `handoff.c` を `git mv` した物（中身は include の path だけ直す） |
 | `zedbsd/os-zedbsd.c` | `zwl-os.h` の zedBSD の実装（全て空）。file の先頭の注釈に「zedBSD needs nothing here: sessiond hands the seat over before the compositor starts (sessiond/seat.c), and libvulkan reaches the display itself (WS104 p006)」 |
 
-## 手順
+## 手順（`<W>` は `ws104-p006`）
 
-1. `git mv userland/desktop/wayland/handoff.c userland/desktop/wayland/zedbsd/handoff-zedbsd.c`。
-2. `zwl-os.h`・`zedbsd/os-zedbsd.c` を作る。
-3. 呼び出しを入れる:
-   - `main.c`: `zwl_compose_open`（137）の前に `zwl_os_open`（失敗なら起動の失敗。今の他の起動の失敗と同じ扱い・同じ形の message）。`service_cleanup`（904-933）の最後に `zwl_os_close`。
-   - `main.c` の `event_loop`: poll の set の数え（662-699）に `zwl_os_poll_count`、詰め（714-769）に `zwl_os_poll_fill`、poll の後（794-811 の近く、入力の device の処理の後）に `zwl_os_poll_done`。
-     既存の index の計算を壊さないように、OS の entry は最後に置く。
-   - `compose.c` の `zwl_compose_output_open` の、swapchain を作る前に `zwl_os_display_acquire`（失敗なら今の swapchain の作成の失敗と同じ扱い）。
-     VkPhysicalDevice と VkDisplayKHR は compose の構造体にある物（`vkdemo_display_open` が選んだ物）を渡す。
-4. `Makefile` の `KEILAND_ZEDBSD_SOURCES` に `zedbsd/handoff-zedbsd.c`・`zedbsd/os-zedbsd.c` を足し、`KEILAND_SOURCES` から `handoff.c` を外す。
-5. `handoff.c` を名指しする script・文書を直す（`grep -rn 'wayland/handoff.c' --exclude-dir=history --exclude-dir=.claude --exclude-dir=build .`）。
+**正確な編集（行・code）は [edits-compositor.md](../edits-compositor.md) の「P006」と「`zwl_os_display_release`」にある。** survey で決めた差:
 
-## 確かめ
+- `VkDisplayKHR` が今どこにも保存されていない（`compose_display` の local の変数）ので、`struct zwl_compose`（`compose.h`）に `VkDisplayKHR display;` を足して `compose_display` で入れる。
+- hook は 7 つ（上の 6 つと `zwl_os_display_release`）。`zwl_os_display_release` は `zwl_compose_output_close` の、`vkdemo_display_close` の後で呼ぶ。
 
-1. build、warning 0。
-2. sessiond との受け渡しと Log Out: `criteria.sh ... C1`（`c1-boot-shutdown.sh` が greeter → login → session → Log Out → Shut Down を確かめる）と `C1 p126`。
-3. compositor の基準の残り: `criteria.sh ... C2 C9`。
-4. boot test。
+1. `git mv userland/desktop/wayland/handoff.c userland/desktop/wayland/zedbsd/handoff-zedbsd.c` し、26 行の include を root からの path に。
+2. 編集する（edits-compositor.md の P006）。
+3. 確かめ:
+   ```
+   ls userland/desktop/wayland/handoff.c 2>/dev/null | wc -l                           # 0
+   grep -c 'zwl_os_' userland/desktop/wayland/main.c userland/desktop/wayland/compose.c   # main.c 5 以上（open・close・poll の 3）、compose.c 2 以上（acquire・release）
+   ```
+4. build と warning の数え（[commands.md](../commands.md) §1）。
+5. compositor の基準（commands.md §5）: results.txt が全て PASS。C1 の 2 行（`zdesktop-p126`、`c1-boot-shutdown`: greeter → login → session → Log Out → Shut Down）が
+   sessiond との受け渡しを確かめる。
+6. boot test（`OUTPUT=build/ws104-p006/boot`）。
+7. commit: `git commit -m WIP -- userland/desktop/wayland`
 
 ## 完了の条件
 
-- `wayland/` の直下に `handoff.c` が無く、`zwl-os.h` の 6 関数が共通の code から呼ばれている（`grep -n 'zwl_os_' userland/desktop/wayland/*.c`）。
-- 確かめ 1〜4 が PASS。
+- 手順 3 が条件どおり、4〜6 が PASS。
 
 ## 結果
 

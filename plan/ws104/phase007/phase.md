@@ -6,86 +6,74 @@ Status: planned
 Disposition: normal
 Parent: [WS104](../ws.md)
 Queue: なし
-実行者: phase-runner（high）でよい（機械的な置き換え。phase-runner-mid でも可）
+依存: p003・p006（patch が p003 の後の tree に当たるように作ってあり、p004〜p006 は `wayland/*.c` を変えるので、それらの後に当てる）
+実行者: phase-runner（high）か phase-runner-mid。`plan/` の script の 7 つの `-I.` は他の WS の file なので **main が当てる**
 
 ## 目的
 
 desktop の source は、自分たちが install される場所を文字列で直書きしている（`/bin/terminal`・`/usr/share/fonts/keiland.ttf`・`/etc/keiland/apps.conf`・
-`/usr/libexec/keiland-ime` など、約 70 箇所）。Linux（WS105）では全てが `/opt/keiland/` の下に入る（決定 D1）。path を 1 つの header の macro にし、
-zedBSD の build では**今と全く同じ文字列**になり、Linux の build（`Makefile.linux`）は `-D` で上書きする形にする。
+`/usr/libexec/keiland-ime` など、26 file・61 行）。Linux（WS105）では全てが `/opt/keiland/` の下に入る（決定 D1）。path を 1 つの header の macro にし、
+zedBSD の build では**今と全く同じ文字列**になり、Linux の build（`keiland-linux.mk`）は `-D` で上書きする。
 
-## 新しい header `userland/desktop/paths.h`
+## 用意してある物
 
-```c
-/*
- * Where the desktop is installed (WS104 p007).  zedBSD's image puts it in the system's own directories, the defaults
- * here.  The Linux build (WS105, Makefile.linux) puts all of it under /opt/keiland and defines each macro on the
- * compiler's command line.  A path is written as the macro followed by the rest of the path, so that the string
- * the program sees is the same as before:  KEILAND_BINDIR "/terminal"  is  "/bin/terminal"  on zedBSD.
- */
-#ifndef KEILAND_BINDIR
-#define KEILAND_BINDIR		"/bin"		/* the programs */
-#endif
-#ifndef KEILAND_LIBEXECDIR
-#define KEILAND_LIBEXECDIR	"/usr/libexec"	/* the helpers (keiland-ime, keiland-x11) */
-#endif
-#ifndef KEILAND_DATADIR
-#define KEILAND_DATADIR		"/usr/share"	/* fonts/, keiland/ (wallpapers, models), browser/, licenses/ */
-#endif
-#ifndef KEILAND_SYSCONFDIR
-#define KEILAND_SYSCONFDIR	"/etc"		/* keiland/ (apps.conf, desktop, open-with) */
-#endif
-```
+- [`../patches/p007.patch`](../patches/p007.patch): 新しい `userland/desktop/paths.h` と 26 file の置き換え・include の追加、host の試験の script 7 つの `-I.`。
+- [`../patches/p007-table.txt`](../patches/p007-table.txt): 置き換えた全ての行の前と後。
+- survey の確かめ（2026-10-01、copy の tree）: 置き換えた 26 個の `.c`（と header を通して影響を受ける `ui.c`・`textedit/text.c`・`browser/view/view.c`）を target で前後に
+  compile し、**object が byte で同じ**（文字列が同じ）。host の試験（files `host-build`・`host-default`、ws094 `host-thumb`、textedit `host-core`、ws089 `host-build`、ws074 `host-build`）が通る。
+  ws094 `host-desktop` は font の確かめ 2 つで落ちるが、変える前の copy でも同じく落ちる（この Phase の原因ではない）。
+- `paths.h` の macro と zedBSD の値: `KEILAND_BINDIR` `"/bin"`、`KEILAND_LIBEXECDIR` `"/usr/libexec"`、`KEILAND_DATADIR` `"/usr/share"`、`KEILAND_SYSCONFDIR` `"/etc"`
+  （それぞれ `#ifndef` で囲み、Linux の build が `-D` で上書きする）。path は「macro + 残りの文字列」で書く（`KEILAND_BINDIR "/terminal"` は zedBSD では `"/bin/terminal"`）。
 
-（注釈と書き方は coding-style.md に合わせる。header の guard を付ける。）
+残す物（2026-10-01 の Q1 の決定）:
 
-Linux の値（WS105 の `Makefile.linux` が渡す。この Phase では使わない）: `KEILAND_BINDIR="/opt/keiland/bin"`、`KEILAND_LIBEXECDIR="/opt/keiland/libexec"`、
-`KEILAND_DATADIR="/opt/keiland/share"`、`KEILAND_SYSCONFDIR="/opt/keiland/etc"`。
+- `"/bin/sh"`（system の shell）と、command の文字列の先頭の `"/bin/sh "`。
+- `userland/desktop/keiland/keiui.h:73` の `KUI_TEXT_EMOJI`（公開の header は repo の `paths.h` を include できない。WS105 p008 で `libkeiui/text.c` の側で扱う）。
+- `files/apps.c:111` の `apps_program_folders[]`（Open With の program を探す directory の一覧。WS105 p008 で `KEILAND_BINDIR` を足す）。
+- `/tmp/wayland-0`・`/tmp/.X11-unix`・`/run`・`/dev`・`/etc/resolv.conf` などの OS の path、`sessiond/`。
 
-## 置き換える物
+## 手順（`<W>` は `ws104-p007`）
 
-次で探す（`sessiond/` は zedBSD だけの program なので対象の外。`/bin/sh` は system の shell なので対象の外）:
+1. 前の文字列を取る（今の build の物）:
+   ```
+   mkdir -p build/ws104-p007
+   make -j64 disk-image > build/ws104-p007/build-before.log 2>&1; echo "make exit=$?"
+   for f in build/amd64/bin/* build/amd64/dynamic/*.so; do echo "== $f"; strings -a "$f" | grep -E '^/(usr|etc|bin)/' | LC_ALL=C sort -u; done > build/ws104-p007/strings-before.txt
+   ```
+2. patch を当てる:
+   - phase-runner: `git apply --exclude='plan/*' plan/ws104/patches/p007.patch`、main に「`git apply --include='plan/*' plan/ws104/patches/p007.patch`」を頼む。
+   - main: `git apply plan/ws104/patches/p007.patch`
+   - **当たらないとき**（p004〜p006 で `wayland/*.c` の行が動いたため）: `git apply --reject` で当たらない hunk を `.rej` に出し、`p007-table.txt` の OLD/NEW の行を文字列で探して手で直す。
+     include の追加の場所は下の表。全て直したら `.rej` を消す。
+3. 残りが無いこと:
+   ```
+   grep -rn --include=*.c --include=*.h -E '"/(usr/share|usr/libexec|etc/keiland|bin/|usr/bin/)' userland/desktop \
+     | grep -v -e '^userland/desktop/sessiond/' -e '"/bin/sh"' -e '"/bin/sh "' -e '^userland/desktop/paths.h:' -e '^userland/desktop/keiland/' | wc -l
+   ```
+   `0`。
+4. build と warning の数え（[commands.md](../commands.md) §1、`build/ws104-p007/build.log`）。後の文字列が同じ:
+   ```
+   for f in build/amd64/bin/* build/amd64/dynamic/*.so; do echo "== $f"; strings -a "$f" | grep -E '^/(usr|etc|bin)/' | LC_ALL=C sort -u; done > build/ws104-p007/strings-after.txt
+   diff build/ws104-p007/strings-before.txt build/ws104-p007/strings-after.txt && echo STRINGS-SAME
+   ```
+5. host の試験: `sh plan/tools/files/host-build.sh`、`sh plan/tools/textedit/host-core.sh`、`sh plan/ws089/tests/host-build.sh`（いずれも exit 0）。
+6. compositor の基準（commands.md §5。App Home からの app の起動を含む）: 全て PASS。
+7. boot test（`OUTPUT=build/ws104-p007/boot`）。
+8. commit: `git commit -m WIP -- userland/desktop`（main は `plan/tools/files plan/tools/textedit plan/ws074/tests/host-build.sh plan/ws089/tests/host-build.sh plan/ws094/tests` も）。
 
-```
-grep -rn --include=*.c --include=*.h -E '"/(usr/share|usr/libexec|etc/keiland|bin/|usr/bin/)' userland/desktop \
-  | grep -v -e '^userland/desktop/sessiond/' -e '"/bin/sh"'
-```
+## include を足す場所（patch が当たらないときの手作業の目安）
 
-2026-10-01 に出た物（約 60 行）: `browser/main.c`・`browser/text/text.h`・`files/apps.c`・`files/files.h`・`files/main.c`・`files/ui-desktop-actions.c`・`files/ui-desktop.c`・
-`imageview/main.c`・`ime/main.c`・`kuidemo/main.c`・`libkeiui/chooser.c`・`mview/main.c`・`notes/main.c`・`pdfviewer/main.c`・`settings/look.c`・`settings/main.c`・
-`terminal/main.c`・`textedit/main.c`・`textedit/textedit.h`・`wayland/corner.c`・`wayland/desktop.c`・`wayland/glass.c`・`wayland/home.c`（`HOME_APPS_PATH`・
-`HOME_BROWSER_START`・891〜902 行の app の一覧）・`wayland/input-method.c`・`wayland/main.c`（69〜70 行の font）・`xserver/server.c`。
+`KEILAND_*` を書いた file は自分で `#include "userland/desktop/paths.h"` する（3 つの header（`files/files.h`・`textedit/textedit.h`・`browser/text/text.h`）を含む）。
 
-置き換えの規則:
-
-| 今 | 後 |
+| 場所 | file |
 | --- | --- |
-| `"/bin/terminal"` | `KEILAND_BINDIR "/terminal"` |
-| `"/usr/libexec/keiland-ime"` | `KEILAND_LIBEXECDIR "/keiland-ime"` |
-| `"/usr/share/fonts/keiland.ttf"` | `KEILAND_DATADIR "/fonts/keiland.ttf"` |
-| `"/usr/share/keiland/wallpapers"` | `KEILAND_DATADIR "/keiland/wallpapers"` |
-| `"/etc/keiland/apps.conf"` | `KEILAND_SYSCONFDIR "/keiland/apps.conf"` |
-| `"/bin/sh /usr/libexec/keiland-x11 /bin/zterm ..."`（文字列の途中に path がある command） | `"/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zterm ..."`（文字列の連結で同じ文字列にする） |
-
-- 各 file に `#include "userland/desktop/paths.h"` を足す（include の並びの慣習に合わせる）。
-- 文字列の中身を 1 文字も変えない。`/dev/`・`/tmp/`・`/proc`・`/sys`・`/run/`・`/var/`・`/etc/resolv.conf`・`/etc/passwd` などの OS の path は対象の外。
-- `wayland/main.c:78` の既定の socket `/tmp/wayland-0` は対象の外（WS105 で Linux の既定を別に決める）。
-
-## 確かめ（文字列が同じであること）
-
-1. 置き換えの**前**に build し、対象の binary の文字列を取る:
-   ```
-   make -j16 BUILD=build/amd64 disk-image
-   for f in build/amd64/bin/* build/amd64/dynamic/*.so; do echo "== $f"; strings -a "$f" | grep -E '^/(usr|etc|bin)/' | LC_ALL=C sort -u; done > build/ws104/p007-before.txt
-   ```
-2. 置き換えの後に同じことをして `build/ws104/p007-after.txt` にし、`diff` が空であること。
-3. build の warning 0。
-4. 上の grep が 0 件（sessiond と `/bin/sh` を除く）。
-5. 回帰: `criteria.sh ... C1 C2 C9`（App Home からの app の起動を含む）、boot test。
+| その file 自身の quote の include の後（前後に空行） | `files/apps.c`・`files/ui-desktop-actions.c`・`files/ui-desktop.c`（`"files.h"` の後）、`files/files.h`（`"ops.h"`）、`files/main.c`・`imageview/main.c`・`libkeiui/chooser.c`・`pdfviewer/main.c`・`settings/main.c`・`textedit/main.c`（`"window.h"`）、`ime/main.c`（`"program.h"`）、`mview/main.c`（`"mview.h"`）、`notes/main.c`（`"app.h"`）、`settings/look.c`（`"settings.h"`）、`terminal/main.c`（`"terminal.h"`）、`wayland/corner.c`（`"menu.h"`）、`wayland/desktop.c`（`"popup.h"`）、`wayland/home.c`（`"glass.h"`）、`wayland/input-method.c`（`"titlebar.h"`） |
+| 公開の header の group の後 | `browser/main.c`（`<browser.h>`）、`wayland/glass.c`（`<truetype.h>`）、`kuidemo/main.c`・`textedit/textedit.h`（`<keiui.h>`） |
+| 同じ group（空行無し） | `browser/text/text.h`（`"base/base.h"`）、`wayland/main.c`（`"data.h"`）、`xserver/server.c`（`"userland/desktop/xserver/internal.h"`） |
 
 ## 完了の条件
 
-- 確かめ 1〜5。
+- 手順 3 が 0、手順 4 の `STRINGS-SAME` と warning 0、手順 5〜7 が PASS。
 
 ## 結果
 

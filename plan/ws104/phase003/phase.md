@@ -6,54 +6,64 @@ Status: planned
 Disposition: normal
 Parent: [WS104](../ws.md)
 Queue: なし
-実行者: phase-runner（high）でよい
+依存: p002
+実行者: phase-runner（high）でよい。`plan/ws089`・`plan/ws100` の script の 2 行は他の WS の file なので、**main が当てる**（下の手順 3）
 
 ## 目的
 
-決定 D14: libkeiland の OS に依存する部分を、OS ごとの C の source に分ける。libkeiland の 15 個の source のうち、OS に依存するのは次の 3 つで、
-どれも **file の全体** が zedBSD の物である（app は `keiland.h` の関数だけを使う）。WS105 は同じ関数を Linux の source で実装する。
+決定 D14: libkeiland の OS に依存する部分を、OS ごとの C の source に分ける。次の 3 つは file の全体が zedBSD の物（app は `keiland.h` の関数だけを使う）。
+WS105 は同じ関数を Linux の source で実装する。
 
 | 今の file | 移す先 | 中身 |
 | --- | --- | --- |
-| `libkeiland/network.c` | `libkeiland/zedbsd/network-zedbsd.c` | zedBSD の networkd と、`userland/base/net/protocol.h` の protocol で話す（`keiland_network_open`・`update`・`get_state`・`get_scan`・`request`・`get_request`・`close`） |
-| `libkeiland/network-link.c` | `libkeiland/zedbsd/network-link-zedbsd.c` | interface の情報（socket の ioctl `SIOCGIFCONF` など）、`/etc/resolv.conf`、zedBSD の鍵の file（`userland/base/net/wifi-store.h`）（`keiland_network_get_links`・`get_dns`・`save_key`・`get_saved`） |
+| `libkeiland/network.c` | `libkeiland/zedbsd/network-zedbsd.c` | zedBSD の networkd と、`userland/base/net/protocol.h` の protocol で話す |
+| `libkeiland/network-link.c` | `libkeiland/zedbsd/network-link-zedbsd.c` | interface の情報（socket の ioctl `SIOCGIFCONF` など。Linux では compile できない）、`/etc/resolv.conf`、zedBSD の鍵の file |
 | `libkeiland/audio.c` | `libkeiland/zedbsd/audio-zedbsd.c` | zedBSD の audiod（`keiland_audio_*`、p002 で足した `keiland_audio_available` を含む） |
 
-## 手順
+## 用意してある物
 
-1. `mkdir userland/desktop/libkeiland/zedbsd` し、3 つを `git mv` する（中身は変えない）。
-2. 移した file の `#include` を確かめる。`"userland/base/..."` の形（repo の root から）なら直さなくてよい。同じ directory の header を `"..."` で読んでいる所があれば
-   root からの path に直す。
-3. `userland/desktop/libkeiland/Makefile`:
-   - 共通の source の変数（今の `LIBZDESKTOP_SOURCES`）から 3 つと `userland/base/net/protocol.c`・`wifi-conf.c`・`wifi-store.c` を外す。
-   - 新しい変数 `LIBKEILAND_ZEDBSD_SOURCES` に、移した 3 つと `userland/base/net/*.c` の 3 つを並べる。注釈: 「the zedBSD side of the library: networkd, the
-     interfaces and the saved keys, audiod (WS104). WS105 has the Linux side in Makefile.linux.」
-   - package の call には `$(LIBZDESKTOP_SOURCES) $(LIBKEILAND_ZEDBSD_SOURCES)` を渡す。変数の名前 `LIBZDESKTOP_SOURCES` は他で参照されていないか
-     `grep -rn LIBZDESKTOP_SOURCES` で確かめ、参照が無ければ `LIBKEILAND_SOURCES` に改名してよい。
-4. 移した file の path を名指しする script を直す:
-   ```
-   grep -rn --exclude-dir=.claude --exclude-dir=build --exclude-dir=.internal --exclude-dir=history \
-     -e 'libkeiland/\(network\|network-link\|audio\)\.c' .
-   ```
-   2026-10-01 に分かっている物: `plan/ws089/tests/host-build.sh:37`（audio.c）、`plan/ws100/tests/host-audio.sh:13`（audio.c）。
-   ws089 の host-network（`plan/ws089/tests/host-network.c` を build する script）も network-link.c を名指ししていれば直す。
-5. 共通の source に OS の物が残っていないことを確かめる:
-   ```
-   grep -n '#include' userland/desktop/libkeiland/*.c | grep -e 'userland/base' -e 'uapi/' -e 'sys/ioctl.h' -e 'net/if.h'
-   ```
-   0 件であること（`preferences.c`・`recent.c` の `<sys/file.h>`・`<sys/stat.h>`・`<pwd.h>` は POSIX なので残してよい）。
+- [`../patches/p003-after-gitmv.patch`](../patches/p003-after-gitmv.patch): `git mv` の後に当てる（rename の hunk を含まない）。中身: `userland/desktop/libkeiland/Makefile`
+  （`LIBZDESKTOP_SOURCES` を `LIBKEILAND_SOURCES` に改名して 3 file と `userland/base/net/*.c` を外し、新しい `LIBKEILAND_ZEDBSD_SOURCES` に並べる）と、
+  `plan/ws089/tests/host-build.sh:37`・`plan/ws100/tests/host-audio.sh:13` の path。
+- survey の確かめ: 移した 3 file は repo の root からの include だけを使い（`"userland/base/net/protocol.h"` など）、そのまま target で compile できる。
+  make が計算する object の一覧は 3 file の場所の他は同じ。object は `build/amd64/dynamic/obj/userland/desktop/libkeiland/zedbsd/*-zedbsd.o` に作られる。
 
-## 確かめ
+## 手順（`<W>` は `ws104-p003`）
 
-1. build: `make -j16 BUILD=build/amd64 disk-image`、warning 0。`nm -D build/amd64/dynamic/libkeiland.so` の export の一覧が移す前と同じ
-   （前後で `nm -D --defined-only build/amd64/dynamic/libkeiland.so | awk '{print $3}' | sort` を取って diff）。
-2. host の試験: `sh plan/ws100/tests/host-audio.sh`、ws089 の host の試験（`plan/ws089/tests/host-build.sh` の使い方に従う）。
-3. Settings の回帰: `plan/ws089/tests/settings-regress.sh`（p002 と同じ手順）。network の頁の試験が含まれる。
-4. boot test。
+1. 前の export の一覧を取る（p002 の build の `libkeiland.so`。無ければ先に `make -j64 build/amd64/dynamic/libkeiland.so`）:
+   ```
+   mkdir -p build/ws104-p003
+   nm -D --defined-only build/amd64/dynamic/libkeiland.so | awk '{print $3}' | LC_ALL=C sort > build/ws104-p003/exports-before.txt
+   ```
+2. 移す:
+   ```
+   mkdir -p userland/desktop/libkeiland/zedbsd
+   git mv userland/desktop/libkeiland/network.c userland/desktop/libkeiland/zedbsd/network-zedbsd.c
+   git mv userland/desktop/libkeiland/network-link.c userland/desktop/libkeiland/zedbsd/network-link-zedbsd.c
+   git mv userland/desktop/libkeiland/audio.c userland/desktop/libkeiland/zedbsd/audio-zedbsd.c
+   ```
+3. patch を当てる:
+   - phase-runner（subagent）: `git apply --exclude='plan/*' plan/ws104/patches/p003-after-gitmv.patch`、そして main に「`git apply --include='plan/*' plan/ws104/patches/p003-after-gitmv.patch` を当ててください」と頼む。
+   - main が実行するなら: `git apply plan/ws104/patches/p003-after-gitmv.patch`
+4. 共通の source に OS の物が残っていない:
+   ```
+   grep -n '#include' userland/desktop/libkeiland/*.c | grep -e 'userland/base' -e 'uapi/' -e 'sys/ioctl.h' -e 'net/if.h' | wc -l
+   ```
+   `0`（`preferences.c`・`recent.c` の `<sys/file.h>`・`<sys/stat.h>`・`<pwd.h>` は POSIX なので対象の外）。
+5. build と warning の数え（[commands.md](../commands.md) §1）。export の一覧が同じ:
+   ```
+   nm -D --defined-only build/amd64/dynamic/libkeiland.so | awk '{print $3}' | LC_ALL=C sort > build/ws104-p003/exports-after.txt
+   diff build/ws104-p003/exports-before.txt build/ws104-p003/exports-after.txt && echo EXPORTS-SAME
+   ```
+6. host の試験: `sh plan/ws100/tests/host-audio.sh`、`sh plan/ws089/tests/host-build.sh`。
+7. Settings の回帰（commands.md §8 の Settings の 5 行）: `settings-regress: PASS`。
+8. boot test（`OUTPUT=build/ws104-p003/boot`）。
+9. commit: `git commit -m WIP -- userland/desktop/libkeiland`（main は `plan/ws089/tests/host-build.sh plan/ws100/tests/host-audio.sh` も）。
 
 ## 完了の条件
 
-- 3 file が `libkeiland/zedbsd/` にあり、手順 5 の grep が 0 件、export の一覧が同じ、確かめ 1〜4 が PASS。
+- 3 file が `libkeiland/zedbsd/` にあり、手順 4 が 0、手順 5 の `EXPORTS-SAME` と warning 0、6〜8 が PASS。
+- 古い `audio.o`・`network.o`・`network-link.o` が build の directory に残るのは無害（消さない）。`libkeiland.so` は object の順が変わるので byte では同じにならない（export が同じならよい）。
 
 ## 結果
 

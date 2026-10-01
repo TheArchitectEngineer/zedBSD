@@ -9,7 +9,7 @@ Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 計画済み（2026-10-01）。最初は p001（header の移動。toolchain の範囲の 1 行を含むので main が実行する）
+Resume point: 計画済み（2026-10-01、survey と design-reviewer の後の改訂 2）。最初は p001（header の移動。toolchain の範囲の sysroot.mk を含むので main が実行する。ユーザーの許可を確かめる）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -51,7 +51,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | A3 | libkeiland・compositor の OS に固有の source が `<package>/zedbsd/` にあり、共通の source は `<uapi/...>`・`"userland/base/..."` を include しない（evdev の定数の header 1 つを除く） | p008 の `plan/tools/keiland-os-boundary/check.sh` |
 | A4 | `zwl_buffer_layout` が `wayland/zedbsd/` の中だけにある。compositor の共通の code と OS の module の間の関数は `zwl-gpu.h`・`zwl-input.h`・`zwl-os.h` に宣言してある | check.sh、p004〜p006 |
 | A5 | desktop の install の path が `userland/desktop/paths.h` の macro で書かれ、zedBSD の build では今と同じ文字列になる | p007 の binary の文字列の比較 |
-| A6 | zedBSD の振る舞いが変わらない: build の warning 0、boot test、WS099 の C1・C2・C9、WS103 の GPU の境界の試験、Settings・音量の試験 | 各 Phase と p008 |
+| A6 | zedBSD の振る舞いが変わらない: build の warning 0、boot test、WS099 の C1・C2・C9、WS103 の GPU の境界の試験、glass（p059）と pen（notes-pen）、Settings・音量の試験 | 各 Phase と p008（[commands.md](commands.md)） |
 
 ## 守ること（全 Phase）
 
@@ -63,7 +63,18 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 - directory を跨ぐ include は、tree の慣習どおり repo の root からの path で書く（`#include "userland/desktop/wayland/zwl.h"`。build に `-I.` がある）。
 - 新しい code・移した code には [coding-style.md](../coding-style.md) の全文を適用する。
 - 試験は amd64 の QEMU。実機（5330）の試験はこの WS では行わない（GPU の扱いの意味を変えないため）。
-- 他の WS の試験の script が移した file の path を持っているときは、path だけを直す（その WS の記録は変えない）。
+- 他の WS の試験の script（`plan/wsNNN/tests/`）と `plan/tools/` の file の変更は **main が当てる**（AGENTS.md の subagent の修正可能範囲）。用意した patch は
+  `git apply --include='plan/*'`（main）と `--exclude='plan/*'`（subagent）で分けて当てられる。他の WS の記録（`plan/**/*.md`）は変えない。
+
+## 用意してある資料（2026-10-01 の survey）
+
+この WS の Phase は、**実行する agent が調べ物をしなくて済むように**、正確な編集と command を用意してある。
+
+| 資料 | 中身 |
+| --- | --- |
+| [commands.md](commands.md) | zedBSD の build と回帰の正確な command（build と warning の数え方、sysroot、boot test、compositor の基準、GPU の境界の試験、Settings・音）と、守ること（image の build を同時に走らせない、BUILD・OUTPUT の引数を必ず渡す） |
+| [patches/](patches/) | p001（sysroot.mk と path の参照 44 file）・p002・p003・p007 の patch。survey が copy の tree で順に当て、build・host の試験・文字列の同一を確かめた |
+| [edits-compositor.md](edits-compositor.md) | p004〜p006 の compositor の編集の正確な手順（行番号・移す関数・新しい code）と、survey で見つけた phase.md の誤りへの Q1 の決定 |
 
 ## Phase
 
@@ -79,6 +90,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | [ws104-p008](phase008/phase.md) | 規約の全文の見直し、境界の確かめの script、回帰 | planned | p001〜p007 |
 
 依存の図: p001 → p002 → p003 ─┐、p001 → p004 → p005 → p006 ─┴→ p007 → p008。p002〜p003 の列と p004〜p006 の列は別の file を触るので、別の agent が同時に進めてよい。
+**ただし image の build（`disk-image` と試験の image）は同時に 1 つだけ**（[commands.md](commands.md) §0）。並べるのは編集と host の試験までで、guest の回帰は順に流す。
 
 ## 実行の体制
 

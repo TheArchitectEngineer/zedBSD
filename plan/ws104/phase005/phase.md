@@ -82,30 +82,32 @@ void zwl_input_probe(struct zwl_server *server, int descriptor, const char *path
 `zwl.h:44` の `#include <uapi/input.h>` を `#include "userland/desktop/wayland/zwl-evdev.h"` に置き換える（zwl.h が同じ directory の header を `"zwl-gpu.h"` の形で
 読んでいるなら、その形に合わせて `"zwl-evdev.h"` でよい。`zedbsd/` の中の file は root からの path で読む）。
 
-## 手順
+## 手順（`<W>` は `ws104-p005`）
 
-1. `zwl-evdev.h`・`zwl-input.h` を作り、zwl.h を直す。
-2. `zedbsd/input-zedbsd.c` を作り、上の関数を input.c から移す（中身は変えない）。input.c の `probe_device` の分類の部分を `zwl_input_probe` にする。
-3. tablet.c・touch.c の `read_axes` の ioctl の行を置き換える。`<sys/ioctl.h>` の include が要らなくなったら消す。
-4. `Makefile` の `KEILAND_ZEDBSD_SOURCES` に `zedbsd/input-zedbsd.c` を足す。
-5. 共通の source に device に触る呼び出しが残っていないことを確かめる:
+**正確な編集（行・code）は [edits-compositor.md](../edits-compositor.md) の「P005」にある。** survey で決めた差:
+
+- `input.c` の `close()` は、`zwl_input_close`・`zwl_input_cleanup` だけでなく 195・491・1030・1043・1090・1103 行も全て `zwl_input_device_close(server, fd)` にする
+  （Linux の logind では device を返す必要があるため。zedBSD では同じ `close()`）。
+- `struct input_capabilities` は `zwl-input.h` の `struct zwl_input_caps` になる。
+
+1. 編集する（edits-compositor.md の P005）。
+2. 残りが無いこと:
    ```
-   grep -n 'ioctl(\|EVIOC\|opendir\|"/dev/input' userland/desktop/wayland/*.c
+   grep -n 'ioctl(\|EVIOC\|opendir\|"/dev/input' userland/desktop/wayland/*.c | wc -l      # 0（zedbsd/ の中は対象の外）
+   grep -rn '#include <uapi/input.h>' userland/desktop/wayland                               # zwl-evdev.h の 1 行だけ
+   grep -n '\bclose(' userland/desktop/wayland/input.c userland/desktop/wayland/tablet.c userland/desktop/wayland/touch.c | wc -l   # 0
    ```
-   0 件（`zedbsd/` の中は対象の外）。`grep -rn 'uapi/input.h' userland/desktop/wayland` が `zwl-evdev.h` の 1 件だけ。
-
-## 確かめ
-
-1. build、warning 0。
-2. compositor の基準: `criteria.sh ... C1 C2 C9`（C9 に p053 の touch の注入の試験が入っている）。
-3. tablet: `plan/ws035/tests/zdesktop-p059.sh`（tablet の試験。使い方は script の先頭）。
-4. 入力の追加と抜き（hotplug）: 試験の中で QEMU の device を `device_add`・`device_del`（QMP）して、pointer が使えるようになる・seat の capability が変わることを、
-   既存の試験に同じ物があればそれで、無ければ「未実施」と書く（再走査の code は移しただけで、中身を変えていない）。
-5. boot test。
+3. build と warning の数え（[commands.md](../commands.md) §1）。
+4. compositor の基準（commands.md §5）: results.txt が全て PASS（C9 に `p053` の touch の注入が入っている）。
+5. glass の見た目と pointer（commands.md §7、`zdesktop-p059.sh`）: `p059: PASS`。
+6. pen（tablet の protocol）: `plan/ws079/tests/notes-pen.sh`（notes の image。使い方は script の先頭）: PASS。
+7. 入力の追加と抜き（hotplug）: 既存の試験に無いので「未実施」と書いてよい（再走査の code は移しただけで中身を変えていない）。
+8. boot test（`OUTPUT=build/ws104-p005/boot`）。
+9. commit: `git commit -m WIP -- userland/desktop/wayland`
 
 ## 完了の条件
 
-- 手順 5 の grep が条件どおり。確かめ 1・2・3・5 が PASS、4 は PASS か理由つきの未実施。
+- 手順 2 の 3 つが条件どおり、手順 3〜6・8 が PASS、7 は未実施でよい（理由を書く）。
 
 ## 結果
 

@@ -29,7 +29,7 @@ FreeBSD は範囲の外（[F-065](../future/F-065-keiland-portable.md) に残す
 distribution の規則は無視する。Vulkan は我々の WSI を持つ libvulkan から system の libvulkan に chain する）。2026-10-01 にユーザーが「Linux移植を進めます」と言い、
 Q1 と手順を検討して、次の「決定と理由」を確定した。zedBSD の上での準備（OS の部分を module に閉じる）は [WS104](../ws104/ws.md) が行う。
 
-**仕組みの詳細は [design.md](design.md)。** 特に libvulkan-compat（§4）は、Vulkan の dispatch・ELF の名前の解決・Wayland の dma-buf の知識が要る難しい部分なので、
+**仕組みの詳細は [design.md](design.md)（2026-10-01 の改訂 2: survey と design-reviewer の結果を入れた）。** 特に libvulkan-compat（§4）は、Vulkan の dispatch・ELF の名前の解決・Wayland の dma-buf の知識が要る難しい部分なので、
 触る agent は §4 を全部読んでから始める。
 
 ## 決定と理由（2026-10-01 ユーザーとの検討）
@@ -51,7 +51,7 @@ Q1 と手順を検討して、次の「決定と理由」を確定した。zedBS
 | D7 | libvulkan-compat は zedBSD の `userland/desktop/libvulkan/` の source を共有しない（読んで手本にするのはよい） | zedBSD の libvulkan は Venus・i915 の driver そのもので、WSI も kernel の handle・`internal.h` の struct に深く結び付いている。共有の境界を作る費用が、新しく書く費用より大きい | 2026-10-01 Q1 の判断（委ねられた技術の範囲。ユーザーに示し、異議なし） |
 | D8 | compositor の画面の出力: libvulkan-compat が **KMS を直接使って VK_KHR_display を実装**する（後段の VK_KHR_display は使わない）。DRM の fd は compositor の seat の backend が得て、規格の `VK_EXT_acquire_drm_display`（`vkGetDrmDisplayEXT`・`vkAcquireDrmDisplayEXT`）で渡す | ベンダーの libvulkan は VK_KHR_display を持たないことが多い。「後段の WSI は使わない」（D5）と一貫する。gdm の下では compositor は利用者として動き、DRM の device は logind からしか得られないので、fd を Vulkan に渡す規格の道が要る。F-065 の未決 2 の (a)（2026-10-01 ユーザー了承） | 2026-10-01 ユーザー |
 | D9 | KMS は Linux の kernel の DRM の ioctl を直接使い、libdrm に link しない。DRM の header は linux-libc-dev の `<drm/*.h>`（MIT） | 依存を減らす（組み込みで libdrm が無い・古いことがある）。使う ioctl は 12 個ほどで小さい | 2026-10-01 Q1 の判断（委ねられた技術の範囲） |
-| D10 | 後段との名前の衝突は、`RTLD_LOCAL`・再入の検出（`abort`）・環境変数で選ぶ `RTLD_DEEPBIND` で扱い、使う後段ごとに `LD_DEBUG=bindings` で確かめる | F-065 の未決 1。2026-09-30 の host の試験で、gcc の既定の build の library では後段が先に載った同名の関数に結び付いた。Khronos の loader は `-Bsymbolic` かもしれないが未確認 | 2026-09-30 ユーザー「作業時に確かめる点として記録します」 |
+| D10 | **後段を `RTLD_DEEPBIND` で開く（glibc の既定、`KEILAND_VULKAN_NO_DEEPBIND=1` で外せる）**。加えて、I の関数の後段の版は `dlsym` の pointer だけで呼び、同じ関数への再入を検出して `abort` する。我々の library は `-Wl,-Bsymbolic` で link する | F-065 の未決 1（2026-09-30 ユーザー「作業時に確かめる点として記録します」）。2026-10-01 の計画の初版は「DEEPBIND は opt-in」だったが、design-reviewer と survey の実験で、Debian の Khronos の loader（`-Bsymbolic` 無し）は自分の `vk*` の address を 269 個の relocation で取っていて、我々の library が先に載ると 215 個が我々の関数に結び付き、loader の `vkGetInstanceProcAddr` が我々の関数を返し、loader の中から我々の関数が実際に呼ばれることが分かった。`RTLD_DEEPBIND` で 0 になる（確かめ済み）ので既定にした（design §4.11）。外すのは、app が malloc などを preload で差し替える場合のため | 2026-10-01 Q1 の判断（委ねられた技術の範囲。実験の証拠による初版の改訂） |
 | D11 | sessiond は Linux に移植しない。**gdm から `/opt/keiland/bin/wayland` が起動されればよい** | ユーザーの指定（2026-10-01 Q1「問題ないか」の確かめ: compositor は sessiond 無しで画面を取る道を既に持つ（`handoff.c`）。gdm の下では compositor が利用者として動くので、DRM と入力の device を logind の `TakeDevice` で得る seat の backend が要る。Log Out は compositor の終了（gdm が greeter に戻す）。session の中の Shut Down は zedBSD にも無い（greeter だけが持つ）ので、Linux では gdm の greeter に任せる（2026-10-01 の計画で Q1 が具体化）。gdm に見せる `/usr/share/wayland-sessions/keiland.desktop` は `/opt/keiland` の外の唯一の file） | 2026-10-01 ユーザー |
 | D12 | logind とは D-Bus を自前の最小の実装で話す（libsystemd・libdbus に link しない） | libsystemd・libelogind は LGPL で、F-065 の「全て再実装する」に合わない。使う method は `GetSession`・`TakeControl`・`TakeDevice`・`ReleaseDevice`・`PauseDeviceComplete` と signal の `PauseDevice`・`ResumeDevice` だけ | 2026-10-01 Q1 の判断（ユーザーの「全て再実装」の方針、F-065 の決定 6 から） |
 | D13 | 開発の最初は root で text console から起動する（`seat-direct`）。gdm（`seat-logind`）は後の Phase | 権限の仕組みを後に回し、画面・入力・buffer を先に確かめる。組み込みの Linux（logind が無い）でも `seat-direct` を使う | 2026-10-01 Q1 の提案（ユーザーに示し、異議なし） |
@@ -64,7 +64,9 @@ Q1 と手順を検討して、次の「決定と理由」を確定した。zedBS
 | D20 | libvulkan-compat の画面の出力は、最初は「複写の道」（後段の image → host の buffer → KMS の dumb buffer）。複写しない道は後で | 全ての後段（lavapipe のように DRM と関係の無い software の Vulkan、ベンダーの libvulkan）で動く。QEMU の試験の host は lavapipe だけ | 2026-10-01 Q1 の判断（委ねられた技術の範囲） |
 | D21 | WS105 で Linux に持って行く app: compositor、Terminal・Files・Settings・Notes・Text Editor・Image Viewer・PDF Viewer・IME・kuidemo・mview と試験の app（vkdemo・wltest・wlshm）。browser・xserver・EGL/GLES は範囲の外 | browser（133 file、openssl）と xserver・EGL/GLES は依存が大きく、移植の仕組みを確かめるのに要らない | 2026-10-01 Q1 の判断（範囲の具体化） |
 | D22 | Linux の compositor は、自分の frame の fence を fd にしない（`vkGetFenceStatus` の poll の道） | Linux の SYNC_FD の fence の export は fence を reset する（規格の副作用）ので、今の `zwl_compose_complete` の `vkWaitForFences` と合わない。OPAQUE_FD は後段によっては無い | 2026-10-01 Q1 の判断 |
-| D23 | Linux の試験は host（libvulkan-compat の chain と WSI、試験用の Wayland server）と QEMU の Debian 13 の guest（compositor・app・gdm・WiFi・音）で行う。host の画面と入力の device は触らない | host は server（Matrox、3D 無し、Vulkan は lavapipe だけ）。guest なら root で DRM master を取り、gdm を入れてよい | 2026-10-01 Q1 の判断 |
+| D23 | Linux の試験は host（libvulkan-compat の chain と WSI、試験用の Wayland server）と QEMU の Debian 13 の guest（compositor・app・gdm・WiFi・音）で行う。host の画面と入力の device は触らない | host は server（Matrox、3D 無し、Vulkan は lavapipe だけ）。guest なら root で DRM master を取り、gdm を入れてよい | 2026-10-01 Q1 の判断。survey: guest の Venus は host の render node を要るので使わない。guest の image は root 無しで作れる（mmdebstrap の unshare）。試験の QEMU は起動ごとに overlay の qcow2 で、共有の image を書かない（design §7.2） |
+| D24 | Linux の build の flag に `-Wno-format-truncation` を入れる。gcc だけの他の警告（`-Wmaybe-uninitialized` の誤検出）は、共通の code に初期値を入れて直す | 2026-10-01 の host の試しの compile で、gcc 14 は表示の文字列の切れの警告を 10 箇所出した（clang 19 は 0）。文字列は意図して切っている。`-Wmaybe-uninitialized` は clang が option を知らないので flag で抑えられない（2 箇所、design §3.5） | 2026-10-01 Q1 の判断（委ねられた技術の範囲） |
+| D25 | **Linux の guest の起動の確かめは、SSH が通ることと QMP の `screendump` の PNG で行う**（`plan/tools/boot-test.sh` は使わない）。serial の log は判定に使わない | AGENTS.md の「起動の確認は boot-test.sh だけ」は zedBSD の image の UEFI の起動の物で、Linux の guest（QEMU の direct kernel boot）には使えない。**ユーザーの確認を待つ**（2026-10-01 の design-reviewer の指摘: AGENTS.md の規則の読み替えに当たる） | 2026-10-01 Q1 の提案（ユーザーの確認待ち） |
 
 ## 達成基準
 
@@ -92,13 +94,18 @@ Q1 と手順を検討して、次の「決定と理由」を確定した。zedBS
 - host に package を入れるとき（sudo、AGENTS.md で許可）は、Phase の結果に何を入れたかを書く。host の `/opt/keiland` には install しない（`DESTDIR` の tree を使う）。
 - 証拠は host・guest（QEMU）を分けて書く。やっていない確かめは「未実施」と書く。PNG はユーザーに見せる。
 - 外部の source（wpa_supplicant の `wpa_ctrl.c`、Mesa、weston など）は読んで手本にしてよいが、複写しない（license を混ぜない）。
+- **host での試験の command には全て `KEILAND_DRM_DEVICE=none` を付け、`WAYLAND_DISPLAY`・`DISPLAY` を外す**（host の画面の DRM の device を開かないため。design §4.9・§7.1）。
+- 全ての試験の command に `timeout` で上限を付ける（固まった client で agent が止まらないように）。
+- `plan/tools/keiland-linux/` の道具と他の WS の file は main が merge する（subagent は自分の worktree で作り、main に送る）。
+- 試験の guest は `guest.sh` が起動ごとに作る overlay で動かす。共有の `build/keiland-linux/guest/guest.img` を消さない・書かない（AGENTS.md の共有の build の規則）。
+- 実験の code の手本は [survey/](survey/README.md)（2026-10-01 の survey が host で通した物）。
 
 ## Phase
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [ws105-p001](phase001/phase.md) | Linux の試験の guest（QEMU の Debian 13）と操作の道具 | planned | なし |
-| [ws105-p002](phase002/phase.md) | build の土台（`keiland-linux.mk`・top-level の goal・library の `Makefile.linux`・ELF と source の一覧の確かめ） | planned | WS104 の p001・p003・p007 |
+| [ws105-p002](phase002/phase.md) | build の土台（`keiland-linux.mk`・top-level の goal・library の `Makefile.linux`・ELF・source の一覧・header の漏れの確かめ） | planned | WS104 の p001・p003 |
 | [ws105-p003](phase003/phase.md) | libvulkan-compat (1): 後段への chain（WSI 無し） | planned | p002 |
 | [ws105-p004](phase004/phase.md) | libvulkan-compat (2): Wayland の WSI（`zwp_linux_dmabuf_v1`、implicit sync） | planned | p003 |
 | [ws105-p005](phase005/phase.md) | libvulkan-compat (3): 画面の WSI（KMS、VK_KHR_display、VK_EXT_acquire_drm_display） | planned | p004、p001 |
@@ -113,13 +120,13 @@ Q1 と手順を検討して、次の「決定と理由」を確定した。zedBS
 
 ```
 p001 ──────────────────────────────┐
-WS104 p001・p003・p007 → p002 → p003 → p004 → p005 → p006（WS104 の完了も前提）→ p007 → p008 ┬→ p009 ┐
+WS104 p001・p003 → p002 → p003 → p004 → p005 → p006（WS104 の完了も前提）→ p007 → p008 ┬→ p009 ┐
                                                                                          └→ p010 ┴→ p011
 ```
 
 ## 実行の体制
 
-- p001・p002・p003 は、WS104 と並行して始めてよい（p001 は依存が無い。p002 は WS104 の p001・p003・p007 の後）。
+- p001 は今すぐ、p002・p003・p004 は WS104 の p001・p003 の後に、WS104 の残りと並行して進めてよい（p002〜p004 は host だけで閉じる）。p006 以降は WS104 の完了の後。
 - libvulkan-compat（p003〜p005）と compositor（p006〜p007）、logind（p009）は phase-runner（high）。app の build（p008）と libkeiland の backend（p010）は
   phase-runner（high）か phase-runner-mid。
 - 各 Phase の agent は、始める前に「決定と理由」・design.md の §0〜§3 と、その Phase が名指す節を読む。

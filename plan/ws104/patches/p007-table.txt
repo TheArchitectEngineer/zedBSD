@@ -1,0 +1,183 @@
+userland/desktop/pdfviewer/main.c:37
+  OLD: #define MAIN_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define MAIN_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/pdfviewer/main.c:40
+  OLD: #define MAIN_NOTES<TAB><TAB>"/bin/notes"
+  NEW: #define MAIN_NOTES<TAB><TAB>KEILAND_BINDIR "/notes"
+userland/desktop/wayland/input-method.c:53
+  OLD: #define IME_PROGRAM<TAB><TAB><TAB>"/usr/libexec/keiland-ime"
+  NEW: #define IME_PROGRAM<TAB><TAB><TAB>KEILAND_LIBEXECDIR "/keiland-ime"
+userland/desktop/wayland/home.c:71
+  OLD: #define HOME_APPS_PATH<TAB><TAB>"/etc/keiland/apps.conf"
+  NEW: #define HOME_APPS_PATH<TAB><TAB>KEILAND_SYSCONFDIR "/keiland/apps.conf"
+userland/desktop/wayland/home.c:78
+  OLD: #define HOME_BROWSER_START<TAB>"/usr/share/browser/start.html"
+  NEW: #define HOME_BROWSER_START<TAB>KEILAND_DATADIR "/browser/start.html"
+userland/desktop/wayland/home.c:891
+  OLD: <TAB><TAB>home_add_app("Terminal", "/bin/terminal", "term shell console sh", 0x323a4eU, "terminal");
+  NEW: <TAB><TAB>home_add_app("Terminal", KEILAND_BINDIR "/terminal", "term shell console sh", 0x323a4eU, "terminal");
+userland/desktop/wayland/home.c:892
+  OLD: <TAB><TAB>home_add_app("Model viewer", "/bin/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
+  NEW: <TAB><TAB>home_add_app("Model viewer", KEILAND_BINDIR "/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
+userland/desktop/wayland/home.c:893
+  OLD: <TAB><TAB>home_add_app("Vulkan test", "/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U, "");
+  NEW: <TAB><TAB>home_add_app("Vulkan test", KEILAND_BINDIR "/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U, "");
+userland/desktop/wayland/home.c:894
+  OLD: <TAB><TAB>home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU, "");
+  NEW: <TAB><TAB>home_add_app("Shared memory", KEILAND_BINDIR "/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU, "");
+userland/desktop/wayland/home.c:895
+  OLD: <TAB><TAB>home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
+  NEW: <TAB><TAB>home_add_app("X terminal", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
+userland/desktop/wayland/home.c:896
+  OLD: <TAB><TAB>home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
+  NEW: <TAB><TAB>home_add_app("Gears", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
+userland/desktop/wayland/home.c:897
+  OLD: <TAB><TAB>home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
+  NEW: <TAB><TAB>home_add_app("Files", KEILAND_BINDIR "/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
+userland/desktop/wayland/home.c:898
+  OLD: <TAB><TAB>home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
+  NEW: <TAB><TAB>home_add_app("Notes", KEILAND_BINDIR "/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
+userland/desktop/wayland/home.c:899
+  OLD: <TAB><TAB>home_add_app("PDF Viewer", "/bin/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
+  NEW: <TAB><TAB>home_add_app("PDF Viewer", KEILAND_BINDIR "/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
+userland/desktop/wayland/home.c:900
+  OLD: <TAB><TAB>home_add_app("Image Viewer", "/bin/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
+  NEW: <TAB><TAB>home_add_app("Image Viewer", KEILAND_BINDIR "/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
+userland/desktop/wayland/home.c:901
+  OLD: <TAB><TAB>home_add_app("Text Editor", "/bin/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
+  NEW: <TAB><TAB>home_add_app("Text Editor", KEILAND_BINDIR "/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
+userland/desktop/wayland/home.c:902
+  OLD: <TAB><TAB>home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
+  NEW: <TAB><TAB>home_add_app("Browser", KEILAND_BINDIR "/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
+userland/desktop/wayland/corner.c:84
+  OLD: #define CORNER_PROGRAM<TAB><TAB>"/bin/notes"
+  NEW: #define CORNER_PROGRAM<TAB><TAB>KEILAND_BINDIR "/notes"
+userland/desktop/wayland/corner.c:85
+  OLD: #define CORNER_COMMAND<TAB><TAB>"/bin/notes --fullscreen"
+  NEW: #define CORNER_COMMAND<TAB><TAB>KEILAND_BINDIR "/notes --fullscreen"
+userland/desktop/wayland/main.c:69
+  OLD: <TAB>server.font_path = "/usr/share/fonts/keiland.ttf";
+  NEW: <TAB>server.font_path = KEILAND_DATADIR "/fonts/keiland.ttf";
+userland/desktop/wayland/main.c:70
+  OLD: <TAB>server.fallback_font_path = "/usr/share/fonts/keiland-fallback.ttf";
+  NEW: <TAB>server.fallback_font_path = KEILAND_DATADIR "/fonts/keiland-fallback.ttf";
+userland/desktop/wayland/desktop.c:63
+  OLD: #define DESKTOP_COMMAND<TAB><TAB><TAB>"/bin/files --desktop"
+  NEW: #define DESKTOP_COMMAND<TAB><TAB><TAB>KEILAND_BINDIR "/files --desktop"
+userland/desktop/wayland/desktop.c:64
+  OLD: #define DESKTOP_SWITCH<TAB><TAB><TAB>"/etc/keiland/desktop"
+  NEW: #define DESKTOP_SWITCH<TAB><TAB><TAB>KEILAND_SYSCONFDIR "/keiland/desktop"
+userland/desktop/files/apps.c:53
+  OLD: #define APPS_SYSTEM_LIST<TAB>"/etc/keiland/open-with"
+  NEW: #define APPS_SYSTEM_LIST<TAB>KEILAND_SYSCONFDIR "/keiland/open-with"
+userland/desktop/files/apps.c:57
+  OLD: #define APPS_TERMINAL<TAB><TAB>"/bin/terminal"
+  NEW: #define APPS_TERMINAL<TAB><TAB>KEILAND_BINDIR "/terminal"
+userland/desktop/files/apps.c:99
+  OLD: <TAB>{ "application/pdf", "PDF Viewer", "/bin/pdfviewer %f", "pdfviewer" },
+  NEW: <TAB>{ "application/pdf", "PDF Viewer", KEILAND_BINDIR "/pdfviewer %f", "pdfviewer" },
+userland/desktop/files/apps.c:100
+  OLD: <TAB>{ APPS_IMAGE_TYPES, "Image Viewer", "/bin/imageview %f", "imageview" },
+  NEW: <TAB>{ APPS_IMAGE_TYPES, "Image Viewer", KEILAND_BINDIR "/imageview %f", "imageview" },
+userland/desktop/files/apps.c:102
+  OLD: <TAB>{ "text/html", "Browser", "/bin/browser %f", "browser" },
+  NEW: <TAB>{ "text/html", "Browser", KEILAND_BINDIR "/browser %f", "browser" },
+userland/desktop/files/apps.c:103
+  OLD: <TAB>{ APPS_TEXT_TYPES, "Text Editor", "/bin/textedit %f", "textedit" },
+  NEW: <TAB>{ APPS_TEXT_TYPES, "Text Editor", KEILAND_BINDIR "/textedit %f", "textedit" },
+userland/desktop/wayland/glass.c:65
+  OLD: #define GLASS_EMOJI_FONT<TAB>"/usr/share/fonts/keiland-emoji.ttf"
+  NEW: #define GLASS_EMOJI_FONT<TAB>KEILAND_DATADIR "/fonts/keiland-emoji.ttf"
+userland/desktop/files/ui-desktop-actions.c:38
+  OLD: #define DESKTOP_FILES<TAB><TAB>"/bin/files"
+  NEW: #define DESKTOP_FILES<TAB><TAB>KEILAND_BINDIR "/files"
+userland/desktop/files/ui-desktop-actions.c:39
+  OLD: #define DESKTOP_SETTINGS<TAB>"/bin/settings"
+  NEW: #define DESKTOP_SETTINGS<TAB>KEILAND_BINDIR "/settings"
+userland/desktop/files/files.h:54
+  OLD: #define FM_WALLPAPER<TAB><TAB>"/usr/share/keiland/wallpaper.ppm"
+  NEW: #define FM_WALLPAPER<TAB><TAB>KEILAND_DATADIR "/keiland/wallpaper.ppm"
+userland/desktop/files/ui-desktop.c:86
+  OLD: #define DESKTOP_FILES<TAB><TAB>"/bin/files"
+  NEW: #define DESKTOP_FILES<TAB><TAB>KEILAND_BINDIR "/files"
+userland/desktop/files/main.c:30
+  OLD: #define MAIN_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define MAIN_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/files/main.c:31
+  OLD: #define MAIN_FALLBACK_FONT<TAB>"/usr/share/fonts/keiland-fallback.ttf"
+  NEW: #define MAIN_FALLBACK_FONT<TAB>KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+userland/desktop/files/main.c:40
+  OLD: #define MAIN_PROGRAM<TAB><TAB>"/bin/files"
+  NEW: #define MAIN_PROGRAM<TAB><TAB>KEILAND_BINDIR "/files"
+userland/desktop/mview/main.c:22
+  OLD: #define MAIN_DEFAULT_MODEL<TAB>"/usr/share/mview/qs40"
+  NEW: #define MAIN_DEFAULT_MODEL<TAB>KEILAND_DATADIR "/mview/qs40"
+userland/desktop/settings/main.c:29
+  OLD: #define MAIN_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define MAIN_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/settings/main.c:30
+  OLD: #define MAIN_FALLBACK_FONT<TAB>"/usr/share/fonts/keiland-fallback.ttf"
+  NEW: #define MAIN_FALLBACK_FONT<TAB>KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+userland/desktop/settings/look.c:55
+  OLD: #define LOOK_DEFAULT_PICTURE<TAB>"/usr/share/keiland/wallpaper.ppm"
+  NEW: #define LOOK_DEFAULT_PICTURE<TAB>KEILAND_DATADIR "/keiland/wallpaper.ppm"
+userland/desktop/settings/look.c:56
+  OLD: #define LOOK_PICTURES<TAB><TAB>"/usr/share/keiland/wallpapers"
+  NEW: #define LOOK_PICTURES<TAB><TAB>KEILAND_DATADIR "/keiland/wallpapers"
+userland/desktop/ime/main.c:28
+  OLD: #define MAIN_SYSTEM_DICTIONARY<TAB><TAB>"/usr/share/kei/ime/ja/SKK-JISYO.X"
+  NEW: #define MAIN_SYSTEM_DICTIONARY<TAB><TAB>KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.X"
+userland/desktop/ime/main.c:29
+  OLD: #define MAIN_SUPPLEMENT_DICTIONARY<TAB>"/usr/share/kei/ime/ja/SKK-JISYO.kei"
+  NEW: #define MAIN_SUPPLEMENT_DICTIONARY<TAB>KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.kei"
+userland/desktop/notes/main.c:66
+  OLD: #define MAIN_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define MAIN_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/libkeiui/chooser.c:36
+  OLD: #define CHOOSER_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define CHOOSER_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/libkeiui/chooser.c:37
+  OLD: #define CHOOSER_FALLBACK_FONT<TAB>"/usr/share/fonts/keiland-fallback.ttf"
+  NEW: #define CHOOSER_FALLBACK_FONT<TAB>KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+userland/desktop/xserver/server.c:35
+  OLD: #define SERVER_FONT_PATH<TAB>"/usr/share/fonts/keiland-mono.ttf"
+  NEW: #define SERVER_FONT_PATH<TAB>KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+userland/desktop/browser/main.c:65
+  OLD: #define MAIN_START_PAGE<TAB><TAB>"/usr/share/browser/start.html"
+  NEW: #define MAIN_START_PAGE<TAB><TAB>KEILAND_DATADIR "/browser/start.html"
+userland/desktop/browser/text/text.h:38
+  OLD: #define TEXT_DEFAULT_SANS<TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define TEXT_DEFAULT_SANS<TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/browser/text/text.h:39
+  OLD: #define TEXT_DEFAULT_MONO<TAB>"/usr/share/fonts/keiland-mono.ttf"
+  NEW: #define TEXT_DEFAULT_MONO<TAB>KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+userland/desktop/browser/text/text.h:40
+  OLD: #define TEXT_DEFAULT_FALLBACK<TAB>"/usr/share/fonts/keiland-fallback.ttf"
+  NEW: #define TEXT_DEFAULT_FALLBACK<TAB>KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+userland/desktop/textedit/main.c:35
+  OLD: #define MAIN_FONT<TAB><TAB>"/usr/share/fonts/keiland-mono.ttf"
+  NEW: #define MAIN_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+userland/desktop/textedit/main.c:36
+  OLD: #define MAIN_FALLBACK_FONT<TAB>"/usr/share/fonts/keiland-fallback.ttf"
+  NEW: #define MAIN_FALLBACK_FONT<TAB>KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+userland/desktop/textedit/main.c:37
+  OLD: #define MAIN_UI_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define MAIN_UI_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/textedit/textedit.h:211
+  OLD: #define TE_TEXT_EMOJI<TAB><TAB>"/usr/share/fonts/keiland-emoji.ttf"
+  NEW: #define TE_TEXT_EMOJI<TAB><TAB>KEILAND_DATADIR "/fonts/keiland-emoji.ttf"
+userland/desktop/terminal/main.c:46
+  OLD: #define MAIN_FONT<TAB><TAB>"/usr/share/fonts/keiland-mono.ttf"
+  NEW: #define MAIN_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+userland/desktop/terminal/main.c:60
+  OLD: #define MAIN_PROGRAM<TAB><TAB>"/bin/terminal"
+  NEW: #define MAIN_PROGRAM<TAB><TAB>KEILAND_BINDIR "/terminal"
+userland/desktop/imageview/main.c:33
+  OLD: #define MAIN_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define MAIN_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/kuidemo/main.c:32
+  OLD: #define DEMO_FONT<TAB><TAB>"/usr/share/fonts/keiland.ttf"
+  NEW: #define DEMO_FONT<TAB><TAB>KEILAND_DATADIR "/fonts/keiland.ttf"
+userland/desktop/kuidemo/main.c:33
+  OLD: #define DEMO_FALLBACK_FONT<TAB>"/usr/share/fonts/keiland-fallback.ttf"
+  NEW: #define DEMO_FALLBACK_FONT<TAB>KEILAND_DATADIR "/fonts/keiland-fallback.ttf"

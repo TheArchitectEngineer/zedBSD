@@ -1,0 +1,156 @@
+diff --git a/userland/desktop/keiland/keiland.h b/userland/desktop/keiland/keiland.h
+index fc888b3..208ae38 100644
+--- a/userland/desktop/keiland/keiland.h
++++ b/userland/desktop/keiland/keiland.h
+@@ -45,8 +45,8 @@
+ extern "C" {
+ #endif
+ 
+-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode). */
+-#define KEILAND_VERSION	20U
++/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs). */
++#define KEILAND_VERSION	21U
+ 
+ /*
+  * Reports the interface version of the library that was loaded.
+@@ -1244,6 +1244,14 @@ int keiland_audio_set_volume(struct keiland_audio *audio, unsigned left, unsigne
+  */
+ int keiland_audio_feedback(struct keiland_audio *audio);
+ 
++/*
++ * Tells whether the sound service runs (KEILAND_VERSION 21): 1 when it
++ * does, 0 when it does not.  It does not connect to the service and does
++ * not wait; a service that runs may still have no sound device
++ * (struct keiland_audio_state's device).
++ */
++int keiland_audio_available(void);
++
+ /*
+  * The keyboard inset (KEILAND_VERSION 18, ws102-p015).
+  *
+diff --git a/userland/desktop/libkeiland/audio.c b/userland/desktop/libkeiland/audio.c
+index 7a5c56f..751c9b8 100644
+--- a/userland/desktop/libkeiland/audio.c
++++ b/userland/desktop/libkeiland/audio.c
+@@ -28,6 +28,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <sys/socket.h>
++#include <sys/stat.h>
+ #include <sys/un.h>
+ #include <time.h>
+ #include <unistd.h>
+@@ -239,6 +240,31 @@ keiland_audio_feedback(
+ 	return 0;
+ }
+ 
++/*
++ * Tells whether audiod runs: 1 when its socket is there, 0 when it is not.
++ * Nothing connects and nothing waits; an audiod that runs may still have no
++ * sound device (keiland_audio_state's device).
++ */
++int
++keiland_audio_available(
++	void)
++{
++	struct stat status;
++	int result;
++
++	/* audiod's socket; one that is not there is audiod not running. */
++	result = stat(AUDIO_SOCKET_PATH, &status);
++	if (result != 0)
++		return 0;
++
++	/* Only a socket counts. */
++	if ((status.st_mode & S_IFMT) != S_IFSOCK)
++		return 0;
++
++	/* audiod is there. */
++	return 1;
++}
++
+ /* Connects to audiod, says HELLO and SUBSCRIBE; returns 0 or an errno value. */
+ static int
+ audio_connect(
+diff --git a/userland/desktop/settings/look.c b/userland/desktop/settings/look.c
+index 5d2a04e..3bed1fb 100644
+--- a/userland/desktop/settings/look.c
++++ b/userland/desktop/settings/look.c
+@@ -48,9 +48,6 @@
+ #define LOOK_DELAY_MAX		1000
+ #define LOOK_DELAY_DEFAULT	400
+ 
+-/* Where the sound service listens (userland/base/audiod/protocol.h). */
+-#define LOOK_SOUND_SOCKET	"/run/audiod.sock"
+-
+ /* The pictures: the default (the session's --wallpaper) and the folder of the others. */
+ #define LOOK_DEFAULT_PICTURE	"/usr/share/keiland/wallpaper.ppm"
+ #define LOOK_PICTURES		"/usr/share/keiland/wallpapers"
+@@ -219,29 +216,6 @@ se_look_set_number(
+ 	se_log("LOOK set key=%s value=%d error=%d", key, value, error);
+ }
+ 
+-/*
+- * Tells whether the sound service is running (its socket is there).
+- */
+-int
+-se_look_sound(
+-	void)
+-{
+-	struct stat status;
+-	int result;
+-
+-	/* The service's socket. */
+-	result = stat(LOOK_SOUND_SOCKET, &status);
+-	if (result != 0)
+-		return 0;
+-
+-	/* Only a socket counts. */
+-	if ((status.st_mode & S_IFMT) != S_IFSOCK)
+-		return 0;
+-
+-	/* The service is there. */
+-	return 1;
+-}
+-
+ /*
+  * Chooses a picture of the Wallpaper page by its index (the default's, or
+  * index -1 when there is no default picture, removes the key).
+diff --git a/userland/desktop/settings/page-home.c b/userland/desktop/settings/page-home.c
+index 6392981..6182095 100644
+--- a/userland/desktop/settings/page-home.c
++++ b/userland/desktop/settings/page-home.c
+@@ -275,7 +275,7 @@ home_state(
+ 		return 1;
+ 	case SE_PAGE_SOUND:
+ 		/* Whether the sound service runs. */
+-		running = se_look_sound();
++		running = keiland_audio_available();
+ 		if (running != 0) {
+ 			(void)snprintf(text, size, "%s", "Sound service running");
+ 		} else {
+diff --git a/userland/desktop/settings/page-input.c b/userland/desktop/settings/page-input.c
+index 63c520b..f081bd4 100644
+--- a/userland/desktop/settings/page-input.c
++++ b/userland/desktop/settings/page-input.c
+@@ -210,7 +210,7 @@ se_sound_draw(
+ 
+ 	/* The output's card: the service's state. */
+ 	card += height + INPUT_GAP;
+-	running = se_look_sound();
++	running = keiland_audio_available();
+ 	service = "Not running";
+ 	if (running != 0 && app->sound.state.reachable && !app->sound.state.device)
+ 		service = "Running, no sound output";
+diff --git a/userland/desktop/settings/settings.h b/userland/desktop/settings/settings.h
+index 4bf7075..526287c 100644
+--- a/userland/desktop/settings/settings.h
++++ b/userland/desktop/settings/settings.h
+@@ -748,7 +748,6 @@ void se_look_poll(struct se_app *app, uint64_t now);
+ void se_look_close(struct se_app *app);
+ void se_look_set_opacity(struct se_app *app, int percent);
+ void se_look_set_number(struct se_app *app, const char *key, int value, int fallback);
+-int se_look_sound(void);
+ void se_look_set_wallpaper(struct se_app *app, int index);
+ void se_look_scan(struct se_app *app);
+ void se_look_volumes(struct se_app *app);

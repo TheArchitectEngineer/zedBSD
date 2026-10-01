@@ -61,7 +61,7 @@ void zwl_gpu_commit(struct zwl_object *surface, struct zwl_object *buffer);
 /* The Vulkan extensions the OS module needs beyond the compositor's own: copies up to capacity names and returns how
    many there are.  zedBSD: none (0). */
 uint32_t zwl_gpu_instance_extensions(const char **names, uint32_t capacity);
-uint32_t zwl_gpu_device_extensions(const char **names, uint32_t capacity);
+uint32_t zwl_gpu_device_extensions(VkPhysicalDevice physical, const char **names, uint32_t capacity);
 
 /* The handle type the compositor's own frame fence is exported as for the main loop's poll, or 0 for none (the loop
    then polls vkGetFenceStatus).  zedBSD: VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT. */
@@ -88,48 +88,35 @@ VkResult zwl_import_adopt(struct zwl_object *buffer, VkImage image, VkDeviceMemo
 | `zedbsd/gpu-zedbsd.c` | `gpu-zedbsd.c` を `git mv` した物。中身は include の行だけ変える（`#include "userland/desktop/wayland/zedbsd/gpu-zedbsd.h"`）。**`<uapi/gpu.h>` を読むのはこの file だけのまま** |
 | `zedbsd/gpu-buffer-zedbsd.c` | `protocol.c` から移す `factory_request`（→ `zwl_gpu_request` に改名）・`factory_fence`・`factory_alpha`、`import.c` から移す `import_image` の前半（image の作成から `vkBindImageMemory` まで）と `zwl_import_create` の fd の `dup` の扱い。新しい hook（`zwl_gpu_global_interface` など）の zedBSD の実装。log の行 `ZWL IMPORT ...`・`ZWL IMPORT_ERROR ...`・`ZWL ACQUIRE_FENCE ...` は**今と同じ文字列**で、この file から出す |
 
-## 手順
+## 手順（`<W>` は `ws104-p004`）
 
-1. `mkdir userland/desktop/wayland/zedbsd`、`git mv userland/desktop/wayland/gpu-zedbsd.c userland/desktop/wayland/zedbsd/gpu-zedbsd.c`。
-2. `zedbsd/gpu-zedbsd.h` を作り、`zwl-gpu.h` の `zwl_buffer_layout` と 3 つの宣言を移す。`zwl-gpu.h` を上の「新しい境界」の形にする（注釈は今の `zwl-gpu.h` の書き方に合わせ、
-   「the boundary between the compositor and its OS's GPU module (WS103, raised by WS104 p004)」と書く）。
-3. `import.c` を 2 つに分ける: 後半を `zwl_import_adopt` として残し、前半を `zedbsd/gpu-buffer-zedbsd.c` の static な関数 `buffer_image`（名前は任意、
-   `import_image` の前半の中身そのもの）にする。error の時の後始末（作りかけの image・memory の破棄）が今と同じになるように、`import_release` が今やっている順を守る。
-4. `protocol.c`:
-   - `globals[]` の entry 3 の文字列と version は、表の中では NULL と 0 にし、`registry_events` と `bind_global` で kind が `ZWL_FACTORY` の時は
-     `zwl_gpu_global_interface()`・`zwl_gpu_global_version()` を使う（他の entry の扱いは変えない）。名前 3 と version 3 は zedBSD では今と同じになる。
-   - `zwl_dispatch` の `ZWL_FACTORY` を `zwl_gpu_request(...)` に。
-   - `factory_request`・`factory_fence`・`factory_alpha` を `zedbsd/gpu-buffer-zedbsd.c` へ移す。これらが使う protocol.c の static な関数があれば、
-     共通の関数として `zwl.h` に宣言して残すか（他の request も使う物）、一緒に移す（factory だけが使う物）。
-   - `commit_fence` の、attach された buffer が GPU の buffer（`buffer->import != NULL` かつ `buffer->shm == NULL`）の時に `zwl_gpu_commit(surface, buffer)` を呼ぶ（fences を移す前）。
-5. `objects.c` の `zwl_buffer_size` を import から読むように。`zwl.h` の `layout` の member を消す。
-6. `compose.c`:
-   - `compose_device` の instance・device の拡張の配列に、`zwl_gpu_instance_extensions`・`zwl_gpu_device_extensions` の名前を足す（配列の大きさに余裕を持たせる。zedBSD では 0 個）。
-   - frame の fence の export の handle type を `zwl_gpu_frame_fence_type()` から取る。0 なら `compose->fence_fd = 0`（今の「fence の拡張が無い device」と同じ道）。
-7. `Makefile`: `KEILAND_GPU_SOURCES` を `KEILAND_ZEDBSD_SOURCES := userland/desktop/wayland/zedbsd/gpu-zedbsd.c userland/desktop/wayland/zedbsd/gpu-buffer-zedbsd.c` に改名・変更
-   （p005・p006 でここに足していく）。`KEILAND_SOURCES` の中の参照も直す。
-8. 道具を直す（main の範囲の `plan/tools/` の物。subagent が実行するなら、直した差分を main に送って適用してもらう）:
-   - `plan/tools/gpu-boundary/v1-check.sh`: `backend=$dir/zedbsd/gpu-zedbsd.c`。`$dir/*.c $dir/*.h` の glob を `$dir` 以下の全て（`find $dir -name '*.[ch]'`）に。
-     `KEILAND_GPU_SOURCES` の名前を読んでいれば新しい名前に。
-   - `plan/tools/gpu-boundary/run-gpu-zedbsd-host.sh`: compile する file を `userland/desktop/wayland/zedbsd/gpu-zedbsd.c` に、`-I.`（repo の root）を足す。
-     `gpu-zedbsd-host.c` が `zwl-gpu.h` から layout を得ていれば `zedbsd/gpu-zedbsd.h` に。
-9. `grep -rn zwl_buffer_layout userland/` が `wayland/zedbsd/` の中だけであること。
+**正確な編集（行・code）は [edits-compositor.md](../edits-compositor.md) の「P004」にある。** その順に行う。上の「新しい境界」との差（survey で決めた物）:
 
-## 確かめ
+- `zwl-gpu.h` に `struct zwl_object;` の前方宣言を足す。`#include <vulkan/vulkan_external.h>` を消す（zedBSD の `vulkan_core.h:5679` が既に include するので振る舞いは同じ。
+  Linux の host の header には無い）。
+- `zwl_gpu_device_extensions` は `VkPhysicalDevice physical` を最初の引数に取る（Linux の module が後段にある拡張だけを返すため）。
+- `compose.c:1949` の `vkGetFenceFdKHR` の直接の呼び出しを、`vkGetDeviceProcAddr` で得た pointer（`compose->get_fence_fd`）に替える（Linux の loader は拡張の関数を export しない）。
+- `objects.c` に `#include "compose.h"` を足す。
+- 新しい header（`zwl-gpu.h`・`zedbsd/gpu-zedbsd.h`）は C89 で通る書き方（host の試験が `-std=c89` で compile する）。
+- 道具の diff（`plan/tools/gpu-boundary/` の 3 file）は main が当てる（subagent は diff を main に送る）。
 
-1. build: `make -j16 BUILD=build/amd64 disk-image`、warning 0。
-2. GPU の境界の試験（`plan/tools/gpu-boundary/`、各 script の先頭の使い方）:
-   - `sh plan/tools/gpu-boundary/v1-check.sh` → `v1-check: PASS`
-   - `sh plan/tools/gpu-boundary/run-gpu-zedbsd-host.sh`（17 件）、`sh plan/tools/gpu-boundary/run-dedicated-host.sh`（18 件）→ PASS
-   - `sh plan/tools/gpu-boundary/build-forge-image.sh` で image（`build/ws103/p004-forge.img` か script の既定の出力）を作り、
-     `plan/ws035/tests/zdesktop-guest.sh start <image>` の後 `forge-guest.sh` と `fence-guest.sh` → PASS
-3. compositor の基準（Venus）: `plan/ws099/tests/build-criteria-image.sh` → `plan/ws099/tests/criteria.sh build/ws099-criteria.img build/ws104/p004-criteria C1 C2 C9` → 全て PASS。
-4. boot test。
+1. 編集する（edits-compositor.md の P004 の 1〜7 と「`vkGetFenceFdKHR` を直接呼ばない」「`<vulkan/vulkan_external.h>` を消す」）。
+2. 残りが無いこと:
+   ```
+   grep -rn zwl_buffer_layout userland/desktop | grep -v '/wayland/zedbsd/' | wc -l          # 0
+   grep -n 'factory_request\|factory_fence\|factory_alpha\|zwl_import_create' userland/desktop/wayland/*.c userland/desktop/wayland/*.h | wc -l   # 0
+   grep -rn 'vulkan_external.h' userland/desktop/wayland | wc -l                                 # 0
+   grep -n 'vkGetFenceFdKHR(' userland/desktop/wayland/*.c | wc -l                               # 0（pointer の呼び出しだけ）
+   ```
+3. build と warning の数え（[commands.md](../commands.md) §1、`build/ws104-p004/build.log`）。
+4. GPU の境界の試験の全部（commands.md §6、`<W>` を `ws104-p004` に）: `v1-check: PASS`、`dedicated-host: PASS`×2、`gpu-zedbsd-host: PASS`×2、`forge-guest: PASS`、`fence-guest: PASS`。
+5. compositor の基準（commands.md §5）: results.txt が全て PASS（C1 2 行・C2 1 行・C9 10 行）。
+6. boot test（commands.md §4、`OUTPUT=build/ws104-p004/boot`）。
+7. commit: `git commit -m WIP -- userland/desktop/wayland`（main は `plan/tools/gpu-boundary` も）。
 
 ## 完了の条件
 
-- `zwl_buffer_layout` が `wayland/zedbsd/` の中だけ、`protocol.c`・`import.c`・`objects.c`・`zwl.h` に keiland_gpu_buffer_v1 の request の処理と zedBSD の型が無い。
-- 確かめ 1〜4 が PASS。log の行の形が変わっていない（fence-guest・forge-guest が行を読んで PASS することで確かめられる）。
+- 手順 2 の 4 つが 0、手順 3〜6 が PASS。log の行の形が変わっていない（fence-guest・forge-guest・criteria が行を読んで PASS することで確かめられる）。
 
 ## 結果
 

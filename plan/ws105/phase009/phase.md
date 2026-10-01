@@ -7,59 +7,69 @@ Disposition: normal
 Parent: [WS105](../ws.md)
 Queue: なし
 依存: p008
-実行者: phase-runner（high）。**始める前に [design.md](../design.md) の §5.1・§5.5・§5.6 を読む。**
+実行者: phase-runner（high）。**始める前に [design.md](../design.md) の §5.1・§5.5・§5.6・§7.2（gdm）を読む**。`plan/tools/keiland-linux/` の変更は main が merge
 
 ## 目的
 
 決定 D11・D12。gdm の session の一覧から Keiland を選ぶと、gdm が `/opt/keiland/bin/wayland` を利用者（root でない）の session として起動する。compositor は
 logind から DRM と入力の device の fd を受ける（利用者には device を直接開く権限が無い）。Log Out で gdm に戻り、VT の切り替え（pause・resume）で画面が戻る。
 
+## 手本
+
+- `survey/dbusprobe.py`: host の system bus で通った D-Bus の client（NUL の byte、`AUTH EXTERNAL`、`NEGOTIATE_UNIX_FD`、`Hello`、method の call の marshal）。
+- design §5.5 の `TakeDevice` の byte の並び（host で通った物）。
+
 ## 作る・変える file
 
 | file | 中身 |
 | --- | --- |
-| `wayland/linux/dbus-linux.c`（と `linux/dbus-linux.h`） | design §5.5 の最小の D-Bus の client。外に出す関数の例: `dbus_open_system(struct keiland_dbus *)`、`dbus_call(bus, destination, path, interface, member, signature, args..., reply)`（同期。reply を待つ間に来た signal は queue に溜める）、`dbus_add_match(bus, rule)`、`dbus_fd(bus)`、`dbus_dispatch(bus, callback)`（poll で readable のときに signal を読む）。型は `s`・`o`・`u`・`b`・`h` と、それらの struct（reply の `(hb)`）だけ。message の最大の大きさ、壊れた message は error で切る |
-| `wayland/linux/seat-logind-linux.c` | design §5.5 の手順（`GetSession`・`TakeControl`・`TakeDevice`・`ReleaseDevice`・`PauseDevice`・`PauseDeviceComplete`・`ResumeDevice`） |
-| `wayland/linux/os-linux.c` | seat の選択に `logind` を足す（design §5.1）。`zwl_os_poll_count`・`fill`・`done` で D-Bus の fd を main loop に入れ、signal を seat-logind に渡す |
-| 共通: `zwl.h`・`display.c`（`zwl_schedule`）など | design §5.6 の p009 の行（`os_paused`、paused の間は合成しない、resume で swapchain を作り直す）。**zedBSD では `os_paused` は常に 0 で、道は通らない** |
-| `userland/desktop/wayland/linux/keiland.desktop` | design §5.5 の内容 |
-| `userland/desktop/keiland-linux.mk` | `install-session`: `$(DESTDIR)/usr/share/wayland-sessions/keiland.desktop` に入れる（`/opt/keiland` の外の唯一の file、D11） |
-| `plan/tools/keiland-linux/build-guest.sh`・`guest.sh` | `gdm` の variant（p001 で用意した物）を使う。gdm の自動 login（`/etc/gdm3/daemon.conf` の `[daemon]` に `AutomaticLoginEnable=true`・`AutomaticLogin=kei`、`WaylandEnable=true`）と、利用者 kei の session を Keiland にする（`/var/lib/AccountsService/users/kei` に `[User]`・`Session=keiland`・`SessionType=wayland`）を `guest.sh` の command（`gdm-setup`）で行う |
-
-D-Bus の message の形の要点（実装の前に D-Bus の仕様の "Message Format" の節を読む）:
-
-- header: endian の byte `l`、type（1 method_call、2 method_return、3 error、4 signal）、flags、version 1、body の長さ（u32）、serial（u32）、header の field の配列 `a(yv)`
-  （1 PATH `o`、2 INTERFACE `s`、3 MEMBER `s`、4 ERROR_NAME `s`、5 REPLY_SERIAL `u`、6 DESTINATION `s`、7 SENDER `s`、8 SIGNATURE `g`、9 UNIX_FDS `u`）。header の後を 8 byte に揃える。
-- fd（`h`）は body の中では fd の配列の index（u32）で、fd 自体は `sendmsg`・`recvmsg` の `SCM_RIGHTS`。header の UNIX_FDS に数を入れる。
-- 認証の後に `NEGOTIATE_UNIX_FD` を送って `AGREE_UNIX_FD` を受ける（fd を受けるのに要る）。
+| `wayland/linux/dbus-linux.c`・`dbus-linux.h` | design §5.5 の最小の D-Bus の client。外に出す関数の例: `int dbus_open_system(struct linux_dbus *bus)`、`int dbus_call(struct linux_dbus *bus, const char *destination, const char *path, const char *interface, const char *member, const char *signature, const struct dbus_arg *args, size_t count, struct dbus_reply *reply)`（同期。返事を待つ間に来た signal は queue に溜める。上限 5 秒）、`int dbus_add_match(struct linux_dbus *bus, const char *rule)`、`int dbus_fd(const struct linux_dbus *bus)`、`int dbus_dispatch(struct linux_dbus *bus, dbus_signal_fn callback, void *data)`（readable のときに signal を読む）。型は `s`・`o`・`g`・`u`・`b`・`h` とそれらの struct だけ。message の最大の大きさ（例 64 KiB）を超える物・壊れた物は error で切る |
+| `wayland/linux/seat-logind-linux.c` | design §5.5 の手順 1〜6（`GetSession`・`AddMatch`・`TakeControl`・`TakeDevice`・`ReleaseDevice`・`PauseDevice`・`PauseDeviceComplete`・`ResumeDevice`）と pause・resume の扱い |
+| `wayland/linux/os-linux.c` | seat の選択に `logind` を足す（design §5.1 の規則）。`zwl_os_poll_count`・`fill`・`done` で D-Bus の fd を main loop に入れ、signal を seat-logind に渡す。compositor の log に `ZWL SEAT logind session=<path>` の 1 行 |
+| `wayland/linux/input-linux.c` | logind の device の open・close、pause の device を読まない、resume の fd に替える |
+| 共通: `zwl.h`・`display.c`（`zwl_schedule`）・`main.c` | design §5.6 の p009 の行（`os_paused`、paused の間は合成しない、resume で swapchain を作り直す、paused の間は入力の再走査をしない）。**zedBSD では `os_paused` は常に 0** |
+| `wayland/linux/keiland.desktop` | design §5.5 の内容に `--wallpaper=/opt/keiland/share/keiland/wallpaper.ppm` を足した物 |
+| `userland/desktop/keiland-linux.mk` | `install-session`: `install -D -m 0644 userland/desktop/wayland/linux/keiland.desktop $(DESTDIR)/usr/share/wayland-sessions/keiland.desktop`（`/opt/keiland` の外の唯一の file、D11） |
+| `plan/tools/keiland-linux/guest.sh`（main） | command `gdm-setup`: guest で AccountsService の session を設定（design §7.2: `busctl call ... SetSession s keiland` と `SetSessionType s wayland`）し、`systemctl restart gdm` |
 
 ## guest での手順
 
 ```
-plan/tools/keiland-linux/build-guest.sh build/keiland-linux/guest-gdm gdm
-GUEST_DIR=build/keiland-linux/guest-gdm GUEST_RUN=build/keiland-linux/run-gdm SSH_PORT=2227 plan/tools/keiland-linux/guest.sh start
-make keiland-linux && make keiland-linux-install keiland-linux-install-session DESTDIR=$PWD/build/keiland-linux/stage
-GUEST_DIR=... plan/tools/keiland-linux/install-guest.sh
-GUEST_DIR=... plan/tools/keiland-linux/guest.sh gdm-setup
-GUEST_DIR=... plan/tools/keiland-linux/guest.sh ssh 'systemctl restart gdm'
-# 30 秒ほど待って
-GUEST_DIR=... plan/tools/keiland-linux/guest.sh screenshot build/keiland-linux/p009-session.png
-GUEST_DIR=... plan/tools/keiland-linux/guest.sh ssh 'ps -o user,pid,args -C wayland; loginctl list-sessions'
+make -j64 keiland-linux && make keiland-linux-install keiland-linux-install-session DESTDIR=$PWD/build/keiland-linux/stage
+make -j64 keiland-linux CC=clang KEILAND_LINUX_BUILD=build/keiland-linux-clang
+sh plan/tools/keiland-linux/build-guest.sh $PWD/build/keiland-linux/guest-gdm gdm
+export GUEST_DIR=$PWD/build/keiland-linux/guest-gdm GUEST_RUN=$PWD/build/keiland-linux/run-gdm SSH_PORT=2227
+G=plan/tools/keiland-linux/guest.sh
+sh $G start && sh plan/tools/keiland-linux/install-guest.sh && sh $G gdm-setup
+sleep 30; sh $G screenshot $PWD/build/keiland-linux/p009-session.png
+sh $G ssh 'ps -o user,pid,args -C wayland; loginctl list-sessions; cat /proc/$(pidof wayland)/environ | tr "\0" "\n" | grep -E "XDG_SESSION|XDG_RUNTIME"'
+sh $G ssh 'journalctl -b --no-pager -u gdm | tail -20'
 ```
 
-## 確かめ（完了の条件）
+VT の切り替え（design §5.5: Ctrl+Alt+Fn は使えない）:
 
-1. build（gcc・clang）warning 0、`elf-check.sh`・`makefile-sync.sh` PASS。
-2. gdm の自動 login で Keiland の session が起動する: `ps` の `wayland` の user が `kei`、screenshot に wallpaper と system bar（PNG をユーザーに見せる）、
-   compositor の log に seat logind の行（`ZWL SEAT logind session=...` のような 1 行を Linux の module から出す）。
-3. 利用者の session の中で app が起動する（App Home から Terminal）。入力が届く（key と pointer）。
-4. Log Out: gdm の greeter に戻る（自動 login を切った状態で確かめる: `daemon.conf` の `AutomaticLoginEnable=false` にして、greeter で session を選んで kei で login →
-   Keiland → Log Out → greeter の screenshot）。greeter の操作は QMP の key と click で行う。
-5. VT の切り替え: Keiland の session の中で `guest.sh key ctrl alt f3`（text の console）→ 5 秒 → 元の VT（`loginctl` で分かる VT。`ctrl alt f2` など）に戻る →
-   screenshot で Keiland の画面が戻る。compositor の log に pause と resume の行。戻った後に pointer と key が届く。
-6. text console から root での起動（p006 の `seat-direct`）が今も動く（`KEILAND_SEAT=direct`）。
-7. 共通の file を変えたので zedBSD の回帰（design §9.2）。
+```
+VT=$(sh $G ssh 'loginctl show-session $(loginctl list-sessions --no-legend | awk "\$3==\"kei\"{print \$1}") -p VTNr --value')
+sh $G ssh 'busctl call org.freedesktop.login1 /org/freedesktop/login1/seat/seat0 org.freedesktop.login1.Seat SwitchTo u 3'    # pause
+sleep 5; sh $G screenshot $PWD/build/keiland-linux/p009-vt3.png
+sh $G ssh "busctl call org.freedesktop.login1 /org/freedesktop/login1/seat/seat0 org.freedesktop.login1.Seat SwitchTo u $VT"   # resume
+sleep 5; sh $G screenshot $PWD/build/keiland-linux/p009-back.png
+sh $G ssh 'chvt 3'; sleep 5; sh $G ssh "chvt $VT"; sleep 5; sh $G screenshot $PWD/build/keiland-linux/p009-back2.png   # force
+```
+
+## 完了の条件
+
+1. build（gcc・clang）、`elf-check: PASS`、`makefile-sync: PASS`、`header-check: PASS`。
+2. gdm の自動 login で Keiland の session が起動する: `ps` の `wayland` の user が `kei`、compositor の環境に `XDG_SESSION_TYPE=wayland` と `XDG_SESSION_ID`、compositor の log に
+   `ZWL SEAT logind session=...`、screenshot に wallpaper と system bar（PNG をユーザーに見せる）。design §10 の V6。
+3. 利用者の session の中で app が起動する（App Home から Terminal）。入力（key と pointer）が届く。
+4. Log Out: gdm の greeter に戻る（自動 login を切って確かめる: guest の `/etc/gdm3/daemon.conf` の `AutomaticLoginEnable=false` にして `systemctl restart gdm`、greeter で kei を選び
+   password `kei` を QMP の key で打って login → Keiland → Log Out → greeter の screenshot）。
+5. VT の切り替え: `SwitchTo`（pause）と `chvt`（force）の両方で、戻った後に Keiland の画面が戻り（`p009-back.png`・`p009-back2.png`）、pointer と key が届く。compositor の log に pause と resume の行。
+   design §10 の V11 の結果（pause で何が起きたか）を記録。
+6. text console から root での起動（p006 の `seat-direct`、`KEILAND_SEAT=direct`）が今も動く（base の guest で）。
+7. 共通の file を変えたので zedBSD の回帰（design §9.2、[WS104 の commands.md](../../ws104/commands.md) の §1・§4・§5）。
 
 ## 結果
 
-（実行の後に書く。design §10 の V6 の結果も）
+（実行の後に書く）
