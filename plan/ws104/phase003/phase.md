@@ -2,10 +2,10 @@
 
 # ws104-p003: libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ
 
-Status: planned
+Status: in-progress
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
+Queue: q517 / q517-i01
 依存: p002
 実行者: phase-runner（high）でよい。`plan/ws089`・`plan/ws100` の script の 2 行は他の WS の file なので、**main が当てる**（下の手順 3）
 
@@ -68,3 +68,5 @@ WS105 は同じ関数を Linux の source で実装する。
 ## 結果
 
 （実行の後に書く）
+
+Execution started UTC: 2026-10-01T02:25:22.606785+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
