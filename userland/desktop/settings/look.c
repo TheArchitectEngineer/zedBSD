@@ -48,9 +48,6 @@
 #define LOOK_DELAY_MAX		1000
 #define LOOK_DELAY_DEFAULT	400
 
-/* Where the sound service listens (userland/base/audiod/protocol.h). */
-#define LOOK_SOUND_SOCKET	"/run/audiod.sock"
-
 /* The pictures: the default (the session's --wallpaper) and the folder of the others. */
 #define LOOK_DEFAULT_PICTURE	"/usr/share/keiland/wallpaper.ppm"
 #define LOOK_PICTURES		"/usr/share/keiland/wallpapers"
@@ -217,29 +214,6 @@ se_look_set_number(
 
 	/* The log line the tests read. */
 	se_log("LOOK set key=%s value=%d error=%d", key, value, error);
-}
-
-/*
- * Tells whether the sound service is running (its socket is there).
- */
-int
-se_look_sound(
-	void)
-{
-	struct stat status;
-	int result;
-
-	/* The service's socket. */
-	result = stat(LOOK_SOUND_SOCKET, &status);
-	if (result != 0)
-		return 0;
-
-	/* Only a socket counts. */
-	if ((status.st_mode & S_IFMT) != S_IFSOCK)
-		return 0;
-
-	/* The service is there. */
-	return 1;
 }
 
 /*

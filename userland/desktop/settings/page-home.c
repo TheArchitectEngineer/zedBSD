@@ -275,7 +275,7 @@ home_state(
 		return 1;
 	case SE_PAGE_SOUND:
 		/* Whether the sound service runs. */
-		running = se_look_sound();
+		running = keiland_audio_available();
 		if (running != 0) {
 			(void)snprintf(text, size, "%s", "Sound service running");
 		} else {

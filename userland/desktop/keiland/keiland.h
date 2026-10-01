@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode). */
-#define KEILAND_VERSION	20U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs). */
+#define KEILAND_VERSION	21U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1243,6 +1243,14 @@ int keiland_audio_set_volume(struct keiland_audio *audio, unsigned left, unsigne
  * sending.
  */
 int keiland_audio_feedback(struct keiland_audio *audio);
+
+/*
+ * Tells whether the sound service runs (KEILAND_VERSION 21): 1 when it
+ * does, 0 when it does not.  It does not connect to the service and does
+ * not wait; a service that runs may still have no sound device
+ * (struct keiland_audio_state's device).
+ */
+int keiland_audio_available(void);
 
 /*
  * The keyboard inset (KEILAND_VERSION 18, ws102-p015).

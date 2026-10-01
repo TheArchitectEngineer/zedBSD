@@ -2,10 +2,10 @@
 
 # ws104-p002: audio の漏れを libkeiland へ（`keiland_audio_available`）
 
-Status: planned
+Status: in-progress
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
+Queue: q516 / q516-i01
 依存: p001
 実行者: phase-runner（high）でよい
 
@@ -47,3 +47,5 @@ host で「socket が無いと 0、あると 1、version 21」・ws089 `host-bui
 ## 結果
 
 （実行の後に書く）
+
+Execution started UTC: 2026-10-01T02:14:13.207998+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。

@@ -748,7 +748,6 @@ void se_look_poll(struct se_app *app, uint64_t now);
 void se_look_close(struct se_app *app);
 void se_look_set_opacity(struct se_app *app, int percent);
 void se_look_set_number(struct se_app *app, const char *key, int value, int fallback);
-int se_look_sound(void);
 void se_look_set_wallpaper(struct se_app *app, int index);
 void se_look_scan(struct se_app *app);
 void se_look_volumes(struct se_app *app);

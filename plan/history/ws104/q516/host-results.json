@@ -1,0 +1,14 @@
+{
+  "available_probe": {
+    "version": 21,
+    "missing_socket": 0,
+    "regular_file": 0,
+    "unix_socket": 1
+  },
+  "audio_host": "14/14 PASS",
+  "settings_host": "exit 0",
+  "style_check_audio": "0",
+  "formatter": "clang-format-19 19.1.7, changed function; function signature manually restored to mandatory full rule",
+  "build": "exit 0; own warnings 0; raw Phase filter 1 due parallel OpenSSH stderr interleaving (sshbuf-getput-crypto.c:171 EC_KEY_get0_public_key), reviewed package warning",
+  "boot": "PASS; login PNG inspected"
+}

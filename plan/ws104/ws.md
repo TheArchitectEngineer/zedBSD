@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q515](../queue.md) finished（p001 cleared）
-Resume point: 2026-10-01 q515 / p001 cleared（公開 header を移動、sysroot 同一、build・boot・host 4 本 PASS）。次の候補は p002 または p004。p002〜p008 は未実行。
+Queue: [q516](../queue.md) active（ws104-p002 in-progress）
+Resume point: ws104-p002 in-progress。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -81,7 +81,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [ws104-p001](phase001/phase.md) | desktop の公開の header を `userland/desktop/keiland/` へ移す（sysroot の manifest に 1 directory を足す） | cleared（q515） | なし |
-| [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | planned | p001 |
+| [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | in-progress | p001 |
 | [ws104-p003](phase003/phase.md) | libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ | planned | p002 |
 | [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | planned | p001 |
 | [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | planned | p004 |
@@ -101,3 +101,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 ## 2026-10-01 の結果
 
 p001 を q515 で cleared。公開 header 24 file を内容を保って移動し、sysroot の 241 file の同一性、amd64 build（自前 warning 0）、host 試験 4 本、QEMU boot を確認した。実装 `12d7efeea05917a0d12c50a93824a6b6dc990c59`。詳細は [p001 の結果](phase001/phase.md#結果)。A1 は verified、WS の残りの基準は p002〜p008 に残る。構造・依存は計画どおり。GitHub へは未公開。
+
+### 2026-10-01T02:14:13.207998+00:00 / q516 / ws104-p002
+
+in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase002/phase.md)。

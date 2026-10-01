@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -237,6 +238,31 @@ keiland_audio_feedback(
 
 	/* Succeeded: the sound plays from audiod's next period. */
 	return 0;
+}
+
+/*
+ * Tells whether audiod runs: 1 when its socket is there, 0 when it is not.
+ * Nothing connects and nothing waits; an audiod that runs may still have no
+ * sound device (keiland_audio_state's device).
+ */
+int
+keiland_audio_available(
+	void)
+{
+	struct stat status;
+	int error;
+
+	/* audiod's socket; one that is not there is audiod not running. */
+	error = stat(AUDIO_SOCKET_PATH, &status);
+	if (error != 0)
+		return 0;
+
+	/* Only a socket counts. */
+	if ((status.st_mode & S_IFMT) != S_IFSOCK)
+		return 0;
+
+	/* Succeeded: audiod's socket is present. */
+	return 1;
 }
 
 /* Connects to audiod, says HELLO and SUBSCRIBE; returns 0 or an errno value. */

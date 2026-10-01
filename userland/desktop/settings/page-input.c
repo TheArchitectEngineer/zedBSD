@@ -210,7 +210,7 @@ se_sound_draw(
 
 	/* The output's card: the service's state. */
 	card += height + INPUT_GAP;
-	running = se_look_sound();
+	running = keiland_audio_available();
 	service = "Not running";
 	if (running != 0 && app->sound.state.reachable && !app->sound.state.device)
 		service = "Running, no sound output";
