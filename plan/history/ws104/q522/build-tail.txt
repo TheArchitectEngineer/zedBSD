@@ -1,0 +1,12 @@
+build/zedimage-host disk --machine pcat --layout native \
+ --kernel build/amd64/vmunix --bootx64 build/amd64/uefi/BOOTX64.EFI \
+ --zedbsd-config build/amd64/zedbsd-native-uefi-graphical-y-kmsg-n.cfg --logo build/amd64/boot-logo.ppm \
+ --ufs-root build/amd64/arch-images/amd64-native-root-1024m.ufs --swapfile build/amd64/native-swap-1024m.img \
+ build/amd64/hdd-image.img.unchecked
+python3 platform/amd64/tools/check-amd64-native-image.py \
+ --kernel build/amd64/vmunix --bootx64 build/amd64/uefi/BOOTX64.EFI \
+ --zedbsd-config build/amd64/zedbsd-native-uefi-graphical-y-kmsg-n.cfg --logo build/amd64/boot-logo.ppm \
+ --ufs-root build/amd64/arch-images/amd64-native-root-1024m.ufs --swap build/amd64/native-swap-1024m.img \
+ build/amd64/hdd-image.img.unchecked
+check-amd64-native-image: build/amd64/hdd-image.img.unchecked: OK
+mv -f build/amd64/hdd-image.img.unchecked build/amd64/hdd-image.img

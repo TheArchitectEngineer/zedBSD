@@ -1,6 +1,6 @@
 {
   "base": "ac5453cc",
-  "implementation": "6efb4f2bbe86e44da74a79f44ec4cf4a4576318c",
+  "implementation": "cd48e74d110a1e504c2b87ac288d41cdc928367c",
   "files": {
     "plan/tools/keiland-os-boundary/check.sh": "e4e02d7750565b8c1212ceaaf6a7a401c7c2bd69553b068de43cb700e47fefa1",
     "plan/ws079/tests/run-pdf-ccitt.sh": "df88c73fd547d363d891df55669ebd9a208e3058430797e90955296a40d50167",
@@ -93,7 +93,7 @@
     "userland/desktop/wayland/zedbsd/gpu-buffer-zedbsd.c": "de160538391e760351124217e87b1b59f6d23215b63b5dd7c989aafdb88b5e8c",
     "userland/desktop/wayland/zedbsd/gpu-zedbsd.c": "5d50cc938db004bf8c86911cb78a0959c8090fc05cb23d0d5905a29d4952ae6d",
     "userland/desktop/wayland/zedbsd/gpu-zedbsd.h": "0e0930cdf60dca8fc03692eefd3ad4bbdf695a6dede8aa42cba5acbb5857ac90",
-    "userland/desktop/wayland/zedbsd/handoff-zedbsd.c": "b1c79d269d46781e38e28b01da5eab413cc78054061b4caf6e76c2220c123e00",
+    "userland/desktop/wayland/zedbsd/handoff-zedbsd.c": "dee0a319370a752364eec32eecd4bfe4ce65403f463df658d8cc539179e51fc9",
     "userland/desktop/wayland/zedbsd/input-zedbsd.c": "aa5f73891e0ce5f30fcae36933735bdeb5f455f96e30ea7f6f619f87e9c36db1",
     "userland/desktop/wayland/zedbsd/os-zedbsd.c": "d45a94e22ed29797d06e6033c55145c63dd14a896151f7dbdd8f749bed536c30",
     "userland/desktop/wayland/zwl-evdev.h": "2022f51d504c805290fd5c7a32ebcd9c7385d09f932c7cdab07a6256fbf6e1e9",
@@ -102,5 +102,7 @@
     "userland/desktop/wayland/zwl-os.h": "700ab7fa3d232f589aedd2bf791c3bf9f690cd5742374385baeadde1f176ea92",
     "userland/desktop/wayland/zwl.h": "6778077fe3116143a937b2a064e243f5f8188a451392e3cef1d39fef40bddf96",
     "userland/desktop/xserver/server.c": "8bacc2146be570417815fe6b8add87ee100a2e497a9634d77fa591363dac5bfd"
-  }
+  },
+  "runtime_implementation": "6efb4f2bbe86e44da74a79f44ec4cf4a4576318c",
+  "final_delta": "One success-return comment, non-comment bytes and all runtime image compositor ELF hashes identical"
 }

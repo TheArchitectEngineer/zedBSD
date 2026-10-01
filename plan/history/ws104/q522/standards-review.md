@@ -1,8 +1,8 @@
 # ws104-p008 / q522 全文規約の最終 source の確認
 
-Implementation: `6efb4f2bbe86e44da74a79f44ec4cf4a4576318c`（WIP）。Source baseline: `ac5453cc`（WS104 実装前の承認・計画）。規約: `plan/coding-style.md` 全文 §1〜§14、SHA256 `2244803c00d4a3346ab4f74c227f16a5b65c439759dfc1184697ab9f63df3930`。Guardrail / AGENTS の project rules を適用。簡約版は無い。
+Implementation: `cd48e74d110a1e504c2b87ac288d41cdc928367c`（WIP）。Source baseline: `ac5453cc`（WS104 実装前の承認・計画）。規約: `plan/coding-style.md` 全文 §1〜§14、SHA256 `2244803c00d4a3346ab4f74c227f16a5b65c439759dfc1184697ab9f63df3930`。Guardrail / AGENTS の project rules を適用。簡約版は無い。
 
-Conformance status: in-progress。最終出口の全関数の追加確認で handoff_descriptor の成功注釈に Succeeded が 1 箇所不足。処理本文は同一の修正を準備済み、直列 suite の終了後に適用・build / ELF 同一性 / boot / 最終規約を確認する。機械違反 0 は手動確認の完了を意味しない。
+Conformance status: cleared。最終成功出口の追加確認で見つけた handoff_descriptor の注釈 1 箇所を修正し、移動 / 新規実装 92 関数を再確認。機械検査・全文の手動確認の未解決項目 0（下記の理由つきの保持を除く）。
 
 ## 対象
 
@@ -38,3 +38,7 @@ sysroot の変更はユーザーが承認した p001 の manifest diff の範囲
 3. 共通 file の未変更箇所の既存報告 68 件（Files 4、IME 9、mview 13、terminal 1、compose 3、input-method 38）は記録したが、関係のない全 file の整形を行っていない。WS104 の変更行に掛かる違反は 0。
 4. best-effort の fcntl / close / shutdown、credential diagnostic の明示 wipe、errno の取得、fd / Vulkan object の解放は従来の責務・順を保存する。後続 call より前の即時 refusal を一律に入れると leak / credential retention / errno 上書きになる所では、その cleanup を終えてから拒否する。分類の早期 return は完了した分類の短い branch として保持。各箇所の目的を注釈で説明した。
 5. static analysis 専用 tool は要求されておらず別途未実施。機械検査で証明できない ABI / 所有 / 処理順は上記の手動 review と Phase の bounded 回帰で確認。Linux compositor・実機 5330・他 platform は未実施。QEMU の console / serial log は起動・回帰の判定に使わない。
+
+## 最終コメント修正の再確認（2026-10-01T05:43:12.897152+00:00）
+
+実装 cd48e74d110a1e504c2b87ac288d41cdc928367c は回帰時 6efb4f2b の処理本文と同じ（成功出口の注釈 1 行だけ）。build / boot を再確認。main と forge / criteria / notes / Settings / volume の compositor ELF は SHA256 同一で、runtime の結果を維持できる。最終 source manifest・style-scope を更新。`make -j64 disk-image` の再実行 exit 0 は別に保存し、既に更新済みのため stdout が空であった。image の check OK は直前の build-final.log の記録。 [同一性・build の証拠](final-comment-build.json)。

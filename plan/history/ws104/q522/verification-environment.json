@@ -1,5 +1,5 @@
 {
-  "implementation": "6efb4f2bbe86e44da74a79f44ec4cf4a4576318c",
+  "implementation": "cd48e74d110a1e504c2b87ac288d41cdc928367c",
   "commands": "build/ws104-control/final-test.sh; archived reproducible commands in tools/keiland-linux/zedbsd-commands.md",
   "own_source_warning_lines": 0,
   "external_warning_lines": 0,
@@ -14,5 +14,38 @@
     "qpdf": "qpdf version 12.2.0"
   },
   "environment": "Linux host; amd64 QEMU / Venus; renderD128 vgem; no physical / Linux compositor acceptance",
-  "status": "in-progress; remaining runtime not yet accepted"
+  "status": "all mandatory regressions PASS; final PNGs inspected",
+  "runtime_implementation": "6efb4f2bbe86e44da74a79f44ec4cf4a4576318c",
+  "final_make_exit": 0,
+  "builds": {
+    "build-final.log": {
+      "own_source_warning_lines": 0,
+      "external_warning_lines": 0
+    },
+    "build.log": {
+      "own_source_warning_lines": 0,
+      "external_warning_lines": 0
+    },
+    "criteria-build.log": {
+      "own_source_warning_lines": 0,
+      "external_warning_lines": 0
+    },
+    "forge-build.log": {
+      "own_source_warning_lines": 0,
+      "external_warning_lines": 0
+    },
+    "notes-build.log": {
+      "own_source_warning_lines": 0,
+      "external_warning_lines": 0
+    },
+    "settings-build.log": {
+      "own_source_warning_lines": 0,
+      "external_warning_lines": 0
+    },
+    "volume-build.log": {
+      "own_source_warning_lines": 0,
+      "external_warning_lines": 0
+    }
+  },
+  "finished_verification_utc": "2026-10-01T05:43:12.982961+00:00"
 }
