@@ -1,0 +1,42 @@
+host-files: exit 0
+built build/ws071-host/files-render
+built build/ws071-host/files-model
+
+host-files-default: exit 0
+ok: cleared: Files' line is gone
+ok: clearing a type without a choice
+ok: clearing a type without a choice: the lines stay
+host-default: PASS
+
+host-textedit: exit 0
+ok edit: Tab over lines indents each
+ok edit: Shift+Tab takes the indent back
+ok edit: Ctrl+Right goes to the end of the word
+host-core: 34/34
+
+host-settings: exit 0
+built build/ws089-host/settings-render
+
+host-desktop-before: exit 0
+ok: resize: 1280, far.txt in the first free cell
+ok: resize: 1280, new.txt in the next
+ok: resize: 1920 again, far.txt back at 16,8
+host-desktop: PASS
+
+host-desktop-after: exit 0
+ok: resize: 1280, far.txt in the first free cell
+ok: resize: 1280, new.txt in the next
+ok: resize: 1920 again, far.txt back at 16,8
+host-desktop: PASS
+
+host-thumb: exit 0
+jpeg of garbage refused: ok error=22
+gif of garbage refused: ok error=22
+gif without a frame refused: ok error=22
+host-thumb: PASS
+
+host-browser: exit 0
+built build/ws074-host/plain/host-tokenizer
+built build/ws074-host/plain/host-tree
+built build/ws074-host/plain/host-url
+built build/ws074-host/plain/host-view

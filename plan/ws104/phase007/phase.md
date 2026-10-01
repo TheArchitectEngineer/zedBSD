@@ -2,10 +2,10 @@
 
 # ws104-p007: install の path を `userland/desktop/paths.h` の macro に
 
-Status: planned
+Status: cleared
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
+Queue: q521 / q521-i01
 依存: p003・p006（patch が p003 の後の tree に当たるように作ってあり、p004〜p006 は `wayland/*.c` を変えるので、それらの後に当てる）
 実行者: phase-runner（high）か phase-runner-mid。`plan/` の script の 7 つの `-I.` は他の WS の file なので **main が当てる**
 
@@ -77,4 +77,15 @@ zedBSD の build では**今と全く同じ文字列**になり、Linux の buil
 
 ## 結果
 
-（実行の後に書く）
+q521-i01 cleared（2026-10-01T04:42:00.543038+00:00）。
+
+cleared（q521）。paths.h の BINDIR / LIBEXECDIR / DATADIR / SYSCONFDIR で desktop の install path を指定し、zedBSD の値を保持。26 file の 61 行と include、host script 7 本の -I. を準備済み patch で更新（p006 後の main.c の include hunk のみ手順どおり調整）。旧 install literal の残り 0。amd64 build exit 0、自前 warning 0。bin/* と dynamic/*.so の該当 path 文字列は前後一致。host 7 本 exit 0、desktop は前後 PASS、Textedit 34/34、Files default・thumbnail PASS。paths.h style-check 0、C1/C2/C9 13/13、boot PASS。p072 全 6 PNG と login PNG を目視し login は提示済み。証拠: plan/history/ws104/q521/（boundary-checks.json、strings-before.txt、strings-after.txt、host-summary.txt、criteria-results.txt、login.png）。system shell / 公開 emoji header / Open With の bare directory / OS path / sessiond は合意どおり保持。実装 cec34d3e（WIP）、実行者 main / Codex Q1、未達条件なし。実機・Linux 未実施、GitHub 未公開。
+
+
+Implementation: `cec34d3e1871e30290e471562b0d6c9c25da3f20`（WIP）。詳細 log: `build/ws104-p007/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
+
+Execution started UTC: 2026-10-01T04:14:21.528421+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
+
+### Checkpoint 2026-10-01T04:18:10.782845+00:00 / q521
+
+実装 cec34d3e（WIP）。26 file の install path を paths.h の 4 macro に変え、host script 7 本の -I. を追加。main.c の include hunk だけ p006 後の group に合わせて手順どおり適用。他の人の未 commit の変更は無かった。amd64 build exit 0、自前 warning 0、install literal の残り 0、binary の path 文字列は前後一致。host 7 本 exit 0（desktop は前後 PASS、textedit 34/34、Files default と thumbnail PASS）。paths.h の style-check 0。boot PASS、login PNG を目視・提示済み。C1/C2/C9 の専用 image と回帰を継続中。実機・Linux 未実施、GitHub 未公開。

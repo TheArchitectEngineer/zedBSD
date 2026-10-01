@@ -2,10 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q520](queue-q520.md)（ws104-p006 cleared）
+Last finished Queue: [q521](queue-q521.md)（ws104-p007 cleared）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-10-01 q521
+
+[q521](queue-q521.md): ws104-p007 **cleared**。cleared（q521）。paths.h の BINDIR / LIBEXECDIR / DATADIR / SYSCONFDIR で desktop の install path を指定し、zedBSD の値を保持。26 file の 61 行と include、host script 7 本の -I. を準備済み patch で更新（p006 後の main.c の include hunk のみ手順どおり調整）。旧 install literal の残り 0。amd64 build exit 0、自前 warning 0。bin/* と dynamic/*.so の該当 path 文字列は前後一致。host 7 本 exit 0、desktop は前後 PASS、Textedit 34/34、Files default・thumbnail PASS。paths.h style-check 0、C1/C2/C9 13/13、boot PASS。p072 全 6 PNG と login PNG を目視し login は提示済み。証拠: plan/history/ws104/q521/（boundary-checks.json、strings-before.txt、strings-after.txt、host-summary.txt、criteria-results.txt、login.png）。system shell / 公開 emoji header / Open With の bare directory / OS path / sessiond は合意どおり保持。実装 cec34d3e（WIP）、実行者 main / Codex Q1、未達条件なし。実機・Linux 未実施、GitHub 未公開。
+
+実装 `cec34d3e1871e30290e471562b0d6c9c25da3f20`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q520
 

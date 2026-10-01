@@ -1,4 +1,4 @@
-<!-- awesome-plan project=zedbsd record=queue -->
+<!-- awesome-plan project=zedbsd record=q521 -->
 
 # Queue
 
@@ -12,7 +12,7 @@ Last finished Queue: q521
 - Timebox: 60 分。必須回帰がこれを超える Phase は手順の所要時間に従い最大 150 分。未知の問題の調査は 30 分で止め、結果と再開条件を記録する。
 - Focus: WS104 の完了。WS105 は後続の context。
 - Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
-- Exact approved scope: [ws104-p007](ws104/phase007/phase.md) 全範囲（開始前 snapshot SHA256 `84841406333e4e2239898fc78d1f14fa77814fb904590783244577f7e8c01eb1`）。snapshot は local outbox に保存。
+- Exact approved scope: [ws104-p007](../ws104/phase007/phase.md) 全範囲（開始前 snapshot SHA256 `84841406333e4e2239898fc78d1f14fa77814fb904590783244577f7e8c01eb1`）。snapshot は local outbox に保存。
 - Executor: Codex Q1、既存 executor finished、並行実行なしを確認。
 - Applicable rules: AGENTS.md、guardrail.md、coding-style.md 全文、ws104/commands.md。
 - Prerequisites: p003・p006 cleared と実装の存在を確認。scope / criteria の後続取消なし。
@@ -20,7 +20,7 @@ Last finished Queue: q521
 
 | Attempt | Phase | Status | Dependency | Selection reason |
 | --- | --- | --- | --- | --- |
-| q521-i01 | [ws104-p007](ws104/phase007/phase.md) | cleared | p003・p006（context） | WS104 の既存依存順 |
+| q521-i01 | [ws104-p007](../ws104/phase007/phase.md) | cleared | p003・p006（context） | WS104 の既存依存順 |
 
 Dependency graph: p003・p006 (context) → q521-i01/ws104-p007。次の Phase は別 Queue。
 

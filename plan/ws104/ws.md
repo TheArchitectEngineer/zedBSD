@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q520](../queue.md) finished（ws104-p006 cleared（q520））
-Resume point: ws104-p006 cleared（q520）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
+Queue: [q521](../queue.md) finished（ws104-p007 cleared（q521））
+Resume point: ws104-p007 cleared（q521）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -86,7 +86,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | cleared（q518） | p001 |
 | [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | cleared（q519） | p004 |
 | [ws104-p006](phase006/phase.md) | compositor の session（`handoff.c`）と OS の hook（`zwl-os.h`）を zedBSD の module に | cleared（q520） | p005 |
-| [ws104-p007](phase007/phase.md) | install の path を `userland/desktop/paths.h` の macro に | planned | p006、p003 |
+| [ws104-p007](phase007/phase.md) | install の path を `userland/desktop/paths.h` の macro に | cleared（q521） | p006、p003 |
 | [ws104-p008](phase008/phase.md) | 規約の全文の見直し、境界の確かめの script、回帰 | planned | p001〜p007 |
 
 依存の図: p001 → p002 → p003 ─┐、p001 → p004 → p005 → p006 ─┴→ p007 → p008。p002〜p003 の列と p004〜p006 の列は別の file を触るので、別の agent が同時に進めてよい。
@@ -179,3 +179,16 @@ q518 の実装 commit は `5d413c08051c50ef856dd81989f15d1989e81438`（WIP）。
 
 cleared（q520）。cleared（q520）。handoff.c を zedbsd/handoff-zedbsd.c へ移動（root からの include path 以外 byte 同一）、zwl-os.h の 7 hook と zedBSD の空実装を追加。main の open/close・poll と compose の display acquire/release が境界を使う。成功した acquire は swapchain / targets の失敗と通常 close で release、未 acquire の failure / prepare-only は release しない。amd64 disk-image exit 0、自前 warning 0。新 OS module/header の style-check 0。C1/C2/C9 13/13 と boot PASS、p072 の全 6 PNG と login PNG を目視し login は提示済み。READY/GO、RELEASED/LOGOUT、wire と既存 log の形式を保持。証拠: `plan/history/ws104/q520/`（boundary-checks.json、criteria-results.txt、login.png）。物理実機・Linux は未実施。WS 全体の全文規約の最終確認は p008。実装 3bfe50b9（WIP）、実行者 main / Codex Q1、未達条件なし。
  詳細は [Phase](phase006/phase.md)。
+
+### 2026-10-01T04:14:21.528421+00:00 / q521 / ws104-p007
+
+in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase007/phase.md)。
+
+### Checkpoint 2026-10-01T04:18:10.782845+00:00 / q521
+
+実装 cec34d3e（WIP）。26 file の install path を paths.h の 4 macro に変え、host script 7 本の -I. を追加。main.c の include hunk だけ p006 後の group に合わせて手順どおり適用。他の人の未 commit の変更は無かった。amd64 build exit 0、自前 warning 0、install literal の残り 0、binary の path 文字列は前後一致。host 7 本 exit 0（desktop は前後 PASS、textedit 34/34、Files default と thumbnail PASS）。paths.h の style-check 0。boot PASS、login PNG を目視・提示済み。C1/C2/C9 の専用 image と回帰を継続中。実機・Linux 未実施、GitHub 未公開。
+
+### 2026-10-01T04:42:00.543038+00:00 / q521 / ws104-p007
+
+cleared（q521）。cleared（q521）。paths.h の BINDIR / LIBEXECDIR / DATADIR / SYSCONFDIR で desktop の install path を指定し、zedBSD の値を保持。26 file の 61 行と include、host script 7 本の -I. を準備済み patch で更新（p006 後の main.c の include hunk のみ手順どおり調整）。旧 install literal の残り 0。amd64 build exit 0、自前 warning 0。bin/* と dynamic/*.so の該当 path 文字列は前後一致。host 7 本 exit 0、desktop は前後 PASS、Textedit 34/34、Files default・thumbnail PASS。paths.h style-check 0、C1/C2/C9 13/13、boot PASS。p072 全 6 PNG と login PNG を目視し login は提示済み。証拠: plan/history/ws104/q521/（boundary-checks.json、strings-before.txt、strings-after.txt、host-summary.txt、criteria-results.txt、login.png）。system shell / 公開 emoji header / Open With の bare directory / OS path / sessiond は合意どおり保持。実装 cec34d3e（WIP）、実行者 main / Codex Q1、未達条件なし。実機・Linux 未実施、GitHub 未公開。
+ 詳細は [Phase](phase007/phase.md)。
