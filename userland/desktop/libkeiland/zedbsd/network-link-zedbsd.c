@@ -34,18 +34,17 @@
 #include <unistd.h>
 
 /* The file the resolver reads its servers from. */
-#define LINK_RESOLV_CONF	"/etc/resolv.conf"
+#define LINK_RESOLV_CONF "/etc/resolv.conf"
 
 /* The longest line of the resolver's file that is read. */
-#define LINK_LINE_MAX		256U
+#define LINK_LINE_MAX 256U
 
 static void link_read(int descriptor, const char *name, struct keiland_network_link *link);
 static int link_request(int descriptor, const char *name, unsigned long command, struct ifreq *request);
 static void link_address(const struct ifreq *request, char *text, size_t size);
 
 /*
- * Copies up to capacity interfaces and returns how many there are (0 when
- * they cannot be read).
+ * Copies up to capacity interfaces and returns how many there are (0 when they cannot be read).
  */
 size_t
 keiland_network_get_links(
@@ -102,8 +101,7 @@ keiland_network_get_links(
 }
 
 /*
- * Copies up to capacity DNS servers of /etc/resolv.conf (its nameserver
- * lines, dotted IPv4) and returns how many were copied.
+ * Copies up to capacity DNS servers of /etc/resolv.conf (its nameserver lines, dotted IPv4) and returns how many were copied.
  */
 size_t
 keiland_network_get_dns(
@@ -137,6 +135,8 @@ keiland_network_get_dns(
 		fields = sscanf(line, "%31s %31s", word, address);
 		if (fields != 2)
 			continue;
+
+		/* Ignores resolver options that do not name a DNS server. */
 		differs = strcmp(word, "nameserver");
 		if (differs != 0)
 			continue;
@@ -159,8 +159,9 @@ keiland_network_get_dns(
 }
 
 /*
- * Saves the key of a Wi-Fi network in the user's credential store, to be
- * joined by itself from then on.  Returns 0 or an errno value.
+ * Saves the key of a Wi-Fi network in the user's credential store, to be joined by itself from then on.
+ *
+ * Returns 0 or an errno value.
  */
 int
 keiland_network_save_key(
@@ -170,29 +171,34 @@ keiland_network_save_key(
 	char diagnostic[WIFI_CONF_DIAGNOSTIC_MAX];
 	size_t ssid_length;
 	size_t key_length;
-	int result;
+	int save_status;
 	int error;
 
 	/* An SSID of one to 32 bytes, and a key of 8 to 63 characters. */
 	if (ssid == NULL || key == NULL)
 		return EINVAL;
+
+	/* Refuses an empty SSID or one too long for the credential protocol. */
 	ssid_length = strlen(ssid);
 	if (ssid_length == 0 || ssid_length > KEILAND_NETWORK_SSID_MAX - 1U)
 		return EINVAL;
+
+	/* Refuses a key outside the saved passphrase range. */
 	key_length = strlen(key);
 	if (key_length < KEILAND_NETWORK_KEY_MIN || key_length > KEILAND_NETWORK_KEY_MAX)
 		return EINVAL;
 
 	/* The store of the user this process runs as (joined automatically from now on). */
 	diagnostic[0] = '\0';
-	result = wifi_store_set_key_for_effective_user(ssid, key, 1, diagnostic, sizeof(diagnostic));
+	save_status = wifi_store_set_key_for_effective_user(ssid, key, 1, diagnostic, sizeof(diagnostic));
 	error = errno;
 
 	/* The diagnostic may quote the store's lines; it is not kept. */
 	wifi_conf_explicit_clear(diagnostic, sizeof(diagnostic));
 
 	/* A store that refused reports why. */
-	if (result != 0) {
+	if (save_status != 0) {
+		/* Gives a refused store operation an errno even when it supplied none. */
 		if (error == 0)
 			error = EIO;
 		return error;
@@ -203,8 +209,7 @@ keiland_network_save_key(
 }
 
 /*
- * Copies up to capacity SSIDs the user has saved keys for (as text) and
- * returns how many there are; the keys themselves never leave the store.
+ * Copies up to capacity SSIDs the user has saved keys for (as text) and returns how many there are; the keys themselves never leave the store.
  */
 size_t
 keiland_network_get_saved(
@@ -217,19 +222,21 @@ keiland_network_get_saved(
 	size_t count;
 	size_t index;
 	size_t length;
-	int result;
+	int load_status;
 
 	/* The model is large, and holds keys: it is allocated and wiped. */
 	model = malloc(sizeof(*model));
 	if (model == NULL)
 		return 0;
+
+	/* Initializes the model before reading the credential store. */
 	wifi_conf_model_init(model);
 
 	/* The user's store; a missing one has no networks. */
 	diagnostic[0] = '\0';
-	result = wifi_store_load_for_effective_user(model, diagnostic, sizeof(diagnostic));
+	load_status = wifi_store_load_for_effective_user(model, diagnostic, sizeof(diagnostic));
 	wifi_conf_explicit_clear(diagnostic, sizeof(diagnostic));
-	if (result != 0) {
+	if (load_status != 0) {
 		wifi_conf_model_clear(model);
 		free(model);
 		return 0;
@@ -238,10 +245,13 @@ keiland_network_get_saved(
 	/* Each network's SSID, as many as fit. */
 	count = model->profile_count;
 	for (index = 0; index < count && index < capacity; index++) {
+		/* Bounds the copied public SSID without exposing its saved key. */
 		profile = &model->profiles[index];
 		length = profile->ssid_length;
 		if (length > KEILAND_NETWORK_SSID_MAX - 1U)
 			length = KEILAND_NETWORK_SSID_MAX - 1U;
+
+		/* Publishes one terminated SSID in the caller's bounded list. */
 		memcpy(ssids[index], profile->ssid, length);
 		ssids[index][length] = '\0';
 	}
@@ -271,10 +281,15 @@ link_read(
 	/* Up, the link there, and the loopback. */
 	error = link_request(descriptor, name, SIOCGIFFLAGS, &request);
 	if (error == 0) {
+		/* Marks interfaces enabled by their administrative configuration. */
 		if ((request.ifr_flags & IFF_UP) != 0)
 			link->up = 1;
+
+		/* Marks interfaces with a live physical link. */
 		if ((request.ifr_flags & IFF_RUNNING) != 0)
 			link->running = 1;
+
+		/* Marks the local loopback interface independently of link state. */
 		if ((request.ifr_flags & IFF_LOOPBACK) != 0)
 			link->loopback = 1;
 	}
@@ -293,6 +308,8 @@ link_read(
 	error = link_request(descriptor, name, SIOCGIFADDR, &request);
 	if (error == 0)
 		link_address(&request, link->address, sizeof(link->address));
+
+	/* Reads a netmask only as a display attribute of an assigned address. */
 	error = link_request(descriptor, name, SIOCGIFNETMASK, &request);
 	if (error == 0 && link->address[0] != '\0')
 		link_address(&request, link->netmask, sizeof(link->netmask));
@@ -303,6 +320,9 @@ link_read(
 		link->received_bytes = request.ifr_data.ifi_ibytes;
 		link->sent_bytes = request.ifr_data.ifi_obytes;
 	}
+
+	/* Succeeded: the interface holds every available attribute. */
+	return;
 }
 
 /* Asks the kernel one thing of an interface; returns 0 or -1. */
@@ -350,4 +370,7 @@ link_address(
 	written = inet_ntop(AF_INET, &address->sin_addr, text, (socklen_t)size);
 	if (written == NULL)
 		text[0] = '\0';
+
+	/* Succeeded: the output holds the dotted address or remains empty. */
+	return;
 }

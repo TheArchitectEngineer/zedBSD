@@ -239,11 +239,15 @@ device_open(
 		/* The same path means the same node. */
 		same = strcmp(server->inputs[index].path, path);
 		if (same == 0)
-			return 1;
+			break;
 	}
 
-	/* The node is not open. */
-	return 0;
+	/* Refuses an entry not represented by any live descriptor. */
+	if (index == ZWL_INPUT_MAX)
+		return 0;
+
+	/* Succeeded: a live descriptor already owns this device node. */
+	return 1;
 }
 
 /* Opens one node and hands its capability bitmaps to the seat. */

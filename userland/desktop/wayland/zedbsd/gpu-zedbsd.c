@@ -66,12 +66,16 @@ zwl_gpu_buffer_decode(
 	/* A record of this interface's revision and length. */
 	if (image.version != GPU_ABI_VERSION)
 		return EINVAL;
+
+	/* Refuses a record whose declared size differs from this ABI. */
 	if (image.size != sizeof(image))
 		return EINVAL;
 
 	/* A size Vulkan can make an image of. */
 	if (image.width == 0U || image.width > limits->max_dimension)
 		return EINVAL;
+
+	/* Refuses a height outside the device image limit. */
 	if (image.height == 0U || image.height > limits->max_dimension)
 		return EINVAL;
 
@@ -92,6 +96,8 @@ zwl_gpu_buffer_decode(
 	row_bytes = (uint64_t)image.width * 4U;
 	if (image.stride < row_bytes)
 		return EINVAL;
+
+	/* Refuses a row ending in part of a four-byte pixel. */
 	if ((image.stride % 4U) != 0U)
 		return EINVAL;
 
@@ -99,6 +105,8 @@ zwl_gpu_buffer_decode(
 	rows_bytes = (uint64_t)image.stride * (uint64_t)(image.height - 1U) + row_bytes;
 	if (image.offset > UINT64_MAX - rows_bytes)
 		return EINVAL;
+
+	/* Refuses an image whose last pixel extends past the shared allocation. */
 	end = image.offset + rows_bytes;
 	if (end > image.allocation_bytes)
 		return EINVAL;

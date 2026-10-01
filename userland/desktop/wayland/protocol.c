@@ -403,6 +403,9 @@ global_identity(
 	/* Every other global is the table's. */
 	*interface = global->interface;
 	*version = global->version;
+
+	/* Succeeded: the caller holds the advertised identity of this global. */
+	return;
 }
 
 /* Announces only the selected protocol globals in stable registry order. */
@@ -593,7 +596,9 @@ bind_global(
 		/* Names, interface strings and negotiated versions are checked together. */
 		global_identity(&globals[index], &offered, &offered_version);
 		same = strcmp(interface, offered);
-		if (same != 0 || version == 0 || version > offered_version)
+		if (same != 0 ||
+		    version == 0 ||
+		    version > offered_version)
 			return EPROTO;
 
 		/* A global the connection was not shown cannot be bound (the input method's, input-method.c). */

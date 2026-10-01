@@ -22,6 +22,9 @@ struct zwl_object;
 /*
  * What the compositor's Vulkan device can take, against which a description
  * is checked before any of its values reaches Vulkan.
+ *
+ * The server retains these limits after selecting its Vulkan device;
+ * imports use them until that device is destroyed during compose cleanup.
  */
 struct zwl_gpu_limits {
 	uint32_t max_dimension;

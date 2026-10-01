@@ -33,11 +33,16 @@
 #include <unistd.h>
 
 /* How long zdesktop waits for GO, and for QUIT after LOGOUT (milliseconds). */
-#define HANDOFF_WAIT_MS		20000U
-#define HANDOFF_LOGOUT_MS	30000U
+#define HANDOFF_WAIT_MS 20000U
+#define HANDOFF_LOGOUT_MS 30000U
 
-/* What the session has read of sessiond's next line (answers to the lock screen too, ws035-p102). */
+/*
+ * Retains sessiond responses between event-loop reads for this process.
+ * handoff_used counts the bytes before its trailing NUL; consumed lines leave it.
+ */
 static char handoff_line[64];
+
+/* Counts retained response bytes; zero means no incomplete session line remains. */
 static size_t handoff_used;
 
 static int handoff_descriptor(const struct zwl_server *server);
@@ -45,6 +50,7 @@ static void handoff_answered(struct zwl_server *server, const char *line);
 
 /*
  * Says READY and waits for GO, once, before the display is first taken.
+ *
  * Nothing happens when sessiond did not start zdesktop.
  */
 void
@@ -66,6 +72,8 @@ zwl_handoff_wait(
 	/* Only the first time the display is taken. */
 	if (server->handed_over)
 		return;
+
+	/* Publishes that the first display acquisition has entered the handoff. */
 	server->handed_over = 1;
 
 	/* The greeter's descriptor, or the session's; none when sessiond did not start zdesktop. */
@@ -97,16 +105,25 @@ zwl_handoff_wait(
 		status = poll(&entry, 1, (int)(HANDOFF_WAIT_MS - waited));
 		if (status < 0 && errno == EINTR)
 			continue;
+
+		/* Ends the handshake when polling failed or its time expired. */
 		if (status <= 0)
 			break;
+
+		/* Reads only the response byte that polling made available. */
 		count = read(descriptor, &byte, 1U);
-		if (count < 0 && (errno == EINTR || errno == EAGAIN))
+		if (count < 0 &&
+		    (errno == EINTR ||
+		    errno == EAGAIN))
 			continue;
+
+		/* Ends the handshake when the peer closed or a read failed. */
 		if (count <= 0)
 			break;
 
 		/* A whole line is looked at; a long one is thrown away. */
 		if (byte != '\n') {
+			/* Keeps a bounded line while passing over excess response bytes. */
 			if (used + 1U < sizeof(line))
 				line[used++] = byte;
 			continue;
@@ -124,11 +141,13 @@ zwl_handoff_wait(
 
 	/* Succeeded: the display can be taken (with or without GO). */
 	printf("ZWL HANDOFF go=%d waited_ms=%llu at_ms=%llu\n", go, (unsigned long long)(zwl_milliseconds() - started), (unsigned long long)zwl_milliseconds());
+
+	/* Succeeded: the display can be acquired with or without a GO response. */
+	return;
 }
 
 /*
- * Gives the display back ahead of the rest of zdesktop's end, and tells
- * sessiond so (RELEASED).
+ * Gives the display back ahead of the rest of zdesktop's end, and tells sessiond so (RELEASED).
  */
 void
 zwl_handoff_release(
@@ -143,13 +162,18 @@ zwl_handoff_release(
 	descriptor = handoff_descriptor(server);
 	if (descriptor >= 0)
 		(void)write(descriptor, "RELEASED\n", 9U);
+
+	/* Reports that display ownership has returned before slower teardown. */
 	printf("ZWL HANDOFF released at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+
+	/* Succeeded: the swapchain is released and sessiond is notified. */
+	return;
 }
 
 /*
- * Log Out of a session sessiond started: asks it for a greeter (LOGOUT);
- * the session goes on showing until sessiond says QUIT.  Returns 1 when
- * asked, 0 when zdesktop should simply end.
+ * Log Out of a session sessiond started: asks it for a greeter (LOGOUT); the session goes on showing until sessiond says QUIT.
+ *
+ * Returns 1 when asked, 0 when zdesktop should simply end.
  */
 int
 zwl_handoff_logout(
@@ -160,6 +184,8 @@ zwl_handoff_logout(
 	/* Only a session sessiond started, and once. */
 	if (server->greeter || server->control_fd < 0)
 		return 0;
+
+	/* Reuses the outstanding logout rather than sending a second request. */
 	if (server->logout_ms != 0U)
 		return 1;
 
@@ -178,8 +204,7 @@ zwl_handoff_logout(
 }
 
 /*
- * Reads what sessiond sent a session, and ends a Log Out that was never
- * answered in time.
+ * Reads what sessiond sent a session, and ends a Log Out that was never answered in time.
  */
 void
 zwl_handoff_tick(
@@ -222,6 +247,8 @@ zwl_handoff_tick(
 		end = strchr(handoff_line, '\n');
 		if (end == NULL)
 			break;
+
+		/* Applies the complete line before compacting the remaining bytes. */
 		*end = '\0';
 		handoff_answered(server, handoff_line);
 		handoff_used -= (size_t)(end - handoff_line) + 1U;
@@ -231,6 +258,9 @@ zwl_handoff_tick(
 	/* A line that never ends is thrown away. */
 	if (handoff_used + 1U >= sizeof(handoff_line))
 		handoff_used = 0U;
+
+	/* Succeeded: the available session responses are applied. */
+	return;
 }
 
 /* Returns the descriptor to sessiond: the greeter's, the session's, or -1. */
@@ -272,4 +302,7 @@ handoff_answered(
 
 	/* Anything else is not for this zdesktop. */
 	printf("ZWL HANDOFF line=%s\n", line);
+
+	/* Succeeded: an unrelated session line is reported without changing the session. */
+	return;
 }

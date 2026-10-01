@@ -75,13 +75,21 @@ zwl_gpu_request(
 	/* Revision two: the acquire fence of a surface's next commit. */
 	if (opcode == 2U) {
 		error = factory_fence(factory, bytes, size);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the buffer protocol update is applied. */
+		return 0;
 	}
 
 	/* Revision three: how a buffer's alpha is read. */
 	if (opcode == 3U) {
 		error = factory_alpha(factory, bytes, size);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the buffer protocol update is applied. */
+		return 0;
 	}
 
 	/* The nha signature has new_id and array bytes; h contributes no wire word. */
@@ -117,6 +125,8 @@ zwl_gpu_request(
 	 */
 	if (error == 0)
 		error = buffer_import(buffer, &layout, descriptor);
+
+	/* Closes the request-owned descriptor before reporting an import failure. */
 	close(descriptor);
 	if (error != 0) {
 		printf("ZWL IMPORT_ERROR client=%llu buffer=%u errno=%d\n", (unsigned long long)factory->client->number, buffer->id, error);
@@ -142,6 +152,9 @@ zwl_gpu_commit(
 	/* zedBSD fences arrive with set_acquire_fence before the commit. */
 	(void)surface;
 	(void)buffer;
+
+	/* Succeeded: the explicit zedBSD fences remain available to the common commit. */
+	return;
 }
 
 /*
@@ -203,6 +216,8 @@ factory_fence(
 	/* The surface and the generation in two words; the fd beside them. */
 	if (factory->version < 2U || size != 12U)
 		return EPROTO;
+
+	/* Waits until the request-owned acquire-fence descriptor has arrived. */
 	descriptor = zwl_take_fd(factory->client);
 	if (descriptor < 0)
 		return EAGAIN;
@@ -249,6 +264,8 @@ factory_alpha(
 	/* The buffer and the alpha in two words. */
 	if (factory->version < 3U || size != 8U)
 		return EPROTO;
+
+	/* Refuses a drawing mode outside opaque and premultiplied alpha. */
 	alpha = word_at(bytes, 4);
 	if (alpha > 1U)
 		return EPROTO;
@@ -256,7 +273,7 @@ factory_alpha(
 	/* The buffer must be one of the client's GPU buffers. */
 	buffer = zwl_find(factory->client, word_at(bytes, 0));
 	if (buffer == NULL ||
-	    buffer->kind != ZWL_BUFFER||
+	    buffer->kind != ZWL_BUFFER ||
 	    buffer->shm != NULL)
 		return EPROTO;
 
@@ -264,7 +281,7 @@ factory_alpha(
 	zwl_import_set_alpha(buffer, alpha);
 	factory->client->server->dirty = 1;
 
-	/* Succeeded. */
+	/* Succeeded: the next frame uses the requested buffer blending mode. */
 	return 0;
 }
 
@@ -279,7 +296,7 @@ buffer_import(
 	VkImage image;
 	VkDeviceMemory memory;
 	int copy;
-	VkResult result;
+	VkResult status;
 
 	/* The compositor's Vulkan device the image is imported into. */
 	compose = buffer->client->server->compose;
@@ -290,16 +307,16 @@ buffer_import(
 		return errno;
 
 	/* The image bound to the imported memory (the copy is consumed or closed). */
-	result = buffer_image(compose, layout, copy, &image, &memory);
-	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)result);
+	status = buffer_image(compose, layout, copy, &image, &memory);
+	if (status != VK_SUCCESS) {
+		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)status);
 		return EINVAL;
 	}
 
 	/* Its view and descriptor sets and the buffer's import record (import.c); the image and memory go on failure. */
-	result = zwl_import_adopt(buffer, image, memory, layout->width, layout->height, layout->format);
-	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)result);
+	status = zwl_import_adopt(buffer, image, memory, layout->width, layout->height, layout->format);
+	if (status != VK_SUCCESS) {
+		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)status);
 		return EINVAL;
 	}
 
@@ -327,7 +344,7 @@ buffer_image(
 	VkImportMemoryFdInfoKHR import_info;
 	VkMemoryAllocateInfo allocate;
 	VkFormat format;
-	VkResult result;
+	VkResult status;
 
 	/* No Vulkan objects exist until their creation succeeds. */
 	*created = VK_NULL_HANDLE;
@@ -357,27 +374,37 @@ buffer_image(
 	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	result = vkCreateImage(compose->device, &create, NULL, created);
-	if (result != VK_SUCCESS) {
+
+	/* Creates the sampled image before any dedicated memory is imported. */
+	status = vkCreateImage(compose->device, &create, NULL, created);
+	if (status != VK_SUCCESS) {
 		close(descriptor);
 		buffer_image_release(compose, created, memory);
-		return result;
+		return status;
 	}
 
 	/* The client's layout must be the one this image has: same memory type, rows and offset. */
 	vkGetImageMemoryRequirements(compose->device, *created, &requirements);
+
+	/* Selects the color plane whose rows must match the client description. */
 	memset(&subresource, 0, sizeof(subresource));
 	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	/* Queries the image layout and refuses a mismatched client allocation. */
 	vkGetImageSubresourceLayout(compose->device, *created, &subresource, &layout);
 	if ((requirements.memoryTypeBits & (1U << image->memory_type)) == 0U ||
 	    requirements.size > image->allocation_bytes ||
 	    layout.offset != image->offset ||
 	    layout.rowPitch != image->stride) {
 		printf("ZWL VULKAN_IMPORT_LAYOUT types=0x%x type=%u size=%llu bytes=%llu offset=%llu/%llu pitch=%llu/%u\n",
-		       requirements.memoryTypeBits, image->memory_type,
-		       (unsigned long long)requirements.size, (unsigned long long)image->allocation_bytes,
-		       (unsigned long long)layout.offset, (unsigned long long)image->offset,
-		       (unsigned long long)layout.rowPitch, image->stride);
+		       requirements.memoryTypeBits,
+		       image->memory_type,
+		       (unsigned long long)requirements.size,
+		       (unsigned long long)image->allocation_bytes,
+		       (unsigned long long)layout.offset,
+		       (unsigned long long)image->offset,
+		       (unsigned long long)layout.rowPitch,
+		       image->stride);
 		close(descriptor);
 		buffer_image_release(compose, created, memory);
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -407,18 +434,20 @@ buffer_image(
 	allocate.pNext = &import_info;
 	allocate.allocationSize = requirements.size;
 	allocate.memoryTypeIndex = image->memory_type;
-	result = vkAllocateMemory(compose->device, &allocate, NULL, memory);
-	if (result != VK_SUCCESS) {
+
+	/* Imports dedicated memory and transfers its descriptor only on success. */
+	status = vkAllocateMemory(compose->device, &allocate, NULL, memory);
+	if (status != VK_SUCCESS) {
 		close(descriptor);
 		buffer_image_release(compose, created, memory);
-		return result;
+		return status;
 	}
 
 	/* The image uses that memory. */
-	result = vkBindImageMemory(compose->device, *created, *memory, 0U);
-	if (result != VK_SUCCESS) {
+	status = vkBindImageMemory(compose->device, *created, *memory, 0U);
+	if (status != VK_SUCCESS) {
 		buffer_image_release(compose, created, memory);
-		return result;
+		return status;
 	}
 
 	/* Succeeded: the image is bound to the client's memory. */
@@ -435,10 +464,17 @@ buffer_image_release(
 	/* The image, then its memory. */
 	if (*image != VK_NULL_HANDLE)
 		vkDestroyImage(compose->device, *image, NULL);
+
+	/* Releases memory after no image can reference it. */
 	if (*memory != VK_NULL_HANDLE)
 		vkFreeMemory(compose->device, *memory, NULL);
+
+	/* Leaves both output handles safe for another cleanup attempt. */
 	*image = VK_NULL_HANDLE;
 	*memory = VK_NULL_HANDLE;
+
+	/* Succeeded: the imported image and memory handles are cleared. */
+	return;
 }
 
 /* Reads one possibly unaligned native-endian protocol word. */

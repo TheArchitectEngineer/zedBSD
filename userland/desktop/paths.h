@@ -21,12 +21,12 @@
 
 /* The programs. */
 #ifndef KEILAND_BINDIR
-#define KEILAND_BINDIR		"/bin"
+#define KEILAND_BINDIR "/bin"
 #endif
 
 /* The helpers the desktop starts (keiland-ime, keiland-x11). */
 #ifndef KEILAND_LIBEXECDIR
-#define KEILAND_LIBEXECDIR	"/usr/libexec"
+#define KEILAND_LIBEXECDIR "/usr/libexec"
 #endif
 
 /*
@@ -34,12 +34,12 @@
  * (the input method's dictionaries).
  */
 #ifndef KEILAND_DATADIR
-#define KEILAND_DATADIR		"/usr/share"
+#define KEILAND_DATADIR "/usr/share"
 #endif
 
 /* The configuration: keiland/ (apps.conf, desktop, open-with). */
 #ifndef KEILAND_SYSCONFDIR
-#define KEILAND_SYSCONFDIR	"/etc"
+#define KEILAND_SYSCONFDIR "/etc"
 #endif
 
 #endif

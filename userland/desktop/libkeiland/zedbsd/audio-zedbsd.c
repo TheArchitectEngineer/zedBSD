@@ -35,22 +35,25 @@
 
 /* audiod's socket (a host test builds with another path; plan/ws100/tests/host-audio.sh). */
 #ifndef AUDIO_SOCKET_PATH
-#define AUDIO_SOCKET_PATH	AUDIOD_SOCKET_PATH
+#define AUDIO_SOCKET_PATH AUDIOD_SOCKET_PATH
 #endif
 
 /* The wait before connecting again, in milliseconds. */
-#define AUDIO_RETRY_MS		1000U
+#define AUDIO_RETRY_MS 1000U
 
 /* The bytes kept of messages not read whole yet. */
-#define AUDIO_PENDING		(AUDIOD_MESSAGE_MAX * 8U)
+#define AUDIO_PENDING (AUDIOD_MESSAGE_MAX * 8U)
 
 /* The subscription's mask: the device volume. */
-#define AUDIO_SUBSCRIBE_VOLUME	1U
+#define AUDIO_SUBSCRIBE_VOLUME 1U
 
 /*
  * One following of audiod: the connection (-1 while none), the serial of
  * the next request, when to connect again, the bytes of messages not read
  * whole, and what audiod reported.
+ *
+ * The subscriber owns this allocation from open until close; socket -1
+ * means updates must reconnect before any request can be sent.
  */
 struct keiland_audio {
 	int socket;
@@ -69,8 +72,7 @@ static void audio_message(struct keiland_audio *audio, const uint8_t *bytes, uin
 static uint64_t audio_milliseconds(void);
 
 /*
- * Starts following audiod's volume; an audiod not running yet is connected
- * by a later update.
+ * Starts following audiod's volume; an audiod not running yet is connected by a later update.
  */
 struct keiland_audio *
 keiland_audio_open(
@@ -82,6 +84,8 @@ keiland_audio_open(
 	audio = calloc(1, sizeof(*audio));
 	if (audio == NULL)
 		return NULL;
+
+	/* Starts the subscription without an owned connection. */
 	audio->socket = -1;
 	audio->serial = 1U;
 
@@ -106,7 +110,12 @@ keiland_audio_close(
 	/* The connection and the record. */
 	if (audio->socket >= 0)
 		(void)close(audio->socket);
+
+	/* Releases the subscription after its owned socket is closed. */
 	free(audio);
+
+	/* Succeeded: the subscription and its connection are released. */
+	return;
 }
 
 /*
@@ -125,8 +134,7 @@ keiland_audio_fd(
 }
 
 /*
- * Reads what audiod has sent, and connects again when the connection went
- * and its wait is over.
+ * Reads what audiod has sent, and connects again when the connection went and its wait is over.
  */
 int
 keiland_audio_update(
@@ -138,11 +146,14 @@ keiland_audio_update(
 
 	/* Nothing has changed yet. */
 	*changed = 0U;
+
+	/* Refuses to update or request audio without a subscription record. */
 	if (audio == NULL)
 		return EINVAL;
 
 	/* A lost connection is made again when its wait is over. */
 	if (audio->socket < 0) {
+		/* Retries only after the previous connection attempt's delay. */
 		now = audio_milliseconds();
 		if (now >= audio->retry_ms) {
 			error = audio_connect(audio);
@@ -169,11 +180,16 @@ keiland_audio_get_state(
 {
 	/* A missing record knows nothing. */
 	memset(state, 0, sizeof(*state));
+
+	/* Leaves the empty output when no subscription exists. */
 	if (audio == NULL)
 		return;
 
 	/* The state as reported. */
 	*state = audio->state;
+
+	/* Succeeded: the caller holds the last reported audio state. */
+	return;
 }
 
 /*
@@ -190,8 +206,13 @@ keiland_audio_set_volume(
 	int error;
 
 	/* A volume within range, on a connection. */
-	if (audio == NULL || left > 100U || right > 100U || muted > 1U)
+	if (audio == NULL ||
+	    left > 100U ||
+	    right > 100U ||
+	    muted > 1U)
 		return EINVAL;
+
+	/* Refuses a request while the daemon connection is absent. */
 	if (audio->socket < 0)
 		return ENOTCONN;
 
@@ -222,8 +243,12 @@ keiland_audio_feedback(
 	int error;
 
 	/* A connection to send on. */
+
+	/* Refuses to update or request audio without a subscription record. */
 	if (audio == NULL)
 		return EINVAL;
+
+	/* Refuses a request while the daemon connection is absent. */
 	if (audio->socket < 0)
 		return ENOTCONN;
 
@@ -242,6 +267,7 @@ keiland_audio_feedback(
 
 /*
  * Tells whether audiod runs: 1 when its socket is there, 0 when it is not.
+ *
  * Nothing connects and nothing waits; an audiod that runs may still have no
  * sound device (keiland_audio_state's device).
  */
@@ -300,6 +326,8 @@ audio_connect(
 	flags = fcntl(descriptor, F_GETFL);
 	if (flags >= 0)
 		(void)fcntl(descriptor, F_SETFL, flags | O_NONBLOCK);
+
+	/* Publishes the connection with no partially received message. */
 	audio->socket = descriptor;
 	audio->pending_used = 0U;
 
@@ -336,6 +364,8 @@ audio_drop(
 	/* The connection. */
 	if (audio->socket >= 0)
 		(void)close(audio->socket);
+
+	/* Retires pending input and postpones the next connection attempt. */
 	audio->socket = -1;
 	audio->pending_used = 0U;
 	audio->retry_ms = audio_milliseconds() + AUDIO_RETRY_MS;
@@ -344,9 +374,14 @@ audio_drop(
 	if (audio->state.reachable) {
 		audio->state.reachable = 0U;
 		audio->state.device = 0U;
+
+		/* Publishes the lost reachability when the caller is collecting changes. */
 		if (changed != NULL)
 			*changed |= KEILAND_AUDIO_CHANGED_REACHABLE;
 	}
+
+	/* Succeeded: the subscription waits to reconnect with empty pending input. */
+	return;
 }
 
 /* Writes one whole request; a connection that cannot take it is dropped. Returns 0 or an errno value. */
@@ -359,17 +394,19 @@ audio_send(
 	ssize_t sent;
 	int error;
 
-	/* All of it at once (the requests are small), never raising SIGPIPE. */
+	/* Sends the complete small request without raising SIGPIPE. */
 	sent = send(audio->socket, message, length, MSG_NOSIGNAL);
-	if (sent == (ssize_t)length)
-		return 0;
+	if (sent != (ssize_t)length) {
+		/* Captures the write failure before dropping the unusable connection. */
+		error = EIO;
+		if (sent < 0)
+			error = errno;
+		audio_drop(audio, NULL);
+		return error;
+	}
 
-	/* A short or failed write: the connection is not usable. */
-	error = EIO;
-	if (sent < 0)
-		error = errno;
-	audio_drop(audio, NULL);
-	return error;
+	/* Succeeded: the daemon received the complete request. */
+	return 0;
 }
 
 /* Reads the bytes that have come and handles each whole message. */
@@ -385,8 +422,12 @@ audio_read(
 	for (;;) {
 		/* Bytes, as many as there is room for; none waiting ends the read. */
 		count = recv(audio->socket, audio->pending + audio->pending_used, sizeof(audio->pending) - audio->pending_used, 0);
-		if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-			return;
+		if (count < 0 &&
+		    (errno == EAGAIN ||
+		    errno == EWOULDBLOCK))
+			break;
+
+		/* A closed or failed stream is replaced on a later update. */
 		if (count <= 0) {
 			audio_drop(audio, changed);
 			return;
@@ -397,6 +438,7 @@ audio_read(
 
 		/* Each whole message kept. */
 		while (audio->pending_used >= sizeof(header)) {
+			/* Rejects a header that cannot frame a valid daemon message. */
 			memcpy(&header, audio->pending, sizeof(header));
 			if (header.length < sizeof(header) || header.length > AUDIOD_MESSAGE_MAX) {
 				/* A broken stream: connect again. */
@@ -414,6 +456,9 @@ audio_read(
 			memmove(audio->pending, audio->pending + header.length, audio->pending_used);
 		}
 	}
+
+	/* Succeeded: all complete messages currently available have been applied. */
+	return;
 }
 
 /* Handles one message from audiod: WELCOME and VOLUME_CHANGED change the state, the rest is passed over. */
@@ -435,7 +480,13 @@ audio_message(
 	if (header.type == AUDIOD_WELCOME && length >= sizeof(welcome)) {
 		memcpy(&welcome, bytes, sizeof(welcome));
 		audio->state.reachable = 1U;
-		audio->state.device = welcome.device != 0U;
+		audio->state.device = 0U;
+
+		/* Marks a reported output device as available. */
+		if (welcome.device != 0U)
+			audio->state.device = 1U;
+
+		/* Keeps the format reported by the daemon. */
 		audio->state.rate = welcome.rate;
 		audio->state.channels = welcome.channels;
 		*changed |= KEILAND_AUDIO_CHANGED_REACHABLE;
@@ -447,9 +498,18 @@ audio_message(
 		memcpy(&volume, bytes, sizeof(volume));
 		audio->state.left = volume.left;
 		audio->state.right = volume.right;
-		audio->state.muted = volume.muted != 0U;
+		audio->state.muted = 0U;
+
+		/* Marks a muted output independently of its retained volume. */
+		if (volume.muted != 0U)
+			audio->state.muted = 1U;
+
+		/* Notifies the subscriber that its visible volume state changed. */
 		*changed |= KEILAND_AUDIO_CHANGED_VOLUME;
 	}
+
+	/* Succeeded: the report is applied or its unneeded type is passed over. */
+	return;
 }
 
 /* Gives the monotonic clock in milliseconds (0 when it cannot be read). */

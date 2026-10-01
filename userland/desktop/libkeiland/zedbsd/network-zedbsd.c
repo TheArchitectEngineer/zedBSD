@@ -40,16 +40,16 @@
 #include <unistd.h>
 
 /* The watch's request ID, and the first of the requests'. */
-#define NETWORK_WATCH_ID	1U
+#define NETWORK_WATCH_ID 1U
 
 /* How long a watch that could not be made waits before it is tried again. */
-#define NETWORK_RETRY_MS	1000U
+#define NETWORK_RETRY_MS 1000U
 
 /* How long a frame that has begun to arrive may take to arrive whole. */
-#define NETWORK_FRAME_SECONDS	2U
+#define NETWORK_FRAME_SECONDS 2U
 
 /* The longest line of a state or a scan that is read. */
-#define NETWORK_LINE_MAX	512U
+#define NETWORK_LINE_MAX 512U
 
 /*
  * One watch of the network: the SUBSCRIBE connection, the state it last
@@ -59,6 +59,8 @@
  *
  * watch is -1 while there is no watch; retry_ms is when one is tried
  * again.  request_fd is -1 while no request is outstanding.
+ * The subscriber owns this allocation from open until close; completed
+ * requests retain their outcome here after their connection is released.
  */
 struct keiland_network {
 	int watch;
@@ -89,15 +91,14 @@ static unsigned network_wifi_state(const char *name);
 static int network_line(const char *output, size_t length, size_t *start, char *line, size_t size);
 static void network_parse_scan(struct keiland_network *network, const char *output, size_t length);
 static void network_parse_ap(struct keiland_network *network, const char *line);
-static const char *network_word(const char *line, const char *key, char *value, size_t size);
+static const char *network_word(const char *line, const char *key, char *field_text, size_t size);
 static void network_ssid_text(const char *hex, char *text, size_t size);
 static uint64_t network_milliseconds(void);
 
 /*
  * Starts watching the network.
  *
- * A daemon that is not running yet is not a failure: the watch is made by
- * a later update.
+ * A daemon that is not running yet is not a failure: the watch is made by a later update.
  */
 struct keiland_network *
 keiland_network_open(
@@ -109,6 +110,8 @@ keiland_network_open(
 	network = calloc(1, sizeof(*network));
 	if (network == NULL)
 		return NULL;
+
+	/* Starts both connections as unowned and reserves the watch request ID. */
 	network->watch = -1;
 	network->request_fd = -1;
 	network->next_id = NETWORK_WATCH_ID + 1U;
@@ -134,14 +137,20 @@ keiland_network_close(
 	/* The two connections, and the record. */
 	if (network->watch >= 0)
 		(void)close(network->watch);
+
+	/* Retires any independent request connection before freeing its record. */
 	if (network->request_fd >= 0)
 		(void)close(network->request_fd);
+
+	/* Releases the watch record after neither connection can report to it. */
 	free(network);
+
+	/* Succeeded: both connections and the watch record are released. */
+	return;
 }
 
 /*
- * Reads what has arrived on the watch and on the request without waiting,
- * and makes the watch again when it went (at most once a second).
+ * Reads what has arrived on the watch and on the request without waiting, and makes the watch again when it went (at most once a second).
  */
 int
 keiland_network_update(
@@ -153,11 +162,14 @@ keiland_network_update(
 
 	/* Nothing has changed yet. */
 	*changed = 0;
+
+	/* Refuses an operation without its network watch record. */
 	if (network == NULL)
 		return EINVAL;
 
 	/* A lost watch is made again when its wait is over. */
 	if (network->watch < 0) {
+		/* Retries only when the previous watch attempt's delay expires. */
 		now = network_milliseconds();
 		if (now >= network->retry_ms) {
 			error = network_watch(network);
@@ -188,16 +200,20 @@ keiland_network_get_state(
 {
 	/* A missing watch knows nothing. */
 	memset(state, 0, sizeof(*state));
+
+	/* Leaves the caller's state empty when no watch exists. */
 	if (network == NULL)
 		return;
 
 	/* The state the watch keeps. */
 	*state = network->state;
+
+	/* Succeeded: the caller holds the last reported network state. */
+	return;
 }
 
 /*
- * Copies up to capacity networks of the last scan, the strongest first,
- * and returns how many there are.
+ * Copies up to capacity networks of the last scan, the strongest first, and returns how many there are.
  */
 size_t
 keiland_network_get_scan(
@@ -215,10 +231,12 @@ keiland_network_get_scan(
 	count = network->scan_count;
 	if (count > capacity)
 		count = capacity;
+
+	/* Copies retained access points when the caller provided room. */
 	if (count != 0)
 		memcpy(aps, network->scan, count * sizeof(*aps));
 
-	/* The number the scan found. */
+	/* Succeeded: reports the full scan size, even if the copy was bounded. */
 	return network->scan_count;
 }
 
@@ -240,8 +258,12 @@ keiland_network_request(
 	int error;
 
 	/* One request at a time. */
+
+	/* Refuses an operation without its network watch record. */
 	if (network == NULL)
 		return EINVAL;
+
+	/* Keeps one request outstanding so its reply has an unambiguous owner. */
 	if (network->request_fd >= 0)
 		return EBUSY;
 
@@ -275,6 +297,8 @@ keiland_network_request(
 		/* An SSID of one to 32 bytes. */
 		if (ssid == NULL)
 			return EINVAL;
+
+		/* Refuses an SSID outside the daemon's bounded name field. */
 		length = strlen(ssid);
 		if (length == 0 || length > KEILAND_NETWORK_SSID_MAX - 1U)
 			return EINVAL;
@@ -320,8 +344,7 @@ keiland_network_request(
 }
 
 /*
- * Tells the request outstanding, or the one that finished last and its
- * errno value.
+ * Tells the request outstanding, or the one that finished last and its errno value.
  */
 unsigned
 keiland_network_get_request(
@@ -337,7 +360,7 @@ keiland_network_get_request(
 	if (network->request_fd >= 0)
 		return network->request;
 
-	/* The last one that finished. */
+	/* Succeeded: reports the last request and its stored outcome. */
 	*error = network->finished_error;
 	return network->finished;
 }
@@ -364,8 +387,12 @@ network_connect(
 	if (error != 0) {
 		error = errno;
 		(void)close(connection);
+
+		/* Maps an absent listening daemon to the missing-service convention. */
 		if (error == ECONNREFUSED)
 			return ENOENT;
+
+		/* Reports the original connection failure after closing its descriptor. */
 		return error;
 	}
 
@@ -421,6 +448,9 @@ network_unwatch(
 	/* The daemon can no longer be reached, which the caller shows. */
 	memset(&network->state, 0, sizeof(network->state));
 	*changed |= KEILAND_NETWORK_CHANGED_STATE;
+
+	/* Succeeded: the watch is retired and unreachable state is published. */
+	return;
 }
 
 /* Tells whether a connection has something to read (or has ended) now. */
@@ -439,7 +469,7 @@ network_readable(
 	if (ready <= 0)
 		return 0;
 
-	/* Something is there, or the other side has gone. */
+	/* Succeeded: the socket is readable or has closed. */
 	return 1;
 }
 
@@ -463,7 +493,7 @@ network_read_watch(
 		/* Nothing more has arrived. */
 		readable = network_readable(network->watch);
 		if (!readable)
-			return 0;
+			break;
 
 		/* A frame, whole; a watch that ended or broke is dropped. */
 		failed = networkd_protocol_read_frame_timed(network->watch, &header, payload, sizeof(payload), NETWORKD_RESPONSE_MAX, NETWORK_FRAME_SECONDS);
@@ -489,6 +519,9 @@ network_read_watch(
 		network_parse_state(&network->state, output, output_length);
 		*changed |= KEILAND_NETWORK_CHANGED_STATE;
 	}
+
+	/* Succeeded: all currently readable state frames have been applied. */
+	return 0;
 }
 
 /* Reads the answer to the request outstanding, when it has arrived. */
@@ -542,10 +575,16 @@ network_read_answer(
 	network->finished_error = 0;
 	if (status == NETWORKD_RESULT_DEGRADED && network->finished == KEILAND_NETWORK_REQUEST_SCAN)
 		return 0;
+
+	/* Retains a refused daemon request as the visible completed outcome. */
 	if (status != NETWORKD_RESULT_OK) {
 		network->finished_error = EIO;
+
+		/* Keeps the daemon's specific errno when it supplied one. */
 		if (error != 0)
 			network->finished_error = (int)error;
+
+		/* Reports the refusal retained for the request observer. */
 		return network->finished_error;
 	}
 
@@ -578,12 +617,14 @@ network_fields(
 	/* Each field; the ones this side does not use are passed over. */
 	networkd_field_reader_init(&reader, payload, length);
 	for (;;) {
+		/* Stops the field traversal when no complete field remains. */
 		failed = networkd_field_read(&reader, &field);
 		if (failed != 0)
 			break;
 
 		/* The outcome. */
 		if (field.type == NETWORKD_FIELD_STATUS) {
+			/* Accepts this mandatory outcome field only when its scalar decodes. */
 			failed = networkd_field_read_u32(&field, status);
 			if (failed == 0)
 				seen |= 1U;
@@ -592,6 +633,7 @@ network_fields(
 
 		/* The reason for a refusal. */
 		if (field.type == NETWORKD_FIELD_ERROR) {
+			/* Accepts this mandatory outcome field only when its scalar decodes. */
 			failed = networkd_field_read_u32(&field, error);
 			if (failed == 0)
 				seen |= 2U;
@@ -613,11 +655,7 @@ network_fields(
 	return 0;
 }
 
-/*
- * Reads a state: the interfaces' lines and the Wi-Fi's.  The connection is
- * the Wi-Fi's when the Wi-Fi is connected and its interface is online, and
- * otherwise the first other interface that is online with an address.
- */
+/* Reads the interfaces and Wi-Fi state from the daemon's text. */
 static void
 network_parse_state(
 	struct keiland_network_state *state,
@@ -631,15 +669,24 @@ network_parse_state(
 	int more;
 	int differs;
 
+	/*
+	 * Reads a state: the interfaces' lines and the Wi-Fi's.  The connection is
+	 * the Wi-Fi's when the Wi-Fi is connected and its interface is online, and
+	 * otherwise the first other interface that is online with an address.
+	 */
+
 	/* A reachable daemon with nothing known yet. */
 	memset(state, 0, sizeof(*state));
 	state->reachable = 1;
+
+	/* Starts interface selection without a wired or online radio candidate. */
 	wired[0] = '\0';
 	wifi_online = 0;
 
 	/* The Wi-Fi's line first, so that the interfaces' lines know which one is the radio. */
 	start = 0;
 	for (;;) {
+		/* Stops when the bounded daemon output contains no further line. */
 		more = network_line(output, length, &start, line, sizeof(line));
 		if (!more)
 			break;
@@ -653,6 +700,7 @@ network_parse_state(
 	/* Then each interface's line (not the Wi-Fi's, not an empty one). */
 	start = 0;
 	for (;;) {
+		/* Stops when the bounded daemon output contains no further line. */
 		more = network_line(output, length, &start, line, sizeof(line));
 		if (!more)
 			break;
@@ -683,12 +731,12 @@ network_parse_state(
 		state->kind = KEILAND_NETWORK_WIRED;
 		(void)snprintf(state->interface, sizeof(state->interface), "%s", wired);
 	}
+
+	/* Succeeded: the reachable connection state is classified. */
+	return;
 }
 
-/*
- * Copies the next line of a text from *start into line (cut to its size)
- * and moves *start past it.  Returns 0 when the text is used up.
- */
+/* Copies the next bounded line and advances the text cursor. */
 static int
 network_line(
 	const char *output,
@@ -699,6 +747,11 @@ network_line(
 {
 	size_t end;
 	size_t copied;
+
+	/*
+	 * Copies the next line of a text from *start into line (cut to its size)
+	 * and moves *start past it.  Returns 0 when the text is used up.
+	 */
 
 	/* The text is used up. */
 	if (*start >= length)
@@ -713,19 +766,17 @@ network_line(
 	copied = end - *start;
 	if (copied >= size)
 		copied = size - 1U;
+
+	/* Publishes the bounded line and advances past its original newline. */
 	memcpy(line, output + *start, copied);
 	line[copied] = '\0';
 	*start = end + 1U;
 
-	/* A line was read. */
+	/* Succeeded: the next line is copied and the cursor advances. */
 	return 1;
 }
 
-/*
- * Reads an interface's line, "NAME static|unconfigured online|offline":
- * the radio's being online, or the first other interface (not the
- * loopback) online with an address.
- */
+/* Selects an online radio or the first configured wired interface. */
 static void
 network_parse_interface(
 	struct keiland_network_state *state,
@@ -739,6 +790,12 @@ network_parse_interface(
 	char link[32];
 	int count;
 	int differs;
+
+	/*
+	 * Reads an interface's line, "NAME static|unconfigured online|offline":
+	 * the radio's being online, or the first other interface (not the
+	 * loopback) online with an address.
+	 */
 
 	/* The three words. */
 	count = sscanf(line, "%15s %31s %31s", name, address, link);
@@ -766,6 +823,9 @@ network_parse_interface(
 	differs = strcmp(address, "static");
 	if (differs == 0 && wired[0] == '\0')
 		(void)snprintf(wired, wired_size, "%s", name);
+
+	/* Succeeded: the interface is classified without replacing an earlier wired choice. */
+	return;
 }
 
 /* Reads the Wi-Fi's line, "wifi state=NAME interface=IF ssid=HEX radios=N". */
@@ -774,35 +834,40 @@ network_parse_wifi(
 	struct keiland_network_state *state,
 	const char *line)
 {
-	char value[80];
+	char field_text[80];
 	const char *found;
 	int differs;
 
 	/* No radio at all. */
-	found = network_word(line, "radios", value, sizeof(value));
-	differs = strcmp(value, "0");
+	found = network_word(line, "radios", field_text, sizeof(field_text));
+	differs = strcmp(field_text, "0");
 	if (found != NULL && differs == 0) {
 		state->wifi = KEILAND_WIFI_ABSENT;
 		return;
 	}
 
 	/* The radio the managed connection uses ("-" for none). */
-	found = network_word(line, "interface", value, sizeof(value));
-	differs = strcmp(value, "-");
+	found = network_word(line, "interface", field_text, sizeof(field_text));
+	differs = strcmp(field_text, "-");
 	if (found != NULL && differs != 0)
-		(void)snprintf(state->wifi_interface, sizeof(state->wifi_interface), "%s", value);
+		(void)snprintf(state->wifi_interface, sizeof(state->wifi_interface), "%s", field_text);
 
 	/* The network it is on or joining. */
-	found = network_word(line, "ssid", value, sizeof(value));
-	differs = strcmp(value, "-");
+	found = network_word(line, "ssid", field_text, sizeof(field_text));
+	differs = strcmp(field_text, "-");
 	if (found != NULL && differs != 0)
-		network_ssid_text(value, state->ssid, sizeof(state->ssid));
+		network_ssid_text(field_text, state->ssid, sizeof(state->ssid));
 
 	/* The daemon's state, in the desktop's terms (the ones not named are left unconnected). */
-	found = network_word(line, "state", value, sizeof(value));
+	found = network_word(line, "state", field_text, sizeof(field_text));
 	if (found == NULL)
-		value[0] = '\0';
-	state->wifi = network_wifi_state(value);
+		field_text[0] = '\0';
+
+	/* Classifies the daemon state, including an absent or unknown name. */
+	state->wifi = network_wifi_state(field_text);
+
+	/* Succeeded: the radio identity and state are decoded. */
+	return;
 }
 
 /* Tells the desktop's Wi-Fi state for networkd's name of it. */
@@ -826,6 +891,8 @@ network_wifi_state(
 	differs = strcmp(name, "connecting");
 	if (differs == 0)
 		return KEILAND_WIFI_CONNECTING;
+
+	/* Treats a reconnect as the same visible joining state. */
 	differs = strcmp(name, "reconnecting");
 	if (differs == 0)
 		return KEILAND_WIFI_CONNECTING;
@@ -835,15 +902,11 @@ network_wifi_state(
 	if (differs == 0)
 		return KEILAND_WIFI_CONNECTED;
 
-	/* Left by the user, leaving, or a name not known here. */
+	/* Succeeded: other state names describe an unconnected radio. */
 	return KEILAND_WIFI_DISCONNECTED;
 }
 
-/*
- * Reads a scan's networks: its lines
- * "interface=IF bss index=N ssid=HEX bssid=HEX ... rssi=N ... security=HEX ...",
- * one network an SSID (the strongest access point), the strongest first.
- */
+/* Reads and sorts the strongest access point of each scanned SSID. */
 static void
 network_parse_scan(
 	struct keiland_network *network,
@@ -858,12 +921,19 @@ network_parse_scan(
 	size_t place;
 	int more;
 
+	/*
+	 * Reads a scan's networks: its lines
+	 * "interface=IF bss index=N ssid=HEX bssid=HEX ... rssi=N ... security=HEX ...",
+	 * one network an SSID (the strongest access point), the strongest first.
+	 */
+
 	/* A new scan replaces the last. */
 	network->scan_count = 0;
 
 	/* Each line that names an access point. */
 	start = 0;
 	for (;;) {
+		/* Stops when the bounded daemon output contains no further line. */
 		more = network_line(output, length, &start, line, sizeof(line));
 		if (!more)
 			break;
@@ -876,9 +946,11 @@ network_parse_scan(
 
 	/* The strongest first (an insertion sort of a few entries). */
 	for (index = 1; index < network->scan_count; index++) {
+		/* Inserts this access point after every stronger retained one. */
 		moved = network->scan[index];
 		place = index;
 		while (place > 0 && network->scan[place - 1].rssi < moved.rssi) {
+			/* Shifts a weaker access point to reserve this signal-ranked position. */
 			network->scan[place] = network->scan[place - 1];
 			place--;
 		}
@@ -886,6 +958,9 @@ network_parse_scan(
 		/* The entry goes where the stronger ones end. */
 		network->scan[place] = moved;
 	}
+
+	/* Succeeded: the scan keeps the strongest access point per SSID in signal order. */
+	return;
 }
 
 /* Reads one access point's line into the scan (the stronger of two of one SSID stays). */
@@ -895,7 +970,7 @@ network_parse_ap(
 	const char *line)
 {
 	struct keiland_network_ap ap;
-	char value[80];
+	char field_text[80];
 	const char *found;
 	unsigned long security;
 	size_t index;
@@ -903,29 +978,35 @@ network_parse_ap(
 
 	/* The SSID; a hidden network (no SSID) is not listed. */
 	memset(&ap, 0, sizeof(ap));
-	found = network_word(line, "ssid", value, sizeof(value));
-	if (found == NULL || value[0] == '\0')
+
+	/* Skips a hidden access point without a public SSID. */
+	found = network_word(line, "ssid", field_text, sizeof(field_text));
+	if (found == NULL || field_text[0] == '\0')
 		return;
-	network_ssid_text(value, ap.ssid, sizeof(ap.ssid));
+
+	/* Rejects a hexadecimal SSID that decodes to an empty public name. */
+	network_ssid_text(field_text, ap.ssid, sizeof(ap.ssid));
 	if (ap.ssid[0] == '\0')
 		return;
 
 	/* The signal. */
 	ap.rssi = -100;
-	found = network_word(line, "rssi", value, sizeof(value));
+	found = network_word(line, "rssi", field_text, sizeof(field_text));
 	if (found != NULL)
-		ap.rssi = atoi(value);
+		ap.rssi = atoi(field_text);
 
 	/* Any security bit asks for a key. */
-	found = network_word(line, "security", value, sizeof(value));
+	found = network_word(line, "security", field_text, sizeof(field_text));
 	if (found != NULL) {
-		security = strtoul(value, NULL, 16);
+		/* Marks any advertised security mode as requiring a saved key. */
+		security = strtoul(field_text, NULL, 16);
 		if (security != 0)
 			ap.secured = 1;
 	}
 
 	/* An SSID already listed keeps its stronger access point. */
 	for (index = 0; index < network->scan_count; index++) {
+		/* Skips access points naming a different retained network. */
 		differs = strcmp(network->scan[index].ssid, ap.ssid);
 		if (differs != 0)
 			continue;
@@ -933,6 +1014,8 @@ network_parse_ap(
 		/* The stronger one stays. */
 		if (ap.rssi > network->scan[index].rssi)
 			network->scan[index] = ap;
+
+		/* Leaves this SSID represented by exactly one strongest access point. */
 		return;
 	}
 
@@ -941,32 +1024,41 @@ network_parse_ap(
 		network->scan[network->scan_count] = ap;
 		network->scan_count++;
 	}
+
+	/* Succeeded: the access point is retained when room remains. */
+	return;
 }
 
-/*
- * Finds " KEY=VALUE" (or "KEY=VALUE" at the start) in a line and copies the
- * value; returns where it was found, or NULL.
- */
+/* Copies a named whole-word field and reports its position. */
 static const char *
 network_word(
 	const char *line,
 	const char *key,
-	char *value,
+	char *field_text,
 	size_t size)
 {
 	const char *at;
 	size_t key_length;
 	size_t length;
 
+	/*
+	 * Finds " KEY=VALUE" (or "KEY=VALUE" at the start) in a line and copies the
+	 * value; returns where it was found, or NULL.
+	 */
+
 	/* Nothing found yet. */
-	value[0] = '\0';
+	field_text[0] = '\0';
 
 	/* Each place the key appears, as a whole word followed by '='. */
 	key_length = strlen(key);
-	for (at = strstr(line, key); at != NULL; at = strstr(at + 1, key)) {
+	for (at = strstr(line, key);
+	     at != NULL;
+	     at = strstr(at + 1, key)) {
 		/* Part of a longer word. */
 		if (at != line && at[-1] != ' ')
 			continue;
+
+		/* Requires the complete key to be followed by its value separator. */
 		if (at[key_length] != '=')
 			continue;
 
@@ -975,13 +1067,19 @@ network_word(
 		length = strcspn(at, " ");
 		if (length >= size)
 			length = size - 1U;
-		memcpy(value, at, length);
-		value[length] = '\0';
-		return at;
+
+		/* Copies and terminates the bounded field before returning its position. */
+		memcpy(field_text, at, length);
+		field_text[length] = '\0';
+		break;
 	}
 
-	/* The line does not have the key. */
-	return NULL;
+	/* Refuses a field not present as a complete key. */
+	if (at == NULL)
+		return NULL;
+
+	/* Succeeded: the field text is copied and its position is retained. */
+	return at;
 }
 
 /* Turns a hexadecimal SSID into text a menu can show (a control byte shows as '?'). */
@@ -991,28 +1089,35 @@ network_ssid_text(
 	char *text,
 	size_t size)
 {
-	unsigned value;
+	unsigned decoded_byte;
 	size_t used;
 	int count;
 
 	/* Each pair of digits is one byte. */
 	used = 0;
-	while (hex[0] != '\0' && hex[1] != '\0' && used + 1U < size) {
+	while (hex[0] != '\0' &&
+	       hex[1] != '\0' &&
+	       used + 1U < size) {
 		/* A pair that is not hexadecimal ends the SSID. */
-		count = sscanf(hex, "%2x", &value);
+		count = sscanf(hex, "%2x", &decoded_byte);
 		if (count != 1)
 			break;
 
 		/* A control byte cannot be drawn. */
-		if (value < 0x20U || value == 0x7fU)
-			value = '?';
-		text[used] = (char)value;
+		if (decoded_byte < 0x20U || decoded_byte == 0x7fU)
+			decoded_byte = '?';
+
+		/* Publishes one drawable SSID byte and advances to the next pair. */
+		text[used] = (char)decoded_byte;
 		used++;
 		hex += 2;
 	}
 
 	/* The text ends where the digits did. */
 	text[used] = '\0';
+
+	/* Succeeded: the decoded SSID is terminated. */
+	return;
 }
 
 /* Reads the monotonic clock in milliseconds. */
@@ -1028,6 +1133,6 @@ network_milliseconds(
 	if (error != 0)
 		return 0;
 
-	/* Seconds and nanoseconds as milliseconds. */
+	/* Succeeded: expresses the monotonic clock in milliseconds. */
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }

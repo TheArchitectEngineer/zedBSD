@@ -647,6 +647,8 @@ compose_device(
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	application.pApplicationName = "wayland";
 	application.apiVersion = VK_API_VERSION_1_0;
+
+	/* Describes the instance separately from its application identity. */
 	memset(&instance, 0, sizeof(instance));
 	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instance.pApplicationInfo = &application;
@@ -698,10 +700,12 @@ compose_device(
 	if (wanted == 2U && fence_type != 0)
 		compose->fence_fd = 1;
 
-	/* Append the OS extensions after the common device extension list. */
+	/* Keeps the common extensions and both optional frame-fence extensions together. */
 	device_count = 5U;
 	if (compose->fence_fd)
 		device_count = 7U;
+
+	/* Appends the OS extensions after the selected common device extension list. */
 	memcpy(device_names, device_extensions, device_count * sizeof(device_names[0]));
 	extra = zwl_gpu_device_extensions(compose->physical, device_names + device_count, COMPOSE_EXTENSIONS_MAX - device_count);
 	if (extra > COMPOSE_EXTENSIONS_MAX - device_count)
@@ -715,6 +719,8 @@ compose_device(
 	queue.queueFamilyIndex = compose->family;
 	queue.queueCount = 1U;
 	queue.pQueuePriorities = &priority;
+
+	/* Describes the device separately from its selected queue. */
 	memset(&device, 0, sizeof(device));
 	device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device.queueCreateInfoCount = 1U;
@@ -1031,6 +1037,8 @@ compose_objects(
 	memset(&export, 0, sizeof(export));
 	export.sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO;
 	export.handleTypes = zwl_gpu_frame_fence_type();
+
+	/* Describes the frame fence with the OS export type when export is available. */
 	memset(&fence, 0, sizeof(fence));
 	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	if (compose->fence_fd)
