@@ -98,17 +98,22 @@ void zwl_input_probe(struct zwl_server *server, int descriptor, const char *path
    grep -n '\bclose(' userland/desktop/wayland/input.c userland/desktop/wayland/tablet.c userland/desktop/wayland/touch.c | wc -l   # 0
    ```
 3. build と warning の数え（[commands.md](../commands.md) §1）。
-4. compositor の基準（commands.md §5）: results.txt が全て PASS（C9 に `p053` の touch の注入が入っている）。
+4. compositor の基準（commands.md §5）: results.txt が全て PASS（C9 の p053 は共有メモリの合成。touchscreen の注入は下の専用試験で確認する）。
 5. glass の見た目と pointer（commands.md §7、`zdesktop-p059.sh`）: `p059: PASS`。
 6. pen（tablet の protocol）: `plan/ws079/tests/notes-pen.sh`（notes の image。使い方は script の先頭）: PASS。
+6a. touchscreen: `build-pen-image.sh build/ws104-p005-touch` → `GUEST_RUNTIME` を専用の `build/ws104-p005-touch-run` にして `pen-guest.sh start`・`zdesktop-guest.sh wait --timeout 240` → `zdesktop-p013-touch.sh build/ws104-p005-touch build/ws104-p005/touch ws104-p005-` → stop。既存の `plan/ws079/tests/` の道具を使い、`p013 touch: PASS` を確認。約 5〜10 分。C9 の誤記を補い、変更する touch.c の軸の読取りと 2 指・cancel・pointer fallback の production path を確かめる。
 7. 入力の追加と抜き（hotplug）: 既存の試験に無いので「未実施」と書いてよい（再走査の code は移しただけで中身を変えていない）。
 8. boot test（`OUTPUT=build/ws104-p005/boot`）。
 9. commit: `git commit -m WIP -- userland/desktop/wayland`
 
 ## 完了の条件
 
-- 手順 2 の 3 つが条件どおり、手順 3〜6・8 が PASS、7 は未実施でよい（理由を書く）。
+- 手順 2 の 3 つが条件どおり、手順 3〜6a・8 が PASS、7 は未実施でよい（理由を書く）。
 
 ## 結果
 
 （実行の後に書く）
+
+## 検証手順の補正（2026-10-01T02:58:03.434367+00:00）
+
+q518 の関連道具の確認で、p053 は touch 注入ではないと判明。C9 の必須確認を保ち、既存の p013-touch を補った。入力の分離の範囲・API・依存・達成する振る舞いは不変。WS104 完了までの自律実行承認内の検証手段の補正。新しい implementation の範囲は追加しない。

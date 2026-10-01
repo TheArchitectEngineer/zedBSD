@@ -2,10 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q517](queue-q517.md)（ws104-p003 cleared）
+Last finished Queue: [q518](queue-q518.md)（ws104-p004 cleared）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-10-01 q518
+
+[q518](queue-q518.md): ws104-p004 **cleared**。GPU の wire layout・zedBSD GPU protocol/global・import を OS module に閉じ、共通 import は Vulkan image / memory の adopt だけにした。共通 layout、旧 factory、vulkan_external include、直接 vkGetFenceFdKHR は 0。device proc pointer で fence を呼ぶ。amd64 disk-image build exit 0、自前 warning 0。GPU v1 check（52 source）、dedicated host 18 cases × ordinary/sanitize、decode host 17 cases × ordinary/sanitize、forge guest、600 fence（全て generation 1）と 600 frames、C1/C2/C9 13/13、boot 全て PASS。p072 の全 6 PNG を目視し Wiseview・drag・復元・desktop 移動を確認。login PNG も目視・提示済み。証拠: `plan/history/ws104/q518/`。clang-format 19.1.7 と新 module / common import の style-check を実施（0）。全文規約の最終確認は p008。実機・Linux は未実施。旧 protocol/log と通常 path を保持し、import 失敗時の所有権を module で明示した。未達条件なし。
+
+実装 `69f0f2c030becfa426fb98e2be9ad1c324488e4a`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q517
 

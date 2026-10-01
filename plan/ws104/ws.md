@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q518](../queue.md) active（ws104-p004 in-progress）
-Resume point: ws104-p004 in-progress。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
+Queue: [q518](../queue.md) finished（ws104-p004 cleared（q518））
+Resume point: ws104-p004 cleared（q518）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -83,7 +83,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | [ws104-p001](phase001/phase.md) | desktop の公開の header を `userland/desktop/keiland/` へ移す（sysroot の manifest に 1 directory を足す） | cleared（q515） | なし |
 | [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | cleared（q516） | p001 |
 | [ws104-p003](phase003/phase.md) | libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ | cleared（q517） | p002 |
-| [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | in-progress | p001 |
+| [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | cleared（q518） | p001 |
 | [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | planned | p004 |
 | [ws104-p006](phase006/phase.md) | compositor の session（`handoff.c`）と OS の hook（`zwl-os.h`）を zedBSD の module に | planned | p005 |
 | [ws104-p007](phase007/phase.md) | install の path を `userland/desktop/paths.h` の macro に | planned | p006、p003 |
@@ -123,3 +123,17 @@ cleared（q517）。libkeiland の network・network-link・audio を `zedbsd/*-
 ### 2026-10-01T02:34:59.246799+00:00 / q518 / ws104-p004
 
 in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase004/phase.md)。
+
+### Checkpoint 2026-10-01T02:46:06.727450+00:00 / q518
+
+実装 `5d413c08`（WIP）。境界 4 項目の旧参照 0、amd64 build exit 0・自前 warning 0、style-check（新しい GPU module/header・import）0、V1 52 source compile・host 18 case/17 case の ordinary と sanitizer・boot・forge guest・fence guest PASS（600/600 fence、generation 1、600 frames / 64 s）。証拠は `plan/history/ws104/q518/`。C1・C2・C9 を実行中で、p004 は in-progress。p008 で共通 source の既存の規約の差も全文確認する。
+
+
+### 検証資料の補正 2026-10-01T02:58:03.434367+00:00
+
+p005 の C9/p053 の touch 表記を訂正。既存の WS079 p013-touch を同じ入力分離の検証に補い、変更する touch の軸と event の道を直接確認する。API・Phase 構造・依存・WS の受け入れ範囲は変わらない。詳細は [p005](phase005/phase.md#検証手順の補正)。
+
+### 2026-10-01T03:10:03.009057+00:00 / q518 / ws104-p004
+
+cleared（q518）。GPU の wire layout・zedBSD GPU protocol/global・import を OS module に閉じ、共通 import は Vulkan image / memory の adopt だけにした。共通 layout、旧 factory、vulkan_external include、直接 vkGetFenceFdKHR は 0。device proc pointer で fence を呼ぶ。amd64 disk-image build exit 0、自前 warning 0。GPU v1 check（52 source）、dedicated host 18 cases × ordinary/sanitize、decode host 17 cases × ordinary/sanitize、forge guest、600 fence（全て generation 1）と 600 frames、C1/C2/C9 13/13、boot 全て PASS。p072 の全 6 PNG を目視し Wiseview・drag・復元・desktop 移動を確認。login PNG も目視・提示済み。証拠: `plan/history/ws104/q518/`。clang-format 19.1.7 と新 module / common import の style-check を実施（0）。全文規約の最終確認は p008。実機・Linux は未実施。旧 protocol/log と通常 path を保持し、import 失敗時の所有権を module で明示した。未達条件なし。
+ 詳細は [Phase](phase004/phase.md)。
