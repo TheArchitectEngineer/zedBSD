@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=master -->
 
 <!-- awesome-plan-current:start -->
-Active Queue: なし。Last finished Queue: q514（ws103-p007 cleared: WS103 完了）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
+Active Queue: なし。Proposed Queue: q515（ws104-p001、未承認。2026-10-01 ユーザーの候補依頼に基づく）。Last finished Queue: q514（ws103-p007 cleared: WS103 完了）。2026-09-29〜30 のサブエージェントの Phase は Queue の外で、記録は各 ws.md と phase.md。
 Current Focused Goal: fg010 — Kei Operating System を 2026-10-17 の OSC Tokyo Fall のデモに向けて仕上げる（Dell Latitude 5330 の内蔵 LCD、`display=edp`）。
 Next（2026-10-01 に更新）: ユーザー「Linux移植を進めます」→ WS104（Keiland の OS の境界の整理、zedBSD の上）と WS105（Keiland を Linux で動かす）を計画した（planned、Queue はまだ無い。survey 6 本と design-reviewer の後の改訂 2: 各 Phase に正確な編集・patch・command）。最初は ws104-p001（toolchain の範囲の sysroot.mk の差分を含むので main が実行。2026-10-01 にユーザーが差分を許可）と ws105-p001（Linux の試験の guest。SSH と QMP による起動確認を同日に許可）。WS103（compositor を libvulkan だけに）は 2026-10-01 に完了（q508〜q514、ユーザーの自走の指示）。デモの優先 WS（WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102・WS084・WS075・WS081・WS085・WS068・WS101）は 2026-10-01 に作業の手引き（各 `guide.md`）と実機の手引き（`tools/hw5330/README.md`）を整えた。候補: デモ critical の上位（WS099・WS079・WS090・WS089・WS094・WS100・WS078・WS102）、5330 の実機の新しい demo の image とユーザーの実機の確認。サブエージェントは N=0。
 IME（WS095）は一時的に人間が作業中（エージェントに割り当てない）。WS074 は 2026-09-30 のユーザー指示「Run ws074」で再開し、p099まで cleared。

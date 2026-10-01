@@ -5,12 +5,12 @@
 Status: planned
 Disposition: normal
 Parent: [WS104](../ws.md)
-Queue: なし
-実行者: **main（Q1）だけ**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。2026-10-01 にユーザーが `p001-sysroot.patch` の適用を許可。Queue は未設定）
+Queue: [q515 / q515-i01](../../queue.md) proposed（未承認、未実行）
+実行者: **main（Q1）だけ**（`toolchain/llvm/sysroot.mk` は AGENTS.md の toolchain の範囲。2026-10-01 にユーザーが `p001-sysroot.patch` の適用を許可。q515 は proposed、実行は未承認）
 
 ## 判断（2026-10-01）
 
-ユーザーは [p001-sysroot.patch](../patches/p001-sysroot.patch) の適用を明示して許可した。toolchain の変更の判断は解決した。Phase の範囲・達成基準は変わらず、実行には Queue の選定が要る。
+ユーザーは [p001-sysroot.patch](../patches/p001-sysroot.patch) の適用を明示して許可した。toolchain の変更の判断は解決した。Phase の範囲・達成基準は変わらず、実行には proposed Queue q515 の承認が要る。
 
 ## 目的
 
