@@ -272,7 +272,7 @@ handoff_descriptor(
 	if (server->greeter)
 		return server->auth_fd;
 
-	/* A session on --control-fd (-1 without). */
+	/* Succeeded: the session control descriptor (-1 without sessiond). */
 	return server->control_fd;
 }
 
