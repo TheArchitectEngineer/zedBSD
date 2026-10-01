@@ -2,6 +2,8 @@
 
 Implementation: `6efb4f2bbe86e44da74a79f44ec4cf4a4576318c`（WIP）。Source baseline: `ac5453cc`（WS104 実装前の承認・計画）。規約: `plan/coding-style.md` 全文 §1〜§14、SHA256 `2244803c00d4a3346ab4f74c227f16a5b65c439759dfc1184697ab9f63df3930`。Guardrail / AGENTS の project rules を適用。簡約版は無い。
 
+Conformance status: in-progress。最終出口の全関数の追加確認で handoff_descriptor の成功注釈に Succeeded が 1 箇所不足。処理本文は同一の修正を準備済み、直列 suite の終了後に適用・build / ELF 同一性 / boot / 最終規約を確認する。機械違反 0 は手動確認の完了を意味しない。
+
 ## 対象
 
 C / header 83 file。新規・移動した実装と境界 header は全文、既存の共通実装は WS104 の全変更箇所とそれを含む関数・呼び出し順・所有を確認。[source manifest](source-manifest.json) は shell / Makefile / toolchain の範囲と最終 SHA256 も保持。削除・移動元は最終 tree に無い。

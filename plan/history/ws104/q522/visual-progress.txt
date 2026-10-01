@@ -1,0 +1,5 @@
+2026-10-01 q522 final implementation 6efb4f2b
+boot/login.png: login prompt confirmed and presented.
+criteria/c9-p072: wiseview / dragging / minimized / restored / desk2 / desk1, all six inspected; corresponding window placement, selection outline, rounded corners and desktop indicator present.
+p059: desktop / hover / moved / maximized / restored / closed, all six inspected; hover close button, rounded glass titlebar/body, original/restored geometry and closed window state present.
+notes-pen: pressure / eraser / hover-pen / hover-eraser / pen-1, all five inspected; pressure-weighted curve and straight stroke, erased curve, restored ink, pen dot / eraser ring and PDF strokes present. qpdf OK, compositor ERROR 0.

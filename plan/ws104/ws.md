@@ -204,3 +204,7 @@ in-progress。current user, 2026-10-01「お、いい調子ですね！その調
 ### Checkpoint 2026-10-01T05:00:49.526826+00:00 / q522
 
 最終実装 6efb4f2b の amd64 build exit 0、自前 / 外部 warning 0。GPU V1 は 54 source、dedicated host 18 case × ordinary / sanitize、decode host 17 case × ordinary / sanitize、forge guest、fence guest（600 fence、generation 1、600 frame / 64 s）、boot 全て PASS。boot PNG を目視してユーザーに提示した。GPU の log / PNG / tools version と final source manifest は plan/history/ws104/q522 に保存。C1/C2/C9 は実行中、その他必須回帰は未完了、p008 は in-progress。
+
+### Checkpoint 2026-10-01T05:27:20.127703+00:00 / q522
+
+compositor C1/C2/C9 13/13、glass p059、Notes pen/eraser/undo/hover/PDF（qpdf OK・ZWL ERROR 0）、Settings host、audio host 14/14 PASS。p072 6 枚・glass 6 枚・Notes 5 枚を目視し、PNG / summary を history/ws104/q522 に保持。Settings guest 8 本を実行中、volume は後続。全文 review の全関数の最終 return 追加点検で handoff_descriptor の Succeeded 注釈が 1 箇所不足、コメントのみの修正を準備し、suite 終了後に ELF 同一性・build / boot と最終規約を確認する。p008 は in-progress、clearance はまだ行わない。

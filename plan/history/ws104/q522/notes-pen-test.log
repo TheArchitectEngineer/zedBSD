@@ -1,0 +1,15 @@
+log: NOTES TABLET seat ok
+peninject=0
+log: NOTES TABLET tool type=0x140 pressure=1 tilt=1 ok
+log: NOTES STROKE page=0 id=1 tool=0 points=[0-9]+ strokes=1 pressure=[0-9]+\.\.6[0-9]{4} tilt=1 ok
+log: NOTES STROKE page=0 id=2 tool=0 points=[0-9]+ strokes=2 pressure=[0-9]+\.\.9[0-9]{3} tilt=1 ok
+peninject=0
+log: NOTES ERASE page=0 removed=1 strokes=1 ok
+log: NOTES UNDO page=0 strokes=2 ok
+log: NOTES HOVER source=1 ok
+log: NOTES HOVER source=2 ok
+log: NOTES HOVER gone ok
+log: NOTES SAVE reason=request pages=1 strokes=2 ok
+qpdf: ok
+zdesktop: no ERROR
+notes-pen: PASS
