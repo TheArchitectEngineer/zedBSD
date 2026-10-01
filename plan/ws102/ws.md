@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p016・p017・p018・p020・p021・p023 と L3 の p019 cleared 2026-09-30。p024 cleared 2026-09-30（全手順の回帰は未実施）。ユーザーの指示で優先を下げ P3 の担当は終了（2026-09-30）。再開はユーザーが言うとき（次は p022 の絵文字の面、BUG-125）
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-30 ユーザー）
 

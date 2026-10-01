@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: p011（Terminal・Notes の窓、KUI_VERSION 11）uncleared（2026-09-30、ユーザーの指示で優先を下げた。main に入れた。残りの試験は未実施、再開はユーザーが言うとき）。p008 cleared。次は p009・p010（Files）、p007（WS089 の完了の後）、p015（案）
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-29 ユーザー）
 

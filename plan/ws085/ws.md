@@ -8,6 +8,7 @@ Related Milestones: MG001
 Parent: [Master](../master.md)
 Queue: [q499](../queue.md)
 Resume point: p001。Windows QEMUのmapped blob scanoutでデスクトップを確認済み。SDL→仮想USB HIDの10指タッチを追加し、QMPの2指注入でメニュー起動を確認。Files起動停止の原因だったWindowsの共有画像通信のpadding・fd所有権を修正し、Files開閉・再起動とTerminal同時起動を確認。物理タッチ入力と所有者切替の確認待ち。
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標と境界
 

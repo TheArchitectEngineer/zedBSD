@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: none
 Resume point: p033（desktop GL 3.2）cleared（2026-09-27、Venus で glx-p033 と回帰 PASS。i915 未実施）。GL 3.3 以降（p037・p034〜p036）は保留（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」）。再開はユーザーの指示で p037 から（[phase037](phase037/phase.md) に設計の下書き）。p009・p004・p007 は残り、i915 の高度化（WS031 等）の後
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標
 

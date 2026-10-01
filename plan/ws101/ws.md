@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: **L1 で区切り**。p015（S13 を demo の image で）cleared（2026-09-30、5330 の passthrough、kei の Terminal で s13.sh が通った）。**2026-09-30 ユーザーの判断で最適化（p016・p017）の優先を下げた**（「GPUでは疎通できたので、最適化の優先度を下げます」）。再開するなら p016 から（phase015 の Resume point に測り方の案）。p017 の候補は下の「段の計画」の後の節
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-30 ユーザー）
 

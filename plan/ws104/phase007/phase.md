@@ -21,7 +21,7 @@ zedBSD の build では**今と全く同じ文字列**になり、Linux の buil
 - [`../patches/p007-table.txt`](../patches/p007-table.txt): 置き換えた全ての行の前と後。
 - survey の確かめ（2026-10-01、copy の tree）: 置き換えた 26 個の `.c`（と header を通して影響を受ける `ui.c`・`textedit/text.c`・`browser/view/view.c`）を target で前後に
   compile し、**object が byte で同じ**（文字列が同じ）。host の試験（files `host-build`・`host-default`、ws094 `host-thumb`、textedit `host-core`、ws089 `host-build`、ws074 `host-build`）が通る。
-  ws094 `host-desktop` は font の確かめ 2 つで落ちるが、変える前の copy でも同じく落ちる（この Phase の原因ではない）。
+  ws094 `host-desktop` は survey の copy の tree では font の確かめ 2 つで落ちた（変える前の copy でも同じ）が、main の checkout では PASS する（2026-10-01、WS094 の guide の調べ）。main で前後に走らせて比べる。
 - `paths.h` の macro と zedBSD の値: `KEILAND_BINDIR` `"/bin"`、`KEILAND_LIBEXECDIR` `"/usr/libexec"`、`KEILAND_DATADIR` `"/usr/share"`、`KEILAND_SYSCONFDIR` `"/etc"`
   （それぞれ `#ifndef` で囲み、Linux の build が `-D` で上書きする）。path は「macro + 残りの文字列」で書く（`KEILAND_BINDIR "/terminal"` は zedBSD では `"/bin/terminal"`）。
 

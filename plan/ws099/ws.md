@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: p002（C5）cleared（2026-09-30 P6、5330 で最大 55 ms）。次は L2 の残り（C1 の実機・BUG-119）
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-30 ユーザー）
 

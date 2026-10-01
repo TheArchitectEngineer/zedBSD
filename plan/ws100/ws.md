@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: p005 cleared（2026-09-30、Settings の Sound の頁）。L1（まず動く）がそろった（下の「段の計画」）。次は L2 の p006（5330 の実機、A7、ユーザー）
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-30 ユーザー）
 

@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: main の依頼（worktree `.claude/worktrees/ws094-desktop`、branch `wt/ws094`）
 Resume point: L3 の計測（p008）は 2026-09-30 に cleared。基準値は (a) 2908 ms（目標 1500）・(b) 1094 ms（2500）・(c) 95 ms（50）・SLOW-FRAME 0。p009 は 2026-09-30 に uncleared: (a) 1954 ms（画面に出るまで 2973）、(c) 90 ms、(b) 1344、SLOW-FRAME 0。残りは zdesktop の import（WS035）と QEMU の Venus の呼び出し 1 回約 10 ms で、進め方は main の判断待ち（phase009 の「残り」）。p013（jpg・gif の thumbnail）は 2026-09-30 に cleared（Image Viewer と共有の decoder `userland/desktop/picture/`）。段の計画は下の「段（L1〜L5）」
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-29 ユーザー）
 

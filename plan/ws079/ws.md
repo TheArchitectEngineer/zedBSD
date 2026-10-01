@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: 2026-09-30: L2 の p016 cleared（QEMU の S8・S9 と頁送り ≤ 200 ms）。残りは実機（5330 の mouse）と Windows の QEMU（touch）での S8・S9 の確認（ユーザー、`demo-s8-s9-manual.md`）と、L3 の実機のペン
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-28 ユーザー）
 

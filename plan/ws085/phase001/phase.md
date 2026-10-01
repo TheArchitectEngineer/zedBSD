@@ -60,3 +60,52 @@ data/hdd-image.imgはビルド済みamd64 imageのコピー。data/edk2-x86_64-c
 配布フォルダの既存 data/hdd-image.img で Files の初回表示、Documents への移動、終了 status=0、Files の再起動、Terminal の同時起動・surface map を確認。ZFILES READY、共有画像3枚の import 成功、QEMU stderr に fence error なし。証拠は C:\Work\files-fixed.png と C:\Work\zedbsd-winq-files-fixed-stderr.log。commit/push は行っていない。
 
 調査中、壊れた通信からの guest GPU reset で vrend_destroy_context から NULL 呼び出しとなる別の host crash も捕捉した。正常なアプリ起動では再現しなくなったが、意図的なGPU障害からの回復と以前からの表示所有者切替は未検証。
+
+## 手順（2026-10-01 追記）: 残りの受け入れ（所有者の切替・速度・物理の touch）
+
+p001 の残り（「手順・制限」の所有者の切替とアニメーション、「Windows SDL multitouch」の物理の touch）を、最新の main の image でユーザーに確かめてもらう。
+WS081 の L2（[windows-touch.md](../../ws081/tests/windows-touch.md)）と同じ image・同じ起動で 1 回にまとめる。command の説明は [手引き](../guide.md)。
+
+エージェントの用意（repo の root で）:
+
+```
+mkdir -p build/ws085-p001
+ls build/amd64/sysroot/usr/lib/crt1.o
+sh plan/ws081/tests/build-demo-win.sh build/ws085-p001-win > build/ws085-p001/win-build.log 2>&1; echo "exit=$?"
+grep -E ':[0-9]+:[0-9]+: warning:' build/ws085-p001/win-build.log | grep -vE '/packages/|^\.\./src/|userland/base/noct/noct/' | wc -l
+OUTPUT=build/ws085-p001/boot plan/tools/boot-test.sh build/ws085-p001-win/hdd-image.img; echo "exit=$?"
+sh plan/ws035/tests/zdesktop-guest.sh start build/ws085-p001-win/hdd-image.img
+sh plan/ws035/tests/zdesktop-guest.sh wait --timeout 240
+sleep 30
+python3 plan/ws035/tests/zdesktop-shot.py build/ws085-p001/linux-desktop.png --runtime build/ws035-sq-run
+sh plan/ws035/tests/zdesktop-guest.sh stop
+sha256sum build/ws085-p001-win/hdd-image.img
+```
+
+- 1 行目の後の `ls` が失敗したら、先に `make -j64 sysroot-amd64`（`build-demo-win.sh` が `build/amd64` に image を作らないように）。
+- PASS: build の `exit=0`、warning `0`、`boot-test: PASS …`（Venus の無い QEMU では console の login に戻るのが正しい、ws081-p018）、`linux-desktop.png` に kei の desktop（Linux の Venus 1.3 の経路）。
+- 他の image の build と重ねない。`build/ws035-sq-run` を使う他の試験（criteria.sh）と重ねない。
+
+ユーザーへ渡す手順（このまま送る。image は `build/ws085-p001-win/hdd-image.img` と、その sha256）:
+
+1. `C:\Work\winq-zedbsd\data\hdd-image.img` をこの image に替え（元は名前を変えて残す）、`boot.bat` で起動。desktop が出るまでの秒数を見る。
+2. App Home から Files・Terminal・Notes を開いて閉じる、を 5 回。その後 App Home の Log Out → greeter で kei を選び Enter → desktop、を 3 回。QEMU が止まらないか、画面が黒・古いままにならないかを見る。
+3. Gears を開いて 30 秒、動きが滑らかか（カクつくか）を見る。
+4. 指で: 左上を tap（App Home が開く）、Files の一覧を指で fling。続けて [windows-touch.md](../../ws081/tests/windows-touch.md) の 3 行（`touchlog --seconds=15`）。
+5. 報告: 1〜4 のそれぞれの結果、止まった時は QEMU の窓（boot.bat の PowerShell）の最後の 20 行、touchlog の `SUMMARY` の 6 行。
+
+エージェントの確かめ（ユーザーが止まった・黒いと報告した時。SSH が生きていれば）:
+
+```
+ssh -p 2222 root@127.0.0.1 "grep -E 'ZWL (ERROR|FAILED|VULKAN_ERROR|OUTPUT)' /run/user/1000/session.log | tail -20; grep -E 'SESSIOND (HANDOFF|GREETER)' /var/log/sessiond.log | tail -20"
+```
+
+（ユーザーの Windows で打ってもらい、出力を送ってもらう。guest の app の log であり、QEMU の console の log ではない。）
+
+## 完了の条件（p001）
+
+- 手順の 2 で QEMU が止まらず、Log Out・login の 3 回とも desktop が出る（BUG-101 の所有者の切替）。止まれば uncleared、提案 p002（[手引き](../guide.md)）へ。
+- 手順の 3 の滑らかさをユーザーが記録（数値が要るなら WS081 の p017 の `--log-frames` の image で `ZWL COMPOSE` の間隔を測る）。基準の数値は無いので、ユーザーの「デモに使える」の判断で決める。
+- 手順の 4 で指の tap が届き、touchlog の SUMMARY が出る（`touching` > 0）。L2 の数値（≥ 60 Hz・欠け 0）の合否は WS081 の記録に書く。
+- Linux の Venus の desktop（`linux-desktop.png`）が出る。
+- 結果を上の「現在の証拠」の後に日付つきで足し、BUG-101 の ticket と Bug Board の行を更新する（Windows の証拠と Linux の QEMU の証拠を分けて書く）。

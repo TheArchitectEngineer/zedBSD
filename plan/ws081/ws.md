@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: 2026-09-30: L2 の準備の p016 cleared（道具と手順）。次は Windows の機械での計測（ユーザー、`plan/ws081/tests/windows-touch.md`。用意: touchlog 入りの image と boot.bat の ssh の転送）→ L3 の p017。p007（実機）→ p009。BUG-099 は tracking
 <!-- awesome-plan-current:end -->
+作業の手引き（2026-10-01）: [guide.md](guide.md)
 
 ## 目標（2026-09-28 ユーザー）
 

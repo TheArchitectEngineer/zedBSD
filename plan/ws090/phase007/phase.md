@@ -1,0 +1,97 @@
+<!-- awesome-plan project=zedbsd record=ws090-p007 -->
+
+# ws090-p007: Settings を libkeiui へ
+
+Status: planning（ws.md の表。依存の WS089 の完了がまだ）
+Disposition: normal
+Parent: [WS090](../ws.md)
+Queue: なし
+依存: p005（cleared）、**WS089 の完了**（ws.md・design.md §9 の 3 番、2026-09-29 main）
+
+この file は 2026-10-01 に手引き（[../guide.md](../guide.md)）と一緒に作った。範囲は [design.md](../design.md) §9・§10 の p007 の行で、下の手順と
+完了の条件はそこから起こした案である。実行の前に main が範囲と、WS104 との順（下の「始める前」）を確かめる。
+
+## 範囲（design.md §10）
+
+- 描画の層: Settings が `userland/desktop/files/canvas.c`・`text.c`・`icons.c` と `artwork/mark.c` を source のまま compile している（F-038、
+  `userland/desktop/settings/Makefile` の `KEILAND_SETTINGS_SOURCES` の最後の 4 つ）のを、libkeiui の `kui_canvas`・`kui_text`・`kui_icon` に替える。
+  Settings の線の絵（`settings/glyphs.c`）は p002 で libkeiui の `icons-line.c`（`KUI_ICON_TILES`〜`KUI_ICON_DISCLOSURE`、Settings の順のまま、
+  GRID → `KUI_ICON_TILES`、CHEVRON → `KUI_ICON_DISCLOSURE`）に入っている（[phase002](../phase002/phase.md)）。
+- 窓の土台: `settings/window.c`（1347 行）・`present.c`（1218 行）を `kui_window`（`KUI_PRESENT_VULKAN`、glass のため see-through）に替える。
+  menu（`menu.c`）・titlebar（`titlebar.c`）・glass（`glass.c`）は libkeiland のまま app に残し、`kui_window_display`・`kui_window_surface`・
+  `kui_window_toplevel`・`kui_window_seat` の accessor で作る（PDF Viewer・Image Viewer の p008 と同じ）。
+- 部品（任意、時間があれば）: `settings/widgets.c` の button・switch・slider・field・card・row を libkeiui の部品に。見た目が変わる物は変えない。
+- 見た目と機能は変えない。
+
+## 始める前（2026-10-01 追記）
+
+- WS089 の完了の処理（試験を `plan/tools/settings/` へ移すか）の後に始める。WS089 の [guide.md](../../ws089/guide.md) の p012（提案）を見る。
+- **WS104 と同じ file に触れる**: ws104-p002（`settings/look.c`・`settings.h`・`page-home.c`・`page-input.c`、`keiland_audio_available`）、ws104-p003
+  （`plan/ws089/tests/host-build.sh:37` の path）、ws104-p007（install の path の macro、settings の `main.c` などの path の文字列）。
+  **WS104 の p001〜p003・p007 が main に入った後に始める**か、main に順を決めてもらう（同時に走らせない）。
+- KUI_VERSION を上げる要があれば（足りない accessor など）、適用の直前に main の値を確かめ、main の最新の次にする（2026-10-01 は 11、p015 が 12 を使う予定）。
+- 2026-10-10 までに終わらなければ merge しない（design.md J5）。Settings はデモの S7 の app。
+
+## 手順（2026-10-01 追記）
+
+`<W>` は `ws090-p007`。command は repo の root から。一般の build・boot test は [plan/ws104/commands.md](../../ws104/commands.md) の §1・§4、
+Settings の guest の回帰は同 §8。WS089 の試験が `plan/tools/settings/` に移っていたら、下の `plan/ws089/tests/` を読み替える。
+
+1. 前の絵（基準）を host で取る（変更の前の tree で）:
+   ```
+   mkdir -p build/ws090-p007/before
+   sh plan/ws089/tests/host-build.sh
+   for page in home wifi ethernet network appearance wallpaper sound display storage keyboard mouse about bluetooth; do
+   	build/ws089-host/settings-render --page=$page draw=build/ws090-p007/before/$page.ppm > /dev/null
+   done
+   ls build/ws090-p007/before | wc -l
+   ```
+   最後の行が `13`。`--page=` は `settings/pages.c` の表の小文字の語（home・wifi・…・about）。
+2. 前の guest の画面: Settings の image（commands.md §8 の 1〜3 行目、`build-settings-image.sh build/ws090-p007-settings-before`）で
+   `settings-regress.sh build/ws090-p007/regress-before` を流し、`settings-regress: PASS` と画面（各 test の directory の PNG）を残す。
+3. 描画の層を替える: `userland/desktop/settings/*.c` の `fm_`→`kui_`・`FM_`→`KUI_`（`grep -c "fm_\|FM_" userland/desktop/settings/*.c` で 2026-10-01 は
+   widgets.c 63・page-network.c 76 など計 12 file）、`#include` を `<keiui.h>` に。`glyphs.c` の線の絵は `kui_icon_draw(..., KUI_ICON_TILES + n, ...)` の対応に
+   替え、`glyphs.c` を消す（icon の名前の対応は phase002 の記録）。Makefile の `KEILAND_SETTINGS_SOURCES` から files・artwork の 4 file と `glyphs.c` を除き、
+   依存に `desktop/libkeiui` を足す。`platform/amd64/vmunix.mk:1361-1374` の `$(BUILD)/bin/settings` の規則に `$(DYNAMIC_DIR)/libkeiui.so`・`-l:libkeiui.so`・
+   `--needed libkeiui.so` を足す（pdfviewer の規則 `:1401-1414` と同じ形。**vmunix.mk は main の許可が要る**。p008・p011 では Q1 が許可した）。
+4. host の試験を合わせる: `plan/ws089/tests/host-build.sh` の compile の列（files の canvas・text・icons・mark の 4 file）を libkeiui の
+   `canvas.c`・`text.c`・`icons.c`・`icons-line.c`・`theme.c`（と依存。`plan/ws090/tests/host-draw.sh` の列を見る）に替える（WS089 の file。**main の許可**、
+   試験の中身は弱めない、窓の移行と別の commit）。
+5. 1 と同じ command で `build/ws090-p007/after/` に描き、比べる:
+   ```
+   for f in build/ws090-p007/before/*.ppm; do cmp -s "$f" build/ws090-p007/after/$(basename "$f") && echo "same $(basename "$f")" || echo "DIFF $(basename "$f")"; done
+   ```
+   全て `same`。違う絵があれば `compare`（ImageMagick）で差の画素を見て、p002 の「Files と byte で一致」の前提が崩れた所を直す（意図した差は無いはず）。
+6. 窓の土台を替える: `window.c`・`present.c`・`shaders.h`・`shaders/` を消し、`main.c` で `kui_window_open`（`KUI_PRESENT_VULKAN`、title「Settings」、
+   app_id は今の値）・`kui_window_dispatch`・`kui_window_take`・`kui_window_repeat`・`kui_window_present_resize`・`kui_window_present` を使う。menu・titlebar・
+   glass の action は `kui_window_post` で key と同じ queue に積む（PDF Viewer の `main.c` が見本、ws090-p008 の phase.md の「窓の移行」）。
+   `window.h` の `struct se_window` は `struct kui_window *` を持つだけにする。
+7. build（commands.md §1）: `make exit=0`、warning 0。`ls -la build/amd64/bin/settings`（大きさを前後で記録）。
+8. 確かめ:
+   ```
+   sh plan/ws089/tests/host-build.sh
+   sh plan/ws089/tests/host-preferences.sh
+   sh plan/ws090/tests/host-draw.sh
+   sh plan/ws090/tests/host-widgets.sh
+   sh plan/ws100/tests/host-audio.sh
+   ```
+   PASS: `built build/ws089-host/settings-render`、`host-preferences: PASS`、`host-draw: 13/13 passed`、`host-widgets: 94/94 passed`、`host-audio: N/N passed`。
+9. guest: commands.md §8 の Settings の 5 行（BUILD は `build/ws090-p007-settings`、runtime は `build/ws090-p007-settings-run`）で `settings-regress: PASS`（約 10 分）。
+   画面を 2 の物と並べて目で確かめる（違いは時計と system bar だけ）。音の頁は commands.md §8 の `volume-p005.sh`（`volume-p005: PASS`、WS100 の試験、
+   runtime は `build/ws100-run` に固定なので他の音の試験と同時に流さない）。
+10. WS099 の C9（commands.md §5）と boot test（commands.md §4、`OUTPUT=build/ws090-p007/boot`）。
+11. 規約: `python3 plan/tools/style-check.py userland/desktop/settings/*.c userland/desktop/settings/*.h` が 0、`git diff --check` 0。
+
+## 完了の条件
+
+1. Settings の source に `fm_`・`FM_` が無く、Makefile が files・artwork の source を compile しない（F-038 の解消）。`settings/window.c`・`present.c` が無い。
+2. host の絵（手順 5）が前後で byte で同じ。
+3. `settings-regress: PASS`、`volume-p005: PASS`、C9 の全行 PASS（BUG-125 の p076 の 1 回の FAIL は `C9_TESTS="p076"` で流し直す）、boot test PASS。
+4. build warning 0、style-check 0。
+5. 2026-10-10 までに 1〜4 を満たさなければ merge しない（J5）。
+
+## 未知
+
+- Settings の key の repeat と search の欄（titlebar の search の field の text は zdesktop の titlebar の物）が `kui_window` の queue の順で変わらないか（BUG-111 の型）。
+  見る所: `settings/window.c` の repeat の扱いと `kui_window_repeat`（`userland/desktop/libkeiui/window.c`）。試験は `settings-p008.sh`（検索）。
+- Settings の glass の 2 枚の card の panel の座標（`glass.c:79-107`）が `kui_window` の surface でも同じ原点か。試験は `settings-p004.sh` の画面。
