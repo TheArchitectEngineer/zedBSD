@@ -22,16 +22,9 @@
 #include "zwl.h"
 #include "tablet.h"
 #include "touch.h"
-#include <sys/ioctl.h>
-#include <dirent.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-
-/* The directory whose eventN nodes are the evdev devices. */
-#define INPUT_DIRECTORY		"/dev/input"
 
 /* Bound the reads one device gets per event-loop pass, so others still run. */
 #define INPUT_READS_PER_PASS	16U
@@ -73,22 +66,6 @@
 /* The number of bits in one word of an evdev capability bitmap. */
 #define BITMAP_WORD_BITS	(8U * sizeof(unsigned long))
 
-/*
- * The capability bitmaps of one evdev node, as EVIOCGBIT reports them.
- *
- * One instance lives on the stack while a node is classified.
- */
-struct input_capabilities {
-	unsigned long event[EV_MAX / (8U * sizeof(unsigned long)) + 1U];
-	unsigned long key[KEY_MAX / (8U * sizeof(unsigned long)) + 1U];
-	unsigned long relative[REL_MAX / (8U * sizeof(unsigned long)) + 1U];
-	unsigned long absolute[ABS_MAX / (8U * sizeof(unsigned long)) + 1U];
-};
-
-static int event_node_name(const char *name);
-static int device_open(struct zwl_server *server, const char *path);
-static void probe_device(struct zwl_server *server, const char *path);
-static int read_capabilities(int descriptor, struct input_capabilities *capabilities);
 static int read_ranges(int descriptor, struct input_absinfo *x, struct input_absinfo *y);
 static int bit_is_set(const unsigned long *bits, unsigned code);
 static void consume_event(struct zwl_server *server, struct zwl_input_device *device, const struct input_event *event);
@@ -100,63 +77,101 @@ static uint32_t event_time(const struct input_event *event);
 static void update_capabilities(struct zwl_server *server);
 static int attach_tablet(struct zwl_server *server, int descriptor, const char *path);
 static int attach_touch(struct zwl_server *server, int descriptor, const char *path);
-static int multitouch(const struct input_capabilities *capabilities);
+static int multitouch(const struct zwl_input_caps *capabilities);
 
 /*
- * Opens every evdev pointer and keyboard not already open.
+ * Classifies an open device and attaches it to the seat.
  *
- * A missing directory leaves the seat without devices; it is not an error.
- * The event loop calls this periodically so late devices are picked up.
+ * The seat takes the descriptor and closes it when unsupported or full.
  */
 void
-zwl_input_scan(
-	struct zwl_server *server)
+zwl_input_probe(
+	struct zwl_server *server,
+	int descriptor,
+	const char *path,
+	const struct zwl_input_caps *capabilities)
 {
-	DIR *directory;
-	struct dirent *entry;
-	char path[ZWL_INPUT_PATH_MAX];
-	int length;
-	int valid;
-	int open_already;
+	struct input_absinfo x;
+	struct input_absinfo y;
+	unsigned pointer;
+	unsigned keyboard;
+	unsigned absolute;
+	int touch_screen;
+	int has_type;
+	int has_first;
+	int has_second;
+	int error;
 
-	/* The next rescan is due one period from now. */
-	server->input_scan_time = zwl_milliseconds();
-
-	/* Without the directory there is nothing to read. */
-	directory = opendir(INPUT_DIRECTORY);
-	if (directory == NULL)
-		return;
-
-	/* Every eventN entry is a candidate device. */
-	while (1) {
-		/* The end of the directory ends the scan. */
-		entry = readdir(directory);
-		if (entry == NULL)
-			break;
-
-		/* Only eventN nodes speak evdev. */
-		valid = event_node_name(entry->d_name);
-		if (!valid)
-			continue;
-
-		/* An overlong name cannot be an ordinary device node. */
-		length = snprintf(path, sizeof(path), "%s/%s", INPUT_DIRECTORY, entry->d_name);
-		if (length < 0 || (size_t)length >= sizeof(path))
-			continue;
-
-		/* A node already being read is left alone. */
-		open_already = device_open(server, path);
-		if (open_already)
-			continue;
-
-		/* Classify the node and keep it if it is a pointer or a keyboard. */
-		probe_device(server, path);
+	/* A pen tablet reports BTN_TOOL_PEN, ABS_PRESSURE and both position axes (tablet.c, WS079 p003). */
+	has_type = bit_is_set(capabilities->event, EV_KEY);
+	has_first = bit_is_set(capabilities->key, BTN_TOOL_PEN);
+	has_second = bit_is_set(capabilities->absolute, ABS_PRESSURE);
+	if (has_type &&
+	    has_first &&
+	    has_second) {
+		/* Both position ranges must be readable and nonempty to be mapped. */
+		error = read_ranges(descriptor, &x, &y);
+		if (error == 0) {
+			(void)attach_tablet(server, descriptor, path);
+			return;
+		}
 	}
 
-	/* The directory stream is no longer needed. */
-	closedir(directory);
+	/* A touch screen speaks multitouch protocol B (touch.c, WS079 p013); its ABS_X/Y are not a pointer. */
+	touch_screen = multitouch(capabilities);
+	if (touch_screen) {
+		(void)attach_touch(server, descriptor, path);
+		return;
+	}
 
-	/* Succeeded: every present pointer and keyboard is open. */
+	/* A keyboard reports key events including the letter keys A and Z. */
+	keyboard = 0;
+	has_type = bit_is_set(capabilities->event, EV_KEY);
+	has_first = bit_is_set(capabilities->key, KEY_A);
+	has_second = bit_is_set(capabilities->key, KEY_Z);
+	if (has_type &&
+	    has_first &&
+	    has_second)
+		keyboard = 1;
+
+	/* An absolute pointer reports ABS_X and ABS_Y. */
+	absolute = 0;
+	has_type = bit_is_set(capabilities->event, EV_ABS);
+	has_first = bit_is_set(capabilities->absolute, ABS_X);
+	has_second = bit_is_set(capabilities->absolute, ABS_Y);
+	if (has_type &&
+	    has_first &&
+	    has_second) {
+		/* Both axis ranges must be readable and nonempty to be mapped. */
+		error = read_ranges(descriptor, &x, &y);
+		if (error == 0)
+			absolute = 1;
+	}
+
+	/* A relative pointer reports REL_X and REL_Y. */
+	pointer = absolute;
+	has_type = bit_is_set(capabilities->event, EV_REL);
+	has_first = bit_is_set(capabilities->relative, REL_X);
+	has_second = bit_is_set(capabilities->relative, REL_Y);
+	if (has_type &&
+	    has_first &&
+	    has_second)
+		pointer = 1;
+
+	/* A node that is neither is not the seat's business. */
+	if (!pointer && !keyboard) {
+		zwl_input_device_close(server, descriptor);
+		return;
+	}
+
+	/* Keep the node; an absolute pointer brings its ranges along. */
+	if (absolute) {
+		(void)zwl_input_attach(server, descriptor, path, pointer, keyboard, &x, &y);
+	} else {
+		(void)zwl_input_attach(server, descriptor, path, pointer, keyboard, NULL, NULL);
+	}
+
+	/* Succeeded: the node has been classified. */
 	return;
 }
 
@@ -192,7 +207,7 @@ zwl_input_attach(
 
 	/* A full table cannot take another device. */
 	if (device == NULL) {
-		close(descriptor);
+		zwl_input_device_close(server, descriptor);
 		return ENOSPC;
 	}
 
@@ -242,8 +257,7 @@ zwl_input_read(
 	struct zwl_input_device *device)
 {
 	struct input_event events[32];
-	ssize_t bytes;
-	size_t count;
+	ssize_t count;
 	size_t index;
 	unsigned reads;
 	int error;
@@ -255,8 +269,8 @@ zwl_input_read(
 			return;
 
 		/* Read as many whole events as the buffer holds. */
-		bytes = read(device->fd, events, sizeof(events));
-		if (bytes < 0) {
+		count = zwl_input_device_read(device->fd, events, sizeof(events) / sizeof(events[0]));
+		if (count < 0) {
 			error = errno;
 
 			/* Nothing more is ready; the next poll will say when there is. */
@@ -273,16 +287,15 @@ zwl_input_read(
 			return;
 		}
 
-		/* End of file or a torn event means the node no longer speaks evdev. */
-		if (bytes == 0 || ((size_t)bytes % sizeof(events[0])) != 0) {
+		/* End of file means the node is gone. */
+		if (count == 0) {
 			printf("ZWL INPUT_CLOSED device=%s errno=%d\n", device->path, EIO);
 			zwl_input_close(server, device);
 			return;
 		}
 
 		/* Apply the events in the order the device produced them. */
-		count = (size_t)bytes / sizeof(events[0]);
-		for (index = 0; index < count; index++)
+		for (index = 0; index < (size_t)count; index++)
 			consume_event(server, device, &events[index]);
 	}
 
@@ -311,7 +324,7 @@ zwl_input_close(
 		zwl_touch_remove(server, device, 1);
 
 	/* The slot is free once its descriptor is closed. */
-	close(device->fd);
+	zwl_input_device_close(server, device->fd);
 	device->fd = -1;
 	device->live = 0;
 
@@ -346,7 +359,7 @@ zwl_input_cleanup(
 			zwl_touch_remove(server, &server->inputs[index], 0);
 
 		/* Close the descriptor and free the slot. */
-		close(server->inputs[index].fd);
+		zwl_input_device_close(server, server->inputs[index].fd);
 		server->inputs[index].fd = -1;
 		server->inputs[index].live = 0;
 	}
@@ -356,186 +369,6 @@ zwl_input_cleanup(
 
 	/* Succeeded: the seat holds no device descriptors. */
 	return;
-}
-
-/* Reports whether a directory entry is named eventN. */
-static int
-event_node_name(
-	const char *name)
-{
-	const char *cursor;
-	int prefix;
-
-	/* The name starts with "event" and has at least one more character. */
-	prefix = strncmp(name, "event", 5);
-	if (prefix != 0 || name[5] == '\0')
-		return 0;
-
-	/* Everything after the prefix is a decimal digit. */
-	for (cursor = name + 5; *cursor != '\0'; cursor++) {
-		/* Any other character makes it some other kind of node. */
-		if (*cursor < '0' || *cursor > '9')
-			return 0;
-	}
-
-	/* Succeeded: the entry is an evdev node. */
-	return 1;
-}
-
-/* Reports whether a device node is already open in the table. */
-static int
-device_open(
-	struct zwl_server *server,
-	const char *path)
-{
-	unsigned index;
-	int same;
-
-	/* Compare the path with every slot in use. */
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
-		/* A free slot names no device. */
-		if (!server->inputs[index].live)
-			continue;
-
-		/* The same path means the same node. */
-		same = strcmp(server->inputs[index].path, path);
-		if (same == 0)
-			return 1;
-	}
-
-	/* The node is not open. */
-	return 0;
-}
-
-/* Opens one node, classifies it and keeps it when it is a pointer or keyboard. */
-static void
-probe_device(
-	struct zwl_server *server,
-	const char *path)
-{
-	struct input_capabilities capabilities;
-	struct input_absinfo x;
-	struct input_absinfo y;
-	unsigned pointer;
-	unsigned keyboard;
-	unsigned absolute;
-	int touch_screen;
-	int has_type;
-	int has_first;
-	int has_second;
-	int descriptor;
-	int error;
-
-	/* The seat only reads, never blocks and does not pass the node to children. */
-	descriptor = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-	if (descriptor < 0)
-		return;
-
-	/* The capability bitmaps decide what kind of device this is. */
-	error = read_capabilities(descriptor, &capabilities);
-	if (error != 0) {
-		close(descriptor);
-		return;
-	}
-
-	/* A pen tablet reports BTN_TOOL_PEN, ABS_PRESSURE and both position axes (tablet.c, WS079 p003). */
-	has_type = bit_is_set(capabilities.event, EV_KEY);
-	has_first = bit_is_set(capabilities.key, BTN_TOOL_PEN);
-	has_second = bit_is_set(capabilities.absolute, ABS_PRESSURE);
-	if (has_type && has_first && has_second) {
-		/* Both position ranges must be readable and nonempty to be mapped. */
-		error = read_ranges(descriptor, &x, &y);
-		if (error == 0) {
-			(void)attach_tablet(server, descriptor, path);
-			return;
-		}
-	}
-
-	/* A touch screen speaks multitouch protocol B (touch.c, WS079 p013); its ABS_X/Y are not a pointer. */
-	touch_screen = multitouch(&capabilities);
-	if (touch_screen) {
-		(void)attach_touch(server, descriptor, path);
-		return;
-	}
-
-	/* A keyboard reports key events including the letter keys A and Z. */
-	keyboard = 0;
-	has_type = bit_is_set(capabilities.event, EV_KEY);
-	has_first = bit_is_set(capabilities.key, KEY_A);
-	has_second = bit_is_set(capabilities.key, KEY_Z);
-	if (has_type && has_first && has_second)
-		keyboard = 1;
-
-	/* An absolute pointer reports ABS_X and ABS_Y. */
-	absolute = 0;
-	has_type = bit_is_set(capabilities.event, EV_ABS);
-	has_first = bit_is_set(capabilities.absolute, ABS_X);
-	has_second = bit_is_set(capabilities.absolute, ABS_Y);
-	if (has_type && has_first && has_second) {
-		/* Both axis ranges must be readable and nonempty to be mapped. */
-		error = read_ranges(descriptor, &x, &y);
-		if (error == 0)
-			absolute = 1;
-	}
-
-	/* A relative pointer reports REL_X and REL_Y. */
-	pointer = absolute;
-	has_type = bit_is_set(capabilities.event, EV_REL);
-	has_first = bit_is_set(capabilities.relative, REL_X);
-	has_second = bit_is_set(capabilities.relative, REL_Y);
-	if (has_type && has_first && has_second)
-		pointer = 1;
-
-	/* A node that is neither is not the seat's business. */
-	if (!pointer && !keyboard) {
-		close(descriptor);
-		return;
-	}
-
-	/* Keep the node; an absolute pointer brings its ranges along. */
-	if (absolute) {
-		(void)zwl_input_attach(server, descriptor, path, pointer, keyboard, &x, &y);
-	} else {
-		(void)zwl_input_attach(server, descriptor, path, pointer, keyboard, NULL, NULL);
-	}
-
-	/* Succeeded: the node has been classified. */
-	return;
-}
-
-/* Reads the event, key, relative and absolute capability bitmaps of one node. */
-static int
-read_capabilities(
-	int descriptor,
-	struct input_capabilities *capabilities)
-{
-	int error;
-
-	/* Absent bitmaps read as empty. */
-	memset(capabilities, 0, sizeof(*capabilities));
-
-	/* The event types the node can produce. */
-	error = ioctl(descriptor, EVIOCGBIT(0, sizeof(capabilities->event)), capabilities->event);
-	if (error < 0)
-		return errno;
-
-	/* The key and button codes the node can produce. */
-	error = ioctl(descriptor, EVIOCGBIT(EV_KEY, sizeof(capabilities->key)), capabilities->key);
-	if (error < 0)
-		return errno;
-
-	/* The relative axes the node can produce. */
-	error = ioctl(descriptor, EVIOCGBIT(EV_REL, sizeof(capabilities->relative)), capabilities->relative);
-	if (error < 0)
-		return errno;
-
-	/* The absolute axes the node can produce. */
-	error = ioctl(descriptor, EVIOCGBIT(EV_ABS, sizeof(capabilities->absolute)), capabilities->absolute);
-	if (error < 0)
-		return errno;
-
-	/* Succeeded: the four bitmaps describe the node. */
-	return 0;
 }
 
 /* Reads both absolute axis ranges and refuses a range that cannot be mapped. */
@@ -549,15 +382,15 @@ read_ranges(
 
 	/* The horizontal range maps onto the surface width. */
 	memset(x, 0, sizeof(*x));
-	error = ioctl(descriptor, EVIOCGABS(ABS_X), x);
-	if (error < 0)
-		return errno;
+	error = zwl_input_device_absinfo(descriptor, ABS_X, x);
+	if (error != 0)
+		return error;
 
 	/* The vertical range maps onto the surface height. */
 	memset(y, 0, sizeof(*y));
-	error = ioctl(descriptor, EVIOCGABS(ABS_Y), y);
-	if (error < 0)
-		return errno;
+	error = zwl_input_device_absinfo(descriptor, ABS_Y, y);
+	if (error != 0)
+		return error;
 
 	/* An empty or inverted range has no pixel to map to. */
 	if (x->maximum <= x->minimum || y->maximum <= y->minimum)
@@ -1027,7 +860,7 @@ attach_tablet(
 
 	/* A full table cannot take another device. */
 	if (device == NULL) {
-		close(descriptor);
+		zwl_input_device_close(server, descriptor);
 		return ENOSPC;
 	}
 
@@ -1040,7 +873,7 @@ attach_tablet(
 	/* The tablet reads the axes and tells the bound tablet seats (tablet.c). */
 	error = zwl_tablet_add(server, device);
 	if (error != 0) {
-		close(descriptor);
+		zwl_input_device_close(server, descriptor);
 		device->fd = -1;
 		device->tablet = 0;
 		return error;
@@ -1087,7 +920,7 @@ attach_touch(
 
 	/* A full table cannot take another device. */
 	if (device == NULL) {
-		close(descriptor);
+		zwl_input_device_close(server, descriptor);
 		return ENOSPC;
 	}
 
@@ -1100,7 +933,7 @@ attach_touch(
 	/* The touch screen reads its range (touch.c). */
 	error = zwl_touch_add(device);
 	if (error != 0) {
-		close(descriptor);
+		zwl_input_device_close(server, descriptor);
 		device->fd = -1;
 		device->touch = 0;
 		return error;
@@ -1122,7 +955,7 @@ attach_touch(
 /* Reports whether a node speaks multitouch protocol B: slots, tracking numbers and both places. */
 static int
 multitouch(
-	const struct input_capabilities *capabilities)
+	const struct zwl_input_caps *capabilities)
 {
 	int present;
 

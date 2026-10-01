@@ -77,7 +77,6 @@
 #include "popup.h"
 #include "subsurface.h"
 #include <keiland.h>
-#include <sys/ioctl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -665,14 +664,14 @@ read_axes(
 
 	/* The horizontal range of the fingers' places. */
 	descriptor = screen->input->fd;
-	error = ioctl(descriptor, EVIOCGABS(ABS_MT_POSITION_X), &screen->axis_x);
-	if (error < 0)
-		return errno;
+	error = zwl_input_device_absinfo(descriptor, ABS_MT_POSITION_X, &screen->axis_x);
+	if (error != 0)
+		return error;
 
 	/* The vertical range. */
-	error = ioctl(descriptor, EVIOCGABS(ABS_MT_POSITION_Y), &screen->axis_y);
-	if (error < 0)
-		return errno;
+	error = zwl_input_device_absinfo(descriptor, ABS_MT_POSITION_Y, &screen->axis_y);
+	if (error != 0)
+		return error;
 
 	/* An empty or inverted range has no pixel to map to. */
 	if (screen->axis_x.maximum <= screen->axis_x.minimum)
@@ -682,9 +681,9 @@ read_axes(
 
 	/* The slot the next report's finger events address until one names another. */
 	memset(&slot, 0, sizeof(slot));
-	error = ioctl(descriptor, EVIOCGABS(ABS_MT_SLOT), &slot);
-	if (error < 0)
-		return errno;
+	error = zwl_input_device_absinfo(descriptor, ABS_MT_SLOT, &slot);
+	if (error != 0)
+		return error;
 	screen->slot = slot.value;
 
 	/* Succeeded: the touch screen's places can be mapped onto the output. */
