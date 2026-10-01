@@ -1,6 +1,10 @@
 Kei/zedBSD
 ==========
 
+<div align="center">
+  <img src="docs/imgs/screenshot1.png" width="80%">
+</div>
+
 `zedBSD` is a modern, redesigned BSD-based kernel and base system that
 aims to implement all `POSIX.1-2024` and `Single UNIX Specification
 version 4 (SUSv4)` features with a sophisticated architecture.
