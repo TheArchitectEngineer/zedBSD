@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [q516](../queue.md) active（ws104-p002 in-progress）
-Resume point: ws104-p002 in-progress。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
+Queue: [q516](../queue.md) finished（ws104-p002 cleared（q516））
+Resume point: ws104-p002 cleared（q516）。ユーザーの WS104 完了までの自律実行承認（2026-10-01）により残りを依存順に進める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -81,7 +81,7 @@ Keiland（compositor・libkeiland・desktop の app）の **OS に依存する c
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [ws104-p001](phase001/phase.md) | desktop の公開の header を `userland/desktop/keiland/` へ移す（sysroot の manifest に 1 directory を足す） | cleared（q515） | なし |
-| [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | in-progress | p001 |
+| [ws104-p002](phase002/phase.md) | audio の漏れ（`settings/look.c`）を libkeiland へ（`keiland_audio_available`、KEILAND_VERSION 21） | cleared（q516） | p001 |
 | [ws104-p003](phase003/phase.md) | libkeiland の OS の 3 file を `libkeiland/zedbsd/` へ | planned | p002 |
 | [ws104-p004](phase004/phase.md) | compositor の GPU の buffer の境界を引き上げる（`zwl_buffer_layout` を zedBSD の module の中へ） | planned | p001 |
 | [ws104-p005](phase005/phase.md) | compositor の入力の device の層を `wayland/zedbsd/input-zedbsd.c` へ | planned | p004 |
@@ -105,3 +105,8 @@ p001 を q515 で cleared。公開 header 24 file を内容を保って移動し
 ### 2026-10-01T02:14:13.207998+00:00 / q516 / ws104-p002
 
 in-progress。current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。 詳細は [Phase](phase002/phase.md)。
+
+### 2026-10-01T02:25:22.416961+00:00 / q516 / ws104-p002
+
+cleared（q516）。公開版 21 の `keiland_audio_available()` を追加し、Settings の audiod socket 直接参照を除去。旧関数・Settings の `/run/` literal は 0。amd64 disk-image exit 0、自前 warning 0（raw filter の 1 行は OpenSSH の並列 stderr が分断された EC_KEY の非推奨 warning と前後から確認）。host audio 14/14、Settings host build、Settings guest 8 本の回帰、boot 全て PASS。新 API の socket 不在・通常 file・Unix socket を 0/0/1、版 21 と host で確認。style-check 0。clang-format 19.1.7 を新関数の範囲に使用し、全文規約が指定する定義の引数改行は手動で復元。任意の audiod 有り Sound 頁は未実施（socket 判定は旧関数と同値、positive host probe 済み。WS 全体の p008 で volume-p005 を実行）。証拠: `plan/history/ws104/q516/`。実機・Linux は未実施。
+ 詳細は [Phase](phase002/phase.md)。

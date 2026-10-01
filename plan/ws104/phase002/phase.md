@@ -2,7 +2,7 @@
 
 # ws104-p002: audio の漏れを libkeiland へ（`keiland_audio_available`）
 
-Status: in-progress
+Status: cleared
 Disposition: normal
 Parent: [WS104](../ws.md)
 Queue: q516 / q516-i01
@@ -46,6 +46,11 @@ host で「socket が無いと 0、あると 1、version 21」・ws089 `host-bui
 
 ## 結果
 
-（実行の後に書く）
+q516-i01 cleared（2026-10-01T02:25:22.416961+00:00）。
+
+公開版 21 の `keiland_audio_available()` を追加し、Settings の audiod socket 直接参照を除去。旧関数・Settings の `/run/` literal は 0。amd64 disk-image exit 0、自前 warning 0（raw filter の 1 行は OpenSSH の並列 stderr が分断された EC_KEY の非推奨 warning と前後から確認）。host audio 14/14、Settings host build、Settings guest 8 本の回帰、boot 全て PASS。新 API の socket 不在・通常 file・Unix socket を 0/0/1、版 21 と host で確認。style-check 0。clang-format 19.1.7 を新関数の範囲に使用し、全文規約が指定する定義の引数改行は手動で復元。任意の audiod 有り Sound 頁は未実施（socket 判定は旧関数と同値、positive host probe 済み。WS 全体の p008 で volume-p005 を実行）。証拠: `plan/history/ws104/q516/`。実機・Linux は未実施。
+
+
+Implementation: `7e3ac1bc26ede65bd94e364eee2d23c84a6668d0`（WIP）。詳細 log: `build/ws104-p002/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
 
 Execution started UTC: 2026-10-01T02:14:13.207998+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。

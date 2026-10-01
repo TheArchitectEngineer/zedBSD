@@ -2,10 +2,16 @@
 
 <!-- awesome-plan-current:start -->
 Active Queue: なし
-Last finished Queue: [q515](queue-q515.md)（ws104-p001 cleared）。2026-09-29〜30 の subagent（N=6〜9）の周期は Queue の外。それ以前の作業は下の節
+Last finished Queue: [q516](queue-q516.md)（ws104-p002 cleared）
 <!-- awesome-plan-current:end -->
 
 # Past Log
+
+## 最新: 2026-10-01 q516
+
+[q516](queue-q516.md): ws104-p002 **cleared**。公開版 21 の `keiland_audio_available()` を追加し、Settings の audiod socket 直接参照を除去。旧関数・Settings の `/run/` literal は 0。amd64 disk-image exit 0、自前 warning 0（raw filter の 1 行は OpenSSH の並列 stderr が分断された EC_KEY の非推奨 warning と前後から確認）。host audio 14/14、Settings host build、Settings guest 8 本の回帰、boot 全て PASS。新 API の socket 不在・通常 file・Unix socket を 0/0/1、版 21 と host で確認。style-check 0。clang-format 19.1.7 を新関数の範囲に使用し、全文規約が指定する定義の引数改行は手動で復元。任意の audiod 有り Sound 頁は未実施（socket 判定は旧関数と同値、positive host probe 済み。WS 全体の p008 で volume-p005 を実行）。証拠: `plan/history/ws104/q516/`。実機・Linux は未実施。
+
+実装 `7e3ac1bc26ede65bd94e364eee2d23c84a6668d0`。自律実行承認による次の WS104 Phase に進む。GitHub へは未公開。
 
 ## 最新: 2026-10-01 q515（WS104 の公開ヘッダー分離）
 
