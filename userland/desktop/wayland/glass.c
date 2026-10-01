@@ -38,6 +38,8 @@
 
 #include <truetype.h>
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -62,7 +64,7 @@
 
 /* The fonts kept open: the first font, the fallback and the colour emoji font (ws102-p019). */
 #define GLASS_FACES		3U
-#define GLASS_EMOJI_FONT	"/usr/share/fonts/keiland-emoji.ttf"
+#define GLASS_EMOJI_FONT	KEILAND_DATADIR "/fonts/keiland-emoji.ttf"
 
 /* The icons' two sizes in pixels, and how many there are. */
 #define GLASS_ICON_SIZES	2U

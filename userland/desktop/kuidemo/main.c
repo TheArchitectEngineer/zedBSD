@@ -22,6 +22,8 @@
 #include <keiland.h>
 #include <keiui.h>
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -29,8 +31,8 @@
 #include <string.h>
 
 /* The fonts. */
-#define DEMO_FONT		"/usr/share/fonts/keiland.ttf"
-#define DEMO_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
+#define DEMO_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+#define DEMO_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
 
 /* The window's size until the compositor gives one. */
 #define DEMO_WIDTH		900U

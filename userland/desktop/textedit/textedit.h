@@ -18,6 +18,8 @@
 
 #include <keiui.h>
 
+#include "userland/desktop/paths.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -208,7 +210,7 @@ struct te_text_face {
  * drawn, ws102-p019).
  */
 #define TE_TEXT_FACES		3
-#define TE_TEXT_EMOJI		"/usr/share/fonts/keiland-emoji.ttf"
+#define TE_TEXT_EMOJI		KEILAND_DATADIR "/fonts/keiland-emoji.ttf"
 
 /*
  * The fonts of one kind of text (the body's monospaced font, or the

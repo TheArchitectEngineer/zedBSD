@@ -41,6 +41,8 @@
 #include "glass.h"
 #include "menu.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -81,8 +83,8 @@
 
 /* What the gesture brings: the application's identity and how it is started. */
 #define CORNER_APP_ID		"notes"
-#define CORNER_PROGRAM		"/bin/notes"
-#define CORNER_COMMAND		"/bin/notes --fullscreen"
+#define CORNER_PROGRAM		KEILAND_BINDIR "/notes"
+#define CORNER_COMMAND		KEILAND_BINDIR "/notes --fullscreen"
 
 /* The name shown in the hint once it is large enough. */
 #define CORNER_LABEL		"Notes"

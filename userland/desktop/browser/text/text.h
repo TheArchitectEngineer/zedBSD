@@ -25,6 +25,7 @@
 #define KEILAND_BROWSER_TEXT_H
 
 #include "base/base.h"
+#include "userland/desktop/paths.h"
 
 /* The faces a text system holds: sans, monospace, the fallback, then the page's web fonts. */
 #define TEXT_FACE_SANS		0
@@ -35,9 +36,9 @@
 #define TEXT_FACES		(TEXT_FACE_WEB + TEXT_WEB_FACES)
 
 /* The fonts the zdesktop image installs. */
-#define TEXT_DEFAULT_SANS	"/usr/share/fonts/keiland.ttf"
-#define TEXT_DEFAULT_MONO	"/usr/share/fonts/keiland-mono.ttf"
-#define TEXT_DEFAULT_FALLBACK	"/usr/share/fonts/keiland-fallback.ttf"
+#define TEXT_DEFAULT_SANS	KEILAND_DATADIR "/fonts/keiland.ttf"
+#define TEXT_DEFAULT_MONO	KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+#define TEXT_DEFAULT_FALLBACK	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
 
 struct truetype_face;
 struct text_glyph_entry;

@@ -45,6 +45,8 @@
 
 #include <browser.h>
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -62,7 +64,7 @@
 #define MAIN_MAX_SIZE		16384UL
 
 /* The page the window opens when the command line names none. */
-#define MAIN_START_PAGE		"/usr/share/browser/start.html"
+#define MAIN_START_PAGE		KEILAND_DATADIR "/browser/start.html"
 
 /*
  * How long the headless modes let a page's timers run, in virtual

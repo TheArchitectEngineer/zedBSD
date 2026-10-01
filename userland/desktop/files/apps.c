@@ -36,6 +36,8 @@
 
 #include "files.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
@@ -50,11 +52,11 @@
 #define UNUSED_PARAMETER(name)	((void)(name))
 
 /* The system's list, and the user's under the configuration folder. */
-#define APPS_SYSTEM_LIST	"/etc/keiland/open-with"
+#define APPS_SYSTEM_LIST	KEILAND_SYSCONFDIR "/keiland/open-with"
 #define APPS_USER_LIST		"keiland/open-with"
 
 /* The terminal a "@terminal" command runs in, and the words that mark the two special commands. */
-#define APPS_TERMINAL		"/bin/terminal"
+#define APPS_TERMINAL		KEILAND_BINDIR "/terminal"
 #define APPS_TERMINAL_WORD	"@terminal "
 #define APPS_QUICKLOOK_WORD	"@quicklook"
 
@@ -96,11 +98,11 @@ struct apps_builtin {
  * Anything the others do not fit is shown by less in a terminal.
  */
 static const struct apps_builtin apps_builtins[] = {
-	{ "application/pdf", "PDF Viewer", "/bin/pdfviewer %f", "pdfviewer" },
-	{ APPS_IMAGE_TYPES, "Image Viewer", "/bin/imageview %f", "imageview" },
+	{ "application/pdf", "PDF Viewer", KEILAND_BINDIR "/pdfviewer %f", "pdfviewer" },
+	{ APPS_IMAGE_TYPES, "Image Viewer", KEILAND_BINDIR "/imageview %f", "imageview" },
 	{ "image/" "*", "Quick Look", "@quicklook", NULL },
-	{ "text/html", "Browser", "/bin/browser %f", "browser" },
-	{ APPS_TEXT_TYPES, "Text Editor", "/bin/textedit %f", "textedit" },
+	{ "text/html", "Browser", KEILAND_BINDIR "/browser %f", "browser" },
+	{ APPS_TEXT_TYPES, "Text Editor", KEILAND_BINDIR "/textedit %f", "textedit" },
 	{ APPS_TEXT_TYPES, "Terminal (less)", "@terminal less %f", NULL },
 	{ APPS_TEXT_TYPES, "Remacs", "@terminal remacs %f", "remacs" },
 	{ APPS_TEXT_TYPES, "Terminal (ed)", "@terminal ed %f", "ed" },

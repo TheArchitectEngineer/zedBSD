@@ -19,7 +19,7 @@ ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
-flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src"
+flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src -I."
 
 # The libraries the program uses, from their sources.
 objects=""

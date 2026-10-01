@@ -18,6 +18,8 @@
 
 #include "program.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,8 +27,8 @@
 #include <sys/stat.h>
 
 /* Where the Japanese dictionaries are installed (the package ime-dict-ja). */
-#define MAIN_SYSTEM_DICTIONARY		"/usr/share/kei/ime/ja/SKK-JISYO.X"
-#define MAIN_SUPPLEMENT_DICTIONARY	"/usr/share/kei/ime/ja/SKK-JISYO.kei"
+#define MAIN_SYSTEM_DICTIONARY		KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.X"
+#define MAIN_SUPPLEMENT_DICTIONARY	KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.kei"
 
 static void main_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void main_global_remove(void *data, struct wl_registry *registry, uint32_t name);

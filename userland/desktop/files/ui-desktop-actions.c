@@ -19,6 +19,8 @@
 
 #include "files.h"
 
+#include "userland/desktop/paths.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -35,8 +37,8 @@
 #define DESKTOP_KEY_N		49U
 
 /* The programs the desktop starts: Files for a folder, Settings for the wallpaper, and Settings' page. */
-#define DESKTOP_FILES		"/bin/files"
-#define DESKTOP_SETTINGS	"/bin/settings"
+#define DESKTOP_FILES		KEILAND_BINDIR "/files"
+#define DESKTOP_SETTINGS	KEILAND_BINDIR "/settings"
 #define DESKTOP_WALLPAPER_PAGE	"wallpaper"
 
 static void desktop_show_in_files(struct fm_app *app);

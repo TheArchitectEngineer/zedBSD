@@ -49,6 +49,8 @@
 
 #include "app.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
@@ -63,7 +65,7 @@
 #define MAIN_HEIGHT		768U
 
 /* The font the toolbar's labels are drawn with. */
-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
+#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
 
 /* The longest path Notes keeps. */
 #define MAIN_PATH_MAX		4096U

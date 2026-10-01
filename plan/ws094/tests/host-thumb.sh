@@ -11,7 +11,7 @@ host=build/ws071-host
 out=${1:-build/ws094-host-thumb}
 mkdir -p "$out"
 objects=$(ls $host/obj/*.o | grep -v '/host-')
-${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$host/include -Iuserland/desktop/files \
+${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$host/include -Iuserland/desktop/files -I. \
     -o $host/host-thumb plan/ws094/tests/host-thumb.c $objects -lm || exit 1
 exec python3 - "$host/host-thumb" "$out" <<'PY'
 import os, struct, subprocess, sys

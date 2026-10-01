@@ -24,6 +24,8 @@
 
 #include "window.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <limits.h>
 #include <spawn.h>
@@ -34,10 +36,10 @@
 #include <unistd.h>
 
 /* The font used unless told otherwise. */
-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
+#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
 
 /* The program "Annotate in Notes" starts. */
-#define MAIN_NOTES		"/bin/notes"
+#define MAIN_NOTES		KEILAND_BINDIR "/notes"
 
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U

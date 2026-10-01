@@ -23,6 +23,8 @@
 
 #include "window.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -30,7 +32,7 @@
 #include <string.h>
 
 /* The font used unless told otherwise. */
-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
+#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
 
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U

@@ -19,6 +19,8 @@
 
 #include "window.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -27,8 +29,8 @@
 #include <sys/stat.h>
 
 /* The fonts used unless told otherwise (the fallback is optional). */
-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
-#define MAIN_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
+#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+#define MAIN_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
 
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U
@@ -37,7 +39,7 @@
 #define MAIN_SLOW_FRAME_MS	250U
 
 /* The program a new window runs when this one was not started by its full path. */
-#define MAIN_PROGRAM		"/bin/files"
+#define MAIN_PROGRAM		KEILAND_BINDIR "/files"
 
 /* How often the menus' state is checked at most while no input arrives, in milliseconds. */
 #define MAIN_MENU_CHECK_MS	250U

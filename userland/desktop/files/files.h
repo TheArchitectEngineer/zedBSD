@@ -24,6 +24,8 @@
 #include "canvas.h"
 #include "ops.h"
 
+#include "userland/desktop/paths.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -51,7 +53,7 @@
 #define FM_LIST_ROW		28
 
 /* The desktop's wallpaper, which the dashboard's hero card shows (a binary PPM). */
-#define FM_WALLPAPER		"/usr/share/keiland/wallpaper.ppm"
+#define FM_WALLPAPER		KEILAND_DATADIR "/keiland/wallpaper.ppm"
 
 /* The window's size when the compositor leaves it to the program. */
 #define FM_WIDTH		1120

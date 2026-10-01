@@ -28,13 +28,15 @@
 #include "chooser.h"
 #include "window.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* The fonts used unless the application names others. */
-#define CHOOSER_FONT		"/usr/share/fonts/keiland.ttf"
-#define CHOOSER_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
+#define CHOOSER_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+#define CHOOSER_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
 
 /*
  * One file chooser: the model, the text, the window and its input, the

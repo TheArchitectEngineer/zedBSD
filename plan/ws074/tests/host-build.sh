@@ -22,7 +22,7 @@ variant=${1:-plain}
 out=build/ws074-host/$variant
 src=userland/desktop/browser
 cc=${CC:-cc}
-flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -I$src -Iplan/ws074/tests -Ibuild/ws074-host/include"
+flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -I$src -Iplan/ws074/tests -Ibuild/ws074-host/include -I."
 case $variant in
 plain) ;;
 asan) flags="$flags -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" ;;

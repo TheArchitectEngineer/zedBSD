@@ -30,6 +30,8 @@
 
 #include "files.h"
 
+#include "userland/desktop/paths.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,7 +85,7 @@
 #define DESKTOP_KEY_DOWN	108U
 
 /* The program a folder opens in. */
-#define DESKTOP_FILES		"/bin/files"
+#define DESKTOP_FILES		KEILAND_BINDIR "/files"
 
 static void desktop_layout(struct fm_app *app, int width, int height);
 static int desktop_over(const struct fm_app *app);

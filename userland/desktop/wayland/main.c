@@ -15,6 +15,7 @@
 #include "keymap.h"
 #include "ime.h"
 #include "data.h"
+#include "userland/desktop/paths.h"
 #include "zwl-os.h"
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -67,8 +68,8 @@ main(
 	server.frame_fd = -1;
 	server.auth_fd = -1;
 	server.control_fd = -1;
-	server.font_path = "/usr/share/fonts/keiland.ttf";
-	server.fallback_font_path = "/usr/share/fonts/keiland-fallback.ttf";
+	server.font_path = KEILAND_DATADIR "/fonts/keiland.ttf";
+	server.fallback_font_path = KEILAND_DATADIR "/fonts/keiland-fallback.ttf";
 	server.window_opacity = 1.0f;
 	server.pointer_speed = 100;
 	server.repeat_rate = 25;

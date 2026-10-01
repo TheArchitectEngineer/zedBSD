@@ -39,6 +39,8 @@
 #include "menu.h"
 #include "titlebar.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -50,7 +52,7 @@
 #include <unistd.h>
 
 /* The input method's program. */
-#define IME_PROGRAM			"/usr/libexec/keiland-ime"
+#define IME_PROGRAM			KEILAND_LIBEXECDIR "/keiland-ime"
 
 /* How long to wait before starting it again, and how often it may start in a window of time. */
 #define IME_RESTART_MS			1000U

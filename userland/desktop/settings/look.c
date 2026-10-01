@@ -19,6 +19,8 @@
 
 #include "settings.h"
 
+#include "userland/desktop/paths.h"
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -49,8 +51,8 @@
 #define LOOK_DELAY_DEFAULT	400
 
 /* The pictures: the default (the session's --wallpaper) and the folder of the others. */
-#define LOOK_DEFAULT_PICTURE	"/usr/share/keiland/wallpaper.ppm"
-#define LOOK_PICTURES		"/usr/share/keiland/wallpapers"
+#define LOOK_DEFAULT_PICTURE	KEILAND_DATADIR "/keiland/wallpaper.ppm"
+#define LOOK_PICTURES		KEILAND_DATADIR "/keiland/wallpapers"
 
 /* A picture's small copy, in pixels. */
 #define LOOK_THUMB_WIDTH	240

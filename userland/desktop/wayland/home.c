@@ -44,6 +44,8 @@
 
 #include "glass.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -68,14 +70,14 @@
 #define HOME_KEY_PAGE_DOWN	109U
 
 /* The applications' list, and how many it may hold. */
-#define HOME_APPS_PATH		"/etc/keiland/apps.conf"
+#define HOME_APPS_PATH		KEILAND_SYSCONFDIR "/keiland/apps.conf"
 
 /* The command of a login session's Log Out, which the compositor carries out itself. */
 #define HOME_LOGOUT		"@logout"
 #define HOME_LOCK		"@lock"
 
 /* The page the built-in list's browser opens (shown only when the page is there). */
-#define HOME_BROWSER_START	"/usr/share/browser/start.html"
+#define HOME_BROWSER_START	KEILAND_DATADIR "/browser/start.html"
 #define HOME_APPS_MAX		48U
 
 /* How long opening and closing take, and the least move of the corner drag. */
@@ -888,18 +890,18 @@ home_read_apps(
 
 	/* Without a usable file, the applications the compositor has. */
 	if (home_app_count == 0U) {
-		home_add_app("Terminal", "/bin/terminal", "term shell console sh", 0x323a4eU, "terminal");
-		home_add_app("Model viewer", "/bin/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
-		home_add_app("Vulkan test", "/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U, "");
-		home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU, "");
-		home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
-		home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
-		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
-		home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
-		home_add_app("PDF Viewer", "/bin/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
-		home_add_app("Image Viewer", "/bin/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
-		home_add_app("Text Editor", "/bin/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
-		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
+		home_add_app("Terminal", KEILAND_BINDIR "/terminal", "term shell console sh", 0x323a4eU, "terminal");
+		home_add_app("Model viewer", KEILAND_BINDIR "/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
+		home_add_app("Vulkan test", KEILAND_BINDIR "/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U, "");
+		home_add_app("Shared memory", KEILAND_BINDIR "/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU, "");
+		home_add_app("X terminal", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
+		home_add_app("Gears", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
+		home_add_app("Files", KEILAND_BINDIR "/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
+		home_add_app("Notes", KEILAND_BINDIR "/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
+		home_add_app("PDF Viewer", KEILAND_BINDIR "/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
+		home_add_app("Image Viewer", KEILAND_BINDIR "/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
+		home_add_app("Text Editor", KEILAND_BINDIR "/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
+		home_add_app("Browser", KEILAND_BINDIR "/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
 	}
 
 	/* A login's session locks (ws035-p102) and ends with Log Out (ws035-p095), the last icons. */

@@ -30,6 +30,8 @@
 
 #include "terminal.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <pty.h>
@@ -43,7 +45,7 @@
 #include <unistd.h>
 
 /* The font the terminal uses unless told otherwise, and its size in pixels. */
-#define MAIN_FONT		"/usr/share/fonts/keiland-mono.ttf"
+#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland-mono.ttf"
 #define MAIN_FONT_PIXELS	16U
 
 /* The grid the window opens with. */
@@ -57,7 +59,7 @@
 #define MAIN_STALE_LIMIT	8U
 
 /* The program started for a new window when the terminal was not run by a path. */
-#define MAIN_PROGRAM		"/bin/terminal"
+#define MAIN_PROGRAM		KEILAND_BINDIR "/terminal"
 
 /* The most text the clipboard holds: every cell as four UTF-8 bytes, and a line break per row. */
 #define MAIN_CLIPBOARD_MAX	(TERMINAL_MAX_COLUMNS * TERMINAL_MAX_ROWS * 4U + TERMINAL_MAX_ROWS)

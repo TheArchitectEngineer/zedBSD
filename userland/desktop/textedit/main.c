@@ -22,6 +22,8 @@
 
 #include "window.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -32,9 +34,9 @@
 #include <unistd.h>
 
 /* The fonts used unless told otherwise: the text's (monospaced), the characters it lacks, and the interface's. */
-#define MAIN_FONT		"/usr/share/fonts/keiland-mono.ttf"
-#define MAIN_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
-#define MAIN_UI_FONT		"/usr/share/fonts/keiland.ttf"
+#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+#define MAIN_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+#define MAIN_UI_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
 
 /* How often frames are drawn while the fingers or the view's scroll move, in milliseconds. */
 #define MAIN_FRAME_MS		16

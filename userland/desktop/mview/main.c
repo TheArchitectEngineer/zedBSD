@@ -12,6 +12,8 @@
 
 #include "mview.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +21,7 @@
 #include <time.h>
 
 /* The model shown when --model is not given. */
-#define MAIN_DEFAULT_MODEL	"/usr/share/mview/qs40"
+#define MAIN_DEFAULT_MODEL	KEILAND_DATADIR "/mview/qs40"
 
 /* How long an idle viewer waits for input before looking again, in milliseconds. */
 #define MAIN_IDLE_WAIT		16

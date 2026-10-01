@@ -37,6 +37,8 @@
 #include "menu.h"
 #include "popup.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -60,8 +62,8 @@
 #define DESKTOP_ERROR_TOKEN		1U
 
 /* The program a login session starts, and the file that turns it off. */
-#define DESKTOP_COMMAND			"/bin/files --desktop"
-#define DESKTOP_SWITCH			"/etc/keiland/desktop"
+#define DESKTOP_COMMAND			KEILAND_BINDIR "/files --desktop"
+#define DESKTOP_SWITCH			KEILAND_SYSCONFDIR "/keiland/desktop"
 
 /* How long after it ends the program is started again, and how many starts a minute are allowed. */
 #define DESKTOP_RESTART_MS		2000U

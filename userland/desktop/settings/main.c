@@ -20,14 +20,16 @@
 
 #include "window.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* The fonts used unless told otherwise (the fallback is optional). */
-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
-#define MAIN_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
+#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+#define MAIN_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
 
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U
