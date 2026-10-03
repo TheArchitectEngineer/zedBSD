@@ -13,8 +13,10 @@
 #   plan/ws035/tests/zdesktop-guest.sh stop     (the last started guest, unless GUEST_RUNTIME names another)
 #
 # Host set-up, once per boot of the host (sudo is allowed on this host):
-#   scp -r awe@10.0.10.25:/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install \
+#   scp -r awe@10.0.30.3:/home/awe/zedbsd-q306-venus/dependencies/q312-quiesce/install \
 #       build/ws035-sq-venus/
+#   (10.0.30.3 is the Latitude 5330 test host; 2026-10-04 copy: virgl_render_server sha256 745bef59c17c88975ee567c0ae8c2c689b5b06fca79171d121227d0f5f5f84c2,
+#    libvirglrenderer.so.1.9.0 sha256 38447deeaac67a7c9ff4613115a49b2d60a10acda6c073f2d4c73d0af718fbd4)
 #   sudo modprobe vgem && sudo chmod 0666 /dev/dri/renderD128
 #
 # ws035-p125: start first stops a guest still running in the same runtime directory (start copies the image over
