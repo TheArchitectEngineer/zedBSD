@@ -430,7 +430,9 @@ cpu_totals(
 		totals[3] += entry->other;
 	}
 
-	/* Succeeded: the totals. */
+	/* The value is not needed any more. */
 	free(buffer);
+
+	/* Succeeded: the totals. */
 	return 0;
 }

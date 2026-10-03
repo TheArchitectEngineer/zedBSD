@@ -18,8 +18,9 @@
 # Each script waits 2.6 s after declaring its device before it touches: the compositor finds a new evdev node by
 # looking now and then.  Pictures go to OUTDIR (and to PREFIX* when given).
 #
-#   cp /home/awe/zedBSD-rpi4/build/main-pen/hdd-image.img build/ws081-main-pen.img
-#   VENUS_RENDERER=/home/awe/zedBSD-rpi4/build/ws035-sq-venus/install \
+#   sh plan/tools/guest/test-image.sh plan/ws079/tests/config-amd64-pen.mk build/ws081-main-pen   (ws136-p003)
+#   cp build/ws081-main-pen/hdd-image.img build/ws081-main-pen.img
+#   VENUS_RENDERER=$PWD/build/ws035-sq-venus/install \
 #   GUEST_RUNTIME=$PWD/build/ws081-run plan/ws079/tests/pen-guest.sh start build/ws081-main-pen.img
 #   GUEST_RUNTIME=... plan/ws081/tests/p015-guest.sh BUILD [OUTDIR [PREFIX]]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

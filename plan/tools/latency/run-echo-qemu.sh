@@ -2,7 +2,8 @@
 # ws041 p003: boots IMG on one CPU and times the shell's echo of typed keys
 # beside a busy loop (plan/tools/latency/echo-latency.py).
 set -u
-cd /home/awe/zedBSD-rpi4
+# ws136-p003: from the tree the script is in (it was a fixed other tree, now gone).
+cd "$(dirname -- "$0")/../../.."
 IMG=${IMG:?image}
 D=${RUN:-/tmp/ws041-echo}
 mkdir -p $D; rm -f $D/*.sock

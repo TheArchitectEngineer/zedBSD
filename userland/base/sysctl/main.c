@@ -26,6 +26,7 @@
 
 static int show_cputimes(void);
 static int show_diskstats(void);
+static int show_gputelemetry(void);
 static int fetch_value(const char *name, unsigned char **buffer, size_t *length);
 static int show_writeback(void);
 static int show_readahead(void);
@@ -89,6 +90,7 @@ show_all(
 	static const char *const names[] = {
 	    "hw.cputimes",
 	    "hw.diskstats",
+	    "hw.gputelemetry",
 	    "kern.boot.firmware_partition",
 	    "kern.boot.config_partition",
 	    "kern.boot.config_matches",
@@ -185,6 +187,10 @@ show_name(
 	/* Each physical disk's work, a line a disk. */
 	if (strcmp(name, "hw.diskstats") == 0)
 		return show_diskstats();
+
+	/* Each GPU's work as its driver keeps it, a line a GPU. */
+	if (strcmp(name, "hw.gputelemetry") == 0)
+		return show_gputelemetry();
 
 	/* Formats speculative observations separately from ordinary demand I/O.
 	 */
@@ -519,8 +525,10 @@ show_cputimes(
 		       (unsigned long long)entry->idle, (unsigned long long)entry->other);
 	}
 
-	/* Succeeded: every CPU is printed. */
+	/* The value is not needed any more. */
 	free(buffer);
+
+	/* Succeeded: every CPU is printed. */
 	return 0;
 }
 
@@ -581,8 +589,73 @@ show_diskstats(
 		       (unsigned long long)entry->busy_ns, entry->inflight);
 	}
 
-	/* Succeeded: every disk is printed. */
+	/* The value is not needed any more. */
 	free(buffer);
+
+	/* Succeeded: every disk is printed. */
+	return 0;
+}
+
+/*
+ * Prints hw.gputelemetry (ws134-p007): the GPUs, then a line a GPU with its
+ * driver, the fields it filled (valid), its busy time at the driver's
+ * clock, its frequencies and its objects' memory.  Returns 0, or -1 with
+ * errno set.
+ */
+static int
+show_gputelemetry(
+	void)
+{
+	const struct gpu_telemetry_header *header;
+	const struct gpu_telemetry_entry *entry;
+	unsigned char *buffer;
+	size_t length;
+	uint32_t gpu;
+	int status;
+	int valid;
+
+	/* The value, whole. */
+	status = fetch_value("hw.gputelemetry", &buffer, &length);
+	if (status != 0)
+		return -1;
+
+	/* A value of a layout this command does not know. */
+	header = (const struct gpu_telemetry_header *)(void *)buffer;
+	valid = 1;
+	if (length < sizeof(*header)) {
+		valid = 0;
+	} else if (header->version != GPU_TELEMETRY_VERSION) {
+		valid = 0;
+	} else if (header->element_size != sizeof(*entry)) {
+		valid = 0;
+	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
+		valid = 0;
+	}
+
+	/* Refuses what it cannot read. */
+	if (!valid) {
+		free(buffer);
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* The GPUs. */
+	printf("hw.gputelemetry: gpus=%u\n", header->count);
+
+	/* A line a GPU. */
+	for (gpu = 0; gpu < header->count; gpu++) {
+		entry = (const struct gpu_telemetry_entry *)(void *)(buffer + header->struct_size + (size_t)gpu * header->element_size);
+		printf("hw.gputelemetry: gpu=%u driver=%.16s valid=0x%x time_ns=%llu busy_ns=%llu cur_mhz=%u req_mhz=%u min_mhz=%u max_mhz=%u "
+		       "objects_bytes=%llu objects_limit=%llu\n",
+		       gpu, entry->driver, entry->valid, (unsigned long long)entry->time_ns, (unsigned long long)entry->busy_ns,
+		       entry->cur_mhz, entry->req_mhz, entry->min_mhz, entry->max_mhz,
+		       (unsigned long long)entry->objects_bytes, (unsigned long long)entry->objects_limit);
+	}
+
+	/* The value is not needed any more. */
+	free(buffer);
+
+	/* Succeeded: every GPU is printed. */
 	return 0;
 }
 
@@ -604,6 +677,9 @@ fetch_value(
 	int attempt;
 
 	/* A few tries: the value may grow between the length and the read. */
+	value = NULL;
+	size = 0;
+	status = -1;
 	for (attempt = 0; attempt < 4; attempt++) {
 		/* The length the kernel needs now. */
 		size = 0;
@@ -618,19 +694,24 @@ fetch_value(
 
 		/* The value; one that grew is asked for again. */
 		status = sysctlbyname(name, value, &size, NULL, 0);
-		if (status == 0) {
-			*buffer = value;
-			*length = size;
-			return 0;
-		}
+		if (status == 0)
+			break;
 
 		/* Any failure but a grown value ends the tries. */
 		free(value);
+		value = NULL;
 		if (errno != ENOMEM)
 			return -1;
 	}
 
 	/* Still growing after every try. */
-	errno = EAGAIN;
-	return -1;
+	if (status != 0) {
+		errno = EAGAIN;
+		return -1;
+	}
+
+	/* Succeeded: the value, the caller's to free. */
+	*buffer = value;
+	*length = size;
+	return 0;
 }

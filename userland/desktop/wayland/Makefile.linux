@@ -43,6 +43,7 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/settings.c \
 	userland/desktop/wayland/settings-store.c \
 	userland/desktop/wayland/system.c \
+	userland/desktop/wayland/sysmon.c \
 	userland/desktop/settings-keys/settings-keys.c \
 	userland/desktop/wayland/text-input.c \
 	userland/desktop/wayland/input-method.c \

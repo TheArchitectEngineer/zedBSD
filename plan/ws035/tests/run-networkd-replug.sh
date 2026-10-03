@@ -6,7 +6,8 @@
 #                run a second DHCP after it
 # Needs the SSH harness guest running (plan/tools/guest/guest.sh start).
 set -eu
-cd /home/awe/zedBSD-rpi4
+# ws136-p003: from the tree the script is in (it was a fixed other tree, now gone).
+cd "$(dirname -- "$0")/../../.."
 MODE=${MODE:-auto}
 PCAP=${PCAP:-/tmp/replug-$MODE.pcap}
 S=build/guest/serial.sock

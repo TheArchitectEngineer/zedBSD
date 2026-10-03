@@ -51,6 +51,27 @@ void
 kern_gpu_start_ops_set(
 	const struct kern_gpu_start_ops *ops);
 
+struct gpu_telemetry_entry;
+
+/*
+ * Reads one GPU's telemetry into an entry whose driver name is filled and
+ * whose other fields are zero: the driver sets the fields it keeps and
+ * their bits in valid.  Returns 0, or an errno to leave the GPU out.
+ */
+typedef int (*kern_gpu_telemetry_read_t)(void *context, struct gpu_telemetry_entry *entry);
+
+/*
+ * Lists a GPU in hw.gputelemetry (ws134-p007): its driver's name, the
+ * function that reads it and its context, which must live as long as the
+ * kernel.  The same context is listed once.  Returns 0, or ENOSPC when the
+ * list is full.
+ */
+int
+kern_gpu_telemetry_register(
+	const char *driver,
+	kern_gpu_telemetry_read_t read,
+	void *context);
+
 int
 kern_sysctl(
 	const int *name,

@@ -6,18 +6,31 @@
 # decisions).  The guest boots a copy of IMAGE and is stopped afterwards.
 # Timing is not measured (the machine may be loaded).  From ws065-p004.
 #
-#   [IMAGE=...] [GUEST_RUNTIME=...] sh plan/tools/sh/guest-expat.sh SH [EXPAT_TAR]
+#   IMAGE=... [GUEST_RUNTIME=...] sh plan/tools/sh/guest-expat.sh SH [EXPAT_TAR]
 #
-# SH is a sh built for the guest (build-guest-sh.sh); EXPAT_TAR defaults to
-# /home/awe/zedBSD-rpi4/build/ws046/expat-src.tar (expat 2.8.5, read only).
-# IMAGE defaults to the native guest image
-# /home/awe/zedBSD-rpi4/build/ws053-full-hal-guest/hdd-image.img, which has
-# clang and make.
+# SH is a sh built for the guest (build-guest-sh.sh); EXPAT_TAR is an
+# uncompressed tar of expat 2.8.5, by default made from the verified release
+# tarball of the expat package (build/distfiles/expat-2.8.5.tar.xz; make
+# fetches it) with zedbsd added to conftools/config.sub.  IMAGE is the full guest image, which has clang and make
+# (plan/tools/guest/build-full-image.sh).  ws136-p003: the defaults were
+# another tree's build and image, now gone.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 sh_binary=$1
-expat=${2:-/home/awe/zedBSD-rpi4/build/ws046/expat-src.tar}
-image=${IMAGE:-/home/awe/zedBSD-rpi4/build/ws053-full-hal-guest/hdd-image.img}
+image=${IMAGE:?set IMAGE to the full guest image (plan/tools/guest/build-full-image.sh)}
+expat=${2:-}
+if [ -z "$expat" ]; then
+	# The release's conftools/config.sub does not know zedbsd, so configure
+	# would refuse --build=x86_64-unknown-zedbsd: it is named beside netbsd,
+	# as the openssh package's patch does (the tar ws046 made had the same).
+	expat=build/guest-expat/expat-src.tar
+	rm -rf build/guest-expat
+	mkdir -p build/guest-expat
+	xz -dc build/distfiles/expat-2.8.5.tar.xz | tar -x -C build/guest-expat -f - || exit 1
+	sed -i 's/| netbsd\* |/| netbsd* | zedbsd* |/' build/guest-expat/expat-2.8.5/conftools/config.sub
+	grep -q 'zedbsd\*' build/guest-expat/expat-2.8.5/conftools/config.sub || { echo "guest-expat: config.sub not patched" >&2; exit 1; }
+	tar -c --format=ustar -C build/guest-expat -f "$expat" expat-2.8.5 || exit 1
+fi
 guest="python3 plan/tools/guest/guest.py"
 
 $guest stop >/dev/null 2>&1

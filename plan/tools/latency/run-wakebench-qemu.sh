@@ -2,7 +2,8 @@
 # ws041: boots IMG on SMP CPUs (1 by default, so every process shares one
 # CPU), logs in on the serial console and runs the wakebench modes.
 set -u
-cd /home/awe/zedBSD-rpi4
+# ws136-p003: from the tree the script is in (it was a fixed other tree, now gone).
+cd "$(dirname -- "$0")/../../.."
 IMG=${IMG:?image}
 SMP=${SMP:-1}
 D=${RUN:-/tmp/ws041-run}

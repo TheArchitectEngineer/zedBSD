@@ -49,6 +49,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_HW, HW_GPU_START, 0 }, 2, "hw.gpu.start"},
 	{{ CTL_HW, HW_CPUTIMES, 0 }, 2, "hw.cputimes"},
 	{{ CTL_HW, HW_DISKSTATS, 0 }, 2, "hw.diskstats"},
+	{{ CTL_HW, HW_GPUTELEMETRY, 0 }, 2, "hw.gputelemetry"},
 	{{ CTL_KERN, KERN_MSGBUF, 0 }, 2, "kern.msgbuf"},
 	{{ CTL_KERN, KERN_MSGBUF_SIZE, 0 }, 2, "kern.msgbuf_size"},
 	{{ CTL_KERN, KERN_MSGBUF_DROPPED, 0 }, 2, "kern.msgbuf_dropped"},
@@ -100,9 +101,32 @@ static atomic_uint_t gpu_attaching;
 static const struct kern_gpu_start_ops *gpu_start_ops;
 static char hostname[KERN_HOST_NAME_MAX + 1U] = "zedbsd";
 
+/* The most GPUs hw.gputelemetry lists. */
+#define GPU_TELEMETRY_MAX	8U
+
+/* One GPU hw.gputelemetry lists: its driver's name, the function that reads it, and its context. */
+struct gpu_telemetry_source {
+	char driver[16];
+	kern_gpu_telemetry_read_t read;
+	void *context;
+};
+
+/*
+ * The GPUs hw.gputelemetry lists (ws134-p007).
+ *
+ * A driver appends one under gpu_telemetry_lock and publishes it by raising
+ * gpu_telemetry_count with release; a reader loads the count with acquire
+ * and reads the sources below it without the lock.  Nothing is ever taken
+ * out: a source and its context live as long as the kernel.
+ */
+static struct gpu_telemetry_source gpu_telemetry_sources[GPU_TELEMETRY_MAX];
+static atomic_uint_t gpu_telemetry_count;
+static struct spinlock gpu_telemetry_lock;
+
 static int sysctl_gpu_start(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_cputimes(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_diskstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
+static int sysctl_gputelemetry(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
 static const struct sysctl_leaf *find_oid(const int *oid, unsigned oidlen);
@@ -117,6 +141,65 @@ sysctl_init(
 	void)
 {
 	spin_init(&hostname_lock, LOCK_RANK_DEVICE, "hostname");
+	spin_init(&gpu_telemetry_lock, LOCK_RANK_DEVICE, "gpu telemetry");
+}
+
+/*
+ * Lists a GPU in hw.gputelemetry (ws134-p007): its driver's name, the
+ * function that reads it and its context, which live as long as the
+ * kernel.  A context already listed is not listed again.  Returns 0, or
+ * ENOSPC when the list is full, EINVAL without a function.
+ */
+int
+kern_gpu_telemetry_register(
+	const char *driver,
+	kern_gpu_telemetry_read_t read,
+	void *context)
+{
+	struct gpu_telemetry_source *source;
+	unsigned long irq;
+	unsigned count;
+	unsigned index;
+	size_t length;
+
+	/* A source needs its function. */
+	if (read == NULL || driver == NULL)
+		return EINVAL;
+
+	/* Appended under the lock, published by the count. */
+	irq = spin_lock_irqsave(&gpu_telemetry_lock);
+
+	/* A context already listed stays as it is. */
+	count = atomic_load_acquire(&gpu_telemetry_count);
+	for (index = 0; index < count; index++) {
+		if (gpu_telemetry_sources[index].context == context) {
+			spin_unlock_irqrestore(&gpu_telemetry_lock, irq);
+			return 0;
+		}
+	}
+
+	/* A full list. */
+	if (count >= GPU_TELEMETRY_MAX) {
+		spin_unlock_irqrestore(&gpu_telemetry_lock, irq);
+		return ENOSPC;
+	}
+
+	/* The new source, whole before the count shows it. */
+	source = &gpu_telemetry_sources[count];
+	kern_memset(source, 0, sizeof(*source));
+	length = kern_strlen(driver);
+	if (length > sizeof(source->driver) - 1U)
+		length = sizeof(source->driver) - 1U;
+	kern_memcpy(source->driver, driver, length);
+	source->read = read;
+	source->context = context;
+	atomic_store_release(&gpu_telemetry_count, count + 1U);
+
+	/* Another driver may list its GPU now. */
+	spin_unlock_irqrestore(&gpu_telemetry_lock, irq);
+
+	/* Succeeded: the GPU is listed. */
+	return 0;
 }
 
 /*
@@ -245,6 +328,12 @@ kern_sysctl(
 	/* Reports each physical disk's work. */
 	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_DISKSTATS) {
 		error = sysctl_diskstats(oldp, oldlenp, newp, newlen);
+		return error;
+	}
+
+	/* Reports each GPU's work as its driver keeps it. */
+	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_GPUTELEMETRY) {
+		error = sysctl_gputelemetry(oldp, oldlenp, newp, newlen);
 		return error;
 	}
 
@@ -691,6 +780,83 @@ sysctl_diskstats(
 		return error;
 
 	/* Succeeded: the value (or its length) is given. */
+	return 0;
+}
+
+/*
+ * Reads hw.gputelemetry: the header and each listed GPU as its driver reads
+ * it (ws134-p007).  A GPU whose driver fails to read it is left out.  A
+ * buffer too small fails with ENOMEM and the length needed (every listed
+ * GPU's, so a reader that asks again with it has room).
+ */
+static int
+sysctl_gputelemetry(
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen)
+{
+	struct gpu_telemetry_header header;
+	struct gpu_telemetry_entry entry;
+	const struct gpu_telemetry_source *source;
+	uint8_t *output;
+	unsigned listed;
+	unsigned index;
+	uint32_t count;
+	size_t needed;
+	size_t capacity;
+	int error;
+
+	/* Read-only. */
+	if (newp != NULL || newlen != 0)
+		return EPERM;
+
+	/* The length every listed GPU takes. */
+	listed = atomic_load_acquire(&gpu_telemetry_count);
+	needed = sizeof(header) + (size_t)listed * sizeof(entry);
+
+	/* Without a length there is nothing to size or copy. */
+	if (oldlenp == NULL) {
+		if (oldp == NULL)
+			return 0;
+		return EINVAL;
+	}
+
+	/* The length needed, and nothing more without a buffer or with one too small. */
+	capacity = *oldlenp;
+	*oldlenp = needed;
+	if (oldp == NULL)
+		return 0;
+	if (capacity < needed)
+		return ENOMEM;
+
+	/* Each GPU its driver reads, after the header's place. */
+	output = oldp;
+	count = 0;
+	for (index = 0; index < listed; index++) {
+		/* The entry with its driver's name, the rest for the driver. */
+		source = &gpu_telemetry_sources[index];
+		kern_memset(&entry, 0, sizeof(entry));
+		kern_memcpy(entry.driver, source->driver, sizeof(entry.driver));
+		error = source->read(source->context, &entry);
+		if (error != 0)
+			continue;
+
+		/* Into the next place. */
+		kern_memcpy(output + sizeof(header) + (size_t)count * sizeof(entry), &entry, sizeof(entry));
+		count++;
+	}
+
+	/* The header, with the GPUs read; the length is theirs. */
+	kern_memset(&header, 0, sizeof(header));
+	header.version = GPU_TELEMETRY_VERSION;
+	header.struct_size = sizeof(header);
+	header.element_size = sizeof(entry);
+	header.count = count;
+	kern_memcpy(output, &header, sizeof(header));
+	*oldlenp = sizeof(header) + (size_t)count * sizeof(entry);
+
+	/* Succeeded: the value is in the buffer. */
 	return 0;
 }
 

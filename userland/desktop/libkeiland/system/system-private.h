@@ -85,6 +85,81 @@ struct system_view {
 	unsigned result_count;
 };
 
+/*
+ * One sample of the machine as the compositor tells it (WS134 p012): the
+ * counters and present values of kl_system_monitor_v1's events, before
+ * they are made into a frame's rates (system-monitor-rate.c, which knows
+ * nothing of Wayland so that the host tests build it alone).
+ */
+struct system_monitor_cpu {
+	uint64_t user;
+	uint64_t system;
+	uint64_t idle;
+	uint64_t other;
+};
+
+/* One link's counters in a raw sample. */
+struct system_monitor_link {
+	uint64_t id;
+	uint64_t rx;
+	uint64_t tx;
+	unsigned up;
+};
+
+/* One disk's counters in a raw sample. */
+struct system_monitor_disk {
+	uint64_t id;
+	uint64_t read_ops;
+	uint64_t write_ops;
+	uint64_t read_bytes;
+	uint64_t write_bytes;
+	uint64_t read_ns;
+	uint64_t write_ns;
+	uint64_t busy_ns;
+};
+
+/* One GPU's counters and present values in a raw sample. */
+struct system_monitor_gpu {
+	uint64_t id;
+	uint64_t time_ns;
+	uint64_t busy_ns;
+	uint64_t memory_used;
+	uint64_t memory_total;
+	unsigned cur_mhz;
+	unsigned max_mhz;
+	int milli_celsius;
+	unsigned milli_watts;
+};
+
+/* A raw sample as a whole (valid has the KL_MONITOR_FRAME_* bits the compositor sent). */
+struct system_monitor_raw {
+	uint64_t time_ns;
+	unsigned valid;
+	unsigned cpu_hz;
+	int cpu_milli_celsius;
+	unsigned cpu_count;
+	struct system_monitor_cpu cpu[KL_MONITOR_CPU_MAX];
+	uint64_t memory_total;
+	uint64_t memory_free;
+	uint64_t memory_cache;
+	uint64_t memory_reclaimable;
+	uint64_t swap_total;
+	uint64_t swap_used;
+	unsigned link_count;
+	struct system_monitor_link link[KL_MONITOR_LINK_MAX];
+	unsigned disk_count;
+	struct system_monitor_disk disk[KL_MONITOR_DISK_MAX];
+	unsigned gpu_count;
+	struct system_monitor_gpu gpu[KL_MONITOR_GPU_MAX];
+};
+
+/* system-monitor-rate.c */
+void system_monitor_rates(const struct system_monitor_raw *previous, const struct system_monitor_raw *current, struct kl_monitor_frame *frame);
+
+/* system.c, for system-monitor.c */
+struct wl_proxy;
+struct wl_proxy *system_monitor_make(struct kl_system *system, uint32_t period_ms, const void *listener, void *data);
+
 /* system-view.c */
 void system_view_init(struct system_view *view);
 void system_view_network_state(struct system_view *view, const struct kl_network_state *state);

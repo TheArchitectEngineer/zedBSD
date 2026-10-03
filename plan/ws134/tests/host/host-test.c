@@ -50,7 +50,10 @@ main(
 		return 1;
 	}
 
+	/* Every check held. */
 	printf("monitor-host: PASS\n");
+
+	/* Succeeded: the run is over. */
 	return 0;
 }
 
@@ -64,6 +67,7 @@ check(
 	if (condition)
 		return;
 
+	/* A failure is counted. */
 	printf("FAIL: %s\n", what);
 	failures++;
 }
@@ -80,6 +84,7 @@ test_sim(void)
 	int same;
 	int in_range;
 	int took;
+	int differs;
 	unsigned core;
 
 	/* Two simulations of one seed. */
@@ -90,20 +95,29 @@ test_sim(void)
 	for (now = 0; now < 600000U; now += 1000U) {
 		took = sm_source_take(&first, now, &a);
 		took &= sm_source_take(&second, now, &b);
+		differs = memcmp(&a, &b, sizeof(a));
 		if (!took || a.time_ms != now)
 			same = 0;
-		if (memcmp(&a, &b, sizeof(a)) != 0)
+		if (differs != 0)
 			same = 0;
-		if (a.cpu < 0.0 || a.cpu > 1.0 || a.memory_used > first.info.memory_total || a.disk_latency_ms <= 0.0)
+
+		/* Every value within its range. */
+		if (a.cpu < 0.0 ||
+		    a.cpu > 1.0 ||
+		    a.memory_used > first.info.memory_total ||
+		    a.disk_latency_ms <= 0.0)
 			in_range = 0;
 		for (core = 0; core < first.info.cpu_count; core++) {
 			if (a.cpu_core[core] < 0.0 || a.cpu_core[core] > 1.0)
 				in_range = 0;
 		}
+
+		/* Every field is the simulation's. */
 		if (a.simulated != a.valid)
 			in_range = 0;
 	}
 
+	/* The verdicts. */
 	check(same, "sim: one seed gives one sequence");
 	check(in_range, "sim: values in range and all simulated");
 
@@ -199,6 +213,7 @@ test_rules(void)
 		level = sm_rules_update(&rules, &info, &frame, 0);
 	}
 
+	/* Still calm. */
 	check(level == SM_LEVEL_NORMAL, "rules: a simulated field grades nothing");
 
 	/* From the simulation itself it does. */
@@ -208,6 +223,7 @@ test_rules(void)
 		level = sm_rules_update(&rules, &info, &frame, 1);
 	}
 
+	/* Raised. */
 	check(level == SM_LEVEL_ELEVATED && rules.rule_levels[SM_RULE_CPU] == SM_LEVEL_ELEVATED, "rules: the simulation's own fields grade");
 
 	/* The same CPU really busy: Elevated at 10 s, Warning at 60 s, Critical at 120 s. */
@@ -219,24 +235,28 @@ test_rules(void)
 		level = sm_rules_update(&rules, &info, &frame, 0);
 	}
 
+	/* The level so far, then the next stretch. */
 	check(level == SM_LEVEL_NORMAL, "rules: not before 10 s");
 	for (; time <= 10000U; time += 1000U) {
 		frame.time_ms = time;
 		level = sm_rules_update(&rules, &info, &frame, 0);
 	}
 
+	/* The level so far, then the next stretch. */
 	check(level == SM_LEVEL_ELEVATED, "rules: Elevated at 10 s");
 	for (; time <= 60000U; time += 1000U) {
 		frame.time_ms = time;
 		level = sm_rules_update(&rules, &info, &frame, 0);
 	}
 
+	/* The level so far, then the next stretch. */
 	check(level == SM_LEVEL_WARNING, "rules: Warning at 60 s");
 	for (; time <= 120000U; time += 1000U) {
 		frame.time_ms = time;
 		level = sm_rules_update(&rules, &info, &frame, 0);
 	}
 
+	/* Critical, and its cause. */
 	check(level == SM_LEVEL_CRITICAL, "rules: Critical at 120 s");
 	check(strncmp(rules.summary, "CPU 97", 6) == 0, "rules: the summary names the cause");
 

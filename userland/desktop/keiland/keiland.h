@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed). */
-#define KEILAND_VERSION	22U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*). */
+#define KEILAND_VERSION	23U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1177,6 +1177,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_AUDIO	0x4U
 #define KL_SYSTEM_HAS_POWER	0x8U
 #define KL_SYSTEM_HAS_DEVICES	0x10U
+#define KL_SYSTEM_HAS_MONITOR	0x20U	/* kl_system_monitor_open (WS134 p012) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
@@ -1386,6 +1387,169 @@ size_t kl_system_devices_get(const struct kl_system *system, struct kl_device *d
  * ENOTSUP, or EINVAL.
  */
 int kl_system_devices_eject(struct kl_system *system, const char *id, uint32_t *request);
+
+/*
+ * The machine's monitor (WS134 p012, plan/ws134/design.md section 1.3):
+ * what the System Monitor shows, sampled by the compositor and made into
+ * rates here.  A monitor is opened on a kl_system and its samples come
+ * with kl_system_dispatch; kl_system_monitor_take gives the newest frame:
+ * the rates over the time since the sample before it (the CPUs' shares,
+ * bytes and operations a second, the disks' mean latency, the GPUs'
+ * shares) and the present values.  The first frame comes with the second
+ * sample.  A device that came again, or a counter that went back, has no
+ * rate for that frame.  Close every monitor before its kl_system.
+ */
+
+/* The most CPUs, GPUs, disks and links a monitor follows. */
+#define KL_MONITOR_CPU_MAX	256U
+#define KL_MONITOR_GPU_MAX	4U
+#define KL_MONITOR_DISK_MAX	8U
+#define KL_MONITOR_LINK_MAX	16U
+
+/* What a frame has (struct kl_monitor_frame's valid). */
+#define KL_MONITOR_FRAME_CPU		0x001U
+#define KL_MONITOR_FRAME_MEMORY		0x002U
+#define KL_MONITOR_FRAME_SWAP		0x004U
+#define KL_MONITOR_FRAME_LINKS		0x008U
+#define KL_MONITOR_FRAME_DISKS		0x010U
+#define KL_MONITOR_FRAME_GPU_BUSY	0x020U
+#define KL_MONITOR_FRAME_GPU_MEMORY	0x040U
+#define KL_MONITOR_FRAME_GPU_FREQ	0x080U
+#define KL_MONITOR_FRAME_TEMPERATURE	0x100U
+#define KL_MONITOR_FRAME_POWER		0x200U
+
+/* A disk's kind (struct kl_monitor_info's disk kind). */
+#define KL_MONITOR_KIND_OTHER	1U
+#define KL_MONITOR_KIND_NVME	2U
+#define KL_MONITOR_KIND_USB	3U
+#define KL_MONITOR_KIND_UAS	4U
+#define KL_MONITOR_KIND_IDE	5U
+#define KL_MONITOR_KIND_SDMMC	6U
+#define KL_MONITOR_KIND_SCSI	7U
+
+/* One GPU of the info: its id, name and driver. */
+struct kl_monitor_gpu_info {
+	uint64_t id;
+	char name[48];
+	char driver[16];
+};
+
+/* One disk of the info: its id, name and kind. */
+struct kl_monitor_disk_info {
+	uint64_t id;
+	char name[32];
+	unsigned kind;
+};
+
+/* One link of the info: its id and name. */
+struct kl_monitor_link_info {
+	uint64_t id;
+	char name[16];
+};
+
+/* What does not change from frame to frame: the CPUs, the machine's name, the devices. */
+struct kl_monitor_info {
+	unsigned cpu_count;
+	char host[64];
+	unsigned gpu_count;
+	unsigned disk_count;
+	unsigned link_count;
+	struct kl_monitor_gpu_info gpu[KL_MONITOR_GPU_MAX];
+	struct kl_monitor_disk_info disk[KL_MONITOR_DISK_MAX];
+	struct kl_monitor_link_info link[KL_MONITOR_LINK_MAX];
+};
+
+/* One link's bytes a second, received and sent, and whether it is up. */
+struct kl_monitor_link_rate {
+	uint64_t id;
+	double rx_rate;
+	double tx_rate;
+	unsigned up;
+};
+
+/* One disk's bytes and operations a second, its mean latency in milliseconds, and its busy share (0 to 1). */
+struct kl_monitor_disk_rate {
+	uint64_t id;
+	double read_rate;
+	double write_rate;
+	double read_ops;
+	double write_ops;
+	double latency_ms;
+	double busy;
+};
+
+/* One GPU's busy share (0 to 1), its memory, frequencies, temperature and power. */
+struct kl_monitor_gpu_rate {
+	uint64_t id;
+	double busy;
+	uint64_t memory_used;
+	uint64_t memory_total;
+	unsigned cur_mhz;
+	unsigned max_mhz;
+	int milli_celsius;
+	unsigned milli_watts;
+};
+
+/*
+ * One frame: when (CLOCK_MONOTONIC, ns) and over how many seconds, what it
+ * has, the CPUs' busy shares (0 to 1, all and each), the memory in bytes,
+ * the links' and the disks' rates (each, and their sums; the disks'
+ * latency is the mean over every operation), the GPUs, and the CPU's
+ * temperature.
+ */
+struct kl_monitor_frame {
+	uint64_t time_ns;
+	double seconds;
+	unsigned valid;
+	double cpu;
+	unsigned cpu_count;
+	double cpu_core[KL_MONITOR_CPU_MAX];
+	uint64_t memory_total;
+	uint64_t memory_free;
+	uint64_t memory_cache;
+	uint64_t memory_reclaimable;
+	uint64_t swap_total;
+	uint64_t swap_used;
+	unsigned link_count;
+	struct kl_monitor_link_rate link[KL_MONITOR_LINK_MAX];
+	double rx_rate;
+	double tx_rate;
+	unsigned disk_count;
+	struct kl_monitor_disk_rate disk[KL_MONITOR_DISK_MAX];
+	double read_rate;
+	double write_rate;
+	double disk_latency_ms;
+	unsigned gpu_count;
+	struct kl_monitor_gpu_rate gpu[KL_MONITOR_GPU_MAX];
+	int cpu_milli_celsius;
+};
+
+/* A monitor on a kl_system. */
+struct kl_system_monitor;
+
+/*
+ * Opens a monitor sampled every period_ms (250 to 10000; 0 is 1000).
+ * Returns NULL with errno ENOTSUP when the compositor offers none, or
+ * ENOMEM.
+ */
+struct kl_system_monitor *kl_system_monitor_open(struct kl_system *system, unsigned period_ms);
+
+/*
+ * Copies the newest frame into *frame: 1 when one came since the last
+ * take, 0 when none did (*frame is left as it was).
+ */
+int kl_system_monitor_take(struct kl_system_monitor *monitor, struct kl_monitor_frame *frame);
+
+/*
+ * The info as last told (all zero before the first), and how many times it
+ * changed (a new number means the devices changed).
+ */
+const struct kl_monitor_info *kl_system_monitor_info(const struct kl_system_monitor *monitor, unsigned *changes);
+
+/*
+ * Closes a monitor.
+ */
+void kl_system_monitor_close(struct kl_system_monitor *monitor);
 
 #ifdef __cplusplus
 }

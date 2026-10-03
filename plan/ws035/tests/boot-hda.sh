@@ -4,7 +4,8 @@
 # devices.
 # KVM when the host offers it, else TCG; QEMU_NO_KVM=1 forces TCG (ws129-p011).
 . "$(dirname -- "$0")/../../tools/guest/qemu-accel.sh"
-cd /home/awe/zedBSD-rpi4
+# ws136-p003: from the tree the script is in (it was a fixed other tree, now gone).
+cd "$(dirname -- "$0")/../../.."
 for pid in $(pgrep qemu-system); do kill -9 $pid; done; sleep 1
 IMG=${IMG:-build/p007-img/hdd-image.img}
 D=${RUN:-/tmp/p007-run}; mkdir -p $D; rm -f $D/*.sock $D/*.wav

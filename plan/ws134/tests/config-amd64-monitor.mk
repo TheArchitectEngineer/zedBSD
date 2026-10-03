@@ -7,3 +7,7 @@ include plan/tools/files/config-amd64-files.mk
 ZEDBSD_USER_PROGRAMS += monitor
 CONFIG_INPUT_TEST_INJECT := y
 ZEDBSD_USER_PROGRAMS += touchinject
+# ws134-p008: the backend's monitor area without the compositor (monitor-backend-p008.sh).
+ZEDBSD_USER_PROGRAMS += monitor-probe
+# ws134-p012: the system extension's probe with its "monitor" command (monitor-system-p012.sh).
+ZEDBSD_USER_PROGRAMS += keiland-system

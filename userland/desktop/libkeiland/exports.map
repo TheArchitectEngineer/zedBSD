@@ -40,6 +40,10 @@
 		kl_system_devices_eject;
 		kl_system_devices_get;
 		kl_system_dispatch;
+		kl_system_monitor_close;
+		kl_system_monitor_info;
+		kl_system_monitor_open;
+		kl_system_monitor_take;
 		kl_system_network_get_dns;
 		kl_system_network_get_links;
 		kl_system_network_get_saved;

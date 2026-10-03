@@ -399,6 +399,182 @@ int kl_backend_audio_feedback(struct kl_backend_audio *audio);
 int kl_backend_audio_available(void);
 
 /*
+ * The machine's monitor (WS134 p008, plan/ws134/design.md section 1.3): what
+ * the System Monitor shows, as counters that only grow (the CPUs' ticks,
+ * the links' and the disks' bytes, the GPUs' busy time) and present values
+ * (the memory), for the compositor to sample on a thread of its own and
+ * send to the clients that ask.
+ *
+ * Unlike the other areas, nothing here touches struct kl_backend or calls
+ * the host: the functions may be called from any thread, one monitor at a
+ * time from one thread.  Each device has an id that does not change while
+ * it is there and a generation that changes when it comes again; a sample's
+ * entries carry the id of the info's device they belong to (not its place).
+ * A field the system does not give leaves its KL_MONITOR_HAVE_* bit clear.
+ */
+struct kl_backend_monitor;
+
+/* The most CPUs, GPUs, disks and links a monitor follows. */
+#define KL_MONITOR_CPU_MAX		256U
+#define KL_MONITOR_GPU_MAX		4U
+#define KL_MONITOR_DISK_MAX		8U
+#define KL_MONITOR_LINK_MAX		16U
+
+/* What a sample gives (struct kl_backend_monitor_sample's valid). */
+#define KL_MONITOR_HAVE_CPU_TIMES	0x00000001U
+#define KL_MONITOR_HAVE_MEMORY		0x00000002U
+#define KL_MONITOR_HAVE_SWAP		0x00000004U
+#define KL_MONITOR_HAVE_LINKS		0x00000008U
+#define KL_MONITOR_HAVE_DISKS		0x00000010U
+#define KL_MONITOR_HAVE_GPU_BUSY	0x00000020U
+#define KL_MONITOR_HAVE_GPU_MEMORY	0x00000040U
+#define KL_MONITOR_HAVE_GPU_FREQ	0x00000080U
+#define KL_MONITOR_HAVE_TEMPERATURE	0x00000100U
+#define KL_MONITOR_HAVE_POWER		0x00000200U
+
+/* A disk's kind (struct kl_backend_monitor_info's disk kind). */
+#define KL_MONITOR_DISK_OTHER		1U
+#define KL_MONITOR_DISK_NVME		2U
+#define KL_MONITOR_DISK_USB		3U
+#define KL_MONITOR_DISK_UAS		4U
+#define KL_MONITOR_DISK_IDE		5U
+#define KL_MONITOR_DISK_SDMMC		6U
+#define KL_MONITOR_DISK_SCSI		7U
+
+/* One GPU of the info: its id and generation, its name and its driver. */
+struct kl_backend_monitor_gpu_info {
+	uint64_t id;
+	uint64_t generation;
+	char name[48];
+	char driver[16];
+};
+
+/* One disk of the info: its id and generation, name, kind and size in bytes (0 unknown). */
+struct kl_backend_monitor_disk_info {
+	uint64_t id;
+	uint64_t generation;
+	char name[32];
+	unsigned kind;
+	uint64_t size_bytes;
+};
+
+/* One link of the info: its id and generation, and its name. */
+struct kl_backend_monitor_link_info {
+	uint64_t id;
+	uint64_t generation;
+	char name[16];
+};
+
+/*
+ * What does not change from sample to sample: the CPUs, the machine's name,
+ * and the GPUs, the disks and the links (no loopback) with their ids and
+ * generations.  generation is the set's: it changes whenever a device comes
+ * or goes, so a client reads the info again when it differs.
+ */
+struct kl_backend_monitor_info {
+	unsigned cpu_count;
+	char host[64];
+	uint64_t generation;
+	unsigned gpu_count;
+	unsigned disk_count;
+	unsigned link_count;
+	struct kl_backend_monitor_gpu_info gpu[KL_MONITOR_GPU_MAX];
+	struct kl_backend_monitor_disk_info disk[KL_MONITOR_DISK_MAX];
+	struct kl_backend_monitor_link_info link[KL_MONITOR_LINK_MAX];
+};
+
+/* One CPU's ticks since boot (cpu_hz a second). */
+struct kl_backend_monitor_cpu {
+	uint64_t user;
+	uint64_t system;
+	uint64_t idle;
+	uint64_t other;
+};
+
+/* One link's bytes since it came, and whether it is up. */
+struct kl_backend_monitor_link {
+	uint64_t id;
+	uint64_t rx_bytes;
+	uint64_t tx_bytes;
+	unsigned up;
+};
+
+/* One disk's work since it came (the times in nanoseconds). */
+struct kl_backend_monitor_disk {
+	uint64_t id;
+	uint64_t read_ops;
+	uint64_t write_ops;
+	uint64_t read_bytes;
+	uint64_t write_bytes;
+	uint64_t read_ns;
+	uint64_t write_ns;
+	uint64_t busy_ns;
+};
+
+/* One GPU's busy time at its driver's clock, its memory and frequencies, temperature and power. */
+struct kl_backend_monitor_gpu {
+	uint64_t id;
+	uint64_t time_ns;
+	uint64_t busy_ns;
+	uint64_t memory_used;
+	uint64_t memory_total;
+	unsigned cur_mhz;
+	unsigned max_mhz;
+	int milli_celsius;
+	unsigned milli_watts;
+};
+
+/*
+ * One sample: when (CLOCK_MONOTONIC, ns), what it gives, the counters and
+ * the present values.  The memory is in bytes: total, free, the caches,
+ * and the part of the caches that can be dropped at once (clean file
+ * data); it is read at most every 5 seconds (reading it walks the kernel's
+ * pages), so samples in between repeat the last.
+ */
+struct kl_backend_monitor_sample {
+	uint64_t time_ns;
+	uint64_t valid;
+	uint64_t cpu_hz;
+	unsigned cpu_count;
+	struct kl_backend_monitor_cpu cpu[KL_MONITOR_CPU_MAX];
+	uint64_t memory_total;
+	uint64_t memory_free;
+	uint64_t memory_cache;
+	uint64_t memory_reclaimable;
+	uint64_t swap_total;
+	uint64_t swap_used;
+	unsigned link_count;
+	struct kl_backend_monitor_link link[KL_MONITOR_LINK_MAX];
+	unsigned disk_count;
+	struct kl_backend_monitor_disk disk[KL_MONITOR_DISK_MAX];
+	unsigned gpu_count;
+	struct kl_backend_monitor_gpu gpu[KL_MONITOR_GPU_MAX];
+	int cpu_milli_celsius;
+};
+
+/*
+ * Opens a monitor.  Returns NULL with errno set (ENOMEM, or ENOTSUP where
+ * the system gives nothing).
+ */
+struct kl_backend_monitor *kl_backend_monitor_open(void);
+
+/*
+ * Reads the info.  Returns 0 or an errno value.
+ */
+int kl_backend_monitor_info(struct kl_backend_monitor *monitor, struct kl_backend_monitor_info *info);
+
+/*
+ * Takes a sample.  Returns 0 (with what could be read; valid says what),
+ * or an errno value when nothing could.
+ */
+int kl_backend_monitor_sample(struct kl_backend_monitor *monitor, struct kl_backend_monitor_sample *sample);
+
+/*
+ * Closes a monitor.
+ */
+void kl_backend_monitor_close(struct kl_backend_monitor *monitor);
+
+/*
  * The peer of a client's connection (WS135, plan/ws135/design.md section
  * 4.2): which user runs the process at the other end of a connected local
  * socket, so that the compositor shows its system extension only to its

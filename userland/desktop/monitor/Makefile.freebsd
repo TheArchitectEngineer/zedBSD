@@ -10,5 +10,6 @@ KEILAND_FREEBSD_MONITOR_SOURCES := userland/desktop/monitor/main.c \
 	userland/desktop/monitor/scene.c \
 	userland/desktop/monitor/space.c \
 	userland/desktop/monitor/interact.c \
+	userland/desktop/monitor/system-source.c \
 	userland/desktop/monitor/render.c
 $(eval $(call KEILAND_FREEBSD_PROGRAM,monitor,bin,$(KEILAND_FREEBSD_MONITOR_SOURCES),libkeiui.so libkeiland.so libwayland-client.so libtruetype.so libvulkan.so.1 libkeiland-compat.a,-lm))

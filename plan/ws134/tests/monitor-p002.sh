@@ -66,7 +66,7 @@ check "$out/replay.png" >/dev/null
 guest 'cat /tmp/monitor.log' > "$out/replay.log"
 
 # 2. The simulation, moving.
-start '--seed=3 --token=s'
+start '--source=sim --seed=3 --token=s'
 expect_log 'ZMON READY .* source=sim'
 sleep 20
 pointer move 1270 790 sleep 300

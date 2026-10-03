@@ -14,7 +14,7 @@ ${CC:-clang} -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -Wdeclaration-a
 	plan/ws095/tests/host-engine.c $D/output.c $D/engine-direct.c $D/ja-kana.c $D/ja-romaji.c \
 	$D/ja-dict.c $D/ja-user.c $D/ja-inflect.c $D/ja-segment.c $D/ja-engine.c $D/ja-keys.c -pthread -o "$out"
 x=
-for candidate in build/sources/remacs/dict/SKK-JISYO.X /home/awe/zedBSD-rpi4/build/sources/remacs/dict/SKK-JISYO.X; do
+for candidate in build/sources/remacs/dict/SKK-JISYO.X; do
 	if [ -f "$candidate" ]; then x=$candidate; break; fi
 done
 "$out" plan/ws095/tests/ja-test.dict $x

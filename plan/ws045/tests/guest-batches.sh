@@ -5,10 +5,10 @@
 # PASS count to OUTPUT; the last line is ALL-BATCHES-FINISHED.  With POSIX=1
 # the WS043 POSIX cases (plan/tools/utils/cases, with POSIXLY_CORRECT on
 # both sides) are run instead.
-#   [IMAGE=...] [POSIX=1] sh plan/ws045/tests/guest-batches.sh [OUTPUT]
-#   (default OUTPUT build/ws045/guest-all.out; IMAGE the native guest image
-#   /home/awe/zedBSD-rpi4/build/ws053-full-hal-guest/hdd-image.img, booted
-#   from NVMe, read only: the guest runs on a copy)
+#   IMAGE=... [POSIX=1] sh plan/ws045/tests/guest-batches.sh [OUTPUT]
+#   (default OUTPUT build/ws045/guest-all.out; IMAGE the full guest image,
+#   plan/tools/guest/build-full-image.sh, booted from NVMe, read only: the
+#   guest runs on a copy; ws136-p003: the default was another tree's image)
 # With SH=1 the guest's copy also gets this tree's sh as /bin/sh and env as
 # /usr/bin/env, so that the sh's env builtin (which leaves GNU's options to
 # /usr/bin/env) is the one the cases run.
@@ -17,7 +17,7 @@ set -u
 out=${1:-build/ws045/guest-all.out}
 work=build/ws045/guest-batches
 export GUEST_RUNTIME=${GUEST_RUNTIME:-build/ws045/guest-run}
-image=${IMAGE:-/home/awe/zedBSD-rpi4/build/ws053-full-hal-guest/hdd-image.img}
+image=${IMAGE:?set IMAGE to the full guest image (plan/tools/guest/build-full-image.sh)}
 guest="python3 plan/tools/guest/guest.py"
 
 # The cases with the host's (GNU) output.

@@ -143,6 +143,8 @@ sm_source_open_sim(
 	/* The first spike, excursion and hot core. */
 	sim_schedule(&source->sim, 0);
 	source->next_ms = 0;
+
+	/* Succeeded: the simulation runs. */
 	return 0;
 }
 
@@ -453,6 +455,8 @@ sim_noise(
 {
 	/* The last value moves a little towards a new random one. */
 	sim->noise[index] += (sim_uniform(sim) * 2.0 - 1.0 - sim->noise[index]) * 0.35;
+
+	/* Succeeded: the noise's new value. */
 	return sim->noise[index];
 }
 
@@ -467,7 +471,8 @@ sim_spike(
 	double length;
 
 	/* No spike on this target now. */
-	if (sim->spike_target != target || time_ms < sim->spike_start_ms ||
+	if (sim->spike_target != target ||
+	    time_ms < sim->spike_start_ms ||
 	    time_ms >= sim->spike_start_ms + sim->spike_length_ms)
 		return 0.0;
 
@@ -547,6 +552,8 @@ clamp(
 		return low;
 	if (value > high)
 		return high;
+
+	/* Succeeded: the value within its bounds. */
 	return value;
 }
 
@@ -574,8 +581,10 @@ replay_line(
 			line[length++] = character;
 	}
 
-	/* Succeeded: the line. */
+	/* The line ends there. */
 	line[length] = '\0';
+
+	/* Succeeded: a line. */
 	return 1;
 }
 
@@ -695,6 +704,8 @@ replay_frame(
 
 	/* The simulated fields are only ones the frame has. */
 	frame->simulated &= frame->valid;
+
+	/* Succeeded: the frame is read. */
 	return 0;
 }
 

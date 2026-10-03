@@ -35,14 +35,15 @@
 
 /*
  * One application's system: the display, the library's queue with the
- * manager and its objects on it (an object is NULL when the compositor
- * does not offer it), the view, the number of the next request, and
- * whether the compositor went.
+ * manager (bound at manager_version) and its objects on it (an object is
+ * NULL when the compositor does not offer it), the view, the number of the
+ * next request, and whether the compositor went.
  */
 struct kl_system {
 	struct wl_display *display;
 	struct wl_event_queue *queue;
 	struct wl_proxy *manager;
+	uint32_t manager_version;
 	struct wl_proxy *network;
 	struct wl_proxy *audio;
 	struct wl_proxy *power;
@@ -52,9 +53,10 @@ struct kl_system {
 	unsigned lost;
 };
 
-/* What the registry search found: the manager's global name, 0 for none. */
+/* What the registry search found: the manager's global name (0 for none) and the version it offers. */
 struct system_search {
 	uint32_t name;
+	uint32_t version;
 };
 
 /* The listener of kl_system_manager_v1's event, as libwayland calls it. */
@@ -287,7 +289,44 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_POWER;
 	if (system->devices != NULL)
 		bits |= KL_SYSTEM_HAS_DEVICES;
+
+	/* The monitor, offered to a manager bound at version 2 (WS134 p012). */
+	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_MONITOR) != 0U && system->manager_version >= 2U)
+		bits |= KL_SYSTEM_HAS_MONITOR;
 	return bits;
+}
+
+/*
+ * Makes a monitor object (WS134 p012, for system-monitor.c) on the
+ * library's queue, its events to the listener with data.  Returns NULL
+ * when the compositor offers none.
+ */
+struct wl_proxy *
+system_monitor_make(
+	struct kl_system *system,
+	uint32_t period_ms,
+	const void *listener,
+	void *data)
+{
+	struct wl_proxy *proxy;
+	unsigned bits;
+
+	/* Not offered, or the compositor went. */
+	bits = kl_system_capabilities(system);
+	if ((bits & KL_SYSTEM_HAS_MONITOR) == 0U)
+		return NULL;
+	if (system->lost)
+		return NULL;
+
+	/* The object, under a new ID, with its period. */
+	proxy = wl_proxy_marshal_constructor(system->manager, KL_SYSTEM_MANAGER_GET_MONITOR, &kl_system_monitor_v1_interface, NULL, period_ms);
+	if (proxy == NULL)
+		return NULL;
+
+	/* Its events to the monitor; sent at once, so that the samples start. */
+	(void)wl_proxy_add_listener(proxy, (void (**)(void))listener, data);
+	(void)wl_display_flush(system->display);
+	return proxy;
 }
 
 /*
@@ -668,15 +707,16 @@ system_global(
 	int differs;
 
 	UNUSED_PARAMETER(registry);
-	UNUSED_PARAMETER(version);
 
 	/* The search the registry was given. */
 	search = data;
 
-	/* Notes only the system manager's name. */
+	/* Notes only the system manager's name and version. */
 	differs = strcmp(interface, KL_SYSTEM_MANAGER_NAME);
-	if (differs == 0)
+	if (differs == 0) {
 		search->name = name;
+		search->version = version;
+	}
 }
 
 /* A global that goes is not the search's concern. */
@@ -1073,6 +1113,7 @@ system_bind(
 
 	/* Asks for the globals, announced to this search alone; the wrapper is not needed after. */
 	search.name = 0U;
+	search.version = 0U;
 	registry = wl_display_get_registry(wrapper);
 	wl_proxy_wrapper_destroy(wrapper);
 	if (registry == NULL)
@@ -1094,7 +1135,10 @@ system_bind(
 	}
 
 	/* Binds the manager, on the queue as the registry is; the registry is not needed after. */
-	system->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, KL_SYSTEM_MANAGER_VERSION);
+	system->manager_version = search.version;
+	if (system->manager_version > KL_SYSTEM_MANAGER_VERSION)
+		system->manager_version = KL_SYSTEM_MANAGER_VERSION;
+	system->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, system->manager_version);
 	wl_registry_destroy(registry);
 	if (system->manager == NULL)
 		return ENOMEM;

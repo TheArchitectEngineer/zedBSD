@@ -1593,6 +1593,9 @@ i915_start_publish(
 	device->stage = "rps_start";
 	(void)drv_i915_rps_start(&gt->init.rps, &gt->irq, &gt->mmio);
 
+	/* Lists the GPU in hw.gputelemetry (ws134-p007), which only reads what the RPS keeps; a full list leaves it out. */
+	(void)kern_gpu_telemetry_register("i915", drv_i915_rps_telemetry_read, &gt->init.rps);
+
 	/* Creates the request worker's state. */
 	device->stage = "worker_create";
 	error = drv_i915_worker_create(device);

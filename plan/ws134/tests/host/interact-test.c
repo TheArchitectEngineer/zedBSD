@@ -82,6 +82,8 @@ main(void)
 
 	/* Every check held. */
 	fprintf(stderr, "monitor-interact: PASS\n");
+
+	/* Succeeded: the run is over. */
 	return 0;
 }
 

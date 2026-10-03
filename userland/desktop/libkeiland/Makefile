@@ -17,7 +17,8 @@ LIBKEILAND_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/lib
 	userland/desktop/libkeiland/settings.c userland/desktop/libkeiland/settings-cache.c \
 	userland/desktop/libkeiland/settings-app.c userland/desktop/settings-keys/settings-keys.c \
 	userland/desktop/libkeiland/system/system.c userland/desktop/libkeiland/system/system-view.c \
-	userland/desktop/libkeiland/system/system-protocol.c
+	userland/desktop/libkeiland/system/system-protocol.c userland/desktop/libkeiland/system/system-monitor.c \
+	userland/desktop/libkeiland/system/system-monitor-rate.c
 
 LIBZDESKTOP_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiland.so=$(BUILD)/dynamic/libkeiland.so)
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiland,Desktop system library,amd64,y,library,$(LIBKEILAND_SOURCES),y,desktop,desktop/libkeiland,desktop/libwayland desktop/libtruetype,,shared-library,$(LIBZDESKTOP_IMAGE_DATA),,lib))

@@ -42,6 +42,8 @@ sm_rgb(
 	color.g = (float)((rgb >> 8) & 0xffU) / 255.0f;
 	color.b = (float)(rgb & 0xffU) / 255.0f;
 	color.a = alpha;
+
+	/* Succeeded: the colour. */
 	return color;
 }
 
@@ -61,6 +63,8 @@ sm_color_mix(
 	color.g = from.g + (to.g - from.g) * amount;
 	color.b = from.b + (to.b - from.b) * amount;
 	color.a = from.a + (to.a - from.a) * amount;
+
+	/* Succeeded: the mixed colour. */
 	return color;
 }
 

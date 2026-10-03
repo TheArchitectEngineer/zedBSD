@@ -25,7 +25,7 @@
 #     and uneven and the numbers say little; the smoothness is measured by the
 #     library's host test (ws081-p003) and on the device (ws081-p007).
 #
-#   VENUS_RENDERER=/home/awe/zedBSD-rpi4/build/ws035-sq-venus/install \
+#   VENUS_RENDERER=$PWD/build/ws035-sq-venus/install \
 #   GUEST_RUNTIME=$PWD/build/ws081-run plan/ws079/tests/pen-guest.sh start build/amd64/hdd-image.img
 #   GUEST_RUNTIME=... plan/ws081/tests/p004-guest.sh BUILD [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
