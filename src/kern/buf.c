@@ -1278,14 +1278,16 @@ buf_write_pinned(
 
 /*
  * Releases the journal pins of the lines a range covers, where the pin
- * carries the given tag; those lines are then ordinary dirty lines.
+ * carries the given tag; those lines are then ordinary dirty lines.  The
+ * lines a later tag holds are counted in *kept when the caller asks.
  */
 int
 buf_unpin(
 	struct disk *disk,
 	uint64_t block,
 	uint32_t count,
-	uint64_t pin)
+	uint64_t pin,
+	unsigned *kept)
 {
 	struct disk *leaf;
 	struct buf *buffer;
@@ -1328,6 +1330,8 @@ buf_unpin(
 		irq = spin_lock_irqsave(&buffer->b_lock);
 		if (buffer->b_journal_pin == pin)
 			buffer->b_journal_pin = 0;
+		else if (buffer->b_journal_pin != 0 && kept != NULL)
+			(*kept)++;
 		spin_unlock_irqrestore(&buffer->b_lock, irq);
 
 		/* Lets the line go and steps to the next one. */

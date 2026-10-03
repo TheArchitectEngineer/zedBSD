@@ -118,14 +118,17 @@ buf_write_pinned(
 /*
  * Releases the pins buf_write_pinned() set on a range with the same tag;
  * those lines are then ordinary dirty lines.  A line a later transaction
- * pinned again keeps its pin.
+ * pinned again keeps its pin; *kept, when given, is raised by the number of
+ * such lines, so that the journal knows the cache will not write the
+ * range's home until that transaction commits.
  */
 int
 buf_unpin(
 	struct disk *disk,
 	uint64_t block,
 	uint32_t count,
-	uint64_t pin);
+	uint64_t pin,
+	unsigned *kept);
 
 /*
  * Writes the dirty lines of a range back to the disk, leaving a line a

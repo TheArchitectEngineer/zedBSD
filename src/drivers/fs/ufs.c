@@ -415,6 +415,8 @@ struct ufs_j3 {
 	unsigned closed_freed_count;
 	uint8_t *closed_descriptor;
 	uint32_t closed_desc_sectors;
+	/* The buffer the finisher copies a range home through; staging is the close's. */
+	uint8_t *closed_staging;
 };
 
 /* Share internal object layouts with production-linked lifetime fixtures. */
@@ -877,6 +879,7 @@ static int j3_copy_range(struct mount *mountp, struct ufs_j3 *j3, const struct u
 static int j3_commit_payload(struct mount *mountp, struct ufs_j3 *j3, uint8_t *descriptor, uint32_t desc_sectors);
 static int j3_commit_seal(struct mount *mountp, struct ufs_j3 *j3, uint8_t *descriptor, uint32_t desc_sectors, uint64_t sequence);
 static void j3_unpin_ranges(struct mount *mountp, const struct ufs_j3_range *ranges, unsigned count, uint64_t pin);
+static int j3_home_direct(struct mount *mountp, struct ufs_j3 *j3, const struct ufs_j3_range *range, uint64_t cursor);
 static int j3_close_transaction(struct ufs_mount_state *ms, struct mount *mountp, int *closed);
 static int j3_finish_commit(struct ufs_mount_state *ms, struct mount *mountp);
 static void j3_commit_wait(struct ufs_j3 *j3);
@@ -19440,7 +19443,57 @@ j3_unpin_ranges(
 	 * transaction pinned again stays with that transaction.
 	 */
 	for (n = 0; n < count; n++)
-		(void)buf_unpin(mountp->m_disk, ranges[n].lba, ranges[n].count, pin);
+		(void)buf_unpin(mountp->m_disk, ranges[n].lba, ranges[n].count, pin, NULL);
+}
+
+/*
+ * Writes one logged range of the closed transaction home from its copy in
+ * the slot, beneath the cache (ws073-p051).  For a range whose line the
+ * running transaction pinned again: the cache will not write that line
+ * until the running transaction commits, and that commit's payload carries
+ * only its own ranges of the line, so the closed transaction's range has
+ * to reach its home by itself before its slot is reused.  The cache line,
+ * which holds the newer content, is left as it is and is written whole
+ * later.
+ */
+static int
+j3_home_direct(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	const struct ufs_j3_range *range,
+	uint64_t cursor)
+{
+	struct backing_mutation_guard guard;
+	uint32_t done;
+	uint32_t amount;
+	int error;
+
+	/* Copies the range through the finisher's buffer in chunks. */
+	for (done = 0; done < range->count; done += amount) {
+		/* Takes no more than the buffer holds. */
+		amount = range->count - done;
+		if (amount > J3_STAGING_SECTORS)
+			amount = J3_STAGING_SECTORS;
+
+		/* Reads the chunk from the slot. */
+		error = j3_io(mountp, j3, cursor + done, amount, j3->closed_staging, 0);
+		if (error != 0)
+			return error;
+
+		/* Writes it home as the filesystem, beneath the cache, the way a delayed write-back does. */
+		error = backing_mutation_begin_disk_filesystem(mountp->m_disk, range->lba + done, amount, &guard);
+		if (error != 0)
+			return error;
+		error = disk_write_direct_context(mountp->m_disk, range->lba + done, amount, j3->closed_staging, NULL);
+		backing_mutation_end(&guard);
+
+		/* Reports why the chunk could not be written. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the range is at its home on the device. */
+	return 0;
 }
 
 /*
@@ -19558,6 +19611,9 @@ j3_finish_commit(
 	struct mount *mountp)
 {
 	struct ufs_j3 *j3;
+	const struct ufs_j3_range *range;
+	uint64_t cursor;
+	unsigned kept;
 	unsigned n;
 	int home_error;
 	int error;
@@ -19569,21 +19625,41 @@ j3_finish_commit(
 	j3 = &ms->j3;
 	error = j3_commit_seal(mountp, j3, j3->closed_descriptor, j3->closed_desc_sectors, j3->closed_sequence);
 
-	/* Lets the committed sectors go home, now that replay would write them too. */
+	/*
+	 * Sends every range home now that replay would write it too, and
+	 * before the next transaction closes: the next commit's durable flush
+	 * then covers these writes, before the slot after that reuses this
+	 * one.  A range whose lines are unpinned is written by the cache; a
+	 * range whose line the running transaction pinned again is written
+	 * from the slot's copy beneath the cache, since the cache holds the
+	 * line until that transaction commits and its payload carries only
+	 * its own ranges of the line.  The copies lie in the slot after the
+	 * descriptor, in the order of the logged ranges.
+	 */
 	home_error = 0;
 	if (error == 0) {
-		j3_unpin_ranges(mountp, j3->closed_ranges, j3->closed_count, j3->closed_sequence);
-
-		/*
-		 * Writes the homes now, before the next transaction closes: a
-		 * later transaction that pins one of these lines again keeps the
-		 * next commit's buf_sync from writing it, while that commit's
-		 * payload need not carry this transaction's content for the
-		 * line.
-		 */
+		cursor = j3->header_sectors + (j3->closed_sequence & 1U) * j3->slot_sectors + j3->closed_desc_sectors;
 		for (n = 0; n < j3->closed_count; n++) {
-			if (home_error == 0)
-				home_error = buf_writeback_range(mountp->m_disk, j3->closed_ranges[n].lba, j3->closed_ranges[n].count);
+			/* Unpins the range's lines, counting the ones a later tag holds. */
+			range = &j3->closed_ranges[n];
+			kept = 0;
+			(void)buf_unpin(mountp->m_disk, range->lba, range->count, j3->closed_sequence, &kept);
+
+			/* A held range is pinned content with no copy in the slot; the cache writes it when it can. */
+			if (range->hold) {
+				if (kept == 0 && home_error == 0)
+					home_error = buf_writeback_range(mountp->m_disk, range->lba, range->count);
+				continue;
+			}
+
+			/* Writes a logged range home through the cache, or from the slot when the cache holds its line. */
+			if (home_error == 0 && kept == 0)
+				home_error = buf_writeback_range(mountp->m_disk, range->lba, range->count);
+			else if (home_error == 0)
+				home_error = j3_home_direct(mountp, j3, range, cursor);
+
+			/* Steps past the range's copy in the slot. */
+			cursor += range->count;
 		}
 	}
 
@@ -20882,6 +20958,13 @@ j3_open(
 		return ENOMEM;
 	}
 
+	/* Takes the buffer the finisher copies a range home through. */
+	j3->closed_staging = kern_malloc((size_t)J3_STAGING_SECTORS * SECTOR_SIZE);
+	if (j3->closed_staging == NULL) {
+		(void)j3_close(mountp, ms, 0);
+		return ENOMEM;
+	}
+
 	/* Starts an empty transaction, with no commit closed or being written. */
 	kern_memset(j3->index, 0, sizeof(unsigned) * 2U * j3->ranges_max);
 	kern_memset(j3->freed, 0, sizeof(uint64_t) * J3_FREED_MAX);
@@ -20983,6 +21066,7 @@ j3_close(
 	kern_free(j3->closed_ranges);
 	kern_free(j3->closed_freed);
 	kern_free(j3->closed_descriptor);
+	kern_free(j3->closed_staging);
 	j3->ranges = NULL;
 	j3->index = NULL;
 	j3->freed = NULL;
@@ -20990,6 +21074,7 @@ j3_close(
 	j3->closed_ranges = NULL;
 	j3->closed_freed = NULL;
 	j3->closed_descriptor = NULL;
+	j3->closed_staging = NULL;
 	j3->range_count = 0;
 	j3->closed_count = 0;
 	j3->closed_freed_count = 0;
