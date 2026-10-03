@@ -34,7 +34,8 @@
   4. toolchain: `make toolchain` などで `build/llvm`・`llvm-source`・`llvm-build`・`NoctLang` を作り直した後に `plan/tools/toolchain-lock.sh lock`。
   5. Linux の試験の guest（WS105・WS131、QEMU+KVM）: `plan/tools/keiland-linux/build-guest.sh`（base と gdm）で `build/keiland-linux/guest`・`guest-gdm` を作り直す。guest の SSH の鍵 `plan/tmp/guest/` は tree にある。
   6. 試験の image の入力（2026-10-04 Q1 が作り直した）: `build/ws035-fonts/`（`userland/desktop/fonts/` の Inter.ttf・Inter-OFL.txt → OFL.txt・JetBrainsMono-Regular.ttf・JetBrainsMono-OFL.txt・DroidSansFallbackFull.ttf・DroidSansFallback-LICENSE.txt の複写）、`build/ws035-wallpaper/`（wallpaper.ppm・wallpaper-1080.ppm = `userland/desktop/keiland/wallpapers/Birch-Lake.ppm`）、`build/ws071-fonts/`（DroidSansFallbackFull.ttf・LICENSE・Apache-2.0.txt）。Venus の renderer `build/ws035-sq-venus/install` は Latitude 5330（10.0.30.3）から scp（`plan/ws035/tests/zdesktop-guest.sh` の注記、sha256 も）。host の `sudo modprobe vgem && sudo chmod 0666 /dev/dri/renderD128` は host の起動ごとに。
-  7. 統合の前の残り: 無い（全ての agent の branch は main に入っている。`worktree-agent-aefedcaf…` の 2 commit は BUG-066 の決定で merge しない物）。P1 の `build/p1-q640/p007-wip.patch` は p007 が commit 済みなので不要。
+  7. FreeBSD の試験の guest: `plan/tools/keiland-freebsd/build-guest.sh` で `build/keiland-freebsd/guest` を作る（鍵は OUT の中に作る）。
+  8. 統合の前の残り: 無い（全ての agent の branch は main に入っている。`worktree-agent-aefedcaf…` の 2 commit は BUG-066 の決定で merge しない物）。P1 の `build/p1-q640/p007-wip.patch` は p007 が commit 済みなので不要。
 - **tree に残るが git に入らない物**（削除の対象外の前提）: `.wifi`（WiFi の認証情報、ユーザーが作成）、`.claude/settings.local.json`、`config.mk`、`plan/*/temp/`。
 - **host の状態**（repo の外）: sysctl の一時の設定（`vm.dirty_background_bytes=512M`・`vm.dirty_bytes=2G`・`vm.swappiness=10`、2026-10-03 user「sysctl の調整はやってみてください」）は再起動で戻る。残すかは user の判断待ち。fstrim は 2026-10-03 に実行済み（35 分、204.6 GiB）。
 
@@ -311,6 +312,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | tool | 用途 | 使い方 |
 | --- | --- | --- |
+| [FreeBSD 15.1 の試験の guest と backend の試験](tools/keiland-freebsd/README.md)（WS137） | 公式の 15.1 の image（CHECKSUM を q550 の記録と照合）と NoCloud の seed から作る QEMU+KVM の guest。loopback の SSH と QMP の PNG を使い、serial の log は読まない。guest の中で keiland-freebsd.mk を native で build（warning 0）し、audit と ws131 の host 試験を流す。GPU は無い | `build-guest.sh [--force] [OUT]`、`guest.sh start\|stop\|status\|ssh\|put\|get\|copy\|shot`、`backend-test.sh [OUT]`。T1・T2 は自分の build/ に作るか GUEST_DIR で読み取り専用で使う。2 つ同時は GUEST_RUN と SSH_PORT を分ける |
 | `plan/tools/git-hooks/commit-msg` | git の commit-msg の hook（メッセージが `WIP` ちょうどでない commit を拒否、Co-Authored-By などの混入の防止、2026-10-03） | `cp plan/tools/git-hooks/commit-msg .git/hooks/ && chmod +x .git/hooks/commit-msg`（clone・作り直しの後に毎回） |
 | `plan/tools/toolchain-lock.sh` | 共有の toolchain の tree（`build/llvm`・`llvm-source`・`llvm-build`・`NoctLang`）の directory を読み取り専用にして、許可の無い変更を防ぐ（BUG-096） | `lock`・`unlock`（main が許可した toolchain の変更の間だけ）・`status` |
 | [boot-test.sh](tools/boot-test.sh)（`boot-test.py`） | 起動の確認。OVMF の USB（amd64）か BIOS の IDE（i386）で起動し、画面を QMP で撮って login prompt を読む | `plan/tools/boot-test.sh [IMAGE]`。`OUTPUT`（既定 `build/boot-test`）、`BOOT_TIMEOUT`、`BOOT_MODE=uefi-usb` か `bios-ide` |

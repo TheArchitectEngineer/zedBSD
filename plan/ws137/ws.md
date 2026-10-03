@@ -28,4 +28,4 @@ Resume point: p001 は道具を作り QEMU+KVM で 1 回通した（backend-test
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | guest の道具（build-guest.sh・guest.sh・README）と backend の build・試験の道具、T1・T2 への手順 | in-progress（q658、P3。build-guest・guest.sh・backend-test を 1 回通した、Q1 の判定待ち） | — |
-| p002 | WS131 p004〜p008 の FreeBSD の build と試験を T1・T2 で流し、結果を記録 | planned | p001 |
+| p002 | WS131 p004〜p008 の FreeBSD の build と試験を T1・T2 で流し、結果を記録 | planned（T1・T2、Q1 が依頼） | p001 |

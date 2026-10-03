@@ -2,7 +2,7 @@
 
 # ws137-p001: FreeBSD 15.1 の試験の guest の道具と backend の build・試験の道具
 
-Status: in-progress（q658-i01、P3 generation6。道具は作り、自分の QEMU 1 つで guest の作成・SSH・backend-test を 1 回通した。clearance は Q1 が判定）
+Status: cleared（q658、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS137](../ws.md)
 Queue: q658 / q658-i01（2026-10-04 user「FreeBSDのVMイメージを用意して、T1,T2で使えるようにした上で、書くだけだったFreeBSDのテストも実行するようにお願いします。libkeiland-backendのビルドと実行のことです。」、Q1 の割り当て）
@@ -48,3 +48,7 @@ source の不具合: 見つからなかった（WS131 の FreeBSD の「書く�
 ## 再開・次
 
 Q1 が merge し、Master の Tools 節に行を足す（案は Q1 への報告）。p002 は T1・T2 がこの道具で WS131 p004〜p008 の FreeBSD の項目を流す。
+
+## 結果（Q1、2026-10-04）
+
+cleared。P3 の QEMU+KVM で build-guest.sh（公式の CHECKSUM が q550 の記録と一致、image の sha256 OK、15.1-RELEASE-p4、clang 19.1.7、46 package、約 3 分）、guest.sh の start・ssh・shot・status・stop、backend-test.sh（351 source の native build warning 0、native-build-audit PASS、host-seat-freebsd 13/13・host-session 31/31・host-power 17/17・6/6、sync-rejected・dmabuf-export-rejected）が全て PASS。GPU の probe は GPU の無い guest のため未実施。

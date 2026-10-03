@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p049 -->
 # ws073-p049: BUG-033 — guest の clang の速さを今の状態で測り、残る原因があれば直す
 
-Status: in-progress（q651-i01、P1 generation12、2026-10-04。測定の道具を作り、測定を T1 に依頼）
+Status: cleared（q651-i01、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-033](../../bugs/BUG-033.md)
@@ -42,3 +42,7 @@ BUG-033 は ws046-p007 で主因（libc の allocator の鎖の走査、buffer c
 ## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
 
 T1 に 512 MiB・2 GiB の測定（試験の依頼 4、kit は build/p1-q651/bug033/kit.tar）を依頼済み、結果は Q1 が受ける。再開: host の xmlparse 1.05〜1.36 秒と比べ、数倍以内なら close を提案、遠ければ gdbstub で PC を採る。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T1-050（QEMU KVM、bfc0f9d の CI image）: guest の clang -O2 -c（秒、3 回）512 MiB: xmlparse 2.54/1.79/1.57、xmltok 1.51/1.62/1.34、xmlrole 0.21/0.18/0.14、同時 3 本 2 s。2048 MiB: xmlparse 2.17/1.51/1.60、xmltok 1.49/1.36/1.53、同時 3 本 1 s。host は xmlparse 1.05〜1.36 秒で、guest は約 1.2〜1.9 倍。package の build に実用になる速さ。
