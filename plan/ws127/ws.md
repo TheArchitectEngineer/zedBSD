@@ -77,3 +77,5 @@ F-032・F-034・F-040（ベータ1 の外の見込み）。
 ## Event
 
 2026-10-02 / ws127-beta1-plan: fg019 の計画エージェントが到達目標 F1〜F5 と p001〜p008 を作成。p001 だけ planned、他は p001 のユーザーの選択待ちの planning。Queue は未投入。
+
+2026-10-04 Q1（user「任せます」で判断を委ねられた）: ベータ1 に向け、標準 app の作業を WS131 の app の移行より先にする。p001 の候補から Q1 が採る: p003（名前の衝突と Trash の残り: Replace で消さずに Trash、cut の Esc で clipboard を戻す、folder の merge）、p006（DnD の自動の scroll と spring-loaded）。p004（PDF の thumbnail）は p003・p006 の後に時間があれば。p005（日本語の UI の文言）は翻訳の方針の判断が要るのでユーザーに残す。p007 は実機。

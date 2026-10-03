@@ -118,3 +118,5 @@ device は `llvmpipe (LLVM 19.1.7, 256 bits)`（この host に描画の GPU が
 - compositor（`ZWL PERF compose`、全体の窓）: 合成 4 回/秒、draw_ms 88〜104（うち submit+present 68〜79）、frame_ms 98〜115。
 - 480x320 の窓: 合成は同じ 4 回/秒、monitor fps 4.7、callback 209 ms、compositor の draw_ms 87・frame_ms 96。
 Q1 の読み: 窓を小さくしても変わらないので、monitor の描く画素の量ではなく、compositor の 1 回の合成（host の CPU の lavapipe で 1280x800 の全面、約 100 ms）と frame callback の間隔が律速。QEMU（GPU 無しの host）では fps の判定に意味が無い。15 fps の判定は実機（5330 の iGPU）で行うのが妥当（ユーザーの判断を求める）。証拠 worktrees/t1/build/t1-057/。
+
+2026-10-04 Q1（user「任せます」）: fps 15 以上の判定は実機（5330 の iGPU）の値で行う。QEMU（host に GPU が無い）の fps は記録だけ。

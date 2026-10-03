@@ -20,6 +20,7 @@
 - 再開の時の割り当ての候補（user が決める）: P1 = WS131 の p008 の試験と p009 以降、P2 = WS134 の p003 の直しと p004、T1・T2 = 台帳の未実行の予約（`plan/agents/T1/requests.md`・`T2/requests.md`）。WS135（設定の一本化、BUG-162）の担当と時期は未定。
 - **2026-10-04 夜の自律の指示**: user「私は寝ます。昼までには起きると思います。テストが全部終わったら、P2は優先度の高いものから、実装タスクを進めてください。WSが完了できないときは他のWSに移ることで、どんどん先に進めてください。」→ 体制は P2・T1・T2（P3 は WS137 の後に終了）。P2 は WS135 の後、優先度の順に実装の Phase を進め、判断・実機・依存で止まる WS は記録して次の WS へ。Q1 の解釈: WS131 の p009 以降（設計はユーザーのレビュー済み）もこの指示で始めてよい。新しい製品の判断・HAL の API・toolchain・push は従来どおりユーザーの承認まで止める。
 - **2026-10-04 夜〜朝の成果**（全て main に統合、QEMU と FreeBSD・Linux の guest の確認、実機は未実施）: WS135 completed（設定の一本化、BUG-162 resolved）、WS136 completed（試験の image の作り方）、WS137 completed（FreeBSD の試験の VM）。WS131 p004〜p011 cleared（p012 はユーザーの判断待ち）。WS134 p001・p002・p004〜p006・p008・p011〜p013 cleared（p003 の fps・p007 の i915・p009 の ACPI・p010 の残りは実機待ち）。Bug resolved: 033・052・053・103・129・135・139・143・162・163・164（163・164 は今夜の発見）。T1-076 で main 039b00f の boot-test・C1・settings-p007・files-p004 PASS。体制は P2（待機）・T1（待機）、T2 は終了。
+- 2026-10-04 user「任せます」→ Q1 の決定: 標準 app のベータ1 の作業（WS127 p003・p006、WS128 p005・p006）を先にし、WS131 の app の移行（p012 以降）はベータ1 の後。WS134 p003 の fps は実機の値で判定。
 <!-- master:agents:end -->
 
 ## リポジトリの作り直し（2026-10-03 夜、持ち越し）
@@ -52,8 +53,6 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
-- WS131 の app の移行（p012 以降）と標準 app のベータ1 の作業（WS127・WS128）のどちらを先にするか（WS131 p012 はこの判断待ちで止めた）。
-- WS134 p003 の fps 15 の判定を実機（5330 の iGPU）の値にするか（QEMU は host に GPU が無く compositor の合成が律速）。
 - WS135（設定の一本化、BUG-162）の担当と開始の時期。WS131 の p010・p011 の設定の部分は WS135 が引き取る。
 - host の sysctl の設定を `/etc/sysctl.d` に残すか。
 - docs/ の本文に残る Plan の ID の記述を消すか。
