@@ -13,7 +13,9 @@
  * again if it dies.  It binds the seat and the three globals only it is
  * shown (the input method manager, the virtual keyboard manager and
  * zdesktop's status), makes its languages (direct input first, then
- * Japanese), and serves the keyboard until the connection ends.
+ * Japanese), and serves the keyboard until the connection ends or it is
+ * told to stop by a signal.  The languages save what they learned once no
+ * key has come for a while, and when the program ends.
  */
 
 #include "program.h"
@@ -22,6 +24,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,12 +34,21 @@
 #define MAIN_SYSTEM_DICTIONARY		KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.X"
 #define MAIN_SUPPLEMENT_DICTIONARY	KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.kei"
 
+/*
+ * Set by a SIGTERM, SIGHUP or SIGINT: the loop ends at its next turn, so
+ * that the languages save what they learned before the program goes.  It
+ * is zero for the program's life until then.
+ */
+static volatile sig_atomic_t main_stopping;
+
 static void main_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void main_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static int main_engines(struct program *program);
 static void main_user_path(char *path, size_t size);
 static void main_warm(struct program *program, struct ime_engine *engine);
 static int main_serve(struct program *program);
+static int main_earlier(int left, int right);
+static void main_stop(int signal_number);
 
 /*
  * The registry's events.
@@ -51,11 +63,20 @@ main(
 	void)
 {
 	struct program program;
+	struct sigaction action;
 	int status;
 	unsigned i;
 
 	memset(&program, 0, sizeof(program));
 	setvbuf(stdout, NULL, _IOLBF, 0);
+
+	/* A stop asked by a signal ends the loop rather than the program, and interrupts its wait. */
+	memset(&action, 0, sizeof(action));
+	action.sa_handler = main_stop;
+	sigemptyset(&action.sa_mask);
+	(void)sigaction(SIGTERM, &action, NULL);
+	(void)sigaction(SIGHUP, &action, NULL);
+	(void)sigaction(SIGINT, &action, NULL);
 
 	/* The engines' output is large; it lives on the heap. */
 	program.out = malloc(sizeof(*program.out));
@@ -121,15 +142,15 @@ main(
 	status = program_popup_start(&program);
 	printf("KEI-IME POPUP ready=%d error=%d\n", program.popup.ready, status);
 
-	/* Serves the keyboard until the connection ends or another input method holds the seat. */
+	/* Serves the keyboard until the connection ends, another input method holds the seat, or a signal stops it. */
 	printf("KEI-IME READY languages=%u\n", program.engine_count);
-	while (!program.unavailable) {
+	while (!program.unavailable && !main_stopping) {
 		status = main_serve(&program);
 		if (status != 0)
 			break;
 	}
 
-	/* The engines go with the program. */
+	/* The engines go with the program, writing what they learned and have not saved. */
 	for (i = 0; i < program.engine_count; i++)
 		program.engines[i].ops->destroy(&program.engines[i]);
 
@@ -324,6 +345,8 @@ main_serve(
 	struct program *program)
 {
 	struct pollfd descriptor;
+	int repeat_timeout;
+	int save_timeout;
 	int timeout;
 	int status;
 
@@ -335,8 +358,10 @@ main_serve(
 	/* What the program sends, sent now. */
 	(void)wl_display_flush(program->display);
 
-	/* Waits for zdesktop, or until the held key repeats. */
-	timeout = program_repeat_timeout(program, program_clock_ms());
+	/* Waits for zdesktop, or until the held key repeats or the languages are due to save. */
+	repeat_timeout = program_repeat_timeout(program, program_clock_ms());
+	save_timeout = program_save_timeout(program, program_clock_ms());
+	timeout = main_earlier(repeat_timeout, save_timeout);
 	descriptor.fd = wl_display_get_fd(program->display);
 	descriptor.events = POLLIN;
 	descriptor.revents = 0;
@@ -354,6 +379,44 @@ main_serve(
 	/* The held key's repeat. */
 	program_repeat_due(program, program_clock_ms());
 
+	/* The languages' save, once no key has come for a while. */
+	program_save_due(program, program_clock_ms());
+
 	/* Succeeded: the connection goes on. */
 	return 0;
+}
+
+/*
+ * Gives the shorter of two poll timeouts, where -1 means no limit.
+ */
+static int
+main_earlier(
+	int left,
+	int right)
+{
+	/* A side without a limit leaves the other. */
+	if (left < 0)
+		return right;
+	if (right < 0)
+		return left;
+
+	/* Both limited: the left is sooner. */
+	if (left < right)
+		return left;
+
+	/* The right is sooner, or as soon. */
+	return right;
+}
+
+/*
+ * Notes a signal asking the program to stop (SIGTERM, SIGHUP, SIGINT).
+ */
+static void
+main_stop(
+	int signal_number)
+{
+	UNUSED_PARAMETER(signal_number);
+
+	/* main's loop sees it after the wait it interrupts. */
+	main_stopping = 1;
 }

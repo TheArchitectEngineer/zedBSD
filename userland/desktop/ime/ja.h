@@ -168,8 +168,9 @@ struct ja_user_entry {
 /*
  * The user's dictionary of choices.
  *
- * The entries are kept in a table hashed by reading.  Every learned
- * choice is written back to the file, which is replaced as a whole.
+ * The entries are kept in a table hashed by reading.  The learned
+ * choices are written back to the file, which is replaced as a whole,
+ * when the engine is told to save and when it closes.
  */
 struct ja_user {
 	char path[1024];
@@ -215,7 +216,9 @@ struct ja_span {
  * being converted, its segments.
  *
  * It lives for the input method's lifetime.  An empty composition with
- * nothing pending is the resting state between inputs.
+ * nothing pending is the resting state between inputs.  user_unsaved
+ * says the user dictionary's file is behind its table: set when a commit
+ * learns a choice, cleared when ja_core_save hands the text to the writer.
  */
 struct ja_core {
 	struct ja_unit units[JA_UNITS_MAX];
@@ -232,6 +235,7 @@ struct ja_core {
 	struct ja_user user;
 	struct ja_lexicon lexicon;
 	bool learning;
+	bool user_unsaved;
 	int system_error;
 	int supplement_error;
 	int user_error;
@@ -309,6 +313,7 @@ void ja_core_apply_form(struct ja_core *core, enum ja_form form);
 void ja_core_commit(struct ja_core *core, struct ime_output *out);
 void ja_core_output(const struct ja_core *core, struct ime_output *out);
 void ja_core_set_learning(struct ja_core *core, bool learning);
+void ja_core_save(struct ja_core *core);
 
 /* ja-keys.c */
 void ja_keys_handle(struct ja_core *core, const struct ime_key *key, struct ime_output *out);

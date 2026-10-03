@@ -206,7 +206,57 @@ program_repeat_due(
 }
 
 /*
- * Gives a steady clock in milliseconds, for the repeat.
+ * Gives how long main's loop may wait before the engines are due to save,
+ * in milliseconds: 0 when it is due, -1 when nothing waits to be saved.
+ */
+int
+program_save_timeout(
+	const struct program *program,
+	unsigned long long now_ms)
+{
+	unsigned long long left;
+
+	/* No key came since the last save. */
+	if (program->save_ms == 0U)
+		return -1;
+
+	/* Due already. */
+	if (now_ms >= program->save_ms)
+		return 0;
+
+	/* The time left, at most PROGRAM_SAVE_IDLE_MS, which an int holds. */
+	left = program->save_ms - now_ms;
+	return (int)left;
+}
+
+/*
+ * Tells every engine to save what it learned once no key has come for
+ * PROGRAM_SAVE_IDLE_MS; the engines write by a thread of their own, so the
+ * loop does not wait for the disk.
+ */
+void
+program_save_due(
+	struct program *program,
+	unsigned long long now_ms)
+{
+	unsigned i;
+
+	/* Nothing to save, or a key came too recently. */
+	if (program->save_ms == 0U)
+		return;
+	if (now_ms < program->save_ms)
+		return;
+
+	/* Each engine writes what it learned. */
+	for (i = 0; i < program->engine_count; i++)
+		program->engines[i].ops->save(&program->engines[i]);
+
+	/* Saved: the next key starts the wait again. */
+	program->save_ms = 0;
+}
+
+/*
+ * Gives a steady clock in milliseconds, for the repeat and the save.
  */
 unsigned long long
 program_clock_ms(void)
@@ -609,6 +659,9 @@ method_press(
 	engine = &program->engines[program->current];
 	if (program->active) {
 		engine->ops->key(engine, &typed, program->out);
+
+		/* The engines save what they learned once no key has come for a while after this one. */
+		program->save_ms = program_clock_ms() + PROGRAM_SAVE_IDLE_MS;
 	} else {
 		ime_output_clear(program->out);
 		program->out->pass_key = true;

@@ -27,6 +27,13 @@
 #define PROGRAM_ENGINES_MAX	4U
 #define PROGRAM_KEYS		768U
 
+/*
+ * How long no key may come before the engines save what they learned
+ * (BUG-143, 2026-10-04 user: save when there has been no input for three
+ * minutes, not at each commit).
+ */
+#define PROGRAM_SAVE_IDLE_MS	180000ULL
+
 /* The candidate window's buffers: one shown while the next is drawn. */
 #define PROGRAM_POPUP_BUFFERS	2U
 
@@ -81,7 +88,9 @@ struct program_repeat {
  *
  * It lives in main's frame for the program's lifetime.  The active flags
  * follow the protocol's double buffering: an activate or deactivate is
- * pending until done.
+ * pending until done.  save_ms is when the engines are next told to save:
+ * each key an engine is given moves it to PROGRAM_SAVE_IDLE_MS later, and
+ * it is zero when no key came since the last save.
  */
 struct program {
 	struct wl_display *display;
@@ -113,6 +122,7 @@ struct program {
 	struct ime_output *out;
 	struct program_popup popup;
 	struct program_repeat repeat;
+	unsigned long long save_ms;
 };
 
 /* method.c */
@@ -121,6 +131,8 @@ void program_announce_language(struct program *program);
 int program_repeat_timeout(const struct program *program, unsigned long long now_ms);
 void program_repeat_due(struct program *program, unsigned long long now_ms);
 unsigned long long program_clock_ms(void);
+int program_save_timeout(const struct program *program, unsigned long long now_ms);
+void program_save_due(struct program *program, unsigned long long now_ms);
 
 /* popup.c */
 int program_popup_start(struct program *program);
