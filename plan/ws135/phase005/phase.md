@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws135-p005 -->
 # ws135-p005: app だけの設定（Terminal の terminal.ambiguous-wide）を `kl_settings_*` へ
 
-Status: in-progress（q656-i01、P2 generation7。Terminal と Files の open-with は実装・host 試験済み・T2 の QEMU 待ち）
+Status: cleared（q656-i01、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS135](../ws.md)
 Queue: q656 / q656-i01（D3 (a) 承認: app だけの設定は libkeiland が app の file を直接、別の process に通知しない）
@@ -39,3 +39,7 @@ Queue: q656 / q656-i01（D3 (a) 承認: app だけの設定は libkeiland が ap
 - 検証: `plan/tools/files/host-default.sh` → PASS（20 項目）、`host-model.sh` PASS、`host-settings.sh` 38/38、zedBSD の files・keiland-linux warning 0。
   `host-p009.sh`・`host-p010.sh`・`host-p013.sh` は FAIL だが、変更の前（main a7940cf、git stash で確認）でも同じく FAIL（open-with と無関係、Files の既存の問題として Q1 に報告）。
 - QEMU（T2 に依頼）: `plan/tools/files/files-open.sh always`（と open の回帰）。未実施。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T2-014（QEMU Venus、agent/p2 47b3418 の image）PASS 10/10: settings-p003・p007・p004・p005・settings-pages（1280x800、24 頁）・terminal-p009-guest（広い幅が restart の後も読み戻される）・files-open always（files.conf の選択と cleared）・files-open mouse・volume-p005（desktop.conf は書かれない、feedback の音 4）・boot-test。証拠 worktrees/t2/build/t2-014/out/。FreeBSD の native build と host 試験は T2-016（47b3418）で別に確かめる。

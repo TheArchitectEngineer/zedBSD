@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws135-p002 -->
 # ws135-p002: compositor の設定の store・merge の書き・拡張の protocol
 
-Status: in-progress（q656-i01、P2 generation7。実装と host 試験済み・QEMU は p003 の probe と一緒に T2 へ）
+Status: cleared（q656-i01、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS135](../ws.md)
 Queue: q656 / q656-i01（2026-10-04 user「WS135の設計D1-D6を承認します。」、Q1 の依頼で p002〜p006 を design.md 第 2 版のとおり）
@@ -38,3 +38,7 @@ log の文字列 `ZWL PREFERENCES key=… applied` は変えない。新しい l
   `make keiland-linux` warning 0。`git diff --check` OK。
 - 未実施: FreeBSD の native build（FreeBSD の guest が要る）、`plan/tools/keiland-os-boundary/check.sh`（この worktree では `make -pn disk-image` が openssl の
   package の build の状態を求めて止まる）、QEMU（p003 の probe と一緒に T2 へ）。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T2-014（QEMU Venus、agent/p2 47b3418 の image）PASS 10/10: settings-p003・p007・p004・p005・settings-pages（1280x800、24 頁）・terminal-p009-guest（広い幅が restart の後も読み戻される）・files-open always（files.conf の選択と cleared）・files-open mouse・volume-p005（desktop.conf は書かれない、feedback の音 4）・boot-test。証拠 worktrees/t2/build/t2-014/out/。FreeBSD の native build と host 試験は T2-016（47b3418）で別に確かめる。
