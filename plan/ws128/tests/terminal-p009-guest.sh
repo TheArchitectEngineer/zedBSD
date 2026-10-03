@@ -100,7 +100,7 @@ start_terminal t1 1
 
 # 1. Off: the default.
 expect_log /tmp/t.log 'ZTERM SETTINGS run=t1 ambiguous_wide=0'
-expect_log /tmp/t.log 'ZTERM MENU ready items=31'
+expect_log /tmp/t.log 'ZTERM MENU ready items=39'
 expect_log /tmp/t.log 'ZTERM MENU state .* ambiguous_wide=0'
 keys 'cat /tmp/p009.txt' '\n'
 sleep 1.5

@@ -67,6 +67,21 @@ struct zwp_primary_selection_offer_v1;
 /* The background of selected cells, a muted blue. */
 #define TERMINAL_SELECTION	0x3a5a98U
 
+/*
+ * The colour themes of View > Theme (ws128-p006): the dark one the
+ * terminal always had (TERMINAL_FOREGROUND on TERMINAL_BACKGROUND), a light
+ * one, and white on black.  The cells keep the dark theme's colours for
+ * the text's default ones; the drawing puts the theme's in their place.
+ */
+#define TERMINAL_THEME_DARK	0U
+#define TERMINAL_THEME_LIGHT	1U
+#define TERMINAL_THEME_CONTRAST	2U
+#define TERMINAL_THEMES		3U
+
+/* The longest text Edit > Find looks for, in bytes and in characters (ws128-p006). */
+#define TERMINAL_SEARCH_BYTES	128U
+#define TERMINAL_SEARCH_LENGTH	64U
+
 /* The font sizes zooming stays within, its step, and the sizes the View menu names. */
 #define TERMINAL_PIXELS_MIN	8U
 #define TERMINAL_PIXELS_MAX	32U
@@ -127,7 +142,29 @@ enum terminal_action {
 	TERMINAL_ACTION_ABOUT,
 	TERMINAL_ACTION_NEW_TAB,
 	TERMINAL_ACTION_CLOSE_TAB,
-	TERMINAL_ACTION_AMBIGUOUS_WIDE
+	TERMINAL_ACTION_AMBIGUOUS_WIDE,
+	TERMINAL_ACTION_FIND,
+	TERMINAL_ACTION_FIND_NEXT,
+	TERMINAL_ACTION_FIND_PREVIOUS,
+	TERMINAL_ACTION_THEME_DARK,
+	TERMINAL_ACTION_THEME_LIGHT,
+	TERMINAL_ACTION_THEME_CONTRAST
+};
+
+/*
+ * The colours of a theme (ws128-p006), as 0xRRGGBB: the text's default
+ * foreground and background, the selection's background, a match's
+ * background and the current match's, the text on a match, and the
+ * search bar's background.
+ */
+struct terminal_theme {
+	uint32_t foreground;
+	uint32_t background;
+	uint32_t selection;
+	uint32_t match;
+	uint32_t current;
+	uint32_t match_text;
+	uint32_t bar;
 };
 
 /*
@@ -148,7 +185,8 @@ struct terminal_tab_request {
  * What the menus show of the terminal's state: whether something is
  * selected (Copy), whether the clipboard holds text (Paste), the font's
  * size (Zoom, Text Size), whether the window is fullscreen and whether
- * Ambiguous-width characters are wide (ws128-p009).
+ * Ambiguous-width characters are wide (ws128-p009), the theme and whether
+ * there is a text to find again (ws128-p006).
  */
 struct terminal_menu_state {
 	int selection;
@@ -156,15 +194,21 @@ struct terminal_menu_state {
 	unsigned pixels;
 	int fullscreen;
 	int ambiguous_wide;
+	unsigned theme;
+	int can_find_again;
 };
 
 /*
  * The terminal's own settings kept between runs (settings.c, the desktop's
  * settings terminal.* through libkeiland, WS135): whether Ambiguous-width
- * characters are wide (ws128-p009).  All zero is the default.
+ * characters are wide (ws128-p009), the font's size in pixels and the
+ * colour theme (ws128-p006).  All zero is the default (a size of 0: the
+ * size the terminal is started with).
  */
 struct terminal_settings {
 	int ambiguous_wide;
+	unsigned font_size;
+	unsigned theme;
 };
 
 /* The modifier bits of wl_keyboard.modifiers, as zdesktop reports them. */
@@ -507,6 +551,28 @@ struct terminal_window {
 	/* Whether the compositor last configured the window fullscreen. */
 	int fullscreen;
 
+	/* The colour theme the window is drawn in (TERMINAL_THEME_*, ws128-p006). */
+	unsigned theme;
+
+	/*
+	 * Edit > Find (ws128-p006): whether the search bar is open (the keys
+	 * then edit the text looked for instead of going to the shell), the
+	 * text (UTF-8, search_length bytes), whether it changed since the main
+	 * loop last looked, and a step the main loop has yet to take (1 to the
+	 * next older match, -1 to the next newer, 0 none).  The main loop
+	 * answers with the match it found (search_found; its line, its first
+	 * column and how many cells it covers), which the drawing marks.
+	 */
+	int search_open;
+	char search_query[TERMINAL_SEARCH_BYTES];
+	size_t search_length;
+	int search_edited;
+	int search_step;
+	int search_found;
+	unsigned long search_line;
+	unsigned search_column;
+	unsigned search_cells;
+
 	/*
 	 * The tabs in the titlebar (tabs.c): zdesktop's titlebar (NULL without
 	 * the Titlebar Presentation), the tabs and the active one as last shown
@@ -616,6 +682,12 @@ unsigned long terminal_screen_view_line(const struct terminal_screen *screen, un
 int terminal_screen_scroll_view(struct terminal_screen *screen, int lines);
 size_t terminal_screen_text(struct terminal_screen *screen, char *text, size_t size);
 int terminal_screen_in_range(const struct terminal_screen *screen, unsigned column, unsigned long line);
+
+/* Finding text in the scrollback and the screen (search.c). */
+size_t terminal_search_decode(const char *text, size_t length, uint32_t *query, size_t capacity);
+int terminal_search_find(struct terminal_screen *screen, const uint32_t *query, size_t count, unsigned long line, unsigned column, int direction, unsigned long *found_line, unsigned *found_column, unsigned *cells);
+int terminal_search_line(struct terminal_screen *screen, const uint32_t *query, size_t count, unsigned long line, unsigned char *marks);
+void terminal_search_show(struct terminal_screen *screen, unsigned long line);
 
 /* The settings kept between runs (settings.c). */
 void terminal_settings_load(struct terminal_settings *settings);

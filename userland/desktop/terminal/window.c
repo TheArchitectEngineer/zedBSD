@@ -36,6 +36,12 @@
 #define WINDOW_KEY_PAGEUP	104U
 #define WINDOW_KEY_PAGEDOWN	109U
 
+/* The keys the search bar answers itself (ws128-p006): Escape, Backspace, Enter and the keypad's Enter. */
+#define WINDOW_KEY_ESCAPE	1U
+#define WINDOW_KEY_BACKSPACE	14U
+#define WINDOW_KEY_ENTER	28U
+#define WINDOW_KEY_KP_ENTER	96U
+
 /* The evdev codes of the pointer's left and middle buttons. */
 #define WINDOW_BUTTON_LEFT	0x110U
 #define WINDOW_BUTTON_MIDDLE	0x112U
@@ -53,6 +59,8 @@ static void window_take(struct terminal_window *window);
 static void window_event(struct terminal_window *window, const struct kui_window_event *event);
 static void window_press(struct terminal_window *window, uint32_t key);
 static void window_text_commit(struct terminal_window *window, const char *text);
+static void window_search_key(struct terminal_window *window, uint32_t key);
+static void window_search_append(struct terminal_window *window, const char *text, size_t length);
 static void window_text_preedit(struct terminal_window *window, const struct kui_window_event *event);
 static void window_text_delete(struct terminal_window *window, uint32_t before);
 static void window_wheel(struct terminal_window *window, double dy);
@@ -430,6 +438,12 @@ window_press(
 	size_t length;
 	int shift;
 
+	/* While the search bar is open the keys edit what it looks for (ws128-p006). */
+	if (window->search_open) {
+		window_search_key(window, key);
+		return;
+	}
+
 	/* Shift with Page Up scrolls the view a page back instead of typing (ws035-p114). */
 	shift = 0;
 	if ((window->modifiers & TERMINAL_MODIFIER_SHIFT) != 0U)
@@ -466,8 +480,14 @@ window_text_commit(
 {
 	size_t length;
 
-	/* The text's bytes, and whether they fit after those typed before. */
+	/* The text's bytes; while the search bar is open it is what the bar looks for (ws128-p006). */
 	length = strlen(text);
+	if (window->search_open) {
+		window_search_append(window, text, length);
+		return;
+	}
+
+	/* Whether they fit after those typed before. */
 	if (length > sizeof(window->input) - window->input_length) {
 		printf("ZTERM IME commit dropped bytes=%u\n", (unsigned)length);
 		fflush(stdout);
@@ -484,6 +504,81 @@ window_text_commit(
 	/* The log line the tests read. */
 	printf("ZTERM IME commit bytes=%u text=%s\n", (unsigned)length, text);
 	fflush(stdout);
+}
+
+/*
+ * Answers a key while the search bar is open (ws128-p006): Escape closes
+ * it, Enter finds the next older match (Shift+Enter the next newer),
+ * Backspace takes back the last character, and a key that types a
+ * printable character adds it.  Nothing goes to the shell.
+ */
+static void
+window_search_key(
+	struct terminal_window *window,
+	uint32_t key)
+{
+	unsigned char bytes[16];
+	size_t length;
+	int shift;
+
+	/* Whether Shift is held, which turns Enter the other way. */
+	shift = 0;
+	if ((window->modifiers & TERMINAL_MODIFIER_SHIFT) != 0U)
+		shift = 1;
+
+	/* Each key the bar answers itself. */
+	switch (key) {
+	case WINDOW_KEY_ESCAPE:
+		/* The bar closes; the main loop draws the window without it. */
+		window->search_open = 0;
+		window->search_edited = 1;
+		return;
+	case WINDOW_KEY_ENTER:
+	case WINDOW_KEY_KP_ENTER:
+		/* The next match back through the scrollback, or forward with Shift. */
+		window->search_step = 1;
+		if (shift)
+			window->search_step = -1;
+		return;
+	case WINDOW_KEY_BACKSPACE:
+		/* The last character goes (its continuation bytes, then its first). */
+		while (window->search_length > 0U &&
+		       ((unsigned char)window->search_query[window->search_length - 1U] & 0xc0U) == 0x80U)
+			window->search_length--;
+		if (window->search_length > 0U)
+			window->search_length--;
+		window->search_query[window->search_length] = '\0';
+		window->search_edited = 1;
+		return;
+	default:
+		break;
+	}
+
+	/* A key that types one printable character of ASCII adds it; any other does nothing. */
+	length = terminal_key_bytes(key, window->modifiers & TERMINAL_MODIFIER_SHIFT, bytes, sizeof(bytes));
+	if (length != 1U || bytes[0] < 0x20U || bytes[0] > 0x7eU)
+		return;
+
+	/* The character joins the text. */
+	window_search_append(window, (const char *)bytes, 1U);
+}
+
+/* Adds text (UTF-8) to what the search bar looks for, whole or not at all. */
+static void
+window_search_append(
+	struct terminal_window *window,
+	const char *text,
+	size_t length)
+{
+	/* Text that does not fit whole is left out, so no character is cut. */
+	if (window->search_length + length >= sizeof(window->search_query))
+		return;
+
+	/* The text after what is there; the main loop looks again. */
+	memcpy(window->search_query + window->search_length, text, length);
+	window->search_length += length;
+	window->search_query[window->search_length] = '\0';
+	window->search_edited = 1;
 }
 
 /*
