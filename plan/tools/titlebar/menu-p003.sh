@@ -90,7 +90,7 @@ echo "terminal: surface $surface at $wx,$wy"
 
 # 1. The menus in the floating title bar.
 expect_log /tmp/t.log 'ZTERM MENU ready items=39'
-expect_log /tmp/zdesktop.log "MENU commit client=$zc1 menu=[0-9]+ serial=1 items=31"
+expect_log /tmp/zdesktop.log "MENU commit client=$zc1 menu=[0-9]+ serial=1 items=39"
 expect_log /tmp/zdesktop.log "MENU bar client=$zc1 surface=$surface where=floating item=5 "
 pointer move 1250 780 sleep 400
 check "$out/floating.png" --expect $((wx + 400)),$((wy + 300)),1d2230 || status=1

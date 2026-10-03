@@ -96,12 +96,17 @@ keys '<esc>'
 sleep 1
 expect_log /tmp/t.log 'ZTERM SEARCH run=t1 closed'
 
-# 3. View > Theme > Light.
+# 3. View > Theme > Light (the submenu is waited for before its row is clicked, as menu-p003 does for Text Size).
 zwl_app_clients
 click "$(item_x 1 floating 3 $wx)" $bar
+expect_log /tmp/zdesktop.log "MENU open client=$zc1 .*item=3 depth=1"
+expect_log /tmp/zdesktop.log 'MENU row item=44 '
 px=$(popup_x)
-pointer move $((px + 40)) "$(row_y 44)" sleep 500 move $((px + 120)) "$(row_y 44)" sleep 600
+pointer move $((px + 40)) "$(row_y 44)" sleep 500 move $((px + 120)) "$(row_y 44)" sleep 800
+expect_log /tmp/zdesktop.log "MENU open client=$zc1 .*item=44 depth=2"
+expect_log /tmp/zdesktop.log 'MENU row item=46 '
 click $(( $(popup_x) + 60 )) "$(row_y 46)" 1200
+guest 'grep MENU /tmp/zdesktop.log' > "$out/zdesktop-menu.log"
 expect_log /tmp/t.log 'ZTERM THEME run=t1 theme=1 saved=0'
 expect_guest 'grep -qx "theme=1" $HOME/.config/keiland/terminal.conf' 'terminal.conf keeps theme=1'
 pointer move 1250 780 sleep 400
