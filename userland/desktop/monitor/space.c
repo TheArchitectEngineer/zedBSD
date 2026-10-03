@@ -33,6 +33,9 @@
 /* Pi, twice. */
 #define SPACE_TAU		6.283185307f
 
+/* The longest step a spring is moved by at once, in seconds (shorter steps keep it stable at any frame rate). */
+#define SPACE_SPRING_STEP	(1.0f / 120.0f)
+
 /* The core's shells, and the points of a ring. */
 #define SPACE_SHELLS		3U
 #define SPACE_RING_POINTS	72U
@@ -736,12 +739,23 @@ spring(
 {
 	float omega;
 	float acceleration;
+	float step;
 
-	/* The pull towards the target and the damping. */
+	/*
+	 * The pull towards the target and the damping, in steps of at most
+	 * SPACE_SPRING_STEP: one step of a whole slow frame (a tenth of a
+	 * second at 2 Hz) is unstable and grows without end (ws134-p010,
+	 * T1-072: the tilt ran off at 4 frames a second and the background's
+	 * grid filled the vertex memory).
+	 */
 	omega = 2.0f * SPACE_TAU;
-	acceleration = omega * omega * (target - *value) - 2.0f * omega * *speed;
-	*speed += acceleration * seconds;
-	*value += *speed * seconds;
+	while (seconds > 0.0f) {
+		step = fminf(seconds, SPACE_SPRING_STEP);
+		acceleration = omega * omega * (target - *value) - 2.0f * omega * *speed;
+		*speed += acceleration * step;
+		*value += *speed * step;
+		seconds -= step;
+	}
 
 	/* Succeeded: the value where the spring took it. */
 	return *value;

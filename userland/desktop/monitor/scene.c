@@ -76,6 +76,9 @@ static const char *const card_ranges[SM_RANGES] = { "Last minute", "Last 5 minut
 /* The rules as the state's card lists them, in the order of enum sm_rule. */
 static const char *const card_rules[SM_RULE_COUNT] = { "CPU", "Memory", "Swap", "Disk latency", "GPU", "GPU temperature" };
 
+/* The most lines of the background's grid (the logical window holds 27). */
+#define SCENE_GRID_LINES	64U
+
 /* How long a value's slide takes, and how far it moves, in milliseconds and logical pixels. */
 #define SCENE_SLIDE_MS		180U
 #define SCENE_SLIDE_DISTANCE	4.0f
@@ -197,6 +200,7 @@ sm_scene_build(
 	float step;
 	float offset;
 	float x;
+	unsigned lines;
 	int error;
 
 	/* Room for a frame's worth, then nothing in it. */
@@ -225,8 +229,14 @@ sm_scene_build(
 	sm_draw_gradient(&app->scene, 0.0f, 0.0f, layout->width, layout->height, sm_rgb(TOKEN_BG_DEEP, 1.0f), sm_rgb(TOKEN_BG_MID, 1.0f));
 	step = 48.0f * layout->scale;
 	offset = app->view.plates[SM_PLATE_EVENTS].x - layout->plates[SM_PLATE_EVENTS].x;
-	for (x = step + offset; x < layout->width; x += step)
+	lines = 0;
+	for (x = step + offset; x < layout->width; x += step) {
+		/* No more lines than the window holds, whatever the offset (a runaway one once filled the vertex memory). */
+		lines++;
+		if (lines > SCENE_GRID_LINES)
+			break;
 		sm_draw_rect(&app->scene, floorf(x), layout->header.y + layout->header.height, 1.0f, layout->height, sm_rgb(0x161d29U, 1.0f));
+	}
 
 	/* The parts, back to front. */
 	build_header(app, now_ms);
