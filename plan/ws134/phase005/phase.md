@@ -40,3 +40,9 @@ monitor の本物の値（p008）の出どころの一つ。interrupt は分け�
 ## stub の項目
 
 この Phase は kernel だけで、monitor の stub は増減しない（monitor が `hw.cputimes` を読むのは p008）。
+
+## 結果（T1-064、QEMU Venus KVM、main 1587d3d の image、2026-10-04）
+
+`cputimes-p005: PASS`。4 CPU の guest が boot（SSH 13 s）。hz=1000 cpus=4（hw.ncpu 4）、静かな 5 秒の和 20022/20000・idle 20008、
+busy loop 1 本で user 4995（cpu 0）、4 本で user 20002・4 CPU とも半分超、top の `%Cpu(s)` 2 行（11.2 us・25.0 us）。
+証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-064/out/`。clearance は Q1 の判定。実機は未実施。

@@ -141,6 +141,27 @@ struct disk {
 	char d_identity_partuuid[DISK_IDENTITY_TEXT_MAX];
 	char d_identity_partlabel[DISK_IDENTITY_TEXT_MAX];
 	struct disk *d_next;
+
+	/*
+	 * The work hw.diskstats reports (ws134-p006), counted only for a disk
+	 * whose driver gave it a kind (DISK_STATS_KIND_*, a physical whole
+	 * disk; zero for partitions, loop disks and file systems' disks).
+	 * The registry lock protects them: the submission and the completion
+	 * of a request change them where they change d_inflight.
+	 * d_stats_generation is the set of disks' generation when the disk
+	 * appeared; d_stats_busy_since_ns is when it last went from no request
+	 * outstanding to one.
+	 */
+	uint32_t d_stats_kind;
+	uint32_t d_stats_generation;
+	uint64_t d_stats_read_ops;
+	uint64_t d_stats_write_ops;
+	uint64_t d_stats_read_bytes;
+	uint64_t d_stats_write_bytes;
+	uint64_t d_stats_read_ns;
+	uint64_t d_stats_write_ns;
+	uint64_t d_stats_busy_ns;
+	uint64_t d_stats_busy_since_ns;
 };
 
 struct bio {
@@ -164,7 +185,12 @@ struct bio {
 	struct wait_queue b_waitq;
 	unsigned b_initialized;
 	enum bio_state b_state;
+	/* When the request was submitted, in nanoseconds, for its disk's hw.diskstats times (ws134-p006). */
+	uint64_t b_submitted_ns;
 };
+
+void disk_set_stats_kind(struct disk *disk, uint32_t kind);
+int disk_stats_copy(void *output, size_t capacity, size_t *needed);
 
 int disk_write_context(struct disk *disk, uint64_t block, uint32_t count, const void *data, const struct io_context *context);
 int disk_write_filesystem_context(struct disk *disk, uint64_t block, uint32_t count, const void *data, const struct io_context *context);

@@ -22,6 +22,7 @@
 #include "kern/boot.h"
 #include "kern/lock.h"
 #include <uapi/errno.h>
+#include <uapi/sysctl.h>
 #include <hal/hal.h>
 #include "kern/klog.h"
 
@@ -238,6 +239,9 @@ drv_pc98_ide_init(
 				unit->firmware_heads = unit->native_heads;
 				unit->firmware_sectors = unit->native_sectors;
 			}
+
+			/* hw.diskstats lists it as an IDE disk (ws134-p006). */
+			disk_set_stats_kind(unit->disk, DISK_STATS_KIND_IDE);
 
 			/* Checks the disk create result. */
 			if (disk_create(unit->disk) == 0) {

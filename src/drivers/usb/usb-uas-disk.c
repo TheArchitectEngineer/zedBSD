@@ -15,6 +15,7 @@
 #include <drivers/usb/usb-uas.h>
 #include <drivers/usb/usb-storage-scsi.h>
 #include <kern/disk.h>
+#include <uapi/sysctl.h>
 #include <kern/partition.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
@@ -421,6 +422,9 @@ uas_publish_media(struct uas_disk *owner, const struct uas_media *media)
 	disk->d_max_transfer_blocks = owner->transport.capacity / media->block_size;
 	disk->d_ops = &uas_disk_ops;
 	disk->d_data = owner;
+
+	/* hw.diskstats lists it as a UAS disk (ws134-p006). */
+	disk_set_stats_kind(disk, DISK_STATS_KIND_UAS);
 	error = disk_create(disk);
 	if (error != 0)
 		goto failed;

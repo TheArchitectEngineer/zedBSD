@@ -15,6 +15,7 @@
 #include <drivers/usb/usb.h>
 #include <uapi/errno.h>
 #include <kern/disk.h>
+#include <uapi/sysctl.h>
 #include <kern/partition.h>
 #include <kern/io-stats.h>
 #include <kern/lock.h>
@@ -1627,6 +1628,9 @@ storage_publish_disk(
 	disk->d_ops = &storage_disk_ops;
 	disk->d_data = storage;
 	storage->disk = disk;
+
+	/* hw.diskstats lists it as a USB mass storage disk (ws134-p006). */
+	disk_set_stats_kind(disk, DISK_STATS_KIND_USB);
 
 	/* Checks the operation status. */
 	error = disk_create(disk);

@@ -11,6 +11,7 @@
 
 #include "drivers/platform/pcat/pcat-ide.h"
 #include <uapi/errno.h>
+#include <uapi/sysctl.h>
 #include <kern/lock.h>
 #include "kern/klog.h"
 
@@ -122,6 +123,9 @@ drv_pcat_ide_init(
 		unit->disk->d_max_transfer_blocks = 255;
 		unit->disk->d_ops = &ata_ops;
 		unit->disk->d_data = unit;
+
+		/* hw.diskstats lists it as an IDE disk (ws134-p006). */
+		disk_set_stats_kind(unit->disk, DISK_STATS_KIND_IDE);
 
 		/* Checks the disk create result. */
 		if (disk_create(unit->disk) != 0)

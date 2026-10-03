@@ -33,6 +33,8 @@
 #include <hal/hal.h>
 #include <kern/pmem.h>
 #include <uapi/block.h>
+#include <uapi/sysctl.h>
+#include "kern/clock.h"
 #include <kern/kcrt.h>
 
 #define DISK_ALLOCATED		1U
@@ -103,6 +105,13 @@ static unsigned live_count;
 static unsigned admin_count;
 static dev_t next_dev = 1;
 static atomic_uint_t disk_registry_lock;
+
+/*
+ * The generation of the set of disks hw.diskstats lists (ws134-p006): one
+ * more each time such a disk appears or goes, under the registry lock.
+ * Zero until the first disk appears.
+ */
+static uint32_t disk_stats_generation;
 struct bio_async_endpoint;
 static atomic_uint_t async_initialized;
 static struct spinlock async_registry;
@@ -121,6 +130,10 @@ static int sd_name(char name[DISK_NAME_MAX], unsigned number);
 static int name_append_unsigned(char name[DISK_NAME_MAX], unsigned *at, unsigned value);
 static void disk_copy_info(const struct disk *disk, struct disk_info *info);
 static int bio_admit(struct disk *disk, struct bio *bio);
+static uint64_t disk_stats_now_ns(void);
+static void disk_stats_start(struct disk *leaf, struct bio *bio);
+static void disk_stats_end(struct disk *leaf, const struct bio *bio, size_t transferred, int completed);
+static void disk_stats_gone(const struct disk *disk);
 static int bio_dispatch(struct bio *bio);
 static int disk_transfer_direct(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, void *data, const struct backing_claim *claim, uint32_t *completed, const struct io_context *context);
 static struct disk *disk_leaf(struct disk *disk);
@@ -637,6 +650,14 @@ disk_create(
 		tail = &(*tail)->d_next;
 	*tail = disk;
 	live_count++;
+
+	/* A disk hw.diskstats lists changes the set's generation and keeps the one it appeared in. */
+	if (disk->d_stats_kind != 0U && disk->d_parent == NULL) {
+		disk_stats_generation++;
+		disk->d_stats_generation = disk_stats_generation;
+	}
+
+	/* The registry may change again. */
 	disk_unlock(enabled);
 
 	/* Reports the published disk. */
@@ -686,6 +707,7 @@ disk_gone(
 	disk->d_next = NULL;
 	disk_persistence_invalidate(disk);
 	disk->d_state = DISK_GONE;
+	disk_stats_gone(disk);
 
 out:
 	disk_unlock(enabled);
@@ -777,6 +799,7 @@ disk_gone_if_idle(
 	disk->d_next = NULL;
 	disk_persistence_invalidate(disk);
 	disk->d_state = DISK_GONE;
+	disk_stats_gone(disk);
 	disk_unlock(enabled);
 	error = 0;
 
@@ -1179,6 +1202,132 @@ disk_get_info(
 
 	/* Reports an unknown name. */
 	return ENOENT;
+}
+
+/*
+ * Gives an allocated disk the kind of device it is, so that hw.diskstats
+ * lists it and counts its work (ws134-p006).
+ *
+ * The driver of a physical whole disk calls it before disk_create(); a
+ * disk without a kind (a partition, a loop disk, a file system's) is not
+ * listed.
+ */
+DISK_HIGH void
+disk_set_stats_kind(
+	struct disk *disk,
+	uint32_t kind)
+{
+	bool enabled;
+	int index;
+
+	/* Nothing to mark. */
+	if (disk == NULL)
+		return;
+
+	/* Only a disk that is allocated and not yet published takes a kind. */
+	enabled = disk_lock();
+
+	/* A slot of the registry, not yet published. */
+	index = disk_index(disk);
+	if (index >= 0 && disk->d_state == DISK_ALLOCATED)
+		disk->d_stats_kind = kind;
+
+	/* The registry may change again. */
+	disk_unlock(enabled);
+}
+
+/*
+ * Writes hw.diskstats into output: the header and an entry for each
+ * listed disk, in the order they appeared (ws134-p006).
+ *
+ * *needed is always the length the value takes.  With output NULL nothing
+ * is written; with capacity smaller than *needed nothing is written and
+ * ENOMEM is reported.  The registry lock is held throughout, so the
+ * entries and the generation are of one moment.
+ */
+DISK_HIGH int
+disk_stats_copy(
+	void *output,
+	size_t capacity,
+	size_t *needed)
+{
+	struct disk_stats_header header;
+	struct disk_stats_entry entry;
+	struct disk *disk;
+	uint8_t *place;
+	uint32_t count;
+	bool enabled;
+	int error;
+
+	/* The listed disks and the length they take, all under the registry lock. */
+	enabled = disk_lock();
+
+	/* The physical whole disks with a kind. */
+	count = 0;
+	for (disk = disk_head; disk != NULL; disk = disk->d_next) {
+		if (disk->d_stats_kind != 0U && disk->d_parent == NULL)
+			count++;
+	}
+
+	/* The length, and nothing written without a buffer or with one too small. */
+	*needed = sizeof(header) + (size_t)count * sizeof(entry);
+	error = 0;
+	if (output != NULL && capacity < *needed)
+		error = ENOMEM;
+	if (output == NULL || error != 0) {
+		disk_unlock(enabled);
+		return error;
+	}
+
+	/* The header. */
+	zero_bytes(&header, sizeof(header));
+	header.version = DISK_STATS_VERSION;
+	header.struct_size = sizeof(header);
+	header.element_size = sizeof(entry);
+	header.count = count;
+	header.generation = disk_stats_generation;
+	place = output;
+	kern_memcpy(place, &header, sizeof(header));
+	place += sizeof(header);
+
+	/* Each listed disk after it. */
+	for (disk = disk_head; disk != NULL; disk = disk->d_next) {
+		/* Not a physical whole disk with a kind. */
+		if (disk->d_stats_kind == 0U || disk->d_parent != NULL)
+			continue;
+
+		/* Its name, kind and flags, its id and generation. */
+		zero_bytes(&entry, sizeof(entry));
+		kern_memcpy(entry.name, disk->d_name, sizeof(entry.name));
+		entry.name[sizeof(entry.name) - 1U] = '\0';
+		entry.kind = disk->d_stats_kind;
+		if ((disk->d_flags & DISK_READ_ONLY) != 0U)
+			entry.flags |= DISK_STATS_READ_ONLY;
+		if ((disk->d_flags & DISK_REMOVABLE) != 0U)
+			entry.flags |= DISK_STATS_REMOVABLE;
+		entry.id = (uint64_t)disk->d_dev;
+		entry.generation = disk->d_stats_generation;
+
+		/* Its work and what is outstanding. */
+		entry.read_ops = disk->d_stats_read_ops;
+		entry.write_ops = disk->d_stats_write_ops;
+		entry.read_bytes = disk->d_stats_read_bytes;
+		entry.write_bytes = disk->d_stats_write_bytes;
+		entry.read_ns = disk->d_stats_read_ns;
+		entry.write_ns = disk->d_stats_write_ns;
+		entry.busy_ns = disk->d_stats_busy_ns;
+		entry.inflight = disk->d_inflight;
+
+		/* Into its place. */
+		kern_memcpy(place, &entry, sizeof(entry));
+		place += sizeof(entry);
+	}
+
+	/* The registry may change again. */
+	disk_unlock(enabled);
+
+	/* Succeeded: the value is written. */
+	return 0;
 }
 
 /*
@@ -1602,6 +1751,7 @@ bio_submit(
 		disk_write_retire(leaf, bio, error, 0);
 		enabled = disk_lock();
 		leaf->d_inflight--;
+		disk_stats_end(leaf, bio, 0, 0);
 		(void)refcount_put_not_last(&leaf->d_refs);
 		bio->b_state = BIO_NEW;
 		bio->b_leaf_disk = NULL;
@@ -1680,8 +1830,12 @@ bio_complete(
 
 	/* Unpins the leaf. */
 	enabled = disk_lock();
-	if (leaf != NULL && leaf->d_inflight != 0)
+	if (leaf != NULL && leaf->d_inflight != 0) {
 		leaf->d_inflight--;
+		disk_stats_end(leaf, bio, transferred, 1);
+	}
+
+	/* The completion's pin on the leaf is dropped. */
 	if (leaf != NULL)
 		(void)refcount_put_not_last(&leaf->d_refs);
 	disk_unlock(enabled);
@@ -3124,6 +3278,7 @@ bio_admit(
 	bio->b_error = 0;
 	bio->b_state = BIO_SUBMITTED;
 	leaf->d_inflight++;
+	disk_stats_start(leaf, bio);
 	refcount_get(&leaf->d_refs);
 	disk_unlock(enabled);
 
@@ -3800,4 +3955,113 @@ async_worker(void *argument)
 		spin_unlock_irqrestore(&endpoint->lock, irq);
 		bio_async_release(request);
 	}
+}
+
+/* The time for hw.diskstats, in nanoseconds: the monotonic counter, or the clock's ticks without one. */
+static uint64_t
+disk_stats_now_ns(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t seconds;
+	uint64_t rest;
+	bool have;
+
+	/* The counter, when the machine has one. */
+	have = kern_rtc_read_counter(&counter, &frequency);
+	if (!have || frequency == 0U)
+		return sched_ticks() * (1000000000ULL / KERN_CLOCK_HZ);
+
+	/* Whole seconds, then the rest, so the product does not overflow. */
+	seconds = counter / frequency;
+	rest = counter % frequency;
+
+	/* Succeeded: the time. */
+	return seconds * 1000000000ULL + rest * 1000000000ULL / frequency;
+}
+
+/*
+ * A request was admitted to a disk (its d_inflight just counted it, under
+ * the registry lock): its submission's time, and the start of a busy
+ * stretch when it is the only one outstanding.
+ */
+static void
+disk_stats_start(
+	struct disk *leaf,
+	struct bio *bio)
+{
+	uint64_t now;
+
+	/* A disk hw.diskstats does not list keeps no times. */
+	bio->b_submitted_ns = 0;
+	if (leaf->d_stats_kind == 0U)
+		return;
+
+	/* The request's start, and the disk's busy stretch's. */
+	now = disk_stats_now_ns();
+	bio->b_submitted_ns = now;
+	if (leaf->d_inflight == 1U)
+		leaf->d_stats_busy_since_ns = now;
+}
+
+/*
+ * A request left a disk (its d_inflight just dropped it, under the
+ * registry lock): the end of a busy stretch when none is outstanding, and
+ * for a completed read or write its count, bytes and time.  A request the
+ * driver refused (completed 0) counts only toward the busy time.
+ */
+static void
+disk_stats_end(
+	struct disk *leaf,
+	const struct bio *bio,
+	size_t transferred,
+	int completed)
+{
+	uint64_t now;
+	uint64_t elapsed;
+
+	/* A disk hw.diskstats does not list keeps no times. */
+	if (leaf->d_stats_kind == 0U)
+		return;
+
+	/* The busy stretch ends with the last request outstanding. */
+	now = disk_stats_now_ns();
+	if (leaf->d_inflight == 0U && now >= leaf->d_stats_busy_since_ns)
+		leaf->d_stats_busy_ns += now - leaf->d_stats_busy_since_ns;
+
+	/* A refused request did no work. */
+	if (!completed)
+		return;
+
+	/* How long it was outstanding (none when its start was not kept). */
+	elapsed = 0;
+	if (bio->b_submitted_ns != 0U && now >= bio->b_submitted_ns)
+		elapsed = now - bio->b_submitted_ns;
+
+	/* A read or a write counts; a flush does not. */
+	if (bio->b_op == BIO_READ) {
+		leaf->d_stats_read_ops++;
+		leaf->d_stats_read_bytes += transferred;
+		leaf->d_stats_read_ns += elapsed;
+	} else if (bio->b_op == BIO_WRITE) {
+		leaf->d_stats_write_ops++;
+		leaf->d_stats_write_bytes += transferred;
+		leaf->d_stats_write_ns += elapsed;
+	}
+}
+
+/* A disk left the registry (under its lock): a disk hw.diskstats listed changes the set's generation. */
+static void
+disk_stats_gone(
+	const struct disk *disk)
+{
+	/* Only a listed disk. */
+	if (disk->d_stats_kind == 0U)
+		return;
+	if (disk->d_parent != NULL)
+		return;
+
+	/* One more change of the set. */
+	disk_stats_generation++;
 }

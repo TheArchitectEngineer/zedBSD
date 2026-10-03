@@ -48,6 +48,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_HW, HW_GPU_ATTACHING, 0 }, 2, "hw.gpu.attaching"},
 	{{ CTL_HW, HW_GPU_START, 0 }, 2, "hw.gpu.start"},
 	{{ CTL_HW, HW_CPUTIMES, 0 }, 2, "hw.cputimes"},
+	{{ CTL_HW, HW_DISKSTATS, 0 }, 2, "hw.diskstats"},
 	{{ CTL_KERN, KERN_MSGBUF, 0 }, 2, "kern.msgbuf"},
 	{{ CTL_KERN, KERN_MSGBUF_SIZE, 0 }, 2, "kern.msgbuf_size"},
 	{{ CTL_KERN, KERN_MSGBUF_DROPPED, 0 }, 2, "kern.msgbuf_dropped"},
@@ -101,6 +102,7 @@ static char hostname[KERN_HOST_NAME_MAX + 1U] = "zedbsd";
 
 static int sysctl_gpu_start(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_cputimes(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
+static int sysctl_diskstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
 static const struct sysctl_leaf *find_oid(const int *oid, unsigned oidlen);
@@ -237,6 +239,12 @@ kern_sysctl(
 	/* Reports each CPU's ticks by what it was doing. */
 	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_CPUTIMES) {
 		error = sysctl_cputimes(oldp, oldlenp, newp, newlen);
+		return error;
+	}
+
+	/* Reports each physical disk's work. */
+	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_DISKSTATS) {
+		error = sysctl_diskstats(oldp, oldlenp, newp, newlen);
 		return error;
 	}
 
@@ -643,6 +651,46 @@ sysctl_cputimes(
 	}
 
 	/* Succeeded: the value is in the buffer. */
+	return 0;
+}
+
+/*
+ * Reads hw.diskstats: the header and each physical whole disk's work
+ * (ws134-p006), written by the disk registry under its lock.  A buffer too
+ * small fails with ENOMEM and the length needed.
+ */
+static int
+sysctl_diskstats(
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen)
+{
+	size_t needed;
+	size_t capacity;
+	int error;
+
+	/* Read-only. */
+	if (newp != NULL || newlen != 0)
+		return EPERM;
+
+	/* Without a length there is nothing to size or copy. */
+	if (oldlenp == NULL) {
+		if (oldp == NULL)
+			return 0;
+		return EINVAL;
+	}
+
+	/* The value, or only its length without a buffer. */
+	capacity = *oldlenp;
+	error = disk_stats_copy(oldp, capacity, &needed);
+	*oldlenp = needed;
+
+	/* Reports a buffer too small. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the value (or its length) is given. */
 	return 0;
 }
 

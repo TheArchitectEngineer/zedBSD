@@ -13,6 +13,7 @@
 
 #include <uapi/errno.h>
 #include <kern/disk.h>
+#include <uapi/sysctl.h>
 #include "kern/klog.h"
 
 #define SPC_TARGET_COUNT 7U
@@ -172,6 +173,9 @@ probe_target(
 	unit->disk->d_max_transfer_blocks = SPC_MAX_BLOCKS;
 	unit->disk->d_ops = &spc_ops;
 	unit->disk->d_data = unit;
+
+	/* hw.diskstats lists it as a SCSI disk (ws134-p006). */
+	disk_set_stats_kind(unit->disk, DISK_STATS_KIND_SCSI);
 
 	/* Checks the disk create result. */
 	if (disk_create(unit->disk) != 0) {

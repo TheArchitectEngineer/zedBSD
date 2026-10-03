@@ -17,6 +17,7 @@
 #include <kern/atomic.h>
 #include <kern/clock.h>
 #include <kern/disk.h>
+#include <uapi/sysctl.h>
 #include <kern/io-pool.h>
 #include <kern/lock.h>
 #include <kern/page.h>
@@ -4694,6 +4695,9 @@ nvme_probe_namespace(
 		error = ENXIO;
 		goto fail_disk;
 	}
+
+	/* hw.diskstats lists the namespace as an NVMe disk (ws134-p006). */
+	disk_set_stats_kind(disk, DISK_STATS_KIND_NVME);
 
 	/* Checks the operation status. */
 	error = disk_create(disk);
