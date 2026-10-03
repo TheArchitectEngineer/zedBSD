@@ -35,7 +35,7 @@ WS131 の設計（`plan/ws131/design.md` §4.2〜4.4）は p010 で compositor �
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: 設定の項目の一覧と解決の先、libkeiland の API（get・set・watch と通知）、compositor の拡張の interface（manager の version）、desktop.conf の session の開始・終了の読み書き、Settings・system bar・試験の移行、WS131 p010・p011 との分担、Phase の分け方。design-reviewer の review | planning | — |
+| [p001](phase001/phase.md) | 設計: 設定の項目の一覧と解決の先、libkeiland の API（get・set・watch と通知）、compositor の拡張の interface（manager の version）、desktop.conf の session の開始・終了の読み書き、Settings・system bar・試験の移行、WS131 p010・p011 との分担、Phase の分け方。design-reviewer の review | in-progress（q652、P2。[design.md](design.md) 第 2 版、判断 D1〜D6 と Phase の ID 待ち） | — |
 | p002 以降 | p001 で決める（compositor の store と拡張、libkeiland の API と監視、Settings・system bar の移行と監視の thread の除去、Linux・FreeBSD、全文の規約と回帰） | planning | p001、WS131 の p010（manager の枠） |
 
 ## 関係
