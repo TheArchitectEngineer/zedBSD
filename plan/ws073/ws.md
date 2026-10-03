@@ -90,6 +90,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p049](phase049/phase.md) | BUG-033 | guest の clang の速さの今の測定（expat の 3 file の compile、512 MiB・2 GiB）、残る原因があれば直す | cleared（q651、T1-050 の測定） |
 | [ws073-p052](phase052/phase.md) | — | i386 pcat の vmunix の build（ACPI の無い構成の `drv_acpi_poweroff`、`splash.o` の欠け） | cleared（q651、pcat・pc98・amd64 の build warning 0） |
 | [ws073-p053](phase053/phase.md) | BUG-163 | fsync の後、journal の pin が同じ line の普通の content を止める（4 KiB に揃わない volume で block の境の line）: buffer cache が line の block ごとに journal の外の書き込みを記録し、`ufs_sync` が pin された line のその sector だけを cache の下から書く。T には依頼しない（user） | cleared（q664、2026-10-04） |
+| [ws073-p054](phase054/phase.md) | BUG-164 | crash の後の名前の無い inode: mount の回収（orphan の scan）が tail journal の volume でしか走らなかった。v3・journal 無しの volume でも前の session が clean に終わらなかったとき scan する。T には依頼しない（user） | in-progress（q665、P2 の QEMU で直す前 orphan 残る → 後 UFS OK） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
