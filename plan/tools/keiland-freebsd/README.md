@@ -1,5 +1,41 @@
 # Native FreeBSD Keiland regression probes
 
+## FreeBSD 15.1 の試験の guest と backend の試験（WS137）
+
+T1・T2 と実装の担当が、自分の worktree で FreeBSD の native の build と試験を流すための道具。guest は QEMU+KVM、
+i915 の passthrough は使わない（virtio-vga は QMP の screendump だけ、GPU は無い）。SSH は `127.0.0.1` の転送ポートだけ、
+serial は繋がず、console・serial の log を判定に使わない（AGENTS.md の WS109 の例外）。全ての command に `timeout` を付ける。
+
+```sh
+timeout 2400 sh plan/tools/keiland-freebsd/build-guest.sh            # 既定 OUT=build/keiland-freebsd/guest、既存は再利用
+timeout 300  sh plan/tools/keiland-freebsd/guest.sh start
+timeout 60   sh plan/tools/keiland-freebsd/guest.sh ssh 'freebsd-version -ku; pkg info -q gmake seatd'
+timeout 60   sh plan/tools/keiland-freebsd/guest.sh shot "$PWD/build/keiland-freebsd/console.png"
+timeout 5400 sh plan/tools/keiland-freebsd/backend-test.sh           # 動いていなければ start し、終わると stop
+timeout 120  sh plan/tools/keiland-freebsd/guest.sh stop
+```
+
+- `build-guest.sh [--force] [OUT]`: 公式の `FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz` と `CHECKSUM.SHA256`
+  （`download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/`）を取得し、image の行が WS109 の記録
+  [q550/CHECKSUM.SHA256](../../history/ws109/q550/CHECKSUM.SHA256) と同じこと、取得物の SHA256 がその値であることを確かめる。
+  OUT に guest 専用の SSH の鍵（`id_ed25519`）と NoCloud の seed（`seed.iso`: root と `kei`（wheel・video）に鍵だけで login）を作り、
+  image を 24 GiB にして一度起動し、初回の起動（growfs・nuageinit・初回の pkg の upgrade と再起動）が終わるのを SSH で待つ
+  （`/firstboot` が消え boottime が 30 秒変わらない）。`pkg install` で native の build の package（README.freebsd.md の一覧と pkgconf）
+  を入れ、`packages.txt`（名前・版・license）・`versions.txt`・`pkg-install.txt`・`first-boot.png` を残して止め、`guest.qcow2` にする。
+  準備の guest は `OUT/prepare` と port 2236（`PREPARE_PORT`）を使い、動いている試験の guest と重ならない。
+- `guest.sh start|stop|status|ssh|put|get|copy|shot`（`guest.py`）: 起動ごとに `GUEST_RUN`（既定 `build/keiland-freebsd/run`）に
+  overlay を作り、`guest.qcow2` は読み取り専用の base（他の checkout の image も `GUEST_DIR` で使える。鍵は `GUEST_DIR/id_ed25519`）。
+  既定 `SSH_PORT=2235`、`GUEST_MEMORY=8G`、`GUEST_CPUS=8`、KVM は [qemu-accel.sh](../guest/qemu-accel.sh)。
+  `ssh 'CMD'` は root（`SSH_USER=kei` で利用者、上限 `GUEST_COMMAND_TIMEOUT` 秒、既定 120）。`copy DEST PATH...` は working tree の
+  追跡中と無視されない file を tar で guest の DEST（専用の directory、先に消す）へ写す。`shot PNG` は QMP の screendump。
+  2 つの guest を同時に動かす時は `GUEST_RUN` と `SSH_PORT` を変える。
+- `backend-test.sh [OUT]`: tree（build に要る path と `plan/ws131/tests`、`BACKEND_TEST_EXTRA_PATHS` で追加）を guest の
+  `/root/keiland-src` に写し、base の clang で `keiland-freebsd.mk all`（exit 0 と `warning:` 0）、DESTDIR の install と
+  `header-dependencies`、`native-build-audit.py`、`plan/ws131/tests` の host-seat-freebsd・host-session・host-power（ASan・UBSan）、
+  `sync-rejected.c`・`dmabuf-export-rejected.c` を流す。step ごとの log と `summary.txt`（PASS/FAIL/SKIP）は OUT
+  （既定 `build/keiland-freebsd/backend-test`）。全部 PASS の時だけ exit 0。build の取得物（seatd・emoji・辞書）は guest の
+  `/root/keiland-distfiles` に残り、Makefile の SHA256 で毎回確かめる。GPU・seat・窓の probe（下の節）はこの guest では流せない。
+
 Retained from WS109's actual FreeBSD15.1/i915 QEMU acceptance. These do not launch a VM,
 change host devices or supply fake GPU/service providers. Run only in an explicitly owned,
 prepared native guest; compile from the repository root with its native headers/Clang19.

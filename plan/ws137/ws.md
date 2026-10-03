@@ -3,13 +3,13 @@
 # WS137: FreeBSD の試験の VM を T1・T2 で使えるようにし、libkeiland-backend の FreeBSD の試験を流す
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q658（P3）
-Resume point: p001。
+Resume point: p001 は道具を作り QEMU+KVM で 1 回通した（backend-test PASS、Q1 の判定待ち、[phase.md](phase001/phase.md)）。次は p002（T1・T2）。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-04 ユーザー）
@@ -27,5 +27,5 @@ Resume point: p001。
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| p001 | guest の道具（build-guest.sh・guest.sh・README）と backend の build・試験の道具、T1・T2 への手順 | planned（q658、P3） | — |
+| [p001](phase001/phase.md) | guest の道具（build-guest.sh・guest.sh・README）と backend の build・試験の道具、T1・T2 への手順 | in-progress（q658、P3。build-guest・guest.sh・backend-test を 1 回通した、Q1 の判定待ち） | — |
 | p002 | WS131 p004〜p008 の FreeBSD の build と試験を T1・T2 で流し、結果を記録 | planned | p001 |
