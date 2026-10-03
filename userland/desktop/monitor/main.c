@@ -484,6 +484,10 @@ main_frame_done(
 	app->frame_callback = NULL;
 	app->frame_allowed = 1;
 
+	/* The compositor's answer time for the frame report. */
+	app->callback_us += kui_clock_us() - app->frame_asked_us;
+	app->callback_count++;
+
 	/* A hidden window that shows again says so. */
 	if (!app->visible) {
 		app->visible = 1;
@@ -655,7 +659,8 @@ main_draw(
 	struct sm_app *app,
 	uint64_t now)
 {
-	uint64_t wait_us;
+	struct sm_frame_times times;
+	uint64_t before_us;
 	uint64_t now_us;
 	int moving;
 	int error;
@@ -678,10 +683,12 @@ main_draw(
 			return 0;
 	}
 
-	/* The scene. */
+	/* The scene, timed for the frame report. */
+	before_us = kui_clock_us();
 	error = sm_scene_build(app, now);
 	if (error != 0)
 		return -1;
+	app->build_us += kui_clock_us() - before_us;
 
 	/* The next frame waits for the compositor's callback for this one, asked before the present commits it. */
 	app->frame_callback = wl_surface_frame(app->surface);
@@ -689,11 +696,11 @@ main_draw(
 		(void)wl_callback_add_listener(app->frame_callback, &main_frame_listener, app);
 		app->frame_allowed = 0;
 		app->frame_asked_ms = now;
+		app->frame_asked_us = kui_clock_us();
 	}
 
 	/* The frame; an outdated swapchain or a lost surface is made again and the frame drawn next time. */
-	wait_us = 0;
-	result = sm_renderer_draw(&app->renderer, &app->scene, &wait_us);
+	result = sm_renderer_draw(&app->renderer, &app->scene, &times);
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		printf("ZMON SWAPCHAIN outdated\n");
 		error = main_resize(app);
@@ -720,7 +727,11 @@ main_draw(
 
 	/* Counted for the frame report; the next frame not before 1/fps. */
 	app->frames++;
-	app->frame_wait_us += wait_us;
+	app->frame_wait_us += times.wait_us;
+	app->frame_times.acquire_us += times.acquire_us;
+	app->frame_times.record_us += times.record_us;
+	app->frame_times.submit_us += times.submit_us;
+	app->frame_times.present_us += times.present_us;
 	app->next_frame_us = kui_clock_us() + 1000000U / app->fps;
 	app->dirty = 0;
 	return 0;
@@ -780,6 +791,8 @@ main_reports(
 	uint64_t heap;
 	double seconds;
 	double wait_ms;
+	double per_frame;
+	double callback_ms;
 
 	UNUSED_PARAMETER(now);
 
@@ -791,10 +804,31 @@ main_reports(
 		frames = app->frames - last_frames;
 		seconds = (double)(now_us - last_us) / 1000000.0;
 		wait_ms = 0.0;
-		if (frames != 0U)
+		per_frame = 0.0;
+		if (frames != 0U) {
 			wait_ms = (double)app->frame_wait_us / 1000.0 / (double)frames;
-		printf("ZMON FRAME fps=%.1f wait_ms=%.2f visible=%d\n", (double)frames / seconds, wait_ms, app->visible);
+			per_frame = 1.0 / 1000.0 / (double)frames;
+		}
+
+		/* The compositor's mean answer to a frame callback. */
+		callback_ms = 0.0;
+		if (app->callback_count != 0U)
+			callback_ms = (double)app->callback_us / 1000.0 / (double)app->callback_count;
+
+		/* The rate, then the mean of each part of a frame (ws134-p003). */
+		printf("ZMON FRAME fps=%.1f wait_ms=%.2f visible=%d build_ms=%.2f acquire_ms=%.2f record_ms=%.2f submit_ms=%.2f present_ms=%.2f callback_ms=%.2f\n",
+		    (double)frames / seconds, wait_ms, app->visible,
+		    (double)app->build_us * per_frame,
+		    (double)app->frame_times.acquire_us * per_frame,
+		    (double)app->frame_times.record_us * per_frame,
+		    (double)app->frame_times.submit_us * per_frame,
+		    (double)app->frame_times.present_us * per_frame,
+		    callback_ms);
 		app->frame_wait_us = 0;
+		memset(&app->frame_times, 0, sizeof(app->frame_times));
+		app->build_us = 0;
+		app->callback_us = 0;
+		app->callback_count = 0;
 		last_frames = app->frames;
 		last_us = now_us;
 	}

@@ -69,3 +69,21 @@ uncleared。`monitor-p003.sh` を 2 回（66 s・65 s、変更なし）流して
 3. GPU 0 の名前「llvmpipe (LLVM 19.1.7, 2」が途中で切れる → 括弧の前で切るか省略記号（`scene.c` の `short_name` の周り）。
 4. 直したら build（warning 0）・host 試験（`tests/host/run.sh`）・preview を流し、T1 に `monitor-p003.sh` を再依頼。
 
+
+## 再開（q657、P1 generation12、2026-10-04）
+
+Q1 の割り当て（P2 は WS135）。再開の条件 1〜4 に沿って:
+
+1. **計測**: `render.c` の `sm_renderer_draw` が段ごとの時間（acquire・record・submit・present・fence の wait）を `struct sm_frame_times`（`app.h`）に返し、
+   `main.c` が scene の build と frame callback の答えの時間（`wl_surface_frame` から `done` まで）を足して、`ZMON FRAME` の行に
+   `build_ms acquire_ms record_ms submit_ms present_ms callback_ms` を加えた（`fps=`・`wait_ms=` は前と同じ位置）。`monitor-p003.sh` は sim の全ての
+   `ZMON FRAME` の行を出し、段 3 として zdesktop `--log-frames` で compositor の合成の回数を 10 秒数える（測るだけ、判定しない）。
+   描画の軽量化は、この計測で重い段が分かってから行う（host の見積り: 1920x1240 で scene の fragment は画面の 2.3 倍、うち 1.0 は全面の背景の
+   gradient、build は host で 0.28 ms。T1-043 の fence の wait 5〜7 ms と合わせると、213 ms/frame の大半は acquire か compositor の callback の待ちの見込み）。
+2. **sim の GPU 名**: `source.c` で「Simulated GPU」をやめ、1 台目「Integrated Graphics」（描画の device 名で置き換わる）、2 台目「Discrete Graphics」
+   （3 台以上は番号付き）。実在の型番は名乗らない。
+3. **GPU 名の切れ**: `scene.c` の Graphics の card は `%.24s` で切っていた。新しい `fit_name` が card の幅に収まるかを atlas の幅で測り、全体 → 括弧の前
+   （`short_name`）→ 「...」の順に縮める。
+4. 確かめ: monitor の build（zedBSD -Werror）warning 0、Linux の gcc `-fsyntax-only -Werror`（変えた 4 file）、`tests/host/run.sh` → `monitor-host: PASS`、
+   style-diff 0、host の preview（1200x760 と 1920x1240、sim 16 CPU・2 GPU）で「GPU 0 Virtio-GPU Venus (llvmpipe)」「GPU 1 Discrete Graphics」。
+   image `build-monitor-image.sh build/p1-ws134` exit 0。QEMU は T1 に依頼（llvmpipe の image。Venus の image の計測は Venus の renderer が使える時）。
