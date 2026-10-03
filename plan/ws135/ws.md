@@ -37,6 +37,7 @@ WS131 の設計（`plan/ws131/design.md` §4.2〜4.4）は p010 で compositor �
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計: 設定の項目の一覧と解決の先、libkeiland の API（get・set・watch と通知）、compositor の拡張の interface（manager の version）、desktop.conf の session の開始・終了の読み書き、Settings・system bar・試験の移行、WS131 p010・p011 との分担、Phase の分け方。design-reviewer の review | in-progress（q652、P2。[design.md](design.md) 第 2 版、判断 D1〜D6 と Phase の ID 待ち） | — |
 | [p002](phase002/phase.md) | compositor の store・merge の書き・`kl_system_manager_v1`／`kl_system_settings_v1`・peer_uid・壁紙の非同期・音量の順序・repeat の送り直し（watcher は残す） | in-progress（q656、P2。host 45 PASS、zedBSD・Linux build warning 0、QEMU は p003 と一緒に T2） | p001 |
+| [p003](phase003/phase.md) | libkeiland の `kl_settings_*`（wire・cache・watch・app の file）と probe `keiland-settings` | in-progress（q656、P2。host 26 PASS、build warning 0、QEMU は T2） | p002 |
 | p002 以降 | p001 で決める（compositor の store と拡張、libkeiland の API と監視、Settings・system bar の移行と監視の thread の除去、Linux・FreeBSD、全文の規約と回帰） | planning | p001、WS131 の p010（manager の枠） |
 
 ## 関係
