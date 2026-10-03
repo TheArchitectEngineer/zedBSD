@@ -29,3 +29,10 @@ Parent: [WS134](../ws.md)
 - FreeBSD: この host で build できない。T に `monitor-backend-p011.sh freebsd`（WS137 の FreeBSD guest、base の cc で -Werror）と
   `plan/tools/keiland-freebsd/backend-test.sh`（native build、warning 0）を依頼。結果は未着。
 - 実機は未実施。
+
+## 結果（T1-068、WS137 の FreeBSD guest、fbeeba4、2026-10-04）
+
+PASS 2/2。`monitor-backend-p011 freebsd: PASS`（CPU 8、disk vtbd0、link vtnet0、valid 0x1f、tick 3052/3048（127 Hz × 8 × 3.00 s）、user 381、
+memory total 8317661184、build の warning 0）。`backend-test.sh` rc 0（build・warning 0・install・audit・host-seat・host-session・host-power・
+sync-rejected・dmabuf-export-rejected 全 PASS）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-068/p011/`・
+`/home/awe/zedBSD-worktrees/t1/build/keiland-freebsd/backend-test-068/summary.txt`。
