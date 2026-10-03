@@ -324,6 +324,10 @@ zwl_dispatch(
 		/* Keiland's system extension: the manager, the network, the sound, the power and the devices (system.c, WS131 p010). */
 		error = zwl_system_request(object, opcode, bytes, size);
 		break;
+	case ZWL_SYSTEM_MONITOR:
+		/* Keiland's system extension: the monitor (sysmon.c, WS134 p012). */
+		error = zwl_sysmon_request(object, opcode, bytes, size);
+		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
 		break;

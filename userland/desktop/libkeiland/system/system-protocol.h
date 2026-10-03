@@ -23,5 +23,6 @@ extern const struct wl_interface kl_system_network_v1_interface;
 extern const struct wl_interface kl_system_audio_v1_interface;
 extern const struct wl_interface kl_system_power_v1_interface;
 extern const struct wl_interface kl_system_devices_v1_interface;
+extern const struct wl_interface kl_system_monitor_v1_interface;
 
 #endif

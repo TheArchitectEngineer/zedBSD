@@ -15,13 +15,17 @@
  * state), "scan", "join SSID", "disconnect", "wifi-on", "wifi-off",
  * "save-key SSID KEY", "details", "volume LEFT RIGHT MUTED", "feedback",
  * "power ACTION" (1 power off, 2 restart, 3 suspend), "eject ID" (each
- * request waits up to the timeout for its result) and "watch" (the
- * changes until the timeout).  Each line starts with KEILAND-SYSTEM:
+ * request waits up to the timeout for its result), "watch" (the
+ * changes until the timeout) and "monitor" (the machine's monitor at
+ * 250 ms until the timeout: its info and each frame, WS134 p012).  Each
+ * line starts with KEILAND-SYSTEM:
  *
  *   KEILAND-SYSTEM open capabilities=0xB | failed step=open errno=E
  *   KEILAND-SYSTEM network reachable=... ssid=S        (and ap, link, dns, saved, audio, power, device)
  *   KEILAND-SYSTEM result request=R error=E          (E: 0 or the errno's name)
  *   KEILAND-SYSTEM change bits=0xB
+ *   KEILAND-SYSTEM monitor-info changes=N cpus=N host=H gpus=N disks=N links=N   (and monitor-disk, monitor-link, monitor-gpu)
+ *   KEILAND-SYSTEM monitor-frame n=N seconds=S valid=0xB cpu=C ... | monitor failed errno=E
  *   KEILAND-SYSTEM done status=S
  */
 
@@ -57,6 +61,7 @@ static const struct probe_command probe_commands[] = {
 	{ "power", 1 },
 	{ "eject", 1 },
 	{ "watch", 0 },
+	{ "monitor", 0 },
 };
 
 static const struct probe_command *probe_find(const char *word);
@@ -65,6 +70,8 @@ static void probe_dump(const struct kl_system *system);
 static void probe_details(const struct kl_system *system);
 static int probe_wait(struct wl_display *display, struct kl_system *system, uint32_t request, int timeout_ms);
 static void probe_watch(struct wl_display *display, struct kl_system *system, int timeout_ms);
+static void probe_monitor(struct wl_display *display, struct kl_system *system, int timeout_ms);
+static void probe_monitor_info(const struct kl_system_monitor *monitor);
 static int probe_round(struct wl_display *display, struct kl_system *system, int timeout_ms, unsigned *changed);
 static unsigned long long probe_clock_ms(void);
 static const char *probe_error(int error);
@@ -147,6 +154,14 @@ main(
 		differs = strcmp(command->name, "watch");
 		if (differs == 0) {
 			probe_watch(display, system, timeout_ms);
+			arg++;
+			continue;
+		}
+
+		/* The monitor. */
+		differs = strcmp(command->name, "monitor");
+		if (differs == 0) {
+			probe_monitor(display, system, timeout_ms);
 			arg++;
 			continue;
 		}
@@ -388,6 +403,107 @@ probe_watch(
 			probe_dump(system);
 		}
 	}
+}
+
+/* Follows the machine's monitor at 250 ms until the timeout: its info when it changes, and each frame. */
+static void
+probe_monitor(
+	struct wl_display *display,
+	struct kl_system *system,
+	int timeout_ms)
+{
+	struct kl_system_monitor *monitor;
+	struct kl_monitor_frame *frame;
+	unsigned long long until;
+	unsigned long long now;
+	unsigned changes;
+	unsigned shown;
+	unsigned frames;
+	unsigned changed;
+	int taken;
+	int error;
+
+	/* The frame is large: on the heap. */
+	frame = calloc(1, sizeof(*frame));
+	if (frame == NULL) {
+		printf("KEILAND-SYSTEM monitor failed errno=ENOMEM\n");
+		return;
+	}
+
+	/* The monitor. */
+	monitor = kl_system_monitor_open(system, 250U);
+	if (monitor == NULL) {
+		printf("KEILAND-SYSTEM monitor failed errno=%s\n", probe_error(errno));
+		free(frame);
+		return;
+	}
+
+	/* Until the timeout. */
+	shown = 0;
+	frames = 0;
+	until = probe_clock_ms() + (unsigned long long)timeout_ms;
+	for (;;) {
+		/* The timeout ends the watch. */
+		now = probe_clock_ms();
+		if (now >= until)
+			break;
+
+		/* Reads and dispatches. */
+		error = probe_round(display, system, (int)(until - now), &changed);
+		if (error != 0)
+			break;
+
+		/* The info when it changed. */
+		(void)kl_system_monitor_info(monitor, &changes);
+		if (changes != shown) {
+			shown = changes;
+			probe_monitor_info(monitor);
+		}
+
+		/* A new frame. */
+		taken = kl_system_monitor_take(monitor, frame);
+		if (!taken)
+			continue;
+		frames++;
+		printf("KEILAND-SYSTEM monitor-frame n=%u seconds=%.3f valid=0x%x cpu=%.3f cpus=%u core0=%.3f mem_total=%llu mem_free=%llu "
+		       "cache=%llu swap_total=%llu rx=%.0f tx=%.0f read=%.0f write=%.0f latency_ms=%.3f disks=%u links=%u gpus=%u\n",
+		       frames, frame->seconds, frame->valid, frame->cpu, frame->cpu_count, frame->cpu_core[0],
+		       (unsigned long long)frame->memory_total, (unsigned long long)frame->memory_free,
+		       (unsigned long long)frame->memory_cache, (unsigned long long)frame->swap_total, frame->rx_rate, frame->tx_rate,
+		       frame->read_rate, frame->write_rate, frame->disk_latency_ms, frame->disk_count, frame->link_count, frame->gpu_count);
+	}
+
+	/* The monitor goes. */
+	kl_system_monitor_close(monitor);
+	(void)wl_display_flush(display);
+	free(frame);
+}
+
+/* Prints the monitor's info and its devices. */
+static void
+probe_monitor_info(
+	const struct kl_system_monitor *monitor)
+{
+	const struct kl_monitor_info *info;
+	unsigned changes;
+	unsigned index;
+
+	/* The machine. */
+	info = kl_system_monitor_info(monitor, &changes);
+	printf("KEILAND-SYSTEM monitor-info changes=%u cpus=%u host=%s gpus=%u disks=%u links=%u\n", changes, info->cpu_count, info->host,
+	       info->gpu_count, info->disk_count, info->link_count);
+
+	/* Each disk. */
+	for (index = 0; index < info->disk_count; index++)
+		printf("KEILAND-SYSTEM monitor-disk name=%s kind=%u\n", info->disk[index].name, info->disk[index].kind);
+
+	/* Each link. */
+	for (index = 0; index < info->link_count; index++)
+		printf("KEILAND-SYSTEM monitor-link name=%s\n", info->link[index].name);
+
+	/* Each GPU. */
+	for (index = 0; index < info->gpu_count; index++)
+		printf("KEILAND-SYSTEM monitor-gpu name=%s driver=%s\n", info->gpu[index].name, info->gpu[index].driver);
 }
 
 /* Reads the display's events for up to timeout_ms, then dispatches the system; returns 0 or -1 when the display went. */

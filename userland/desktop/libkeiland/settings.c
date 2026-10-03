@@ -590,8 +590,8 @@ settings_bind(
 		return;
 	}
 
-	/* Binds the manager, on the queue as the registry is; the registry is not needed after. */
-	settings->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, KL_SYSTEM_MANAGER_VERSION);
+	/* Binds the manager at version 1 (the settings need no more), on the queue as the registry is; the registry is not needed after. */
+	settings->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, 1U);
 	if (settings->manager == NULL) {
 		wl_registry_destroy(registry);
 		return;
