@@ -1,0 +1,79 @@
+{
+  "scope": "fixed stock 1.1.0 source, native API mocks and private socketpair only",
+  "source_sha256": {
+    "src/venus/vkr_queue.c": "63f15e3409ab43235e2a97eb6227b31cad06f935b0a170d613b321c8455d549d",
+    "src/venus/vkr_queue.h": "7e8952a124c4c421cda3bf05942e1a6dbe1f520bcf465ee2d50f664c7053c5c3",
+    "src/proxy/proxy_context.c": "3fb8ec75e7c0dfd0460402705d224cc843b348547b2641553eff15d7224e83de"
+  },
+  "results": [
+    {
+      "case": "queue",
+      "profile": "ordinary",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.4658072720048949,
+        "log": "/tmp/q312-stock-evidence/queue-ordinary.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.002377635973971337,
+        "log": "/tmp/q312-stock-evidence/queue-ordinary.run.log"
+      }
+    },
+    {
+      "case": "queue",
+      "profile": "sanitized",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.8682852060301229,
+        "log": "/tmp/q312-stock-evidence/queue-sanitized.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.007834568968974054,
+        "log": "/tmp/q312-stock-evidence/queue-sanitized.run.log"
+      }
+    },
+    {
+      "case": "proxy",
+      "profile": "ordinary",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.31552680500317365,
+        "log": "/tmp/q312-stock-evidence/proxy-ordinary.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.0021177619928494096,
+        "log": "/tmp/q312-stock-evidence/proxy-ordinary.run.log"
+      }
+    },
+    {
+      "case": "proxy",
+      "profile": "sanitized",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.4659434820059687,
+        "log": "/tmp/q312-stock-evidence/proxy-sanitized.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.017374527000356466,
+        "log": "/tmp/q312-stock-evidence/proxy-sanitized.run.log"
+      }
+    }
+  ],
+  "pass": true
+}

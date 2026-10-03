@@ -1,0 +1,76 @@
+{
+  "source_version": "virglrenderer 1.1.0",
+  "source_baseline": "pinned /tmp/q308-virglrenderer-1.1.0",
+  "patch_sha256": "04def7cd3fd9e50fad62ff98298a9e34880ce793de4b5942d5a908dd0132379f",
+  "source_licenses_preserved": true,
+  "changed_files": {
+    "server/render_client.c": {
+      "before_sha256": "89e9c59d9b20330720fe718fdc44f3e7b17678404f8f3f4da673612aeb0921d8",
+      "after_sha256": "eb5333a98c7ae9e0b80a5932f3ddc7872d2eb2d1a2970aced94bf5baa73bc20c"
+    },
+    "server/render_context.c": {
+      "before_sha256": "9e3936a4dc4e32b3c9f1c8bf500b7c2f4769ccbeb1fed01f3758f9567a7669fc",
+      "after_sha256": "33b0fa13d84fdf091aa2f88df4dffc8bd72491611ff5ed2c8aa567ecad1a07cd"
+    },
+    "server/render_protocol.h": {
+      "before_sha256": "e85e522f09b47faa0c42eb0957af7f1904706b4e29d956967a19be80ed80f35a",
+      "after_sha256": "0658d25f10a8613ede516a190baebcd5b67c04f636b640a11125131030855a2e"
+    },
+    "server/render_state.c": {
+      "before_sha256": "b1406ee3b789f908d38a14e6f37749a855757baa4a40d589466e5aab6ab0665d",
+      "after_sha256": "8ecfd81b83565782655ca5d4af3fefda7d96cccf2ba3ded7d4519d613f4d80c9"
+    },
+    "server/render_state.h": {
+      "before_sha256": "73556544cecaa97047d2a2f653506d9ebb67a435a8da33378ec76b3fa8c7ae68",
+      "after_sha256": "37ace8491369610085fee66dcfca38f7d7e0a476934a6bfd39a7a47c68a8b127"
+    },
+    "src/proxy/proxy_client.c": {
+      "before_sha256": "77797e13e8a30e820042933bcbbb0c82da98383ea65288e130aa229f23e353bc",
+      "after_sha256": "5a225fbdadc6e0fbdccf2706e2397a5b398c30255fee0c4a10354b2c18bc4c3f"
+    },
+    "src/proxy/proxy_client.h": {
+      "before_sha256": "67bc2c06f14d693b95fc39018f891cae72a3701676a80811b6fcd5eef692f327",
+      "after_sha256": "dd70eb15e65d92ede58a670d15748a2c5815dd734e9b6e7eae3259ec83aef4aa"
+    },
+    "src/proxy/proxy_context.c": {
+      "before_sha256": "3fb8ec75e7c0dfd0460402705d224cc843b348547b2641553eff15d7224e83de",
+      "after_sha256": "055a255a34fef47221c10bd1cc30f38646906af89d072aa3252ec0ac7d5dfb3d"
+    },
+    "src/proxy/proxy_renderer.c": {
+      "before_sha256": "47889f5264c3092930dc682e489d43f04ec5034ad44d32af4b69dd43459500f0",
+      "after_sha256": "58a6b9665ad0d8ac56053290f67ec8647bf848a6f0205e75d9bfcec637872e8c"
+    },
+    "src/venus/vkr_context.c": {
+      "before_sha256": "f91fa982b7b03ac0f1a4e000469a1aed1bbe74de9f5bb555d3f042c15e10da33",
+      "after_sha256": "020d019e86e8f4402fa121e5a58c5881fdbaa1b28edd05b2d94dca02003af134"
+    },
+    "src/venus/vkr_context.h": {
+      "before_sha256": "d555606485a086eadd83f83f1c55291323704ded45880973287310a8ea2e6ec4",
+      "after_sha256": "90aa7228c9134b6cf2194c5c84ebee79d30ca6606c03ae8a558728dfd5a656e6"
+    },
+    "src/venus/vkr_device_memory.c": {
+      "before_sha256": "d4493cc7000079292b191809d3f6e06f771e9c22805cdbc9efe26988548c228b",
+      "after_sha256": "63fa567b212d7fa8a9d2df564a5b715c5ffdd2cbf3a81ace114ed6b18064b495"
+    },
+    "src/venus/vkr_renderer.c": {
+      "before_sha256": "1d11405f349b23fce6e6932d0c1e997408484e94442e44042c7b424727d31200",
+      "after_sha256": "7599cdd1c75ecd685cc1c3a31077a83c806736b696101380806b0525afd6c032"
+    },
+    "src/venus/vkr_renderer.h": {
+      "before_sha256": "302aa9b83db016976c048798c7a6a1f75ea2d73d93c1891051d0a9e799ea08d2",
+      "after_sha256": "3f041f4b9c982257a17eaf5b023e1f6ef5b165919c5def116da6b146393fed4e"
+    },
+    "src/venus_hw.h": {
+      "before_sha256": "7bc1a8195294d681f4081719e7c4dfea396765e82b5583a2471fad9705aab64e",
+      "after_sha256": "4bee9e6aa17d300a946af8613cfc6a5674cff50098aa2ecc65fbba3e5f61baeb"
+    }
+  },
+  "vendor_capset": {
+    "size": 168,
+    "magic": 1514292307,
+    "flags": 1,
+    "requires_init_ack": true
+  },
+  "system_libraries_modified": false,
+  "independent_review_fix": "INIT dispatch rejection terminates the connection; protocol-only negative reproduction retained."
+}

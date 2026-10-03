@@ -1,0 +1,74 @@
+[
+  {
+    "original": "/tmp/q310-fence-close-before.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-fence-close-before.log",
+    "bytes": 103,
+    "sha256": "f0a7cdbbfb8bfa13d82c3143f940e4531f1c50f0c70d8a038d177152878e2845"
+  },
+  {
+    "original": "/tmp/q310-fence-close-after.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-fence-close-after.log",
+    "bytes": 260,
+    "sha256": "447a8ef099cc489b83067acabc88e216a4d41046455d0a315bf6fcea35f35ca6"
+  },
+  {
+    "original": "/tmp/q310-fence-close-existing.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-fence-close-existing.log",
+    "bytes": 254,
+    "sha256": "1b1d9fa3b50200ef845714dea4b8341e8776e930f2bf1da013d3b3aaa13d6117"
+  },
+  {
+    "original": "/tmp/q310-venus-backend-final-retry.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-venus-backend-final-retry.log",
+    "bytes": 134,
+    "sha256": "513765a2fb367df0b6dfbb1f0db91e6f02cce5ba530c160dc160495fd122f073"
+  },
+  {
+    "original": "/tmp/q310-venus-sharing-final-retry.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-venus-sharing-final-retry.log",
+    "bytes": 332,
+    "sha256": "4740652e0aedf318b519bb44ea1ca13015e385ddf472789c2ef8e07240ce0d4f"
+  },
+  {
+    "original": "/tmp/q310-venus-edid-final-retry.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-venus-edid-final-retry.log",
+    "bytes": 382,
+    "sha256": "7b9bce50c4a3d13fd31365c54d8bc1ca6fe540552738fc83622c1d5a7c2a5a3f"
+  },
+  {
+    "original": "/tmp/q310-transport-topology.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-transport-topology.log",
+    "bytes": 866,
+    "sha256": "6a55160efc59c9cab7854f9c189dbd713e56922ae184a76d37047b89e6b6a645"
+  },
+  {
+    "original": "/tmp/q310-gpu-topology.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-gpu-topology.log",
+    "bytes": 314,
+    "sha256": "9a7441eee810d4940daff7efac135dd735a34157aa5c630d178cec2767f85b59"
+  },
+  {
+    "original": "/tmp/q310-gpu-placement.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-gpu-placement.log",
+    "bytes": 312,
+    "sha256": "a0ec0133f4335dbd5ef1e864aa16cf5153faa30095e244277c666bd250a4754d"
+  },
+  {
+    "original": "/tmp/q310-topology-placement-abi.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-topology-placement-abi.log",
+    "bytes": 69,
+    "sha256": "5f38718d57887c28011c242b1ba093722fd14d89ed49938c52b61b67b7983183"
+  },
+  {
+    "original": "/tmp/q310-final-close-build.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-final-close-build.log",
+    "bytes": 22550,
+    "sha256": "0a7c2fb8e0c1f4c95f4ed06426d3e05f0a5abed17fa246beea25c61b1ebdded7"
+  },
+  {
+    "original": "plan/ws014/temp/q310-placement-enotty.log",
+    "retained": "plan/ws014/phase007/verification-logs/q310-placement-enotty.log",
+    "bytes": 382,
+    "sha256": "8054e5d697eed49975dfa89a19bae283c70462e693f4b02e81b652d5add15db0"
+  }
+]

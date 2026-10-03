@@ -1,0 +1,91 @@
+<!-- awesome-plan project=zedbsd record=ws104-p007 -->
+
+# ws104-p007: install の path を `userland/desktop/paths.h` の macro に
+
+Status: cleared
+Disposition: normal
+Parent: [WS104](../../../ws104/ws.md)
+Queue: q521 / q521-i01
+依存: p003・p006（patch が p003 の後の tree に当たるように作ってあり、p004〜p006 は `wayland/*.c` を変えるので、それらの後に当てる）
+実行者: Codex Q1 / main（現在の Master N=0。委任せず実行した実績）
+
+## 目的
+
+desktop の source は、自分たちが install される場所を文字列で直書きしている（`/bin/terminal`・`/usr/share/fonts/keiland.ttf`・`/etc/keiland/apps.conf`・
+`/usr/libexec/keiland-ime` など、26 file・61 行）。Linux（WS105）では全てが `/opt/keiland/` の下に入る（決定 D1）。path を 1 つの header の macro にし、
+zedBSD の build では**今と全く同じ文字列**になり、Linux の build（`keiland-linux.mk`）は `-D` で上書きする。
+
+## 用意してある物
+
+- [`../patches/p007.patch`](../design/p007.patch): 新しい `userland/desktop/paths.h` と 26 file の置き換え・include の追加、host の試験の script 7 つの `-I.`。
+- [`../patches/p007-table.txt`](../design/p007-table.txt): 置き換えた全ての行の前と後。
+- survey の確かめ（2026-10-01、copy の tree）: 置き換えた 26 個の `.c`（と header を通して影響を受ける `ui.c`・`textedit/text.c`・`browser/view/view.c`）を target で前後に
+  compile し、**object が byte で同じ**（文字列が同じ）。host の試験（files `host-build`・`host-default`、ws094 `host-thumb`、textedit `host-core`、ws089 `host-build`、ws074 `host-build`）が通る。
+  ws094 `host-desktop` は survey の copy の tree では font の確かめ 2 つで落ちた（変える前の copy でも同じ）が、main の checkout では PASS する（2026-10-01、WS094 の guide の調べ）。main で前後に走らせて比べる。
+- `paths.h` の macro と zedBSD の値: `KEILAND_BINDIR` `"/bin"`、`KEILAND_LIBEXECDIR` `"/usr/libexec"`、`KEILAND_DATADIR` `"/usr/share"`、`KEILAND_SYSCONFDIR` `"/etc"`
+  （それぞれ `#ifndef` で囲み、Linux の build が `-D` で上書きする）。path は「macro + 残りの文字列」で書く（`KEILAND_BINDIR "/terminal"` は zedBSD では `"/bin/terminal"`）。
+
+残す物（2026-10-01 の Q1 の決定）:
+
+- `"/bin/sh"`（system の shell）と、command の文字列の先頭の `"/bin/sh "`。
+- `userland/desktop/keiland/keiui.h:73` の `KUI_TEXT_EMOJI`（公開の header は repo の `paths.h` を include できない。WS105 p008 で `libkeiui/text.c` の側で扱う）。
+- `files/apps.c:111` の `apps_program_folders[]`（Open With の program を探す directory の一覧。WS105 p008 で `KEILAND_BINDIR` を足す）。
+- `/tmp/wayland-0`・`/tmp/.X11-unix`・`/run`・`/dev`・`/etc/resolv.conf` などの OS の path、`sessiond/`。
+
+## 手順（`<W>` は `ws104-p007`）
+
+1. 前の文字列を取る（今の build の物）:
+   ```
+   mkdir -p build/ws104-p007
+   make -j64 disk-image > build/ws104-p007/build-before.log 2>&1; echo "make exit=$?"
+   for f in build/amd64/bin/* build/amd64/dynamic/*.so; do echo "== $f"; strings -a "$f" | grep -E '^/(usr|etc|bin)/' | LC_ALL=C sort -u; done > build/ws104-p007/strings-before.txt
+   ```
+2. patch を当てる:
+   - phase-runner: `git apply --exclude='plan/*' plan/ws104/patches/p007.patch`、main に「`git apply --include='plan/*' plan/ws104/patches/p007.patch`」を頼む。
+   - main: `git apply plan/ws104/patches/p007.patch`
+   - **当たらないとき**（p004〜p006 で `wayland/*.c` の行が動いたため）: `git apply --reject` で当たらない hunk を `.rej` に出し、`p007-table.txt` の OLD/NEW の行を文字列で探して手で直す。
+     include の追加の場所は下の表。全て直したら `.rej` を消す。
+3. 残りが無いこと:
+   ```
+   grep -rn --include=*.c --include=*.h -E '"/(usr/share|usr/libexec|etc/keiland|bin/|usr/bin/)' userland/desktop \
+     | grep -v -e '^userland/desktop/sessiond/' -e '"/bin/sh"' -e '"/bin/sh "' -e '^userland/desktop/paths.h:' -e '^userland/desktop/keiland/' | wc -l
+   ```
+   `0`。
+4. build と warning の数え（[commands.md](../../../tools/keiland-linux/zedbsd-commands.md) §1、`build/ws104-p007/build.log`）。後の文字列が同じ:
+   ```
+   for f in build/amd64/bin/* build/amd64/dynamic/*.so; do echo "== $f"; strings -a "$f" | grep -E '^/(usr|etc|bin)/' | LC_ALL=C sort -u; done > build/ws104-p007/strings-after.txt
+   diff build/ws104-p007/strings-before.txt build/ws104-p007/strings-after.txt && echo STRINGS-SAME
+   ```
+5. host の試験: `sh plan/tools/files/host-build.sh`、`sh plan/tools/textedit/host-core.sh`、`sh plan/ws089/tests/host-build.sh`（いずれも exit 0）。
+6. compositor の基準（commands.md §5。App Home からの app の起動を含む）: 全て PASS。
+7. boot test（`OUTPUT=build/ws104-p007/boot`）。
+8. commit: `git commit -m WIP -- userland/desktop`（main は `plan/tools/files plan/tools/textedit plan/ws074/tests/host-build.sh plan/ws089/tests/host-build.sh plan/ws094/tests` も）。
+
+## include を足す場所（patch が当たらないときの手作業の目安）
+
+`KEILAND_*` を書いた file は自分で `#include "userland/desktop/paths.h"` する（3 つの header（`files/files.h`・`textedit/textedit.h`・`browser/text/text.h`）を含む）。
+
+| 場所 | file |
+| --- | --- |
+| その file 自身の quote の include の後（前後に空行） | `files/apps.c`・`files/ui-desktop-actions.c`・`files/ui-desktop.c`（`"files.h"` の後）、`files/files.h`（`"ops.h"`）、`files/main.c`・`imageview/main.c`・`libkeiui/chooser.c`・`pdfviewer/main.c`・`settings/main.c`・`textedit/main.c`（`"window.h"`）、`ime/main.c`（`"program.h"`）、`mview/main.c`（`"mview.h"`）、`notes/main.c`（`"app.h"`）、`settings/look.c`（`"settings.h"`）、`terminal/main.c`（`"terminal.h"`）、`wayland/corner.c`（`"menu.h"`）、`wayland/desktop.c`（`"popup.h"`）、`wayland/home.c`（`"glass.h"`）、`wayland/input-method.c`（`"titlebar.h"`） |
+| 公開の header の group の後 | `browser/main.c`（`<browser.h>`）、`wayland/glass.c`（`<truetype.h>`）、`kuidemo/main.c`・`textedit/textedit.h`（`<keiui.h>`） |
+| 同じ group（空行無し） | `browser/text/text.h`（`"base/base.h"`）、`wayland/main.c`（`"data.h"`）、`xserver/server.c`（`"userland/desktop/xserver/internal.h"`） |
+
+## 完了の条件
+
+- 手順 3 が 0、手順 4 の `STRINGS-SAME` と warning 0、手順 5〜7 が PASS。
+
+## 結果
+
+q521-i01 cleared（2026-10-01T04:42:00.543038+00:00）。
+
+cleared（q521）。paths.h の BINDIR / LIBEXECDIR / DATADIR / SYSCONFDIR で desktop の install path を指定し、zedBSD の値を保持。26 file の 61 行と include、host script 7 本の -I. を準備済み patch で更新（p006 後の main.c の include hunk のみ手順どおり調整）。旧 install literal の残り 0。amd64 build exit 0、自前 warning 0。bin/* と dynamic/*.so の該当 path 文字列は前後一致。host 7 本 exit 0、desktop は前後 PASS、Textedit 34/34、Files default・thumbnail PASS。paths.h style-check 0、C1/C2/C9 13/13、boot PASS。p072 全 6 PNG と login PNG を目視し login は提示済み。証拠: plan/history/ws104/q521/（boundary-checks.json、strings-before.txt、strings-after.txt、host-summary.txt、criteria-results.txt、login.png）。system shell / 公開 emoji header / Open With の bare directory / OS path / sessiond は合意どおり保持。実装 cec34d3e（WIP）、実行者 main / Codex Q1、未達条件なし。実機・Linux 未実施、GitHub 未公開。
+
+
+Implementation: `cec34d3e1871e30290e471562b0d6c9c25da3f20`（WIP）。詳細 log: `build/ws104-p007/`（一時物）。実機・Linux は未実施。GitHub へは未公開。
+
+Execution started UTC: 2026-10-01T04:14:21.528421+00:00。Approval: current user, 2026-10-01「お、いい調子ですね！その調子で、ws104の完了まで自律的に作業を進めてください。」。既存 WS104 p002〜p008 全範囲、依存順の 1 Phase Queue と検証・記録・WIP commit を承認。push / GitHub 公開は承認対象外。
+
+### Checkpoint 2026-10-01T04:18:10.782845+00:00 / q521
+
+実装 cec34d3e（WIP）。26 file の install path を paths.h の 4 macro に変え、host script 7 本の -I. を追加。main.c の include hunk だけ p006 後の group に合わせて手順どおり適用。他の人の未 commit の変更は無かった。amd64 build exit 0、自前 warning 0、install literal の残り 0、binary の path 文字列は前後一致。host 7 本 exit 0（desktop は前後 PASS、textedit 34/34、Files default と thumbnail PASS）。paths.h の style-check 0。boot PASS、login PNG を目視・提示済み。C1/C2/C9 の専用 image と回帰を継続中。実機・Linux 未実施、GitHub 未公開。

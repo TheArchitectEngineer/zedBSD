@@ -1,0 +1,66 @@
+{
+  "event": "p002",
+  "verified_at": "2026-09-14T01:52:54.764750+00:00",
+  "records": {
+    "ws029": {
+      "url": "https://github.com/awemorris/zedBSD/issues/386",
+      "state": "open",
+      "body_sha256": "abf6da64beecd56f6b062762a03cdf01ee1ebc5a519b4d65289bdb3895b93755"
+    },
+    "master": {
+      "url": "https://github.com/awemorris/zedBSD/issues/1",
+      "state": "open",
+      "body_sha256": "6bd329f760932a90d32d8bc01fb4a2787101e254c974372053212c0c0c2f319b"
+    },
+    "queue": {
+      "url": "https://github.com/awemorris/zedBSD/issues/362",
+      "state": "open",
+      "body_sha256": "dfbacced61309c2a1858319a661534992df7562911a8f7bc614fb946b2202461"
+    },
+    "guardrail": {
+      "url": "https://github.com/awemorris/zedBSD/issues/363",
+      "state": "open",
+      "body_sha256": "656c2557b53e5ae52b9be61acd79316e990d829f9fa0f3f9ac4d36d1a701b94d"
+    },
+    "past-log": {
+      "url": "https://github.com/awemorris/zedBSD/issues/366",
+      "state": "open",
+      "body_sha256": "fd74821ab82419eec76ac82ea09f156d44e5f28281cb5a4ceec621300bd91106"
+    },
+    "ws029-p001": {
+      "url": "https://github.com/awemorris/zedBSD/issues/398",
+      "state": "closed",
+      "body_sha256": "7819b3d14ed594d47d060f55c557f95cbae434ea8bec8cb5df8dca87f56f6d4e"
+    },
+    "ws029-p002": {
+      "url": "https://github.com/awemorris/zedBSD/issues/399",
+      "state": "closed",
+      "body_sha256": "675499ddd44131fd3e8a7f7effd6db38f7466599b09e3ce725b00e2271eb60c1"
+    },
+    "ws029-p003": {
+      "url": "https://github.com/awemorris/zedBSD/issues/400",
+      "state": "open",
+      "body_sha256": "f7619166ff50a4897cec64a3ba542ed20772c31b0c8311a7a83ecea79b62b496"
+    },
+    "ws029-p004": {
+      "url": "https://github.com/awemorris/zedBSD/issues/401",
+      "state": "open",
+      "body_sha256": "a8ddd3df078c13426d0ce5fed09280759956b688936708042eedf6bc55830104"
+    },
+    "ws029-p005": {
+      "url": "https://github.com/awemorris/zedBSD/issues/402",
+      "state": "open",
+      "body_sha256": "450877e014255f52282c4a26a9531c6b477a8a2b08e2313b8315e0cf7f3e5949"
+    },
+    "ws029-p006": {
+      "url": "https://github.com/awemorris/zedBSD/issues/403",
+      "state": "open",
+      "body_sha256": "07130b39ee76990c92898a109c66f62c19dc6eeb47090e7349fd0db5d593d731"
+    },
+    "ws029-p007": {
+      "url": "https://github.com/awemorris/zedBSD/issues/404",
+      "state": "open",
+      "body_sha256": "28a67d23ae1c669e807bb34412b1b57c549dcf3b932c4927507e60e8d95b8216"
+    }
+  }
+}

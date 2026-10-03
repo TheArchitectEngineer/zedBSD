@@ -1,0 +1,184 @@
+{
+  "queue": "q311",
+  "phase": "ws014-p008",
+  "body_records": {
+    "ws014-p008": {
+      "url": "https://github.com/awemorris/zedBSD/issues/395",
+      "hash": "00ce747acbd23d0f265fc4e15e8ff4f5bf51dd3d881e5ebe72ee1e3fa6162ac9",
+      "state": "open"
+    },
+    "ws014": {
+      "url": "https://github.com/awemorris/zedBSD/issues/15",
+      "hash": "0421e8af026fe31a364b99a5af00634b5efe5b4c7c443265c09af585b9699b5f",
+      "state": "open"
+    },
+    "queue": {
+      "url": "https://github.com/awemorris/zedBSD/issues/362",
+      "hash": "14cb8d44edc1f65f126cf3e5626bb03dc65d4892bd086e4504f9a133eb1e7619",
+      "state": "open"
+    },
+    "master": {
+      "url": "https://github.com/awemorris/zedBSD/issues/1",
+      "hash": "aa7629239653a7f63e4dff8e56b02dd9e53d883a1aa0f9ab4ff4d34865b3f13d",
+      "state": "open"
+    },
+    "guardrail": {
+      "url": "https://github.com/awemorris/zedBSD/issues/363",
+      "hash": "9e024669fa15b90ea0110cff681a3ef4d8ca00f5e470419b62e020cf5dd7733a",
+      "state": "open"
+    },
+    "past-log": {
+      "url": "https://github.com/awemorris/zedBSD/issues/366",
+      "hash": "00fe19af63e2b0d2ec2ff9a68c91bb96240ce00005056e71750c2f93574468bd",
+      "state": "open"
+    },
+    "ws014-p004": {
+      "url": "https://github.com/awemorris/zedBSD/issues/385",
+      "hash": "3ed4bbbe43ff812dd5a67e5bea90e1af3e526faa2ff00f28d442ad96b407fc12",
+      "state": "open"
+    },
+    "ws014-p007": {
+      "url": "https://github.com/awemorris/zedBSD/issues/394",
+      "hash": "b96ac081dade56114f83c33c8f97ee8127ca236e518461c9c22b452595293668",
+      "state": "closed"
+    }
+  },
+  "project": {
+    "ws014-p008": {
+      "state": "OPEN",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6tSU0",
+      "fields": {
+        "Title": "[ws014-p008] GPU完了責任・fence所属と描画資源の改善",
+        "Status": "In Progress",
+        "Logical ID": "ws014-p008",
+        "Record Kind": "Phase",
+        "Awesome Plan Status": "in-progress",
+        "Phase Disposition": "normal",
+        "Primary Milestone": "MG006",
+        "Related Milestones": "MG003",
+        "Objectives": "O2, O4",
+        "Parent WS": "ws014",
+        "Queue ID": "q311",
+        "Queue Item Status": "in-progress",
+        "Planning Category": "Current Queue",
+        "Current Focus": "No",
+        "Status Note": "q311 active: p008 GPU completion/driver fence/WSI resources. p007 cleared; p004 waits, i915 stays WS029."
+      }
+    },
+    "ws014": {
+      "state": "OPEN",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6WJs0",
+      "fields": {
+        "Title": "WS014: virtio-gpu bring-up",
+        "Status": "In Progress",
+        "Logical ID": "ws014",
+        "Record Kind": "WS",
+        "Planning Category": "Current Queue",
+        "Current Focus": "No",
+        "Primary Milestone": "MG006",
+        "Related Milestones": "MG003",
+        "Objectives": "O2, O4",
+        "Awesome Plan Status": "incomplete",
+        "Status Note": "q311 active: p008 GPU completion/driver fence/WSI resources. p007 cleared; p004 waits, i915 stays WS029.",
+        "Queue ID": "q311"
+      }
+    },
+    "queue": {
+      "state": "OPEN",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6W0f0",
+      "fields": {
+        "Title": "[Awesome Plan] Queue",
+        "Logical ID": "queue",
+        "Record Kind": "Board",
+        "Planning Category": "Current Queue",
+        "Awesome Plan Status": "active",
+        "Queue ID": "q311",
+        "Status Note": "q311 active: p008 GPU completion/driver fence/WSI resources. p007 cleared; p004 waits, i915 stays WS029.",
+        "Queue Item Status": "in-progress"
+      }
+    },
+    "master": {
+      "state": "OPEN",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6WJq8",
+      "fields": {
+        "Title": "[Awesome Plan] Master Board",
+        "Status": "Todo",
+        "Logical ID": "master",
+        "Record Kind": "Board",
+        "Planning Category": "Other",
+        "Current Focus": "No",
+        "Status Note": "q311 active: p008 GPU completion/driver fence/WSI resources. p007 cleared; p004 waits, i915 stays WS029."
+      }
+    },
+    "guardrail": {
+      "state": "OPEN",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6W0h4",
+      "fields": {
+        "Title": "[Awesome Plan] Guardrail",
+        "Logical ID": "guardrail",
+        "Record Kind": "Board",
+        "Status": "Todo",
+        "Planning Category": "Other",
+        "Status Note": "q311 authorized. Fence belongs to GPU framework; generic opaque handle only in kern. No new HAL approval or git publication."
+      }
+    },
+    "past-log": {
+      "state": "OPEN",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6W0oE",
+      "fields": {
+        "Title": "[Awesome Plan] Past Log",
+        "Logical ID": "past-log",
+        "Status": "Todo",
+        "Record Kind": "Board",
+        "Planning Category": "Other",
+        "Status Note": "q311 active: p008 GPU completion/driver fence/WSI resources. p007 cleared; p004 waits, i915 stays WS029."
+      }
+    },
+    "ws014-p004": {
+      "state": "OPEN",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6oh0M",
+      "fields": {
+        "Title": "[ws014-p004] 最終API整理・規約全文確認",
+        "Status": "Todo",
+        "Awesome Plan Status": "planning",
+        "Status Note": "Planning, unqueued. Depends on p008 completion after cleared p007. Final GPU API/standards review before WS029.",
+        "Logical ID": "ws014-p004",
+        "Record Kind": "Phase",
+        "Primary Milestone": "MG006",
+        "Related Milestones": "MG003",
+        "Objectives": "O2, O4",
+        "Current Focus": "No",
+        "Planning Category": "Outlook",
+        "Parent WS": "ws014",
+        "Phase Disposition": "normal"
+      }
+    },
+    "ws014-p007": {
+      "state": "CLOSED",
+      "item_id": "PVTI_lAHOC2X95c4BjFGlzg6rz1o",
+      "fields": {
+        "Title": "[ws014-p007] GPUレビュー対応・BLOB直接表示・同期と転送性能の改善",
+        "Status": "Done",
+        "Logical ID": "ws014-p007",
+        "Record Kind": "Phase",
+        "Awesome Plan Status": "cleared",
+        "Phase Disposition": "normal",
+        "Queue ID": "q310",
+        "Queue Item Status": "cleared",
+        "Planning Category": "Other",
+        "Status Note": "Cleared q310, acceptance retained. Follow-up review3/driver fence improvements now independent p008 in q311."
+      }
+    }
+  },
+  "public_project": true,
+  "linked_repository": {
+    "nodes": [
+      {
+        "nameWithOwner": "awemorris/zedBSD"
+      }
+    ]
+  },
+  "verified_at": "2026-09-13T08:11:25.869014+00:00",
+  "source_started": false,
+  "repository_publication": "user owns git add/commit/push"
+}

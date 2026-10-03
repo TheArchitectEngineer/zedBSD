@@ -1,0 +1,14 @@
+Venus strict profile: exact flags/magic, legacy rejection, descriptor negotiation PASS
+Venus jobs: 28 reservations + 4 control, no-allocation commit, reverse IRQ, 16-bit wrap PASS
+Venus job policy: capacity, common deadlines, late retirement, unknown reserved, isolated idle and global quarantine PASS
+Venus IRQ: out-of-order contexts, exact-once callbacks, fence/ring identity, 3 markers + reserved decoder and runtime sleeping PASS
+Venus topology INTx: read-clear, config-only, queue coexistence, saturation and unlocked poll wake PASS
+Venus topology MSI-X: shared vector, config-only, queue coexistence, saturation and unlocked poll wake PASS
+Venus transport: whole-BAR/capset/queue-wrap/async-wait/stalled-clock/timeout/reset PASS
+Venus strict profile: exact flags/magic, legacy rejection, descriptor negotiation PASS
+Venus jobs: 28 reservations + 4 control, no-allocation commit, reverse IRQ, 16-bit wrap PASS
+Venus job policy: capacity, common deadlines, late retirement, unknown reserved, isolated idle and global quarantine PASS
+Venus IRQ: out-of-order contexts, exact-once callbacks, fence/ring identity, 3 markers + reserved decoder and runtime sleeping PASS
+Venus topology INTx: read-clear, config-only, queue coexistence, saturation and unlocked poll wake PASS
+Venus topology MSI-X: shared vector, config-only, queue coexistence, saturation and unlocked poll wake PASS
+Venus transport: whole-BAR/capset/queue-wrap/async-wait/stalled-clock/timeout/reset PASS

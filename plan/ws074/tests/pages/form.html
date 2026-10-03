@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Form controls</title>
+<style>
+body { font-family: sans-serif; font-size: 14px; }
+p { margin: 6px 0; }
+.big { font: 18px sans-serif; width: 300px; height: 25px; padding: 5px 8px 0 6px; }
+.flat { border: none; background: #f3f5f6; height: 30px; font: 15px sans-serif; }
+#hint { text-indent: 8px; }
+</style>
+</head>
+<body>
+<form id="search" action="results.html" method="get">
+<p>Name <input id="name" name="name" size="20"> after</p>
+<p>Query <input id="query" class="big" name="q" value="kei" maxlength="12"></p>
+<p>Secret <input id="secret" type="password" name="secret" value="abc"></p>
+<p>Hint <input id="hint" name="hint" placeholder="Type here"></p>
+<p><input id="agree" type="checkbox" name="agree" checked> Agree
+<input id="news" type="checkbox" name="news" value="yes"> News</p>
+<p><input id="red" type="radio" name="color" value="red" checked> Red
+<input id="blue" type="radio" name="color" value="blue"> Blue</p>
+<p>Kind <select id="kind" name="kind"><option value="all">Everything</option><option value="books" selected>Books and more</option></select></p>
+<p><textarea id="notes" name="notes" cols="24" rows="3">first line
+second</textarea></p>
+<input type="hidden" name="source" value="hp">
+<p><input id="go" type="submit" name="btn" value="Search"> <input id="lucky" type="submit" name="lucky" value="Lucky"> <input type="button" value="Plain"> <button id="b" type="button">Button</button> <input class="flat" type="submit" value="Flat"></p>
+</form>
+<p><input id="outside" value="no form"></p>
+<form id="latin" action="latin.html?old=1#top" accept-charset="ISO-8859-1"><p><input id="lat" name="t"> <input type="submit" value="Go"></p></form>
+<form id="post" action="post.html" method="post"><p><input id="posted" name="p"></p></form>
+<script>
+var log = function (text) { console.log(text); };
+document.getElementById("search").addEventListener("submit", function (event) { log("submit " + event.target.id); });
+document.getElementById("query").addEventListener("input", function () { log("input query"); });
+document.getElementById("news").addEventListener("change", function () { log("change news"); });
+</script>
+</body>
+</html>

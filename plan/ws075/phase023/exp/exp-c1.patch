@@ -1,0 +1,15 @@
+diff --git a/userland/desktop/wayland/backdrop.c b/userland/desktop/wayland/backdrop.c
+index 98c623ac..04689f9f 100644
+--- a/userland/desktop/wayland/backdrop.c
++++ b/userland/desktop/wayland/backdrop.c
+@@ -64,6 +64,10 @@ zwl_backdrop_begin(
+ 	struct zwl_backdrop *backdrop;
+ 	VkResult result;
+ 
++	/* ws075-p023 experiment (c1): no backdrop; the glass keeps the blurred wallpaper. */
++	if (server != NULL)
++		return 0;
++
+ 	/* The images, made the first time (a failure is remembered). */
+ 	compose = server->compose;
+ 	backdrop = &compose->backdrop;

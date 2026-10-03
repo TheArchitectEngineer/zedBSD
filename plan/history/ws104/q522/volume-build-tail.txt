@@ -1,0 +1,12 @@
+build/zedimage-host disk --machine pcat --layout native \
+ --kernel build/ws104-p008-volume/vmunix --bootx64 build/ws104-p008-volume/uefi/BOOTX64.EFI \
+ --zedbsd-config build/ws104-p008-volume/zedbsd-native-uefi-graphical-y-kmsg-n.cfg --logo build/ws104-p008-volume/boot-logo.ppm \
+ --ufs-root build/ws104-p008-volume/arch-images/amd64-native-root-1024m.ufs --swapfile build/ws104-p008-volume/native-swap-1024m.img \
+ build/ws104-p008-volume/hdd-image.img.unchecked
+python3 platform/amd64/tools/check-amd64-native-image.py \
+ --kernel build/ws104-p008-volume/vmunix --bootx64 build/ws104-p008-volume/uefi/BOOTX64.EFI \
+ --zedbsd-config build/ws104-p008-volume/zedbsd-native-uefi-graphical-y-kmsg-n.cfg --logo build/ws104-p008-volume/boot-logo.ppm \
+ --ufs-root build/ws104-p008-volume/arch-images/amd64-native-root-1024m.ufs --swap build/ws104-p008-volume/native-swap-1024m.img \
+ build/ws104-p008-volume/hdd-image.img.unchecked
+check-amd64-native-image: build/ws104-p008-volume/hdd-image.img.unchecked: OK
+mv -f build/ws104-p008-volume/hdd-image.img.unchecked build/ws104-p008-volume/hdd-image.img

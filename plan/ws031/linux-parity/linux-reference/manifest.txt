@@ -1,0 +1,121 @@
+================================================================================
+linux-reference / manifest.txt   (rev2, M0)
+WS031 Linux-parity port — FIXED reference environment
+Captured 2026-09-16 from the running positive-control system on host 10.0.10.25.
+This environment is FROZEN. Do not upgrade the kernel, i915, firmware, or QEMU
+config. All parity comparisons are made against THIS version only.
+================================================================================
+
+[GUEST KERNEL]
+  uname            : 6.8.0-139-generic
+  /proc/version_signature : Ubuntu 6.8.0-139.139-generic 6.8.12
+  distro           : Ubuntu 24.04 (noble) cloud image, gcc-13 / binutils 2.42
+  i915.ko          : /lib/modules/6.8.0-139-generic/kernel/drivers/gpu/drm/i915/i915.ko.zst
+  i915 vermagic    : 6.8.0-139-generic SMP preempt mod_unload modversions
+  i915 srcversion  : F4AF37620F4AC270E54227A
+  i915 drm version : Initialized i915 1.6.0 20230929
+
+[SOURCE PACKAGE — canonical 正本]
+  source:Package   : linux      source:Version : 6.8.0-139.139
+    (from: dpkg-query -W -f='${source:Package}\t${source:Version}' linux-modules[-extra]-6.8.0-139-generic)
+  acquired via     : apt-get source --only-source linux=6.8.0-139.139  (deb-src enabled in guest)
+  file sha256:
+    linux_6.8.0-139.139.dsc          40fb1a41e084f8f923cbea43fe2ffc491e7bd3c247672018f0aa97ef3e352558
+    linux_6.8.0.orig.tar.gz          26512115972bdf017a4ac826cc7d3e9b0ba397d4f85cd330e4e4ff54c78061c8
+    linux_6.8.0-139.139.diff.gz      c18cf1db6c7ed0ad5cf7d651de117b415f17e05baaeefb13a4a2306e94e9ae57
+  assembled tree   : linux-6.8.0/ (orig + Ubuntu .diff applied), i915 = 386 .c files
+  stored in repo   : linux-reference/ubu-i915-src (canonical), linux-reference/ubu-uapi-drm
+  comparison tree  : linux-reference/i915-src = upstream stable v6.8.12 (kept for reference)
+
+[L0.2 — Ubuntu vs upstream v6.8.12, PORT-SCOPE DIFF RESULT]
+  Ubuntu 6.8.0-139.139 base = stable 6.8.12 (per version_signature).
+  Diff of every port-scope file (SAME unless noted):
+    i915_driver.c, i915_gem.c, gt/intel_gt.c, gt/intel_gt_pm.c, gt/intel_renderstate.c,
+    intel_clock_gating.c, gt/intel_wopcm.c, intel_pcode.c         => SAME
+    gt/intel_workarounds.c  => +3 lines: Wa_14019877138 inside xelpg_ctx_workarounds_init
+                               (Xe-LPG / Meteor Lake IP_VER 12,70/12,71) — NOT ADL-P
+    gt/intel_mocs.c         => 1 line: IP range (12,70)-(12,71) -> (12,70)-(12,74)
+                               (Xe-LPG range) — NOT ADL-P (46a8 is Gen12.0)
+  CONCLUSION: for target 8086:46a8 (ADL-P, Gen12.0), Ubuntu 6.8.0-139.139 i915 is
+  FUNCTIONALLY IDENTICAL to upstream v6.8.12 across the entire port scope. Both deltas
+  are in non-taken (Xe-LPG/Xe-HP) branches. The working reference (v6.8.12) is valid;
+  ledger corrections C1/C2 and all row fixes hold for Ubuntu.
+
+[KERNEL CONFIG]  (linux-reference/config-6.8.0-139-generic, sha via os copy)
+  CONFIG_DRM_I915_DEBUG_GEM      : not set   => P7.11 __engines_verify_workarounds returns 0 (NOT_TAKEN)
+  CONFIG_DRM_I915_WERROR         : not set
+  CONFIG_DRM_I915_PXP            : y          => intel_pxp_init has effect (P: PXP)
+  CONFIG_DRM_I915_GVT            : y          => intel_gvt_init compiled (early-returns on non-vGPU host)
+  CONFIG_INTEL_IOMMU_DEFAULT_ON  : y          (this is the GUEST kernel config)
+
+[i915 MODULE PARAMETERS — actual values]
+  enable_guc = 0   (set by /etc/modprobe.d/i915-euctl.conf: "options i915 enable_guc=0")
+                   => execlists submission; GuC/HuC firmware NOT fetched (P6.1/P7.7 branch)
+  enable_dc  = -1  (auto/default)
+  (other params at module default)
+
+[FIRMWARE — blob loads, kept SEPARATE from feature init]
+  DMC : i915/adlp_dmc.bin  version v2.20  load result: "Finished loading DMC firmware" (success)
+        (a real firmware blob load; display microcontroller)
+  GuC/HuC : NOT loaded (enable_guc=0)
+  NOTE: adlp_guc_70.bin absent on this part; with GuC on, ADL-P would wedge -> guc off.
+
+[FEATURE INIT — NOT a firmware blob load]
+  PXP : "Protected Xe Path (PXP) protected content support initialized"
+        This is FEATURE/component init (context + component bind), CONFIG_DRM_I915_PXP=y,
+        NOT the load of a named firmware file. Do not equate the log line with a blob load.
+
+[GPU / PLATFORM]
+  PCI       : 0000:00:02.0  8086:46a8 (rev 0c)  Alder Lake-UP3 GT2 [Iris Xe], gfx IP ver 12.0
+  subsystem : Dell 1028:0b02
+  GT        : 1 slice, 5 DSS (dss_en=0x1f, 0x913c), 112 threads/DSS, max_threads=559
+  display   : display version 13, has_dmc/has_dsc/has_ddi yes, has_gmch no
+
+[HOST + QEMU (positive-control VM)]
+  host      : 10.0.10.25 (KVM). GPU bound vfio-pci on host when no guest holds it.
+  qemu args (boot-dev.sh / boot-linux.sh; nogpu variant boot-nogpu.sh for source work):
+    -machine q35,accel=kvm,memory-backend=mem
+    -cpu host,host-phys-bits-limit=39           # guest phys-bits=39 => IOMMU MGAW=39
+    -m 4096 -smp 4 -object memory-backend-memfd,id=mem,size=4G,share=on
+    -drive file=disk.img,format=qcow2,if=virtio -drive file=seed.iso,format=raw,if=virtio
+    -device vfio-pci,host=0000:00:02.0,x-igd-opregion=on,rombar=0
+    -netdev user (+hostfwd tcp 127.0.0.1:2222->:22 in dev/nogpu)
+  ACTUAL qemu version: TODO record `qemu-system-x86_64 --version` on 10.0.10.25 (host-side).
+
+[IOMMU — three distinct layers, recorded separately]
+  1. HOST IOMMU (10.0.10.25 bare metal): provides vfio DMA remapping for passthrough.
+     host-phys-bits-limit=39 makes the guest-exposed address width match host IOMMU MGAW=39,
+     which fixes vfio_container_dma_map=-22 at high VAs. (Host dmesg not yet captured here.)
+  2. GUEST virtual IOMMU (what the i915-in-guest sees): guest dmesg shows
+     "DMAR: Skip IOMMU disabling for graphics", "Default domain type: Translated",
+     "DMA domain TLB invalidation policy: lazy". CONFIG_INTEL_IOMMU_DEFAULT_ON=y (guest).
+  3. GUEST i915 DMA MAPPING (what the driver does): the DMA-API mappings i915 creates for
+     GEM objects/GGTT. Distinct from (2). zedBSD must reproduce the mapping semantics, not
+     the guest's virtual-IOMMU config.
+  Do NOT infer the guest config solely from the QEMU arg excerpt above.
+
+[GPU HANDOFF / RESET — per-VM, graceful default]
+  - Exactly one consumer holds the GPU at a time: zedBSD-under-QEMU (run-ind.sh) OR the
+    Linux dev VM (boot-dev.sh). GPU left bound vfio-pci on host between runs.
+  - PREFERRED: manage the target VM by PID/QMP and shut it down gracefully; record any
+    forced kill (`pkill -9 -f qemu`) as a SEPARATE, non-standard condition.
+  - "vfio performs bus reset on teardown" is an UNVERIFIED assumption; no evidence captured.
+    Do not add new reset ops blindly; record the actual shutdown/release/reset used.
+
+[POSITIVE-CONTROL RESULT BEING MATCHED]
+  Tool: /home/awe/linuxvm/linux-c2-replay.c (direct-ioctl replay, softpin same VAs).
+  Under this exact kernel/params/QEMU config, all four fixtures COMPLETE on the GPU
+  (MI-only, init-only, eu-empty, eu-store; EU wrote 0xc0ffee02, no reset).
+  => batch/kernel/IDD/VFE/walker/state correct on this HW/VFIO/execlists; gap is in
+     zedBSD's driver path (this port closes it).
+
+[FIXTURES]  (linux-reference/fixtures/ ; names fixed, tagged by kernel+batch hash)
+  source        : linux-c2-replay.c  sha256 d8cc6a8e5ee91a0a69ea7dfc8966f31e9bf7e7c86e380305e3f77123f9f8378a
+  softpin VAs   : SHARED_VA=0x100400000  BATCH_VA=0x100600000  KSP_OFFSET=1024
+  tags          : READY=0xc0ffee10 DONE=0xc0ffee20 CS=0xc0ffee30 store=0xc0ffee02
+  replay modes -> port fixture names:
+    mode 0 MI-only   : PPGTT marker(READY)+marker(DONE)+BB_END, no pipeline
+    mode 1 init-only : SBA+PIPELINE_SELECT+VFE+MIDL, marker only, NO GPGPU_WALKER   (old C0)
+    mode 2 eu-empty  : + GPGPU_WALKER, kernel=empty_cs (mov r127 r0; send.ts EOT)   (old C2)
+    mode 3 eu-store  : + GPGPU_WALKER, kernel=store_cs (A64 store 0xc0ffee02; EOT)  (old C1)
+================================================================================

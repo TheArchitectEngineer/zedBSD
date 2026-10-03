@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "applied_at": "2026-09-13T12:18:17.073215+00:00",
+  "operation": "local guest patch and static compile only",
+  "source_sha256": {
+    "src/drivers/gpu/venus/internal.h": "dd242284e696f805761aecdd3c0a15848539385ce35c5a43ad8e62b165589aaf",
+    "src/drivers/gpu/venus/transport.c": "3bed4d95f39b735d345839b47e17c320abbee36d87ef5f5daff8a248c7e8282e",
+    "src/drivers/gpu/venus/venus.c": "b5e76d7428540357614533b2bdab164a32d38ff99966331c3a16e35cf117e1cb"
+  },
+  "patch_sha256": "0a343d014a64494d8e45c00436da92f21eb1fdf27430a2e3f3ed4a4945f14aed",
+  "static_compile": {
+    "argv": [
+      "clang",
+      "--target=x86_64-unknown-zedbsd",
+      "-ffreestanding",
+      "-std=gnu11",
+      "-fsyntax-only",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-Wdeclaration-after-statement",
+      "-Ilibc/include",
+      "-Iinclude",
+      "src/drivers/gpu/venus/transport.c",
+      "src/drivers/gpu/venus/venus.c"
+    ],
+    "exit_code": 0,
+    "output": ""
+  },
+  "prior_auto_review_rejection": "preserved in approval-context.md; scope and exact semantic checks reviewed before this attempt",
+  "host_build_or_runtime_performed": false
+}

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head><title>  The   tree  </title></head>
+<body>
+<div id="root"><p class="a">one</p><!-- note --><p class="a b">two <em>three</em></p>text</div>
+<script>
+function names(list) {
+  var out = [];
+  for (var i = 0; i < list.length; i++)
+    out.push(list[i].nodeName);
+  return out.join(",");
+}
+var root = document.getElementById("root");
+console.log("root", root.nodeType, root.nodeName, root.tagName, root.localName, root.id);
+console.log("children", names(root.childNodes), root.childNodes.length, root.children.length, root.childElementCount);
+console.log("first", root.firstChild.nodeName, root.lastChild.nodeName, root.firstElementChild.className, root.lastElementChild.className);
+console.log("siblings", root.firstChild.nextSibling.nodeName, root.firstChild.nextSibling.nodeValue, root.lastChild.previousSibling.nodeName);
+console.log("element siblings", root.firstElementChild.nextElementSibling.className, root.lastElementChild.previousElementSibling.className);
+console.log("text", root.textContent, "|", root.lastChild.data, root.lastChild.length, root.lastChild.nodeValue);
+console.log("parents", root.parentNode.nodeName, root.parentElement.nodeName, document.documentElement.parentNode.nodeName, document.documentElement.parentElement);
+console.log("owner", root.ownerDocument === document, document.ownerDocument, root.isConnected);
+console.log("contains", document.contains(root), root.contains(root.firstChild.firstChild), root.firstChild.contains(root));
+console.log("constants", Node.ELEMENT_NODE, Node.TEXT_NODE, Node.COMMENT_NODE, Node.DOCUMENT_NODE, root.DOCUMENT_FRAGMENT_NODE);
+console.log("types", root.firstChild.firstChild.nodeType, root.childNodes[1].nodeType, document.nodeType, document.doctype.nodeType, document.doctype.name);
+console.log("instanceof", root instanceof HTMLElement, root instanceof Element, root instanceof Node, root instanceof EventTarget, root.firstChild.firstChild instanceof Text, root.childNodes[1] instanceof Comment);
+console.log("prototypes", Object.getPrototypeOf(HTMLElement) === Element, Object.getPrototypeOf(Text.prototype) === CharacterData.prototype);
+
+var made = document.createElement("SECTION");
+var text = document.createTextNode("made");
+made.appendChild(text);
+root.insertBefore(made, root.firstChild);
+console.log("insert", names(root.childNodes), made.nodeName, made.tagName, made.localName);
+root.appendChild(made);
+console.log("move", names(root.childNodes));
+var removed = root.removeChild(root.firstChild);
+console.log("remove", removed.nodeName, removed.parentNode, names(root.childNodes));
+var replacement = document.createElement("span");
+var old = root.replaceChild(replacement, root.childNodes[1]);
+console.log("replace", old.nodeName, names(root.childNodes));
+var copy = root.cloneNode(true);
+var shallow = root.cloneNode(false);
+console.log("clone", copy.id, copy.childNodes.length, shallow.childNodes.length, copy.parentNode, copy.textContent === root.textContent);
+root.textContent = "gone";
+console.log("textContent", root.childNodes.length, root.firstChild.nodeName, root.textContent, root.hasChildNodes());
+root.textContent = "";
+console.log("empty", root.childNodes.length, root.hasChildNodes());
+
+var fragment = document.createDocumentFragment();
+fragment.appendChild(document.createElement("i"));
+fragment.appendChild(document.createElement("b"));
+root.appendChild(fragment);
+console.log("fragment", names(root.childNodes), fragment.childNodes.length);
+root.append("x", document.createElement("u"), "y");
+root.prepend(document.createComment("c"));
+console.log("append", names(root.childNodes), root.textContent);
+root.lastChild.remove();
+console.log("remove2", names(root.childNodes));
+
+try {
+  root.appendChild(document.body);
+} catch (e) {
+  console.log("hierarchy", e instanceof Error, e instanceof DOMException, e.name, e.code);
+}
+try {
+  root.removeChild(document.body);
+} catch (e) {
+  console.log("not a child", e instanceof Error, e instanceof DOMException, e.name, e.code);
+}
+try {
+  root.appendChild("text");
+} catch (e) {
+  console.log("not a node", e instanceof TypeError);
+}
+try {
+  Node.prototype.appendChild.call({}, root);
+} catch (e) {
+  console.log("illegal", e instanceof TypeError);
+}
+try {
+  new Node();
+} catch (e) {
+  console.log("constructor", e instanceof TypeError);
+}
+var t = new Text("abc");
+t.appendData("def");
+var c = new Comment("hmm");
+console.log("constructors", t.data, t.length, c.data, c.nodeName, new DocumentFragment().nodeName);
+console.log("title", document.title);
+document.title = "Changed";
+console.log("title2", document.title, document.head.lastChild.nodeName);
+</script>
+</body>
+</html>

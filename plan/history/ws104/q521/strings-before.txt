@@ -1,0 +1,547 @@
+== build/amd64/bin/Xzed
+
+== build/amd64/bin/acquire-fence-test
+
+== build/amd64/bin/admin
+/bin/%s
+== build/amd64/bin/ar
+
+== build/amd64/bin/at
+
+== build/amd64/bin/audiod
+
+== build/amd64/bin/awk
+
+== build/amd64/bin/base64
+
+== build/amd64/bin/basename
+
+== build/amd64/bin/batch
+
+== build/amd64/bin/bc
+
+== build/amd64/bin/blkid
+
+== build/amd64/bin/browser
+/usr/share/browser/start.html
+== build/amd64/bin/cal
+
+== build/amd64/bin/cat
+
+== build/amd64/bin/cflow
+
+== build/amd64/bin/chgrp
+
+== build/amd64/bin/chmod
+
+== build/amd64/bin/chown
+
+== build/amd64/bin/cksum
+
+== build/amd64/bin/cmp
+
+== build/amd64/bin/comm
+
+== build/amd64/bin/compress
+
+== build/amd64/bin/cp
+
+== build/amd64/bin/cron
+/bin/sh
+== build/amd64/bin/crontab
+
+== build/amd64/bin/csplit
+
+== build/amd64/bin/cut
+
+== build/amd64/bin/cxref
+
+== build/amd64/bin/data-probe
+
+== build/amd64/bin/date
+
+== build/amd64/bin/dd
+
+== build/amd64/bin/delta
+/bin/%s
+== build/amd64/bin/df
+
+== build/amd64/bin/dhcpc
+/etc/resolv.conf
+/etc/resolv.conf.tmp.%ld
+== build/amd64/bin/diff
+
+== build/amd64/bin/dirname
+
+== build/amd64/bin/diskpart
+
+== build/amd64/bin/dmesg
+
+== build/amd64/bin/du
+
+== build/amd64/bin/echo
+
+== build/amd64/bin/ed
+
+== build/amd64/bin/egltest
+
+== build/amd64/bin/egrep
+
+== build/amd64/bin/env
+
+== build/amd64/bin/expand
+
+== build/amd64/bin/expr
+
+== build/amd64/bin/extras-probe
+
+== build/amd64/bin/false
+
+== build/amd64/bin/fetch
+
+== build/amd64/bin/fgrep
+
+== build/amd64/bin/file
+
+== build/amd64/bin/files
+/bin/browser %f
+/bin/files
+/bin/imageview %f
+/bin/pdfviewer %f
+/bin/settings
+/bin/sh
+/bin/terminal
+/bin/textedit %f
+/etc/keiland/open-with
+/etc/mtab
+/usr/bin
+/usr/local/bin
+/usr/share/fonts/keiland-fallback.ttf
+/usr/share/fonts/keiland.ttf
+/usr/share/keiland/wallpaper.ppm
+== build/amd64/bin/find
+
+== build/amd64/bin/fmt
+
+== build/amd64/bin/fold
+
+== build/amd64/bin/fuser
+
+== build/amd64/bin/gencat
+
+== build/amd64/bin/get
+/bin/%s
+== build/amd64/bin/getconf
+
+== build/amd64/bin/gettext
+
+== build/amd64/bin/getty
+/bin/login
+== build/amd64/bin/glxtest
+
+== build/amd64/bin/gpu-forge-test
+
+== build/amd64/bin/greeter-probe
+
+== build/amd64/bin/grep
+
+== build/amd64/bin/halt
+
+== build/amd64/bin/head
+
+== build/amd64/bin/host
+
+== build/amd64/bin/hostname
+
+== build/amd64/bin/iconv
+
+== build/amd64/bin/id
+
+== build/amd64/bin/ifconfig
+
+== build/amd64/bin/imageview
+/usr/share/fonts/keiland.ttf
+== build/amd64/bin/infocmp
+
+== build/amd64/bin/init
+/etc/rc.conf
+/etc/service.d
+/etc/service.d/%s
+== build/amd64/bin/install
+
+== build/amd64/bin/ipcrm
+
+== build/amd64/bin/ipcs
+
+== build/amd64/bin/join
+
+== build/amd64/bin/kill
+
+== build/amd64/bin/less
+
+== build/amd64/bin/link
+
+== build/amd64/bin/ln
+
+== build/amd64/bin/locale
+/usr/share/locale
+== build/amd64/bin/localedef
+
+== build/amd64/bin/logger
+
+== build/amd64/bin/login
+/bin/sh
+== build/amd64/bin/logname
+
+== build/amd64/bin/lp
+
+== build/amd64/bin/lpr
+
+== build/amd64/bin/ls
+
+== build/amd64/bin/lspci
+
+== build/amd64/bin/lsusb
+
+== build/amd64/bin/m4
+
+== build/amd64/bin/mailx
+
+== build/amd64/bin/make
+/bin/sh
+== build/amd64/bin/menu-probe
+
+== build/amd64/bin/mesg
+
+== build/amd64/bin/mkdir
+
+== build/amd64/bin/mkfifo
+
+== build/amd64/bin/mkfs
+
+== build/amd64/bin/mkswap
+
+== build/amd64/bin/mktemp
+
+== build/amd64/bin/more
+
+== build/amd64/bin/mount
+/etc/fstab
+== build/amd64/bin/msgfmt
+
+== build/amd64/bin/mv
+
+== build/amd64/bin/mview
+/usr/share/mview/qs40
+== build/amd64/bin/net
+/etc/net.conf
+/etc/passwd
+/etc/rc.conf
+== build/amd64/bin/networkd
+/etc/group
+/etc/passwd
+/etc/resolv.conf
+/etc/resolv.conf.tmp.%ld
+== build/amd64/bin/newgrp
+/bin/sh
+== build/amd64/bin/ngettext
+
+== build/amd64/bin/nice
+
+== build/amd64/bin/nl
+
+== build/amd64/bin/nm
+
+== build/amd64/bin/noct
+
+== build/amd64/bin/nohup
+
+== build/amd64/bin/notes
+/usr/share/fonts/keiland.ttf
+== build/amd64/bin/nslookup
+
+== build/amd64/bin/ntpdate
+/etc/rc.conf
+== build/amd64/bin/od
+
+== build/amd64/bin/paste
+
+== build/amd64/bin/patch
+
+== build/amd64/bin/pathchk
+
+== build/amd64/bin/pax
+
+== build/amd64/bin/pdfviewer
+/bin/notes
+/usr/share/fonts/keiland.ttf
+== build/amd64/bin/peninject
+
+== build/amd64/bin/ping
+
+== build/amd64/bin/popup-probe
+
+== build/amd64/bin/poweroff
+
+== build/amd64/bin/pr
+
+== build/amd64/bin/printf
+
+== build/amd64/bin/prs
+/bin/%s
+== build/amd64/bin/ps
+
+== build/amd64/bin/pwd
+
+== build/amd64/bin/readlink
+
+== build/amd64/bin/realpath
+
+== build/amd64/bin/reboot
+
+== build/amd64/bin/renice
+
+== build/amd64/bin/rm
+
+== build/amd64/bin/rmdel
+/bin/%s
+== build/amd64/bin/rmdir
+
+== build/amd64/bin/route
+
+== build/amd64/bin/sact
+/bin/%s
+== build/amd64/bin/sccs
+/bin/%s
+== build/amd64/bin/seat-probe
+
+== build/amd64/bin/sed
+
+== build/amd64/bin/seq
+
+== build/amd64/bin/service
+/etc/rc.conf
+/etc/service.d
+== build/amd64/bin/sessiond
+/bin/sh
+/bin/wayland
+/etc/keiland/autologin
+/etc/keiland/session
+/usr/share/keiland/wallpaper.ppm
+== build/amd64/bin/settings
+/usr/share/fonts/keiland-fallback.ttf
+/usr/share/fonts/keiland.ttf
+/usr/share/keiland/wallpaper.ppm
+/usr/share/keiland/wallpapers
+== build/amd64/bin/sh
+/bin/sh
+/etc/profile
+== build/amd64/bin/shutdown
+
+== build/amd64/bin/sleep
+
+== build/amd64/bin/sort
+
+== build/amd64/bin/split
+
+== build/amd64/bin/stat
+
+== build/amd64/bin/strings
+
+== build/amd64/bin/stty
+
+== build/amd64/bin/subsurface-probe
+
+== build/amd64/bin/swapoff
+
+== build/amd64/bin/swapon
+/etc/fstab
+== build/amd64/bin/sync
+
+== build/amd64/bin/sysctl
+
+== build/amd64/bin/syslogd
+
+== build/amd64/bin/tablet-probe
+
+== build/amd64/bin/tabs
+
+== build/amd64/bin/tac
+
+== build/amd64/bin/tail
+
+== build/amd64/bin/talk
+
+== build/amd64/bin/tee
+
+== build/amd64/bin/terminal
+/bin/sh
+/bin/terminal
+/usr/share/fonts/keiland-mono.ttf
+== build/amd64/bin/test
+
+== build/amd64/bin/tic
+
+== build/amd64/bin/time
+
+== build/amd64/bin/timeout
+
+== build/amd64/bin/titlebar-probe
+
+== build/amd64/bin/top
+
+== build/amd64/bin/touch
+
+== build/amd64/bin/touchinject
+
+== build/amd64/bin/tput
+
+== build/amd64/bin/tr
+
+== build/amd64/bin/true
+
+== build/amd64/bin/truncate
+
+== build/amd64/bin/tsort
+
+== build/amd64/bin/tty
+
+== build/amd64/bin/umount
+/etc/fstab
+== build/amd64/bin/uname
+
+== build/amd64/bin/uncompress
+
+== build/amd64/bin/unexpand
+
+== build/amd64/bin/unget
+/bin/%s
+== build/amd64/bin/uniq
+
+== build/amd64/bin/unlink
+
+== build/amd64/bin/uudecode
+
+== build/amd64/bin/uuencode
+
+== build/amd64/bin/val
+/bin/%s
+== build/amd64/bin/vkdemo
+
+== build/amd64/bin/wayland
+/bin/browser /usr/share/browser/start.html
+/bin/files
+/bin/files --desktop
+/bin/imageview
+/bin/mview --windowed --size=960x640
+/bin/notes
+/bin/notes --fullscreen
+/bin/pdfviewer
+/bin/sh
+/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0
+/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24
+/bin/terminal
+/bin/textedit
+/bin/wlshm --size=480x320 --frames=6000
+/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30
+/etc/keiland/apps.conf
+/etc/keiland/desktop
+/usr/libexec/keiland-ime
+/usr/share/fonts/keiland-emoji.ttf
+/usr/share/fonts/keiland-fallback.ttf
+/usr/share/fonts/keiland.ttf
+== build/amd64/bin/wc
+
+== build/amd64/bin/what
+/bin/%s
+== build/amd64/bin/which
+
+== build/amd64/bin/who
+
+== build/amd64/bin/whoami
+
+== build/amd64/bin/wifi
+
+== build/amd64/bin/wlshm
+
+== build/amd64/bin/wltest
+
+== build/amd64/bin/write
+
+== build/amd64/bin/xargs
+
+== build/amd64/bin/xserver
+/usr/share/fonts/keiland-mono.ttf
+== build/amd64/bin/zcat
+
+== build/amd64/bin/zgears
+
+== build/amd64/bin/zshell
+
+== build/amd64/bin/zterm
+/bin/sh
+/usr/share/zterm/icons/app-icon.xpm
+== build/amd64/bin/zwl
+
+== build/amd64/bin/zwm
+/etc/Xzed/zwm.conf
+/usr/share/zwm/backgrounds
+== build/amd64/dynamic/ld.so
+/usr/lib
+== build/amd64/dynamic/libEGL.so
+
+== build/amd64/dynamic/libGL.so
+
+== build/amd64/dynamic/libGLESv2.so
+
+== build/amd64/dynamic/libbrowser.so
+/usr/share/fonts/keiland-fallback.ttf
+/usr/share/fonts/keiland-mono.ttf
+/usr/share/fonts/keiland.ttf
+== build/amd64/dynamic/libc.so
+/bin/sh
+/etc/group
+/etc/hostid
+/etc/mtab
+/etc/passwd
+/etc/resolv.conf
+/etc/services
+/etc/shadow
+/usr/share/locale
+/usr/share/locale/%s/locale.zloc
+/usr/share/nls/%L/%N.cat:/usr/share/nls/%N/%L
+== build/amd64/dynamic/libgif-compat.so
+
+== build/amd64/dynamic/libjpeg-compat.so
+
+== build/amd64/dynamic/libkeiland.so
+/etc/passwd
+/etc/resolv.conf
+== build/amd64/dynamic/libkeiui.so
+/usr/share/fonts/keiland-emoji.ttf
+/usr/share/fonts/keiland-fallback.ttf
+/usr/share/fonts/keiland.ttf
+== build/amd64/dynamic/libpdf.so
+/usr/share/fonts
+== build/amd64/dynamic/libpng-compat.so
+
+== build/amd64/dynamic/libtruetype.so
+
+== build/amd64/dynamic/libutil.so
+
+== build/amd64/dynamic/libvulkan.so
+
+== build/amd64/dynamic/libwayland-client.so
+
+== build/amd64/dynamic/libwayland-egl.so
+
+== build/amd64/dynamic/libz-compat.so
+
+== build/amd64/dynamic/rpathtest.so
+
+== build/amd64/dynamic/tlstest.so
+
+== build/amd64/dynamic/verstest.so
+
+== build/amd64/dynamic/versuse.so
+

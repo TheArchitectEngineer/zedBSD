@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html><head><title>markup</title></head><body>
+<div id="s" title="a&quot;b<c>&amp;&nbsp;x" data-x='q"r'>t&lt;u&gt;&amp;&nbsp;<br><img src="x.png"><!--c--><script>if (1 < 2 && 3 > 4) {}</script><style>p > a {}</style><textarea>&lt;x&gt;</textarea><svg viewBox="0 0 1 1"><path d="M0 0"/></svg><noscript><b>n</b></noscript><template><i>tt</i></template></div>
+<div id="d"><p>x</p></div><table><tbody id="tb"></tbody></table>
+<select id="sel"></select>
+<script>
+// ws074-p081: innerHTML, outerHTML, insertAdjacentHTML/Element/Text and template.content.
+var s = document.getElementById("s");
+console.log("serialize " + s.innerHTML);
+console.log("outer " + s.outerHTML.slice(0, 70));
+var d = document.getElementById("d");
+d.innerHTML = '<b class="c">b&amp;</b><i>i</i><script>console.log("ran")<\/script>text';
+console.log("inner " + d.innerHTML + " " + d.children.length + " " + d.firstChild.tagName);
+d.insertAdjacentHTML("beforeend", "<em>e</em>");
+d.insertAdjacentHTML("afterBegin", "<u>u</u>");
+d.firstElementChild.insertAdjacentHTML("beforebegin", "<!--c-->");
+console.log("adjacent " + d.innerHTML);
+var tb = document.getElementById("tb");
+tb.innerHTML = "<tr><td>1</td></tr>";
+console.log("table " + tb.outerHTML);
+var sel = document.getElementById("sel");
+sel.innerHTML = "<option>a</option><div>b</div><option selected>c</option>";
+console.log("select " + sel.innerHTML + " " + sel.children.length);
+var e = document.createElement("span");
+console.log("element " + (d.insertAdjacentElement("afterend", e) === e) + " " + e.previousElementSibling.id);
+console.log("detached " + document.createElement("i").insertAdjacentElement("afterend", e));
+d.insertAdjacentText("afterbegin", "t<");
+console.log("text " + d.innerHTML.slice(0, 20));
+d.querySelector("i").outerHTML = "<q>q</q><q>r</q>";
+console.log("outer set " + d.innerHTML);
+try { d.insertAdjacentHTML("middle", "x"); } catch (x) { console.log("position threw " + x.name + " " + x.code); }
+try { document.documentElement.outerHTML = "<p>"; } catch (x) { console.log("document child threw " + x.name + " " + x.code); }
+var loose = document.createElement("div");
+loose.outerHTML = "<p>p</p>";
+console.log("no parent " + loose.outerHTML);
+var t = document.createElement("template");
+t.innerHTML = "<td>z</td>";
+console.log("template " + t.innerHTML + " " + t.content.childNodes.length + " " + t.childNodes.length + " " + t.content.nodeName);
+var parsed = s.querySelector("template");
+console.log("parsed template " + parsed.content.firstChild.tagName + " " + parsed.childNodes.length + " " + (parsed.content === parsed.content));
+var copy = parsed.cloneNode(true);
+console.log("clone " + copy.innerHTML + " " + (copy.content !== parsed.content));
+var p = document.createElement("p");
+p.innerHTML = "<pre>\nline</pre><textarea>\nt</textarea><listing>\nl</listing>";
+console.log("newline " + JSON.stringify(p.innerHTML));
+p.innerHTML = "<math><mi>x</mi></math><svg><foreignObject><b>f</b></foreignObject></svg>";
+console.log("foreign " + p.innerHTML + " " + p.firstChild.namespaceURI);
+p.innerHTML = "a<!--x-->b&lt;&gt;&amp; \"'";
+console.log("escape " + p.innerHTML + " " + p.childNodes.length);
+p.setAttribute("title", "\"&<> '");
+console.log("attribute " + p.outerHTML.slice(0, 40));
+p.innerHTML = "";
+console.log("empty " + p.childNodes.length + " [" + p.innerHTML + "]");
+p.innerHTML = "<br></br><p>q";
+console.log("errors " + p.innerHTML);
+</script>
+</body></html>

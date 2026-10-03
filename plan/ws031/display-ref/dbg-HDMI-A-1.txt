@@ -1,0 +1,11 @@
+### /sys/kernel/debug/dri/0/HDMI-A-1/edid_override
+### /sys/kernel/debug/dri/0/HDMI-A-1/force
+unspecified
+### /sys/kernel/debug/dri/0/HDMI-A-1/i915_hdcp_sink_capability
+cat: /sys/kernel/debug/dri/0/HDMI-A-1/i915_hdcp_sink_capability: No such device
+### /sys/kernel/debug/dri/0/HDMI-A-1/i915_lpsp_capability
+cat: /sys/kernel/debug/dri/0/HDMI-A-1/i915_lpsp_capability: No such device
+### /sys/kernel/debug/dri/0/HDMI-A-1/output_bpc
+cat: /sys/kernel/debug/dri/0/HDMI-A-1/output_bpc: No such device
+### /sys/kernel/debug/dri/0/HDMI-A-1/vrr_range
+cat: /sys/kernel/debug/dri/0/HDMI-A-1/vrr_range: No such device

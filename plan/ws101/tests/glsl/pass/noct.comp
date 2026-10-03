@@ -1,0 +1,35 @@
+#version 310 es
+precision highp float;
+precision highp int;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer NoctBuffer0 { uint word[]; } noct_buffer_0;
+layout(std430, binding = 1) buffer NoctBuffer1 { uint word[]; } noct_buffer_1;
+layout(std430, binding = 2) readonly buffer NoctScalarBlock { uint word[]; } noct_scalar;
+layout(std430, binding = 3) coherent buffer NoctResultBlock { uint word[]; } noct_result;
+
+void main(void)
+{
+	uint noct_lane = gl_GlobalInvocationID.x;
+	uint noct_start = noct_scalar.word[1u];
+	uint noct_trip = noct_scalar.word[2u];
+	if (noct_lane >= noct_trip)
+		return;
+	// noct_start is supplied for the shared start/trip ABI; typed IR uses the lane.
+	uint v0 = noct_lane;
+	uint v1 = noct_buffer_0.word[v0];
+	uint v2 = noct_scalar.word[0u];
+	uint v3 = 0x0019660Du;
+	uint v4 = v1 * v3;
+	uint v5 = 0x3C6EF35Fu;
+	uint v6 = v4 + v5;
+	uint v7 = 0x0000000Du;
+	uint v8 = v6 >> v7;
+	uint v9 = v6 ^ v8;
+	uint v10 = uint(int(v9) / int(v2));
+	uint v11 = uint(int(v9) % int(v2));
+	bool v12 = int(v10) < int(v11);
+	uint v13 = v12 ? v10 : v11;
+	noct_buffer_1.word[v0] = v13;
+	atomicAdd(noct_result.word[0u], v11);
+}

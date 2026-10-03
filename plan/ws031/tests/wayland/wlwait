@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/sleep
+arguments=3
+after=zdesktop
+restart=no
+required=NO

@@ -1,0 +1,29 @@
+#!/bin/sh
+# libkeiui (ws090-p006, from plan/tools/keiland of ws092-p003): builds and runs the host tests of the file
+# chooser's model and view (host-chooser.c) with libkeiui's chooser, widgets, drawing and input, libkeiland's
+# recent files, scroller and gestures, and libtruetype, on Linux, and turns the pictures into PNG files.
+#   sh plan/tools/keiui/host-chooser.sh [OUTPUT]   (default build/keiui/host-chooser; pictures in build/keiui-shots)
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+set -e
+cd "$(dirname "$0")/../../.."
+out=${1:-build/keiui/host-chooser}
+shots=build/keiui-shots
+mkdir -p "$(dirname "$out")/inc" "$shots"
+cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
+U=userland/desktop
+K=$U/libkeiui
+L=$U/libkeiland
+cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$K -I$U/libtruetype \
+	plan/tools/keiui/host-chooser.c $K/chooser-model.c $K/chooser-view.c \
+	$K/version.c $K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c \
+	$K/text-touch.c $K/ui.c $K/widgets.c $K/field.c $K/list.c $K/cards.c \
+	$L/recent.c $L/gesture.c $L/motion.c $L/scroll.c \
+	$U/libtruetype/*.c $U/picture/color-glyph.c \
+	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"
+F=$U/fonts
+"$out" $F/Inter.ttf $F/DroidSansFallbackFull.ttf "$shots/host-chooser"
+for p in "$shots"/host-chooser-*.ppm; do
+	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
+	rm -f "$p"
+done

@@ -1,0 +1,6 @@
+PASS shared WSI swapchain: no readback, external barriers, three owned async jobs, delayed producer fence, idle drain, GPU crop/scale, release-gated acquire, late OOM
+PASS shared WSI swapchain: no readback, external barriers, three owned async jobs, delayed producer fence, idle drain, GPU crop/scale, release-gated acquire, late OOM
+PASS WSI route: partial native import cleanup, OOM abort, unsupported fallback at creation, no per-frame retry, exact teardown
+PASS shared WSI swapchain: no readback, external barriers, three owned async jobs, delayed producer fence, idle drain, GPU crop/scale, release-gated acquire, late OOM
+PASS shared WSI swapchain: no readback, external barriers, three owned async jobs, delayed producer fence, idle drain, GPU crop/scale, release-gated acquire, late OOM
+PASS WSI route: partial native import cleanup, OOM abort, unsupported fallback at creation, no per-frame retry, exact teardown

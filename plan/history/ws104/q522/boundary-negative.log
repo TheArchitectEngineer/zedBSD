@@ -1,0 +1,7 @@
+check: C1 FAIL userland/desktop/wayland/display.c:464: #include <uapi/gpu.h>
+check: C2 PASS
+check: C3 PASS
+check: C4 PASS
+check: C5 PASS
+keiland-os-boundary: FAIL
+exit=1

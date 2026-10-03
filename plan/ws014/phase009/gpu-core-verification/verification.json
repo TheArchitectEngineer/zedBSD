@@ -1,0 +1,223 @@
+{
+  "status": "PASS",
+  "observed_utc": "2026-09-13T11:48:20.000173+00:00",
+  "phase": "ws014-p009",
+  "queue": "q312",
+  "suites": [
+    {
+      "name": "gpu-job",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-job-final.log",
+      "saved_log": "gpu-job.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-job-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-fence",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-fence-final.log",
+      "saved_log": "gpu-fence.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-fence-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-fence-reuse",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-fence-reuse-final.log",
+      "saved_log": "gpu-fence-reuse.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-fence-reuse-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-fence-close",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-fence-close-final.log",
+      "saved_log": "gpu-fence-close.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-fence-close-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-sharing",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-sharing-final.log",
+      "saved_log": "gpu-sharing.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-sharing-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-scanout",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-scanout-final.log",
+      "saved_log": "gpu-scanout.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-scanout-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-topology",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-topology-final.log",
+      "saved_log": "gpu-topology.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-topology-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-placement",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-placement-final.log",
+      "saved_log": "gpu-placement.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-placement-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "handle-fd",
+      "exit": 0,
+      "log": "/tmp/q312-handle-fd-final.log",
+      "saved_log": "handle-fd.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-handle-fd-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-supervision",
+      "exit": 0,
+      "log": "/tmp/q312-supervision-final.log",
+      "saved_log": "gpu-supervision.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-supervision-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-framework",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-framework-final.log",
+      "saved_log": "gpu-framework.log",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-framework-test.sh",
+      "timeout_seconds": 120
+    },
+    {
+      "name": "gpu-build-selection",
+      "exit": 0,
+      "log": "/tmp/q312-gpu-build-selection-001.log",
+      "saved_log": "gpu-build-selection.log",
+      "modes": [
+        "6 platforms x Venus y/n make input"
+      ],
+      "runner": "plan/ws014/tests/run-gpu-build-selection-test.py",
+      "timeout_seconds": 120
+    }
+  ],
+  "regressions_fixed": [
+    {
+      "case": "reset-race",
+      "before": "reset-race-before.log",
+      "after": "reset-race-after.log",
+      "before_status": "FAIL",
+      "after_status": "PASS ordinary and ASan/UBSan"
+    },
+    {
+      "case": "raw-close",
+      "before": "raw-close-before.log",
+      "after": "raw-close-after.log",
+      "before_status": "FAIL",
+      "after_status": "PASS ordinary and ASan/UBSan"
+    },
+    {
+      "case": "withdraw",
+      "before": "withdraw-before.log",
+      "after": "withdraw-after.log",
+      "before_status": "FAIL",
+      "after_status": "PASS ordinary and ASan/UBSan"
+    }
+  ],
+  "abi": [
+    {
+      "abi": "ILP32",
+      "status": "PASS",
+      "object_class": 32,
+      "object_sha256": "828cb76d3c75d0c77b35bc865ba88edb7b983bcc4c77615296d9e0009acd0325",
+      "source": "plan/ws014/tests/gpu-uapi-layout.c",
+      "assertions": [
+        "GPU_JOB_CAPACITY 48 bytes, nr37, all field offsets",
+        "GPU_JOB_POLICY 40 bytes, nr38, all field offsets",
+        "existing GPU UAPI layouts preserved"
+      ]
+    },
+    {
+      "abi": "LP64",
+      "status": "PASS",
+      "object_class": 64,
+      "object_sha256": "8d43bffbb1f18132abb99615739dc7b7ad217bb2d0013201332041378f80b24f",
+      "source": "plan/ws014/tests/gpu-uapi-layout.c",
+      "assertions": [
+        "GPU_JOB_CAPACITY 48 bytes, nr37, all field offsets",
+        "GPU_JOB_POLICY 40 bytes, nr38, all field offsets",
+        "existing GPU UAPI layouts preserved"
+      ]
+    }
+  ],
+  "nogpu": "nogpu-amd64.json",
+  "style": "style.json",
+  "source_sha256": {
+    "src/drivers/gpu/gpu.c": "89c9277a29e99bad3f6e67a7c52f272f228f2a2ebbf6abf63824f30433228b53",
+    "include/drivers/gpu.h": "bbe8278715e6bab484ef701bcc505c6e10721f5a5fd6cf859b15ca6e209e3a21",
+    "include/uapi/gpu.h": "8b553223d0165bca92f8640b739257dba831c9a3a4464e922eefe96bf4597b71",
+    "include/uapi/gpu-job.h": "9000c4aa40be85fab5d863ac6b2cd80cabf9f8573de6969e3e379b0dce0e026c",
+    "Makefile": "025453b0794e15816a4a57903e78ca578d6ff795fbc7812f43eda2db111b5f0a",
+    "config/kernel-options.list": "45d82578d75ca48d3538c1e83f3df19e5ebe1d16b979614af5e363240440b8c8",
+    "plan/ws014/tests/gpu-supervision.c": "4e0b249edbd287dca56151339d4a9d31b4caf1f4cac8fe13e803a836693c38bf",
+    "plan/ws014/tests/gpu-test-fd.c": "c8ec7d29e392d2a683dd1156c8948d6f98565ed1243e877befb747cdb86f9db5",
+    "plan/ws014/tests/gpu-job.c": "50c35bf59ee784c1a0669ed878e80ca61835301cb6d0eeb8dcbb5ae99312e8e9",
+    "plan/ws014/tests/gpu-fence-reuse.c": "86845d7efa06e319868bca23a50fa529775cc61b3fdb2d6342b428d86b112c4b",
+    "plan/ws014/tests/gpu-uapi-layout.c": "f7a2c03b62b52f66b29dd280fe7a3f39dee1e1020ad0fbc7afd008a82f8398a8"
+  },
+  "limits": [
+    "Supervision fixture invokes actual common monitor steps at explicit scheduler boundaries; it does not simulate real simultaneous kernel threads or prove native GPU quiescence.",
+    "Backend peer has four reservation slots; it proves common capacity pressure independently from the real Venus slot count.",
+    "Backend stop acknowledgement is explicitly withheld until modeled native access retires. Native-host evidence belongs to separate real-VM acceptance.",
+    "Final core style edits preserve the tested C token stream; no semantic regression is inferred merely from text formatting.",
+    "Six platform y/n make inputs were inspected; only GPU-disabled amd64 was actually compiled here.",
+    "No full make check, HAL change or shared main build directory was used."
+  ]
+}

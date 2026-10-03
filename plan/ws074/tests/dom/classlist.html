@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>classList and dataset</title></head>
+<body>
+<div id="a" class="  one two  one "></div>
+<div id="b"></div>
+<span id="c" data-first="1" data-two-words="yes" data-x-y-z="xyz" data-="empty" data-UPPER="up"></span>
+<script>
+// ws074-p031: classList (DOMTokenList) and dataset (DOMStringMap).
+var a = document.getElementById("a");
+var list = a.classList;
+console.log(list.length, list.value, list.item(0), list.item(1), list.item(2), list.contains("two"), list.contains("three"));
+list.add("three", "one");
+console.log(a.className);
+list.remove("one", "missing");
+console.log(a.className, list.length);
+console.log(list.toggle("two"), a.className, list.toggle("two"), a.className);
+console.log(list.toggle("four", false), list.toggle("three", true), a.className);
+console.log(list.replace("three", "3"), list.replace("none", "x"), a.className, String(list));
+var threw = [];
+try { list.add(""); } catch (error) { threw.push("empty " + error.name + " " + error.code); }
+try { list.add("a b"); } catch (error) { threw.push("space " + error.name + " " + error.code); }
+try { list.toggle(""); } catch (error) { threw.push("toggle " + error.name); }
+console.log(threw.join(","), a.className);
+var b = document.getElementById("b");
+b.classList.remove("x");
+console.log(b.hasAttribute("class"), b.classList.length);
+b.classList.add("x");
+console.log(b.getAttribute("class"), b.classList instanceof DOMTokenList);
+list.value = "p q";
+console.log(a.className, list.length);
+var c = document.getElementById("c");
+var data = c.dataset;
+console.log(data.first, data.twoWords, data.xYZ, Object.keys(data).join(","));
+data.first = "changed";
+console.log(c.getAttribute("data-first"), c.dataset.first);
+c.removeAttribute("data-two-words");
+console.log(data.twoWords, typeof c.dataset.twoWords);
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{
+  "scope": "Impact assessment after exact7 instance/device admission gate",
+  "status": "PASS",
+  "checks": [
+    {
+      "runner": "plan/ws030/tests/run-libvulkan-memory.sh",
+      "sha256": "35f52123bf9eaa98668881700bf544db306a9020325b599b8c16ae95fff43eee",
+      "action": "not rerun",
+      "reason": "Does not compile instance.c/device.c or call their profile gates; native_quiescence is not read by the exercised source. Related struct storage is rebuilt by each standalone runner, with no fixed binary layout dependency."
+    },
+    {
+      "runner": "plan/ws030/tests/run-libvulkan-resources-test.sh",
+      "sha256": "d74c9849141c5e7d3fec1727373f7b1136e21b2537120e10431e4cf47fcc9258",
+      "action": "not rerun",
+      "reason": "Does not compile instance.c/device.c or call their profile gates; native_quiescence is not read by the exercised source. Related struct storage is rebuilt by each standalone runner, with no fixed binary layout dependency."
+    },
+    {
+      "runner": "plan/ws030/tests/run-libvulkan-descriptors-test.sh",
+      "sha256": "30f3c690b86163dd2d96b0a5dcb19f45e7ff2adbcc1c8f8f8e84b19f6412f924",
+      "action": "not rerun",
+      "reason": "Does not compile instance.c/device.c or call their profile gates; native_quiescence is not read by the exercised source. Related struct storage is rebuilt by each standalone runner, with no fixed binary layout dependency."
+    },
+    {
+      "runner": "plan/ws030/tests/run-libvulkan-external-memory.sh",
+      "sha256": "1b1a6320acc96b1e3a9bee7e4696e16ad219a337b76bdf2eab943cfdde4bf672",
+      "action": "not rerun",
+      "reason": "Does not compile instance.c/device.c or call their profile gates; native_quiescence is not read by the exercised source. Related struct storage is rebuilt by each standalone runner, with no fixed binary layout dependency."
+    },
+    {
+      "runner": "plan/ws030/tests/run-libvulkan-foundation.sh",
+      "sha256": "0ef1c5d1073d9f82948dcc385582079cd70abfde148bf72ebb52f15ec5a52e0c",
+      "action": "not rerun",
+      "reason": "Does not compile instance.c/device.c or call their profile gates; native_quiescence is not read by the exercised source. Related struct storage is rebuilt by each standalone runner, with no fixed binary layout dependency."
+    },
+    {
+      "runner": "plan/ws030/tests/run-libvulkan-pipeline-test.sh",
+      "sha256": "f1aac451d55fa6bda29d6ebab3ac366c87914f73f74719af330d68e65c4f820a",
+      "action": "not rerun",
+      "reason": "Does not compile instance.c/device.c or call their profile gates; native_quiescence is not read by the exercised source. Related struct storage is rebuilt by each standalone runner, with no fixed binary layout dependency."
+    },
+    {
+      "runner": "plan/ws030/tests/run-libvulkan-commands-test.sh",
+      "sha256": "d7412162f126bd1a856ec617eeac85128aee66bba34144af471611d6bb5acc49",
+      "action": "not rerun",
+      "reason": "Does not compile instance.c/device.c or call their profile gates; native_quiescence is not read by the exercised source. Related struct storage is rebuilt by each standalone runner, with no fixed binary layout dependency."
+    }
+  ],
+  "foundation": "Only objects.c and wire.c primitives with its own transport peer; supplies no old renderer profile and creates no native Instance/Device.",
+  "commands": "The ordinary family runner excludes COMMANDS_REAL_CONTEXT. The separate real-context variant opens metadata and constructs an internal local device directly; context parser still recognizes old profiles, and its 13-profile parsing behavior passed the targeted context runner.",
+  "affected_reruns": "../userland-verification/profile7.json records context and discovery ordinary plus ASan/UBSan PASS, source stable. Discovery is the only focused shell runner that links instance.c/device.c; no other family fixture update is needed.",
+  "prior_results": "verification.json remains unchanged and retains the earlier seven family runs."
+}

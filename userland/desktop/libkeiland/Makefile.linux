@@ -1,0 +1,18 @@
+# The Linux build of libkeiland.so; the zedBSD build remains in Makefile.
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+# keiland-linux-sync: skip userland/base/net/* (networkd is zedBSD only)
+KEILAND_LINUX_KEILAND_SOURCES := userland/desktop/libkeiland/version.c \
+	userland/desktop/libkeiland/menu.c \
+	userland/desktop/libkeiland/recent.c \
+	userland/desktop/libkeiland/titlebar.c \
+	userland/desktop/libkeiland/glass.c \
+	userland/desktop/libkeiland/motion.c \
+	userland/desktop/libkeiland/scroll.c \
+	userland/desktop/libkeiland/gesture.c \
+	userland/desktop/libkeiland/preferences.c \
+	userland/desktop/libkeiland/desktop.c \
+	userland/desktop/libkeiland/keyboard-inset.c \
+	userland/desktop/libkeiland/edit.c \
+	userland/desktop/libkeiland/system-compat.c \
+	userland/desktop/libkeiland/audio-compat.c
+$(eval $(call KEILAND_LINUX_LIBRARY,keiland,libkeiland.so,$(KEILAND_LINUX_KEILAND_SOURCES),libwayland-client.so libkeiland-backend.a,-lm,userland/desktop/libkeiland/exports.map))

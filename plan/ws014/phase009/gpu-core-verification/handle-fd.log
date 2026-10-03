@@ -1,0 +1,4 @@
+kernel handle/fd/SCM_RIGHTS: lifecycle, reservation, typed transfer, abort and cleanup PASS
+kernel handle syscall boundary: SCM_RIGHTS, copyout rollback, fd flags, type errors PASS
+kernel handle/fd/SCM_RIGHTS: lifecycle, reservation, typed transfer, abort and cleanup PASS
+kernel handle syscall boundary: SCM_RIGHTS, copyout rollback, fd flags, type errors PASS

@@ -1,0 +1,378 @@
+require zedbuild;
+
+func requireSha256(path, expected) {
+    var command = "printf '%s  %s\\n' " + zbShellQuote(expected) + " " +
+        zbShellQuote(path) + " | sha256sum -c - >/dev/null";
+    if (System.shell(command) != 0) {
+        zbFail(path + ": SHA-256 differs from the immutable source");
+    }
+}
+
+func requireText(text, needle, what) {
+    if (String.indexOf(text, needle) < 0) {
+        zbFail(what + ": missing " + needle);
+    }
+}
+
+func rejectText(text, needle, what) {
+    if (String.indexOf(text, needle) >= 0) {
+        zbFail(what + ": forbidden imported content " + needle);
+    }
+}
+
+func withoutWhitespace(text) {
+    var result = "";
+    for (i in 0..String.charCount(text)) {
+        var code = String.charCodeAt(text, i);
+        if (code != 32 && code != 9 && code != 10 && code != 13) {
+            result = result + String.charAt(text, i);
+        }
+    }
+    return result;
+}
+
+func arrayBody(text, name, what) {
+    var anchor = name + "[] = {";
+    var start = String.indexOf(text, anchor);
+    if (start < 0) { zbFail(what + ": missing array " + name); }
+    var rest = String.substring(text, start + String.charCount(anchor), -1);
+    var finish = String.indexOf(rest, "};");
+    if (finish < 0) { zbFail(what + ": unterminated array " + name); }
+    return String.substring(rest, 0, finish);
+}
+
+func sizedArrayBody(text, name, what) {
+    var anchor = name + "[";
+    var start = String.indexOf(text, anchor);
+    if (start < 0) { zbFail(what + ": missing array " + name); }
+    var rest = String.substring(text, start + String.charCount(anchor), -1);
+    var initializer = String.indexOf(rest, "= {");
+    if (initializer < 0) { zbFail(what + ": missing initializer for " + name); }
+    rest = String.substring(rest, initializer + 3, -1);
+    var finish = String.indexOf(rest, "};");
+    if (finish < 0) { zbFail(what + ": unterminated array " + name); }
+    return String.substring(rest, 0, finish);
+}
+
+func isHexDigit(code) {
+    return (code >= 48 && code <= 57) || (code >= 65 && code <= 70) ||
+        (code >= 97 && code <= 102);
+}
+
+func countHexWords(text) {
+    var count = 0;
+    var i = 0;
+    var length = String.charCount(text);
+    while (i + 2 < length) {
+        if (String.charAt(text, i) == "0" &&
+            (String.charAt(text, i + 1) == "x" ||
+             String.charAt(text, i + 1) == "X") &&
+            isHexDigit(String.charCodeAt(text, i + 2))) {
+            count = count + 1;
+            i = i + 3;
+            while (i < length && isHexDigit(String.charCodeAt(text, i))) {
+                i = i + 1;
+            }
+        } else {
+            i = i + 1;
+        }
+    }
+    return count;
+}
+
+func isDecimalDigit(code) {
+    return code >= 48 && code <= 57;
+}
+
+func numberTokens(text, what) {
+    var numbers = [];
+    var i = 0;
+    var length = String.charCount(text);
+    while (i < length) {
+        var start = i;
+        if (String.charAt(text, i) == "-" && i + 1 < length &&
+            isDecimalDigit(String.charCodeAt(text, i + 1))) {
+            i = i + 1;
+        } else if (!isDecimalDigit(String.charCodeAt(text, i))) {
+            i = i + 1;
+            start = -1;
+        }
+        if (start >= 0) {
+            if (i + 2 < length && String.charAt(text, i) == "0" &&
+                (String.charAt(text, i + 1) == "x" ||
+                 String.charAt(text, i + 1) == "X") &&
+                isHexDigit(String.charCodeAt(text, i + 2))) {
+                i = i + 2;
+                while (i < length && isHexDigit(String.charCodeAt(text, i))) {
+                    i = i + 1;
+                }
+            } else {
+                while (i < length &&
+                       isDecimalDigit(String.charCodeAt(text, i))) {
+                    i = i + 1;
+                }
+            }
+            if (i == start || (i == start + 1 &&
+                               String.charAt(text, start) == "-")) {
+                zbFail(what + ": invalid numeric token");
+            }
+            Array.push(numbers,
+                zbParseNumber(String.substring(text, start, i - start)));
+        }
+    }
+    return numbers;
+}
+
+func requireNumbersEqual(actual, expected, what) {
+    if (Array.size(actual) != Array.size(expected)) {
+        zbFail(what + ": element count differs");
+    }
+    for (i in 0..Array.size(actual)) {
+        if (actual[i] != expected[i]) {
+            zbFail(what + ": value differs at element " + i);
+        }
+    }
+}
+
+func decodeBcdByte(data, byteIndex, what) {
+    var byte = (data >> (byteIndex * 8)) & 255;
+    var high = (byte >> 4) & 15;
+    var low = byte & 15;
+    if (high > 9 || low > 9) {
+        zbFail(what + ": non-BCD power-by-rate value");
+    }
+    return high * 10 + low;
+}
+
+func deriveLegacyRateOffsets(tableText, name) {
+    var what = "upstream " + name;
+    var values = numberTokens(arrayBody(tableText, name, what), what);
+    if (Array.size(values) != 46 * 6) {
+        zbFail(what + ": expected 46 six-field BB-PG records");
+    }
+
+    var cck = [];
+    var ofdm = [];
+    var record = 0;
+    while (record < 46) {
+        var at = record * 6;
+        var band = values[at];
+        var path = values[at + 1];
+        var txNumber = values[at + 2];
+        var address = values[at + 3];
+        var data = values[at + 5];
+        if (band == 0 && path == 0 && txNumber == 0) {
+            if (address == 0xc20) {
+                for (j in 0..4) {
+                    Array.push(cck, decodeBcdByte(data, j, what));
+                }
+            } else if (address == 0xc24 || address == 0xc28) {
+                for (j in 0..4) {
+                    Array.push(ofdm, decodeBcdByte(data, j, what));
+                }
+            }
+        }
+        record = record + 1;
+    }
+    if (Array.size(cck) != 4 || Array.size(ofdm) != 8) {
+        zbFail(what + ": missing 2.4-GHz CCK/OFDM path-A records");
+    }
+
+    var offsets = [];
+    for (j in 0..4) { Array.push(offsets, cck[j] - cck[3]); }
+    for (j in 0..8) { Array.push(offsets, ofdm[j] - ofdm[7]); }
+    return offsets;
+}
+
+func deriveLegacyWorldLimits(tableText, name) {
+    var what = "upstream " + name;
+    var values = numberTokens(arrayBody(tableText, name, what), what);
+    if (Array.size(values) != 585 * 6) {
+        zbFail(what + ": expected 585 six-field TX-power-limit records");
+    }
+
+    var limits = [];
+    var seen = [];
+    for (j in 0..22) {
+        Array.push(limits, 256);
+        Array.push(seen, 0);
+    }
+    var record = 0;
+    while (record < 585) {
+        var at = record * 6;
+        var regd = values[at];
+        var band = values[at + 1];
+        var bandwidth = values[at + 2];
+        var rateSection = values[at + 3];
+        var channel = values[at + 4];
+        var limit = values[at + 5];
+        if (regd >= 0 && regd <= 2 && band == 0 && bandwidth == 0 &&
+            rateSection >= 0 && rateSection <= 1 &&
+            channel >= 1 && channel <= 11) {
+            var index = (channel - 1) * 2 + rateSection;
+            if (limit < limits[index]) { limits[index] = limit; }
+            seen[index] = seen[index] + 1;
+        }
+        record = record + 1;
+    }
+    for (j in 0..22) {
+        if (seen[j] != 3 || limits[j] == 256) {
+            zbFail(what + ": incomplete FCC/MKK/ETSI legacy 2G coverage");
+        }
+    }
+    return limits;
+}
+
+func main(args) {
+    var sourceTable = "";
+    var sourceChip = "";
+    var sourceLicense = "";
+    var imported = "src/drivers/wifi/rtl8822b/rtl8822b.c";
+    var binaryLicense =
+        "userland/base/licenses/rtl8822b-tables/LICENSE";
+    var i = 0;
+    while (i < Array.size(args)) {
+        if (args[i] == "--source-table" && i + 1 < Array.size(args)) {
+            sourceTable = args[i + 1]; i = i + 2;
+        } else if (args[i] == "--source-chip" && i + 1 < Array.size(args)) {
+            sourceChip = args[i + 1]; i = i + 2;
+        } else if (args[i] == "--source-license" && i + 1 < Array.size(args)) {
+            sourceLicense = args[i + 1]; i = i + 2;
+        } else if (args[i] == "--import" && i + 1 < Array.size(args)) {
+            imported = args[i + 1]; i = i + 2;
+        } else if (args[i] == "--binary-license" &&
+                   i + 1 < Array.size(args)) {
+            binaryLicense = args[i + 1]; i = i + 2;
+        } else {
+            zbFail("usage: check-rtl8822b-tables.noct --source-table FILE " +
+                "--source-chip FILE --source-license FILE [--import FILE] " +
+                "[--binary-license FILE]");
+        }
+    }
+    if (sourceTable == "" || sourceChip == "" || sourceLicense == "") {
+        zbFail("all three immutable upstream source files are required");
+    }
+
+    requireSha256(sourceTable,
+        "8e58874cfb30a2bcbfe24af93348a56a35f2968fcbf2fbea2e7b48f733d212a7");
+    requireSha256(sourceChip,
+        "76f624db6f3cea02506be5a72924e9b5da27966fed9fc8fbdf6bb2f126712076");
+    requireSha256(sourceLicense,
+        "7a83b1aeb460458db9a4bd521d7f237c45b1650f6e60ea5ffc71e49472454de3");
+    var tableText = FileUtil.readText(sourceTable);
+    var chipText = FileUtil.readText(sourceChip);
+    var licenseText = FileUtil.readText(sourceLicense);
+    var importedText = FileUtil.readText(imported);
+    var binaryLicenseText = FileUtil.readText(binaryLicense);
+
+    requireText(tableText,
+        "// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause",
+        "upstream table source");
+    requireText(importedText, "// SPDX-License-Identifier: BSD-3-Clause",
+        "imported table data");
+    requireText(licenseText,
+        "Redistribution and use in source and binary forms",
+        "upstream BSD-3-Clause text");
+    requireText(importedText,
+        "Redistribution and use in source and binary forms",
+        "imported BSD-3-Clause notice");
+    requireText(importedText,
+        "Neither the name of the copyright holder nor the names of its",
+        "imported BSD-3-Clause notice");
+    requireText(importedText,
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS",
+        "imported BSD-3-Clause notice");
+    requireText(binaryLicenseText,
+        "Copyright (c) 2018-2019 Realtek Corporation",
+        "binary-distribution BSD-3-Clause notice");
+    requireText(binaryLicenseText,
+        "Redistribution and use in source and binary forms",
+        "binary-distribution BSD-3-Clause notice");
+    requireText(binaryLicenseText,
+        "Neither the name of the copyright holder nor the names of its",
+        "binary-distribution BSD-3-Clause notice");
+    requireText(binaryLicenseText,
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS",
+        "binary-distribution BSD-3-Clause notice");
+
+    var included = ["rtw8822b_mac", "rtw8822b_agc", "rtw8822b_bb",
+        "rtw8822b_rf_a", "rtw8822b_rf_b"];
+    var expectedWords = [250, 20302, 2984, 10178, 8904];
+    for (j in 0..Array.size(included)) {
+        var name = included[j];
+        var sourceBody = arrayBody(tableText, name, "upstream table source");
+        var importedBody = arrayBody(importedText, name,
+            "imported table data");
+        // Formatting may change whitespace, but every ordered value must match.
+        requireNumbersEqual(numberTokens(importedBody, "imported " + name),
+            numberTokens(sourceBody, "upstream " + name), name + " data stream");
+        if (countHexWords(sourceBody) != expectedWords[j] ||
+            countHexWords(importedBody) != expectedWords[j] ||
+            (expectedWords[j] & 1) != 0) {
+            zbFail(name + ": word count differs from section metadata");
+        }
+    }
+
+    var legacyOffsets = deriveLegacyRateOffsets(tableText,
+        "rtw8822b_bb_pg_type2");
+    requireNumbersEqual(deriveLegacyRateOffsets(tableText,
+        "rtw8822b_bb_pg_type3"), legacyOffsets,
+        "RFE type 3 legacy 2G rate offsets");
+    requireNumbersEqual(deriveLegacyRateOffsets(tableText,
+        "rtw8822b_bb_pg_type5"), legacyOffsets,
+        "RFE type 5 legacy 2G rate offsets");
+    requireText(importedText,
+        "static const int8_t rtw8822b_2g_legacy_rate_offset[12]",
+        "imported compact power-by-rate data");
+    requireNumbersEqual(numberTokens(sizedArrayBody(importedText,
+        "rtw8822b_2g_legacy_rate_offset",
+        "imported compact power-by-rate data"),
+        "imported compact power-by-rate data"), legacyOffsets,
+        "imported compact power-by-rate data");
+
+    var legacyLimits = deriveLegacyWorldLimits(tableText,
+        "rtw8822b_txpwr_lmt_type0");
+    requireNumbersEqual(deriveLegacyWorldLimits(tableText,
+        "rtw8822b_txpwr_lmt_type2"), legacyLimits,
+        "RFE type 2 legacy 2G world limits");
+    requireNumbersEqual(deriveLegacyWorldLimits(tableText,
+        "rtw8822b_txpwr_lmt_type5"), legacyLimits,
+        "RFE type 5 legacy 2G world limits");
+    requireText(importedText,
+        "static const uint8_t rtw8822b_2g_legacy_world_limit[11][2]",
+        "imported compact world-limit data");
+    requireNumbersEqual(numberTokens(sizedArrayBody(importedText,
+        "rtw8822b_2g_legacy_world_limit", "imported compact world-limit data"),
+        "imported compact world-limit data"), legacyLimits,
+        "imported compact world-limit data");
+
+    var excluded = ["rtw8822b_bb_pg_type2", "rtw8822b_bb_pg_type3",
+        "rtw8822b_bb_pg_type5", "rtw8822b_txpwr_lmt_type0",
+        "rtw8822b_txpwr_lmt_type2", "rtw8822b_txpwr_lmt_type5"];
+    for (j in 0..Array.size(excluded)) {
+        arrayBody(tableText, excluded[j], "upstream table source");
+        rejectText(importedText, excluded[j] + "[]", "imported table data");
+    }
+
+    requireText(chipText, "[2] = RTW_DEF_RFE(8822b, 2, 2),",
+        "upstream RFE map");
+    requireText(chipText, "[3] = RTW_DEF_RFE(8822b, 3, 0),",
+        "upstream RFE map");
+    requireText(chipText, "[5] = RTW_DEF_RFE(8822b, 5, 5),",
+        "upstream RFE map");
+
+    var counts = ["rtw8822b_mac, 250", "rtw8822b_agc, 20302",
+        "rtw8822b_bb, 2984", "rtw8822b_rf_a, 10178",
+        "rtw8822b_rf_b, 8904"];
+    var compactImported = withoutWhitespace(importedText);
+    for (j in 0..Array.size(counts)) {
+        requireText(compactImported, withoutWhitespace(counts[j]), "section metadata");
+    }
+
+    rejectText(importedText, "#include", "imported table data");
+    rejectText(importedText, "RTW_DECL_TABLE", "imported table data");
+    rejectText(importedText, "rtw_phy_cfg_", "imported table data");
+    rejectText(importedText, "static void ", "imported table data");
+    rejectText(importedText, "static int ", "imported table data");
+    print("RTL8822B table provenance check: PASS");
+}

@@ -1,0 +1,84 @@
+--- a/src/venus/vkr_queue.c
++++ b/src/venus/vkr_queue.c
+@@ -4,6 +4,10 @@
+  */
+ 
+ #include "vkr_queue.h"
++
++#include <errno.h>
++#include <time.h>
++#include <unistd.h>
+ 
+ #include "venus-protocol/vn_protocol_renderer_queue.h"
+ 
+@@ -169,6 +173,59 @@
+       free(queue);
+ }
+ 
++/* TEST ARTIFACT ONLY: one gate delays delivery after actual native success. */
++static void
++q312_completion_delay(struct vkr_context *ctx, struct vkr_queue_sync *sync)
++{
++   const char *gate = getenv("Q312_COMPLETION_GATE");
++   struct timespec started, now, pause;
++   int saved_error;
++
++   /* The private harness creates one file only after all contexts initialize. */
++   if (!gate || gate[0] != '/' || unlink(gate) != 0)
++      return;
++
++   if (clock_gettime(CLOCK_MONOTONIC, &started) != 0) {
++      fprintf(stderr, "Q312_COMPLETION_DELAY failed pid=%ld context=%u error=clock\n",
++              (long)getpid(), ctx->ctx_id);
++      fflush(stderr);
++      return;
++   }
++
++   fprintf(stderr,
++           "Q312_COMPLETION_DELAY acquired pid=%ld context=%u fence=%" PRIu64
++           " native=SUCCESS duration_ms=15000\n",
++           (long)getpid(), ctx->ctx_id, sync->fence_id);
++   fflush(stderr);
++
++   /* The queue and native mutexes are both unlocked at this test boundary. */
++   pause.tv_sec = 15;
++   pause.tv_nsec = 0;
++   while (nanosleep(&pause, &pause) != 0) {
++      saved_error = errno;
++      if (saved_error == EINTR)
++         continue;
++      fprintf(stderr, "Q312_COMPLETION_DELAY failed pid=%ld context=%u error=%d\n",
++              (long)getpid(), ctx->ctx_id, saved_error);
++      fflush(stderr);
++      return;
++   }
++
++   if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
++      fprintf(stderr, "Q312_COMPLETION_DELAY failed pid=%ld context=%u error=clock\n",
++              (long)getpid(), ctx->ctx_id);
++      fflush(stderr);
++      return;
++   }
++   const int64_t elapsed_ms = (now.tv_sec - started.tv_sec) * INT64_C(1000) +
++                             (now.tv_nsec - started.tv_nsec) / INT64_C(1000000);
++   fprintf(stderr,
++           "Q312_COMPLETION_DELAY released pid=%ld context=%u fence=%" PRIu64
++           " elapsed_ms=%" PRIi64 "\n",
++           (long)getpid(), ctx->ctx_id, sync->fence_id, elapsed_ms);
++   fflush(stderr);
++}
++
+ static int
+ vkr_queue_thread(void *arg)
+ {
+@@ -202,6 +259,10 @@
+          result = vk->WaitForFences(dev->base.handle.device, 1, &sync->fence, true,
+                                     ns_per_sec * 3);
+       }
++
++      /* The isolated test build changes delivery time, never the native result. */
++      if (result == VK_SUCCESS)
++         q312_completion_delay(ctx, sync);
+ 
+       mtx_lock(&queue->sync_thread.mutex);
+ 

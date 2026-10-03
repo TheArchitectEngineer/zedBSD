@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "checks": [
+    "C token stream unchanged by final style edit",
+    "target C89 syntax",
+    "owned source git diff --check"
+  ],
+  "source_sha256": "89c9277a29e99bad3f6e67a7c52f272f228f2a2ebbf6abf63824f30433228b53"
+}

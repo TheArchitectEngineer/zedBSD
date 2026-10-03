@@ -1,0 +1,856 @@
+--- a/server/render_client.c
++++ b/server/render_client.c
+@@ -222,13 +222,21 @@
+ render_client_dispatch_init(struct render_client *client,
+                             const union render_client_op_request *req)
+ {
++   if (req->init.zedbsd_magic != VIRGL_VENUS_ZEDBSD_MAGIC ||
++       req->init.zedbsd_flags != VIRGL_VENUS_ZEDBSD_FEATURES)
++      return false;
++
+    client->init_flags = req->init.flags;
+ 
+    /* this makes the Vulkan loader loads ICDs */
+    uint32_t unused_count;
+    vkEnumerateInstanceExtensionProperties(NULL, &unused_count, NULL);
+ 
+-   return true;
++   const struct render_client_op_init_reply reply = {
++      .zedbsd_magic = VIRGL_VENUS_ZEDBSD_MAGIC,
++      .zedbsd_flags = VIRGL_VENUS_ZEDBSD_FEATURES,
++   };
++   return render_socket_send_reply(&client->socket, &reply, sizeof(reply));
+ }
+ 
+ static bool
+@@ -278,8 +286,14 @@
+       return false;
+    }
+ 
+-   if (!entry->dispatch(client, &req))
++   if (!entry->dispatch(client, &req)) {
+       render_log("failed to dispatch client op %d", req.header.op);
++      /* INIT has a blocking peer waiting for its acknowledgment. A rejected
++       * pair must close the connection instead of silently withholding a reply.
++       */
++      if (req.header.op == RENDER_CLIENT_OP_INIT)
++         return false;
++   }
+ 
+    return true;
+ }
+--- a/server/render_context.c
++++ b/server/render_context.c
+@@ -94,7 +94,7 @@
+    const struct render_context_op_import_resource_request *req =
+       &request->import_resource;
+    return render_state_import_resource(ctx->ctx_id, req->res_id, req->fd_type, fds[0],
+-                                       req->size);
++                                       req->size, &req->vulkan_info);
+ }
+ 
+ static bool
+--- a/server/render_protocol.h
++++ b/server/render_protocol.h
+@@ -9,6 +9,7 @@
+ #include <stdint.h>
+ 
+ #include "virgl_resource.h"
++#include "venus_hw.h"
+ 
+ /* this covers the command line options and the socket type */
+ #define RENDER_SERVER_VERSION 0
+@@ -58,6 +59,14 @@
+ struct render_client_op_init_request {
+    struct render_client_op_header header;
+    uint32_t flags; /* VIRGL_RENDERER_USE_* and others */
++   uint32_t zedbsd_magic;
++   uint32_t zedbsd_flags;
++};
++
++/* Acknowledges the paired proxy/server protocol before any vendor cap is exposed. */
++struct render_client_op_init_reply {
++   uint32_t zedbsd_magic;
++   uint32_t zedbsd_flags;
+ };
+ 
+ /* Remove all contexts.
+@@ -164,6 +173,8 @@
+    uint32_t res_id;
+    enum virgl_resource_fd_type fd_type;
+    uint64_t size;
++   /* OPAQUE resources retain the exporting native allocation's immutable identity. */
++   struct virgl_resource_vulkan_info vulkan_info;
+    /* followed by 1 fd */
+ };
+ 
+--- a/server/render_state.c
++++ b/server/render_state.c
+@@ -235,10 +235,11 @@
+                              uint32_t res_id,
+                              enum virgl_resource_fd_type fd_type,
+                              int fd,
+-                             uint64_t size)
+-{
+-   SCOPE_LOCK_RENDERER();
+-   return vkr_renderer_import_resource(ctx_id, res_id, fd_type, fd, size);
++                             uint64_t size,
++                             const struct virgl_resource_vulkan_info *vulkan_info)
++{
++   SCOPE_LOCK_RENDERER();
++   return vkr_renderer_import_resource(ctx_id, res_id, fd_type, fd, size, vulkan_info);
+ }
+ 
+ void
+--- a/server/render_state.h
++++ b/server/render_state.h
+@@ -48,7 +48,8 @@
+                              uint32_t res_id,
+                              enum virgl_resource_fd_type fd_type,
+                              int fd,
+-                             uint64_t size);
++                             uint64_t size,
++                             const struct virgl_resource_vulkan_info *vulkan_info);
+ 
+ void
+ render_state_destroy_resource(uint32_t ctx_id, uint32_t res_id);
+--- a/src/proxy/proxy_client.c
++++ b/src/proxy/proxy_client.c
+@@ -86,8 +86,21 @@
+    const struct render_client_op_init_request req = {
+       .header.op = RENDER_CLIENT_OP_INIT,
+       .flags = flags,
++      .zedbsd_magic = VIRGL_VENUS_ZEDBSD_MAGIC,
++      .zedbsd_flags = VIRGL_VENUS_ZEDBSD_FEATURES,
+    };
+-   return proxy_socket_send_request(&client->socket, &req, sizeof(req));
++   if (!proxy_socket_send_request(&client->socket, &req, sizeof(req)))
++      return false;
++
++   struct render_client_op_init_reply reply;
++   if (!proxy_socket_receive_reply(&client->socket, &reply, sizeof(reply)))
++      return false;
++   if (reply.zedbsd_magic != VIRGL_VENUS_ZEDBSD_MAGIC ||
++       reply.zedbsd_flags != VIRGL_VENUS_ZEDBSD_FEATURES)
++      return false;
++
++   client->zedbsd_features = reply.zedbsd_flags;
++   return true;
+ }
+ 
+ struct proxy_client *
+--- a/src/proxy/proxy_client.h
++++ b/src/proxy/proxy_client.h
+@@ -10,6 +10,9 @@
+ 
+ struct proxy_client {
+    struct proxy_socket socket;
++
++   /* Set only after the paired server acknowledges the exact opaque-sharing contract. */
++   uint32_t zedbsd_features;
+ };
+ 
+ struct proxy_client *
+--- a/src/proxy/proxy_context.c
++++ b/src/proxy/proxy_context.c
+@@ -106,7 +106,6 @@
+                                             uint32_t cur_seqno)
+ {
+    struct proxy_timeline *timeline = &ctx->timelines[ring_idx];
+-   bool force_retire_all = false;
+ 
+    /* check if the socket has been disconnected (i.e., the other end has
+     * crashed) if no progress is made after a while
+@@ -117,15 +116,15 @@
+           proxy_socket_is_connected(&ctx->socket))
+          return false;
+ 
+-      /* socket has been disconnected */
+-      force_retire_all = true;
++      /* A disconnected renderer has no authority to invent successful GPU completion. */
++      return false;
+    }
+ 
+    timeline->cur_seqno = cur_seqno;
+    timeline->cur_seqno_stall_count = 0;
+ 
+    list_for_each_entry_safe (struct proxy_fence, fence, &timeline->fences, head) {
+-      if (!proxy_fence_is_signaled(fence, timeline->cur_seqno) && !force_retire_all)
++      if (!proxy_fence_is_signaled(fence, timeline->cur_seqno))
+          return false;
+ 
+       ctx->base.fence_retire(&ctx->base, ring_idx, fence->fence_id);
+@@ -188,6 +187,10 @@
+       }
+ 
+       proxy_context_retire_fences_internal(ctx);
++
++      /* HUP is permanently readable; leave pending fences for the guest watchdog. */
++      if (poll_fds[1].revents & (POLLHUP | POLLERR | POLLNVAL))
++         break;
+    }
+ 
+    return 0;
+@@ -442,12 +445,12 @@
+    if (proxy_context_resource_find(ctx, res_id))
+       return;
+ 
+-   /* The current render protocol only supports importing dma-buf, shm or pipe resource
+-    * that can be exported to dma-buf. A protocol change is needed when there exists use
+-    * case for importing external Vulkan opaque resource.
++   /* Opaque Vulkan allocations carry the original native allocation metadata through
++    * the paired render protocol; importing VkDeviceMemory validates that identity.
+     */
+    if (res->fd_type != VIRGL_RESOURCE_FD_INVALID &&
+        res->fd_type != VIRGL_RESOURCE_FD_DMABUF &&
++       res->fd_type != VIRGL_RESOURCE_FD_OPAQUE &&
+        res->fd_type != VIRGL_RESOURCE_FD_SHM) {
+       proxy_log("failed to attach res %d with fd_type %d", res_id, res->fd_type);
+       return;
+@@ -477,13 +480,24 @@
+       close_res_fd = true;
+    }
+ 
++   /* Reject malformed opaque allocation bounds before transferring the retained fd. */
++   if (res_fd_type == VIRGL_RESOURCE_FD_OPAQUE &&
++       (!res->vulkan_info.allocation_size ||
++        res_size > res->vulkan_info.allocation_size)) {
++      proxy_log("failed to attach opaque res %d with invalid allocation size", res_id);
++      return;
++   }
++
+    /* the proxy ignores iovs since transfer_3d is not supported */
+-   const struct render_context_op_import_resource_request req = {
++   struct render_context_op_import_resource_request req = {
+       .header.op = RENDER_CONTEXT_OP_IMPORT_RESOURCE,
+       .res_id = res_id,
+       .fd_type = res_fd_type,
+       .size = res_size,
+    };
++   if (res_fd_type == VIRGL_RESOURCE_FD_OPAQUE)
++      req.vulkan_info = res->vulkan_info;
++
+    if (!proxy_socket_send_request_with_fds(&ctx->socket, &req, sizeof(req), &res_fd, 1))
+       proxy_log("failed to attach res %d", res_id);
+ 
+--- a/src/proxy/proxy_renderer.c
++++ b/src/proxy/proxy_renderer.c
+@@ -58,8 +58,19 @@
+ proxy_get_capset(uint32_t set, void *caps)
+ {
+    switch (set) {
+-   case VIRGL_RENDERER_CAPSET_VENUS:
+-      return vkr_get_capset(caps, proxy_renderer.flags);
++   case VIRGL_RENDERER_CAPSET_VENUS: {
++      const size_t size = vkr_get_capset(caps, proxy_renderer.flags);
++      struct virgl_renderer_capset_venus *c = caps;
++      static_assert(sizeof(*c) == 168, "zedBSD suffix must follow the 160-byte capset");
++      static_assert(offsetof(struct virgl_renderer_capset_venus, zedbsd_magic) == 160,
++                    "zedBSD capability magic offset");
++      if (c && proxy_renderer.client &&
++          proxy_renderer.client->zedbsd_features == VIRGL_VENUS_ZEDBSD_FEATURES) {
++         c->zedbsd_magic = VIRGL_VENUS_ZEDBSD_MAGIC;
++         c->zedbsd_flags = proxy_renderer.client->zedbsd_features;
++      }
++      return size;
++   }
+    default:
+       break;
+    }
+--- a/src/venus/vkr_context.c
++++ b/src/venus/vkr_context.c
+@@ -136,6 +136,10 @@
+       return false;
+    }
+ 
++   /* A later sequence must never retire earlier work whose success is unknown. */
++   if (atomic_load_explicit(&ctx->queue_sync_failed, memory_order_acquire))
++      return false;
++
+    /* always merge fences */
+    assert(!(flags & ~VIRGL_RENDERER_FENCE_FLAG_MERGEABLE));
+    flags = VIRGL_RENDERER_FENCE_FLAG_MERGEABLE;
+@@ -210,9 +214,16 @@
+                                      uint64_t blob_size,
+                                      enum virgl_resource_fd_type fd_type,
+                                      int fd,
+-                                     void *mmap_ptr)
++                                     void *mmap_ptr,
++                                     const struct virgl_resource_vulkan_info *vulkan_info)
+ {
+    assert(!vkr_context_get_resource(ctx, res_id));
++
++   /* An opaque allocation cannot be reinterpreted without its exporting memory bounds. */
++   if (fd_type == VIRGL_RESOURCE_FD_OPAQUE &&
++       (!vulkan_info || !vulkan_info->allocation_size ||
++        blob_size > vulkan_info->allocation_size))
++      return false;
+ 
+    struct vkr_resource *res = malloc(sizeof(*res));
+    if (!res)
+@@ -221,6 +232,9 @@
+    res->res_id = res_id;
+    res->fd_type = fd_type;
+    res->size = blob_size;
++   memset(&res->vulkan_info, 0, sizeof(res->vulkan_info));
++   if (fd_type == VIRGL_RESOURCE_FD_OPAQUE)
++      res->vulkan_info = *vulkan_info;
+ 
+    /* fd and mmap_ptr cannot be valid at the same time, but allowed to be -1 and NULL */
+    assert(fd < 0 || !mmap_ptr);
+@@ -250,7 +264,7 @@
+       return false;
+ 
+    if (!vkr_context_import_resource_internal(ctx, res_id, blob_size,
+-                                             VIRGL_RESOURCE_FD_SHM, -1, mmap_ptr)) {
++                                             VIRGL_RESOURCE_FD_SHM, -1, mmap_ptr, NULL)) {
+       munmap(mmap_ptr, blob_size);
+       return false;
+    }
+@@ -277,7 +291,7 @@
+    }
+ 
+    if (!vkr_context_import_resource_internal(ctx, res_id, blob_size,
+-                                             VIRGL_RESOURCE_FD_SHM, -1, mmap_ptr)) {
++                                             VIRGL_RESOURCE_FD_SHM, -1, mmap_ptr, NULL)) {
+       munmap(mmap_ptr, blob_size);
+       close(fd);
+       return false;
+@@ -310,12 +324,12 @@
+    if (!vkr_device_memory_export_blob(mem, blob_size, blob_flags, &blob))
+       return false;
+ 
+-   /* For CROSS_DEVICE, store a dup'ed fd in vkr_resource for:
+-    * - vkAllocateMemory for dma_buf import
+-    * - vkGetMemoryFdPropertiesKHR for dma_buf fd properties query
++   /* Preserve an fd for native import in the exporting context as well as independent
++    * contexts. Cross-device dma-buf also needs its fd-properties query path.
+     */
+    int res_fd = -1;
+-   if (blob_flags & VIRGL_RENDERER_BLOB_FLAG_USE_CROSS_DEVICE) {
++   if ((blob_flags & VIRGL_RENDERER_BLOB_FLAG_USE_CROSS_DEVICE) ||
++       blob.type == VIRGL_RESOURCE_FD_OPAQUE) {
+       res_fd = os_dupfd_cloexec(blob.u.fd);
+       if (res_fd < 0) {
+          close(blob.u.fd);
+@@ -324,7 +338,7 @@
+    }
+ 
+    if (!vkr_context_import_resource_internal(ctx, res_id, blob_size, blob.type, res_fd,
+-                                             NULL)) {
++                                             NULL, &blob.vulkan_info)) {
+       if (res_fd >= 0)
+          close(res_fd);
+       close(blob.u.fd);
+@@ -359,12 +373,14 @@
+                             uint32_t res_id,
+                             enum virgl_resource_fd_type fd_type,
+                             int fd,
+-                            uint64_t size)
++                            uint64_t size,
++                            const struct virgl_resource_vulkan_info *vulkan_info)
+ {
+    if (fd_type == VIRGL_RESOURCE_FD_SHM)
+       return vkr_context_import_resource_from_shm(ctx, res_id, size, fd);
+ 
+-   return vkr_context_import_resource_internal(ctx, res_id, size, fd_type, fd, NULL);
++   return vkr_context_import_resource_internal(ctx, res_id, size, fd_type, fd, NULL,
++                                               vulkan_info);
+ }
+ 
+ void
+@@ -655,6 +671,7 @@
+ 
+    ctx->ctx_id = ctx_id;
+    ctx->retire_fence = cb;
++   atomic_init(&ctx->queue_sync_failed, false);
+    ctx->debug_name = malloc(debug_len + 1);
+    if (!ctx->debug_name)
+       goto err_debug_name;
+--- a/src/venus/vkr_context.h
++++ b/src/venus/vkr_context.h
+@@ -30,6 +30,9 @@
+    } u;
+ 
+    size_t size;
++
++   /* Opaque fd imports must preserve the native exporting allocation's identity. */
++   struct virgl_resource_vulkan_info vulkan_info;
+ };
+ 
+ enum vkr_context_validate_level {
+@@ -93,6 +96,9 @@
+ 
+    struct vkr_queue *sync_queues[64];
+ 
++   /* A failed queue marker forbids every later success watermark in this context. */
++   atomic_bool queue_sync_failed;
++
+    struct vkr_instance *instance;
+    char *instance_name;
+ 
+@@ -133,7 +139,8 @@
+                             uint32_t res_id,
+                             enum virgl_resource_fd_type fd_type,
+                             int fd,
+-                            uint64_t size);
++                            uint64_t size,
++                            const struct virgl_resource_vulkan_info *vulkan_info);
+ 
+ void
+ vkr_context_destroy_resource(struct vkr_context *ctx, uint32_t res_id);
+--- a/src/venus/vkr_device.c
++++ b/src/venus/vkr_device.c
+@@ -315,6 +315,10 @@
+          vkr_log("vkDeviceWaitIdle(%p) failed(%d)", dev, (int32_t)result);
+    }
+ 
++   /* End borrowed submission-fence waits before destroying device objects. */
++   list_for_each_entry_safe (struct vkr_queue, queue, &dev->queues, base.track_head)
++      vkr_queue_destroy(ctx, queue);
++
+    mtx_destroy(&dev->object_mutex);
+ 
+    if (!list_is_empty(&dev->objects)) {
+@@ -322,11 +326,8 @@
+          vkr_device_object_destroy(ctx, dev, obj);
+    }
+ 
+-   list_for_each_entry_safe (struct vkr_queue, queue, &dev->queues, base.track_head)
+-      vkr_queue_destroy(ctx, queue);
+-
+    list_for_each_entry_safe (struct vkr_queue_sync, sync, &dev->free_syncs, head) {
+-      vk->DestroyFence(dev->base.handle.device, sync->fence, NULL);
++      /* Queue records never own or destroy their borrowed native fence. */
+       free(sync);
+    }
+ 
+--- a/src/venus/vkr_device_memory.c
++++ b/src/venus/vkr_device_memory.c
+@@ -12,6 +12,8 @@
+ 
+ static bool
+ vkr_get_fd_info_from_resource_info(struct vkr_context *ctx,
++                                   const struct vkr_physical_device *physical_dev,
++                                   const VkMemoryAllocateInfo *alloc_info,
+                                    const VkImportMemoryResourceInfoMESA *res_info,
+                                    VkImportMemoryFdInfoKHR *out)
+ {
+@@ -27,9 +29,23 @@
+    case VIRGL_RESOURCE_FD_DMABUF:
+       handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+       break;
+-   case VIRGL_RESOURCE_FD_OPAQUE:
++   case VIRGL_RESOURCE_FD_OPAQUE: {
++      /* Opaque memory types and sizes are meaningful only for the exact native device
++       * and driver which exported the allocation. No guest-supplied reinterpretation
++       * may replace the metadata retained with the host fd.
++       */
++      const struct virgl_resource_vulkan_info *info = &res->vulkan_info;
++      const VkPhysicalDeviceIDProperties *id = &physical_dev->id_properties;
++      if (alloc_info->allocationSize != info->allocation_size ||
++          alloc_info->memoryTypeIndex != info->memory_type_index ||
++          memcmp(id->deviceUUID, info->device_uuid, VK_UUID_SIZE) ||
++          memcmp(id->driverUUID, info->driver_uuid, VK_UUID_SIZE)) {
++         vkr_log("failed to import opaque resource: native allocation identity mismatch");
++         return false;
++      }
+       handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+       break;
++   }
+    default:
+       return false;
+    }
+@@ -250,7 +266,8 @@
+       alloc_info, VK_STRUCTURE_TYPE_IMPORT_MEMORY_RESOURCE_INFO_MESA);
+    if (prev_of_res_info) {
+       res_info = (VkImportMemoryResourceInfoMESA *)prev_of_res_info->pNext;
+-      if (!vkr_get_fd_info_from_resource_info(ctx, res_info, &local_import_info)) {
++      if (!vkr_get_fd_info_from_resource_info(ctx, physical_dev, alloc_info, res_info,
++                                              &local_import_info)) {
+          args->ret = VK_ERROR_INVALID_EXTERNAL_HANDLE;
+          return;
+       }
+@@ -513,12 +530,10 @@
+       }
+       fd_type = VIRGL_RESOURCE_FD_DMABUF;
+       handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+-   } else if (can_export_dma_buf) {
+-      /* prefer dmabuf for easier mapping? */
+-      fd_type = VIRGL_RESOURCE_FD_DMABUF;
+-      handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+    } else if (can_export_opaque) {
+-      /* prefer opaque for performance? */
++      /* Same-device sharing preserves native optimal-image allocation semantics.
++       * CROSS_DEVICE above remains an explicit dma-buf requirement.
++       */
+       fd_type = VIRGL_RESOURCE_FD_OPAQUE;
+       handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+ 
+@@ -532,6 +547,9 @@
+ 
+       vulkan_info.allocation_size = mem->allocation_size;
+       vulkan_info.memory_type_index = mem->memory_type_index;
++   } else if (can_export_dma_buf) {
++      fd_type = VIRGL_RESOURCE_FD_DMABUF;
++      handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+    } else {
+       vkr_log("mem is not exportable");
+       return false;
+--- a/src/venus/vkr_queue.c
++++ b/src/venus/vkr_queue.c
+@@ -11,103 +11,119 @@
+ #include "vkr_physical_device.h"
+ #include "vkr_queue_gen.h"
+ 
++/* Allocates a queue marker record without creating or resetting a native fence. */
+ static struct vkr_queue_sync *
+-vkr_device_alloc_queue_sync(struct vkr_device *dev,
+-                            uint32_t fence_flags,
+-                            uint32_t ring_idx,
+-                            uint64_t fence_id)
+-{
+-   struct vn_device_proc_table *vk = &dev->proc_table;
++vkr_device_alloc_queue_sync(
++   struct vkr_device *dev,
++   uint32_t fence_flags,
++   uint32_t ring_idx,
++   uint64_t fence_id)
++{
+    struct vkr_queue_sync *sync;
+ 
++   /* Reuses only bookkeeping whose previous host fence access has ended. */
+    mtx_lock(&dev->free_sync_mutex);
++
+    if (list_is_empty(&dev->free_syncs)) {
+       mtx_unlock(&dev->free_sync_mutex);
+-
+       sync = malloc(sizeof(*sync));
+       if (!sync)
+          return NULL;
+-
+-      const VkExportFenceCreateInfo export_info = {
+-         .sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO,
+-         .handleTypes = VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT,
+-      };
+-      const struct VkFenceCreateInfo create_info = {
+-         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+-         .pNext = dev->physical_device->KHR_external_fence_fd ? &export_info : NULL,
+-      };
+-      VkResult result =
+-         vk->CreateFence(dev->base.handle.device, &create_info, NULL, &sync->fence);
+-      if (result != VK_SUCCESS) {
+-         free(sync);
+-         vkr_log("failed to create sync fence for fence_id %" PRIu64, fence_id);
+-         return NULL;
+-      }
+    } else {
+       sync = LIST_ENTRY(struct vkr_queue_sync, dev->free_syncs.next, head);
+       list_del(&sync->head);
+       mtx_unlock(&dev->free_sync_mutex);
+-
+-      vk->ResetFences(dev->base.handle.device, 1, &sync->fence);
+-   }
+-
+-   sync->device_lost = false;
++   }
++
++   /* The successful queue submission supplies the borrowed fence later. */
++   sync->fence = VK_NULL_HANDLE;
+    sync->flags = fence_flags;
+    sync->ring_idx = ring_idx;
+    sync->fence_id = fence_id;
+ 
++   /* Succeeded: this record owns no native Vulkan object. */
+    return sync;
+ }
+ 
+-static void
+-vkr_device_free_queue_sync(struct vkr_device *dev, struct vkr_queue_sync *sync)
+-{
++/* Recycles a completed record after relinquishing its borrowed fence identity. */
++static void
++vkr_device_free_queue_sync(
++   struct vkr_device *dev,
++   struct vkr_queue_sync *sync)
++{
++   /* The guest owns destruction and reset of the real submission fence. */
++   sync->fence = VK_NULL_HANDLE;
+    mtx_lock(&dev->free_sync_mutex);
++
+    list_addtail(&sync->head, &dev->free_syncs);
++
+    mtx_unlock(&dev->free_sync_mutex);
+ }
+ 
++/* Publishes verified success only while no earlier queue completion is uncertain. */
+ static inline void
+-vkr_queue_sync_retire(struct vkr_queue *queue, struct vkr_queue_sync *sync)
+-{
+-   TRACE_FUNC();
+-   queue->context->retire_fence(queue->context->ctx_id, sync->ring_idx, sync->fence_id);
++vkr_queue_sync_retire(
++   struct vkr_queue *queue,
++   struct vkr_queue_sync *sync)
++{
++   bool failed;
++
++   /* A later watermark must not conceal a failed earlier submission. */
++   failed = atomic_load_explicit(&queue->context->queue_sync_failed, memory_order_acquire);
++   if (!failed)
++      queue->context->retire_fence(queue->context->ctx_id, sync->ring_idx, sync->fence_id);
++
++   /* No native fence access is allowed after publishing the successful callback. */
+    vkr_device_free_queue_sync(queue->device, sync);
+ }
+ 
++/*
++ * Binds a marker to the actual latest successful submission's native fence.
++ */
+ bool
+-vkr_queue_sync_submit(struct vkr_queue *queue,
+-                      uint32_t flags,
+-                      uint32_t ring_idx,
+-                      uint64_t fence_id)
+-{
+-   TRACE_FUNC();
+-   struct vkr_device *dev = queue->device;
+-   struct vn_device_proc_table *vk = &dev->proc_table;
+-
+-   struct vkr_queue_sync *sync =
+-      vkr_device_alloc_queue_sync(dev, flags, ring_idx, fence_id);
+-   if (!sync)
++vkr_queue_sync_submit(
++   struct vkr_queue *queue,
++   uint32_t flags,
++   uint32_t ring_idx,
++   uint64_t fence_id)
++{
++   struct vkr_device *dev;
++   struct vkr_queue_sync *sync;
++   bool failed;
++
++   /* Reserve host bookkeeping before consuming the submission-to-marker handoff. */
++   dev = queue->device;
++   sync = vkr_device_alloc_queue_sync(dev, flags, ring_idx, fence_id);
++   if (!sync) {
++      atomic_store_explicit(&queue->context->queue_sync_failed, true, memory_order_release);
+       return false;
+-
++   }
++
++   /* Queue serialization associates this marker with exactly one native submission. */
+    mtx_lock(&queue->vk_mutex);
+-   VkResult result = vk->QueueSubmit(queue->base.handle.queue, 0, NULL, sync->fence);
++
++   failed = atomic_load_explicit(&queue->context->queue_sync_failed, memory_order_acquire);
++   sync->fence = queue->submission_fence;
++   queue->submission_fence = VK_NULL_HANDLE;
++
+    mtx_unlock(&queue->vk_mutex);
+ 
+-   if (result == VK_ERROR_DEVICE_LOST) {
+-      sync->device_lost = true;
+-      vkr_log("sync submit hit device lost for fence_id %" PRIu64, fence_id);
+-   } else if (result != VK_SUCCESS) {
++   /* No empty submit can substitute for an absent or rejected sparse/command submission. */
++   if (failed || sync->fence == VK_NULL_HANDLE) {
++      atomic_store_explicit(&queue->context->queue_sync_failed, true, memory_order_release);
+       vkr_device_free_queue_sync(dev, sync);
+-      vkr_log("sync submit failed (vk ret %d) for fence_id %" PRIu64, result, fence_id);
+       return false;
+    }
+ 
++   /* The guest retains this native fence until the corresponding kernel job terminates. */
+    mtx_lock(&queue->sync_thread.mutex);
++
+    list_addtail(&sync->head, &queue->sync_thread.syncs);
+    cnd_signal(&queue->sync_thread.cond);
++
+    mtx_unlock(&queue->sync_thread.mutex);
+ 
++   /* Succeeded: only a successful native wait can publish this marker. */
+    return true;
+ }
+ 
+@@ -122,8 +138,14 @@
+ 
+    thrd_join(queue->sync_thread.thread, NULL);
+ 
+-   list_for_each_entry_safe (struct vkr_queue_sync, sync, &queue->sync_thread.syncs, head)
+-      vkr_queue_sync_retire(queue, sync);
++   /* Unverified teardown must never advance the guest's successful watermark. */
++   if (!list_is_empty(&queue->sync_thread.syncs))
++      atomic_store_explicit(&queue->context->queue_sync_failed, true, memory_order_release);
++
++   list_for_each_entry_safe (struct vkr_queue_sync, sync, &queue->sync_thread.syncs, head) {
++      list_del(&sync->head);
++      vkr_device_free_queue_sync(queue->device, sync);
++   }
+ 
+    mtx_destroy(&queue->sync_thread.mutex);
+    cnd_destroy(&queue->sync_thread.cond);
+@@ -174,7 +196,7 @@
+       mtx_unlock(&queue->sync_thread.mutex);
+ 
+       VkResult result;
+-      if (sync->device_lost) {
++      if (atomic_load_explicit(&ctx->queue_sync_failed, memory_order_acquire)) {
+          result = VK_ERROR_DEVICE_LOST;
+       } else {
+          result = vk->WaitForFences(dev->base.handle.device, 1, &sync->fence, true,
+@@ -187,6 +209,14 @@
+          continue;
+ 
+       list_del(&sync->head);
++
++      /* Failure stays sticky and unacknowledged until the guest watchdog reports error. */
++      if (result != VK_SUCCESS) {
++         atomic_store_explicit(&ctx->queue_sync_failed, true, memory_order_release);
++         vkr_log("strict queue wait failed (%d), fence_id %" PRIu64, result, sync->fence_id);
++         vkr_device_free_queue_sync(dev, sync);
++         continue;
++      }
+ 
+       vkr_queue_sync_retire(queue, sync);
+    }
+@@ -243,6 +273,7 @@
+    queue->flags = flags;
+    queue->family = family;
+    queue->index = index;
++   queue->submission_fence = VK_NULL_HANDLE;
+ 
+    if (mtx_init(&queue->vk_mutex, mtx_plain)) {
+       free(queue);
+@@ -376,8 +407,16 @@
+    vn_replace_vkQueueSubmit_args_handle(args);
+ 
+    mtx_lock(&queue->vk_mutex);
++
++   /* A rejected operation must not leave an older native fence available to a marker. */
++   queue->submission_fence = VK_NULL_HANDLE;
+    args->ret =
+       vk->QueueSubmit(args->queue, args->submitCount, args->pSubmits, args->fence);
++   if (args->ret == VK_SUCCESS)
++      queue->submission_fence = args->fence;
++   else if (args->ret == VK_ERROR_DEVICE_LOST)
++      atomic_store_explicit(&queue->context->queue_sync_failed, true, memory_order_release);
++
+    mtx_unlock(&queue->vk_mutex);
+ }
+ 
+@@ -392,8 +431,16 @@
+    vn_replace_vkQueueBindSparse_args_handle(args);
+ 
+    mtx_lock(&queue->vk_mutex);
++
++   /* A rejected operation must not leave an older native fence available to a marker. */
++   queue->submission_fence = VK_NULL_HANDLE;
+    args->ret =
+       vk->QueueBindSparse(args->queue, args->bindInfoCount, args->pBindInfo, args->fence);
++   if (args->ret == VK_SUCCESS)
++      queue->submission_fence = args->fence;
++   else if (args->ret == VK_ERROR_DEVICE_LOST)
++      atomic_store_explicit(&queue->context->queue_sync_failed, true, memory_order_release);
++
+    mtx_unlock(&queue->vk_mutex);
+ }
+ 
+@@ -417,8 +464,16 @@
+    vn_replace_vkQueueSubmit2_args_handle(args);
+ 
+    mtx_lock(&queue->vk_mutex);
++
++   /* A rejected operation must not leave an older native fence available to a marker. */
++   queue->submission_fence = VK_NULL_HANDLE;
+    args->ret =
+       vk->QueueSubmit2(args->queue, args->submitCount, args->pSubmits, args->fence);
++   if (args->ret == VK_SUCCESS)
++      queue->submission_fence = args->fence;
++   else if (args->ret == VK_ERROR_DEVICE_LOST)
++      atomic_store_explicit(&queue->context->queue_sync_failed, true, memory_order_release);
++
+    mtx_unlock(&queue->vk_mutex);
+ }
+ 
+--- a/src/venus/vkr_queue.h
++++ b/src/venus/vkr_queue.h
+@@ -9,8 +9,8 @@
+ #include "vkr_common.h"
+ 
+ struct vkr_queue_sync {
++   /* Borrows the real submission fence until the final host wait finishes. */
+    VkFence fence;
+-   bool device_lost;
+ 
+    uint32_t flags;
+    uint32_t ring_idx;
+@@ -36,6 +36,9 @@
+     * thread and ring thread.
+     */
+    mtx_t vk_mutex;
++
++   /* The next marker consumes the latest successful submission fence. */
++   VkFence submission_fence;
+ 
+    /* Submitted fences are added to sync_thread.syncs first. With required
+     * VKR_RENDERER_THREAD_SYNC and VKR_RENDERER_ASYNC_FENCE_CB in render server, the sync
+--- a/src/venus/vkr_renderer.c
++++ b/src/venus/vkr_renderer.c
+@@ -212,7 +212,8 @@
+                              uint32_t res_id,
+                              enum virgl_resource_fd_type fd_type,
+                              int fd,
+-                             uint64_t size)
++                             uint64_t size,
++                             const struct virgl_resource_vulkan_info *vulkan_info)
+ {
+    TRACE_FUNC();
+ 
+@@ -225,7 +226,7 @@
+    if (!ctx)
+       return false;
+ 
+-   return vkr_context_import_resource(ctx, res_id, fd_type, fd, size);
++   return vkr_context_import_resource(ctx, res_id, fd_type, fd, size, vulkan_info);
+ }
+ 
+ void
+--- a/src/venus/vkr_renderer.h
++++ b/src/venus/vkr_renderer.h
+@@ -69,7 +69,8 @@
+                              uint32_t res_id,
+                              enum virgl_resource_fd_type fd_type,
+                              int fd,
+-                             uint64_t size);
++                             uint64_t size,
++                             const struct virgl_resource_vulkan_info *vulkan_info);
+ 
+ void
+ vkr_renderer_destroy_resource(uint32_t ctx_id, uint32_t res_id);
+--- a/src/venus_hw.h
++++ b/src/venus_hw.h
+@@ -25,6 +25,12 @@
+ #define VENUS_HW_H
+ 
+ #include <stdint.h>
++
++/* Isolated zedBSD renderer protocol: both proxy and server must acknowledge it. */
++#define VIRGL_VENUS_ZEDBSD_MAGIC 0x5a424453U
++#define VIRGL_VENUS_ZEDBSD_OPAQUE_SHARING 1U
++#define VIRGL_VENUS_ZEDBSD_STRICT_QUEUE 2U
++#define VIRGL_VENUS_ZEDBSD_FEATURES 3U
+ 
+ struct virgl_renderer_capset_venus {
+    uint32_t wire_format_version;
+@@ -69,6 +75,10 @@
+     * dedicated heap (Host visible memory).
+     */
+    uint32_t use_guest_vram;
++
++   /* Vendor suffix at byte 160. Unknown sizes, magic or flags are not this contract. */
++   uint32_t zedbsd_magic;
++   uint32_t zedbsd_flags;
+ };
+ 
+ #endif /* VENUS_HW_H */

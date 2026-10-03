@@ -1,0 +1,3 @@
+batch   bytes=1412  sha256=d41d1413553c7d7a6634e174d45e26049bd851509621eccb65c64d43d0ef9363
+state   bytes=4096  sha256=fe54619086da7612a828de663a162017f72c58ceae17ea5bd95784470685ff52
+fnv1a64 batch=241f478201bb3a81 state(page as submitted; the log is read after the run, so the marker dwords are the GPU-written values)=26a08d52909ca9a4

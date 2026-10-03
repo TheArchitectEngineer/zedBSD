@@ -1,0 +1,8 @@
+#version 450
+// ws101-p002: a workgroup of 16 x 16 = 256 invocations, each axis within the device's, is refused (more than 128).
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(std430, binding = 0) buffer O { uint o[]; };
+void main()
+{
+	o[gl_GlobalInvocationID.x] = 1u;
+}

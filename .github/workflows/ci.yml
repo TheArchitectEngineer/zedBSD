@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake curl git grub-common gzip ninja-build \
+            mtools patch xz-utils
+
+      - name: Acquire verified source inputs
+        run: make download
+
+      - name: Install pinned LLVM toolchain cache
+        run: |
+          make toolchain-cache
+          make -j4 toolchain
+
+      - name: Build amd64
+        run: |
+          cp config/ci/config-amd64.mk config.mk
+          make -j4
+          mkdir -p artifacts
+          # The 2 GiB native image is published gzip-compressed.
+          gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-amd64.img.gz
+
+      - name: Package Kei-nightly.zip
+        # Until the base package is on the rev-0 release, a failure here leaves
+        # the image release as it was.
+        continue-on-error: true
+        run: |
+          # The Windows package (WINQ-EMU QEMU with Venus) comes from the
+          # rev-0 release, verified by the SHA-256 in tools/release/kei-nightly.mk.
+          make kei-nightly-zip
+          cp build/amd64/Kei-nightly.zip artifacts/Kei-nightly.zip
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: |
+            artifacts/*.img.gz
+            artifacts/Kei-nightly.zip
+
+  release:
+    name: Create GitHub Release
+
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: write
+
+    needs:
+      - build
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          path: artifacts
+
+      - name: Download Keiland packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: keiland-linux-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checkout release verifier
+        uses: actions/checkout@v4
+        with:
+          path: release-source
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: nightly-${{ github.run_number }}
+          name: Nightly Build ${{ github.run_number }}
+          prerelease: true
+
+          body: |
+            This is an automated nightly build. Not an official release.
+            
+            zedBSD OS
+            =========
+            
+            | CPU     | Machine      | File                  | Description                                             |
+            |---------|--------------|-----------------------|---------------------------------------------------------|
+            | amd64   | PC (UEFI)    | `zedbsd-amd64.img.gz` | USB image, gzip-compressed (`gunzip` before writing).   |
+            | amd64   | Windows      | `Kei-nightly.zip`     | Kei in QEMU with Vulkan (Venus). Unzip and run `boot.bat`. |
+
+            Keiland Linux (native QEMU build and installation tests)
+            =======================================================
+
+          files: |
+            artifacts/zedbsd-amd64.img.gz
+            artifacts/Kei-nightly.zip

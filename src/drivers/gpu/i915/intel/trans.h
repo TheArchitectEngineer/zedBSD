@@ -1,0 +1,465 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ */
+
+/*
+ * Copyright © 2006-2007 Intel Corporation
+ * Copyright © 2012 Intel Corporation
+ *
+ * Authors:
+ *    Eric Anholt <eric@anholt.net>
+ *    Eugeni Dodonov <eugeni.dodonov@intel.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
+/*
+ * The transcoder and DDI registers of Linux i915_reg.h: enum transcoder
+ * (intel_display_limits.h) with the transcoder timing, pipe source, M/N and
+ * context latency registers, and the transcoder mode, VRR, DDI function and
+ * DDI buffer control registers.  display/modeset-internal.h includes it
+ * after enum pipe, because the transcoders are numbered after the pipes.
+ *
+ * enum transcoder and the timing, M/N and latency registers (Linux intel_display_limits.h, i915_reg.h).
+ * zedBSD WS031: `enum transcoder` and the transcoder timing / pipe source / M-N / context-latency register
+ * definitions extracted textually from the Linux v6.8.12 i915 reference (display/intel_display_limits.h:
+ * SPDX MIT; i915_reg.h: MIT permission notice; Copyright Intel Corporation -- the full notice is kept in
+ * intel_display_port.c) by tools/port_lcd_calc.py.
+ *
+ * The transcoder mode, VRR, DDI function and DDI buffer registers (Linux i915_reg.h).
+ * zedBSD WS031: the TRANS_MULT, TRANS_VRR_*, TRANSCONF, CHICKEN_TRANS, TRANS_DDI_FUNC_CTL[2], DDI_BUF_CTL and
+ * TRANS_MSA_MISC register definitions extracted textually from the Linux v6.8.12 i915 reference (i915_reg.h:
+ * MIT permission notice; Copyright Intel Corporation -- the full notice is kept in intel_ddi_port.c) by
+ * tools/port_lcd_calc.py.
+ */
+
+#ifndef DRIVERS_GPU_I915_INTEL_TRANS_H
+#define DRIVERS_GPU_I915_INTEL_TRANS_H
+
+/* enum transcoder and the timing, M/N and latency registers (Linux intel_display_limits.h, i915_reg.h). */
+
+enum transcoder {
+	INVALID_TRANSCODER = -1,
+	/*
+	 * The following transcoders have a 1:1 transcoder -> pipe mapping,
+	 * keep their values fixed: the code assumes that TRANSCODER_A=0, the
+	 * rest have consecutive values and match the enum values of the pipes
+	 * they map to.
+	 */
+	TRANSCODER_A = PIPE_A,
+	TRANSCODER_B = PIPE_B,
+	TRANSCODER_C = PIPE_C,
+	TRANSCODER_D = PIPE_D,
+
+	/*
+	 * The following transcoders can map to any pipe, their enum value
+	 * doesn't need to stay fixed.
+	 */
+	TRANSCODER_EDP,
+	TRANSCODER_DSI_0,
+	TRANSCODER_DSI_1,
+	TRANSCODER_DSI_A = TRANSCODER_DSI_0,	/* legacy DSI */
+	TRANSCODER_DSI_C = TRANSCODER_DSI_1,	/* legacy DSI */
+
+	I915_MAX_TRANSCODERS
+};
+
+/* Pipe/transcoder A timing regs */
+#define _TRANS_HTOTAL_A		0x60000
+#define   HTOTAL_MASK			REG_GENMASK(31, 16)
+#define   HTOTAL(htotal)		REG_FIELD_PREP(HTOTAL_MASK, (htotal))
+#define   HACTIVE_MASK			REG_GENMASK(15, 0)
+#define   HACTIVE(hdisplay)		REG_FIELD_PREP(HACTIVE_MASK, (hdisplay))
+#define _TRANS_HBLANK_A		0x60004
+#define   HBLANK_END_MASK		REG_GENMASK(31, 16)
+#define   HBLANK_END(hblank_end)	REG_FIELD_PREP(HBLANK_END_MASK, (hblank_end))
+#define   HBLANK_START_MASK		REG_GENMASK(15, 0)
+#define   HBLANK_START(hblank_start)	REG_FIELD_PREP(HBLANK_START_MASK, (hblank_start))
+#define _TRANS_HSYNC_A		0x60008
+#define   HSYNC_END_MASK		REG_GENMASK(31, 16)
+#define   HSYNC_END(hsync_end)		REG_FIELD_PREP(HSYNC_END_MASK, (hsync_end))
+#define   HSYNC_START_MASK		REG_GENMASK(15, 0)
+#define   HSYNC_START(hsync_start)	REG_FIELD_PREP(HSYNC_START_MASK, (hsync_start))
+#define _TRANS_VTOTAL_A		0x6000c
+#define   VTOTAL_MASK			REG_GENMASK(31, 16)
+#define   VTOTAL(vtotal)		REG_FIELD_PREP(VTOTAL_MASK, (vtotal))
+#define   VACTIVE_MASK			REG_GENMASK(15, 0)
+#define   VACTIVE(vdisplay)		REG_FIELD_PREP(VACTIVE_MASK, (vdisplay))
+#define _TRANS_VBLANK_A		0x60010
+#define   VBLANK_END_MASK		REG_GENMASK(31, 16)
+#define   VBLANK_END(vblank_end)	REG_FIELD_PREP(VBLANK_END_MASK, (vblank_end))
+#define   VBLANK_START_MASK		REG_GENMASK(15, 0)
+#define   VBLANK_START(vblank_start)	REG_FIELD_PREP(VBLANK_START_MASK, (vblank_start))
+#define _TRANS_VSYNC_A		0x60014
+#define   VSYNC_END_MASK		REG_GENMASK(31, 16)
+#define   VSYNC_END(vsync_end)		REG_FIELD_PREP(VSYNC_END_MASK, (vsync_end))
+#define   VSYNC_START_MASK		REG_GENMASK(15, 0)
+#define   VSYNC_START(vsync_start)	REG_FIELD_PREP(VSYNC_START_MASK, (vsync_start))
+#define _TRANS_EXITLINE_A	0x60018
+#define _PIPEASRC		0x6001c
+#define   PIPESRC_WIDTH_MASK	REG_GENMASK(31, 16)
+#define   PIPESRC_WIDTH(w)	REG_FIELD_PREP(PIPESRC_WIDTH_MASK, (w))
+#define   PIPESRC_HEIGHT_MASK	REG_GENMASK(15, 0)
+#define   PIPESRC_HEIGHT(h)	REG_FIELD_PREP(PIPESRC_HEIGHT_MASK, (h))
+#define _BCLRPAT_A		0x60020
+#define _TRANS_VSYNCSHIFT_A	0x60028
+#define _TRANS_MULT_A		0x6002c
+
+/* Pipe/transcoder B timing regs */
+#define _TRANS_HTOTAL_B		0x61000
+#define _TRANS_HBLANK_B		0x61004
+#define _TRANS_HSYNC_B		0x61008
+#define _TRANS_VTOTAL_B		0x6100c
+#define _TRANS_VBLANK_B		0x61010
+#define _TRANS_VSYNC_B		0x61014
+#define _PIPEBSRC		0x6101c
+#define _BCLRPAT_B		0x61020
+#define _TRANS_VSYNCSHIFT_B	0x61028
+#define _TRANS_MULT_B		0x6102c
+
+/* DSI 0 timing regs */
+#define _TRANS_HTOTAL_DSI0	0x6b000
+#define _TRANS_HSYNC_DSI0	0x6b008
+#define _TRANS_VTOTAL_DSI0	0x6b00c
+#define _TRANS_VSYNC_DSI0	0x6b014
+#define _TRANS_VSYNCSHIFT_DSI0	0x6b028
+
+/* DSI 1 timing regs */
+#define _TRANS_HTOTAL_DSI1	0x6b800
+#define _TRANS_HSYNC_DSI1	0x6b808
+#define _TRANS_VTOTAL_DSI1	0x6b80c
+#define _TRANS_VSYNC_DSI1	0x6b814
+#define _TRANS_VSYNCSHIFT_DSI1	0x6b828
+
+#define TRANS_HTOTAL(trans)	_MMIO_TRANS2((trans), _TRANS_HTOTAL_A)
+#define TRANS_HBLANK(trans)	_MMIO_TRANS2((trans), _TRANS_HBLANK_A)
+#define TRANS_HSYNC(trans)	_MMIO_TRANS2((trans), _TRANS_HSYNC_A)
+#define TRANS_VTOTAL(trans)	_MMIO_TRANS2((trans), _TRANS_VTOTAL_A)
+#define TRANS_VBLANK(trans)	_MMIO_TRANS2((trans), _TRANS_VBLANK_A)
+#define TRANS_VSYNC(trans)	_MMIO_TRANS2((trans), _TRANS_VSYNC_A)
+#define BCLRPAT(trans)		_MMIO_TRANS2((trans), _BCLRPAT_A)
+#define TRANS_VSYNCSHIFT(trans)	_MMIO_TRANS2((trans), _TRANS_VSYNCSHIFT_A)
+#define PIPESRC(pipe)		_MMIO_TRANS2((pipe), _PIPEASRC)
+#define TRANS_MULT(trans)	_MMIO_TRANS2((trans), _TRANS_MULT_A)
+
+#define _PIPEA_DATA_M1		0x60030
+#define _PIPEA_DATA_N1		0x60034
+#define _PIPEA_DATA_M2		0x60038
+#define _PIPEA_DATA_N2		0x6003c
+#define _PIPEA_LINK_M1		0x60040
+#define _PIPEA_LINK_N1		0x60044
+#define _PIPEA_LINK_M2		0x60048
+#define _PIPEA_LINK_N2		0x6004c
+
+/* PIPEB timing regs are same start from 0x61000 */
+
+#define _PIPEB_DATA_M1		0x61030
+#define _PIPEB_DATA_N1		0x61034
+#define _PIPEB_DATA_M2		0x61038
+#define _PIPEB_DATA_N2		0x6103c
+#define _PIPEB_LINK_M1		0x61040
+#define _PIPEB_LINK_N1		0x61044
+#define _PIPEB_LINK_M2		0x61048
+#define _PIPEB_LINK_N2		0x6104c
+
+#define PIPE_DATA_M1(tran) _MMIO_TRANS2(tran, _PIPEA_DATA_M1)
+#define PIPE_DATA_N1(tran) _MMIO_TRANS2(tran, _PIPEA_DATA_N1)
+#define PIPE_DATA_M2(tran) _MMIO_TRANS2(tran, _PIPEA_DATA_M2)
+#define PIPE_DATA_N2(tran) _MMIO_TRANS2(tran, _PIPEA_DATA_N2)
+#define PIPE_LINK_M1(tran) _MMIO_TRANS2(tran, _PIPEA_LINK_M1)
+#define PIPE_LINK_N1(tran) _MMIO_TRANS2(tran, _PIPEA_LINK_N1)
+#define PIPE_LINK_M2(tran) _MMIO_TRANS2(tran, _PIPEA_LINK_M2)
+#define PIPE_LINK_N2(tran) _MMIO_TRANS2(tran, _PIPEA_LINK_N2)
+
+#define _TRANS_A_SET_CONTEXT_LATENCY		0x6007C
+#define _TRANS_B_SET_CONTEXT_LATENCY		0x6107C
+#define _TRANS_C_SET_CONTEXT_LATENCY		0x6207C
+#define _TRANS_D_SET_CONTEXT_LATENCY		0x6307C
+#define TRANS_SET_CONTEXT_LATENCY(tran)		_MMIO_TRANS2(tran, _TRANS_A_SET_CONTEXT_LATENCY)
+#define  TRANS_SET_CONTEXT_LATENCY_MASK		REG_GENMASK(15, 0)
+#define  TRANS_SET_CONTEXT_LATENCY_VALUE(x)	REG_FIELD_PREP(TRANS_SET_CONTEXT_LATENCY_MASK, (x))
+
+/* The transcoder mode, VRR, DDI function and DDI buffer registers (Linux i915_reg.h). */
+
+/* VRR registers */
+#define _TRANS_VRR_CTL_A		0x60420
+#define _TRANS_VRR_CTL_B		0x61420
+#define _TRANS_VRR_CTL_C		0x62420
+#define _TRANS_VRR_CTL_D		0x63420
+#define TRANS_VRR_CTL(trans)			_MMIO_TRANS2(trans, _TRANS_VRR_CTL_A)
+#define   VRR_CTL_VRR_ENABLE			REG_BIT(31)
+#define   VRR_CTL_IGN_MAX_SHIFT			REG_BIT(30)
+#define   VRR_CTL_FLIP_LINE_EN			REG_BIT(29)
+#define   VRR_CTL_PIPELINE_FULL_MASK		REG_GENMASK(10, 3)
+#define   VRR_CTL_PIPELINE_FULL(x)		REG_FIELD_PREP(VRR_CTL_PIPELINE_FULL_MASK, (x))
+#define   VRR_CTL_PIPELINE_FULL_OVERRIDE	REG_BIT(0)
+#define	  XELPD_VRR_CTL_VRR_GUARDBAND_MASK	REG_GENMASK(15, 0)
+#define	  XELPD_VRR_CTL_VRR_GUARDBAND(x)	REG_FIELD_PREP(XELPD_VRR_CTL_VRR_GUARDBAND_MASK, (x))
+
+#define _TRANS_VRR_VMAX_A		0x60424
+#define _TRANS_VRR_VMAX_B		0x61424
+#define _TRANS_VRR_VMAX_C		0x62424
+#define _TRANS_VRR_VMAX_D		0x63424
+#define TRANS_VRR_VMAX(trans)		_MMIO_TRANS2(trans, _TRANS_VRR_VMAX_A)
+#define   VRR_VMAX_MASK			REG_GENMASK(19, 0)
+
+#define _TRANS_VRR_VMIN_A		0x60434
+#define _TRANS_VRR_VMIN_B		0x61434
+#define _TRANS_VRR_VMIN_C		0x62434
+#define _TRANS_VRR_VMIN_D		0x63434
+#define TRANS_VRR_VMIN(trans)		_MMIO_TRANS2(trans, _TRANS_VRR_VMIN_A)
+#define   VRR_VMIN_MASK			REG_GENMASK(15, 0)
+
+#define _TRANS_VRR_VMAXSHIFT_A		0x60428
+#define _TRANS_VRR_VMAXSHIFT_B		0x61428
+#define _TRANS_VRR_VMAXSHIFT_C		0x62428
+#define _TRANS_VRR_VMAXSHIFT_D		0x63428
+#define TRANS_VRR_VMAXSHIFT(trans)	_MMIO_TRANS2(trans, \
+					_TRANS_VRR_VMAXSHIFT_A)
+#define   VRR_VMAXSHIFT_DEC_MASK	REG_GENMASK(29, 16)
+#define   VRR_VMAXSHIFT_DEC		REG_BIT(16)
+#define   VRR_VMAXSHIFT_INC_MASK	REG_GENMASK(12, 0)
+
+#define _TRANS_VRR_STATUS_A		0x6042C
+#define _TRANS_VRR_STATUS_B		0x6142C
+#define _TRANS_VRR_STATUS_C		0x6242C
+#define _TRANS_VRR_STATUS_D		0x6342C
+#define TRANS_VRR_STATUS(trans)		_MMIO_TRANS2(trans, _TRANS_VRR_STATUS_A)
+#define   VRR_STATUS_VMAX_REACHED	REG_BIT(31)
+#define   VRR_STATUS_NOFLIP_TILL_BNDR	REG_BIT(30)
+#define   VRR_STATUS_FLIP_BEF_BNDR	REG_BIT(29)
+#define   VRR_STATUS_NO_FLIP_FRAME	REG_BIT(28)
+#define   VRR_STATUS_VRR_EN_LIVE	REG_BIT(27)
+#define   VRR_STATUS_FLIPS_SERVICED	REG_BIT(26)
+#define   VRR_STATUS_VBLANK_MASK	REG_GENMASK(22, 20)
+#define   STATUS_FSM_IDLE		REG_FIELD_PREP(VRR_STATUS_VBLANK_MASK, 0)
+#define   STATUS_FSM_WAIT_TILL_FDB	REG_FIELD_PREP(VRR_STATUS_VBLANK_MASK, 1)
+#define   STATUS_FSM_WAIT_TILL_FS	REG_FIELD_PREP(VRR_STATUS_VBLANK_MASK, 2)
+#define   STATUS_FSM_WAIT_TILL_FLIP	REG_FIELD_PREP(VRR_STATUS_VBLANK_MASK, 3)
+#define   STATUS_FSM_PIPELINE_FILL	REG_FIELD_PREP(VRR_STATUS_VBLANK_MASK, 4)
+#define   STATUS_FSM_ACTIVE		REG_FIELD_PREP(VRR_STATUS_VBLANK_MASK, 5)
+#define   STATUS_FSM_LEGACY_VBLANK	REG_FIELD_PREP(VRR_STATUS_VBLANK_MASK, 6)
+
+#define _TRANS_VRR_VTOTAL_PREV_A	0x60480
+#define _TRANS_VRR_VTOTAL_PREV_B	0x61480
+#define _TRANS_VRR_VTOTAL_PREV_C	0x62480
+#define _TRANS_VRR_VTOTAL_PREV_D	0x63480
+#define TRANS_VRR_VTOTAL_PREV(trans)	_MMIO_TRANS2(trans, \
+					_TRANS_VRR_VTOTAL_PREV_A)
+#define   VRR_VTOTAL_FLIP_BEFR_BNDR	REG_BIT(31)
+#define   VRR_VTOTAL_FLIP_AFTER_BNDR	REG_BIT(30)
+#define   VRR_VTOTAL_FLIP_AFTER_DBLBUF	REG_BIT(29)
+#define   VRR_VTOTAL_PREV_FRAME_MASK	REG_GENMASK(19, 0)
+
+#define _TRANS_VRR_FLIPLINE_A		0x60438
+#define _TRANS_VRR_FLIPLINE_B		0x61438
+#define _TRANS_VRR_FLIPLINE_C		0x62438
+#define _TRANS_VRR_FLIPLINE_D		0x63438
+#define TRANS_VRR_FLIPLINE(trans)	_MMIO_TRANS2(trans, \
+					_TRANS_VRR_FLIPLINE_A)
+#define   VRR_FLIPLINE_MASK		REG_GENMASK(19, 0)
+
+#define _TRANSACONF		0x70008
+#define   TRANSCONF_ENABLE			REG_BIT(31)
+#define   TRANSCONF_DOUBLE_WIDE			REG_BIT(30) /* pre-i965 */
+#define   TRANSCONF_STATE_ENABLE			REG_BIT(30) /* i965+ */
+#define   TRANSCONF_DSI_PLL_LOCKED		REG_BIT(29) /* vlv & pipe A only */
+#define   TRANSCONF_FRAME_START_DELAY_MASK	REG_GENMASK(28, 27) /* pre-hsw */
+#define   TRANSCONF_FRAME_START_DELAY(x)		REG_FIELD_PREP(TRANSCONF_FRAME_START_DELAY_MASK, (x)) /* pre-hsw: 0-3 */
+#define   TRANSCONF_PIPE_LOCKED			REG_BIT(25)
+#define   TRANSCONF_FORCE_BORDER			REG_BIT(25)
+#define   TRANSCONF_GAMMA_MODE_MASK_I9XX		REG_BIT(24) /* gmch */
+#define   TRANSCONF_GAMMA_MODE_MASK_ILK		REG_GENMASK(25, 24) /* ilk-ivb */
+#define   TRANSCONF_GAMMA_MODE_8BIT		REG_FIELD_PREP(TRANSCONF_GAMMA_MODE_MASK, 0)
+#define   TRANSCONF_GAMMA_MODE_10BIT		REG_FIELD_PREP(TRANSCONF_GAMMA_MODE_MASK, 1)
+#define   TRANSCONF_GAMMA_MODE_12BIT		REG_FIELD_PREP(TRANSCONF_GAMMA_MODE_MASK_ILK, 2) /* ilk-ivb */
+#define   TRANSCONF_GAMMA_MODE_SPLIT		REG_FIELD_PREP(TRANSCONF_GAMMA_MODE_MASK_ILK, 3) /* ivb */
+#define   TRANSCONF_GAMMA_MODE(x)		REG_FIELD_PREP(TRANSCONF_GAMMA_MODE_MASK_ILK, (x)) /* pass in GAMMA_MODE_MODE_* */
+#define   TRANSCONF_INTERLACE_MASK		REG_GENMASK(23, 21) /* gen3+ */
+#define   TRANSCONF_INTERLACE_PROGRESSIVE	REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK, 0)
+#define   TRANSCONF_INTERLACE_W_SYNC_SHIFT_PANEL	REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK, 4) /* gen4 only */
+#define   TRANSCONF_INTERLACE_W_SYNC_SHIFT	REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK, 5) /* gen4 only */
+#define   TRANSCONF_INTERLACE_W_FIELD_INDICATION	REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK, 6)
+#define   TRANSCONF_INTERLACE_FIELD_0_ONLY	REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK, 7) /* gen3 only */
+/*
+ * ilk+: PF/D=progressive fetch/display, IF/D=interlaced fetch/display,
+ * DBL=power saving pixel doubling, PF-ID* requires panel fitter
+ */
+#define   TRANSCONF_INTERLACE_MASK_ILK		REG_GENMASK(23, 21) /* ilk+ */
+#define   TRANSCONF_INTERLACE_MASK_HSW		REG_GENMASK(22, 21) /* hsw+ */
+#define   TRANSCONF_INTERLACE_PF_PD_ILK		REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK_ILK, 0)
+#define   TRANSCONF_INTERLACE_PF_ID_ILK		REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK_ILK, 1)
+#define   TRANSCONF_INTERLACE_IF_ID_ILK		REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK_ILK, 3)
+#define   TRANSCONF_INTERLACE_IF_ID_DBL_ILK	REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK_ILK, 4) /* ilk/snb only */
+#define   TRANSCONF_INTERLACE_PF_ID_DBL_ILK	REG_FIELD_PREP(TRANSCONF_INTERLACE_MASK_ILK, 5) /* ilk/snb only */
+#define   TRANSCONF_REFRESH_RATE_ALT_ILK		REG_BIT(20)
+#define   TRANSCONF_MSA_TIMING_DELAY_MASK	REG_GENMASK(19, 18) /* ilk/snb/ivb */
+#define   TRANSCONF_MSA_TIMING_DELAY(x)		REG_FIELD_PREP(TRANSCONF_MSA_TIMING_DELAY_MASK, (x))
+#define   TRANSCONF_CXSR_DOWNCLOCK		REG_BIT(16)
+#define   TRANSCONF_WGC_ENABLE			REG_BIT(15) /* vlv/chv only */
+#define   TRANSCONF_REFRESH_RATE_ALT_VLV		REG_BIT(14)
+#define   TRANSCONF_COLOR_RANGE_SELECT		REG_BIT(13)
+#define   TRANSCONF_OUTPUT_COLORSPACE_MASK	REG_GENMASK(12, 11) /* ilk-ivb */
+#define   TRANSCONF_OUTPUT_COLORSPACE_RGB	REG_FIELD_PREP(TRANSCONF_OUTPUT_COLORSPACE_MASK, 0) /* ilk-ivb */
+#define   TRANSCONF_OUTPUT_COLORSPACE_YUV601	REG_FIELD_PREP(TRANSCONF_OUTPUT_COLORSPACE_MASK, 1) /* ilk-ivb */
+#define   TRANSCONF_OUTPUT_COLORSPACE_YUV709	REG_FIELD_PREP(TRANSCONF_OUTPUT_COLORSPACE_MASK, 2) /* ilk-ivb */
+#define   TRANSCONF_OUTPUT_COLORSPACE_YUV_HSW	REG_BIT(11) /* hsw only */
+#define   TRANSCONF_BPC_MASK			REG_GENMASK(7, 5) /* ctg-ivb */
+#define   TRANSCONF_BPC_8			REG_FIELD_PREP(TRANSCONF_BPC_MASK, 0)
+#define   TRANSCONF_BPC_10			REG_FIELD_PREP(TRANSCONF_BPC_MASK, 1)
+#define   TRANSCONF_BPC_6			REG_FIELD_PREP(TRANSCONF_BPC_MASK, 2)
+#define   TRANSCONF_BPC_12			REG_FIELD_PREP(TRANSCONF_BPC_MASK, 3)
+#define   TRANSCONF_DITHER_EN			REG_BIT(4)
+#define   TRANSCONF_DITHER_TYPE_MASK		REG_GENMASK(3, 2)
+#define   TRANSCONF_DITHER_TYPE_SP		REG_FIELD_PREP(TRANSCONF_DITHER_TYPE_MASK, 0)
+#define   TRANSCONF_DITHER_TYPE_ST1		REG_FIELD_PREP(TRANSCONF_DITHER_TYPE_MASK, 1)
+#define   TRANSCONF_DITHER_TYPE_ST2		REG_FIELD_PREP(TRANSCONF_DITHER_TYPE_MASK, 2)
+#define   TRANSCONF_DITHER_TYPE_TEMP		REG_FIELD_PREP(TRANSCONF_DITHER_TYPE_MASK, 3)
+#define TRANSCONF(trans)	_MMIO_PIPE2((trans), _TRANSACONF)
+
+#define _CHICKEN_TRANS_A	0x420c0
+#define _CHICKEN_TRANS_B	0x420c4
+#define _CHICKEN_TRANS_C	0x420c8
+#define _CHICKEN_TRANS_EDP	0x420cc
+#define _CHICKEN_TRANS_D	0x420d8
+#define CHICKEN_TRANS(trans)	_MMIO(_PICK((trans), \
+					    [TRANSCODER_EDP] = _CHICKEN_TRANS_EDP, \
+					    [TRANSCODER_A] = _CHICKEN_TRANS_A, \
+					    [TRANSCODER_B] = _CHICKEN_TRANS_B, \
+					    [TRANSCODER_C] = _CHICKEN_TRANS_C, \
+					    [TRANSCODER_D] = _CHICKEN_TRANS_D))
+#define _MTL_CHICKEN_TRANS_A	0x604e0
+#define _MTL_CHICKEN_TRANS_B	0x614e0
+#define MTL_CHICKEN_TRANS(trans)	_MMIO_TRANS((trans), \
+						    _MTL_CHICKEN_TRANS_A, \
+						    _MTL_CHICKEN_TRANS_B)
+#define   PIPE_VBLANK_WITH_DELAY	REG_BIT(31) /* tgl+ */
+#define   SKL_UNMASK_VBL_TO_PIPE_IN_SRD	REG_BIT(30) /* skl+ */
+#define   HSW_FRAME_START_DELAY_MASK	REG_GENMASK(28, 27)
+#define   HSW_FRAME_START_DELAY(x)	REG_FIELD_PREP(HSW_FRAME_START_DELAY_MASK, x)
+#define   VSC_DATA_SEL_SOFTWARE_CONTROL	REG_BIT(25) /* GLK */
+#define   FECSTALL_DIS_DPTSTREAM_DPTTG	REG_BIT(23)
+#define   DDI_TRAINING_OVERRIDE_ENABLE	REG_BIT(19)
+#define   ADLP_1_BASED_X_GRANULARITY	REG_BIT(18)
+#define   DDI_TRAINING_OVERRIDE_VALUE	REG_BIT(18)
+#define   DDIE_TRAINING_OVERRIDE_ENABLE	REG_BIT(17) /* CHICKEN_TRANS_A only */
+#define   DDIE_TRAINING_OVERRIDE_VALUE	REG_BIT(16) /* CHICKEN_TRANS_A only */
+#define   PSR2_ADD_VERTICAL_LINE_COUNT	REG_BIT(15)
+#define   PSR2_VSC_ENABLE_PROG_HEADER	REG_BIT(12)
+
+/* Per-pipe DDI Function Control */
+#define _TRANS_DDI_FUNC_CTL_A		0x60400
+#define _TRANS_DDI_FUNC_CTL_B		0x61400
+#define _TRANS_DDI_FUNC_CTL_C		0x62400
+#define _TRANS_DDI_FUNC_CTL_D		0x63400
+#define _TRANS_DDI_FUNC_CTL_EDP		0x6F400
+#define _TRANS_DDI_FUNC_CTL_DSI0	0x6b400
+#define _TRANS_DDI_FUNC_CTL_DSI1	0x6bc00
+#define TRANS_DDI_FUNC_CTL(tran) _MMIO_TRANS2(tran, _TRANS_DDI_FUNC_CTL_A)
+
+#define  TRANS_DDI_FUNC_ENABLE		(1 << 31)
+/* Those bits are ignored by pipe EDP since it can only connect to DDI A */
+#define  TRANS_DDI_PORT_SHIFT		28
+#define  TGL_TRANS_DDI_PORT_SHIFT	27
+#define  TRANS_DDI_PORT_MASK		(7 << TRANS_DDI_PORT_SHIFT)
+#define  TGL_TRANS_DDI_PORT_MASK	(0xf << TGL_TRANS_DDI_PORT_SHIFT)
+#define  TRANS_DDI_SELECT_PORT(x)	((x) << TRANS_DDI_PORT_SHIFT)
+#define  TGL_TRANS_DDI_SELECT_PORT(x)	(((x) + 1) << TGL_TRANS_DDI_PORT_SHIFT)
+#define  TRANS_DDI_MODE_SELECT_MASK	(7 << 24)
+#define  TRANS_DDI_MODE_SELECT_HDMI	(0 << 24)
+#define  TRANS_DDI_MODE_SELECT_DVI	(1 << 24)
+#define  TRANS_DDI_MODE_SELECT_DP_SST	(2 << 24)
+#define  TRANS_DDI_MODE_SELECT_DP_MST	(3 << 24)
+#define  TRANS_DDI_MODE_SELECT_FDI_OR_128B132B	(4 << 24)
+#define  TRANS_DDI_BPC_MASK		(7 << 20)
+#define  TRANS_DDI_BPC_8		(0 << 20)
+#define  TRANS_DDI_BPC_10		(1 << 20)
+#define  TRANS_DDI_BPC_6		(2 << 20)
+#define  TRANS_DDI_BPC_12		(3 << 20)
+#define  TRANS_DDI_PORT_SYNC_MASTER_SELECT_MASK	REG_GENMASK(19, 18)
+#define  TRANS_DDI_PORT_SYNC_MASTER_SELECT(x)	REG_FIELD_PREP(TRANS_DDI_PORT_SYNC_MASTER_SELECT_MASK, (x))
+#define  TRANS_DDI_PVSYNC		(1 << 17)
+#define  TRANS_DDI_PHSYNC		(1 << 16)
+#define  TRANS_DDI_PORT_SYNC_ENABLE	REG_BIT(15)
+#define  TRANS_DDI_EDP_INPUT_MASK	(7 << 12)
+#define  TRANS_DDI_EDP_INPUT_A_ON	(0 << 12)
+#define  TRANS_DDI_EDP_INPUT_A_ONOFF	(4 << 12)
+#define  TRANS_DDI_EDP_INPUT_B_ONOFF	(5 << 12)
+#define  TRANS_DDI_EDP_INPUT_C_ONOFF	(6 << 12)
+#define  TRANS_DDI_EDP_INPUT_D_ONOFF	(7 << 12)
+#define  TRANS_DDI_MST_TRANSPORT_SELECT_MASK	REG_GENMASK(11, 10)
+#define  TRANS_DDI_MST_TRANSPORT_SELECT(trans)	\
+	REG_FIELD_PREP(TRANS_DDI_MST_TRANSPORT_SELECT_MASK, trans)
+#define  TRANS_DDI_HDCP_SIGNALLING	(1 << 9)
+#define  TRANS_DDI_DP_VC_PAYLOAD_ALLOC	(1 << 8)
+#define  TRANS_DDI_HDMI_SCRAMBLER_CTS_ENABLE (1 << 7)
+#define  TRANS_DDI_HDMI_SCRAMBLER_RESET_FREQ (1 << 6)
+#define  TRANS_DDI_HDCP_SELECT		REG_BIT(5)
+#define  TRANS_DDI_BFI_ENABLE		(1 << 4)
+#define  TRANS_DDI_HIGH_TMDS_CHAR_RATE	(1 << 4)
+#define  TRANS_DDI_PORT_WIDTH_MASK	REG_GENMASK(3, 1)
+#define  TRANS_DDI_PORT_WIDTH(width)	REG_FIELD_PREP(TRANS_DDI_PORT_WIDTH_MASK, (width) - 1)
+#define  TRANS_DDI_HDMI_SCRAMBLING	(1 << 0)
+#define  TRANS_DDI_HDMI_SCRAMBLING_MASK (TRANS_DDI_HDMI_SCRAMBLER_CTS_ENABLE \
+					| TRANS_DDI_HDMI_SCRAMBLER_RESET_FREQ \
+					| TRANS_DDI_HDMI_SCRAMBLING)
+
+#define _TRANS_DDI_FUNC_CTL2_A		0x60404
+#define _TRANS_DDI_FUNC_CTL2_B		0x61404
+#define _TRANS_DDI_FUNC_CTL2_C		0x62404
+#define _TRANS_DDI_FUNC_CTL2_EDP	0x6f404
+#define _TRANS_DDI_FUNC_CTL2_DSI0	0x6b404
+#define _TRANS_DDI_FUNC_CTL2_DSI1	0x6bc04
+#define TRANS_DDI_FUNC_CTL2(tran)	_MMIO_TRANS2(tran, _TRANS_DDI_FUNC_CTL2_A)
+#define  PORT_SYNC_MODE_ENABLE			REG_BIT(4)
+#define  PORT_SYNC_MODE_MASTER_SELECT_MASK	REG_GENMASK(2, 0)
+#define  PORT_SYNC_MODE_MASTER_SELECT(x)	REG_FIELD_PREP(PORT_SYNC_MODE_MASTER_SELECT_MASK, (x))
+
+#define _DDI_BUF_CTL_A				0x64000
+#define _DDI_BUF_CTL_B				0x64100
+/* Known as DDI_CTL_DE in MTL+ */
+#define DDI_BUF_CTL(port) _MMIO_PORT(port, _DDI_BUF_CTL_A, _DDI_BUF_CTL_B)
+#define  DDI_BUF_CTL_ENABLE			(1 << 31)
+#define  XE2LPD_DDI_BUF_D2D_LINK_ENABLE		REG_BIT(29)
+#define  XE2LPD_DDI_BUF_D2D_LINK_STATE		REG_BIT(28)
+#define  DDI_BUF_TRANS_SELECT(n)	((n) << 24)
+#define  DDI_BUF_EMP_MASK			(0xf << 24)
+#define  DDI_BUF_PHY_LINK_RATE(r)		((r) << 20)
+#define  DDI_BUF_PORT_DATA_MASK			REG_GENMASK(19, 18)
+#define  DDI_BUF_PORT_DATA_10BIT		REG_FIELD_PREP(DDI_BUF_PORT_DATA_MASK, 0)
+#define  DDI_BUF_PORT_DATA_20BIT		REG_FIELD_PREP(DDI_BUF_PORT_DATA_MASK, 1)
+#define  DDI_BUF_PORT_DATA_40BIT		REG_FIELD_PREP(DDI_BUF_PORT_DATA_MASK, 2)
+#define  DDI_BUF_PORT_REVERSAL			(1 << 16)
+#define  DDI_BUF_IS_IDLE			(1 << 7)
+#define  DDI_BUF_CTL_TC_PHY_OWNERSHIP		REG_BIT(6)
+#define  DDI_A_4_LANES				(1 << 4)
+#define  DDI_PORT_WIDTH(width)			(((width) == 3 ? 4 : ((width) - 1)) << 1)
+#define  DDI_PORT_WIDTH_MASK			(7 << 1)
+#define  DDI_PORT_WIDTH_SHIFT			1
+#define  DDI_INIT_DISPLAY_DETECTED		(1 << 0)
+
+#define _TRANSA_MSA_MISC		0x60410
+#define _TRANSB_MSA_MISC		0x61410
+#define _TRANSC_MSA_MISC		0x62410
+#define _TRANS_EDP_MSA_MISC		0x6f410
+#define TRANS_MSA_MISC(tran) _MMIO_TRANS2(tran, _TRANSA_MSA_MISC)
+
+#endif /* DRIVERS_GPU_I915_INTEL_TRANS_H */

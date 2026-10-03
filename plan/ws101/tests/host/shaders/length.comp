@@ -1,0 +1,12 @@
+#version 450
+// ws101-p002: .length() of a run-time array, and a stride that is not a power of two.
+layout(local_size_x = 1) in;
+struct S { uint a; uint b; uint c; };
+layout(std430, set = 0, binding = 0) buffer W { uint head; uint words[]; };
+layout(std430, set = 0, binding = 1) buffer T { S triples[]; };
+layout(std430, set = 0, binding = 2) buffer O { uint o[]; };
+void main()
+{
+	o[0] = uint(words.length());
+	o[1] = uint(triples.length());
+}

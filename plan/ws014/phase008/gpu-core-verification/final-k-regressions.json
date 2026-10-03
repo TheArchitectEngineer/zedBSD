@@ -1,0 +1,123 @@
+{
+  "scope": "q311 final generic DRIVER-tag and GPU core regression matrix",
+  "parallel_limit": 2,
+  "per_suite_limit_seconds": 120,
+  "source_hashes": {
+    "src/drivers/gpu/gpu.c": "79ee974479d7229d3370c34f1791cfdd4d552b720ebc3568caf12a7f295a71a0",
+    "src/drivers/gpu/gpu-fence.c": "2231f9dd68e1e7605d38fff59747d87f5e936eaabbd5985dc9ab5213a061ae33",
+    "include/drivers/gpu.h": "23686e50618d0828bc7fead47e27583fae7965773197e5bacb925fcae901dba4",
+    "include/drivers/gpu-fence.h": "90a0b3cf39b253fabee9da570609590cc63cf5ee8d83d6389a61f2c7e3969762",
+    "include/kern/handle.h": "f407505a7585aae6ec865f748f9a5309a4aa6c2fa9552f0654339d1106196b3f",
+    "src/kern/handle.c": "7f78caedc78a68b9534a4cf5c9b7ecf6cf6e026a35aa6e504749175d8f2217e8",
+    "src/kern/fd-object.c": "d21a7fb84f3e7d36fcc325159a4510443a936c9b040c94569caf84ee2e638078",
+    "src/kern/filedesc.c": "8dbc35104d970912eafcdb2fb5c43fd95f38ca609d159908662ed57eea6a801f",
+    "src/kern/poll.c": "8e7a04c9ef63ef2c6b8b22085832d5a072f33904807054ac97e18480bb97e8f9",
+    "src/kern/net/unix-socket.c": "67e2619451b4a978b7f39de98551ae0dd2386e860527fbf386646914e7fce479"
+  },
+  "source_unchanged": true,
+  "completed_utc": "2026-09-13T09:05:38.238215+00:00",
+  "suites": [
+    {
+      "suite": "gpu-sharing",
+      "runner": "plan/ws014/tests/run-gpu-sharing-test.sh",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-gpu-sharing-test.sh"
+      ],
+      "started_utc": "2026-09-13T09:05:26.353383+00:00",
+      "duration_seconds": 3.978,
+      "exit_code": 0,
+      "result": "PASS",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "log": "q311-final-gpu-sharing.log",
+      "runner_sha256": "6dea3f046c51aad1ff05c8056812e2f5c41f351936ab196cc931da159e2434f4"
+    },
+    {
+      "suite": "handle-fd",
+      "runner": "plan/ws014/tests/run-handle-fd-test.sh",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-handle-fd-test.sh",
+        "/home/awe/zedBSD/plan/ws014/temp/q311-final-k-regressions/handle-fd"
+      ],
+      "started_utc": "2026-09-13T09:05:26.353106+00:00",
+      "duration_seconds": 6.738,
+      "exit_code": 0,
+      "result": "PASS",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "log": "q311-final-handle-fd.log",
+      "runner_sha256": "d7fb9d69b8fd6dca618c6783d983a8f1b44090a2d7f062b15d8d2d28a53b8b7d"
+    },
+    {
+      "suite": "gpu-topology",
+      "runner": "plan/ws014/tests/run-gpu-topology-test.sh",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-gpu-topology-test.sh"
+      ],
+      "started_utc": "2026-09-13T09:05:30.331949+00:00",
+      "duration_seconds": 4.077,
+      "exit_code": 0,
+      "result": "PASS",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "log": "q311-final-gpu-topology.log",
+      "runner_sha256": "44fb6ced82efbeaba4d91631d21a139c56912adafe0286673899ba81002e7150"
+    },
+    {
+      "suite": "gpu-scanout",
+      "runner": "plan/ws014/tests/run-gpu-scanout-test.sh",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-gpu-scanout-test.sh"
+      ],
+      "started_utc": "2026-09-13T09:05:33.091208+00:00",
+      "duration_seconds": 4.079,
+      "exit_code": 0,
+      "result": "PASS",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "log": "q311-final-gpu-scanout.log",
+      "runner_sha256": "3c8c3b3410c3a7f8a7886502c80c69e45a1c555295ae57dd35ee707f8cbccd8c"
+    },
+    {
+      "suite": "gpu-placement",
+      "runner": "plan/ws014/tests/run-gpu-placement-test.sh",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-gpu-placement-test.sh"
+      ],
+      "started_utc": "2026-09-13T09:05:34.409501+00:00",
+      "duration_seconds": 3.828,
+      "exit_code": 0,
+      "result": "PASS",
+      "modes": [
+        "ordinary",
+        "ASan/UBSan"
+      ],
+      "log": "q311-final-gpu-placement.log",
+      "runner_sha256": "7b49c8c1fbfcd7a4dda9fbd01cadac76e383b9553295e1155111d9d606836e2d"
+    }
+  ],
+  "result": "PASS"
+}

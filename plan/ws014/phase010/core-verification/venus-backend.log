@@ -1,0 +1,6 @@
+QUIESCE backend: old-host refusal, host ACK and descriptor retirement as two barriers, admission owned by the core PASS
+ISOLATE backend: quarantined context keeps its allocation, sends no destroy/close traffic, retires at reset PASS
+Venus backend: context/storage/blob/present/timeout ownership PASS
+QUIESCE backend: old-host refusal, host ACK and descriptor retirement as two barriers, admission owned by the core PASS
+ISOLATE backend: quarantined context keeps its allocation, sends no destroy/close traffic, retires at reset PASS
+Venus backend: context/storage/blob/present/timeout ownership PASS

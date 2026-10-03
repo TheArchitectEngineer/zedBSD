@@ -1,0 +1,51 @@
+window capture click 1 inner true window
+document capture click 1 inner true #document
+outer capture click 1 inner true DIV
+inner capture click 2 inner true P
+attribute handler click inner
+inner bubble click 2 inner true P
+outer bubble click 3 inner true DIV
+document bubble click 3 inner true #document
+window bubble click 3 inner true window
+--- stopPropagation
+window capture click 1 inner true window
+document capture click 1 inner true #document
+outer capture click 1 inner true DIV
+inner capture click 2 inner true P
+attribute handler click inner
+inner bubble click 2 inner true P
+outer bubble click 3 inner true DIV
+stopper
+--- stopImmediatePropagation
+a
+--- once and duplicates
+count 1
+--- handleEvent and cancel
+handleEvent true true
+handleEvent true false
+results false true false false 0 null true
+--- CustomEvent and property handler
+detail 42 true true
+window capture click 1 inner true window
+document capture click 1 inner true #document
+outer capture click 1 inner true DIV
+inner capture click 2 inner true P
+attribute handler click inner
+inner bubble click 2 inner true P
+outer bubble click 3 inner true DIV
+property handler inner
+document bubble click 3 inner true #document
+window bubble click 3 inner true window
+--- EventTarget of its own
+own target x true
+--- errors
+Uncaught Error: listener failed
+after the error
+no type true
+not an event true
+mouse 5 7 1 true false
+phases 0 1 2 3
+--- MessageEvent and postMessage
+made 9 https://example.test id true true true
+queued
+posted 7 true string true true

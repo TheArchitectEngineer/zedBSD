@@ -1,0 +1,79 @@
+{
+  "scope": "proposed isolated quiescence source, native idle mocks and private CPU0 socketpair only",
+  "source_sha256": {
+    "src/venus/vkr_context.c": "11b742cf9589053ce062f3da608b1fe19df4e9c83927fdbdcbd32fb1e27a186f",
+    "src/venus/vkr_context.h": "fb84e596919a1536d114f56ae19c48963fe193e4122f51d5be41f75f596ac7f9",
+    "src/proxy/proxy_context.c": "b17250637668883eab2c8ca710a77f203605ef4011b6fe8eee2517054497af3d"
+  },
+  "results": [
+    {
+      "case": "context",
+      "profile": "ordinary",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 7.290373005962465,
+        "log": "/tmp/q312-quiesce-host-evidence/context-ordinary.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.06463272596010938,
+        "log": "/tmp/q312-quiesce-host-evidence/context-ordinary.run.log"
+      }
+    },
+    {
+      "case": "context",
+      "profile": "sanitized",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 13.764385213027708,
+        "log": "/tmp/q312-quiesce-host-evidence/context-sanitized.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.11547487002098933,
+        "log": "/tmp/q312-quiesce-host-evidence/context-sanitized.run.log"
+      }
+    },
+    {
+      "case": "proxy",
+      "profile": "ordinary",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.41683153295889497,
+        "log": "/tmp/q312-quiesce-host-evidence/proxy-ordinary.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.0015157349989749491,
+        "log": "/tmp/q312-quiesce-host-evidence/proxy-ordinary.run.log"
+      }
+    },
+    {
+      "case": "proxy",
+      "profile": "sanitized",
+      "compile": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.4656735729658976,
+        "log": "/tmp/q312-quiesce-host-evidence/proxy-sanitized.compile.log"
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "pass": true,
+        "seconds": 0.016509245964698493,
+        "log": "/tmp/q312-quiesce-host-evidence/proxy-sanitized.run.log"
+      }
+    }
+  ],
+  "pass": true
+}

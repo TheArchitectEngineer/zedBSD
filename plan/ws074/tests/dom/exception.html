@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html><head><title>exception</title></head><body><div id="d"></div>
+<script>
+// ws074-p083: DOMException (the interface, its names and codes, and the DOM's throws).
+var made = new DOMException("the message", "NotFoundError");
+console.log("made " + [made.name, made.code, made.message].join("|"));
+var plain = new DOMException();
+console.log("defaults [" + plain.name + "] " + plain.code + " [" + plain.message + "]");
+var odd = new DOMException("m", "SomethingElse");
+console.log("unknown name " + odd.name + " " + odd.code);
+console.log("instance " + (made instanceof DOMException) + " " + (made instanceof Error) + " " + (Object.getPrototypeOf(DOMException.prototype) === Error.prototype));
+console.log("string " + String(made) + " | " + String(plain));
+console.log("constants " + [DOMException.INDEX_SIZE_ERR, DOMException.HIERARCHY_REQUEST_ERR, DOMException.NOT_FOUND_ERR, DOMException.SYNTAX_ERR, DOMException.QUOTA_EXCEEDED_ERR, DOMException.DATA_CLONE_ERR, made.INVALID_STATE_ERR].join(" "));
+var codes = ["IndexSizeError", "HierarchyRequestError", "InvalidCharacterError", "NoModificationAllowedError", "NotSupportedError", "InvalidStateError", "SyntaxError", "SecurityError", "NetworkError", "AbortError", "QuotaExceededError", "TimeoutError", "DataCloneError", "EncodingError", "NotAllowedError"].map(function (name) {
+  return name + "=" + new DOMException("", name).code;
+});
+console.log("codes " + codes.join(" "));
+var d = document.getElementById("d");
+function thrown(f) {
+  try { f(); return "none"; } catch (e) { return (e instanceof DOMException) + " " + e.name + " " + e.code; }
+}
+console.log("hierarchy " + thrown(function () { d.appendChild(document.body); }));
+console.log("not found " + thrown(function () { d.removeChild(document.body); }));
+console.log("character " + thrown(function () { document.createElement(""); }));
+console.log("syntax " + thrown(function () { d.querySelector("[["); }));
+console.log("token " + thrown(function () { d.classList.add("a b"); }));
+console.log("position " + thrown(function () { d.insertAdjacentHTML("nowhere", ""); }));
+console.log("computed " + thrown(function () { getComputedStyle(d).color = "red"; }));
+console.log("type error " + thrown(function () { d.appendChild("x"); }));
+try { throw new DOMException("thrown by a script", "AbortError"); } catch (e) { console.log("script " + e.name + " " + e.code + " " + e.message); }
+</script>
+</body></html>

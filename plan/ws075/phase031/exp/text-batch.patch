@@ -1,0 +1,655 @@
+commit 6cb8e214e04edb9394a984a7c482324569473306
+Author: Awe Morris <awe@noctvm.io>
+Date:   Wed Sep 30 14:30:23 2026 +0900
+
+    WIP
+
+diff --git a/userland/desktop/wayland/backdrop.c b/userland/desktop/wayland/backdrop.c
+index 98c623ac..dee62898 100644
+--- a/userland/desktop/wayland/backdrop.c
++++ b/userland/desktop/wayland/backdrop.c
+@@ -85,7 +85,8 @@ zwl_backdrop_begin(
+ 	/* The scene's glass samples the blurred wallpaper while the scene is drawn (not the image being drawn). */
+ 	compose->backdrop_set = VK_NULL_HANDLE;
+ 
+-	/* The output's pass ends, and the scene is drawn small. */
++	/* The output's pass ends (after the glyphs waiting, ws075-p031), and the scene is drawn small. */
++	zwl_text_flush(server, command);
+ 	vkCmdEndRenderPass(command);
+ 	backdrop_begin_small(server, command, &backdrop->targets[0]);
+ 
+@@ -108,9 +109,10 @@ zwl_backdrop_end(
+ 	VkRenderPassBeginInfo pass;
+ 	unsigned round;
+ 
+-	/* The scene's pass ends. */
++	/* The scene's pass ends (after the glyphs waiting, ws075-p031). */
+ 	compose = server->compose;
+ 	backdrop = &compose->backdrop;
++	zwl_text_flush(server, command);
+ 	vkCmdEndRenderPass(command);
+ 
+ 	/* Blurred across into the second image, then down back into the first, a few times over. */
+diff --git a/userland/desktop/wayland/compose.c b/userland/desktop/wayland/compose.c
+index 7fb10028..23d65c16 100644
+--- a/userland/desktop/wayland/compose.c
++++ b/userland/desktop/wayland/compose.c
+@@ -32,7 +32,9 @@
+ static VkResult compose_device(struct zwl_compose *compose);
+ static VkResult compose_objects(struct zwl_compose *compose);
+ static VkResult compose_pass(struct zwl_compose *compose);
+-static VkResult compose_pipeline(struct zwl_compose *compose, enum zwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, VkPipeline *pipeline);
++static VkResult compose_pipeline(struct zwl_compose *compose, enum zwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *text_input, VkPipeline *pipeline);
++static VkResult compose_text_pipeline(struct zwl_compose *compose);
++static VkResult compose_text_buffer(struct zwl_compose *compose);
+ static VkResult compose_panel_pipeline(struct zwl_compose *compose);
+ static VkResult compose_corners(struct zwl_compose *compose);
+ static VkResult compose_targets(struct zwl_compose *compose);
+@@ -532,6 +534,14 @@ zwl_compose_close(
+ 		vkDestroyBuffer(compose->device, compose->corners, NULL);
+ 		vkFreeMemory(compose->device, compose->corners_memory, NULL);
+ 
++		/* The text batches' pipeline and vertex buffer (ws075-p031). */
++		if (compose->text_pipeline != VK_NULL_HANDLE)
++			vkDestroyPipeline(compose->device, compose->text_pipeline, NULL);
++		if (compose->text_buffer != VK_NULL_HANDLE)
++			vkDestroyBuffer(compose->device, compose->text_buffer, NULL);
++		if (compose->text_memory != VK_NULL_HANDLE)
++			vkFreeMemory(compose->device, compose->text_memory, NULL);
++
+ 		/* The pass, layouts, sampler, pools and synchronization. */
+ 		vkDestroyRenderPass(compose->device, compose->pass, NULL);
+ 		vkDestroyPipelineLayout(compose->device, compose->layout, NULL);
+@@ -790,6 +800,11 @@ compose_objects(
+ 
+ 	/* The quad's corners. */
+ 	result = compose_corners(compose);
++	if (result != VK_SUCCESS)
++		return result;
++
++	/* The text batches' vertex buffer (ws075-p031). */
++	result = compose_text_buffer(compose);
+ 	return result;
+ }
+ 
+@@ -858,6 +873,70 @@ compose_corners(
+ 	return VK_SUCCESS;
+ }
+ 
++/*
++ * Creates the text batches' vertex buffer (ws075-p031): room for
++ * ZWL_TEXT_GLYPHS glyphs of six corners, in host-visible, coherent memory
++ * mapped for good.
++ */
++static VkResult
++compose_text_buffer(
++	struct zwl_compose *compose)
++{
++	VkPhysicalDeviceMemoryProperties memory;
++	VkMemoryRequirements requirements;
++	VkMemoryAllocateInfo allocate;
++	VkBufferCreateInfo buffer;
++	VkMemoryPropertyFlags wanted;
++	VkDeviceSize bytes;
++	uint32_t index;
++	VkResult result;
++	void *map;
++
++	/* The buffer. */
++	bytes = (VkDeviceSize)ZWL_TEXT_GLYPHS * ZWL_QUAD_VERTICES * ZWL_TEXT_FLOATS * sizeof(float);
++	memset(&buffer, 0, sizeof(buffer));
++	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
++	buffer.size = bytes;
++	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
++	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
++	result = vkCreateBuffer(compose->device, &buffer, NULL, &compose->text_buffer);
++	if (result != VK_SUCCESS)
++		return result;
++
++	/* Host-visible, coherent memory for it. */
++	vkGetBufferMemoryRequirements(compose->device, compose->text_buffer, &requirements);
++	vkGetPhysicalDeviceMemoryProperties(compose->physical, &memory);
++	wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
++	for (index = 0; index < memory.memoryTypeCount; index++) {
++		if ((requirements.memoryTypeBits & (1U << index)) != 0U &&
++		    (memory.memoryTypes[index].propertyFlags & wanted) == wanted)
++			break;
++	}
++
++	/* Without such memory the glyphs cannot be written. */
++	if (index == memory.memoryTypeCount)
++		return VK_ERROR_FORMAT_NOT_SUPPORTED;
++
++	/* The memory, bound and mapped for good. */
++	memset(&allocate, 0, sizeof(allocate));
++	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
++	allocate.allocationSize = requirements.size;
++	allocate.memoryTypeIndex = index;
++	result = vkAllocateMemory(compose->device, &allocate, NULL, &compose->text_memory);
++	if (result != VK_SUCCESS)
++		return result;
++	result = vkBindBufferMemory(compose->device, compose->text_buffer, compose->text_memory, 0U);
++	if (result != VK_SUCCESS)
++		return result;
++	result = vkMapMemory(compose->device, compose->text_memory, 0U, bytes, 0U, &map);
++	if (result != VK_SUCCESS)
++		return result;
++	compose->text_map = map;
++
++	/* Succeeded: the frames can batch their glyphs. */
++	return VK_SUCCESS;
++}
++
+ /* Creates the render pass for the output's format and the two pipelines. */
+ static VkResult
+ compose_pass(
+@@ -927,9 +1006,9 @@ compose_pass(
+ 	}
+ 
+ 	/* The opaque and the alpha pipelines. */
+-	result = compose_pipeline(compose, ZWL_DRAW_OPAQUE, vertex, fragment, compose->layout, &compose->pipelines[ZWL_DRAW_OPAQUE]);
++	result = compose_pipeline(compose, ZWL_DRAW_OPAQUE, vertex, fragment, compose->layout, NULL, &compose->pipelines[ZWL_DRAW_OPAQUE]);
+ 	if (result == VK_SUCCESS)
+-		result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->layout, &compose->pipelines[ZWL_DRAW_ALPHA]);
++		result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->layout, NULL, &compose->pipelines[ZWL_DRAW_ALPHA]);
+ 	vkDestroyShaderModule(compose->device, vertex, NULL);
+ 	vkDestroyShaderModule(compose->device, fragment, NULL);
+ 	if (result != VK_SUCCESS)
+@@ -937,6 +1016,11 @@ compose_pass(
+ 
+ 	/* The glass look's pipeline. */
+ 	result = compose_panel_pipeline(compose);
++	if (result != VK_SUCCESS)
++		return result;
++
++	/* The glass look's text pipeline (ws075-p031). */
++	result = compose_text_pipeline(compose);
+ 	return result;
+ }
+ 
+@@ -967,13 +1051,82 @@ compose_panel_pipeline(
+ 	}
+ 
+ 	/* Every shape is blended: the shader's output is premultiplied. */
+-	result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, &compose->panel_pipeline);
++	result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, NULL, &compose->panel_pipeline);
+ 	vkDestroyShaderModule(compose->device, vertex, NULL);
+ 	vkDestroyShaderModule(compose->device, fragment, NULL);
+ 	return result;
+ }
+ 
+-/* Creates a pipeline that draws a quad the given way, with the given layout. */
++/*
++ * Creates the glass look's text pipeline (ws075-p031): text.vert and
++ * text.frag, blended with premultiplied alpha like the panel pipeline, its
++ * vertices a glyph's corners (ZWL_TEXT_FLOATS floats each).
++ */
++static VkResult
++compose_text_pipeline(
++	struct zwl_compose *compose)
++{
++	VkVertexInputAttributeDescription attributes[4];
++	VkVertexInputBindingDescription binding;
++	VkPipelineVertexInputStateCreateInfo input;
++	VkShaderModuleCreateInfo module;
++	VkShaderModule vertex;
++	VkShaderModule fragment;
++	VkResult result;
++
++	/* One vertex buffer: the place, the place in the atlas, the color and the opacity. */
++	memset(&binding, 0, sizeof(binding));
++	binding.binding = 0U;
++	binding.stride = ZWL_TEXT_FLOATS * sizeof(float);
++	binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
++	memset(attributes, 0, sizeof(attributes));
++	attributes[0].location = 0U;
++	attributes[0].format = VK_FORMAT_R32G32_SFLOAT;
++	attributes[0].offset = 0U;
++	attributes[1].location = 1U;
++	attributes[1].format = VK_FORMAT_R32G32_SFLOAT;
++	attributes[1].offset = 2U * sizeof(float);
++	attributes[2].location = 2U;
++	attributes[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
++	attributes[2].offset = 4U * sizeof(float);
++	attributes[3].location = 3U;
++	attributes[3].format = VK_FORMAT_R32_SFLOAT;
++	attributes[3].offset = 8U * sizeof(float);
++	memset(&input, 0, sizeof(input));
++	input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
++	input.vertexBindingDescriptionCount = 1U;
++	input.pVertexBindingDescriptions = &binding;
++	input.vertexAttributeDescriptionCount = 4U;
++	input.pVertexAttributeDescriptions = attributes;
++
++	/* The shaders, needed only while the pipeline is created. */
++	memset(&module, 0, sizeof(module));
++	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
++	module.codeSize = sizeof(zwl_text_vert);
++	module.pCode = zwl_text_vert;
++	result = vkCreateShaderModule(compose->device, &module, NULL, &vertex);
++	if (result != VK_SUCCESS)
++		return result;
++	module.codeSize = sizeof(zwl_text_frag);
++	module.pCode = zwl_text_frag;
++	result = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
++	if (result != VK_SUCCESS) {
++		vkDestroyShaderModule(compose->device, vertex, NULL);
++		return result;
++	}
++
++	/* The glyphs are blended: the shader's output is premultiplied (the panel pipeline's layout, its set the atlas). */
++	result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, &input, &compose->text_pipeline);
++	vkDestroyShaderModule(compose->device, vertex, NULL);
++	vkDestroyShaderModule(compose->device, fragment, NULL);
++	return result;
++}
++
++/*
++ * Creates a pipeline that draws a quad the given way, with the given layout;
++ * text_input, when given, is the text pipeline's vertex input (the quad's
++ * corners otherwise).
++ */
+ static VkResult
+ compose_pipeline(
+ 	struct zwl_compose *compose,
+@@ -981,6 +1134,7 @@ compose_pipeline(
+ 	VkShaderModule vertex,
+ 	VkShaderModule fragment,
+ 	VkPipelineLayout layout,
++	const VkPipelineVertexInputStateCreateInfo *text_input,
+ 	VkPipeline *result)
+ {
+ 	static const VkDynamicState dynamic[] = {
+@@ -1079,6 +1233,8 @@ compose_pipeline(
+ 	pipeline.stageCount = 2U;
+ 	pipeline.pStages = stages;
+ 	pipeline.pVertexInputState = &input;
++	if (text_input != NULL)
++		pipeline.pVertexInputState = text_input;
+ 	pipeline.pInputAssemblyState = &assembly;
+ 	pipeline.pViewportState = &viewport;
+ 	pipeline.pRasterizationState = &raster;
+@@ -1392,6 +1548,9 @@ compose_quad_part(
+ 	float width;
+ 	float height;
+ 
++	/* The glyphs waiting (the glass look's text, ws075-p031) are drawn first, under the image. */
++	zwl_text_flush(server, command);
++
+ 	/* The rectangle in normalized device coordinates, and the part of the image. */
+ 	width = (float)server->width;
+ 	height = (float)server->height;
+@@ -1566,9 +1725,10 @@ compose_record(
+ 	compose->scissor_now = scissor;
+ 	vkCmdSetScissor(compose->command, 0U, 1U, &scissor);
+ 
+-	/* Every quad's corners. */
++	/* Every quad's corners; no glyph of the frame is batched yet (ws075-p031). */
+ 	offset = 0U;
+ 	vkCmdBindVertexBuffers(compose->command, 0U, 1U, &compose->corners, &offset);
++	zwl_text_frame(compose);
+ 
+ 	/*
+ 	 * The windows, bottom to top (painter's order): plainly, or in the glass
+@@ -1593,7 +1753,8 @@ compose_record(
+ 		zwl_popup_draw(server, compose->command);
+ 	}
+ 
+-	/* The cursor over everything. */
++	/* The cursor over everything, after the glyphs still waiting. */
++	zwl_text_flush(server, compose->command);
+ 	compose_cursor(server, compose->command);
+ 	vkCmdEndRenderPass(compose->command);
+ 
+diff --git a/userland/desktop/wayland/compose.h b/userland/desktop/wayland/compose.h
+index aef4eca4..835c07fc 100644
+--- a/userland/desktop/wayland/compose.h
++++ b/userland/desktop/wayland/compose.h
+@@ -32,6 +32,14 @@
+ /* The vertices of a quad: two triangles of a triangle list. */
+ #define ZWL_QUAD_VERTICES	6U
+ 
++/*
++ * The text batches (ws075-p031): the glyphs a frame may batch (more are
++ * drawn one by one), and the floats of a glyph's corner in the vertex
++ * buffer: its place (2), its place in the atlas (2), color (4), opacity (1).
++ */
++#define ZWL_TEXT_GLYPHS		8192U
++#define ZWL_TEXT_FLOATS		9U
++
+ /* The glass look's push constants: six vec4 (see shaders/panel.frag). */
+ #define ZWL_PANEL_CONSTANTS	24U
+ 
+@@ -125,6 +133,20 @@ struct zwl_compose {
+ 	/* The glass look's pipeline (shapes, glass, text) and the sampler of its blurred wallpaper. */
+ 	VkPipelineLayout panel_layout;
+ 	VkPipeline panel_pipeline;
++	/*
++	 * The glass look's text in batches (ws075-p031): the text pipeline
++	 * (panel.frag's text mode for many glyphs in one draw), the vertex
++	 * buffer the frame's glyphs are written into (mapped for good, room
++	 * for ZWL_TEXT_GLYPHS glyphs), how many the frame has written, and
++	 * where the glyphs waiting to be drawn start and how many there are.
++	 */
++	VkPipeline text_pipeline;
++	VkBuffer text_buffer;
++	VkDeviceMemory text_memory;
++	float *text_map;
++	uint32_t text_used;
++	uint32_t text_first;
++	uint32_t text_pending;
+ 	VkSampler linear_sampler;
+ 	struct zwl_glass *glass;
+ 	VkDescriptorPool descriptors;
+@@ -215,6 +237,10 @@ void zwl_compose_set_put(struct zwl_compose *compose, VkDescriptorSet set);
+ /* Gives an image a second, linearly sampled descriptor set (compose.c). */
+ VkResult zwl_compose_linear_set(struct zwl_compose *compose, struct zwl_import *import);
+ 
++/* The glass look's text in batches (glass.c, ws075-p031): a frame's start, and the waiting glyphs drawn. */
++void zwl_text_frame(struct zwl_compose *compose);
++void zwl_text_flush(struct zwl_server *server, VkCommandBuffer command);
++
+ /* The output's pass that keeps its pixels (backdrop.c). */
+ VkResult zwl_compose_load_pass(struct zwl_compose *compose);
+ 
+diff --git a/userland/desktop/wayland/glass.c b/userland/desktop/wayland/glass.c
+index 206a49c9..e2139d3d 100644
+--- a/userland/desktop/wayland/glass.c
++++ b/userland/desktop/wayland/glass.c
+@@ -200,6 +200,7 @@ static int glass_open_face(struct zwl_glass *glass, const char *path);
+ static const struct glass_glyph *glass_glyph_of(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
+ static const struct glass_glyph *glass_cache_glyph(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
+ static uint32_t glass_utf8_next(const char **text);
++static int glass_text_batch(struct zwl_compose *compose, const struct glass_shape *shape, const float *constants);
+ static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
+ static void *file_read(const char *path, size_t *size);
+ static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
+@@ -1277,6 +1278,7 @@ glass_shape_draw(
+ 	float width;
+ 	float height;
+ 	VkDescriptorSet set;
++	int batched;
+ 
+ 	/*
+ 	 * The quad and the box, moved and scaled when the desktop layer is
+@@ -1321,6 +1323,12 @@ glass_shape_draw(
+ 	constants[22] = shape->edge;
+ 	constants[23] = shape->opacity;
+ 
++	/* Text from the atlas waits to be drawn with the glyphs next to it; anything else draws them first (ws075-p031). */
++	batched = glass_text_batch(compose, shape, constants);
++	if (batched)
++		return;
++	zwl_text_flush(server, command);
++
+ 	/*
+ 	 * A shape without an image of its own is given the blurred scene under
+ 	 * the window being drawn when there is one (backdrop.c), else the
+@@ -2193,3 +2201,103 @@ glass_draw_glyph_at(
+ 	shape.set = glass->atlas.set;
+ 	glass_shape_draw(server, command, &shape);
+ }
++
++/*
++ * The glass look's text in batches (ws075-p031).  A glyph (a shape of the
++ * text mode that samples the atlas) is not drawn when it is recorded: its
++ * two triangles are written into the frame's vertex buffer, and every glyph
++ * waiting is drawn with one draw of the text pipeline (text.frag: panel.frag's
++ * text mode, the same arithmetic) before anything else is drawn, a pass
++ * ends, or the frame ends.  The order of what is drawn is kept, so the
++ * picture is the same as drawing each glyph alone; a frame of more glyphs
++ * than the buffer holds draws the rest one by one.
++ */
++
++/* Starts a frame: no glyph written, none waiting. */
++void
++zwl_text_frame(
++	struct zwl_compose *compose)
++{
++	/* The buffer is the frame's again (the frame before has completed). */
++	compose->text_used = 0U;
++	compose->text_first = 0U;
++	compose->text_pending = 0U;
++}
++
++/*
++ * Writes a shape into the batch when it is a glyph and there is room: its
++ * six corners (the quad's corners in normalized device coordinates, as the
++ * panel's vertex shader places them, and the atlas's) with its color and
++ * opacity.  Returns 1 when it waits in the batch, 0 when it is to be drawn
++ * alone.
++ */
++static int
++glass_text_batch(
++	struct zwl_compose *compose,
++	const struct glass_shape *shape,
++	const float *constants)
++{
++	/* The corners of the two triangles: (0,0) (1,0) (0,1) (0,1) (1,0) (1,1). */
++	static const unsigned corners[ZWL_QUAD_VERTICES][2] = {
++		{ 0U, 0U }, { 1U, 0U }, { 0U, 1U }, { 0U, 1U }, { 1U, 0U }, { 1U, 1U }
++	};
++	float *vertex;
++	unsigned corner;
++
++	/* Only the atlas's text, with the buffer made and room in it. */
++	if (shape->mode != MODE_TEXT || compose->glass == NULL || shape->set != compose->glass->atlas.set)
++		return 0;
++	if (compose->text_map == NULL || compose->text_pipeline == VK_NULL_HANDLE)
++		return 0;
++	if (compose->text_used >= ZWL_TEXT_GLYPHS)
++		return 0;
++
++	/* Each corner: the place (x from constants 0 or 2, y from 1 or 3), the atlas's (uv 0 or 2, 1 or 3), the color and opacity. */
++	vertex = compose->text_map + (size_t)compose->text_used * ZWL_QUAD_VERTICES * ZWL_TEXT_FLOATS;
++	for (corner = 0; corner < ZWL_QUAD_VERTICES; corner++) {
++		vertex[0] = constants[corners[corner][0] * 2U];
++		vertex[1] = constants[1U + corners[corner][1] * 2U];
++		vertex[2] = shape->uv[corners[corner][0] * 2U];
++		vertex[3] = shape->uv[1U + corners[corner][1] * 2U];
++		memcpy(&vertex[4], shape->color, 4U * sizeof(float));
++		vertex[8] = shape->opacity;
++		vertex += ZWL_TEXT_FLOATS;
++	}
++
++	/* One more glyph written and waiting. */
++	compose->text_used++;
++	compose->text_pending++;
++	return 1;
++}
++
++/* Draws the glyphs waiting, with one draw, and puts the quad's corners back for the shapes after them. */
++void
++zwl_text_flush(
++	struct zwl_server *server,
++	VkCommandBuffer command)
++{
++	struct zwl_compose *compose;
++	VkDescriptorSet set;
++	VkDeviceSize offset;
++
++	/* Nothing waiting. */
++	compose = server->compose;
++	if (compose == NULL || compose->text_pending == 0U)
++		return;
++
++	/* The text pipeline, the atlas, and the waiting glyphs' corners. */
++	set = compose->glass->atlas.set;
++	offset = (VkDeviceSize)compose->text_first * ZWL_QUAD_VERTICES * ZWL_TEXT_FLOATS * sizeof(float);
++	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->text_pipeline);
++	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
++	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->text_buffer, &offset);
++	vkCmdDraw(command, compose->text_pending * ZWL_QUAD_VERTICES, 1U, 0U, 0U);
++
++	/* The quad's corners again, for every other shape. */
++	offset = 0U;
++	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
++
++	/* Nothing waiting now. */
++	compose->text_first = compose->text_used;
++	compose->text_pending = 0U;
++}
+diff --git a/userland/desktop/wayland/shaders.h b/userland/desktop/wayland/shaders.h
+index 2aba132a..6a8461ed 100644
+--- a/userland/desktop/wayland/shaders.h
++++ b/userland/desktop/wayland/shaders.h
+@@ -398,4 +398,90 @@ static const uint32_t zwl_panel_frag[] = {
+ 	0x00000176U, 0x0000017aU, 0x000100fdU, 0x00010038U,
+ };
+ 
++static const uint32_t zwl_text_vert[] = {
++	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000028U, 0x00000000U, 0x00020011U,
++	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
++	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x000d000fU, 0x00000000U,
++	0x00000004U, 0x6e69616dU, 0x00000000U, 0x0000000dU, 0x00000012U, 0x0000001cU,
++	0x0000001dU, 0x0000001fU, 0x00000021U, 0x00000024U, 0x00000026U, 0x00030047U,
++	0x0000000bU, 0x00000002U, 0x00050048U, 0x0000000bU, 0x00000000U, 0x0000000bU,
++	0x00000000U, 0x00050048U, 0x0000000bU, 0x00000001U, 0x0000000bU, 0x00000001U,
++	0x00050048U, 0x0000000bU, 0x00000002U, 0x0000000bU, 0x00000003U, 0x00050048U,
++	0x0000000bU, 0x00000003U, 0x0000000bU, 0x00000004U, 0x00040047U, 0x00000012U,
++	0x0000001eU, 0x00000000U, 0x00040047U, 0x0000001cU, 0x0000001eU, 0x00000000U,
++	0x00040047U, 0x0000001dU, 0x0000001eU, 0x00000001U, 0x00030047U, 0x0000001fU,
++	0x0000000eU, 0x00040047U, 0x0000001fU, 0x0000001eU, 0x00000001U, 0x00040047U,
++	0x00000021U, 0x0000001eU, 0x00000002U, 0x00030047U, 0x00000024U, 0x0000000eU,
++	0x00040047U, 0x00000024U, 0x0000001eU, 0x00000002U, 0x00040047U, 0x00000026U,
++	0x0000001eU, 0x00000003U, 0x00020013U, 0x00000002U, 0x00030021U, 0x00000003U,
++	0x00000002U, 0x00030016U, 0x00000006U, 0x00000020U, 0x00040017U, 0x00000007U,
++	0x00000006U, 0x00000004U, 0x00040015U, 0x00000008U, 0x00000020U, 0x00000000U,
++	0x0004002bU, 0x00000008U, 0x00000009U, 0x00000001U, 0x0004001cU, 0x0000000aU,
++	0x00000006U, 0x00000009U, 0x0006001eU, 0x0000000bU, 0x00000007U, 0x00000006U,
++	0x0000000aU, 0x0000000aU, 0x00040020U, 0x0000000cU, 0x00000003U, 0x0000000bU,
++	0x0004003bU, 0x0000000cU, 0x0000000dU, 0x00000003U, 0x00040015U, 0x0000000eU,
++	0x00000020U, 0x00000001U, 0x0004002bU, 0x0000000eU, 0x0000000fU, 0x00000000U,
++	0x00040017U, 0x00000010U, 0x00000006U, 0x00000002U, 0x00040020U, 0x00000011U,
++	0x00000001U, 0x00000010U, 0x0004003bU, 0x00000011U, 0x00000012U, 0x00000001U,
++	0x0004002bU, 0x00000006U, 0x00000014U, 0x00000000U, 0x0004002bU, 0x00000006U,
++	0x00000015U, 0x3f800000U, 0x00040020U, 0x00000019U, 0x00000003U, 0x00000007U,
++	0x00040020U, 0x0000001bU, 0x00000003U, 0x00000010U, 0x0004003bU, 0x0000001bU,
++	0x0000001cU, 0x00000003U, 0x0004003bU, 0x00000011U, 0x0000001dU, 0x00000001U,
++	0x0004003bU, 0x00000019U, 0x0000001fU, 0x00000003U, 0x00040020U, 0x00000020U,
++	0x00000001U, 0x00000007U, 0x0004003bU, 0x00000020U, 0x00000021U, 0x00000001U,
++	0x00040020U, 0x00000023U, 0x00000003U, 0x00000006U, 0x0004003bU, 0x00000023U,
++	0x00000024U, 0x00000003U, 0x00040020U, 0x00000025U, 0x00000001U, 0x00000006U,
++	0x0004003bU, 0x00000025U, 0x00000026U, 0x00000001U, 0x00050036U, 0x00000002U,
++	0x00000004U, 0x00000000U, 0x00000003U, 0x000200f8U, 0x00000005U, 0x0004003dU,
++	0x00000010U, 0x00000013U, 0x00000012U, 0x00050051U, 0x00000006U, 0x00000016U,
++	0x00000013U, 0x00000000U, 0x00050051U, 0x00000006U, 0x00000017U, 0x00000013U,
++	0x00000001U, 0x00070050U, 0x00000007U, 0x00000018U, 0x00000016U, 0x00000017U,
++	0x00000014U, 0x00000015U, 0x00050041U, 0x00000019U, 0x0000001aU, 0x0000000dU,
++	0x0000000fU, 0x0003003eU, 0x0000001aU, 0x00000018U, 0x0004003dU, 0x00000010U,
++	0x0000001eU, 0x0000001dU, 0x0003003eU, 0x0000001cU, 0x0000001eU, 0x0004003dU,
++	0x00000007U, 0x00000022U, 0x00000021U, 0x0003003eU, 0x0000001fU, 0x00000022U,
++	0x0004003dU, 0x00000006U, 0x00000027U, 0x00000026U, 0x0003003eU, 0x00000024U,
++	0x00000027U, 0x000100fdU, 0x00010038U,
++};
++
++static const uint32_t zwl_text_frag[] = {
++	0x07230203U, 0x00010000U, 0x000d000bU, 0x0000002fU, 0x00000000U, 0x00020011U,
++	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
++	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0009000fU, 0x00000004U,
++	0x00000004U, 0x6e69616dU, 0x00000000U, 0x00000010U, 0x0000001aU, 0x0000002aU,
++	0x0000002cU, 0x00030010U, 0x00000004U, 0x00000007U, 0x00040047U, 0x0000000cU,
++	0x00000021U, 0x00000000U, 0x00040047U, 0x0000000cU, 0x00000022U, 0x00000000U,
++	0x00040047U, 0x00000010U, 0x0000001eU, 0x00000000U, 0x00030047U, 0x0000001aU,
++	0x0000000eU, 0x00040047U, 0x0000001aU, 0x0000001eU, 0x00000001U, 0x00040047U,
++	0x0000002aU, 0x0000001eU, 0x00000000U, 0x00030047U, 0x0000002cU, 0x0000000eU,
++	0x00040047U, 0x0000002cU, 0x0000001eU, 0x00000002U, 0x00020013U, 0x00000002U,
++	0x00030021U, 0x00000003U, 0x00000002U, 0x00030016U, 0x00000006U, 0x00000020U,
++	0x00090019U, 0x00000009U, 0x00000006U, 0x00000001U, 0x00000000U, 0x00000000U,
++	0x00000000U, 0x00000001U, 0x00000000U, 0x0003001bU, 0x0000000aU, 0x00000009U,
++	0x00040020U, 0x0000000bU, 0x00000000U, 0x0000000aU, 0x0004003bU, 0x0000000bU,
++	0x0000000cU, 0x00000000U, 0x00040017U, 0x0000000eU, 0x00000006U, 0x00000002U,
++	0x00040020U, 0x0000000fU, 0x00000001U, 0x0000000eU, 0x0004003bU, 0x0000000fU,
++	0x00000010U, 0x00000001U, 0x00040017U, 0x00000012U, 0x00000006U, 0x00000004U,
++	0x00040015U, 0x00000014U, 0x00000020U, 0x00000000U, 0x0004002bU, 0x00000014U,
++	0x00000015U, 0x00000003U, 0x00040020U, 0x00000019U, 0x00000001U, 0x00000012U,
++	0x0004003bU, 0x00000019U, 0x0000001aU, 0x00000001U, 0x0004002bU, 0x00000006U,
++	0x0000001eU, 0x3f800000U, 0x00040020U, 0x00000023U, 0x00000001U, 0x00000006U,
++	0x00040020U, 0x00000029U, 0x00000003U, 0x00000012U, 0x0004003bU, 0x00000029U,
++	0x0000002aU, 0x00000003U, 0x0004003bU, 0x00000023U, 0x0000002cU, 0x00000001U,
++	0x00050036U, 0x00000002U, 0x00000004U, 0x00000000U, 0x00000003U, 0x000200f8U,
++	0x00000005U, 0x0004003dU, 0x0000000aU, 0x0000000dU, 0x0000000cU, 0x0004003dU,
++	0x0000000eU, 0x00000011U, 0x00000010U, 0x00050057U, 0x00000012U, 0x00000013U,
++	0x0000000dU, 0x00000011U, 0x00050051U, 0x00000006U, 0x00000016U, 0x00000013U,
++	0x00000003U, 0x0004003dU, 0x00000012U, 0x0000001cU, 0x0000001aU, 0x00050051U,
++	0x00000006U, 0x0000001fU, 0x0000001cU, 0x00000000U, 0x00050051U, 0x00000006U,
++	0x00000020U, 0x0000001cU, 0x00000001U, 0x00050051U, 0x00000006U, 0x00000021U,
++	0x0000001cU, 0x00000002U, 0x00070050U, 0x00000012U, 0x00000022U, 0x0000001fU,
++	0x00000020U, 0x00000021U, 0x0000001eU, 0x00050041U, 0x00000023U, 0x00000024U,
++	0x0000001aU, 0x00000015U, 0x0004003dU, 0x00000006U, 0x00000025U, 0x00000024U,
++	0x0005008eU, 0x00000012U, 0x00000026U, 0x00000022U, 0x00000025U, 0x0005008eU,
++	0x00000012U, 0x00000028U, 0x00000026U, 0x00000016U, 0x0004003dU, 0x00000006U,
++	0x0000002dU, 0x0000002cU, 0x0005008eU, 0x00000012U, 0x0000002eU, 0x00000028U,
++	0x0000002dU, 0x0003003eU, 0x0000002aU, 0x0000002eU, 0x000100fdU, 0x00010038U,
++};
++
+ #endif
+diff --git a/userland/desktop/wayland/shaders/regenerate.py b/userland/desktop/wayland/shaders/regenerate.py
+index 62553485..6a28717f 100644
+--- a/userland/desktop/wayland/shaders/regenerate.py
++++ b/userland/desktop/wayland/shaders/regenerate.py
+@@ -13,7 +13,8 @@ import tempfile
+ 
+ HERE = pathlib.Path(__file__).resolve().parent
+ SHADERS = [("quad.vert", "zwl_quad_vert"), ("quad.frag", "zwl_quad_frag"),
+-           ("panel.vert", "zwl_panel_vert"), ("panel.frag", "zwl_panel_frag")]
++           ("panel.vert", "zwl_panel_vert"), ("panel.frag", "zwl_panel_frag"),
++           ("text.vert", "zwl_text_vert"), ("text.frag", "zwl_text_frag")]
+ 
+ 
+ def compile_shader(source):
+diff --git a/userland/desktop/wayland/shaders/text.frag b/userland/desktop/wayland/shaders/text.frag
+new file mode 100644
+index 00000000..67e3b014
+--- /dev/null
++++ b/userland/desktop/wayland/shaders/text.frag
+@@ -0,0 +1,20 @@
++// zedBSD zdesktop: the glass look's text (ws075-p031): panel.frag's text mode
++// (5), the same arithmetic, for many glyphs in one draw.
++// Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
++#version 450
++
++layout(set = 0, binding = 0) uniform sampler2D image;
++
++layout(location = 0) in vec2 texcoord;
++layout(location = 1) flat in vec4 tint;
++layout(location = 2) flat in float fade;
++layout(location = 0) out vec4 result;
++
++void main()
++{
++	// The glyph's coverage in the atlas, in its color, faded by its opacity.
++	float cover = texture(image, texcoord).a;
++	vec4 colour = vec4(tint.rgb, 1.0) * tint.a * cover;
++
++	result = colour * fade;
++}
+diff --git a/userland/desktop/wayland/shaders/text.vert b/userland/desktop/wayland/shaders/text.vert
+new file mode 100644
+index 00000000..335b8c9b
+--- /dev/null
++++ b/userland/desktop/wayland/shaders/text.vert
+@@ -0,0 +1,23 @@
++// zedBSD zdesktop: the glass look's text, many glyphs in one draw (ws075-p031).
++// Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
++#version 450
++
++// Each glyph is two triangles in zdesktop's vertex buffer: the corner's place
++// in normalized device coordinates and in the atlas, and the glyph's color and
++// opacity (the same at its six corners).
++layout(location = 0) in vec2 place;
++layout(location = 1) in vec2 atlas;
++layout(location = 2) in vec4 color;
++layout(location = 3) in float opacity;
++
++layout(location = 0) out vec2 texcoord;
++layout(location = 1) flat out vec4 tint;
++layout(location = 2) flat out float fade;
++
++void main()
++{
++	gl_Position = vec4(place, 0.0, 1.0);
++	texcoord = atlas;
++	tint = color;
++	fade = opacity;
++}

@@ -1,0 +1,268 @@
+--- a/src/venus_hw.h
++++ b/src/venus_hw.h
+@@ -30,7 +30,7 @@
+ #define VIRGL_VENUS_ZEDBSD_MAGIC 0x5a424453U
+ #define VIRGL_VENUS_ZEDBSD_OPAQUE_SHARING 1U
+ #define VIRGL_VENUS_ZEDBSD_STRICT_QUEUE 2U
+-#define VIRGL_VENUS_ZEDBSD_FEATURES 3U
++#define VIRGL_VENUS_ZEDBSD_FEATURES 7U
+ 
+ struct virgl_renderer_capset_venus {
+    uint32_t wire_format_version;
+--- a/src/venus/vkr_context.h
++++ b/src/venus/vkr_context.h
+@@ -99,6 +99,19 @@
+    /* A failed queue marker forbids every later success watermark in this context. */
+    atomic_bool queue_sync_failed;
+ 
++   /* CPU0 quiescence acknowledgements are held until every native device is idle. */
++   struct {
++      mtx_t mutex;
++      thrd_t thread;
++      bool requested;
++      bool started;
++      bool done;
++      bool failed;
++      bool fence_pending;
++      uint64_t fence_id;
++   } quiesce;
++
++
+    struct vkr_instance *instance;
+    char *instance_name;
+ 
+--- a/src/venus/vkr_context.c
++++ b/src/venus/vkr_context.c
+@@ -119,6 +119,134 @@
+    vkr_context_init_command_buffer_dispatch(ctx);
+ }
+ 
++/* A backend-only payload lies outside the standard Venus opcode namespace. */
++static bool
++vkr_context_is_quiesce(const void *buffer, size_t size)
++{
++   static const uint8_t command[16] = {
++      0x51, 0x53, 0x42, 0x5a, 0x01, 0x00, 0x00, 0x00,
++      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++   };
++   return size == sizeof(command) && memcmp(buffer, command, sizeof(command)) == 0;
++}
++
++/* No decoder mutates device lists after admission closes; ring contexts are refused. */
++static int
++vkr_context_quiesce_thread(void *argument)
++{
++   struct vkr_context *ctx = argument;
++   struct vkr_instance *instance = ctx->instance;
++   bool stopped = true;
++
++   /* Actual device idle covers all queues, including raw inline work without a job marker. */
++   for (uint32_t index = 0; instance && index < instance->physical_device_count; index++) {
++      struct vkr_physical_device *physical = instance->physical_devices[index];
++      if (!physical)
++         continue;
++      list_for_each_entry(struct vkr_device, dev, &physical->devices, base.track_head) {
++         VkResult result = dev->proc_table.DeviceWaitIdle(dev->base.handle.device);
++         if (result != VK_SUCCESS) {
++            vkr_log("quiesce native idle failed (%d), context %u", result, ctx->ctx_id);
++            stopped = false;
++            break;
++         }
++      }
++      if (!stopped)
++         break;
++   }
++
++   /* A returned native fence may still be borrowed by a delayed host retirement callback. */
++   for (uint32_t index = 0; stopped && instance && index < instance->physical_device_count; index++) {
++      struct vkr_physical_device *physical = instance->physical_devices[index];
++      if (!physical)
++         continue;
++      list_for_each_entry(struct vkr_device, dev, &physical->devices, base.track_head) {
++         list_for_each_entry(struct vkr_queue, queue, &dev->queues, base.track_head) {
++            mtx_lock(&queue->sync_thread.mutex);
++            while (!list_is_empty(&queue->sync_thread.syncs)) {
++               struct timespec until;
++               timespec_get(&until, TIME_UTC);
++               until.tv_nsec += 100000000;
++               if (until.tv_nsec >= 1000000000) {
++                  until.tv_sec++;
++                  until.tv_nsec -= 1000000000;
++               }
++               cnd_timedwait(&queue->sync_thread.cond, &queue->sync_thread.mutex, &until);
++            }
++            mtx_unlock(&queue->sync_thread.mutex);
++         }
++      }
++   }
++
++   /* The mutex serializes the final callback with later CPU0 fences, including sequence wrap. */
++   mtx_lock(&ctx->quiesce.mutex);
++   ctx->quiesce.failed = !stopped;
++   ctx->quiesce.done = stopped;
++   if (stopped && ctx->quiesce.fence_pending) {
++      ctx->retire_fence(ctx->ctx_id, 0, ctx->quiesce.fence_id);
++      ctx->quiesce.fence_pending = false;
++   }
++   mtx_unlock(&ctx->quiesce.mutex);
++   return 0;
++}
++
++/* Starts only a worker; the server dispatcher and QEMU control queue never wait for idle. */
++static bool
++vkr_context_quiesce_begin(struct vkr_context *ctx)
++{
++   bool has_rings;
++   int result;
++
++   mtx_lock(&ctx->quiesce.mutex);
++   if (ctx->quiesce.requested) {
++      mtx_unlock(&ctx->quiesce.mutex);
++      return true;
++   }
++   ctx->quiesce.requested = true;
++
++   /* Ring decoders can mutate native state concurrently and need a separate stop contract. */
++   mtx_lock(&ctx->ring_mutex);
++   has_rings = !list_is_empty(&ctx->rings);
++   mtx_unlock(&ctx->ring_mutex);
++   if (has_rings) {
++      vkr_log("quiesce refuses active decoder rings, context %u", ctx->ctx_id);
++      ctx->quiesce.failed = true;
++      mtx_unlock(&ctx->quiesce.mutex);
++      return true;
++   }
++
++   result = thrd_create(&ctx->quiesce.thread, vkr_context_quiesce_thread, ctx);
++   if (result == thrd_success)
++      ctx->quiesce.started = true;
++   else {
++      vkr_log("quiesce worker creation failed (%d), context %u", result, ctx->ctx_id);
++      ctx->quiesce.failed = true;
++   }
++   mtx_unlock(&ctx->quiesce.mutex);
++   return true;
++}
++
++/* Only verified quiescence permits a CPU0 watermark after the private stop command. */
++static bool
++vkr_context_quiesce_fence(struct vkr_context *ctx, uint64_t fence_id)
++{
++   mtx_lock(&ctx->quiesce.mutex);
++   if (!ctx->quiesce.requested) {
++      mtx_unlock(&ctx->quiesce.mutex);
++      return false;
++   }
++
++   /* Serial command delivery identifies the latest fence even when its uint32 sequence wraps. */
++   if (ctx->quiesce.done) {
++      ctx->retire_fence(ctx->ctx_id, 0, fence_id);
++   } else {
++      ctx->quiesce.fence_id = fence_id;
++      ctx->quiesce.fence_pending = true;
++   }
++   mtx_unlock(&ctx->quiesce.mutex);
++   return true;
++}
++
+ bool
+ vkr_context_submit_fence(struct vkr_context *ctx,
+                          uint32_t flags,
+@@ -127,23 +255,36 @@
+ {
+    /* retire fence on cpu timeline directly */
+    if (ring_idx == 0) {
++      if (vkr_context_quiesce_fence(ctx, fence_id))
++         return true;
+       ctx->retire_fence(ctx->ctx_id, ring_idx, fence_id);
+       return true;
+    }
+ 
++   /* Marker admission closes with decoder admission before the idle worker starts. */
++   mtx_lock(&ctx->quiesce.mutex);
++   if (ctx->quiesce.requested) {
++      mtx_unlock(&ctx->quiesce.mutex);
++      return false;
++   }
++
+    if (ring_idx >= ARRAY_SIZE(ctx->sync_queues) || !ctx->sync_queues[ring_idx]) {
+       vkr_log("submit_fence: invalid ring_idx %u", ring_idx);
++      mtx_unlock(&ctx->quiesce.mutex);
+       return false;
+    }
+ 
+    /* A later sequence must never retire earlier work whose success is unknown. */
+-   if (atomic_load_explicit(&ctx->queue_sync_failed, memory_order_acquire))
+-      return false;
+-
+-   /* always merge fences */
++   if (atomic_load_explicit(&ctx->queue_sync_failed, memory_order_acquire)) {
++      mtx_unlock(&ctx->quiesce.mutex);
++      return false;
++   }
++
++   /* The existing host callback only publishes an atomic timeline; it cannot reenter here. */
+    assert(!(flags & ~VIRGL_RENDERER_FENCE_FLAG_MERGEABLE));
+    flags = VIRGL_RENDERER_FENCE_FLAG_MERGEABLE;
+    bool ok = vkr_queue_sync_submit(ctx->sync_queues[ring_idx], flags, ring_idx, fence_id);
++   mtx_unlock(&ctx->quiesce.mutex);
+ 
+    return ok;
+ }
+@@ -151,6 +292,15 @@
+ bool
+ vkr_context_submit_cmd(struct vkr_context *ctx, const void *buffer, size_t size)
+ {
++   if (vkr_context_is_quiesce(buffer, size))
++      return vkr_context_quiesce_begin(ctx);
++
++   mtx_lock(&ctx->quiesce.mutex);
++   bool stopped = ctx->quiesce.requested;
++   mtx_unlock(&ctx->quiesce.mutex);
++   if (stopped)
++      return false;
++
+    /* CS error is considered fatal (destroy the context?) */
+    if (vkr_context_get_fatal(ctx)) {
+       vkr_log("submit_cmd: early bail due to fatal decoder state");
+@@ -603,9 +753,20 @@
+    mtx_destroy(&ctx->ring_monitor.mutex);
+ }
+ 
++/* Joins before teardown may destroy native objects or shared callback storage. */
++static void
++vkr_context_quiesce_fini(struct vkr_context *ctx)
++{
++   if (ctx->quiesce.started)
++      thrd_join(ctx->quiesce.thread, NULL);
++   mtx_destroy(&ctx->quiesce.mutex);
++}
++
+ void
+ vkr_context_destroy(struct vkr_context *ctx)
+ {
++   vkr_context_quiesce_fini(ctx);
++
+    /* TODO Move the entire teardown process to a separate thread so that the main thread
+     * cannot get blocked by the vkDeviceWaitIdle upon device destruction.
+     */
+@@ -668,6 +829,11 @@
+    struct vkr_context *ctx = calloc(1, sizeof(*ctx));
+    if (!ctx)
+       return NULL;
++
++   if (mtx_init(&ctx->quiesce.mutex, mtx_plain) != thrd_success) {
++      free(ctx);
++      return NULL;
++   }
+ 
+    ctx->ctx_id = ctx_id;
+    ctx->retire_fence = cb;
+@@ -745,6 +911,7 @@
+ err_ctx_wait_ring_init:
+    free(ctx->debug_name);
+ err_debug_name:
++   mtx_destroy(&ctx->quiesce.mutex);
+    free(ctx);
+    return NULL;
+ }

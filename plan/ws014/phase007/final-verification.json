@@ -1,0 +1,225 @@
+{
+  "status": "accepted",
+  "at": "2026-09-13T03:16:34.383321+00:00",
+  "baseline": "ea32e2367589ad1349f3ae08a6265586d28d6a1d",
+  "final_runtime": [
+    "q310-wayland-008",
+    "q310-direct-004",
+    "q310-fence-exit-003",
+    "q310-recovery-004"
+  ],
+  "same_final_kernel": true,
+  "kernel_sha256": "9941d92ad403e21732a4e200f7aef2f57cea8317de7f8e7ff3e1c609f8afc0ba",
+  "current_sources_and_artifacts_match_final_attempts": true,
+  "no_new_HAL_changes": true,
+  "no_staged_changes": true,
+  "no_git_publication": true,
+  "producer_exit_wait_ms": 10,
+  "ordinary": {
+    "captures": [
+      {
+        "capture": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 240,
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 76800,
+          "raw_bytes": 307200,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "d78d1978edbe1a27e0c6b36203e0485fac850fe4ac6d4a67ab18a4a00bd6e301",
+          "width": 320
+        },
+        "filename": "ordinary-1.ppm",
+        "observed_after_submit": 2,
+        "rgb_sha256": "b8075d3b6500e48cddefaa341589cafbac193928dee0f39eee89484ab7a7c337",
+        "sha256": "d78d1978edbe1a27e0c6b36203e0485fac850fe4ac6d4a67ab18a4a00bd6e301"
+      },
+      {
+        "capture": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 240,
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 76800,
+          "raw_bytes": 307200,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "5e69fe795a4210bfb79006ec3ae8ae162d3dc2db42b24986597647e76fb28bf1",
+          "width": 320
+        },
+        "filename": "ordinary-2.ppm",
+        "observed_after_submit": 3,
+        "rgb_sha256": "841f4cc460fc61ced6b44f05c9eb9ef85ce3866dbd8438652fa928179db104b8",
+        "sha256": "5e69fe795a4210bfb79006ec3ae8ae162d3dc2db42b24986597647e76fb28bf1"
+      }
+    ],
+    "completed": true,
+    "first_time_ms": 0,
+    "frames": 13,
+    "guest_command": "/bin/vkdemo --duration=2 --token=rc04dca118e96bdee964f95e1-ordinary",
+    "last_time_ms": 1910,
+    "samples": [
+      {
+        "frame": 1,
+        "readback_disabled": true,
+        "time_ms": 0
+      },
+      {
+        "frame": 2,
+        "readback_disabled": true,
+        "time_ms": 150
+      },
+      {
+        "frame": 3,
+        "readback_disabled": true,
+        "time_ms": 310
+      },
+      {
+        "frame": 4,
+        "readback_disabled": true,
+        "time_ms": 470
+      },
+      {
+        "frame": 5,
+        "readback_disabled": true,
+        "time_ms": 630
+      },
+      {
+        "frame": 6,
+        "readback_disabled": true,
+        "time_ms": 790
+      },
+      {
+        "frame": 7,
+        "readback_disabled": true,
+        "time_ms": 950
+      },
+      {
+        "frame": 8,
+        "readback_disabled": true,
+        "time_ms": 1110
+      },
+      {
+        "frame": 9,
+        "readback_disabled": true,
+        "time_ms": 1270
+      },
+      {
+        "frame": 10,
+        "readback_disabled": true,
+        "time_ms": 1430
+      },
+      {
+        "frame": 11,
+        "readback_disabled": true,
+        "time_ms": 1590
+      },
+      {
+        "frame": 12,
+        "readback_disabled": true,
+        "time_ms": 1750
+      },
+      {
+        "frame": 13,
+        "readback_disabled": true,
+        "time_ms": 1910
+      }
+    ],
+    "start_seen": true,
+    "token": "rc04dca118e96bdee964f95e1-ordinary"
+  },
+  "scanout_trace": {
+    "blob_requests": 107,
+    "blob_resources": [
+      3,
+      4,
+      5,
+      13,
+      14,
+      15,
+      19,
+      26,
+      27,
+      28,
+      32,
+      33,
+      34
+    ],
+    "height": 240,
+    "legacy_requests": 0,
+    "proves": "request selection only",
+    "scope": "whole direct acceptance run",
+    "width": 320
+  },
+  "display_notifications": {
+    "attempts": 1,
+    "outputs": 1,
+    "sequence": 1
+  },
+  "verification": [
+    {
+      "path": "plan/ws014/phase007/userland-final-verification.json",
+      "sha256": "96022743a73c1dd75dc3a2faa5733ee58bfb936b2c354d0a36090288d9e7f30e"
+    },
+    {
+      "path": "plan/ws014/phase007/kernel-final-verification.json",
+      "sha256": "cc753fe86f2557ce065479d36e6b5bc2054d9c3c7e480c7ae2228dc413e92c63"
+    },
+    {
+      "path": "plan/ws014/phase007/placement-verification.json",
+      "sha256": "be473061d8c8249b4e32498628e4171077dece4ed31524977d6485e932a18013"
+    },
+    {
+      "path": "plan/ws014/phase007/verification-logs/index.json",
+      "sha256": "402bb9385d71d7faa2630c1fbcc5c78437faa093e15a21adf08f13f82c6c0443"
+    },
+    {
+      "path": "plan/ws014/phase007/runtime-acceptance.json",
+      "sha256": "d32312bfed7de16eddc65118dc6d2ee67efe48a7d3306dc31f6348cd3c186fa2"
+    }
+  ],
+  "build": {
+    "argv": "timeout 1200 make -j16 BUILD=/home/awe/zedBSD/build/vkdemo-amd64 ZEDBSD_CONFIG=/home/awe/zedBSD/plan/ws014/tests/config-wayland-amd64.mk ARCH_IMAGE_DIR=/home/awe/zedBSD/build/vkdemo-amd64/arch-images DATA_IMAGE=/home/awe/zedBSD/build/vkdemo-amd64/data.img SWAP_IMAGE=/home/awe/zedBSD/build/vkdemo-amd64/swapfile disk-image",
+    "exit_code": 0,
+    "log": "plan/ws014/phase007/verification-logs/q310-final-close-build.log"
+  },
+  "limits": [
+    "not Vulkan CTS",
+    "physical foreign DMA/placement and hotplug not hardware accepted",
+    "stock virglrenderer optimal sharing unsupported; isolated paired host patch required",
+    "ordinary 2-second finite sample is not a speedup benchmark",
+    "no new HAL changes",
+    "p004/WS029 not executed"
+  ]
+}

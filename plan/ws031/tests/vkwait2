@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/sleep
+arguments=25
+after=vkprobe1
+restart=no
+required=NO

@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/sleep
+arguments=5
+after=mview1
+restart=no
+required=NO

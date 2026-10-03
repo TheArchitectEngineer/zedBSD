@@ -1,0 +1,909 @@
+diff --git a/src/drivers/gpu/i915/compiler/compile.c b/src/drivers/gpu/i915/compiler/compile.c
+index 82b9f36d..edb4840b 100644
+--- a/src/drivers/gpu/i915/compiler/compile.c
++++ b/src/drivers/gpu/i915/compiler/compile.c
+@@ -590,6 +590,15 @@ drv_i915_shader_compile(
+ 		return EINVAL;
+ 	}
+ 
++	/* Moves the waits for the out-of-order instructions to where their registers are used. */
++	error = drv_i915_eu_schedule(&state.code);
++	if (error != 0) {
++		drv_i915_eu_free(&state.code);
++		kern_free(state.value_grf);
++		kern_free(binary);
++		return error;
++	}
++
+ 	/* Reads the encoded words; an empty kernel still gets one byte of storage. */
+ 	words = drv_i915_eu_data(&state.code, &bytes);
+ 	if (bytes == 0U) {
+diff --git a/src/drivers/gpu/i915/compiler/eu.c b/src/drivers/gpu/i915/compiler/eu.c
+index ff1c011e..97fd0226 100644
+--- a/src/drivers/gpu/i915/compiler/eu.c
++++ b/src/drivers/gpu/i915/compiler/eu.c
+@@ -33,9 +33,12 @@
+  *   - the SEND that ends the thread waits for the previous instruction and
+  *     needs nothing after it.
+  *
+- * XXX: this serialises the kernel.  It is correct for any program this
+- * compiler emits and leaves the pipelining Mesa's dataflow analysis would
+- * allow on the table.
++ * drv_i915_eu_schedule() then loosens the out-of-order part (ws075-p022):
++ * each out-of-order instruction takes a token of its own (sixteen in turn),
++ * and its sync.nop moves from right after it to right before the first
++ * instruction that reads or writes its destination, or writes its sources.
++ * The in-order chain (@1) stays: every in-order instruction still waits for
++ * the one before it.
+  */
+ 
+ #include "eu.h"
+@@ -72,6 +75,19 @@
+ /* The token-set SWSB byte of an out-of-order instruction with nothing to wait for. */
+ #define I915_EU_SWSB_TOKEN_SET		0x40U
+ 
++/* How many scoreboard tokens (SBIDs) Gen12 has. */
++#define I915_EU_TOKENS			16U
++
++/* The bytes of one general register. */
++#define I915_EU_GRF_BYTES		32U
++
++/*
++ * The registers an instruction touches, as drv_i915_eu_schedule() reads
++ * them back from its encoding: at most one written run and three read runs
++ * (a SEND's two payload runs, or an ALU's two sources).
++ */
++#define I915_EU_MAX_READS		3U
++
+ /* The first buffer capacity, in words; the buffer doubles from there. */
+ #define I915_EU_FIRST_CAPACITY		64U
+ 
+@@ -103,6 +119,59 @@
+  */
+ #define I915_EU_SCOPE_FOUR		4
+ 
++/*
++ * A run of general registers an instruction reads or writes: `count`
++ * registers from `first`; a count of zero touches no general register.
++ */
++struct i915_eu_run {
++	uint32_t first;
++	uint32_t count;
++};
++
++/*
++ * One scoreboard token of drv_i915_eu_schedule(): the out-of-order
++ * instruction that holds it at a point of the program, and the registers it
++ * is still to write (`write`) and to read (`reads`).
++ *
++ * A token is busy from its instruction until a sync.nop waits for its
++ * destination; a wait for its sources only empties `reads`.  `age` orders
++ * the busy tokens, oldest first, for reuse when all are busy.
++ */
++struct i915_eu_token {
++	int busy;
++	uint32_t age;
++	struct i915_eu_run write;
++	struct i915_eu_run reads[I915_EU_MAX_READS];
++};
++
++/*
++ * The state of one run of drv_i915_eu_schedule(): the program being
++ * rebuilt, the marks it reads, where each old instruction went and the
++ * tokens in flight.
++ *
++ * It lives on the caller's stack for the run; the arrays have one entry per
++ * old instruction, and `start` and `place` one more for the end.
++ */
++struct i915_eu_schedule {
++	/* The program as the encoder made it, how many instructions it has, and the rebuilt one. */
++	struct i915_eu_buf *buffer;
++	uint32_t count;
++	struct i915_eu_buf out;
++
++	/* Nonzero for an encoder's sync.nop that is dropped, and for a loop's first instruction. */
++	uint8_t *dropped;
++	uint8_t *loop_top;
++
++	/* Where each old instruction's waits start in the new program, and where it is itself. */
++	uint32_t *start;
++	uint32_t *place;
++
++	/* The tokens, the next one to try, and the order they were taken in. */
++	struct i915_eu_token tokens[I915_EU_TOKENS];
++	uint32_t next_token;
++	uint32_t clock;
++};
++
+ /* The hardware conditional modifier of each enum i915_eu_cond, in its order. */
+ static const uint32_t i915_eu_cond_bits[I915_EU_COND_COUNT] = {
+ 	EU_COND_Z,
+@@ -127,6 +196,22 @@ static void i915_eu_src1(uint32_t *inst, struct i915_eu_reg reg);
+ static uint32_t i915_eu_file_bit(struct i915_eu_reg reg);
+ static void i915_eu_set(uint32_t *inst, unsigned high, unsigned low, uint32_t value);
+ static void i915_eu_bit(uint32_t *inst, unsigned position, uint32_t value);
++static uint32_t i915_eu_get(const uint32_t *inst, unsigned high, unsigned low);
++static void i915_eu_touches(const uint32_t *inst, struct i915_eu_run *write, struct i915_eu_run reads[I915_EU_MAX_READS]);
++static void i915_eu_operand_run(const uint32_t *inst, int source, struct i915_eu_run *run);
++static int i915_eu_runs_meet(const struct i915_eu_run *first, const struct i915_eu_run *second);
++static int i915_eu_is_out_of_order(const uint32_t *inst);
++static int i915_eu_is_end_of_thread(const uint32_t *inst);
++static void i915_eu_wait(struct i915_eu_buf *out, struct i915_eu_token *token, uint32_t id, int destination);
++static int i915_eu_schedule_alloc(struct i915_eu_schedule *pass);
++static int i915_eu_schedule_mark(struct i915_eu_schedule *pass);
++static int i915_eu_schedule_rebuild(struct i915_eu_schedule *pass);
++static void i915_eu_schedule_waits(struct i915_eu_schedule *pass, const struct i915_eu_run *write, const struct i915_eu_run reads[I915_EU_MAX_READS], int flush);
++static uint32_t i915_eu_schedule_take(struct i915_eu_schedule *pass, const struct i915_eu_run *write, const struct i915_eu_run reads[I915_EU_MAX_READS]);
++static int i915_eu_schedule_jumps(struct i915_eu_schedule *pass);
++static int i915_eu_schedule_move(struct i915_eu_schedule *pass, uint32_t index, uint32_t *inst, unsigned high, unsigned low);
++static int i915_eu_is_encoder_wait(const struct i915_eu_buf *buffer, uint32_t index);
++static int i915_eu_jump_target(uint32_t index, uint32_t jump, uint32_t count, uint32_t *target);
+ 
+ /*
+  * Prepares an empty instruction buffer.
+@@ -1318,6 +1403,85 @@ drv_i915_eu_patch_endif(
+ 	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, (target - endif_position) * GEN12_EU_DWORDS * 4U);
+ }
+ 
++/*
++ * Moves the waits for out-of-order instructions (MATH, SEND) from right
++ * after each to where their registers are next used, and gives each its
++ * own token (ws075-p022).
++ *
++ * The encoder follows every out-of-order instruction with a sync.nop on
++ * token 0.  This pass drops those, gives each out-of-order instruction the
++ * next free of the sixteen tokens, and puts a sync.nop on a token right
++ * before the first later instruction that reads or writes that token's
++ * destination registers (.dst) or writes its source registers (.src), or
++ * that needs the token again when all are busy.  Every token is waited for
++ * before a WHILE, at the first instruction of a loop (a WHILE's target) and
++ * before the SEND that ends the thread.  An IF and its ENDIF need no wait:
++ * the channels that jump over the IF's body only skip instructions, so the
++ * tokens in flight after the ENDIF are at most those after the body.  The
++ * jumps of IF, ENDIF and WHILE are moved by the sync.nops put in between.
++ *
++ * Returns 0, EINVAL for a poisoned buffer or a jump out of the program, or
++ * ENOMEM; on a failure the buffer is poisoned.
++ */
++int
++drv_i915_eu_schedule(
++	struct i915_eu_buf *buffer)
++{
++	struct i915_eu_schedule pass;
++	uint32_t count;
++	int error;
++
++	/* A poisoned buffer is left as it is. */
++	if (buffer->error != 0)
++		return EINVAL;
++
++	/* Nothing encoded, nothing to move. */
++	count = (uint32_t)(buffer->count / GEN12_EU_DWORDS);
++	if (count == 0U)
++		return 0;
++
++	/* Allocates the per-instruction marks and positions. */
++	kern_memset(&pass, 0, sizeof(pass));
++	pass.buffer = buffer;
++	pass.count = count;
++	drv_i915_eu_init(&pass.out);
++	error = i915_eu_schedule_alloc(&pass);
++
++	/* Marks the encoder's own waits and the first instruction of each loop. */
++	if (error == 0)
++		error = i915_eu_schedule_mark(&pass);
++
++	/* Rebuilds the program with the waits where the registers are used. */
++	if (error == 0)
++		error = i915_eu_schedule_rebuild(&pass);
++
++	/* Moves the jumps over the waits put in between. */
++	if (error == 0)
++		error = i915_eu_schedule_jumps(&pass);
++
++	/* Frees the marks and positions. */
++	kern_free(pass.dropped);
++	kern_free(pass.loop_top);
++	kern_free(pass.start);
++	kern_free(pass.place);
++
++	/* A failure poisons the buffer and keeps the old program out of use. */
++	if (error != 0) {
++		drv_i915_eu_free(&pass.out);
++		buffer->error = 1;
++		return error;
++	}
++
++	/* The new program replaces the old one. */
++	drv_i915_eu_free(buffer);
++	buffer->words = pass.out.words;
++	buffer->count = pass.out.count;
++	buffer->capacity = pass.out.capacity;
++
++	/* Succeeded: the waits are where the registers are used. */
++	return 0;
++}
++
+ /*
+  * Encodes a two-source instruction on the channels `scope` names,
+  * predicated on `flag` when `predicated` is nonzero (see drv_i915_eu_alu2()).
+@@ -1799,3 +1963,668 @@ i915_eu_bit(
+ 		inst[position / 32U] &= ~mask;
+ 	}
+ }
++
++/* Allocates the marks and positions of a scheduling run; ENOMEM when one cannot be. */
++static int
++i915_eu_schedule_alloc(
++	struct i915_eu_schedule *pass)
++{
++	/* The dropped sync.nops. */
++	pass->dropped = kern_calloc(pass->count, sizeof(*pass->dropped));
++	if (pass->dropped == NULL)
++		return ENOMEM;
++
++	/* The loops' first instructions. */
++	pass->loop_top = kern_calloc(pass->count, sizeof(*pass->loop_top));
++	if (pass->loop_top == NULL)
++		return ENOMEM;
++
++	/* Where each instruction's waits start, the end included. */
++	pass->start = kern_calloc(pass->count + 1U, sizeof(*pass->start));
++	if (pass->start == NULL)
++		return ENOMEM;
++
++	/* Where each instruction goes, the end included. */
++	pass->place = kern_calloc(pass->count + 1U, sizeof(*pass->place));
++	if (pass->place == NULL)
++		return ENOMEM;
++
++	/* Succeeded: every array is there. */
++	return 0;
++}
++
++/*
++ * Marks the encoder's own sync.nops, which are dropped, and the first
++ * instruction of each loop; EINVAL for a WHILE that jumps out of the program.
++ */
++static int
++i915_eu_schedule_mark(
++	struct i915_eu_schedule *pass)
++{
++	const uint32_t *inst;
++	uint32_t index;
++	uint32_t opcode;
++	uint32_t jump;
++	uint32_t target;
++	int wait;
++	int error;
++
++	/* Looks at every instruction once. */
++	for (index = 0U; index < pass->count; index++) {
++		inst = pass->buffer->words + (size_t)index * GEN12_EU_DWORDS;
++		opcode = i915_eu_get(inst, EU_OPCODE_HI, EU_OPCODE_LO);
++
++		/* The encoder's wait right after an out-of-order instruction is dropped. */
++		wait = i915_eu_is_encoder_wait(pass->buffer, index);
++		if (wait)
++			pass->dropped[index] = 1U;
++
++		/* Only a WHILE marks a loop. */
++		if (opcode != EU_OP_WHILE)
++			continue;
++
++		/* A WHILE jumps back to the first instruction of its loop. */
++		jump = i915_eu_get(inst, EU_JIP_HI, EU_JIP_LO);
++		error = i915_eu_jump_target(index, jump, pass->count, &target);
++		if (error != 0)
++			return error;
++		if (target == pass->count)
++			return EINVAL;
++
++		/* The target is where every token is waited for. */
++		pass->loop_top[target] = 1U;
++	}
++
++	/* Succeeded: the marks are set. */
++	return 0;
++}
++
++/*
++ * Rebuilds the program into the pass's output: each kept instruction after
++ * the waits it needs, and each out-of-order one with its own token.
++ * Returns 0 or ENOMEM.
++ */
++static int
++i915_eu_schedule_rebuild(
++	struct i915_eu_schedule *pass)
++{
++	struct i915_eu_run write;
++	struct i915_eu_run reads[I915_EU_MAX_READS];
++	const uint32_t *inst;
++	uint32_t *copy;
++	uint32_t index;
++	uint32_t opcode;
++	uint32_t swsb;
++	uint32_t id;
++	int flush;
++	int out_of_order;
++	int end_of_thread;
++
++	/* Walks the old program in order. */
++	for (index = 0U; index < pass->count; index++) {
++		inst = pass->buffer->words + (size_t)index * GEN12_EU_DWORDS;
++		opcode = i915_eu_get(inst, EU_OPCODE_HI, EU_OPCODE_LO);
++		pass->start[index] = (uint32_t)(pass->out.count / GEN12_EU_DWORDS);
++
++		/* A dropped sync.nop leaves nothing; a jump to it lands on what follows. */
++		if (pass->dropped[index] != 0U) {
++			pass->place[index] = pass->start[index];
++			continue;
++		}
++
++		/* Every token is waited for at a loop's first instruction, before a WHILE and before the end of the thread. */
++		end_of_thread = i915_eu_is_end_of_thread(inst);
++		flush = 0;
++		if (pass->loop_top[index] != 0U) {
++			flush = 1;
++		} else if (opcode == EU_OP_WHILE) {
++			flush = 1;
++		} else if (end_of_thread) {
++			flush = 1;
++		}
++
++		/* Waits for what the instruction depends on. */
++		i915_eu_touches(inst, &write, reads);
++		i915_eu_schedule_waits(pass, &write, reads, flush);
++
++		/* An out-of-order instruction takes a token. */
++		id = 0U;
++		out_of_order = i915_eu_is_out_of_order(inst);
++		if (out_of_order)
++			id = i915_eu_schedule_take(pass, &write, reads);
++
++		/* Copies the instruction. */
++		pass->place[index] = (uint32_t)(pass->out.count / GEN12_EU_DWORDS);
++		copy = i915_eu_reserve(&pass->out);
++		if (copy == NULL)
++			return ENOMEM;
++
++		/* The copy is the old instruction bit for bit. */
++		kern_memcpy(copy, inst, GEN12_EU_DWORDS * sizeof(uint32_t));
++
++		/* Names the token in the copy's scoreboard byte (its low four bits). */
++		if (out_of_order) {
++			swsb = i915_eu_get(copy, EU_SWSB_HI, EU_SWSB_LO);
++			i915_eu_set(copy, EU_SWSB_HI, EU_SWSB_LO, (swsb & ~0xfU) | id);
++		}
++	}
++
++	/* The end of the program is a target past the last instruction. */
++	pass->start[pass->count] = (uint32_t)(pass->out.count / GEN12_EU_DWORDS);
++	pass->place[pass->count] = pass->start[pass->count];
++
++	/* A sync.nop that could not be placed poisoned the output. */
++	if (pass->out.error != 0)
++		return ENOMEM;
++
++	/* Succeeded: the program is rebuilt. */
++	return 0;
++}
++
++/*
++ * Puts before an instruction the waits it needs: on each token in flight
++ * whose destination it reads or writes (.dst), or whose sources it writes
++ * (.src); on every token when `flush` is set.
++ */
++static void
++i915_eu_schedule_waits(
++	struct i915_eu_schedule *pass,
++	const struct i915_eu_run *write,
++	const struct i915_eu_run reads[I915_EU_MAX_READS],
++	int flush)
++{
++	struct i915_eu_token *token;
++	uint32_t id;
++	uint32_t read;
++	int needs_dst;
++	int needs_src;
++	int meet;
++
++	/* Looks at every token in flight. */
++	for (id = 0U; id < I915_EU_TOKENS; id++) {
++		token = &pass->tokens[id];
++		if (!token->busy)
++			continue;
++
++		/* Writing what the token writes needs its destination written. */
++		needs_dst = flush;
++		meet = i915_eu_runs_meet(write, &token->write);
++		if (meet)
++			needs_dst = 1;
++
++		/* So does reading it. */
++		for (read = 0U; read < I915_EU_MAX_READS; read++) {
++			meet = i915_eu_runs_meet(&reads[read], &token->write);
++			if (meet)
++				needs_dst = 1;
++		}
++
++		/* Writing what the token still reads needs its sources read. */
++		needs_src = 0;
++		for (read = 0U; read < I915_EU_MAX_READS; read++) {
++			meet = i915_eu_runs_meet(write, &token->reads[read]);
++			if (meet)
++				needs_src = 1;
++		}
++
++		/* A destination wait covers the sources too. */
++		if (needs_dst) {
++			i915_eu_wait(&pass->out, token, id, 1);
++		} else if (needs_src) {
++			i915_eu_wait(&pass->out, token, id, 0);
++		}
++	}
++}
++
++/*
++ * Gives an out-of-order instruction a token: the next free one in turn, or,
++ * when all are busy, the oldest after a wait for its destination.  Returns
++ * the token.
++ */
++static uint32_t
++i915_eu_schedule_take(
++	struct i915_eu_schedule *pass,
++	const struct i915_eu_run *write,
++	const struct i915_eu_run reads[I915_EU_MAX_READS])
++{
++	struct i915_eu_token *token;
++	uint32_t id;
++	uint32_t step;
++	uint32_t candidate;
++	uint32_t read;
++
++	/* The next free token in turn. */
++	id = I915_EU_TOKENS;
++	for (step = 0U; step < I915_EU_TOKENS; step++) {
++		candidate = (pass->next_token + step) % I915_EU_TOKENS;
++		if (!pass->tokens[candidate].busy) {
++			id = candidate;
++			break;
++		}
++	}
++
++	/* All busy: the oldest one's instruction is waited for and its token taken. */
++	if (id == I915_EU_TOKENS) {
++		id = 0U;
++		for (candidate = 1U; candidate < I915_EU_TOKENS; candidate++) {
++			if (pass->tokens[candidate].age < pass->tokens[id].age)
++				id = candidate;
++		}
++
++		/* Its destination written, it is free for this instruction. */
++		i915_eu_wait(&pass->out, &pass->tokens[id], id, 1);
++	}
++
++	/* The token now stands for this instruction's registers, the youngest in flight. */
++	token = &pass->tokens[id];
++	token->busy = 1;
++	token->age = pass->clock;
++	token->write = *write;
++	for (read = 0U; read < I915_EU_MAX_READS; read++)
++		token->reads[read] = reads[read];
++	pass->clock++;
++	pass->next_token = (id + 1U) % I915_EU_TOKENS;
++
++	/* Succeeded: the instruction's token. */
++	return id;
++}
++
++/*
++ * Moves the jumps of the rebuilt program's branches (IF: JIP and UIP;
++ * ENDIF, WHILE: JIP) by the waits now between each branch and its target;
++ * a jump lands on its target's waits.  Returns 0, or EINVAL for a jump out
++ * of the program.
++ */
++static int
++i915_eu_schedule_jumps(
++	struct i915_eu_schedule *pass)
++{
++	uint32_t *copy;
++	uint32_t index;
++	uint32_t opcode;
++	int error;
++
++	/* Looks at every kept instruction. */
++	for (index = 0U; index < pass->count; index++) {
++		if (pass->dropped[index] != 0U)
++			continue;
++
++		/* Only the branches carry jumps. */
++		copy = pass->out.words + (size_t)pass->place[index] * GEN12_EU_DWORDS;
++		opcode = i915_eu_get(copy, EU_OPCODE_HI, EU_OPCODE_LO);
++		if (opcode != EU_OP_IF && opcode != EU_OP_ENDIF && opcode != EU_OP_WHILE)
++			continue;
++
++		/* The JIP. */
++		error = i915_eu_schedule_move(pass, index, copy, EU_JIP_HI, EU_JIP_LO);
++		if (error != 0)
++			return error;
++
++		/* An IF's UIP too. */
++		if (opcode == EU_OP_IF) {
++			error = i915_eu_schedule_move(pass, index, copy, EU_UIP_HI, EU_UIP_LO);
++			if (error != 0)
++				return error;
++		}
++	}
++
++	/* Succeeded: every jump reaches its old target. */
++	return 0;
++}
++
++/* Moves one jump field of the copy of old instruction `index`; EINVAL for a target out of the program. */
++static int
++i915_eu_schedule_move(
++	struct i915_eu_schedule *pass,
++	uint32_t index,
++	uint32_t *inst,
++	unsigned high,
++	unsigned low)
++{
++	uint32_t jump;
++	uint32_t target;
++	int32_t moved;
++	int error;
++
++	/* The old target, from the old jump in bytes. */
++	jump = i915_eu_get(inst, high, low);
++	error = i915_eu_jump_target(index, jump, pass->count, &target);
++	if (error != 0)
++		return error;
++
++	/* The new jump, from the branch's new place to the target's waits. */
++	moved = ((int32_t)pass->start[target] - (int32_t)pass->place[index]) * (int32_t)(GEN12_EU_DWORDS * 4U);
++	i915_eu_set(inst, high, low, (uint32_t)moved);
++
++	/* Succeeded: the jump is moved. */
++	return 0;
++}
++
++/* Reports whether an instruction is the encoder's sync.nop on token 0 right after an out-of-order instruction. */
++static int
++i915_eu_is_encoder_wait(
++	const struct i915_eu_buf *buffer,
++	uint32_t index)
++{
++	const uint32_t *inst;
++	uint32_t opcode;
++	uint32_t swsb;
++	uint32_t destination_wait;
++	uint32_t source_wait;
++	int previous_out_of_order;
++
++	/* The first instruction follows nothing. */
++	if (index == 0U)
++		return 0;
++
++	/* Only a sync.nop waits. */
++	inst = buffer->words + (size_t)index * GEN12_EU_DWORDS;
++	opcode = i915_eu_get(inst, EU_OPCODE_HI, EU_OPCODE_LO);
++	if (opcode != EU_OP_SYNC)
++		return 0;
++
++	/* It follows an out-of-order instruction. */
++	previous_out_of_order = i915_eu_is_out_of_order(inst - GEN12_EU_DWORDS);
++	if (!previous_out_of_order)
++		return 0;
++
++	/* It waits on token 0, for the destination or the sources. */
++	swsb = i915_eu_get(inst, EU_SWSB_HI, EU_SWSB_LO);
++	destination_wait = EU_SWSB_SYNC_DST(I915_EU_TOKEN);
++	source_wait = EU_SWSB_SYNC_SRC(I915_EU_TOKEN);
++	if (swsb == destination_wait)
++		return 1;
++	if (swsb == source_wait)
++		return 1;
++
++	/* Another wait is kept. */
++	return 0;
++}
++
++/*
++ * Works out the instruction a jump of `jump` bytes from instruction `index`
++ * lands on (`count` for the end of the program); EINVAL when it is outside
++ * the program or not on an instruction.
++ */
++static int
++i915_eu_jump_target(
++	uint32_t index,
++	uint32_t jump,
++	uint32_t count,
++	uint32_t *target)
++{
++	int32_t bytes;
++	int32_t landing;
++
++	/* The jump is a signed number of bytes, a whole number of instructions. */
++	bytes = (int32_t)jump;
++	if ((bytes % (int32_t)(GEN12_EU_DWORDS * 4U)) != 0)
++		return EINVAL;
++
++	/* The instruction it lands on must be in the program or its end. */
++	landing = (int32_t)index + bytes / (int32_t)(GEN12_EU_DWORDS * 4U);
++	if (landing < 0 || landing > (int32_t)count)
++		return EINVAL;
++
++	/* Succeeded: the target. */
++	*target = (uint32_t)landing;
++	return 0;
++}
++
++/* Reads a field of the 128-bit instruction. */
++static uint32_t
++i915_eu_get(
++	const uint32_t *inst,
++	unsigned high,
++	unsigned low)
++{
++	uint32_t value;
++	unsigned position;
++
++	/* Gathers the bits from the high end down. */
++	value = 0U;
++	for (position = high + 1U; position > low; position--)
++		value = (value << 1) | ((inst[(position - 1U) / 32U] >> ((position - 1U) % 32U)) & 1U);
++
++	/* Succeeded: the field's value. */
++	return value;
++}
++
++/* Reports whether an instruction is out of order: a MATH, or a SEND that does not end the thread. */
++static int
++i915_eu_is_out_of_order(
++	const uint32_t *inst)
++{
++	uint32_t opcode;
++	int end_of_thread;
++
++	/* Math runs out of order. */
++	opcode = i915_eu_get(inst, EU_OPCODE_HI, EU_OPCODE_LO);
++	if (opcode == EU_OP_MATH)
++		return 1;
++
++	/* Anything but a message runs in order. */
++	if (opcode != EU_OP_SEND && opcode != EU_OP_SENDC)
++		return 0;
++
++	/* A message runs out of order unless it ends the thread. */
++	end_of_thread = i915_eu_is_end_of_thread(inst);
++	if (end_of_thread)
++		return 0;
++
++	/* Succeeded: an out-of-order message. */
++	return 1;
++}
++
++/* Reports whether an instruction is the SEND that ends the thread. */
++static int
++i915_eu_is_end_of_thread(
++	const uint32_t *inst)
++{
++	uint32_t opcode;
++	uint32_t eot;
++
++	/* Only a message can end the thread. */
++	opcode = i915_eu_get(inst, EU_OPCODE_HI, EU_OPCODE_LO);
++	if (opcode != EU_OP_SEND && opcode != EU_OP_SENDC)
++		return 0;
++
++	/* The end-of-thread bit says whether it does. */
++	eot = i915_eu_get(inst, EU_SEND_EOT_BIT, EU_SEND_EOT_BIT);
++	if (eot == 0U)
++		return 0;
++
++	/* Succeeded: the message ends the thread. */
++	return 1;
++}
++
++/*
++ * Reads back which general registers an instruction writes and reads: a
++ * SEND's destination and payload runs from its descriptors, an ALU
++ * instruction's destination and sources from their regions.  A sync.nop,
++ * a branch or a NOP touches none.
++ */
++static void
++i915_eu_touches(
++	const uint32_t *inst,
++	struct i915_eu_run *write,
++	struct i915_eu_run reads[I915_EU_MAX_READS])
++{
++	uint32_t opcode;
++	uint32_t index;
++	uint32_t file;
++
++	/* Touches nothing until an operand says otherwise. */
++	write->first = 0U;
++	write->count = 0U;
++	for (index = 0U; index < I915_EU_MAX_READS; index++) {
++		reads[index].first = 0U;
++		reads[index].count = 0U;
++	}
++
++	/* Control flow and the scoreboard's own instructions touch no register. */
++	opcode = i915_eu_get(inst, EU_OPCODE_HI, EU_OPCODE_LO);
++	if (opcode == EU_OP_SYNC ||
++	    opcode == EU_OP_NOP ||
++	    opcode == EU_OP_IF ||
++	    opcode == EU_OP_ENDIF ||
++	    opcode == EU_OP_WHILE)
++		return;
++
++	/* An ALU instruction: its destination and its two sources as their regions say. */
++	if (opcode != EU_OP_SEND && opcode != EU_OP_SENDC) {
++		i915_eu_operand_run(inst, -1, write);
++		i915_eu_operand_run(inst, 0, &reads[0]);
++		i915_eu_operand_run(inst, 1, &reads[1]);
++		return;
++	}
++
++	/* A message's reply: the registers from its destination, as many as desc 24:20 says. */
++	file = i915_eu_get(inst, EU_DST_REG_FILE_BIT, EU_DST_REG_FILE_BIT);
++	if (file != 0U) {
++		write->first = i915_eu_get(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO);
++		write->count = i915_eu_get(inst, 55U, 51U);
++	}
++
++	/* Its first payload run: as many registers as desc 28:25 says. */
++	file = i915_eu_get(inst, EU_SRC0_REG_FILE_BIT, EU_SRC0_REG_FILE_BIT);
++	if (file != 0U) {
++		reads[0].first = i915_eu_get(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
++		reads[0].count = i915_eu_get(inst, 70U, 67U);
++	}
++
++	/* Its second payload run: as many registers as ex_desc 10:6 says. */
++	file = i915_eu_get(inst, EU_SRC1_REG_FILE_BIT, EU_SRC1_REG_FILE_BIT);
++	if (file != 0U) {
++		reads[1].first = i915_eu_get(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
++		reads[1].count = i915_eu_get(inst, 103U, 99U);
++	}
++}
++
++/*
++ * Works out the general registers one operand of an ALU instruction spans
++ * (`source` -1 for the destination, 0 or 1 for a source): none for an
++ * immediate or an architecture register, else from the subregister, the
++ * channels, the type's size and the stride; a scalar region reads one
++ * element.
++ */
++static void
++i915_eu_operand_run(
++	const uint32_t *inst,
++	int source,
++	struct i915_eu_run *run)
++{
++	static const uint32_t strides[4] = { 0U, 1U, 2U, 4U };
++	uint32_t channels;
++	uint32_t immediate;
++	uint32_t file;
++	uint32_t nr;
++	uint32_t subnr;
++	uint32_t type;
++	uint32_t stride;
++	uint32_t vstride;
++	uint32_t bytes;
++
++	/* Nothing until the operand is known to be a general register. */
++	run->first = 0U;
++	run->count = 0U;
++
++	/* The channels the instruction runs. */
++	channels = 1U << i915_eu_get(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO);
++
++	/* The operand's fields; a source may be an immediate. */
++	immediate = 0U;
++	if (source < 0) {
++		file = i915_eu_get(inst, EU_DST_REG_FILE_BIT, EU_DST_REG_FILE_BIT);
++		nr = i915_eu_get(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO);
++		subnr = i915_eu_get(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO);
++		type = i915_eu_get(inst, EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO);
++		stride = strides[i915_eu_get(inst, EU_DST_HSTRIDE_HI, EU_DST_HSTRIDE_LO)];
++		vstride = 1U;
++	} else if (source == 0) {
++		immediate = i915_eu_get(inst, EU_SRC0_IS_IMM_BIT, EU_SRC0_IS_IMM_BIT);
++		file = i915_eu_get(inst, EU_SRC0_REG_FILE_BIT, EU_SRC0_REG_FILE_BIT);
++		nr = i915_eu_get(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
++		subnr = i915_eu_get(inst, EU_SRC0_SUBREG_HI, EU_SRC0_SUBREG_LO);
++		type = i915_eu_get(inst, EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO);
++		stride = strides[i915_eu_get(inst, EU_SRC0_HSTRIDE_HI, EU_SRC0_HSTRIDE_LO)];
++		vstride = i915_eu_get(inst, EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO);
++	} else {
++		immediate = i915_eu_get(inst, EU_SRC1_IS_IMM_BIT, EU_SRC1_IS_IMM_BIT);
++		file = i915_eu_get(inst, EU_SRC1_REG_FILE_BIT, EU_SRC1_REG_FILE_BIT);
++		nr = i915_eu_get(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
++		subnr = i915_eu_get(inst, EU_SRC1_SUBREG_HI, EU_SRC1_SUBREG_LO);
++		type = i915_eu_get(inst, EU_SRC1_REG_TYPE_HI, EU_SRC1_REG_TYPE_LO);
++		stride = strides[i915_eu_get(inst, EU_SRC1_HSTRIDE_HI, EU_SRC1_HSTRIDE_LO)];
++		vstride = i915_eu_get(inst, EU_SRC1_VSTRIDE_HI, EU_SRC1_VSTRIDE_LO);
++	}
++
++	/* An immediate or an architecture register (the null register, a flag) is not a general register. */
++	if (immediate != 0U)
++		return;
++	if (file == 0U)
++		return;
++
++	/* The bytes from the register's start: a scalar region reads one element, any other every channel's. */
++	if (vstride == 0U && stride == 0U) {
++		bytes = subnr + (1U << (type & 3U));
++	} else {
++		if (stride == 0U)
++			stride = 1U;
++		bytes = subnr + channels * (1U << (type & 3U)) * stride;
++	}
++
++	/* The registers those bytes span. */
++	run->first = nr;
++	run->count = (bytes + I915_EU_GRF_BYTES - 1U) / I915_EU_GRF_BYTES;
++}
++
++/* Reports whether two register runs share a register. */
++static int
++i915_eu_runs_meet(
++	const struct i915_eu_run *first,
++	const struct i915_eu_run *second)
++{
++	/* An empty run shares nothing. */
++	if (first->count == 0U || second->count == 0U)
++		return 0;
++
++	/* Disjoint runs: one ends before the other starts. */
++	if (first->first + first->count <= second->first)
++		return 0;
++	if (second->first + second->count <= first->first)
++		return 0;
++
++	/* Succeeded: they overlap. */
++	return 1;
++}
++
++/*
++ * Appends a sync.nop on a token to the rebuilt program: until its
++ * instruction has written its destination (`destination` nonzero; the
++ * token is then free) or has read its sources.
++ */
++static void
++i915_eu_wait(
++	struct i915_eu_buf *out,
++	struct i915_eu_token *token,
++	uint32_t id,
++	int destination)
++{
++	uint32_t read;
++
++	/* A destination wait frees the token. */
++	if (destination) {
++		i915_eu_sync(out, EU_SWSB_SYNC_DST(id));
++		token->busy = 0;
++		token->write.count = 0U;
++		for (read = 0U; read < I915_EU_MAX_READS; read++)
++			token->reads[read].count = 0U;
++		return;
++	}
++
++	/* A source wait leaves the destination pending. */
++	i915_eu_sync(out, EU_SWSB_SYNC_SRC(id));
++	for (read = 0U; read < I915_EU_MAX_READS; read++)
++		token->reads[read].count = 0U;
++}
+diff --git a/src/drivers/gpu/i915/compiler/eu.h b/src/drivers/gpu/i915/compiler/eu.h
+index e16e11a5..246ab0a6 100644
+--- a/src/drivers/gpu/i915/compiler/eu.h
++++ b/src/drivers/gpu/i915/compiler/eu.h
+@@ -192,5 +192,6 @@ uint32_t drv_i915_eu_if(struct i915_eu_buf *buffer, enum i915_eu_flag flag);
+ uint32_t drv_i915_eu_endif(struct i915_eu_buf *buffer);
+ void drv_i915_eu_patch_if(struct i915_eu_buf *buffer, uint32_t if_position, uint32_t endif_position);
+ void drv_i915_eu_patch_endif(struct i915_eu_buf *buffer, uint32_t endif_position, uint32_t target);
++int drv_i915_eu_schedule(struct i915_eu_buf *buffer);
+ 
+ #endif /* DRIVERS_GPU_I915_COMPILER_EU_H */

@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/sleep
+arguments=10
+after=wltest2
+restart=no
+required=NO

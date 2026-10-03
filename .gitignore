@@ -1,0 +1,18 @@
+/build/
+/config.mk
+/userland/base/noct/distfiles/
+/userland/base/noct/noct/
+/toolchain/llvm/distfiles/
+__pycache__/
+*~
+.internal/
+plan/ws*/temp/
+
+# Awesome Plan local cache, write-back journal and conflicts
+/plan/.sync/
+
+# Temp
+plan/ws031/mesa-refs/
+/userland/desktop/browser/distfiles/
+
+.wifi

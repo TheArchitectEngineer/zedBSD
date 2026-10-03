@@ -1,0 +1,2 @@
+WSI discovery/swapchain: dynamic40 outputs,37 images, shared rollback, acquire/present and cleanup PASS
+WSI native adapter: independent display admission, fixed copied storage, BLOB import/selection, front retention through wait/failure/alias destruction, foreign import rejection PASS

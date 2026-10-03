@@ -1,0 +1,57 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * PC/AT boot framebuffer, Cirrus GD5446, and standard VGA backends.
+ */
+
+#ifndef KERN_DRIVERS_GRAPHICS_PCAT_BACKEND_H
+#define KERN_DRIVERS_GRAPHICS_PCAT_BACKEND_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <uapi/graphics.h>
+
+struct pcat_graphics_image {
+	unsigned format, width, height;
+	size_t stride;
+	const uint8_t *pixels;
+	const uint32_t *palette;
+	unsigned palette_size;
+};
+
+int drv_pcat_graphics_backend_ready(void);
+size_t drv_pcat_graphics_backend_get_modes(struct graphics_mode_info *, size_t);
+int drv_pcat_graphics_backend_enter(struct graphics_mode *);
+void drv_pcat_graphics_backend_leave(void);
+int drv_pcat_graphics_backend_fill(const struct graphics_rect *, uint32_t);
+int drv_pcat_graphics_backend_line(unsigned, unsigned, unsigned, unsigned,
+				   uint32_t);
+int drv_pcat_graphics_backend_pattern_fill(const struct graphics_rect *,
+					   uint32_t, uint64_t);
+int drv_pcat_graphics_backend_blit(unsigned, unsigned,
+				   const struct pcat_graphics_image *, uint64_t,
+				   int);
+int drv_pcat_graphics_backend_flush(const struct graphics_rect *, size_t);
+int drv_pcat_graphics_backend_get_glyph(uint32_t, uint8_t[32], unsigned *,
+					unsigned *);
+
+/*
+ * Report the linear framebuffer this backend owns.
+ *
+ * The text layer draws glyphs into the same framebuffer, so it needs
+ * the pixel pointer and the geometry. Returns 0 when no linear
+ * framebuffer is available.
+ */
+int drv_pcat_graphics_backend_get_framebuffer(
+	volatile uint32_t **pixels,
+	unsigned *width,
+	unsigned *height,
+	unsigned *stride,
+	int *rgbx);
+
+#endif

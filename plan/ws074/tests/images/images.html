@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>browser: images</title>
+<style>
+body { font-family: sans-serif; background-color: #f4f1ea; color: #222; margin: 16px; }
+h1 { color: #1f4e79; font-size: 24px; margin: 0 0 8px 0; }
+p { margin: 8px 0; }
+.frame { border: 3px solid #1f4e79; padding: 4px; background: white; }
+.centered { display: block; margin: 8px auto; }
+.right { float: right; margin: 0 0 8px 8px; }
+.fit { max-width: 100%; }
+.small { width: 48px; }
+</style>
+</head>
+<body>
+<h1>Images</h1>
+<img class="right frame" src="logo.png" alt="logo">
+<p>A JPEG photo at its own size: <img src="photo.jpg" alt="photo"> and the text goes on after it on the same line.</p>
+<p>Progressive <img src="photo-prog.jpg" width="160" alt="progressive"> at half its width, CMYK
+<img src="cmyk.jpg" height="50" alt="cmyk"> by its height, and gray <img class="small" src="gray.jpg" alt="gray">.</p>
+<p>A PNG with alpha <img src="logo.png" alt="logo"> over the background, a palette PNG <img src="palette.png" alt="palette">,
+a GIF <img src="anim.gif" alt="gif"> with a transparent colour, and a <a href="second.html"><img src="logo.png" width="24" alt="link"> link</a>.</p>
+<img class="centered frame fit" src="photo.jpg" width="1200" alt="wide">
+<p>A missing image: <img src="missing.png" width="40" height="30" alt="missing"> keeps its size.</p>
+</body>
+</html>

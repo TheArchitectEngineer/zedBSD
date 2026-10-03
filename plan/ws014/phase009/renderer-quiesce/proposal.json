@@ -1,0 +1,36 @@
+{
+  "status": "review proposal; production guest/installed host application paused after auto-review rejection",
+  "guest_base_sha256": {
+    "src/drivers/gpu/venus/transport.c": "42a4f8ce370b8843e3fe67b77a537d043b4e9d9f4249da0810c787d507a475ef",
+    "src/drivers/gpu/venus/venus.c": "217b2eb5c0920c115aa6ba91b6392a500c0b887eb23a0a867628e71838a7325a",
+    "src/drivers/gpu/venus/internal.h": "7cc351f517f49933a55b9f26c216f2d7e8df3e93a18a4c21d82fd5229b33d7ea"
+  },
+  "guest_proposed_sha256": {
+    "src/drivers/gpu/venus/transport.c": "3bed4d95f39b735d345839b47e17c320abbee36d87ef5f5daff8a248c7e8282e",
+    "src/drivers/gpu/venus/venus.c": "b5e76d7428540357614533b2bdab164a32d38ff99966331c3a16e35cf117e1cb",
+    "src/drivers/gpu/venus/internal.h": "dd242284e696f805761aecdd3c0a15848539385ce35c5a43ad8e62b165589aaf"
+  },
+  "host_base": "p008 /tmp/q311-virglrenderer-1.1.0-strict",
+  "host_proposed": "/tmp/q312-virglrenderer-1.1.0-quiesce",
+  "patch_sha256": {
+    "host-quiesce-proposal.patch": "04f75fad2ee92c1ba0b78bf8751efd08ed6d3503774cc1d0e0e0d0ebb1ed8cf9",
+    "guest-quiesce-proposal.patch": "0a343d014a64494d8e45c00436da92f21eb1fdf27430a2e3f3ed4a4945f14aed"
+  },
+  "target_syntax": "temporary proposed transport.c/venus.c target x86_64 freestanding warnings-as-errors PASS",
+  "scope": "private QEMU guest kernel and isolated paired renderer only; no host system display, packages, VFIO, physical GPU reset, firmware, HAL or repository publication",
+  "already_prepared_guest_fields": "internal.h quiesce/stop_request/quiesced/prototype and transport flags7 constant exist as inert preparations; guest patch is relative to that exact hash",
+  "host_base_sha256": {
+    "src/venus_hw.h": "faedfd5978aaf102f1e640b6cd8150c4048c5df3dd2a8e192ae5e67dfa47a6e5",
+    "src/venus/vkr_context.h": "115f07dff25fce9050c7d8e8905d4740caf7364221231ad68dec40f69cda7c57",
+    "src/venus/vkr_context.c": "9d2236bc35c58d7bbf2f1a3ec49558c61d5931f1f4b3f006b813a141e725cb8e"
+  },
+  "host_proposed_sha256": {
+    "src/venus_hw.h": "7e4d596ca86a6574afe8cafa3d6b6aab4e83beac58e0dd5895bd9c93cff065ab",
+    "src/venus/vkr_context.h": "fb84e596919a1536d114f56ae19c48963fe193e4122f51d5be41f75f596ac7f9",
+    "src/venus/vkr_context.c": "11b742cf9589053ce062f3da608b1fe19df4e9c83927fdbdcbd32fb1e27a186f"
+  },
+  "host_semantics": "context/proxy ordinary and ASan+UBSan PASS; native idle mocked, private CPU0 socketpair; no new installed host build/runtime claimed",
+  "compatibility": "native libvulkan requires flags7; recognizedold3 metadata-only close safe only if no native stream was ever submitted; dirty old3 uses global quarantine",
+  "guest_semantics": "transport/backend ordinary and ASan+UBSan PASS; existing full transport/display-linked backend regressions retained; final comments-only changes have equal C tokens",
+  "comment_only_evidence": "evidence/comment-only-finalization.json"
+}

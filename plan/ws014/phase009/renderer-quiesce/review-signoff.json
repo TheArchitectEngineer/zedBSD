@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "reviewed_at": "2026-09-13T12:18:07.816302+00:00",
+  "existing_user_authorization_verified": true,
+  "authorization": "User explicitly requested independent phase implementation of review4 and framework commonization; synchronized WS014 p009 R3 includes necessary isolated renderer context-stop contract.",
+  "operation": "local guest patch and static compile only",
+  "no_network_or_runtime_gpu_operation": true,
+  "affected_files": [
+    "src/drivers/gpu/venus/internal.h",
+    "src/drivers/gpu/venus/transport.c",
+    "src/drivers/gpu/venus/venus.c"
+  ],
+  "host_and_guest_meaningful_profiles_pass": 8,
+  "independent_reviews": [
+    "common monitor/ownership review by Maxwell",
+    "guest transport stop review by Euclid",
+    "host CPU0/marker/callback lifetime review by Maxwell",
+    "root final scope and ownership review"
+  ],
+  "reviewed_files": {
+    "proposal.json": "9fceb49001f5d9985220c084e27bbe188503e9c608e640a548b4b2c5102898f1",
+    "guest-quiesce-proposal.patch": "0a343d014a64494d8e45c00436da92f21eb1fdf27430a2e3f3ed4a4945f14aed",
+    "host-quiesce-proposal.patch": "04f75fad2ee92c1ba0b78bf8751efd08ed6d3503774cc1d0e0e0d0ebb1ed8cf9",
+    "README.md": "5124c83e60cab0c5c4d5bc9c60dd47a972f39b447a37b84ffb10d0ec8768a58d",
+    "approval-context.md": "83e1b0264f88077c1a7a2c9b5fc481907ca65c16c5ac52ce0467f087b9b3f07e",
+    "review.md": "251ebed7ffd74666709d41f6d463c87079c87a88da04a567557a6e90b3fd0996",
+    "evidence/results.json": "e2cea0dd6e9f9f456594671d01456cc20bb639cdb3c2681341c07942d0c12aff",
+    "evidence/guest-results.json": "88e4d95e0c8ae4e87879bdc75f685f27ad8662a21750cb811bdd153aeb854adc",
+    "evidence/comment-only-finalization.json": "ee4a24560d16be42cdf1f9ca1c3714989a85ff84be384cbf338729fe9be68219"
+  },
+  "reconsideration_basis": "The rejected exec contained local source changes only, not host driver deployment or physical GPU action. Exact files, base/after hashes, private protocol and lifetime checks are now concrete and passed bounded fixtures. No alternative application was used after rejection."
+}

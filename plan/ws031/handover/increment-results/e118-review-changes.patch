@@ -1,0 +1,2116 @@
+# WS031 E-118 review diff against the end of E-117 (tree 0e3fcb67250d961400bd0b9e48c6fdcfd6aaaac7 = 2bf790a4 + e97-e117-changes.patch). Hand-written files; tex_fixture_fhd_gen.inc is generated (reftex 1920 1080 rt) and included for reading.
+diff --git a/plan/ws031/handover/tools/reftex.c b/plan/ws031/handover/tools/reftex.c
+index ad9d3c33..e4f3bb9a 100644
+--- a/plan/ws031/handover/tools/reftex.c
++++ b/plan/ws031/handover/tools/reftex.c
+@@ -1,6 +1,8 @@
+ /* WS031 T1: the first textured-draw fixture, generated from the fixed Mesa tree.
+  *
+- *   PS:  uv = frag_coord.xy / (32, 32);  colour = txl(texture BTI 1, sampler 0, uv, lod 0);
++ *   PS:  uv = frag_coord.xy / (RT_W, RT_H);  colour = txl(texture BTI 1, sampler 0, uv, lod 0);
++ *        RT_W / RT_H: argv[1] / argv[2], default 32 / 32 (the T1 fixture; its output is unchanged).  E-118: with
++ *        argv[3] == "rt" the render target's RENDER_SURFACE_STATE is emitted too (isl, B8G8R8A8_UNORM, linear).
+  *        render target 0 (BTI 0) = colour.  It keeps the A64 entry marker of the
+  *        single-colour PS (0xc0ffee01 -> 0x100400c10) so "the PS ran" and "the
+  *        sample was right" stay separate observations.
+@@ -38,16 +40,18 @@ __gen_combine_address(void *data, void *location, uint64_t address, uint32_t del
+ 
+ #define TEX_W 8
+ #define TEX_H 8
+-#define RT_W 32
+-#define RT_H 32
++#define RT_VA_PLACEHOLDER 0x100800000ull
+ #define TEX_VA_PLACEHOLDER 0x100404000ull
+ #define MOCS 6
+ 
+ static void reflog(void *d, unsigned *id, const char *fmt, ...) { (void)d;(void)id;(void)fmt; }
+ 
+ int
+-main(void)
++main(int argc, char **argv)
+ {
++   unsigned rt_w = argc > 2 ? (unsigned)atoi(argv[1]) : 32u;
++   unsigned rt_h = argc > 2 ? (unsigned)atoi(argv[2]) : 32u;
++   int emit_rt = argc > 3 && strcmp(argv[3], "rt") == 0;
+    process_intel_debug_variable();
+    void *mem_ctx = ralloc_context(NULL);
+    struct intel_device_info devinfo;
+@@ -83,7 +87,7 @@ main(void)
+    nir_def *fc = nir_load_frag_coord(&b);
+    nir_def *pixel = nir_ffloor(&b, nir_trim_vector(&b, fc, 2));
+    nir_def *uv = nir_fmul(&b, nir_fadd(&b, pixel, nir_imm_vec2(&b, 0.5f, 0.5f)),
+-                          nir_imm_vec2(&b, 1.0f / RT_W, 1.0f / RT_H));
++                          nir_imm_vec2(&b, 1.0f / (float)rt_w, 1.0f / (float)rt_h));
+ 
+    nir_tex_instr *tex = nir_tex_instr_create(b.shader, 2);
+    tex->op = nir_texop_txl;
+@@ -292,6 +296,36 @@ main(void)
+       printf("0x%08xU, ", smp_lin[i]);
+    printf("\n};\n");
+ 
++   if (emit_rt) {
++      /* E-118: the render target as the draw names it -- layout and RENDER_SURFACE_STATE from isl */
++      struct isl_surf rt;
++      bool rt_ok = isl_surf_init(&dev, &rt, .dim = ISL_SURF_DIM_2D, .format = ISL_FORMAT_B8G8R8A8_UNORM,
++            .width = rt_w, .height = rt_h, .depth = 1, .levels = 1, .array_len = 1, .samples = 1,
++            .usage = ISL_SURF_USAGE_RENDER_TARGET_BIT, .tiling_flags = ISL_TILING_LINEAR_BIT);
++      if (!rt_ok) {
++         fprintf(stderr, "reftex: isl_surf_init(render target) failed\n");
++         return 1;
++      }
++      struct isl_view rtv = {
++         .usage = ISL_SURF_USAGE_RENDER_TARGET_BIT, .format = ISL_FORMAT_B8G8R8A8_UNORM,
++         .base_level = 0, .levels = 1, .base_array_layer = 0, .array_len = 1,
++         .swizzle = ISL_SWIZZLE_IDENTITY,
++      };
++      uint32_t rt_rss[16];
++      memset(rt_rss, 0, sizeof(rt_rss));
++      isl_surf_fill_state(&dev, rt_rss, .surf = &rt, .view = &rtv, .address = RT_VA_PLACEHOLDER, .mocs = MOCS);
++      fprintf(stderr, "reftex: render target %ux%u row_pitch_B=%u size_B=%llu alignment_B=%u\n", rt_w, rt_h,
++         rt.row_pitch_B, (unsigned long long)rt.size_B, rt.alignment_B);
++      printf("#define TEXFIX_RT_WIDTH %uU\n#define TEXFIX_RT_HEIGHT %uU\n#define TEXFIX_RT_ROW_PITCH %uU\n"
++             "#define TEXFIX_RT_SIZE %lluU\n#define TEXFIX_RT_ALIGNMENT %uU\n#define TEXFIX_RT_VA_PLACEHOLDER 0x%llxULL\n",
++         rt_w, rt_h, rt.row_pitch_B, (unsigned long long)rt.size_B, rt.alignment_B, (unsigned long long)RT_VA_PLACEHOLDER);
++      printf("/* RENDER_SURFACE_STATE of the render target (isl_surf_fill_state, render-target usage, address = placeholder, mocs %d). */\n", MOCS);
++      printf("static const uint32_t texfix_rt_rss[16] = {");
++      for (unsigned i = 0; i < 16; i++)
++         printf("%s0x%08xU,", (i % 4) == 0 ? "\n\t" : " ", rt_rss[i]);
++      printf("\n};\n");
++   }
++
+    /* raw PS for the disassembler */
+    FILE *f = fopen("reftex_ps.bin", "wb");
+    if (f) { fwrite(bytes, 1, pd->base.program_size, f); fclose(f); }
+diff --git a/plan/ws031/tests/lcd-modeset-host-test.c b/plan/ws031/tests/lcd-modeset-host-test.c
+index 4d45a795..fe97af2a 100644
+--- a/plan/ws031/tests/lcd-modeset-host-test.c
++++ b/plan/ws031/tests/lcd-modeset-host-test.c
+@@ -562,6 +562,19 @@ int main(int argc, char **argv)
+ 		      "F: ... but from the minimum it comes back at MAX (__intel_backlight_enable: level <= min -> max)");
+ 		rc = parity_lcd_modeset_brightness(orig, mx);
+ 		CHECK(rc == PARITY_LCD_MS_OK && lcd_fake_reg(&lcd, 0xc8258) == orig, "F: back to the original level");
++		{
++			uint32_t d0, u0;
++
++			rc = parity_lcd_modeset_brightness(30000u, mx);                /* start from a level that is not max */
++			d0 = lcd_fake_reg(&lcd, 0xc8258);
++			parity_lcd_modeset_status(&s);
++			u0 = s.backlight_user;
++			rc = rc == PARITY_LCD_MS_OK ? parity_lcd_modeset_brightness(mx, mx) : rc;
++			rc = rc == PARITY_LCD_MS_OK ? parity_lcd_modeset_brightness(0u, mx) : rc;
++			rc = rc == PARITY_LCD_MS_OK ? parity_lcd_modeset_brightness(u0, s.backlight_user_max) : rc;
++			CHECK(rc == PARITY_LCD_MS_OK && u0 == 30000u && lcd_fake_reg(&lcd, 0xc8258) == d0 && d0 != 30000u,
++			      "F: restore uses the saved USER level (30000 -> hw duty again), not the hw level fed back as a user level");
++		}
+ 		CHECK(lcd_fake_violations(&lcd) == 0, "F: no model violation");
+ 	}
+ 	rc = parity_lcd_modeset_commit_disable();
+@@ -593,6 +606,22 @@ int main(int argc, char **argv)
+ 		CHECK(all_released("G"), "G: nothing held after the eDP ends");
+ 	}
+ 
++	/* ================= H. the pipe's power cannot be released (interrupt drain failed): the stop is not confirmed ================= */
++	bring_up();
++	cfg = ms_cfg();
++	rc = parity_lcd_modeset_prepare(&st, &cfg, &trace.ops);
++	rc = rc == 0 ? parity_lcd_modeset_commit_enable() : -99;
++	lcd.fault_put_refused_domain = POWER_DOMAIN_PIPE_A + 1;
++	rc = rc == 0 ? parity_lcd_modeset_commit_disable() : -99;
++	parity_lcd_modeset_status(&s);
++	CHECK(rc == PARITY_LCD_MS_ERRORS && s.stop_unconfirmed == 1 && s.dc_off_held == 1 && lcd.power_refs[POWER_DOMAIN_DC_OFF] == 1 &&
++	      lcd.power_refs[POWER_DOMAIN_PIPE_A] == 1 && s.first_error != 0 && strstr(s.first_error, "kept") != 0,
++	      "H: a pipe power release refused in the commit tail -> the disable is NOT a success, DC_OFF and the pipe's power stay held");
++	CHECK(parity_lcd_modeset_prepare(&st, &cfg, &trace.ops) == -16, "H: and nothing new starts on top of it");
++	parity_lcd_modeset_abandoned();
++	CHECK(parity_lcd_modeset_discard_model(&trace.ops) == 0, "H: (the model is discarded)");
++	(void)parity_edp_end(&res);
++
+ 	/* ================= E. a time-base fault is not a timeout ================= */
+ 	bring_up();
+ 	lcd.fault_time_base_reg = 0x46010;              /* the PLL-lock wait */
+diff --git a/src/drivers/gpu/i915/draw_fixture.h b/src/drivers/gpu/i915/draw_fixture.h
+index 1534f88b..34f01cf7 100644
+--- a/src/drivers/gpu/i915/draw_fixture.h
++++ b/src/drivers/gpu/i915/draw_fixture.h
+@@ -96,4 +96,29 @@ void drv_i915_tex_fixture_write_state_ab_filter(void *state_page, uint64_t rt_va
+ uint32_t drv_i915_tex_fixture_expected_pixel_linear(const uint8_t *rgba, unsigned x, unsigned y,
+ 	int *inexact);
+ 
++/*
++ * ---- E-118: the same textured draw at 1920x1080, into a buffer the caller owns ----
++ * Generated by reftex "1920 1080 rt" (tex_fixture_fhd_gen.inc): the PS computes uv = (pixel + 0.5) / (1920, 1080),
++ * the render target's RENDER_SURFACE_STATE comes from isl (B8G8R8A8_UNORM, linear, pitch 7680).  The texture, its
++ * surface state and the sampler are the T1 ones.  Nearest sampling at LOD 0 of the 8x8 texture gives
++ *   pixel (x, y) = texel (x / 240, y / 135)
++ * so the 32x32 fixture's expected_pixel() gives it at (4 * (x / 240), 4 * (y / 135)).
++ * GPU VA layout of the draw (checked for overlaps by the GPU-free test, parity_fhd_va_layout()):
++ *   0x100400000 +4 KiB   state page (surface heap, dynamic heap, PS, vertices, markers)
++ *   0x100401000 +4 KiB   batch
++ *   0x100404000 +4 KiB   texture (256 bytes + guard)
++ *   0x100800000 +8294400 render target = the scanout buffer's backing (its GGTT binding is separate and unrelated)
++ */
++#define I915_TEX_FHD_RT_VA        0x100800000ull
++#define I915_TEX_FHD_WIDTH        1920u
++#define I915_TEX_FHD_HEIGHT       1080u
++#define I915_TEX_FHD_PITCH        7680u
++#define I915_TEX_FHD_RT_BYTES     8294400u
++void drv_i915_tex_fixture_fhd_write_state(void *state_page, uint64_t rt_va, uint64_t tex_va, uint32_t mocs);
++unsigned drv_i915_tex_fixture_fhd_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs);
++/* the generated words, for the GPU-free comparison with the T1 fixture (texture state, sampler, PS size) */
++const uint32_t *drv_i915_tex_fixture_fhd_rt_rss(void);
++unsigned drv_i915_tex_fixture_fhd_ps_bytes(void);
++int drv_i915_tex_fixture_fhd_same_texture_state(void);
++
+ #endif /* I915_DRAW_FIXTURE_H */
+diff --git a/src/drivers/gpu/i915/parity/bios.h b/src/drivers/gpu/i915/parity/bios.h
+index ab601282..b22bddea 100644
+--- a/src/drivers/gpu/i915/parity/bios.h
++++ b/src/drivers/gpu/i915/parity/bios.h
+@@ -71,8 +71,11 @@ struct parity_vbt_state {
+ #ifndef PARITY_LCDR_TEST
+ #define PARITY_LCDR_TEST 0            /* LCD reuse: three cycles + IRQ + brightness (implies the explicit VBT) */
+ #endif
++#ifndef PARITY_LCDG_TEST
++#define PARITY_LCDG_TEST 0            /* LCD-G: a GPU-drawn full-HD image shown from the same backing */
++#endif
+ #ifndef PARITY_VBT_EXPLICIT
+-#define PARITY_VBT_EXPLICIT (PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST)
++#define PARITY_VBT_EXPLICIT (PARITY_AUX_TEST || PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST)
+ #endif
+ #define PARITY_VBT_EXPLICIT_NAME "zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt"
+ #define PARITY_VBT_EXPLICIT_SUBSYS_VENDOR 0x1028u
+diff --git a/src/drivers/gpu/i915/parity/eu_test.c b/src/drivers/gpu/i915/parity/eu_test.c
+index 454f37f2..5c1a42fc 100644
+--- a/src/drivers/gpu/i915/parity/eu_test.c
++++ b/src/drivers/gpu/i915/parity/eu_test.c
+@@ -1127,6 +1127,277 @@ parity_tex_test_release(struct parity_tex_test *x, struct parity_gt_mem *gm)
+ 	parity_eu_test_release(&x->t, gm);
+ }
+ 
++/* ---------------- E-118: the full-HD draw into the scanout buffer ---------------- */
++
++#define FHD_PREFILL 0x5a5a5a5au
++
++static const struct parity_fhd_va fhd_va[] = {
++	{ "state page", PARITY_EU_SHARED_VA, 4096u, 4096u },
++	{ "batch", PARITY_EU_BATCH_VA, 4096u, 4096u },
++	{ "texture", I915_TEX_FIXTURE_TEX_VA, 4096u, 4096u },
++	{ "render target = scanout backing", I915_TEX_FHD_RT_VA, (I915_TEX_FHD_RT_BYTES + 4095u) & ~4095u, 4096u },
++};
++
++int
++parity_fhd_va_layout(const struct parity_fhd_va **out, unsigned *n)
++{
++	unsigned i, j, nn = (unsigned)(sizeof(fhd_va) / sizeof(fhd_va[0]));
++
++	if (out != 0)
++		*out = fhd_va;
++	if (n != 0)
++		*n = nn;
++	for (i = 0u; i < nn; i++) {
++		if ((fhd_va[i].va & (fhd_va[i].align - 1u)) != 0u || fhd_va[i].len == 0u)
++			return -1;
++		for (j = i + 1u; j < nn; j++)
++			if (fhd_va[i].va < fhd_va[j].va + fhd_va[j].len && fhd_va[j].va < fhd_va[i].va + fhd_va[i].len)
++				return -1;
++	}
++	return 0;
++}
++
++uint32_t
++parity_fhd_render_verify(const struct parity_fhd_render *x, const uint32_t *pixels, uint32_t pitch_bytes)
++{
++	static uint8_t pattern[I915_TEX_FIXTURE_TEX_BYTES];
++	uint32_t bad = 0u, xx, yy;
++
++	(void)x;
++	drv_i915_tex_fixture_pattern(pattern, 0u);
++	for (yy = 0u; yy < I915_TEX_FHD_HEIGHT; yy++) {
++		const uint32_t *row = (const uint32_t *)((const uint8_t *)pixels + (uint64_t)yy * pitch_bytes);
++		uint32_t row_want[8];
++		unsigned u;
++
++		for (u = 0u; u < 8u; u++)                       /* texel column u covers x in [240u, 240u + 240) */
++			row_want[u] = drv_i915_tex_fixture_expected_pixel(pattern, 4u * u, 4u * (yy / 135u));
++		for (xx = 0u; xx < I915_TEX_FHD_WIDTH; xx++)
++			if (row[xx] != row_want[xx / 240u])
++				bad++;
++	}
++	return bad;
++}
++
++int
++parity_fhd_render_run(struct parity_fhd_render *x, struct parity_gt_engines *es, struct parity_gt_ppgtt *vm,
++	struct parity_gt_mem *gm, struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms,
++	struct parity_gt_object *rt)
++{
++	static const uint64_t va[3] = { PARITY_EU_SHARED_VA, PARITY_EU_BATCH_VA, I915_TEX_FIXTURE_TEX_VA };
++	static uint8_t pattern[I915_TEX_FIXTURE_TEX_BYTES];
++	struct parity_eu_test *t;
++	struct parity_gt_engine *ge;
++	struct parity_execlists *el;
++	struct parity_gt_object *obj[3];
++	struct parity_gt_ppgtt_walk w;
++	volatile uint32_t *mk;
++	volatile uint8_t *tb;
++	uint64_t dma;
++	unsigned i, p;
++	int rc;
++
++	if (x == 0 || es == 0 || vm == 0 || gm == 0 || m == 0 || rt == 0 || rt->bytes < I915_TEX_FHD_RT_BYTES)
++		return -EINVAL;
++	memset(x, 0, sizeof(*x));
++	t = &x->t;
++	x->rt = rt;
++	x->first_bad_x = -1;
++	x->first_bad_y = -1;
++	if (parity_fhd_va_layout(0, 0) != 0)
++		return fail(t, -EINVAL, "va layout overlaps");
++
++	for (i = 0u; i < es->n; i++)
++		if (es->ge[i].info->class == PARITY_RENDER_CLASS)
++			break;
++	if (i == es->n)
++		return fail(t, -ENODEV, "no render engine");
++	t->engine_idx = i;
++	ge = &es->ge[i];
++	el = &es->el[i];
++
++	t->shared = parity_gt_object_create(gm, 4096u);
++	t->batch = parity_gt_object_create(gm, 4096u);
++	x->tex = parity_gt_object_create(gm, 4096u);
++	if (t->shared == 0 || t->batch == 0 || x->tex == 0)
++		return fail(t, -ENOMEM, "gem_create");
++	obj[0] = t->shared; obj[1] = t->batch; obj[2] = x->tex;
++	rc = parity_gt_ppgtt_alloc_range(gm, vm, PARITY_EU_SHARED_VA, 5u * 4096u);
++	if (rc == 0)
++		rc = parity_gt_ppgtt_alloc_range(gm, vm, I915_TEX_FHD_RT_VA, (uint64_t)rt->pages * 4096u);
++	if (rc != 0)
++		return fail(t, rc, "allocate_va_range");
++	for (i = 0u; i < 3u && rc == 0; i++) {
++		rc = parity_gt_object_page_dma(obj[i], 0u, &dma);
++		if (rc == 0)
++			rc = parity_gt_ppgtt_insert_page(vm, dma, va[i], 0u);
++	}
++	/* the render target: every page of the scanout buffer's own backing */
++	x->rt_pages = (I915_TEX_FHD_RT_BYTES + 4095u) / 4096u;
++	for (p = 0u; p < x->rt_pages && rc == 0; p++) {
++		rc = parity_gt_object_page_dma(rt, p, &dma);
++		if (rc == 0)
++			rc = parity_gt_ppgtt_insert_page(vm, dma, I915_TEX_FHD_RT_VA + (uint64_t)p * 4096u, 0u);
++		if (rc == 0)
++			x->rt_pages_mapped++;
++	}
++	if (rc != 0)
++		return fail(t, rc, "ppgtt_insert");
++	/* what the GPU will walk: the leaf of the first, a middle and the last page is the object's own page */
++	x->rt_walk_ok = 1;
++	for (i = 0u; i < 3u; i++) {
++		unsigned pg = i == 0u ? 0u : i == 1u ? x->rt_pages / 2u : x->rt_pages - 1u;
++
++		if (parity_gt_object_page_dma(rt, pg, &dma) != 0 || parity_gt_ppgtt_walk(vm, I915_TEX_FHD_RT_VA + (uint64_t)pg * 4096u, &w) != 0 ||
++		    w.levels != 4 || !w.leaf_present || w.leaf_dma != (dma & ~0xfffull))
++			x->rt_walk_ok = 0;
++		if (i == 0u)
++			x->rt_first_dma = dma;
++		if (i == 2u)
++			x->rt_last_dma = dma;
++	}
++	if (!x->rt_walk_ok)
++		return fail(t, -EFAULT, "render target PPGTT walk");
++
++	/* CPU uploads: texture (+ guard), state page, batch; the target pre-filled and published for the GPU */
++	x->mocs = drv_i915_draw_fixture_mocs();
++	drv_i915_tex_fixture_pattern(pattern, 0u);
++	tb = (volatile uint8_t *)x->tex->cpu;
++	for (i = 0u; i < 4096u; i++)
++		tb[i] = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
++	{
++		uint32_t *px = (uint32_t *)rt->cpu;
++
++		for (i = 0u; i < I915_TEX_FHD_RT_BYTES / 4u; i++)
++			px[i] = FHD_PREFILL;
++		parity_gt_clflush(rt->cpu, I915_TEX_FHD_RT_BYTES);
++	}
++	drv_i915_tex_fixture_fhd_write_state(t->shared->cpu, I915_TEX_FHD_RT_VA, I915_TEX_FIXTURE_TEX_VA, x->mocs);
++	x->rt_rss_mocs = (((uint32_t *)t->shared->cpu)[64u / 4u + 1u] >> 24) & 0x7fu;
++	if (x->rt_rss_mocs != x->mocs)
++		return fail(t, -EINVAL, "render target surface state MOCS");
++	t->batch_dwords = drv_i915_tex_fixture_fhd_build_batch((uint32_t *)t->batch->cpu, 1024u, PARITY_EU_SHARED_VA, x->mocs);
++	if (t->batch_dwords == 0u || t->batch_dwords >= 1024u)
++		return fail(t, -ENOSPC, "build_batch");
++	t->pipesel_rc = parity_draw_batch_check_pipeline_select((const uint32_t *)t->batch->cpu, t->batch_dwords, &t->pipesel);
++	if (t->pipesel_rc != 0)
++		return fail(t, t->pipesel_rc, "pipeline_select_verify");
++	t->batch_hash = fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4u, 0xcbf29ce484222325ull);
++
++	rc = parity_lrc_alloc(&t->ce, ge, vm, gm, 4096u, 0u);
++	if (rc != 0)
++		return fail(t, rc, "intel_context_create");
++	t->tl_page = parity_gt_object_create(gm, 4096u);
++	if (t->tl_page == 0)
++		return fail(t, -ENOMEM, "intel_timeline_create");
++	rc = parity_gt_ggtt_bind(gm, t->tl_page);
++	if (rc != 0)
++		return fail(t, rc, "intel_timeline_pin");
++	parity_lrc_init_state(&t->ce);
++	(void)parity_lrc_update_regs(&t->ce, t->ce.ring.tail);
++	t->tl_seqno = 2u;
++	rc = eu_build_request(t, &t->rq, &t->ce, t->tl_page, t->tl_seqno, PARITY_EU_BATCH_VA);
++	if (rc != 0)
++		return rc;
++	rc = parity_execlists_submit(ge, el, m, &t->rq);
++	if (rc != 0)
++		return fail(t, rc, "execlists_submit");
++	t->submitted = 1;
++	rc = wait_retired(t, ge, el, &t->rq, m, timeout_ms);
++	if (rc == 0)
++		t->completed = 1;
++	else if (rc == -ETIMEDOUT)
++		t->timed_out = 1;
++	else
++		(void)fail(t, rc, "i915_request_wait");
++
++	mk = (volatile uint32_t *)t->shared->cpu + I915_DRAW_FIXTURE_MARKER_OFFSET / 4u;
++	x->marker_before = mk[0];
++	x->marker_after = mk[1];
++	x->marker_middraw = mk[2];
++	x->ps_marker = mk[4];
++	if (t->completed) {
++		eu_log_record(t, ge, el, &t->rq, &t->ce, "completed");
++		t->parked = eu_park(t, es, ge, el, m, timeout_ms);
++		x->gpu_done = t->parked;
++		/* the CPU view: drop any line the CPU may hold for these pages before reading what the GPU wrote */
++		parity_gt_clflush(rt->cpu, I915_TEX_FHD_RT_BYTES);
++		{
++			const uint32_t *px = (const uint32_t *)rt->cpu;
++			static uint8_t pat[I915_TEX_FIXTURE_TEX_BYTES];
++			uint32_t yy, xx;
++
++			drv_i915_tex_fixture_pattern(pat, 0u);
++			x->px_total = I915_TEX_FHD_WIDTH * I915_TEX_FHD_HEIGHT;
++			for (yy = 0u; yy < I915_TEX_FHD_HEIGHT; yy++) {
++				for (xx = 0u; xx < I915_TEX_FHD_WIDTH; xx++) {
++					uint32_t want = drv_i915_tex_fixture_expected_pixel(pat, 4u * (xx / 240u), 4u * (yy / 135u));
++					uint32_t got = px[yy * (I915_TEX_FHD_PITCH / 4u) + xx];
++
++					if (got == want) {
++						x->px_match++;
++					} else {
++						if (got == FHD_PREFILL)
++							x->px_stale++;
++						if (x->first_bad_x < 0) {
++							x->first_bad_x = (int)xx;
++							x->first_bad_y = (int)yy;
++							x->first_bad_expected = want;
++							x->first_bad_observed = got;
++						}
++					}
++				}
++			}
++			x->image_hash = fnv1a64(rt->cpu, I915_TEX_FHD_RT_BYTES, 0xcbf29ce484222325ull);
++		}
++		for (i = 0u; i < 4096u; i++) {
++			uint8_t want = i < I915_TEX_FIXTURE_TEX_BYTES ? pattern[i] : (uint8_t)PARITY_TEX_GUARD_BYTE;
++
++			if (tb[i] != want) {
++				if (i < I915_TEX_FIXTURE_TEX_BYTES)
++					x->tex_changed_bytes++;
++				else
++					x->guard_bad_bytes++;
++			}
++		}
++		t->outcome = (t->parked && x->marker_before == I915_DRAW_FIXTURE_MARKER_BEFORE &&
++			x->marker_middraw == I915_DRAW_FIXTURE_MARKER_MIDDRAW && x->marker_after == I915_DRAW_FIXTURE_MARKER_AFTER &&
++			x->ps_marker == I915_DRAW_FIXTURE_PS_MARKER && x->px_match == x->px_total &&
++			x->tex_changed_bytes == 0u && x->guard_bad_bytes == 0u) ? PARITY_EU_PASS : PARITY_EU_ERROR;
++		if (t->outcome == PARITY_EU_ERROR && t->err == 0)
++			(void)fail(t, -EIO, "markers/pixels/guard");
++		return t->err;
++	}
++	if (t->timed_out)
++		t->outcome = PARITY_EU_HANG;
++	eu_log_record(t, ge, el, &t->rq, &t->ce, "hang");
++	eu_hang_dump_reset(t, es, ge, el, m, uncore_lock);
++	/* gpu_done stays 0: after a hang the GPU is not shown to have let go of the target; the caller keeps it */
++	return t->err != 0 ? t->err : -ETIMEDOUT;
++}
++
++int
++parity_fhd_render_release(struct parity_fhd_render *x, struct parity_gt_mem *gm, struct parity_gt_ppgtt *vm)
++{
++	unsigned p;
++
++	if (x == 0 || gm == 0 || vm == 0)
++		return -EINVAL;
++	if (!x->gpu_done && x->t.submitted)
++		return -EBUSY;                  /* the GPU may still use the target and the state: nothing is released */
++	/* the render target's PTEs back to scratch: nothing in this vm names the scanout pages any more */
++	for (p = 0u; p < x->rt_pages_mapped; p++)
++		if (parity_gt_ppgtt_insert_scratch(vm, I915_TEX_FHD_RT_VA + (uint64_t)p * 4096u) == 0)
++			x->rt_pages_cleared++;
++	if (x->tex != 0) {
++		parity_gt_object_destroy(gm, x->tex);
++		x->tex = 0;
++	}
++	parity_eu_test_release(&x->t, gm);
++	x->rt = 0;
++	return x->rt_pages_cleared == x->rt_pages_mapped ? 0 : -EIO;
++}
++
+ /* ---------------- T3: texture update, binding switch, redraw, new context ---------------- */
+ 
+ static void
+diff --git a/src/drivers/gpu/i915/parity/eu_test.h b/src/drivers/gpu/i915/parity/eu_test.h
+index 49f8ea7f..e2a8607b 100644
+--- a/src/drivers/gpu/i915/parity/eu_test.h
++++ b/src/drivers/gpu/i915/parity/eu_test.h
+@@ -243,6 +243,39 @@ struct parity_tex_test {
+ 	int stats_valid;
+ };
+ 
++/*
++ * E-118: the full-HD textured draw into an object the CALLER owns (the scanout buffer): it is mapped into the PPGTT at
++ * I915_TEX_FHD_RT_VA page by page (the same backing pages as its GGTT display binding), pre-filled and published by the
++ * CPU, drawn by the GPU, and compared pixel by pixel after the request retired and the CPU view was invalidated.  The
++ * object is never written by the CPU after the draw, and never freed here.
++ */
++struct parity_fhd_render {
++	struct parity_eu_test t;
++	struct parity_gt_object *tex;
++	struct parity_gt_object *rt;           /* NOT owned */
++	uint32_t mocs, rt_rss_mocs;
++	uint32_t marker_before, marker_middraw, marker_after, ps_marker;
++	unsigned px_match, px_stale, px_total;
++	int first_bad_x, first_bad_y;
++	uint32_t first_bad_expected, first_bad_observed;
++	unsigned tex_changed_bytes, guard_bad_bytes;
++	unsigned rt_pages, rt_pages_mapped, rt_pages_cleared;
++	int rt_walk_ok;                        /* first / middle / last page: the PPGTT leaf is the object's own page */
++	uint64_t rt_first_dma, rt_last_dma;
++	int gpu_done;                          /* request retired and engine parked: the GPU no longer uses the target */
++	uint64_t image_hash;
++};
++int parity_fhd_render_run(struct parity_fhd_render *x, struct parity_gt_engines *es, struct parity_gt_ppgtt *vm,
++	struct parity_gt_mem *gm, struct osdep_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms,
++	struct parity_gt_object *rt);
++/* wrong pixels of the target against the expected image (no CPU write) */
++uint32_t parity_fhd_render_verify(const struct parity_fhd_render *x, const uint32_t *pixels, uint32_t pitch_bytes);
++/* PTEs of the target back to scratch, own objects freed -- only when gpu_done; the target itself is never touched */
++int parity_fhd_render_release(struct parity_fhd_render *x, struct parity_gt_mem *gm, struct parity_gt_ppgtt *vm);
++/* the VA layout table of the draw and its overlap check (GPU-free): 0 = no two ranges overlap, all aligned */
++struct parity_fhd_va { const char *name; uint64_t va, len, align; };
++int parity_fhd_va_layout(const struct parity_fhd_va **out, unsigned *n);
++
+ int parity_tex_test_run(struct parity_tex_test *x, struct parity_gt_engines *es,
+ 	struct parity_gt_ppgtt *vm, struct parity_gt_mem *gm, struct osdep_mmio *m,
+ 	struct spinlock *uncore_lock, unsigned timeout_ms);
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.c b/src/drivers/gpu/i915/parity/gt_mem.c
+index 3de8d5ce..cbabe7d2 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.c
++++ b/src/drivers/gpu/i915/parity/gt_mem.c
+@@ -898,6 +898,29 @@ parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+ 	return 0;
+ }
+ 
++int
++parity_gt_ppgtt_insert_scratch(struct parity_gt_ppgtt *pp, uint64_t offset)
++{
++	struct parity_gt_object *table;
++	struct parity_gt_ppgtt_table *t;
++	uint64_t idx;
++	int lvl;
++
++	if (pp == 0 || !pp->inited || (offset & (PARITY_GT_PAGE_BYTES - 1u)) != 0u)
++		return -EINVAL;
++	idx = offset >> 12;
++	table = pp->top_pd;
++	for (lvl = pp->top; lvl > 0; lvl--) {
++		t = child_of(pp, table, (unsigned)((idx >> ((unsigned)lvl * 9u)) & 511u));
++		if (t == 0)
++			return -ENOENT;
++		table = t->obj;
++	}
++	((uint64_t *)table->cpu)[idx & 511u] = pp->scratch_encode[0];
++	parity_gt_clflush(&((uint64_t *)table->cpu)[idx & 511u], sizeof(uint64_t));
++	return 0;
++}
++
+ #define PTE_ADDR_MASK   0x0000fffffffff000ull
+ 
+ static struct parity_gt_ppgtt_table *
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.h b/src/drivers/gpu/i915/parity/gt_mem.h
+index 8b2e8f3d..6e77c15d 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.h
++++ b/src/drivers/gpu/i915/parity/gt_mem.h
+@@ -175,6 +175,9 @@ typedef void (*parity_gt_ppgtt_pt_fn)(struct parity_gt_ppgtt *pp,
+ int parity_gt_ppgtt_foreach_pt(struct parity_gt_ppgtt *pp, uint64_t start,
+ 	uint64_t length, parity_gt_ppgtt_pt_fn fn, void *data);
+ 
++/* gen8_ppgtt_clear(): one PTE at offset back to the scratch page (the vm's scratch encode); the tables stay. */
++int parity_gt_ppgtt_insert_scratch(struct parity_gt_ppgtt *pp, uint64_t offset);
++
+ /* gen8_ppgtt_insert_entry(): one PTE at offset; the tables must exist. */
+ int parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+ 	uint64_t offset, unsigned pat_index);
+diff --git a/src/drivers/gpu/i915/parity/irq.c b/src/drivers/gpu/i915/parity/irq.c
+index 4907f7f3..79b0c084 100644
+--- a/src/drivers/gpu/i915/parity/irq.c
++++ b/src/drivers/gpu/i915/parity/irq.c
+@@ -717,10 +717,18 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
+ 			continue;
+ 		if (!(master_ctl & GEN8_DE_PIPE_IRQ(pipe)))
+ 			continue;
++		/* admission: counted in first, then the gate is checked (the closing side sets the gate, then reads the count) */
++		(void)__atomic_add_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
++		if (__atomic_load_n(&d->pipe_closed[pipe], __ATOMIC_SEQ_CST)) {
++			(void)__atomic_sub_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
++			d->pipe_refused[pipe]++;
++			continue;
++		}
+ 
+ 		iir = rd(d, GEN8_DE_PIPE_IIR(pipe));
+ 		if (iir == 0u) {
+ 			d->de_lied_count++;   /* (DE PIPE) */
++			(void)__atomic_sub_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
+ 			continue;
+ 		}
+ 
+@@ -731,9 +739,14 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
+ 		if (iir & GEN8_PIPE_VBLANK) {
+ 			d->de_vblank_count[pipe]++;
+ 			/* intel_handle_vblank() -> drm_handle_vblank(): counted and waiters woken only while enabled */
+-			if (d->vbl != 0 && d->vbl->inited && d->vbl->enabled[pipe]) {
+-				d->vbl->count[pipe]++;
+-				parity_kcomplete(&d->vbl->wake[pipe]);
++			if (d->vbl != 0 && d->vbl->inited) {
++				unsigned long vf = spin_lock_irqsave(&d->vbl->lock);
++
++				if (d->vbl->enabled[pipe]) {
++					d->vbl->count[pipe]++;
++					parity_kcomplete(&d->vbl->wake[pipe]);
++				}
++				spin_unlock_irqrestore(&d->vbl->lock, vf);
+ 			}
+ 		}
+ 
+@@ -749,6 +762,7 @@ gen8_de_irq_handler(struct parity_irq_dev *d, uint32_t master_ctl)
+ 			kern_logf("i915: parity Fault errors on pipe %c: 0x%08x\n",
+ 				(char)('A' + pipe), fault_errors);
+ 		}
++		(void)__atomic_sub_fetch(&d->pipe_inflight[pipe], 1u, __ATOMIC_SEQ_CST);
+ 	}
+ 
+ 	/*
+@@ -915,8 +929,12 @@ parity_intel_synchronize_irq(struct parity_irq_dev *d)
+ 	for (waited = 0u; waited < 100000u; waited += 10u) {
+ 		if ((int)(__atomic_load_n(&d->handler_exits, __ATOMIC_SEQ_CST) - seen) >= 0)
+ 			return 0;
+-		if (parity_udelay(10u) != 0)
+-			break;
++		if (parity_udelay(10u) != 0) {
++			if (d->vbl != 0)
++				d->vbl->sync_time_faults++;
++			kern_logf("i915: parity intel_synchronize_irq: the time base failed while waiting (not a timeout)\n");
++			return -EIO;
++		}
+ 	}
+ 	if (d->vbl != 0)
+ 		d->vbl->sync_timeouts++;
+@@ -951,36 +969,72 @@ parity_gen8_irq_power_well_post_enable(struct parity_irq_dev *d, unsigned pipe_m
+ 			GEN8_DE_PIPE_IER(pipe), ~d->de_irq_mask[pipe] | extra_ier, GEN8_DE_PIPE_IIR(pipe));
+ 		d->vbl->post_imr[pipe] = d->de_irq_mask[pipe];
+ 		d->vbl->post_ier[pipe] = ~d->de_irq_mask[pipe] | extra_ier;
++		__atomic_store_n(&d->pipe_closed[pipe], 0, __ATOMIC_SEQ_CST);     /* the handler may enter it again */
+ 	}
+ 	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ }
+ 
+-/* gen8_irq_power_well_pre_disable() */
+-void
++int
++parity_irq_drain_pipes(struct parity_irq_dev *d, unsigned pipe_mask, unsigned timeout_us)
++{
++	unsigned waited, pipe, busy;
++
++	for (waited = 0u;; waited += 10u) {
++		busy = 0u;
++		for (pipe = 0u; pipe < PARITY_IRQ_MAX_PIPES; pipe++)
++			if ((pipe_mask & (1u << pipe)) != 0u && __atomic_load_n(&d->pipe_inflight[pipe], __ATOMIC_SEQ_CST) != 0u)
++				busy |= 1u << pipe;
++		if (busy == 0u)
++			return 0;
++		if (waited >= timeout_us) {
++			if (d->vbl != 0)
++				d->vbl->drain_timeouts++;
++			kern_logf("i915: parity IRQ drain: the handler did not leave pipe(s) 0x%x within %u us\n", busy, timeout_us);
++			return -ETIMEDOUT;
++		}
++		if (parity_udelay(10u) != 0) {
++			if (d->vbl != 0)
++				d->vbl->drain_time_faults++;
++			kern_logf("i915: parity IRQ drain: the time base failed while waiting (not a timeout)\n");
++			return -EIO;
++		}
++	}
++}
++
++/*
++ * gen8_irq_power_well_pre_disable(): the reference resets the pipe's interrupt registers and then completes
++ * intel_synchronize_irq() before the well goes off.  Here: close the pipe's admission (no new handler work enters its
++ * registers), reset the source, then drain what had already entered.  The pipe stays closed until the next
++ * post-enable.  A drain that does not complete is returned, so the caller keeps the well on.
++ */
++int
+ parity_gen8_irq_power_well_pre_disable(struct parity_irq_dev *d, unsigned pipe_mask)
+ {
+ 	unsigned long flags;
+-	unsigned pipe;
++	unsigned pipe, closing = 0u;
+ 
+ 	if (d->vbl == 0 || !d->vbl->inited)
+-		return;
++		return 0;
+ 	flags = spin_lock_irqsave(&d->vbl->lock);
+ 	if (!d->irqs_enabled) {
+ 		d->vbl->skipped_irqs_disabled++;
+ 		spin_unlock_irqrestore(&d->vbl->lock, flags);
+-		return;
++		return 0;
+ 	}
+ 	d->vbl->pre_disable_calls++;
+ 	for (pipe = 0u; pipe < PARITY_IRQ_MAX_PIPES; pipe++) {
+ 		if ((d->pipe_mask & pipe_mask & (1u << pipe)) == 0u)
+ 			continue;
++		__atomic_store_n(&d->pipe_closed[pipe], 1, __ATOMIC_SEQ_CST);
++		closing |= 1u << pipe;
+ 		/* GEN8_IRQ_RESET_NDX(uncore, DE_PIPE, pipe) */
+ 		gen3_irq_reset(d, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
+ 	}
+ 	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ 
+-	/* make sure we're done processing display irqs */
+-	(void)parity_intel_synchronize_irq(d);
++	/* make sure we're done processing display irqs (of these pipes) */
++	d->vbl->sync_calls++;
++	return parity_irq_drain_pipes(d, closing, 100000u);
+ }
+ 
+ /* bdw_update_pipe_irq(): called with the IRQ lock held */
+@@ -1012,48 +1066,61 @@ bdw_update_pipe_irq(struct parity_irq_dev *d, unsigned pipe, uint32_t interrupt_
+  * is of handled interrupts, and waits also require the hardware frame counter to move), and PSR is not enabled on
+  * this path -- an explicit adaptation, not reached with PSR.
+  */
++/* bdw_enable_vblank() / bdw_disable_vblank() without their lock: the callers below hold it (one lock, one rule) */
+ static int
+-bdw_enable_vblank(struct parity_irq_dev *d, unsigned pipe)
++bdw_enable_vblank_locked(struct parity_irq_dev *d, unsigned pipe)
+ {
+-	unsigned long flags = spin_lock_irqsave(&d->vbl->lock);
+-
+ 	bdw_update_pipe_irq(d, pipe, GEN8_PIPE_VBLANK, GEN8_PIPE_VBLANK);
+-	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ 	return 0;
+ }
+ 
+ static void
+-bdw_disable_vblank(struct parity_irq_dev *d, unsigned pipe)
++bdw_disable_vblank_locked(struct parity_irq_dev *d, unsigned pipe)
+ {
+-	unsigned long flags = spin_lock_irqsave(&d->vbl->lock);
+-
+ 	bdw_update_pipe_irq(d, pipe, GEN8_PIPE_VBLANK, 0u);
+-	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ }
+ 
++/*
++ * The reference counts, the enabled state, the IMR bit and the handler's count all change under the IRQ lock.
++ * ADAPTATION: the last put masks at once.  Linux's vblank_disable_immediate still disables through the vblank core
++ * after the pending vblank / event processing; this limited path has no DRM events or workers, so it masks inside
++ * put().  Not to be carried over to a present / flip path as it is.
++ */
+ int
+ parity_drm_vblank_get(struct parity_irq_dev *d, unsigned pipe)
+ {
+-	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || !d->irqs_enabled)
++	unsigned long flags;
++
++	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES)
++		return -EINVAL;
++	flags = spin_lock_irqsave(&d->vbl->lock);
++	if (!d->irqs_enabled) {
++		spin_unlock_irqrestore(&d->vbl->lock, flags);
+ 		return -EINVAL;
++	}
+ 	if (d->vbl->refs[pipe]++ == 0u) {
+ 		d->vbl->enable_calls[pipe]++;
+ 		d->vbl->enabled[pipe] = 1;
+-		(void)bdw_enable_vblank(d, pipe);
++		(void)bdw_enable_vblank_locked(d, pipe);
+ 	}
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ 	return 0;
+ }
+ 
+ void
+ parity_drm_vblank_put(struct parity_irq_dev *d, unsigned pipe)
+ {
+-	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || d->vbl->refs[pipe] == 0u)
++	unsigned long flags;
++
++	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES)
+ 		return;
+-	if (--d->vbl->refs[pipe] == 0u) {        /* vblank_disable_immediate */
++	flags = spin_lock_irqsave(&d->vbl->lock);
++	if (d->vbl->refs[pipe] != 0u && --d->vbl->refs[pipe] == 0u) {
+ 		d->vbl->disable_calls[pipe]++;
+-		bdw_disable_vblank(d, pipe);
++		bdw_disable_vblank_locked(d, pipe);
+ 		d->vbl->enabled[pipe] = 0;
+ 	}
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ }
+ 
+ int
+@@ -1064,10 +1131,24 @@ parity_wait_vblank(struct parity_irq_dev *d, unsigned pipe, unsigned n, unsigned
+ 	uint32_t start, frame0 = 0u;
+ 	int ok = 0;
+ 
+-	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || d->vbl->refs[pipe] == 0u || n == 0u)
++	unsigned long flags;
++
++	if (d->vbl == 0 || !d->vbl->inited || pipe >= PARITY_IRQ_MAX_PIPES || n == 0u)
+ 		return -EINVAL;
++	flags = spin_lock_irqsave(&d->vbl->lock);
++	if (d->vbl->refs[pipe] == 0u) {
++		spin_unlock_irqrestore(&d->vbl->lock, flags);
++		return -EINVAL;
++	}
++	if (d->vbl->waiting[pipe]) {            /* a second waiter would re-arm the first one's wake-up */
++		d->vbl->second_waiter_refusals++;
++		spin_unlock_irqrestore(&d->vbl->lock, flags);
++		return -EBUSY;
++	}
++	d->vbl->waiting[pipe] = 1;
+ 	parity_kreinit_completion(&d->vbl->wake[pipe]);
+ 	start = d->vbl->count[pipe];
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ 	if (read_frame != 0)
+ 		frame0 = read_frame(frame_ctx);
+ 	deadline = sched_ticks() + (timeout_ms + 9u) / 10u + 1u;
+@@ -1082,6 +1163,9 @@ parity_wait_vblank(struct parity_irq_dev *d, unsigned pipe, unsigned n, unsigned
+ 	}
+ 	if (count_seen != 0)
+ 		*count_seen = d->vbl->count[pipe] - start;
++	flags = spin_lock_irqsave(&d->vbl->lock);
++	d->vbl->waiting[pipe] = 0;
++	spin_unlock_irqrestore(&d->vbl->lock, flags);
+ 	return ok ? 0 : -ETIMEDOUT;
+ }
+ 
+@@ -1091,10 +1175,10 @@ pw_irq_post_enable(void *ctx, unsigned pipe_mask)
+ 	parity_gen8_irq_power_well_post_enable(ctx, pipe_mask);
+ }
+ 
+-static void
++static int
+ pw_irq_pre_disable(void *ctx, unsigned pipe_mask)
+ {
+-	parity_gen8_irq_power_well_pre_disable(ctx, pipe_mask);
++	return parity_gen8_irq_power_well_pre_disable(ctx, pipe_mask);
+ }
+ 
+ const struct parity_pw_irq_ops parity_pw_irq_ops = { pw_irq_post_enable, pw_irq_pre_disable };
+diff --git a/src/drivers/gpu/i915/parity/irq.h b/src/drivers/gpu/i915/parity/irq.h
+index 4822b791..27ef1b1d 100644
+--- a/src/drivers/gpu/i915/parity/irq.h
++++ b/src/drivers/gpu/i915/parity/irq.h
+@@ -57,7 +57,9 @@ struct parity_irq_vblank {
+ 	/* the hooks, observed */
+ 	unsigned post_enable_calls, pre_disable_calls, skipped_irqs_disabled;
+ 	uint32_t post_imr[PARITY_IRQ_MAX_PIPES], post_ier[PARITY_IRQ_MAX_PIPES];
+-	unsigned sync_calls, sync_timeouts;
++	unsigned sync_calls, sync_timeouts, sync_time_faults, drain_timeouts, drain_time_faults;
++	int waiting[PARITY_IRQ_MAX_PIPES];                 /* one waiter per pipe (the wake-up is re-armed by it) */
++	unsigned second_waiter_refusals;
+ };
+ 
+ struct parity_irq_dev {
+@@ -134,6 +136,10 @@ struct parity_irq_dev {
+ 
+ 	/* handler entry / exit counts: intel_synchronize_irq() waits for exits to reach the entries it saw */
+ 	volatile unsigned handler_entries, handler_exits;
++	/* per-pipe admission: the handler enters a pipe's registers only while it is open, counted in pipe_inflight */
++	volatile int pipe_closed[PARITY_IRQ_MAX_PIPES];
++	volatile unsigned pipe_inflight[PARITY_IRQ_MAX_PIPES];
++	volatile unsigned pipe_refused[PARITY_IRQ_MAX_PIPES];     /* master bit seen while the pipe was closed */
+ 	struct parity_irq_vblank *vbl;           /* NULL: vblank delivery not bound (GPU-free tests of the old parts) */
+ 
+ 	/* Diagnostics. */
+@@ -161,11 +167,17 @@ void parity_intel_irq_uninstall(struct parity_irq_dev *d);
+ void parity_irq_vblank_init(struct parity_irq_dev *d, struct parity_irq_vblank *v);
+ /* gen8_irq_power_well_post_enable() / gen8_irq_power_well_pre_disable() */
+ void parity_gen8_irq_power_well_post_enable(struct parity_irq_dev *d, unsigned pipe_mask);
+-void parity_gen8_irq_power_well_pre_disable(struct parity_irq_dev *d, unsigned pipe_mask);
++/* 0, or the pipes' in-flight handler work did not drain: -ETIMEDOUT (it did not finish) / -EIO (the time base failed) */
++int parity_gen8_irq_power_well_pre_disable(struct parity_irq_dev *d, unsigned pipe_mask);
++/* wait until no handler is inside the given pipes' registers (pipes stay as they are: open or closed) */
++int parity_irq_drain_pipes(struct parity_irq_dev *d, unsigned pipe_mask, unsigned timeout_us);
+ /*
+- * intel_synchronize_irq(): returns once every handler invocation that had started when it was called has finished.
+- * The HAL offers no synchronize without detach (hal_irq_detach_msi_sync detaches); this is the same guarantee from the
+- * handler's own entry / exit counts -- no HAL change.  0, or -ETIMEDOUT after 100 ms (a handler that never ends).
++ * intel_synchronize_irq() over the handler's own entry / exit counts: waits until the exits reach the entries seen at the
++ * call.  This equals "every invocation started before the call has finished" ONLY if invocations of this handler never
++ * overlap; the HAL (amd64) fixes an MSI's destination CPU at allocation and records one in_handler flag per vector, but
++ * nothing in it states that an invocation cannot begin after the EOI while the previous one is still returning -- so the
++ * power-well path does NOT rely on this function: it closes the pipe's admission and drains the pipe's own in-flight
++ * count (parity_irq_drain_pipes).  0; -ETIMEDOUT after 100 ms; -EIO when the time base fails while waiting.
+  */
+ int parity_intel_synchronize_irq(struct parity_irq_dev *d);
+ struct parity_pw_irq_ops;
+diff --git a/src/drivers/gpu/i915/parity/ktest.c b/src/drivers/gpu/i915/parity/ktest.c
+index 44d5297c..ea5e9bc8 100644
+--- a/src/drivers/gpu/i915/parity/ktest.c
++++ b/src/drivers/gpu/i915/parity/ktest.c
+@@ -3187,6 +3187,55 @@ parity_sync_ktest(void)
+ 					parity_power_well_disable(pwa, &ipwc) == 0 && kv.pre_disable_calls == before_pre + 1u &&
+ 					ipwc.irq_post_enable_calls >= 1u && ipwc.irq_pre_disable_calls == 1u,
+ 					"irq: IRQ-HOOK-WELL PW_A's enable restores and its disable stops pipe A's interrupts through the bound hooks");
++				/* ---- E-118 IRQ-DRAIN-WELL: a handler still inside pipe A: the real disable entry must keep the well on ---- */
++				{
++					static const struct parity_time_test_ops fault_ops2 = { ktest_fail_read, 0, 0, 0 };
++					struct parity_power_well *other = 0;
++					unsigned acks, j;
++					int drc;
++
++					for (j = 0u; j < ipd.num_power_wells; j++)
++						if (ipd.power_wells[j].irq_pipe_mask == 2u)
++							other = &ipd.power_wells[j];
++					KCHECK(parity_power_well_get(pwa, &ipwc) == 0 && pwa->refcount == 1u && id.pipe_closed[0] == 0,
++						"irq: IRQ-DRAIN-WELL PW_A taken; post-enable left pipe A open");
++					id.pipe_inflight[0] = 1u;                       /* an invocation that never leaves pipe A */
++					parity_power_well_put(pwa, &ipwc);
++					KCHECK(ipwc.irq_sync_failed == 1 && pwa->refcount == 1u && ipwc.kept_wells == 1u &&
++						parity_power_well_is_enabled(pwa, &ipwc) == 1 && kv.drain_timeouts == 1u && id.pipe_closed[0] == 1,
++						"irq: IRQ-DRAIN-WELL drain timed out -> POWER_REQUEST NOT cleared (the well still reads enabled), kept and owned");
++					KCHECK(other != 0 && parity_power_well_get(other, &ipwc) == 0 &&
++						parity_power_well_disable(other, &ipwc) == -EBUSY && ipwc.disable_refusals >= 2u &&
++						parity_power_well_is_enabled(other, &ipwc) == 1,
++						"irq: IRQ-DRAIN-LATCH after that, every later well disable is refused (another pipe's well stays on too)");
++					/* the handler refuses the closed pipe: its IIR is neither read nor acked */
++					acks = id.de_pipe_iir_acks[0];
++					id.pipe_inflight[0] = 0u;
++					osdep_mmio_raw_write32(&m, 0x44200u, 1u << 16);
++					osdep_mmio_raw_write32(&m, 0x44408u, 1u);
++					parity_gen11_display_irq_handler(&id);
++					KCHECK(id.de_pipe_iir_acks[0] == acks && id.pipe_refused[0] >= 1u && id.pipe_inflight[0] == 0u,
++						"irq: IRQ-GATE the handler does not enter a closed pipe (admission refused, in-flight back to 0)");
++					/* a time-base fault during the drain is -EIO, not a timeout */
++					id.pipe_inflight[1] = 1u;
++					parity_wait_test_set(&fault_ops2);
++					drc = parity_irq_drain_pipes(&id, 1u << 1, 1000u);
++					parity_wait_test_set(0);
++					id.pipe_inflight[1] = 0u;
++					KCHECK(drc == -EIO && kv.drain_time_faults == 1u && kv.drain_timeouts == 1u,
++						"irq: IRQ-DRAIN-EIO the time base failing during the drain is -EIO, counted apart from a timeout");
++					/* one waiter per pipe */
++					id.irqs_enabled = 1;
++					(void)parity_drm_vblank_get(&id, 2u);
++					kv.waiting[2] = 1;
++					KCHECK(parity_wait_vblank(&id, 2u, 1u, 10u, kvb_read_frame, 0, &seen) == -EBUSY && kv.second_waiter_refusals == 1u,
++						"irq: VBL-ONE a second waiter on the same pipe is refused (it would re-arm the first one's wake-up)");
++					kv.waiting[2] = 0;
++					parity_drm_vblank_put(&id, 2u);
++					/* this test's device is discarded: its latch goes with it */
++					ipwc.irq_sync_failed = 0;
++					id.pipe_closed[0] = 0;
++				}
+ 				ipwc.irq_ops = 0;
+ 				ipwc.irqs_enabled = 0;
+ 			}
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c
+index 982af4df..66f26d01 100644
+--- a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.c
+@@ -290,6 +290,10 @@ static void f_power_put(void *ctx, int domain, int wakeref)
+ 
+ 	(void)wakeref;
+ 	hw->power_puts++;
++	if (hw->fault_put_refused_domain == domain + 1) {
++		parity_lcd_backend_fault("model: power well kept on (pipe interrupt drain failed)" "\n");
++		return;                         /* the reference stays held */
++	}
+ 	if (domain < 0 || domain >= LCD_FAKE_MAX_DOMAINS || hw->power_refs[domain] <= 0) {
+ 		hw->power_underflows++;
+ 		return;
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h
+index aaaffd9a..5f62f678 100644
+--- a/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_fake_hw.h
+@@ -38,6 +38,7 @@ struct lcd_fake_hw {
+ 	int fault_underrun_steady_after;        /* n > 0: the underrun status is raised by the n-th frame-counter read after the arm */
+ 	int fault_drop_dbuf_update;             /* DBUF slice requests are lost (a test of the MODEL) */
+ 	uint32_t fault_time_base_reg;           /* a wait on this register meets a TIME-BASE fault (not a timeout) */
++	int fault_put_refused_domain;           /* domain + 1 whose put is refused like a kept power well; 0 = none */
+ 	int fault_power_get;                    /* domain + 1 whose get fails; 0 = none */
+ 	/* the sink's wishes: it reports CR once voltage swing >= want_vswing, EQ once pre-emphasis >= want_preemph */
+ 	uint8_t sink_want_vswing, sink_want_preemph;
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c b/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c
+index 735586d1..0a1f7ce0 100644
+--- a/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_show_ktest.c
+@@ -21,6 +21,8 @@
+ #include "../dp/parity_edp.h"
+ #include "../dp/dp_fake_hw.h"
+ #include "../dp/dp_fixture_latitude5330.h"
++#include "../eu_test.h"
++#include "../../draw_fixture.h"
+ 
+ #define TABLE_ENTRIES 16384u
+ #define SENTINEL      0x5a5a5a5a5a5a5a5aull
+@@ -196,6 +198,74 @@ void parity_lcd_show_ktest(parity_lcd_show_ktest_check check, struct drv_dma_dev
+ 		show.in_window = 0;
+ 	}
+ 
++	/* ---- E-118 G-FIXTURE: the full-HD draw's generated state, VA layout and verifier ---- */
++	{
++		static uint32_t state[1024], batch[1024];
++		const struct parity_fhd_va *lay = 0;
++		const uint32_t *rss = drv_i915_tex_fixture_fhd_rt_rss();
++		unsigned nl = 0u, bd, di, rect_ok = 0u;
++
++		check(parity_fhd_va_layout(&lay, &nl) == 0 && nl == 4u && lay[3].va == I915_TEX_FHD_RT_VA && lay[3].len >= I915_TEX_FHD_RT_BYTES,
++			"lcd-g: G-VA the draw's GPU VA ranges (state, batch, texture, 8 MB render target) are aligned and do not overlap");
++		check(drv_i915_tex_fixture_fhd_same_texture_state() && rss[2] == 0x0437077fu && rss[3] == I915_TEX_FHD_PITCH - 1u &&
++			((rss[0] >> 18) & 0x1ffu) == 0xc0u && ((rss[1] >> 24) & 0x7fu) == drv_i915_draw_fixture_mocs() &&
++			drv_i915_tex_fixture_fhd_ps_bytes() <= 1024u,
++			"lcd-g: G-STATE isl render target 1920x1080 B8G8R8A8 pitch 7680 MOCS uncached; texture / sampler / packets = the T1 ones");
++		drv_i915_tex_fixture_fhd_write_state(state, I915_TEX_FHD_RT_VA, I915_TEX_FIXTURE_TEX_VA, drv_i915_draw_fixture_mocs());
++		bd = drv_i915_tex_fixture_fhd_build_batch(batch, 1024u, 0x100400000ull, drv_i915_draw_fixture_mocs());
++		for (di = 0u; di + 1u < bd; di++)
++			if (batch[di + 1u] == 0x0437077fu && batch[di] == 0u)
++				rect_ok++;
++		check(bd > 0u && bd < 1024u && rect_ok == 1u && state[2048u / 4u] == 0x44f00000u && state[2048u / 4u + 1u] == 0x44870000u &&
++			state[64u / 4u + 8u] == (uint32_t)I915_TEX_FHD_RT_VA && state[64u / 4u + 9u] == (uint32_t)(I915_TEX_FHD_RT_VA >> 32),
++			"lcd-g: G-BATCH drawing rectangle 1919x1079, RECTLIST (1920,1080), render target state names the 8 MB range");
++		{
++			struct parity_gt_object *img = parity_gt_object_create(&gm, I915_TEX_FHD_RT_BYTES);
++			static struct parity_fhd_render fx;
++			static uint8_t pat[I915_TEX_FIXTURE_TEX_BYTES];
++			uint32_t x, y, bad0 = 1u, bad1 = 0u;
++
++			if (img != 0) {
++				uint32_t *px = (uint32_t *)img->cpu;
++
++				drv_i915_tex_fixture_pattern(pat, 0u);
++				for (y = 0u; y < I915_TEX_FHD_HEIGHT; y++)
++					for (x = 0u; x < I915_TEX_FHD_WIDTH; x++)
++						px[y * 1920u + x] = drv_i915_tex_fixture_expected_pixel(pat, 4u * (x / 240u), 4u * (y / 135u));
++				bad0 = parity_fhd_render_verify(&fx, px, I915_TEX_FHD_PITCH);
++				px[1079u * 1920u + 1919u] ^= 0x00010000u;
++				px[0] ^= 0x1u;
++				bad1 = parity_fhd_render_verify(&fx, px, I915_TEX_FHD_PITCH);
++				parity_gt_object_destroy(&gm, img);
++			}
++			check(img != 0 && bad0 == 0u && bad1 == 2u,
++				"lcd-g: G-VERIFY all 2,073,600 pixels against texel (x/240, y/135); two wrong pixels are counted as two");
++		}
++	}
++
++	/* ---- E-118 G-PREPARED: show a buffer the test owns; the display part never creates, fills or frees it ---- */
++	{
++		static struct parity_scanout so_p;
++		unsigned live;
++		int rc2;
++
++		rc = bring_up(&so_p);
++		rc2 = parity_scanout_create(&gm, 1920u, 1080u, PARITY_FOURCC_XRGB8888, PARITY_MOD_LINEAR, &so_p);
++		check(rc == 0 && rc2 == 0 && parity_lcd_show_prepared(&show, &so_p, 0, 0, &rep) == -EINVAL && so_p.state == PARITY_SCANOUT_ALLOCATED,
++			"lcd-g: G-PREPARED an unpinned buffer is refused; the buffer is left as it was");
++		(void)parity_scanout_pin(&so_p, "owner");
++		(void)parity_lcd_pattern_fill(so_p.cpu, so_p.pitch, so_p.width, so_p.height, 113u);
++		parity_scanout_publish(&so_p);
++		live = gm.objects_live;
++		rc2 = parity_lcd_show_prepared(&show, &so_p, 0, 0, &rep);
++		check(rc2 == 0 && rep.pass && rep.display_released && so_p.state == PARITY_SCANOUT_PINNED && so_p.pin_owner != 0 &&
++			gm.objects_live == live && lcd.plane_surf_at_arm == (uint32_t)so_p.surf &&
++			parity_lcd_pattern_verify(so_p.cpu, so_p.pitch, so_p.width, so_p.height, 113u, 0, 0) == 0u,
++			"lcd-g: G-PREPARED shown and stopped; the buffer comes back PINNED to its owner with its pixels untouched");
++		check(parity_scanout_unpin(&so_p) == 0 && parity_scanout_destroy(&so_p) == 0 && edp_released(),
++			"lcd-g: G-PREPARED the OWNER releases it afterwards");
++	}
++
+ 	/* ---- B: early failure: nothing is shown, everything is given back, the first anomaly is the training ---- */
+ 	rc = bring_up(&so_b);
+ 	lcd.fault_cr_never = 1;
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc b/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc
+index e8622313..b3097ce9 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc
++++ b/src/drivers/gpu/i915/parity/lcd/parity_backlight_glue.inc
+@@ -67,3 +67,9 @@ void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on)
+ 	else
+ 		intel_edp_backlight_off(&ms->conn_state);
+ }
++
++/* the backlight device's brightness for the current hardware level (intel_backlight_device_register / __intel_backlight_enable) */
++u32 parity_lcd_ms_user_level(struct parity_lcd_modeset *ms, u32 user_max)
++{
++	return scale_hw_to_user(&ms->connector, ms->connector.panel.backlight.level, user_max);
++}
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c
+index 842cf1c3..1377cb2a 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.c
+@@ -45,6 +45,8 @@
+ #include "parity_lcd_show.h"
+ #include "parity_lcd_kernel.h"
+ #include "parity_lcd_modeset.h"
++#include "../eu_test.h"
++#include "../../draw_fixture.h"
+ 
+ /* the ops carry the reference's domain numbers; the power-domains state uses its own enum with the same order */
+ _Static_assert((int)POWER_DOMAIN_DISPLAY_CORE == (int)PARITY_PW_DOMAIN_DISPLAY_CORE, "DISPLAY_CORE");
+@@ -65,7 +67,8 @@ struct lcd_kernel {
+ 	int power_refs[POWER_DOMAIN_NUM];       /* what THIS run took and has not returned (per domain) */
+ 	unsigned power_get_failures, wait_timeouts, time_faults, unresolved_steps, decided, errors;
+ 	int phase_cleanup;
+-	unsigned pattern_id, window_ms, post_before, pre_before, vbt_min;                      /* set when the disable commit starts: errors are counted apart */
++	unsigned pattern_id, window_ms, post_before, pre_before, vbt_min;
++	uint32_t bl_freq0;                      /* set when the disable commit starts: errors are counted apart */
+ 	unsigned cleanup_errors;
+ };
+ 
+@@ -195,7 +198,14 @@ static void k_power_put(void *ctx, int domain, int wakeref)
+ 		return;
+ 	}
+ 	k->power_refs[domain]--;
+-	parity_display_power_put(k->d->pd, (enum parity_power_domain)domain, k->d->pwc);
++	{
++		unsigned before = k->d->pwc->disable_refusals;
++
++		parity_display_power_put(k->d->pd, (enum parity_power_domain)domain, k->d->pwc);
++		if (k->d->pwc->disable_refusals != before)
++			parity_lcd_backend_fault("a power well was NOT turned off: the pipe interrupt drain failed (the stop is not "
++				"confirmed; display power is kept)\n");
++	}
+ }
+ 
+ static void k_power_put_async(void *ctx, int domain, int wakeref, int delay_ms)
+@@ -674,7 +684,7 @@ static int irq_check(struct lcd_kernel *k, int verbose)
+ 	uint32_t extra = 0x00000001u | parity_gen8_de_pipe_underrun_mask(13) | parity_gen8_de_pipe_flip_done_mask(13);
+ 	uint32_t imr, ier, imr_on, imr_off, want_ier, f0, f1, seen[3] = { 0u, 0u, 0u };
+ 	unsigned raw0, raw1, raw2, i;
+-	int rc[3] = { -1, -1, -1 }, get_rc, ok;
++	int rc[3] = { -1, -1, -1 }, get_rc, ok, drain_rc = -1;
+ 
+ 	if (v == 0 || !v->inited)
+ 		return -22;
+@@ -690,7 +700,11 @@ static int irq_check(struct lcd_kernel *k, int verbose)
+ 	f1 = read_frame(k);
+ 	raw1 = d->irq->de_vblank_count[0];
+ 	parity_drm_vblank_put(d->irq, 0u);
++	/* baseline only after: the mask is read back set, and handler work already inside pipe A has drained -- a legitimate
++	 * vblank handled between the last wait and the put is not counted as "after masking" */
+ 	imr_off = osdep_mmio_read32(d->mmio, 0x44404u);
++	drain_rc = parity_irq_drain_pipes(d->irq, 1u << 0, 10000u);
++	raw1 = d->irq->de_vblank_count[0];
+ 	step_sleep(k, 100u);
+ 	raw2 = d->irq->de_vblank_count[0];
+ 	/*
+@@ -700,7 +714,7 @@ static int irq_check(struct lcd_kernel *k, int verbose)
+ 	 * logged, not judged.
+ 	 */
+ 	ok = get_rc == 0 && ((imr ^ d->irq->de_irq_mask[0]) & (extra | 0x1u)) == 0u && (imr & 1u) != 0u && ier == want_ier &&
+-		(imr_on & 1u) == 0u && rc[0] == 0 && rc[1] == 0 && rc[2] == 0 && raw1 - raw0 >= 3u && f1 != f0 &&
++		(imr_on & 1u) == 0u && rc[0] == 0 && rc[1] == 0 && rc[2] == 0 && raw1 - raw0 >= 3u && f1 != f0 && drain_rc == 0 &&
+ 		(imr_off & 1u) != 0u && raw2 == raw1 && v->refs[0] == 0u;
+ 	kern_logf("i915: parity LCD-R IRQ: after the well came on: GEN8_DE_PIPE_IMR(A)=0x%08x (driver's de_irq_mask 0x%08x) "
+ 		"GEN8_DE_PIPE_IER(A)=0x%08x (expected ~mask|vblank|underrun|flip done = 0x%08x) | vblank get rc=%d IMR=0x%08x | waits rc=%d/%d/%d "
+@@ -712,17 +726,36 @@ static int irq_check(struct lcd_kernel *k, int verbose)
+ 	return ok ? 0 : -5;
+ }
+ 
++/* intel_backlight: user -> hw (scale_user_to_hw) -> PWM (intel_backlight_level_to_pwm, identity here: min/max = PWM min/max) */
++static uint32_t expected_duty(const struct parity_lcd_modeset_status *s, uint32_t user)
++{
++	uint64_t span = (uint64_t)(s->backlight_max - s->backlight_min) * user;
++
++	return s->backlight_min + (uint32_t)((span + s->backlight_user_max / 2u) / s->backlight_user_max);
++}
++
+ static int brightness_step(struct lcd_kernel *k, unsigned step, const char *name, int op, uint32_t level, uint32_t max,
+ 	unsigned hold_ms)
+ {
+ 	const struct parity_lcd_kernel_deps *d = k->d;
+ 	struct parity_lcd_modeset_status s;
+-	uint32_t f0, f1;
+-	int rc;
++	uint32_t f0, f1, ctl, freq, duty, want;
++	int rc, regs_ok;
+ 
+ 	rc = op == 0 ? parity_lcd_modeset_brightness(level, max) : parity_lcd_modeset_backlight(op > 0);
+ 	f0 = read_frame(k);
+ 	parity_lcd_modeset_status(&s);
++	ctl = osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_CTL"));
++	freq = osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_FREQ"));
++	duty = osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_DUTY"));
++	want = expected_duty(&s, s.backlight_user);
++	/* the period never changes; off: PWM disabled and the device's backlight off; on / level: PWM enabled and the duty the
++	 * reference conversion gives for the user brightness */
++	regs_ok = freq == k->bl_freq0 && (op < 0 ? ((ctl & 0x80000000u) == 0u && !s.backlight_enabled) :
++		((ctl & 0x80000000u) != 0u && s.backlight_enabled && duty == want));
++	kern_logf("i915: parity LCD-R step=%u %s registers: user %u/%u -> expected DUTY %u, read DUTY %u FREQ 0x%08x (start 0x%08x) "
++		"PWM_CTL 0x%08x -> %s\n", step, name, s.backlight_user, s.backlight_user_max, op < 0 ? 0u : want, duty, freq, k->bl_freq0,
++		ctl, regs_ok ? "OK" : "MISMATCH");
+ 	kern_logf("i915: parity LCD-R step=%u %s rc=%d | BXT_BLC_PWM_CTL=0x%08x FREQ=0x%08x DUTY=0x%08x (level %u of [%u,%u]) "
+ 		"backlight_enabled=%d PP_CONTROL backlight bit via eDP | crtc_active=%d plane_armed=%d (take the photograph)\n",
+ 		step, name, rc, osdep_mmio_read32(d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_CTL")),
+@@ -733,7 +766,7 @@ static int brightness_step(struct lcd_kernel *k, unsigned step, const char *name
+ 	f1 = read_frame(k);
+ 	kern_logf("i915: parity LCD-R step=%u %s done: frame counter %u -> %u over %u ms (the scanout %s)\n", step, name, f0, f1, hold_ms,
+ 		f1 != f0 ? "continued" : "STOPPED");
+-	return rc == PARITY_LCD_MS_OK && f1 != f0 && s.crtc_active && s.plane_armed ? 0 : -5;
++	return rc == PARITY_LCD_MS_OK && regs_ok && f1 != f0 && s.crtc_active && s.plane_armed ? 0 : -5;
+ }
+ 
+ static unsigned d_vbt_min(struct lcd_kernel *k)
+@@ -752,8 +785,9 @@ static int window_first(void *ctx, struct parity_lcd_observer *o)
+ 	if ((rc = irq_check(k, 1)) != 0)
+ 		return rc;
+ 	parity_lcd_modeset_status(&s);
+-	mx = s.backlight_max;
+-	orig = s.backlight_level;
++	mx = s.backlight_user_max;
++	orig = s.backlight_user;                /* the USER brightness is what gets restored */
++	k->bl_freq0 = osdep_mmio_read32(k->d->mmio, parity_lcd_reg_by_name("BXT_BLC_PWM_FREQ"));
+ 	kern_logf("i915: parity LCD-R brightness: VBT min_brightness %u (a 0..255 coefficient) -> backlight.min %u of max %u "
+ 		"(get_backlight_min_vbt); current level %u; user range [0, %u] (intel_backlight_device_register)\n",
+ 		d_vbt_min(k), s.backlight_min, mx, orig, mx);
+@@ -814,3 +848,156 @@ void parity_lcd_kernel_summary(struct parity_lcd_test_summary *out)
+ 	if (out != 0)
+ 		*out = lcdb_summary;
+ }
++
++/* ---------------- LCD-G (-DPARITY_LCDG_TEST=1) ---------------- */
++
++static struct parity_scanout lcdg_scanout;      /* outlives the run when the buffer is abandoned */
++static struct parity_fhd_render lcdg_render;
++
++static uint32_t lcdg_verify(void *ctx, const struct parity_scanout *so)
++{
++	(void)ctx;
++	parity_gt_clflush(so->cpu, so->size);   /* read what is in memory, not a stale CPU line */
++	return parity_fhd_render_verify(&lcdg_render, so->cpu, so->pitch);
++}
++
++int parity_lcd_kernel_lcdg_run(const struct parity_lcd_kernel_deps *d)
++{
++	static struct parity_lcd_show_env env;
++	static struct parity_lcd_show_report rep;
++	struct lcd_kernel *k = &lk;
++	struct parity_scanout *so = &lcdg_scanout;
++	struct parity_fhd_render *fr = &lcdg_render;
++	uint64_t ggtt_first = 0u, ggtt_last = 0u;
++	int rc, same_backing, released = 0, render_released = 0, i, held = 0;
++
++	memset(&lcdb_summary, 0, sizeof(lcdb_summary));
++	lcdb_summary.ran = 1;
++	if (d == 0 || d->edp == 0 || d->mmio == 0 || d->gm == 0 || d->es == 0 || d->vm == 0 || d->irq == 0) {
++		kern_logf("i915: parity LCD-G verdict: FAIL (a dependency is missing)\n");
++		return -1;
++	}
++	if (parity_lcd_show_retained() || parity_lcd_modeset_retained() || so->state != PARITY_SCANOUT_NONE) {
++		lcdb_summary.retained = 1;
++		lcdb_summary.first_anomaly = "refused: resources of an earlier run are retained";
++		kern_logf("i915: parity LCD-G verdict: FAIL (refused before any initialisation: retained resources)\n");
++		return -1;
++	}
++	if (!lcdb_locks_live) {
++		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_DPLL], LOCK_RANK_DEVICE, "parity-lcd-dpll");
++		(void)mutex_init(&lcdb_locks[PARITY_LCD_LOCK_BACKLIGHT], LOCK_RANK_DEVICE, "parity-lcd-backlight");
++		lcdb_locks_live = 1;
++	}
++	memset(k, 0, sizeof(*k));
++	k->locks = lcdb_locks;
++	k->d = d;
++	bind_ops(k);
++	memset(&env, 0, sizeof(env));
++	if (preflight(k) != 0 || fill_cfg(k, &env.cfg) != 0) {
++		kern_logf("i915: parity LCD-G verdict: FAIL (preflight: nothing was written)\n");
++		lcdb_summary.first_anomaly = "preflight refused (nothing written)";
++		return -1;
++	}
++
++	/* ---- one backing: the scanout buffer (GGTT display binding) ---- */
++	rc = parity_gt_display_window_init(d->gm, PARITY_GT_DISPLAY_PAGES);
++	if (rc != 0 && rc != -EBUSY) {
++		kern_logf("i915: parity LCD-G verdict: FAIL (display window rc=%d)\n", rc);
++		return -1;
++	}
++	rc = parity_scanout_create(d->gm, I915_TEX_FHD_WIDTH, I915_TEX_FHD_HEIGHT, PARITY_FOURCC_XRGB8888, PARITY_MOD_LINEAR, so);
++	if (rc == 0 && (so->pitch != I915_TEX_FHD_PITCH || so->size != I915_TEX_FHD_RT_BYTES)) {
++		kern_logf("i915: parity LCD-G: scanout layout pitch=%u size=%u differs from the render target's (isl: %u / %u)\n",
++			so->pitch, so->size, I915_TEX_FHD_PITCH, I915_TEX_FHD_RT_BYTES);
++		(void)parity_scanout_destroy(so);
++		rc = -EINVAL;
++	}
++	if (rc == 0 && (rc = parity_scanout_pin(so, "lcd-g")) != 0)
++		(void)parity_scanout_destroy(so);
++	if (rc != 0) {
++		kern_logf("i915: parity LCD-G verdict: FAIL (scanout buffer rc=%d)\n", rc);
++		return -1;
++	}
++
++	/* ---- ... and its PPGTT mapping: the GPU draws into the same pages ---- */
++	rc = parity_fhd_render_run(fr, d->es, d->vm, d->gm, d->mmio, d->uncore_lock, 2000u, so->obj);
++	ggtt_first = parity_gt_ggtt_read_pte(d->gm, so->obj->ggtt_page);
++	ggtt_last = parity_gt_ggtt_read_pte(d->gm, so->obj->ggtt_page + fr->rt_pages - 1u);
++	same_backing = fr->rt == so->obj && fr->rt_walk_ok && (ggtt_first & ~0xfffull) == (fr->rt_first_dma & ~0xfffull) &&
++		(ggtt_last & ~0xfffull) == (fr->rt_last_dma & ~0xfffull);
++	kern_logf("i915: parity LCD-G render: rc=%d where=%s outcome=%s submitted=%d completed=%d parked=%d timed_out=%d | markers "
++		"before=%08x middraw=%08x after=%08x ps=%08x | pixels match=%u/%u stale=%u first_bad=(%d,%d) expected=%08x observed=%08x | "
++		"texture changed=%u guard_bad=%u | image fnv=%016llx | batch_dwords=%u pipesel rc=%d | rt mocs=%u\n", rc,
++		fr->t.err_where != 0 ? fr->t.err_where : "-", fr->t.outcome == PARITY_EU_PASS ? "PASS" : fr->t.outcome == PARITY_EU_HANG ? "HANG" : "ERROR",
++		fr->t.submitted, fr->t.completed, fr->t.parked, fr->t.timed_out, fr->marker_before, fr->marker_middraw, fr->marker_after,
++		fr->ps_marker, fr->px_match, fr->px_total, fr->px_stale, fr->first_bad_x, fr->first_bad_y, fr->first_bad_expected,
++		fr->first_bad_observed, fr->tex_changed_bytes, fr->guard_bad_bytes, (unsigned long long)fr->image_hash, fr->t.batch_dwords,
++		fr->t.pipesel_rc, fr->rt_rss_mocs);
++	kern_logf("i915: parity LCD-G same backing: object %p | PPGTT 0x%llx.. %u pages mapped, walk ok=%d, first page dma 0x%llx last 0x%llx | "
++		"GGTT surf 0x%08llx: PTE first 0x%llx last 0x%llx -> %s\n", (void *)so->obj, (unsigned long long)I915_TEX_FHD_RT_VA,
++		fr->rt_pages_mapped, fr->rt_walk_ok, (unsigned long long)fr->rt_first_dma, (unsigned long long)fr->rt_last_dma,
++		(unsigned long long)so->surf, (unsigned long long)ggtt_first, (unsigned long long)ggtt_last,
++		same_backing ? "SAME PAGES" : "DIFFERENT");
++	if (rc != 0 || fr->t.outcome != PARITY_EU_PASS || !same_backing) {
++		if (fr->gpu_done || !fr->t.submitted) {
++			render_released = parity_fhd_render_release(fr, d->gm, d->vm) == 0;
++			if (parity_scanout_unpin(so) == 0)
++				(void)parity_scanout_destroy(so);
++		} else {
++			/* the GPU is not shown to have let go of the target: keep the buffer and the GPU objects */
++			parity_scanout_abandon(so);
++		}
++		lcdb_summary.first_anomaly = "the GPU image is not the expected one (not shown)";
++		lcdb_summary.first_anomaly_stage = "render";
++		kern_logf("i915: parity LCD-G verdict: FAIL (the GPU draw did not produce the expected image; nothing was shown; "
++			"render objects released=%d)\n", render_released);
++		return -1;
++	}
++
++	/* ---- show THAT object: no CPU write since the draw ---- */
++	env.hw = &k->ops;
++	env.gm = d->gm;
++	env.so = 0;
++	env.lcd = &d->edp->lcd;
++	env.pipe = 0;
++	env.first_frames_ms = 1000u;
++	env.window_ms = 12000u;
++	env.at_stage = at_stage;
++	env.at_stage_ctx = k;
++	k->pattern_id = 0u;
++	k->window_ms = env.window_ms;
++	k->post_before = d->irq->vbl != 0 ? d->irq->vbl->post_enable_calls : 0u;
++	k->pre_before = d->irq->vbl != 0 ? d->irq->vbl->pre_disable_calls : 0u;
++	kern_logf("i915: parity LCD-G showing the GPU-drawn buffer (surf 0x%08llx, image fnv %016llx)\n",
++		(unsigned long long)so->surf, (unsigned long long)fr->image_hash);
++	rc = parity_lcd_show_prepared(&env, so, lcdg_verify, 0, &rep);
++
++	log_trace(rep.trace);
++	log_observer(&rep.obs);
++	log_status("enable-returned", &rep.at_enable);
++	log_status("disable-returned", &rep.at_disable);
++	for (i = 0; i < (int)POWER_DOMAIN_NUM; i++)
++		held += k->power_refs[i];
++
++	/* ---- both users done?  display: stop confirmed; GPU: retired and parked -> release in that order ---- */
++	if (rep.display_released) {
++		render_released = parity_fhd_render_release(fr, d->gm, d->vm) == 0;
++		if (render_released && parity_scanout_unpin(so) == 0 && parity_scanout_destroy(so) == 0)
++			released = 1;
++	}
++	kern_logf("i915: parity LCD-G stop / release: display released=%d abandoned=%d | render PTEs cleared %u/%u released=%d | "
++		"buffer unpinned+destroyed=%d | image re-checked after the stop: wrong pixels=%u | display pages in use=%u | power refs "
++		"held=%d | first anomaly: %s (stage %s)\n", rep.display_released, rep.abandoned, fr->rt_pages_cleared, fr->rt_pages_mapped,
++		render_released, released, rep.readback_bad_after, d->gm->display_allocated_pages, held,
++		rep.first_anomaly != 0 ? rep.first_anomaly : "none", stage_name(rep.first_anomaly_stage));
++	lcdb_summary.pass = rc == 0 && released && held == 0 && k->unresolved_steps == 0u && k->time_faults == 0u;
++	lcdb_summary.first_anomaly = rep.first_anomaly;
++	lcdb_summary.first_anomaly_stage = stage_name(rep.first_anomaly_stage);
++	lcdb_summary.stage = stage_name(rep.stage);
++	lcdb_summary.cleanup_rc = rep.disable_rc;
++	lcdb_summary.retained = parity_lcd_show_retained();
++	kern_logf("i915: parity LCD-G verdict: %s (GPU pixels %u/%u, same backing, shown from the GPU-written object, stop %s, released=%d; "
++		"the photograph is separate evidence)\n", lcdb_summary.pass ? "PASS" : "FAIL", fr->px_match, fr->px_total,
++		rep.display_released ? "confirmed" : "NOT confirmed", released);
++	return lcdb_summary.pass ? 0 : -1;
++}
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h
+index e16f867a..ce7e2fcb 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_kernel.h
+@@ -20,6 +20,9 @@ struct parity_bw_state;
+ struct parity_dmc_dev;
+ struct parity_irq_dev;
+ struct parity_gt_mem;
++struct parity_gt_engines;
++struct parity_gt_ppgtt;
++struct spinlock;
+ 
+ #define PARITY_LCDB_PATTERN_ID  110u                     /* the asymmetric LCD-B picture (lcd_pattern.c) */
+ #define PARITY_LCDB_PATTERN_FNV 0xce63f20b23f91f85ull    /* its pinned hash at 1920x1080 (lcd-pattern-host.c) */
+@@ -42,12 +45,18 @@ struct parity_lcd_kernel_deps {
+ 	struct parity_irq_dev *irq;
+ 	struct parity_gt_mem *gm;
+ 	int ipc_enabled;                        /* skl_watermark_ipc_init()'s result */
++	/* LCD-G only: the GT the draw is submitted to (forcewake is held by the caller) */
++	struct parity_gt_engines *es;
++	struct parity_gt_ppgtt *vm;
++	struct spinlock *uncore_lock;
+ };
+ 
+ /* 0 = PASS (software state + hardware observation; the photograph is judged outside) */
+ int parity_lcd_kernel_lcdb_run(const struct parity_lcd_kernel_deps *d);
+ /* LCD reuse (-DPARITY_LCDR_TEST=1): three show / stop cycles, pipe IRQ + vblank, brightness, backlight off / on */
+ int parity_lcd_kernel_lcdr_run(const struct parity_lcd_kernel_deps *d);
++/* LCD-G (-DPARITY_LCDG_TEST=1): a GPU-drawn full-HD image shown from the same backing */
++int parity_lcd_kernel_lcdg_run(const struct parity_lcd_kernel_deps *d);
+ /* 1 while a run's resources are retained (the display may still read): the outer teardown keeps DMA, bus mastering, scratch */
+ int parity_lcd_kernel_abandoned(void);
+ 
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c
+index c73a4659..9dde569d 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.c
+@@ -264,6 +264,8 @@ void parity_lcd_modeset_status(struct parity_lcd_modeset_status *out)
+ 	out->dither = ms.crtc_state.dither;
+ 	out->backlight_min = ms.connector.panel.backlight.min;
+ 	out->backlight_max = ms.connector.panel.backlight.max;
++	out->backlight_user = ms.bl_user;
++	out->backlight_user_max = ms.bl_user_max;
+ 	out->commits = ms.commits;
+ 	out->errors = ms_errors;
+ 	out->first_error = ms_first_error;
+@@ -282,6 +284,9 @@ int parity_lcd_modeset_enable(void)
+ 	if (ms.backlight_setup_rc != 0)
+ 		on_error(0, "intel_backlight_setup failed (no PWM frequency from the hardware or the VBT)\n");
+ 	parity_lcd_ms_crtc_enable(&ms);
++	/* intel_backlight_device_register(): max_brightness = backlight.max, brightness = the level scaled to it */
++	ms.bl_user_max = ms.connector.panel.backlight.max;
++	ms.bl_user = ms.bl_user_max != 0u ? parity_lcd_ms_user_level(&ms, ms.bl_user_max) : 0u;
+ 	if (ms_errors != 0u)
+ 		return PARITY_LCD_MS_ERRORS;
+ 	/* the evidence that training worked is the sink's own status, not the flag the stop function sets */
+@@ -435,6 +440,7 @@ int parity_lcd_modeset_commit_disable(void)
+ 	}
+ 
+ 	PARITY_LCD_DECIDED(&ms.i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it");
++	before = ms_errors;
+ 	intel_dbuf_pre_plane_update(&ms.state);
+ 	intel_mbus_dbox_update(&ms.state);
+ 	/* skl_commit_modeset_enables(): nothing is enabled by this commit */
+@@ -442,6 +448,13 @@ int parity_lcd_modeset_commit_disable(void)
+ 	intel_modeset_put_crtc_power_domains(&ms.crtc, &put_domains);
+ 	ms.wm.old_dbuf = ms.wm.new_dbuf;
+ 	observe(PARITY_LCD_OBS_COMMIT_END);
++	if (ms_errors != before) {
++		/* e.g. the pipe's power well could not be turned off (its interrupt drain failed): the stop is not confirmed;
++		 * DC_OFF stays held and the caller keeps the buffer */
++		ms.stop_unconfirmed = 1;
++		PARITY_LCD_DECIDED(&ms.i915, "commit tail reported an error (power not released): DC_OFF kept, stop unconfirmed");
++		return PARITY_LCD_MS_ERRORS;
++	}
+ 	intel_display_power_put_async_delay(&ms.i915, POWER_DOMAIN_DC_OFF, ms.dc_off_wakeref, 17);
+ 	ms.dc_off_held = 0;
+ 	return PARITY_LCD_MS_OK;
+@@ -483,6 +496,10 @@ int parity_lcd_modeset_brightness(uint32_t user_level, uint32_t user_max)
+ 	if (!ms.prepared || !ms.crtc.active || parity_lcd_modeset_retained() || user_max == 0u || user_level > user_max)
+ 		return PARITY_LCD_MS_NOT_PREPARED;
+ 	parity_lcd_ms_set_brightness(&ms, user_level, user_max);
++	if (user_max == ms.bl_user_max)
++		ms.bl_user = user_level;
++	else
++		ms.bl_user = parity_lcd_ms_user_level(&ms, ms.bl_user_max);
+ 	return ms_errors != before ? PARITY_LCD_MS_ERRORS : PARITY_LCD_MS_OK;
+ }
+ 
+@@ -492,6 +509,13 @@ int parity_lcd_modeset_backlight(int on)
+ 
+ 	if (!ms.prepared || !ms.crtc.active || parity_lcd_modeset_retained())
+ 		return PARITY_LCD_MS_NOT_PREPARED;
+-	parity_lcd_ms_backlight_power(&ms, on);
++	{
++		u32 before_level = ms.connector.panel.backlight.level;
++
++		parity_lcd_ms_backlight_power(&ms, on);
++		/* __intel_backlight_enable(): a level <= min comes back as max, and the device's brightness follows */
++		if (on && ms.connector.panel.backlight.level != before_level)
++			ms.bl_user = parity_lcd_ms_user_level(&ms, ms.bl_user_max);
++	}
+ 	return ms_errors != before ? PARITY_LCD_MS_ERRORS : PARITY_LCD_MS_OK;
+ }
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h
+index 83c4c8a0..e5397eee 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset.h
+@@ -80,7 +80,8 @@ struct parity_lcd_modeset_status {
+ 	int stop_unconfirmed, retained;
+ 	int dither;
+ 	uint32_t backlight_min;         /* panel->backlight.min (hw units) */
+-	uint32_t backlight_max;                     /* crtc state: derived from pipe_bpp (intel_modeset_pipe_config) */
++	uint32_t backlight_max;
++	uint32_t backlight_user, backlight_user_max;   /* the user brightness (restore THIS, not the hw level) */                     /* crtc state: derived from pipe_bpp (intel_modeset_pipe_config) */
+ 	unsigned commits;
+ 	/* ownership */
+ 	int pll_on, pll_active_mask, pll_wakeref;
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h
+index 163e0563..f0097084 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_modeset_int.h
+@@ -36,6 +36,7 @@ struct parity_lcd_modeset {
+ 	unsigned int bw_data_rate;              /* MB/s, as intel_bw_check_qgv_points() compares it */
+ 	/* the commit */
+ 	int dc_off_held; int dc_off_wakeref;
++	u32 bl_user, bl_user_max;                /* the backlight device's props.brightness / max_brightness */
+ 	int stop_unconfirmed;                   /* the disable reported an error: nothing further was given back */
+ 	unsigned commits;
+ 	int prepared;
+@@ -62,6 +63,7 @@ void intel_dbuf_post_plane_update(struct intel_atomic_state *state);
+ void intel_mbus_dbox_update(struct intel_atomic_state *state);
+ void parity_lcd_ms_set_brightness(struct parity_lcd_modeset *ms, u32 user_level, u32 user_max);     /* intel_backlight_port.c */
+ void parity_lcd_ms_backlight_power(struct parity_lcd_modeset *ms, int on);
++u32 parity_lcd_ms_user_level(struct parity_lcd_modeset *ms, u32 user_max);
+ int parity_lcd_ms_wm_compute(struct parity_lcd_modeset *ms);                             /* skl_watermark_port.c */
+ void parity_lcd_ms_color_check(struct parity_lcd_modeset *ms);                         /* intel_color_port.c */
+ int parity_lcd_ms_backlight_setup(struct parity_lcd_modeset *ms);                      /* intel_backlight_port.c */
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c
+index 8f34a399..9a0ac076 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.c
+@@ -63,53 +63,17 @@ static int first_error_after(const struct parity_lcd_trace *t, unsigned from)
+ 	return -1;
+ }
+ 
+-int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_report *r)
++/*
++ * The display part: check phase, the enable commit, the observation window, the disable commit, and the decision whether
++ * the display has let go of the buffer.  Never creates, fills, unpins or destroys the buffer.
++ * Returns 1 when the buffer was handed to the display (the enable was attempted), 0 when it never was.
++ */
++static int show_display(struct parity_lcd_show_env *env, struct parity_scanout *so, struct parity_lcd_show_report *r,
++	uint32_t (*verify)(void *ctx, const struct parity_scanout *so), void *verify_ctx)
+ {
+-	struct parity_scanout *so;
+ 	unsigned disable_from, waited;
+ 
+-	if (env == 0 || r == 0 || env->hw == 0 || env->gm == 0 || env->so == 0 || env->lcd == 0)
+-		return -EINVAL;
+-	if (show_retained || parity_lcd_modeset_retained())
+-		return -EBUSY;                  /* an earlier run left resources the display may still read: nothing is touched */
+-	memset(r, 0, sizeof(*r));
+-	r->first_error_trace_at = -1;
+-	r->cleanup_first_error_trace_at = -1;
+-	r->trace = &show_trace;
+-	so = env->so;
+-	if (so->state != PARITY_SCANOUT_NONE) {
+-		anomaly(r, "the scanout storage is still in use (an earlier buffer was abandoned?)", -EBUSY);
+-		return -EBUSY;
+-	}
+-
+-	/* ---- the buffer ---- */
+-	r->window_rc = parity_gt_display_window_init(env->gm, PARITY_GT_DISPLAY_PAGES);
+-	if (r->window_rc != 0 && r->window_rc != -EBUSY) {     /* -EBUSY: claimed earlier, which is fine */
+-		anomaly(r, "display GGTT window", r->window_rc);
+-		return -1;
+-	}
+-	r->create_rc = parity_scanout_create(env->gm, (uint32_t)env->lcd->mode.hdisplay, (uint32_t)env->lcd->mode.vdisplay,
+-		PARITY_FOURCC_XRGB8888, PARITY_MOD_LINEAR, so);
+-	if (r->create_rc != 0) {
+-		anomaly(r, "scanout create", r->create_rc);
+-		return -1;
+-	}
+-	r->pin_rc = parity_scanout_pin(so, "lcd-b");
+-	if (r->pin_rc != 0) {
+-		anomaly(r, "scanout pin", r->pin_rc);
+-		r->destroy_rc = parity_scanout_destroy(so);
+-		return -1;
+-	}
+ 	r->surf = so->surf;
+-	r->pattern_hash = parity_lcd_pattern_fill(so->cpu, so->pitch, so->width, so->height, env->pattern_id);
+-	parity_scanout_publish(so);
+-	r->readback_bad_before = parity_lcd_pattern_verify(so->cpu, so->pitch, so->width, so->height, env->pattern_id, 0, 0);
+-	if (r->readback_bad_before != 0u || (env->pattern_fnv != 0u && r->pattern_hash != env->pattern_fnv)) {
+-		anomaly(r, "the picture in the buffer is not the expected one", -EIO);
+-		goto release_unused;
+-	}
+-	reached(env, r, PARITY_LCD_SHOW_BUFFER_READY);
+-
+ 	/* ---- check phase ---- */
+ 	env->cfg.fb_fourcc = so->format;
+ 	env->cfg.fb_modifier = so->modifier;
+@@ -125,7 +89,7 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 	parity_lcd_modeset_status(&r->at_enable);
+ 	if (r->prepare_rc != 0) {
+ 		anomaly(r, r->at_enable.first_error != 0 ? r->at_enable.first_error : "modeset prepare refused the state", r->prepare_rc);
+-		goto release_unused;
++		return 0;
+ 	}
+ 	reached(env, r, PARITY_LCD_SHOW_PREPARED);
+ 
+@@ -133,7 +97,7 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 	r->begin_rc = parity_scanout_begin(so);
+ 	if (r->begin_rc != 0) {
+ 		anomaly(r, "scanout begin", r->begin_rc);
+-		goto release_unused;
++		return 0;
+ 	}
+ 	parity_lcd_trace_phase(&show_trace, "commit: enable");
+ 	r->enable_rc = parity_lcd_modeset_commit_enable();
+@@ -193,7 +157,7 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 		anomaly(r, "the disable commit did not succeed", r->disable_rc);
+ 	reached(env, r, PARITY_LCD_SHOW_DISABLE_RETURNED);
+ 
+-	/* ---- may the buffer be given back?  Only when the hardware says the pipe stands ---- */
++	/* ---- has the display let go of the buffer?  Only when the hardware says the pipe stands ---- */
+ 	r->stopped_rc = -EBUSY;
+ 	if (r->disable_rc == PARITY_LCD_MS_OK) {
+ 		r->stopped_rc = parity_lcd_observer_stopped(&r->obs, 200u, &r->stop_frame_first, &r->stop_frame_last);
+@@ -205,17 +169,12 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 		reached(env, r, PARITY_LCD_SHOW_STOP_CONFIRMED);
+ 		parity_lcd_modeset_plane_released();
+ 		parity_scanout_end(so);
+-		r->readback_bad_after = parity_lcd_pattern_verify(so->cpu, so->pitch, so->width, so->height, env->pattern_id, 0, 0);
+-		r->unpin_rc = parity_scanout_unpin(so);
+-		r->destroy_rc = r->unpin_rc == 0 ? parity_scanout_destroy(so) : -EBUSY;
+-		r->released = r->unpin_rc == 0 && r->destroy_rc == 0;
+-		if (!r->released)
+-			anomaly(r, "the buffer could not be released after a confirmed stop", r->unpin_rc != 0 ? r->unpin_rc : r->destroy_rc);
+-		else
+-			reached(env, r, PARITY_LCD_SHOW_RELEASED);
++		r->display_released = 1;
++		if (verify != 0)
++			r->readback_bad_after = verify(verify_ctx, so);
+ 	} else {
+ 		/* not confirmed: the backing pages, their DMA mapping, the GGTT entries, the pin and its owner stay for ever;
+-		 * the modeset object forgets what it holds (DC_OFF, power domains, DBUF stay as they are in the hardware) */
++		 * the modeset object keeps what it holds (DC_OFF, power domains, DBUF) */
+ 		parity_scanout_abandon(so);
+ 		parity_lcd_modeset_abandoned();
+ 		show_retained = 1;
+@@ -223,10 +182,108 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+ 		r->abandoned = 1;
+ 		reached(env, r, PARITY_LCD_SHOW_ABANDONED);
+ 	}
++	return 1;
++}
+ 
+-	r->pass = r->first_anomaly == 0 && r->window_hook_rc == 0 && r->released && r->enable_rc == PARITY_LCD_MS_OK && r->steady_rc == 0 &&
++static int show_passed(const struct parity_lcd_show_report *r, int released)
++{
++	return r->first_anomaly == 0 && r->window_hook_rc == 0 && released && r->enable_rc == PARITY_LCD_MS_OK && r->steady_rc == 0 &&
+ 		r->at_enable.cr_ok && r->at_enable.eq_ok && r->obs.seen_steady == 0u && r->obs.vblank_unmasked_seen == 0 &&
+ 		r->readback_bad_after == 0u && show_trace.steps == 0u && show_trace.dropped == 0u;
++}
++
++static int show_begin(struct parity_lcd_show_env *env, struct parity_lcd_show_report *r)
++{
++	if (show_retained || parity_lcd_modeset_retained())
++		return -EBUSY;                  /* an earlier run left resources the display may still read: nothing is touched */
++	memset(r, 0, sizeof(*r));
++	r->first_error_trace_at = -1;
++	r->cleanup_first_error_trace_at = -1;
++	r->trace = &show_trace;
++	(void)env;
++	return 0;
++}
++
++int parity_lcd_show_prepared(struct parity_lcd_show_env *env, struct parity_scanout *so,
++	uint32_t (*verify)(void *ctx, const struct parity_scanout *so), void *verify_ctx, struct parity_lcd_show_report *r)
++{
++	if (env == 0 || r == 0 || env->hw == 0 || env->lcd == 0 || so == 0)
++		return -EINVAL;
++	if (show_begin(env, r) != 0)
++		return -EBUSY;
++	if (so->state != PARITY_SCANOUT_PINNED) {
++		anomaly(r, "the prepared buffer is not a pinned, unused scanout buffer", -EINVAL);
++		return -EINVAL;
++	}
++	reached(env, r, PARITY_LCD_SHOW_BUFFER_READY);
++	(void)show_display(env, so, r, verify, verify_ctx);
++	r->released = r->display_released;          /* for the prepared path: the display let go; the OWNER releases the buffer */
++	r->pass = show_passed(r, r->display_released);
++	return r->pass ? 0 : -1;
++}
++
++static uint32_t pattern_verify(void *ctx, const struct parity_scanout *so)
++{
++	const struct parity_lcd_show_env *env = ctx;
++
++	return parity_lcd_pattern_verify(so->cpu, so->pitch, so->width, so->height, env->pattern_id, 0, 0);
++}
++
++/* The CPU-pattern wrapper: creates, fills and releases its OWN buffer around the display part. */
++int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_report *r)
++{
++	struct parity_scanout *so;
++
++	if (env == 0 || r == 0 || env->hw == 0 || env->gm == 0 || env->so == 0 || env->lcd == 0)
++		return -EINVAL;
++	if (show_begin(env, r) != 0)
++		return -EBUSY;
++	so = env->so;
++	if (so->state != PARITY_SCANOUT_NONE) {
++		anomaly(r, "the scanout storage is still in use (an earlier buffer was abandoned?)", -EBUSY);
++		return -EBUSY;
++	}
++
++	/* ---- the buffer ---- */
++	r->window_rc = parity_gt_display_window_init(env->gm, PARITY_GT_DISPLAY_PAGES);
++	if (r->window_rc != 0 && r->window_rc != -EBUSY) {     /* -EBUSY: claimed earlier, which is fine */
++		anomaly(r, "display GGTT window", r->window_rc);
++		return -1;
++	}
++	r->create_rc = parity_scanout_create(env->gm, (uint32_t)env->lcd->mode.hdisplay, (uint32_t)env->lcd->mode.vdisplay,
++		PARITY_FOURCC_XRGB8888, PARITY_MOD_LINEAR, so);
++	if (r->create_rc != 0) {
++		anomaly(r, "scanout create", r->create_rc);
++		return -1;
++	}
++	r->pin_rc = parity_scanout_pin(so, "lcd-b");
++	if (r->pin_rc != 0) {
++		anomaly(r, "scanout pin", r->pin_rc);
++		r->destroy_rc = parity_scanout_destroy(so);
++		return -1;
++	}
++	r->surf = so->surf;
++	r->pattern_hash = parity_lcd_pattern_fill(so->cpu, so->pitch, so->width, so->height, env->pattern_id);
++	parity_scanout_publish(so);
++	r->readback_bad_before = parity_lcd_pattern_verify(so->cpu, so->pitch, so->width, so->height, env->pattern_id, 0, 0);
++	if (r->readback_bad_before != 0u || (env->pattern_fnv != 0u && r->pattern_hash != env->pattern_fnv)) {
++		anomaly(r, "the picture in the buffer is not the expected one", -EIO);
++		goto release_unused;
++	}
++	reached(env, r, PARITY_LCD_SHOW_BUFFER_READY);
++
++	if (!show_display(env, so, r, pattern_verify, env))
++		goto release_unused;
++	if (r->display_released) {
++		r->unpin_rc = parity_scanout_unpin(so);
++		r->destroy_rc = r->unpin_rc == 0 ? parity_scanout_destroy(so) : -EBUSY;
++		r->released = r->unpin_rc == 0 && r->destroy_rc == 0;
++		if (!r->released)
++			anomaly(r, "the buffer could not be released after a confirmed stop", r->unpin_rc != 0 ? r->unpin_rc : r->destroy_rc);
++		else
++			reached(env, r, PARITY_LCD_SHOW_RELEASED);
++	}
++	r->pass = show_passed(r, r->released);
+ 	return r->pass ? 0 : -1;
+ 
+ release_unused:
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h
+index a1c9b359..d186971a 100644
+--- a/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h
++++ b/src/drivers/gpu/i915/parity/lcd/parity_lcd_show.h
+@@ -85,6 +85,7 @@ struct parity_lcd_show_report {
+ 	uint64_t pattern_hash;
+ 	uint32_t readback_bad_before, readback_bad_after;
+ 	int released, abandoned;
++	int display_released;                   /* the display has provably stopped reading it (back to PINNED) */
+ 	struct parity_lcd_observer obs;
+ 	struct parity_lcd_trace *trace;         /* the run log (static storage of the show body) */
+ 	int pass;
+@@ -97,6 +98,15 @@ int parity_lcd_show_run(struct parity_lcd_show_env *env, struct parity_lcd_show_
+  * initialises anything while it is set, and the outer teardown asks it before releasing the DMA device, the scratch
+  * page, the BARs or bus mastering.  Cleared only by _discard_model() for a run on a register MODEL.
+  */
++/*
++ * Show a buffer somebody else prepared (a GPU render target, a second buffer ...): the pixels are NOT touched, the buffer
++ * is NOT created, unpinned or destroyed here.  It must be PINNED (not in use, not abandoned).  On return it is either
++ * PINNED again (display_released = 1: the stop was confirmed; the owner releases it when ITS other users -- e.g. the
++ * GPU's mappings -- are done) or ABANDONED (the stop was not confirmed: kept for ever, the device latch is set).
++ * `verify` (optional) re-checks the pixels after the stop: the number of wrong pixels.
++ */
++int parity_lcd_show_prepared(struct parity_lcd_show_env *env, struct parity_scanout *so,
++	uint32_t (*verify)(void *ctx, const struct parity_scanout *so), void *verify_ctx, struct parity_lcd_show_report *out);
+ int parity_lcd_show_retained(void);
+ int parity_lcd_show_discard_model(struct parity_lcd_show_env *env);
+ 
+diff --git a/src/drivers/gpu/i915/parity/power_domains.c b/src/drivers/gpu/i915/parity/power_domains.c
+index de4227cf..37718ec8 100644
+--- a/src/drivers/gpu/i915/parity/power_domains.c
++++ b/src/drivers/gpu/i915/parity/power_domains.c
+@@ -501,6 +501,11 @@ parity_power_well_disable(struct parity_power_well *w, struct parity_pw_ctx *c)
+ 	unsigned reg;
+ 	uint32_t req, st, v;
+ 
++	if (c->irq_sync_failed && w->ops != PARITY_PW_OPS_ALWAYS_ON) {
++		c->disable_refusals++;
++		return -EBUSY;
++	}
++
+ 	if (w->ops == PARITY_PW_OPS_ALWAYS_ON) {
+ 		w->hw_enabled = 1;   /* always-on: never actually disabled */
+ 		return 0;
+@@ -543,10 +548,18 @@ parity_power_well_disable(struct parity_power_well *w, struct parity_pw_ctx *c)
+ 	 * hsw_power_well_pre_disable() -> gen8_irq_power_well_pre_disable(): stop the pipe's interrupt sources and wait for
+ 	 * a handler already running, BEFORE the well goes off (afterwards the handler would read a powered-off register).
+ 	 */
+-	if (w->irq_pipe_mask != 0u && c->irqs_enabled) {
++	if (w->irq_pipe_mask != 0u && c->irqs_enabled && !c->irq_sync_failed) {
+ 		c->irq_pre_disable_calls++;
+-		if (c->irq_ops != 0)
+-			c->irq_ops->pre_disable(c->irq_ctx, w->irq_pipe_mask);
++		if (c->irq_ops != 0 && c->irq_ops->pre_disable(c->irq_ctx, w->irq_pipe_mask) != 0) {
++			/* the handler was not shown to have left the pipe: the well stays on, and so does everything else */
++			c->irq_sync_failed = 1;
++			kern_logf("i915: parity power well %s: pipe interrupt drain FAILED; the well is kept on and every later "
++				"well disable is refused\n", w->name);
++		}
++	}
++	if (c->irq_sync_failed) {
++		c->disable_refusals++;
++		return -EBUSY;                  /* POWER_REQUEST is not touched */
+ 	}
+ 	v = osdep_mmio_raw_read32(c->mmio, reg);
+ 	osdep_mmio_raw_write32(c->mmio, reg, v & ~req);
+@@ -637,8 +650,11 @@ parity_power_well_put(struct parity_power_well *w, struct parity_pw_ctx *c)
+ 	if (w->refcount == 0u)
+ 		return;   /* underflow guard */
+ 	w->refcount--;
+-	if (w->refcount == 0u)
+-		(void)parity_power_well_disable(w, c);
++	if (w->refcount == 0u && parity_power_well_disable(w, c) == -EBUSY) {
++		/* the disable was refused: the well is still on and now owned by that failed stop (never re-enabled on a later get) */
++		w->refcount = 1u;
++		c->kept_wells++;
++	}
+ }
+ 
+ /*
+diff --git a/src/drivers/gpu/i915/parity/power_domains.h b/src/drivers/gpu/i915/parity/power_domains.h
+index 99f6c2be..8b3e9a17 100644
+--- a/src/drivers/gpu/i915/parity/power_domains.h
++++ b/src/drivers/gpu/i915/parity/power_domains.h
+@@ -175,7 +175,7 @@ struct parity_cdclk_dev;
+  */
+ struct parity_pw_irq_ops {
+ 	void (*post_enable)(void *ctx, unsigned pipe_mask);
+-	void (*pre_disable)(void *ctx, unsigned pipe_mask);
++	int (*pre_disable)(void *ctx, unsigned pipe_mask);     /* 0, or the drain failed: the well must NOT go off */
+ };
+ 
+ /*
+@@ -190,6 +190,14 @@ struct parity_pw_ctx {
+ 	unsigned vga_reset_calls;
+ 	unsigned irq_post_enable_calls;
+ 	unsigned irq_pre_disable_calls;
++	/*
++	 * Set when a pipe's interrupt drain failed before its well would have gone off.  From then on every well disable
++	 * is refused (the handler that did not finish may still touch display registers), the well that was about to go
++	 * off stays owned, and the probe's teardown keeps the IRQ handler attached and the device resources in place.
++	 */
++	int irq_sync_failed;
++	unsigned disable_refusals;             /* well disables refused because of it */
++	unsigned kept_wells;                   /* wells kept on by a refused disable */
+ 	const struct parity_pw_irq_ops *irq_ops;   /* NULL: the IRQ layer is not bound (GPU-free tests) */
+ 	void *irq_ctx;
+ 	unsigned ack_timeouts;   /* real HW ACK timeouts (warn+continue) */
+diff --git a/src/drivers/gpu/i915/parity/probe.c b/src/drivers/gpu/i915/parity/probe.c
+index b5e145a9..f7dfaed1 100644
+--- a/src/drivers/gpu/i915/parity/probe.c
++++ b/src/drivers/gpu/i915/parity/probe.c
+@@ -1728,16 +1728,32 @@ p6_fw_out:
+ 	 * LCD-B: one known picture on the panel through the reference's modeset, a finite observation window, the
+ 	 * reference's stop path.  No GPU submission happens in this mode; the AUX diagnostics are not repeated.
+ 	 */
+-	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST) {
++	if (PARITY_LCDB_TEST || PARITY_LCDR_TEST || PARITY_LCDG_TEST) {
+ 		static struct parity_lcd_kernel_deps lcdb;
+ 
+ 		lcdb.edp = &edp_dev; lcdb.mmio = &mmio; lcdb.pd = &power_domains; lcdb.pwc = &pwc; lcdb.dcore = &dcore;
+ 		lcdb.cdclk = &cdclk; lcdb.nogem = &nogem; lcdb.dstate = &dstate; lcdb.bw = &bw_state; lcdb.dmc = &dmc_dev;
+ 		lcdb.irq = &irqdev; lcdb.gm = &gtmem; lcdb.ipc_enabled = dprobe.ipc_enabled;
++		lcdb.es = &gteng; lcdb.vm = &gtpp; lcdb.uncore_lock = &uncore_lock;
+ 		if (gtmem_inited) {
+ 			struct parity_lcd_test_summary sum;
+ 
+-			if (PARITY_LCDR_TEST)
++			if (PARITY_LCDG_TEST) {
++				/* like the TEX test: the GT's forcewake domains are held around the submission */
++				static const int gfwd[5] = { OSDEP_FW_RENDER, OSDEP_FW_GT,
++					OSDEP_FW_MEDIA_VDBOX0, OSDEP_FW_MEDIA_VDBOX2, OSDEP_FW_MEDIA_VEBOX0 };
++				unsigned gheld = 0u;
++				int gfrc = 0;
++
++				while (gheld < 5u && (gfrc = osdep_fw_get(&mmio, gfwd[gheld])) == 0)
++					gheld++;
++				if (gheld == 5u)
++					(void)parity_lcd_kernel_lcdg_run(&lcdb);
++				else
++					kern_logf("i915: parity LCD-G verdict: FAIL (forcewake rc=%d; nothing submitted)\n", gfrc);
++				while (gheld-- > 0u)
++					osdep_fw_put(&mmio, gfwd[gheld]);
++			} else if (PARITY_LCDR_TEST)
+ 				(void)parity_lcd_kernel_lcdr_run(&lcdb);
+ 			else
+ 				(void)parity_lcd_kernel_lcdb_run(&lcdb);
+@@ -2303,7 +2319,11 @@ teardown:
+ 		kern_logf("i915: parity teardown: display-nogem fini (crtc/plane/dpll records released)\n");
+ 	}
+ 	if (irq_installed) {
+-		parity_intel_irq_uninstall(&irqdev);
++		if (pwc.irq_sync_failed)
++			kern_logf("i915: parity teardown: a pipe interrupt drain failed earlier -- the IRQ handler stays attached, "
++				"display power and device resources are kept\n");
++		else
++			parity_intel_irq_uninstall(&irqdev);
+ 		kern_logf("i915: parity teardown: intel_irq_uninstall (sources reset, "
+ 			"handler detached; irq_count=%u handled=%u none=%u)\n",
+ 			irqdev.irq_count, irqdev.irq_handled_count, irqdev.irq_none_count);
+@@ -2355,7 +2375,7 @@ teardown:
+ 		kern_logf("i915: parity teardown: WC aperture unmap va=%p size=0x%llx rc=%d\n",
+ 			wc_aperture_va, (unsigned long long)wc_aperture_size, wc_urc);
+ 	}
+-	if (parity_lcd_kernel_abandoned()) {
++	if (parity_lcd_kernel_abandoned() || pwc.irq_sync_failed) {
+ 		/* a scanout buffer may still be read by the display: its pages, the scratch page behind its guard PTEs, the DMA
+ 		 * device (IOMMU mappings), the GGTT and bus mastering all stay as they are -- a leak is the safe side */
+ 		kern_logf("i915: parity teardown: a scanout buffer was ABANDONED -- DMA device, scratch page, BARs and bus mastering are kept\n");
+diff --git a/src/drivers/gpu/i915/selftest.c b/src/drivers/gpu/i915/selftest.c
+index 3b83296c..2a9e1581 100644
+--- a/src/drivers/gpu/i915/selftest.c
++++ b/src/drivers/gpu/i915/selftest.c
+@@ -869,6 +869,7 @@ struct i915_draw_tex_opts {
+ 	uint32_t ps_dw7;		/* dispatch GRF start (from the compiler's prog_data) */
+ 	uint32_t ps_extra_dw1;		/* valid, UAV, source depth / W as the compiler requires */
+ 	uint32_t ssp_dw0, ssp_dw1;	/* 3DSTATE_SAMPLER_STATE_POINTERS_PS */
++	uint32_t rt_w, rt_h;		/* E-118: the render target's size for the drawing rectangle; 0 = the 32x32 fixture */
+ };
+ 
+ static void
+@@ -1146,7 +1147,8 @@ i915_draw_build_batch(
+ 	i915_draw_emit(&batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DRAWING_RECTANGLE,
+ 		GEN12_3DSTATE_DRAWING_RECTANGLE_DWORDS));
+ 	i915_draw_emit(&batch, 0U);
+-	i915_draw_emit(&batch, (I915_DRAW_WIDTH - 1U) | ((I915_DRAW_HEIGHT - 1U) << 16));
++	i915_draw_emit(&batch, tex != NULL && tex->rt_w != 0U ? (tex->rt_w - 1U) | ((tex->rt_h - 1U) << 16) :
++		(I915_DRAW_WIDTH - 1U) | ((I915_DRAW_HEIGHT - 1U) << 16));
+ 	i915_draw_emit(&batch, 0U);
+ 
+ 	/*
+@@ -1342,7 +1344,7 @@ drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t sta
+ {
+ 	static const struct i915_draw_tex_opts tex = {
+ 		TEXFIX_3DSTATE_PS_DW3, TEXFIX_3DSTATE_PS_DW7, TEXFIX_3DSTATE_PS_EXTRA_DW1,
+-		TEXFIX_SAMPLER_POINTERS_PS_DW0, TEXFIX_SAMPLER_POINTERS_PS_DW1,
++		TEXFIX_SAMPLER_POINTERS_PS_DW0, TEXFIX_SAMPLER_POINTERS_PS_DW1, 0U, 0U,
+ 	};
+ 	static struct i915_gem_object state;
+ 
+@@ -1351,6 +1353,87 @@ drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t sta
+ 	return i915_draw_build_batch(cmds, capacity, &state, &state, &state, &state, mocs, 1U, &tex);
+ }
+ 
++/* ---- E-118: the full-HD textured draw (generated shader / render-target / texture words) ---- */
++
++#include "tex_fixture_fhd_gen.inc"
++
++_Static_assert(TEXFHD_PS_BYTES <= I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET,
++	"the full-HD PS must fit between the kernel offset and the vertex data");
++_Static_assert(TEXFHD_PS_DISPATCH_8 == 1U && TEXFHD_PS_NUM_VARYING == 0U && TEXFHD_PS_USES_POS_OFFSET == 0U &&
++	TEXFHD_PS_TOTAL_SCRATCH == 0U && TEXFHD_PS_PUSH_SIZE0 == 0U && TEXFHD_3DSTATE_PS_EXTRA_DW0 == 0x784f0000U &&
++	(TEXFHD_3DSTATE_PS_DW7 >> 16) == TEXFHD_PS_GRF_START_8,
++	"the full-HD PS is dispatched the way this batch dispatches the T1 one");
++_Static_assert(TEXFHD_RT_WIDTH == I915_TEX_FHD_WIDTH && TEXFHD_RT_HEIGHT == I915_TEX_FHD_HEIGHT &&
++	TEXFHD_RT_ROW_PITCH == I915_TEX_FHD_PITCH && TEXFHD_RT_SIZE == I915_TEX_FHD_RT_BYTES &&
++	TEXFHD_RT_VA_PLACEHOLDER == I915_TEX_FHD_RT_VA && TEXFHD_TEX_VA_PLACEHOLDER == I915_TEX_FIXTURE_TEX_VA &&
++	TEXFHD_SAMPLER_OFFSET == I915_TEX_FIXTURE_SAMPLER_OFFSET,
++	"draw_fixture.h must describe the generated full-HD fixture");
++
++void
++drv_i915_tex_fixture_fhd_write_state(void *state_page, uint64_t rt_va, uint64_t tex_va, uint32_t mocs)
++{
++	uint32_t *heap = state_page;
++	uint32_t *rss = &heap[I915_TEX_FIXTURE_TEX_RSS_OFFSET / 4U];
++	uint32_t *rt = &heap[I915_DRAW_SURFACE_STATE_OFFSET / 4U];
++
++	drv_i915_draw_fixture_write_state(state_page, rt_va, mocs);
++	/* the render target's surface state is isl's (render-target usage, 1920x1080, pitch 7680), address patched in */
++	memcpy(rt, texfhd_rt_rss, sizeof(texfhd_rt_rss));
++	rt[8] = (uint32_t)rt_va;
++	rt[9] = (uint32_t)(rt_va >> 32);
++	/* the full-HD sampling PS and its EOT carpet */
++	memset((uint8_t *)state_page + I915_DRAW_PS_KERNEL_OFFSET, 0, I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET);
++	memcpy((uint8_t *)state_page + I915_DRAW_PS_KERNEL_OFFSET, texfhd_ps, TEXFHD_PS_BYTES);
++	i915_draw_fill_eot(state_page, I915_DRAW_PS_KERNEL_OFFSET + TEXFHD_PS_BYTES,
++		I915_DRAW_POSITION_OFFSET - I915_DRAW_PS_KERNEL_OFFSET - TEXFHD_PS_BYTES);
++	/* binding table entry 1 -> the texture (the T1 surface state), sampler */
++	heap[I915_DRAW_BINDING_TABLE_OFFSET / 4U + 1U] = I915_TEX_FIXTURE_TEX_RSS_OFFSET;
++	memcpy(rss, texfhd_tex_rss, sizeof(texfhd_tex_rss));
++	rss[8] = (uint32_t)tex_va;
++	rss[9] = (uint32_t)(tex_va >> 32);
++	memcpy(&heap[I915_TEX_FIXTURE_SAMPLER_OFFSET / 4U], texfhd_sampler, sizeof(texfhd_sampler));
++	/* the RECTLIST covers the whole target: (1920, 1080), (0, 1080), (0, 0) */
++	i915_draw_write_vertices(state_page, 0x44f00000U /* 1920.0f */, 0x44870000U /* 1080.0f */);
++	(void)mocs;     /* the generated surface states carry MOCS 6 = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX) (checked by the test) */
++}
++
++unsigned
++drv_i915_tex_fixture_fhd_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs)
++{
++	static const struct i915_draw_tex_opts tex = {
++		TEXFHD_3DSTATE_PS_DW3, TEXFHD_3DSTATE_PS_DW7, TEXFHD_3DSTATE_PS_EXTRA_DW1,
++		TEXFHD_SAMPLER_POINTERS_PS_DW0, TEXFHD_SAMPLER_POINTERS_PS_DW1, TEXFHD_RT_WIDTH, TEXFHD_RT_HEIGHT,
++	};
++	static struct i915_gem_object state;
++
++	memset(&state, 0, sizeof(state));
++	state.va = state_va;
++	return i915_draw_build_batch(cmds, capacity, &state, &state, &state, &state, mocs, 1U, &tex);
++}
++
++const uint32_t *
++drv_i915_tex_fixture_fhd_rt_rss(void)
++{
++	return texfhd_rt_rss;
++}
++
++unsigned
++drv_i915_tex_fixture_fhd_ps_bytes(void)
++{
++	return TEXFHD_PS_BYTES;
++}
++
++/* the texture state, the sampler and the packet words must be the T1 ones: only the scale and the target differ */
++int
++drv_i915_tex_fixture_fhd_same_texture_state(void)
++{
++	return memcmp(texfhd_tex_rss, texfix_tex_rss, sizeof(texfix_tex_rss)) == 0 &&
++		memcmp(texfhd_sampler, texfix_sampler, sizeof(texfix_sampler)) == 0 &&
++		TEXFHD_3DSTATE_PS_DW3 == TEXFIX_3DSTATE_PS_DW3 && TEXFHD_3DSTATE_PS_DW7 == TEXFIX_3DSTATE_PS_DW7 &&
++		TEXFHD_3DSTATE_PS_EXTRA_DW1 == TEXFIX_3DSTATE_PS_EXTRA_DW1 &&
++		TEXFHD_SAMPLER_POINTERS_PS_DW1 == TEXFIX_SAMPLER_POINTERS_PS_DW1;
++}
++
+ void
+ drv_i915_tex_fixture_pattern(uint8_t *rgba, unsigned variant)
+ {
+diff --git a/src/drivers/gpu/i915/tex_fixture_fhd_gen.inc b/src/drivers/gpu/i915/tex_fixture_fhd_gen.inc
+new file mode 100644
+index 00000000..8e17f8af
+--- /dev/null
++++ b/src/drivers/gpu/i915/tex_fixture_fhd_gen.inc
+@@ -0,0 +1,114 @@
++/*
++ * SPDX-License-Identifier: MIT
++ *
++ * GENERATED FILE - WS031 E-118 full-HD textured-draw fixture.  Do not edit by hand.
++ *
++ * Generator : plan/ws031/handover/tools/reftex.c, run as "reftex 1920 1080 rt" (built inside the Mesa tree as
++ *             src/intel/compiler/brw/reftex.c; zedBSD project code, NIR builder program); names renamed
++ *             TEXFIX_ -> TEXFHD_ / texfix_ -> texfhd_ by plan/ws031/handover/tools/lcd-e118/gen_fhd.sh
++ * Inputs    : Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef (MIT):
++ *             brw_compile_fs (shader ISA + prog_data), isl (texture and render-target layout, both
++ *             RENDER_SURFACE_STATEs), genxml gen120 (SAMPLER_STATE, 3DSTATE_PS DW3, 3DSTATE_SAMPLER_STATE_POINTERS_PS);
++ *             device ADL-P 0x46a8.
++ * Shader    : uv = (floor(gl_FragCoord.xy) + 0.5) / (1920, 1080);  colour = sample_lz(texture BTI 1, sampler 0, uv);
++ *             RT 0 (BTI 0) = colour;  A64 entry marker 0xc0ffee01 -> 0x100400c10.
++ * sha256    : reftex_ps.bin (1920x1080) ee82808c1a72b2c10ba2bc56c151f205e170bfa112c5176eb52d7c0ff1b6d265
++ */
++#define TEXFHD_3DSTATE_PS_DW3 0x08080000U
++#define TEXFHD_3DSTATE_PS_DW7 0x00040000U
++#define TEXFHD_3DSTATE_PS_EXTRA_DW0 0x784f0000U
++#define TEXFHD_3DSTATE_PS_EXTRA_DW1 0x81800004U
++#define TEXFHD_SAMPLER_OFFSET 896U
++#define TEXFHD_SAMPLER_POINTERS_PS_DW0 0x782f0000U
++#define TEXFHD_SAMPLER_POINTERS_PS_DW1 0x00000380U
++/* Generated by plan/ws031/mesa-refs reftex.c (brw_compile_fs + isl + genxml gen120, ADL-P 0x46a8). Do not edit. */
++#define TEXFHD_PS_BYTES 656U
++#define TEXFHD_PS_DISPATCH_8 1U
++#define TEXFHD_PS_DISPATCH_16 1U
++#define TEXFHD_PS_DISPATCH_32 0U
++#define TEXFHD_PS_OFFSET_16 320U
++#define TEXFHD_PS_GRF_START_8 4U
++#define TEXFHD_PS_GRF_START_16 6U
++#define TEXFHD_PS_NUM_VARYING 0U
++#define TEXFHD_PS_USES_SRC_DEPTH 1U
++#define TEXFHD_PS_USES_SRC_W 1U
++#define TEXFHD_PS_USES_POS_OFFSET 0U
++#define TEXFHD_PS_TOTAL_SCRATCH 0U
++#define TEXFHD_PS_PUSH_SIZE0 0U
++#define TEXFHD_TEX_WIDTH 8U
++#define TEXFHD_TEX_HEIGHT 8U
++#define TEXFHD_TEX_ROW_PITCH 32U
++#define TEXFHD_TEX_SIZE 256U
++#define TEXFHD_TEX_ALIGNMENT 1U
++#define TEXFHD_TEX_VA_PLACEHOLDER 0x100404000ULL
++static const uint32_t texfhd_ps[164] = {
++	0x80040040U, 0x02058110U, 0x04140144U, 0x11001010U,
++	0x80000061U, 0x31010110U, 0x000001e4U, 0x00000000U,
++	0x00030061U, 0x0b054220U, 0x00000000U, 0xc0ffee01U,
++	0x80000301U, 0x00000000U, 0x00000000U, 0x00000000U,
++	0x00030061U, 0x01050110U, 0x00440245U, 0x00000000U,
++	0x00030061U, 0x00050110U, 0x00440205U, 0x00000000U,
++	0x80030061U, 0x03264aa0U, 0x00000000U, 0x00000001U,
++	0x21060361U, 0x00100107U, 0x21050361U, 0x00100007U,
++	0x80030361U, 0x03064aa0U, 0x00000000U, 0x00400c10U,
++	0xe1080340U, 0x3f000600U, 0xe1070340U, 0x3f000500U,
++	0x80000301U, 0x00000000U, 0x00000000U, 0x00000000U,
++	0x00030061U, 0x09260660U, 0x00000324U, 0x00000000U,
++	0x00030341U, 0x0d058aa0U, 0x0a460805U, 0x3a72b9d6U,
++	0x00030341U, 0x0c058aa0U, 0x0a460705U, 0x3a088889U,
++	0x00030361U, 0x09060660U, 0x00000304U, 0x00000000U,
++	0x0003a031U, 0x7c240000U, 0x20020c0cU, 0x00e00d0cU,
++	0x01839131U, 0x00000000U, 0xcdfa0914U, 0x019a0b0cU,
++	0x80002001U, 0x00000000U, 0x00000000U, 0x00000000U,
++	0x00030132U, 0x00000004U, 0x58007c24U, 0x00c40000U,
++	0x00000000U, 0x00000000U, 0x00000000U, 0x00000000U,
++	0x80050040U, 0x02058110U, 0x04140144U, 0x11001010U,
++	0x80000061U, 0x31010110U, 0x000001e4U, 0x00000000U,
++	0x00040061U, 0x16054220U, 0x00000000U, 0xc0ffee01U,
++	0x80000301U, 0x00000000U, 0x00000000U, 0x00000000U,
++	0x00040061U, 0x01050110U, 0x00440245U, 0x00000000U,
++	0x00040061U, 0x00050110U, 0x00440205U, 0x00000000U,
++	0x80030061U, 0x04264aa0U, 0x00000000U, 0x00000001U,
++	0x20080361U, 0x00100107U, 0x20060361U, 0x00100007U,
++	0x80030361U, 0x04064aa0U, 0x00000000U, 0x00400c10U,
++	0xe00c0340U, 0x3f000800U, 0xe00a0340U, 0x3f000600U,
++	0x80000301U, 0x00000000U, 0x00000000U, 0x00000000U,
++	0x00030061U, 0x12260660U, 0x00000424U, 0x00000000U,
++	0x00130061U, 0x14260660U, 0x00000424U, 0x00000000U,
++	0x00040441U, 0x10058aa0U, 0x0a460c05U, 0x3a72b9d6U,
++	0x00040441U, 0x0e058aa0U, 0x0a460a05U, 0x3a088889U,
++	0x00030461U, 0x12060660U, 0x00000404U, 0x00000000U,
++	0x00130461U, 0x14060660U, 0x00000404U, 0x00000000U,
++	0x0004b031U, 0x78440000U, 0x20020e14U, 0x01601014U,
++	0x01849131U, 0x00000000U, 0xcdfa1224U, 0x01961614U,
++	0x80002001U, 0x00000000U, 0x00000000U, 0x00000000U,
++	0x00040132U, 0x00000004U, 0x50007844U, 0x00c40000U,
++};
++/* RENDER_SURFACE_STATE of the texture (isl_surf_fill_state, address = placeholder, mocs 6). */
++static const uint32_t texfhd_tex_rss[16] = {
++	0x231d4000U, 0x86000002U, 0x00070007U, 0x0000001fU,
++	0x00000000U, 0x00000100U, 0x00000000U, 0x09770000U,
++	0x00404000U, 0x00000001U, 0x00000000U, 0x00000000U,
++	0x00000000U, 0x00000000U, 0x00000000U, 0x00000000U,
++};
++/* SAMPLER_STATE: nearest/nearest, no mip, clamp, LOD [0,0], normalised. */
++static const uint32_t texfhd_sampler[4] = {
++	0x10000000U, 0x00000000U, 0x00000000U, 0x00000092U, 
++};
++/* SAMPLER_STATE, bilinear: linear/linear, address rounding on (anv/blorp), otherwise identical. */
++static const uint32_t texfhd_sampler_linear[4] = {
++	0x10024000U, 0x00000000U, 0x00000000U, 0x0007e092U, 
++};
++#define TEXFHD_RT_WIDTH 1920U
++#define TEXFHD_RT_HEIGHT 1080U
++#define TEXFHD_RT_ROW_PITCH 7680U
++#define TEXFHD_RT_SIZE 8294400U
++#define TEXFHD_RT_ALIGNMENT 4U
++#define TEXFHD_RT_VA_PLACEHOLDER 0x100800000ULL
++/* RENDER_SURFACE_STATE of the render target (isl_surf_fill_state, render-target usage, address = placeholder, mocs 6). */
++static const uint32_t texfhd_rt_rss[16] = {
++	0x23014000U, 0x8600010eU, 0x0437077fU, 0x00001dffU,
++	0x00000000U, 0x00000100U, 0x00000000U, 0x09770000U,
++	0x00800000U, 0x00000001U, 0x00000000U, 0x00000000U,
++	0x00000000U, 0x00000000U, 0x00000000U, 0x00000000U,
++};

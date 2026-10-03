@@ -1,0 +1,818 @@
+diff --git a/plan/tools/files/host-build.sh b/plan/tools/files/host-build.sh
+index f136106..c0cb848 100644
+--- a/plan/tools/files/host-build.sh
++++ b/plan/tools/files/host-build.sh
+@@ -19,7 +19,7 @@ ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
+ cc=${CC:-cc}
+-flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src"
++flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src -I."
+ 
+ # The libraries the program uses, from their sources.
+ objects=""
+diff --git a/plan/tools/files/host-default.sh b/plan/tools/files/host-default.sh
+index 85fa615..dda9013 100644
+--- a/plan/tools/files/host-default.sh
++++ b/plan/tools/files/host-default.sh
+@@ -8,7 +8,7 @@ cd "$(dirname -- "$0")/../../.."
+ sh plan/tools/files/host-build.sh >/dev/null || exit 1
+ out=build/ws071-host
+ objects=$(ls $out/obj/*.o | grep -v '/host-')
+-${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -Iuserland/desktop/files \
++${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -Iuserland/desktop/files -I. \
+     -o $out/host-default plan/tools/files/host-default.c $objects -lm || exit 1
+ temporary=$(mktemp -d)
+ $out/host-default "$temporary"
+diff --git a/plan/tools/textedit/host-core.sh b/plan/tools/textedit/host-core.sh
+index 2be3ea1..b06bff4 100644
+--- a/plan/tools/textedit/host-core.sh
++++ b/plan/tools/textedit/host-core.sh
+@@ -11,7 +11,7 @@ mkdir -p "$(dirname "$out")/inc"
+ cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
+ D=userland/desktop/textedit
+-cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -I$D -I"$(dirname "$out")/inc" -Iuserland/desktop/libtruetype \
++cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -I$D -I. -I"$(dirname "$out")/inc" -Iuserland/desktop/libtruetype \
+ 	plan/tools/textedit/host-core.c $D/buffer.c $D/undo.c $D/file.c $D/layout.c $D/find.c $D/edit.c \
+ 	$D/app.c $D/draw.c $D/canvas.c $D/text.c userland/desktop/libtruetype/*.c \
+ 	userland/desktop/libkeiui/input.c userland/desktop/libkeiui/scroll.c userland/desktop/libkeiui/text-touch.c \
+diff --git a/plan/ws074/tests/host-build.sh b/plan/ws074/tests/host-build.sh
+index 75a1dd5..bce7ec7 100644
+--- a/plan/ws074/tests/host-build.sh
++++ b/plan/ws074/tests/host-build.sh
+@@ -22,7 +22,7 @@ variant=${1:-plain}
+ out=build/ws074-host/$variant
+ src=userland/desktop/browser
+ cc=${CC:-cc}
+-flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -I$src -Iplan/ws074/tests -Ibuild/ws074-host/include"
++flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -I$src -Iplan/ws074/tests -Ibuild/ws074-host/include -I."
+ case $variant in
+ plain) ;;
+ asan) flags="$flags -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" ;;
+diff --git a/plan/ws089/tests/host-build.sh b/plan/ws089/tests/host-build.sh
+index d68949f..3c9a04c 100755
+--- a/plan/ws089/tests/host-build.sh
++++ b/plan/ws089/tests/host-build.sh
+@@ -17,7 +17,7 @@ mkdir -p "$out/include" "$out/obj"
+ ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ cc=${CC:-cc}
+-flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src"
++flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src -I."
+ 
+ objects=""
+ for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c \
+diff --git a/plan/ws094/tests/host-desktop.sh b/plan/ws094/tests/host-desktop.sh
+index 5595d4c..a670de9 100644
+--- a/plan/ws094/tests/host-desktop.sh
++++ b/plan/ws094/tests/host-desktop.sh
+@@ -7,7 +7,7 @@ cd "$(dirname -- "$0")/../../.."
+ sh plan/tools/files/host-build.sh >/dev/null || exit 1
+ out=build/ws071-host
+ objects=$(ls $out/obj/*.o | grep -v '/host-')
+-${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -Iuserland/desktop/files \
++${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -Iuserland/desktop/files -I. \
+     -o $out/host-desktop plan/ws094/tests/host-desktop.c $objects -lm || exit 1
+ temporary=$(mktemp -d)
+ $out/host-desktop "$temporary"
+diff --git a/plan/ws094/tests/host-thumb.sh b/plan/ws094/tests/host-thumb.sh
+index b6d1f3f..eb527d2 100644
+--- a/plan/ws094/tests/host-thumb.sh
++++ b/plan/ws094/tests/host-thumb.sh
+@@ -11,7 +11,7 @@ host=build/ws071-host
+ out=${1:-build/ws094-host-thumb}
+ mkdir -p "$out"
+ objects=$(ls $host/obj/*.o | grep -v '/host-')
+-${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$host/include -Iuserland/desktop/files \
++${CC:-cc} -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$host/include -Iuserland/desktop/files -I. \
+     -o $host/host-thumb plan/ws094/tests/host-thumb.c $objects -lm || exit 1
+ exec python3 - "$host/host-thumb" "$out" <<'PY'
+ import os, struct, subprocess, sys
+diff --git a/userland/desktop/browser/main.c b/userland/desktop/browser/main.c
+index 32f272d..3fd0eee 100644
+--- a/userland/desktop/browser/main.c
++++ b/userland/desktop/browser/main.c
+@@ -45,6 +45,8 @@
+ 
+ #include <browser.h>
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <limits.h>
+ #include <stdio.h>
+@@ -62,7 +64,7 @@
+ #define MAIN_MAX_SIZE		16384UL
+ 
+ /* The page the window opens when the command line names none. */
+-#define MAIN_START_PAGE		"/usr/share/browser/start.html"
++#define MAIN_START_PAGE		KEILAND_DATADIR "/browser/start.html"
+ 
+ /*
+  * How long the headless modes let a page's timers run, in virtual
+diff --git a/userland/desktop/browser/text/text.h b/userland/desktop/browser/text/text.h
+index 306305a..e000dda 100644
+--- a/userland/desktop/browser/text/text.h
++++ b/userland/desktop/browser/text/text.h
+@@ -25,6 +25,7 @@
+ #define KEILAND_BROWSER_TEXT_H
+ 
+ #include "base/base.h"
++#include "userland/desktop/paths.h"
+ 
+ /* The faces a text system holds: sans, monospace, the fallback, then the page's web fonts. */
+ #define TEXT_FACE_SANS		0
+@@ -35,9 +36,9 @@
+ #define TEXT_FACES		(TEXT_FACE_WEB + TEXT_WEB_FACES)
+ 
+ /* The fonts the zdesktop image installs. */
+-#define TEXT_DEFAULT_SANS	"/usr/share/fonts/keiland.ttf"
+-#define TEXT_DEFAULT_MONO	"/usr/share/fonts/keiland-mono.ttf"
+-#define TEXT_DEFAULT_FALLBACK	"/usr/share/fonts/keiland-fallback.ttf"
++#define TEXT_DEFAULT_SANS	KEILAND_DATADIR "/fonts/keiland.ttf"
++#define TEXT_DEFAULT_MONO	KEILAND_DATADIR "/fonts/keiland-mono.ttf"
++#define TEXT_DEFAULT_FALLBACK	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+ 
+ struct truetype_face;
+ struct text_glyph_entry;
+diff --git a/userland/desktop/files/apps.c b/userland/desktop/files/apps.c
+index b1513c7..1116448 100644
+--- a/userland/desktop/files/apps.c
++++ b/userland/desktop/files/apps.c
+@@ -36,6 +36,8 @@
+ 
+ #include "files.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <fnmatch.h>
+@@ -50,11 +52,11 @@
+ #define UNUSED_PARAMETER(name)	((void)(name))
+ 
+ /* The system's list, and the user's under the configuration folder. */
+-#define APPS_SYSTEM_LIST	"/etc/keiland/open-with"
++#define APPS_SYSTEM_LIST	KEILAND_SYSCONFDIR "/keiland/open-with"
+ #define APPS_USER_LIST		"keiland/open-with"
+ 
+ /* The terminal a "@terminal" command runs in, and the words that mark the two special commands. */
+-#define APPS_TERMINAL		"/bin/terminal"
++#define APPS_TERMINAL		KEILAND_BINDIR "/terminal"
+ #define APPS_TERMINAL_WORD	"@terminal "
+ #define APPS_QUICKLOOK_WORD	"@quicklook"
+ 
+@@ -96,11 +98,11 @@ struct apps_builtin {
+  * Anything the others do not fit is shown by less in a terminal.
+  */
+ static const struct apps_builtin apps_builtins[] = {
+-	{ "application/pdf", "PDF Viewer", "/bin/pdfviewer %f", "pdfviewer" },
+-	{ APPS_IMAGE_TYPES, "Image Viewer", "/bin/imageview %f", "imageview" },
++	{ "application/pdf", "PDF Viewer", KEILAND_BINDIR "/pdfviewer %f", "pdfviewer" },
++	{ APPS_IMAGE_TYPES, "Image Viewer", KEILAND_BINDIR "/imageview %f", "imageview" },
+ 	{ "image/" "*", "Quick Look", "@quicklook", NULL },
+-	{ "text/html", "Browser", "/bin/browser %f", "browser" },
+-	{ APPS_TEXT_TYPES, "Text Editor", "/bin/textedit %f", "textedit" },
++	{ "text/html", "Browser", KEILAND_BINDIR "/browser %f", "browser" },
++	{ APPS_TEXT_TYPES, "Text Editor", KEILAND_BINDIR "/textedit %f", "textedit" },
+ 	{ APPS_TEXT_TYPES, "Terminal (less)", "@terminal less %f", NULL },
+ 	{ APPS_TEXT_TYPES, "Remacs", "@terminal remacs %f", "remacs" },
+ 	{ APPS_TEXT_TYPES, "Terminal (ed)", "@terminal ed %f", "ed" },
+diff --git a/userland/desktop/files/files.h b/userland/desktop/files/files.h
+index 6259eca..b768eb2 100644
+--- a/userland/desktop/files/files.h
++++ b/userland/desktop/files/files.h
+@@ -24,6 +24,8 @@
+ #include "canvas.h"
+ #include "ops.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <sys/types.h>
+@@ -51,7 +53,7 @@
+ #define FM_LIST_ROW		28
+ 
+ /* The desktop's wallpaper, which the dashboard's hero card shows (a binary PPM). */
+-#define FM_WALLPAPER		"/usr/share/keiland/wallpaper.ppm"
++#define FM_WALLPAPER		KEILAND_DATADIR "/keiland/wallpaper.ppm"
+ 
+ /* The window's size when the compositor leaves it to the program. */
+ #define FM_WIDTH		1120
+diff --git a/userland/desktop/files/main.c b/userland/desktop/files/main.c
+index 84c90ad..0c838e8 100644
+--- a/userland/desktop/files/main.c
++++ b/userland/desktop/files/main.c
+@@ -19,6 +19,8 @@
+ 
+ #include "window.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <limits.h>
+ #include <stdio.h>
+@@ -27,8 +29,8 @@
+ #include <sys/stat.h>
+ 
+ /* The fonts used unless told otherwise (the fallback is optional). */
+-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
+-#define MAIN_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
++#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
++#define MAIN_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+ 
+ /* How many frames in a row may find the swapchain out of date before the program gives up. */
+ #define MAIN_STALE_LIMIT	8U
+@@ -37,7 +39,7 @@
+ #define MAIN_SLOW_FRAME_MS	250U
+ 
+ /* The program a new window runs when this one was not started by its full path. */
+-#define MAIN_PROGRAM		"/bin/files"
++#define MAIN_PROGRAM		KEILAND_BINDIR "/files"
+ 
+ /* How often the menus' state is checked at most while no input arrives, in milliseconds. */
+ #define MAIN_MENU_CHECK_MS	250U
+diff --git a/userland/desktop/files/ui-desktop-actions.c b/userland/desktop/files/ui-desktop-actions.c
+index 5096005..62e00e2 100644
+--- a/userland/desktop/files/ui-desktop-actions.c
++++ b/userland/desktop/files/ui-desktop-actions.c
+@@ -19,6 +19,8 @@
+ 
+ #include "files.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <stdio.h>
+ #include <string.h>
+ #include <sys/stat.h>
+@@ -35,8 +37,8 @@
+ #define DESKTOP_KEY_N		49U
+ 
+ /* The programs the desktop starts: Files for a folder, Settings for the wallpaper, and Settings' page. */
+-#define DESKTOP_FILES		"/bin/files"
+-#define DESKTOP_SETTINGS	"/bin/settings"
++#define DESKTOP_FILES		KEILAND_BINDIR "/files"
++#define DESKTOP_SETTINGS	KEILAND_BINDIR "/settings"
+ #define DESKTOP_WALLPAPER_PAGE	"wallpaper"
+ 
+ static void desktop_show_in_files(struct fm_app *app);
+diff --git a/userland/desktop/files/ui-desktop.c b/userland/desktop/files/ui-desktop.c
+index 5d9a061..b544cc2 100644
+--- a/userland/desktop/files/ui-desktop.c
++++ b/userland/desktop/files/ui-desktop.c
+@@ -30,6 +30,8 @@
+ 
+ #include "files.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -83,7 +85,7 @@
+ #define DESKTOP_KEY_DOWN	108U
+ 
+ /* The program a folder opens in. */
+-#define DESKTOP_FILES		"/bin/files"
++#define DESKTOP_FILES		KEILAND_BINDIR "/files"
+ 
+ static void desktop_layout(struct fm_app *app, int width, int height);
+ static int desktop_over(const struct fm_app *app);
+diff --git a/userland/desktop/imageview/main.c b/userland/desktop/imageview/main.c
+index 6031604..5c7df8a 100644
+--- a/userland/desktop/imageview/main.c
++++ b/userland/desktop/imageview/main.c
+@@ -23,6 +23,8 @@
+ 
+ #include "window.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <limits.h>
+ #include <stdio.h>
+@@ -30,7 +32,7 @@
+ #include <string.h>
+ 
+ /* The font used unless told otherwise. */
+-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
++#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+ 
+ /* How many frames in a row may find the swapchain out of date before the program gives up. */
+ #define MAIN_STALE_LIMIT	8U
+diff --git a/userland/desktop/ime/main.c b/userland/desktop/ime/main.c
+index 8421b10..99517e6 100644
+--- a/userland/desktop/ime/main.c
++++ b/userland/desktop/ime/main.c
+@@ -18,6 +18,8 @@
+ 
+ #include "program.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -25,8 +27,8 @@
+ #include <sys/stat.h>
+ 
+ /* Where the Japanese dictionaries are installed (the package ime-dict-ja). */
+-#define MAIN_SYSTEM_DICTIONARY		"/usr/share/kei/ime/ja/SKK-JISYO.X"
+-#define MAIN_SUPPLEMENT_DICTIONARY	"/usr/share/kei/ime/ja/SKK-JISYO.kei"
++#define MAIN_SYSTEM_DICTIONARY		KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.X"
++#define MAIN_SUPPLEMENT_DICTIONARY	KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.kei"
+ 
+ static void main_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
+ static void main_global_remove(void *data, struct wl_registry *registry, uint32_t name);
+diff --git a/userland/desktop/kuidemo/main.c b/userland/desktop/kuidemo/main.c
+index eaad10a..21e8ca7 100644
+--- a/userland/desktop/kuidemo/main.c
++++ b/userland/desktop/kuidemo/main.c
+@@ -22,6 +22,8 @@
+ #include <keiland.h>
+ #include <keiui.h>
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <stdarg.h>
+ #include <stdio.h>
+@@ -29,8 +31,8 @@
+ #include <string.h>
+ 
+ /* The fonts. */
+-#define DEMO_FONT		"/usr/share/fonts/keiland.ttf"
+-#define DEMO_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
++#define DEMO_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
++#define DEMO_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+ 
+ /* The window's size until the compositor gives one. */
+ #define DEMO_WIDTH		900U
+diff --git a/userland/desktop/libkeiui/chooser.c b/userland/desktop/libkeiui/chooser.c
+index d0e4a8c..4e71a73 100644
+--- a/userland/desktop/libkeiui/chooser.c
++++ b/userland/desktop/libkeiui/chooser.c
+@@ -28,13 +28,15 @@
+ #include "chooser.h"
+ #include "window.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+ /* The fonts used unless the application names others. */
+-#define CHOOSER_FONT		"/usr/share/fonts/keiland.ttf"
+-#define CHOOSER_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
++#define CHOOSER_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
++#define CHOOSER_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+ 
+ /*
+  * One file chooser: the model, the text, the window and its input, the
+diff --git a/userland/desktop/mview/main.c b/userland/desktop/mview/main.c
+index 038326d..853d3ad 100644
+--- a/userland/desktop/mview/main.c
++++ b/userland/desktop/mview/main.c
+@@ -12,6 +12,8 @@
+ 
+ #include "mview.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -19,7 +21,7 @@
+ #include <time.h>
+ 
+ /* The model shown when --model is not given. */
+-#define MAIN_DEFAULT_MODEL	"/usr/share/mview/qs40"
++#define MAIN_DEFAULT_MODEL	KEILAND_DATADIR "/mview/qs40"
+ 
+ /* How long an idle viewer waits for input before looking again, in milliseconds. */
+ #define MAIN_IDLE_WAIT		16
+diff --git a/userland/desktop/notes/main.c b/userland/desktop/notes/main.c
+index 8ff4df8..d9a7423 100644
+--- a/userland/desktop/notes/main.c
++++ b/userland/desktop/notes/main.c
+@@ -49,6 +49,8 @@
+ 
+ #include "app.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <math.h>
+ #include <stdio.h>
+@@ -63,7 +65,7 @@
+ #define MAIN_HEIGHT		768U
+ 
+ /* The font the toolbar's labels are drawn with. */
+-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
++#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+ 
+ /* The longest path Notes keeps. */
+ #define MAIN_PATH_MAX		4096U
+diff --git a/userland/desktop/paths.h b/userland/desktop/paths.h
+new file mode 100644
+index 0000000..ad3f1b0
+--- /dev/null
++++ b/userland/desktop/paths.h
+@@ -0,0 +1,45 @@
++/*
++ * zedBSD
++ * Copyright (C) 2026 Awe Morris
++ *
++ * SPDX-License-Identifier: Zlib
++ */
++
++/*
++ * Where the desktop is installed (WS104 p007).  zedBSD's image puts it in
++ * the system's own directories, the defaults here.  The Linux build (WS105,
++ * Makefile.linux) puts all of it under /opt/keiland and defines each macro
++ * on the compiler's command line.
++ *
++ * A path is written as the macro followed by the rest of the path, so that
++ * the string a program sees is the same as before: KEILAND_BINDIR
++ * "/terminal" is "/bin/terminal" on zedBSD.
++ */
++
++#ifndef KEILAND_PATHS_H
++#define KEILAND_PATHS_H
++
++/* The programs. */
++#ifndef KEILAND_BINDIR
++#define KEILAND_BINDIR		"/bin"
++#endif
++
++/* The helpers the desktop starts (keiland-ime, keiland-x11). */
++#ifndef KEILAND_LIBEXECDIR
++#define KEILAND_LIBEXECDIR	"/usr/libexec"
++#endif
++
++/*
++ * The data: fonts/, keiland/ (the wallpapers), browser/, mview/ and kei/
++ * (the input method's dictionaries).
++ */
++#ifndef KEILAND_DATADIR
++#define KEILAND_DATADIR		"/usr/share"
++#endif
++
++/* The configuration: keiland/ (apps.conf, desktop, open-with). */
++#ifndef KEILAND_SYSCONFDIR
++#define KEILAND_SYSCONFDIR	"/etc"
++#endif
++
++#endif
+diff --git a/userland/desktop/pdfviewer/main.c b/userland/desktop/pdfviewer/main.c
+index a155e87..0720a26 100644
+--- a/userland/desktop/pdfviewer/main.c
++++ b/userland/desktop/pdfviewer/main.c
+@@ -24,6 +24,8 @@
+ 
+ #include "window.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <limits.h>
+ #include <spawn.h>
+@@ -34,10 +36,10 @@
+ #include <unistd.h>
+ 
+ /* The font used unless told otherwise. */
+-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
++#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+ 
+ /* The program "Annotate in Notes" starts. */
+-#define MAIN_NOTES		"/bin/notes"
++#define MAIN_NOTES		KEILAND_BINDIR "/notes"
+ 
+ /* How many frames in a row may find the swapchain out of date before the program gives up. */
+ #define MAIN_STALE_LIMIT	8U
+diff --git a/userland/desktop/settings/look.c b/userland/desktop/settings/look.c
+index 3bed1fb..a40b9bd 100644
+--- a/userland/desktop/settings/look.c
++++ b/userland/desktop/settings/look.c
+@@ -19,6 +19,8 @@
+ 
+ #include "settings.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <dirent.h>
+ #include <errno.h>
+ #include <fcntl.h>
+@@ -49,8 +51,8 @@
+ #define LOOK_DELAY_DEFAULT	400
+ 
+ /* The pictures: the default (the session's --wallpaper) and the folder of the others. */
+-#define LOOK_DEFAULT_PICTURE	"/usr/share/keiland/wallpaper.ppm"
+-#define LOOK_PICTURES		"/usr/share/keiland/wallpapers"
++#define LOOK_DEFAULT_PICTURE	KEILAND_DATADIR "/keiland/wallpaper.ppm"
++#define LOOK_PICTURES		KEILAND_DATADIR "/keiland/wallpapers"
+ 
+ /* A picture's small copy, in pixels. */
+ #define LOOK_THUMB_WIDTH	240
+diff --git a/userland/desktop/settings/main.c b/userland/desktop/settings/main.c
+index 2b83d4d..e54a33d 100644
+--- a/userland/desktop/settings/main.c
++++ b/userland/desktop/settings/main.c
+@@ -20,14 +20,16 @@
+ 
+ #include "window.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+ /* The fonts used unless told otherwise (the fallback is optional). */
+-#define MAIN_FONT		"/usr/share/fonts/keiland.ttf"
+-#define MAIN_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
++#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
++#define MAIN_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+ 
+ /* How many frames in a row may find the swapchain out of date before the program gives up. */
+ #define MAIN_STALE_LIMIT	8U
+diff --git a/userland/desktop/terminal/main.c b/userland/desktop/terminal/main.c
+index 2d51533..d428f3e 100644
+--- a/userland/desktop/terminal/main.c
++++ b/userland/desktop/terminal/main.c
+@@ -30,6 +30,8 @@
+ 
+ #include "terminal.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <pty.h>
+@@ -43,7 +45,7 @@
+ #include <unistd.h>
+ 
+ /* The font the terminal uses unless told otherwise, and its size in pixels. */
+-#define MAIN_FONT		"/usr/share/fonts/keiland-mono.ttf"
++#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+ #define MAIN_FONT_PIXELS	16U
+ 
+ /* The grid the window opens with. */
+@@ -57,7 +59,7 @@
+ #define MAIN_STALE_LIMIT	8U
+ 
+ /* The program started for a new window when the terminal was not run by a path. */
+-#define MAIN_PROGRAM		"/bin/terminal"
++#define MAIN_PROGRAM		KEILAND_BINDIR "/terminal"
+ 
+ /* The most text the clipboard holds: every cell as four UTF-8 bytes, and a line break per row. */
+ #define MAIN_CLIPBOARD_MAX	(TERMINAL_MAX_COLUMNS * TERMINAL_MAX_ROWS * 4U + TERMINAL_MAX_ROWS)
+diff --git a/userland/desktop/textedit/main.c b/userland/desktop/textedit/main.c
+index 3267698..0773a30 100644
+--- a/userland/desktop/textedit/main.c
++++ b/userland/desktop/textedit/main.c
+@@ -22,6 +22,8 @@
+ 
+ #include "window.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <limits.h>
+ #include <stdarg.h>
+@@ -32,9 +34,9 @@
+ #include <unistd.h>
+ 
+ /* The fonts used unless told otherwise: the text's (monospaced), the characters it lacks, and the interface's. */
+-#define MAIN_FONT		"/usr/share/fonts/keiland-mono.ttf"
+-#define MAIN_FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
+-#define MAIN_UI_FONT		"/usr/share/fonts/keiland.ttf"
++#define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland-mono.ttf"
++#define MAIN_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
++#define MAIN_UI_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
+ 
+ /* How often frames are drawn while the fingers or the view's scroll move, in milliseconds. */
+ #define MAIN_FRAME_MS		16
+diff --git a/userland/desktop/textedit/textedit.h b/userland/desktop/textedit/textedit.h
+index 9590dab..5a794f2 100644
+--- a/userland/desktop/textedit/textedit.h
++++ b/userland/desktop/textedit/textedit.h
+@@ -18,6 +18,8 @@
+ 
+ #include <keiui.h>
+ 
++#include "userland/desktop/paths.h"
++
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <sys/types.h>
+@@ -208,7 +210,7 @@ struct te_text_face {
+  * drawn, ws102-p019).
+  */
+ #define TE_TEXT_FACES		3
+-#define TE_TEXT_EMOJI		"/usr/share/fonts/keiland-emoji.ttf"
++#define TE_TEXT_EMOJI		KEILAND_DATADIR "/fonts/keiland-emoji.ttf"
+ 
+ /*
+  * The fonts of one kind of text (the body's monospaced font, or the
+diff --git a/userland/desktop/wayland/corner.c b/userland/desktop/wayland/corner.c
+index 5430082..90c559d 100644
+--- a/userland/desktop/wayland/corner.c
++++ b/userland/desktop/wayland/corner.c
+@@ -41,6 +41,8 @@
+ #include "glass.h"
+ #include "menu.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <stdio.h>
+ #include <string.h>
+@@ -81,8 +83,8 @@
+ 
+ /* What the gesture brings: the application's identity and how it is started. */
+ #define CORNER_APP_ID		"notes"
+-#define CORNER_PROGRAM		"/bin/notes"
+-#define CORNER_COMMAND		"/bin/notes --fullscreen"
++#define CORNER_PROGRAM		KEILAND_BINDIR "/notes"
++#define CORNER_COMMAND		KEILAND_BINDIR "/notes --fullscreen"
+ 
+ /* The name shown in the hint once it is large enough. */
+ #define CORNER_LABEL		"Notes"
+diff --git a/userland/desktop/wayland/desktop.c b/userland/desktop/wayland/desktop.c
+index ff96f30..23c139d 100644
+--- a/userland/desktop/wayland/desktop.c
++++ b/userland/desktop/wayland/desktop.c
+@@ -37,6 +37,8 @@
+ #include "menu.h"
+ #include "popup.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <stdio.h>
+@@ -60,8 +62,8 @@
+ #define DESKTOP_ERROR_TOKEN		1U
+ 
+ /* The program a login session starts, and the file that turns it off. */
+-#define DESKTOP_COMMAND			"/bin/files --desktop"
+-#define DESKTOP_SWITCH			"/etc/keiland/desktop"
++#define DESKTOP_COMMAND			KEILAND_BINDIR "/files --desktop"
++#define DESKTOP_SWITCH			KEILAND_SYSCONFDIR "/keiland/desktop"
+ 
+ /* How long after it ends the program is started again, and how many starts a minute are allowed. */
+ #define DESKTOP_RESTART_MS		2000U
+diff --git a/userland/desktop/wayland/glass.c b/userland/desktop/wayland/glass.c
+index fb548d0..8ea3d38 100644
+--- a/userland/desktop/wayland/glass.c
++++ b/userland/desktop/wayland/glass.c
+@@ -38,6 +38,8 @@
+ 
+ #include <truetype.h>
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <math.h>
+@@ -62,7 +64,7 @@
+ 
+ /* The fonts kept open: the first font, the fallback and the colour emoji font (ws102-p019). */
+ #define GLASS_FACES		3U
+-#define GLASS_EMOJI_FONT	"/usr/share/fonts/keiland-emoji.ttf"
++#define GLASS_EMOJI_FONT	KEILAND_DATADIR "/fonts/keiland-emoji.ttf"
+ 
+ /* The icons' two sizes in pixels, and how many there are. */
+ #define GLASS_ICON_SIZES	2U
+diff --git a/userland/desktop/wayland/home.c b/userland/desktop/wayland/home.c
+index b47eeb3..caa8521 100644
+--- a/userland/desktop/wayland/home.c
++++ b/userland/desktop/wayland/home.c
+@@ -44,6 +44,8 @@
+ 
+ #include "glass.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <stdio.h>
+@@ -68,14 +70,14 @@
+ #define HOME_KEY_PAGE_DOWN	109U
+ 
+ /* The applications' list, and how many it may hold. */
+-#define HOME_APPS_PATH		"/etc/keiland/apps.conf"
++#define HOME_APPS_PATH		KEILAND_SYSCONFDIR "/keiland/apps.conf"
+ 
+ /* The command of a login session's Log Out, which the compositor carries out itself. */
+ #define HOME_LOGOUT		"@logout"
+ #define HOME_LOCK		"@lock"
+ 
+ /* The page the built-in list's browser opens (shown only when the page is there). */
+-#define HOME_BROWSER_START	"/usr/share/browser/start.html"
++#define HOME_BROWSER_START	KEILAND_DATADIR "/browser/start.html"
+ #define HOME_APPS_MAX		48U
+ 
+ /* How long opening and closing take, and the least move of the corner drag. */
+@@ -888,18 +890,18 @@ home_read_apps(
+ 
+ 	/* Without a usable file, the applications the compositor has. */
+ 	if (home_app_count == 0U) {
+-		home_add_app("Terminal", "/bin/terminal", "term shell console sh", 0x323a4eU, "terminal");
+-		home_add_app("Model viewer", "/bin/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
+-		home_add_app("Vulkan test", "/bin/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U, "");
+-		home_add_app("Shared memory", "/bin/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU, "");
+-		home_add_app("X terminal", "/bin/sh /usr/libexec/keiland-x11 /bin/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
+-		home_add_app("Gears", "/bin/sh /usr/libexec/keiland-x11 /bin/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
+-		home_add_app("Files", "/bin/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
+-		home_add_app("Notes", "/bin/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
+-		home_add_app("PDF Viewer", "/bin/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
+-		home_add_app("Image Viewer", "/bin/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
+-		home_add_app("Text Editor", "/bin/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
+-		home_add_app("Browser", "/bin/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
++		home_add_app("Terminal", KEILAND_BINDIR "/terminal", "term shell console sh", 0x323a4eU, "terminal");
++		home_add_app("Model viewer", KEILAND_BINDIR "/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
++		home_add_app("Vulkan test", KEILAND_BINDIR "/wltest --windowed --size=640x420 --frames=3600 --delay-ms=30", "wltest gpu test", 0x5a8de0U, "");
++		home_add_app("Shared memory", KEILAND_BINDIR "/wlshm --size=480x320 --frames=6000", "wlshm shm test", 0x5aa87aU, "");
++		home_add_app("X terminal", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
++		home_add_app("Gears", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
++		home_add_app("Files", KEILAND_BINDIR "/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
++		home_add_app("Notes", KEILAND_BINDIR "/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
++		home_add_app("PDF Viewer", KEILAND_BINDIR "/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
++		home_add_app("Image Viewer", KEILAND_BINDIR "/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
++		home_add_app("Text Editor", KEILAND_BINDIR "/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
++		home_add_app("Browser", KEILAND_BINDIR "/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
+ 	}
+ 
+ 	/* A login's session locks (ws035-p102) and ends with Log Out (ws035-p095), the last icons. */
+diff --git a/userland/desktop/wayland/input-method.c b/userland/desktop/wayland/input-method.c
+index 383bc5e..3552276 100644
+--- a/userland/desktop/wayland/input-method.c
++++ b/userland/desktop/wayland/input-method.c
+@@ -39,6 +39,8 @@
+ #include "menu.h"
+ #include "titlebar.h"
+ 
++#include "userland/desktop/paths.h"
++
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <signal.h>
+@@ -50,7 +52,7 @@
+ #include <unistd.h>
+ 
+ /* The input method's program. */
+-#define IME_PROGRAM			"/usr/libexec/keiland-ime"
++#define IME_PROGRAM			KEILAND_LIBEXECDIR "/keiland-ime"
+ 
+ /* How long to wait before starting it again, and how often it may start in a window of time. */
+ #define IME_RESTART_MS			1000U
+diff --git a/userland/desktop/wayland/main.c b/userland/desktop/wayland/main.c
+index 420749c..a4db591 100644
+--- a/userland/desktop/wayland/main.c
++++ b/userland/desktop/wayland/main.c
+@@ -15,6 +15,7 @@
+ #include "keymap.h"
+ #include "ime.h"
+ #include "data.h"
++#include "userland/desktop/paths.h"
+ #include <sys/socket.h>
+ #include <sys/un.h>
+ #include <sys/stat.h>
+@@ -66,8 +67,8 @@ main(
+ 	server.frame_fd = -1;
+ 	server.auth_fd = -1;
+ 	server.control_fd = -1;
+-	server.font_path = "/usr/share/fonts/keiland.ttf";
+-	server.fallback_font_path = "/usr/share/fonts/keiland-fallback.ttf";
++	server.font_path = KEILAND_DATADIR "/fonts/keiland.ttf";
++	server.fallback_font_path = KEILAND_DATADIR "/fonts/keiland-fallback.ttf";
+ 	server.window_opacity = 1.0f;
+ 	server.pointer_speed = 100;
+ 	server.repeat_rate = 25;
+diff --git a/userland/desktop/xserver/server.c b/userland/desktop/xserver/server.c
+index 87c2444..69ee68e 100644
+--- a/userland/desktop/xserver/server.c
++++ b/userland/desktop/xserver/server.c
+@@ -17,6 +17,7 @@
+  */
+ 
+ #include "userland/desktop/xserver/internal.h"
++#include "userland/desktop/paths.h"
+ 
+ #include <errno.h>
+ #include <fcntl.h>
+@@ -32,7 +33,7 @@
+ /* The defaults of the options. */
+ #define SERVER_SOCKET_PATH	"/tmp/.X11-unix/X0"
+ #define SERVER_SOCKET_DIR	"/tmp/.X11-unix"
+-#define SERVER_FONT_PATH	"/usr/share/fonts/keiland-mono.ttf"
++#define SERVER_FONT_PATH	KEILAND_DATADIR "/fonts/keiland-mono.ttf"
+ #define SERVER_WIDTH		1280U
+ #define SERVER_HEIGHT		800U
+ 

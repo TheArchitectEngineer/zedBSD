@@ -1,0 +1,4 @@
+libvulkan resources: PASS (24 APIs, native geometry, sparse arrays, metadata, callbacks, loss)
+ordinary: PASS
+libvulkan resources: PASS (24 APIs, native geometry, sparse arrays, metadata, callbacks, loss)
+sanitize: PASS

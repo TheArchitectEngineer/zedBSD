@@ -1,0 +1,87 @@
+log: TABLETPROBE ready run=touch mode=touch ok
+probe: 1:9 at 320,203
+log: INPUT device=/dev/input/event[0-9]+ kind=touch abs=1 ok
+log: TOUCH down client=1 surface=9 contact=0 x=420 y=303 ok
+log: TOUCH down client=1 surface=9 contact=1 x=720 y=503 ok
+log: TABLETPROBE seat capabilities=7 ok
+log: TABLETPROBE touch down id=0 surface=1 x=100.00 y=100.00 ok
+log: TABLETPROBE touch motion id=0 x=140.00 y=130.00 ok
+log: TABLETPROBE touch down id=1 surface=1 x=400.00 y=300.00 ok
+log: TABLETPROBE touch motion id=1 x=380.00 y=280.00 ok
+log: TABLETPROBE touch up id=0 ok
+log: TABLETPROBE touch up id=1 ok
+count: probe frames = 9 ok
+count: probe cancels = 0 ok
+check: (340,223) want d8f0d8 got d8f0d8 ok
+check: (420,303) want 1e8a3a got 1e8a3a ok
+check: (700,483) want 1e8a3a got 1e8a3a ok
+check: build/ws104-p005/touch/ws104-p005-probe.png 1280x800 PASS
+pointer probe: 2:9 at 368,251
+log: TOUCH pointer client=2 surface=9 contact=0 x=468 y=351 ok
+log: TABLETPROBE pointer button=0x110 state=1 ok
+log: TABLETPROBE pointer motion x=160 y=120 ok
+log: TABLETPROBE pointer button=0x110 state=0 ok
+count: wl_touch downs of the pointer probe = 0 ok
+check: (388,271) want f0e0d0 got f0e0d0 ok
+check: (465,351) want 202020 got 202020 ok
+check: build/ws104-p005/touch/ws104-p005-pointer.png 1280x800 PASS
+log: TOUCH shell contact=1 x=640 y=795 ok
+log: TOUCH cancel client=1 reason=shell ok
+log: WISEVIEW opening ok
+count: probe cancels = 1 ok
+count: probe moves after the cancel = 0 ok
+count: probe ups after the cancel = 0 ok
+log: WISEVIEW closed ok
+log: TOUCH shell contact=0 x=8 y=8 ok
+log: HOME open via=drag ok
+log: HOME bottom swipe ok
+log: HOME close via=bottom ok
+count: Wiseview from Home's bottom edge = 0 ok
+log: CORNER press source=touch x=1272 y=6 ok
+log: CORNER commit via=distance ok
+log: CORNER notes launch pid= ok
+check: (640,400) want fdf6e3 got fdf6e3 ok
+check: build/ws104-p005/touch/ws104-p005-notes.png 1280x800 PASS
+log: WISEVIEW opening ok
+log: WISEVIEW closed ok
+surfaces: a=1:6 b=2:6 c=3:6
+log: GLASS moved surface=6 x=560 y=350 ok
+check: (700,450) want e8c8b0 got e8c8b0 ok
+check: (450,350) want c8d8ec got c8d8ec ok
+check: (200,200) want f4f7fc got f4f7fc ok
+check: build/ws104-p005/touch/ws104-p005-stack.png 1280x800 PASS
+log: TOUCH title pair window=3:6 ok
+log: TOUCH flick window=3:6 dx=0,0 dy=-40,-40 ok
+log: GLASS lower client=3 surface=6 via=two-finger-flick next=2:6 focus=2:6 ok
+count: c docked by the flick = 0 ok
+count: moves by the flick = 3 ok
+check: (700,450) want c8d8ec got c8d8ec ok
+check: (450,350) want c8d8ec got c8d8ec ok
+check: (900,640) want e8c8b0 got e8c8b0 ok
+check: build/ws104-p005/touch/ws104-p005-flick-lowered.png 1280x800 PASS
+log: TOUCH flick refused reason=slow ok
+count: lowers after the slow drag = 1 ok
+count: moves after the slow drag = 3 ok
+check: (700,450) want c8d8ec got c8d8ec ok
+check: (450,350) want c8d8ec got c8d8ec ok
+check: build/ws104-p005/touch/ws104-p005-slow.png 1280x800 PASS
+log: TOUCH flick refused reason=down ok
+log: TOUCH flick refused reason=sideways ok
+count: lowers after the down and sideways flicks = 1 ok
+count: moves after the down and sideways flicks = 3 ok
+check: (700,450) want c8d8ec got c8d8ec ok
+check: (450,350) want c8d8ec got c8d8ec ok
+check: build/ws104-p005/touch/ws104-p005-down.png 1280x800 PASS
+log: TOUCH title held window=2:6 ok
+log: TOUCH title drag contact=0 x=450 y=220 ok
+log: GLASS moved surface=6 x=240 y=290 ok
+count: lowers after the drag = 1 ok
+check: (300,500) want c8d8ec got c8d8ec ok
+check: (900,400) want e8c8b0 got e8c8b0 ok
+check: build/ws104-p005/touch/ws104-p005-drag.png 1280x800 PASS
+log: TOUCH title tap contact=0 x=780 y=320 ok
+count: lowers after the tap = 1 ok
+check: (700,450) want e8c8b0 got e8c8b0 ok
+check: (300,500) want c8d8ec got c8d8ec ok
+check: build/ws104-p005/touch/ws104-p005-tap.png 1280x800 PASS
+p013 touch: PASS

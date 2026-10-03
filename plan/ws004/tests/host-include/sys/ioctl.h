@@ -1,0 +1,17 @@
+/* Host-fixture shim for zedBSD's size-encoded ioctl namespace. */
+#ifndef KERN_WS004_HOST_SYS_IOCTL_H
+#define KERN_WS004_HOST_SYS_IOCTL_H
+
+#define KERN_IOC_VOID  0x00000000UL
+#define KERN_IOC_OUT   0x40000000UL
+#define KERN_IOC_IN    0x80000000UL
+#define KERN_IOC_INOUT (KERN_IOC_IN | KERN_IOC_OUT)
+#define KERN_IOC(dir, group, nr, size)                                      \
+	((unsigned long)(dir) | (((unsigned long)(size) & 0x1fffUL) << 16) |  \
+	 ((unsigned long)(group) << 8) | (unsigned long)(nr))
+#define _IO(g, n) KERN_IOC(KERN_IOC_VOID, (g), (n), 0)
+#define _IOR(g, n, t) KERN_IOC(KERN_IOC_OUT, (g), (n), sizeof(t))
+#define _IOW(g, n, t) KERN_IOC(KERN_IOC_IN, (g), (n), sizeof(t))
+#define _IOWR(g, n, t) KERN_IOC(KERN_IOC_INOUT, (g), (n), sizeof(t))
+
+#endif

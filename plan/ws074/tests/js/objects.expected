@@ -1,0 +1,21 @@
+literal 3,b,a-b,1.5,computed,a, 2 three one and a half 4
+key-order key value  1
+short 7 42
+accessor 40 4 g value,onlyGetter,
+proto from base derived shadowed,own,inherited,
+array 4 undefined false true 0,2,
+grow 11 ten
+shrink 2 undefined 0,
+nested 6
+string 5 h o undefined el
+delete true true b, true 3 false false
+globals false true number undefined
+for-in 0,2,both,ownKey,inheritedKey,
+for-in-delete first,second,
+for-in-other 0 first,second,01
+new 7 true true true true
+prototype object true true x,y,sum,
+function namedFunction 3 anonymousName assigned undefined
+missing-method TypeError
+not-constructor TypeError
+null-write TypeError

@@ -1,0 +1,29 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/* Only the calls <keiland.h> declares leave the library. */
+{
+	global:
+		keiland_version;
+		keiland_menu_*;
+		keiland_window_menu_*;
+		keiland_context_menu_*;
+		keiland_recent_*;
+		keiland_titlebar_*;
+		keiland_glass_*;
+		keiland_network_*;
+		keiland_motion_*;
+		keiland_scroller_*;
+		keiland_gesture_*;
+		keiland_preferences_*;
+		keiland_desktop_*;
+		keiland_audio_*;
+		keiland_keyboard_inset_*;
+		keiland_edit_*;
+	local:
+		*;
+};

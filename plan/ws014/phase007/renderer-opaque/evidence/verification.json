@@ -1,0 +1,61 @@
+{
+  "source_version": "1.1.0",
+  "patch_sha256": "04def7cd3fd9e50fad62ff98298a9e34880ce793de4b5942d5a908dd0132379f",
+  "source_manifest_matches": true,
+  "library": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/lib/x86_64-linux-gnu/libvirglrenderer.so.1.9.0",
+  "library_directory": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/lib/x86_64-linux-gnu",
+  "library_sha256": "3f692e604f7653153b6b7340afa0f97e65ee78956babe004eb7d0b8ead8a6a26",
+  "server": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/libexec/virgl_render_server",
+  "server_sha256": "c9383cef62253c995cb067d7e1eb11c29d801bdd3514fa5d0dcbdb26e9056f0d",
+  "options": {
+    "buildtype": "release",
+    "libdir": "lib/x86_64-linux-gnu",
+    "prefix": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install",
+    "minigbm_allocation": false,
+    "platforms": [
+      "egl"
+    ],
+    "render-server-worker": "process",
+    "tests": false,
+    "venus": true,
+    "video": false
+  },
+  "server_ldd": "\tlinux-vdso.so.1 (0x00007f2d087d2000)\n\tlibvulkan.so.1 => /lib/x86_64-linux-gnu/libvulkan.so.1 (0x00007f2d085f5000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f2d08401000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007f2d087d4000)\n",
+  "all_build_targets_passed": true,
+  "handshake": {
+    "protocol_only": true,
+    "contexts_created": 0,
+    "results": [
+      {
+        "case": "valid",
+        "pass": true,
+        "reply_hex": "5344425a01000000",
+        "server_exit": 255,
+        "server_stderr": ""
+      },
+      {
+        "case": "wrong_magic",
+        "pass": true,
+        "reply_hex": "",
+        "server_exit": 255,
+        "server_stderr": "virgl_render_server[17117]: failed to dispatch client op 1\n"
+      },
+      {
+        "case": "wrong_flags",
+        "pass": true,
+        "reply_hex": "",
+        "server_exit": 255,
+        "server_stderr": "virgl_render_server[17118]: failed to dispatch client op 1\n"
+      },
+      {
+        "case": "stock_request_size",
+        "pass": true,
+        "reply_hex": "",
+        "server_exit": 255,
+        "server_stderr": "virgl_render_server[17119]: invalid request size 8 for client op 1\n"
+      }
+    ]
+  },
+  "qemu_launched": false,
+  "system_libraries_modified": false
+}

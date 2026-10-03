@@ -1,0 +1,20 @@
+	pipe src=1920x1080+0+0, dither=yes, bpp=18
+	[PLANE:31:plane 1A]: type=PRI
+	[PLANE:40:plane 2A]: type=OVL
+	[PLANE:49:plane 3A]: type=OVL
+	[PLANE:58:plane 4A]: type=OVL
+	[PLANE:67:plane 5A]: type=OVL
+	[PLANE:76:cursor A]: type=CUR
+	pipe src=0x0+0+0, dither=no, bpp=0
+	[PLANE:82:plane 1B]: type=PRI
+	[PLANE:91:plane 2B]: type=OVL
+	[PLANE:100:plane 3B]: type=OVL
+	[PLANE:109:plane 4B]: type=OVL
+	[PLANE:118:plane 5B]: type=OVL
+	[PLANE:127:cursor B]: type=CUR
+	pipe src=0x0+0+0, dither=no, bpp=0
+	[PLANE:133:plane 1C]: type=PRI
+	[PLANE:142:plane 2C]: type=OVL
+	[PLANE:151:plane 3C]: type=OVL
+	[PLANE:160:plane 4C]: type=OVL
+	[PLANE:169:plane 5C]: type=OVL

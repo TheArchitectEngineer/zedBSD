@@ -1,0 +1,2 @@
+libvulkan sync: PASS (payload transitions, rollback, unlocked waits, query preservation)
+libvulkan sync: PASS (payload transitions, rollback, unlocked waits, query preservation)

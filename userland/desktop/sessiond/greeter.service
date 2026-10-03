@@ -1,0 +1,6 @@
+type=respawn
+command=/sbin/sessiond
+after=syslogd,networking
+replaces=getty_console
+restart=on-failure
+required=NO

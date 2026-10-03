@@ -1,0 +1,138 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ */
+
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright © 2019 Intel Corporation
+ */
+
+/*
+ * The display power domains of Linux intel_display_power.h: enum
+ * intel_display_power_domain and the POWER_DOMAIN_PIPE() family of macros,
+ * for the modeset environment.
+ *
+ * The power domains (Linux intel_display_power.h).
+ * zedBSD WS031: definitions extracted textually from the Linux v6.8.12 reference drivers/gpu/drm/i915/display/intel_display_power.h
+ * (sha256 9dd042ad4c10c5efd3f4320145f9e08bb2ff76539db70ce538c99367bd80c04d) by tools/port_lcd_calc.py:
+ * enum intel_display_power_domain.
+ * The notice above is the source file's own.
+ *
+ * The per-pipe and per-transcoder domain macros (Linux intel_display_power.h).
+ * zedBSD WS031: macro definitions extracted textually from the Linux v6.8.12 reference drivers/gpu/drm/i915/display/intel_display_power.h
+ * (sha256 9dd042ad4c10c5efd3f4320145f9e08bb2ff76539db70ce538c99367bd80c04d) by tools/port_lcd_calc.py:
+ * the root macros listed in tools/port_lcd_modeset.json plus every macro of that header they use.
+ * The notice above is the source file's own.
+ */
+
+#ifndef DRIVERS_GPU_I915_INTEL_POWER_H
+#define DRIVERS_GPU_I915_INTEL_POWER_H
+
+/* The power domains (Linux intel_display_power.h). */
+
+enum intel_display_power_domain {
+	POWER_DOMAIN_DISPLAY_CORE,
+	POWER_DOMAIN_PIPE_A,
+	POWER_DOMAIN_PIPE_B,
+	POWER_DOMAIN_PIPE_C,
+	POWER_DOMAIN_PIPE_D,
+	POWER_DOMAIN_PIPE_PANEL_FITTER_A,
+	POWER_DOMAIN_PIPE_PANEL_FITTER_B,
+	POWER_DOMAIN_PIPE_PANEL_FITTER_C,
+	POWER_DOMAIN_PIPE_PANEL_FITTER_D,
+	POWER_DOMAIN_TRANSCODER_A,
+	POWER_DOMAIN_TRANSCODER_B,
+	POWER_DOMAIN_TRANSCODER_C,
+	POWER_DOMAIN_TRANSCODER_D,
+	POWER_DOMAIN_TRANSCODER_EDP,
+	POWER_DOMAIN_TRANSCODER_DSI_A,
+	POWER_DOMAIN_TRANSCODER_DSI_C,
+
+	/* VDSC/joining for eDP/DSI transcoder (ICL) or pipe A (TGL) */
+	POWER_DOMAIN_TRANSCODER_VDSC_PW2,
+
+	POWER_DOMAIN_PORT_DDI_LANES_A,
+	POWER_DOMAIN_PORT_DDI_LANES_B,
+	POWER_DOMAIN_PORT_DDI_LANES_C,
+	POWER_DOMAIN_PORT_DDI_LANES_D,
+	POWER_DOMAIN_PORT_DDI_LANES_E,
+	POWER_DOMAIN_PORT_DDI_LANES_F,
+
+	POWER_DOMAIN_PORT_DDI_LANES_TC1,
+	POWER_DOMAIN_PORT_DDI_LANES_TC2,
+	POWER_DOMAIN_PORT_DDI_LANES_TC3,
+	POWER_DOMAIN_PORT_DDI_LANES_TC4,
+	POWER_DOMAIN_PORT_DDI_LANES_TC5,
+	POWER_DOMAIN_PORT_DDI_LANES_TC6,
+
+	POWER_DOMAIN_PORT_DDI_IO_A,
+	POWER_DOMAIN_PORT_DDI_IO_B,
+	POWER_DOMAIN_PORT_DDI_IO_C,
+	POWER_DOMAIN_PORT_DDI_IO_D,
+	POWER_DOMAIN_PORT_DDI_IO_E,
+	POWER_DOMAIN_PORT_DDI_IO_F,
+
+	POWER_DOMAIN_PORT_DDI_IO_TC1,
+	POWER_DOMAIN_PORT_DDI_IO_TC2,
+	POWER_DOMAIN_PORT_DDI_IO_TC3,
+	POWER_DOMAIN_PORT_DDI_IO_TC4,
+	POWER_DOMAIN_PORT_DDI_IO_TC5,
+	POWER_DOMAIN_PORT_DDI_IO_TC6,
+
+	POWER_DOMAIN_PORT_DSI,
+	POWER_DOMAIN_PORT_CRT,
+	POWER_DOMAIN_PORT_OTHER,
+	POWER_DOMAIN_VGA,
+	POWER_DOMAIN_AUDIO_MMIO,
+	POWER_DOMAIN_AUDIO_PLAYBACK,
+
+	POWER_DOMAIN_AUX_IO_A,
+	POWER_DOMAIN_AUX_IO_B,
+	POWER_DOMAIN_AUX_IO_C,
+	POWER_DOMAIN_AUX_IO_D,
+	POWER_DOMAIN_AUX_IO_E,
+	POWER_DOMAIN_AUX_IO_F,
+
+	POWER_DOMAIN_AUX_A,
+	POWER_DOMAIN_AUX_B,
+	POWER_DOMAIN_AUX_C,
+	POWER_DOMAIN_AUX_D,
+	POWER_DOMAIN_AUX_E,
+	POWER_DOMAIN_AUX_F,
+
+	POWER_DOMAIN_AUX_USBC1,
+	POWER_DOMAIN_AUX_USBC2,
+	POWER_DOMAIN_AUX_USBC3,
+	POWER_DOMAIN_AUX_USBC4,
+	POWER_DOMAIN_AUX_USBC5,
+	POWER_DOMAIN_AUX_USBC6,
+
+	POWER_DOMAIN_AUX_TBT1,
+	POWER_DOMAIN_AUX_TBT2,
+	POWER_DOMAIN_AUX_TBT3,
+	POWER_DOMAIN_AUX_TBT4,
+	POWER_DOMAIN_AUX_TBT5,
+	POWER_DOMAIN_AUX_TBT6,
+
+	POWER_DOMAIN_GMBUS,
+	POWER_DOMAIN_GT_IRQ,
+	POWER_DOMAIN_DC_OFF,
+	POWER_DOMAIN_TC_COLD_OFF,
+	POWER_DOMAIN_INIT,
+
+	POWER_DOMAIN_NUM,
+	POWER_DOMAIN_INVALID = POWER_DOMAIN_NUM,
+};
+
+/* The per-pipe and per-transcoder domain macros (Linux intel_display_power.h). */
+
+#define POWER_DOMAIN_PIPE(pipe) ((pipe) + POWER_DOMAIN_PIPE_A)
+#define POWER_DOMAIN_PIPE_PANEL_FITTER(pipe) \
+		((pipe) + POWER_DOMAIN_PIPE_PANEL_FITTER_A)
+#define POWER_DOMAIN_TRANSCODER(tran) \
+	((tran) == TRANSCODER_EDP ? POWER_DOMAIN_TRANSCODER_EDP : \
+	 (tran) + POWER_DOMAIN_TRANSCODER_A)
+
+#endif /* DRIVERS_GPU_I915_INTEL_POWER_H */

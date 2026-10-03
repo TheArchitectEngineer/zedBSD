@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+# ws075-p001: lists everything in SPIR-V modules that the i915 executor's shader compiler does not take, without stopping
+# at the first thing (the compiler itself refuses the whole module at its first refusal).  The rules copy what
+# src/drivers/gpu/i915/compiler/spirv.c (and compile.c) accept as of 2026-09-28; each rule names the function it copies.  Shape rules
+# (operand sizes, nesting depths, dynamic indices, phis) are not copied: the compiler's first refusal is compared by
+# run.sh to catch a module whose only gaps are of that kind.
+#
+#   survey.py [--first] FILE.spv ...     one line per module: its gaps (or "ok"); --first prints only the first gap
+#                                        in module order, for the comparison with the compiler's own refusal
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+import subprocess
+import sys
+
+# i915_spirv_declare_decoration, i915_spirv_declare_member_decoration.
+DECORATIONS = {'Location', 'Binding', 'DescriptorSet', 'BuiltIn', 'ArrayStride', 'Block', 'RelaxedPrecision', 'Flat',
+               'Centroid', 'NoPerspective'}
+MEMBER_DECORATIONS = {'Offset', 'BuiltIn', 'MatrixStride', 'RowMajor', 'ColMajor', 'RelaxedPrecision', 'Flat', 'Centroid',
+                      'NoPerspective'}
+
+# i915_spirv_declare_variable: module variables of these storage classes (Input and Output with a Location; an Output
+# without one is a block written only through its Position builtin).
+STORAGE = {'Input', 'Output', 'PushConstant', 'UniformConstant', 'Uniform'}
+
+# i915_spirv_declare (module level): what is interpreted, and what has no execution semantics.
+MODULE = {'OpEntryPoint', 'OpDecorate', 'OpMemberDecorate', 'OpTypeVoid', 'OpTypeBool', 'OpTypeSampler', 'OpTypeFunction',
+          'OpTypeImage', 'OpTypeInt', 'OpTypeFloat', 'OpTypeVector', 'OpTypeMatrix', 'OpTypeSampledImage', 'OpTypeArray',
+          'OpTypeStruct', 'OpTypePointer', 'OpConstant', 'OpConstantTrue', 'OpConstantFalse', 'OpConstantComposite',
+          'OpVariable', 'OpExtInstImport', 'OpNop', 'OpSourceContinued', 'OpSource', 'OpSourceExtension', 'OpName',
+          'OpMemberName', 'OpString', 'OpLine', 'OpNoLine', 'OpModuleProcessed', 'OpCapability', 'OpExtension',
+          'OpMemoryModel', 'OpExecutionMode'}
+
+# i915_spirv_lower_instruction: the instructions of a function body that are lowered.
+BODY = {'OpReturn', 'OpUnreachable', 'OpBranch', 'OpBranchConditional', 'OpSelectionMerge', 'OpLoopMerge', 'OpKill',
+        'OpPhi', 'OpFDiv', 'OpFMod', 'OpFRem', 'OpFOrdEqual', 'OpFUnordEqual', 'OpFOrdNotEqual', 'OpFUnordNotEqual',
+        'OpFOrdLessThan', 'OpFUnordLessThan', 'OpFOrdGreaterThan', 'OpFUnordGreaterThan', 'OpFOrdLessThanEqual',
+        'OpFUnordLessThanEqual', 'OpFOrdGreaterThanEqual', 'OpFUnordGreaterThanEqual', 'OpIEqual', 'OpINotEqual',
+        'OpUGreaterThan', 'OpSGreaterThan', 'OpUGreaterThanEqual', 'OpSGreaterThanEqual', 'OpULessThan', 'OpSLessThan',
+        'OpULessThanEqual', 'OpSLessThanEqual', 'OpLogicalAnd', 'OpLogicalOr', 'OpLogicalNot', 'OpLogicalEqual',
+        'OpLogicalNotEqual', 'OpSelect', 'OpVariable', 'OpAccessChain', 'OpLoad', 'OpStore', 'OpFAdd', 'OpFSub', 'OpFMul',
+        'OpIAdd', 'OpISub', 'OpIMul', 'OpUDiv', 'OpSDiv', 'OpUMod', 'OpSRem', 'OpSMod', 'OpShiftRightLogical',
+        'OpShiftRightArithmetic', 'OpShiftLeftLogical', 'OpBitwiseOr', 'OpBitwiseXor', 'OpBitwiseAnd', 'OpSNegate', 'OpNot',
+        'OpConvertFToU', 'OpConvertFToS', 'OpConvertSToF', 'OpConvertUToF', 'OpBitcast', 'OpVectorTimesScalar',
+        'OpMatrixTimesScalar', 'OpVectorTimesMatrix', 'OpMatrixTimesVector', 'OpMatrixTimesMatrix', 'OpTranspose',
+        'OpOuterProduct', 'OpFNegate', 'OpDot', 'OpCompositeConstruct', 'OpCompositeExtract', 'OpCompositeInsert',
+        'OpCopyObject', 'OpVectorShuffle', 'OpExtInst',
+        'OpImageSampleImplicitLod', 'OpImageSampleExplicitLod', 'OpLabel', 'OpFunction', 'OpFunctionEnd', 'OpNop', 'OpLine',
+        'OpNoLine', 'OpDPdx', 'OpDPdy', 'OpFwidth', 'OpDPdxFine', 'OpDPdxCoarse', 'OpDPdyCoarse', 'OpFwidthCoarse',
+        'OpDPdyFine', 'OpFwidthFine', 'OpImageSampleDrefImplicitLod', 'OpImageSampleDrefExplicitLod',
+        'OpImageSampleProjImplicitLod', 'OpImageSampleProjExplicitLod', 'OpImageSampleProjDrefImplicitLod',
+        'OpImageSampleProjDrefExplicitLod', 'OpImageFetch', 'OpImage', 'OpImageQuerySizeLod', 'OpImageQuerySize',
+        'OpImageQueryLevels'}
+
+# i915_spirv_lower_sample and i915_spirv_lower_texture: the image operands of a sample that are lowered.
+SAMPLE_OPERANDS = {'Bias', 'Lod', 'Grad', 'ConstOffset'}
+
+# i915_spirv_lower_fetch: the image operands of a fetch that are lowered.
+FETCH_OPERANDS = {'Lod', 'ConstOffset'}
+
+# The image kinds a sample, a fetch and a query take (i915_spirv_image_type() and its callers): not multisampled.
+SAMPLE_DIMS = {'1D', '2D', '3D', 'Cube'}
+FETCH_DIMS = {'1D', '2D', '3D'}
+
+# i915_spirv_lower_extended: GLSL.std.450.
+EXTENDED = {'Round', 'RoundEven', 'Trunc', 'FAbs', 'SAbs', 'FSign', 'SSign', 'Floor', 'Ceil', 'Fract', 'Radians', 'Degrees',
+            'Sin', 'Cos', 'Tan', 'Pow', 'Exp', 'Log', 'Exp2', 'Log2', 'Sqrt', 'InverseSqrt', 'FMin', 'UMin', 'SMin', 'FMax',
+            'UMax', 'SMax', 'FClamp', 'UClamp', 'SClamp', 'FMix', 'Step', 'SmoothStep', 'Length', 'Distance', 'Cross',
+            'Normalize', 'Reflect', 'Determinant', 'MatrixInverse', 'PackHalf2x16', 'UnpackHalf2x16'}
+
+# i915_spirv_lower_store_output: the output builtins that are written.
+OUTPUT_BUILTINS = {'Position', 'PointSize'}
+
+
+def disassemble(path):
+	"""Returns the module's instructions as lists of words of spirv-dis --raw-id."""
+	text = subprocess.run(['spirv-dis', '--raw-id', '--no-header', '--no-color', path], capture_output=True, text=True,
+	                      check=True).stdout
+	instructions = []
+	for line in text.splitlines():
+		line = line.split(';')[0].strip()
+		if line:
+			instructions.append(line.split())
+	return instructions
+
+
+def survey(path):
+	"""Returns the module's gaps, in module order, each once."""
+	gaps = []
+
+	def gap(text):
+		if text not in gaps:
+			gaps.append(text)
+
+	instructions = disassemble(path)
+	types = {}
+	variables = {}
+	member_builtins = {}
+	builtins = {}
+	chains = {}
+	constants = {}
+	locations = {}
+	flats = set()
+	loads = {}
+	stage = None
+	functions = 0
+	in_body = False
+	for words in instructions:
+		# The result id, if any, and the opcode.
+		result = None
+		if len(words) > 2 and words[1] == '=':
+			result = words[0]
+			words = words[2:]
+		opcode = words[0]
+		operands = words[1:]
+
+		# Types, for the variables' and the constants' checks.
+		if opcode.startswith('OpType') and result is not None:
+			types[result] = words
+			if opcode in ('OpTypeInt', 'OpTypeFloat') and int(operands[0]) != 32:
+				gap('%d-bit %s' % (int(operands[0]), 'integers' if opcode == 'OpTypeInt' else 'floats'))
+
+		# The entry point's stage.
+		if opcode == 'OpEntryPoint':
+			stage = operands[0]
+			if stage not in ('Vertex', 'Fragment'):
+				gap('execution model %s' % stage)
+
+		# Decorations; the builtins kept for the variables.
+		if opcode == 'OpDecorate':
+			if operands[1] not in DECORATIONS:
+				gap('decoration %s' % operands[1])
+			if operands[1] == 'BuiltIn':
+				builtins[operands[0]] = operands[2]
+			if operands[1] == 'Location':
+				locations[operands[0]] = int(operands[2])
+			if operands[1] == 'Flat':
+				flats.add(operands[0])
+		if opcode == 'OpMemberDecorate':
+			if operands[2] not in MEMBER_DECORATIONS:
+				gap('member decoration %s' % operands[2])
+			if operands[2] == 'BuiltIn':
+				member_builtins[(operands[0], int(operands[1]))] = operands[3]
+
+		# Functions: one, never called.
+		if opcode == 'OpFunction':
+			functions += 1
+			in_body = True
+			if functions == 2:
+				gap('function calls (more than one function)')
+		if opcode == 'OpFunctionCall':
+			gap('function calls (more than one function)')
+		if opcode == 'OpFunctionEnd':
+			in_body = False
+			continue
+
+		# Module level.
+		if not in_body:
+			if opcode not in MODULE:
+				gap('module-level %s' % opcode)
+			if opcode == 'OpConstant' and types.get(operands[0], ['?'])[0] == 'OpTypeInt':
+				constants[result] = int(operands[1])
+			if opcode == 'OpConstantComposite':
+				# i915_spirv_declare_constant_composite: vectors, matrices, arrays and structures of constants.
+				kind = types.get(operands[0], ['?'])[0]
+				if kind not in ('OpTypeVector', 'OpTypeMatrix', 'OpTypeArray', 'OpTypeStruct'):
+					gap('constant composite of %s' % kind[6:].lower())
+			if opcode == 'OpVariable':
+				storage = operands[1]
+				variables[result] = (storage, operands[0])
+				if len(operands) > 2:
+					gap('variable initializer')
+				if storage not in STORAGE:
+					gap('module variable in %s' % storage)
+				elif storage == 'Input' and result in builtins:
+					# i915_spirv_declare_variable: a vertex shader's VertexIndex and InstanceIndex are generated inputs.
+					# A fragment shader's FrontFacing, FragCoord and PointCoord are the payload's facing bit, pixel
+					# position, depth and w, and the point sprite's coordinate.
+					generated = stage == 'Vertex' and builtins[result] in ('VertexIndex', 'InstanceIndex')
+					if stage == 'Fragment' and builtins[result] in ('FrontFacing', 'FragCoord', 'PointCoord'):
+						generated = True
+					if not generated:
+						gap('input builtin %s' % builtins[result])
+				elif storage == 'Input':
+					# i915_spirv_lower_load: an input is floats, or integers in a vertex shader or a Flat fragment input.
+					pointee = types.get(types.get(operands[0], ['', '', ''])[2], ['?', ''])
+					if pointee[0] == 'OpTypeVector':
+						pointee = types.get(pointee[1], ['?'])
+					if pointee[0] == 'OpTypeInt' and stage != 'Vertex' and result not in flats:
+						gap('integer inputs')
+				# i915_compile_store_output: a fragment shader writes one colour, at location 0.
+				if storage == 'Output' and stage == 'Fragment' and locations.get(result, 0) != 0:
+					gap('colour outputs past location 0 (MRT)')
+			continue
+
+		# A function body.
+		if opcode not in BODY:
+			if opcode == 'OpSwitch':
+				gap('OpSwitch')
+			elif opcode in ('OpFunctionCall', 'OpFunctionParameter', 'OpReturnValue'):
+				gap('function calls (more than one function)')
+			else:
+				gap('instruction %s' % opcode)
+		if opcode == 'OpExtInst' and operands[2] not in EXTENDED:
+			gap('GLSL.std.450 %s' % operands[2])
+		if opcode == 'OpLoad':
+			loads[result] = operands[0]
+		if opcode == 'OpImage':
+			# i915_spirv_lower_image: the image of a loaded sampler names its binding.
+			loads[result] = loads.get(operands[1], '')
+		if opcode.startswith('OpImageSample'):
+			# i915_spirv_lower_sample and _texture: 1D, 2D, 3D and cube images, arrays, of floats or integers;
+			# Bias, Lod, Grad and ConstOffset (the operand mask after a Dref's reference).
+			mask = 4 if 'Dref' in opcode else 3
+			if len(operands) > mask and not set(operands[mask].split('|')) <= SAMPLE_OPERANDS:
+				gap('texture() with operands (%s)' % operands[mask])
+			sampled = types.get(loads.get(operands[1], ''), ['?', ''])
+			image = types.get(sampled[1], ['?', '', '?', '0', '0', '0'])
+			if image[0] == 'OpTypeImage' and (image[2] not in SAMPLE_DIMS or image[5] != '0'):
+				gap('texture() of a sampler%s%s' % (image[2], 'MS' if image[5] != '0' else ''))
+		if opcode in ('OpImageFetch', 'OpImageQuerySizeLod', 'OpImageQuerySize', 'OpImageQueryLevels'):
+			# i915_spirv_lower_fetch and _query: 1D, 2D and 3D images (a query also a cube), not multisampled.
+			image = types.get(loads.get(operands[1], ''), ['?', '', '?', '0', '0', '0'])
+			if image[0] == 'OpTypeSampledImage':
+				image = types.get(image[1], ['?', '', '?', '0', '0', '0'])
+			dims = FETCH_DIMS if opcode == 'OpImageFetch' else SAMPLE_DIMS
+			if image[0] == 'OpTypeImage' and (image[2] not in dims or image[5] != '0'):
+				gap('%s of a sampler%s%s' % ('texelFetch()' if opcode == 'OpImageFetch' else 'textureSize()', image[2],
+				                             'MS' if image[5] != '0' else ''))
+			if opcode == 'OpImageFetch' and len(operands) > 3 and not set(operands[3].split('|')) <= FETCH_OPERANDS:
+				gap('texelFetch() with operands (%s)' % operands[3])
+		if opcode == 'OpVariable':
+			# i915_spirv_lower_variable: scalars, vectors, matrices, and arrays and structures of them.
+			if len(operands) > 2:
+				gap('local variable initializer')
+		if opcode == 'OpAccessChain':
+			chains[result] = (operands[2], operands[3:])
+		if opcode == 'OpStore':
+			base, indices = chains.get(operands[0], (operands[0], []))
+			if base in variables and variables[base][0] == 'Output':
+				name = builtins.get(base)
+				pointer = types.get(variables[base][1])
+				if name is None and pointer is not None and indices:
+					name = member_builtins.get((pointer[2], constants.get(indices[0])))
+				if name is not None and name not in OUTPUT_BUILTINS:
+					gap('output builtin %s' % name)
+	return gaps
+
+
+def main():
+	first = False
+	paths = sys.argv[1:]
+	if paths and paths[0] == '--first':
+		first = True
+		paths = paths[1:]
+	for path in paths:
+		gaps = survey(path)
+		if first:
+			gaps = gaps[:1]
+		print('%s: %s' % (path, '; '.join(gaps) if gaps else 'ok'))
+
+
+if __name__ == '__main__':
+	main()

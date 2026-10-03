@@ -1,0 +1,33 @@
+### /sys/kernel/debug/dri/0/eDP-1/edid_override
+### /sys/kernel/debug/dri/0/eDP-1/force
+unspecified
+### /sys/kernel/debug/dri/0/eDP-1/i915_drrs_type
+DRRS type: static
+### /sys/kernel/debug/dri/0/eDP-1/i915_dsc_bpc
+Input_BPC: 0
+### /sys/kernel/debug/dri/0/eDP-1/i915_dsc_fec_support
+DSC_Enabled: no
+DSC_Sink_Support: no
+DSC_Output_Format_Sink_Support: RGB: no YCBCR420: no YCBCR444: no
+DSC_Sink_BPP_Precision: 16
+Force_DSC_Enable: no
+### /sys/kernel/debug/dri/0/eDP-1/i915_dsc_fractional_bpp
+Force_DSC_Fractional_BPP_Enable: no
+### /sys/kernel/debug/dri/0/eDP-1/i915_dsc_output_format
+DSC_Output_Format: RGB
+### /sys/kernel/debug/dri/0/eDP-1/i915_lpsp_capability
+LPSP: capable
+### /sys/kernel/debug/dri/0/eDP-1/i915_panel_timings
+Panel power up delay: 200
+Panel power down delay: 110
+Backlight on delay: 80
+Backlight off delay: 200
+### /sys/kernel/debug/dri/0/eDP-1/i915_psr_sink_status
+cat: /sys/kernel/debug/dri/0/eDP-1/i915_psr_sink_status: No such device
+### /sys/kernel/debug/dri/0/eDP-1/i915_psr_status
+Sink support: PSR = no, Panel Replay = no
+### /sys/kernel/debug/dri/0/eDP-1/output_bpc
+Maximum: 6
+### /sys/kernel/debug/dri/0/eDP-1/vrr_range
+Min: 0
+Max: 0

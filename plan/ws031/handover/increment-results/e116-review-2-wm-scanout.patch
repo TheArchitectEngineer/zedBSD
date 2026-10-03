@@ -1,0 +1,899 @@
+# WS031 E-116 review bundle, part 2: full current text (as a diff against the pre-E-97 base 2bf790a4) of the WM/DDB adaptation layer and of the scanout release / abandon handling
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.c b/src/drivers/gpu/i915/parity/gt_mem.c
+index 637005c8..a7c28634 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.c
++++ b/src/drivers/gpu/i915/parity/gt_mem.c
+@@ -50,6 +50,13 @@ parity_gen8_pde_encode(uint64_t dma)
+ 		PARITY_PPAT_UNCACHED;
+ }
+ 
++uint64_t
++parity_gen8_pde_encode_cached(uint64_t dma)
++{
++	/* PPAT_CACHED_PDE is 0: WB LLC. */
++	return dma | PARITY_GEN8_PAGE_PRESENT_B | PARITY_GEN8_PAGE_RW_B;
++}
++
+ /* --- the pool and the GGTT window ---------------------------------------- */
+ 
+ int
+@@ -91,8 +98,16 @@ parity_gt_mem_fini(struct parity_gt_mem *gm)
+ 		return;
+ 	/* Release in reverse: unbind first so no live PTE names a freed page. */
+ 	for (i = PARITY_GT_MAX_OBJECTS; i-- > 0u; ) {
+-		if (gm->objects[i].in_use)
+-			parity_gt_object_destroy(gm, &gm->objects[i]);
++		if (!gm->objects[i].in_use)
++			continue;
++		if (gm->objects[i].keep) {
++			/* the display could not be shown to have stopped reading it: leaking is the safe side */
++			gm->kept_objects++;
++			kern_logf("i915: parity gt_mem: object at GGTT 0x%llx (%u pages) NOT released: still owned by the display\n",
++				(unsigned long long)gm->objects[i].ggtt_offset, gm->objects[i].pages);
++			continue;
++		}
++		parity_gt_object_destroy(gm, &gm->objects[i]);
+ 	}
+ 	gm->inited = 0;
+ }
+@@ -182,7 +197,9 @@ parity_gt_object_destroy(struct parity_gt_mem *gm, struct parity_gt_object *o)
+ {
+ 	if (gm == 0 || o == 0 || !o->in_use)
+ 		return;
+-	if (o->bound)
++	if (o->bound && o->display)
++		parity_gt_display_unbind(gm, o);
++	else if (o->bound)
+ 		parity_gt_ggtt_unbind(gm, o);
+ 	if (o->vec != 0)
+ 		(void)drv_dma_vector_free(o->vec);
+@@ -364,6 +381,10 @@ parity_gt_ggtt_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
+ 
+ 	if (gm == 0 || o == 0 || !o->bound)
+ 		return;
++	if (o->display) {
++		parity_gt_display_unbind(gm, o);
++		return;
++	}
+ 	first = o->ggtt_page - gm->window_first;
+ 	for (p = 0u; p < o->pages; p++)
+ 		ggtt_write_pte(gm, o->ggtt_page + p, gm->scratch_pte);
+@@ -376,6 +397,165 @@ parity_gt_ggtt_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
+ 	o->ggtt_offset = 0u;
+ }
+ 
++/* --- display window -------------------------------------------------------- */
++
++uint64_t
++parity_gt_ggtt_read_pte(const struct parity_gt_mem *gm, unsigned index)
++{
++	if (gm == 0 || index >= gm->entries)
++		return 0;
++	/* the same access width the writes use: the PTE table is a 64-bit register window */
++	return kern_mmio_read64((volatile void *)(gm->table + (size_t)index * 8u));
++}
++
++int
++parity_gt_display_window_init(struct parity_gt_mem *gm, unsigned pages)
++{
++	unsigned i;
++
++	if (gm == 0 || !gm->inited || pages == 0u || pages > PARITY_GT_DISPLAY_PAGES ||
++	    (pages % 32u) != 0u)
++		return -EINVAL;
++	if (gm->display_pages != 0u)
++		return -EBUSY;
++	/* below the GT window, and never reaching the bottom of the table */
++	if (gm->window_first <= pages)
++		return -ENOSPC;
++	gm->display_first = gm->window_first - pages;
++	gm->display_pages = pages;
++	for (i = 0u; i < PARITY_GT_DISPLAY_WORDS; i++)
++		gm->display_bitmap[i] = 0u;
++	gm->display_allocated_pages = 0u;
++	return 0;
++}
++
++static int
++display_bit(const struct parity_gt_mem *gm, unsigned page)
++{
++	return (int)((gm->display_bitmap[page / 32u] >> (page % 32u)) & 1u);
++}
++
++static void
++display_set(struct parity_gt_mem *gm, unsigned first, unsigned pages, int used)
++{
++	unsigned i;
++
++	for (i = first; i < first + pages; i++) {
++		if (used)
++			gm->display_bitmap[i / 32u] |= (uint32_t)1u << (i % 32u);
++		else
++			gm->display_bitmap[i / 32u] &= ~((uint32_t)1u << (i % 32u));
++	}
++}
++
++int
++parity_gt_display_bind(struct parity_gt_mem *gm, struct parity_gt_object *o,
++	unsigned align_pages, unsigned guard_pages)
++{
++	unsigned start = 0u, p, span;
++	int rc;
++
++	if (gm == 0 || !gm->inited || o == 0 || !o->in_use || gm->display_pages == 0u ||
++	    align_pages == 0u || (align_pages & (align_pages - 1u)) != 0u)
++		return -EINVAL;
++	if (o->bound)
++		return -EBUSY;
++	span = guard_pages + o->pages + guard_pages;
++	if (span > gm->display_pages)
++		return -ENOSPC;
++
++	/*
++	 * First fit for [guard | object | guard] with the OBJECT's absolute GGTT page
++	 * aligned -- the alignment is a property of the address the plane is given,
++	 * not of the window-relative index.
++	 */
++	{
++		unsigned obj_abs = (gm->display_first + guard_pages + align_pages - 1u) & ~(align_pages - 1u);
++		int found = 0;
++
++		for (; obj_abs + o->pages + guard_pages <= gm->display_first + gm->display_pages;
++		     obj_abs += align_pages) {
++			unsigned i, clash = 0u;
++
++			start = obj_abs - guard_pages - gm->display_first;
++			for (i = start; i < start + span; i++) {
++				if (display_bit(gm, i)) {
++					clash = 1u;
++					break;
++				}
++			}
++			if (!clash) {
++				found = 1;
++				break;
++			}
++		}
++		if (!found) {
++			gm->ggtt_alloc_fail++;
++			return -ENOSPC;
++		}
++	}
++
++	/* encode every page BEFORE touching a PTE: a buffer that cannot be mapped changes nothing */
++	for (p = 0u; p < o->pages; p++) {
++		uint64_t dma = 0, pte = 0;
++
++		rc = parity_gt_object_page_dma(o, p, &dma);
++		if (rc != 0)
++			return rc;
++		if (!parity_ggtt_pte_encode(osdep_dma_addr(dma), (uint64_t)PARITY_GT_PAGE_BYTES,
++				gm->dma_mask, &pte))
++			return -ERANGE;
++	}
++
++	display_set(gm, start, span, 1);
++	gm->display_allocated_pages += span;
++	for (p = 0u; p < guard_pages; p++) {
++		ggtt_write_pte(gm, gm->display_first + start + p, gm->scratch_pte);
++		ggtt_write_pte(gm, gm->display_first + start + guard_pages + o->pages + p, gm->scratch_pte);
++		gm->display_pte_writes += 2u;
++	}
++	for (p = 0u; p < o->pages; p++) {
++		uint64_t dma = 0, pte = 0;
++
++		(void)parity_gt_object_page_dma(o, p, &dma);
++		(void)parity_ggtt_pte_encode(osdep_dma_addr(dma), (uint64_t)PARITY_GT_PAGE_BYTES,
++			gm->dma_mask, &pte);
++		ggtt_write_pte(gm, gm->display_first + start + guard_pages + p, pte);
++		gm->display_pte_writes++;
++	}
++	parity_gt_ggtt_flush(gm);
++
++	o->ggtt_page = gm->display_first + start + guard_pages;
++	o->ggtt_offset = (uint64_t)o->ggtt_page * PARITY_GT_PAGE_BYTES;
++	o->display = 1;
++	o->display_guard = guard_pages;
++	o->bound = 1;
++	return 0;
++}
++
++void
++parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o)
++{
++	unsigned first, span, p;
++
++	if (gm == 0 || o == 0 || !o->bound || !o->display)
++		return;
++	first = o->ggtt_page - o->display_guard - gm->display_first;
++	span = o->display_guard + o->pages + o->display_guard;
++	for (p = 0u; p < o->pages; p++) {
++		ggtt_write_pte(gm, o->ggtt_page + p, gm->scratch_pte);
++		gm->display_pte_writes++;
++	}
++	parity_gt_ggtt_flush(gm);
++	display_set(gm, first, span, 0);
++	gm->display_allocated_pages -= span;
++	o->bound = 0;
++	o->display = 0;
++	o->display_guard = 0u;
++	o->ggtt_page = 0u;
++	o->ggtt_offset = 0u;
++}
++
+ /* --- intel_gt_init_scratch ------------------------------------------------ */
+ 
+ int
+@@ -406,6 +586,23 @@ parity_gt_init_scratch(struct parity_gt_mem *gm, struct parity_gt_object **out)
+ /* --- the kernel ppgtt ----------------------------------------------------- */
+ 
+ /* fill_px(): every entry of one page holds the same encoded address. */
++void
++parity_gt_clflush(const volatile void *address, size_t bytes)
++{
++#if defined(__x86_64__) || defined(__i386__)
++	const volatile char *p = (const volatile char *)((uintptr_t)address & ~(uintptr_t)63u);
++	const volatile char *end = (const volatile char *)address + bytes;
++
++	__asm__ volatile("mfence" : : : "memory");
++	for (; p < end; p += 64)
++		__asm__ volatile("clflush (%0)" : : "r"(p) : "memory");
++	__asm__ volatile("mfence" : : : "memory");
++#else
++	(void)address; (void)bytes;
++#endif
++}
++
++/* fill_page_dma(): memset64 + drm_clflush_virt_range(vaddr, PAGE_SIZE). */
+ static void
+ fill_px(struct parity_gt_object *o, uint64_t value, unsigned count)
+ {
+@@ -414,6 +611,7 @@ fill_px(struct parity_gt_object *o, uint64_t value, unsigned count)
+ 
+ 	for (i = 0u; i < count; i++)
+ 		p[i] = value;
++	parity_gt_clflush(o->cpu, PARITY_GT_PAGE_BYTES);
+ }
+ 
+ int
+@@ -600,8 +798,9 @@ alloc_level(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp,
+ 			t->lvl = lvl;
+ 			t->dma = dma;
+ 			pp->n_tables++;
+-			/* set_pd_entry(): gen8_pde_encode(px_dma(pt), I915_CACHE_LLC) */
+-			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode(dma);
++			/* set_pd_entry() -> write_dma_entry(): the entry, then clflush it. */
++			((uint64_t *)pd->cpu)[idx] = parity_gen8_pde_encode_cached(dma);
++			parity_gt_clflush(&((uint64_t *)pd->cpu)[idx], sizeof(uint64_t));
+ 		}
+ 		if (lvl != 0) {
+ 			rc = alloc_level(gm, pp, t->obj, start, end, lvl);
+@@ -686,5 +885,69 @@ parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+ 	}
+ 	((uint64_t *)table->cpu)[idx & 511u] =
+ 		parity_gen12_ppgtt_pte_encode(dma, pat_index);
++	/* gen8_ppgtt_insert_entry(): drm_clflush_virt_range(&vaddr[idx], 8). */
++	parity_gt_clflush(&((uint64_t *)table->cpu)[idx & 511u], sizeof(uint64_t));
++	return 0;
++}
++
++#define PTE_ADDR_MASK   0x0000fffffffff000ull
++
++static struct parity_gt_ppgtt_table *
++table_by_dma(struct parity_gt_ppgtt *pp, uint64_t dma)
++{
++	unsigned i;
++
++	for (i = 0u; i < pp->n_tables; i++)
++		if (pp->tables[i].dma == dma)
++			return &pp->tables[i];
++	return 0;
++}
++
++int
++parity_gt_ppgtt_walk(struct parity_gt_ppgtt *pp, uint64_t va,
++	struct parity_gt_ppgtt_walk *w)
++{
++	struct parity_gt_object *table;
++	uint64_t idx;
++	int lvl, level;
++
++	if (pp == 0 || !pp->inited || w == 0)
++		return -EINVAL;
++	memset(w, 0, sizeof(*w));
++	w->va = va;
++	w->top_dma = pp->top_pd_dma;
++	idx = va >> 12;
++	table = pp->top_pd;
++	for (lvl = pp->top, level = 0; lvl >= 0; lvl--, level++) {
++		unsigned i = (unsigned)((idx >> ((unsigned)lvl * 9u)) & 511u);
++		uint64_t raw;
++
++		w->idx[level] = i;
++		/* Read the entry the walker would read: the table as submitted. */
++		parity_gt_clflush(&((uint64_t *)table->cpu)[i], sizeof(uint64_t));
++		raw = ((volatile uint64_t *)table->cpu)[i];
++		w->raw[level] = raw;
++		w->levels = level + 1;
++		w->scratch[level] = (lvl > 0) ? (raw == pp->scratch_encode[lvl]) :
++			(raw == pp->scratch_encode[0]);
++		if (lvl == 0) {
++			w->leaf_dma = raw & PTE_ADDR_MASK;
++			w->leaf_present = (raw & PARITY_GEN8_PAGE_PRESENT_B) != 0u;
++			w->leaf_rw = (raw & PARITY_GEN8_PAGE_RW_B) != 0u;
++			w->leaf_pat = ((raw & PARITY_GEN12_PTE_PAT0) ? 1u : 0u) |
++				((raw & PARITY_GEN12_PTE_PAT1) ? 2u : 0u) |
++				((raw & PARITY_GEN12_PTE_PAT2) ? 4u : 0u);
++			break;
++		}
++		w->child_dma[level] = raw & PTE_ADDR_MASK;
++		{
++			struct parity_gt_ppgtt_table *t = table_by_dma(pp, w->child_dma[level]);
++
++			if (t == 0)
++				break;   /* scratch or foreign: the walk ends here */
++			w->child_known[level] = 1;
++			table = t->obj;
++		}
++	}
+ 	return 0;
+ }
+diff --git a/src/drivers/gpu/i915/parity/gt_mem.h b/src/drivers/gpu/i915/parity/gt_mem.h
+index ae5bea22..da543775 100644
+--- a/src/drivers/gpu/i915/parity/gt_mem.h
++++ b/src/drivers/gpu/i915/parity/gt_mem.h
+@@ -50,8 +50,19 @@ struct osdep_mmio;
+ #define PARITY_GT_GGTT_PAGES     256u                        /* 1 MiB */
+ #define PARITY_GT_GGTT_WORDS     (PARITY_GT_GGTT_PAGES / 32u)
+ 
++/*
++ * The DISPLAY window: GGTT space for scanout buffers, directly BELOW the GT window and
++ * managed separately from it (own bitmap, own placement rules), so growing the display
++ * side never moves or re-initialises a ring, context image, status page or scratch page.
++ * It is claimed explicitly (parity_gt_display_window_init) -- never as a side effect of
++ * parity_gt_mem_init -- and only the PTEs of an allocation (its guards and its pages) are
++ * ever written.  32 MiB: two full-HD XRGB8888 buffers with 256 KiB alignment and guards.
++ */
++#define PARITY_GT_DISPLAY_PAGES  8192u
++#define PARITY_GT_DISPLAY_WORDS  (PARITY_GT_DISPLAY_PAGES / 32u)
++
+ /* Object pool: HWSP/ring/LRC per engine, plus scratch and the ppgtt pages. */
+-#define PARITY_GT_MAX_OBJECTS    64u
++#define PARITY_GT_MAX_OBJECTS    128u   /* E-102: 64 ran out with the R1 harness (4 user objects + 3 contexts) */
+ 
+ /* gen12 ppgtt page-table entry bits (intel_gtt.h). */
+ #define PARITY_GEN8_PAGE_PRESENT_B  (((uint64_t)1) << 0)
+@@ -87,6 +98,9 @@ struct parity_gt_object {
+ 	uint32_t bytes;
+ 	unsigned pages;
+ 	unsigned ggtt_page;         /* first page index in the GGTT table */
++	int display;                /* bound in the display window (not the GT window) */
++	unsigned display_guard;     /* scratch-filled guard pages on EACH side */
++	int keep;                   /* never destroyed by parity_gt_mem_fini: the display may still read it */
+ 	uint64_t ggtt_offset;       /* the GPU VA the engine uses; valid when bound */
+ 	int bound;
+ 	int in_use;
+@@ -107,6 +121,14 @@ struct parity_gt_mem {
+ 	uint32_t bitmap[PARITY_GT_GGTT_WORDS];
+ 	unsigned allocated_pages;
+ 
++	/* the display window (valid when display_pages != 0) */
++	unsigned display_first;
++	unsigned display_pages;
++	uint32_t display_bitmap[PARITY_GT_DISPLAY_WORDS];
++	unsigned display_allocated_pages;
++	unsigned display_pte_writes;
++	unsigned kept_objects;          /* objects fini had to leave alone (see `keep`) */
++
+ 	struct parity_gt_object objects[PARITY_GT_MAX_OBJECTS];
+ 	unsigned objects_live;
+ 
+@@ -156,9 +178,39 @@ int parity_gt_ppgtt_foreach_pt(struct parity_gt_ppgtt *pp, uint64_t start,
+ int parity_gt_ppgtt_insert_page(struct parity_gt_ppgtt *pp, uint64_t dma,
+ 	uint64_t offset, unsigned pat_index);
+ 
++/*
++ * The publish contract of a page-table write (write_dma_entry / fill_page_dma /
++ * gen8_ppgtt_insert_entry in the reference): the GPU's table walker does not
++ * snoop the CPU caches, so every written entry is clflushed.
++ */
++void parity_gt_clflush(const volatile void *address, size_t bytes);
++
++/*
++ * What the GPU would actually walk for one GPU VA, read from the SUBMITTED
++ * tables (not from what the builders returned): the raw 64-bit entry at every
++ * level, the child table it names, and the leaf.
++ */
++struct parity_gt_ppgtt_walk {
++	uint64_t va;
++	uint64_t top_dma;            /* what PDP0 of the context must hold */
++	unsigned idx[4];             /* PML4, PDP, PD, PT indices */
++	uint64_t raw[4];             /* raw entries, top first */
++	uint64_t child_dma[3];       /* address bits of raw[0..2] */
++	int child_known[3];          /* the child is one of this vm's tables */
++	int scratch[4];              /* the entry equals the scratch encode of that level */
++	int levels;                  /* entries read (4 = reached the PTE) */
++	uint64_t leaf_dma;
++	int leaf_present, leaf_rw;
++	unsigned leaf_pat;           /* PAT index from PAT0/1/2 bits */
++};
++int parity_gt_ppgtt_walk(struct parity_gt_ppgtt *pp, uint64_t va,
++	struct parity_gt_ppgtt_walk *w);
++
+ /* --- encoders (exposed so the tests compare against the reference values) --- */
+ uint64_t parity_gen12_ppgtt_pte_encode(uint64_t dma, unsigned pat_index);
+ uint64_t parity_gen8_pde_encode(uint64_t dma);
++/* gen8_pde_encode(addr, I915_CACHE_LLC): PPAT_CACHED_PDE, what set_pd_entry() uses. */
++uint64_t parity_gen8_pde_encode_cached(uint64_t dma);
+ 
+ /* --- pool / GGTT window --- */
+ int parity_gt_mem_init(struct parity_gt_mem *gm, struct drv_dma_device *dma,
+@@ -177,6 +229,20 @@ int parity_gt_ggtt_bind(struct parity_gt_mem *gm, struct parity_gt_object *o);
+ void parity_gt_ggtt_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o);
+ void parity_gt_ggtt_flush(struct parity_gt_mem *gm);
+ 
++/* --- display window --- */
++/* Claims `pages` directly below the GT window.  -ENOSPC when the GGTT is too small. */
++int parity_gt_display_window_init(struct parity_gt_mem *gm, unsigned pages);
++/*
++ * Binds `o` in the display window with its first page aligned to `align_pages` (a power
++ * of two) and `guard_pages` of scratch reserved and written on each side.  The object's
++ * pages must all encode (DMA range); nothing stays bound or reserved on failure.
++ */
++int parity_gt_display_bind(struct parity_gt_mem *gm, struct parity_gt_object *o,
++	unsigned align_pages, unsigned guard_pages);
++void parity_gt_display_unbind(struct parity_gt_mem *gm, struct parity_gt_object *o);
++/* Reads one PTE slot back (tests / diagnostics). */
++uint64_t parity_gt_ggtt_read_pte(const struct parity_gt_mem *gm, unsigned index);
++
+ /* --- the two things intel_gt_init() asks for before the engines --- */
+ int parity_gt_init_scratch(struct parity_gt_mem *gm, struct parity_gt_object **out);
+ int parity_gt_ppgtt_create(struct parity_gt_mem *gm, struct parity_gt_ppgtt *pp);
+diff --git a/src/drivers/gpu/i915/parity/lcd/lcd_wm_compat.h b/src/drivers/gpu/i915/parity/lcd/lcd_wm_compat.h
+new file mode 100644
+index 00000000..0e31d086
+--- /dev/null
++++ b/src/drivers/gpu/i915/parity/lcd/lcd_wm_compat.h
+@@ -0,0 +1,89 @@
++/*
++ * WS031 Linux-parity — environment of the watermark / DDB code (skl_watermark_port.c and its helpers) on top
++ * of the other LCD compat headers.  zedBSD project code.
++ *
++ * Scope: ONE pipe with ONE visible plane (the primary; no cursor plane is created in this path).  The
++ * reference's iterators over "the planes of this crtc" / "the crtcs of this state" therefore visit that one
++ * plane / crtc, and the global DBUF state is the one object the modeset carries.
++ */
++#ifndef PARITY_LCD_WM_COMPAT_H
++#define PARITY_LCD_WM_COMPAT_H
++#include "lcd_i915_fixed.h"           /* reference, extracted: uint_fixed_16_16_t arithmetic */
++#include "lcd_mreg_wm.h"              /* reference, extracted macros: PLANE_WM, PLANE_BUF_CFG, ... */
++
++#ifndef UINT_MAX
++#define UINT_MAX 0xffffffffu
++#endif
++#define ffs(x) __builtin_ffs((int)(x))
++#define fls(x) ((x) ? 32 - __builtin_clz((unsigned int)(x)) : 0)
++#ifndef hweight8
++#define hweight8(x) ((unsigned int)__builtin_popcount((unsigned int)(x) & 0xffu))
++#endif
++#define max_t(t, a, b) ({ t _a = (t)(a); t _b = (t)(b); _a > _b ? _a : _b; })
++#define DIV64_U64_ROUND_UP(n, d) ((u64)(((u64)(n) + (u64)(d) - 1u) / (u64)(d)))
++#define div64_u64(n, d) ((u64)(n) / (u64)(d))
++#define IS_ERR(p) (0)
++#define PTR_ERR(p) (0)
++#define WARN_ON_ONCE(c) WARN_ON(c)
++#define IS_KABYLAKE(i915) 0
++#define IS_COFFEELAKE(i915) 0
++#define IS_COMETLAKE(i915) 0
++#define IS_DGFX(i915) 0
++
++/* drm_format_info(): only the cursor's ARGB8888 is looked up (skl_cursor_allocation) */
++static inline const struct drm_format_info *drm_format_info(u32 format)
++{
++	static const struct drm_format_info argb8888 = { .format = DRM_FORMAT_ARGB8888, .num_planes = 1, .cpp = { 4, 0, 0, 0 }, .has_alpha = true };
++	return format == DRM_FORMAT_ARGB8888 ? &argb8888 : 0;
++}
++
++/* the DBUF slice tables of other platforms are not reached (display version 13, not DG2) */
++#define dg2_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
++#define tgl_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
++#define icl_compute_dbuf_slices(pipe, active_pipes, join_mbus) (0)
++
++/* intel_mbus_dbox_update() walks the crtcs of the active pipes: here the one crtc of the modeset (lcd_modeset_compat.h
++ * has the big-joiner form of this iterator, which never runs) */
++#undef for_each_intel_crtc_in_pipe_mask
++#define for_each_intel_crtc_in_pipe_mask(dev, crtc, mask) \
++	for ((crtc) = to_intel_crtc(parity_lcd_wm->crtc_state->uapi.crtc); (crtc) != 0; (crtc) = 0) for_each_if((mask) & BIT((crtc)->pipe))
++
++/* gen9_dbuf_slices_update(): the body the normal initialisation already uses (it owns the enabled-slices state and the
++ * power-domains lock); reached through the ops so that the model and the real device see the same request */
++#define gen9_dbuf_slices_update(i915, req_slices) (i915)->emit->dbuf_slices_update((i915)->emit->ctx, (unsigned)(req_slices))
++
++/* [fixed] linear framebuffers only */
++#define intel_fb_is_ccs_modifier(modifier) (0)
++#define intel_fb_is_tiled_modifier(modifier) ((modifier) != DRM_FORMAT_MOD_LINEAR)
++
++/* ---- the global DBUF state and the atomic accessors, reduced to the modeset's one object ---- */
++struct intel_atomic_state;
++struct intel_global_state { struct intel_atomic_state *state; bool changed; };
++#define to_intel_atomic_state(s) (s)
++#include "lcd_dbuf_types.h"           /* reference, extracted: struct intel_dbuf_state */
++struct parity_lcd_wm_ctx { struct intel_dbuf_state old_dbuf, new_dbuf; struct intel_crtc_state *crtc_state; };
++extern struct parity_lcd_wm_ctx *parity_lcd_wm;
++#define intel_atomic_get_new_dbuf_state(state) (&parity_lcd_wm->new_dbuf)
++#define intel_atomic_get_old_dbuf_state(state) (&parity_lcd_wm->old_dbuf)
++#define intel_atomic_get_crtc_state(state, crtc) (parity_lcd_wm->crtc_state)
++#define intel_atomic_lock_global_state(global_state) (0)
++#define to_intel_plane_state(x) ((struct intel_plane_state *)(x))
++
++/* ---- iterators over the one plane / crtc ---- */
++#define intel_atomic_crtc_state_for_each_plane_state(plane, plane_state, crtc_state) \
++	for ((plane) = (crtc_state)->only_plane, (plane_state) = (crtc_state)->only_plane_state; (plane) != 0; (plane) = 0)
++#define for_each_intel_plane_on_crtc(dev, crtc, plane) for ((plane) = parity_lcd_wm->crtc_state->only_plane; (plane) != 0; (plane) = 0)
++#define for_each_new_intel_plane_in_state(state, plane, new_plane_state, i) \
++	for ((i) = 0, (plane) = parity_lcd_wm->crtc_state->only_plane, (new_plane_state) = (struct intel_plane_state *)parity_lcd_wm->crtc_state->only_plane_state; (i) < 1 && (plane) != 0; (i)++)
++#define for_each_plane_id_on_crtc(crtc, p) for ((p) = PLANE_PRIMARY; (p) <= PLANE_PRIMARY; (p)++)   /* crtc->plane_ids_mask = the primary */
++#define for_each_dbuf_slice(i915, slice) for ((slice) = DBUF_S1; (slice) < I915_MAX_DBUF_SLICES; (slice)++) for_each_if(DISPLAY_INFO(i915)->dbuf.slice_mask & BIT(slice))
++#define for_each_dbuf_slice_in_mask(i915, slice, mask) for_each_dbuf_slice((i915), (slice)) for_each_if((mask) & BIT(slice))
++
++/* prototypes of kept non-static reference functions called across the generated files */
++unsigned int intel_plane_data_rate(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state, int color_plane);
++bool intel_wm_plane_visible(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
++int intel_usecs_to_scanlines(const struct drm_display_mode *adjusted_mode, int usecs);
++void drm_mode_get_hv_timing(const struct drm_display_mode *mode, int *hdisplay, int *vdisplay);
++void skl_write_plane_wm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state);
++
++#endif /* PARITY_LCD_WM_COMPAT_H */
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_atomic_plane_glue.inc b/src/drivers/gpu/i915/parity/lcd/parity_atomic_plane_glue.inc
+new file mode 100644
+index 00000000..3fe8d39b
+--- /dev/null
++++ b/src/drivers/gpu/i915/parity/lcd/parity_atomic_plane_glue.inc
+@@ -0,0 +1,15 @@
++/*
++ * WS031 Linux-parity — zedBSD glue at the end of intel_atomic_plane_port.c: the two assignments of
++ * intel_plane_atomic_check_with_state() that give a visible plane its data rates (the DDB allocation weighs
++ * planes by rel_data_rate).
++ */
++#include "lcd_dp_compat.h"
++#include "parity_lcd_modeset_int.h"
++
++void parity_lcd_ms_plane_data_rates(struct parity_lcd_modeset *ms)
++{
++	struct intel_crtc_state *cs = &ms->crtc_state;
++
++	cs->data_rate[ms->plane.id] = intel_plane_data_rate(cs, &ms->plane_state, 0);
++	cs->rel_data_rate[ms->plane.id] = intel_plane_relative_data_rate(cs, &ms->plane_state, 0);
++}
+diff --git a/src/drivers/gpu/i915/parity/lcd/parity_wm_glue.inc b/src/drivers/gpu/i915/parity/lcd/parity_wm_glue.inc
+new file mode 100644
+index 00000000..88d1628f
+--- /dev/null
++++ b/src/drivers/gpu/i915/parity/lcd/parity_wm_glue.inc
+@@ -0,0 +1,66 @@
++/*
++ * WS031 Linux-parity — zedBSD glue at the end of skl_watermark_port.c: the reference's skl_compute_wm() /
++ * skl_compute_ddb() reduced to the one crtc of the modeset.  The per-crtc work is the reference's own
++ * (skl_build_pipe_wm, the DBUF slice / MBUS / weight computation, skl_crtc_allocate_ddb,
++ * skl_crtc_allocate_plane_ddb); what is reduced is the iteration over crtcs and the global-state locking.
++ * Not covered here: intel_compute_sagv_mask() (the SAGV / bandwidth side of the commit).
++ */
++#include "lcd_dp_compat.h"
++#include "parity_lcd_modeset_int.h"
++
++struct parity_lcd_wm_ctx *parity_lcd_wm;
++
++int parity_lcd_ms_wm_compute(struct parity_lcd_modeset *ms)
++{
++	struct intel_crtc_state *cs = &ms->crtc_state;
++	struct intel_dbuf_state *new_dbuf = &ms->wm.new_dbuf;
++	enum pipe pipe = ms->crtc.pipe;
++	int ret;
++
++	parity_lcd_wm = &ms->wm;
++	ms->wm.crtc_state = cs;
++	ms->state.base.dev = &ms->i915.drm;
++	ms->state.crtc_state = cs;
++	/* what intel_plane_atomic_check() leaves for a visible plane: its data rates */
++	cs->only_plane = &ms->plane;
++	cs->only_plane_state = &ms->plane_state;
++	parity_lcd_ms_plane_data_rates(ms);
++
++	ret = skl_build_pipe_wm(&ms->state, &ms->crtc);
++	if (ret)
++		return ret;
++
++	/* skl_compute_ddb() */
++	ms->wm.old_dbuf.base.state = &ms->state;       /* a global state object knows its atomic state (-> the device) */
++	*new_dbuf = ms->wm.old_dbuf;
++	new_dbuf->active_pipes = ms->wm.old_dbuf.active_pipes | (u8)BIT(pipe);
++	new_dbuf->joined_mbus = adlp_check_mbus_joined(new_dbuf->active_pipes);        /* HAS_MBUS_JOINING: ADL-P */
++	new_dbuf->slices[pipe] = skl_compute_dbuf_slices(&ms->crtc, new_dbuf->active_pipes, new_dbuf->joined_mbus);
++	new_dbuf->enabled_slices = intel_dbuf_enabled_slices(new_dbuf);
++	new_dbuf->weight[pipe] = intel_crtc_ddb_weight(cs);
++	/* a change of the slices / the MBUS joining serializes the global state (intel_atomic_serialize_global_state) */
++	new_dbuf->base.changed = new_dbuf->enabled_slices != ms->wm.old_dbuf.enabled_slices ||
++		new_dbuf->joined_mbus != ms->wm.old_dbuf.joined_mbus || new_dbuf->active_pipes != ms->wm.old_dbuf.active_pipes;
++	ret = skl_crtc_allocate_ddb(&ms->state, &ms->crtc);
++	if (ret)
++		return ret;
++	return skl_crtc_allocate_plane_ddb(&ms->state, &ms->crtc);
++}
++
++/* the same part of skl_compute_ddb() for the commit that turns the crtc off: no active pipe is left */
++void parity_lcd_ms_wm_compute_off(struct parity_lcd_modeset *ms)
++{
++	struct intel_dbuf_state *new_dbuf = &ms->wm.new_dbuf;
++	enum pipe pipe = ms->crtc.pipe;
++
++	parity_lcd_wm = &ms->wm;
++	*new_dbuf = ms->wm.old_dbuf;
++	new_dbuf->active_pipes = ms->wm.old_dbuf.active_pipes & (u8)~BIT(pipe);
++	new_dbuf->joined_mbus = adlp_check_mbus_joined(new_dbuf->active_pipes);
++	new_dbuf->slices[pipe] = skl_compute_dbuf_slices(&ms->crtc, new_dbuf->active_pipes, new_dbuf->joined_mbus);
++	new_dbuf->enabled_slices = intel_dbuf_enabled_slices(new_dbuf);
++	new_dbuf->weight[pipe] = 0;
++	memset(&new_dbuf->ddb[pipe], 0, sizeof(new_dbuf->ddb[pipe]));
++	new_dbuf->base.changed = new_dbuf->enabled_slices != ms->wm.old_dbuf.enabled_slices ||
++		new_dbuf->joined_mbus != ms->wm.old_dbuf.joined_mbus || new_dbuf->active_pipes != ms->wm.old_dbuf.active_pipes;
++}
+diff --git a/src/drivers/gpu/i915/parity/lcd/scanout.c b/src/drivers/gpu/i915/parity/lcd/scanout.c
+new file mode 100644
+index 00000000..568c7e58
+--- /dev/null
++++ b/src/drivers/gpu/i915/parity/lcd/scanout.c
+@@ -0,0 +1,160 @@
++/*
++ * WS031 Linux-parity — the scanout buffer (see scanout.h).  zedBSD project code.
++ *
++ * The layout and placement numbers follow the reference's rules for this one layout;
++ * each is named where it is used:
++ *   pitch alignment 64        intel_fb_stride_alignment(): a linear surface whose pitch is
++ *                             within the plane's maximum stride uses 64 bytes
++ *                             (i915_gem_dumb_create() rounds width * cpp up to 64 as well)
++ *   stride units   pitch/64   skl_plane_stride() / skl_plane_stride_mult(): a linear surface
++ *                             expresses its stride in 64-byte chunks
++ *   alignment      256 KiB    intel_surf_alignment() -> intel_linear_alignment(), DISPLAY_VER >= 9
++ *   guard          168 PTEs   i915_gem_object_pin_to_display_plane(): VTD_GUARD of scratch on both
++ *                             sides when VT-d is active.  A VFIO guest cannot see whether the
++ *                             HOST translates its DMA, so the guard is applied always
++ *                             (a superset of the reference's behaviour; recorded, not hidden)
++ *   cache          clflush    __i915_gem_object_flush_for_display(): the CPU's dirty cache lines
++ *                             are flushed before the display reads the pages
++ *   PTE            present    gen8_ggtt_pte_encode(): address | PRESENT; the cache level chosen
++ *                             for a display pin has no PTE bits on this generation
++ */
++#include "../../internal.h"
++#include <kern/klog.h>
++#include <string.h>
++#include <errno.h>
++#include "../gt_mem.h"
++#include "scanout.h"
++
++#define SCANOUT_STRIDE_ALIGN   64u
++#define SCANOUT_SURF_ALIGN     (256u * 1024u)
++#define SCANOUT_VTD_GUARD      168u
++#define SCANOUT_MAX_STRIDE     131072u          /* skl_plane_max_stride(), DISPLAY_VER >= 13: 128 KiB (65536 pixels would allow more) */
++
++int
++parity_scanout_create(struct parity_gt_mem *gm, uint32_t width, uint32_t height,
++	uint32_t format, uint64_t modifier, struct parity_scanout *so)
++{
++	if (gm == 0 || so == 0)
++		return -EINVAL;
++	memset(so, 0, sizeof(*so));
++	/* the one layout this stage supports; anything else is refused before any allocation */
++	if (format != PARITY_FOURCC_XRGB8888 || modifier != PARITY_MOD_LINEAR ||
++	    width == 0u || height == 0u || width > 8192u || height > 4096u)
++		return -EINVAL;
++
++	so->gm = gm;
++	so->width = width;
++	so->height = height;
++	so->format = format;
++	so->modifier = modifier;
++	so->cpp = 4u;
++	so->pitch = (width * so->cpp + SCANOUT_STRIDE_ALIGN - 1u) & ~(SCANOUT_STRIDE_ALIGN - 1u);
++	if (so->pitch > SCANOUT_MAX_STRIDE)
++		return -EINVAL;
++	so->stride_units = so->pitch / SCANOUT_STRIDE_ALIGN;
++	so->size = so->pitch * height;
++	so->alignment = SCANOUT_SURF_ALIGN;
++	so->guard_pages = SCANOUT_VTD_GUARD;
++
++	so->obj = parity_gt_object_create(gm, so->size);
++	if (so->obj == 0) {
++		memset(so, 0, sizeof(*so));
++		return -ENOMEM;
++	}
++	so->cpu = (uint32_t *)so->obj->cpu;
++	so->state = PARITY_SCANOUT_ALLOCATED;
++	return 0;
++}
++
++int
++parity_scanout_pin(struct parity_scanout *so, const char *owner)
++{
++	int rc;
++
++	if (so == 0 || so->state != PARITY_SCANOUT_ALLOCATED)
++		return so != 0 && so->state >= PARITY_SCANOUT_PINNED ? -EBUSY : -EINVAL;
++	rc = parity_gt_display_bind(so->gm, so->obj, so->alignment / PARITY_GT_PAGE_BYTES, so->guard_pages);
++	if (rc != 0)
++		return rc;
++	/* the plane's surface register holds a 32-bit, 4 KiB aligned GGTT offset */
++	if ((so->obj->ggtt_offset >> 32) != 0u || (so->obj->ggtt_offset & (so->alignment - 1u)) != 0u) {
++		parity_gt_display_unbind(so->gm, so->obj);
++		return -ERANGE;
++	}
++	so->surf = so->obj->ggtt_offset;
++	so->pin_owner = owner;
++	so->state = PARITY_SCANOUT_PINNED;
++	parity_scanout_publish(so);
++	return 0;
++}
++
++void
++parity_scanout_publish(struct parity_scanout *so)
++{
++	if (so == 0 || so->state < PARITY_SCANOUT_ALLOCATED || so->cpu == 0)
++		return;
++	parity_gt_clflush(so->cpu, so->size);
++	so->publishes++;
++}
++
++int
++parity_scanout_begin(struct parity_scanout *so)
++{
++	if (so == 0 || so->state != PARITY_SCANOUT_PINNED)
++		return -EINVAL;
++	so->state = PARITY_SCANOUT_IN_USE;
++	return 0;
++}
++
++void
++parity_scanout_end(struct parity_scanout *so)
++{
++	if (so != 0 && so->state == PARITY_SCANOUT_IN_USE)
++		so->state = PARITY_SCANOUT_PINNED;
++}
++
++int
++parity_scanout_unpin(struct parity_scanout *so)
++{
++	if (so == 0)
++		return -EINVAL;
++	if (so->state == PARITY_SCANOUT_IN_USE || so->state == PARITY_SCANOUT_ABANDONED) {
++		so->refused_unpin++;
++		return -EBUSY;
++	}
++	if (so->state != PARITY_SCANOUT_PINNED)
++		return -EINVAL;
++	parity_gt_display_unbind(so->gm, so->obj);
++	so->surf = 0u;
++	so->pin_owner = 0;
++	so->state = PARITY_SCANOUT_ALLOCATED;
++	return 0;
++}
++
++int
++parity_scanout_destroy(struct parity_scanout *so)
++{
++	if (so == 0)
++		return -EINVAL;
++	if (so->state >= PARITY_SCANOUT_PINNED) {
++		so->refused_destroy++;
++		return -EBUSY;
++	}
++	if (so->state != PARITY_SCANOUT_ALLOCATED)
++		return -EINVAL;
++	parity_gt_object_destroy(so->gm, so->obj);
++	memset(so, 0, sizeof(*so));
++	return 0;
++}
++
++void
++parity_scanout_abandon(struct parity_scanout *so)
++{
++	if (so == 0 || so->state < PARITY_SCANOUT_PINNED)
++		return;
++	so->obj->keep = 1;
++	so->state = PARITY_SCANOUT_ABANDONED;
++	kern_logf("i915: parity scanout: ABANDONED at GGTT 0x%llx (%u bytes, owner %s): the display was not "
++		"shown to have stopped; pages, mapping and PTEs are kept\n",
++		(unsigned long long)so->surf, so->size, so->pin_owner != 0 ? so->pin_owner : "-");
++}
+diff --git a/src/drivers/gpu/i915/parity/lcd/scanout.h b/src/drivers/gpu/i915/parity/lcd/scanout.h
+new file mode 100644
+index 00000000..3c4da0e5
+--- /dev/null
++++ b/src/drivers/gpu/i915/parity/lcd/scanout.h
+@@ -0,0 +1,88 @@
++/*
++ * WS031 Linux-parity — the scanout buffer: a framebuffer the DISPLAY ENGINE reads.
++ *
++ * First form, deliberately narrow: XRGB8888, DRM_FORMAT_MOD_LINEAR, rotation 0, no
++ * scaling, no compression / aux planes, one colour plane.  With a linear modifier the
++ * reference does not use a display page table even on hardware that has one
++ * (intel_fb_modifier_uses_dpt(): HAS_DPT && modifier != LINEAR), so the ordinary GGTT
++ * path is the reference's own path for this buffer, not a shortcut.  A tiled buffer
++ * must revisit that decision from the DPT test on.
++ *
++ * What this object keeps apart (they are different things with different owners):
++ *   backing      DMA pages and their size                       (gt_mem object)
++ *   cpu          the CPU mapping used to draw into it
++ *   ggtt         the reserved GGTT range: guards + pages, and the display alignment
++ *   layout       format / modifier / pitch / height            (what the plane is told)
++ *   surf         the address the plane's surface register gets
++ *   users        who pinned it, and whether the display is scanning it out
++ *
++ * The memory image is 32 bits per pixel.  The LINK carries 18 bpp to this panel; that
++ * number belongs to the link computation and never sizes this buffer.
++ *
++ * Lifetime: create -> pin -> [publish after CPU writes] -> scanout_begin ... scanout_end
++ * -> unpin -> destroy.  A buffer the display is (or may still be) reading is never
++ * unpinned or freed: unpin/destroy refuse it, and if a stop could not be confirmed the
++ * owner calls parity_scanout_abandon(), which keeps the pages and the mapping for ever
++ * and records that, rather than producing a clean-looking teardown.
++ */
++#ifndef PARITY_SCANOUT_H
++#define PARITY_SCANOUT_H
++
++#include <stdint.h>
++
++struct parity_gt_mem;
++struct parity_gt_object;
++
++#define PARITY_FOURCC_XRGB8888 0x34325258u      /* 'XR24' */
++#define PARITY_MOD_LINEAR 0ull
++
++enum parity_scanout_state {
++	PARITY_SCANOUT_NONE = 0,
++	PARITY_SCANOUT_ALLOCATED,       /* backing + CPU mapping */
++	PARITY_SCANOUT_PINNED,          /* + GGTT range, surf address valid */
++	PARITY_SCANOUT_IN_USE,          /* the display engine reads it */
++	PARITY_SCANOUT_ABANDONED        /* stop not confirmed: never released */
++};
++
++struct parity_scanout {
++	/* layout */
++	uint32_t width, height;
++	uint32_t format;                /* PARITY_FOURCC_XRGB8888 */
++	uint64_t modifier;              /* PARITY_MOD_LINEAR */
++	unsigned cpp;                   /* bytes per pixel of the MEMORY image: 4 */
++	uint32_t pitch;                 /* bytes per row: width * cpp rounded up to the stride alignment */
++	uint32_t stride_units;          /* pitch / 64: the PLANE_STRIDE encoding for a linear surface */
++	uint32_t size;                  /* pitch * height */
++	/* placement requirements */
++	uint32_t alignment;             /* bytes: intel_surf_alignment() */
++	unsigned guard_pages;           /* scratch PTEs on each side: VTD_GUARD */
++	/* backing, mapping, GGTT */
++	struct parity_gt_mem *gm;
++	struct parity_gt_object *obj;
++	uint32_t *cpu;
++	uint64_t surf;                  /* GGTT offset for PLANE_SURF (fits 32 bits, 4 KiB aligned) */
++	/* users */
++	int state;
++	const char *pin_owner;
++	unsigned publishes;
++	unsigned refused_unpin, refused_destroy;
++};
++
++/* 0 or a negative errno: -EINVAL unsupported layout, -ENOMEM backing.  Nothing stays allocated on failure. */
++int parity_scanout_create(struct parity_gt_mem *gm, uint32_t width, uint32_t height,
++	uint32_t format, uint64_t modifier, struct parity_scanout *so);
++/* Reserves the GGTT range (alignment + guards), writes the PTEs, flushes the CPU cache for the display. */
++int parity_scanout_pin(struct parity_scanout *so, const char *owner);
++/* After the CPU changed pixels: make them visible to the display engine (i915_gem_object_flush_if_display). */
++void parity_scanout_publish(struct parity_scanout *so);
++/* The display engine starts / has provably stopped reading the buffer. */
++int parity_scanout_begin(struct parity_scanout *so);
++void parity_scanout_end(struct parity_scanout *so);
++/* -EBUSY while the display reads it. */
++int parity_scanout_unpin(struct parity_scanout *so);
++/* -EBUSY while pinned or in use. */
++int parity_scanout_destroy(struct parity_scanout *so);
++/* The stop could not be confirmed: keep pages, mapping and PTEs for ever; teardown leaves them alone. */
++void parity_scanout_abandon(struct parity_scanout *so);
++
++#endif /* PARITY_SCANOUT_H */

@@ -1,0 +1,4 @@
+Actual GPU-disabled amd64 vmunix build: PASS
+GPU core/fence/Venus symbols and objects: absent
+Generic handle/fd symbols: handle_get, handle_put, fd_object_get, fd_object_put, filedesc_commit_objects
+ELF SHA256: cdb215d31100466965ad8cbcbe68f24065f2ef53495e279ceb978472d705a089

@@ -1,0 +1,1 @@
+2026-09-30 acid2 exact-pixel-pass 1 agreement 100.00% acid3 9/100 exact-pixel-pass 0 agreement 40.35% historical-diagnostic suite=wpt-2d66b9b7 phase=ws074-p099 queue=q507

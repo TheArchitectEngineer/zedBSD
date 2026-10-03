@@ -1,0 +1,66 @@
+diff --git a/plan/ws089/tests/host-build.sh b/plan/ws089/tests/host-build.sh
+index 72dd61c..d68949f 100755
+--- a/plan/ws089/tests/host-build.sh
++++ b/plan/ws089/tests/host-build.sh
+@@ -32,9 +32,9 @@ for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userla
+ 	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -c "$file" -o "$object"
+ 	objects="$objects $object"
+ done
+-# The sound page's link to audiod (ws100-p005): libkeiland's audio.c (no audiod on the host: the page shows no sound).
++# The sound page's link to audiod (ws100-p005): libkeiland's zedbsd/audio-zedbsd.c (no audiod on the host: the page shows no sound).
+ object="$out/obj/shared-audio.o"
+-"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -c userland/desktop/libkeiland/audio.c -o "$object"
++"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -c userland/desktop/libkeiland/zedbsd/audio-zedbsd.c -o "$object"
+ objects="$objects $object"
+ for file in $src/*.c; do
+ 	case $(basename "$file") in
+diff --git a/plan/ws100/tests/host-audio.sh b/plan/ws100/tests/host-audio.sh
+index f30bf60..fb3ebe0 100644
+--- a/plan/ws100/tests/host-audio.sh
++++ b/plan/ws100/tests/host-audio.sh
+@@ -1,5 +1,5 @@
+ #!/bin/sh
+-# ws100-p003: builds libkeiland's audio.c on the host with its socket in build/ws100-host (AUDIO_SOCKET_PATH) and runs
++# ws100-p003: builds libkeiland's zedbsd/audio-zedbsd.c on the host with its socket in build/ws100-host (AUDIO_SOCKET_PATH) and runs
+ # host-audio.c against a pretend audiod.
+ #   sh plan/ws100/tests/host-audio.sh
+ # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+@@ -10,5 +10,5 @@ mkdir -p "$out/include"
+ ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ ${CC:-cc} -std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I"$out/include" -I. \
+     "-DAUDIO_SOCKET_PATH=\"$out/audiod.sock\"" \
+-    userland/desktop/libkeiland/audio.c plan/ws100/tests/host-audio.c -o "$out/host-audio"
++    userland/desktop/libkeiland/zedbsd/audio-zedbsd.c plan/ws100/tests/host-audio.c -o "$out/host-audio"
+ exec "$out/host-audio"
+diff --git a/userland/desktop/libkeiland/Makefile b/userland/desktop/libkeiland/Makefile
+index c5ac6f2..1151252 100644
+--- a/userland/desktop/libkeiland/Makefile
++++ b/userland/desktop/libkeiland/Makefile
+@@ -5,15 +5,21 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
+ # Menu, WS070).  The file chooser of ws092-p003 moved to libkeiui (ws090-p006,
+ # KEILAND_VERSION 16).
+ # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+-LIBZDESKTOP_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/libkeiland/menu.c \
++LIBKEILAND_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/libkeiland/menu.c \
+ 	userland/desktop/libkeiland/recent.c userland/desktop/libkeiland/titlebar.c \
+-	userland/desktop/libkeiland/glass.c userland/desktop/libkeiland/network.c \
++	userland/desktop/libkeiland/glass.c \
+ 	userland/desktop/libkeiland/motion.c userland/desktop/libkeiland/scroll.c \
+-	userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/network-link.c \
++	userland/desktop/libkeiland/gesture.c \
+ 	userland/desktop/libkeiland/preferences.c \
+-	userland/desktop/libkeiland/desktop.c userland/desktop/libkeiland/audio.c \
+-	userland/desktop/libkeiland/keyboard-inset.c userland/desktop/libkeiland/edit.c \
++	userland/desktop/libkeiland/desktop.c \
++	userland/desktop/libkeiland/keyboard-inset.c userland/desktop/libkeiland/edit.c
++
++# The zedBSD side of the library: networkd, the interfaces and the saved keys,
++# audiod (WS104).  WS105 has the Linux side in Makefile.linux.
++LIBKEILAND_ZEDBSD_SOURCES := userland/desktop/libkeiland/zedbsd/network-zedbsd.c \
++	userland/desktop/libkeiland/zedbsd/network-link-zedbsd.c \
++	userland/desktop/libkeiland/zedbsd/audio-zedbsd.c \
+ 	userland/base/net/protocol.c userland/base/net/wifi-conf.c userland/base/net/wifi-store.c
+ 
+ LIBZDESKTOP_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiland.so=$(BUILD)/dynamic/libkeiland.so)
+-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiland,Desktop system library,amd64,y,library,$(LIBZDESKTOP_SOURCES),y,desktop,desktop/libkeiland,desktop/libwayland desktop/libtruetype,,shared-library,$(LIBZDESKTOP_IMAGE_DATA),,lib))
++$(eval $(call ZEDBSD_USERLAND_PACKAGE,libkeiland,Desktop system library,amd64,y,library,$(LIBKEILAND_SOURCES) $(LIBKEILAND_ZEDBSD_SOURCES),y,desktop,desktop/libkeiland,desktop/libwayland desktop/libtruetype,,shared-library,$(LIBZDESKTOP_IMAGE_DATA),,lib))

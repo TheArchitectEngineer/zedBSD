@@ -1,0 +1,15 @@
+head script
+microtask of the head script
+body script
+async starts
+end of body script
+load
+slept 20
+all slept 10,5,now
+caught late
+click listener
+after click
+microtask of the listener
+end of the rejections
+handled handled later
+Uncaught (in promise) Error: nobody handles this

@@ -1,0 +1,10 @@
+{
+  "runtime_source": "6efb4f2bbe86e44da74a79f44ec4cf4a4576318c",
+  "wayland_elf": "build/amd64/bin/wayland",
+  "wayland_sha256_before_comment": "ebaf8d759341534730c921b9af0594a10806f5d22852429f19d9acf22d04872b",
+  "handoff_source_sha256": "b1c79d269d46781e38e28b01da5eab413cc78054061b4caf6e76c2220c123e00",
+  "non_comment_bytes_identical": true,
+  "handoff_source_sha256_after": "dee0a319370a752364eec32eecd4bfe4ce65403f463df658d8cc539179e51fc9",
+  "wayland_sha256_after_comment": "ebaf8d759341534730c921b9af0594a10806f5d22852429f19d9acf22d04872b",
+  "all_runtime_image_wayland_elf_identical": true
+}

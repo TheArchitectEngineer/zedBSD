@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/sleep
+arguments=45
+after=syslogd
+restart=no
+required=NO

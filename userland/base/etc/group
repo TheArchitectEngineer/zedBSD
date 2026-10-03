@@ -1,0 +1,5 @@
+wheel:x:0:root
+network:x:69:kei
+sshd:x:22:
+_greeter:x:78:
+kei:x:1000:

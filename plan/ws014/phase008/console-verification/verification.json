@@ -1,0 +1,56 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-text-snapshot-test.sh"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.316,
+      "log": "plan/ws014/phase008/console-verification/run-text-snapshot-test.log",
+      "sha256": "6f938d57b2fe47fd2c0c72beda90d74a4e935fadc0eef0feac66313981e41421"
+    },
+    {
+      "command": [
+        "sh",
+        "plan/ws014/tests/run-text-notification-test.sh"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.265,
+      "log": "plan/ws014/phase008/console-verification/run-text-notification-test.log",
+      "sha256": "ddecc658fb0b549d66be18adaf49aec03e41b87c9805f0ae1b9b3607860121e0"
+    },
+    {
+      "command": [
+        "sh",
+        "plan/ws030/tests/run-venus-console-test.sh"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": null,
+      "log": "plan/ws014/phase008/console-verification/run-venus-console-test.log",
+      "sha256": "527b89c7c73f73924a3433a18166eb01a2b854143380db187d93f09b5079d998",
+      "final_revalidation": "Normal and ASan/UBSan runner exit0 after public-peer ordering/comment-only change; timeout120 seconds."
+    }
+  ],
+  "source_sha256": {
+    "include/kern/text-display.h": "e1de7b2343f9ab05b97cddaa84fde710d73c8fb09eb88d1260dbfd27dc3eb245",
+    "include/kern/lock.h": "b1a34d1e65c6de7e7dc659dcfbb9c6f4cdf4175199fd014aadcdc8231af134e1",
+    "src/kern/text-display.c": "bcdac830adddd73aab5e37a0cd2b4f58f25f1defbf7233b91f7f3b004f04f936",
+    "src/drivers/gpu/venus/display.c": "bc9c96834eb4e9c57c7b3c1870474353c02fe033983d834c186eefb6cd9b6e12",
+    "src/drivers/gpu/venus/internal.h": "3a1b0fb134890b5e2d39950621f67512ebdc15e3e013a649adf9533559226b8f",
+    "plan/ws030/tests/text-snapshot.c": "881dac7b5181d4f86c23ace43f712f4b61ff20e3a85e8eb1403038e962ef4a27",
+    "plan/ws030/tests/venus-console.c": "482d678e5caec3e463c2cce4e2e0ba4230385026be6e90f70cdd9bdbab8468fd",
+    "plan/ws014/tests/text-notification.c": "1bf8f6b8e94cb590c06fa1a9466651982c48c17fbf3516a103d448749a142f2e"
+  },
+  "changed_during_run": [],
+  "coverage": "real text/display production paths with host collaborators; each runner normal and ASan/UBSan",
+  "independent_review": {
+    "reviewers": [
+      "Euclid",
+      "Hume"
+    ],
+    "finding": "No functional defect identified in notification ordering/lifetime and producer-stop scenario. Public test peer ordering and purpose comments corrected.",
+    "applied_rules": "plan/coding-style.md full changed-code checklist"
+  }
+}

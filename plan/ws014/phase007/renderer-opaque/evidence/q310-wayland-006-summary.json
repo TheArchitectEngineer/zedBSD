@@ -1,0 +1,59 @@
+{
+  "status": "pass",
+  "started": "2026-09-13T02:10:34.989783+00:00",
+  "elapsed_seconds": 46.651,
+  "qemu_exit_code": 0,
+  "image_sha256": "939d075a54fea74efc5bd1276bc180a628946879a388e3aa0ccb6b875d957fc0",
+  "environment": {
+    "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/intel_icd.json",
+    "VIRGL_LOG_LEVEL": "debug",
+    "RENDER_SERVER_EXEC_PATH": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/libexec/virgl_render_server",
+    "LD_LIBRARY_PATH": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/lib/x86_64-linux-gnu"
+  },
+  "renderer_library": {
+    "directory": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/lib/x86_64-linux-gnu",
+    "path": "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/lib/x86_64-linux-gnu/libvirglrenderer.so.1.9.0",
+    "sha256": "3f692e604f7653153b6b7340afa0f97e65ee78956babe004eb7d0b8ead8a6a26",
+    "mapped_by_qemu": true,
+    "final_sha256": "3f692e604f7653153b6b7340afa0f97e65ee78956babe004eb7d0b8ead8a6a26"
+  },
+  "render_server_sha256": "c9383cef62253c995cb067d7e1eb11c29d801bdd3514fa5d0dcbdb26e9056f0d",
+  "concurrent_admission": true,
+  "external_fence": true,
+  "independent_renderer_import": true,
+  "allocation_imports": [
+    {
+      "kind": "buffer",
+      "marker": "GPU ALLOCATION PASS kind=1 producer-exit independent-context pixels=1024"
+    },
+    {
+      "kind": "optimal",
+      "marker": "GPU ALLOCATION PASS kind=2 producer-exit independent-context pixels=1024"
+    }
+  ],
+  "fifo_completed": true,
+  "mailbox_completed": true,
+  "shared_gpu_path": true,
+  "compositor_stopped": true,
+  "lifecycle": {
+    "client_aborted": true,
+    "client_reopened": true,
+    "compositor_reopened": true,
+    "compositor_killed": true,
+    "surface_loss": true,
+    "console_restored": true,
+    "client_reopen_token": "r80ea1a010463e48ddab3eedf-after-abort",
+    "surface_loss_marker": "WLTEST FAILED run=r80ea1a010463e48ddab3eedf-lost api=vkAcquireNextImageKHR result=-1000000000 cleanup=0 errno=44 frames=2",
+    "killed_console_sha256": "8961e65cbb7d6be4e3e0308eec111099e3e3a7fd99a3dc64ebffe1f635882216",
+    "killed_console_restored": true,
+    "after_kill_token": "r80ea1a010463e48ddab3eedf-after-kill",
+    "after_kill_reopened": true,
+    "console_before_sha256": "6cf90d00b5741695657c7c6dfda63ac8db2f9612dd13a738b72d95771e4dca2c",
+    "console_after_sha256": "9a91f79d95849fe5b21d04ccdcc2c14e704420ad14488cd275f6d39abe3f50cb"
+  },
+  "source_evidence": "plan/ws014/temp/remote/q310-wayland-006/evidence/result.json",
+  "source_evidence_sha256": "bdbae57c35e2ac6b2ef648bc1ec8fea59ee9b7f56c5eba2be5f622b0b3fa1287",
+  "frames": 12,
+  "evaluated_pixels": 921600,
+  "mismatch_pixels": 0
+}

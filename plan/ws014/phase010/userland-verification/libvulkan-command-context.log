@@ -1,0 +1,4 @@
+libvulkan commands: 44 exact wire records, >64KiB copied batches, bounded prefix flush, 97 buffers, recording failure/reset and implicit pool frees PASS
+PASS actual command/context: End-Reset-rerecord no-reply flush and legal 1152000-byte copy payload
+libvulkan commands: 44 exact wire records, >64KiB copied batches, bounded prefix flush, 97 buffers, recording failure/reset and implicit pool frees PASS
+PASS actual command/context: End-Reset-rerecord no-reply flush and legal 1152000-byte copy payload

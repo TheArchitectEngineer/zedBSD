@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html><head><title>flexmin</title>
+<style>
+body { margin: 0; }
+.row { display: flex; width: 200px; }
+.box { display: inline-block; width: 60px; height: 10px; }
+.item { flex: 1 1 100px; }
+</style></head>
+<body>
+<div class="row" id="r1"><div class="item" id="a"><span class="box"></span><span class="box"></span></div><div class="item" id="b"><span class="box"></span></div><div class="item" id="c"><span class="box"></span></div></div>
+<div class="row" id="r2"><div class="item" id="d" style="min-width: 0"><span class="box"></span></div><div class="item" id="e" style="overflow: hidden"><span class="box"></span></div><div class="item" id="f"><span class="box"></span></div><div class="item" id="g"><span class="box"></span></div></div>
+<div class="row" id="r3"><div id="h" style="width: 30px; flex-shrink: 1"><span class="box"></span></div><div id="i" style="flex: 0 1 300px"><span class="box"></span><span class="box"></span></div></div>
+<div class="row" id="r4"><div id="j" style="flex: 0 1 150px"><span class="box"></span></div><div id="k" style="flex: 0 1 150px; max-width: 40px"><span class="box"></span></div></div>
+<script>
+// ws074-p084: a flex row's items shrink no narrower than their content (min-width: auto).
+function w(id) { return Math.round(document.getElementById(id).getBoundingClientRect().width); }
+console.log("wrapping " + [w("a"), w("b"), w("c")].join(" "));
+console.log("zero and scroll " + [w("d"), w("e"), w("f"), w("g")].join(" "));
+console.log("given width " + [w("h"), w("i")].join(" "));
+console.log("max-width " + [w("j"), w("k")].join(" "));
+console.log("computed " + getComputedStyle(document.getElementById("a")).minWidth + " " + getComputedStyle(document.getElementById("d")).minWidth);
+</script>
+</body></html>

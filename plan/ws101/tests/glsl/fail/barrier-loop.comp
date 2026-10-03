@@ -1,0 +1,8 @@
+#version 310 es
+// expect: barrier() is not allowed inside a selection, a loop or a switch
+layout(local_size_x = 64) in;
+void main()
+{
+	for (int i = 0; i < 4; i++)
+		barrier();
+}

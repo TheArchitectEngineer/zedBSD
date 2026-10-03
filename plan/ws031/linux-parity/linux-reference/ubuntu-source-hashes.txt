@@ -1,0 +1,11 @@
+=== dsc/orig/debian hashes ===
+40fb1a41e084f8f923cbea43fe2ffc491e7bd3c247672018f0aa97ef3e352558  /tmp/src/linux_6.8.0-139.139.dsc
+26512115972bdf017a4ac826cc7d3e9b0ba397d4f85cd330e4e4ff54c78061c8  /tmp/src/linux_6.8.0.orig.tar.gz
+c18cf1db6c7ed0ad5cf7d651de117b415f17e05baaeefb13a4a2306e94e9ae57  /tmp/src/linux_6.8.0-139.139.diff.gz
+=== extracted tree ===
+/tmp/src/linux-6.8.0/
+TREE=/tmp/src/linux-6.8.0/
+=== i915 c-file count ===
+386
+STAGED /tmp/ubu-i915.tar.gz 9c5fcd0796ca3cb86a853091438a6dbd97fdad20ca4f584e6acd1af28dfa7fb7
+DONE

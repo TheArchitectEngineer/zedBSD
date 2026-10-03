@@ -1,0 +1,4 @@
+reftex: PS size=640 d8=1 d16=1 d32=0 off16=320 off32=0 grf_start8=4 grf_start16=6 grf_start32=0 num_varying=0 persample=0 uses_kill=0 uses_src_depth=1 uses_src_w=1 uses_pos_offset=0 uses_omask=0 computed_depth=0 has_side_effects=1 total_scratch=0 push_sizes=0/0/0/0 barycentric_interp_modes=0x0
+reftex: texture tiling=0 row_pitch_B=32 size_B=256 alignment_B=1 image_alignment=16x4 ss.size=64 ss.align=64
+reftex: 3DSTATE_PS DW7(grf start 4)=0x00040000 | 3DSTATE_PS_EXTRA = 0x784f0000 0x81800004
+reftex: 3DSTATE_PS header=0x7820000a DW3(sampler count 1, bt count 2)=0x08080000 | 3DSTATE_SAMPLER_STATE_POINTERS_PS = 0x782f0000 0x00000380

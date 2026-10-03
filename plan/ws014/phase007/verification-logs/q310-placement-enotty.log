@@ -1,0 +1,2 @@
+libvulkan external memory: stock DMA and negotiated OPAQUE, private WSI DMA, placed64/legacy40, placement refusal and terminal ownership, immutable metadata, native extent and lazy mmap PASS
+libvulkan external memory: stock DMA and negotiated OPAQUE, private WSI DMA, placed64/legacy40, placement refusal and terminal ownership, immutable metadata, native extent and lazy mmap PASS

@@ -1,0 +1,80 @@
+{
+  "scope": "actual renderer source; scripted native Vulkan only",
+  "results": [
+    {
+      "case": "queue",
+      "profile": "ordinary",
+      "compile": {
+        "exit": 0,
+        "seconds": 0.3658313990017632,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/queue-ordinary-compile.log",
+        "pass": true
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "seconds": 0.0016027829988161102,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/queue-ordinary-run.log",
+        "pass": true
+      }
+    },
+    {
+      "case": "queue",
+      "profile": "sanitized",
+      "compile": {
+        "exit": 0,
+        "seconds": 0.8669998169934843,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/queue-sanitized-compile.log",
+        "pass": true
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "seconds": 0.008082639003987424,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/queue-sanitized-run.log",
+        "pass": true
+      }
+    },
+    {
+      "case": "proxy",
+      "profile": "ordinary",
+      "compile": {
+        "exit": 0,
+        "seconds": 0.26492405698809307,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/proxy-ordinary-compile.log",
+        "pass": true
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "seconds": 0.0018633389991009608,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/proxy-ordinary-run.log",
+        "pass": true
+      }
+    },
+    {
+      "case": "proxy",
+      "profile": "sanitized",
+      "compile": {
+        "exit": 0,
+        "seconds": 0.4661563250119798,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/proxy-sanitized-compile.log",
+        "pass": true
+      },
+      "pass": true,
+      "run": {
+        "exit": 0,
+        "seconds": 0.00819207399035804,
+        "log": "/home/awe/zedbsd-q306-venus/dependencies/q311-strict/fixture-evidence/proxy-sanitized-run.log",
+        "pass": true
+      }
+    }
+  ],
+  "pass": true,
+  "fixture_sha256": {
+    "handshake.py": "e1f246caeb622bc6fe8c494960f0a5d28850f0e99d76f96ad051bc2e3a5ff35c",
+    "proxy.c": "d1f2a06615fea381815618c147fcf470abdff64fb37b238e87e9068ced3295f7",
+    "queue.c": "239da27cb059daf1db823540db539c3268c122da73577c0402f80b2588729ee7",
+    "run.py": "326b14cdd01697dcfb14464ac38d8da444faec0a1881e37a2965c619810d5d7e"
+  }
+}

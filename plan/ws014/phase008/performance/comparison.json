@@ -1,0 +1,345 @@
+{
+  "baseline": {
+    "token": "q311-baseline-cpu-ordinary",
+    "guest_command": "/bin/vkdemo --duration=2 --token=q311-baseline-cpu-ordinary",
+    "start_seen": true,
+    "samples": [
+      {
+        "frame": 1,
+        "time_ms": 0,
+        "readback_disabled": true
+      },
+      {
+        "frame": 2,
+        "time_ms": 140,
+        "readback_disabled": true
+      },
+      {
+        "frame": 3,
+        "time_ms": 310,
+        "readback_disabled": true
+      },
+      {
+        "frame": 4,
+        "time_ms": 470,
+        "readback_disabled": true
+      },
+      {
+        "frame": 5,
+        "time_ms": 630,
+        "readback_disabled": true
+      },
+      {
+        "frame": 6,
+        "time_ms": 790,
+        "readback_disabled": true
+      },
+      {
+        "frame": 7,
+        "time_ms": 950,
+        "readback_disabled": true
+      },
+      {
+        "frame": 8,
+        "time_ms": 1110,
+        "readback_disabled": true
+      },
+      {
+        "frame": 9,
+        "time_ms": 1270,
+        "readback_disabled": true
+      },
+      {
+        "frame": 10,
+        "time_ms": 1430,
+        "readback_disabled": true
+      },
+      {
+        "frame": 11,
+        "time_ms": 1590,
+        "readback_disabled": true
+      },
+      {
+        "frame": 12,
+        "time_ms": 1750,
+        "readback_disabled": true
+      },
+      {
+        "frame": 13,
+        "time_ms": 1910,
+        "readback_disabled": true
+      }
+    ],
+    "captures": [
+      {
+        "filename": "ordinary-1.ppm",
+        "sha256": "18e3841cdbce6625585a890733982bb96e4b88f56d9717575d60c4ec28f18505",
+        "capture": {
+          "method": "rfb-raw-unix",
+          "rectangles": 1,
+          "framebuffer_updates": 1,
+          "desktop_resizes": 0,
+          "last_rectangles": 0,
+          "raw_bytes": 307200,
+          "pixel_format": {
+            "bits_per_pixel": 32,
+            "depth": 24,
+            "big_endian": false,
+            "red_shift": 16,
+            "green_shift": 8,
+            "blue_shift": 0
+          },
+          "server_version": "RFB 003.008",
+          "server_name": "QEMU",
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "width": 320,
+          "height": 240,
+          "pixels": 76800,
+          "sha256": "18e3841cdbce6625585a890733982bb96e4b88f56d9717575d60c4ec28f18505"
+        },
+        "rgb_sha256": "af065c4663d85c946cafad2edc0a9b47418876598e5637a16cc76476f1c34f4f",
+        "observed_after_submit": 2
+      },
+      {
+        "filename": "ordinary-2.ppm",
+        "sha256": "5e69fe795a4210bfb79006ec3ae8ae162d3dc2db42b24986597647e76fb28bf1",
+        "capture": {
+          "method": "rfb-raw-unix",
+          "rectangles": 1,
+          "framebuffer_updates": 1,
+          "desktop_resizes": 0,
+          "last_rectangles": 0,
+          "raw_bytes": 307200,
+          "pixel_format": {
+            "bits_per_pixel": 32,
+            "depth": 24,
+            "big_endian": false,
+            "red_shift": 16,
+            "green_shift": 8,
+            "blue_shift": 0
+          },
+          "server_version": "RFB 003.008",
+          "server_name": "QEMU",
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "width": 320,
+          "height": 240,
+          "pixels": 76800,
+          "sha256": "5e69fe795a4210bfb79006ec3ae8ae162d3dc2db42b24986597647e76fb28bf1"
+        },
+        "rgb_sha256": "841f4cc460fc61ced6b44f05c9eb9ef85ce3866dbd8438652fa928179db104b8",
+        "observed_after_submit": 3
+      }
+    ],
+    "completed": true,
+    "frames": 13,
+    "first_time_ms": 0,
+    "last_time_ms": 1910,
+    "host_qemu_cpu": {
+      "before": {
+        "pid": 26173,
+        "start_ticks": 7591446,
+        "cpu_ticks": 364,
+        "ticks_per_second": 100,
+        "monotonic": 75924.930654511
+      },
+      "after": {
+        "pid": 26173,
+        "start_ticks": 7591446,
+        "cpu_ticks": 400,
+        "ticks_per_second": 100,
+        "monotonic": 75930.242849948
+      },
+      "cpu_seconds": 0.36,
+      "wall_seconds": 5.3121954369999,
+      "cpu_seconds_per_frame": 0.02769230769230769,
+      "percent_of_one_cpu": 6.776859102219186,
+      "scope": "QEMU process including vCPU threads; excludes renderer children and capture client; command through returned prompt"
+    }
+  },
+  "p008": {
+    "captures": [
+      {
+        "capture": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 240,
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 76800,
+          "raw_bytes": 307200,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "d78d1978edbe1a27e0c6b36203e0485fac850fe4ac6d4a67ab18a4a00bd6e301",
+          "width": 320
+        },
+        "filename": "ordinary-1.ppm",
+        "observed_after_submit": 2,
+        "rgb_sha256": "b8075d3b6500e48cddefaa341589cafbac193928dee0f39eee89484ab7a7c337",
+        "sha256": "d78d1978edbe1a27e0c6b36203e0485fac850fe4ac6d4a67ab18a4a00bd6e301"
+      },
+      {
+        "capture": {
+          "desktop_resizes": 0,
+          "framebuffer_updates": 1,
+          "height": 240,
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "last_rectangles": 0,
+          "method": "rfb-raw-unix",
+          "pixel_format": {
+            "big_endian": false,
+            "bits_per_pixel": 32,
+            "blue_shift": 0,
+            "depth": 24,
+            "green_shift": 8,
+            "red_shift": 16
+          },
+          "pixels": 76800,
+          "raw_bytes": 307200,
+          "rectangles": 1,
+          "server_name": "QEMU",
+          "server_version": "RFB 003.008",
+          "sha256": "34e216c1c2c08d8b622a602658e95f2a813f2ea4f70d2dbd59eaecd6f12e8108",
+          "width": 320
+        },
+        "filename": "ordinary-2.ppm",
+        "observed_after_submit": 3,
+        "rgb_sha256": "3cd58c2368b688e94f6a5a5f0aa60264d8bbe3fcfb032a9ab766a2453fc61641",
+        "sha256": "34e216c1c2c08d8b622a602658e95f2a813f2ea4f70d2dbd59eaecd6f12e8108"
+      }
+    ],
+    "completed": true,
+    "first_time_ms": 0,
+    "frames": 15,
+    "guest_command": "/bin/vkdemo --duration=2 --token=r12b1fe6f9195079b08f02cb4-ordinary",
+    "host_qemu_cpu": {
+      "after": {
+        "cpu_ticks": 379,
+        "monotonic": 76513.226060948,
+        "pid": 26486,
+        "start_ticks": 7649762,
+        "ticks_per_second": 100
+      },
+      "before": {
+        "cpu_ticks": 331,
+        "monotonic": 76507.735163365,
+        "pid": 26486,
+        "start_ticks": 7649762,
+        "ticks_per_second": 100
+      },
+      "cpu_seconds": 0.48,
+      "cpu_seconds_per_frame": 0.032,
+      "percent_of_one_cpu": 8.74174017533579,
+      "scope": "QEMU process including vCPU threads; excludes renderer children and capture client; command through returned prompt",
+      "wall_seconds": 5.490897583003971
+    },
+    "last_time_ms": 1880,
+    "samples": [
+      {
+        "frame": 1,
+        "readback_disabled": true,
+        "time_ms": 0
+      },
+      {
+        "frame": 2,
+        "readback_disabled": true,
+        "time_ms": 150
+      },
+      {
+        "frame": 3,
+        "readback_disabled": true,
+        "time_ms": 280
+      },
+      {
+        "frame": 4,
+        "readback_disabled": true,
+        "time_ms": 410
+      },
+      {
+        "frame": 5,
+        "readback_disabled": true,
+        "time_ms": 540
+      },
+      {
+        "frame": 6,
+        "readback_disabled": true,
+        "time_ms": 680
+      },
+      {
+        "frame": 7,
+        "readback_disabled": true,
+        "time_ms": 810
+      },
+      {
+        "frame": 8,
+        "readback_disabled": true,
+        "time_ms": 940
+      },
+      {
+        "frame": 9,
+        "readback_disabled": true,
+        "time_ms": 1080
+      },
+      {
+        "frame": 10,
+        "readback_disabled": true,
+        "time_ms": 1210
+      },
+      {
+        "frame": 11,
+        "readback_disabled": true,
+        "time_ms": 1340
+      },
+      {
+        "frame": 12,
+        "readback_disabled": true,
+        "time_ms": 1480
+      },
+      {
+        "frame": 13,
+        "readback_disabled": true,
+        "time_ms": 1610
+      },
+      {
+        "frame": 14,
+        "readback_disabled": true,
+        "time_ms": 1740
+      },
+      {
+        "frame": 15,
+        "readback_disabled": true,
+        "time_ms": 1880
+      }
+    ],
+    "start_seen": true,
+    "token": "r12b1fe6f9195079b08f02cb4-ordinary"
+  },
+  "comparison": "One matched ordinary2-second scene, same harness and host. CPU includes owned QEMU/vCPU process from command through returned shell, excludes renderer children/capture client. Not a steady-state FPS or statistically repeated benchmark.",
+  "cpu_reduction_demonstrated": false,
+  "same_harness_sha256": "8c1d29b66928e83db91716d17e7d85de000cce3e20f8ce6f30531e3e356e512a"
+}

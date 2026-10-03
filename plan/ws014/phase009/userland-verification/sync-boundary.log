@@ -1,0 +1,4 @@
+libvulkan private fence batch: terminal=3 reset_transactions=1 ready_reuses=3 steady_submits=20 new_fences=0 reset_transactions_total=7
+libvulkan sync: PASS (payload transitions, rollback, unlocked waits, query preservation)
+libvulkan private fence batch: terminal=3 reset_transactions=1 ready_reuses=3 steady_submits=20 new_fences=0 reset_transactions_total=7
+libvulkan sync: PASS (payload transitions, rollback, unlocked waits, query preservation)

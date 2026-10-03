@@ -1,0 +1,7 @@
+{
+  "status": "fail",
+  "attempt": "q311-producer-stop-001",
+  "result": "/home/awe/zedBSD/plan/ws014/temp/remote/q311-producer-stop-001/result.json",
+  "error": "RuntimeError: command exited 2; see build.log",
+  "evidence_error": null
+}

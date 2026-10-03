@@ -1,0 +1,31 @@
+#version 310 es
+// ws101-p008: a group's 64 words summed by a tree in shared memory, a barrier after each halving
+// (unrolled: GLSL ES 3.10 allows no barrier() in a loop), and a shared atomic counter.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer V { uint v[]; };
+layout(std430, binding = 1) buffer S { uint sums[]; };
+shared uint partial[64];
+shared uint arrived;
+void main()
+{
+	uint l = gl_LocalInvocationIndex;
+	if (l == 0u)
+		arrived = 0u;
+	partial[l] = v[gl_GlobalInvocationID.x];
+	barrier();
+	atomicAdd(arrived, 1u);
+	if (l < 32u) partial[l] += partial[l + 32u];
+	barrier();
+	if (l < 16u) partial[l] += partial[l + 16u];
+	barrier();
+	if (l < 8u) partial[l] += partial[l + 8u];
+	barrier();
+	if (l < 4u) partial[l] += partial[l + 4u];
+	barrier();
+	if (l < 2u) partial[l] += partial[l + 2u];
+	barrier();
+	if (l == 0u) {
+		sums[gl_WorkGroupID.x * 2u] = partial[0] + partial[1];
+		sums[gl_WorkGroupID.x * 2u + 1u] = arrived;
+	}
+}

@@ -1,0 +1,18 @@
+### /sys/kernel/debug/dri/0/crtc-0/crc
+cat: /sys/kernel/debug/dri/0/crtc-0/crc: Is a directory
+### /sys/kernel/debug/dri/0/crtc-0/i915_current_bpc
+Current: 6
+### /sys/kernel/debug/dri/0/crtc-0/i915_drrs_ctl
+cat: /sys/kernel/debug/dri/0/crtc-0/i915_drrs_ctl: Permission denied
+### /sys/kernel/debug/dri/0/crtc-0/i915_drrs_status
+DRRS enabled: no
+DRRS active: no
+DRRS refresh rate: high
+DRRS busy frontbuffer bits: 0x0
+### /sys/kernel/debug/dri/0/crtc-0/i915_fbc_false_color
+0
+### /sys/kernel/debug/dri/0/crtc-0/i915_fbc_status
+FBC disabled: stolen memory not initialised
+  [PLANE:31:plane 1A]: stolen memory not initialised
+### /sys/kernel/debug/dri/0/crtc-0/i915_pipe
+A

@@ -1,0 +1,224 @@
+{
+  "initial_matrix": {
+    "jobs": [
+      {
+        "name": "kernel-fence",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-kernel-fence-test.sh"
+        ],
+        "exit_code": 0,
+        "seconds": 2.213,
+        "log_sha256": "2877b21f4281f26104a26816d9e03a7ab40d4511db97750716d19e0bbc612021"
+      },
+      {
+        "name": "gpu-fence",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-gpu-fence-test.sh"
+        ],
+        "exit_code": 0,
+        "seconds": 3.746,
+        "log_sha256": "1b1d9fa3b50200ef845714dea4b8341e8776e930f2bf1da013d3b3aaa13d6117"
+      },
+      {
+        "name": "gpu-fence-reuse",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-gpu-fence-reuse-test.sh"
+        ],
+        "exit_code": 0,
+        "seconds": 3.733,
+        "log_sha256": "0b39a9c9cd91f9747797dc6a128dcec605ded387c8c2acbf3fd14e39bff3d2b3"
+      },
+      {
+        "name": "gpu-sharing",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-gpu-sharing-test.sh"
+        ],
+        "exit_code": 0,
+        "seconds": 3.791,
+        "log_sha256": "bf4b6ec174618c702caabd0a46fdf3f78f9e4e64975950ce76e94bdd0f341db1"
+      },
+      {
+        "name": "gpu-scanout",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-gpu-scanout-test.sh"
+        ],
+        "exit_code": 0,
+        "seconds": 3.904,
+        "log_sha256": "e2fa7dcb24992d16ce5732f7fc896ebfbf1b0e3c1803c506cfad386d600dbd25"
+      },
+      {
+        "name": "gpu-framework",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-gpu-framework-test.sh"
+        ],
+        "exit_code": 0,
+        "seconds": 3.953,
+        "log_sha256": "1861a01e9394d59cf7b0cede39abfd78c34dd9e3bebc7b0de4f0d966df375185"
+      },
+      {
+        "name": "venus-sharing",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-venus-sharing-test.sh"
+        ],
+        "exit_code": 1,
+        "seconds": 0.048,
+        "log_sha256": "049a7c549e410dc1ca3121968abba9867ab61ac63cf58a9b11f0879794f3df7b"
+      },
+      {
+        "name": "venus-backend",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-venus-backend-test.sh"
+        ],
+        "exit_code": 1,
+        "seconds": 0.305,
+        "log_sha256": "c21c52db6e6df58605c40bc7092f1d9541fb321a207d732b7e3264d2933c38e2"
+      },
+      {
+        "name": "venus-edid",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-venus-edid-test.sh"
+        ],
+        "exit_code": 1,
+        "seconds": 0.048,
+        "log_sha256": "afcf4ef036cd091819c0ae956a021b4bcfa80de49cba2527c636e71f0ef4ccfa"
+      },
+      {
+        "name": "handle-fd",
+        "argv": [
+          "timeout",
+          "120",
+          "sh",
+          "plan/ws014/tests/run-handle-fd-test.sh"
+        ],
+        "exit_code": 0,
+        "seconds": 6.535,
+        "log_sha256": "37c40a5a6fd96b036ac214594580434ed40e74522b7ccaf4f6979902d23a7d89"
+      }
+    ],
+    "core_before": {
+      "src/drivers/gpu/gpu.c": "8ddaf7ae8304bb3d25422e2fe9d87fa5fd3f82f4653bc1bcf178dbcec81ca379",
+      "src/kern/fence.c": "ba2bedeaf45d9a669a5455dd565acb55e77c1efc3c5e6f49a979bfc5c65940d8",
+      "src/kern/poll.c": "8e7a04c9ef63ef2c6b8b22085832d5a072f33904807054ac97e18480bb97e8f9",
+      "include/drivers/gpu.h": "b40c2c789884829e1f07f8594fa01434fac604d934603a4f2a2cd36b804ea17b",
+      "include/uapi/gpu-display.h": "59094c77886619923e2d75b924495a41eb03b97cc18800cbd20967404088ad71",
+      "include/uapi/gpu-scanout.h": "b3a1bd68912a2c11a55dca9bf9764439ebffc372d1acfbe772d538ae63daff4f"
+    },
+    "core_after": {
+      "src/drivers/gpu/gpu.c": "8ddaf7ae8304bb3d25422e2fe9d87fa5fd3f82f4653bc1bcf178dbcec81ca379",
+      "src/kern/fence.c": "ba2bedeaf45d9a669a5455dd565acb55e77c1efc3c5e6f49a979bfc5c65940d8",
+      "src/kern/poll.c": "8e7a04c9ef63ef2c6b8b22085832d5a072f33904807054ac97e18480bb97e8f9",
+      "include/drivers/gpu.h": "b40c2c789884829e1f07f8594fa01434fac604d934603a4f2a2cd36b804ea17b",
+      "include/uapi/gpu-display.h": "59094c77886619923e2d75b924495a41eb03b97cc18800cbd20967404088ad71",
+      "include/uapi/gpu-scanout.h": "b3a1bd68912a2c11a55dca9bf9764439ebffc372d1acfbe772d538ae63daff4f"
+    }
+  },
+  "additional_or_corrected_runs": [
+    {
+      "name": "venus-backend",
+      "result": "PASS",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-venus-backend-test.sh"
+      ],
+      "log": "/tmp/q310-venus-backend-final-retry.log",
+      "log_sha256": "513765a2fb367df0b6dfbb1f0db91e6f02cce5ba530c160dc160495fd122f073",
+      "note": "ordinary and ASan/UBSan; recorded owner execution receipt plus log review"
+    },
+    {
+      "name": "venus-sharing",
+      "result": "PASS",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-venus-sharing-test.sh"
+      ],
+      "log": "/tmp/q310-venus-sharing-final-retry.log",
+      "log_sha256": "4740652e0aedf318b519bb44ea1ca13015e385ddf472789c2ef8e07240ce0d4f",
+      "note": "ordinary and ASan/UBSan; recorded owner execution receipt plus log review"
+    },
+    {
+      "name": "venus-edid",
+      "result": "PASS",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-venus-edid-test.sh"
+      ],
+      "log": "/tmp/q310-venus-edid-final-retry.log",
+      "log_sha256": "7b9bce50c4a3d13fd31365c54d8bc1ca6fe540552738fc83622c1d5a7c2a5a3f",
+      "note": "ordinary and ASan/UBSan; recorded owner execution receipt plus log review"
+    },
+    {
+      "name": "gpu-topology",
+      "result": "PASS",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-gpu-topology-test.sh"
+      ],
+      "log": "/tmp/q310-gpu-topology.log",
+      "log_sha256": "9a7441eee810d4940daff7efac135dd735a34157aa5c630d178cec2767f85b59",
+      "note": "ordinary and ASan/UBSan; recorded owner execution receipt plus log review"
+    },
+    {
+      "name": "gpu-placement",
+      "result": "PASS",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-gpu-placement-test.sh"
+      ],
+      "log": "/tmp/q310-gpu-placement.log",
+      "log_sha256": "a0ec0133f4335dbd5ef1e864aa16cf5153faa30095e244277c666bd250a4754d",
+      "note": "ordinary and ASan/UBSan; recorded owner execution receipt plus log review"
+    },
+    {
+      "name": "venus-transport",
+      "result": "PASS",
+      "command": [
+        "timeout",
+        "120",
+        "sh",
+        "plan/ws014/tests/run-venus-transport-test.sh"
+      ],
+      "log": "/tmp/q310-transport-topology.log",
+      "log_sha256": "6a55160efc59c9cab7854f9c189dbd713e56922ae184a76d37047b89e6b6a645",
+      "note": "ordinary and ASan/UBSan; recorded owner execution receipt plus log review"
+    }
+  ],
+  "initial_failures_preserved": true,
+  "notes": "The initial three Venus fixture compilation/link failures are preserved; corrected executions provide their acceptance. Physical placement and display topology changes are code fixtures, not physical hardware measurements."
+}

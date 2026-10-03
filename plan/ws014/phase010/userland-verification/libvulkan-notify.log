@@ -1,0 +1,4 @@
+libvulkan admission: preparing_hold=1 internal_competitor=1 distinct_proofs=2 retry_extra_creates=0 PASS
+libvulkan notifications: exact/all/any wake, timeout retention, unlocked capacity retry, unlocked wait and native DEVICE_LOST PASS
+libvulkan admission: preparing_hold=1 internal_competitor=1 distinct_proofs=2 retry_extra_creates=0 PASS
+libvulkan notifications: exact/all/any wake, timeout retention, unlocked capacity retry, unlocked wait and native DEVICE_LOST PASS

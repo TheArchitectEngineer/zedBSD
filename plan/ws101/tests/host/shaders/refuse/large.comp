@@ -1,0 +1,8 @@
+#version 450
+// ws101-p002: a workgroup of more invocations than the device runs (256 > 128) is refused.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) buffer O { uint o[]; };
+void main()
+{
+	o[gl_GlobalInvocationID.x] = 1u;
+}

@@ -1,0 +1,31 @@
+{
+  "result": "PASS",
+  "finished_utc": "2026-09-13T08:52:04.729312+00:00",
+  "configuration": "config-nogpu-amd64.mk",
+  "config_sha256": "8cfffee00abc0116ae5ba3cb3bb102258c213a95e7adfb7bfee646b425cedfa2",
+  "command": "timeout 600 make -j16 ZEDBSD_CONFIG=plan/ws014/temp/q311-nogpu-amd64/config.mk BUILD=build/q311-nogpu-amd64 vmunix",
+  "build_exit_code": 0,
+  "kernel": "build/q311-nogpu-amd64/vmunix",
+  "kernel_bytes": 1025616,
+  "kernel_sha256": "cdb215d31100466965ad8cbcbe68f24065f2ef53495e279ceb978472d705a089",
+  "nm_command": "build/llvm/bin/llvm-nm --defined-only build/q311-nogpu-amd64/vmunix",
+  "gpu_core_fence_venus_symbols": [],
+  "gpu_object_files": [],
+  "required_generic_symbols_present": [
+    "handle_get",
+    "handle_put",
+    "fd_object_get",
+    "fd_object_put",
+    "filedesc_commit_objects"
+  ],
+  "generic_symbol_excerpt": [
+    "ffffffff80270cfe T fd_object_clear",
+    "ffffffff80270c7d T fd_object_get",
+    "ffffffff80270ca8 T fd_object_put",
+    "ffffffff80270c58 T fd_object_valid",
+    "ffffffff80270897 T filedesc_commit_objects",
+    "ffffffff80270bf7 T handle_get",
+    "ffffffff80270c13 T handle_put"
+  ],
+  "scope_limit": "One actual amd64 kernel, not six architecture builds. The remaining platforms have actual make-expanded source/object selection evidence."
+}

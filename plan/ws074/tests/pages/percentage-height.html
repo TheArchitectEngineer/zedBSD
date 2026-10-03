@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>browser: percentage heights</title>
+<style>
+body { margin: 0; font: 16px sans-serif; }
+.fixed { height: 200px; width: 200px; }
+.half { height: 50%; }
+.inline-parent { display: inline-block; height: 180px; width: 200px; }
+.inline-parent span { display: inline; }
+.inline-parent span > div { height: 100%; }
+.flex { display: flex; height: 160px; width: 400px; }
+.flex > div { width: 50%; }
+.flex .fill { height: 100%; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; height: 240px; width: 400px; }
+.grid > div { height: 100%; }
+.grid > div > div { height: 100%; }
+</style>
+</head>
+<body>
+<div class="fixed"><div class="half">half</div></div>
+<div class="inline-parent"><span><div>through inline wrapper</div></span></div>
+<div class="flex"><div><div class="fill">stretched descendant</div></div><div>line height</div></div>
+<div class="grid"><div><div>one</div></div><div><div>two</div></div><div><div>three</div></div><div><div>four</div></div></div>
+</body>
+</html>

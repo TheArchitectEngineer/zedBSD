@@ -1,0 +1,203 @@
+{
+  "baseline_acceptance": "q310-direct-004",
+  "purpose": "new same-harness CPU measurement of preserved p007 artifacts, not p008 acceptance",
+  "image_sha256": "772af12d68ed7f20956ec2e1e8fd03c61c92ec20cece96b254302f64595f5bee",
+  "kernel_sha256": "9941d92ad403e21732a4e200f7aef2f57cea8317de7f8e7ff3e1c609f8afc0ba",
+  "remote_argv": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=15s",
+    "540",
+    "python3",
+    "/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/vkdemo-qemu.py",
+    "--image",
+    "/home/awe/zedbsd-q306-venus/q310-direct-004/boot.img",
+    "--output",
+    "/home/awe/zedbsd-q306-venus/q311-baseline-measure-001/capture",
+    "--timeout",
+    "180",
+    "--console-address",
+    "6647696",
+    "--console-size",
+    "32768",
+    "--render-server",
+    "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/libexec/virgl_render_server",
+    "--renderer-library-dir",
+    "/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/install/lib/x86_64-linux-gnu",
+    "--token",
+    "q311-baseline-cpu"
+  ],
+  "harnesses": {
+    "vkdemo-qemu.py": "8c1d29b66928e83db91716d17e7d85de000cce3e20f8ce6f30531e3e356e512a",
+    "venus-qemu.py": "ab6a6cc29915725fbfaa7cc62d4569b2974c31e5aad5a97a03641b829afad170",
+    "venus_rfb.py": "e8e829cb010da6b9e15275e2c43dd01cdb11994da9f05f944c85ebbd9e5043f6",
+    "vkdemo_oracle.py": "0699b722d7fc430303b370eac8808091133a802f2dfb6bb9cf028e6c57fd5cf5"
+  },
+  "ordinary": {
+    "token": "q311-baseline-cpu-ordinary",
+    "guest_command": "/bin/vkdemo --duration=2 --token=q311-baseline-cpu-ordinary",
+    "start_seen": true,
+    "samples": [
+      {
+        "frame": 1,
+        "time_ms": 0,
+        "readback_disabled": true
+      },
+      {
+        "frame": 2,
+        "time_ms": 140,
+        "readback_disabled": true
+      },
+      {
+        "frame": 3,
+        "time_ms": 310,
+        "readback_disabled": true
+      },
+      {
+        "frame": 4,
+        "time_ms": 470,
+        "readback_disabled": true
+      },
+      {
+        "frame": 5,
+        "time_ms": 630,
+        "readback_disabled": true
+      },
+      {
+        "frame": 6,
+        "time_ms": 790,
+        "readback_disabled": true
+      },
+      {
+        "frame": 7,
+        "time_ms": 950,
+        "readback_disabled": true
+      },
+      {
+        "frame": 8,
+        "time_ms": 1110,
+        "readback_disabled": true
+      },
+      {
+        "frame": 9,
+        "time_ms": 1270,
+        "readback_disabled": true
+      },
+      {
+        "frame": 10,
+        "time_ms": 1430,
+        "readback_disabled": true
+      },
+      {
+        "frame": 11,
+        "time_ms": 1590,
+        "readback_disabled": true
+      },
+      {
+        "frame": 12,
+        "time_ms": 1750,
+        "readback_disabled": true
+      },
+      {
+        "frame": 13,
+        "time_ms": 1910,
+        "readback_disabled": true
+      }
+    ],
+    "captures": [
+      {
+        "filename": "ordinary-1.ppm",
+        "sha256": "18e3841cdbce6625585a890733982bb96e4b88f56d9717575d60c4ec28f18505",
+        "capture": {
+          "method": "rfb-raw-unix",
+          "rectangles": 1,
+          "framebuffer_updates": 1,
+          "desktop_resizes": 0,
+          "last_rectangles": 0,
+          "raw_bytes": 307200,
+          "pixel_format": {
+            "bits_per_pixel": 32,
+            "depth": 24,
+            "big_endian": false,
+            "red_shift": 16,
+            "green_shift": 8,
+            "blue_shift": 0
+          },
+          "server_version": "RFB 003.008",
+          "server_name": "QEMU",
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "width": 320,
+          "height": 240,
+          "pixels": 76800,
+          "sha256": "18e3841cdbce6625585a890733982bb96e4b88f56d9717575d60c4ec28f18505"
+        },
+        "rgb_sha256": "af065c4663d85c946cafad2edc0a9b47418876598e5637a16cc76476f1c34f4f",
+        "observed_after_submit": 2
+      },
+      {
+        "filename": "ordinary-2.ppm",
+        "sha256": "5e69fe795a4210bfb79006ec3ae8ae162d3dc2db42b24986597647e76fb28bf1",
+        "capture": {
+          "method": "rfb-raw-unix",
+          "rectangles": 1,
+          "framebuffer_updates": 1,
+          "desktop_resizes": 0,
+          "last_rectangles": 0,
+          "raw_bytes": 307200,
+          "pixel_format": {
+            "bits_per_pixel": 32,
+            "depth": 24,
+            "big_endian": false,
+            "red_shift": 16,
+            "green_shift": 8,
+            "blue_shift": 0
+          },
+          "server_version": "RFB 003.008",
+          "server_name": "QEMU",
+          "initial_geometry": [
+            320,
+            240
+          ],
+          "initial_pixel_format": "2018000100ff00ff00ff100800000000",
+          "width": 320,
+          "height": 240,
+          "pixels": 76800,
+          "sha256": "5e69fe795a4210bfb79006ec3ae8ae162d3dc2db42b24986597647e76fb28bf1"
+        },
+        "rgb_sha256": "841f4cc460fc61ced6b44f05c9eb9ef85ce3866dbd8438652fa928179db104b8",
+        "observed_after_submit": 3
+      }
+    ],
+    "completed": true,
+    "frames": 13,
+    "first_time_ms": 0,
+    "last_time_ms": 1910,
+    "host_qemu_cpu": {
+      "before": {
+        "pid": 26173,
+        "start_ticks": 7591446,
+        "cpu_ticks": 364,
+        "ticks_per_second": 100,
+        "monotonic": 75924.930654511
+      },
+      "after": {
+        "pid": 26173,
+        "start_ticks": 7591446,
+        "cpu_ticks": 400,
+        "ticks_per_second": 100,
+        "monotonic": 75930.242849948
+      },
+      "cpu_seconds": 0.36,
+      "wall_seconds": 5.3121954369999,
+      "cpu_seconds_per_frame": 0.02769230769230769,
+      "percent_of_one_cpu": 6.776859102219186,
+      "scope": "QEMU process including vCPU threads; excludes renderer children and capture client; command through returned prompt"
+    }
+  },
+  "result": "capture/result.json",
+  "status": "PASS"
+}

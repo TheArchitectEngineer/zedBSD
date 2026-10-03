@@ -1,0 +1,19 @@
+{
+  "upstream": "virglrenderer 1.1.0",
+  "source_url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/tree/1.1.0",
+  "source_cache": "/tmp/q308-virglrenderer-1.1.0",
+  "execution": "local only; fixed production source and scripted native calls/private socketpair",
+  "helpers_from": "existing q311-strict build, same upstream Mesa and generated queue dispatch header",
+  "helpers_sha256": {
+    "config.h": "daa2ed3498f6de7a03d10b379b3fb3e384a43641edecd7588fda155faaf689e8",
+    "virgl-version.h": "4ccd31d333d2b74d10962ad42148ceb2be949a61f249952b0a799de704046a21",
+    "vkr_queue_gen.h": "50edcde48afdce2ac26672b4b07fb52704c58bbd12269837329a9e2da489207e",
+    "libmesa.a": "fad575b6cebcb0d20a3b2b07ff68e19a53845ef974624d06aaab7672008568d4"
+  },
+  "compile_attempts": [
+    "missing generated version header",
+    "thin archive members absent; removed archive confirmed required Mesa helpers",
+    "downloaded public archive members; added source root include; all four final profiles pass"
+  ],
+  "source_upload": "not performed; auto-review refusal preserved, task completed locally"
+}

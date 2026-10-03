@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "final_configurations": [
+    "normal",
+    "short"
+  ],
+  "builds": [
+    {
+      "case": "normal-concurrent",
+      "exit_code": 2,
+      "full_log": "/tmp/q312-final-build-normal.log",
+      "full_log_sha256": "1f9c0a43f765384a85fc4efbb5351ab24d6a60bfc316ee391adee0e5a2b2770d",
+      "saved_log": "build-normal-concurrent.log",
+      "saved_log_is_tail": false
+    },
+    {
+      "case": "short-concurrent",
+      "exit_code": 2,
+      "full_log": "/tmp/q312-final-build-short.log",
+      "full_log_sha256": "36ed28c49fa2e5b8ac1fd0682747b7197d88dcee930d1ef9367b533108009182",
+      "saved_log": "build-short-concurrent.log",
+      "saved_log_is_tail": false
+    },
+    {
+      "case": "normal-missing-sysroot",
+      "exit_code": 2,
+      "full_log": "/tmp/q312-final-build-normal-002.log",
+      "full_log_sha256": "c77f5d8daf3189dec8b9c341abfdeaba7a12d75df208b078b151e4c3e4a3bd0f",
+      "saved_log": "build-normal-missing-sysroot.log",
+      "saved_log_is_tail": false
+    },
+    {
+      "case": "sysroot-repair",
+      "exit_code": 0,
+      "full_log": "/tmp/q312-sysroot-repair.log",
+      "full_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "saved_log": "build-sysroot-repair.log",
+      "saved_log_is_tail": true
+    },
+    {
+      "case": "normal",
+      "exit_code": 0,
+      "full_log": "/tmp/q312-final-build-normal-003.log",
+      "full_log_sha256": "cf80bf2c3818692b8a88893822523f922f1c76fde1a37b8f47a86c22683d51f0",
+      "saved_log": "build-normal.log",
+      "saved_log_is_tail": true
+    },
+    {
+      "case": "short",
+      "exit_code": 0,
+      "full_log": "/tmp/q312-final-build-short-002.log",
+      "full_log_sha256": "e998928bff44707f4331d485a9ef1e9890bf61d3f20efe86b1ce36e10608a44b",
+      "saved_log": "build-short.log",
+      "saved_log_is_tail": true
+    }
+  ],
+  "parallel_build_limitation": "Different BUILD values share generated target sysroot. Rebuilt generated sysroot and then built images sequentially. No build-system source change.",
+  "recorded_at": "2026-09-13T12:24:50.340605+00:00"
+}

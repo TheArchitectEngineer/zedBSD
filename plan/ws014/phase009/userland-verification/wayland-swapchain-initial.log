@@ -1,0 +1,2 @@
+wayland-swapchain: plan/ws014/tests/wayland-wsi-swapchain.c:401: main: Assertion `error == VK_ERROR_DEVICE_LOST && device.error == VK_SUCCESS' failed.
+Aborted

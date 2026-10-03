@@ -1,0 +1,21 @@
+display version: 13
+cursor_needs_physical: no
+has_cdclk_crawl: yes
+has_cdclk_squash: no
+has_ddi: yes
+has_dp_mst: yes
+has_dsb: yes
+has_fpga_dbg: yes
+has_gmch: no
+has_hotplug: yes
+has_hti: no
+has_ipc: yes
+has_overlay: no
+has_psr: yes
+has_psr_hw_tracking: no
+overlay_needs_physical: no
+supports_tv: no
+has_hdcp: yes
+has_dmc: yes
+has_dsc: yes
+rawclk rate: 19200 kHz

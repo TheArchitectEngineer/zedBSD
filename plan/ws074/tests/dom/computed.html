@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html><head><title>computed</title>
+<style>
+body { margin: 8px; }
+#box { width: 100px; height: 40px; padding: 10px 4px; border: 2px solid red; margin: 5px 7px; opacity: 0.5; font-size: 20px; line-height: 1.5; text-indent: 8px; }
+#sized { box-sizing: border-box; width: 100px; height: 30px; padding: 5px; border: 1px solid rgba(0, 0, 255, 0.3); }
+#hidden { display: none; width: 50px; }
+.fonts { font-family: Arial, "Amazon Ember", sans-serif; font-weight: bold; font-style: italic; visibility: hidden; float: left; overflow-x: hidden; overflow-y: auto; }
+#rel { position: relative; top: 10px; max-width: 50%; z-index: 3; background-color: #336699; }
+#holder { position: relative; border: 3px solid black; padding: 6px; height: 80px; }
+#abs { position: absolute; top: 10px; left: 20px; width: 10px; height: 10px; }
+#fixed { position: fixed; top: 0; left: 0; width: 5px; height: 5px; }
+#tall { height: 3000px; }
+#target { height: 50px; }
+</style></head>
+<body><div id="first" style="height: 20px"></div><div id="box"></div><div id="sized"></div><div id="hidden"></div><span id="inline">x</span>
+<div class="fonts" id="fonts"></div><div id="rel" style="height: 5px"></div>
+<div id="holder"><div id="abs"></div><div id="static" style="height: 4px"></div></div>
+<table><tr><td id="cell"><div id="incell" style="width: 3px; height: 3px"></div></td></tr></table>
+<div id="fixed"></div><div id="tall"></div><div id="target"></div><div style="height: 2000px"></div>
+<script>
+// ws074-p082: getComputedStyle, offsetParent/Top/Left and the scroll methods.
+function $(id) { return document.getElementById(id); }
+var cs = getComputedStyle($("box"));
+console.log("box " + [cs.width, cs.height, cs.paddingTop, cs.paddingLeft, cs.marginRight, cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor].join(" "));
+console.log("box2 " + [cs.display, cs.position, cs.opacity, cs.zIndex, cs.color, cs.backgroundColor, cs.fontSize, cs.lineHeight, cs.textIndent].join(" "));
+console.log("names " + [cs.getPropertyValue("font-size"), cs.getPropertyValue("margin-bottom"), cs["border-left-width"], cs.getPropertyValue("no-such-thing") === ""].join(" "));
+var sized = getComputedStyle($("sized"));
+console.log("sized " + [sized.width, sized.height, sized.boxSizing, sized.borderTopColor].join(" "));
+var hidden = getComputedStyle($("hidden"));
+console.log("hidden " + [hidden.display, hidden.width].join(" "));
+console.log("inline " + [getComputedStyle($("inline")).width, getComputedStyle($("inline")).display].join(" "));
+var fonts = getComputedStyle($("fonts"));
+console.log("fonts " + [fonts.fontFamily, fonts.fontWeight, fonts.fontStyle, fonts.visibility, fonts.cssFloat === undefined ? fonts.getPropertyValue("float") : fonts.cssFloat, fonts.overflow].join("|"));
+var rel = getComputedStyle($("rel"));
+console.log("rel " + [rel.position, rel.top, rel.bottom, rel.maxWidth, rel.zIndex, rel.backgroundColor, getComputedStyle($("first")).top].join(" "));
+console.log("text [" + cs.cssText + "] " + (cs.length > 50) + " " + (typeof cs.item(0)));
+try { cs.width = "1px"; console.log("wrote"); } catch (e) { console.log("read-only " + (e instanceof Error) + " " + e.name + " " + e.code); }
+$("box").style.width = "60px";
+console.log("live " + cs.width);
+var loose = document.createElement("div");
+console.log("detached [" + getComputedStyle(loose).display + "]");
+try { getComputedStyle(null); } catch (e) { console.log("not an element " + (e instanceof TypeError)); }
+console.log("offset parent " + [$("abs").offsetParent.id, $("static").offsetParent.id, $("incell").offsetParent.id, $("box").offsetParent.tagName].join(" "));
+console.log("no parent " + [$("hidden").offsetParent, $("fixed").offsetParent, document.body.offsetParent, document.documentElement.offsetParent].join(" "));
+console.log("offsets " + [$("abs").offsetTop, $("abs").offsetLeft, $("static").offsetTop, $("static").offsetLeft, $("first").offsetTop, $("first").offsetLeft, $("hidden").offsetTop].join(" "));
+console.log("box offset " + ($("box").offsetTop === $("first").offsetTop + 20 + 5) + " " + $("box").offsetLeft);
+var limit = document.documentElement.scrollHeight - innerHeight;
+scrollTo(0, 500);
+console.log("scrollTo " + scrollY + " " + pageYOffset);
+scrollBy(0, 100);
+console.log("scrollBy " + scrollY);
+scrollTo({ top: 100000 });
+console.log("clamp " + (scrollY === limit));
+scroll(0, -5);
+console.log("negative " + scrollY);
+scrollBy({ top: 30 });
+console.log("by options " + scrollY);
+$("target").scrollIntoView();
+console.log("into view " + $("target").getBoundingClientRect().top);
+$("target").scrollIntoView(false);
+console.log("into view end " + ($("target").getBoundingClientRect().bottom === innerHeight));
+$("target").scrollIntoView({ block: "center" });
+console.log("into view center " + (Math.abs($("target").getBoundingClientRect().top - (innerHeight - 50) / 2) < 1));
+document.documentElement.scrollTop = 50;
+console.log("scrollTop " + scrollY + " " + document.documentElement.scrollTop);
+$("box").scrollTo(0, 300);
+$("box").scrollBy(0, 300);
+console.log("element " + scrollY);
+document.documentElement.scrollTo(0, 70);
+console.log("root " + scrollY);
+</script>
+</body></html>

@@ -1,0 +1,2 @@
+ASSERT /home/awe/zedBSD/plan/ws014/tests/gpu-fence-close.c:162: state.state == GPU_FENCE_ERROR
+Aborted

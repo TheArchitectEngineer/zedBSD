@@ -1,0 +1,3 @@
+PASS job consume race: ENOENT waits for reaper ERROR publication, both observers DEVICE_LOST
+race-test: /home/awe/zedBSD/plan/ws030/tests/libvulkan-job-race.c:164: main: Assertion `status == VK_ERROR_DEVICE_LOST' failed.
+Aborted

@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/sh
+arguments=/etc/keiland/run-mview.sh
+after=wlkill
+restart=no
+required=NO

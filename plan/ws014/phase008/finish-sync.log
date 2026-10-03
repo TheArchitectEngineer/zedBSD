@@ -1,0 +1,22 @@
+Published and verified ws014-p008
+Published and verified master
+Published and verified ws014
+Published and verified queue
+Published and verified guardrail
+Published and verified past-log
+Published and verified ws014-p004
+Published and verified ws014-p007
+{
+  "status": "PASS",
+  "acceptance_comment": "https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652374702",
+  "records": [
+    "ws014-p008",
+    "master",
+    "ws014",
+    "queue",
+    "guardrail",
+    "past-log",
+    "ws014-p004",
+    "ws014-p007"
+  ]
+}

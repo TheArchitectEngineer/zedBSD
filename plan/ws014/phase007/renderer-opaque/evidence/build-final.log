@@ -1,0 +1,3 @@
+ninja: Entering directory `/home/awe/zedbsd-q306-venus/dependencies/q310-opaque/build'
+[1/2] Compiling C object server/virgl_render_server.p/render_client.c.o
+[2/2] Linking target server/virgl_render_server

@@ -1,0 +1,2175 @@
+A64 UEFI ENTRY
+A64 CFG MISSING 0x0000000000000000
+A64 CFG MATCH 0x0000000000000001
+A64 CFG SELECTED 0x0000000000000001
+A64 CFG UUID 1057-561F
+A64 KERNEL vmunix
+A64 PARAMS boot0=UUID=1057-561F video=640x480 overlay-root=boot0:rootfs.img overlay-data=boot0:data.img swap0=boot0:swapfile
+A64 KERN LINK 0x0000000000200000
+A64 KERN SIZE 0x0000000000692000
+Allocate kernel at linked address: 0x800000000000000e
+A64 KERN LOAD 0x0000000001800000
+A64 KERN RELOCATED away from the linked address
+A64 UEFI ELF
+A64 RSDP 0x000000007fb7e014
+A64 GOP  0x0000000080000000
+A64 LOW  0x00000000001f0000
+A64 CR4  0x0000000000000668
+A64 MAPSZ 0x0000000000001710
+A64 DESCSZ 0x0000000000000030
+A64 DESCVER 0x0000000000000001
+A64 RANGES 0x000000000000002c
+A64 MARK 1=EBS 2=MAP 3=CR3 4=KERN
+A64 UEFI READY
+A64 UEFI BOOT SERVICES EXITED
+A64 UEFI EXIT
+
+zedBSD amd64 HAL
+A64 ENTRY PASS
+A64 KERNEL link=200000-892000 load=1800000-1e92000 (relocated by the loader)
+A64 KERNEL shadow 200000-a00000 reserved (linked slots behind the relocated image)
+A64 MEMORY source=2 usable=4236591104 boot_reclaim=51736576 highest_usable=6442450944 allocator=1043193856
+A64 RAM ARENA low=1110016 high=0 runs=2 root=29106176
+A64 RAM PROBE boundary=1073741824 physical=1073741824 read=ok
+A64 RAM PROBE boundary=4294967296 physical=4294967296 read=ok
+A64 RAM MAP bytes=4288327680 tables=271 large=2036 small=4523
+A64 RAM ALLOC extents=29 managed=4288327680 metadata=630784 free=4227874816 publication_limit=70368744177664
+A64 PAGING PASS
+A64 IDT READY
+A64 ACPI RSDP PASS rev=2 rsdt=7FB7D074 xsdt=00000000:7FB7D0E8
+A64 ACPI ROOT READY kind=XSDT length=84 entries=6
+A64 ACPI MADT READY length=144 lapic=FEE00000
+A64 ACPI MCFG READY regions=1
+A64 ACPI READY cpus=4 ioapics=1 ecam=1 lapic=FEE00000
+A64 APIC PREFLIGHT PASS id=0 base=00000000:FEE00900 madt=FEE00000 lock=0 result=active-xapic
+A64 LAPIC READY id=0 base=FEE00000
+A64 BOOT RECLAIM released=43794432 bytes ACPI/AP owners retained
+A64 IOAPIC BEGIN index=0 address=FEC00000 gsi=0
+A64 IOAPIC READY index=0 version=00170011 pins=24
+A64 IOAPIC ROUTING READY controllers=1 destination=0
+A64 TIMER CAL BEGIN
+A64 TIMECOUNTER KVM clock-features 0x40000001 eax=0x1007efb clocksource=1 clocksource2=1 stable_bit=1 -> PIT-calibrated TSC (pvclock backend TODO)
+A64 TIMECOUNTER CAS-SELFTEST 120-then-110=PASS 110-then-120=PASS
+A64 TIMECOUNTER CANDIDATE policy=1 max=32 ratio=0/0 crystal=0 invariant=0 adjust=1
+A64 TIMECOUNTER PIT READY hz=0:2497840618
+A64 TIMER CAL READY ticks=628102
+A64 TIMER READY
+A64 CONSOLE IRQ READY
+A64 IRQ READY
+boot: kernel heap, process, and scheduler initialization
+A64 TIMER TICK
+A64 XMM CONTEXT PASS
+A64 APIC PREFLIGHT PASS id=1 base=00000000:FEE00800 madt=FEE00000 lock=0 result=active-xapic
+A64 TIMECOUNTER AP PASS cpu=1 reason=ok generation=0 rounds=8 width=0:488
+A64 APIC PREFLIGHT PASS id=2 base=00000000:FEE00800 madt=FEE00000 lock=0 result=active-xapic
+A64 TIMECOUNTER AP PASS cpu=2 reason=ok generation=0 rounds=8 width=0:459
+A64 APIC PREFLIGHT PASS id=3 base=00000000:FEE00800 madt=FEE00000 lock=0 result=active-xapic
+A64 TIMECOUNTER AP PASS cpu=3 reason=ok generation=0 rounds=8 width=0:506
+A64 TIMECOUNTER READ cpu=0 status=pass reads=64
+A64 TIMECOUNTER READ cpu=1 status=pass reads=64
+A64 TIMECOUNTER READ cpu=2 status=pass reads=64
+A64 TIMECOUNTER READ cpu=3 status=pass reads=64
+A64 TIMECOUNTER READY cpus=4 source=pit hz=0:2497840618
+I/O pool large=16 small=16 resident=1118208 budget=4194304
+boot: HAL initialized successfully. [cpu 4, memory 4089MB, timer 10ms]
+boot: CPUs ready: 4
+boot: platform device discovery
+usb: URB completion contract q009-release-acquire-v1
+pci: ECAM segment 0000 bus 00 at 00000000:e0000000
+i915: device 8086:46a8 rev 0c (experimental native driver, no display)
+i915: parity runner: device registered, probe deferred to readiness
+graphics: built-in VGA 8x16 font selected
+boot: platform devices detected: 0
+boot: waiting up to 5 seconds for boot storage
+boot: boot-storage wait expired
+boot: parameters: boot0=UUID=1057-561F video=640x480 overlay-root=boot0:rootfs.img overlay-data=boot0:data.img swap0=boot0:swapfile
+boot: ignored 1 unknown parameter; first=video
+i915: parity runner started (thread handle recorded)
+i915: parity rbouot:n VnFerS  tinhirtiealaizdat iobn
+egin (execution base ready)
+vfs: boot BIOS=80 GPT partition=unknown devices=0
+i915: parity attach begin (stop_afterin=putP: 3/d)ev
+/input/event0: PC/AT PS/2 mouse
+input: /dev/input/event1: PC/AT PS/2 keyboard
+i915: parity PM probe get_sync:v fsc: nfatgi_vev beoont ddioskr=n=on0e xph8y0si8ca6l  diuskss=a0
+ge=1 active=1 resume_rc=0
+vfs: boot0 selector resolution failed (error 6)
+VFS initialization failed (i6)9; 1en5te:ri ngp iadlre.i
+ty P0 pci_enable_device ok (commanVFSd i=ni0tixal0iz0ati0on 7fa)il
+ed (6); entering idle.
+i915: parity P1 uncore BAR mapped (8388608 bytes)
+i915: parity P1 device_info: slice_fuse=0x00000001(1) dss_fuse=0x0000001f(5 DSS)
+i915: parity P1 gt_init_mmio: clock=19200000Hz period=52ns sseu(slice=0x1 dss=0x1f eu/ss=16 total=80) l3bank=0x7 engine_mask=0x10503 engines=5 fault=0x0
+i915: parity P1 engine[0] rcs0: class=0 inst=0 base=0x02000 reset_domain=0x2 ctx_size=57344 caps=0x0
+i915: parity P1 engine[1] bcs0: class=3 inst=0 base=0x22000 reset_domain=0x4 ctx_size=8192 caps=0x0
+i915: parity P1 engine[2] vcs0: class=1 inst=0 base=0x1c0000 reset_domain=0x8 ctx_size=8192 caps=0x3
+i915: parity P1 engine[3] vcs2: class=1 inst=2 base=0x1d0000 reset_domain=0x20 ctx_size=8192 caps=0x1
+i915: parity P1 engine[4] vecs0: class=2 inst=0 base=0x1c8000 reset_domain=0x80 ctx_size=8192 caps=0x2
+i915: parity P1 gt_reset attempt=0 passes=2 rc=0
+i915: parity P1 sanitize_gpu __intel_gt_reset(ALL_ENGINES) ok
+i915: parity P2 dma_request: streaming_mask=0x7fffffffff coherent_mask=0x7fffffffff max_seg=0xffffffff
+i915: parity P2 dma_backend: bus_bits=32 i915_bits=39 i915_max_seg=0xffffffff coherent=1
+i915: parity P2 ggtt_probe: ggms=3 entries=1048576 (4096 MiB GPU VA window)
+i915: parity P2 scratch: cpu=0xffff80010016a000 dma=0x10016a000 len=0x1000 ggtt_pte=0x10016a001
+i915: parity env: phys_bits=39 cpu_limit=0x7fffffffff bar2_raw=0x0000000c bar3_raw=0x00000070
+i915: parity P2 ggtt_init_hw: gmadr=0x7000000000 mappable_end=0x10000000
+i915: parity P2 ggtt_init_hw: WC aperture mapped base=0x7000000000 requested_size=0x10000000 mapped_size=0x10000000 va=0xffffffffe1000000 attr=RW|WC
+i915: parity P2 ggtt_init_hw: 32 fence registers initialized
+i915: parity P2 pci_set_master ok (command=0x0007)
+i915: parity P2 pci_enable_msi ok (vector programmed, msi_enabled=1, handler unattached)
+i915: parity P2 pci_enable_msi kept for P4 (resource retained)
+i915: parity P2 opregion: ASLS=0x00000000
+i915: parity P2 dram: raw=0x00003420 type=0 channels=2 qgv_points=4 psf_gv_points=3 wm_lv0_adjust=0
+i915: parity P2 bw: QGV 0 DCLK=2134 tRP=15 tRDPRE=8 tRAS=35 tRCD=15 tRC=50
+i915: parity P2 bw: QGV 1 DCLK=2934 tRP=21 tRDPRE=12 tRAS=47 tRCD=21 tRC=68
+i915: parity P2 bw: QGV 2 DCLK=3201 tRP=22 tRDPRE=12 tRAS=52 tRCD=22 tRC=74
+i915: parity P2 bw: QGV 3 DCLK=2668 tRP=19 tRDPRE=10 tRAS=43 tRCD=19 tRC=62
+i915: parity P2 bw: PSF GV 0 CLK=32
+i915: parity P2 bw: PSF GV 1 CLK=48
+i915: parity P2 bw: PSF GV 2 CLK=48
+i915: parity P2 bw: BW0/QGV0 num_planes=0 deratedbw=9299 peakbw=34144
+i915: parity P2 bw: BW0/QGV1 num_planes=0 deratedbw=10925 peakbw=46944
+i915: parity P2 bw: BW0/QGV2 num_planes=0 deratedbw=11707 peakbw=51216
+i915: parity P2 bw: BW0/QGV3 num_planes=0 deratedbw=10508 peakbw=42688
+i915: parity P2 bw: BW0/PSF0 num_planes=0 bw=34133
+i915: parity P2 bw: BW0/PSF1 num_planes=0 bw=51200
+i915: parity P2 bw: BW0/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW1/QGV0 num_planes=2 deratedbw=11064 peakbw=34144
+i915: parity P2 bw: BW1/QGV1 num_planes=2 deratedbw=13813 peakbw=46944
+i915: parity P2 bw: BW1/QGV2 num_planes=2 deratedbw=14899 peakbw=51216
+i915: parity P2 bw: BW1/QGV3 num_planes=2 deratedbw=13010 peakbw=42688
+i915: parity P2 bw: BW1/PSF0 num_planes=2 bw=34133
+i915: parity P2 bw: BW1/PSF1 num_planes=2 bw=51200
+i915: parity P2 bw: BW1/PSF2 num_planes=2 bw=51200
+i915: parity P2 bw: BW2/QGV0 num_planes=0 deratedbw=12225 peakbw=34144
+i915: parity P2 bw: BW2/QGV1 num_planes=0 deratedbw=15917 peakbw=46944
+i915: parity P2 bw: BW2/QGV2 num_planes=0 deratedbw=17252 peakbw=51216
+i915: parity P2 bw: BW2/QGV3 num_planes=0 deratedbw=14768 peakbw=42688
+i915: parity P2 bw: BW2/PSF0 num_planes=0 bw=34133
+i915: parity P2 bw: BW2/PSF1 num_planes=0 bw=51200
+i915: parity P2 bw: BW2/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW3/QGV0 num_planes=0 deratedbw=12902 peakbw=34144
+i915: parity P2 bw: BW3/QGV1 num_planes=0 deratedbw=17230 peakbw=46944
+i915: parity P2 bw: BW3/QGV2 num_planes=0 deratedbw=18731 peakbw=51216
+i915: parity P2 bw: BW3/QGV3 num_planes=0 deratedbw=15838 peakbw=42688
+i915: parity P2 bw: BW3/PSF0 num_planes=0 bw=34133
+i915: parity P2 bw: BW3/PSF1 num_planes=0 bw=51200
+i915: parity P2 bw: BW3/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW4/QGV0 num_planes=0 deratedbw=13269 peakbw=34144
+i915: parity P2 bw: BW4/QGV1 num_planes=0 deratedbw=17970 peakbw=46944
+i915: parity P2 bw: BW4/QGV2 num_planes=0 deratedbw=19569 peakbw=51216
+i915: parity P2 bw: BW4/QGV3 num_planes=0 deratedbw=16433 peakbw=42688
+i915: parity P2 bw: BW4/PSF0 num_planes=0 bw=34133
+i915: parity P2 bw: BW4/PSF1 num_planes=0 bw=51200
+i915: parity P2 bw: BW4/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW5/QGV0 num_planes=0 deratedbw=13460 peakbw=34144
+i915: parity P2 bw: BW5/QGV1 num_planes=0 deratedbw=18365 peakbw=46944
+i915: parity P2 bw: BW5/QGV2 num_planes=0 deratedbw=20017 peakbw=51216
+i915: parity P2 bw: BW5/QGV3 num_planes=0 deratedbw=16748 peakbw=42688
+i915: parity P2 bw: BW5/PSF0 num_planes=0 bw=34133
+i915: parity P2 bw: BW5/PSF1 num_planes=0 bw=51200
+i915: parity P2 bw: BW5/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: sagv_status=2 num_qgv_points=4 num_psf_points=3
+i915: parity P2 hw_probe tail: dram_detect rc=0 bw_init rc=0 sagv=2
+i915: parity P3 display_driver_probe_noirq enter (device state carried from P2, msi_kept=1)
+i915: parity P3 drm_vblank_init: vblank_slots=4 (per-pipe worker+timer+seqlock)
+i915: parity P3 intel_bios_init: source=3 vbt_found=1 version=249 bdb_blocks=12 child_devices=4 missing_defaults=0 parser_errors=0 arena_peak=5184
+i915: parity P3 VBT explicit blob: name=zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt requested=1 found=1 size=8704 sha256=3bff4a0920d55c9a.. hash_ok=1 valid=1 subsys=1028:0b02 subsys_ok=1 used=1 (explicit supply; OpRegion present=0 is unchanged)
+i915: parity P3 VBT child[0]: port=A dvo_port=10 type=0x1806 aux_ch=0 ddc_pin=9 dp=1 edp=1 hdmi=0 typec=0 tbt=0 max_lanes=4 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[1]: port=B dvo_port=7 type=0x60d2 aux_ch=1 ddc_pin=2 dp=0 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=4 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[2]: port=D dvo_port=13 type=0x68c6 aux_ch=3 ddc_pin=9 dp=1 edp=0 hdmi=0 typec=1 tbt=1 max_lanes=4 max_rate=810000 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[3]: port=E dvo_port=15 type=0x68c6 aux_ch=4 ddc_pin=10 dp=1 edp=0 hdmi=0 typec=1 tbt=1 max_lanes=4 max_rate=810000 hpd_invert=0 lane_reversal=0
+i915: parity P3 intel_bios_init done: source=3 vbt_found=1 version=249 child_devices=4
+i915: parity P3 intel_vga_register: client=registered gmch_bridge=found ret=0
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity cdclk: sanitizing cdclk programmed by pre-os
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity P3 intel_power_domains_init_hw(false) done: cdclk=179200 vco=537600 dbuf=0x1 init_ref=1 sync_hw=1
+i915: dmc worker: proceeding to load
+i915: parity P3 intel_dmc_init: revid=0xc step=D0 DMC load queued (path=i915/adlp_dmc.bin, work_submitted=1)
+i915: parity P3 modeset/flip workqueues: modeset=1 flip=1
+i915: parity Forcing SAGV disable: mask 0x10b
+i915: parity P3 intel_bw_init: obj=3 sagv_forced=1 qgv=0x4 psf=0x6 mask=0x10b pcode=0 sagv_status=1
+i915: parity PCIID cached: ven=0x8086 dev=0x46a8 rev=0x0c subsys=1028:0b02 | live: ven=0x8086 dev=0x46a8 rev=0x0c subsys=1028:0b02
+i915: parity P3 intel_init_quirks: dev=0x46a8 subsys=1028:0b02 quirk_mask=0x0 hooks=0 dmi_available=0
+i915: parity Sanitized enable_fbc value: 1
+i915: parity P3 intel_fbc_init: fbc_mask=0x1 enable_fbc=1 created=1 funcs=6
+i915: parity P3 probe_noirq COMPLETE: global objs=4 (order: cdclk,dbuf,bw,pmdemand) mode_config max=16384x16384 cursor=256x256 async_flip=1
+i915: parity Assuming PCH ID 7a80
+i915: parity Found Alder Lake PCH
+i915: parity P4 intel_detect_pch: type=8 id=0x7a80 source=2 bridges=1 bridge_dev=0x2918 subsys=1af4:1100
+i915: parity P4 intel_irq_install: rc=0 msi_irq=16 attached=1 gt_irqs=0x909 dmask=0x9090909 smask=0x9090000 reset_writes=62 post_writes=28
+i915: parity P4 de masks: pipe_masked=0x10100f80 pipe_enables=0x90700f89 port_masked=0x3f07 misc_masked=0x80000 de_irq_mask[A]=0xefeff07f master_enabled=1
+i915: parity P4 irq observed: count=0 handled=0 none=0 gt=0 display=0 last_master_ctl=0x0 gu_misc_iir=0x0
+i915: parity P4 gt irq: banks=0/0 identity=0 invalid=0 engine=0 other=0 unknown=0 user=0 ctxsw=0 err=0 sema=0
+i915: parity P5-0 survey pipe A: power(pipe=1 trans=1) TRANSCONF=0x00000000 TRANS_DDI_FUNC_CTL=0x00030000 PLANE_CTL(1)=0x00000008
+i915: parity P5-0 survey pipe B: power(pipe=1 trans=1) TRANSCONF=0x00000000 TRANS_DDI_FUNC_CTL=0x00030000 PLANE_CTL(1)=0x00000008
+i915: parity P5-0 survey pipe C: power(pipe=1 trans=1) TRANSCONF=0x00000000 TRANS_DDI_FUNC_CTL=0x00030000 PLANE_CTL(1)=0x00000008
+i915: parity P5-0 survey pipe D: power(pipe=1 trans=1) TRANSCONF=0x00000000 TRANS_DDI_FUNC_CTL=0x00030000 PLANE_CTL(1)=0x00000008
+i915: parity P5-0 survey DDI A: DDI_BUF_CTL=0x00000080
+i915: parity P5-0 survey DDI B: DDI_BUF_CTL=0x00000080
+i915: parity P5-0 survey DDI TC1: DDI_BUF_CTL=0x00000080
+i915: parity P5-0 survey DDI TC2: DDI_BUF_CTL=0x00000080
+i915: parity P5-0 survey DDI TC3: DDI_BUF_CTL=0x00000080
+i915: parity P5-0 survey DDI TC4: DDI_BUF_CTL=0x00000080
+i915: parity P5-0 survey PLL DPLL0: ENABLE=0x00000000
+i915: parity P5-0 survey PLL DPLL1: ENABLE=0x00000000
+i915: parity P5-0 survey PLL TBT: ENABLE=0x00000000
+i915: parity P5-0 survey PLL TC1: ENABLE=0x00000000
+i915: parity P5-0 survey PLL TC2: ENABLE=0x00000000
+i915: parity P5-0 survey PLL TC3: ENABLE=0x00000000
+i915: parity P5-0 survey PLL TC4: ENABLE=0x00000000
+i915: parity P5-0 survey wells: total=30 on=8 on_unused=0
+i915: parity SAGV supported: yes, original SAGV block time: 35 us
+i915: parity P5 4 display pipes available.
+i915: parity P5 Current CDCLK: cdclk=179200 vco=537600 ref=38400 voltage=0
+i915: parity P5a wm: levels=6 latency=3/54/83/102/147/147/144/144 valid=1 sagv_status=1 block_time=35us
+i915: parity P5a objects: crtcs=4 planes/crtc=6 scalers=2 dplls=7(mgr=1) gmbus_pins=9 pps_base=0x61200 gmbus_base=0xc0000
+i915: parity P5a hw: max_cdclk=652800 nssc_ref=38400 adlp_wa=1 hti_read=0 vga_already_off=1 vga_disabled=0 writes=2 (gmbus_adapters/hdcp_component unimplemented: 1/1)
+i915: parity edp init_connector (in setup_outputs): vbt_source=3 port=A aux_ch=0 panel_early=1 type=2 pps(100us) t1_t3=2000 t8=800 t9=2000 t10=1100 t11_t12=5000 controller=0 well_refs=7
+i915: parity edp pps before: PP_STATUS=0x00000000 PP_CONTROL=0x00000000 PP_ON_DELAYS=0x00000000 PP_OFF_DELAYS=0x00000000
+i915: parity edp pps after intel_pps_init: PP_STATUS=0x00000000 PP_CONTROL=0x00000060 PP_ON_DELAYS=0x07d00001 PP_OFF_DELAYS=0x044c0001
+i915: parity edp pps: idx=0 valid=1 delays(ms) up=200 down=110 cycle=600 bl_on=80 bl_off=200
+i915: parity edp acquire: rc=0 stage=4 failed_stage=0 dpcd_ok=1 edp_dpcd_ok=1 link_cfg_ok=1 edid_ok=1 edid_blocks=1 ext=0 i2c_defers=0 i2c_nacks=0 log_errors=0 wait_timeouts=0 time_faults=0 elapsed_ms=389 | sleeps: tick=1 (200611 us) short=0 (0 us)
+i915: parity edp DPCD 000: 11 0a 02 41 00 00 01 00 02 00 00 00 00 0b 00 | eDP 700: 01 18 00 (ok=1) | 100: 0a 02 (ok=1)
+i915: parity edp EDID +000: 00 ff ff ff ff ff ff 00 06 af 99 2b 00 00 00 00
+i915: parity edp EDID +010: 00 1f 01 04 95 1d 11 78 02 93 05 92 58 59 90 29
+i915: parity edp EDID +020: 1d 50 54 00 00 00 01 01 01 01 01 01 01 01 01 01
+i915: parity edp EDID +030: 01 01 01 01 01 01 00 37 80 a0 70 38 30 40 10 10
+i915: parity edp EDID +040: 3e 00 25 a5 10 00 00 1a 00 2c 80 a0 70 38 30 40
+i915: parity edp EDID +050: 10 10 3e 00 25 a5 10 00 00 1a 00 00 00 fe 00 35
+i915: parity edp EDID +060: 47 54 4b 30 80 42 31 33 33 48 41 4e 00 00 00 00
+i915: parity edp EDID +070: 00 01 41 23 99 00 10 00 00 0a 01 0a 20 20 00 74
+i915: parity edp EDID sha256=503058223c08a628.. mfg=06af product=2b99
+i915: parity edp pps after intel_pps_init_late: PP_STATUS=0x00000000 PP_CONTROL=0x00000068 PP_ON_DELAYS=0x07d00001 PP_OFF_DELAYS=0x044c0001
+i915: parity edp late: rc=0 panel_late=1 type=2 delays(ms) up=200 down=110 cycle=600 | KEPT: vdd_hw=1 vdd_wakeref=1 off_reserved=1 (in 3000 ms) refs core=0 aux=1 well_refs=10
+i915: parity LCD-A rc=0 mode 1920x1080 clock=140800 kHz h 1920/1936/1952/2080 v 1080/1083/1097/1128 sync +- bpc=6 | link 270000 kHz x2 (sink max 270000 x2, use_max_params=1) bpp=18 need=316800 have=540000 kBps | TU=64 data M/N 0x4b17e4/0x800000 link M/N 273406/524288 | DPLL ref=38400 kHz CFGCR0=0x00e001a5 CFGCR1=0x00000088 DIV0=0x0 | notes=0
+i915: parity LCD-A cpu-transcoder[12] rmw   0x420c0 = 0x80000000 clear=0x00000000 (computed; NOT written)
+i915: parity LCD-A cpu-transcoder[13] write 0x60420 = 0x00000000 clear=0x00000000 (computed; NOT written)
+i915: parity LCD-A cpu-transcoder[14] write 0x6002c = 0x00000000 clear=0x00000000 (computed; NOT written)
+i915: parity LCD-A cpu-transcoder[15] rmw   0x420c0 = 0x00000000 clear=0x18000000 (computed; NOT written)
+i915: parity LCD-A cpu-transcoder[16] write 0x70008 = 0x00000000 clear=0x00000000 (computed; NOT written)
+i915: parity LCD-A ddi[0] write 0x60410 = 0x00000001 (computed; NOT written)
+i915: parity LCD-A ddi[1] write 0x60404 = 0x00000000 (computed; NOT written)
+i915: parity LCD-A ddi[2] write 0x60400 = 0x8a210002 (computed; NOT written)
+i915: parity LCD-A ddi: DDI_BUF_CTL value=0x00000002 (enable bit comes with link training) | DDI_BUF_CTL_A readout now=0x00000080
+i915: parity LCD-A word[ 0] 0x60030 = 0x7e4b17e4 (computed; NOT written)
+i915: parity LCD-A word[ 1] 0x60034 = 0x00800000 (computed; NOT written)
+i915: parity LCD-A word[ 2] 0x60040 = 0x00042bfe (computed; NOT written)
+i915: parity LCD-A word[ 3] 0x60044 = 0x00080000 (computed; NOT written)
+i915: parity LCD-A word[ 4] 0x6007c = 0x00000000 (computed; NOT written)
+i915: parity LCD-A word[ 5] 0x60028 = 0x00000000 (computed; NOT written)
+i915: parity LCD-A word[ 6] 0x60000 = 0x081f077f (computed; NOT written)
+i915: parity LCD-A word[ 7] 0x60004 = 0x081f077f (computed; NOT written)
+i915: parity LCD-A word[ 8] 0x60008 = 0x079f078f (computed; NOT written)
+i915: parity LCD-A word[ 9] 0x6000c = 0x04670437 (computed; NOT written)
+i915: parity LCD-A word[10] 0x60010 = 0x04670000 (computed; NOT written)
+i915: parity LCD-A word[11] 0x60014 = 0x0448043a (computed; NOT written)
+i915: parity LCD-A word[12] 0x6001c = 0x077f0437 (computed; NOT written)
+i915: parity P5b setup_outputs: vbt_children=4 ddi_init=4 encoders=4 skipped=0 crt_present=0
+i915: parity P5b encoder[0]: port=A phy=0 tc=0 clk=1 pd=17 dvo=0x0a dev_type=0x1806 dp=1 hdmi=0
+i915: parity P5b encoder[1]: port=B phy=1 tc=0 clk=1 pd=18 dvo=0x07 dev_type=0x60d2 dp=0 hdmi=1
+i915: parity P5b encoder[2]: port=D phy=5 tc=1 clk=2 pd=23 dvo=0x0d dev_type=0x68c6 dp=1 hdmi=0
+i915: parity P5b encoder[3]: port=E phy=6 tc=1 clk=2 pd=24 dvo=0x0f dev_type=0x68c6 dp=1 hdmi=0
+i915: parity P5c [CRTC:A] hw state readout: disabled
+i915: parity P5c [CRTC:B] hw state readout: disabled
+i915: parity P5c [CRTC:C] hw state readout: disabled
+i915: parity P5c [CRTC:D] hw state readout: disabled
+i915: parity P5c [ENCODER port A] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c [ENCODER port B] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c [ENCODER port D] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c [ENCODER port E] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c DPLL 0 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c DPLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TBT PLL hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 2 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 3 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 4 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c readout: crtcs=4 active_pipes=0x0 planes_visible=0 encoders_linked=0 dplls_on=0 (detail readout unimplemented: 1)
+i915: parity P5d sanitize: vblank_resets=4 dmc_pipes=0 vblank_on=0 fbc_deact=0 enc_clk_gated=0 dplls_disabled=0 wells_disabled=0 cmtg_wa=0 early_was=0 wm_read=1 (crtc_disable_noatomic needed: 0)
+i915: parity P6a tables: gt_wa=5 mocs(uc_index=3 entries=64) rps(rp0=72 rp1=21 min=6 eff=21 pcode=1) rc6_supported=1
+i915: parity WA-MANIFEST GT 'gt_wa': 5 entries
+i915: parity WA GT reg=0x00fdc clr=0x7f000000 set=0x00000000 rmask=0x7f000000 kind=0 mcr=0 MCR steering (icl_wa_init_mcr)
+i915: parity WA GT reg=0x1c3f10 clr=0x00400000 set=0x00400000 rmask=0x00400000 kind=0 mcr=0 Wa_14011060649
+i915: parity WA GT reg=0x1d3f10 clr=0x00400000 set=0x00400000 rmask=0x00400000 kind=0 mcr=0 Wa_14011060649
+i915: parity WA GT reg=0x09550 clr=0x00000200 set=0x00000200 rmask=0x00000200 kind=0 mcr=1 Wa_14011059788
+i915: parity WA GT reg=0x09424 clr=0x00000002 set=0x00000000 rmask=0x00000000 kind=2 mcr=0 Wa_14015795083
+i915: parity P6a rcs0: engine_wa=8 ctx_wa=5 whitelist=4
+i915: parity WA-MANIFEST ENGINE 'rcs0': 8 entries
+i915: parity WA ENGINE reg=0x020c4 clr=0x00000000 set=0x3fff0306 rmask=0x00003fff kind=1 mcr=0 fake: RING_CMD_CCTL MOCS
+i915: parity WA ENGINE reg=0x020ec clr=0x00000000 set=0x00020002 rmask=0x00000002 kind=1 mcr=0 Wa_1606700617
+i915: parity WA ENGINE reg=0x0e4f4 clr=0x00000000 set=0x41004100 rmask=0x00004100 kind=1 mcr=1 Wa_1606931601
+i915: parity WA ENGINE reg=0x020a0 clr=0x00080000 set=0x00080000 rmask=0x00080000 kind=0 mcr=0 Wa_14010919138
+i915: parity WA ENGINE reg=0x0e18c clr=0x00000000 set=0x80008000 rmask=0x00008000 kind=1 mcr=1 Wa_1406941453
+i915: parity WA ENGINE reg=0x0e48c clr=0x00000000 set=0x02000200 rmask=0x00000200 kind=1 mcr=1 Wa_14010229206
+i915: parity WA ENGINE reg=0x02050 clr=0x00000000 set=0x10801080 rmask=0x00001080 kind=1 mcr=0 Wa_1607297627
+i915: parity WA ENGINE reg=0x020e0 clr=0x00000000 set=0x40004000 rmask=0x00004000 kind=1 mcr=0 perctx preempt ctrl
+i915: parity WA-MANIFEST CTX 'ctx_wa': 5 entries
+i915: parity WA CTX reg=0x07304 clr=0x00000000 set=0x02000200 rmask=0x00000200 kind=1 mcr=0 Wa_1409142259
+i915: parity WA CTX reg=0x02580 clr=0x00000000 set=0x00060002 rmask=0x00000006 kind=1 mcr=0 WaDisableGPGPUMidThreadPreemption
+i915: parity WA CTX reg=0x06604 clr=0xffffffff set=0xe0040000 rmask=0x00000000 kind=2 mcr=0 Wa_16011163337 (FF_MODE2)
+i915: parity WA CTX reg=0x07018 clr=0x00000000 set=0x20002000 rmask=0x00002000 kind=1 mcr=0 Wa_1806527549
+i915: parity WA CTX reg=0x07300 clr=0x00000000 set=0x00400040 rmask=0x00000040 kind=1 mcr=0 Wa_1606376872
+i915: parity WA-MANIFEST WHITELIST 'whitelist': 4 entries
+i915: parity WA WHITELIST reg=0x10002349 clr=0x00000000 set=0x00000000 rmask=0x00000000 kind=0 mcr=0 Wa_1408556865 (PS_INVOCATION_COUNT x4)
+i915: parity WA WHITELIST reg=0x07010 clr=0x00000000 set=0x00000000 rmask=0x00000000 kind=0 mcr=0 Wa_1508744258
+i915: parity WA WHITELIST reg=0x07018 clr=0x00000000 set=0x00000000 rmask=0x00000000 kind=0 mcr=0 Wa_1806527549 (whitelist)
+i915: parity WA WHITELIST reg=0x07304 clr=0x00000000 set=0x00000000 rmask=0x00000000 kind=0 mcr=0 tuning
+i915: parity P6a bcs0: engine_wa=1 ctx_wa=1 whitelist=1
+i915: parity P6a vcs0: engine_wa=1 ctx_wa=0 whitelist=1
+i915: parity P6a vcs2: engine_wa=1 ctx_wa=0 whitelist=1
+i915: parity P6a vecs0: engine_wa=1 ctx_wa=0 whitelist=1
+i915: parity P6c mem: ggtt window first=1048320 pages=256 (of 1048576) scratch ggtt=0xfff00000 ppgtt top_pd dma=0x10021d000 objects=6
+i915: parity P6c rcs0: hwsp=0xfff01000 kctx state=0xfff02000 (16 pages, wa_bb_page=14) ring=0xfff12000 lrca=0xfff02119 ccid=0x00000000 bb=32 dw
+i915: parity P6c bcs0: hwsp=0xfff13000 kctx state=0xfff14000 (4 pages, wa_bb_page=2) ring=0xfff18000 lrca=0xfff14119 ccid=0x60000000 bb=32 dw
+i915: parity P6c vcs0: hwsp=0xfff19000 kctx state=0xfff1a000 (4 pages, wa_bb_page=2) ring=0xfff1e000 lrca=0xfff1a119 ccid=0x20000000 bb=32 dw
+i915: parity P6c vcs2: hwsp=0xfff1f000 kctx state=0xfff20000 (4 pages, wa_bb_page=2) ring=0xfff24000 lrca=0xfff20119 ccid=0x20020000 bb=32 dw
+i915: parity P6c vecs0: hwsp=0xfff25000 kctx state=0xfff26000 (4 pages, wa_bb_page=2) ring=0xfff2a000 lrca=0xfff26119 ccid=0x40000000 bb=32 dw
+i915: parity P1 gt_reset attempt=0 passes=2 rc=0
+i915: parity P6c resume: rc=0 reset_engines=0 stop_cs_timeouts=0 engines_resumed=5 l3cc(rcs, mocs_init_engine)=32
+i915: parity P6b hw: pat=1 gt_wa(w=1 skip=4 ok=4 mismatch=0 noverify=1) mocs(global=64 l3cc=32) whitelist_writes=60 engines=5
+i915: parity P6b rcs0 wa: w=8 skip=0 ok=8 mismatch=0 noverify=0
+i915: parity P6b bcs0 wa: w=1 skip=0 ok=1 mismatch=0 noverify=0
+i915: parity P6b vcs0 wa: w=1 skip=0 ok=1 mismatch=0 noverify=0
+i915: parity P6b vcs2 wa: w=1 skip=0 ok=1 mismatch=0 noverify=0
+i915: parity P6b vecs0 wa: w=1 skip=0 ok=1 mismatch=0 noverify=0
+i915: parity P6b pm: rps_enabled=1 rc6_enabled=1 rc6_ctl=0x40000 pg_enable=0x19f (rc6 skipped by switch: 0)
+i915: parity P6c rcs0 resume: stop_cs=0 mi_fw_pending=0x0 esr=0x0 | readback HWS_PGA=0xfff01000 (want 0xfff01000) MODE_GEN7=0x00000008 MI_MODE=0x00000200 HEAD=0x00000000 TAIL=0x00000000
+i915: parity P6c bcs0 resume: stop_cs=0 mi_fw_pending=0x0 esr=0x0 | readback HWS_PGA=0xfff13000 (want 0xfff13000) MODE_GEN7=0x00000008 MI_MODE=0x00000200 HEAD=0x00000000 TAIL=0x00000000
+i915: parity P6c vcs0 resume: stop_cs=0 mi_fw_pending=0x0 esr=0x0 | readback HWS_PGA=0xfff19000 (want 0xfff19000) MODE_GEN7=0x00000008 MI_MODE=0x00000200 HEAD=0x00000000 TAIL=0x00000000
+i915: parity P6c vcs2 resume: stop_cs=0 mi_fw_pending=0x0 esr=0x0 | readback HWS_PGA=0xfff1f000 (want 0xfff1f000) MODE_GEN7=0x00000008 MI_MODE=0x00000200 HEAD=0x00000000 TAIL=0x00000000
+i915: parity P6c vecs0 resume: stop_cs=0 mi_fw_pending=0x0 esr=0x0 | readback HWS_PGA=0xfff25000 (want 0xfff25000) MODE_GEN7=0x00000008 MI_MODE=0x00000200 HEAD=0x00000000 TAIL=0x00000000
+i915: parity P6c record_defaults: rc=0 where=- polls=9 timed_out=0 wedged=0 | gt irq during: user=9 ctx_switch=10 engine=12 error=0
+i915: parity P6c rcs0 defaults: state=3 rq_seqno=2 krq_seqno=1 hwsp_seqno=1 | el submits=2 promotes=2 completes=2 errors=0 late=0 mmio=0 serial=3 wakeref_serial=3
+i915: parity P6c rcs0 default_state: 65536 bytes | reg[1]=11081019 CTX_CTRL=ffff0008 RING_HEAD=00000188 RING_TAIL=00000188 RING_START=fff3b000 RING_CTL=00000001 TIMESTAMP=00001233 RPCS=80041000
+i915: parity P6c bcs0 defaults: state=3 rq_seqno=2 krq_seqno=1 hwsp_seqno=1 | el submits=2 promotes=2 completes=2 errors=0 late=0 mmio=0 serial=3 wakeref_serial=3
+i915: parity P6c bcs0 default_state: 16384 bytes | reg[1]=11081019 CTX_CTRL=ffff0008 RING_HEAD=000000f8 RING_TAIL=000000f8 RING_START=fff41000 RING_CTL=00000001 TIMESTAMP=00000424 RPCS=ffff0000
+i915: parity P6c vcs0 defaults: state=3 rq_seqno=2 krq_seqno=1 hwsp_seqno=1 | el submits=2 promotes=2 completes=2 errors=0 late=0 mmio=0 serial=3 wakeref_serial=3
+i915: parity P6c vcs0 default_state: 16384 bytes | reg[1]=11081019 CTX_CTRL=ffff0008 RING_HEAD=00000078 RING_TAIL=00000078 RING_START=fff47000 RING_CTL=00000001 TIMESTAMP=00000383 RPCS=00000000
+i915: parity P6c vcs2 defaults: state=3 rq_seqno=2 krq_seqno=1 hwsp_seqno=1 | el submits=2 promotes=2 completes=2 errors=0 late=0 mmio=0 serial=3 wakeref_serial=3
+i915: parity P6c vcs2 default_state: 16384 bytes | reg[1]=11081019 CTX_CTRL=ffff0008 RING_HEAD=00000078 RING_TAIL=00000078 RING_START=fff4d000 RING_CTL=00000001 TIMESTAMP=000001c6 RPCS=00000000
+i915: parity P6c vecs0 defaults: state=3 rq_seqno=2 krq_seqno=1 hwsp_seqno=1 | el submits=2 promotes=2 completes=2 errors=0 late=0 mmio=0 serial=3 wakeref_serial=3
+i915: parity P6c vecs0 default_state: 16384 bytes | reg[1]=11081019 CTX_CTRL=ffff0008 RING_HEAD=00000078 RING_TAIL=00000078 RING_START=fff53000 RING_CTL=00000001 TIMESTAMP=000001a9 RPCS=00000000
+i915: parity P6c verify_workarounds: rc=0 where=- polls=22 timed_out=0 | gt irq during: user=10 ctx_switch=19 engine=28 error=0
+i915: parity P6c rcs0 verify_wa: state=4 list=8 emitted=5 mcr_skipped=3 verified=5 mismatched=0 not_verifiable=0 err=0 rq_seqno=2 krq_seqno=3 hwsp_seqno=3 | el submits=4 promotes=4 completes=4 errors=0 serial=5 wakeref_serial=5 ring_emit=608
+i915: parity P6c bcs0 verify_wa: state=4 list=1 emitted=1 mcr_skipped=0 verified=1 mismatched=0 not_verifiable=0 err=0 rq_seqno=2 krq_seqno=3 hwsp_seqno=3 | el submits=4 promotes=4 completes=4 errors=0 serial=5 wakeref_serial=5 ring_emit=400
+i915: parity P6c vcs0 verify_wa: state=4 list=1 emitted=1 mcr_skipped=0 verified=1 mismatched=0 not_verifiable=0 err=0 rq_seqno=2 krq_seqno=3 hwsp_seqno=3 | el submits=4 promotes=4 completes=4 errors=0 serial=5 wakeref_serial=5 ring_emit=400
+i915: parity P6c vcs2 verify_wa: state=4 list=1 emitted=1 mcr_skipped=0 verified=1 mismatched=0 not_verifiable=0 err=0 rq_seqno=2 krq_seqno=3 hwsp_seqno=3 | el submits=4 promotes=4 completes=4 errors=0 serial=5 wakeref_serial=5 ring_emit=400
+i915: parity P6c vecs0 verify_wa: state=4 list=1 emitted=1 mcr_skipped=0 verified=1 mismatched=0 not_verifiable=0 err=0 rq_seqno=2 krq_seqno=3 hwsp_seqno=3 | el submits=4 promotes=4 completes=4 errors=0 serial=5 wakeref_serial=5 ring_emit=400
+i915: parity P6c migrate_init: rc=0 where=- engine=bcs0 tables=11 windows=16777216 pte_window=0x1000000 exposed_pts=8 ring=524288 state=16384 | ggtt ring=0xfff34000 state=0xfff30000 hwsp=0xfff13108 | lrc PDP0=00000001:0029b000 RING_CTL=0007f001 top_pd=0x10029b000
+i915: parity P7 pxp_init: rc=0 where=- full=1 engine=vcs0 kcr_base=0x32000 ce ring=4096 state=16384 ggtt=0xfffb4000 hwsp=0xfff19180 stream_cmd=1 component_added=1 (KCR init + irq enable wait for the mei-pxp bind: none here)
+i915: parity P7 display_driver_probe: rc=0 active_crtcs=0 initial_commit=0 overlay=0 fbdev=0 ipc_enabled=1
+i915: parity P7 hpd_init: encoders=4 pins=4,5 setups=1 skipped=0 | de: enabled=0x30003 hotplug=0x30003 IMR=0xfffcfffc TC_CTL=0x00000088 TBT_CTL=0x00000088 | pch: enabled=0x3030000 hotplug=0x3030000 SHPD_FILTER=0xf8 SDEIMR=0x3c043f07 SHOTPLUG_DDI=0x00000088 SHOTPLUG_TC=0x00000088 | poll: works=1 core_gets=1
+i915: parity P7 driver_register: na_registrations=15 opregion=0 kms_poll=1 | power_domains_enable: wells_on 9 -> 4 dc_state=0x0 verify_mismatches=0 | runtime_pm_enable: probe usage=0 active=1 (autosuspend not armed: intel_runtime_suspend unimplemented)
+i915: parity P7 well always_on: refcount=1 hw_enabled=1
+i915: parity P7 well PW_1: refcount=0 hw_enabled=1
+i915: parity P7 well DC_off: refcount=1 hw_enabled=1
+i915: parity P7 well AUX_A: refcount=1 hw_enabled=1
+i915: parity P7 DC_STATE_EN=0x00000000 DC_off disable_calls=0 dc_state_writes=1 rewrites=0 dmc_has_payload=1
+i915: parity LCD-R begin: three show / stop cycles in one driver lifetime (patterns 110, 111, 112); one display owner, run serially (the modeset object is global; the DPLL / backlight mutexes do not make the whole modeset reentrant)
+i915: parity LCD-R cycle 1 begin (pattern 110)
+i915: parity LCD-B reg[preflight] ICL_DPLL_ENABLE 0x46010 = 0x00000000
+i915: parity LCD-B reg[preflight] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5
+i915: parity LCD-B reg[preflight] TGL_DPLL_CFGCR1 0x164288 = 0x00000088
+i915: parity LCD-B reg[preflight] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07c00
+i915: parity LCD-B reg[preflight] DDI_BUF_CTL 0x64000 = 0x00000080
+i915: parity LCD-B reg[preflight] TRANS_CLK_SEL 0x46140 = 0x00000000
+i915: parity LCD-B reg[preflight] TRANS_DDI_FUNC_CTL 0x60400 = 0x00030000
+i915: parity LCD-B reg[preflight] TRANSCONF 0x70008 = 0x00000000
+i915: parity LCD-B reg[preflight] PIPE_MISC 0x70030 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_CTL_1 0x70180 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_COLOR_CTL_1 0x701cc = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_STRIDE_1 0x70188 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_SIZE_1 0x70190 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_SURF_1 0x7019c = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_WM_1_0 0x70240 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_BUF_CFG_1 0x7027c = 0x00000000
+i915: parity LCD-B reg[preflight] MBUS_CTL 0x4438c = 0x00000700
+i915: parity LCD-B reg[preflight] PIPE_MBUS_DBOX_CTL 0x7003c = 0x00000000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S1 0x45008 = 0xc040c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S2 0x44fe8 = 0x0040c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S3 0x44300 = 0x0040c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S4 0x44304 = 0x0040c000
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_CTL 0xc8250 = 0x00000000
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_FREQ 0xc8254 = 0x00000000
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_DUTY 0xc8258 = 0x00000000
+i915: parity LCD-B reg[preflight] ICL_PIPESTATUS 0x70058 = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IMR 0x44404 = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IER 0x4440c = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[preflight] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000000
+i915: parity LCD-B preflight: DDI / PLL idle=1 (pipe A registers read TRANSCONF 0x00000000 PLANE_CTL 0x00000000 IMR 0x00000000 with power well A off) | IRQ state pipe A mask 0xefeff07f: vblank + underrun masked=1 | no code of this path waits for a software vblank count; no worker / callback / waiter is created by it
+i915: parity LCD-B input: VBT low_vswing=0 hobl=0 afc_override=0 backlight present=1 active_low=0 controller=0 pwm=200 Hz min=15 | rawclk=19200 kHz | DDI_BUF_CTL at connector init 0x00000080 -> saved bits 0x0
+i915: parity LCD-B input: wm levels=6 latency 3/54/83/102/147/147/144/144 us ipc=1 sagv_block=35 us | DBUF slices now 0x1 MBUS_CTL=0x00000700 joined=0 | CDCLK now 179200 kHz vco 537600 ref 38400 bypass 19200 level 0 max 652800 | QGV mask 0x10b -> allowed 0x4 bw 14899 MB/s | DMC fw mask 0x1f
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity LCD-B (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)
+i915: parity LCD-B (decided) intel_set_cpu_fifo_underrun_reporting: underrun IRQ stays masked; the test owns and samples ICL_PIPESTATUS
+i915: parity LCD-B (decided) intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)
+i915: parity LCD-B (decided) intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)
+i915: parity LCD-B reg[picture-up] ICL_DPLL_ENABLE 0x46010 = 0xcc000000 | Linux 0xcc000000 mask 0xcc000000 same
+i915: parity LCD-B reg[picture-up] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5 | Linux 0x00e001a5 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TGL_DPLL_CFGCR1 0x164288 = 0x00000088 | Linux 0x00000088 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07800
+i915: parity LCD-B reg[picture-up] DDI_BUF_CTL 0x64000 = 0x80000002 | Linux 0x80000002 mask 0xffffff7f same
+i915: parity LCD-B reg[picture-up] TRANS_CLK_SEL 0x46140 = 0x10000000 | Linux 0x10000000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TRANS_DDI_FUNC_CTL 0x60400 = 0x8a210002 | Linux 0x8a210002 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TRANSCONF 0x70008 = 0xc0000000 | Linux 0xc0000000 mask 0xc0000000 same
+i915: parity LCD-B reg[picture-up] PIPE_MISC 0x70030 = 0x00800150
+i915: parity LCD-B reg[picture-up] PLANE_CTL_1 0x70180 = 0x94000000 | Linux 0x94000000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_COLOR_CTL_1 0x701cc = 0x00002000 | Linux 0x00002000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_STRIDE_1 0x70188 = 0x00000078 | Linux 0x00000078 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_SIZE_1 0x70190 = 0x0437077f | Linux 0x0437077f mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_SURF_1 0x7019c = 0xfdfc0000
+i915: parity LCD-B reg[picture-up] PLANE_WM_1_0 0x70240 = 0x80004010 | Linux 0x80004010 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_BUF_CFG_1 0x7027c = 0x0fdb0000 | Linux 0x0fdb0000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] MBUS_CTL 0x4438c = 0xdc000700 | Linux 0xdc000700 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PIPE_MBUS_DBOX_CTL 0x7003c = 0xa9038806
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S1 0x45008 = 0xc043c000 | Linux 0xc043c000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S2 0x44fe8 = 0xc043c000 | Linux 0xc043c000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S3 0x44300 = 0xc043c000
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S4 0x44304 = 0xc043c000
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_CTL 0xc8250 = 0x80000000
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700 | Linux 0x00017700 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_DUTY 0xc8258 = 0x00017700
+i915: parity LCD-B reg[picture-up] ICL_PIPESTATUS 0x70058 = 0x60000000
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IMR 0x44404 = 0xefe9f07f
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IER 0x4440c = 0x90700f89
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[picture-up] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000034
+i915: parity LCD-B reg[picture-up] same as Linux's dump: 17/17 (comparison only; no value above was copied from it)
+i915: parity LCD-B PICTURE UP: pattern id=110 on the panel; observation window 2000 ms starts now (take the photograph)
+i915: parity LCD-R IRQ: after the well came on: GEN8_DE_PIPE_IMR(A)=0xefe9f07f (driver's de_irq_mask 0xefeff07f) GEN8_DE_PIPE_IER(A)=0x90700f89 (expected ~mask|vblank|underrun|flip done = 0x90700f89) | vblank get rc=0 IMR=0xefe9f07e | waits rc=0/0/0 new-vblanks 1/1/1 | handler vblank IRQs +3 frames 57->60 | put IMR=0xefe9f07f | vblank IRQs in the next 100 ms after masking: 0 | refs 0 | IMR bits differing from the written mask 0x00060000 (judged bits 0x80600009) -> OK
+i915: parity LCD-R brightness: VBT min_brightness 15 (a 0..255 coefficient) -> backlight.min 5647 of max 96000 (get_backlight_min_vbt); current level 96000; user range [0, 96000] (intel_backlight_device_register)
+i915: parity LCD-R step=0 max rc=0 | BXT_BLC_PWM_CTL=0x80000000 FREQ=0x00017700 DUTY=0x00017700 (level 96000 of [5647,96000]) backlight_enabled=1 PP_CONTROL backlight bit via eDP | crtc_active=1 plane_armed=1 (take the photograph)
+i915: parity LCD-R step=0 max done: frame counter 73 -> 498 over 7000 ms (the scanout continued)
+i915: parity LCD-R step=1 half rc=0 | BXT_BLC_PWM_CTL=0x80000000 FREQ=0x00017700 DUTY=0x0000c688 (level 50824 of [5647,96000]) backlight_enabled=1 PP_CONTROL backlight bit via eDP | crtc_active=1 plane_armed=1 (take the photograph)
+i915: parity LCD-R step=1 half done: frame counter 500 -> 924 over 7000 ms (the scanout continued)
+i915: parity LCD-R step=2 min(user 0) rc=0 | BXT_BLC_PWM_CTL=0x80000000 FREQ=0x00017700 DUTY=0x0000160f (level 5647 of [5647,96000]) backlight_enabled=1 PP_CONTROL backlight bit via eDP | crtc_active=1 plane_armed=1 (take the photograph)
+i915: parity LCD-R step=2 min(user 0) done: frame counter 926 -> 1351 over 7000 ms (the scanout continued)
+i915: parity LCD-R step=3 half-again rc=0 | BXT_BLC_PWM_CTL=0x80000000 FREQ=0x00017700 DUTY=0x0000c688 (level 50824 of [5647,96000]) backlight_enabled=1 PP_CONTROL backlight bit via eDP | crtc_active=1 plane_armed=1 (take the photograph)
+i915: parity LCD-R step=3 half-again done: frame counter 1352 -> 1415 over 1000 ms (the scanout continued)
+i915: parity LCD-R step=4 backlight-off(scanout continues) rc=0 | BXT_BLC_PWM_CTL=0x00000000 FREQ=0x00017700 DUTY=0x00000000 (level 50824 of [5647,96000]) backlight_enabled=0 PP_CONTROL backlight bit via eDP | crtc_active=1 plane_armed=1 (take the photograph)
+i915: parity LCD-R step=4 backlight-off(scanout continues) done: frame counter 1429 -> 1855 over 7000 ms (the scanout continued)
+i915: parity LCD-R step=5 backlight-on rc=0 | BXT_BLC_PWM_CTL=0x80000000 FREQ=0x00017700 DUTY=0x0000c688 (level 50824 of [5647,96000]) backlight_enabled=1 PP_CONTROL backlight bit via eDP | crtc_active=1 plane_armed=1 (take the photograph)
+i915: parity LCD-R step=5 backlight-on done: frame counter 1857 -> 2281 over 7000 ms (the scanout continued)
+i915: parity LCD-R step=6 restore rc=0 | BXT_BLC_PWM_CTL=0x80000000 FREQ=0x00017700 DUTY=0x00017700 (level 96000 of [5647,96000]) backlight_enabled=1 PP_CONTROL backlight bit via eDP | crtc_active=1 plane_armed=1 (take the photograph)
+i915: parity LCD-R step=6 restore done: frame counter 2283 -> 2346 over 1000 ms (the scanout continued)
+i915: parity LCD-B observation window over; stopping through the reference's disable path
+i915: parity LCD-B (decided) intel_crtc_vblank_off: no vblank waiters / events / work exist in this test
+i915: parity LCD-B (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it
+i915: parity LCD-B reg[after-disable] ICL_DPLL_ENABLE 0x46010 = 0x00000000
+i915: parity LCD-B reg[after-disable] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5
+i915: parity LCD-B reg[after-disable] TGL_DPLL_CFGCR1 0x164288 = 0x00000088
+i915: parity LCD-B reg[after-disable] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07c00
+i915: parity LCD-B reg[after-disable] DDI_BUF_CTL 0x64000 = 0x00000080
+i915: parity LCD-B reg[after-disable] TRANS_CLK_SEL 0x46140 = 0x00000000
+i915: parity LCD-B reg[after-disable] TRANS_DDI_FUNC_CTL 0x60400 = 0x00030000
+i915: parity LCD-B reg[after-disable] TRANSCONF 0x70008 = 0x00000000
+i915: parity LCD-B reg[after-disable] PIPE_MISC 0x70030 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_CTL_1 0x70180 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_COLOR_CTL_1 0x701cc = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_STRIDE_1 0x70188 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_SIZE_1 0x70190 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_SURF_1 0x7019c = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_WM_1_0 0x70240 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_BUF_CFG_1 0x7027c = 0x00000000
+i915: parity LCD-B reg[after-disable] MBUS_CTL 0x4438c = 0x1c000700
+i915: parity LCD-B reg[after-disable] PIPE_MBUS_DBOX_CTL 0x7003c = 0x00000000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S1 0x45008 = 0xc041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S2 0x44fe8 = 0x0041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S3 0x44300 = 0x0041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S4 0x44304 = 0x0041c000
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_CTL 0xc8250 = 0x00000000
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_DUTY 0xc8258 = 0x00000000
+i915: parity LCD-B reg[after-disable] ICL_PIPESTATUS 0x70058 = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IMR 0x44404 = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IER 0x4440c = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[after-disable] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000000
+i915: parity LCD-B run log: 314 entries (109 writes, 101 rmw, 6 waits [0 timed out], 0 unresolved steps, 6 decided, 0 errors, dropped 0, slept 720 us)
+i915: parity LCD-B t[  0] PHASE commit: enable
+i915: parity LCD-B t[  1] pw-get 0x00049 b=0x00000000 c=0x00000000 d=0x00000000 rc=74 n=1
+i915: parity LCD-B t[  2] observe 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[  3] pw-get 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[  4] pw-get 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[  5] pw-get 0x00009 b=0x00000000 c=0x00000000 d=0x00000000 rc=10 n=1
+i915: parity LCD-B t[  6] pw-get 0x00011 b=0x00000000 c=0x00000000 d=0x00000000 rc=18 n=1
+i915: parity LCD-B t[  7] decide (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)
+i915: parity LCD-B t[  8] rmw 0x4438c b=0xdc000000 c=0xdc000000 d=0x00000700 rc=0 n=1
+i915: parity LCD-B t[  9] rmw 0x45008 b=0x00030000 c=0x00070000 d=0xc040c000 rc=0 n=1
+i915: parity LCD-B t[ 10] rmw 0x44fe8 b=0x00030000 c=0x00070000 d=0x0040c000 rc=0 n=1
+i915: parity LCD-B t[ 11] rmw 0x44300 b=0x00030000 c=0x00070000 d=0x0040c000 rc=0 n=1
+i915: parity LCD-B t[ 12] rmw 0x44304 b=0x00030000 c=0x00070000 d=0x0040c000 rc=0 n=1
+i915: parity LCD-B t[ 13] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 14] write 0x7003c b=0x01038806 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 18] rmw 0x45250 b=0x00000001 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 19] pw-get 0x00035 b=0x00000000 c=0x00000000 d=0x00000000 rc=54 n=1
+i915: parity LCD-B t[ 20] rmw 0x46010 b=0x08000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 21] wait 0x46010 b=0x04000000 c=0x04000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[ 22] write 0x164284 b=0x00e001a5 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 23] write 0x164288 b=0x00000088 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 24] rmw 0x46010 b=0x80000000 c=0x00000000 d=0x0c000000 rc=0 n=1
+i915: parity LCD-B t[ 25] wait 0x46010 b=0x40000000 c=0x40000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[ 26] decide (decided) intel_set_cpu_fifo_underrun_reporting: underrun IRQ stays masked; the test owns and samples ICL_PIPESTATUS
+i915: parity LCD-B t[ 27] observe 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 28] panel 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 29] rmw 0x164280 b=0x00000000 c=0x00000003 d=0x01e07c00 rc=0 n=1
+i915: parity LCD-B t[ 30] rmw 0x164280 b=0x00000000 c=0x00000400 d=0x01e07c00 rc=0 n=1
+i915: parity LCD-B t[ 31] pw-get 0x0001d b=0x00000000 c=0x00000000 d=0x00000000 rc=30 n=1
+i915: parity LCD-B t[ 32] write 0x46140 b=0x10000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 33] write 0x60400 b=0x0a210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 35] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 36] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 37] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 38] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 39] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 40] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[ 42] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 43] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 45] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 46] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 47] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 48] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 49] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 50] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 51] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 52] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 53] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 54] rmw 0x16289c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 55] rmw 0x16299c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 56] rmw 0x162a9c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 57] rmw 0x162b9c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 59] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 60] rmw 0x162028 b=0x000000c0 c=0x000000f0 d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 61] rmw 0x78000 b=0x00000000 c=0x860f0000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 62] dpcd-w 0x00300 b=0x0001aa00 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[ 63] dpcd-w 0x00600 b=0x00000001 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[ 64] dpcd-r drm_dp_read_dpcd_caps
+i915: parity LCD-B t[ 66] write 0x60540 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 67] write 0x64000 b=0x80000002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 70] dpcd-w 0x00107 b=0x00000100 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[ 71] dpcd-w 0x00100 b=0x0000020a c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[ 73] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 74] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 75] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 76] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 77] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 78] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[ 80] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 81] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 83] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 84] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 85] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 86] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 87] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 88] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 89] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 90] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 91] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 92] rmw 0x16289c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 93] rmw 0x16299c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 94] rmw 0x162a9c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 95] rmw 0x162b9c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 97] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 99] write 0x60540 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[100] dpcd-w 0x00102 b=0x00000021 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[101] dpcd-r 0x00202 b=0x00800000 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[103] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[104] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[105] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[106] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[107] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[108] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[110] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[111] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[113] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[114] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[115] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[116] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[117] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[118] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[119] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[120] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[121] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[122] rmw 0x16289c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[123] rmw 0x16299c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[124] rmw 0x162a9c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[125] rmw 0x162b9c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[127] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[128] dpcd-w 0x00103 b=0x00000101 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[129] dpcd-r 0x00202 b=0x00800000 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[131] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[132] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[133] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[134] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[135] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[136] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[138] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[139] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[141] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[142] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[143] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[144] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[145] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[146] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[147] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[148] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[149] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[150] rmw 0x16289c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[151] rmw 0x16299c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[152] rmw 0x162a9c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[153] rmw 0x162b9c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[155] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[156] dpcd-w 0x00103 b=0x00000101 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[157] dpcd-r 0x00202 b=0x00000011 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[159] write 0x60540 b=0x80000100 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[160] dpcd-w 0x00102 b=0x00010122 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[161] dpcd-r 0x00202 b=0x00810077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[162] rmw 0x60540 b=0x00000200 c=0x00000700 d=0x80000100 rc=0 n=1
+i915: parity LCD-B t[163] wait 0x60544 b=0x02000000 c=0x02000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[164] dpcd-w 0x00102 b=0x00000000 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[166] write 0x60540 b=0x80000300 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[167] write 0x60410 b=0x00000001 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[168] write 0x6001c b=0x077f0437 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[169] write 0x70030 b=0x00800150 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[170] write 0x60030 b=0x7e4b17e4 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[171] write 0x60034 b=0x00800000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[172] write 0x60040 b=0x00042bfe c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[173] write 0x60044 b=0x00080000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[174] write 0x6007c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[175] write 0x60028 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[176] write 0x60000 b=0x081f077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[177] write 0x60004 b=0x081f077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[178] write 0x60008 b=0x079f078f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[179] write 0x6000c b=0x04670437 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[180] write 0x60010 b=0x04670000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[181] write 0x60014 b=0x0448043a c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[182] rmw 0x420c0 b=0x80000000 c=0x00000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[183] write 0x60420 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[184] write 0x6002c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[185] rmw 0x420c0 b=0x00000000 c=0x18000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[186] write 0x70008 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[187] write 0x70034 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[188] write 0x4a480 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[189] write 0x49028 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[190] write 0x45270 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[192] write 0x70038 b=0x40008080 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[193] write 0x60404 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[194] write 0x60400 b=0x8a210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[195] rmw 0x70028 b=0x00002000 c=0x00000000 d=0x00000a0f rc=0 n=1
+i915: parity LCD-B t[197] write 0x70008 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[198] decide (decided) intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)
+i915: parity LCD-B t[200] write 0xc8254 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[201] write 0xc8258 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[202] write 0xc8250 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[203] write 0xc8250 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[204] panel 0x00004 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[206] write 0x60200 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[207] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[208] observe 0x00002 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[209] write 0x70188 b=0x00000078 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[210] write 0x7018c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[211] write 0x70190 b=0x0437077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[212] write 0x70194 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[213] write 0x70198 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[214] write 0x701a0 b=0xff000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[215] write 0x701a4 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[216] write 0x701c0 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[217] write 0x701c8 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[218] write 0x701cc b=0x00002000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[219] write 0x70240 b=0x80004010 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[220] write 0x70244 b=0x80010041 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[221] write 0x70248 b=0x80018061 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[222] write 0x7024c b=0x8001c071 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[223] write 0x70250 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[224] write 0x70254 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[225] write 0x70268 b=0x8000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[226] write 0x70258 b=0x8000c031 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[227] write 0x7025c b=0x8000003f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[228] write 0x7027c b=0x0fdb0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[229] write 0x70180 b=0x94000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[230] write 0x7019c b=0xfdfc0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[231] observe 0x00003 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[232] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[233] decide (decided) intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)
+i915: parity LCD-B t[234] observe 0x00007 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[235] pw-put 0x00049 b=0x0000004a c=0x00000011 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[236] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[237] write 0xc8258 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[238] write 0xc8258 b=0x0000c688 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[239] write 0xc8258 b=0x0000160f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[240] write 0xc8258 b=0x0000c688 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[241] panel 0x00005 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[242] write 0xc8258 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[243] rmw 0xc8250 b=0x00000000 c=0x80000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[245] write 0xc8254 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[246] write 0xc8258 b=0x0000c688 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[247] write 0xc8250 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[248] write 0xc8250 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[249] panel 0x00004 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[250] write 0xc8258 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[251] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[252] PHASE commit: disable
+i915: parity LCD-B t[253] pw-get 0x00049 b=0x00000000 c=0x00000000 d=0x00000000 rc=74 n=1
+i915: parity LCD-B t[254] observe 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[255] write 0x701c8 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[256] write 0x70240 b=0x80004010 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[257] write 0x70244 b=0x80010041 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[258] write 0x70248 b=0x80018061 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[259] write 0x7024c b=0x8001c071 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[260] write 0x70250 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[261] write 0x70254 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[262] write 0x70268 b=0x8000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[263] write 0x70258 b=0x8000c031 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[264] write 0x7025c b=0x8000003f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[265] write 0x7027c b=0x0fdb0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[266] write 0x70180 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[267] write 0x7019c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[268] observe 0x00004 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[269] panel 0x00005 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[270] write 0xc8258 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[271] rmw 0xc8250 b=0x00000000 c=0x80000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[272] decide (decided) intel_crtc_vblank_off: no vblank waiters / events / work exist in this test
+i915: parity LCD-B t[274] write 0x70008 b=0x40000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[275] rmw 0x420c0 b=0x00000000 c=0x00800000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[276] wait 0x70008 b=0x00000000 c=0x40000000 d=0x00000064 rc=0 n=1
+i915: parity LCD-B t[277] write 0x60404 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[279] write 0x60400 b=0x00210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[281] write 0x60200 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[282] dpcd-w 0x00600 b=0x00000002 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[284] write 0x64000 b=0x00000002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[285] rmw 0x60540 b=0x00000000 c=0x80000000 d=0x80000300 rc=0 n=1
+i915: parity LCD-B t[288] write 0x46140 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[289] panel 0x00002 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[290] panel 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[291] pw-put 0x0001d b=0x0000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[292] rmw 0x164280 b=0x00000400 c=0x00000000 d=0x01e07800 rc=0 n=1
+i915: parity LCD-B t[293] rmw 0x46010 b=0x00000000 c=0x80000000 d=0xcc000000 rc=0 n=1
+i915: parity LCD-B t[294] wait 0x46010 b=0x00000000 c=0x40000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[295] rmw 0x46010 b=0x00000000 c=0x08000000 d=0x0c000000 rc=0 n=1
+i915: parity LCD-B t[296] wait 0x46010 b=0x00000000 c=0x04000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[297] pw-put 0x00035 b=0x00000036 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[298] rmw 0x45250 b=0x00000000 c=0x00000001 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[299] observe 0x00006 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[300] decide (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it
+i915: parity LCD-B t[301] rmw 0x4438c b=0x1c000000 c=0xdc000000 d=0xdc000700 rc=0 n=1
+i915: parity LCD-B t[302] rmw 0x45008 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[303] rmw 0x44fe8 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[304] rmw 0x44300 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[305] rmw 0x44304 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[306] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[307] dbuf 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[308] pw-put 0x00000 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[309] pw-put 0x00001 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[310] pw-put 0x00009 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[311] pw-put 0x00011 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[312] observe 0x00007 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[313] pw-put 0x00049 b=0x0000004a c=0x00000011 d=0x00000001 rc=0 n=1
+i915: parity LCD-B observer: ICL_PIPESTATUS 0x70058 underrun mask 0x9c000000 (bit31 pipe underrun, bit28 soft, bit27 hard, bit26 port) | PIPE_FRMCOUNT_G4X 0x70040 | GEN8_DE_PIPE_IMR 0x44404 vblank bit 0x1 | the test owns the status for the run; the pipe's underrun and vblank interrupts stay masked, so the IRQ handler never reads or clears it
+i915: parity LCD-B observer: status found before the run 0x00000000 (kept, not judged) | start/stop periods 0x00000000 | steady picture 0x00000000 | vblank interrupt ever unmasked=0 | samples=15 dropped=0
+i915: parity LCD-B observer sample  0 point=  0 trans  status=0x00000000 frame=0 imr=0x00000000
+i915: parity LCD-B observer sample  1 point=  1 trans  status=0x00000000 frame=0 imr=0xefe9f07f
+i915: parity LCD-B observer sample  2 point=  2 trans  status=0x60000000 frame=3 imr=0xefe9f07f
+i915: parity LCD-B observer sample  3 point=  3 trans  status=0x60000000 frame=3 imr=0xefe9f07f
+i915: parity LCD-B observer sample  4 point=  7 trans  status=0x60000000 frame=5 imr=0xefe9f07f
+i915: parity LCD-B observer sample  5 point=100 trans  status=0x60000000 frame=15 imr=0xefe9f07f
+i915: parity LCD-B observer sample  6 point=100 steady status=0x60000000 frame=2378 imr=0xefe9f07f
+i915: parity LCD-B observer sample  7 point=100 steady status=0x60000000 frame=2409 imr=0xefe9f07f
+i915: parity LCD-B observer sample  8 point=100 steady status=0x60000000 frame=2439 imr=0xefe9f07f
+i915: parity LCD-B observer sample  9 point=100 steady status=0x60000000 frame=2469 imr=0xefe9f07f
+i915: parity LCD-B observer sample 10 point=100 steady status=0x60000000 frame=2469 imr=0xefe9f07f
+i915: parity LCD-B observer sample 11 point=  0 trans  status=0x60000000 frame=2472 imr=0xefe9f07f
+i915: parity LCD-B observer sample 12 point=  4 trans  status=0x60000000 frame=2472 imr=0xefe9f07f
+i915: parity LCD-B observer sample 13 point=  6 trans  status=0x60000000 frame=2487 imr=0xefe9f07f
+i915: parity LCD-B observer sample 14 point=  7 trans  status=0x00000000 frame=0 imr=0x00000000
+i915: parity LCD-B state[enable-returned] software: prepared=1 crtc_active=1 plane_armed=1 pll_on=1 pll_mask=0x1 wakerefs io=30 aux=54 crtc_domains=4 dc_off_held=0 dbuf_slices=0xf mbus_joined=1 stop_unconfirmed=0 backlight=1 level=96000/96000 errors=0
+i915: parity LCD-B state[enable-returned] sink: link 270000 x2 rc=0 status 77 00 01 01 11 00 cr_ok=1 eq_ok=1 train_set 01 01 (driver flag link_trained=1 is not evidence)
+i915: parity LCD-B state[window-end] software: prepared=1 crtc_active=1 plane_armed=1 pll_on=1 pll_mask=0x1 wakerefs io=30 aux=54 crtc_domains=4 dc_off_held=0 dbuf_slices=0xf mbus_joined=1 stop_unconfirmed=0 backlight=1 level=96000/96000 errors=0
+i915: parity LCD-B state[window-end] sink: link 270000 x2 rc=0 status 77 00 01 01 11 00 cr_ok=1 eq_ok=1 train_set 01 01 (driver flag link_trained=1 is not evidence)
+i915: parity LCD-B state[disable-returned] software: prepared=1 crtc_active=0 plane_armed=1 pll_on=0 pll_mask=0x0 wakerefs io=0 aux=0 crtc_domains=0 dc_off_held=0 dbuf_slices=0x1 mbus_joined=0 stop_unconfirmed=0 backlight=0 level=96000/96000 errors=0
+i915: parity LCD-B state[disable-returned] sink: link 270000 x2 rc=-22 status 00 00 00 00 00 00 cr_ok=0 eq_ok=0 train_set 01 01 (driver flag link_trained=0 is not evidence)
+i915: parity LCD-B buffer: surf=0xfdfc0000 pattern id=110 fnv=ce63f20b23f91f85 (pinned ce63f20b23f91f85) readback_bad before=0 after=0 | released=1 abandoned=0 unpin=0 destroy=0 | display pages in use=0
+i915: parity LCD-B hardware observation: first frames rc=0 counter 5 -> 15 | steady rounds=4 rc=0 counter 15 -> 2469 | after stop rc=0 counter 2487 -> 2487 TRANSCONF=0x00000000
+i915: parity LCD-B first anomaly: none (stage=none rc=0 run-log index=-1) | bring-up errors=0 | cleanup errors=0 (first at run-log index -1) | rcs: window=0 create=0 pin=0 prepare=0 begin=0 enable=0 disable=0
+i915: parity LCD-B backend: power refs of this run still held=0 get_failures=0 | wait timeouts=0 time faults=0 | unresolved steps=0 decided=6 | eDP tick sleeps=589
+i915: parity LCD-B power-well IRQ hooks during this run: post_enable +1 pre_disable +1 (sync calls 5, sync timeouts 0) | pipe A IMR now 0x00000000 (well off reads 0)
+i915: parity LCD-B verdict: PASS (furthest stage=released; software flags, hardware observation and the photograph are separate evidence: this line covers the first two)
+i915: parity LCD-R cycle 1 verdict: PASS
+i915: parity LCD-R cycle 2 begin (pattern 111)
+i915: parity LCD-B reg[preflight] ICL_DPLL_ENABLE 0x46010 = 0x00000000
+i915: parity LCD-B reg[preflight] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5
+i915: parity LCD-B reg[preflight] TGL_DPLL_CFGCR1 0x164288 = 0x00000088
+i915: parity LCD-B reg[preflight] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07c00
+i915: parity LCD-B reg[preflight] DDI_BUF_CTL 0x64000 = 0x00000080
+i915: parity LCD-B reg[preflight] TRANS_CLK_SEL 0x46140 = 0x00000000
+i915: parity LCD-B reg[preflight] TRANS_DDI_FUNC_CTL 0x60400 = 0x00030000
+i915: parity LCD-B reg[preflight] TRANSCONF 0x70008 = 0x00000000
+i915: parity LCD-B reg[preflight] PIPE_MISC 0x70030 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_CTL_1 0x70180 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_COLOR_CTL_1 0x701cc = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_STRIDE_1 0x70188 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_SIZE_1 0x70190 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_SURF_1 0x7019c = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_WM_1_0 0x70240 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_BUF_CFG_1 0x7027c = 0x00000000
+i915: parity LCD-B reg[preflight] MBUS_CTL 0x4438c = 0x1c000700
+i915: parity LCD-B reg[preflight] PIPE_MBUS_DBOX_CTL 0x7003c = 0x00000000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S1 0x45008 = 0xc041c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S2 0x44fe8 = 0x0041c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S3 0x44300 = 0x0041c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S4 0x44304 = 0x0041c000
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_CTL 0xc8250 = 0x00000000
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_DUTY 0xc8258 = 0x00000000
+i915: parity LCD-B reg[preflight] ICL_PIPESTATUS 0x70058 = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IMR 0x44404 = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IER 0x4440c = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[preflight] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000000
+i915: parity LCD-B preflight: DDI / PLL idle=1 (pipe A registers read TRANSCONF 0x00000000 PLANE_CTL 0x00000000 IMR 0x00000000 with power well A off) | IRQ state pipe A mask 0xefeff07f: vblank + underrun masked=1 | no code of this path waits for a software vblank count; no worker / callback / waiter is created by it
+i915: parity LCD-B input: VBT low_vswing=0 hobl=0 afc_override=0 backlight present=1 active_low=0 controller=0 pwm=200 Hz min=15 | rawclk=19200 kHz | DDI_BUF_CTL at connector init 0x00000080 -> saved bits 0x0
+i915: parity LCD-B input: wm levels=6 latency 3/54/83/102/147/147/144/144 us ipc=1 sagv_block=35 us | DBUF slices now 0x1 MBUS_CTL=0x1c000700 joined=0 | CDCLK now 179200 kHz vco 537600 ref 38400 bypass 19200 level 0 max 652800 | QGV mask 0x10b -> allowed 0x4 bw 14899 MB/s | DMC fw mask 0x1f
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity LCD-B (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)
+i915: parity LCD-B (decided) intel_set_cpu_fifo_underrun_reporting: underrun IRQ stays masked; the test owns and samples ICL_PIPESTATUS
+i915: parity LCD-B (decided) intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)
+i915: parity LCD-B (decided) intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)
+i915: parity LCD-B reg[picture-up] ICL_DPLL_ENABLE 0x46010 = 0xcc000000 | Linux 0xcc000000 mask 0xcc000000 same
+i915: parity LCD-B reg[picture-up] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5 | Linux 0x00e001a5 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TGL_DPLL_CFGCR1 0x164288 = 0x00000088 | Linux 0x00000088 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07800
+i915: parity LCD-B reg[picture-up] DDI_BUF_CTL 0x64000 = 0x80000002 | Linux 0x80000002 mask 0xffffff7f same
+i915: parity LCD-B reg[picture-up] TRANS_CLK_SEL 0x46140 = 0x10000000 | Linux 0x10000000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TRANS_DDI_FUNC_CTL 0x60400 = 0x8a210002 | Linux 0x8a210002 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TRANSCONF 0x70008 = 0xc0000000 | Linux 0xc0000000 mask 0xc0000000 same
+i915: parity LCD-B reg[picture-up] PIPE_MISC 0x70030 = 0x00800150
+i915: parity LCD-B reg[picture-up] PLANE_CTL_1 0x70180 = 0x94000000 | Linux 0x94000000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_COLOR_CTL_1 0x701cc = 0x00002000 | Linux 0x00002000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_STRIDE_1 0x70188 = 0x00000078 | Linux 0x00000078 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_SIZE_1 0x70190 = 0x0437077f | Linux 0x0437077f mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_SURF_1 0x7019c = 0xfdfc0000
+i915: parity LCD-B reg[picture-up] PLANE_WM_1_0 0x70240 = 0x80004010 | Linux 0x80004010 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_BUF_CFG_1 0x7027c = 0x0fdb0000 | Linux 0x0fdb0000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] MBUS_CTL 0x4438c = 0xdc000700 | Linux 0xdc000700 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PIPE_MBUS_DBOX_CTL 0x7003c = 0xa9038806
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S1 0x45008 = 0xc043c000 | Linux 0xc043c000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S2 0x44fe8 = 0xc043c000 | Linux 0xc043c000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S3 0x44300 = 0xc043c000
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S4 0x44304 = 0xc043c000
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_CTL 0xc8250 = 0x80000000
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700 | Linux 0x00017700 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_DUTY 0xc8258 = 0x00017700
+i915: parity LCD-B reg[picture-up] ICL_PIPESTATUS 0x70058 = 0x60000000
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IMR 0x44404 = 0xefe9f07f
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IER 0x4440c = 0x90700f89
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[picture-up] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000035
+i915: parity LCD-B reg[picture-up] same as Linux's dump: 17/17 (comparison only; no value above was copied from it)
+i915: parity LCD-B PICTURE UP: pattern id=111 on the panel; observation window 3000 ms starts now (take the photograph)
+i915: parity LCD-R IRQ: after the well came on: GEN8_DE_PIPE_IMR(A)=0xefe9f07f (driver's de_irq_mask 0xefeff07f) GEN8_DE_PIPE_IER(A)=0x90700f89 (expected ~mask|vblank|underrun|flip done = 0x90700f89) | vblank get rc=0 IMR=0xefe9f07e | waits rc=0/0/0 new-vblanks 1/1/1 | handler vblank IRQs +3 frames 57->60 | put IMR=0xefe9f07f | vblank IRQs in the next 100 ms after masking: 0 | refs 0 | IMR bits differing from the written mask 0x00060000 (judged bits 0x80600009) -> OK
+i915: parity LCD-B observation window over; stopping through the reference's disable path
+i915: parity LCD-B (decided) intel_crtc_vblank_off: no vblank waiters / events / work exist in this test
+i915: parity LCD-B (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it
+i915: parity LCD-B reg[after-disable] ICL_DPLL_ENABLE 0x46010 = 0x00000000
+i915: parity LCD-B reg[after-disable] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5
+i915: parity LCD-B reg[after-disable] TGL_DPLL_CFGCR1 0x164288 = 0x00000088
+i915: parity LCD-B reg[after-disable] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07c00
+i915: parity LCD-B reg[after-disable] DDI_BUF_CTL 0x64000 = 0x00000080
+i915: parity LCD-B reg[after-disable] TRANS_CLK_SEL 0x46140 = 0x00000000
+i915: parity LCD-B reg[after-disable] TRANS_DDI_FUNC_CTL 0x60400 = 0x00030000
+i915: parity LCD-B reg[after-disable] TRANSCONF 0x70008 = 0x00000000
+i915: parity LCD-B reg[after-disable] PIPE_MISC 0x70030 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_CTL_1 0x70180 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_COLOR_CTL_1 0x701cc = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_STRIDE_1 0x70188 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_SIZE_1 0x70190 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_SURF_1 0x7019c = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_WM_1_0 0x70240 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_BUF_CFG_1 0x7027c = 0x00000000
+i915: parity LCD-B reg[after-disable] MBUS_CTL 0x4438c = 0x1c000700
+i915: parity LCD-B reg[after-disable] PIPE_MBUS_DBOX_CTL 0x7003c = 0x00000000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S1 0x45008 = 0xc041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S2 0x44fe8 = 0x0041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S3 0x44300 = 0x0041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S4 0x44304 = 0x0041c000
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_CTL 0xc8250 = 0x00000000
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_DUTY 0xc8258 = 0x00000000
+i915: parity LCD-B reg[after-disable] ICL_PIPESTATUS 0x70058 = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IMR 0x44404 = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IER 0x4440c = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[after-disable] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000000
+i915: parity LCD-B run log: 300 entries (99 writes, 100 rmw, 6 waits [0 timed out], 0 unresolved steps, 6 decided, 0 errors, dropped 0, slept 720 us)
+i915: parity LCD-B t[  0] PHASE commit: enable
+i915: parity LCD-B t[  1] pw-get 0x00049 b=0x00000000 c=0x00000000 d=0x00000000 rc=74 n=1
+i915: parity LCD-B t[  2] observe 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[  3] pw-get 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[  4] pw-get 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[  5] pw-get 0x00009 b=0x00000000 c=0x00000000 d=0x00000000 rc=10 n=1
+i915: parity LCD-B t[  6] pw-get 0x00011 b=0x00000000 c=0x00000000 d=0x00000000 rc=18 n=1
+i915: parity LCD-B t[  7] decide (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)
+i915: parity LCD-B t[  8] rmw 0x4438c b=0xdc000000 c=0xdc000000 d=0x1c000700 rc=0 n=1
+i915: parity LCD-B t[  9] rmw 0x45008 b=0x00030000 c=0x00070000 d=0xc041c000 rc=0 n=1
+i915: parity LCD-B t[ 10] rmw 0x44fe8 b=0x00030000 c=0x00070000 d=0x0041c000 rc=0 n=1
+i915: parity LCD-B t[ 11] rmw 0x44300 b=0x00030000 c=0x00070000 d=0x0041c000 rc=0 n=1
+i915: parity LCD-B t[ 12] rmw 0x44304 b=0x00030000 c=0x00070000 d=0x0041c000 rc=0 n=1
+i915: parity LCD-B t[ 13] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 14] write 0x7003c b=0x01038806 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 18] rmw 0x45250 b=0x00000001 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 19] pw-get 0x00035 b=0x00000000 c=0x00000000 d=0x00000000 rc=54 n=1
+i915: parity LCD-B t[ 20] rmw 0x46010 b=0x08000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 21] wait 0x46010 b=0x04000000 c=0x04000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[ 22] write 0x164284 b=0x00e001a5 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 23] write 0x164288 b=0x00000088 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 24] rmw 0x46010 b=0x80000000 c=0x00000000 d=0x0c000000 rc=0 n=1
+i915: parity LCD-B t[ 25] wait 0x46010 b=0x40000000 c=0x40000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[ 26] decide (decided) intel_set_cpu_fifo_underrun_reporting: underrun IRQ stays masked; the test owns and samples ICL_PIPESTATUS
+i915: parity LCD-B t[ 27] observe 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 28] panel 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 29] rmw 0x164280 b=0x00000000 c=0x00000003 d=0x01e07c00 rc=0 n=1
+i915: parity LCD-B t[ 30] rmw 0x164280 b=0x00000000 c=0x00000400 d=0x01e07c00 rc=0 n=1
+i915: parity LCD-B t[ 31] pw-get 0x0001d b=0x00000000 c=0x00000000 d=0x00000000 rc=30 n=1
+i915: parity LCD-B t[ 32] write 0x46140 b=0x10000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 33] write 0x60400 b=0x0a210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 35] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 36] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 37] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 38] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 39] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 40] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[ 42] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 43] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 45] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 46] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 47] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 48] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 49] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 50] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 51] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 52] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 53] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 54] rmw 0x16289c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 55] rmw 0x16299c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 56] rmw 0x162a9c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 57] rmw 0x162b9c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 59] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 60] rmw 0x162028 b=0x000000c0 c=0x000000f0 d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 61] rmw 0x78000 b=0x00000000 c=0x860f0000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 62] dpcd-w 0x00300 b=0x0001aa00 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[ 63] dpcd-w 0x00600 b=0x00000001 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[ 64] dpcd-r drm_dp_read_dpcd_caps
+i915: parity LCD-B t[ 66] write 0x60540 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 67] write 0x64000 b=0x80000002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 70] dpcd-w 0x00107 b=0x00000100 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[ 71] dpcd-w 0x00100 b=0x0000020a c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[ 73] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 74] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 75] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 76] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 77] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 78] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[ 80] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 81] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 83] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 84] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 85] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 86] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 87] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 88] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 89] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 90] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 91] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 92] rmw 0x16289c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 93] rmw 0x16299c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 94] rmw 0x162a9c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 95] rmw 0x162b9c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 97] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 99] write 0x60540 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[100] dpcd-w 0x00102 b=0x00000021 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[101] dpcd-r 0x00202 b=0x00800000 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[103] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[104] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[105] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[106] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[107] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[108] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[110] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[111] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[113] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[114] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[115] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[116] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[117] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[118] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[119] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[120] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[121] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[122] rmw 0x16289c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[123] rmw 0x16299c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[124] rmw 0x162a9c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[125] rmw 0x162b9c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[127] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[128] dpcd-w 0x00103 b=0x00000101 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[129] dpcd-r 0x00202 b=0x00800000 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[131] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[132] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[133] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[134] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[135] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[136] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[138] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[139] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[141] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[142] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[143] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[144] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[145] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[146] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[147] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[148] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[149] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[150] rmw 0x16289c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[151] rmw 0x16299c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[152] rmw 0x162a9c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[153] rmw 0x162b9c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[155] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[156] dpcd-w 0x00103 b=0x00000101 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[157] dpcd-r 0x00202 b=0x00000011 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[159] write 0x60540 b=0x80000100 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[160] dpcd-w 0x00102 b=0x00010122 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[161] dpcd-r 0x00202 b=0x00810077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[162] rmw 0x60540 b=0x00000200 c=0x00000700 d=0x80000100 rc=0 n=1
+i915: parity LCD-B t[163] wait 0x60544 b=0x02000000 c=0x02000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[164] dpcd-w 0x00102 b=0x00000000 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[166] write 0x60540 b=0x80000300 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[167] write 0x60410 b=0x00000001 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[168] write 0x6001c b=0x077f0437 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[169] write 0x70030 b=0x00800150 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[170] write 0x60030 b=0x7e4b17e4 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[171] write 0x60034 b=0x00800000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[172] write 0x60040 b=0x00042bfe c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[173] write 0x60044 b=0x00080000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[174] write 0x6007c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[175] write 0x60028 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[176] write 0x60000 b=0x081f077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[177] write 0x60004 b=0x081f077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[178] write 0x60008 b=0x079f078f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[179] write 0x6000c b=0x04670437 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[180] write 0x60010 b=0x04670000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[181] write 0x60014 b=0x0448043a c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[182] rmw 0x420c0 b=0x80000000 c=0x00000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[183] write 0x60420 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[184] write 0x6002c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[185] rmw 0x420c0 b=0x00000000 c=0x18000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[186] write 0x70008 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[187] write 0x70034 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[188] write 0x4a480 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[189] write 0x49028 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[190] write 0x45270 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[192] write 0x70038 b=0x40008080 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[193] write 0x60404 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[194] write 0x60400 b=0x8a210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[195] rmw 0x70028 b=0x00002000 c=0x00000000 d=0x00000a0f rc=0 n=1
+i915: parity LCD-B t[197] write 0x70008 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[198] decide (decided) intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)
+i915: parity LCD-B t[200] write 0xc8254 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[201] write 0xc8258 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[202] write 0xc8250 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[203] write 0xc8250 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[204] panel 0x00004 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[206] write 0x60200 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[207] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[208] observe 0x00002 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[209] write 0x70188 b=0x00000078 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[210] write 0x7018c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[211] write 0x70190 b=0x0437077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[212] write 0x70194 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[213] write 0x70198 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[214] write 0x701a0 b=0xff000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[215] write 0x701a4 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[216] write 0x701c0 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[217] write 0x701c8 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[218] write 0x701cc b=0x00002000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[219] write 0x70240 b=0x80004010 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[220] write 0x70244 b=0x80010041 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[221] write 0x70248 b=0x80018061 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[222] write 0x7024c b=0x8001c071 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[223] write 0x70250 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[224] write 0x70254 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[225] write 0x70268 b=0x8000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[226] write 0x70258 b=0x8000c031 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[227] write 0x7025c b=0x8000003f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[228] write 0x7027c b=0x0fdb0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[229] write 0x70180 b=0x94000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[230] write 0x7019c b=0xfdfc0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[231] observe 0x00003 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[232] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[233] decide (decided) intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)
+i915: parity LCD-B t[234] observe 0x00007 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[235] pw-put 0x00049 b=0x0000004a c=0x00000011 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[236] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[237] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[238] PHASE commit: disable
+i915: parity LCD-B t[239] pw-get 0x00049 b=0x00000000 c=0x00000000 d=0x00000000 rc=74 n=1
+i915: parity LCD-B t[240] observe 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[241] write 0x701c8 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[242] write 0x70240 b=0x80004010 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[243] write 0x70244 b=0x80010041 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[244] write 0x70248 b=0x80018061 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[245] write 0x7024c b=0x8001c071 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[246] write 0x70250 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[247] write 0x70254 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[248] write 0x70268 b=0x8000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[249] write 0x70258 b=0x8000c031 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[250] write 0x7025c b=0x8000003f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[251] write 0x7027c b=0x0fdb0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[252] write 0x70180 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[253] write 0x7019c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[254] observe 0x00004 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[255] panel 0x00005 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[256] write 0xc8258 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[257] rmw 0xc8250 b=0x00000000 c=0x80000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[258] decide (decided) intel_crtc_vblank_off: no vblank waiters / events / work exist in this test
+i915: parity LCD-B t[260] write 0x70008 b=0x40000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[261] rmw 0x420c0 b=0x00000000 c=0x00800000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[262] wait 0x70008 b=0x00000000 c=0x40000000 d=0x00000064 rc=0 n=1
+i915: parity LCD-B t[263] write 0x60404 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[265] write 0x60400 b=0x00210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[267] write 0x60200 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[268] dpcd-w 0x00600 b=0x00000002 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[270] write 0x64000 b=0x00000002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[271] rmw 0x60540 b=0x00000000 c=0x80000000 d=0x80000300 rc=0 n=1
+i915: parity LCD-B t[274] write 0x46140 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[275] panel 0x00002 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[276] panel 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[277] pw-put 0x0001d b=0x0000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[278] rmw 0x164280 b=0x00000400 c=0x00000000 d=0x01e07800 rc=0 n=1
+i915: parity LCD-B t[279] rmw 0x46010 b=0x00000000 c=0x80000000 d=0xcc000000 rc=0 n=1
+i915: parity LCD-B t[280] wait 0x46010 b=0x00000000 c=0x40000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[281] rmw 0x46010 b=0x00000000 c=0x08000000 d=0x0c000000 rc=0 n=1
+i915: parity LCD-B t[282] wait 0x46010 b=0x00000000 c=0x04000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[283] pw-put 0x00035 b=0x00000036 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[284] rmw 0x45250 b=0x00000000 c=0x00000001 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[285] observe 0x00006 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[286] decide (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it
+i915: parity LCD-B t[287] rmw 0x4438c b=0x1c000000 c=0xdc000000 d=0xdc000700 rc=0 n=1
+i915: parity LCD-B t[288] rmw 0x45008 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[289] rmw 0x44fe8 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[290] rmw 0x44300 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[291] rmw 0x44304 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[292] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[293] dbuf 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[294] pw-put 0x00000 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[295] pw-put 0x00001 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[296] pw-put 0x00009 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[297] pw-put 0x00011 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[298] observe 0x00007 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[299] pw-put 0x00049 b=0x0000004a c=0x00000011 d=0x00000001 rc=0 n=1
+i915: parity LCD-B observer: ICL_PIPESTATUS 0x70058 underrun mask 0x9c000000 (bit31 pipe underrun, bit28 soft, bit27 hard, bit26 port) | PIPE_FRMCOUNT_G4X 0x70040 | GEN8_DE_PIPE_IMR 0x44404 vblank bit 0x1 | the test owns the status for the run; the pipe's underrun and vblank interrupts stay masked, so the IRQ handler never reads or clears it
+i915: parity LCD-B observer: status found before the run 0x00000000 (kept, not judged) | start/stop periods 0x00000000 | steady picture 0x00000000 | vblank interrupt ever unmasked=0 | samples=17 dropped=0
+i915: parity LCD-B observer sample  0 point=  0 trans  status=0x00000000 frame=0 imr=0x00000000
+i915: parity LCD-B observer sample  1 point=  1 trans  status=0x00000000 frame=0 imr=0xefe9f07f
+i915: parity LCD-B observer sample  2 point=  2 trans  status=0x60000000 frame=3 imr=0xefe9f07f
+i915: parity LCD-B observer sample  3 point=  3 trans  status=0x60000000 frame=3 imr=0xefe9f07f
+i915: parity LCD-B observer sample  4 point=  7 trans  status=0x60000000 frame=5 imr=0xefe9f07f
+i915: parity LCD-B observer sample  5 point=100 trans  status=0x60000000 frame=15 imr=0xefe9f07f
+i915: parity LCD-B observer sample  6 point=100 steady status=0x60000000 frame=101 imr=0xefe9f07f
+i915: parity LCD-B observer sample  7 point=100 steady status=0x60000000 frame=131 imr=0xefe9f07f
+i915: parity LCD-B observer sample  8 point=100 steady status=0x60000000 frame=161 imr=0xefe9f07f
+i915: parity LCD-B observer sample  9 point=100 steady status=0x60000000 frame=191 imr=0xefe9f07f
+i915: parity LCD-B observer sample 10 point=100 steady status=0x60000000 frame=221 imr=0xefe9f07f
+i915: parity LCD-B observer sample 11 point=100 steady status=0x60000000 frame=251 imr=0xefe9f07f
+i915: parity LCD-B observer sample 12 point=100 steady status=0x60000000 frame=251 imr=0xefe9f07f
+i915: parity LCD-B observer sample 13 point=  0 trans  status=0x60000000 frame=254 imr=0xefe9f07f
+i915: parity LCD-B observer sample 14 point=  4 trans  status=0x60000000 frame=254 imr=0xefe9f07f
+i915: parity LCD-B observer sample 15 point=  6 trans  status=0x60000000 frame=269 imr=0xefe9f07f
+i915: parity LCD-B observer sample 16 point=  7 trans  status=0x00000000 frame=0 imr=0x00000000
+i915: parity LCD-B state[enable-returned] software: prepared=1 crtc_active=1 plane_armed=1 pll_on=1 pll_mask=0x1 wakerefs io=30 aux=54 crtc_domains=4 dc_off_held=0 dbuf_slices=0xf mbus_joined=1 stop_unconfirmed=0 backlight=1 level=96000/96000 errors=0
+i915: parity LCD-B state[enable-returned] sink: link 270000 x2 rc=0 status 77 00 01 01 11 00 cr_ok=1 eq_ok=1 train_set 01 01 (driver flag link_trained=1 is not evidence)
+i915: parity LCD-B state[window-end] software: prepared=1 crtc_active=1 plane_armed=1 pll_on=1 pll_mask=0x1 wakerefs io=30 aux=54 crtc_domains=4 dc_off_held=0 dbuf_slices=0xf mbus_joined=1 stop_unconfirmed=0 backlight=1 level=96000/96000 errors=0
+i915: parity LCD-B state[window-end] sink: link 270000 x2 rc=0 status 77 00 01 01 11 00 cr_ok=1 eq_ok=1 train_set 01 01 (driver flag link_trained=1 is not evidence)
+i915: parity LCD-B state[disable-returned] software: prepared=1 crtc_active=0 plane_armed=1 pll_on=0 pll_mask=0x0 wakerefs io=0 aux=0 crtc_domains=0 dc_off_held=0 dbuf_slices=0x1 mbus_joined=0 stop_unconfirmed=0 backlight=0 level=96000/96000 errors=0
+i915: parity LCD-B state[disable-returned] sink: link 270000 x2 rc=-22 status 00 00 00 00 00 00 cr_ok=0 eq_ok=0 train_set 01 01 (driver flag link_trained=0 is not evidence)
+i915: parity LCD-B buffer: surf=0xfdfc0000 pattern id=111 fnv=543260bcf7cb8665 (pinned 0000000000000000) readback_bad before=0 after=0 | released=1 abandoned=0 unpin=0 destroy=0 | display pages in use=0
+i915: parity LCD-B hardware observation: first frames rc=0 counter 5 -> 15 | steady rounds=6 rc=0 counter 15 -> 251 | after stop rc=0 counter 269 -> 269 TRANSCONF=0x00000000
+i915: parity LCD-B first anomaly: none (stage=none rc=0 run-log index=-1) | bring-up errors=0 | cleanup errors=0 (first at run-log index -1) | rcs: window=-17 create=0 pin=0 prepare=0 begin=0 enable=0 disable=0
+i915: parity LCD-B backend: power refs of this run still held=0 get_failures=0 | wait timeouts=0 time faults=0 | unresolved steps=0 decided=6 | eDP tick sleeps=901
+i915: parity LCD-B power-well IRQ hooks during this run: post_enable +1 pre_disable +1 (sync calls 6, sync timeouts 0) | pipe A IMR now 0x00000000 (well off reads 0)
+i915: parity LCD-B verdict: PASS (furthest stage=released; software flags, hardware observation and the photograph are separate evidence: this line covers the first two)
+i915: parity LCD-R cycle 2 verdict: PASS
+i915: parity LCD-R cycle 3 begin (pattern 112)
+i915: parity LCD-B reg[preflight] ICL_DPLL_ENABLE 0x46010 = 0x00000000
+i915: parity LCD-B reg[preflight] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5
+i915: parity LCD-B reg[preflight] TGL_DPLL_CFGCR1 0x164288 = 0x00000088
+i915: parity LCD-B reg[preflight] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07c00
+i915: parity LCD-B reg[preflight] DDI_BUF_CTL 0x64000 = 0x00000080
+i915: parity LCD-B reg[preflight] TRANS_CLK_SEL 0x46140 = 0x00000000
+i915: parity LCD-B reg[preflight] TRANS_DDI_FUNC_CTL 0x60400 = 0x00030000
+i915: parity LCD-B reg[preflight] TRANSCONF 0x70008 = 0x00000000
+i915: parity LCD-B reg[preflight] PIPE_MISC 0x70030 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_CTL_1 0x70180 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_COLOR_CTL_1 0x701cc = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_STRIDE_1 0x70188 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_SIZE_1 0x70190 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_SURF_1 0x7019c = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_WM_1_0 0x70240 = 0x00000000
+i915: parity LCD-B reg[preflight] PLANE_BUF_CFG_1 0x7027c = 0x00000000
+i915: parity LCD-B reg[preflight] MBUS_CTL 0x4438c = 0x1c000700
+i915: parity LCD-B reg[preflight] PIPE_MBUS_DBOX_CTL 0x7003c = 0x00000000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S1 0x45008 = 0xc041c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S2 0x44fe8 = 0x0041c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S3 0x44300 = 0x0041c000
+i915: parity LCD-B reg[preflight] DBUF_CTL_S4 0x44304 = 0x0041c000
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_CTL 0xc8250 = 0x00000000
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700
+i915: parity LCD-B reg[preflight] BXT_BLC_PWM_DUTY 0xc8258 = 0x00000000
+i915: parity LCD-B reg[preflight] ICL_PIPESTATUS 0x70058 = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IMR 0x44404 = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IER 0x4440c = 0x00000000
+i915: parity LCD-B reg[preflight] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[preflight] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000000
+i915: parity LCD-B preflight: DDI / PLL idle=1 (pipe A registers read TRANSCONF 0x00000000 PLANE_CTL 0x00000000 IMR 0x00000000 with power well A off) | IRQ state pipe A mask 0xefeff07f: vblank + underrun masked=1 | no code of this path waits for a software vblank count; no worker / callback / waiter is created by it
+i915: parity LCD-B input: VBT low_vswing=0 hobl=0 afc_override=0 backlight present=1 active_low=0 controller=0 pwm=200 Hz min=15 | rawclk=19200 kHz | DDI_BUF_CTL at connector init 0x00000080 -> saved bits 0x0
+i915: parity LCD-B input: wm levels=6 latency 3/54/83/102/147/147/144/144 us ipc=1 sagv_block=35 us | DBUF slices now 0x1 MBUS_CTL=0x1c000700 joined=0 | CDCLK now 179200 kHz vco 537600 ref 38400 bypass 19200 level 0 max 652800 | QGV mask 0x10b -> allowed 0x4 bw 14899 MB/s | DMC fw mask 0x1f
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity LCD-B (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)
+i915: parity LCD-B (decided) intel_set_cpu_fifo_underrun_reporting: underrun IRQ stays masked; the test owns and samples ICL_PIPESTATUS
+i915: parity LCD-B (decided) intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)
+i915: parity LCD-B (decided) intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)
+i915: parity LCD-B reg[picture-up] ICL_DPLL_ENABLE 0x46010 = 0xcc000000 | Linux 0xcc000000 mask 0xcc000000 same
+i915: parity LCD-B reg[picture-up] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5 | Linux 0x00e001a5 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TGL_DPLL_CFGCR1 0x164288 = 0x00000088 | Linux 0x00000088 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07800
+i915: parity LCD-B reg[picture-up] DDI_BUF_CTL 0x64000 = 0x80000002 | Linux 0x80000002 mask 0xffffff7f same
+i915: parity LCD-B reg[picture-up] TRANS_CLK_SEL 0x46140 = 0x10000000 | Linux 0x10000000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TRANS_DDI_FUNC_CTL 0x60400 = 0x8a210002 | Linux 0x8a210002 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] TRANSCONF 0x70008 = 0xc0000000 | Linux 0xc0000000 mask 0xc0000000 same
+i915: parity LCD-B reg[picture-up] PIPE_MISC 0x70030 = 0x00800150
+i915: parity LCD-B reg[picture-up] PLANE_CTL_1 0x70180 = 0x94000000 | Linux 0x94000000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_COLOR_CTL_1 0x701cc = 0x00002000 | Linux 0x00002000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_STRIDE_1 0x70188 = 0x00000078 | Linux 0x00000078 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_SIZE_1 0x70190 = 0x0437077f | Linux 0x0437077f mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_SURF_1 0x7019c = 0xfdfc0000
+i915: parity LCD-B reg[picture-up] PLANE_WM_1_0 0x70240 = 0x80004010 | Linux 0x80004010 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PLANE_BUF_CFG_1 0x7027c = 0x0fdb0000 | Linux 0x0fdb0000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] MBUS_CTL 0x4438c = 0xdc000700 | Linux 0xdc000700 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] PIPE_MBUS_DBOX_CTL 0x7003c = 0xa9038806
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S1 0x45008 = 0xc043c000 | Linux 0xc043c000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S2 0x44fe8 = 0xc043c000 | Linux 0xc043c000 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S3 0x44300 = 0xc043c000
+i915: parity LCD-B reg[picture-up] DBUF_CTL_S4 0x44304 = 0xc043c000
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_CTL 0xc8250 = 0x80000000
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700 | Linux 0x00017700 mask 0xffffffff same
+i915: parity LCD-B reg[picture-up] BXT_BLC_PWM_DUTY 0xc8258 = 0x00017700
+i915: parity LCD-B reg[picture-up] ICL_PIPESTATUS 0x70058 = 0x60000000
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IMR 0x44404 = 0xefe9f07f
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IER 0x4440c = 0x90700f89
+i915: parity LCD-B reg[picture-up] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[picture-up] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000036
+i915: parity LCD-B reg[picture-up] same as Linux's dump: 17/17 (comparison only; no value above was copied from it)
+i915: parity LCD-B PICTURE UP: pattern id=112 on the panel; observation window 3000 ms starts now (take the photograph)
+i915: parity LCD-R IRQ: after the well came on: GEN8_DE_PIPE_IMR(A)=0xefe9f07f (driver's de_irq_mask 0xefeff07f) GEN8_DE_PIPE_IER(A)=0x90700f89 (expected ~mask|vblank|underrun|flip done = 0x90700f89) | vblank get rc=0 IMR=0xefe9f07e | waits rc=0/0/0 new-vblanks 1/1/1 | handler vblank IRQs +3 frames 58->61 | put IMR=0xefe9f07f | vblank IRQs in the next 100 ms after masking: 0 | refs 0 | IMR bits differing from the written mask 0x00060000 (judged bits 0x80600009) -> OK
+i915: parity LCD-B observation window over; stopping through the reference's disable path
+i915: parity LCD-B (decided) intel_crtc_vblank_off: no vblank waiters / events / work exist in this test
+i915: parity LCD-B (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it
+i915: parity LCD-B reg[after-disable] ICL_DPLL_ENABLE 0x46010 = 0x00000000
+i915: parity LCD-B reg[after-disable] TGL_DPLL_CFGCR0 0x164284 = 0x00e001a5
+i915: parity LCD-B reg[after-disable] TGL_DPLL_CFGCR1 0x164288 = 0x00000088
+i915: parity LCD-B reg[after-disable] ICL_DPCLKA_CFGCR0 0x164280 = 0x01e07c00
+i915: parity LCD-B reg[after-disable] DDI_BUF_CTL 0x64000 = 0x00000080
+i915: parity LCD-B reg[after-disable] TRANS_CLK_SEL 0x46140 = 0x00000000
+i915: parity LCD-B reg[after-disable] TRANS_DDI_FUNC_CTL 0x60400 = 0x00030000
+i915: parity LCD-B reg[after-disable] TRANSCONF 0x70008 = 0x00000000
+i915: parity LCD-B reg[after-disable] PIPE_MISC 0x70030 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_CTL_1 0x70180 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_COLOR_CTL_1 0x701cc = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_STRIDE_1 0x70188 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_SIZE_1 0x70190 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_SURF_1 0x7019c = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_WM_1_0 0x70240 = 0x00000000
+i915: parity LCD-B reg[after-disable] PLANE_BUF_CFG_1 0x7027c = 0x00000000
+i915: parity LCD-B reg[after-disable] MBUS_CTL 0x4438c = 0x1c000700
+i915: parity LCD-B reg[after-disable] PIPE_MBUS_DBOX_CTL 0x7003c = 0x00000000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S1 0x45008 = 0xc041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S2 0x44fe8 = 0x0041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S3 0x44300 = 0x0041c000
+i915: parity LCD-B reg[after-disable] DBUF_CTL_S4 0x44304 = 0x0041c000
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_CTL 0xc8250 = 0x00000000
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_FREQ 0xc8254 = 0x00017700
+i915: parity LCD-B reg[after-disable] BXT_BLC_PWM_DUTY 0xc8258 = 0x00000000
+i915: parity LCD-B reg[after-disable] ICL_PIPESTATUS 0x70058 = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IMR 0x44404 = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IER 0x4440c = 0x00000000
+i915: parity LCD-B reg[after-disable] GEN8_DE_PIPE_IIR 0x44408 = 0x00000000
+i915: parity LCD-B reg[after-disable] PIPE_FRMCOUNT_G4X 0x70040 = 0x00000000
+i915: parity LCD-B run log: 300 entries (99 writes, 100 rmw, 6 waits [0 timed out], 0 unresolved steps, 6 decided, 0 errors, dropped 0, slept 720 us)
+i915: parity LCD-B t[  0] PHASE commit: enable
+i915: parity LCD-B t[  1] pw-get 0x00049 b=0x00000000 c=0x00000000 d=0x00000000 rc=74 n=1
+i915: parity LCD-B t[  2] observe 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[  3] pw-get 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[  4] pw-get 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[  5] pw-get 0x00009 b=0x00000000 c=0x00000000 d=0x00000000 rc=10 n=1
+i915: parity LCD-B t[  6] pw-get 0x00011 b=0x00000000 c=0x00000000 d=0x00000000 rc=18 n=1
+i915: parity LCD-B t[  7] decide (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)
+i915: parity LCD-B t[  8] rmw 0x4438c b=0xdc000000 c=0xdc000000 d=0x1c000700 rc=0 n=1
+i915: parity LCD-B t[  9] rmw 0x45008 b=0x00030000 c=0x00070000 d=0xc041c000 rc=0 n=1
+i915: parity LCD-B t[ 10] rmw 0x44fe8 b=0x00030000 c=0x00070000 d=0x0041c000 rc=0 n=1
+i915: parity LCD-B t[ 11] rmw 0x44300 b=0x00030000 c=0x00070000 d=0x0041c000 rc=0 n=1
+i915: parity LCD-B t[ 12] rmw 0x44304 b=0x00030000 c=0x00070000 d=0x0041c000 rc=0 n=1
+i915: parity LCD-B t[ 13] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 14] write 0x7003c b=0x01038806 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 18] rmw 0x45250 b=0x00000001 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 19] pw-get 0x00035 b=0x00000000 c=0x00000000 d=0x00000000 rc=54 n=1
+i915: parity LCD-B t[ 20] rmw 0x46010 b=0x08000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 21] wait 0x46010 b=0x04000000 c=0x04000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[ 22] write 0x164284 b=0x00e001a5 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 23] write 0x164288 b=0x00000088 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 24] rmw 0x46010 b=0x80000000 c=0x00000000 d=0x0c000000 rc=0 n=1
+i915: parity LCD-B t[ 25] wait 0x46010 b=0x40000000 c=0x40000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[ 26] decide (decided) intel_set_cpu_fifo_underrun_reporting: underrun IRQ stays masked; the test owns and samples ICL_PIPESTATUS
+i915: parity LCD-B t[ 27] observe 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 28] panel 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 29] rmw 0x164280 b=0x00000000 c=0x00000003 d=0x01e07c00 rc=0 n=1
+i915: parity LCD-B t[ 30] rmw 0x164280 b=0x00000000 c=0x00000400 d=0x01e07c00 rc=0 n=1
+i915: parity LCD-B t[ 31] pw-get 0x0001d b=0x00000000 c=0x00000000 d=0x00000000 rc=30 n=1
+i915: parity LCD-B t[ 32] write 0x46140 b=0x10000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 33] write 0x60400 b=0x0a210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 35] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 36] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 37] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 38] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 39] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 40] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[ 42] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 43] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 45] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 46] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 47] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 48] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 49] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 50] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 51] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 52] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 53] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 54] rmw 0x16289c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 55] rmw 0x16299c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 56] rmw 0x162a9c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 57] rmw 0x162b9c b=0x35000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[ 59] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 60] rmw 0x162028 b=0x000000c0 c=0x000000f0 d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 61] rmw 0x78000 b=0x00000000 c=0x860f0000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 62] dpcd-w 0x00300 b=0x0001aa00 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[ 63] dpcd-w 0x00600 b=0x00000001 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[ 64] dpcd-r drm_dp_read_dpcd_caps
+i915: parity LCD-B t[ 66] write 0x60540 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 67] write 0x64000 b=0x80000002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 70] dpcd-w 0x00107 b=0x00000100 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[ 71] dpcd-w 0x00100 b=0x0000020a c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[ 73] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 74] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 75] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 76] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 77] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 78] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[ 80] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 81] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[ 83] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 84] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 85] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 86] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 87] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[ 88] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 89] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 90] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[ 91] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[ 92] rmw 0x16289c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 93] rmw 0x16299c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 94] rmw 0x162a9c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 95] rmw 0x162b9c b=0x35000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[ 97] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[ 99] write 0x60540 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[100] dpcd-w 0x00102 b=0x00000021 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[101] dpcd-r 0x00202 b=0x00800000 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[103] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[104] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[105] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[106] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[107] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[108] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[110] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[111] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[113] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[114] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[115] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[116] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[117] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[118] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[119] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[120] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[121] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[122] rmw 0x16289c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[123] rmw 0x16299c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[124] rmw 0x162a9c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[125] rmw 0x162b9c b=0x4c000000 c=0x7f000000 d=0x35000000 rc=0 n=1
+i915: parity LCD-B t[127] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[128] dpcd-w 0x00103 b=0x00000101 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[129] dpcd-r 0x00202 b=0x00800000 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[131] write 0x162604 b=0x1c000004 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[132] rmw 0x162890 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[133] rmw 0x162990 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[134] rmw 0x162a90 b=0x80000000 c=0x80000000 d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[135] rmw 0x162b90 b=0x00000000 c=0x80000000 d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[136] rmw 0x162014 b=0x00000003 c=0x00000000 d=0x1204045b rc=0 n=1
+i915: parity LCD-B t[138] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[139] rmw 0x162028 b=0x00000000 c=0x0000000c d=0x000300c0 rc=0 n=1
+i915: parity LCD-B t[141] write 0x162694 b=0x20290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[142] rmw 0x162888 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[143] rmw 0x162988 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[144] rmw 0x162a88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[145] rmw 0x162b88 b=0x00009098 c=0x0000b8ff d=0x00009098 rc=0 n=1
+i915: parity LCD-B t[146] rmw 0x162890 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[147] rmw 0x162990 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[148] rmw 0x162a90 b=0x0000003f c=0x0003ffff d=0x8028003f rc=0 n=1
+i915: parity LCD-B t[149] rmw 0x162b90 b=0x0000003f c=0x0003ffff d=0x0028003f rc=0 n=1
+i915: parity LCD-B t[150] rmw 0x16289c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[151] rmw 0x16299c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[152] rmw 0x162a9c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[153] rmw 0x162b9c b=0x4c000000 c=0x7f000000 d=0x4c000000 rc=0 n=1
+i915: parity LCD-B t[155] write 0x162694 b=0xa0290030 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[156] dpcd-w 0x00103 b=0x00000101 c=0x00000002 d=0x00000000 rc=2 n=1
+i915: parity LCD-B t[157] dpcd-r 0x00202 b=0x00000011 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[159] write 0x60540 b=0x80000100 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[160] dpcd-w 0x00102 b=0x00010122 c=0x00000003 d=0x00000000 rc=3 n=1
+i915: parity LCD-B t[161] dpcd-r 0x00202 b=0x00810077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[162] rmw 0x60540 b=0x00000200 c=0x00000700 d=0x80000100 rc=0 n=1
+i915: parity LCD-B t[163] wait 0x60544 b=0x02000000 c=0x02000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[164] dpcd-w 0x00102 b=0x00000000 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[166] write 0x60540 b=0x80000300 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[167] write 0x60410 b=0x00000001 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[168] write 0x6001c b=0x077f0437 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[169] write 0x70030 b=0x00800150 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[170] write 0x60030 b=0x7e4b17e4 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[171] write 0x60034 b=0x00800000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[172] write 0x60040 b=0x00042bfe c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[173] write 0x60044 b=0x00080000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[174] write 0x6007c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[175] write 0x60028 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[176] write 0x60000 b=0x081f077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[177] write 0x60004 b=0x081f077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[178] write 0x60008 b=0x079f078f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[179] write 0x6000c b=0x04670437 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[180] write 0x60010 b=0x04670000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[181] write 0x60014 b=0x0448043a c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[182] rmw 0x420c0 b=0x80000000 c=0x00000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[183] write 0x60420 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[184] write 0x6002c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[185] rmw 0x420c0 b=0x00000000 c=0x18000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[186] write 0x70008 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[187] write 0x70034 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[188] write 0x4a480 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[189] write 0x49028 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[190] write 0x45270 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[192] write 0x70038 b=0x40008080 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[193] write 0x60404 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[194] write 0x60400 b=0x8a210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[195] rmw 0x70028 b=0x00002000 c=0x00000000 d=0x00000a0f rc=0 n=1
+i915: parity LCD-B t[197] write 0x70008 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[198] decide (decided) intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)
+i915: parity LCD-B t[200] write 0xc8254 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[201] write 0xc8258 b=0x00017700 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[202] write 0xc8250 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[203] write 0xc8250 b=0x80000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[204] panel 0x00004 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[206] write 0x60200 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[207] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[208] observe 0x00002 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[209] write 0x70188 b=0x00000078 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[210] write 0x7018c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[211] write 0x70190 b=0x0437077f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[212] write 0x70194 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[213] write 0x70198 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[214] write 0x701a0 b=0xff000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[215] write 0x701a4 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[216] write 0x701c0 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[217] write 0x701c8 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[218] write 0x701cc b=0x00002000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[219] write 0x70240 b=0x80004010 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[220] write 0x70244 b=0x80010041 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[221] write 0x70248 b=0x80018061 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[222] write 0x7024c b=0x8001c071 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[223] write 0x70250 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[224] write 0x70254 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[225] write 0x70268 b=0x8000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[226] write 0x70258 b=0x8000c031 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[227] write 0x7025c b=0x8000003f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[228] write 0x7027c b=0x0fdb0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[229] write 0x70180 b=0x94000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[230] write 0x7019c b=0xfdfc0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[231] observe 0x00003 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[232] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[233] decide (decided) intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)
+i915: parity LCD-B t[234] observe 0x00007 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[235] pw-put 0x00049 b=0x0000004a c=0x00000011 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[236] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[237] dpcd-r 0x00202 b=0x01010077 c=0x00000006 d=0x00000000 rc=6 n=1
+i915: parity LCD-B t[238] PHASE commit: disable
+i915: parity LCD-B t[239] pw-get 0x00049 b=0x00000000 c=0x00000000 d=0x00000000 rc=74 n=1
+i915: parity LCD-B t[240] observe 0x00000 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[241] write 0x701c8 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[242] write 0x70240 b=0x80004010 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[243] write 0x70244 b=0x80010041 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[244] write 0x70248 b=0x80018061 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[245] write 0x7024c b=0x8001c071 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[246] write 0x70250 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[247] write 0x70254 b=0x800280a1 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[248] write 0x70268 b=0x8000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[249] write 0x70258 b=0x8000c031 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[250] write 0x7025c b=0x8000003f c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[251] write 0x7027c b=0x0fdb0000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[252] write 0x70180 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[253] write 0x7019c b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[254] observe 0x00004 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[255] panel 0x00005 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[256] write 0xc8258 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[257] rmw 0xc8250 b=0x00000000 c=0x80000000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[258] decide (decided) intel_crtc_vblank_off: no vblank waiters / events / work exist in this test
+i915: parity LCD-B t[260] write 0x70008 b=0x40000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[261] rmw 0x420c0 b=0x00000000 c=0x00800000 d=0x80000000 rc=0 n=1
+i915: parity LCD-B t[262] wait 0x70008 b=0x00000000 c=0x40000000 d=0x00000064 rc=0 n=1
+i915: parity LCD-B t[263] write 0x60404 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[265] write 0x60400 b=0x00210002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[267] write 0x60200 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[268] dpcd-w 0x00600 b=0x00000002 c=0x00000001 d=0x00000000 rc=1 n=1
+i915: parity LCD-B t[270] write 0x64000 b=0x00000002 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[271] rmw 0x60540 b=0x00000000 c=0x80000000 d=0x80000300 rc=0 n=1
+i915: parity LCD-B t[274] write 0x46140 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[275] panel 0x00002 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[276] panel 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[277] pw-put 0x0001d b=0x0000001e c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[278] rmw 0x164280 b=0x00000400 c=0x00000000 d=0x01e07800 rc=0 n=1
+i915: parity LCD-B t[279] rmw 0x46010 b=0x00000000 c=0x80000000 d=0xcc000000 rc=0 n=1
+i915: parity LCD-B t[280] wait 0x46010 b=0x00000000 c=0x40000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[281] rmw 0x46010 b=0x00000000 c=0x08000000 d=0x0c000000 rc=0 n=1
+i915: parity LCD-B t[282] wait 0x46010 b=0x00000000 c=0x04000000 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[283] pw-put 0x00035 b=0x00000036 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[284] rmw 0x45250 b=0x00000000 c=0x00000001 d=0x00000001 rc=0 n=1
+i915: parity LCD-B t[285] observe 0x00006 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[286] decide (decided) intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it
+i915: parity LCD-B t[287] rmw 0x4438c b=0x1c000000 c=0xdc000000 d=0xdc000700 rc=0 n=1
+i915: parity LCD-B t[288] rmw 0x45008 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[289] rmw 0x44fe8 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[290] rmw 0x44300 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[291] rmw 0x44304 b=0x00010000 c=0x00070000 d=0xc043c000 rc=0 n=1
+i915: parity LCD-B t[292] dbuf 0x0000f b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[293] dbuf 0x00001 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[294] pw-put 0x00000 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[295] pw-put 0x00001 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[296] pw-put 0x00009 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[297] pw-put 0x00011 b=0xffffffff c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[298] observe 0x00007 b=0x00000000 c=0x00000000 d=0x00000000 rc=0 n=1
+i915: parity LCD-B t[299] pw-put 0x00049 b=0x0000004a c=0x00000011 d=0x00000001 rc=0 n=1
+i915: parity LCD-B observer: ICL_PIPESTATUS 0x70058 underrun mask 0x9c000000 (bit31 pipe underrun, bit28 soft, bit27 hard, bit26 port) | PIPE_FRMCOUNT_G4X 0x70040 | GEN8_DE_PIPE_IMR 0x44404 vblank bit 0x1 | the test owns the status for the run; the pipe's underrun and vblank interrupts stay masked, so the IRQ handler never reads or clears it
+i915: parity LCD-B observer: status found before the run 0x00000000 (kept, not judged) | start/stop periods 0x00000000 | steady picture 0x00000000 | vblank interrupt ever unmasked=0 | samples=17 dropped=0
+i915: parity LCD-B observer sample  0 point=  0 trans  status=0x00000000 frame=0 imr=0x00000000
+i915: parity LCD-B observer sample  1 point=  1 trans  status=0x00000000 frame=0 imr=0xefe9f07f
+i915: parity LCD-B observer sample  2 point=  2 trans  status=0x60000000 frame=3 imr=0xefe9f07f
+i915: parity LCD-B observer sample  3 point=  3 trans  status=0x60000000 frame=3 imr=0xefe9f07f
+i915: parity LCD-B observer sample  4 point=  7 trans  status=0x60000000 frame=5 imr=0xefe9f07f
+i915: parity LCD-B observer sample  5 point=100 trans  status=0x60000000 frame=16 imr=0xefe9f07f
+i915: parity LCD-B observer sample  6 point=100 steady status=0x60000000 frame=102 imr=0xefe9f07f
+i915: parity LCD-B observer sample  7 point=100 steady status=0x60000000 frame=132 imr=0xefe9f07f
+i915: parity LCD-B observer sample  8 point=100 steady status=0x60000000 frame=162 imr=0xefe9f07f
+i915: parity LCD-B observer sample  9 point=100 steady status=0x60000000 frame=192 imr=0xefe9f07f
+i915: parity LCD-B observer sample 10 point=100 steady status=0x60000000 frame=222 imr=0xefe9f07f
+i915: parity LCD-B observer sample 11 point=100 steady status=0x60000000 frame=252 imr=0xefe9f07f
+i915: parity LCD-B observer sample 12 point=100 steady status=0x60000000 frame=252 imr=0xefe9f07f
+i915: parity LCD-B observer sample 13 point=  0 trans  status=0x60000000 frame=255 imr=0xefe9f07f
+i915: parity LCD-B observer sample 14 point=  4 trans  status=0x60000000 frame=255 imr=0xefe9f07f
+i915: parity LCD-B observer sample 15 point=  6 trans  status=0x60000000 frame=270 imr=0xefe9f07f
+i915: parity LCD-B observer sample 16 point=  7 trans  status=0x00000000 frame=0 imr=0x00000000
+i915: parity LCD-B state[enable-returned] software: prepared=1 crtc_active=1 plane_armed=1 pll_on=1 pll_mask=0x1 wakerefs io=30 aux=54 crtc_domains=4 dc_off_held=0 dbuf_slices=0xf mbus_joined=1 stop_unconfirmed=0 backlight=1 level=96000/96000 errors=0
+i915: parity LCD-B state[enable-returned] sink: link 270000 x2 rc=0 status 77 00 01 01 11 00 cr_ok=1 eq_ok=1 train_set 01 01 (driver flag link_trained=1 is not evidence)
+i915: parity LCD-B state[window-end] software: prepared=1 crtc_active=1 plane_armed=1 pll_on=1 pll_mask=0x1 wakerefs io=30 aux=54 crtc_domains=4 dc_off_held=0 dbuf_slices=0xf mbus_joined=1 stop_unconfirmed=0 backlight=1 level=96000/96000 errors=0
+i915: parity LCD-B state[window-end] sink: link 270000 x2 rc=0 status 77 00 01 01 11 00 cr_ok=1 eq_ok=1 train_set 01 01 (driver flag link_trained=1 is not evidence)
+i915: parity LCD-B state[disable-returned] software: prepared=1 crtc_active=0 plane_armed=1 pll_on=0 pll_mask=0x0 wakerefs io=0 aux=0 crtc_domains=0 dc_off_held=0 dbuf_slices=0x1 mbus_joined=0 stop_unconfirmed=0 backlight=0 level=96000/96000 errors=0
+i915: parity LCD-B state[disable-returned] sink: link 270000 x2 rc=-22 status 00 00 00 00 00 00 cr_ok=0 eq_ok=0 train_set 01 01 (driver flag link_trained=0 is not evidence)
+i915: parity LCD-B buffer: surf=0xfdfc0000 pattern id=112 fnv=2049f03a1f95eb65 (pinned 0000000000000000) readback_bad before=0 after=0 | released=1 abandoned=0 unpin=0 destroy=0 | display pages in use=0
+i915: parity LCD-B hardware observation: first frames rc=0 counter 5 -> 16 | steady rounds=6 rc=0 counter 16 -> 252 | after stop rc=0 counter 270 -> 270 TRANSCONF=0x00000000
+i915: parity LCD-B first anomaly: none (stage=none rc=0 run-log index=-1) | bring-up errors=0 | cleanup errors=0 (first at run-log index -1) | rcs: window=-17 create=0 pin=0 prepare=0 begin=0 enable=0 disable=0
+i915: parity LCD-B backend: power refs of this run still held=0 get_failures=0 | wait timeouts=0 time faults=0 | unresolved steps=0 decided=6 | eDP tick sleeps=1215
+i915: parity LCD-B power-well IRQ hooks during this run: post_enable +1 pre_disable +1 (sync calls 7, sync timeouts 0) | pipe A IMR now 0x00000000 (well off reads 0)
+i915: parity LCD-B verdict: PASS (furthest stage=released; software flags, hardware observation and the photograph are separate evidence: this line covers the first two)
+i915: parity LCD-R cycle 3 verdict: PASS
+i915: parity LCD-R verdict: PASS (cycles passed 3/3; photographs are separate evidence)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity teardown: driver_unregister (rpm usage=1, INIT reference re-taken: wells_on=8 DC_STATE_EN=0x00000000)
+i915: parity teardown: intel_pxp_fini (VCS context + stream page released)
+i915: parity P1 gt_reset attempt=0 passes=2 rc=0
+i915: parity teardown: engines stopped and reset (rc=0) before release
+i915: parity teardown: engines released (status pages, kernel contexts)
+i915: parity teardown: GT objects released, GGTT window back to scratch (pte_writes=13612 live=0)
+i915: parity edp fini: end_rc=0 vdd_hw=0 vdd_wakeref=0 off_reserved=0 refs core=0 aux=0 lock_errors=0 | vdd-off work armed=79 fired=4 ran=4 cancelled(timer/queue)=75/0 | async put: puts=102 parked=6 grabs=0 work_runs=6 released=6 flushes=1 state_errors=0 use_count_errors=0 | well_refs=7
+i915: parity teardown: display-nogem fini (crtc/plane/dpll records released)
+i915: parity teardown: intel_irq_uninstall (sources reset, handler detached; irq_count=148 handled=148 none=0)
+i915: parity teardown: display-state fini (global objs released, fbc freed)
+i915: parity teardown: intel_dmc_fini (worker synced; load_seq_completed=1, payload_writes=13019, dmc_ref_held=0)
+i915: parity teardown: DMC ver=2.20 ids MAIN/A/B/C/D present=00000 payload=6274/2547/3066/566/566
+i915: parity teardown: display-core driver_remove (init rpm wakeref cancelled, wells kept)
+i915: parity teardown: power domains map released
+i915: parity teardown: VGA arbiter client unregistered
+i915: parity teardown: DRM device + vblank released
+i915: parity teardown: MSI resource released
+i915: parity teardown: WC aperture unmap va=0xffffffffe1000000 size=0x10000000 rc=0
+i915: parity teardown: PCI probe runtime PM released (usage=0)
+i915: parity tr[0] note rpm_init_early a0=0x0 a1=0x0
+i915: parity tr[1] acquire rpm_get_sync a0=0x1 a1=0x0
+i915: parity tr[2] acquire pci_probe_runtime_pm_get_sync a0=0x1 a1=0x0
+i915: parity tr[3] entry pci_enable_device a0=0x0 a1=0x0
+i915: parity tr[4] note pci_set_power_state a0=0x0 a1=0xd0
+i915: parity tr[5] acquire pci_device a0=0x3 a1=0x7
+i915: parity tr[6] exit pci_enable_device a0=0x0 a1=0x0
+i915: parity tr[7] note rpm_init_early a0=0x0 a1=0x0
+i915: parity tr[8] note i915_driver_create a0=0x0 a1=0x0
+i915: parity tr[9] note i915_driver_early_probe a0=0x0 a1=0x0
+i915: parity tr[10] note intel_vgpu_detect:physical a0=0x0 a1=0x0
+i915: parity tr[11] note intel_gt_probe_all:single_gt a0=0x0 a1=0x0
+i915: parity tr[12] acquire uncore_mmio_bar a0=0x800000 a1=0x0
+i915: parity tr[13] acquire forcewake a0=0x1 a1=0x1
+i915: parity tr[14] release forcewake a0=0x1 a1=0x0
+i915: parity tr[15] note intel_gt_init_mmio:mcr_multicast a0=0x0 a1=0x0
+i915: parity tr[16] acquire forcewake a0=0x1 a1=0x1
+i915: parity tr[17] acquire forcewake a0=0x0 a1=0x1
+i915: parity tr[18] note posting_read a0=0xcec4 a1=0x0
+i915: parity tr[19] release forcewake a0=0x0 a1=0x0
+i915: parity tr[20] release forcewake a0=0x1 a1=0x0
+i915: parity tr[21] note reset_callback:gen8_reset_engines a0=0x0 a1=0x0
+i915: parity tr[22] acquire forcewake a0=0x0 a1=0x1
+i915: parity tr[23] acquire forcewake a0=0x1 a1=0x1
+i915: parity tr[24] release forcewake a0=0x1 a1=0x0
+i915: parity tr[25] release forcewake a0=0x0 a1=0x0
+i915: parity tr[26] acquire sanitize_gpu:__intel_gt_reset a0=0x1 a1=0x0
+i915: parity tr[27] entry dma_set_info a0=0x27 a1=0xffffffff
+i915: parity tr[28] exit dma_set_info a0=0x0 a1=0x0
+i915: parity tr[29] acquire ggtt_table_window a0=0x800000 a1=0x100000
+i915: parity tr[30] map scratch_page a0=0x10016a000 a1=0x10016a001
+i915: parity tr[31] note address_space_init:GGTT a0=0x100000000 a1=0x0
+i915: parity tr[32] acquire ggtt_aperture_gmadr a0=0x7000000000 a1=0x10000000
+i915: parity tr[33] acquire ggtt_aperture_wc a0=0x7000000000 a1=0x10000000
+i915: parity tr[34] acquire forcewake a0=0x1 a1=0x1
+i915: parity tr[35] release forcewake a0=0x1 a1=0x0
+i915: parity tr[36] note intel_ggtt_init_fences a0=0x20 a1=0x0
+i915: parity tr[37] note intel_gt_tiles_init:single_tile a0=0x1 a1=0x0
+i915: parity tr[38] note memory_regions_hw_probe:smem a0=0x0 a1=0x0
+i915: parity tr[39] note ggtt_enable_hw:gen6plus_noop a0=0x0 a1=0x0
+i915: parity tr[40] acquire pci_bus_master a0=0x1 a1=0x7
+i915: parity tr[41] acquire pci_set_master a0=0x7 a1=0x0
+i915: parity tr[42] acquire pci_msi a0=0xd0 a1=0xac
+i915: parity tr[43] note intel_opregion_absent a0=0x0 a1=0x0
+i915: parity tr[44] acquire intel_dram_detect a0=0x0 a1=0x2
+i915: parity tr[45] acquire intel_bw_init_hw a0=0x2 a1=0x0
+i915: parity tr[46] note display_driver_probe_noirq:enter a0=0x0 a1=0x0
+i915: parity tr[47] note i915_inject_probe_failure:noop a0=0x0 a1=0x0
+i915: parity tr[48] note HAS_DISPLAY:true a0=0x1 a1=0x0
+i915: parity tr[49] acquire drm_dev_init a0=0x0 a1=0x0
+i915: parity tr[50] acquire drm_vblank_init a0=0x4 a1=0x0
+i915: parity tr[51] acquire intel_bios_init:vbt_parsed a0=0xf9 a1=0xc
+i915: parity tr[52] acquire intel_vga_register a0=0x0 a1=0x0
+i915: parity tr[53] acquire intel_power_domains_init a0=0x1e a1=0x4000000a
+i915: parity tr[54] acquire intel_pmdemand_init_early a0=0x0 a1=0x0
+i915: parity tr[55] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[56] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[57] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[58] note posting_read a0=0x44414 a1=0x0
+i915: parity tr[59] note posting_read a0=0x44418 a1=0x0
+i915: parity tr[60] note posting_read a0=0x44418 a1=0x0
+i915: parity tr[61] note posting_read a0=0x44424 a1=0x0
+i915: parity tr[62] note posting_read a0=0x44428 a1=0x0
+i915: parity tr[63] note posting_read a0=0x44428 a1=0x0
+i915: parity tr[64] note posting_read a0=0x44434 a1=0x0
+i915: parity tr[65] note posting_read a0=0x44438 a1=0x0
+i915: parity tr[66] note posting_read a0=0x44438 a1=0x0
+i915: parity tr[67] note posting_read a0=0x44444 a1=0x0
+i915: parity tr[68] note posting_read a0=0x44448 a1=0x0
+i915: parity tr[69] note posting_read a0=0x44448 a1=0x0
+i915: parity tr[70] note posting_read a0=0x44464 a1=0x0
+i915: parity tr[71] note posting_read a0=0x44468 a1=0x0
+i915: parity tr[72] note posting_read a0=0x44468 a1=0x0
+i915: parity tr[73] note posting_read a0=0x44474 a1=0x0
+i915: parity tr[74] note posting_read a0=0x44478 a1=0x0
+i915: parity tr[75] note posting_read a0=0x44478 a1=0x0
+i915: parity tr[76] note posting_read a0=0xc4004 a1=0x0
+i915: parity tr[77] note posting_read a0=0xc4008 a1=0x0
+i915: parity tr[78] note posting_read a0=0xc4008 a1=0x0
+i915: parity tr[79] note posting_read a0=0x444f4 a1=0x0
+i915: parity tr[80] note posting_read a0=0x444f8 a1=0x0
+i915: parity tr[81] note posting_read a0=0x444f8 a1=0x0
+i915: parity tr[82] note posting_read a0=0x444e4 a1=0x0
+i915: parity tr[83] note posting_read a0=0x444e8 a1=0x0
+i915: parity tr[84] note posting_read a0=0x444e8 a1=0x0
+i915: parity tr[85] note posting_read a0=0xc4004 a1=0x0
+i915: parity tr[86] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[87] note posting_read a0=0x44414 a1=0x0
+i915: parity tr[88] note posting_read a0=0x44424 a1=0x0
+i915: parity tr[89] note posting_read a0=0x44434 a1=0x0
+i915: parity tr[90] note posting_read a0=0x44444 a1=0x0
+i915: parity tr[91] note posting_read a0=0x44464 a1=0x0
+i915: parity tr[92] note posting_read a0=0x44474 a1=0x0
+i915: parity tr[93] note posting_read a0=0x444f4 a1=0x0
+i915: parity tr[94] note posting_read a0=0x190010 a1=0x0
+i915: parity tr[95] acquire forcewake a0=0x0 a1=0x1
+i915: parity tr[96] acquire forcewake a0=0x1 a1=0x1
+i915: parity tr[97] acquire forcewake a0=0x2 a1=0x1
+i915: parity tr[98] acquire forcewake a0=0x3 a1=0x1
+i915: parity tr[99] acquire forcewake a0=0x4 a1=0x1
+i915: parity tr[100] note posting_read a0=0x209c a1=0x0
+i915: parity tr[101] note posting_read a0=0x23a0 a1=0x0
+i915: parity tr[102] note posting_read a0=0x23a0 a1=0x0
+i915: parity tr[103] note posting_read a0=0x2209c a1=0x0
+i915: parity tr[104] note posting_read a0=0x223a0 a1=0x0
+i915: parity tr[105] note posting_read a0=0x223a0 a1=0x0
+i915: parity tr[106] note posting_read a0=0x1c009c a1=0x0
+i915: parity tr[107] note posting_read a0=0x1c03a0 a1=0x0
+i915: parity tr[108] note posting_read a0=0x1c03a0 a1=0x0
+i915: parity tr[109] note posting_read a0=0x1d009c a1=0x0
+i915: parity tr[110] note posting_read a0=0x1d03a0 a1=0x0
+i915: parity tr[111] note posting_read a0=0x1d03a0 a1=0x0
+i915: parity tr[112] note posting_read a0=0x1c809c a1=0x0
+i915: parity tr[113] note posting_read a0=0x1c83a0 a1=0x0
+i915: parity tr[114] note posting_read a0=0x1c83a0 a1=0x0
+i915: parity tr[115] acquire forcewake a0=0x0 a1=0x2
+i915: parity tr[116] acquire forcewake a0=0x1 a1=0x2
+i915: parity tr[117] release forcewake a0=0x1 a1=0x1
+i915: parity tr[118] release forcewake a0=0x0 a1=0x1
+i915: parity tr[119] note posting_read a0=0x2080 a1=0x0
+i915: parity tr[120] note posting_read a0=0x22080 a1=0x0
+i915: parity tr[121] note posting_read a0=0x1c0080 a1=0x0
+i915: parity tr[122] note posting_read a0=0x1d0080 a1=0x0
+i915: parity tr[123] note posting_read a0=0x1c8080 a1=0x0
+i915: parity tr[124] release forcewake a0=0x4 a1=0x0
+i915: parity tr[125] release forcewake a0=0x3 a1=0x0
+i915: parity tr[126] release forcewake a0=0x2 a1=0x0
+i915: parity tr[127] release forcewake a0=0x1 a1=0x0
+i915: parity tr[128] release forcewake a0=0x0 a1=0x0
+i915: parity tr[129] note posting_read a0=0x44434 a1=0x0
+i915: parity tr[130] note posting_read a0=0x44438 a1=0x0
+i915: parity tr[131] note posting_read a0=0x44438 a1=0x0
+i915: parity tr[132] note posting_read a0=0x44424 a1=0x0
+i915: parity tr[133] note posting_read a0=0x44428 a1=0x0
+i915: parity tr[134] note posting_read a0=0x44428 a1=0x0
+i915: parity tr[135] note posting_read a0=0x44414 a1=0x0
+i915: parity tr[136] note posting_read a0=0x44418 a1=0x0
+i915: parity tr[137] note posting_read a0=0x44418 a1=0x0
+i915: parity tr[138] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[139] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[140] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[141] release rpm_put a0=0x0 a1=0x0
+i915: parity tr[142] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[143] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[144] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[145] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[146] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[147] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[148] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[149] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[150] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[151] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[152] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[153] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[154] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[155] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[156] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[157] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[158] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[159] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[160] acquire rpm_get_sync a0=0x1 a1=0x0
+i915: parity tr[161] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[162] note posting_read a0=0x44414 a1=0x0
+i915: parity tr[163] note posting_read a0=0x44424 a1=0x0
+i915: parity tr[164] note posting_read a0=0x44434 a1=0x0
+i915: parity tr[165] acquire forcewake a0=0x0 a1=0x1
+i915: parity tr[166] acquire forcewake a0=0x1 a1=0x1
+i915: parity tr[167] acquire forcewake a0=0x2 a1=0x1
+i915: parity tr[168] acquire forcewake a0=0x3 a1=0x1
+i915: parity tr[169] acquire forcewake a0=0x4 a1=0x1
+i915: parity tr[170] note posting_read a0=0x209c a1=0x0
+i915: parity tr[171] note posting_read a0=0x2209c a1=0x0
+i915: parity tr[172] note posting_read a0=0x1c009c a1=0x0
+i915: parity tr[173] note posting_read a0=0x1d009c a1=0x0
+i915: parity tr[174] note posting_read a0=0x1c809c a1=0x0
+i915: parity tr[175] acquire forcewake a0=0x0 a1=0x2
+i915: parity tr[176] acquire forcewake a0=0x1 a1=0x2
+i915: parity tr[177] release forcewake a0=0x1 a1=0x1
+i915: parity tr[178] release forcewake a0=0x0 a1=0x1
+i915: parity tr[179] release forcewake a0=0x4 a1=0x0
+i915: parity tr[180] release forcewake a0=0x3 a1=0x0
+i915: parity tr[181] release forcewake a0=0x2 a1=0x0
+i915: parity tr[182] release forcewake a0=0x1 a1=0x0
+i915: parity tr[183] release forcewake a0=0x0 a1=0x0
+i915: parity tr[184] note posting_read a0=0x44404 a1=0x0
+i915: parity tr[185] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[186] note posting_read a0=0x44408 a1=0x0
+i915: parity tr[187] note posting_read a0=0x44414 a1=0x0
+i915: parity tr[188] note posting_read a0=0x44418 a1=0x0
+i915: parity tr[189] note posting_read a0=0x44418 a1=0x0
+i915: parity tr[190] note posting_read a0=0x44424 a1=0x0
+i915: parity tr[191] note posting_read a0=0x44428 a1=0x0
+i915: parity tr[192] note posting_read a0=0x44428 a1=0x0
+i915: parity tr[193] note posting_read a0=0x44434 a1=0x0
+i915: parity tr[194] note posting_read a0=0x44438 a1=0x0
+i915: parity tr[195] note posting_read a0=0x44438 a1=0x0
+i915: parity tr[196] note posting_read a0=0x44444 a1=0x0
+i915: parity tr[197] note posting_read a0=0x44448 a1=0x0
+i915: parity tr[198] note posting_read a0=0x44448 a1=0x0
+i915: parity tr[199] note posting_read a0=0x44464 a1=0x0
+i915: parity tr[200] note posting_read a0=0x44468 a1=0x0
+i915: parity tr[201] note posting_read a0=0x44468 a1=0x0
+i915: parity tr[202] note posting_read a0=0x44474 a1=0x0
+i915: parity tr[203] note posting_read a0=0x44478 a1=0x0
+i915: parity tr[204] note posting_read a0=0x44478 a1=0x0
+i915: parity tr[205] note posting_read a0=0xc4004 a1=0x0
+i915: parity tr[206] note posting_read a0=0xc4008 a1=0x0
+i915: parity tr[207] note posting_read a0=0xc4008 a1=0x0
+i915: parity tr[208] note posting_read a0=0x444f4 a1=0x0
+i915: parity tr[209] note posting_read a0=0x444f8 a1=0x0
+i915: parity tr[210] note posting_read a0=0x444f8 a1=0x0
+i915: parity tr[211] note posting_read a0=0x444e4 a1=0x0
+i915: parity tr[212] note posting_read a0=0x444e8 a1=0x0
+i915: parity tr[213] note posting_read a0=0x444e8 a1=0x0
+i915: parity tr[214] release pci_msi a0=0xd0 a1=0x0
+i915: parity tr[215] release pci_device_restore a0=0x0 a1=0x7
+i915: parity tr[216] release rpm_put a0=0x0 a1=0x0
+i915: parity attach end: reached=P3 outcome=STOPPED where=i915_driver_probe complete err=0
+i915: parity ktest begin (cpu=0, shared backend)
+i915: parity ktest K0 native-waitq start=8703 deadline=8724 end=8724 rc=42
+i915: parity ktest cross-CPU: gens=64 cross_cpu=0 mismatch=0 queue_fail=0
+i915: parity P1 gt_reset attempt=0 passes=2 rc=0
+i915: parity P1 gt_reset attempt=0 passes=1 rc=-42
+i915: parity P1 gt_reset attempt=1 passes=1 rc=-42
+i915: parity P1 gt_reset attempt=2 passes=1 rc=-42
+i915: parity P1 gt_reset attempt=0 passes=1 rc=-42
+i915: parity P1 gt_reset attempt=1 passes=2 rc=0
+i915: parity pcode read mbox=0x0000000d err=-24
+i915: parity pcode read mbox=0x0000000d err=-42
+i915: parity P2 dram: raw=0x00003420 type=0 channels=2 qgv_points=4 psf_gv_points=3 wm_lv0_adjust=0
+i915: parity P2 dram: unknown type field 0xf (tolerated)
+i915: parity P2 dram: raw=0x00003420 type=0 channels=2 qgv_points=4 psf_gv_points=3 wm_lv0_adjust=0
+i915: parity P2 bw: QGV 0 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity P2 bw: QGV 1 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity P2 bw: QGV 2 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity P2 bw: QGV 3 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity P2 bw: PSF GV 0 CLK=16
+i915: parity P2 bw: PSF GV 1 CLK=32
+i915: parity P2 bw: PSF GV 2 CLK=48
+i915: parity P2 bw: BW0/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW0/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW0/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW0/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW0/PSF0 num_planes=0 bw=17067
+i915: parity P2 bw: BW0/PSF1 num_planes=0 bw=34133
+i915: parity P2 bw: BW0/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW1/QGV0 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/QGV1 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/QGV2 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/QGV3 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/PSF0 num_planes=2 bw=17067
+i915: parity P2 bw: BW1/PSF1 num_planes=2 bw=34133
+i915: parity P2 bw: BW1/PSF2 num_planes=2 bw=51200
+i915: parity P2 bw: BW2/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/PSF0 num_planes=0 bw=17067
+i915: parity P2 bw: BW2/PSF1 num_planes=0 bw=34133
+i915: parity P2 bw: BW2/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW3/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/PSF0 num_planes=0 bw=17067
+i915: parity P2 bw: BW3/PSF1 num_planes=0 bw=34133
+i915: parity P2 bw: BW3/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW4/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/PSF0 num_planes=0 bw=17067
+i915: parity P2 bw: BW4/PSF1 num_planes=0 bw=34133
+i915: parity P2 bw: BW4/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: BW5/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/PSF0 num_planes=0 bw=17067
+i915: parity P2 bw: BW5/PSF1 num_planes=0 bw=34133
+i915: parity P2 bw: BW5/PSF2 num_planes=0 bw=51200
+i915: parity P2 bw: sagv_status=2 num_qgv_points=4 num_psf_points=3
+i915: parity P2 dram: raw=0x00003420 type=0 channels=2 qgv_points=4 psf_gv_points=3 wm_lv0_adjust=0
+i915: parity P2 bw: QGV 0 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity P2 bw: QGV 1 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity P2 bw: QGV 2 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity P2 bw: QGV 3 DCLK=16668 tRP=15 tRDPRE=4 tRAS=8 tRCD=0 tRC=23
+i915: parity pcode read mbox=0x0000020d err=-12
+i915: parity P2 bw: failed to read PSF point data; PSF points dropped
+i915: parity P2 bw: BW0/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW0/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW0/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW0/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/QGV0 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/QGV1 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/QGV2 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW1/QGV3 num_planes=2 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW2/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW3/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW4/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/QGV0 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/QGV1 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/QGV2 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: BW5/QGV3 num_planes=0 deratedbw=38000 peakbw=266688
+i915: parity P2 bw: sagv_status=2 num_qgv_points=4 num_psf_points=0
+i915: parity P3 drm_vblank_init: vblank_slots=4 (per-pipe worker+timer+seqlock)
+i915: parity P3 intel_bios_init: source=0 vbt_found=0 version=155 bdb_blocks=0 child_devices=3 missing_defaults=1 parser_errors=0 arena_peak=240
+i915: parity P3 VBT child[0]: port=A dvo_port=0 type=0x1004 aux_ch=-1 ddc_pin=0 dp=1 edp=1 hdmi=0 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[1]: port=B dvo_port=1 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[2]: port=C dvo_port=2 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 intel_bios_init: source=0 vbt_found=0 version=155 bdb_blocks=0 child_devices=3 missing_defaults=1 parser_errors=0 arena_peak=240
+i915: parity P3 VBT child[0]: port=A dvo_port=0 type=0x1004 aux_ch=-1 ddc_pin=0 dp=1 edp=1 hdmi=0 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[1]: port=B dvo_port=1 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[2]: port=C dvo_port=2 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 intel_bios_init: source=0 vbt_found=0 version=155 bdb_blocks=0 child_devices=3 missing_defaults=1 parser_errors=0 arena_peak=240
+i915: parity P3 VBT explicit blob: name=zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt requested=1 found=1 size=8704 sha256=3bff4a0920d55c9a.. hash_ok=1 valid=1 subsys=1028:0b03 subsys_ok=0 used=0 (explicit supply; OpRegion present=0 is unchanged)
+i915: parity P3 VBT child[0]: port=A dvo_port=0 type=0x1004 aux_ch=-1 ddc_pin=0 dp=1 edp=1 hdmi=0 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[1]: port=B dvo_port=1 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[2]: port=C dvo_port=2 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 intel_bios_init: source=3 vbt_found=1 version=249 bdb_blocks=12 child_devices=4 missing_defaults=0 parser_errors=0 arena_peak=5184
+i915: parity P3 VBT explicit blob: name=zedbsd/vbt/dell-latitude-5330-1028-0b02.vbt requested=1 found=1 size=8704 sha256=3bff4a0920d55c9a.. hash_ok=1 valid=1 subsys=1028:0b02 subsys_ok=1 used=1 (explicit supply; OpRegion present=0 is unchanged)
+i915: parity P3 VBT child[0]: port=A dvo_port=10 type=0x1806 aux_ch=0 ddc_pin=9 dp=1 edp=1 hdmi=0 typec=0 tbt=0 max_lanes=4 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[1]: port=B dvo_port=7 type=0x60d2 aux_ch=1 ddc_pin=2 dp=0 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=4 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[2]: port=D dvo_port=13 type=0x68c6 aux_ch=3 ddc_pin=9 dp=1 edp=0 hdmi=0 typec=1 tbt=1 max_lanes=4 max_rate=810000 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[3]: port=E dvo_port=15 type=0x68c6 aux_ch=4 ddc_pin=10 dp=1 edp=0 hdmi=0 typec=1 tbt=1 max_lanes=4 max_rate=810000 hpd_invert=0 lane_reversal=0
+i915: parity P3 intel_bios_init: source=0 vbt_found=0 version=155 bdb_blocks=0 child_devices=3 missing_defaults=1 parser_errors=0 arena_peak=240
+i915: parity P3 VBT child[0]: port=A dvo_port=0 type=0x1004 aux_ch=-1 ddc_pin=0 dp=1 edp=1 hdmi=0 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[1]: port=B dvo_port=1 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 VBT child[2]: port=C dvo_port=2 type=0x0014 aux_ch=-1 ddc_pin=0 dp=1 edp=0 hdmi=1 typec=0 tbt=0 max_lanes=0 max_rate=0 hpd_invert=0 lane_reversal=0
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity P1 gt_reset attempt=0 passes=2 time-base fault rc=-5
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well fuse PG2 wait timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity power well PW_A enable ACK timeout (continuing)
+i915: parity power well fuse PG6 wait timeout (continuing)
+i915: parity pcode request mbox=0x00000007 timeout, retrying (preempt off)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: parity cdclk: sanitizing cdclk programmed by pre-os
+i915: parity pcode request mbox=0x00000007 timeout, retrying (preempt off)
+i915: parity cdclk: PCU prepare failed (err -42, freq 652800)
+i915: parity cdclk: sanitizing cdclk programmed by pre-os
+i915: parity cdclk: sanitizing cdclk programmed by pre-os
+i915: parity pcode write mbox=0x00000007 err=-25
+i915: parity cdclk: PCODE freq set failed (err -25, freq 556800)
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: parity cdclk: sanitizing cdclk programmed by pre-os
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: parity display_core: stop at power_well_1_enable (adaptation-layer fault)
+i915: parity pcode request mbox=0x00000007 timeout, retrying (preempt off)
+i915: parity pcode request mbox=0x00000007 timeout, retrying (preempt off)
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity power well fuse PG1 wait timeout (continuing)
+i915: DMC-PARSE rc=0 ver=2.20 pkg_ver=2 entries=6 css_len=128 main=1
+i915: DMC-PARSE id=0 hv=3 off_dw=6301 start=0x80000 mmio=7 fwsz_dw=6274 payload=25096 present=1
+i915: DMC-PARSE id=1 hv=3 off_dw=12639 start=0x90000 mmio=9 fwsz_dw=2547 payload=10188 present=1
+i915: DMC-PARSE id=2 hv=3 off_dw=15250 start=0x98000 mmio=9 fwsz_dw=3066 payload=12264 present=1
+i915: DMC-PARSE id=3 hv=3 off_dw=18380 start=0x52000 mmio=5 fwsz_dw=566 payload=2264 present=1
+i915: DMC-PARSE id=4 hv=3 off_dw=19010 start=0x59000 mmio=5 fwsz_dw=566 payload=2264 present=1
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: dmc worker: proceeding to load
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (0 initialised)
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: parity dmc: unknown DMC fw header version 7
+i915: DMC-FINI ckpt A: init
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: DMC-FINI ckpt B: queued, spawning fini thread
+i915: DMC-FINI ckpt C: sleeping 40ms
+i915: DMC-FINI thread: entering fini
+i915: dmc worker: parked (test pause)
+i915: DMC-FINI ckpt D: ws=1 fini_done=0
+i915: DMC-FINI ckpt E: released pause
+i915: dmc worker: proceeding to load
+i915: DMC-FINI thread: fini returned
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: dmc worker: proceeding to load
+i915: parity Forcing SAGV disable: mask 0x5
+i915: parity Forcing SAGV disable: mask 0x5
+i915: parity pcode request mbox=0x0000000e timeout, retrying (preempt off)
+i915: parity Failed to disable qgv points (-42) points: 0x5
+i915: parity applying backlight present quirk
+i915: parity applying DMI quirk
+i915: parity Sanitized enable_fbc value: 1
+i915: parity Sanitized enable_fbc value: 0
+i915: parity Sanitized enable_fbc value: 0
+i915: parity Disabling framebuffer compression (FBC) to prevent screen flicker with VT-d enabled
+i915: parity Sanitized enable_fbc value: 0
+i915: parity Sanitized enable_fbc value: 1
+i915: parity Sanitized enable_fbc value: 0
+i915: parity Sanitized enable_fbc value: 0
+i915: parity Sanitized enable_fbc value: 0
+i915: parity Sanitized enable_fbc value: 0
+i915: parity Sanitized enable_fbc value: 1
+i915: parity Assuming PCH ID 7a80
+i915: parity Found Alder Lake PCH
+i915: parity Found Alder Lake PCH
+i915: parity Assuming PCH ID 7a80
+i915: parity Found Alder Lake PCH
+i915: parity Found Alder Lake PCH
+i915: parity Display disabled, reverting to NOP PCH
+i915: parity Found Ice Lake PCH
+i915: parity Found Jasper Lake PCH
+i915: parity Found Tiger Lake LP PCH
+i915: parity Found Mule Creek Canyon PCH
+i915: parity Found PantherPoint PCH
+i915: parity Found Comet Lake V PCH (CMP-V)
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity WARN interrupt register 0xc4008 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x60818 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x61818 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x62818 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x63818 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x44408 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x44418 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x44428 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x44438 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x44448 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x44468 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x44478 is not zero: 0xffffffff
+i915: parity WARN interrupt register 0x444f8 is not zero: 0xffffffff
+i915: parity Fault errors on pipe B: 0x00000080
+i915: parity WARN interrupt register 0x44408 is not zero: 0x00000001
+i915: parity intel_synchronize_irq: a handler invocation did not finish (entries=5 exits=4)
+i915: parity WARN interrupt register 0x44408 is not zero: 0xffffffff
+i915: parity WARN Platform does not support port C
+i915: parity VBT says port A is not DVI/HDMI/DP compatible, respect it
+i915: parity Port A already claimed
+i915: parity P3 intel_power_domains_init: wells=30 allowed_dc=0x4000000a target_dc=0x2 disable_pw=1 (xelpd map)
+i915: parity WARN Platform does not support port C
+i915: parity P5c [CRTC:A] hw state readout: disabled
+i915: parity P5c [CRTC:B] hw state readout: disabled
+i915: parity P5c [CRTC:C] hw state readout: disabled
+i915: parity P5c [CRTC:D] hw state readout: disabled
+i915: parity P5c [ENCODER port A] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c [ENCODER port B] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c DPLL 0 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c DPLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TBT PLL hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 2 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 3 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 4 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c [CRTC:A] hw state readout: disabled
+i915: parity P5c [CRTC:B] hw state readout: enabled
+i915: parity P5c [CRTC:C] hw state readout: disabled
+i915: parity P5c [CRTC:D] hw state readout: disabled
+i915: parity P5c [ENCODER port A] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c [ENCODER port B] hw state readout: enabled pipe_mask=0x2 mst=0
+i915: parity P5c DPLL 0 hw state readout: pipe_mask 0x0, on 1
+i915: parity P5c DPLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TBT PLL hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 2 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 3 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 4 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c [CRTC:A] hw state readout: disabled (power gated)
+i915: parity P5c [CRTC:B] hw state readout: disabled (power gated)
+i915: parity P5c [CRTC:C] hw state readout: disabled (power gated)
+i915: parity P5c [CRTC:D] hw state readout: disabled (power gated)
+i915: parity P5c [ENCODER port A] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c [ENCODER port B] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c DPLL 0 hw state readout: pipe_mask 0x0, on 1
+i915: parity P5c DPLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TBT PLL hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 2 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 3 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 4 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c [CRTC:A] hw state readout: disabled
+i915: parity P5c [CRTC:B] hw state readout: enabled
+i915: parity P5c [CRTC:C] hw state readout: disabled
+i915: parity P5c [CRTC:D] hw state readout: disabled
+i915: parity P5c [ENCODER port A] hw state readout: disabled pipe_mask=0x0 mst=0
+i915: parity P5c [ENCODER port B] hw state readout: enabled pipe_mask=0x2 mst=0
+i915: parity P5c DPLL 0 hw state readout: pipe_mask 0x0, on 1
+i915: parity P5c DPLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TBT PLL hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 1 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 2 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 3 hw state readout: pipe_mask 0x0, on 0
+i915: parity P5c TC PLL 4 hw state readout: pipe_mask 0x0, on 0
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity DPLL 0 enabled but not in use, disabling
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity [ENCODER port A] is disabled with an ungated DDI clock, gate it
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity WARN [CRTC:B] is active with no encoders: intel_crtc_disable_noatomic() is NOT implemented, pipe left as-is
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity BIOS left unused DC_off power well enabled, disabling it
+i915: parity vcs2 fused off
+i915: parity Unexpected fault addr=0x0 space=PPGTT engine_id=3
+i915: parity INTR_IDENTITY_REG0:0 0x00000000 not valid!
+i915: parity RC6/PG SKIPPED by the diagnostic switch (pg_enable would be 0x19f, ctl 0x40000)
+i915: parity scanout: ABANDONED at GGTT 0x1fc0000 (8294400 bytes, owner ktest): the display was not shown to have stopped; pages, mapping and PTEs are kept
+i915: parity gt_mem: object at GGTT 0x1fc0000 (2025 pages) NOT released: still owned by the display
+i915: parity scanout: ABANDONED at GGTT 0x1fc0000 (8294400 bytes, owner lcd-b): the display was not shown to have stopped; pages, mapping and PTEs are kept
+i915: parity gt_mem: object at GGTT 0x1fc0000 (2025 pages) NOT released: still owned by the display
+i915: parity bcs0 stop_cs: MODE_IDLE timeout, head=0000 tail=0000
+i915: parity bcs0 stop_cs: MODE_IDLE timeout, head=0040 tail=0000
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): HEAD=00000000 TAIL=00000000 START=00000000 CTL=00000000 ACTHD=00000000:00000000 IPEHR=00000000 INSTDONE=00000000 MI_MODE=00000000 ESR=00000000 EIR=00000000
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): EXECLIST_STATUS=00000000:00000000 CSB_PTR=ffff0b0b hwsp: csb_write=3 preempt=0 seqno=1 | sw: csb_head=3 submits=3 promotes=2 completes=2 errors=0 late=0 mmio=0 last=00008000:03ff8000
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[0]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[1]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[2]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[3]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[4]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[5]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[6]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[7]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[8]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[9]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[10]=ffffffff:ffffffff
+i915: parity bcs0 dump(intel_gt_wait_for_idle -ETIME): csb[11]=ffffffff:ffffffff
+i915: parity bcs0 stop_cs: MODE_IDLE timeout, head=0000 tail=0000
+i915: parity P1 gt_reset attempt=0 passes=2 rc=0
+i915: parity bcs0 workaround lost on load! (reg[22050]=0x0, relevant bits were 0x0 vs expected 0x100) t: plain
+i915: parity P3 intel_combo_phy_init: combo PHYs A/B (2 initialised)
+i915: parity ktest (completion+workqueue): 502 checks, 0 failures
+i915: runner-result: selftest=PASS selftest_scope=K0-K5 probe=COMPLETE last_op=i915_driver_register blocked_at=- cleanup=1 published=0 lcd_test=PASS lcd_first_anomaly_at=none lcd_cleanup_rc=0 lcd_retained=0
+i915: parity runner thread end

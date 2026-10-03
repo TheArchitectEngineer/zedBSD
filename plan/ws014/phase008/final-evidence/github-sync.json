@@ -1,0 +1,594 @@
+{
+  "status": "PASS",
+  "verified_at": "2026-09-13T09:10:23.858036+00:00",
+  "acceptance_comment": "https://github.com/awemorris/zedBSD/issues/395#issuecomment-5652374702",
+  "records": {
+    "ws014-p008": {
+      "url": "https://github.com/awemorris/zedBSD/issues/395",
+      "state": "closed",
+      "body_sha256": "4e63fa5a3706c637baa837b0ff8a46146d38fa683d1aa553405cfa80e9bfa837"
+    },
+    "master": {
+      "url": "https://github.com/awemorris/zedBSD/issues/1",
+      "state": "open",
+      "body_sha256": "c05535ab8a8354f95fa4a9b38e5fdc8f6d362c4ff48ed2c4319ca9c591ba7085"
+    },
+    "ws014": {
+      "url": "https://github.com/awemorris/zedBSD/issues/15",
+      "state": "open",
+      "body_sha256": "1b0cbb7320a8ceb7b73c9128307a07537dbab406f32599693c2b836d3cc7c8f5"
+    },
+    "queue": {
+      "url": "https://github.com/awemorris/zedBSD/issues/362",
+      "state": "open",
+      "body_sha256": "208b3d3579f0f682d0f9aec77029b4949d09b160942501312580455030967fc0"
+    },
+    "guardrail": {
+      "url": "https://github.com/awemorris/zedBSD/issues/363",
+      "state": "open",
+      "body_sha256": "0b34080174fad72d2ce4dc1d8b13e5d1d5a93d71d5bd7f3953f3c4f8ab53b8de"
+    },
+    "past-log": {
+      "url": "https://github.com/awemorris/zedBSD/issues/366",
+      "state": "open",
+      "body_sha256": "1bb319624c563cc299129f9005e7ae51be93bb58e06151c418040823086b4eff"
+    },
+    "ws014-p004": {
+      "url": "https://github.com/awemorris/zedBSD/issues/385",
+      "state": "open",
+      "body_sha256": "a669786a8c21519a5bc2c6172c858d859261ba1e2d4511bb7125ad8aac7b1d4b"
+    },
+    "ws014-p007": {
+      "url": "https://github.com/awemorris/zedBSD/issues/394",
+      "state": "closed",
+      "body_sha256": "1b1794a926ee9834912c92a12b2f31d402c1de09d6006dc4794a2e32e54089ac"
+    }
+  },
+  "project": {
+    "ws014-p008": {
+      "Title": "[ws014-p008] GPU完了責任・fence所属と描画資源の改善",
+      "Status": "Done",
+      "Logical ID": "ws014-p008",
+      "Record Kind": "Phase",
+      "Awesome Plan Status": "cleared",
+      "Phase Disposition": "normal",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Parent WS": "ws014",
+      "Queue ID": "q311",
+      "Queue Item Status": "cleared",
+      "Planning Category": "Other",
+      "Current Focus": "No",
+      "Status Note": "q311 finished; p008 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "ws014": {
+      "Title": "WS014: virtio-gpu bring-up",
+      "Status": "In Progress",
+      "Logical ID": "ws014",
+      "Record Kind": "WS",
+      "Planning Category": "Outlook",
+      "Current Focus": "No",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Awesome Plan Status": "incomplete",
+      "Status Note": "q311 finished; p008 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "queue": {
+      "Title": "[Awesome Plan] Queue",
+      "Logical ID": "queue",
+      "Record Kind": "Board",
+      "Planning Category": "Other",
+      "Awesome Plan Status": "finished",
+      "Queue ID": "q311",
+      "Status Note": "q311 finished; p008 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029.",
+      "Queue Item Status": "cleared"
+    },
+    "master": {
+      "Title": "[Awesome Plan] Master Board",
+      "Status": "Todo",
+      "Logical ID": "master",
+      "Record Kind": "Board",
+      "Planning Category": "Other",
+      "Current Focus": "No",
+      "Status Note": "q311 finished; p008 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "guardrail": {
+      "Title": "[Awesome Plan] Guardrail",
+      "Logical ID": "guardrail",
+      "Record Kind": "Board",
+      "Status": "Todo",
+      "Planning Category": "Other",
+      "Status Note": "q311 finished; no new HAL changes. Generic opaque handle retained; GPU fence belongs to driver framework. git publication remains user-owned."
+    },
+    "past-log": {
+      "Title": "[Awesome Plan] Past Log",
+      "Logical ID": "past-log",
+      "Status": "Todo",
+      "Record Kind": "Board",
+      "Planning Category": "Other",
+      "Status Note": "q311 finished; p008 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "ws014-p004": {
+      "Title": "[ws014-p004] 最終API整理・規約全文確認",
+      "Status": "Todo",
+      "Awesome Plan Status": "planning",
+      "Status Note": "Planning and unqueued. p008 and p007 cleared; review their final GPU API/standards evidence before WS029.",
+      "Logical ID": "ws014-p004",
+      "Record Kind": "Phase",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Current Focus": "No",
+      "Planning Category": "Outlook",
+      "Parent WS": "ws014",
+      "Phase Disposition": "normal"
+    },
+    "ws014-p007": {
+      "Title": "[ws014-p007] GPUレビュー対応・BLOB直接表示・同期と転送性能の改善",
+      "Status": "Done",
+      "Logical ID": "ws014-p007",
+      "Record Kind": "Phase",
+      "Awesome Plan Status": "cleared",
+      "Phase Disposition": "normal",
+      "Queue ID": "q310",
+      "Queue Item Status": "cleared",
+      "Planning Category": "Other",
+      "Status Note": "q310 cleared; acceptance retained. Follow-up p008 now cleared in q311. p004 remains planning."
+    }
+  },
+  "project_identity": {
+    "id": "PVT_kwHOC2X95c4BjFGl",
+    "url": "https://github.com/users/awemorris/projects/2",
+    "public": true,
+    "repositories": {
+      "nodes": [
+        {
+          "nameWithOwner": "awemorris/zedBSD"
+        }
+      ]
+    },
+    "fields": {
+      "nodes": [
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yIs",
+          "name": "Title"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yIw",
+          "name": "Assignees"
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6yI0",
+          "name": "Status",
+          "options": [
+            {
+              "id": "f75ad846",
+              "name": "Todo"
+            },
+            {
+              "id": "47fc9ee4",
+              "name": "In Progress"
+            },
+            {
+              "id": "98236657",
+              "name": "Done"
+            }
+          ]
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yI4",
+          "name": "Labels"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yI8",
+          "name": "Linked pull requests"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJA",
+          "name": "Milestone"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJE",
+          "name": "Repository"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJM",
+          "name": "Reviewers"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJQ",
+          "name": "Parent issue"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJU",
+          "name": "Sub-issues progress"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJY",
+          "name": "Created"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJc",
+          "name": "Updated"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6yJg",
+          "name": "Closed"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6zBA",
+          "name": "Logical ID"
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zB8",
+          "name": "Record Kind",
+          "options": [
+            {
+              "id": "6429c2e7",
+              "name": "Board"
+            },
+            {
+              "id": "7a7d255c",
+              "name": "WS"
+            },
+            {
+              "id": "018ad3d2",
+              "name": "Phase"
+            },
+            {
+              "id": "5c60ac72",
+              "name": "Bug"
+            },
+            {
+              "id": "a49687d7",
+              "name": "Queue History"
+            }
+          ]
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zCA",
+          "name": "Primary Milestone",
+          "options": [
+            {
+              "id": "1fcc8a3e",
+              "name": "MG001"
+            },
+            {
+              "id": "97811c7e",
+              "name": "MG002"
+            },
+            {
+              "id": "69aba4af",
+              "name": "MG003"
+            },
+            {
+              "id": "e423d93f",
+              "name": "MG004"
+            },
+            {
+              "id": "e313f1b4",
+              "name": "MG005"
+            },
+            {
+              "id": "fb9282cb",
+              "name": "MG006"
+            },
+            {
+              "id": "58ea1029",
+              "name": "MG007"
+            },
+            {
+              "id": "a205706d",
+              "name": "MG008"
+            },
+            {
+              "id": "2bb0e6d5",
+              "name": "MG009"
+            }
+          ]
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6zC8",
+          "name": "Related Milestones"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6zDc",
+          "name": "Objectives"
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zE0",
+          "name": "Awesome Plan Status",
+          "options": [
+            {
+              "id": "d637dc6d",
+              "name": "planning"
+            },
+            {
+              "id": "9384185c",
+              "name": "planned"
+            },
+            {
+              "id": "ec533f6d",
+              "name": "in-progress"
+            },
+            {
+              "id": "781c0612",
+              "name": "incomplete"
+            },
+            {
+              "id": "99f5b599",
+              "name": "completed"
+            },
+            {
+              "id": "14af033a",
+              "name": "cleared"
+            },
+            {
+              "id": "22fbe707",
+              "name": "uncleared"
+            },
+            {
+              "id": "028638b7",
+              "name": "proposed"
+            },
+            {
+              "id": "e71ed065",
+              "name": "active"
+            },
+            {
+              "id": "cafc460e",
+              "name": "finished"
+            }
+          ]
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zE4",
+          "name": "Phase Disposition",
+          "options": [
+            {
+              "id": "b6289037",
+              "name": "normal"
+            },
+            {
+              "id": "89a872af",
+              "name": "canceled"
+            }
+          ]
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6zF0",
+          "name": "WS Priority"
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6zF4",
+          "name": "Focused Goal IDs"
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zG0",
+          "name": "Current Focus",
+          "options": [
+            {
+              "id": "2f35565f",
+              "name": "Yes"
+            },
+            {
+              "id": "61e33108",
+              "name": "No"
+            }
+          ]
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6zHw",
+          "name": "Queue ID"
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zIs",
+          "name": "Queue Item Status",
+          "options": [
+            {
+              "id": "bf104739",
+              "name": "pending"
+            },
+            {
+              "id": "cf34edf4",
+              "name": "in-progress"
+            },
+            {
+              "id": "d5f8951a",
+              "name": "cleared"
+            },
+            {
+              "id": "ae8d0ab9",
+              "name": "uncleared"
+            }
+          ]
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zIw",
+          "name": "Planning Category",
+          "options": [
+            {
+              "id": "94406ed6",
+              "name": "Other"
+            },
+            {
+              "id": "69bf7185",
+              "name": "Outlook"
+            },
+            {
+              "id": "60a32904",
+              "name": "Current Queue"
+            }
+          ]
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh6zI0",
+          "name": "Parent WS",
+          "options": [
+            {
+              "id": "988ce36a",
+              "name": "ws001"
+            },
+            {
+              "id": "6b244a72",
+              "name": "ws002"
+            },
+            {
+              "id": "7d7c44a2",
+              "name": "ws003"
+            },
+            {
+              "id": "9e2a0658",
+              "name": "ws004"
+            },
+            {
+              "id": "3aff2124",
+              "name": "ws005"
+            },
+            {
+              "id": "de0b0fd6",
+              "name": "ws006"
+            },
+            {
+              "id": "d2eccd9c",
+              "name": "ws007"
+            },
+            {
+              "id": "fe471177",
+              "name": "ws008"
+            },
+            {
+              "id": "106f8fbb",
+              "name": "ws009"
+            },
+            {
+              "id": "350ed3d8",
+              "name": "ws010"
+            },
+            {
+              "id": "c8a54b69",
+              "name": "ws011"
+            },
+            {
+              "id": "a849f2cf",
+              "name": "ws012"
+            },
+            {
+              "id": "1b8ab3de",
+              "name": "ws013"
+            },
+            {
+              "id": "e856bce6",
+              "name": "ws014"
+            },
+            {
+              "id": "0f5aef69",
+              "name": "ws015"
+            },
+            {
+              "id": "64c4397b",
+              "name": "ws016"
+            },
+            {
+              "id": "54f1f0dd",
+              "name": "ws017"
+            },
+            {
+              "id": "d865de9e",
+              "name": "ws018"
+            },
+            {
+              "id": "8f8fc5a0",
+              "name": "ws019"
+            },
+            {
+              "id": "5a37af17",
+              "name": "ws020"
+            },
+            {
+              "id": "dbde310d",
+              "name": "ws021"
+            },
+            {
+              "id": "a2237305",
+              "name": "ws022"
+            },
+            {
+              "id": "8e006128",
+              "name": "ws023"
+            },
+            {
+              "id": "6d6e01bc",
+              "name": "ws024"
+            },
+            {
+              "id": "5bf9767a",
+              "name": "ws025"
+            },
+            {
+              "id": "aa0d9226",
+              "name": "ws026"
+            },
+            {
+              "id": "4232587b",
+              "name": "ws027"
+            },
+            {
+              "id": "4adfccd7",
+              "name": "ws030"
+            }
+          ]
+        },
+        {
+          "id": "PVTF_lAHOC2X95c4BjFGlzhh6zJw",
+          "name": "Status Note"
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh7NRM",
+          "name": "Bug Reproduction",
+          "options": [
+            {
+              "id": "cb59beb5",
+              "name": "unknown"
+            },
+            {
+              "id": "4dd2da8f",
+              "name": "unreproduced"
+            },
+            {
+              "id": "1b02ca71",
+              "name": "reproduced"
+            }
+          ]
+        },
+        {
+          "id": "PVTSSF_lAHOC2X95c4BjFGlzhh7NTA",
+          "name": "Bug Disposition",
+          "options": [
+            {
+              "id": "ac3a26cc",
+              "name": "tracking"
+            },
+            {
+              "id": "dcfcafdd",
+              "name": "scheduled"
+            },
+            {
+              "id": "134a6bcd",
+              "name": "resolved"
+            },
+            {
+              "id": "298bf540",
+              "name": "duplicate"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "p004_dependency_closed": true,
+  "queue_board_open": true,
+  "repository_publication": "user owns git add/commit/push"
+}

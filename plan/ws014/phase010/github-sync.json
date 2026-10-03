@@ -1,0 +1,263 @@
+{
+  "status": "PASS",
+  "verified_at": "2026-09-13T18:22:12.703312+00:00",
+  "authorization": "current user: GitHubの同期をお願いします。",
+  "published_events": [
+    "q312 completion",
+    "q313 start",
+    "q313 completion"
+  ],
+  "phase_issue": "https://github.com/awemorris/zedBSD/issues/397",
+  "acceptance_comments": {
+    "ws014-p009": "https://github.com/awemorris/zedBSD/issues/396#issuecomment-5655170913",
+    "ws014-p010": "https://github.com/awemorris/zedBSD/issues/397#issuecomment-5655171051"
+  },
+  "records": {
+    "master": {
+      "url": "https://github.com/awemorris/zedBSD/issues/1",
+      "state": "open",
+      "body_sha256": "25430e7513f675c6f59f71b07be84ab4febf23a889a1467219f3f2c63679cca3"
+    },
+    "ws014": {
+      "url": "https://github.com/awemorris/zedBSD/issues/15",
+      "state": "open",
+      "body_sha256": "a3f3ae8ed601e9a85d91f44b5a4205f5933e65e4423ff002ed6849ac78ebc5dc"
+    },
+    "queue": {
+      "url": "https://github.com/awemorris/zedBSD/issues/362",
+      "state": "open",
+      "body_sha256": "8dd39c80adc1f6d1ca1c12b9b535b41e0f059f485001f16f5ca79173817907f9"
+    },
+    "guardrail": {
+      "url": "https://github.com/awemorris/zedBSD/issues/363",
+      "state": "open",
+      "body_sha256": "daea34b8fe8395c33bb67edf6dfe589346c6ea1e3c4c9379eee03413c5c022a8"
+    },
+    "past-log": {
+      "url": "https://github.com/awemorris/zedBSD/issues/366",
+      "state": "open",
+      "body_sha256": "b9376cacd4176df010978be3ac50653733ab641a34b3f83241e93c54676d8626"
+    },
+    "ws014-p004": {
+      "url": "https://github.com/awemorris/zedBSD/issues/385",
+      "state": "open",
+      "body_sha256": "35373f61c7c98e5a058d9fde1b9ead02ab15b6afcce0f77b6cc112e2938bcf1e"
+    },
+    "ws014-p008": {
+      "url": "https://github.com/awemorris/zedBSD/issues/395",
+      "state": "closed",
+      "body_sha256": "0cc7e3115e416a487fc972c33c489360a33bdd4c67db1f46d2e9d6c38f637073"
+    },
+    "ws014-p009": {
+      "url": "https://github.com/awemorris/zedBSD/issues/396",
+      "state": "closed",
+      "body_sha256": "efee40502ee8e18974bb592648f7ddbacb8fdbb4e9d1a2918845f9f876236687"
+    },
+    "ws014-p010": {
+      "url": "https://github.com/awemorris/zedBSD/issues/397",
+      "state": "closed",
+      "body_sha256": "31b701c9e275099e11ace851329a3a75f38143030b87e46059a3040426328df4"
+    }
+  },
+  "project": {
+    "ws014-p010": {
+      "Title": "[ws014-p010] GPU監督の共通化仕上げと局所隔離",
+      "Status": "Done",
+      "Logical ID": "ws014-p010",
+      "Record Kind": "Phase",
+      "Awesome Plan Status": "cleared",
+      "Phase Disposition": "normal",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Parent WS": "ws014",
+      "Queue ID": "q313",
+      "Queue Item Status": "cleared",
+      "Planning Category": "Other",
+      "Current Focus": "No",
+      "Status Note": "q313 finished; p010 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "ws014-p009": {
+      "Title": "[ws014-p009] GPUレビュー対応とフレームワーク共通化",
+      "Status": "Done",
+      "Logical ID": "ws014-p009",
+      "Record Kind": "Phase",
+      "Awesome Plan Status": "cleared",
+      "Phase Disposition": "normal",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Parent WS": "ws014",
+      "Queue ID": "q312",
+      "Queue Item Status": "cleared",
+      "Planning Category": "Other",
+      "Current Focus": "No",
+      "Status Note": "q313 finished; p010 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "ws014": {
+      "Title": "WS014: virtio-gpu bring-up",
+      "Status": "In Progress",
+      "Logical ID": "ws014",
+      "Record Kind": "WS",
+      "Planning Category": "Outlook",
+      "Current Focus": "No",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Awesome Plan Status": "incomplete",
+      "Status Note": "q313 finished; p010 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "queue": {
+      "Title": "[Awesome Plan] Queue",
+      "Logical ID": "queue",
+      "Record Kind": "Board",
+      "Planning Category": "Other",
+      "Awesome Plan Status": "finished",
+      "Queue ID": "q313",
+      "Status Note": "q313 finished; p010 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029.",
+      "Queue Item Status": "cleared"
+    },
+    "master": {
+      "Title": "[Awesome Plan] Master Board",
+      "Status": "Todo",
+      "Logical ID": "master",
+      "Record Kind": "Board",
+      "Planning Category": "Other",
+      "Current Focus": "No",
+      "Status Note": "q313 finished; p010 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "guardrail": {
+      "Title": "[Awesome Plan] Guardrail",
+      "Logical ID": "guardrail",
+      "Record Kind": "Board",
+      "Status": "Todo",
+      "Planning Category": "Other",
+      "Status Note": "q313 finished; no new HAL changes. GPU ops v9 adds per-context isolation; UAPI unchanged. git publication remains user-owned."
+    },
+    "past-log": {
+      "Title": "[Awesome Plan] Past Log",
+      "Logical ID": "past-log",
+      "Status": "Todo",
+      "Record Kind": "Board",
+      "Planning Category": "Other",
+      "Status Note": "q313 finished; p010 cleared. No active Queue. p004 planning, not queued; native i915 remains WS029."
+    },
+    "ws014-p004": {
+      "Title": "[ws014-p004] 最終API整理・規約全文確認",
+      "Status": "Todo",
+      "Awesome Plan Status": "planning",
+      "Status Note": "Planning and unqueued. p010/p009/p008 cleared; review final GPU API/standards evidence before WS029.",
+      "Logical ID": "ws014-p004",
+      "Record Kind": "Phase",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Current Focus": "No",
+      "Planning Category": "Outlook",
+      "Parent WS": "ws014",
+      "Phase Disposition": "normal"
+    },
+    "ws014-p008": {
+      "Title": "[ws014-p008] GPU完了責任・fence所属と描画資源の改善",
+      "Status": "Done",
+      "Logical ID": "ws014-p008",
+      "Record Kind": "Phase",
+      "Awesome Plan Status": "cleared",
+      "Phase Disposition": "normal",
+      "Primary Milestone": "MG006",
+      "Related Milestones": "MG003",
+      "Objectives": "O2, O4",
+      "Parent WS": "ws014",
+      "Queue ID": "q311",
+      "Queue Item Status": "cleared",
+      "Planning Category": "Other",
+      "Current Focus": "No",
+      "Status Note": "q311 cleared; acceptance retained. Follow-up p009 and p010 cleared. p004 remains planning."
+    }
+  },
+  "project_identity": {
+    "id": "PVT_kwHOC2X95c4BjFGl",
+    "url": "https://github.com/users/awemorris/projects/2",
+    "public": true
+  },
+  "ws014_children": {
+    "count": 10,
+    "open": [
+      213,
+      385
+    ],
+    "closed": [
+      383,
+      384,
+      387,
+      393,
+      394,
+      395,
+      396,
+      397
+    ]
+  },
+  "unrelated_pending_outbox": [
+    "20260911-installer-bringup-plan-body-bug-board",
+    "20260911-installer-bringup-plan-body-past-log",
+    "20260911-installer-bringup-plan-body-queue",
+    "20260911-installer-bringup-plan-comment-BUG-013",
+    "20260911-installer-bringup-plan-comment-BUG-023",
+    "20260911-installer-bringup-plan-comment-BUG-024",
+    "20260911-installer-bringup-plan-comment-BUG-025",
+    "20260911-installer-bringup-plan-comment-master",
+    "20260911-installer-bringup-plan-create-BUG-013",
+    "20260911-installer-bringup-plan-create-BUG-023",
+    "20260911-installer-bringup-plan-create-BUG-024",
+    "20260911-installer-bringup-plan-create-BUG-025",
+    "20260911-installer-bringup-plan-project",
+    "20260911-installer-bringup-plan-relations",
+    "20260911-network-improvements-plan-body-ws005",
+    "20260911-network-improvements-plan-comment-master",
+    "20260911-network-improvements-plan-comment-ws005",
+    "20260911-network-improvements-plan-comment-ws005-p013",
+    "20260911-network-improvements-plan-comment-ws005-p014",
+    "20260911-network-improvements-plan-comment-ws005-p015",
+    "20260911-network-improvements-plan-comment-ws005-p016",
+    "20260911-network-improvements-plan-comment-ws005-p017",
+    "20260911-network-improvements-plan-create-ws005-p013",
+    "20260911-network-improvements-plan-create-ws005-p014",
+    "20260911-network-improvements-plan-create-ws005-p015",
+    "20260911-network-improvements-plan-create-ws005-p016",
+    "20260911-network-improvements-plan-create-ws005-p017",
+    "20260911-network-improvements-plan-project",
+    "20260911-network-improvements-plan-relations",
+    "20260911-v13-focused-goal-comment-BUG-013",
+    "20260911-v13-focused-goal-comment-master",
+    "q304-finish-gpu-framework-body-past-log",
+    "q304-finish-gpu-framework-project-queue"
+  ],
+  "repository_publication": "user owns git add/commit/push; working tree remains uncommitted",
+  "corrections": [
+    {
+      "observed": "the Past Log body and all nine event comments were rendered before the local p010 links were rewritten, so they still pointed at plan/ws014/phase010/phase.md",
+      "applied": "republished the Past Log body and edited the nine comments with the corrected notes",
+      "journal_prefix": "q313-fix-",
+      "verified_at": "2026-09-13T18:25:50.222425+00:00"
+    }
+  ],
+  "repository": {
+    "head": "0c4dd2bf5d49d5adc7bac2e6e6c754c09ef8be0d",
+    "note": "the user committed the p010 sources and records as this HEAD; the files still modified below are this synchronization run rewriting the local records with the published Issue and comment links",
+    "uncommitted": [
+      "M AGENTS.md",
+      "M plan/AGENTS.md",
+      "M plan/history/index.md",
+      "M plan/history/queue-q312.md",
+      "M plan/history/queue-q313.md",
+      "M plan/master.md",
+      "M plan/queue.md",
+      "M plan/records.json",
+      "M plan/ws014/phase009/phase.md",
+      "M plan/ws014/phase010/phase.md",
+      "M plan/ws014/phase010/results.md",
+      "M plan/ws014/ws.md",
+      "?? plan/ws014/phase010/github-sync.json"
+    ]
+  }
+}

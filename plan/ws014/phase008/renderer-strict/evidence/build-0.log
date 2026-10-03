@@ -1,0 +1,109 @@
+The Meson build system
+Version: 1.7.0
+Source dir: /home/awe/zedbsd-q306-venus/dependencies/q311-strict/source
+Build dir: /home/awe/zedbsd-q306-venus/dependencies/q311-strict/build
+Build type: native build
+Project name: virglrenderer
+Project version: 1.1.0
+C compiler for the host machine: cc (gcc 14.2.0 "cc (Debian 14.2.0-19) 14.2.0")
+C linker for the host machine: cc ld.bfd 2.44
+Host machine cpu family: x86_64
+Host machine cpu: x86_64
+Compiler for C supports arguments -Werror=enum-int-mismatch: YES 
+Compiler for C supports arguments -Werror=implicit-function-declaration: YES 
+Compiler for C supports arguments -Werror=missing-prototypes: YES 
+Compiler for C supports arguments -Werror=pedantic: YES 
+Compiler for C supports arguments -Wmissing-prototypes: YES 
+Compiler for C supports arguments -Werror=incompatible-pointer-types: YES 
+Compiler for C supports arguments -Werror=int-to-pointer-cast: YES 
+Compiler for C supports arguments -Werror=switch: YES 
+Compiler for C supports arguments -Wno-overlength-strings: YES 
+Compiler for C supports arguments -Wno-missing-field-initializers: YES 
+Compiler for C supports arguments -Werror=format: YES 
+Compiler for C supports arguments -fvisibility=hidden: YES 
+Compiler for C supports arguments -fno-strict-aliasing: YES 
+Program python3 found: YES (/usr/bin/python3)
+Run-time dependency threads found: YES
+Found pkg-config: YES (/usr/bin/pkg-config) 1.8.1
+Run-time dependency epoxy found: YES 1.5.10
+Library m found: YES
+Run-time dependency libdrm found: YES 2.4.124
+Run-time dependency libdrm_amdgpu found: YES 2.4.124
+Has header "sys/uio.h" : YES 
+Has header "dlfcn.h" : YES 
+Checking for function "pthread_setaffinity_np" with dependency threads: YES 
+Has header "sys/eventfd.h" : YES 
+Has header "sys/select.h" : YES 
+Has header "linux/dma-buf.h" : YES 
+Has header "linux/udmabuf.h" : YES 
+Checking for function "bswap32" : YES 
+Checking for function "bswap64" : YES 
+Checking for function "clz" : YES 
+Checking for function "clzll" : YES 
+Checking for function "expect" : YES 
+Checking for function "ffs" : YES 
+Checking for function "ffsll" : YES 
+Checking for function "popcount" : YES 
+Checking for function "popcountll" : YES 
+Checking for function "types_compatible_p" : YES 
+Checking for function "unreachable" : YES 
+Compiler for C supports function attribute const: YES 
+Compiler for C supports function attribute flatten: YES 
+Compiler for C supports function attribute format: YES 
+Compiler for C supports function attribute malloc: YES 
+Compiler for C supports function attribute noreturn: YES 
+Compiler for C supports function attribute packed: YES 
+Compiler for C supports function attribute pure: YES 
+Compiler for C supports function attribute returns_nonnull: YES 
+Compiler for C supports function attribute unused: YES 
+Compiler for C supports function attribute warn_unused_result: YES 
+Compiler for C supports function attribute weak: YES 
+Compiler for C supports function attribute aligned: YES 
+Checking for function "memfd_create" : YES 
+Checking for function "strtok_r" : YES 
+Checking for function "timespec_get" : YES 
+Has header "epoxy/egl.h" with dependency epoxy: YES 
+Run-time dependency gbm found: YES 25.2.6-1~bpo13+1
+Has header "sys/mman.h" : YES 
+Header "stdlib.h" has symbol "__STDC_NO_VLA__" : NO 
+Run-time dependency vulkan found: YES 1.4.309
+Configuring config.h using configuration
+Configuring virgl-version.h using configuration
+Build targets in project: 9
+NOTICE: Future-deprecated features used:
+ * 1.1.0: {'"boolean option" keyword argument "value" of type str'}
+
+virglrenderer 1.1.0
+
+  Directories
+    prefix                    : /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install
+    libdir                    : lib/x86_64-linux-gnu
+
+  Configuration
+    c_args                    : 
+    egl                       : true
+    glx                       : false
+    gbm                       : true
+    minigbm_alloc             : false
+    venus                     : true
+    drm-msm                   : false
+    render server (DEPRECATED): true
+    drm-amdgpu                : false
+    render server worker      : process
+    video                     : false
+    tests                     : false
+    fuzzer                    : false
+    tracing                   : none
+    unstable-apis             : false
+
+  User defined options
+    buildtype                 : release
+    minigbm_allocation        : false
+    platforms                 : egl
+    prefix                    : /home/awe/zedbsd-q306-venus/dependencies/q311-strict/install
+    render-server-worker      : process
+    tests                     : false
+    venus                     : true
+    video                     : false
+
+Found ninja-1.12.1 at /usr/bin/ninja

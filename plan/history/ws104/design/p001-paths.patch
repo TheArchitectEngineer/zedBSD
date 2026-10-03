@@ -1,0 +1,627 @@
+diff --git a/plan/tools/files/host-build.sh b/plan/tools/files/host-build.sh
+index 67bb9e4..f136106 100644
+--- a/plan/tools/files/host-build.sh
++++ b/plan/tools/files/host-build.sh
+@@ -14,8 +14,8 @@ cd "$(dirname -- "$0")/../../.."
+ out=build/ws071-host
+ src=userland/desktop/files
+ mkdir -p "$out/include" "$out/obj"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
+-ln -sf "$(pwd)/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
+ cc=${CC:-cc}
+diff --git a/plan/tools/keiui/host-chooser.sh b/plan/tools/keiui/host-chooser.sh
+index 8853a10..2094e45 100644
+--- a/plan/tools/keiui/host-chooser.sh
++++ b/plan/tools/keiui/host-chooser.sh
+@@ -9,7 +9,7 @@ cd "$(dirname "$0")/../../.."
+ out=${1:-build/keiui/host-chooser}
+ shots=build/keiui-shots
+ mkdir -p "$(dirname "$out")/inc" "$shots"
+-cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
++cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
+ U=userland/desktop
+ K=$U/libkeiui
+diff --git a/plan/tools/textedit/host-core.sh b/plan/tools/textedit/host-core.sh
+index b5df237..2be3ea1 100644
+--- a/plan/tools/textedit/host-core.sh
++++ b/plan/tools/textedit/host-core.sh
+@@ -8,7 +8,7 @@ set -e
+ cd "$(dirname "$0")/../../.."
+ out=${1:-build/textedit/host-core}
+ mkdir -p "$(dirname "$out")/inc"
+-cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
++cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
+ D=userland/desktop/textedit
+ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -I$D -I"$(dirname "$out")/inc" -Iuserland/desktop/libtruetype \
+diff --git a/plan/ws014/tests/run-venus-remote.py b/plan/ws014/tests/run-venus-remote.py
+index 1985ed4..bc5fc75 100755
+--- a/plan/ws014/tests/run-venus-remote.py
++++ b/plan/ws014/tests/run-venus-remote.py
+@@ -90,16 +90,16 @@ PROFILES = {
+                                        'userland/base/tests/gpu-fence',
+                                        'userland/base/tests/gpu-admission',
+                                        'userland/base/tests/gpu-recovery',
+-                                       'userland/desktop/libwayland', 'include/libc/wayland',
++                                       'userland/desktop/libwayland', 'userland/desktop/keiland/wayland',
+                                        'userland/desktop/libvulkan', 'include/libc/vulkan'],
+                 'source_files': ['include/kern/handle.h', 'include/kern/fd-object.h',
+                                  'include/drivers/gpu/gpu-fence.h', 'src/drivers/gpu/gpu-fence.c',
+                                  'include/uapi/gpu-fence.h', 'include/uapi/gpu-scanout.h',
+                                  'include/drivers/gpu/gpu-scanout.h',
+                                  'include/kern/filedesc.h', 'include/kern/net/socket.h',
+-                                 'include/libc/wayland-client.h', 'include/libc/wayland-client-core.h',
+-                                 'include/libc/wayland-client-protocol.h', 'include/libc/wayland-util.h',
+-                                 'include/libc/xdg-shell-client-protocol.h',
++                                 'userland/desktop/keiland/wayland-client.h', 'userland/desktop/keiland/wayland-client-core.h',
++                                 'userland/desktop/keiland/wayland-client-protocol.h', 'userland/desktop/keiland/wayland-util.h',
++                                 'userland/desktop/keiland/xdg-shell-client-protocol.h',
+                                  'src/kern/handle.c', 'src/kern/fd-object.c', 'src/kern/filedesc.c',
+                                  'src/kern/net/unix-socket.c', 'src/kern/poll.c',
+                                  'include/drivers/gpu/gpu-share.h', 'include/libc/errno.h', 'include/libc/stddef.h', 'src/libc/string.c',
+@@ -125,7 +125,7 @@ PROFILES['mview'] = {
+                 ['initial.ppm', 'rotate.ppm', 'pan.ppm', 'zoom.ppm', 'keys.ppm', 'reset.ppm',
+                  'mview-observed.log'],
+     'source_directories': ['userland/desktop/mview', 'userland/desktop/wayland', 'userland/desktop/libwayland',
+-                           'include/libc/wayland', 'userland/desktop/libvulkan', 'include/libc/vulkan'],
++                           'userland/desktop/keiland/wayland', 'userland/desktop/libvulkan', 'include/libc/vulkan'],
+     'source_files': ['plan/ws031/tests/mview-qemu.py', 'plan/ws031/tests/run-mview-remote.py',
+                      'plan/ws031/tests/config-mview-amd64.mk'],
+     'additional_artifacts': {'vulkan_library': 'dynamic/libvulkan.so',
+diff --git a/plan/ws035/tests/p075/run-host.sh b/plan/ws035/tests/p075/run-host.sh
+index c8095dd..95e98dc 100755
+--- a/plan/ws035/tests/p075/run-host.sh
++++ b/plan/ws035/tests/p075/run-host.sh
+@@ -21,9 +21,9 @@ runtime=$(mktemp -d /tmp/p075.XXXXXX)
+ trap 'rm -rf "$runtime"' EXIT
+ 
+ # Only the Wayland headers of zedBSD, never its libc's, on the client's include path.
+-ln -s "$root/include/libc/wayland" "$out/include/wayland"
++ln -s "$root/userland/desktop/keiland/wayland" "$out/include/wayland"
+ for header in wayland-client.h wayland-client-core.h wayland-client-protocol.h wayland-util.h; do
+-	ln -s "$root/include/libc/$header" "$out/include/$header"
++	ln -s "$root/userland/desktop/keiland/$header" "$out/include/$header"
+ done
+ 
+ # The protocol's code for both ends.
+diff --git a/plan/ws068/tests/glsl-host/run.sh b/plan/ws068/tests/glsl-host/run.sh
+index 5fe37d8..9d9d79b 100755
+--- a/plan/ws068/tests/glsl-host/run.sh
++++ b/plan/ws068/tests/glsl-host/run.sh
+@@ -19,7 +19,8 @@ status=0
+ fail() { echo "FAIL: $*"; status=1; }
+ 
+ # The tools: the compiler's driver (with the sanitizers), libGLESv2's reflection, the i915 compiler.
+-for h in EGL GLES2 GLES3 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++for h in EGL GLES2 GLES3 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
+ cc -std=c11 -g -O1 -Wall -Wextra -Werror -Wdeclaration-after-statement -fsanitize=address,undefined \
+ 	-o "$out/glsl-test" "$here/glsl-test.c" "$root"/userland/desktop/libglesv2/glsl/*.c -lm || exit 1
+ cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" \
+diff --git a/plan/ws068/tests/spirv-host/run.sh b/plan/ws068/tests/spirv-host/run.sh
+index f336fa3..e098d92 100755
+--- a/plan/ws068/tests/spirv-host/run.sh
++++ b/plan/ws068/tests/spirv-host/run.sh
+@@ -7,7 +7,8 @@ here=$(cd "$(dirname -- "$0")" && pwd)
+ root=$here/../../../..
+ out=${1:-$root/build/ws068-p008-host}
+ mkdir -p "$out/shim"
+-for h in EGL GLES2 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++for h in EGL GLES2 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
+ cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$here/main.c" "$root/userland/desktop/libglesv2/spirv.c"
+ status=0
+ for stage in vert frag; do
+diff --git a/plan/ws073/tests/wayland-dispatch-once.sh b/plan/ws073/tests/wayland-dispatch-once.sh
+index f7f1a9d..edf6aed 100644
+--- a/plan/ws073/tests/wayland-dispatch-once.sh
++++ b/plan/ws073/tests/wayland-dispatch-once.sh
+@@ -10,7 +10,7 @@ out=${1:-build/ws073-wayland-dispatch}
+ mkdir -p "$out/include/wayland"
+ cp userland/desktop/libwayland/zed-*-client-protocol.h "$out/include/wayland/"
+ sources=$(ls userland/desktop/libwayland/*.c)
+-flags="-std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -Wno-cast-function-type -Iinclude/libc/wayland -I$out/include -I. -idirafter include/libc -pthread"
++flags="-std=c99 -D_GNU_SOURCE -Wall -Wextra -Werror -Wno-cast-function-type -Iuserland/desktop/keiland/wayland -I$out/include -I. -idirafter userland/desktop/keiland -idirafter include/libc -pthread"
+ cc $flags $sources plan/ws073/tests/wayland-dispatch-once.c -o "$out/dispatch-once"
+ timeout 30 "$out/dispatch-once"
+ cc $flags -fsanitize=address,undefined -fno-omit-frame-pointer -g $sources plan/ws073/tests/wayland-dispatch-once.c -o "$out/dispatch-once-asan"
+diff --git a/plan/ws074/tests/browser-p057.sh b/plan/ws074/tests/browser-p057.sh
+index e7cde53..67c42be 100644
+--- a/plan/ws074/tests/browser-p057.sh
++++ b/plan/ws074/tests/browser-p057.sh
+@@ -27,7 +27,7 @@ status=0
+ 
+ # 1. The library's exports and the programs' needs.
+ $nm -D --defined-only "$build/dynamic/libbrowser.so" | awk '{print $NF}' | sort > "$out/exported.txt"
+-sed -n 's/^[a-z].*[ *]\(browser_[a-z_]*\)(.*/\1/p' include/libc/browser.h | sort > "$out/declared.txt"
++sed -n 's/^[a-z].*[ *]\(browser_[a-z_]*\)(.*/\1/p' userland/desktop/keiland/browser.h | sort > "$out/declared.txt"
+ if cmp -s "$out/exported.txt" "$out/declared.txt"; then
+ 	echo "exports: the $(wc -l < "$out/declared.txt") calls <browser.h> declares, and nothing else, ok"
+ else
+diff --git a/plan/ws074/tests/host-build.sh b/plan/ws074/tests/host-build.sh
+index 2199daf..75a1dd5 100644
+--- a/plan/ws074/tests/host-build.sh
++++ b/plan/ws074/tests/host-build.sh
+@@ -38,9 +38,9 @@ engine=""
+ # The base libraries the engine links on zedBSD, built from their sources (their public headers
+ # are linked into build/ws074-host/include, since the host's C library does not have them).
+ mkdir -p build/ws074-host/include
+-ln -sf "$(pwd)/include/libc/truetype.h" build/ws074-host/include/truetype.h
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" build/ws074-host/include/truetype.h
+ # The engine's own public header (libbrowser, ws074-p057), which the host's C library lacks too.
+-ln -sf "$(pwd)/include/libc/browser.h" build/ws074-host/include/browser.h
++ln -sf "$(pwd)/userland/desktop/keiland/browser.h" build/ws074-host/include/browser.h
+ for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/outline.c \
+     userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c; do
+ 	object=$out/obj/truetype-$(basename "$file" .c).o
+diff --git a/plan/ws075/tests/shader-survey/run.sh b/plan/ws075/tests/shader-survey/run.sh
+index 4fe26ba..67572c2 100755
+--- a/plan/ws075/tests/shader-survey/run.sh
++++ b/plan/ws075/tests/shader-survey/run.sh
+@@ -20,7 +20,8 @@ rm -rf "$out"
+ mkdir -p "$out/apps" "$out/scenes" "$out/programs" "$out/shim"
+ 
+ # The tools: zedBSD's GLSL compiler's driver, libGLESv2's gl_Position rewrite, the i915 compiler on the host.
+-for h in EGL GLES2 GLES3 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++for h in EGL GLES2 GLES3 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
+ cc -std=c11 -O1 -w -o "$out/glsl-test" "$root/plan/ws068/tests/glsl-host/glsl-test.c" "$root"/userland/desktop/libglesv2/glsl/*.c -lm || exit 1
+ cc -std=c99 -w -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" "$root/userland/desktop/libglesv2/spirv.c" || exit 1
+ cc -std=gnu99 -O0 -w -I"$root" -I"$root/include" -DHAL_ARCH_AMD64 -o "$out/i915-check" \
+diff --git a/plan/ws079/tests/run-pdf-ccitt.sh b/plan/ws079/tests/run-pdf-ccitt.sh
+index 2fc9c5e..2a2b1be 100644
+--- a/plan/ws079/tests/run-pdf-ccitt.sh
++++ b/plan/ws079/tests/run-pdf-ccitt.sh
+@@ -34,7 +34,7 @@ ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
+ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
+ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ liberation=/usr/share/fonts/truetype/liberation
+ for family in "keiland:LiberationSans" "keiland-serif:LiberationSerif" "keiland-mono:LiberationMono"; do
+ 	name=${family%%:*}
+diff --git a/plan/ws079/tests/run-pdf-render.sh b/plan/ws079/tests/run-pdf-render.sh
+index 22a380a..f0471d8 100644
+--- a/plan/ws079/tests/run-pdf-render.sh
++++ b/plan/ws079/tests/run-pdf-render.sh
+@@ -18,7 +18,7 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ # ws079-p008: the security handler (crypt.c) uses the C library's MD5, which openbsd-digest.c has with SHA-1.
+ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
+ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ convert -size 64x48 gradient:red-yellow -quality 90 "$out/test.jpg"
+ libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
+ 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
+diff --git a/plan/ws079/tests/run-pdf-text.sh b/plan/ws079/tests/run-pdf-text.sh
+index 1480df2..ecc7eae 100644
+--- a/plan/ws079/tests/run-pdf-text.sh
++++ b/plan/ws079/tests/run-pdf-text.sh
+@@ -44,7 +44,7 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ # ws079-p008: the security handler (crypt.c) uses the C library's MD5, which openbsd-digest.c has with SHA-1.
+ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
+ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ 
+ # The substitute fonts: sans, serif and mono in four styles, from Liberation.
+ liberation=/usr/share/fonts/truetype/liberation
+diff --git a/plan/ws079/tests/run-pdf-update.sh b/plan/ws079/tests/run-pdf-update.sh
+index 746cda0..325361a 100644
+--- a/plan/ws079/tests/run-pdf-update.sh
++++ b/plan/ws079/tests/run-pdf-update.sh
+@@ -23,7 +23,7 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ # ws079-p008: the security handler (crypt.c) uses the C library's MD5, which openbsd-digest.c has with SHA-1.
+ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
+ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ # ws079-p007: the page interpreter draws text (font.c, encoding.c, libtruetype) and shadings (shading.c).
+ libpdf="userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c
+ 	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
+diff --git a/plan/ws079/tests/run-pdfviewer-host.sh b/plan/ws079/tests/run-pdfviewer-host.sh
+index 98690f8..d8f894d 100644
+--- a/plan/ws079/tests/run-pdfviewer-host.sh
++++ b/plan/ws079/tests/run-pdfviewer-host.sh
+@@ -20,7 +20,7 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
+ # ws079-p008: the security handler (crypt.c) uses the C library's MD5, which openbsd-digest.c has with SHA-1.
+ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
+ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
+ 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
+ 	userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
+diff --git a/plan/ws079/tests/truetype-outline-test.sh b/plan/ws079/tests/truetype-outline-test.sh
+index cf1cdcc..239a152 100755
+--- a/plan/ws079/tests/truetype-outline-test.sh
++++ b/plan/ws079/tests/truetype-outline-test.sh
+@@ -14,7 +14,7 @@ out=${1:-build/ws079-outline-host}
+     /usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf /usr/share/fonts/truetype/noto/NotoSansBalinese-Regular.ttf
+ mkdir -p "$out/include"
+ # Only the public header: the rest of include/libc is the target libc, not the host one.
+-cp include/libc/truetype.h "$out/include/"
++cp userland/desktop/keiland/truetype.h "$out/include/"
+ src="userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c
+      userland/desktop/libtruetype/outline.c userland/desktop/libtruetype/render.c
+      userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c
+diff --git a/plan/ws079/tests/truetype-render-compare.sh b/plan/ws079/tests/truetype-render-compare.sh
+index fe9fdc5..2f676fb 100644
+--- a/plan/ws079/tests/truetype-render-compare.sh
++++ b/plan/ws079/tests/truetype-render-compare.sh
+@@ -17,7 +17,7 @@ shift
+     /usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf
+ out=build/ws079-render-compare
+ mkdir -p "$out/include" "$out/old"
+-cp include/libc/truetype.h "$out/include/"
++cp userland/desktop/keiland/truetype.h "$out/include/"
+ git show "$revision:userland/desktop/libtruetype/outline.c" > "$out/old/outline.c"
+ cp userland/desktop/libtruetype/internal.h "$out/old/"
+ others="userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/render.c
+diff --git a/plan/ws081/tests/run-browsertouch.sh b/plan/ws081/tests/run-browsertouch.sh
+index c4fe3a6..4d01dbf 100644
+--- a/plan/ws081/tests/run-browsertouch.sh
++++ b/plan/ws081/tests/run-browsertouch.sh
+@@ -12,7 +12,7 @@ extra=${EXTRA_CFLAGS:-}
+ mkdir -p "$out/include"
+ 
+ # Only <keiland.h> is taken from include/libc: the rest of that directory is zedBSD's C library.
+-ln -sf "$root/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ 
+ flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion $extra -I$out/include -I$root/userland/desktop/browser"
+ for name in motion scroll gesture; do
+diff --git a/plan/ws081/tests/run-filestouch.sh b/plan/ws081/tests/run-filestouch.sh
+index 4cc53a3..97f6621 100755
+--- a/plan/ws081/tests/run-filestouch.sh
++++ b/plan/ws081/tests/run-filestouch.sh
+@@ -11,7 +11,7 @@ extra=${EXTRA_CFLAGS:-}
+ mkdir -p "$out/include"
+ 
+ # Only <keiland.h> is taken from include/libc: the rest of that directory is zedBSD's C library.
+-ln -sf "$root/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ 
+ flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion $extra -I$out/include"
+ for name in motion scroll gesture; do
+diff --git a/plan/ws081/tests/run-motion.sh b/plan/ws081/tests/run-motion.sh
+index f66cfc3..2d89806 100755
+--- a/plan/ws081/tests/run-motion.sh
++++ b/plan/ws081/tests/run-motion.sh
+@@ -13,7 +13,7 @@ mkdir -p "$out/include"
+ 
+ # Only <keiland.h> is taken from include/libc: the rest of that directory is
+ # zedBSD's C library, which must not stand in for the host's.
+-ln -sf "$root/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ 
+ cc=${CC:-clang}
+ extra=${EXTRA_CFLAGS:-}
+diff --git a/plan/ws081/tests/run-notestouch.sh b/plan/ws081/tests/run-notestouch.sh
+index 381e052..1d13ad6 100755
+--- a/plan/ws081/tests/run-notestouch.sh
++++ b/plan/ws081/tests/run-notestouch.sh
+@@ -11,7 +11,7 @@ extra=${EXTRA_CFLAGS:-}
+ mkdir -p "$out/include"
+ 
+ # Only <keiland.h> is taken from include/libc: the rest of that directory is zedBSD's C library.
+-ln -sf "$root/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ 
+ flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion $extra -I$out/include"
+ for name in motion scroll gesture; do
+diff --git a/plan/ws081/tests/run-pdftouch.sh b/plan/ws081/tests/run-pdftouch.sh
+index b09a320..5690d8e 100755
+--- a/plan/ws081/tests/run-pdftouch.sh
++++ b/plan/ws081/tests/run-pdftouch.sh
+@@ -12,9 +12,12 @@ font=${2:-/home/awe/zedBSD-rpi4/build/ws035-fonts/Inter.ttf}
+ cc=${CC:-clang}
+ mkdir -p "$out/include"
+ ln -sfn "$root/include/libc/compat" "$out/include/compat"
+-for header in pdf.h sha2.h md5.h sha1.h truetype.h keiland.h; do
++for header in pdf.h sha2.h md5.h sha1.h; do
+ 	ln -sf "$root/include/libc/$header" "$out/include/$header"
+ done
++for header in truetype.h keiland.h; do
++	ln -sf "$root/userland/desktop/keiland/$header" "$out/include/$header"
++done
+ 
+ # The test document: eight Letter pages, each with bands of colour and as many squares as its number.
+ python3 "$root/plan/ws081/tests/make-touch-pdf.py" "$out/touch.pdf"
+diff --git a/plan/ws081/tests/run-scroll.sh b/plan/ws081/tests/run-scroll.sh
+index d4af5df..78b1aa8 100755
+--- a/plan/ws081/tests/run-scroll.sh
++++ b/plan/ws081/tests/run-scroll.sh
+@@ -11,7 +11,7 @@ mkdir -p "$out/include"
+ 
+ # Only <keiland.h> is taken from include/libc: the rest of that directory is
+ # zedBSD's C library, which must not stand in for the host's.
+-ln -sf "$root/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ 
+ cc=${CC:-clang}
+ extra=${EXTRA_CFLAGS:-}
+diff --git a/plan/ws081/tests/run-termtouch.sh b/plan/ws081/tests/run-termtouch.sh
+index b39c877..ac90de9 100755
+--- a/plan/ws081/tests/run-termtouch.sh
++++ b/plan/ws081/tests/run-termtouch.sh
+@@ -11,7 +11,7 @@ extra=${EXTRA_CFLAGS:-}
+ mkdir -p "$out/include"
+ 
+ # Only <keiland.h> is taken from include/libc: the rest of that directory is zedBSD's C library.
+-ln -sf "$root/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ 
+ flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion $extra -I$out/include"
+ for name in motion scroll gesture; do
+diff --git a/plan/ws089/tests/host-build.sh b/plan/ws089/tests/host-build.sh
+index 848209b..72dd61c 100755
+--- a/plan/ws089/tests/host-build.sh
++++ b/plan/ws089/tests/host-build.sh
+@@ -14,8 +14,8 @@ cd "$(dirname -- "$0")/../../.."
+ out=build/ws089-host
+ src=userland/desktop/settings
+ mkdir -p "$out/include" "$out/obj"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
+-ln -sf "$(pwd)/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ cc=${CC:-cc}
+ flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src"
+ 
+diff --git a/plan/ws089/tests/host-preferences.sh b/plan/ws089/tests/host-preferences.sh
+index 37996c4..d94de46 100755
+--- a/plan/ws089/tests/host-preferences.sh
++++ b/plan/ws089/tests/host-preferences.sh
+@@ -8,7 +8,7 @@ set -eu
+ cd "$(dirname -- "$0")/../../.."
+ out=$(pwd)/build/ws089-host
+ mkdir -p "$out/include"
+-ln -sf "$(pwd)/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ ${CC:-cc} -std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I"$out/include" \
+     userland/desktop/libkeiland/preferences.c plan/ws089/tests/host-preferences.c -o "$out/host-preferences"
+ rm -rf "$out/prefs-home"
+diff --git a/plan/ws090/tests/host-draw.sh b/plan/ws090/tests/host-draw.sh
+index 16c10db..30740b4 100644
+--- a/plan/ws090/tests/host-draw.sh
++++ b/plan/ws090/tests/host-draw.sh
+@@ -9,7 +9,7 @@ cd "$(dirname "$0")/../../.."
+ out=${1:-build/ws090/host-draw}
+ shots=build/ws090-shots
+ mkdir -p "$(dirname "$out")/inc" "$shots"
+-cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
++cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
+ U=userland/desktop
+ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiui -I$U/libtruetype \
+diff --git a/plan/ws090/tests/host-input.sh b/plan/ws090/tests/host-input.sh
+index a2acdd7..fa76486 100644
+--- a/plan/ws090/tests/host-input.sh
++++ b/plan/ws090/tests/host-input.sh
+@@ -7,7 +7,7 @@ set -e
+ cd "$(dirname "$0")/../../.."
+ out=${1:-build/ws090/host-input}
+ mkdir -p "$(dirname "$out")/inc"
+-cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
++cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ U=userland/desktop
+ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiui \
+ 	plan/ws090/tests/host-input.c \
+diff --git a/plan/ws090/tests/host-widgets.sh b/plan/ws090/tests/host-widgets.sh
+index 7b72dac..4eed2ce 100644
+--- a/plan/ws090/tests/host-widgets.sh
++++ b/plan/ws090/tests/host-widgets.sh
+@@ -9,7 +9,7 @@ cd "$(dirname "$0")/../../.."
+ out=${1:-build/ws090/host-widgets}
+ shots=build/ws090-shots
+ mkdir -p "$(dirname "$out")/inc" "$shots"
+-cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
++cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ # ws090-p008: the text's colour emoji (KUI_VERSION 9) read their PNG pictures through picture/color-glyph.c and
+ # libpng-compat, whose headers are the C library's compat ones.
+ ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
+diff --git a/plan/ws100/tests/host-audio.sh b/plan/ws100/tests/host-audio.sh
+index dc87630..f30bf60 100644
+--- a/plan/ws100/tests/host-audio.sh
++++ b/plan/ws100/tests/host-audio.sh
+@@ -7,7 +7,7 @@ set -eu
+ cd "$(dirname -- "$0")/../../.."
+ out=$(pwd)/build/ws100-host
+ mkdir -p "$out/include"
+-ln -sf "$(pwd)/include/libc/keiland.h" "$out/include/keiland.h"
++ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ ${CC:-cc} -std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I"$out/include" -I. \
+     "-DAUDIO_SOCKET_PATH=\"$out/audiod.sock\"" \
+     userland/desktop/libkeiland/audio.c plan/ws100/tests/host-audio.c -o "$out/host-audio"
+diff --git a/plan/ws101/tests/gles/run.sh b/plan/ws101/tests/gles/run.sh
+index 6aca190..710e6c9 100755
+--- a/plan/ws101/tests/gles/run.sh
++++ b/plan/ws101/tests/gles/run.sh
+@@ -10,7 +10,8 @@ here=$(cd "$(dirname -- "$0")" && pwd)
+ root=$here/../../../..
+ out=${1:-$root/build/ws101-gles-host}
+ mkdir -p "$out/shim"
+-for h in EGL GLES2 GLES3 KHR wayland-egl-core.h; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++for h in EGL GLES2 GLES3 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
++ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
+ status=0
+ cc -std=c11 -g -O1 -Wall -Wextra -Werror -fsanitize=address,undefined -I"$out/shim" \
+ 	-o "$out/reflect-host" "$here/reflect-host.c" "$root/userland/desktop/libglesv2/spirv.c" \
+diff --git a/plan/ws102/tests/host-emoji.sh b/plan/ws102/tests/host-emoji.sh
+index 6ad0a6e..34c32d6 100644
+--- a/plan/ws102/tests/host-emoji.sh
++++ b/plan/ws102/tests/host-emoji.sh
+@@ -9,7 +9,7 @@ cd "$(dirname -- "$0")/../../.."
+ out=build/ws102-host-emoji
+ font=${1:-build/distfiles/NotoColorEmoji-2.047.ttf}
+ mkdir -p "$out/include"
+-ln -sf "$(pwd)/include/libc/truetype.h" "$out/include/truetype.h"
++ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
+ ${CC:-cc} -O1 -g -Wall -Wextra -Werror -I"$out/include" -I. -Iuserland/desktop/libtruetype -o "$out/host-emoji" \
+     plan/ws102/tests/host-emoji.c userland/desktop/picture/color-glyph.c \
+diff --git a/plan/ws102/tests/host-inset.sh b/plan/ws102/tests/host-inset.sh
+index e548000..d91f288 100644
+--- a/plan/ws102/tests/host-inset.sh
++++ b/plan/ws102/tests/host-inset.sh
+@@ -7,7 +7,7 @@ set -e
+ cd "$(dirname "$0")/../../.."
+ out=${1:-build/ws102/host-inset}
+ mkdir -p "$(dirname "$out")/inc"
+-cp include/libc/truetype.h include/libc/keiland.h include/libc/keiui.h "$(dirname "$out")/inc/"
++cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+ U=userland/desktop
+ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiui \
+ 	plan/ws102/tests/host-inset.c \
+diff --git a/userland/desktop/libbrowser/Makefile b/userland/desktop/libbrowser/Makefile
+index d7d7c13..5903c11 100644
+--- a/userland/desktop/libbrowser/Makefile
++++ b/userland/desktop/libbrowser/Makefile
+@@ -2,7 +2,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
+ 
+ # libbrowser (ws074-p057): the Web browser engine as a component, plan/ws074/design.md §19 -- HTML, CSS,
+ # the layout, JavaScript, the DOM, the network, the images and the CPU and Vulkan renderers -- behind
+-# <browser.h> (include/libc/browser.h).  /bin/browser is its shell; any program can show HTML with it.
++# <browser.h> (userland/desktop/keiland/browser.h).  /bin/browser is its shell; any program can show HTML with it.
+ # The sources stay in userland/desktop/browser, one directory per module (plan/ws074/design.md §2), where
+ # the tests find them; this Makefile only registers them as the library.  exports.map lets only the calls
+ # of <browser.h> out.
+@@ -151,4 +151,4 @@ LIBBROWSER_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libbrowser.so=$(BUIL
+ 	/usr/share/licenses/browser/WHATWG-entities=userland/base/licenses/browser/WHATWG-entities \
+ 	/usr/share/licenses/browser/Unicode-License-V3=userland/base/licenses/browser/Unicode-License-V3
+ 
+-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libbrowser,Web browser engine library,amd64,n,library,$(LIBBROWSER_SOURCES),y,desktop,desktop/libbrowser,desktop/libtruetype desktop/libvulkan base/libjpeg-compat base/libpng-compat base/libz-compat base/libgif-compat,,shared-library,$(LIBBROWSER_IMAGE_DATA),include/libc/browser.h,lib))
++$(eval $(call ZEDBSD_USERLAND_PACKAGE,libbrowser,Web browser engine library,amd64,n,library,$(LIBBROWSER_SOURCES),y,desktop,desktop/libbrowser,desktop/libtruetype desktop/libvulkan base/libjpeg-compat base/libpng-compat base/libz-compat base/libgif-compat,,shared-library,$(LIBBROWSER_IMAGE_DATA),userland/desktop/keiland/browser.h,lib))
+diff --git a/userland/desktop/libwayland/README.md b/userland/desktop/libwayland/README.md
+index b941ad1..0a9c5d5 100644
+--- a/userland/desktop/libwayland/README.md
++++ b/userland/desktop/libwayland/README.md
+@@ -2,7 +2,7 @@
+ 
+ `libwayland-client.so` supplies the selected standard client transport for
+ Vulkan Wayland WSI and ordinary applications. Public headers live below
+-`include/libc/wayland/`; thin `<wayland-client.h>` and
++`userland/desktop/keiland/wayland/`; thin `<wayland-client.h>` and
+ `<xdg-shell-client-protocol.h>` entry headers preserve standard include spelling.
+ The base package is `libwayland-client` in `desktop/libwayland`, installed at
+ `/lib/libwayland-client.so` with the same SONAME.
+@@ -42,7 +42,7 @@ permissions are checked by the compositor/GPU layers. Revision two adds
+ `set_acquire_fence(surface, fd, generation_hi, generation_lo)`: a kernel fence
+ and its payload generation that the surface's next commit waits for.
+ 
+-[API-PROVENANCE.md](../../../include/libc/wayland/API-PROVENANCE.md) records pinned
++[API-PROVENANCE.md](../keiland/wayland/API-PROVENANCE.md) records pinned
+ upstream interface facts, hashes, selected scope, limitations and notices.
+ Selected core descriptions are wl_display/registry/callback/region/buffer v1,
+ wl_compositor/surface/output v4 and wl_seat/pointer/keyboard/touch v5 (wl_touch
+diff --git a/userland/desktop/libwayland/data-device-protocol.c b/userland/desktop/libwayland/data-device-protocol.c
+index 37a958c..7fb9165 100644
+--- a/userland/desktop/libwayland/data-device-protocol.c
++++ b/userland/desktop/libwayland/data-device-protocol.c
+@@ -14,7 +14,7 @@
+  * Their events reach listeners through the generic dispatch (event.c);
+  * wl_data_device.data_offer creates a server-made wl_data_offer.  The
+  * descriptions follow the pinned Wayland 1.23.1 core protocol
+- * (include/libc/wayland/API-PROVENANCE.md).
++ * (userland/desktop/keiland/wayland/API-PROVENANCE.md).
+  */
+ 
+ #include "internal.h"
+diff --git a/userland/desktop/libwayland/input-method-protocol.c b/userland/desktop/libwayland/input-method-protocol.c
+index 94c74e8..6b1de00 100644
+--- a/userland/desktop/libwayland/input-method-protocol.c
++++ b/userland/desktop/libwayland/input-method-protocol.c
+@@ -13,7 +13,7 @@
+  * Only the input method zdesktop starts may bind the manager.  The events reach
+  * listeners through the generic dispatch (event.c); the keyboard grab's
+  * keymap carries a descriptor.  The descriptions follow the pinned wlroots
+- * description (include/libc/wayland/API-PROVENANCE.md).
++ * description (userland/desktop/keiland/wayland/API-PROVENANCE.md).
+  */
+ 
+ #include "internal.h"
+diff --git a/userland/desktop/libwayland/primary-selection-protocol.c b/userland/desktop/libwayland/primary-selection-protocol.c
+index 2df2735..a7e02cf 100644
+--- a/userland/desktop/libwayland/primary-selection-protocol.c
++++ b/userland/desktop/libwayland/primary-selection-protocol.c
+@@ -15,7 +15,7 @@
+  * Their events reach listeners through the generic dispatch (event.c);
+  * zwp_primary_selection_device_v1.data_offer creates a server-made offer.
+  * The descriptions follow the pinned wayland-protocols description
+- * (include/libc/wayland/API-PROVENANCE.md).
++ * (userland/desktop/keiland/wayland/API-PROVENANCE.md).
+  */
+ 
+ #include "internal.h"
+diff --git a/userland/desktop/libwayland/subsurface-protocol.c b/userland/desktop/libwayland/subsurface-protocol.c
+index e9b61f3..5bf73eb 100644
+--- a/userland/desktop/libwayland/subsurface-protocol.c
++++ b/userland/desktop/libwayland/subsurface-protocol.c
+@@ -12,7 +12,7 @@
+  * A sub-surface is a wl_surface placed relative to a parent surface and
+  * shown with it: video, GL parts and client-side decorations of toolkits.
+  * Neither interface has events.  The descriptions follow the pinned Wayland
+- * 1.23.1 core protocol (include/libc/wayland/API-PROVENANCE.md).
++ * 1.23.1 core protocol (userland/desktop/keiland/wayland/API-PROVENANCE.md).
+  */
+ 
+ #include "internal.h"
+diff --git a/userland/desktop/libwayland/tablet-protocol.c b/userland/desktop/libwayland/tablet-protocol.c
+index b94e4a5..cc55eac 100644
+--- a/userland/desktop/libwayland/tablet-protocol.c
++++ b/userland/desktop/libwayland/tablet-protocol.c
+@@ -16,7 +16,7 @@
+  * zwp_tablet_pad_v2 is described only so that pad_added names an interface:
+  * its group event's pad group is not described, and zdesktop never
+  * announces a pad.  The descriptions follow the pinned wayland-protocols
+- * description (include/libc/wayland/API-PROVENANCE.md), whose notice is kept
++ * description (userland/desktop/keiland/wayland/API-PROVENANCE.md), whose notice is kept
+  * there.
+  */
+ 
+diff --git a/userland/desktop/libwayland/text-input-protocol.c b/userland/desktop/libwayland/text-input-protocol.c
+index 6ff08d1..5931c06 100644
+--- a/userland/desktop/libwayland/text-input-protocol.c
++++ b/userland/desktop/libwayland/text-input-protocol.c
+@@ -13,7 +13,7 @@
+  * keyboard, and hears the input method's preedit, commit and
+  * delete_surrounding_text, applied together at done.  The events reach
+  * listeners through the generic dispatch (event.c).  The descriptions follow
+- * the pinned wayland-protocols description (include/libc/wayland/API-PROVENANCE.md).
++ * the pinned wayland-protocols description (userland/desktop/keiland/wayland/API-PROVENANCE.md).
+  */
+ 
+ #include "internal.h"
+diff --git a/userland/desktop/libwayland/touch-protocol.c b/userland/desktop/libwayland/touch-protocol.c
+index e35a503..1242d41 100644
+--- a/userland/desktop/libwayland/touch-protocol.c
++++ b/userland/desktop/libwayland/touch-protocol.c
+@@ -11,7 +11,7 @@
+  *
+  * The request (release, since 3) and the events down (`uuoiff`), up
+  * (`uui`), motion (`uiff`), frame and cancel follow the pinned Wayland
+- * 1.23.1 description (include/libc/wayland/API-PROVENANCE.md).  shape and
++ * 1.23.1 description (userland/desktop/keiland/wayland/API-PROVENANCE.md).  shape and
+  * orientation are version 6 and are not described; the compositor offers
+  * wl_seat version 5.  The events reach listeners through the generic
+  * dispatch (event.c).
+diff --git a/userland/desktop/libwayland/virtual-keyboard-protocol.c b/userland/desktop/libwayland/virtual-keyboard-protocol.c
+index 9f02c2b..572aa40 100644
+--- a/userland/desktop/libwayland/virtual-keyboard-protocol.c
++++ b/userland/desktop/libwayland/virtual-keyboard-protocol.c
+@@ -10,7 +10,7 @@
+  * (virtual-keyboard-unstable-v1, version 1; ws095-p004):
+  * zwp_virtual_keyboard_manager_v1 and zwp_virtual_keyboard_v1.  Only the
+  * input method zdesktop starts may bind the manager.  The descriptions follow
+- * the pinned wlroots description (include/libc/wayland/API-PROVENANCE.md).
++ * the pinned wlroots description (userland/desktop/keiland/wayland/API-PROVENANCE.md).
+  */
+ 
+ #include "internal.h"

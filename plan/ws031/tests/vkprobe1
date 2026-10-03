@@ -1,0 +1,6 @@
+type=oneshot
+command=/bin/vkdemo
+arguments=--offscreen --readback --token=vk1 --duration=1
+after=vkwait1
+restart=no
+required=NO

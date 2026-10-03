@@ -1,0 +1,2 @@
+libvulkan commands: 44 exact wire records, >64KiB copied batches, bounded prefix flush, 97 buffers, recording failure/reset and implicit pool frees PASS
+libvulkan commands: 44 exact wire records, >64KiB copied batches, bounded prefix flush, 97 buffers, recording failure/reset and implicit pool frees PASS

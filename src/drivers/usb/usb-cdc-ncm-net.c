@@ -1,0 +1,2252 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/* XXX: Need coding style fitting. */
+
+/*
+ * Integrated USB CDC NCM network driver
+ */
+
+#include <drivers/usb/usb-cdc-ncm.h>
+#include <drivers/usb/usb.h>
+#include <uapi/errno.h>
+#include <kern/lock.h>
+#include <kern/net/net-device.h>
+#include <kern/net/packet-buf.h>
+#include <kern/sched.h>
+#include <limits.h>
+#include "kern/klog.h"
+#include "kern/kmem.h"
+#include <kern/kcrt.h>
+
+#define NCM_COMMUNICATION_CLASS		0x02U
+#define NCM_COMMUNICATION_SUBCLASS	0x0dU
+#define NCM_COMMUNICATION_PROTOCOL	0x00U
+#define NCM_DATA_CLASS			0x0aU
+#define NCM_DATA_SUBCLASS		0x00U
+#define NCM_DATA_PROTOCOL		0x01U
+
+#define NCM_CS_INTERFACE		0x24U
+#define NCM_HEADER_DESCRIPTOR		0x00U
+#define NCM_UNION_DESCRIPTOR		0x06U
+#define NCM_ETHERNET_DESCRIPTOR		0x0fU
+#define NCM_FUNCTIONAL_DESCRIPTOR	0x1aU
+
+#define NCM_GET_NTB_PARAMETERS		0x80U
+#define NCM_SET_ETHERNET_PACKET_FILTER	0x43U
+#define NCM_FILTER_ALL_MULTICAST	0x0002U
+#define NCM_FILTER_DIRECTED		0x0004U
+#define NCM_FILTER_BROADCAST		0x0008U
+
+#define NCM_NOTIFICATION_NETWORK_CONNECTION 0x00U
+#define NCM_NOTIFICATION_SPEED_CHANGE	0x2aU
+#define NCM_NOTIFICATION_SIZE		16U
+#define NCM_NTB_BUFFER_SIZE		8192U
+#define NCM_RX_QUEUE_MAX		8U
+
+/*
+ * Frames held while the one transmit transfer is busy.  The packet pool is
+ * small and shared by the whole stack, so the queue stays short; a burst
+ * of acknowledgements fits, and only a longer one is dropped.
+ */
+#define NCM_TX_QUEUE_MAX		8U
+#define NCM_TRANSFER_TIMEOUT_MS		5000U
+#define NCM_CONTROL_TIMEOUT_MS		1000U
+#define NCM_REARM_RETRY_MAX		3U
+#define NCM_COMPLETION_KINDS		3U
+
+#define NCM_COMPLETION_TX		0U
+#define NCM_COMPLETION_NOTIFICATION	1U
+#define NCM_COMPLETION_RX		2U
+
+#define NCM_CAP_PACKET_FILTER		0x01U
+#define NCM_CAP_MAX_DATAGRAM_SIZE	0x08U
+#define NCM_CAP_CRC_MODE		0x10U
+
+struct ncm_binding {
+	struct drv_usb_device *device;
+	struct drv_usb_interface *control;
+	struct drv_usb_interface *data;
+	struct drv_usb_endpoint *notification;
+	struct drv_usb_endpoint *bulk_in;
+	struct drv_usb_endpoint *bulk_out;
+	unsigned data_alternate;
+	uint8_t mac_string;
+	uint8_t capabilities;
+};
+
+struct ncm_adapter {
+	struct drv_usb_device *usb_device;
+	struct drv_usb_interface *control;
+	struct drv_usb_interface *data;
+	struct drv_usb_endpoint *notification_endpoint;
+	struct drv_usb_endpoint *bulk_in;
+	struct drv_usb_endpoint *bulk_out;
+	struct drv_usb_urb *notification_urb;
+	struct drv_usb_urb *rx_urb;
+	struct drv_usb_urb *tx_urb;
+	struct net_device *net_device;
+	struct drv_usb_cdc_ncm_profile profile;
+	struct drv_usb_cdc_ncm_rx_state rx_state;
+	struct spinlock lock;
+	uint8_t *notification_buffer;
+	uint8_t *rx_buffer;
+	uint8_t *tx_buffer;
+	struct packet_buf *rx_queue[NCM_RX_QUEUE_MAX];
+	size_t rx_queue_head;
+	size_t rx_queue_count;
+	unsigned data_alternate;
+	uint8_t capabilities;
+	unsigned ready;
+	unsigned starts_active;
+	unsigned polls_active;
+	unsigned poll_cursor;
+	unsigned opened;
+	unsigned closing;
+	unsigned stopping;
+	unsigned quarantined;
+	unsigned notification_ready;
+	unsigned rx_ready;
+	unsigned tx_ready;
+	unsigned notification_rearm;
+	unsigned rx_rearm;
+	unsigned notification_rearm_active;
+	unsigned rx_rearm_active;
+	unsigned notification_retries;
+	unsigned rx_retries;
+	unsigned tx_busy;
+	/*
+	 * Frames waiting for the transmit transfer, linked through their next
+	 * field and owned by the adapter.  The adapter lock guards the list;
+	 * each transmit completion sends the head, and stop frees what is left.
+	 */
+	struct packet_buf *tx_queue_head;
+	struct packet_buf *tx_queue_tail;
+	unsigned tx_queue_count;
+	uint16_t tx_sequence;
+	int stop_error;
+	uint32_t upstream_bps;
+	uint32_t downstream_bps;
+};
+
+static uint16_t ncm_le16(const uint8_t *bytes);
+static uint32_t ncm_le32(const uint8_t *bytes);
+static struct drv_usb_configuration * ncm_interface_configuration(struct drv_usb_interface *interface);
+static int ncm_iad_covers(const struct drv_usb_interface_association_descriptor *iad, unsigned interface_number);
+static int ncm_iad_consistent(struct drv_usb_configuration *configuration, unsigned control_number, unsigned data_number);
+static int ncm_control_descriptors(const struct drv_usb_host_interface *alternate, unsigned control_number, unsigned *data_number, uint8_t *mac_string, uint8_t *capabilities);
+static int ncm_find_notification(const struct drv_usb_host_interface *alternate, struct drv_usb_endpoint **result);
+static int ncm_find_data_alternate(struct drv_usb_interface *data, struct drv_usb_endpoint **bulk_in, struct drv_usb_endpoint **bulk_out, unsigned *alternate_result);
+static int ncm_binding_parse(struct drv_usb_interface *control, struct ncm_binding *binding);
+static int ncm_hex(unsigned char character);
+static int ncm_get_mac(const struct ncm_binding *binding, uint8_t mac[6]);
+static int ncm_control(struct ncm_adapter *adapter, uint8_t request_type, uint8_t request, uint16_t value, void *buffer, size_t length, size_t *actual);
+static int ncm_program_profile(struct ncm_adapter *adapter);
+static int ncm_program_packet_filter(struct ncm_adapter *adapter);
+static int ncm_urb_status_error(enum drv_usb_urb_status status);
+static int ncm_tx_status_is_error(enum drv_usb_urb_status status);
+static void ncm_completion(struct drv_usb_urb *urb, void *argument);
+static int ncm_start_urb(struct ncm_adapter *adapter, struct drv_usb_urb *urb, void *buffer, size_t length);
+static int ncm_cancel_and_drain(struct drv_usb_urb *urb);
+static void ncm_wait_activity(struct ncm_adapter *adapter);
+static void ncm_free_rx_queue(struct ncm_adapter *adapter);
+static int ncm_stop(struct ncm_adapter *adapter);
+static int ncm_open(struct net_device *device);
+static void ncm_close(struct net_device *device);
+static int ncm_transmit(struct net_device *device, struct packet_buf *packet);
+static int ncm_tx_submit(struct ncm_adapter *adapter, struct packet_buf *packet);
+static void ncm_tx_queue_free(struct ncm_adapter *adapter);
+static int ncm_queue_datagram(const void *frame, size_t length, void *argument);
+static void ncm_notification_process(struct ncm_adapter *adapter);
+static int ncm_rearm(struct ncm_adapter *adapter, int notification);
+static unsigned ncm_deliver_queued(struct ncm_adapter *adapter, unsigned budget);
+static int ncm_poll_enter(struct ncm_adapter *adapter);
+static void ncm_poll_exit(struct ncm_adapter *adapter);
+static int ncm_take_pending(struct ncm_adapter *adapter, unsigned *pending);
+static void ncm_restore_pending(struct ncm_adapter *adapter, unsigned *pending);
+static int ncm_take_notification_rearm(struct ncm_adapter *adapter);
+static int ncm_take_rx_rearm(struct ncm_adapter *adapter);
+static int ncm_poll_tx_completion(struct ncm_adapter *adapter);
+static int ncm_poll_notification_completion(struct ncm_adapter *adapter);
+static int ncm_poll_rx_completion(struct net_device *device, struct ncm_adapter *adapter);
+static int ncm_has_poll_work(struct ncm_adapter *adapter);
+static unsigned ncm_poll_receive(struct net_device *device, unsigned budget);
+static void ncm_release(void *driver_data);
+static void ncm_set_ready(struct ncm_adapter *adapter, int ready);
+static void ncm_urbs_free(struct ncm_adapter *adapter);
+static int ncm_urbs_alloc(struct ncm_adapter *adapter);
+static void ncm_buffers_free(struct ncm_adapter *adapter);
+static int ncm_buffers_alloc(struct ncm_adapter *adapter);
+static int ncm_net_device_create(struct ncm_adapter *adapter, const uint8_t mac[6]);
+static int ncm_attach(struct drv_usb_interface *interface, const struct drv_usb_id *id);
+static int ncm_detach(struct drv_usb_interface *interface, unsigned flags);
+static void ncm_shutdown(struct drv_usb_interface *interface);
+static int ncm_match(struct drv_usb_interface *interface, const struct drv_usb_id *id);
+
+static const struct net_device_ops ncm_net_ops = {
+	.open = ncm_open,
+	.close = ncm_close,
+	.transmit = ncm_transmit,
+	.poll_receive = ncm_poll_receive,
+	.release = ncm_release
+};
+
+static const struct drv_usb_id ncm_ids[] = {
+	{
+		.match_flags = DRV_USB_ID_IF_CLASS | DRV_USB_ID_IF_SUBCLASS | DRV_USB_ID_IF_PROTOCOL,
+		.interface_class = NCM_COMMUNICATION_CLASS,
+		.interface_subclass = NCM_COMMUNICATION_SUBCLASS,
+		.interface_protocol = NCM_COMMUNICATION_PROTOCOL
+	}
+};
+
+static struct drv_usb_driver ncm_driver = {
+	.name = "usb-cdc-ncm",
+	.ids = ncm_ids,
+	.id_count = sizeof(ncm_ids) / sizeof(ncm_ids[0]),
+	.match = ncm_match,
+	.attach = ncm_attach,
+	.detach = ncm_detach,
+	.shutdown = ncm_shutdown
+};
+
+/*
+ * Registers this driver with the USB subsystem.
+ */
+int
+drv_usb_cdc_ncm_driver_register(
+	void)
+{
+	int error;
+
+	/* Obtains the drv usb driver register result. */
+	error = drv_usb_driver_register(&ncm_driver);
+
+	/* Returns the computed result. */
+	return error;
+}
+
+/* Reads a 16-bit field, least significant byte first. */
+static uint16_t
+ncm_le16(
+	const uint8_t *bytes)
+{
+	/* Returns the computed result. */
+	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
+}
+
+/* Reads a 32-bit field, least significant byte first. */
+static uint32_t
+ncm_le32(
+	const uint8_t *bytes)
+{
+	/* Returns the computed result. */
+	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
+	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
+}
+
+/* Reports the configuration an interface belongs to. */
+static struct drv_usb_configuration *
+ncm_interface_configuration(
+	struct drv_usb_interface *interface)
+{
+	struct drv_usb_configuration *configuration;
+	unsigned interface_index;
+	struct drv_usb_device *device = drv_usb_interface_device(interface);
+	unsigned configuration_index;
+
+	/* Process each remaining element. */
+	for (configuration_index = 0;
+	     configuration_index < drv_usb_device_configuration_count(device);
+	     configuration_index++) {
+		configuration = drv_usb_device_configuration(
+			device, configuration_index);
+
+		/* Process each remaining element. */
+		for (interface_index = 0;
+		     interface_index <
+		     drv_usb_configuration_interface_count(configuration);
+		     interface_index++) {
+			/* Checks the drv usb configuration interface result. */
+			if (drv_usb_configuration_interface(configuration,
+							    interface_index) ==
+			    interface) {
+				/* Returns the computed result. */
+				return configuration;
+			}
+		}
+	}
+
+	/* Reports that no result is available. */
+	return NULL;
+}
+
+/* Asks whether an association covers a given interface. */
+static int
+ncm_iad_covers(
+	const struct drv_usb_interface_association_descriptor *iad,
+	unsigned interface_number)
+{
+	/* Returns the computed result. */
+	return iad->interface_count != 0U &&
+	       interface_number >= iad->first_interface &&
+	       interface_number - iad->first_interface < iad->interface_count;
+}
+
+/* Refuses an association that does not describe this function. */
+static int
+ncm_iad_consistent(
+	struct drv_usb_configuration *configuration,
+	unsigned control_number,
+	unsigned data_number)
+{
+	const struct drv_usb_interface_association_descriptor *iad;
+	unsigned index;
+	int association = 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < drv_usb_configuration_iad_count(configuration);
+	     index++) {
+		/* Handles the iad availability. */
+		iad = drv_usb_configuration_iad(configuration, index);
+		if (iad == NULL)
+			return 0;
+
+		/* Checks the ncm iad covers result. */
+		if (!ncm_iad_covers(iad, control_number) &&
+		    !ncm_iad_covers(iad, data_number) &&
+		    iad->first_interface != control_number &&
+		    iad->first_interface != data_number)
+			continue;
+
+		/* Handles the association condition. */
+		if (association || iad->first_interface != control_number ||
+		    iad->interface_count != 2U ||
+		    iad->function_class != NCM_COMMUNICATION_CLASS ||
+		    iad->function_subclass != NCM_COMMUNICATION_SUBCLASS ||
+		    iad->function_protocol != NCM_COMMUNICATION_PROTOCOL ||
+		    data_number != control_number + 1U) {
+			/* Succeeded. */
+			return 0;
+		}
+		association = 1;
+	}
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Finds the class descriptors the control interface carries. */
+static int
+ncm_control_descriptors(
+	const struct drv_usb_host_interface *alternate,
+	unsigned control_number,
+	unsigned *data_number,
+	uint8_t *mac_string,
+	uint8_t *capabilities)
+{
+	const uint8_t *descriptor;
+	size_t length;
+	unsigned index, header = 0, union_descriptor = 0, ethernet = 0, ncm = 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < drv_usb_host_interface_extra_count(alternate);
+	     index++) {
+		/* Checks the drv usb host interface extra result. */
+		if (drv_usb_host_interface_extra(alternate, index,
+						 (const void **)&descriptor,
+						 &length) != 0 ||
+		    descriptor == NULL || length < 2U) {
+			/* Succeeded. */
+			return 0;
+		}
+
+		/* Checks the file descriptor. */
+		if (descriptor[1] != NCM_CS_INTERFACE)
+			continue;
+
+		/* Checks the current data length. */
+		if (length < 3U || descriptor[0] != length)
+			return 0;
+		/* Dispatch the selected operation case. */
+		switch (descriptor[2]) {
+		case NCM_HEADER_DESCRIPTOR:
+			/* Checks the ncm le16 result. */
+			if (length != 5U || ++header != 1U ||
+			    ncm_le16(descriptor + 3U) == 0) {
+				/* Succeeded. */
+				return 0;
+			}
+			break;
+		case NCM_UNION_DESCRIPTOR:
+			/* Handles the header condition. */
+			if (header != 1U || length != 5U ||
+			    ++union_descriptor != 1U ||
+			    descriptor[3] != control_number ||
+			    descriptor[4] == control_number) {
+				/* Succeeded. */
+				return 0;
+			}
+			*data_number = descriptor[4];
+			break;
+		case NCM_ETHERNET_DESCRIPTOR:
+			/* Checks the ncm le16 result. */
+			if (header != 1U || length != 13U || ++ethernet != 1U ||
+			    descriptor[3] == 0 ||
+			    ncm_le16(descriptor + 8U) <
+				    DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE) {
+				/* Succeeded. */
+				return 0;
+			}
+			*mac_string = descriptor[3];
+			break;
+		case NCM_FUNCTIONAL_DESCRIPTOR:
+			/* Checks the ncm le16 result. */
+			if (header != 1U || length != 6U || ++ncm != 1U ||
+			    ncm_le16(descriptor + 3U) != 0x0100U ||
+			    (descriptor[5] & 0xc0U) != 0) {
+				/* Succeeded. */
+				return 0;
+			}
+			*capabilities = descriptor[5];
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* Returns the computed result. */
+	return header == 1U && union_descriptor == 1U && ethernet == 1U &&
+	       ncm == 1U;
+}
+
+/* Finds the interrupt endpoint notifications arrive on. */
+static int
+ncm_find_notification(
+	const struct drv_usb_host_interface *alternate,
+	struct drv_usb_endpoint **result)
+{
+	struct drv_usb_endpoint *endpoint;
+	unsigned index;
+	struct drv_usb_endpoint *notification = NULL;
+
+	/* Process each remaining element. */
+	for (index = 0;
+	     index < drv_usb_host_interface_endpoint_count(alternate);
+	     index++) {
+		/* Checks the drv usb endpoint type result. */
+		endpoint = drv_usb_host_interface_endpoint(alternate, index);
+		if (drv_usb_endpoint_type(endpoint) !=
+			    DRV_USB_TRANSFER_INTERRUPT ||
+		    !drv_usb_endpoint_is_input(endpoint) ||
+		    notification != NULL) {
+			/* Succeeded. */
+			return 0;
+		}
+		notification = endpoint;
+	}
+
+	/* Handles the notification availability. */
+	if (notification == NULL)
+		return 0;
+	*result = notification;
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Finds the data setting that actually carries packets. */
+static int
+ncm_find_data_alternate(
+	struct drv_usb_interface *data,
+	struct drv_usb_endpoint **bulk_in,
+	struct drv_usb_endpoint **bulk_out,
+	unsigned *alternate_result)
+{
+	struct drv_usb_endpoint *endpoint;
+	const struct drv_usb_host_interface *alternate;
+	const struct drv_usb_interface_descriptor *descriptor;
+	struct drv_usb_endpoint *input, *output;
+	unsigned endpoint_index;
+	unsigned index;
+	int empty_found = 0, bulk_found = 0;
+
+	/* Process each remaining element. */
+	for (index = 0; index < drv_usb_interface_alternate_count(data);
+	     index++) {
+		alternate = drv_usb_interface_alternate(data, index);
+		descriptor = drv_usb_host_interface_descriptor(alternate);
+		input = NULL;
+		output = NULL;
+
+		/* Handles the descriptor availability. */
+		if (descriptor == NULL ||
+		    descriptor->interface_class != NCM_DATA_CLASS ||
+		    descriptor->interface_subclass != NCM_DATA_SUBCLASS ||
+		    descriptor->interface_protocol != NCM_DATA_PROTOCOL) {
+			/* Succeeded. */
+			return 0;
+		}
+
+		/* Checks the file descriptor. */
+		if (descriptor->alternate_setting == 0U) {
+			/* Checks the file descriptor. */
+			if (descriptor->endpoint_count != 0U || empty_found)
+				return 0;
+			empty_found = 1;
+			continue;
+		}
+
+		/* Checks the file descriptor. */
+		if (descriptor->endpoint_count != 2U)
+			continue;
+		/* Process each remaining element. */
+		for (endpoint_index = 0; endpoint_index < 2U;
+		     endpoint_index++) {
+			/* Checks the drv usb endpoint type result. */
+			endpoint = drv_usb_host_interface_endpoint(
+				alternate, endpoint_index);
+			if (drv_usb_endpoint_type(endpoint) !=
+			    DRV_USB_TRANSFER_BULK)
+				break;
+
+			/* Handles the drv usb endpoint is input condition. */
+			if (drv_usb_endpoint_is_input(endpoint)) {
+				/* Handles the input availability. */
+				if (input != NULL)
+					break;
+				input = endpoint;
+			} else {
+				/* Handles the output availability. */
+				if (output != NULL)
+					break;
+				output = endpoint;
+			}
+		}
+
+		/* Handles the input availability. */
+		if (endpoint_index != 2U || input == NULL || output == NULL)
+			continue;
+
+		/* Handles the bulk found condition. */
+		if (bulk_found)
+			return 0;
+		bulk_found = 1;
+		*bulk_in = input;
+		*bulk_out = output;
+		*alternate_result = descriptor->alternate_setting;
+	}
+
+	/* Returns the computed result. */
+	return empty_found && bulk_found;
+}
+
+/* Reads everything this driver needs out of the interface. */
+static int
+ncm_binding_parse(
+	struct drv_usb_interface *control,
+	struct ncm_binding *binding)
+{
+	struct drv_usb_configuration *configuration;
+	const struct drv_usb_interface_descriptor *control_descriptor;
+	const struct drv_usb_host_interface *control_alternate;
+	unsigned control_number, data_number = UINT_MAX;
+	uint8_t mac_string = 0;
+
+	kern_memset(binding, 0, sizeof(*binding));
+
+	/* Checks the drv usb interface alternate count result. */
+	control_descriptor = drv_usb_interface_descriptor(control);
+	if (control_descriptor == NULL ||
+	    control_descriptor->interface_class != NCM_COMMUNICATION_CLASS ||
+	    control_descriptor->interface_subclass !=
+		    NCM_COMMUNICATION_SUBCLASS ||
+	    control_descriptor->interface_protocol !=
+		    NCM_COMMUNICATION_PROTOCOL ||
+	    drv_usb_interface_alternate_count(control) != 1U) {
+		/* Succeeded. */
+		return 0;
+	}
+
+	/* Checks the drv usb device hcd capabilities result. */
+	if ((drv_usb_device_hcd_capabilities(
+		     drv_usb_interface_device(control)) &
+	     DRV_USB_HCD_CAP_CONCURRENT_URBS) == 0) {
+		/* Succeeded. */
+		return 0;
+	}
+
+	/* Handles the configuration availability. */
+	configuration = ncm_interface_configuration(control);
+	if (configuration == NULL)
+		return 0;
+	control_alternate = drv_usb_interface_alternate(control, 0);
+
+	/* Checks the ncm control descriptors result. */
+	control_number = control_descriptor->interface_number;
+	if (control_alternate == NULL ||
+	    !ncm_control_descriptors(control_alternate, control_number,
+				     &data_number, &mac_string,
+				     &binding->capabilities) ||
+	    !ncm_find_notification(control_alternate, &binding->notification)) {
+		/* Succeeded. */
+		return 0;
+	}
+	binding->data = drv_usb_configuration_find_interface(configuration,
+							     data_number);
+
+	/* Checks the ncm iad consistent result. */
+	if (binding->data == NULL ||
+	    !ncm_iad_consistent(configuration, control_number, data_number) ||
+	    !ncm_find_data_alternate(binding->data, &binding->bulk_in,
+				     &binding->bulk_out,
+				     &binding->data_alternate)) {
+		/* Succeeded. */
+		return 0;
+	}
+	binding->device = drv_usb_interface_device(control);
+	binding->control = control;
+	binding->mac_string = mac_string;
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Renders one hexadecimal character as its value. */
+static int
+ncm_hex(
+	unsigned char character)
+{
+	/* Classifies the current input character. */
+	if (character >= '0' && character <= '9')
+		return character - '0';
+
+	/* Classifies the current input character. */
+	if (character >= 'a' && character <= 'f')
+		return character - 'a' + 10;
+
+	/* Classifies the current input character. */
+	if (character >= 'A' && character <= 'F')
+		return character - 'A' + 10;
+
+	/* Reports operation failure. */
+	return -1;
+}
+
+/* Reads the hardware address out of a string descriptor. */
+static int
+ncm_get_mac(
+	const struct ncm_binding *binding,
+	uint8_t mac[6])
+{
+	int high;
+	int low;
+	char string[13];
+	unsigned index;
+	int all_zero = 1;
+
+	/* Checks the drv usb device get string result. */
+	if (drv_usb_device_get_string(binding->device, binding->mac_string, 0,
+				      string, sizeof(string)) != 0 ||
+	    kern_strlen(string) != 12U) {
+		/* Failed. */
+		return EINVAL;
+	}
+	/* Process each remaining element. */
+	for (index = 0; index < 6U; index++) {
+		high = ncm_hex((unsigned char)string[index * 2U]);
+
+		/* Handles the high condition. */
+		low = ncm_hex((unsigned char)string[index * 2U + 1U]);
+		if (high < 0 || low < 0)
+			return EINVAL;
+		mac[index] = (uint8_t)((high << 4) | low);
+
+		/* Handles the mac condition. */
+		if (mac[index] != 0)
+			all_zero = 0;
+	}
+
+	/* Handles the all zero condition. */
+	if (all_zero || (mac[0] & 1U) != 0)
+		return EINVAL;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Runs one class control request against the device. */
+static int
+ncm_control(
+	struct ncm_adapter *adapter,
+	uint8_t request_type,
+	uint8_t request,
+	uint16_t value,
+	void *buffer,
+	size_t length,
+	size_t *actual)
+{
+	int error;
+
+	/* Obtains the drv usb control result. */
+	error = drv_usb_control(
+		adapter->usb_device, request_type, request, value,
+		(uint16_t)drv_usb_interface_number(adapter->control), buffer,
+		length, NCM_CONTROL_TIMEOUT_MS, actual);
+
+	/* Returns the computed result. */
+	return error;
+}
+
+/* Tells the device the block sizes this driver will use. */
+static int
+ncm_program_profile(
+	struct ncm_adapter *adapter)
+{
+	struct drv_usb_cdc_ncm_control_request request;
+	size_t actual;
+	int error;
+	static const enum drv_usb_cdc_ncm_control_step steps[] = {
+		DRV_USB_CDC_NCM_CONTROL_SELECT_NTH16,
+		DRV_USB_CDC_NCM_CONTROL_SET_INPUT_SIZE,
+		DRV_USB_CDC_NCM_CONTROL_SET_MAX_DATAGRAM_SIZE,
+		DRV_USB_CDC_NCM_CONTROL_DISABLE_CRC};
+	unsigned index;
+
+	/* Process each remaining element. */
+	for (index = 0; index < sizeof(steps) / sizeof(steps[0]); index++) {
+		actual = 0;
+
+		/* Handles the steps condition. */
+		if (steps[index] ==
+			    DRV_USB_CDC_NCM_CONTROL_SET_MAX_DATAGRAM_SIZE &&
+		    (adapter->capabilities & NCM_CAP_MAX_DATAGRAM_SIZE) == 0)
+			continue;
+
+		/* Handles the steps condition. */
+		if (steps[index] == DRV_USB_CDC_NCM_CONTROL_DISABLE_CRC &&
+		    (adapter->capabilities & NCM_CAP_CRC_MODE) == 0)
+			continue;
+
+		/* Checks the operation status. */
+		error = drv_usb_cdc_ncm_make_control_request(
+			&adapter->profile, steps[index], &request);
+		if (error == EOPNOTSUPP &&
+		    steps[index] == DRV_USB_CDC_NCM_CONTROL_SELECT_NTH16)
+			continue;
+		if (error != 0)
+			return error;
+
+		/* Checks the operation status. */
+		error = ncm_control(adapter,
+				    DRV_USB_DIR_OUT | DRV_USB_REQUEST_CLASS |
+					    DRV_USB_RECIP_INTERFACE,
+				    request.request, request.value,
+				    request.payload, request.length, &actual);
+		if (error != 0 || actual != request.length)
+			return error != 0 ? error : EIO;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Tells the device which packets to pass up. */
+static int
+ncm_program_packet_filter(
+	struct ncm_adapter *adapter)
+{
+	size_t actual = 0;
+	unsigned long irq;
+	int error;
+
+	/* Handles the adapter condition. */
+	if ((adapter->capabilities & NCM_CAP_PACKET_FILTER) == 0)
+		return 0;
+
+	/* Handles the adapter condition. */
+	irq = spin_lock_irqsave(&adapter->lock);
+	if (!adapter->ready || !adapter->opened || adapter->closing ||
+	    adapter->quarantined) {
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Failed. */
+		return ENETDOWN;
+	}
+
+	adapter->starts_active++;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Checks the operation status. */
+	error = ncm_control(adapter,
+			    DRV_USB_DIR_OUT | DRV_USB_REQUEST_CLASS |
+				    DRV_USB_RECIP_INTERFACE,
+			    NCM_SET_ETHERNET_PACKET_FILTER,
+			    NCM_FILTER_DIRECTED | NCM_FILTER_ALL_MULTICAST |
+				    NCM_FILTER_BROADCAST,
+			    NULL, 0, &actual);
+	if (error != 0 || actual != 0)
+		error = error != 0 ? error : EIO;
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Handles the adapter condition. */
+	if (adapter->starts_active == 0)
+		__builtin_trap();
+
+	/* Checks the operation status. */
+	if (error == 0 && (adapter->closing || !adapter->opened))
+		error = ENETDOWN;
+	adapter->starts_active--;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Renders a transfer status as the error it stands for. */
+static int
+ncm_urb_status_error(
+	enum drv_usb_urb_status status)
+{
+	/* Checks the operation status. */
+	if (status == DRV_USB_URB_COMPLETE)
+		return 0;
+
+	/* Checks the operation status. */
+	if (status == DRV_USB_URB_TIMEOUT)
+		return ETIMEDOUT;
+
+	/* Checks the operation status. */
+	if (status == DRV_USB_URB_STALL)
+		return EPIPE;
+
+	/* Checks the operation status. */
+	if (status == DRV_USB_URB_DISCONNECTED)
+		return ENODEV;
+
+	/* Failed. */
+	return EIO;
+}
+
+/* Asks whether a transmit status is one to report. */
+static int
+ncm_tx_status_is_error(
+	enum drv_usb_urb_status status)
+{
+	/* Returns the computed result. */
+	return status == DRV_USB_URB_STALL || status == DRV_USB_URB_TIMEOUT ||
+	       status == DRV_USB_URB_DISCONNECTED ||
+	       status == DRV_USB_URB_IO_ERROR;
+}
+
+/* Takes one finished transfer. */
+static void
+ncm_completion(
+	struct drv_usb_urb *urb,
+	void *argument)
+{
+	struct ncm_adapter *adapter = argument;
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	int tx_error = 0;
+
+	/* Handles the urb condition. */
+	if (urb == adapter->notification_urb)
+		adapter->notification_ready = 1;
+	else if (urb == adapter->rx_urb)
+		adapter->rx_ready = 1;
+	else if (urb == adapter->tx_urb) {
+		adapter->tx_ready = 1;
+		tx_error = ncm_tx_status_is_error(drv_usb_urb_status(urb));
+	}
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Checks the operation status. */
+	if (tx_error)
+		net_device_tx_error(adapter->net_device);
+	net_device_schedule_poll(adapter->net_device);
+}
+
+/* Puts one transfer back on its endpoint. */
+static int
+ncm_start_urb(
+	struct ncm_adapter *adapter,
+	struct drv_usb_urb *urb,
+	void *buffer,
+	size_t length)
+{
+	unsigned long irq;
+	int error;
+
+	/* Handles the adapter condition. */
+	irq = spin_lock_irqsave(&adapter->lock);
+	if (!adapter->ready || !adapter->opened || adapter->closing ||
+	    adapter->quarantined) {
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Failed. */
+		return ENETDOWN;
+	}
+
+	adapter->starts_active++;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Checks the operation status. */
+	error = drv_usb_urb_setup(urb, buffer, length, 0, 0, ncm_completion,
+				  adapter);
+	if (error == 0)
+		error = drv_usb_urb_submit(urb);
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Handles the adapter condition. */
+	if (adapter->starts_active == 0)
+		__builtin_trap();
+	adapter->starts_active--;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Cancels a transfer and waits for it to leave. */
+static int
+ncm_cancel_and_drain(
+	struct drv_usb_urb *urb)
+{
+	int error;
+	enum drv_usb_urb_status status;
+
+	/* Handles the urb availability. */
+	if (urb == NULL)
+		return 0;
+
+	/* Checks the operation status. */
+	status = drv_usb_urb_status(urb);
+	if (status == DRV_USB_URB_PENDING)
+		(void)drv_usb_urb_cancel(urb);
+
+	/* Obtains the drv usb urb drain result. */
+	error = drv_usb_urb_drain(urb, NCM_TRANSFER_TIMEOUT_MS);
+
+	/* Returns the computed result. */
+	return error;
+}
+
+/* Waits for everything this device has in flight to finish. */
+static void
+ncm_wait_activity(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq;
+	unsigned active;
+
+	/* Continue until the operation reaches a terminal state. */
+	for (;;) {
+		irq = spin_lock_irqsave(&adapter->lock);
+		active = adapter->starts_active + adapter->polls_active;
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Handles the active condition. */
+		if (active == 0)
+			return;
+		sched_yield();
+	}
+}
+
+/* Gives back the packets that were waiting to be delivered. */
+static void
+ncm_free_rx_queue(
+	struct ncm_adapter *adapter)
+{
+	struct packet_buf *packets[NCM_RX_QUEUE_MAX];
+	unsigned long irq;
+	size_t count = 0;
+
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Process each remaining element. */
+	while (adapter->rx_queue_count != 0) {
+		packets[count++] = adapter->rx_queue[adapter->rx_queue_head];
+		adapter->rx_queue[adapter->rx_queue_head] = NULL;
+		adapter->rx_queue_head =
+			(adapter->rx_queue_head + 1U) % NCM_RX_QUEUE_MAX;
+		adapter->rx_queue_count--;
+	}
+
+	adapter->rx_queue_head = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Process each remaining element. */
+	while (count != 0)
+		packet_buf_free(packets[--count]);
+}
+
+/* Stops the interface carrying traffic. */
+static int
+ncm_stop(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq;
+	int error = 0, candidate;
+
+	/* Continue until the operation reaches a terminal state. */
+	for (;;) {
+		/* Handles the adapter condition. */
+		irq = spin_lock_irqsave(&adapter->lock);
+		if (!adapter->stopping)
+			break;
+		spin_unlock_irqrestore(&adapter->lock, irq);
+		sched_yield();
+	}
+
+	adapter->stopping = 1;
+	adapter->closing = 1;
+	adapter->opened = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/*
+	 * A poll admitted before closing was published may still parse an RX
+	 * buffer or attempt a rearm.  Join that complete worker section before
+	 * cancelling URBs or changing the data-interface alternate.
+	 */
+	ncm_wait_activity(adapter);
+
+	/* Checks the operation status. */
+	candidate = ncm_cancel_and_drain(adapter->notification_urb);
+	if (error == 0)
+		error = candidate;
+
+	/* Checks the operation status. */
+	candidate = ncm_cancel_and_drain(adapter->rx_urb);
+	if (error == 0)
+		error = candidate;
+
+	/* Checks the operation status. */
+	candidate = ncm_cancel_and_drain(adapter->tx_urb);
+	if (error == 0)
+		error = candidate;
+	if (error == 0)
+		ncm_free_rx_queue(adapter);
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Checks the operation status. */
+	if (error == 0) {
+		adapter->notification_ready = 0;
+		adapter->rx_ready = 0;
+		adapter->tx_ready = 0;
+		adapter->notification_rearm = 0;
+		adapter->rx_rearm = 0;
+		adapter->notification_rearm_active = 0;
+		adapter->rx_rearm_active = 0;
+		adapter->notification_retries = 0;
+		adapter->rx_retries = 0;
+		adapter->tx_busy = 0;
+	} else {
+		adapter->quarantined = 1;
+	}
+
+	adapter->stop_error = error;
+	adapter->closing = 0;
+	adapter->stopping = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Drops the frames still waiting; no transfer refers to them. */
+	ncm_tx_queue_free(adapter);
+
+	/* Handles the net device availability. */
+	if (adapter->net_device != NULL)
+		(void)net_device_set_carrier(adapter->net_device, 0);
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Brings the interface up and starts its transfers. */
+static int
+ncm_open(
+	struct net_device *device)
+{
+	struct ncm_adapter *adapter = device->driver_data;
+	unsigned long irq;
+	int error;
+
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Handles the adapter condition. */
+	if (!adapter->ready || adapter->opened || adapter->closing ||
+	    adapter->stopping || adapter->quarantined) {
+		error = !adapter->ready ? ENETDOWN
+					: (adapter->quarantined ? EIO : EBUSY);
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Failed. */
+		return error;
+	}
+
+	adapter->opened = 1;
+	adapter->stop_error = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/*
+	 * The data alternate is active by the time the net device becomes
+	 * ready. Some functions discard their filter across an administrative
+	 * close, so program it on every open and before publishing any
+	 * persistent URB.
+	 */
+
+	/* Checks the operation status. */
+	error = ncm_program_packet_filter(adapter);
+	if (error == 0) {
+		error = ncm_start_urb(adapter, adapter->notification_urb,
+				      adapter->notification_buffer,
+				      NCM_NOTIFICATION_SIZE);
+	}
+	if (error == 0) {
+		error = ncm_start_urb(adapter, adapter->rx_urb,
+				      adapter->rx_buffer,
+				      adapter->profile.ntb_in_max_size);
+	}
+	if (error != 0) {
+		(void)ncm_stop(adapter);
+
+		/* Failed. */
+		return error;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Takes the interface down. */
+static void
+ncm_close(
+	struct net_device *device)
+{
+	struct ncm_adapter *adapter = device->driver_data;
+
+	(void)ncm_stop(adapter);
+}
+
+/*
+ * Sends one packet, wrapped in the block format the device wants, or
+ * queues it while the transmit transfer is busy.
+ */
+static int
+ncm_transmit(
+	struct net_device *device,
+	struct packet_buf *packet)
+{
+	struct ncm_adapter *adapter = device->driver_data;
+	unsigned long irq;
+	int error;
+
+	/* Handles the packet availability. */
+	if (packet == NULL)
+		return EINVAL;
+
+	/* Handles the adapter condition. */
+	irq = spin_lock_irqsave(&adapter->lock);
+	if (!adapter->ready || !adapter->opened || adapter->closing ||
+	    adapter->quarantined) {
+		spin_unlock_irqrestore(&adapter->lock, irq);
+		packet_buf_free(packet);
+
+		/* Failed. */
+		return ENETDOWN;
+	}
+
+	/* Queues the frame behind a busy transfer; only a full queue drops it. */
+	if (adapter->tx_busy) {
+		if (adapter->tx_queue_count >= NCM_TX_QUEUE_MAX) {
+			spin_unlock_irqrestore(&adapter->lock, irq);
+			packet_buf_free(packet);
+
+			/* Failed. */
+			return ENOBUFS;
+		}
+
+		packet->next = NULL;
+		if (adapter->tx_queue_tail != NULL)
+			adapter->tx_queue_tail->next = packet;
+		else
+			adapter->tx_queue_head = packet;
+		adapter->tx_queue_tail = packet;
+		adapter->tx_queue_count++;
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Succeeded: a transmit completion sends it. */
+		return 0;
+	}
+
+	/* tx_busy makes this caller the transfer's owner; starts_active holds off teardown. */
+	adapter->tx_busy = 1;
+	adapter->starts_active++;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Sends the frame. */
+	error = ncm_tx_submit(adapter, packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Wraps one frame in a transfer block and submits the transfer.
+ *
+ * The caller has set tx_busy and counted itself in starts_active under the
+ * adapter lock.  The packet is consumed.  On failure tx_busy is cleared.
+ */
+static int
+ncm_tx_submit(
+	struct ncm_adapter *adapter,
+	struct packet_buf *packet)
+{
+	unsigned long irq;
+	size_t ntb_length = 0;
+	uint16_t sequence;
+	int error;
+
+	/* Builds the block; the transfer never refers to the packet. */
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	sequence = adapter->tx_sequence;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	error = drv_usb_cdc_ncm_build_ntb16(
+		&adapter->profile, sequence, packet->data, packet->length,
+		adapter->tx_buffer, adapter->profile.ntb_out_max_size,
+		&ntb_length);
+	packet_buf_free(packet);
+
+	/* Checks the operation status. */
+	irq = spin_lock_irqsave(&adapter->lock);
+	if (error == 0 && (adapter->closing || !adapter->opened))
+		error = ENETDOWN;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Checks the operation status. */
+	if (error == 0) {
+		error = drv_usb_urb_setup(
+			adapter->tx_urb, adapter->tx_buffer, ntb_length, 0,
+			NCM_TRANSFER_TIMEOUT_MS, ncm_completion, adapter);
+	}
+	if (error == 0)
+		error = drv_usb_urb_submit(adapter->tx_urb);
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Handles the adapter condition. */
+	if (adapter->starts_active == 0)
+		__builtin_trap();
+
+	/* Checks the operation status. */
+	if (error == 0)
+		adapter->tx_sequence++;
+	adapter->starts_active--;
+
+	/* Checks the operation status. */
+	if (error != 0)
+		adapter->tx_busy = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Frees every frame still waiting for the transmit transfer. */
+static void
+ncm_tx_queue_free(
+	struct ncm_adapter *adapter)
+{
+	struct packet_buf *packets;
+	struct packet_buf *packet;
+	unsigned long irq;
+
+	/* Takes the whole list under the lock. */
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	packets = adapter->tx_queue_head;
+	adapter->tx_queue_head = NULL;
+	adapter->tx_queue_tail = NULL;
+	adapter->tx_queue_count = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Frees it outside the lock. */
+	for (;;) {
+		packet = packets;
+		if (packet == NULL)
+			break;
+		packets = packet->next;
+		packet_buf_free(packet);
+	}
+}
+
+/* Puts one received packet on the delivery queue. */
+static int
+ncm_queue_datagram(
+	const void *frame,
+	size_t length,
+	void *argument)
+{
+	struct ncm_adapter *adapter = argument;
+	struct packet_buf *packet;
+	void *destination;
+	unsigned long irq;
+
+	/* Checks the current data length. */
+	if (length < DRV_USB_CDC_NCM_ETHERNET_HEADER_SIZE ||
+	    length > DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE) {
+		/* Failed. */
+		return EINVAL;
+	}
+
+	/* Handles the packet availability. */
+	packet = packet_buf_alloc(0);
+	if (packet == NULL)
+		return ENOBUFS;
+
+	/* Handles the destination availability. */
+	destination = packet_buf_append(packet, length);
+	if (destination == NULL) {
+		packet_buf_free(packet);
+
+		/* Failed. */
+		return EMSGSIZE;
+	}
+
+	kern_memcpy(destination, frame, length);
+
+	/* Handles the adapter condition. */
+	irq = spin_lock_irqsave(&adapter->lock);
+	if (adapter->rx_queue_count >= NCM_RX_QUEUE_MAX) {
+		spin_unlock_irqrestore(&adapter->lock, irq);
+		packet_buf_free(packet);
+
+		/* Failed. */
+		return ENOBUFS;
+	}
+
+	adapter->rx_queue[(adapter->rx_queue_head + adapter->rx_queue_count) %
+			  NCM_RX_QUEUE_MAX] = packet;
+	adapter->rx_queue_count++;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Takes one notification the device has sent. */
+static void
+ncm_notification_process(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq;
+	const uint8_t *notification = adapter->notification_buffer;
+	size_t length = drv_usb_urb_actual_length(adapter->notification_urb);
+	uint16_t interface_number;
+
+	/* Checks the drv usb urb status result. */
+	if (drv_usb_urb_status(adapter->notification_urb) !=
+		    DRV_USB_URB_COMPLETE ||
+	    length < 8U ||
+	    notification[0] != (DRV_USB_DIR_IN | DRV_USB_REQUEST_CLASS |
+				DRV_USB_RECIP_INTERFACE)) {
+		/* Returns the computed result. */
+		return;
+	}
+
+	/*
+	 * Some NCM functions, including RTL8156 configuration 2, name the
+	 * associated data interface rather than the communication interface.
+	 * The binding has already validated this exact control/data pair.
+	 */
+
+	/* Checks the drv usb interface number result. */
+	interface_number = ncm_le16(notification + 4U);
+	if (interface_number != drv_usb_interface_number(adapter->control) &&
+	    interface_number != drv_usb_interface_number(adapter->data)) {
+		/* Returns the computed result. */
+		return;
+	}
+
+	/* Checks the ncm le16 result. */
+	if (notification[1] == NCM_NOTIFICATION_NETWORK_CONNECTION &&
+	    ncm_le16(notification + 6U) == 0U && length == 8U) {
+		(void)net_device_set_carrier(adapter->net_device,
+					     ncm_le16(notification + 2U) != 0U);
+	} else if (notification[1] == NCM_NOTIFICATION_SPEED_CHANGE &&
+		   ncm_le16(notification + 2U) == 0U &&
+		   ncm_le16(notification + 6U) == 8U && length == 16U) {
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		adapter->downstream_bps = ncm_le32(notification + 8U);
+		adapter->upstream_bps = ncm_le32(notification + 12U);
+		spin_unlock_irqrestore(&adapter->lock, irq);
+	}
+}
+
+/* Puts the receive and notification transfers back on. */
+static int
+ncm_rearm(
+	struct ncm_adapter *adapter,
+	int notification)
+{
+	struct drv_usb_urb *urb =
+		notification ? adapter->notification_urb : adapter->rx_urb;
+	void *buffer = notification ? (void *)adapter->notification_buffer
+				    : (void *)adapter->rx_buffer;
+	size_t length = notification ? NCM_NOTIFICATION_SIZE
+				     : adapter->profile.ntb_in_max_size;
+	int error = ncm_start_urb(adapter, urb, buffer, length);
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	unsigned *retry = notification ? &adapter->notification_retries
+				       : &adapter->rx_retries;
+	unsigned *pending = notification ? &adapter->notification_rearm
+					 : &adapter->rx_rearm;
+	unsigned *active = notification ? &adapter->notification_rearm_active
+					: &adapter->rx_rearm_active;
+	int retryable = error == EBUSY || error == ENOMEM || error == EAGAIN ||
+			error == ENOBUFS;
+	int retry_scheduled = 0;
+	int quarantine = 0;
+	int stopping = !adapter->ready || !adapter->opened ||
+		       adapter->closing || adapter->stopping;
+
+	/* Handles the active condition. */
+	if (*active == 0)
+		__builtin_trap();
+
+	/* Checks the operation status. */
+	if (error == 0) {
+		/*
+		 * The caller atomically claimed the old rearm request. Preserve
+		 * a new one that an immediately completed submission may
+		 * already have published through another poll.
+		 */
+		*retry = 0;
+	} else if (stopping) {
+		/*
+		 * A poll admitted immediately before close may reach rearm
+		 * after close has withdrawn admission.  This is orderly
+		 * retirement, not a transfer failure and must not quarantine
+		 * the adapter.
+		 */
+		*retry = 0;
+		error = 0;
+	} else if (retryable && *retry < NCM_REARM_RETRY_MAX) {
+		(*retry)++;
+		*pending = 1;
+		retry_scheduled = 1;
+	} else {
+		*pending = 0;
+		adapter->quarantined = 1;
+		adapter->opened = 0;
+		quarantine = 1;
+	}
+
+	*active = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Handles the net device availability. */
+	if (quarantine && adapter->net_device != NULL)
+		(void)net_device_set_carrier(adapter->net_device, 0);
+
+	/* Handles the retry scheduled condition. */
+	if (retry_scheduled)
+		return EAGAIN;
+
+	/*
+	 * EAGAIN is the internal retry signal.  Once its bounded budget has
+	 * been exhausted, return a terminal error so the caller cannot
+	 * reschedule the quarantined adapter forever.
+	 */
+	if (quarantine && error == EAGAIN)
+		return EIO;
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Hands the queued packets up to the network stack. */
+static unsigned
+ncm_deliver_queued(
+	struct ncm_adapter *adapter,
+	unsigned budget)
+{
+	struct packet_buf *packet;
+	unsigned long irq;
+	unsigned delivered = 0;
+
+	/* Continue while the operation condition remains true. */
+	while (delivered < budget) {
+		/* Handles the adapter condition. */
+		irq = spin_lock_irqsave(&adapter->lock);
+		if (adapter->rx_queue_count == 0) {
+			spin_unlock_irqrestore(&adapter->lock, irq);
+			break;
+		}
+
+		packet = adapter->rx_queue[adapter->rx_queue_head];
+		adapter->rx_queue[adapter->rx_queue_head] = NULL;
+		adapter->rx_queue_head =
+			(adapter->rx_queue_head + 1U) % NCM_RX_QUEUE_MAX;
+		adapter->rx_queue_count--;
+		spin_unlock_irqrestore(&adapter->lock, irq);
+		net_device_receive(adapter->net_device, packet);
+		delivered++;
+	}
+
+	/* Returns the computed result. */
+	return delivered;
+}
+
+/* Joins the gate that serializes polling. */
+static int
+ncm_poll_enter(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	int admitted = adapter->ready && adapter->opened && !adapter->closing &&
+		       !adapter->stopping && !adapter->quarantined;
+
+	/* Handles the admitted condition. */
+	if (admitted)
+		adapter->polls_active++;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Returns the computed result. */
+	return admitted;
+}
+
+/* Leaves that gate. */
+static void
+ncm_poll_exit(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Handles the adapter condition. */
+	if (adapter->polls_active == 0)
+		__builtin_trap();
+	adapter->polls_active--;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+}
+
+/* Takes whatever the poll has to deal with. */
+static int
+ncm_take_pending(
+	struct ncm_adapter *adapter,
+	unsigned *pending)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	int taken = *pending != 0;
+
+	/* Handles the taken condition. */
+	if (taken)
+		*pending = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Returns the computed result. */
+	return taken;
+}
+
+/* Puts back what the poll could not deal with yet. */
+static void
+ncm_restore_pending(
+	struct ncm_adapter *adapter,
+	unsigned *pending)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+
+	*pending = 1;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+}
+
+/* Claims the right to re-arm the notification transfer. */
+static int
+ncm_take_notification_rearm(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	int taken = adapter->notification_rearm != 0 &&
+		    adapter->notification_rearm_active == 0;
+
+	/* Handles the taken condition. */
+	if (taken) {
+		adapter->notification_rearm = 0;
+		adapter->notification_rearm_active = 1;
+	}
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Returns the computed result. */
+	return taken;
+}
+
+/* Claims the right to re-arm the receive transfer. */
+static int
+ncm_take_rx_rearm(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	int taken = adapter->rx_rearm != 0 && adapter->rx_rearm_active == 0 &&
+		    adapter->rx_queue_count == 0;
+
+	/* Handles the taken condition. */
+	if (taken) {
+		adapter->rx_rearm = 0;
+		adapter->rx_rearm_active = 1;
+	}
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Returns the computed result. */
+	return taken;
+}
+
+/* Takes the transmit completion the poll found. */
+static int
+ncm_poll_tx_completion(
+	struct ncm_adapter *adapter)
+{
+	struct packet_buf *packet;
+	unsigned long irq;
+	int error;
+
+	/* Checks the ncm take pending result. */
+	if (!ncm_take_pending(adapter, &adapter->tx_ready))
+		return 0;
+
+	/* Handles the adapter condition. */
+	irq = spin_lock_irqsave(&adapter->lock);
+	if (adapter->starts_active != 0) {
+		spin_unlock_irqrestore(&adapter->lock, irq);
+		ncm_restore_pending(adapter, &adapter->tx_ready);
+
+		/* Succeeded. */
+		return 0;
+	}
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Checks the drv usb urb drain result. */
+	if (drv_usb_urb_drain(adapter->tx_urb, NCM_TRANSFER_TIMEOUT_MS) != 0) {
+		ncm_restore_pending(adapter, &adapter->tx_ready);
+
+		/* Succeeded. */
+		return 0;
+	}
+
+	/*
+	 * Hands the transfer to the next waiting frame, keeping tx_busy, or
+	 * frees it when none waits.  A frame whose submit fails is dropped
+	 * and the next one is tried, so the queue never stalls behind it.
+	 */
+	for (;;) {
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		packet = adapter->tx_queue_head;
+		if (packet != NULL) {
+			adapter->tx_queue_head = packet->next;
+			if (adapter->tx_queue_head == NULL)
+				adapter->tx_queue_tail = NULL;
+			adapter->tx_queue_count--;
+			packet->next = NULL;
+			adapter->tx_busy = 1;
+			adapter->starts_active++;
+		} else {
+			adapter->tx_busy = 0;
+		}
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		if (packet == NULL)
+			break;
+
+		error = ncm_tx_submit(adapter, packet);
+		if (error == 0)
+			break;
+
+		if (adapter->net_device != NULL)
+			adapter->net_device->tx_dropped++;
+	}
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Takes the notification completion the poll found. */
+static int
+ncm_poll_notification_completion(
+	struct ncm_adapter *adapter)
+{
+	/* Checks the ncm take pending result. */
+	if (!ncm_take_pending(adapter, &adapter->notification_ready))
+		return 0;
+
+	/* Checks the drv usb urb drain result. */
+	if (drv_usb_urb_drain(adapter->notification_urb,
+			      NCM_TRANSFER_TIMEOUT_MS) != 0) {
+		ncm_restore_pending(adapter, &adapter->notification_ready);
+
+		/* Succeeded. */
+		return 0;
+	}
+
+	ncm_notification_process(adapter);
+	ncm_restore_pending(adapter, &adapter->notification_rearm);
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Takes the receive completion the poll found. */
+static int
+ncm_poll_rx_completion(
+	struct net_device *device,
+	struct ncm_adapter *adapter)
+{
+	size_t count = 0;
+	int error;
+
+	/* Checks the ncm take pending result. */
+	if (!ncm_take_pending(adapter, &adapter->rx_ready))
+		return 0;
+
+	/* Checks the drv usb urb drain result. */
+	if (drv_usb_urb_drain(adapter->rx_urb, NCM_TRANSFER_TIMEOUT_MS) != 0) {
+		ncm_restore_pending(adapter, &adapter->rx_ready);
+
+		/* Succeeded. */
+		return 0;
+	}
+
+	/* Checks the operation status. */
+	error = ncm_urb_status_error(drv_usb_urb_status(adapter->rx_urb));
+	if (error == 0) {
+		error = drv_usb_cdc_ncm_parse_ntb16(
+			&adapter->profile, &adapter->rx_state,
+			adapter->rx_buffer,
+			drv_usb_urb_actual_length(adapter->rx_urb),
+			ncm_queue_datagram, adapter, &count);
+	}
+	if (error != 0)
+		device->rx_errors++;
+	ncm_restore_pending(adapter, &adapter->rx_rearm);
+
+	/* Reports operation failure. */
+	return 1;
+}
+
+/* Asks whether the poll has anything left to do. */
+static int
+ncm_has_poll_work(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	int pending = adapter->ready && adapter->opened && !adapter->closing &&
+		      !adapter->stopping && !adapter->quarantined &&
+		      (adapter->notification_ready || adapter->rx_ready ||
+		       adapter->tx_ready ||
+		       (adapter->notification_rearm &&
+			!adapter->notification_rearm_active) ||
+		       (adapter->rx_rearm && !adapter->rx_rearm_active) ||
+		       adapter->rx_queue_count != 0);
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Returns the computed result. */
+	return pending;
+}
+
+/* Serves one round of polling for this device. */
+static unsigned
+ncm_poll_receive(
+	struct net_device *device,
+	unsigned budget)
+{
+	unsigned kind;
+	int completed;
+	struct ncm_adapter *adapter = device->driver_data;
+	unsigned cursor, delivered, index, work = 0;
+	unsigned long irq;
+	int notification_completed = 0, rx_progress = 0;
+
+	/* Checks the ncm poll enter result. */
+	if (!ncm_poll_enter(adapter))
+		return 0;
+	delivered = ncm_deliver_queued(adapter, budget);
+	work += delivered;
+	rx_progress = delivered != 0;
+
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	cursor = adapter->poll_cursor % NCM_COMPLETION_KINDS;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* Process each remaining element. */
+	for (index = 0; index < NCM_COMPLETION_KINDS && work < budget;
+	     index++) {
+		/* Handles the kind condition. */
+		kind = (cursor + index) % NCM_COMPLETION_KINDS;
+		if (kind == NCM_COMPLETION_TX)
+			completed = ncm_poll_tx_completion(adapter);
+		else if (kind == NCM_COMPLETION_NOTIFICATION)
+			completed = ncm_poll_notification_completion(adapter);
+		else
+			completed = ncm_poll_rx_completion(device, adapter);
+
+		/* Handles the completed condition. */
+		if (!completed)
+			continue;
+
+		/* Handles the kind condition. */
+		if (kind == NCM_COMPLETION_NOTIFICATION)
+			notification_completed = 1;
+		else if (kind == NCM_COMPLETION_RX)
+			rx_progress = 1;
+		work++;
+		irq = spin_lock_irqsave(&adapter->lock);
+		adapter->poll_cursor = (kind + 1U) % NCM_COMPLETION_KINDS;
+		spin_unlock_irqrestore(&adapter->lock, irq);
+	}
+
+	/* Handles the work condition. */
+	if (work < budget) {
+		delivered = ncm_deliver_queued(adapter, budget - work);
+		work += delivered;
+
+		/* Handles the delivered condition. */
+		if (delivered != 0)
+			rx_progress = 1;
+	}
+
+	/*
+	 * A rearm caused by a completion (or by draining the last queued frame)
+	 * is part of that already-budgeted work item.  A standalone retry
+	 * consumes one unit so persistent HCD backpressure cannot escape the
+	 * poll budget.
+	 */
+	if (notification_completed) {
+		/* Handles the ncm take notification rearm condition. */
+		if (ncm_take_notification_rearm(adapter))
+			(void)ncm_rearm(adapter, 1);
+	} else if (work < budget && ncm_take_notification_rearm(adapter)) {
+		(void)ncm_rearm(adapter, 1);
+		work++;
+	}
+
+	/* Handles the rx progress condition. */
+	if (rx_progress) {
+		/* Handles the ncm take rx rearm condition. */
+		if (ncm_take_rx_rearm(adapter))
+			(void)ncm_rearm(adapter, 0);
+	} else if (work < budget && ncm_take_rx_rearm(adapter)) {
+		(void)ncm_rearm(adapter, 0);
+		work++;
+	}
+
+	/* Handles the ncm has poll work condition. */
+	if (ncm_has_poll_work(adapter))
+		net_device_schedule_poll(device);
+	ncm_poll_exit(adapter);
+
+	/* Returns the computed result. */
+	return work;
+}
+
+/* Gives every resource this device held back. */
+static void
+ncm_release(
+	void *driver_data)
+{
+	kern_free(driver_data);
+}
+
+/* Marks the device as ready to carry traffic. */
+static void
+ncm_set_ready(
+	struct ncm_adapter *adapter,
+	int ready)
+{
+	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+
+	adapter->ready = ready != 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+}
+
+/* Gives the transfers this device used back. */
+static void
+ncm_urbs_free(
+	struct ncm_adapter *adapter)
+{
+	drv_usb_urb_free(adapter->tx_urb);
+	drv_usb_urb_free(adapter->rx_urb);
+	drv_usb_urb_free(adapter->notification_urb);
+	adapter->tx_urb = NULL;
+	adapter->rx_urb = NULL;
+	adapter->notification_urb = NULL;
+}
+
+/* Takes the transfers this device needs. */
+static int
+ncm_urbs_alloc(
+	struct ncm_adapter *adapter)
+{
+	adapter->notification_urb = drv_usb_urb_alloc(
+		adapter->usb_device, adapter->notification_endpoint, 0);
+	adapter->rx_urb =
+		drv_usb_urb_alloc(adapter->usb_device, adapter->bulk_in, 0);
+	adapter->tx_urb =
+		drv_usb_urb_alloc(adapter->usb_device, adapter->bulk_out, 0);
+
+	/* Handles the notification urb availability. */
+	if (adapter->notification_urb != NULL && adapter->rx_urb != NULL &&
+	    adapter->tx_urb != NULL) {
+		/* Succeeded. */
+		return 0;
+	}
+	ncm_urbs_free(adapter);
+
+	/* Failed. */
+	return ENOMEM;
+}
+
+/* Gives the buffers this device used back. */
+static void
+ncm_buffers_free(
+	struct ncm_adapter *adapter)
+{
+	kern_free(adapter->tx_buffer);
+	kern_free(adapter->rx_buffer);
+	kern_free(adapter->notification_buffer);
+	adapter->tx_buffer = NULL;
+	adapter->rx_buffer = NULL;
+	adapter->notification_buffer = NULL;
+}
+
+/* Takes the buffers this device needs. */
+static int
+ncm_buffers_alloc(
+	struct ncm_adapter *adapter)
+{
+	adapter->notification_buffer = kern_malloc(NCM_NOTIFICATION_SIZE);
+	adapter->rx_buffer = kern_malloc(adapter->profile.ntb_in_max_size);
+	adapter->tx_buffer = kern_malloc(adapter->profile.ntb_out_max_size);
+
+	/* Handles the notification buffer availability. */
+	if (adapter->notification_buffer != NULL &&
+	    adapter->rx_buffer != NULL && adapter->tx_buffer != NULL) {
+		/* Succeeded. */
+		return 0;
+	}
+	ncm_buffers_free(adapter);
+
+	/* Failed. */
+	return ENOMEM;
+}
+
+/* Publishes this device as a network interface. */
+static int
+ncm_net_device_create(
+	struct ncm_adapter *adapter,
+	const uint8_t mac[6])
+{
+	struct net_device *device = net_device_alloc();
+	unsigned index;
+	int error = ENOSPC;
+
+	/* Handles the device availability. */
+	if (device == NULL)
+		return ENOSPC;
+	device->flags = NET_DEVICE_BROADCAST | NET_DEVICE_MULTICAST;
+	device->mtu = DRV_USB_CDC_NCM_MTU;
+	kern_memcpy(device->hwaddr, mac, 6U);
+	device->hwaddr_len = 6U;
+	device->ops = &ncm_net_ops;
+	device->driver_data = adapter;
+	/* Process each remaining element. */
+	for (index = 0; index < NET_DEVICE_MAX; index++) {
+		device->name[0] = 'u';
+		device->name[1] = 'e';
+		device->name[2] = (char)('0' + index);
+		device->name[3] = '\0';
+
+		/* Checks the operation status. */
+		error = net_device_create(device);
+		if (error != EEXIST)
+			break;
+	}
+	if (error != 0) {
+		/*
+		 * The allocation owner, not the unpublished device, still owns
+		 * the adapter on an attach error.
+		 */
+		device->driver_data = NULL;
+		net_device_destroy(device);
+
+		/* Failed. */
+		return error;
+	}
+
+	adapter->net_device = device;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Binds this driver to an interface the bus has matched. */
+static int
+ncm_attach(
+	struct drv_usb_interface *interface,
+	const struct drv_usb_id *id)
+{
+	struct ncm_binding binding;
+	struct ncm_adapter *adapter;
+	struct drv_usb_cdc_ncm_limits limits;
+	uint8_t parameters[DRV_USB_CDC_NCM_NTB_PARAMETERS_SIZE];
+	uint8_t mac[6];
+	size_t actual = 0;
+	int error;
+
+	(void)id;
+
+	/* Checks the ncm binding parse result. */
+	if (!ncm_binding_parse(interface, &binding))
+		return ENODEV;
+
+	/* Handles the adapter availability. */
+	adapter = kern_malloc(sizeof(*adapter));
+	if (adapter == NULL)
+		return ENOMEM;
+	kern_memset(adapter, 0, sizeof(*adapter));
+	adapter->usb_device = binding.device;
+	adapter->control = binding.control;
+	adapter->data = binding.data;
+	adapter->notification_endpoint = binding.notification;
+	adapter->bulk_in = binding.bulk_in;
+	adapter->bulk_out = binding.bulk_out;
+	adapter->data_alternate = binding.data_alternate;
+	adapter->capabilities = binding.capabilities;
+	spin_init(&adapter->lock, LOCK_RANK_DEVICE, "usb-cdc-ncm");
+
+	/*
+	 * The USB core owns failed-attach cleanup through the provisional
+	 * binding. Publish partial driver state before acquiring any sibling or
+	 * resource.
+	 */
+
+	/* Checks the operation status. */
+	error = drv_usb_interface_set_driver_data(interface, adapter);
+	if (error != 0) {
+		kern_free(adapter);
+
+		/* Failed. */
+		return error;
+	}
+
+	/* Checks the operation status. */
+	error = drv_usb_interface_claim(interface, binding.data);
+	if (error != 0)
+		return error;
+
+	/* Checks the operation status. */
+	error = ncm_get_mac(&binding, mac);
+	if (error != 0)
+		return error;
+	kern_memset(&limits, 0, sizeof(limits));
+	limits.ntb_in_max_size = NCM_NTB_BUFFER_SIZE;
+	limits.ntb_out_max_size = NCM_NTB_BUFFER_SIZE;
+	limits.rx_max_datagrams = NCM_RX_QUEUE_MAX;
+	limits.tx_max_datagrams = 1U;
+	limits.ndp_chain_max = DRV_USB_CDC_NCM_MAX_NDP_CHAIN;
+	limits.bulk_out_max_packet_size =
+		drv_usb_endpoint_max_packet_size(binding.bulk_out);
+
+	/* Checks the operation status. */
+	error = ncm_control(adapter,
+			    DRV_USB_DIR_IN | DRV_USB_REQUEST_CLASS |
+				    DRV_USB_RECIP_INTERFACE,
+			    NCM_GET_NTB_PARAMETERS, 0, parameters,
+			    sizeof(parameters), &actual);
+	if (error != 0 || actual != sizeof(parameters)) {
+		error = error != 0 ? error : EIO;
+
+		/* Failed. */
+		return error;
+	}
+
+	/* Checks the operation status. */
+	error = drv_usb_cdc_ncm_negotiate_nth16(parameters, actual, &limits,
+						&adapter->profile);
+	if (error != 0)
+		return error;
+
+	/* Checks the operation status. */
+	error = ncm_program_profile(adapter);
+	if (error != 0)
+		return error;
+	drv_usb_cdc_ncm_rx_reset(&adapter->rx_state);
+
+	/* Checks the operation status. */
+	error = ncm_buffers_alloc(adapter);
+	if (error != 0)
+		return error;
+
+	/* Checks the operation status. */
+	error = ncm_urbs_alloc(adapter);
+	if (error != 0)
+		return error;
+
+	/* Checks the operation status. */
+	error = ncm_net_device_create(adapter, mac);
+	if (error != 0)
+		return error;
+
+	/*
+	 * Idle URBs deliberately retain the inactive data endpoints.  The p015
+	 * interface transaction makes this the final fallible attach operation.
+	 */
+
+	/* Checks the operation status. */
+	error = drv_usb_interface_set_alternate(binding.data,
+						binding.data_alternate);
+	if (error != 0)
+		return error;
+	ncm_set_ready(adapter, 1);
+	kern_logf("usb-cdc-ncm: %s mac=%02x:%02x:%02x:%02x:%02x:%02x\n",
+		   adapter->net_device->name, mac[0], mac[1], mac[2], mac[3],
+		   mac[4], mac[5]);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Gives that interface up and everything held for it. */
+static int
+ncm_detach(
+	struct drv_usb_interface *interface,
+	unsigned flags)
+{
+	struct ncm_adapter *adapter = drv_usb_interface_driver_data(interface);
+	int error;
+
+	/* Handles the adapter availability. */
+	if (adapter == NULL)
+		return 0;
+	ncm_set_ready(adapter, 0);
+
+	/* Checks the operation status. */
+	error = ncm_stop(adapter);
+	if (error != 0)
+		return error;
+
+	/*
+	 * p015 permits allocated, completely drained URBs to retain inactive
+	 * endpoint objects across SET_INTERFACE.  Keep the complete graph until
+	 * this final normal-detach hardware transaction has succeeded.
+	 */
+	if ((flags & (DRV_USB_DETACH_FORCE | DRV_USB_DETACH_ATTACH_FAILED)) ==
+	    0) {
+		/* Checks the operation status. */
+		error = drv_usb_interface_set_alternate(adapter->data, 0);
+		if (error != 0)
+			return error;
+	}
+
+	/* Checks the operation status. */
+	error = adapter->net_device != NULL
+			? net_device_gone(adapter->net_device)
+			: 0;
+	if (error != 0)
+		return error;
+	ncm_urbs_free(adapter);
+	ncm_buffers_free(adapter);
+
+	/* Handles the net device availability. */
+	if (adapter->net_device != NULL)
+		net_device_destroy(adapter->net_device);
+	else
+		kern_free(adapter);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Takes the device out of service at system shutdown. */
+static void
+ncm_shutdown(
+	struct drv_usb_interface *interface)
+{
+	struct ncm_adapter *adapter = drv_usb_interface_driver_data(interface);
+
+	/* Handles the adapter availability. */
+	if (adapter != NULL) {
+		ncm_set_ready(adapter, 0);
+		(void)ncm_stop(adapter);
+	}
+}
+
+/* Reports whether this driver can drive an interface. */
+static int
+ncm_match(
+	struct drv_usb_interface *interface,
+	const struct drv_usb_id *id)
+{
+	int error;
+	struct ncm_binding binding;
+
+	(void)id;
+
+	/* Computes the function result. */
+	error = ncm_binding_parse(interface, &binding) ? 100 : 0;
+
+	/* Returns the computed result. */
+	return error;
+}

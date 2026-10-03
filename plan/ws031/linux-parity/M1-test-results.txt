@@ -1,0 +1,51 @@
+=== building dma_contract_test ===
+=== running dma_contract_test ===
+== DMA contract tests (mock backend, GPU-free) ==
+[set_info] return contract 0/-errno
+[DMA-1] non-identity mapping
+[DMA-2] scattered pages are not base + i*PAGE
+[DMA-3] coalescing: mapped nents < orig nents; unmap uses orig
+[DMA-4] mapping failure: 0 return, resources released
+[DMA-5] unmap refused while pinned into a GPU page table
+[DMA-6] sync_for_device before use, sync_for_cpu after
+[trace] overflow is counted (a gap != 'not run')
+== 36 checks, 0 failures ==
+=== building mmio_contract_test ===
+=== running mmio_contract_test ===
+== MMIO/forcewake/MCR contract tests (mock, GPU-free) ==
+[domain] register-to-forcewake-domain mapping
+[FW-1] refcounted get/nested/put/put with one wake + one sleep
+[MMIO-1] forcewaked access requires the domain held
+[MMIO-2] masked RMW touches only masked bits
+[MMIO-3] posting read issues a bus read
+[FW-2] ACK timeout returns error and does not leave a held ref
+[FW-3] over-put is detected, not silently ignored
+[MCR] steering is an exclusive locked section
+[balance] no forcewake left held at end
+== 35 checks, 0 failures ==
+=== building pci_contract_test ===
+=== running pci_contract_test ===
+== PCI contract tests (mock config space, GPU-free) ==
+[cfg] typed width access assembles little-endian
+[cap] walk finds present caps, returns 0 for absent (never operates missing)
+[enable] enable_device sets IO|MEM and D0, leaves STATUS untouched
+[enable] second enable_device is a no-op (no double-run)
+[master] bus master sets MASTER bit only, STATUS untouched
+[msi] enable_msi sets the enable bit when the cap is present
+[msi] absent MSI cap: -ENODEV, no config write (fall back to INTx)
+[power] set_power_state with no PM cap writes nothing
+[restore] restore returns PCI_COMMAND to its saved value
+== 27 checks, 0 failures ==
+=== building sync_contract_test ===
+=== running sync_contract_test ===
+== sync / deferred-work contract tests (GPU-free) ==
+[SYNC-1] completion signalled before wait returns immediately
+[SYNC-2] wait times out when never completed
+[SYNC-3] completion signalled mid-wait is observed
+[WQ-1] queue_work does not run the work inline
+[WQ-3] cancel before run prevents execution
+[WQ-4] ordered queue runs FIFO
+[WQ-5] queueing an already-queued work is a no-op
+[WQ-6] a running work can cancel a still-pending work
+== 20 checks, 0 failures ==
+=== ALL TESTS rc=0 ===

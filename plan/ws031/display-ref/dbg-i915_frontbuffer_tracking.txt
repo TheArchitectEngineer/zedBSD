@@ -1,0 +1,2 @@
+FB tracking busy bits: 0x00000000
+FB tracking flip bits: 0x00000000

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>fetch</title>
+<p id="out">fetch pending</p>
+<script>
+var fetchResults = [];
+function fetchFinished(value) {
+    fetchResults.push(value);
+    if (fetchResults.length === 3)
+        document.getElementById("out").textContent = fetchResults.join(" ");
+}
+fetch("/pages/first.html").then(function (response) {
+    return response.text().then(function (text) {
+        fetchFinished("success=" + response.ok + ":" + response.status + ":" + (text.indexOf("the first page") >= 0));
+    });
+});
+fetch("/status/404").then(function (response) {
+    fetchFinished("http=" + response.ok + ":" + response.status);
+});
+fetch("http://127.0.0.1:1/unreachable").then(function () {
+    fetchFinished("network=false");
+}).catch(function (error) {
+    fetchFinished("network=" + (error instanceof TypeError));
+});
+</script>

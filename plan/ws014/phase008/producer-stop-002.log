@@ -1,0 +1,7 @@
+{
+  "status": "fail",
+  "attempt": "q311-producer-stop-002",
+  "result": "/home/awe/zedBSD/plan/ws014/temp/remote/q311-producer-stop-002/result.json",
+  "error": "'producer-stop'",
+  "evidence_error": null
+}
