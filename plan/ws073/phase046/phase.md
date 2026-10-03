@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p046 -->
 # ws073-p046: BUG-053 — RAM を超える anonymous memory（残り: RAM + swap の 9 割の 1300 MiB）
 
-Status: uncleared（q651-i01、P1 generation12、2026-10-04。T1-049 で 1300 MiB が 10 分で終わらない）
+Status: cleared（2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-053](../../bugs/BUG-053.md)
@@ -86,3 +86,7 @@ T1-049（b65fd40、512 MiB、swap 1 GiB、NVMe）: 900 MiB PASS（33.4 s）、45
   `amd64 vmunix check: PASS`。`plan/tools/style-check.py src/kern/vmspace.c` の変えた範囲に違反なし（範囲の外の既存の指摘は残る）。
 - QEMU（T に依頼）: 512 MiB の guest（native の image、swap 1 GiB）で `swaphog 450`・`900`（回帰）、`swaphog 1300 30`（10 分の上限）。未実施。
 - 450 の 1 回目の SSH の切断（T1-049）は未調査のまま。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T2-018（QEMU KVM、512 MiB guest、088b21d の kernel）: swaphog 900 bad=0（32.3 s）、450 bad=0（13.3 s）、1300 bad=0・total_s=53.3（直す前の T1-049 は 600 s で 288885/332800 page）、io_err=0、終わりの ps に init・cron・sshd。450 の 1 回目の SSH の切断（T1-049）は今回は起きず、原因は未調査。実機は未実施。
