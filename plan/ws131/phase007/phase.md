@@ -2,7 +2,7 @@
 
 # ws131-p007: backend の入力の領域
 
-Status: uncleared（q650、2026-10-03、P1。T1-044 で 3/4 PASS、touch・pen の demo-s8-s9 はラップアップで未実行）
+Status: cleared（q650、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q650（2026-10-03、Q1 の割り当て）
@@ -97,3 +97,7 @@ uncleared（未実行の項目が残る）。boot-test PASS、C1 PASS（p126・c
 ## FreeBSD の確認（Q1、2026-10-04、WS137）
 
 T1-056（FreeBSD 15.1-RELEASE-p4 の QEMU+KVM guest、main fec887f）: native の build（warning 0）・install・native-build-audit・host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected が全て PASS。GPU の無い guest のため表示・入力の確認は未実施。
+
+## 残りの結果（Q1、2026-10-04、T1-059、QEMU Venus KVM、main e00b4ea）
+
+cleared。`demo-s8-s9: PASS`: S8 は corner の swipe で Notes が fullscreen、pen の `NOTES STROKE`（線が描かれる）、Esc で窓。S9 は `scroll_turn_ms=126 page_frame_ms=129 page_turn_ms=457 limit=200`、double-tap の zoom 1.563→fit、pinch の scale 1.807、ZWL ERROR なし。T1-044 の boot-test・C1・Linux と合わせて全項目 PASS。FreeBSD は T1-056 の native build と host 試験。

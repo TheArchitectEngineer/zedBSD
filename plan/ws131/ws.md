@@ -58,7 +58,7 @@ app は OS の抽象化を直接持たない。例: Settings → libkeiland → 
 | [p004](phase004/phase.md) | backend の音声 | cleared（q650、T2-009 の再試験 PASS） | p003 | 3〜4h |
 | [p005](phase005/phase.md) | backend の電源 | cleared（q650、T1-040 C1 PASS、log の順は未確認） | p004 | 3〜4h |
 | [p006](phase006/phase.md) | backend の seat・session | cleared（q650、T2-007・T2-011・T1-042） | p005 | 4〜5h |
-| [p007](phase007/phase.md) | backend の入力 | uncleared（q650、T1-044 で 3/4 PASS、demo-s8-s9 未実行） | p006 | 3〜4h |
+| [p007](phase007/phase.md) | backend の入力 | cleared（q650、T1-044・T1-059） | p006 | 3〜4h |
 | [p008](phase008/phase.md) | backend の表示 | cleared（q650、T2-013・T1-054） | p007 | 3〜4h |
 | [p009](phase009/phase.md) | backend の GPU の buffer と境界の確定 | planning | p008 | 4〜5h |
 | [p010](phase010/phase.md) | 拡張の protocol `kl_system_manager_v1` と設定の記録（監視は残す） | planning | p004、P2 の BUG-125 の merge | 4〜5h |
