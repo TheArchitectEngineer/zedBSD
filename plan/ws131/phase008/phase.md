@@ -80,3 +80,7 @@ Queue: q650（2026-10-03、Q1 の割り当て）
 ## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
 
 2026-10-04: Linux（T2-013）PASS（gcc・clang warning 0、compositor の PNG、display-probe direct・--acquire）。zedBSD の boot-test・C1 は T1 に依頼済み（試験の依頼 7、T1-053・054）。再開: その結果で Q1 が判定し、その後 p009（ユーザーの承認の後）。
+
+## 試験の途中（Q1、2026-10-04）
+
+Linux: T2-013 PASS。zedBSD: T1-054 で C1 PASS（p126・c1-boot-shutdown、Venus、shutdown_down=1・qemu_gone=1）。既定の image の boot-test は T1 の後の番。

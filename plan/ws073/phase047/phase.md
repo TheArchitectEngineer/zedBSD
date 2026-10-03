@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p047 -->
 # ws073-p047: BUG-052 — tmpfs の容量を物理 memory の半分に（file の data を page の index で持つ）
 
-Status: in-progress（q651-i01、P1 generation12、2026-10-04。T1-048 の FAIL は試験の期待の誤り（node の上限は ws073-p013 の設計どおり）、期待を直して T1 に再試験の依頼）
+Status: cleared（q651-i01、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-052](../../bugs/BUG-052.md)
@@ -75,3 +75,7 @@ PASS、1 byte の file が 14325 個で ENOSPC（`FAIL 20000 data files fit`）�
 ## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
 
 T1 に tmpfs-many.sh の再試験（試験の依頼 5、commit 4281d15）を依頼済み、結果は Q1 が受ける。再開: その結果で Q1 が判定（kernel の変更なし）。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T1-052（QEMU、4281d15）: tmpfs-many.sh `failures 0`、14325 個で node の上限（ws073-p013 の設計）で止まり `PASS the node quota, not the bytes, stopped them`。T1-048 で bug052-tmpfs.sh PASS（4191060 KiB、512 MiB を 1 s で書き 0 s で消す）・boot-test PASS。実機は未実施。制限: tmpfs の data は swap されない、file の数は全 tmpfs で約 14300 個（inode の cache の 7/8）。

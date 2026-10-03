@@ -57,3 +57,7 @@ image を作る script は 33 本（`find plan -name 'build-*image*.sh'` の 32 
 ## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
 
 T1 に代表 5 つの boot-test と demo の build（試験の依頼 6）を依頼済み。再開: T1 の結果で Q1 が判定。残り（image を写す道具、vkloop-hw.sh、ws101 の accel noct）は上の「残り」のとおり。
+
+## 試験の途中（Q1、2026-10-04）
+
+T1-053: files・login・settings・criteria・ime の 5 つの image の boot-test は全て PASS（8〜11 s）。demo の build と boot は T1 の後の番。
