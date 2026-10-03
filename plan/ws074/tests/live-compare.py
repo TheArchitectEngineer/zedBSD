@@ -8,7 +8,7 @@
 
 URL is a live http or https page, or a saved capture under build/ (a file's path), which is how the
 demo's pages are iterated on without asking the site again.  browser runs `--render` with the fonts of
-build/ws035-fonts;
+userland/desktop/fonts;
 Chromium (headless, the same fonts through build/ws074-chrome/fonts.conf from chrome-fonts.sh) takes a
 screenshot with the fixed Chrome User-Agent, so both get the same variant of the page, and runs the page's
 scripts for five seconds of virtual time.  Both pictures and a side-by-side picture (ours | Chromium |
@@ -41,7 +41,7 @@ AGENT = CHROME_USER_AGENT
 
 def render_ours(program, url, width, height, out):
     """Draws the page with browser's CPU renderer into a PNG."""
-    fonts = os.path.join(ROOT, "build/ws035-fonts")
+    fonts = os.path.join(ROOT, "userland/desktop/fonts")
     ppm = out + ".ppm"
     command = [program, "--render", "--output=" + ppm, "--width=%d" % width, "--height=%d" % height,
                "--font=" + os.path.join(fonts, "Inter.ttf"),

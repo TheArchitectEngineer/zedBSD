@@ -10,9 +10,10 @@
 #     the fix the save on Enter held the input method past 500 ms: "ZWL IME bypass after_ms=500").
 #  4. ws095-p015 (2026-10-04 user: save the dictionary when there has been no input for three minutes): right after
 #     step 3 the user dictionary is not written yet; 190 s without a key and it is (one reading at least); then one more
-#     conversion learned ("watasi") and keiland-ime stopped by SIGTERM: the file has a second reading (saved at the end).
+#     conversion learned ("watasi") and keiland-ime stopped by SIGTERM: zdesktop logs it exited, and the file has a second
+#     reading (saved at the end).
 # Reported, not judged against a number for 1 and 2 (the guest's own figures are the evidence; 5330 is measured by the
-# user).  PASS needs every trial shown (missed=0), no "ZWL IME bypass" in step 3, and step 4's three checks.
+# user).  PASS needs every trial shown (missed=0), no "ZWL IME bypass" in step 3, and step 4's four checks.
 #
 #   plan/ws089/tests/settings-guest.sh start IMAGE      (or zdesktop-guest.sh start IMAGE)
 #   plan/ws095/tests/latency-bug143.sh [OUTDIR]          (default build/ws095-shots/bug143)
@@ -101,8 +102,17 @@ echo "dictionary after 190 s without a key: $now"
 [ "$now" != none ] && [ "$now" -ge 1 ] 2>/dev/null && echo "written after the idle time: ok" || { echo "written after the idle time: FAIL"; status=1; }
 keys 'watasi' ' ' ' ' '\n'
 sleep 1
-guest "pid=\$(ps -A -o pid,args | grep '[k]eiland-ime' | awk '{print \$1}'); kill -TERM \$pid; echo stopped \$pid" >/dev/null
-sleep 3
+exited_before=$(guest "grep -c 'ZWL IME exited' /tmp/zdesktop.log" | tail -1)
+guest "pid=\$(ps -A -o pid,args | grep '[k]eiland-ime' | awk '{print \$1}'); echo pids \$pid; kill -TERM \$pid" | tail -1
+tries=0
+while [ $tries -lt 10 ]; do
+	exited_after=$(guest "grep -c 'ZWL IME exited' /tmp/zdesktop.log" | tail -1)
+	[ "${exited_after:-0}" -gt "${exited_before:-0}" ] 2>/dev/null && break
+	tries=$((tries + 1))
+	sleep 1
+done
+echo "ZWL IME exited lines: ${exited_before:-?} -> ${exited_after:-?}"
+[ "${exited_after:-0}" -gt "${exited_before:-0}" ] 2>/dev/null && echo "keiland-ime ends on SIGTERM: ok" || { echo "keiland-ime ends on SIGTERM: FAIL"; status=1; }
 last=$(entries)
 echo "dictionary after SIGTERM: $last"
 [ "$last" != none ] && [ "$last" -gt "${now:-0}" ] 2>/dev/null && echo "written at the end: ok" || { echo "written at the end: FAIL"; status=1; }

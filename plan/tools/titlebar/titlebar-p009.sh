@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws070-p009: the glass look's glyph cache (UTF-8, the fallback font) on the Venus guest (the lean
-# image with build/ws071-fonts' fallback font).  zdesktop --glass shows /bin/titlebar-probe --show with a
+# image with userland/desktop/fonts' fallback font).  zdesktop --glass shows /bin/titlebar-probe --show with a
 # Japanese title:
 #  1. zdesktop made the atlas's cache (GLASS atlas), opened the fallback font on the first character
 #     the first font lacks (GLASS fallback font ... faces=2; lazily since ws070-p010), and rendered the

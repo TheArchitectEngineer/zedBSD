@@ -66,7 +66,7 @@ run log（失敗しなくても）を dmesg に出す。amd64 の kernel の log
 address を知る（2026-10-03 user: DHCP のまま。router は同じ address を当分使い回す）:
 
 1. 5320 の画面（firmware の framebuffer）に console の login prompt が出たら、user が `root`（password `root`、デモの account、
-   `plan/ws035/demo/demo-accounts.sh`）で login する。
+   base の `userland/base/etc/shadow`）で login する。
 2. `ifconfig ue0` を打ち、`inet` の address を Q1 に伝える。
 3. 以後のエージェントの操作はその address に SSH で行う。
    （console の login prompt が出ることは QEMU でも 5320 でも未確認。出ない場合の代わり（/etc/issue に ue0 の address を出す等）は P4 が Q1 に返す。）

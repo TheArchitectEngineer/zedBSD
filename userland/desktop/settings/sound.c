@@ -10,12 +10,13 @@
  * same volume the system bar's popup sets (userland/desktop/wayland/
  * volume.c), through the same ways.
  *
- *   - audiod holds the volume during the session (libkeiland's
- *     keiland_audio_*); a change is sent to it, and a change made in the
- *     system bar comes back from it.  Nothing is written to a file while
- *     the user changes it (BUG-161, ws100-p012): zdesktop keeps the volume
- *     in the preferences (sound.volume, sound.muted in desktop.conf) once,
- *     at the session's end, and applies it to audiod at the next login.
+ *   - audiod holds the volume during the session.  A change is set as the
+ *     desktop's settings sound.volume and sound.muted (libkeiland's
+ *     kl_settings_*, WS135), which zdesktop asks audiod for; the page
+ *     follows audiod's reports (libkeiland's keiland_audio_*, which also
+ *     plays the feedback sound, until ws131-p011).  Nothing is written to
+ *     a file while the user changes it (BUG-161): zdesktop keeps the volume
+ *     at the session's end and gives it to audiod at the next login.
  *   - The short feedback sound follows the system bar's rules: when a
  *     change is final (a drag let go, mute turned off), at most one every
  *     250 milliseconds while dragging, and never when mute is turned on.
@@ -50,13 +51,13 @@ se_sound_open(
 {
 	struct se_sound *sound;
 
-	/* The kept volume, or all of it. */
+	/* The session's volume as zdesktop reports it, or all of it until it is known. */
 	sound = &app->sound;
 	sound->value = 100;
 	sound->muted = 0;
-	if (app->look.preferences != NULL) {
-		sound->value = keiland_preferences_get_int(app->look.preferences, SOUND_KEY_VOLUME, 100, 0, 100);
-		sound->muted = keiland_preferences_get_int(app->look.preferences, SOUND_KEY_MUTED, 0, 0, 1);
+	if (app->look.settings != NULL) {
+		sound->value = kl_settings_get_int(app->look.settings, SOUND_KEY_VOLUME, 100);
+		sound->muted = kl_settings_get_int(app->look.settings, SOUND_KEY_MUTED, 0);
 	}
 
 	/* The link to audiod (it connects when audiod runs). */
@@ -252,7 +253,11 @@ sound_set(
 	}
 }
 
-/* Sends the volume shown to audiod. */
+/*
+ * Sends the volume shown: as the desktop's settings, which zdesktop asks
+ * audiod for, or to audiod directly on a desktop without Keiland's
+ * extension.
+ */
 static void
 sound_send(
 	struct se_app *app)
@@ -264,7 +269,13 @@ sound_send(
 	sound = &app->sound;
 	sound->send_waiting = 0;
 	sound->sent_at = app->now;
-	error = keiland_audio_set_volume(sound->audio, (unsigned)sound->value, (unsigned)sound->value, (unsigned)sound->muted);
+	if (app->look.settings != NULL && app->look.writable) {
+		error = kl_settings_set_int(app->look.settings, SOUND_KEY_VOLUME, sound->value, NULL);
+		if (error == 0)
+			error = kl_settings_set_int(app->look.settings, SOUND_KEY_MUTED, sound->muted, NULL);
+	} else {
+		error = keiland_audio_set_volume(sound->audio, (unsigned)sound->value, (unsigned)sound->value, (unsigned)sound->muted);
+	}
 	if (error != 0)
 		se_log("SOUND send errno=%d", error);
 }

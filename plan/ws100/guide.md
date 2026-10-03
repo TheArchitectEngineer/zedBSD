@@ -117,22 +117,9 @@ master の優先: WS099・WS079・WS090・WS089・WS094・**WS100**・WS078・WS
 
 ### 5.1 image の build
 
-1. 試験の client `audiod-feedback` を先に作る（**main の checkout には `build/ws100-tests/` が無い**、2026-10-01 確かめ。無いと volume の image に
-   `/usr/bin/audiod-feedback` が入らず（`config-amd64-volume.mk:8` の `wildcard`）、`volume-p004.sh:67`・`volume-p005.sh:65` の `audiod-feedback get` が失敗する）。
-   `build-audiod-image.sh` の client の作り方（13〜19 行）は `--sysroot=$build/sysroot` だが、sysroot は全ての BUILD で共有の `build/amd64/sysroot`
-   （`toolchain/llvm/sysroot.mk:5`）なので、別の BUILD では使えない。代わりに次を流す（2026-10-01 に scratch で compile・link できることを確かめた）:
-
-```
-ls build/amd64/sysroot/usr/lib/crt1.o build/amd64/dynamic/libc.so
-mkdir -p build/ws100-tests build/<W>
-sysroot=$PWD/build/amd64/sysroot
-build/llvm/bin/clang --target=x86_64-unknown-zedbsd --sysroot="$sysroot" -nostdinc -I. -Iinclude -isystem "$sysroot/usr/include" -DHAL_ARCH_AMD64 -DKERN_USER_ABI_LP64 -DKERN_DYNAMIC_LIBC -m64 -march=x86-64 -mno-red-zone -O2 -ffreestanding -fPIC -fno-builtin -fno-stack-protector -Wall -Wextra -Werror -c plan/ws100/tests/audiod-feedback.c -o build/ws100-tests/audiod-feedback.o
-build/llvm/bin/clang --target=x86_64-unknown-zedbsd --sysroot="$sysroot" -m64 -nostdlib -pie -Wl,--no-relax -Wl,--hash-style=sysv,-z,now,-z,relro -Wl,--allow-shlib-undefined -Wl,--dynamic-linker=/lib/ld.so "$sysroot/usr/lib/crt1.o" build/ws100-tests/audiod-feedback.o -Lbuild/amd64/dynamic -Wl,-rpath-link,build/amd64/dynamic -l:libc.so -o build/ws100-tests/audiod-feedback
-```
-
-   - 1 行目の file が無い時だけ `make -j64 sysroot-amd64`（commands.md §2）を先に流す（`build/amd64/dynamic/libc.so` が無い時は、まず §5.1 の 2 の image を
-     1 回作り、その `build/<W>-volume/dynamic` を `-L` と `-rpath-link` に使う）。
-   - `build/ws100-tests/` は config が固定で見る共有の path（`config-amd64-volume.mk:8`・`config-amd64-audiod.mk:9`）。中身は WS100 の試験の client だけ。
+1. 試験の client `audiod-feedback` は `build-volume-image.sh`・`build-audiod-image.sh` が中で `build-audiod-feedback.sh BUILD` を呼んで
+   `BUILD/tests/audiod-feedback` に作る（ws136-p001、2026-10-04: 以前の共有の `build/ws100-tests/` はやめた。config は `$(BUILD)/tests/audiod-feedback` を読む）。
+   headers は共有の `build/amd64/sysroot`、libc.so は BUILD の `dynamic/`（無ければ先に作る）。手で作るなら `sh plan/ws100/tests/build-audiod-feedback.sh build/<W>-volume`。
 
 2. volume の image（WS099 の基準の image + HDA・audiod・audiod-feedback、kei の autologin）:
 

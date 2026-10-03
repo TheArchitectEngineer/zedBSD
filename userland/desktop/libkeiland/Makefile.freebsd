@@ -9,10 +9,13 @@ KEILAND_FREEBSD_KEILAND_SOURCES := userland/desktop/libkeiland/version.c \
 	userland/desktop/libkeiland/motion.c \
 	userland/desktop/libkeiland/scroll.c \
 	userland/desktop/libkeiland/gesture.c \
-	userland/desktop/libkeiland/preferences.c \
 	userland/desktop/libkeiland/desktop.c \
 	userland/desktop/libkeiland/keyboard-inset.c \
 	userland/desktop/libkeiland/edit.c \
+	userland/desktop/libkeiland/settings.c \
+	userland/desktop/libkeiland/settings-cache.c \
+	userland/desktop/libkeiland/settings-app.c \
+	userland/desktop/settings-keys/settings-keys.c \
 	userland/desktop/libkeiland/system-compat.c \
 	userland/desktop/libkeiland/audio-compat.c
 $(eval $(call KEILAND_FREEBSD_LIBRARY,keiland,libkeiland.so,$(KEILAND_FREEBSD_KEILAND_SOURCES),libwayland-client.so libkeiland-backend.a,-lm,userland/desktop/libkeiland/exports.map))

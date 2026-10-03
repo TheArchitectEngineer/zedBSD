@@ -17,7 +17,7 @@ BUILD=${BUILD:-build/ws101-p010-hw}
 host=${I915_HOST:-solaris10-man}
 D=plan/ws101/tests/hw/gles
 Z=plan/ws031/tests/zdesktop
-fonts=/home/awe/zedBSD-rpi4/build/ws035-fonts
+fonts=userland/desktop/fonts
 mkdir -p "$out" "$BUILD"
 
 # The image: the services of plan/ws031/tests/vkloop-hw.sh zdesktop's first steps, then this run's.

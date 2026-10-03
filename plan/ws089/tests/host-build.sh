@@ -29,9 +29,16 @@ for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cma
 	"$cc" -O2 -g -w -I$out/include -Iuserland/desktop/libtruetype -c "$file" -o "$object"
 	objects="$objects $object"
 done
-for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userland/desktop/files/icons.c userland/desktop/artwork/mark.c userland/desktop/libkeiland/preferences.c; do
+for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userland/desktop/files/icons.c userland/desktop/artwork/mark.c; do
 	object="$out/obj/shared-$(basename "$file" .c).o"
 	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -c "$file" -o "$object"
+	objects="$objects $object"
+done
+# The desktop's settings (WS135): libkeiland's cache and the settings' table, under a stand-in for kl_settings_*
+# without Wayland (host-settings-stub.c: the compositor's keys in memory, a set in effect at once).
+for file in userland/desktop/libkeiland/settings-cache.c userland/desktop/settings-keys/settings-keys.c plan/ws089/tests/host-settings-stub.c; do
+	object="$out/obj/shared-$(basename "$file" .c).o"
+	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland -c "$file" -o "$object"
 	objects="$objects $object"
 done
 # The sound page's link to audiod (ws100-p005): libkeiland's audio-compat.c over libkeiland-backend's zedBSD

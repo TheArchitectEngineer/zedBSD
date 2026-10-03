@@ -110,6 +110,19 @@ struct sm_target {
 };
 
 /*
+ * How long the parts of one frame took, in microseconds (ws134-p003): the
+ * wait for an image, recording the commands, the submit, the present and
+ * the wait for the frame's fence.  The frame report prints their means.
+ */
+struct sm_frame_times {
+	uint64_t acquire_us;
+	uint64_t record_us;
+	uint64_t submit_us;
+	uint64_t present_us;
+	uint64_t wait_us;
+};
+
+/*
  * The renderer: the device, the swapchain and its targets, the pass and
  * the pipelines, the atlas's image, and the vertex buffer.  One frame at
  * a time: each is waited for before the next, so the host writes the
@@ -347,6 +360,18 @@ struct sm_app {
 	uint64_t frames;
 	uint64_t next_frame_us;
 	uint64_t frame_wait_us;
+
+	/*
+	 * The report's sums since it was last printed (ws134-p003): the parts of
+	 * the frames, building the scenes, and the time from asking for a frame
+	 * callback to the compositor's answer (callback_us, callback_count
+	 * answers).  frame_asked_us is when the pending callback was asked.
+	 */
+	struct sm_frame_times frame_times;
+	uint64_t build_us;
+	uint64_t callback_us;
+	uint64_t callback_count;
+	uint64_t frame_asked_us;
 	uint64_t report_ms;
 	uint64_t memory_report_ms;
 };
@@ -380,7 +405,7 @@ VkResult sm_renderer_open(struct sm_renderer *renderer, struct wl_display *displ
 VkResult sm_renderer_resize(struct sm_renderer *renderer, uint32_t width, uint32_t height);
 VkResult sm_renderer_recover(struct sm_renderer *renderer, struct wl_display *display, struct wl_surface *surface, uint32_t width, uint32_t height);
 VkResult sm_renderer_atlas(struct sm_renderer *renderer, const struct sm_atlas *atlas);
-VkResult sm_renderer_draw(struct sm_renderer *renderer, const struct sm_scene *scene, uint64_t *wait_us);
+VkResult sm_renderer_draw(struct sm_renderer *renderer, const struct sm_scene *scene, struct sm_frame_times *times);
 void sm_renderer_close(struct sm_renderer *renderer);
 
 #endif

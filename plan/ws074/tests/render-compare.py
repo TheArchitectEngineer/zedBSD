@@ -6,7 +6,7 @@
 
   render-compare.py PAGE.html [--width W] [--height H] [--program PATH] [--out DIR] [--shots DIR --tag TAG]
 
-browser runs `--render --output=OUT.ppm` with the fonts of build/ws035-fonts; Chromium takes
+browser runs `--render --output=OUT.ppm` with the fonts of userland/desktop/fonts; Chromium takes
 a screenshot through chrome-shot.sh (the same fonts through build/ws074-chrome/fonts.conf).  Both
 pictures and a side-by-side picture (ours | Chromium | difference) go to DIR (default
 build/ws074-render).  A pixel agrees when no channel differs by more than 16 (design.md §14.5);
@@ -31,7 +31,7 @@ THRESHOLD = 16
 
 
 def render_ours(program, page, width, height, out):
-    fonts = os.path.join(ROOT, "build/ws035-fonts")
+    fonts = os.path.join(ROOT, "userland/desktop/fonts")
     ppm = out + ".ppm"
     subprocess.run([program, "--render", "--output=" + ppm, "--width=%d" % width, "--height=%d" % height,
                     "--font=" + os.path.join(fonts, "Inter.ttf"),

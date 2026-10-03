@@ -84,9 +84,10 @@ zwl_handoff_logout(
 	if (error != 0)
 		return 0;
 
-	/* The clipboard's history goes (clipboard.c), and the session's volume is kept for the next login (volume.c). */
+	/* The clipboard's history goes (clipboard.c), and the session's volume and settings are kept for the next login (volume.c, settings.c). */
 	zwl_clipboard_history_clear(server, "logout");
 	zwl_volume_keep(server, "logout");
+	zwl_settings_logout(server);
 
 	/* Succeeded: the quit will come. */
 	server->logout_ms = zwl_milliseconds();

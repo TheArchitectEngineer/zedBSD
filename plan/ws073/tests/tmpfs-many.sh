@@ -51,16 +51,19 @@ for round in 1 2 3; do
 	check "round $round: remove them" rm -rf "$dir"
 done
 
-# Files with data stop at the byte quota, with the rest of the system intact.
+# Files with data: one page each.  Before ws073-p047 the 32 MiB byte quota stopped them at about 8000; the quota is
+# half of memory now (BUG-052), so the node quota of the inode cache's share (about 14300, ws073-p013) stops them
+# first, with bytes to spare, and the rest of the system intact (T1-048: 14325).
 mkdir -p "$dir"
 i=0
 while [ "$i" -lt 20000 ]; do
 	echo x > "$dir/d$i" 2>/dev/null || break
 	i=$((i + 1))
 done
-echo "files with one byte each before the quota: $i"
-check "the byte quota, not the inodes, stopped it" sh -c "df /tmp | tail -1 | grep -q '100%'"
-check "other files still open at the quota" others_work
+echo "files with one byte each: $i"
+check "more data files than the old 32 MiB quota held" test "$i" -gt 9000
+check "the node quota, not the bytes, stopped them" sh -c "! df /tmp | tail -1 | grep -q '100%'"
+check "other files still open with them" others_work
 check "remove the data files" rm -rf "$dir"
 check "a new file after removal" sh -c "echo y > /tmp/bug029-after && rm /tmp/bug029-after"
 

@@ -81,8 +81,7 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def font_directory():
-    for directory in (ROOT / "build/ws035-fonts",
-                      ROOT / "userland/desktop/fonts"):
+    for directory in (ROOT / "userland/desktop/fonts",):
         if all((directory / name).is_file() for name in FONT_NAMES):
             return directory
     raise RuntimeError("comparison fonts were not found")

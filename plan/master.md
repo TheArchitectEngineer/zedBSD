@@ -18,6 +18,7 @@
 <!-- master:agents:start -->
 - 体制: 単一 session の Q1 ＋固定名サブエージェント（実装 P1〜P8、試験 T1・T2）。2026-10-03 夜 user「これによりすべての作業をソフトに停止します。」で P1・P2・T1・T2 はラップアップして終了、全ての成果は main に統合済み（P4 の WS118 の source と記録も Q1 が取り込んだ）。動いている担当は無い。
 - 再開の時の割り当ての候補（user が決める）: P1 = WS131 の p008 の試験と p009 以降、P2 = WS134 の p003 の直しと p004、T1・T2 = 台帳の未実行の予約（`plan/agents/T1/requests.md`・`T2/requests.md`）。WS135（設定の一本化、BUG-162）の担当と時期は未定。
+- **2026-10-04 夜の自律の指示**: user「私は寝ます。昼までには起きると思います。テストが全部終わったら、P2は優先度の高いものから、実装タスクを進めてください。WSが完了できないときは他のWSに移ることで、どんどん先に進めてください。」→ 体制は P2・T1・T2（P3 は WS137 の後に終了）。P2 は WS135 の後、優先度の順に実装の Phase を進め、判断・実機・依存で止まる WS は記録して次の WS へ。Q1 の解釈: WS131 の p009 以降（設計はユーザーのレビュー済み）もこの指示で始めてよい。新しい製品の判断・HAL の API・toolchain・push は従来どおりユーザーの承認まで止める。
 <!-- master:agents:end -->
 
 ## リポジトリの作り直し（2026-10-03 夜、持ち越し）
@@ -32,7 +33,8 @@
   3. サブエージェントの worktree: 古い `/home/awe/zedBSD-worktrees/*`（agent/p1〜p4・t1・t2、codex/a1〜a3・p8〜p10）と `/home/awe/zedBSD-rpi4/.claude/worktrees/*` は古い `.git` に結び付くので使えない。担当を起こす時に main が `git worktree add /home/awe/zedBSD-worktrees/<名前> -b agent/<名前>` で作り直す（[protocol](agents/protocol.md) の 1）。古い worktree の directory の削除はユーザーが行う。
   4. toolchain: `make toolchain` などで `build/llvm`・`llvm-source`・`llvm-build`・`NoctLang` を作り直した後に `plan/tools/toolchain-lock.sh lock`。
   5. Linux の試験の guest（WS105・WS131、QEMU+KVM）: `plan/tools/keiland-linux/build-guest.sh`（base と gdm）で `build/keiland-linux/guest`・`guest-gdm` を作り直す。guest の SSH の鍵 `plan/tmp/guest/` は tree にある。
-  6. 統合の前の残り: 無い（全ての agent の branch は main に入っている。`worktree-agent-aefedcaf…` の 2 commit は BUG-066 の決定で merge しない物）。P1 の `build/p1-q640/p007-wip.patch` は p007 が commit 済みなので不要。
+  6. 試験の image の入力（2026-10-04 Q1 が作り直した）: `build/ws035-fonts/`（`userland/desktop/fonts/` の Inter.ttf・Inter-OFL.txt → OFL.txt・JetBrainsMono-Regular.ttf・JetBrainsMono-OFL.txt・DroidSansFallbackFull.ttf・DroidSansFallback-LICENSE.txt の複写）、`build/ws035-wallpaper/`（wallpaper.ppm・wallpaper-1080.ppm = `userland/desktop/keiland/wallpapers/Birch-Lake.ppm`）、`build/ws071-fonts/`（DroidSansFallbackFull.ttf・LICENSE・Apache-2.0.txt）。Venus の renderer `build/ws035-sq-venus/install` は Latitude 5330（10.0.30.3）から scp（`plan/ws035/tests/zdesktop-guest.sh` の注記、sha256 も）。host の `sudo modprobe vgem && sudo chmod 0666 /dev/dri/renderD128` は host の起動ごとに。
+  7. 統合の前の残り: 無い（全ての agent の branch は main に入っている。`worktree-agent-aefedcaf…` の 2 commit は BUG-066 の決定で merge しない物）。P1 の `build/p1-q640/p007-wip.patch` は p007 が commit 済みなので不要。
 - **tree に残るが git に入らない物**（削除の対象外の前提）: `.wifi`（WiFi の認証情報、ユーザーが作成）、`.claude/settings.local.json`、`config.mk`、`plan/*/temp/`。
 - **host の状態**（repo の外）: sysctl の一時の設定（`vm.dirty_background_bytes=512M`・`vm.dirty_bytes=2G`・`vm.swappiness=10`、2026-10-03 user「sysctl の調整はやってみてください」）は再起動で戻る。残すかは user の判断待ち。fstrim は 2026-10-03 に実行済み（35 分、204.6 GiB）。
 
@@ -224,7 +226,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | p099 cleared（q507、Acid2 100%）。p172/q579はbranch統合済みだが最終review残でuncleared。A1でp172再開後、p100→p174→p175→p173→p176。p101 CSS2も保持 |
 | [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-30: L1（C6 91.3 ms）と L2（p029: blur は窓ごと、既定は無効・Settings だけ有効、C6 67.3 ms）を満たした。L3 は p030 で計測（文字の draw 約 400 で約 10 ms）。ユーザーの指示で描画の高速化を止め、p031（文字の draw をまとめる）は build まで済んだ patch（`phase031/exp/text-batch.patch`）で保留。再開はユーザーが描画の高速化の再開を言うとき |
 | [WS076](ws076/ws.md) | MG002 | libc の libm を自前で正しく書き直す（src/libc、誤差 1 ulp 以内、fmod 等は正確）（2026-09-28 ユーザー「libmは独自に書いてください。libcのツリーに入れてください。」） | completed | 2026-09-28 完了（`src/libc/math/`、群 B は全件で正しく丸め、BUG-078 解決）。F-046・F-047 へ移管 |
-| [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | planning | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
+| [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | canceled（2026-10-04 user: PC-98 の対応をやめる） | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
 | [WS078](ws078/ws.md) | MG006 | Kei Operating System への名前の移行（2026-09-28 ユーザーの決定: OS の名前 Kei、カーネルの内部名 zedbsd、Keiland、`/bin/wayland`・`/bin/xserver`・`/bin/browser`、`KERN_` の接頭辞、ロゴは Kei の 3 文字） | incomplete | 2026-09-28: p002・p003・p006・BUG-080・retro への移動は済み、p004 はほぼ済み。残り: 注釈と log の名前、p005 |
 | [WS079](ws079/ws.md) | MG006 | 手書きノート（Notes、筆圧 4096 段階の USB のペンタブレット、PDF に保存し編集の metadata を持つ）と PDF Viewer（scroll と page の swipe）、上の右端から左下へのスワイプで Notes を起動・最前面・全画面（2026-09-28 ユーザー） | incomplete | 2026-09-30: 段 L1（全 Phase）と L2 の QEMU の分（ws079-p016: 台本 S8・S9 を注入の touch と pen で自動で通す、PDF の頁送りの最長 142 ms ≤ 200 ms）を満たした。残り: 実機と Windows の QEMU での確かめ（ユーザー、`plan/ws079/demo-s8-s9-manual.md`）、L3 の実機のペン |
 | [WS080](ws080/ws.md) | MG002 | `ld.coff`: Win64 PE32+ の動的ローダ（PE/COFF の mapping・relocation・DLL・import/export・Microsoft x64 ABI・最小の TEB/PEB・GS base）。NT の loader は再現せず `AddressOfEntryPoint` へ直接。互換の DLL は上に積む（2026-09-28 ユーザーの仕様 [spec.md](ws080/spec.md)） | planning | p001（設計）から。GS base は swapgs（案 A）に決定、差分は p001 で承認を得る。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/`（商標のため Win64 の名前を OS に出さない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/`。橋の DLL は置かず互換の DLL が zedBSD の UAPI を直接呼び Wayland と直接通信。判断待ち: 優先度 |
@@ -282,6 +284,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | planning | 安定版 S1 の内容と試験の一覧はユーザーと決める |
 | [WS134](ws134/ws.md) | MG006 | システムモニターのアプリ（Analytic Spatial UI、中央の状態コア、層構造、2026-10-03 ユーザー） | incomplete | p001・p002 cleared、p003 uncleared（sim の fps 4.7）、p004 uncleared（`interact.c` まで） |
 | [WS135](ws135/ws.md) | MG006 | 設定の読み書きを libkeiland に一本化（libkeiland が直接か compositor の拡張で解決、監視と通知の API、desktop.conf は compositor の内部で session の開始・終了だけ読み書き。BUG-162、2026-10-03 ユーザー） | planning | p001 設計 |
+| [WS136](ws136/ws.md) | MG007 | 試験の image を「WS の tests/ の config.mk ＋個別の file の複写」に揃え、過去の build/ を入力にしない（2026-10-04 ユーザー） | planning | p001（P1） |
+| [WS137](ws137/ws.md) | MG006 | FreeBSD の試験の VM（QEMU+KVM）を T1・T2 で使えるようにし、libkeiland-backend の FreeBSD の build と試験を流す（2026-10-04 ユーザー） | planning | p001（P3） |
 | [WS116](ws116/ws.md) | MG002 | upstream Qt6の範囲をGTK4移植後に検討し `packages/desktop/qt6`へ移植 | planning | WS115の知見後。旧WS034 p030移管、Queue none |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。

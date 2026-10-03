@@ -41,7 +41,7 @@ shot() {
 }
 
 # The link's middle in the page at 1000 wide, from the host's layout: "x y".
-f=build/ws035-fonts
+f=userland/desktop/fonts
 link=$(build/ws074-host/plain/browser --dump=layout --width=1000 --height=700 --font=$f/Inter.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf \
     userland/desktop/browser/data/start.html |

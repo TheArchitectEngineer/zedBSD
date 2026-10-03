@@ -65,3 +65,7 @@ font・cell・row の高さで cursor の位置に描く（後ろの文字をず
 ユーザーの 2026-10-02 の観察は q603 の直しより前の image の可能性がある。
 QEMU の再確認（`ime-p013.sh`、今の main の image）を Q1 経由で試験の担当に依頼した（P2-02。ws095-p015 の textedit の角丸の変更の後の見た目の確認を兼ねる）。
 実機（5330）の目視はユーザー。この節は確認の記録で、Phase の status は Q1 の判定まで変えない。
+
+## 再確認の結果（Q1、2026-10-04）
+
+T1-047（QEMU Venus KVM、2026-10-04、main 09179c0 の image、fonts 入り）: `ime-p013: PASS`、変換中の文字は本文と同じ大きさで inline・文節の下線あり、ws095-p015 の textedit の角丸の変更の後も card の角・背景が前と同じ見た目。cleared のまま。実機は S2。

@@ -100,6 +100,7 @@ static struct spinlock swap_source_lock = {
 static int swap_manager_enable_transition(struct swap_backend *backend, int *enabled_here);
 static void swap_manager_disable_empty(struct swap_backend *backend);
 static int swap_io(struct swap_backend *backend, uint32_t slot, void *page, int write);
+static int source_find_free_locked(const struct swap_backend_source *source, uint32_t *index);
 static int is_boot_reference(const char *value);
 extern struct thread *thread_current(void);
 static int selector_validate(const char *selector);
@@ -309,6 +310,7 @@ swap_source_prepare(
 	source->page_size = page_size;
 	source->slot_count = slot_count;
 	source->free_slots = slot_count;
+	source->next_slot = 0;
 	source->state = SWAP_SOURCE_STATE_PREPARED;
 
 	spin_unlock_irqrestore(&swap_lock, irq);
@@ -508,6 +510,7 @@ swap_alloc_slot(
 	unsigned long irq;
 	uint32_t index;
 	uint8_t mask;
+	int found;
 
 	/* Rejects a missing backend or result. */
 	if (backend == NULL || slot == NULL)
@@ -527,19 +530,26 @@ swap_alloc_slot(
 		if (source->state != SWAP_SOURCE_STATE_ACTIVE ||
 		    source->free_slots == 0)
 			continue;
-		for (index = 0; index < source->slot_count; index++) {
-			mask = (uint8_t)(1U << (index & 7U));
-			if (!(source->bitmap[index >> 3] & mask)) {
-				source->bitmap[index >> 3] |= mask;
-				source->slot_pending_free[index] = 0;
-				source->free_slots--;
-				backend->free_slots--;
-				*slot = ((uint32_t)source_id <<
-				    SWAP_SLOT_SOURCE_SHIFT) | index;
-				spin_unlock_irqrestore(&swap_lock, irq);
-				return 0;
-			}
-		}
+
+		/* Finds a clear bit from where the last allocation stopped. */
+		found = source_find_free_locked(source, &index);
+		if (found != 0)
+			continue;
+
+		/* Takes the slot; the next search starts after it. */
+		mask = (uint8_t)(1U << (index & 7U));
+		source->bitmap[index >> 3] |= mask;
+		source->slot_pending_free[index] = 0;
+		source->free_slots--;
+		backend->free_slots--;
+		source->next_slot = index + 1U;
+		*slot = ((uint32_t)source_id << SWAP_SLOT_SOURCE_SHIFT) | index;
+
+		/* Lets the other allocations and frees in. */
+		spin_unlock_irqrestore(&swap_lock, irq);
+
+		/* Succeeded: the slot is the caller's. */
+		return 0;
 	}
 
 	spin_unlock_irqrestore(&swap_lock, irq);
@@ -3818,4 +3828,58 @@ source_set_current_total(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Finds a clear bit of a source's slot bitmap.
+ *
+ * The search starts at the source's next_slot and wraps once, skipping a
+ * byte of eight used slots at a time, so a nearly full source does not
+ * make every allocation walk the bitmap from its start with interrupts
+ * off (BUG-053).  The caller holds swap_lock.  Reports ENOSPC when every
+ * slot is used.
+ */
+static int
+source_find_free_locked(
+	const struct swap_backend_source *source,
+	uint32_t *index)
+{
+	uint32_t candidate;
+	uint32_t scanned;
+	uint8_t mask;
+
+	/* A hint past the end, after a source shrank or was reset, starts over. */
+	candidate = source->next_slot;
+	if (candidate >= source->slot_count)
+		candidate = 0;
+
+	/* Looks at every slot once, from the hint around to just before it. */
+	scanned = 0;
+	while (scanned < source->slot_count) {
+		/* A whole byte of used slots is passed in one step. */
+		if ((candidate & 7U) == 0 &&
+		    source->slot_count - candidate >= 8U &&
+		    source->bitmap[candidate >> 3] == 0xffU) {
+			scanned += 8U;
+			candidate += 8U;
+		} else {
+			/* A clear bit is the free slot. */
+			mask = (uint8_t)(1U << (candidate & 7U));
+			if ((source->bitmap[candidate >> 3] & mask) == 0) {
+				*index = candidate;
+				return 0;
+			}
+
+			/* A used slot passes to the next one. */
+			scanned++;
+			candidate++;
+		}
+
+		/* The search wraps at the end of the source. */
+		if (candidate >= source->slot_count)
+			candidate = 0;
+	}
+
+	/* Every slot is used. */
+	return ENOSPC;
 }

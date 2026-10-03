@@ -58,7 +58,7 @@ expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=2 
 shot one.png
 
 # 2. The desktop between the sidebar and the content, as the wallpaper has it.
-wallpaper=build/ws035-wallpaper/wallpaper.ppm   # the file the image installs as /usr/share/keiland/wallpaper.ppm
+wallpaper=userland/desktop/keiland/wallpapers/Birch-Lake.ppm   # the file the image installs as /usr/share/keiland/wallpaper.ppm
 python3 - "$out/one.png" "$wallpaper" $((wx + 216)) $((wy + 300)) <<'EOF' || status=1
 import sys
 from PIL import Image

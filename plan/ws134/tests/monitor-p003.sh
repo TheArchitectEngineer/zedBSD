@@ -7,6 +7,8 @@
 #     relief, the flows, the raised plates' amber or coral edges.
 #  2. The simulation (16 CPUs, 2 GPUs) moving for 20 seconds with the pointer moved across the window (the parallax):
 #     frames at 15 fps or more (ZMON FRAME), no failure.  sim.png.
+#  3. (measured, not judged) the compositor's compose rate under the same simulation (zdesktop --log-frames), and each
+#     part of the monitor's frames (ZMON FRAME build_ms acquire_ms record_ms submit_ms present_ms wait_ms callback_ms).
 # Judged by the monitor's log (/tmp/monitor.log in the guest, read over SSH) and the pictures, not the console.
 #
 #   plan/ws134/tests/monitor-p003.sh [OUTDIR]
@@ -89,8 +91,23 @@ fps=$(guest "grep 'ZMON FRAME' /tmp/monitor.log | tail -1" | sed -n 's/.*fps=\([
 failed=$(guest "grep -cE 'ZMON (FAILED|DISCONNECTED)|failed' /tmp/monitor.log" | tail -1)
 [ "${failed:-1}" = 0 ] && echo "sim: no failure ok" || { echo "sim: failure lines MISSING"; status=1; }
 guest 'grep -E "ZMON (READY|FRAME|MEM|LEVEL|VISIBLE)" /tmp/monitor.log' > "$out/sim.log"
+guest 'grep "ZMON FRAME" /tmp/monitor.log' | sed 's/^/sim frame: /'
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
+
+# 3. ws134-p003: the compositor's own rate under the same simulation (zdesktop --log-frames: one ZWL COMPOSE line a
+#    frame), to tell the monitor's cost from the compositor's.  Measured, not judged.
+guest "$stop_all" >/dev/null
+guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
+picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/monitor --timeout-s=300 --seed=9 --cpus=16 --gpus=2 --token=c > /tmp/monitor.log 2>&1 </dev/null & echo started" >/dev/null
+sleep 8
+first=$(guest "grep -c 'ZWL COMPOSE' /tmp/zdesktop.log" | tail -1)
+sleep 10
+last=$(guest "grep -c 'ZWL COMPOSE' /tmp/zdesktop.log" | tail -1)
+echo "compositor: $(( (${last:-0} - ${first:-0}) / 10 )) compose frames a second with the monitor (measured)"
+guest 'grep "ZMON FRAME" /tmp/monitor.log | tail -1' | sed 's/^/compositor run, monitor frame: /'
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "monitor-p003: PASS" || echo "monitor-p003: FAIL"
 exit $status

@@ -279,7 +279,7 @@ static int writes_delayed(const struct disk *disk, const struct io_context *cont
 static int writeback_line(struct buf *buffer, const struct io_context *context, int delayed);
 static int writeback_line_whole(struct buf *buffer, const struct io_context *drain, int delayed);
 static int writeback_line_runs(struct buf *buffer, const struct io_context *drain, const struct backing_claim *writer);
-static int write_lines(struct disk *disk, uint64_t block, uint32_t count, const void *data, int pin);
+static int write_lines(struct disk *disk, uint64_t block, uint32_t count, const void *data, uint64_t pin);
 static void flusher_hooks_init(void);
 static int reserve_bytes(size_t size, int metadata);
 static void cancel_reservation(size_t size, int metadata);
@@ -1250,19 +1250,25 @@ buf_flusher_hook(
 
 /*
  * Writes into the cache and pins the lines for a journal: they stay dirty
- * and nothing writes them to the disk until buf_unpin() releases them.
+ * and nothing writes them to the disk until buf_unpin() with the same tag
+ * releases them.
  */
 int
 buf_write_pinned(
 	struct disk *disk,
 	uint64_t block,
 	uint32_t count,
-	const void *data)
+	const void *data,
+	uint64_t pin)
 {
 	int error;
 
+	/* A pin of zero would mean no pin at all. */
+	if (pin == 0)
+		return EINVAL;
+
 	/* Writes the lines, pinned and dirty, without writing them back. */
-	error = write_lines(disk, block, count, data, 1);
+	error = write_lines(disk, block, count, data, pin);
 	if (error != 0)
 		return error;
 
@@ -1271,14 +1277,17 @@ buf_write_pinned(
 }
 
 /*
- * Releases the journal pins of the lines a range covers; they are then
- * ordinary dirty lines.
+ * Releases the journal pins of the lines a range covers, where the pin
+ * carries the given tag; those lines are then ordinary dirty lines.  The
+ * lines a later tag holds are counted in *kept when the caller asks.
  */
 int
 buf_unpin(
 	struct disk *disk,
 	uint64_t block,
-	uint32_t count)
+	uint32_t count,
+	uint64_t pin,
+	unsigned *kept)
 {
 	struct disk *leaf;
 	struct buf *buffer;
@@ -1315,11 +1324,14 @@ buf_unpin(
 		/*
 		 * Clears the pin: write-back and the flusher, which left the
 		 * line alone while the journal held it, may write it home now.
+		 * A line a later transaction pinned again stays pinned for that
+		 * transaction's own commit.
 		 */
 		irq = spin_lock_irqsave(&buffer->b_lock);
-
-		buffer->b_journal_pin = 0;
-
+		if (buffer->b_journal_pin == pin)
+			buffer->b_journal_pin = 0;
+		else if (buffer->b_journal_pin != 0 && kept != NULL)
+			(*kept)++;
 		spin_unlock_irqrestore(&buffer->b_lock, irq);
 
 		/* Lets the line go and steps to the next one. */
@@ -1330,6 +1342,67 @@ buf_unpin(
 	/* Succeeded: the lines are ordinary dirty lines now. */
 	return 0;
 }
+
+/*
+ * Writes the dirty lines of a range back to the disk, leaving a line a
+ * journal pins alone and not flushing the device.  A journal uses it to
+ * send a committed transaction's homes on their way (ws073-p051).
+ */
+int
+buf_writeback_range(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count)
+{
+	struct disk *leaf;
+	struct buf *buffer;
+	uint64_t mapped;
+	uint64_t end;
+	uint64_t line_blocks;
+	uint64_t line_start;
+	int error;
+
+	/* An empty range has no lines to write. */
+	if (count == 0)
+		return 0;
+
+	/* Resolves the range to the leaf disk the lines belong to. */
+	error = disk_resolve_range(disk, block, count, &leaf, &mapped);
+	if (error != 0)
+		return error;
+
+	/* Measures a line in blocks: a page, or one block larger than a page. */
+	line_blocks = KERN_PAGE_SIZE / leaf->d_block_size;
+	if (leaf->d_block_size > KERN_PAGE_SIZE)
+		line_blocks = 1;
+
+	/* Writes each line the range covers that is dirty and not pinned. */
+	end = mapped + count;
+	line_start = mapped - mapped % line_blocks;
+	while (line_start < end) {
+		/* Takes the line. */
+		error = reference_line(leaf, line_start, &buffer);
+		if (error != 0)
+			return error;
+
+		/* Writes it back as its own dirtier would; a clean or pinned line is left as it is. */
+		error = busy_acquire(buffer);
+		if (error == 0)
+			error = buf_writeback(buffer);
+		buf_release(buffer);
+
+		/* Reports why the line could not be written. */
+		if (error != 0)
+			return error;
+
+		/* Steps to the next line. */
+		line_start += line_blocks;
+	}
+
+	/* Succeeded: the range's dirty lines are on their way to the disk. */
+	return 0;
+}
+
 /*
  * Hashes a disk and block to a bucket.
  *
@@ -2683,7 +2756,8 @@ writes_delayed(
 
 /*
  * Copies a range into its lines and marks them dirty without writing
- * them back; with pin, the lines are also pinned for a journal.
+ * them back; with a nonzero pin, the lines are also pinned for a journal
+ * under that tag.
  */
 static int
 write_lines(
@@ -2691,7 +2765,7 @@ write_lines(
 	uint64_t block,
 	uint32_t count,
 	const void *data,
-	int pin)
+	uint64_t pin)
 {
 	struct disk *leaf;
 	struct buf *buffer;
@@ -2758,13 +2832,13 @@ write_lines(
 		/*
 		 * Pins the line for the journal before it is dirty, so that no
 		 * writer sees it dirty and unpinned: write-back and the flusher
-		 * leave a pinned line alone until buf_unpin().
+		 * leave a pinned line alone until buf_unpin() with this tag.  A
+		 * line an earlier transaction pinned takes the new tag, so that
+		 * the earlier commit's unpin leaves it to this one (ws073-p051).
 		 */
-		if (pin) {
+		if (pin != 0) {
 			irq = spin_lock_irqsave(&buffer->b_lock);
-
-			buffer->b_journal_pin = 1;
-
+			buffer->b_journal_pin = pin;
 			spin_unlock_irqrestore(&buffer->b_lock, irq);
 		}
 

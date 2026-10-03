@@ -11,6 +11,7 @@
 
 #include "desktop.h"
 #include "zwl.h"
+#include "userland/desktop/keiland/kl-system-protocol.h"
 #include "menu.h"
 #include "titlebar.h"
 #include "inset.h"
@@ -69,6 +70,7 @@ static const struct zwl_global globals[] = {
 	{ 22, "keiland_keyboard_inset_manager_v1", 1, ZWL_KEYBOARD_INSET_MANAGER },
 	{ 23, "keiland_edit_manager_v1", 1, ZWL_EDIT_MANAGER },
 	{ 24, "org_kde_kwin_server_decoration_manager", 1, ZWL_KDE_DECORATION_MANAGER },
+	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, ZWL_SYSTEM_MANAGER },
 };
 
 static void global_identity(const struct zwl_global *global, const char **interface, uint32_t *version);
@@ -310,6 +312,11 @@ zwl_dispatch(
 		/* The editing operations (edit.c, ws102-p017). */
 		error = zwl_edit_request(object, opcode, bytes, size);
 		break;
+	case ZWL_SYSTEM_MANAGER:
+	case ZWL_SYSTEM_SETTINGS:
+		/* Keiland's system extension: the settings (settings.c, WS135). */
+		error = zwl_settings_request(object, opcode, bytes, size);
+		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
 		break;
@@ -431,6 +438,11 @@ registry_events(
 	for (index = 0; index < sizeof(globals) / sizeof(globals[0]); index++) {
 		/* The input method's globals are shown to the input method alone (input-method.c). */
 		visible = zwl_ime_global_visible(registry->client, globals[index].kind);
+		if (!visible)
+			continue;
+
+		/* The system extension is shown to a session's own user alone (settings.c). */
+		visible = zwl_settings_global_visible(registry->client, globals[index].kind);
 		if (!visible)
 			continue;
 
@@ -614,6 +626,11 @@ bind_global(
 		if (!visible)
 			return EPROTO;
 
+		/* Nor the system extension, for a client that was not shown it (settings.c). */
+		visible = zwl_settings_global_visible(registry->client, globals[index].kind);
+		if (!visible)
+			return EPROTO;
+
 		/* A successful binding creates exactly one independent client-side object. */
 		object = zwl_create(registry->client, id, globals[index].kind, version);
 		if (object == NULL)
@@ -623,6 +640,13 @@ bind_global(
 		if (object->kind == ZWL_OUTPUT) {
 			/* Publish the newly bound output's complete initial property snapshot. */
 			error = output_events(object);
+			if (error != 0)
+				return error;
+		}
+
+		/* A system manager tells what it offers. */
+		if (object->kind == ZWL_SYSTEM_MANAGER) {
+			error = zwl_settings_bind(object);
 			if (error != 0)
 				return error;
 		}

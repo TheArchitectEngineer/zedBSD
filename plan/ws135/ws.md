@@ -35,10 +35,15 @@ WS131 の設計（`plan/ws131/design.md` §4.2〜4.4）は p010 で compositor �
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: 設定の項目の一覧と解決の先、libkeiland の API（get・set・watch と通知）、compositor の拡張の interface（manager の version）、desktop.conf の session の開始・終了の読み書き、Settings・system bar・試験の移行、WS131 p010・p011 との分担、Phase の分け方。design-reviewer の review | planning | — |
+| [p001](phase001/phase.md) | 設計: 設定の項目の一覧と解決の先、libkeiland の API（get・set・watch と通知）、compositor の拡張の interface（manager の version）、desktop.conf の session の開始・終了の読み書き、Settings・system bar・試験の移行、WS131 p010・p011 との分担、Phase の分け方。design-reviewer の review | in-progress（q652、P2。[design.md](design.md) 第 2 版、判断 D1〜D6 と Phase の ID 待ち） | — |
+| [p002](phase002/phase.md) | compositor の store・merge の書き・`kl_system_manager_v1`／`kl_system_settings_v1`・peer_uid・壁紙の非同期・音量の順序・repeat の送り直し（watcher は残す） | in-progress（q656、P2。host 45 PASS、zedBSD・Linux build warning 0、QEMU は p003 と一緒に T2） | p001 |
+| [p003](phase003/phase.md) | libkeiland の `kl_settings_*`（wire・cache・watch・app の file）と probe `keiland-settings` | in-progress（q656、P2。host 26 PASS、build warning 0、QEMU は T2） | p002 |
+| [p004](phase004/phase.md) | Settings を `kl_settings_*` へ、compositor の watcher・libkeiland の `keiland_preferences_*` を除去、試験の書き換え、check.sh S1 | in-progress（q656、P2。host・build・check.sh PASS、QEMU は T2） | p003 |
 | p002 以降 | p001 で決める（compositor の store と拡張、libkeiland の API と監視、Settings・system bar の移行と監視の thread の除去、Linux・FreeBSD、全文の規約と回帰） | planning | p001、WS131 の p010（manager の枠） |
 
 ## 関係
 
 - [BUG-162](../bugs/BUG-162.md)（このWS の由来）、[BUG-161](../bugs/BUG-161.md)（音量は session の終わりに一度だけ書く、resolved）、BUG-125（毎秒の監視による menu の遅れ）。
 - [WS131](../ws131/ws.md)（libkeiland と backend、拡張の manager）、WS089（Settings）、WS100（音量）、WS113（`displays.conf` も compositor の store）。
+
+2026-10-04 user「WS135の設計D1-D6を承認します。」→ design.md 第 2 版の D1〜D6 を承認（D3 は Q1 の推奨どおり (a): app だけの設定は libkeiland が app の file を直接読み書きし、別の process には通知しない）。Phase の ID は p002〜p006（design.md §7）。実装は q656（P2）。

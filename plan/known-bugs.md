@@ -1,6 +1,6 @@
 # zedBSD known bugs
 
-2026-10-04 Q1: user の判断で BUG-024 は対応不要で終了、BUG-036・041・099 は様子見で close（再発で reopen）。BUG-143・053・052・162・103・129・033・157・139 は P1・P2、BUG-135 は P9（Fable 5.1 high）に割り当て（Disposition は各 ticket）。下の「優先度」の表は 2026-10-03 以前の物で古い（BUG-095・120・124・144 は resolved または実機の確認待ち）。
+2026-10-04 Q1: user の判断で BUG-013・023 は PC-98 の対応をやめるので close、BUG-101 は解決済みで close。BUG-024 は対応不要で終了、BUG-036・041・099 は様子見で close（再発で reopen）。BUG-143・053・052・162・103・129・033・157・139 は P1・P2、BUG-135 は P9（Fable 5.1 high）に割り当て（Disposition は各 ticket）。下の「優先度」の表は 2026-10-03 以前の物で古い（BUG-095・120・124・144 は resolved または実機の確認待ち）。
 
 Last updated: 2026-10-03
 
@@ -50,11 +50,11 @@ remain as traceable history and are not new implementation work.
 | [BUG-142](bugs/BUG-142.md) | Files: 起動直後の停止中の Ctrl+C が遅れて処理 | unreproduced / resolved | ws127-p001 | ws099-p029 で時刻の順の merge に直した、T2-004 の QEMU で PASS。実機は S2 |
 | [BUG-141](bugs/BUG-141.md) | Files: hover の強調が残る | unreproduced / resolved | ws127-p001 | ws099-p029 で leave を送るよう直した、T2-008 の QEMU で PASS。実機は S2 |
 | [BUG-140](bugs/BUG-140.md) | Files: Trash の同名の 2 つ目の名前と種類 | reproduced / resolved | ws127-p001 | q616（ws127-p002）で修正、host 試験 |
-| [BUG-139](bugs/BUG-139.md) | Text Editor の IME の変換中の文字が小さい | reproduced / scheduled（ws095-p013 で直した、QEMU で確認、実機の確認待ち） | ユーザー実機、UI/UX の要 | 実機の確認 → resolved |
+| [BUG-139](bugs/BUG-139.md) | Text Editor の IME の変換中の文字が小さい | reproduced / resolved（ws095-p013、T1-047 の QEMU で再確認。実機は S2） | ユーザー実機、UI/UX の要 | 実機の確認 → resolved |
 | [BUG-138](bugs/BUG-138.md) | system bar の WiFi の on/off・AP 接続が未実装 | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p019 |
 | [BUG-137](bugs/BUG-137.md) | Terminal の初回起動でタイトルバーが数秒遅れる | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
 | [BUG-136](bugs/BUG-136.md) | Gears（X11）にタイトルバーが出ない | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
-| [BUG-135](bugs/BUG-135.md) | stat() が数秒かかる（UFS、guest） | reproduced / tracking | ws099-p020 の診断で 0.7〜6.5 秒。compositor は watcher thread で回避 | kernel/UFS の Phase で gdbstub で待ちの場所を取る |
+| [BUG-135](bugs/BUG-135.md) | stat() が数秒かかる（UFS、guest） | reproduced / scheduled（ws073-p051、直しを main に統合 2026-10-04、残りの確認待ち） | ws099-p020 の診断で 0.7〜6.5 秒。p045 で namespace の共有、p051 で journal の commit の flush を mount の lock の外へ（P9 の QEMU の診断で 1 秒超 7 → 0 回） | Q1 が p051 の差分を読んで merge・判定（T1・T2 の試験は user の指示で除外） |
 | [BUG-134](bugs/BUG-134.md) | AX211 不動作、driver 有効で起動停止 | unreproduced / resolved（2026-10-02 ユーザーの実機確認） | デモ config の firmware 欠落。CI 土台の image で実機動作 | 起動停止が再び見えたら reopen |
 | [BUG-133](bugs/BUG-133.md) | Browser UTF16 reserve byte数overflow | reproduced（host の単体の試験） / resolved（ws074-p177） | browser2:BUG129をp172/q579で検出、mainBUG129はFonts別条件。原本を保持してID衝突修復 | ws074-p177（P2）で直した: 増長後の capacity が SIZE_MAX/2 を越えたら need に落とす。host 試験の前 FAIL・後 PASS。resolved の判定は Q1 |
 | [BUG-130](bugs/BUG-130.md) | FreeBSD drm-kmod DMA-BUF のaccess flags | reproduced / tracking | WS109 q568、live fdのsync ioctlがEBADF、Vulkan window acquire失敗 | Keiland workaround/実GPU window・所有権はq569/q570で検証済み。driver未修理、drm-kmod upgrade時に再確認 |
@@ -90,7 +90,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-049](bugs/BUG-049.md) | amd64 guest で SSH が届かない（不具合ではない） | reproduced（QEMU） / resolved | 計測用の image を `guest.py extra-files` 無しで build し、`/etc/net.conf` が無かった。extra-files ありでは届く | — |
 | [BUG-050](bugs/BUG-050.md) | libc の `strerror` が 29〜31・33〜40・43〜45・53〜66 を "Unknown error" と返す | reproduced（QEMU、決定的） / resolved（2026-09-27） | `string.c` の switch に case が無かった | 修正済み（WS001 の表）。host の試験 81/81、guest で 1〜81 に "Unknown error" 0（WS073 が確認） |
 | [BUG-051](bugs/BUG-051.md) | `sshd-session` の子が SIGSEGV（NULL の読み）で 1 度落ちた | reproduced（QEMU） / resolved（ws073-p030、2026-09-29） | ws061-p003 | 原因: signal の frame が amd64 の red zone（%rsp の下 128 byte）を壊し、libcrypto の leaf の関数の変数が 0 に。`src/kern/signal.c` で 128 byte 空ける。probe 修正前 FAIL・後 PASS、SSH の負荷 1092 session で落ち 0。実機は未実施 |
-| [BUG-052](bugs/BUG-052.md) | tmpfs が mount ごとに 32 MiB・1024 node で固定（実際は inode の共通の pool 512 で約 490 file。尽きると `/dev/null` も開けず sshd が落ちる） | reproduced / tracking（node の部分は ws073-p013 で解決） | byte の容量 32 MiB が残る。tmpfs の page が kernel heap の large allocation（線形の free）で、容量を上げる前に VM の page にする設計が要る | tmpfs の page を VM の page に（WS を立てる） |
+| [BUG-052](bugs/BUG-052.md) | tmpfs が mount ごとに 32 MiB・1024 node で固定（実際は inode の共通の pool 512 で約 490 file。尽きると `/dev/null` も開けず sshd が落ちる） | reproduced / resolved（ws073-p047、QEMU で確認 2026-10-04） | byte の容量 32 MiB が残る。tmpfs の page が kernel heap の large allocation（線形の free）で、容量を上げる前に VM の page にする設計が要る | tmpfs の page を VM の page に（WS を立てる） |
 | [BUG-053](bugs/BUG-053.md) | RAM を超える anonymous memory で fault が ENOMEM、init まで SIGSEGV | reproduced（QEMU 512 MiB、決定的） / resolved（450・900 MiB。5a32f4e7） | 原因は 2 つ: 空き page の予備が無く page table の確保が失敗（予備・worker・待つ fault・OOM kill で修正）、swap out した page が reclaim の待ち行列に残り走査の上限で resident な page に届かない（待ち行列を resident だけに）。512 MiB の guest で 450 MiB 15 秒・900 MiB 96 秒（NVMe）が正常終了 | 1300 MiB（RAM + swap の 9 割）は 35 分で終わらず未確認。再開は `vmstatprobe` を 1 分ごとに出して page out が進むか見る |
 | [BUG-054](bugs/BUG-054.md) | `/dev/fd/N` が開いた file でなく文字 device に見え（`diff <(..) <(..)` が「device identity」で違うと言う）、`ls /dev/fd` で devfs の inode の pool が尽きて sshd が落ちる | reproduced（QEMU、決定的） / resolved（ws067-p001） | ws065-p001 の process substitution の試験で。sh の読み書きは正しい | devfs の `stat`・readdir を descriptor に合わせ、`diff` は FIFO・文字 device を中身で比べる |
 | [BUG-055](bugs/BUG-055.md) | libc の `setvbuf(stream, NULL, _IOLBF, 0)` が EINVAL で失敗し、行単位の buffer にならない（zwl の log が 4 KiB ごとにしか出ない） | reproduced（QEMU、決定的） / resolved（ws035-p054） | ws035-p054 の試験で zwl の log の行数が跳んだ | buffer が NULL で大きさ 0 なら `BUFSIZ` で確保する |

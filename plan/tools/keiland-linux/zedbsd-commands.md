@@ -110,7 +110,7 @@ sh plan/ws100/tests/volume-p004.sh build/<W>-volume/hdd-image.img build/<W>/volu
 sh plan/ws100/tests/volume-p005.sh build/<W>-volume/hdd-image.img build/<W>/volume-p005
 ```
 
-- **音量の image の前提**: `volume-p004.sh`・`volume-p005.sh` は `build/ws100-tests/audiod-feedback` を要る（`config-amd64-volume.mk:8`、無いと image に入らず試験が落ちる）。2026-10-01 の survey 時点の main には無かった。WS104 p008 でこの guide の compile / link command で作成して volume 回帰を実行済み。作り方は [WS100 の guide.md](../../ws100/guide.md) §5.1。
+- **音量の image の前提**: `volume-p004.sh`・`volume-p005.sh` は image の `/usr/bin/audiod-feedback` を要る。`build-volume-image.sh` が中で `BUILD/tests/audiod-feedback` を作って入れる（ws136-p001、2026-10-04。以前の共有の `build/ws100-tests/` はやめた）。
 - PASS: `built build/ws089-host/settings-render`（exit 0）、`settings-regress: PASS`（約 10 分）、`host-audio: N/N passed`（exit 0）、`volume-p004: PASS`・`volume-p005: PASS`（各 6〜7 分）。
 
 ## 9. 時間の目安（WS104 の Phase の回帰の全部）

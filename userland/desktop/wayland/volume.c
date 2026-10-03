@@ -31,12 +31,15 @@
  *
  * All of it goes through libkeiland-backend (kl_backend_audio_*, ws131-p004):
  * zdesktop never speaks audiod's protocol, and nothing here waits for it.
- * The preferences stay libkeiland's until the compositor keeps them itself
- * (ws131-p010).
+ * The kept volume is the compositor's settings store's (settings.c, WS135):
+ * the store gives the volume the file held, takes audiod's volume as the
+ * session's, and writes it at the session's end.  A client's set of the
+ * volume (kl_system_settings_v1) comes here as zwl_volume_request.
  */
 
 #include "glass.h"
 #include "titlebar.h"
+#include "settings-store.h"
 #include <keiland.h>
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -214,8 +217,8 @@ zwl_volume_keep(
 	char text[16];
 	int error;
 
-	/* Without preferences, or before audiod ever reported, there is nothing to keep. */
-	if (server->preferences == NULL || !volume_view.restored)
+	/* Without the settings (the login screen), or before audiod ever reported, there is nothing to keep. */
+	if (server->settings == NULL || !volume_view.restored)
 		return;
 
 	/* audiod's volume when it is reached, else the last one shown. */
@@ -232,21 +235,81 @@ zwl_volume_keep(
 		return;
 	}
 
-	/* The two keys, once. */
+	/* The two keys go into the store, which writes them as the session ends (settings.c). */
 	(void)snprintf(text, sizeof(text), "%u", value);
-	error = keiland_preferences_set(server->preferences, VOLUME_KEY_VOLUME, text);
-	if (error == 0) {
-		(void)snprintf(text, sizeof(text), "%u", muted);
-		error = keiland_preferences_set(server->preferences, VOLUME_KEY_MUTED, text);
-	}
-	if (error == 0) {
-		volume_view.kept = 1U;
-		volume_view.kept_value = value;
-		volume_view.kept_muted = muted;
-	}
+	zwl_settings_store_report(server->settings, VOLUME_KEY_VOLUME, text);
+	(void)snprintf(text, sizeof(text), "%u", muted);
+	zwl_settings_store_report(server->settings, VOLUME_KEY_MUTED, text);
+	volume_view.kept = 1U;
+	volume_view.kept_value = value;
+	volume_view.kept_muted = muted;
+	error = 0;
 
 	/* The log line the tests read. */
 	printf("ZWL VOLUME kept value=%u muted=%u why=%s write=1 error=%d\n", value, muted, why, error);
+}
+
+/*
+ * Reports the volume for the settings (settings.c, WS135): whether the
+ * session's volume is known (audiod was reached and given the kept
+ * volume), whether there is sound, and audiod's volume and mute.
+ */
+void
+zwl_volume_report(
+	unsigned *restored,
+	unsigned *available,
+	unsigned *value,
+	unsigned *muted)
+{
+	int sound;
+
+	/* Known once audiod took the kept volume. */
+	*restored = volume_view.restored;
+
+	/* Sound: audiod reached, with a device. */
+	sound = volume_sound();
+	*available = 0U;
+	if (sound)
+		*available = 1U;
+
+	/* audiod's volume when it is reached, else the last one shown. */
+	*value = volume_view.value;
+	*muted = volume_view.muted;
+	if (volume_view.state.reachable) {
+		*value = volume_view.state.left;
+		*muted = volume_view.state.muted;
+	}
+}
+
+/*
+ * Sets the volume a client asked for (kl_system_settings_v1, WS135): shown
+ * and sent to audiod, without the feedback sound (the client plays its
+ * own).  Returns 0, EBUSY before audiod took the kept volume (the start's
+ * volume must not be overtaken), or ENODEV without sound.
+ */
+int
+zwl_volume_request(
+	struct zwl_server *server,
+	unsigned value,
+	unsigned muted)
+{
+	/* No link, or audiod not reached. */
+	if (volume_view.audio == NULL || !volume_view.state.reachable)
+		return ENODEV;
+
+	/* The kept volume goes to audiod first. */
+	if (!volume_view.restored)
+		return EBUSY;
+
+	/* Shown and sent. */
+	volume_view.value = value;
+	volume_view.muted = muted;
+	volume_send(server);
+	server->dirty = 1;
+	printf("ZWL VOLUME set value=%u muted=%u via=settings final=1 at_ms=%llu\n", value, muted, (unsigned long long)zwl_milliseconds());
+
+	/* Succeeded: audiod has the volume (its report comes back to the settings). */
+	return 0;
 }
 
 /*
@@ -707,9 +770,8 @@ static void
 volume_restore(
 	struct zwl_server *server)
 {
-	int32_t value;
-	int32_t muted;
-	char text[16];
+	int value;
+	int muted;
 	int error;
 
 	/* audiod came back: it gets the volume the session had. */
@@ -722,14 +784,14 @@ volume_restore(
 	}
 	volume_view.restored = 1U;
 
-	/* Without preferences (the login screen), or without a kept volume, audiod's stays. */
-	if (server->preferences == NULL)
+	/* Without the settings (the login screen), or without a kept volume, audiod's stays. */
+	if (server->settings == NULL)
 		return;
-	error = keiland_preferences_get(server->preferences, VOLUME_KEY_VOLUME, text, sizeof(text));
+	error = zwl_settings_kept(server, VOLUME_KEY_VOLUME, &value);
 	if (error != 0)
 		return;
-	value = keiland_preferences_get_int(server->preferences, VOLUME_KEY_VOLUME, 100, 0, 100);
-	muted = keiland_preferences_get_int(server->preferences, VOLUME_KEY_MUTED, 0, 0, 1);
+	muted = 0;
+	(void)zwl_settings_kept(server, VOLUME_KEY_MUTED, &muted);
 
 	/* What the file holds, so that the end writes only a change. */
 	volume_view.kept = 1U;

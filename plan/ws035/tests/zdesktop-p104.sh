@@ -2,12 +2,14 @@
 # ws035-p104: the system bar's network menu in a normal user's graphical session, on the Venus guest of the
 # graphical login image with the networkd stand-in (plan/ws035/tests/build-login-image.sh BUILD graphical-network).
 # sessiond gives the session's user the group "network", which networkd's socket (0660, root:network) admits.
-#  1. A normal user (kei, uid 1000, empty password) is added and the greeter restarted, so it offers kei.
-#     Enter logs kei in.  The session's zdesktop reaches the real networkd (QEMU: wired ue0, no radio):
+#  1. ws136-p002: the image has kei (uid 1000, password "kei") and logs kei in at boot (/etc/keiland/autologin,
+#     since 2026-09-29); the run stops that session, empties the autologin file (restored at the end) and starts
+#     sessiond itself, so the greeter offers kei, selected.  The password logs kei in.  The session's zdesktop reaches the real networkd (QEMU: wired ue0, no radio):
 #     "ZWL NETWORK state reachable=1 ... kind=wired" as uid 1000; the menu shows the wired line (wired-menu.png).
 #  2. The stand-in with a Wi-Fi radio takes networkd's place, its socket set to networkd's owner and mode
 #     (root:network 0660); the session is ended and kei logs in again.  As kei the menu scans (list.png),
-#     joins "Kei Lab" (joined.png) and turns the Wi-Fi off (off.png).  Part 2's radio is QEMU-only faking.
+#     joins "Kei Lab" (typing a key in the menu's field when kei's store has none, BUG-160) (joined.png) and turns
+#     the Wi-Fi off (off.png).  Part 2's radio is QEMU-only faking.
 #
 #   GUEST_RUNTIME=... plan/ws035/tests/zdesktop-guest.sh start build/<x>/hdd-image.img
 #   plan/ws035/tests/zdesktop-p104.sh [OUTDIR] [SHOTS PREFIX]
@@ -68,14 +70,16 @@ open_menu() {
 	click $(($1 + $3 / 2)) $(($2 + $4 / 2)) 1500
 }
 
-# 1. The user kei, and a greeter that offers kei.
-expect_log /var/log/greeter.log 'ZWL GREETER open' 60
-guest 'grep -q "^kei:" /etc/passwd || { echo "kei:x:1000:1000:Kei Tester:/home/kei:/bin/sh" >> /etc/passwd; echo "kei::0:0:99999:7:::" >> /etc/shadow; echo "kei:x:1000:" >> /etc/group; mkdir -p /home/kei; chown 1000:1000 /home/kei; }; id kei' | tail -1 | sed 's/^/user: /'
-sleep 21
-guest 'kill $(sed -n "s/.*SESSIOND GREETER start pid=\([0-9]*\).*/\1/p" /var/log/sessiond.log | tail -1); echo killed' >/dev/null
-expect_log /var/log/greeter.log 'ZWL GREETER open users=1 selected=kei' 30
+# 1. The boot's session (kei's autologin) stopped, the autologin emptied, and a greeter that offers kei.
+stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[s]essiond|[w]ayland( |$)" | awk "{print \$1}"); do kill $p; done; sleep 2'
+guest "$stop_all
+[ -f /tmp/p104-autologin.saved ] || cp /etc/keiland/autologin /tmp/p104-autologin.saved; : > /etc/keiland/autologin
+rm -f /var/log/sessiond.log /var/log/greeter.log $session" >/dev/null
+guest 'id kei' | tail -1 | sed 's/^/user: /'
+guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
+expect_log /var/log/greeter.log 'ZWL GREETER open users=[0-9]+ selected=kei' 30
 sleep 2
-keys '\n'
+keys 'kei' '\n'
 expect_log $session 'ZWL HANDOFF go=1' 30
 guest "grep 'SESSIOND SESSION start' /var/log/sessiond.log | tail -1" | tail -1 | sed 's/^/session: /'
 expect_log $session 'ZWL NETWORK state reachable=1 connected=1 kind=wired interface=[a-z]+[0-9]+ wifi=absent'
@@ -91,9 +95,9 @@ expect_log $session 'ZWL NETWORK close via=outside'
 guest 'mv /run/networkd.sock /run/networkd.sock.real; /bin/network-probe 300 > /tmp/probe.log 2>&1 </dev/null & sleep 1; chown root:network /run/networkd.sock; chmod 0660 /run/networkd.sock; ls -l /run/networkd.sock' | tail -1 | sed 's/^/stand-in: /'
 expect_log /tmp/probe.log 'NETPROBE listening'
 guest 'kill $(sed -n "s/.*SESSIOND SESSION start user=kei .* pid=\([0-9]*\).*/\1/p" /var/log/sessiond.log | tail -1); echo killed' >/dev/null
-expect_log /var/log/greeter.log 'ZWL GREETER open users=1 selected=kei' 30 2
+expect_log /var/log/greeter.log 'ZWL GREETER open users=[0-9]+ selected=kei' 30 2
 sleep 2
-keys '\n'
+keys 'kei' '\n'
 expect_log $session 'ZWL HANDOFF go=1' 30
 expect_log $session 'ZWL NETWORK state reachable=1 connected=1 kind=wired interface=em9 wifi=disconnected'
 open_menu
@@ -104,7 +108,15 @@ lx=$(($1 + 150)); ly=$(($2 + $4 / 2))
 pointer move "$lx" "$ly" sleep 500
 shot list.png
 click "$lx" "$ly" 1500
-expect_log /tmp/probe.log 'NETPROBE request op=35 ssid=Kei Lab'
+# Since BUG-160 (ws005-p029) a secured network without a key in the user's own store opens the menu's key field;
+# kei has none the first time, so a key is typed (saved in kei's store, then the join).  ws136-p002.
+asked=$(guest "grep -ac 'ZWL NETWORK key open ssid=Kei Lab' $session" | tail -1)
+if [ "${asked:-0}" -gt 0 ] 2>/dev/null; then
+	echo "key field: open, a key is typed"
+	keys 'kei-lab-p104' '\n'
+	expect_log $session 'ZWL NETWORK key saved ssid=Kei Lab'
+fi
+expect_log /tmp/probe.log 'NETPROBE request op=35 ssid=Kei Lab' 15
 expect_log $session 'ZWL NETWORK state reachable=1 connected=1 kind=wifi interface=wlan0 wifi=connected ssid=Kei Lab'
 pointer move 1100 500 sleep 500
 shot joined.png
@@ -122,5 +134,8 @@ guest 'cat /tmp/probe.log' > "$out/probe.log"
 # networkd's socket back.
 guest 'for p in $(ps -A -o pid,args | grep -E "[n]etwork-probe" | awk "{print \$1}"); do kill $p; done; rm -f /run/networkd.sock; mv /run/networkd.sock.real /run/networkd.sock; net show' > "$out/net-show.txt"
 grep -q 'online' "$out/net-show.txt" && echo "networkd: back" || { echo "networkd: not back"; status=1; }
+
+# The autologin as it was (kei's session keeps running, as the boot's did).
+guest "[ -f /tmp/p104-autologin.saved ] && cat /tmp/p104-autologin.saved > /etc/keiland/autologin && rm -f /tmp/p104-autologin.saved" >/dev/null
 [ $status = 0 ] && echo "zdesktop-p104: PASS" || echo "zdesktop-p104: FAIL"
 exit $status

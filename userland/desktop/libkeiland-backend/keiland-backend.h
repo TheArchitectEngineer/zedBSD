@@ -29,6 +29,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 struct pollfd;
 struct kl_backend_input_caps;
@@ -396,6 +397,15 @@ int kl_backend_audio_feedback(struct kl_backend_audio *audio);
  * still have no sound device (struct kl_backend_audio_state's device).
  */
 int kl_backend_audio_available(void);
+
+/*
+ * The peer of a client's connection (WS135, plan/ws135/design.md section
+ * 4.2): which user runs the process at the other end of a connected local
+ * socket, so that the compositor shows its system extension only to its
+ * own user.  Returns 0, or an errno value (the caller then treats the
+ * peer as another user).
+ */
+int kl_backend_peer_uid(int descriptor, uid_t *uid);
 
 
 /*

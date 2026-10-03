@@ -197,7 +197,7 @@ plan/ws075/tests/hdmi-h4-hw.sh ctl hmp info registers
 - 言葉の報告（「起動しました」「フリーズしています」等）と、画面の写真（`plan/ws084/ws.md:18-19`）。
 - 素の 5330 の Kei に ssh で入った `dmesg` の行（例: `takeover`・`preflight`・`perf:`。`plan/ws084/ws.md:55,157`）。demo の image は sshd を持ち
   （`config-demo-hdmi.mk:16-19`）、root は password `root` と guest の harness の鍵（`plan/tmp/guest/id_ed25519.pub` があれば入る、
-  `build-demo-image.sh:41-43`）で入れる。kei の password は `kei`（`plan/ws035/demo/demo-accounts.sh:2-5`）。
+  `plan/ws075/demo/build-demo-image.sh` の `/root/.ssh/authorized_keys`）で入れる。kei の password は `kei`（base の `userland/base/etc/shadow`、2026-09-29 の決定）。
 - 素の 5330 の Kei の IP は DHCP で決まり、前例は `10.0.30.5`（`plan/ws084/ws.md:142`）。centris から届かなかったこともある
   （`plan/ws084/ws.md:128`「No route to host」）。届くならエージェントが直接入ってよいか、ユーザーに確かめる。入る command（**未確認**、
   `plan/tools/guest/guest.py:128-138` の option に合わせた形）:

@@ -14,8 +14,8 @@
  *   Display     the screen's mode, read only (changing it comes later);
  *   Storage     each file system's use.
  *
- * What is saved goes into the user's preferences (look.c), which zdesktop
- * follows within a second.
+ * What is chosen goes into the desktop's settings (look.c), which zdesktop
+ * puts into effect at once.
  */
 
 #include "settings.h"
@@ -91,10 +91,10 @@ se_appearance_draw(
 	value_width = fm_text_width(app->text, value, strlen(value), LOOK_TEXT_TITLE, 0);
 	(void)fm_text_draw(app->text, canvas, x + width - LOOK_PAD - value_width, y + line.ascent, value, strlen(value), LOOK_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
 
-	/* The slider: see-through at the left, opaque at the right; it works only when the preferences can be saved. */
+	/* The slider: see-through at the left, opaque at the right; it works only when the settings can be changed. */
 	fraction = (float)(app->look.opacity - LOOK_OPACITY_MIN) / (float)(LOOK_OPACITY_MAX - LOOK_OPACITY_MIN);
 	enabled = 0;
-	if (app->look.preferences != NULL)
+	if (app->look.writable)
 		enabled = 1;
 	se_slider_draw(app, canvas, x + LOOK_PAD + 14, y + 26, width - 2 * LOOK_PAD - 28, fraction, enabled, LOOK_OPACITY, &app->look.slider);
 
@@ -316,14 +316,14 @@ look_message(
 
 	/* The message kept, or the lack of a home. */
 	text = app->look.message;
-	if (text[0] == '\0' && app->look.preferences == NULL)
-		text = "Settings cannot be saved: this account has no home folder.";
+	if (text[0] == '\0' && !app->look.writable)
+		text = "These settings cannot be changed on this desktop.";
 	if (text[0] == '\0')
 		return top;
 
 	/* One line, red for a failure. */
 	ink = SE_COLOR_TEXT_SECONDARY;
-	if (app->look.message_bad != 0 || app->look.preferences == NULL)
+	if (app->look.message_bad != 0 || !app->look.writable)
 		ink = SE_COLOR_BAD;
 	(void)fm_text_draw_fit(app->text, canvas, x + 2, top + 16, text, LOOK_TEXT_SMALL, 0, width, ink);
 

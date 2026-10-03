@@ -10,7 +10,7 @@ cd "$(dirname -- "$0")/../../.."
 host=build/ws074-host/plain
 out=build/ws081-p006-host
 cc=${CC:-cc}
-fonts=build/ws035-fonts
+fonts=userland/desktop/fonts
 mkdir -p "$out"
 flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -Iuserland/desktop/browser -Ibuild/ws074-host/include"
 engine=$(ls $host/obj/*.o | grep -v '/main\.o$')

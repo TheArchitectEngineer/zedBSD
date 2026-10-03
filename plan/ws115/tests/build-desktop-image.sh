@@ -1,28 +1,18 @@
 #!/bin/sh
-# ws115-p009: the compositor criteria image (plan/ws099/tests/build-criteria-image.sh: the graphical login image
-# with Terminal, Files, wltest and the protocol probes) with the xdg-shell probe (plan/ws115/tests/xdg-probe.sh) added.
+# ws115-p009: the criteria image (plan/ws099/tests/config-amd64-criteria.mk, generated wallpapers included) with the
+# guest harness's files, the sample home maker and a probe's files (PROBE-EXTRA: --file and --mode pairs).
+# ws136-p001 (2026-10-04): through plan/tools/guest/test-image.sh; the fonts come with the compositor's package.
 #
 #   plan/ws115/tests/build-desktop-image.sh BUILD PROBE-EXTRA [MAKE-VARIABLE...]
-#
-# PROBE-EXTRA is the ZEDBSD_TEST_EXTRA_FILES value xdg-probe.sh printed; the make variables (such as
-# ZEDBSD_LLVM_SOURCE=...) are passed on.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
-. plan/tools/guest/jobs.sh  # ZEDBSD_JOBS, the parallel jobs (default 16)
 build=$1
 probe=$2
 shift 2
-extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_EXTRA_FILES='\(.*\)'$/\1/p")
-[ -n "$extra" ] || { echo "build-desktop-image: no guest files (plan/tools/guest/guest.py keys?)"; exit 1; }
-extra="$extra --file /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Inter.ttf"
-extra="$extra --file /usr/share/fonts/keiland-mono.ttf=userland/desktop/fonts/JetBrainsMono-Regular.ttf"
-extra="$extra --file /usr/share/fonts/keiland-fallback.ttf=userland/desktop/fonts/DroidSansFallbackFull.ttf"
-extra="$extra --file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh"
-python3 userland/desktop/wallpapers/generate.py "$build/wallpapers" >/dev/null
-for picture in "$build"/wallpapers/*.ppm; do
-	extra="$extra --file /usr/share/keiland/wallpapers/$(basename "$picture")=$picture"
-done
-extra="$extra $probe"
-exec make -j"$ZEDBSD_JOBS" ZEDBSD_CONFIG=plan/ws099/tests/config-amd64-criteria.mk BUILD="$build" \
-    "ZEDBSD_TEST_EXTRA_FILES=$extra" ZEDBSD_TEST_IMAGE_TAG=wsp009 "$@" disk-image
+# PROBE-EXTRA is a list of --file and --mode pairs, split into words.
+# shellcheck disable=SC2086
+exec plan/tools/guest/test-image.sh plan/ws099/tests/config-amd64-criteria.mk "$build" \
+	--file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh \
+	$probe \
+	ZEDBSD_TEST_IMAGE_TAG=wsp009 "$@"

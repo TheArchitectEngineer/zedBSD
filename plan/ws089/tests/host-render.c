@@ -123,7 +123,7 @@ main(
 	host_network_fake(&app, scenario);
 
 	/*
-	 * The preferences in a home of the test's own under build/ (never the
+	 * A home of the test's own under build/ (never the
 	 * real home): build/ws089-host/render-home, an absolute path.
 	 */
 	if (getcwd(home, sizeof(home) - 64) == NULL)
@@ -131,7 +131,7 @@ main(
 	strcat(home, "/build/ws089-host/render-home");
 	(void)mkdir(home, 0700);
 	setenv("HOME", home, 1);
-	se_look_open(&app);
+	se_look_open(&app, NULL);
 	se_ui_init(&app, &text, start);
 	se_ui_draw(&app, &canvas);
 

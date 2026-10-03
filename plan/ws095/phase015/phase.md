@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws095-p015 -->
 # ws095-p015: 利用者の辞書の保存を入力の無い 3 分の後と終了の時に（BUG-143）
 
-Status: in-progress（q652-i01、P2 generation7。実装済み・T2 の QEMU の確認待ち）
+Status: in-progress（q652-i01、P2 generation7。T1-046 で SIGTERM の保存が FAIL → 直して T1 に再依頼）
 Disposition: normal
 Parent: [WS095](../ws.md)
 Bug: [BUG-143](../../bugs/BUG-143.md)
@@ -57,3 +57,21 @@ host の計測（scratchpad の bench、-O2、`te_draw` を 1 key ごと、50 �
 - 結論: Text Editor の key ごとの CPU の描画は host で約 1/6 になった。ただし 500 ms を説明する量ではない（host で 25 ms）。QEMU の T1-024 では Text Editor と
   Terminal の差は小さかった。残りの候補は実機（5330、i915）の present の経路（`keiui_present_frame` の 8 MB の memcpy を host から見える memory へ、
   `vkWaitForFences` の同期の待ち）で、実機の計測が要る。ここは未特定のまま BUG-143 に残す。
+
+## 結果（Q1、2026-10-04、T1-046、QEMU Venus KVM、main 09179c0 の image）
+
+uncleared。ok: `ZWL IME bypass lines: 0 -> 0`、確定の直後は辞書の file が無い、190 s の後に 1 件。FAIL（2 回とも同じ）: `dictionary after SIGTERM: 1`・`written at the end: FAIL`。SIGTERM の後の辞書は `かんじ /感じ/漢字/` だけで わたし の行が無い。SIGTERM の後も ps に keiland-ime が残る（pid 44・175、/bin/wayland の子）。LATENCY（ms、参考）: textedit-direct 312/440・306/516、terminal-direct 300/309・305/313、japanese 290〜417。証拠 worktrees/t1/build/t1-046/・t1-046-retry/。再開: P2 が SIGTERM で終わらない理由（signal の扱い・試験の送り先の pid）を調べて直し、T1 に再依頼。
+
+## T1-046 の結果と直し（2026-10-04）
+
+T1-046（QEMU、main 09179c0、2 回とも同じ）: bypass 0→0、確定の直後は辞書なし、190 s 後に 1 件（ok）。**FAIL**: SIGTERM の後も keiland-ime が残り
+（pid 44・175）、辞書に わたし の行が無い（`written at the end: FAIL`）。LATENCY（参考）: textedit-direct 312/440・306/516、terminal-direct 300/309・305/313 ms。
+
+原因（読みからの判断、guest では未確認）: 3 分の保存で辞書の writer thread が起動し、以後 cond の待ちで生きている。process への SIGTERM は block していない
+どの thread にも届きうるので、writer thread に届くと main の thread の poll は割り込まれず、`main_stopping` は立つが loop は次の event まで poll の中で待つ。
+key が来ないので終わらず、終わりの保存も走らない。
+
+直し（`main.c`）: self-pipe。起動の時に non-blocking の pipe を作り、signal の handler は印を立てて 1 byte を書く（async-signal-safe の `write`）。loop の poll は
+display と pipe の 2 つを待ち、印が立っていれば display を待たずに返る（display の dispatch は display の fd が読める時だけ）。どの thread に signal が届いても、
+poll が再開されても起きる。試験（`latency-bug143.sh` step 4）は SIGTERM の後に zdesktop の `ZWL IME exited` が増えることも確かめる。
+build: zedBSD の keiland-ime・keiland-linux とも warning 0。QEMU は T1 に再依頼。

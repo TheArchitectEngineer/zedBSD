@@ -95,6 +95,13 @@ struct swap_backend_source {
 	uint32_t page_size;
 	uint32_t slot_count;
 	uint32_t free_slots;
+
+	/*
+	 * Where the next slot search starts, under swap_lock: one past the slot
+	 * allocated last, so the search does not walk the used front of the
+	 * bitmap every time.
+	 */
+	uint32_t next_slot;
 	uint8_t *bitmap;
 	uint32_t *slot_inflight;
 	uint8_t *slot_pending_free;

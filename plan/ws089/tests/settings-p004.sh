@@ -107,7 +107,6 @@ shot wallpaper.png
 control 101
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/Aurora.ppm error=0'
 expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Aurora.ppm'
-guest "cat $conf"
 shot wallpaper-aurora.png
 control 100
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value= error=0'
