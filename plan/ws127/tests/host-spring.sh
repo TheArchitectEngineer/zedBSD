@@ -6,6 +6,9 @@
 #  2. A quick pass over docs (no rest) opens nothing.
 #  3. With 150 more files in the folder, README.md held near the content's bottom edge (y 700 of 12..708) scrolls the content:
 #     the first item's place moves up.
+#  4. ws127-p006: a second tab (Ctrl+T) shows docs; back in the first, README.md held on the second tab for 850 ms
+#     brings it to the front ("DRAG spring tab=1"), and the release on its empty part moves README.md into docs.
+#  5. A quick pass over the second tab brings nothing to the front.
 #   sh plan/ws127/tests/host-spring.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -63,6 +66,19 @@ else
 	status=1
 fi
 rm -f "$project"/z-file-*.txt
+
+# 4. A tab the drag rests on comes to the front (ws127-p006); the drop on its empty part moves the item into its folder.
+tabs="key=20:2 wait=300 press=$docs release=$docs key=28 wait=300 press=400,27 release=400,27 wait=300"
+run tab $tabs press=$readme drag=640,132 drag=880,27 wait=400 wait=450 draw="$out/tab.ppm" drag=700,450 release=700,450 wait=400 wait=400
+expect tab "TABS new index=1 count=2"
+expect tab "DRAG spring tab=1$"
+expect tab "TABS select index=1 count=2"
+expect tab "DRAG drop operation=move items=1 destination=$project/docs$"
+if [ -f "$project/docs/README.md" ] && [ ! -e "$project/README.md" ]; then echo "tab: README.md moved into docs ok"; else echo "tab: README.md moved into docs MISSING"; status=1; fi
+
+# 5. A quick pass over the tab: it stays behind.
+run tab-pass $tabs press=$readme drag=640,132 drag=880,27 wait=200 drag=700,450 wait=900 release=700,450
+refuse tab-pass "DRAG spring"
 
 [ $status = 0 ] && echo "host-spring: PASS" || echo "host-spring: FAIL"
 exit $status
