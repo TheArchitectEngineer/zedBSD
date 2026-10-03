@@ -92,3 +92,7 @@ Q1 の割り当て（P2 は WS135）。再開の条件 1〜4 に沿って:
 ## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
 
 q657（P1）で計測・GPU 名・名前の切れを実装（8af2512、統合 c9b09ad）、T1 に monitor-p003.sh（試験の依頼 8、image build/p1-ws134/hdd-image.img）を依頼済み。再開: T1 の `sim frame: ZMON FRAME` の段ごとの時間（acquire・present・callback のどれが重いか）と `compositor: N compose frames a second` を見て軽量化を決める。host の見積りは fragment が画面の 2.3 倍（全面の背景 1.0）。
+
+## T1-055（Q1、2026-10-04、QEMU Venus KVM、8af2512 の image、段ごとの時間を入れた後）
+
+uncleared のまま。2 回とも `sim: 4 fps (want 15 or more)`（replay 3 つは ok、ERROR なし）。sim の frame（ms）: build 2.2〜3.1、acquire 0.04〜0.25、record 30〜36、submit 9〜10、present 48〜50、**callback 208〜223**、wait 2〜6。`compositor: 4 compose frames a second`。monitor の device は Venus の guest なのに `llvmpipe (LLVM 19.1.7, 256 bits)`（guest に /dev/gpu0 は在る）。読み: 1 frame の大半は compositor の frame callback の待ちで、compositor 自身が毎秒 4 回しか合成していない。monitor が Venus でなく llvmpipe を選んでいる（ICD の選び方か環境）。証拠 worktrees/t1/build/t1-055/。再開: (1) monitor が Venus を使わない理由、(2) compositor の合成が 4 回/秒の理由（monitor の CPU 描画の重さで compositor が待つのか）を調べる。
