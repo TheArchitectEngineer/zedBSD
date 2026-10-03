@@ -156,7 +156,8 @@ main(
 	main_about_window();
 	se_ui_init(&main_app, &main_text, options.page);
 
-	/* The network's watch (a daemon not running yet is found later), and the desktop's settings. */
+	/* The desktop's system (the network and the sound follow it), and the desktop's settings. */
+	se_system_open(&main_app, main_window.display);
 	se_network_open(&main_app);
 	se_look_open(&main_app, main_window.display);
 	se_sound_open(&main_app);
@@ -189,9 +190,10 @@ main(
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the network's watch, then the titlebar, the menus and the glass before the window they belong to. */
+	/* Everything goes, the network and the sound before the system, then the titlebar, the menus and the glass before the window they belong to. */
 	se_network_close(&main_app);
 	se_sound_close(&main_app);
+	se_system_close(&main_app);
 	se_look_close(&main_app);
 	se_titlebar_close(&main_titlebar);
 	se_menu_close(&main_menu);
@@ -407,8 +409,9 @@ main_loop(
 		/* What the window was asked to do: minimizing, zooming, closing. */
 		main_request();
 
-		/* Time passes for the interface (the minute About shows), and the network reports. */
+		/* Time passes for the interface (the minute About shows), and the system reports (the network and the sound follow it). */
 		se_ui_tick(&main_app, now);
+		se_system_poll(&main_app);
 		se_network_poll(&main_app, now);
 		se_look_poll(&main_app, now);
 		se_sound_poll(&main_app, now);

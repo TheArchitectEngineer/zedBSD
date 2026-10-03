@@ -13,12 +13,12 @@
  * Vulkan, and reaches anything only zdesktop offers through this library,
  * never through a private protocol of its own.
  *
- * It is also the desktop's way into the operating system: zdesktop does not
- * talk to networkd, audiod or the other daemons itself.  Everything it needs
- * from the system, other than drawing through Vulkan and its windows through
- * Wayland, comes through this library.  A daemon's protocol or an extension
- * can then change in one place, and moving the desktop to another system
- * means rewriting this library and nothing else.
+ * It is also an application's way to the desktop's system: the network, the
+ * sound, the power and the devices (kl_system_*) and the desktop's settings
+ * (kl_settings_*) are the compositor's, asked for through Keiland's system
+ * extension.  The library itself speaks to no daemon and reads none of the
+ * system's files (WS131 p011): the compositor's libkeiland-backend does, on
+ * each operating system.
  *
  * Each feature adds its calls here when it arrives with its first user, so
  * that nothing is promised before it exists.  The first is the System Menu
@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs). */
-#define KEILAND_VERSION	21U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed). */
+#define KEILAND_VERSION	22U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -569,203 +569,6 @@ int keiland_glass_set_blur(struct keiland_glass *glass, int enabled);
 void keiland_glass_destroy(struct keiland_glass *glass);
 
 /*
- * The network (ws035-p013).
- *
- * The desktop's view of the network and its Wi-Fi switch, for the system
- * bar: whether the machine is connected and through what (a wired
- * interface, or a Wi-Fi network by its SSID), the networks the radio sees,
- * and the requests a user makes from a menu (join a network, disconnect,
- * turn Wi-Fi on or off).  The system's network daemon is behind it; the
- * desktop never speaks the daemon's protocol itself.
- *
- * Nothing here waits.  The state arrives when the daemon reports a change;
- * keiland_network_update reads what has arrived and says what changed.  A
- * request is sent at once and its answer arrives through the same update,
- * so a scan or a join that takes seconds does not stop the caller.  One
- * request is outstanding at a time (EBUSY otherwise).
- *
- * Every call that can fail returns 0 or an errno value: ENOENT (the daemon
- * is not running), EACCES or EPERM (the user may not look or act),
- * EBUSY, EINVAL, ENOMEM.
- */
-struct keiland_network;
-
-/* The longest SSID shown, as printable text with the terminating NUL. */
-#define KEILAND_NETWORK_SSID_MAX	33U
-
-/* The longest interface name, with the terminating NUL. */
-#define KEILAND_NETWORK_NAME_MAX	16U
-
-/* The most networks a scan keeps. */
-#define KEILAND_NETWORK_SCAN_MAX	24U
-
-/* What carries the connection. */
-#define KEILAND_NETWORK_NONE		0U
-#define KEILAND_NETWORK_WIRED		1U
-#define KEILAND_NETWORK_WIFI		2U
-
-/* The Wi-Fi's state. */
-#define KEILAND_WIFI_ABSENT		0U	/* no radio */
-#define KEILAND_WIFI_OFF		1U
-#define KEILAND_WIFI_SEARCHING		2U
-#define KEILAND_WIFI_CONNECTING	3U
-#define KEILAND_WIFI_CONNECTED		4U
-#define KEILAND_WIFI_DISCONNECTED	5U	/* on, and left unconnected by the user */
-
-/* What keiland_network_update found (bits). */
-#define KEILAND_NETWORK_CHANGED_STATE	1U
-#define KEILAND_NETWORK_CHANGED_SCAN	2U
-#define KEILAND_NETWORK_CHANGED_DONE	4U
-
-/* The requests. */
-#define KEILAND_NETWORK_REQUEST_NONE		0U
-#define KEILAND_NETWORK_REQUEST_SCAN		1U
-#define KEILAND_NETWORK_REQUEST_JOIN		2U
-#define KEILAND_NETWORK_REQUEST_DISCONNECT	3U
-#define KEILAND_NETWORK_REQUEST_WIFI_ON	4U
-#define KEILAND_NETWORK_REQUEST_WIFI_OFF	5U
-#define KEILAND_NETWORK_REQUEST_PROFILES	6U	/* the user's saved networks changed (KEILAND_VERSION 11) */
-
-/*
- * The network as last reported: connected (an interface is up with an
- * address), through what and which interface, the wired interface that is
- * up with an address (empty when none, even while the Wi-Fi carries the
- * connection), and the Wi-Fi's state with the SSID of the network it is on
- * or joining (empty otherwise).  reachable is 0 while the daemon cannot be
- * reached.
- */
-struct keiland_network_state {
-	unsigned reachable;
-	unsigned connected;
-	unsigned kind;
-	char interface[KEILAND_NETWORK_NAME_MAX];
-	char wired[KEILAND_NETWORK_NAME_MAX];
-	unsigned wifi;
-	char wifi_interface[KEILAND_NETWORK_NAME_MAX];
-	char ssid[KEILAND_NETWORK_SSID_MAX];
-};
-
-/*
- * One network a scan found: its SSID, its signal in dBm, and whether it
- * asks for a key.  The strongest of the access points of one SSID stands
- * for it.
- */
-struct keiland_network_ap {
-	char ssid[KEILAND_NETWORK_SSID_MAX];
-	int rssi;
-	unsigned secured;
-};
-
-/*
- * Starts watching the network.  Returns NULL with errno set on ENOMEM; a
- * daemon that is not running yet is tried again by the updates.
- */
-struct keiland_network *keiland_network_open(void);
-
-/*
- * Stops watching and drops an outstanding request.
- */
-void keiland_network_close(struct keiland_network *network);
-
-/*
- * Reads what has arrived without waiting, and reconnects to a daemon that
- * went away (at most once a second).  *changed gets the
- * KEILAND_NETWORK_CHANGED_* bits of what changed.
- */
-int keiland_network_update(struct keiland_network *network, unsigned *changed);
-
-/*
- * Copies the network's state as last reported.
- */
-void keiland_network_get_state(const struct keiland_network *network, struct keiland_network_state *state);
-
-/*
- * Copies up to capacity networks of the last scan, the strongest first,
- * and returns how many there are.
- */
-size_t keiland_network_get_scan(const struct keiland_network *network, struct keiland_network_ap *aps, size_t capacity);
-
-/*
- * Sends a request (KEILAND_NETWORK_REQUEST_*; a join names the SSID, the
- * others take NULL).  A join uses the network's saved profile.
- */
-int keiland_network_request(struct keiland_network *network, unsigned request, const char *ssid);
-
-/*
- * Tells the request outstanding (KEILAND_NETWORK_REQUEST_NONE when none),
- * or, after KEILAND_NETWORK_CHANGED_DONE, the one that finished and its
- * errno value (0 when it succeeded) through *error.
- */
-unsigned keiland_network_get_request(const struct keiland_network *network, int *error);
-
-/*
- * The network's details for Settings (KEILAND_VERSION 11, ws089-p003): each
- * interface as the kernel reports it, the DNS servers, and the keys of the
- * Wi-Fi networks the user has saved.  These read the kernel and the files
- * directly and do not wait for the daemon.
- *
- * A new network is joined with its key in three steps: the key is saved in
- * the user's credential store (keiland_network_save_key: /etc/wifi.conf for
- * root, the .wifi.conf of the passwd home otherwise), the daemon is told
- * the saved networks changed (KEILAND_NETWORK_REQUEST_PROFILES), and the
- * network is joined (KEILAND_NETWORK_REQUEST_JOIN).  A key is a WPA
- * passphrase of 8 to 63 characters; the daemon joins with the keys of the
- * user who turned the Wi-Fi on.
- */
-
-/* The most interfaces and DNS servers reported, and an IPv4 address's text with its NUL. */
-#define KEILAND_NETWORK_LINKS_MAX	16U
-#define KEILAND_NETWORK_DNS_MAX		4U
-#define KEILAND_NETWORK_ADDRESS_MAX	16U
-
-/* The shortest and the longest key. */
-#define KEILAND_NETWORK_KEY_MIN		8U
-#define KEILAND_NETWORK_KEY_MAX		63U
-
-/*
- * One interface: its name, whether it is up and has its link, whether it
- * is the loopback, its IPv4 address and netmask (empty when it has none),
- * its hardware address and MTU, and the bytes it has received and sent.
- */
-struct keiland_network_link {
-	char name[KEILAND_NETWORK_NAME_MAX];
-	unsigned up;
-	unsigned running;
-	unsigned loopback;
-	char address[KEILAND_NETWORK_ADDRESS_MAX];
-	char netmask[KEILAND_NETWORK_ADDRESS_MAX];
-	unsigned char hardware[6];
-	unsigned mtu;
-	uint64_t received_bytes;
-	uint64_t sent_bytes;
-};
-
-/*
- * Copies up to capacity interfaces and returns how many there are (0 when
- * they cannot be read).
- */
-size_t keiland_network_get_links(struct keiland_network_link *links, size_t capacity);
-
-/*
- * Copies up to capacity DNS servers of /etc/resolv.conf (dotted IPv4) and
- * returns how many were copied.
- */
-size_t keiland_network_get_dns(char (*servers)[KEILAND_NETWORK_ADDRESS_MAX], size_t capacity);
-
-/*
- * Saves the key of a Wi-Fi network in the user's credential store (joined
- * by itself from then on).  Returns 0 or an errno value (EINVAL for an SSID
- * or a key outside the bounds).
- */
-int keiland_network_save_key(const char *ssid, const char *key);
-
-/*
- * Copies up to capacity SSIDs the user has saved keys for and returns how
- * many there are (0 when none, or the store cannot be read).
- */
-size_t keiland_network_get_saved(char (*ssids)[KEILAND_NETWORK_SSID_MAX], size_t capacity);
-
-/*
  * The touch motion (WS081, plan/ws081/design.md sections 3 and 6).
  *
  * A cheap touch screen reports 30 to 60 times a second, unevenly, and with
@@ -1115,82 +918,6 @@ void keiland_desktop_ack(struct keiland_desktop *desktop, uint32_t serial);
  * Gives the desktop's role up.
  */
 void keiland_desktop_destroy(struct keiland_desktop *desktop);
-
-/*
- * The sound output's volume (ws100-p003, KEILAND_VERSION 15): the device
- * volume audiod applies to everything it plays, 0 to 100 per channel, and
- * whether it is muted, for the system bar and Settings.  Nothing here
- * waits: keiland_audio_update reads what audiod has sent, a set or the
- * feedback sound is sent at once.  An audiod that is not running is not a
- * failure; the updates connect again, at most once a second.
- */
-struct keiland_audio;
-
-/* What audiod last reported. */
-struct keiland_audio_state {
-	unsigned reachable;	/* 0 while audiod cannot be reached */
-	unsigned device;	/* 0 when audiod has no sound device */
-	unsigned rate;		/* the device's rate, 0 unknown */
-	unsigned channels;
-	unsigned left;		/* 0..100 */
-	unsigned right;		/* 0..100 */
-	unsigned muted;		/* 0 or 1 */
-};
-
-/* What keiland_audio_update found changed. */
-#define KEILAND_AUDIO_CHANGED_REACHABLE	1U	/* audiod came or went */
-#define KEILAND_AUDIO_CHANGED_VOLUME	2U	/* the volume or mute changed */
-
-/*
- * Starts following audiod's volume (HELLO, then SUBSCRIBE).  Returns NULL
- * only without memory.
- */
-struct keiland_audio *keiland_audio_open(void);
-
-/*
- * Stops following audiod.
- */
-void keiland_audio_close(struct keiland_audio *audio);
-
-/*
- * The descriptor to poll for audio events, or -1 when no event source exists.
- * Native OSS mixers use periodic keiland_audio_update calls without an event fd.
- */
-int keiland_audio_fd(const struct keiland_audio *audio);
-
-/*
- * Reads what audiod has sent without waiting, and connects again when the
- * connection went (at most once a second).  *changed has the
- * KEILAND_AUDIO_CHANGED_* bits of what changed.  Returns 0, or EINVAL.
- */
-int keiland_audio_update(struct keiland_audio *audio, unsigned *changed);
-
-/*
- * Copies what audiod last reported.
- */
-void keiland_audio_get_state(const struct keiland_audio *audio, struct keiland_audio_state *state);
-
-/*
- * Asks audiod for a volume (0..100 each) and mute.  The new volume comes
- * back through keiland_audio_update.  Returns 0, ENOTCONN (not connected),
- * EINVAL (out of range) or the error of sending.
- */
-int keiland_audio_set_volume(struct keiland_audio *audio, unsigned left, unsigned right, unsigned muted);
-
-/*
- * Asks audiod to play its short feedback sound at the device volume (an
- * audiod without it stays silent).  Returns 0, ENOTCONN, or the error of
- * sending.
- */
-int keiland_audio_feedback(struct keiland_audio *audio);
-
-/*
- * Tells whether the sound service runs (KEILAND_VERSION 21): 1 when it
- * does, 0 when it does not.  It does not connect to the service and does
- * not wait; a service that runs may still have no sound device
- * (struct keiland_audio_state's device).
- */
-int keiland_audio_available(void);
 
 /*
  * The keyboard inset (KEILAND_VERSION 18, ws102-p015).
@@ -1572,7 +1299,9 @@ unsigned kl_system_capabilities(const struct kl_system *system);
 
 /*
  * Takes one answered request: 1 with its number and its error (0, EPERM,
- * ENOTSUP, EBUSY, EINVAL, ENODEV, EIO), 0 when none is answered.
+ * ENOTSUP, EBUSY, EINVAL, ENODEV, EIO; a join's and a save_key's own
+ * ENOENT: no key saved, EACCES: the network refused the key, ENETUNREACH:
+ * the network is out of reach), 0 when none is answered.
  */
 int kl_system_take_result(struct kl_system *system, uint32_t *request, int *error);
 
@@ -1604,7 +1333,8 @@ int kl_system_network_save_key(struct kl_system *system, const char *ssid, const
 
 /*
  * Asks for the network's details: the interfaces, the DNS servers and the
- * saved networks come (KL_SYSTEM_CHANGED_DETAILS) before the answer.
+ * saved networks come (KL_SYSTEM_CHANGED_DETAILS) before the answer.  It
+ * is no request of the network daemon's and is asked alongside one.
  * Returns 0 when asked, or ENOTSUP.
  */
 int kl_system_network_query_details(struct kl_system *system, uint32_t *request);

@@ -42,15 +42,10 @@
 
 #include "userland/desktop/libkeiland-backend/keiland-backend-gpu.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend-evdev.h"
+#include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
-
-/* The network's and the sound's records of libkeiland-backend, which the system extension reads (system.c). */
-struct kl_backend_network;
-struct kl_backend_network_state;
-struct kl_backend_network_ap;
-struct kl_backend_audio_state;
 
 /* Bound each connection's wire, descriptor, object and queued-event storage. */
 #define ZWL_WIRE_MAX		65532U
@@ -1195,6 +1190,8 @@ int zwl_system_request(struct zwl_object *object, uint32_t opcode, const unsigne
 void zwl_system_tick(struct zwl_server *server);
 void zwl_system_network_changed(struct zwl_server *server, unsigned changed);
 int zwl_system_network_done(struct zwl_server *server, unsigned request, int error);
+int zwl_system_bar_save_key(struct zwl_server *server, const char *ssid, const char *key);
+void zwl_system_bar_saved(struct zwl_server *server);
 void zwl_system_close(struct zwl_server *server);
 float zwl_home_progress(struct zwl_server *server);
 void zwl_home_layer(struct zwl_server *server, float progress, float *x, float *y, float *scale);
@@ -1279,6 +1276,8 @@ int zwl_network_is_open(void);
 struct kl_backend_network *zwl_network_watch(void);
 void zwl_network_state(struct kl_backend_network_state *state);
 size_t zwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity);
+void zwl_network_key_failed(struct zwl_server *server, const char *ssid, int error);
+void zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX], size_t count);
 void zwl_volume_tick(struct zwl_server *server);
 void zwl_volume_keep(struct zwl_server *server, const char *why);
 void zwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);

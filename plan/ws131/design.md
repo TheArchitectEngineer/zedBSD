@@ -395,7 +395,7 @@ VkExternalFenceHandleTypeFlagBits kl_backend_gpu_frame_fence_type(void);
 
 1. **snapshot**: object を作ると今の状態を event の列で送り、最後に `done(serial)`。client は `done` までの途中を app に見せない。変化も「変わった item ＋ `done`」。
 2. **要求と結果**: 要求は client の `request_id` を持ち、compositor は必ず一度 `result(request_id, applied, saved)` を返す。`applied` は適用の結果、`saved` は記録の結果（WS113 p005 の「applied と saved を別の結果」と揃える、review 10）。値は protocol の列挙で errno の数値を送らない。
-3. **error の列挙**: `0 ok`・`1 denied`・`2 unsupported`・`3 busy`・`4 invalid`・`5 unavailable`・`6 failed`・`7 not_saved`。
+3. **error の列挙**: `0 ok`・`1 denied`・`2 unsupported`・`3 busy`・`4 invalid`・`5 unavailable`・`6 failed`・`7 not_saved`。p011 で network の join の失敗を分ける `8 no_key`・`9 refused`・`10 unreachable` を足した（Settings が理由を言うため、libkeiland は `ENOENT`・`EACCES`・`ENETUNREACH` に戻す）。`query_details` は daemon の要求ではなく、一度に一つの約束に数えない（p011）。
 4. **一度に一つ**（review 8）: network の要求は client と compositor の system bar を合わせて一度に一つ（backend の今の約束、`keiland.h:689-698`）。他は `busy`。鍵の保存 → profile の通知（`KEILAND_NETWORK_REQUEST_PROFILES`、`keiland.h:627`）→ join の 3 段は `save_key` の中で compositor が行い、protocol には出さない。
 5. **認可**（D5、review 9）: compositor は client の uid を `kl_backend_peer_uid()` で得て、compositor と同じ uid の client にだけ registry に global を見せる（今の `zwl_ime_global_visible` の仕組み、`protocol.c:433`・`:613`）。socket は 0700 の `XDG_RUNTIME_DIR` にあるので、これは主な防御ではなく、uid の違う client の誤った接続を止める多重の防御。zedBSD は `getpeereid`（`include/libc/unistd.h:124`、`src/libc/openbsd.c:261`）がある（networkd は `SO_PEERCRED` を使う、`userland/base/networkd/main.c:2963`）。WiFi の鍵は log に出さない。
 6. **Keiland 以外の compositor**（review 22）: global が無ければ `kl_system_open()` は `ENOTSUP`。Settings は該当の頁を「この desktop では使えない」と表示する。

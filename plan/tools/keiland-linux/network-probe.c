@@ -8,7 +8,7 @@
 /*
  * Checks the production network backend against the isolated simulated AP.
  */
-#include <keiland.h>
+#include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include <inttypes.h>
 #include <errno.h>
 #include <stdio.h>
@@ -16,9 +16,9 @@
 #include <time.h>
 #include <unistd.h>
 
-static int probe(struct keiland_network *network);
-static int wait_state(struct keiland_network *network, unsigned wifi, unsigned seconds);
-static int wait_request(struct keiland_network *network, unsigned request);
+static int probe(struct kl_backend_network *network);
+static int wait_state(struct kl_backend_network *network, unsigned wifi, unsigned seconds);
+static int wait_request(struct kl_backend_network *network, unsigned request);
 
 /*
  * Owns one watch while the simulated-radio criteria exercise the public API.
@@ -27,15 +27,15 @@ int
 main(
 	void)
 {
-	struct keiland_network *network;
+	struct kl_backend_network *network;
 	int error;
 
 	/* A missing allocation prevents all radio operations. */
-	network = keiland_network_open();
+	network = kl_backend_network_open();
 	if (network == NULL)
 		return 1;
 	error = probe(network);
-	keiland_network_close(network);
+	kl_backend_network_close(network);
 	if (error != 0) {
 		fprintf(stderr, "network-probe: FAIL errno=%d %s\n", error, strerror(error));
 		return 1;
@@ -49,13 +49,13 @@ main(
 /* Verifies scan, credentials, join, disconnect and details using one owned watch. */
 static int
 probe(
-	struct keiland_network *network)
+	struct kl_backend_network *network)
 {
-	struct keiland_network_state state;
-	struct keiland_network_ap aps[KEILAND_NETWORK_SCAN_MAX];
-	struct keiland_network_link links[KEILAND_NETWORK_LINKS_MAX];
-	char saved[KEILAND_NETWORK_SCAN_MAX][KEILAND_NETWORK_SSID_MAX];
-	char dns[KEILAND_NETWORK_DNS_MAX][KEILAND_NETWORK_ADDRESS_MAX];
+	struct kl_backend_network_state state;
+	struct kl_backend_network_ap aps[KL_BACKEND_NETWORK_SCAN_MAX];
+	struct kl_backend_network_link links[KL_BACKEND_NETWORK_LINKS_MAX];
+	char saved[KL_BACKEND_NETWORK_SCAN_MAX][KL_BACKEND_NETWORK_SSID_MAX];
+	char dns[KL_BACKEND_NETWORK_DNS_MAX][KL_BACKEND_NETWORK_ADDRESS_MAX];
 	size_t count;
 	size_t index;
 	unsigned changed;
@@ -67,23 +67,23 @@ probe(
 	int same;
 
 	/* Wait for an actual reachable disconnected radio, not a placeholder state. */
-	error = wait_state(network, KEILAND_WIFI_DISCONNECTED, 10);
+	error = wait_state(network, KL_BACKEND_WIFI_DISCONNECTED, 10);
 	if (error != 0)
 		return error;
-	error = keiland_network_request(network, KEILAND_NETWORK_REQUEST_SCAN, NULL);
+	error = kl_backend_network_request(network, KL_BACKEND_NETWORK_REQUEST_SCAN, NULL);
 	if (error != 0)
 		return error;
-	error = wait_request(network, KEILAND_NETWORK_REQUEST_SCAN);
+	error = wait_request(network, KL_BACKEND_NETWORK_REQUEST_SCAN);
 	if (error != 0)
 		return error;
 
 	/* A completed scan must expose the secured fixture AP within twenty seconds. */
 	found = 0;
 	for (iteration = 0; iteration < 1000; iteration++) {
-		error = keiland_network_update(network, &changed);
+		error = kl_backend_network_update(network, &changed);
 		if (error != 0)
 			return error;
-		count = keiland_network_get_scan(network, aps, KEILAND_NETWORK_SCAN_MAX);
+		count = kl_backend_network_get_scan(network, aps, KL_BACKEND_NETWORK_SCAN_MAX);
 		for (index = 0; index < count; index++) {
 			same = strcmp(aps[index].ssid, "keiland-test");
 			if (same == 0 && aps[index].secured != 0)
@@ -104,39 +104,39 @@ probe(
 
 	/* Saving a key must not itself connect the previously disconnected radio. */
 	printf("network-probe: scan secured AP PASS\n");
-	error = keiland_network_save_key("keiland-test", "keiland-pass");
+	error = kl_backend_network_save_key("keiland-test", "keiland-pass");
 	if (error != 0)
 		return error;
 	(void)usleep(200000);
-	error = keiland_network_update(network, &changed);
+	error = kl_backend_network_update(network, &changed);
 	if (error != 0)
 		return error;
-	keiland_network_get_state(network, &state);
-	if (state.wifi == KEILAND_WIFI_CONNECTED) {
+	kl_backend_network_get_state(network, &state);
+	if (state.wifi == KL_BACKEND_WIFI_CONNECTED) {
 		error = EPROTO;
 		return error;
 	}
 
 	/* The application's usual profile refresh and JOIN sequence remains unchanged. */
-	error = keiland_network_request(network, KEILAND_NETWORK_REQUEST_PROFILES, NULL);
+	error = kl_backend_network_request(network, KL_BACKEND_NETWORK_REQUEST_PROFILES, NULL);
 	if (error != 0)
 		return error;
-	error = wait_request(network, KEILAND_NETWORK_REQUEST_PROFILES);
+	error = wait_request(network, KL_BACKEND_NETWORK_REQUEST_PROFILES);
 	if (error != 0)
 		return error;
-	error = keiland_network_request(network, KEILAND_NETWORK_REQUEST_JOIN, "keiland-test");
+	error = kl_backend_network_request(network, KL_BACKEND_NETWORK_REQUEST_JOIN, "keiland-test");
 	if (error != 0)
 		return error;
-	error = wait_request(network, KEILAND_NETWORK_REQUEST_JOIN);
+	error = wait_request(network, KL_BACKEND_NETWORK_REQUEST_JOIN);
 	if (error != 0)
 		return error;
-	error = wait_state(network, KEILAND_WIFI_CONNECTED, 30);
+	error = wait_state(network, KL_BACKEND_WIFI_CONNECTED, 30);
 	if (error != 0)
 		return error;
-	keiland_network_get_state(network, &state);
+	kl_backend_network_get_state(network, &state);
 	same = strcmp(state.ssid, "keiland-test");
 	if (same != 0 ||
-	    state.kind != KEILAND_NETWORK_WIFI ||
+	    state.kind != KL_BACKEND_NETWORK_WIFI ||
 	    state.connected == 0) {
 		error = EPROTO;
 		return error;
@@ -144,7 +144,7 @@ probe(
 
 	/* Kernel interfaces, saved profiles and resolvers are real backend outputs. */
 	printf("network-probe: join wifi=%u kind=%u ssid=%s PASS\n", state.wifi, state.kind, state.ssid);
-	count = keiland_network_get_links(links, KEILAND_NETWORK_LINKS_MAX);
+	count = kl_backend_network_get_links(links, KL_BACKEND_NETWORK_LINKS_MAX);
 	wifi = 0;
 	wired = 0;
 	for (index = 0; index < count; index++) {
@@ -165,7 +165,7 @@ probe(
 
 	/* The saved credential query must decode the same exact SSID. */
 	found = 0;
-	count = keiland_network_get_saved(saved, KEILAND_NETWORK_SCAN_MAX);
+	count = kl_backend_network_get_saved(saved, KL_BACKEND_NETWORK_SCAN_MAX);
 	for (index = 0; index < count; index++) {
 		same = strcmp(saved[index], "keiland-test");
 		if (same == 0)
@@ -180,7 +180,7 @@ probe(
 
 	/* QEMU's resolver proves the existing DNS parser reads the guest configuration. */
 	found = 0;
-	count = keiland_network_get_dns(dns, KEILAND_NETWORK_DNS_MAX);
+	count = kl_backend_network_get_dns(dns, KL_BACKEND_NETWORK_DNS_MAX);
 	for (index = 0; index < count; index++) {
 		same = strcmp(dns[index], "10.0.2.3");
 		if (same == 0)
@@ -194,13 +194,13 @@ probe(
 	}
 
 	/* Explicit disconnect returns the radio to the public disconnected state. */
-	error = keiland_network_request(network, KEILAND_NETWORK_REQUEST_DISCONNECT, NULL);
+	error = kl_backend_network_request(network, KL_BACKEND_NETWORK_REQUEST_DISCONNECT, NULL);
 	if (error != 0)
 		return error;
-	error = wait_request(network, KEILAND_NETWORK_REQUEST_DISCONNECT);
+	error = wait_request(network, KL_BACKEND_NETWORK_REQUEST_DISCONNECT);
 	if (error != 0)
 		return error;
-	error = wait_state(network, KEILAND_WIFI_DISCONNECTED, 10);
+	error = wait_state(network, KL_BACKEND_WIFI_DISCONNECTED, 10);
 	if (error != 0)
 		return error;
 
@@ -211,21 +211,21 @@ probe(
 /* Waits a bounded time for a reachable radio state without blocking update. */
 static int
 wait_state(
-	struct keiland_network *network,
+	struct kl_backend_network *network,
 	unsigned wifi,
 	unsigned seconds)
 {
-	struct keiland_network_state state;
+	struct kl_backend_network_state state;
 	unsigned iteration;
 	unsigned changed;
 	int error;
 
 	/* Poll the ordinary public update path until the requested state is observed. */
 	for (iteration = 0; iteration < seconds * 50; iteration++) {
-		error = keiland_network_update(network, &changed);
+		error = kl_backend_network_update(network, &changed);
 		if (error != 0)
 			return error;
-		keiland_network_get_state(network, &state);
+		kl_backend_network_get_state(network, &state);
 		if (state.reachable != 0 && state.wifi == wifi)
 			return 0;
 		(void)usleep(20000);
@@ -239,7 +239,7 @@ wait_state(
 /* Waits for the exact public completion event and checks the daemon outcome. */
 static int
 wait_request(
-	struct keiland_network *network,
+	struct kl_backend_network *network,
 	unsigned request)
 {
 	unsigned iteration;
@@ -250,11 +250,11 @@ wait_request(
 
 	/* Commands have a two-second backend deadline; five seconds bounds the fixture. */
 	for (iteration = 0; iteration < 250; iteration++) {
-		error = keiland_network_update(network, &changed);
+		error = kl_backend_network_update(network, &changed);
 		if (error != 0)
 			return error;
-		if ((changed & KEILAND_NETWORK_CHANGED_DONE) != 0) {
-			finished = keiland_network_get_request(network, &request_error);
+		if ((changed & KL_BACKEND_NETWORK_CHANGED_DONE) != 0) {
+			finished = kl_backend_network_get_request(network, &request_error);
 			if (finished != request)
 				return EPROTO;
 			if (request_error != 0)

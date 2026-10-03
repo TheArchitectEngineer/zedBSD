@@ -72,6 +72,16 @@ static struct {
 	char saved_key[KL_BACKEND_NETWORK_KEY_MAX + 1U];
 	unsigned save_count;
 	unsigned bar_done_count;
+	int save_error;
+	unsigned command_bar_key;
+	unsigned command_bar_saved;
+	int bar_key_error;
+	unsigned bar_key_called;
+	unsigned key_failed_count;
+	int key_failed_error;
+	size_t bar_saved_count;
+	char bar_saved_first[KL_BACKEND_NETWORK_SSID_MAX];
+	unsigned bar_saved_calls;
 	struct kl_backend_audio_state audio;
 	unsigned set_left;
 	unsigned set_right;
@@ -141,12 +151,38 @@ kl_backend_network_request(struct kl_backend_network *network, unsigned request,
 int
 kl_backend_network_save_key(const char *ssid, const char *key)
 {
+	int error;
+
 	pthread_mutex_lock(&world.lock);
 	snprintf(world.saved_ssid, sizeof(world.saved_ssid), "%s", ssid);
 	snprintf(world.saved_key, sizeof(world.saved_key), "%s", key);
 	world.save_count++;
+	error = world.save_error;
 	pthread_mutex_unlock(&world.lock);
-	return 0;
+	return error;
+}
+
+void
+zwl_network_key_failed(struct zwl_server *server, const char *ssid, int error)
+{
+	(void)server;
+	(void)ssid;
+	pthread_mutex_lock(&world.lock);
+	world.key_failed_count++;
+	world.key_failed_error = error;
+	pthread_mutex_unlock(&world.lock);
+}
+
+void
+zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX], size_t count)
+{
+	(void)server;
+	pthread_mutex_lock(&world.lock);
+	world.bar_saved_calls++;
+	world.bar_saved_count = count;
+	if (count > 0U)
+		snprintf(world.bar_saved_first, sizeof(world.bar_saved_first), "%s", ssids[0]);
+	pthread_mutex_unlock(&world.lock);
 }
 
 size_t
@@ -455,11 +491,30 @@ static void
 serve_pass(void)
 {
 	struct kl_backend_network_state state;
+	unsigned bar_key;
+	unsigned bar_saved;
 	unsigned answer;
 	unsigned release;
 	unsigned changed;
 	int error;
 	int owned;
+
+	/* The test's commands to the system bar's side (called outside the lock: the fakes take it). */
+	pthread_mutex_lock(&world.lock);
+	bar_key = world.command_bar_key;
+	world.command_bar_key = 0U;
+	bar_saved = world.command_bar_saved;
+	world.command_bar_saved = 0U;
+	pthread_mutex_unlock(&world.lock);
+	if (bar_key) {
+		error = zwl_system_bar_save_key(&server, "Bar", "barpass1");
+		pthread_mutex_lock(&world.lock);
+		world.bar_key_error = error;
+		world.bar_key_called = 1U;
+		pthread_mutex_unlock(&world.lock);
+	}
+	if (bar_saved)
+		zwl_system_bar_saved(&server);
 
 	/* The test's commands. */
 	pthread_mutex_lock(&world.lock);
@@ -718,6 +773,9 @@ test_view(void)
 	CHECK(system_view_error_of(KL_SYSTEM_RESULT_INVALID) == EINVAL, "view: invalid");
 	CHECK(system_view_error_of(KL_SYSTEM_RESULT_UNAVAILABLE) == ENODEV, "view: unavailable");
 	CHECK(system_view_error_of(KL_SYSTEM_RESULT_NOT_SAVED) == EIO, "view: not saved");
+	CHECK(system_view_error_of(KL_SYSTEM_RESULT_NO_KEY) == ENOENT, "view: no key");
+	CHECK(system_view_error_of(KL_SYSTEM_RESULT_REFUSED) == EACCES, "view: refused");
+	CHECK(system_view_error_of(KL_SYSTEM_RESULT_UNREACHABLE) == ENETUNREACH, "view: unreachable");
 }
 
 /* The last captured result's applied value, or UINT32_MAX without one. */
@@ -887,7 +945,7 @@ test_both_ends(void)
 	world.auto_answer = 1U;
 	world.answer_error = ENOENT;
 	pthread_mutex_unlock(&world.lock);
-	expect_result(display, system, first, ENODEV, "join without a key");
+	expect_result(display, system, first, ENOENT, "join without a key");
 	pthread_mutex_lock(&world.lock);
 	world.answer_error = 0;
 	pthread_mutex_unlock(&world.lock);
@@ -940,6 +998,48 @@ test_both_ends(void)
 	CHECK(links[1].received_bytes == 0x123456789ULL && links[1].sent_bytes == 42U && links[1].running == 0U, "link counters");
 	CHECK(kl_system_network_get_dns(system, dns, 4U) == 1U && strcmp(dns[0], "192.168.1.1") == 0, "dns");
 	CHECK(kl_system_network_get_saved(system, saved, 4U) == 1U && strcmp(saved[0], "Home") == 0, "saved");
+
+	/* The details alongside a request of the daemon's: answered while the scan is still out. */
+	pthread_mutex_lock(&world.lock);
+	world.auto_answer = 0U;
+	pthread_mutex_unlock(&world.lock);
+	CHECK(kl_system_network_request(system, KL_NETWORK_SCAN, NULL, &second) == 0, "scan held asked");
+	(void)pump(display, system, NULL, 3);
+	CHECK(outstanding_now() == KL_BACKEND_NETWORK_REQUEST_SCAN, "scan out");
+	CHECK(kl_system_network_query_details(system, &first) == 0, "details beside the scan asked");
+	expect_result(display, system, first, 0, "details beside the scan");
+	pthread_mutex_lock(&world.lock);
+	world.auto_answer = 1U;
+	pthread_mutex_unlock(&world.lock);
+	expect_result(display, system, second, 0, "scan after the details");
+
+	/* The system bar's key: saved by the thread, told, joined; the join's answer is the bar's. */
+	pthread_mutex_lock(&world.lock);
+	world.log_count = 0U;
+	world.bar_done_count = 0U;
+	world.command_bar_key = 1U;
+	pthread_mutex_unlock(&world.lock);
+	(void)pump(display, system, NULL, 20);
+	pthread_mutex_lock(&world.lock);
+	CHECK(world.bar_key_called == 1U && world.bar_key_error == 0, "bar key handed (error %d)", world.bar_key_error);
+	CHECK(world.save_count == 3U && strcmp(world.saved_ssid, "Bar") == 0, "bar key saved by the store");
+	CHECK(world.log_count == 2U && world.log[0] == KL_BACKEND_NETWORK_REQUEST_PROFILES && world.log[1] == KL_BACKEND_NETWORK_REQUEST_JOIN && strcmp(world.log_ssid[1], "Bar") == 0, "bar: profiles then join");
+	CHECK(world.bar_done_count == 1U, "bar: the join's answer is the bar's");
+	world.save_error = EIO;
+	world.command_bar_key = 1U;
+	pthread_mutex_unlock(&world.lock);
+	(void)pump(display, system, NULL, 20);
+	pthread_mutex_lock(&world.lock);
+	CHECK(world.key_failed_count == 1U && world.key_failed_error == EIO, "bar: a key not saved is told");
+	world.save_error = 0;
+
+	/* The system bar's saved networks. */
+	world.command_bar_saved = 1U;
+	pthread_mutex_unlock(&world.lock);
+	(void)pump(display, system, NULL, 20);
+	pthread_mutex_lock(&world.lock);
+	CHECK(world.bar_saved_calls == 1U && world.bar_saved_count == 1U && strcmp(world.bar_saved_first, "Home") == 0, "bar: saved networks");
+	pthread_mutex_unlock(&world.lock);
 
 	/* A new state from the daemon. */
 	pthread_mutex_lock(&world.lock);

@@ -2,7 +2,7 @@
 
 # ws131-p009: backend の GPU の buffer の領域と境界の確定
 
-Status: in-progress（q659-i01、P2 generation7。実装・host 試験・build・checker 済み、QEMU は T2 の結果待ち）
+Status: cleared（q659、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q659 / q659-i01（Q1 2026-10-04: ユーザーの夜の指示「優先度の高い実装を進め、止まれば次の WS へ」の Q1 の解釈、所有 path の委任あり）
@@ -114,3 +114,7 @@ design.md §3.7 の「配置」の段落をそのまま（X server の key code 
 ## Linux・FreeBSD の結果（Q1、2026-10-04、T1-060）
 
 FreeBSD: main 71ffdf3 では include の相対 path の誤り（git mv の後）で build が FAIL、P2 の 098082c で直し、backend-test 9 項目 PASS（build warning 0・install・audit・host-seat・session・power・sync-rejected・dmabuf-export-rejected）。Linux: host の gcc・clang warning 0、wsi-check 4 mode × 90 frame PASS、Debian 13 の QEMU+KVM guest で wltest 600 frame（`ZWL ACQUIRE_FENCE` 601）、dmabuf-forge PASS（out_of_bounds で拒否、compositor 継続、`ZWL EXIT error=0 cleanup_failed=0`）。zedBSD の分は T2-019 待ち。
+
+## zedBSD の結果と判定（Q1、2026-10-04、T2-019、869dc5c）
+
+cleared。3 つの image の build は warning 0、boot-test PASS、criteria の C1・C2・C9 の 13 行 PASS（1242 s）、dedicated-host・gpu-zedbsd-host PASS ×2、v1-check PASS（52 source）、forge-guest・fence-guest（fence 600）PASS。Linux・FreeBSD は T1-060（FreeBSD は 098082c の include の直しの後）。注: v1-check.sh に BUILD を渡すと、その BUILD に sysroot が無いと stddef.h が無く FAIL する（道具の引数の扱い、文書どおりの build/amd64 では PASS）。

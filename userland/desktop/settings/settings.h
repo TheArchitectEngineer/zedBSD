@@ -303,10 +303,18 @@ struct se_panel {
 };
 
 /* How many networks, interfaces, DNS servers and saved networks Settings keeps. */
-#define SE_NETWORK_SCAN		KEILAND_NETWORK_SCAN_MAX
-#define SE_NETWORK_LINKS	KEILAND_NETWORK_LINKS_MAX
-#define SE_NETWORK_DNS		KEILAND_NETWORK_DNS_MAX
-#define SE_NETWORK_SAVED	32U
+#define SE_NETWORK_SCAN		KL_NETWORK_SCAN_MAX
+#define SE_NETWORK_LINKS	KL_NETWORK_LINKS_MAX
+#define SE_NETWORK_DNS		KL_NETWORK_DNS_MAX
+#define SE_NETWORK_SAVED	KL_NETWORK_SAVED_MAX
+
+/*
+ * The network's requests Settings makes: none, the daemon's (KL_NETWORK_SCAN
+ * to KL_NETWORK_WIFI_OFF), and a key saved and its network joined, which
+ * the compositor carries out as one request.
+ */
+#define SE_NETWORK_NONE		0U
+#define SE_NETWORK_SAVE_KEY	6U
 
 /* How many seconds of the network's activity the graph keeps (one sample a second). */
 #define SE_USAGE_SAMPLES	120U
@@ -316,13 +324,13 @@ struct se_panel {
 #define SE_KEY_TEXT		64U
 
 /*
- * The steps of joining a network whose key was just typed: the key is
- * saved, the daemon is told the saved networks changed, and the network is
- * joined.
+ * What a join is: none, a join of a network whose key is saved, or a join
+ * with a key just typed (the compositor saves the key, tells the daemon and
+ * joins, WS131 p011).
  */
 enum se_join_step {
 	SE_JOIN_NONE,
-	SE_JOIN_PROFILES,
+	SE_JOIN_KEY,
 	SE_JOIN_CONNECT
 };
 
@@ -336,51 +344,60 @@ struct se_field {
 };
 
 /*
- * What the network pages show, and what they have asked of the daemon
- * (network.c keeps it up to date; the host tests fill it by hand).
+ * The network as the network pages show it (network.c keeps it up to date
+ * through libkeiland's kl_system_*; the host tests fill it by hand).
  *
- * state, scan, links, dns and saved are the last reports.  request is the
- * daemon's request outstanding (KEILAND_NETWORK_REQUEST_NONE when none);
- * join_step and join_ssid carry a join with a new key through its steps.
- * libkeiland carries one request at a time: a switch, a disconnect or a
- * join asked for while another request (a scan, usually) is out waits in
- * one slot -- pending_request (NONE when empty), the join's step and its
- * network -- and is sent when that one is answered (ws089-p012 C1, as the
- * system bar does since ws005-p019).  A scan is never kept.
+ * live is 1 when the desktop offers the network (Keiland's system
+ * extension); without it the pages say so.  state and scan are the
+ * compositor's last reports, and links, dns and saved its last details,
+ * asked for now and then (details_id while asked, details_known once one
+ * came).  request is the request outstanding (SE_NETWORK_NONE when none)
+ * and request_id the number its answer carries; join_step and join_ssid
+ * carry a join through it.  One request goes at a time, the system bar's
+ * included: a switch, a disconnect or a join asked for while another
+ * request (a scan, usually) is out waits in one slot -- pending_request
+ * (NONE when empty), the join's step and its network -- and is sent when
+ * that one is answered (ws089-p012 C1, as the system bar does since
+ * ws005-p019); one the compositor answered busy (the system bar's request
+ * was out) waits there until retry_at.  A scan is never kept.
  * scan_received tells that a scan's report arrived, so an empty list
  * means no network is in reach rather than none looked for yet.
  * key_ssid names the network whose key is being typed (empty when the key
  * form is closed); key_reveal asks the next frame to scroll the page so
- * that the form, under its network's row, is in sight (BUG-160).  The usage ring holds the bytes a second received and
- * sent, newest at usage_next - 1.
+ * that the form, under its network's row, is in sight (BUG-160).  The
+ * usage ring holds the bytes a second received and sent, newest at
+ * usage_next - 1.
  */
 struct se_network {
 	int live;
-	struct keiland_network *handle;
-	struct keiland_network_state state;
-	struct keiland_network_ap scan[SE_NETWORK_SCAN];
+	struct kl_network_state state;
+	struct kl_network_ap scan[SE_NETWORK_SCAN];
 	size_t scan_count;
 	uint64_t scanned_at;
 	int scan_received;
-	struct keiland_network_link links[SE_NETWORK_LINKS];
+	struct kl_network_link links[SE_NETWORK_LINKS];
 	size_t link_count;
-	char dns[SE_NETWORK_DNS][KEILAND_NETWORK_ADDRESS_MAX];
+	char dns[SE_NETWORK_DNS][KL_NETWORK_ADDRESS_MAX];
 	size_t dns_count;
-	char saved[SE_NETWORK_SAVED][KEILAND_NETWORK_SSID_MAX];
+	char saved[SE_NETWORK_SAVED][KL_NETWORK_SSID_MAX];
 	size_t saved_count;
+	uint32_t details_id;
+	int details_known;
+	uint64_t details_at;
 	unsigned request;
+	uint32_t request_id;
 	unsigned join_step;
-	char join_ssid[KEILAND_NETWORK_SSID_MAX];
+	char join_ssid[KL_NETWORK_SSID_MAX];
 	unsigned pending_request;
 	unsigned pending_step;
-	char pending_ssid[KEILAND_NETWORK_SSID_MAX];
-	char key_ssid[KEILAND_NETWORK_SSID_MAX];
+	char pending_ssid[KL_NETWORK_SSID_MAX];
+	uint64_t retry_at;
+	char key_ssid[KL_NETWORK_SSID_MAX];
 	struct se_field key;
 	int key_shown;
 	int key_reveal;
 	char message[SE_MESSAGE];
 	int message_bad;
-	uint64_t polled_at;
 	uint64_t sampled_at;
 	uint64_t received_total;
 	uint64_t sent_total;
@@ -648,15 +665,16 @@ struct se_look {
 
 /*
  * The sound's volume as the Sound page shows and sets it (ws100-p005,
- * sound.c): the link to audiod (libkeiland's keiland_audio, NULL without
- * memory) and what it last reported, the volume and mute shown (audiod's,
- * or the one being set), a drag in progress, a volume or a feedback sound
- * held back (at most one every 50 and 250 milliseconds while dragging, as
- * the system bar does), and the slider's place in the last frame.
+ * sound.c): live when the desktop offers the sound (Keiland's system
+ * extension), what the compositor last reported of the sound service, the
+ * volume and mute shown (the service's, or the one being set), a drag in
+ * progress, a volume or a feedback sound held back (at most one every 50
+ * and 250 milliseconds while dragging, as the system bar does), and the
+ * slider's place in the last frame.
  */
 struct se_sound {
-	struct keiland_audio *audio;
-	struct keiland_audio_state state;
+	int live;
+	struct kl_audio_state state;
 	int value;
 	int muted;
 	int dragging;
@@ -754,6 +772,15 @@ struct se_app {
 	/* The titlebar's search and what it found. */
 	struct se_search search;
 
+	/*
+	 * The desktop's system (libkeiland's kl_system, WS131 p011; NULL on a
+	 * desktop without Keiland's system extension) and what its last
+	 * dispatch found changed (KL_SYSTEM_CHANGED_*), for the network and
+	 * the sound to follow.
+	 */
+	struct kl_system *system;
+	unsigned system_changed;
+
 	/* What the network pages show and have asked of the daemon. */
 	struct se_network network;
 
@@ -806,9 +833,15 @@ int se_ethernet_page_draw(struct se_app *app, struct fm_canvas *canvas, int x, i
 void se_network_press(struct se_app *app, int index);
 int se_network_key(struct se_app *app, const struct se_event *event);
 
+/* The desktop's system the network and the sound follow (system.c). */
+void se_system_open(struct se_app *app, struct wl_display *display);
+void se_system_poll(struct se_app *app);
+void se_system_close(struct se_app *app);
+
 /* The network's backend (network.c; the host tests have their own). */
 void se_network_open(struct se_app *app);
 void se_network_poll(struct se_app *app, uint64_t now);
+int se_network_result(struct se_app *app, uint32_t request, int error);
 int se_network_wait(struct se_app *app);
 void se_network_close(struct se_app *app);
 void se_network_wifi(struct se_app *app, int on);
@@ -858,6 +891,7 @@ void se_sound_close(struct se_app *app);
 void se_sound_press(struct se_app *app, int index);
 void se_sound_drag(struct se_app *app, int index, int x, unsigned phase);
 int se_sound_available(const struct se_app *app);
+int se_sound_running(const struct se_app *app);
 
 /* A slider (widgets.c). */
 void se_slider_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width, float fraction, int enabled, int index, struct fm_rect *rect);

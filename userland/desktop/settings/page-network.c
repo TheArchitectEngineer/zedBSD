@@ -90,10 +90,10 @@ static int network_ethernet_card(struct se_app *app, struct fm_canvas *canvas, i
 static int network_dns_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 static int network_usage_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 static void network_graph(struct fm_canvas *canvas, const struct se_network *network, int x, int y, int width, int height);
-static int network_link_card(struct se_app *app, struct fm_canvas *canvas, const struct keiland_network_link *link, int x, int top, int width);
+static int network_link_card(struct se_app *app, struct fm_canvas *canvas, const struct kl_network_link *link, int x, int top, int width);
 static int network_header(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, int height, const char *title, const char *subtitle);
 static int network_message_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width);
-static const struct keiland_network_link *network_link(const struct se_network *network, const char *name);
+static const struct kl_network_link *network_link(const struct se_network *network, const char *name);
 static int network_wired(const struct se_network *network, size_t index);
 static int network_saved(const struct se_network *network, const char *ssid);
 static unsigned network_prefix(const char *netmask);
@@ -167,12 +167,12 @@ se_wifi_page_draw(
 	/* The switch's card: the Wi-Fi's state in words, the switch, and Disconnect while on a network. */
 	network = &app->network;
 	on = 0;
-	if (network->state.wifi != KEILAND_WIFI_OFF && network->state.wifi != KEILAND_WIFI_ABSENT)
+	if (network->state.wifi != KL_WIFI_OFF && network->state.wifi != KL_WIFI_ABSENT)
 		on = 1;
 	(void)network_header(app, canvas, x, top, width, NETWORK_HEADER + 8, "Wi-Fi", network_wifi_words(network));
-	se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KEILAND_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
+	se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KL_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
 	connected = 0;
-	if (network->state.wifi == KEILAND_WIFI_CONNECTED)
+	if (network->state.wifi == KL_WIFI_CONNECTED)
 		connected = 1;
 	if (connected != 0) {
 		button = se_button_width(app, "Disconnect");
@@ -243,7 +243,7 @@ se_network_press(
 	int index)
 {
 	struct se_network *network;
-	const struct keiland_network_ap *ap;
+	const struct kl_network_ap *ap;
 	int saved;
 	int differs;
 
@@ -251,7 +251,7 @@ se_network_press(
 	network = &app->network;
 	switch (index) {
 	case NETWORK_WIFI_SWITCH:
-		se_network_wifi(app, network->state.wifi == KEILAND_WIFI_OFF);
+		se_network_wifi(app, network->state.wifi == KL_WIFI_OFF);
 		return;
 	case NETWORK_SCAN:
 		se_network_scan(app);
@@ -261,7 +261,7 @@ se_network_press(
 		return;
 	case NETWORK_KEY_JOIN:
 		/* A key long enough is saved and the network joined. */
-		if (network->key.length >= KEILAND_NETWORK_KEY_MIN)
+		if (network->key.length >= KL_NETWORK_KEY_MIN)
 			se_network_join_key(app, network->key_ssid, network->key.text);
 		return;
 	case NETWORK_KEY_CANCEL:
@@ -293,7 +293,7 @@ se_network_press(
 
 	/* The network the machine is on needs nothing. */
 	differs = strcmp(ap->ssid, network->state.ssid);
-	if (differs == 0 && network->state.wifi == KEILAND_WIFI_CONNECTED)
+	if (differs == 0 && network->state.wifi == KL_WIFI_CONNECTED)
 		return;
 
 	/* A saved network is joined at once. */
@@ -369,8 +369,8 @@ network_status_card(
 	int width)
 {
 	const struct se_network *network;
-	const struct keiland_network_link *link;
-	const struct keiland_network_link *wired;
+	const struct kl_network_link *link;
+	const struct kl_network_link *wired;
 	char address[40];
 	char detail[40];
 	int columns;
@@ -394,7 +394,9 @@ network_status_card(
 	y = se_card_begin(app, canvas, x, top, width, height, "Connection Status", NULL);
 
 	/* Internet: whether an interface is up with an address. */
-	if (network->state.reachable == 0) {
+	if (network->live == 0) {
+		network_tile(app, canvas, x + NETWORK_PAD, y, tile_width, SE_GLYPH_GLOBE, "Internet", "Unknown", "Not available on this desktop", 0);
+	} else if (network->state.reachable == 0) {
 		network_tile(app, canvas, x + NETWORK_PAD, y, tile_width, SE_GLYPH_GLOBE, "Internet", "Unknown", "The network service is not running", 0);
 	} else if (network->state.connected != 0) {
 		network_tile(app, canvas, x + NETWORK_PAD, y, tile_width, SE_GLYPH_GLOBE, "Internet", "Connected", "Online", 1);
@@ -404,11 +406,11 @@ network_status_card(
 
 	/* The network in use: the Wi-Fi's SSID or the wired interface. */
 	glyph = SE_GLYPH_ETHERNET;
-	if (network->state.kind == KEILAND_NETWORK_WIFI)
+	if (network->state.kind == KL_NETWORK_WIFI)
 		glyph = SE_GLYPH_WIFI;
-	if (network->state.kind == KEILAND_NETWORK_WIFI) {
+	if (network->state.kind == KL_NETWORK_WIFI) {
 		network_tile(app, canvas, x + NETWORK_PAD + (tile_width + 12), y, tile_width, glyph, "Active network", network->state.ssid, "Wi-Fi", 0);
-	} else if (network->state.kind == KEILAND_NETWORK_WIRED) {
+	} else if (network->state.kind == KL_NETWORK_WIRED) {
 		network_tile(app, canvas, x + NETWORK_PAD + (tile_width + 12), y, tile_width, glyph, "Active network", network->state.interface, "Wired", 0);
 	} else {
 		network_tile(app, canvas, x + NETWORK_PAD + (tile_width + 12), y, tile_width, glyph, "Active network", "None", "-", 0);
@@ -540,7 +542,7 @@ network_wifi_card(
 
 	/* The card's height: the header, a line of words or the rows, the key's line, the link, the message. */
 	on = 0;
-	if (network->state.wifi != KEILAND_WIFI_OFF && network->state.wifi != KEILAND_WIFI_ABSENT)
+	if (network->state.wifi != KL_WIFI_OFF && network->state.wifi != KL_WIFI_ABSENT)
 		on = 1;
 	height = NETWORK_HEADER + 8;
 	if (on == 0 || shown == 0) {
@@ -563,17 +565,17 @@ network_wifi_card(
 	if (compact != 0)
 		title = "Wi-Fi Networks";
 	subtitle = "Connect to available wireless networks.";
-	if (network->request == KEILAND_NETWORK_REQUEST_SCAN)
+	if (network->request == KL_NETWORK_SCAN)
 		subtitle = "Searching...";
 	y = network_header(app, canvas, x, top, width, height, title, subtitle);
 	if (compact != 0) {
-		se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KEILAND_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
+		se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KL_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
 	} else {
-		(void)se_button_draw(app, canvas, x + width - NETWORK_PAD - se_button_width(app, "Scan"), top + 16, "Scan", 0, on != 0 && network->request == KEILAND_NETWORK_REQUEST_NONE, NETWORK_SCAN);
+		(void)se_button_draw(app, canvas, x + width - NETWORK_PAD - se_button_width(app, "Scan"), top + 16, "Scan", 0, on != 0 && network->request == SE_NETWORK_NONE, NETWORK_SCAN);
 	}
 
 	/* Without the radio, while it is off, or with nothing listed, a line of words. */
-	if (network->state.wifi == KEILAND_WIFI_ABSENT) {
+	if (network->state.wifi == KL_WIFI_ABSENT) {
 		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "This computer has no Wi-Fi radio.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
 	} else if (on == 0) {
@@ -581,7 +583,7 @@ network_wifi_card(
 		y += 36;
 	} else if (shown == 0 &&
 		   network->scan_received != 0 &&
-		   network->request != KEILAND_NETWORK_REQUEST_SCAN) {
+		   network->request != KL_NETWORK_SCAN) {
 		/* A scan came back empty: nothing is in reach. */
 		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "No networks in reach.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
@@ -721,7 +723,7 @@ network_row_draw(
 	network = &app->network;
 	differs = strcmp(row->ssid, network->state.ssid);
 	current = 0;
-	if (differs == 0 && network->state.wifi == KEILAND_WIFI_CONNECTED)
+	if (differs == 0 && network->state.wifi == KL_WIFI_CONNECTED)
 		current = 1;
 	joining = 0;
 	differs = strcmp(row->ssid, network->join_ssid);
@@ -733,12 +735,12 @@ network_row_draw(
 	 * page's own scan, usually) is being joined too: the row says so from
 	 * the click, not only once the join is sent (BUG-154).
 	 */
-	if (network->pending_request != KEILAND_NETWORK_REQUEST_NONE && network->pending_step != SE_JOIN_NONE) {
+	if (network->pending_request != SE_NETWORK_NONE && network->pending_step != SE_JOIN_NONE) {
 		differs = strcmp(row->ssid, network->pending_ssid);
 		if (differs == 0)
 			joining = 1;
 	}
-	if (network->state.wifi == KEILAND_WIFI_CONNECTING) {
+	if (network->state.wifi == KL_WIFI_CONNECTING) {
 		differs = strcmp(row->ssid, network->state.ssid);
 		if (differs == 0)
 			joining = 1;
@@ -861,7 +863,7 @@ network_key_draw(
 	join = se_button_width(app, "Join");
 	show = se_button_width(app, reveal);
 	(void)se_button_draw(app, canvas, right - cancel, y + 10, "Cancel", 0, 1, NETWORK_KEY_CANCEL);
-	(void)se_button_draw(app, canvas, right - cancel - 8 - join, y + 10, "Join", 1, network->key.length >= KEILAND_NETWORK_KEY_MIN, NETWORK_KEY_JOIN);
+	(void)se_button_draw(app, canvas, right - cancel - 8 - join, y + 10, "Join", 1, network->key.length >= KL_NETWORK_KEY_MIN, NETWORK_KEY_JOIN);
 	(void)se_button_draw(app, canvas, right - cancel - 8 - join - 8 - show, y + 10, reveal, 0, 1, NETWORK_KEY_SHOW);
 
 	/* The field, which has the keyboard while the line is open: white with the accent's edge. */
@@ -908,7 +910,7 @@ network_ethernet_card(
 	int width)
 {
 	const struct se_network *network;
-	const struct keiland_network_link *link;
+	const struct kl_network_link *link;
 	char name[48];
 	const char *status;
 	const char *address;
@@ -1135,13 +1137,12 @@ static int
 network_link_card(
 	struct se_app *app,
 	struct fm_canvas *canvas,
-	const struct keiland_network_link *link,
+	const struct kl_network_link *link,
 	int x,
 	int top,
 	int width)
 {
 	char title[48];
-	char hardware[24];
 	char number[32];
 	const char *address;
 	const char *netmask;
@@ -1171,8 +1172,7 @@ network_link_card(
 		netmask = link->netmask;
 	y = se_row_value(app, canvas, x, y, width, "IPv4 address", address, 0);
 	y = se_row_value(app, canvas, x, y, width, "Subnet mask", netmask, 0);
-	(void)snprintf(hardware, sizeof(hardware), "%02x:%02x:%02x:%02x:%02x:%02x", link->hardware[0], link->hardware[1], link->hardware[2], link->hardware[3], link->hardware[4], link->hardware[5]);
-	y = se_row_value(app, canvas, x, y, width, "Hardware address", hardware, 0);
+	y = se_row_value(app, canvas, x, y, width, "Hardware address", link->hardware, 0);
 
 	/* The MTU and the counters. */
 	(void)snprintf(number, sizeof(number), "%u", link->mtu);
@@ -1233,7 +1233,7 @@ network_message_draw(
 }
 
 /* Finds an interface by its name, or NULL (also for an empty name). */
-static const struct keiland_network_link *
+static const struct kl_network_link *
 network_link(
 	const struct se_network *network,
 	const char *name)
@@ -1330,21 +1330,23 @@ static const char *
 network_wifi_words(
 	const struct se_network *network)
 {
-	/* The daemon out of reach, then each state. */
+	/* A desktop without Keiland's system extension, the daemon out of reach, then each state. */
+	if (network->live == 0)
+		return "Wi-Fi settings are not available on this desktop.";
 	if (network->state.reachable == 0)
 		return "The network service is not running.";
 
 	/* Each state of the radio. */
 	switch (network->state.wifi) {
-	case KEILAND_WIFI_ABSENT:
+	case KL_WIFI_ABSENT:
 		return "This computer has no Wi-Fi radio.";
-	case KEILAND_WIFI_OFF:
+	case KL_WIFI_OFF:
 		return "Wi-Fi is off.";
-	case KEILAND_WIFI_SEARCHING:
+	case KL_WIFI_SEARCHING:
 		return "Looking for a saved network.";
-	case KEILAND_WIFI_CONNECTING:
+	case KL_WIFI_CONNECTING:
 		return "Joining a network.";
-	case KEILAND_WIFI_CONNECTED:
+	case KL_WIFI_CONNECTED:
 		return "Connected.";
 	default:
 		break;

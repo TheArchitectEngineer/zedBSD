@@ -10,13 +10,14 @@
  * same volume the system bar's popup sets (userland/desktop/wayland/
  * volume.c), through the same ways.
  *
- *   - audiod holds the volume during the session.  A change is set as the
- *     desktop's settings sound.volume and sound.muted (libkeiland's
- *     kl_settings_*, WS135), which zdesktop asks audiod for; the page
- *     follows audiod's reports (libkeiland's keiland_audio_*, which also
- *     plays the feedback sound, until ws131-p011).  Nothing is written to
- *     a file while the user changes it (BUG-161): zdesktop keeps the volume
- *     at the session's end and gives it to audiod at the next login.
+ *   - audiod holds the volume during the session.  zdesktop is asked for it
+ *     and follows audiod's reports for every client (libkeiland's
+ *     kl_system_audio_*, WS131 p011, which also plays the feedback sound);
+ *     the page shows what zdesktop tells.  Nothing is written to a file
+ *     while the user changes it (BUG-161): zdesktop keeps the volume at the
+ *     session's end and gives it to audiod at the next login.  On a desktop
+ *     without Keiland's system extension the page says the sound is not
+ *     available.
  *   - The short feedback sound follows the system bar's rules: when a
  *     change is final (a drag let go, mute turned off), at most one every
  *     250 milliseconds while dragging, and never when mute is turned on.
@@ -33,42 +34,52 @@
 /* How often the page follows audiod while it shows, in milliseconds. */
 #define SOUND_POLL_MS		250
 
-/* The keys the volume is kept under (the system bar's). */
-#define SOUND_KEY_VOLUME	"sound.volume"
-#define SOUND_KEY_MUTED		"sound.muted"
-
 static void sound_set(struct se_app *app, int value, int muted, int final);
 static void sound_send(struct se_app *app);
-static int sound_send_settings(struct se_app *app);
 static void sound_feedback(struct se_app *app);
 
 /*
- * Starts following audiod's volume; until it reports, the page shows the
- * kept volume.
+ * Starts following the sound, when the desktop offers it: what zdesktop
+ * told of audiod when the system opened.
  */
 void
 se_sound_open(
 	struct se_app *app)
 {
 	struct se_sound *sound;
+	unsigned capabilities;
 
-	/* The session's volume as zdesktop reports it, or all of it until it is known. */
+	/* All of the volume until it is known. */
 	sound = &app->sound;
 	sound->value = 100;
 	sound->muted = 0;
-	if (app->look.settings != NULL) {
-		sound->value = kl_settings_get_int(app->look.settings, SOUND_KEY_VOLUME, 100);
-		sound->muted = kl_settings_get_int(app->look.settings, SOUND_KEY_MUTED, 0);
+
+	/* Without the desktop's sound the page says so. */
+	capabilities = 0U;
+	if (app->system != NULL)
+		capabilities = kl_system_capabilities(app->system);
+	if ((capabilities & KL_SYSTEM_HAS_AUDIO) == 0U) {
+		se_log("SOUND open live=0");
+		return;
 	}
 
-	/* The link to audiod (it connects when audiod runs). */
-	sound->audio = keiland_audio_open();
-	se_log("SOUND open value=%d muted=%d link=%d", sound->value, sound->muted, sound->audio != NULL);
+	/* The sound is followed from now on. */
+	sound->live = 1;
+
+	/* What zdesktop told; the volume shown is audiod's once it is reached. */
+	kl_system_audio_get_state(app->system, &sound->state);
+	if (sound->state.reachable) {
+		sound->value = (int)sound->state.left;
+		sound->muted = (int)sound->state.muted;
+	}
+
+	/* The log line the tests read. */
+	se_log("SOUND open live=1 reachable=%u value=%d muted=%d", sound->state.reachable, sound->value, sound->muted);
 }
 
 /*
- * Reads what audiod has reported, and sends a volume or a sound a drag
- * held back.
+ * Follows what zdesktop told of audiod, and sends a volume or a sound a
+ * drag held back.
  */
 void
 se_sound_poll(
@@ -76,23 +87,20 @@ se_sound_poll(
 	uint64_t now)
 {
 	struct se_sound *sound;
-	unsigned changed;
 
-	/* No link, nothing to follow. */
+	/* Nothing to follow. */
 	sound = &app->sound;
-	if (sound->audio == NULL)
+	if (!sound->live)
 		return;
 
-	/* What arrived. */
-	changed = 0;
-	(void)keiland_audio_update(sound->audio, &changed);
-	if (changed != 0U) {
-		keiland_audio_get_state(sound->audio, &sound->state);
+	/* A new report. */
+	if ((app->system_changed & KL_SYSTEM_CHANGED_AUDIO) != 0U) {
+		kl_system_audio_get_state(app->system, &sound->state);
 		app->dirty = 1;
 		se_log("SOUND report reachable=%u device=%u value=%u muted=%u", sound->state.reachable, sound->state.device, sound->state.left, sound->state.muted);
 
 		/* A report shows the volume (set here or in the system bar), unless a drag or a held volume leads. */
-		if ((changed & KEILAND_AUDIO_CHANGED_VOLUME) != 0U && !sound->dragging && !sound->send_waiting) {
+		if (sound->state.reachable && !sound->dragging && !sound->send_waiting) {
 			sound->value = (int)sound->state.left;
 			sound->muted = (int)sound->state.muted;
 		}
@@ -120,7 +128,7 @@ se_sound_wait(
 		return (int)SOUND_SEND_MS;
 
 	/* The page shows: it follows the system bar's changes. */
-	if (app->page == SE_PAGE_SOUND && app->sound.audio != NULL)
+	if (app->page == SE_PAGE_SOUND && app->sound.live)
 		return SOUND_POLL_MS;
 
 	/* Nothing due. */
@@ -128,19 +136,18 @@ se_sound_wait(
 }
 
 /*
- * Stops following audiod (a volume held back is sent first).
+ * Stops following the sound (a volume held back is sent first).
  */
 void
 se_sound_close(
 	struct se_app *app)
 {
-	/* The last volume, then the link. */
-	if (app->sound.audio == NULL)
+	/* The last volume. */
+	if (!app->sound.live)
 		return;
 	if (app->sound.send_waiting)
 		sound_send(app);
-	keiland_audio_close(app->sound.audio);
-	app->sound.audio = NULL;
+	app->sound.live = 0;
 }
 
 /*
@@ -151,12 +158,28 @@ se_sound_available(
 	const struct se_app *app)
 {
 	/* audiod, and its device. */
-	if (app->sound.audio == NULL || !app->sound.state.reachable)
+	if (!app->sound.live || !app->sound.state.reachable)
 		return 0;
 	if (!app->sound.state.device)
 		return 0;
 
 	/* Succeeded: there is sound. */
+	return 1;
+}
+
+/*
+ * Tells whether the sound service runs (zdesktop reaches audiod), with a
+ * device or without.
+ */
+int
+se_sound_running(
+	const struct se_app *app)
+{
+	/* The desktop's sound, and audiod reached. */
+	if (!app->sound.live || !app->sound.state.reachable)
+		return 0;
+
+	/* Succeeded: the service runs. */
 	return 1;
 }
 
@@ -254,11 +277,7 @@ sound_set(
 	}
 }
 
-/*
- * Sends the volume shown: as the desktop's settings, which zdesktop asks
- * audiod for, or to audiod directly on a desktop without Keiland's
- * extension.
- */
+/* Sends the volume shown to zdesktop, which asks audiod for it. */
 static void
 sound_send(
 	struct se_app *app)
@@ -271,39 +290,12 @@ sound_send(
 	sound->send_waiting = 0;
 	sound->sent_at = app->now;
 
-	/* Sends the request: as the desktop's settings with Keiland's extension, else to audiod. */
-	if (app->look.settings != NULL && app->look.writable) {
-		error = sound_send_settings(app);
-	} else {
-		error = keiland_audio_set_volume(sound->audio, (unsigned)sound->value, (unsigned)sound->value, (unsigned)sound->muted);
-	}
+	/* The request (both channels at the volume shown); its answer is logged by system.c. */
+	error = kl_system_audio_set_volume(app->system, (unsigned)sound->value, (unsigned)sound->value, (unsigned)sound->muted, NULL);
 
 	/* A request that cannot go is logged (the next report shows audiod's). */
 	if (error != 0)
 		se_log("SOUND send errno=%d", error);
-}
-
-/* Sets the volume shown as the desktop's settings, which zdesktop asks audiod for; returns 0 or an errno value. */
-static int
-sound_send_settings(
-	struct se_app *app)
-{
-	struct se_sound *sound;
-	int error;
-
-	/* Sets the volume. */
-	sound = &app->sound;
-	error = kl_settings_set_int(app->look.settings, SOUND_KEY_VOLUME, sound->value, NULL);
-	if (error != 0)
-		return error;
-
-	/* Then the mute. */
-	error = kl_settings_set_int(app->look.settings, SOUND_KEY_MUTED, sound->muted, NULL);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: zdesktop asks audiod for both. */
-	return 0;
 }
 
 /* Asks audiod for the feedback sound at the volume now. */
@@ -316,6 +308,6 @@ sound_feedback(
 	/* Once now. */
 	app->sound.feedback_waiting = 0;
 	app->sound.feedback_at = app->now;
-	error = keiland_audio_feedback(app->sound.audio);
+	error = kl_system_audio_feedback(app->system, NULL);
 	se_log("SOUND feedback error=%d", error);
 }
