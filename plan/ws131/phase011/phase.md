@@ -179,3 +179,8 @@ FreeBSD: backend-test 9/9 PASS、libkeiland.so の NEEDED は libwayland-client�
 ## 判定（Q1、2026-10-04）
 
 cleared。zedBSD（QEMU）: T2-021 で C9 p076 単独 20/20 PASS・volume-p004・boot-test PASS・power は session の中で actions=0x0 と ENOTSUP（D12）・system bar の Wi-Fi の鍵の流れ ok。T2-022 で settings-regress 8/8 PASS（a565cb2 の後）。T2-024 で volume-p005・zdesktop-p104 PASS（a594882 の後: 最初の音の state を report の書式でも log、鍵の保存で旧い `ZWL NETWORK key saved` も log、試験の側は runas で kei として Settings を起こす）。FreeBSD・Linux: T1-062 PASS。
+
+### 結果（T2-024、a594882、2026-10-04）
+
+PASS 2/2: volume-p005（`SOUND report … value=60` ok）、zdesktop-p104（`ZWL NETWORK key saved ssid=Kei Lab` ok）。証拠
+`/home/awe/zedBSD-worktrees/t2/build/t2-024/`。settings-regress は T2-022 で 8/8 PASS、C9 p076 は 20/20 PASS。
