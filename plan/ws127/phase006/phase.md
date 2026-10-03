@@ -2,7 +2,7 @@
 
 # ws127-p006: DnD の自動の scroll と spring-loaded（F-039）
 
-Status: in-progress（q666、P2、2026-10-04。実装と host 試験は済み、QEMU の試験は T1 に依頼して結果待ち）
+Status: cleared（q666、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: q666（Q1 の dispatch、2026-10-04。user「任せます」→ Q1 の採否）
@@ -53,3 +53,7 @@ Settings と共有の `canvas.c`・`text.c`・`icons.c` を変えたら `sh plan
 ## Event
 
 2026-10-02 / ws127-beta1-plan: fg019 の計画で新設（planning）。p001 の結果とユーザーの選択で範囲を確定し planned にする。
+
+## 判定（Q1、2026-10-04）
+
+cleared。T1-077：files-p006・files-regress 14 本・boot-test PASS（QEMU）。実機は未実施

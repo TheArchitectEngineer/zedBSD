@@ -2,7 +2,7 @@
 
 # ws128-p005: Image Viewer の改善
 
-Status: in-progress（q666、P2、2026-10-04。3 項目の実装と host 試験は済み、QEMU は T1 に依頼して結果待ち。画像の copy は F-074 へ移管）
+Status: cleared（q666、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS128](../ws.md)
 Queue: q666（Q1 の dispatch、2026-10-04。user「任せます」→ Q1 の採否）
@@ -57,3 +57,7 @@ libkeiland に吸収されるので、その時に `kl_` の clipboard の API �
 ## Event
 
 2026-10-02 / ws128-beta1-plan: fg019 の計画で新設。
+
+## 判定（Q1、2026-10-04）
+
+cleared。T1-078：imageview-p005・boot-test PASS（QEMU）。画像の copy は F-074。実機は未実施
