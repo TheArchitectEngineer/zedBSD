@@ -87,3 +87,5 @@
 | P9 / generation1 | phase-runner（Fable 5.1、high） | BUG-135（ws073-p051）、試験の依頼はしない | `/home/awe/zedBSD-worktrees/p9` / `agent/p9` | q653 | running |
 | T1 / generation4 | test-runner | 主に P1 の試験 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | q654 | running |
 | T2 / generation2 | test-runner | 主に P2 の試験、T2-007（WS131 p006a） | `/home/awe/zedBSD-worktrees/t2` / `agent/t2` | q654 | running |
+
+2026-10-04 Q1: user「P2,T1,T2の3サブエージェント構成にしましょう。P1は終了、P3は完了したら終了。」→ P1 generation12 は d213b73 でラップアップして終了（成果は全て main に統合）。P9 generation1 もラップアップを依頼（BUG-135 の直しは統合しない、journal の穴の直しは未試験）。P3 generation6（WS137、FreeBSD の guest の道具、`/home/awe/zedBSD-worktrees/p3` / `agent/p3`、q658）は完了したら終了。続ける担当は P2・T1・T2。
