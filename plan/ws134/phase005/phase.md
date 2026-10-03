@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p005 -->
 # ws134-p005: K1 kernel の CPU ごとの時間 `hw.cputimes`
 
-Status: in-progress（q661、P2 generation8、2026-10-04。実装・build 済み、T の QEMU の試験待ち）
+Status: cleared（q661、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §1.1・§1.2 の K1
@@ -39,3 +39,7 @@ monitor の本物の値（p008）の出どころの一つ。interrupt は分け�
 ## stub の項目
 
 この Phase は kernel だけで、monitor の stub は増減しない（monitor が `hw.cputimes` を読むのは p008）。
+
+## 結果（Q1、2026-10-04、T1-064、QEMU Venus KVM 4 CPU、main 1587d3d の kernel）
+
+cleared。`cputimes-p005: PASS`: hz=1000 cpus=4、静かな 20 s で idle 20008/20022、user を 1 つ回すと 4995、全 CPU で user 20002・4 CPU とも、top に 2 行。試験の script は 9b8062a（統合済み）。
