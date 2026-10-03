@@ -75,3 +75,8 @@ Queue: q650（2026-10-03、Q1 の割り当て）
   - Linux: gdm の guest で compositor の PNG、`display-probe`（README の KMS の確認）。
 - 結果を見て Q1 が判定する。
 - その後 p009（GPU の buffer と境界の確定）へ進む。
+
+
+## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
+
+2026-10-04: Linux（T2-013）PASS（gcc・clang warning 0、compositor の PNG、display-probe direct・--acquire）。zedBSD の boot-test・C1 は T1 に依頼済み（試験の依頼 7、T1-053・054）。再開: その結果で Q1 が判定し、その後 p009（ユーザーの承認の後）。

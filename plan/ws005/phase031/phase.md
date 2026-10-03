@@ -54,3 +54,8 @@ HAL・UAPI は変えていない。
 
 - S2 の実機で、間違えた鍵が「did not accept the key」（Settings）・`Could not join (Permission denied)`（system bar）になることを確かめる。
 - 前の操作の recovery の最中に来た connect の admission の ENETDOWN（AX211 の ioctl の入口）は変えていない（その時は radio が実際に止まっている）。
+
+
+## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
+
+実装・host 試験済み（ebd233f、統合 863f4a9）。再開: S2 の実機（5330 の AX211、または host で blacklist した後の passthrough）で間違えた鍵の文言を確かめる（手順は BUG-157）。

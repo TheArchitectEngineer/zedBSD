@@ -52,3 +52,8 @@ image を作る script は 33 本（`find plan -name 'build-*image*.sh'` の 32 
   clang の入る `config/ci/config-amd64.mk` での test-image.sh の build。使う時に移す。
 - `plan/ws031/tests/vkloop-hw.sh`（i915 の実機の試験が自分で make を呼ぶ）: font・壁紙は tree の物にしたが helper には移していない。
 - ws101 の accelerator 付きの noct（`build-s13-image.sh`・`g3-hw.sh`・`g3-venus.sh`）: `ZEDBSD_NOCT_ACCEL := y` の build は toolchain の規則で main の許可が要る。
+
+
+## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
+
+T1 に代表 5 つの boot-test と demo の build（試験の依頼 6）を依頼済み。再開: T1 の結果で Q1 が判定。残り（image を写す道具、vkloop-hw.sh、ws101 の accel noct）は上の「残り」のとおり。
