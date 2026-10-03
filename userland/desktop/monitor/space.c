@@ -205,12 +205,16 @@ sm_space_core(
 	float cy;
 	unsigned glow;
 
-	/* The camera over the box's middle: a little from above and from the left, following the pointer a few degrees. */
+	/*
+	 * The camera over the box's middle: a little from above and from the
+	 * left, following the pointer a few degrees, and turned by a drag on
+	 * the core (ws134-p004; it comes back when let go).
+	 */
 	motion = &app->motion;
 	scale = box->height * 0.145f;
 	cx = box->x + box->width * 0.5f;
 	cy = box->y + box->height * 0.44f;
-	camera_set(&camera, cx, cy, scale, -0.52f + motion->tilt_x * 0.026f, 0.38f + motion->tilt_y * 0.017f);
+	camera_set(&camera, cx, cy, scale, -0.52f + motion->tilt_x * 0.026f + app->touch.core_turn, 0.38f + motion->tilt_y * 0.017f);
 
 	/* The colours: the level's tone through the shells, brighter inwards; the breath and the GPU's pulse. */
 	tone = sm_level_color(app->level);

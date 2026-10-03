@@ -14,6 +14,11 @@
  * draw (plan/ws134/tests/host/preview.sh).
  *
  *	preview OUT WIDTH HEIGHT TIME_MS SANS MONO [replay:FILE | sim:SEED[:CPUS:GPUS]] [POINTER_X POINTER_Y]
+ *
+ * ws134-p004: PREVIEW_CARD=PLATE[:PINNED[:PROGRESS]] draws the card of a
+ * plate (its number in enum sm_plate) brought forward, pinned or not, at a
+ * stage of its coming out (default all the way); PREVIEW_KEYBOARD=PLATE
+ * draws the keyboard's edge around a plate.
  */
 
 #include "app.h"
@@ -24,6 +29,19 @@
 #include <time.h>
 
 static void take_frames(struct sm_app *app, uint64_t now);
+
+/*
+ * Keeps a new range (interact.c's swipes call it; the preview takes no
+ * input, and main.c's titlebar is not here).
+ */
+void
+sm_set_range(
+	struct sm_app *app,
+	unsigned range)
+{
+	/* The range only. */
+	app->range = range;
+}
 
 /* Builds one scene and writes it. */
 int
@@ -42,6 +60,11 @@ main(
 	struct timespec begin;
 	struct timespec end;
 	const char *bench_text;
+	const char *card_text;
+	const char *keyboard_text;
+	int card_plate;
+	int card_pinned;
+	float card_progress;
 	int error;
 
 	/* The arguments. */
@@ -54,6 +77,8 @@ main(
 	app.fixed_ms = strtoull(argv[4], NULL, 10);
 	app.period_ms = 1000;
 	app.range = 1;
+	app.focus.plate = -1;
+	app.focus.keyboard = -1;
 
 	/* The fonts and the source. */
 	error = kui_text_open(&app.sans, argv[5], NULL);
@@ -94,6 +119,24 @@ main(
 	error = sm_atlas_build(&app.atlas, &app.sans, &app.mono, app.layout.scale);
 	if (error != 0)
 		return 1;
+
+	/* A card brought forward, and the keyboard's plate (ws134-p004). */
+	card_text = getenv("PREVIEW_CARD");
+	if (card_text != NULL) {
+		card_pinned = 0;
+		card_progress = 1.0f;
+		card_plate = -1;
+		(void)sscanf(card_text, "%d:%d:%f", &card_plate, &card_pinned, &card_progress);
+		app.focus.plate = card_plate;
+		app.focus.pinned = card_pinned;
+		app.focus.progress = card_progress;
+		app.focus.opening = 1;
+	}
+
+	/* The keyboard's plate. */
+	keyboard_text = getenv("PREVIEW_KEYBOARD");
+	if (keyboard_text != NULL)
+		app.focus.keyboard = (int)strtol(keyboard_text, NULL, 10);
 
 	/* The scene. */
 	error = sm_scene_build(&app, app.fixed_ms);

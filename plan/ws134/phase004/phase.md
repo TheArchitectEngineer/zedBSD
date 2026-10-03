@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p004 -->
 # ws134-p004: システムモニターの操作（M3a）
 
-Status: uncleared（q645 の後の Q1 の依頼、P2、2026-10-03。`interact.c` を書いたところでユーザーの指示でラップアップ。未配線・未試験）
+Status: in-progress（q660、P2 generation8、2026-10-04。再開の条件 1〜6 を実装、host 試験 PASS、T1/T2 の QEMU の試験待ち。以前: q645 の後の依頼で `interact.c` まで書いてラップアップ、uncleared）
 Disposition: normal
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §3.9・§3.10・§5
@@ -44,3 +44,44 @@ Tab・Shift+Tab・Enter・Space・Esc・P の key の操作。pointer の位置�
 
 p002・p003 と同じ（design.md §1.5 の表のまま）。画面の値は全て sim か replay で、本物は hostname・CPU の数・uptime だけ。
 この Phase は入力だけで、stub の項目は増減しない。
+
+## 再開（q660、P2 generation8、2026-10-04）
+
+再開の条件 1〜6 を実装した（commit a37e407、base 97e1ebe）。
+
+- `interact.c`: 前の世代の下書きを規約に合わせて書き直し、review で見つけた 4 点を直した。(a) swipe の判定が前の接触の指の
+  位置（slot に残る）も見ていた → 接触の始めに記録を消し、1 本指の lift の dx・dy だけで判定。(b) Shift+Tab を何も無い所から押すと
+  最後の 1 つ前（lanes）へ行った → 最後（events）へ。(c) pointer の長押しが `--clock=fixed` の時計では起きない（止まった時計で
+  測っていた）→ 本当の時計（`kui_clock_us`）で測る。(d) card が出ている時に card の上の tap でも閉じた → card の外の tap だけ閉じる。
+  2 本指の tap に「2 本目が 1 本目から 250 ms 以内」（design.md §3.10）を足した。swipe は plate の上で始まった 1 本指の drag だけ
+  （状態コアの上は回す操作）。Esc は `ZMON VIEW overview`（固定も外す）。log: `ZMON CARD open|close|pin=|shown`、`ZMON VIEW detail|overview`、
+  `ZMON FOCUS`、`ZMON CORE turn= via=touch|pointer`、`ZMON RANGE`。公開の `sm_card_box`（card の箱の補間、tap の当たりと描画で共有）。
+- `main.c`: `main_set_range` → 公開の `sm_set_range`。`main_input` は RESIZE・CLOSE・Ctrl+Q だけを扱い、他（←→ を含む）は
+  `sm_interact_event` へ。`sm_interact_open/close`。loop で `sm_interact_tick` の答え（指・ボタンが下りている、card・コアが動いている）
+  を `input_active` にして `dirty` を立て、`main_timeout` は 16 ms 以下に（固定の時計でも長押しが時刻で出る）。試験が触る場所を知るため
+  `ZMON PLATE name= x= y= width= height=` を READY の前と resize の後に出す。
+- `scene.c`: `build_keyboard`（key の plate の周りに ice の 2 px の縁）、`build_card`（暗さ 0.4×e の overlay、plate の箱から中央の 72%×64% へ
+  e = 1-(1-p)^3 で補間、pin の時は縁が ice と「Pinned」の chip、題・範囲の名前・値・注記、chart は p の後ろ 2/3 で下から伸びる。CPU・GPU・
+  Memory は系列の graph、Network は RX・TX、Disk・Latency は Read・Write、CPU cores は core ごとの棒（85% 超はアンバー）、System state は
+  rule ごとの level、Events は新しい順の一覧）。出きった時に 1 回 `ZMON CARD shown plate= pinned= value=`。
+- `space.c`: 状態コアの方位に `app->touch.core_turn`。
+- Makefile・Makefile.linux・Makefile.freebsd に `interact.c`。
+- 試験: `tests/host/interact-test.c`（新、`run.sh` に追加。interact.c を libkeiland の gesture.c・motion.c と試験の時計で動かす: tap・card の上と
+  外の tap・長押し・固定の card と外の tap・Esc・右 click・左右の swipe・コアの drag（範囲は変わらない、戻る）・pinch の開閉（範囲は変わらない）・
+  2 本指の tap 2 回と 400 ms の押し続け・Tab/Shift+Tab/Enter/←→・pointer のコアの drag・click・pointer の長押し、42 の確かめ）。
+  `tests/monitor-p004.sh`（新、guest の 8 段: tap → card.png、外の tap、長押し → 固定・外の tap で閉じない・pinned.png・Esc、swipe → `RANGE 15 min`
+  で card なし、pinch の開閉 → `VIEW detail/overview` で RANGE 不変・overview.png、2 本指の tap 2 回、key（Tab Tab Enter P Esc ←）→ keys.png、
+  コアの drag → `CORE turn= via=touch`）。`config-amd64-monitor.mk` に `CONFIG_INPUT_TEST_INJECT := y` と `touchinject`（試験の image だけ）。
+  `tests/host/preview.c` に `PREVIEW_CARD`・`PREVIEW_KEYBOARD`。
+
+### 確かめ（host、2026-10-04）
+
+- build: `make ZEDBSD_CONFIG=plan/ws134/tests/config-amd64-monitor.mk BUILD=build/p2-q656 build/p2-q656/bin/monitor`（zedBSD の clang、`-Werror`）
+  exit 0、warning 0。Linux: `keiland-linux.mk` の flag（gcc `-std=gnu17 -Wall -Wextra -Werror`）で monitor の 11 file の object を作れた。
+  FreeBSD: `keiland-freebsd.mk` の flag で host の clang の `-fsyntax-only` 11 file（FreeBSD の sysroot ではない）。
+- `plan/tools/style-check.py userland/desktop/monitor/*.c plan/ws134/tests/host/interact-test.c` 違反 0。
+- `plan/ws134/tests/host/run.sh build/p2-q660-host` → `monitor-host: PASS`・`monitor-interact: PASS`（42 の確かめ全て ok）。
+- host の preview（critical の replay、130 s、1280x800）: CPU の card（pin、key の縁が Memory）、CPU cores の card（8 本の棒）、System state の card
+  （6 rule、CPU と Disk latency が Critical）、Network の card の途中（p=0.5）。`build/p2-q660-preview/`（worktree p2、git の外）。
+- QEMU: 未実施（T1/T2 に `monitor-p004.sh` を依頼する）。実機: 未実施。
+
