@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws136-p003 -->
 # ws136-p003: p001 の残り（既存の image を写す道具、/home/awe/zedBSD-rpi4 の既定、vkloop-hw.sh）
 
-Status: in-progress（q663、P2 generation8、2026-10-04。書き換え済み、full の image の build と試験は T に依頼）
+Status: in-progress（q663、P2 generation8、2026-10-04。書き換え済み。T1-073 で build・boot・clang は PASS、guest-expat.sh の失敗は道具の config.sub の抜けで直した。再実行は T に）
 Disposition: normal
 Parent: [WS136](../ws.md)
 依存: p001（cleared）。範囲（Q1 2026-10-04）: 既存の image を写す道具（hybrid-image.sh・ws073 kernel-image.sh ほか）の既定の
@@ -51,3 +51,15 @@ Parent: [WS136](../ws.md)
 - `VKLOOP_BUILD_ONLY=1 BUILD=build/p2-vkloop plan/ws031/tests/vkloop-hw.sh`（i915 の実機の image を build だけ、`test-image.sh` 経由）: exit 0、
   `check-amd64-native-image: OK`、rootfs に `/bin/vkdemo` と `/etc/service.d/vkprobe1`・`vkwait1`。5330 での実行は未実施（実機）。
 - full の image（clang を含む）の build と、それを使う道具の 1 つ（`kernel-image.sh` で作り boot-test、`guest-expat.sh`）: T に依頼。
+
+## T1-073 の結果（2026-10-04、T1、b1bf23e）と直し
+
+- `build-full-image.sh build/t1-full`: exit 0（780 s）。`kernel-image.sh` の native.img で boot-test PASS（T1 の
+  `build/t1-073/boot/login.png`）、SSH で `clang version 23.1.0`・Target `x86_64-unknown-zedbsd`、`make` は bmake の usage の行（version の表示は無い）。
+- `guest-expat.sh`: `configure status 1`・`make status 2`・`runtests status 127`。原因は試験の道具（p003 で変えた所）: T1 の guest の disk の写し
+  （`build/t1-073-run/disk.img`）の `/root/configure.log` を host で読むと（`tools/build/check-ufs-image.py` の UFS の reader、読むだけ）
+  `Invalid configuration 'x86_64-unknown-zedbsd': OS 'zedbsd' not recognized`。前の既定の tar（ws046 が作った物）は `conftools/config.sub` に
+  `zedbsd*` を足してあったが、release の tarball から作る形にしたときにそれが抜けた。guest の不具合ではない。
+- 直し: `guest-expat.sh` が既定の tar を作るとき、展開して `conftools/config.sub` の `netbsd*` の隣に `zedbsd*` を足し（openssh の package の patch
+  と同じ形）、足せたことを確かめ、ustar で tar にし直す。host の確かめ: 作った tar の `conftools/config.sub x86_64-unknown-zedbsd` が
+  `x86_64-unknown-zedbsd` を返す、100 文字を超える path は 0。guest での再実行は未実施（次の T の batch で `guest-expat.sh` を 1 回）。
