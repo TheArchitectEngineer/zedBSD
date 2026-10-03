@@ -3,7 +3,7 @@
 # WS136: 試験の image を「config.mk ＋個別の file の複写」に揃える
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: completed（2026-10-04）
 Primary Milestone: MG007
 Related Milestones: —
 Objectives: O2
@@ -30,3 +30,7 @@ Resume point: p001（棚卸しと移行）。
 | [p001](phase001/phase.md) | 棚卸し（image を作る script と過去の build を読む所の一覧）と移行、代表の build と boot-test の依頼 | cleared（q655、T1-053・054） | — |
 | [p003](phase003/phase.md) | p001 の残り: 既存の image を写して差し替える道具（hybrid-image.sh・ws073 kernel-image.sh ほか、既定が今は無い /home/awe/zedBSD-rpi4）、vkloop-hw.sh、ws101 の accel の noct（toolchain の許可が要る） | in-progress（q663: 書き換え済み、full の image の build と試験は T） | p001 |
 | [p002](phase002/phase.md) | login の試験 p095・p102・p104 を 2026-09-29 の既定の image（kei の自動 login、root/root・kei/kei）に合わせる（p103 は変更不要） | cleared（q655、T2-011・T2-012 PASS） | — |
+
+## 完了（Q1、2026-10-04）
+
+p001（33 本の script を `plan/tools/guest/test-image.sh` と WS の tests/ の config.mk に、代表 6 つの image の boot-test PASS）・p002（login の試験を既定の image に合わせた、p095・p102・p103・p104 PASS）・p003（全部入りの image の標準の作り方 `config-amd64-full.mk`・`build-full-image.sh`、他の tree の image を写す道具をやめた、guest の clang と expat の試験 PASS）が cleared。残り（ws101 の noct、FAT を差し替える道具）は [F-073](../future-work.md)。
