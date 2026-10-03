@@ -63,3 +63,10 @@ HAL・UAPI は変えていない。
 ## 結果（Q1、2026-10-04、T1-048、QEMU KVM、b65fd40 の既定の image）
 
 uncleared。boot-test PASS、bug052-tmpfs.sh PASS（`tmpfs size 4191060 KiB`・512 MiB を 1 s で書いて 0 s で消す）。tmpfs-many.sh FAIL ×2（同じ）: 空の file 10000 ×3 round は PASS、1 byte の file が 14325 個で `No space left on device`（`FAIL 20000 data files fit`）、その時の df は 4191060 KiB 中 0 使用。byte の容量でなく別の上限（node の数、inode の共通の pool の 512 の系統など）に当たっている見当。証拠 worktrees/t1/build/t1-048/。再開: P1 が 14325 で ENOSPC になる上限を直して T1 に再依頼。
+
+## T1-048（2026-10-04、b65fd40 の既定の image、QEMU）と試験の直し
+
+boot-test PASS、`bug052-tmpfs.sh` PASS（容量 4191060 KiB、512 MiB を 1 s で書き 0 s で消す）。`tmpfs-many.sh` は FAIL ×2（同じ）: 空 file 10000 ×3 は
+PASS、1 byte の file が 14325 個で ENOSPC（`FAIL 20000 data files fit`）。14325 は ws073-p013 の node の上限（全 tmpfs で inode cache の 7/8、約 14300）で、
+設計どおり。誤りは私が p047 で直した試験の期待（20000 個が入る）の方。→ `tmpfs-many.sh` を「旧 32 MiB の quota（約 8000 個）より多く入り（9000 超）、
+止めたのは node の上限で byte は 100% でない、他の file は開ける」に直した。kernel は不変。再試験を T1 に依頼。
