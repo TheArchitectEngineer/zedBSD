@@ -312,10 +312,17 @@ zwl_dispatch(
 		/* The editing operations (edit.c, ws102-p017). */
 		error = zwl_edit_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_MANAGER:
 	case ZWL_SYSTEM_SETTINGS:
 		/* Keiland's system extension: the settings (settings.c, WS135). */
 		error = zwl_settings_request(object, opcode, bytes, size);
+		break;
+	case ZWL_SYSTEM_MANAGER:
+	case ZWL_SYSTEM_NETWORK:
+	case ZWL_SYSTEM_AUDIO:
+	case ZWL_SYSTEM_POWER:
+	case ZWL_SYSTEM_DEVICES:
+		/* Keiland's system extension: the manager, the network, the sound, the power and the devices (system.c, WS131 p010). */
+		error = zwl_system_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -646,7 +653,7 @@ bind_global(
 
 		/* A system manager tells what it offers. */
 		if (object->kind == ZWL_SYSTEM_MANAGER) {
-			error = zwl_settings_bind(object);
+			error = zwl_system_bind(object);
 			if (error != 0)
 				return error;
 		}

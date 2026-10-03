@@ -320,6 +320,79 @@ zwl_volume_request(
 }
 
 /*
+ * Sets both channels' volume a client asked for (kl_system_audio_v1, WS131
+ * p010): the left shown in the system bar, both sent to the sound service,
+ * without the feedback sound.  Returns 0, EBUSY before the service took
+ * the kept volume, ENODEV without sound, or the error of sending.
+ */
+int
+zwl_volume_request_channels(
+	struct zwl_server *server,
+	unsigned left,
+	unsigned right,
+	unsigned muted)
+{
+	int error;
+
+	/* No link, or the service not reached. */
+	if (volume_view.audio == NULL || !volume_view.state.reachable)
+		return ENODEV;
+
+	/* The kept volume goes to the service first. */
+	if (!volume_view.restored)
+		return EBUSY;
+
+	/* Shown (the bar shows the left channel) and sent now; a drag's send held back is overtaken. */
+	volume_view.value = left;
+	volume_view.muted = muted;
+	volume_view.send_waiting = 0U;
+	volume_view.sent_ms = zwl_milliseconds();
+	server->dirty = 1;
+	error = kl_backend_audio_set_volume(volume_view.audio, left, right, muted);
+	printf("ZWL VOLUME set left=%u right=%u muted=%u via=system error=%d\n", left, right, muted, error);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the service has the volume (its report comes back as the state). */
+	return 0;
+}
+
+/*
+ * Plays the short feedback sound a client asked for (kl_system_audio_v1).
+ * Returns 0, ENODEV without sound, or the error of sending.
+ */
+int
+zwl_volume_feedback(
+	void)
+{
+	int error;
+
+	/* No link, or the service not reached. */
+	if (volume_view.audio == NULL || !volume_view.state.reachable)
+		return ENODEV;
+
+	/* The sound, at the device volume. */
+	error = kl_backend_audio_feedback(volume_view.audio);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the service plays it. */
+	return 0;
+}
+
+/*
+ * Copies the sound service's state as last reported (all zero before the
+ * link: not reached).
+ */
+void
+zwl_volume_audio_state(
+	struct kl_backend_audio_state *state)
+{
+	/* The state last read. */
+	*state = volume_view.state;
+}
+
+/*
  * Draws the volume's icon in the system bar at x (its left edge), in the
  * bar's ink.
  */

@@ -20,8 +20,8 @@
  * dispatches this queue and then runs the watches, never within the
  * display's dispatch.
  *
- * The protocol's interfaces are described here, as wayland-scanner would
- * make them, over libwayland's marshalling.
+ * The protocol's interfaces are system/system-protocol.c's, shared with
+ * the system (WS131 p010).
  */
 
 #include <keiland.h>
@@ -29,6 +29,7 @@
 #include <wayland-client.h>
 
 #include "settings-private.h"
+#include "system/system-protocol.h"
 #include "userland/desktop/keiland/kl-system-protocol.h"
 
 #include <errno.h>
@@ -81,78 +82,6 @@ static void settings_capabilities(void *data, struct wl_proxy *proxy, uint32_t b
 static void settings_value(void *data, struct wl_proxy *proxy, const char *key, const char *value, uint32_t flags);
 static void settings_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static void settings_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
-
-/*
- * The two interfaces of Keiland's system extension, defined below.  They
- * are declared first because get_settings's argument types name the
- * settings interface before it is defined, and they are not static
- * because wayland-scanner's interfaces are visible to the whole program.
- */
-extern const struct wl_interface kl_system_manager_v1_interface;
-extern const struct wl_interface kl_system_settings_v1_interface;
-
-/* get_settings's argument types: the new settings object it makes. */
-static const struct wl_interface *settings_get_types[] = {
-	&kl_system_settings_v1_interface,
-};
-
-/* The arguments of messages that name no interface (at most three). */
-static const struct wl_interface *settings_plain_types[] = {
-	NULL,
-	NULL,
-	NULL,
-};
-
-/* The requests of kl_system_manager_v1. */
-static const struct wl_message settings_manager_requests[] = {
-	{ "destroy", "", NULL },
-	{ "get_settings", "n", settings_get_types },
-};
-
-/* The events of kl_system_manager_v1. */
-static const struct wl_message settings_manager_events[] = {
-	{ "capabilities", "u", settings_plain_types },
-};
-
-/*
- * kl_system_manager_v1 as libwayland marshals it: its name, version, two
- * requests and one event.  It lives for the program.
- */
-const struct wl_interface kl_system_manager_v1_interface = {
-	KL_SYSTEM_MANAGER_NAME,
-	1,
-	2,
-	settings_manager_requests,
-	1,
-	settings_manager_events
-};
-
-/* The requests of kl_system_settings_v1. */
-static const struct wl_message settings_requests[] = {
-	{ "destroy", "", NULL },
-	{ "set", "uss", settings_plain_types },
-	{ "reset", "us", settings_plain_types },
-};
-
-/* The events of kl_system_settings_v1. */
-static const struct wl_message settings_events[] = {
-	{ "value", "ssu", settings_plain_types },
-	{ "done", "u", settings_plain_types },
-	{ "result", "uuu", settings_plain_types },
-};
-
-/*
- * kl_system_settings_v1 as libwayland marshals it: its name, version,
- * three requests and three events.  It lives for the program.
- */
-const struct wl_interface kl_system_settings_v1_interface = {
-	KL_SYSTEM_SETTINGS_NAME,
-	1,
-	3,
-	settings_requests,
-	3,
-	settings_events
-};
 
 /* The registry's callbacks while the manager is looked for. */
 static const struct wl_registry_listener settings_registry_listener = {
@@ -725,7 +654,7 @@ settings_global_remove(
 	UNUSED_PARAMETER(name);
 }
 
-/* Takes the manager's capabilities (version 1 offers only the settings). */
+/* The manager's capabilities are the system's concern (system/system.c), not the settings'. */
 static void
 settings_capabilities(
 	void *data,

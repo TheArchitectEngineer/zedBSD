@@ -42,6 +42,10 @@
  * All of it comes through libkeiland-backend (kl_backend_network_*): zdesktop never
  * speaks networkd's protocol.  Nothing here waits for the daemon; each tick
  * reads what has arrived.
+ *
+ * The watch is shared with Keiland's system extension (system.c, WS131
+ * p010): each tick tells it the new state and scan, and hands it the
+ * answer of a request it sent; the slot is still sent after that answer.
  */
 
 #include "glass.h"
@@ -217,6 +221,7 @@ static void network_key_type(struct zwl_server *server, uint32_t key);
 static void network_key_submit(struct zwl_server *server);
 static void network_key_wipe(void);
 static void network_finished(struct zwl_server *server, unsigned request, int error);
+static void network_send_waiting(struct zwl_server *server);
 static void network_connecting(const char *ssid);
 
 /*
@@ -229,6 +234,7 @@ zwl_network_tick(
 {
 	unsigned changed;
 	unsigned request;
+	int owned;
 	int error;
 
 	/* The watch, once (libkeiland-backend connects to the daemon when it can). */
@@ -261,11 +267,23 @@ zwl_network_tick(
 		printf("ZWL NETWORK scan count=%u\n", (unsigned)network_view.scan_count);
 	}
 
-	/* A request that finished: its failure said, and what waited for it sent. */
+	/* The system extension's network objects hear the new state and scan (system.c). */
+	zwl_system_network_changed(server, changed);
+
+	/*
+	 * A request that finished: the extension's goes to it (and what waits in
+	 * the slot is sent), the system bar's says its failure and sends what
+	 * waited for it.
+	 */
 	if ((changed & KL_BACKEND_NETWORK_CHANGED_DONE) != 0) {
 		request = kl_backend_network_get_request(network_view.watch, &error);
 		printf("ZWL NETWORK done request=%s error=%d\n", network_request_name(request), error);
-		network_finished(server, request, error);
+		owned = zwl_system_network_done(server, request, error);
+		if (owned) {
+			network_send_waiting(server);
+		} else {
+			network_finished(server, request, error);
+		}
 	}
 
 	/* Something shown has changed. */
@@ -495,6 +513,51 @@ zwl_network_motion(
 
 	/* Succeeded: the motion was the menu's. */
 	return 1;
+}
+
+/*
+ * Gives the network watch for the system extension (system.c), NULL before
+ * the desktop's first tick or when it could not be made.
+ */
+struct kl_backend_network *
+zwl_network_watch(
+	void)
+{
+	/* The watch, shared. */
+	return network_view.watch;
+}
+
+/*
+ * Copies the network's state as the watch last reported it (all zero
+ * before the first report: the daemon not reached).
+ */
+void
+zwl_network_state(
+	struct kl_backend_network_state *state)
+{
+	/* The state last read. */
+	*state = network_view.state;
+}
+
+/*
+ * Copies up to capacity networks of the last scan and returns how many
+ * were copied.
+ */
+size_t
+zwl_network_scan(
+	struct kl_backend_network_ap *aps,
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as there are and fit. */
+	count = network_view.scan_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(aps, network_view.scan, count * sizeof(aps[0]));
+
+	/* Succeeded: the networks are copied. */
+	return count;
 }
 
 /*
@@ -1532,7 +1595,6 @@ network_finished(
 	unsigned request,
 	int error)
 {
-	unsigned waiting;
 	unsigned index;
 	int differs;
 
@@ -1576,16 +1638,27 @@ network_finished(
 	}
 
 	/* What waited in the slot is sent now. */
-	waiting = network_view.pending_request;
-	if (waiting != KL_BACKEND_NETWORK_REQUEST_NONE) {
-		network_view.pending_request = KL_BACKEND_NETWORK_REQUEST_NONE;
+	network_send_waiting(server);
+}
 
-		/* A join names its network; the other requests take none. */
-		if (network_view.pending_ssid[0] != '\0') {
-			network_request(server, waiting, network_view.pending_ssid);
-		} else {
-			network_request(server, waiting, NULL);
-		}
+/* Sends the request that waited in the slot, if one did. */
+static void
+network_send_waiting(
+	struct zwl_server *server)
+{
+	unsigned waiting;
+
+	/* Nothing waits. */
+	waiting = network_view.pending_request;
+	if (waiting == KL_BACKEND_NETWORK_REQUEST_NONE)
+		return;
+	network_view.pending_request = KL_BACKEND_NETWORK_REQUEST_NONE;
+
+	/* A join names its network; the other requests take none. */
+	if (network_view.pending_ssid[0] != '\0') {
+		network_request(server, waiting, network_view.pending_ssid);
+	} else {
+		network_request(server, waiting, NULL);
 	}
 }
 

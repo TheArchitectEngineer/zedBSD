@@ -1,0 +1,21 @@
+#!/bin/sh
+# ws131-p010: builds the host test of Keiland's system extension -- libkeiland's view and kl_system_* client
+# (userland/desktop/libkeiland/system/) with the host's libwayland-client, against the compositor's
+# userland/desktop/wayland/system.c with fakes of the network, the sound and the power -- under ASan and UBSan,
+# and runs it.
+#   sh plan/ws131/tests/host-system.sh [OUTPUT]   (default build/ws131-host/host-system)
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+set -eu
+cd "$(dirname -- "$0")/../../.."
+out=${1:-build/ws131-host/host-system}
+mkdir -p "$(dirname -- "$out")/include"
+# Only keiland.h from the tree: the tree's wayland-client.h is zedBSD's, the host's is the one to link with.
+cp userland/desktop/keiland/keiland.h "$(dirname -- "$out")/include/keiland.h"
+${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -pthread \
+	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+	-I. -I"$(dirname -- "$out")/include" \
+	plan/ws131/tests/host-system.c userland/desktop/wayland/system.c \
+	userland/desktop/libkeiland/system/system.c userland/desktop/libkeiland/system/system-view.c \
+	userland/desktop/libkeiland/system/system-protocol.c \
+	$(pkg-config --cflags --libs wayland-client) -o "$out"
+timeout 120 "$out"

@@ -709,6 +709,9 @@ event_loop(
 		/* The settings: a wallpaper read meanwhile, audiod's sound, and the changes told to the clients (settings.c). */
 		zwl_settings_tick(server);
 
+		/* The system extension: its threads' work taken, the sound's changes told (system.c). */
+		zwl_system_tick(server);
+
 		/* The input method is looked after: started again, passed by when it does not answer (input-method.c). */
 		zwl_ime_tick(server, now);
 
@@ -1006,6 +1009,9 @@ service_cleanup(
 	/* The session's volume and settings are kept for the next login (volume.c, BUG-161; settings.c, WS135). */
 	zwl_volume_keep(server, "end");
 	zwl_settings_close(server);
+
+	/* The system extension's threads end before the backend closes (system.c). */
+	zwl_system_close(server);
 
 	/* Returns the OS resources after input and display cleanup. */
 	zwl_os_close(server);

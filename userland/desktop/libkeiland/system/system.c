@@ -1,0 +1,1181 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The desktop's system for applications (keiland.h's kl_system_*; WS131
+ * p010, plan/ws131/design.md section 4.4): the client of Keiland's system
+ * extension (kl_system_manager_v1 and its network, sound, power and
+ * devices objects; keiland/kl-system-protocol.h).
+ *
+ * As the settings do (settings.c), the objects live on a queue of the
+ * library's own, which stays theirs, so that a change sent right after the
+ * first state is not lost to another queue.  The application's loop reads
+ * the display; kl_system_dispatch dispatches this queue, which only fills
+ * the view (system-view.c), and reports what changed.
+ */
+
+#include <keiland.h>
+
+#include <wayland-client.h>
+
+#include "system-private.h"
+#include "system-protocol.h"
+#include "userland/desktop/keiland/kl-system-protocol.h"
+
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Marks protocol callback arguments that this client does not inspect. */
+#define UNUSED_PARAMETER(name) ((void)(name))
+
+/*
+ * One application's system: the display, the library's queue with the
+ * manager and its objects on it (an object is NULL when the compositor
+ * does not offer it), the view, the number of the next request, and
+ * whether the compositor went.
+ */
+struct kl_system {
+	struct wl_display *display;
+	struct wl_event_queue *queue;
+	struct wl_proxy *manager;
+	struct wl_proxy *network;
+	struct wl_proxy *audio;
+	struct wl_proxy *power;
+	struct wl_proxy *devices;
+	struct system_view view;
+	uint32_t next_request;
+	unsigned lost;
+};
+
+/* What the registry search found: the manager's global name, 0 for none. */
+struct system_search {
+	uint32_t name;
+};
+
+/* The listener of kl_system_manager_v1's event, as libwayland calls it. */
+struct system_manager_listener {
+	void (*capabilities)(void *data, struct wl_proxy *proxy, uint32_t bits);
+};
+
+/* The listener of kl_system_network_v1's events, in their order. */
+struct system_network_listener {
+	void (*state)(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t connected, uint32_t kind, const char *interface, const char *wired, uint32_t wifi, const char *wifi_interface, const char *ssid);
+	void (*access_point)(void *data, struct wl_proxy *proxy, const char *ssid, int32_t rssi, uint32_t secured);
+	void (*scan_done)(void *data, struct wl_proxy *proxy);
+	void (*link)(void *data, struct wl_proxy *proxy, const char *name, uint32_t flags, const char *address, const char *netmask, const char *hardware, uint32_t mtu, uint32_t received_high, uint32_t received_low, uint32_t sent_high, uint32_t sent_low);
+	void (*dns)(void *data, struct wl_proxy *proxy, const char *address);
+	void (*saved_network)(void *data, struct wl_proxy *proxy, const char *ssid);
+	void (*details_done)(void *data, struct wl_proxy *proxy);
+	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
+/* The listener of kl_system_audio_v1's events, in their order. */
+struct system_audio_listener {
+	void (*state)(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t device, uint32_t rate, uint32_t channels, uint32_t left, uint32_t right, uint32_t muted);
+	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
+/* The listener of kl_system_power_v1's events, in their order. */
+struct system_power_listener {
+	void (*state)(void *data, struct wl_proxy *proxy, uint32_t source, int32_t percent, uint32_t charging, uint32_t actions);
+	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
+/* The listener of kl_system_devices_v1's events, in their order. */
+struct system_devices_listener {
+	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
+	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
+static void system_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
+static void system_global_remove(void *data, struct wl_registry *registry, uint32_t name);
+static void system_capabilities(void *data, struct wl_proxy *proxy, uint32_t bits);
+static void system_network_state(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t connected, uint32_t kind, const char *interface, const char *wired, uint32_t wifi, const char *wifi_interface, const char *ssid);
+static void system_access_point(void *data, struct wl_proxy *proxy, const char *ssid, int32_t rssi, uint32_t secured);
+static void system_scan_done(void *data, struct wl_proxy *proxy);
+static void system_link(void *data, struct wl_proxy *proxy, const char *name, uint32_t flags, const char *address, const char *netmask, const char *hardware, uint32_t mtu, uint32_t received_high, uint32_t received_low, uint32_t sent_high, uint32_t sent_low);
+static void system_dns(void *data, struct wl_proxy *proxy, const char *address);
+static void system_saved_network(void *data, struct wl_proxy *proxy, const char *ssid);
+static void system_details_done(void *data, struct wl_proxy *proxy);
+static void system_network_done(void *data, struct wl_proxy *proxy, uint32_t serial);
+static void system_audio_state(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t device, uint32_t rate, uint32_t channels, uint32_t left, uint32_t right, uint32_t muted);
+static void system_audio_done(void *data, struct wl_proxy *proxy, uint32_t serial);
+static void system_power_state(void *data, struct wl_proxy *proxy, uint32_t source, int32_t percent, uint32_t charging, uint32_t actions);
+static void system_power_done(void *data, struct wl_proxy *proxy, uint32_t serial);
+static void system_device(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
+static void system_devices_done(void *data, struct wl_proxy *proxy, uint32_t serial);
+static void system_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+static int system_bind(struct kl_system *system);
+static struct wl_proxy *system_make(struct kl_system *system, uint32_t bit, uint32_t opcode, const struct wl_interface *interface, const void *listener);
+static void system_destroy(struct wl_proxy *proxy, uint32_t opcode);
+static uint32_t system_number(struct kl_system *system, uint32_t *request);
+
+/* The registry's callbacks while the manager is looked for. */
+static const struct wl_registry_listener system_registry_listener = {
+	system_global,
+	system_global_remove
+};
+
+/* The manager's callback. */
+static const struct system_manager_listener system_manager_listener = {
+	system_capabilities
+};
+
+/* The network object's callbacks, which fill the view of the kl_system they are given. */
+static const struct system_network_listener system_network_listener = {
+	system_network_state,
+	system_access_point,
+	system_scan_done,
+	system_link,
+	system_dns,
+	system_saved_network,
+	system_details_done,
+	system_network_done,
+	system_result
+};
+
+/* The sound object's callbacks. */
+static const struct system_audio_listener system_audio_listener = {
+	system_audio_state,
+	system_audio_done,
+	system_result
+};
+
+/* The power object's callbacks. */
+static const struct system_power_listener system_power_listener = {
+	system_power_state,
+	system_power_done,
+	system_result
+};
+
+/* The devices object's callbacks. */
+static const struct system_devices_listener system_devices_listener = {
+	system_device,
+	system_devices_done,
+	system_result
+};
+
+/*
+ * Opens the system on a display, waiting once for its first state.
+ */
+struct kl_system *
+kl_system_open(
+	struct wl_display *display)
+{
+	struct kl_system *system;
+	int error;
+
+	/* A display to open it on. */
+	if (display == NULL) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* Allocates the record; request numbers start at 1. */
+	system = calloc(1, sizeof(*system));
+	if (system == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	/* Nothing told yet. */
+	system->display = display;
+	system->next_request = 1U;
+	system_view_init(&system->view);
+
+	/* Binds the extension and takes the first state. */
+	error = system_bind(system);
+	if (error != 0) {
+		kl_system_close(system);
+		errno = error;
+		return NULL;
+	}
+
+	/* What the system started with is not told as a change. */
+	(void)system_view_take_changed(&system->view);
+
+	/* Succeeded: the system is open. */
+	return system;
+}
+
+/*
+ * Closes the system.
+ */
+void
+kl_system_close(
+	struct kl_system *system)
+{
+	/* Nothing to close. */
+	if (system == NULL)
+		return;
+
+	/* Destroys the objects first, then the manager. */
+	system_destroy(system->network, KL_SYSTEM_NETWORK_DESTROY);
+	system_destroy(system->audio, KL_SYSTEM_AUDIO_DESTROY);
+	system_destroy(system->power, KL_SYSTEM_POWER_DESTROY);
+	system_destroy(system->devices, KL_SYSTEM_DEVICES_DESTROY);
+	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
+
+	/* Then the queue they lived on. */
+	if (system->queue != NULL)
+		wl_event_queue_destroy(system->queue);
+
+	/* Frees the record. */
+	free(system);
+}
+
+/*
+ * Takes the compositor's events the display has read, and reports what
+ * changed.
+ */
+int
+kl_system_dispatch(
+	struct kl_system *system,
+	unsigned *changed)
+{
+	unsigned bits;
+	int status;
+	int error;
+
+	/* Takes the compositor's events on the library's queue (they only fill the view). */
+	if (!system->lost) {
+		/* Dispatches the queue; a failure, or an error the display holds, means the compositor went. */
+		status = wl_display_dispatch_queue_pending(system->display, system->queue);
+		error = wl_display_get_error(system->display);
+		if (status < 0 || error != 0)
+			system->lost = 1U;
+	}
+
+	/* What changed since the last dispatch. */
+	bits = system_view_take_changed(&system->view);
+	if (changed != NULL)
+		*changed = bits;
+
+	/* The compositor went. */
+	if (system->lost)
+		return EPIPE;
+
+	/* Succeeded: every change was taken. */
+	return 0;
+}
+
+/*
+ * Reports what the compositor offers.
+ */
+unsigned
+kl_system_capabilities(
+	const struct kl_system *system)
+{
+	unsigned bits;
+
+	/* The objects it made, as KL_SYSTEM_HAS_* bits. */
+	bits = 0U;
+	if (system->network != NULL)
+		bits |= KL_SYSTEM_HAS_NETWORK;
+	if (system->audio != NULL)
+		bits |= KL_SYSTEM_HAS_AUDIO;
+	if (system->power != NULL)
+		bits |= KL_SYSTEM_HAS_POWER;
+	if (system->devices != NULL)
+		bits |= KL_SYSTEM_HAS_DEVICES;
+	return bits;
+}
+
+/*
+ * Takes one answered request.
+ */
+int
+kl_system_take_result(
+	struct kl_system *system,
+	uint32_t *request,
+	int *error)
+{
+	int taken;
+
+	/* The oldest answer, if any. */
+	taken = system_view_take_result(&system->view, request, error);
+
+	/* 1 with one, 0 without. */
+	return taken;
+}
+
+/*
+ * Copies the network's state.
+ */
+void
+kl_system_network_get_state(
+	const struct kl_system *system,
+	struct kl_network_state *state)
+{
+	/* The state in effect. */
+	*state = system->view.network;
+}
+
+/*
+ * Copies up to capacity networks of the last scan.
+ */
+size_t
+kl_system_network_get_scan(
+	const struct kl_system *system,
+	struct kl_network_ap *aps,
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as there are and fit. */
+	count = system->view.scan_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(aps, system->view.scan, count * sizeof(aps[0]));
+
+	/* Succeeded: the networks are copied. */
+	return count;
+}
+
+/*
+ * Asks for a network request.
+ */
+int
+kl_system_network_request(
+	struct kl_system *system,
+	unsigned what,
+	const char *ssid,
+	uint32_t *request)
+{
+	const char *named;
+	uint32_t number;
+	size_t length;
+
+	/* The network object. */
+	if (system->network == NULL || system->lost)
+		return ENOTSUP;
+
+	/* A request of the protocol's; a join names a network that fits. */
+	if (what < KL_NETWORK_SCAN || what > KL_NETWORK_WIFI_OFF)
+		return EINVAL;
+	named = "";
+	if (what == KL_NETWORK_JOIN) {
+		if (ssid == NULL)
+			return EINVAL;
+		length = strlen(ssid);
+		if (length == 0U || length >= KL_NETWORK_SSID_MAX)
+			return EINVAL;
+		named = ssid;
+	}
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->network, KL_SYSTEM_NETWORK_REQUEST, number, (uint32_t)what, named);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Asks for a Wi-Fi network's key to be saved and the network joined.
+ */
+int
+kl_system_network_save_key(
+	struct kl_system *system,
+	const char *ssid,
+	const char *key,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t ssid_length;
+	size_t key_length;
+
+	/* The network object. */
+	if (system->network == NULL || system->lost)
+		return ENOTSUP;
+
+	/* A network and a key within their bounds. */
+	if (ssid == NULL || key == NULL)
+		return EINVAL;
+	ssid_length = strlen(ssid);
+	key_length = strlen(key);
+	if (ssid_length == 0U || ssid_length >= KL_NETWORK_SSID_MAX)
+		return EINVAL;
+	if (key_length < KL_NETWORK_KEY_MIN || key_length > KL_NETWORK_KEY_MAX)
+		return EINVAL;
+
+	/* Sent with the application's next flush (libwayland copies the key into its buffer). */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->network, KL_SYSTEM_NETWORK_SAVE_KEY, number, ssid, key);
+
+	/* Succeeded: the answer comes once the network is joined. */
+	return 0;
+}
+
+/*
+ * Asks for the network's details.
+ */
+int
+kl_system_network_query_details(
+	struct kl_system *system,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* The network object. */
+	if (system->network == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->network, KL_SYSTEM_NETWORK_QUERY_DETAILS, number);
+
+	/* Succeeded: the details and the answer come later. */
+	return 0;
+}
+
+/*
+ * Copies up to capacity interfaces of the details last asked for.
+ */
+size_t
+kl_system_network_get_links(
+	const struct kl_system *system,
+	struct kl_network_link *links,
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as there are and fit. */
+	count = system->view.link_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(links, system->view.links, count * sizeof(links[0]));
+
+	/* Succeeded: the interfaces are copied. */
+	return count;
+}
+
+/*
+ * Copies up to capacity DNS servers of the details last asked for.
+ */
+size_t
+kl_system_network_get_dns(
+	const struct kl_system *system,
+	char (*servers)[KL_NETWORK_ADDRESS_MAX],
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as there are and fit. */
+	count = system->view.dns_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(servers, system->view.dns, count * sizeof(servers[0]));
+
+	/* Succeeded: the servers are copied. */
+	return count;
+}
+
+/*
+ * Copies up to capacity saved networks of the details last asked for.
+ */
+size_t
+kl_system_network_get_saved(
+	const struct kl_system *system,
+	char (*ssids)[KL_NETWORK_SSID_MAX],
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as there are and fit. */
+	count = system->view.saved_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(ssids, system->view.saved, count * sizeof(ssids[0]));
+
+	/* Succeeded: the networks are copied. */
+	return count;
+}
+
+/*
+ * Copies the sound output's state.
+ */
+void
+kl_system_audio_get_state(
+	const struct kl_system *system,
+	struct kl_audio_state *state)
+{
+	/* The state in effect. */
+	*state = system->view.audio;
+}
+
+/*
+ * Asks for each channel's volume and the mute.
+ */
+int
+kl_system_audio_set_volume(
+	struct kl_system *system,
+	unsigned left,
+	unsigned right,
+	unsigned muted,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* The sound object. */
+	if (system->audio == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Volumes and a mute within their bounds. */
+	if (left > 100U || right > 100U || muted > 1U)
+		return EINVAL;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->audio, KL_SYSTEM_AUDIO_SET_VOLUME, number, (uint32_t)left, (uint32_t)right, (uint32_t)muted);
+
+	/* Succeeded: the answer comes as a result, the volume as a new state. */
+	return 0;
+}
+
+/*
+ * Asks for the short feedback sound.
+ */
+int
+kl_system_audio_feedback(
+	struct kl_system *system,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* The sound object. */
+	if (system->audio == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->audio, KL_SYSTEM_AUDIO_FEEDBACK, number);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Copies the power's state.
+ */
+void
+kl_system_power_get_state(
+	const struct kl_system *system,
+	struct kl_power_state *state)
+{
+	/* The state in effect. */
+	*state = system->view.power;
+}
+
+/*
+ * Asks for a power action.
+ */
+int
+kl_system_power_action(
+	struct kl_system *system,
+	unsigned action,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* The power object. */
+	if (system->power == NULL || system->lost)
+		return ENOTSUP;
+
+	/* An action of the protocol's. */
+	if (action < KL_POWER_POWEROFF || action > KL_POWER_SUSPEND)
+		return EINVAL;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->power, KL_SYSTEM_POWER_ACTION, number, (uint32_t)action);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Copies up to capacity removable devices.
+ */
+size_t
+kl_system_devices_get(
+	const struct kl_system *system,
+	struct kl_device *devices,
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as there are and fit. */
+	count = system->view.device_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(devices, system->view.devices, count * sizeof(devices[0]));
+
+	/* Succeeded: the devices are copied. */
+	return count;
+}
+
+/*
+ * Asks for a removable device to be ejected.
+ */
+int
+kl_system_devices_eject(
+	struct kl_system *system,
+	const char *id,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t length;
+
+	/* The devices object. */
+	if (system->devices == NULL || system->lost)
+		return ENOTSUP;
+
+	/* A device's ID that fits. */
+	if (id == NULL)
+		return EINVAL;
+	length = strlen(id);
+	if (length == 0U || length >= KL_DEVICE_TEXT_MAX)
+		return EINVAL;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->devices, KL_SYSTEM_DEVICES_EJECT, number, id);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/* Notes the system manager's global. */
+static void
+system_global(
+	void *data,
+	struct wl_registry *registry,
+	uint32_t name,
+	const char *interface,
+	uint32_t version)
+{
+	struct system_search *search;
+	int differs;
+
+	UNUSED_PARAMETER(registry);
+	UNUSED_PARAMETER(version);
+
+	/* The search the registry was given. */
+	search = data;
+
+	/* Notes only the system manager's name. */
+	differs = strcmp(interface, KL_SYSTEM_MANAGER_NAME);
+	if (differs == 0)
+		search->name = name;
+}
+
+/* A global that goes is not the search's concern. */
+static void
+system_global_remove(
+	void *data,
+	struct wl_registry *registry,
+	uint32_t name)
+{
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(registry);
+	UNUSED_PARAMETER(name);
+}
+
+/* Keeps what the manager offers. */
+static void
+system_capabilities(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t bits)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The bits, for the objects to make. */
+	system = data;
+	system->view.capabilities = bits;
+}
+
+/* Keeps the network's state, in effect at its done. */
+static void
+system_network_state(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t reachable,
+	uint32_t connected,
+	uint32_t kind,
+	const char *interface,
+	const char *wired,
+	uint32_t wifi,
+	const char *wifi_interface,
+	const char *ssid)
+{
+	struct kl_system *system;
+	struct kl_network_state state;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The state as the application's record. */
+	system = data;
+	memset(&state, 0, sizeof(state));
+	state.reachable = reachable;
+	state.connected = connected;
+	state.kind = kind;
+	system_view_copy(state.interface, sizeof(state.interface), interface);
+	system_view_copy(state.wired, sizeof(state.wired), wired);
+	state.wifi = wifi;
+	system_view_copy(state.wifi_interface, sizeof(state.wifi_interface), wifi_interface);
+	system_view_copy(state.ssid, sizeof(state.ssid), ssid);
+
+	/* Pending until the done. */
+	system_view_network_state(&system->view, &state);
+}
+
+/* Adds a network of a scan. */
+static void
+system_access_point(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *ssid,
+	int32_t rssi,
+	uint32_t secured)
+{
+	struct kl_system *system;
+	struct kl_network_ap ap;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The network as the application's record. */
+	system = data;
+	memset(&ap, 0, sizeof(ap));
+	system_view_copy(ap.ssid, sizeof(ap.ssid), ssid);
+	ap.rssi = rssi;
+	ap.secured = secured;
+
+	/* Added to the pending scan. */
+	system_view_access_point(&system->view, &ap);
+}
+
+/* Ends a scan's list. */
+static void
+system_scan_done(
+	void *data,
+	struct wl_proxy *proxy)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The list is whole. */
+	system = data;
+	system_view_scan_done(&system->view);
+}
+
+/* Adds an interface of the details. */
+static void
+system_link(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *name,
+	uint32_t flags,
+	const char *address,
+	const char *netmask,
+	const char *hardware,
+	uint32_t mtu,
+	uint32_t received_high,
+	uint32_t received_low,
+	uint32_t sent_high,
+	uint32_t sent_low)
+{
+	struct kl_system *system;
+	struct kl_network_link link;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The interface as the application's record: its flags apart, its counters whole. */
+	system = data;
+	memset(&link, 0, sizeof(link));
+	system_view_copy(link.name, sizeof(link.name), name);
+	if ((flags & KL_SYSTEM_LINK_UP) != 0U)
+		link.up = 1U;
+	if ((flags & KL_SYSTEM_LINK_RUNNING) != 0U)
+		link.running = 1U;
+	if ((flags & KL_SYSTEM_LINK_LOOPBACK) != 0U)
+		link.loopback = 1U;
+	system_view_copy(link.address, sizeof(link.address), address);
+	system_view_copy(link.netmask, sizeof(link.netmask), netmask);
+	system_view_copy(link.hardware, sizeof(link.hardware), hardware);
+	link.mtu = mtu;
+	link.received_bytes = ((uint64_t)received_high << 32) | received_low;
+	link.sent_bytes = ((uint64_t)sent_high << 32) | sent_low;
+
+	/* Added to the pending details. */
+	system_view_link(&system->view, &link);
+}
+
+/* Adds a DNS server of the details. */
+static void
+system_dns(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *address)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* Added to the pending details. */
+	system = data;
+	system_view_dns(&system->view, address);
+}
+
+/* Adds a saved network of the details. */
+static void
+system_saved_network(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *ssid)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* Added to the pending details. */
+	system = data;
+	system_view_saved(&system->view, ssid);
+}
+
+/* Puts the details into effect. */
+static void
+system_details_done(
+	void *data,
+	struct wl_proxy *proxy)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The details, as one state. */
+	system = data;
+	system_view_details_done(&system->view);
+}
+
+/* Puts the network's state and scan into effect. */
+static void
+system_network_done(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t serial)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(serial);
+
+	/* The network, as one state. */
+	system = data;
+	system_view_network_done(&system->view);
+}
+
+/* Keeps the sound's state, in effect at its done. */
+static void
+system_audio_state(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t reachable,
+	uint32_t device,
+	uint32_t rate,
+	uint32_t channels,
+	uint32_t left,
+	uint32_t right,
+	uint32_t muted)
+{
+	struct kl_system *system;
+	struct kl_audio_state state;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The state as the application's record. */
+	system = data;
+	state.reachable = reachable;
+	state.device = device;
+	state.rate = rate;
+	state.channels = channels;
+	state.left = left;
+	state.right = right;
+	state.muted = muted;
+
+	/* Pending until the done. */
+	system_view_audio_state(&system->view, &state);
+}
+
+/* Puts the sound's state into effect. */
+static void
+system_audio_done(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t serial)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(serial);
+
+	/* The sound, as one state. */
+	system = data;
+	system_view_audio_done(&system->view);
+}
+
+/* Keeps the power's state, in effect at its done. */
+static void
+system_power_state(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t source,
+	int32_t percent,
+	uint32_t charging,
+	uint32_t actions)
+{
+	struct kl_system *system;
+	struct kl_power_state state;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The state as the application's record. */
+	system = data;
+	state.source = source;
+	state.percent = percent;
+	state.charging = charging;
+	state.actions = actions;
+
+	/* Pending until the done. */
+	system_view_power_state(&system->view, &state);
+}
+
+/* Puts the power's state into effect. */
+static void
+system_power_done(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t serial)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(serial);
+
+	/* The power, as one state. */
+	system = data;
+	system_view_power_done(&system->view);
+}
+
+/* Adds a removable device. */
+static void
+system_device(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *id,
+	uint32_t kind,
+	uint32_t state,
+	const char *name,
+	const char *location)
+{
+	struct kl_system *system;
+	struct kl_device device;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The device as the application's record. */
+	system = data;
+	memset(&device, 0, sizeof(device));
+	system_view_copy(device.id, sizeof(device.id), id);
+	device.kind = kind;
+	device.state = state;
+	system_view_copy(device.name, sizeof(device.name), name);
+	system_view_copy(device.location, sizeof(device.location), location);
+
+	/* Added to the pending list. */
+	system_view_device(&system->view, &device);
+}
+
+/* Puts the devices into effect. */
+static void
+system_devices_done(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t serial)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(serial);
+
+	/* The devices, as one state. */
+	system = data;
+	system_view_devices_done(&system->view);
+}
+
+/* Keeps an answered request of any object. */
+static void
+system_result(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t request,
+	uint32_t applied,
+	uint32_t saved)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(saved);
+
+	/* The answer, for kl_system_take_result. */
+	system = data;
+	system_view_result(&system->view, request, applied);
+}
+
+/*
+ * Binds the compositor's system manager on the library's queue, makes the
+ * objects it offers and waits once for their first state.  Returns 0,
+ * ENOTSUP without the extension, EPIPE when the compositor went, or
+ * ENOMEM.
+ */
+static int
+system_bind(
+	struct kl_system *system)
+{
+	struct system_search search;
+	struct wl_display *wrapper;
+	struct wl_registry *registry;
+	int status;
+
+	/* Makes the library's queue. */
+	system->queue = wl_display_create_queue(system->display);
+	if (system->queue == NULL)
+		return ENOMEM;
+
+	/* Wraps the display for the search: what the wrapper makes lives on the queue. */
+	wrapper = wl_proxy_create_wrapper(system->display);
+	if (wrapper == NULL)
+		return ENOMEM;
+	wl_proxy_set_queue((struct wl_proxy *)wrapper, system->queue);
+
+	/* Asks for the globals, announced to this search alone; the wrapper is not needed after. */
+	search.name = 0U;
+	registry = wl_display_get_registry(wrapper);
+	wl_proxy_wrapper_destroy(wrapper);
+	if (registry == NULL)
+		return ENOMEM;
+
+	/* Listens to the registry's globals and waits for every one to be announced. */
+	status = wl_registry_add_listener(registry, &system_registry_listener, &search);
+	if (status == 0)
+		status = wl_display_roundtrip_queue(system->display, system->queue);
+	if (status < 0) {
+		wl_registry_destroy(registry);
+		return EPIPE;
+	}
+
+	/* Without the system manager there is no extension (not Keiland, or another user's). */
+	if (search.name == 0U) {
+		wl_registry_destroy(registry);
+		return ENOTSUP;
+	}
+
+	/* Binds the manager, on the queue as the registry is; the registry is not needed after. */
+	system->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, KL_SYSTEM_MANAGER_VERSION);
+	wl_registry_destroy(registry);
+	if (system->manager == NULL)
+		return ENOMEM;
+
+	/* Listens to the manager and waits for what it offers. */
+	(void)wl_proxy_add_listener(system->manager, (void (**)(void))&system_manager_listener, system);
+	status = wl_display_roundtrip_queue(system->display, system->queue);
+	if (status < 0)
+		return EPIPE;
+
+	/* Makes each object it offers, on the same queue. */
+	system->network = system_make(system, KL_SYSTEM_CAPABILITY_NETWORK, KL_SYSTEM_MANAGER_GET_NETWORK, &kl_system_network_v1_interface, &system_network_listener);
+	system->audio = system_make(system, KL_SYSTEM_CAPABILITY_AUDIO, KL_SYSTEM_MANAGER_GET_AUDIO, &kl_system_audio_v1_interface, &system_audio_listener);
+	system->power = system_make(system, KL_SYSTEM_CAPABILITY_POWER, KL_SYSTEM_MANAGER_GET_POWER, &kl_system_power_v1_interface, &system_power_listener);
+	system->devices = system_make(system, KL_SYSTEM_CAPABILITY_DEVICES, KL_SYSTEM_MANAGER_GET_DEVICES, &kl_system_devices_v1_interface, &system_devices_listener);
+
+	/* Waits for their first state: each object's state and its done. */
+	status = wl_display_roundtrip_queue(system->display, system->queue);
+	if (status < 0)
+		return EPIPE;
+
+	/* Succeeded: the system has its first state. */
+	return 0;
+}
+
+/* Makes one of the manager's objects when it is offered, listened to with the system; NULL otherwise. */
+static struct wl_proxy *
+system_make(
+	struct kl_system *system,
+	uint32_t bit,
+	uint32_t opcode,
+	const struct wl_interface *interface,
+	const void *listener)
+{
+	struct wl_proxy *proxy;
+
+	/* Not offered. */
+	if ((system->view.capabilities & bit) == 0U)
+		return NULL;
+
+	/* The object, under a new ID. */
+	proxy = wl_proxy_marshal_constructor(system->manager, opcode, interface, NULL);
+	if (proxy == NULL)
+		return NULL;
+
+	/* Its events fill the view. */
+	(void)wl_proxy_add_listener(proxy, (void (**)(void))listener, system);
+	return proxy;
+}
+
+/* Destroys one of the system's objects, when it was made. */
+static void
+system_destroy(
+	struct wl_proxy *proxy,
+	uint32_t opcode)
+{
+	/* Not made. */
+	if (proxy == NULL)
+		return;
+
+	/* The compositor is told, then the proxy goes. */
+	wl_proxy_marshal(proxy, opcode);
+	wl_proxy_destroy(proxy);
+}
+
+/*
+ * Gives a request its number and the caller the number when asked for;
+ * next_request moves so that each request has a number of its own to be
+ * answered by.
+ */
+static uint32_t
+system_number(
+	struct kl_system *system,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* The next number. */
+	number = system->next_request;
+	system->next_request++;
+	if (request != NULL)
+		*request = number;
+	return number;
+}
