@@ -543,3 +543,7 @@ ID は Q1 が割り当て済み（2026-10-03）。QEMU の試験は T1/T2 に依
 | 23 | apps.conf の色・Linux/FreeBSD の一覧 | 色は `4f9d8f`（青緑、他と重ならない）、Linux・FreeBSD の `apps.conf.in` と demo の一覧にも足す（§0） |
 | 24 | 履歴の memory | 持つ field を決めた（§3.10） |
 | 25 | GPU の 2 枚目 | stub は機器を作らない（§1.6） |
+
+## manager の version の決め直し（Q1、2026-10-04）
+
+WS113 の `get_displays`（version 2 の予約）は未実装・未定義で、WS113 は planned のまま。protocol の version は積み上げなので、未定義の 2 を飛ばして 3 にはできない。monitor の `get_monitor` を **version 2**（今の v1 の最後の opcode の次）にし、WS113 の `get_displays` はその次の version（3）にする。WS113 の記録にも書いた。

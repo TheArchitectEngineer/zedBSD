@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p008 -->
 # ws134-p008: M3a 本物の値（zedBSD の backend の monitor の領域）
 
-Status: in-progress（q662、P2 generation8、2026-10-04。実装・build 済み、T の QEMU の試験待ち）
+Status: cleared（q662、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §1.3（backend の領域「monitor」）
@@ -46,3 +46,7 @@ counter を読む。compositor の拡張（p012）と app（p013）はまだ使�
 
 `monitor-backend-p008: PASS`（17 項目）。CPU 4、host kei、GPU なし、nvme0n1 NVMe、link ue0、2 sample 3.00 s、valid 0x1f、tick 12004/12004、
 user 2810、memory total 8583294976、disk の読み 33513472 byte、link 638 byte。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-067/out/probe.txt`。
+
+## 判定（Q1、2026-10-04）
+
+cleared。T1-067（QEMU Venus KVM 4 CPU）: `monitor-backend-p008: PASS`（info・valid 0x1f・tick 12004/12004・user 2810・memory・disk の読み・link の bytes）。

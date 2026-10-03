@@ -97,3 +97,5 @@ p008はp002〜p007の実出力を要する。見込みは実装許可ではな�
 2026-10-02 / ws113-beta1-plan: fg019 の計画エージェントがベータ1 の受け入れ M1〜M4（D1〜D5 の測り方）、時間の見積もり、衝突と並列、未決の判断 4 件を追加。Phase の追加・依存の変更・受け入れの緩和は無し。Queue は未投入。
 
 2026-10-02 user（D-ATOMIC）:「WS113は推奨でよいです。」→ **(a) logical owner の同時更新**を受け入れの解釈として採択。pointer の境界で窓の所属を compositor の中で一度に切り替え、最大 1 frame 程度の両画面での見え・不表示は許容。present_wait/present_id の追加と 2 head の同時 latch は要求しない。p001 の残り（0.75h、採択の反映と whole-Phase の契約の確定）を次の attempt で行う。
+
+2026-10-04 Q1: `kl_system_manager_v1` の version 2 は WS134（システムモニター）の `get_monitor` が先に使う（WS113 は未実装のため）。WS113 の `get_displays` は実装する時に、その時の最新の次の version にする（今の見込み 3）。
