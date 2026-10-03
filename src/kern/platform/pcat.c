@@ -435,8 +435,13 @@ kern_platform_poweroff(
 {
 	int error;
 
+#if CONFIG_DRIVER_ACPI
 	/* Asks the ACPI driver for S5, which normally does not return. */
 	error = drv_acpi_poweroff();
+#else
+	/* A kernel built without the ACPI driver has no way to turn the power off. */
+	error = ENODEV;
+#endif
 	if (error != 0)
 		return error;
 

@@ -36,6 +36,7 @@ PCAT_GRAPHICS_OBJS := \
 	$(BUILD)/src/drivers/platform/pcat/graphics/font.o \
 	$(BUILD)/src/drivers/platform/pcat/graphics/text.o \
 	$(BUILD)/src/drivers/platform/pcat/graphics/vgafont.o \
+	$(BUILD)/src/drivers/platform/pcat/graphics/splash.o \
 	$(BUILD)/src/drivers/platform/pcat/serial-mirror.o
 endif
 KERN_OBJS := $(BUILD)/src/kern/entry.o $(BUILD)/src/kern/clock.o \

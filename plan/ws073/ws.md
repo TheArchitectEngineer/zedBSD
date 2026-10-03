@@ -83,6 +83,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p038](phase038/phase.md) | BUG-110 | TLS の thread pointer を processor から読む: rtld の `__tls_get_addr`・TLSDESC・`__rtld_pthread_private` は amd64 `%fs:0`・arm64 `TPIDR_EL0`、static の libc も main thread の attach の後は同じ（i386 等は syscall のまま）。errno 1 回 204 → 7.5 ns、複数 thread と signal の TLS の試験（dynamic・static）・dyntest・libm・desktop・boot test PASS、arm64 は build だけ（WS035 のエージェントが main の依頼で実施） | cleared（2026-09-29） |
 | [ws073-p047](phase047/phase.md) | BUG-052 | tmpfs の容量を物理 memory の半分に: file の data を物理 page と radix tree の index で持つ（heap と 2 乗の解放をやめる）、frame は private の page を reclaim して取る | in-progress（q651、T1 の試験待ち） |
 | [ws073-p048](phase048/phase.md) | BUG-103 | /bin/sh の上下の矢印の履歴を PS/2 の keyboard だけの QEMU で確かめて閉じる（修正は WS087 で済み） | cleared（q651、T1-045 PASS） |
+| [ws073-p052](phase052/phase.md) | — | i386 pcat の vmunix の build（ACPI の無い構成の `drv_acpi_poweroff`、`splash.o` の欠け） | in-progress（q651、build 済み） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
 
