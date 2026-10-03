@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p054 -->
 # ws073-p054: BUG-164 — crash の後、名前の無い inode（nlink 0）が allocated のまま残る
 
-Status: in-progress（q665、P2 generation8、2026-10-04。原因の特定・直し・build・P2 の QEMU で再現と確認まで済み。判定は Q1）
+Status: cleared（q665、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-164](../../bugs/BUG-164.md)
@@ -60,3 +60,7 @@ Queue: q665（Q1 2026-10-04「host の UFS の reader で inode 300 と journal 
 - 大きい root（inode の多い volume）の crash の後の boot で scan に掛かる時間は測っていない（使用中の inode の block を読むだけ、clean な
   boot では走らない）。
 - 使い捨て: `build/p2-b164`（元の image の複写を含む）、`build/p2-b135`、`build/p2-b163-base`。
+
+## 判定（Q1、2026-10-04）
+
+cleared。P2 の自分の QEMU: p054-orphan.sh は直す前に決定的に FAIL（orphan が remount の後も残る）、直した後 UFS OK ×2。元の BUG-164 の image（clean の byte を 0 に戻す）も直した kernel で inode 300 を回収して UFS OK。crash-test.sh・p051-window.sh・p053-fsync.sh の回帰 PASS。kernel は amd64・pcat・rpi4 で warning 0（main でも確認）。実機は未実施。
