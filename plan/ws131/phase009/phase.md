@@ -110,3 +110,7 @@ q659（P2）。ユーザーの夜の自律の指示（master の記録）で着�
 
 design.md §3.7 の「配置」の段落をそのまま（X server の key code は `xserver/keycodes.h`、checker は `check.sh` の L7・M1・X1・C3）。「compositor は libvulkan だけ」は
 「OS 固有の部分は `libkeiland-backend-zedbsd/` に閉じる（`gpu-zedbsd.c` が kernel の GPU の型を読む唯一の file）。確かめは `plan/tools/gpu-boundary/v1-check.sh`」に。
+
+## Linux・FreeBSD の結果（Q1、2026-10-04、T1-060）
+
+FreeBSD: main 71ffdf3 では include の相対 path の誤り（git mv の後）で build が FAIL、P2 の 098082c で直し、backend-test 9 項目 PASS（build warning 0・install・audit・host-seat・session・power・sync-rejected・dmabuf-export-rejected）。Linux: host の gcc・clang warning 0、wsi-check 4 mode × 90 frame PASS、Debian 13 の QEMU+KVM guest で wltest 600 frame（`ZWL ACQUIRE_FENCE` 601）、dmabuf-forge PASS（out_of_bounds で拒否、compositor 継続、`ZWL EXIT error=0 cleanup_failed=0`）。zedBSD の分は T2-019 待ち。
