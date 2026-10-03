@@ -637,7 +637,7 @@ compose_device(
 	/* Append the OS extensions to the existing instance extension list. */
 	memcpy(instance_names, instance_extensions, sizeof(instance_extensions));
 	instance_count = 5U;
-	extra = zwl_gpu_instance_extensions(instance_names + instance_count, COMPOSE_EXTENSIONS_MAX - instance_count);
+	extra = kl_backend_gpu_instance_extensions(instance_names + instance_count, COMPOSE_EXTENSIONS_MAX - instance_count);
 	if (extra > COMPOSE_EXTENSIONS_MAX - instance_count)
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	instance_count += extra;
@@ -695,7 +695,7 @@ compose_device(
 	}
 
 	/* Export only when the device and the OS both support frame fence fds. */
-	fence_type = zwl_gpu_frame_fence_type();
+	fence_type = kl_backend_gpu_frame_fence_type();
 	compose->fence_fd = 0;
 	if (wanted == 2U && fence_type != 0)
 		compose->fence_fd = 1;
@@ -707,7 +707,7 @@ compose_device(
 
 	/* Appends the OS extensions after the selected common device extension list. */
 	memcpy(device_names, device_extensions, device_count * sizeof(device_names[0]));
-	extra = zwl_gpu_device_extensions(compose->physical, device_names + device_count, COMPOSE_EXTENSIONS_MAX - device_count);
+	extra = kl_backend_gpu_device_extensions(compose->physical, device_names + device_count, COMPOSE_EXTENSIONS_MAX - device_count);
 	if (extra > COMPOSE_EXTENSIONS_MAX - device_count)
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	device_count += extra;
@@ -848,13 +848,18 @@ compose_limits(
 	VkPhysicalDeviceProperties device;
 	VkPhysicalDeviceMemoryProperties memory;
 
+	/* The device the GPU buffers are imported into. */
+	server->gpu_device.instance = server->compose->instance;
+	server->gpu_device.physical = server->compose->physical;
+	server->gpu_device.device = server->compose->device;
+
 	/* The largest width and height of a 2D image. */
 	vkGetPhysicalDeviceProperties(server->compose->physical, &device);
-	server->gpu_limits.max_dimension = device.limits.maxImageDimension2D;
+	server->gpu_device.max_dimension = device.limits.maxImageDimension2D;
 
 	/* The memory types a buffer's memory may be one of. */
 	vkGetPhysicalDeviceMemoryProperties(server->compose->physical, &memory);
-	server->gpu_limits.memory_type_count = memory.memoryTypeCount;
+	server->gpu_device.memory_type_count = memory.memoryTypeCount;
 
 	/* Succeeded: descriptions are checked against these. */
 	return;
@@ -1036,7 +1041,7 @@ compose_objects(
 	/* The frame's fence, exportable as an fd the event loop polls (design D3). */
 	memset(&export, 0, sizeof(export));
 	export.sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO;
-	export.handleTypes = zwl_gpu_frame_fence_type();
+	export.handleTypes = kl_backend_gpu_frame_fence_type();
 
 	/* Describes the frame fence with the OS export type when export is available. */
 	memset(&fence, 0, sizeof(fence));
@@ -2012,7 +2017,7 @@ compose_submit(
 	memset(&fd_info, 0, sizeof(fd_info));
 	fd_info.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
 	fd_info.fence = compose->fence;
-	fd_info.handleType = zwl_gpu_frame_fence_type();
+	fd_info.handleType = kl_backend_gpu_frame_fence_type();
 	fd = -1;
 	result = compose->get_fence_fd(compose->device, &fd_info, &fd);
 	if (result != VK_SUCCESS)

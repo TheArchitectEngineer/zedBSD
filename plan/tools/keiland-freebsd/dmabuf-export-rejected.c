@@ -6,7 +6,7 @@
  */
 
 /* Checks real reservation-export rejection without requiring a physical DMA buffer. */
-#include "userland/desktop/wayland/dmabuf/sync.h"
+#include "userland/desktop/libkeiland-backend/dmabuf/sync.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -28,7 +28,7 @@ main(
 	/* An invalid borrowed descriptor cannot publish a new owned sync descriptor. */
 	exported = 123;
 	errno = 0;
-	error = zwl_dmabuf_export_read(-1, &exported);
+	error = kl_backend_dmabuf_export_read(-1, &exported);
 	if (error != -1 ||
 	    errno != EBADF ||
 	    exported != 123)
@@ -42,7 +42,7 @@ main(
 	/* Unsupported native reservation operations must preserve errno and the borrowed file. */
 	exported = 456;
 	errno = 0;
-	error = zwl_dmabuf_export_read(descriptors[0], &exported);
+	error = kl_backend_dmabuf_export_read(descriptors[0], &exported);
 	saved = errno;
 	if (error != -1 ||
 	    saved != ENOTTY ||

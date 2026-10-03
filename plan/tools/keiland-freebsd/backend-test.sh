@@ -97,7 +97,7 @@ probe="cc -std=gnu17 -Wall -Wextra -Werror -I. -I/usr/local/include"
 step sync-rejected 120 "mkdir -p build/probes && $probe plan/tools/keiland-freebsd/sync-rejected.c \
 	userland/desktop/libvulkan-compat/freebsd/sync-freebsd.c -o build/probes/sync-rejected && build/probes/sync-rejected"
 step dmabuf-export-rejected 120 "mkdir -p build/probes && $probe plan/tools/keiland-freebsd/dmabuf-export-rejected.c \
-	userland/desktop/wayland/freebsd/sync-freebsd.c -o build/probes/dmabuf-export-rejected && \
+	userland/desktop/libkeiland-backend-freebsd/sync-freebsd.c -o build/probes/dmabuf-export-rejected && \
 	build/probes/dmabuf-export-rejected"
 
 if [ "$started" = 1 ]; then

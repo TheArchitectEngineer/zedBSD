@@ -2,10 +2,10 @@
 
 # ws131-p009: backend の GPU の buffer の領域と境界の確定
 
-Status: planning（p002 第 2 版はユーザーのレビュー済み（2026-10-03、D7 は確認中）。開始はユーザーの承認と P2 の終了の後に Q1 が指示）
+Status: in-progress（q659-i01、P2 generation7。実装・host 試験・build・checker 済み、QEMU は T2 の結果待ち）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
-Queue: none
+Queue: q659 / q659-i01（Q1 2026-10-04: ユーザーの夜の指示「優先度の高い実装を進め、止まれば次の WS へ」の Q1 の解釈、所有 path の委任あり）
 依存: p008 cleared。判断 D14（決定済み）
 目安: 4〜5h（1 Queue）。実行者: Q1 が割り当てる（high）
 所有 path: `userland/desktop/wayland/`（`zedbsd/gpu-*`、`dmabuf/`、`linux/sync-linux.c`・`freebsd/sync-freebsd.c`、`zwl-gpu.h`、`protocol.c`・`objects.c`・`import.c`・`compose.c` の結線、OS の data の `data/` への移動）、`userland/desktop/libkeiland-backend*/`、`plan/ws131/`。（Q1 の委任が要る: Q1 が Phase の前に委任を記録する）: `plan/tools/gpu-boundary/`・`plan/tools/keiland-os-boundary/`・`plan/tools/keiland-freebsd/dmabuf-export-rejected.c`
@@ -69,3 +69,44 @@ tag で行える（`resource_private`）ので host には足さない。
 ## 着手（Q1、2026-10-04）
 
 q659（P2）。ユーザーの夜の自律の指示（master の記録）で着手。p008 は cleared（T2-013・T1-054）。所有 path の委任は Q1 が許可。WS113 p004 は planned で動いていない。p007 は touch・pen の demo-s8-s9 だけ未実行で uncleared（T1 に依頼）、p009 の前提の入力の backend は統合済み。
+
+
+## 実装（q659-i01、P2 generation7、2026-10-04）
+
+- **interface**（新）`libkeiland-backend/keiland-backend-gpu.h`: `struct kl_backend_protocol_host`（design.md §3.5 の 11 操作に P1 の読み直しの 9 個を足した: resource の
+  create・create_server・find（role で種類と shm を確かめる）・destroy・role・id・version・client_number・private、emit、post_error（`KL_BACKEND_ERROR_INVALID` で
+  generic）、take_fd、buffer_adopt、buffer_set_alpha（次の frame を描き直す）、surface_fence（満杯で ENOSPC）・surface_fence_full、device（instance・physical・device と
+  上限）、log_frames）と、backend の出す `kl_backend_gpu_*`（global の名前と版・bind・request・commit・resource_free・instance/device の extension・frame の fence の型）。
+  design の案からの違い: `struct kl_backend *backend` の引数は無い（GPU の module は process に一つの状態で backend を使わない）。`void *data` も無く、host の関数は
+  resource から compositor を得る（device・log_frames も resource を取る）。
+- **compositor**: `wayland/gpu-host.c`（新）が host を実装（resource は `struct zwl_object`）。`protocol.c`（request・global の名前と版・bind・commit）・`objects.c`（解放）・
+  `compose.c`（extension・fence の型、`server->gpu_device` に instance・physical・device と上限）を `kl_backend_gpu_*` に。`zwl-gpu.h` と `server->gpu_limits` を除いた。
+- **git mv**: `wayland/zedbsd/gpu-buffer-zedbsd.c`・`gpu-zedbsd.{c,h}` → `libkeiland-backend-zedbsd/`、`wayland/dmabuf/{gpu-dmabuf.c,sync.h}` → `libkeiland-backend/dmabuf/`、
+  `wayland/linux/sync-linux.c` → `libkeiland-backend-linux/`、`wayland/freebsd/sync-freebsd.c` → `libkeiland-backend-freebsd/`。install の data は
+  `wayland/data/{apps-linux.conf.in,keiland.desktop,apps-freebsd.conf.in}`。**compositor の tree に OS の directory は無い**（`find userland/desktop/wayland -type d` は
+  `shaders`・`data` だけ）。module は host 越しに書き直し（log の文字列は同じ）、dmabuf は呼び出しの間 file-scope の `gpu_host`、`zwl_dmabuf_export_read` →
+  `kl_backend_dmabuf_export_read`（backend の未定義の symbol に `zwl_` が無い）。
+- **build の一覧**: zedBSD は `sources.mk` の `KL_BACKEND_ZEDBSD_SOURCES` に GPU の 2 file、Linux・FreeBSD は backend の static library に dmabuf と sync。compositor の
+  3 つの Makefile の compositor の source の一覧は一致（新 M1）。
+- **X server**（D14）: `xserver/keymap.c` の `<uapi/input.h>` を除き、使う 62 個の evdev の key code を `xserver/keycodes.h`（新）に（値は uapi と同じ、Wayland の keyboard の規格）。
+- **checker**（委任あり）: `plan/tools/keiland-os-boundary/check.sh`: common は compositor と libkeiland の全体、C3 は `zwl_buffer_layout`・`gpu_image_descriptor`・
+  `uapi/gpu` が compositor・libkeiland・backend の共有と Linux・FreeBSD の tree に無い、L2・L3 の path を backend に、新 L7（compositor に OS の directory が無い）・
+  M1（3 つの Makefile の compositor の source の一致）・X1（X server が OS の header を include しない）、B3 は `keiland-backend*.h` に広げた。
+  `plan/tools/gpu-boundary/v1-check.sh`: backend を `libkeiland-backend-zedbsd/gpu-zedbsd.c` に、毒入りの header の compile は compositor の source の全体（backend を除く）。
+  `run-gpu-zedbsd-host.sh`・`gpu-zedbsd-host.c`・`keiland-freebsd/{backend-test.sh,README.md,dmabuf-export-rejected.c}` の path。
+  ついでに `plan/tools/keiland-linux/makefile-sync.sh` の `.c` の正規表現（`apps.conf` を `apps.c` と読んで main でも FAIL していた）に `\b`。
+
+## 検証（host と build）
+
+- build: zedBSD の compositor・X server（`ZEDBSD_CONFIG=plan/tools/settings/config-amd64-settings.mk`）warning 0、`make keiland-linux`（gcc）と `CC=clang` とも warning 0。
+- `nm -u libkeiland-backend.a`（Linux）に `zwl_`・`kwl_` 無し。
+- `keiland-os-boundary/check.sh` PASS（C1〜C5・L1〜L7・M1・X1・B1・B3・S1）。故意の違反（`wayland/zedbsd/x.c` に `zwl_buffer_layout`）で C3 と L7 が FAIL、戻して PASS。
+- `v1-check.sh build/amd64` PASS（52 source を毒入りで compile）。故意の違反（`wayland/os.c` に `#include <uapi/gpu.h>`）で FAIL 2 件、戻して PASS。
+- `run-gpu-zedbsd-host.sh` PASS（ordinary・sanitize）、`run-dedicated-host.sh` PASS、`makefile-sync.sh` PASS、`style-check.py` の新しい・変えた file に違反 0。
+- 未実施（T2 に依頼）: zedBSD の boot-test、C1・C2・C9（criteria）、forge・fence の guest。Linux の dmabuf-probe・dmabuf-forge・wsi-check・acquire-fence、FreeBSD の native build と
+  `dmabuf-export-rejected` の実行（backend-test.sh）。
+
+## Guardrail の本文（Q1 が `plan/guardrail.md` に適用、design.md §3.7）
+
+design.md §3.7 の「配置」の段落をそのまま（X server の key code は `xserver/keycodes.h`、checker は `check.sh` の L7・M1・X1・C3）。「compositor は libvulkan だけ」は
+「OS 固有の部分は `libkeiland-backend-zedbsd/` に閉じる（`gpu-zedbsd.c` が kernel の GPU の型を読む唯一の file）。確かめは `plan/tools/gpu-boundary/v1-check.sh`」に。

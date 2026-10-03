@@ -58,7 +58,7 @@ and install boundaries. No global loader or standard system headers are replaced
 ## Native sync and Vulkan window probes
 
 Compile `sync-rejected.c` with production `libvulkan-compat/freebsd/sync-freebsd.c`;
-compile `dmabuf-export-rejected.c` with `wayland/freebsd/sync-freebsd.c`.
+compile `dmabuf-export-rejected.c` with `libkeiland-backend-freebsd/sync-freebsd.c`.
 Both use real native pipes/closed files and check output/error/borrowed-fd ownership.
 `dmabuf-native-flags.c` reuses the registered real Vulkan exporter; link the production native
 sync adapter plus staged `-l:libvulkan.so.1 -l:libwayland-client.so`, with `-I.`, the native build

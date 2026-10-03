@@ -6,18 +6,19 @@
  */
 
 /*
- * The zedBSD side of the compositor's GPU buffer boundary (zwl-gpu.h, WS103).
+ * The zedBSD side of the GPU buffers (libkeiland-backend, keiland-backend-gpu.h;
+ * WS103, WS131 p009).
  *
  * On zedBSD a client's GPU buffer is a kernel image capability fd with the
  * kernel's description of the image (struct gpu_image_descriptor, 64 bytes,
  * as keiland_gpu_buffer_v1.create_buffer's array).  The fd is imported as
  * Vulkan OPAQUE_FD memory; libvulkan checks the description against the
  * kernel's own record of the capability when the import names the image
- * (a dedicated import).  This file is the only one of the compositor that
- * reads the kernel's types.
+ * (a dedicated import).  This file is the only one of the desktop that
+ * reads the kernel's GPU types.
  */
 
-#include "userland/desktop/wayland/zedbsd/gpu-zedbsd.h"
+#include "userland/desktop/libkeiland-backend-zedbsd/gpu-zedbsd.h"
 
 #include <uapi/gpu.h>
 #include <errno.h>

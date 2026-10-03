@@ -40,7 +40,7 @@
 #ifndef ZWL_H
 #define ZWL_H
 
-#include "zwl-gpu.h"
+#include "userland/desktop/libkeiland-backend/keiland-backend-gpu.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend-evdev.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -661,8 +661,11 @@ struct zwl_server {
 	uint32_t height;
 	/* The display mode's refresh in millihertz (from Vulkan, compose.c), told to clients by wl_output. */
 	uint32_t refresh;
-	/* What the Vulkan device can take, against which a GPU buffer's description is checked (compose.c fills it). */
-	struct zwl_gpu_limits gpu_limits;
+	/*
+	 * The Vulkan device as libkeiland-backend's GPU buffers import into it,
+	 * and what it can take (compose.c fills it once the device is made).
+	 */
+	struct kl_backend_gpu_device gpu_device;
 	uint64_t timeout_ms;
 	uint64_t max_frames;
 	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
@@ -1166,6 +1169,8 @@ void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int
 void zwl_glass_tick(struct zwl_server *server);
 void zwl_glass_prefetch(struct zwl_server *server);
 int zwl_glass_wallpaper(struct zwl_server *server, const char *path);
+const struct kl_backend_protocol_host *zwl_gpu_host(void);
+struct kl_backend_resource *zwl_gpu_resource(struct zwl_object *object);
 int zwl_glass_wallpaper_begin(struct zwl_server *server, const char *path);
 int zwl_glass_wallpaper_poll(struct zwl_server *server, int *error);
 void zwl_settings_open(struct zwl_server *server);

@@ -6,8 +6,8 @@
  */
 
 /*
- * Host test of the compositor's check of a GPU buffer's description
- * (userland/desktop/wayland/zedbsd/gpu-zedbsd.c, ws103-p004).
+ * Host test of libkeiland-backend's check of a GPU buffer's description
+ * (userland/desktop/libkeiland-backend-zedbsd/gpu-zedbsd.c, ws103-p004).
  *
  * zwl_gpu_buffer_decode must accept a description Vulkan can make an image
  * of and refuse, before any value reaches Vulkan, every description a client
@@ -17,7 +17,7 @@
  * revision.
  */
 
-#include "userland/desktop/wayland/zedbsd/gpu-zedbsd.h"
+#include "userland/desktop/libkeiland-backend-zedbsd/gpu-zedbsd.h"
 #include <uapi/gpu.h>
 #include <stdint.h>
 #include <stdio.h>

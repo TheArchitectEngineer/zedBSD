@@ -567,8 +567,8 @@ object_free(
 	client = object->client;
 	zwl_import_destroy(object);
 
-	/* OS buffer descriptors remain alive until the final Vulkan image use has retired. */
-	zwl_gpu_object_free(object);
+	/* OS buffer descriptors (libkeiland-backend's) remain alive until the final Vulkan image use has retired. */
+	kl_backend_gpu_resource_free(zwl_gpu_host(), zwl_gpu_resource(object));
 
 	/* Shared-memory buffer storage returns its separate pool reference. */
 	if (object->shm != NULL) {

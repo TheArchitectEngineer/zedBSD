@@ -187,7 +187,7 @@ zwl_dispatch(
 		break;
 	case ZWL_GPU_OBJECT:
 	case ZWL_FACTORY:
-		error = zwl_gpu_request(object, opcode, bytes, size);
+		error = kl_backend_gpu_request(zwl_gpu_host(), zwl_gpu_resource(object), opcode, bytes, size);
 		break;
 	case ZWL_SHM:
 	case ZWL_SHM_POOL:
@@ -404,10 +404,10 @@ global_identity(
 	const char **interface,
 	uint32_t *version)
 {
-	/* The OS module names its GPU buffer global (zwl-gpu.h; keiland_gpu_buffer_v1 version 3 on zedBSD). */
+	/* libkeiland-backend names its GPU buffer global (keiland_gpu_buffer_v1 version 3 on zedBSD, zwp_linux_dmabuf_v1 elsewhere). */
 	if (global->kind == ZWL_FACTORY) {
-		*interface = zwl_gpu_global_interface();
-		*version = zwl_gpu_global_version();
+		*interface = kl_backend_gpu_global_interface();
+		*version = kl_backend_gpu_global_version();
 		return;
 	}
 
@@ -651,9 +651,9 @@ bind_global(
 				return error;
 		}
 
-		/* GPU bindings receive the OS module's sampled buffer format snapshot. */
+		/* GPU bindings receive libkeiland-backend's sampled buffer format snapshot. */
 		if (object->kind == ZWL_FACTORY) {
-			error = zwl_gpu_bind(object);
+			error = kl_backend_gpu_bind(zwl_gpu_host(), zwl_gpu_resource(object));
 			if (error != 0)
 				return error;
 		}
@@ -1576,12 +1576,12 @@ commit_fence(
 {
 	unsigned index;
 
-	/* Give the OS module the attached GPU buffer before moving commit fences. */
+	/* Give libkeiland-backend the attached GPU buffer before moving commit fences. */
 	if (attached &&
 	    surface->queued != NULL &&
 	    surface->queued->import != NULL &&
 	    surface->queued->shm == NULL)
-		zwl_gpu_commit(surface, surface->queued);
+		kl_backend_gpu_commit(zwl_gpu_host(), zwl_gpu_resource(surface), zwl_gpu_resource(surface->queued));
 
 	/* The reused image still waits for its own fences. */
 	if (!attached && surface->acquire_count == 0)
