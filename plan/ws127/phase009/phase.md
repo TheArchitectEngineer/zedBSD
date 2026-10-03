@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws127-p009 -->
 # ws127-p009: Files の host 試験 p009・p010・p013 の FAIL
 
-Status: in-progress（q656、P2 generation7。原因を直し host で PASS、Q1 の判定待ち）
+Status: cleared（q656、P2 generation7、2026-10-04。Q1 判定: 試験の前提（font の path）の直し、host-p009・p010・p013 PASS）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: q656（2026-10-04 Q1「Files の host-p009・p010・p013 の既存の FAIL は見つけた担当がすぐ直す方針…Phase は ws127-p009」）
