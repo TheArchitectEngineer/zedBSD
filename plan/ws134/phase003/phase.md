@@ -96,3 +96,17 @@ q657（P1）で計測・GPU 名・名前の切れを実装（8af2512、統合 c9
 ## T1-055（Q1、2026-10-04、QEMU Venus KVM、8af2512 の image、段ごとの時間を入れた後）
 
 uncleared のまま。2 回とも `sim: 4 fps (want 15 or more)`（replay 3 つは ok、ERROR なし）。sim の frame（ms）: build 2.2〜3.1、acquire 0.04〜0.25、record 30〜36、submit 9〜10、present 48〜50、**callback 208〜223**、wait 2〜6。`compositor: 4 compose frames a second`。monitor の device は Venus の guest なのに `llvmpipe (LLVM 19.1.7, 256 bits)`（guest に /dev/gpu0 は在る）。読み: 1 frame の大半は compositor の frame callback の待ちで、compositor 自身が毎秒 4 回しか合成していない。monitor が Venus でなく llvmpipe を選んでいる（ICD の選び方か環境）。証拠 worktrees/t1/build/t1-055/。再開: (1) monitor が Venus を使わない理由、(2) compositor の合成が 4 回/秒の理由（monitor の CPU 描画の重さで compositor が待つのか）を調べる。
+
+## 調べ（q656 の後、P2 generation7、2026-10-04）
+
+- **monitor が Venus でなく llvmpipe を選ぶ理由（再開の (1)）**: 選び方の誤りではない。この host には GPU が無い（`lspci` の表示の device は Matrox
+  MGA G200e だけ、`vulkaninfo --summary` の device は `llvmpipe (LLVM 19.1.7, 256 bits)`、`PHYSICAL_DEVICE_TYPE_CPU` の一つだけ）。QEMU の Venus
+  （virtio-gpu-gl-pci venus=on）は guest の Vulkan を host の Vulkan で描くので、guest の Vulkan の device の名前が host の lavapipe の名前になる。
+  monitor（`render.c` の `render_device`）・libkeiui・Notes は同じ「surface に present できる最初の device」の選び方で、guest の device は一つだけ。
+  つまり QEMU の上では monitor も compositor も **host の CPU（lavapipe）で描いている**。
+- **compositor が毎秒 4 回しか合成しない理由（再開の (2)）**: 未測定。候補は (a) compositor の合成そのもの（1280x800 の glass の look、blur を含む）が
+  lavapipe で約 200 ms、(b) monitor の描画（record 30・submit 10・present 48 ms、どれも lavapipe の CPU の仕事）と host の CPU を取り合う。
+  これを分けるため `monitor-p003.sh` に段 3 の `ZWL PERF compose`（compositor の draw_ms・frame_ms）と、段 4 の 480x320 の小さな窓の同じ計測を足した
+  （判定しない）。小さな窓で両方の rate が大きく上がれば、描く pixel の量（host の CPU の renderer）が律速。
+- 15 fps の条件: 実機（i915）の値で判定するのが本来で、QEMU の lavapipe の上の値は参考。ただし Q1 の指摘どおり条件を下げるだけにはせず、段 3・4 の
+  数字で軽量化の余地（全面の背景・overdraw）を決める。T2 に依頼（P2-08）。
