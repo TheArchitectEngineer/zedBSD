@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws136-p002 -->
 # ws136-p002: login の試験（p095・p102・p103・p104）を 2026-09-29 の既定の image に合わせる
 
-Status: in-progress（q655、P1 generation12、2026-10-04。直した、T2 の再試験待ち）
+Status: cleared（q655、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS136](../ws.md)
 Queue: q655（Q1 の dispatch 2026-10-04: 「古い試験は見つけた担当がすぐ直す」方針。T2-007 の p095・p102 の FAIL の判定から）
@@ -37,3 +37,7 @@ ssid=Kei Lab` と wifi=connected が MISSING、joined.png は「Key for Kei Lab�
 鍵の要る AP を利用者の自分の store（`kl_backend_network_get_saved`、daemon ではない）に鍵が無ければ menu の鍵の欄を開く。kei の store は空。
 → p104 は click の後に `ZWL NETWORK key open ssid=Kei Lab` があれば鍵（`kei-lab-p104`）を打って Enter し、`key saved` の後の op=35 を待つ（15 秒）。
 再試験を T2 に依頼。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T2-011: p095 PASS・p102 PASS（p103 は変更なしで PASS）。T2-012: 鍵を打つ形に直した p104 PASS（key field open → key saved → op=35 → wifi=connected ssid=Kei Lab、op=33・wifi=off ok）。QEMU のみ。
