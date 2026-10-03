@@ -274,6 +274,9 @@ int fm_trash_path(char *path, size_t size);
 int fm_trash_info_read(const char *trash, const char *name, char *original, size_t size, time_t *deleted);
 int fm_trash_info_write(const char *path, const char *original, time_t deleted);
 int fm_trash_name(const char *trash, const char *base, char *name, size_t size);
+int fm_trash_for(const char *item, char *trash, size_t size);
+int fm_trash_of(const char *item, char *trash, size_t size);
+int fm_trash_list(char ***trashes, size_t *count);
 
 /* The undo history (undo.c). */
 void fm_undo_push(struct fm_undo *history, unsigned kind, size_t count, char *const *from, char *const *to, const unsigned *before, const unsigned *after);

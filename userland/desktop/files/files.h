@@ -1519,7 +1519,7 @@ void fm_dir_sort(struct fm_listing *listing, unsigned sort, int reverse);
 void fm_dir_free(struct fm_listing *listing);
 struct fm_entry *fm_dir_add(struct fm_listing *listing, const char *folder, const char *name);
 int fm_dir_count(const char *path, int hidden);
-int fm_dir_read_trash(struct fm_listing *listing, const char *trash);
+int fm_dir_read_trash(struct fm_listing *listing);
 void fm_dir_size_text(uint64_t size, char *text, size_t length);
 void fm_dir_items_text(long count, char *text, size_t length);
 void fm_owner_text(uid_t uid, gid_t gid, char *text, size_t length);

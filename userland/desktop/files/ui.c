@@ -659,13 +659,11 @@ fm_ui_reload(
 	const struct fm_location *location;
 	struct fm_visit *visit;
 	const char *path;
-	char trash[FM_PATH_MAX];
 	char **kept;
 	char *cursor_name;
 	size_t kept_count;
 	size_t index;
 	int found;
-	int error;
 
 	/* The place, and the folder its items come from. */
 	visit = &tab->history[tab->history_index];
@@ -703,9 +701,7 @@ fm_ui_reload(
 	if (path != NULL) {
 		(void)fm_dir_read(&tab->listing, path, app->show_hidden);
 	} else if (location->kind == FM_LOCATION_TRASH) {
-		error = fm_trash_path(trash, sizeof(trash));
-		if (error == 0)
-			(void)fm_dir_read_trash(&tab->listing, trash);
+		(void)fm_dir_read_trash(&tab->listing);
 	} else if (location->kind == FM_LOCATION_HOME) {
 		fm_home_gather(app);
 	} else {
