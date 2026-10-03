@@ -14,7 +14,7 @@
 # Pictures of each step go to OUTDIR (and to the WS081 shots with a prefix when one is given).  Nothing reads the
 # console; the steps read /tmp/pv.log through SSH.
 #
-#   VENUS_RENDERER=/home/awe/zedBSD-rpi4/build/ws035-sq-venus/install \
+#   VENUS_RENDERER=$PWD/build/ws035-sq-venus/install \
 #   GUEST_RUNTIME=$PWD/build/ws081-run plan/ws079/tests/pen-guest.sh start build/amd64/hdd-image.img
 #   GUEST_RUNTIME=... plan/ws081/tests/p012-guest.sh BUILD [OUTDIR [PREFIX]]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

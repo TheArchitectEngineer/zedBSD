@@ -2,7 +2,8 @@
 # ws035-p007: runs the HDA driver through five QEMU configurations and
 # keeps each guest transcript and WAV check under OUT.
 set -u
-cd /home/awe/zedBSD-rpi4
+# ws136-p003: from the tree the script is in (it was a fixed other tree, now gone).
+cd "$(dirname -- "$0")/../../.."
 OUT=${OUT:-plan/ws035/phase007/evidence}
 D=${RUN:-/tmp/p007-run}; export RUN=$D
 mkdir -p "$OUT"

@@ -3,9 +3,10 @@
 # 40 at a time, starting the guest again every 10 batches (BUG-029), and
 # writes each batch's FAIL lines and PASS count to OUTPUT; the last line is
 # ALL-BATCHES-FINISHED.  The guest image must be built already.
-#   [IMAGE=...] sh plan/tools/sh/guest-batches.sh [OUTPUT]
-#   (default OUTPUT build/ws042/guest-all.out; IMAGE the native guest image
-#   build/ws053-full-hal-guest/hdd-image.img, booted from NVMe)
+#   IMAGE=... sh plan/tools/sh/guest-batches.sh [OUTPUT]
+#   (default OUTPUT build/ws042/guest-all.out; IMAGE the full guest image,
+#   plan/tools/guest/build-full-image.sh, booted from NVMe; ws136-p003: the
+#   default was an earlier build's image)
 # With GUEST_SH=FILE (a sh built for the guest, e.g. by build-guest-sh.sh)
 # the guest's copy of the image gets that sh as /bin/sh after each start.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -13,7 +14,7 @@ set -u
 out=${1:-build/ws042/guest-all.out}
 work=build/ws042/guest-batches
 export GUEST_RUNTIME=${GUEST_RUNTIME:-build/ws042/guest-run}
-image=${IMAGE:-build/ws053-full-hal-guest/hdd-image.img}
+image=${IMAGE:?set IMAGE to the full guest image (plan/tools/guest/build-full-image.sh)}
 
 # The oils test data the cases read (REPO_ROOT on the guest is /root/oils).
 rm -rf "$work"

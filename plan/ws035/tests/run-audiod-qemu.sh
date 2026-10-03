@@ -2,7 +2,8 @@
 # ws035-p009: audiod on QEMU's HD Audio, driven by audiod-client.  Each guest
 # transcript and WAV check is kept under OUT.
 set -u
-cd /home/awe/zedBSD-rpi4
+# ws136-p003: from the tree the script is in (it was a fixed other tree, now gone).
+cd "$(dirname -- "$0")/../../.."
 OUT=${OUT:-plan/ws035/phase009/evidence}
 D=${RUN:-/tmp/p009-run}; export RUN=$D
 export IMG=${IMG:-build/p009-img/hdd-image.img}

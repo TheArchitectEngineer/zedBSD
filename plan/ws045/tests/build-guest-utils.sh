@@ -6,16 +6,17 @@
 # back-references of ws045-p002) is linked into each program, where its
 # regcomp and regexec take the place of the image's libc's.
 #
-#   sh plan/ws045/tests/build-guest-utils.sh [IMAGE_BUILD] [OUTPUT_DIR]
+#   sh plan/ws045/tests/build-guest-utils.sh IMAGE_BUILD [OUTPUT_DIR]
 #
-# IMAGE_BUILD is the build directory of the image the guest runs (default
-# /home/awe/zedBSD-rpi4/build/ws053-full-hal-guest, read only); its
-# dynamic/libc.so is linked against, and /home/awe/zedBSD-rpi4/build/amd64
-# gives the sysroot.  OUTPUT_DIR defaults to build/ws045/guest-bin.
+# IMAGE_BUILD is the build directory of the image the guest runs (read only),
+# the full guest image's (plan/tools/guest/build-full-image.sh); its
+# dynamic/libc.so is linked against, and this tree's build/amd64 gives the
+# sysroot (make sysroot-amd64).  ws136-p003: the defaults were another tree's
+# build, now gone.  OUTPUT_DIR defaults to build/ws045/guest-bin.
 set -eu
-image_build=${1:-/home/awe/zedBSD-rpi4/build/ws053-full-hal-guest}
+image_build=${1:?usage: build-guest-utils.sh IMAGE_BUILD [OUTPUT_DIR]}
 out=${2:-build/ws045/guest-bin}
-sysroot=/home/awe/zedBSD-rpi4/build/amd64/sysroot
+sysroot=build/amd64/sysroot
 clang=build/llvm/bin/clang
 objects=$out/.obj
 mkdir -p "$out" "$objects"

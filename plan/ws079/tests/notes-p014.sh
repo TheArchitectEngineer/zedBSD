@@ -14,7 +14,7 @@
 #   refuse     Notes on signed.pdf (from PDF Viewer's Annotate) and on encrypted.pdf: refused with the message
 # Pictures: OUTDIR/*.png, and with PREFIX also PREFIX*.png.  Program logs (NOTES ..., PDFVIEWER ...) are read over SSH.
 #
-#   GUEST_RUNTIME=$PWD/build/p014/run plan/ws035/tests/zdesktop-guest.sh start /home/awe/zedBSD-rpi4/build/ws035-sq/hdd-image.img
+#   GUEST_RUNTIME=$PWD/build/p014/run plan/ws035/tests/zdesktop-guest.sh start IMAGE (the notes test image, ws136-p003)
 #   plan/ws079/tests/notes-p014.sh OUTDIR PREFIX install annotate check viewer reopen refuse
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u

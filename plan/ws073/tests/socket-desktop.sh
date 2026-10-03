@@ -14,7 +14,7 @@ clients=${2:-40}
 out=${3:-build/ws073-p034/desktop}
 mkdir -p "$out"
 export GUEST_RUNTIME=$PWD/build/ws073-venus
-export VENUS_RENDERER=${VENUS_RENDERER:-/home/awe/zedBSD-rpi4/build/ws035-sq-venus/install}
+export VENUS_RENDERER=${VENUS_RENDERER:-$PWD/build/ws035-sq-venus/install}
 guest() { timeout 300 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 timeout 300 sh plan/ws035/tests/zdesktop-guest.sh start "$image" </dev/null | tail -1
 timeout 400 python3 plan/tools/guest/guest.py wait </dev/null | tail -1
