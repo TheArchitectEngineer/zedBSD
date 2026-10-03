@@ -54,7 +54,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-138](bugs/BUG-138.md) | system bar の WiFi の on/off・AP 接続が未実装 | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p019 |
 | [BUG-137](bugs/BUG-137.md) | Terminal の初回起動でタイトルバーが数秒遅れる | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
 | [BUG-136](bugs/BUG-136.md) | Gears（X11）にタイトルバーが出ない | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
-| [BUG-135](bugs/BUG-135.md) | stat() が数秒かかる（UFS、guest） | reproduced / scheduled（ws073-p051、P9、2026-10-04 修正を実装） | ws099-p020 の診断で 0.7〜6.5 秒。p045 で namespace の共有、p051 で journal の commit の flush を mount の lock の外へ（P9 の QEMU の診断で 1 秒超 7 → 0 回） | Q1 が p051 の差分を読んで merge・判定（T1・T2 の試験は user の指示で除外） |
+| [BUG-135](bugs/BUG-135.md) | stat() が数秒かかる（UFS、guest） | reproduced / scheduled（ws073-p051、直しを main に統合 2026-10-04、残りの確認待ち） | ws099-p020 の診断で 0.7〜6.5 秒。p045 で namespace の共有、p051 で journal の commit の flush を mount の lock の外へ（P9 の QEMU の診断で 1 秒超 7 → 0 回） | Q1 が p051 の差分を読んで merge・判定（T1・T2 の試験は user の指示で除外） |
 | [BUG-134](bugs/BUG-134.md) | AX211 不動作、driver 有効で起動停止 | unreproduced / resolved（2026-10-02 ユーザーの実機確認） | デモ config の firmware 欠落。CI 土台の image で実機動作 | 起動停止が再び見えたら reopen |
 | [BUG-133](bugs/BUG-133.md) | Browser UTF16 reserve byte数overflow | reproduced（host の単体の試験） / resolved（ws074-p177） | browser2:BUG129をp172/q579で検出、mainBUG129はFonts別条件。原本を保持してID衝突修復 | ws074-p177（P2）で直した: 増長後の capacity が SIZE_MAX/2 を越えたら need に落とす。host 試験の前 FAIL・後 PASS。resolved の判定は Q1 |
 | [BUG-130](bugs/BUG-130.md) | FreeBSD drm-kmod DMA-BUF のaccess flags | reproduced / tracking | WS109 q568、live fdのsync ioctlがEBADF、Vulkan window acquire失敗 | Keiland workaround/実GPU window・所有権はq569/q570で検証済み。driver未修理、drm-kmod upgrade時に再確認 |
