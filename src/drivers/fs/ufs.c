@@ -392,6 +392,29 @@ struct ufs_j3 {
 	uint8_t *staging;
 	/* The mount the flusher's hook commits for, while it is registered. */
 	struct mount *mountp;
+
+	/*
+	 * The closed transaction (ws073-p051, BUG-135).  A commit is done in
+	 * two steps: j3_close_transaction() copies the payload into the slot
+	 * and moves the running transaction here under the mount lock and the
+	 * journal lock, and j3_finish_commit() seals it -- the device's
+	 * flushes -- with both locks let go.  closing is set from the close to
+	 * the end of the finish; the closed side belongs to the finisher
+	 * meanwhile, and the next close waits on commit_idle for it to end.
+	 * The ranges stay pinned under closed_sequence until the seal is
+	 * durable; the freed blocks keep content out of their old owners'
+	 * blocks until then.  A descriptor left here after closing drops to
+	 * zero is a commit whose sealing failed, to be tried again.
+	 */
+	int closing;
+	struct wait_queue commit_idle;
+	uint64_t closed_sequence;
+	struct ufs_j3_range *closed_ranges;
+	unsigned closed_count;
+	uint64_t *closed_freed;
+	unsigned closed_freed_count;
+	uint8_t *closed_descriptor;
+	uint32_t closed_desc_sectors;
 };
 
 /* Share internal object layouts with production-linked lifetime fixtures. */
@@ -654,6 +677,7 @@ static int write_sectors_context(struct mount *mountp, uint64_t lba, uint32_t co
 static int write_sectors(struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer);
 static int observed_disk_read(struct disk *disk, uint64_t block, uint32_t count, void *buffer);
 static int ufs_sync(struct mount *mountp);
+static int ufs_sync_close(struct ufs_mount_state *ms, struct mount *mountp, int *closed, int *busy);
 static int journal_checkpoint_locked(struct mount *mountp);
 static uint32_t locator_get32(const uint8_t *p);
 static uint64_t locator_get64(const uint8_t *p);
@@ -840,19 +864,23 @@ static int j3_io(struct mount *mountp, const struct ufs_j3 *j3, uint64_t file_se
 static int j3_durable(struct mount *mountp);
 static unsigned j3_hash(uint64_t key, unsigned size);
 static void j3_range_add(struct ufs_j3 *j3, uint64_t lba, uint32_t count, uint32_t hold);
-static int j3_freed_test(const struct ufs_j3 *j3, uint64_t fragment);
+static int j3_freed_test(const uint64_t *set, uint64_t fragment);
 static void j3_freed_add(struct ufs_mount_state *ms, uint64_t fragment);
 static int j3_content_freed(const struct ufs_mount_state *ms, uint64_t lba, uint32_t count);
+static int j3_room(const struct ufs_j3 *j3, uint32_t count, int hold);
+static int j3_commit_pending(const struct ufs_j3 *j3);
 static int j3_write(struct ufs_mount_state *ms, struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer, const struct io_context *context, int content);
 static int j3_geometry(struct ufs_j3 *j3);
 static int j3_write_header(struct mount *mountp, struct ufs_j3 *j3);
 static uint32_t j3_logged_ranges(const struct ufs_j3 *j3);
 static int j3_copy_range(struct mount *mountp, struct ufs_j3 *j3, const struct ufs_j3_range *range, uint64_t cursor, uint32_t *sum);
 static int j3_commit_payload(struct mount *mountp, struct ufs_j3 *j3, uint8_t *descriptor, uint32_t desc_sectors);
-static int j3_commit_seal(struct mount *mountp, struct ufs_j3 *j3, uint8_t *descriptor, uint32_t desc_sectors);
-static void j3_unpin_all(struct mount *mountp, struct ufs_j3 *j3);
-static int j3_commit_locked(struct ufs_mount_state *ms, struct mount *mountp);
-static int j3_commit(struct ufs_mount_state *ms, struct mount *mountp);
+static int j3_commit_seal(struct mount *mountp, struct ufs_j3 *j3, uint8_t *descriptor, uint32_t desc_sectors, uint64_t sequence);
+static void j3_unpin_ranges(struct mount *mountp, const struct ufs_j3_range *ranges, unsigned count, uint64_t pin);
+static int j3_close_transaction(struct ufs_mount_state *ms, struct mount *mountp, int *closed);
+static int j3_finish_commit(struct ufs_mount_state *ms, struct mount *mountp);
+static void j3_commit_wait(struct ufs_j3 *j3);
+static int j3_commit_now(struct ufs_mount_state *ms, struct mount *mountp);
 static void j3_hook(void *argument);
 static int j3_super_read(struct mount *mountp, uint8_t sector[SECTOR_SIZE]);
 static int j3_locator_parse(const uint8_t sector[SECTOR_SIZE], uint64_t *fragment, uint64_t *nonce);
@@ -16831,6 +16859,7 @@ ufs_mount_impl(
 	mountp->m_data = ms;
 	(void)mutex_init(&ms->journal_lock, LOCK_RANK_DEVICE, "ufs journal");
 	(void)mutex_init(&ms->j3.lock, LOCK_RANK_DEVICE, "ufs batched journal");
+	waitq_init(&ms->j3.commit_idle, "ufs batched journal commit");
 	(void)mutex_init(&ms->snapshot_lock, LOCK_RANK_DEVICE, "ufs snapshot");
 
 	/* Finds the journal, if this volume carries one. */
@@ -17123,6 +17152,8 @@ ufs_sync(
 	struct mount *mountp)
 {
 	struct ufs_mount_state *ms;
+	int closed;
+	int busy;
 	int error;
 
 	/* A call that names no mount has nothing to flush. */
@@ -17134,18 +17165,27 @@ ufs_sync(
 	if (ms == NULL)
 		return EINVAL;
 
-	mutex_lock(&ms->lock);
-	mutex_lock(&ms->journal_lock);
+	/*
+	 * Checks the tail journal's point and closes the batched journal's
+	 * running transaction under the mount lock, which takes only memory
+	 * copies.  A commit another thread is writing is waited out with the
+	 * mount lock let go, so that no change of the volume waits behind its
+	 * flushes (ws073-p051, BUG-135).
+	 */
+	for (;;) {
+		error = ufs_sync_close(ms, mountp, &closed, &busy);
+		if (!busy)
+			break;
 
-	error = journal_checkpoint_locked(mountp);
+		/* Waits for the commit under way to end, then tries again. */
+		mutex_lock(&ms->j3.lock);
+		j3_commit_wait(&ms->j3);
+		mutex_unlock(&ms->j3.lock);
+	}
 
-	mutex_unlock(&ms->journal_lock);
-
-	/* Commits the batched journal's running transaction. */
-	if (error == 0 && ms->j3.active)
-		error = j3_commit(ms, mountp);
-
-	mutex_unlock(&ms->lock);
+	/* Seals the closed transaction -- the device's flushes -- with the locks let go. */
+	if (error == 0 && closed)
+		error = j3_finish_commit(ms, mountp);
 
 	/*
 	 * The mount is only durable once the device has it.  The writes and the
@@ -17160,6 +17200,59 @@ ufs_sync(
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * The locked part of a sync (ws073-p051): checks the tail journal's point
+ * and closes the batched journal's running transaction under the mount
+ * lock.  *closed reports a transaction for j3_finish_commit() to seal;
+ * *busy reports that a commit is being written, so the caller is to wait
+ * for it with the mount lock let go and try again.
+ */
+static int
+ufs_sync_close(
+	struct ufs_mount_state *ms,
+	struct mount *mountp,
+	int *closed,
+	int *busy)
+{
+	int error;
+
+	/* Checks the tail journal's point under the mount lock. */
+	*closed = 0;
+	*busy = 0;
+	mutex_lock(&ms->lock);
+	mutex_lock(&ms->journal_lock);
+	error = journal_checkpoint_locked(mountp);
+	mutex_unlock(&ms->journal_lock);
+
+	/* A failed check point ends the sync. */
+	if (error != 0) {
+		mutex_unlock(&ms->lock);
+		return error;
+	}
+
+	/* A batched journal out of service has nothing to close. */
+	if (!ms->j3.active) {
+		mutex_unlock(&ms->lock);
+		return 0;
+	}
+
+	/* Closes the running transaction, unless a commit is being written. */
+	mutex_lock(&ms->j3.lock);
+	if (ms->j3.closing)
+		*busy = 1;
+	else
+		error = j3_close_transaction(ms, mountp, closed);
+	mutex_unlock(&ms->j3.lock);
+	mutex_unlock(&ms->lock);
+
+	/* Reports why the transaction could not be closed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transaction is closed, or a commit under way is reported. */
 	return 0;
 }
 
@@ -18794,10 +18887,10 @@ j3_range_add(
 		j3->logged_sectors += count;
 }
 
-/* Asks whether a block was freed by the running transaction. */
+/* Asks whether a block is in a set of blocks a transaction freed. */
 static int
 j3_freed_test(
-	const struct ufs_j3 *j3,
+	const uint64_t *set,
 	uint64_t fragment)
 {
 	unsigned slot;
@@ -18807,16 +18900,16 @@ j3_freed_test(
 	 * each block plus one, so that zero marks an empty slot.
 	 */
 	slot = j3_hash(fragment, J3_FREED_MAX);
-	while (j3->freed[slot] != 0) {
+	while (set[slot] != 0) {
 		/* The block is in the set. */
-		if (j3->freed[slot] == fragment + 1U)
+		if (set[slot] == fragment + 1U)
 			return 1;
 
 		/* Probes the next slot. */
 		slot = (slot + 1U) & (J3_FREED_MAX - 1U);
 	}
 
-	/* The block was not freed by the running transaction. */
+	/* The block is not in the set. */
 	return 0;
 }
 
@@ -18847,7 +18940,7 @@ j3_freed_add(
 	 */
 	known = 1;
 	if (j3->active && j3->freed_count < J3_FREED_MAX / 2U)
-		known = j3_freed_test(j3, fragment);
+		known = j3_freed_test(j3->freed, fragment);
 
 	/* Stores a block not yet in the set. */
 	if (!known) {
@@ -18882,13 +18975,60 @@ j3_content_freed(
 	for (block = fragment - fragment % ms->super.frag;
 	     block <= last;
 	     block += ms->super.frag) {
-		/* Content in a freed block waits for the commit. */
-		freed = j3_freed_test(&ms->j3, block);
+		/* Content in a block the running transaction freed waits for its commit. */
+		freed = 0;
+		if (ms->j3.freed_count != 0)
+			freed = j3_freed_test(ms->j3.freed, block);
+		if (freed)
+			return 1;
+
+		/*
+		 * So does content in a block the closed transaction freed, until
+		 * that commit is durable (ws073-p051).
+		 */
+		if (ms->j3.closed_freed_count != 0)
+			freed = j3_freed_test(ms->j3.closed_freed, block);
 		if (freed)
 			return 1;
 	}
 
 	/* No block of the range was freed. */
+	return 0;
+}
+
+/* Asks whether the running transaction has room for a write of count sectors. */
+static int
+j3_room(
+	const struct ufs_j3 *j3,
+	uint32_t count,
+	int hold)
+{
+	/* The descriptor lists no more ranges. */
+	if (j3->range_count >= j3->ranges_max)
+		return 0;
+
+	/* The slot's payload holds no more sectors; a held range is only pinned. */
+	if (!hold && j3->logged_sectors + count > j3->payload_max)
+		return 0;
+
+	/* There is room. */
+	return 1;
+}
+
+/* Asks whether a commit is still to be done: a transaction that runs, or a seal that failed. */
+static int
+j3_commit_pending(
+	const struct ufs_j3 *j3)
+{
+	/* A commit whose sealing failed waits to be sealed again. */
+	if (j3->closed_descriptor != NULL)
+		return 1;
+
+	/* A running transaction with ranges waits for its commit. */
+	if (j3->range_count != 0)
+		return 1;
+
+	/* Nothing is to be committed. */
 	return 0;
 }
 
@@ -18913,6 +19053,8 @@ j3_write(
 	struct ufs_j3 *j3;
 	uint64_t bytes;
 	int hold;
+	int room;
+	int pending;
 	int error;
 
 	/* Takes the write under the journal lock. */
@@ -18920,9 +19062,9 @@ j3_write(
 	bytes = (uint64_t)count * mountp->m_disk->d_block_size;
 	mutex_lock(&j3->lock);
 
-	/* Holds content that lands in a block the running transaction freed. */
+	/* Holds content that lands in a block the running or the closed transaction freed. */
 	hold = 0;
-	if (content && j3->freed_count != 0)
+	if (content && (j3->freed_count != 0 || j3->closed_freed_count != 0))
 		hold = j3_content_freed(ms, lba, count);
 
 	/* Writes other content as an ordinary delayed write, outside the journal. */
@@ -18943,14 +19085,19 @@ j3_write(
 		return 0;
 	}
 
-	/* Commits first when the transaction has no room for the write. */
+	/*
+	 * Commits first, in place, while the transaction has no room for the
+	 * write: a seal that failed earlier, then the running transaction
+	 * (ws073-p051).  The caller is in the middle of a change and holds
+	 * the mount lock, so this rare commit waits for its flushes here.
+	 */
 	error = 0;
-	if (j3->range_count >= j3->ranges_max) {
-		/* The descriptor lists no more ranges. */
-		error = j3_commit_locked(ms, mountp);
-	} else if (!hold && j3->logged_sectors + count > j3->payload_max) {
-		/* The slot's payload holds no more sectors. */
-		error = j3_commit_locked(ms, mountp);
+	room = j3_room(j3, count, hold);
+	pending = j3_commit_pending(j3);
+	while (!room && pending && error == 0) {
+		error = j3_commit_now(ms, mountp);
+		room = j3_room(j3, count, hold);
+		pending = j3_commit_pending(j3);
 	}
 
 	/* Reports why the transaction could not make room. */
@@ -18959,8 +19106,12 @@ j3_write(
 		return error;
 	}
 
-	/* Pins the sectors in the cache, where they wait for the commit. */
-	error = buf_write_pinned(mountp->m_disk, lba, count, buffer);
+	/*
+	 * Pins the sectors in the cache under the running transaction's
+	 * sequence, where they wait for its commit; a line a commit being
+	 * written still holds now waits for this one instead.
+	 */
+	error = buf_write_pinned(mountp->m_disk, lba, count, buffer, j3->sequence);
 	if (error != 0) {
 		mutex_unlock(&j3->lock);
 		return error;
@@ -19214,16 +19365,18 @@ j3_commit_payload(
 }
 
 /*
- * Seals the running transaction: writes the descriptor at the head of its
- * slot, makes the slot durable, then writes and makes durable the commit
- * record in the slot's last sector.  From then on replay applies it.
+ * Seals the closed transaction of the given sequence: writes the descriptor
+ * at the head of its slot, makes the slot durable, then writes and makes
+ * durable the commit record in the slot's last sector.  From then on replay
+ * applies it.
  */
 static int
 j3_commit_seal(
 	struct mount *mountp,
 	struct ufs_j3 *j3,
 	uint8_t *descriptor,
-	uint32_t desc_sectors)
+	uint32_t desc_sectors,
+	uint64_t sequence)
 {
 	uint8_t commit[SECTOR_SIZE];
 	uint64_t base;
@@ -19232,7 +19385,7 @@ j3_commit_seal(
 	int error;
 
 	/* Writes the descriptor at the head of the slot the sequence picks. */
-	base = j3->header_sectors + (j3->sequence & 1U) * j3->slot_sectors;
+	base = j3->header_sectors + (sequence & 1U) * j3->slot_sectors;
 	error = j3_io(mountp, j3, base, desc_sectors, descriptor, 1);
 	if (error != 0)
 		return error;
@@ -19251,7 +19404,7 @@ j3_commit_seal(
 	kern_memset(commit, 0, sizeof(commit));
 	put32(commit, J3_COMMIT_MAGIC);
 	put32(commit + 4, J3_VERSION);
-	put64(commit + 8, j3->sequence);
+	put64(commit + 8, sequence);
 	put64(commit + 16, j3->nonce);
 	put32(commit + 24, desc_sum);
 	put32(commit + 28, desc_sectors);
@@ -19272,46 +19425,64 @@ j3_commit_seal(
 	return 0;
 }
 
-/* Releases the pins of every range of the running transaction. */
+/* Releases the pins a transaction of the given sequence set on its ranges. */
 static void
-j3_unpin_all(
+j3_unpin_ranges(
 	struct mount *mountp,
-	struct ufs_j3 *j3)
+	const struct ufs_j3_range *ranges,
+	unsigned count,
+	uint64_t pin)
 {
 	unsigned n;
 
-	/* Lets the flusher write each range home from here on. */
-	for (n = 0; n < j3->range_count; n++)
-		(void)buf_unpin(mountp->m_disk, j3->ranges[n].lba, j3->ranges[n].count);
+	/*
+	 * Lets the flusher write each range home from here on; a line a later
+	 * transaction pinned again stays with that transaction.
+	 */
+	for (n = 0; n < count; n++)
+		(void)buf_unpin(mountp->m_disk, ranges[n].lba, ranges[n].count, pin);
 }
 
 /*
- * Commits the running transaction; the caller holds the journal lock.
+ * Closes the running transaction (ws073-p051): copies its logged ranges
+ * into their slot, lists them in a descriptor, and moves the transaction
+ * aside as the closed one for j3_finish_commit() to seal, while a new
+ * empty transaction starts running.  Only memory and the cache are
+ * touched, so the caller holds the mount lock and the journal lock only
+ * briefly.  No commit may be being written (closing is zero).  *closed
+ * reports whether there is something for j3_finish_commit() to write: the
+ * transaction closed now, or an earlier one whose sealing failed and is to
+ * be tried again.
  */
 static int
-j3_commit_locked(
+j3_close_transaction(
 	struct ufs_mount_state *ms,
-	struct mount *mountp)
+	struct mount *mountp,
+	int *closed)
 {
 	struct ufs_j3 *j3;
+	struct ufs_j3_range *ranges;
+	uint64_t *freed;
 	uint8_t *descriptor;
 	size_t bytes;
 	uint32_t logged;
 	uint32_t desc_sectors;
 	int error;
 
-	/* A transaction with nothing in it has nothing to commit. */
+	/* A commit whose sealing failed is sealed again before anything new is closed. */
 	j3 = &ms->j3;
+	*closed = 0;
+	if (j3->closed_descriptor != NULL) {
+		j3->closing = 1;
+		*closed = 1;
+
+		/* Succeeded: the earlier commit is to be sealed again. */
+		return 0;
+	}
+
+	/* A transaction with nothing in it has nothing to commit. */
 	if (j3->range_count == 0)
 		return 0;
-
-	/*
-	 * Writes what is not pinned -- content and earlier homes -- so that
-	 * it reaches the device before this commit does.
-	 */
-	error = buf_sync(mountp->m_disk);
-	if (error != 0)
-		return error;
 
 	/* Sizes the descriptor, in whole sectors, for the ranges the commit logs. */
 	logged = j3_logged_ranges(j3);
@@ -19326,65 +19497,199 @@ j3_commit_locked(
 	/* Starts it empty, so that the sectors past its last range are zero. */
 	kern_memset(descriptor, 0, bytes);
 
-	/* Copies the logged ranges into the slot and lists them. */
+	/*
+	 * Copies the logged ranges into the slot and lists them.  A copy that
+	 * did not complete leaves the volume unwritable, with the transaction
+	 * still running and pinned.
+	 */
 	error = j3_commit_payload(mountp, j3, descriptor, desc_sectors);
-
-	/* Seals the slot once the payload is in it. */
-	if (error == 0)
-		error = j3_commit_seal(mountp, j3, descriptor, desc_sectors);
-
-	/* Gives the descriptor back, sealed or not. */
-	kern_free(descriptor);
-
-	/* A commit that did not complete leaves the volume unwritable. */
 	if (error != 0) {
+		kern_free(descriptor);
 		ms->writable = 0;
 		return error;
 	}
 
-	/* Lets the committed sectors go home. */
-	j3_unpin_all(mountp, j3);
+	/*
+	 * Moves the transaction aside as the closed one: its ranges, which
+	 * stay pinned under its sequence, its freed blocks, which keep content
+	 * out of their old owners' blocks until the commit is durable, and its
+	 * descriptor.  The arrays change places with the closed side's, which
+	 * the last finish left empty.
+	 */
+	ranges = j3->closed_ranges;
+	j3->closed_ranges = j3->ranges;
+	j3->ranges = ranges;
+	j3->closed_count = j3->range_count;
+	freed = j3->closed_freed;
+	j3->closed_freed = j3->freed;
+	j3->freed = freed;
+	j3->closed_freed_count = j3->freed_count;
+	j3->closed_sequence = j3->sequence;
+	j3->closed_descriptor = descriptor;
+	j3->closed_desc_sectors = desc_sectors;
 
-	/* Empties the ranges and their index for the next transaction. */
+	/* Starts the next transaction empty, under the next sequence and so in the other slot. */
 	j3->range_count = 0;
 	j3->logged_sectors = 0;
 	kern_memset(j3->index, 0, sizeof(unsigned) * 2U * j3->ranges_max);
-
-	/* Forgets the freed blocks, whose frees are now committed. */
-	if (j3->freed_count != 0) {
-		kern_memset(j3->freed, 0, sizeof(uint64_t) * J3_FREED_MAX);
-		j3->freed_count = 0;
-	}
-
-	/* The next transaction takes the next sequence, and so the other slot. */
+	j3->freed_count = 0;
 	j3->sequence++;
 
-	/* Succeeded: the transaction is committed. */
+	/*
+	 * closing marks a commit between its close and the end of its writes:
+	 * the closed side is the finisher's, and the next close waits for it.
+	 */
+	j3->closing = 1;
+	*closed = 1;
+
+	/* Succeeded: the transaction is closed and awaits its seal. */
 	return 0;
 }
 
-/* Commits the running transaction under the journal lock. */
+/*
+ * Seals the closed transaction and lets its sectors go home (ws073-p051).
+ * Runs with neither the mount lock nor the journal lock, so that the
+ * device's flushes hold up no lookup or change of the volume; the closed
+ * side is this caller's alone while closing is set.
+ */
 static int
-j3_commit(
+j3_finish_commit(
 	struct ufs_mount_state *ms,
 	struct mount *mountp)
 {
+	struct ufs_j3 *j3;
+	unsigned n;
+	int home_error;
 	int error;
 
-	/* Commits the running transaction while the journal is in service. */
-	mutex_lock(&ms->j3.lock);
+	/*
+	 * Writes the descriptor and the commit record into the closed
+	 * transaction's slot, each made durable, in that order.
+	 */
+	j3 = &ms->j3;
+	error = j3_commit_seal(mountp, j3, j3->closed_descriptor, j3->closed_desc_sectors, j3->closed_sequence);
 
-	error = 0;
-	if (ms->j3.active)
-		error = j3_commit_locked(ms, mountp);
+	/* Lets the committed sectors go home, now that replay would write them too. */
+	home_error = 0;
+	if (error == 0) {
+		j3_unpin_ranges(mountp, j3->closed_ranges, j3->closed_count, j3->closed_sequence);
 
-	mutex_unlock(&ms->j3.lock);
+		/*
+		 * Writes the homes now, before the next transaction closes: a
+		 * later transaction that pins one of these lines again keeps the
+		 * next commit's buf_sync from writing it, while that commit's
+		 * payload need not carry this transaction's content for the
+		 * line.
+		 */
+		for (n = 0; n < j3->closed_count; n++) {
+			if (home_error == 0)
+				home_error = buf_writeback_range(mountp->m_disk, j3->closed_ranges[n].lba, j3->closed_ranges[n].count);
+		}
+	}
+
+	/* Ends the commit under the journal lock. */
+	mutex_lock(&j3->lock);
+
+	/*
+	 * A commit that did not complete leaves the volume unwritable; the
+	 * closed transaction stays pinned, to be sealed again by the next
+	 * commit or let go when the journal goes out of service.
+	 */
+	if (error != 0) {
+		ms->writable = 0;
+	} else {
+		/* Empties the closed side for the next close. */
+		j3->closed_count = 0;
+		if (j3->closed_freed_count != 0) {
+			kern_memset(j3->closed_freed, 0, sizeof(uint64_t) * J3_FREED_MAX);
+			j3->closed_freed_count = 0;
+		}
+
+		/* Gives the sealed descriptor back. */
+		kern_free(j3->closed_descriptor);
+		j3->closed_descriptor = NULL;
+		j3->closed_desc_sectors = 0;
+	}
+
+	/*
+	 * A home that could not be written leaves the volume unwritable too:
+	 * the commit is durable and the next mount's replay writes the home,
+	 * but no later transaction may be built on the line meanwhile.
+	 */
+	if (home_error != 0)
+		ms->writable = 0;
+
+	/* The commit is over, sealed or not; a close waiting for it may go on. */
+	j3->closing = 0;
+	waitq_wake_all(&j3->commit_idle);
+	mutex_unlock(&j3->lock);
+
+	/* Reports why the seal failed. */
+	if (error != 0)
+		return error;
+
+	/* Reports why a home could not be written. */
+	if (home_error != 0)
+		return home_error;
+
+	/* Succeeded: the transaction is committed and its homes are on their way. */
+	return 0;
+}
+
+/* Waits, with the journal lock yielded meanwhile, until no commit is being written. */
+static void
+j3_commit_wait(
+	struct ufs_j3 *j3)
+{
+	uint64_t sequence;
+
+	/* Sleeps until the finish of the commit under way wakes the waiters. */
+	while (j3->closing) {
+		sequence = waitq_sequence(&j3->commit_idle);
+		(void)mutex_wait(&j3->lock, &j3->commit_idle, sequence, 0, 0);
+	}
+}
+
+/*
+ * Commits in place (ws073-p051): waits out a commit being written, closes
+ * the running transaction and seals it before returning, with the journal
+ * lock let go for the writes.  For the callers that cannot go on before the
+ * commit is durable: a change whose transaction has no room left, and the
+ * journal going out of service.  The caller holds the journal lock, and the
+ * mount lock when the volume may be changing.
+ */
+static int
+j3_commit_now(
+	struct ufs_mount_state *ms,
+	struct mount *mountp)
+{
+	struct ufs_j3 *j3;
+	int closed;
+	int error;
+
+	/* Waits for a commit another thread is writing. */
+	j3 = &ms->j3;
+	j3_commit_wait(j3);
+
+	/* Closes the running transaction, or takes up a seal that failed. */
+	error = j3_close_transaction(ms, mountp, &closed);
+	if (error != 0)
+		return error;
+
+	/* Nothing closed means nothing to seal. */
+	if (!closed)
+		return 0;
+
+	/* Seals it with the journal lock let go, as every finish runs. */
+	mutex_unlock(&j3->lock);
+	error = j3_finish_commit(ms, mountp);
+	mutex_lock(&j3->lock);
 
 	/* Reports why the commit failed. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: what ran is committed. */
+	/* Succeeded: the transaction is committed. */
 	return 0;
 }
 
@@ -19397,33 +19702,40 @@ j3_hook(
 	void *argument)
 {
 	struct ufs_mount_state *ms;
+	struct mount *mountp;
+	int closed;
 
-	/*
-	 * Takes the locks a metadata operation holds, lowest first, so that no
-	 * operation is half done when the commit runs.
-	 */
+	/* The mount the hook was registered for; none once the journal is going out of service. */
 	ms = argument;
-
-	/*
-	 * Writes the content the commit would first write, before the locks,
-	 * so that the commit holds them for less (ws073-p045).
-	 */
-	if (ms->j3.mountp != NULL)
-		(void)buf_sync(ms->j3.mountp->m_disk);
+	mountp = ms->j3.mountp;
+	if (mountp == NULL)
+		return;
 
 	/*
 	 * Shares the namespace (no change is half done while it is shared, and
-	 * lookups go on meanwhile, ws073-p045), then takes the mount lock.
+	 * lookups go on meanwhile, ws073-p045), then takes the mount lock and
+	 * the journal lock, lowest first, so that no operation is half done
+	 * when the transaction closes.
 	 */
 	namespace_share(ms);
 	mutex_lock(&ms->lock);
+	mutex_lock(&ms->j3.lock);
 
-	/* Commits for the mount the hook was registered for. */
-	if (ms->j3.mountp != NULL)
-		(void)j3_commit(ms, ms->j3.mountp);
-
+	/*
+	 * Closes the running transaction, unless a commit is still being
+	 * written: then this interval's commit waits for the next interval
+	 * rather than holding the locks for the flushes (ws073-p051).
+	 */
+	closed = 0;
+	if (!ms->j3.closing)
+		(void)j3_close_transaction(ms, mountp, &closed);
+	mutex_unlock(&ms->j3.lock);
 	mutex_unlock(&ms->lock);
 	namespace_unshare(ms);
+
+	/* Seals the closed transaction with the locks let go, so that its flushes hold up no lookup or change. */
+	if (closed)
+		(void)j3_finish_commit(ms, mountp);
 }
 
 /* Reads the superblock sector that holds the locator and the request. */
@@ -20556,12 +20868,32 @@ j3_open(
 		return ENOMEM;
 	}
 
-	/* Starts an empty transaction. */
+	/* Takes the table the closed transaction's ranges change places into (ws073-p051). */
+	j3->closed_ranges = kern_malloc(sizeof(struct ufs_j3_range) * j3->ranges_max);
+	if (j3->closed_ranges == NULL) {
+		(void)j3_close(mountp, ms, 0);
+		return ENOMEM;
+	}
+
+	/* Takes the set the closed transaction's freed blocks change places into. */
+	j3->closed_freed = kern_malloc(sizeof(uint64_t) * J3_FREED_MAX);
+	if (j3->closed_freed == NULL) {
+		(void)j3_close(mountp, ms, 0);
+		return ENOMEM;
+	}
+
+	/* Starts an empty transaction, with no commit closed or being written. */
 	kern_memset(j3->index, 0, sizeof(unsigned) * 2U * j3->ranges_max);
 	kern_memset(j3->freed, 0, sizeof(uint64_t) * J3_FREED_MAX);
+	kern_memset(j3->closed_freed, 0, sizeof(uint64_t) * J3_FREED_MAX);
 	j3->range_count = 0;
 	j3->logged_sectors = 0;
 	j3->freed_count = 0;
+	j3->closed_count = 0;
+	j3->closed_freed_count = 0;
+	j3->closed_descriptor = NULL;
+	j3->closed_desc_sectors = 0;
+	j3->closing = 0;
 
 	/*
 	 * Carries the metadata writes from here on, and commits them on the
@@ -20590,6 +20922,7 @@ j3_close(
 	int commit)
 {
 	struct ufs_j3 *j3;
+	int pending;
 	int error;
 
 	/* Stops the interval commits before taking the journal down. */
@@ -20599,17 +20932,28 @@ j3_close(
 
 	/*
 	 * Ends the running transaction -- committed when asked, else its
-	 * pinned sectors let go unlogged -- and carries no more writes.
+	 * pinned sectors let go unlogged -- and carries no more writes.  A
+	 * commit a sync is still writing is waited out first (ws073-p051).
 	 */
 	mutex_lock(&j3->lock);
 
+	/* Waits out a commit a sync is still writing. */
+	j3_commit_wait(j3);
+
+	/* Commits what is pending when asked, else lets the pinned sectors go unlogged. */
 	error = 0;
 	if (commit &&
 	    j3->active &&
 	    j3->ranges != NULL) {
-		error = j3_commit_locked(ms, mountp);
+		/* Seals a commit whose sealing failed, then commits what runs. */
+		pending = j3_commit_pending(j3);
+		while (pending && error == 0) {
+			error = j3_commit_now(ms, mountp);
+			pending = j3_commit_pending(j3);
+		}
 	} else if (!commit && j3->ranges != NULL) {
-		j3_unpin_all(mountp, j3);
+		j3_unpin_ranges(mountp, j3->ranges, j3->range_count, j3->sequence);
+		j3_unpin_ranges(mountp, j3->closed_ranges, j3->closed_count, j3->closed_sequence);
 	}
 
 	/* Carries no more writes. */
@@ -20631,16 +20975,25 @@ j3_close(
 			error = j3_durable(mountp);
 	}
 
-	/* Gives back the memory of the running transaction. */
+	/* Gives back the memory of the running and the closed transaction. */
 	kern_free(j3->ranges);
 	kern_free(j3->index);
 	kern_free(j3->freed);
 	kern_free(j3->staging);
+	kern_free(j3->closed_ranges);
+	kern_free(j3->closed_freed);
+	kern_free(j3->closed_descriptor);
 	j3->ranges = NULL;
 	j3->index = NULL;
 	j3->freed = NULL;
 	j3->staging = NULL;
+	j3->closed_ranges = NULL;
+	j3->closed_freed = NULL;
+	j3->closed_descriptor = NULL;
 	j3->range_count = 0;
+	j3->closed_count = 0;
+	j3->closed_freed_count = 0;
+	j3->closed_desc_sectors = 0;
 
 	/* Reports why the last commit failed. */
 	if (error != 0)
