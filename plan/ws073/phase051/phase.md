@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p051 -->
 # ws073-p051: BUG-135 — UFS の journal の commit の flush を mount の lock の外へ出し、stat の秒単位の停止の残りを直す
 
-Status: in-progress（q653-i01、P9 generation1 → 2026-10-04 再開 P2 generation8。実装 e5631f9 → c79e089。i386・arm64 の build、window の crash の試験（道具を直して 3 PASS・1 判定外）、hold の range の読みと案を記録。hold の扱いの決めと統合・判定は Q1。T1・T2 の試験は user の指示で除外）
+Status: in-progress（q653-i01、P9 generation1 → 2026-10-04 再開 P2 generation8。実装 e5631f9 → c79e089 → hold の range の直し 89ae1fa（案 3、Q1 の決定）。amd64・pcat・rpi4 の build warning 0、P2 の QEMU で crash-test 9・window・fsprobe の churn が PASS。統合・判定は Q1。T1・T2 の試験は user の指示で除外）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-135](../../bugs/BUG-135.md)
@@ -254,3 +254,61 @@ unpin して `buf_writeback_range` が line を whole で書くまで、R は ca
 - e5631f9 の kernel との window の比較、(b) fsprobe の churn、BUG-143・BUG-147・sshd の症状での確認、i386・arm64 の実行、受け入れの
   QEMU の試験（user の指示で T に依頼しない）、実機。
 - 使い捨て: `build/p2-b135`（DWARF の image）、`build/p2-b135-run`。worktree の build で、消してよい。
+
+## hold の range の直し（案 3、2026-10-04、P2 generation8。Q1 の決定「案 3 で直して」、技術の選択として委任の範囲）
+
+### 実装（`src/drivers/fs/ufs.c`、89ae1fa）
+
+- `struct ufs_j3` に `home_owed`（journal の lock の下）。finish が hold の range を、後の transaction が line を pin し直していた
+  （`buf_unpin` の kept != 0）ために書かなかったら 1 にする。どの range の line も後の transaction に残らない（kept が全て 0）finish で 0 に戻す。
+  0 に戻せる理由: owed の line を pin し直した transaction はその line に自分の range を持つので、その finish の kept が 0 なら
+  `buf_writeback_range` が line を whole で書いている（owed の hold の sector を含む）。kept が残る finish では owed のまま（保守的）。
+- Q1 の案は「`j3_finish_commit` が数を返す」だったが、状態に置く形にした。理由: flusher の `j3_hook` の finish と `j3_write` の
+  `j3_commit_now` の finish が、fsync の知らない所で hold を飛ばしうる。fsync が自分の finish の戻り値だけを見ると、それを見落とす。
+- `ufs_sync` は 1 回の commit（新しい `ufs_sync_commit`: 従来の close の loop（commit 中なら lock を離して待つ）＋ finish）の後、
+  `home_owed` が 1 の間だけ commit をあと最大 `UFS_SYNC_OWED_ROUNDS`（2）回繰り返し、それから `disk_sync` する。owed でない普段の
+  fsync の手順と flush の回数は変わらない（BUG-135 の lock の外の flush もそのまま）。
+
+### fsync の保証（この直しの後）
+
+`fsync`（`ufs_file_sync` → `ufs_sync`）が 0 を返した後の電源断で:
+
+- その時までに閉じた transaction（fsync 自身が閉じた X を含む）の metadata は durable（従来どおり。commit record が durable）。
+- X までの hold の content（X か前の transaction が解放した block への content）も、後の transaction がその line を pin し直していても、
+  owed の追加の commit（最大 2 回）でその line の次の持ち主が commit して line を whole で書き、`disk_sync` の flush で durable になる。
+- 例外（記録）: 追加の 2 回の間にも毎回新しい transaction が同じ line を pin し直し続けると、上限で諦め、その hold の content は
+  次の commit まで cache にしか無い（直す前と同じ窓。fragment を共有する line への 1 秒あたり 3 回以上の連続した再 pin が要る）。
+- 対象の外（下の bug の案）: hold でない普通の content の line が pin し直された場合。
+
+### 確かめ
+
+- kernel の build（`make -s ZEDBSD_CONFIG=config/ci/config-<p>.mk BUILD=build/p2-<p> build/p2-<p>/vmunix`）: amd64・pcat・rpi4 とも
+  exit 0、warning 0、error 0。
+- style: `plan/tools/style-check.py` と P2 の補助の checker で、HEAD の ufs.c と比べて新しい指摘 0。
+- DWARF の SSH の image（`build/p2-b135`、上と同じ作り方、89ae1fa の kernel）で P2 の QEMU 1 つ（T には依頼していない、user の指示）:
+  - `bash plan/tools/ufs/crash-test.sh build/p2-b135/hdd-image.img 9`: HOLDS 3182 = PREFIX 3182、`UFS OK`（PASS）。
+  - `sh plan/ws073/tests/p051-window.sh build/p2-b135/hdd-image.img build/p2-b135/vmunix build/p2-b135/window1`: `$1 = "/jour"`、
+    seal は sequence 5、HOLDS 3065 = PREFIX 3065、volume・root `UFS OK`（PASS）。
+  - fsprobe の churn（`CHURN=1 LOAD_JOBS=2 RUN_SECONDS=45 sh plan/ws073/tests/p051-experiment.sh … build/p2-b135/fsprobe`、
+    fsprobe は `fsprobe-build.sh` で build）: **stat 4500 回、最長 4 ms、100 ms 超 0、1 秒超 0**。nap 最長 11 ms。fsync の書き手は
+    190 回まで（打ち切り、設計どおり）、100 ms 超の 139 回のうち 1 秒超 23 回（host の dd の負荷の下の device の flush。fsync 自身の
+    遅さは BUG-135 の対象外で、直す前の fsync の数は記録に無いので比較していない）。
+- owed の追加の commit が実際に走った回数は観測していない（数える log を足していない）。hold の再 pin の窓を電源断で突く試験は無い
+  （QEMU の kill は host の page cache の write を失わず、窓が cache にだけある content を突けない）。
+
+## 別の bug の ticket の案（Q1 が Bug にする。p045 以降の普通の content の再 pin の窓）
+
+- 題: UFS の fsync が返った後、普通の content が durable でないことがある（line を journal の後の transaction が pin し直したとき）。
+- 期待: `fsync(fd)` が 0 を返したら、その file の content は電源断の後も残る。
+- 観測（code の読みだけ、再現は未）: content は journal の外の delayed write で、`ufs_sync` の最後の `disk_sync` → `buf_sync` が書く。
+  `buf_sync` は pinned な line を飛ばす。p045（`disk_sync` を lock の外へ）以降、fsync の close と `disk_sync` の間に別の thread の変更が
+  running の transaction でその 4 KiB line を pin する（同じ line の fragment に metadata（directory の block・indirect・inode の block）か
+  hold がある）と、fsync の content は次の commit（~1 秒）まで cache にしか無い。
+- 影響: fragment（1 KiB）を共有する line（小さい file の末尾と小さい directory）。窓は ~1 秒、電源断がそこに当たる必要がある。
+  metadata の整合は保たれる（content だけが古い/0）。
+- 発見: ws073-p051（BUG-135）の hold の range の読み（2026-10-04、P2）。p045 の記録の「fsync の最後の disk_sync を lock の外へ」と関係。
+- 直し方の候補: (1) fsync が file の dirty な line を知って（inode の範囲を `buf_sync` に渡す）、pinned なら次の commit を待つ。
+  (2) content の line を metadata の line と共有しないよう割り当てる（format・allocator の変更、大きい）。(3) `buf_sync` が pinned な
+  line の中の pin されていない sector を direct に書く（sector の単位の dirty の管理が要る）。
+- 再現の案: fragment の割り当ての所で小さい file の追記＋fsync と、同じ line の directory の変更を並べ、fsync の直後に gdbstub で
+  止めて `buf` の line の dirty と pin を読む（kill では窓を突けない）。
