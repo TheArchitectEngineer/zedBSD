@@ -2,8 +2,10 @@
 # ws035-p095: the graphical login from end to end on the Venus guest of the login image
 # (plan/ws035/tests/build-login-image.sh): sessiond --graphical starts zdesktop --greeter as _greeter at the
 # display's preferred size.  Users alice (uid 1001, "secret word") and bob (uid 1002) are made (zdesktop-p094.sh
-# makes alice; this makes both).
-#  1. greeter.png: the login screen: the time and date, the card with both users, alice selected.
+# makes alice; this makes both).  ws136-p002: since 2026-09-29 the image has kei (uid 1000) in its base passwd and
+# sessiond logs kei in at boot (/etc/keiland/autologin); the run empties the autologin file (restored at the end), so
+# the sessiond it starts brings the greeter, which offers kei, alice and bob in passwd's order.
+#  1. greeter.png: the login screen: the time and date, the card with the three users, Down selects alice.
 #  2. wrong.png: a wrong password: "Wrong password" (SESSIOND AUTH fail).
 #  3. The right password (typed with Shift for nothing, a space in it): the greeter ends, the session runs as alice
 #     (zdesktop --session, pid owned by alice, its socket in /run/user/1001), session.png.
@@ -56,7 +58,8 @@ for u in alice:1001:Alice bob:1002:Bob; do n=\${u%%:*}; rest=\${u#*:}; id=\${res
  grep -q \"^\$n:\" /etc/group || echo \"\$n:x:\$id:\" >> /etc/group
  mkdir -p /home/\$n; chown \$id:\$id /home/\$n; done
 grep -v -e '^alice:' -e '^bob:' /etc/shadow > /tmp/shadow.new; echo 'alice:$hash:0:0:99999:7:::' >> /tmp/shadow.new; echo 'bob:$hash_bob:0:0:99999:7:::' >> /tmp/shadow.new; cat /tmp/shadow.new > /etc/shadow; rm -f /tmp/shadow.new
-rm -f /var/log/sessiond.log /var/log/greeter.log" >/dev/null
+rm -f /var/log/sessiond.log /var/log/greeter.log
+[ -f /tmp/p095-autologin.saved ] || cp /etc/keiland/autologin /tmp/p095-autologin.saved; : > /etc/keiland/autologin" >/dev/null
 
 # 0. The GPU admits root and the device's owner (gpu_open): alice owns it 0600, bob is refused by the mode; with
 #    0666 bob is still refused by the GPU (logged); owned by root again, alice is refused as before.
@@ -78,13 +81,15 @@ expect_run 'chmod 0666 /dev/gpu0; ls -l /dev/gpu0' '^crw-rw-rw- .* root '
 
 # 1. The login screen.
 guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
-expect_log /var/log/greeter.log 'ZWL GREETER open users=2 selected=alice' 20
+expect_log /var/log/greeter.log 'ZWL GREETER open users=3 selected=kei' 20
 expect_log /var/log/greeter.log 'ZWL OUTPUT open' 20
 set -- $(guest "grep 'ZWL OUTPUT open' /var/log/greeter.log | tail -1" | sed -n 's/.*width=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p')
 width=${1:-1280}; height=${2:-800}
 echo "output ${width}x$height"
 sleep 3
 pointer move $((width - 4)) $((height / 3)) sleep 400
+keys '<down>'
+expect_log /var/log/greeter.log 'ZWL GREETER select user=alice' 10
 check "$out/greeter.png" >/dev/null
 
 # 2. A wrong password.
@@ -130,6 +135,7 @@ pointer move $((width - 4)) $((height / 3)) sleep 400
 check "$out/again.png" >/dev/null
 guest "$stop_all" >/dev/null
 guest "cat /var/log/sessiond.log; cat /var/log/greeter.log" > "$out/logs.txt"
+guest "[ -f /tmp/p095-autologin.saved ] && cat /tmp/p095-autologin.saved > /etc/keiland/autologin && rm -f /tmp/p095-autologin.saved" >/dev/null
 
 echo "zdesktop-p095: status=$status"
 exit $status
