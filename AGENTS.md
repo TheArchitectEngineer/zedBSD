@@ -680,6 +680,10 @@ primary docs for operational syntax:
   - T1 に依頼した担当は結果を待たず、Q1 が投入した別の WS の作業へ移ってよい（2026-10-03 ユーザー「待つのではなくて、別な作業をしてスループットを上げます。」）。依頼した Phase は T1 の結果を Q1 が判定するまで cleared にしない。
   - 負荷試験・耐久試験は別枠。ユーザーに確かめてから夜間に流す。
   - T1 の運用は [protocol](plan/agents/protocol.md) の「試験の担当 T1」。
+- **試験の image の作り方（2026-10-04 ユーザー）**: 「試験ビルドの標準的な方法は、config.mkでのビルド＋個別ファイルコピー、程度にして、過去のbuild/を参照するのはやめましょう。config.mkと個別ファイルをwsのtests/に入れればいいだけです。」
+  - 試験の image は、その WS の `plan/wsNNN/tests/` に置いた config.mk での build と、個別の file の複写（`--file 宛先=元`）だけで作る。複写の元は tree の中（その WS の `tests/`、または `userland/` などの source）に置く。
+  - 過去の build の成果（`build/ws035-fonts`・`build/ws035-wallpaper`・`build/ws071-fonts` など、別の試験が作った物）を image の入力にしない。特殊な build の手順を増やさない。
+  - host 側の QEMU の道具（Venus の renderer など）は image の入力ではないので別（入手の手順は script の注記と Master の「リポジトリの作り直し」）。
 - 回帰試験では GPU を使わず、framebuffer で login prompt だけを確かめる。GPU の確認は GPU を扱う WS の Phase で行う。
 - QEMU の証拠と実機の証拠を分けて書く。やっていない確認は「未実施」と書く。
 
