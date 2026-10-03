@@ -32,6 +32,16 @@
 #define MENU_FILE_LINE		11U
 #define MENU_CLOSE		12U
 #define MENU_QUIT		13U
+#define MENU_OPEN_WITH		14U
+#define MENU_TRASH		15U
+#define MENU_TRASH_LINE		16U
+
+/*
+ * The items of File > Open With (ws128-p005): one slot for each
+ * application, the first's ID and each further one's the next, labelled
+ * and shown for the image shown.
+ */
+#define MENU_OPENER_FIRST	60U
 
 /* The items of View. */
 #define MENU_FIT		20U
@@ -44,6 +54,7 @@
 #define MENU_TURN_LINE		27U
 #define MENU_PLAY		28U
 #define MENU_FULLSCREEN		29U
+#define MENU_SLIDESHOW		35U
 
 /* The items of Go. */
 #define MENU_PREVIOUS		30U
@@ -63,6 +74,8 @@
 #define CONTEXT_FULLSCREEN	54U
 #define CONTEXT_LINE		55U
 #define CONTEXT_OPEN		56U
+#define CONTEXT_TRASH		57U
+#define CONTEXT_TRASH_LINE	58U
 
 /*
  * One item of the menus as the viewer builds them: its ID, its parent,
@@ -83,7 +96,18 @@ struct menu_item {
 static const struct menu_item menu_items[] = {
 	{ MENU_FILE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "File", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_OPEN, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Open...", IV_ACTION_OPEN, KEILAND_MENU_ROLE_OPEN, KEILAND_MENU_CTRL, 'o' },
+	{ MENU_OPEN_WITH, MENU_FILE, KEILAND_MENU_ITEM_SUBMENU, "Open With", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST + 1U, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST + 1U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST + 2U, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST + 2U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST + 3U, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST + 3U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST + 4U, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST + 4U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST + 5U, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST + 5U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST + 6U, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST + 6U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_OPENER_FIRST + 7U, MENU_OPEN_WITH, KEILAND_MENU_ITEM_NORMAL, "-", IV_ACTION_OPEN_WITH_FIRST + 7U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_FILE_LINE, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_TRASH, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Move to Trash", IV_ACTION_TRASH, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_TRASH_LINE, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_CLOSE, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Close", IV_ACTION_CLOSE, KEILAND_MENU_ROLE_CLOSE, KEILAND_MENU_CTRL, 'w' },
 	{ MENU_QUIT, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Quit Image Viewer", IV_ACTION_QUIT, KEILAND_MENU_ROLE_QUIT, KEILAND_MENU_CTRL, 'q' },
 	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
@@ -97,6 +121,7 @@ static const struct menu_item menu_items[] = {
 	{ MENU_TURN_LINE, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_PLAY, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Play Animation", IV_ACTION_PLAY, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_FULLSCREEN, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Full Screen", IV_ACTION_FULLSCREEN, KEILAND_MENU_ROLE_FULLSCREEN, 0U, 0U },
+	{ MENU_SLIDESHOW, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Slideshow", IV_ACTION_SLIDESHOW, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_GO, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Go", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_PREVIOUS, MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Previous Image", IV_ACTION_PREVIOUS, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_NEXT, MENU_GO, KEILAND_MENU_ITEM_NORMAL, "Next Image", IV_ACTION_NEXT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
@@ -115,7 +140,9 @@ static const struct menu_item context_items[] = {
 	{ CONTEXT_ROTATE_LEFT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Rotate Left", IV_ACTION_ROTATE_LEFT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ CONTEXT_FULLSCREEN, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Full Screen", IV_ACTION_FULLSCREEN, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ CONTEXT_LINE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ CONTEXT_OPEN, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Open...", IV_ACTION_OPEN, KEILAND_MENU_ROLE_NONE, 0U, 0U }
+	{ CONTEXT_OPEN, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Open...", IV_ACTION_OPEN, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ CONTEXT_TRASH_LINE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ CONTEXT_TRASH, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Move to Trash", IV_ACTION_TRASH, KEILAND_MENU_ROLE_NONE, 0U, 0U }
 };
 
 static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
@@ -153,9 +180,10 @@ iv_menu_open(
 {
 	int error;
 
-	/* Nothing yet but the window. */
+	/* Nothing yet but the window; Open With's slots are not set yet. */
 	memset(menu, 0, sizeof(*menu));
 	menu->window = window;
+	menu->opener_count = -1;
 
 	/* The connection's menu service; a compositor without one leaves the viewer without menus. */
 	menu->service = keiland_menu_service_open(kui_window_display(window->kui));
@@ -273,6 +301,78 @@ iv_menu_context(
 
 	/* The log line the tests read. */
 	iv_log("CONTEXT-MENU open x=%d y=%d serial=%u", x, y, kui_window_press_serial(menu->window->kui));
+}
+
+/*
+ * Shows the applications of File > Open With for the image shown: each
+ * slot takes an application's name and is shown, the slots left over are
+ * hidden (ws128-p005).  The same names again send nothing.
+ */
+void
+iv_menu_openers(
+	struct iv_menu *menu,
+	char names[][IV_OPENER_NAME],
+	int count)
+{
+	const char *first;
+	int index;
+	int same;
+	int match;
+	int error;
+
+	/* Without menus nothing is sent. */
+	if (menu->menu == NULL)
+		return;
+
+	/* The same number of names as the menu shows, each the same, sends nothing. */
+	same = 0;
+	if (count == menu->opener_count)
+		same = 1;
+	for (index = 0; same != 0 && index < count; index++) {
+		match = strcmp(names[index], menu->openers[index]);
+		if (match != 0)
+			same = 0;
+	}
+
+	/* Nothing changed. */
+	if (same != 0)
+		return;
+
+	/* The slots in one transaction. */
+	error = keiland_menu_begin(menu->menu);
+	if (error != 0) {
+		iv_log("MENU openers-failed errno=%d", error);
+		return;
+	}
+
+	/* Each slot: an application's name and shown, or hidden. */
+	for (index = 0; index < IV_OPENERS && error == 0; index++) {
+		if (index < count) {
+			error = keiland_menu_set_label(menu->menu, MENU_OPENER_FIRST + (uint32_t)index, names[index]);
+			if (error == 0)
+				error = keiland_menu_set_visible(menu->menu, MENU_OPENER_FIRST + (uint32_t)index, 1);
+		} else {
+			error = keiland_menu_set_visible(menu->menu, MENU_OPENER_FIRST + (uint32_t)index, 0);
+		}
+	}
+
+	/* The slots are shown together; a refusal is logged and they stay as they were. */
+	(void)keiland_menu_commit(menu->menu);
+	if (error != 0) {
+		iv_log("MENU openers-failed errno=%d", error);
+		return;
+	}
+
+	/* The menu shows these names from now on. */
+	for (index = 0; index < count; index++)
+		snprintf(menu->openers[index], IV_OPENER_NAME, "%s", names[index]);
+	menu->opener_count = count;
+
+	/* The log line the tests read: how many, and the first (the default). */
+	first = "-";
+	if (count > 0)
+		first = names[0];
+	iv_log("MENU openers count=%d first=%s", count, first);
 }
 
 /*
@@ -542,6 +642,26 @@ menu_state_items(
 
 	/* The full screen is checked while the window fills it. */
 	error = keiland_menu_set_checked(model, MENU_FULLSCREEN, state->fullscreen);
+	if (error != 0)
+		return error;
+
+	/* Open With and Move to Trash need an image (ws128-p005). */
+	error = keiland_menu_set_enabled(model, MENU_OPEN_WITH, state->has_image);
+	if (error != 0)
+		return error;
+
+	/* Move to Trash likewise. */
+	error = keiland_menu_set_enabled(model, MENU_TRASH, state->has_image);
+	if (error != 0)
+		return error;
+
+	/* A slideshow needs an image to start from. */
+	error = keiland_menu_set_enabled(model, MENU_SLIDESHOW, state->has_image);
+	if (error != 0)
+		return error;
+
+	/* The slideshow is checked while it runs. */
+	error = keiland_menu_set_checked(model, MENU_SLIDESHOW, state->slideshow);
 	if (error != 0)
 		return error;
 
