@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p004 -->
 # ws134-p004: システムモニターの操作（M3a）
 
-Status: in-progress（q660、P2 generation8、2026-10-04。再開の条件 1〜6 を実装、host 試験 PASS、T1/T2 の QEMU の試験待ち。以前: q645 の後の依頼で `interact.c` まで書いてラップアップ、uncleared）
+Status: cleared（q660、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §3.9・§3.10・§5
@@ -85,3 +85,7 @@ p002・p003 と同じ（design.md §1.5 の表のまま）。画面の値は全�
   （6 rule、CPU と Disk latency が Critical）、Network の card の途中（p=0.5）。`build/p2-q660-preview/`（worktree p2、git の外）。
 - QEMU: 未実施（T1/T2 に `monitor-p004.sh` を依頼する）。実機: 未実施。
 
+
+## 結果（Q1、2026-10-04、T1-063、QEMU Venus KVM、main 3333344）
+
+cleared。`monitor-p004: PASS`: tap・外の tap・長押しの pin・Esc・左 swipe（RANGE 15 min）・pinch（detail↔overview）・2 本指の tap（graphics）・key（FOCUS gpu・Enter・P・Esc・Left で 5 min）・コアの drag、ERROR なし。card.png・pinned.png・overview.png。fps は判定していない（p003 の件、実機で）。証拠 worktrees/t1/build/t1-063/。
