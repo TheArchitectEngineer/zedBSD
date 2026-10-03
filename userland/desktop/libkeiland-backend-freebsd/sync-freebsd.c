@@ -10,7 +10,7 @@
  * The record follows fixed drm_v6.6.25_13; no driver implementation is imported.
  */
 #include "userland/desktop/libkeiland-backend/dmabuf/sync.h"
-#include "../../freebsd-compat/freebsd/dma-sync.h"
+#include "../freebsd-compat/freebsd/dma-sync.h"
 #include <stdint.h>
 #include <sys/ioccom.h>
 #include <sys/ioctl.h>
