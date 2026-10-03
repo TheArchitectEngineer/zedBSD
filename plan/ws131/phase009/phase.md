@@ -65,3 +65,7 @@ wire の object の型（`ZWL_FACTORY`・`ZWL_GPU_OBJECT`・`ZWL_BUFFER`）の�
 tag で行える（`resource_private`）ので host には足さない。
 
 着手（範囲 2〜6）は Q1 の確認待ち（p008 の未 cleared のまま着手するか、Queue ID、所有 path の委任、WS113 p004 との衝突）。
+
+## 着手（Q1、2026-10-04）
+
+q659（P2）。ユーザーの夜の自律の指示（master の記録）で着手。p008 は cleared（T2-013・T1-054）。所有 path の委任は Q1 が許可。WS113 p004 は planned で動いていない。p007 は touch・pen の demo-s8-s9 だけ未実行で uncleared（T1 に依頼）、p009 の前提の入力の backend は統合済み。

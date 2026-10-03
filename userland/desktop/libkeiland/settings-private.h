@@ -10,7 +10,7 @@
  * design.md section 3): the cache of the values, the watches and the
  * finished requests (settings-cache.c), and the application's own file
  * (settings-app.c).  Neither knows Wayland, so that the host tests build
- * them alone (plan/ws135/tests/host-settings.sh).
+ * them alone (plan/tools/settings/host-settings.sh).
  */
 
 #ifndef KEILAND_SETTINGS_PRIVATE_H
