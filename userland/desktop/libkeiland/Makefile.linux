@@ -17,5 +17,7 @@ KEILAND_LINUX_KEILAND_SOURCES := userland/desktop/libkeiland/version.c \
 	userland/desktop/libkeiland/system/system.c \
 	userland/desktop/libkeiland/system/system-view.c \
 	userland/desktop/libkeiland/system/system-protocol.c \
+	userland/desktop/libkeiland/system/system-monitor.c \
+	userland/desktop/libkeiland/system/system-monitor-rate.c \
 	userland/desktop/settings-keys/settings-keys.c
 $(eval $(call KEILAND_LINUX_LIBRARY,keiland,libkeiland.so,$(KEILAND_LINUX_KEILAND_SOURCES),libwayland-client.so,-lm,userland/desktop/libkeiland/exports.map))

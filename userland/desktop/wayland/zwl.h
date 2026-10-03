@@ -176,6 +176,8 @@ enum zwl_kind {
 	ZWL_SYSTEM_AUDIO,
 	ZWL_SYSTEM_POWER,
 	ZWL_SYSTEM_DEVICES,
+	/* The system extension's monitor (sysmon.c, WS134 p012). */
+	ZWL_SYSTEM_MONITOR,
 };
 
 /*
@@ -564,6 +566,15 @@ struct zwl_object {
 	uint64_t tablet_seat_number;
 	unsigned tablet_slot;
 	unsigned tool_slot;
+	/*
+	 * A monitor object of the system extension (sysmon.c, WS134 p012): the
+	 * period it asked for in milliseconds, the serial of the sample it has
+	 * not acked yet (0: none, the next may come), and the serial of the
+	 * info it heard last (0: none yet).
+	 */
+	uint32_t monitor_period;
+	uint32_t monitor_waiting;
+	uint32_t monitor_info;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -1193,6 +1204,10 @@ int zwl_system_network_done(struct zwl_server *server, unsigned request, int err
 int zwl_system_bar_save_key(struct zwl_server *server, const char *ssid, const char *key);
 void zwl_system_bar_saved(struct zwl_server *server);
 void zwl_system_close(struct zwl_server *server);
+int zwl_sysmon_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
+int zwl_sysmon_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void zwl_sysmon_tick(struct zwl_server *server);
+void zwl_sysmon_close(struct zwl_server *server);
 float zwl_home_progress(struct zwl_server *server);
 void zwl_home_layer(struct zwl_server *server, float progress, float *x, float *y, float *scale);
 int zwl_home_button(struct zwl_server *server, uint32_t button, uint32_t state);

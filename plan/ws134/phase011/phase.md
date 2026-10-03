@@ -33,3 +33,10 @@ Parent: [WS134](../ws.md)
 ## 判定（Q1、2026-10-04）
 
 cleared。Linux: host の gcc・clang warning 0、monitor-backend-p011.sh linux PASS（P2、host）。FreeBSD: T1-068（FreeBSD 15.1 の QEMU guest）で `monitor-backend-p011 freebsd: PASS`（CPU 8・vtbd0・vtnet0・valid 0x1f・tick 3052/3048）と backend-test 9/9 PASS。
+
+## 結果（T1-068、WS137 の FreeBSD guest、fbeeba4、2026-10-04）
+
+PASS 2/2。`monitor-backend-p011 freebsd: PASS`（CPU 8、disk vtbd0、link vtnet0、valid 0x1f、tick 3052/3048（127 Hz × 8 × 3.00 s）、user 381、
+memory total 8317661184、build の warning 0）。`backend-test.sh` rc 0（build・warning 0・install・audit・host-seat・host-session・host-power・
+sync-rejected・dmabuf-export-rejected 全 PASS）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-068/p011/`・
+`/home/awe/zedBSD-worktrees/t1/build/keiland-freebsd/backend-test-068/summary.txt`。

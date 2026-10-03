@@ -36,9 +36,19 @@ static const struct wl_interface *system_get_power_types[] = {
 static const struct wl_interface *system_get_devices_types[] = {
 	&kl_system_devices_v1_interface,
 };
+static const struct wl_interface *system_get_monitor_types[] = {
+	&kl_system_monitor_v1_interface,
+	NULL,
+};
 
-/* The arguments of messages that name no interface (at most ten, a link's). */
+/* The arguments of messages that name no interface (at most sixteen, a monitor's disk's). */
 static const struct wl_interface *system_plain_types[] = {
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
 	NULL,
 	NULL,
 	NULL,
@@ -59,6 +69,7 @@ static const struct wl_message system_manager_requests[] = {
 	{ "get_audio", "n", system_get_audio_types },
 	{ "get_power", "n", system_get_power_types },
 	{ "get_devices", "n", system_get_devices_types },
+	{ "get_monitor", "2nu", system_get_monitor_types },
 };
 
 /* The events of kl_system_manager_v1. */
@@ -66,11 +77,11 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1: six requests and one event.  It lives for the program. */
+/* kl_system_manager_v1, version 2: seven requests (get_monitor since 2) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
-	1,
-	6,
+	2,
+	7,
 	system_manager_requests,
 	1,
 	system_manager_events
@@ -199,4 +210,34 @@ const struct wl_interface kl_system_devices_v1_interface = {
 	system_devices_requests,
 	3,
 	system_devices_events
+};
+
+/* The requests of kl_system_monitor_v1 (WS134 p012). */
+static const struct wl_message system_monitor_requests[] = {
+	{ "destroy", "", NULL },
+	{ "ack", "u", system_plain_types },
+	{ "set_period", "u", system_plain_types },
+};
+
+/* The events of kl_system_monitor_v1. */
+static const struct wl_message system_monitor_events[] = {
+	{ "info", "usuu", system_plain_types },
+	{ "device", "uuuuuuss", system_plain_types },
+	{ "info_done", "u", system_plain_types },
+	{ "cpu", "uuuuuuuuu", system_plain_types },
+	{ "memory", "uuuuuuuuuuuu", system_plain_types },
+	{ "link", "uuuuuuu", system_plain_types },
+	{ "disk", "uuuuuuuuuuuuuuuu", system_plain_types },
+	{ "gpu", "uuuuuuuuuuuuiu", system_plain_types },
+	{ "sample_done", "uuuuuui", system_plain_types },
+};
+
+/* kl_system_monitor_v1: three requests and nine events.  It lives for the program. */
+const struct wl_interface kl_system_monitor_v1_interface = {
+	KL_SYSTEM_MONITOR_NAME,
+	1,
+	3,
+	system_monitor_requests,
+	9,
+	system_monitor_events
 };

@@ -32,9 +32,9 @@ main(
 	unsigned version;
 	unsigned capabilities;
 
-	/* The desktop contract of WS131 p011. */
+	/* The desktop contract of WS131 p011 (22), or a later one that only added to it (23: WS134 p012's monitor). */
 	version = keiland_version();
-	if (version != 22U)
+	if (version < 22U)
 		return 1;
 
 	/* No system without a display. */

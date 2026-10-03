@@ -12,13 +12,14 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 1)
+ * kl_system_manager_v1 (a global, version 2)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
  *   request 3 get_audio(new_id kl_system_audio_v1)
  *   request 4 get_power(new_id kl_system_power_v1)
  *   request 5 get_devices(new_id kl_system_devices_v1)
+ *   request 6 get_monitor(new_id kl_system_monitor_v1, uint period_ms)    since version 2 (WS134 p012)
  *   event   0 capabilities(uint bits)              sent when it is bound
  *
  * kl_system_settings_v1
@@ -78,6 +79,37 @@
  *   event   1 done(uint serial)
  *   event   2 result(uint request, uint applied, uint saved)
  *
+ * kl_system_monitor_v1 (WS134 p012, plan/ws134/design.md section 1.3)
+ *   request 0 destroy
+ *   request 1 ack(uint serial)                       the sample of that serial is taken
+ *   request 2 set_period(uint period_ms)             250 to 10000
+ *   event   0 info(uint cpu_count, string host, uint generation_high, uint generation_low)
+ *   event   1 device(uint kind, uint id_high, uint id_low, uint generation_high, uint generation_low, uint subkind,
+ *                    string name, string driver)
+ *   event   2 info_done(uint serial)               the info and devices before it are the whole info
+ *   event   3 cpu(uint index, uint user_high, uint user_low, uint system_high, uint system_low, uint idle_high,
+ *                 uint idle_low, uint other_high, uint other_low)
+ *   event   4 memory(uint total_high, uint total_low, uint free_high, uint free_low, uint cache_high, uint cache_low,
+ *                    uint reclaimable_high, uint reclaimable_low, uint swap_total_high, uint swap_total_low,
+ *                    uint swap_used_high, uint swap_used_low)
+ *   event   5 link(uint id_high, uint id_low, uint rx_high, uint rx_low, uint tx_high, uint tx_low, uint up)
+ *   event   6 disk(uint id_high, uint id_low, uint read_ops_high, uint read_ops_low, uint write_ops_high,
+ *                  uint write_ops_low, uint read_bytes_high, uint read_bytes_low, uint write_bytes_high,
+ *                  uint write_bytes_low, uint read_ns_high, uint read_ns_low, uint write_ns_high, uint write_ns_low,
+ *                  uint busy_ns_high, uint busy_ns_low)
+ *   event   7 gpu(uint id_high, uint id_low, uint time_high, uint time_low, uint busy_high, uint busy_low,
+ *                 uint memory_used_high, uint memory_used_low, uint memory_total_high, uint memory_total_low,
+ *                 uint cur_mhz, uint max_mhz, int milli_celsius, uint milli_watts)
+ *   event   8 sample_done(uint serial, uint time_high, uint time_low, uint valid_high, uint valid_low, uint cpu_hz,
+ *                         int cpu_milli_celsius)
+ *   The compositor samples the machine (libkeiland-backend's monitor area) on a thread of its own while a monitor
+ *   object exists, as often as the shortest period asked (at most 4 a second).  A sample is the counters (they only
+ *   grow; a client makes the rates) and the present values, its cpu, memory, link, disk and gpu events and a
+ *   sample_done; the info comes first and again when the devices change (info, a device a GPU, disk or link,
+ *   info_done).  A u64 travels as its high and low halves.  No sample is sent before the client acked the last
+ *   one, nor when the client's queue has no room for a whole one: a sample is sent whole or not at all, and one
+ *   skipped is not owed (the next counters cover it).
+ *
  * Every object hears its first state and a done when it is made, and each
  * change afterwards as the changed events and a done.
  */
@@ -87,7 +119,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		1U
+#define KL_SYSTEM_MANAGER_VERSION		2U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -97,6 +129,7 @@
 #define KL_SYSTEM_MANAGER_GET_AUDIO		3U
 #define KL_SYSTEM_MANAGER_GET_POWER		4U
 #define KL_SYSTEM_MANAGER_GET_DEVICES		5U
+#define KL_SYSTEM_MANAGER_GET_MONITOR		6U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -105,12 +138,14 @@
 #define KL_SYSTEM_CAPABILITY_AUDIO		0x4U
 #define KL_SYSTEM_CAPABILITY_POWER		0x8U
 #define KL_SYSTEM_CAPABILITY_DEVICES		0x10U
+#define KL_SYSTEM_CAPABILITY_MONITOR		0x20U
 
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
 #define KL_SYSTEM_AUDIO_NAME			"kl_system_audio_v1"
 #define KL_SYSTEM_POWER_NAME			"kl_system_power_v1"
 #define KL_SYSTEM_DEVICES_NAME			"kl_system_devices_v1"
+#define KL_SYSTEM_MONITOR_NAME			"kl_system_monitor_v1"
 
 /* kl_system_network_v1's requests and events. */
 #define KL_SYSTEM_NETWORK_DESTROY		0U
@@ -163,6 +198,30 @@
 #define KL_SYSTEM_DEVICES_EVENT_DEVICE		0U
 #define KL_SYSTEM_DEVICES_EVENT_DONE		1U
 #define KL_SYSTEM_DEVICES_EVENT_RESULT		2U
+
+/* kl_system_monitor_v1's requests and events (WS134 p012). */
+#define KL_SYSTEM_MONITOR_DESTROY		0U
+#define KL_SYSTEM_MONITOR_ACK			1U
+#define KL_SYSTEM_MONITOR_SET_PERIOD		2U
+#define KL_SYSTEM_MONITOR_EVENT_INFO		0U
+#define KL_SYSTEM_MONITOR_EVENT_DEVICE		1U
+#define KL_SYSTEM_MONITOR_EVENT_INFO_DONE	2U
+#define KL_SYSTEM_MONITOR_EVENT_CPU		3U
+#define KL_SYSTEM_MONITOR_EVENT_MEMORY		4U
+#define KL_SYSTEM_MONITOR_EVENT_LINK		5U
+#define KL_SYSTEM_MONITOR_EVENT_DISK		6U
+#define KL_SYSTEM_MONITOR_EVENT_GPU		7U
+#define KL_SYSTEM_MONITOR_EVENT_SAMPLE_DONE	8U
+
+/* A monitor device's kind (the device event's kind). */
+#define KL_SYSTEM_MONITOR_DEVICE_GPU		1U
+#define KL_SYSTEM_MONITOR_DEVICE_DISK		2U
+#define KL_SYSTEM_MONITOR_DEVICE_LINK		3U
+
+/* The bounds of a monitor's period, in milliseconds, and the period without one. */
+#define KL_SYSTEM_MONITOR_PERIOD_MIN		250U
+#define KL_SYSTEM_MONITOR_PERIOD_MAX		10000U
+#define KL_SYSTEM_MONITOR_PERIOD_DEFAULT	1000U
 
 /* kl_system_settings_v1's requests and events. */
 #define KL_SYSTEM_SETTINGS_DESTROY		0U

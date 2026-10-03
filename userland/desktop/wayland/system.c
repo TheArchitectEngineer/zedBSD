@@ -223,6 +223,10 @@ zwl_system_bind(
 	    KL_SYSTEM_CAPABILITY_AUDIO |
 	    KL_SYSTEM_CAPABILITY_POWER |
 	    KL_SYSTEM_CAPABILITY_DEVICES;
+
+	/* The monitor, to a manager bound at version 2 (WS134 p012). */
+	if (manager->version >= 2U)
+		bits |= KL_SYSTEM_CAPABILITY_MONITOR;
 	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
 	if (error != 0)
 		return error;
@@ -300,6 +304,9 @@ zwl_system_tick(
 	/* A step of a saved key the system bar's request held up. */
 	if (system_state.wait.stage == SYSTEM_NETWORK_RETRY)
 		system_network_step(server, system_state.wait.request);
+
+	/* The monitor's samples, to the monitor objects (sysmon.c, WS134 p012). */
+	zwl_sysmon_tick(server);
 
 	/* The sound as volume.c has it, told to every sound object when it changed. */
 	zwl_volume_audio_state(&audio);
@@ -430,6 +437,9 @@ zwl_system_close(
 {
 	UNUSED_PARAMETER(server);
 
+	/* The monitor's sampling. */
+	zwl_sysmon_close(server);
+
 	/* A job under way ends on its own (a file read or written to its end, a bus call answered). */
 	system_job_wait(&system_state.network_job);
 	system_job_wait(&system_state.power_job);
@@ -459,6 +469,16 @@ system_manager_request(
 		if (size != 0U)
 			return EPROTO;
 		zwl_object_destroy(manager);
+		return 0;
+	}
+
+	/* The monitor is sysmon.c's, since version 2 (WS134 p012). */
+	if (opcode == KL_SYSTEM_MANAGER_GET_MONITOR) {
+		if (manager->version < 2U)
+			return EPROTO;
+		error = zwl_sysmon_create(manager, bytes, size);
+		if (error != 0)
+			return error;
 		return 0;
 	}
 
