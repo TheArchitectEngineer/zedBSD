@@ -91,3 +91,5 @@
 2026-10-04 Q1: user「P2,T1,T2の3サブエージェント構成にしましょう。P1は終了、P3は完了したら終了。」→ P1 generation12 は d213b73 でラップアップして終了（成果は全て main に統合）。P9 generation1 もラップアップを依頼（BUG-135 の直しは統合しない、journal の穴の直しは未試験）。P3 generation6（WS137、FreeBSD の guest の道具、`/home/awe/zedBSD-worktrees/p3` / `agent/p3`、q658）は完了したら終了。続ける担当は P2・T1・T2。
 
 2026-10-04 Q1: P9 generation1 はラップアップして終了。**agent/p9（1f9e10b、base 9e228b6）は main に未統合**: e5631f9（journal の commit の 2 段化、単独では穴あり）→ 4ed7e93（記録）→ c79e089（range/line の穴の直し）→ 1f9e10b（phase.md の再開の条件、p051-window.sh）。統合は user の確認の後に c79e089 以降を含めて。branch と worktree `/home/awe/zedBSD-worktrees/p9` は消さない。
+
+2026-10-04 Q1: P3 generation6 は ws137-p001（988b9a0、統合済み）で終了。体制は P2・T1・T2。
