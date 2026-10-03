@@ -62,7 +62,7 @@ app は OS の抽象化を直接持たない。例: Settings → libkeiland → 
 | [p008](phase008/phase.md) | backend の表示 | cleared（q650、T2-013・T1-054） | p007 | 3〜4h |
 | [p009](phase009/phase.md) | backend の GPU の buffer と境界の確定 | cleared（q659、T2-019・T1-060） | p008 | 4〜5h |
 | [p010](phase010/phase.md) | 拡張の protocol `kl_system_manager_v1` と設定の記録（監視は残す） | cleared（q659、T2-020・T1-061・T1-062） | p004、P2 の BUG-125 の merge | 4〜5h |
-| [p011](phase011/phase.md) | Settings を拡張へ、毎秒の監視の除去、libkeiland の OS を 0 に | in-progress（q659、P2。実装・host・zedBSD と Linux の build・checker 済み、FreeBSD と QEMU は試験の担当） | p010、WS089・P1 の区切り | 4〜5h |
+| [p011](phase011/phase.md) | Settings を拡張へ、毎秒の監視の除去、libkeiland の OS を 0 に | cleared（q659、T2-021・022・024・T1-062） | p010、WS089・P1 の区切り | 4〜5h |
 | [p012](phase012/phase.md) | libkeiui を libkeiland へ移す（名前は変えない） | planning | p003 の merge、ベータ1 の app の区切り | 4h |
 | [p013](phase013/phase.md) | 旧 libkeiui の名前を `kl_`・`KL_` に | planning | p012 | 3〜4h |
 | [p014](phase014/phase.md) | 旧 libkeiland の名前を `kl_`・`KL_` に | planning | p013・p011 | 3〜4h |

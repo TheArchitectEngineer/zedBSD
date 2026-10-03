@@ -2,7 +2,7 @@
 
 # ws131-p011: Settings を拡張の経路へ、毎秒の監視の除去、libkeiland の OS を 0 に
 
-Status: in-progress（q659、P2、2026-10-04。実装・host の試験・zedBSD と Linux の build・checker 済み。FreeBSD の build と QEMU は試験の担当に依頼）
+Status: cleared（q659、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q659（Q1 の「p011 へ」、2026-10-04。WS135 で済んだ設定の部分を除く）
@@ -175,3 +175,7 @@ FreeBSD: backend-test 9/9 PASS、libkeiland.so の NEEDED は libwayland-client�
   live=1 reachable=1 value=60` とだけ log していた（network の `NETWORK state` と同じ形の退行、変化として来ないので report の行が出ない）。
   `se_sound_open` が最初の state を report と同じ書式でも log する。
 - 確かめ: zedBSD の settings・compositor（-Werror）exit 0 warning 0、Linux の gcc で object、style-check 違反 0。QEMU は T2 に再試験を依頼。
+
+## 判定（Q1、2026-10-04）
+
+cleared。zedBSD（QEMU）: T2-021 で C9 p076 単独 20/20 PASS・volume-p004・boot-test PASS・power は session の中で actions=0x0 と ENOTSUP（D12）・system bar の Wi-Fi の鍵の流れ ok。T2-022 で settings-regress 8/8 PASS（a565cb2 の後）。T2-024 で volume-p005・zdesktop-p104 PASS（a594882 の後: 最初の音の state を report の書式でも log、鍵の保存で旧い `ZWL NETWORK key saved` も log、試験の側は runas で kei として Settings を起こす）。FreeBSD・Linux: T1-062 PASS。
