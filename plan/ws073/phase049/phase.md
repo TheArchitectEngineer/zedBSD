@@ -37,3 +37,8 @@ BUG-033 は ws046-p007 で主因（libc の allocator の鎖の走査、buffer c
 ## 残り
 
 - T1 の結果で、数倍以内なら close を Q1 に提案、遠ければ gdbstub で PC を採って原因を探す（ws046-p007 と同じ方法）。
+
+
+## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
+
+T1 に 512 MiB・2 GiB の測定（試験の依頼 4、kit は build/p1-q651/bug033/kit.tar）を依頼済み、結果は Q1 が受ける。再開: host の xmlparse 1.05〜1.36 秒と比べ、数倍以内なら close を提案、遠ければ gdbstub で PC を採る。

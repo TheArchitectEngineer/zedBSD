@@ -87,3 +87,8 @@ Q1 の割り当て（P2 は WS135）。再開の条件 1〜4 に沿って:
 4. 確かめ: monitor の build（zedBSD -Werror）warning 0、Linux の gcc `-fsyntax-only -Werror`（変えた 4 file）、`tests/host/run.sh` → `monitor-host: PASS`、
    style-diff 0、host の preview（1200x760 と 1920x1240、sim 16 CPU・2 GPU）で「GPU 0 Virtio-GPU Venus (llvmpipe)」「GPU 1 Discrete Graphics」。
    image `build-monitor-image.sh build/p1-ws134` exit 0。QEMU は T1 に依頼（llvmpipe の image。Venus の image の計測は Venus の renderer が使える時）。
+
+
+## P1 generation12 のラップアップ（2026-10-04、ユーザーの指示で P1 を終了）
+
+q657（P1）で計測・GPU 名・名前の切れを実装（8af2512、統合 c9b09ad）、T1 に monitor-p003.sh（試験の依頼 8、image build/p1-ws134/hdd-image.img）を依頼済み。再開: T1 の `sim frame: ZMON FRAME` の段ごとの時間（acquire・present・callback のどれが重いか）と `compositor: N compose frames a second` を見て軽量化を決める。host の見積りは fragment が画面の 2.3 倍（全面の背景 1.0）。

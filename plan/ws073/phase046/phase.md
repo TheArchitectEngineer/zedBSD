@@ -45,3 +45,26 @@ BUG-053 は 2026-09-25 の修正（commit 5a32f4e7、古い履歴）で 450・90
 ## 結果（Q1、2026-10-04、T1-049、QEMU KVM、512 MiB guest、b65fd40）
 
 uncleared。swap_free=262143/262143 で開始。900 MiB: `SWAPHOG mib=900 bad=0 total_s=33.4`。450 MiB: 1 回目は t=10 の verify の途中で `Connection to 127.0.0.1 closed by remote host.`（SWAPHOG の行なし、14 s）、900 の後の再試行は `bad=0 total_s=13.6`。1300 MiB: 602 s で打ち切り。t=30 で write 263271/332800、以後 30 s ごとに約 1300〜1600 page、t=600 で 288885/332800、page_out=798113、swap_free=68912、io_err=0。後の ps に init・sshd・cron など全て残る（止まりではなく極端に遅い）。証拠 worktrees/t1/build/t1-049/。再開: P1 が 1300 MiB の遅さ（1 page あたりの page_out の多さ、約 2.7 回）と 450 の 1 回目の SSH の切断を調べる。
+
+## T1-049 の読みと再開の条件（P1 generation12 のラップアップ、2026-10-04。修正は未実装）
+
+T1-049（b65fd40、512 MiB、swap 1 GiB、NVMe）: 900 MiB PASS（33.4 s）、450 は 1 回目に t=10 で SSH が切れ再試行 PASS（13.6 s）、1300 MiB は 602 s で打ち切り
+（t=30 で 263271/332800 page、以後 30 s に約 1300〜1600 page、io_err=0、ps は全て残る）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-049/`。
+
+読み（コード、未検証）:
+- **page の出し入れの繰り返しではない。** STAT の page_out・page_in は system の起動からの累計で、450・900 の run の分を含む。1300 の run の中では
+  page_out の増え（605396 → 798113 = 192717）は swapped の増え（657 → 193229 = 192572）とほぼ同じ、page_in の増えは 145。1 page を 1 回出しているだけ。
+- **遅くなる境が 262144 page（1 GiB）**: 書いた page が 263271 を越えた所から 1 page に約 20 ms。region の page の索引（`src/kern/vmspace.c` の
+  `region_page_index_rebuild`・`region_page_index_insert`）が原因の第一候補:
+  - 索引は「page 数の 2 倍以上の 2 の冪」の bucket で、page 数が bucket 数を越えるたびに作り直す。262145 page 目で 1048576 bucket（8 MiB を 1 つの
+    `kern_calloc`）を求める。空きが 1 MiB の時は物理の連続 8 MiB が取れず、`region_page_index_rebuild` は**古い索引を先に解放してから**確保に失敗し、
+    region は索引無しになる（`find_page` は region の list を全部たどる）。
+  - さらに `region_page_index_insert` は「索引が無く page 数が MINIMUM 以上」で**毎回 rebuild を呼ぶ**ので、以後の fault ごとに 26 万 page の list を
+    2 回たどり（数える・`find_page`）8 MiB の確保を試みて失敗する。fault 1 回が O(n) になり、観測の「1 page 約 20 ms」と合う。
+- 直し方（案）: rebuild は新しい索引を先に確保し、失敗したら古い索引を残して使い続ける（chain が長くなるだけ）。失敗の後は page 数が倍になるまで
+  作り直さない（`page_index_retry` の閾値を足す）。bucket 数に上限（例 2^18 = 2 MiB）を置く。host 試験は vmspace の索引の部分を切り出して、確保の失敗を
+  注入して insert・find・remove が正しいことと rebuild の回数が O(log n) であることを確かめる。
+- 450 の 1 回目の SSH の切断（t=10、page out が始まる頃）は未調査。sshd・cron が fault で待つ時間か、別の原因（BUG-053 の前の記録に同じ形の症状の
+  記録あり）。
+- 再開の条件: 上の直しを実装し、host 試験、kernel の build、T1 に swaphog 450・900・1300（`plan/ws073/tests/swaphog.c`、10 分の上限）を再依頼。
+  1300 が終われば受け入れの残り（1300 MiB の未確認）が解ける見込み。
