@@ -8,7 +8,8 @@
 #     "ZWL NETWORK state reachable=1 ... kind=wired" as uid 1000; the menu shows the wired line (wired-menu.png).
 #  2. The stand-in with a Wi-Fi radio takes networkd's place, its socket set to networkd's owner and mode
 #     (root:network 0660); the session is ended and kei logs in again.  As kei the menu scans (list.png),
-#     joins "Kei Lab" (joined.png) and turns the Wi-Fi off (off.png).  Part 2's radio is QEMU-only faking.
+#     joins "Kei Lab" (typing a key in the menu's field when kei's store has none, BUG-160) (joined.png) and turns
+#     the Wi-Fi off (off.png).  Part 2's radio is QEMU-only faking.
 #
 #   GUEST_RUNTIME=... plan/ws035/tests/zdesktop-guest.sh start build/<x>/hdd-image.img
 #   plan/ws035/tests/zdesktop-p104.sh [OUTDIR] [SHOTS PREFIX]
@@ -107,7 +108,15 @@ lx=$(($1 + 150)); ly=$(($2 + $4 / 2))
 pointer move "$lx" "$ly" sleep 500
 shot list.png
 click "$lx" "$ly" 1500
-expect_log /tmp/probe.log 'NETPROBE request op=35 ssid=Kei Lab'
+# Since BUG-160 (ws005-p029) a secured network without a key in the user's own store opens the menu's key field;
+# kei has none the first time, so a key is typed (saved in kei's store, then the join).  ws136-p002.
+asked=$(guest "grep -ac 'ZWL NETWORK key open ssid=Kei Lab' $session" | tail -1)
+if [ "${asked:-0}" -gt 0 ] 2>/dev/null; then
+	echo "key field: open, a key is typed"
+	keys 'kei-lab-p104' '\n'
+	expect_log $session 'ZWL NETWORK key saved ssid=Kei Lab'
+fi
+expect_log /tmp/probe.log 'NETPROBE request op=35 ssid=Kei Lab' 15
 expect_log $session 'ZWL NETWORK state reachable=1 connected=1 kind=wifi interface=wlan0 wifi=connected ssid=Kei Lab'
 pointer move 1100 500 sleep 500
 shot joined.png

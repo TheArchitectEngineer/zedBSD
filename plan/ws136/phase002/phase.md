@@ -29,3 +29,11 @@ T2-007（ws131-p006a、graphical の login の image、QEMU）の p095・p102 �
 ## 検証
 
 - `sh -n` で 3 本の構文。guest での実行は T2 に依頼（T2-007 の 2〜4 の再試験として）。未実施。
+
+## T2-011（2026-10-04、66d9974 の script、T2-007 の image）と p104 の直し
+
+p095 PASS（53 s）、p102 PASS（64 s）、p103 PASS（59 s、元の script）。p104 FAIL ×2: wired・scan・row・op=33・wifi=off は ok、`NETPROBE request op=35
+ssid=Kei Lab` と wifi=connected が MISSING、joined.png は「Key for Kei Lab」の空の欄。原因: 試験の前提が BUG-160（ws005-p029）より古い。system bar は
+鍵の要る AP を利用者の自分の store（`kl_backend_network_get_saved`、daemon ではない）に鍵が無ければ menu の鍵の欄を開く。kei の store は空。
+→ p104 は click の後に `ZWL NETWORK key open ssid=Kei Lab` があれば鍵（`kei-lab-p104`）を打って Enter し、`key saved` の後の op=35 を待つ（15 秒）。
+再試験を T2 に依頼。
