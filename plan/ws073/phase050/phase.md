@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p050 -->
 # ws073-p050: package の menu の Fonts の分類（BUG-129）
 
-Status: in-progress（q652-i01、P2 generation7。host で確認済み・Q1 の判定待ち）
+Status: cleared（q652-i01、P2 generation7。Q1 判定 2026-10-04）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-129](../../bugs/BUG-129.md)
