@@ -1382,6 +1382,281 @@ int kl_settings_dispatch(struct kl_settings *settings);
  */
 int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int *error);
 
+/*
+ * The desktop's system for applications (WS131 p010, plan/ws131/design.md
+ * section 4.4): the network, the sound, the power and the removable
+ * devices, as the compositor holds them through Keiland's system
+ * extension.  An application asks the compositor and never reaches a
+ * daemon or the operating system itself.
+ *
+ * The state is the compositor's, told as one state at a time: an
+ * application sees the state before a change or after it, never half of
+ * it.  A request is answered once, by a result kl_system_take_result
+ * gives; a change it makes comes as a new state.  One network request is
+ * outstanding at a time, the system bar's included; another is answered
+ * EBUSY.  One thread uses one kl_system.
+ */
+
+/* The longest SSID, interface name and dotted IPv4 address, with their NULs. */
+#define KL_NETWORK_SSID_MAX	33U
+#define KL_NETWORK_NAME_MAX	16U
+#define KL_NETWORK_ADDRESS_MAX	16U
+
+/* The most networks a scan, interfaces, DNS servers and saved networks a kl_system keeps. */
+#define KL_NETWORK_SCAN_MAX	24U
+#define KL_NETWORK_LINKS_MAX	16U
+#define KL_NETWORK_DNS_MAX	4U
+#define KL_NETWORK_SAVED_MAX	24U
+
+/* A WPA key's length. */
+#define KL_NETWORK_KEY_MIN	8U
+#define KL_NETWORK_KEY_MAX	63U
+
+/* What carries the connection. */
+#define KL_NETWORK_NONE		0U
+#define KL_NETWORK_WIRED	1U
+#define KL_NETWORK_WIFI		2U
+
+/* The Wi-Fi's state. */
+#define KL_WIFI_ABSENT		0U	/* no radio */
+#define KL_WIFI_OFF		1U
+#define KL_WIFI_SEARCHING	2U
+#define KL_WIFI_CONNECTING	3U
+#define KL_WIFI_CONNECTED	4U
+#define KL_WIFI_DISCONNECTED	5U	/* on, and left unconnected by the user */
+
+/* The network's requests (kl_system_network_request). */
+#define KL_NETWORK_SCAN		1U
+#define KL_NETWORK_JOIN		2U	/* names the network; its key must be saved */
+#define KL_NETWORK_DISCONNECT	3U
+#define KL_NETWORK_WIFI_ON	4U
+#define KL_NETWORK_WIFI_OFF	5U
+
+/* The power's actions, their bits in the state's actions, and where the power comes from. */
+#define KL_POWER_POWEROFF	1U
+#define KL_POWER_REBOOT		2U
+#define KL_POWER_SUSPEND	3U
+#define KL_POWER_ACTION_BIT(action)	(1U << (action))
+#define KL_POWER_SOURCE_UNKNOWN	0U
+#define KL_POWER_SOURCE_AC	1U
+#define KL_POWER_SOURCE_BATTERY	2U
+
+/* The longest device ID, name and location, with their NULs, and the most devices kept. */
+#define KL_DEVICE_TEXT_MAX	64U
+#define KL_DEVICES_MAX		16U
+
+/* What the compositor offers (kl_system_capabilities). */
+#define KL_SYSTEM_HAS_NETWORK	0x2U
+#define KL_SYSTEM_HAS_AUDIO	0x4U
+#define KL_SYSTEM_HAS_POWER	0x8U
+#define KL_SYSTEM_HAS_DEVICES	0x10U
+
+/* What a kl_system_dispatch found changed. */
+#define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
+#define KL_SYSTEM_CHANGED_SCAN		0x2U	/* the networks of the scan */
+#define KL_SYSTEM_CHANGED_DETAILS	0x4U	/* the interfaces, DNS servers and saved networks asked for */
+#define KL_SYSTEM_CHANGED_AUDIO		0x8U
+#define KL_SYSTEM_CHANGED_POWER		0x10U
+#define KL_SYSTEM_CHANGED_DEVICES	0x20U
+#define KL_SYSTEM_CHANGED_RESULT	0x40U	/* a request was answered */
+
+/*
+ * The network: whether the daemon is reached, whether the machine is
+ * connected and through what and which interface, the wired interface up
+ * with an address (empty when none), and the Wi-Fi's state, interface and
+ * the network it is on or joining.
+ */
+struct kl_network_state {
+	unsigned reachable;
+	unsigned connected;
+	unsigned kind;
+	char interface[KL_NETWORK_NAME_MAX];
+	char wired[KL_NETWORK_NAME_MAX];
+	unsigned wifi;
+	char wifi_interface[KL_NETWORK_NAME_MAX];
+	char ssid[KL_NETWORK_SSID_MAX];
+};
+
+/* One network a scan found: its SSID, its signal in dBm, and whether it asks for a key. */
+struct kl_network_ap {
+	char ssid[KL_NETWORK_SSID_MAX];
+	int rssi;
+	unsigned secured;
+};
+
+/*
+ * One interface: its name, whether it is up, has its link and is the
+ * loopback, its IPv4 address and netmask (empty when none), its hardware
+ * address as text, its MTU, and the bytes it has received and sent.
+ */
+struct kl_network_link {
+	char name[KL_NETWORK_NAME_MAX];
+	unsigned up;
+	unsigned running;
+	unsigned loopback;
+	char address[KL_NETWORK_ADDRESS_MAX];
+	char netmask[KL_NETWORK_ADDRESS_MAX];
+	char hardware[18];
+	unsigned mtu;
+	uint64_t received_bytes;
+	uint64_t sent_bytes;
+};
+
+/*
+ * The sound output: whether the sound service is reached and has a
+ * device, the device's rate and channels, the volume of each channel
+ * (0 to 100) and whether it is muted.
+ */
+struct kl_audio_state {
+	unsigned reachable;
+	unsigned device;
+	unsigned rate;
+	unsigned channels;
+	unsigned left;
+	unsigned right;
+	unsigned muted;
+};
+
+/*
+ * The power: where it comes from, the battery's charge in percent (-1 when
+ * unknown), whether it charges, and the KL_POWER_ACTION_BIT of each action
+ * the user may take now.
+ */
+struct kl_power_state {
+	unsigned source;
+	int percent;
+	unsigned charging;
+	unsigned actions;
+};
+
+/* One removable device (none until the devices arrive, WS132): its ID, kind, state, name and where it is. */
+struct kl_device {
+	char id[KL_DEVICE_TEXT_MAX];
+	unsigned kind;
+	unsigned state;
+	char name[KL_DEVICE_TEXT_MAX];
+	char location[KL_DEVICE_TEXT_MAX];
+};
+
+/*
+ * One application's view of the system: the state the compositor told,
+ * and the requests not answered yet.  It lives from kl_system_open to
+ * kl_system_close.
+ */
+struct kl_system;
+
+/*
+ * Opens the system on a display and waits once for its first state.
+ * Returns NULL with errno ENOTSUP without Keiland's system extension (not
+ * Keiland, or another user's compositor), EPIPE when the compositor went,
+ * or ENOMEM.
+ */
+struct kl_system *kl_system_open(struct wl_display *display);
+
+/*
+ * Closes the system.
+ */
+void kl_system_close(struct kl_system *system);
+
+/*
+ * Takes the compositor's events the display has read; *changed (may be
+ * NULL) has the KL_SYSTEM_CHANGED_* bits of what changed since the last
+ * dispatch.  It never waits.  Returns 0, or EPIPE once the compositor went.
+ */
+int kl_system_dispatch(struct kl_system *system, unsigned *changed);
+
+/*
+ * Reports the KL_SYSTEM_HAS_* bits of what the compositor offers.
+ */
+unsigned kl_system_capabilities(const struct kl_system *system);
+
+/*
+ * Takes one answered request: 1 with its number and its error (0, EPERM,
+ * ENOTSUP, EBUSY, EINVAL, ENODEV, EIO), 0 when none is answered.
+ */
+int kl_system_take_result(struct kl_system *system, uint32_t *request, int *error);
+
+/*
+ * Copies the network's state.
+ */
+void kl_system_network_get_state(const struct kl_system *system, struct kl_network_state *state);
+
+/*
+ * Copies up to capacity networks of the last scan, the strongest first,
+ * and returns how many were copied.
+ */
+size_t kl_system_network_get_scan(const struct kl_system *system, struct kl_network_ap *aps, size_t capacity);
+
+/*
+ * Asks for a network request (KL_NETWORK_*; a join names the SSID, the
+ * others take NULL); request (may be NULL) names its answer.  Returns 0
+ * when asked, ENOTSUP, or EINVAL.
+ */
+int kl_system_network_request(struct kl_system *system, unsigned what, const char *ssid, uint32_t *request);
+
+/*
+ * Asks for a Wi-Fi network's key to be saved in the user's store and the
+ * network joined, answered once it is joined or it failed.  Returns 0 when
+ * asked, ENOTSUP, or EINVAL (an SSID or key outside its bounds).  The key
+ * is not kept.
+ */
+int kl_system_network_save_key(struct kl_system *system, const char *ssid, const char *key, uint32_t *request);
+
+/*
+ * Asks for the network's details: the interfaces, the DNS servers and the
+ * saved networks come (KL_SYSTEM_CHANGED_DETAILS) before the answer.
+ * Returns 0 when asked, or ENOTSUP.
+ */
+int kl_system_network_query_details(struct kl_system *system, uint32_t *request);
+
+/*
+ * Copy up to capacity of the details last asked for and return how many
+ * were copied.
+ */
+size_t kl_system_network_get_links(const struct kl_system *system, struct kl_network_link *links, size_t capacity);
+size_t kl_system_network_get_dns(const struct kl_system *system, char (*servers)[KL_NETWORK_ADDRESS_MAX], size_t capacity);
+size_t kl_system_network_get_saved(const struct kl_system *system, char (*ssids)[KL_NETWORK_SSID_MAX], size_t capacity);
+
+/*
+ * Copies the sound output's state.
+ */
+void kl_system_audio_get_state(const struct kl_system *system, struct kl_audio_state *state);
+
+/*
+ * Asks for each channel's volume (0 to 100) and the mute.  Returns 0 when
+ * asked, ENOTSUP, or EINVAL.
+ */
+int kl_system_audio_set_volume(struct kl_system *system, unsigned left, unsigned right, unsigned muted, uint32_t *request);
+
+/*
+ * Asks for the short feedback sound at the device volume.  Returns 0 when
+ * asked, or ENOTSUP.
+ */
+int kl_system_audio_feedback(struct kl_system *system, uint32_t *request);
+
+/*
+ * Copies the power's state.
+ */
+void kl_system_power_get_state(const struct kl_system *system, struct kl_power_state *state);
+
+/*
+ * Asks for a power action (KL_POWER_*); one not in the state's actions is
+ * answered ENOTSUP.  Returns 0 when asked, ENOTSUP, or EINVAL.
+ */
+int kl_system_power_action(struct kl_system *system, unsigned action, uint32_t *request);
+
+/*
+ * Copies up to capacity removable devices and returns how many were
+ * copied.
+ */
+size_t kl_system_devices_get(const struct kl_system *system, struct kl_device *devices, size_t capacity);
+
+/*
+ * Asks for a removable device to be ejected.  Returns 0 when asked,
+ * ENOTSUP, or EINVAL.
+ */
+int kl_system_devices_eject(struct kl_system *system, const char *id, uint32_t *request);
+
 #ifdef __cplusplus
 }
 #endif

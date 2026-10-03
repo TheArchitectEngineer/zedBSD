@@ -34,6 +34,26 @@
 		kl_settings_unwatch;
 		kl_settings_dispatch;
 		kl_settings_take_result;
+		kl_system_audio_feedback;
+		kl_system_audio_get_state;
+		kl_system_audio_set_volume;
+		kl_system_capabilities;
+		kl_system_close;
+		kl_system_devices_eject;
+		kl_system_devices_get;
+		kl_system_dispatch;
+		kl_system_network_get_dns;
+		kl_system_network_get_links;
+		kl_system_network_get_saved;
+		kl_system_network_get_scan;
+		kl_system_network_get_state;
+		kl_system_network_query_details;
+		kl_system_network_request;
+		kl_system_network_save_key;
+		kl_system_open;
+		kl_system_power_action;
+		kl_system_power_get_state;
+		kl_system_take_result;
 	local:
 		*;
 };

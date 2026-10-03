@@ -322,27 +322,8 @@ zwl_settings_global_visible(
 }
 
 /*
- * Tells a newly bound system manager what it offers.
- */
-int
-zwl_settings_bind(
-	struct zwl_object *manager)
-{
-	uint32_t bits;
-	int error;
-
-	/* Tells the capabilities; the settings are all there is in version 1. */
-	bits = KL_SYSTEM_CAPABILITY_SETTINGS;
-	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the client knows the capabilities. */
-	return 0;
-}
-
-/*
- * Carries out a request of kl_system_manager_v1 or of a settings object.
+ * Carries out a request of a settings object, or the manager's
+ * get_settings (system.c hands it on, WS131 p010).
  */
 int
 zwl_settings_request(
@@ -355,17 +336,9 @@ zwl_settings_request(
 	uint32_t id;
 	int error;
 
-	/* The manager: it goes, or it makes a settings object. */
+	/* The manager's get_settings makes a settings object. */
 	if (object->kind == ZWL_SYSTEM_MANAGER) {
-		/* A destroy, which carries no arguments, lets the manager go. */
-		if (opcode == KL_SYSTEM_MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
-
-			/* Succeeded: the manager is gone. */
-			return 0;
-		}
-
-		/* Only get_settings is left, with its new ID. */
+		/* get_settings, with its new ID. */
 		if (opcode != KL_SYSTEM_MANAGER_GET_SETTINGS || size != 4U)
 			return EPROTO;
 

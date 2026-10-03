@@ -46,6 +46,12 @@
 #include <stddef.h>
 #include <sys/types.h>
 
+/* The network's and the sound's records of libkeiland-backend, which the system extension reads (system.c). */
+struct kl_backend_network;
+struct kl_backend_network_state;
+struct kl_backend_network_ap;
+struct kl_backend_audio_state;
+
 /* Bound each connection's wire, descriptor, object and queued-event storage. */
 #define ZWL_WIRE_MAX		65532U
 #define ZWL_RIGHTS_MAX		32U
@@ -168,9 +174,13 @@ enum zwl_kind {
 	/* KDE's server decoration, which GTK declares its decoration with (decoration.c, ws114-p008). */
 	ZWL_KDE_DECORATION_MANAGER,
 	ZWL_KDE_DECORATION,
-	/* Keiland's system extension: the manager and the settings (settings.c, WS135). */
+	/* Keiland's system extension: the manager and the settings (settings.c, WS135), the network, the sound, the power and the devices (system.c, WS131 p010). */
 	ZWL_SYSTEM_MANAGER,
 	ZWL_SYSTEM_SETTINGS,
+	ZWL_SYSTEM_NETWORK,
+	ZWL_SYSTEM_AUDIO,
+	ZWL_SYSTEM_POWER,
+	ZWL_SYSTEM_DEVICES,
 };
 
 /*
@@ -1179,8 +1189,13 @@ void zwl_settings_logout(struct zwl_server *server);
 void zwl_settings_close(struct zwl_server *server);
 int zwl_settings_kept(struct zwl_server *server, const char *name, int *number);
 int zwl_settings_global_visible(struct zwl_client *client, enum zwl_kind kind);
-int zwl_settings_bind(struct zwl_object *manager);
 int zwl_settings_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int zwl_system_bind(struct zwl_object *manager);
+int zwl_system_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void zwl_system_tick(struct zwl_server *server);
+void zwl_system_network_changed(struct zwl_server *server, unsigned changed);
+int zwl_system_network_done(struct zwl_server *server, unsigned request, int error);
+void zwl_system_close(struct zwl_server *server);
 float zwl_home_progress(struct zwl_server *server);
 void zwl_home_layer(struct zwl_server *server, float progress, float *x, float *y, float *scale);
 int zwl_home_button(struct zwl_server *server, uint32_t button, uint32_t state);
@@ -1261,10 +1276,16 @@ int zwl_network_button(struct zwl_server *server, uint32_t button, uint32_t stat
 int zwl_network_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_network_motion(struct zwl_server *server);
 int zwl_network_is_open(void);
+struct kl_backend_network *zwl_network_watch(void);
+void zwl_network_state(struct kl_backend_network_state *state);
+size_t zwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity);
 void zwl_volume_tick(struct zwl_server *server);
 void zwl_volume_keep(struct zwl_server *server, const char *why);
 void zwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);
 int zwl_volume_request(struct zwl_server *server, unsigned value, unsigned muted);
+int zwl_volume_request_channels(struct zwl_server *server, unsigned left, unsigned right, unsigned muted);
+int zwl_volume_feedback(void);
+void zwl_volume_audio_state(struct kl_backend_audio_state *state);
 int zwl_volume_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_volume_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_volume_motion(struct zwl_server *server);

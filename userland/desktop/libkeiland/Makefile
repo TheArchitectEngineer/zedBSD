@@ -15,7 +15,9 @@ LIBKEILAND_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/lib
 	userland/desktop/libkeiland/desktop.c \
 	userland/desktop/libkeiland/keyboard-inset.c userland/desktop/libkeiland/edit.c \
 	userland/desktop/libkeiland/settings.c userland/desktop/libkeiland/settings-cache.c \
-	userland/desktop/libkeiland/settings-app.c userland/desktop/settings-keys/settings-keys.c
+	userland/desktop/libkeiland/settings-app.c userland/desktop/settings-keys/settings-keys.c \
+	userland/desktop/libkeiland/system/system.c userland/desktop/libkeiland/system/system-view.c \
+	userland/desktop/libkeiland/system/system-protocol.c
 
 # The zedBSD side of the library.  The network (ws131-p003) and the sound (ws131-p004) moved to
 # libkeiland-backend; keiland_network_* and keiland_audio_* forward to it (system-compat.c, audio-compat.c)
