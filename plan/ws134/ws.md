@@ -30,8 +30,8 @@ CPU（全体と各 core）、GPU（Util・VRAM・温度・電力、複数）、R
 | [p005](phase005/phase.md) | K1 kernel: CPU ごとの時間 `hw.cputimes`（sysctl の CLI・top の CPU 行、design.md §1.2 の review の反映） | cleared（q661、T1-064 PASS） | — |
 | [p006](phase006/phase.md) | K2 kernel: disk ごとの統計 `hw.diskstats`（物理の whole disk） | cleared（q661、T1-065 PASS） | — |
 | [p007](phase007/phase.md) | K3 kernel: GPU の telemetry の sysctl `hw.gputelemetry`（Guardrail により ioctl にしない。実機の確認は 5330） | in-progress（q661: 実装・build 済み、QEMU の試験待ち。i915 は実機） | — |
-| [p008](phase008/phase.md) | M3a 本物の値（zedBSD の backend の monitor の領域） | in-progress（q662: 実装・build 済み、QEMU の試験待ち） | WS131 p010 までの統合、p005・p006 |
-| p011 | M3b Linux・FreeBSD の backend の monitor の領域 | planned | p008 |
+| [p008](phase008/phase.md) | M3a 本物の値（zedBSD の backend の monitor の領域） | in-progress（q662: T1-067 PASS、Q1 の判定待ち） | WS131 p010 までの統合、p005・p006 |
+| [p011](phase011/phase.md) | M3b Linux・FreeBSD の backend の monitor の領域 | in-progress（q662: Linux は host で PASS、FreeBSD は T の試験待ち） | p008 |
 | p012 | M3c compositor の `kl_system_monitor_v1`（manager v3、専用の thread、ack と間引き）と libkeiland の `kl_system_monitor_*` | planned | p008 |
 | p013 | M3d app の system の source | planned | p012 |
 | p009 | K4 kernel: ACPI の thermal・電池（実機、WS131 p005 と調整） | planned | 実機 |
