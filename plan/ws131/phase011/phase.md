@@ -134,3 +134,16 @@ Q1 への merge の依頼に添えた（下の文）:
 ## Resume
 
 試験の担当の結果を Q1 が判定する。FAIL なら P2 が直す。
+
+## T2-021 の FAIL の直し（P2 generation8、2026-10-04、Q1 の依頼）
+
+- 症状: settings-regress（zedBSD の QEMU）の p003 で `ZSETTINGS NETWORK state reachable=1 connected=1 kind=1 interface=[a-z]+[0-9]+ wifi=0`、
+  p008 で `ZSETTINGS NETWORK state reachable=1 connected=1 kind=1` が 2 回とも MISSING（他の 6 本は PASS）。証拠
+  `/home/awe/zedBSD-worktrees/t2/build/t2-021/settings-regress/`・`settings-regress-retry/`。
+- 原因（source の退行、試験は正しい）: p011 の前は `keiland_network_update` が daemon の最初の state を「変化」として返し、
+  `se_network_poll` が `NETWORK state` の行を出していた。p011 の後は `kl_system_open` が最初の state まで roundtrip で受け取ってしまい、
+  `se_network_open` が `kl_system_network_get_state` で取るだけで log を出さない。state が変わらない限り `KL_SYSTEM_CHANGED_NETWORK` は
+  来ないので、最初の state の行が一度も出ない。画面（T2-021 の p003/network-real.png）は Connected・ue0・Wired で、state 自体は正しい。
+- 直し: `userland/desktop/settings/network.c` の `se_network_open` が最初の state を変化と同じ書式で log する。
+- 確かめ: zedBSD の settings（`-Werror`）exit 0 warning 0、Linux の flag の gcc で network.o、style-check 違反 0。QEMU は T2 に
+  settings-regress の再試験を依頼。

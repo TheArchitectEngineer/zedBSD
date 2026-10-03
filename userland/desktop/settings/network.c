@@ -86,8 +86,15 @@ se_network_open(
 	/* The network is followed from now on. */
 	network->live = 1;
 
-	/* The state and the scan the compositor told when the system opened. */
+	/*
+	 * The state the compositor told when the system opened, logged as a
+	 * change is: it is the first state, which the tests wait for, and no
+	 * change follows while it holds (WS131 p011, T2-021).
+	 */
 	kl_system_network_get_state(app->system, &network->state);
+	se_log("NETWORK state reachable=%u connected=%u kind=%u interface=%s wifi=%u ssid=%s", network->state.reachable, network->state.connected, network->state.kind, network->state.interface, network->state.wifi, network->state.ssid);
+
+	/* The scan the compositor told when the system opened. */
 	count = kl_system_network_get_scan(app->system, network->scan, SE_NETWORK_SCAN);
 	if (count > SE_NETWORK_SCAN)
 		count = SE_NETWORK_SCAN;
