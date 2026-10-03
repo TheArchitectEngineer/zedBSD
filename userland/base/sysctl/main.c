@@ -24,6 +24,7 @@
 
 #define NAME_MAX 64U
 
+static int show_cputimes(void);
 static int show_writeback(void);
 static int show_readahead(void);
 static int set_writeback(const char *value);
@@ -84,6 +85,7 @@ show_all(
 	void)
 {
 	static const char *const names[] = {
+	    "hw.cputimes",
 	    "kern.boot.firmware_partition",
 	    "kern.boot.config_partition",
 	    "kern.boot.config_matches",
@@ -172,6 +174,10 @@ show_name(
 		printf("%s: %s\n", name, selector);
 		return 0;
 	}
+
+	/* Each CPU's ticks by what it was doing, a line a CPU. */
+	if (strcmp(name, "hw.cputimes") == 0)
+		return show_cputimes();
 
 	/* Formats speculative observations separately from ordinary demand I/O.
 	 */
@@ -450,5 +456,80 @@ show_readahead(
 	    (unsigned long long)report.queue_refusals,
 	    (unsigned long long)report.memory_bytes,
 	    report.jobs, report.running, report.demand);
+	return 0;
+}
+
+/*
+ * Prints hw.cputimes (ws134-p005): the ticks a second and the CPUs, then
+ * a line a CPU with its user, system, idle and other ticks since boot.
+ * Returns 0, or -1 with errno set.
+ */
+static int
+show_cputimes(
+	void)
+{
+	const struct cpu_times_header *header;
+	const struct cpu_times_entry *entry;
+	unsigned char *buffer;
+	size_t length;
+	size_t needed;
+	uint32_t cpu;
+	int status;
+	int valid;
+
+	/* The length the kernel needs for every CPU. */
+	length = 0;
+	status = sysctlbyname("hw.cputimes", NULL, &length, NULL, 0);
+	if (status != 0)
+		return -1;
+
+	/* A buffer of that length. */
+	buffer = malloc(length);
+	if (buffer == NULL)
+		return -1;
+
+	/* The value. */
+	needed = length;
+	status = sysctlbyname("hw.cputimes", buffer, &length, NULL, 0);
+	if (status != 0) {
+		free(buffer);
+		return -1;
+	}
+
+	/* A value of another length than asked for (the CPUs changed), or of a layout this command does not know. */
+	header = (const struct cpu_times_header *)(void *)buffer;
+	valid = 1;
+	if (length != needed) {
+		valid = 0;
+	} else if (length < sizeof(*header)) {
+		valid = 0;
+	} else if (header->version != CPU_TIMES_VERSION) {
+		valid = 0;
+	} else if (header->element_size != sizeof(*entry)) {
+		valid = 0;
+	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
+		valid = 0;
+	}
+
+	/* Refuses what it cannot read. */
+	if (!valid) {
+		free(buffer);
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* The clock's rate and the CPUs. */
+	printf("hw.cputimes: hz=%u cpus=%u\n", header->hz, header->count);
+
+	/* A line a CPU. */
+	for (cpu = 0; cpu < header->count; cpu++) {
+		entry = (const struct cpu_times_entry *)(void *)(buffer + header->struct_size + (size_t)cpu * header->element_size);
+		printf("hw.cputimes: cpu=%u user=%llu system=%llu idle=%llu other=%llu\n", cpu,
+		       (unsigned long long)entry->user, (unsigned long long)entry->system,
+		       (unsigned long long)entry->idle, (unsigned long long)entry->other);
+	}
+
+	/* Succeeded: every CPU is printed. */
+	free(buffer);
 	return 0;
 }

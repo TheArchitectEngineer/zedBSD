@@ -19,10 +19,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/sysctl.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
 #include <uapi/system.h>
+#include <uapi/sysctl.h>
 
 #define TOP_MAX_PROCESSES 256U
 #define TOP_CLEAR_SCREEN "\033[H\033[2J"
@@ -41,6 +43,8 @@ static void human(uint64_t bytes, char out[16]);
 static const char *user_name(uid_t uid, char b[16]);
 static char state_letter(unsigned state);
 static const char *leaf(const char *s);
+static void cpu_line(void);
+static int cpu_totals(uint64_t totals[4]);
 
 /*
  * Runs the top command.
@@ -188,7 +192,7 @@ draw(
 	printf("Tasks: %3zu total, %3u running, %3u sleeping, %3u stopped, %3u "
 	       "zombie\n",
 	       count, running, sleeping, stopped, zombie);
-	printf("%%Cpu(s):  0.0 us,  0.0 sy,  0.0 ni, 100.0 id,  0.0 wa\n");
+	cpu_line();
 	printf("MiB Mem : %8s total, %8s free, %8s used\n", total, freeb, used);
 	printf("MiB Swap: %8s total, %8s free\n\n", swap, swapfree);
 	printf("VM I/O: %llu page-in, %llu page-out, %llu swapped\n\n",
@@ -313,4 +317,120 @@ leaf(
 
 	/* Returns the computed result. */
 	return p ? p + 1 : s;
+}
+
+/*
+ * Prints the CPUs' row (ws134-p005): the shares of user, system, idle and
+ * other time over all CPUs since the last draw (since boot the first
+ * time), from hw.cputimes.  Without hw.cputimes the row says so.
+ */
+static void
+cpu_line(
+	void)
+{
+	static uint64_t last[4];
+	uint64_t totals[4];
+	uint64_t delta[4];
+	uint64_t sum;
+	double share[4];
+	unsigned kind;
+	int error;
+
+	/* The ticks of every CPU, added up. */
+	error = cpu_totals(totals);
+	if (error != 0) {
+		printf("%%Cpu(s): unavailable\n");
+		return;
+	}
+
+	/* The ticks since the last draw, and the last for the next. */
+	sum = 0;
+	for (kind = 0; kind < 4U; kind++) {
+		delta[kind] = totals[kind] - last[kind];
+		sum += delta[kind];
+		last[kind] = totals[kind];
+	}
+
+	/* Each kind's share (all idle when no tick came). */
+	for (kind = 0; kind < 4U; kind++) {
+		share[kind] = 0.0;
+		if (sum != 0U)
+			share[kind] = 100.0 * (double)delta[kind] / (double)sum;
+	}
+
+	/* No tick between two draws: idle. */
+	if (sum == 0U)
+		share[2] = 100.0;
+
+	/* The row: user, system, idle, other (between threads). */
+	printf("%%Cpu(s): %5.1f us, %5.1f sy, %5.1f id, %5.1f ot\n", share[0], share[1], share[2], share[3]);
+}
+
+/*
+ * Adds up every CPU's user, system, idle and other ticks from hw.cputimes
+ * into totals.  Returns 0, or -1 when the value cannot be read.
+ */
+static int
+cpu_totals(
+	uint64_t totals[4])
+{
+	const struct cpu_times_header *header;
+	const struct cpu_times_entry *entry;
+	unsigned char *buffer;
+	size_t length;
+	size_t needed;
+	uint32_t cpu;
+	int status;
+
+	/* The length the kernel needs. */
+	length = 0;
+	status = sysctlbyname("hw.cputimes", NULL, &length, NULL, 0);
+	if (status != 0)
+		return -1;
+
+	/* A buffer of that length. */
+	buffer = malloc(length);
+	if (buffer == NULL)
+		return -1;
+
+	/* The value, whole and of the known layout. */
+	needed = length;
+	status = sysctlbyname("hw.cputimes", buffer, &length, NULL, 0);
+	header = (const struct cpu_times_header *)(void *)buffer;
+	if (status != 0) {
+		free(buffer);
+		return -1;
+	}
+
+	/* A short value or another layout. */
+	if (length != needed || length < sizeof(*header)) {
+		free(buffer);
+		return -1;
+	}
+
+	/* Another version or element. */
+	if (header->version != CPU_TIMES_VERSION || header->element_size != sizeof(*entry)) {
+		free(buffer);
+		return -1;
+	}
+
+	/* Entries beyond the value. */
+	if (header->struct_size + (size_t)header->count * header->element_size > length) {
+		free(buffer);
+		return -1;
+	}
+
+	/* Every CPU's ticks, added up by kind. */
+	memset(totals, 0, 4U * sizeof(totals[0]));
+	for (cpu = 0; cpu < header->count; cpu++) {
+		entry = (const struct cpu_times_entry *)(void *)(buffer + header->struct_size + (size_t)cpu * header->element_size);
+		totals[0] += entry->user;
+		totals[1] += entry->system;
+		totals[2] += entry->idle;
+		totals[3] += entry->other;
+	}
+
+	/* Succeeded: the totals. */
+	free(buffer);
+	return 0;
 }
