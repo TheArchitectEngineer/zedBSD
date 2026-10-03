@@ -6,7 +6,7 @@
  */
 
 /* Exports Linux reservation fences without exposing kernel records to shared rendering. */
-#include "../dmabuf/sync.h"
+#include "userland/desktop/libkeiland-backend/dmabuf/sync.h"
 #include <linux/dma-buf.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -15,7 +15,7 @@
  * Exports the writers that must finish before the compositor samples the buffer.
  */
 int
-zwl_dmabuf_export_read(
+kl_backend_dmabuf_export_read(
 	int buffer_fd,
 	int *sync_fd)
 {

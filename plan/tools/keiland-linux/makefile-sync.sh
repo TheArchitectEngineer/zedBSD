@@ -14,8 +14,8 @@ for path in sorted(Path('userland').glob('*/*/Makefile.linux')):
 	target_path = path.with_name('Makefile')
 	target = target_path.read_text() if target_path.exists() else ''
 	# Tokens are literal source paths; variable references do not supply source membership.
-	target_sources = set(re.findall(r'userland/[^\s,()]+\.c', target))
-	linux_sources = set(re.findall(r'userland/[^\s,()]+\.c', linux))
+	target_sources = set(re.findall(r'userland/[^\s,()]+\.c\b', target))
+	linux_sources = set(re.findall(r'userland/[^\s,()]+\.c\b', linux))
 	rules = {'skip': [], 'only': []}
 	for kind, pattern in re.findall(r'^# keiland-linux-sync: (skip|only) (\S+)', linux, re.M):
 		rules[kind].append(pattern)

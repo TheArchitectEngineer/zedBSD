@@ -7,9 +7,11 @@
 
 /*
  * Receives one-plane standard dma-bufs on Linux and FreeBSD and passes their Vulkan images and
- * implicit acquire fences to the compositor's common ownership machinery.
+ * implicit acquire fences to the compositor's common ownership machinery (libkeiland-backend's GPU
+ * buffers, keiland-backend-gpu.h; WS131 p009).  The compositor's wire objects and device are the
+ * protocol host's, which every public call is given.
  */
-#include "../compose.h"
+#include "userland/desktop/libkeiland-backend/keiland-backend-gpu.h"
 #include <inttypes.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -55,25 +57,32 @@ static uint64_t gpu_modifiers[GPU_ENUM_MAX];
 static uint32_t gpu_modifier_count;
 static unsigned gpu_queried;
 
+/*
+ * The protocol host of the call being carried out: set at each entry
+ * (bind, request, commit, resource free), on the compositor's event loop's
+ * thread, before any helper below uses it.
+ */
+static const struct kl_backend_protocol_host *gpu_host;
+
 static uint32_t gpu_word(const unsigned char *bytes, size_t offset);
-static int gpu_formats(struct zwl_compose *compose);
-static int gpu_modifier_importable(struct zwl_compose *compose, uint64_t modifier);
+static int gpu_formats(const struct kl_backend_gpu_device *device);
+static int gpu_modifier_importable(const struct kl_backend_gpu_device *device, uint64_t modifier);
 static int gpu_modifier_known(uint64_t modifier);
-static int gpu_factory_request(struct zwl_object *factory, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int gpu_params_add(struct zwl_object *params, const unsigned char *bytes, size_t size);
-static int gpu_params_create(struct zwl_object *params, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int gpu_params_validate(struct zwl_object *params, uint32_t width, uint32_t height, uint32_t format, uint64_t *allocation_bytes);
-static int gpu_protocol_error(struct zwl_object *params, uint32_t code, const char *reason);
-static int gpu_create_buffer(struct zwl_object *params, uint32_t opcode, uint32_t id, uint32_t width, uint32_t height, uint32_t format, uint64_t allocation_bytes);
-static VkResult gpu_image(struct zwl_object *buffer, const struct gpu_buffer *plane, uint32_t width, uint32_t height);
-static VkResult gpu_image_memory(struct zwl_compose *compose, const struct gpu_buffer *plane, VkImage image, VkDeviceMemory *memory);
-static void gpu_image_release(struct zwl_compose *compose, VkImage image, VkDeviceMemory memory);
+static int gpu_factory_request(struct kl_backend_resource *factory, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int gpu_params_add(struct kl_backend_resource *params, const unsigned char *bytes, size_t size);
+static int gpu_params_create(struct kl_backend_resource *params, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int gpu_params_validate(struct kl_backend_resource *params, uint32_t width, uint32_t height, uint32_t format, uint64_t *allocation_bytes);
+static int gpu_protocol_error(struct kl_backend_resource *params, uint32_t code, const char *reason);
+static int gpu_create_buffer(struct kl_backend_resource *params, uint32_t opcode, uint32_t id, uint32_t width, uint32_t height, uint32_t format, uint64_t allocation_bytes);
+static VkResult gpu_image(struct kl_backend_resource *buffer, const struct gpu_buffer *plane, uint32_t width, uint32_t height);
+static VkResult gpu_image_memory(const struct kl_backend_gpu_device *device, const struct gpu_buffer *plane, VkImage image, VkDeviceMemory *memory);
+static void gpu_image_release(const struct kl_backend_gpu_device *device, VkImage image, VkDeviceMemory memory);
 
 /*
  * Names the standard Linux dma-buf factory.
  */
 const char *
-zwl_gpu_global_interface(
+kl_backend_gpu_global_interface(
 	void)
 {
 	/* Succeeded: Native clients share the standard dma-buf protocol. */
@@ -84,7 +93,7 @@ zwl_gpu_global_interface(
  * Reports the supported format-and-modifier protocol revision.
  */
 uint32_t
-zwl_gpu_global_version(
+kl_backend_gpu_global_version(
 	void)
 {
 	/* Succeeded: revision three supplies modifier events without feedback objects. */
@@ -95,19 +104,27 @@ zwl_gpu_global_version(
  * Sends a new factory binding its importable formats and modifiers.
  */
 int
-zwl_gpu_bind(
-	struct zwl_object *factory)
+kl_backend_gpu_bind(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *factory)
 {
 	uint32_t formats[2] = {GPU_ARGB8888, GPU_XRGB8888};
 	uint32_t words[3];
 	uint32_t format_index;
 	uint32_t modifier_index;
+	uint32_t version;
 	int error;
 
+	/* The host this call's helpers use. */
+	gpu_host = host;
+
 	/* Resolves the compositor device's sampled import capabilities once. */
-	error = gpu_formats(factory->client->server->compose);
+	error = gpu_formats(gpu_host->device(factory));
 	if (error != 0)
 		return error;
+
+	/* The factory's version decides the modifier events. */
+	version = gpu_host->resource_version(factory);
 
 	/* A display-only backend has no buffer format to advertise. */
 	if (gpu_modifier_count == 0U)
@@ -116,12 +133,12 @@ zwl_gpu_bind(
 	/* Publishes both alpha interpretations of the same byte format. */
 	for (format_index = 0; format_index < 2U; format_index++) {
 		/* Versions one through three receive the legacy format event. */
-		error = zwl_emit(factory->client, factory->id, 0U, &formats[format_index], sizeof(uint32_t));
+		error = gpu_host->emit(factory, 0U, &formats[format_index], sizeof(uint32_t));
 		if (error != 0)
 			return error;
 
 		/* Modifier events belong only to revision three of this factory. */
-		if (factory->version < 3U)
+		if (version < 3U)
 			continue;
 
 		/* Each advertised modifier is independently sampled and importable. */
@@ -130,7 +147,7 @@ zwl_gpu_bind(
 			words[0] = formats[format_index];
 			words[1] = (uint32_t)(gpu_modifiers[modifier_index] >> 32);
 			words[2] = (uint32_t)gpu_modifiers[modifier_index];
-			error = zwl_emit(factory->client, factory->id, 1U, words, sizeof(words));
+			error = gpu_host->emit(factory, 1U, words, sizeof(words));
 			if (error != 0)
 				return error;
 		}
@@ -144,16 +161,24 @@ zwl_gpu_bind(
  * Handles factory constructors and one-use dma-buf parameter batches.
  */
 int
-zwl_gpu_request(
-	struct zwl_object *object,
+kl_backend_gpu_request(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
+	uint32_t version;
+	unsigned role;
 	int error;
 
+	/* The host this call's helpers use, and the object's kind and version. */
+	gpu_host = host;
+	version = gpu_host->resource_version(object);
+
 	/* The factory creates params but owns no plane itself. */
-	if (object->kind == ZWL_FACTORY) {
+	role = gpu_host->resource_role(object);
+	if (role == KL_BACKEND_ROLE_FACTORY) {
 		error = gpu_factory_request(object, opcode, bytes, size);
 		if (error != 0)
 			return error;
@@ -163,19 +188,19 @@ zwl_gpu_request(
 	}
 
 	/* The common dispatcher must not route unrelated objects into this module. */
-	if (object->kind != ZWL_GPU_OBJECT)
+	if (role != KL_BACKEND_ROLE_GPU_OBJECT)
 		return EPROTO;
 
 	/* A destructor is valid before or after a batch has been consumed. */
 	if (opcode == 0U && size == 0U) {
-		zwl_object_destroy(object);
+		gpu_host->resource_destroy(object);
 		return 0;
 	}
 
 	/* Dispatches only the parameter methods defined by the negotiated version. */
 	if (opcode == 1U) {
 		error = gpu_params_add(object, bytes, size);
-	} else if (opcode == 2U || (opcode == 3U && object->version >= 2U)) {
+	} else if (opcode == 2U || (opcode == 3U && version >= 2U)) {
 		error = gpu_params_create(object, opcode, bytes, size);
 	} else {
 		/* An unknown opcode has no descriptor or child ownership to consume. */
@@ -194,13 +219,17 @@ zwl_gpu_request(
  * Releases a parameter or buffer's retained plane descriptor.
  */
 void
-zwl_gpu_object_free(
-	struct zwl_object *object)
+kl_backend_gpu_resource_free(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *object)
 {
 	struct gpu_buffer *plane;
 
+	/* The host this call's helpers use. */
+	gpu_host = host;
+
 	/* Shared-memory and other common objects own no dma-buf record. */
-	plane = object->gpu_private;
+	plane = (*gpu_host->resource_private(object));
 	if (plane == NULL)
 		return;
 
@@ -210,7 +239,7 @@ zwl_gpu_object_free(
 
 	/* Removes the OS-owned record after its plane descriptor has retired. */
 	free(plane);
-	object->gpu_private = NULL;
+	(*gpu_host->resource_private(object)) = NULL;
 
 	/* Succeeded: this object retains no dma-buf ownership. */
 	return;
@@ -220,33 +249,40 @@ zwl_gpu_object_free(
  * Attaches the client's implicit write fence to the surface's next commit.
  */
 void
-zwl_gpu_commit(
-	struct zwl_object *surface,
-	struct zwl_object *buffer)
+kl_backend_gpu_commit(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *surface,
+	struct kl_backend_resource *buffer)
 {
 	struct gpu_buffer *plane;
 	int fence_fd;
 	int error;
 	int saved_error;
+	int logging;
+	int full;
+
+	/* The host this call's helpers use. */
+	gpu_host = host;
 
 	/* Shared-memory commits do not carry an external reservation object. */
 	if (buffer == NULL)
 		return;
 
 	/* Only imported dma-bufs have a retained plane descriptor. */
-	plane = buffer->gpu_private;
+	plane = (*gpu_host->resource_private(buffer));
 	if (plane == NULL)
 		return;
 
 	/* A full pending-fence array cannot silently discard a client's acquire fence. */
-	if (surface->acquire_count >= ZWL_FENCE_MAX) {
-		(void)zwl_error(surface->client, surface->id, "too many acquire fences");
+	full = gpu_host->surface_fence_full(surface);
+	if (full) {
+		(void)gpu_host->post_error(surface, KL_BACKEND_ERROR_INVALID, "too many acquire fences");
 		return;
 	}
 
 	/* Exports only the writers that must finish before the compositor samples the image. */
 	fence_fd = -1;
-	error = zwl_dmabuf_export_read(plane->fd, &fence_fd);
+	error = kl_backend_dmabuf_export_read(plane->fd, &fence_fd);
 	if (error != 0) {
 		/* Older kernels rely on the client's completed CPU-wait presentation path. */
 		saved_error = errno;
@@ -254,8 +290,8 @@ zwl_gpu_commit(
 			return;
 
 		/* A failed reservation inquiry ends this client before further GPU work. */
-		printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)surface->client->number, saved_error);
-		(void)zwl_error(surface->client, surface->id, "cannot export acquire fence");
+		printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(surface), saved_error);
+		(void)gpu_host->post_error(surface, KL_BACKEND_ERROR_INVALID, "cannot export acquire fence");
 		return;
 	}
 
@@ -263,18 +299,22 @@ zwl_gpu_commit(
 	error = fcntl(fence_fd, F_SETFD, FD_CLOEXEC);
 	if (error < 0) {
 		(void)close(fence_fd);
-		(void)zwl_error(surface->client, surface->id, "cannot retain acquire fence");
+		(void)gpu_host->post_error(surface, KL_BACKEND_ERROR_INVALID, "cannot retain acquire fence");
 		return;
 	}
 
 	/* Each sync_file is a fresh payload at generation one, owned by common commit cleanup. */
-	surface->acquire[surface->acquire_count].fd = fence_fd;
-	surface->acquire[surface->acquire_count].generation = 1U;
-	surface->acquire_count++;
+	error = gpu_host->surface_fence(surface, fence_fd, 1U);
+	if (error != 0) {
+		(void)close(fence_fd);
+		(void)gpu_host->post_error(surface, KL_BACKEND_ERROR_INVALID, "too many acquire fences");
+		return;
+	}
 
 	/* Per-frame diagnostics expose the fence transfer without changing default behavior. */
-	if (surface->client->server->log_frames)
-		printf("ZWL ACQUIRE_FENCE client=%" PRIu64 " surface=%u generation=1\n", (uint64_t)surface->client->number, surface->id);
+	logging = gpu_host->log_frames(surface);
+	if (logging)
+		printf("ZWL ACQUIRE_FENCE client=%" PRIu64 " surface=%u generation=1\n", (uint64_t)gpu_host->client_number(surface), gpu_host->resource_id(surface));
 
 	/* Succeeded: common commit polling now owns the client's acquire fence. */
 	return;
@@ -284,7 +324,7 @@ zwl_gpu_commit(
  * Supplies the standard DRM display-acquisition instance extensions.
  */
 uint32_t
-zwl_gpu_instance_extensions(
+kl_backend_gpu_instance_extensions(
 	const char **names,
 	uint32_t capacity)
 {
@@ -304,7 +344,7 @@ zwl_gpu_instance_extensions(
  * Supplies only available dma-buf and modifier device extensions.
  */
 uint32_t
-zwl_gpu_device_extensions(
+kl_backend_gpu_device_extensions(
 	VkPhysicalDevice physical,
 	const char **names,
 	uint32_t capacity)
@@ -373,7 +413,7 @@ zwl_gpu_device_extensions(
  * Selects ordinary Vulkan status polling for compositor frame completion.
  */
 VkExternalFenceHandleTypeFlagBits
-zwl_gpu_frame_fence_type(
+kl_backend_gpu_frame_fence_type(
 	void)
 {
 	/* Succeeded: Shared frame fences remain intact for common status polling. */
@@ -398,7 +438,7 @@ gpu_word(
 /* Caches single-plane sampled layouts that can import the selected device's dma-bufs. */
 static int
 gpu_formats(
-	struct zwl_compose *compose)
+	const struct kl_backend_gpu_device *device)
 {
 	PFN_vkGetPhysicalDeviceFormatProperties2KHR query;
 	VkDrmFormatModifierPropertiesEXT modifiers[GPU_ENUM_MAX];
@@ -419,11 +459,11 @@ gpu_formats(
 	}
 
 	/* Requires the same selected device that supplied the extension subset. */
-	if (compose == NULL || compose->physical != gpu_physical)
+	if (device == NULL || device->physical != gpu_physical)
 		return EINVAL;
 
 	/* An API-1.0 instance exposes the enabled properties2 extension's KHR entry point. */
-	query = (PFN_vkGetPhysicalDeviceFormatProperties2KHR)vkGetInstanceProcAddr(compose->instance, "vkGetPhysicalDeviceFormatProperties2KHR");
+	query = (PFN_vkGetPhysicalDeviceFormatProperties2KHR)vkGetInstanceProcAddr(device->instance, "vkGetPhysicalDeviceFormatProperties2KHR");
 	if (query == NULL)
 		return ENOTSUP;
 
@@ -432,11 +472,11 @@ gpu_formats(
 		/* Reads linear sampling support from the ordinary format properties. */
 		memset(&properties, 0, sizeof(properties));
 		properties.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
-		query(compose->physical, VK_FORMAT_B8G8R8A8_UNORM, &properties);
+		query(device->physical, VK_FORMAT_B8G8R8A8_UNORM, &properties);
 
 		/* External importability is required in addition to the sampling format feature. */
 		if ((properties.formatProperties.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0U) {
-			supported = gpu_modifier_importable(compose, 0U);
+			supported = gpu_modifier_importable(device, 0U);
 			if (supported != 0) {
 				gpu_modifiers[0] = 0U;
 				gpu_modifier_count = 1U;
@@ -456,7 +496,7 @@ gpu_formats(
 	memset(&properties, 0, sizeof(properties));
 	properties.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
 	properties.pNext = &list;
-	query(compose->physical, VK_FORMAT_B8G8R8A8_UNORM, &properties);
+	query(device->physical, VK_FORMAT_B8G8R8A8_UNORM, &properties);
 
 	/* Refuses more entries than the module can retain rather than accepting a partial set. */
 	count = list.drmFormatModifierCount;
@@ -465,7 +505,7 @@ gpu_formats(
 
 	/* Populates the measured layout array with only the allocated number of entries. */
 	list.pDrmFormatModifierProperties = modifiers;
-	query(compose->physical, VK_FORMAT_B8G8R8A8_UNORM, &properties);
+	query(device->physical, VK_FORMAT_B8G8R8A8_UNORM, &properties);
 	if (list.drmFormatModifierCount < count)
 		count = list.drmFormatModifierCount;
 
@@ -480,7 +520,7 @@ gpu_formats(
 			continue;
 
 		/* External image properties certify the actual modifier's importability. */
-		supported = gpu_modifier_importable(compose, modifiers[index].drmFormatModifier);
+		supported = gpu_modifier_importable(device, modifiers[index].drmFormatModifier);
 		if (supported == 0)
 			continue;
 
@@ -497,7 +537,7 @@ gpu_formats(
 /* Checks external import support for one sampled image layout. */
 static int
 gpu_modifier_importable(
-	struct zwl_compose *compose,
+	const struct kl_backend_gpu_device *device,
 	uint64_t modifier)
 {
 	PFN_vkGetPhysicalDeviceImageFormatProperties2KHR query;
@@ -509,7 +549,7 @@ gpu_modifier_importable(
 	VkResult status;
 
 	/* The enabled API-1.0 properties2 extension supplies this physical query. */
-	query = (PFN_vkGetPhysicalDeviceImageFormatProperties2KHR)vkGetInstanceProcAddr(compose->instance, "vkGetPhysicalDeviceImageFormatProperties2KHR");
+	query = (PFN_vkGetPhysicalDeviceImageFormatProperties2KHR)vkGetInstanceProcAddr(device->instance, "vkGetPhysicalDeviceImageFormatProperties2KHR");
 	if (query == NULL)
 		return 0;
 
@@ -549,7 +589,7 @@ gpu_modifier_importable(
 	memset(&properties, 0, sizeof(properties));
 	properties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2;
 	properties.pNext = &external_properties;
-	status = query(compose->physical, &image, &properties);
+	status = query(device->physical, &image, &properties);
 	if (status != VK_SUCCESS)
 		return 0;
 
@@ -586,18 +626,18 @@ gpu_modifier_known(
 /* Creates one independent params object or destroys its factory binding. */
 static int
 gpu_factory_request(
-	struct zwl_object *factory,
+	struct kl_backend_resource *factory,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *params;
+	struct kl_backend_resource *params;
 	struct gpu_buffer *plane;
 	uint32_t id;
 
 	/* Factory destruction never invalidates previously constructed params or buffers. */
 	if (opcode == 0U && size == 0U) {
-		zwl_object_destroy(factory);
+		gpu_host->resource_destroy(factory);
 		return 0;
 	}
 
@@ -607,20 +647,20 @@ gpu_factory_request(
 
 	/* Creates the client-chosen params identity before attaching any OS-owned state. */
 	id = gpu_word(bytes, 0U);
-	params = zwl_create(factory->client, id, ZWL_GPU_OBJECT, factory->version);
+	params = gpu_host->resource_create(factory, id, KL_BACKEND_ROLE_GPU_OBJECT, gpu_host->resource_version(factory));
 	if (params == NULL)
 		return EPROTO;
 
 	/* Allocates one batch with an explicitly absent descriptor. */
 	plane = calloc(1, sizeof(*plane));
 	if (plane == NULL) {
-		zwl_object_destroy(params);
+		gpu_host->resource_destroy(params);
 		return ENOMEM;
 	}
 
 	/* The params object owns its record independently of the factory binding. */
 	plane->fd = -1;
-	params->gpu_private = plane;
+	(*gpu_host->resource_private(params)) = plane;
 
 	/* Succeeded: add and create can now populate this one-use batch. */
 	return 0;
@@ -629,7 +669,7 @@ gpu_factory_request(
 /* Consumes one plane descriptor only after the complete add payload has arrived. */
 static int
 gpu_params_add(
-	struct zwl_object *params,
+	struct kl_backend_resource *params,
 	const unsigned char *bytes,
 	size_t size)
 {
@@ -643,12 +683,12 @@ gpu_params_add(
 		return EPROTO;
 
 	/* A pending descriptor leaves the complete request ready for the common retry path. */
-	descriptor = zwl_take_fd(params->client);
+	descriptor = gpu_host->take_fd(params);
 	if (descriptor < 0)
 		return EAGAIN;
 
 	/* A consumed batch cannot collect another descriptor. */
-	plane = params->gpu_private;
+	plane = (*gpu_host->resource_private(params));
 	if (plane->used != 0U) {
 		(void)close(descriptor);
 		error = gpu_protocol_error(params, GPU_ALREADY_USED, "params already used");
@@ -691,7 +731,7 @@ gpu_params_add(
 /* Validates and consumes one batch through synchronous or asynchronous buffer construction. */
 static int
 gpu_params_create(
-	struct zwl_object *params,
+	struct kl_backend_resource *params,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -717,7 +757,7 @@ gpu_params_create(
 		return EPROTO;
 
 	/* A batch remains consumed even when its first import fails. */
-	plane = params->gpu_private;
+	plane = (*gpu_host->resource_private(params));
 	if (plane->used != 0U) {
 		error = gpu_protocol_error(params, GPU_ALREADY_USED, "params already used");
 		return error;
@@ -743,7 +783,7 @@ gpu_params_create(
 		}
 
 		/* Asynchronous construction reports a failed event with no child buffer. */
-		error = zwl_emit(params->client, params->id, 1U, NULL, 0U);
+		error = gpu_host->emit(params, 1U, NULL, 0U);
 		if (error != 0)
 			return error;
 
@@ -769,12 +809,13 @@ gpu_params_create(
 /* Checks dimensions, layout and actual allocation bounds before calling any Vulkan importer. */
 static int
 gpu_params_validate(
-	struct zwl_object *params,
+	struct kl_backend_resource *params,
 	uint32_t width,
 	uint32_t height,
 	uint32_t format,
 	uint64_t *allocation_bytes)
 {
+	const struct kl_backend_gpu_device *device;
 	struct gpu_buffer *plane;
 	uint32_t maximum;
 	uint64_t required;
@@ -783,7 +824,7 @@ gpu_params_validate(
 	int error;
 
 	/* Every supported RGB format needs precisely plane zero. */
-	plane = params->gpu_private;
+	plane = (*gpu_host->resource_private(params));
 	if (plane->fd < 0) {
 		error = gpu_protocol_error(params, GPU_INCOMPLETE, "plane zero is missing");
 		return error;
@@ -803,7 +844,10 @@ gpu_params_validate(
 	}
 
 	/* Unsigned decoding also rejects negative signed dimensions above the bounded Vulkan limit. */
-	maximum = params->client->server->gpu_limits.max_dimension;
+	device = gpu_host->device(params);
+	maximum = 0U;
+	if (device != NULL)
+		maximum = device->max_dimension;
 	if (width == 0U ||
 	    height == 0U ||
 	    width > maximum ||
@@ -840,15 +884,15 @@ gpu_params_validate(
 /* Reports one fatal params error and records the rejected import without calling Vulkan. */
 static int
 gpu_protocol_error(
-	struct zwl_object *params,
+	struct kl_backend_resource *params,
 	uint32_t code,
 	const char *reason)
 {
 	int error;
 
 	/* The common diagnostic prefix also counts pre-import validation failures. */
-	printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)params->client->number, EINVAL);
-	error = zwl_error_code(params->client, params->id, code, reason);
+	printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(params), EINVAL);
+	error = gpu_host->post_error(params, code, reason);
 	if (error != 0)
 		return error;
 
@@ -859,7 +903,7 @@ gpu_protocol_error(
 /* Constructs a buffer with independent descriptor ownership and reports its import outcome. */
 static int
 gpu_create_buffer(
-	struct zwl_object *params,
+	struct kl_backend_resource *params,
 	uint32_t opcode,
 	uint32_t id,
 	uint32_t width,
@@ -867,17 +911,18 @@ gpu_create_buffer(
 	uint32_t format,
 	uint64_t allocation_bytes)
 {
-	struct zwl_object *buffer;
+	struct kl_backend_resource *buffer;
 	struct gpu_buffer *source;
 	struct gpu_buffer *plane;
+	uint32_t buffer_id;
 	VkResult status;
 	int error;
 
 	/* Asynchronous construction uses the compositor's reserved server identity range. */
 	if (opcode == 2U) {
-		buffer = zwl_create_server(params->client, ZWL_BUFFER, 1U);
+		buffer = gpu_host->resource_create_server(params, KL_BACKEND_ROLE_BUFFER, 1U);
 	} else {
-		buffer = zwl_create(params->client, id, ZWL_BUFFER, 1U);
+		buffer = gpu_host->resource_create(params, id, KL_BACKEND_ROLE_BUFFER, 1U);
 	}
 
 	/* Refuses an exhausted identity table or an invalid client-chosen buffer identity. */
@@ -887,36 +932,36 @@ gpu_create_buffer(
 	/* Allocates the buffer's descriptor record separately from its one-use params. */
 	plane = calloc(1, sizeof(*plane));
 	if (plane == NULL) {
-		zwl_object_destroy(buffer);
+		gpu_host->resource_destroy(buffer);
 		return ENOMEM;
 	}
 
 	/* Copies immutable layout fields while giving the buffer its own close-on-exec fd. */
-	source = params->gpu_private;
+	source = (*gpu_host->resource_private(params));
 	*plane = *source;
 	plane->fd = fcntl(source->fd, F_DUPFD_CLOEXEC, 0);
 	if (plane->fd < 0) {
 		free(plane);
-		zwl_object_destroy(buffer);
+		gpu_host->resource_destroy(buffer);
 		return EIO;
 	}
 
 	/* Final common object cleanup now owns the retained plane descriptor. */
-	buffer->gpu_private = plane;
+	(*gpu_host->resource_private(buffer)) = plane;
 	status = gpu_image(buffer, plane, width, height);
 	if (status != VK_SUCCESS) {
 		/* A failed import retires its independently created buffer and all partial resources. */
-		printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)params->client->number, EIO);
-		zwl_object_destroy(buffer);
+		printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(params), EIO);
+		gpu_host->resource_destroy(buffer);
 
 		/* Immediate creation cannot return an invalid wl_buffer to the client. */
 		if (opcode == 3U) {
-			error = zwl_error_code(params->client, params->id, GPU_INVALID_BUFFER, "Vulkan buffer import failed");
+			error = gpu_host->post_error(params, GPU_INVALID_BUFFER, "Vulkan buffer import failed");
 			return error;
 		}
 
 		/* Asynchronous creation reports a recoverable failed event without a child identity. */
-		error = zwl_emit(params->client, params->id, 1U, NULL, 0U);
+		error = gpu_host->emit(params, 1U, NULL, 0U);
 		if (error != 0)
 			return error;
 
@@ -926,16 +971,19 @@ gpu_create_buffer(
 
 	/* The fourcc selects how common composition interprets the imported image's alpha byte. */
 	if (format == GPU_ARGB8888)
-		zwl_import_set_alpha(buffer, 1U);
+		gpu_host->buffer_set_alpha(buffer, 1U);
+
+	/* The buffer's wire id, for the log and the created event. */
+	buffer_id = gpu_host->resource_id(buffer);
 
 	/* The imported resource and actual kernel allocation size share the target's diagnostic shape. */
-	printf("ZWL IMPORT client=%" PRIu64 " buffer=%u width=%u height=%u bytes=%" PRIu64 "\n", (uint64_t)params->client->number, buffer->id, width, height, (uint64_t)allocation_bytes);
+	printf("ZWL IMPORT client=%" PRIu64 " buffer=%u width=%u height=%u bytes=%" PRIu64 "\n", (uint64_t)gpu_host->client_number(params), buffer_id, width, height, (uint64_t)allocation_bytes);
 
 	/* Asynchronous construction announces its server-allocated new identity. */
 	if (opcode == 2U) {
-		error = zwl_emit(params->client, params->id, 0U, &buffer->id, sizeof(buffer->id));
+		error = gpu_host->emit(params, 0U, &buffer_id, sizeof(buffer_id));
 		if (error != 0) {
-			zwl_object_destroy(buffer);
+			gpu_host->resource_destroy(buffer);
 			return error;
 		}
 	}
@@ -947,12 +995,12 @@ gpu_create_buffer(
 /* Creates an external image and transfers both Vulkan resources to common import ownership. */
 static VkResult
 gpu_image(
-	struct zwl_object *buffer,
+	struct kl_backend_resource *buffer,
 	const struct gpu_buffer *plane,
 	uint32_t width,
 	uint32_t height)
 {
-	struct zwl_compose *compose;
+	const struct kl_backend_gpu_device *device;
 	VkSubresourceLayout layout;
 	VkImageDrmFormatModifierExplicitCreateInfoEXT modifier;
 	VkExternalMemoryImageCreateInfo external;
@@ -963,8 +1011,12 @@ gpu_image(
 	VkSubresourceLayout actual;
 	VkResult status;
 
+	/* The compositor's device; a params batch is not taken before it is made. */
+	device = gpu_host->device(buffer);
+	if (device == NULL)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
 	/* Builds the sole image plane from the validated client layout. */
-	compose = buffer->client->server->compose;
 	memset(&layout, 0, sizeof(layout));
 	layout.offset = plane->offset;
 	layout.rowPitch = plane->stride;
@@ -1009,7 +1061,7 @@ gpu_image(
 	/* Image creation is checked before querying or importing its memory. */
 	image = VK_NULL_HANDLE;
 	memory = VK_NULL_HANDLE;
-	status = vkCreateImage(compose->device, &create, NULL, &image);
+	status = vkCreateImage(device->device, &create, NULL, &image);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -1018,31 +1070,31 @@ gpu_image(
 		/* Reads the created image's ordinary color-plane layout. */
 		memset(&subresource, 0, sizeof(subresource));
 		subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		vkGetImageSubresourceLayout(compose->device, image, &subresource, &actual);
+		vkGetImageSubresourceLayout(device->device, image, &subresource, &actual);
 
 		/* A different native offset or pitch cannot represent the supplied dma-buf safely. */
 		if (actual.offset != plane->offset || actual.rowPitch != plane->stride) {
-			gpu_image_release(compose, image, memory);
+			gpu_image_release(device, image, memory);
 			return VK_ERROR_INVALID_EXTERNAL_HANDLE;
 		}
 	}
 
 	/* Imports a duplicate fd using the actual image requirements and compatible memory types. */
-	status = gpu_image_memory(compose, plane, image, &memory);
+	status = gpu_image_memory(device, plane, image, &memory);
 	if (status != VK_SUCCESS) {
-		gpu_image_release(compose, image, memory);
+		gpu_image_release(device, image, memory);
 		return status;
 	}
 
 	/* Binds the imported dedicated allocation before common image-view creation. */
-	status = vkBindImageMemory(compose->device, image, memory, 0U);
+	status = vkBindImageMemory(device->device, image, memory, 0U);
 	if (status != VK_SUCCESS) {
-		gpu_image_release(compose, image, memory);
+		gpu_image_release(device, image, memory);
 		return status;
 	}
 
 	/* Common adoption consumes both handles even if image-view or descriptor creation fails. */
-	status = zwl_import_adopt(buffer, image, memory, width, height, VK_FORMAT_B8G8R8A8_UNORM);
+	status = gpu_host->buffer_adopt(buffer, image, memory, width, height, VK_FORMAT_B8G8R8A8_UNORM);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -1053,7 +1105,7 @@ gpu_image(
 /* Imports a dedicated allocation with fd ownership matching Vulkan's success convention. */
 static VkResult
 gpu_image_memory(
-	struct zwl_compose *compose,
+	const struct kl_backend_gpu_device *device,
 	const struct gpu_buffer *plane,
 	VkImage image,
 	VkDeviceMemory *memory)
@@ -1070,19 +1122,19 @@ gpu_image_memory(
 	int descriptor;
 
 	/* Requires the device's enabled external-fd memory query entry point. */
-	query = (PFN_vkGetMemoryFdPropertiesKHR)vkGetDeviceProcAddr(compose->device, "vkGetMemoryFdPropertiesKHR");
+	query = (PFN_vkGetMemoryFdPropertiesKHR)vkGetDeviceProcAddr(device->device, "vkGetMemoryFdPropertiesKHR");
 	if (query == NULL)
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Measures which memory types the actual dma-buf descriptor can import. */
 	memset(&properties, 0, sizeof(properties));
 	properties.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR;
-	status = query(compose->device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, plane->fd, &properties);
+	status = query(device->device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, plane->fd, &properties);
 	if (status != VK_SUCCESS)
 		return status;
 
 	/* Intersects descriptor compatibility with the created image's memory requirements. */
-	vkGetImageMemoryRequirements(compose->device, image, &requirements);
+	vkGetImageMemoryRequirements(device->device, image, &requirements);
 	bits = properties.memoryTypeBits & requirements.memoryTypeBits;
 	if (bits == 0U)
 		return VK_ERROR_INVALID_EXTERNAL_HANDLE;
@@ -1117,7 +1169,7 @@ gpu_image_memory(
 	allocate.pNext = &imported;
 	allocate.allocationSize = requirements.size;
 	allocate.memoryTypeIndex = memory_type;
-	status = vkAllocateMemory(compose->device, &allocate, NULL, memory);
+	status = vkAllocateMemory(device->device, &allocate, NULL, memory);
 	if (status != VK_SUCCESS) {
 		(void)close(descriptor);
 		return status;
@@ -1130,17 +1182,17 @@ gpu_image_memory(
 /* Releases partial image construction before common adoption owns either handle. */
 static void
 gpu_image_release(
-	struct zwl_compose *compose,
+	const struct kl_backend_gpu_device *device,
 	VkImage image,
 	VkDeviceMemory memory)
 {
 	/* Imported memory cannot retire before the image bound to it. */
 	if (image != VK_NULL_HANDLE)
-		vkDestroyImage(compose->device, image, NULL);
+		vkDestroyImage(device->device, image, NULL);
 
 	/* A failed allocation may leave no memory handle to destroy. */
 	if (memory != VK_NULL_HANDLE)
-		vkFreeMemory(compose->device, memory, NULL);
+		vkFreeMemory(device->device, memory, NULL);
 
 	/* Succeeded: partial construction owns no Vulkan resource. */
 	return;

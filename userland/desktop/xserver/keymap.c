@@ -17,7 +17,7 @@
 
 #include "userland/desktop/xserver/internal.h"
 
-#include <uapi/input.h>
+#include "userland/desktop/xserver/keycodes.h"
 
 /* The keysyms of the keys that type nothing. */
 #define KEYSYM_HOME		0xff50U

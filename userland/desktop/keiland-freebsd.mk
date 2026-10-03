@@ -122,7 +122,7 @@ KEILAND_FREEBSD_PACKAGES ?= userland/base/libz-compat/Makefile.freebsd \
 include $(KEILAND_FREEBSD_PACKAGES)
 
 # App Home uses the compositor's existing config parser; no common built-in list changes.
-$(KEILAND_FREEBSD_BUILD)/etc/keiland/apps.conf: userland/desktop/wayland/freebsd/apps.conf.in
+$(KEILAND_FREEBSD_BUILD)/etc/keiland/apps.conf: userland/desktop/wayland/data/apps-freebsd.conf.in
 	@mkdir -p $(dir $@)
 	sed 's|@PREFIX@|$(KEILAND_PREFIX)|g' $< > $@.tmp
 	mv $@.tmp $@

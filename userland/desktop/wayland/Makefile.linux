@@ -1,7 +1,5 @@
 # zedBSD; Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 # The independent Linux compositor list; target-only device modules and X11 helper are excluded.
-# keiland-linux-sync: skip userland/desktop/wayland/zedbsd/* target-only modules
-# keiland-linux-sync: only userland/desktop/wayland/dmabuf/* native dma-buf protocol
 WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/wire.c \
 	userland/desktop/wayland/objects.c \
@@ -57,8 +55,7 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/handoff.c \
 	userland/desktop/wayland/backend-host.c \
 	userland/desktop/wayland/os.c \
-	userland/desktop/wayland/dmabuf/gpu-dmabuf.c \
-	userland/desktop/wayland/linux/sync-linux.c
+	userland/desktop/wayland/gpu-host.c
 $(eval $(call KEILAND_LINUX_PROGRAM,wayland,bin,$(WAYLAND_LINUX_SOURCES),libkeiland.so libkeiland-backend.a libtruetype.so libpng-compat.so libz-compat.so libvulkan.so.1,-lm))
 
 $(eval $(call KEILAND_LINUX_DATA,share/fonts/keiland.ttf,userland/desktop/fonts/Inter.ttf))

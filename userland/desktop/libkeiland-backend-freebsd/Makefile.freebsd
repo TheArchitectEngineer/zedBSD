@@ -11,7 +11,9 @@ KEILAND_FREEBSD_BACKEND_SOURCES := userland/desktop/libkeiland-backend/backend.c
 	userland/desktop/libkeiland-backend-freebsd/seat-freebsd.c \
 	userland/desktop/libkeiland-backend/evdev/input-evdev.c \
 	userland/desktop/libkeiland-backend/drm/display-drm.c \
-	userland/desktop/libkeiland-backend/peer/peer-getpeereid.c
+	userland/desktop/libkeiland-backend/peer/peer-getpeereid.c \
+	userland/desktop/libkeiland-backend/dmabuf/gpu-dmabuf.c \
+	userland/desktop/libkeiland-backend-freebsd/sync-freebsd.c
 $(eval $(call KEILAND_FREEBSD_STATIC,keiland-backend,libkeiland-backend.a,$(KEILAND_FREEBSD_BACKEND_SOURCES)))
 
 # The seat's compilation cannot race the external client's generated public header (ws131-p006).

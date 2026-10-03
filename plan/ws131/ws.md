@@ -60,7 +60,7 @@ app は OS の抽象化を直接持たない。例: Settings → libkeiland → 
 | [p006](phase006/phase.md) | backend の seat・session | cleared（q650、T2-007・T2-011・T1-042） | p005 | 4〜5h |
 | [p007](phase007/phase.md) | backend の入力 | cleared（q650、T1-044・T1-059） | p006 | 3〜4h |
 | [p008](phase008/phase.md) | backend の表示 | cleared（q650、T2-013・T1-054） | p007 | 3〜4h |
-| [p009](phase009/phase.md) | backend の GPU の buffer と境界の確定 | planning | p008 | 4〜5h |
+| [p009](phase009/phase.md) | backend の GPU の buffer と境界の確定 | in-progress（q659、P2。実装・host・build・checker 済み、QEMU は T2） | p008 | 4〜5h |
 | [p010](phase010/phase.md) | 拡張の protocol `kl_system_manager_v1` と設定の記録（監視は残す） | planning | p004、P2 の BUG-125 の merge | 4〜5h |
 | [p011](phase011/phase.md) | Settings を拡張へ、毎秒の監視の除去、libkeiland の OS を 0 に | planning | p010、WS089・P1 の区切り | 4〜5h |
 | [p012](phase012/phase.md) | libkeiui を libkeiland へ移す（名前は変えない） | planning | p003 の merge、ベータ1 の app の区切り | 4h |

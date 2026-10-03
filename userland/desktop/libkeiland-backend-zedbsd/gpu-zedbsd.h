@@ -5,11 +5,21 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* The image description used only inside the zedBSD GPU module. */
+/* The image description used only inside the zedBSD GPU module (libkeiland-backend, WS131 p009). */
 #ifndef ZWL_GPU_ZEDBSD_H
 #define ZWL_GPU_ZEDBSD_H
 
-#include "userland/desktop/wayland/zwl-gpu.h"
+#include "userland/desktop/libkeiland-backend/keiland-backend-gpu.h"
+
+/*
+ * What the compositor's Vulkan device can take, against which a description
+ * is checked before any of its values reaches Vulkan (from the device the
+ * protocol host lends, for one request).
+ */
+struct zwl_gpu_limits {
+	uint32_t max_dimension;
+	uint32_t memory_type_count;
+};
 
 /*
  * The layout of a client's GPU buffer as its description states it.

@@ -9,7 +9,7 @@
  * Exports drm-kmod reservations with native FreeBSD ioctl encoding.
  * The record follows fixed drm_v6.6.25_13; no driver implementation is imported.
  */
-#include "../dmabuf/sync.h"
+#include "userland/desktop/libkeiland-backend/dmabuf/sync.h"
 #include "../../freebsd-compat/freebsd/dma-sync.h"
 #include <stdint.h>
 #include <sys/ioccom.h>
@@ -28,7 +28,7 @@ struct zwl_freebsd_dma_sync {
  * Exports the native writers that must finish before the compositor samples a buffer.
  */
 int
-zwl_dmabuf_export_read(
+kl_backend_dmabuf_export_read(
 	int buffer_fd,
 	int *sync_fd)
 {

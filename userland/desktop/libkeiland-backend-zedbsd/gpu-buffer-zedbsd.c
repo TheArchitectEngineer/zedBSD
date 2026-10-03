@@ -6,13 +6,14 @@
  */
 
 /*
- * Handles zedBSD's GPU buffer protocol and imports kernel image capabilities.
+ * Handles zedBSD's GPU buffer protocol and imports kernel image capabilities
+ * (libkeiland-backend's GPU buffers, keiland-backend-gpu.h; WS131 p009).
  * The request retains its fd; Vulkan consumes a duplicate on a successful
- * dedicated import.  The common compositor adopts the image and its memory.
+ * dedicated import.  The compositor adopts the image and its memory through
+ * the protocol host it lends.
  */
 
-#include "userland/desktop/wayland/compose.h"
-#include "userland/desktop/wayland/zedbsd/gpu-zedbsd.h"
+#include "userland/desktop/libkeiland-backend-zedbsd/gpu-zedbsd.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -20,17 +21,17 @@
 #include <unistd.h>
 
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
-static int factory_fence(struct zwl_object *factory, const unsigned char *bytes, size_t size);
-static int factory_alpha(struct zwl_object *factory, const unsigned char *bytes, size_t size);
-static int buffer_import(struct zwl_object *buffer, const struct zwl_buffer_layout *layout, int descriptor);
-static VkResult buffer_image(struct zwl_compose *compose, const struct zwl_buffer_layout *image, int descriptor, VkImage *created, VkDeviceMemory *memory);
-static void buffer_image_release(struct zwl_compose *compose, VkImage *image, VkDeviceMemory *memory);
+static int factory_fence(const struct kl_backend_protocol_host *host, struct kl_backend_resource *factory, const unsigned char *bytes, size_t size);
+static int factory_alpha(const struct kl_backend_protocol_host *host, struct kl_backend_resource *factory, const unsigned char *bytes, size_t size);
+static int buffer_import(const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer, const struct zwl_buffer_layout *layout, int descriptor);
+static VkResult buffer_image(const struct kl_backend_gpu_device *device, const struct zwl_buffer_layout *image, int descriptor, VkImage *created, VkDeviceMemory *memory);
+static void buffer_image_release(const struct kl_backend_gpu_device *device, VkImage *image, VkDeviceMemory *memory);
 
 /*
  * Names the zedBSD GPU buffer global.
  */
 const char *
-zwl_gpu_global_interface(
+kl_backend_gpu_global_interface(
 	void)
 {
 	/* Succeeded: zedBSD clients share kernel image capabilities. */
@@ -41,7 +42,7 @@ zwl_gpu_global_interface(
  * Reports the supported GPU buffer protocol version.
  */
 uint32_t
-zwl_gpu_global_version(
+kl_backend_gpu_global_version(
 	void)
 {
 	/* Succeeded: revision three adds premultiplied alpha. */
@@ -52,14 +53,18 @@ zwl_gpu_global_version(
  * Creates a GPU buffer or updates its alpha and acquire fences.
  */
 int
-zwl_gpu_request(
-	struct zwl_object *factory,
+kl_backend_gpu_request(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *factory,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *buffer;
+	const struct kl_backend_gpu_device *device;
+	struct kl_backend_resource *buffer;
 	struct zwl_buffer_layout layout;
+	struct zwl_gpu_limits limits;
+	unsigned role;
 	size_t wire_bytes;
 	uint32_t id;
 	uint32_t length;
@@ -67,18 +72,19 @@ zwl_gpu_request(
 	int error;
 
 	/* zedBSD has no GPU protocol objects beyond the factory and ordinary buffers. */
-	if (factory->kind == ZWL_GPU_OBJECT)
+	role = host->resource_role(factory);
+	if (role == KL_BACKEND_ROLE_GPU_OBJECT)
 		return EPROTO;
 
 	/* Destroying a binding does not destroy buffers it previously created. */
 	if (opcode == 0 && size == 0) {
-		zwl_object_destroy(factory);
+		host->resource_destroy(factory);
 		return 0;
 	}
 
 	/* Revision two: the acquire fence of a surface's next commit. */
 	if (opcode == 2U) {
-		error = factory_fence(factory, bytes, size);
+		error = factory_fence(host, factory, bytes, size);
 		if (error != 0)
 			return error;
 
@@ -88,7 +94,7 @@ zwl_gpu_request(
 
 	/* Revision three: how a buffer's alpha is read. */
 	if (opcode == 3U) {
-		error = factory_alpha(factory, bytes, size);
+		error = factory_alpha(host, factory, bytes, size);
 		if (error != 0)
 			return error;
 
@@ -107,20 +113,30 @@ zwl_gpu_request(
 		return EPROTO;
 
 	/* Consume the fd only after the complete byte payload has passed framing checks. */
-	descriptor = zwl_take_fd(factory->client);
+	descriptor = host->take_fd(factory);
 	if (descriptor < 0)
 		return EAGAIN;
 
 	/* Creation failure still closes the request-owned descriptor immediately. */
 	id = word_at(bytes, 0);
-	buffer = zwl_create(factory->client, id, ZWL_BUFFER, 1);
+	buffer = host->resource_create(factory, id, KL_BACKEND_ROLE_BUFFER, 1);
 	if (buffer == NULL) {
 		close(descriptor);
 		return EPROTO;
 	}
 
+	/* The compositor's device; without one there is nothing to import into. */
+	device = host->device(factory);
+	if (device == NULL) {
+		close(descriptor);
+		host->resource_destroy(buffer);
+		return EPROTO;
+	}
+
 	/* The description's values, each checked before any reaches Vulkan (gpu-zedbsd.c). */
-	error = zwl_gpu_buffer_decode(bytes + 8U, length, &factory->client->server->gpu_limits, &layout);
+	limits.max_dimension = device->max_dimension;
+	limits.memory_type_count = device->memory_type_count;
+	error = zwl_gpu_buffer_decode(bytes + 8U, length, &limits, &layout);
 
 	/*
 	 * Window mode's Vulkan image, made once for the buffer's lifetime (design
@@ -128,18 +144,18 @@ zwl_gpu_request(
 	 * the description against the kernel's record of the fd (WS103).
 	 */
 	if (error == 0)
-		error = buffer_import(buffer, &layout, descriptor);
+		error = buffer_import(host, buffer, &layout, descriptor);
 
 	/* Closes the request-owned descriptor before reporting an import failure. */
 	close(descriptor);
 	if (error != 0) {
-		printf("ZWL IMPORT_ERROR client=%llu buffer=%u errno=%d\n", (unsigned long long)factory->client->number, buffer->id, error);
-		zwl_object_destroy(buffer);
+		printf("ZWL IMPORT_ERROR client=%llu buffer=%u errno=%d\n", (unsigned long long)host->client_number(factory), host->resource_id(buffer), error);
+		host->resource_destroy(buffer);
 		return EPROTO;
 	}
 
 	/* The machine log counts the imports (plan/ws099/tests/import-launch.sh reads the prefix). */
-	printf("ZWL IMPORT client=%llu buffer=%u width=%u height=%u bytes=%llu\n", (unsigned long long)factory->client->number, buffer->id, layout.width, layout.height, (unsigned long long)layout.allocation_bytes);
+	printf("ZWL IMPORT client=%llu buffer=%u width=%u height=%u bytes=%llu\n", (unsigned long long)host->client_number(factory), host->resource_id(buffer), layout.width, layout.height, (unsigned long long)layout.allocation_bytes);
 
 	/* Succeeded: the wl_buffer owns its independently imported resource. */
 	return 0;
@@ -149,11 +165,13 @@ zwl_gpu_request(
  * Keeps the explicit acquire fences supplied by zedBSD clients.
  */
 void
-zwl_gpu_commit(
-	struct zwl_object *surface,
-	struct zwl_object *buffer)
+kl_backend_gpu_commit(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *surface,
+	struct kl_backend_resource *buffer)
 {
 	/* zedBSD fences arrive with set_acquire_fence before the commit. */
+	(void)host;
 	(void)surface;
 	(void)buffer;
 
@@ -165,7 +183,7 @@ zwl_gpu_commit(
  * Reports the additional instance extensions needed by zedBSD.
  */
 uint32_t
-zwl_gpu_instance_extensions(
+kl_backend_gpu_instance_extensions(
 	const char **names,
 	uint32_t capacity)
 {
@@ -181,7 +199,7 @@ zwl_gpu_instance_extensions(
  * Reports the additional device extensions needed by zedBSD.
  */
 uint32_t
-zwl_gpu_device_extensions(
+kl_backend_gpu_device_extensions(
 	VkPhysicalDevice physical,
 	const char **names,
 	uint32_t capacity)
@@ -199,7 +217,7 @@ zwl_gpu_device_extensions(
  * Reports how zedBSD exports the compositor frame fence.
  */
 VkExternalFenceHandleTypeFlagBits
-zwl_gpu_frame_fence_type(
+kl_backend_gpu_frame_fence_type(
 	void)
 {
 	/* Succeeded: an OPAQUE_FD fence can be polled without resetting it. */
@@ -210,10 +228,12 @@ zwl_gpu_frame_fence_type(
  * Preserves zedBSD's factory protocol without initial format events.
  */
 int
-zwl_gpu_bind(
-	struct zwl_object *factory)
+kl_backend_gpu_bind(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *factory)
 {
 	/* zedBSD clients know the kernel image description without a format snapshot. */
+	(void)host;
 	(void)factory;
 
 	/* Succeeded: this factory needs no bind event. */
@@ -224,11 +244,13 @@ zwl_gpu_bind(
  * Preserves zedBSD buffer retirement without Linux descriptor records.
  */
 void
-zwl_gpu_object_free(
-	struct zwl_object *object)
+kl_backend_gpu_resource_free(
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *resource)
 {
 	/* zedBSD imports retain their resources through common Vulkan image ownership. */
-	(void)object;
+	(void)host;
+	(void)resource;
 
 	/* Succeeded: no additional OS-owned record needs retirement. */
 	return;
@@ -237,28 +259,39 @@ zwl_gpu_object_free(
 /* Takes a surface's next acquire fence and its nonzero generation. */
 static int
 factory_fence(
-	struct zwl_object *factory,
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *factory,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
+	struct kl_backend_resource *surface;
 	uint64_t generation;
 	int descriptor;
+	int full;
+	uint32_t version;
+	int logging;
+	int error;
 
 	/* The surface and the generation in two words; the fd beside them. */
-	if (factory->version < 2U || size != 12U)
+	version = host->resource_version(factory);
+	if (version < 2U || size != 12U)
 		return EPROTO;
 
 	/* Waits until the request-owned acquire-fence descriptor has arrived. */
-	descriptor = zwl_take_fd(factory->client);
+	descriptor = host->take_fd(factory);
 	if (descriptor < 0)
 		return EAGAIN;
 
-	/* The surface must be the client's own. */
-	surface = zwl_find(factory->client, word_at(bytes, 0));
-	if (surface == NULL ||
-	    surface->kind != ZWL_SURFACE ||
-	    surface->acquire_count == ZWL_FENCE_MAX) {
+	/* The surface must be the client's own, with room for another fence. */
+	surface = host->resource_find(factory, word_at(bytes, 0), KL_BACKEND_ROLE_SURFACE);
+	if (surface == NULL) {
+		close(descriptor);
+		return EPROTO;
+	}
+
+	/* A surface with as many fences as a commit takes refuses another. */
+	full = host->surface_fence_full(surface);
+	if (full) {
 		close(descriptor);
 		return EPROTO;
 	}
@@ -271,13 +304,16 @@ factory_fence(
 	}
 
 	/* The fence joins the others of the next commit. */
-	surface->acquire[surface->acquire_count].fd = descriptor;
-	surface->acquire[surface->acquire_count].generation = generation;
-	surface->acquire_count++;
+	error = host->surface_fence(surface, descriptor, generation);
+	if (error != 0) {
+		close(descriptor);
+		return EPROTO;
+	}
 
 	/* Names the fence when the per-frame lines were asked for (a present's own fence is at its first generation, ws103-p005). */
-	if (factory->client->server->log_frames)
-		printf("ZWL ACQUIRE_FENCE client=%llu surface=%u generation=%llu\n", (unsigned long long)factory->client->number, surface->id, (unsigned long long)generation);
+	logging = host->log_frames(factory);
+	if (logging)
+		printf("ZWL ACQUIRE_FENCE client=%llu surface=%u generation=%llu\n", (unsigned long long)host->client_number(factory), host->resource_id(surface), (unsigned long long)generation);
 
 	/* Succeeded: the next commit waits for this fence too. */
 	return 0;
@@ -286,15 +322,18 @@ factory_fence(
 /* Sets whether an imported GPU buffer is opaque or premultiplied alpha. */
 static int
 factory_alpha(
-	struct zwl_object *factory,
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *factory,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *buffer;
+	struct kl_backend_resource *buffer;
 	uint32_t alpha;
+	uint32_t version;
 
 	/* The buffer and the alpha in two words. */
-	if (factory->version < 3U || size != 8U)
+	version = host->resource_version(factory);
+	if (version < 3U || size != 8U)
 		return EPROTO;
 
 	/* Refuses a drawing mode outside opaque and premultiplied alpha. */
@@ -303,15 +342,12 @@ factory_alpha(
 		return EPROTO;
 
 	/* The buffer must be one of the client's GPU buffers. */
-	buffer = zwl_find(factory->client, word_at(bytes, 0));
-	if (buffer == NULL ||
-	    buffer->kind != ZWL_BUFFER ||
-	    buffer->shm != NULL)
+	buffer = host->resource_find(factory, word_at(bytes, 0), KL_BACKEND_ROLE_BUFFER);
+	if (buffer == NULL)
 		return EPROTO;
 
-	/* The window's drawing blends the buffer by its alpha, or covers what is under it (import.c). */
-	zwl_import_set_alpha(buffer, alpha);
-	factory->client->server->dirty = 1;
+	/* The window's drawing blends the buffer by its alpha, or covers what is under it; the next frame shows it. */
+	host->buffer_set_alpha(buffer, alpha);
 
 	/* Succeeded: the next frame uses the requested buffer blending mode. */
 	return 0;
@@ -320,18 +356,22 @@ factory_alpha(
 /* Imports a copy of the buffer fd and gives its image to the compositor. */
 static int
 buffer_import(
-	struct zwl_object *buffer,
+	const struct kl_backend_protocol_host *host,
+	struct kl_backend_resource *buffer,
 	const struct zwl_buffer_layout *layout,
 	int descriptor)
 {
-	struct zwl_compose *compose;
+	const struct kl_backend_gpu_device *device;
 	VkImage image;
 	VkDeviceMemory memory;
 	int copy;
+	int logging;
 	VkResult status;
 
 	/* The compositor's Vulkan device the image is imported into. */
-	compose = buffer->client->server->compose;
+	device = host->device(buffer);
+	if (device == NULL)
+		return EINVAL;
 
 	/* Vulkan consumes the fd it imports, so it gets its own. */
 	copy = dup(descriptor);
@@ -339,29 +379,32 @@ buffer_import(
 		return errno;
 
 	/* The image bound to the imported memory (the copy is consumed or closed). */
-	status = buffer_image(compose, layout, copy, &image, &memory);
+	status = buffer_image(device, layout, copy, &image, &memory);
 	if (status != VK_SUCCESS) {
-		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)status);
+		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), (int)status);
 		return EINVAL;
 	}
 
-	/* Its view and descriptor sets and the buffer's import record (import.c); the image and memory go on failure. */
-	status = zwl_import_adopt(buffer, image, memory, layout->width, layout->height, layout->format);
+	/* Its view and descriptor sets and the buffer's import record (the compositor's); the image and memory go on failure. */
+	status = host->buffer_adopt(buffer, image, memory, layout->width, layout->height, layout->format);
 	if (status != VK_SUCCESS) {
-		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)buffer->client->number, buffer->id, (int)status);
+		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), (int)status);
 		return EINVAL;
 	}
+
+	/* The per-frame log names the import. */
+	logging = host->log_frames(buffer);
+	if (logging)
+		printf("ZWL VULKAN_IMPORT client=%llu buffer=%u width=%u height=%u\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), layout->width, layout->height);
 
 	/* Succeeded: the buffer can be drawn in window mode. */
-	if (buffer->client->server->log_frames)
-		printf("ZWL VULKAN_IMPORT client=%llu buffer=%u width=%u height=%u\n", (unsigned long long)buffer->client->number, buffer->id, buffer->import->width, buffer->import->height);
 	return 0;
 }
 
 /* Creates a linear image and binds the imported fd as dedicated memory. */
 static VkResult
 buffer_image(
-	struct zwl_compose *compose,
+	const struct kl_backend_gpu_device *device,
 	const struct zwl_buffer_layout *image,
 	int descriptor,
 	VkImage *created,
@@ -408,22 +451,22 @@ buffer_image(
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	/* Creates the sampled image before any dedicated memory is imported. */
-	status = vkCreateImage(compose->device, &create, NULL, created);
+	status = vkCreateImage(device->device, &create, NULL, created);
 	if (status != VK_SUCCESS) {
 		close(descriptor);
-		buffer_image_release(compose, created, memory);
+		buffer_image_release(device, created, memory);
 		return status;
 	}
 
 	/* The client's layout must be the one this image has: same memory type, rows and offset. */
-	vkGetImageMemoryRequirements(compose->device, *created, &requirements);
+	vkGetImageMemoryRequirements(device->device, *created, &requirements);
 
 	/* Selects the color plane whose rows must match the client description. */
 	memset(&subresource, 0, sizeof(subresource));
 	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
 	/* Queries the image layout and refuses a mismatched client allocation. */
-	vkGetImageSubresourceLayout(compose->device, *created, &subresource, &layout);
+	vkGetImageSubresourceLayout(device->device, *created, &subresource, &layout);
 	if ((requirements.memoryTypeBits & (1U << image->memory_type)) == 0U ||
 	    requirements.size > image->allocation_bytes ||
 	    layout.offset != image->offset ||
@@ -438,7 +481,7 @@ buffer_image(
 		       (unsigned long long)layout.rowPitch,
 		       image->stride);
 		close(descriptor);
-		buffer_image_release(compose, created, memory);
+		buffer_image_release(device, created, memory);
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 	}
 
@@ -468,17 +511,17 @@ buffer_image(
 	allocate.memoryTypeIndex = image->memory_type;
 
 	/* Imports dedicated memory and transfers its descriptor only on success. */
-	status = vkAllocateMemory(compose->device, &allocate, NULL, memory);
+	status = vkAllocateMemory(device->device, &allocate, NULL, memory);
 	if (status != VK_SUCCESS) {
 		close(descriptor);
-		buffer_image_release(compose, created, memory);
+		buffer_image_release(device, created, memory);
 		return status;
 	}
 
 	/* The image uses that memory. */
-	status = vkBindImageMemory(compose->device, *created, *memory, 0U);
+	status = vkBindImageMemory(device->device, *created, *memory, 0U);
 	if (status != VK_SUCCESS) {
-		buffer_image_release(compose, created, memory);
+		buffer_image_release(device, created, memory);
 		return status;
 	}
 
@@ -489,17 +532,17 @@ buffer_image(
 /* Destroys what buffer_image made, whatever part of it was made, in import_release's order. */
 static void
 buffer_image_release(
-	struct zwl_compose *compose,
+	const struct kl_backend_gpu_device *device,
 	VkImage *image,
 	VkDeviceMemory *memory)
 {
 	/* The image, then its memory. */
 	if (*image != VK_NULL_HANDLE)
-		vkDestroyImage(compose->device, *image, NULL);
+		vkDestroyImage(device->device, *image, NULL);
 
 	/* Releases memory after no image can reference it. */
 	if (*memory != VK_NULL_HANDLE)
-		vkFreeMemory(compose->device, *memory, NULL);
+		vkFreeMemory(device->device, *memory, NULL);
 
 	/* Leaves both output handles safe for another cleanup attempt. */
 	*image = VK_NULL_HANDLE;

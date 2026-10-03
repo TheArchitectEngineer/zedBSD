@@ -121,7 +121,7 @@ include userland/tests/kuidemo/Makefile.linux
 include userland/desktop/ime/Makefile.linux
 
 # App Home uses the compositor's existing config parser; no common built-in list changes.
-$(KEILAND_LINUX_BUILD)/etc/keiland/apps.conf: userland/desktop/wayland/linux/apps.conf.in
+$(KEILAND_LINUX_BUILD)/etc/keiland/apps.conf: userland/desktop/wayland/data/apps-linux.conf.in
 	@mkdir -p $(dir $@)
 	sed 's|@PREFIX@|$(KEILAND_PREFIX)|g' $< > $@.tmp
 	mv $@.tmp $@
@@ -185,7 +185,7 @@ clean:
 		$(KEILAND_LINUX_BUILD)/stage
 
 .PHONY: install-session print-sources header-dependencies
-$(KEILAND_LINUX_BUILD)/share/wayland-sessions/keiland.desktop: userland/desktop/wayland/linux/keiland.desktop
+$(KEILAND_LINUX_BUILD)/share/wayland-sessions/keiland.desktop: userland/desktop/wayland/data/keiland.desktop
 	@mkdir -p $(dir $@)
 	sed 's|/opt/keiland|$(KEILAND_PREFIX)|g' $< > $@.tmp
 	mv $@.tmp $@

@@ -8,10 +8,9 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 status=0
 
-# Collect common compositor and system-library sources, excluding OS modules.
-find userland/desktop/libkeiland userland/desktop/wayland \
-    \( -path '*/zedbsd' -o -path '*/linux' -o -path '*/freebsd' -o -path '*/wpa' \) -prune \
-    -o -name '*.[ch]' -print | LC_ALL=C sort > "$work/common"
+# Collect the compositor's and the system library's sources: all of them, since their OS code is libkeiland-backend's
+# (ws131-p009 moved the last of it, the GPU buffers).
+find userland/desktop/libkeiland userland/desktop/wayland -name '*.[ch]' -print | LC_ALL=C sort > "$work/common"
 
 # The compositor and libkeiland include no OS header (the evdev header choice is
 # libkeiland-backend's keiland-backend-evdev.h since ws131-p007).
@@ -24,10 +23,12 @@ while IFS= read -r file; do
     awk '/ioctl[[:space:]]*\(/ {print FILENAME ":" FNR ": " $0}' "$file"
 done < "$work/common" > "$work/C2"
 
-# A zedBSD wire layout must stay inside the zedBSD GPU backend.
-find userland/desktop/wayland -path '*/zedbsd' -prune -o -name '*.[ch]' -print |
+# The zedBSD GPU wire layout and the kernel's GPU types stay inside libkeiland-backend-zedbsd (WS131 C3, ws131-p009):
+# not in the compositor, libkeiland or the other backend trees (libvulkan, the driver, is not the desktop's boundary).
+find userland/desktop/wayland userland/desktop/libkeiland userland/desktop/libkeiland-backend \
+    userland/desktop/libkeiland-backend-linux userland/desktop/libkeiland-backend-freebsd -name '*.[ch]' -print |
 while IFS= read -r file; do
-    awk '/zwl_buffer_layout/ {print FILENAME ":" FNR ": " $0}' "$file"
+    awk '/zwl_buffer_layout|gpu_image_descriptor|[<"]uapi\/gpu/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/C3"
 
 # Inspect each literal so a system-shell exception cannot hide another path.
@@ -65,14 +66,12 @@ while IFS= read -r file; do
 done > "$work/L1"
 
 # Each OS module consumes only its own kernel and service interfaces (libkeiland-backend's trees, WS131).
-find userland/desktop/wayland/linux \
-    userland/desktop/libkeiland-backend-linux userland/desktop/libkeiland-backend-freebsd \
+find userland/desktop/libkeiland-backend-linux userland/desktop/libkeiland-backend-freebsd \
     userland/desktop/libkeiland-backend/wpa -name '*.[ch]' -print 2>/dev/null |
 while IFS= read -r file; do
     awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"](uapi\/|userland\/base\/(net|audiod)\/)/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/L2"
-find userland/desktop/libkeiland/zedbsd userland/desktop/wayland/zedbsd \
-    userland/desktop/libkeiland-backend-zedbsd -name '*.[ch]' -print 2>/dev/null |
+find userland/desktop/libkeiland-backend-zedbsd -name '*.[ch]' -print 2>/dev/null |
 while IFS= read -r file; do
     awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"](linux\/|drm\/|sound\/)/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/L3"
@@ -105,7 +104,7 @@ while IFS= read -r file; do
     case $file in
     userland/desktop/libkeiland/system-compat.c|userland/desktop/libkeiland/audio-compat.c) continue ;;
     esac
-    awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"].*keiland-backend\.h[>"]/ {print FILENAME ":" FNR ": " $0}' "$file"
+    awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"].*keiland-backend[a-z-]*\.h[>"]/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/B3"
 
 # libkeiland keeps no operating-system directory: its OS code is libkeiland-backend's (WS131 L6, ws131-p004).
@@ -114,6 +113,29 @@ for os_dir in zedbsd linux freebsd; do
         echo "userland/desktop/libkeiland/$os_dir: an OS directory in libkeiland"
     fi
 done > "$work/L6"
+
+# The X server reads the Wayland keyboard's key codes from its own header, not an OS header (WS131 D14, ws131-p009).
+find userland/desktop/xserver -name '*.[ch]' -print |
+while IFS= read -r file; do
+    awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"](uapi\/|linux\/|dev\/)/ {print FILENAME ":" FNR ": " $0}' "$file"
+done > "$work/X1"
+
+# The compositor keeps no operating-system directory either: its OS code is libkeiland-backend's (WS131, ws131-p009).
+for os_dir in zedbsd linux freebsd dmabuf evdev session drm wpa; do
+    if [ -e "userland/desktop/wayland/$os_dir" ]; then
+        echo "userland/desktop/wayland/$os_dir: an OS directory in the compositor"
+    fi
+done > "$work/L7"
+
+# The compositor's three Makefiles build the same compositor sources (libkeiland-backend's are each OS's own; ws131-p009).
+for makefile in Makefile Makefile.linux Makefile.freebsd; do
+    grep -oE 'userland/[A-Za-z0-9_/.-]*\.c\b' "userland/desktop/wayland/$makefile" | grep -v '^userland/desktop/libkeiland-backend' |
+        LC_ALL=C sort -u > "$work/sources-$makefile"
+done
+{
+    diff "$work/sources-Makefile" "$work/sources-Makefile.linux" | sed -n 's/^[<>] /Makefile vs Makefile.linux: /p'
+    diff "$work/sources-Makefile" "$work/sources-Makefile.freebsd" | sed -n 's/^[<>] /Makefile vs Makefile.freebsd: /p'
+} > "$work/M1"
 
 # desktop.conf is the compositor's own file (WS135): no other desktop source names it.
 find userland/desktop -name '*.[ch]' -print |
@@ -146,7 +168,7 @@ for line in Path(sys.argv[1]).read_text().splitlines():
 PY
 
 # Report every violated condition before returning the aggregate outcome.
-for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 B1 B3 S1; do
+for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 L7 M1 X1 B1 B3 S1; do
     if [ -s "$work/$check" ]; then
         while IFS= read -r detail; do
             printf 'check: %s FAIL %s\n' "$check" "$detail"

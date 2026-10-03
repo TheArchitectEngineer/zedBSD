@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws103-p004: host test of the compositor's check of a GPU buffer's description (userland/desktop/wayland/zedbsd/gpu-zedbsd.c),
+# ws103-p004: host test of libkeiland-backend's check of a GPU buffer's description (userland/desktop/libkeiland-backend-zedbsd/gpu-zedbsd.c),
 # plain and with ASan/UBSan.  Prints each case and "gpu-zedbsd-host: PASS" or FAIL.
 #   sh plan/tools/gpu-boundary/run-gpu-zedbsd-host.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -16,7 +16,7 @@ for mode in ordinary sanitize; do
     fi
     cc -std=c89 -D_GNU_SOURCE -Wall -Wextra -Werror $extra \
         -I"$work/include" -I"$repo/include" -I"$repo" \
-        "$repo/plan/tools/gpu-boundary/gpu-zedbsd-host.c" "$repo/userland/desktop/wayland/zedbsd/gpu-zedbsd.c" \
+        "$repo/plan/tools/gpu-boundary/gpu-zedbsd-host.c" "$repo/userland/desktop/libkeiland-backend-zedbsd/gpu-zedbsd.c" \
         -o "$work/$mode"
     echo "== $mode"
     ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 timeout 20 "$work/$mode"
