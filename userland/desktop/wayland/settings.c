@@ -85,6 +85,7 @@ static void settings_apply_all(struct zwl_server *server, int starting);
 static void settings_apply_wallpaper(struct zwl_server *server, int starting);
 static void settings_apply_opacity(struct zwl_server *server);
 static void settings_apply_number(struct zwl_server *server, const char *name, int32_t *target);
+static void settings_apply_repeat(struct zwl_server *server, int starting);
 static void settings_mark(struct zwl_server *server, const char *name);
 static void settings_flush(struct zwl_server *server);
 static int settings_emit_value(struct zwl_client *client, uint32_t id, const struct zwl_settings_entry *entry);
@@ -243,6 +244,7 @@ zwl_settings_follow(
 	unsigned index;
 	unsigned chosen;
 	int differs;
+	int sound;
 	int error;
 
 	/* Nothing to follow. */
@@ -254,7 +256,8 @@ zwl_settings_follow(
 		entry = &server->settings->entries[index];
 		if ((entry->key->flags & KL_SETTINGS_KEY_KEPT) == 0U)
 			continue;
-		if (strncmp(entry->key->name, "sound.", 6U) == 0)
+		sound = strncmp(entry->key->name, "sound.", 6U);
+		if (sound == 0)
 			continue;
 
 		/* What it is now. */
@@ -483,43 +486,60 @@ settings_apply(
 	const char *name,
 	int starting)
 {
+	int differs;
+
 	/* The wallpaper and the windows' opacity. */
-	if (strcmp(name, "wallpaper") == 0) {
+	differs = strcmp(name, "wallpaper");
+	if (differs == 0) {
 		settings_apply_wallpaper(server, starting);
 		return;
 	}
-	if (strcmp(name, "window.opacity") == 0) {
+	differs = strcmp(name, "window.opacity");
+	if (differs == 0) {
 		settings_apply_opacity(server);
 		return;
 	}
 
 	/* The pointer's speed and the wheel's direction. */
-	if (strcmp(name, "pointer.speed") == 0) {
+	differs = strcmp(name, "pointer.speed");
+	if (differs == 0) {
 		settings_apply_number(server, name, &server->pointer_speed);
 		return;
 	}
-	if (strcmp(name, "pointer.natural") == 0) {
+	differs = strcmp(name, "pointer.natural");
+	if (differs == 0) {
 		settings_apply_number(server, name, &server->pointer_natural);
 		return;
 	}
 
-	/* The keyboards' repeat, told again to the keyboards bound already (not before anything is bound). */
-	if (strcmp(name, "keyboard.repeat.rate") == 0) {
+	/* The keyboards' repeat. */
+	differs = strcmp(name, "keyboard.repeat.rate");
+	if (differs == 0) {
 		settings_apply_number(server, name, &server->repeat_rate);
-		if (!starting) {
-			zwl_seat_repeat_changed(server);
-			zwl_ime_repeat_changed(server);
-		}
+		settings_apply_repeat(server, starting);
 		return;
 	}
-	if (strcmp(name, "keyboard.repeat.delay") == 0) {
+	differs = strcmp(name, "keyboard.repeat.delay");
+	if (differs == 0) {
 		settings_apply_number(server, name, &server->repeat_delay_ms);
-		if (!starting) {
-			zwl_seat_repeat_changed(server);
-			zwl_ime_repeat_changed(server);
-		}
+		settings_apply_repeat(server, starting);
 		return;
 	}
+}
+
+/* Tells the keyboards bound already the repeat again (nothing is bound before the look is made). */
+static void
+settings_apply_repeat(
+	struct zwl_server *server,
+	int starting)
+{
+	/* Before anything is bound there is nobody to tell. */
+	if (starting)
+		return;
+
+	/* The applications' keyboards, then the input method's grab. */
+	zwl_seat_repeat_changed(server);
+	zwl_ime_repeat_changed(server);
 }
 
 /*
@@ -840,6 +860,7 @@ settings_change(
 	struct zwl_server *server;
 	const struct kl_settings_key *key;
 	uint32_t applied;
+	int differs;
 	int valid;
 	int error;
 
@@ -862,11 +883,13 @@ settings_change(
 	}
 
 	/* The sound is audiod's; the wallpaper is read away from the event loop. */
-	if (strncmp(name, "sound.", 6U) == 0) {
+	differs = strncmp(name, "sound.", 6U);
+	if (differs == 0) {
 		applied = settings_change_sound(server, key, value, reset);
 		return applied;
 	}
-	if (strcmp(name, "wallpaper") == 0) {
+	differs = strcmp(name, "wallpaper");
+	if (differs == 0) {
 		applied = settings_change_wallpaper(object, request, value, reset, answered);
 		return applied;
 	}
@@ -902,6 +925,7 @@ settings_change_sound(
 	unsigned volume;
 	unsigned muted;
 	uint32_t applied;
+	int differs;
 	int number;
 	int error;
 
@@ -910,7 +934,8 @@ settings_change_sound(
 	number = key->fallback;
 	if (!reset)
 		(void)kl_settings_key_number(key, value, &number);
-	if (strcmp(key->name, "sound.volume") == 0) {
+	differs = strcmp(key->name, "sound.volume");
+	if (differs == 0) {
 		volume = (unsigned)number;
 	} else {
 		muted = (unsigned)number;

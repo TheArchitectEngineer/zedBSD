@@ -24,6 +24,17 @@
 		keiland_audio_*;
 		keiland_keyboard_inset_*;
 		keiland_edit_*;
+		kl_settings_open;
+		kl_settings_close;
+		kl_settings_get;
+		kl_settings_get_int;
+		kl_settings_set;
+		kl_settings_set_int;
+		kl_settings_reset;
+		kl_settings_watch;
+		kl_settings_unwatch;
+		kl_settings_dispatch;
+		kl_settings_take_result;
 	local:
 		*;
 };

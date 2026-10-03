@@ -73,6 +73,7 @@ zwl_settings_store_open(
 	size_t count;
 	size_t index;
 	int written;
+	int sound;
 
 	memset(store, 0, sizeof(*store));
 	(void)pthread_mutex_init(&store->writer.lock, NULL);
@@ -96,7 +97,8 @@ zwl_settings_store_open(
 		 * is not known until audiod reports (zwl_settings_store_report).
 		 */
 		entry->known = 1;
-		if (strncmp(key->name, "sound.", 6U) == 0)
+		sound = strncmp(key->name, "sound.", 6U);
+		if (sound == 0)
 			entry->known = 0;
 		store->count++;
 	}
