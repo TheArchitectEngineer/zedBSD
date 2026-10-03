@@ -16651,11 +16651,17 @@ orphan_recover_one(
 	 */
 	ms = state(mountp);
 
-	/* Sizes the staging from the images the recovery will hold. */
+	/*
+	 * Sizes the staging from the images the recovery will hold, on a
+	 * volume with the tail journal, whose grouped retirement needs the
+	 * room; another volume retires the inode by the ordered steps of a
+	 * write-through volume (ws073-p054).
+	 */
 	bytes = 3U * ms->super.bsize + UFS_SBLOCK_SIZE;
-	if (ms->journal.sector_count <= 2U ||
-	    bytes / UFS_SECTOR_SIZE > UFS_JOURNAL_GROUP_SECTORS ||
-	    bytes / UFS_SECTOR_SIZE > ms->journal.sector_count - 2U) {
+	if (ms->journal_enabled &&
+	    (ms->journal.sector_count <= 2U ||
+	     bytes / UFS_SECTOR_SIZE > UFS_JOURNAL_GROUP_SECTORS ||
+	     bytes / UFS_SECTOR_SIZE > ms->journal.sector_count - 2U)) {
 		/* Failed. */
 		return EOPNOTSUPP;
 	}
@@ -16784,14 +16790,22 @@ orphan_recover(
 	struct ufs_orphan_scan *scan;
 	int error;
 
-	/*
-	 * Keeps readonly and nonjournal admission free of orphan-reclamation
-	 * writes.
-	 */
-
-	/* Takes the mount the recovery runs against. */
+	/* Keeps a read-only mount free of orphan-reclamation writes. */
 	ms = state(mountp);
-	if (!ms->writable || !ms->journal_enabled)
+	if (!ms->writable)
+		return 0;
+
+	/*
+	 * A volume with the tail journal is scanned at every mount.  Another
+	 * one -- the batched journal's (v3) or none -- only when its last
+	 * session did not end clean: a file that lost its last name, or was
+	 * still open when it did, is retired later than its unlink, in another
+	 * transaction of the batched journal, so a crash between the two
+	 * leaves an allocated inode nothing names (ws073-p054, BUG-164).  The
+	 * scan runs before the batched journal opens and before the writes are
+	 * delayed, so each retirement goes through in its ordered steps.
+	 */
+	if (!ms->journal_enabled && ms->super.clean != 0)
 		return 0;
 
 	/* A mount that already has a root has been recovered already. */
