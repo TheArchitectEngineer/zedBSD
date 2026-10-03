@@ -53,6 +53,7 @@ Resume point（2026-10-02 計画）: **p001（棚卸し・回帰の取り直し�
 | [ws127-p006](phase006/phase.md) | DnD の自動の scroll と spring-loaded（F-039） | planning（p001 でユーザーの採否） | p001 | 2h |
 | [ws127-p007](phase007/phase.md) | 5330 の実機での操作と速さ。遅ければ描き直しを damage の矩形に絞る（F-037） | planning（p002〜p006 の後、実機とユーザーの時間） | p002〜p006 の選んだ物 | 2h + ユーザー 20 分 |
 | [ws127-p008](phase008/phase.md) | 全文規約と回帰（WS の最後） | planning | 実装の Phase | 2h |
+| [ws127-p009](phase009/phase.md) | Files の host 試験 p009・p010・p013 の FAIL（host-render の既定の font が作り直した build/ に無い path を指していた。試験を tree の font に） | in-progress（q656、P2。host 3 本 PASS、Q1 の判定待ち） | — | 0.5h |
 
 候補のうち Phase にしていない物（p001 で選ばれたら Phase を足す）: F-033（カラム・ギャラリーの表示、4h 以上）、F-036（装置の unmount・eject、USB の storage の hotplug の通知が要る）、
 F-032・F-034・F-040（ベータ1 の外の見込み）。
