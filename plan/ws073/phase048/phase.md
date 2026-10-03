@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p048 -->
 # ws073-p048: BUG-103 — /bin/sh の上下の矢印の履歴（PS/2 の keyboard だけの時）を確かめて閉じる
 
-Status: in-progress（q651-i01、P1 generation12、2026-10-04。確認の試験を T1 に依頼、結果待ち）
+Status: cleared（q651-i01、P1 generation12、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-103](../../bugs/BUG-103.md)
@@ -28,3 +28,7 @@ BUG-103 の 2 つの原因（sh の履歴が file に残らない、PS/2 の key
 ## 残り
 
 - T1 の結果で Q1 が判定する。PASS なら QEMU の範囲で resolved を提案（実機の確認は S2）。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T1-045（QEMU、2026-10-04、q35・NVMe・USB keyboard 無し・KVM、main 9e228b6 の image）: `BUG103-PS2-HISTORY:PASS (2 output lines)`、画面で Up で呼び戻した行が出た。実機（素の 5330）は未実施。
