@@ -33,3 +33,8 @@ rps・GEM の動きを変えないで。QEMU で確かめられる範囲（Venus
 ## QEMU の結果（Q1、2026-10-04、T1-066、Venus KVM）
 
 `gputelemetry-p007: PASS`: `hw.gputelemetry: gpus=0`（Venus は要素なし）、hw.cputimes・hw.diskstats も読める。i915 の値（rps の busy・周波数）は実機（5330、S2 か passthrough）で確かめるまで in-progress。
+
+## 結果（T1-066、QEMU Venus KVM、p2-q660 の image（1345e85）、2026-10-04）
+
+`gputelemetry-p007: PASS`。Venus で `hw.gputelemetry: gpus=0`、hw.cputimes・hw.diskstats も読める（nvme0n1 kind=2 generation=1）、
+`sysctl -a` exit 0（29 行、記録だけ）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-066/out/`。i915 の値は実機（5330）で未確認。
