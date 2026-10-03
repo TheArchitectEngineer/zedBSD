@@ -18,7 +18,7 @@ if [ "${1:-}" = --fresh ]; then
 fi
 [ -d "$home" ] || sh plan/tools/files/make-home.sh "$home" >/dev/null
 fallback=
-[ -f /usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf ] && fallback=--fallback=/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf
+fallback=--fallback=$root/userland/desktop/fonts/DroidSansFallbackFull.ttf
 HOME=$home XDG_RUNTIME_DIR=$root/build/ws071-host XDG_DATA_HOME=$home/.local/share XDG_CONFIG_HOME=$home/.config \
     "$root/build/ws071-host/files-render" $fallback "$@"
 for argument in "$@"; do
