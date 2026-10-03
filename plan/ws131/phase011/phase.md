@@ -150,3 +150,18 @@ FreeBSD: backend-test 9/9 PASS、libkeiland.so の NEEDED は libwayland-client�
 - 直し: `userland/desktop/settings/network.c` の `se_network_open` が最初の state を変化と同じ書式で log する。
 - 確かめ: zedBSD の settings（`-Werror`）exit 0 warning 0、Linux の flag の gcc で network.o、style-check 違反 0。QEMU は T2 に
   settings-regress の再試験を依頼。
+
+## T2-021 の volume-p005 の FAIL の直し（P2 generation8、2026-10-04、Q1 の依頼）
+
+- 症状: volume-p005 で Settings が `ZSETTINGS SOUND open live=0`、Sound の頁が「Not available on this desktop」。`SOUND report reachable=1 ...`・
+  `ZSETTINGS CONTROL index=6`・`SOUND set value=(29|30|31)` が MISSING。compositor の `ZWL VOLUME reachable=1 device=1` は ok。証拠
+  `/home/awe/zedBSD-worktrees/t2/build/t2-021/volume-p005/`・`volume-p005-retry/`。
+- 原因（試験の側）: volume-p005 は kei の session（compositor は kei、uid 1000）に root の SSH から `/bin/settings` を起こす。compositor は
+  design.md §4.1 の 5（D5）どおり、自分と同じ uid の client にだけ `kl_system_manager_v1` を見せる（`wayland/settings.c` の `peer_same`）ので、
+  root の Settings は拡張を見つけられず（`kl_system_open` が ENOTSUP）`live=0` になる。p011 の前の Settings は audiod に直に話していたので root で
+  動いた。settings-regress は root の compositor に root の Settings で同じ uid なので影響しない。D5 の方針は正しいので source は変えない。
+- 直し: 試験の道具 `userland/tests/runas`（新、試験の image だけ: root が `runas USER COMMAND...` で user の group・uid になって exec。HOME・USER・
+  LOGNAME を user のに、他の環境は保つ）。`plan/ws100/tests/config-amd64-volume.mk` に `runas`、`volume-p005.sh` は Settings を
+  `/bin/runas kei /bin/settings ...` で起こす。
+- 確かめ: `runas` の build（-Werror）exit 0 warning 0、style-check 違反 0。QEMU は T2 に volume-p005 の再試験を依頼。
+- 代わりの案（未採用、要れば Q1・user の判断）: compositor が root の client にも拡張を見せる（D5 の例外）。
