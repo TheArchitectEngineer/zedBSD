@@ -126,3 +126,7 @@ design.md §4 の拡張 `kl_system_manager_v1`（settings・network・audio・po
 ## Resume
 
 T2 の結果（FreeBSD の build、guest の probe、回帰）を Q1 が判定する。FAIL なら P2 が直す。
+
+## FreeBSD・Linux の結果（Q1、2026-10-04、T1-061、main 574a90f）
+
+FreeBSD: backend-test 9/9 PASS（build warning 0・install・audit・host 試験・sync-rejected・dmabuf-export-rejected）。Linux: host の gcc・clang warning 0、libkeiland.so に kl_system_* 20 個。Debian 13 の QEMU+KVM guest の direct compositor で probe（host で compile して入れた、Linux の build の規則が無い）: dump は `capabilities=0x1e`（zedBSD の期待 0x1f と違う、要確認）、audio 72/72、power の actions は 0x0（直後の watch では 0xe）、details は lo・enp0s5・dns。`volume 40 60 0` で left=40 right=59、別の probe の watch に change。範囲外の値は EINVAL、feedback ok。uid の違う client は socket の権限で connect EACCES、権限を広げても open で ENOTSUP（同じ uid だけの規則どおり）。power・eject・join は未実施。`ZWL EXIT error=0 cleanup_failed=0`。zedBSD の分は T2-020 待ち。
