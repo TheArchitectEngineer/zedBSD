@@ -747,11 +747,13 @@ settings_app_change(
 	if (error != 0)
 		return error;
 
-	/* The value in effect: the one asked for, or the default. */
+	/* The value in effect: the one asked for, the default of a row's key, or none for a prefix row's. */
+	found = kl_settings_key_find(key);
 	if (value != NULL) {
 		settings_cache_set(&settings->cache, key, value, 0U, 1U);
-	} else {
-		found = kl_settings_key_find(key);
+	} else if (found != NULL && (found->flags & KL_SETTINGS_KEY_PREFIX) != 0U) {
+		settings_cache_set(&settings->cache, key, "", 0U, 0U);
+	} else if (found != NULL) {
 		(void)snprintf(fallback, sizeof(fallback), "%d", found->fallback);
 		settings_cache_set(&settings->cache, key, fallback, KL_SETTINGS_DEFAULT, 1U);
 	}

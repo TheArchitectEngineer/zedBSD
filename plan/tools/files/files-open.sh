@@ -185,7 +185,8 @@ always)
 	sleep 3
 	shot always-less.png
 	guest "for p in \$(ps -A -o pid,args | grep -E '[t]erminal|[l]ess ' | awk '{print \$1}'); do kill \$p; done; sleep 1" >/dev/null
-	guest 'cat /tmp/fhome/.config/keiland/open-with' > "$out/always-list.txt"
+	guest 'cat /tmp/fhome/.config/keiland/files.conf' > "$out/always-settings.txt"
+	grep -q 'open-with.text/plain=Terminal (less)' "$out/always-settings.txt" && echo 'files.conf: the choice ok' || { echo 'files.conf: the choice MISSING'; status=1; }
 	# A double click now opens the text with less.
 	before=$(guest "grep -c 'ZFILES OPEN path=/tmp/demo/4-notes.txt app=Terminal (less)' /tmp/f.log" | tail -1)
 	double 4 3000
@@ -202,7 +203,8 @@ always)
 	shot always-system.png
 	double 4 1500
 	opened 4-notes.txt 'Text Editor' textedit always-back.png
-	guest 'cat /tmp/fhome/.config/keiland/open-with' > "$out/always-list-after.txt"
+	guest 'cat /tmp/fhome/.config/keiland/files.conf' > "$out/always-settings-after.txt"
+	grep -q 'open-with.text/plain=' "$out/always-settings-after.txt" && { echo 'files.conf: the choice not cleared'; status=1; } || echo 'files.conf: cleared ok'
 	;;
 info)
 	# The information card of the PNG and of the text lists their ways, the new default first.

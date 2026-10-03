@@ -9,10 +9,11 @@
  * The applications that open files: which ones fit a file, and starting
  * one on it (spec §14).
  *
- * The ways to open a file come from three lists, the first match of the
- * earliest list being the default: the user's
- * $XDG_CONFIG_HOME/keiland/open-with, the system's /etc/keiland/open-with,
- * and the built-in table below.  A list's line is
+ * The ways to open a file come, the first being the default, from the way
+ * the user chose for the file's type (Always Open With, ws093-p003), then
+ * from three lists, the first match of the earliest list first: the user's
+ * own $XDG_CONFIG_HOME/keiland/open-with, the system's
+ * /etc/keiland/open-with, and the built-in table below.  A list's line is
  *
  *	PATTERNS<TAB>NAME<TAB>COMMAND
  *
@@ -24,17 +25,19 @@
  * shows the file in Quick Look.  Lines starting with '#' are comments.
  *
  * The lists are read each time a file is opened, so an edit takes effect
- * at once, and nothing of them is kept between openings.
+ * at once, and nothing of them is kept between openings.  Files only reads
+ * them: the lists are the user's and the system's to write.
  *
- * Always Open With (ws093-p003) writes the user's list: a line for one
- * type, after a "# set by Files" comment, at the top of the list, so that
- * it is the type's default.  Files changes only the lines it wrote that
- * way (one a type); the lines the user wrote stay as they are.  The list
- * is written to a new file beside it and renamed over it, so that a
- * failure part-way leaves the old list whole.
+ * The way chosen for a type is the desktop's setting
+ * files.open-with.<type> (libkeiland's kl_settings_*, WS135: "<name><TAB>
+ * <command>", kept by libkeiland in ~/.config/keiland/files.conf); Files
+ * opens no settings file itself.  The lines an earlier Files wrote into the
+ * user's list after a "# set by Files" comment are not read any more.
  */
 
 #include "files.h"
+
+#include <keiland.h>
 
 #include "userland/desktop/paths.h"
 
@@ -64,9 +67,12 @@
 #define APPS_LINE		1024
 #define APPS_EXPANDED		(FM_OPENER_COMMAND + 4 * FM_PATH_MAX)
 
-/* The comment Files puts before a line it wrote, and the suffix of the new list it writes before the rename. */
+/* The comment an earlier Files put before a line it wrote into the user's list (such lines are passed over). */
 #define APPS_MARK		"# set by Files"
-#define APPS_NEW_SUFFIX		".new"
+
+/* The application's name in the desktop's settings, and the prefix of the key of a type's chosen way. */
+#define APPS_SETTINGS_APP	"files"
+#define APPS_SETTINGS_PREFIX	"files.open-with."
 
 /* How many descriptors a started program closes before it runs (all the window may have open). */
 #define APPS_DESCRIPTORS	1024
@@ -113,11 +119,9 @@ static const struct apps_builtin apps_builtins[] = {
 static const char *const apps_program_folders[] = {KEILAND_BINDIR, "/bin", "/usr/bin", "/usr/local/bin"};
 
 static int apps_user_list(char *list, size_t size);
-static int apps_rewrite(const char *type, const struct fm_opener *opener);
-static int apps_copy_list(FILE *old, FILE *new, const char *type);
+static int apps_choice_key(const char *type, char *key, size_t size);
+static int apps_choice(const char *type, struct fm_opener *opener);
 static int apps_is_mark(const char *line);
-static int apps_is_type_line(const char *line, const char *type);
-static int apps_make_folders(const char *list);
 static void apps_read_list(const char *path, const char *type, struct fm_opener *openers, int capacity, int *count);
 static int apps_parse_line(char *line, char **patterns, char **name, char **command);
 static int apps_matches(const char *patterns, const char *type);
@@ -142,6 +146,7 @@ fm_apps_for(
 	struct fm_opener *openers,
 	int capacity)
 {
+	struct fm_opener chosen;
 	char list[FM_PATH_MAX];
 	size_t index;
 	int regular;
@@ -157,6 +162,11 @@ fm_apps_for(
 	regular = S_ISREG(mode);
 	if (regular != 0 && (mode & 0111) != 0)
 		apps_add(openers, capacity, &count, "Run in Terminal", "@terminal %f");
+
+	/* The way the user chose for the type. */
+	error = apps_choice(mime->type, &chosen);
+	if (error == 0)
+		apps_add(openers, capacity, &count, chosen.name, chosen.command);
 
 	/* The user's list, when there is a place for it. */
 	error = apps_user_list(list, sizeof(list));
@@ -283,21 +293,40 @@ fm_apps_spawn(
 }
 
 /*
- * Makes a way the default for one type: the user's list gets the way's line
- * for exactly that type at its top, in place of the one Files wrote before.
+ * Makes a way the default for one type: the desktop's setting
+ * files.open-with.<type> takes the way's name and command.
  *
- * Returns 0, or an errno value (ENOENT without a home or configuration
- * folder) with the list as it was.
+ * Returns 0, or an errno value (EINVAL for a type or a way the setting
+ * cannot hold, ENOENT without a home) with the default as it was.
  */
 int
 fm_apps_set_default(
 	const char *type,
 	const struct fm_opener *opener)
 {
+	struct kl_settings *settings;
+	char key[KL_SETTINGS_KEY_MAX];
+	char value[KL_SETTINGS_VALUE_MAX];
+	int written;
 	int error;
 
-	/* The list rewritten with the way's line first. */
-	error = apps_rewrite(type, opener);
+	/* The type's key, and the way as "<name><TAB><command>". */
+	error = apps_choice_key(type, key, sizeof(key));
+	if (error == 0) {
+		written = snprintf(value, sizeof(value), "%s\t%s", opener->name, opener->command);
+		if (written < 0 || (size_t)written >= sizeof(value))
+			error = EINVAL;
+	}
+
+	/* The setting, kept by libkeiland. */
+	if (error == 0) {
+		settings = kl_settings_open(NULL, APPS_SETTINGS_APP);
+		error = ENOMEM;
+		if (settings != NULL) {
+			error = kl_settings_set(settings, key, value, NULL);
+			kl_settings_close(settings);
+		}
+	}
 	fm_log("DEFAULT set type=%s app=%s error=%d", type, opener->name, error);
 
 	/* Reports why the default could not be changed. */
@@ -309,19 +338,31 @@ fm_apps_set_default(
 }
 
 /*
- * Gives one type back to the system's default: the line Files wrote for it
- * leaves the user's list (the user's own lines stay).
+ * Gives one type back to the system's default: the setting of the type
+ * goes back to having no way (the user's own list stays as it is).
  *
- * Returns 0, or an errno value with the list as it was.
+ * Returns 0, or an errno value with the default as it was.
  */
 int
 fm_apps_clear_default(
 	const char *type)
 {
+	struct kl_settings *settings;
+	char key[KL_SETTINGS_KEY_MAX];
 	int error;
 
-	/* The list rewritten without Files' line for the type. */
-	error = apps_rewrite(type, NULL);
+	/* The type's key. */
+	error = apps_choice_key(type, key, sizeof(key));
+
+	/* The setting back at its default. */
+	if (error == 0) {
+		settings = kl_settings_open(NULL, APPS_SETTINGS_APP);
+		error = ENOMEM;
+		if (settings != NULL) {
+			error = kl_settings_reset(settings, key, NULL);
+			kl_settings_close(settings);
+		}
+	}
 	fm_log("DEFAULT clear type=%s error=%d", type, error);
 
 	/* Reports why the default could not be given back. */
@@ -333,58 +374,84 @@ fm_apps_clear_default(
 }
 
 /*
- * Tells whether the user's list has a line Files wrote for a type (the
- * type has a default the user chose): 1 when it has, 0 when not.
+ * Tells whether the user chose a way for a type: 1 when the desktop's
+ * setting of the type holds one, 0 when not.
  */
 int
 fm_apps_has_default(
 	const char *type)
 {
-	char list[FM_PATH_MAX];
-	char line[APPS_LINE];
-	char *read;
-	FILE *file;
-	int after_mark;
-	int is_mark;
-	int is_type;
+	struct fm_opener chosen;
 	int error;
 
-	/* The user's list; without one there is no choice of the user's. */
-	error = apps_user_list(list, sizeof(list));
+	/* The type's chosen way. */
+	error = apps_choice(type, &chosen);
 	if (error != 0)
 		return 0;
 
-	/* The list, when there is one. */
-	file = fopen(list, "r");
-	if (file == NULL)
-		return 0;
+	/* The user chose one. */
+	return 1;
+}
 
-	/* Looks for Files' comment followed by the type's line. */
-	after_mark = 0;
-	for (;;) {
-		/* The next line, until the list ends. */
-		read = fgets(line, sizeof(line), file);
-		if (read == NULL)
-			break;
+/* Makes a type's key in the desktop's settings (files.open-with.<type>); returns 0 or EINVAL for a type it cannot hold. */
+static int
+apps_choice_key(
+	const char *type,
+	char *key,
+	size_t size)
+{
+	int written;
 
-		/* A line of the type right after Files' comment is the user's choice. */
-		if (after_mark) {
-			is_type = apps_is_type_line(line, type);
-			if (is_type) {
-				fclose(file);
-				return 1;
-			}
-		}
+	/* The prefix and the type. */
+	written = snprintf(key, size, "%s%s", APPS_SETTINGS_PREFIX, type);
+	if (written < 0 || (size_t)written >= size)
+		return EINVAL;
 
-		/* Whether this line is Files' comment, for the next one. */
-		is_mark = apps_is_mark(line);
-		after_mark = is_mark;
-	}
+	/* Succeeded: the key (libkeiland checks the type's characters). */
+	return 0;
+}
 
-	/* The list is done with. */
-	fclose(file);
+/* Reads the way chosen for a type from the desktop's settings; returns 0, or an errno value when there is none. */
+static int
+apps_choice(
+	const char *type,
+	struct fm_opener *opener)
+{
+	struct kl_settings *settings;
+	char key[KL_SETTINGS_KEY_MAX];
+	char value[KL_SETTINGS_VALUE_MAX];
+	size_t name_length;
+	size_t command_length;
+	char *tab;
+	int error;
 
-	/* No line of Files' for the type. */
+	/* The type's key. */
+	error = apps_choice_key(type, key, sizeof(key));
+	if (error != 0)
+		return error;
+
+	/* The setting, read now (another window may have chosen meanwhile). */
+	settings = kl_settings_open(NULL, APPS_SETTINGS_APP);
+	if (settings == NULL)
+		return ENOMEM;
+	error = kl_settings_get(settings, key, value, sizeof(value), NULL);
+	kl_settings_close(settings);
+	if (error != 0)
+		return error;
+
+	/* The name before the tab, the command after it; a name too long for the window is refused. */
+	tab = strchr(value, '\t');
+	if (tab == NULL)
+		return EINVAL;
+	*tab = '\0';
+	name_length = strlen(value);
+	if (name_length >= sizeof(opener->name))
+		return EINVAL;
+	memcpy(opener->name, value, name_length + 1U);
+	command_length = strlen(tab + 1);
+	memcpy(opener->command, tab + 1, command_length + 1U);
+
+	/* Succeeded: the chosen way. */
 	return 0;
 }
 
@@ -423,142 +490,7 @@ apps_user_list(
 	return 0;
 }
 
-/*
- * Writes the user's list anew: Files' line for the type first (none when
- * opener is NULL), then every line of the old list but the one Files wrote
- * for the type and its comment.  The new list is renamed over the old one.
- */
-static int
-apps_rewrite(
-	const char *type,
-	const struct fm_opener *opener)
-{
-	char list[FM_PATH_MAX];
-	char fresh[FM_PATH_MAX + sizeof(APPS_NEW_SUFFIX)];
-	FILE *old;
-	FILE *new;
-	int written;
-	int error;
-
-	/* The user's list, and the new list beside it. */
-	error = apps_user_list(list, sizeof(list));
-	if (error != 0)
-		return error;
-
-	/* The new list's name: the list's with a suffix (the buffer holds both). */
-	snprintf(fresh, sizeof(fresh), "%s%s", list, APPS_NEW_SUFFIX);
-
-	/* The folders the list lives in, made when they are not there. */
-	error = apps_make_folders(list);
-	if (error != 0)
-		return error;
-
-	/* The new list. */
-	new = fopen(fresh, "w");
-	if (new == NULL)
-		return errno;
-
-	/* The way's line first, after Files' comment. */
-	if (opener != NULL) {
-		written = fprintf(new, "%s\n%s\t%s\t%s\n", APPS_MARK, type, opener->name, opener->command);
-		if (written < 0) {
-			fclose(new);
-			(void)unlink(fresh);
-			return EIO;
-		}
-	}
-
-	/* The old list's lines but Files' line for the type, when there is an old list. */
-	old = fopen(list, "r");
-	if (old != NULL) {
-		error = apps_copy_list(old, new, type);
-		fclose(old);
-		if (error != 0) {
-			fclose(new);
-			(void)unlink(fresh);
-			return error;
-		}
-	}
-
-	/* The new list, complete on the disk. */
-	error = fclose(new);
-	if (error != 0) {
-		(void)unlink(fresh);
-		return EIO;
-	}
-
-	/* The new list takes the old one's place at once. */
-	error = rename(fresh, list);
-	if (error != 0) {
-		error = errno;
-		(void)unlink(fresh);
-		return error;
-	}
-
-	/* Succeeded: the list is written. */
-	return 0;
-}
-
-/* Copies a list's lines but Files' line for a type and the comment before it; returns 0 or EIO. */
-static int
-apps_copy_list(
-	FILE *old,
-	FILE *new,
-	const char *type)
-{
-	char line[APPS_LINE];
-	char *read;
-	int held;
-	int is_mark;
-	int is_type;
-	int written;
-
-	/* Each line; Files' comment is held until the line after it says whether it goes. */
-	held = 0;
-	for (;;) {
-		/* The next line, until the list ends. */
-		read = fgets(line, sizeof(line), old);
-		if (read == NULL)
-			break;
-
-		/* A held comment goes with the type's line after it, and the line goes too. */
-		if (held) {
-			held = 0;
-			is_type = apps_is_type_line(line, type);
-			if (is_type)
-				continue;
-
-			/* The comment belongs to another line, and stays. */
-			written = fprintf(new, "%s\n", APPS_MARK);
-			if (written < 0)
-				return EIO;
-		}
-
-		/* Files' comment is held for the line after it. */
-		is_mark = apps_is_mark(line);
-		if (is_mark) {
-			held = 1;
-			continue;
-		}
-
-		/* Any other line stays as it was. */
-		written = fputs(line, new);
-		if (written < 0)
-			return EIO;
-	}
-
-	/* A comment at the list's end stays. */
-	if (held) {
-		written = fprintf(new, "%s\n", APPS_MARK);
-		if (written < 0)
-			return EIO;
-	}
-
-	/* Succeeded: every line that stays is copied. */
-	return 0;
-}
-
-/* Tells whether a line of a list (with its end) is the comment Files puts before its own lines. */
+/* Tells whether a line of a list (with its end) is the comment an earlier Files put before its own lines. */
 static int
 apps_is_mark(
 	const char *line)
@@ -584,66 +516,6 @@ apps_is_mark(
 	return 0;
 }
 
-/* Tells whether a line of a list (with its end) is a way for exactly one type: its patterns are that type. */
-static int
-apps_is_type_line(
-	const char *line,
-	const char *type)
-{
-	size_t length;
-	int differs;
-
-	/* The patterns are the type, ended by the first tab. */
-	length = strlen(type);
-	differs = strncmp(line, type, length);
-	if (differs != 0)
-		return 0;
-
-	/* The type alone, not the start of a longer pattern. */
-	if (line[length] != '\t')
-		return 0;
-
-	/* It is the type's line. */
-	return 1;
-}
-
-/* Makes the folders a list lives in (the configuration folder and its keiland folder) when they are not there. */
-static int
-apps_make_folders(
-	const char *list)
-{
-	char folder[FM_PATH_MAX];
-	char *slash;
-	int error;
-
-	/* The list's folder, and the configuration folder above it. */
-	snprintf(folder, sizeof(folder), "%s", list);
-	slash = strrchr(folder, '/');
-	if (slash == NULL)
-		return 0;
-	*slash = '\0';
-
-	/* The configuration folder first (~/.config may not be there yet). */
-	slash = strrchr(folder, '/');
-	if (slash != NULL && slash != folder) {
-		*slash = '\0';
-		error = mkdir(folder, 0755);
-		if (error != 0 && errno != EEXIST)
-			return errno;
-
-		/* The path back to the list's folder. */
-		*slash = '/';
-	}
-
-	/* Then the keiland folder in it. */
-	error = mkdir(folder, 0755);
-	if (error != 0 && errno != EEXIST)
-		return errno;
-
-	/* Succeeded: the list's folder is there. */
-	return 0;
-}
-
 /* Adds the openers of a list that fit a type; a list that cannot be read adds none. */
 static void
 apps_read_list(
@@ -659,6 +531,8 @@ apps_read_list(
 	char *command;
 	char *read;
 	FILE *file;
+	int after_mark;
+	int is_mark;
 	int parsed;
 	int matched;
 
@@ -668,10 +542,19 @@ apps_read_list(
 		return;
 
 	/* Each line that names a way to open the type. */
+	after_mark = 0;
 	for (;;) {
 		read = fgets(line, sizeof(line), file);
 		if (read == NULL)
 			break;
+
+		/* A line an earlier Files wrote (after its comment) is passed over: the choice is a setting now. */
+		is_mark = apps_is_mark(line);
+		if (after_mark) {
+			after_mark = is_mark;
+			continue;
+		}
+		after_mark = is_mark;
 
 		/* A comment, a blank or a malformed line says nothing. */
 		parsed = apps_parse_line(line, &patterns, &name, &command);

@@ -87,7 +87,7 @@ ws135-p001（q652-i01、P2、2026-10-04）。第 2 版（design-reviewer の rev
 | `sound.muted` | 同上 | bool | 0/1 |
 | `sound.available` | compositor（読むだけ） | bool | `set` は `denied`。audiod に届き device がある時 1 |
 | `terminal.ambiguous-wide` | libkeiland（app の file、D3） | bool | 0/1 |
-| `files.open-with.<type>`（D3 で入れるなら） | libkeiland（app の file） | string | 書式 |
+| `files.open-with.<type>`（§2.4 の prefix の行） | libkeiland（app の file `files.conf`） | opener | §2.4 |
 
 - 未知の key の `set` は `unsupported`（D5）。表に無い key は保存しない。手での編集の未知の key と comment は desktop.conf に残る（§4.3）。新しい設定は表に行を足す。
 - 範囲の外の値の `set` は `invalid`（丸めない）。file の手での編集の値は読みで範囲に丸める。
@@ -107,6 +107,23 @@ ws135-p001（q652-i01、P2、2026-10-04）。第 2 版（design-reviewer の rev
 libkeiland が `~/.config/keiland/<app>.conf` を直接読み書きする（今の `terminal/settings.c` の書き方: 1 key を置き換え、fsync、rename）。監視は同じ process の
 中の変更だけを通知し、別の process（別の Terminal）の変更は**通知しない**（file の poll をしないため）。他の process は起動の時に読む。
 これは WS135 の完了の条件 3（別の process の変更も届く）を app だけの設定では満たさない。満たすには compositor の store に入れる（D3 (c)）。判断は D3。
+
+### 2.4 prefix の行: Files の open-with（2026-10-04 追加、Q1「open-with は WS135 で行って」）
+
+Files の「Always Open With」（種類ごとに既定の app を選ぶ）は種類ごとの動的な key で、固定の key の表に入らない。表に **prefix の行**を足す。
+
+| 行 | 解決の先 | 型 | key の検査 | 値の検査 |
+| --- | --- | --- | --- | --- |
+| `files.open-with.`（flag `KL_SETTINGS_KEY_PREFIX`） | libkeiland → `~/.config/keiland/files.conf` の行 `open-with.<type>=<NAME><TAB><COMMAND>` | opener | prefix の後ろが MIME の型: 小文字・数字・`.`・`+`・`-`・`_` と、先頭でも末尾でもない `/` がちょうど一つ。key 全体は `KL_SETTINGS_KEY_MAX` 未満 | NAME と COMMAND が空でなく、制御文字が無く、その間の TAB がちょうど一つ。全体は `KL_SETTINGS_VALUE_MAX`（256）未満（Files の command の上限 512 より狭い: 長い command の選択は `EINVAL` で残らない） |
+
+- 既定（選ばれていない）は「値が無い」（`get` は `EAGAIN`）。`reset` は file の行を除く。
+- `kl_settings_key_find` は固定の行の名前の一致、無ければ prefix の行で suffix を検査して返す。`kl_settings_name_valid`（一般の key の書式）は prefix の key には使わない。
+- cache は固定の行の entry に加え、prefix の key の entry を値の来た時に作る（上限 64）。watch は prefix の key にも効く（prefix の一致）。
+- Files（`files/apps.c`）: 選んだ既定は `kl_settings_open(NULL, "files")` で読み書き（開くたびに読む、今と同じ）。`fm_apps_set_default` は `set`、`fm_apps_clear_default` は `reset`、
+  `fm_apps_has_default` は `get`。`fm_apps_for` は選んだ既定を最初に、続けて利用者が手で書く list（`~/.config/keiland/open-with`、PATTERNS<TAB>NAME<TAB>COMMAND）、
+  system の list、組み込み。**Files は利用者の list を書かない**（今までの「# set by Files」の行の書き換えを除く）。利用者の手で書く list は `/etc/keiland/open-with` と
+  同じ「関連づけの list」（data）として読むだけにする（mailcap と同じ扱い。設定の file ではない）。その中に残る昔の「# set by Files」の行は読まない（この変更の前に
+  選んだ既定は失われる。開発中の版なので移行はしない）。
 
 ## 3. libkeiland の API（`kl_settings_*`）
 

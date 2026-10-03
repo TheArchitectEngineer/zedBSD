@@ -45,6 +45,8 @@ kl_settings_open(
 		key = kl_settings_key_at(index);
 		if (key->resolver != KL_SETTINGS_RESOLVER_COMPOSITOR || key->type == KL_SETTINGS_TYPE_PATH)
 			continue;
+		if ((key->flags & KL_SETTINGS_KEY_PREFIX) != 0U)
+			continue;
 		snprintf(value, sizeof(value), "%d", key->fallback);
 		settings_cache_set(&settings->cache, key->name, value, KL_SETTINGS_DEFAULT, 1U);
 	}
@@ -147,6 +149,12 @@ kl_settings_reset(
 		return ENOENT;
 	if (found->resolver == KL_SETTINGS_RESOLVER_APP && settings_app_write(&settings->app, key, NULL) != 0)
 		return EIO;
+	if ((found->flags & KL_SETTINGS_KEY_PREFIX) != 0U) {
+		settings_cache_set(&settings->cache, key, "", 0U, 0U);
+		settings_cache_result(&settings->cache, settings->next_request, 0);
+		settings->next_request++;
+		return 0;
+	}
 	value[0] = '\0';
 	if (found->type != KL_SETTINGS_TYPE_PATH)
 		snprintf(value, sizeof(value), "%d", found->fallback);

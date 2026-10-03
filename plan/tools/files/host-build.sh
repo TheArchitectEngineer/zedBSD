@@ -55,6 +55,15 @@ fi
 "$cc" $flags -c userland/desktop/libkeiui/scroll-bar.c -o "$out/obj/keiui-scroll-bar.o"
 objects="$objects $out/obj/keiui-scroll-bar.o"
 
+# The desktop's settings (files/apps.c keeps the chosen ways there since WS135): libkeiland's cache and application
+# files and the settings' table, under the stand-in for kl_settings_* without Wayland (plan/ws135/tests/host-kl-settings.c).
+for file in userland/desktop/libkeiland/settings-cache.c userland/desktop/libkeiland/settings-app.c \
+    userland/desktop/settings-keys/settings-keys.c plan/ws135/tests/host-kl-settings.c; do
+	object="$out/obj/keiland-$(basename "$file" .c).o"
+	"$cc" $flags -Iuserland/desktop/libkeiland -c "$file" -o "$object"
+	objects="$objects $object"
+done
+
 # libkeiland's gesture, scroller and motion (files/touch.c uses them since ws081-p010; ws093-p003).
 for file in userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/scroll.c userland/desktop/libkeiland/motion.c; do
 	object="$out/obj/keiland-$(basename "$file" .c).o"

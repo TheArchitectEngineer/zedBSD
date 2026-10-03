@@ -39,7 +39,7 @@ WS131 の設計（`plan/ws131/design.md` §4.2〜4.4）は p010 で compositor �
 | [p002](phase002/phase.md) | compositor の store・merge の書き・`kl_system_manager_v1`／`kl_system_settings_v1`・peer_uid・壁紙の非同期・音量の順序・repeat の送り直し（watcher は残す） | in-progress（q656、P2。host 45 PASS、zedBSD・Linux build warning 0、QEMU は p003 と一緒に T2） | p001 |
 | [p003](phase003/phase.md) | libkeiland の `kl_settings_*`（wire・cache・watch・app の file）と probe `keiland-settings` | in-progress（q656、P2。host 26 PASS、build warning 0、QEMU は T2） | p002 |
 | [p004](phase004/phase.md) | Settings を `kl_settings_*` へ、compositor の watcher・libkeiland の `keiland_preferences_*` を除去、試験の書き換え、check.sh S1 | in-progress（q656、P2。host・build・check.sh PASS、QEMU は T2） | p003 |
-| [p005](phase005/phase.md) | app だけの設定: Terminal の `terminal.ambiguous-wide` を `kl_settings_*` へ（Files の open-with は判断待ち） | in-progress（q656、P2。host・build 済み、QEMU は T2） | p003、D3 |
+| [p005](phase005/phase.md) | app だけの設定: Terminal の `terminal.ambiguous-wide` と Files の open-with（prefix の行 `files.open-with.<type>`）を `kl_settings_*` へ | in-progress（q656、P2。host・build 済み、QEMU は T2） | p003、D3 |
 | p002 以降 | p001 で決める（compositor の store と拡張、libkeiland の API と監視、Settings・system bar の移行と監視の thread の除去、Linux・FreeBSD、全文の規約と回帰） | planning | p001、WS131 の p010（manager の枠） |
 
 ## 関係

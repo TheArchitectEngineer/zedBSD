@@ -22,8 +22,8 @@
 
 #include <stdint.h>
 
-/* The most keys the cache holds (the table's rows), watches, and finished requests kept. */
-#define SETTINGS_CACHE_KEYS	16U
+/* The most keys the cache holds (the table's rows and the prefix rows' keys), watches, and finished requests kept. */
+#define SETTINGS_CACHE_KEYS	64U
 #define SETTINGS_CACHE_WATCHES	32U
 #define SETTINGS_CACHE_RESULTS	32U
 
@@ -32,7 +32,8 @@
 #define SETTINGS_APP_PATH_MAX	1024U
 
 /*
- * One key as the cache holds it.
+ * One key as the cache holds it: its name and its row of the table (a
+ * prefix row's key has a name of its own).
  *
  * value, flags and present are the state in effect (present zero: no value,
  * the value is empty).  The pending ones are what the compositor sent
@@ -42,6 +43,7 @@
  * the next notify.
  */
 struct settings_cache_entry {
+	char name[KL_SETTINGS_KEY_MAX];
 	const struct kl_settings_key *key;
 	char value[KL_SETTINGS_VALUE_MAX];
 	unsigned flags;

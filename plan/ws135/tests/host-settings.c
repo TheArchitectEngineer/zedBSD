@@ -45,6 +45,7 @@ static void test_watch_changes(void);
 static void test_lost(void);
 static void test_results(void);
 static void test_app(void);
+static void test_prefix(void);
 
 int
 main(
@@ -61,6 +62,7 @@ main(
 	test_lost();
 	test_results();
 	test_app();
+	test_prefix();
 	printf("host-settings: %d passed, %d failed\n", test_passed, test_failed);
 	if (test_failed != 0)
 		return 1;
@@ -319,4 +321,38 @@ test_app(void)
 		fclose(file);
 	check(error == 0 && strstr(text, "ambiguous-wide") == NULL && strstr(text, "other=x\n") != NULL, "app: a reset takes the line out");
 	check(settings_app_write(&app, "pointer.speed", "1") == EINVAL, "app: another key is not the application's");
+}
+
+static void
+test_prefix(void)
+{
+	const struct kl_settings_key *key;
+	struct settings_cache cache;
+	struct settings_app app;
+	char value[KL_SETTINGS_VALUE_MAX];
+	int error;
+
+	key = kl_settings_key_find("files.open-with.image/svg+xml");
+	check(key != NULL && (key->flags & KL_SETTINGS_KEY_PREFIX) != 0U, "prefix: files.open-with.image/svg+xml is the prefix row's");
+	check(kl_settings_key_find("files.open-with.image") == NULL, "prefix: a type without a slash is not");
+	check(kl_settings_key_find("files.open-with.a/b/c") == NULL, "prefix: two slashes are not");
+	check(kl_settings_key_find("files.open-with.Image/png") == NULL, "prefix: an upper-case type is not");
+	check(key != NULL && kl_settings_key_check(key, "Viewer\tview %f") == 0, "prefix: name tab command is an opener");
+	check(key != NULL && kl_settings_key_check(key, "Viewer view") == EINVAL, "prefix: no tab is not");
+	check(key != NULL && kl_settings_key_check(key, "\tview") == EINVAL, "prefix: an empty name is not");
+	check(key != NULL && kl_settings_key_check(key, "a\tb\tc") == EINVAL, "prefix: two tabs are not");
+
+	settings_cache_init(&cache);
+	error = settings_cache_get(&cache, "files.open-with.text/plain", value, sizeof(value), NULL);
+	check(error == EAGAIN, "prefix: a type not chosen has no value (got %d)", error);
+	(void)settings_app_open(&app, "files", test_home);
+	error = settings_app_write(&app, "files.open-with.text/plain", "Less\tless %f");
+	check(error == 0, "prefix: written to files.conf");
+	settings_app_load(&app, &cache);
+	error = settings_cache_get(&cache, "files.open-with.text/plain", value, sizeof(value), NULL);
+	check(error == 0 && strcmp(value, "Less\tless %f") == 0, "prefix: read back from files.conf");
+	error = settings_app_write(&app, "files.open-with.text/plain", NULL);
+	settings_cache_init(&cache);
+	settings_app_load(&app, &cache);
+	check(error == 0 && settings_cache_get(&cache, "files.open-with.text/plain", value, sizeof(value), NULL) == EAGAIN, "prefix: a reset leaves no value");
 }

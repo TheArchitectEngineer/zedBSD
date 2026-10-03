@@ -116,6 +116,8 @@ settings_app_load(
 		key = kl_settings_key_at(index);
 		if (key->resolver != KL_SETTINGS_RESOLVER_APP)
 			continue;
+		if ((key->flags & KL_SETTINGS_KEY_PREFIX) != 0U)
+			continue;
 		differs = strncmp(key->name, app->name, prefix_length);
 		if (differs != 0 || key->name[prefix_length] != '.')
 			continue;
@@ -248,11 +250,18 @@ app_parse_line(
 	if (key == NULL || key->resolver != KL_SETTINGS_RESOLVER_APP)
 		return;
 
-	/* A number moved into its range. */
-	error = kl_settings_key_number(key, raw, &number);
-	if (error != 0)
-		return;
-	(void)snprintf(clean, sizeof(clean), "%d", number);
+	/* An opener as it is, when it is one; a number moved into its range. */
+	if (key->type == KL_SETTINGS_TYPE_OPENER) {
+		error = kl_settings_key_check(key, raw);
+		if (error != 0)
+			return;
+		(void)snprintf(clean, sizeof(clean), "%s", raw);
+	} else {
+		error = kl_settings_key_number(key, raw, &number);
+		if (error != 0)
+			return;
+		(void)snprintf(clean, sizeof(clean), "%d", number);
+	}
 
 	/* The value in effect. */
 	settings_cache_set(cache, full, clean, 0U, 1U);

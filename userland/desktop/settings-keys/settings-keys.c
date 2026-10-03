@@ -31,10 +31,13 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "sound.volume", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 100, 100, KL_SETTINGS_KEY_KEPT },
 	{ "sound.muted", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
 	{ "sound.available", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_READ_ONLY },
-	{ "terminal.ambiguous-wide", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, 0U }
+	{ "terminal.ambiguous-wide", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, 0U },
+	{ "files.open-with.", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_OPENER, 0, 0, 0, KL_SETTINGS_KEY_PREFIX }
 };
 
 static int keys_parse(const char *value, long *parsed);
+static int keys_type_valid(const char *type);
+static int keys_opener_valid(const char *value);
 
 /*
  * Reports how many settings the table has.
@@ -66,21 +69,44 @@ kl_settings_key_at(
 }
 
 /*
- * Finds a setting by its name; NULL for a name the table does not have.
+ * Finds a setting by its name: a row of that name, or a prefix row whose
+ * prefix the name starts with and whose rest is a MIME type.  NULL for a
+ * name the table does not have.
  */
 const struct kl_settings_key *
 kl_settings_key_find(
 	const char *name)
 {
+	size_t prefix_length;
+	size_t length;
 	size_t count;
 	size_t index;
 	int differs;
+	int valid;
 
-	/* Each row in turn. */
+	/* Compares each row's name with the one asked for. */
 	count = kl_settings_key_count();
 	for (index = 0; index < count; index++) {
+		if ((settings_keys[index].flags & KL_SETTINGS_KEY_PREFIX) != 0U)
+			continue;
 		differs = strcmp(settings_keys[index].name, name);
 		if (differs == 0)
+			return &settings_keys[index];
+	}
+
+	/* A prefix row: the name is too long, or does not start with its prefix, or its rest is not a MIME type. */
+	length = strlen(name);
+	if (length >= KL_SETTINGS_KEY_MAX)
+		return NULL;
+	for (index = 0; index < count; index++) {
+		if ((settings_keys[index].flags & KL_SETTINGS_KEY_PREFIX) == 0U)
+			continue;
+		prefix_length = strlen(settings_keys[index].name);
+		differs = strncmp(name, settings_keys[index].name, prefix_length);
+		if (differs != 0)
+			continue;
+		valid = keys_type_valid(name + prefix_length);
+		if (valid)
 			return &settings_keys[index];
 	}
 
@@ -101,10 +127,20 @@ kl_settings_key_check(
 	int valid;
 	int error;
 
-	/* Any value must fit and hold no control character. */
-	valid = kl_settings_value_valid(value);
-	if (!valid)
-		return EINVAL;
+	/* Any value but an opener (which holds one tab) must fit and hold no control character. */
+	if (key->type != KL_SETTINGS_TYPE_OPENER) {
+		valid = kl_settings_value_valid(value);
+		if (!valid)
+			return EINVAL;
+	}
+
+	/* An opener is a name, a tab and a command. */
+	if (key->type == KL_SETTINGS_TYPE_OPENER) {
+		valid = keys_opener_valid(value);
+		if (!valid)
+			return EINVAL;
+		return 0;
+	}
 
 	/* A path is absolute. */
 	if (key->type == KL_SETTINGS_TYPE_PATH) {
@@ -245,4 +281,91 @@ keys_parse(
 
 	/* Succeeded: a whole number. */
 	return 0;
+}
+
+/* Tells whether a text is a MIME type: lower-case letters, digits, '.', '+', '-' and '_', with one '/' inside. */
+static int
+keys_type_valid(
+	const char *type)
+{
+	size_t length;
+	size_t index;
+	unsigned slashes;
+	char character;
+
+	/* Not empty, and neither starting nor ending with the slash. */
+	length = strlen(type);
+	if (length < 3U)
+		return 0;
+	if (type[0] == '/' || type[length - 1U] == '/')
+		return 0;
+
+	/* Each character one of those allowed, the slash once. */
+	slashes = 0;
+	for (index = 0; index < length; index++) {
+		character = type[index];
+		if (character == '/') {
+			slashes++;
+			continue;
+		}
+		if (character >= 'a' && character <= 'z')
+			continue;
+		if (character >= '0' && character <= '9')
+			continue;
+		if (character == '.' ||
+		    character == '+' ||
+		    character == '-' ||
+		    character == '_')
+			continue;
+
+		/* Any other character refuses the type. */
+		return 0;
+	}
+
+	/* Exactly one slash. */
+	if (slashes != 1U)
+		return 0;
+
+	/* Succeeded: a MIME type. */
+	return 1;
+}
+
+/* Tells whether a value is an opener: a name, one tab and a command, neither empty, no other control character, short enough. */
+static int
+keys_opener_valid(
+	const char *value)
+{
+	size_t length;
+	size_t index;
+	size_t tab;
+	unsigned tabs;
+	unsigned char character;
+
+	/* Short enough. */
+	length = strlen(value);
+	if (length >= KL_SETTINGS_VALUE_MAX)
+		return 0;
+
+	/* Each byte printable but the one tab. */
+	tabs = 0;
+	tab = 0;
+	for (index = 0; index < length; index++) {
+		character = (unsigned char)value[index];
+		if (character == '\t') {
+			tabs++;
+			tab = index;
+			continue;
+		}
+		if (character < 0x20U || character == 0x7fU)
+			return 0;
+	}
+
+	/* One tab, with a name before it and a command after it. */
+	if (tabs != 1U)
+		return 0;
+	if (tab == 0U || tab + 1U == length)
+		return 0;
+
+	/* Succeeded: an opener. */
+	return 1;
 }

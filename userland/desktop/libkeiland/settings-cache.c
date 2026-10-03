@@ -22,6 +22,7 @@
 #include <string.h>
 
 static void cache_copy(char *to, size_t size, const char *from);
+static struct settings_cache_entry *cache_add(struct settings_cache *cache, const char *key);
 static int cache_entry_differs(const struct settings_cache_entry *entry);
 static int cache_watch_covers(const struct settings_cache_watch *watch, const char *key);
 
@@ -38,10 +39,13 @@ settings_cache_init(
 
 	memset(cache, 0, sizeof(*cache));
 
-	/* One entry for each key, none of them with a value yet. */
+	/* One entry for each key of a row (a prefix row's keys come as they are set), none of them with a value yet. */
 	count = kl_settings_key_count();
 	for (index = 0; index < count && cache->count < SETTINGS_CACHE_KEYS; index++) {
 		key = kl_settings_key_at(index);
+		if ((key->flags & KL_SETTINGS_KEY_PREFIX) != 0U)
+			continue;
+		cache_copy(cache->entries[cache->count].name, sizeof(cache->entries[0].name), key->name);
 		cache->entries[cache->count].key = key;
 		cache->count++;
 	}
@@ -61,9 +65,9 @@ settings_cache_find(
 	unsigned index;
 	int differs;
 
-	/* Each entry in turn. */
+	/* Compares each entry's name with the one asked for. */
 	for (index = 0; index < cache->count; index++) {
-		differs = strcmp(cache->entries[index].key->name, key);
+		differs = strcmp(cache->entries[index].name, key);
 		if (differs == 0)
 			return &cache->entries[index];
 	}
@@ -135,8 +139,10 @@ settings_cache_set(
 {
 	struct settings_cache_entry *entry;
 
-	/* A key the table does not have is passed over. */
+	/* The key's entry; a prefix row's key gets one the first time. */
 	entry = settings_cache_find(cache, key);
+	if (entry == NULL)
+		entry = cache_add(cache, key);
 	if (entry == NULL)
 		return;
 
@@ -208,12 +214,17 @@ settings_cache_get(
 	unsigned *flags)
 {
 	const struct settings_cache_entry *entry;
+	const struct kl_settings_key *row;
 	size_t length;
 
-	/* The key's entry. */
+	/* The key's entry; a prefix row's key not set yet has no value. */
 	entry = settings_cache_find((struct settings_cache *)cache, key);
-	if (entry == NULL)
-		return ENOENT;
+	if (entry == NULL) {
+		row = kl_settings_key_find(key);
+		if (row == NULL)
+			return ENOENT;
+		return EAGAIN;
+	}
 
 	/* No value yet. */
 	if (!entry->present)
@@ -356,10 +367,10 @@ settings_cache_notify(
 			watch = &cache->watches[slot];
 			if (!watch->used || watch->removed || watch->added)
 				continue;
-			covers = cache_watch_covers(watch, entry->key->name);
+			covers = cache_watch_covers(watch, entry->name);
 			if (!covers)
 				continue;
-			watch->fn(watch->data, entry->key->name, value, entry->told_flags);
+			watch->fn(watch->data, entry->name, value, entry->told_flags);
 		}
 	}
 
@@ -481,4 +492,33 @@ cache_watch_covers(
 
 	/* Covered. */
 	return 1;
+}
+
+/* Makes the entry of a prefix row's key (none for another key, or when the cache is full); NULL without one. */
+static struct settings_cache_entry *
+cache_add(
+	struct settings_cache *cache,
+	const char *key)
+{
+	const struct kl_settings_key *row;
+	struct settings_cache_entry *entry;
+
+	/* Only a prefix row's key. */
+	row = kl_settings_key_find(key);
+	if (row == NULL || (row->flags & KL_SETTINGS_KEY_PREFIX) == 0U)
+		return NULL;
+
+	/* A full cache takes no more. */
+	if (cache->count == SETTINGS_CACHE_KEYS)
+		return NULL;
+
+	/* The new entry, with no value yet. */
+	entry = &cache->entries[cache->count];
+	memset(entry, 0, sizeof(*entry));
+	cache_copy(entry->name, sizeof(entry->name), key);
+	entry->key = row;
+	cache->count++;
+
+	/* Succeeded: the key's entry. */
+	return entry;
 }
