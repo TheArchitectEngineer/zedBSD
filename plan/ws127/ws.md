@@ -50,7 +50,7 @@ Resume point（2026-10-02 計画）: **p001（棚卸し・回帰の取り直し�
 | [ws127-p003](phase003/phase.md) | 名前の衝突と Trash の残り。F-050 の 3 つ（Replace で消さずに Trash、cut の Esc で clipboard を保つ、folder の merge）は実装済み（ws035-p110・p115）。この Phase は F-041 の一部 `$topdir/.Trash-$uid`（volume の trash） | in-progress（q666-i01、P2。実装と host PASS、QEMU は T1 待ち） | p001 | 3h |
 | [ws127-p004](phase004/phase.md) | thumbnail の拡張（F-035: PDF の 1 頁目を libpdf で、disk の thumbnail の cache。動画は WS122 の後で外） | planning（p001 でユーザーの採否） | p001 | 3h |
 | [ws127-p005](phase005/phase.md) | 日本語の UI の文言と、名前の変更での IME（F-041 の残り）。Settings と共通の翻訳の仕組み | planning（ユーザーの判断: 日本語の UI をベータ1 に入れるか。WS095 の IME の状態） | p001、WS095、WS089 p016 と仕組みを共有 | 4h |
-| [ws127-p006](phase006/phase.md) | DnD の自動の scroll と spring-loaded（F-039）。端の自動 scroll と item・sidebar の folder の spring は実装済み（ws127-p002）。この Phase は tab の上で待つと tab が切り替わる spring | planned（q666、P2 が p003 の次） | p001 | 1h |
+| [ws127-p006](phase006/phase.md) | DnD の自動の scroll と spring-loaded（F-039）。端の自動 scroll と item・sidebar の folder の spring は実装済み（ws127-p002）。この Phase は tab の上で待つと tab が切り替わる spring | in-progress（q666、P2。実装と host PASS、QEMU は T1 待ち） | p001 | 1h |
 | [ws127-p007](phase007/phase.md) | 5330 の実機での操作と速さ。遅ければ描き直しを damage の矩形に絞る（F-037） | planning（p002〜p006 の後、実機とユーザーの時間） | p002〜p006 の選んだ物 | 2h + ユーザー 20 分 |
 | [ws127-p008](phase008/phase.md) | 全文規約と回帰（WS の最後） | planning | 実装の Phase | 2h |
 | [ws127-p009](phase009/phase.md) | Files の host 試験 p009・p010・p013 の FAIL（host-render の既定の font が作り直した build/ に無い path を指していた。試験を tree の font に） | cleared（q656、host 3 本 PASS） | — | 0.5h |
