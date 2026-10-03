@@ -165,3 +165,13 @@ FreeBSD: backend-test 9/9 PASS、libkeiland.so の NEEDED は libwayland-client�
   `/bin/runas kei /bin/settings ...` で起こす。
 - 確かめ: `runas` の build（-Werror）exit 0 warning 0、style-check 違反 0。QEMU は T2 に volume-p005 の再試験を依頼。
 - 代わりの案（未採用、要れば Q1・user の判断）: compositor が root の client にも拡張を見せる（D5 の例外）。
+
+## T2-021・T2-022 の残り 2 点の直し（P2 generation8、2026-10-04、Q1 の依頼）
+
+- p104（system bar の Wi-Fi の鍵）: 流れは全て ok だが、試験（`zdesktop-p104.sh`、`zdesktop-p013.sh` も）が待つ `ZWL NETWORK key saved ssid=` が
+  無い。p011 で鍵の保存を `system.c` の thread に移した時、log が `ZWL SYSTEM network key saved ssid= error=` だけになった。2 つの試験が待つ行なので
+  log の側を保つ: 保存が成功した時に前の行 `ZWL NETWORK key saved ssid=` も出す（`system_network_job_take`）。
+- volume-p005: 残りの MISSING は `SOUND report reachable=1 device=1 value=60` だけ。Settings の最初の report（60）は open の時に取り、`SOUND open
+  live=1 reachable=1 value=60` とだけ log していた（network の `NETWORK state` と同じ形の退行、変化として来ないので report の行が出ない）。
+  `se_sound_open` が最初の state を report と同じ書式でも log する。
+- 確かめ: zedBSD の settings・compositor（-Werror）exit 0 warning 0、Linux の gcc で object、style-check 違反 0。QEMU は T2 に再試験を依頼。
