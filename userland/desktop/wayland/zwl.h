@@ -759,21 +759,21 @@ struct zwl_server {
 	const char *wallpaper_path;
 	float window_opacity;
 	/*
-	 * The settings' effects (settings.c, WS135): window_opacity_started and
-	 * wallpaper_started are what the command line gave, which a setting
-	 * reset returns to; wallpaper_path above is the picture shown, and
-	 * wallpaper_chosen the settings' (empty for the command line's).  The pointer's speed is a
-	 * percentage of the relative pointer's movement, with the hundredths
-	 * of a pixel carried over; natural turns the wheel round.  The
-	 * keyboards' repeat is what wl_keyboard.repeat_info tells a keyboard
-	 * bound from then on.
-	 */
-	/*
 	 * The settings the session holds (settings.c and settings-store.c,
 	 * WS135): NULL for the login screen.  Made before the look, freed at
 	 * the compositor's end after the session's settings are written.
 	 */
 	struct zwl_settings_store *settings;
+	/*
+	 * The settings' effects (settings.c, WS135): window_opacity_started and
+	 * wallpaper_started are what the command line gave, which a setting
+	 * reset returns to; wallpaper_path above is the picture shown, and
+	 * wallpaper_chosen the settings' (empty for the command line's).  The
+	 * pointer's speed is a percentage of the relative pointer's movement,
+	 * with the hundredths of a pixel carried over; natural turns the wheel
+	 * round.  The keyboards' repeat is what wl_keyboard.repeat_info tells a
+	 * keyboard bound from then on.
+	 */
 	float window_opacity_started;
 	const char *wallpaper_started;
 	char wallpaper_chosen[256];

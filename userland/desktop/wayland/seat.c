@@ -1054,19 +1054,31 @@ zwl_seat_repeat_changed(
 	struct zwl_object *object;
 	int32_t repeat[2];
 
-	/* The rate and the delay. */
+	/* Builds wl_keyboard.repeat_info's arguments: the rate, then the delay. */
 	repeat[0] = server->repeat_rate;
 	repeat[1] = server->repeat_delay_ms;
 
-	/* Each live keyboard that is told the repeat. */
-	for (client = server->clients; client != NULL; client = client->next) {
+	/* Visits every client that is still served. */
+	for (client = server->clients;
+	     client != NULL;
+	     client = client->next) {
+		/* A client already failed is not written to again. */
 		if (client->fatal)
 			continue;
-		for (object = client->objects; object != NULL; object = object->next) {
+
+		/* Tells each live keyboard of the client that knows repeat_info. */
+		for (object = client->objects;
+		     object != NULL;
+		     object = object->next) {
+			/* Only a live keyboard is told. */
 			if (object->kind != ZWL_KEYBOARD || object->dead)
 				continue;
+
+			/* A keyboard bound before version 4 has no repeat_info. */
 			if (object->version < KEYBOARD_REPEAT_VERSION)
 				continue;
+
+			/* Sends the new repeat. */
 			deliver(client, object->id, KEYBOARD_REPEAT_INFO, repeat, sizeof(repeat));
 		}
 	}

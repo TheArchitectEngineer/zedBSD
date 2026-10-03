@@ -82,10 +82,16 @@ static void settings_value(void *data, struct wl_proxy *proxy, const char *key, 
 static void settings_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static void settings_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 
+/*
+ * The two interfaces of Keiland's system extension, defined below.  They
+ * are declared first because get_settings's argument types name the
+ * settings interface before it is defined, and they are not static
+ * because wayland-scanner's interfaces are visible to the whole program.
+ */
 extern const struct wl_interface kl_system_manager_v1_interface;
 extern const struct wl_interface kl_system_settings_v1_interface;
 
-/* get_settings: the new settings object. */
+/* get_settings's argument types: the new settings object it makes. */
 static const struct wl_interface *settings_get_types[] = {
 	&kl_system_settings_v1_interface,
 };
@@ -108,7 +114,10 @@ static const struct wl_message settings_manager_events[] = {
 	{ "capabilities", "u", settings_plain_types },
 };
 
-/* kl_system_manager_v1. */
+/*
+ * kl_system_manager_v1 as libwayland marshals it: its name, version, two
+ * requests and one event.  It lives for the program.
+ */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
 	1,
@@ -132,7 +141,10 @@ static const struct wl_message settings_events[] = {
 	{ "result", "uuu", settings_plain_types },
 };
 
-/* kl_system_settings_v1. */
+/*
+ * kl_system_settings_v1 as libwayland marshals it: its name, version,
+ * three requests and three events.  It lives for the program.
+ */
 const struct wl_interface kl_system_settings_v1_interface = {
 	KL_SYSTEM_SETTINGS_NAME,
 	1,
@@ -148,12 +160,12 @@ static const struct wl_registry_listener settings_registry_listener = {
 	settings_global_remove
 };
 
-/* The manager's listener. */
+/* The manager's callbacks, given every manager this library binds. */
 static const struct settings_manager_listener settings_manager_listener = {
 	settings_capabilities
 };
 
-/* The settings object's listener. */
+/* The settings object's callbacks, which fill the cache of the kl_settings they are given. */
 static const struct settings_proxy_listener settings_proxy_listener = {
 	settings_value,
 	settings_done,
@@ -161,6 +173,7 @@ static const struct settings_proxy_listener settings_proxy_listener = {
 };
 
 static int settings_home(char *home, size_t size);
+static void settings_app_start(struct kl_settings *settings, const char *app);
 static void settings_bind(struct kl_settings *settings);
 static int settings_error_of(uint32_t applied);
 static int settings_app_change(struct kl_settings *settings, const char *key, const char *value, uint32_t *request);
@@ -175,34 +188,31 @@ kl_settings_open(
 	const char *app)
 {
 	struct kl_settings *settings;
-	char home[SETTINGS_APP_PATH_MAX];
-	int error;
 
-	/* The record, with no value yet. */
+	/* Allocates the record. */
 	settings = calloc(1, sizeof(*settings));
 	if (settings == NULL) {
 		errno = ENOMEM;
 		return NULL;
 	}
+
+	/* Starts with no value yet; request numbers start at 1. */
 	settings->display = display;
 	settings->next_request = 1;
 	settings_cache_init(&settings->cache);
 
-	/* The application's own keys, at their defaults and then the file's values. */
-	if (app != NULL) {
-		error = settings_home(home, sizeof(home));
-		if (error == 0)
-			error = settings_app_open(&settings->app, app, home);
-		if (error == 0)
-			settings_app_load(&settings->app, &settings->cache);
-	}
+	/* Takes the application's own keys, at their defaults and then the file's values. */
+	if (app != NULL)
+		settings_app_start(settings, app);
 
-	/* The compositor's keys, through its extension when it has one. */
+	/* Takes the compositor's keys, through its extension when it has one. */
 	if (display != NULL)
 		settings_bind(settings);
 
-	/* Succeeded: what the settings started with is not told as a change. */
+	/* What the settings started with is not told as a change. */
 	settings_cache_settle(&settings->cache);
+
+	/* Succeeded: the settings are open. */
 	return settings;
 }
 
@@ -217,19 +227,23 @@ kl_settings_close(
 	if (settings == NULL)
 		return;
 
-	/* The settings object, then the manager, then the queue. */
+	/* Destroys the settings object first. */
 	if (settings->proxy != NULL) {
 		wl_proxy_marshal(settings->proxy, KL_SYSTEM_SETTINGS_DESTROY);
 		wl_proxy_destroy(settings->proxy);
 	}
+
+	/* Then the manager. */
 	if (settings->manager != NULL) {
 		wl_proxy_marshal(settings->manager, KL_SYSTEM_MANAGER_DESTROY);
 		wl_proxy_destroy(settings->manager);
 	}
+
+	/* Then the queue they lived on. */
 	if (settings->queue != NULL)
 		wl_event_queue_destroy(settings->queue);
 
-	/* The record. */
+	/* Frees the record. */
 	free(settings);
 }
 
@@ -260,7 +274,7 @@ kl_settings_get(
 	if (found->resolver == KL_SETTINGS_RESOLVER_APP && !settings->app.used)
 		return ENOTSUP;
 
-	/* The cache's value. */
+	/* Copies the value the cache holds. */
 	error = settings_cache_get(&settings->cache, key, value, size, flags);
 	if (error != 0)
 		return error;
@@ -283,13 +297,17 @@ kl_settings_get_int(
 	int number;
 	int error;
 
-	/* The value as text. */
+	/* Copies the value as text. */
 	error = kl_settings_get(settings, key, value, sizeof(value), NULL);
 	if (error != 0)
 		return fallback;
 
-	/* A whole number within the key's range. */
+	/* Finds the key's row, which gives the range. */
 	found = kl_settings_key_find(key);
+	if (found == NULL)
+		return fallback;
+
+	/* Reads a whole number within the key's range. */
 	error = kl_settings_key_number(found, value, &number);
 	if (error != 0)
 		return fallback;
@@ -312,10 +330,12 @@ kl_settings_set(
 	uint32_t number;
 	int error;
 
-	/* A key of the desktop's that may be set. */
+	/* A key of the desktop's. */
 	found = kl_settings_key_find(key);
 	if (found == NULL)
 		return ENOENT;
+
+	/* One that may be set. */
 	if ((found->flags & KL_SETTINGS_KEY_READ_ONLY) != 0U)
 		return EPERM;
 
@@ -329,6 +349,8 @@ kl_settings_set(
 		error = settings_app_change(settings, key, value, request);
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the key holds its value. */
 		return 0;
 	}
 
@@ -336,14 +358,19 @@ kl_settings_set(
 	if (settings->proxy == NULL)
 		return ENOTSUP;
 
-	/* The request, sent with the application's next flush. */
+	/*
+	 * Sends the request with the application's next flush; next_request
+	 * moves so that each request has a number of its own to be answered by.
+	 */
 	number = settings->next_request;
 	settings->next_request++;
 	wl_proxy_marshal(settings->proxy, KL_SYSTEM_SETTINGS_SET, number, key, value);
 
-	/* Succeeded: the answer comes as a result, the value as a change. */
+	/* Gives the caller the request's number, when asked for. */
 	if (request != NULL)
 		*request = number;
+
+	/* Succeeded: the answer comes as a result, the value as a change. */
 	return 0;
 }
 
@@ -360,8 +387,10 @@ kl_settings_set_int(
 	char text[16];
 	int error;
 
-	/* The number as text. */
+	/* Writes the number as text. */
 	(void)snprintf(text, sizeof(text), "%d", value);
+
+	/* Asks for the key to take it. */
 	error = kl_settings_set(settings, key, text, request);
 	if (error != 0)
 		return error;
@@ -383,10 +412,12 @@ kl_settings_reset(
 	uint32_t number;
 	int error;
 
-	/* A key of the desktop's that may be set. */
+	/* A key of the desktop's. */
 	found = kl_settings_key_find(key);
 	if (found == NULL)
 		return ENOENT;
+
+	/* One that may be set. */
 	if ((found->flags & KL_SETTINGS_KEY_READ_ONLY) != 0U)
 		return EPERM;
 
@@ -395,6 +426,8 @@ kl_settings_reset(
 		error = settings_app_change(settings, key, NULL, request);
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the key is at its default. */
 		return 0;
 	}
 
@@ -402,14 +435,19 @@ kl_settings_reset(
 	if (settings->proxy == NULL)
 		return ENOTSUP;
 
-	/* The request. */
+	/*
+	 * Sends the request with the application's next flush; next_request
+	 * moves so that each request has a number of its own to be answered by.
+	 */
 	number = settings->next_request;
 	settings->next_request++;
 	wl_proxy_marshal(settings->proxy, KL_SYSTEM_SETTINGS_RESET, number, key);
 
-	/* Succeeded: asked. */
+	/* Gives the caller the request's number, when asked for. */
 	if (request != NULL)
 		*request = number;
+
+	/* Succeeded: asked. */
 	return 0;
 }
 
@@ -426,7 +464,7 @@ kl_settings_watch(
 {
 	int error;
 
-	/* A watch in the cache. */
+	/* Adds the watch to the cache. */
 	error = settings_cache_watch(&settings->cache, prefix, fn, data, watch);
 	if (error != 0)
 		return error;
@@ -443,7 +481,7 @@ kl_settings_unwatch(
 	struct kl_settings *settings,
 	unsigned watch)
 {
-	/* The cache's watch. */
+	/* Removes the watch from the cache. */
 	settings_cache_unwatch(&settings->cache, watch);
 }
 
@@ -457,19 +495,30 @@ kl_settings_dispatch(
 {
 	int status;
 	int error;
+	int gone;
 
-	/* The compositor's events on the library's queue (they only fill the cache). */
+	/* Takes the compositor's events on the library's queue (they only fill the cache). */
 	if (settings->queue != NULL && !settings->lost) {
+		/* Dispatches the queue; a failure means the compositor went. */
+		gone = 0;
 		status = wl_display_dispatch_queue_pending(settings->display, settings->queue);
-		error = wl_display_get_error(settings->display);
-		if (status < 0 || error != 0) {
-			/* The compositor went: its keys have no value from now on. */
+		if (status < 0) {
+			gone = 1;
+		} else {
+			/* So does an error the display holds. */
+			error = wl_display_get_error(settings->display);
+			if (error != 0)
+				gone = 1;
+		}
+
+		/* lost records that the compositor went: its keys have no value from now on. */
+		if (gone) {
 			settings->lost = 1;
 			settings_cache_lost(&settings->cache, KL_SETTINGS_RESOLVER_COMPOSITOR);
 		}
 	}
 
-	/* The watches of what changed. */
+	/* Runs the watches of what changed. */
 	settings_cache_notify(&settings->cache);
 
 	/* The compositor went. */
@@ -491,7 +540,7 @@ kl_settings_take_result(
 {
 	int taken;
 
-	/* The oldest finished request, if any. */
+	/* Takes the oldest finished request, if any. */
 	taken = settings_cache_take_result(&settings->cache, request, error);
 
 	/* 1 with one, 0 without. */
@@ -506,16 +555,21 @@ settings_home(
 {
 	const struct passwd *user;
 	const char *given;
+	uid_t uid;
 	int written;
 
 	/* $HOME when it is an absolute path, else the password file's. */
 	given = getenv("HOME");
 	if (given == NULL || given[0] != '/') {
-		user = getpwuid(getuid());
+		/* Looks the user up in the password file; a missing or relative home is none. */
+		uid = getuid();
+		user = getpwuid(uid);
 		if (user == NULL ||
 		    user->pw_dir == NULL ||
 		    user->pw_dir[0] != '/')
 			return ENOENT;
+
+		/* Takes the password file's home. */
 		given = user->pw_dir;
 	}
 
@@ -526,6 +580,29 @@ settings_home(
 
 	/* Succeeded: the home is known. */
 	return 0;
+}
+
+/* Opens the application's own file under the home and reads its keys; without them the keys stay at their defaults. */
+static void
+settings_app_start(
+	struct kl_settings *settings,
+	const char *app)
+{
+	char home[SETTINGS_APP_PATH_MAX];
+	int error;
+
+	/* Finds the user's home; without one the application has no file. */
+	error = settings_home(home, sizeof(home));
+	if (error != 0)
+		return;
+
+	/* Opens the application's file under it. */
+	error = settings_app_open(&settings->app, app, home);
+	if (error != 0)
+		return;
+
+	/* Reads the file's values over the defaults. */
+	settings_app_load(&settings->app, &settings->cache);
 }
 
 /*
@@ -542,47 +619,71 @@ settings_bind(
 	struct wl_registry *registry;
 	int status;
 
-	/* The library's queue. */
+	/* Makes the library's queue. */
 	settings->queue = wl_display_create_queue(settings->display);
 	if (settings->queue == NULL)
 		return;
 
-	/* The display as the search sees it: what it makes lives on the queue. */
+	/* Wraps the display for the search: what the wrapper makes lives on the queue. */
 	wrapper = wl_proxy_create_wrapper(settings->display);
 	if (wrapper == NULL)
 		return;
+
+	/* Sends what the wrapper makes to the library's queue. */
 	wl_proxy_set_queue((struct wl_proxy *)wrapper, settings->queue);
 
-	/* The globals, announced to this search alone. */
+	/* Asks for the globals, announced to this search alone; the wrapper is not needed after. */
 	search.name = 0;
 	registry = wl_display_get_registry(wrapper);
-	wl_proxy_wrapper_destroy(wrapper);
-	if (registry == NULL)
+	if (registry == NULL) {
+		wl_proxy_wrapper_destroy(wrapper);
 		return;
+	}
+	wl_proxy_wrapper_destroy(wrapper);
+
+	/* Listens to the registry's globals. */
 	status = wl_registry_add_listener(registry, &settings_registry_listener, &search);
-	if (status == 0)
-		status = wl_display_roundtrip_queue(settings->display, settings->queue);
-	if (status < 0 || search.name == 0U) {
+	if (status != 0) {
 		wl_registry_destroy(registry);
 		return;
 	}
 
-	/* The manager, on the queue as the registry is. */
-	settings->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, KL_SYSTEM_MANAGER_VERSION);
-	wl_registry_destroy(registry);
-	if (settings->manager == NULL)
+	/* Waits for every global to be announced. */
+	status = wl_display_roundtrip_queue(settings->display, settings->queue);
+	if (status < 0) {
+		wl_registry_destroy(registry);
 		return;
+	}
+
+	/* Without the system manager there is no extension. */
+	if (search.name == 0U) {
+		wl_registry_destroy(registry);
+		return;
+	}
+
+	/* Binds the manager, on the queue as the registry is; the registry is not needed after. */
+	settings->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, KL_SYSTEM_MANAGER_VERSION);
+	if (settings->manager == NULL) {
+		wl_registry_destroy(registry);
+		return;
+	}
+	wl_registry_destroy(registry);
+
+	/* Listens to the manager. */
 	(void)wl_proxy_add_listener(settings->manager, (void (**)(void))&settings_manager_listener, settings);
 
-	/* The settings object, on the same queue. */
+	/* Makes the settings object, on the same queue. */
 	settings->proxy = wl_proxy_marshal_constructor(settings->manager, KL_SYSTEM_MANAGER_GET_SETTINGS, &kl_system_settings_v1_interface, NULL);
 	if (settings->proxy == NULL)
 		return;
+
+	/* Listens to the settings object. */
 	(void)wl_proxy_add_listener(settings->proxy, (void (**)(void))&settings_proxy_listener, settings);
 
-	/* The first state: every compositor key and a done. */
+	/* Waits for the first state: every compositor key and a done. */
 	status = wl_display_roundtrip_queue(settings->display, settings->queue);
 	if (status < 0) {
+		/* lost records that the compositor went: its keys have no value from now on. */
 		settings->lost = 1;
 		settings_cache_lost(&settings->cache, KL_SETTINGS_RESOLVER_COMPOSITOR);
 	}
@@ -603,8 +704,10 @@ settings_global(
 	UNUSED_PARAMETER(registry);
 	UNUSED_PARAMETER(version);
 
-	/* Only the system manager. */
+	/* The search the registry was given. */
 	search = data;
+
+	/* Notes only the system manager's name. */
 	differs = strcmp(interface, KL_SYSTEM_MANAGER_NAME);
 	if (differs == 0)
 		search->name = name;
@@ -649,14 +752,20 @@ settings_value(
 
 	UNUSED_PARAMETER(proxy);
 
-	/* A value not known yet has none; the default flag is the application's. */
+	/* The settings the object was made for. */
 	settings = data;
+
+	/* A value not known yet has none. */
 	present = 1;
 	if ((flags & KL_SYSTEM_SETTINGS_UNKNOWN) != 0U)
 		present = 0;
+
+	/* The protocol's default flag becomes the application's. */
 	shown = 0;
 	if ((flags & KL_SYSTEM_SETTINGS_DEFAULT) != 0U)
 		shown = KL_SETTINGS_DEFAULT;
+
+	/* Keeps the value pending until the done. */
 	settings_cache_pending(&settings->cache, key, value, shown, present);
 }
 
@@ -672,7 +781,7 @@ settings_done(
 	UNUSED_PARAMETER(proxy);
 	UNUSED_PARAMETER(serial);
 
-	/* The pending values are one state. */
+	/* Puts the pending values into effect as one state. */
 	settings = data;
 	settings_cache_done(&settings->cache);
 }
@@ -692,7 +801,7 @@ settings_result(
 	UNUSED_PARAMETER(proxy);
 	UNUSED_PARAMETER(saved);
 
-	/* The result for kl_settings_take_result. */
+	/* Keeps the result, as an errno value, for kl_settings_take_result. */
 	settings = data;
 	error = settings_error_of(applied);
 	settings_cache_result(&settings->cache, request, error);
@@ -742,29 +851,38 @@ settings_app_change(
 	if (!settings->app.used)
 		return ENOTSUP;
 
-	/* The file. */
+	/* Only a key of the desktop's (the callers found it already). */
+	found = kl_settings_key_find(key);
+	if (found == NULL)
+		return ENOENT;
+
+	/* Writes the key into the file. */
 	error = settings_app_write(&settings->app, key, value);
 	if (error != 0)
 		return error;
 
-	/* The value in effect: the one asked for, the default of a row's key, or none for a prefix row's. */
-	found = kl_settings_key_find(key);
+	/* The value in effect: the one asked for, none for a prefix row's key, or the default of a row's. */
 	if (value != NULL) {
 		settings_cache_set(&settings->cache, key, value, 0U, 1U);
-	} else if (found != NULL && (found->flags & KL_SETTINGS_KEY_PREFIX) != 0U) {
+	} else if ((found->flags & KL_SETTINGS_KEY_PREFIX) != 0U) {
 		settings_cache_set(&settings->cache, key, "", 0U, 0U);
-	} else if (found != NULL) {
+	} else {
 		(void)snprintf(fallback, sizeof(fallback), "%d", found->fallback);
 		settings_cache_set(&settings->cache, key, fallback, KL_SETTINGS_DEFAULT, 1U);
 	}
 
-	/* The request is finished already. */
+	/*
+	 * Finishes the request at once; next_request moves so that each
+	 * request has a number of its own to be answered by.
+	 */
 	number = settings->next_request;
 	settings->next_request++;
 	settings_cache_result(&settings->cache, number, 0);
 
-	/* Succeeded: the key holds its value. */
+	/* Gives the caller the request's number, when asked for. */
 	if (request != NULL)
 		*request = number;
+
+	/* Succeeded: the key holds its value. */
 	return 0;
 }

@@ -120,9 +120,13 @@ se_look_open(
 	if (error != ENOTSUP)
 		look->writable = 1;
 
-	/* What they hold, and the changes made elsewhere from now on. */
+	/* Reads what they hold. */
 	look_read(app);
+
+	/* Watches the changes made elsewhere from now on. */
 	(void)kl_settings_watch(look->settings, "", look_changed, app, NULL);
+
+	/* The log line the tests read. */
 	se_log("LOOK open opacity=%d wallpaper=%s writable=%d", look->opacity, look->wallpaper, look->writable);
 }
 
@@ -150,17 +154,24 @@ se_look_poll(
 	if (look->settings == NULL)
 		return;
 
-	/* The changes; a watch draws them (look_changed). */
+	/* Takes the changes; a watch draws them (look_changed). */
 	(void)kl_settings_dispatch(look->settings);
 
-	/* Each answer; a refusal is shown. */
+	/* Takes each answer; a refusal is shown. */
 	for (;;) {
+		/* No answer left ends the round. */
 		taken = kl_settings_take_result(look->settings, &request, &error);
 		if (!taken)
 			break;
+
+		/* The log line the tests read. */
 		se_log("LOOK result request=%u error=%d", request, error);
+
+		/* An answer that the setting was changed needs nothing shown. */
 		if (error == 0)
 			continue;
+
+		/* Shows the refusal on the page. */
 		(void)snprintf(look->message, sizeof(look->message), "The setting could not be changed (error %d).", error);
 		look->message_bad = 1;
 		app->dirty = 1;
@@ -203,7 +214,7 @@ se_look_close(
 		fm_image_release(&look->wallpapers[index].thumbnail);
 	look->wallpaper_count = 0;
 
-	/* The settings. */
+	/* Closes the settings. */
 	if (look->settings != NULL)
 		kl_settings_close(look->settings);
 	look->settings = NULL;
@@ -255,7 +266,7 @@ se_look_set_number(
 
 	UNUSED_PARAMETER(fallback);
 
-	/* The key. */
+	/* Sets the key to the number. */
 	(void)snprintf(text, sizeof(text), "%d", value);
 	error = look_write(app, key, text);
 
@@ -472,10 +483,15 @@ look_read(
 	look->repeat_rate = kl_settings_get_int(look->settings, "keyboard.repeat.rate", LOOK_RATE_DEFAULT);
 	look->repeat_delay = kl_settings_get_int(look->settings, "keyboard.repeat.delay", LOOK_DELAY_DEFAULT);
 
-	/* The picture: the chosen one, or none (empty) for the default. */
+	/*
+	 * The picture: the chosen one, or none (empty) for the default.  flags
+	 * starts at the default, so that a value never read counts as one.
+	 */
 	flags = KL_SETTINGS_DEFAULT;
 	error = kl_settings_get(look->settings, "wallpaper", look->wallpaper, sizeof(look->wallpaper), &flags);
-	if (error != 0 || (flags & KL_SETTINGS_DEFAULT) != 0U || look->wallpaper[0] != '/')
+	if (error != 0 ||
+	    (flags & KL_SETTINGS_DEFAULT) != 0U ||
+	    look->wallpaper[0] != '/')
 		look->wallpaper[0] = '\0';
 }
 
@@ -497,9 +513,11 @@ look_changed(
 	if (app->look.dragging != 0)
 		return;
 
-	/* The new values, drawn. */
+	/* Reads the new values, and draws them. */
 	look_read(app);
 	app->dirty = 1;
+
+	/* The log line the tests read. */
 	se_log("LOOK changed key=%s opacity=%d wallpaper=%s", key, app->look.opacity, app->look.wallpaper);
 }
 
@@ -537,8 +555,10 @@ look_write(
 		return error;
 	}
 
-	/* Succeeded: zdesktop puts it into effect, and the watch hears it back. */
+	/* Draws the page with the message cleared. */
 	app->dirty = 1;
+
+	/* Succeeded: zdesktop puts it into effect, and the watch hears it back. */
 	return 0;
 }
 

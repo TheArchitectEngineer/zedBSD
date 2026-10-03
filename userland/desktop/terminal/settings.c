@@ -44,15 +44,15 @@ terminal_settings_load(
 	/* The defaults: the terminal as it was before the setting existed. */
 	memset(settings, 0, sizeof(*settings));
 
-	/* The terminal's settings; its own keys need no display. */
+	/* Opens the terminal's settings; its own keys need no display. */
 	desktop = kl_settings_open(NULL, SETTINGS_APP);
 	if (desktop == NULL)
 		return;
 
-	/* Whether Ambiguous-width characters are wide. */
+	/* Reads whether Ambiguous-width characters are wide. */
 	settings->ambiguous_wide = kl_settings_get_int(desktop, SETTINGS_AMBIGUOUS_WIDE, 0);
 
-	/* The settings are not needed any more. */
+	/* Closes the settings, which are not needed any more. */
 	kl_settings_close(desktop);
 }
 
@@ -68,21 +68,25 @@ terminal_settings_save(
 	int wide;
 	int error;
 
-	/* The terminal's settings. */
+	/* Opens the terminal's settings. */
 	desktop = kl_settings_open(NULL, SETTINGS_APP);
 	if (desktop == NULL)
 		return errno;
 
-	/* The setting, as 0 or 1. */
+	/* Gives the setting as 0 or 1. */
 	wide = 0;
 	if (settings->ambiguous_wide)
 		wide = 1;
-	error = kl_settings_set_int(desktop, SETTINGS_AMBIGUOUS_WIDE, wide, NULL);
-	kl_settings_close(desktop);
 
-	/* Reports a setting that could not be kept. */
-	if (error != 0)
+	/* Keeps it in the terminal's file; a failure leaves the old setting. */
+	error = kl_settings_set_int(desktop, SETTINGS_AMBIGUOUS_WIDE, wide, NULL);
+	if (error != 0) {
+		kl_settings_close(desktop);
 		return error;
+	}
+
+	/* Closes the settings, which are not needed any more. */
+	kl_settings_close(desktop);
 
 	/* Succeeded: the next run reads it. */
 	return 0;

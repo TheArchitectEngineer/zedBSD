@@ -215,7 +215,6 @@ zwl_volume_keep(
 	unsigned value;
 	unsigned muted;
 	char text[16];
-	int error;
 
 	/* Without the settings (the login screen), or before audiod ever reported, there is nothing to keep. */
 	if (server->settings == NULL || !volume_view.restored)
@@ -235,18 +234,24 @@ zwl_volume_keep(
 		return;
 	}
 
-	/* The two keys go into the store, which writes them as the session ends (settings.c). */
+	/* Hands the volume to the store, which writes it as the session ends (settings.c). */
 	(void)snprintf(text, sizeof(text), "%u", value);
 	zwl_settings_store_report(server->settings, VOLUME_KEY_VOLUME, text);
+
+	/* Hands the mute to the store the same way. */
 	(void)snprintf(text, sizeof(text), "%u", muted);
 	zwl_settings_store_report(server->settings, VOLUME_KEY_MUTED, text);
+
+	/*
+	 * Remembers what the store now holds, so that a later keep with the
+	 * same volume writes nothing again.
+	 */
 	volume_view.kept = 1U;
 	volume_view.kept_value = value;
 	volume_view.kept_muted = muted;
-	error = 0;
 
-	/* The log line the tests read. */
-	printf("ZWL VOLUME kept value=%u muted=%u why=%s write=1 error=%d\n", value, muted, why, error);
+	/* Logs the keep for the tests; handing it to the store cannot fail, so the error is always 0. */
+	printf("ZWL VOLUME kept value=%u muted=%u why=%s write=1 error=%d\n", value, muted, why, 0);
 }
 
 /*
@@ -301,11 +306,13 @@ zwl_volume_request(
 	if (!volume_view.restored)
 		return EBUSY;
 
-	/* Shown and sent. */
+	/* Shows the asked volume and sends it to audiod. */
 	volume_view.value = value;
 	volume_view.muted = muted;
 	volume_send(server);
 	server->dirty = 1;
+
+	/* Logs the set for the tests. */
 	printf("ZWL VOLUME set value=%u muted=%u via=settings final=1 at_ms=%llu\n", value, muted, (unsigned long long)zwl_milliseconds());
 
 	/* Succeeded: audiod has the volume (its report comes back to the settings). */
@@ -784,12 +791,16 @@ volume_restore(
 	}
 	volume_view.restored = 1U;
 
-	/* Without the settings (the login screen), or without a kept volume, audiod's stays. */
+	/* Without the settings (the login screen), audiod's volume stays. */
 	if (server->settings == NULL)
 		return;
+
+	/* Takes the volume the file kept; without a kept volume, audiod's stays. */
 	error = zwl_settings_kept(server, VOLUME_KEY_VOLUME, &value);
 	if (error != 0)
 		return;
+
+	/* Takes the kept mute, which stays off when the file holds none. */
 	muted = 0;
 	(void)zwl_settings_kept(server, VOLUME_KEY_MUTED, &muted);
 

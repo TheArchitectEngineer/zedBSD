@@ -27,13 +27,15 @@ kl_backend_peer_uid(
 	socklen_t length;
 	int status;
 
-	/* The credentials the kernel recorded at the connection. */
+	/* Reads the credentials the kernel recorded when the connection was made. */
 	length = sizeof(credentials);
 	status = getsockopt(descriptor, SOL_SOCKET, SO_PEERCRED, &credentials, &length);
 	if (status != 0)
 		return errno;
 
-	/* Succeeded: the peer's user. */
+	/* Gives the caller the user that runs the peer process. */
 	*uid = credentials.uid;
+
+	/* Succeeded: *uid is the peer's user. */
 	return 0;
 }

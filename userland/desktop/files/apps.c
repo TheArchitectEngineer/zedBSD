@@ -121,6 +121,9 @@ static const char *const apps_program_folders[] = {KEILAND_BINDIR, "/bin", "/usr
 static int apps_user_list(char *list, size_t size);
 static int apps_choice_key(const char *type, char *key, size_t size);
 static int apps_choice(const char *type, struct fm_opener *opener);
+static int apps_choice_set(const char *type, const struct fm_opener *opener);
+static int apps_choice_clear(const char *type);
+static int apps_choice_write(const char *key, const char *value);
 static int apps_is_mark(const char *line);
 static void apps_read_list(const char *path, const char *type, struct fm_opener *openers, int capacity, int *count);
 static int apps_parse_line(char *line, char **patterns, char **name, char **command);
@@ -163,7 +166,7 @@ fm_apps_for(
 	if (regular != 0 && (mode & 0111) != 0)
 		apps_add(openers, capacity, &count, "Run in Terminal", "@terminal %f");
 
-	/* The way the user chose for the type. */
+	/* Offers the way the user chose for the type first, when there is one. */
 	error = apps_choice(mime->type, &chosen);
 	if (error == 0)
 		apps_add(openers, capacity, &count, chosen.name, chosen.command);
@@ -304,29 +307,12 @@ fm_apps_set_default(
 	const char *type,
 	const struct fm_opener *opener)
 {
-	struct kl_settings *settings;
-	char key[KL_SETTINGS_KEY_MAX];
-	char value[KL_SETTINGS_VALUE_MAX];
-	int written;
 	int error;
 
-	/* The type's key, and the way as "<name><TAB><command>". */
-	error = apps_choice_key(type, key, sizeof(key));
-	if (error == 0) {
-		written = snprintf(value, sizeof(value), "%s\t%s", opener->name, opener->command);
-		if (written < 0 || (size_t)written >= sizeof(value))
-			error = EINVAL;
-	}
+	/* Sets the type's setting to the way. */
+	error = apps_choice_set(type, opener);
 
-	/* The setting, kept by libkeiland. */
-	if (error == 0) {
-		settings = kl_settings_open(NULL, APPS_SETTINGS_APP);
-		error = ENOMEM;
-		if (settings != NULL) {
-			error = kl_settings_set(settings, key, value, NULL);
-			kl_settings_close(settings);
-		}
-	}
+	/* The log line the tests read. */
 	fm_log("DEFAULT set type=%s app=%s error=%d", type, opener->name, error);
 
 	/* Reports why the default could not be changed. */
@@ -347,22 +333,12 @@ int
 fm_apps_clear_default(
 	const char *type)
 {
-	struct kl_settings *settings;
-	char key[KL_SETTINGS_KEY_MAX];
 	int error;
 
-	/* The type's key. */
-	error = apps_choice_key(type, key, sizeof(key));
+	/* Puts the type's setting back at its default. */
+	error = apps_choice_clear(type);
 
-	/* The setting back at its default. */
-	if (error == 0) {
-		settings = kl_settings_open(NULL, APPS_SETTINGS_APP);
-		error = ENOMEM;
-		if (settings != NULL) {
-			error = kl_settings_reset(settings, key, NULL);
-			kl_settings_close(settings);
-		}
-	}
+	/* The log line the tests read. */
 	fm_log("DEFAULT clear type=%s error=%d", type, error);
 
 	/* Reports why the default could not be given back. */
@@ -384,7 +360,7 @@ fm_apps_has_default(
 	struct fm_opener chosen;
 	int error;
 
-	/* The type's chosen way. */
+	/* Reads the type's chosen way; without one the user chose none. */
 	error = apps_choice(type, &chosen);
 	if (error != 0)
 		return 0;
@@ -402,7 +378,7 @@ apps_choice_key(
 {
 	int written;
 
-	/* The prefix and the type. */
+	/* Joins the prefix and the type; a key that does not fit is refused. */
 	written = snprintf(key, size, "%s%s", APPS_SETTINGS_PREFIX, type);
 	if (written < 0 || (size_t)written >= size)
 		return EINVAL;
@@ -425,33 +401,129 @@ apps_choice(
 	char *tab;
 	int error;
 
-	/* The type's key. */
+	/* Makes the type's key. */
 	error = apps_choice_key(type, key, sizeof(key));
 	if (error != 0)
 		return error;
 
-	/* The setting, read now (another window may have chosen meanwhile). */
+	/* Opens the settings now (another window may have chosen meanwhile). */
 	settings = kl_settings_open(NULL, APPS_SETTINGS_APP);
 	if (settings == NULL)
 		return ENOMEM;
-	error = kl_settings_get(settings, key, value, sizeof(value), NULL);
-	kl_settings_close(settings);
-	if (error != 0)
-		return error;
 
-	/* The name before the tab, the command after it; a name too long for the window is refused. */
+	/* Reads the setting; without a way chosen there is none. */
+	error = kl_settings_get(settings, key, value, sizeof(value), NULL);
+	if (error != 0) {
+		kl_settings_close(settings);
+		return error;
+	}
+
+	/* Closes the settings, which are not needed any more. */
+	kl_settings_close(settings);
+
+	/* Finds the tab between the name and the command. */
 	tab = strchr(value, '\t');
 	if (tab == NULL)
 		return EINVAL;
+
+	/* Ends the name at the tab; a name too long for the window is refused. */
 	*tab = '\0';
 	name_length = strlen(value);
 	if (name_length >= sizeof(opener->name))
 		return EINVAL;
+
+	/* Gives the caller the name and the command after the tab. */
 	memcpy(opener->name, value, name_length + 1U);
 	command_length = strlen(tab + 1);
 	memcpy(opener->command, tab + 1, command_length + 1U);
 
 	/* Succeeded: the chosen way. */
+	return 0;
+}
+
+/* Sets the desktop's setting of a type to a way ("<name><TAB><command>"); returns 0 or an errno value. */
+static int
+apps_choice_set(
+	const char *type,
+	const struct fm_opener *opener)
+{
+	char key[KL_SETTINGS_KEY_MAX];
+	char value[KL_SETTINGS_VALUE_MAX];
+	int written;
+	int error;
+
+	/* Makes the type's key. */
+	error = apps_choice_key(type, key, sizeof(key));
+	if (error != 0)
+		return error;
+
+	/* Writes the way as "<name><TAB><command>"; one the setting cannot hold is refused. */
+	written = snprintf(value, sizeof(value), "%s\t%s", opener->name, opener->command);
+	if (written < 0 || (size_t)written >= sizeof(value))
+		return EINVAL;
+
+	/* Sets the key to the way. */
+	error = apps_choice_write(key, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the way is the type's default. */
+	return 0;
+}
+
+/* Puts the desktop's setting of a type back at its default (no way chosen); returns 0 or an errno value. */
+static int
+apps_choice_clear(
+	const char *type)
+{
+	char key[KL_SETTINGS_KEY_MAX];
+	int error;
+
+	/* Makes the type's key. */
+	error = apps_choice_key(type, key, sizeof(key));
+	if (error != 0)
+		return error;
+
+	/* Puts the key back at its default. */
+	error = apps_choice_write(key, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: no way is chosen for the type. */
+	return 0;
+}
+
+/* Sets a key of Files' own settings (value NULL: back at its default), which libkeiland keeps; returns 0 or an errno value. */
+static int
+apps_choice_write(
+	const char *key,
+	const char *value)
+{
+	struct kl_settings *settings;
+	int error;
+
+	/* Opens Files' own settings. */
+	settings = kl_settings_open(NULL, APPS_SETTINGS_APP);
+	if (settings == NULL)
+		return ENOMEM;
+
+	/* Sets the key, or puts it back at its default. */
+	if (value != NULL) {
+		error = kl_settings_set(settings, key, value, NULL);
+	} else {
+		error = kl_settings_reset(settings, key, NULL);
+	}
+
+	/* A refusal leaves the setting as it was. */
+	if (error != 0) {
+		kl_settings_close(settings);
+		return error;
+	}
+
+	/* Closes the settings, which are not needed any more. */
+	kl_settings_close(settings);
+
+	/* Succeeded: libkeiland keeps the key. */
 	return 0;
 }
 
@@ -551,9 +623,12 @@ apps_read_list(
 		/* A line an earlier Files wrote (after its comment) is passed over: the choice is a setting now. */
 		is_mark = apps_is_mark(line);
 		if (after_mark) {
+			/* after_mark tells the next line whether this one is Files' comment. */
 			after_mark = is_mark;
 			continue;
 		}
+
+		/* Remembers for the next line whether this one is Files' comment. */
 		after_mark = is_mark;
 
 		/* A comment, a blank or a malformed line says nothing. */

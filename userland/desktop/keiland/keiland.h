@@ -1296,6 +1296,11 @@ void keiland_edit_destroy(struct keiland_edit *edit);
 /* A value the user did not choose: its resolver's default. */
 #define KL_SETTINGS_DEFAULT	0x1U
 
+/*
+ * One application's view of the desktop's settings: the compositor's
+ * values it was told, its own file's, its watches and its requests not
+ * answered yet.  It lives from kl_settings_open to kl_settings_close.
+ */
 struct kl_settings;
 
 /*

@@ -46,7 +46,7 @@ size_t
 kl_settings_key_count(
 	void)
 {
-	/* The rows of the table. */
+	/* Reports the table's size counted in rows. */
 	return sizeof(settings_keys) / sizeof(settings_keys[0]);
 }
 
@@ -64,7 +64,7 @@ kl_settings_key_at(
 	if (index >= count)
 		return NULL;
 
-	/* The row. */
+	/* Reports the setting at that place. */
 	return &settings_keys[index];
 }
 
@@ -87,24 +87,34 @@ kl_settings_key_find(
 	/* Compares each row's name with the one asked for. */
 	count = kl_settings_key_count();
 	for (index = 0; index < count; index++) {
+		/* A prefix row is matched by its prefix below, not by its whole name. */
 		if ((settings_keys[index].flags & KL_SETTINGS_KEY_PREFIX) != 0U)
 			continue;
+
+		/* A row of that very name is the setting. */
 		differs = strcmp(settings_keys[index].name, name);
 		if (differs == 0)
 			return &settings_keys[index];
 	}
 
-	/* A prefix row: the name is too long, or does not start with its prefix, or its rest is not a MIME type. */
+	/* A name too long is no prefix row's either. */
 	length = strlen(name);
 	if (length >= KL_SETTINGS_KEY_MAX)
 		return NULL;
+
+	/* Looks for a prefix row the name starts with, followed by a MIME type. */
 	for (index = 0; index < count; index++) {
+		/* Only a prefix row is looked at. */
 		if ((settings_keys[index].flags & KL_SETTINGS_KEY_PREFIX) == 0U)
 			continue;
+
+		/* The name must start with the row's prefix. */
 		prefix_length = strlen(settings_keys[index].name);
 		differs = strncmp(name, settings_keys[index].name, prefix_length);
 		if (differs != 0)
 			continue;
+
+		/* The rest must be a MIME type for the row to be the setting. */
 		valid = keys_type_valid(name + prefix_length);
 		if (valid)
 			return &settings_keys[index];
@@ -139,22 +149,31 @@ kl_settings_key_check(
 		valid = keys_opener_valid(value);
 		if (!valid)
 			return EINVAL;
+
+		/* Succeeded: the opener may be given. */
 		return 0;
 	}
 
 	/* A path is absolute. */
 	if (key->type == KL_SETTINGS_TYPE_PATH) {
+		/* A relative path is refused. */
 		if (value[0] != '/')
 			return EINVAL;
+
+		/* Succeeded: the path may be given. */
 		return 0;
 	}
 
-	/* A number or a Boolean is a whole number within the range, not moved into it. */
+	/* A number or a Boolean is a whole number. */
 	error = keys_parse(value, &parsed);
 	if (error != 0)
 		return EINVAL;
+
+	/* It must not lie below the range (it is not moved into it). */
 	if (parsed < (long)key->minimum)
 		return EINVAL;
+
+	/* Nor above it. */
 	if (parsed > (long)key->maximum)
 		return EINVAL;
 
@@ -206,24 +225,33 @@ kl_settings_name_valid(
 	size_t index;
 	char character;
 
-	/* An empty name, and one too long, are not. */
+	/* An empty name is not. */
 	length = strlen(name);
 	if (length == 0U)
 		return 0;
+
+	/* Nor one too long. */
 	if (length >= KL_SETTINGS_KEY_MAX)
 		return 0;
 
 	/* Each character must be one of those allowed. */
 	for (index = 0; index < length; index++) {
+		/* A lower-case letter is allowed. */
 		character = name[index];
 		if (character >= 'a' && character <= 'z')
 			continue;
+
+		/* So is a digit. */
 		if (character >= '0' && character <= '9')
 			continue;
+
+		/* And the three separators. */
 		if (character == '.' ||
 		    character == '_' ||
 		    character == '-')
 			continue;
+
+		/* Any other character refuses the name. */
 		return 0;
 	}
 
@@ -250,6 +278,7 @@ kl_settings_value_valid(
 
 	/* No control character. */
 	for (index = 0; index < length; index++) {
+		/* A control character refuses the value. */
 		character = (unsigned char)value[index];
 		if (character < 0x20U || character == 0x7fU)
 			return 0;
@@ -267,15 +296,19 @@ keys_parse(
 {
 	char *end;
 
-	/* The number. */
+	/* Reads the number, with errno cleared so that a range error shows. */
 	errno = 0;
 	*parsed = strtol(value, &end, 10);
 
-	/* Nothing read, something after it, or out of a long's range. */
+	/* Nothing read is no number. */
 	if (end == value)
 		return EINVAL;
+
+	/* Nor is one with something after it. */
 	if (*end != '\0')
 		return EINVAL;
+
+	/* Nor one out of a long's range. */
 	if (errno != 0)
 		return EINVAL;
 
@@ -293,25 +326,34 @@ keys_type_valid(
 	unsigned slashes;
 	char character;
 
-	/* Not empty, and neither starting nor ending with the slash. */
+	/* Too short to hold a type, a slash and a subtype is not one. */
 	length = strlen(type);
 	if (length < 3U)
 		return 0;
+
+	/* Nor is one starting or ending with the slash. */
 	if (type[0] == '/' || type[length - 1U] == '/')
 		return 0;
 
-	/* Each character one of those allowed, the slash once. */
+	/* Each character one of those allowed, the slashes counted. */
 	slashes = 0;
 	for (index = 0; index < length; index++) {
+		/* A slash is counted. */
 		character = type[index];
 		if (character == '/') {
 			slashes++;
 			continue;
 		}
+
+		/* A lower-case letter is allowed. */
 		if (character >= 'a' && character <= 'z')
 			continue;
+
+		/* So is a digit. */
 		if (character >= '0' && character <= '9')
 			continue;
+
+		/* And the four marks. */
 		if (character == '.' ||
 		    character == '+' ||
 		    character == '-' ||
@@ -341,28 +383,33 @@ keys_opener_valid(
 	unsigned tabs;
 	unsigned char character;
 
-	/* Short enough. */
+	/* A value too long is not. */
 	length = strlen(value);
 	if (length >= KL_SETTINGS_VALUE_MAX)
 		return 0;
 
-	/* Each byte printable but the one tab. */
+	/* Each byte printable but the tabs, which are counted. */
 	tabs = 0;
 	tab = 0;
 	for (index = 0; index < length; index++) {
+		/* A tab is counted, and where it is kept. */
 		character = (unsigned char)value[index];
 		if (character == '\t') {
 			tabs++;
 			tab = index;
 			continue;
 		}
+
+		/* Any other control character refuses the value. */
 		if (character < 0x20U || character == 0x7fU)
 			return 0;
 	}
 
-	/* One tab, with a name before it and a command after it. */
+	/* Exactly one tab. */
 	if (tabs != 1U)
 		return 0;
+
+	/* With a name before it and a command after it. */
 	if (tab == 0U || tab + 1U == length)
 		return 0;
 
