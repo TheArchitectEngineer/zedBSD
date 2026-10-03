@@ -30,6 +30,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-160](bugs/BUG-160.md) | WiFi の鍵の入力欄が画面の下に出る（AP の行の中で入力できない） | reproduced（実機 S1、ユーザー） / resolved（ws005-p029、QEMU。実機は S2） | S1 の後のフィードバック | P1（q642） |
 | [BUG-161](bugs/BUG-161.md) | 音量の変更のたびに desktop.conf へ書く（session の終わりに一度だけ書くべき） | reproduced（code） / resolved | T2-006 の volume-p005 とユーザーの判断 | ws100-p012、T2-009 の QEMU で PASS |
 | [BUG-162](bugs/BUG-162.md) | desktop.conf を Settings と zdesktop の通信路に使っている（1 秒ごとの poll） | reproduced（code） / resolved（WS135、2026-10-04） | ユーザーの問い（BUG-161 の後） | WS135 |
+| [BUG-163](bugs/BUG-163.md) | UFS の fsync の後、line を後の transaction が pin し直すと普通の content が durable でない窓（約 1 秒） | unknown（code の読み） / tracking | ws073-p051 の読み | UFS の Phase（直し方の候補は ticket） |
 | [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132） |
 | [BUG-158](bugs/BUG-158.md) | 操作中・放置中にフリーズし、電源ボタンの長押しが要る | reproduced（実機 S1） / tracking | S1（WS133） | WS005／WS004（AX211）、原因次第 |
 | [BUG-157](bugs/BUG-157.md) | 鍵を間違えたとき「Could not join (Network is down)」と出る（5330 の AX211） | reproduced（実機 S1） / scheduled | S1（WS133） | WS005／WS004（AX211） |
@@ -54,7 +55,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-138](bugs/BUG-138.md) | system bar の WiFi の on/off・AP 接続が未実装 | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p019 |
 | [BUG-137](bugs/BUG-137.md) | Terminal の初回起動でタイトルバーが数秒遅れる | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
 | [BUG-136](bugs/BUG-136.md) | Gears（X11）にタイトルバーが出ない | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
-| [BUG-135](bugs/BUG-135.md) | stat() が数秒かかる（UFS、guest） | reproduced / scheduled（ws073-p051、直しを main に統合 2026-10-04、残りの確認待ち） | ws099-p020 の診断で 0.7〜6.5 秒。p045 で namespace の共有、p051 で journal の commit の flush を mount の lock の外へ（P9 の QEMU の診断で 1 秒超 7 → 0 回） | Q1 が p051 の差分を読んで merge・判定（T1・T2 の試験は user の指示で除外） |
+| [BUG-135](bugs/BUG-135.md) | stat() が数秒かかる（UFS、guest） | reproduced / resolved（ws073-p051、QEMU 2026-10-04） | ws099-p020 の診断で 0.7〜6.5 秒。p045 で namespace の共有、p051 で journal の commit の flush を mount の lock の外へ（P9 の QEMU の診断で 1 秒超 7 → 0 回） | Q1 が p051 の差分を読んで merge・判定（T1・T2 の試験は user の指示で除外） |
 | [BUG-134](bugs/BUG-134.md) | AX211 不動作、driver 有効で起動停止 | unreproduced / resolved（2026-10-02 ユーザーの実機確認） | デモ config の firmware 欠落。CI 土台の image で実機動作 | 起動停止が再び見えたら reopen |
 | [BUG-133](bugs/BUG-133.md) | Browser UTF16 reserve byte数overflow | reproduced（host の単体の試験） / resolved（ws074-p177） | browser2:BUG129をp172/q579で検出、mainBUG129はFonts別条件。原本を保持してID衝突修復 | ws074-p177（P2）で直した: 増長後の capacity が SIZE_MAX/2 を越えたら need に落とす。host 試験の前 FAIL・後 PASS。resolved の判定は Q1 |
 | [BUG-130](bugs/BUG-130.md) | FreeBSD drm-kmod DMA-BUF のaccess flags | reproduced / tracking | WS109 q568、live fdのsync ioctlがEBADF、Vulkan window acquire失敗 | Keiland workaround/実GPU window・所有権はq569/q570で検証済み。driver未修理、drm-kmod upgrade時に再確認 |

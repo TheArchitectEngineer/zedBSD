@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p051 -->
 # ws073-p051: BUG-135 — UFS の journal の commit の flush を mount の lock の外へ出し、stat の秒単位の停止の残りを直す
 
-Status: in-progress（q653-i01、P9 generation1 → 2026-10-04 再開 P2 generation8。実装 e5631f9 → c79e089 → hold の range の直し 89ae1fa（案 3、Q1 の決定）。amd64・pcat・rpi4 の build warning 0、P2 の QEMU で crash-test 9・window・fsprobe の churn が PASS。統合・判定は Q1。T1・T2 の試験は user の指示で除外）
+Status: cleared（2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-135](../../bugs/BUG-135.md)
@@ -312,3 +312,7 @@ unpin して `buf_writeback_range` が line を whole で書くまで、R は ca
   line の中の pin されていない sector を direct に書く（sector の単位の dirty の管理が要る）。
 - 再現の案: fragment の割り当ての所で小さい file の追記＋fsync と、同じ line の directory の変更を並べ、fsync の直後に gdbstub で
   止めて `buf` の line の dirty と pin を読む（kill では窓を突けない）。
+
+## 判定（Q1、2026-10-04）
+
+cleared。QEMU（P2・P9 の自分の QEMU、ユーザーの指示で T には依頼しない）: fsprobe の churn で stat の最長 2.11 s（直す前）→ 4 ms（89ae1fa）、1 秒超 7 → 0。crash-test.sh・root-crash.sh・p051-window.sh（穴を突く kill）PASS、volume と root は UFS OK。kernel は amd64・pcat・rpi4・pc98・intelmac で warning 0。実機は未実施、QEMU の kill では flush 前の電源断は模せない。普通の content の再 pin の窓は [BUG-163](../../bugs/BUG-163.md) に分けた。
