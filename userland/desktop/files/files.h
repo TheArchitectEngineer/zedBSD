@@ -1597,6 +1597,7 @@ int fm_thumb_is_pdf(const unsigned char *data, size_t size);
 int fm_thumb_pdf(const unsigned char *data, size_t size, struct fm_image *image);
 int fm_thumb_cache_read(const char *path, struct fm_image *image);
 int fm_thumb_cache_write(const char *path, const struct fm_image *image);
+int fm_thumb_cache_trim(unsigned maximum, unsigned keep);
 int fm_drop_accepts(const struct fm_app *app);
 void fm_drop_perform(struct fm_app *app, char *const *paths, size_t count);
 

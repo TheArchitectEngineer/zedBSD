@@ -48,7 +48,7 @@ Resume point（2026-10-02 計画）: **p001（棚卸し・回帰の取り直し�
 | [ws127-p001](phase001/phase.md) | 棚卸し: 現在の main で回帰の取り直し、spec.md と実装の照合表、QEMU での実使用の通しと不具合の表、改善の候補の一覧（価値・規模・危険・依存）。最後にユーザーが選ぶ | cleared（2026-10-02 の q595、表を 2026-10-03 Q1 が更新） | — | 3h |
 | [ws127-p002](phase002/phase.md) | p001 で見つけた不具合の直し（重い・中） | planning（p001 の不具合の表が要る） | p001 | 3h |
 | [ws127-p003](phase003/phase.md) | 名前の衝突と Trash の残り。F-050 の 3 つ（Replace で消さずに Trash、cut の Esc で clipboard を保つ、folder の merge）は実装済み（ws035-p110・p115）。この Phase は F-041 の一部 `$topdir/.Trash-$uid`（volume の trash） | cleared（q666、T1-077） | p001 | 3h |
-| [ws127-p004](phase004/phase.md) | thumbnail の拡張（F-035: PDF の 1 頁目を libpdf で、disk の thumbnail の cache。動画は WS122 の後で外） | planning（p001 でユーザーの採否） | p001 | 3h |
+| [ws127-p004](phase004/phase.md) | thumbnail の拡張（F-035）。PDF の thumbnail と disk の cache は ws127-p002 で実装済み。この Phase は cache の上限（2000→1800）と壊れた PDF の試験。動画は WS122 の後 | in-progress（q667、P2。host PASS、QEMU は p008 と T1 へ） | p001 | 1h |
 | [ws127-p005](phase005/phase.md) | 日本語の UI の文言と、名前の変更での IME（F-041 の残り）。Settings と共通の翻訳の仕組み | planning（ユーザーの判断: 日本語の UI をベータ1 に入れるか。WS095 の IME の状態） | p001、WS095、WS089 p016 と仕組みを共有 | 4h |
 | [ws127-p006](phase006/phase.md) | DnD の自動の scroll と spring-loaded（F-039）。端の自動 scroll と item・sidebar の folder の spring は実装済み（ws127-p002）。この Phase は tab の上で待つと tab が切り替わる spring | cleared（q666、T1-077） | p001 | 1h |
 | [ws127-p007](phase007/phase.md) | 5330 の実機での操作と速さ。遅ければ描き直しを damage の矩形に絞る（F-037） | planning（p002〜p006 の後、実機とユーザーの時間） | p002〜p006 の選んだ物 | 2h + ユーザー 20 分 |
