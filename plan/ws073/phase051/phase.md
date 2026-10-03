@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p051 -->
 # ws073-p051: BUG-135 — UFS の journal の commit の flush を mount の lock の外へ出し、stat の秒単位の停止の残りを直す
 
-Status: in-progress（q653-i01、P9 generation1（Fable 5.1、high）、2026-10-04。実装・build・P9 自身の QEMU の診断と crash test まで済み、Q1 の merge と判定待ち。T1・T2 の試験は user の指示で除外）
+Status: in-progress（q653-i01、P9 generation1（Fable 5.1、high）、2026-10-04。実装（e5631f9 → 穴の直し c79e089）・build・P9 自身の QEMU の診断と crash test まで済み。2026-10-04 01:30 ごろ Q1 の指示（体制を P2・T1・T2 に）でラップアップ、P9 は終了。統合は未。再開の条件は末尾。T1・T2 の試験は user の指示で除外）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-135](../../bugs/BUG-135.md)
@@ -49,6 +49,28 @@ journal（j3）の commit を 2 段に分ける:
   （`j3_content_freed` は running と閉じた側の両方を見る）。
 - 新しい `buf_writeback_range(disk, block, count)`: 範囲の line を home へ書く（pinned な line は飛ばす）。N の home を N＋1 を閉じる前に
   device へ出すために使う（N＋1 が N の line を pin し直すと N＋2 の durable の `buf_sync` がその line を飛ばすため）。
+- `buf_unpin(..., pin, &kept)` は他の tag が残った line の数を返し、N の finish はそれが 0 でない logged range を `j3_home_direct` で
+  slot の copy から home へ direct に書く（次の節）。
+
+### 閉じた transaction の range と line の粒度の穴（Q1 のレビューで見つけ、c79e089 で直した）
+
+payload は range（fragment、1 KiB = 2 sector）の単位で写し、pin と cache の書きは line（4 KiB）の単位。N が line L の fragment A を、
+running の N＋1 が同じ L の別の fragment B を書くと、L の tag は N＋1 になり、N の finish は L を unpin できず cache も L を書かない
+（pinned）。N＋1 の payload には B しか無いので、N＋1 の record が durable になった後・L を home へ書く前に電源が切れると、replay は
+最新の N＋1 だけを適用し A はどこにも無い（旧 code は commit が同期・排他で、N の pin が全て外れた後にしか N＋1 が pin できず、N＋1 の
+commit の最初の `buf_sync` が L を書いていたので無かった穴。e5631f9 で入り、c79e089 で直した）。
+
+直し: N の finish は range ごとに `buf_unpin(..., pin, &kept)`（他の tag が残る line の数）を見て、kept == 0 なら cache で書き
+（`buf_writeback_range`）、kept != 0 なら `j3_home_direct` が N の slot にある A の copy（descriptor の後、logged range の順）を読み、
+`backing_mutation_begin_disk_filesystem` ＋ `disk_write_direct_context`（`writeback_line_whole` と同じ経路、cache を通らない）で A の
+home sector だけに書く。cache の L（B を含む新しい内容）はそのまま残り、N＋1 の commit の後に whole line で書かれる。順序は
+A の direct write → N＋1 の durable 1（flush）→ N＋1 の record → L の whole write。
+
+残課題: hold の range（running が解放した block への content、payload に copy が無い）の line が pin し直された場合は cache の書きを
+待つしかない。content は journal の対象の外で、fsync が返した後にその content が disk に無い窓は、fsync の最後の `disk_sync` を lock の
+外へ出した p045 以降と同じ（別の transaction が同じ line を pin し直すと `disk_sync` が飛ばす）。頻度は低い（同じ ~1 秒の間に解放した
+block へ content を書き、かつ同じ 4 KiB line を別の transaction の metadata か hold が使う）。直すなら hold の content も slot に写すか、
+fsync が自分の pin した line の unpin を待つ形にする。
 
 ### journal の順序の保証（変えない）
 
@@ -119,6 +141,21 @@ nap は常に 0 で、guest 全体の停止ではない。
 - 電源断を模した replay の host だけの試験は無い（ufs.c の j3 を host で動かす harness が無く、zedimage-host は別実装、check-volume.py は
   journal を読まない）。上の QEMU の試験が代わり。
 
+### 穴の直し c79e089 の後の確認（2026-10-04 01:00〜、ラップアップで途中まで）
+
+- build: `BUILD=build/p9-amd64` vmunix exit 0・warning 0・check PASS、DWARF の `build/p9-dbg` も exit 0・warning 0。style-diff（base 9e228b6）
+  変更行の違反 0、`git diff --check` OK。image: `build/p9-logs/fix2.img`（c79e089 の kernel を ESP に差し替え）、`dbg2.img`（DWARF）、
+  `dbg-e56.img`（e5631f9 の DWARF kernel、穴の比較用）。
+- `crash-test.sh build/p9-logs/fix2.img 4 9`: 4 秒 HOLDS 2565 = PREFIX 2565、9 秒 HOLDS 3182 = PREFIX 3182、`UFS OK`（PASS）。
+- `root-crash.sh build/p9-logs/fix2.img 6`: `durable-content`・`churn 50`・root `UFS OK`（PASS）。
+- fsprobe の churn（c79e089 の kernel）: **未実施**（走り始めた所で Q1 のラップアップの指示、止めた）。e5631f9 の kernel の結果（上の表）は
+  c79e089 でも変わらないと見る（直しは finish の home の書き方だけで、lock の持ち方は同じ）が、観測していない。
+- 穴を突く crash の試験 [tests/p051-window.sh](../tests/p051-window.sh)（新。gdbstub で `j3_home_direct` が走る＝穴の条件が起きた
+  transaction X の finish を待ち、次の `j3_commit_seal` が返った直後＝X＋1 の record が durable で home が未書きの所で QEMU を kill、
+  再起動して replay、crash-grow の check と host の check-volume）: **未実施**（書いただけ、syntax check のみ。QEMU の kill は host の
+  page cache に届いた write を失わないので「flush の前の電源断」は模せないが、この穴は A が device にまったく書かれない種類なので
+  kill で突ける）。e5631f9 の kernel には `j3_home_direct` が無いので `ARM=j3_finish_commit SEALS=2` で流して比べる案。
+
 ### 未実施
 
 - T1・T2 への試験の依頼（user の指示で除外）。受け入れの QEMU の試験（UFS の試験の一式・boot test）: **未実施（user の指示で除外）**。
@@ -126,9 +163,15 @@ nap は常に 0 で、guest 全体の停止ではない。
 - BUG-143（IME の確定）・BUG-147（app の起動）・sshd の stall の症状での確認（p045 の残り）: 未実施。
 - i386・arm64 の build: 未実施（変更は arch に依らない C）。
 
-### 残り・再開点
+### 残り・再開点（2026-10-04 ラップアップ、P9 は終了）
 
-- Q1 が差分を読み、merge と Phase の判定をする（commit e5631f9 ＋ 記録の commit）。
+- commit: e5631f9（最初の実装、range/line の粒度の穴あり。**単独では統合しない**）→ 4ed7e93（記録）→ c79e089（穴の直し: `buf_unpin` の
+  `kept`、`j3_home_direct`、`closed_staging`）→ 記録の commit。統合は c79e089 以降を含めて、user の確認の後に Q1 が行う（Q1 の決め）。
+- 再開の条件（次の担当が c79e089 の kernel で）: (a) `tests/p051-window.sh build/<dbg>/hdd-image.img build/<dbg>/vmunix OUT` を直した
+  DWARF kernel で数回流し PASS を見る（`ARM=j3_finish_commit SEALS=2` で e5631f9 の kernel と比べる）。(b) fsprobe の churn を
+  `p051-experiment.sh` で c79e089 の kernel で 1 回（1 秒超 0 を確かめる）。(c) 残課題の hold の range（上の「穴」の節）の扱いを決める。
+  (d) i386・arm64 の build。これらの後に Q1 が判定し、T1・T2 の試験は user の判断。
+- hold の range の残課題: content の line が pin し直されたときの fsync の窓（p045 以降と同じ、頻度は低い）。直し方の案は上の節。
 - 残る 100〜200 ms の stat の遅れは秒単位ではない。追うなら `p051-experiment.sh IMAGE OUT FSPROBE VMUNIX_DWARF` の標本の間隔を狭めるか、
   stat の slow の行の時刻と標本の時刻を照合する。
 - 使い捨ての build: `build/p9-amd64`（image）、`build/p9-base`（直す前の kernel）、`build/p9-dbg`（DWARF）、`build/p9-logs`（image の複製
