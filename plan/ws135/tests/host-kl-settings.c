@@ -6,9 +6,10 @@
  */
 
 /*
- * ws089 / ws135-p004: libkeiland's kl_settings_* for Settings' host test, without Wayland: the compositor's
- * keys are held in memory at the table's defaults, a set takes effect at once and is answered at once, and the
- * watches run at the next dispatch (libkeiland's own settings-cache.c, so they behave as on the guest).
+ * ws135: libkeiland's kl_settings_* for the host tests of its users (Settings' plan/ws089/tests/host-build.sh,
+ * Terminal's plan/ws128/tests/terminal-p009.sh), without Wayland: the compositor's keys are held in memory at the
+ * table's defaults, a set takes effect at once and is answered at once, an application's keys are its real file
+ * (libkeiland's settings-app.c), and the watches run at the next dispatch (libkeiland's settings-cache.c).
  */
 
 #include "settings-private.h"
@@ -20,6 +21,7 @@
 
 struct kl_settings {
 	struct settings_cache cache;
+	struct settings_app app;
 	uint32_t next_request;
 };
 
@@ -34,7 +36,6 @@ kl_settings_open(
 	size_t index;
 
 	(void)display;
-	(void)app;
 	settings = calloc(1, sizeof(*settings));
 	if (settings == NULL)
 		return NULL;
@@ -48,6 +49,8 @@ kl_settings_open(
 		settings_cache_set(&settings->cache, key->name, value, KL_SETTINGS_DEFAULT, 1U);
 	}
 	settings_cache_set(&settings->cache, "wallpaper", "", KL_SETTINGS_DEFAULT, 1U);
+	if (app != NULL && getenv("HOME") != NULL && settings_app_open(&settings->app, app, getenv("HOME")) == 0)
+		settings_app_load(&settings->app, &settings->cache);
 	settings_cache_settle(&settings->cache);
 	return settings;
 }
@@ -104,6 +107,11 @@ kl_settings_set(
 	error = kl_settings_key_check(found, value);
 	if (error != 0)
 		return error;
+	if (found->resolver == KL_SETTINGS_RESOLVER_APP) {
+		error = settings_app_write(&settings->app, key, value);
+		if (error != 0)
+			return error;
+	}
 	settings_cache_set(&settings->cache, key, value, 0U, 1U);
 	settings_cache_result(&settings->cache, settings->next_request, 0);
 	if (request != NULL)
@@ -137,6 +145,8 @@ kl_settings_reset(
 	found = kl_settings_key_find(key);
 	if (found == NULL)
 		return ENOENT;
+	if (found->resolver == KL_SETTINGS_RESOLVER_APP && settings_app_write(&settings->app, key, NULL) != 0)
+		return EIO;
 	value[0] = '\0';
 	if (found->type != KL_SETTINGS_TYPE_PATH)
 		snprintf(value, sizeof(value), "%d", found->fallback);

@@ -20,9 +20,11 @@ main_build=${KEILAND_LINUX_INCLUDE:-/home/awe/zedBSD-claude1/build/keiland-linux
 # The test program, from the terminal's own sources, with the Linux build's warnings.
 timeout 120 gcc -std=gnu17 -O2 -Wall -Wextra -Werror -Wno-format-truncation -D_GNU_SOURCE \
 	-DKEILAND_DATADIR='"/opt/keiland/share"' -DKEILAND_BINDIR='"/opt/keiland/bin"' \
-	-I. -Iuserland/desktop/keiland -I"$main_build" \
+	-I. -Iuserland/desktop/keiland -Iuserland/desktop/libkeiland -I"$main_build" \
 	plan/ws128/tests/terminal-p009.c userland/desktop/terminal/screen.c \
 	userland/desktop/terminal/width.c userland/desktop/terminal/settings.c \
+	userland/desktop/libkeiland/settings-cache.c userland/desktop/libkeiland/settings-app.c \
+	userland/desktop/settings-keys/settings-keys.c plan/ws135/tests/host-kl-settings.c \
 	-o "$out/terminal-p009" || { echo "build: FAIL"; exit 1; }
 echo "build: ok"
 
