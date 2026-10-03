@@ -115,8 +115,18 @@ sm_source_open_sim(
 	source->info.gpu_count = gpus;
 	source->info.memory_total = SIM_MEMORY;
 	source->info.swap_total = SIM_SWAP;
+	/*
+	 * The GPUs' names are generic (2026-10-03 user: no "sim" in what is
+	 * shown): the first is the integrated one (the drawing device's name
+	 * replaces it, main.c), the others discrete.  No real model is named.
+	 */
 	for (index = 0; index < gpus; index++) {
-		(void)snprintf(source->info.gpu_name[index], SM_NAME_MAX, "Simulated GPU");
+		if (index == 0U)
+			(void)snprintf(source->info.gpu_name[index], SM_NAME_MAX, "Integrated Graphics");
+		else if (gpus == 2U)
+			(void)snprintf(source->info.gpu_name[index], SM_NAME_MAX, "Discrete Graphics");
+		else
+			(void)snprintf(source->info.gpu_name[index], SM_NAME_MAX, "Discrete Graphics %u", index);
 		source->info.gpu_memory_total[index] = SIM_GPU_MEMORY;
 	}
 

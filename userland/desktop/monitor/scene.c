@@ -81,6 +81,7 @@ static void build_events(struct sm_app *app);
 static void shown_text(struct sm_app *app, enum sm_plate plate, const char *name, const char *value);
 static void view_compute(struct sm_app *app, uint64_t now_ms);
 static void short_name(char *out, size_t size, const char *name);
+static void fit_name(struct sm_app *app, enum sm_style style, float width, const char *prefix, const char *name, char *out, size_t size);
 static void state_plate(struct sm_app *app, enum sm_plate plate, unsigned layer, float radius);
 static float value_text(struct sm_app *app, enum sm_plate plate, enum sm_style style, float x, float baseline, const char *text, uint64_t now_ms);
 static void flow_tube(struct sm_app *app, float x, float y, float width, float height, float phase, float share, int backwards, float jam, struct sm_color color);
@@ -618,7 +619,8 @@ build_graphics(
 	const char *plural;
 	char note[32];
 	char value[32];
-	char text[32];
+	char first[16];
+	char text[SM_NAME_MAX + 16];
 	float s;
 	float share;
 	float card_y;
@@ -672,7 +674,8 @@ build_graphics(
 		card.width = box->width - 32.0f * s;
 		card.height = card_height;
 		sm_draw_plate(&app->scene, &card, 2, 10.0f * s);
-		(void)snprintf(text, sizeof(text), "GPU %u  %.24s", gpu, info->gpu_name[gpu]);
+		(void)snprintf(first, sizeof(first), "GPU %u  ", gpu);
+		fit_name(app, SM_STYLE_NOTE, card.width - 28.0f * s, first, info->gpu_name[gpu], text, sizeof(text));
 		(void)sm_draw_text(app, SM_STYLE_NOTE, card.x + 14.0f * s, card.y + 22.0f * s, text, sm_rgb(TOKEN_TEXT, 1.0f), 0);
 
 		/* Its use, large. */
@@ -1201,4 +1204,52 @@ short_name(
 		length = size - 1U;
 	memcpy(out, name, length);
 	out[length] = '\0';
+}
+
+/*
+ * Writes prefix and a device's name into out so that it fits a width in a
+ * style: the whole name when it fits, else the name up to its first
+ * parenthesis or comma ("llvmpipe (LLVM 19.1.7, 256 bits)" is "llvmpipe"),
+ * else that cut further with "..." at the end (ws134-p003: the name was cut
+ * at 24 characters, in the middle of a word).
+ */
+static void
+fit_name(
+	struct sm_app *app,
+	enum sm_style style,
+	float width,
+	const char *prefix,
+	const char *name,
+	char *out,
+	size_t size)
+{
+	char shorter[SM_NAME_MAX];
+	size_t length;
+	float used;
+
+	/* The whole name, when it fits. */
+	(void)snprintf(out, size, "%s%s", prefix, name);
+	used = sm_atlas_width(&app->atlas, style, out);
+	if (used <= width)
+		return;
+
+	/* The name without its details, when that fits. */
+	short_name(shorter, sizeof(shorter), name);
+	(void)snprintf(out, size, "%s%s", prefix, shorter);
+	used = sm_atlas_width(&app->atlas, style, out);
+	if (used <= width)
+		return;
+
+	/* Shortened a character at a time, with "..." after what is left. */
+	length = strlen(shorter);
+	while (length > 0U) {
+		length--;
+		while (length > 0U && shorter[length - 1U] == ' ')
+			length--;
+		shorter[length] = '\0';
+		(void)snprintf(out, size, "%s%s...", prefix, shorter);
+		used = sm_atlas_width(&app->atlas, style, out);
+		if (used <= width)
+			return;
+	}
 }

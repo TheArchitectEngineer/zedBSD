@@ -355,15 +355,15 @@ sm_renderer_atlas(
 }
 
 /*
- * Draws a scene on the window and waits for it; reports how long the wait
- * for the GPU took.  VK_ERROR_OUT_OF_DATE_KHR and VK_ERROR_SURFACE_LOST_KHR
+ * Draws a scene on the window and waits for it; reports how long each part
+ * of the frame took in times.  VK_ERROR_OUT_OF_DATE_KHR and VK_ERROR_SURFACE_LOST_KHR
  * are the caller's to recover from (sm_renderer_resize, sm_renderer_recover).
  */
 VkResult
 sm_renderer_draw(
 	struct sm_renderer *renderer,
 	const struct sm_scene *scene,
-	uint64_t *wait_us)
+	struct sm_frame_times *times)
 {
 	VkSubmitInfo submit;
 	VkPresentInfoKHR present;
@@ -390,12 +390,16 @@ sm_renderer_draw(
 		memcpy(renderer->vertex_map, scene->vertices, scene->vertex_count * SM_VERTEX_FLOATS * sizeof(float));
 
 	/* The image to draw into, once the compositor has given one back. */
+	memset(times, 0, sizeof(*times));
+	before = kui_clock_us();
 	renderer->operation = "vkAcquireNextImageKHR";
 	error = vkAcquireNextImageKHR(renderer->device, renderer->swapchain, RENDER_TIMEOUT, renderer->acquired, VK_NULL_HANDLE, &image);
+	times->acquire_us = kui_clock_us() - before;
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
 	/* The frame's commands. */
+	before = kui_clock_us();
 	renderer->operation = "vkResetCommandBuffer";
 	error = vkResetCommandBuffer(renderer->command, 0U);
 	if (error != VK_SUCCESS)
@@ -405,6 +409,7 @@ sm_renderer_draw(
 	render_record(renderer, image, scene);
 	renderer->operation = "vkEndCommandBuffer";
 	error = vkEndCommandBuffer(renderer->command);
+	times->record_us = kui_clock_us() - before;
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -425,8 +430,10 @@ sm_renderer_draw(
 	submit.pCommandBuffers = &renderer->command;
 	submit.signalSemaphoreCount = 1U;
 	submit.pSignalSemaphores = &renderer->targets[image].rendered;
+	before = kui_clock_us();
 	renderer->operation = "vkQueueSubmit";
 	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
+	times->submit_us = kui_clock_us() - before;
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -438,8 +445,10 @@ sm_renderer_draw(
 	present.swapchainCount = 1U;
 	present.pSwapchains = &renderer->swapchain;
 	present.pImageIndices = &image;
+	before = kui_clock_us();
 	renderer->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(renderer->queue, &present);
+	times->present_us = kui_clock_us() - before;
 
 	/* The frame is finished before the host touches the vertices again, whatever the present said. */
 	before = kui_clock_us();
@@ -447,7 +456,7 @@ sm_renderer_draw(
 	waited = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDER_TIMEOUT);
 	if (waited != VK_SUCCESS)
 		return VK_ERROR_DEVICE_LOST;
-	*wait_us = kui_clock_us() - before;
+	times->wait_us = kui_clock_us() - before;
 
 	/* The present's answer. */
 	renderer->operation = "vkQueuePresentKHR";
