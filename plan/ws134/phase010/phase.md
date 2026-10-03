@@ -50,3 +50,7 @@ image（build-monitor-image.sh）で monitor-p002・p004・p005（cputimes）・
 - 確かめ: host で live の時計・220 ms の frame・pointer を左右に振る harness（preview の改造、scratch）で、直す前は scene の build が終わらず
   （120 秒の timeout）、直した後は 100 frame の間 vertex 40134〜40200 で安定。zedBSD の monitor -Werror warning 0、Linux の object、host 試験 3 本 PASS、
   style 0。QEMU は T1 に monitor-p002・p003 の再試験を依頼。
+
+## 回帰の結果（Q1、2026-10-04）
+
+T1-071: monitor-p004・cputimes-p005・diskstats-p006・monitor-backend-p008・monitor-system-p012・monitor-p013、FreeBSD の monitor-backend-p011 と backend-test 9/9 PASS。monitor-p002・p003 は sim の spring の発散（3ea9d46 で直した）で FAIL → T1-074 で両方 PASS（fps は記録だけ）。今できる分は済み。実機待ち（p003 の fps、p007 の i915、p009 の ACPI、デモの通し）が残るので in-progress。

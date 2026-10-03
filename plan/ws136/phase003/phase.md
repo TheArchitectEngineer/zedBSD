@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws136-p003 -->
 # ws136-p003: p001 の残り（既存の image を写す道具、/home/awe/zedBSD-rpi4 の既定、vkloop-hw.sh）
 
-Status: in-progress（q663、P2 generation8、2026-10-04。書き換え済み。T1-073 で build・boot・clang は PASS、guest-expat.sh の失敗は道具の config.sub の抜けで直した。再実行は T に）
+Status: cleared（q663、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS136](../ws.md)
 依存: p001（cleared）。範囲（Q1 2026-10-04）: 既存の image を写す道具（hybrid-image.sh・ws073 kernel-image.sh ほか）の既定の
@@ -63,3 +63,7 @@ Parent: [WS136](../ws.md)
 - 直し: `guest-expat.sh` が既定の tar を作るとき、展開して `conftools/config.sub` の `netbsd*` の隣に `zedbsd*` を足し（openssh の package の patch
   と同じ形）、足せたことを確かめ、ustar で tar にし直す。host の確かめ: 作った tar の `conftools/config.sub x86_64-unknown-zedbsd` が
   `x86_64-unknown-zedbsd` を返す、100 文字を超える path は 0。guest での再実行は未実施（次の T の batch で `guest-expat.sh` を 1 回）。
+
+## 判定（Q1、2026-10-04）
+
+cleared。T1-073: build-full-image.sh rc 0（clang 込み、780 s）、kernel-image.sh の native.img で boot-test PASS、SSH で clang 23.1.0。T1-075（486d7ce の後）: guest-expat.sh の configure・make・runtests が全て status 0、`Checks: 4932, Failed: 0`。範囲外の残り（ws101 の accel の noct は toolchain の許可が要る、指定の image の FAT を差し替える道具）は記録のとおり。
