@@ -56,3 +56,12 @@ libkeiui の text-input（`kui_window_text_input`）を使う app は今は **Te
 
 実機（5330）での目視（ユーザー）。Notes・Settings・Files は IME の入力自体が無い（p007・p008）。selection・検索の一致の色の帯は preedit の後ろでずれうる（変換中は通常 selection が無い）。
 折り返しの行で preedit が行の右端を越える分は切れる（次の行へは回らない）。
+
+### 再確認（2026-10-04、q652-i01、P2 generation7）
+
+BUG-139 が P2 に「再確認と残り」で割り当てられた。main 9e228b6（と 83e677c）の source を読んだ: `main_preedit_draw()` と UI の font の overlay は無く、
+preedit は `main.c` の `KUI_WINDOW_TEXT_PREEDIT` から `te_app.preedit`・`preedit_begin`・`preedit_end` に入り、`draw.c` の `draw_preedit()` が本文と同じ
+font・cell・row の高さで cursor の位置に描く（後ろの文字をずらす、文節の強調、caret の位置）。q603-i01 の直しはそのまま残っていて、直す残りは無い。
+ユーザーの 2026-10-02 の観察は q603 の直しより前の image の可能性がある。
+QEMU の再確認（`ime-p013.sh`、今の main の image）を Q1 経由で試験の担当に依頼した（P2-02。ws095-p015 の textedit の角丸の変更の後の見た目の確認を兼ねる）。
+実機（5330）の目視はユーザー。この節は確認の記録で、Phase の status は Q1 の判定まで変えない。
