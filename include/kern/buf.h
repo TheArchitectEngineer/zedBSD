@@ -31,6 +31,12 @@ enum buf_io_state {
 #define BUF_ERROR	0x0004U
 #define BUF_INVALID	0x0008U
 #define BUF_GENERATION_EXHAUSTED 0x0010U
+/*
+ * The line holds data an ordinary write (outside any journal) left that is
+ * not on the disk yet; cleared when the line is written clean.  A journal's
+ * pin on such a line holds that data back too (ws073-p053, BUG-163).
+ */
+#define BUF_UNJOURNALED	0x0020U
 
 #define BUF_INVALIDATE_DISCARD	0x0001U
 #define BUF_RECLAIM_WRITE	0x0001U
@@ -139,6 +145,16 @@ buf_writeback_range(
 	struct disk *disk,
 	uint64_t block,
 	uint32_t count);
+
+/*
+ * Counts the lines of a disk that a journal pins while they also hold data
+ * an ordinary write left and the disk does not have yet: a sync of the
+ * disk skips them, so their ordinary data waits for the journal's next
+ * commit (ws073-p053, BUG-163).
+ */
+unsigned
+buf_pinned_unjournaled(
+	struct disk *disk);
 
 /*
  * Registers a function the flusher calls on every interval, before it

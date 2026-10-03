@@ -301,6 +301,7 @@ static int disk_cache_range(struct disk *disk, struct disk **leaf_out, uint64_t 
 static int evict_one(struct disk *disk, uint64_t start, uint64_t end, int range, unsigned flags, size_t *freed);
 static int writeback_one_reclaimable(void);
 static void dirty_link(struct buf *buffer);
+static void mark_dirty(struct buf *buffer, unsigned flags);
 static void dirty_clear(struct buf *buffer);
 static void dirty_unlink_locked(struct buf *buffer);
 static struct buf *dirty_reference(struct disk *disk, uint64_t start, uint64_t end, int reclaim);
@@ -438,6 +439,19 @@ void
 buf_mark_dirty(
 	struct buf *buffer)
 {
+	/* Marks the buffer dirty with no other flag. */
+	mark_dirty(buffer, 0);
+}
+
+/*
+ * Marks a buffer dirty, with flags (BUF_UNJOURNALED) set in the same
+ * step, so that no write-back cleans it between the two.
+ */
+static void
+mark_dirty(
+	struct buf *buffer,
+	unsigned flags)
+{
 	unsigned long irq;
 
 	/* Ignores a missing buffer. */
@@ -446,6 +460,7 @@ buf_mark_dirty(
 
 	/* Advances the generation, skipping zero, and sets the flags. */
 	irq = spin_lock_irqsave(&buffer->b_lock);
+	buffer->b_flags |= flags;
 
 	if (buffer->b_generation == UINT64_MAX)
 		buffer->b_flags |= BUF_GENERATION_EXHAUSTED;
@@ -821,9 +836,11 @@ buf_write_context(
 
 		/*
 		 * A write-cached disk keeps the line dirty for the flusher,
-		 * unless dirty memory is already at its bound.
+		 * unless dirty memory is already at its bound.  The line is
+		 * marked as holding data written outside any journal, which a
+		 * journal's pin on it would hold back (ws073-p053).
 		 */
-		buf_mark_dirty(buffer);
+		mark_dirty(buffer, BUF_UNJOURNALED);
 		delayed = writes_delayed(disk, context);
 		error = 0;
 		if (!delayed)
@@ -1341,6 +1358,54 @@ buf_unpin(
 
 	/* Succeeded: the lines are ordinary dirty lines now. */
 	return 0;
+}
+
+/*
+ * Counts a disk's dirty lines that a journal pins while they hold data an
+ * ordinary write left (ws073-p053, BUG-163).  The pin and the flags are
+ * read without the line's lock, as dirty_reference() reads the pin: a
+ * caller that has just synced the disk took each such line's lock while
+ * the sync skipped it, so it sees what the sync saw.
+ */
+unsigned
+buf_pinned_unjournaled(
+	struct disk *disk)
+{
+	struct disk *leaf;
+	struct buf *buffer;
+	uint64_t start;
+	uint64_t end;
+	unsigned long irq;
+	unsigned count;
+	int error;
+
+	/* Resolves the disk's block range on its leaf; a disk that cannot be resolved has no lines. */
+	error = disk_cache_range(disk, &leaf, &start, &end);
+	if (error != 0)
+		return 0;
+
+	/* Walks the leaf's dirty lines in the range. */
+	count = 0;
+	irq = spin_lock_irqsave(&dirty_index_lock);
+	for (buffer = leaf->d_dirty_buffers; buffer != NULL; buffer = buffer->b_device_dirty_next) {
+		/* Leaves out a line outside the range. */
+		if (buffer->b_block >= end)
+			continue;
+		if (buffer->b_block + buffer->b_block_count <= start)
+			continue;
+
+		/* Counts a pinned line that holds ordinary data. */
+		if (buffer->b_journal_pin == 0)
+			continue;
+		if ((buffer->b_flags & BUF_UNJOURNALED) != 0U)
+			count++;
+	}
+
+	/* Lets the dirty index go. */
+	spin_unlock_irqrestore(&dirty_index_lock, irq);
+
+	/* Reports how many lines hold ordinary data back. */
+	return count;
 }
 
 /*
@@ -2150,7 +2215,7 @@ finish_run_line(
 	buffer->b_error = error;
 	if (write) {
 		if (error == 0 && generation == buffer->b_dirty_generation) {
-			buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
+			buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR | BUF_UNJOURNALED);
 			dirty_clear(buffer);
 			stat_add(&cache_dirty_bytes, (uint64_t)-(int64_t)buffer->b_size);
 		} else if (error != 0) {
@@ -2966,7 +3031,7 @@ writeback_line(
 	buffer->b_io_inflight = 0;
 	buffer->b_error = error;
 	if (error == 0 && generation == buffer->b_dirty_generation) {
-		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
+		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR | BUF_UNJOURNALED);
 		dirty_clear(buffer);
 		stat_add(&cache_dirty_bytes,
 		    (uint64_t)-(int64_t)buffer->b_size);
