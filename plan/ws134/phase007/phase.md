@@ -29,3 +29,7 @@ rps・GEM の動きを変えないで。QEMU で確かめられる範囲（Venus
 - QEMU（T に依頼）: `plan/ws134/tests/gputelemetry-p007.sh`（Venus で `hw.gputelemetry: gpus=0` と GPU の行なし、隣の hw.cputimes・
   hw.diskstats も読める、`sysctl -a` は記録だけ）。結果は未着。
 - 実機（5330 の i915、busy・周波数が負荷で動く）: 未実施（Q1 が user と時間を決める）。
+
+## QEMU の結果（Q1、2026-10-04、T1-066、Venus KVM）
+
+`gputelemetry-p007: PASS`: `hw.gputelemetry: gpus=0`（Venus は要素なし）、hw.cputimes・hw.diskstats も読める。i915 の値（rps の busy・周波数）は実機（5330、S2 か passthrough）で確かめるまで in-progress。
