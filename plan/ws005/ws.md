@@ -51,6 +51,7 @@ networkd の SUBSCRIBE と `net watch`（ws035-p018）、system bar の network 
 | [p028](phase028/phase.md) | [BUG-157](../bugs/BUG-157.md): 失敗した接続の理由（鍵の拒否）がその後の close・quiesce で消えて ENETDOWN になるのを、共通の WLAN core で保つ | in-progress（q641、P1。実装済み・S2 の実機で確認） | なし | 2h |
 | [p029](phase029/phase.md) | [BUG-160](../bugs/BUG-160.md): Wi-Fi の鍵の入力欄を選んだ AP の行の直下に（system bar の menu。Settings は欄を scroll で見せる） | cleared（2026-10-03 Q1、T1-019） | なし | 2h |
 | [p030](phase030/phase.md) | [BUG-148](../bugs/BUG-148.md): system bar の network の menu で接続中の AP を一番上に Disconnect の button、画面に収まる件数に | cleared（2026-10-03 Q1、T1-031） | なし | 2h |
+| [p031](phase031/phase.md) | [BUG-157](../bugs/BUG-157.md) の残り: networkd が後始末（disconnect）の error で join の理由を置き換える、AX211 が recovery 中の disconnect を ENETDOWN で断る、recovery の 2 度目の link loss が EACCES を上書きする | in-progress（q651、P1。実装・host 試験済み、確認は S2 の実機） | p028 | 2h |
 
 p016 は ws035-p018 へ移管済み（cleared）。p017（旧 fg005 の統合）は p022・p023 に置き換える提案（main の確認待ち、それまで planning のまま残す）。
 
