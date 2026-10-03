@@ -111,6 +111,7 @@ STAGE2_OBJS = \
 	$(BUILD)/src/kern/namei.o \
 	$(BUILD)/src/kern/mount.o \
 	$(BUILD)/src/kern/tmpfs.o \
+	$(BUILD)/src/kern/tmpfs-pages.o \
 	$(BUILD)/src/drivers/fs/overlayfs.o \
 	$(BUILD)/src/kern/vfs.o \
 	$(BUILD)/src/kern/swap.o \

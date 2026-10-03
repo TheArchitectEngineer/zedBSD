@@ -8,8 +8,9 @@
 /*
  * The hierarchical memory filesystem.
  *
- * Every node keeps its directory entries, sparse data pages, extended
- * attributes, and symlink target in kernel memory, charged against the
+ * Every node keeps its directory entries, extended attributes, and symlink
+ * target in kernel memory and a regular file's data in whole physical
+ * pages found through a page index (tmpfs-pages.c), charged against the
  * mount's node and byte quotas and the system commit limit.  Directory
  * entries carry monotonic cookies so that readdir survives concurrent
  * renames.
@@ -23,7 +24,10 @@
 #include "kern/namei.h"
 #include "kern/page.h"
 #include "kern/pipe.h"
+#include "kern/pmem.h"
 #include "kern/vm-commit.h"
+#include "kern/vm-reclaim.h"
+#include "tmpfs-pages.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
@@ -35,18 +39,25 @@
  * the inode cache that all tmpfs mounts may hold together (below).
  */
 #define TMPFS_DEFAULT_NODES 1024U
-#define TMPFS_DEFAULT_BYTES (32U * 1024U * 1024U)
+
+/*
+ * The smallest byte quota a mount gets.  The quota itself is half of
+ * physical memory, the Linux default (BUG-052); the pages are charged to
+ * the commit limit as they are written.
+ */
+#define TMPFS_MINIMUM_BYTES ((uint64_t)32U * 1024U * 1024U)
+
+/*
+ * How many data pages one step of a write allocates before it takes the
+ * inode lock.  The frames are taken without the lock, because taking one
+ * may reclaim memory; the step bounds what a write holds unused.
+ */
+#define TMPFS_WRITE_BATCH 16U
 #ifdef KERN_USER_ABI_LP64
 #define TMPFS_OFF_MAX ((off_t)INT64_MAX)
 #else
 #define TMPFS_OFF_MAX ((off_t)INT32_MAX)
 #endif
-
-struct tmpfs_page {
-	struct tmpfs_page *next;
-	uint64_t index;
-	uint8_t data[KERN_PAGE_SIZE];
-};
 
 struct tmpfs_dirent {
 	struct tmpfs_dirent *next;
@@ -70,11 +81,15 @@ struct tmpfs_node {
 	struct inode *inode;
 	struct inode *parent;
 	struct tmpfs_dirent *children;
-	struct tmpfs_page *pages;
 	struct tmpfs_xattr *xattrs;
 	char *symlink;
 	size_t symlink_length;
-	size_t allocated_pages;
+
+	/*
+	 * A regular file's data pages, under inode->i_lock.  The zeroed node of
+	 * kern_calloc() is an empty index; pages.count is what stat reports.
+	 */
+	struct tmpfs_pages pages;
 };
 
 struct tmpfs_state {
@@ -140,7 +155,11 @@ static int detach_entry(struct inode *directory, const struct componentname *com
 static int tmpfs_unlink(struct inode *directory, const struct componentname *component);
 static int tmpfs_rmdir(struct inode *directory, const struct componentname *component);
 static int tmpfs_rename(struct inode *old_directory, const struct componentname *old_component, struct inode *new_directory, const struct componentname *new_component, unsigned flags);
-static struct tmpfs_page ** find_page_link(struct tmpfs_node *node, uint64_t index);
+static uint64_t tmpfs_default_bytes(void);
+static size_t count_missing_pages(struct tmpfs_node *node, uint64_t offset, size_t length, size_t *chunk);
+static void take_frames(struct tmpfs_state *state, struct kern_pmem *frames, size_t wanted, size_t *taken, int *error);
+static void return_frames(struct tmpfs_state *state, struct kern_pmem *frames, size_t first, size_t count);
+static size_t fill_chunk(struct inode *inode, struct tmpfs_node *node, uint64_t offset, const uint8_t *in, size_t length, struct kern_pmem *frames, size_t frame_count, size_t *used, int *error);
 static ssize_t tmpfs_pread(struct file *file, void *buffer, size_t length, off_t offset);
 static ssize_t tmpfs_write_at(struct inode *inode, const void *buffer, size_t length, off_t offset, int append);
 static ssize_t tmpfs_pwrite(struct file *file, const void *buffer, size_t length, off_t offset);
@@ -1298,20 +1317,6 @@ tmpfs_rename(
 	return 0;
 }
 
-/* Finds the link at or after a page index in the sorted page list. */
-static struct tmpfs_page **
-find_page_link(
-	struct tmpfs_node *node,
-	uint64_t index)
-{
-	struct tmpfs_page **link;
-
-	link = &node->pages;
-	while (*link != NULL && (*link)->index < index)
-		link = &(*link)->next;
-	return link;
-}
-
 /* Reads file data at an offset, treating missing pages as zeros. */
 static ssize_t
 tmpfs_pread(
@@ -1322,13 +1327,13 @@ tmpfs_pread(
 {
 	struct inode *inode;
 	struct tmpfs_node *node;
+	const uint8_t *data;
 	uint8_t *out;
 	size_t done;
 	uint64_t absolute;
 	uint64_t index;
 	size_t within;
 	size_t count;
-	struct tmpfs_page **link;
 
 	inode = file->f_inode;
 	node = tmpfs_node(inode);
@@ -1353,11 +1358,13 @@ tmpfs_pread(
 		index = absolute / KERN_PAGE_SIZE;
 		within = (size_t)(absolute % KERN_PAGE_SIZE);
 		count = KERN_PAGE_SIZE - within;
-		link = find_page_link(node, index);
 		if (count > length - done)
 			count = length - done;
-		if (*link != NULL && (*link)->index == index)
-			kern_memcpy(out + done, (*link)->data + within, count);
+
+		/* A page holds data; a hole reads as zeros. */
+		data = tmpfs_pages_lookup(&node->pages, index);
+		if (data != NULL)
+			kern_memcpy(out + done, data + within, count);
 		else
 			kern_memset(out + done, 0, count);
 		done += count;
@@ -1369,7 +1376,15 @@ tmpfs_pread(
 	return (ssize_t)done;
 }
 
-/* Writes file data at an offset or at the end, allocating pages as needed. */
+/*
+ * Writes file data at an offset or at the end, allocating pages as needed.
+ *
+ * The write goes in steps of at most TMPFS_WRITE_BATCH pages.  Each step
+ * counts the pages it is missing under the inode lock, takes and charges
+ * frames for them without the lock (taking one may reclaim memory), and
+ * copies under the lock again.  The caller's I/O lock serializes writes
+ * of the inode, so the steps of one write are not interleaved with another.
+ */
 static ssize_t
 tmpfs_write_at(
 	struct inode *inode,
@@ -1378,15 +1393,17 @@ tmpfs_write_at(
 	off_t offset,
 	int append)
 {
+	struct kern_pmem frames[TMPFS_WRITE_BATCH];
 	struct tmpfs_node *node;
 	const uint8_t *in;
 	size_t done;
-	uint64_t absolute;
-	uint64_t index;
-	size_t within;
-	size_t count;
-	struct tmpfs_page **link;
-	struct tmpfs_page *page;
+	size_t chunk;
+	size_t missing;
+	size_t taken;
+	size_t used;
+	size_t copied;
+	int frame_error;
+	int fill_error;
 	int error;
 
 	node = tmpfs_node(inode);
@@ -1400,64 +1417,60 @@ tmpfs_write_at(
 		return -EFBIG;
 
 	/* An append starts at the current size. */
-	mutex_lock(&inode->i_lock);
-
 	if (append) {
+		/* Samples the size the append starts at. */
+		mutex_lock(&inode->i_lock);
+
 		offset = inode->i_size;
+
+		mutex_unlock(&inode->i_lock);
+
+		/* Refuses an append past the offset limit. */
 		if ((uint64_t)length >
-		    (uint64_t)TMPFS_OFF_MAX - (uint64_t)offset) {
-			mutex_unlock(&inode->i_lock);
+		    (uint64_t)TMPFS_OFF_MAX - (uint64_t)offset)
 			return -EFBIG;
-		}
 	}
 
-	/* Copies page by page, allocating and charging missing pages. */
+	/* Writes one step at a time. */
 	while (done < length) {
-		absolute = (uint64_t)offset + done;
-		index = absolute / KERN_PAGE_SIZE;
-		within = (size_t)(absolute % KERN_PAGE_SIZE);
-		count = KERN_PAGE_SIZE - within;
-		link = find_page_link(node, index);
-		if (count > length - done)
-			count = length - done;
-		if (*link == NULL || (*link)->index != index) {
-			/* A short write reports what was done before the failure. */
-			error = charge_page(node->state);
+		/* Counts the pages this step must add. */
+		mutex_lock(&inode->i_lock);
+
+		missing = count_missing_pages(node, (uint64_t)offset + done, length - done, &chunk);
+
+		mutex_unlock(&inode->i_lock);
+
+		/* Takes and charges a frame for each, without the lock. */
+		take_frames(node->state, frames, missing, &taken, &frame_error);
+
+		/* Copies the step, using the frames for the missing pages. */
+		mutex_lock(&inode->i_lock);
+
+		copied = fill_chunk(inode, node, (uint64_t)offset + done, in + done, chunk, frames, taken, &used, &fill_error);
+
+		mutex_unlock(&inode->i_lock);
+
+		/* Frames the step did not need go back, with their charges. */
+		return_frames(node->state, frames, used, taken - used);
+		done += copied;
+
+		/*
+		 * A step that stopped short for want of memory or quota ends the
+		 * write: a short write reports what was written, an empty one why.
+		 * One that stopped only because a page vanished between the count
+		 * and the copy (a truncation) counts again in the next step.
+		 */
+		if (copied < chunk) {
+			error = fill_error;
+			if (error == 0)
+				error = frame_error;
 			if (error != 0) {
-				mutex_unlock(&inode->i_lock);
 				if (done != 0)
 					return (ssize_t)done;
 				return -(ssize_t)error;
 			}
-
-			page = kern_calloc(1, sizeof(*page));
-			if (page == NULL) {
-				uncharge_page(node->state);
-				mutex_unlock(&inode->i_lock);
-				if (done != 0)
-					return (ssize_t)done;
-				return -ENOMEM;
-			}
-
-			page->index = index;
-			page->next = *link;
-			*link = page;
-			node->allocated_pages++;
-		} else {
-			page = *link;
 		}
-
-		kern_memcpy(page->data + within, in + done, count);
-		done += count;
-		/*
-		 * Publish every completed prefix before a later allocation can fail.
-		 * A zero-length write must leave EOF unchanged.
-		 */
-		if ((off_t)((uint64_t)offset + done) > inode->i_size)
-			inode->i_size = (off_t)((uint64_t)offset + done);
 	}
-
-	mutex_unlock(&inode->i_lock);
 
 	/* Reports the bytes written. */
 	return (ssize_t)done;
@@ -1524,57 +1537,42 @@ tmpfs_truncate(
 	off_t size)
 {
 	struct tmpfs_node *node;
-	struct tmpfs_page **link;
-	struct tmpfs_page *free_list;
-	uint64_t last_index;
-	struct tmpfs_page *page;
-	struct tmpfs_page **tail;
-	struct tmpfs_page *next;
+	uint8_t *tail;
+	uint64_t first_removed;
+	size_t within;
+	size_t freed;
 
 	node = tmpfs_node(inode);
-	free_list = NULL;
 
 	/* Rejects a non-regular inode or a negative size. */
 	if (node == NULL || inode->i_type != INODE_REG || size < 0)
 		return EINVAL;
 
-	/* Moves every page past the new size to the free list. */
+	/* The first page wholly past the new size, and where the size falls in its page. */
+	first_removed = ((uint64_t)size + KERN_PAGE_SIZE - 1U) / KERN_PAGE_SIZE;
+	within = (size_t)((uint64_t)size % KERN_PAGE_SIZE);
+
+	/* Frees every page past the new size and publishes the size. */
 	mutex_lock(&inode->i_lock);
 
-	if (size == 0)
-		last_index = 0;
-	else
-		last_index = ((uint64_t)size - 1U) / KERN_PAGE_SIZE;
-	for (link = &node->pages; *link != NULL;) {
-		page = *link;
-		if (size == 0 || page->index > last_index) {
-			*link = page->next;
-			page->next = free_list;
-			free_list = page;
-			node->allocated_pages--;
-		} else {
-			link = &page->next;
-		}
-	}
+	/* The pages wholly past the new size, and the tables they leave empty, go. */
+	freed = tmpfs_pages_truncate(&node->pages, first_removed);
 
 	/* Zeroes the tail of the last page so a later extension reads zeros. */
-	if (size != 0 && ((uint64_t)size % KERN_PAGE_SIZE) != 0) {
-		tail = find_page_link(node, last_index);
-		if (*tail != NULL && (*tail)->index == last_index)
-			kern_memset((*tail)->data + ((size_t)size % KERN_PAGE_SIZE), 0,
-			    KERN_PAGE_SIZE - ((size_t)size % KERN_PAGE_SIZE));
+	if (within != 0) {
+		tail = tmpfs_pages_lookup(&node->pages, first_removed - 1U);
+		if (tail != NULL)
+			kern_memset(tail + within, 0, KERN_PAGE_SIZE - within);
 	}
 
 	inode->i_size = size;
 
 	mutex_unlock(&inode->i_lock);
 
-	/* Frees the pages outside the lock. */
-	while (free_list != NULL) {
-		next = free_list->next;
-		kern_free(free_list);
+	/* Gives the freed pages back to the quota and the commit limit. */
+	while (freed != 0) {
 		uncharge_page(node->state);
-		free_list = next;
+		freed--;
 	}
 
 	/* Reports the completed truncation. */
@@ -1604,11 +1602,12 @@ tmpfs_getattr(
 	status->st_mtime = inode->i_mtime.tv_sec;
 	status->st_ctime = inode->i_ctime.tv_sec;
 	status->st_blksize = KERN_PAGE_SIZE;
-	if (node != NULL)
-		status->st_blocks = (blkcnt_t)(node->allocated_pages *
+	if (node != NULL) {
+		status->st_blocks = (blkcnt_t)(node->pages.count *
 		    (KERN_PAGE_SIZE / 512U));
-	else
+	} else {
 		status->st_blocks = 0;
+	}
 	return 0;
 }
 
@@ -1732,10 +1731,9 @@ tmpfs_reclaim(
 	struct inode *inode)
 {
 	struct tmpfs_node *node;
-	struct tmpfs_page *page;
 	struct tmpfs_xattr *attribute;
-	struct tmpfs_page *next_page;
 	struct tmpfs_xattr *next_attribute;
+	size_t freed;
 
 	/* Ignores an inode without a node. */
 	node = tmpfs_node(inode);
@@ -1743,12 +1741,10 @@ tmpfs_reclaim(
 		return;
 
 	/* Frees the pages, returning their charges. */
-	page = node->pages;
-	while (page != NULL) {
-		next_page = page->next;
-		kern_free(page);
+	freed = tmpfs_pages_truncate(&node->pages, 0);
+	while (freed != 0) {
 		uncharge_page(node->state);
-		page = next_page;
+		freed--;
 	}
 
 	/* Frees the attributes. */
@@ -1794,7 +1790,7 @@ tmpfs_mount_impl(
 	state->max_nodes = tmpfs_nodes_limit();
 	if (state->max_nodes < TMPFS_DEFAULT_NODES)
 		state->max_nodes = TMPFS_DEFAULT_NODES;
-	state->max_bytes = TMPFS_DEFAULT_BYTES;
+	state->max_bytes = tmpfs_default_bytes();
 
 	/* The root is the mount's first node, counted in the shared share too. */
 	error = charge_shared_node();
@@ -1881,4 +1877,220 @@ tmpfs_statvfs(
 
 	/* Reports the filled statistics. */
 	return 0;
+}
+
+/* Returns a mount's byte quota: half of physical memory, at least the minimum. */
+static uint64_t
+tmpfs_default_bytes(
+	void)
+{
+	struct kern_memstat memory;
+	uint64_t half;
+
+	/* Reads the machine's physical memory. */
+	kern_memstat(&memory);
+	half = (uint64_t)memory.physical_total / 2U;
+
+	/* A small machine still gets the minimum. */
+	if (half < TMPFS_MINIMUM_BYTES)
+		half = TMPFS_MINIMUM_BYTES;
+
+	/* Reports the quota in whole pages. */
+	half = half - half % KERN_PAGE_SIZE;
+	return half;
+}
+
+/*
+ * Counts the pages one write step must add.
+ *
+ * The step starts at offset and covers at most TMPFS_WRITE_BATCH pages of
+ * the length left; its byte length is stored in chunk.  The caller holds
+ * inode->i_lock.
+ */
+static size_t
+count_missing_pages(
+	struct tmpfs_node *node,
+	uint64_t offset,
+	size_t length,
+	size_t *chunk)
+{
+	uint64_t index;
+	size_t within;
+	size_t count;
+	size_t covered;
+	size_t missing;
+	unsigned step;
+	void *data;
+
+	/* Nothing is covered or missing yet. */
+	covered = 0;
+	missing = 0;
+
+	/* Looks at each page of the step. */
+	for (step = 0; step < TMPFS_WRITE_BATCH && covered < length; step++) {
+		index = (offset + covered) / KERN_PAGE_SIZE;
+		within = (size_t)((offset + covered) % KERN_PAGE_SIZE);
+		count = KERN_PAGE_SIZE - within;
+		if (count > length - covered)
+			count = length - covered;
+
+		/* A hole needs a page. */
+		data = tmpfs_pages_lookup(&node->pages, index);
+		if (data == NULL)
+			missing++;
+		covered += count;
+	}
+
+	/* Succeeded: the step's length and the pages it needs. */
+	*chunk = covered;
+	return missing;
+}
+
+/*
+ * Takes and charges frames for a write step.
+ *
+ * Each frame is charged to the mount's quota and the commit limit, then
+ * taken zeroed from physical memory, reclaiming private pages when memory
+ * is short.  It stops at the first failure, stores its reason in error and
+ * how many frames it took in taken.  The caller holds no inode lock.
+ */
+static void
+take_frames(
+	struct tmpfs_state *state,
+	struct kern_pmem *frames,
+	size_t wanted,
+	size_t *taken,
+	int *error)
+{
+	void *page;
+	size_t count;
+	int charge_error;
+	int frame_error;
+
+	/* No frame is taken and nothing has failed yet. */
+	count = 0;
+	*error = 0;
+
+	/* Charges and takes one frame at a time. */
+	while (count < wanted) {
+		/* Charges the quota and the commit limit first. */
+		charge_error = charge_page(state);
+		if (charge_error != 0) {
+			*error = charge_error;
+			break;
+		}
+
+		/* Then takes the frame, giving the charge back when there is none. */
+		frame_error = vm_reclaim_frame_private(&frames[count]);
+		if (frame_error != 0) {
+			uncharge_page(state);
+			*error = ENOMEM;
+			break;
+		}
+
+		/* A new page reads as zeros where the write does not cover it. */
+		page = kern_pmem_to_kernel(frames[count].paddr);
+		kern_memset(page, 0, KERN_PAGE_SIZE);
+		count++;
+	}
+
+	/* Succeeded or stopped: the frames taken. */
+	*taken = count;
+}
+
+/* Frees frames a write step did not use, giving back their charges. */
+static void
+return_frames(
+	struct tmpfs_state *state,
+	struct kern_pmem *frames,
+	size_t first,
+	size_t count)
+{
+	size_t index;
+	int error;
+
+	/* Frees each unused frame and its charge. */
+	for (index = first; index < first + count; index++) {
+		error = kern_pmem_free(&frames[index]);
+		if (error != 0)
+			HAL_FATAL("tmpfs frame free failed");
+		uncharge_page(state);
+	}
+}
+
+/*
+ * Copies one write step into the file.
+ *
+ * A page the file lacks takes the next of the step's frames.  The copy
+ * stops at a hole with no frame left, or when the page index cannot grow
+ * (error).  Publishes every completed prefix in the file size, stores how
+ * many frames went into the file in used, and reports the bytes copied.
+ * The caller holds inode->i_lock.
+ */
+static size_t
+fill_chunk(
+	struct inode *inode,
+	struct tmpfs_node *node,
+	uint64_t offset,
+	const uint8_t *in,
+	size_t length,
+	struct kern_pmem *frames,
+	size_t frame_count,
+	size_t *used,
+	int *error)
+{
+	uint8_t *data;
+	uint64_t index;
+	size_t within;
+	size_t count;
+	size_t done;
+	size_t frames_used;
+	int insert_error;
+
+	/* Nothing is copied, no frame used and nothing has failed yet. */
+	done = 0;
+	frames_used = 0;
+	*error = 0;
+
+	/* Copies page by page. */
+	while (done < length) {
+		index = (offset + done) / KERN_PAGE_SIZE;
+		within = (size_t)((offset + done) % KERN_PAGE_SIZE);
+		count = KERN_PAGE_SIZE - within;
+		if (count > length - done)
+			count = length - done;
+
+		/* A hole takes the next frame, or ends the step when none is left. */
+		data = tmpfs_pages_lookup(&node->pages, index);
+		if (data == NULL) {
+			if (frames_used == frame_count)
+				break;
+
+			/* The frame becomes the file's page at this number. */
+			insert_error = tmpfs_pages_insert(&node->pages, index, frames[frames_used].paddr);
+			if (insert_error != 0) {
+				*error = insert_error;
+				break;
+			}
+
+			/* The page's bytes are the frame's. */
+			data = kern_pmem_to_kernel(frames[frames_used].paddr);
+			frames_used++;
+		}
+
+		/* Copies the bytes of this page. */
+		kern_memcpy(data + within, in + done, count);
+		done += count;
+
+		/*
+		 * Publishes every completed prefix before a later page can fail.
+		 * A zero-length write must leave EOF unchanged.
+		 */
+		if ((off_t)(offset + done) > inode->i_size)
+			inode->i_size = (off_t)(offset + done);
+	}
+
+	/* Succeeded or stopped: the bytes copied and the frames used. */
+	*used = frames_used;
+	return done;
 }
