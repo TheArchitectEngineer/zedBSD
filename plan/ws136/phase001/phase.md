@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws136-p001 -->
 # ws136-p001: 試験の image の script の棚卸しと移行（config.mk ＋ tree の file の複写）
 
-Status: in-progress（q655、P1 generation12、2026-10-04）
+Status: cleared（q655、2026-10-04。Q1 判定。残りは p003）
 Disposition: normal
 Parent: [WS136](../ws.md)
 Queue: q655（2026-10-04 user「試験のイメージが特殊なビルドになっているのがよくない気がします。試験ビルドの標準的な方法は、config.mkでのビルド＋個別ファイルコピー、程度にして、過去のbuild/を参照するのはやめましょう。config.mkと個別ファイルをwsのtests/に入れればいいだけです。」）
@@ -61,3 +61,7 @@ T1 に代表 5 つの boot-test と demo の build（試験の依頼 6）を依�
 ## 試験の途中（Q1、2026-10-04）
 
 T1-053: files・login・settings・criteria・ime の 5 つの image の boot-test は全て PASS（8〜11 s）。demo の build と boot は T1 の後の番。
+
+## 結果（Q1、2026-10-04）
+
+cleared。T1-053: files・login・settings・criteria・ime・demo の 6 つの image の boot-test PASS（demo は build-demo-image.sh で 744 s、Aurora・Dawn・Lagoon・Meadow・Twilight・Birch-Lake・Lakeside の 7 枚が rootfs に在る）。T1-054: 既定の image の boot-test PASS。残り（既存の image を写して差し替える道具、vkloop-hw.sh、ws101 の noct）は ws136-p003 へ。

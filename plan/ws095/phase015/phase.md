@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws095-p015 -->
 # ws095-p015: 利用者の辞書の保存を入力の無い 3 分の後と終了の時に（BUG-143）
 
-Status: in-progress（q652-i01、P2 generation7。T1-046 で SIGTERM の保存が FAIL → 直して T1 に再依頼）
+Status: cleared（q652-i01、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS095](../ws.md)
 Bug: [BUG-143](../../bugs/BUG-143.md)
@@ -75,3 +75,7 @@ key が来ないので終わらず、終わりの保存も走らない。
 display と pipe の 2 つを待ち、印が立っていれば display を待たずに返る（display の dispatch は display の fd が読める時だけ）。どの thread に signal が届いても、
 poll が再開されても起きる。試験（`latency-bug143.sh` step 4）は SIGTERM の後に zdesktop の `ZWL IME exited` が増えることも確かめる。
 build: zedBSD の keiland-ime・keiland-linux とも warning 0。QEMU は T1 に再依頼。
+
+## 再試験の結果（Q1、2026-10-04）
+
+cleared。T1-051（QEMU Venus KVM、c9b09ad の image）: `ZWL IME exited lines: 0 -> 1`・`keiland-ime ends on SIGTERM: ok`・`dictionary after SIGTERM: 2`・`written at the end: ok`、missed=0、bypass 0 -> 0。T1-046 で確定の直後は辞書なし・190 s の後に書かれるも確認済み。LATENCY（参考、VNC の撮影の遅れを含む）: textedit-direct 336/442、terminal-direct 302/320、japanese 301〜444 ms。直接入力の遅れ（ユーザーの観察の 500 ms）は未特定のまま、実機（S2）で測る。

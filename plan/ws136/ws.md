@@ -27,5 +27,6 @@ Resume point: p001（棚卸しと移行）。
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| p001 | 棚卸し（image を作る script と過去の build を読む所の一覧）と移行、代表の build と boot-test の依頼 | in-progress（q655、P1） | — |
+| [p001](phase001/phase.md) | 棚卸し（image を作る script と過去の build を読む所の一覧）と移行、代表の build と boot-test の依頼 | cleared（q655、T1-053・054） | — |
+| p003 | p001 の残り: 既存の image を写して差し替える道具（hybrid-image.sh・ws073 kernel-image.sh ほか、既定が今は無い /home/awe/zedBSD-rpi4）、vkloop-hw.sh、ws101 の accel の noct（toolchain の許可が要る） | planned | p001 |
 | [p002](phase002/phase.md) | login の試験 p095・p102・p104 を 2026-09-29 の既定の image（kei の自動 login、root/root・kei/kei）に合わせる（p103 は変更不要） | cleared（q655、T2-011・T2-012 PASS） | — |

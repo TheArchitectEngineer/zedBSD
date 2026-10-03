@@ -57,7 +57,7 @@ Resume point（2026-10-02 計画詳細化）: **次は p005 の新 attempt**（�
 | [ws095-p011](phase011/phase.md) | 全体の規約の適合、guest の回帰（実機の確認は別に記録） | planning | p005〜p008・p012（p009/p010 は行った時だけ） | 2〜3h |
 | [ws095-p012](phase012/phase.md) | 補いの辞書を千語へ広げ、活用の種類の注釈（SKK の `;…`）を engine が読む。held-out の文 100 以上で拡張の前後を測る（ユーザーの答え 2026-09-29 夜） | cleared（q593-i01、2026-10-02、P4。1,478 見出し、100 文 92→97、held-out A 64→102（盲検）・109、B 47→81。merge は Q1） | p003・p004 | 4h |
 | [ws095-p014](phase014/phase.md) | BUG-143: 確定のたびの利用者の辞書の保存（fsync）を別の thread に移し、IME の迂回を無くす。Text Editor の入力の遅れの計測 | cleared（q643、P1、2026-10-03 Q1 判定。直接入力の遅れは BUG-143 に残す） | — | 2h |
-| [ws095-p015](phase015/phase.md) | BUG-143: 確定のたびの保存をやめ、入力の無い 3 分の後と IME の終了の時に保存（user 2026-10-04）。Text Editor の遅れの読み | in-progress（q652、T1-046 の FAIL を直し再試験待ち） | p014 | 2h |
+| [ws095-p015](phase015/phase.md) | BUG-143: 確定のたびの保存をやめ、入力の無い 3 分の後と IME の終了の時に保存（user 2026-10-04）。Text Editor の遅れの読み | cleared（q652、T1-051 PASS） | p014 | 2h |
 
 **source の衝突**: p005 は `userland/desktop/wayland/` の compose.c・protocol.c・display.c・shell.c・input-method.c・ime.h を触る。WS114 p007 の再 attempt（修正が要る時の shell.c・protocol.c）、WS117 p003、WS099（BUG-125）・WS094（desktop surface）・WS113（display.c）の compositor の Queue と同時に実行すると merge の衝突が出る。main が順を決める。p008 は Files（WS127 最重点）と titlebar-shell.c を触る。p006 は Terminal、p007 は textedit・notes。p012 は `userland/desktop/ime/` の中だけで衝突しない。
 

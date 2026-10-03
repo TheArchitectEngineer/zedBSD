@@ -2,7 +2,7 @@
 
 # ws131-p008: backend の表示の領域
 
-Status: uncleared（q650、2026-10-03、P1。実装と host の確認は済み、ユーザーのソフトな停止で QEMU・Linux の guest の試験は未依頼）
+Status: cleared（q650、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q650（2026-10-03、Q1 の割り当て）
@@ -84,3 +84,7 @@ Queue: q650（2026-10-03、Q1 の割り当て）
 ## 試験の途中（Q1、2026-10-04）
 
 Linux: T2-013 PASS。zedBSD: T1-054 で C1 PASS（p126・c1-boot-shutdown、Venus、shutdown_down=1・qemu_gone=1）。既定の image の boot-test は T1 の後の番。
+
+## 結果（Q1、2026-10-04）
+
+cleared。Linux: T2-013 PASS（gcc・clang warning 0、Debian 13 の guest で compositor の desktop、display-probe direct・--acquire）。zedBSD: T1-054 で C1 PASS・既定の image（c9b09ad）の boot-test PASS。FreeBSD: P3 の WS137 の backend-test で native build warning 0（GPU 無しのため表示は未実施）。
