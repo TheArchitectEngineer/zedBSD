@@ -116,7 +116,8 @@ for os_dir in zedbsd linux freebsd; do
 done > "$work/L6"
 
 # Inspect the actual target package membership and wildcard filename boundary.
-make -pn disk-image > "$work/make-database"
+# The database only (a target that does not exist, so no recipe of the package builds runs; 2026-10-04, a fresh build/ has no package trees).
+make -pn -q zedbsd-make-database-only > "$work/make-database" 2>/dev/null || true
 python3 - "$work/make-database" > "$work/L5" <<'PY'
 from pathlib import Path
 import fnmatch
