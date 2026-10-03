@@ -82,6 +82,7 @@ struct main_options {
 	const char *command;
 	const char *token;
 	unsigned pixels;
+	int pixels_given;
 	unsigned columns;
 	unsigned rows;
 	unsigned timeout;
@@ -107,6 +108,13 @@ struct main_run {
 	 * follows it, and the settings file keeps it for the next run.
 	 */
 	int ambiguous_wide;
+
+	/*
+	 * The font's size the settings file keeps (0: none yet; View > Zoom and
+	 * Text Size keep theirs) and the colour theme (View > Theme), ws128-p006.
+	 */
+	unsigned kept_pixels;
+	unsigned theme;
 
 	/* What failed last, the Vulkan result of it, and why the run ended normally. */
 	const char *operation;
@@ -246,6 +254,10 @@ static void main_menu_state(const struct main_run *run, struct terminal_menu_sta
 static void main_new_window(const struct main_options *options, const struct main_run *run);
 static int main_zoom(const struct main_options *options, struct main_run *run, unsigned pixels);
 static void main_ambiguous_wide(const struct main_options *options, struct main_run *run);
+static int main_save_settings(const struct main_run *run);
+static void main_theme(const struct main_options *options, struct main_run *run, unsigned theme);
+static void main_find(int step);
+static void main_search(const struct main_options *options);
 static void main_copy(void);
 static void main_start_paste(void);
 static void main_drop_paste(void);
@@ -399,6 +411,7 @@ main_parse(
 			status = main_number(value, 96U, &options->pixels);
 			if (status != 0)
 				return -1;
+			options->pixels_given = 1;
 			continue;
 		}
 
@@ -482,16 +495,24 @@ main_start(
 {
 	struct terminal_menu_state state;
 	struct terminal_settings settings;
+	unsigned pixels;
 	int status;
 
 	/* The settings kept from the last run (the defaults when there are none). */
 	terminal_settings_load(&settings);
 	run->ambiguous_wide = settings.ambiguous_wide;
-	printf("ZTERM SETTINGS run=%s ambiguous_wide=%d\n", options->token, run->ambiguous_wide);
+	run->kept_pixels = settings.font_size;
+	run->theme = settings.theme;
+	printf("ZTERM SETTINGS run=%s ambiguous_wide=%d font_size=%u theme=%u\n", options->token, run->ambiguous_wide, settings.font_size, settings.theme);
+
+	/* The font's size: the one given on the command line, else the one kept, else the default (ws128-p006). */
+	pixels = options->pixels;
+	if (!options->pixels_given && settings.font_size != 0U)
+		pixels = settings.font_size;
 
 	/* The font, which sets the cell's size. */
 	run->operation = "terminal_font_open";
-	status = terminal_font_open(&main_font, options->font, options->pixels);
+	status = terminal_font_open(&main_font, options->font, pixels);
 	if (status != 0) {
 		errno = status;
 		return -1;
@@ -521,8 +542,9 @@ main_start(
 	if (run->result != VK_SUCCESS)
 		return -1;
 
-	/* The grid that fits the window. */
-	run->pixels = options->pixels;
+	/* The grid that fits the window, and the theme it is drawn in. */
+	run->pixels = pixels;
+	main_window.theme = run->theme;
 	main_grid(main_renderer.extent.width, main_renderer.extent.height, &run->columns, &run->rows);
 
 	/* The menus, which zdesktop draws (none from a compositor without the System Menu). */
@@ -644,6 +666,9 @@ main_loop(
 
 		/* The pointer selects, or drags the selected text out (ws035-p093). */
 		main_pointer();
+
+		/* The search bar's text and steps find their matches (ws128-p006). */
+		main_search(options);
 
 		/* The wheel and Shift+Page Up or Down scroll the view, and a selection past the edge scrolls it (ws035-p114). */
 		main_scroll();
@@ -1039,6 +1064,27 @@ main_menu_actions(
 			/* Ambiguous-width characters written from now on take the other width. */
 			main_ambiguous_wide(options, run);
 			break;
+		case TERMINAL_ACTION_FIND:
+			/* The search bar opens with the text looked for last (ws128-p006). */
+			main_find(0);
+			break;
+		case TERMINAL_ACTION_FIND_NEXT:
+			/* The next older match. */
+			main_find(1);
+			break;
+		case TERMINAL_ACTION_FIND_PREVIOUS:
+			/* The next newer match. */
+			main_find(-1);
+			break;
+		case TERMINAL_ACTION_THEME_DARK:
+			main_theme(options, run, TERMINAL_THEME_DARK);
+			break;
+		case TERMINAL_ACTION_THEME_LIGHT:
+			main_theme(options, run, TERMINAL_THEME_LIGHT);
+			break;
+		case TERMINAL_ACTION_THEME_CONTRAST:
+			main_theme(options, run, TERMINAL_THEME_CONTRAST);
+			break;
 		case TERMINAL_ACTION_ABOUT:
 			/* A line about the terminal on the screen (there are no dialogs). */
 			terminal_screen_write(main_screen, (const unsigned char *)MAIN_ABOUT, sizeof(MAIN_ABOUT) - 1U);
@@ -1082,6 +1128,10 @@ main_menu_state(
 	state->pixels = run->pixels;
 	state->fullscreen = main_window.fullscreen;
 	state->ambiguous_wide = run->ambiguous_wide;
+	state->theme = run->theme;
+	state->can_find_again = 0;
+	if (main_window.search_length != 0U)
+		state->can_find_again = 1;
 }
 
 /*
@@ -1175,8 +1225,12 @@ main_zoom(
 	if (error != 0)
 		return 0;
 
-	/* The size the menus show and Zoom In and Out step from. */
+	/* The size the menus show and Zoom In and Out step from, kept for the next run (ws128-p006). */
 	run->pixels = pixels;
+	run->kept_pixels = pixels;
+	error = main_save_settings(run);
+	if (error != 0)
+		printf("ZTERM SETTINGS save-failed error=%d\n", error);
 
 	/* The grid that fits the window at the new size, for every tab, told to each shell. */
 	main_grid(main_renderer.extent.width, main_renderer.extent.height, &run->columns, &run->rows);
@@ -1205,7 +1259,6 @@ main_ambiguous_wide(
 	const struct main_options *options,
 	struct main_run *run)
 {
-	struct terminal_settings settings;
 	unsigned index;
 	int error;
 
@@ -1221,12 +1274,160 @@ main_ambiguous_wide(
 		terminal_screen_set_ambiguous_wide(main_tabs[index].screen, run->ambiguous_wide);
 
 	/* The settings file keeps it; a failed write leaves this run changed and is reported. */
-	memset(&settings, 0, sizeof(settings));
-	settings.ambiguous_wide = run->ambiguous_wide;
-	error = terminal_settings_save(&settings);
+	error = main_save_settings(run);
 
 	/* The log line the tests read. */
 	printf("ZTERM AMBIGUOUS run=%s wide=%d saved=%d\n", options->token, run->ambiguous_wide, error);
+	fflush(stdout);
+}
+
+/* Keeps the run's settings for the next run (ws128-p009, ws128-p006); returns 0 or an errno value. */
+static int
+main_save_settings(
+	const struct main_run *run)
+{
+	struct terminal_settings settings;
+	int error;
+
+	/* The width setting, the font's size kept (0: none) and the theme. */
+	memset(&settings, 0, sizeof(settings));
+	settings.ambiguous_wide = run->ambiguous_wide;
+	settings.font_size = run->kept_pixels;
+	settings.theme = run->theme;
+
+	/* The settings file keeps them. */
+	error = terminal_settings_save(&settings);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the next run reads them. */
+	return 0;
+}
+
+/*
+ * Draws the window in a colour theme (View > Theme, ws128-p006), kept for
+ * the next run.
+ */
+static void
+main_theme(
+	const struct main_options *options,
+	struct main_run *run,
+	unsigned theme)
+{
+	int error;
+
+	/* The theme the window is drawn in from the next frame. */
+	run->theme = theme;
+	main_window.theme = theme;
+	main_screen->changed = 1;
+
+	/* The settings file keeps it; a failed write leaves this run changed and is reported. */
+	error = main_save_settings(run);
+
+	/* The log line the tests read. */
+	printf("ZTERM THEME run=%s theme=%u saved=%d\n", options->token, theme, error);
+	fflush(stdout);
+}
+
+/*
+ * Opens the search bar (Edit > Find, step 0), or takes a step to the
+ * next older (1) or newer (-1) match of the text looked for last; a step
+ * without a text opens the bar instead (ws128-p006).
+ */
+static void
+main_find(
+	int step)
+{
+	/* The bar opens, showing the text looked for last; the main loop finds it again. */
+	if (step == 0 || main_window.search_length == 0U) {
+		main_window.search_open = 1;
+		main_window.search_edited = 1;
+		return;
+	}
+
+	/* The step, taken with the bar open. */
+	main_window.search_open = 1;
+	main_window.search_step = step;
+}
+
+/*
+ * Finds the search bar's text (ws128-p006): a text that changed is looked
+ * for back from the bottom of the window, a step goes on from the match
+ * shown; a match found is brought into the window and marked.
+ */
+static void
+main_search(
+	const struct main_options *options)
+{
+	uint32_t query[TERMINAL_SEARCH_LENGTH];
+	unsigned long from_line;
+	unsigned long line;
+	unsigned from_column;
+	unsigned column;
+	unsigned cells;
+	size_t count;
+	int direction;
+	int edited;
+	int found;
+
+	/* Only a changed text or a step asks for a search. */
+	if (!main_window.search_edited && main_window.search_step == 0)
+		return;
+
+	/* A closed bar marks nothing; the window is drawn without it. */
+	if (!main_window.search_open) {
+		main_window.search_edited = 0;
+		main_window.search_step = 0;
+		main_window.search_found = 0;
+		main_screen->changed = 1;
+		printf("ZTERM SEARCH run=%s closed\n", options->token);
+		fflush(stdout);
+		return;
+	}
+
+	/* The text's characters. */
+	count = terminal_search_decode(main_window.search_query, main_window.search_length, query, TERMINAL_SEARCH_LENGTH);
+
+	/* A changed text from below the window's last row back; a step from the match shown, its way. */
+	direction = 1;
+	from_line = main_screen->scrolled - main_screen->view + main_screen->rows;
+	from_column = 0U;
+	edited = main_window.search_edited;
+	if (!edited && main_window.search_found) {
+		direction = main_window.search_step;
+		from_line = main_window.search_line;
+		from_column = main_window.search_column;
+	}
+
+	/* The change and the step are taken. */
+	main_window.search_edited = 0;
+	main_window.search_step = 0;
+
+	/* The match; none keeps the view where it is. */
+	found = terminal_search_find(main_screen, query, count, from_line, from_column, direction, &line, &column, &cells);
+	if (found) {
+		main_window.search_found = 1;
+		main_window.search_line = line;
+		main_window.search_column = column;
+		main_window.search_cells = cells;
+		terminal_search_show(main_screen, line);
+	} else if (edited) {
+		/* A changed text that is nowhere has no match to show; a step past the last keeps the one shown. */
+		main_window.search_found = 0;
+	}
+
+	/* The bar and the marks are drawn again. */
+	main_screen->changed = 1;
+
+	/* The log line the tests read. */
+	printf("ZTERM SEARCH run=%s query=%s found=%d line=%lu column=%u cells=%u view=%u\n",
+	       options->token,
+	       main_window.search_query,
+	       found,
+	       main_window.search_line,
+	       main_window.search_column,
+	       main_window.search_cells,
+	       main_screen->view);
 	fflush(stdout);
 }
 
@@ -1381,8 +1582,10 @@ main_tab_switch(
 	run->child = main_tabs[index].child;
 	run->master = main_tabs[index].master;
 
-	/* The keys not yet sent belonged to the tab before; its grid is drawn. */
+	/* The keys not yet sent belonged to the tab before; its grid is drawn, without the other tab's search. */
 	main_window.input_length = 0;
+	main_window.search_open = 0;
+	main_window.search_found = 0;
 	main_screen->changed = 1;
 	printf("ZTERM TAB active id=%u\n", main_tabs[index].id);
 	fflush(stdout);
