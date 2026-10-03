@@ -93,3 +93,5 @@
 2026-10-04 Q1: P9 generation1 はラップアップして終了。**agent/p9（1f9e10b、base 9e228b6）は main に未統合**: e5631f9（journal の commit の 2 段化、単独では穴あり）→ 4ed7e93（記録）→ c79e089（range/line の穴の直し）→ 1f9e10b（phase.md の再開の条件、p051-window.sh）。統合は user の確認の後に c79e089 以降を含めて。branch と worktree `/home/awe/zedBSD-worktrees/p9` は消さない。
 
 2026-10-04 Q1: P3 generation6 は ws137-p001（988b9a0、統合済み）で終了。体制は P2・T1・T2。
+
+2026-10-04 Q1: P2 generation7 は 9bea552（統合 63c5d7d）で終了（WS135・ws127-p009・BUG-053・WS131 p009〜p011）。P2 generation8 を q660（ws134-p004）で起動。WS131 p012 はユーザーの判断待ち（標準 app のベータ1 と app の移行の順）。
