@@ -306,48 +306,6 @@ zwl_settings_store_report(
 }
 
 /*
- * Takes a value another writer already put in the file (Settings, until
- * ws135-p004 moves it to the extension): it is in effect, and it is also
- * the start, since the file holds it.  value NULL is a key taken out of
- * the file (the default).  The sound is not followed (BUG-161).
- */
-void
-zwl_settings_store_follow(
-	struct zwl_settings_store *store,
-	const char *name,
-	const char *value)
-{
-	struct zwl_settings_entry *entry;
-	char clean[KL_SETTINGS_VALUE_MAX];
-	int error;
-
-	/* Only a setting the store holds, and not the sound's. */
-	entry = zwl_settings_store_find(store, name);
-	if (entry == NULL)
-		return;
-	if (!entry->known)
-		return;
-
-	/* A key taken out goes back to its default, which is also the start now. */
-	if (value == NULL) {
-		store_entry_set(store, entry, entry->fallback, 0U);
-		entry->start_chosen = 0;
-		entry->start[0] = '\0';
-		return;
-	}
-
-	/* A value the setting cannot take is passed over. */
-	error = store_clean_value(entry->key, value, clean, sizeof(clean));
-	if (error != 0)
-		return;
-
-	/* The value in effect, and the start. */
-	store_entry_set(store, entry, clean, 1U);
-	entry->start_chosen = 1;
-	store_copy(entry->start, sizeof(entry->start), clean);
-}
-
-/*
  * Lists the settings the session's end would write: those kept in the
  * file whose value is known and differs from the start.  changes has room
  * for ZWL_SETTINGS_ENTRIES.  Returns how many.

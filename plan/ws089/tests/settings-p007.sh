@@ -1,13 +1,14 @@
 #!/bin/sh
-# ws089-p007: zdesktop follows the desktop's preferences (~/.config/keiland/desktop.conf, root's home) on the Venus
-# guest (the lean image, build-settings-image.sh).  zdesktop --glass at 1280x800, started without --wallpaper
-# (the landscape drawn by zdesktop), with Settings' About page open to see the windows' opacity.
-#  1. No file: ZWL PREFERENCES open, the landscape (start.png).
-#  2. wallpaper=/usr/share/keiland/wallpaper.ppm written (a new file renamed over, as libkeiland does): within a few
-#     seconds ZWL PREFERENCES key=wallpaper applied and ZWL GLASS wallpaper path=... ms=N (wallpaper.png).
-#  3. window.opacity=85: key=window.opacity applied value=85 (opacity.png).
-#  4. pointer.speed=200, pointer.natural=1, keyboard.repeat.rate=40, keyboard.repeat.delay=250: each applied.
-#  5. The file removed: the landscape again (ZWL GLASS wallpaper path=-) and the opacity back to 100 (removed.png).
+# ws089-p007, rewritten for WS135 (ws135-p004): zdesktop puts the desktop's settings into effect at once when they are
+# set through Keiland's system extension (the probe keiland-settings, libkeiland's kl_settings_*), on the Venus guest
+# of the WS135 image (SETTINGS_CONFIG=plan/ws135/tests/config-amd64-settings.mk build-settings-image.sh).  zdesktop
+# --glass at 1280x800, started without --wallpaper (the landscape drawn by zdesktop), with Settings' About page open to
+# see the windows' opacity.  desktop.conf is zdesktop's own: the test only removes it or seeds it before zdesktop starts.
+#  1. No file: ZWL SETTINGS open, the landscape (start.png).
+#  2. wallpaper set: ZWL PREFERENCES key=wallpaper applied and ZWL GLASS wallpaper path=... ms=N (wallpaper.png).
+#  3. window.opacity 85: key=window.opacity applied value=85 (opacity.png).
+#  4. pointer.speed 200, pointer.natural 1, keyboard.repeat.rate 40, keyboard.repeat.delay 250: each applied.
+#  5. Each reset: the landscape again (ZWL GLASS wallpaper path=-) and the opacity back to 100 (removed.png).
 #  6. zdesktop started again with a wallpaper in the file: it is applied before the look is made (key=wallpaper
 #     applied, no ZWL GLASS wallpaper line) (restart.png).
 #  7. No ERROR line in zdesktop's log.
@@ -61,11 +62,16 @@ refuse_log() {
 	fi
 }
 
-# Writes the preferences as a new file renamed over the old (the writer's way), one key=value an argument.
+# Seeds desktop.conf before zdesktop starts (one key=value an argument).
 write_conf() {
 	lines=""
 	for line in "$@"; do lines="$lines$line\n"; done
 	guest "mkdir -p /root/.config/keiland; printf '$lines' > $conf.new; mv $conf.new $conf; echo written" >/dev/null
+}
+
+# Sets the desktop's settings through the extension (the probe), as KEY VALUE pairs or "reset KEY".
+probe() {
+	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/keiland-settings $* >> /tmp/probe.log 2>&1; echo done" >/dev/null
 }
 
 # A picture of the screen with the pointer out of the way.
@@ -79,31 +85,31 @@ shot() {
 guest "$stop_all" >/dev/null
 guest "rm -f $conf" >/dev/null
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES open'
+expect_log /tmp/zdesktop.log 'ZWL SETTINGS open'
 guest "$start_settings" >/dev/null
 shot start.png
 
 # 2. The wallpaper.
-write_conf 'wallpaper=/usr/share/keiland/wallpaper.ppm'
+probe set wallpaper /usr/share/keiland/wallpaper.ppm
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=wallpaper applied'
 expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.ppm ms=[0-9]+'
 guest "grep 'ZWL GLASS wallpaper' /tmp/zdesktop.log"
 shot wallpaper.png
 
 # 3. The windows' opacity.
-write_conf 'wallpaper=/usr/share/keiland/wallpaper.ppm' 'window.opacity=85'
+probe set window.opacity 85
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=85'
 shot opacity.png
 
 # 4. The pointer and the keyboards.
-write_conf 'wallpaper=/usr/share/keiland/wallpaper.ppm' 'window.opacity=85' 'pointer.speed=200' 'pointer.natural=1' 'keyboard.repeat.rate=40' 'keyboard.repeat.delay=250'
+probe set pointer.speed 200 set pointer.natural 1 set keyboard.repeat.rate 40 set keyboard.repeat.delay 250
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=200'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.natural applied value=1'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.rate applied value=40'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.delay applied value=250'
 
-# 5. The file removed: back to the command line's.
-guest "rm -f $conf" >/dev/null
+# 5. Each setting reset: back to the command line's.
+probe reset wallpaper reset window.opacity reset pointer.speed
 expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=- ms='
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=100'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=100'
@@ -114,7 +120,7 @@ guest "$stop_all" >/dev/null
 write_conf 'wallpaper=/usr/share/keiland/wallpaper.ppm'
 guest "$start_desktop" >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=wallpaper applied'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES open'
+expect_log /tmp/zdesktop.log 'ZWL SETTINGS open'
 refuse_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path='
 refuse_log /tmp/zdesktop.log 'ZWL GLASS no wallpaper'
 shot restart.png
@@ -122,7 +128,8 @@ shot restart.png
 # 7. zdesktop saw no error.
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; guest "grep ERROR /tmp/zdesktop.log | head -5"; status=1; }
-guest 'grep -E "PREFERENCES|GLASS wallpaper|STARTUP step=wallpaper" /tmp/zdesktop.log' > "$out/preferences.log"
+guest 'grep -E "PREFERENCES|SETTINGS|GLASS wallpaper|STARTUP step=wallpaper" /tmp/zdesktop.log' > "$out/preferences.log"
+guest 'cat /tmp/probe.log' > "$out/probe.log"
 guest "$stop_all" >/dev/null
 guest "rm -f $conf" >/dev/null
 [ $status = 0 ] && echo "settings-p007: PASS" || echo "settings-p007: FAIL"

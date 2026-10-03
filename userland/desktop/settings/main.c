@@ -156,9 +156,9 @@ main(
 	main_about_window();
 	se_ui_init(&main_app, &main_text, options.page);
 
-	/* The network's watch (a daemon not running yet is found later), and the user's preferences. */
+	/* The network's watch (a daemon not running yet is found later), and the desktop's settings. */
 	se_network_open(&main_app);
-	se_look_open(&main_app);
+	se_look_open(&main_app, main_window.display);
 	se_sound_open(&main_app);
 
 	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */

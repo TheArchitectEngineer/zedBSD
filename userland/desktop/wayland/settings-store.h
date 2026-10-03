@@ -108,7 +108,6 @@ int zwl_settings_store_load(struct zwl_settings_store *store);
 int zwl_settings_store_choose(struct zwl_settings_store *store, const char *name, const char *value);
 int zwl_settings_store_reset(struct zwl_settings_store *store, const char *name);
 void zwl_settings_store_report(struct zwl_settings_store *store, const char *name, const char *value);
-void zwl_settings_store_follow(struct zwl_settings_store *store, const char *name, const char *value);
 unsigned zwl_settings_store_changes(const struct zwl_settings_store *store, struct zwl_settings_change *changes);
 int zwl_settings_store_save(struct zwl_settings_store *store);
 int zwl_settings_store_save_later(struct zwl_settings_store *store);

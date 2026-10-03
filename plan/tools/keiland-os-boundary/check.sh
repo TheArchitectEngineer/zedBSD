@@ -115,6 +115,13 @@ for os_dir in zedbsd linux freebsd; do
     fi
 done > "$work/L6"
 
+# desktop.conf is the compositor's own file (WS135): no other desktop source names it.
+find userland/desktop -name '*.[ch]' -print |
+while IFS= read -r file; do
+    [ "$file" != userland/desktop/wayland/settings-store.c ] || continue
+    awk '/"[^"]*desktop\.conf[^"]*"/ {print FILENAME ":" FNR ": " $0}' "$file"
+done > "$work/S1"
+
 # Inspect the actual target package membership and wildcard filename boundary.
 # The database only (a target that does not exist, so no recipe of the package builds runs; 2026-10-04, a fresh build/ has no package trees).
 make -pn -q zedbsd-make-database-only > "$work/make-database" 2>/dev/null || true
@@ -139,7 +146,7 @@ for line in Path(sys.argv[1]).read_text().splitlines():
 PY
 
 # Report every violated condition before returning the aggregate outcome.
-for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 B1 B3; do
+for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 B1 B3 S1; do
     if [ -s "$work/$check" ]; then
         while IFS= read -r detail; do
             printf 'check: %s FAIL %s\n' "$check" "$detail"

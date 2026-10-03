@@ -636,9 +636,6 @@ struct zwl_perf {
 
 uint64_t zwl_cycles(void);
 
-/* The user's preferences (libkeiland), opened by preferences.c. */
-struct keiland_preferences;
-
 /*
  * The compositor: one per process, alive from start to exit.
  *
@@ -762,19 +759,15 @@ struct zwl_server {
 	const char *wallpaper_path;
 	float window_opacity;
 	/*
-	 * The user's preferences (preferences.c, ws089-p007): the file, when a
-	 * login's desktop reads it (NULL for the login screen, or no home), and
-	 * the last time it was looked at.  window_opacity_started and
-	 * wallpaper_started are what the command line gave, which a key removed
-	 * returns to; wallpaper_path above is the picture shown, and
-	 * wallpaper_chosen the preferences' (empty for the command line's).  The pointer's speed is a
+	 * The settings' effects (settings.c, WS135): window_opacity_started and
+	 * wallpaper_started are what the command line gave, which a setting
+	 * reset returns to; wallpaper_path above is the picture shown, and
+	 * wallpaper_chosen the settings' (empty for the command line's).  The pointer's speed is a
 	 * percentage of the relative pointer's movement, with the hundredths
 	 * of a pixel carried over; natural turns the wheel round.  The
 	 * keyboards' repeat is what wl_keyboard.repeat_info tells a keyboard
 	 * bound from then on.
 	 */
-	struct keiland_preferences *preferences;
-	uint64_t preferences_checked_ms;
 	/*
 	 * The settings the session holds (settings.c and settings-store.c,
 	 * WS135): NULL for the login screen.  Made before the look, freed at
@@ -1179,14 +1172,10 @@ void zwl_settings_open(struct zwl_server *server);
 void zwl_settings_tick(struct zwl_server *server);
 void zwl_settings_logout(struct zwl_server *server);
 void zwl_settings_close(struct zwl_server *server);
-void zwl_settings_follow(struct zwl_server *server);
 int zwl_settings_kept(struct zwl_server *server, const char *name, int *number);
 int zwl_settings_global_visible(struct zwl_client *client, enum zwl_kind kind);
 int zwl_settings_bind(struct zwl_object *manager);
 int zwl_settings_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_preferences_open(struct zwl_server *server);
-void zwl_preferences_tick(struct zwl_server *server, uint64_t now);
-void zwl_preferences_close(struct zwl_server *server);
 float zwl_home_progress(struct zwl_server *server);
 void zwl_home_layer(struct zwl_server *server, float progress, float *x, float *y, float *scale);
 int zwl_home_button(struct zwl_server *server, uint32_t button, uint32_t state);

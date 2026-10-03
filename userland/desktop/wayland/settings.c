@@ -21,12 +21,9 @@
  *
  * Each change, whoever made it, comes to every settings object as its
  * value and a done.  Each key put into effect is logged
- * ("ZWL PREFERENCES key=... applied"), which the tests read.
- *
- * Until ws135-p004 moves Settings to the extension, Settings still writes
- * desktop.conf and preferences.c's watcher follows it
- * (zwl_settings_follow): those values are in effect and already in the
- * file, so the session's end does not write them again.
+ * ("ZWL PREFERENCES key=... applied"), which the tests read.  No other
+ * process reads or writes desktop.conf, and nothing looks at it during
+ * the session.
  */
 
 #include "zwl.h"
@@ -35,8 +32,6 @@
 
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
-
-#include <keiland.h>
 
 #include <errno.h>
 #include <pwd.h>
@@ -226,62 +221,6 @@ zwl_settings_close(
 	zwl_settings_store_close(server->settings);
 	free(server->settings);
 	server->settings = NULL;
-}
-
-/*
- * Follows desktop.conf as preferences.c's watcher read it again: Settings
- * wrote it (until ws135-p004).  Each compositor setting but the sound's
- * takes the file's value (or its default, when the key went), and the
- * settings that changed are put into effect and told.
- */
-void
-zwl_settings_follow(
-	struct zwl_server *server)
-{
-	struct zwl_settings_entry *entry;
-	char before[KL_SETTINGS_VALUE_MAX];
-	char value[KEILAND_PREFERENCES_VALUE_MAX];
-	unsigned index;
-	unsigned chosen;
-	int differs;
-	int sound;
-	int error;
-
-	/* Nothing to follow. */
-	if (server->settings == NULL || server->preferences == NULL)
-		return;
-
-	/* Each compositor setting the file may hold. */
-	for (index = 0; index < server->settings->count; index++) {
-		entry = &server->settings->entries[index];
-		if ((entry->key->flags & KL_SETTINGS_KEY_KEPT) == 0U)
-			continue;
-		sound = strncmp(entry->key->name, "sound.", 6U);
-		if (sound == 0)
-			continue;
-
-		/* What it is now. */
-		(void)snprintf(before, sizeof(before), "%s", entry->value);
-		chosen = entry->chosen;
-
-		/* The file's value, or none. */
-		error = keiland_preferences_get(server->preferences, entry->key->name, value, sizeof(value));
-		if (error != 0) {
-			zwl_settings_store_follow(server->settings, entry->key->name, NULL);
-		} else {
-			zwl_settings_store_follow(server->settings, entry->key->name, value);
-		}
-
-		/* A setting that changed is put into effect and told. */
-		differs = strcmp(before, entry->value);
-		if (differs == 0 && chosen == entry->chosen)
-			continue;
-		settings_apply(server, entry->key->name, 0);
-		settings_mark(server, entry->key->name);
-	}
-
-	/* The changes, told now. */
-	settings_flush(server);
 }
 
 /*
@@ -543,9 +482,10 @@ settings_apply_repeat(
 }
 
 /*
- * Shows the wallpaper the settings hold, reading it now (the start, and a
- * file Settings wrote until ws135-p004); a client's choice is read by
- * glass.c's thread instead (settings_change_wallpaper).
+ * Shows the wallpaper the settings hold: at the start (the look reads it
+ * when it is made), or the landscape after a reset (no file to read).  A
+ * picture a client chose is read by glass.c's thread instead
+ * (settings_change_wallpaper).
  */
 static void
 settings_apply_wallpaper(

@@ -604,15 +604,17 @@ struct se_volume {
 };
 
 /*
- * The desktop's look and the user's preferences as Settings shows them
+ * The desktop's look and settings as Settings shows them
  * (look.c, ws089-p004).
  *
- * preferences is the user's file (NULL, with open_error, when there is no
- * home and nothing can be saved); it is read again once a second.  opacity
+ * settings are the desktop's settings (libkeiland's kl_settings, WS135;
+ * NULL, with open_error, without memory), and writable says the
+ * compositor's can be changed here (Keiland's extension); a change made
+ * elsewhere comes to a watch.  opacity
  * is the windows' opacity shown (a drag moves it before it is written),
  * and so are the pointer's speed (percent), natural scrolling and the
  * keyboards' repeat (keys a second, milliseconds before it starts);
- * wallpaper is the preferences' picture (empty for the default).  The
+ * wallpaper is the settings' picture (empty for the default).  The
  * pictures are found and read when the Wallpaper page is first shown; the
  * default's (the session's --wallpaper) is wallpapers[0] when it exists.
  * The sliders' rectangles are the last frame's, for a drag (slider for
@@ -621,9 +623,9 @@ struct se_volume {
  * copies while the page is already shown.
  */
 struct se_look {
-	struct keiland_preferences *preferences;
+	struct kl_settings *settings;
 	int open_error;
-	uint64_t checked_at;
+	int writable;
 	int opacity;
 	int pointer_speed;
 	int pointer_natural;
@@ -755,7 +757,7 @@ struct se_app {
 	/* What the network pages show and have asked of the daemon. */
 	struct se_network network;
 
-	/* The desktop's look and the user's preferences. */
+	/* The desktop's look and settings. */
 	struct se_look look;
 
 	/* The sound's volume (ws100-p005). */
@@ -819,8 +821,8 @@ void se_network_disconnect(struct se_app *app);
 int se_field_key(struct se_field *field, const struct se_event *event);
 void se_field_clear(struct se_field *field);
 
-/* The look and the preferences (look.c). */
-void se_look_open(struct se_app *app);
+/* The look and the settings (look.c). */
+void se_look_open(struct se_app *app, struct wl_display *display);
 void se_look_poll(struct se_app *app, uint64_t now);
 int se_look_wait(const struct se_app *app);
 void se_look_close(struct se_app *app);

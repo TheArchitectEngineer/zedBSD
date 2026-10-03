@@ -6,15 +6,14 @@
  */
 
 /*
- * The desktop's look as Settings keeps it (ws089-p004): the user's
- * preferences (libkeiland's, ~/.config/keiland/desktop.conf, which zdesktop
- * follows within a second, ws089-p007), the pictures the Wallpaper page
- * offers with their small copies, and the file systems the Storage page
- * shows.
+ * The desktop's look as Settings keeps it (ws089-p004): the desktop's
+ * settings (libkeiland's kl_settings_*, which zdesktop holds and puts into
+ * effect at once; WS135), the pictures the Wallpaper page offers with their
+ * small copies, and the file systems the Storage page shows.
  *
- * Settings writes a key when the user has chosen: a picture clicked, a
- * slider let go.  The file is read again once a second, so that a change
- * made elsewhere shows too.
+ * Settings sets a key when the user has chosen: a picture clicked, a
+ * slider let go.  A change made elsewhere (the system bar, another
+ * Settings) comes as a change the watch hears; nothing reads a file.
  *
  * The pictures' small copies are read by a thread of their own (BUG-152):
  * the Wallpaper page is shown at once with a stand-in in each tile, and
@@ -36,8 +35,8 @@
 #include <time.h>
 #include <unistd.h>
 
-/* How often the preferences are read again, in milliseconds. */
-#define LOOK_CHECK_MS		1000U
+/* A parameter a function does not use. */
+#define UNUSED_PARAMETER(name)	((void)(name))
 
 /* How often the window's thread looks for finished small copies while they are being read, in milliseconds. */
 #define LOOK_LOAD_POLL_MS	40
@@ -73,6 +72,7 @@
 static const char *const look_places[] = { "/", "/home", "/usr", "/var", "/tmp", "/boot" };
 
 static void look_read(struct se_app *app);
+static void look_changed(void *data, const char *key, const char *value, unsigned flags);
 static int look_write(struct se_app *app, const char *key, const char *value);
 static void look_add_picture(struct se_app *app, const char *path, const char *name);
 static void look_load_start(struct se_app *app);
@@ -84,14 +84,18 @@ static int look_ppm_number(const unsigned char *data, size_t size, size_t *at, u
 static int look_compare_names(const void *left, const void *right);
 
 /*
- * Opens the user's preferences and reads what the look's pages show.  Without
- * a home nothing can be saved, and the pages say so.
+ * Opens the desktop's settings on the window's display and reads what the
+ * look's pages show.  Without Keiland's extension nothing can be changed,
+ * and the pages say so.
  */
 void
 se_look_open(
-	struct se_app *app)
+	struct se_app *app,
+	struct wl_display *display)
 {
 	struct se_look *look;
+	char value[KL_SETTINGS_VALUE_MAX];
+	int error;
 
 	/* Nothing read yet. */
 	look = &app->look;
@@ -102,23 +106,29 @@ se_look_open(
 	look->repeat_delay = LOOK_DELAY_DEFAULT;
 	look->wallpaper[0] = '\0';
 
-	/* The file; without a home the pages still show the defaults. */
-	look->preferences = keiland_preferences_open();
-	if (look->preferences == NULL) {
+	/* The settings; without them the pages still show the defaults. */
+	look->settings = kl_settings_open(display, NULL);
+	if (look->settings == NULL) {
 		look->open_error = errno;
 		se_log("LOOK none errno=%d", look->open_error);
 		return;
 	}
 
-	/* What it holds. */
+	/* Whether the compositor's settings can be changed here (Keiland's extension). */
+	error = kl_settings_get(look->settings, "pointer.speed", value, sizeof(value), NULL);
+	look->writable = 0;
+	if (error != ENOTSUP)
+		look->writable = 1;
+
+	/* What they hold, and the changes made elsewhere from now on. */
 	look_read(app);
-	look->checked_at = app->now;
-	se_log("LOOK open opacity=%d wallpaper=%s", look->opacity, look->wallpaper);
+	(void)kl_settings_watch(look->settings, "", look_changed, app, NULL);
+	se_log("LOOK open opacity=%d wallpaper=%s writable=%d", look->opacity, look->wallpaper, look->writable);
 }
 
 /*
- * Reads the preferences again once a second; a change made elsewhere is
- * shown.
+ * Takes the compositor's changes the window's display read (the watch shows
+ * them) and the answers to the keys set, a failure shown on the page.
  */
 void
 se_look_poll(
@@ -126,31 +136,35 @@ se_look_poll(
 	uint64_t now)
 {
 	struct se_look *look;
-	int changed;
+	uint32_t request;
+	int taken;
 	int error;
+
+	UNUSED_PARAMETER(now);
 
 	/* The pictures' small copies finished since the last round go to their tiles. */
 	look_load_take(app);
 
-	/* Nothing to read, or not yet. */
+	/* Nothing to follow. */
 	look = &app->look;
-	if (look->preferences == NULL)
-		return;
-	if (now - look->checked_at < LOOK_CHECK_MS)
-		return;
-	look->checked_at = now;
-
-	/* The file, when it moved; a drag in progress keeps its own value. */
-	error = keiland_preferences_reload(look->preferences, &changed);
-	if (error != 0 || changed == 0)
-		return;
-	if (look->dragging != 0)
+	if (look->settings == NULL)
 		return;
 
-	/* The new values, drawn. */
-	look_read(app);
-	app->dirty = 1;
-	se_log("LOOK changed opacity=%d wallpaper=%s", look->opacity, look->wallpaper);
+	/* The changes; a watch draws them (look_changed). */
+	(void)kl_settings_dispatch(look->settings);
+
+	/* Each answer; a refusal is shown. */
+	for (;;) {
+		taken = kl_settings_take_result(look->settings, &request, &error);
+		if (!taken)
+			break;
+		se_log("LOOK result request=%u error=%d", request, error);
+		if (error == 0)
+			continue;
+		(void)snprintf(look->message, sizeof(look->message), "The setting could not be changed (error %d).", error);
+		look->message_bad = 1;
+		app->dirty = 1;
+	}
 }
 
 /*
@@ -189,15 +203,15 @@ se_look_close(
 		fm_image_release(&look->wallpapers[index].thumbnail);
 	look->wallpaper_count = 0;
 
-	/* The file. */
-	if (look->preferences != NULL)
-		keiland_preferences_close(look->preferences);
-	look->preferences = NULL;
+	/* The settings. */
+	if (look->settings != NULL)
+		kl_settings_close(look->settings);
+	look->settings = NULL;
 }
 
 /*
- * Saves the windows' opacity (85 to 100 percent), which zdesktop takes
- * within a second; 100 removes the key (the desktop's own).
+ * Sets the windows' opacity (85 to 100 percent), which zdesktop puts into
+ * effect at once.
  */
 void
 se_look_set_opacity(
@@ -214,21 +228,20 @@ se_look_set_opacity(
 		percent = LOOK_OPACITY_MAX;
 	app->look.opacity = percent;
 
-	/* The key, or none for fully opaque. */
-	if (percent == LOOK_OPACITY_MAX) {
-		error = look_write(app, "window.opacity", NULL);
-	} else {
-		(void)snprintf(value, sizeof(value), "%d", percent);
-		error = look_write(app, "window.opacity", value);
-	}
+	/*
+	 * The key, always set (WS135): the desktop's default opacity is the
+	 * session's command line's, which need not be 100.
+	 */
+	(void)snprintf(value, sizeof(value), "%d", percent);
+	error = look_write(app, "window.opacity", value);
 
 	/* The log line the tests read. */
 	se_log("LOOK set key=window.opacity value=%d error=%d", percent, error);
 }
 
 /*
- * Saves a whole number under a key, which zdesktop takes within a second;
- * the default value removes the key (the desktop's own).
+ * Sets a whole number under a key, which zdesktop puts into effect at once
+ * (always set: fallback is only the page's own idea of the default).
  */
 void
 se_look_set_number(
@@ -240,13 +253,11 @@ se_look_set_number(
 	char text[16];
 	int error;
 
-	/* The key, or none for the default. */
-	if (value == fallback) {
-		error = look_write(app, key, NULL);
-	} else {
-		(void)snprintf(text, sizeof(text), "%d", value);
-		error = look_write(app, key, text);
-	}
+	UNUSED_PARAMETER(fallback);
+
+	/* The key. */
+	(void)snprintf(text, sizeof(text), "%d", value);
+	error = look_write(app, key, text);
 
 	/* The log line the tests read. */
 	se_log("LOOK set key=%s value=%d error=%d", key, value, error);
@@ -265,7 +276,7 @@ se_look_set_wallpaper(
 	const char *path;
 	int error;
 
-	/* The default removes the key; any other picture is written. */
+	/* The default puts the key back at its default; any other picture is set. */
 	look = &app->look;
 	path = NULL;
 	if (index >= 0 && (unsigned)index < look->wallpaper_count) {
@@ -438,31 +449,61 @@ se_look_wallpaper_name(
 	return slash + 1;
 }
 
-/* Reads the look's keys from the preferences. */
+/* Reads the look's keys from the settings (the compositor's values, its defaults included). */
 static void
 look_read(
 	struct se_app *app)
 {
 	struct se_look *look;
+	unsigned flags;
 	int error;
 
-	/* The opacity, 100 when unset. */
+	/* Without the settings the defaults stay. */
+	if (app->look.settings == NULL)
+		return;
+
+	/* The opacity, 100 when not known. */
 	look = &app->look;
-	look->opacity = keiland_preferences_get_int(look->preferences, "window.opacity", LOOK_OPACITY_MAX, LOOK_OPACITY_MIN, LOOK_OPACITY_MAX);
+	look->opacity = kl_settings_get_int(look->settings, "window.opacity", LOOK_OPACITY_MAX);
 
 	/* The pointer and the keyboards. */
-	look->pointer_speed = keiland_preferences_get_int(look->preferences, "pointer.speed", LOOK_SPEED_DEFAULT, LOOK_SPEED_MIN, LOOK_SPEED_MAX);
-	look->pointer_natural = keiland_preferences_get_int(look->preferences, "pointer.natural", 0, 0, 1);
-	look->repeat_rate = keiland_preferences_get_int(look->preferences, "keyboard.repeat.rate", LOOK_RATE_DEFAULT, LOOK_RATE_MIN, LOOK_RATE_MAX);
-	look->repeat_delay = keiland_preferences_get_int(look->preferences, "keyboard.repeat.delay", LOOK_DELAY_DEFAULT, LOOK_DELAY_MIN, LOOK_DELAY_MAX);
+	look->pointer_speed = kl_settings_get_int(look->settings, "pointer.speed", LOOK_SPEED_DEFAULT);
+	look->pointer_natural = kl_settings_get_int(look->settings, "pointer.natural", 0);
+	look->repeat_rate = kl_settings_get_int(look->settings, "keyboard.repeat.rate", LOOK_RATE_DEFAULT);
+	look->repeat_delay = kl_settings_get_int(look->settings, "keyboard.repeat.delay", LOOK_DELAY_DEFAULT);
 
-	/* The picture; none, or one that is not an absolute path, is the default. */
-	error = keiland_preferences_get(look->preferences, "wallpaper", look->wallpaper, sizeof(look->wallpaper));
-	if (error != 0 || look->wallpaper[0] != '/')
+	/* The picture: the chosen one, or none (empty) for the default. */
+	flags = KL_SETTINGS_DEFAULT;
+	error = kl_settings_get(look->settings, "wallpaper", look->wallpaper, sizeof(look->wallpaper), &flags);
+	if (error != 0 || (flags & KL_SETTINGS_DEFAULT) != 0U || look->wallpaper[0] != '/')
 		look->wallpaper[0] = '\0';
 }
 
-/* Writes a key (or removes it when value is NULL); a failure is shown on the page. Returns 0 or an errno value. */
+/* Shows a change made elsewhere (the system bar, another Settings); a drag in progress keeps its own value. */
+static void
+look_changed(
+	void *data,
+	const char *key,
+	const char *value,
+	unsigned flags)
+{
+	struct se_app *app;
+
+	UNUSED_PARAMETER(value);
+	UNUSED_PARAMETER(flags);
+
+	/* A drag leads until it ends. */
+	app = data;
+	if (app->look.dragging != 0)
+		return;
+
+	/* The new values, drawn. */
+	look_read(app);
+	app->dirty = 1;
+	se_log("LOOK changed key=%s opacity=%d wallpaper=%s", key, app->look.opacity, app->look.wallpaper);
+}
+
+/* Sets a key (or puts it back at its default when value is NULL); a failure is shown on the page. Returns 0 or an errno value. */
 static int
 look_write(
 	struct se_app *app,
@@ -472,31 +513,31 @@ look_write(
 	struct se_look *look;
 	int error;
 
-	/* Without a home nothing is saved. */
+	/* Without Keiland's extension nothing can be changed. */
 	look = &app->look;
-	if (look->preferences == NULL) {
-		(void)snprintf(look->message, sizeof(look->message), "%s", "Settings cannot be saved: this account has no home folder.");
+	if (look->settings == NULL || !look->writable) {
+		(void)snprintf(look->message, sizeof(look->message), "%s", "These settings cannot be changed on this desktop.");
 		look->message_bad = 1;
-		return ENOENT;
+		return ENOTSUP;
 	}
 
-	/* The key, or its removal. */
+	/* The key, or back to its default. */
 	if (value != NULL) {
-		error = keiland_preferences_set(look->preferences, key, value);
+		error = kl_settings_set(look->settings, key, value, NULL);
 	} else {
-		error = keiland_preferences_unset(look->preferences, key);
+		error = kl_settings_reset(look->settings, key, NULL);
 	}
 
 	/* A failure is shown; a success clears the last message. */
 	look->message[0] = '\0';
 	look->message_bad = 0;
 	if (error != 0) {
-		(void)snprintf(look->message, sizeof(look->message), "The setting could not be saved (error %d).", error);
+		(void)snprintf(look->message, sizeof(look->message), "The setting could not be changed (error %d).", error);
 		look->message_bad = 1;
 		return error;
 	}
 
-	/* Succeeded: zdesktop takes it within a second. */
+	/* Succeeded: zdesktop puts it into effect, and the watch hears it back. */
 	app->dirty = 1;
 	return 0;
 }

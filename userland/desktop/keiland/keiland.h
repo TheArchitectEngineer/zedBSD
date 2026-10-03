@@ -1071,71 +1071,10 @@ int keiland_gesture_pinch(struct keiland_gesture *gesture, uint64_t now_us, doub
  */
 
 /*
- * The desktop's preferences (ws089-p007, KEILAND_VERSION 13).
- *
- * The user's choices of the desktop's look and input, kept in
- * ~/.config/keiland/desktop.conf as key=value lines (a line starting with
- * # and an empty line are ignored, and kept).  Settings writes them one
- * key at a time; zdesktop reads them and notices when the file changes.
- * Nothing here speaks to the compositor.
- *
- * A write locks a file beside the preferences, reads them again, changes
- * only its key, and replaces the file with a new one, so that two writers
- * and a hand edit do not lose each other's changes.  A key is made of
- * lower-case letters, digits, '.', '_' and '-'; a value is printable
- * text without a newline.
+ * The desktop's preferences (ws089-p007, KEILAND_VERSION 13) are gone: the
+ * desktop's settings are kl_settings_* below (WS135), and desktop.conf is
+ * the compositor's own file.
  */
-struct keiland_preferences;
-
-/* The bytes of a key and of a value with their NUL. */
-#define KEILAND_PREFERENCES_KEY_MAX	64U
-#define KEILAND_PREFERENCES_VALUE_MAX	256U
-
-/*
- * Opens the user's preferences and reads them (a missing file has none).
- * The home is $HOME, else the user's home in the password file.
- *
- * Returns NULL with errno set: ENOENT (no home), ENAMETOOLONG, ENOMEM.
- */
-struct keiland_preferences *keiland_preferences_open(void);
-
-/*
- * Closes the preferences.
- */
-void keiland_preferences_close(struct keiland_preferences *preferences);
-
-/*
- * Reads the preferences again when the file's identity, size or time of
- * change moved since the last reading; *changed is 1 when they were read
- * again, else 0.  Returns 0, or an errno value of reading.
- */
-int keiland_preferences_reload(struct keiland_preferences *preferences, int *changed);
-
-/*
- * Copies a key's value.  Returns 0, ENOENT (the key is not set) or ERANGE
- * (the value does not fit).
- */
-int keiland_preferences_get(const struct keiland_preferences *preferences, const char *key, char *value, size_t size);
-
-/*
- * Reports a key's value as a whole number within minimum..maximum (a value
- * outside is moved to the nearer end); fallback when the key is not set or
- * is not a number.
- */
-int keiland_preferences_get_int(const struct keiland_preferences *preferences, const char *key, int fallback, int minimum, int maximum);
-
-/*
- * Sets a key's value in the file (and in what was read).  Returns 0, or
- * EINVAL (a key or a value that is not allowed), E2BIG (a file too large),
- * or an errno value of writing.
- */
-int keiland_preferences_set(struct keiland_preferences *preferences, const char *key, const char *value);
-
-/*
- * Removes a key from the file (and from what was read); a key not set is
- * no error.  Returns 0, EINVAL, E2BIG or an errno value of writing.
- */
-int keiland_preferences_unset(struct keiland_preferences *preferences, const char *key);
 
 /*
  * The desktop surface (KEILAND_VERSION 14, ws094-p003).

@@ -44,7 +44,6 @@ static void test_two_stores(void);
 static void test_unread(void);
 static void test_writer(void);
 static void test_sound(void);
-static void test_follow(void);
 
 int
 main(
@@ -75,7 +74,6 @@ main(
 	test_unread();
 	test_writer();
 	test_sound();
-	test_follow();
 
 	printf("host-store: %d passed, %d failed\n", test_passed, test_failed);
 	if (test_failed != 0)
@@ -375,27 +373,5 @@ test_sound(void)
 	(void)zwl_settings_store_finish(&store);
 	check(file_has("sound.volume=65") && file_has("sound.muted=0") && strstr(get_file(), "sound.available") == NULL,
 	      "sound: the session's volume is kept, sound.available is never written");
-	zwl_settings_store_close(&store);
-}
-
-static void
-test_follow(void)
-{
-	struct zwl_settings_store store;
-	struct zwl_settings_change changes[ZWL_SETTINGS_ENTRIES];
-	struct zwl_settings_entry *entry;
-	unsigned count;
-
-	put_file("pointer.speed=50\n");
-	(void)zwl_settings_store_open(&store, test_home);
-	(void)zwl_settings_store_load(&store);
-	zwl_settings_store_follow(&store, "pointer.speed", "75");
-	zwl_settings_store_follow(&store, "window.opacity", "90");
-	entry = zwl_settings_store_find(&store, "pointer.speed");
-	count = zwl_settings_store_changes(&store, changes);
-	check(entry != NULL && strcmp(entry->value, "75") == 0 && count == 0U, "follow: another writer's value is in effect and not written again");
-	zwl_settings_store_follow(&store, "pointer.speed", NULL);
-	count = zwl_settings_store_changes(&store, changes);
-	check(entry != NULL && strcmp(entry->value, "100") == 0 && count == 0U, "follow: a key taken out of the file goes to its default");
 	zwl_settings_store_close(&store);
 }

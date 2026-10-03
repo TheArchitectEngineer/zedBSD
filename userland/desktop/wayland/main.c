@@ -131,14 +131,12 @@ main(
 	}
 
 	/*
-	 * A desktop that is not the login screen follows the user's
-	 * preferences (ws089-p007), read before the look draws its wallpaper
-	 * so that the picture is read once.
+	 * A desktop that is not the login screen holds the desktop's settings
+	 * (settings.c, WS135), read before the look draws its wallpaper so
+	 * that the picture is read once.
 	 */
-	if (!server.greeter) {
+	if (!server.greeter)
 		zwl_settings_open(&server);
-		zwl_preferences_open(&server);
-	}
 
 	/* Catch normal termination without performing allocation or I/O inside a signal handler. */
 	previous_handler = signal(SIGINT, stop_service);
@@ -708,9 +706,6 @@ event_loop(
 		/* The windows hear new bounds when the space for bodies changed (the glass look given up, protocol.c). */
 		zwl_window_bounds_refresh(server);
 
-		/* desktop.conf, when Settings changed it, is followed now (preferences.c looks once a second). */
-		zwl_preferences_tick(server, now);
-
 		/* The settings: a wallpaper read meanwhile, audiod's sound, and the changes told to the clients (settings.c). */
 		zwl_settings_tick(server);
 
@@ -1008,10 +1003,9 @@ service_cleanup(
 	/* No client remains to hear from the seat, so its devices close quietly. */
 	zwl_input_cleanup(server);
 
-	/* The session's volume and settings are kept for the next login (volume.c, BUG-161; settings.c, WS135), then the file is not followed any more. */
+	/* The session's volume and settings are kept for the next login (volume.c, BUG-161; settings.c, WS135). */
 	zwl_volume_keep(server, "end");
 	zwl_settings_close(server);
-	zwl_preferences_close(server);
 
 	/* Returns the OS resources after input and display cleanup. */
 	zwl_os_close(server);

@@ -110,7 +110,7 @@ se_mouse_draw(
 	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 10 + line.ascent, "Natural scrolling", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 32 + line.ascent, "The content moves the way the wheel turns.", INPUT_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 	enabled = 0;
-	if (app->look.preferences != NULL)
+	if (app->look.writable)
 		enabled = 1;
 	se_toggle_draw(app, canvas, x + width - INPUT_PAD - 44, y + 16, app->look.pointer_natural, enabled, INPUT_NATURAL);
 
@@ -380,10 +380,10 @@ input_slider_block(
 	value_width = fm_text_width(app->text, value, strlen(value), INPUT_TEXT_TITLE, 0);
 	(void)fm_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + line.ascent, value, strlen(value), INPUT_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
 
-	/* The slider; it works only when the preferences can be saved. */
+	/* The slider; it works only when the settings can be changed. */
 	fraction = (float)(number - slider->minimum) / (float)(slider->maximum - slider->minimum);
 	enabled = 0;
-	if (app->look.preferences != NULL)
+	if (app->look.writable)
 		enabled = 1;
 	se_slider_draw(app, canvas, x + INPUT_PAD + 14, y + 24, width - 2 * INPUT_PAD - 28, fraction, enabled, slider->index, &app->look.sliders[slider->index - INPUT_SPEED]);
 
@@ -433,8 +433,8 @@ input_saving(
 
 	/* The last failure, or the lack of a home. */
 	text = app->look.message;
-	if (text[0] == '\0' && app->look.preferences == NULL)
-		text = "Settings cannot be saved: this account has no home folder.";
+	if (text[0] == '\0' && !app->look.writable)
+		text = "These settings cannot be changed on this desktop.";
 	if (text[0] == '\0')
 		return top;
 

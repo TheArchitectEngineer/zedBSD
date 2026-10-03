@@ -109,7 +109,6 @@ expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=30
 control 3
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.natural value=1 error=0'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.natural applied value=1'
-guest "cat $conf"
 shot mouse.png
 slide 2 middle
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.speed value=100 error=0'
