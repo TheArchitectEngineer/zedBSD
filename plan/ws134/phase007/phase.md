@@ -1,0 +1,31 @@
+<!-- awesome-plan project=zedbsd record=ws134-p007 -->
+# ws134-p007: K3 kernel の GPU の telemetry `hw.gputelemetry`
+
+Status: in-progress（q661、P2 generation8、2026-10-04。実装・build 済み、T の QEMU の試験待ち。i915 の値は実機（5330）でしか見えない）
+Disposition: normal
+Parent: [WS134](../ws.md)
+設計: [design.md](../design.md) §1.2 の K3（Guardrail「compositor は GPU の UAPI を ioctl で呼ばない」により sysctl）
+依存: なし。2026-10-04 Q1「i915 は実機の LCD の作業（WS075・WS118）で敏感な所なので、telemetry の読みは i915 の既存の状態を読むだけにし、
+rps・GEM の動きを変えないで。QEMU で確かめられる範囲（Venus は要素なし、sysctl の形）を試験にして。」
+
+## 実装
+
+- `include/uapi/sysctl.h`: `HW_GPUTELEMETRY 8`、`GPU_TELEMETRY_VERSION 1`、valid の bit（BUSY・CUR_MHZ・REQ_MHZ・RANGE_MHZ・OBJECTS）、
+  `struct gpu_telemetry_header`（24 byte）と `struct gpu_telemetry_entry`（driver[16]・valid・reserved・time_ns・busy_ns・objects_bytes・
+  objects_limit・cur/req/min/max の MHz、72 byte）、`_Static_assert`。
+- `include/kern/sysctl.h`・`src/kern/sysctl.c`: `kern_gpu_telemetry_register(driver, read, context)`（最大 8、追加だけ、lock の下で足して count を
+  release で公開、読み手は acquire の count の下を lock なしで読む。同じ context は 1 回。context は kernel の寿命）。`sysctl_gputelemetry`
+  （登録された GPU ごとに entry を driver の名前と 0 で用意し read を呼ぶ。失敗した GPU は出さない）。
+- `src/drivers/gpu/i915/gt-power.c`: `drv_i915_rps_telemetry_read`（rps の lock の下で `busy_total_ns`＋実行中の分（`now - busy_since_ns`）、
+  `last_freq`・`min_softlimit`・`max_softlimit`・`enabled` を読むだけ。register は読まず、rps と GEM の動きは変えない。MHz は 50/3 MHz の単位から）。
+  cur_mhz（hardware の今の周波数、register の読みが要る）と GEM の objects は出さない（valid の bit なし）。
+- `src/drivers/gpu/i915/device.c`: `drv_i915_rps_start` の直後に `kern_gpu_telemetry_register("i915", ..., &gt->init.rps)`（1 行）。
+- Venus（virtio-gpu）は登録しない（要素なし）。
+- `userland/base/sysctl/main.c`: `show_gputelemetry`（`hw.gputelemetry: gpus=` と GPU ごとの行）、`sysctl -a` にも。
+
+## 確かめ
+
+- build: kernel は amd64（i915 入り）・pcat・rpi4・intelmac で exit 0、warning 0。sysctl の CLI exit 0。style-check の新しい違反 0。
+- QEMU（T に依頼）: `plan/ws134/tests/gputelemetry-p007.sh`（Venus で `hw.gputelemetry: gpus=0` と GPU の行なし、隣の hw.cputimes・
+  hw.diskstats も読める、`sysctl -a` は記録だけ）。結果は未着。
+- 実機（5330 の i915、busy・周波数が負荷で動く）: 未実施（Q1 が user と時間を決める）。

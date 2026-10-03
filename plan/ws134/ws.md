@@ -29,7 +29,7 @@ CPU（全体と各 core）、GPU（Util・VRAM・温度・電力、複数）、R
 | [p004](phase004/phase.md) | M3a 操作: tap の展開・長押しの固定・swipe の時間軸・pinch の俯瞰・key/pointer・--calm | cleared（q660、T1-063 PASS） | p003 |
 | [p005](phase005/phase.md) | K1 kernel: CPU ごとの時間 `hw.cputimes`（sysctl の CLI・top の CPU 行、design.md §1.2 の review の反映） | cleared（q661、T1-064 PASS） | — |
 | [p006](phase006/phase.md) | K2 kernel: disk ごとの統計 `hw.diskstats`（物理の whole disk） | in-progress（q661: 実装・build 済み、QEMU の試験待ち） | — |
-| p007 | K3 kernel: GPU の telemetry の sysctl `hw.gputelemetry`（Guardrail により ioctl にしない。実機の確認は 5330） | planned | — |
+| [p007](phase007/phase.md) | K3 kernel: GPU の telemetry の sysctl `hw.gputelemetry`（Guardrail により ioctl にしない。実機の確認は 5330） | in-progress（q661: 実装・build 済み、QEMU の試験待ち。i915 は実機） | — |
 | p008 | M3a 本物の値（zedBSD の backend の monitor の領域） | planned | WS131 p010 までの統合、p005・p006 |
 | p011 | M3b Linux・FreeBSD の backend の monitor の領域 | planned | p008 |
 | p012 | M3c compositor の `kl_system_monitor_v1`（manager v3、専用の thread、ack と間引き）と libkeiland の `kl_system_monitor_*` | planned | p008 |

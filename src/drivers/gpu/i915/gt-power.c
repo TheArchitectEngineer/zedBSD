@@ -27,6 +27,7 @@
 #include <kern/clock.h>
 #include <kern/klog.h>
 #include <kern/sched.h>
+#include <uapi/sysctl.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -664,6 +665,70 @@ drv_i915_rps_busy_end(
 	}
 
 	spin_unlock_irqrestore(&rps->lock, flags);
+}
+
+/*
+ * Reads the GT's telemetry for hw.gputelemetry (ws134-p007): the busy time
+ * the runs added up, with the run under way counted to now, the frequency
+ * the driver last wrote, and the range the work moves in.
+ *
+ * It only reads what the RPS already keeps (no register, no change), so it
+ * does not touch the frequency's control.  The context is the device's
+ * struct i915_rps, which lives as long as the kernel.  Returns 0.
+ */
+int
+drv_i915_rps_telemetry_read(
+	void *context,
+	struct gpu_telemetry_entry *entry)
+{
+	struct i915_rps *rps;
+	unsigned long flags;
+	uint64_t now;
+	uint64_t busy;
+	uint32_t written;
+	uint32_t lowest;
+	uint32_t highest;
+	int enabled;
+
+	/* The clock, before the lock, as the busy accounting reads it. */
+	rps = context;
+	now = drv_i915_perf_now();
+
+	/* The busy time to now, and the frequencies, read together. */
+	flags = spin_lock_irqsave(&rps->lock);
+
+	/* The finished runs' time and the run under way's to now; the frequencies as they are. */
+	busy = rps->busy_total_ns;
+	if (rps->busy_runs != 0U && now > rps->busy_since_ns)
+		busy += now - rps->busy_since_ns;
+	written = rps->last_freq;
+	lowest = rps->min_softlimit;
+	highest = rps->max_softlimit;
+	enabled = rps->enabled;
+
+	/* The RPS goes on. */
+	spin_unlock_irqrestore(&rps->lock, flags);
+
+	/* The busy time at the driver's clock. */
+	entry->time_ns = now;
+	entry->busy_ns = busy;
+	entry->valid |= GPU_TELEMETRY_BUSY;
+
+	/* The frequency last written, in MHz (the driver counts in 50/3 MHz). */
+	if (enabled && written != I915_RPS_FREQ_NONE) {
+		entry->req_mhz = written * 50U / GEN9_FREQ_SCALER;
+		entry->valid |= GPU_TELEMETRY_REQ_MHZ;
+	}
+
+	/* The range the work moves in, once it is known. */
+	if (highest != 0U) {
+		entry->min_mhz = lowest * 50U / GEN9_FREQ_SCALER;
+		entry->max_mhz = highest * 50U / GEN9_FREQ_SCALER;
+		entry->valid |= GPU_TELEMETRY_RANGE_MHZ;
+	}
+
+	/* Succeeded: the entry holds what the RPS keeps. */
+	return 0;
 }
 
 /*

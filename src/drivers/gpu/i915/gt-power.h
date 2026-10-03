@@ -216,6 +216,8 @@ void drv_i915_rps_boost_begin(struct i915_rps *rps);
 void drv_i915_rps_boost_end(struct i915_rps *rps);
 void drv_i915_rps_busy_begin(struct i915_rps *rps);
 void drv_i915_rps_busy_end(struct i915_rps *rps);
+struct gpu_telemetry_entry;
+int drv_i915_rps_telemetry_read(void *context, struct gpu_telemetry_entry *entry);
 uint32_t drv_i915_rps_next_freq(const struct i915_rps *rps, uint32_t pm_iir, int client_boost, int *adj);
 uint32_t drv_i915_rps_pm_mask(const struct i915_rps *rps, uint32_t freq);
 uint32_t drv_i915_rps_limits(const struct i915_rps *rps, uint32_t freq);
