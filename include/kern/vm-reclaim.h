@@ -129,6 +129,10 @@ vm_reclaim_frame(
  * page-out worker first.  For a fault that could not map for lack of
  * page-table memory.
  */
+int
+vm_reclaim_frame_private(
+	struct kern_pmem *memory);
+
 void
 vm_reclaim_wait_free(void);
 

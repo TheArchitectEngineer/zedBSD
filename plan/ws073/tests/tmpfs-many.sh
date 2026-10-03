@@ -51,16 +51,18 @@ for round in 1 2 3; do
 	check "round $round: remove them" rm -rf "$dir"
 done
 
-# Files with data stop at the byte quota, with the rest of the system intact.
+# Files with data: 20000 one-page files (80 MiB) fit, since the byte quota is
+# half of memory (BUG-052, ws073-p047; it was 32 MiB), with the rest of the
+# system intact.
 mkdir -p "$dir"
 i=0
 while [ "$i" -lt 20000 ]; do
 	echo x > "$dir/d$i" 2>/dev/null || break
 	i=$((i + 1))
 done
-echo "files with one byte each before the quota: $i"
-check "the byte quota, not the inodes, stopped it" sh -c "df /tmp | tail -1 | grep -q '100%'"
-check "other files still open at the quota" others_work
+echo "files with one byte each: $i"
+check "20000 data files fit" test "$i" -eq 20000
+check "other files still open with them" others_work
 check "remove the data files" rm -rf "$dir"
 check "a new file after removal" sh -c "echo y > /tmp/bug029-after && rm /tmp/bug029-after"
 

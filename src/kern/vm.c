@@ -96,6 +96,12 @@
  * swap, so this is reached only when swap cannot be written.
  */
 #define VM_OOM_WAIT_SECONDS		10U
+
+/*
+ * How many pages a file system's data allocation reclaims before it gives
+ * up (vm_reclaim_frame_private()); each pass frees one page or stops.
+ */
+#define VM_PRIVATE_FRAME_ATTEMPTS	64U
 #define VM_PAGE_TRACKED			0x0010U
 #define stats				vm_reclaim_counters
 
@@ -5272,6 +5278,63 @@ vm_reclaim_frame(
 			return ENOMEM;
 		started = now;
 	}
+}
+
+/*
+ * Allocates one page frame for file system data, reclaiming private pages.
+ *
+ * It is vm_reclaim_frame() for a caller inside a file system's write path:
+ * the frame is taken only while the free count is above the reserve the
+ * faults need, and below it the caller gives back disposable cache or swaps
+ * out one private page itself.  It never writes back a file's page, which
+ * could need the very inode lock the caller holds, and it never sleeps:
+ * when nothing can be reclaimed it reports ENOMEM, having asked the
+ * page-out worker to refill.
+ */
+int
+vm_reclaim_frame_private(
+	struct kern_pmem *memory)
+{
+	size_t free_pages;
+	size_t minimum;
+	size_t released;
+	unsigned attempt;
+	int error;
+
+	/* The reserve a data frame must leave for the faults. */
+	minimum = vm_free_min_pages();
+
+	/* Tries, then reclaims one page, a bounded number of times. */
+	for (attempt = 0; attempt < VM_PRIVATE_FRAME_ATTEMPTS; attempt++) {
+		/* Takes a free frame while the reserve stays intact. */
+		free_pages = vm_free_pages();
+		if (free_pages > minimum) {
+			error = vm_private_page_alloc(memory);
+			if (error == HAL_OK) {
+				if (free_pages < 2U * minimum)
+					pageout_kick();
+				return 0;
+			}
+		}
+
+		/* Asks the worker to refill. */
+		pageout_kick();
+
+		/* Disposable cache is given back first. */
+		released = 0;
+		if (cache_memory_reclaim != NULL)
+			released = cache_memory_reclaim(PAGE_SIZE);
+		if (released != 0)
+			continue;
+
+		/* Then one private page is swapped out; none left ends the attempts. */
+		error = vm_reclaim_private_one(NULL);
+		if (error != 0)
+			break;
+	}
+
+	/* Nothing could be reclaimed without writing back a file. */
+	return ENOMEM;
 }
 
 /*
