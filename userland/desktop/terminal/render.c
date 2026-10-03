@@ -1423,7 +1423,9 @@ render_search_bar(
 	float y;
 
 	/* Only while the bar is open, on a grid with a row for it. */
-	if (window == NULL || !window->search_open || screen->rows == 0U)
+	if (window == NULL ||
+	    !window->search_open ||
+	    screen->rows == 0U)
 		return vertex;
 
 	/* The bar's words; the block goes after the text looked for. */

@@ -556,7 +556,9 @@ window_search_key(
 
 	/* A key that types one printable character of ASCII adds it; any other does nothing. */
 	length = terminal_key_bytes(key, window->modifiers & TERMINAL_MODIFIER_SHIFT, bytes, sizeof(bytes));
-	if (length != 1U || bytes[0] < 0x20U || bytes[0] > 0x7eU)
+	if (length != 1U ||
+	    bytes[0] < 0x20U ||
+	    bytes[0] > 0x7eU)
 		return;
 
 	/* The character joins the text. */

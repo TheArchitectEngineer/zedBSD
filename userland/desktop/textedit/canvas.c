@@ -397,6 +397,7 @@ round_full(
 			blended_to = over(blended_from, color, 255U);
 		}
 
+		/* The pixel takes the blended colour. */
 		pixels[index] = blended_to;
 	}
 }

@@ -221,6 +221,8 @@ kui_scroll_bar_press(
 	} else {
 		*new_offset = offset + page;
 	}
+
+	/* The new place stays within the content. */
 	if (*new_offset < 0.0)
 		*new_offset = 0.0;
 	if (*new_offset > limit)

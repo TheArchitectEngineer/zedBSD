@@ -174,6 +174,7 @@ fm_grid_entry_icon(
 {
 	const struct fm_image *thumb;
 	char label[8];
+	int kind;
 
 	/* A folder is blue. */
 	if (entry->folder != 0) {
@@ -183,7 +184,8 @@ fm_grid_entry_icon(
 
 	/* A picture with a path shows its thumbnail, once it is made (it is asked for until then). */
 	thumb = NULL;
-	if (fm_thumb_kind(entry) != 0)
+	kind = fm_thumb_kind(entry);
+	if (kind != 0)
 		thumb = fm_thumb_get(app, entry->path, entry->modified);
 	if (thumb != NULL) {
 		grid_thumbnail(canvas, thumb, x, y, size);

@@ -27,6 +27,11 @@
  * sticky $topdir/.Trash, else $topdir/.Trash-$uid.  Those trashes record
  * the path relative to $topdir, so the volume may be mounted elsewhere
  * later.  When neither can be used the home trash takes the item (a copy).
+ *
+ * The system's own mounts get no trash of their own (ws127-p008, as GIO
+ * leaves its system-internal mounts alone): the root, /tmp, /var/tmp and
+ * /var, and anything under /dev, /proc, /sys, /run, /boot, /snap and
+ * /var/lib.  An item there goes to the home trash.
  */
 
 #include "ops.h"
@@ -39,6 +44,16 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+/* The tops of the system's mounts that get no trash of their own (the whole path). */
+static const char *const trash_system_tops[] = {
+	"/", "/tmp", "/var/tmp", "/var"
+};
+
+/* The folders under which the system's mounts get no trash of their own (the folder and below). */
+static const char *const trash_system_trees[] = {
+	"/dev", "/proc", "/sys", "/run", "/boot", "/snap", "/var/lib"
+};
 
 /* The largest .trashinfo file read. */
 #define TRASH_INFO_MAX		8192
@@ -60,6 +75,7 @@ static void trash_list_free(char **trashes, size_t count);
 static int trash_list_volume(char ***trashes, size_t *count, const char *topdir);
 static int trash_list_volume_add(char ***trashes, size_t *count, const char *path);
 static int trash_elsewhere(const char *item, const char *home, char *trash, size_t size);
+static int trash_system_top(const char *topdir);
 
 /*
  * Writes the trash's path (its files and info folders are made when
@@ -1024,6 +1040,7 @@ trash_elsewhere(
 	struct stat home_status;
 	char files[FM_OPS_PATH_MAX + 8];
 	char topdir[FM_OPS_PATH_MAX];
+	int system;
 	int error;
 
 	/* The file system the item is on. */
@@ -1046,11 +1063,48 @@ trash_elsewhere(
 	if (error != 0)
 		return error;
 
+	/* A system's mount gets no trash of its own. */
+	system = trash_system_top(topdir);
+	if (system != 0)
+		return EXDEV;
+
 	/* The trash there, made when missing. */
 	error = trash_volume(topdir, trash, size);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the item goes into its volume's trash. */
+	return 0;
+}
+
+/* Tells whether the top of a volume is one of the system's mounts, which get no trash of their own. */
+static int
+trash_system_top(
+	const char *topdir)
+{
+	size_t index;
+	size_t length;
+	int match;
+
+	/* The tops named whole. */
+	for (index = 0; index < sizeof(trash_system_tops) / sizeof(trash_system_tops[0]); index++) {
+		match = strcmp(topdir, trash_system_tops[index]);
+		if (match == 0)
+			return 1;
+	}
+
+	/* The folders and what is under them. */
+	for (index = 0; index < sizeof(trash_system_trees) / sizeof(trash_system_trees[0]); index++) {
+		length = strlen(trash_system_trees[index]);
+		match = strncmp(topdir, trash_system_trees[index], length);
+		if (match != 0)
+			continue;
+
+		/* The folder itself, or a path below it (not a longer name beside it). */
+		if (topdir[length] == '\0' || topdir[length] == '/')
+			return 1;
+	}
+
+	/* A volume of the user's. */
 	return 0;
 }

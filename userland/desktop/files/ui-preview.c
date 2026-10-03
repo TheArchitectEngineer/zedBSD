@@ -467,10 +467,12 @@ preview_picture(
 	float y;
 	int width;
 	int height;
+	int kind;
 
 	/* A picture's thumbnail, once it is made. */
 	thumb = NULL;
-	if (fm_thumb_kind(entry) != 0)
+	kind = fm_thumb_kind(entry);
+	if (kind != 0)
 		thumb = fm_thumb_get(app, entry->path, entry->modified);
 
 	/* No thumbnail: the item's icon, large, in the middle of the box. */

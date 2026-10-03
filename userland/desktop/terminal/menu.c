@@ -144,6 +144,7 @@ static const struct menu_item menu_items[] = {
 static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static int menu_build(struct terminal_window *window);
 static int menu_state(struct terminal_window *window, const struct terminal_menu_state *state);
+static int menu_same(uint32_t checked, uint32_t item);
 
 /* What the window menu tells the terminal: only the choices. */
 static const struct keiland_window_menu_listener menu_listener = {
@@ -361,6 +362,9 @@ menu_state(
 	uint32_t checked_size;
 	int larger;
 	int smaller;
+	int dark;
+	int light;
+	int contrast;
 	int error;
 
 	/* Zooming stops at the largest and the smallest size. */
@@ -370,6 +374,18 @@ menu_state(
 	smaller = 0;
 	if (state->pixels > TERMINAL_PIXELS_MIN)
 		smaller = 1;
+
+	/* The theme's radio item that is checked (ws128-p006). */
+	dark = 0;
+	light = 0;
+	contrast = 0;
+	if (state->theme == TERMINAL_THEME_LIGHT) {
+		light = 1;
+	} else if (state->theme == TERMINAL_THEME_CONTRAST) {
+		contrast = 1;
+	} else {
+		dark = 1;
+	}
 
 	/* The radio item of the size, if the size is one the menu names. */
 	checked_size = 0;
@@ -401,13 +417,13 @@ menu_state(
 
 	/* One radio item of the four is checked, or none for a size between them. */
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_SMALL, checked_size == MENU_SIZE_SMALL);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_SMALL, menu_same(checked_size, MENU_SIZE_SMALL));
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_MEDIUM, checked_size == MENU_SIZE_MEDIUM);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_MEDIUM, menu_same(checked_size, MENU_SIZE_MEDIUM));
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_LARGE, checked_size == MENU_SIZE_LARGE);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_LARGE, menu_same(checked_size, MENU_SIZE_LARGE));
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_HUGE, checked_size == MENU_SIZE_HUGE);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_HUGE, menu_same(checked_size, MENU_SIZE_HUGE));
 
 	/* Fullscreen is checked while the window is. */
 	if (error == 0)
@@ -419,11 +435,11 @@ menu_state(
 
 	/* The theme's radio item (ws128-p006). */
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_THEME_DARK, state->theme == TERMINAL_THEME_DARK);
+		error = keiland_menu_set_checked(menu, MENU_THEME_DARK, dark);
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_THEME_LIGHT, state->theme == TERMINAL_THEME_LIGHT);
+		error = keiland_menu_set_checked(menu, MENU_THEME_LIGHT, light);
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_THEME_CONTRAST, state->theme == TERMINAL_THEME_CONTRAST);
+		error = keiland_menu_set_checked(menu, MENU_THEME_CONTRAST, contrast);
 
 	/* Find Next and Find Previous need a text looked for. */
 	if (error == 0)
@@ -449,5 +465,19 @@ menu_state(
 	window->menu_state = *state;
 	printf("ZTERM MENU state selection=%d clipboard=%d pixels=%u fullscreen=%d ambiguous_wide=%d theme=%u find=%d\n", state->selection, state->clipboard, state->pixels, state->fullscreen, state->ambiguous_wide, state->theme, state->can_find_again);
 	fflush(stdout);
+	return 0;
+}
+
+/* Tells whether a radio item is the one checked (1) or not (0). */
+static int
+menu_same(
+	uint32_t checked,
+	uint32_t item)
+{
+	/* The item checked. */
+	if (checked == item)
+		return 1;
+
+	/* Another item. */
 	return 0;
 }
