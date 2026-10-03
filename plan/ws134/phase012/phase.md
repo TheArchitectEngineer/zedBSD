@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p012 -->
 # ws134-p012: M3c compositor の `kl_system_monitor_v1` と libkeiland の `kl_system_monitor_*`
 
-Status: in-progress（q662、P2 generation8、2026-10-04。実装・build・host 試験済み、T の QEMU の試験待ち）
+Status: cleared（q662、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §1.3（compositor の拡張と libkeiland の API）
@@ -40,3 +40,7 @@ Parent: [WS134](../ws.md)
   （B2 は zedBSD と Linux の binary）。style-check の新しい違反 0（system.c の既存の 4 件は前から）。
 - host 試験: `plan/ws134/tests/host/run.sh` → monitor-host・monitor-interact・monitor-rate PASS。
 - QEMU（T に依頼）: `monitor-system-p012.sh`。FreeBSD の build（backend-test.sh）も依頼。結果は未着。
+
+## 判定（Q1、2026-10-04）
+
+cleared。T1-069: QEMU Venus の guest で `monitor-system-p012: PASS`（capabilities 0x3e、4 s で 15 frame、busy loop の CPU、disk の読み、sampling の開始と停止、ERROR なし）、FreeBSD の backend-test 9/9 PASS。zedBSD・Linux の build warning 0、check.sh PASS（B2 は zedBSD・Linux の binary）。

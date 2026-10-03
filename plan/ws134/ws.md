@@ -32,7 +32,7 @@ CPU（全体と各 core）、GPU（Util・VRAM・温度・電力、複数）、R
 | [p007](phase007/phase.md) | K3 kernel: GPU の telemetry の sysctl `hw.gputelemetry`（Guardrail により ioctl にしない。実機の確認は 5330） | in-progress（q661: 実装・build 済み、QEMU の試験待ち。i915 は実機） | — |
 | [p008](phase008/phase.md) | M3a 本物の値（zedBSD の backend の monitor の領域） | cleared（q662、T1-067 PASS） | WS131 p010 までの統合、p005・p006 |
 | [p011](phase011/phase.md) | M3b Linux・FreeBSD の backend の monitor の領域 | cleared（q662、T1-068 PASS） | p008 |
-| [p012](phase012/phase.md) | M3c compositor の `kl_system_monitor_v1`（manager v2、専用の thread、ack と間引き）と libkeiland の `kl_system_monitor_*` | in-progress（q662: 実装・host 試験済み、QEMU の試験待ち） | p008 |
+| [p012](phase012/phase.md) | M3c compositor の `kl_system_monitor_v1`（manager v2、専用の thread、ack と間引き）と libkeiland の `kl_system_monitor_*` | cleared（q662、T1-069 PASS） | p008 |
 | p013 | M3d app の system の source | planned | p012 |
 | p009 | K4 kernel: ACPI の thermal・電池（実機、WS131 p005 と調整） | planned | 実機 |
 | p010 | M4 全文規約・回帰・デモの通し | planned | p002〜p009 |
