@@ -45,15 +45,18 @@ python3 $guest run 'mkdir -p /jour && mount -t ufs /dev/nvme1n1 /jour &&
 	(nohup sh /root/crash-grow.sh /jour run > /root/made.txt 2>&1 < /dev/null &)' || exit 1
 sleep "${GROW_SECONDS:-3}"
 
-# Writes the gdb script: arm on ARM, then SEALS returns of j3_commit_seal, then kill the machine.
+# Writes the gdb script: arm on ARM on the volume's mount (/jour), then SEALS returns of j3_commit_seal on the same
+# mount (the root's commits run alongside and are not the window), then kill the machine.
 port=$(python3 -c "import json; print(json.load(open('$GUEST_RUNTIME/session.json'))['debug_port'])")
 cat > "$out/kill.gdb" <<EOF
 set pagination off
 target remote 127.0.0.1:$port
-break $arm
+break $arm if \$_streq(mountp->m_path, "/jour")
 continue
+set \$m = mountp
+print mountp->m_path
 delete
-break j3_commit_seal
+break j3_commit_seal if mountp == \$m
 EOF
 n=0
 while [ "$n" -lt "$seals" ]; do
@@ -67,7 +70,8 @@ info registers rip
 kill
 EOF
 timeout 120 gdb -q -batch -x "$out/kill.gdb" "$vmunix" > "$out/gdb.txt" 2>&1
-grep -q "Run till exit" "$out/gdb.txt" || { echo "FAIL the window was not reached (gdb.txt)"; python3 $guest stop > /dev/null 2>&1; exit 1; }
+# (gdb 16 in batch prints no "Run till exit": the cut is the rip back in the seal's caller, then the kill.)
+grep -q '^rip .*<j3_' "$out/gdb.txt" && grep -q 'Inferior 1 .* killed' "$out/gdb.txt" || { echo "FAIL the window was not reached (gdb.txt)"; python3 $guest stop > /dev/null 2>&1; exit 1; }
 sleep 1
 python3 $guest stop > /dev/null 2>&1
 cp --reflink=auto "$GUEST_RUNTIME/disk.img" "$out/crashed-root.img"

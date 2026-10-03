@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p051 -->
 # ws073-p051: BUG-135 — UFS の journal の commit の flush を mount の lock の外へ出し、stat の秒単位の停止の残りを直す
 
-Status: in-progress（q653-i01、P9 generation1（Fable 5.1、high）、2026-10-04。実装（e5631f9 → 穴の直し c79e089）・build・P9 自身の QEMU の診断と crash test まで済み。2026-10-04 01:30 ごろ Q1 の指示（体制を P2・T1・T2 に）でラップアップ、P9 は終了。統合は未。再開の条件は末尾。T1・T2 の試験は user の指示で除外）
+Status: in-progress（q653-i01、P9 generation1 → 2026-10-04 再開 P2 generation8。実装 e5631f9 → c79e089。i386・arm64 の build、window の crash の試験（道具を直して 3 PASS・1 判定外）、hold の range の読みと案を記録。hold の扱いの決めと統合・判定は Q1。T1・T2 の試験は user の指示で除外）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-135](../../bugs/BUG-135.md)
@@ -176,3 +176,81 @@ nap は常に 0 で、guest 全体の停止ではない。
   stat の slow の行の時刻と標本の時刻を照合する。
 - 使い捨ての build: `build/p9-amd64`（image）、`build/p9-base`（直す前の kernel）、`build/p9-dbg`（DWARF）、`build/p9-logs`（image の複製
   base.img・dbg.img 各 2.2 GB、fsprobe、run-*/ の記録）。全て worktree の build で、消してよい。
+
+## 再開（2026-10-04、P2 generation8、Q1 の指示）
+
+Q1 の指示: 再開の条件のうち (d) i386・arm64 の build、(c) hold の range の扱いの読み、(a) `p051-window.sh` を自分の QEMU 1 つで短く。
+T1・T2 には依頼しない（user の指示）。kernel は main（c79e089 を含む）の source のまま、kernel の C は変えていない。
+
+### (d) i386・arm64 の build
+
+pcat（i386）・rpi4（arm64）・pc98（i386）・intelmac（amd64）の kernel を build: 4 つとも exit 0・warning 0。pcat と rpi4 の binary に
+`j3_finish_commit`・`j3_home_direct` があることを symbol で確かめた。実行は未実施（QEMU・実機とも）。
+
+### (a) 穴を突く crash の試験（P2 の QEMU 1 つ、短く）
+
+DWARF の kernel の SSH の image: `flock /tmp/zedbsd-image-build.lock plan/tools/guest/test-image.sh plan/tools/guest/config-amd64-ssh.mk
+build/p2-b135 "ZEDBSD_KERNEL_LTO_CFLAGS=-g -fno-omit-frame-pointer"`（exit 0、`.debug_info` あり）。実行は
+`GUEST_RUNTIME=build/p2-b135-run sh plan/ws073/tests/p051-window.sh build/p2-b135/hdd-image.img build/p2-b135/vmunix OUT [ARM SEALS]`。
+
+**試験の道具の直し（kernel ではない）**: 最初の 3 回は全て `FAIL the window was not reached`。gdb.txt を読むと、
+1. gdb 16.3（Debian）の batch は `finish` の `Run till exit` を出さず、到達の判定の grep が常に外れる。
+2. `j3_commit_seal` の breakpoint に mount の条件が無く、root の commit も止める: 1 回目は arm が `mounts+5936`（/jour）で seal が
+   `mounts+848`（root）、2・3 回目は逆。窓（同じ mount の X の finish の後の X＋1 の seal）を突いていなかった。
+
+直し（`tests/p051-window.sh`）: arm は `if $_streq(mountp->m_path, "/jour")`、その `mountp` を `$m` に取り、`break j3_commit_seal if
+mountp == $m`。到達の判定は `rip` が `<j3_…>`（seal の呼び手）に戻っていることと `Inferior 1 … killed`。
+
+直した後の結果（全て mount は /jour、`$1 = "/jour"`、seal は `sequence=5`＝`j3_home_direct` が走った sequence 4 の次）:
+
+| 回 | ARM SEALS | 結果 |
+| --- | --- | --- |
+| window1 | j3_home_direct 1 | PASS: HOLDS 2942 = PREFIX 2942、volume・root `UFS OK`。rip `<j3_finish_commit+213>` |
+| window2 | j3_home_direct 1 | 判定外（`FAIL the window was not reached`）: `finish` の途中で別の vCPU の thread に SIGTRAP（`asm_get_rflags`）が来て gdb が止まり、seal の中で kill。判定が正しく弾いた。kernel の不具合の証拠ではない |
+| window3 | j3_home_direct 1 | PASS: names 3001、volume・root `UFS OK` |
+| window-finish | j3_finish_commit 2 | PASS: names 2902、volume・root `UFS OK` |
+
+QEMU の kill は host の page cache に届いた write を失わないので、「flush の前の電源断」は模せない（P9 の記録のとおり）。
+`j3_home_direct` の穴（A が device にまったく書かれない種類）は kill で突ける。e5631f9 の kernel との比較は未実施
+（e5631f9 の DWARF の image を作っていない）。(b) fsprobe の churn: 未実施。
+
+### (c) hold の range の扱い（code の読み、決めは Q1）
+
+読んだ所: `j3_write`（content が running か閉じた側の freed set の block に落ちると hold＝`buf_write_pinned` で pin、payload に copy 無し、
+`j3_room` は hold を payload に数えない）、`j3_finish_commit`（hold の range は `buf_unpin(..., closed_sequence, &kept)` の後、kept == 0 なら
+`buf_writeback_range`、kept != 0 なら何もしない）、`ufs_sync`（close → finish → `disk_sync`、`disk_sync` の `buf_sync` は pinned な line を飛ばす）。
+
+窓: 閉じた X の hold の range R の 4 KiB line を、X の finish の前に running の X＋1 が pin し直す（X＋1 の metadata の fragment か、X が解放した
+block への X＋1 の hold）。X の finish は R を書かず、fsync の `disk_sync` も飛ばす。X＋1 の commit（次の interval、~1 秒、か次の fsync）が
+unpin して `buf_writeback_range` が line を whole で書くまで、R は cache にしか無い。その間の電源断では、X の commit は durable（R の block は
+新しい持ち主のもの）で、R の content は無く、その block は前の持ち主の古い内容のまま。fsync が返った content が無く、別の file だった内容が
+見える。
+
+- 新しい窓ではない: hold の content は commit の後に cache で書く設計で、seal から home の書きまでの間の電源断は前から同じ結果
+  （replay は hold を書かない）。re-pin はその間を X＋1 の commit まで延ばし、fsync の後にも残す。後者は p045 で `disk_sync` を lock の外へ
+  出してからの窓と同じ種類（普通の content でも、line を他の transaction が pin し直すと `disk_sync` が飛ばす）。
+- 頻度: fragment（1 KiB）単位の割り当ての所（小さい file の末尾・小さい directory）で、同じ ~1 秒に解放と再利用が起き、同じ 4 KiB line を
+  別の transaction が使うとき。
+
+案:
+
+1. **hold の content も slot に写す**（logged にして `j3_home_direct` で書く）: 却下を勧める。replay は最新の commit を毎回当てるので、
+   commit の後に journal の外で書かれ fsync された新しい content を、replay が古い copy で上書きしうる（metadata は後の変更が pin されるので
+   起きないが、content は pin されない）。payload も content の量だけ減る。
+2. **kept の hold の sector だけを cache から direct に書く**: 却下を勧める。その sector は X＋1 が同じ block を解放して再び割り当てた後の
+   content（X＋1 の hold）でありうる。X＋1 の commit の前に home へ出すと、X の状態の持ち主に別の file の content が見える。freed set を
+   見て分ければ避けられるが、lock と競合の扱いが増える。
+3. **fsync が自分の hold を待つ**（勧める）: `j3_finish_commit` が kept != 0 で書かなかった hold の range の数を返し、`ufs_sync` はそれが
+   0 でないときだけ close → finish をもう 1 回（上限 2 回）行ってから `disk_sync` する。X＋1 の finish が line を unpin して whole で書く。
+   追加の commit（flush 2 回）はこの稀な場合だけで、普段の fsync の遅さ（BUG-135 の対象）は変わらない。X＋2 がまた pin し直すほどの
+   churn では上限で諦め、今と同じ窓が残る（記録する）。flusher（`j3_hook`）の側は fsync の約束が無いので変えない。
+4. **直さない**（記録だけ）: p045 で受け入れた普通の content の窓と同じ種類、頻度が低い。
+
+推奨: 3 を別の Phase（または p051 の追加の範囲）で小さく実装する。普通の content が pin し直された line の窓（p045 以降）は 3 でも
+直らない（fsync はどの line が自分の file のものかを知らない）。直すなら別の bug として扱う。決めは Q1（user の判断が要るなら Q1 から）。
+
+### 未実施（この再開）
+
+- e5631f9 の kernel との window の比較、(b) fsprobe の churn、BUG-143・BUG-147・sshd の症状での確認、i386・arm64 の実行、受け入れの
+  QEMU の試験（user の指示で T に依頼しない）、実機。
+- 使い捨て: `build/p2-b135`（DWARF の image）、`build/p2-b135-run`。worktree の build で、消してよい。
