@@ -17215,6 +17215,9 @@ ufs_sync(
 		waiting = ufs_sync_waiting(ms, mountp);
 		if (!waiting)
 			break;
+
+		/* Counts the round taken again. */
+		io_stats_record(IO_UFS_SYNC_AGAIN, 0);
 	}
 
 	/* Reports the failure. */

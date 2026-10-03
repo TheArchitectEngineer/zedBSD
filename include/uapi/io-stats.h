@@ -95,6 +95,7 @@ enum io_stat_event {
 	IO_XHCI_IRQ_ENTRY,	/* All xHCI controllers: handler entries, owned status, consumed ring events. */
 	IO_XHCI_IRQ_OWNED,
 	IO_XHCI_IRQ_EVENT,
+	IO_UFS_SYNC_AGAIN,	/* A UFS sync's extra round: data still held back by the journal's pin (ws073-p053). */
 	IO_STAT_COUNT
 };
 
