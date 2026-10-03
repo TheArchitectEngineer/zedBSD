@@ -7,8 +7,10 @@
 #     relief, the flows, the raised plates' amber or coral edges.
 #  2. The simulation (16 CPUs, 2 GPUs) moving for 20 seconds with the pointer moved across the window (the parallax):
 #     frames at 15 fps or more (ZMON FRAME), no failure.  sim.png.
-#  3. (measured, not judged) the compositor's compose rate under the same simulation (zdesktop --log-frames), and each
-#     part of the monitor's frames (ZMON FRAME build_ms acquire_ms record_ms submit_ms present_ms wait_ms callback_ms).
+#  3. (measured, not judged) the compositor's compose rate under the same simulation (zdesktop --log-frames), each
+#     part of the monitor's frames (ZMON FRAME build_ms acquire_ms record_ms submit_ms present_ms wait_ms callback_ms),
+#     and the compositor's own cost of a frame (ZWL PERF compose draw_ms frame_ms).
+#  4. (measured, not judged) the same in a 480x320 window: whether the rate is bound by the pixels drawn.
 # Judged by the monitor's log (/tmp/monitor.log in the guest, read over SSH) and the pictures, not the console.
 #
 #   plan/ws134/tests/monitor-p003.sh [OUTDIR]
@@ -108,6 +110,24 @@ sleep 10
 last=$(guest "grep -c 'ZWL COMPOSE' /tmp/zdesktop.log" | tail -1)
 echo "compositor: $(( (${last:-0} - ${first:-0}) / 10 )) compose frames a second with the monitor (measured)"
 guest 'grep "ZMON FRAME" /tmp/monitor.log | tail -1' | sed 's/^/compositor run, monitor frame: /'
+# The compositor's own cost of a frame (ZWL PERF: draw_ms is its CPU time to record and submit, frame_ms the time to
+# its fence), to tell a slow composition (the host's renderer) from the monitor's wait.
+guest 'grep "ZWL PERF compose" /tmp/zdesktop.log | tail -3' | sed 's/^/compositor perf: /'
+
+# 4. ws134-p003: the same simulation in a small window (480x320), measured, not judged: when the rates rise much, the
+#    frame is bound by the pixels drawn (the host's CPU renderer), not by the monitor's work a frame.
+guest "$stop_all" >/dev/null
+guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
+picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+/bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/monitor --timeout-s=300 --seed=9 --cpus=16 --gpus=2 --size=480x320 --token=small > /tmp/monitor.log 2>&1 </dev/null & echo started" >/dev/null
+sleep 8
+first=$(guest "grep -c 'ZWL COMPOSE' /tmp/zdesktop.log" | tail -1)
+sleep 10
+last=$(guest "grep -c 'ZWL COMPOSE' /tmp/zdesktop.log" | tail -1)
+echo "small window: compositor $(( (${last:-0} - ${first:-0}) / 10 )) compose frames a second (measured)"
+guest 'grep "ZMON FRAME" /tmp/monitor.log | tail -1' | sed 's/^/small window, monitor frame: /'
+guest 'grep "ZWL PERF compose" /tmp/zdesktop.log | tail -2' | sed 's/^/small window, compositor perf: /'
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "monitor-p003: PASS" || echo "monitor-p003: FAIL"
 exit $status
