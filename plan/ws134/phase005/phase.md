@@ -34,7 +34,8 @@ monitor の本物の値（p008）の出どころの一つ。interrupt は分け�
 - QEMU（T に依頼）: `plan/ws134/tests/cputimes-p005.sh`（4 CPU の guest、SSH で: header と hw.ncpu、静かな 5 秒の和が 5 s×hz×CPU の ±10% で
   idle が半分超、awk の busy loop 1 本で user が 1 CPU の 5 秒の 60% 以上、CPU の数だけの loop で user が全体の 60% 以上と 2 CPU 以上が半分超、
   `top -b -n 2 -d 1` の `%Cpu(s)` の 2 行）。結果は未着。boot は同じ試験の guest の起動で見る。
-- i386 など他の arch の kernel の build は未実施（u64 は atomic の HAL の関数で読み書きしている）。実機は未実施。
+- 他の arch の kernel: `config/ci/config-pcat.mk`（i386、`BUILD=build/p2-pcat vmunix`）と `config/ci/config-rpi4.mk`（arm64）が exit 0・
+  warning 0（u64 は atomic の関数で読み書き）。試験の image: `build/p2-q660/hdd-image.img`（9b8062a）を T1 に渡した。実機は未実施。
 
 ## stub の項目
 
@@ -43,3 +44,8 @@ monitor の本物の値（p008）の出どころの一つ。interrupt は分け�
 ## 結果（Q1、2026-10-04、T1-064、QEMU Venus KVM 4 CPU、main 1587d3d の kernel）
 
 cleared。`cputimes-p005: PASS`: hz=1000 cpus=4、静かな 20 s で idle 20008/20022、user を 1 つ回すと 4995、全 CPU で user 20002・4 CPU とも、top に 2 行。試験の script は 9b8062a（統合済み）。
+## 結果（T1-064、QEMU Venus KVM、main 1587d3d の image、2026-10-04）
+
+`cputimes-p005: PASS`。4 CPU の guest が boot（SSH 13 s）。hz=1000 cpus=4（hw.ncpu 4）、静かな 5 秒の和 20022/20000・idle 20008、
+busy loop 1 本で user 4995（cpu 0）、4 本で user 20002・4 CPU とも半分超、top の `%Cpu(s)` 2 行（11.2 us・25.0 us）。
+証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-064/out/`。clearance は Q1 の判定。実機は未実施。

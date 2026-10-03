@@ -99,6 +99,82 @@ _Static_assert(sizeof(struct cpu_times_header) == 24U,
 _Static_assert(sizeof(struct cpu_times_entry) == 32U,
     "hw.cputimes entry ABI must be identical on ILP32 and LP64");
 
+/*
+ * hw.diskstats: each physical whole disk's work since it appeared
+ * (ws134-p006).  The value is a struct disk_stats_header followed by count
+ * struct disk_stats_entry, in the order the disks appeared.  Partitions,
+ * loop disks and a file system's own disks are not listed: a partition's
+ * work is its whole disk's.  Read-only.  A buffer too small fails with
+ * ENOMEM and the length needed.
+ *
+ * read_ns and write_ns add up the time from each request's submission to
+ * its completion (their change over the change of the ops is the mean
+ * latency); busy_ns is the time the disk had any request outstanding.
+ * Only reads and writes count (not flushes); bytes are what completed.
+ * A disk that is unplugged and plugged again comes back with another id;
+ * the header's generation changes whenever a disk appears or goes.
+ */
+#define HW_DISKSTATS	7
+
+/* The version of the hw.diskstats layout. */
+#define DISK_STATS_VERSION	1U
+
+/* What kind of device a disk is (struct disk_stats_entry's kind). */
+#define DISK_STATS_KIND_OTHER	1U
+#define DISK_STATS_KIND_NVME	2U
+#define DISK_STATS_KIND_USB	3U
+#define DISK_STATS_KIND_UAS	4U
+#define DISK_STATS_KIND_IDE	5U
+#define DISK_STATS_KIND_SDMMC	6U
+#define DISK_STATS_KIND_SCSI	7U
+
+/* A disk's flags in hw.diskstats. */
+#define DISK_STATS_READ_ONLY	0x00000001U
+#define DISK_STATS_REMOVABLE	0x00000002U
+
+/*
+ * The head of hw.diskstats: the layout's version, the header's size, one
+ * entry's size, how many entries follow, and the generation of the set of
+ * disks.  Every field has a fixed width, so one layout serves ILP32 and
+ * LP64 processes.
+ */
+struct disk_stats_header {
+	uint32_t version;
+	uint32_t struct_size;
+	uint32_t element_size;
+	uint32_t count;
+	uint32_t generation;
+	uint32_t reserved;
+};
+
+/*
+ * One disk in hw.diskstats: its name, kind and flags, its id (never
+ * reused while the system runs), the generation it appeared in, its
+ * completed reads and writes and their bytes and times, the time it was
+ * busy (nanoseconds), and the requests outstanding now.
+ */
+struct disk_stats_entry {
+	char name[32];
+	uint32_t kind;
+	uint32_t flags;
+	uint64_t id;
+	uint64_t generation;
+	uint64_t read_ops;
+	uint64_t write_ops;
+	uint64_t read_bytes;
+	uint64_t write_bytes;
+	uint64_t read_ns;
+	uint64_t write_ns;
+	uint64_t busy_ns;
+	uint32_t inflight;
+	uint32_t reserved;
+};
+
+_Static_assert(sizeof(struct disk_stats_header) == 24U,
+    "hw.diskstats header ABI must be identical on ILP32 and LP64");
+_Static_assert(sizeof(struct disk_stats_entry) == 120U,
+    "hw.diskstats entry ABI must be identical on ILP32 and LP64");
+
 /* Firmware RAM and actually managed RAM are distinct. */
 #define MEMORY_STATS_VERSION 2U
 struct memory_stats {

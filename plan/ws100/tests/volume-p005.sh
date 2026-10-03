@@ -115,7 +115,9 @@ guest 'audiod-feedback volume 60' >/dev/null
 sleep 2
 conf_start=$(guest "grep -E '^sound\\.(volume|muted)=' $conf" | tr '\n' ' ')
 maps=$(count $log 'ZWL MAP client=')
-guest "export XDG_RUNTIME_DIR=/run/user/1000 HOME=/home/kei; /bin/settings --timeout-s=600 sound > $slog 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+# Settings runs as kei (runas): the compositor serves its system extension only to its own user (WS131 p011, D5), so a
+# Settings root started would find no sound (T2-021).
+guest "export XDG_RUNTIME_DIR=/run/user/1000 HOME=/home/kei; /bin/runas kei /bin/settings --timeout-s=600 sound > $slog 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 expect_more $log 'ZWL MAP client=' "$maps" 20
 set -- $(last $log 'ZWL MAP client=' | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}

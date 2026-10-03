@@ -12,6 +12,7 @@
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
 
 #include <kern/disk.h>
+#include <uapi/sysctl.h>
 #include <kern/lock.h>
 
 #include <uapi/errno.h>
@@ -140,6 +141,9 @@ drv_rpi4_sdhci_init(
 	unit.disk->d_max_transfer_blocks = 1;
 	unit.disk->d_ops = &sd_ops;
 	unit.disk->d_data = &unit;
+
+	/* hw.diskstats lists the card as an SD/MMC disk (ws134-p006). */
+	disk_set_stats_kind(unit.disk, DISK_STATS_KIND_SDMMC);
 
 	/* Checks the operation status. */
 	error = disk_create(unit.disk);

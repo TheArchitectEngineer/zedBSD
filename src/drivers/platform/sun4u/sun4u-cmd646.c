@@ -12,6 +12,7 @@
 #include "drivers/platform/sun4u/sun4u-cmd646.h"
 
 #include <kern/disk.h>
+#include <uapi/sysctl.h>
 
 #include <uapi/errno.h>
 #include "kern/klog.h"
@@ -105,6 +106,9 @@ drv_sun4u_cmd646_init(
 	ata_disk->d_block_count = sectors;
 	ata_disk->d_max_transfer_blocks = 1;
 	ata_disk->d_ops = &ops;
+
+	/* hw.diskstats lists it as an IDE disk (ws134-p006). */
+	disk_set_stats_kind(ata_disk, DISK_STATS_KIND_IDE);
 
 	/* Checks the operation status. */
 	error = disk_create(ata_disk);
