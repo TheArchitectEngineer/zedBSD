@@ -50,7 +50,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-142](bugs/BUG-142.md) | Files: 起動直後の停止中の Ctrl+C が遅れて処理 | unreproduced / resolved | ws127-p001 | ws099-p029 で時刻の順の merge に直した、T2-004 の QEMU で PASS。実機は S2 |
 | [BUG-141](bugs/BUG-141.md) | Files: hover の強調が残る | unreproduced / resolved | ws127-p001 | ws099-p029 で leave を送るよう直した、T2-008 の QEMU で PASS。実機は S2 |
 | [BUG-140](bugs/BUG-140.md) | Files: Trash の同名の 2 つ目の名前と種類 | reproduced / resolved | ws127-p001 | q616（ws127-p002）で修正、host 試験 |
-| [BUG-139](bugs/BUG-139.md) | Text Editor の IME の変換中の文字が小さい | reproduced / scheduled（ws095-p013 で直した、QEMU で確認、実機の確認待ち） | ユーザー実機、UI/UX の要 | 実機の確認 → resolved |
+| [BUG-139](bugs/BUG-139.md) | Text Editor の IME の変換中の文字が小さい | reproduced / resolved（ws095-p013、T1-047 の QEMU で再確認。実機は S2） | ユーザー実機、UI/UX の要 | 実機の確認 → resolved |
 | [BUG-138](bugs/BUG-138.md) | system bar の WiFi の on/off・AP 接続が未実装 | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p019 |
 | [BUG-137](bugs/BUG-137.md) | Terminal の初回起動でタイトルバーが数秒遅れる | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
 | [BUG-136](bugs/BUG-136.md) | Gears（X11）にタイトルバーが出ない | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
