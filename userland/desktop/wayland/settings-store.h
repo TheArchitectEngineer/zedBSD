@@ -12,7 +12,7 @@
  * session's start and merged back into it once at its end.
  *
  * It knows no Wayland and no server, so that the host tests build it
- * alone (plan/ws135/tests/host-store.sh).
+ * alone (plan/tools/settings/host-store.sh).
  */
 
 #ifndef ZWL_SETTINGS_STORE_H
