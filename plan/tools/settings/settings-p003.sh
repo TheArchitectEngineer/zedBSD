@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws135-p002/p003: the compositor's settings and libkeiland's kl_settings_* on the Venus guest of the Settings image
-# with the probe (SETTINGS_CONFIG=plan/ws135/tests/config-amd64-settings.mk plan/ws089/tests/build-settings-image.sh BUILD).
+# with the probe (SETTINGS_CONFIG=plan/tools/settings/config-amd64-settings.mk plan/ws089/tests/build-settings-image.sh BUILD).
 # zdesktop --glass at 1280x800 as root (HOME=/root).  Judged by the probe's and zdesktop's logs and desktop.conf:
 #  1. desktop.conf seeded (pointer.speed=50, my.note=hello): the probe's dump has pointer.speed=50 flags=0 and
 #     window.opacity flags=1 (the default); terminal.ambiguous-wide without --app is ENOTSUP (error=ENOTSUP).
@@ -17,7 +17,7 @@
 #  7. No ZWL ERROR in zdesktop's logs.
 #
 #   plan/ws089/tests/settings-guest.sh start IMAGE    (the guest must be up)
-#   plan/ws135/tests/settings-p003.sh [OUTDIR]        (default build/ws135-shots/p003)
+#   plan/tools/settings/settings-p003.sh [OUTDIR]        (default build/ws135-shots/p003)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

@@ -24,7 +24,7 @@ timeout 120 gcc -std=gnu17 -O2 -Wall -Wextra -Werror -Wno-format-truncation -D_G
 	plan/ws128/tests/terminal-p009.c userland/desktop/terminal/screen.c \
 	userland/desktop/terminal/width.c userland/desktop/terminal/settings.c \
 	userland/desktop/libkeiland/settings-cache.c userland/desktop/libkeiland/settings-app.c \
-	userland/desktop/settings-keys/settings-keys.c plan/ws135/tests/host-kl-settings.c \
+	userland/desktop/settings-keys/settings-keys.c plan/tools/settings/host-kl-settings.c \
 	-o "$out/terminal-p009" || { echo "build: FAIL"; exit 1; }
 echo "build: ok"
 

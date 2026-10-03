@@ -16,7 +16,7 @@
  *   terminal-p009 speed      the time of a large output, off and on
  *
  * It links the terminal's own screen.c, width.c and settings.c, with libkeiland's settings under the host
- * stand-in plan/ws135/tests/host-kl-settings.c (WS135).
+ * stand-in plan/tools/settings/host-kl-settings.c (WS135).
  */
 
 #include "userland/desktop/terminal/terminal.h"

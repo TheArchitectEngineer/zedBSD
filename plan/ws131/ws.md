@@ -113,3 +113,5 @@ D8 の決定（2026-10-03 user）: 単独走行（N=1）で p003〜p024 を番�
 2026-10-03 Q1: WS134（system monitor、P2）の app を p023 の互換の除去の対象と前提に加えた（P2 の design.md §6 の依頼。足さないと B5 で FAIL）。monitor の system manager は `kl_system_manager_v1` の v3（WS113 が v2）。
 
 2026-10-03 Q1: 設定（preferences）の部分は [WS135](../ws135/ws.md)（BUG-162、ユーザーの方針: 読み書きは libkeiland を通す、監視と通知の API、desktop.conf は compositor の内部で session の開始・終了だけ）が引き取る。p010・p011 の設定の行は WS135 の p001 の結果で書き換える（manager の枠と network・audio・power は WS131 に残る）。
+
+2026-10-04 Q1: WS135 が completed。p010 の manager v1（capabilities）と settings、peer_uid、p011 の監視の thread と `keiland_preferences_*` の除去は WS135 で済んだ。p010 は manager に network・audio・power の interface を足す範囲、p011 は Settings の残り（network・audio の状態と feedback）と libkeiland の OS を 0 にする範囲に読み替える（依存に WS135 を足す）。

@@ -284,7 +284,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS132](ws132/ws.md) | MG006 | /dev/system の電源管理と PnP の通知（subscriber が事象を指定）、自動 mount、Files の eject | planning | p001 設計（/dev/system に電源管理と PnP の通知、subscriber が事象を指定） |
 | [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | planning | 安定版 S1 の内容と試験の一覧はユーザーと決める |
 | [WS134](ws134/ws.md) | MG006 | システムモニターのアプリ（Analytic Spatial UI、中央の状態コア、層構造、2026-10-03 ユーザー） | incomplete | p001・p002 cleared、p003 uncleared（sim の fps 4.7）、p004 uncleared（`interact.c` まで） |
-| [WS135](ws135/ws.md) | MG006 | 設定の読み書きを libkeiland に一本化（libkeiland が直接か compositor の拡張で解決、監視と通知の API、desktop.conf は compositor の内部で session の開始・終了だけ読み書き。BUG-162、2026-10-03 ユーザー） | planning | p001 設計 |
+| [WS135](ws135/ws.md) | MG006 | 設定の読み書きを libkeiland に一本化（libkeiland が直接か compositor の拡張で解決、監視と通知の API、desktop.conf は compositor の内部で session の開始・終了だけ読み書き。BUG-162、2026-10-03 ユーザー） | completed（2026-10-04） | — |
 | [WS136](ws136/ws.md) | MG007 | 試験の image を「WS の tests/ の config.mk ＋個別の file の複写」に揃え、過去の build/ を入力にしない（2026-10-04 ユーザー） | planning | p001（P1） |
 | [WS137](ws137/ws.md) | MG006 | FreeBSD の試験の VM（QEMU+KVM）を T1・T2 で使えるようにし、libkeiland-backend の FreeBSD の build と試験を流す（2026-10-04 ユーザー） | completed（2026-10-04） | — |
 | [WS116](ws116/ws.md) | MG002 | upstream Qt6の範囲をGTK4移植後に検討し `packages/desktop/qt6`へ移植 | planning | WS115の知見後。旧WS034 p030移管、Queue none |
@@ -313,6 +313,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | tool | 用途 | 使い方 |
 | --- | --- | --- |
 | [FreeBSD 15.1 の試験の guest と backend の試験](tools/keiland-freebsd/README.md)（WS137） | 公式の 15.1 の image（CHECKSUM を q550 の記録と照合）と NoCloud の seed から作る QEMU+KVM の guest。loopback の SSH と QMP の PNG を使い、serial の log は読まない。guest の中で keiland-freebsd.mk を native で build（warning 0）し、audit と ws131 の host 試験を流す。GPU は無い | `build-guest.sh [--force] [OUT]`、`guest.sh start\|stop\|status\|ssh\|put\|get\|copy\|shot`、`backend-test.sh [OUT]`。T1・T2 は自分の build/ に作るか GUEST_DIR で読み取り専用で使う。2 つ同時は GUEST_RUN と SSH_PORT を分ける |
+| [settings/](tools/settings/) | WS135 の設定の試験: compositor の store（`host-store.sh`）、libkeiland の `kl_settings_*`（`host-settings.sh`）、Wayland 無しの stand-in（`host-kl-settings.c`、Files・Terminal・Settings の host 試験が使う）、QEMU の `settings-p003.sh` と image の `config-amd64-settings.mk` | `sh plan/tools/settings/host-store.sh`、`sh plan/tools/settings/host-settings.sh` |
 | `plan/tools/git-hooks/commit-msg` | git の commit-msg の hook（メッセージが `WIP` ちょうどでない commit を拒否、Co-Authored-By などの混入の防止、2026-10-03） | `cp plan/tools/git-hooks/commit-msg .git/hooks/ && chmod +x .git/hooks/commit-msg`（clone・作り直しの後に毎回） |
 | `plan/tools/toolchain-lock.sh` | 共有の toolchain の tree（`build/llvm`・`llvm-source`・`llvm-build`・`NoctLang`）の directory を読み取り専用にして、許可の無い変更を防ぐ（BUG-096） | `lock`・`unlock`（main が許可した toolchain の変更の間だけ）・`status` |
 | [boot-test.sh](tools/boot-test.sh)（`boot-test.py`） | 起動の確認。OVMF の USB（amd64）か BIOS の IDE（i386）で起動し、画面を QMP で撮って login prompt を読む | `plan/tools/boot-test.sh [IMAGE]`。`OUTPUT`（既定 `build/boot-test`）、`BOOT_TIMEOUT`、`BOOT_MODE=uefi-usb` か `bios-ide` |
