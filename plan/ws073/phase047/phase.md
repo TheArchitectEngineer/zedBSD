@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p047 -->
 # ws073-p047: BUG-052 — tmpfs の容量を物理 memory の半分に（file の data を page の index で持つ）
 
-Status: in-progress（q651-i01、P1 generation12、2026-10-04。実装・build・host 試験済み、QEMU の試験を T1 に依頼）
+Status: uncleared（q651-i01、P1 generation12、2026-10-04。T1-048 で tmpfs-many.sh が FAIL）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-052](../../bugs/BUG-052.md)
@@ -59,3 +59,7 @@ HAL・UAPI は変えていない。
 
 - T1 の結果で Q1 が判定する。
 - tmpfs の data の swap での裏打ち（上の制限）。必要なら別の Phase。
+
+## 結果（Q1、2026-10-04、T1-048、QEMU KVM、b65fd40 の既定の image）
+
+uncleared。boot-test PASS、bug052-tmpfs.sh PASS（`tmpfs size 4191060 KiB`・512 MiB を 1 s で書いて 0 s で消す）。tmpfs-many.sh FAIL ×2（同じ）: 空の file 10000 ×3 round は PASS、1 byte の file が 14325 個で `No space left on device`（`FAIL 20000 data files fit`）、その時の df は 4191060 KiB 中 0 使用。byte の容量でなく別の上限（node の数、inode の共通の pool の 512 の系統など）に当たっている見当。証拠 worktrees/t1/build/t1-048/。再開: P1 が 14325 で ENOSPC になる上限を直して T1 に再依頼。
