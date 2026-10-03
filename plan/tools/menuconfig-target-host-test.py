@@ -62,6 +62,7 @@ def check_packages() -> None:
         "libcxx": "packages/devel",
         "openssh": "packages/network",
         "openssl": "packages/security",
+        "noto-color-emoji": "packages/fonts",
     }
     for name, group in expected_group.items():
         row = next((row for row in rows if row[0] == name), None)
@@ -98,6 +99,50 @@ def check_packages() -> None:
         fail("OpenSSH is held by something that does not need it")
 
 
+def check_fonts_menu() -> None:
+    """Walks Packages > Fonts the way a user would and chooses the emoji font.
+
+    The curses screen is left out: choose() is replaced by answers given in
+    order, each checked against the labels the menu shows (BUG-129).
+    """
+    shown: list[tuple[str, list[str]]] = []
+    emoji = next((row for row in USER_PROGRAM_ROWS if row[0] == "noto-color-emoji"), None)
+    if emoji is None:
+        fail("noto-color-emoji is not offered at all")
+
+    def answer(title: str, labels: list[str]) -> int | None:
+        if title == "Packages" and len([t for t, _l in shown if t == "Packages"]) == 1:
+            if "Fonts" not in labels:
+                fail(f"the Packages menu shows no Fonts: {labels}")
+            return labels.index("Fonts")
+        if title == "Fonts":
+            entries = [label for label in labels if label[4:] == emoji[1]]
+            if not entries:
+                fail(f"the Fonts menu does not offer noto-color-emoji: {labels}")
+            if len([t for t, _l in shown if t == "Fonts"]) == 1:
+                return labels.index(entries[0])
+            if not entries[0].startswith("[*]"):
+                fail(f"noto-color-emoji is not marked chosen: {entries[0]}")
+            return len(labels) - 1
+        return len(labels) - 1
+
+    def choose(_screen, title, labels, _target, _selected=0):
+        shown.append((title, list(labels)))
+        if len(shown) > 10:
+            fail("the Fonts walk did not end")
+        return answer(title, labels)
+
+    real_choose = menu.choose
+    menu.choose = choose
+    values: dict[str, object] = {"ZEDBSD_PLATFORM": "amd64", "ZEDBSD_USER_PROGRAMS": set()}
+    try:
+        menu.select_package_programs(None, values)
+    finally:
+        menu.choose = real_choose
+    if "noto-color-emoji" not in values["ZEDBSD_USER_PROGRAMS"]:
+        fail("choosing it from Packages > Fonts did not select noto-color-emoji")
+
+
 def main() -> None:
     expected_targets = {(record[1], record[2]) for record in menu.PLATFORMS}
     if set(menu.BOARD_VARIANTS) != expected_targets:
@@ -110,6 +155,7 @@ def main() -> None:
         fail("amd64 PC/AT Variants changed")
 
     check_packages()
+    check_fonts_menu()
 
     template = menu.defaults()
 
