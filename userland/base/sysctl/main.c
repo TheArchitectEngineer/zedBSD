@@ -25,6 +25,8 @@
 #define NAME_MAX 64U
 
 static int show_cputimes(void);
+static int show_diskstats(void);
+static int fetch_value(const char *name, unsigned char **buffer, size_t *length);
 static int show_writeback(void);
 static int show_readahead(void);
 static int set_writeback(const char *value);
@@ -86,6 +88,7 @@ show_all(
 {
 	static const char *const names[] = {
 	    "hw.cputimes",
+	    "hw.diskstats",
 	    "kern.boot.firmware_partition",
 	    "kern.boot.config_partition",
 	    "kern.boot.config_matches",
@@ -178,6 +181,10 @@ show_name(
 	/* Each CPU's ticks by what it was doing, a line a CPU. */
 	if (strcmp(name, "hw.cputimes") == 0)
 		return show_cputimes();
+
+	/* Each physical disk's work, a line a disk. */
+	if (strcmp(name, "hw.diskstats") == 0)
+		return show_diskstats();
 
 	/* Formats speculative observations separately from ordinary demand I/O.
 	 */
@@ -472,36 +479,19 @@ show_cputimes(
 	const struct cpu_times_entry *entry;
 	unsigned char *buffer;
 	size_t length;
-	size_t needed;
 	uint32_t cpu;
 	int status;
 	int valid;
 
-	/* The length the kernel needs for every CPU. */
-	length = 0;
-	status = sysctlbyname("hw.cputimes", NULL, &length, NULL, 0);
+	/* The value, whole. */
+	status = fetch_value("hw.cputimes", &buffer, &length);
 	if (status != 0)
 		return -1;
 
-	/* A buffer of that length. */
-	buffer = malloc(length);
-	if (buffer == NULL)
-		return -1;
-
-	/* The value. */
-	needed = length;
-	status = sysctlbyname("hw.cputimes", buffer, &length, NULL, 0);
-	if (status != 0) {
-		free(buffer);
-		return -1;
-	}
-
-	/* A value of another length than asked for (the CPUs changed), or of a layout this command does not know. */
+	/* A value of a layout this command does not know. */
 	header = (const struct cpu_times_header *)(void *)buffer;
 	valid = 1;
-	if (length != needed) {
-		valid = 0;
-	} else if (length < sizeof(*header)) {
+	if (length < sizeof(*header)) {
 		valid = 0;
 	} else if (header->version != CPU_TIMES_VERSION) {
 		valid = 0;
@@ -532,4 +522,115 @@ show_cputimes(
 	/* Succeeded: every CPU is printed. */
 	free(buffer);
 	return 0;
+}
+
+/*
+ * Prints hw.diskstats (ws134-p006): the set's generation and the disks,
+ * then a line a disk with its kind, flags, id, generation, work and
+ * requests outstanding.  Returns 0, or -1 with errno set.
+ */
+static int
+show_diskstats(
+	void)
+{
+	const struct disk_stats_header *header;
+	const struct disk_stats_entry *entry;
+	unsigned char *buffer;
+	size_t length;
+	uint32_t disk;
+	int status;
+	int valid;
+
+	/* The value, whole. */
+	status = fetch_value("hw.diskstats", &buffer, &length);
+	if (status != 0)
+		return -1;
+
+	/* A value of a layout this command does not know. */
+	header = (const struct disk_stats_header *)(void *)buffer;
+	valid = 1;
+	if (length < sizeof(*header)) {
+		valid = 0;
+	} else if (header->version != DISK_STATS_VERSION) {
+		valid = 0;
+	} else if (header->element_size != sizeof(*entry)) {
+		valid = 0;
+	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
+		valid = 0;
+	}
+
+	/* Refuses what it cannot read. */
+	if (!valid) {
+		free(buffer);
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* The set of disks. */
+	printf("hw.diskstats: generation=%u disks=%u\n", header->generation, header->count);
+
+	/* A line a disk. */
+	for (disk = 0; disk < header->count; disk++) {
+		entry = (const struct disk_stats_entry *)(void *)(buffer + header->struct_size + (size_t)disk * header->element_size);
+		printf("hw.diskstats: name=%.32s kind=%u flags=0x%x id=%llu generation=%llu read_ops=%llu write_ops=%llu "
+		       "read_bytes=%llu write_bytes=%llu read_ns=%llu write_ns=%llu busy_ns=%llu inflight=%u\n",
+		       entry->name, entry->kind, entry->flags, (unsigned long long)entry->id, (unsigned long long)entry->generation,
+		       (unsigned long long)entry->read_ops, (unsigned long long)entry->write_ops,
+		       (unsigned long long)entry->read_bytes, (unsigned long long)entry->write_bytes,
+		       (unsigned long long)entry->read_ns, (unsigned long long)entry->write_ns,
+		       (unsigned long long)entry->busy_ns, entry->inflight);
+	}
+
+	/* Succeeded: every disk is printed. */
+	free(buffer);
+	return 0;
+}
+
+/*
+ * Reads a sysctl value whose length the kernel decides (a header and its
+ * entries) into a new buffer: the length first, then the value, again
+ * with the new length when it grew in between (a CPU or a disk came).
+ * Returns 0 with *buffer to free, or -1 with errno set.
+ */
+static int
+fetch_value(
+	const char *name,
+	unsigned char **buffer,
+	size_t *length)
+{
+	unsigned char *value;
+	size_t size;
+	int status;
+	int attempt;
+
+	/* A few tries: the value may grow between the length and the read. */
+	for (attempt = 0; attempt < 4; attempt++) {
+		/* The length the kernel needs now. */
+		size = 0;
+		status = sysctlbyname(name, NULL, &size, NULL, 0);
+		if (status != 0)
+			return -1;
+
+		/* A buffer of that length. */
+		value = malloc(size);
+		if (value == NULL)
+			return -1;
+
+		/* The value; one that grew is asked for again. */
+		status = sysctlbyname(name, value, &size, NULL, 0);
+		if (status == 0) {
+			*buffer = value;
+			*length = size;
+			return 0;
+		}
+
+		/* Any failure but a grown value ends the tries. */
+		free(value);
+		if (errno != ENOMEM)
+			return -1;
+	}
+
+	/* Still growing after every try. */
+	errno = EAGAIN;
+	return -1;
 }
