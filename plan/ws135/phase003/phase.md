@@ -29,3 +29,7 @@ Queue: q656 / q656-i01（2026-10-04 user「WS135の設計D1-D6を承認します
 ## 結果（Q1、2026-10-04）
 
 cleared。T2-014（QEMU Venus、agent/p2 47b3418 の image）PASS 10/10: settings-p003・p007・p004・p005・settings-pages（1280x800、24 頁）・terminal-p009-guest（広い幅が restart の後も読み戻される）・files-open always（files.conf の選択と cleared）・files-open mouse・volume-p005（desktop.conf は書かれない、feedback の音 4）・boot-test。証拠 worktrees/t2/build/t2-014/out/。FreeBSD の native build と host 試験は T2-016（47b3418）で別に確かめる。
+
+## FreeBSD（Q1、2026-10-04）
+
+T2-016（FreeBSD 15.1 の QEMU guest、47b3418）: backend-test（native build warning 0・install・audit・host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected）PASS、guest の clang 19.1.7 で host-store 43/0・host-settings 38/0（ASan・UBSan）。
