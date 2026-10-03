@@ -1146,6 +1146,9 @@ system_network_job_take(
 		return;
 	}
 
+	/* The line the system bar's tests read since before the key moved to this thread (network.c, WS131 p011). */
+	printf("ZWL NETWORK key saved ssid=%s\n", system_state.wait.ssid);
+
 	/* The daemon is told the saved networks changed; its answer sends the join. */
 	system_network_step(server, KL_BACKEND_NETWORK_REQUEST_PROFILES);
 }

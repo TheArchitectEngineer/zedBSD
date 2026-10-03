@@ -73,8 +73,9 @@ se_sound_open(
 		sound->muted = (int)sound->state.muted;
 	}
 
-	/* The log line the tests read. */
+	/* The log lines the tests read: the open, and the first report as a change is told (WS131 p011, T2-022). */
 	se_log("SOUND open live=1 reachable=%u value=%d muted=%d", sound->state.reachable, sound->value, sound->muted);
+	se_log("SOUND report reachable=%u device=%u value=%u muted=%u", sound->state.reachable, sound->state.device, sound->state.left, sound->state.muted);
 }
 
 /*
