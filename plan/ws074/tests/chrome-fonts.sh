@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws074: writes the fontconfig file that makes the host's Chromium draw with the fonts
-# browser uses (build/ws035-fonts: Inter for serif and sans-serif, JetBrains Mono for
+# browser uses (userland/desktop/fonts: Inter for serif and sans-serif, JetBrains Mono for
 # monospace, Droid Sans Fallback for the rest), into build/ws074-chrome/fonts.conf.
 # A family the fonts do not have (Arial, the system font of the form controls) is drawn in
 # Inter, then Droid Sans Fallback, as browser draws any named family it lacks (ws074-p032).
@@ -11,7 +11,7 @@
 set -eu
 cd "$(dirname -- "$0")/../../.."
 root=$(pwd)
-fonts=$(readlink -f build/ws035-fonts)
+fonts=$(readlink -f userland/desktop/fonts)
 if [ ! -f "$fonts/Inter.ttf" ] || [ ! -f "$fonts/JetBrainsMono-Regular.ttf" ] ||
     [ ! -f "$fonts/DroidSansFallbackFull.ttf" ]; then
 	fonts=$root/userland/desktop/fonts

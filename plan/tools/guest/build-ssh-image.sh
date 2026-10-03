@@ -1,10 +1,9 @@
 #!/bin/sh
-# ws063: builds the SSH guest image (plan/tools/guest/config-amd64-ssh.mk) into BUILD.
+# Builds the SSH guest image without clang (plan/tools/guest/config-amd64-ssh.mk) with the guest harness's files.
+# ws136-p001 (2026-10-04): through plan/tools/guest/test-image.sh, the one way test images are built.
 #   sh plan/tools/guest/build-ssh-image.sh [BUILD]    (default build/amd64, which the packages link against)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-root=$(cd "$(dirname "$0")/../../.." && pwd)
-cd "$root" || exit 1
-. plan/tools/guest/jobs.sh  # ZEDBSD_JOBS, the parallel jobs (default 16)
+set -eu
+cd "$(dirname -- "$0")/../../.."
 build=${1:-build/amd64}
-extra=$(python3 plan/tools/guest/guest.py extra-files)
-eval "make -j$ZEDBSD_JOBS ZEDBSD_CONFIG=plan/tools/guest/config-amd64-ssh.mk BUILD=$build $extra disk-image"
+exec plan/tools/guest/test-image.sh plan/tools/guest/config-amd64-ssh.mk "$build"

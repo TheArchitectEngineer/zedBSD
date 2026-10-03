@@ -34,7 +34,7 @@ expect_log() {
 }
 
 # The link's middle in the page, from the host build's layout of the same page at the same size.
-f=build/ws035-fonts
+f=userland/desktop/fonts
 link=$(build/ws074-host/plain/browser --dump=layout --width=800 --height=640 --font=$f/Inter.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf plan/ws074/tests/pages/inline-block.html 2>/dev/null |
     awk '$1 == "block" && $2 == "<a>" { printf "%d %d\n", $3 + $5 / 2, $4 + $6 / 2; exit }')

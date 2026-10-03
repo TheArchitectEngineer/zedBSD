@@ -45,7 +45,7 @@ def main():
     arguments = parser.parse_args()
     subprocess.run([sys.executable, os.path.join(ROOT, "plan/ws074/tests/make-test-images.py")], check=True,
                    stdout=subprocess.DEVNULL)
-    fonts = os.path.join(ROOT, "build/ws035-fonts")
+    fonts = os.path.join(ROOT, "userland/desktop/fonts")
     page = os.path.join(ROOT, "build/ws074-images/fonts.html")
     dump = subprocess.run([arguments.program, "--dump=paint", "--width=800", "--height=400",
                            "--font=" + os.path.join(fonts, "Inter.ttf"),

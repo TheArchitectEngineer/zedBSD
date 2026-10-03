@@ -82,7 +82,7 @@ def find_chromium(requested):
 
 def font_directory():
     """Use the packaged font artifacts when present, otherwise their sources."""
-    candidates = (ROOT / "build/ws035-fonts", ROOT / "userland/desktop/fonts")
+    candidates = (ROOT / "userland/desktop/fonts",)
     for candidate in candidates:
         if all((candidate / name).is_file() for name in FONT_NAMES):
             return candidate

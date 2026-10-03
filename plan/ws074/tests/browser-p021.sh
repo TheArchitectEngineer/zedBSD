@@ -43,7 +43,7 @@ shot() {
 }
 
 # The linked image's middle in the page at 900 wide, from the host's layout: "x y".
-f=build/ws035-fonts
+f=userland/desktop/fonts
 python3 plan/ws074/tests/make-test-images.py >/dev/null
 link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Inter.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf "$(pwd)/build/ws074-images/images.html" |

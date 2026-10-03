@@ -60,7 +60,7 @@ def chrome_boxes(root, page, width, height):
 
 
 def our_boxes(root, program, page, width, height):
-    fonts = os.path.join(root, "build/ws035-fonts")
+    fonts = os.path.join(root, "userland/desktop/fonts")
     if not os.path.isfile(os.path.join(fonts, "Inter.ttf")):
         fonts = os.path.join(root, "userland/desktop/fonts")
     result = subprocess.run([program, "--dump=layout", "--width=%d" % width, "--height=%d" % height,

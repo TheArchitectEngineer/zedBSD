@@ -7,7 +7,7 @@
   gpu-compare.py PAGE.html... [--width W] [--height H] [--program PATH] [--out DIR]
   gpu-compare.py --pictures GPU.ppm CPU.ppm [--out DIR]
 
-The first form draws each page with `--render-gpu` and `--render` (the fonts of build/ws035-fonts;
+The first form draws each page with `--render-gpu` and `--render` (the fonts of userland/desktop/fonts;
 on the host the GPU is the one Vulkan picks, lavapipe with VK_DRIVER_FILES); the second compares two
 pictures already drawn (the guest's).  A pair agrees when no channel of any pixel differs by more
 than 2, allowing 0.1% of the pixels to differ by more.  A side-by-side picture (GPU | CPU |
@@ -31,7 +31,7 @@ SHARE_LIMIT = 0.001
 
 
 def draw(program, mode, page, width, height, out):
-    fonts = os.path.join(ROOT, "build/ws035-fonts")
+    fonts = os.path.join(ROOT, "userland/desktop/fonts")
     if not os.path.isdir(fonts):
         fonts = os.path.join(ROOT, "userland/desktop/fonts")
     subprocess.run([program, mode, "--output=" + out, "--width=%d" % width, "--height=%d" % height,
