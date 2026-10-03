@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p006 -->
 # ws134-p006: K2 kernel の disk ごとの統計 `hw.diskstats`
 
-Status: in-progress（q661、P2 generation8、2026-10-04。実装・build 済み、T の QEMU の試験待ち）
+Status: cleared（q661、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §1.2 の K2
@@ -41,3 +41,7 @@ sysctl の CLI の表示。monitor の Disk の本物の値（p008）の出ど�
   read の ops・bytes（8 MiB 以上）・時間・busy が増え平均 latency が 1 us〜1 s、32 MiB の書き込みと sync で write が 8 MiB 以上、QMP で USB の
   stick を挿すと kind 3/4 の新しい disk と別の id・generation の増加、その読みが stick に数わる、抜くと消えて generation がまた増える）。結果は未着。
 - 実機は未実施（NVMe・USB は 5330）。
+
+## 結果（Q1、2026-10-04、T1-065、QEMU Venus KVM、NVMe、main a326b91）
+
+cleared。`diskstats-p006: PASS`: nvme0n1（NVMe、partition は数えない）、読み 32 MiB で ops・bytes・時間・busy が増え、書き込みで write が増える。QMP の usb-storage の hotplug で sda（kind 3、別の id）が現れ generation 1→2・読みを計上、device_del で消え 2→3。sun4u・x68k の kernel は CI の config が無く未 build。
