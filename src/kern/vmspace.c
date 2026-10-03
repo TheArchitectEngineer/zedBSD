@@ -51,6 +51,14 @@
 #define VM_REGION_INDEX_MINIMUM		32U
 
 /*
+ * The most buckets a region's index has (2 MiB of pointers on a 64-bit
+ * machine): past it the chains grow longer instead (BUG-053: a region of
+ * a million pages asked for 8 MiB of contiguous memory while memory was
+ * short).
+ */
+#define VM_REGION_INDEX_MAXIMUM		262144U
+
+/*
  * One page of storage carved into mapping descriptors.
  *
  * Descriptors are handed out from a slab's free mask rather than allocated
@@ -239,7 +247,7 @@ static struct vm_region * find_region_locked(struct vmspace *vm, uintptr_t addre
 static struct vm_page * find_page(struct vm_region *region, uintptr_t address);
 static void region_page_index_insert(struct vm_region *region, struct vm_page *page);
 static void region_page_index_remove(struct vm_region *region, struct vm_page *page);
-static void region_page_index_rebuild(struct vm_region *region);
+static int region_page_index_rebuild(struct vm_region *region, int keep);
 static void region_page_index_free(struct vm_region *region);
 static void vmspace_wait_fault_event(struct vmspace *vm, uint64_t sequence);
 static void vmspace_wait_faults_locked(struct vmspace *vm);
@@ -4985,15 +4993,21 @@ find_page(
 /*
  * Rebuilds a region's page index from its page list.
  *
- * The index has two buckets for every page, rounded up to a power of two,
- * once the region has enough pages to make the list slow; below that, or
- * without memory for the buckets, the region has no index and faults walk
- * the list (BUG-033: a walk made faulting in a large library quadratic).
+ * The index has two buckets for every page, rounded up to a power of two and
+ * at most VM_REGION_INDEX_MAXIMUM, once the region has enough pages to make
+ * the list slow; below that the region has no index and faults walk the list
+ * (BUG-033: a walk made faulting in a large library quadratic).  The new
+ * buckets are had before the old ones go: without memory for them, keep
+ * leaves a valid old index in place (its chains grow longer), and the next
+ * try waits until the region has twice the pages (BUG-053).  Without keep
+ * (the old index no longer matches the list) a failure leaves the region
+ * without an index.  Returns 1 when the index was rebuilt, 0 otherwise.
  * The caller holds the VM lock.
  */
-static void
+static int
 region_page_index_rebuild(
-	struct vm_region *region)
+	struct vm_region *region,
+	int keep)
 {
 	struct vm_page **index;
 	struct vm_page *page;
@@ -5005,24 +5019,35 @@ region_page_index_rebuild(
 	count = 0;
 	for (page = region->pages; page != NULL; page = page->next)
 		count++;
-
-	/* Drops the old index and keeps the count. */
-	region_page_index_free(region);
 	region->page_count = count;
 
 	/* A region with few pages keeps to its list. */
-	if (count < VM_REGION_INDEX_MINIMUM)
-		return;
+	if (count < VM_REGION_INDEX_MINIMUM) {
+		region_page_index_free(region);
+		region->page_index_retry = 0;
+		return 0;
+	}
 
-	/* Sizes the buckets to twice the pages, a power of two. */
+	/* Sizes the buckets to twice the pages, a power of two, within the maximum. */
 	size = VM_REGION_INDEX_MINIMUM;
-	while (size < count * 2U && size <= SIZE_MAX / 2U / sizeof(*index))
+	while (size < count * 2U && size < VM_REGION_INDEX_MAXIMUM)
 		size *= 2U;
 
-	/* Without memory for the buckets the list serves on its own. */
+	/* The new buckets, before the old ones go. */
 	index = kern_calloc(size, sizeof(*index));
-	if (index == NULL)
-		return;
+	if (index == NULL) {
+		/* Not tried again until the region has twice the pages. */
+		region->page_index_retry = count * 2U;
+
+		/* A valid old index serves on; otherwise the list does. */
+		if (!keep)
+			region_page_index_free(region);
+		return 0;
+	}
+
+	/* The old index goes. */
+	region_page_index_free(region);
+	region->page_index_retry = 0;
 
 	/* Chains every page into its bucket. */
 	for (page = region->pages; page != NULL; page = page->next) {
@@ -5034,13 +5059,17 @@ region_page_index_rebuild(
 	/* Publishes the index. */
 	region->page_index = index;
 	region->page_index_size = size;
+
+	/* Succeeded: every page is in the new index. */
+	return 1;
 }
 
 /*
  * Adds a page the caller has just linked into a region's list to the index.
  *
- * An index that the page count has outgrown is rebuilt twice as large, which
- * also takes in the new page.  The caller holds the VM lock.
+ * An index that the page count has outgrown is rebuilt twice as large (up to
+ * the maximum), which also takes in the new page; when that cannot be had,
+ * the page joins the old index.  The caller holds the VM lock.
  */
 static void
 region_page_index_insert(
@@ -5048,19 +5077,26 @@ region_page_index_insert(
 	struct vm_page *page)
 {
 	size_t bucket;
+	int rebuilt;
 
-	/* Counts the page, building an index once the region has enough. */
+	/* Counts the page. */
 	region->page_count++;
+
+	/* Builds an index once the region has enough pages (and is not waiting after a failure). */
 	if (region->page_index == NULL) {
-		if (region->page_count >= VM_REGION_INDEX_MINIMUM)
-			region_page_index_rebuild(region);
+		if (region->page_count >= VM_REGION_INDEX_MINIMUM &&
+		    region->page_count >= region->page_index_retry)
+			(void)region_page_index_rebuild(region, 0);
 		return;
 	}
 
-	/* Rebuilds an index the count has outgrown, twice as large. */
-	if (region->page_count > region->page_index_size) {
-		region_page_index_rebuild(region);
-		return;
+	/* Rebuilds an index the count has outgrown, unless it is at its largest or waiting after a failure. */
+	if (region->page_count > region->page_index_size &&
+	    region->page_index_size < VM_REGION_INDEX_MAXIMUM &&
+	    region->page_count >= region->page_index_retry) {
+		rebuilt = region_page_index_rebuild(region, 1);
+		if (rebuilt)
+			return;
 	}
 
 	/* Chains the page into its bucket. */
@@ -6034,6 +6070,7 @@ split_region_prepared(
 	right->pages = NULL;
 	right->page_index = NULL;
 	right->page_index_size = 0;
+	right->page_index_retry = 0;
 	right->page_count = 0;
 	right->start = address;
 	right->size = right_size;
@@ -6118,9 +6155,10 @@ split_region_prepared(
 		right->pages = page;
 	}
 
-	/* Indexes each half's pages afresh. */
-	region_page_index_rebuild(region);
-	region_page_index_rebuild(right);
+	/* Indexes each half's pages afresh (the old index held both halves' pages). */
+	region->page_index_retry = 0;
+	(void)region_page_index_rebuild(region, 0);
+	(void)region_page_index_rebuild(right, 0);
 
 	/* Links the right half after the left. */
 	right->next = region->next;

@@ -195,10 +195,14 @@ struct vm_region {
 	 * page without walking the list: a power-of-two number of buckets
 	 * chained through index_next, or none while the region has few pages
 	 * or no memory could be had for one (the list is walked then).  The
-	 * VM lock protects it with the list.
+	 * VM lock protects it with the list.  page_index_retry is the page
+	 * count before which a larger index is not tried again after one could
+	 * not be had (BUG-053: a failed try at every fault made each fault walk
+	 * the whole list); zero when nothing failed.
 	 */
 	struct vm_page **page_index;
 	size_t page_index_size;
+	size_t page_index_retry;
 	size_t page_count;
 	struct vm_region *next;
 };
