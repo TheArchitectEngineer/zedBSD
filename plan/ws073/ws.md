@@ -84,6 +84,7 @@ BUG-027・BUG-033（性能。単独の計測を後で）。
 | [ws073-p046](phase046/phase.md) | BUG-053 | RAM を超える anonymous memory の残り（1300 MiB）: 測定の道具 swaphog を作り直し、swap の slot の探索を next-fit に | in-progress（q651、T1 の測定待ち） |
 | [ws073-p047](phase047/phase.md) | BUG-052 | tmpfs の容量を物理 memory の半分に: file の data を物理 page と radix tree の index で持つ（heap と 2 乗の解放をやめる）、frame は private の page を reclaim して取る | in-progress（q651、T1 の試験待ち） |
 | [ws073-p048](phase048/phase.md) | BUG-103 | /bin/sh の上下の矢印の履歴を PS/2 の keyboard だけの QEMU で確かめて閉じる（修正は WS087 で済み） | cleared（q651、T1-045 PASS） |
+| [ws073-p049](phase049/phase.md) | BUG-033 | guest の clang の速さの今の測定（expat の 3 file の compile、512 MiB・2 GiB）、残る原因があれば直す | in-progress（q651、T1 の測定待ち） |
 | [ws073-p052](phase052/phase.md) | — | i386 pcat の vmunix の build（ACPI の無い構成の `drv_acpi_poweroff`、`splash.o` の欠け） | in-progress（q651、build 済み） |
 
 ## 残りの bug（2026-09-27 21 時の時点）
