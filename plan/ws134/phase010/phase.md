@@ -37,3 +37,16 @@ image（build-monitor-image.sh）で monitor-p002・p004・p005（cputimes）・
 - p007: i915 の `hw.gputelemetry`（busy・周波数が負荷で動く）と monitor の GPU の使用率。
 - p009: ACPI の thermal・電池（K4）。
 - デモの通し: 5330 で monitor を App Home から起こし、本物の値・操作（touch）を通す。
+
+## monitor の sim の段の FAIL（T1-070・T1-071・T1-072）の直し（2026-10-04）
+
+- 症状: monitor-p003・p002 の sim の段で READY の後に数秒で `monitor: vkAllocateMemory failed (-2)`・`ZMON DONE frames=18`、窓が消える。
+  replay（固定の時計）・p013（system、pointer を動かさない）・p004（touch と key）は PASS。
+- 原因: p004 で pointer の位置（`motion.pointer_x/y`）が初めて配線され、camera の傾きの spring（2 Hz、減衰 2ω）が動き始めた。
+  `spring` は 1 frame の時間（最大 0.1 秒）を 1 段で積んでいて、ωdt ≈ 1.26 で半陰の Euler が不安定（固有値の絶対値 2.66）、QEMU の
+  4〜5 fps では傾きが指数的に発散する。傾きは層の視差で背景の格子の offset になり、`for (x = step + offset; x < width; x += step)` が
+  巨大な |x| で x + step == x になって終わらず、矩形を足し続けて vertex buffer の確保が host の memory を使い切った。
+- 直し: `space.c` の `spring` を 1/120 秒以下の小さな段で積む（どの frame rate でも安定）。`scene.c` の背景の格子の線を 64 本で打ち切る（守り）。
+- 確かめ: host で live の時計・220 ms の frame・pointer を左右に振る harness（preview の改造、scratch）で、直す前は scene の build が終わらず
+  （120 秒の timeout）、直した後は 100 frame の間 vertex 40134〜40200 で安定。zedBSD の monitor -Werror warning 0、Linux の object、host 試験 3 本 PASS、
+  style 0。QEMU は T1 に monitor-p002・p003 の再試験を依頼。
