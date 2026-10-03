@@ -2,7 +2,7 @@
 
 # ws131-p006: backend の seat・session の領域
 
-Status: uncleared（q650、2026-10-03、P1。p006b は T1-042 で確認済み、p006c は書くだけ。p006a の QEMU（T2-007）はラップアップで未実行）
+Status: cleared（q650、2026-10-04。Q1 判定: p006a は T2-007・T2-011、p006b は T1-042、p006c は書くだけ）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q650（2026-10-03、Q1 の割り当て）
@@ -249,3 +249,7 @@ p006 全体の判定は p006a の T2-007 の結果を待つ。
 ## T2-007 の途中（Q1、2026-10-04）
 
 boot-test PASS、p101 PASS。p095・p102 は FAIL ×2 だが、P1 の判定で p006a の退行ではなく試験の前提が古い（2026-09-29 から既定の image は kei の自動 login、greeter が出ない）。sessiond の log で受け渡しは成功（`HANDOFF session ready=1`・`go written=3`）。試験は ws136-p002 で直して再試験。
+
+## 結果（Q1、2026-10-04）
+
+cleared。p006a（zedBSD、QEMU）: boot-test PASS、p101 PASS、p103 PASS、C1 PASS（C1_REQUIRE_QEMU_EXIT=1、QEMU が終わる）、p095・p102 は試験を今の既定の image に直した後（ws136-p002）PASS。p104（greeter の Wi-Fi の join）は直した試験でも FAIL（`NETPROBE request op=35 ssid=Kei Lab MISSING`、鍵の入力欄が出たまま）だが、session の受け渡しではなく greeter の network の join の試験で、試験の前提（保存した鍵・インラインの鍵の欄、BUG-160 の後）の疑いとして ws136-p002 で扱う。p006b は T1-042（Debian の QEMU+KVM）PASS。p006c は FreeBSD の書くだけ（build・起動は未実施）。証拠 worktrees/t2/build/t2-007/・t2-011/。
