@@ -7071,6 +7071,7 @@ run_managed_connect(
 	uint32_t ifindex;
 	unsigned timeout;
 	int result;
+	int retired;
 	int saved;
 
 	*l2_succeeded = 0;
@@ -7109,10 +7110,29 @@ run_managed_connect(
 	if (result == 0)
 		result = acquire_managed_l3(interface, deadline);
 
-	/* A stopped child is never substituted for a proven L2/L3 retirement. */
+	/* Reports a join that worked. */
+	if (result == 0)
+		return 0;
+
+	/*
+	 * A failed join is always retired: a stopped child is never substituted
+	 * for a proven L2/L3 retirement.  The retirement does not rename the
+	 * failure, though.  The caller and the user are told why the join failed
+	 * (a key the network refused is EACCES), not why the cleanup after it
+	 * failed: a radio that is recovering refuses the cleanup's disconnect with
+	 * ENETDOWN, and that used to reach the user as "Network is down"
+	 * (BUG-157).  A cleanup that could not finish keeps the connection's
+	 * ownership, logs its stage and schedules its own retry.
+	 */
 	saved = errno;
-	if (result != 0 && retire_managed_connection(failure_state, 1) != 0)
-		saved = errno;
+	retired = retire_managed_connection(failure_state, 1);
+	if (retired != 0) {
+		fprintf(stderr,
+		    "networkd: %s: join failed: %s; its cleanup is retried\n",
+		    interface, strerror(saved));
+	}
+
+	/* Reports why the join failed. */
 	errno = saved;
 	return result;
 }

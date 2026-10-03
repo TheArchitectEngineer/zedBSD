@@ -7124,7 +7124,19 @@ ax211_net_ioctl(
 		 (request == SIOCSWLANDISCONNECT &&
 		  controller->session_stopped))
 		result = 0;
-	else if (!controller->runtime_active || controller->quarantined ||
+	else if (request == SIOCSWLANDISCONNECT &&
+		 !controller->quarantined &&
+		 (controller->recovery_pending ||
+		  controller->recovery_running)) {
+		/*
+		 * A disconnect that arrives while recovery is stopping the
+		 * session waits for it: the session ends stopped and the retry
+		 * is admitted then.  EBUSY is the retryable answer; ENETDOWN
+		 * made networkd's cleanup after a refused key fail, and the
+		 * user read "Network is down" instead of the refusal (BUG-157).
+		 */
+		result = EBUSY;
+	} else if (!controller->runtime_active || controller->quarantined ||
 		 controller->recovery_pending || controller->recovery_running)
 		result = ENETDOWN;
 	else

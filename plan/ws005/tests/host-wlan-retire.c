@@ -16,7 +16,11 @@
  *      wifi command reports as ENETDOWN);
  *   2. opening the station again clears it;
  *   3. an explicit disconnect after a failed connection reports its own
- *      outcome (terminal error 0), as before.
+ *      outcome (terminal error 0), as before;
+ *   4. (ws005-p031) a connection fails with EACCES while the radio cannot
+ *      delete its keys, so the handshake engine stays failed, and the
+ *      driver's recovery then reports a second loss (EIO) for the same
+ *      generation: the status still says EACCES (before the fix: EIO).
  * Prints one line a case and "host-wlan-retire: PASS" or FAIL at the end.
  *
  *   plan/ws005/tests/host-wlan-retire.sh
@@ -36,6 +40,9 @@
 
 /* The cases that failed. */
 static int retire_failures;
+
+/* The error the radio's key deletion reports (case 4 makes the engine's cleanup fail). */
+static int retire_key_delete_error;
 
 /* The clock the station reads: one tick a call, so deadlines are never reached in a case. */
 static uint64_t retire_ticks;
@@ -211,7 +218,7 @@ static int
 radio_key_delete(void *context, uint64_t generation, enum wlan_radio_key_kind kind, uint8_t index, uint64_t key_generation, uint64_t deadline)
 {
 	(void)context; (void)generation; (void)kind; (void)index; (void)key_generation; (void)deadline;
-	return 0;
+	return retire_key_delete_error;
 }
 
 static int
@@ -352,6 +359,24 @@ main(void)
 	error = retire_status(&device, &status);
 	snprintf(what, sizeof(what), "after the disconnect: state=%u terminal=%d", status.state, status.terminal_error);
 	retire_check(what, error == 0 && status.state == WLAN_STATE_IDLE && status.terminal_error == 0);
+
+	/* 4. A refused key whose cleanup fails, then the recovery's own loss: the first reason stays. */
+	error = wlan_station_test_seed_authorized(station, &bss, 30U, 31U);
+	retire_check("seed third connection", error == 0);
+	retire_key_delete_error = EIO;
+	error = wlan_station_report_link_loss(station, 30U, EACCES);
+	snprintf(what, sizeof(what), "third link loss EACCES (cleanup fails) error=%d", error);
+	retire_check(what, 1);
+	error = retire_status(&device, &status);
+	snprintf(what, sizeof(what), "after the refusal: state=%u terminal=%d", status.state, status.terminal_error);
+	retire_check(what, error == 0 && status.state == WLAN_STATE_FAILED && status.terminal_error == EACCES);
+	error = wlan_station_report_link_loss(station, 30U, EIO);
+	snprintf(what, sizeof(what), "recovery link loss EIO error=%d", error);
+	retire_check(what, 1);
+	error = retire_status(&device, &status);
+	snprintf(what, sizeof(what), "after the recovery: state=%u terminal=%d (EACCES kept)", status.state, status.terminal_error);
+	retire_check(what, error == 0 && status.state == WLAN_STATE_FAILED && status.terminal_error == EACCES);
+	retire_key_delete_error = 0;
 
 	/* The verdict. */
 	if (retire_failures != 0) {

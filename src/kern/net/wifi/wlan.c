@@ -3596,6 +3596,17 @@ station_link_lost_controlled(
 		return ENOTCONN;
 	}
 
+	/*
+	 * A connection that has already failed keeps its first reason.  A
+	 * driver that recovers after a refused key reports a second loss for
+	 * the same generation, and the recovery's own error would otherwise
+	 * replace EACCES (BUG-157).  A new connect clears the state, so a
+	 * failure seen here belongs to this generation.
+	 */
+	if (station->state == WLAN_STATE_FAILED &&
+	    station->terminal_error != 0)
+		reason = station->terminal_error;
+
 	/* Fails the connection, then stops the engine. */
 	carrier_error = station_carrier_down_locked(station);
 	station->terminal_error = reason;
