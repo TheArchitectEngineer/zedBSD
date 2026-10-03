@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p053 -->
 # ws073-p053: BUG-163 — UFS の fsync の後、journal の pin が同じ line の普通の content を止めて disk に届かない
 
-Status: in-progress（q664、P2 generation8、2026-10-04。実装・build・host 試験・P2 の QEMU で再現と確認まで済み。判定は Q1）
+Status: cleared（q664、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-163](../../bugs/BUG-163.md)
@@ -117,3 +117,7 @@ transaction）と見る。直した後の 4 回と直す前の他の 3 回は `U
 - 実機。T1 の試験（user の指示で除外）。pc98・intelmac の build（buf.c は共通、amd64・pcat・rpi4 で確かめた）。
 - syncprobe の check は file ごとに 1 block（8 KiB）。大きい file・indirect の block の隣は試していない（仕組みは同じ）。
 - 使い捨て: `build/p2-b135`（直した後の DWARF の image、p053 の出力）、`build/p2-b163-base`（直す前）、`build/p2-b135-run`。
+
+## 判定（Q1、2026-10-04）
+
+cleared。P2 の自分の QEMU（T には依頼しない形）: MBR の partition を 63 から始めた volume で、直す前（25b5533）は 200 回の fsync の戻りのうち 156 回で content が disk に無く、crash の後 16 個中 6 個の file が欠けた。2b24e1c の後は 0/200・欠け 0・UFS OK、direct の書き 647 回。2048 から始めた volume では direct の書き 0（余計な I/O なし）。crash-test.sh・p051-window.sh PASS、fsprobe の churn は前後で同じ。kernel は amd64・pcat・rpi4 で warning 0（main でも確認）。実機は未実施。別の観察（直す前の kernel の 1 回の orphan の inode）は BUG-164。
