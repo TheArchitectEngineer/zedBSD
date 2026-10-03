@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p011 -->
 # ws134-p011: M3b Linux・FreeBSD の backend の monitor の領域
 
-Status: in-progress（q662、P2 generation8、2026-10-04。Linux は host で PASS、FreeBSD は T の guest の試験待ち）
+Status: cleared（q662、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §1.1・§1.3
@@ -29,3 +29,7 @@ Parent: [WS134](../ws.md)
 - FreeBSD: この host で build できない。T に `monitor-backend-p011.sh freebsd`（WS137 の FreeBSD guest、base の cc で -Werror）と
   `plan/tools/keiland-freebsd/backend-test.sh`（native build、warning 0）を依頼。結果は未着。
 - 実機は未実施。
+
+## 判定（Q1、2026-10-04）
+
+cleared。Linux: host の gcc・clang warning 0、monitor-backend-p011.sh linux PASS（P2、host）。FreeBSD: T1-068（FreeBSD 15.1 の QEMU guest）で `monitor-backend-p011 freebsd: PASS`（CPU 8・vtbd0・vtnet0・valid 0x1f・tick 3052/3048）と backend-test 9/9 PASS。
