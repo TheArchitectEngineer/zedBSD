@@ -42,3 +42,5 @@ WS131 の設計（`plan/ws131/design.md` §4.2〜4.4）は p010 で compositor �
 
 - [BUG-162](../bugs/BUG-162.md)（このWS の由来）、[BUG-161](../bugs/BUG-161.md)（音量は session の終わりに一度だけ書く、resolved）、BUG-125（毎秒の監視による menu の遅れ）。
 - [WS131](../ws131/ws.md)（libkeiland と backend、拡張の manager）、WS089（Settings）、WS100（音量）、WS113（`displays.conf` も compositor の store）。
+
+2026-10-04 user「WS135の設計D1-D6を承認します。」→ design.md 第 2 版の D1〜D6 を承認（D3 は Q1 の推奨どおり (a): app だけの設定は libkeiland が app の file を直接読み書きし、別の process には通知しない）。Phase の ID は p002〜p006（design.md §7）。実装は q656（P2）。

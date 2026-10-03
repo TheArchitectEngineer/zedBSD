@@ -344,3 +344,7 @@ compositor は audiod に最初に届いた時に desktop.conf の値を渡す�
 | 14 | 範囲の外の既定の値 | 丸めず `flags=default`（§2.1） |
 | 15 | 引用の誤り | `:45-56`、`KEILAND_VERSION` の書き方を直した |
 | 16 | 起動の時の音量の取り合い | §4.5（復元の前の `set sound.*` は `busy`） |
+
+## 承認（2026-10-04）
+
+user「WS135の設計D1-D6を承認します。」D3 は (a)。
