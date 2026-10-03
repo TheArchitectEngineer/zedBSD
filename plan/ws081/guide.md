@@ -91,14 +91,12 @@ sh plan/ws081/tests/run-browsertouch.sh build/<W>/browser
 
 | 何 | command | 出力 |
 | --- | --- | --- |
-| touchlog だけ | `sh plan/ws081/tests/build-touchlog.sh build/amd64` | `build/ws081-tests/touchlog` |
+| touchlog だけ | `sh plan/ws081/tests/build-touchlog.sh build/<W>` | `build/<W>/tests/touchlog` |
 | touchlog の試験の image（Linux の QEMU、pen の image + touchlog） | `sh plan/ws081/tests/build-touchlog.sh build/<W>-touchlog image > build/<W>/touchlog-build.log 2>&1; echo "exit=$?"` | `build/<W>-touchlog/hdd-image.img` |
 | Windows の QEMU 用の demo の image | `sh plan/ws081/tests/build-demo-win.sh build/<W>-demo-win > build/<W>/demo-win-build.log 2>&1; echo "exit=$?"` | `build/<W>-demo-win/hdd-image.img`（約 2.2 GB） |
 
-- **注意（`build-touchlog.sh:12`）**: 第 1 引数の BUILD の sysroot（`<BUILD>/sysroot/usr/lib/crt1.o`）が無いと、その BUILD に touchlog の image を丸ごと build する。
-  `build-demo-win.sh` は中で `build-touchlog.sh build/amd64` を呼ぶ（`build-demo-win.sh:23`）。先に `ls build/amd64/sysroot/usr/lib/crt1.o` があることを確かめる。無ければ
-  `make -j64 sysroot-amd64`（commands.md §2）を先に。これを怠ると `build/amd64/hdd-image.img` が touchlog の image で上書きされる。
-- touchlog は `build/ws081-tests/` に固定で置かれる（全ての BUILD で共有）。
+- touchlog は `BUILD/tests/touchlog` に作る（ws136-p001、2026-10-04: 以前の共有の `build/ws081-tests/` はやめた）。headers は共有の `build/amd64/sysroot`、
+  libc.so は BUILD の `dynamic/`（無ければ `TOUCHLOG_CONFIG` の config で先に作る）。`build-demo-win.sh` は自分の BUILD で呼ぶ。
 - image の build は同時に 1 つ。warning の確かめは commands.md §1 の grep。
 
 ### Linux の QEMU の試験
@@ -138,7 +136,7 @@ sh plan/ws081/tests/touchlog-check.sh build/<W>-touchlog/hdd-image.img build/<W>
 - ユーザーの決定: デモの touch は Windows の QEMU（2026-09-30 朝）。WS081 の L3 は後ろ（2026-09-30 午後「描画の高速化はラップアップ」）。Notes の指は既定で scroll・pinch、toolbar の切り替えで線（p015）。
   design §10 の 1〜3・5・6 は既定の案のまま進めている。値を変えるならユーザーに示す。
 - Windows の機械と `C:\Work\winq-zedbsd` の binary はユーザーの物。QEMU の fork の source（`vendor/winq-emu-*`）はこの checkout に無い（WS085 の merge で submodule を外した）。
-- `build/ws081-tests/touchlog` と `build/amd64/sysroot` は全ての agent で共有。消さない。
+- `build/amd64/sysroot` は全ての agent で共有。消さない。
 - 共有の runtime: `touchlog-check.sh` は `build/ws081/touchlog-run`、各 app の試験は `build/ws081-run`。同時に 2 つの試験を同じ runtime で走らせない。
 - 2026-10-01 から WS104 が compositor と libkeiland の file を動かす（OS の境界）。library・compositor の source に触る前に main に確かめる。
 - 2026-10-10 ごろ以降は bug の修正と実機の調整だけ。

@@ -22,7 +22,7 @@ noct=${NOCT:-/home/awe/zedBSD-rpi4/build/demo-lcd9/bin/noct}
 D=plan/ws101/tests/hw/g3
 Z=plan/ws031/tests/zdesktop
 G=plan/ws101/tests/hw/gles
-fonts=/home/awe/zedBSD-rpi4/build/ws035-fonts
+fonts=userland/desktop/fonts
 mkdir -p "$out" "$BUILD"
 [ -x "$noct" ] || { echo "g3-hw: no accelerator-enabled noct at $noct"; exit 1; }
 

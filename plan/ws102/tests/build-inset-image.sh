@@ -1,26 +1,15 @@
 #!/bin/sh
-# ws102-p015: builds the keyboard inset's test image (plan/ws102/tests/config-amd64-inset.mk: the WS079 demo image and Text Editor)
-# with the guest harness's files, the fonts, the wallpaper and the tests' sample home maker,
-# like plan/tools/titlebar/build-menu-image.sh.  The fonts and the wallpaper are not in git:
-# build/ws035-fonts (Inter, JetBrains Mono), build/ws035-wallpaper, and build/ws071-fonts
-# (DroidSansFallbackFull.ttf, Apache-2.0, for Japanese file names; copied from the host's
-# /usr/share/fonts/truetype/droid/ with /usr/share/doc/fonts-droid-fallback/copyright).
+# ws102: builds the inset guest image (plan/ws102/tests/config-amd64-inset.mk) with the guest harness's files, the
+# wallpaper and the tests' sample home maker.
+# ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
+# The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
+# userland/desktop/keiland/wallpapers/Birch-Lake.ppm.
 #
 #   plan/ws102/tests/build-inset-image.sh [BUILD]     (default build/amd64)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
-. plan/tools/guest/jobs.sh  # ZEDBSD_JOBS, the parallel jobs (default 16)
 build=${1:-build/amd64}
-extra=$(python3 plan/tools/guest/guest.py extra-files | sed -n "s/^ZEDBSD_TEST_EXTRA_FILES='\(.*\)'$/\1/p")
-[ -n "$extra" ] || { echo "build-inset-image: no guest files (plan/tools/guest/guest.py keys?)"; exit 1; }
-[ -f build/ws035-fonts/Inter.ttf ] && extra="$extra --file /usr/share/fonts/keiland.ttf=build/ws035-fonts/Inter.ttf"
-[ -f build/ws035-fonts/OFL.txt ] && extra="$extra --file /usr/share/fonts/keiland-OFL.txt=build/ws035-fonts/OFL.txt"
-[ -f build/ws035-fonts/JetBrainsMono-Regular.ttf ] && extra="$extra --file /usr/share/fonts/keiland-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
-[ -f build/ws035-fonts/JetBrainsMono-OFL.txt ] && extra="$extra --file /usr/share/fonts/keiland-mono-OFL.txt=build/ws035-fonts/JetBrainsMono-OFL.txt"
-[ -f build/ws071-fonts/DroidSansFallbackFull.ttf ] && extra="$extra --file /usr/share/fonts/keiland-fallback.ttf=build/ws071-fonts/DroidSansFallbackFull.ttf"
-[ -f build/ws071-fonts/DroidSansFallback-LICENSE.txt ] && extra="$extra --file /usr/share/fonts/keiland-fallback-LICENSE.txt=build/ws071-fonts/DroidSansFallback-LICENSE.txt"
-[ -f build/ws035-wallpaper/wallpaper.ppm ] && extra="$extra --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper.ppm"
-extra="$extra --file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh"
-exec make -j"$ZEDBSD_JOBS" ZEDBSD_CONFIG=plan/ws102/tests/config-amd64-inset.mk BUILD="$build" \
-    "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image
+exec plan/tools/guest/test-image.sh plan/ws102/tests/config-amd64-inset.mk "$build" \
+	--file /usr/share/keiland/wallpaper.ppm=userland/desktop/keiland/wallpapers/Birch-Lake.ppm \
+	--file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh

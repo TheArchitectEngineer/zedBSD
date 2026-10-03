@@ -13,7 +13,7 @@ ws074-p052).  plan/ws074/tests/images/images.html and backgrounds.html are copie
 plan/ws074/tests/pages/second.html (a link's target).  build-browser-image.sh puts the
 directory in the guest image at /usr/share/browser-images/.
 
-The web font test (ws074-p070): mono.woff (JetBrains Mono of build/ws035-fonts, which is under the SIL Open Font
+The web font test (ws074-p070): mono.woff (JetBrains Mono of userland/desktop/fonts, which is under the SIL Open Font
 License, wrapped into WOFF 1.0 with its tables deflated), mono-stored.woff (the same with its tables stored as they
 are), mono.ttf (the font as it is) and the license beside them as mono-OFL.txt, for
 plan/ws074/tests/images/fonts.html.
@@ -86,8 +86,8 @@ def woff(sfnt, compress):
 
 
 def fonts(out):
-    """Writes the web font test's fonts (ws074-p070) beside its page, when build/ws035-fonts has the font."""
-    source = os.path.join(ROOT, "build/ws035-fonts/JetBrainsMono-Regular.ttf")
+    """Writes the web font test's fonts (ws074-p070) beside its page, from userland/desktop/fonts."""
+    source = os.path.join(ROOT, "userland/desktop/fonts/JetBrainsMono-Regular.ttf")
     if not os.path.exists(source):
         return
     with open(source, "rb") as font:
@@ -97,7 +97,7 @@ def fonts(out):
     with open(os.path.join(out, "mono-stored.woff"), "wb") as target:
         target.write(woff(sfnt, False))
     shutil.copy(source, os.path.join(out, "mono.ttf"))
-    shutil.copy(os.path.join(ROOT, "build/ws035-fonts/JetBrainsMono-OFL.txt"), os.path.join(out, "mono-OFL.txt"))
+    shutil.copy(os.path.join(ROOT, "userland/desktop/fonts/JetBrainsMono-OFL.txt"), os.path.join(out, "mono-OFL.txt"))
     shutil.copy(os.path.join(ROOT, "plan/ws074/tests/images/fonts.html"), out)
 
 

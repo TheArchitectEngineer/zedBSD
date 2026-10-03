@@ -314,7 +314,7 @@ def main():
                         default=ROOT / "build/ws074-structure")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    fonts = ROOT / "build/ws035-fonts"
+    fonts = ROOT / "userland/desktop/fonts"
     font_config = ROOT / "build/ws074-chrome/fonts.conf"
     result = compare_page_structure(
         args.program.resolve(), args.chromium.resolve(), args.page.resolve(),

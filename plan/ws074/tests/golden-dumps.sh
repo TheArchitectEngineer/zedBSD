@@ -7,7 +7,7 @@
 # plan/ws074/tests/golden/NAME.KIND (a golden file that does not exist yet is skipped with a note).
 # --update rewrites the golden files; review the difference before committing them.
 # PROGRAM defaults to the host build, build/ws074-host/plain/browser.
-# The layout is measured with the fonts of the guest image (build/ws035-fonts: Inter, JetBrains Mono,
+# The layout is measured with the fonts of the guest image (userland/desktop/fonts: Inter, JetBrains Mono,
 # Droid Sans Fallback), passed with --font= and the like, so the host and the guest agree.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -25,7 +25,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 mkdir -p plan/ws074/tests/golden build/ws074-dumps
-fonts=build/ws035-fonts
+fonts=userland/desktop/fonts
 if [ ! -f $fonts/Inter.ttf ]; then
 	fonts=userland/desktop/fonts
 fi

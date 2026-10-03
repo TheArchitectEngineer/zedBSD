@@ -36,7 +36,7 @@
 #                                                      WS035 p066: zdesktop (zdesktop --glass at 1920x1080, two wl_shm windows and mview --windowed
 #                                                      on top; services in plan/ws031/tests/zdesktop/)
 #                                                      built with plan/ws031/tests/config-zdesktop-hw.mk into build/resident-zdesktop;
-#                                                      the font and the wallpaper come from build/ws035-fonts/ and build/ws035-wallpaper/
+#                                                      the font and the wallpaper come from userland/desktop/fonts/ and userland/desktop/keiland/wallpapers/Birch-Lake.ppm
 #                                                      (not in git); the capture harness docks mview and opens Wiseview
 #        Every run takes the machine: flock /tmp/i915-hw.lock plan/ws031/tests/vkloop-hw.sh ...
 #        I915_HOST names the 5330 for ssh and scp (default: the alias solaris10-man; e.g. I915_HOST=awe@10.0.30.3)
@@ -182,13 +182,13 @@ if [ "$KEILAND_RUN" = 1 ]; then
 	# KEILAND_APP=terminal runs terminal (WS035 p068) where the model viewer runs, with the same log
 	if [ "${KEILAND_APP:-mview}" = terminal ]; then
 		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-terminal.sh"
-		FILES="$FILES --file /usr/share/fonts/keiland-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
+		FILES="$FILES --file /usr/share/fonts/keiland-mono.ttf=userland/desktop/fonts/JetBrainsMono-Regular.ttf"
 	fi
 	# KEILAND_APP=home (WS035 p069): nothing is started in the viewer's place; App Home starts the
 	# applications (CAPTURE=zdesktop-home clicks them), and the logs are written out every two seconds
 	if [ "${KEILAND_APP:-mview}" = home ]; then
 		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-home.sh"
-		FILES="$FILES --file /usr/share/fonts/keiland-mono.ttf=build/ws035-fonts/JetBrainsMono-Regular.ttf"
+		FILES="$FILES --file /usr/share/fonts/keiland-mono.ttf=userland/desktop/fonts/JetBrainsMono-Regular.ttf"
 	fi
 	# KEILAND_APP=egltest (ws075-p005): egltest's scenes one after another in the viewer's place, their lines in its log
 	if [ "${KEILAND_APP:-mview}" = egltest ]; then
@@ -198,8 +198,8 @@ if [ "$KEILAND_RUN" = 1 ]; then
 	if [ "${KEILAND_APP:-mview}" = egltest6 ]; then
 		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest6.sh"
 	fi
-	FILES="$FILES --file /usr/share/fonts/keiland.ttf=build/ws035-fonts/Inter.ttf"
-	FILES="$FILES --file /usr/share/keiland/wallpaper.ppm=build/ws035-wallpaper/wallpaper-1080.ppm"
+	FILES="$FILES --file /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Inter.ttf"
+	FILES="$FILES --file /usr/share/keiland/wallpaper.ppm=userland/desktop/keiland/wallpapers/Birch-Lake.ppm"
 	RC_CONF=plan/ws031/tests/zdesktop/rc.conf
 fi
 # the image is rebuilt only when an input is newer than it: switching to an older rc.conf does not

@@ -7,7 +7,7 @@
 #   08 Wiseview (the bottom edge's swipe), 09 the lock screen (App Home's Lock Screen), 10 unlocked,
 #   11 the greeter again (App Home's Log Out).
 # The pointer is driven through QMP like a finger or a pen: a press, moves and a release.
-# ws035-p120: the demonstration logs in as the person kei ("Kei", no password; plan/ws035/demo/demo-accounts.sh):
+# ws035-p120: the demonstration logs in as the person kei ("Kei", no password; the base accounts, userland/base/etc):
 # the session's log is /run/user/1000/session.log, the PDF goes to /home/kei/Documents, and the walk checks that
 # Notes saved its notebook in /home/kei/Documents/Notes as kei, that the session has the group network, and that
 # PDF Viewer opened over the fullscreen Notes leaves the system bar away (ZWL GLASS bar hidden).
