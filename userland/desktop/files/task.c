@@ -732,6 +732,7 @@ task_plan_source(
 	char target[2 * FM_OPS_PATH_MAX + 32];
 	char parent[FM_OPS_PATH_MAX];
 	char original[FM_OPS_PATH_MAX];
+	char trash[FM_OPS_PATH_MAX];
 	const char *source;
 	const char *suffix;
 	const char *folder;
@@ -829,16 +830,29 @@ task_plan_source(
 		/* The move is planned. */
 		break;
 	case FM_TASK_TRASH:
-		/* The item into the trash (the destination), with the record of where it was. */
-		error = task_plan_trash(task, task->destination, source, &status, target, sizeof(target));
+		/*
+		 * The item into its trash: its volume's, or the home trash
+		 * (ws127-p003); the destination when neither is there.
+		 */
+		error = fm_trash_for(source, trash, sizeof(trash));
+		if (error != 0)
+			snprintf(trash, sizeof(trash), "%s", task->destination);
+
+		/* The item into that trash, with the record of where it was. */
+		error = task_plan_trash(task, trash, source, &status, target, sizeof(target));
 		if (error == 0)
 			task->results[owner] = strdup(target);
 
 		/* The move into the trash is planned. */
 		break;
 	case FM_TASK_RESTORE:
-		/* Where the item was, from its record in the trash. */
-		error = fm_trash_info_read(task->destination, task_base(source), original, sizeof(original), &deleted);
+		/* The trash the item is in (a volume's, ws127-p003), else the destination. */
+		error = fm_trash_of(source, trash, sizeof(trash));
+		if (error != 0)
+			snprintf(trash, sizeof(trash), "%s", task->destination);
+
+		/* Where the item was, from its record in that trash. */
+		error = fm_trash_info_read(trash, task_base(source), original, sizeof(original), &deleted);
 		if (error != 0) {
 			task_fail(task, owner, error, source);
 			return -1;
@@ -871,7 +885,7 @@ task_plan_source(
 		}
 
 		/* The record goes once the item is back. */
-		snprintf(target, sizeof(target), "%s/info/%s.trashinfo", task->destination, task_base(source));
+		snprintf(target, sizeof(target), "%s/info/%s.trashinfo", trash, task_base(source));
 		step = task_add(task, FM_STEP_UNTRASHINFO, target, NULL);
 		if (step == NULL)
 			error = ENOMEM;
@@ -985,10 +999,11 @@ task_resolve(
 		return EINVAL;
 
 	/*
-	 * It goes to the trash first, where undo finds it again; without a
-	 * trash it is removed.  The source is planned again after it.
+	 * It goes to its trash first (its volume's, ws127-p003), where undo
+	 * finds it again; without a trash it is removed.  The source is
+	 * planned again after it.
 	 */
-	error = fm_trash_path(trash, sizeof(trash));
+	error = fm_trash_for(target, trash, sizeof(trash));
 	if (error == 0) {
 		error = task_plan_trash(task, trash, target, &status, trashed, sizeof(trashed));
 		if (error != 0)
