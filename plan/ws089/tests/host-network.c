@@ -7,7 +7,7 @@
 
 /*
  * ws089-p003: the network's backend for the host tests, in place of
- * userland/desktop/settings/network.c: made-up states (host_network_fake)
+ * userland/desktop/settings/network.c (WS131 p011: over kl_system_*): made-up states (host_network_fake)
  * and requests that print what they would ask of the daemon and change the
  * made-up state as the daemon would.  Test code only; the program never
  * has it.
@@ -28,7 +28,7 @@ host_ap(
 	int rssi,
 	unsigned secured)
 {
-	struct keiland_network_ap *ap;
+	struct kl_network_ap *ap;
 
 	ap = &network->scan[network->scan_count];
 	(void)snprintf(ap->ssid, sizeof(ap->ssid), "%s", ssid);
@@ -47,7 +47,7 @@ host_link(
 	uint64_t received,
 	uint64_t sent)
 {
-	struct keiland_network_link *link;
+	struct kl_network_link *link;
 
 	link = &network->links[network->link_count];
 	memset(link, 0, sizeof(*link));
@@ -57,9 +57,7 @@ host_link(
 	(void)snprintf(link->address, sizeof(link->address), "%s", address);
 	if (address[0] != '\0')
 		(void)snprintf(link->netmask, sizeof(link->netmask), "%s", "255.255.255.0");
-	link->hardware[0] = 0x52;
-	link->hardware[1] = 0x54;
-	link->hardware[5] = (unsigned char)(network->link_count + 0x10);
+	(void)snprintf(link->hardware, sizeof(link->hardware), "52:54:00:00:00:%02x", (unsigned)(network->link_count + 0x10));
 	link->mtu = 1500;
 	link->received_bytes = received;
 	link->sent_bytes = sent;
@@ -81,6 +79,7 @@ host_network_fake(
 
 	network = &app->network;
 	memset(network, 0, sizeof(*network));
+	network->live = 1;
 	network->state.reachable = 1;
 	if (strcmp(scenario, "down") == 0) {
 		network->state.reachable = 0;
@@ -96,7 +95,7 @@ host_network_fake(
 	network->dns_count = 2;
 	(void)snprintf(network->state.wired, sizeof(network->state.wired), "%s", "em0");
 	network->state.connected = 1;
-	network->state.kind = KEILAND_NETWORK_WIRED;
+	network->state.kind = KL_NETWORK_WIRED;
 	(void)snprintf(network->state.interface, sizeof(network->state.interface), "%s", "em0");
 
 	/* The activity of the last two minutes. */
@@ -111,18 +110,18 @@ host_network_fake(
 
 	/* The radio. */
 	if (strcmp(scenario, "absent") == 0) {
-		network->state.wifi = KEILAND_WIFI_ABSENT;
+		network->state.wifi = KL_WIFI_ABSENT;
 		return;
 	}
 	if (strcmp(scenario, "wired") == 0) {
-		network->state.wifi = KEILAND_WIFI_OFF;
+		network->state.wifi = KL_WIFI_OFF;
 		return;
 	}
 
 	/* On a Wi-Fi network: the radio, its scan and the saved keys. */
 	host_link(network, "wlan0", "192.168.1.24", 1, 50000000ULL, 9000000ULL);
-	network->state.wifi = KEILAND_WIFI_CONNECTED;
-	network->state.kind = KEILAND_NETWORK_WIFI;
+	network->state.wifi = KL_WIFI_CONNECTED;
+	network->state.kind = KL_NETWORK_WIFI;
 	(void)snprintf(network->state.interface, sizeof(network->state.interface), "%s", "wlan0");
 	(void)snprintf(network->state.wifi_interface, sizeof(network->state.wifi_interface), "%s", "wlan0");
 	(void)snprintf(network->state.ssid, sizeof(network->state.ssid), "%s", "Kei Lab");
@@ -154,6 +153,18 @@ se_network_poll(
 }
 
 int
+se_network_result(
+	struct se_app *app,
+	uint32_t request,
+	int error)
+{
+	(void)app;
+	(void)request;
+	(void)error;
+	return 0;
+}
+
+int
 se_network_wait(
 	struct se_app *app)
 {
@@ -174,7 +185,7 @@ se_network_wifi(
 	int on)
 {
 	printf("NETWORK wifi on=%d\n", on);
-	app->network.state.wifi = on != 0 ? KEILAND_WIFI_SEARCHING : KEILAND_WIFI_OFF;
+	app->network.state.wifi = on != 0 ? KL_WIFI_SEARCHING : KL_WIFI_OFF;
 }
 
 void
@@ -205,7 +216,7 @@ se_network_join_key(
 {
 	printf("NETWORK join-key ssid=%s key-length=%u\n", ssid, (unsigned)strlen(key));
 	(void)snprintf(app->network.join_ssid, sizeof(app->network.join_ssid), "%s", ssid);
-	app->network.join_step = SE_JOIN_PROFILES;
+	app->network.join_step = SE_JOIN_KEY;
 	(void)snprintf(app->network.message, sizeof(app->network.message), "Connecting to %s...", ssid);
 	app->network.message_bad = 0;
 }
@@ -215,6 +226,6 @@ se_network_disconnect(
 	struct se_app *app)
 {
 	printf("NETWORK disconnect\n");
-	app->network.state.wifi = KEILAND_WIFI_DISCONNECTED;
+	app->network.state.wifi = KL_WIFI_DISCONNECTED;
 	app->network.state.ssid[0] = '\0';
 }

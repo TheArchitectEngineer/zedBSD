@@ -77,7 +77,7 @@ timeout 120 sh plan/tools/keiland-linux/header-check.sh
 `elf-check.sh` は全 ELF の RUNPATH、library の SONAME、我々の NEEDED の存在を確認する。`KEILAND_PREFIX` を変えた build では同じ変数を export して確認する。
 `makefile-sync.sh` は package ごとの source token を双方向に比較し、zedbsd / linux / wpa と説明付き skip / only を扱う。
 `header-check.sh` は system header も含む `-M` を全 source に行い、system の Wayland / EGL / GLES の混入を検出する。`CC` と `KEILAND_LINUX_BUILD` を export して別 build を指定できる。
-`lib-smoke.c` は p002 の仮 backend と version 21 の確認用。p010 で本物の service backend を入れた後の動作は各 service の試験で確認する。
+`lib-smoke.c` は libkeiland の version 22 と `kl_system_*`（display 無しは EINVAL、compositor が動いていれば Keiland の拡張か ENOTSUP）の確認用（ws131-p011。libkeiland は OS に触れない）。staged の libkeiland.so と libwayland-client に link する。
 
 ## Vulkan chain の確認
 
@@ -139,12 +139,12 @@ guestにdirect compositorを起動した後に使う。確認はclientの終了0
 
 `wifi-setup.sh` は disposable guest 内の root 専用。mac80211_hwsim の2radioにhostapd / wpa_supplicantを起動し、試験専用192.0.2.2/24を付ける（DHCPはKeilandの外）。hostでは実行しない。
 
-`network-probe.c`・`audio-probe.c` は staged libkeiland.so に linkし、guestのkeiで実行する。networkはsecured APのscan、saveが自動joinしないこと、PROFILES→JOIN、IPv4/MAC/MTU/counters、saved/DNS、disconnect。audioは40%のreadback、amixer外部70% event/readable、mute、silentfeedback。HDA raw0〜74でlibraryの40%はamixer41%（許容±3）。
+`network-probe.c`・`audio-probe.c` は libkeiland-backend の API（`kl_backend_network_*`・`kl_backend_audio_*`）を直接使う（ws131-p011 で libkeiland の旧 API を除いたため）。build の `lib/libkeiland-backend.a` に link し、guestのkeiで実行する。networkはsecured APのscan、saveが自動joinしないこと、PROFILES→JOIN、IPv4/MAC/MTU/counters、saved/DNS、disconnect。audioは40%のreadback、amixer外部70% event/readable、mute、silentfeedback。HDA raw0〜74でlibraryの40%はamixer41%（許容±3）。
 
 ```sh
 for p in network-probe audio-probe; do
-  cc -D_GNU_SOURCE -std=gnu17 -Wall -Wextra -Werror -o build/keiland-linux/stage/opt/keiland/bin/$p plan/tools/keiland-linux/$p.c \
-    -Iuserland/desktop/keiland -Lbuild/keiland-linux/lib -l:libkeiland.so -Wl,-rpath-link,build/keiland-linux/lib -Wl,-rpath,/opt/keiland/lib
+  cc -D_GNU_SOURCE -std=gnu17 -Wall -Wextra -Werror -I. -o build/keiland-linux/stage/opt/keiland/bin/$p plan/tools/keiland-linux/$p.c \
+    build/keiland-linux/lib/libkeiland-backend.a -lm
 done
 timeout 30 sh plan/tools/keiland-linux/guest.sh put plan/tools/keiland-linux/wifi-setup.sh /tmp/wifi-setup.sh
 timeout 60 sh plan/tools/keiland-linux/guest.sh ssh 'sh /tmp/wifi-setup.sh'

@@ -123,6 +123,20 @@ design.md §4 の拡張 `kl_system_manager_v1`（settings・network・audio・po
 - review 7 のうち system bar の鍵の同期の書き（`network.c` の `network_key_submit` の `kl_backend_network_save_key`、`network_key_saved` の `kl_backend_network_get_saved`）は event loop に残っている。Settings を拡張へ移す p011 で、system bar も `system.c` の network の thread を使う形にするのが良い。この Phase では扱っていない。
 - 範囲外の file の変更: `platform/amd64/vmunix.mk`（probe の link の規則）と `userland/tests/keiland-system/`（新規）。merge の時に Q1 が判断する。
 
+### T1-061 の 2 点への答え（P2、2026-10-04、p011 の作業の中で）
+
+1. `capabilities=0x1e`: 意図どおりで、Linux で欠けた bit は無い。probe は `kl_system_capabilities()` を表示する。この関数は app が使える object の `KL_SYSTEM_HAS_*`（network 0x2・audio 0x4・power 0x8・devices 0x10）だけを返し、settings の bit（protocol の 0x1）を含まない。settings は `kl_settings_*` の側にあるので、zedBSD でも 0x1e になる。T2 への依頼にも 0x1e と書いた。compositor が送る capabilities の event は 0x1f のまま。
+2. power の actions が最初の dump で 0x0、直後の watch で 0xe だった件: 不具合だった。p010 では power の object を作った時に未読の状態（unknown・actions 0）と done をすぐ送り、power の thread が読み終えてから変化として送り直していた。これは「作った時に全部の状態」の約束に反する。p011 で直した（`wayland/system.c`）:
+   - compositor の最初の tick で power を一度読む。
+   - 一度も読み終えていない間に作られた power の object には、最初の状態を送らない。最初の読みが終わった時に、状態と done を送る（読みに失敗しても unknown として送る）。
+   - 読み終えた後に作られた object には、その状態をすぐ送り、もう一度読む（変われば変化として送る）。
+   - これにより kl_system_open の時には、普通は読み終えた状態が届く。
+   - host-system.sh で両端の試験を通した。Linux の guest での再確認は p011 の試験に含めて依頼する。
+
+T2-020（zedBSD）で Q1 が尋ねた 3 点目への答え:
+
+3. audiod の device が 0 でも `volume` が error=0（ENODEV ではない）になる件: 意図どおり。audiod は device が無くても DEVICE_VOLUME を受け、自分の音量として持ち、購読者に知らせる（`userland/base/audiod/main.c` の `AUDIOD_DEVICE_VOLUME`、「The device's volume (or audiod's own)」）。compositor が ENODEV にするのは audiod に届かない時だけで、WS135 の `zwl_volume_request` と同じ規則。Settings は device が無い時に slider を使えなくし、「Running, no sound output」と出す。
+
 ## Resume
 
 T2 の結果（FreeBSD の build、guest の probe、回帰）を Q1 が判定する。FAIL なら P2 が直す。

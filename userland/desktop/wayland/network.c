@@ -25,7 +25,8 @@
  * network joins it with its saved profile; a network that asks for a key
  * and has none saved opens a key field in the menu instead, and Enter saves
  * the key in the user's store, tells the daemon and joins (ws005-p019,
- * BUG-138), the same three steps Settings takes.  A click on the switch
+ * BUG-138), the same three steps Settings takes, done by the system
+ * extension's thread (system.c).  A click on the switch
  * turns the Wi-Fi on or off.  A click elsewhere, or Esc, closes the menu.
  * Opening the menu asks for a scan.
  *
@@ -55,6 +56,9 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+
+/* A parameter a function does not use. */
+#define UNUSED_PARAMETER(name)	((void)(name))
 
 /* The evdev codes of Esc, Backspace, Enter and the keypad's Enter. */
 #define NETWORK_KEY_ESC		1U
@@ -120,9 +124,15 @@ struct network_row {
  *
  * The key field: key_open while it is shown, for key_ssid, with the
  * characters typed so far in key (key_length of them, never more than
- * NETWORK_KEY_MAX, wiped whenever the field closes or the key is saved).
- * join_after_profiles is set while the daemon is being told the saved
- * networks changed, so that its answer sends the join of key_ssid.
+ * NETWORK_KEY_MAX, wiped whenever the field closes or the key is handed
+ * to the system extension, which saves it on its thread, tells the daemon
+ * and joins; the join's answer comes here as the bar's own).
+ *
+ * The saved networks (saved, saved_count) as the system extension's thread
+ * last read them, asked for each time the menu opens (WS131 p011: nothing
+ * here reads the user's store on the event loop); before the first
+ * reading a network that asks for a key is joined, and a join without a
+ * saved key opens the key field.
  *
  * The waiting slot: pending_request (KL_BACKEND_NETWORK_REQUEST_NONE when
  * empty) and pending_ssid, sent when the outstanding request is answered.
@@ -159,7 +169,8 @@ struct network_view {
 	char key_ssid[KL_BACKEND_NETWORK_SSID_MAX];
 	char key[NETWORK_KEY_MAX + 1U];
 	size_t key_length;
-	unsigned join_after_profiles;
+	char saved[KL_BACKEND_NETWORK_SCAN_MAX][KL_BACKEND_NETWORK_SSID_MAX];
+	size_t saved_count;
 	unsigned pending_request;
 	char pending_ssid[KL_BACKEND_NETWORK_SSID_MAX];
 	char connecting[KL_BACKEND_NETWORK_SSID_MAX];
@@ -561,6 +572,42 @@ zwl_network_scan(
 }
 
 /*
+ * Says that a key the key field handed to the system extension could not
+ * be saved, or its network not told or joined, and gives up the join.
+ */
+void
+zwl_network_key_failed(
+	struct zwl_server *server,
+	const char *ssid,
+	int error)
+{
+	/* The failure in the menu, and no network shown as being joined. */
+	(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not join %s (%s)", ssid, strerror(error));
+	network_connecting(NULL);
+	server->dirty = 1;
+	printf("ZWL NETWORK key failed ssid=%s error=%d\n", ssid, error);
+}
+
+/*
+ * Keeps the saved networks the system extension's thread read.
+ */
+void
+zwl_network_saved(
+	struct zwl_server *server,
+	char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX],
+	size_t count)
+{
+	UNUSED_PARAMETER(server);
+
+	/* As many as are kept. */
+	if (count > KL_BACKEND_NETWORK_SCAN_MAX)
+		count = KL_BACKEND_NETWORK_SCAN_MAX;
+	memcpy(network_view.saved, ssids, count * sizeof(network_view.saved[0]));
+	network_view.saved_count = count;
+	printf("ZWL NETWORK saved count=%u\n", (unsigned)count);
+}
+
+/*
  * Tells whether the menu is open (the look is not still while it is).
  */
 int
@@ -582,6 +629,9 @@ network_open_menu(
 	network_view.logged_layout = 0;
 	server->dirty = 1;
 	printf("ZWL NETWORK open\n");
+
+	/* The saved networks, read again by the system extension's thread. */
+	zwl_system_bar_saved(server);
 
 	/* A radio that is on is asked what it sees. */
 	if (network_view.state.wifi == KL_BACKEND_WIFI_ABSENT)
@@ -1420,29 +1470,22 @@ network_choose_ap(
 	network_key_open(server, chosen->ssid);
 }
 
-/* Tells whether the user's store has a key for a network. */
+/* Tells whether the user's store had a key for a network when the system extension's thread last read it. */
 static int
 network_key_saved(
 	const char *ssid)
 {
-	char saved[KL_BACKEND_NETWORK_SCAN_MAX][KL_BACKEND_NETWORK_SSID_MAX];
-	size_t count;
 	size_t index;
 	int differs;
 
-	/* The networks the user has saved (read from the store, not the daemon). */
-	count = kl_backend_network_get_saved(saved, KL_BACKEND_NETWORK_SCAN_MAX);
-	if (count > KL_BACKEND_NETWORK_SCAN_MAX)
-		count = KL_BACKEND_NETWORK_SCAN_MAX;
-
-	/* Looks for this one among them. */
-	for (index = 0; index < count; index++) {
-		differs = strcmp(saved[index], ssid);
+	/* Looks for this one among the saved networks. */
+	for (index = 0; index < network_view.saved_count; index++) {
+		differs = strcmp(network_view.saved[index], ssid);
 		if (differs == 0)
 			return 1;
 	}
 
-	/* Not saved. */
+	/* Not saved, or not read yet. */
 	return 0;
 }
 
@@ -1549,8 +1592,8 @@ network_key_submit(
 		return;
 	}
 
-	/* The key, saved in the user's own store. */
-	error = kl_backend_network_save_key(network_view.key_ssid, network_view.key);
+	/* The key, handed to the system extension's thread, which saves it, tells the daemon and joins. */
+	error = zwl_system_bar_save_key(server, network_view.key_ssid, network_view.key);
 	network_key_wipe();
 	if (error != 0) {
 		(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not save the key (%s)", strerror(error));
@@ -1558,14 +1601,15 @@ network_key_submit(
 		server->dirty = 1;
 		return;
 	}
-	printf("ZWL NETWORK key saved ssid=%s\n", network_view.key_ssid);
 
-	/* The field closes; the daemon is told, and its answer sends the join (the menu says it is connecting from now). */
+	/* The log line the tests read (never the key). */
+	printf("ZWL NETWORK key handed ssid=%s\n", network_view.key_ssid);
+
+	/* The field closes; the menu says it is connecting from now, and the join's answer comes as the bar's. */
 	network_view.key_open = 0;
-	network_view.join_after_profiles = 1;
 	(void)snprintf(network_view.joining, sizeof(network_view.joining), "%s", network_view.key_ssid);
 	network_connecting(network_view.key_ssid);
-	network_request(server, KL_BACKEND_NETWORK_REQUEST_PROFILES, NULL);
+	server->dirty = 1;
 }
 
 /* Wipes the key field's characters, every byte of it. */
@@ -1604,13 +1648,6 @@ network_finished(
 	/* A join answered, joined or not, is no longer waited for (its state, or its failure, shows now). */
 	if (request == KL_BACKEND_NETWORK_REQUEST_JOIN)
 		network_connecting(NULL);
-
-	/* The daemon has the new key: the join follows (the slot waits for it). */
-	if (request == KL_BACKEND_NETWORK_REQUEST_PROFILES && network_view.join_after_profiles) {
-		network_view.join_after_profiles = 0;
-		network_request(server, KL_BACKEND_NETWORK_REQUEST_JOIN, network_view.key_ssid);
-		return;
-	}
 
 	/* A join of a network that asks for a key, without one, asks for it. */
 	if (error == ENOENT && request == KL_BACKEND_NETWORK_REQUEST_JOIN) {

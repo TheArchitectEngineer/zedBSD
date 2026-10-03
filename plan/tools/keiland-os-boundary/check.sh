@@ -94,18 +94,34 @@ while IFS= read -r file; do
     awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*([<"]userland\/desktop\/wayland\/|"[^"]*zwl[^"]*\.h"|<keiland\.h>|<keiui\.h>)/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/B1"
 
-# Only the compositor uses libkeiland-backend; libkeiland forwards through it only in
-# system-compat.c and audio-compat.c until Settings reaches the network and the sound through the compositor (WS131 B3,
-# ws131-p011).
+# Only the compositor uses libkeiland-backend: no other desktop source includes its headers, and no other Makefile
+# builds or links its sources (the top-level lists that include the backend's own Makefiles aside) (WS131 B3; since ws131-p011 libkeiland reaches the system only through the compositor).
 find userland/desktop -path 'userland/desktop/wayland' -prune \
     -o -path 'userland/desktop/libkeiland-backend*' -prune \
     -o -name '*.[ch]' -print |
 while IFS= read -r file; do
-    case $file in
-    userland/desktop/libkeiland/system-compat.c|userland/desktop/libkeiland/audio-compat.c) continue ;;
-    esac
     awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"].*keiland-backend[a-z-]*\.h[>"]/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/B3"
+find userland/desktop -path 'userland/desktop/wayland' -prune \
+    -o -path 'userland/desktop/libkeiland-backend*' -prune \
+    -o \( -name 'Makefile*' -o -name '*.mk' \) -print |
+while IFS= read -r file; do
+    awk '/libkeiland-backend|userland\/base\/net\// && !/libkeiland-backend[a-z-]*\/Makefile\.(linux|freebsd)/ {print FILENAME ":" FNR ": " $0}' "$file"
+done >> "$work/B3"
+
+# The compositor takes from libkeiland only what D4 allows: the touch motion, the scroller, the gestures and the
+# version (WS131 B2, ws131-p011; `nm -u` of each compositor binary that is built: zedBSD's under $BUILD, default
+# build/amd64, Linux's under $KEILAND_LINUX_BUILD, default build/keiland-linux, and any in $B2_BINARIES).
+for binary in "${BUILD:-build/amd64}/bin/wayland" "${KEILAND_LINUX_BUILD:-build/keiland-linux}/bin/wayland" ${B2_BINARIES:-}; do
+    if [ ! -f "$binary" ]; then
+        echo "check: B2 note: $binary not built, not looked at" >&2
+        continue
+    fi
+    nm -u "$binary" | awk -v binary="$binary" '{name = $NF; sub(/@.*/, "", name)}
+        name ~ /^(keiland_|kl_)/ && name !~ /^(keiland_motion_|keiland_scroller_|keiland_gesture_|keiland_version$|kl_version$)/ {
+            print binary ": uses " name " of libkeiland"
+        }'
+done > "$work/B2"
 
 # libkeiland keeps no operating-system directory: its OS code is libkeiland-backend's (WS131 L6, ws131-p004).
 for os_dir in zedbsd linux freebsd; do
@@ -168,7 +184,7 @@ for line in Path(sys.argv[1]).read_text().splitlines():
 PY
 
 # Report every violated condition before returning the aggregate outcome.
-for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 L7 M1 X1 B1 B3 S1; do
+for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 L7 M1 X1 B1 B2 B3 S1; do
     if [ -s "$work/$check" ]; then
         while IFS= read -r detail; do
             printf 'check: %s FAIL %s\n' "$check" "$detail"

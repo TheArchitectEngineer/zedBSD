@@ -8,7 +8,7 @@
 /*
  * Checks production ALSA controls and another process's mixer notifications.
  */
-#include <keiland.h>
+#include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include <errno.h>
 #include <poll.h>
 #include <stdio.h>
@@ -16,8 +16,8 @@
 #include <string.h>
 #include <unistd.h>
 
-static int audio_probe(struct keiland_audio *audio);
-static int volume(struct keiland_audio *audio, unsigned percent, unsigned muted);
+static int audio_probe(struct kl_backend_audio *audio);
+static int volume(struct kl_backend_audio *audio, unsigned percent, unsigned muted);
 static int mixer(const char *command, const char *expected);
 
 /*
@@ -27,23 +27,23 @@ int
 main(
 	void)
 {
-	struct keiland_audio *audio;
+	struct kl_backend_audio *audio;
 	int available;
 	int error;
 
 	/* The real caller must be able to discover a supported mixer. */
-	available = keiland_audio_available();
+	available = kl_backend_audio_available();
 	if (available != 1) {
 		fprintf(stderr, "audio-probe: FAIL unavailable\n");
 		return 1;
 	}
 
 	/* Subscription cleanup remains owned by main on every outcome. */
-	audio = keiland_audio_open();
+	audio = kl_backend_audio_open();
 	if (audio == NULL)
 		return 1;
 	error = audio_probe(audio);
-	keiland_audio_close(audio);
+	kl_backend_audio_close(audio);
 	if (error != 0) {
 		fprintf(stderr, "audio-probe: FAIL errno=%d %s\n", error, strerror(error));
 		return 1;
@@ -57,19 +57,19 @@ main(
 /* Exercises the public read/write and poll paths against the actual guest mixer. */
 static int
 audio_probe(
-	struct keiland_audio *audio)
+	struct kl_backend_audio *audio)
 {
-	struct keiland_audio_state state;
+	struct kl_backend_audio_state state;
 	struct pollfd descriptor;
 	unsigned changed;
 	int error;
 	int polled;
 
 	/* A reachable card with a supported element is a real audio device. */
-	error = keiland_audio_update(audio, &changed);
+	error = kl_backend_audio_update(audio, &changed);
 	if (error != 0)
 		return error;
-	keiland_audio_get_state(audio, &state);
+	kl_backend_audio_get_state(audio, &state);
 	if (state.reachable != 1 || state.device != 1)
 		return ENODEV;
 
@@ -82,23 +82,23 @@ audio_probe(
 		return error;
 
 	/* Drain the library's own notifications before testing another process. */
-	error = keiland_audio_update(audio, &changed);
+	error = kl_backend_audio_update(audio, &changed);
 	if (error != 0)
 		return error;
 	error = mixer("amixer -c 0 set Master 70%", "[on]");
 	if (error != 0)
 		return error;
-	descriptor.fd = keiland_audio_fd(audio);
+	descriptor.fd = kl_backend_audio_fd(audio);
 	descriptor.events = POLLIN;
 	descriptor.revents = 0;
 	polled = poll(&descriptor, 1, 3000);
 	if (polled != 1 || (descriptor.revents & POLLIN) == 0)
 		return ETIMEDOUT;
-	error = keiland_audio_update(audio, &changed);
+	error = kl_backend_audio_update(audio, &changed);
 	if (error != 0)
 		return error;
-	keiland_audio_get_state(audio, &state);
-	if ((changed & KEILAND_AUDIO_CHANGED_VOLUME) == 0 ||
+	kl_backend_audio_get_state(audio, &state);
+	if ((changed & KL_BACKEND_AUDIO_CHANGED_VOLUME) == 0 ||
 	    state.left < 67 ||
 	    state.left > 73)
 		return EPROTO;
@@ -117,7 +117,7 @@ audio_probe(
 	error = mixer("amixer -c 0 get Master", "[on]");
 	if (error != 0)
 		return error;
-	error = keiland_audio_feedback(audio);
+	error = kl_backend_audio_feedback(audio);
 	if (error != 0)
 		return error;
 
@@ -128,22 +128,22 @@ audio_probe(
 /* Checks hardware readback after a public volume and mute request. */
 static int
 volume(
-	struct keiland_audio *audio,
+	struct kl_backend_audio *audio,
 	unsigned percent,
 	unsigned muted)
 {
-	struct keiland_audio_state state;
+	struct kl_backend_audio_state state;
 	unsigned changed;
 	int error;
 
 	/* Device state is obtained by update, never by assuming the write succeeded. */
-	error = keiland_audio_set_volume(audio, percent, percent, muted);
+	error = kl_backend_audio_set_volume(audio, percent, percent, muted);
 	if (error != 0)
 		return error;
-	error = keiland_audio_update(audio, &changed);
+	error = kl_backend_audio_update(audio, &changed);
 	if (error != 0)
 		return error;
-	keiland_audio_get_state(audio, &state);
+	kl_backend_audio_get_state(audio, &state);
 	printf("audio-probe: volume left=%u right=%u muted=%u changed=%u\n", state.left, state.right, state.muted, changed);
 	if (state.left != percent ||
 	    state.right != percent ||

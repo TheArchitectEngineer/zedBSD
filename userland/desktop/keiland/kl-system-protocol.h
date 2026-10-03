@@ -51,7 +51,10 @@
  *   event   7 done(uint serial)
  *   event   8 result(uint request, uint applied, uint saved)
  *   One request of the network is outstanding at a time, the system bar's
- *   included; another is answered busy.
+ *   included; another is answered busy.  query_details is no request of
+ *   the daemon's: every object that asked hears the next reading.  A join
+ *   (and save_key's join) is answered no_key, refused or unreachable for
+ *   its own failures.
  *
  * kl_system_audio_v1
  *   request 0 destroy
@@ -182,5 +185,10 @@
 #define KL_SYSTEM_RESULT_UNAVAILABLE		5U
 #define KL_SYSTEM_RESULT_FAILED			6U
 #define KL_SYSTEM_RESULT_NOT_SAVED		7U
+
+/* A network join's own failures (WS131 p011): no key is saved, the network refused the key, the network is out of reach. */
+#define KL_SYSTEM_RESULT_NO_KEY			8U
+#define KL_SYSTEM_RESULT_REFUSED		9U
+#define KL_SYSTEM_RESULT_UNREACHABLE		10U
 
 #endif

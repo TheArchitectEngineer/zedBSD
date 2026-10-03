@@ -216,9 +216,11 @@ se_sound_draw(
 
 	/* The output's card: the service's state. */
 	card += height + INPUT_GAP;
-	running = keiland_audio_available();
+	running = se_sound_running(app);
 	service = "Not running";
-	if (running != 0 && app->sound.state.reachable && !app->sound.state.device)
+	if (!app->sound.live)
+		service = "Not available on this desktop";
+	else if (running != 0 && !app->sound.state.device)
 		service = "Running, no sound output";
 	else if (running != 0)
 		service = "Running";
@@ -227,7 +229,9 @@ se_sound_draw(
 
 	/* What the volume is, and why it cannot be changed now. */
 	note = "The system bar's volume icon changes the same volume.";
-	if (!available)
+	if (!app->sound.live)
+		note = "The sound is set from this desktop's own settings.";
+	else if (!available)
 		note = "The volume can be changed when the sound service runs with a sound output.";
 	y = input_note(app, canvas, x, card + se_card_height(1, 1) + INPUT_GAP, width, note);
 

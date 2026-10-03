@@ -26,12 +26,13 @@ link() {
 link "$out/bug149-poll.o" -o "$out/bug149-poll"
 # shellcheck disable=SC2086
 "$clang" $cflags -c plan/ws005/tests/bug149-keiland.c -o "$out/bug149-keiland.o"
-# libkeiland's network calls (system-compat.c) over the zedBSD backend (ws131-p003 moved network-zedbsd.c
-# from libkeiland/zedbsd/ to libkeiland-backend-zedbsd/; its sources.mk lists the backend's files).  Since
-# ws131-p003 the backend also checks readability with MSG_PEEK after poll, so this probe now checks the join
-# end to end rather than the kernel fix alone.
+# The zedBSD backend's network calls (kl_backend_network_*; ws131-p011 removed libkeiland's forwarding
+# system-compat.c, so the probe calls the backend directly).  Since ws131-p003 the backend also checks
+# readability with MSG_PEEK after poll, so this probe checks the join end to end rather than the kernel fix
+# alone.  backend.c's session and seat are the no-op ones (the probe opens no backend).
 objects="$out/bug149-keiland.o"
-for source in userland/desktop/libkeiland/system-compat.c userland/desktop/libkeiland-backend/backend.c \
+for source in userland/desktop/libkeiland-backend/backend.c userland/desktop/libkeiland-backend/session/session-none.c \
+	userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c \
 	userland/desktop/libkeiland-backend-zedbsd/network-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/network-link-zedbsd.c \
 	userland/base/net/protocol.c userland/base/net/wifi-conf.c userland/base/net/wifi-store.c; do

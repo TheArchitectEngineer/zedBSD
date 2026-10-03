@@ -23,13 +23,19 @@
  * (the interfaces, the DNS servers, the saved networks, read from the
  * kernel and files) are done by a thread of the network's, and the power's
  * state (logind's answers on Linux) by a thread of the power's, each one
- * job at a time.  A key is never written to the log.
+ * job at a time.  The system bar saves its keys and learns the saved
+ * networks through the same thread (WS131 p011).  A key is never written
+ * to the log.
  *
  * A key saved is joined in three steps within the one request (design.md
  * section 4.1 item 4): the key is saved, the network daemon is told the
  * saved networks changed, and the network is joined; the client hears one
  * result, at the end.  A step the system bar's request holds up is sent
  * again on the next pass.
+ *
+ * The details are no request of the daemon's: they are read whenever the
+ * thread is free (a key waiting to be saved goes first), and every object
+ * that asked meanwhile hears the same reading.
  */
 
 #include "zwl.h"
@@ -52,13 +58,16 @@
 /* The largest event payload this file sends. */
 #define SYSTEM_EVENT_MAX	512U
 
-/* The network work a client waits for (the stage of struct system_network_wait). */
+/* The most objects waiting for the details at once; one more is answered busy. */
+#define SYSTEM_DETAILS_WAITING	8U
+
+/* The network work waiting (the stage of struct system_network_wait). */
 #define SYSTEM_NETWORK_IDLE	0U
 #define SYSTEM_NETWORK_REQUEST	1U	/* a request of the daemon's, waiting for its answer */
-#define SYSTEM_NETWORK_SAVING	2U	/* the network's thread saves the key */
-#define SYSTEM_NETWORK_PROFILES	3U	/* the daemon is told the saved networks changed */
-#define SYSTEM_NETWORK_JOINING	4U	/* the network of the saved key is joined */
-#define SYSTEM_NETWORK_DETAILS	5U	/* the network's thread reads the details */
+#define SYSTEM_NETWORK_QUEUED	2U	/* a key waits for the network's thread to be free */
+#define SYSTEM_NETWORK_SAVING	3U	/* the network's thread saves the key */
+#define SYSTEM_NETWORK_PROFILES	4U	/* the daemon is told the saved networks changed */
+#define SYSTEM_NETWORK_JOINING	5U	/* the network of the saved key is joined */
 #define SYSTEM_NETWORK_RETRY	6U	/* a step the system bar's request held up, sent again next pass */
 
 /* The jobs of the threads. */
@@ -94,36 +103,63 @@ struct system_job {
 };
 
 /*
- * The network work a client waits for: the stage, the daemon's request it
- * waits on (retry: the one to send again), who asked (the client by its
- * number, its object, 0 once the object went, and the request's number)
- * and the network.
+ * The network work waiting: the stage, the daemon's request it waits on
+ * (retry: the one to send again), who asked -- the system bar (bar), or a
+ * client by its number, its object (0 once the object went) and the
+ * request's number -- the network, and while queued its key (wiped when
+ * the thread takes it).
  */
 struct system_network_wait {
 	unsigned stage;
 	unsigned request;
+	unsigned bar;
 	uint64_t client;
 	uint32_t object;
 	uint32_t number;
 	char ssid[KL_BACKEND_NETWORK_SSID_MAX];
+	char key[KL_BACKEND_NETWORK_KEY_MAX + 1U];
+};
+
+/* An object waiting for the details: its client by number, its ID and the request's number. */
+struct system_details_wait {
+	uint64_t client;
+	uint32_t object;
+	uint32_t number;
 };
 
 /*
- * The extension's state that is no object's: the network work waiting, what
- * of the network is being told (network.c's changed bits, during
- * zwl_system_network_changed only), the two threads' jobs, what the objects were last told of the sound and the
- * power (so that only a change is told), and the serial of the last done.
+ * The extension's state that is no object's:
+ *
+ *   - the network work waiting, and what of the network is being told
+ *     (network.c's changed bits, during zwl_system_network_changed only);
+ *   - the objects waiting for the details (waiting, counted by
+ *     details_count, bar for the system bar's saved networks) and those
+ *     the reading under way answers (serving, serving_count, serving_bar);
+ *   - the two threads' jobs;
+ *   - what the objects were last told of the sound and the power (so that
+ *     only a change is told): power_started once the first read of the
+ *     power began, power_read once one ended (a power object made before
+ *     then hears its first state at that end);
+ *   - the serial of the last done.
+ *
  * One per process; only the event loop's thread touches it, but the jobs'
  * fields their comment names.
  */
 struct system_state {
 	struct system_network_wait wait;
 	unsigned network_changed;
+	struct system_details_wait details[SYSTEM_DETAILS_WAITING];
+	unsigned details_count;
+	unsigned details_bar;
+	struct system_details_wait serving[SYSTEM_DETAILS_WAITING];
+	unsigned serving_count;
+	unsigned serving_bar;
 	struct system_job network_job;
 	struct system_job power_job;
 	struct kl_backend_audio_state audio;
 	unsigned audio_told;
 	struct kl_backend_power_state power;
+	unsigned power_started;
 	unsigned power_read;
 	uint32_t serial;
 };
@@ -137,17 +173,18 @@ static int system_audio_request(struct zwl_object *object, uint32_t opcode, cons
 static int system_power_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_devices_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static uint32_t system_network_send(struct zwl_object *object, uint32_t number, uint32_t what, const char *ssid);
-static uint32_t system_network_save_key(struct zwl_object *object, uint32_t number, const char *ssid, const char *key);
+static int system_network_save_key(struct zwl_server *server, uint64_t client, uint32_t object, uint32_t number, unsigned bar, const char *ssid, const char *key);
 static uint32_t system_network_details(struct zwl_object *object, uint32_t number);
-static void system_network_wait_for(struct zwl_object *object, unsigned stage, unsigned request, uint32_t number, const char *ssid);
 static void system_network_step(struct zwl_server *server, unsigned request);
 static void system_network_snapshot(struct zwl_object *object);
 static void system_network_change(struct zwl_object *object);
 static void system_network_state(struct zwl_object *object);
 static void system_network_scan(struct zwl_object *object);
 static void system_network_details_send(struct zwl_object *object);
-static void system_network_finish(struct zwl_server *server, uint32_t applied);
+static void system_network_finish(struct zwl_server *server, int error);
 static void system_network_job_take(struct zwl_server *server);
+static void system_network_job_next(struct zwl_server *server);
+static void system_details_take(struct zwl_server *server);
 static void system_power_job_take(struct zwl_server *server);
 static void system_power_read(struct zwl_server *server);
 static int system_job_finished(struct system_job *job);
@@ -157,10 +194,11 @@ static void *system_job_run(void *argument);
 static void system_audio_state(struct zwl_object *object);
 static void system_power_state(struct zwl_object *object);
 static void system_tell(struct zwl_server *server, enum zwl_kind kind, void (*tell)(struct zwl_object *object), uint32_t done_opcode);
-static struct zwl_object *system_waiting_object(struct zwl_server *server);
+static struct zwl_object *system_network_object(struct zwl_server *server, uint64_t number, uint32_t id);
 static void system_result(struct zwl_object *object, uint32_t opcode, uint32_t number, uint32_t applied);
 static void system_done(struct zwl_object *object, uint32_t opcode);
 static uint32_t system_result_of(int error);
+static uint32_t system_network_result_of(int error);
 static unsigned system_network_what(uint32_t what);
 static void system_wipe(char *text, size_t size);
 static size_t system_put_word(unsigned char *payload, size_t offset, uint32_t word);
@@ -237,8 +275,9 @@ zwl_system_request(
 }
 
 /*
- * Looks after the extension once a pass: the threads' finished jobs, a
- * network step held up, and the sound told when it changed.
+ * Looks after the extension once a pass: the power read at the start, the
+ * threads' finished jobs and the next ones, a network step held up, and
+ * the sound told when it changed.
  */
 void
 zwl_system_tick(
@@ -247,9 +286,16 @@ zwl_system_tick(
 	struct kl_backend_audio_state audio;
 	int differs;
 
-	/* The threads' jobs, once they are done. */
+	/* The power is read once at the start, so that the clients find its state known. */
+	if (!system_state.power_started) {
+		system_state.power_started = 1U;
+		system_power_read(server);
+	}
+
+	/* The threads' jobs, once they are done, and the network thread's next job. */
 	system_network_job_take(server);
 	system_power_job_take(server);
+	system_network_job_next(server);
 
 	/* A step of a saved key the system bar's request held up. */
 	if (system_state.wait.stage == SYSTEM_NETWORK_RETRY)
@@ -286,9 +332,10 @@ zwl_system_network_changed(
 
 /*
  * Takes the network daemon's answer when the request was the extension's:
- * the client's result, or the next step of a saved key.  Returns 1 when it
+ * a client's result, or the next step of a saved key.  Returns 1 when it
  * was the extension's (network.c then only sends what waits in its slot),
- * 0 when it was the system bar's.
+ * 0 when it was the system bar's -- its own requests, and the join of a
+ * key the bar saved, which network.c follows as its own join.
  */
 int
 zwl_system_network_done(
@@ -313,11 +360,64 @@ zwl_system_network_done(
 		return 1;
 	}
 
-	/* The request the client asked for, or the last step of its key, answered. */
-	system_network_finish(server, system_result_of(error));
+	/* The join of a key the system bar saved is the bar's to follow (its failure text, its key field). */
+	if (wait->stage == SYSTEM_NETWORK_JOINING && wait->bar) {
+		memset(&system_state.wait, 0, sizeof(system_state.wait));
+		return 0;
+	}
+
+	/* The request a client asked for, or the last step of its key, answered. */
+	system_network_finish(server, error);
 
 	/* Succeeded: the answer was the extension's. */
 	return 1;
+}
+
+/*
+ * Saves a key the system bar's key field took, on the network's thread,
+ * then tells the daemon and joins the network as a client's save_key
+ * does; the join's answer comes to network.c as its own, a failure before
+ * it as zwl_network_key_failed.  Returns 0, EBUSY while other network work
+ * of the extension waits, EINVAL, or ENODEV without the daemon's watch.
+ */
+int
+zwl_system_bar_save_key(
+	struct zwl_server *server,
+	const char *ssid,
+	const char *key)
+{
+	size_t ssid_length;
+	size_t key_length;
+	int error;
+
+	/* A network and a key within their bounds. */
+	ssid_length = strlen(ssid);
+	key_length = strlen(key);
+	if (ssid_length == 0U || ssid_length >= KL_BACKEND_NETWORK_SSID_MAX)
+		return EINVAL;
+	if (key_length < KL_BACKEND_NETWORK_KEY_MIN || key_length > KL_BACKEND_NETWORK_KEY_MAX)
+		return EINVAL;
+
+	/* The steps, as the bar's. */
+	error = system_network_save_key(server, 0U, 0U, 0U, 1U, ssid, key);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the key is saved and the network joined after it. */
+	return 0;
+}
+
+/*
+ * Asks the network's thread for the saved networks, which come to network.c
+ * as zwl_network_saved (with the next reading of the details).
+ */
+void
+zwl_system_bar_saved(
+	struct zwl_server *server)
+{
+	/* The bar waits for the next reading. */
+	system_state.details_bar = 1U;
+	system_network_job_next(server);
 }
 
 /*
@@ -334,8 +434,11 @@ zwl_system_close(
 	system_job_wait(&system_state.network_job);
 	system_job_wait(&system_state.power_job);
 
-	/* Nothing waits any more. */
+	/* Nothing waits any more, and no key stays in memory. */
+	system_wipe(system_state.wait.key, sizeof(system_state.wait.key));
 	memset(&system_state.wait, 0, sizeof(system_state.wait));
+	system_state.details_count = 0U;
+	system_state.details_bar = 0U;
 }
 
 /* Carries out a request of the manager: it goes, or it makes one of its objects. */
@@ -404,6 +507,9 @@ system_manager_request(
 		system_done(created, KL_SYSTEM_AUDIO_EVENT_DONE);
 		break;
 	case ZWL_SYSTEM_POWER:
+		/* Before the first read ends there is no state yet: the read's end tells it, with its done. */
+		if (!system_state.power_read)
+			break;
 		system_power_state(created);
 		system_done(created, KL_SYSTEM_POWER_EVENT_DONE);
 		break;
@@ -413,7 +519,7 @@ system_manager_request(
 	}
 
 	/* The power is read again, by its thread, for the new object (a change comes as its state and a done). */
-	if (kind == ZWL_SYSTEM_POWER)
+	if (kind == ZWL_SYSTEM_POWER && system_state.power_read)
 		system_power_read(manager->client->server);
 
 	/* Succeeded: the object is the client's. */
@@ -443,7 +549,7 @@ system_network_request(
 		if (size != 0U)
 			return EPROTO;
 		wait = &system_state.wait;
-		if (wait->stage != SYSTEM_NETWORK_IDLE && wait->client == object->client->number && wait->object == object->id)
+		if (wait->stage != SYSTEM_NETWORK_IDLE && !wait->bar && wait->client == object->client->number && wait->object == object->id)
 			wait->object = 0U;
 		zwl_object_destroy(object);
 		return 0;
@@ -504,12 +610,12 @@ system_network_request(
 	}
 
 	/* Started, or answered at once when it cannot be. */
-	applied = system_network_save_key(object, number, ssid, key);
+	error = system_network_save_key(object->client->server, object->client->number, object->id, number, 0U, ssid, key);
 	system_wipe(key, strlen(key));
 	free(key);
 	free(ssid);
-	if (applied != KL_SYSTEM_RESULT_OK)
-		system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, number, applied);
+	if (error != 0)
+		system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, number, system_network_result_of(error));
 
 	/* Succeeded: the request is answered now, or when it finishes. */
 	return 0;
@@ -657,6 +763,7 @@ system_network_send(
 	uint32_t what,
 	const char *ssid)
 {
+	struct system_network_wait *wait;
 	struct kl_backend_network *watch;
 	const char *named;
 	unsigned request;
@@ -674,7 +781,8 @@ system_network_send(
 		return KL_SYSTEM_RESULT_INVALID;
 
 	/* One network request at a time, and the daemon's watch. */
-	if (system_state.wait.stage != SYSTEM_NETWORK_IDLE)
+	wait = &system_state.wait;
+	if (wait->stage != SYSTEM_NETWORK_IDLE)
 		return KL_SYSTEM_RESULT_BUSY;
 	watch = zwl_network_watch();
 	if (watch == NULL)
@@ -687,99 +795,97 @@ system_network_send(
 	error = kl_backend_network_request(watch, request, named);
 	printf("ZWL SYSTEM network client=%llu request=%u error=%d\n", (unsigned long long)object->client->number, request, error);
 	if (error != 0)
-		return system_result_of(error);
+		return system_network_result_of(error);
 
 	/* The answer is waited for. */
-	system_network_wait_for(object, SYSTEM_NETWORK_REQUEST, request, number, ssid);
-
-	/* Succeeded: the result comes with the answer. */
-	return KL_SYSTEM_RESULT_OK;
-}
-
-/* Starts saving a key on the network's thread; the daemon is told and the network joined after it. */
-static uint32_t
-system_network_save_key(
-	struct zwl_object *object,
-	uint32_t number,
-	const char *ssid,
-	const char *key)
-{
-	struct kl_backend_network *watch;
-	size_t ssid_length;
-	size_t key_length;
-	int error;
-
-	/* A network and a key within their bounds (a WPA key is 8 to 63 characters). */
-	ssid_length = strlen(ssid);
-	key_length = strlen(key);
-	if (ssid_length == 0U || ssid_length >= KL_BACKEND_NETWORK_SSID_MAX)
-		return KL_SYSTEM_RESULT_INVALID;
-	if (key_length < KL_BACKEND_NETWORK_KEY_MIN || key_length > KL_BACKEND_NETWORK_KEY_MAX)
-		return KL_SYSTEM_RESULT_INVALID;
-
-	/* One network request at a time, and the daemon's watch to tell. */
-	if (system_state.wait.stage != SYSTEM_NETWORK_IDLE)
-		return KL_SYSTEM_RESULT_BUSY;
-	watch = zwl_network_watch();
-	if (watch == NULL)
-		return KL_SYSTEM_RESULT_UNAVAILABLE;
-
-	/* The thread saves the key (the network, never the key, is logged). */
-	error = system_job_start(&system_state.network_job, SYSTEM_JOB_SAVE_KEY, ssid, key);
-	printf("ZWL SYSTEM network client=%llu save-key ssid=%s error=%d\n", (unsigned long long)object->client->number, ssid, error);
-	if (error != 0)
-		return system_result_of(error);
-
-	/* The steps are waited for. */
-	system_network_wait_for(object, SYSTEM_NETWORK_SAVING, KL_BACKEND_NETWORK_REQUEST_NONE, number, ssid);
-
-	/* Succeeded: the result comes once the network is joined. */
-	return KL_SYSTEM_RESULT_OK;
-}
-
-/* Starts reading the network's details on its thread; the asking object hears them before its result. */
-static uint32_t
-system_network_details(
-	struct zwl_object *object,
-	uint32_t number)
-{
-	int error;
-
-	/* One network request at a time. */
-	if (system_state.wait.stage != SYSTEM_NETWORK_IDLE)
-		return KL_SYSTEM_RESULT_BUSY;
-
-	/* The thread reads them. */
-	error = system_job_start(&system_state.network_job, SYSTEM_JOB_DETAILS, "", "");
-	if (error != 0)
-		return system_result_of(error);
-
-	/* The details are waited for. */
-	system_network_wait_for(object, SYSTEM_NETWORK_DETAILS, KL_BACKEND_NETWORK_REQUEST_NONE, number, "");
-
-	/* Succeeded: the details and the result come later. */
-	return KL_SYSTEM_RESULT_OK;
-}
-
-/* Records the network work an object waits for. */
-static void
-system_network_wait_for(
-	struct zwl_object *object,
-	unsigned stage,
-	unsigned request,
-	uint32_t number,
-	const char *ssid)
-{
-	struct system_network_wait *wait;
-
-	/* The stage, who asked, and the network. */
-	wait = &system_state.wait;
-	wait->stage = stage;
+	memset(wait, 0, sizeof(*wait));
+	wait->stage = SYSTEM_NETWORK_REQUEST;
 	wait->request = request;
 	wait->client = object->client->number;
 	wait->object = object->id;
 	wait->number = number;
 	(void)snprintf(wait->ssid, sizeof(wait->ssid), "%s", ssid);
+
+	/* Succeeded: the result comes with the answer. */
+	return KL_SYSTEM_RESULT_OK;
+}
+
+/*
+ * Starts saving a key, of a client's object or the system bar's (bar):
+ * on the network's thread now, or as soon as it is free; the daemon is
+ * told and the network joined after it.  Returns 0, EINVAL, EBUSY while
+ * other network work waits, or ENODEV without the daemon's watch.
+ */
+static int
+system_network_save_key(
+	struct zwl_server *server,
+	uint64_t client,
+	uint32_t object,
+	uint32_t number,
+	unsigned bar,
+	const char *ssid,
+	const char *key)
+{
+	struct system_network_wait *wait;
+	struct kl_backend_network *watch;
+	size_t ssid_length;
+	size_t key_length;
+
+	/* A network and a key within their bounds (a WPA key is 8 to 63 characters). */
+	ssid_length = strlen(ssid);
+	key_length = strlen(key);
+	if (ssid_length == 0U || ssid_length >= KL_BACKEND_NETWORK_SSID_MAX)
+		return EINVAL;
+	if (key_length < KL_BACKEND_NETWORK_KEY_MIN || key_length > KL_BACKEND_NETWORK_KEY_MAX)
+		return EINVAL;
+
+	/* One network request at a time, and the daemon's watch to tell. */
+	wait = &system_state.wait;
+	if (wait->stage != SYSTEM_NETWORK_IDLE)
+		return EBUSY;
+	watch = zwl_network_watch();
+	if (watch == NULL)
+		return ENODEV;
+
+	/* The key waits for the thread, which takes it at once when it is free (the network, never the key, is logged). */
+	memset(wait, 0, sizeof(*wait));
+	wait->stage = SYSTEM_NETWORK_QUEUED;
+	wait->request = KL_BACKEND_NETWORK_REQUEST_NONE;
+	wait->bar = bar;
+	wait->client = client;
+	wait->object = object;
+	wait->number = number;
+	(void)snprintf(wait->ssid, sizeof(wait->ssid), "%s", ssid);
+	(void)snprintf(wait->key, sizeof(wait->key), "%s", key);
+	printf("ZWL SYSTEM network client=%llu bar=%u save-key ssid=%s\n", (unsigned long long)client, bar, ssid);
+	system_network_job_next(server);
+
+	/* Succeeded: the result comes once the network is joined. */
+	return 0;
+}
+
+/* Asks the network's thread for the details for an object; it hears them before its result. */
+static uint32_t
+system_network_details(
+	struct zwl_object *object,
+	uint32_t number)
+{
+	struct system_details_wait *waiting;
+
+	/* Room for one more. */
+	if (system_state.details_count >= SYSTEM_DETAILS_WAITING)
+		return KL_SYSTEM_RESULT_BUSY;
+
+	/* The object waits for the next reading. */
+	waiting = &system_state.details[system_state.details_count];
+	waiting->client = object->client->number;
+	waiting->object = object->id;
+	waiting->number = number;
+	system_state.details_count++;
+	system_network_job_next(object->client->server);
+
+	/* Succeeded: the details and the result come later. */
+	return KL_SYSTEM_RESULT_OK;
 }
 
 /*
@@ -800,7 +906,7 @@ system_network_step(
 	wait = &system_state.wait;
 	watch = zwl_network_watch();
 	if (watch == NULL) {
-		system_network_finish(server, KL_SYSTEM_RESULT_UNAVAILABLE);
+		system_network_finish(server, ENODEV);
 		return;
 	}
 
@@ -820,7 +926,7 @@ system_network_step(
 	/* A step that could not be sent ends the work. */
 	printf("ZWL SYSTEM network step request=%u ssid=%s error=%d\n", request, wait->ssid, error);
 	if (error != 0) {
-		system_network_finish(server, system_result_of(error));
+		system_network_finish(server, error);
 		return;
 	}
 
@@ -963,21 +1069,34 @@ system_network_details_send(
 	(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_DETAILS_DONE, NULL, 0U);
 }
 
-/* Answers the network work waiting, if its object is still there, and makes room for the next. */
+/*
+ * Ends the network work waiting with an errno value: the asking object's
+ * result if it is still there, or the system bar told of a failure; then
+ * makes room for the next.
+ */
 static void
 system_network_finish(
 	struct zwl_server *server,
-	uint32_t applied)
+	int error)
 {
+	struct system_network_wait *wait;
 	struct zwl_object *object;
 
-	/* The asking object's result (nothing of the network is kept by the compositor: saved follows applied). */
-	object = system_waiting_object(server);
-	if (object != NULL)
-		system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, system_state.wait.number, applied);
+	/* The bar hears only a failure (its join's answer is its own, zwl_system_network_done). */
+	wait = &system_state.wait;
+	if (wait->bar) {
+		if (error != 0)
+			zwl_network_key_failed(server, wait->ssid, error);
+	} else {
+		/* The asking object's result (nothing of the network is kept by the compositor: saved follows applied). */
+		object = system_network_object(server, wait->client, wait->object);
+		if (object != NULL)
+			system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, wait->number, system_network_result_of(error));
+	}
 
-	/* Nothing waits any more. */
-	memset(&system_state.wait, 0, sizeof(system_state.wait));
+	/* Nothing waits any more, and no key stays. */
+	system_wipe(wait->key, sizeof(wait->key));
+	memset(wait, 0, sizeof(*wait));
 }
 
 /* Takes the network thread's finished job: the details sent, or the key saved and the daemon told. */
@@ -986,7 +1105,6 @@ system_network_job_take(
 	struct zwl_server *server)
 {
 	struct system_job *job;
-	struct zwl_object *object;
 	int finished;
 
 	/* Nothing finished yet. */
@@ -995,19 +1113,16 @@ system_network_job_take(
 	if (!finished)
 		return;
 
-	/* The details go to the object that asked, with its result. */
+	/* The details go to everyone the reading answers. */
 	if (job->kind == SYSTEM_JOB_DETAILS) {
-		object = system_waiting_object(server);
-		if (object != NULL)
-			system_network_details_send(object);
-		system_network_finish(server, KL_SYSTEM_RESULT_OK);
+		system_details_take(server);
 		return;
 	}
 
 	/* A key that could not be saved ends the work. */
 	printf("ZWL SYSTEM network key saved ssid=%s error=%d\n", system_state.wait.ssid, job->error);
 	if (job->error != 0) {
-		system_network_finish(server, system_result_of(job->error));
+		system_network_finish(server, job->error);
 		return;
 	}
 
@@ -1015,7 +1130,87 @@ system_network_job_take(
 	system_network_step(server, KL_BACKEND_NETWORK_REQUEST_PROFILES);
 }
 
-/* Takes the power thread's finished read, and tells every power object a change. */
+/*
+ * Starts the network thread's next job when it is free: a key waiting
+ * first, else the details when anyone waits for them.
+ */
+static void
+system_network_job_next(
+	struct zwl_server *server)
+{
+	struct system_network_wait *wait;
+	int error;
+
+	/* The thread is busy. */
+	if (system_state.network_job.started)
+		return;
+
+	/* A key waiting is saved (the copy here is wiped once the thread has its own); a thread that cannot be made ends the work. */
+	wait = &system_state.wait;
+	if (wait->stage == SYSTEM_NETWORK_QUEUED) {
+		error = system_job_start(&system_state.network_job, SYSTEM_JOB_SAVE_KEY, wait->ssid, wait->key);
+		system_wipe(wait->key, sizeof(wait->key));
+		if (error != 0) {
+			system_network_finish(server, error);
+			return;
+		}
+
+		/* The thread saves it. */
+		wait->stage = SYSTEM_NETWORK_SAVING;
+		return;
+	}
+
+	/* Nobody waits for the details. */
+	if (system_state.details_count == 0U && !system_state.details_bar)
+		return;
+
+	/* Those waiting now are the ones this reading answers. */
+	error = system_job_start(&system_state.network_job, SYSTEM_JOB_DETAILS, "", "");
+	if (error != 0)
+		return;
+	memcpy(system_state.serving, system_state.details, system_state.details_count * sizeof(system_state.details[0]));
+	system_state.serving_count = system_state.details_count;
+	system_state.serving_bar = system_state.details_bar;
+	system_state.details_count = 0U;
+	system_state.details_bar = 0U;
+}
+
+/* Sends a finished reading of the details to each object it answers, with its result, and the saved networks to the bar. */
+static void
+system_details_take(
+	struct zwl_server *server)
+{
+	const struct system_details_wait *waiting;
+	struct system_job *job;
+	struct zwl_object *object;
+	size_t count;
+	unsigned index;
+
+	/* Each object still there: the details, then its result. */
+	job = &system_state.network_job;
+	for (index = 0; index < system_state.serving_count; index++) {
+		waiting = &system_state.serving[index];
+		object = system_network_object(server, waiting->client, waiting->object);
+		if (object == NULL)
+			continue;
+		system_network_details_send(object);
+		system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, waiting->number, KL_SYSTEM_RESULT_OK);
+	}
+
+	/* The reading answered them all. */
+	system_state.serving_count = 0U;
+
+	/* The bar's saved networks. */
+	if (system_state.serving_bar) {
+		system_state.serving_bar = 0U;
+		count = job->saved_count;
+		if (count > KL_BACKEND_NETWORK_SCAN_MAX)
+			count = KL_BACKEND_NETWORK_SCAN_MAX;
+		zwl_network_saved(server, job->saved, count);
+	}
+}
+
+/* Takes the power thread's finished read, and tells every power object the first state and each change. */
 static void
 system_power_job_take(
 	struct zwl_server *server)
@@ -1023,6 +1218,7 @@ system_power_job_take(
 	struct system_job *job;
 	int finished;
 	int differs;
+	int first;
 
 	/* Nothing finished yet. */
 	job = &system_state.power_job;
@@ -1030,15 +1226,25 @@ system_power_job_take(
 	if (!finished)
 		return;
 
-	/* A state that could not be read keeps the last one. */
-	if (job->error != 0)
-		return;
+	/* The first read is the first state, which every power object waits for. */
+	first = 0;
+	if (!system_state.power_read)
+		first = 1;
 
-	/* Told only when it changed. */
+	/* A state that could not be read keeps the last one; a first one that could not says nothing is known. */
+	if (job->error != 0 && !first)
+		return;
+	if (job->error != 0) {
+		memset(&job->power, 0, sizeof(job->power));
+		job->power.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
+		job->power.percent = -1;
+	}
+
+	/* Told the first time, then only when it changed. */
 	differs = memcmp(&job->power, &system_state.power, sizeof(job->power));
 	system_state.power = job->power;
 	system_state.power_read = 1U;
-	if (differs != 0)
+	if (differs != 0 || first)
 		system_tell(server, ZWL_SYSTEM_POWER, system_power_state, KL_SYSTEM_POWER_EVENT_DONE);
 }
 
@@ -1218,28 +1424,20 @@ system_audio_state(
 	(void)zwl_emit(object->client, object->id, KL_SYSTEM_AUDIO_EVENT_STATE, words, sizeof(words));
 }
 
-/* Sends the power's state as last read (before the first read: unknown, no action). */
+/* Sends the power's state as last read (sent only after the first read). */
 static void
 system_power_state(
 	struct zwl_object *object)
 {
-	struct kl_backend_power_state state;
+	const struct kl_backend_power_state *state;
 	uint32_t words[4];
 
-	/* The last read, or nothing known. */
-	state = system_state.power;
-	if (!system_state.power_read) {
-		state.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
-		state.percent = -1;
-		state.charging = 0U;
-		state.actions = 0U;
-	}
-
 	/* source, percent, charging, actions. */
-	words[0] = state.source;
-	words[1] = (uint32_t)state.percent;
-	words[2] = state.charging;
-	words[3] = state.actions;
+	state = &system_state.power;
+	words[0] = state->source;
+	words[1] = (uint32_t)state->percent;
+	words[2] = state->charging;
+	words[3] = state->actions;
 	(void)zwl_emit(object->client, object->id, KL_SYSTEM_POWER_EVENT_STATE, words, sizeof(words));
 }
 
@@ -1273,25 +1471,27 @@ system_tell(
 	}
 }
 
-/* Finds the object the network work waits for, if its client still has it. */
+/* Finds a client's network object by the client's number and the object's ID, if it is still there. */
 static struct zwl_object *
-system_waiting_object(
-	struct zwl_server *server)
+system_network_object(
+	struct zwl_server *server,
+	uint64_t number,
+	uint32_t id)
 {
 	struct zwl_client *client;
 	struct zwl_object *object;
 
 	/* The object went. */
-	if (system_state.wait.object == 0U)
+	if (id == 0U)
 		return NULL;
 
 	/* The client by its number, and its network object of that ID. */
 	for (client = server->clients;
 	     client != NULL;
 	     client = client->next) {
-		if (client->number != system_state.wait.client || client->fatal)
+		if (client->number != number || client->fatal)
 			continue;
-		object = zwl_find(client, system_state.wait.object);
+		object = zwl_find(client, id);
 		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_NETWORK)
 			return NULL;
 		return object;
@@ -1361,6 +1561,33 @@ system_result_of(
 
 	/* Anything else failed. */
 	return KL_SYSTEM_RESULT_FAILED;
+}
+
+/*
+ * Gives the protocol's result for an errno value of the network daemon,
+ * which tells a join's failures apart (WS131 p011: Settings says why).
+ */
+static uint32_t
+system_network_result_of(
+	int error)
+{
+	uint32_t applied;
+
+	/* The join's own failures: no key saved, the key refused, the network out of reach. */
+	switch (error) {
+	case ENOENT:
+		return KL_SYSTEM_RESULT_NO_KEY;
+	case EACCES:
+		return KL_SYSTEM_RESULT_REFUSED;
+	case ENETUNREACH:
+		return KL_SYSTEM_RESULT_UNREACHABLE;
+	default:
+		break;
+	}
+
+	/* Every other one as for the rest of the system. */
+	applied = system_result_of(error);
+	return applied;
 }
 
 /* Gives the daemon's request for a client's what, or none for a what the protocol does not have. */

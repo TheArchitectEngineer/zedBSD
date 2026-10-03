@@ -15,12 +15,10 @@
 		keiland_recent_*;
 		keiland_titlebar_*;
 		keiland_glass_*;
-		keiland_network_*;
 		keiland_motion_*;
 		keiland_scroller_*;
 		keiland_gesture_*;
 		keiland_desktop_*;
-		keiland_audio_*;
 		keiland_keyboard_inset_*;
 		keiland_edit_*;
 		kl_settings_open;
