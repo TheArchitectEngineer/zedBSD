@@ -79,3 +79,7 @@ uncleared。boot-test PASS、settings-regress PASS 8/8。volume-p004 FAIL ×2: 1
 ## 再試験（Q1、2026-10-03）
 
 cleared。T2-009（QEMU、efc5ea7fc、build warning 0）: volume-p004 PASS（136 s）、volume-p005 PASS（83 s）、volume-bug153 PASS（70 s）。証拠 worktrees/t2/build/t2-009/。実機は未実施（mute の確認を最長約 4 s 待つように直した試験で、mute off も ok）。
+
+## FreeBSD の確認（Q1、2026-10-04、WS137）
+
+T1-056（FreeBSD 15.1-RELEASE-p4 の QEMU+KVM guest、main fec887f）: native の build（warning 0）・install・native-build-audit・host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected が全て PASS。GPU の無い guest のため表示・入力の確認は未実施。

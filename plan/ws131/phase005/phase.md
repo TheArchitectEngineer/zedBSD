@@ -80,3 +80,7 @@ base は main（p004 の `b8b50d098` を含む）。
 ## 結果（Q1、2026-10-03、T1-040、QEMU）
 
 cleared。boot-test PASS、c1-boot-shutdown ×2 とも `C1: PASS`（greeter の Shut Down で SSH が止まり QEMU が終了）。制限: 2 回とも `C1-shutdown-order: WARN`（止まる前に greeter の log を読めず、`powering=poweroff` → `power=poweroff` の順と send errno の無いことは未確認）。電源が切れるという結果は確かめたので cleared とし、log の順は host-power 17/17 の確認に頼る。実機は S2（BUG-119）。証拠 worktrees/t1/build/t1-criteria/t1-040/。
+
+## FreeBSD の確認（Q1、2026-10-04、WS137）
+
+T1-056（FreeBSD 15.1-RELEASE-p4 の QEMU+KVM guest、main fec887f）: native の build（warning 0）・install・native-build-audit・host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected が全て PASS。GPU の無い guest のため表示・入力の確認は未実施。

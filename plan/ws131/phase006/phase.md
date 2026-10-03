@@ -253,3 +253,7 @@ boot-test PASS、p101 PASS。p095・p102 は FAIL ×2 だが、P1 の判定で p
 ## 結果（Q1、2026-10-04）
 
 cleared。p006a（zedBSD、QEMU）: boot-test PASS、p101 PASS、p103 PASS、C1 PASS（C1_REQUIRE_QEMU_EXIT=1、QEMU が終わる）、p095・p102 は試験を今の既定の image に直した後（ws136-p002）PASS。p104（greeter の Wi-Fi の join）は直した試験でも FAIL（`NETPROBE request op=35 ssid=Kei Lab MISSING`、鍵の入力欄が出たまま）だが、session の受け渡しではなく greeter の network の join の試験で、試験の前提（保存した鍵・インラインの鍵の欄、BUG-160 の後）の疑いとして ws136-p002 で扱う。p006b は T1-042（Debian の QEMU+KVM）PASS。p006c は FreeBSD の書くだけ（build・起動は未実施）。証拠 worktrees/t2/build/t2-007/・t2-011/。
+
+## FreeBSD の確認（Q1、2026-10-04、WS137）
+
+T1-056（FreeBSD 15.1-RELEASE-p4 の QEMU+KVM guest、main fec887f）: native の build（warning 0）・install・native-build-audit・host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected が全て PASS。GPU の無い guest のため表示・入力の確認は未実施。
