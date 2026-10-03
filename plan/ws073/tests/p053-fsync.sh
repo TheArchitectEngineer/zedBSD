@@ -15,7 +15,7 @@
 # (where fsync() returns) and kills the machine there.  The guest boots the crashed root with the volume, mounts it
 # (the journal replays), and syncprobe checks that every file holds one whole generation; the volume is checked on
 # the host too.  Prints the check lines and "RESULT start=S torn=T unjournaled_writes=C bytes=B"; exit 0 when the
-# machine was cut where asked.  env: GUEST_RUNTIME (default build/p053-run), RUN_SECONDS.
+# machine was cut where asked.  env: GUEST_RUNTIME (default build/p053-run), RUN_SECONDS, CUT and RETURNS (below).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 image=$1
@@ -75,20 +75,62 @@ if [ -n "$event" ]; then
 	bytes=$(sed -n 's/.* bytes=\([0-9]*\).*/\1/p' "$out/iostat.txt")
 fi
 
-# Waits for a sync of /jour to return, and kills the machine there.
+# Watches the returns of the syncs of /jour (where fsync() returns), up to RETURNS (default 200) of them.  After each,
+# it reads every dirty, pinned line of the volume that spans two of its blocks from the guest's memory, and each
+# sector there that carries syncprobe's stamp is compared with the same sector of the disk image on the host (the
+# guest's writes reach the host's file at once): a sector that differs is content the fsync left off the disk.  With
+# CUT=unwritten (the default) the machine is killed at the first such return; with CUT=last at the last one watched.
 port=$(python3 -c "import json; print(json.load(open('$GUEST_RUNTIME/session.json'))['debug_port'])")
 cat > "$out/cut.gdb" <<EOF
 set pagination off
 target remote 127.0.0.1:$port
-break ufs_sync if \$_streq(mountp->m_path, "/jour")
-continue
-print mountp->m_path
-delete
-finish
-info registers rip
-kill
+python
+import gdb
+cut = "${CUT:-unwritten}"
+start = $start
+returns = ${RETURNS:-200}
+image = open("$root/$disk", "rb")
+inferior = gdb.selected_inferior()
+stop = gdb.Breakpoint("ufs_sync")
+stop.condition = '\$_streq(mountp->m_path, "/jour")'
+seen = 0
+found = 0
+for attempt in range(returns):
+    gdb.execute("continue")
+    if attempt == 0:
+        gdb.execute("print mountp->m_path")
+    leaf = gdb.parse_and_eval("mountp->m_disk->d_parent")
+    stop.enabled = False
+    gdb.execute("finish", to_string=True)
+    stop.enabled = True
+    seen += 1
+    unwritten = 0
+    line = leaf["d_dirty_buffers"]
+    while int(line) != 0:
+        block = int(line["b_block"])
+        spans = (block - start) % 16 != 0 and ((block + 7 - start) % 16) < 7
+        if int(line["b_journal_pin"]) != 0 and start <= block < start + 262144 and spans:
+            data = bytes(inferior.read_memory(int(line["b_data"]), 8 * 512))
+            for index in range(8):
+                sector = data[index * 512:(index + 1) * 512]
+                if sector[0:4] != b"SYNC":
+                    continue
+                image.seek((block + index) * 512)
+                if image.read(512) != sector:
+                    unwritten += 1
+        line = line["b_device_dirty_next"]
+    if unwritten != 0:
+        found += 1
+        print("UNWRITTEN return=%d sectors=%d" % (attempt, unwritten))
+        if cut == "unwritten":
+            break
+print("CUT returns=%d unwritten_returns=%d" % (seen, found))
+stop.delete()
+gdb.execute("info registers rip")
+gdb.execute("kill")
+end
 EOF
-timeout 300 gdb -q -batch -x "$out/cut.gdb" "$vmunix" > "$out/gdb.txt" 2>&1
+timeout 900 gdb -q -batch -x "$out/cut.gdb" "$vmunix" > "$out/gdb.txt" 2>&1
 grep -q '^\$1 = "/jour"' "$out/gdb.txt" && grep -q 'Inferior 1 .* killed' "$out/gdb.txt" ||
 	{ echo "FAIL the sync of /jour was not reached (gdb.txt)"; python3 $guest stop > /dev/null 2>&1; exit 1; }
 sleep 1
@@ -109,4 +151,4 @@ dd if="$disk" of="$out/volume-after.ufs" bs=512 skip="$start" count=$(($(stat -c
 python3 plan/tools/ufs/check-volume.py "$out/volume-after.ufs" | tail -1 | tee -a "$out/check.txt"
 rm -f "$out/volume-after.ufs" "$out/crashed-root.img"
 torn=$(sed -n 's/^SYNCPROBE torn=\([0-9]*\).*/\1/p' "$out/check.txt")
-echo "RESULT start=$start torn=${torn:-?} unjournaled_writes=${calls:-?} bytes=${bytes:-?}"
+echo "RESULT start=$start torn=${torn:-?} unjournaled_writes=${calls:-?} bytes=${bytes:-?} $(grep -o 'CUT returns=.*' "$out/gdb.txt")"
