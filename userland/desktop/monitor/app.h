@@ -308,6 +308,18 @@ struct sm_touch {
 	float core_turn;
 };
 
+/*
+ * The system's source (system-source.c, WS134 p013): the desktop's system
+ * and its monitor, the newest frame of rates, and how many times its info
+ * changed when it was last taken.
+ */
+struct sm_system {
+	struct kl_system *system;
+	struct kl_system_monitor *monitor;
+	struct kl_monitor_frame frame;
+	unsigned info_changes;
+};
+
 /* The time ranges the graphs show (the titlebar's controls). */
 #define SM_RANGES		4U
 
@@ -315,6 +327,7 @@ struct sm_touch {
 struct sm_app {
 	/* The options. */
 	const char *replay_path;
+	int source_choice;
 	uint64_t seed;
 	unsigned period_ms;
 	unsigned fps;
@@ -346,6 +359,7 @@ struct sm_app {
 
 	/* The data: the source, the last frame, the history, the rules and the events. */
 	struct sm_source source;
+	struct sm_system system;
 	struct sm_frame frame;
 	int have_frame;
 	struct sm_history history;
@@ -417,6 +431,11 @@ void sm_card_box(const struct sm_app *app, float eased, struct sm_box *box);
 
 /* main.c */
 void sm_set_range(struct sm_app *app, unsigned range);
+
+/* system-source.c */
+int sm_system_open(struct sm_source *source, struct sm_system *system, struct wl_display *display, unsigned period_ms, uint64_t seed, const char *gpu_name);
+void sm_system_close(struct sm_system *system);
+int sm_system_take(struct sm_source *source, struct sm_system *system, uint64_t now_ms, struct sm_frame *frame);
 
 /* render.c */
 VkResult sm_renderer_open(struct sm_renderer *renderer, struct wl_display *display, struct wl_surface *surface, uint32_t width, uint32_t height);

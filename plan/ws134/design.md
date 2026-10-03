@@ -196,18 +196,18 @@ app の中の 1 つの層 `source.c`（`struct sm_source`）が、画面の側�
 代わりに下の表で stub の項目と、本物に替える時に要る OS・libkeiland の API を管理し、実装の各 Phase の報告に最新の表を添える。app の中では
 `struct sm_frame` の `simulated` の bit と `ZMON SAMPLE … simulated=0x…` の log で区別できる（試験と調べのため）。
 
-**stub の項目の一覧**（2026-10-03 の設計の時点。替える Phase は §5）:
+**stub の項目の一覧**（2026-10-03 の設計の時点。替える Phase は §5。2026-10-04 p013 で `--source=system`（既定の auto）の本物になった項目を「今」の列に書いた。本物にならない field は calm の sim が埋め `simulated` の bit を立てる）:
 
 | 画面の項目 | 今（zedBSD） | 本物にするのに要る OS の API | 要る libkeiland・backend の API | 替える Phase |
 | --- | --- | --- | --- | --- |
-| CPU 全体・core ごとの %（サマリー・タイル面・コアの上層） | stub | K1 `hw.cputimes`（新）。Linux `/proc/stat`、FreeBSD `kern.cp_times` は今ある | `kl_backend_monitor_sample` の `cpu[]`、`kl_system_monitor_v1` の `cpu` event、`kl_system_monitor_take` | p005 + p008 |
+| CPU 全体・core ごとの %（サマリー・タイル面・コアの上層） | **本物**（p013、zedBSD・Linux・FreeBSD） | K1 `hw.cputimes`（新）。Linux `/proc/stat`、FreeBSD `kern.cp_times` は今ある | `kl_backend_monitor_sample` の `cpu[]`、`kl_system_monitor_v1` の `cpu` event、`kl_system_monitor_take` | p005 + p008 |
 | CPU の周波数（CPU の plate の補助の数字） | stub | HAL の MSR の API（D3、user の承認）。Linux `scaling_cur_freq`、FreeBSD `dev.cpu.N.freq` | sample に `cpu_mhz` を足す | HAL の承認の後 |
-| memory の Used・Cache・Available・Swap（サマリー・Memory の層・コアの内部の密度） | stub（WS131 p010 の前） | 今ある: `/dev/system` の `KERN_SYSTEM_GET_VMSTAT`、`vfs.bufcache`。Linux `/proc/meminfo`、FreeBSD `vm.stats.vm.*` | sample の `memory_*`・`swap_*`、`kl_system_monitor_v1` の `memory` event | p008 |
-| network の RX/TX（サマリー・流れ・コアの周りの線） | stub（WS131 p010 の前） | 今ある: `SIOCGIFSTATS`。Linux `/sys/class/net`、FreeBSD `getifaddrs` | sample の `link[]`（backend の network 領域の link の読みを共有） | p008 |
+| memory の Used・Cache・Available・Swap（サマリー・Memory の層・コアの内部の密度） | **本物**（p013。Used = total − free − cache、Available = free + 捨てられる cache） | 今ある: `/dev/system` の `KERN_SYSTEM_GET_VMSTAT`、`vfs.bufcache`。Linux `/proc/meminfo`、FreeBSD `vm.stats.vm.*` | sample の `memory_*`・`swap_*`、`kl_system_monitor_v1` の `memory` event | p008 |
+| network の RX/TX（サマリー・流れ・コアの周りの線） | **本物**（p013、loopback を除く link の和） | 今ある: `SIOCGIFSTATS`。Linux `/sys/class/net`、FreeBSD `getifaddrs` | sample の `link[]`（backend の network 領域の link の読みを共有） | p008 |
 | network の link の速さ（目盛りの上限の線） | 出さない（自動の目盛り） | K5 `SIOCGIFLINK`（新、任意）。Linux `/sys/class/net/IF/speed`、FreeBSD `ifi_baudrate` | info に `speed_bps` | 任意 |
-| disk の読み・書き（byte/s・ops/s）（サマリー・流れ・コアの下のリング） | stub | 全体の和は今ある `vfs.io.stats`（`IO_COMPLETE_READ`・`WRITE`）、disk ごとは K2 `hw.diskstats`（新）。Linux `/proc/diskstats`、FreeBSD devstat | sample の `disk[]`、info の `disk[]` | p006 + p008 |
-| disk の latency（Latency の plate・lane の詰まり） | stub | K2 の `read_ns`・`write_ns`（新） | 同上（率の計算は libkeiland） | p006 + p008 |
-| GPU の使用率・周波数・memory（GPU の plate・カード・コアの側面） | stub（QEMU の Venus は p008 の後も stub） | K3 `hw.gputelemetry`（新、i915 だけ）。Linux amdgpu・i915 の sysfs、FreeBSD はほぼ無い | sample の `gpu[]`、info の `gpu[]` | p007 + p008 |
+| disk の読み・書き（byte/s・ops/s）（サマリー・流れ・コアの下のリング） | **本物**（p013、物理の whole disk の和） | 全体の和は今ある `vfs.io.stats`（`IO_COMPLETE_READ`・`WRITE`）、disk ごとは K2 `hw.diskstats`（新）。Linux `/proc/diskstats`、FreeBSD devstat | sample の `disk[]`、info の `disk[]` | p006 + p008 |
+| disk の latency（Latency の plate・lane の詰まり） | **本物**（p013、全 disk の操作あたりの平均） | K2 の `read_ns`・`write_ns`（新） | 同上（率の計算は libkeiland） | p006 + p008 |
+| GPU の使用率・周波数・memory（GPU の plate・カード・コアの側面） | i915 の使用率は本物（p013、実機で未確認）、周波数は driver の要求の値、memory は stub。QEMU の Venus・FreeBSD は stub（GPU の名前は描画の device の本物） | K3 `hw.gputelemetry`（新、i915 だけ）。Linux amdgpu・i915 の sysfs、FreeBSD はほぼ無い | sample の `gpu[]`、info の `gpu[]` | p007 + p008 |
 | GPU・CPU の温度（GPU カードの熱の gradient・meter） | stub | HAL の MSR の API（D3）か K4 の ACPI の thermal zone。Linux hwmon、FreeBSD coretemp・`hw.acpi.thermal` | sample の `milli_celsius` | p009（K4）か HAL の承認の後 |
 | GPU の電力（meter） | stub | HAL の RAPL の MSR（D3）。Linux hwmon `power1_average`（amdgpu） | sample の `milli_watts` | HAL の承認の後 |
 | 電池 | 出さない | K4（ACPI の `_BST` 等） | WS131 p005 の `kl_backend_power_get_state`・`kl_system_power_v1` | WS131 p005 + p009（K4） |

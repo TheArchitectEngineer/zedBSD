@@ -10,7 +10,7 @@
  * the machine's CPU, GPU, memory, network and disks as plates in layers,
  * with the system's state graded at its centre.
  *
- *	monitor [--source=sim|replay:FILE] [--seed=N] [--period-ms=N] [--fps=N]
+ *	monitor [--source=auto|system|sim|replay:FILE] [--seed=N] [--period-ms=N] [--fps=N]
  *		[--size=WxH] [--cpus=N] [--gpus=N] [--calm] [--clock=fixed:MS]
  *		[--range=0..3] [--timeout-s=N] [--token=T]
  *
@@ -62,6 +62,11 @@
  */
 #define MAIN_CONTROL_RANGE	1U
 
+/* Where the frames come from (--source): the system when the desktop offers it, else the simulation (the default); the system; the simulation. */
+#define MAIN_SOURCE_AUTO	0
+#define MAIN_SOURCE_SYSTEM	1
+#define MAIN_SOURCE_SIM		2
+
 /* The history the simulation fills before the window shows, in milliseconds (the 5 minutes' range). */
 #define MAIN_PREFILL_MS		300000U
 
@@ -83,6 +88,7 @@ static int main_draw(struct sm_app *app, uint64_t now);
 static int main_timeout(const struct sm_app *app, uint64_t now);
 static void main_reports(struct sm_app *app, uint64_t now);
 static void main_log_layout(const struct sm_app *app);
+static int main_open_source(struct sm_app *app);
 
 static const struct keiland_titlebar_listener main_titlebar_listener = {
 	main_control_activated, NULL, NULL, NULL, NULL, NULL, NULL, NULL
@@ -215,7 +221,7 @@ main_options(
 	for (index = 1; index < argc; index++) {
 		status = main_option(app, argv[index]);
 		if (status != 0) {
-			fprintf(stderr, "usage: monitor [--source=sim|replay:FILE] [--seed=N] [--period-ms=N] [--fps=N] [--size=WxH]\n"
+			fprintf(stderr, "usage: monitor [--source=auto|system|sim|replay:FILE] [--seed=N] [--period-ms=N] [--fps=N] [--size=WxH]\n"
 				"               [--cpus=N] [--gpus=N] [--calm] [--clock=fixed:MS] [--range=0..3] [--timeout-s=N] [--token=T]\n");
 			return 2;
 		}
@@ -263,10 +269,32 @@ main_option(
 	/* Each option's value. */
 	switch (option) {
 	case 0:
-		/* A recording, or the simulation. */
+		/* A recording, the system, the simulation, or the system when it can be had. */
 		match = strncmp(value, "replay:", 7);
-		if (match == 0)
+		if (match == 0) {
 			app->replay_path = value + 7;
+			break;
+		}
+
+		/* The others by name. */
+		match = strcmp(value, "system");
+		if (match == 0) {
+			app->source_choice = MAIN_SOURCE_SYSTEM;
+			break;
+		}
+
+		/* The simulation. */
+		match = strcmp(value, "sim");
+		if (match == 0) {
+			app->source_choice = MAIN_SOURCE_SIM;
+			break;
+		}
+
+		/* The system when it can be had; any other word is unknown. */
+		match = strcmp(value, "auto");
+		if (match != 0)
+			return -1;
+		app->source_choice = MAIN_SOURCE_AUTO;
 		break;
 	case 1:
 		app->seed = strtoull(value, NULL, 10);
@@ -384,20 +412,10 @@ main_open(
 		return -1;
 	}
 
-	/* The source: a recording, or the simulation. */
-	if (app->replay_path != NULL) {
-		error = sm_source_open_replay(&app->source, app->replay_path, app->period_ms);
-		if (error != 0) {
-			fprintf(stderr, "monitor: %s: error %d\n", app->replay_path, error);
-			return -1;
-		}
-	} else {
-		(void)sm_source_open_sim(&app->source, app->seed, app->period_ms, app->cpus, app->gpus, app->calm);
-
-		/* The simulated GPU is named after the device that draws the window. */
-		if (app->source.info.gpu_count != 0U)
-			(void)snprintf(app->source.info.gpu_name[0], SM_NAME_MAX, "%s", app->renderer.device_name);
-	}
+	/* The source: a recording, the system (the desktop's monitor), or the simulation. */
+	error = main_open_source(app);
+	if (error != 0)
+		return -1;
 
 	/* The history and the rules start empty and calm. */
 	sm_history_init(&app->history);
@@ -411,7 +429,7 @@ main_open(
 	if (app->fixed_clock) {
 		for (time = 0; time <= app->fixed_ms; time += app->period_ms)
 			main_take_frames(app, time);
-	} else if (app->replay_path == NULL) {
+	} else if (app->source.kind == SM_SOURCE_SIM) {
 		for (time = 0; time < MAIN_PREFILL_MS; time += app->period_ms)
 			main_take_frames(app, time);
 		app->clock_offset_ms = MAIN_PREFILL_MS;
@@ -422,8 +440,10 @@ main_open(
 
 	/* The source's name and the run's token. */
 	source_name = "sim";
-	if (app->replay_path != NULL)
+	if (app->source.kind == SM_SOURCE_REPLAY)
 		source_name = "replay";
+	else if (app->source.kind == SM_SOURCE_SYSTEM)
+		source_name = "system";
 	token = "-";
 	if (app->token != NULL)
 		token = app->token;
@@ -446,6 +466,7 @@ main_close(
 	sm_scene_release(&app->scene);
 	sm_atlas_release(&app->atlas);
 	sm_source_close(&app->source);
+	sm_system_close(&app->system);
 	sm_interact_close(app);
 	if (app->frame_callback != NULL)
 		wl_callback_destroy(app->frame_callback);
@@ -561,9 +582,12 @@ main_take_frames(
 	char text[80];
 	int took;
 
-	/* Each frame due. */
+	/* Each frame due (the system's when a sample came). */
 	for (;;) {
-		took = sm_source_take(&app->source, now, &frame);
+		if (app->source.kind == SM_SOURCE_SYSTEM)
+			took = sm_system_take(&app->source, &app->system, now, &frame);
+		else
+			took = sm_source_take(&app->source, now, &frame);
 		if (!took)
 			break;
 		app->frame = frame;
@@ -807,6 +831,8 @@ main_timeout(
 	due = app->source.next_ms;
 	if (app->source.kind == SM_SOURCE_REPLAY)
 		due = app->source.replay.pending.time_ms;
+	else if (app->source.kind == SM_SOURCE_SYSTEM)
+		due = now + 1000U;
 	wait = 1000;
 	if (due > now && due - now < (uint64_t)wait)
 		wait = (int)(due - now);
@@ -905,4 +931,51 @@ main_log_layout(
 		printf("ZMON PLATE name=%s x=%.0f y=%.0f width=%.0f height=%.0f\n", sm_plate_name((enum sm_plate)plate), box->x, box->y, box->width,
 		       box->height);
 	}
+}
+
+/*
+ * Opens the source: the recording asked for, else the system (asked for,
+ * or by default when the desktop offers it), else the simulation.
+ * Returns 0, or an errno value for a recording or a system that cannot be
+ * opened when it was asked for by name.
+ */
+static int
+main_open_source(
+	struct sm_app *app)
+{
+	int error;
+
+	/* A recording. */
+	if (app->replay_path != NULL) {
+		error = sm_source_open_replay(&app->source, app->replay_path, app->period_ms);
+		if (error != 0) {
+			fprintf(stderr, "monitor: %s: error %d\n", app->replay_path, error);
+			return error;
+		}
+
+		/* The recording plays. */
+		return 0;
+	}
+
+	/* The system, unless the simulation was asked for. */
+	if (app->source_choice != MAIN_SOURCE_SIM) {
+		error = sm_system_open(&app->source, &app->system, app->display, app->period_ms, app->seed, app->renderer.device_name);
+		if (error == 0)
+			return 0;
+
+		/* Asked for by name: no other source stands in. */
+		printf("ZMON SYSTEM none errno=%d\n", error);
+		if (app->source_choice == MAIN_SOURCE_SYSTEM)
+			return error;
+	}
+
+	/* The simulation. */
+	(void)sm_source_open_sim(&app->source, app->seed, app->period_ms, app->cpus, app->gpus, app->calm);
+
+	/* The simulated GPU is named after the device that draws the window. */
+	if (app->source.info.gpu_count != 0U)
+		(void)snprintf(app->source.info.gpu_name[0], SM_NAME_MAX, "%s", app->renderer.device_name);
+
+	/* Succeeded: the simulation. */
+	return 0;
 }
