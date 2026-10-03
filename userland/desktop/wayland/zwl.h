@@ -168,6 +168,9 @@ enum zwl_kind {
 	/* KDE's server decoration, which GTK declares its decoration with (decoration.c, ws114-p008). */
 	ZWL_KDE_DECORATION_MANAGER,
 	ZWL_KDE_DECORATION,
+	/* Keiland's system extension: the manager and the settings (settings.c, WS135). */
+	ZWL_SYSTEM_MANAGER,
+	ZWL_SYSTEM_SETTINGS,
 };
 
 /*
@@ -603,6 +606,13 @@ struct zwl_client {
 	 * decorated.
 	 */
 	unsigned kde_bound;
+	/*
+	 * Whether the peer's user was looked at, and whether it is the
+	 * compositor's own (settings.c, WS135: only the compositor's user sees
+	 * the system extension).  Looked at once, at the first registry.
+	 */
+	unsigned peer_checked;
+	unsigned peer_same;
 };
 
 /* Cycle counts of the event loop, reported every few seconds (ZWL PERF). */
@@ -765,6 +775,12 @@ struct zwl_server {
 	 */
 	struct keiland_preferences *preferences;
 	uint64_t preferences_checked_ms;
+	/*
+	 * The settings the session holds (settings.c and settings-store.c,
+	 * WS135): NULL for the login screen.  Made before the look, freed at
+	 * the compositor's end after the session's settings are written.
+	 */
+	struct zwl_settings_store *settings;
 	float window_opacity_started;
 	const char *wallpaper_started;
 	char wallpaper_chosen[256];
@@ -1157,6 +1173,17 @@ void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int
 void zwl_glass_tick(struct zwl_server *server);
 void zwl_glass_prefetch(struct zwl_server *server);
 int zwl_glass_wallpaper(struct zwl_server *server, const char *path);
+int zwl_glass_wallpaper_begin(struct zwl_server *server, const char *path);
+int zwl_glass_wallpaper_poll(struct zwl_server *server, int *error);
+void zwl_settings_open(struct zwl_server *server);
+void zwl_settings_tick(struct zwl_server *server);
+void zwl_settings_logout(struct zwl_server *server);
+void zwl_settings_close(struct zwl_server *server);
+void zwl_settings_follow(struct zwl_server *server);
+int zwl_settings_kept(struct zwl_server *server, const char *name, int *number);
+int zwl_settings_global_visible(struct zwl_client *client, enum zwl_kind kind);
+int zwl_settings_bind(struct zwl_object *manager);
+int zwl_settings_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void zwl_preferences_open(struct zwl_server *server);
 void zwl_preferences_tick(struct zwl_server *server, uint64_t now);
 void zwl_preferences_close(struct zwl_server *server);
@@ -1242,6 +1269,8 @@ int zwl_network_motion(struct zwl_server *server);
 int zwl_network_is_open(void);
 void zwl_volume_tick(struct zwl_server *server);
 void zwl_volume_keep(struct zwl_server *server, const char *why);
+void zwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);
+int zwl_volume_request(struct zwl_server *server, unsigned value, unsigned muted);
 int zwl_volume_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_volume_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_volume_motion(struct zwl_server *server);
@@ -1261,6 +1290,7 @@ int zwl_seat_request(struct zwl_object *object, uint32_t opcode, const unsigned 
 void zwl_seat_focus(struct zwl_server *server);
 void zwl_seat_surface_gone(struct zwl_object *surface);
 void zwl_seat_capabilities(struct zwl_server *server);
+void zwl_seat_repeat_changed(struct zwl_server *server);
 void zwl_seat_motion(struct zwl_server *server, uint32_t time);
 int zwl_seat_motion_shell(struct zwl_server *server, uint32_t time);
 void zwl_seat_motion_deliver(struct zwl_server *server, uint32_t time);

@@ -127,6 +127,24 @@ struct glass_prefetch {
 	int started;
 };
 
+/*
+ * A wallpaper chosen during the session, read and decoded on a thread of
+ * its own (WS135, plan/ws135/design.md section 4.4) so that the event loop
+ * never waits on the disk: the path, the picture or the error once the
+ * thread is done, and whether it runs or has not been joined yet.  lock
+ * guards done; only the event loop starts it (zwl_glass_wallpaper_begin)
+ * and joins it (zwl_glass_wallpaper_poll, zwl_glass_close).
+ */
+struct glass_loader {
+	pthread_t thread;
+	pthread_mutex_t lock;
+	char path[256];
+	struct wallpaper_picture picture;
+	int error;
+	int done;
+	int started;
+};
+
 struct glass_glyph {
 	uint32_t x;
 	uint32_t y;
@@ -191,6 +209,7 @@ static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 
 static int wallpaper_create(struct zwl_server *server, struct zwl_glass *glass);
 static int wallpaper_fill(struct zwl_server *server, struct zwl_glass *glass, const char *path);
+static int wallpaper_draw(struct zwl_server *server, struct zwl_glass *glass, struct wallpaper_picture *given);
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
 static float ridge(float x, float base, float amplitude, float phase);
 static int blur_create(struct zwl_server *server, struct zwl_glass *glass);
@@ -214,12 +233,24 @@ static uint32_t glass_utf8_next(const char **text);
 static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
 static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
+static int wallpaper_decode(unsigned char *data, size_t size, struct wallpaper_picture *picture);
+static void *loader_run(void *argument);
+static void loader_join(void);
 static int ppm_number(const unsigned char *data, size_t size, size_t *at, uint32_t *number);
 static void *prefetch_run(void *argument);
 static unsigned char *prefetch_take(const char *path, size_t *size);
 
 /* The wallpaper read ahead, when zwl_glass_prefetch started it (only the main thread starts and takes it). */
 static struct glass_prefetch glass_prefetch;
+
+/*
+ * The wallpaper chosen during the session being read (only the event loop
+ * starts and joins it); its lock is made with the first one.
+ */
+static struct glass_loader glass_loader;
+
+/* Whether glass_loader's lock has been made (once, by the first begin). */
+static int glass_loader_ready;
 
 /*
  * Starts reading the wallpaper's file on a thread (ws035-p133), before the
@@ -294,6 +325,11 @@ zwl_glass_close(
 	struct zwl_glass *glass;
 	unsigned face;
 
+	/* A wallpaper still being read is waited for, and its picture let go. */
+	loader_join();
+	free(glass_loader.picture.data);
+	glass_loader.picture.data = NULL;
+
 	/* Nothing was made. */
 	if (server->compose == NULL || server->compose->glass == NULL)
 		return;
@@ -357,6 +393,137 @@ zwl_glass_wallpaper(
 	return 0;
 }
 
+/*
+ * Starts reading a wallpaper chosen during the session on a thread of its
+ * own (WS135): the event loop goes on, and zwl_glass_wallpaper_poll shows
+ * the picture once it is read.  Returns 0, EBUSY while another is being
+ * read, EINVAL for a path that is not an ordinary file (a FIFO, a device,
+ * a folder) or too long, ENODEV without the look, or the errno value of
+ * looking at the file or of the thread.
+ */
+int
+zwl_glass_wallpaper_begin(
+	struct zwl_server *server,
+	const char *path)
+{
+	struct stat status;
+	size_t length;
+	int descriptor;
+	int error;
+
+	/* Without the look there is no wallpaper. */
+	if (server->compose == NULL || server->compose->glass == NULL)
+		return ENODEV;
+
+	/* One picture at a time. */
+	if (glass_loader.started)
+		return EBUSY;
+
+	/* A path that fits. */
+	length = strlen(path);
+	if (length >= sizeof(glass_loader.path))
+		return EINVAL;
+
+	/* An ordinary file: opening it never waits, and a FIFO or a device is refused now. */
+	descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+	if (descriptor < 0)
+		return errno;
+	error = fstat(descriptor, &status);
+	(void)close(descriptor);
+	if (error != 0)
+		return EINVAL;
+	if (!S_ISREG(status.st_mode))
+		return EINVAL;
+
+	/* The lock, once. */
+	if (!glass_loader_ready) {
+		error = pthread_mutex_init(&glass_loader.lock, NULL);
+		if (error != 0)
+			return error;
+		glass_loader_ready = 1;
+	}
+
+	/* What the thread works on. */
+	memcpy(glass_loader.path, path, length + 1U);
+	memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
+	glass_loader.error = 0;
+	glass_loader.done = 0;
+
+	/* The thread. */
+	error = pthread_create(&glass_loader.thread, NULL, loader_run, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the picture is being read. */
+	glass_loader.started = 1;
+	return 0;
+}
+
+/*
+ * Shows a wallpaper zwl_glass_wallpaper_begin read, once its thread is
+ * done.  Returns 0 while there is none or it is still being read, or 1
+ * with *error 0 (the picture is shown) or the errno value of reading or
+ * drawing it (the wallpaper shown stays).
+ */
+int
+zwl_glass_wallpaper_poll(
+	struct zwl_server *server,
+	int *error)
+{
+	struct wallpaper_picture picture;
+	uint64_t started;
+	int done;
+
+	/* Nothing is being read. */
+	if (!glass_loader.started)
+		return 0;
+
+	/* Samples whether the thread is done. */
+	(void)pthread_mutex_lock(&glass_loader.lock);
+
+	done = glass_loader.done;
+
+	(void)pthread_mutex_unlock(&glass_loader.lock);
+
+	/* Still reading. */
+	if (!done)
+		return 0;
+
+	/* The thread's end; its picture is the event loop's now. */
+	(void)pthread_join(glass_loader.thread, NULL);
+	glass_loader.started = 0;
+	picture = glass_loader.picture;
+	memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
+
+	/* A picture that could not be read is not shown. */
+	*error = glass_loader.error;
+	if (*error != 0) {
+		printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", glass_loader.path, *error);
+		return 1;
+	}
+
+	/* The look went meanwhile. */
+	if (server->compose == NULL || server->compose->glass == NULL) {
+		free(picture.data);
+		*error = ENODEV;
+		return 1;
+	}
+
+	/* The frames in flight read the images; they end first, then the picture is drawn. */
+	started = zwl_milliseconds();
+	(void)vkDeviceWaitIdle(server->compose->device);
+	*error = wallpaper_draw(server, server->compose->glass, &picture);
+	if (*error != 0)
+		return 1;
+
+	/* Everything on the output stands on it. */
+	server->dirty = 1;
+	printf("ZWL GLASS wallpaper path=%s ms=%llu\n", glass_loader.path, (unsigned long long)(zwl_milliseconds() - started));
+
+	/* Succeeded: the new wallpaper is shown from the next frame. */
+	return 1;
+}
+
 /* Makes the wallpaper's image and its blurred copy, and draws them. */
 static int
 wallpaper_create(
@@ -403,6 +570,37 @@ wallpaper_fill(
 	const char *path)
 {
 	struct wallpaper_picture picture;
+	int error;
+
+	/* The picture given, when it can be read; otherwise the landscape drawn here. */
+	memset(&picture, 0, sizeof(picture));
+	if (path != NULL) {
+		error = wallpaper_load(path, &picture);
+		if (error != 0)
+			printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", path, error);
+	}
+
+	/* The picture into both images. */
+	error = wallpaper_draw(server, glass, &picture);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both images hold the picture. */
+	return 0;
+}
+
+/*
+ * Draws a picture read already (data NULL: the landscape) into the
+ * wallpaper's image and its blurred copy, one output row at a time, and
+ * lets the picture's bytes go.
+ */
+static int
+wallpaper_draw(
+	struct zwl_server *server,
+	struct zwl_glass *glass,
+	struct wallpaper_picture *given)
+{
+	struct wallpaper_picture picture;
 	uint32_t *columns;
 	uint32_t *line;
 	uint32_t *sums;
@@ -419,20 +617,16 @@ wallpaper_fill(
 	uint64_t started;
 	int error;
 
+	/* The picture is this function's from now on. */
+	picture = *given;
+	given->data = NULL;
+
 	/* The sizes: the output's, and the frosted glass's. */
 	started = zwl_milliseconds();
 	width = server->width;
 	height = server->height;
 	small_width = width / GLASS_BLUR_SCALE;
 	small_height = height / GLASS_BLUR_SCALE;
-
-	/* The picture given, when it can be read; otherwise the landscape drawn here. */
-	memset(&picture, 0, sizeof(picture));
-	if (path != NULL) {
-		error = wallpaper_load(path, &picture);
-		if (error != 0)
-			printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", path, error);
-	}
 
 	/* One output row, each output column's source column, a block row's sums, and the small image. */
 	line = malloc((size_t)width * sizeof(*line));
@@ -1041,8 +1235,8 @@ file_read(
 	int descriptor;
 	int error;
 
-	/* The file. */
-	descriptor = open(path, O_RDONLY | O_CLOEXEC);
+	/* The file; opening a FIFO or a device does not wait for a writer. */
+	descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
 	if (descriptor < 0)
 		return NULL;
 
@@ -1050,6 +1244,13 @@ file_read(
 	error = fstat(descriptor, &status);
 	if (error != 0) {
 		close(descriptor);
+		return NULL;
+	}
+
+	/* Only an ordinary file is a picture: a FIFO or a device would hold the reader (WS135). */
+	if (!S_ISREG(status.st_mode)) {
+		close(descriptor);
+		errno = EINVAL;
 		return NULL;
 	}
 
@@ -1108,11 +1309,7 @@ wallpaper_load(
 	struct wallpaper_picture *picture)
 {
 	unsigned char *data;
-	uint32_t source_width;
-	uint32_t source_height;
-	uint32_t maximum;
 	size_t size;
-	size_t at;
 	int error;
 
 	/* The file, read ahead when the prefetch read this path, otherwise now. */
@@ -1121,6 +1318,32 @@ wallpaper_load(
 		data = file_read(path, &size);
 	if (data == NULL)
 		return errno;
+
+	/* Its picture. */
+	error = wallpaper_decode(data, size, picture);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the picture is kept for its rows. */
+	return 0;
+}
+
+/*
+ * Takes a binary PPM's header from its file's bytes (which the picture
+ * keeps, or which are freed on a failure).  Returns 0, or EINVAL for bytes
+ * that are not such a picture.  Safe on any thread.
+ */
+static int
+wallpaper_decode(
+	unsigned char *data,
+	size_t size,
+	struct wallpaper_picture *picture)
+{
+	uint32_t source_width;
+	uint32_t source_height;
+	uint32_t maximum;
+	size_t at;
+	int error;
 
 	/* The P6 magic. */
 	if (size < 2U || data[0] != 'P' || data[1] != '6') {
@@ -1196,6 +1419,54 @@ ppm_number(
 	/* Succeeded. */
 	*number = value;
 	return 0;
+}
+
+/* Reads and decodes the wallpaper glass_loader names, away from the event loop. */
+static void *
+loader_run(
+	void *argument)
+{
+	struct wallpaper_picture picture;
+	unsigned char *data;
+	size_t size;
+	int error;
+
+	(void)argument;
+
+	/* The file's bytes, then its picture. */
+	memset(&picture, 0, sizeof(picture));
+	error = 0;
+	data = file_read(glass_loader.path, &size);
+	if (data == NULL)
+		error = errno;
+	if (error == 0)
+		error = wallpaper_decode(data, size, &picture);
+
+	/* The result, for the event loop after the join. */
+	(void)pthread_mutex_lock(&glass_loader.lock);
+
+	glass_loader.picture = picture;
+	glass_loader.error = error;
+	glass_loader.done = 1;
+
+	(void)pthread_mutex_unlock(&glass_loader.lock);
+
+	/* Succeeded: the thread ends. */
+	return NULL;
+}
+
+/* Waits for a wallpaper still being read (at the look's end). */
+static void
+loader_join(
+	void)
+{
+	/* Nothing is being read. */
+	if (!glass_loader.started)
+		return;
+
+	/* The thread ends on its own: an ordinary file is read to its end. */
+	(void)pthread_join(glass_loader.thread, NULL);
+	glass_loader.started = 0;
 }
 
 /* Reads the wallpaper's file on the prefetch's thread; the result is taken after the join. */

@@ -454,6 +454,27 @@ zwl_ime_global_visible(
 }
 
 /*
+ * Tells the input method's keyboard grab the keyboards' repeat again,
+ * after the settings changed it (WS135), so that the keys it repeats
+ * itself follow at once.
+ */
+void
+zwl_ime_repeat_changed(
+	struct zwl_server *server)
+{
+	int32_t repeat[2];
+
+	/* No input method, or no grab yet: the grab hears it when it is made. */
+	if (server->ime == NULL || server->ime->grab == NULL)
+		return;
+
+	/* The rate and the delay. */
+	repeat[0] = server->repeat_rate;
+	repeat[1] = server->repeat_delay_ms;
+	ime_emit(server->ime->grab, GRAB_REPEAT_INFO, repeat, sizeof(repeat));
+}
+
+/*
  * Takes the keys that belong to the input method before zdesktop's own:
  * the release of a key whose press went to the input method or was taken
  * here, and the keys that change the language.

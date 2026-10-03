@@ -127,6 +127,7 @@ int zwl_ime_request(struct zwl_object *object, uint32_t opcode, const unsigned c
 void zwl_ime_object_gone(struct zwl_object *object);
 void zwl_ime_client_gone(struct zwl_client *client);
 int zwl_ime_global_visible(struct zwl_client *client, enum zwl_kind kind);
+void zwl_ime_repeat_changed(struct zwl_server *server);
 int zwl_ime_key_early(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 int zwl_ime_key_grab(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state, int composing_only);
 void zwl_ime_modifiers(struct zwl_server *server);
