@@ -8,8 +8,11 @@
 #  3. textedit-japanese: Alt+Space (Japanese), then for each trial "kanji", Space and Enter (a conversion learned and
 #     saved to the user dictionary), then "a" measured (its preedit あ); and the session's ZWL IME bypass lines are counted (before
 #     the fix the save on Enter held the input method past 500 ms: "ZWL IME bypass after_ms=500").
+#  4. ws095-p015 (2026-10-04 user: save the dictionary when there has been no input for three minutes): right after
+#     step 3 the user dictionary is not written yet; 190 s without a key and it is (one reading at least); then one more
+#     conversion learned ("watasi") and keiland-ime stopped by SIGTERM: the file has a second reading (saved at the end).
 # Reported, not judged against a number for 1 and 2 (the guest's own figures are the evidence; 5330 is measured by the
-# user).  PASS needs every trial shown (missed=0) and no "ZWL IME bypass" in step 3.
+# user).  PASS needs every trial shown (missed=0), no "ZWL IME bypass" in step 3, and step 4's three checks.
 #
 #   plan/ws089/tests/settings-guest.sh start IMAGE      (or zdesktop-guest.sh start IMAGE)
 #   plan/ws095/tests/latency-bug143.sh [OUTDIR]          (default build/ws095-shots/bug143)
@@ -85,6 +88,24 @@ done
 bypass_after=$(guest "grep -c 'ZWL IME bypass' /tmp/zdesktop.log" | tail -1)
 echo "ZWL IME bypass lines: ${bypass_before:-?} -> ${bypass_after:-?}"
 [ "${bypass_after:-1}" = "${bypass_before:-0}" ] && echo "no IME bypass: ok" || { echo "no IME bypass: FAIL"; status=1; }
+
+# 4. The user dictionary: not written at each commit, written after three minutes without a key and at the end.
+dict=/root/.config/kei/ime/ja-user.dict
+entries() { guest "if [ -f $dict ]; then grep -vc '^;' $dict; else echo none; fi" | tail -1; }
+now=$(entries)
+echo "dictionary right after the commits: $now"
+[ "$now" = none ] && echo "not written at the commits: ok" || { echo "not written at the commits: FAIL"; status=1; }
+sleep 190
+now=$(entries)
+echo "dictionary after 190 s without a key: $now"
+[ "$now" != none ] && [ "$now" -ge 1 ] 2>/dev/null && echo "written after the idle time: ok" || { echo "written after the idle time: FAIL"; status=1; }
+keys 'watasi' ' ' ' ' '\n'
+sleep 1
+guest "pid=\$(ps -A -o pid,args | grep '[k]eiland-ime' | awk '{print \$1}'); kill -TERM \$pid; echo stopped \$pid" >/dev/null
+sleep 3
+last=$(entries)
+echo "dictionary after SIGTERM: $last"
+[ "$last" != none ] && [ "$last" -gt "${now:-0}" ] 2>/dev/null && echo "written at the end: ok" || { echo "written at the end: FAIL"; status=1; }
 guest 'grep -E "ZWL IME|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
 grep -q 'missed=[1-9]' "$out/latency.txt" && { echo "a trial was never shown: FAIL"; status=1; }
 grep '^LATENCY' "$out/latency.txt"

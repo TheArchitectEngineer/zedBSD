@@ -55,6 +55,7 @@ static void test_suru_kuru(void);
 static void test_split(void);
 static void test_user(void);
 static void test_engine_keys(void);
+static void test_engine_save(void);
 static void test_direct(void);
 static void romaji_case(const char *typed, const char *expected);
 static void inflect_case(const char *reading, size_t stem_end, char consonant, size_t end, int expected);
@@ -112,6 +113,7 @@ main(
 	test_split();
 	test_user();
 	test_engine_keys();
+	test_engine_save();
 	test_direct();
 
 	printf("host-engine: %d passed, %d failed\n", test_passed, test_failed);
@@ -1054,6 +1056,84 @@ test_engine_keys(void)
 	engine.ops->reset(&engine, false, out);
 
 	engine.ops->destroy(&engine);
+	free(out);
+}
+
+/*
+ * BUG-143: a commit that learns a choice does not write the user
+ * dictionary; the engine's save writes it, and so does its close when it
+ * was not saved.
+ */
+static void
+test_engine_save(void)
+{
+	struct ime_engine engine;
+	struct ja_config config;
+	struct ja_user user;
+	const struct ja_user_entry *entry;
+	struct ime_output *out;
+	struct ja_core *core;
+	struct stat status;
+	char path[1024];
+	int error;
+
+	out = malloc(sizeof(*out));
+	if (out == NULL)
+		return;
+
+	snprintf(path, sizeof(path), "%s/save-user.dict", test_dir);
+	config.system_dictionary = test_dict;
+	config.supplement_dictionary = NULL;
+	config.user_dictionary = path;
+
+	/* A learned commit leaves the file unwritten; the save writes it. */
+	error = ja_engine_create(&engine, &config);
+	check(error == 0, "save: the engine is made");
+	if (error != 0) {
+		free(out);
+		return;
+	}
+
+	core = engine.state;
+	type_text(&engine, "watasi", out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	key_code(&engine, IME_KEY_ENTER, 0, out);
+	check(strcmp(out->commit, "渡し") == 0, "save: 渡し is committed (got %s)", out->commit);
+	error = stat(path, &status);
+	check(error != 0 && errno == ENOENT, "save: the commit does not write the file");
+	check(core->user_unsaved, "save: the commit leaves the choice unsaved");
+	engine.ops->save(&engine);
+	check(!core->user_unsaved, "save: the save hands the choice to the writer");
+	engine.ops->save(&engine);
+	check(!core->user_unsaved, "save: a second save with nothing learned does nothing");
+	engine.ops->destroy(&engine);
+	error = ja_user_open(&user, path);
+	check(error == 0, "save: the saved file opens");
+	entry = ja_user_find(&user, "わたし", strlen("わたし"));
+	check(entry != NULL && strcmp(entry->candidates[0], "渡し") == 0, "save: the save wrote 渡し first");
+	ja_user_free(&user);
+
+	/* A choice learned and never saved is written when the engine closes. */
+	error = ja_engine_create(&engine, &config);
+	check(error == 0, "save: the engine is made again");
+	if (error != 0) {
+		free(out);
+		return;
+	}
+
+	type_text(&engine, "watasi", out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	key_code(&engine, IME_KEY_SPACE, 0, out);
+	key_code(&engine, IME_KEY_ENTER, 0, out);
+	check(strcmp(out->commit, "私") == 0, "save: 私 is committed after the learned 渡し (got %s)", out->commit);
+	engine.ops->destroy(&engine);
+	error = ja_user_open(&user, path);
+	check(error == 0, "save: the file opens after the close");
+	entry = ja_user_find(&user, "わたし", strlen("わたし"));
+	check(entry != NULL && strcmp(entry->candidates[0], "私") == 0, "save: the close wrote 私 first");
+	ja_user_free(&user);
+
 	free(out);
 }
 

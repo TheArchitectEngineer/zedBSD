@@ -46,7 +46,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-146](bugs/BUG-146.md) | Venus の guest 試験が client=1 前提、IME が先だと外れる | reproduced / resolved | ws127-p002 | ws099-p025 で共有の helper（plan/tools/guest/zwl-clients.sh）に置き換え、T1-039 の QEMU で PASS |
 | [BUG-145](bugs/BUG-145.md) | AX211: handshake の後に DHCP の lease が取れず disassoc（reason 8） | reproduced（passthrough） / tracking | ws005-p019 q611、5GHz | WS004 の新しい Phase |
 | [BUG-144](bugs/BUG-144.md) | 8 番目の Model viewer が vkAllocateMemory -4 | reproduced（QEMU） / resolved（ws014-p011、窓 1 GiB、2026-10-03） | ws129-p010、Venus の hostmem の見当 | 実機で確かめる |
-| [BUG-143](bugs/BUG-143.md) | IME の確定のたびに 500 ms 超で止まり IME を迂回 | reproduced（QEMU） / tracking | ws095-p005、辞書の保存の fsync の見当 | WS095 の次の Phase |
+| [BUG-143](bugs/BUG-143.md) | IME の確定のたびに 500 ms 超で止まり IME を迂回 | reproduced（QEMU） / scheduled（ws095-p015、P2: 保存は 3 分の無入力の後と終了の時、Text Editor の描画 25→3.8 ms。T2 の確認待ち） | ws095-p005、辞書の保存の fsync の見当 | T2 の結果 → resolved。直接入力の遅れは実機で測る |
 | [BUG-142](bugs/BUG-142.md) | Files: 起動直後の停止中の Ctrl+C が遅れて処理 | unreproduced / resolved | ws127-p001 | ws099-p029 で時刻の順の merge に直した、T2-004 の QEMU で PASS。実機は S2 |
 | [BUG-141](bugs/BUG-141.md) | Files: hover の強調が残る | unreproduced / resolved | ws127-p001 | ws099-p029 で leave を送るよう直した、T2-008 の QEMU で PASS。実機は S2 |
 | [BUG-140](bugs/BUG-140.md) | Files: Trash の同名の 2 つ目の名前と種類 | reproduced / resolved | ws127-p001 | q616（ws127-p002）で修正、host 試験 |

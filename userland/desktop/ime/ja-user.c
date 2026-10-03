@@ -10,20 +10,21 @@
  * (plan/ws095/design.md section 7.4).
  *
  * It is an SKK file of readings and candidates, like the system
- * dictionary, and is looked in before it.  Each learned choice rewrites
- * the file whole: a temporary file is written, synced and renamed over
+ * dictionary, and is looked in before it.  Each save rewrites the file
+ * whole: a temporary file is written, synced and renamed over
  * the old one, so that a crash leaves either the old or the new file and
  * never an empty one.  The file is the user's alone (mode 0600), and a
  * damaged or oversized file is read as far as it is well formed.  The
  * directory it lives in is made by the input method before the engine
  * starts.
  *
- * A choice learned while typing is written by a thread of its own
- * (ja_user_save_later, BUG-143): the file's text is made at once, and the
- * write, its sync and the rename happen away from the keys, which on a
- * slow disk took long enough that zdesktop passed the input method by.
- * Only the newest text waits to be written; freeing the dictionary waits
- * for the last write.
+ * The choices learned while typing are not written at each commit
+ * (BUG-143): the engine saves once no key has come for a while, and when
+ * it closes.  That save goes by a thread of its own (ja_user_save_later):
+ * the file's text is made at once, and the write, its sync and the rename
+ * happen away from the keys, which on a slow disk took long enough that
+ * zdesktop passed the input method by.  Only the newest text waits to be
+ * written; freeing the dictionary waits for the last write.
  */
 
 #include "ja.h"

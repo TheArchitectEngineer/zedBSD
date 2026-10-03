@@ -44,6 +44,7 @@ static void engine_key(struct ime_engine *engine, const struct ime_key *key, str
 static void engine_reset(struct ime_engine *engine, bool commit, struct ime_output *out);
 static void engine_surrounding(struct ime_engine *engine, const char *text, uint32_t cursor, uint32_t anchor);
 static void engine_content_type(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
+static void engine_save(struct ime_engine *engine);
 static void engine_destroy(struct ime_engine *engine);
 
 /*
@@ -56,6 +57,7 @@ static const struct ime_engine_ops engine_ops = {
 	engine_reset,
 	engine_surrounding,
 	engine_content_type,
+	engine_save,
 	engine_destroy
 };
 
@@ -163,6 +165,15 @@ void
 ja_core_close(
 	struct ja_core *core)
 {
+	/*
+	 * The choices not yet in the file go to the writer thread, which
+	 * ja_user_free waits for: they outlive the input method.  They go
+	 * by the thread rather than at once, so that an older text still
+	 * waiting there is not written over the newer one.
+	 */
+	if (core->user_unsaved)
+		(void)ja_user_save_later(&core->user);
+
 	/* The dictionaries, then the segments. */
 	ja_user_free(&core->user);
 	ja_dict_free(&core->supplement);
@@ -695,12 +706,13 @@ engine_commit_conversion(
 	free(text);
 
 	/*
-	 * The choices outlive the input method; the file is written by a
-	 * thread of its own, so that a slow disk does not hold the commit
-	 * (BUG-143).
+	 * user_unsaved tells ja_core_save and ja_core_close that the file is
+	 * behind the table.  The file is not written here: a write at each
+	 * commit held the keys on a slow disk (BUG-143), and the Wayland side
+	 * asks for the save once no key has come for a while.
 	 */
 	if (learned)
-		(void)ja_user_save_later(&core->user);
+		core->user_unsaved = true;
 }
 
 /*
@@ -788,6 +800,32 @@ ja_core_set_learning(
 {
 	/* Read by each commit. */
 	core->learning = learning;
+}
+
+/*
+ * Writes the choices learned since the last save to the user dictionary's
+ * file, by its writer thread so that the caller does not wait for the disk.
+ *
+ * Nothing is written when nothing was learned; a save that cannot be made
+ * is tried again at the next one, and at the close.
+ */
+void
+ja_core_save(
+	struct ja_core *core)
+{
+	int error;
+
+	/* Nothing learned since the file was last written. */
+	if (!core->user_unsaved)
+		return;
+
+	/* Hands the dictionary's text to the writer thread. */
+	error = ja_user_save_later(&core->user);
+	if (error != 0)
+		return;
+
+	/* Succeeded: the file will hold every choice learned so far. */
+	core->user_unsaved = false;
 }
 
 /*
@@ -1038,6 +1076,21 @@ engine_content_type(
 		secret = true;
 
 	ja_core_set_learning(core, !secret);
+}
+
+/*
+ * Writes the choices learned since the last save, away from the keys.
+ */
+static void
+engine_save(
+	struct ime_engine *engine)
+{
+	struct ja_core *core;
+
+	core = engine->state;
+
+	/* The user dictionary, by its writer thread. */
+	ja_core_save(core);
 }
 
 /*

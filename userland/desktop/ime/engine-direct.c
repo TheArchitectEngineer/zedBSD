@@ -21,6 +21,7 @@ static void direct_key(struct ime_engine *engine, const struct ime_key *key, str
 static void direct_reset(struct ime_engine *engine, bool commit, struct ime_output *out);
 static void direct_surrounding(struct ime_engine *engine, const char *text, uint32_t cursor, uint32_t anchor);
 static void direct_content_type(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
+static void direct_save(struct ime_engine *engine);
 static void direct_destroy(struct ime_engine *engine);
 
 /*
@@ -33,6 +34,7 @@ static const struct ime_engine_ops direct_ops = {
 	direct_reset,
 	direct_surrounding,
 	direct_content_type,
+	direct_save,
 	direct_destroy
 };
 
@@ -112,6 +114,16 @@ direct_content_type(
 	UNUSED_PARAMETER(engine);
 	UNUSED_PARAMETER(hint);
 	UNUSED_PARAMETER(purpose);
+}
+
+/*
+ * Has learned nothing to save.
+ */
+static void
+direct_save(
+	struct ime_engine *engine)
+{
+	UNUSED_PARAMETER(engine);
 }
 
 /*

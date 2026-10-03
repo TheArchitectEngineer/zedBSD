@@ -130,7 +130,10 @@ struct ime_output {
  * or dropping it (on deactivation, when zdesktop has already committed the
  * preedit itself); surrounding tells the engine the text around the
  * cursor; content_type tells it what the field holds (the hints and the
- * purpose of text-input-v3); destroy frees the engine.
+ * purpose of text-input-v3); save writes what the engine has learned to
+ * its file, away from the keys (the Wayland side calls it once no key has
+ * come for a while); destroy writes what is still unsaved and frees the
+ * engine.
  */
 struct ime_engine_ops {
 	const char *id;
@@ -139,6 +142,7 @@ struct ime_engine_ops {
 	void (*reset)(struct ime_engine *engine, bool commit, struct ime_output *out);
 	void (*surrounding)(struct ime_engine *engine, const char *text, uint32_t cursor, uint32_t anchor);
 	void (*content_type)(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
+	void (*save)(struct ime_engine *engine);
 	void (*destroy)(struct ime_engine *engine);
 };
 
@@ -156,8 +160,9 @@ struct ime_engine {
 /*
  * Where the Japanese engine finds its dictionaries.
  *
- * The user dictionary is read at start and rewritten after each learned
- * choice; the supplement is optional (NULL for none) and is looked in
+ * The user dictionary is read at start and rewritten when the engine is
+ * told to save and when it is destroyed, not at each learned choice
+ * (BUG-143); the supplement is optional (NULL for none) and is looked in
  * before the system dictionary.
  */
 struct ja_config {
