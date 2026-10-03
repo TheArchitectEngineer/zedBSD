@@ -66,6 +66,7 @@ main(
 	int card_pinned;
 	float card_progress;
 	int error;
+	int replay;
 
 	/* The arguments. */
 	if (argc < 8) {
@@ -73,6 +74,7 @@ main(
 		return 2;
 	}
 
+	/* The stopped clock at the time asked for, and no card or keyboard plate unless asked. */
 	app.fixed_clock = 1;
 	app.fixed_ms = strtoull(argv[4], NULL, 10);
 	app.period_ms = 1000;
@@ -89,7 +91,9 @@ main(
 		return 1;
 	}
 
-	if (strncmp(argv[7], "replay:", 7) == 0) {
+	/* A recording, or the simulation of a seed, CPUs and GPUs. */
+	replay = strncmp(argv[7], "replay:", 7);
+	if (replay == 0) {
 		error = sm_source_open_replay(&app.source, argv[7] + 7, 1000);
 	} else {
 		cpus = 4;
@@ -99,6 +103,7 @@ main(
 		(void)snprintf(app.source.info.gpu_name[0], SM_NAME_MAX, "Virtio-GPU Venus (llvmpipe)");
 	}
 
+	/* A source that cannot be opened. */
 	if (error != 0) {
 		fprintf(stderr, "preview: source: error %d\n", error);
 		return 1;
@@ -171,6 +176,8 @@ main(
 	fwrite(app.atlas.pixels, sizeof(uint32_t), (size_t)app.atlas.width * (size_t)app.atlas.height, file);
 	fclose(file);
 	printf("preview: %zu vertices, %zu draws, level %s\n", app.scene.vertex_count, app.scene.draw_count, sm_level_name(app.level));
+
+	/* Succeeded: the run is over. */
 	return 0;
 }
 

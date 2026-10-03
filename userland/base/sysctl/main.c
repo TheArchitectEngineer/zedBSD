@@ -525,8 +525,10 @@ show_cputimes(
 		       (unsigned long long)entry->idle, (unsigned long long)entry->other);
 	}
 
-	/* Succeeded: every CPU is printed. */
+	/* The value is not needed any more. */
 	free(buffer);
+
+	/* Succeeded: every CPU is printed. */
 	return 0;
 }
 
@@ -587,8 +589,10 @@ show_diskstats(
 		       (unsigned long long)entry->busy_ns, entry->inflight);
 	}
 
-	/* Succeeded: every disk is printed. */
+	/* The value is not needed any more. */
 	free(buffer);
+
+	/* Succeeded: every disk is printed. */
 	return 0;
 }
 
@@ -648,8 +652,10 @@ show_gputelemetry(
 		       (unsigned long long)entry->objects_bytes, (unsigned long long)entry->objects_limit);
 	}
 
-	/* Succeeded: every GPU is printed. */
+	/* The value is not needed any more. */
 	free(buffer);
+
+	/* Succeeded: every GPU is printed. */
 	return 0;
 }
 
@@ -671,6 +677,9 @@ fetch_value(
 	int attempt;
 
 	/* A few tries: the value may grow between the length and the read. */
+	value = NULL;
+	size = 0;
+	status = -1;
 	for (attempt = 0; attempt < 4; attempt++) {
 		/* The length the kernel needs now. */
 		size = 0;
@@ -685,19 +694,24 @@ fetch_value(
 
 		/* The value; one that grew is asked for again. */
 		status = sysctlbyname(name, value, &size, NULL, 0);
-		if (status == 0) {
-			*buffer = value;
-			*length = size;
-			return 0;
-		}
+		if (status == 0)
+			break;
 
 		/* Any failure but a grown value ends the tries. */
 		free(value);
+		value = NULL;
 		if (errno != ENOMEM)
 			return -1;
 	}
 
 	/* Still growing after every try. */
-	errno = EAGAIN;
-	return -1;
+	if (status != 0) {
+		errno = EAGAIN;
+		return -1;
+	}
+
+	/* Succeeded: the value, the caller's to free. */
+	*buffer = value;
+	*length = size;
+	return 0;
 }

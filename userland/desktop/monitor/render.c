@@ -348,9 +348,11 @@ sm_renderer_atlas(
 	write.pImageInfo = &image_info;
 	vkUpdateDescriptorSets(renderer->device, 1U, &write, 0U, NULL);
 
-	/* Succeeded: the next frame moves the image to the general layout. */
+	/* The next frame moves the image to the general layout. */
 	renderer->atlas_serial = atlas->serial;
 	renderer->atlas_ready = 0;
+
+	/* Succeeded: the atlas is uploaded. */
 	return VK_SUCCESS;
 }
 
@@ -624,8 +626,10 @@ render_device(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the device and its queue. */
+	/* The device's queue. */
 	vkGetDeviceQueue(renderer->device, renderer->family, 0U, &renderer->queue);
+
+	/* Succeeded: the device and its queue. */
 	return VK_SUCCESS;
 }
 
@@ -959,8 +963,10 @@ render_memory(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the memory, counted for the log's report. */
+	/* The memory, counted for the log's report. */
 	renderer->allocated_bytes += requirements->size;
+
+	/* Succeeded: the memory is allocated. */
 	return VK_SUCCESS;
 }
 
@@ -1098,8 +1104,10 @@ render_vertices(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the host writes each frame's vertices here. */
+	/* The host writes each frame's vertices here. */
 	renderer->vertex_capacity = capacity;
+
+	/* Succeeded: the vertex buffer is ready. */
 	return VK_SUCCESS;
 }
 

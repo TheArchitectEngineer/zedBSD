@@ -262,6 +262,8 @@ monitor_fetch(
 	int attempt;
 
 	/* A few tries: the value may grow between the length and the read. */
+	size = 0;
+	status = -1;
 	for (attempt = 0; attempt < 4; attempt++) {
 		/* The length the kernel needs now. */
 		size = 0;
@@ -280,10 +282,8 @@ monitor_fetch(
 
 		/* The value; one that grew is asked for again. */
 		status = sysctlbyname(name, monitor->buffer, &size, NULL, 0);
-		if (status == 0) {
-			*length = size;
-			return 0;
-		}
+		if (status == 0)
+			break;
 
 		/* Any failure but a grown value ends the tries. */
 		if (errno != ENOMEM)
@@ -291,7 +291,12 @@ monitor_fetch(
 	}
 
 	/* Still growing after every try. */
-	return EAGAIN;
+	if (status != 0)
+		return EAGAIN;
+
+	/* Succeeded: the value's length. */
+	*length = size;
+	return 0;
 }
 
 /*
@@ -324,8 +329,10 @@ monitor_entries(
 	if (header->struct_size + (size_t)header->count * element_size > length)
 		return EINVAL;
 
-	/* Succeeded: the entries. */
+	/* The entries' count. */
 	*count = header->count;
+
+	/* Succeeded: the entries. */
 	return 0;
 }
 
@@ -365,8 +372,10 @@ monitor_cpus(
 		sample->cpu[cpu].other = entry->other;
 	}
 
-	/* Succeeded: the CPUs. */
+	/* The CPUs read. */
 	sample->cpu_count = count;
+
+	/* Succeeded: the CPUs. */
 	return 0;
 }
 
@@ -534,9 +543,11 @@ monitor_disks(
 		info->disk[index].size_bytes = 0;
 	}
 
-	/* Succeeded: the disks. */
+	/* The disks read. */
 	sample->disk_count = count;
 	info->disk_count = count;
+
+	/* Succeeded: the disks. */
 	return 0;
 }
 
@@ -613,9 +624,11 @@ monitor_gpus(
 		(void)snprintf(info->gpu[index].name, sizeof(info->gpu[index].name), "%.15s", entry->driver);
 	}
 
-	/* Succeeded: the GPUs. */
+	/* The GPUs read. */
 	sample->gpu_count = count;
 	info->gpu_count = count;
+
+	/* Succeeded: the GPUs. */
 	return 0;
 }
 

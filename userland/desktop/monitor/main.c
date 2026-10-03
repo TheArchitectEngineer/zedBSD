@@ -148,7 +148,9 @@ main(
 			app.dirty = 1;
 
 		/* A window that has not shown a frame for a while is hidden. */
-		if (!app.frame_allowed && app.visible && now >= app.frame_asked_ms + MAIN_HIDDEN_MS) {
+		if (!app.frame_allowed &&
+		    app.visible &&
+		    now >= app.frame_asked_ms + MAIN_HIDDEN_MS) {
 			app.visible = 0;
 			printf("ZMON VISIBLE 0\n");
 		}
@@ -170,6 +172,8 @@ main(
 	printf("ZMON DONE frames=%llu\n", (unsigned long long)app.frames);
 	fflush(stdout);
 	main_close(&app);
+
+	/* Succeeded: the monitor ran to its end. */
 	return 0;
 }
 
@@ -232,6 +236,8 @@ main_options(
 		app->period_ms = 100U;
 	if (app->fps == 0U || app->fps > 60U)
 		app->fps = 30U;
+
+	/* Succeeded: the options are read. */
 	return 0;
 }
 
@@ -453,6 +459,8 @@ main_open(
 	       app->renderer.extent.height, source_name, app->source.info.cpu_count, app->source.info.gpu_count,
 	       app->renderer.device_name, token);
 	fflush(stdout);
+
+	/* Succeeded: the monitor is open. */
 	return 0;
 }
 
@@ -662,7 +670,9 @@ main_input(
 			break;
 		case KUI_WINDOW_KEY:
 			/* Ctrl+Q ends the monitor; every other key is the plates'. */
-			if (event.pressed && event.code == MAIN_KEY_Q && (event.modifiers & KUI_MOD_CTRL) != 0U) {
+			if (event.pressed &&
+			    event.code == MAIN_KEY_Q &&
+			    (event.modifiers & KUI_MOD_CTRL) != 0U) {
 				app->quit = 1;
 				break;
 			}
@@ -715,9 +725,11 @@ main_resize(
 			return -1;
 	}
 
-	/* Succeeded: the next frame at the new size. */
+	/* The next frame at the new size; the tests read the line. */
 	printf("ZMON RESIZE width=%u height=%u\n", app->renderer.extent.width, app->renderer.extent.height);
 	app->dirty = 1;
+
+	/* Succeeded: the window's new size is followed. */
 	return 0;
 }
 
@@ -740,7 +752,9 @@ main_draw(
 
 	/* The graphs slide between samples (not with the clock stopped): a frame every 1/fps while nothing else changed. */
 	moving = 0;
-	if (!app->fixed_clock && app->have_frame && app->visible)
+	if (!app->fixed_clock &&
+	    app->have_frame &&
+	    app->visible)
 		moving = 1;
 	if (!app->dirty) {
 		/* Nothing moves, or its next frame is not due yet. */
@@ -802,6 +816,8 @@ main_draw(
 	app->frame_times.present_us += times.present_us;
 	app->next_frame_us = kui_clock_us() + 1000000U / app->fps;
 	app->dirty = 0;
+
+	/* Succeeded: the frame is drawn. */
 	return 0;
 }
 
@@ -840,7 +856,9 @@ main_timeout(
 		wait = 0;
 
 	/* The next frame of the sliding graphs, when one is allowed. */
-	if (app->frame_allowed && app->have_frame && app->visible) {
+	if (app->frame_allowed &&
+	    app->have_frame &&
+	    app->visible) {
 		now_us = kui_clock_us();
 		if (app->next_frame_us <= now_us)
 			return 0;

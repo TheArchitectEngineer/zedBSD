@@ -141,8 +141,10 @@ sm_atlas_build(
 		}
 	}
 
-	/* Succeeded: the atlas is drawn. */
+	/* The canvas it was drawn on goes. */
 	kui_canvas_release(&canvas);
+
+	/* Succeeded: the atlas is drawn. */
 	return 0;
 }
 

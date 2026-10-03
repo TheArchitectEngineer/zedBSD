@@ -444,6 +444,8 @@ camera_facing(
 
 	/* The normal turned and tilted like a point, its depth only. */
 	z = -normal[0] * camera->sin_azimuth + normal[2] * camera->cos_azimuth;
+
+	/* Succeeded: its depth. */
 	return normal[1] * camera->sin_elevation + z * camera->cos_elevation;
 }
 
@@ -707,6 +709,8 @@ shade(
 	facing = normal[0] * space_light[0] + normal[1] * space_light[1] + normal[2] * space_light[2];
 	if (facing < 0.0f)
 		facing = 0.0f;
+
+	/* Succeeded: the shade, never quite dark. */
 	return 0.55f + 0.45f * facing;
 }
 
@@ -738,6 +742,8 @@ spring(
 	acceleration = omega * omega * (target - *value) - 2.0f * omega * *speed;
 	*speed += acceleration * seconds;
 	*value += *speed * seconds;
+
+	/* Succeeded: the value where the spring took it. */
 	return *value;
 }
 
@@ -755,6 +761,8 @@ rate_share(
 		share = 0.0;
 	if (share > 1.0)
 		share = 1.0;
+
+	/* Succeeded: the share. */
 	return (float)share;
 }
 
@@ -774,6 +782,8 @@ tile_order(
 		return -1;
 	if (a->depth > b->depth)
 		return 1;
+
+	/* As deep. */
 	return 0;
 }
 

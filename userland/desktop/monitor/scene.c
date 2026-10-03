@@ -208,7 +208,10 @@ sm_scene_build(
 
 	/* How far the graphs have slid towards the next sample (none with the clock stopped). */
 	shift = 0.0f;
-	if (!app->fixed_clock && app->have_frame && app->source.period_ms != 0U && now_ms > app->frame_at_ms) {
+	if (!app->fixed_clock &&
+	    app->have_frame &&
+	    app->source.period_ms != 0U &&
+	    now_ms > app->frame_at_ms) {
 		shift = (float)(now_ms - app->frame_at_ms) / (float)app->source.period_ms;
 		if (shift > 1.0f)
 			shift = 1.0f;
@@ -360,6 +363,8 @@ scene_peak(
 		return 2.0f * power;
 	if (peak <= 5.0f * power)
 		return 5.0f * power;
+
+	/* Succeeded: the next power of ten. */
 	return 10.0f * power;
 }
 
@@ -1121,7 +1126,9 @@ value_text(
 
 	/* How far the slide has come (done at once with the clock stopped or no old value). */
 	progress = 1.0f;
-	if (!app->fixed_clock && slide->old[0] != '\0' && now_ms < slide->changed_ms + SCENE_SLIDE_MS)
+	if (!app->fixed_clock &&
+	    slide->old[0] != '\0' &&
+	    now_ms < slide->changed_ms + SCENE_SLIDE_MS)
 		progress = (float)(now_ms - slide->changed_ms) / (float)SCENE_SLIDE_MS;
 	progress = 1.0f - (1.0f - progress) * (1.0f - progress);
 	distance = SCENE_SLIDE_DISTANCE * app->layout.scale;
@@ -1138,7 +1145,9 @@ value_text(
 		advance = sm_atlas_width(&app->atlas, style, single);
 
 		/* A character as it was. */
-		if (progress >= 1.0f || (index < old_length && slide->old[index] == text[index])) {
+		if (progress >= 1.0f ||
+		    (index < old_length &&
+		     slide->old[index] == text[index])) {
 			(void)sm_draw_text(app, style, pen, baseline, single, color, 0);
 			pen += advance;
 			continue;

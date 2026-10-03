@@ -249,6 +249,8 @@ monitor_fetch(
 	int attempt;
 
 	/* A few tries: the value may grow between the length and the read. */
+	size = 0;
+	status = -1;
 	for (attempt = 0; attempt < 4; attempt++) {
 		/* The length the kernel needs now, with room for a little growth. */
 		size = 0;
@@ -268,10 +270,8 @@ monitor_fetch(
 
 		/* The value; one that grew is asked for again. */
 		status = sysctlbyname(name, monitor->buffer, &size, NULL, 0);
-		if (status == 0) {
-			*length = size;
-			return 0;
-		}
+		if (status == 0)
+			break;
 
 		/* Any failure but a grown value ends the tries. */
 		if (errno != ENOMEM)
@@ -279,7 +279,12 @@ monitor_fetch(
 	}
 
 	/* Still growing after every try. */
-	return EAGAIN;
+	if (status != 0)
+		return EAGAIN;
+
+	/* Succeeded: the value's length. */
+	*length = size;
+	return 0;
 }
 
 /* Reads each CPU's ticks from kern.cp_times; returns 0 or an errno value. */
@@ -329,8 +334,10 @@ monitor_cpus(
 	else if (status == 0 && clock.hz > 0)
 		sample->cpu_hz = (uint64_t)clock.hz;
 
-	/* Succeeded: the CPUs. */
+	/* The CPUs read. */
 	sample->cpu_count = (unsigned)count;
+
+	/* Succeeded: the CPUs. */
 	return 0;
 }
 
@@ -591,9 +598,11 @@ monitor_disks(
 		count++;
 	}
 
-	/* Succeeded: the disks. */
+	/* The disks read. */
 	sample->disk_count = count;
 	info->disk_count = count;
+
+	/* Succeeded: the disks. */
 	return 0;
 }
 

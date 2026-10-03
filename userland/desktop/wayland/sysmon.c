@@ -380,8 +380,10 @@ sysmon_start(void)
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the sampling runs. */
+	/* The thread runs. */
 	sysmon_state.running = 1;
+
+	/* Succeeded: the sampling runs. */
 	return 0;
 }
 
@@ -725,6 +727,8 @@ sysmon_put_word(
 {
 	/* The word in the wire's native byte order. */
 	memcpy(payload + offset, &word, sizeof(word));
+
+	/* Succeeded: the offset after it. */
 	return offset + sizeof(word);
 }
 
@@ -780,5 +784,7 @@ sysmon_word(
 
 	/* The word. */
 	memcpy(&word, bytes + offset, sizeof(word));
+
+	/* Succeeded: the word. */
 	return word;
 }

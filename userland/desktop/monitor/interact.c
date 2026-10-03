@@ -214,7 +214,9 @@ sm_interact_tick(
 	}
 
 	/* The pointer held still on a plate is a long press, once (by the real clock). */
-	if (touch->pressed && !touch->press_moved && !touch->press_long) {
+	if (touch->pressed &&
+	    !touch->press_moved &&
+	    !touch->press_long) {
 		if (now_us / 1000U >= touch->press_ms + PRESS_LONG_MS) {
 			touch->press_long = 1;
 			act_long_press(app, touch->press_x, touch->press_y);

@@ -303,6 +303,8 @@ monitor_cpus(
 	sample->cpu_hz = 100;
 	if (hz > 0)
 		sample->cpu_hz = (uint64_t)hz;
+
+	/* Succeeded: the CPUs. */
 	return 0;
 }
 
@@ -589,9 +591,11 @@ monitor_disks(
 	/* The file goes. */
 	(void)fclose(file);
 
-	/* Succeeded: the disks. */
+	/* The disks read. */
 	sample->disk_count = count;
 	info->disk_count = count;
+
+	/* Succeeded: the disks. */
 	return 0;
 }
 
@@ -715,7 +719,9 @@ monitor_gpus(
 		/* The busy percentage, added up over the time since the last read. */
 		(void)snprintf(path, sizeof(path), "%s/gpu_busy_percent", device);
 		error = monitor_read_number(path, &value);
-		if (error == 0 && value >= 0 && value <= 100) {
+		if (error == 0 &&
+		    value >= 0 &&
+		    value <= 100) {
 			if (monitor->gpu_read_ns[index] != 0U && now > monitor->gpu_read_ns[index])
 				monitor->gpu_busy_ns[index] += (now - monitor->gpu_read_ns[index]) / 100U * (uint64_t)value;
 			monitor->gpu_read_ns[index] = now;
@@ -730,7 +736,9 @@ monitor_gpus(
 			/* Of how much. */
 			(void)snprintf(path, sizeof(path), "%s/mem_info_vram_total", device);
 			error = monitor_read_number(path, &total);
-			if (error == 0 && value >= 0 && total > 0) {
+			if (error == 0 &&
+			    value >= 0 &&
+			    total > 0) {
 				gpu->memory_used = (uint64_t)value;
 				gpu->memory_total = (uint64_t)total;
 				sample->valid |= KL_MONITOR_HAVE_GPU_MEMORY;

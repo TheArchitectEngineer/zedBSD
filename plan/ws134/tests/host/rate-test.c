@@ -54,6 +54,8 @@ main(void)
 
 	/* Every check held. */
 	printf("monitor-rate: PASS\n");
+
+	/* Succeeded: the run is over. */
 	return 0;
 }
 
