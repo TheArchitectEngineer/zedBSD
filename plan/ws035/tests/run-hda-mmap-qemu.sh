@@ -3,7 +3,8 @@
 # write path it must not disturb.  Each guest transcript and WAV check is
 # kept under OUT.  IMG is the image built with config-amd64-hda-image.mk.
 set -u
-cd /home/awe/zedBSD-rpi4
+# ws136-p003: from the tree the script is in (it was a fixed other tree, now gone).
+cd "$(dirname -- "$0")/../../.."
 OUT=${OUT:-plan/ws035/phase049/evidence}
 D=${RUN:-/tmp/p049-run}; export RUN=$D
 export IMG=${IMG:-build/p049-img/hdd-image.img}

@@ -7,10 +7,11 @@
 #   sh plan/ws045/tests/target-check.sh [SYSROOT_BUILD] FILE.c...
 #
 # SYSROOT_BUILD is the build directory whose amd64/ and i386/ sysroots are
-# used (default /home/awe/zedBSD-rpi4/build, read only); arm64 compiles
-# against include/libc, as its image build does.
+# used (default this tree's build, read only; ws136-p003: it was another
+# tree's, now gone); arm64 compiles against include/libc, as its image build
+# does.
 set -eu
-build=/home/awe/zedBSD-rpi4/build
+build=build
 case ${1:-} in
 *.c) ;;
 *) build=$1; shift ;;

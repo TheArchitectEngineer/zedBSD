@@ -4,16 +4,17 @@
 # copied into a running guest (a copy of that image) and tried there without
 # building a new image.  From ws045's build-guest-utils.sh (ws065-p004).
 #
-#   sh plan/tools/sh/build-guest-sh.sh [IMAGE_BUILD] [OUTPUT]
+#   sh plan/tools/sh/build-guest-sh.sh IMAGE_BUILD [OUTPUT]
 #
-# IMAGE_BUILD is the build directory of the image the guest runs (default
-# /home/awe/zedBSD-rpi4/build/ws053-full-hal-guest, read only); its
-# dynamic/libc.so is linked against.  The headers and crt1.o come from this
+# IMAGE_BUILD is the build directory of the image the guest runs (read only),
+# the full guest image's (plan/tools/guest/build-full-image.sh; ws136-p003: the
+# default was another tree's build, now gone); its dynamic/libc.so is linked
+# against.  The headers and crt1.o come from this
 # tree's sysroot (build/amd64/sysroot, made by make sysroot-amd64).
 # OUTPUT defaults to build/guest-sh/sh.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
-image_build=${1:-/home/awe/zedBSD-rpi4/build/ws053-full-hal-guest}
+image_build=${1:?usage: build-guest-sh.sh IMAGE_BUILD [OUTPUT]}
 out=${2:-build/guest-sh/sh}
 sysroot=build/amd64/sysroot
 clang=build/llvm/bin/clang

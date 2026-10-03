@@ -20,7 +20,7 @@ out=${1:-build/ws001/guest.out}
 if [ $# -gt 0 ]; then
 	shift
 fi
-noct=${NOCT:-/home/awe/zedBSD-rpi4/build/NoctLang/build-static/noct}
+noct=${NOCT:-$(cd "$(dirname -- "$0")/../../.." && pwd)/build/NoctLang/build-static/noct}
 export GUEST_RUNTIME=build/ws001/guest-rt
 
 # The cases and their references.

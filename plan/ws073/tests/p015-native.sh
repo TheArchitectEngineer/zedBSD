@@ -1,10 +1,10 @@
 #!/bin/sh
 # ws073-p015 / BUG-073 on amd64 native (UEFI, NVMe, KVM), from the host.
 #
-#   sh plan/ws073/tests/p015-native.sh VMUNIX MOUNT [OUT]
+#   sh plan/ws073/tests/p015-native.sh BUILD MOUNT [OUT]
 #
-# VMUNIX is this tree's guest kernel (the measurement guest's config, so
-# that it runs the main tree's full guest image with sshd); MOUNT is this
+# BUILD is where this tree's full guest image (with sshd) is built (kernel-image.sh; ws136-p003: it was a VMUNIX
+# put into another tree's image); MOUNT is this
 # tree's /sbin/mount (it knows the msdosfs spelling).  A second NVMe disk
 # carries three FAT32 partitions with 512 B, 2 KiB and 4 KiB clusters.  The
 # guest runs boot-slots.sh native (nothing shown at boot; a runtime
@@ -14,7 +14,7 @@
 # each FAT.  OUT (default build/ws073-p015) keeps the images and the output.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
-vmunix=${1:?vmunix}
+build=${1:?build}
 mount_binary=${2:?mount}
 out=${3:-build/ws073-p015}
 here=$(cd "$(dirname "$0")" && pwd)
@@ -43,7 +43,7 @@ for spec in 2048:131072:1:C512 133120:327680:4:C2K 460800:614400:8:C4K; do
 done
 
 # The guest image: the full guest with this tree's kernel.
-sh "$here/kernel-image.sh" "$vmunix" "$out/native.img" >/dev/null
+sh "$here/kernel-image.sh" "$build" "$out/native.img" >/dev/null
 $g stop >/dev/null 2>&1 || true
 $g start "$out/native.img" --qemu-extra \
 	"-drive if=none,id=fat,file=$(realpath "$fat"),format=raw -device nvme,serial=zedbsd-fat,drive=fat"

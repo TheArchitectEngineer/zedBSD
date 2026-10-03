@@ -95,6 +95,8 @@ I915_TEST_VBT=y
 # brought up and every presentation is copied into guest RAM for the host's pmemsave (display/capture.c)
 I915_TEST_CAPTURE=${I915_TEST_CAPTURE:-n}
 BUILD=${BUILD:-build/resident}
+# the image's config: the mode's, else the plain vkprobe image's (ws136-p003: the tree's config.mk before)
+ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws031/tests/config-vkprobe-hw.mk}
 mkdir -p $BUILD
 # a change of flags or of the test build is not seen by make: force the rebuild and relink by hand
 FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT|capture=$I915_TEST_CAPTURE"
@@ -209,10 +211,12 @@ cp "$RC_CONF" $RC_GEN.new
 cmp -s $RC_GEN.new $RC_GEN 2>/dev/null || mv $RC_GEN.new $RC_GEN
 rm -f $RC_GEN.new
 RC_CONF=$RC_GEN
-make -j"$ZEDBSD_JOBS" BUILD=$BUILD "I915_TESTS=${I915_TESTS:-n}" "I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" \
-	"I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
-	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" \
-	ZEDBSD_TEST_RC_CONF=$RC_CONF "ZEDBSD_TEST_EXTRA_FILES=$FILES" \
+# The image the one standard way (ws136-p003): the config, the files of the tree, and the build's variables, without
+# the guest harness's SSH files (the machine is reached over its serial log).
+# shellcheck disable=SC2086
+plan/tools/guest/test-image.sh --no-harness "$ZEDBSD_CONFIG" "$BUILD" $FILES "I915_TESTS=${I915_TESTS:-n}" \
+	"I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" "I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
+	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" ZEDBSD_TEST_RC_CONF=$RC_CONF \
 	ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > $BUILD/resident-build.log 2>&1 || {
 	echo "BUILD FAILED (the image on the 5330 is NOT this tree):"
 	grep -E ' error: |Error [0-9]' $BUILD/resident-build.log | head

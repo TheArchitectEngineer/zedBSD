@@ -5,16 +5,17 @@
 # kept as OUT/hang.png) and the next run cannot connect; a failed run leaves
 # the guest running for the debugger.
 #
-#   sh plan/ws073/tests/bug082.sh VMUNIX [RUNS [OUT]]
+#   sh plan/ws073/tests/bug082.sh BUILD [RUNS [OUT]]
+# BUILD is where this tree's full guest image is built (kernel-image.sh; ws136-p003: it was a VMUNIX).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-vmunix=${1:?vmunix}
+build=${1:?build}
 runs=${2:-20}
 out=${3:-build/ws073-bug082}
 here=$(cd "$(dirname "$0")" && pwd)
 g="sh $here/g.sh"
 mkdir -p "$out"
-sh "$here/kernel-image.sh" "$vmunix" "$out/native.img" >/dev/null
+sh "$here/kernel-image.sh" "$build" "$out/native.img" >/dev/null
 $g stop >/dev/null 2>&1 || true
 $g start "$out/native.img" >/dev/null
 $g wait >/dev/null
