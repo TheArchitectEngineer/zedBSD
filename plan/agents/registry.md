@@ -78,3 +78,12 @@
 
 
 2026-10-03 夜 Q1: user のソフトな停止で P1・P2・T1（generation3）・T2（generation1）はラップアップして終了。全ての成果は main に統合済み。リポジトリの作り直しの後は worktree と branch を作り直す（[master](../master.md) の「リポジトリの作り直し」）。
+
+2026-10-04 Q1: リポジトリの作り直しの後、worktree を `git worktree add` で作り直して起動（user の指示、N=5）:
+| 担当 | 定義 | 仕事 | worktree / branch | Queue | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| P1 / generation12 | phase-runner（high） | BUG-053・052・103・033・157（ws073-p046〜p049・ws005-p031） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1` | q651 | running |
+| P2 / generation7 | phase-runner（high） | BUG-143・129・139・162（ws095-p015・ws073-p050・ws095-p013・ws135-p001） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | q652 | running |
+| P9 / generation1 | phase-runner（Fable 5.1、high） | BUG-135（ws073-p051）、試験の依頼はしない | `/home/awe/zedBSD-worktrees/p9` / `agent/p9` | q653 | running |
+| T1 / generation4 | test-runner | 主に P1 の試験 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | q654 | running |
+| T2 / generation2 | test-runner | 主に P2 の試験、T2-007（WS131 p006a） | `/home/awe/zedBSD-worktrees/t2` / `agent/t2` | q654 | running |
