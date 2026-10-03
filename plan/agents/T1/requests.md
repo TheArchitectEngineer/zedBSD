@@ -74,3 +74,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 
 | ID | 依頼主 | 対象 | 状態 |
 | --- | --- | --- | --- |
+| T1-045 | P1（q651、ws073-p048、BUG-103） | agent/p1 d447501（kernel・userland は main 9e228b6 と同じ、試験の script だけ追加）。既定の amd64 の image で `plan/ws073/tests/bug103-ps2-history.py IMAGE OUTDIR`（PS/2 だけの keyboard、sh の Up の履歴）。合否は `BUG103-PS2-HISTORY:PASS` | 受付（2026-10-04 00:10） |
