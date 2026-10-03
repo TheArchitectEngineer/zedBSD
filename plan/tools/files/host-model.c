@@ -70,7 +70,7 @@ main(
 	int error;
 
 	if (argc < 2) {
-		fprintf(stderr, "usage: files-model TEMPORARY-FOLDER [OTHER-FILE-SYSTEM-FOLDER]\n");
+		fprintf(stderr, "usage: files-model TEMPORARY-FOLDER [OTHER-FILE-SYSTEM-FOLDER [VOLUME-FOLDER]]\n");
 		return 2;
 	}
 	mkdir(argv[1], 0755);
@@ -338,7 +338,7 @@ main(
 		snprintf(other, sizeof(other), "%s/xfs/dst/Old.txt", root);
 		error = fm_trash_for(other, trash, sizeof(trash));
 		snprintf(path, sizeof(path), "%s/files/", trash);
-		check(task->replaced[0] != NULL && strncmp(task->replaced[0], path, strlen(path)) == 0 && file_is(task->replaced[0], "old"), "replace across file systems: the file is in its volume's trash");
+		check(task->replaced[0] != NULL && strncmp(task->replaced[0], path, strlen(path)) == 0 && file_is(task->replaced[0], "old"), "replace across file systems: the file is in the trash fm_trash_for chose (the home trash for /dev/shm)");
 		snprintf(other, sizeof(other), "%s/x.txt", task->replaced[1] != NULL ? task->replaced[1] : "-");
 		check(file_is(other, "x"), "replace across file systems: the folder is in that trash with its contents");
 		snprintf(path, sizeof(path), "%s/xfs/dst/Old.txt", root);
@@ -459,11 +459,20 @@ main(
 	check(!exists(other), "put back: the record is gone");
 	fm_task_free(task);
 
-	/* 8b. An item on another volume goes to that volume's trash, $topdir/.Trash-$uid (ws127-p003). */
+	/* 8a. An item on a system's mount (the second folder, /dev/shm) goes to the home trash, not a trash of that mount (ws127-p008). */
 	if (argc > 2) {
-		snprintf(path, sizeof(path), "%s/volume", argv[2]);
+		snprintf(path, sizeof(path), "%s/System.txt", argv[2]);
+		make_file(path, "system");
+		error = fm_trash_for(path, other, sizeof(other));
+		check(error == 0 && strcmp(other, trash) == 0, "system mount: an item of /dev/shm goes to the home trash");
+		unlink(path);
+	}
+
+	/* 8b. An item on another volume (the third folder, a tmpfs of the user's) goes to that volume's trash, $topdir/.Trash-$uid (ws127-p003). */
+	if (argc > 3) {
+		snprintf(path, sizeof(path), "%s/volume", argv[3]);
 		fm_ops_mkdir_parents(path);
-		snprintf(path, sizeof(path), "%s/volume/Notes.txt", argv[2]);
+		snprintf(path, sizeof(path), "%s/volume/Notes.txt", argv[3]);
 		make_file(path, "notes");
 		volume_items[0] = strdup(path);
 		error = fm_trash_for(volume_items[0], other, sizeof(other));
@@ -504,13 +513,15 @@ main(
 			snprintf(path, sizeof(path), "%s/info/Notes.txt.trashinfo", other);
 			check(task->error_count == 0 && file_is(volume_items[0], "notes") && !exists(path), "volume trash: put back returns it and removes the record");
 			fm_task_free(task);
-			snprintf(path, sizeof(path), "%s/volume/Notes.txt", argv[2]);
+			snprintf(path, sizeof(path), "%s/volume/Notes.txt", argv[3]);
 			unlink(path);
 			free(volume_items[1]);
 		} else {
-			printf("skip: volume trash (the other folder's volume top cannot hold a trash)\n");
+			check(0, "volume trash: the third folder's volume holds a trash");
 		}
 		free(volume_items[0]);
+	} else {
+		printf("skip: volume trash (no third folder on a volume of the user's)\n");
 	}
 
 	/* 9. Delete a folder tree for good. */

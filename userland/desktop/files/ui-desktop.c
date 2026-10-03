@@ -506,6 +506,8 @@ desktop_painted_record(
 	size_t index,
 	struct fm_desktop_painted *painted)
 {
+	int kind;
+
 	/* Zeroed first, so that records compare whole. */
 	memset(painted, 0, sizeof(*painted));
 	painted->column = app->desk.places[index].column;
@@ -514,7 +516,8 @@ desktop_painted_record(
 	painted->cut = entry->cut;
 
 	/* A picture's thumbnail, once made (fm_grid_entry_icon draws it). */
-	if (fm_thumb_kind(entry) != 0)
+	kind = fm_thumb_kind(entry);
+	if (kind != 0)
 		painted->thumb = fm_thumb_get(app, entry->path, entry->modified);
 
 	/* Succeeded: the record describes this cell. */
