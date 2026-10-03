@@ -110,3 +110,11 @@ uncleared のまま。2 回とも `sim: 4 fps (want 15 or more)`（replay 3 つ�
   （判定しない）。小さな窓で両方の rate が大きく上がれば、描く pixel の量（host の CPU の renderer）が律速。
 - 15 fps の条件: 実機（i915）の値で判定するのが本来で、QEMU の lavapipe の上の値は参考。ただし Q1 の指摘どおり条件を下げるだけにはせず、段 3・4 の
   数字で軽量化の余地（全面の背景・overdraw）を決める。T2 に依頼（P2-08）。
+
+## T1-057（Q1、2026-10-04、QEMU Venus KVM、main 8d9cf3e、判定なしの計測）
+
+device は `llvmpipe (LLVM 19.1.7, 256 bits)`（この host に描画の GPU が無く、Venus は host の lavapipe で描く、P2 の調べ）。
+- monitor（sim、全体の窓）: fps 4.6〜4.7、record 26.8〜31.1、submit 10.1、present 48.8〜49.9、callback 212.9〜221.7 ms。
+- compositor（`ZWL PERF compose`、全体の窓）: 合成 4 回/秒、draw_ms 88〜104（うち submit+present 68〜79）、frame_ms 98〜115。
+- 480x320 の窓: 合成は同じ 4 回/秒、monitor fps 4.7、callback 209 ms、compositor の draw_ms 87・frame_ms 96。
+Q1 の読み: 窓を小さくしても変わらないので、monitor の描く画素の量ではなく、compositor の 1 回の合成（host の CPU の lavapipe で 1280x800 の全面、約 100 ms）と frame callback の間隔が律速。QEMU（GPU 無しの host）では fps の判定に意味が無い。15 fps の判定は実機（5330 の iGPU）で行うのが妥当（ユーザーの判断を求める）。証拠 worktrees/t1/build/t1-057/。

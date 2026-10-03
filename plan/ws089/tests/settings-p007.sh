@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws089-p007, rewritten for WS135 (ws135-p004): zdesktop puts the desktop's settings into effect at once when they are
 # set through Keiland's system extension (the probe keiland-settings, libkeiland's kl_settings_*), on the Venus guest
-# of the WS135 image (SETTINGS_CONFIG=plan/ws135/tests/config-amd64-settings.mk build-settings-image.sh).  zdesktop
+# of the WS135 image (SETTINGS_CONFIG=plan/tools/settings/config-amd64-settings.mk build-settings-image.sh).  zdesktop
 # --glass at 1280x800, started without --wallpaper (the landscape drawn by zdesktop), with Settings' About page open to
 # see the windows' opacity.  desktop.conf is zdesktop's own: the test only removes it or seeds it before zdesktop starts.
 #  1. No file: ZWL SETTINGS open, the landscape (start.png).

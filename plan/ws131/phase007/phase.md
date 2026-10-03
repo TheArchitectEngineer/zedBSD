@@ -93,3 +93,7 @@ evdev の device の走査・読み・lease を backend へ移す。evdev の型
 ## 結果（Q1、2026-10-03、T1-044、QEMU）
 
 uncleared（未実行の項目が残る）。boot-test PASS、C1 PASS（p126・c1-boot-shutdown）、Linux の gdm の guest（QEMU+KVM）PASS（`ZWL INPUT device=` 4 つ、launcher の click で App Home、Terminal に `$ ab`）。demo-s8-s9（touch・pen）はユーザーの指示のラップアップで未実行。証拠 worktrees/t1/build/t1-criteria/t1-044/・t1-linux/t1-044/。再開: demo-s8-s9 を流して PASS なら cleared。
+
+## FreeBSD の確認（Q1、2026-10-04、WS137）
+
+T1-056（FreeBSD 15.1-RELEASE-p4 の QEMU+KVM guest、main fec887f）: native の build（warning 0）・install・native-build-audit・host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected が全て PASS。GPU の無い guest のため表示・入力の確認は未実施。

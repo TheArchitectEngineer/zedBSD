@@ -88,3 +88,7 @@ Linux: T2-013 PASS。zedBSD: T1-054 で C1 PASS（p126・c1-boot-shutdown、Venu
 ## 結果（Q1、2026-10-04）
 
 cleared。Linux: T2-013 PASS（gcc・clang warning 0、Debian 13 の guest で compositor の desktop、display-probe direct・--acquire）。zedBSD: T1-054 で C1 PASS・既定の image（c9b09ad）の boot-test PASS。FreeBSD: P3 の WS137 の backend-test で native build warning 0（GPU 無しのため表示は未実施）。
+
+## FreeBSD の確認（Q1、2026-10-04、WS137）
+
+T1-056（FreeBSD 15.1-RELEASE-p4 の QEMU+KVM guest、main fec887f）: native の build（warning 0）・install・native-build-audit・host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected が全て PASS。GPU の無い guest のため表示・入力の確認は未実施。

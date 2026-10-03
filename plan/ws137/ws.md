@@ -3,29 +3,32 @@
 # WS137: FreeBSD の試験の VM を T1・T2 で使えるようにし、libkeiland-backend の FreeBSD の試験を流す
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-04）
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q658（P3）
-Resume point: p001 は道具を作り QEMU+KVM で 1 回通した（backend-test PASS、Q1 の判定待ち、[phase.md](phase001/phase.md)）。次は p002（T1・T2）。
+Queue: q658（P3）・T1-056
+Resume point: なし。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-04 ユーザー）
 
 「FreeBSDのVMイメージを用意して、T1,T2で使えるようにした上で、書くだけだったFreeBSDのテストも実行するようにお願いします。libkeiland-backendのビルドと実行のことです。」
 
-## 完了の条件
+## 結果
 
-1. FreeBSD 15.1 の QEMU+KVM の guest を作る道具 `plan/tools/keiland-freebsd/build-guest.sh`（公式の VM image `FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz` を取得し CHECKSUM.SHA256 で確かめ、cloud-init の seed で SSH の鍵、native の build に要る package を入れる）と、起動・停止・SSH の道具（`plan/tools/keiland-freebsd/guest.sh`、Linux の `plan/tools/keiland-linux/guest.sh` と同じ形）。guest の image は worktree の `build/keiland-freebsd/guest` に作り、T1・T2 が自分の build/ に作れる（共有の build/ の物を読み取り専用でも使える）。手順は README に。
-2. guest の中で libkeiland-backend（と WS131 で FreeBSD を「書くだけ」にした compositor・libkeiland の部分）を native に build（warning 0）し、host 試験（host-seat-freebsd ほか）と、guest の中で動かせる試験を流す道具（例 `plan/tools/keiland-freebsd/backend-test.sh`）。
-3. WS131 の p004〜p008 の「FreeBSD は書くだけ」の項目を T1・T2 で流し、結果を各 phase.md に書く（直しは担当の WS の Phase）。
-4. 規則: AGENTS.md「検証」の WS109 の FreeBSD guest の例外（127.0.0.1 の転送ポートの SSH と QMP の screendump の PNG、serial・console の log で判定しない）。i915 の passthrough は使わない（virtio の GPU か GPU 無し）。
+- 道具 `plan/tools/keiland-freebsd/`（README の WS137 の節）: `build-guest.sh`（公式の FreeBSD 15.1 の VM image を取得し、公式の CHECKSUM.SHA256 を q550 の記録と照合、NoCloud の seed、native の build の package）、`guest.sh`（start・stop・status・ssh・put・get・copy・shot、127.0.0.1 の転送ポートと QMP の PNG、serial の log は読まない）、`backend-test.sh`（guest の中で keiland-freebsd.mk を native に build、warning 0、install・audit・host 試験）。Master の Tools 節に登録。
+- 確認: P3 の QEMU+KVM と T1-056（main fec887f）で、native の build（351 source、libkeiland-backend・libkeiland・compositor・app）warning 0、native-build-audit、host-seat-freebsd 13/13・host-session 31/31・host-power 17/17・6/6、sync-rejected・dmabuf-export-rejected が全て PASS。WS131 の p004〜p008 の phase.md に記録。
+
+## 制限・移管
+
+- guest に GPU が無い（i915 の passthrough は使わない規則）ので、FreeBSD の compositor の起動・表示・入力の確認は未実施。必要になったら別の WS で。
+- 2 つの guest の同時の起動、`--force` の作り直し、他の checkout の image の共用は未確認（README に方法）。
 
 ## Phase
 
-| Phase | 内容 | 状態 | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | guest の道具（build-guest.sh・guest.sh・README）と backend の build・試験の道具、T1・T2 への手順 | in-progress（q658、P3。build-guest・guest.sh・backend-test を 1 回通した、Q1 の判定待ち） | — |
-| p002 | WS131 p004〜p008 の FreeBSD の build と試験を T1・T2 で流し、結果を記録 | planned（T1・T2、Q1 が依頼） | p001 |
+| Phase | 内容 | 状態 |
+| --- | --- | --- |
+| p001 | guest の道具と backend の build・試験の道具 | cleared（P3、988b9a0） |
+| p002 | WS131 p004〜p008 の FreeBSD の build と試験 | cleared（T1-056 PASS 9/9） |
