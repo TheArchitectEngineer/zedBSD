@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: planning
+Disposition: canceled（2026-10-04 user「PC-98対応をもうやらないです。」、BUG-024 も「対応不要で終了」）
 Primary Milestone: MG001
 Related Milestones: MG002
 Objectives: O1
@@ -33,3 +34,5 @@ USB の host controller（PCI の上の UHCI・OHCI・EHCI）は PCI の後に�
 | ws077-p001 | 調査と設計: PC-9821 の PCI の方式、QEMU の PC-98 の PCI の有無、HAL の差分の案、menuconfig の pc98 の PCI の対応 | planning |
 | ws077-p002 | PC-98 の PCI の backend と IRQ の経路、pci.drivers の platform に pc98 | planning |
 | ws077-p003 | 規約と回帰（PC-98 の boot） | planning |
+
+2026-10-04 Q1: user の判断で PC-98 の対応をやめるので、この WS は canceled（実装は未着手、BUG-024 は終了）。

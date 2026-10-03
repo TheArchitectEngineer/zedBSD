@@ -1,6 +1,6 @@
 # zedBSD known bugs
 
-2026-10-04 Q1: user の判断で BUG-024 は対応不要で終了、BUG-036・041・099 は様子見で close（再発で reopen）。BUG-143・053・052・162・103・129・033・157・139 は P1・P2、BUG-135 は P9（Fable 5.1 high）に割り当て（Disposition は各 ticket）。下の「優先度」の表は 2026-10-03 以前の物で古い（BUG-095・120・124・144 は resolved または実機の確認待ち）。
+2026-10-04 Q1: user の判断で BUG-013・023 は PC-98 の対応をやめるので close、BUG-101 は解決済みで close。BUG-024 は対応不要で終了、BUG-036・041・099 は様子見で close（再発で reopen）。BUG-143・053・052・162・103・129・033・157・139 は P1・P2、BUG-135 は P9（Fable 5.1 high）に割り当て（Disposition は各 ticket）。下の「優先度」の表は 2026-10-03 以前の物で古い（BUG-095・120・124・144 は resolved または実機の確認待ち）。
 
 Last updated: 2026-10-03
 
