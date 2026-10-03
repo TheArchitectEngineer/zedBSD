@@ -251,7 +251,9 @@ struct sm_motion {
 /*
  * The card brought forward (design.md section 3.9): the plate (-1: none),
  * how far it has come out (0 to 1, eased when drawn), whether it is coming
- * or going, whether it is pinned, and the plate the keyboard is on.
+ * or going, whether it is pinned, the plate the keyboard is on (-1: none),
+ * the last tick's time, and the plate whose card was last drawn all the
+ * way out plus one (the log says so once; zero: none).
  */
 struct sm_focus {
 	int plate;
@@ -260,6 +262,7 @@ struct sm_focus {
 	int pinned;
 	int keyboard;
 	uint64_t last_ms;
+	int drawn;
 };
 
 /* The most fingers the monitor follows. */
@@ -267,10 +270,13 @@ struct sm_focus {
 
 /*
  * The fingers and the pointer (design.md section 3.10): libkeiland's
- * gestures, the fingers down and where each touched, the most down in this
- * contact, a two-finger tap's start, whether a pinch already acted, the
- * drag in progress (and whether it turns the core), and the pointer's
- * press.
+ * gestures, the fingers down (a slot holds a finger's id plus one, zero is
+ * free) and where each touched and is now, the most down in this contact,
+ * when its first and second fingers touched and the two's middle (a
+ * two-finger tap), whether a finger moved past the slop and whether a
+ * pinch already acted, a lone finger's movement when it lifted (a swipe),
+ * the drag in progress (whether it turns the core, or may be a swipe), the
+ * pointer's press (press_ms by the real clock), and the core's turn.
  */
 struct sm_touch {
 	struct keiland_gesture *gesture;
@@ -281,11 +287,17 @@ struct sm_touch {
 	float last_y[SM_FINGERS];
 	unsigned fingers;
 	unsigned most;
+	uint64_t first_us;
 	uint64_t second_us;
+	float two_x;
+	float two_y;
 	int moved;
 	int pinched;
+	float lift_dx;
+	float lift_dy;
 	int dragging;
 	int drag_core;
+	int swipe_ok;
 	int pressed;
 	int press_moved;
 	int press_long;
@@ -328,6 +340,9 @@ struct sm_app {
 	uint64_t frame_asked_ms;
 	int quit;
 	int dirty;
+
+	/* Whether the input needs the clock and frames (sm_interact_tick: a finger or the button down, the card or the core moving). */
+	int input_active;
 
 	/* The data: the source, the last frame, the history, the rules and the events. */
 	struct sm_source source;
@@ -395,9 +410,12 @@ void sm_space_relief(struct sm_app *app, const struct sm_box *box);
 /* interact.c */
 int sm_interact_open(struct sm_app *app);
 void sm_interact_close(struct sm_app *app);
-void sm_interact_event(struct sm_app *app, const struct kui_window_event *event, uint64_t now_ms);
+void sm_interact_event(struct sm_app *app, const struct kui_window_event *event);
 int sm_interact_tick(struct sm_app *app, uint64_t now_ms);
 const char *sm_plate_name(enum sm_plate plate);
+void sm_card_box(const struct sm_app *app, float eased, struct sm_box *box);
+
+/* main.c */
 void sm_set_range(struct sm_app *app, unsigned range);
 
 /* render.c */

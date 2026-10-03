@@ -21,10 +21,11 @@
  * window costs nothing and never makes the WSI's present wait (design.md
  * section 4.3).
  *
- * The log (stdout) is what the tests read: ZMON READY, SAMPLE, TEXT (each
- * plate's value as drawn), LEVEL, VISIBLE, FRAME (the frame rate and
- * times every 5 seconds), MEM (the monitor's own allocations every 30
- * seconds) and DONE.  --clock=fixed:MS stops the clock at MS after
+ * The log (stdout) is what the tests read: ZMON PLATE (each plate's box),
+ * READY, SAMPLE, TEXT (each plate's value as drawn), LEVEL, VISIBLE, FRAME
+ * (the frame rate and times every 5 seconds), MEM (the monitor's own
+ * allocations every 30 seconds), the input's CARD, VIEW, RANGE, FOCUS and
+ * CORE (interact.c), and DONE.  --clock=fixed:MS stops the clock at MS after
  * playing the source up to it, so the picture is the same every run.
  */
 
@@ -43,16 +44,16 @@
 #define MAIN_FONT_MONO		KEILAND_DATADIR "/fonts/keiland-mono.ttf"
 #define MAIN_FONT_FALLBACK	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
 
-/* The evdev codes of the keys the monitor takes. */
-#define MAIN_KEY_ESC		1U
+/* The evdev code of the key that ends the monitor with Ctrl (the other keys are interact.c's). */
 #define MAIN_KEY_Q		16U
-#define MAIN_KEY_LEFT		105U
-#define MAIN_KEY_RIGHT		106U
 
 /* How long without the compositor's frame callback means the window is hidden, and the reports' periods. */
 #define MAIN_HIDDEN_MS		1000U
 #define MAIN_FRAME_REPORT_MS	5000U
 #define MAIN_MEMORY_REPORT_MS	30000U
+
+/* How long the loop may wait while the input needs the clock (a finger down, the card moving), in milliseconds. */
+#define MAIN_INPUT_MS		16
 
 /*
  * The titlebar's controls: the time ranges, as text pills (a segmented
@@ -81,7 +82,7 @@ static int main_resize(struct sm_app *app);
 static int main_draw(struct sm_app *app, uint64_t now);
 static int main_timeout(const struct sm_app *app, uint64_t now);
 static void main_reports(struct sm_app *app, uint64_t now);
-static void main_set_range(struct sm_app *app, unsigned range);
+static void main_log_layout(const struct sm_app *app);
 
 static const struct keiland_titlebar_listener main_titlebar_listener = {
 	main_control_activated, NULL, NULL, NULL, NULL, NULL, NULL, NULL
@@ -135,6 +136,11 @@ main(
 		now = main_now(&app);
 		main_take_frames(&app, now);
 
+		/* The input's time: while it moves or a finger is down, frames keep coming (a long press is found by the clock). */
+		app.input_active = sm_interact_tick(&app, now);
+		if (app.input_active)
+			app.dirty = 1;
+
 		/* A window that has not shown a frame for a while is hidden. */
 		if (!app.frame_allowed && app.visible && now >= app.frame_asked_ms + MAIN_HIDDEN_MS) {
 			app.visible = 0;
@@ -159,6 +165,30 @@ main(
 	fflush(stdout);
 	main_close(&app);
 	return 0;
+}
+
+/*
+ * Shows another time range: the graphs and the titlebar's checked control.
+ */
+void
+sm_set_range(
+	struct sm_app *app,
+	unsigned range)
+{
+	unsigned index;
+
+	/* The range; the tests read the line. */
+	app->range = range;
+	app->dirty = 1;
+	printf("ZMON RANGE %s\n", main_range_labels[range]);
+
+	/* The titlebar shows it checked. */
+	if (app->titlebar == NULL)
+		return;
+	(void)keiland_titlebar_begin(app->titlebar);
+	for (index = 0; index < SM_RANGES; index++)
+		(void)keiland_titlebar_set_control_state(app->titlebar, MAIN_CONTROL_RANGE + index, 1, index == range);
+	(void)keiland_titlebar_commit(app->titlebar);
 }
 
 /* Reads the command line; returns 0, or 2 after printing the usage. */
@@ -317,6 +347,11 @@ main_open(
 	app->height = height;
 	main_titlebar(app);
 
+	/* The gestures of the window's fingers. */
+	error = sm_interact_open(app);
+	if (error != 0)
+		return -1;
+
 	/* The fonts: the interface's, and the monospaced one (the interface's again when it is missing). */
 	error = kui_text_open(&app->sans, MAIN_FONT, MAIN_FONT_FALLBACK);
 	if (error != 0) {
@@ -382,13 +417,18 @@ main_open(
 		app->clock_offset_ms = MAIN_PREFILL_MS;
 	}
 
-	/* The tests' first line. */
+	/* Where the plates are, for the tests that touch them. */
+	main_log_layout(app);
+
+	/* The source's name and the run's token. */
 	source_name = "sim";
 	if (app->replay_path != NULL)
 		source_name = "replay";
 	token = "-";
 	if (app->token != NULL)
 		token = app->token;
+
+	/* The line the tests wait for. */
 	printf("ZMON READY width=%u height=%u source=%s cpus=%u gpus=%u device=\"%s\" token=%s\n", app->renderer.extent.width,
 	       app->renderer.extent.height, source_name, app->source.info.cpu_count, app->source.info.gpu_count,
 	       app->renderer.device_name, token);
@@ -401,11 +441,12 @@ static void
 main_close(
 	struct sm_app *app)
 {
-	/* The drawing, the data and the window. */
+	/* The drawing, the data, the input and the window. */
 	sm_renderer_close(&app->renderer);
 	sm_scene_release(&app->scene);
 	sm_atlas_release(&app->atlas);
 	sm_source_close(&app->source);
+	sm_interact_close(app);
 	if (app->frame_callback != NULL)
 		wl_callback_destroy(app->frame_callback);
 	if (app->titlebar != NULL)
@@ -464,7 +505,7 @@ main_control_activated(
 	/* One of the ranges. */
 	app = data;
 	if (id >= MAIN_CONTROL_RANGE && id < MAIN_CONTROL_RANGE + SM_RANGES)
-		main_set_range(app, id - MAIN_CONTROL_RANGE);
+		sm_set_range(app, id - MAIN_CONTROL_RANGE);
 }
 
 /* The compositor showed the last frame: the next may be drawn. */
@@ -570,7 +611,7 @@ main_event(
 	app->event_count++;
 }
 
-/* Takes the window's input: its size, its close, and the keys. */
+/* Takes the window's input: its size and its close here, Ctrl+Q, and the rest to interact.c (the fingers, the pointer, the keys). */
 static void
 main_input(
 	struct sm_app *app)
@@ -584,6 +625,8 @@ main_input(
 		took = kui_window_take(app->window, &event);
 		if (!took)
 			break;
+
+		/* Each kind. */
 		switch (event.kind) {
 		case KUI_WINDOW_RESIZE:
 			status = main_resize(app);
@@ -594,17 +637,17 @@ main_input(
 			app->quit = 1;
 			break;
 		case KUI_WINDOW_KEY:
-			/* A key's press: the ranges, and the way out. */
-			if (!event.pressed)
-				break;
-			if (event.code == MAIN_KEY_LEFT && app->range > 0U)
-				main_set_range(app, app->range - 1U);
-			else if (event.code == MAIN_KEY_RIGHT && app->range + 1U < SM_RANGES)
-				main_set_range(app, app->range + 1U);
-			else if (event.code == MAIN_KEY_Q && (event.modifiers & KUI_MOD_CTRL) != 0U)
+			/* Ctrl+Q ends the monitor; every other key is the plates'. */
+			if (event.pressed && event.code == MAIN_KEY_Q && (event.modifiers & KUI_MOD_CTRL) != 0U) {
 				app->quit = 1;
+				break;
+			}
+
+			/* The plates' keys. */
+			sm_interact_event(app, &event);
 			break;
 		default:
+			sm_interact_event(app, &event);
 			break;
 		}
 	}
@@ -638,6 +681,7 @@ main_resize(
 	/* The layout, and the atlas when the text's scale changed. */
 	scale = app->layout.scale;
 	sm_layout_compute(&app->layout, (float)app->renderer.extent.width, (float)app->renderer.extent.height);
+	main_log_layout(app);
 	if (app->layout.scale != scale) {
 		error = sm_atlas_build(&app->atlas, &app->sans, &app->mono, app->layout.scale);
 		if (error != 0)
@@ -751,6 +795,10 @@ main_timeout(
 	if (app->dirty && app->frame_allowed)
 		return 0;
 
+	/* The input keeps the clock while it moves or a finger is down. */
+	if (app->input_active)
+		return MAIN_INPUT_MS;
+
 	/* With the clock stopped only the compositor wakes the loop (and the run's end). */
 	if (app->fixed_clock)
 		return 1000;
@@ -843,24 +891,18 @@ main_reports(
 	}
 }
 
-/* Shows another time range: the graphs and the titlebar's checked control. */
+/* Logs each plate's box ("ZMON PLATE name=cpu x= y= width= height="), so that the tests know where to touch. */
 static void
-main_set_range(
-	struct sm_app *app,
-	unsigned range)
+main_log_layout(
+	const struct sm_app *app)
 {
-	unsigned index;
+	const struct sm_box *box;
+	unsigned plate;
 
-	/* The range. */
-	app->range = range;
-	app->dirty = 1;
-	printf("ZMON RANGE %s\n", main_range_labels[range]);
-
-	/* The titlebar shows it checked. */
-	if (app->titlebar == NULL)
-		return;
-	(void)keiland_titlebar_begin(app->titlebar);
-	for (index = 0; index < SM_RANGES; index++)
-		(void)keiland_titlebar_set_control_state(app->titlebar, MAIN_CONTROL_RANGE + index, 1, index == range);
-	(void)keiland_titlebar_commit(app->titlebar);
+	/* Each plate, in the window's pixels. */
+	for (plate = 0; plate < SM_PLATES; plate++) {
+		box = &app->layout.plates[plate];
+		printf("ZMON PLATE name=%s x=%.0f y=%.0f width=%.0f height=%.0f\n", sm_plate_name((enum sm_plate)plate), box->x, box->y, box->width,
+		       box->height);
+	}
 }
