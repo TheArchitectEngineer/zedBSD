@@ -2,7 +2,7 @@
 
 # ws131-p010: compositor の拡張の protocol と設定の記録
 
-Status: in-progress（q659、P2、2026-10-04。実装・host の試験・3 OS のうち zedBSD と Linux の build・checker 済み。FreeBSD の build と QEMU の guest の probe は T2 に依頼）
+Status: cleared（q659、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q659（Q1 の「p010 へ」、2026-10-04）
@@ -148,3 +148,7 @@ FreeBSD: backend-test 9/9 PASS（build warning 0・install・audit・host 試験
 ## zedBSD の結果（Q1、2026-10-04、T2-020、7c9c1ad）
 
 probe: `capabilities=0x1e`（Linux と同じ値、期待の 0x1f との差は P2 が確かめる）、power の actions=0x0（session の中、D12 どおり）、volume 30 40 で watch に change と left=30 right=40（audiod は device=0 だが error=0、ENODEV にならない点も P2 が確かめる）、範囲外 EINVAL、power ENOTSUP、details（lo0・ue0・dns）、scan ok、eject ENOTSUP、別の uid は `failed step=open errno=ENOTSUP`（試験のため guest の kei に SSH の鍵を置き、/tmp/wayland-0 を 0666 にした）、ZWL ERROR 0。回帰: settings-regress・settings-p007・volume-p004・volume-p005・boot-test PASS。判定は capabilities と power の最初の状態の P2 の確認の後。
+
+## 判定（Q1、2026-10-04）
+
+cleared。zedBSD は T2-020（probe と回帰 PASS）、FreeBSD・Linux は T1-061。capabilities=0x1e は正しい（settings の bit は kl_settings_*）。power の最初の状態の不具合は 4d67ad5（p011 と一緒）で直り、T1-062 の Linux の guest で最初の dump が `actions=0xe`。device=0 での volume の成功は意図どおり。

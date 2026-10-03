@@ -134,3 +134,7 @@ Q1 への merge の依頼に添えた（下の文）:
 ## Resume
 
 試験の担当の結果を Q1 が判定する。FAIL なら P2 が直す。
+
+## FreeBSD・Linux の結果（Q1、2026-10-04、T1-062、main 3f059b5）
+
+FreeBSD: backend-test 9/9 PASS、libkeiland.so の NEEDED は libwayland-client・libm・libc、FreeBSD の compositor の binary で B2 PASS。Linux: gcc・clang warning 0、NEEDED は同じ 3 つ、guest で network-probe・audio-probe・lib-smoke PASS、`capabilities=0x1e`、最初の dump で power `actions=0xe`、Settings の Wi-Fi で鍵を入れて `NETWORK save-key ok`・`Connected to keiland-test.`（wpa_state=COMPLETED）、compositor error=0。zedBSD は T2-021 待ち。
