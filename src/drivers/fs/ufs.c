@@ -212,6 +212,8 @@
 #define J3_EXTENT_ENTRY		16U
 /* The sectors a commit or a replay moves at a time. */
 #define J3_STAGING_SECTORS	128U
+/* How many more commits a sync makes while a held range's home is owed (ws073-p051). */
+#define UFS_SYNC_OWED_ROUNDS	2U
 /* The slots of the set of freed blocks, a power of two. */
 #define J3_FREED_MAX		16384U
 /* The magic numbers of the header, a descriptor, a commit record, the locator and the request. */
@@ -417,6 +419,16 @@ struct ufs_j3 {
 	uint32_t closed_desc_sectors;
 	/* The buffer the finisher copies a range home through; staging is the close's. */
 	uint8_t *closed_staging;
+	/*
+	 * home_owed is set when a finish left a held range (content in a
+	 * block an earlier transaction freed, with no copy in the slot)
+	 * unwritten because a later transaction pinned its line again, and
+	 * stays set until a finish leaves no line pinned by a later
+	 * transaction: the line's next owner then wrote it whole.  A sync sees
+	 * it to commit again before it returns (ws073-p051).  Under the
+	 * journal lock.
+	 */
+	int home_owed;
 };
 
 /* Share internal object layouts with production-linked lifetime fixtures. */
@@ -679,6 +691,7 @@ static int write_sectors_context(struct mount *mountp, uint64_t lba, uint32_t co
 static int write_sectors(struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer);
 static int observed_disk_read(struct disk *disk, uint64_t block, uint32_t count, void *buffer);
 static int ufs_sync(struct mount *mountp);
+static int ufs_sync_commit(struct ufs_mount_state *ms, struct mount *mountp);
 static int ufs_sync_close(struct ufs_mount_state *ms, struct mount *mountp, int *closed, int *busy);
 static int journal_checkpoint_locked(struct mount *mountp);
 static uint32_t locator_get32(const uint8_t *p);
@@ -17155,8 +17168,8 @@ ufs_sync(
 	struct mount *mountp)
 {
 	struct ufs_mount_state *ms;
-	int closed;
-	int busy;
+	unsigned round;
+	int owed;
 	int error;
 
 	/* A call that names no mount has nothing to flush. */
@@ -17169,26 +17182,26 @@ ufs_sync(
 		return EINVAL;
 
 	/*
-	 * Checks the tail journal's point and closes the batched journal's
-	 * running transaction under the mount lock, which takes only memory
-	 * copies.  A commit another thread is writing is waited out with the
-	 * mount lock let go, so that no change of the volume waits behind its
-	 * flushes (ws073-p051, BUG-135).
+	 * Commits the running transaction.  A held range a finish could not
+	 * write, because a later transaction pinned its line again, reaches
+	 * its home with the commit of that later transaction, so the sync
+	 * commits again while a home is owed, at most UFS_SYNC_OWED_ROUNDS
+	 * more times (ws073-p051).
 	 */
-	for (;;) {
-		error = ufs_sync_close(ms, mountp, &closed, &busy);
-		if (!busy)
+	error = ufs_sync_commit(ms, mountp);
+	for (round = 0; round < UFS_SYNC_OWED_ROUNDS && error == 0; round++) {
+		/* Reads whether a home is owed. */
+		mutex_lock(&ms->j3.lock);
+		owed = ms->j3.home_owed;
+		mutex_unlock(&ms->j3.lock);
+
+		/* Stops once every held range is on its way home. */
+		if (!owed)
 			break;
 
-		/* Waits for the commit under way to end, then tries again. */
-		mutex_lock(&ms->j3.lock);
-		j3_commit_wait(&ms->j3);
-		mutex_unlock(&ms->j3.lock);
+		/* Commits the transaction that holds the owed line. */
+		error = ufs_sync_commit(ms, mountp);
 	}
-
-	/* Seals the closed transaction -- the device's flushes -- with the locks let go. */
-	if (error == 0 && closed)
-		error = j3_finish_commit(ms, mountp);
 
 	/*
 	 * The mount is only durable once the device has it.  The writes and the
@@ -17203,6 +17216,51 @@ ufs_sync(
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * One commit of a sync (ws073-p051): checks the tail journal's point and
+ * closes the batched journal's running transaction under the mount lock,
+ * which takes only memory copies, then seals it -- the device's flushes --
+ * with the locks let go.  A commit another thread is writing is waited
+ * out with the mount lock let go, so that no change of the volume waits
+ * behind its flushes (BUG-135).
+ */
+static int
+ufs_sync_commit(
+	struct ufs_mount_state *ms,
+	struct mount *mountp)
+{
+	int closed;
+	int busy;
+	int error;
+
+	/* Closes the running transaction, waiting out a commit under way. */
+	for (;;) {
+		error = ufs_sync_close(ms, mountp, &closed, &busy);
+		if (!busy)
+			break;
+
+		/* Waits for the commit under way to end, then tries again. */
+		mutex_lock(&ms->j3.lock);
+		j3_commit_wait(&ms->j3);
+		mutex_unlock(&ms->j3.lock);
+	}
+
+	/* Reports why the transaction could not be closed. */
+	if (error != 0)
+		return error;
+
+	/* Seals the closed transaction. */
+	if (closed)
+		error = j3_finish_commit(ms, mountp);
+
+	/* Reports why the commit failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the running transaction is committed, or there was none. */
 	return 0;
 }
 
@@ -19615,6 +19673,8 @@ j3_finish_commit(
 	uint64_t cursor;
 	unsigned kept;
 	unsigned n;
+	int held_kept;
+	int any_kept;
 	int home_error;
 	int error;
 
@@ -19637,6 +19697,8 @@ j3_finish_commit(
 	 * descriptor, in the order of the logged ranges.
 	 */
 	home_error = 0;
+	held_kept = 0;
+	any_kept = 0;
 	if (error == 0) {
 		cursor = j3->header_sectors + (j3->closed_sequence & 1U) * j3->slot_sectors + j3->closed_desc_sectors;
 		for (n = 0; n < j3->closed_count; n++) {
@@ -19645,10 +19707,20 @@ j3_finish_commit(
 			kept = 0;
 			(void)buf_unpin(mountp->m_disk, range->lba, range->count, j3->closed_sequence, &kept);
 
-			/* A held range is pinned content with no copy in the slot; the cache writes it when it can. */
+			/* Notes a line a later transaction holds, which this finish cannot write whole. */
+			if (kept != 0U)
+				any_kept = 1;
+
+			/*
+			 * A held range is pinned content with no copy in the slot; the
+			 * cache writes it when it can, and a sync waits for the line's
+			 * next owner to write it when that is later.
+			 */
 			if (range->hold) {
 				if (kept == 0 && home_error == 0)
 					home_error = buf_writeback_range(mountp->m_disk, range->lba, range->count);
+				else if (kept != 0U)
+					held_kept = 1;
 				continue;
 			}
 
@@ -19685,6 +19757,17 @@ j3_finish_commit(
 		kern_free(j3->closed_descriptor);
 		j3->closed_descriptor = NULL;
 		j3->closed_desc_sectors = 0;
+
+		/*
+		 * Owes a home for a held range this finish left to the line's next
+		 * owner; a finish that left no line to a later transaction has
+		 * written every owed line whole, since the transaction that pinned
+		 * an owed line again has a range in it.
+		 */
+		if (held_kept)
+			j3->home_owed = 1;
+		else if (!any_kept)
+			j3->home_owed = 0;
 	}
 
 	/*
@@ -20977,6 +21060,7 @@ j3_open(
 	j3->closed_descriptor = NULL;
 	j3->closed_desc_sectors = 0;
 	j3->closing = 0;
+	j3->home_owed = 0;
 
 	/*
 	 * Carries the metadata writes from here on, and commits them on the
