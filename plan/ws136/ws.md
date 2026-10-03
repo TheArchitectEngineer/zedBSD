@@ -28,4 +28,4 @@ Resume point: p001（棚卸しと移行）。
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | p001 | 棚卸し（image を作る script と過去の build を読む所の一覧）と移行、代表の build と boot-test の依頼 | in-progress（q655、P1） | — |
-| p002 | login の試験 p095・p102・p103・p104 を 2026-09-29 の既定の image（kei の自動 login、root/root・kei/kei）に合わせる（T2-007 の FAIL は試験の前提が古いため、P1 の判定） | planned（q655、P1） | — |
+| [p002](phase002/phase.md) | login の試験 p095・p102・p104 を 2026-09-29 の既定の image（kei の自動 login、root/root・kei/kei）に合わせる（p103 は変更不要） | in-progress（q655、P1、T2 の再試験待ち） | — |
