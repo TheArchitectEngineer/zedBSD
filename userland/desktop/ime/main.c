@@ -23,12 +23,14 @@
 #include "userland/desktop/paths.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 /* Where the Japanese dictionaries are installed (the package ime-dict-ja). */
 #define MAIN_SYSTEM_DICTIONARY		KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.X"
@@ -40,6 +42,15 @@
  * is zero for the program's life until then.
  */
 static volatile sig_atomic_t main_stopping;
+
+/*
+ * The pipe the signal handler writes a byte into, so that the loop's poll
+ * wakes even when the signal went to another thread (the user
+ * dictionary's writer) or the wait was not interrupted.  Made once at the
+ * start; -1 at both ends when it could not be made (the loop then relies
+ * on the interrupted poll alone).
+ */
+static int main_wake[2] = { -1, -1 };
 
 static void main_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void main_global_remove(void *data, struct wl_registry *registry, uint32_t name);
@@ -70,7 +81,19 @@ main(
 	memset(&program, 0, sizeof(program));
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
-	/* A stop asked by a signal ends the loop rather than the program, and interrupts its wait. */
+	/* The wake-up pipe the stop writes into; the loop polls its reading end. */
+	status = pipe(main_wake);
+	if (status == 0) {
+		(void)fcntl(main_wake[0], F_SETFL, O_NONBLOCK);
+		(void)fcntl(main_wake[1], F_SETFL, O_NONBLOCK);
+		(void)fcntl(main_wake[0], F_SETFD, FD_CLOEXEC);
+		(void)fcntl(main_wake[1], F_SETFD, FD_CLOEXEC);
+	} else {
+		main_wake[0] = -1;
+		main_wake[1] = -1;
+	}
+
+	/* A stop asked by a signal ends the loop rather than the program, and wakes its wait. */
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = main_stop;
 	sigemptyset(&action.sa_mask);
@@ -335,8 +358,9 @@ main_user_path(
 
 /*
  * Serves one turn of the connection: the events queued, then a wait for
- * more no longer than the held key's next repeat, then the repeat when it
- * is due.
+ * more no longer than the held key's next repeat or the languages' save
+ * (or until a signal asks the program to stop), then the repeat and the
+ * save when they are due.
  *
  * Returns 0, or -1 when the connection ended.
  */
@@ -344,7 +368,8 @@ static int
 main_serve(
 	struct program *program)
 {
-	struct pollfd descriptor;
+	struct pollfd descriptors[2];
+	char drained[16];
 	int repeat_timeout;
 	int save_timeout;
 	int timeout;
@@ -362,15 +387,25 @@ main_serve(
 	repeat_timeout = program_repeat_timeout(program, program_clock_ms());
 	save_timeout = program_save_timeout(program, program_clock_ms());
 	timeout = main_earlier(repeat_timeout, save_timeout);
-	descriptor.fd = wl_display_get_fd(program->display);
-	descriptor.events = POLLIN;
-	descriptor.revents = 0;
-	status = poll(&descriptor, 1, timeout);
+	descriptors[0].fd = wl_display_get_fd(program->display);
+	descriptors[0].events = POLLIN;
+	descriptors[0].revents = 0;
+	descriptors[1].fd = main_wake[0];
+	descriptors[1].events = POLLIN;
+	descriptors[1].revents = 0;
+	status = poll(descriptors, 2, timeout);
 	if (status < 0 && errno != EINTR)
 		return -1;
 
+	/* A stop asked by a signal: the loop ends at its test, without waiting for zdesktop. */
+	if (main_stopping) {
+		if (main_wake[0] >= 0)
+			(void)read(main_wake[0], drained, sizeof(drained));
+		return 0;
+	}
+
 	/* zdesktop's events, read and handled. */
-	if (status > 0) {
+	if (status > 0 && (descriptors[0].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)) != 0) {
 		status = wl_display_dispatch(program->display);
 		if (status < 0)
 			return -1;
@@ -417,6 +452,8 @@ main_stop(
 {
 	UNUSED_PARAMETER(signal_number);
 
-	/* main's loop sees it after the wait it interrupts. */
+	/* main's loop sees it after the wait, which the byte in the pipe ends. */
 	main_stopping = 1;
+	if (main_wake[1] >= 0)
+		(void)write(main_wake[1], "", 1);
 }
