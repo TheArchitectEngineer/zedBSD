@@ -41,3 +41,27 @@ GPU の buffer の protocol（zedBSD の `keiland_gpu_buffer_v1`、Linux・FreeB
 ## Resume
 
 依存の Phase の cleared と main への統合、関係する判断の決定の後に、Q1 が Queue を作る。
+
+## 範囲 1 の読み直し（P1 generation12、2026-10-04、読みだけ、main f26a0f4）
+
+compositor から GPU の module（`zedbsd/gpu-buffer-zedbsd.c` 525 行・`gpu-zedbsd.c` 140 行、`dmabuf/gpu-dmabuf.c` 1147 行、`linux/sync-linux.c`・
+`freebsd/sync-freebsd.c`）への呼び出しは `protocol.c:188`（request）・`:401-403`（global の名前と版）・`:632`（bind）・`:1560`（commit）、`objects.c:571`
+（object の解放）、`compose.c:640`・`:698`・`:710`・`:1039`・`:2015`（extension と frame の fence の型）。module が compositor から使う物を数えると、design.md
+§3.5 の host の 11 操作に次が足りない:
+
+| 足りない物 | 今の使い方 | host に足す案 |
+| --- | --- | --- |
+| object の wire の id | log の `buffer=%u`・`surface=%u`、dmabuf の `created` event の payload（`buffer->id`）、`zwl_emit(…, factory->id, …)` | `uint32_t (*resource_id)(struct kl_backend_resource *)` |
+| client の番号 | log の `client=%llu`（試験が grep する `ZWL IMPORT`・`ZWL ACQUIRE_FENCE`・`ZWL VULKAN_IMPORT*`） | `uint64_t (*client_number)(struct kl_backend_resource *)` |
+| object の版 | dmabuf の params の opcode 3 は版 2 以上だけ（`gpu-dmabuf.c:178`）、params は factory の版で作る（`:610`） | `uint32_t (*resource_version)(struct kl_backend_resource *)` |
+| find の種類の確かめ | `zwl_find` の後に `kind == ZWL_SURFACE`・`kind == ZWL_BUFFER && shm == NULL`（`gpu-buffer-zedbsd.c:258-261`・`:306-309`） | `resource_find(data, any, id, role)` が種類の合わない物と shm の buffer に NULL を返す（role に SURFACE・GPU_BUFFER） |
+| alpha だけの変更 | zedBSD の set_alpha の要求は import と別（`:313`）、その後 `server->dirty = 1` | `buffer_register` と別に `void (*buffer_set_alpha)(data, buffer, alpha)`（compositor が dirty にする） |
+| fence の列の満杯 | `acquire_count == ZWL_FENCE_MAX` で拒む（zedBSD は要求を拒み、dmabuf は `zwl_error`） | `surface_fence` は満杯で `ENOSPC` を返し fd は呼んだ側が閉じる。generation は引数（zedBSD は要求の値、dmabuf は 1） |
+| frame の log の有無 | `server->log_frames` | `int (*log_frames)(void *data)` |
+| 上限 | `server->gpu_limits`（max_dimension・memory_type_count） | `struct kl_backend_vulkan` に limits を足すか `(*limits)(data)` |
+| 物理 device・instance | dmabuf の format の問い（`gpu_formats(compose)`）、import | `vulkan()` が instance・physical・device・proc addr を返す（案のまま） |
+
+wire の object の型（`ZWL_FACTORY`・`ZWL_GPU_OBJECT`・`ZWL_BUFFER`）の判定（`gpu-dmabuf.c:156`・`:166`）は backend が自分で作った resource に付ける private の
+tag で行える（`resource_private`）ので host には足さない。
+
+着手（範囲 2〜6）は Q1 の確認待ち（p008 の未 cleared のまま着手するか、Queue ID、所有 path の委任、WS113 p004 との衝突）。
