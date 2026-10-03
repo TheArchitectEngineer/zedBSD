@@ -23,7 +23,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 - **compositor は libvulkan だけを使う（2026-09-30 ユーザー）**: Keiland の compositor（zdesktop、`userland/desktop/wayland/`）は、GPU と表示を
   libvulkan（Vulkan の API と拡張）だけで扱い、GPU の UAPI（`include/uapi/gpu*.h`）を ioctl で直接呼ばない。入力の device の evdev の ioctl は
   対象の外。今残る直の ioctl（起動時の表示の問い合わせ、buffer の import の確かめ、fence の問い合わせ、表示の claim・release、Vulkan の無い
-  予備の表示）は [WS103](ws103/ws.md) で移した（2026-10-01 完了。OS 固有の部分は macro でなく OS ごとの module `gpu-zedbsd.c` に閉じた（V1 の改訂、2026-09-30 夜 ユーザー承認）。確かめは `plan/tools/gpu-boundary/v1-check.sh`）。ユーザーの問い「私はKeilandコンポジターがlibvulkanのみを使用していると思っていたのですが、
+  予備の表示）は [WS103](ws103/ws.md) で移した（2026-10-01 完了。OS 固有の部分は macro でなく OS ごとの module `gpu-zedbsd.c` に閉じた。2026-10-04 WS131 p009 の改訂: OS 固有の部分は `libkeiland-backend-zedbsd/` に閉じる（`gpu-zedbsd.c` が kernel の GPU の型を読む唯一の file）（V1 の改訂、2026-09-30 夜 ユーザー承認）。確かめは `plan/tools/gpu-boundary/v1-check.sh`）。ユーザーの問い「私はKeilandコンポジターがlibvulkanのみを使用していると思っていたのですが、
   ioctlを使ってしまっているのですか？」への Q1 の説明の後、「規則にして今移す」を選んだ。
   同日の補い（ユーザー）:「どうしても最適化に必要なところは、opt-outできるようにマクロで囲めますか？必須機能では使っていない気がします。」→
   必須の機能は libvulkan だけで動かす。最適化のためにどうしても要る直の ioctl だけは、compositor の build の macro（例 `ZWL_GPU_DIRECT`、既定は有効）で
@@ -31,12 +31,8 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
   同日の決め（ユーザー）:「では、まずioctlを可能な限りやめて、Vulkan APIでlibvulkanで行うようにします。移行できない部分は、マクロで囲って、
   zedBSDでのみ行うようにします。evdevはLinuxにもあるので、ひとまずノータッチでよいです。」→ 直の GPU の ioctl はできる限り Vulkan の API（zedBSD では
   libvulkan）へ移す。移せない物は zedBSD の時だけ build される macro で囲む（Linux・FreeBSD の build では入らない）。evdev の ioctl は今は変えない。
-- **Keiland の OS の境界（2026-10-01 ユーザー「Linux移植を進めます」、[WS104](ws104/ws.md)・[WS105](ws105/ws.md)。WS104 の完了から効く）**:
-  desktop（libkeiland・compositor）の OS に固有の code は OS ごとの C の source に分け、`<package>/zedbsd/<役割>-zedbsd.c`・`<package>/linux/<役割>-linux.c`、
-  Linux と FreeBSD で共有する仕組みは `<package>/<仕組み>/<役割>-<仕組み>.c` に置く。FreeBSD15 の新しい backend は `<package>/freebsd/<役割>-freebsd.c` に置く（WS109 の計画、未実装）。共通の source は `<uapi/...>`・`"userland/base/..."` を include せず、
-  OS の macro の block は非常に細かい所だけ（今は `wayland/zwl-evdev.h` の 1 つ、ユーザー「非常に細かい部分ではマクロブロックで分けてよい」）。
-  desktop の公開の header は `userland/desktop/keiland/`（`vulkan/`・EGL・GLES は OS の API として `include/libc/`）。install の path は `userland/desktop/paths.h` の macro。
-  Linux の build は package ごとの `Makefile.linux`（zedBSD の build と完全に別、`make keiland-linux`）。確かめは `plan/tools/keiland-os-boundary/check.sh`（WS104 p008 で作る）。
+- **配置**（2026-10-03 ユーザーの決定、WS131）: desktop の OS の抽象化（電源・network・音声・PnP・設定・seat・入力・表示・GPU の buffer）の OS に固有の code は libkeiland-backend にだけ置く。interface と複数の OS が共有する仕組みは `userland/desktop/libkeiland-backend/`、OS ごとの実装は `libkeiland-backend-zedbsd/`・`-linux/`・`-freebsd/`。libkeiland-backend を使うのは compositor だけ。compositor（`userland/desktop/wayland/`）と libkeiland は OS の header（`<uapi/…>`・`<linux/…>`・`<dev/…>`）・`"userland/base/…"`・`ioctl()`・OS の macro の block を持たない。macro の block は `libkeiland-backend/keiland-backend-evdev.h` の evdev の header の選択だけ。backend の OS の tree は自分の OS の header だけを include し、compositor の内部と `<keiland.h>` を include しない。**app の自分の機能のための OS の依存はこの規則の対象外**（D14、2026-10-03 user）: Terminal の pty（`TIOCSWINSZ` は 3 OS で同じ、`openpty` の header が `<pty.h>`／FreeBSD の `<libutil.h>` で違うので macro の block で切り替える）と Files の xattr（`tags.c`・`info.c`・`task.c`、FreeBSD の extattr の読み替えは Files の中）。X server は対象外にせず、Wayland の規格（evdev）の key code の定数を自分の header に持って `<uapi/input.h>` の include を無くす。対象外の一覧は checker の許可の表に置く。
+  （2026-10-04 Q1: WS131 p009 の merge で、下の旧い規則（2026-10-01 の WS104・WS105 の OS ごとの `<package>/<os>/` の配置）をこの段落で置き換えた。checker は `plan/tools/keiland-os-boundary/check.sh` の C1〜C5・L1〜L7・M1・X1・B1・B3・S1、X server の key code は `xserver/keycodes.h`。旧い規則の文は git の履歴と WS131 の design.md §3.7。）
 - **browser / libbrowser（2026-10-01 ユーザーレビュー）**: engine の source/private header/table/shader/生成器は `userland/desktop/libbrowser/` が所有し、
   `userland/desktop/browser/` は libbrowser.so のコンポーネントを window/tab に包む main/shell/app data を所有する。
   libbrowser は標準 Vulkan を使用可、Wayland の header/API/protocol と直接の link は public/private とも使用不可。
