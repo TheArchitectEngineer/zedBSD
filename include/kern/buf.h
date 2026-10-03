@@ -31,12 +31,6 @@ enum buf_io_state {
 #define BUF_ERROR	0x0004U
 #define BUF_INVALID	0x0008U
 #define BUF_GENERATION_EXHAUSTED 0x0010U
-/*
- * The line holds data an ordinary write (outside any journal) left that is
- * not on the disk yet; cleared when the line is written clean.  A journal's
- * pin on such a line holds that data back too (ws073-p053, BUG-163).
- */
-#define BUF_UNJOURNALED	0x0020U
 
 #define BUF_INVALIDATE_DISCARD	0x0001U
 #define BUF_RECLAIM_WRITE	0x0001U
@@ -80,6 +74,14 @@ struct buf {
 	 * line home-bound until its own commit (ws073-p051).
 	 */
 	uint64_t b_journal_pin;
+	/*
+	 * The blocks of the line that ordinary writes, outside any journal,
+	 * left and the disk does not have yet: a bit each, the line's first
+	 * block lowest (kern/buf-unjournaled.h).  A journal's pinned write
+	 * over a block takes its bit out; a clean write-back clears them all.
+	 * Under b_lock, changed by the busy owner (ws073-p053, BUG-163).
+	 */
+	uint32_t b_unjournaled;
 };
 
 /* Zero-initialize before first use. Pins common cache lines, never their busy state. */
@@ -147,13 +149,14 @@ buf_writeback_range(
 	uint32_t count);
 
 /*
- * Counts the lines of a disk that a journal pins while they also hold data
- * an ordinary write left and the disk does not have yet: a sync of the
- * disk skips them, so their ordinary data waits for the journal's next
- * commit (ws073-p053, BUG-163).
+ * Writes, beneath the cache, the blocks of a disk's dirty lines that
+ * ordinary writes left and the disk does not have yet, and no other block
+ * of those lines: a line a journal pins keeps its journaled blocks back for
+ * the journal's commit, while its ordinary data reaches the disk now
+ * (ws073-p053, BUG-163).  Does not flush the device.
  */
-unsigned
-buf_pinned_unjournaled(
+int
+buf_write_unjournaled(
 	struct disk *disk);
 
 /*

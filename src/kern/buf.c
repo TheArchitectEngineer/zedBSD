@@ -18,6 +18,7 @@
 
 #include "kern/backing-claim.h"
 #include "kern/buf.h"
+#include "kern/buf-unjournaled.h"
 #include "kern/io-stats.h"
 #include "kern/io-pool.h"
 #include "kern/disk.h"
@@ -301,7 +302,9 @@ static int disk_cache_range(struct disk *disk, struct disk **leaf_out, uint64_t 
 static int evict_one(struct disk *disk, uint64_t start, uint64_t end, int range, unsigned flags, size_t *freed);
 static int writeback_one_reclaimable(void);
 static void dirty_link(struct buf *buffer);
-static void mark_dirty(struct buf *buffer, unsigned flags);
+static void mark_dirty(struct buf *buffer, uint64_t offset, uint64_t count, int pinned);
+static struct buf *unjournaled_reference(struct disk *disk, uint64_t start, uint64_t end, uint64_t after);
+static int unjournaled_write_line(struct buf *buffer, uint64_t start, uint64_t end);
 static void dirty_clear(struct buf *buffer);
 static void dirty_unlink_locked(struct buf *buffer);
 static struct buf *dirty_reference(struct disk *disk, uint64_t start, uint64_t end, int reclaim);
@@ -439,18 +442,22 @@ void
 buf_mark_dirty(
 	struct buf *buffer)
 {
-	/* Marks the buffer dirty with no other flag. */
-	mark_dirty(buffer, 0);
+	/* Marks the buffer dirty, leaving its record of unjournaled blocks as it is. */
+	mark_dirty(buffer, 0, 0, 0);
 }
 
 /*
- * Marks a buffer dirty, with flags (BUF_UNJOURNALED) set in the same
- * step, so that no write-back cleans it between the two.
+ * Marks a buffer dirty after a write of count blocks from the line's block
+ * offset, and records them in the same step: an ordinary write's blocks as
+ * unjournaled, a journal's pinned write's blocks as the journal's
+ * (ws073-p053).  A count of zero leaves the record as it is.
  */
 static void
 mark_dirty(
 	struct buf *buffer,
-	unsigned flags)
+	uint64_t offset,
+	uint64_t count,
+	int pinned)
 {
 	unsigned long irq;
 
@@ -458,10 +465,12 @@ mark_dirty(
 	if (buffer == NULL)
 		return;
 
-	/* Advances the generation, skipping zero, and sets the flags. */
+	/* Records the written blocks under the line's lock. */
 	irq = spin_lock_irqsave(&buffer->b_lock);
-	buffer->b_flags |= flags;
+	if (count != 0)
+		buffer->b_unjournaled = buf_unjournaled_after_write(buffer->b_unjournaled, offset, count, pinned);
 
+	/* Advances the generation, skipping zero, and sets the flags. */
 	if (buffer->b_generation == UINT64_MAX)
 		buffer->b_flags |= BUF_GENERATION_EXHAUSTED;
 
@@ -836,11 +845,11 @@ buf_write_context(
 
 		/*
 		 * A write-cached disk keeps the line dirty for the flusher,
-		 * unless dirty memory is already at its bound.  The line is
-		 * marked as holding data written outside any journal, which a
-		 * journal's pin on it would hold back (ws073-p053).
+		 * unless dirty memory is already at its bound.  The blocks are
+		 * recorded as written outside any journal, which a journal's
+		 * pin on the line would otherwise hold back (ws073-p053).
 		 */
-		mark_dirty(buffer, BUF_UNJOURNALED);
+		mark_dirty(buffer, offset_blocks, amount_blocks, 0);
 		delayed = writes_delayed(disk, context);
 		error = 0;
 		if (!delayed)
@@ -1361,51 +1370,51 @@ buf_unpin(
 }
 
 /*
- * Counts a disk's dirty lines that a journal pins while they hold data an
- * ordinary write left (ws073-p053, BUG-163).  The pin and the flags are
- * read without the line's lock, as dirty_reference() reads the pin: a
- * caller that has just synced the disk took each such line's lock while
- * the sync skipped it, so it sees what the sync saw.
+ * Writes, beneath the cache, the unjournaled blocks of a disk's dirty
+ * lines (ws073-p053, BUG-163): what ordinary writes left, which the
+ * journal does not carry, so that a line the journal pins does not hold it
+ * back.  Each line is visited once, in the order of its block; the busy
+ * owner of a line is the only one that changes its data and its record,
+ * so a run written here is the line's newest content of those blocks, and
+ * a later write-back of the whole line writes the same or newer.
  */
-unsigned
-buf_pinned_unjournaled(
+int
+buf_write_unjournaled(
 	struct disk *disk)
 {
 	struct disk *leaf;
 	struct buf *buffer;
 	uint64_t start;
 	uint64_t end;
-	unsigned long irq;
-	unsigned count;
+	uint64_t after;
 	int error;
 
-	/* Resolves the disk's block range on its leaf; a disk that cannot be resolved has no lines. */
+	/* Resolves the disk's block range on its leaf. */
 	error = disk_cache_range(disk, &leaf, &start, &end);
 	if (error != 0)
-		return 0;
+		return error;
 
-	/* Walks the leaf's dirty lines in the range. */
-	count = 0;
-	irq = spin_lock_irqsave(&dirty_index_lock);
-	for (buffer = leaf->d_dirty_buffers; buffer != NULL; buffer = buffer->b_device_dirty_next) {
-		/* Leaves out a line outside the range. */
-		if (buffer->b_block >= end)
-			continue;
-		if (buffer->b_block + buffer->b_block_count <= start)
-			continue;
+	/* Takes the lines with unjournaled blocks one at a time, in the order of their blocks. */
+	after = start;
+	for (;;) {
+		buffer = unjournaled_reference(leaf, start, end, after);
+		if (buffer == NULL)
+			break;
+		after = buffer->b_block + buffer->b_block_count;
 
-		/* Counts a pinned line that holds ordinary data. */
-		if (buffer->b_journal_pin == 0)
-			continue;
-		if ((buffer->b_flags & BUF_UNJOURNALED) != 0U)
-			count++;
+		/* Writes its unjournaled blocks as its busy owner. */
+		error = busy_acquire(buffer);
+		if (error == 0)
+			error = unjournaled_write_line(buffer, start, end);
+		buf_release(buffer);
+
+		/* Reports why the line could not be written. */
+		if (error != 0)
+			return error;
 	}
 
-	/* Lets the dirty index go. */
-	spin_unlock_irqrestore(&dirty_index_lock, irq);
-
-	/* Reports how many lines hold ordinary data back. */
-	return count;
+	/* Succeeded: the unjournaled blocks are on their way to the disk. */
+	return 0;
 }
 
 /*
@@ -2215,7 +2224,8 @@ finish_run_line(
 	buffer->b_error = error;
 	if (write) {
 		if (error == 0 && generation == buffer->b_dirty_generation) {
-			buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR | BUF_UNJOURNALED);
+			buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
+			buffer->b_unjournaled = 0;
 			dirty_clear(buffer);
 			stat_add(&cache_dirty_bytes, (uint64_t)-(int64_t)buffer->b_size);
 		} else if (error != 0) {
@@ -2636,6 +2646,143 @@ dirty_reference(
 	return buffer;
 }
 
+/*
+ * References the dirty line of a disk's range [start, end) with
+ * unjournaled blocks whose block is the lowest at or after after, or
+ * returns NULL when there is none.
+ */
+static struct buf *
+unjournaled_reference(
+	struct disk *disk,
+	uint64_t start,
+	uint64_t end,
+	uint64_t after)
+{
+	struct buf *buffer;
+	struct buf *found;
+	unsigned long irq;
+
+	/* Scans the disk's dirty lines for the lowest one at or after the mark. */
+	found = NULL;
+	irq = spin_lock_irqsave(&dirty_index_lock);
+	for (buffer = disk->d_dirty_buffers; buffer != NULL; buffer = buffer->b_device_dirty_next) {
+		/* Leaves out a line without unjournaled blocks. */
+		if (buffer->b_unjournaled == 0U)
+			continue;
+
+		/* Leaves out a line outside the range or before the mark. */
+		if (buffer->b_block + buffer->b_block_count <= start)
+			continue;
+		if (buffer->b_block >= end)
+			continue;
+		if (buffer->b_block < after && buffer->b_block + buffer->b_block_count <= after)
+			continue;
+
+		/* Keeps the lowest. */
+		if (found == NULL || buffer->b_block < found->b_block)
+			found = buffer;
+	}
+
+	/* References the line found before the index is let go. */
+	if (found != NULL)
+		refcount_get(&found->b_refs);
+	spin_unlock_irqrestore(&dirty_index_lock, irq);
+
+	/* Takes the lower-ranked cache lock only after releasing the index guard. */
+	if (found != NULL) {
+		irq = spin_lock_irqsave(&cache_lock);
+		lru_remove_locked(found);
+		spin_unlock_irqrestore(&cache_lock, irq);
+	}
+
+	/* The line, or none. */
+	return found;
+}
+
+/*
+ * Writes a line's unjournaled blocks within [start, end) beneath the cache,
+ * as the filesystem writes a delayed line, and takes them out of the
+ * record.  The caller is the line's busy owner, so neither its data nor
+ * its record changes meanwhile; no other block of the line is written, so
+ * the blocks a journal pinned wait for its commit.  A run that touches
+ * another owner's claim (a swap file's, a loop image's) is left for that
+ * owner, as writeback_line() leaves it.
+ */
+static int
+unjournaled_write_line(
+	struct buf *buffer,
+	uint64_t start,
+	uint64_t end)
+{
+	struct backing_mutation_guard guard;
+	const struct backing_claim *foreign;
+	unsigned long irq;
+	uint64_t block;
+	uint32_t record;
+	uint32_t written;
+	uint32_t first;
+	uint32_t run;
+	int error;
+
+	/* Reads the record; a line written clean meanwhile has none. */
+	irq = spin_lock_irqsave(&buffer->b_lock);
+	record = buffer->b_unjournaled;
+	if ((buffer->b_flags & BUF_DIRTY) == 0U)
+		record = 0;
+	spin_unlock_irqrestore(&buffer->b_lock, irq);
+
+	/* Writes each run of unjournaled blocks. */
+	written = 0;
+	first = 0;
+	for (;;) {
+		/* The next run, within the line and the range. */
+		run = buf_unjournaled_next_run(record, &first);
+		if (run == 0)
+			break;
+		if (first + run > buffer->b_block_count)
+			run = buffer->b_block_count - first;
+		block = buffer->b_block + first;
+
+		/* Leaves a run outside the range, or one of another owner's claim, as it is. */
+		foreign = NULL;
+		error = backing_claim_find_extent_owner(buffer->b_disk, block, run, NULL, &foreign);
+		if (error != 0)
+			foreign = NULL;
+		if (block < start ||
+		    block + run > end ||
+		    foreign != NULL) {
+			first += run;
+			continue;
+		}
+
+		/* Writes the run as the filesystem, beneath the cache. */
+		error = backing_mutation_begin_disk_filesystem(buffer->b_disk, block, run, &guard);
+		if (error != 0)
+			return error;
+		error = disk_write_direct_context(buffer->b_disk, block, run,
+						  (uint8_t *)buffer->b_data + (size_t)first * buffer->b_disk->d_block_size,
+						  NULL);
+		backing_mutation_end(&guard);
+
+		/* Reports why the run could not be written. */
+		if (error != 0)
+			return error;
+
+		/* Counts it and steps past it. */
+		io_stats_record(IO_BUF_UNJOURNALED_WRITE, (uint64_t)run * buffer->b_disk->d_block_size);
+		written |= buf_unjournaled_bits(first, run);
+		first += run;
+	}
+
+	/* Takes the written blocks out of the record. */
+	irq = spin_lock_irqsave(&buffer->b_lock);
+	buffer->b_unjournaled &= ~written;
+	spin_unlock_irqrestore(&buffer->b_lock, irq);
+
+	/* Succeeded: the line's unjournaled blocks are written. */
+	return 0;
+}
+
 /* Writes out aged dirty buffers every interval, forever. */
 static void
 flusher(
@@ -2907,11 +3054,14 @@ write_lines(
 			spin_unlock_irqrestore(&buffer->b_lock, irq);
 		}
 
-		/* Copies the data into the line and leaves it dirty. */
+		/*
+		 * Copies the data into the line and leaves it dirty; the blocks
+		 * are the journal's now, no longer unjournaled (ws073-p053).
+		 */
 		kern_memcpy((uint8_t *)buffer->b_data + offset_blocks * leaf->d_block_size,
 			    in,
 			    (size_t)(amount_blocks * leaf->d_block_size));
-		buf_mark_dirty(buffer);
+		mark_dirty(buffer, offset_blocks, amount_blocks, 1);
 		buf_release(buffer);
 
 		/* Steps past the part written. */
@@ -3031,7 +3181,8 @@ writeback_line(
 	buffer->b_io_inflight = 0;
 	buffer->b_error = error;
 	if (error == 0 && generation == buffer->b_dirty_generation) {
-		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR | BUF_UNJOURNALED);
+		buffer->b_flags &= ~(BUF_DIRTY | BUF_ERROR);
+		buffer->b_unjournaled = 0;
 		dirty_clear(buffer);
 		stat_add(&cache_dirty_bytes,
 		    (uint64_t)-(int64_t)buffer->b_size);

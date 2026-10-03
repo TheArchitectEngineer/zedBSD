@@ -212,11 +212,8 @@
 #define J3_EXTENT_ENTRY		16U
 /* The sectors a commit or a replay moves at a time. */
 #define J3_STAGING_SECTORS	128U
-/*
- * How many more rounds of commit and flush a sync makes while data is
- * still held back by a journal's pin (ws073-p051, ws073-p053).
- */
-#define UFS_SYNC_AGAIN_ROUNDS	2U
+/* How many more commits a sync makes while a held range's home is owed (ws073-p051). */
+#define UFS_SYNC_OWED_ROUNDS	2U
 /* The slots of the set of freed blocks, a power of two. */
 #define J3_FREED_MAX		16384U
 /* The magic numbers of the header, a descriptor, a commit record, the locator and the request. */
@@ -695,7 +692,6 @@ static int write_sectors(struct mount *mountp, uint64_t lba, uint32_t count, con
 static int observed_disk_read(struct disk *disk, uint64_t block, uint32_t count, void *buffer);
 static int ufs_sync(struct mount *mountp);
 static int ufs_sync_commit(struct ufs_mount_state *ms, struct mount *mountp);
-static int ufs_sync_waiting(struct ufs_mount_state *ms, struct mount *mountp);
 static int ufs_sync_close(struct ufs_mount_state *ms, struct mount *mountp, int *closed, int *busy);
 static int journal_checkpoint_locked(struct mount *mountp);
 static uint32_t locator_get32(const uint8_t *p);
@@ -17173,7 +17169,7 @@ ufs_sync(
 {
 	struct ufs_mount_state *ms;
 	unsigned round;
-	int waiting;
+	int owed;
 	int error;
 
 	/* A call that names no mount has nothing to flush. */
@@ -17186,39 +17182,49 @@ ufs_sync(
 		return EINVAL;
 
 	/*
-	 * Commits the running transaction, then makes the device durable.  The
-	 * writes and the device's cache flush need no mount lock (ws073-p045,
-	 * BUG-135: under a slow flush the lock held every change of the volume
-	 * for seconds), so another change may pin a line meanwhile, and the
-	 * flush skips a pinned line.  While such a line still holds data back
-	 * -- a held range a finish left (ws073-p051) or ordinary content
-	 * sharing the line (ws073-p053, BUG-163) -- the line waits for the
-	 * commit of the transaction that pinned it, so the sync does another
-	 * round, at most UFS_SYNC_AGAIN_ROUNDS more.
+	 * Commits the running transaction.  A held range a finish could not
+	 * write, because a later transaction pinned its line again, reaches
+	 * its home with the commit of that later transaction, so the sync
+	 * commits again while a home is owed, at most UFS_SYNC_OWED_ROUNDS
+	 * more times (ws073-p051).
 	 */
-	for (round = 0; ; round++) {
-		/* Commits the running transaction. */
+	error = ufs_sync_commit(ms, mountp);
+	for (round = 0; round < UFS_SYNC_OWED_ROUNDS && error == 0; round++) {
+		/* Reads whether a home is owed. */
+		mutex_lock(&ms->j3.lock);
+		owed = ms->j3.home_owed;
+		mutex_unlock(&ms->j3.lock);
+
+		/* Stops once every held range is on its way home. */
+		if (!owed)
+			break;
+
+		/* Commits the transaction that holds the owed line. */
 		error = ufs_sync_commit(ms, mountp);
-		if (error != 0)
-			break;
-
-		/* Writes every unpinned dirty line and flushes the device. */
-		error = disk_sync(mountp->m_disk);
-		if (error != 0)
-			break;
-
-		/* Stops after the last round allowed. */
-		if (round == UFS_SYNC_AGAIN_ROUNDS)
-			break;
-
-		/* Stops once no pin holds data back. */
-		waiting = ufs_sync_waiting(ms, mountp);
-		if (!waiting)
-			break;
-
-		/* Counts the round taken again. */
-		io_stats_record(IO_UFS_SYNC_AGAIN, 0);
 	}
+
+	/*
+	 * Writes the dirty lines, then the content a journal's pin still holds
+	 * back: on a volume whose start is not aligned to a cache line, a line
+	 * spans two blocks, and a transaction that pins one block's metadata
+	 * pins the other block's content with it, again and again while the
+	 * metadata keeps changing.  The content's own blocks are written
+	 * beneath the cache; the journaled ones wait for their commit
+	 * (ws073-p053, BUG-163).  On an aligned volume no pinned line holds
+	 * content, and nothing more is written.
+	 */
+	if (error == 0)
+		error = buf_sync(mountp->m_disk);
+	if (error == 0)
+		error = buf_write_unjournaled(mountp->m_disk);
+
+	/*
+	 * The mount is only durable once the device has it.  The writes and the
+	 * device's cache flush need no mount lock (ws073-p045, BUG-135: under a
+	 * slow flush the lock held every change of the volume for seconds).
+	 */
+	if (error == 0)
+		error = disk_sync(mountp->m_disk);
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -17270,37 +17276,6 @@ ufs_sync_commit(
 		return error;
 
 	/* Succeeded: the running transaction is committed, or there was none. */
-	return 0;
-}
-
-/*
- * Asks whether a journal's pin still holds back data a sync is to make
- * durable: a held range a finish left to the line's next owner (home_owed,
- * ws073-p051), or a line of ordinary content a transaction pinned for a
- * range of its own in the same line (ws073-p053, BUG-163; a line spans
- * two blocks on a volume whose start is not aligned to a line).
- */
-static int
-ufs_sync_waiting(
-	struct ufs_mount_state *ms,
-	struct mount *mountp)
-{
-	unsigned lines;
-	int owed;
-
-	/* A held range's home that is owed. */
-	mutex_lock(&ms->j3.lock);
-	owed = ms->j3.home_owed;
-	mutex_unlock(&ms->j3.lock);
-	if (owed)
-		return 1;
-
-	/* A pinned line that holds ordinary content. */
-	lines = buf_pinned_unjournaled(mountp->m_disk);
-	if (lines != 0U)
-		return 1;
-
-	/* Nothing is held back. */
 	return 0;
 }
 
