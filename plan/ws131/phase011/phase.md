@@ -175,3 +175,8 @@ FreeBSD: backend-test 9/9 PASS、libkeiland.so の NEEDED は libwayland-client�
   live=1 reachable=1 value=60` とだけ log していた（network の `NETWORK state` と同じ形の退行、変化として来ないので report の行が出ない）。
   `se_sound_open` が最初の state を report と同じ書式でも log する。
 - 確かめ: zedBSD の settings・compositor（-Werror）exit 0 warning 0、Linux の gcc で object、style-check 違反 0。QEMU は T2 に再試験を依頼。
+
+### 結果（T2-024、a594882、2026-10-04）
+
+PASS 2/2: volume-p005（`SOUND report … value=60` ok）、zdesktop-p104（`ZWL NETWORK key saved ssid=Kei Lab` ok）。証拠
+`/home/awe/zedBSD-worktrees/t2/build/t2-024/`。settings-regress は T2-022 で 8/8 PASS、C9 p076 は 20/20 PASS。
