@@ -1041,6 +1041,37 @@ zwl_seat_modifiers(
 	return;
 }
 
+/*
+ * Tells every keyboard of version 4 or later the repeat again, after the
+ * settings changed it (WS135): a running application repeats held keys at
+ * the new rate from now on, not only a keyboard bound later.
+ */
+void
+zwl_seat_repeat_changed(
+	struct zwl_server *server)
+{
+	struct zwl_client *client;
+	struct zwl_object *object;
+	int32_t repeat[2];
+
+	/* The rate and the delay. */
+	repeat[0] = server->repeat_rate;
+	repeat[1] = server->repeat_delay_ms;
+
+	/* Each live keyboard that is told the repeat. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (object = client->objects; object != NULL; object = object->next) {
+			if (object->kind != ZWL_KEYBOARD || object->dead)
+				continue;
+			if (object->version < KEYBOARD_REPEAT_VERSION)
+				continue;
+			deliver(client, object->id, KEYBOARD_REPEAT_INFO, repeat, sizeof(repeat));
+		}
+	}
+}
+
 /* Creates a pointer, keyboard or touch object and introduces it to the current focus. */
 static int
 create_device(

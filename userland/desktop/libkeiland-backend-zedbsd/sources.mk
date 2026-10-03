@@ -14,4 +14,5 @@ KL_BACKEND_ZEDBSD_SOURCES := userland/desktop/libkeiland-backend/backend.c \
 	userland/desktop/libkeiland-backend-zedbsd/session-zedbsd.c \
 	userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c \
 	userland/desktop/libkeiland-backend-zedbsd/input-zedbsd.c \
-	userland/desktop/libkeiland-backend-zedbsd/display-zedbsd.c
+	userland/desktop/libkeiland-backend-zedbsd/display-zedbsd.c \
+	userland/desktop/libkeiland-backend/peer/peer-getpeereid.c
