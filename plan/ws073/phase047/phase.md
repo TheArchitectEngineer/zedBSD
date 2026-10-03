@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws073-p047 -->
 # ws073-p047: BUG-052 — tmpfs の容量を物理 memory の半分に（file の data を page の index で持つ）
 
-Status: uncleared（q651-i01、P1 generation12、2026-10-04。T1-048 で tmpfs-many.sh が FAIL）
+Status: in-progress（q651-i01、P1 generation12、2026-10-04。T1-048 の FAIL は試験の期待の誤り（node の上限は ws073-p013 の設計どおり）、期待を直して T1 に再試験の依頼）
 Disposition: normal
 Parent: [WS073](../ws.md)
 Bug: [BUG-052](../../bugs/BUG-052.md)
