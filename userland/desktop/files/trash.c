@@ -56,6 +56,7 @@ static int trash_mount_top(const char *item, char *topdir, size_t size);
 static int trash_volume(const char *topdir, char *trash, size_t size);
 static int trash_usable(const char *path, int shared);
 static int trash_list_add(char ***trashes, size_t *count, const char *path);
+static void trash_list_free(char **trashes, size_t count);
 static int trash_list_volume(char ***trashes, size_t *count, const char *topdir);
 static int trash_list_volume_add(char ***trashes, size_t *count, const char *path);
 static int trash_elsewhere(const char *item, const char *home, char *trash, size_t size);
@@ -466,7 +467,7 @@ fm_trash_list(
 
 	/* Memory that ran out lists nothing. */
 	if (error != 0) {
-		fm_paths_free(*trashes, *count);
+		trash_list_free(*trashes, *count);
 		*trashes = NULL;
 		*count = 0;
 		return error;
@@ -920,6 +921,23 @@ trash_list_add(
 	*trashes = grown;
 	(*count)++;
 	return 0;
+}
+
+/*
+ * Frees a list of trashes (as fm_paths_free does; this file keeps its own
+ * so that Image Viewer can build it without the clipboard, ws128-p005).
+ */
+static void
+trash_list_free(
+	char **trashes,
+	size_t count)
+{
+	size_t index;
+
+	/* Each path, then the table. */
+	for (index = 0; index < count; index++)
+		free(trashes[index]);
+	free(trashes);
 }
 
 /* Adds the trashes at the top of one volume that are there; returns 0 or ENOMEM. */

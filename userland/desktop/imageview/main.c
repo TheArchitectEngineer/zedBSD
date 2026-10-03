@@ -138,6 +138,8 @@ static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned r
 static int main_canvas_make(void);
 static void main_state(struct iv_state *state);
 static void main_opened(void);
+static void main_share(void);
+static void main_openers(void);
 static void main_fullscreen(void);
 static int main_image(void);
 
@@ -419,7 +421,8 @@ main_loop(
 		return -1;
 	}
 
-	/* The image given on the command line, and the first frame. */
+	/* Open With's slots for no image yet, the image given on the command line, and the first frame. */
+	main_openers();
 	main_opened();
 	status = main_frame();
 	if (status != 0)
@@ -485,6 +488,9 @@ main_loop(
 
 		/* The chooser the viewer asked for (File > Open), or one it no longer waits for closed. */
 		main_choose();
+
+		/* The image to the trash, or to an application of Open With, when asked (ws128-p005). */
+		main_share();
 
 		/* An image opened: its title and the recent files; the full screen asked for or given. */
 		main_opened();
@@ -851,6 +857,7 @@ main_state(
 	state->fit = main_app.fit;
 	state->playing = main_app.playing;
 	state->fullscreen = main_app.fullscreen;
+	state->slideshow = main_app.slideshow;
 
 	/* Only an image that was decoded can be zoomed and turned. */
 	if (main_app.has_image &&
@@ -879,8 +886,9 @@ main_opened(void)
 	if (!main_app.opened)
 		return;
 
-	/* The opening is being answered now. */
+	/* The opening is being answered now; Open With follows the image (ws128-p005). */
 	main_app.opened = 0;
+	main_openers();
 
 	/* Without an image, the application's name. */
 	if (!main_app.has_image || main_app.current == NULL) {
@@ -908,6 +916,69 @@ main_opened(void)
 	error = keiland_recent_add(resolved, MAIN_APPLICATION);
 	if (error != 0)
 		iv_log("RECENT failed errno=%d", error);
+}
+
+/*
+ * Carries out what the viewer asked of the files (ws128-p005): the image
+ * shown into the trash (the viewer then goes on to the next image), or
+ * the image opened in an application of Open With.
+ */
+static void
+main_share(void)
+{
+	char path[IV_PATH_MAX];
+	char trashed[2 * IV_PATH_MAX + 32];
+	int index;
+	int error;
+
+	/* The image to the trash. */
+	if (main_app.want_trash) {
+		main_app.want_trash = 0;
+		if (main_app.has_image && main_app.current != NULL) {
+			/* The path is kept: the image goes once it is in the trash. */
+			snprintf(path, sizeof(path), "%s", main_app.current->path);
+			error = iv_share_trash(path, trashed, sizeof(trashed));
+			if (error != 0)
+				snprintf(trashed, sizeof(trashed), "-");
+			iv_log("TRASH path=%s trashed=%s errno=%d", path, trashed, error);
+
+			/* Gone: the next image; not gone: why. */
+			if (error == 0) {
+				iv_app_removed(&main_app);
+				iv_app_message(&main_app, "Moved to the Trash", 1500U);
+			} else {
+				iv_app_message(&main_app, "The image could not be moved to the Trash.", 3000U);
+			}
+		}
+	}
+
+	/* The image to an application of Open With. */
+	if (main_app.want_open_with >= 0) {
+		index = main_app.want_open_with;
+		main_app.want_open_with = -1;
+		if (main_app.has_image && main_app.current != NULL) {
+			error = iv_share_open_with(main_app.current->path, main_app.current->format, index);
+			iv_log("OPEN-WITH index=%d path=%s errno=%d", index, main_app.current->path, error);
+			if (error != 0)
+				iv_app_message(&main_app, "The application could not be started.", 3000U);
+		}
+	}
+}
+
+/* Gives File > Open With the applications for the image shown (none without one). */
+static void
+main_openers(void)
+{
+	char names[IV_OPENERS][IV_OPENER_NAME];
+	int count;
+
+	/* The applications Files offers for the image's type. */
+	count = 0;
+	if (main_app.has_image && main_app.current != NULL)
+		count = iv_share_openers(main_app.current->path, main_app.current->format, names, IV_OPENERS);
+
+	/* The menu shows them. */
+	iv_menu_openers(&main_menu, names, count);
 }
 
 /*

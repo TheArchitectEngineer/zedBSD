@@ -209,6 +209,7 @@ view(
 	const char *directory)
 {
 	char path[1024];
+	char other[1100];
 	struct iv_app app;
 	struct iv_place before;
 	struct iv_place after;
@@ -300,6 +301,60 @@ view(
 	iv_app_event(&app, &event);
 	iv_app_place_at(&app, 700.0, 400.0, &after);
 	check(!app.fit && fabs(before.x - after.x) < 0.01 && fabs(before.y - after.y) < 0.01, "wheel", "scale %f", app.scale);
+
+	/* ws128-p005: a slideshow goes through the images every IV_SLIDESHOW_MS, around from the last to the first. */
+	iv_app_action(&app, IV_ACTION_FIT);
+	iv_app_action(&app, IV_ACTION_SLIDESHOW);
+	check(app.slideshow && app.want_fullscreen && app.slideshow_screen, "slideshow-start", "slideshow %d", app.slideshow);
+	app.want_fullscreen = 0;
+	app.now += IV_SLIDESHOW_MS / 2U;
+	(void)iv_app_tick(&app, app.now);
+	check(app.folder.index == 0, "slideshow-wait", "index %lu", (unsigned long)app.folder.index);
+	app.now += IV_SLIDESHOW_MS;
+	(void)iv_app_tick(&app, app.now);
+	check(app.folder.index == 1, "slideshow-next", "index %lu", (unsigned long)app.folder.index);
+	app.now += IV_SLIDESHOW_MS;
+	(void)iv_app_tick(&app, app.now);
+	app.now += IV_SLIDESHOW_MS;
+	(void)iv_app_tick(&app, app.now);
+	check(app.folder.index == 0, "slideshow-around", "index %lu", (unsigned long)app.folder.index);
+	memset(&event, 0, sizeof(event));
+	event.type = IV_EVENT_KEY;
+	event.key = IV_KEY_ESCAPE;
+	event.pressed = 1;
+	iv_app_event(&app, &event);
+	check(!app.slideshow, "slideshow-esc", "");
+
+	/* ws128-p005: Delete asks the window for the trash; an application of Open With likewise. */
+	memset(&event, 0, sizeof(event));
+	event.type = IV_EVENT_KEY;
+	event.key = IV_KEY_DELETE;
+	event.pressed = 1;
+	iv_app_event(&app, &event);
+	check(app.want_trash == 1, "trash-asked", "");
+	app.want_trash = 0;
+	iv_app_action(&app, (enum iv_action)(IV_ACTION_OPEN_WITH_FIRST + 2U));
+	check(app.want_open_with == 2, "open-with-asked", "index %d", app.want_open_with);
+	app.want_open_with = -1;
+
+	/* ws128-p005: once b.png left the folder (as to the trash), the image now in its place (c.png) is shown. */
+	iv_app_action(&app, IV_ACTION_NEXT);
+	snprintf(path, sizeof(path), "%s/b.png", directory);
+	snprintf(other, sizeof(other), "%s/../b.png.away", directory);
+	error = rename(path, other);
+	iv_app_removed(&app);
+	check(error == 0 && app.folder.count == 2 && app.folder.index == 1 && app.current->width == 300, "removed-next", "count %lu index %lu",
+	    (unsigned long)app.folder.count, (unsigned long)app.folder.index);
+	(void)rename(other, path);
+
+	/* c.png gone too (b.png back on the disk): the image now at its place, b.png. */
+	snprintf(path, sizeof(path), "%s/c.png", directory);
+	snprintf(other, sizeof(other), "%s/../c.png.away", directory);
+	error = rename(path, other);
+	iv_app_removed(&app);
+	check(error == 0 && app.folder.count == 2 && app.folder.index == 1 && app.current->width == 400, "removed-last", "count %lu index %lu",
+	    (unsigned long)app.folder.count, (unsigned long)app.folder.index);
+	(void)rename(other, path);
 
 	/* Closing shows nothing. */
 	iv_app_action(&app, IV_ACTION_CLOSE);

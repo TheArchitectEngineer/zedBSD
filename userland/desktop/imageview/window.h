@@ -142,7 +142,8 @@ struct iv_present {
 /*
  * What the menus and the titlebar show of the viewer: whether an image is
  * shown (and can be), its place and the folder's count, whether it is
- * fitted, animated (and playing) and fullscreen.
+ * fitted, animated (and playing) and fullscreen, and whether a slideshow
+ * runs (ws128-p005).
  */
 struct iv_state {
 	int has_image;
@@ -153,6 +154,7 @@ struct iv_state {
 	int animated;
 	int playing;
 	int fullscreen;
+	int slideshow;
 };
 
 /*
@@ -170,7 +172,8 @@ struct iv_glass {
  * The window's menus as given to zdesktop (menu.c): the connection's menu
  * service (NULL when the compositor has none, and the window then has no
  * menus), the menu and the window's place for it, and the state the menus
- * last showed.
+ * last showed; the names of Open With's applications shown, for the image
+ * shown (ws128-p005).
  */
 struct iv_menu {
 	struct keiland_menu_service *service;
@@ -180,6 +183,8 @@ struct iv_menu {
 	struct iv_window *window;
 	struct keiland_menu *context;
 	struct keiland_context_menu *popup;
+	char openers[IV_OPENERS][IV_OPENER_NAME];
+	int opener_count;
 };
 
 /*
@@ -202,6 +207,7 @@ int iv_menu_open(struct iv_menu *menu, struct iv_window *window, const struct iv
 void iv_menu_refresh(struct iv_menu *menu, const struct iv_state *state);
 void iv_menu_close(struct iv_menu *menu);
 void iv_menu_context(struct iv_menu *menu, const struct iv_state *state, int x, int y);
+void iv_menu_openers(struct iv_menu *menu, char names[][IV_OPENER_NAME], int count);
 
 /* The titlebar's controls (titlebar.c). */
 int iv_titlebar_open(struct iv_titlebar *titlebar, struct iv_window *window, const struct iv_state *state);
