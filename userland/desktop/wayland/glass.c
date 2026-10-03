@@ -424,38 +424,51 @@ zwl_glass_wallpaper_begin(
 	if (length >= sizeof(glass_loader.path))
 		return EINVAL;
 
-	/* An ordinary file: opening it never waits, and a FIFO or a device is refused now. */
+	/* Opens the path without waiting, so that a FIFO or a device is refused now. */
 	descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
 	if (descriptor < 0)
 		return errno;
+
+	/* Looks at what the path names, then lets the descriptor go. */
 	error = fstat(descriptor, &status);
-	(void)close(descriptor);
-	if (error != 0)
+	if (error != 0) {
+		(void)close(descriptor);
 		return EINVAL;
+	}
+	(void)close(descriptor);
+
+	/* Refuses anything but an ordinary file. */
 	if (!S_ISREG(status.st_mode))
 		return EINVAL;
 
-	/* The lock, once. */
+	/* Makes the lock with the first picture. */
 	if (!glass_loader_ready) {
 		error = pthread_mutex_init(&glass_loader.lock, NULL);
 		if (error != 0)
 			return error;
+
+		/* Later begins reuse the lock made here. */
 		glass_loader_ready = 1;
 	}
 
-	/* What the thread works on. */
+	/* Gives the thread the path and an empty result to fill. */
 	memcpy(glass_loader.path, path, length + 1U);
 	memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
 	glass_loader.error = 0;
 	glass_loader.done = 0;
 
-	/* The thread. */
+	/* Starts the thread that reads and decodes the picture. */
 	error = pthread_create(&glass_loader.thread, NULL, loader_run, NULL);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the picture is being read. */
+	/*
+	 * started tells poll and close that a thread runs or waits to be
+	 * joined, and refuses another begin until then.
+	 */
 	glass_loader.started = 1;
+
+	/* Succeeded: the picture is being read. */
 	return 0;
 }
 
@@ -489,7 +502,10 @@ zwl_glass_wallpaper_poll(
 	if (!done)
 		return 0;
 
-	/* The thread's end; its picture is the event loop's now. */
+	/*
+	 * Joins the finished thread; clearing started lets the next begin in,
+	 * and the picture is the event loop's now.
+	 */
 	(void)pthread_join(glass_loader.thread, NULL);
 	glass_loader.started = 0;
 	picture = glass_loader.picture;
@@ -516,8 +532,10 @@ zwl_glass_wallpaper_poll(
 	if (*error != 0)
 		return 1;
 
-	/* Everything on the output stands on it. */
+	/* Redraws the output, since everything on it stands on the wallpaper. */
 	server->dirty = 1;
+
+	/* Logs how long the drawing took, for the tests. */
 	printf("ZWL GLASS wallpaper path=%s ms=%llu\n", glass_loader.path, (unsigned long long)(zwl_milliseconds() - started));
 
 	/* Succeeded: the new wallpaper is shown from the next frame. */
@@ -1319,7 +1337,7 @@ wallpaper_load(
 	if (data == NULL)
 		return errno;
 
-	/* Its picture. */
+	/* Decodes the picture from the file's bytes. */
 	error = wallpaper_decode(data, size, picture);
 	if (error != 0)
 		return error;
@@ -1433,16 +1451,16 @@ loader_run(
 
 	(void)argument;
 
-	/* The file's bytes, then its picture. */
+	/* Reads the file's bytes, and decodes the picture from them when they could be read. */
 	memset(&picture, 0, sizeof(picture));
-	error = 0;
 	data = file_read(glass_loader.path, &size);
-	if (data == NULL)
+	if (data == NULL) {
 		error = errno;
-	if (error == 0)
+	} else {
 		error = wallpaper_decode(data, size, &picture);
+	}
 
-	/* The result, for the event loop after the join. */
+	/* Publishes the result; done tells poll that the thread can be joined. */
 	(void)pthread_mutex_lock(&glass_loader.lock);
 
 	glass_loader.picture = picture;
@@ -1464,7 +1482,10 @@ loader_join(
 	if (!glass_loader.started)
 		return;
 
-	/* The thread ends on its own: an ordinary file is read to its end. */
+	/*
+	 * Waits for the thread, which ends on its own since an ordinary file is
+	 * read to its end; clearing started records that nothing runs now.
+	 */
 	(void)pthread_join(glass_loader.thread, NULL);
 	glass_loader.started = 0;
 }

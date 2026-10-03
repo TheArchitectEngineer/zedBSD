@@ -37,14 +37,20 @@ settings_cache_init(
 	size_t count;
 	size_t index;
 
+	/* Starts with no entry, no watch and no result. */
 	memset(cache, 0, sizeof(*cache));
 
 	/* One entry for each key of a row (a prefix row's keys come as they are set), none of them with a value yet. */
 	count = kl_settings_key_count();
-	for (index = 0; index < count && cache->count < SETTINGS_CACHE_KEYS; index++) {
+	for (index = 0;
+	     index < count && cache->count < SETTINGS_CACHE_KEYS;
+	     index++) {
+		/* A prefix row has no key of its own name. */
 		key = kl_settings_key_at(index);
 		if ((key->flags & KL_SETTINGS_KEY_PREFIX) != 0U)
 			continue;
+
+		/* Makes the row's entry. */
 		cache_copy(cache->entries[cache->count].name, sizeof(cache->entries[0].name), key->name);
 		cache->entries[cache->count].key = key;
 		cache->count++;
@@ -94,7 +100,7 @@ settings_cache_pending(
 	if (entry == NULL)
 		return;
 
-	/* The value waits for the done. */
+	/* Keeps the value pending; touched makes the done put it into effect. */
 	cache_copy(entry->pending_value, sizeof(entry->pending_value), value);
 	entry->pending_flags = flags;
 	entry->pending_present = present;
@@ -111,13 +117,14 @@ settings_cache_done(
 	struct settings_cache_entry *entry;
 	unsigned index;
 
-	/* Each key the compositor sent since its last done. */
+	/* Puts each key the compositor sent since its last done into effect. */
 	for (index = 0; index < cache->count; index++) {
+		/* A key not sent keeps its value. */
 		entry = &cache->entries[index];
 		if (!entry->touched)
 			continue;
 
-		/* The pending value is the one in effect, and is compared at the next notify. */
+		/* The pending value is the one in effect; changed has it compared at the next notify. */
 		cache_copy(entry->value, sizeof(entry->value), entry->pending_value);
 		entry->flags = entry->pending_flags;
 		entry->present = entry->pending_present;
@@ -139,14 +146,16 @@ settings_cache_set(
 {
 	struct settings_cache_entry *entry;
 
-	/* The key's entry; a prefix row's key gets one the first time. */
+	/* Finds the key's entry. */
 	entry = settings_cache_find(cache, key);
-	if (entry == NULL)
+	if (entry == NULL) {
+		/* A prefix row's key gets one the first time; any other key has none. */
 		entry = cache_add(cache, key);
-	if (entry == NULL)
-		return;
+		if (entry == NULL)
+			return;
+	}
 
-	/* The value in effect, compared at the next notify. */
+	/* Puts the value into effect; changed has it compared at the next notify. */
 	cache_copy(entry->value, sizeof(entry->value), value);
 	entry->flags = flags;
 	entry->present = present;
@@ -165,13 +174,14 @@ settings_cache_lost(
 	struct settings_cache_entry *entry;
 	unsigned index;
 
-	/* Each key of the resolver. */
+	/* Takes away the value of each key of the resolver. */
 	for (index = 0; index < cache->count; index++) {
+		/* Another resolver's key keeps its value. */
 		entry = &cache->entries[index];
 		if (entry->key->resolver != resolver)
 			continue;
 
-		/* No value, and nothing pending. */
+		/* No value, and nothing pending; changed has the watches told. */
 		entry->value[0] = '\0';
 		entry->flags = 0;
 		entry->present = 0;
@@ -191,8 +201,9 @@ settings_cache_settle(
 	struct settings_cache_entry *entry;
 	unsigned index;
 
-	/* Each key: what is in effect is what was told, and nothing is to compare. */
+	/* Takes each key's value as told, with nothing to compare. */
 	for (index = 0; index < cache->count; index++) {
+		/* What is in effect is what was told. */
 		entry = &cache->entries[index];
 		cache_copy(entry->told_value, sizeof(entry->told_value), entry->value);
 		entry->told_flags = entry->flags;
@@ -217,12 +228,15 @@ settings_cache_get(
 	const struct kl_settings_key *row;
 	size_t length;
 
-	/* The key's entry; a prefix row's key not set yet has no value. */
+	/* Finds the key's entry. */
 	entry = settings_cache_find((struct settings_cache *)cache, key);
 	if (entry == NULL) {
+		/* A key the table does not have. */
 		row = kl_settings_key_find(key);
 		if (row == NULL)
 			return ENOENT;
+
+		/* A prefix row's key not set yet has no value. */
 		return EAGAIN;
 	}
 
@@ -235,10 +249,14 @@ settings_cache_get(
 	if (length + 1U > size)
 		return ERANGE;
 
-	/* Succeeded: the value and its flags. */
+	/* Copies the value. */
 	memcpy(value, entry->value, length + 1U);
+
+	/* Gives its flags, when asked for. */
 	if (flags != NULL)
 		*flags = entry->flags;
+
+	/* Succeeded: the value and its flags. */
 	return 0;
 }
 
@@ -259,14 +277,16 @@ settings_cache_watch(
 	size_t length;
 	unsigned index;
 
-	/* A callback and a prefix that fits. */
+	/* A callback and a prefix are needed. */
 	if (fn == NULL || prefix == NULL)
 		return EINVAL;
+
+	/* The prefix must fit. */
 	length = strlen(prefix);
 	if (length >= KL_SETTINGS_KEY_MAX)
 		return EINVAL;
 
-	/* A free slot. */
+	/* Finds a free slot. */
 	slot = NULL;
 	for (index = 0; index < SETTINGS_CACHE_WATCHES; index++) {
 		if (!cache->watches[index].used) {
@@ -274,12 +294,14 @@ settings_cache_watch(
 			break;
 		}
 	}
+
+	/* Every watch is in use. */
 	if (slot == NULL)
 		return ENOMEM;
 
 	/*
-	 * The watch.  added marks one made while the watches run: it hears
-	 * the next change, not the one being told.
+	 * Makes the watch.  added marks one made while the watches run: it
+	 * hears the next change, not the one being told.
 	 */
 	memset(slot, 0, sizeof(*slot));
 	memcpy(slot->prefix, prefix, length + 1U);
@@ -288,13 +310,17 @@ settings_cache_watch(
 	slot->id = cache->next_watch;
 	slot->used = 1;
 	slot->added = cache->notifying;
+
+	/* The next watch's number skips 0 when it wraps, since 0 names no watch. */
 	cache->next_watch++;
 	if (cache->next_watch == 0U)
 		cache->next_watch = 1;
 
-	/* Succeeded: the watch's number. */
+	/* Gives the caller the watch's number, when asked for. */
 	if (watch != NULL)
 		*watch = slot->id;
+
+	/* Succeeded: the watch hears the next change. */
 	return 0;
 }
 
@@ -309,8 +335,9 @@ settings_cache_unwatch(
 {
 	unsigned index;
 
-	/* The watch of that number. */
+	/* Finds the watch of that number. */
 	for (index = 0; index < SETTINGS_CACHE_WATCHES; index++) {
+		/* Only a watch in use with that number. */
 		if (!cache->watches[index].used || cache->watches[index].id != watch)
 			continue;
 
@@ -318,6 +345,8 @@ settings_cache_unwatch(
 		cache->watches[index].removed = 1;
 		if (!cache->notifying)
 			cache->watches[index].used = 0;
+
+		/* Only one watch has the number. */
 		return;
 	}
 }
@@ -342,11 +371,14 @@ settings_cache_notify(
 	/* While the watches run, an added watch waits and a stopped one is only marked. */
 	cache->notifying = 1;
 
-	/* Each key that changed. */
+	/* Tells each key that changed. */
 	for (index = 0; index < cache->count; index++) {
+		/* A key not changed has nothing to tell. */
 		entry = &cache->entries[index];
 		if (!entry->changed)
 			continue;
+
+		/* The key is looked at now; clearing changed waits for the next change. */
 		entry->changed = 0;
 
 		/* The same as the watches heard: nothing to tell. */
@@ -354,33 +386,47 @@ settings_cache_notify(
 		if (!differs)
 			continue;
 
-		/* What the watches hear now. */
+		/* Records what the watches hear now. */
 		cache_copy(entry->told_value, sizeof(entry->told_value), entry->value);
 		entry->told_flags = entry->flags;
 		entry->told_present = entry->present;
+
+		/* A key with no value is told as NULL. */
 		value = NULL;
 		if (entry->present)
 			value = entry->told_value;
 
-		/* Each watch that covers the key, and was not added or stopped meanwhile. */
+		/* Calls each watch that covers the key, and was not added or stopped meanwhile. */
 		for (slot = 0; slot < SETTINGS_CACHE_WATCHES; slot++) {
+			/* A free slot, a stopped watch and one added during the run are passed over. */
 			watch = &cache->watches[slot];
-			if (!watch->used || watch->removed || watch->added)
+			if (!watch->used ||
+			    watch->removed ||
+			    watch->added)
 				continue;
+
+			/* A watch of other keys is passed over. */
 			covers = cache_watch_covers(watch, entry->name);
 			if (!covers)
 				continue;
+
+			/* Tells the watch the key's value. */
 			watch->fn(watch->data, entry->name, value, entry->told_flags);
 		}
 	}
 
 	/* The run is over: stopped watches go, added ones hear from now on. */
 	for (slot = 0; slot < SETTINGS_CACHE_WATCHES; slot++) {
+		/* A stopped watch's slot is freed. */
 		watch = &cache->watches[slot];
 		if (watch->removed)
 			watch->used = 0;
+
+		/* An added watch hears the next change. */
 		watch->added = 0;
 	}
+
+	/* The watches no longer run: added and stopped watches take effect at once again. */
 	cache->notifying = 0;
 }
 
@@ -402,7 +448,7 @@ settings_cache_result(
 		cache->result_count--;
 	}
 
-	/* The result after the others. */
+	/* Keeps the result after the others. */
 	place = (cache->result_head + cache->result_count) % SETTINGS_CACHE_RESULTS;
 	cache->results[place].request = request;
 	cache->results[place].error = error;
@@ -422,7 +468,7 @@ settings_cache_take_result(
 	if (cache->result_count == 0U)
 		return 0;
 
-	/* The oldest. */
+	/* Takes the oldest out of the ring. */
 	*request = cache->results[cache->result_head].request;
 	*error = cache->results[cache->result_head].error;
 	cache->result_head = (cache->result_head + 1U) % SETTINGS_CACHE_RESULTS;
@@ -441,7 +487,7 @@ cache_copy(
 {
 	size_t length;
 
-	/* The bytes that fit, then the NUL. */
+	/* Copies the bytes that fit, then the NUL. */
 	length = strlen(from);
 	if (length >= size)
 		length = size - 1U;
@@ -456,9 +502,11 @@ cache_entry_differs(
 {
 	int differs;
 
-	/* Whether there is a value, and its flags. */
+	/* A value come or gone differs. */
 	if (entry->present != entry->told_present)
 		return 1;
+
+	/* So do other flags. */
 	if (entry->flags != entry->told_flags)
 		return 1;
 
@@ -471,7 +519,7 @@ cache_entry_differs(
 	if (differs != 0)
 		return 1;
 
-	/* The same. */
+	/* The same as the watches heard. */
 	return 0;
 }
 
@@ -484,13 +532,13 @@ cache_watch_covers(
 	size_t length;
 	int differs;
 
-	/* The prefix's characters at the key's start. */
+	/* The key must start with the prefix's characters. */
 	length = strlen(watch->prefix);
 	differs = strncmp(key, watch->prefix, length);
 	if (differs != 0)
 		return 0;
 
-	/* Covered. */
+	/* The key starts with the prefix: covered. */
 	return 1;
 }
 
@@ -512,7 +560,7 @@ cache_add(
 	if (cache->count == SETTINGS_CACHE_KEYS)
 		return NULL;
 
-	/* The new entry, with no value yet. */
+	/* Makes the new entry, with no value yet. */
 	entry = &cache->entries[cache->count];
 	memset(entry, 0, sizeof(*entry));
 	cache_copy(entry->name, sizeof(entry->name), key);

@@ -75,21 +75,29 @@ zwl_settings_store_open(
 	int written;
 	int sound;
 
+	/* Starts empty, with no file and no writer, and makes the writer's lock. */
 	memset(store, 0, sizeof(*store));
 	(void)pthread_mutex_init(&store->writer.lock, NULL);
 
-	/* One entry for each compositor setting, at the table's default. */
+	/* Makes one entry for each compositor setting, at the table's default, while there is room. */
 	count = kl_settings_key_count();
-	for (index = 0; index < count && store->count < ZWL_SETTINGS_ENTRIES; index++) {
+	for (index = 0;
+	     index < count && store->count < ZWL_SETTINGS_ENTRIES;
+	     index++) {
+		/* Only a setting the compositor resolves is the store's. */
 		key = kl_settings_key_at(index);
 		if (key->resolver != KL_SETTINGS_RESOLVER_COMPOSITOR)
 			continue;
 
-		/* A number's default is the table's; a path's is none until the command line gives one. */
+		/* Ties the next entry to its key. */
 		entry = &store->entries[store->count];
 		entry->key = key;
+
+		/* A number's default is the table's; a path's is none until the command line gives one. */
 		if (key->type != KL_SETTINGS_TYPE_PATH)
 			(void)snprintf(entry->fallback, sizeof(entry->fallback), "%d", key->fallback);
+
+		/* Puts the default into effect. */
 		store_copy(entry->value, sizeof(entry->value), entry->fallback);
 
 		/*
@@ -100,6 +108,8 @@ zwl_settings_store_open(
 		sound = strncmp(key->name, "sound.", 6U);
 		if (sound == 0)
 			entry->known = 0;
+
+		/* The entry is the store's from now on. */
 		store->count++;
 	}
 
@@ -107,16 +117,20 @@ zwl_settings_store_open(
 	if (home == NULL || home[0] != '/')
 		return 0;
 
-	/* The folder and the file in it. */
+	/* Names the folder under the home. */
 	written = snprintf(store->folder, sizeof(store->folder), "%s/%s", home, STORE_FOLDER);
 	if (written < 0 || (size_t)written >= sizeof(store->folder))
 		return ENAMETOOLONG;
+
+	/* Names the file in the folder. */
 	written = snprintf(store->path, sizeof(store->path), "%s/%s", store->folder, STORE_NAME);
 	if (written < 0 || (size_t)written >= sizeof(store->path))
 		return ENAMETOOLONG;
 
-	/* Succeeded: the file can be read and written. */
+	/* present tells the load and the saves that there is a file to read and write. */
 	store->present = 1;
+
+	/* Succeeded: the file can be read and written. */
 	return 0;
 }
 
@@ -150,7 +164,7 @@ zwl_settings_store_find(
 	unsigned index;
 	int differs;
 
-	/* Each entry in turn. */
+	/* Finds the entry whose key has the name. */
 	for (index = 0; index < store->count; index++) {
 		differs = strcmp(store->entries[index].key->name, name);
 		if (differs == 0)
@@ -179,8 +193,10 @@ zwl_settings_store_default(
 	if (entry == NULL)
 		return;
 
-	/* The default, and the value while nothing is chosen. */
+	/* Keeps the default. */
 	store_copy(entry->fallback, sizeof(entry->fallback), value);
+
+	/* A setting at its default takes it at once. */
 	if (!entry->chosen)
 		store_copy(entry->value, sizeof(entry->value), entry->fallback);
 }
@@ -206,14 +222,14 @@ zwl_settings_store_load(
 	if (!store->present)
 		return 0;
 
-	/* Room for the file's text. */
+	/* Allocates room for the file's text. */
 	text = malloc(STORE_FILE_MAX);
 	if (text == NULL) {
 		store->read_error = ENOMEM;
 		return ENOMEM;
 	}
 
-	/* The text; a missing file is empty. */
+	/* Reads the text; a missing file is empty. */
 	error = store_load(store->path, text, STORE_FILE_MAX, &length);
 	if (error != 0) {
 		free(text);
@@ -221,7 +237,7 @@ zwl_settings_store_load(
 		return error;
 	}
 
-	/* Its lines. */
+	/* Takes the settings from the text's lines, then lets the text go. */
 	store_parse(store, text, length);
 	free(text);
 
@@ -244,10 +260,12 @@ zwl_settings_store_choose(
 	struct zwl_settings_entry *entry;
 	int error;
 
-	/* Only a setting the store holds, and one that may be set. */
+	/* Only a setting the store holds. */
 	entry = zwl_settings_store_find(store, name);
 	if (entry == NULL)
 		return ENOENT;
+
+	/* Only one that may be set. */
 	if ((entry->key->flags & KL_SETTINGS_KEY_READ_ONLY) != 0U)
 		return EPERM;
 
@@ -256,8 +274,10 @@ zwl_settings_store_choose(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the value is in effect. */
+	/* Puts the chosen value into effect. */
 	store_entry_set(store, entry, value, 1U);
+
+	/* Succeeded: the value is in effect. */
 	return 0;
 }
 
@@ -272,15 +292,19 @@ zwl_settings_store_reset(
 {
 	struct zwl_settings_entry *entry;
 
-	/* Only a setting the store holds, and one that may be set. */
+	/* Only a setting the store holds. */
 	entry = zwl_settings_store_find(store, name);
 	if (entry == NULL)
 		return ENOENT;
+
+	/* Only one that may be set. */
 	if ((entry->key->flags & KL_SETTINGS_KEY_READ_ONLY) != 0U)
 		return EPERM;
 
-	/* Succeeded: the default is in effect. */
+	/* Puts the default into effect, as not chosen. */
 	store_entry_set(store, entry, entry->fallback, 0U);
+
+	/* Succeeded: the default is in effect. */
 	return 0;
 }
 
@@ -320,22 +344,23 @@ zwl_settings_store_changes(
 	unsigned index;
 	int differs;
 
-	/* Each entry that differs from what the file held. */
+	/* Lists each entry that differs from what the file held. */
 	count = 0;
 	for (index = 0; index < store->count; index++) {
+		/* An entry the same as the file is not written. */
 		entry = &store->entries[index];
 		differs = store_entry_differs(entry);
 		if (!differs)
 			continue;
 
-		/* The key, and its value or none. */
+		/* Lists the key, its value, and whether it was chosen (unchosen: the key leaves the file). */
 		store_copy(changes[count].key, sizeof(changes[count].key), entry->key->name);
 		store_copy(changes[count].value, sizeof(changes[count].value), entry->value);
 		changes[count].chosen = entry->chosen;
 		count++;
 	}
 
-	/* The changes listed. */
+	/* Reports how many changes were listed. */
 	return count;
 }
 
@@ -361,14 +386,20 @@ zwl_settings_store_save(
 	if (count == 0U)
 		return 0;
 
-	/* The merge. */
+	/* Merges the changes into the file. */
 	error = store_merge(store->folder, store->path, changes, count);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the file holds every change. */
+	/*
+	 * The written values are the file's start from now on, and
+	 * saved_generation records that the file took every change up to the
+	 * store's generation.
+	 */
 	store_mark_saved(store, changes, count);
 	store->saved_generation = store->generation;
+
+	/* Succeeded: the file holds every change. */
 	return 0;
 }
 
@@ -400,20 +431,25 @@ zwl_settings_store_save_later(
 	if (writer->count == 0U)
 		return 0;
 
-	/* What the thread works on. */
+	/* Gives the thread the file's path and folder, the generation it writes, and an empty result. */
 	store_copy(writer->path, sizeof(writer->path), store->path);
 	store_copy(writer->folder, sizeof(writer->folder), store->folder);
 	writer->generation = store->generation;
 	writer->done = 0;
 	writer->error = 0;
 
-	/* The thread. */
+	/* Starts the thread that merges the changes. */
 	error = pthread_create(&writer->thread, NULL, store_writer_run, writer);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the file is being written. */
+	/*
+	 * started tells zwl_settings_store_finish and close that a thread runs
+	 * or waits to be joined, and refuses a second writer.
+	 */
 	writer->started = 1;
+
+	/* Succeeded: the file is being written. */
 	return 0;
 }
 
@@ -430,9 +466,10 @@ zwl_settings_store_finish(
 	struct zwl_settings_writer *writer;
 	int error;
 
-	/* The writer, when one was started. */
+	/* Waits for the writer, when one was started. */
 	writer = &store->writer;
 	if (writer->started) {
+		/* Joins it; clearing started records that no thread runs now. */
 		(void)pthread_join(writer->thread, NULL);
 		writer->started = 0;
 
@@ -441,7 +478,7 @@ zwl_settings_store_finish(
 			store_mark_saved(store, writer->changes, writer->count);
 	}
 
-	/* What is left. */
+	/* Merges now whatever the writer did not write. */
 	error = zwl_settings_store_save(store);
 	if (error != 0)
 		return error;
@@ -471,7 +508,7 @@ store_entry_set(
 	    !entry->known)
 		store->generation++;
 
-	/* The value in effect. */
+	/* Puts the value into effect; it is known from now on. */
 	store_copy(entry->value, sizeof(entry->value), value);
 	entry->chosen = chosen;
 	entry->known = 1;
@@ -490,13 +527,15 @@ store_parse(
 	/* Each line, the last one with or without its newline. */
 	start = 0;
 	while (start < length) {
-		/* The line's end. */
+		/* Finds the line's end. */
 		end = start;
 		while (end < length && text[end] != '\n')
 			end++;
 
-		/* Its setting, if it is a line of one. */
+		/* Takes the line's setting, if it is a line of one. */
 		store_parse_line(store, text + start, end - start);
+
+		/* Moves past the newline to the next line. */
 		start = end + 1U;
 	}
 }
@@ -521,25 +560,33 @@ store_parse_line(
 	if (length == 0U || line[0] == '#')
 		return;
 
-	/* The key before the first '=', and the value after it, both fitting. */
+	/* Finds the first '='; a line without one holds no setting. */
 	equals = memchr(line, '=', length);
 	if (equals == NULL)
 		return;
+
+	/* The key before it must be there and fit. */
 	key_length = (size_t)(equals - line);
 	value_length = length - key_length - 1U;
 	if (key_length == 0U || key_length >= sizeof(key))
 		return;
+
+	/* The value after it must fit. */
 	if (value_length >= sizeof(raw))
 		return;
+
+	/* Copies the key and the value out as strings. */
 	memcpy(key, line, key_length);
 	key[key_length] = '\0';
 	memcpy(raw, equals + 1, value_length);
 	raw[value_length] = '\0';
 
-	/* Only a setting the store holds, and not one it only reports. */
+	/* Only a setting the store holds. */
 	entry = zwl_settings_store_find(store, key);
 	if (entry == NULL)
 		return;
+
+	/* Not one the store only reports. */
 	if ((entry->key->flags & KL_SETTINGS_KEY_KEPT) == 0U)
 		return;
 
@@ -552,9 +599,11 @@ store_parse_line(
 	if (error != 0)
 		return;
 
-	/* The start; it is in effect too, except the sound's, which audiod holds (volume.c gives it to audiod). */
+	/* Keeps the value as the start the session's end compares with. */
 	entry->start_chosen = 1;
 	store_copy(entry->start, sizeof(entry->start), clean);
+
+	/* It is in effect too, except the sound's, which audiod holds (volume.c gives it to audiod). */
 	if (entry->known) {
 		store_copy(entry->value, sizeof(entry->value), clean);
 		entry->chosen = 1;
@@ -580,9 +629,14 @@ store_clean_value(
 
 	/* A path is absolute, and kept as it is. */
 	if (key->type == KL_SETTINGS_TYPE_PATH) {
+		/* A relative path is refused. */
 		if (raw[0] != '/')
 			return EINVAL;
+
+		/* Gives the path as it is. */
 		(void)snprintf(value, size, "%s", raw);
+
+		/* Succeeded: the path as the setting takes it. */
 		return 0;
 	}
 
@@ -591,8 +645,10 @@ store_clean_value(
 	if (error != 0)
 		return EINVAL;
 
-	/* Succeeded: the value as the setting takes it. */
+	/* Gives the number, moved into its range. */
 	(void)snprintf(value, size, "%d", number);
+
+	/* Succeeded: the value as the setting takes it. */
 	return 0;
 }
 
@@ -603,9 +659,11 @@ store_entry_differs(
 {
 	int differs;
 
-	/* A setting never kept, or not known, is not written. */
+	/* A setting never kept is not written. */
 	if ((entry->key->flags & KL_SETTINGS_KEY_KEPT) == 0U)
 		return 0;
+
+	/* Nor one not known yet. */
 	if (!entry->known)
 		return 0;
 
@@ -636,8 +694,9 @@ store_mark_saved(
 	struct zwl_settings_entry *entry;
 	unsigned index;
 
-	/* Each change written. */
+	/* Updates the start of each setting written. */
 	for (index = 0; index < count; index++) {
+		/* A change the store no longer holds has no start to update. */
 		entry = zwl_settings_store_find(store, changes[index].key);
 		if (entry == NULL)
 			continue;
@@ -666,17 +725,19 @@ store_merge(
 	int lock;
 	int error;
 
-	/* Room for the file as it is and as it is to be. */
+	/* Allocates room for the file as it is. */
 	before = malloc(STORE_FILE_MAX);
 	if (before == NULL)
 		return ENOMEM;
+
+	/* Allocates room for the file as it is to be. */
 	after = malloc(STORE_FILE_MAX);
 	if (after == NULL) {
 		free(before);
 		return ENOMEM;
 	}
 
-	/* The folder, then the lock beside the file (held until closed). */
+	/* Makes the folder, then takes the lock beside the file (held until closed). */
 	store_mkdir(folder);
 	lock = store_lock(path);
 	if (lock < 0) {
@@ -686,20 +747,22 @@ store_merge(
 		return error;
 	}
 
-	/* The file as it is now, under the lock. */
+	/* Reads the file as it is now, under the lock. */
 	error = store_load(path, before, STORE_FILE_MAX, &before_length);
+	if (error != 0)
+		goto cleanup;
 
-	/* Each change in turn, the text of one change the start of the next. */
-	for (index = 0; error == 0 && index < count; index++) {
+	/* Applies each change in turn, the text of one change the start of the next. */
+	for (index = 0; index < count; index++) {
 		/* A setting back at its default leaves the file. */
 		value = NULL;
 		if (changes[index].chosen)
 			value = changes[index].value;
 
-		/* The text with this key changed. */
+		/* Writes the text with this key changed. */
 		error = store_compose(before, before_length, changes[index].key, value, after, STORE_FILE_MAX, &after_length);
 		if (error != 0)
-			break;
+			goto cleanup;
 
 		/* The new text is the one the next change works on. */
 		swap = before;
@@ -708,11 +771,11 @@ store_merge(
 		before_length = after_length;
 	}
 
-	/* The new text in place of the old file. */
-	if (error == 0)
-		error = store_replace(path, before, before_length);
+	/* Puts the new text in place of the old file. */
+	error = store_replace(path, before, before_length);
 
-	/* The lock and the room go. */
+cleanup:
+	/* Lets the lock and the room go. */
 	(void)close(lock);
 	free(after);
 	free(before);
@@ -737,18 +800,21 @@ store_load(
 	int descriptor;
 	int error;
 
-	/* Nothing yet. */
+	/* Starts with an empty text. */
 	*length = 0;
 
-	/* The file, when there is one. */
+	/* Opens the file, when there is one. */
 	descriptor = open(path, O_RDONLY | O_CLOEXEC);
 	if (descriptor < 0) {
+		/* A missing file is an empty text. */
 		if (errno == ENOENT)
 			return 0;
+
+		/* Reports why the file could not be opened. */
 		return errno;
 	}
 
-	/* Every byte, up to the room there is. */
+	/* Reads every byte, up to the room there is. */
 	error = 0;
 	for (;;) {
 		/* A file that fills the room is too large. */
@@ -757,7 +823,7 @@ store_load(
 			break;
 		}
 
-		/* The next bytes; none left is the end. */
+		/* Reads the next bytes; an interruption is tried again. */
 		count = read(descriptor, text + *length, capacity - *length);
 		if (count < 0) {
 			if (errno == EINTR)
@@ -766,13 +832,15 @@ store_load(
 			break;
 		}
 
-		/* Nothing more is the end; else the bytes join the text. */
+		/* Nothing more is the end. */
 		if (count == 0)
 			break;
+
+		/* The bytes join the text. */
 		*length += (size_t)count;
 	}
 
-	/* The file is not needed any more. */
+	/* Closes the file, which is not needed any more. */
 	(void)close(descriptor);
 
 	/* Reports why the text could not be read. */
@@ -803,12 +871,11 @@ store_compose(
 	/* Nothing written yet, and the key not yet met. */
 	*length = 0;
 	written = 0;
-	error = 0;
 
-	/* Each line of the old text. */
+	/* Copies each line of the old text, changing the key's. */
 	start = 0;
-	while (error == 0 && start < old_length) {
-		/* The line's end. */
+	while (start < old_length) {
+		/* Finds the line's end. */
 		end = start;
 		while (end < old_length && old_text[end] != '\n')
 			end++;
@@ -816,29 +883,37 @@ store_compose(
 		/* The key's line: its first becomes the new value (or goes), the others go. */
 		matched = store_line_is(old_text + start, end - start, key);
 		if (matched) {
-			if (!written && value != NULL)
+			/* Writes the new value in place of the key's first line, unless the key leaves the file. */
+			if (!written && value != NULL) {
 				error = store_append_line(text, capacity, length, key, value);
+				if (error != 0)
+					return error;
+			}
+
+			/* written records that the key was met, so its later lines go. */
 			written = 1;
 		} else {
 			/* Any other line stays as it was. */
 			error = store_append(text, capacity, length, old_text + start, end - start);
-			if (error == 0)
-				error = store_append(text, capacity, length, "\n", 1U);
+			if (error != 0)
+				return error;
+
+			/* With its newline. */
+			error = store_append(text, capacity, length, "\n", 1U);
+			if (error != 0)
+				return error;
 		}
 
-		/* The next line. */
+		/* Moves past the newline to the next line. */
 		start = end + 1U;
 	}
 
-	/* A key the file did not have goes at its end. */
-	if (error == 0 &&
-	    !written &&
-	    value != NULL)
+	/* A key the file did not have goes at its end, unless it leaves the file. */
+	if (!written && value != NULL) {
 		error = store_append_line(text, capacity, length, key, value);
-
-	/* Reports a text too large. */
-	if (error != 0)
-		return error;
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the new text is written. */
 	return 0;
@@ -857,7 +932,7 @@ store_append(
 	if (part_length > capacity - *length)
 		return E2BIG;
 
-	/* The part at the end. */
+	/* Adds the part at the end. */
 	memcpy(text + *length, part, part_length);
 	*length += part_length;
 
@@ -876,16 +951,22 @@ store_append_line(
 {
 	int error;
 
-	/* The key, the '=', the value and the newline. */
+	/* Adds the key. */
 	error = store_append(text, capacity, length, key, strlen(key));
 	if (error != 0)
 		return error;
+
+	/* Adds the '='. */
 	error = store_append(text, capacity, length, "=", 1U);
 	if (error != 0)
 		return error;
+
+	/* Adds the value. */
 	error = store_append(text, capacity, length, value, strlen(value));
 	if (error != 0)
 		return error;
+
+	/* Ends the line. */
 	error = store_append(text, capacity, length, "\n", 1U);
 	if (error != 0)
 		return error;
@@ -909,10 +990,12 @@ store_line_is(
 	if (length <= key_length)
 		return 0;
 
-	/* The key's characters, then the '='. */
+	/* The line must start with the key's characters. */
 	differs = memcmp(line, key, key_length);
 	if (differs != 0)
 		return 0;
+
+	/* Then the '='. */
 	if (line[key_length] != '=')
 		return 0;
 
@@ -940,10 +1023,11 @@ store_replace(
 	if (descriptor < 0)
 		return errno;
 
-	/* Every byte of the text. */
+	/* Writes every byte of the text. */
 	error = 0;
 	done = 0;
 	while (done < length) {
+		/* Writes what is left; an interruption is tried again. */
 		count = write(descriptor, text + done, length - done);
 		if (count < 0) {
 			if (errno == EINTR)
@@ -956,7 +1040,7 @@ store_replace(
 		done += (size_t)count;
 	}
 
-	/* On the disk before it takes the file's name. */
+	/* Flushes the text to the disk before it takes the file's name. */
 	if (error == 0) {
 		status = fsync(descriptor);
 		if (status != 0)
@@ -974,7 +1058,7 @@ store_replace(
 		return error;
 	}
 
-	/* It replaces the file at once. */
+	/* Renames the new file over the file, which replaces it at once. */
 	status = rename(temporary, path);
 	if (status != 0) {
 		error = errno;
@@ -996,13 +1080,13 @@ store_lock(
 	int status;
 	int error;
 
-	/* The lock file. */
+	/* Opens the lock file, making it when it is missing. */
 	(void)snprintf(lock_path, sizeof(lock_path), "%s.lock", path);
 	descriptor = open(lock_path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
 	if (descriptor < 0)
 		return -1;
 
-	/* Held until the descriptor is closed. */
+	/* Takes the lock, held until the descriptor is closed. */
 	status = flock(descriptor, LOCK_EX);
 	if (status != 0) {
 		error = errno;
@@ -1023,19 +1107,20 @@ store_mkdir(
 	char partial[ZWL_SETTINGS_PATH_MAX];
 	size_t index;
 
-	/* Each prefix that ends at a slash, then the whole path. */
+	/* Makes each prefix that ends at a slash. */
 	store_copy(partial, sizeof(partial), folder);
 	for (index = 1; partial[index] != '\0'; index++) {
+		/* Only a slash ends a prefix. */
 		if (partial[index] != '/')
 			continue;
 
-		/* The folder up to this slash; one that exists is left alone. */
+		/* Makes the folder up to this slash; one that exists is left alone. */
 		partial[index] = '\0';
 		(void)mkdir(partial, 0700);
 		partial[index] = '/';
 	}
 
-	/* The folder itself. */
+	/* Makes the folder itself. */
 	(void)mkdir(partial, 0700);
 }
 
@@ -1047,12 +1132,13 @@ store_writer_run(
 	struct zwl_settings_writer *writer;
 	int error;
 
+	/* The writer that started the thread. */
 	writer = argument;
 
-	/* The merge, away from the event loop. */
+	/* Merges the changes, away from the event loop. */
 	error = store_merge(writer->folder, writer->path, writer->changes, writer->count);
 
-	/* How it went, for zwl_settings_store_finish after the join. */
+	/* Records how it went, for zwl_settings_store_finish after the join; done says the thread is finished. */
 	(void)pthread_mutex_lock(&writer->lock);
 
 	writer->error = error;
@@ -1073,7 +1159,7 @@ store_copy(
 {
 	size_t length;
 
-	/* The bytes that fit, then the NUL. */
+	/* Copies the bytes that fit, then the NUL. */
 	length = strlen(from);
 	if (length >= size)
 		length = size - 1U;

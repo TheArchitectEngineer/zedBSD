@@ -39,6 +39,7 @@
 
 static void sound_set(struct se_app *app, int value, int muted, int final);
 static void sound_send(struct se_app *app);
+static int sound_send_settings(struct se_app *app);
 static void sound_feedback(struct se_app *app);
 
 /*
@@ -265,19 +266,44 @@ sound_send(
 	struct se_sound *sound;
 	int error;
 
-	/* The request; one that cannot go is logged (the next report shows audiod's). */
+	/* Records that nothing waits to be sent, and when this was sent. */
 	sound = &app->sound;
 	sound->send_waiting = 0;
 	sound->sent_at = app->now;
+
+	/* Sends the request: as the desktop's settings with Keiland's extension, else to audiod. */
 	if (app->look.settings != NULL && app->look.writable) {
-		error = kl_settings_set_int(app->look.settings, SOUND_KEY_VOLUME, sound->value, NULL);
-		if (error == 0)
-			error = kl_settings_set_int(app->look.settings, SOUND_KEY_MUTED, sound->muted, NULL);
+		error = sound_send_settings(app);
 	} else {
 		error = keiland_audio_set_volume(sound->audio, (unsigned)sound->value, (unsigned)sound->value, (unsigned)sound->muted);
 	}
+
+	/* A request that cannot go is logged (the next report shows audiod's). */
 	if (error != 0)
 		se_log("SOUND send errno=%d", error);
+}
+
+/* Sets the volume shown as the desktop's settings, which zdesktop asks audiod for; returns 0 or an errno value. */
+static int
+sound_send_settings(
+	struct se_app *app)
+{
+	struct se_sound *sound;
+	int error;
+
+	/* Sets the volume. */
+	sound = &app->sound;
+	error = kl_settings_set_int(app->look.settings, SOUND_KEY_VOLUME, sound->value, NULL);
+	if (error != 0)
+		return error;
+
+	/* Then the mute. */
+	error = kl_settings_set_int(app->look.settings, SOUND_KEY_MUTED, sound->muted, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: zdesktop asks audiod for both. */
+	return 0;
 }
 
 /* Asks audiod for the feedback sound at the volume now. */

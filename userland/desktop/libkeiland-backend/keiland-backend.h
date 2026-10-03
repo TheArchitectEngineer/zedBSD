@@ -407,7 +407,6 @@ int kl_backend_audio_available(void);
  */
 int kl_backend_peer_uid(int descriptor, uid_t *uid);
 
-
 /*
  * The power (ws131-p005).
  *

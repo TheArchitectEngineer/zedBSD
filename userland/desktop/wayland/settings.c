@@ -71,7 +71,10 @@ struct settings_state {
 	struct settings_waiting waiting;
 };
 
-/* The one state of the process; zero until zwl_settings_open. */
+/*
+ * The one state of the process: zeroed by zwl_settings_open and kept for
+ * the process's life; only the event loop's thread touches it.
+ */
 static struct settings_state settings_state;
 
 static int settings_home(char *home, size_t size);
@@ -114,42 +117,50 @@ zwl_settings_open(
 	int percent;
 	int error;
 
-	/* What the command line gave is what a setting back at its default returns to. */
+	/* Keeps what the command line gave, which a setting back at its default returns to. */
 	server->window_opacity_started = server->window_opacity;
 	server->wallpaper_started = server->wallpaper_path;
 	server->wallpaper_chosen[0] = '\0';
+
+	/* Starts with nothing marked and no wallpaper request waiting. */
 	memset(&settings_state, 0, sizeof(settings_state));
 
-	/* The store. */
+	/* Allocates the store; without it the session has no settings. */
 	store = calloc(1, sizeof(*store));
 	if (store == NULL) {
 		printf("ZWL SETTINGS none errno=%d\n", ENOMEM);
 		return;
 	}
 
-	/* The user's home; without one the settings live for the session only. */
+	/* Finds the user's home; without one the settings live for the session only. */
 	error = settings_home(home, sizeof(home));
 	if (error != 0)
 		home[0] = '\0';
+
+	/* Opens the store on the home's desktop.conf. */
 	error = zwl_settings_store_open(store, home);
 	if (error != 0)
 		printf("ZWL SETTINGS home errno=%d\n", error);
 
-	/* The command line's defaults: the wallpaper, and the opacity in whole percent. */
+	/* Makes the command line's wallpaper the wallpaper's default. */
 	if (server->wallpaper_path != NULL)
 		zwl_settings_store_default(store, "wallpaper", server->wallpaper_path);
+
+	/* Makes the command line's opacity, in whole percent, the opacity's default. */
 	percent = (int)(server->window_opacity * 100.0f + 0.5f);
 	(void)snprintf(opacity, sizeof(opacity), "%d", percent);
 	zwl_settings_store_default(store, "window.opacity", opacity);
 
-	/* The file, once. */
+	/* Reads desktop.conf, once for the session. */
 	error = zwl_settings_store_load(store);
 	if (error != 0)
 		printf("ZWL SETTINGS read-failed errno=%d\n", error);
 
-	/* Every setting, before anything is drawn. */
+	/* Gives the server the store, and puts every setting into effect before anything is drawn. */
 	server->settings = store;
 	settings_apply_all(server, 1);
+
+	/* Logs the opening for the tests. */
 	printf("ZWL SETTINGS open present=%d\n", store->present);
 }
 
@@ -168,15 +179,15 @@ zwl_settings_tick(
 	if (server->settings == NULL)
 		return;
 
-	/* A wallpaper glass.c finished reading. */
+	/* Takes a wallpaper glass.c finished reading, and answers its request. */
 	finished = zwl_glass_wallpaper_poll(server, &error);
 	if (finished)
 		settings_wallpaper_done(server, error);
 
-	/* The sound as audiod has it. */
+	/* Takes the sound as audiod reports it. */
 	settings_sound(server);
 
-	/* What changed, to every settings object. */
+	/* Tells every settings object what changed. */
 	settings_flush(server);
 }
 
@@ -194,8 +205,10 @@ zwl_settings_logout(
 	if (server->settings == NULL)
 		return;
 
-	/* The merge, on its thread. */
+	/* Starts merging the session's settings into desktop.conf on the store's thread. */
 	error = zwl_settings_store_save_later(server->settings);
+
+	/* Logs how the start went, for the tests. */
 	printf("ZWL SETTINGS logout-save error=%d\n", error);
 }
 
@@ -213,11 +226,13 @@ zwl_settings_close(
 	if (server->settings == NULL)
 		return;
 
-	/* The writer, then whatever changed after it (or everything, without it). */
+	/* Waits for the writer, then writes whatever changed after it (or everything, without it). */
 	error = zwl_settings_store_finish(server->settings);
+
+	/* Logs how the writing went, for the tests. */
 	printf("ZWL SETTINGS saved error=%d\n", error);
 
-	/* The store goes. */
+	/* Lets the store go; the server has no settings from now on. */
 	zwl_settings_store_close(server->settings);
 	free(server->settings);
 	server->settings = NULL;
@@ -237,14 +252,16 @@ zwl_settings_kept(
 	struct zwl_settings_entry *entry;
 	int error;
 
-	/* No settings, or no such setting. */
+	/* Without settings (the login screen) nothing was kept. */
 	if (server->settings == NULL)
 		return ENOENT;
+
+	/* Finds the setting; one the file did not hold was not kept. */
 	entry = zwl_settings_store_find(server->settings, name);
 	if (entry == NULL || !entry->start_chosen)
 		return ENOENT;
 
-	/* The file's value as a number. */
+	/* Reads the file's value as a number. */
 	error = kl_settings_key_number(entry->key, entry->start, number);
 	if (error != 0)
 		return ENOENT;
@@ -264,6 +281,7 @@ zwl_settings_global_visible(
 	enum zwl_kind kind)
 {
 	uid_t uid;
+	uid_t own;
 	int error;
 
 	/* Only the system manager is limited. */
@@ -274,15 +292,25 @@ zwl_settings_global_visible(
 	if (client->server->settings == NULL)
 		return 0;
 
-	/* The peer's user, looked at once. */
+	/* Looks at the peer's user once, at the first registry. */
 	if (!client->peer_checked) {
+		/*
+		 * peer_checked keeps the look from being repeated; peer_same stays
+		 * zero (another user) unless the users are found to match.
+		 */
 		client->peer_checked = 1;
 		client->peer_same = 0;
+
+		/* Asks which user runs the peer; a failure leaves it another user. */
 		error = kl_backend_peer_uid(client->fd, &uid);
-		if (error == 0 && uid == getuid())
-			client->peer_same = 1;
-		if (error != 0)
+		if (error != 0) {
 			printf("ZWL SETTINGS peer client=%llu errno=%d\n", (unsigned long long)client->number, error);
+		} else {
+			/* The compositor's own user is the one that sees the extension. */
+			own = getuid();
+			if (uid == own)
+				client->peer_same = 1;
+		}
 	}
 
 	/* Only the compositor's user. */
@@ -303,7 +331,7 @@ zwl_settings_bind(
 	uint32_t bits;
 	int error;
 
-	/* The settings are all there is in version 1. */
+	/* Tells the capabilities; the settings are all there is in version 1. */
 	bits = KL_SYSTEM_CAPABILITY_SETTINGS;
 	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
 	if (error != 0)
@@ -329,40 +357,55 @@ zwl_settings_request(
 
 	/* The manager: it goes, or it makes a settings object. */
 	if (object->kind == ZWL_SYSTEM_MANAGER) {
+		/* A destroy, which carries no arguments, lets the manager go. */
 		if (opcode == KL_SYSTEM_MANAGER_DESTROY && size == 0U) {
 			zwl_object_destroy(object);
+
+			/* Succeeded: the manager is gone. */
 			return 0;
 		}
 
 		/* Only get_settings is left, with its new ID. */
 		if (opcode != KL_SYSTEM_MANAGER_GET_SETTINGS || size != 4U)
 			return EPROTO;
+
+		/* Makes the settings object under the ID the client chose. */
 		id = settings_word(bytes, 0U);
 		created = zwl_create(object->client, id, ZWL_SYSTEM_SETTINGS, object->version);
 		if (created == NULL)
 			return EPROTO;
 
-		/* It hears every setting and a done. */
+		/* Tells the new object every setting and a done. */
 		error = settings_snapshot(created);
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the client has a settings object that knows every setting. */
 		return 0;
 	}
 
 	/* A settings object: it goes, sets, or resets. */
 	switch (opcode) {
 	case KL_SYSTEM_SETTINGS_DESTROY:
+		/* A destroy carries no arguments. */
 		if (size != 0U)
 			return EPROTO;
+
+		/* Lets the settings object go. */
 		zwl_object_destroy(object);
+
+		/* Succeeded: the settings object is gone. */
 		return 0;
 	case KL_SYSTEM_SETTINGS_SET:
+		/* Sets a setting to the value the client gave. */
 		error = settings_set(object, bytes, size, 0);
 		break;
 	case KL_SYSTEM_SETTINGS_RESET:
+		/* Puts a setting back at its default. */
 		error = settings_set(object, bytes, size, 1);
 		break;
 	default:
+		/* No other request exists. */
 		error = EPROTO;
 		break;
 	}
@@ -383,16 +426,21 @@ settings_home(
 {
 	const struct passwd *user;
 	const char *given;
+	uid_t uid;
 	int written;
 
 	/* $HOME when it is an absolute path, else the password file's. */
 	given = getenv("HOME");
 	if (given == NULL || given[0] != '/') {
-		user = getpwuid(getuid());
+		/* Looks the user up in the password file; a missing or relative home is none. */
+		uid = getuid();
+		user = getpwuid(uid);
 		if (user == NULL ||
 		    user->pw_dir == NULL ||
 		    user->pw_dir[0] != '/')
 			return ENOENT;
+
+		/* Takes the password file's home. */
 		given = user->pw_dir;
 	}
 
@@ -413,7 +461,7 @@ settings_apply_all(
 {
 	unsigned index;
 
-	/* Each compositor setting the store holds. */
+	/* Puts each compositor setting the store holds into effect. */
 	for (index = 0; index < server->settings->count; index++)
 		settings_apply(server, server->settings->entries[index].key->name, starting);
 }
@@ -427,37 +475,43 @@ settings_apply(
 {
 	int differs;
 
-	/* The wallpaper and the windows' opacity. */
+	/* Shows the wallpaper. */
 	differs = strcmp(name, "wallpaper");
 	if (differs == 0) {
 		settings_apply_wallpaper(server, starting);
 		return;
 	}
+
+	/* Sets the windows' opacity. */
 	differs = strcmp(name, "window.opacity");
 	if (differs == 0) {
 		settings_apply_opacity(server);
 		return;
 	}
 
-	/* The pointer's speed and the wheel's direction. */
+	/* Sets the pointer's speed. */
 	differs = strcmp(name, "pointer.speed");
 	if (differs == 0) {
 		settings_apply_number(server, name, &server->pointer_speed);
 		return;
 	}
+
+	/* Sets the wheel's direction. */
 	differs = strcmp(name, "pointer.natural");
 	if (differs == 0) {
 		settings_apply_number(server, name, &server->pointer_natural);
 		return;
 	}
 
-	/* The keyboards' repeat. */
+	/* Sets the keyboards' repeat rate, and tells the keyboards bound already. */
 	differs = strcmp(name, "keyboard.repeat.rate");
 	if (differs == 0) {
 		settings_apply_number(server, name, &server->repeat_rate);
 		settings_apply_repeat(server, starting);
 		return;
 	}
+
+	/* Sets the keyboards' repeat delay, and tells the keyboards bound already. */
 	differs = strcmp(name, "keyboard.repeat.delay");
 	if (differs == 0) {
 		settings_apply_number(server, name, &server->repeat_delay_ms);
@@ -509,8 +563,10 @@ settings_apply_wallpaper(
 	if (differs == 0)
 		return;
 
-	/* The choice, and the picture it means. */
+	/* Records the choice shown. */
 	(void)snprintf(server->wallpaper_chosen, sizeof(server->wallpaper_chosen), "%s", chosen);
+
+	/* Shows the chosen picture, or the command line's when none is chosen. */
 	path = server->wallpaper_started;
 	if (server->wallpaper_chosen[0] != '\0')
 		path = server->wallpaper_chosen;
@@ -529,7 +585,7 @@ settings_apply_wallpaper(
 		return;
 	}
 
-	/* The new picture is shown. */
+	/* Logs that the new picture is shown, for the tests. */
 	printf("ZWL PREFERENCES key=wallpaper applied\n");
 }
 
@@ -548,6 +604,7 @@ settings_apply_opacity(
 	opacity = server->window_opacity_started;
 	percent = (int)(opacity * 100.0f + 0.5f);
 	if (entry != NULL && entry->chosen) {
+		/* The chosen percentage, when it reads as a number. */
 		error = kl_settings_key_number(entry->key, entry->value, &percent);
 		if (error == 0)
 			opacity = (float)percent / 100.0f;
@@ -557,9 +614,11 @@ settings_apply_opacity(
 	if (opacity == server->window_opacity)
 		return;
 
-	/* Every window is drawn again at the new opacity. */
+	/* Draws every window again at the new opacity. */
 	server->window_opacity = opacity;
 	server->dirty = 1;
+
+	/* Logs the opacity put into effect, for the tests. */
 	printf("ZWL PREFERENCES key=window.opacity applied value=%d\n", percent);
 }
 
@@ -574,10 +633,12 @@ settings_apply_number(
 	int number;
 	int error;
 
-	/* The setting's value as a number. */
+	/* Finds the setting; one the store does not hold changes nothing. */
 	entry = zwl_settings_store_find(server->settings, name);
 	if (entry == NULL)
 		return;
+
+	/* Reads its value as a number; one that does not read changes nothing. */
 	error = kl_settings_key_number(entry->key, entry->value, &number);
 	if (error != 0)
 		return;
@@ -586,8 +647,10 @@ settings_apply_number(
 	if (*target == (int32_t)number)
 		return;
 
-	/* The new value, from the next input on. */
+	/* Uses the new value from the next input on. */
 	*target = (int32_t)number;
+
+	/* Logs the value put into effect, for the tests. */
 	printf("ZWL PREFERENCES key=%s applied value=%d\n", name, number);
 }
 
@@ -600,10 +663,12 @@ settings_mark(
 	unsigned index;
 	int differs;
 
-	/* The setting's entry. */
+	/* Finds the setting's entry and marks it. */
 	for (index = 0; index < server->settings->count; index++) {
+		/* Only the entry whose key has the name is marked. */
 		differs = strcmp(server->settings->entries[index].key->name, name);
 		if (differs == 0) {
+			/* announce makes the next flush tell every settings object the entry's value. */
 			settings_state.announce[index] = 1;
 			return;
 		}
@@ -620,32 +685,49 @@ settings_flush(
 	unsigned marked;
 	unsigned index;
 
-	/* Nothing marked, nothing told. */
+	/* Finds whether any setting is marked. */
 	marked = 0;
 	for (index = 0; index < server->settings->count; index++)
 		marked |= settings_state.announce[index];
+
+	/* Nothing marked, nothing told. */
 	if (!marked)
 		return;
 
-	/* Each live settings object hears each marked value, then one done. */
+	/*
+	 * The serial moves once for each state told, so that the done closing
+	 * this state is told apart from every earlier one.
+	 */
 	settings_state.serial++;
-	for (client = server->clients; client != NULL; client = client->next) {
+
+	/* Tells each live settings object of every client each marked value, then one done. */
+	for (client = server->clients;
+	     client != NULL;
+	     client = client->next) {
+		/* A client already failed is not written to again. */
 		if (client->fatal)
 			continue;
-		for (object = client->objects; object != NULL; object = object->next) {
+
+		/* Visits each of the client's objects. */
+		for (object = client->objects;
+		     object != NULL;
+		     object = object->next) {
+			/* Only a live settings object is told. */
 			if (object->kind != ZWL_SYSTEM_SETTINGS || object->dead)
 				continue;
 
-			/* The values, then the done that makes them one state. */
+			/* Sends each marked value. */
 			for (index = 0; index < server->settings->count; index++) {
 				if (settings_state.announce[index])
 					(void)settings_emit_value(client, object->id, &server->settings->entries[index]);
 			}
+
+			/* Sends the done that makes the values one state. */
 			settings_emit_done(client, object->id);
 		}
 	}
 
-	/* Everything marked was told. */
+	/* Clears the marks: everything marked was told. */
 	memset(settings_state.announce, 0, sizeof(settings_state.announce));
 }
 
@@ -662,21 +744,25 @@ settings_emit_value(
 	size_t offset;
 	int error;
 
-	/* The flags: at its default, or not known yet. */
+	/* Sends the value in effect, flagged when it is at its default. */
 	flags = 0;
 	value = entry->value;
 	if (!entry->chosen)
 		flags |= KL_SYSTEM_SETTINGS_DEFAULT;
+
+	/* A value nothing reported yet is sent empty and flagged unknown. */
 	if (!entry->known) {
 		flags |= KL_SYSTEM_SETTINGS_UNKNOWN;
 		value = "";
 	}
 
-	/* key, value, flags. */
+	/* Builds the event's arguments in the protocol's order. */
 	offset = settings_put_string(payload, 0, entry->key->name);
 	offset = settings_put_string(payload, offset, value);
 	memcpy(payload + offset, &flags, sizeof(flags));
 	offset += sizeof(flags);
+
+	/* Queues the event to the client. */
 	error = zwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_VALUE, payload, offset);
 	if (error != 0)
 		return error;
@@ -693,7 +779,7 @@ settings_emit_done(
 {
 	uint32_t serial;
 
-	/* The serial. */
+	/* Queues the done with the serial of the state told last. */
 	serial = settings_state.serial;
 	(void)zwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_DONE, &serial, sizeof(serial));
 }
@@ -709,16 +795,22 @@ settings_result(
 {
 	uint32_t words[3];
 
+	/* Answers the request by its number, with whether it was applied. */
+	words[0] = request;
+	words[1] = applied;
+
 	/*
 	 * saved: a setting applied is kept when the store has a file to write
 	 * at the session's end; without a home it lives for the session only.
 	 */
-	words[0] = request;
-	words[1] = applied;
 	words[2] = applied;
 	if (applied == KL_SYSTEM_RESULT_OK && !stored)
 		words[2] = KL_SYSTEM_RESULT_NOT_SAVED;
+
+	/* Queues the answer to the client. */
 	(void)zwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_RESULT, words, sizeof(words));
+
+	/* Logs the answer, for the tests. */
 	printf("ZWL SETTINGS result client=%llu request=%u applied=%u saved=%u\n", (unsigned long long)client->number, request, words[1], words[2]);
 }
 
@@ -741,15 +833,17 @@ settings_set(
 	int valid;
 	int error;
 
-	/* The request's number and the key. */
+	/* A request too short for its number is malformed. */
 	if (size < 4U)
 		return EPROTO;
+
+	/* Reads the request's number and the key. */
 	request = settings_word(bytes, 0U);
 	error = settings_read_string(bytes, size, 4U, &name, &next);
 	if (error != 0)
 		return EPROTO;
 
-	/* A set's value; nothing may trail. */
+	/* Reads a set's value; a reset has none. */
 	value = NULL;
 	end = next;
 	if (!reset) {
@@ -759,23 +853,30 @@ settings_set(
 			return EPROTO;
 		}
 	}
+
+	/* Refuses bytes that trail the last argument. */
 	if (end != size) {
 		free(value);
 		free(name);
 		return EPROTO;
 	}
 
-	/* The change, answered now unless the wallpaper is being read. */
+	/* Makes the change, and answers it now unless the wallpaper is being read. */
 	answered = 0;
 	applied = settings_change(object, request, name, value, reset, &answered);
 	if (!answered)
 		settings_result(object->client, object->id, request, applied, object->client->server->settings->present);
+
 	/* The log names a well-formed key only (a client's bytes are not written as they are). */
 	shown = "-";
 	valid = kl_settings_name_valid(name);
 	if (valid)
 		shown = name;
+
+	/* Logs the request, for the tests. */
 	printf("ZWL SETTINGS %s key=%s client=%llu applied=%u\n", reset ? "reset" : "set", shown, (unsigned long long)object->client->number, applied);
+
+	/* Lets the request's copies go. */
 	free(value);
 	free(name);
 
@@ -804,14 +905,20 @@ settings_change(
 	int valid;
 	int error;
 
-	/* A name of the table's, resolved by the compositor. */
+	/* Finds the compositor the request reached. */
 	server = object->client->server;
+
+	/* Refuses a malformed name. */
 	valid = kl_settings_name_valid(name);
 	if (!valid)
 		return KL_SYSTEM_RESULT_INVALID;
+
+	/* Refuses a key the table lacks or that the compositor does not resolve. */
 	key = kl_settings_key_find(name);
 	if (key == NULL || key->resolver != KL_SETTINGS_RESOLVER_COMPOSITOR)
 		return KL_SYSTEM_RESULT_UNSUPPORTED;
+
+	/* Refuses a change to a key nobody may change. */
 	if ((key->flags & KL_SETTINGS_KEY_READ_ONLY) != 0U)
 		return KL_SYSTEM_RESULT_DENIED;
 
@@ -822,28 +929,38 @@ settings_change(
 			return KL_SYSTEM_RESULT_INVALID;
 	}
 
-	/* The sound is audiod's; the wallpaper is read away from the event loop. */
+	/* The sound is audiod's: it goes there through volume.c. */
 	differs = strncmp(name, "sound.", 6U);
 	if (differs == 0) {
 		applied = settings_change_sound(server, key, value, reset);
-		return applied;
-	}
-	differs = strcmp(name, "wallpaper");
-	if (differs == 0) {
-		applied = settings_change_wallpaper(object, request, value, reset, answered);
+
+		/* Reports audiod's answer. */
 		return applied;
 	}
 
-	/* Any other setting: in the store, into effect, and told. */
+	/* The wallpaper is read away from the event loop. */
+	differs = strcmp(name, "wallpaper");
+	if (differs == 0) {
+		applied = settings_change_wallpaper(object, request, value, reset, answered);
+
+		/* Reports whether the reading started. */
+		return applied;
+	}
+
+	/* Puts any other setting in the store. */
 	if (reset) {
 		error = zwl_settings_store_reset(server->settings, name);
 	} else {
 		error = zwl_settings_store_choose(server->settings, name, value);
 	}
+
+	/* Answers a change the store refused with its reason. */
 	if (error != 0) {
 		applied = settings_result_of(error);
 		return applied;
 	}
+
+	/* Puts the setting into effect, and tells every settings object. */
 	settings_apply(server, name, 0);
 	settings_mark(server, name);
 	settings_flush(server);
@@ -869,11 +986,15 @@ settings_change_sound(
 	int number;
 	int error;
 
-	/* The volume and mute as they are, and the one asked for (a reset is the table's default). */
+	/* Takes the volume and mute as they are. */
 	zwl_volume_report(&restored, &available, &volume, &muted);
+
+	/* Reads the number asked for; a reset asks for the table's default. */
 	number = key->fallback;
 	if (!reset)
 		(void)kl_settings_key_number(key, value, &number);
+
+	/* The volume's key changes the volume, the mute's key the mute. */
 	differs = strcmp(key->name, "sound.volume");
 	if (differs == 0) {
 		volume = (unsigned)number;
@@ -881,7 +1002,7 @@ settings_change_sound(
 		muted = (unsigned)number;
 	}
 
-	/* audiod. */
+	/* Sends the volume and mute to audiod; a refusal is answered with its reason. */
 	error = zwl_volume_request(server, volume, muted);
 	if (error != 0) {
 		applied = settings_result_of(error);
@@ -907,8 +1028,10 @@ settings_change_wallpaper(
 	uint32_t applied;
 	int error;
 
-	/* One wallpaper at a time. */
+	/* Finds the compositor the request reached. */
 	server = object->client->server;
+
+	/* One wallpaper at a time. */
 	if (settings_state.waiting.active)
 		return KL_SYSTEM_RESULT_BUSY;
 
@@ -919,33 +1042,45 @@ settings_change_wallpaper(
 
 	/* A reset to the landscape needs no file: in effect now. */
 	if (path == NULL) {
+		/* Puts the setting back at its default; a refusal is answered with its reason. */
 		error = zwl_settings_store_reset(server->settings, "wallpaper");
 		if (error != 0) {
 			applied = settings_result_of(error);
 			return applied;
 		}
+
+		/* Shows the landscape when the store holds the setting. */
 		entry = zwl_settings_store_find(server->settings, "wallpaper");
 		if (entry != NULL)
 			settings_apply_wallpaper(server, 0);
+
+		/* Tells every settings object. */
 		settings_mark(server, "wallpaper");
 		settings_flush(server);
+
+		/* Succeeded: the landscape is in effect. */
 		return KL_SYSTEM_RESULT_OK;
 	}
 
-	/* The thread; a path that is not an ordinary file is refused now. */
+	/* Starts glass.c's thread; a path that is not an ordinary file is refused now. */
 	error = zwl_glass_wallpaper_begin(server, path);
 	if (error != 0) {
 		applied = settings_result_of(error);
 		return applied;
 	}
 
-	/* The request waits for it. */
+	/*
+	 * Keeps the request until the picture is read: active makes the tick
+	 * answer it, and refuses another wallpaper until then.
+	 */
 	settings_state.waiting.client = object->client->number;
 	settings_state.waiting.object = object->id;
 	settings_state.waiting.request = request;
 	settings_state.waiting.reset = (unsigned)reset;
 	settings_state.waiting.active = 1;
 	(void)snprintf(settings_state.waiting.path, sizeof(settings_state.waiting.path), "%s", path);
+
+	/* Tells the caller that the answer comes later. */
 	*answered = 1;
 
 	/* Succeeded: the answer comes once the picture is read. */
@@ -968,12 +1103,17 @@ settings_wallpaper_done(
 	waiting = &settings_state.waiting;
 	if (!waiting->active)
 		return;
+
+	/* The request is answered here, so another wallpaper may be asked for from now on. */
 	waiting->active = 0;
 
-	/* Shown: the setting holds it now. */
+	/* A picture that was not shown fails the request. */
 	applied = KL_SYSTEM_RESULT_FAILED;
 	if (error == 0) {
+		/* The picture is shown: the request succeeded. */
 		applied = KL_SYSTEM_RESULT_OK;
+
+		/* The setting holds the choice now: its default after a reset, else the path. */
 		if (waiting->reset) {
 			(void)zwl_settings_store_reset(server->settings, "wallpaper");
 			server->wallpaper_chosen[0] = '\0';
@@ -986,21 +1126,32 @@ settings_wallpaper_done(
 		server->wallpaper_path = server->wallpaper_started;
 		if (server->wallpaper_chosen[0] != '\0')
 			server->wallpaper_path = server->wallpaper_chosen;
+
+		/* Logs the wallpaper put into effect, for the tests. */
 		printf("ZWL PREFERENCES key=wallpaper applied\n");
+
+		/* Tells every settings object. */
 		settings_mark(server, "wallpaper");
 		settings_flush(server);
 	}
 
-	/* The client, if it is still there with its settings object. */
+	/* Answers the client, if it is still there with its settings object. */
 	stored = server->settings->present;
-	for (client = server->clients; client != NULL; client = client->next) {
+	for (client = server->clients;
+	     client != NULL;
+	     client = client->next) {
+		/* Only the waiting client, while it is still served. */
 		if (client->number != waiting->client || client->fatal)
 			continue;
+
+		/* Its settings object must still be alive to hear the answer. */
 		object = zwl_find(client, waiting->object);
 		if (object == NULL ||
 		    object->dead ||
 		    object->kind != ZWL_SYSTEM_SETTINGS)
 			break;
+
+		/* Sends the answer. */
 		settings_result(client, object->id, waiting->request, applied, stored);
 		break;
 	}
@@ -1019,13 +1170,14 @@ settings_sound(
 	char text[16];
 	int differs;
 
-	/* What volume.c knows. */
+	/* Takes what volume.c knows of the sound. */
 	zwl_volume_report(&restored, &available, &value, &muted);
 
 	/* Whether there is sound, told when it changes. */
 	(void)snprintf(text, sizeof(text), "%u", available);
 	entry = zwl_settings_store_find(server->settings, "sound.available");
 	if (entry != NULL) {
+		/* Reports a value that changed, or that was not known yet. */
 		differs = strcmp(entry->value, text);
 		if (differs != 0 || !entry->known) {
 			zwl_settings_store_report(server->settings, "sound.available", text);
@@ -1037,10 +1189,11 @@ settings_sound(
 	if (!restored || !available)
 		return;
 
-	/* The volume. */
+	/* Takes the volume, told when it changes. */
 	(void)snprintf(text, sizeof(text), "%u", value);
 	entry = zwl_settings_store_find(server->settings, "sound.volume");
 	if (entry != NULL) {
+		/* Reports a value that changed, or that was not known yet. */
 		differs = strcmp(entry->value, text);
 		if (differs != 0 || !entry->known) {
 			zwl_settings_store_report(server->settings, "sound.volume", text);
@@ -1048,10 +1201,11 @@ settings_sound(
 		}
 	}
 
-	/* The mute. */
+	/* Takes the mute, told when it changes. */
 	(void)snprintf(text, sizeof(text), "%u", muted);
 	entry = zwl_settings_store_find(server->settings, "sound.muted");
 	if (entry != NULL) {
+		/* Reports a value that changed, or that was not known yet. */
 		differs = strcmp(entry->value, text);
 		if (differs != 0 || !entry->known) {
 			zwl_settings_store_report(server->settings, "sound.muted", text);
@@ -1069,16 +1223,20 @@ settings_snapshot(
 	unsigned index;
 	int error;
 
-	/* Every compositor setting the store holds. */
+	/* Tells every compositor setting the store holds, when there is a store. */
 	store = settings->client->server->settings;
-	for (index = 0; store != NULL && index < store->count; index++) {
-		error = settings_emit_value(settings->client, settings->id, &store->entries[index]);
-		if (error != 0)
-			return error;
+	if (store != NULL) {
+		for (index = 0; index < store->count; index++) {
+			error = settings_emit_value(settings->client, settings->id, &store->entries[index]);
+			if (error != 0)
+				return error;
+		}
 	}
 
-	/* The done that makes them one state. */
+	/* Sends the done that makes them one state. */
 	settings_emit_done(settings->client, settings->id);
+
+	/* Logs the snapshot, for the tests. */
 	printf("ZWL SETTINGS snapshot client=%llu object=%u\n", (unsigned long long)settings->client->number, settings->id);
 
 	/* Succeeded: the object knows every setting. */
@@ -1147,13 +1305,17 @@ settings_read_string(
 	size_t padded;
 	char *copy;
 
-	/* The length, with the NUL. */
+	/* The length word must be within the request. */
 	if (offset + 4U > size)
 		return EPROTO;
+
+	/* Reads the length, which counts the NUL; an empty or too long string is malformed. */
 	length = settings_word(bytes, offset);
 	padded = ((size_t)length + 3U) & ~(size_t)3U;
 	if (length == 0U || length > SETTINGS_WIRE_TEXT_MAX)
 		return EPROTO;
+
+	/* The padded text must be within the request. */
 	if (offset + 4U + padded > size)
 		return EPROTO;
 
@@ -1161,15 +1323,17 @@ settings_read_string(
 	if (bytes[offset + 4U + length - 1U] != '\0')
 		return EPROTO;
 
-	/* The copy. */
+	/* Copies the text for the caller, who frees it. */
 	copy = malloc(length);
 	if (copy == NULL)
 		return ENOMEM;
 	memcpy(copy, bytes + offset + 4U, length);
 
-	/* Succeeded: the text and where the next argument starts. */
+	/* Gives the caller the copy and where the next argument starts. */
 	*text = copy;
 	*next = offset + 4U + padded;
+
+	/* Succeeded: the string is read. */
 	return 0;
 }
 
@@ -1181,7 +1345,9 @@ settings_word(
 {
 	uint32_t word;
 
-	/* The word. */
+	/* Copies the word out, since a request's bytes need not be aligned. */
 	memcpy(&word, bytes + offset, sizeof(word));
+
+	/* Reports the word read. */
 	return word;
 }

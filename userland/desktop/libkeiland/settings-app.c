@@ -38,6 +38,7 @@ static void app_parse_line(const struct settings_app *app, struct settings_cache
 static int app_read(const char *path, char *text, size_t capacity, size_t *length);
 static int app_compose(const char *old_text, size_t old_length, const char *name, const char *value, char *text, size_t capacity, size_t *length);
 static int app_append(char *text, size_t capacity, size_t *length, const char *part, size_t part_length);
+static int app_append_line(char *text, size_t capacity, size_t *length, const char *name, size_t name_length, const char *value);
 static int app_replace(const char *path, const char *text, size_t length);
 static void app_mkdir(const char *folder);
 
@@ -56,12 +57,15 @@ settings_app_open(
 	int written;
 	int valid;
 
+	/* Starts unused, so that a failure leaves no file in use. */
 	memset(app, 0, sizeof(*app));
 
-	/* A well-formed name that fits. */
+	/* A well-formed name. */
 	valid = kl_settings_name_valid(name);
 	if (!valid)
 		return EINVAL;
+
+	/* One that fits. */
 	length = strlen(name);
 	if (length >= sizeof(app->name))
 		return EINVAL;
@@ -70,17 +74,21 @@ settings_app_open(
 	if (home == NULL || home[0] != '/')
 		return ENOENT;
 
-	/* The folder and the file. */
+	/* Names the folder under the home. */
 	written = snprintf(app->folder, sizeof(app->folder), "%s/%s", home, APP_FOLDER);
 	if (written < 0 || (size_t)written >= sizeof(app->folder))
 		return ENAMETOOLONG;
+
+	/* Names the file in the folder. */
 	written = snprintf(app->path, sizeof(app->path), "%s/%s.conf", app->folder, name);
 	if (written < 0 || (size_t)written >= sizeof(app->path))
 		return ENAMETOOLONG;
 
-	/* Succeeded: the file is the application's. */
+	/* Keeps the name; used tells the load and the writes that the file is the application's. */
 	memcpy(app->name, name, length + 1U);
 	app->used = 1;
+
+	/* Succeeded: the file is the application's. */
 	return 0;
 }
 
@@ -113,22 +121,31 @@ settings_app_load(
 	prefix_length = strlen(app->name);
 	count = kl_settings_key_count();
 	for (index = 0; index < count; index++) {
+		/* Only an application's key. */
 		key = kl_settings_key_at(index);
 		if (key->resolver != KL_SETTINGS_RESOLVER_APP)
 			continue;
+
+		/* A prefix row's keys have no default of their own. */
 		if ((key->flags & KL_SETTINGS_KEY_PREFIX) != 0U)
 			continue;
+
+		/* Only this application's: its name, then a '.'. */
 		differs = strncmp(key->name, app->name, prefix_length);
 		if (differs != 0 || key->name[prefix_length] != '.')
 			continue;
+
+		/* Puts the table's default into effect. */
 		(void)snprintf(fallback, sizeof(fallback), "%d", key->fallback);
 		settings_cache_set(cache, key->name, fallback, KL_SETTINGS_DEFAULT, 1U);
 	}
 
-	/* The file's text; a missing or unreadable file leaves the defaults. */
+	/* Allocates room for the file's text; without it the defaults stay. */
 	text = malloc(APP_FILE_MAX);
 	if (text == NULL)
 		return;
+
+	/* Reads the text; a missing or unreadable file leaves the defaults. */
 	error = app_read(app->path, text, APP_FILE_MAX, &length);
 	if (error != 0) {
 		free(text);
@@ -138,16 +155,19 @@ settings_app_load(
 	/* Each line, the last one with or without its newline. */
 	start = 0;
 	while (start < length) {
-		/* The line's end. */
+		/* Finds the line's end. */
 		end = start;
 		while (end < length && text[end] != '\n')
 			end++;
 
-		/* Its key, if it is a line of one. */
+		/* Takes the line's key, if it is a line of one. */
 		app_parse_line(app, cache, text + start, end - start);
+
+		/* Moves past the newline to the next line. */
 		start = end + 1U;
 	}
 
+	/* Lets the text go. */
 	free(text);
 }
 
@@ -171,32 +191,49 @@ settings_app_write(
 	int differs;
 	int error;
 
-	/* Only the application's own key. */
+	/* Only with the application's file. */
 	if (!app->used)
 		return ENOENT;
+
+	/* Only the application's own key: its name, then a '.'. */
 	prefix_length = strlen(app->name);
 	differs = strncmp(key, app->name, prefix_length);
 	if (differs != 0 || key[prefix_length] != '.')
 		return EINVAL;
+
+	/* The line's name is the key after the application's name and the '.'. */
 	name = key + prefix_length + 1U;
 
-	/* Room for the file as it is and as it is to be. */
+	/* Allocates room for the file as it is. */
 	before = malloc(APP_FILE_MAX);
 	if (before == NULL)
 		return ENOMEM;
+
+	/* Allocates room for the file as it is to be. */
 	after = malloc(APP_FILE_MAX);
 	if (after == NULL) {
 		free(before);
 		return ENOMEM;
 	}
 
-	/* The folder, the file as it is, the line changed, and the new file. */
+	/* Makes the folder; one that exists is left alone. */
 	app_mkdir(app->folder);
+
+	/* Reads the file as it is. */
 	error = app_read(app->path, before, APP_FILE_MAX, &before_length);
-	if (error == 0)
-		error = app_compose(before, before_length, name, value, after, APP_FILE_MAX, &after_length);
-	if (error == 0)
-		error = app_replace(app->path, after, after_length);
+	if (error != 0)
+		goto cleanup;
+
+	/* Writes the text with the line changed. */
+	error = app_compose(before, before_length, name, value, after, APP_FILE_MAX, &after_length);
+	if (error != 0)
+		goto cleanup;
+
+	/* Puts the new text in place of the file. */
+	error = app_replace(app->path, after, after_length);
+
+cleanup:
+	/* Lets the room go. */
 	free(after);
 	free(before);
 
@@ -231,17 +268,23 @@ app_parse_line(
 	if (length == 0U || line[0] == '#')
 		return;
 
-	/* The name before the first '=' and the value after it, both fitting. */
+	/* Finds the first '='; a line without one holds no key. */
 	equals = memchr(line, '=', length);
 	if (equals == NULL)
 		return;
+
+	/* A name before it, and a value after it that fits. */
 	name_length = (size_t)(equals - line);
 	value_length = length - name_length - 1U;
 	if (name_length == 0U || value_length >= sizeof(raw))
 		return;
+
+	/* Makes the key: the application's name, a '.', and the line's name, fitting. */
 	written = snprintf(full, sizeof(full), "%s.%.*s", app->name, (int)name_length, line);
 	if (written < 0 || (size_t)written >= sizeof(full))
 		return;
+
+	/* Copies the value out as a string. */
 	memcpy(raw, equals + 1, value_length);
 	raw[value_length] = '\0';
 
@@ -252,18 +295,24 @@ app_parse_line(
 
 	/* An opener as it is, when it is one; a number moved into its range. */
 	if (key->type == KL_SETTINGS_TYPE_OPENER) {
+		/* An opener that is not well formed is passed over. */
 		error = kl_settings_key_check(key, raw);
 		if (error != 0)
 			return;
+
+		/* Takes the opener as it is. */
 		(void)snprintf(clean, sizeof(clean), "%s", raw);
 	} else {
+		/* A value that is not a number is passed over. */
 		error = kl_settings_key_number(key, raw, &number);
 		if (error != 0)
 			return;
+
+		/* Takes the number, moved into its range. */
 		(void)snprintf(clean, sizeof(clean), "%d", number);
 	}
 
-	/* The value in effect. */
+	/* Puts the value into effect. */
 	settings_cache_set(cache, full, clean, 0U, 1U);
 }
 
@@ -279,18 +328,21 @@ app_read(
 	int descriptor;
 	int error;
 
-	/* Nothing yet. */
+	/* Starts with an empty text. */
 	*length = 0;
 
-	/* The file, when there is one. */
+	/* Opens the file, when there is one. */
 	descriptor = open(path, O_RDONLY | O_CLOEXEC);
 	if (descriptor < 0) {
+		/* A missing file is an empty text. */
 		if (errno == ENOENT)
 			return 0;
+
+		/* Reports why the file could not be opened. */
 		return errno;
 	}
 
-	/* Every byte, up to the room there is. */
+	/* Reads every byte, up to the room there is. */
 	error = 0;
 	for (;;) {
 		/* A file that fills the room is too large. */
@@ -299,7 +351,7 @@ app_read(
 			break;
 		}
 
-		/* The next bytes; none left is the end. */
+		/* Reads the next bytes; an interruption is tried again. */
 		count = read(descriptor, text + *length, capacity - *length);
 		if (count < 0) {
 			if (errno == EINTR)
@@ -307,12 +359,16 @@ app_read(
 			error = errno;
 			break;
 		}
+
+		/* Nothing more is the end. */
 		if (count == 0)
 			break;
+
+		/* The bytes join the text. */
 		*length += (size_t)count;
 	}
 
-	/* The file is not needed any more. */
+	/* Closes the file, which is not needed any more. */
 	(void)close(descriptor);
 
 	/* Reports why the text could not be read. */
@@ -345,60 +401,57 @@ app_compose(
 	/* Nothing written yet, and the name not yet met. */
 	*length = 0;
 	written = 0;
-	error = 0;
 	name_length = strlen(name);
 
-	/* Each line of the old text. */
+	/* Copies each line of the old text, changing the name's. */
 	start = 0;
-	while (error == 0 && start < old_length) {
-		/* The line's end. */
+	while (start < old_length) {
+		/* Finds the line's end. */
 		end = start;
 		while (end < old_length && old_text[end] != '\n')
 			end++;
 
-		/* The name's line: its first becomes the new value (or goes), the others go. */
+		/* Tells whether the line is the name's: the name, then a '='. */
 		matched = 0;
 		if (end - start > name_length) {
 			differs = memcmp(old_text + start, name, name_length);
 			if (differs == 0 && old_text[start + name_length] == '=')
 				matched = 1;
 		}
+
+		/* The name's line: its first becomes the new value (or goes), the others go. */
 		if (matched) {
+			/* Writes the new value in place of the name's first line, unless the name leaves the file. */
 			if (!written && value != NULL) {
-				error = app_append(text, capacity, length, name, name_length);
-				if (error == 0)
-					error = app_append(text, capacity, length, "=", 1U);
-				if (error == 0)
-					error = app_append(text, capacity, length, value, strlen(value));
-				if (error == 0)
-					error = app_append(text, capacity, length, "\n", 1U);
+				error = app_append_line(text, capacity, length, name, name_length, value);
+				if (error != 0)
+					return error;
 			}
+
+			/* written records that the name was met, so its later lines go. */
 			written = 1;
 		} else {
 			/* Any other line stays as it was. */
 			error = app_append(text, capacity, length, old_text + start, end - start);
-			if (error == 0)
-				error = app_append(text, capacity, length, "\n", 1U);
+			if (error != 0)
+				return error;
+
+			/* With its newline. */
+			error = app_append(text, capacity, length, "\n", 1U);
+			if (error != 0)
+				return error;
 		}
 
-		/* The next line. */
+		/* Moves past the newline to the next line. */
 		start = end + 1U;
 	}
 
-	/* A name the file did not have goes at its end. */
-	if (error == 0 && !written && value != NULL) {
-		error = app_append(text, capacity, length, name, name_length);
-		if (error == 0)
-			error = app_append(text, capacity, length, "=", 1U);
-		if (error == 0)
-			error = app_append(text, capacity, length, value, strlen(value));
-		if (error == 0)
-			error = app_append(text, capacity, length, "\n", 1U);
+	/* A name the file did not have goes at its end, unless it leaves the file. */
+	if (!written && value != NULL) {
+		error = app_append_line(text, capacity, length, name, name_length, value);
+		if (error != 0)
+			return error;
 	}
-
-	/* Reports a text too large. */
-	if (error != 0)
-		return error;
 
 	/* Succeeded: the new text. */
 	return 0;
@@ -417,11 +470,47 @@ app_append(
 	if (part_length > capacity - *length)
 		return E2BIG;
 
-	/* The part at the end. */
+	/* Adds the part at the end. */
 	memcpy(text + *length, part, part_length);
 	*length += part_length;
 
 	/* Succeeded: the part is added. */
+	return 0;
+}
+
+/* Adds a name=value line to a text; returns 0, or E2BIG when it does not fit. */
+static int
+app_append_line(
+	char *text,
+	size_t capacity,
+	size_t *length,
+	const char *name,
+	size_t name_length,
+	const char *value)
+{
+	int error;
+
+	/* Adds the name. */
+	error = app_append(text, capacity, length, name, name_length);
+	if (error != 0)
+		return error;
+
+	/* Adds the '='. */
+	error = app_append(text, capacity, length, "=", 1U);
+	if (error != 0)
+		return error;
+
+	/* Adds the value. */
+	error = app_append(text, capacity, length, value, strlen(value));
+	if (error != 0)
+		return error;
+
+	/* Ends the line. */
+	error = app_append(text, capacity, length, "\n", 1U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the line is added. */
 	return 0;
 }
 
@@ -445,10 +534,11 @@ app_replace(
 	if (descriptor < 0)
 		return errno;
 
-	/* Every byte of the text. */
+	/* Writes every byte of the text. */
 	error = 0;
 	done = 0;
 	while (done < length) {
+		/* Writes what is left; an interruption is tried again. */
 		count = write(descriptor, text + done, length - done);
 		if (count < 0) {
 			if (errno == EINTR)
@@ -456,10 +546,12 @@ app_replace(
 			error = errno;
 			break;
 		}
+
+		/* Counts the bytes written. */
 		done += (size_t)count;
 	}
 
-	/* On the disk before it takes the file's name. */
+	/* Flushes the text to the disk before it takes the file's name. */
 	if (error == 0) {
 		status = fsync(descriptor);
 		if (status != 0)
@@ -477,7 +569,7 @@ app_replace(
 		return error;
 	}
 
-	/* It replaces the file at once. */
+	/* Renames the new file over the file, which replaces it at once. */
 	status = rename(temporary, path);
 	if (status != 0) {
 		error = errno;
@@ -498,21 +590,26 @@ app_mkdir(
 	size_t length;
 	size_t index;
 
-	/* A copy to cut at each slash. */
+	/* A folder too long for the copy is not made. */
 	length = strlen(folder);
 	if (length >= sizeof(partial))
 		return;
+
+	/* Copies the folder, to cut it at each slash. */
 	memcpy(partial, folder, length + 1U);
 
-	/* Each prefix that ends at a slash; one that exists is left alone. */
+	/* Makes each prefix that ends at a slash; one that exists is left alone. */
 	for (index = 1; index < length; index++) {
+		/* Only a slash ends a prefix. */
 		if (partial[index] != '/')
 			continue;
+
+		/* Makes the folder up to this slash. */
 		partial[index] = '\0';
 		(void)mkdir(partial, 0700);
 		partial[index] = '/';
 	}
 
-	/* The folder itself. */
+	/* Makes the folder itself. */
 	(void)mkdir(partial, 0700);
 }

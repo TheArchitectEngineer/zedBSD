@@ -468,7 +468,7 @@ zwl_ime_repeat_changed(
 	if (server->ime == NULL || server->ime->grab == NULL)
 		return;
 
-	/* The rate and the delay. */
+	/* Sends the grab the new rate and delay. */
 	repeat[0] = server->repeat_rate;
 	repeat[1] = server->repeat_delay_ms;
 	ime_emit(server->ime->grab, GRAB_REPEAT_INFO, repeat, sizeof(repeat));
