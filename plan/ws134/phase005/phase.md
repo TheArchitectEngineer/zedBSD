@@ -34,7 +34,8 @@ monitor の本物の値（p008）の出どころの一つ。interrupt は分け�
 - QEMU（T に依頼）: `plan/ws134/tests/cputimes-p005.sh`（4 CPU の guest、SSH で: header と hw.ncpu、静かな 5 秒の和が 5 s×hz×CPU の ±10% で
   idle が半分超、awk の busy loop 1 本で user が 1 CPU の 5 秒の 60% 以上、CPU の数だけの loop で user が全体の 60% 以上と 2 CPU 以上が半分超、
   `top -b -n 2 -d 1` の `%Cpu(s)` の 2 行）。結果は未着。boot は同じ試験の guest の起動で見る。
-- i386 など他の arch の kernel の build は未実施（u64 は atomic の HAL の関数で読み書きしている）。実機は未実施。
+- 他の arch の kernel: `config/ci/config-pcat.mk`（i386、`BUILD=build/p2-pcat vmunix`）と `config/ci/config-rpi4.mk`（arm64）が exit 0・
+  warning 0（u64 は atomic の関数で読み書き）。試験の image: `build/p2-q660/hdd-image.img`（9b8062a）を T1 に渡した。実機は未実施。
 
 ## stub の項目
 
