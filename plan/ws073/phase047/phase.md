@@ -59,3 +59,10 @@ HAL・UAPI は変えていない。
 
 - T1 の結果で Q1 が判定する。
 - tmpfs の data の swap での裏打ち（上の制限）。必要なら別の Phase。
+
+## T1-048（2026-10-04、b65fd40 の既定の image、QEMU）と試験の直し
+
+boot-test PASS、`bug052-tmpfs.sh` PASS（容量 4191060 KiB、512 MiB を 1 s で書き 0 s で消す）。`tmpfs-many.sh` は FAIL ×2（同じ）: 空 file 10000 ×3 は
+PASS、1 byte の file が 14325 個で ENOSPC（`FAIL 20000 data files fit`）。14325 は ws073-p013 の node の上限（全 tmpfs で inode cache の 7/8、約 14300）で、
+設計どおり。誤りは私が p047 で直した試験の期待（20000 個が入る）の方。→ `tmpfs-many.sh` を「旧 32 MiB の quota（約 8000 個）より多く入り（9000 超）、
+止めたのは node の上限で byte は 100% でない、他の file は開ける」に直した。kernel は不変。再試験を T1 に依頼。
