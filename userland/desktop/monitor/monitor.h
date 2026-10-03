@@ -62,7 +62,8 @@ enum sm_level {
 /* The sources a frame comes from. */
 enum sm_source_kind {
 	SM_SOURCE_SIM,
-	SM_SOURCE_REPLAY
+	SM_SOURCE_REPLAY,
+	SM_SOURCE_SYSTEM
 };
 
 /* The series the history keeps, one per summary plate's graph. */

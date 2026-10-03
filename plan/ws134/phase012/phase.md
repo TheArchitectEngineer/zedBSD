@@ -40,3 +40,9 @@ Parent: [WS134](../ws.md)
   （B2 は zedBSD と Linux の binary）。style-check の新しい違反 0（system.c の既存の 4 件は前から）。
 - host 試験: `plan/ws134/tests/host/run.sh` → monitor-host・monitor-interact・monitor-rate PASS。
 - QEMU（T に依頼）: `monitor-system-p012.sh`。FreeBSD の build（backend-test.sh）も依頼。結果は未着。
+
+## 結果（T1-069、b63e038、2026-10-04）
+
+PASS 2/2。`monitor-system-p012: PASS`（QEMU Venus KVM: capabilities 0x3e、info（4 CPU・kei・GPU なし・nvme0n1・ue0）、4 秒で 15 frame（0.250〜0.252 s）、
+busy loop の CPU 0.25〜0.38、disk の読み 31305143 B/s まで、sampling の開始と停止、ERROR なし）。FreeBSD の `backend-test.sh` rc 0（warning 0）。
+証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-069/out/`・`/home/awe/zedBSD-worktrees/t1/build/keiland-freebsd/backend-test-069/summary.txt`。
