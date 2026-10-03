@@ -39,6 +39,7 @@ static int app_read(const char *path, char *text, size_t capacity, size_t *lengt
 static int app_compose(const char *old_text, size_t old_length, const char *name, const char *value, char *text, size_t capacity, size_t *length);
 static int app_append(char *text, size_t capacity, size_t *length, const char *part, size_t part_length);
 static int app_replace(const char *path, const char *text, size_t length);
+static void app_mkdir(const char *folder);
 
 /*
  * Names an application's file in a home.  Returns 0, EINVAL for a name
@@ -188,7 +189,7 @@ settings_app_write(
 	}
 
 	/* The folder, the file as it is, the line changed, and the new file. */
-	(void)mkdir(app->folder, 0700);
+	app_mkdir(app->folder);
 	error = app_read(app->path, before, APP_FILE_MAX, &before_length);
 	if (error == 0)
 		error = app_compose(before, before_length, name, value, after, APP_FILE_MAX, &after_length);
@@ -477,4 +478,32 @@ app_replace(
 
 	/* Succeeded: the file holds the new text. */
 	return 0;
+}
+
+/* Makes the files' folder and the missing folders above it (as mkdir -p), for the user alone. */
+static void
+app_mkdir(
+	const char *folder)
+{
+	char partial[SETTINGS_APP_PATH_MAX];
+	size_t length;
+	size_t index;
+
+	/* A copy to cut at each slash. */
+	length = strlen(folder);
+	if (length >= sizeof(partial))
+		return;
+	memcpy(partial, folder, length + 1U);
+
+	/* Each prefix that ends at a slash; one that exists is left alone. */
+	for (index = 1; index < length; index++) {
+		if (partial[index] != '/')
+			continue;
+		partial[index] = '\0';
+		(void)mkdir(partial, 0700);
+		partial[index] = '/';
+	}
+
+	/* The folder itself. */
+	(void)mkdir(partial, 0700);
 }

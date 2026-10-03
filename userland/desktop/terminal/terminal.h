@@ -159,9 +159,9 @@ struct terminal_menu_state {
 };
 
 /*
- * The terminal's own settings kept between runs (settings.c,
- * ~/.config/keiland/terminal.conf): whether Ambiguous-width characters are
- * wide (ws128-p009).  All zero is the default.
+ * The terminal's own settings kept between runs (settings.c, the desktop's
+ * settings terminal.* through libkeiland, WS135): whether Ambiguous-width
+ * characters are wide (ws128-p009).  All zero is the default.
  */
 struct terminal_settings {
 	int ambiguous_wide;

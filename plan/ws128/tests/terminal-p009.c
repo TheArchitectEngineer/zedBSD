@@ -15,7 +15,8 @@
  *   terminal-p009 check      the grid and the settings file
  *   terminal-p009 speed      the time of a large output, off and on
  *
- * It links the terminal's own screen.c, width.c and settings.c.
+ * It links the terminal's own screen.c, width.c and settings.c, with libkeiland's settings under the host
+ * stand-in plan/ws135/tests/host-kl-settings.c (WS135).
  */
 
 #include "userland/desktop/terminal/terminal.h"
@@ -193,7 +194,7 @@ test_check(void)
 		fclose(file);
 	}
 	text[length] = '\0';
-	test_expect(strcmp(text, "# kept\nfuture-key=7\nambiguous-wide=0\n") == 0, "settings: other lines kept, the key replaced");
+	test_expect(strcmp(text, "ambiguous-wide=0\n# kept\nfuture-key=7\n") == 0, "settings: other lines kept, the key replaced in its place (libkeiland, WS135)");
 	terminal_settings_load(&settings);
 	test_expect(settings.ambiguous_wide == 0, "settings: load off");
 
