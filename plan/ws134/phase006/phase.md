@@ -42,6 +42,14 @@ sysctl の CLI の表示。monitor の Disk の本物の値（p008）の出ど�
   stick を挿すと kind 3/4 の新しい disk と別の id・generation の増加、その読みが stick に数わる、抜くと消えて generation がまた増える）。結果は未着。
 - 実機は未実施（NVMe・USB は 5330）。
 
+<<<<<<< HEAD
 ## 結果（Q1、2026-10-04、T1-065、QEMU Venus KVM、NVMe、main a326b91）
 
 cleared。`diskstats-p006: PASS`: nvme0n1（NVMe、partition は数えない）、読み 32 MiB で ops・bytes・時間・busy が増え、書き込みで write が増える。QMP の usb-storage の hotplug で sda（kind 3、別の id）が現れ generation 1→2・読みを計上、device_del で消え 2→3。sun4u・x68k の kernel は CI の config が無く未 build。
+=======
+## 結果（T1-065、QEMU Venus KVM、main a326b91 の image、2026-10-04）
+
+`diskstats-p006: PASS`（21 項目）。generation 1、nvme0n1 が NVMe で partition は出ない、raw の読みで read ops 8179・bytes 33505280・
+平均 111153 ns、書き込みで write bytes 33939456、QMP の usb-storage の hotplug で sda（kind 3、別の id、generation 1→2、読みの計上）、
+unplug で消えて 2→3。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-065/out/`。clearance は Q1 の判定。実機は未実施。
+>>>>>>> 1345e85

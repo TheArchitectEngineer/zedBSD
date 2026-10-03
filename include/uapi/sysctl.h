@@ -175,6 +175,66 @@ _Static_assert(sizeof(struct disk_stats_header) == 24U,
 _Static_assert(sizeof(struct disk_stats_entry) == 120U,
     "hw.diskstats entry ABI must be identical on ILP32 and LP64");
 
+/*
+ * hw.gputelemetry: each GPU's work as its driver keeps it (ws134-p007).
+ * The value is a struct gpu_telemetry_header followed by count struct
+ * gpu_telemetry_entry, one a GPU whose driver reports telemetry (none for a
+ * driver that keeps nothing, such as the virtual GPU).  Read-only.  A
+ * buffer too small fails with ENOMEM and the length needed.
+ *
+ * valid says which fields the driver filled (GPU_TELEMETRY_*).  busy_ns
+ * adds up the time any engine ran a request, up to time_ns (the driver's
+ * clock when it was read), so the change of busy_ns over the change of
+ * time_ns is the GPU's use.  The frequencies are in MHz: the one the
+ * hardware runs at, the one the driver last asked for, and the range it
+ * asks within.  objects_bytes is the memory the GPU's objects hold, of
+ * objects_limit.
+ */
+#define HW_GPUTELEMETRY	8
+
+/* The version of the hw.gputelemetry layout. */
+#define GPU_TELEMETRY_VERSION	1U
+
+/* The fields a driver filled (struct gpu_telemetry_entry's valid). */
+#define GPU_TELEMETRY_BUSY	0x00000001U
+#define GPU_TELEMETRY_CUR_MHZ	0x00000002U
+#define GPU_TELEMETRY_REQ_MHZ	0x00000004U
+#define GPU_TELEMETRY_RANGE_MHZ	0x00000008U
+#define GPU_TELEMETRY_OBJECTS	0x00000010U
+
+/*
+ * The head of hw.gputelemetry: the layout's version, the header's size,
+ * one entry's size and how many entries follow.  Every field has a fixed
+ * width, so one layout serves ILP32 and LP64 processes.
+ */
+struct gpu_telemetry_header {
+	uint32_t version;
+	uint32_t struct_size;
+	uint32_t element_size;
+	uint32_t count;
+	uint32_t reserved[2];
+};
+
+/* One GPU in hw.gputelemetry. */
+struct gpu_telemetry_entry {
+	char driver[16];
+	uint32_t valid;
+	uint32_t reserved;
+	uint64_t time_ns;
+	uint64_t busy_ns;
+	uint64_t objects_bytes;
+	uint64_t objects_limit;
+	uint32_t cur_mhz;
+	uint32_t req_mhz;
+	uint32_t min_mhz;
+	uint32_t max_mhz;
+};
+
+_Static_assert(sizeof(struct gpu_telemetry_header) == 24U,
+    "hw.gputelemetry header ABI must be identical on ILP32 and LP64");
+_Static_assert(sizeof(struct gpu_telemetry_entry) == 72U,
+    "hw.gputelemetry entry ABI must be identical on ILP32 and LP64");
+
 /* Firmware RAM and actually managed RAM are distinct. */
 #define MEMORY_STATS_VERSION 2U
 struct memory_stats {
