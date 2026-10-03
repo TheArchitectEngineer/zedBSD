@@ -68,8 +68,12 @@ struct buf {
 	/*
 	 * Held by a filesystem journal: the buffer stays dirty and is not
 	 * written back until the journal has committed it and unpins it.
+	 * Zero is no pin; otherwise it is the tag (the journal's transaction
+	 * sequence) the last buf_write_pinned() gave, and only buf_unpin() with
+	 * the same tag clears it, so that a later transaction's write keeps the
+	 * line home-bound until its own commit (ws073-p051).
 	 */
-	unsigned b_journal_pin;
+	uint64_t b_journal_pin;
 };
 
 /* Zero-initialize before first use. Pins common cache lines, never their busy state. */
@@ -100,20 +104,38 @@ buf_flusher_start(void);
  * Writes into the cache and pins the lines: they stay dirty and nothing
  * writes them to the disk until buf_unpin() releases them.  For a journal,
  * whose blocks may reach their home only after the journal holds them.
+ * The pin is a nonzero tag, the journal's transaction; a line pinned by an
+ * earlier transaction takes the new tag.
  */
 int
 buf_write_pinned(
 	struct disk *disk,
 	uint64_t block,
 	uint32_t count,
-	const void *data);
+	const void *data,
+	uint64_t pin);
 
 /*
- * Releases the pins buf_write_pinned() set on a range; its lines are then
- * ordinary dirty lines.
+ * Releases the pins buf_write_pinned() set on a range with the same tag;
+ * those lines are then ordinary dirty lines.  A line a later transaction
+ * pinned again keeps its pin; *kept, when given, is raised by the number of
+ * such lines, so that the journal knows the cache will not write the
+ * range's home until that transaction commits.
  */
 int
 buf_unpin(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	uint64_t pin,
+	unsigned *kept);
+
+/*
+ * Writes the dirty lines of a range back to the disk, leaving a line a
+ * journal pins alone; the device is not flushed.
+ */
+int
+buf_writeback_range(
 	struct disk *disk,
 	uint64_t block,
 	uint32_t count);
