@@ -21,6 +21,7 @@ KEILAND_FREEBSD_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/page-look.c \
 	userland/desktop/settings/page-input.c \
 	userland/desktop/settings/sound.c \
+	userland/desktop/settings/system.c \
 	userland/desktop/files/canvas.c \
 	userland/desktop/files/text.c \
 	userland/desktop/files/icons.c \

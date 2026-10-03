@@ -13,7 +13,7 @@
  * The last line is "PASS keiland-slow-join ..." or "FAIL keiland-slow-join ...".
  */
 
-#include <keiland.h>
+#include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include "userland/base/net/protocol.h"
 
@@ -42,7 +42,7 @@ static void bug149_answer(int connection, const struct networkd_protocol_header 
 int
 main(void)
 {
-	struct keiland_network *network;
+	struct kl_backend_network *network;
 	struct timespec tick;
 	unsigned changed;
 	unsigned finished;
@@ -70,7 +70,7 @@ main(void)
 	/* The client, as Settings opens it, and a few updates for the watch. */
 	tick.tv_sec = 0;
 	tick.tv_nsec = 100000000L;
-	network = keiland_network_open();
+	network = kl_backend_network_open();
 	if (network == NULL) {
 		printf("FAIL keiland-slow-join open errno=%d\n", errno);
 		(void)kill(daemon, SIGKILL);
@@ -79,13 +79,13 @@ main(void)
 
 	/* A few updates, in which the watch connects. */
 	for (i = 0; i < 5; i++) {
-		(void)keiland_network_update(network, &changed);
+		(void)kl_backend_network_update(network, &changed);
 		(void)nanosleep(&tick, NULL);
 	}
 
 	/* The join, then the updates every 100 ms until it finishes (at most 10 s). */
 	start = bug149_now_ms();
-	error = keiland_network_request(network, KEILAND_NETWORK_REQUEST_JOIN, "bug149-no-such-ssid");
+	error = kl_backend_network_request(network, KL_BACKEND_NETWORK_REQUEST_JOIN, "bug149-no-such-ssid");
 	if (error != 0) {
 		printf("FAIL keiland-slow-join request error=%d\n", error);
 		(void)kill(daemon, SIGKILL);
@@ -95,11 +95,11 @@ main(void)
 	/* The updates until the join is done. */
 	done = 0;
 	error = 0;
-	finished = KEILAND_NETWORK_REQUEST_NONE;
+	finished = KL_BACKEND_NETWORK_REQUEST_NONE;
 	for (i = 0; i < 100 && !done; i++) {
-		(void)keiland_network_update(network, &changed);
-		if ((changed & KEILAND_NETWORK_CHANGED_DONE) != 0) {
-			finished = keiland_network_get_request(network, &error);
+		(void)kl_backend_network_update(network, &changed);
+		if ((changed & KL_BACKEND_NETWORK_CHANGED_DONE) != 0) {
+			finished = kl_backend_network_get_request(network, &error);
 			done = 1;
 			break;
 		}
@@ -110,12 +110,12 @@ main(void)
 
 	/* The client and the stand-in are done. */
 	elapsed = bug149_now_ms() - start;
-	keiland_network_close(network);
+	kl_backend_network_close(network);
 	(void)kill(daemon, SIGKILL);
 	(void)waitpid(daemon, NULL, 0);
 
 	/* The daemon's own refusal, after its delay. */
-	if (done && finished == KEILAND_NETWORK_REQUEST_JOIN && error == ENOENT &&
+	if (done && finished == KL_BACKEND_NETWORK_REQUEST_JOIN && error == ENOENT &&
 	    elapsed >= (long)BUG149_DELAY_SECONDS * 1000L - 300L) {
 		printf("PASS keiland-slow-join updates=%d elapsed=%ldms error=%d\n", i, elapsed, error);
 		return 0;

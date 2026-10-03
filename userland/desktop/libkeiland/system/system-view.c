@@ -404,6 +404,12 @@ system_view_error_of(
 		return EINVAL;
 	case KL_SYSTEM_RESULT_UNAVAILABLE:
 		return ENODEV;
+	case KL_SYSTEM_RESULT_NO_KEY:
+		return ENOENT;
+	case KL_SYSTEM_RESULT_REFUSED:
+		return EACCES;
+	case KL_SYSTEM_RESULT_UNREACHABLE:
+		return ENETUNREACH;
 	default:
 		break;
 	}

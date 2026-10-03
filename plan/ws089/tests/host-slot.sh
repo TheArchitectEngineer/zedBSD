@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws089-p012 (C1): builds Settings' network.c with host-slot.c (a pretend libkeiland carrying one request at a time) and
+# ws089-p012 (C1), WS131 p011: builds Settings' network.c with host-slot.c (a pretend kl_system, the compositor's network) and
 # runs it: requests asked for while another is out wait in one slot and go after its answer.  Last line: host-slot: PASS.
 #   sh plan/ws089/tests/host-slot.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

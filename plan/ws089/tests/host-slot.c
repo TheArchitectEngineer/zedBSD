@@ -6,14 +6,16 @@
  */
 
 /*
- * ws089-p012 (C1): checks Settings' network requests on the host against a
- * pretend libkeiland that carries one request at a time, as the real one
- * does.  A switch, a disconnect or a join asked for while another request
- * (a scan, usually) is out must wait in the slot and be sent when that one
- * is answered; a scan is not kept; a later ask replaces what waited; a join
- * with a new key saves the key at once and is told to the daemon after the
- * outstanding request.  Built and run by host-slot.sh; the last line says
- * host-slot: PASS or FAIL.
+ * ws089-p012 (C1), WS131 p011: checks Settings' network requests on the
+ * host against a pretend kl_system (the compositor's network) that answers
+ * each request once.  A switch, a disconnect or a join asked for while
+ * Settings' own request (a scan, usually) is out must wait in the slot and
+ * be sent when that one is answered; a scan is not kept; a later ask
+ * replaces what waited; a join with a new key is one save_key request,
+ * sent after the outstanding one with the key typed; a request the
+ * compositor answers busy (the system bar's request was out) waits a
+ * moment and goes again; a join's failures are said in words.  Built and
+ * run by host-slot.sh; the last line says host-slot: PASS or FAIL.
  */
 
 #include "settings.h"
@@ -23,37 +25,37 @@
 #include <stdio.h>
 #include <string.h>
 
-/* How many requests the pretend daemon remembers being sent. */
+/* How many requests the pretend compositor remembers being sent. */
 #define SLOT_SENT_MAX		16
 
 /*
- * The pretend libkeiland: the request outstanding (NONE when none), the
- * one that finished and how, whether a finish is to be reported, and the
- * requests sent in order with the network a join named.  It lives for the
- * whole test and is reset before each case.
+ * The pretend compositor: the request outstanding (SE_NETWORK_NONE when
+ * none) and its number, the next number, and the requests sent in order
+ * with the network named and the key's length.  It lives for the whole
+ * test and is reset before each case.
  */
 struct slot_daemon {
 	unsigned outstanding;
-	unsigned finished;
-	int finished_error;
-	unsigned report;
+	uint32_t outstanding_id;
+	uint32_t next_id;
 	unsigned sent[SLOT_SENT_MAX];
-	char sent_ssid[SLOT_SENT_MAX][KEILAND_NETWORK_SSID_MAX];
+	char sent_ssid[SLOT_SENT_MAX][KL_NETWORK_SSID_MAX];
+	size_t sent_key_length[SLOT_SENT_MAX];
 	unsigned sent_count;
-	int key_saved;
 };
 
-/* The pretend daemon of the case being run. */
+/* The pretend compositor of the case being run. */
 static struct slot_daemon slot_daemon;
 
-/* The handle the pretend libkeiland gives out (its contents are never read). */
-static char slot_handle;
+/* The system the pretend kl_system gives out (its contents are never read). */
+static char slot_system;
 
 /* How many checks failed. */
 static int slot_failures;
 
 static void slot_reset(struct se_app *app);
 static void slot_finish(struct se_app *app, int error);
+static void slot_sent(unsigned request, const char *ssid, const char *key, uint32_t *number);
 static void slot_expect_sent(const char *name, unsigned count, const unsigned *requests);
 static void slot_expect(const char *name, int condition);
 
@@ -64,18 +66,19 @@ int
 main(void)
 {
 	static struct se_app app;
-	static const unsigned scan_then_off[] = { KEILAND_NETWORK_REQUEST_SCAN, KEILAND_NETWORK_REQUEST_WIFI_OFF };
-	static const unsigned scan_then_join[] = { KEILAND_NETWORK_REQUEST_SCAN, KEILAND_NETWORK_REQUEST_JOIN };
-	static const unsigned scan_profiles_join[] = { KEILAND_NETWORK_REQUEST_SCAN, KEILAND_NETWORK_REQUEST_PROFILES, KEILAND_NETWORK_REQUEST_JOIN };
-	static const unsigned join_then_join[] = { KEILAND_NETWORK_REQUEST_JOIN, KEILAND_NETWORK_REQUEST_JOIN };
-	static const unsigned scan_only[] = { KEILAND_NETWORK_REQUEST_SCAN };
-	static const unsigned scan_then_disconnect[] = { KEILAND_NETWORK_REQUEST_SCAN, KEILAND_NETWORK_REQUEST_DISCONNECT };
+	static const unsigned scan_then_off[] = { KL_NETWORK_SCAN, KL_NETWORK_WIFI_OFF };
+	static const unsigned scan_then_join[] = { KL_NETWORK_SCAN, KL_NETWORK_JOIN };
+	static const unsigned scan_then_key[] = { KL_NETWORK_SCAN, SE_NETWORK_SAVE_KEY };
+	static const unsigned join_then_join[] = { KL_NETWORK_JOIN, KL_NETWORK_JOIN };
+	static const unsigned scan_only[] = { KL_NETWORK_SCAN };
+	static const unsigned scan_then_disconnect[] = { KL_NETWORK_SCAN, KL_NETWORK_DISCONNECT };
+	static const unsigned off_twice[] = { KL_NETWORK_WIFI_OFF, KL_NETWORK_WIFI_OFF };
 
 	/* 1. The switch pressed during a scan is sent after the scan's answer. */
 	slot_reset(&app);
 	se_network_scan(&app);
 	se_network_wifi(&app, 0);
-	slot_expect("1 switch waits", app.network.pending_request == KEILAND_NETWORK_REQUEST_WIFI_OFF);
+	slot_expect("1 switch waits", app.network.pending_request == KL_NETWORK_WIFI_OFF);
 	slot_expect("1 no busy refusal", app.network.message_bad == 0);
 	slot_finish(&app, 0);
 	slot_expect_sent("1 scan then off", 2U, scan_then_off);
@@ -91,18 +94,21 @@ main(void)
 	slot_finish(&app, 0);
 	slot_expect("2 connected", strcmp(app.network.message, "Connected to Cafe Guest.") == 0);
 
-	/* 3. A new key during a scan: saved at once, the daemon told after the scan, then the join. */
+	/* 3. A new key during a scan: one save_key request after the scan, with the key typed. */
 	slot_reset(&app);
+	(void)snprintf(app.network.key.text, sizeof(app.network.key.text), "%s", "correct horse");
+	app.network.key.length = strlen(app.network.key.text);
+	(void)snprintf(app.network.key_ssid, sizeof(app.network.key_ssid), "%s", "Neighbor 5G");
 	se_network_scan(&app);
-	se_network_join_key(&app, "Neighbor 5G", "correct horse");
-	slot_expect("3 key saved at once", slot_daemon.key_saved == 1);
-	slot_expect("3 profiles wait", app.network.pending_request == KEILAND_NETWORK_REQUEST_PROFILES);
+	se_network_join_key(&app, "Neighbor 5G", app.network.key.text);
+	slot_expect("3 save-key waits", app.network.pending_request == SE_NETWORK_SAVE_KEY);
+	slot_expect("3 joining said", strcmp(app.network.message, "Connecting to Neighbor 5G...") == 0);
 	slot_finish(&app, 0);
-	slot_finish(&app, 0);
-	slot_expect_sent("3 scan, profiles, join", 3U, scan_profiles_join);
-	slot_expect("3 join names the network", strcmp(slot_daemon.sent_ssid[2], "Neighbor 5G") == 0);
+	slot_expect_sent("3 scan then save-key", 2U, scan_then_key);
+	slot_expect("3 save-key names the network and the key", strcmp(slot_daemon.sent_ssid[1], "Neighbor 5G") == 0 && slot_daemon.sent_key_length[1] == 13U);
 	slot_finish(&app, 0);
 	slot_expect("3 connected", strcmp(app.network.message, "Connected to Neighbor 5G.") == 0);
+	slot_expect("3 key form closed and wiped", app.network.key_ssid[0] == '\0' && app.network.key.length == 0U);
 
 	/* 4. A second join while the first is out: the first's failure is said, then the second goes. */
 	slot_reset(&app);
@@ -119,7 +125,7 @@ main(void)
 	slot_reset(&app);
 	se_network_scan(&app);
 	se_network_scan(&app);
-	slot_expect("5 scan not kept", app.network.pending_request == KEILAND_NETWORK_REQUEST_NONE);
+	slot_expect("5 scan not kept", app.network.pending_request == SE_NETWORK_NONE);
 	slot_finish(&app, 0);
 	slot_expect_sent("5 one scan", 1U, scan_only);
 
@@ -130,6 +136,34 @@ main(void)
 	se_network_disconnect(&app);
 	slot_finish(&app, 0);
 	slot_expect_sent("6 the later press", 2U, scan_then_disconnect);
+
+	/* 7. The compositor busy with the system bar's request: the switch waits a moment and goes again. */
+	slot_reset(&app);
+	se_network_wifi(&app, 0);
+	slot_finish(&app, EBUSY);
+	slot_expect("7 waits after busy", app.network.pending_request == KL_NETWORK_WIFI_OFF && slot_daemon.sent_count == 1U);
+	slot_expect("7 no message for busy", app.network.message_bad == 0);
+	app.now += 600U;
+	se_network_poll(&app, app.now);
+	slot_expect_sent("7 sent again", 2U, off_twice);
+
+	/* 8. A join's failures in words. */
+	slot_reset(&app);
+	se_network_join(&app, "Cafe Guest");
+	slot_finish(&app, ENOENT);
+	slot_expect("8 no saved key", strcmp(app.network.message, "Cafe Guest has no saved key.") == 0);
+	se_network_join(&app, "Cafe Guest");
+	slot_finish(&app, EACCES);
+	slot_expect("8 key refused", strcmp(app.network.message, "Cafe Guest did not accept the key. Check the key and try again.") == 0);
+	se_network_join(&app, "Cafe Guest");
+	slot_finish(&app, ENETUNREACH);
+	slot_expect("8 out of reach", strcmp(app.network.message, "Cafe Guest is not in reach.") == 0);
+
+	/* 9. A short key is refused at once, nothing sent. */
+	slot_reset(&app);
+	se_network_join_key(&app, "Neighbor 5G", "short");
+	slot_expect("9 short key said", strcmp(app.network.message, "The key of Neighbor 5G must be 8 to 63 characters.") == 0);
+	slot_expect("9 nothing sent", slot_daemon.sent_count == 0U);
 
 	/* The verdict. */
 	if (slot_failures != 0) {
@@ -142,37 +176,71 @@ main(void)
 	return 0;
 }
 
-/* Starts a case: a fresh pretend daemon and a fresh Settings watching it, on Home (no periodic scan). */
+/* Starts a case: a fresh pretend compositor and a fresh Settings following it, on Home (no periodic scan). */
 static void
 slot_reset(
 	struct se_app *app)
 {
-	/* The daemon remembers nothing. */
+	/* The compositor remembers nothing; numbers start at 1. */
 	memset(&slot_daemon, 0, sizeof(slot_daemon));
+	slot_daemon.next_id = 1U;
 
-	/* Settings watches it, the Wi-Fi on, nothing shown that scans by itself. */
+	/* Settings follows it, the Wi-Fi on, nothing shown that scans by itself. */
 	memset(app, 0, sizeof(*app));
+	app->system = (struct kl_system *)(void *)&slot_system;
 	app->page = SE_PAGE_HOME;
+	app->now = 1000U;
 	se_network_open(app);
 	app->network.state.reachable = 1;
-	app->network.state.wifi = KEILAND_WIFI_CONNECTED;
+	app->network.state.wifi = KL_WIFI_CONNECTED;
 }
 
-/* Answers the outstanding request with an errno value, and lets Settings read the answer. */
+/* Answers the outstanding request with an errno value, and lets Settings take the answer and poll. */
 static void
 slot_finish(
 	struct se_app *app,
 	int error)
 {
-	/* The answer, reported at the next update. */
-	slot_daemon.finished = slot_daemon.outstanding;
-	slot_daemon.finished_error = error;
-	slot_daemon.outstanding = KEILAND_NETWORK_REQUEST_NONE;
-	slot_daemon.report = KEILAND_NETWORK_CHANGED_DONE;
+	uint32_t number;
 
-	/* Settings reads it. */
-	app->now += 1000U;
+	/* The answer, taken as system.c takes it. */
+	number = slot_daemon.outstanding_id;
+	slot_daemon.outstanding = SE_NETWORK_NONE;
+	slot_daemon.outstanding_id = 0U;
+	app->now += 10U;
+	(void)se_network_result(app, number, error);
+
+	/* Settings polls. */
+	app->system_changed = 0U;
 	se_network_poll(app, app->now);
+}
+
+/* Records a request sent to the pretend compositor, and gives it its number. */
+static void
+slot_sent(
+	unsigned request,
+	const char *ssid,
+	const char *key,
+	uint32_t *number)
+{
+	/* The request is out, under the next number. */
+	slot_daemon.outstanding = request;
+	slot_daemon.outstanding_id = slot_daemon.next_id;
+	slot_daemon.next_id++;
+	if (number != NULL)
+		*number = slot_daemon.outstanding_id;
+
+	/* Remembered. */
+	if (slot_daemon.sent_count >= SLOT_SENT_MAX)
+		return;
+	slot_daemon.sent[slot_daemon.sent_count] = request;
+	slot_daemon.sent_ssid[slot_daemon.sent_count][0] = '\0';
+	if (ssid != NULL)
+		(void)snprintf(slot_daemon.sent_ssid[slot_daemon.sent_count], KL_NETWORK_SSID_MAX, "%s", ssid);
+	slot_daemon.sent_key_length[slot_daemon.sent_count] = 0U;
+	if (key != NULL)
+		slot_daemon.sent_key_length[slot_daemon.sent_count] = strlen(key);
+	slot_daemon.sent_count++;
 }
 
 /* Checks the requests sent so far, in order. */
@@ -219,181 +287,121 @@ slot_expect(
 	printf("%s: ok\n", name);
 }
 
-/*
- * The pretend libkeiland: a handle.
- */
-struct keiland_network *
-keiland_network_open(void)
+/* The pretend kl_system: the network offered. */
+unsigned
+kl_system_capabilities(
+	const struct kl_system *system)
 {
-	/* Any non-NULL handle. */
-	return (struct keiland_network *)(void *)&slot_handle;
+	(void)system;
+	return KL_SYSTEM_HAS_NETWORK;
 }
 
-/*
- * The pretend libkeiland: nothing to close.
- */
+/* The pretend kl_system: the state never changes (the test sets it). */
 void
-keiland_network_close(
-	struct keiland_network *network)
+kl_system_network_get_state(
+	const struct kl_system *system,
+	struct kl_network_state *state)
 {
-	/* The handle is static. */
-	(void)network;
+	(void)system;
+	memset(state, 0, sizeof(*state));
 }
 
-/*
- * The pretend libkeiland: reports a finish once.
- */
-int
-keiland_network_update(
-	struct keiland_network *network,
-	unsigned *changed)
-{
-	/* What changed since the last update. */
-	(void)network;
-	*changed = slot_daemon.report;
-	slot_daemon.report = 0U;
-
-	/* Succeeded. */
-	return 0;
-}
-
-/*
- * The pretend libkeiland: the state never changes (the test sets it).
- */
-void
-keiland_network_get_state(
-	const struct keiland_network *network,
-	struct keiland_network_state *state)
-{
-	/* Nothing to copy. */
-	(void)network;
-	(void)state;
-}
-
-/*
- * The pretend libkeiland: no networks around.
- */
+/* The pretend kl_system: no networks around. */
 size_t
-keiland_network_get_scan(
-	const struct keiland_network *network,
-	struct keiland_network_ap *aps,
+kl_system_network_get_scan(
+	const struct kl_system *system,
+	struct kl_network_ap *aps,
 	size_t capacity)
 {
-	/* None. */
-	(void)network;
+	(void)system;
 	(void)aps;
 	(void)capacity;
 	return 0;
 }
 
-/*
- * The pretend libkeiland: one request at a time, EBUSY otherwise, as the real one.
- */
+/* The pretend kl_system: a request of the daemon's, sent (the compositor answers busy, not the library). */
 int
-keiland_network_request(
-	struct keiland_network *network,
-	unsigned request,
-	const char *ssid)
+kl_system_network_request(
+	struct kl_system *system,
+	unsigned what,
+	const char *ssid,
+	uint32_t *request)
 {
-	/* A request behind another is refused. */
-	(void)network;
-	if (slot_daemon.outstanding != KEILAND_NETWORK_REQUEST_NONE)
-		return EBUSY;
-
-	/* The request is out, and remembered. */
-	slot_daemon.outstanding = request;
-	if (slot_daemon.sent_count < SLOT_SENT_MAX) {
-		slot_daemon.sent[slot_daemon.sent_count] = request;
-		slot_daemon.sent_ssid[slot_daemon.sent_count][0] = '\0';
-		if (ssid != NULL)
-			(void)snprintf(slot_daemon.sent_ssid[slot_daemon.sent_count], KEILAND_NETWORK_SSID_MAX, "%s", ssid);
-		slot_daemon.sent_count++;
-	}
-
-	/* Succeeded: sent. */
+	(void)system;
+	slot_sent(what, ssid, NULL, request);
 	return 0;
 }
 
-/*
- * The pretend libkeiland: the request out, or the one that finished and how.
- */
-unsigned
-keiland_network_get_request(
-	const struct keiland_network *network,
-	int *error)
+/* The pretend kl_system: a key with its network, sent (its length checked as the library does). */
+int
+kl_system_network_save_key(
+	struct kl_system *system,
+	const char *ssid,
+	const char *key,
+	uint32_t *request)
 {
-	/* The outstanding one while it is out. */
-	(void)network;
-	*error = 0;
-	if (slot_daemon.outstanding != KEILAND_NETWORK_REQUEST_NONE)
-		return slot_daemon.outstanding;
+	size_t length;
 
-	/* The finished one. */
-	*error = slot_daemon.finished_error;
-	return slot_daemon.finished;
+	(void)system;
+	length = strlen(key);
+	if (length < KL_NETWORK_KEY_MIN || length > KL_NETWORK_KEY_MAX)
+		return EINVAL;
+	slot_sent(SE_NETWORK_SAVE_KEY, ssid, key, request);
+	return 0;
 }
 
-/*
- * The pretend libkeiland: no interfaces.
- */
+/* The pretend kl_system: the details are asked for, never answered (they are not this test's). */
+int
+kl_system_network_query_details(
+	struct kl_system *system,
+	uint32_t *request)
+{
+	(void)system;
+	*request = 1000000U;
+	return 0;
+}
+
+/* The pretend kl_system: no interfaces. */
 size_t
-keiland_network_get_links(
-	struct keiland_network_link *links,
+kl_system_network_get_links(
+	const struct kl_system *system,
+	struct kl_network_link *links,
 	size_t capacity)
 {
-	/* None. */
+	(void)system;
 	(void)links;
 	(void)capacity;
 	return 0;
 }
 
-/*
- * The pretend libkeiland: no DNS servers.
- */
+/* The pretend kl_system: no DNS servers. */
 size_t
-keiland_network_get_dns(
-	char (*servers)[KEILAND_NETWORK_ADDRESS_MAX],
+kl_system_network_get_dns(
+	const struct kl_system *system,
+	char (*servers)[KL_NETWORK_ADDRESS_MAX],
 	size_t capacity)
 {
-	/* None. */
+	(void)system;
 	(void)servers;
 	(void)capacity;
 	return 0;
 }
 
-/*
- * The pretend libkeiland: a key is saved (the test only counts it; it is never kept).
- */
-int
-keiland_network_save_key(
-	const char *ssid,
-	const char *key)
-{
-	/* Counted. */
-	(void)ssid;
-	(void)key;
-	slot_daemon.key_saved++;
-
-	/* Succeeded. */
-	return 0;
-}
-
-/*
- * The pretend libkeiland: no saved networks.
- */
+/* The pretend kl_system: no saved networks. */
 size_t
-keiland_network_get_saved(
-	char (*ssids)[KEILAND_NETWORK_SSID_MAX],
+kl_system_network_get_saved(
+	const struct kl_system *system,
+	char (*ssids)[KL_NETWORK_SSID_MAX],
 	size_t capacity)
 {
-	/* None. */
+	(void)system;
 	(void)ssids;
 	(void)capacity;
 	return 0;
 }
 
 /*
- * Settings' text field, wiped (the test types no key into one).
+ * Settings' text field, wiped.
  */
 void
 se_field_clear(

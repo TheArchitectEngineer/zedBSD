@@ -41,13 +41,11 @@ for file in userland/desktop/libkeiland/settings-cache.c userland/desktop/libkei
 	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland -c "$file" -o "$object"
 	objects="$objects $object"
 done
-# The sound page's link to audiod (ws100-p005): libkeiland's audio-compat.c over libkeiland-backend's zedBSD
-# audio-zedbsd.c (ws131-p004; no audiod on the host: the page shows no sound).
-for file in userland/desktop/libkeiland-backend-zedbsd/audio-zedbsd.c userland/desktop/libkeiland/audio-compat.c; do
-	object="$out/obj/shared-$(basename "$file" .c).o"
-	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -c "$file" -o "$object"
-	objects="$objects $object"
-done
+# The desktop's system (WS131 p011): a stand-in for kl_system_* without Wayland (no compositor: the sound page
+# says it is not available; host-network.c fills the network pages by hand).
+object="$out/obj/shared-host-kl-system.o"
+"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -c plan/ws089/tests/host-kl-system.c -o "$object"
+objects="$objects $object"
 for file in $src/*.c; do
 	case $(basename "$file") in
 	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|network.c) continue ;;

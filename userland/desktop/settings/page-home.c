@@ -36,7 +36,7 @@
 static int home_group(struct se_app *app, struct fm_canvas *canvas, unsigned group, const char *title, int x, int top, int width);
 static void home_tile(struct se_app *app, struct fm_canvas *canvas, const struct se_page *page, int x, int y, int width);
 static int home_state(const struct se_app *app, unsigned page, char *text, size_t size, int *dot);
-static int home_wifi_state(const struct keiland_network_state *state, char *text, size_t size, int *dot);
+static int home_wifi_state(const struct kl_network_state *state, char *text, size_t size, int *dot);
 static const char *home_address(const struct se_network *network, const char *name);
 
 /*
@@ -201,7 +201,7 @@ home_state(
 	size_t size,
 	int *dot)
 {
-	const struct keiland_network_state *state;
+	const struct kl_network_state *state;
 	const char *address;
 	char free_text[32];
 	int running;
@@ -279,9 +279,11 @@ home_state(
 		 * Whether the sound service runs, and then what the Sound page shows of
 		 * it in the same words: no output, or the volume (ws089-p012 C4).
 		 */
-		running = keiland_audio_available();
+		running = se_sound_running(app);
 		available = se_sound_available(app);
-		if (running == 0) {
+		if (!app->sound.live) {
+			(void)snprintf(text, size, "%s", "Not available on this desktop");
+		} else if (running == 0) {
 			(void)snprintf(text, size, "%s", "No sound service");
 		} else if (app->sound.state.reachable != 0 && app->sound.state.device == 0) {
 			(void)snprintf(text, size, "%s", "Running, no sound output");
@@ -326,7 +328,7 @@ home_state(
 /* Says the Wi-Fi's state for its tile; returns 1 (the Wi-Fi always has a state). */
 static int
 home_wifi_state(
-	const struct keiland_network_state *state,
+	const struct kl_network_state *state,
 	char *text,
 	size_t size,
 	int *dot)
@@ -339,22 +341,22 @@ home_wifi_state(
 
 	/* Each state of the radio. */
 	switch (state->wifi) {
-	case KEILAND_WIFI_ABSENT:
+	case KL_WIFI_ABSENT:
 		(void)snprintf(text, size, "%s", "No Wi-Fi radio");
 		break;
-	case KEILAND_WIFI_OFF:
+	case KL_WIFI_OFF:
 		(void)snprintf(text, size, "%s", "Off");
 		*dot = -1;
 		break;
-	case KEILAND_WIFI_SEARCHING:
+	case KL_WIFI_SEARCHING:
 		(void)snprintf(text, size, "%s", "Searching");
 		*dot = -1;
 		break;
-	case KEILAND_WIFI_CONNECTING:
+	case KL_WIFI_CONNECTING:
 		(void)snprintf(text, size, "Joining %s", state->ssid);
 		*dot = -1;
 		break;
-	case KEILAND_WIFI_CONNECTED:
+	case KL_WIFI_CONNECTED:
 		(void)snprintf(text, size, "Connected \xc2\xb7 %s", state->ssid);
 		*dot = 1;
 		break;
