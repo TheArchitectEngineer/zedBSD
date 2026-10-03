@@ -245,3 +245,7 @@ p006 全体の判定は p006a の T2-007 の結果を待つ。
 ## 停止（Q1、2026-10-03）
 
 ユーザーのソフトな停止で T2-007（p006a の boot-test・p095・p101〜p104・C1）は未実行。再開: T2-007 を流して PASS なら p006 を cleared。
+
+## T2-007 の途中（Q1、2026-10-04）
+
+boot-test PASS、p101 PASS。p095・p102 は FAIL ×2 だが、P1 の判定で p006a の退行ではなく試験の前提が古い（2026-09-29 から既定の image は kei の自動 login、greeter が出ない）。sessiond の log で受け渡しは成功（`HANDOFF session ready=1`・`go written=3`）。試験は ws136-p002 で直して再試験。
