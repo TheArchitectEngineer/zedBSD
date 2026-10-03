@@ -53,6 +53,51 @@
  * with ENODEV.
  */
 #define HW_GPU_START	5
+/*
+ * hw.cputimes: each CPU's time since boot, counted in clock ticks of hz a
+ * second (ws134-p005).  The value is a struct cpu_times_header followed by
+ * count struct cpu_times_entry, one a CPU in the order of their numbers.
+ * Read-only.  A buffer too small fails with ENOMEM and the length needed;
+ * a reader asks for the length first (no buffer) or tries again.
+ *
+ * Each tick is charged to what its CPU was doing: user (a user thread in
+ * user mode), system (a thread in the kernel, or a kernel thread), idle
+ * (the CPU's idle thread), or other (between threads: the running thread
+ * was going to sleep or leaving).  Interrupts are not counted apart: an
+ * interrupt or a page fault that stopped a user thread is that thread's
+ * user time.  A CPU that is not online has every count 0.
+ */
+#define HW_CPUTIMES	6
+
+/* The version of the hw.cputimes layout. */
+#define CPU_TIMES_VERSION	1U
+
+/*
+ * The head of hw.cputimes: the layout's version, the header's size, one
+ * entry's size, how many entries follow, and the ticks a second.  Every
+ * field has a fixed width, so one layout serves ILP32 and LP64 processes.
+ */
+struct cpu_times_header {
+	uint32_t version;
+	uint32_t struct_size;
+	uint32_t element_size;
+	uint32_t count;
+	uint32_t hz;
+	uint32_t reserved;
+};
+
+/* One CPU's ticks in hw.cputimes. */
+struct cpu_times_entry {
+	uint64_t user;
+	uint64_t system;
+	uint64_t idle;
+	uint64_t other;
+};
+
+_Static_assert(sizeof(struct cpu_times_header) == 24U,
+    "hw.cputimes header ABI must be identical on ILP32 and LP64");
+_Static_assert(sizeof(struct cpu_times_entry) == 32U,
+    "hw.cputimes entry ABI must be identical on ILP32 and LP64");
 
 /* Firmware RAM and actually managed RAM are distinct. */
 #define MEMORY_STATS_VERSION 2U

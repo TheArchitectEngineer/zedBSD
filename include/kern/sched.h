@@ -199,6 +199,23 @@ sched_awake_from_sleep(
 uint64_t
 sched_ticks(void);
 
+/*
+ * One CPU's clock ticks since boot by what it was doing when each came
+ * (hw.cputimes, ws134-p005): a user thread in user mode, a thread in the
+ * kernel or a kernel thread, its idle thread, or between threads.
+ */
+struct sched_cpu_time {
+	uint64_t user;
+	uint64_t system;
+	uint64_t idle;
+	uint64_t other;
+};
+
+int
+sched_cpu_time(
+	hal_cpu_id_t cpu,
+	struct sched_cpu_time *time);
+
 int
 sched_has_runnable(void);
 

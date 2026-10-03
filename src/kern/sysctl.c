@@ -24,6 +24,8 @@
 #include "kern/mount.h"
 #include "kern/klog.h"
 #include "kern/lock.h"
+#include "kern/sched.h"
+#include "kern/clock.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
@@ -45,6 +47,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_HW, HW_MEMORY_STATS, 0 }, 2, "hw.memory.stats"},
 	{{ CTL_HW, HW_GPU_ATTACHING, 0 }, 2, "hw.gpu.attaching"},
 	{{ CTL_HW, HW_GPU_START, 0 }, 2, "hw.gpu.start"},
+	{{ CTL_HW, HW_CPUTIMES, 0 }, 2, "hw.cputimes"},
 	{{ CTL_KERN, KERN_MSGBUF, 0 }, 2, "kern.msgbuf"},
 	{{ CTL_KERN, KERN_MSGBUF_SIZE, 0 }, 2, "kern.msgbuf_size"},
 	{{ CTL_KERN, KERN_MSGBUF_DROPPED, 0 }, 2, "kern.msgbuf_dropped"},
@@ -97,6 +100,7 @@ static const struct kern_gpu_start_ops *gpu_start_ops;
 static char hostname[KERN_HOST_NAME_MAX + 1U] = "zedbsd";
 
 static int sysctl_gpu_start(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
+static int sysctl_cputimes(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
 static const struct sysctl_leaf *find_oid(const int *oid, unsigned oidlen);
@@ -227,6 +231,12 @@ kern_sysctl(
 	/* Reports or starts the GPU devices a driver holds for root's start. */
 	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_GPU_START) {
 		error = sysctl_gpu_start(oldp, oldlenp, newp, newlen, superuser);
+		return error;
+	}
+
+	/* Reports each CPU's ticks by what it was doing. */
+	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_CPUTIMES) {
+		error = sysctl_cputimes(oldp, oldlenp, newp, newlen);
 		return error;
 	}
 
@@ -557,6 +567,82 @@ sysctl_output(
 	kern_memcpy(oldp, value, size);
 
 	/* Reports the copied value. */
+	return 0;
+}
+
+/*
+ * Reads hw.cputimes: the header and each CPU's ticks (ws134-p005).
+ *
+ * The value is built straight into the caller's buffer, a CPU at a time,
+ * so its size grows with the CPUs and not the stack.  A buffer too small
+ * fails with ENOMEM and the length needed.
+ */
+static int
+sysctl_cputimes(
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen)
+{
+	struct cpu_times_header header;
+	struct cpu_times_entry entry;
+	struct sched_cpu_time time;
+	uint8_t *output;
+	uint32_t count;
+	uint32_t cpu;
+	size_t needed;
+	size_t capacity;
+	int error;
+
+	/* Read-only. */
+	if (newp != NULL || newlen != 0)
+		return EPERM;
+
+	/* The length a reader needs: the header and an entry a CPU. */
+	count = hal_cpu_count();
+	needed = sizeof(header) + (size_t)count * sizeof(entry);
+
+	/* Without a length there is nothing to size or copy. */
+	if (oldlenp == NULL) {
+		if (oldp == NULL)
+			return 0;
+		return EINVAL;
+	}
+
+	/* The length needed, and nothing more without a buffer or with one too small. */
+	capacity = *oldlenp;
+	*oldlenp = needed;
+	if (oldp == NULL)
+		return 0;
+	if (capacity < needed)
+		return ENOMEM;
+
+	/* The header. */
+	kern_memset(&header, 0, sizeof(header));
+	header.version = CPU_TIMES_VERSION;
+	header.struct_size = sizeof(header);
+	header.element_size = sizeof(entry);
+	header.count = count;
+	header.hz = KERN_CLOCK_HZ;
+	output = oldp;
+	kern_memcpy(output, &header, sizeof(header));
+
+	/* Each CPU's ticks after it (a CPU the scheduler does not have reads zero). */
+	for (cpu = 0; cpu < count; cpu++) {
+		kern_memset(&entry, 0, sizeof(entry));
+		error = sched_cpu_time(cpu, &time);
+		if (error == 0) {
+			entry.user = time.user;
+			entry.system = time.system;
+			entry.idle = time.idle;
+			entry.other = time.other;
+		}
+
+		/* Its place after the header. */
+		kern_memcpy(output + sizeof(header) + (size_t)cpu * sizeof(entry), &entry, sizeof(entry));
+	}
+
+	/* Succeeded: the value is in the buffer. */
 	return 0;
 }
 

@@ -138,3 +138,15 @@ Q1 への merge の依頼に添えた（下の文）:
 ## FreeBSD・Linux の結果（Q1、2026-10-04、T1-062、main 3f059b5）
 
 FreeBSD: backend-test 9/9 PASS、libkeiland.so の NEEDED は libwayland-client・libm・libc、FreeBSD の compositor の binary で B2 PASS。Linux: gcc・clang warning 0、NEEDED は同じ 3 つ、guest で network-probe・audio-probe・lib-smoke PASS、`capabilities=0x1e`、最初の dump で power `actions=0xe`、Settings の Wi-Fi で鍵を入れて `NETWORK save-key ok`・`Connected to keiland-test.`（wpa_state=COMPLETED）、compositor error=0。zedBSD は T2-021 待ち。
+## T2-021 の FAIL の直し（P2 generation8、2026-10-04、Q1 の依頼）
+
+- 症状: settings-regress（zedBSD の QEMU）の p003 で `ZSETTINGS NETWORK state reachable=1 connected=1 kind=1 interface=[a-z]+[0-9]+ wifi=0`、
+  p008 で `ZSETTINGS NETWORK state reachable=1 connected=1 kind=1` が 2 回とも MISSING（他の 6 本は PASS）。証拠
+  `/home/awe/zedBSD-worktrees/t2/build/t2-021/settings-regress/`・`settings-regress-retry/`。
+- 原因（source の退行、試験は正しい）: p011 の前は `keiland_network_update` が daemon の最初の state を「変化」として返し、
+  `se_network_poll` が `NETWORK state` の行を出していた。p011 の後は `kl_system_open` が最初の state まで roundtrip で受け取ってしまい、
+  `se_network_open` が `kl_system_network_get_state` で取るだけで log を出さない。state が変わらない限り `KL_SYSTEM_CHANGED_NETWORK` は
+  来ないので、最初の state の行が一度も出ない。画面（T2-021 の p003/network-real.png）は Connected・ue0・Wired で、state 自体は正しい。
+- 直し: `userland/desktop/settings/network.c` の `se_network_open` が最初の state を変化と同じ書式で log する。
+- 確かめ: zedBSD の settings（`-Werror`）exit 0 warning 0、Linux の flag の gcc で network.o、style-check 違反 0。QEMU は T2 に
+  settings-regress の再試験を依頼。

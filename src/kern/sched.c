@@ -110,6 +110,13 @@ sched_wake_latency_report(void)
 #define SCHED_WAKE_PENDING 0x00000002U
 #define SCHED_ONLINE_TIMEOUT 10000000U
 
+/* What a CPU's tick is charged to (struct sched_cpu's times, hw.cputimes). */
+#define SCHED_TIME_USER		0U
+#define SCHED_TIME_SYSTEM	1U
+#define SCHED_TIME_IDLE		2U
+#define SCHED_TIME_OTHER	3U
+#define SCHED_TIMES		4U
+
 struct sched_cpu {
 	struct spinlock lock;
 	struct sched_queue run[SCHED_PRIOR_LEVELS];
@@ -129,6 +136,13 @@ struct sched_cpu {
 	unsigned yield_due;       /* a quantum ended while preemption was held off */
 	unsigned online;
 	unsigned preempt_count;   /* kern_preempt_disable() nesting depth */
+
+	/*
+	 * The CPU's ticks by what it was doing (SCHED_TIME_*, hw.cputimes).
+	 * Only the CPU's own tick adds to them; readers on other CPUs load
+	 * them atomically (a u64 is not one access on i386).
+	 */
+	volatile uint64_t times[SCHED_TIMES];
 };
 
 static struct sched_cpu *scheduler_cpus;
@@ -171,6 +185,7 @@ static void leave_idle(struct sched_cpu *cpu, const struct thread *current, hal_
 static struct thread *take_stealable_locked(struct sched_cpu *victim);
 static int steal_runnable(hal_cpu_id_t self);
 static void retarget_migrating(struct thread *thread, struct sched_cpu *old_cpu, hal_cpu_id_t target);
+static void charge_cpu_time(struct sched_cpu *cpu, const struct thread *thread);
 
 /*
  * Marks the current user thread as executing in the kernel for accounting.
@@ -880,8 +895,11 @@ sched_clock_cpu(
 		thread = next;
 	}
 
-	/* Charges the running thread and decides on preemption. */
+	/* Charges the tick to what the CPU was doing (hw.cputimes). */
 	thread = curthread;
+	charge_cpu_time(cpu, thread);
+
+	/* Charges the running thread and decides on preemption. */
 	if (thread != NULL && thread->state == THREAD_RUNNING) {
 		if ((thread->flags & THREAD_FLAG_IDLE) == 0 &&
 		    thread->proc != NULL &&
@@ -1318,6 +1336,36 @@ sched_ticks(
 }
 
 /*
+ * Reads one CPU's ticks since boot by what it was doing (hw.cputimes).
+ *
+ * A CPU that never came online reads all zero.  Returns 0, or ENOENT for a
+ * CPU the scheduler does not have.
+ */
+int
+sched_cpu_time(
+	hal_cpu_id_t cpu,
+	struct sched_cpu_time *time)
+{
+	struct sched_cpu *state;
+	unsigned count;
+
+	/* A CPU the scheduler does not have (or none yet, before it starts). */
+	count = atomic_raw_load_acquire(&scheduler_cpu_count);
+	if (scheduler_cpus == NULL || cpu >= count)
+		return ENOENT;
+
+	/* Each count, loaded whole. */
+	state = &scheduler_cpus[cpu];
+	time->user = atomic_u64_load_acquire(&state->times[SCHED_TIME_USER]);
+	time->system = atomic_u64_load_acquire(&state->times[SCHED_TIME_SYSTEM]);
+	time->idle = atomic_u64_load_acquire(&state->times[SCHED_TIME_IDLE]);
+	time->other = atomic_u64_load_acquire(&state->times[SCHED_TIME_OTHER]);
+
+	/* Succeeded: the CPU's ticks. */
+	return 0;
+}
+
+/*
  * Tests whether the current CPU has a runnable thread queued.
  */
 int
@@ -1643,6 +1691,44 @@ send_itimer_signal(
 	kern_memset(&info, 0, sizeof(info));
 	info.code = SI_TIMER;
 	(void)signal_send_process_info(process, signo, &info);
+}
+
+/*
+ * Charges a CPU's tick to what it was doing: its idle thread, a user
+ * thread in user mode, a thread in the kernel or a kernel thread (process0's
+ * or none), or neither (no thread, or one that is not running: it is going
+ * to sleep or leaving).  An interrupt is the time of the thread it stopped.
+ */
+static void
+charge_cpu_time(
+	struct sched_cpu *cpu,
+	const struct thread *thread)
+{
+	unsigned kind;
+
+	/* No thread, or the idle thread. */
+	if (thread == NULL) {
+		kind = SCHED_TIME_OTHER;
+	} else if ((thread->flags & THREAD_FLAG_IDLE) != 0) {
+		kind = SCHED_TIME_IDLE;
+	} else if (thread->state != THREAD_RUNNING) {
+		/* Between threads: going to sleep or leaving. */
+		kind = SCHED_TIME_OTHER;
+	} else if (thread->proc == NULL) {
+		/* A thread of no process works for the kernel. */
+		kind = SCHED_TIME_SYSTEM;
+	} else if (thread->proc == &process0) {
+		/* The kernel's own threads. */
+		kind = SCHED_TIME_SYSTEM;
+	} else if (thread->accounting_kernel_depth != 0) {
+		/* A user thread inside a system call or a fault. */
+		kind = SCHED_TIME_SYSTEM;
+	} else {
+		kind = SCHED_TIME_USER;
+	}
+
+	/* One more tick of that kind; only this CPU writes its counts. */
+	(void)atomic_u64_fetch_add_relaxed(&cpu->times[kind], 1U);
 }
 
 /* Finds the state of a CPU, which must exist. */
