@@ -1100,6 +1100,8 @@ flags:
 		result->f_flag |= ST_RDONLY;
 	if ((mountp->m_flags & MOUNT_NOSUID) != 0)
 		result->f_flag |= ST_NOSUID;
+	if ((mountp->m_flags & MOUNT_NOEXEC) != 0)
+		result->f_flag |= ST_NOEXEC;
 	if (result->f_namemax == 0)
 		result->f_namemax = NAME_MAX;
 

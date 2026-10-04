@@ -122,3 +122,10 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 - Q-2（protocol）: **kl_system_manager_v1 の version 5** を ws132 の devices（mount の request と new の bit）に。WS113 の displays（D-PROTO）は version 6 に繰り下げる（Q1 が WS113 の契約に記録）。
 - Q-3（WS156 の通知の代わり）: **案 A**（system bar の通知の領域に媒体の icon、new の volume がある間に出して 3 回点滅、click で `files --devices`、Files は Devices の group と Today の icon を 3 回点滅、mount か抜去で消える）。D3 の「通知をクリックすると Files の Devices と Today に icon が出て点滅」に最も近い。WS156 の通知ができたら通知に置き換える候補（朝にユーザーに確かめる）。
 - Q-4（共有の file）: **許可**。rc.conf に volumed（enabled・optional）、init の services と Makefile に service（networkd と同じ形）。
+
+## Q1 の判断（2026-10-05）
+
+- Q-1 許可: noexec・`mount_args` の version 2・FAT の持ち主（HAL は不変、vmunix の link まで・host の試験）。
+- Q-2: `kl_system_manager_v1` の version 5 を devices に（mount の request と new の bit）。WS113 の displays は version 6（WS113 の契約に記録済み）。
+- Q-3: 案 A（bar の媒体の icon・3 回の点滅・click で `files --devices`、Files の Devices と Today も 3 回点滅）。WS156 ができたら置き換えの候補。
+- Q-4 許可（`rc.conf`・init の service）。

@@ -22,6 +22,7 @@
 #include "kern/waitq.h"
 #include <limits.h>
 #include <uapi/limits.h>
+#include <uapi/types.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX		256U
@@ -40,6 +41,8 @@
 #define MOUNT_WRITE_THROUGH	0x00000004U
 /* The same bit as MNT_NOJOURNAL: no journal of metadata changes. */
 #define MOUNT_NO_JOURNAL	0x00000008U
+/* The same bit as MNT_NOEXEC: no file of the mount is executed. */
+#define MOUNT_NOEXEC		0x00000010U
 #define MOUNT_PRIVATE_INTERNAL	0x00000002U
 #define FILESYSTEM_NODEV	0x00000001U
 
@@ -152,8 +155,16 @@ struct mount {
 	struct mount *m_next;
 };
 
+/*
+ * The mount data of a disk filesystem: the disk, and the owner a
+ * filesystem without owners (FAT) shows for its files when owner_set is
+ * nonzero (ws132-p004); otherwise root.
+ */
 struct fat_mount_args {
 	const char *fspec;
+	unsigned owner_set;
+	uid_t owner_uid;
+	gid_t owner_gid;
 };
 
 int

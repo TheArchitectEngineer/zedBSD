@@ -20,10 +20,29 @@
 #define KERN_MOUNT_ARGS_VERSION 1U
 #define KERN_MOUNT_FSPEC_MAX 32U
 
+/*
+ * Version 2 (ws132-p004) adds the owner a filesystem without owners of
+ * its own (FAT) shows for its files: with KERN_MOUNT_ARGS_OWNER in flags,
+ * owner_uid and owner_gid replace root.  reserved is zero.  The kernel
+ * takes either version, told apart by size and version.
+ */
+#define KERN_MOUNT_ARGS_VERSION_OWNER 2U
+#define KERN_MOUNT_ARGS_OWNER 0x00000001U
+
 struct mount_args {
 	uint32_t size;
 	uint32_t version;
 	char fspec[KERN_MOUNT_FSPEC_MAX];
+};
+
+struct mount_args_owner {
+	uint32_t size;
+	uint32_t version;
+	char fspec[KERN_MOUNT_FSPEC_MAX];
+	uint32_t owner_uid;
+	uint32_t owner_gid;
+	uint32_t flags;
+	uint32_t reserved;
 };
 
 #if !KERN_UAPI_HOST_LIBC
@@ -40,6 +59,8 @@ struct mount_args {
  * that journals by default otherwise keeps one, creating it when missing.
  */
 #define MNT_NOJOURNAL 0x00000008U
+/* No file of the filesystem is executed: exec answers EACCES (ws132-p004). */
+#define MNT_NOEXEC  0x00000010U
 /*
  * The filesystem is held by this machine rather than reached over a
  * network.  A program deciding whether a file is worth watching, or cheap
