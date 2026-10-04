@@ -345,6 +345,7 @@ main(void)
 {
 	int32_t x[3];
 	int32_t y[3];
+	struct zwl_touchpad_actions released;
 	int32_t travel;
 
 	/* 1. Two fingers up 20 mm from the bottom edge, quickly: BOTTOM2 begins, follows and ends fast. */
@@ -629,17 +630,12 @@ main(void)
 
 	/* 18. The device going away during BOTTOM2: given up. */
 	start_case(1);
-	{
-		struct zwl_touchpad_actions actions;
-
-		/* Under way, then everything let go. */
-		finger_down(0, x[0], y[0]);
-		finger_down(1, x[1], y[1]);
-		frame();
-		move_fingers(2U, x, y, 0, -120, 5, 8U);
-		zwl_touchpad_release_all(&pad, &actions);
-		gather(&actions);
-	}
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, -120, 5, 8U);
+	zwl_touchpad_release_all(&pad, &released);
+	gather(&released);
 	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_CANCEL) == 1U, "released: bottom2 given up");
 
 	/* 19. Without the pad's size there is no edge: two fingers at the bottom scroll. */
@@ -659,6 +655,8 @@ main(void)
 		printf("host-gesture: %d of %d checks FAILED\n", failures, checks);
 		return 1;
 	}
+
+	/* Succeeded. */
 	printf("host-gesture: ok (%d checks)\n", checks);
 	return 0;
 }
