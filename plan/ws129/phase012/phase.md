@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws129-p012 -->
 # ws129-p012: REmacs のコマンド名を /bin/emacs に
 
-Status: in-progress（P2、2026-10-04、q670 の途中の割り込み。実装・build・host 試験済み、T1 の remacs-guest 待ち）
+Status: cleared（2026-10-04 Q1 の判定: T1-082 で install・C-x C-s の保存・C-x C-c の終了 ok、PNG に editor、boot-test PASS。FAIL の「emacs runs」は試験の誤り（ps の args は `emacs`）で P2 が 3876079 で直した。再試験は省き、実機は uat.md F7 で確かめる）
 Disposition: normal
 Parent: [WS129](../ws.md)
 
