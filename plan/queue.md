@@ -36,9 +36,9 @@ user（原文）:「では、サブエージェントを起動して作業しま
 | q711 / q711-i01 | P2 | WS129: p003〜p005 | release の作業 | なし | p003 実装済み・T1-104 の試験待ち（P2 52c6354 → main）。p004 は q714、p005 の今書ける分は p013 に分けて q715、残りは 10/13 頃 |
 | q714 / q714-i01 | P2 | [ws129-p004](ws129/phase004/phase.md) | release の image の config・CI の release の job（rc の build と promote）・root の lock の option（U10）。zip の有無は U6/ws088-p002 次第、program の最終の一覧は 10/13 の RC。ci.yml は WS112 と共有だが WS112 はベータ4 以降で今は衝突なし | ws129-p001 | 実装済み・T1-105 の試験待ち（P2 4c93a6c・8004a91 → main）。ユーザーの判断 3 つ（master の pending-decisions） |
 | q715 / q715-i01 | P2 | [ws129-p013](ws129/phase013/phase.md) | 利用の手引きと既知の問題の下書き（docs/release/、英語） | ws129-p001 | 実装済み（P2 b0052b7 → main）。QEMU 不要、ユーザーの review 待ち（4 つの判断の後に p005 が RC で直す） |
-| q716 / q716-i01 | P1 | [ws089-p027](ws089/phase027/phase.md) | About に PRETTY_NAME | ws129-p003（main に統合済み） | pending（P1、q717 の後） |
+| q716 / q716-i01 | P1 | [ws089-p027](ws089/phase027/phase.md) | About に PRETTY_NAME | ws129-p003（main に統合済み） | 実装済み・T1-108 の試験待ち（P1 c20e75c → main） |
 | q717 / q717-i01 | P1 | [ws132-p003](ws132/phase003/phase.md) | backend の事象、input の探し直し、電池・AC の表示（D1・D2 に依らない分） | ws132-p002（main 8aff921 に統合、QEMU は T1-106） | 実装済み・T1-107 の試験待ち（P1 78fe304 → main）。電池の無い機械の bar の空きを詰めるかはユーザーの判断（詰めると QEMU の試験の座標が全部動く） |
-| q718 / q718-i01 | P1 | [ws099-p032](ws099/phase032/phase.md) | WiFi の icon の Alt+クリックで IP address と統計（設計から） | なし | pending（P1、q716 の後） |
+| q718 / q718-i01 | P1 | [ws099-p032](ws099/phase032/phase.md) | WiFi の icon の Alt+クリックで IP address と統計（設計から） | なし | in-progress（2026-10-05 P1） |
 
 ## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
 
