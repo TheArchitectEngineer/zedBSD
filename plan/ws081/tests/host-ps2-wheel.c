@@ -18,6 +18,9 @@
  *     size, the sample rate back at 100);
  *   - packets fed byte by byte through the interrupt give the motion
  *     (with the ninth bit of the sign), the wheels and the buttons.
+ * The keyboard (BUG-191): a held key's typematic make codes after the
+ * first are published as repeats (value 2), a break releases it, and the
+ * next make is a press again.
  * Prints one line a check and "host-ps2-wheel: PASS" or FAIL at the end.
  *
  *   plan/ws081/tests/host-ps2-wheel.sh
@@ -75,6 +78,7 @@ static unsigned recorded_count;
 
 /* The mouse's interrupt handler and the devices the driver registered. */
 static kern_irq_handler_t model_mouse_handler;
+static kern_irq_handler_t model_keyboard_handler;
 static struct input_device_info model_mouse_copy;
 static const struct input_device_info *model_mouse_info;
 static int model_failures;
@@ -86,6 +90,9 @@ static void feed(const uint8_t *bytes, unsigned count);
 static int find_event(uint16_t type, uint16_t code, int32_t *value);
 static void check(const char *what, int passed);
 static void test_mouse(const char *name, uint8_t richest, unsigned size);
+static void feed_keyboard(const uint8_t *bytes, unsigned count);
+static int key_values(uint16_t code, int32_t *values, unsigned capacity);
+static void test_keyboard(void);
 
 /* The kernel's pieces the driver calls, as no-ops or recorders. */
 void
@@ -157,6 +164,8 @@ kern_irq_register(
 	(void)argument;
 	if (irq == PS2_MOUSE_IRQ)
 		model_mouse_handler = handler;
+	if (irq == PS2_KEYBOARD_IRQ)
+		model_keyboard_handler = handler;
 	return 0;
 }
 
@@ -236,7 +245,7 @@ drv_input_device_unregister(
 	(void)device;
 }
 
-/* Records the mouse's events (the keyboard's are not looked at). */
+/* Records the mouse's and the keyboard's events. */
 void
 drv_input_device_emit(
 	struct input_device *device,
@@ -253,13 +262,18 @@ drv_input_device_emit(
 	recorded_count++;
 }
 
-/* Gives every key symbol a code, so that the keyboard's table builds. */
+/* Gives every key symbol a code from its first letters (a and s differ), so that the keyboard's table builds. */
 uint16_t
 drv_input_key_from_symbol(
 	const char *symbol)
 {
-	(void)symbol;
-	return 1;
+	unsigned code;
+
+	/* The first letter, and the second when there is one. */
+	code = 1U + (unsigned char)symbol[0];
+	if (symbol[1] != '\0')
+		code += 128U + (unsigned char)symbol[1];
+	return (uint16_t)code;
 }
 
 /* The status port: a byte waiting (and whether it is the mouse's); the input buffer is always empty. */
@@ -522,8 +536,75 @@ test_mouse(
 	model_mouse_info->close(NULL);
 }
 
+/* Gives the driver keyboard bytes, one interrupt a byte. */
+static void
+feed_keyboard(
+	const uint8_t *bytes,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Each byte on the keyboard's channel, and its interrupt. */
+	recorded_count = 0;
+	for (index = 0; index < count; index++) {
+		model_push(bytes[index], 0);
+		model_keyboard_handler(PS2_KEYBOARD_IRQ, 0, NULL);
+	}
+}
+
+/* Copies the values of a key's recorded events in order; returns how many. */
+static int
+key_values(
+	uint16_t code,
+	int32_t *values,
+	unsigned capacity)
+{
+	unsigned index;
+	unsigned count;
+
+	/* The key's events, oldest first. */
+	count = 0;
+	for (index = 0; index < recorded_count && count < capacity; index++) {
+		if (recorded[index].type == EV_KEY && recorded[index].code == code) {
+			values[count] = recorded[index].value;
+			count++;
+		}
+	}
+
+	/* How many were found. */
+	return (int)count;
+}
+
+/* The typematic: a held key's makes after the first are repeats; another key held in between is its own. */
+static void
+test_keyboard(void)
+{
+	static const uint8_t held_a[] = { 0x1e, 0x1e, 0x1e, 0x9e, 0x1e, 0x9e };
+	static const uint8_t two_keys[] = { 0x1e, 0x1f, 0x1f, 0x9e, 0x1f, 0x9f };
+	int32_t values[8];
+	uint16_t a;
+	uint16_t s;
+	int count;
+
+	/* The codes of a and s. */
+	a = drv_input_key_from_symbol(scan_symbol(0x1e, 0));
+	s = drv_input_key_from_symbol(scan_symbol(0x1f, 0));
+
+	/* a held (three makes), let go, pressed and let go again: 1 2 2 0 1 0. */
+	feed_keyboard(held_a, sizeof(held_a));
+	count = key_values(a, values, 8U);
+	check("keyboard: held key repeats as value 2", count == 6 && values[0] == 1 && values[1] == 2 && values[2] == 2 && values[3] == 0 && values[4] == 1 && values[5] == 0);
+
+	/* a down, s down and held, a up, s still held, s up: s is 1 2 2 0, a is 1 0. */
+	feed_keyboard(two_keys, sizeof(two_keys));
+	count = key_values(s, values, 8U);
+	check("keyboard: the second key's makes repeat", count == 4 && values[0] == 1 && values[1] == 2 && values[2] == 2 && values[3] == 0);
+	count = key_values(a, values, 8U);
+	check("keyboard: the first key is a press and a release", count == 2 && values[0] == 1 && values[1] == 0);
+}
+
 /*
- * Runs the three mice.
+ * Runs the three mice and the keyboard.
  */
 int
 main(void)
@@ -542,6 +623,11 @@ main(void)
 	test_mouse("plain", PS2_ID_STANDARD, 3U);
 	test_mouse("intellimouse", PS2_ID_WHEEL, 4U);
 	test_mouse("explorer", PS2_ID_EXPLORER, 4U);
+
+	/* The keyboard's typematic. */
+	check("keyboard: handler", model_keyboard_handler != NULL);
+	if (model_keyboard_handler != NULL)
+		test_keyboard();
 
 	/* The verdict. */
 	if (model_failures != 0) {

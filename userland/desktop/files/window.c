@@ -437,11 +437,17 @@ fm_window_repeat(
 		event->time = now;
 	}
 
-	/* The next repeat is one interval later. */
-	window->repeat_at = now + window->repeat_interval;
+	/*
+	 * The next repeat is one interval after this one was due, so a loop that
+	 * woke a little late keeps the pace (BUG-172); one that fell a whole
+	 * interval behind starts again from now instead of catching up in a burst.
+	 */
+	window->repeat_at += window->repeat_interval;
+	if (window->repeat_at <= now)
+		window->repeat_at = now + window->repeat_interval;
 
 	/* Reports the wait until the next repeat. */
-	return (int)window->repeat_interval;
+	return (int)(window->repeat_at - now);
 }
 
 /*

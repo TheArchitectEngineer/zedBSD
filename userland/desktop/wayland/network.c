@@ -88,6 +88,9 @@
 /* How long the switch keeps the position asked after a successful answer, for the state to agree (BUG-183). */
 #define NETWORK_SWITCH_HOLD_MS	4000U
 
+/* How long after the desktop starts a daemon not heard from yet is waited for rather than called missing (BUG-176). */
+#define NETWORK_START_GRACE_MS	30000U
+
 /* The depressed Shift and the locked Caps Lock in the seat's modifier masks. */
 #define NETWORK_SHIFT		0x1U
 #define NETWORK_CAPS		0x2U
@@ -171,6 +174,12 @@ struct network_row {
  * join is answered or given up; empty otherwise.  The menu shows it as
  * being connected to (BUG-154).
  *
+ * opened_ms is when the watch was made and heard is 1 once the daemon's
+ * state has said it is reachable: until then, for NETWORK_START_GRACE_MS,
+ * a daemon still starting (or busy joining the network it knows) is said
+ * to be starting, not unavailable (BUG-176); grace_over is 1 once that
+ * time has passed and the menu was drawn again.
+ *
  * scan_holders counts who asks for scans (ws089-p021): the open menu and
  * each network object of the system extension that asked (system.c); while
  * it is not 0 the watch is asked to keep the radios scanning, and its
@@ -190,6 +199,9 @@ struct network_row {
 struct network_view {
 	struct kl_backend_network *watch;
 	unsigned opened;
+	uint64_t opened_ms;
+	unsigned heard;
+	unsigned grace_over;
 	struct kl_backend_network_state state;
 	struct kl_backend_network_ap scan[KL_BACKEND_NETWORK_SCAN_MAX];
 	size_t scan_count;
@@ -310,6 +322,7 @@ zwl_network_tick(
 	/* The watch, once (libkeiland-backend connects to the daemon when it can); holders before it are told to it. */
 	if (!network_view.opened) {
 		network_view.opened = 1;
+		network_view.opened_ms = zwl_milliseconds();
 		network_view.watch = kl_backend_network_open();
 		network_view.icon_x = -1;
 		if (network_view.watch != NULL && network_view.scan_holders != 0U)
@@ -322,6 +335,15 @@ zwl_network_tick(
 		if (now - network_view.info_asked_ms >= NETWORK_INFO_REFRESH_MS) {
 			network_view.info_asked_ms = now;
 			zwl_system_bar_saved(server);
+		}
+	}
+
+	/* The start's grace ran out with the daemon still silent: the menu says it is unavailable now. */
+	if (!network_view.heard && !network_view.grace_over) {
+		now = zwl_milliseconds();
+		if (now - network_view.opened_ms >= NETWORK_START_GRACE_MS) {
+			network_view.grace_over = 1U;
+			server->dirty = 1;
 		}
 	}
 
@@ -339,6 +361,8 @@ zwl_network_tick(
 	/* A new state redraws the icon (and the menu). */
 	if ((changed & KL_BACKEND_NETWORK_CHANGED_STATE) != 0) {
 		kl_backend_network_get_state(network_view.watch, &network_view.state);
+		if (network_view.state.reachable)
+			network_view.heard = 1U;
 		network_log_state();
 	}
 
@@ -1070,6 +1094,12 @@ network_state_text(
 	char *text,
 	size_t size)
 {
+	/* The daemon not heard from yet just after the start: it is starting (BUG-176). */
+	if (!state->reachable && !network_view.heard && !network_view.grace_over) {
+		(void)snprintf(text, size, "Starting the network service...");
+		return;
+	}
+
 	/* The daemon cannot be reached. */
 	if (!state->reachable) {
 		(void)snprintf(text, size, "Network service not available");
