@@ -43,7 +43,7 @@ Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q58
 
 | Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
-| q683 / q683-i01 | P2（generation11） | [BUG-170](bugs/BUG-170.md)（WS100・WS089） | 音量の slider のドラッグでのフリーズ。確認の音は離した時に 1 回。QEMU で再現と確認 | なし | in-progress |
+| q683 / q683-i01 | P2（generation11） | [BUG-170](bugs/BUG-170.md)（WS100・WS089） | 音量の slider のドラッグでのフリーズ。確認の音は離した時に 1 回。QEMU で再現と確認 | なし | finished / uncleared（P2 2eea840 → main 645d104、T1-087 QEMU PASS 3/3。根は読みで未確定、実機 D1・D2 は次の UAT） |
 | q684 / q684-i01 | 解析 P3（generation7、bug-analyzer = Fable 5.1 high）→ 実装 P3（generation8、phase-runner-mid）→ 試験 T1 | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | 解析 finished（P3 gen7 52df29f → main b7bced6）。実装 in-progress（P3 gen8） |
 | q685 / q685-i01 | P2（予定） | [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md)（[ws033-p001](ws033/phase001/phase.md) の再開） | 後から挿した USB LAN が up しない、Ethernet のメニューの wlan0。QEMU の usb-net の device_add で再現 | なし | pending |
 | q686 / q686-i01 | P2（予定） | [BUG-175](bugs/BUG-175.md) | Terminal 多数で errno=8（ENOSPC）。QEMU で再現し、どの資源かを特定（BUG-120 の関連） | なし | pending |
