@@ -9,7 +9,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 | 項目 | 値 |
 | --- | --- |
-| path | `/home/awe/zedBSD-claude1/build/uat-2/hdd-image.img`（2,216,689,664 byte、sha256 `4b64328432171f0134797394d735629a55d368ff686949711ac9f4ea543cb71f`、source は main 52e15c0、2026-10-04 10:55） |
+| path | `/home/awe/zedBSD-claude1/build/uat-2/hdd-image.img`（2,216,689,664 byte、**sha256 `8c3e51d0b0d85c7eeb2e94a1238a443439c4b7c297c510cc7f7c06d5925d4524`**、2026-10-04 11:45 に作り直し: App Home に System Monitor と Emacs の tile（`plan/ws133/uat-apps.conf`）、config-uat.mk が emacs・monitor・noto-color-emoji を足す。前の版 `4b643284…cb71f` は tile が無い） |
 | 作り方 | `plan/tools/guest/test-image.sh --no-harness plan/ws133/config-uat.mk build/uat-2` に build-demo-image.sh と同じ `--file`（apps.conf・壁紙・authorized_keys）と `I915_TEST_VBT=n`。config-uat.mk は demo の構成（その時の CI の amd64 の構成: emacs・clang 入り）に monitor と noto-color-emoji を足したもの。build/uat-1 はユーザーの新しい CI の構成で emacs が無いので使わない |
 | boot の行 | `kernel=vmunix` `rootpart=PARTLABEL=zedBSD-root` `swap0=PARTLABEL=zedBSD-swap` `logo=logo.ppm` `login=graphical` `kmsg=quiet` `display=edp`（S1 と同じ。同じ名前の行を 2 回書かない） |
 | 利用者 | root / root、kei / kei（kei は起動で自動の login） |
@@ -86,7 +86,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | F4 | Files の操作の速さ（多い folder の scroll、開閉） | 体感の速さ（S1 との比較） | U | |
 | F5 | Image Viewer: Move to Trash・Open With・F5 で slideshow | 動く（ws128-p005） | U | |
 | F6 | Terminal: Ctrl+Shift+F で検索、View > Theme > Light、font の大きさを変えて閉じて開く | 検索・theme・大きさの保存（ws128-p006） | U | |
-| F7 | Terminal で `emacs /tmp/a.txt` → 書いて保存 → 終了 | **/bin/emacs が起動**（ws129-p012）、日本語の IME で入力 | U | |
+| F7 | Terminal で `emacs /tmp/a.txt`（または App Home の Emacs の tile）→ 書いて保存 → 終了 | **/bin/emacs が起動**（ws129-p012）、日本語の IME で入力 | U | |
 | F8 | Text Editor・Terminal で日本語の IME で連続して入力・確定 | 確定のたびに止まらない（BUG-143）、変換中の文字の大きさ（BUG-139） | U | |
 | F9 | Text Editor・Terminal で IME を off にして速く打つ | 入力の遅れの体感（QEMU では約 300 ms。実機で 500 ms 級が残るか） | U | |
 | F10 | `/bin/sh` で上下の矢印 | 履歴（BUG-103） | U | |
@@ -95,7 +95,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 | # | 手順 | 見ること | 誰 | 結果 |
 | --- | --- | --- | --- | --- |
-| G1 | System Monitor を開く。**この image の App Home には System Monitor の tile が無い**（`/bin/monitor` は入っているが apps.conf に行が無い）。Terminal で `monitor &`、または A が SSH で `echo 'System Monitor|/bin/monitor|monitor system cpu memory|4a6a8f|' >> /etc/keiland/apps.conf` の後に Log Out → login で tile を出す | CPU・memory・disk・network が本物の値で動く | U | |
+| G1 | App Home の System Monitor の tile で開く（11:45 の image。前の image なら Terminal で `monitor &`） | CPU・memory・disk・network が本物の値で動く | U | |
 | G2 | A が monitor の log の `ZMON FRAME fps=` を読む | **fps 15 以上**（ws134-p003 の判定は実機の値、2026-10-04 Q1） | A | |
 | G3 | A が `sysctl hw.gputelemetry` | i915 の busy と周波数が出る（ws134-p007） | A | |
 | G4 | 窓を 30 個以上開く（Terminal を多数） | GPU の object の枠で落ちない（BUG-120） | U | |
