@@ -155,6 +155,18 @@
 #define IME_MODIFIER_ALT		0x08U
 #define IME_MODIFIER_META		0x40U
 
+/*
+ * The text input that stands for zdesktop's own text field with the
+ * keyboard (a title bar's search or path field, titlebar-shell.c;
+ * BUG-177).  It has no object; its surface is the window and its state is
+ * the field's, read again (into ime_field_text) each time the input method
+ * is to be told it.  The input method serves it as any application's, and
+ * what it makes goes to the field instead of a client.  It lives as long as
+ * zdesktop; its zero value is "no field".
+ */
+static struct zwl_text_input ime_field;
+static char ime_field_text[ZWL_TITLEBAR_TEXT_MAX + 1U];
+
 static void ime_spawn(struct zwl_server *server, uint64_t now);
 static struct zwl_client *ime_connect(struct zwl_server *server, int descriptor);
 static void ime_lost(struct zwl_server *server);
@@ -188,6 +200,8 @@ static void ime_app_remember(struct zwl_ime *ime);
 static void ime_app_focus(struct zwl_server *server);
 static int ime_client_has_app(const struct zwl_client *client, const char *app_id);
 static void ime_app_forget(struct zwl_server *server, struct zwl_client *client);
+static struct zwl_text_input *ime_current(struct zwl_server *server);
+static void ime_deliver(struct zwl_server *server, struct zwl_text_input *input, const char *preedit, int32_t begin, int32_t end, const char *commit, uint32_t before, uint32_t after);
 
 /*
  * Starts the system's input method, when its program is installed (not on
@@ -663,7 +677,7 @@ zwl_ime_focus(
 	/* The preedit shown is committed where it was typed. */
 	ime = server->ime;
 	if (ime != NULL && ime->active != NULL && ime->preedit_shown != NULL && ime->preedit_shown[0] != '\0')
-		zwl_text_input_deliver(ime->active, NULL, 0, 0, ime->preedit_shown, 0, 0);
+		ime_deliver(server, ime->active, NULL, 0, 0, ime->preedit_shown, 0, 0);
 
 	/* The keys the virtual keyboard held were the old window's; its leave lets them go. */
 	if (ime != NULL)
@@ -697,8 +711,8 @@ zwl_ime_update(
 	if (ime == NULL || ime->method == NULL)
 		return;
 
-	/* The text input to serve now. */
-	current = zwl_text_input_current(server);
+	/* The text input to serve now: zdesktop's own field with the keyboard, else an application's. */
+	current = ime_current(server);
 
 	/* Another text input (or none): the old one is given up, and the new one taken. */
 	if (current != ime->active || (current != NULL && !ime->activated)) {
@@ -731,6 +745,50 @@ zwl_ime_text_input_gone(
 
 	/* The input method is told it serves none. */
 	ime_deactivate(server);
+}
+
+/*
+ * Follows zdesktop's own text field (titlebar-shell.c, BUG-177): its
+ * editing began or ended, or its text or cursor changed.  The input
+ * method is activated for it, told its new state, or deactivated.
+ */
+void
+zwl_ime_field_changed(
+	struct zwl_server *server)
+{
+	/* As a commit of the field's text input. */
+	zwl_ime_update(server, &ime_field);
+
+	/* The candidate window follows the field (its box is known once the field was drawn). */
+	if (server->ime != NULL && server->ime->active == &ime_field)
+		ime_rectangles(server);
+}
+
+/*
+ * Gives a key press to the input method before zdesktop's own text field
+ * takes it, while the field is the text input served (the place of
+ * zwl_ime_key_grab for an application's).  Returns nonzero when taken.
+ */
+int
+zwl_ime_field_key(
+	struct zwl_server *server,
+	uint32_t time,
+	uint32_t key,
+	uint32_t state)
+{
+	int taken;
+
+	/* Only while the field is served. */
+	if (server->ime == NULL || server->ime->active != &ime_field)
+		return 0;
+
+	/* The input method's grab, as for an application. */
+	taken = zwl_ime_key_grab(server, time, key, state, 0);
+	if (!taken)
+		return 0;
+
+	/* Succeeded: the input method has it. */
+	return 1;
 }
 
 /*
@@ -1059,7 +1117,7 @@ ime_lost(
 
 	/* The application's preedit goes. */
 	if (ime->active != NULL && ime->preedit_shown != NULL && ime->preedit_shown[0] != '\0')
-		zwl_text_input_deliver(ime->active, NULL, 0, 0, NULL, 0, 0);
+		ime_deliver(server, ime->active, NULL, 0, 0, NULL, 0, 0);
 
 	/* The keys it heard pressed: their releases go nowhere. */
 	for (i = 0; i < ZWL_IME_KEYS; i++) {
@@ -1517,8 +1575,8 @@ ime_apply(
 
 	/* The served text input hears the preedit, the commit and the deletion together. */
 	if (ime->active != NULL && ime->activated) {
-		zwl_text_input_deliver(ime->active, ime->pending_preedit, ime->pending_begin, ime->pending_end,
-				       ime->pending_commit, ime->pending_before, ime->pending_after);
+		ime_deliver(server, ime->active, ime->pending_preedit, ime->pending_begin, ime->pending_end,
+			    ime->pending_commit, ime->pending_before, ime->pending_after);
 		ime_set_text(&ime->preedit_shown, ime->pending_preedit);
 	}
 
@@ -1551,6 +1609,14 @@ ime_activate(
 	ime_state(server, input);
 	ime_rectangles(server);
 	server->dirty = 1;
+
+	/* Logged: zdesktop's own field has no object of its own. */
+	if (input == &ime_field) {
+		printf("ZWL IME activate field client=%llu surface=%u\n", (unsigned long long)input->surface->client->number, input->surface->id);
+		return;
+	}
+
+	/* An application's text input. */
 	printf("ZWL IME activate client=%llu\n", (unsigned long long)input->object->client->number);
 }
 
@@ -1768,6 +1834,13 @@ ime_keyboard_key(
 	if (key >= ZWL_IME_KEYS) {
 		zwl_seat_key_deliver(server, time, key, state);
 		return;
+	}
+
+	/* zdesktop's own field served: its keys are the field's (titlebar-shell.c), the rest the application's. */
+	if (ime->active == &ime_field) {
+		taken = zwl_titlebar_key(server, key, state);
+		if (taken)
+			return;
 	}
 
 	/* A release of a key the menu took goes nowhere. */
@@ -2284,4 +2357,64 @@ ime_app_forget(
 	if (differs == 0 || ime->status == NULL)
 		return;
 	ime_select(server, wanted);
+}
+
+/*
+ * Gives the text input to serve: zdesktop's own text field with the
+ * keyboard (its state read again), else the application's
+ * (text-input.c).
+ */
+static struct zwl_text_input *
+ime_current(
+	struct zwl_server *server)
+{
+	struct zwl_text_input *input;
+	struct zwl_object *surface;
+	int known;
+
+	/* zdesktop's own field, when one has the keyboard. */
+	surface = zwl_titlebar_field_surface(server);
+	if (surface != NULL) {
+		known = zwl_titlebar_field_state(server, ime_field_text, sizeof(ime_field_text), &ime_field.cursor, &ime_field.anchor, ime_field.rectangle);
+		if (known) {
+			ime_field.surface = surface;
+			ime_field.text = ime_field_text;
+			ime_field.enabled = 1;
+			ime_field.cause = 0;
+			ime_field.hint = 0;
+			ime_field.purpose = 0;
+			return &ime_field;
+		}
+	}
+
+	/* Otherwise an application's. */
+	input = zwl_text_input_current(server);
+
+	/* Succeeded: the one, or none. */
+	return input;
+}
+
+/*
+ * Delivers what the input method made: to zdesktop's own field
+ * (titlebar-shell.c), or to an application's text input (text-input.c).
+ */
+static void
+ime_deliver(
+	struct zwl_server *server,
+	struct zwl_text_input *input,
+	const char *preedit,
+	int32_t begin,
+	int32_t end,
+	const char *commit,
+	uint32_t before,
+	uint32_t after)
+{
+	/* zdesktop's own field. */
+	if (input == &ime_field) {
+		zwl_titlebar_field_input(server, preedit, commit, before, after);
+		return;
+	}
+
+	/* An application's text input. */
+	zwl_text_input_deliver(input, preedit, begin, end, commit, before, after);
 }

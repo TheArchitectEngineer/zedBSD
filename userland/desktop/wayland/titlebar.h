@@ -158,6 +158,9 @@ void zwl_titlebar_overflow_opened(struct zwl_object *surface);
 void zwl_titlebar_forget(struct zwl_server *server, struct zwl_object *object);
 void zwl_titlebar_suggestions(struct zwl_server *server, struct zwl_object *titlebar, uint32_t id, const char *const *strings, size_t count);
 void zwl_titlebar_draw_suggestions(struct zwl_server *server, VkCommandBuffer command);
+struct zwl_object *zwl_titlebar_field_surface(struct zwl_server *server);
+int zwl_titlebar_field_state(struct zwl_server *server, char *text, size_t size, int32_t *cursor, int32_t *anchor, int32_t *rectangle);
+void zwl_titlebar_field_input(struct zwl_server *server, const char *preedit, const char *commit, uint32_t before, uint32_t after);
 
 /* The tab events zwl_titlebar_send_tab sends. */
 #define ZWL_TAB_EVENT_ACTIVATED		0U
