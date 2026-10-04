@@ -169,7 +169,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 有線（ue0）は起動の時から挿すと 10.0.30.3 で up（C7 は後から挿した時だけの不具合）。
 | G5 | OK（再現せず） | （ユーザーが AC を抜いた直後に Q1 が SSH で計測、14 時過ぎ）System Monitor の `ZMON FRAME fps=21.5・14.4・22.4`（1 回だけ 14.4、submit_ms 17・callback_ms 56）。5 fps への低下は出ない。`sysctl` に battery・AC の項目が無い（DSDT が読めていないため電源の状態を知らない） | BUG-159（今回は再現せず） |
 | H1 の追加 | 済み | Shut Down の間の log を SSH で連続に取った（`build/uat-logs/1407/shutdown-watch.txt`）: 05:18:15 compositor の正常な終了（`ZWL EXIT error=0`、音量 77 と設定を保存）、05:18:21 i915 の display の lease を返す、05:18:23 process は 10、その後 sshd の停止で接続が切れた。kernel の最後の電源を切る段は見えない | |
-| H2 | **NG** | LCD はオフになるが、ファンが回り続け電源が切れない。強制電源オフ | BUG-119（再現。DSDT が読めない（`\_S5` は DSDT）ことが原因の候補） |
+| H2 | **NG** | LCD はオフになるが、ファンが回り続け電源が切れない。電源ボタンの**長押しは要らず、1 回押すだけで切れた**（OS が止まった後に firmware が電源ボタンを扱っている形） | BUG-119（再現。DSDT が読めない（`\_S5` は DSDT）ことが原因の候補） |
 
 ### UAT のまとめ（2026-10-04、Q1）
 
