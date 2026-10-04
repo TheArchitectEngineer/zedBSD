@@ -43,6 +43,7 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend-gpu.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend-evdev.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
+#include "touchpad.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -278,6 +279,13 @@ struct zwl_input_device {
 	unsigned tablet;
 	/* A touch screen (touch.c, WS079 p013): its reports go to the touch screen, not to apply_frame. */
 	unsigned touch;
+	/*
+	 * A touch pad (touchpad.c, ws159-p004): its reports go to its touch
+	 * pad layer, whose actions move the pointer, press its buttons and
+	 * scroll; pad is that layer's state while the device is attached.
+	 */
+	unsigned touchpad;
+	struct zwl_touchpad pad;
 	unsigned discarding;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
@@ -1377,6 +1385,7 @@ void zwl_input_scan(struct zwl_server *server);
 int zwl_input_probe(struct zwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int zwl_input_attach(struct zwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
 void zwl_input_read_devices(struct zwl_server *server, struct zwl_input_device **devices, size_t count);
+void zwl_input_tick(struct zwl_server *server, uint64_t now);
 void zwl_input_close(struct zwl_server *server, struct zwl_input_device *device);
 void zwl_input_forget(struct zwl_server *server, struct zwl_input_device *device);
 void zwl_input_cleanup(struct zwl_server *server);

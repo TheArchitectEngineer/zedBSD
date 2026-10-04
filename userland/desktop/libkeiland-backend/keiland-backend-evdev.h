@@ -37,7 +37,10 @@ struct kl_backend;
 #define KL_BACKEND_INPUT_PATH_MAX	64U
 
 /*
- * The capability bitmaps of one evdev node, as EVIOCGBIT reports them.
+ * The capability bitmaps of one evdev node, as EVIOCGBIT reports them, and
+ * its INPUT_PROP_* properties as EVIOCGPROP reports them (ws159-p004: a
+ * touch pad is a pointer, a touch screen is direct).  A backend that does
+ * not read the properties leaves them empty (Linux and FreeBSD for now).
  *
  * One instance lives on the stack while a node is classified.
  */
@@ -46,6 +49,7 @@ struct kl_backend_input_caps {
 	unsigned long key[KEY_MAX / (8U * sizeof(unsigned long)) + 1U];
 	unsigned long relative[REL_MAX / (8U * sizeof(unsigned long)) + 1U];
 	unsigned long absolute[ABS_MAX / (8U * sizeof(unsigned long)) + 1U];
+	unsigned long properties[INPUT_PROP_MAX / (8U * sizeof(unsigned long)) + 1U];
 };
 
 /*

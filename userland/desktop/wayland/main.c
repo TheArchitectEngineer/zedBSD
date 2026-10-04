@@ -700,6 +700,9 @@ event_loop(
 		if (server->os_paused == 0 && now - server->input_scan_time >= ZWL_INPUT_SCAN_MS)
 			zwl_input_scan(server);
 
+		/* The touch pads' timers: a tap's click completes when no drag came (input.c, ws159-p004). */
+		zwl_input_tick(server, now);
+
 		/* A client that has left a ping unanswered too long is not responding (toplevel.c). */
 		zwl_ping_check(server, now);
 

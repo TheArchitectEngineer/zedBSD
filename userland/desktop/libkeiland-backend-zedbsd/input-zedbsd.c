@@ -254,7 +254,7 @@ probe_device(
 		close(descriptor);
 }
 
-/* Reads the event, key, relative and absolute capability bitmaps of one node. */
+/* Reads the event, key, relative and absolute capability bitmaps and the properties of one node. */
 static int
 read_capabilities(
 	int descriptor,
@@ -285,6 +285,11 @@ read_capabilities(
 	if (error < 0)
 		return errno;
 
-	/* Succeeded: the four bitmaps describe the node. */
+	/* Its properties; a kernel without EVIOCGPROP leaves them empty (ws159-p004). */
+	error = ioctl(descriptor, EVIOCGPROP(sizeof(capabilities->properties)), capabilities->properties);
+	if (error < 0)
+		memset(capabilities->properties, 0, sizeof(capabilities->properties));
+
+	/* Succeeded: the bitmaps describe the node. */
 	return 0;
 }
