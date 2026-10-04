@@ -413,6 +413,31 @@ struct se_network {
 	unsigned usage_next;
 };
 
+/* The Users page's password fields: the current password, the new one, the new one again. */
+#define SE_USERS_FIELDS		3
+
+/*
+ * The Users page (page-users.c, ws160-p002): the account as the passwd
+ * database has it (read once: read), the three password fields (wiped when
+ * the change is asked, when Esc empties them and when the window closes),
+ * the field with the keyboard, whether the passwords are shown, the change
+ * asked and its request's number, and the last answer (bad when it
+ * failed).
+ */
+struct se_users {
+	int read;
+	char name[64];
+	char full_name[128];
+	char home[160];
+	struct se_field fields[SE_USERS_FIELDS];
+	int focus;
+	int shown;
+	int asked;
+	uint32_t request;
+	char message[SE_MESSAGE];
+	int message_bad;
+};
+
 /*
  * What About shows of the machine, read once when the program starts
  * (about.c).  An empty text is a value that could not be read, and the
@@ -796,6 +821,9 @@ struct se_app {
 
 	/* The sound's volume (ws100-p005). */
 	struct se_sound sound;
+
+	/* The Users page's account and password fields (ws160-p002). */
+	struct se_users users;
 };
 
 /* The table of pages (pages.c). */
@@ -917,6 +945,13 @@ void se_search_press(struct se_app *app, int index);
 int se_home_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 int se_about_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 int se_soon_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+
+/* The Users page (page-users.c, ws160-p002). */
+int se_users_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+void se_users_press(struct se_app *app, int index);
+int se_users_key(struct se_app *app, const struct se_event *event);
+int se_users_result(struct se_app *app, uint32_t request, int error);
+void se_users_close(struct se_app *app);
 
 /* What About shows of the machine (about.c). */
 void se_about_read(struct se_about *about);

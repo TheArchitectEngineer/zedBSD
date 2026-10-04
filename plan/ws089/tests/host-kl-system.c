@@ -16,6 +16,8 @@
 #include <keiland.h>
 
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct kl_system *
@@ -41,20 +43,37 @@ kl_system_dispatch(struct kl_system *system, unsigned *changed)
 	return 0;
 }
 
+/*
+ * The account (ws160-p002): with HOST_ACCOUNT_RESULT=ERRNO in the
+ * environment the desktop offers it, and a password change is answered
+ * with that errno (0 changed) at the next take_result; the passwords asked
+ * are printed as their lengths only.
+ */
+static int host_account_pending;
+static uint32_t host_account_request;
+
 unsigned
 kl_system_capabilities(const struct kl_system *system)
 {
 	(void)system;
+	if (getenv("HOST_ACCOUNT_RESULT") != NULL)
+		return KL_SYSTEM_HAS_ACCOUNT;
 	return 0U;
 }
 
 int
 kl_system_take_result(struct kl_system *system, uint32_t *request, int *error)
 {
+	const char *answer;
+
 	(void)system;
-	(void)request;
-	(void)error;
-	return 0;
+	if (!host_account_pending)
+		return 0;
+	host_account_pending = 0;
+	answer = getenv("HOST_ACCOUNT_RESULT");
+	*request = host_account_request;
+	*error = answer != NULL ? atoi(answer) : ENOTSUP;
+	return 1;
 }
 
 void
@@ -81,4 +100,19 @@ kl_system_audio_feedback(struct kl_system *system, uint32_t *request)
 	(void)system;
 	(void)request;
 	return ENOTSUP;
+}
+
+/* The account (ws160-p002): offered with HOST_ACCOUNT_RESULT, answered at the next take_result. */
+int
+kl_system_account_set_password(struct kl_system *system, const char *current, const char *fresh, uint32_t *request)
+{
+	(void)system;
+	if (getenv("HOST_ACCOUNT_RESULT") == NULL)
+		return ENOTSUP;
+	host_account_request++;
+	host_account_pending = 1;
+	if (request != NULL)
+		*request = host_account_request;
+	printf("HOSTACCOUNT set-password request=%u current_length=%zu new_length=%zu\n", host_account_request, strlen(current), strlen(fresh));
+	return 0;
 }

@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 3; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 4; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -20,6 +20,7 @@
  *   request 4 get_power(new_id kl_system_power_v1)
  *   request 5 get_devices(new_id kl_system_devices_v1)
  *   request 6 get_monitor(new_id kl_system_monitor_v1, uint period_ms)    since version 2 (WS134 p012)
+ *   request 7 get_account(new_id kl_system_account_v1)    since version 4 (ws160-p002)
  *   event   0 capabilities(uint bits)              sent when it is bound
  *
  * kl_system_settings_v1
@@ -86,6 +87,18 @@
  *   event   1 done(uint serial)
  *   event   2 result(uint request, uint applied, uint saved)
  *
+ * kl_system_account_v1 (ws160-p002: the user's own account)
+ *   request 0 destroy
+ *   request 1 set_password(uint request, string current, string new)
+ *   event   0 result(uint request, uint applied, uint saved)
+ *   The compositor changes the password of the user it runs as, through
+ *   the system (zedBSD: passwd; elsewhere unsupported), on a thread of its
+ *   own, and answers ok, denied (the current password is wrong), invalid
+ *   (the new one breaks the system's rules, or a password is empty or
+ *   longer than KL_SYSTEM_PASSWORD_MAX), unsupported, busy (one change is
+ *   under way) or failed.  Neither password is logged or kept.  The object
+ *   has no state, and so no done.
+ *
  * kl_system_monitor_v1 (WS134 p012, plan/ws134/design.md section 1.3)
  *   request 0 destroy
  *   request 1 ack(uint serial)                       the sample of that serial is taken
@@ -126,7 +139,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		3U
+#define KL_SYSTEM_MANAGER_VERSION		4U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -137,6 +150,7 @@
 #define KL_SYSTEM_MANAGER_GET_POWER		4U
 #define KL_SYSTEM_MANAGER_GET_DEVICES		5U
 #define KL_SYSTEM_MANAGER_GET_MONITOR		6U
+#define KL_SYSTEM_MANAGER_GET_ACCOUNT		7U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -146,6 +160,7 @@
 #define KL_SYSTEM_CAPABILITY_POWER		0x8U
 #define KL_SYSTEM_CAPABILITY_DEVICES		0x10U
 #define KL_SYSTEM_CAPABILITY_MONITOR		0x20U
+#define KL_SYSTEM_CAPABILITY_ACCOUNT		0x40U
 
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
@@ -153,6 +168,13 @@
 #define KL_SYSTEM_POWER_NAME			"kl_system_power_v1"
 #define KL_SYSTEM_DEVICES_NAME			"kl_system_devices_v1"
 #define KL_SYSTEM_MONITOR_NAME			"kl_system_monitor_v1"
+#define KL_SYSTEM_ACCOUNT_NAME			"kl_system_account_v1"
+
+/* kl_system_account_v1's requests and event, and the longest password it carries (without its NUL). */
+#define KL_SYSTEM_ACCOUNT_DESTROY		0U
+#define KL_SYSTEM_ACCOUNT_SET_PASSWORD		1U
+#define KL_SYSTEM_ACCOUNT_EVENT_RESULT		0U
+#define KL_SYSTEM_PASSWORD_MAX			256U
 
 /* kl_system_network_v1's requests and events. */
 #define KL_SYSTEM_NETWORK_DESTROY		0U

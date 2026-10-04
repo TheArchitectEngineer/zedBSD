@@ -11,8 +11,10 @@
  *   passwd [user]       asks on the terminal: the current password (unless
  *                       root runs it), the new one twice
  *   passwd -s [user]    reads the passwords from standard input, one a line,
- *                       without prompts: the current and the new one, or
- *                       only the new one when root sets it; for programs
+ *                       without prompts: the current and the new one for
+ *                       the caller's own password (root's current one is
+ *                       read but not checked), only the new one when root
+ *                       sets another user's; for programs
  *                       such as Settings (ws160-p002), which run passwd
  *                       instead of holding any privilege themselves
  *
@@ -40,13 +42,13 @@
 #include <syslog.h>
 #include <unistd.h>
 
-/* The exit statuses. */
-#define PASSWD_OK		0
-#define PASSWD_FAILED		1
-#define PASSWD_USAGE		2
-#define PASSWD_WRONG		3
-#define PASSWD_REFUSED		4
-#define PASSWD_MISMATCH		5
+/* The exit statuses (account.h, which programs that run passwd -s read). */
+#define PASSWD_OK		ACCOUNT_PASSWD_OK
+#define PASSWD_FAILED		ACCOUNT_PASSWD_FAILED
+#define PASSWD_USAGE		ACCOUNT_PASSWD_USAGE
+#define PASSWD_WRONG		ACCOUNT_PASSWD_WRONG
+#define PASSWD_REFUSED		ACCOUNT_PASSWD_REFUSED
+#define PASSWD_MISMATCH		ACCOUNT_PASSWD_MISMATCH
 
 /* The pause after a wrong current password (seconds). */
 #define PASSWD_WRONG_PAUSE	2U
@@ -75,6 +77,7 @@ main(
 	int status;
 	int by_root;
 	int batch;
+	int own;
 	int reason;
 	int option;
 	int error;
@@ -129,6 +132,9 @@ main(
 	if (optind < argc)
 		name = argv[optind];
 	same = strcmp(name, caller_name);
+	own = 0;
+	if (same == 0)
+		own = 1;
 	if (same != 0 && !by_root) {
 		syslog(LOG_NOTICE, "refused: %s tried to change the password of %s", caller_name, name);
 		fprintf(stderr, "passwd: only root may change another user's password\n");
@@ -148,17 +154,22 @@ main(
 
 	/* The current password, unless root sets it. */
 	current[0] = '\0';
-	if (!by_root) {
+	if (!by_root || (batch && own)) {
 		error = read_secret(batch, "Current password: ", current, sizeof(current));
 		if (error != 0) {
 			fprintf(stderr, "passwd: no current password\n");
 			return PASSWD_FAILED;
 		}
 
-		/* login_verify erases what it is given: a copy is checked, the original kept for the rules. */
-		memcpy(again, current, sizeof(again));
-		error = login_verify(name, again, &account, buffer, sizeof(buffer));
-		wipe(again, sizeof(again));
+		/* login_verify erases what it is given: a copy is checked, the original kept for the rules (root's own is not checked). */
+		error = 0;
+		if (!by_root) {
+			memcpy(again, current, sizeof(again));
+			error = login_verify(name, again, &account, buffer, sizeof(buffer));
+			wipe(again, sizeof(again));
+		}
+
+		/* A wrong one costs two seconds. */
 		if (error != 0) {
 			syslog(LOG_NOTICE, "refused: a wrong current password for %s", name);
 			wipe(current, sizeof(current));

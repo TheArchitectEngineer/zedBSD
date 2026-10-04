@@ -666,6 +666,20 @@ int kl_backend_power_action(struct kl_backend *backend, unsigned action);
 
 
 /*
+ * The account (ws160-p002): the password of the user the compositor runs
+ * as.  zedBSD changes it with passwd (its batch mode, the passwords on a
+ * pipe), which checks the current password and the system's rules and
+ * writes the shadow file; Linux and FreeBSD answer ENOTSUP until the
+ * desktop asks their own services.  It waits for passwd (seconds when the
+ * current password is wrong), so the compositor calls it on a thread.
+ * Returns 0, EACCES when current is wrong, EINVAL when fresh breaks the
+ * rules (or the two passwords do not fit), ENOTSUP, or EIO.  The passwords
+ * are not kept or logged.
+ */
+int kl_backend_account_set_password(const char *current, const char *fresh);
+
+
+/*
  * The session (ws131-p006): the session manager that started the
  * compositor, and the hand-over of the display between the login screen
  * and a session.

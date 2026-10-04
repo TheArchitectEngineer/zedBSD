@@ -23,6 +23,20 @@
 #include <stddef.h>
 #include <sys/types.h>
 
+/*
+ * passwd, and the exit statuses of its batch mode (passwd -s), which
+ * programs that change a password through it read (ws160-p002).
+ */
+#ifndef ACCOUNT_PASSWD_PATH
+#define ACCOUNT_PASSWD_PATH		"/bin/passwd"
+#endif
+#define ACCOUNT_PASSWD_OK		0
+#define ACCOUNT_PASSWD_FAILED		1
+#define ACCOUNT_PASSWD_USAGE		2
+#define ACCOUNT_PASSWD_WRONG		3
+#define ACCOUNT_PASSWD_REFUSED		4
+#define ACCOUNT_PASSWD_MISMATCH		5
+
 /* The shadow file, and its lock. */
 #define ACCOUNT_SHADOW_PATH		"/etc/shadow"
 #define ACCOUNT_SHADOW_LOCK		"/etc/shadow.lock"

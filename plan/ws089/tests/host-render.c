@@ -19,6 +19,8 @@
  *   --size=WxH         the window's size (default 1180x800)
  *   --page=WORD        the page shown first (default Home)
  *   --network=SCENARIO a made-up network (host-network.c: wifi, wired, absent, down; default wifi)
+ * With HOST_ACCOUNT_RESULT=ERRNO in the environment the desktop offers the account (host-kl-system.c, ws160-p002):
+ * the system is a stand-in, polled after each action, and a password change is answered with that errno.
  *
  * Actions, run in order:
  *   move=X,Y  click=X,Y  scroll=PIXELS  key=CODE[:MODS]  action=N
@@ -133,10 +135,14 @@ main(
 	setenv("HOME", home, 1);
 	se_look_open(&app, NULL);
 	se_ui_init(&app, &text, start);
+	if (getenv("HOST_ACCOUNT_RESULT") != NULL)
+		app.system = (struct kl_system *)&app;
 	se_ui_draw(&app, &canvas);
 
-	/* Each action, a frame after it. */
+	/* Each action, a frame after it (and the stand-in system's answers taken). */
 	for (; index < argc; index++) {
+		if (app.system != NULL)
+			se_system_poll(&app);
 		if (sscanf(argv[index], "move=%d,%d", &x, &y) == 2) {
 			host_event(&app, SE_EVENT_MOTION, x, y, 0, 0, 0, 0);
 		} else if (sscanf(argv[index], "click=%d,%d", &x, &y) == 2) {
