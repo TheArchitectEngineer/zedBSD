@@ -108,3 +108,5 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 `plan/tools/guest/test-image.sh --no-harness plan/ws159/tests/config-amd64-uat.mk build/uat-0505` を main 7debc4ba（ws159-p006 の割り込み・i2c-hid の thread_start の直し・WS160 p001/p002・q722・WS132 p003 を含む）で build、exit 0、`check-amd64-native-image: OK`。`/home/awe/zedBSD-claude1/build/uat-0505/hdd-image.img`（2216689664 byte、sha256 830d2498f85213e8bda5ff0a0d9d1d938f05df92c57a13ebafdc5b1b115206c6）。QEMU の boot の確認は T1-124。video player（ws122）と release の license の直しはこの image に入っていない。
 
 注（2026-10-05 Q1）: ws142-p003（d1a57d3a）が入った image では、項目 2.10 の 3 本指の tap は中 click でなく TAP3（switcher の gesture、UI は ws142-p005 まで log だけ）。中 click は 3 本指の押し込み（D1）。build/uat-0505 は 7debc4ba なので旧の動作（中 click）。
+
+追加の確認（2026-10-05 Q1、ws113-p013）: main 780764c3 以降の image なら、compositor が一度描いた後に `backlight-probe`・`backlight-probe 30`・`backlight-probe 100` で内蔵の panel の明るさが変わるのを目視（描く前は EBUSY が正しい）。build/uat-0505 には入っていない。
