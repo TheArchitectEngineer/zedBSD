@@ -36,10 +36,9 @@ zlib-1.3.2/FAQ'
 # 補助・MSVC の wrapper、LICENSE-BUILDTOOLS はそれらの license）で、image の binary に入らない。
 
 # GPL・LGPL の package（全体を一つの判定とする archive の上の directory、ws129-p002）。image に入らない（CI の
-# config は選ばない）か、入れるならユーザーの判断。REmacs の archive は ime-dict-ja が辞書だけを取る（README の GPL の文は
-# 取り込みの前の版。2026-10-04 に作者が zlib にして userland/base/emacs に取り込んだ）。
-packages='gtk-4.18.6 glib-2.84.4 pango-1.56.4 cairo-1.18.6 fribidi-1.0.17 gdk-pixbuf-2.44.8 gperf-3.3
-REmacs-1a724393053e18c4e1f502ecc5ca8ce07d99287a'
+# config は選ばない）か、入れるならユーザーの判断。REmacs の archive は 2026-10-04 から取得しない（作者が zlib にして
+# userland/base/emacs に取り込み、ime-dict-ja の辞書も userland/desktop/ime/dict に写した）。
+packages='gtk-4.18.6 glib-2.84.4 pango-1.56.4 cairo-1.18.6 fribidi-1.0.17 gdk-pixbuf-2.44.8 gperf-3.3'
 
 # build の時だけ使う autotools・libtool・GNU の補助の file の名前（どの archive でも）。
 helpers='config.guess config.sub ltmain.sh libtool.m4 ltoptions.m4 ltsugar.m4 ltversion.m4 lt~obsolete.m4 compile

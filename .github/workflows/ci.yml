@@ -78,18 +78,6 @@ jobs:
           name: artifacts
           path: artifacts
 
-      - name: Download Keiland packages
-        uses: actions/download-artifact@v4
-        with:
-          pattern: keiland-linux-*
-          path: artifacts
-          merge-multiple: true
-
-      - name: Checkout release verifier
-        uses: actions/checkout@v4
-        with:
-          path: release-source
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         env:
@@ -109,9 +97,6 @@ jobs:
             |---------|--------------|-----------------------|---------------------------------------------------------|
             | amd64   | PC (UEFI)    | `zedbsd-amd64.img.gz` | USB image, gzip-compressed (`gunzip` before writing).   |
             | amd64   | Windows      | `Kei-nightly.zip`     | Kei in QEMU with Vulkan (Venus). Unzip and run `boot.bat`. |
-
-            Keiland Linux (native QEMU build and installation tests)
-            =======================================================
 
           files: |
             artifacts/zedbsd-amd64.img.gz

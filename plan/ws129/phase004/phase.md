@@ -30,3 +30,9 @@ p001、BUG-134（ws004-p051）の結果、fg019 の各 WS の到達（program �
 ## 未決の判断
 
 p001 の判断（配布物の範囲・prerelease）。
+
+## 部分の実施: CI の release の job の掃除（2026-10-04、P2、ユーザー「WS129 p004はさくっと直してしまいましょう。」、U1〜U15 に依らない範囲）
+
+- `.github/workflows/ci.yml` の nightly の release の job から、どの job も作らない `keiland-linux-*` の artifact の download と、使わない `release-source` の checkout を削った（WS112 の package の job を外した名残）。本文の中身の無い「Keiland Linux」の節も削った。build の job・tag・配布物は変えていない。
+- 確かめ: `yaml.safe_load` で読めて、release の job の step は「Download artifacts」「Create GitHub Release」の 2 つ。GitHub での実行は未実施（push はユーザーの指示）。
+- 残り（p004 の本体）: release の config・release.yml などは U1〜U15 の後。

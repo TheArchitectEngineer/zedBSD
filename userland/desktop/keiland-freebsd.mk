@@ -148,27 +148,9 @@ $(eval $(call KEILAND_FREEBSD_DATA,share/keiland/wallpaper.ppm,$(KEILAND_FREEBSD
 KEILAND_FREEBSD_ALL += $(KEILAND_FREEBSD_WALLPAPERS)
 KEILAND_FREEBSD_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .ppm,$(KEILAND_FREEBSD_WALLPAPER_NAMES)))
 
-# Dictionary identity comes from its authoritative target declaration, without including target rules.
-KEILAND_FREEBSD_DICT_MAKEFILE := userland/desktop/ime/dict/Makefile
-KEILAND_FREEBSD_DICT_ARCHIVE := $(shell sed -n 's/^ZEDBSD_EXT_ime-dict-ja_ARCHIVE := //p' $(KEILAND_FREEBSD_DICT_MAKEFILE))
-KEILAND_FREEBSD_DICT_URL := $(shell sed -n 's/^ZEDBSD_EXT_ime-dict-ja_URL := //p' $(KEILAND_FREEBSD_DICT_MAKEFILE))
-KEILAND_FREEBSD_DICT_ROOT := $(shell sed -n 's/^ZEDBSD_EXT_ime-dict-ja_ROOT := //p' $(KEILAND_FREEBSD_DICT_MAKEFILE))
-KEILAND_FREEBSD_DICT_ARCHIVE_SHA := $(shell sed -n 's/^ZEDBSD_EXT_ime-dict-ja_SHA256 := //p' $(KEILAND_FREEBSD_DICT_MAKEFILE))
-KEILAND_FREEBSD_DICT_SHA := $(shell sed -n 's/^ZEDBSD_IME_DICT_X_SHA256 := //p' $(KEILAND_FREEBSD_DICT_MAKEFILE))
-build/distfiles/$(KEILAND_FREEBSD_DICT_ARCHIVE):
-	@mkdir -p $(dir $@)
-	fetch -o $@.tmp '$(KEILAND_FREEBSD_DICT_URL)'
-	test "$$(sha256 -q $@.tmp)" = "$(KEILAND_FREEBSD_DICT_ARCHIVE_SHA)"
-	mv $@.tmp $@
-$(KEILAND_FREEBSD_BUILD)/share/kei/ime/ja/SKK-JISYO.X: build/distfiles/$(KEILAND_FREEBSD_DICT_ARCHIVE) $(KEILAND_FREEBSD_DICT_MAKEFILE)
-	@mkdir -p $(dir $@)
-	test "$$(sha256 -q $<)" = "$(KEILAND_FREEBSD_DICT_ARCHIVE_SHA)"
-	tar -xOf $< '$(KEILAND_FREEBSD_DICT_ROOT)/dict/SKK-JISYO.X' > $@.tmp
-	test "$$(sha256 -q $@.tmp)" = "$(KEILAND_FREEBSD_DICT_SHA)"
-	mv $@.tmp $@
-# The copyright holder's WS095 D1 relicensing places the dictionary under the project license.
-KEILAND_FREEBSD_ALL += $(KEILAND_FREEBSD_BUILD)/share/kei/ime/ja/SKK-JISYO.X
-KEILAND_FREEBSD_INSTALL += share/kei/ime/ja/SKK-JISYO.X
+# The Japanese dictionaries are in the tree (userland/desktop/ime/dict, copied from userland/base/emacs/dict on
+# 2026-10-04); the copyright holder's WS095 D1 relicensing places them under the project license.
+$(eval $(call KEILAND_FREEBSD_DATA,share/kei/ime/ja/SKK-JISYO.X,userland/desktop/ime/dict/SKK-JISYO.X))
 $(eval $(call KEILAND_FREEBSD_DATA,share/kei/ime/ja/SKK-JISYO.kei,userland/desktop/ime/dict/SKK-JISYO.kei))
 
 .PHONY: all libraries install install-headers print-sources header-dependencies

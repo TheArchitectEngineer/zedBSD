@@ -53,6 +53,7 @@ Makefile は `Makefile.remacs`）、`userland/packages/editors/remacs` を削除
 CI の config（clang・libcxx 抜き）の rootfs で `license-inventory.py --rootfs` の open は 0。ime-dict-ja はまだ REmacs の archive から辞書を取る
 （tree の `userland/base/emacs/dict` に替えるのは WS095 の持ち主の判断、残り）。
 2026-10-04 追記（ws129-p012、user「remacs のコマンド名は/bin/emacsでお願いします」）: package の名前は `emacs`、install は `/bin/emacs`（同じ nap、`#!/usr/bin/noct`）と link `/usr/bin/noct -> /bin/noct`。表の id も `emacs`（生成物を再生成、open 0）。
+2026-10-04 追記（ユーザー「IME の辞書はコピーして取り込んでください。」）: ime-dict-ja の辞書を `userland/desktop/ime/dict/SKK-JISYO.X` に写し、REmacs の archive の取得をやめた（zedBSD・Linux・FreeBSD）。生成物を再生成、open 0。
 
 ### 確かめて問題の無い物
 

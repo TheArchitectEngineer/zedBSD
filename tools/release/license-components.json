@@ -183,10 +183,12 @@
    "name": "Japanese input dictionary (from the Remacs dictionary)",
    "when": "program:ime-dict-ja",
    "license": "Zlib",
-   "upstream": "the Remacs dictionary (userland/base/emacs/dict, zlib since 2026-10-04); this package still fetches it from the Remacs archive at 1a724393053e",
-   "version": "ext:ime-dict-ja",
+   "upstream": "the Remacs dictionary, copied into userland/desktop/ime/dict from userland/base/emacs/dict on 2026-10-04 (zlib)",
+   "version": "",
    "notices": [],
-   "paths": [],
+   "paths": [
+    "userland/desktop/ime/dict/"
+   ],
    "note": "Under the project's license file (ws095 D1)."
   },
   {
