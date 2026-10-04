@@ -254,6 +254,7 @@ struct input_absinfo {
 #define BUS_USB		0x03
 #define BUS_BLUETOOTH	0x05
 #define BUS_VIRTUAL	0x06
+#define BUS_I2C		0x18
 #define BUS_HOST	0x19
 
 #define EVIOCGVERSION _IOR(KERN_EVDEV_IOC_GROUP, 0x01, int)

@@ -50,6 +50,9 @@
 #if CONFIG_DRIVER_PCI_LPSS_I2C
 #include <drivers/i2c/lpss-i2c.h>
 #endif
+#if CONFIG_DRIVER_PCI_LPSS_I2C && CONFIG_DRIVER_ACPI
+#include <drivers/i2c/i2c-hid.h>
+#endif
 #if CONFIG_DRIVER_USB_STORAGE
 #include "drivers/usb/usb-storage.h"
 #include <drivers/usb/usb-uas.h>
@@ -387,6 +390,16 @@ kern_platform_input_init(
 	 * this doing nothing.
 	 */
 	drv_pcat_serial_mirror_start_input();
+
+#if CONFIG_DRIVER_PCI_LPSS_I2C && CONFIG_DRIVER_ACPI
+	/*
+	 * Starts the HID over I2C devices the ACPI tables name (a laptop's
+	 * touch pad, WS159); each publishes its input device from its own
+	 * thread once it has come up, and one that does not come up leaves
+	 * the PS/2 mouse as the pointer.
+	 */
+	(void)drv_i2c_hid_probe();
+#endif
 
 	/* Succeeded. */
 	return 0;
