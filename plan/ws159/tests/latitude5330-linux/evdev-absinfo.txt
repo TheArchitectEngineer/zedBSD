@@ -1,0 +1,13 @@
+/dev/input/event1 'VEN_06CB:00 06CB:CE65 Mouse' props 0000000000000000
+  keys ['0x110', '0x111']
+/dev/input/event2 'VEN_06CB:00 06CB:CE65 Touchpad' props 0500000000000000
+  abs 0x00 ABS_X                value=0 min=0 max=1336 fuzz=0 flat=0 resolution=12
+  abs 0x01 ABS_Y                value=0 min=0 max=760 fuzz=0 flat=0 resolution=12
+  abs 0x2f ABS_MT_SLOT          value=0 min=0 max=4 fuzz=0 flat=0 resolution=0
+  abs 0x35 ABS_MT_POSITION_X    value=0 min=0 max=1336 fuzz=0 flat=0 resolution=12
+  abs 0x36 ABS_MT_POSITION_Y    value=0 min=0 max=760 fuzz=0 flat=0 resolution=12
+  abs 0x37 ABS_MT_TOOL_TYPE     value=0 min=0 max=2 fuzz=0 flat=0 resolution=0
+  abs 0x39 ABS_MT_TRACKING_ID   value=0 min=0 max=65535 fuzz=0 flat=0 resolution=0
+  keys ['0x110', '0x145', '0x148', '0x14a', '0x14d', '0x14e', '0x14f']
+/dev/input/event3 'PS/2 Generic Mouse' props 0100000000000000
+  keys ['0x110', '0x111', '0x112']

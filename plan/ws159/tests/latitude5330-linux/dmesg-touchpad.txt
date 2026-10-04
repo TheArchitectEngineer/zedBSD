@@ -1,0 +1,73 @@
+[  944.875683] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  944.875687] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 01
+[  944.886899] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  944.886903] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  944.887799] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  944.887803] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 03
+[  944.888545] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_power
+[  944.888548] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 01 08
+[  945.961710] drivers/hid/i2c-hid/i2c-hid-core.c: HID probe called for i2c 0x2c
+[  945.962193] i2c_hid_acpi i2c-VEN_06CB:00: Fetching the HID descriptor
+[  945.962196] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=20 00
+[  945.963520] i2c_hid_acpi i2c-VEN_06CB:00: HID Descriptor: 1e 00 00 01 99 02 21 00 24 00 40 00 25 00 17 00 22 00 23 00 cb 06 65 ce 02 04 00 00 00 00
+[  945.963525] i2c_hid_acpi i2c-VEN_06CB:00: Requesting IRQ: 161
+[  945.964009] i2c_hid_acpi i2c-VEN_06CB:00: entering i2c_hid_parse
+[  945.964011] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_start_hwreset
+[  945.964012] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_power
+[  945.964012] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 00 08
+[  946.025971] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 00 01
+[  946.026534] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_finish_hwreset: waiting...
+[  946.029671] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_finish_hwreset: finished.
+[  946.029675] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_power
+[  946.029677] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 00 08
+[  946.094091] i2c_hid_acpi i2c-VEN_06CB:00: asking HID report descriptor
+[  946.094095] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=21 00
+[  946.114331] i2c_hid_acpi i2c-VEN_06CB:00: Report Descriptor: 05 01 09 02 a1 01 85 02 09 01 a1 00 05 09 19 01 29 02 15 00 25 01 75 01 95 02 81 02 95 06 81 01 05 01 09 30 09 31 15 81 25 7f 75 08 95 02 81 06 c0 c0 05 0d 09 05 a1 01 85 03 05 0d 09 22 a1 02
+[  946.114928] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.114930] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 38 02 23 00
+[  946.115488] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.115489] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 38 02 23 00
+[  946.116044] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.116045] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 37 02 23 00
+[  946.123997] input: VEN_06CB:00 06CB:CE65 Mouse as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0005/input/input17
+[  946.124262] input: VEN_06CB:00 06CB:CE65 Touchpad as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0005/input/input18
+[  946.124631] hid-multitouch 0018:06CB:CE65.0005: input,hidraw0: I2C HID v1.00 Mouse [VEN_06CB:00 06CB:CE65] on i2c-VEN_06CB:00
+[  946.124636] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.124638] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 00
+[  946.125148] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.125150] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.125623] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.125626] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 03
+[    0.685680] serio: i8042 KBD port at 0x60,0x64 irq 1
+[    0.685685] serio: i8042 AUX port at 0x60,0x64 irq 12
+[    0.690606] input: AT Translated Set 2 keyboard as /devices/platform/i8042/serio0/input/input0
+[    0.952708] intel-lpss 0000:00:15.0: enabling device (0000 -> 0002)
+[    0.962352] intel-lpss 0000:00:15.1: enabling device (0000 -> 0002)
+[    1.183816] input: VEN_06CB:00 06CB:CE65 Mouse as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0001/input/input4
+[    1.183912] input: VEN_06CB:00 06CB:CE65 Touchpad as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0001/input/input5
+[    1.183967] hid-generic 0018:06CB:CE65.0001: input,hidraw0: I2C HID v1.00 Mouse [VEN_06CB:00 06CB:CE65] on i2c-VEN_06CB:00
+[    1.261236] input: VEN_06CB:00 06CB:CE65 Mouse as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0001/input/input7
+[    1.261287] input: VEN_06CB:00 06CB:CE65 Touchpad as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0001/input/input8
+[    1.261337] hid-multitouch 0018:06CB:CE65.0001: input,hidraw0: I2C HID v1.00 Mouse [VEN_06CB:00 06CB:CE65] on i2c-VEN_06CB:00
+[    1.508799] input: PS/2 Generic Mouse as /devices/platform/i8042/serio1/input/input3
+[    2.760697] input: Intel HID events as /devices/platform/INTC1070:00/input/input10
+[    2.763301] intel-hid INTC1070:00: platform supports 5 button array
+[    2.766089] input: Intel HID 5 button array as /devices/platform/INTC1070:00/input/input12
+[  944.888545] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_power
+[  945.962193] i2c_hid_acpi i2c-VEN_06CB:00: Fetching the HID descriptor
+[  945.963520] i2c_hid_acpi i2c-VEN_06CB:00: HID Descriptor: 1e 00 00 01 99 02 21 00 24 00 40 00 25 00 17 00 22 00 23 00 cb 06 65 ce 02 04 00 00 00 00
+[  945.963525] i2c_hid_acpi i2c-VEN_06CB:00: Requesting IRQ: 161
+[  945.964009] i2c_hid_acpi i2c-VEN_06CB:00: entering i2c_hid_parse
+[  945.964011] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_start_hwreset
+[  945.964012] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_power
+[  946.026534] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_finish_hwreset: waiting...
+[  946.029671] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_finish_hwreset: finished.
+[  946.029675] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_power
+[  946.094091] i2c_hid_acpi i2c-VEN_06CB:00: asking HID report descriptor
+[  946.114331] i2c_hid_acpi i2c-VEN_06CB:00: Report Descriptor: 05 01 09 02 a1 01 85 02 09 01 a1 00 05 09 19 01 29 02 15 00 25 01 75 01 95 02 81 02 95 06 81 01 05 01 09 30 09 31 15 81 25 7f 75 08 95 02 81 06 c0 c0 05 0d 09 05 a1 01 85 03 05 0d 09 22 a1 02
+[  946.114928] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.115488] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.116044] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.123997] input: VEN_06CB:00 06CB:CE65 Mouse as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0005/input/input17
+[  946.124262] input: VEN_06CB:00 06CB:CE65 Touchpad as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0005/input/input18
+[  946.124631] hid-multitouch 0018:06CB:CE65.0005: input,hidraw0: I2C HID v1.00 Mouse [VEN_06CB:00 06CB:CE65] on i2c-VEN_06CB:00
