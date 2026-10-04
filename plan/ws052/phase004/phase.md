@@ -4,7 +4,7 @@
 
 Phase ID: `ws052-p004`
 Parent: [WS052](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17。PCI の口と NVMe は実装済み（vmunix の link、host の試験）。xHCI・i915 は未着手）
+Status: in-progress（2026-10-05 P1 generation17。PCI の口・NVMe・xHCI は実装済み（vmunix の link、host の試験）。i915 は未着手。QEMU は未実施）
 Phase disposition: normal
 Queue: Q1 の 2026-10-05 の指示（p003 の次。HAL に依らない範囲、1 つでも失敗したら中止し原因の device を返す）
 
@@ -37,6 +37,15 @@ Queue: Q1 の 2026-10-05 の指示（p003 の次。HAL に依らない範囲、1
   `nvme_resume`: disable → queue の memory の reset → enable → 割り込みを元に → I/O queue の作成 → 待たせた request を通す。起きない controller は
   quarantine。suspend の途中の失敗は controller を起こし直して失敗を返す。
 
+- `src/drivers/pci/pci-xhci.c`（xHCI 1.2 §4.23.2 の Save/Restore State）: `xhci_suspend`: gate を閉じる（operation は待ち、submission は TRB を
+  ring に置くが doorbell を鳴らさない）、interrupt の poll 以外の転送の終わりを待つ（2 秒で EBUSY）、port の worker を止め、動いている endpoint を
+  Stop Endpoint（SP）で止める（その Stopped の転送の事象は request を ring に残す）、接続のある root port を U3、RS を下げて HCH、interrupter を
+  止め、Restore に要る register（DNCTRL・CONFIG・DCBAAP・IMOD・ERSTSZ・ERSTBA）を保って CSS。`xhci_resume`: register を戻し、ERDP を driver の
+  event ring の位置に、CRCR を command ring の位置にして CRS、RS、port を U0（USB 2 は Resume を 20 ms）、全 endpoint の doorbell、gate を開け
+  worker を再開。SRE（QEMU は Restore を実装せず必ず立つ）・HCE なら `ESTALE` を返し、PCI の口がその function を detach・attach し直す（USB の
+  device は列挙し直し。mount 中の USB storage は外れる）。USB の wake（remote wakeup、port の wake の bit）はまだ有効にしない。
+- `pci-power.c`: driver の resume が `ESTALE` なら `drv_pci_device_reprobe()`（host の試験に追加）。
+
 ## 確認（ここまで）
 
 | 確認 | コマンド | 結果 |
@@ -48,9 +57,8 @@ Queue: Q1 の 2026-10-05 の指示（p003 の次。HAL に依らない範囲、1
 
 ## 残り
 
-- xHCI: 案は xHCI 1.2 §4.23.2 の Save/Restore State: 新しい submission と port の worker を止め、接続のある root port の device の endpoint を
-  Stop Endpoint（SP）で止め、port を U3、RS を下げ HCH、operational・runtime の register を保存し CSS。resume は register を戻し、command ring を
-  置き直して CRS、SRE（QEMU は Restore を実装しないので立つ見込み）なら reset と再列挙に落ちる。RS、port を U0（USB2 は Resume 20 ms）、doorbell で
-  endpoint を再開。Stop の時の Stopped の completion code の扱いを読む必要がある。
 - i915: scanout の停止、DC6/DC9、GT の RC6、D3hot。resume は suspend の前の出力先（Keiland の指示の分を含む）。
-- 5330 の LPSS-I2C（touchpad）は p004 の必須に入っていないが driver が付くので、p005 までは中止の原因になる（Q1 に報告）。
+- 5330 の LPSS-I2C（touchpad）は p004 の必須に入っていないが driver が付くので、p005 までは中止の原因になる。**p005（止めて入る）で扱う**（2026-10-05 Q1）。
+- QEMU の試験の口（2026-10-05 Q1 の指示）: p006 の `/dev/system` の ioctl の「devices だけ」の mode（root だけ、HAL に依らない: device の
+  suspend→resume の往復だけ、CPU の深い idle・tick・割り込みの mask には触れない）を先に作り、T1 に NVMe・xHCI の往復と、suspend の無い driver で
+  中止して理由が返ることを依頼する。
