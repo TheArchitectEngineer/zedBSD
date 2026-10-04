@@ -12,6 +12,7 @@ Queue: q721
 ベータ1 の release の image は root を lock し（U10）、kei の password を公開する（U3）。image に su・doas・sudo・passwd が無く、kei は wheel に居ないので、管理の作業も password の変更もできなかった（ws129-p004・p013 の P2 の発見）。
 - ユーザー（2026-10-05 未明）「su, sudoを実装してください。」
 - ユーザー（同）passwd について「passwd を実装する」。
+- ユーザー（同）「パスワードはSettingsのUsers画面でもGUI実装します。passwdも実装します。」→ Settings の Users の頁でも password を変えられる（WS089 の Users の頁、passwd と同じ核を使う）。
 - 同じ回答で: release でも自動 login を保つ、nightly の CI の config は今のまま。
 
 ## 目標と受け入れ
@@ -22,8 +23,11 @@ Queue: q721
 4. setuid の扱いが kernel と rootfs の install で正しいこと、環境の変数の消毒、失敗の記録。
 5. host の試験と QEMU（T1）: kei で passwd を変え、新しい password で SSH に入れる。sudo で root の command が動き、wheel でない利用者は拒まれる。su の成功と失敗。
 
+6. Settings の Users の頁で自分の password を変える GUI（今の password・新しい password・確認）。passwd と同じ検証と書き換えの核（library か setuid の helper）を使い、Settings に root の権限を持たせない。
+
 ## Phase
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws160-p001 | 設計（既存の login・crypt・shadow の扱い、setuid の kernel の対応、規則の file の形）と実装・試験 | planned（q721） | なし |
+| ws160-p001 | 設計（既存の login・crypt・shadow の扱い、setuid の kernel の対応、規則の file の形、Settings からの変更の経路）と passwd・su・sudo の実装・試験 | planned（q721） | なし |
+| ws160-p002 | Settings の Users の頁の password の変更（GUI） | planning | p001 |
