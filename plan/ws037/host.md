@@ -22,7 +22,7 @@
 
 | 項目 | 値 | 調べ方 |
 | --- | --- | --- |
-| GPU の PCI の address と ID | （未記入） | `lspci -nn -d 10de:`。RTX 2070 は TU106（例 `10de:1f02`・`1f07`、Super は `1ec2`・`1ec7`。**p001 で確かめる**） |
+| GPU の PCI の address と ID | （未記入） | `lspci -nn -d 10de:`。RTX 2070 は TU106（`10de:1f02`・`1f07`）。RTX 2070 SUPER は TU104（`1e84`・`1ec2`・`1ec7`）で、同じ手順の見込み（[design](nvrtx-design.md) 1.1） |
 | 同じ GPU の他の function | （未記入） | TU106 の board は audio（.1）・USB の xHCI（.2）・UCSI（.3）を持つことがある。VFIO では全部を一緒に渡す |
 | IOMMU の group | （未記入） | `/sys/kernel/iommu_groups/*/devices/` |
 | IOMMU の有効 | （未記入） | kernel の command line の `intel_iommu=on`・`amd_iommu=on`、`dmesg` |
