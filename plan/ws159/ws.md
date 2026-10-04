@@ -9,6 +9,8 @@ Related Milestones: MG003
 Parent: [Master](../master.md)
 Queue: q713（**ベータ1**、2026-10-05 ユーザーのクリックの回答。P1・P2 が空いたら優先して着手）
 Resume point: p001（設計）から。WS049（ACPI AML）の後（ユーザー）。WS049 は p007〜p009・p016・p017 まで済み（実機の UAT 待ち）。
+
+**UAT の image の条件（2026-10-05 Q1）**: main 37d2a16（P1 1a41db3、i2c-hid の probe で `thread_start` を呼ぶ修正）以降で作る。これより前の build では実機の touchpad の thread が動かない（host の試験は thread を自分で走らせていたので見逃した。host-i2c-hid に thread_start の check を追加）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
