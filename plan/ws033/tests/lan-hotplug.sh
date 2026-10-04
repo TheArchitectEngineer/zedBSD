@@ -1,0 +1,86 @@
+#!/bin/sh
+# ws033-p001 / BUG-168: a USB network adapter plugged in after the boot on the SSH guest (plan/tools/guest/guest.py,
+# its management adapter is ue0; image: plan/tools/guest/test-image.sh plan/tools/guest/config-amd64-ssh.mk BUILD).
+# The adapter is QEMU's usb-net (CDC ECM) on its own user network 10.0.5.0/24, plugged in through QMP on a port QEMU
+# chooses (the controller has 8+8 ports).  Judged over SSH only (ifconfig, net show, netstat), never the console.
+#  1. Plugged in: a new interface appears with the adapter's MAC, and within 40 s networkd brings it up and DHCP gives
+#     it a 10.0.5.x address (BUG-168: it stayed down, or fell back to 169.254 with RX packets 0).
+#  2. Its counters move (RX packets > 0): the data interface works after a late attach.
+#  3. Pulled out: the interface goes, networkd stays up; plugged in again: an address again.
+# Each poll's ifconfig, net show and the kernel's usb/net lines go to OUTDIR for the analysis when a step fails.
+#   plan/tools/guest/guest.py start IMAGE; plan/tools/guest/guest.py wait
+#   plan/ws033/tests/lan-hotplug.sh [OUTDIR]
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+set -u
+cd "$(dirname -- "$0")/../../.."
+runtime=${GUEST_RUNTIME:-$PWD/build/guest}
+qmp="$runtime/qmp.sock"
+out=${1:-build/ws033-lan-hotplug}
+mkdir -p "$out"
+guest() { timeout 60 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
+send() { timeout 40 python3 plan/ws049/tests/qmp-send.py "$qmp" "$@" >> "$out/qmp.txt" 2>&1; }
+mac=52:54:00:33:00:05
+status=0
+pass() { echo "$1: ok"; }
+fail() { echo "$1: FAILED"; status=1; }
+: > "$out/qmp.txt"
+
+# The interface with the adapter's MAC, or nothing.
+hot_name() { guest "ifconfig -a" | awk -v mac="$mac" '/^[a-z]+[0-9]+:/ { name = $1; sub(":", "", name) } tolower($0) ~ mac { print name; exit }'; }
+
+# Polls up to 40 s for a 10.0.5.x address on the adapter; each poll is kept.  Prints the interface's name.
+wait_address() {
+	tag=$1
+	i=0
+	while [ $i -lt 20 ]; do
+		name=$(hot_name)
+		if [ -n "$name" ]; then
+			guest "ifconfig $name; net show; netstat -rn 2>/dev/null" > "$out/$tag-poll$i.txt"
+			if grep -q 'inet 10\.0\.5\.' "$out/$tag-poll$i.txt"; then
+				echo "$name"
+				return 0
+			fi
+		fi
+		sleep 2
+		i=$((i + 1))
+	done
+	echo "${name:-}"
+	return 1
+}
+
+# The before state.
+guest "ifconfig -a; net show; dmesg | tail -40" > "$out/before.txt"
+
+# 1 and 2. Plugged in.
+send netdev_add '{"type":"user","id":"hotnet","net":"10.0.5.0/24","host":"10.0.5.2","dhcpstart":"10.0.5.15"}'
+send device_add "{\"driver\":\"usb-net\",\"bus\":\"xhci.0\",\"netdev\":\"hotnet\",\"id\":\"hotnic\",\"mac\":\"$mac\"}"
+name=$(wait_address plug1)
+got=$?
+guest "dmesg | grep -Ei 'usb|cdc|ue[0-9]' | tail -30; ps -A -o pid,args | grep [n]etworkd" > "$out/plug1-kernel.txt"
+echo "interface: ${name:-none}"
+[ -n "$name" ] && pass plugged-interface || fail plugged-interface
+[ $got -eq 0 ] && pass plugged-dhcp-address || fail plugged-dhcp-address
+if [ -n "$name" ]; then
+	guest "ifconfig $name" > "$out/plug1-counters.txt"
+	rx=$(sed -n 's/.*RX packets \([0-9]*\).*/\1/p' "$out/plug1-counters.txt" | head -1)
+	echo "RX packets: ${rx:-?}"
+	[ "${rx:-0}" -gt 0 ] 2>/dev/null && pass plugged-rx || fail plugged-rx
+	# A failed address: what a manual DHCP gets, for the analysis (not judged).
+	[ $got -eq 0 ] || guest "net dhcp $name --timeout=20; ifconfig $name" > "$out/plug1-manual-dhcp.txt"
+fi
+
+# 3. Pulled out, networkd stays; plugged in again.
+send device_del '{"id":"hotnic"}'
+sleep 4
+left=$(hot_name)
+[ -z "$left" ] && pass unplugged-gone || fail unplugged-gone
+guest 'ps -A -o args | grep -c "[n]etworkd"' | tail -1 > "$out/networkd-count.txt"
+[ "$(cat "$out/networkd-count.txt")" = "1" ] && pass networkd-alive || fail networkd-alive
+send device_add "{\"driver\":\"usb-net\",\"bus\":\"xhci.0\",\"netdev\":\"hotnet\",\"id\":\"hotnic\",\"mac\":\"$mac\"}"
+name=$(wait_address plug2)
+[ $? -eq 0 ] && pass replugged-dhcp-address || fail replugged-dhcp-address
+send device_del '{"id":"hotnic"}'
+send netdev_del '{"id":"hotnet"}'
+
+echo "lan-hotplug: status $status (outputs in $out)"
+exit $status

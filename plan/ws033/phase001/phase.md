@@ -70,3 +70,11 @@ BUG-168（後挿しの ue0 が up しない）・BUG-169（抜いた後の Ether
 `net_device_set_carrier` の初期値、NETWORK_CONNECTION 通知の待ち）を読む。(2) managed-lan の 169.254 の後の再試行（carrier が変わらない時の周期の
 再 DHCP）を要るか判断。(3) `plan/ws033/tests/lan-hotplug.sh`（QMP の device_add/device_del、SSH の `ifconfig`・`net show` で判定）を作り、T1 に依頼
 （Q1 経由）。(4) BUG-169 の読み。
+
+## q685 の再開（2026-10-05 P1 generation17）
+
+- **BUG-168 の原因の候補（読んで見つけた競合、直した）**: USB の CDC の driver（`usb-cdc-ecm.c`・`usb-cdc-ncm-net.c` の attach）は、net device を公開（`net_device_create`、networkd に `RTM_IFINFO`）した**後に** data interface の alt setting を選び（USB の control transfer）`ready` にする。起動時は networkd がまだ居ないので問題にならないが、後挿しでは networkd が公開を見てすぐ `ifconfig ue1 up` をし、`ready` の前なら `ecm_open` が `ENETDOWN` で断る。networkd の `lan_raise` は結果を見ずに `raised` を立てるので、二度と up しない（carrier が無いので CONFIGURE にも入らない）。報告の「起動時から挿せば up、後から挿すと down のまま、WiFi を off にしても down」と合う。
+- 直し（`userland/base/networkd/main.c` の `lan_raise`）: `ifconfig up` が失敗したら 200 ms あけて最大 5 回試し、全部失敗したら stderr に理由を出す。driver の順（alt setting を最後の失敗しうる操作にする p015 の取り決め）は変えない。
+- q598 の観測（後挿しの ue1 が `UP,RUNNING` で RX/TX 0、169.254）は別の可能性が残る（data の bulk が後挿しで動かない）。読みだけでは決められないので、QEMU の試験 `plan/ws033/tests/lan-hotplug.sh` を作った（usb-net を QMP で後挿し、40 秒以内の 10.0.5.x の DHCP、RX packets > 0、抜いて networkd が生きていること、挿し直しで再び address。失敗した時は poll ごとの ifconfig・net show・kernel の行と手での `net dhcp` を残す）。T1 に依頼（Q1 経由）。
+- 確認: `make BUILD=build/q713 build/q713/bin/networkd` warning 0、`make managed-lan-host-test` PASS（MLAN-T001）。
+- BUG-169 は [ticket](../../bugs/BUG-169.md)（networkd の state に `radio=` を足し、backend が WLAN の interface を有線と取らない）。
