@@ -32,6 +32,13 @@
  * hung input method cannot take the keyboard with it.  The modifiers the
  * application hears are always the keyboard's own; the virtual keyboard's
  * modifiers and keymap are taken and not used.
+ *
+ * The language belongs to the application with the keyboard (ws095-p016):
+ * zdesktop remembers each application's (by its windows' application ID,
+ * else its connection) and the desktop's, chooses an application's again
+ * when the keyboard comes back to it, and starts an application seen for
+ * the first time with the desktop's.  A window, field or caret that moves
+ * within one application changes nothing.
  */
 
 #include "ime.h"
@@ -42,6 +49,7 @@
 #include "keymap.h"
 #include "menu.h"
 #include "titlebar.h"
+#include "desktop.h"
 
 #include "userland/desktop/paths.h"
 
@@ -61,6 +69,9 @@
 /* How long to wait before starting it again, and how often it may start in a window of time. */
 #define IME_RESTART_MS			1000U
 #define IME_START_WINDOW_MS		60000U
+
+/* The focus key of an application with the keyboard that has ended: the language chosen is nobody's (ws095-p016). */
+#define IME_APP_GONE			"-"
 
 /* How long a key may go unanswered before the input method is passed by, and an answer noted as slow. */
 #define IME_ANSWER_MS			500U
@@ -173,6 +184,13 @@ static size_t ime_put_string(unsigned char *payload, size_t offset, const char *
 static int ime_read_string(const unsigned char *bytes, size_t size, size_t offset, char **text, size_t *next);
 static uint32_t ime_word(const unsigned char *bytes, size_t offset);
 static void ime_set_text(char **field, const char *text);
+static void ime_app_key(struct zwl_server *server, char *key, size_t size);
+static struct zwl_ime_app *ime_app_find(struct zwl_ime *ime, const char *key);
+static struct zwl_ime_app *ime_app_add(struct zwl_ime *ime, const char *key);
+static void ime_app_remember(struct zwl_ime *ime);
+static void ime_app_focus(struct zwl_server *server);
+static int ime_client_has_app(const struct zwl_client *client, const char *app_id);
+static void ime_app_forget(struct zwl_server *server, struct zwl_client *client);
 
 /*
  * Starts the system's input method, when its program is installed (not on
@@ -419,9 +437,14 @@ zwl_ime_client_gone(
 {
 	struct zwl_server *server;
 
-	/* Only the input method's connection matters here. */
+	/* An application's connection that ends takes its language with it when it was its last (ws095-p016). */
 	server = client->server;
-	if (server->ime == NULL || server->ime->client != client)
+	if (server->ime == NULL)
+		return;
+	ime_app_forget(server, client);
+
+	/* Only the input method's connection matters here. */
+	if (server->ime->client != client)
 		return;
 
 	/* Everything the input method held goes. */
@@ -648,6 +671,10 @@ zwl_ime_focus(
 	/* The keys the virtual keyboard held were the old window's; its leave lets them go. */
 	if (ime != NULL)
 		memset(ime->keyboard_down, 0, sizeof(ime->keyboard_down));
+
+	/* The language of the application that has the keyboard now (ws095-p016). */
+	if (ime != NULL)
+		ime_app_focus(server);
 
 	/* The text inputs hear leave and enter (text-input.c). */
 	zwl_text_input_focus(server, previous);
@@ -1349,6 +1376,9 @@ ime_status_request(
 			snprintf(ime->label, sizeof(ime->label), "%s", label);
 			status->client->server->dirty = 1;
 			printf("ZWL IME language=%s\n", ime->language);
+
+			/* It is the language of the application (or the desktop) that has the keyboard (ws095-p016). */
+			ime_app_remember(ime);
 		}
 
 		free(id);
@@ -1977,4 +2007,264 @@ ime_set_text(
 
 	memcpy(copy, text, length);
 	*field = copy;
+}
+
+/*
+ * Writes the key of whose language is chosen now (ws095-p016): empty for
+ * the desktop (no window has the keyboard, or the desktop surface has it),
+ * "app:" and the application ID of the window with the keyboard, or
+ * "client:" and its connection's number when it names no application.
+ */
+static void
+ime_app_key(
+	struct zwl_server *server,
+	char *key,
+	size_t size)
+{
+	struct zwl_object *focus;
+	int desktop;
+
+	/* No window with the keyboard, or the desktop's surface: the desktop. */
+	key[0] = '\0';
+	focus = server->focus;
+	if (focus == NULL)
+		return;
+	desktop = zwl_desktop_is(focus);
+	if (desktop != 0)
+		return;
+
+	/* The window's application, by its ID when it has one. */
+	if (focus->app_id[0] != '\0') {
+		(void)snprintf(key, size, "app:%s", focus->app_id);
+		return;
+	}
+
+	/* Otherwise its connection. */
+	(void)snprintf(key, size, "client:%llu", (unsigned long long)focus->client->number);
+}
+
+/* Finds an application's entry by its key; NULL when none is kept. */
+static struct zwl_ime_app *
+ime_app_find(
+	struct zwl_ime *ime,
+	const char *key)
+{
+	unsigned index;
+	int differs;
+
+	/* Each entry in use. */
+	for (index = 0; index < ZWL_IME_APPS; index++) {
+		if (ime->apps[index].key[0] == '\0')
+			continue;
+		differs = strcmp(ime->apps[index].key, key);
+		if (differs == 0)
+			return &ime->apps[index];
+	}
+
+	/* Not kept. */
+	return NULL;
+}
+
+/*
+ * Makes an entry for an application, in a free place or, when every place
+ * is taken, in place of the first (the table is small and an application
+ * that lost its entry only starts again with the desktop's language).
+ */
+static struct zwl_ime_app *
+ime_app_add(
+	struct zwl_ime *ime,
+	const char *key)
+{
+	struct zwl_ime_app *app;
+	unsigned index;
+
+	/* A free place, else the first one. */
+	app = &ime->apps[0];
+	for (index = 0; index < ZWL_IME_APPS; index++) {
+		if (ime->apps[index].key[0] == '\0') {
+			app = &ime->apps[index];
+			break;
+		}
+	}
+
+	/* The entry, with no language yet. */
+	memset(app, 0, sizeof(*app));
+	(void)snprintf(app->key, sizeof(app->key), "%s", key);
+
+	/* Succeeded: the entry is the application's. */
+	return app;
+}
+
+/* Keeps the language chosen now as the one of whose it is: the application with the keyboard, or the desktop. */
+static void
+ime_app_remember(
+	struct zwl_ime *ime)
+{
+	struct zwl_ime_app *app;
+	int gone;
+
+	/* The application that had the keyboard has ended: the language is nobody's until the next focus. */
+	gone = strcmp(ime->focus_key, IME_APP_GONE);
+	if (gone == 0)
+		return;
+
+	/* The desktop's. */
+	if (ime->focus_key[0] == '\0') {
+		(void)snprintf(ime->desktop_language, sizeof(ime->desktop_language), "%s", ime->language);
+		ime->desktop_known = 1;
+		return;
+	}
+
+	/* An application's (an entry made when it has none yet). */
+	app = ime_app_find(ime, ime->focus_key);
+	if (app == NULL)
+		app = ime_app_add(ime, ime->focus_key);
+	(void)snprintf(app->language, sizeof(app->language), "%s", ime->language);
+}
+
+/*
+ * Follows the keyboard to another application (or the desktop): the
+ * language it had is chosen again; an application seen for the first time
+ * starts with the desktop's (or, before the desktop ever had the keyboard,
+ * keeps the language chosen now).  The same application -- another of its
+ * windows, fields or carets -- changes nothing.
+ */
+static void
+ime_app_focus(
+	struct zwl_server *server)
+{
+	struct zwl_ime *ime;
+	struct zwl_ime_app *app;
+	char key[ZWL_IME_APP_KEY];
+	const char *wanted;
+	const char *why;
+	int same;
+
+	/* Whose the keyboard is now; the same application as before keeps its language. */
+	ime = server->ime;
+	ime_app_key(server, key, sizeof(key));
+	same = strcmp(key, ime->focus_key);
+	if (same == 0)
+		return;
+
+	/* The language chosen until now stays with whose it was. */
+	ime_app_remember(ime);
+	(void)snprintf(ime->focus_key, sizeof(ime->focus_key), "%s", key);
+
+	/* The language to choose: the desktop's, an application's own, or the desktop's for a new one. */
+	wanted = ime->language;
+	why = "kept";
+	if (key[0] == '\0') {
+		if (ime->desktop_known) {
+			wanted = ime->desktop_language;
+			why = "desktop";
+		}
+	} else {
+		app = ime_app_find(ime, key);
+		if (app != NULL && app->language[0] != '\0') {
+			wanted = app->language;
+			why = "remembered";
+		} else {
+			if (ime->desktop_known) {
+				wanted = ime->desktop_language;
+				why = "inherited";
+			}
+			app = ime_app_add(ime, key);
+			(void)snprintf(app->language, sizeof(app->language), "%s", wanted);
+		}
+	}
+	printf("ZWL IME app key=%s language=%s from=%s\n", key[0] != '\0' ? key : "desktop", wanted, why);
+
+	/* Chosen only when it differs from the input method's now (the status then tells the new one). */
+	same = strcmp(wanted, ime->language);
+	if (same == 0 || ime->status == NULL)
+		return;
+	ime_select(server, wanted);
+}
+
+/* Tells whether a connection has a window of an application ID. */
+static int
+ime_client_has_app(
+	const struct zwl_client *client,
+	const char *app_id)
+{
+	const struct zwl_object *object;
+	int differs;
+
+	/* Each live window (surface) of the connection. */
+	for (object = client->objects; object != NULL; object = object->next) {
+		if (object->kind != ZWL_SURFACE || object->dead)
+			continue;
+		differs = strcmp(object->app_id, app_id);
+		if (differs == 0)
+			return 1;
+	}
+
+	/* None names the application. */
+	return 0;
+}
+
+/*
+ * Forgets the languages of the applications whose last connection ends: a
+ * connection's own entry, and an application ID's when no other connection
+ * has a window of it.  The next start of the application begins with the
+ * desktop's language again.
+ */
+static void
+ime_app_forget(
+	struct zwl_server *server,
+	struct zwl_client *client)
+{
+	struct zwl_ime *ime;
+	struct zwl_ime_app *focused;
+	struct zwl_client *other;
+	char key[ZWL_IME_APP_KEY];
+	const char *app_id;
+	unsigned index;
+	int differs;
+	int kept;
+	int has;
+
+	/* The connection's own key. */
+	ime = server->ime;
+	(void)snprintf(key, sizeof(key), "client:%llu", (unsigned long long)client->number);
+
+	/* Each entry: the connection's own goes; an application's goes when this was its last connection. */
+	for (index = 0; index < ZWL_IME_APPS; index++) {
+		if (ime->apps[index].key[0] == '\0')
+			continue;
+		differs = strcmp(ime->apps[index].key, key);
+		if (differs == 0) {
+			memset(&ime->apps[index], 0, sizeof(ime->apps[index]));
+			continue;
+		}
+
+		/* An application ID this connection has a window of. */
+		differs = strncmp(ime->apps[index].key, "app:", 4);
+		if (differs != 0)
+			continue;
+		app_id = ime->apps[index].key + 4;
+		has = ime_client_has_app(client, app_id);
+		if (has == 0)
+			continue;
+
+		/* Another connection with a window of it keeps it. */
+		kept = 0;
+		for (other = server->clients; other != NULL; other = other->next) {
+			if (other == client)
+				continue;
+			has = ime_client_has_app(other, app_id);
+			if (has != 0)
+				kept = 1;
+		}
+		if (kept == 0)
+			memset(&ime->apps[index], 0, sizeof(ime->apps[index]));
+	}
+
+	/* The application with the keyboard that has ended leaves the language chosen to nobody until the next focus. */
+	if (ime->focus_key[0] == '\0')
+		return;
+	focused = ime_app_find(ime, ime->focus_key);
+	if (focused == NULL)
+		(void)snprintf(ime->focus_key, sizeof(ime->focus_key), "%s", IME_APP_GONE);
 }

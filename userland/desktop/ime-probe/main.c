@@ -17,10 +17,11 @@
  *                                  a done and what it applied
  *   PROBE TEXT text=T              everything committed so far
  *
- *   ime-probe [--log=/tmp/ime-probe.log] [--password] [--seconds=N]
+ *   ime-probe [--log=/tmp/ime-probe.log] [--password] [--seconds=N] [--app-id=ID]
  *
  * With --password the field says it holds a password, so the input method
- * must not serve it.
+ * must not serve it.  --app-id names the window's application (ws095-p016:
+ * the input method's state is kept for each application).
  */
 
 #include <wayland/wayland-client.h>
@@ -112,6 +113,7 @@ main(
 {
 	struct probe probe;
 	const char *path;
+	const char *app_id;
 	struct pollfd descriptor;
 	time_t end;
 	long seconds;
@@ -121,6 +123,7 @@ main(
 	/* The options. */
 	memset(&probe, 0, sizeof(probe));
 	path = "/tmp/ime-probe.log";
+	app_id = NULL;
 	seconds = 600;
 	for (index = 1; index < count; index++) {
 		if (strncmp(arguments[index], "--log=", 6) == 0)
@@ -129,8 +132,10 @@ main(
 			probe.password = 1;
 		else if (strncmp(arguments[index], "--seconds=", 10) == 0)
 			seconds = strtol(arguments[index] + 10, NULL, 10);
+		else if (strncmp(arguments[index], "--app-id=", 9) == 0)
+			app_id = arguments[index] + 9;
 		else {
-			fprintf(stderr, "usage: ime-probe [--log=PATH] [--password] [--seconds=N]\n");
+			fprintf(stderr, "usage: ime-probe [--log=PATH] [--password] [--seconds=N] [--app-id=ID]\n");
 			return 2;
 		}
 	}
@@ -171,6 +176,8 @@ main(
 	probe.toplevel = xdg_surface_get_toplevel(probe.role);
 	xdg_toplevel_add_listener(probe.toplevel, &toplevel_listener, &probe);
 	xdg_toplevel_set_title(probe.toplevel, "ime-probe");
+	if (app_id != NULL)
+		xdg_toplevel_set_app_id(probe.toplevel, app_id);
 	wl_surface_commit(probe.surface);
 	status = wl_display_roundtrip(probe.display);
 	if (status < 0 || !probe.configured) {

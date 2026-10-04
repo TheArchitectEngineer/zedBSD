@@ -69,9 +69,35 @@ struct zwl_text_input {
 	uint32_t commits;
 };
 
+/* The most applications whose language is remembered (ws095-p016), and an application key's longest text. */
+#define ZWL_IME_APPS			32U
+#define ZWL_IME_APP_KEY			80U
+
+/*
+ * The language one application last had (ws095-p016): its key -- "app:" and
+ * its windows' application ID, or "client:" and its connection's number
+ * when its window names none -- and the language's ID.  A key empty means
+ * the entry is free.
+ */
+struct zwl_ime_app {
+	char key[ZWL_IME_APP_KEY];
+	char language[16];
+};
+
 /*
  * The system's input method: its process and connection, its objects, the
  * text input it is activated for, and where each held key went.
+ *
+ * The language is kept for each application (ws095-p016, the user's
+ * request of 2026-10-04): apps holds the language each application last
+ * had, and desktop_language the desktop's (when no window has the
+ * keyboard, or the desktop surface has it; desktop_known once it had one).
+ * focus_key names whose the language chosen now is (empty for the
+ * desktop); when the keyboard moves to another application, its language
+ * is chosen again, and an application seen for the first time starts with
+ * the desktop's.  Windows, fields and carets within one application share
+ * its language.  An application's entry goes when its last connection
+ * ends.
  *
  * It is made by zwl_ime_start when the program exists, and lives for the
  * compositor's lifetime; the connection and the objects come and go with
@@ -111,6 +137,10 @@ struct zwl_ime {
 	unsigned watching;
 	uint64_t watch_ms;
 	unsigned bypass;
+	struct zwl_ime_app apps[ZWL_IME_APPS];
+	char desktop_language[16];
+	unsigned desktop_known;
+	char focus_key[ZWL_IME_APP_KEY];
 };
 
 /* text-input.c */
