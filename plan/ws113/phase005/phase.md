@@ -51,3 +51,16 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p005: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: active session同UID peer検査、Settings限定secret無し、保存keyはstandard policy詳細を待つ。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
 2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p005: mainのD-ID A2/旧bootpreferred技術採択messageを受領。snapshot key/label/persistableはA2 schema/一意性を検査。保存を同machine/PCI port scopeに限定、kind/portの人向けlabelを公開、UUID問い合わせを必須にしない。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+
+## 2026-10-05 計画（q702、ベータ2）
+
+入力: [契約の確定](../phase001/contracts-beta2.md) D-PROTO・D-AUTH2・D-STORE・D-BRIGHT・D-BRIGHT-KEY・D-BRIGHT-BOOT、contracts.md §8。
+
+範囲:
+- protocol（`userland/desktop/keiland/kl-system-protocol.h`、compositor `wayland/system.c`、libkeiland `system/system-protocol.c`）: `kl_system_manager_v1` version 4 の request 7 `get_displays(new_id kl_system_displays_v1)`。`kl_system_displays_v1`: event `begin(topology_serial hi/lo, config_serial hi/lo, mode, health)`・`output(token hi/lo, generation hi/lo, key, label, x, y, width, height, refresh_mhz, flags（internal・active・anchor・has_backlight）, brightness)`・`done`・`result(request, status, applied, saved)`。request `configure(request, expected serials, mode)` + `place(request, token, x, y)` + `apply(request)`、`set_brightness(request, token, level)`、`destroy`。status は stale・invalid・unsupported・unauthorized・busy・backend_failed・rollback_failed を分ける。
+- libkeiland（`system/`、`keiland.h`、`exports.map`）: `kl_system_displays_open/close/snapshot/configure/apply/set_brightness`、snapshot の寿命、callback（既存の `kl_system` と同じ dispatch）。`KL_VERSION` の次。
+- compositor: 設定の適用は p004 の transaction、明るさは backend の `kl_backend_backlight_*`（p013）。Fn の key（`KEY_BRIGHTNESSUP/DOWN`）で 5 % ずつ（D-BRIGHT-KEY）、session の始めに displays.conf の明るさを適用（D-BRIGHT-BOOT）。active な session でない時は変更を拒む（D-AUTH2）。
+- 試験の client: `userland/tests/display-probe`（snapshot を log に出す、configure・apply・set_brightness を引数で）。
+
+試験: host（libkeiland の protocol の encode・decode、`plan/ws131/tests/host-system.c` に displays の stub と case を足す）。QEMU（T1、Venus の 2 出力）: display-probe で snapshot に 2 出力、拡張 ⇔ mirror の apply が applied=1 saved=1、stale な serial が `stale`、明るさは has_backlight=0 で `unsupported`。実機（p008）: 明るさの set と Fn の key。
+受け入れ: 上の QEMU と host の PASS、warning 0（zedBSD・Linux の build。Linux・FreeBSD の backend は ENOTSUP の stub）、規約。目安 3〜4h。依存: p004、p013（明るさの backend）。衝突: WS089・WS131 の `kl_system` を変える Phase と直列。
