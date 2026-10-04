@@ -102,7 +102,7 @@ static const struct kl_network_link *network_link(const struct se_network *netwo
 static int network_wired(const struct se_network *network, size_t index);
 static int network_saved(const struct se_network *network, const char *ssid);
 static unsigned network_prefix(const char *netmask);
-static const char *network_wifi_words(const struct se_network *network);
+static const char *network_wifi_words(struct se_network *network);
 
 /*
  * Draws the Network page's cards from a top edge; returns the edge below
@@ -167,12 +167,10 @@ se_wifi_page_draw(
 	int on;
 	int y;
 
-	/* The switch's card: the Wi-Fi's state in words and the switch (Disconnect is on the network's row). */
+	/* The switch's card: the Wi-Fi's state in words and the switch, at the position asked while it waits (BUG-183). */
 	network = &app->network;
-	on = 0;
-	if (network->state.wifi != KL_WIFI_OFF && network->state.wifi != KL_WIFI_ABSENT)
-		on = 1;
-	(void)network_header(app, canvas, x, top, width, NETWORK_HEADER + 8, "Wi-Fi", network_wifi_words(network));
+	on = se_network_wifi_on(network);
+	(void)network_header(app, canvas, x, top, width, NETWORK_HEADER + 8, "Wi-Fi", network_wifi_words(&app->network));
 	se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KL_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
 
 	/* The networks around, under the switch's card. */
@@ -242,12 +240,15 @@ se_network_press(
 	const struct kl_network_ap *ap;
 	int saved;
 	int differs;
+	int on;
 
 	/* Each control. */
 	network = &app->network;
 	switch (index) {
 	case NETWORK_WIFI_SWITCH:
-		se_network_wifi(app, network->state.wifi == KL_WIFI_OFF);
+		/* The other position than the switch shows (the one asked while it waits). */
+		on = se_network_wifi_on(network);
+		se_network_wifi(app, !on);
 		return;
 	case NETWORK_DISCONNECT:
 		se_network_disconnect(app);
@@ -517,6 +518,7 @@ network_wifi_card(
 	int form;
 	int differs;
 	int on;
+	int switch_on;
 
 	/* The networks to list: all of them, or a few in the compact card. */
 	network = &app->network;
@@ -566,8 +568,10 @@ network_wifi_card(
 	if (on != 0 && network->scan_count == 0 && network->scan_received == 0)
 		subtitle = "Searching...";
 	y = network_header(app, canvas, x, top, width, height, title, subtitle);
-	if (compact != 0)
-		se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KL_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
+	if (compact != 0) {
+		switch_on = se_network_wifi_on(network);
+		se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, switch_on, network->state.wifi != KL_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
+	}
 
 	/* Without the radio, while it is off, or with nothing listed, a line of words. */
 	if (network->state.wifi == KL_WIFI_ABSENT) {
@@ -1328,10 +1332,10 @@ network_prefix(
 	return bits;
 }
 
-/* Says the Wi-Fi's state in words for the Wi-Fi page's header. */
+/* Says the Wi-Fi's state in words for the Wi-Fi page's header (the network being joined named, BUG-185). */
 static const char *
 network_wifi_words(
-	const struct se_network *network)
+	struct se_network *network)
 {
 	/* A desktop without Keiland's system extension, the daemon out of reach, then each state. */
 	if (network->live == 0)
@@ -1348,7 +1352,10 @@ network_wifi_words(
 	case KL_WIFI_SEARCHING:
 		return "Looking for a saved network.";
 	case KL_WIFI_CONNECTING:
-		return "Joining a network.";
+		if (network->state.ssid[0] == '\0')
+			return "Connecting...";
+		(void)snprintf(network->wifi_words, sizeof(network->wifi_words), "Connecting to %s...", network->state.ssid);
+		return network->wifi_words;
 	case KL_WIFI_CONNECTED:
 		return "Connected.";
 	default:

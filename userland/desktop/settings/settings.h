@@ -400,6 +400,10 @@ struct se_network {
 	uint64_t retry_at;
 	char key_ssid[KL_NETWORK_SSID_MAX];
 	struct se_field key;
+	struct se_field join_key;
+	int wifi_wanted;
+	uint64_t wifi_until;
+	char wifi_words[96];
 	int key_shown;
 	int key_reveal;
 	char message[SE_MESSAGE];
@@ -881,6 +885,7 @@ int se_network_result(struct se_app *app, uint32_t request, int error);
 int se_network_wait(struct se_app *app);
 void se_network_close(struct se_app *app);
 void se_network_wifi(struct se_app *app, int on);
+int se_network_wifi_on(const struct se_network *network);
 void se_network_join(struct se_app *app, const char *ssid);
 void se_network_join_key(struct se_app *app, const char *ssid, const char *key);
 void se_network_disconnect(struct se_app *app);

@@ -85,6 +85,9 @@
 /* How many evdev codes the character tables cover (up to the space bar). */
 #define NETWORK_KEYS		58U
 
+/* How long the switch keeps the position asked after a successful answer, for the state to agree (BUG-183). */
+#define NETWORK_SWITCH_HOLD_MS	4000U
+
 /* The depressed Shift and the locked Caps Lock in the seat's modifier masks. */
 #define NETWORK_SHIFT		0x1U
 #define NETWORK_CAPS		0x2U
@@ -203,6 +206,8 @@ struct network_view {
 	int32_t icon_height;
 	unsigned icon_logged;
 	char failure[96];
+	unsigned switch_wanted;
+	uint64_t switch_until;
 	char joining[KL_BACKEND_NETWORK_SSID_MAX];
 	unsigned key_open;
 	char key_ssid[KL_BACKEND_NETWORK_SSID_MAX];
@@ -260,6 +265,8 @@ static void network_request(struct zwl_server *server, unsigned request, const c
 static const struct network_row *network_row_at(int32_t x, int32_t y, int32_t *top);
 static int network_in_icon(int32_t x, int32_t y);
 static void network_log_state(void);
+static unsigned network_switch_on(void);
+static void network_switch_settle(struct zwl_server *server);
 static void network_log_layout(void);
 static void network_draw_bars(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t bottom, unsigned lit, const float *ink, float faint);
 static void network_draw_wired(struct zwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
@@ -322,16 +329,21 @@ zwl_network_tick(
 	if (network_view.watch == NULL)
 		return;
 
-	/* What arrived. */
+	/* What arrived; with nothing, the switch may still have waited long enough. */
 	(void)kl_backend_network_update(network_view.watch, &changed);
-	if (changed == 0)
+	if (changed == 0) {
+		network_switch_settle(server);
 		return;
+	}
 
 	/* A new state redraws the icon (and the menu). */
 	if ((changed & KL_BACKEND_NETWORK_CHANGED_STATE) != 0) {
 		kl_backend_network_get_state(network_view.watch, &network_view.state);
 		network_log_state();
 	}
+
+	/* The switch follows the new state. */
+	network_switch_settle(server);
 
 	/* A new scan redraws the menu's networks. */
 	if ((changed & KL_BACKEND_NETWORK_CHANGED_SCAN) != 0) {
@@ -792,9 +804,8 @@ static void
 network_open_menu(
 	struct zwl_server *server)
 {
-	/* The menu, with no failure from before. */
+	/* The menu; a failure stays until the user's next request (BUG-187). */
 	network_view.open = 1;
-	network_view.failure[0] = '\0';
 	network_view.logged_layout = 0;
 	server->dirty = 1;
 	printf("ZWL NETWORK open\n");
@@ -1077,7 +1088,7 @@ network_state_text(
 		(void)snprintf(text, size, "Searching for a known network");
 		break;
 	case KL_BACKEND_WIFI_CONNECTING:
-		(void)snprintf(text, size, "Joining %s...", state->ssid);
+		(void)snprintf(text, size, "Connecting to %s...", state->ssid);
 		break;
 	case KL_BACKEND_WIFI_CONNECTED:
 		(void)snprintf(text, size, "Connected to %s", state->ssid);
@@ -1095,16 +1106,28 @@ network_act(
 	const struct network_row *row)
 {
 	unsigned wanted;
+	unsigned on;
 	int current;
 	int inside;
 
 	/* What the row does. */
 	switch (row->kind) {
 	case NETWORK_ROW_SWITCH:
-		/* Off turns on, anything else turns off. */
+		/*
+		 * Off turns on, anything else turns off; the switch shows the new
+		 * position at once and keeps it until the state agrees (BUG-183:
+		 * turning the radio on takes a second).
+		 */
+		on = network_switch_on();
 		wanted = KL_BACKEND_NETWORK_REQUEST_WIFI_OFF;
-		if (network_view.state.wifi == KL_BACKEND_WIFI_OFF)
+		network_view.switch_wanted = 1U;
+		if (on == 0U) {
 			wanted = KL_BACKEND_NETWORK_REQUEST_WIFI_ON;
+			network_view.switch_wanted = 2U;
+		}
+
+		/* Held until the answer, then a few seconds more. */
+		network_view.switch_until = 0U;
 		network_request(server, wanted, NULL);
 		break;
 	case NETWORK_ROW_AP:
@@ -1140,6 +1163,9 @@ network_request(
 	/* No watch, no request. */
 	if (network_view.watch == NULL)
 		return;
+
+	/* The user acts again: the failure of the last action goes (BUG-187). */
+	network_view.failure[0] = '\0';
 
 	/* A join's network is kept for the failure line. */
 	network_view.joining[0] = '\0';
@@ -1405,7 +1431,7 @@ network_draw_row(
 	/* The switch's row: its label and the switch at the right. */
 	if (row->kind == NETWORK_ROW_SWITCH) {
 		glass_draw_text(server, command, SIZE_TITLE, left + 14, baseline + 1, row->text, 160, ink);
-		network_draw_switch(server, command, right, middle, network_view.state.wifi != KL_BACKEND_WIFI_OFF);
+		network_draw_switch(server, command, right, middle, network_switch_on());
 		return;
 	}
 
@@ -1554,6 +1580,52 @@ network_strength(
 
 	/* Anything weaker still shows one. */
 	return 1;
+}
+
+/* Lets the switch show the state again once it agrees with what was asked, or a while after the answer (BUG-183). */
+static void
+network_switch_settle(
+	struct zwl_server *server)
+{
+	uint64_t now;
+	int agrees;
+
+	/* Nothing asked. */
+	if (network_view.switch_wanted == 0U)
+		return;
+
+	/* The state agrees, or the answer came long enough ago. */
+	agrees = 0;
+	if ((network_view.switch_wanted == 2U) == (network_view.state.wifi != KL_BACKEND_WIFI_OFF))
+		agrees = 1;
+	now = zwl_milliseconds();
+	if (network_view.switch_until != 0U && now >= network_view.switch_until)
+		agrees = 1;
+	if (!agrees)
+		return;
+
+	/* The state again. */
+	network_view.switch_wanted = 0U;
+	network_view.switch_until = 0U;
+	server->dirty = 1;
+	printf("ZWL NETWORK switch settled wifi=%u\n", network_view.state.wifi);
+}
+
+/* Tells whether the switch shows on: what was asked while it waits (BUG-183), else the state. */
+static unsigned
+network_switch_on(
+	void)
+{
+	/* Asked on, or off. */
+	if (network_view.switch_wanted == 2U)
+		return 1U;
+	if (network_view.switch_wanted == 1U)
+		return 0U;
+
+	/* The state. */
+	if (network_view.state.wifi != KL_BACKEND_WIFI_OFF)
+		return 1U;
+	return 0U;
 }
 
 /* Names a request, for the log and the failure line. */
@@ -1810,6 +1882,14 @@ network_finished(
 	/* No failure from before. */
 	network_view.failure[0] = '\0';
 
+	/* The switch's answer: a failure puts it back at once, a success leaves the state a few seconds to agree. */
+	if (request == KL_BACKEND_NETWORK_REQUEST_WIFI_ON || request == KL_BACKEND_NETWORK_REQUEST_WIFI_OFF) {
+		network_view.switch_until = zwl_milliseconds() + NETWORK_SWITCH_HOLD_MS;
+		if (error != 0)
+			network_view.switch_wanted = 0U;
+		server->dirty = 1;
+	}
+
 	/* A join answered, joined or not, is no longer waited for (its state, or its failure, shows now). */
 	if (request == KL_BACKEND_NETWORK_REQUEST_JOIN)
 		network_connecting(NULL);
@@ -1834,6 +1914,9 @@ network_finished(
 	} else if (error == EPERM) {
 		/* Only root and the network group may control Wi-Fi (2026-10-02, ws005-p019). */
 		(void)snprintf(network_view.failure, sizeof(network_view.failure), "This account may not control Wi-Fi");
+	} else if (error == EACCES && request == KL_BACKEND_NETWORK_REQUEST_JOIN) {
+		/* The network refused the key in its handshake (BUG-157, BUG-187): said until the user acts again. */
+		(void)snprintf(network_view.failure, sizeof(network_view.failure), "%s did not accept the key", network_view.joining);
 	} else if (error != 0 && request != KL_BACKEND_NETWORK_REQUEST_SCAN) {
 		/* Anything else that failed says the errno's text. */
 		(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not %s (%s)", network_request_name(request), strerror(error));

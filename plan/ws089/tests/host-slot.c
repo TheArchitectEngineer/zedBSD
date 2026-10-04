@@ -99,8 +99,7 @@ main(void)
 
 	/*
 	 * 3. A new key during a disconnect: one save_key request after it, with
-	 * the key typed.  (A join of another network answered meanwhile wipes
-	 * the key form, BUG-186's area: not this case.)
+	 * the key typed (case 13: a join of another network answered meanwhile).
 	 */
 	slot_reset(&app);
 	se_network_disconnect(&app);
@@ -204,6 +203,65 @@ main(void)
 	app.now += 31000U;
 	se_network_poll(&app, app.now);
 	slot_expect("10 renewed again", slot_daemon.scanning == 1 && slot_daemon.scanning_calls == 3U);
+
+	/*
+	 * 11. BUG-183: the switch shows the position asked at once, keeps it
+	 * while the state lags, and shows the state once it agrees; a failed
+	 * switch goes back at once; a success whose state never comes goes back
+	 * after the hold.
+	 */
+	slot_reset(&app);
+	app.network.state.wifi = KL_WIFI_OFF;
+	se_network_wifi(&app, 1);
+	slot_expect("11 on at once", se_network_wifi_on(&app.network) == 1);
+	slot_finish(&app, 0);
+	slot_expect("11 still on while the state lags", se_network_wifi_on(&app.network) == 1 && app.network.wifi_wanted == 2);
+	app.network.state.wifi = KL_WIFI_SEARCHING;
+	se_network_poll(&app, app.now + 100U);
+	slot_expect("11 settled when the state agrees", app.network.wifi_wanted == 0 && se_network_wifi_on(&app.network) == 1);
+	app.network.state.wifi = KL_WIFI_OFF;
+	se_network_wifi(&app, 1);
+	slot_finish(&app, EIO);
+	slot_expect("11 a failure puts it back", app.network.wifi_wanted == 0 && se_network_wifi_on(&app.network) == 0);
+	se_network_wifi(&app, 1);
+	slot_finish(&app, 0);
+	app.now += 4100U;
+	se_network_poll(&app, app.now);
+	slot_expect("11 back to the state after the hold", app.network.wifi_wanted == 0 && se_network_wifi_on(&app.network) == 0);
+
+	/*
+	 * 12. BUG-186: confirming a new key closes its form at once (the key goes
+	 * to the join); a key refused opens the form again, empty, with the
+	 * reason; a busy answer sends the same key again.
+	 */
+	slot_reset(&app);
+	(void)snprintf(app.network.key_ssid, sizeof(app.network.key_ssid), "%s", "Neighbor 5G");
+	(void)snprintf(app.network.key.text, sizeof(app.network.key.text), "%s", "wrong horse");
+	app.network.key.length = strlen(app.network.key.text);
+	se_network_join_key(&app, "Neighbor 5G", app.network.key.text);
+	slot_expect("12 form closed at the confirm", app.network.key_ssid[0] == '\0' && app.network.key.length == 0U);
+	slot_expect("12 the key went with the join", slot_daemon.sent_count == 1U && slot_daemon.sent_key_length[0] == 11U);
+	slot_finish(&app, EBUSY);
+	app.now += 600U;
+	se_network_poll(&app, app.now);
+	slot_expect("12 busy: the same key sent again", slot_daemon.sent_count == 2U && slot_daemon.sent_key_length[1] == 11U);
+	slot_finish(&app, EACCES);
+	slot_expect("12 refused: the form again, empty", strcmp(app.network.key_ssid, "Neighbor 5G") == 0 && app.network.key.length == 0U);
+	slot_expect("12 refused: the reason", strcmp(app.network.message, "Neighbor 5G did not accept the key. Check the key and try again.") == 0);
+	slot_expect("12 the key is wiped", app.network.join_key.length == 0U && app.network.join_key.text[0] == '\0');
+
+	/*
+	 * 13. BUG-186's addendum: a new key waiting behind a join of another
+	 * network keeps its key when that join is answered.
+	 */
+	slot_reset(&app);
+	se_network_join(&app, "Cafe Guest");
+	(void)snprintf(app.network.key_ssid, sizeof(app.network.key_ssid), "%s", "Neighbor 5G");
+	(void)snprintf(app.network.key.text, sizeof(app.network.key.text), "%s", "correct horse");
+	app.network.key.length = strlen(app.network.key.text);
+	se_network_join_key(&app, "Neighbor 5G", app.network.key.text);
+	slot_finish(&app, 0);
+	slot_expect("13 the waiting key is sent whole", slot_daemon.sent_count == 2U && slot_daemon.sent_key_length[1] == 13U);
 
 	/* The verdict. */
 	if (slot_failures != 0) {

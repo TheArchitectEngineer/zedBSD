@@ -35,7 +35,13 @@
  * no request and never takes the slot.
  *
  * Nothing here waits: the main loop calls se_network_poll every round, and
- * the answers arrive through system.c.  Settings never speaks networkd's
+ * the answers arrive through system.c.
+ *
+ * The Wi-Fi switch shows the position asked at once (BUG-183), and a new
+ * key moves from its form to the join when it is confirmed, so the form
+ * closes while the join is under way and opens again, empty, when the key
+ * did not work (BUG-186); the key is kept until the join is answered (a
+ * busy answer sends it again) and wiped then.  Settings never speaks networkd's
  * protocol, nor reads the network's files, itself (plan/ws089/design.md
  * section 6, plan/ws131/design.md section 4).
  */
@@ -54,6 +60,9 @@
 
 /* How often the asking for scans is renewed while a list of networks is shown (the compositor drops it after a minute), in milliseconds. */
 #define NETWORK_SCANNING_RENEW_MS	30000U
+
+/* How long the switch keeps the position asked after a successful answer, for the state to agree (BUG-183), in milliseconds. */
+#define NETWORK_SWITCH_HOLD_MS	4000U
 
 /* How often the main loop polls while a network page is shown or a request is outstanding, in milliseconds. */
 #define NETWORK_POLL_MS		250
@@ -132,6 +141,7 @@ se_network_poll(
 	struct se_network *network;
 	size_t count;
 	int addresses;
+	int agrees;
 	int shown;
 	int lists;
 	int error;
@@ -147,6 +157,21 @@ se_network_poll(
 		kl_system_network_get_state(app->system, &network->state);
 		se_log("NETWORK state reachable=%u connected=%u kind=%u interface=%s wifi=%u ssid=%s", network->state.reachable, network->state.connected, network->state.kind, network->state.interface, network->state.wifi, network->state.ssid);
 		app->dirty = 1;
+	}
+
+	/* The switch shows the state again once it agrees with what was asked, or a while after the answer (BUG-183). */
+	if (network->wifi_wanted != 0) {
+		agrees = 0;
+		if ((network->wifi_wanted == 2) == (network->state.wifi != KL_WIFI_OFF && network->state.wifi != KL_WIFI_ABSENT))
+			agrees = 1;
+		if (network->wifi_until != 0U && now >= network->wifi_until)
+			agrees = 1;
+		if (agrees != 0) {
+			network->wifi_wanted = 0;
+			network->wifi_until = 0U;
+			app->dirty = 1;
+			se_log("NETWORK switch settled wifi=%u", network->state.wifi);
+		}
 	}
 
 	/* A new scan. */
@@ -249,27 +274,58 @@ void
 se_network_close(
 	struct se_app *app)
 {
-	/* The scans are asked for no longer, then the key and the network go; a request waiting in the slot is dropped with them. */
+	/* The scans are asked for no longer, then the keys and the network go; a request waiting in the slot is dropped with them. */
 	network_scanning(app, 0);
 	se_field_clear(&app->network.key);
+	se_field_clear(&app->network.join_key);
 	app->network.live = 0;
 	app->network.pending_request = SE_NETWORK_NONE;
 }
 
 /*
- * Turns the Wi-Fi on or off.
+ * Turns the Wi-Fi on or off.  The switch shows the new position at once and
+ * keeps it until the state agrees, the request fails, or a few seconds
+ * after a successful answer (BUG-183: turning the radio on takes a second).
  */
 void
 se_network_wifi(
 	struct se_app *app,
 	int on)
 {
+	/* What the switch shows from now on. */
+	app->network.wifi_wanted = 1;
+	if (on != 0)
+		app->network.wifi_wanted = 2;
+	app->network.wifi_until = 0U;
+	app->dirty = 1;
+	se_log("NETWORK switch shows on=%d", on != 0);
+
 	/* The switch's request, sent or kept until the outstanding one is answered. */
 	if (on != 0) {
 		network_ask(app, KL_NETWORK_WIFI_ON, NULL, SE_JOIN_NONE);
 	} else {
 		network_ask(app, KL_NETWORK_WIFI_OFF, NULL, SE_JOIN_NONE);
 	}
+}
+
+/*
+ * Tells whether the Wi-Fi switch shows on: the position asked while it
+ * waits for the state, else the state.
+ */
+int
+se_network_wifi_on(
+	const struct se_network *network)
+{
+	/* Asked on, or off. */
+	if (network->wifi_wanted == 2)
+		return 1;
+	if (network->wifi_wanted == 1)
+		return 0;
+
+	/* The state: on unless off or without a radio. */
+	if (network->state.wifi == KL_WIFI_OFF || network->state.wifi == KL_WIFI_ABSENT)
+		return 0;
+	return 1;
 }
 
 /*
@@ -312,7 +368,18 @@ se_network_join_key(
 		return;
 	}
 
-	/* The request, sent or kept until the outstanding one is answered (the key stays in the form until then). */
+	/*
+	 * The key goes from the form to the join (BUG-186): the form closes as
+	 * the join starts, and the key is kept only until it is sent.
+	 */
+	se_field_clear(&network->join_key);
+	(void)snprintf(network->join_key.text, sizeof(network->join_key.text), "%s", key);
+	network->join_key.length = length;
+	network->key_ssid[0] = '\0';
+	se_field_clear(&network->key);
+	se_log("NETWORK key-form closed ssid=%s", ssid);
+
+	/* The request, sent or kept until the outstanding one is answered. */
 	network_ask(app, SE_NETWORK_SAVE_KEY, ssid, SE_JOIN_KEY);
 
 	/* A join under way or waiting says so (a refusal has said why instead). */
@@ -469,6 +536,13 @@ network_outcome(
 		return;
 	}
 
+	/* The switch's answer: a failure puts it back at once, a success leaves the state a few seconds to agree (BUG-183). */
+	if (request == KL_NETWORK_WIFI_ON || request == KL_NETWORK_WIFI_OFF) {
+		network->wifi_until = app->now + NETWORK_SWITCH_HOLD_MS;
+		if (error != 0)
+			network->wifi_wanted = 0;
+	}
+
 	/* Anything else that failed says so. */
 	if (error != 0) {
 		network->join_step = SE_JOIN_NONE;
@@ -490,6 +564,7 @@ network_join_outcome(
 {
 	struct se_network *network;
 	char reason[SE_MESSAGE];
+	int differs;
 
 	/* A key that was saved, or not (the log lines the tests read, never the key). */
 	network = &app->network;
@@ -502,10 +577,29 @@ network_join_outcome(
 		}
 	}
 
+	/*
+	 * A new key that did not work opens the network's key form again,
+	 * empty, with the reason under it (BUG-186); the key is gone.
+	 */
+	if (request == SE_NETWORK_SAVE_KEY)
+		se_field_clear(&network->join_key);
+	if (error != 0 && request == SE_NETWORK_SAVE_KEY) {
+		(void)snprintf(network->key_ssid, sizeof(network->key_ssid), "%s", network->join_ssid);
+		se_field_clear(&network->key);
+		network->key_shown = 0;
+		network->key_reveal = 1;
+		se_log("NETWORK key-form again ssid=%s errno=%d", network->join_ssid, error);
+	}
+
 	/* Each outcome in words. */
 	if (error == 0) {
-		network->key_ssid[0] = '\0';
-		se_field_clear(&network->key);
+		differs = strcmp(network->key_ssid, network->join_ssid);
+		if (differs == 0) {
+			network->key_ssid[0] = '\0';
+			se_field_clear(&network->key);
+		}
+
+		/* Joined. */
 		network_message(app, 0, "Connected to %s.", network->join_ssid);
 	} else if (error == EINVAL && request == SE_NETWORK_SAVE_KEY) {
 		network_message(app, 1, "The key of %s must be 8 to 63 characters.", network->join_ssid);
@@ -628,9 +722,9 @@ network_send(
 		return;
 	}
 
-	/* A key with its network (the form's key, which a cancel may have wiped meanwhile), or a request of the daemon's. */
+	/* A key with its network (the join's, taken from the form when it was confirmed), or a request of the daemon's. */
 	if (request == SE_NETWORK_SAVE_KEY) {
-		error = kl_system_network_save_key(app->system, ssid, network->key.text, &network->request_id);
+		error = kl_system_network_save_key(app->system, ssid, network->join_key.text, &network->request_id);
 	} else {
 		error = kl_system_network_request(app->system, request, ssid, &network->request_id);
 	}
@@ -638,6 +732,7 @@ network_send(
 	/* A request the library refused is said at once. */
 	if (error != 0) {
 		se_log("NETWORK request=%u refused errno=%d", request, error);
+		se_field_clear(&network->join_key);
 		network->join_step = SE_JOIN_NONE;
 		network_message(app, 1, "The network could not do that (%s).", strerror(error));
 		return;
