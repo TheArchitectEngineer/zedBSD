@@ -600,6 +600,21 @@
    ],
    "paths": [],
    "note": ""
+  },
+  {
+   "id": "ffmpeg",
+   "name": "FFmpeg libraries (libavutil, libswresample, libavcodec, libavformat, libswscale)",
+   "when": "program:libavcodec",
+   "license": "LGPL-2.1-or-later",
+   "upstream": "ffmpeg.org (external package userland/packages/multimedia/libavcodec)",
+   "version": "ext:libavcodec",
+   "notices": [
+    "/usr/share/licenses/ffmpeg/COPYING.LGPLv2.1",
+    "/usr/share/licenses/ffmpeg/LICENSE.md"
+   ],
+   "paths": [],
+   "note": "LGPL 2.1 or later as built (no --enable-gpl, --enable-version3 or --enable-nonfree; configure must report it). Shared libraries, so they can be replaced. In the image by the user's decision of 2026-10-05 (WS122: libavcodec and a simple player in beta 1); the corresponding source is the upstream tarball with no patches and the configure options in the package Makefile.",
+   "status": "decision"
   }
  ]
 }
