@@ -2,7 +2,7 @@
 
 # ws141-p001: 文書（Linux の vc4・v3d の初期化の順と command の投入の順、正本と license、我々の interface への対応）
 
-Status: planned
+Status: in-progress（q691-i01、P2。commit する文書はそろい design-reviewer の review を反映済み。clearance は Q1 の判定と判断の項目の扱いの後）
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: q691（17 時以降）
@@ -32,3 +32,13 @@ Queue: q691（17 時以降）
 ## 検証
 
 design-reviewer の review。code・build・QEMU は無い。
+
+## 結果（2026-10-04、q691-i01、P2 generation11〜12）
+
+- 正本（commit しない、`plan/ws141/temp/`）: Linux v6.19（`05f7e89a…`）の vc4・v3d・周辺の sparse clone、Mesa 25.3.6（`06f9e283…`）の `src/broadcom`、BCM2711 ARM Peripherals の PDF、固定の firmware（`vendor/raspberrypi-firmware` の `3d301dd9`）の DTB と overlay（`fwdtb/`、dtc で dts に戻した）、Raspberry Pi の firmware の wiki（`fw-wiki/`）。
+- 作業の文書（commit しない）: `temp/v3d-init-and-submit.md`（634 行）、`temp/vc4-display-init.md`（537 行）、`temp/vc4-hdmi-2711.md`（678 行）。どれも完了。実機の観測は無い。
+- commit する文書: [rpi4-gpu-license-audit.md](../rpi4-gpu-license-audit.md)（正本と file ごとの path・SHA-256・license、BLOB の確認）、[rpi4-gpu-design.md](../rpi4-gpu-design.md)（構成、方針、段 P0・N0〜N2・P1〜P5・H0〜H10・V0〜V10、interface の対応表、段の印、骨格、BLOB と表、危険、判断の項目 17）。
+- design-reviewer の review（2026-10-04）: 高 3（resource_map の口と非一貫の cache、display と V3D の device の分割、N2 の位置の食い違い）・中 11・低 13。全部を design に反映した（判断の項目 11〜17 を追加、N2 を N1 の直後に固定、割り込みの口を `kern_irq_*` に、console の 80 桁と領域、QEMU での安全な抜けと boot の parameter、BO の連続の run と clean/invalidate、OOM の worker と pool、PTE の uncached、DTB の hash の誤記と overlay の注記、mailbox の 8 word の上限、wiki の出典の追加）。commit する 2 文書に GPL の code・comment・Linux の識別子は無い（review の観点 1）。
+- ユーザーの決定: 判断の項目 1（register の offset と bit は事実として使う、2026-10-04、Guardrail の改訂 main `0f7d70c`）。
+- 残り: 判断の項目 2〜17 は未決（Q1 がユーザーに確かめる）。計画に無い依存: 判断の項目 14（EDID の mailbox は `rpi4-firmware.c` の変更が要る、WS141 の範囲の外）。計画の訂正: interface の実名は `struct drv_gpu_ops`、HDMI の DDC の Linux の driver は `drivers/i2c/busses/i2c-brcmstb.c`。
+- 検証: design-reviewer の review だけ（code・build・QEMU は無い）。
