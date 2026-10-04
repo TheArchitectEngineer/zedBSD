@@ -81,6 +81,28 @@ hal_irq_set_affinity(int irq, const struct hal_cpu_mask *requested)
 	return HAL_OK;
 }
 
+/*
+ * Sets the trigger mode and polarity of one IRQ: the interrupts come as fixed vectors, so a change is not
+ * supported.
+ */
+int
+hal_irq_set_mode(
+	int irq,
+	int trigger,
+	int polarity)
+{
+	/* A valid IRQ, trigger mode and polarity. */
+	if (irq < 0 || irq >= SPARCV9_IRQ_MAX)
+		return HAL_ERR_INVALID;
+	if (trigger != HAL_IRQ_TRIGGER_EDGE && trigger != HAL_IRQ_TRIGGER_LEVEL)
+		return HAL_ERR_INVALID;
+	if (polarity != HAL_IRQ_POLARITY_HIGH && polarity != HAL_IRQ_POLARITY_LOW)
+		return HAL_ERR_INVALID;
+
+	/* The controller's configuration is fixed. */
+	return HAL_ERR_UNSUPPORTED;
+}
+
 int
 hal_irq_get_affinity(int irq, struct hal_irq_affinity *result)
 {

@@ -20,12 +20,16 @@
  * (hid-touch.c), and the device is published as an evdev node that speaks
  * multitouch protocol B.
  *
- * The device's interrupt line (its GpioInt) is watched rather than taken
- * as an interrupt (ws159-p006; the controller's interrupt needs a HAL
- * change that waits for the user's decision): when the line is on an Intel
- * PCH GPIO pad (intel-gpio.c), the thread looks at the pad every
- * LINE_POLL_MS and reads the input register only while the line is
- * asserted, so a still pad costs no I2C transfer.  Without such a pad the
+ * The device's interrupt line (its GpioInt) is taken as an interrupt when
+ * it is on an Intel PCH GPIO pad that can interrupt (intel-gpio.c,
+ * ws159-p006): the thread sleeps until the pad fires, reads the input
+ * register while the line stays asserted, and turns the pad's interrupt on
+ * again; it also wakes every I2C_HID_IRQ_CHECK_MS to read a line that is
+ * asserted without a firing, and goes back to watching the line if the
+ * controller's interrupt was given up.  A pad that cannot interrupt is
+ * watched instead: the thread looks at it every LINE_POLL_MS and reads the
+ * input register only while the line is asserted, so a still pad costs no
+ * I2C transfer.  Without such a pad the
  * thread reads the input register every few milliseconds while fingers
  * move and less often when the pad has been still for a second; a device
  * with nothing to say answers with an empty report (a length of zero), as
@@ -43,8 +47,10 @@
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
+#include <kern/lock.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
+#include <kern/waitq.h>
 #include <uapi/errno.h>
 #include <uapi/input.h>
 
@@ -104,6 +110,9 @@
 #define I2C_HID_LINE_POLL_MS		4U
 #define I2C_HID_LINE_READS_MAX		8U
 
+/* With the pad's interrupt, how long the thread sleeps at most before it looks at the line itself. */
+#define I2C_HID_IRQ_CHECK_MS		1000U
+
 /* After this many failed reads in a row the thread says so and waits a second. */
 #define I2C_HID_ERRORS_BEFORE_PAUSE	50U
 #define I2C_HID_ERROR_PAUSE_MS		1000U
@@ -133,6 +142,10 @@ struct i2c_hid_device {
 	uint32_t line_pin;
 	uint8_t line_active_low;
 	struct drv_intel_gpio_pad *line;
+	/* The pad's interrupt: the lock (with interrupts off) over fired, whether it fired, and where the thread waits. */
+	struct spinlock irq_lock;
+	uint32_t irq_fired;
+	struct wait_queue irq_queue;
 	uint16_t report_descriptor_length;
 	uint16_t report_descriptor_register;
 	uint16_t input_register;
@@ -178,6 +191,9 @@ static int resource_visitor(const struct drv_acpi_resource *resource, void *argu
 static int descriptor_register(struct i2c_hid_device *device);
 static void worker(void *argument);
 static void watch_line(struct i2c_hid_device *device);
+static void wait_interrupt(struct i2c_hid_device *device);
+static void line_interrupt(void *argument);
+static void read_while_asserted(struct i2c_hid_device *device);
 static void sample(struct i2c_hid_device *device);
 static bool line_asserted(const struct i2c_hid_device *device);
 static int device_start(struct i2c_hid_device *device);
@@ -553,13 +569,125 @@ worker(
 	if (device->line_path[0] != '\0')
 		error = drv_intel_gpio_pad_find(device->line_path, device->line_pin, &device->line);
 
-	/* Reads it for as long as the kernel runs, by its line or by sampling. */
-	if (error == 0) {
-		kern_logf("i2c-hid: %s reads on its line (%s pin %u)\n", device->path, device->line_path, device->line_pin);
-		watch_line(device);
-	} else {
+	/* Without a pad, sampling. */
+	if (error != 0) {
 		kern_logf("i2c-hid: %s samples its input (line: %d)\n", device->path, error);
 		sample(device);
+		return;
+	}
+
+	/* The pad's interrupt, when it can interrupt; until the interrupt is given up, if ever. */
+	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "i2c-hid irq");
+	waitq_init(&device->irq_queue, "i2c-hid irq");
+	error = drv_intel_gpio_pad_irq_enable(device->line, line_interrupt, device);
+	if (error == 0) {
+		kern_logf("i2c-hid: %s reads on its interrupt (%s pin %u)\n", device->path, device->line_path, device->line_pin);
+		wait_interrupt(device);
+	}
+
+	/* Watching the line, for as long as the kernel runs. */
+	if (error == 0) {
+		kern_logf("i2c-hid: %s: the interrupt was given up; watches its line\n", device->path);
+	} else {
+		kern_logf("i2c-hid: %s reads on its line (%s pin %u; interrupt: %d)\n", device->path, device->line_path, device->line_pin, error);
+	}
+
+	/* The line's watch never ends. */
+	watch_line(device);
+}
+
+/*
+ * Reads the device each time its pad fires, and when the line is found
+ * asserted without a firing; returns when the controller's interrupt was
+ * given up.
+ */
+static void
+wait_interrupt(
+	struct i2c_hid_device *device)
+{
+	unsigned long state;
+	uint64_t observed;
+	uint64_t deadline;
+	uint64_t now;
+	int alive;
+	int error;
+
+	/* For as long as the interrupt comes. */
+	for (;;) {
+		/* Sleeps until the pad fires, or the time to look comes. */
+		deadline = sched_ticks() + kern_ms_to_ticks(I2C_HID_IRQ_CHECK_MS) + 1U;
+		state = spin_lock_irqsave(&device->irq_lock);
+
+		while (device->irq_fired == 0U) {
+			/* The time to look at the line came. */
+			now = sched_ticks();
+			if (now >= deadline)
+				break;
+
+			/* Sleeps until the handler wakes it, or the deadline. */
+			observed = waitq_sequence(&device->irq_queue);
+			error = waitq_sleep(&device->irq_queue, &device->irq_lock, observed, deadline, 0U);
+			(void)error;
+		}
+
+		/* The firing is taken. */
+		device->irq_fired = 0U;
+
+		spin_unlock_irqrestore(&device->irq_lock, state);
+
+		/* The reports while the line is asserted, then the pad's interrupt on again. */
+		read_while_asserted(device);
+		drv_intel_gpio_pad_irq_arm(device->line);
+
+		/* The controller's interrupt given up: the caller watches the line. */
+		alive = drv_intel_gpio_pad_irq_alive(device->line);
+		if (!alive)
+			return;
+	}
+}
+
+/* The pad fired (in interrupt context): the thread wakes. */
+static void
+line_interrupt(
+	void *argument)
+{
+	struct i2c_hid_device *device;
+
+	/* Marked under the lock the thread sleeps with, and woken. */
+	device = argument;
+	spin_lock(&device->irq_lock);
+
+	device->irq_fired = 1U;
+	waitq_wake_all(&device->irq_queue);
+
+	spin_unlock(&device->irq_lock);
+}
+
+/* Reads reports while the device's line is asserted, a few at a time between looks at the line. */
+static void
+read_while_asserted(
+	struct i2c_hid_device *device)
+{
+	unsigned reads;
+	bool asserted;
+	bool reported;
+	int error;
+
+	/* While the line says a report waits. */
+	reads = 0;
+	asserted = line_asserted(device);
+	while (asserted) {
+		/* One report; a failed read ends the turn (the interrupt or the next look comes back). */
+		reported = false;
+		error = poll_input(device, &reported);
+		if (error != 0)
+			break;
+
+		/* A long run gives the processor up now and then. */
+		reads++;
+		if (reads % I2C_HID_LINE_READS_MAX == 0U)
+			sleep_ms(1U);
+		asserted = line_asserted(device);
 	}
 }
 

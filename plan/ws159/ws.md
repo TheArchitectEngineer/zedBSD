@@ -43,4 +43,4 @@ Resume point: p001（設計）から。WS049（ACPI AML）の後（ユーザー�
 | [ws159-p003](phase003/phase.md) | I2C-HID と Precision Touchpad、EVIOCGPROP、input-inject の touchpad | in-progress（2026-10-05 q713-i01 P1: 実装・host の試験（Linux と同じ byte 列）・build、QEMU と実機の待ち） | p002 |
 | [ws159-p004](phase004/phase.md) | compositor の touchpad の層（tap・tap-drag・押し込み・2 本指のスクロール） | in-progress（2026-10-05 q713-i01 P1: 実装・host の試験・build、QEMU と実機の待ち。LPSS の既定を y に戻した） | p003（host の試験は先に） |
 | ws159-p005 | 実機の UAT と全文の規約 | planning | p004、p006 |
-| [ws159-p006](phase006/phase.md) | GPIO の割り込み（INTC1055 の pinctrl の GpioInt、level・active low）で sampling（6/25 ms の MMIO）をやめる（電池のため、Q1 の追加、2026-10-05） | uncleared（2026-10-05 P1: pad の line の監視（触れた時だけ I2C）まで実装。割り込みは HAL の API の変更（proposed/hal-irq-trigger.diff）がユーザーの承認待ち） | p003 |
+| [ws159-p006](phase006/phase.md) | GPIO の割り込み（INTC1055 の pinctrl の GpioInt、level・active low）で sampling（6/25 ms の MMIO）をやめる（電池のため、Q1 の追加、2026-10-05） | in-progress（2026-10-05 q720-i01 P1: ユーザーの `hal_irq_set_mode` で割り込みを実装（amd64 の IOAPIC、kernel の wrapper、Intel GPIO の pad の割り込み、I2C-HID の割り込み駆動、失敗時は 4 ms の監視）。build・host の試験まで、5330 は未実施） | p003 |

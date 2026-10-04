@@ -26,3 +26,4 @@ $cc -Wl,--gc-sections $extra "$out/host-i2c-hid.o" "$out/i2c-hid.o" "$out/hid-re
 	"$out/hid-digitizer.o" "$out/hid-touch.o" -o "$out/host-i2c-hid"
 "$out/host-i2c-hid" "$root/plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin" line
 "$out/host-i2c-hid" "$root/plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin" sample
+"$out/host-i2c-hid" "$root/plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin" irq

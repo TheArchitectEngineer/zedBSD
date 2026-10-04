@@ -113,6 +113,34 @@ kern_irq_unregister_msi(
 }
 
 /*
+ * Sets the trigger mode and polarity of one numbered interrupt.
+ */
+int
+kern_irq_set_mode(
+	int irq,
+	unsigned trigger,
+	unsigned polarity)
+{
+	int hal_trigger;
+	int hal_polarity;
+
+	/* The kernel's values as the HAL's. */
+	if (trigger != KERN_IRQ_TRIGGER_EDGE && trigger != KERN_IRQ_TRIGGER_LEVEL)
+		return EINVAL;
+	if (polarity != KERN_IRQ_POLARITY_HIGH && polarity != KERN_IRQ_POLARITY_LOW)
+		return EINVAL;
+	hal_trigger = HAL_IRQ_TRIGGER_EDGE;
+	if (trigger == KERN_IRQ_TRIGGER_LEVEL)
+		hal_trigger = HAL_IRQ_TRIGGER_LEVEL;
+	hal_polarity = HAL_IRQ_POLARITY_HIGH;
+	if (polarity == KERN_IRQ_POLARITY_LOW)
+		hal_polarity = HAL_IRQ_POLARITY_LOW;
+
+	/* Succeeded or not, as the HAL says. */
+	return irq_error(hal_irq_set_mode(irq, hal_trigger, hal_polarity));
+}
+
+/*
  * Stops delivery of one numbered interrupt.
  */
 void

@@ -55,6 +55,23 @@ int kern_irq_register_msi(const char *source, kern_irq_handler_t handler,
 			  uint64_t *mapped_address, uint32_t *mapped_event);
 int kern_irq_unregister_msi(int mapped_irq);
 
+/*
+ * The trigger mode and polarity of a numbered interrupt
+ * (kern_irq_set_mode): edge or level, active high or low.
+ */
+#define KERN_IRQ_TRIGGER_EDGE	0U
+#define KERN_IRQ_TRIGGER_LEVEL	1U
+#define KERN_IRQ_POLARITY_HIGH	0U
+#define KERN_IRQ_POLARITY_LOW	1U
+
+/*
+ * Sets the trigger mode and polarity of one numbered interrupt, as a
+ * device's ACPI resource describes it (the line is masked meanwhile and
+ * its mask state kept).  Returns 0, EINVAL, EBUSY while the line is being
+ * delivered, or ENOTSUP when the interrupt controller cannot represent it.
+ */
+int kern_irq_set_mode(int irq, unsigned trigger, unsigned polarity);
+
 /* Stop and resume delivery of one numbered interrupt. */
 void kern_irq_mask(int irq);
 void kern_irq_unmask(int irq);

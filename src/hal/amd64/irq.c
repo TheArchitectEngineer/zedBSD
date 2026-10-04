@@ -463,6 +463,60 @@ hal_irq_set_affinity(
 }
 
 /*
+ * Sets the trigger mode and polarity of one I/O APIC IRQ.  The line is
+ * masked while its route is rewritten and its mask state is restored
+ * after; an MSI vector has no such configuration.
+ */
+int
+hal_irq_set_mode(
+	int irq,
+	int trigger,
+	int polarity)
+{
+	struct irq_service_info *service;
+	bool enabled;
+	unsigned was_masked;
+	int valid;
+	int msi;
+	int error;
+
+	/* An external line's IRQ; an MSI vector's delivery is fixed. */
+	valid = valid_irq(irq);
+	if (irq <= IRQ_TIMER || !valid)
+		return HAL_ERR_INVALID;
+	msi = is_msi_irq(irq);
+	if (msi)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Serialized with the line's deliveries; none may be under way. */
+	service = &irq_service[irq];
+	enabled = service_lock(service);
+	if (service->in_handler || service->in_flight || service->removing) {
+		service_unlock(service, enabled);
+		return HAL_ERR_BUSY;
+	}
+
+	/* Masked while the route changes. */
+	was_masked = service->masked;
+	service->masked = 1;
+	amd64_ioapic_mask(irq);
+	error = amd64_ioapic_set_mode(irq, trigger, polarity);
+
+	/* The mask state as it was. */
+	service->masked = was_masked;
+	if (!was_masked)
+		amd64_ioapic_unmask(irq);
+	service_unlock(service, enabled);
+
+	/* The route's result. */
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the line has the new configuration. */
+	return HAL_OK;
+}
+
+/*
  * Reports the requested and effective affinity of one IRQ.
  */
 int
