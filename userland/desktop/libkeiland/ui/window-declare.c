@@ -274,6 +274,8 @@ kl_window_popup_menu(
 			return errno;
 		keiui_declare_fini(&window->popup_model);
 	}
+
+	/* Its items as the table says. */
 	error = keiui_declare_menu(&window->popup_model, entries, count, &window->action_states, declare_menu_sink, window->popup_menu);
 	if (error != 0)
 		return error;

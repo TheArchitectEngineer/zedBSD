@@ -61,6 +61,8 @@ kl_app_open(
 {
 	const char *display;
 	struct kl_app *app;
+	int compositor;
+	int shell;
 	int status;
 	int error;
 
@@ -100,6 +102,8 @@ kl_app_open(
 		errno = ENOMEM;
 		return NULL;
 	}
+
+	/* Its listener, and one roundtrip for every global. */
 	status = wl_registry_add_listener(app->registry, &app_registry_listener, app);
 	if (status == 0)
 		status = wl_display_roundtrip(app->display);
@@ -110,7 +114,9 @@ kl_app_open(
 	}
 
 	/* Windows need a compositor and a shell. */
-	if (!app_has(app, "wl_compositor") || !app_has(app, "xdg_wm_base")) {
+	compositor = app_has(app, "wl_compositor");
+	shell = app_has(app, "xdg_wm_base");
+	if (!compositor || !shell) {
 		kl_app_close(app);
 		errno = EOPNOTSUPP;
 		return NULL;
@@ -279,6 +285,8 @@ kl_app_watch_fd(
 			app->fd_events[index] = events;
 			return 0;
 		}
+
+		/* Out of the table: the last one takes its place. */
 		app->fd_count--;
 		app->fds[index] = app->fds[app->fd_count];
 		app->fd_events[index] = app->fd_events[app->fd_count];
@@ -424,6 +432,8 @@ keiui_app_forget(
 			app->events[to] = app->events[from];
 		kept++;
 	}
+
+	/* The queue is as long as what was kept. */
 	app->event_count = kept;
 
 	/* The window is no application's any more. */
@@ -444,6 +454,8 @@ keiui_app_menu_service(
 		app->menu_tried = 1;
 		app->menu_service = kl_menu_service_open(app->display);
 	}
+
+	/* The service, or NULL. */
 	return app->menu_service;
 }
 
@@ -473,6 +485,8 @@ keiui_app_global(
 		if (app->display == display)
 			break;
 	}
+
+	/* No application's display. */
 	if (app == NULL)
 		return NULL;
 

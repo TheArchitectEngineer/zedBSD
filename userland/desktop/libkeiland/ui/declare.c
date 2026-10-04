@@ -387,6 +387,8 @@ declare_send(
 			change->error = error;
 			return;
 		}
+
+		/* Begun. */
 		change->begun = 1;
 	}
 
