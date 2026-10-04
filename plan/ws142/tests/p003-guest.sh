@@ -68,6 +68,9 @@ sleep 1
 pad bottom2-short "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -96 12 60" "up 0; up 1"
 expect_count short-begin 'ZWL GESTURE kind=bottom2 phase=begin' 2
 expect_count short-cancel 'ZWL WISEVIEW cancel from=' 1
+# A wrong opening is closed, so that the steps after it are not judged on an open Wiseview (T1-126).
+opened=$(count 'ZWL WISEVIEW opening from=')
+[ "${opened:-0}" -gt 1 ] 2>/dev/null && tap esc
 sleep 1
 
 # 3. Two fingers left 40 mm from the right edge: the second desktop.

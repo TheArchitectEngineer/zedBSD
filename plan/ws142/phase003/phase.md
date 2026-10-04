@@ -46,6 +46,8 @@ Queue: Q1 の指示（2026-10-05、D1・D3・D10 決定済み）
 - 端の帯 6 mm・決める 4 mm／8 mm・開き 40 mm・デスクトップ 60 mm・flick 100 mm/s は仮の値。5330 で、下の端から 2 本指を上げると Wiseview が指に付いて開くか、左右の端からデスクトップが滑るか、普通の 2 本指の scroll が gesture に化けないかを見て調整する。
 - ws159-p005 の 2.10（3 本指の tap）は中 click から TAP3 に変わる（切り替えの UI は p005 まで log だけ）。
 
+- 2026-10-05 T1-126: 1 回目 FAIL、2 回目 PASS。log では 8 mm をゆっくり動かした短い BOTTOM2 の END の速さが `418068`（約 418 mm/s。本当は約 11 mm/s）で、flick と見て Wiseview が開いた。開いたままなので、続く right2・left2 は始まらず（Wiseview が出ている間は始めない）、fullscreen の段の数もずれた（連鎖）。他の速い gesture の END にも `2340150`・`3131932` があった。**原因は実装**: 速さを report ごとの瞬間の速さの平均で出していて、compositor が report をまとめて読む（間隔 1 ms 未満を 1 ms とみなす）と瞬間の速さが極端になる。直し（`touchpad.c`）: 最近の 16 個の report の travel と時刻を持ち、速さは「100 ms 以上前の最新の report から今まで」の travel ÷ 時間（最短 50 ms）で出す。END は指を離した時刻で量るので、止まってから離すと遅い。host の試験に、ゆっくりの指の report が 180 ms ごとに 3 個ずつまとまって届く場合（flick ではなく約 33 mm/s）と、速く動かして 200 ms 止まってから離す場合（report の有無とも flick ではない）を足した（50 checks ok、ASan・UBSan でも）。試験は、間違って開いた時に Esc で閉じて後の段を独立させた（`plan/ws142/tests/p003-guest.sh`）。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定、実機の UAT。

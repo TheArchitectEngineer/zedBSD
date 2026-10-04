@@ -2,7 +2,7 @@
 
 # ws160-p001: su・sudo・passwd の設計と実装
 
-Status: in-progress（2026-10-05 P1 generation17 / q721-i01。設計・実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-127 の p001-guest.sh PASS（試験の直し e777d3ba の後、全部の行）、T1-118 の他の 23 行 ok）。以前: in-progress（2026-10-05 P1 generation17 / q721-i01。設計・実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
 Disposition: normal
 Parent: [WS160](../ws.md)
 Queue: q721 / q721-i01（Q1 の投入、ベータ1）
@@ -101,3 +101,7 @@ Queue: q721 / q721-i01（Q1 の投入、ベータ1）
 - QEMU の結果の判定。
 - docs/release の手引きの「Beta 1 has no way to change it」（password を変えられない）を、passwd・sudo ができたことに合わせて直す（WS129 の文書、Q1 へ）。
 - p002（Settings の Users の頁）は上の S の経路で。
+
+## Q1 の判定（2026-10-05）
+
+T1-127 の p001-guest.sh PASS（試験の直し e777d3ba の後、全部の行）、T1-118 の他の 23 行 ok。**cleared**。D1〜D4 は案で実装、ユーザーの確認待ち（master）。

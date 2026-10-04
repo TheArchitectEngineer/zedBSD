@@ -124,6 +124,9 @@ enum zwl_touchpad_tap {
  *
  * It lives in its input device from attach (zwl_touchpad_init) to detach.
  */
+/* The latest reports of a gesture whose travel and times its speed is measured over. */
+#define ZWL_TOUCHPAD_SAMPLES	16U
+
 struct zwl_touchpad {
 	struct zwl_touchpad_finger fingers[ZWL_TOUCHPAD_SLOTS];
 	int32_t slot;
@@ -152,7 +155,8 @@ struct zwl_touchpad {
 	 * started in (EDGE_* bits), whether the touch is decided (a scroll, or
 	 * none, or a gesture), the gesture under way and its fingers, the
 	 * fingers' mean travel since the decision began (micrometres), the
-	 * travel along its way, and its speed and the time of its last update.
+	 * travel along its way, and its speed; the travel at its latest
+	 * reports with their times, which the speed is measured over.
 	 */
 	int32_t x_max;
 	int32_t y_max;
@@ -164,7 +168,10 @@ struct zwl_touchpad {
 	int64_t gesture_dy_um;
 	int64_t gesture_travel_um;
 	int64_t gesture_speed;
-	uint64_t gesture_last_ms;
+	uint64_t gesture_sample_ms[ZWL_TOUCHPAD_SAMPLES];
+	int64_t gesture_sample_um[ZWL_TOUCHPAD_SAMPLES];
+	unsigned gesture_sample_next;
+	unsigned gesture_sample_count;
 };
 
 void zwl_touchpad_init(struct zwl_touchpad *pad, int32_t resolution_x, int32_t resolution_y);

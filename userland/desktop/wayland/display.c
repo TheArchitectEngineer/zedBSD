@@ -347,6 +347,7 @@ adopt_commit(
 		surface->mapped = 1;
 		server->map_order++;
 		surface->map_order = server->map_order;
+		surface->open_order = server->map_order;
 		surface->desktop = server->desktop;
 		place_window(server, surface);
 		printf("ZWL MAP client=%llu surface=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, surface->x, surface->y);

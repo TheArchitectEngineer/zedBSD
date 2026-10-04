@@ -91,6 +91,12 @@ void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigne
 void glass_draw_mark(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
 VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 
+/* The applications' icons in the system bar and their previews (apps-bar.c), drawn with the shell's marks and Wiseview's tiles (shell.c). */
+int zwl_apps_bar_draw(struct zwl_server *server, VkCommandBuffer command);
+void zwl_apps_bar_draw_popup(struct zwl_server *server, VkCommandBuffer command);
+void zwl_glass_draw_app_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t size, float alpha);
+void zwl_glass_draw_preview(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height, int over);
+
 /* The login screen in place of the desktop (greeter.c). */
 void zwl_greeter_draw(struct zwl_server *server, VkCommandBuffer command);
 

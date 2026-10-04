@@ -566,6 +566,9 @@ zwl_glass_draw(
 	if (cover == NULL)
 		draw_system_bar(server, command, &bar);
 
+	/* The previews of an application's icon in the bar, over the windows (apps-bar.c). */
+	zwl_apps_bar_draw_popup(server, command);
+
 	/* An open menu's popups over the system bar (menu-shell.c). */
 	zwl_menu_draw_popups(server, command);
 
@@ -706,6 +709,11 @@ zwl_glass_button(
 
 	/* The menus take a press on a window's menu, and every button while one is open (menu-shell.c). */
 	pressed = zwl_menu_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* The bar's applications take a press on an icon or a preview, and its release (apps-bar.c). */
+	pressed = zwl_apps_bar_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -2155,6 +2163,11 @@ zwl_glass_key(
 	if (taken)
 		return 1;
 
+	/* Esc hides the previews of an application's icon (apps-bar.c). */
+	taken = zwl_apps_bar_key(server, key, state);
+	if (taken)
+		return 1;
+
 	/* Wiseview, open or opening, takes every key (ws035-p014). */
 	showing = wiseview_showing(server);
 	if (showing) {
@@ -2233,6 +2246,9 @@ zwl_glass_tick(
 
 	/* The sheets where their parents are (ws090-p014). */
 	sheet_place(server);
+
+	/* The previews of the bar's applications show and hide in time (apps-bar.c). */
+	zwl_apps_bar_tick(server);
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);
@@ -3152,6 +3168,7 @@ draw_system_bar(
 	float home;
 	int button;
 	int over;
+	int icons;
 
 	/* The docked window, if one is on top and not moving (not while App Home shows). */
 	docked = docked_window(server);
@@ -3220,6 +3237,13 @@ draw_system_bar(
 		label[3] = progress;
 		glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
 		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, BAR_BASELINE + 1, "Wiseview", 200, label);
+	}
+
+	/* Without a docked title, the applications' icons in its place after a line (apps-bar.c, ws142-p004). */
+	if (docked == NULL && progress <= 0.0f) {
+		icons = zwl_apps_bar_draw(server, command);
+		if (icons)
+			glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
 	}
 
 	/* The desktops, then the status. */
@@ -5544,6 +5568,177 @@ desktop_turn(
 }
 
 /*
+ * Tells whether the system bar has room for the applications' icons
+ * (apps-bar.c, ws142-p004), and where: the glass look's windows, no login
+ * or lock screen, no fullscreen window over the bar, no docked window's
+ * title in it (D6), neither App Home nor Wiseview.  The room is from after
+ * the launcher's line to before the desktops' line.
+ */
+int
+zwl_glass_apps_room(
+	struct zwl_server *server,
+	int32_t *left,
+	int32_t *right)
+{
+	struct shell_bar bar;
+	struct zwl_object *cover;
+	struct zwl_object *docked;
+	float home;
+
+	/* Only the glass look's window mode has the bar, and not over the login or lock screen. */
+	if (!server->glass || !server->windowed || server->greeter || server->locked)
+		return 0;
+
+	/* A fullscreen window, or a docked window's title. */
+	cover = bar_cover(server);
+	docked = docked_window(server);
+	if (cover != NULL || docked != NULL)
+		return 0;
+
+	/* App Home, or Wiseview (open, opening or closing). */
+	home = zwl_home_progress(server);
+	if (home > 0.0f || server->home_to > 0.0f)
+		return 0;
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+		return 0;
+
+	/* The span. */
+	bar_layout(server, &bar);
+	*left = bar.title_x - 4;
+	*right = bar.desktops_line - 16;
+
+	/* Succeeded: there is room. */
+	return 1;
+}
+
+/* Brings a window to the top for the bar's applications (back from minimized), with the focus. */
+void
+zwl_glass_bring(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const char *via)
+{
+	/* Back, on top. */
+	surface->minimized = 0;
+	window_raise(server, surface);
+	server->front_surface = zwl_top_window(server);
+	zwl_seat_focus(server);
+	server->dirty = 1;
+	printf("ZWL APPS raise surface=%u via=%s at_ms=%llu\n", surface->id, via, (unsigned long long)zwl_milliseconds());
+}
+
+/* Opens Wiseview for the bar's "+N" place, as Super+Tab does. */
+void
+zwl_glass_open_wiseview(
+	struct zwl_server *server,
+	const char *via)
+{
+	/* The window on top is the one Enter comes back to. */
+	server->wiseview_current = sheet_owner(zwl_top_window(server));
+	printf("ZWL WISEVIEW opening via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
+	zwl_transition_request(server, "wiseview-open");
+	wiseview_settle(server, 0.0f, 1.0f);
+}
+
+/*
+ * Draws an application's mark at a size (the bar's icons): the picture in
+ * the application's colour, or a blue square with a letter.
+ */
+void
+zwl_glass_draw_app_mark(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	int32_t x,
+	int32_t middle,
+	int32_t size,
+	float alpha)
+{
+	float square[4];
+	float white[4];
+	char title[128];
+	char letter[5];
+	const char *source;
+	uint32_t rgb;
+	int32_t pixels;
+	int32_t width;
+	size_t length;
+	size_t index;
+	int picture;
+
+	/* White, at the mark's opacity. */
+	white[0] = 1.0f;
+	white[1] = 1.0f;
+	white[2] = 1.0f;
+	white[3] = alpha;
+
+	/* The picture and the colour that belong to the window's application ID. */
+	rgb = 0U;
+	picture = zwl_icon_for_app_id(surface->app_id, &rgb);
+	if (picture >= 0) {
+		square[0] = (float)((rgb >> 16) & 0xffU) / 255.0f;
+		square[1] = (float)((rgb >> 8) & 0xffU) / 255.0f;
+		square[2] = (float)(rgb & 0xffU) / 255.0f;
+		square[3] = alpha;
+		glass_draw_solid(server, command, (float)x, (float)(middle - size / 2), (float)size, (float)size, (float)size * 0.3f, square);
+		pixels = size * 7 / 10;
+		glass_draw_icon(server, command, (unsigned)picture, x + (size - pixels) / 2, middle - pixels / 2, (unsigned)pixels, white);
+		return;
+	}
+
+	/* Otherwise a blue square. */
+	square[0] = 0.29f;
+	square[1] = 0.55f;
+	square[2] = 1.0f;
+	square[3] = alpha;
+	glass_draw_solid(server, command, (float)x, (float)(middle - size / 2), (float)size, (float)size, (float)size * 0.3f, square);
+
+	/* Its letter: the application ID's, else the title's first character (all its UTF-8 bytes). */
+	shown_title(surface, title, sizeof(title));
+	source = mark_name(surface->app_id);
+	if (source == NULL)
+		source = title;
+	length = 1;
+	if (((unsigned char)source[0] & 0xe0U) == 0xc0U)
+		length = 2;
+	else if (((unsigned char)source[0] & 0xf0U) == 0xe0U)
+		length = 3;
+	else if (((unsigned char)source[0] & 0xf8U) == 0xf0U)
+		length = 4;
+	for (index = 0; index < length && source[index] != '\0'; index++)
+		letter[index] = source[index];
+	letter[index] = '\0';
+
+	/* In capitals, in the middle. */
+	if (letter[0] >= 'a' && letter[0] <= 'z')
+		letter[0] = (char)(letter[0] - 'a' + 'A');
+	width = glass_text_width(server, SIZE_TITLE, letter);
+	glass_draw_text(server, command, SIZE_TITLE, x + size / 2 - width / 2, middle + 6, letter, size, white);
+}
+
+/* Draws a window's preview for the bar's applications: Wiseview's tile, settled. */
+void
+zwl_glass_draw_preview(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	struct zwl_object *surface,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height,
+	int over)
+{
+	struct shell_rect tile;
+
+	/* The tile, with its label, lit and with its close button under the pointer. */
+	tile.x = x;
+	tile.y = y;
+	tile.width = width;
+	tile.height = height;
+	draw_tile(server, command, surface, &tile, 1.0f, 0U, (unsigned)over);
+}
+
+/*
  * Carries out a touch pad gesture (touchpad.c, ws142-p003): two fingers up
  * from the pad's bottom edge or three fingers up open Wiseview, two
  * fingers in from the left or the right edge switch to the desktop on that
@@ -6027,6 +6222,11 @@ glass_motion_take(
 
 	/* An open menu follows the pointer (menu-shell.c). */
 	taken = zwl_menu_motion(server);
+	if (taken)
+		return 1;
+
+	/* The bar's applications: the rest on an icon, its drag, the previews (apps-bar.c). */
+	taken = zwl_apps_bar_motion(server);
 	if (taken)
 		return 1;
 
