@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS132 の判断 D1〜D3（2026-10-05 未明、P1 の ws132-p001）**: D1 電源ボタン（案: session の中は電源の dialog（Lock・Log Out・Restart・Shut Down・Cancel）、greeter は Shut Down の確認。session の中の Restart・Shut Down には ws131 D12 の改訂が要る。代わりは session では Log Out してから greeter で Shut Down）。D2 蓋を閉じた時（案: session を lock。WS052 の決定では蓋で S0i3 に入るので、S0i3 ができるまでの間の扱い）。D3 自動 mount（案: console の session の利用者を持ち主に /media/<label> へ nosuid・noexec で、その利用者が eject 可、greeter の間は mount しない）。P1 は判断を待たずに p002（kernel の核と送り手）を進める。
 - **HAL の API の承認（2026-10-05 未明、P1 の ws159-p006）**: `hal_irq_set_trigger(int irq_num, unsigned flags)` と `HAL_IRQ_TRIGGER_LEVEL`・`HAL_IRQ_TRIGGER_ACTIVE_LOW` を hal.h に足す案（差分 `plan/ws159/proposed/hal-irq-trigger.diff`、P1 a9cae11）。理由: 5330 の GPIO controller（INTC1055）の IRQ 14 は ACPI で level・active low だが MADT に ISO が無く、amd64 の HAL は MADT だけから trigger を取るので edge・high で設定され、タッチパッドの GPIO の割り込みが使えない。承認までは HAL を使わない pad の RX の MMIO の見張り（4 ms）で動かす。別の道（pad を ACPI mode にして GPE で受ける）は P1 が推さない。
 - 2026-10-04 17 時に決定: BUG-166 のタッチパッドは「押し込み＋タップドラッグ」、5330 の ACPI の table の読み取り専用の取り出しと commit を許可（queue.md の決定 (1)(2)）。
 - WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
