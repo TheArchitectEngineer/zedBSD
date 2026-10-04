@@ -29,10 +29,10 @@ user（原文）:「では、サブエージェントを起動して作業しま
 | q685 / q685-i02 | 空いた担当 | WS033: [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md) | ws033/phase001 の「q685-i01 の途中の結果」の再開点から | なし | pending |
 | q705 / q705-i01 | 空いた担当 | WS127: [ws127-p010](ws127/phase010/phase.md)・[p011](ws127/phase011/phase.md)・[p012](ws127/phase012/phase.md)・[BUG-177](bugs/BUG-177.md) | path の入力と候補、Home は ~/・Today（左の一番上、起動は Today）、Tags の削除（Guardrail の D14 と checker の表は Q1）、検索欄の IME | なし | 新規の分（p010・p011・p012）実装済み・T1-099 の試験待ち（P2 24155d7・d937821・f3ae76d → main）。BUG-177 は保留 |
 | q706 / q706-i01 | 空いた担当 | WS131: [ws131-p014](ws131/phase014/phase.md) の残り → p015〜p022 | phase014 の Resume から番号の順 | なし | pending |
-| q707 / q707-i01 | 空いた担当 | WS132: p001 の設計 → 実装 | /dev/system の事象の subscriber（読む前に種類を登録、受け取り手は Keiland、ACPI の電源ボタン・蓋・AC を配る）、PnP の通知、自動 mount、Files の eject | なし | pending |
+| q707 / q707-i01 | P1 | WS132: p001 の設計 → 実装 | /dev/system の事象の subscriber（読む前に種類を登録、受け取り手は Keiland、ACPI の電源ボタン・蓋・AC を配る）、PnP の通知、自動 mount、Files の eject | なし | pending |
 | q708 / q708-i01 | P2 | WS095: [ws095-p017](ws095/phase017/phase.md)（辞書の移動と統合）・p005・[p016](ws095/phase016/phase.md)（app ごとの IME の状態） | 各 phase.md の範囲 | なし | pending |
-| q709 / q709-i01 | 空いた担当 | WS090: [ws090-p016](ws090/phase016/phase.md) | File Chooser を (b) 左右とも透かす | なし | pending |
-| q710 / q710-i01 | 空いた担当 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | pending |
+| q709 / q709-i01 | 空いた担当 | WS090: [ws090-p016](ws090/phase016/phase.md) | File Chooser を (b) 左右とも透かす | なし | 実装済み・T1-103 の試験待ち（P2 ba8f807 → main 37e0de9） |
+| q710 / q710-i01 | P2 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | in-progress（2026-10-05 P2） |
 | q711 / q711-i01 | 空いた担当 | WS129: p003〜p005 | release の作業 | なし | pending |
 
 ## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
