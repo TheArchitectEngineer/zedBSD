@@ -252,3 +252,13 @@ user「では、修正してください。」を、直前に提示したq698の
 - clang-format 19.1.7を製品の編集範囲と新fixtureに適用し、規約のtab引数を保持。`style-diff.py --base f1fa284`（製品2ファイル）はchanged-line findings 0、新fixtureの`style-check.py --summary`はtotal 0、`sh -n`と`git diff --check`はPASS。
 - `plan/tools/guest/test-image.sh plan/uat/config-uat.mk build/q699`: UAT image作成・image check PASS。image全体はsubmakeのjobserver警告1件、compiler警告/エラー0。最終ソースで同wrapperのtarget `build/q699/vmunix`を再ビルドし、kernel/include check PASS、警告0、実行中ELFのSHA256と一致。Clang 23.1.0（repo toolchain）、既存toolchainのみ使用。
 - 補正無しの製品imageを5330で確認中。gdbのELF専用probeはCSR callback直前の値を読むだけで、register/guest dataを書き換えない。256・512・768件の実doorbell境界を通過、SW_ERROR/restart無し、host応答継続。console10分の最終結果は次の節に記録する。
+
+### q699 の結果・引き継ぎ追補（2026-10-04 20:51 JST、P4 → Q1）
+
+**q699-i01: cleared（承認済みcommand pointer修正と限定検証）**。製品/試験 WIP `acb4afa`、承認・checkpoint WIP `999eb8b`。原因と過去のq698証拠を保持したまま、[BUG-158「SW_ERROR の修正」](../../bugs/BUG-158.md#sw_error-の修正q6992026-10-04-p4)へ実装・最終結果・raw hashを追記した。Bug Boardの該当行も更新。
+
+- 補正無しのUAT image、AX211単独/std VGA/12 vCPU/4GiB/profile無しで688.531秒。console capture間624.389秒（10分24秒）。実doorbell15→2582を2568件観測、256境界10回、飛び/巻戻り0。
+- SW_ERROR/restart/recovery/panicは0。688.051秒の最終sampleで全12 vCPUがsched_idle。host ping/SSHは各70回成功・失敗0。console/serial logを判定に使用せず、guest memoryとread-only breakpointで確認。
+- host最終確認20:49:54 JST: QEMU停止、AX211 driver無し、override(null)、blacklist保持、USB有線で応答。電源再投入不要。local rawはplan/ws004/temp/q699、remoteは~/zedbsd-q699-p4。試験・monitorは終了済み。
+- q699のscopeは実装と今回の確認で満たした。whole Phaseはin-progress、BUG-158はtrackingを維持。実機UAT（未接続10分・接続通信・desktop/入力）は未了。q698のassert後error42の原因解明・実deviceへのreset注入試験を済ませたとはしない。
+- 本追補は20:30の引き継ぎ後にuserが追加した実装指示の結果。以前の「未実装」は当時の履歴であり、現在はacb4afaで修正済み。main変更・merge・push・GitHub公開無し。Q1はbase f1fa284以降を統合し、共有Queueでq699の承認/結果、WS/Master/Past Logを投影する。次のQueueは開始しない。
