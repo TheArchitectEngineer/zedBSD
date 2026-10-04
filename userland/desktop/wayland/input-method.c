@@ -70,9 +70,6 @@
 #define IME_RESTART_MS			1000U
 #define IME_START_WINDOW_MS		60000U
 
-/* The focus key of an application with the keyboard that has ended: the language chosen is nobody's (ws095-p016). */
-#define IME_APP_GONE			"-"
-
 /* How long a key may go unanswered before the input method is passed by, and an answer noted as slow. */
 #define IME_ANSWER_MS			500U
 #define IME_SLOW_MS			100U
@@ -2101,12 +2098,6 @@ ime_app_remember(
 	struct zwl_ime *ime)
 {
 	struct zwl_ime_app *app;
-	int gone;
-
-	/* The application that had the keyboard has ended: the language is nobody's until the next focus. */
-	gone = strcmp(ime->focus_key, IME_APP_GONE);
-	if (gone == 0)
-		return;
 
 	/* The desktop's. */
 	if (ime->focus_key[0] == '\0') {
@@ -2208,7 +2199,8 @@ ime_client_has_app(
  * Forgets the languages of the applications whose last connection ends: a
  * connection's own entry, and an application ID's when no other connection
  * has a window of it.  The next start of the application begins with the
- * desktop's language again.
+ * desktop's language again.  When the application with the keyboard ends,
+ * the keyboard is the desktop's: its language is chosen.
  */
 static void
 ime_app_forget(
@@ -2220,6 +2212,8 @@ ime_app_forget(
 	struct zwl_client *other;
 	char key[ZWL_IME_APP_KEY];
 	const char *app_id;
+	const char *wanted;
+	const char *why;
 	unsigned index;
 	int differs;
 	int kept;
@@ -2261,10 +2255,33 @@ ime_app_forget(
 			memset(&ime->apps[index], 0, sizeof(ime->apps[index]));
 	}
 
-	/* The application with the keyboard that has ended leaves the language chosen to nobody until the next focus. */
+	/* Nothing more unless the application with the keyboard has ended. */
 	if (ime->focus_key[0] == '\0')
 		return;
 	focused = ime_app_find(ime, ime->focus_key);
-	if (focused == NULL)
-		(void)snprintf(ime->focus_key, sizeof(ime->focus_key), "%s", IME_APP_GONE);
+	if (focused != NULL)
+		return;
+
+	/*
+	 * Its window goes without a new focus (seat.c clears it): the keyboard
+	 * is the desktop's, and so is the language (T1-102: Alt+Space on the
+	 * desktop then chooses the desktop's, which the next new application
+	 * inherits).
+	 */
+	ime->focus_key[0] = '\0';
+	wanted = ime->language;
+	why = "kept";
+	if (ime->desktop_known) {
+		wanted = ime->desktop_language;
+		why = "desktop";
+	}
+
+	/* The log line the tests read. */
+	printf("ZWL IME app key=desktop language=%s from=%s\n", wanted, why);
+
+	/* Chosen only when it differs from the input method's now. */
+	differs = strcmp(wanted, ime->language);
+	if (differs == 0 || ime->status == NULL)
+		return;
+	ime_select(server, wanted);
 }
