@@ -51,7 +51,7 @@ Keiland の compositor（`userland/desktop/wayland/`）で、ユーザーの要�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws142-p001](phase001/phase.md) | 設計: 既存の Wiseview・App Home・仮想デスクトップ・上部のバー・gesture の認識（WS081・WS099）・入力の経路を読み、1〜5 の状態機械・描画（プレビューの縮小の描画、Vulkan）・入力の割り当て（Super・Alt+Tab・タッチパッドの端と指の本数）・設定・試験の方法を設計。端の検出の可否（5330 のタッチパッド）の調べ | in-progress（2026-10-05 q701-i01 P1: 設計を書いた、D1〜D11 は人間の判断待ち） | なし |
-| ws142-p002 | Windows キーでアプリの一覧 | planning | p001 |
+| [ws142-p002](phase002/phase.md) | Windows キーでアプリの一覧 | in-progress（2026-10-05 q719-i01 P1: 実装・build warning 0（zedBSD・Linux）・host 16 checks・境界 PASS。QEMU は T1 に依頼） | p001 |
 | ws142-p003 | タッチパッドの gesture（下の端から 2 本指の上 → Wiseview、左右の端から 2 本指 → 仮想デスクトップ、代わりの 3 本指） | planning | p001、D1・D3・D10、BUG-166・167・178 の直し（q689・q700）と衝突しない順 |
 | ws142-p004 | 上部のバーのアプリの一覧とプレビュー（hover・click・複数の窓） | planning | p001、D2・D4〜D8・D11 |
 | ws142-p005 | 切り替えの UI（3 本指のタップ・Alt+Tab、中央のポップアップ） | planning | p003（TAP3・2 本指）、p004、D1・D2 |

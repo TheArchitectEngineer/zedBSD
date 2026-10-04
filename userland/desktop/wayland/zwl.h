@@ -44,6 +44,7 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend-evdev.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "touchpad.h"
+#include "super-tap.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -762,6 +763,8 @@ struct zwl_server {
 	int32_t pointer_y;
 	unsigned modifier_keys;
 	uint32_t modifiers;
+	/* The Windows key pressed alone (super-tap.c, ws142-p002): armed from its press until something else happens. */
+	struct zwl_super_tap super_tap;
 	/* The locked modifiers (Caps Lock 0x2, Num Lock 0x10), each toggled by a press of its key (ws035-p078). */
 	uint32_t locked_modifiers;
 	/* Window mode: the Vulkan output, whether a frame is due, and the fence fd of the frame in flight. */
@@ -1266,6 +1269,7 @@ void zwl_home_tick(struct zwl_server *server);
 int zwl_home_axis(struct zwl_server *server, int32_t vertical, int32_t horizontal);
 int zwl_home_launched(struct zwl_server *server, int32_t *rect);
 void zwl_home_dismiss(struct zwl_server *server, const char *via);
+void zwl_home_toggle(struct zwl_server *server, const char *via);
 pid_t zwl_spawn(struct zwl_server *server, const char *command);
 
 /* The top-right corner's swipe that brings Notes (corner.c; the drawing is in glass.h). */
