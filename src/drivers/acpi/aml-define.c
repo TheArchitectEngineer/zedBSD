@@ -40,10 +40,17 @@
 #define FIELD_ENTRY_CONNECT	0x02U
 #define FIELD_ENTRY_EXTENDED	0x03U
 
+/*
+ * The longest name text a log line or a name reference holds; a longer
+ * name is written as "(long name)".
+ */
+#define NAME_TEXT_MAX 128U
+
 static int define_name(struct drv_acpi_eval *eval);
 static int define_alias(struct drv_acpi_eval *eval);
 static int define_scope(struct drv_acpi_eval *eval);
 static int define_container(struct drv_acpi_eval *eval, unsigned opcode);
+static int container_object(struct drv_acpi_eval *eval, unsigned opcode, struct drv_acpi_object **result);
 static int read_processor(struct drv_acpi_eval *eval, struct drv_acpi_object *object);
 static int read_power_resource(struct drv_acpi_eval *eval, struct drv_acpi_object *object);
 static int define_method(struct drv_acpi_eval *eval);
@@ -56,11 +63,17 @@ static int define_data_region(struct drv_acpi_eval *eval);
 static int define_field(struct drv_acpi_eval *eval, unsigned opcode);
 static int field_head(struct drv_acpi_eval *eval, unsigned opcode, struct drv_acpi_node **first, struct drv_acpi_node **second, uint64_t *bank_value, uint64_t *flags);
 static int field_list(struct drv_acpi_eval *eval, const uint8_t *end, struct drv_acpi_field *template);
+static int field_access(struct drv_acpi_eval *eval, bool extended, struct drv_acpi_field *template);
+static int field_named(struct drv_acpi_eval *eval, const uint8_t *end, struct drv_acpi_field *template);
+static bool segment_valid(const uint8_t *segment);
+static bool segment_character(uint8_t character, bool first);
 static int field_unit_create(struct drv_acpi_eval *eval, const uint8_t *segment, const struct drv_acpi_field *template);
 static int field_connection(struct drv_acpi_eval *eval, struct drv_acpi_field *template);
 static int lookup_named(struct drv_acpi_eval *eval, struct drv_acpi_node **result);
 static int create_named(struct drv_acpi_eval *eval, const struct drv_acpi_name *name, struct drv_acpi_object *object, bool *duplicate);
+static void name_text(const struct drv_acpi_name *name, char *text, size_t size);
 static int package_element(struct drv_acpi_eval *eval, struct drv_acpi_object **result);
+static int name_reference(struct drv_acpi_eval *eval, const struct drv_acpi_name *name, struct drv_acpi_object **result);
 static struct drv_acpi_table *table_find(const char *signature, const char *oem_id, const char *oem_table_id);
 static int string_operand(struct drv_acpi_eval *eval, char *text, size_t size);
 
@@ -100,7 +113,7 @@ drv_acpi_is_definition(
 		break;
 	}
 
-	/* Reports any other opcode. */
+	/* Reports an opcode that is an operator or a statement, not a definition. */
 	return false;
 }
 
@@ -163,7 +176,7 @@ drv_acpi_define(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the definition's name is in the namespace. */
 	return 0;
 }
 
@@ -231,7 +244,7 @@ drv_acpi_build_package(
 			return error;
 		}
 
-		/* Keeps it when the count leaves room for it, and counts it. */
+		/* Keeps it when the count leaves room for it. */
 		if (index < package->value.package.count) {
 			package->value.package.elements[index] = element;
 		} else {
@@ -246,8 +259,10 @@ drv_acpi_build_package(
 	eval->end = outer_end;
 	eval->position = package_end;
 
-	/* Succeeded: the caller holds the package. */
+	/* Hands over the package. */
 	*result = package;
+
+	/* Succeeded: the caller holds the package. */
 	return 0;
 }
 
@@ -296,13 +311,15 @@ drv_acpi_build_buffer(
 	if (buffer == NULL)
 		return ENOMEM;
 
-	/* Copies the initializer and continues after the literal. */
+	/* Copies the initializer. */
 	if (initializer != 0)
 		kern_memcpy(buffer->value.buffer.bytes, eval->position, initializer);
+
+	/* Continues after the literal and hands over the buffer. */
 	eval->position = buffer_end;
+	*result = buffer;
 
 	/* Succeeded: the caller holds the buffer. */
-	*result = buffer;
 	return 0;
 }
 
@@ -336,11 +353,12 @@ drv_acpi_create_buffer_field(
 		return error;
 	}
 
-	/* Places the field by the kind of Create. */
+	/* Places the field by the kind of Create: most take a byte index. */
 	offset = index * 8U;
 	bits = 0;
 	switch (opcode) {
 	case DRV_ACPI_OP_CREATE_BIT_FIELD:
+		/* One bit at a bit index. */
 		offset = index;
 		bits = 1;
 		break;
@@ -365,7 +383,6 @@ drv_acpi_create_buffer_field(
 			return error;
 		}
 
-		/* Ends the CreateField case. */
 		break;
 	}
 
@@ -385,23 +402,27 @@ drv_acpi_create_buffer_field(
 
 	/* Refuses an empty field or one that runs past the buffer. */
 	available = (uint64_t)source->value.buffer.length * 8U;
-	if (bits == 0 || offset > available || bits > available - offset) {
+	if (bits == 0 ||
+	    offset > available ||
+	    bits > available - offset) {
 		drv_acpi_os_log("ACPI: buffer field past the end of its buffer\n");
 		drv_acpi_object_release(source);
 		return EINVAL;
 	}
 
-	/* Makes the field, which keeps the buffer alive. */
+	/* Allocates the field. */
 	field = drv_acpi_object_new(DRV_ACPI_TYPE_BUFFER_FIELD);
 	if (field == NULL) {
 		drv_acpi_object_release(source);
 		return ENOMEM;
 	}
 
-	/* Places the field; it takes over the reference to the buffer. */
+	/* Places the field; it takes over the reference to the buffer, which it keeps alive. */
 	field->value.buffer_field.buffer = source;
 	field->value.buffer_field.bit_offset = offset;
 	field->value.buffer_field.bit_length = bits;
+
+	/* A CreateField field always reads as a buffer. */
 	if (opcode == DRV_ACPI_OP_CREATE_FIELD)
 		field->value.buffer_field.reads_buffer = true;
 
@@ -411,8 +432,70 @@ drv_acpi_create_buffer_field(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the field's name is in the namespace. */
 	return 0;
+}
+
+/*
+ * Resolves the names a package holds that did not exist when it was built.
+ *
+ * It runs once the tables are loaded, on nested packages too.  A name that
+ * still does not resolve stays a name.
+ */
+void
+drv_acpi_package_resolve(
+	struct drv_acpi_object *package)
+{
+	struct drv_acpi_object *element;
+	uint32_t index;
+
+	/* Looks at each element. */
+	for (index = 0; index < package->value.package.count; index++) {
+		/* Skips an uninitialized element. */
+		element = package->value.package.elements[index];
+		if (element == NULL)
+			continue;
+
+		/* A nested package is resolved the same way. */
+		if (element->type == DRV_ACPI_TYPE_PACKAGE) {
+			drv_acpi_package_resolve(element);
+			continue;
+		}
+
+		/* A name reference becomes a node reference when its name resolves. */
+		if (element->type == DRV_ACPI_TYPE_REFERENCE)
+			drv_acpi_reference_resolve(element);
+	}
+}
+
+/*
+ * Turns a name reference into a node reference when its name resolves.
+ *
+ * The name is resolved from the scope it was written in.
+ */
+void
+drv_acpi_reference_resolve(
+	struct drv_acpi_object *reference)
+{
+	struct drv_acpi_node *node;
+	int error;
+
+	/* Only a name reference has anything to resolve. */
+	if (reference->value.reference.kind != DRV_ACPI_REFERENCE_NAME)
+		return;
+
+	/* Looks the name up from its scope. */
+	error = drv_acpi_lookup_path(reference->value.reference.node, reference->value.reference.name, true, &node);
+	if (error != 0)
+		return;
+
+	/* The reference now names the node. */
+	reference->value.reference.kind = DRV_ACPI_REFERENCE_NODE;
+	reference->value.reference.node = node;
+
+	/* The text is no longer needed. */
+	drv_acpi_os_free(reference->value.reference.name);
+	reference->value.reference.name = NULL;
 }
 
 /* Runs a Name: evaluates the value and gives it to a new node. */
@@ -451,7 +534,7 @@ define_name(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the name holds the value. */
 	return 0;
 }
 
@@ -467,10 +550,12 @@ define_alias(
 	bool duplicate;
 	int error;
 
-	/* Reads the existing name and the new one. */
+	/* Reads the existing name. */
 	error = drv_acpi_stream_name(eval, &source);
 	if (error != 0)
 		return error;
+
+	/* Reads the new name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
@@ -483,13 +568,17 @@ define_alias(
 		/* A table load goes on without the alias. */
 		if (eval->frame == NULL)
 			return 0;
+
+		/* Reports a missing name inside a method. */
 		return error;
 	}
 
-	/* Makes the alias object. */
+	/* Allocates the alias object. */
 	alias = drv_acpi_object_new(DRV_ACPI_TYPE_ALIAS);
 	if (alias == NULL)
 		return ENOMEM;
+
+	/* Makes it stand for the existing node. */
 	alias->value.alias.target = target;
 
 	/* Names it. */
@@ -498,7 +587,7 @@ define_alias(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the new name stands for the node. */
 	return 0;
 }
 
@@ -531,7 +620,7 @@ define_scope(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the scope's terms ran. */
 	return 0;
 }
 
@@ -548,43 +637,20 @@ define_container(
 	bool duplicate;
 	int error;
 
-	/* Reads the extent of the definition and its name. */
+	/* Reads the extent of the definition. */
 	error = drv_acpi_stream_package_length(eval, &container_end);
 	if (error != 0)
 		return error;
+
+	/* Reads its name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
 
 	/* Makes the object and reads the fixed data some kinds carry. */
-	object = NULL;
-	error = 0;
-	switch (opcode) {
-	case DRV_ACPI_OP_DEVICE:
-		object = drv_acpi_object_new(DRV_ACPI_TYPE_DEVICE);
-		break;
-	case DRV_ACPI_OP_THERMAL_ZONE:
-		object = drv_acpi_object_new(DRV_ACPI_TYPE_THERMAL_ZONE);
-		break;
-	case DRV_ACPI_OP_PROCESSOR:
-		object = drv_acpi_object_new(DRV_ACPI_TYPE_PROCESSOR);
-		if (object != NULL)
-			error = read_processor(eval, object);
-		break;
-	default:
-		object = drv_acpi_object_new(DRV_ACPI_TYPE_POWER_RESOURCE);
-		if (object != NULL)
-			error = read_power_resource(eval, object);
-		break;
-	}
-
-	/* Reports an object that could not be made or read. */
-	if (object == NULL)
-		return ENOMEM;
-	if (error != 0) {
-		drv_acpi_object_release(object);
+	error = container_object(eval, opcode, &object);
+	if (error != 0)
 		return error;
-	}
 
 	/* Names it. */
 	error = create_named(eval, &name, object, &duplicate);
@@ -598,15 +664,70 @@ define_container(
 		return 0;
 	}
 
-	/* Runs the terms inside it in its own scope. */
+	/* Finds the node just created, which is the scope of the terms inside. */
 	error = drv_acpi_ns_lookup(eval->scope, &name, false, &node);
 	if (error != 0)
 		return error;
+
+	/* Runs the terms inside it in its own scope. */
 	error = drv_acpi_exec_scope(eval, node, container_end);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the container and the terms inside it are defined. */
+	return 0;
+}
+
+/* Makes the object of a container definition and reads its fixed data. */
+static int
+container_object(
+	struct drv_acpi_eval *eval,
+	unsigned opcode,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_object *object;
+	enum drv_acpi_type type;
+	int error;
+
+	/* Chooses the type by the opcode. */
+	switch (opcode) {
+	case DRV_ACPI_OP_DEVICE:
+		type = DRV_ACPI_TYPE_DEVICE;
+		break;
+	case DRV_ACPI_OP_THERMAL_ZONE:
+		type = DRV_ACPI_TYPE_THERMAL_ZONE;
+		break;
+	case DRV_ACPI_OP_PROCESSOR:
+		type = DRV_ACPI_TYPE_PROCESSOR;
+		break;
+	default:
+		type = DRV_ACPI_TYPE_POWER_RESOURCE;
+		break;
+	}
+
+	/* Allocates the object. */
+	object = drv_acpi_object_new(type);
+	if (object == NULL)
+		return ENOMEM;
+
+	/* A Processor and a PowerResource carry fixed data; the others carry none. */
+	error = 0;
+	if (type == DRV_ACPI_TYPE_PROCESSOR) {
+		error = read_processor(eval, object);
+	} else if (type == DRV_ACPI_TYPE_POWER_RESOURCE) {
+		error = read_power_resource(eval, object);
+	}
+
+	/* Reports fixed data that could not be read. */
+	if (error != 0) {
+		drv_acpi_object_release(object);
+		return error;
+	}
+
+	/* Hands over the object. */
+	*result = object;
+
+	/* Succeeded: the caller holds the object. */
 	return 0;
 }
 
@@ -619,25 +740,25 @@ read_processor(
 	uint64_t value;
 	int error;
 
-	/* The processor ID. */
+	/* Reads the processor ID. */
 	error = drv_acpi_stream_integer(eval, 1, &value);
 	if (error != 0)
 		return error;
 	object->value.processor.id = (uint8_t)value;
 
-	/* The address of the processor's control block. */
+	/* Reads the address of the processor's control block. */
 	error = drv_acpi_stream_integer(eval, 4, &value);
 	if (error != 0)
 		return error;
 	object->value.processor.block_address = (uint32_t)value;
 
-	/* The length of the control block. */
+	/* Reads the length of the control block. */
 	error = drv_acpi_stream_integer(eval, 1, &value);
 	if (error != 0)
 		return error;
 	object->value.processor.block_length = (uint8_t)value;
 
-	/* Succeeded. */
+	/* Succeeded: the object holds the processor's data. */
 	return 0;
 }
 
@@ -650,19 +771,19 @@ read_power_resource(
 	uint64_t value;
 	int error;
 
-	/* The deepest system sleep state in which the resource stays on. */
+	/* Reads the deepest system sleep state in which the resource stays on. */
 	error = drv_acpi_stream_integer(eval, 1, &value);
 	if (error != 0)
 		return error;
 	object->value.power.system_level = (uint8_t)value;
 
-	/* The order in which resources are turned on and off. */
+	/* Reads the order in which resources are turned on and off. */
 	error = drv_acpi_stream_integer(eval, 2, &value);
 	if (error != 0)
 		return error;
 	object->value.power.resource_order = (uint16_t)value;
 
-	/* Succeeded. */
+	/* Succeeded: the object holds the resource's data. */
 	return 0;
 }
 
@@ -678,21 +799,27 @@ define_method(
 	bool duplicate;
 	int error;
 
-	/* Reads the extent, the name and the flags. */
+	/* Reads the extent. */
 	error = drv_acpi_stream_package_length(eval, &method_end);
 	if (error != 0)
 		return error;
+
+	/* Reads the name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
+
+	/* Reads the flags. */
 	error = drv_acpi_stream_integer(eval, 1, &flags);
 	if (error != 0)
 		return error;
 
-	/* Makes the method object over the body. */
+	/* Allocates the method object. */
 	method = drv_acpi_object_new(DRV_ACPI_TYPE_METHOD);
 	if (method == NULL)
 		return ENOMEM;
+
+	/* Points it at the body and decodes the flags. */
 	method->value.method.start = eval->position;
 	method->value.method.end = method_end;
 	method->value.method.table = eval->table;
@@ -709,7 +836,7 @@ define_method(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the method can be called by its name. */
 	return 0;
 }
 
@@ -722,15 +849,17 @@ define_external(
 	uint64_t ignored;
 	int error;
 
-	/* Reads the name, the object type and the argument count. */
+	/* Reads the name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
+
+	/* Reads the object type and the argument count, which nothing uses. */
 	error = drv_acpi_stream_integer(eval, 2, &ignored);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the stream is past the declaration. */
 	return 0;
 }
 
@@ -745,18 +874,22 @@ define_mutex(
 	bool duplicate;
 	int error;
 
-	/* Reads the name and the sync level. */
+	/* Reads the name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
+
+	/* Reads the sync level. */
 	error = drv_acpi_stream_integer(eval, 1, &flags);
 	if (error != 0)
 		return error;
 
-	/* Makes the free mutex. */
+	/* Allocates the free mutex. */
 	mutex = drv_acpi_object_new(DRV_ACPI_TYPE_MUTEX);
 	if (mutex == NULL)
 		return ENOMEM;
+
+	/* Gives it its sync level. */
 	mutex->value.mutex.sync_level = (uint8_t)(flags & 0x0fU);
 
 	/* Names it. */
@@ -765,7 +898,7 @@ define_mutex(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the mutex can be acquired by its name. */
 	return 0;
 }
 
@@ -784,7 +917,7 @@ define_event(
 	if (error != 0)
 		return error;
 
-	/* Makes the unsignaled event. */
+	/* Allocates the unsignaled event. */
 	event = drv_acpi_object_new(DRV_ACPI_TYPE_EVENT);
 	if (event == NULL)
 		return ENOMEM;
@@ -795,7 +928,7 @@ define_event(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the event can be signaled by its name. */
 	return 0;
 }
 
@@ -817,18 +950,22 @@ define_region(
 	bool duplicate;
 	int error;
 
-	/* Reads the name and the address space. */
+	/* Reads the name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
+
+	/* Reads the address space. */
 	error = drv_acpi_stream_integer(eval, 1, &space);
 	if (error != 0)
 		return error;
 
-	/* Makes the region object. */
+	/* Allocates the region object. */
 	region = drv_acpi_object_new(DRV_ACPI_TYPE_REGION);
 	if (region == NULL)
 		return ENOMEM;
+
+	/* Records its space and where its offset and length are evaluated. */
 	region->value.region.space = (uint8_t)space;
 	region->value.region.table = eval->table;
 	region->value.region.scope = eval->scope;
@@ -843,18 +980,26 @@ define_region(
 
 	/* Names it. */
 	error = create_named(eval, &name, region, &duplicate);
-	if (error != 0 || duplicate) {
+	if (error != 0) {
 		drv_acpi_object_release(region);
 		return error;
+	}
+
+	/* A duplicate that a table load skipped leaves the first region as it is. */
+	if (duplicate) {
+		drv_acpi_object_release(region);
+		return 0;
 	}
 
 	/* The region remembers its node, which gives a PCI region its device. */
 	error = drv_acpi_ns_lookup(eval->scope, &name, false, &node);
 	if (error == 0)
 		region->value.region.node = node;
+
+	/* The node holds the region; this reference goes. */
 	drv_acpi_object_release(region);
 
-	/* Succeeded. */
+	/* Succeeded: the region can be used by its name. */
 	return 0;
 }
 
@@ -880,25 +1025,27 @@ region_arguments(
 		error = drv_acpi_eval_integer(eval, &region->value.region.length);
 		if (error != 0)
 			return error;
+	} else {
+		/* Steps over the offset. */
+		error = drv_acpi_skip_term_arg(eval);
+		if (error != 0)
+			return error;
 
-		/* The region has its place. */
-		region->value.region.evaluated = 1;
-		region->value.region.arguments_end = eval->position;
-		return 0;
+		/* Steps over the length. */
+		error = drv_acpi_skip_term_arg(eval);
+		if (error != 0)
+			return error;
 	}
 
-	/* Steps over the offset. */
-	error = drv_acpi_skip_term_arg(eval);
-	if (error != 0)
-		return error;
-
-	/* Steps over the length. */
-	error = drv_acpi_skip_term_arg(eval);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the AML between the start and here runs on first use. */
+	/*
+	 * evaluated tells the first access that the region has its place
+	 * already; otherwise the AML between the start and here runs then.
+	 */
+	if (eval->frame != NULL)
+		region->value.region.evaluated = 1;
 	region->value.region.arguments_end = eval->position;
+
+	/* Succeeded: the region has its place, or knows the AML that gives it. */
 	return 0;
 }
 
@@ -916,16 +1063,22 @@ define_data_region(
 	bool duplicate;
 	int error;
 
-	/* Reads the name and the three strings that select the table. */
+	/* Reads the name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the signature of the table. */
 	error = string_operand(eval, signature, sizeof(signature));
 	if (error != 0)
 		return error;
+
+	/* Evaluates its OEM ID. */
 	error = string_operand(eval, oem_id, sizeof(oem_id));
 	if (error != 0)
 		return error;
+
+	/* Evaluates its OEM table ID. */
 	error = string_operand(eval, oem_table_id, sizeof(oem_table_id));
 	if (error != 0)
 		return error;
@@ -937,10 +1090,15 @@ define_data_region(
 		return ENOENT;
 	}
 
-	/* Makes a region over the table's bytes. */
+	/* Allocates the region. */
 	region = drv_acpi_object_new(DRV_ACPI_TYPE_REGION);
 	if (region == NULL)
 		return ENOMEM;
+
+	/*
+	 * Lays the region over the table's bytes; evaluated tells every
+	 * access that it has its place, as it has no AML to evaluate.
+	 */
 	region->value.region.space = DRV_ACPI_SPACE_SYSTEM_MEMORY;
 	region->value.region.data = table->data;
 	region->value.region.length = table->length;
@@ -952,7 +1110,7 @@ define_data_region(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the region can be used by its name. */
 	return 0;
 }
 
@@ -976,12 +1134,12 @@ define_field(
 	if (error != 0)
 		return error;
 
-	/* Everything the definition reads lies inside its extent. */
+	/* Starts the template every unit of the list copies empty. */
+	kern_memset(&template, 0, sizeof(template));
+
+	/* Reads the names, the bank value and the flags that head the list, inside its extent. */
 	outer_end = eval->end;
 	eval->end = field_end;
-
-	/* Reads the names, the bank value and the flags that head the list. */
-	kern_memset(&template, 0, sizeof(template));
 	error = field_head(eval, opcode, &first, &second, &bank_value, &flags);
 	eval->end = outer_end;
 
@@ -994,9 +1152,11 @@ define_field(
 		return error;
 	}
 
-	/* Fills in what every field unit of the list shares. */
+	/* Fills in the flags and the bank value every field unit of the list shares. */
 	template.flags = (uint8_t)flags;
 	template.bank_value = bank_value;
+
+	/* Fills in the kind and the nodes the units reach their bits through. */
 	if (opcode == DRV_ACPI_OP_FIELD) {
 		template.kind = DRV_ACPI_FIELD_REGION;
 		template.region = first;
@@ -1014,12 +1174,18 @@ define_field(
 	eval->end = field_end;
 	error = field_list(eval, field_end, &template);
 	eval->end = outer_end;
+
+	/* The template's connection is done with; each unit holds its own. */
 	drv_acpi_object_release(template.connection);
+
+	/* Reports a list that could not be read. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: continues after the list. */
+	/* Continues after the list. */
 	eval->position = field_end;
+
+	/* Succeeded: every field unit of the list is defined. */
 	return 0;
 }
 
@@ -1039,9 +1205,11 @@ field_head(
 {
 	int error;
 
-	/* Resolves the region, or the index field. */
+	/* Starts with no second node and no bank value, which a plain Field does not have. */
 	*second = NULL;
 	*bank_value = 0;
+
+	/* Resolves the region, or the index field. */
 	error = lookup_named(eval, first);
 	if (error != 0)
 		return error;
@@ -1065,7 +1233,7 @@ field_head(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller has what heads the list. */
 	return 0;
 }
 
@@ -1076,10 +1244,6 @@ field_list(
 	const uint8_t *end,
 	struct drv_acpi_field *template)
 {
-	const uint8_t *segment;
-	uint64_t access_type;
-	uint64_t attribute;
-	uint64_t access_length;
 	uint32_t length;
 	uint8_t byte;
 	int error;
@@ -1098,63 +1262,162 @@ field_list(
 			/* Unnamed bits: the offset moves on. */
 			error = drv_acpi_stream_field_length(eval, &length);
 			if (error != 0)
-				return error;
+				break;
 			template->bit_offset += length;
 			break;
 		case FIELD_ENTRY_ACCESS:
 			/* A new access type and attribute for the entries after it. */
-			error = drv_acpi_stream_integer(eval, 1, &access_type);
-			if (error == 0)
-				error = drv_acpi_stream_integer(eval, 1, &attribute);
-			if (error != 0)
-				return error;
-			template->flags = (uint8_t)((template->flags & ~DRV_ACPI_FIELD_ACCESS_MASK) |
-			    (access_type & DRV_ACPI_FIELD_ACCESS_MASK));
-			template->access_attribute = (uint8_t)attribute;
-			template->access_length = 0;
+			error = field_access(eval, false, template);
 			break;
 		case FIELD_ENTRY_EXTENDED:
 			/* The same with an access length. */
-			error = drv_acpi_stream_integer(eval, 1, &access_type);
-			if (error == 0)
-				error = drv_acpi_stream_integer(eval, 1, &attribute);
-			if (error == 0)
-				error = drv_acpi_stream_integer(eval, 1, &access_length);
-			if (error != 0)
-				return error;
-			template->flags = (uint8_t)((template->flags & ~DRV_ACPI_FIELD_ACCESS_MASK) |
-			    (access_type & DRV_ACPI_FIELD_ACCESS_MASK));
-			template->access_attribute = (uint8_t)attribute;
-			template->access_length = (uint8_t)access_length;
+			error = field_access(eval, true, template);
 			break;
 		case FIELD_ENTRY_CONNECT:
 			/* The connection resource for the entries after it. */
 			error = field_connection(eval, template);
-			if (error != 0)
-				return error;
 			break;
 		default:
-			/* A named field: the rest of its segment and its length. */
-			segment = eval->position - 1;
-			if ((size_t)(end - segment) < 4U)
-				return EIO;
-			eval->position = segment + 4;
-			error = drv_acpi_stream_field_length(eval, &length);
-			if (error != 0)
-				return error;
-
-			/* Creates the unit and moves past its bits. */
-			template->bit_length = length;
-			error = field_unit_create(eval, segment, template);
-			if (error != 0)
-				return error;
-			template->bit_offset += length;
+			/* A named field, whose first character is the byte read. */
+			error = field_named(eval, end, template);
 			break;
 		}
+
+		/* Stops at the first entry that could not be read. */
+		if (error != 0)
+			return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: every entry of the list was read. */
 	return 0;
+}
+
+/* Reads an AccessAs entry, extended or not, into the template. */
+static int
+field_access(
+	struct drv_acpi_eval *eval,
+	bool extended,
+	struct drv_acpi_field *template)
+{
+	uint64_t access_type;
+	uint64_t attribute;
+	uint64_t access_length;
+	int error;
+
+	/* Reads the access type. */
+	error = drv_acpi_stream_integer(eval, 1, &access_type);
+	if (error != 0)
+		return error;
+
+	/* Reads the access attribute. */
+	error = drv_acpi_stream_integer(eval, 1, &attribute);
+	if (error != 0)
+		return error;
+
+	/* Reads the access length of an extended entry; the plain one has none. */
+	access_length = 0;
+	if (extended) {
+		error = drv_acpi_stream_integer(eval, 1, &access_length);
+		if (error != 0)
+			return error;
+	}
+
+	/* Replaces the access type in the flags, and the attribute and length. */
+	template->flags = (uint8_t)((template->flags & ~DRV_ACPI_FIELD_ACCESS_MASK) |
+	    (access_type & DRV_ACPI_FIELD_ACCESS_MASK));
+	template->access_attribute = (uint8_t)attribute;
+	template->access_length = (uint8_t)access_length;
+
+	/* Succeeded: the entries after this one use the new access. */
+	return 0;
+}
+
+/* Reads a named field entry, whose first character was read, and creates its unit. */
+static int
+field_named(
+	struct drv_acpi_eval *eval,
+	const uint8_t *end,
+	struct drv_acpi_field *template)
+{
+	const uint8_t *segment;
+	uint32_t length;
+	bool valid;
+	int error;
+
+	/* Refuses a segment that runs past the list. */
+	segment = eval->position - 1;
+	if ((size_t)(end - segment) < 4U)
+		return EIO;
+
+	/* Refuses a segment with characters no name may contain, as the stream's names do. */
+	valid = segment_valid(segment);
+	if (!valid)
+		return EIO;
+
+	/* Reads the field's length after the segment. */
+	eval->position = segment + 4;
+	error = drv_acpi_stream_field_length(eval, &length);
+	if (error != 0)
+		return error;
+
+	/* Creates the unit. */
+	template->bit_length = length;
+	error = field_unit_create(eval, segment, template);
+	if (error != 0)
+		return error;
+
+	/* Moves past its bits. */
+	template->bit_offset += length;
+
+	/* Succeeded: the unit is defined. */
+	return 0;
+}
+
+/* Reports whether four characters form a name segment. */
+static bool
+segment_valid(
+	const uint8_t *segment)
+{
+	unsigned index;
+	bool valid;
+
+	/* The first character is an upper-case letter or an underscore. */
+	valid = segment_character(segment[0], true);
+	if (!valid)
+		return false;
+
+	/* The others may also be digits. */
+	for (index = 1; index < 4U; index++) {
+		/* Refuses a character no name may contain. */
+		valid = segment_character(segment[index], false);
+		if (!valid)
+			return false;
+	}
+
+	/* Reports a valid segment. */
+	return true;
+}
+
+/* Reports whether a character may stand in a name segment, first or later. */
+static bool
+segment_character(
+	uint8_t character,
+	bool first)
+{
+	/* An upper-case letter may stand anywhere. */
+	if (character >= 'A' && character <= 'Z')
+		return true;
+
+	/* So may the underscore. */
+	if (character == '_')
+		return true;
+
+	/* A digit may stand anywhere but first. */
+	if (!first && character >= '0' && character <= '9')
+		return true;
+
+	/* Reports a character no name may contain there. */
+	return false;
 }
 
 /* Creates one field unit from the template at the current offset. */
@@ -1169,10 +1432,12 @@ field_unit_create(
 	bool duplicate;
 	int error;
 
-	/* Makes the field unit object. */
+	/* Allocates the field unit object. */
 	field = drv_acpi_object_new(DRV_ACPI_TYPE_FIELD_UNIT);
 	if (field == NULL)
 		return ENOMEM;
+
+	/* Copies the template. */
 	field->value.field = *template;
 
 	/* Shares the connection resource with the other units. */
@@ -1188,7 +1453,7 @@ field_unit_create(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the unit can be used by its name. */
 	return 0;
 }
 
@@ -1214,12 +1479,17 @@ field_connection(
 		if (error != 0)
 			return error;
 	} else {
+		/* Resolves the name. */
 		error = lookup_named(eval, &node);
 		if (error != 0)
 			return error;
+
+		/* Refuses a name without an object. */
 		connection = node->object;
 		if (connection == NULL)
 			return EINVAL;
+
+		/* The template takes a reference of its own. */
 		drv_acpi_object_ref(connection);
 	}
 
@@ -1227,7 +1497,7 @@ field_connection(
 	drv_acpi_object_release(template->connection);
 	template->connection = connection;
 
-	/* Succeeded. */
+	/* Succeeded: the entries after this one use the connection. */
 	return 0;
 }
 
@@ -1239,8 +1509,7 @@ lookup_named(
 {
 	struct drv_acpi_name name;
 	struct drv_acpi_node *node;
-	char text[128];
-	int converted;
+	char text[NAME_TEXT_MAX];
 	int error;
 
 	/* Reads the name. */
@@ -1248,19 +1517,18 @@ lookup_named(
 	if (error != 0)
 		return error;
 
-	/* Resolves it. */
+	/* Resolves it; a missing name is logged. */
 	error = drv_acpi_ns_lookup(eval->scope, &name, true, &node);
 	if (error != 0) {
-		/* Logs the name that is missing. */
-		converted = drv_acpi_ns_name_text(&name, text, sizeof(text));
-		if (converted != 0)
-			kern_strcpy(text, "(long name)");
+		name_text(&name, text, sizeof(text));
 		drv_acpi_os_log("ACPI: %s does not exist\n", text);
 		return error;
 	}
 
-	/* Succeeded: an alias stands for its node. */
+	/* Hands over the node; an alias stands for its node. */
 	*result = drv_acpi_ns_resolve_alias(node);
+
+	/* Succeeded: result names the node. */
 	return 0;
 }
 
@@ -1278,8 +1546,7 @@ create_named(
 	bool *duplicate)
 {
 	struct drv_acpi_node *node;
-	char text[128];
-	int converted;
+	char text[NAME_TEXT_MAX];
 	int error;
 
 	/* Creates the node. */
@@ -1287,9 +1554,7 @@ create_named(
 	error = drv_acpi_ns_create(eval, name, &node);
 	if (error != 0) {
 		/* Logs the name that is defined twice or whose scope is missing. */
-		converted = drv_acpi_ns_name_text(name, text, sizeof(text));
-		if (converted != 0)
-			kern_strcpy(text, "(long name)");
+		name_text(name, text, sizeof(text));
 		drv_acpi_os_log("ACPI: %s cannot be created (error %d)\n", text, error);
 
 		/* A table load goes on without the second definition. */
@@ -1302,9 +1567,26 @@ create_named(
 		return error;
 	}
 
-	/* Succeeded: the node holds the object. */
+	/* The node takes the object. */
 	drv_acpi_ns_attach(node, object);
+
+	/* Succeeded: the node holds the object. */
 	return 0;
+}
+
+/* Writes a NameString in text, or "(long name)" when it does not fit. */
+static void
+name_text(
+	const struct drv_acpi_name *name,
+	char *text,
+	size_t size)
+{
+	int text_error;
+
+	/* Writes the name; one too long for the buffer gets the mark. */
+	text_error = drv_acpi_ns_name_text(name, text, size);
+	if (text_error != 0)
+		kern_strcpy(text, "(long name)");
 }
 
 /* Evaluates one element of a Package literal. */
@@ -1316,8 +1598,6 @@ package_element(
 	struct drv_acpi_object *reference;
 	struct drv_acpi_name name;
 	struct drv_acpi_node *node;
-	char text[128];
-	size_t length;
 	bool named;
 	int error;
 
@@ -1325,7 +1605,11 @@ package_element(
 	named = drv_acpi_stream_at_name(eval);
 	if (!named) {
 		error = drv_acpi_eval_term_arg(eval, result);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: result is the element's value. */
+		return 0;
 	}
 
 	/* Reads the name, which is kept as a reference and not evaluated. */
@@ -1333,27 +1617,58 @@ package_element(
 	if (error != 0)
 		return error;
 
-	/* Resolves it to a node reference when it exists. */
+	/* A name that does not exist yet becomes a name reference. */
 	error = drv_acpi_ns_lookup(eval->scope, &name, true, &node);
-	if (error == 0) {
-		reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_NODE);
-		if (reference == NULL)
-			return ENOMEM;
-		reference->value.reference.node = node;
-		*result = reference;
+	if (error != 0) {
+		error = name_reference(eval, &name, result);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: result names the name, to resolve once the tables are loaded. */
 		return 0;
 	}
 
-	/* Keeps the text of a name that does not exist yet. */
-	error = drv_acpi_ns_name_text(&name, text, sizeof(text));
-	if (error != 0)
-		return error;
+	/* Allocates the node reference. */
+	reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_NODE);
+	if (reference == NULL)
+		return ENOMEM;
+
+	/* Points it at the node and hands it over. */
+	reference->value.reference.node = node;
+	*result = reference;
+
+	/* Succeeded: result refers to the node. */
+	return 0;
+}
+
+/*
+ * Makes the name reference of a Package element whose name does not exist
+ * yet: the scope it is resolved from later and the text of the name.  A
+ * name too long for the text is kept as "(long name)", which never
+ * resolves, so that the rest of the package still loads.
+ */
+static int
+name_reference(
+	struct drv_acpi_eval *eval,
+	const struct drv_acpi_name *name,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_object *reference;
+	char text[NAME_TEXT_MAX];
+	size_t length;
+
+	/* Writes the name's text. */
+	name_text(name, text, sizeof(text));
+
+	/* Allocates the reference. */
 	reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_NAME);
 	if (reference == NULL)
 		return ENOMEM;
 
-	/* The scope the name is resolved from later, and the text of the name. */
+	/* Records the scope the name is resolved from later. */
 	reference->value.reference.node = eval->scope;
+
+	/* Allocates room for the text and its terminator. */
 	length = kern_strlen(text);
 	reference->value.reference.name = drv_acpi_os_alloc(length + 1U);
 	if (reference->value.reference.name == NULL) {
@@ -1364,66 +1679,11 @@ package_element(
 	/* Copies the text with its terminator. */
 	kern_memcpy(reference->value.reference.name, text, length + 1U);
 
-	/* Succeeded. */
+	/* Hands over the reference. */
 	*result = reference;
+
+	/* Succeeded: the caller holds the name reference. */
 	return 0;
-}
-
-/*
- * Resolves the names a package holds that did not exist when the package
- * was built, now that the tables are loaded; nested packages too.  A name
- * that still does not resolve stays a name.
- */
-void
-drv_acpi_package_resolve(
-	struct drv_acpi_object *package)
-{
-	struct drv_acpi_object *element;
-	uint32_t index;
-
-	/* Looks at each element. */
-	for (index = 0; index < package->value.package.count; index++) {
-		element = package->value.package.elements[index];
-		if (element == NULL)
-			continue;
-
-		/* A nested package is resolved the same way. */
-		if (element->type == DRV_ACPI_TYPE_PACKAGE) {
-			drv_acpi_package_resolve(element);
-			continue;
-		}
-
-		/* A name reference becomes a node reference when its name resolves. */
-		if (element->type == DRV_ACPI_TYPE_REFERENCE)
-			drv_acpi_reference_resolve(element);
-	}
-}
-
-/*
- * Turns a name reference into a node reference when its name resolves
- * from the scope it was written in.
- */
-void
-drv_acpi_reference_resolve(
-	struct drv_acpi_object *reference)
-{
-	struct drv_acpi_node *node;
-	int error;
-
-	/* Only a name reference has anything to resolve. */
-	if (reference->value.reference.kind != DRV_ACPI_REFERENCE_NAME)
-		return;
-
-	/* Looks the name up from its scope. */
-	error = drv_acpi_lookup_path(reference->value.reference.node, reference->value.reference.name, true, &node);
-	if (error != 0)
-		return;
-
-	/* The reference now names the node; the text is no longer needed. */
-	reference->value.reference.kind = DRV_ACPI_REFERENCE_NODE;
-	reference->value.reference.node = node;
-	drv_acpi_os_free(reference->value.reference.name);
-	reference->value.reference.name = NULL;
 }
 
 /* Finds a loaded table by its signature and OEM identifiers. */
@@ -1436,8 +1696,11 @@ table_find(
 	struct drv_acpi_table *table;
 	int compared;
 
-	/* Compares each loaded table; an empty identifier matches any. */
-	for (table = drv_acpi_table_first(); table != NULL; table = table->next) {
+	/* Compares each loaded table, oldest first; an empty identifier matches any. */
+	table = drv_acpi_table_first();
+	for (;
+	     table != NULL;
+	     table = table->next) {
 		/* Skips a table with another signature. */
 		compared = kern_strcmp(table->signature, signature);
 		if (compared != 0)
@@ -1493,8 +1756,10 @@ string_operand(
 		length = size - 1U;
 	kern_memcpy(text, object->value.string.text, length);
 	text[length] = '\0';
+
+	/* The operand is no longer needed. */
 	drv_acpi_object_release(object);
 
-	/* Succeeded. */
+	/* Succeeded: text holds the string. */
 	return 0;
 }
