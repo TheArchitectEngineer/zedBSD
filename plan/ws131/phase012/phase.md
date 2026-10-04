@@ -2,10 +2,11 @@
 
 # ws131-p012: libkeiui を libkeiland へ移す（名前は変えない）
 
-Status: planning（p002 第 2 版はユーザーのレビュー済み（2026-10-03、D7 は確認中）。開始はユーザーの承認と P2 の終了の後に Q1 が指示）
+Status: in-progress（q673、P2、2026-10-04。ユーザーの承認「WS13(1),WS128は進めてOKです。」）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
-Queue: none
+Queue: [q673](../../queue.md)
+委任（Q1、2026-10-04）: 所有 path の「Q1 の委任が要る」の項（`platform/amd64/vmunix.mk`、`config/ci/config-amd64.mk` と試験の config 4 本、`plan/tools/keiland-linux/elf-check.sh`、§2.4 の host の試験 13 file の path）を q673 の P2 に委任する。toolchain・HAL の API は範囲外
 依存: p011 cleared（D8 の番号の順）、p003 が main に統合済み。WS090 は WS131 の間は動かない（D9 の決定）。判断 D10（承認済み）
 目安: 4h（1 Queue）。実行者: Q1 が割り当てる（high）
 所有 path: `userland/desktop/libkeiui/` → `userland/desktop/libkeiland/ui/`、`userland/desktop/libkeiland/`（Makefile 3 本・exports.map）、利用者の build の file（Text Editor・Image Viewer・PDF Viewer・Notes・Terminal・keiland-ime・kuidemo・**Files**）、`userland/desktop/files/ui-scrollbar.c` の include、`keiland-linux.mk`・`keiland-freebsd.mk`（package の一覧と公開の header の表 `:184-187`）、`plan/ws131/`。（Q1 の委任が要る: Q1 が Phase の前に委任を記録する）: `platform/amd64/vmunix.mk`（libkeiui.so の規則と 7 つの link）、`config/ci/config-amd64.mk:37` と試験の config 4 本の package 名、`plan/tools/keiland-linux/elf-check.sh`、§2.4 の host の試験 13 file の path
