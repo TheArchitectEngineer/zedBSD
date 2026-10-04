@@ -51,6 +51,8 @@ WS001（POSIX 準拠）が並行して utility と libc の POSIX の振る舞�
 
 ## 判断が要る点
 
+**2026-10-05 ユーザーの決定**: dirname の複数の operand は「GNU に合わせる」（WS001 の `plan/ws001/tests/dirname-test.sh` を直す）。mktemp・install・base64・xargs は WS001 の p033〜p039 で実装済みなので判断は不要になった（Q1）。→ q712 で dirname を直し、merge と最後の確認（amd64、i386 は免除）で WS を閉じる。
+
 - `dirname` の複数の operand（GNU の拡張）は、WS001 の試験 `plan/ws001/tests/dirname-test.sh` が「dirname accepted too many operands」を失敗としているため入れていない。
   GNU に合わせるか（WS001 の試験を直す）、POSIX の厳しさを保つかはユーザーの判断。
 

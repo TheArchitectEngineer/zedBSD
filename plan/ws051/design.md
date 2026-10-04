@@ -252,3 +252,11 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 4. 補足（2026-10-04 ユーザー、原文）:「USB-C DPがアタッチされたとき、KeilandがVulkan Display extensionで通知を受けます。この通知を受けたKeilandが、設定ファイルの記録などから総合的に、ミラーや拡張などの判断を行います。出力オフもありえます。」→ hotplug の通知の経路は Vulkan の Display の拡張（libvulkan、WS113 の i915 の接続通知と同じ）。Keiland が設定の記録などから mirror・拡張・出力 off を決める。driver は通知を出し、Keiland の指示で出力するだけ（3 の Q1 の読みのうち、通知の経路は /dev/system でなく Vulkan の Display の拡張に訂正）。
 
 補足（2026-10-04 夜 Q1）: Guardrail の scanout の規則の i915 での実装（GOP の出力先の引き継ぎ、外部優先の廃止）は WS113 p002（HDMI・eDP・DP）と WS051 p002（USB-C の DP-alt）で同じ `takeover.c`・`output.c` に触れる。先に入れた方の実装を他方が使い、重ねて書かない（2026-10-04 ユーザーの Settings の Display の頁の要望、[WS113](../ws113/ws.md)）。
+
+## §13 (1) の決定（2026-10-05 ユーザー、クリックの回答「素の実機＋bare metal Linux で採取」）
+
+試験は 5330 に USB で zedBSD を素で起動する（UAT の形）。正解の register の値は 5330 の Linux（10.0.30.3）で USB-C の DP を挿した状態の register を**読み取りだけ**で採る（host の設定は変えない）。VFIO の passthrough での Type-C の試験はしない。
+
+## §13 (2) の決定（2026-10-05 ユーザー、クリックの回答「向きは受け入れから外す」）
+
+ケーブルの向き（CC1/CC2）は、取れれば表示する（UCSI 2.0 以上か i915 の pin D の時）が、WS050・WS051 の受け入れの条件にしない。WS050 の design の決定 4（1.x でも i915 から取る）はこの決定で「取れる時だけ、受け入れの外」に改める。

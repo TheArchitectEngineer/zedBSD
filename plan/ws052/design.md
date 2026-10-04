@@ -125,3 +125,7 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
    待つ方を選ぶか。
 4. **5330 の FACP・LPIT の取り出し**: DSDT・SSDT と同じく 5330 の Linux から読み取り専用で `/sys/firmware/acpi/tables/FACP`・`LPIT` を取り出す許可。
 5. **beta1 の範囲**（WS132 は beta1 に入る。WS052 の device の範囲（i915・NVMe・xHCI は必須、HDA・Wi-Fi は後でよいか）。
+
+## §10 の決定（2026-10-05 ユーザー、クリックの回答、複数選択）
+
+S0i3（modern standby）に入る契機: **蓋を閉じた時**（ACPI の LID の event）、**電源ボタンを短く押した時**（電源ボタンの event を Keiland が /dev/system で受けて判断）、**一定時間操作が無い時**（idle の timeout、Settings の Power で時間を決める）。menu だけに限る案は採らない。

@@ -202,3 +202,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 要望（ユーザー）: [ws089-p023](ws089/phase023/phase.md) Storage の頁の使用量の解析（multi-thread・逐次の更新・Stop）と Trash を空にする。Settings の Display の頁は [WS113](ws113/ws.md)（q702）。
 - 追加（ユーザー）: [BUG-191](bugs/BUG-191.md) Settings の key のリピートの設定が 5330 のキーボードの挙動に効かない（BUG-172 と同じ根の見込み）。内蔵 LCD の明るさの調節の要望は [WS113](ws113/ws.md) の p006 へ。
 - 要望（ユーザー）: [ws089-p024](ws089/phase024/phase.md) Mouse の頁に加速の設定、既定 base 150%・加速 強め。
+
+## 次の UAT で採る記録（2026-10-05 Q1）
+
+- [BUG-190](bugs/BUG-190.md) の evdev の記録（手順は ticket の「次の UAT で採る evdev の記録の手順」、約 1 分）。
