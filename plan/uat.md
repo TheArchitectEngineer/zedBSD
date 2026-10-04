@@ -195,3 +195,4 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 追加（ユーザー）: [BUG-183](bugs/BUG-183.md) WiFi をオンにすると switch が青くなるまで約 1 秒（オフは一瞬）、[BUG-184](bugs/BUG-184.md) Settings で WiFi をオンにした後のオフのクリックが Scan のボタンに取られる。
 - 追加（ユーザー）: [BUG-185](bugs/BUG-185.md) Settings で WiFi をオンにした時 Connecting… が出ず Connected まで状態があいまい（状態の取得の疑い）。
 - 追加（ユーザー）: [BUG-186](bugs/BUG-186.md) 鍵の入力欄が Connecting… の間も残る（確定の時点で消す）、[BUG-187](bugs/BUG-187.md) 鍵の誤りで失敗すると他の AP に自動で接続し失敗の表示も出ない（Disconnected にして自動接続しない、失敗を表示）。
+- 追加（ユーザー）: [BUG-188](bugs/BUG-188.md) Settings の AP の一覧でシングルタップでは接続されずダブルタップで接続される（シングルタップで接続すべき）。
