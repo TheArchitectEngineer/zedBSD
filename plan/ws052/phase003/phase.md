@@ -4,7 +4,7 @@
 
 Phase ID: `ws052-p003`
 Parent: [WS052](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17。実装と host の試験は済み、vmunix は link まで（warning 0）。T1 の boot test の結果待ち）
+Status: cleared（2026-10-05 Q1: host の試験 PASS（試験の table と 5330 の table）と T1-153 の CI の image の boot PASS（LPS0 の attach が boot の道で走っても起動を壊さない））。以前: in-progress（2026-10-05 P1 generation17。実装と host の試験は済み、vmunix は link まで（warning 0）。T1 の boot test の結果待ち）
 Phase disposition: normal
 Queue: q727 の続き（Q1 の 2026-10-05 の指示「p002 の残りを進め、その後 p003（ACPI の側、HAL に依らない）へ」）
 
@@ -82,3 +82,7 @@ Queue: q727 の続き（Q1 の 2026-10-05 の指示「p002 の残りを進め、
 - 2 つ目の GPE block（GPE1）は今の event の code と同じく扱う（5330 は GPE0 だけ、128 個）。
 - power resource の `_STA` を最初に読んで状態を合わせることはしない（最初の変更で device を D0 とみなし `_PR0` を取る）。
 - LPS0 の function 1（device の制約の一覧）は使っていない。S0i3 に入れない時の診断（design §8）で使う候補。
+
+## Q1 の判定（2026-10-05）
+
+host の試験 PASS（試験の table と 5330 の table）と T1-153 の CI の image の boot PASS（LPS0 の attach が boot の道で走っても起動を壊さない）。**cleared**。5330 の boot の log の LPS0 の行は UAT。
