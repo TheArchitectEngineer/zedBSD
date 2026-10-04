@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws132-p003 -->
 # ws132-p003: Keiland の backend の事象と compositor の input の探し直し・電池の表示
 
-Status: in-progress（2026-10-05 P1 generation17 / q717-i01。実装・build・host の試験まで。QEMU の試験を Q1 経由で T1 に依頼する。結果の判定まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-132 で p003-guest PASS（差した keyboard を compositor が取る・bar、QEMU の abort なし）、q722 の詰めた bar は T1-120 で目視。差した keyboard だけの key と電池の実物は 5330 の UAT）。以前: in-progress（2026-10-05 P1 generation17 / q717-i01。実装・build・host の試験まで。QEMU の試験を Q1 経由で T1 に依頼する。結果の判定まで cleared にしない）
 Disposition: normal
 Parent: [WS132](../ws.md)
 Focused goal: fg019（ベータ1）
@@ -84,3 +84,7 @@ build の warning 0（zedBSD と Linux の keiland-linux.mk）、host の試験�
 - 未実施: QEMU（T1）。電池の無い QEMU の guest で bar の icon が時計の隣に詰まる PNG と、上の log を読む試験が通ること。
 
 q722 の確認（2026-10-05 Q1）: T1-120 の PNG で電池の無い bar の icon が時計の隣に詰まることを目視。
+
+## Q1 の判定（2026-10-05）
+
+T1-132 で p003-guest PASS（差した keyboard を compositor が取る・bar、QEMU の abort なし）、q722 の詰めた bar は T1-120 で目視。差した keyboard だけの key と電池の実物は 5330 の UAT。**cleared**。

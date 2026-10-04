@@ -31,8 +31,8 @@ Resume point: p001（設計）を書いた（[phase001](phase001/phase.md)、D1�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws132-p001](phase001/phase.md) | 設計 | in-progress（2026-10-05 q707-i01 P1: 設計を書いた、D1〜D3 は人間の判断待ち） | — |
-| [ws132-p002](phase002/phase.md) | 事象の核（`/dev/system` の購読・read・poll）、UAPI、送り手（ACPI の電源ボタン・蓋・AC・電池、disk、input、USB、network）、`KERN_SYSTEM_GET_POWER` | in-progress（2026-10-05 q707-i01 P1: 実装・build warning 0・host の試験 527＋137 checks。QEMU は T1 に依頼） | p001 |
-| [ws132-p003](phase003/phase.md) | Keiland の backend の事象（events-zedbsd.c、Linux・FreeBSD は stub）、compositor の input の探し直しと電池・AC の表示（D1・D2 に依らない分。2026-10-05 Q1 が電源ボタン・蓋の動作を p008 に分けた） | in-progress（2026-10-05 q717-i01 P1: 実装・build warning 0（zedBSD・Linux）・host 54 checks・境界 PASS。QEMU は T1 に依頼） | p002 |
+| [ws132-p002](phase002/phase.md) | 事象の核（`/dev/system` の購読・read・poll）、UAPI、送り手（ACPI の電源ボタン・蓋・AC・電池、disk、input、USB、network）、`KERN_SYSTEM_GET_POWER` | cleared（2026-10-05 Q1、T1-132） | p001 |
+| [ws132-p003](phase003/phase.md) | Keiland の backend の事象（events-zedbsd.c、Linux・FreeBSD は stub）、compositor の input の探し直しと電池・AC の表示（D1・D2 に依らない分。2026-10-05 Q1 が電源ボタン・蓋の動作を p008 に分けた） | cleared（2026-10-05 Q1、T1-132） | p002 |
 | ws132-p008 | compositor の電源ボタン・蓋の動作（D1・D2 の決定に従う。蓋は WS052 の S0i3 までの間の扱い） | planning | p003、D1・D2 |
 | ws132-p004 | volumed（D3 の決定: 自動 mount はせず媒体の追加を通知、double click で /media/ の下に mount、抜去・eject の口） | planned（q723、2026-10-05 D3 決定） | p002 |
 | ws132-p005 | libkeiland の volume の口、Files の左の pane の Devices の group と Today の icon（数回点滅）・double click で mount・eject | planned（q723） | p004 |
