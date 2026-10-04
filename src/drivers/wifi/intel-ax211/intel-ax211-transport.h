@@ -167,6 +167,8 @@ struct intel_ax211_transport {
 	struct intel_ax211_ring_token command_external_token;
 	uint32_t enabled_fh_causes;
 	uint32_t enabled_hw_causes;
+	/* Counts published commands modulo 65536; reset starts at zero. */
+	uint16_t command_write_sequence;
 	uint16_t rx_head;
 	uint16_t rx_tail;
 	uint16_t rx_pending_buffer;
