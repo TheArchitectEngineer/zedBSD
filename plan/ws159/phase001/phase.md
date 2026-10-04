@@ -2,7 +2,7 @@
 
 # ws159-p001: native のタッチパッドの設計
 
-Status: in-progress（2026-10-05 P1 generation17 / q713-i01。設計を書いた。Q1 の確認待ち）
+Status: cleared の判定待ち（2026-10-05 P1 generation17 / q713-i01。設計を書き、Q1 が「このまま p002 へ」と ACK（main に統合）。Q1 の委任: D3・D6 の移動・EVIOCGPROP・D8 の caps）
 Disposition: normal
 Parent: [WS159](../ws.md)
 Queue: q713 / q713-i01（2026-10-05 ユーザーのクリックの回答「ベータ1」、Q1 の投入）。design-reviewer は省く（2026-10-05 ユーザー）。
@@ -28,7 +28,7 @@ evdev の multitouch（protocol B）で出し、compositor のタッチパッド
 | evdev（Linux） | "Touchpad": props 0x05（POINTER・BUTTONPAD）、ABS_X 0..1336・ABS_Y 0..760（resolution 12/mm）、MT の slot 0..4、TOOL_TYPE、TRACKING_ID、keys BTN_LEFT・TOOL_FINGER・TOOL_QUINTTAP・TOUCH・TOOL_DOUBLETAP・TRIPLETAP・QUADTAP。別に "Mouse"（report 2） | `evdev-absinfo.txt` |
 | 割り込み | `GpioInt(Level, ActiveLow, ExclusiveAndWake)` on `\_SB.GPI0`（INTC1055）。ACPI の pin は 327 = pad 233（CPU_GP_1）。DW0 は 0x80800102（RXINV、GPIO の input、IOxAPIC への route は無し）、DW1 の INTSEL は 0x33。Linux は intel-gpio の IRQ（親は IO-APIC の 14）を使う | `/sys/kernel/debug/gpio`・`pinctrl`、DSDT の `TPDM` = 0 の経路 |
 | 割り込みなしの読み | input の register を読むと、データの無い時は長さ 0 が返る（10 回とも） | `poll-probe-1.txt` |
-| PS/2 との関係 | DSDT の `HIDD` は、I2C-HID の `_DSM` を評価すると `PS2D = 1` にする。その後、`\_SB.PC00.LPCB.PS2M`（PNP0F13）の `_STA` は 0 を返す。firmware は「OS が I2C-HID を使ったら PS/2 の mouse は無い」と伝えている。Linux は psmouse も残す。触っている間に PS/2 側に packet が来るかは未確認（ユーザーの手が要る、`tests/touch-record.sh`） | DSDT 77727・99528〜99600 行 |
+| PS/2 との関係 | DSDT の `HIDD` は、I2C-HID の `_DSM` を評価すると `PS2D = 1` にする。その後、`\_SB.PC00.LPCB.PS2M`（PNP0F13）の `_STA` は 0 を返す。firmware は「OS が I2C-HID を使ったら PS/2 の mouse は無い」と伝えている。Linux は psmouse も残す。操作中の 60 秒の記録で、Touchpad は 20070 event、PS/2 は 0 event（D7） | DSDT 77727・99528〜99600 行 |
 
 ## 設計
 
@@ -82,7 +82,7 @@ kernel は「指の位置と押し込みを正しく出す」だけを担い、g
 ### D7. PS/2 との二重の入力
 
 - firmware の契約（`HIDD` の `PS2D = 1` → `PS2M._STA` = 0）に従う。I2C-HID の touchpad の attach が成功した後、i8042 の driver に「ACPI の PNP0F13 の `_STA` をもう一度評価し、0 なら aux の stream を止める（`PS2_DISABLE_STREAM`）」を頼む口を足す（`drv_ps2_aux_recheck()`）。外付けの PS/2 の mouse は 5330 には無い。
-- PS/2 側に packet が実際に来るかは未確認（ユーザーの手が要る）。来なければ上の処理は無害、来れば二重の入力を止める。
+- 事実（2026-10-05 01:17:30、5330 の Linux、ユーザーが操作中に 60 秒の記録、`tests/latitude5330-linux/touch-*`）: I2C-HID の Touchpad の evdev に 20070 event、**PS/2 の mouse には 0 event**。I2C-HID の driver が device を PTP mode にしている間、touchpad の PS/2 の互換の packet は出ない。したがって二重の入力は起きない見込みで、上の aux の停止は firmware の契約に合わせる保険（外付けの PS/2 の mouse の無い機械で aux を止めても失う物が無い）。zedBSD で I2C-HID の attach の前後に PS/2 側の packet が止まるかは p003 の実機で確かめる。
 
 ### D8. compositor のタッチパッドの層（p004、`userland/desktop/wayland/touchpad.c`（新）・`touchpad.h`）
 
@@ -111,6 +111,10 @@ kernel は「指の位置と押し込みを正しく出す」だけを担い、g
 | p003 | D4〜D7: hid の層の移動と PTP、`EVIOCGPROP`、I2C-HID の driver と sampling、PS/2 の停止。host の試験 (a)〜(c)、`input-inject` の touchpad | p002 |
 | p004 | D8: compositor の touchpad.c と backend の props（zedBSD のみ）。host の試験 (d)、QEMU（T1、inject の touchpad） | p003 の `EVIOCGPROP` と inject（host の試験は先に） |
 | p005 | 実機の UAT と全文の規約 | p004 |
+
+## 残り（後の Phase へ確実に移す）
+
+- **D5 の 4 ms の MMIO の sampling は、電池の消費の点でベータ1 だけの仮の形**（2026-10-05 Q1）。Intel の GPIO の割り込み（`INTC1055` の `GPI_IS`・`GPI_IE` と IRQ 14、または pad の IOxAPIC への route）へ移す Phase を WS159 に立てる（p006 の案）。それまでは、指の無い間の sampling の間隔を延ばす（D5）。
 
 ## 未決（人間の判断が要る点）
 

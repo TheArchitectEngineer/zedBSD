@@ -77,8 +77,13 @@ enum drv_acpi_space {
 enum drv_acpi_resource_kind {
 	DRV_ACPI_RESOURCE_IO = 1,
 	DRV_ACPI_RESOURCE_MEMORY = 2,
-	DRV_ACPI_RESOURCE_IRQ = 3
+	DRV_ACPI_RESOURCE_IRQ = 3,
+	DRV_ACPI_RESOURCE_I2C = 4,
+	DRV_ACPI_RESOURCE_GPIO_INT = 5
 };
+
+/* The longest controller path a serial bus or GPIO resource keeps, with its terminating NUL. */
+#define DRV_ACPI_RESOURCE_SOURCE_MAX	64U
 
 struct drv_acpi_node;
 struct drv_acpi_object;
@@ -96,6 +101,14 @@ struct drv_acpi_object;
  * memory range may be written; producer says an address space descriptor
  * gives the range to its children rather than using it.  level, active_low
  * and shared describe an interrupt.
+ *
+ * An I2C serial bus connection (I2cSerialBus) puts the device's address on
+ * its bus in base, its connection speed in hertz in speed, sets ten_bit
+ * for a 10-bit address, and names the bus controller in source.  A GPIO
+ * interrupt connection (GpioInt) puts its first pin in base (length is the
+ * number of pins), describes the interrupt with level, active_low, shared
+ * and wake, and names the GPIO controller in source.  source is empty for
+ * the other kinds, and a path too long for it is cut short.
  */
 struct drv_acpi_resource {
 	enum drv_acpi_resource_kind kind;
@@ -107,6 +120,10 @@ struct drv_acpi_resource {
 	uint8_t level;
 	uint8_t active_low;
 	uint8_t shared;
+	uint8_t wake;
+	uint8_t ten_bit;
+	uint32_t speed;
+	char source[DRV_ACPI_RESOURCE_SOURCE_MAX];
 };
 
 /*

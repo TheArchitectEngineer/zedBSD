@@ -12,3 +12,4 @@
 | `lpss-i2c-timing.txt` | clk_summary（133 MHz）と `i2c_designware` の HCNT・LCNT |
 | `lspci-lpss-i2c.txt` | `lspci -vvnn -s 00:15.1`・`00:15.0` |
 | `poll-probe-1.txt` | `../i2c-hid-poll-probe.py`（driver を外して input の register を読む）の結果 |
+| `touch-pad-evdev.txt.gz`・`touch-ps2-evdev.txt`・`touch-run.log` | `../touch-record.sh 60` の結果（2026-10-05 01:17:30 から、ユーザーがタッチパッドを操作中、Q1 が実行）。Touchpad の evdev（`od -A d -t x1 -w24`、24 byte で 1 event、20070 event）と PS/2 の mouse（0 event）。host の試験の台本の素材 |

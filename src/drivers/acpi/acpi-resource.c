@@ -11,10 +11,13 @@
  * device uses, for the drivers that would otherwise each decode it.
  *
  * Small descriptors carry their length in their tag byte; large ones carry
- * a 16-bit length after it.  Descriptors that hold no I/O, memory or
- * interrupt (DMA, vendor, GPIO, serial bus, start and end of dependent
- * functions) are stepped over.  An address space descriptor of the bus
- * number type is stepped over too.
+ * a 16-bit length after it.  Descriptors that hold no I/O, memory,
+ * interrupt or connection (DMA, vendor, start and end of dependent
+ * functions, a GPIO I/O connection, a serial bus other than I2C) are
+ * stepped over.  An address space descriptor of the bus number type is
+ * stepped over too.  An I2C serial bus connection and a GPIO interrupt
+ * connection (ws159-p002, an I2C-HID touchpad's) are decoded with the
+ * path of the controller they name.
  */
 
 #include <kern/kcrt.h>
@@ -46,6 +49,47 @@
 #define LARGE_EXTENDED_IRQ	0x89U
 #define LARGE_QWORD_ADDRESS	0x8aU
 #define LARGE_EXTENDED_ADDRESS	0x8bU
+#define LARGE_GPIO		0x8cU
+#define LARGE_SERIAL_BUS	0x8eU
+
+/*
+ * A GPIO connection descriptor (ACPI 6.5 section 6.4.3.8.1): its connection
+ * type (0 an interrupt), its flags, the offsets of its pin table and of its
+ * resource source's name, all counted from the tag byte, and the bits of
+ * its interrupt flags.
+ */
+#define GPIO_TYPE		4U
+#define GPIO_TYPE_INTERRUPT	0U
+#define GPIO_GENERAL_FLAGS	5U
+#define GPIO_INTERRUPT_FLAGS	7U
+#define GPIO_PIN_TABLE		14U
+#define GPIO_SOURCE_NAME	17U
+#define GPIO_VENDOR_DATA	19U
+#define GPIO_MINIMUM		23U
+#define GPIO_CONSUMER		0x01U
+#define GPIO_EDGE		0x01U
+#define GPIO_POLARITY_MASK	0x06U
+#define GPIO_POLARITY_LOW	0x02U
+#define GPIO_SHARED		0x08U
+#define GPIO_WAKE		0x10U
+
+/*
+ * A serial bus connection descriptor (section 6.4.3.8.2): its bus type (1
+ * I2C), its flags, the length of its type-specific data (counted from
+ * SERIAL_TYPE_DATA), and an I2C connection's speed and address.  The
+ * resource source's name follows the type-specific data.
+ */
+#define SERIAL_BUS_TYPE		5U
+#define SERIAL_BUS_I2C		1U
+#define SERIAL_GENERAL_FLAGS	6U
+#define SERIAL_TYPE_FLAGS	7U
+#define SERIAL_TYPE_LENGTH	10U
+#define SERIAL_TYPE_DATA	12U
+#define SERIAL_I2C_SPEED	12U
+#define SERIAL_I2C_ADDRESS	16U
+#define SERIAL_I2C_DATA		6U
+#define SERIAL_CONSUMER		0x02U
+#define SERIAL_I2C_TEN_BIT	0x01U
 
 /*
  * The resource types of an address space descriptor.
@@ -88,6 +132,9 @@ static int large_descriptor(const uint8_t *descriptor, size_t length, drv_acpi_r
 static int irq_descriptor(const uint8_t *descriptor, size_t length, drv_acpi_resource_visitor_t visitor, void *argument);
 static int extended_irq_descriptor(const uint8_t *descriptor, size_t length, drv_acpi_resource_visitor_t visitor, void *argument);
 static int address_descriptor(const uint8_t *descriptor, size_t length, drv_acpi_resource_visitor_t visitor, void *argument);
+static int gpio_descriptor(const uint8_t *descriptor, size_t length, drv_acpi_resource_visitor_t visitor, void *argument);
+static int serial_bus_descriptor(const uint8_t *descriptor, size_t length, drv_acpi_resource_visitor_t visitor, void *argument);
+static void copy_source(const uint8_t *descriptor, size_t length, size_t offset, size_t end, char *source);
 static uint64_t load_little(const uint8_t *bytes, unsigned width);
 
 /*
@@ -313,6 +360,14 @@ large_descriptor(
 		/* An address space descriptor of memory or I/O. */
 		stop = address_descriptor(descriptor, length, visitor, argument);
 		break;
+	case LARGE_GPIO:
+		/* A GPIO connection: an interrupt is visited, an I/O connection is not. */
+		stop = gpio_descriptor(descriptor, length, visitor, argument);
+		break;
+	case LARGE_SERIAL_BUS:
+		/* A serial bus connection: an I2C one is visited, the others are not. */
+		stop = serial_bus_descriptor(descriptor, length, visitor, argument);
+		break;
 	default:
 		/* Any other large descriptor holds no range or interrupt. */
 		stop = 0;
@@ -504,6 +559,186 @@ address_descriptor(
 
 	/* Succeeded: the range was visited. */
 	return 0;
+}
+
+/*
+ * Visits a GPIO interrupt connection (section 6.4.3.8.1): its first pin,
+ * the number of pins, how the interrupt is signalled and the controller.
+ */
+static int
+gpio_descriptor(
+	const uint8_t *descriptor,
+	size_t length,
+	drv_acpi_resource_visitor_t visitor,
+	void *argument)
+{
+	struct drv_acpi_resource resource;
+	uint64_t pin_table;
+	uint64_t source_name;
+	uint64_t vendor_data;
+	uint64_t flags;
+	uint8_t polarity;
+	int stop;
+
+	/* Refuses a descriptor too short for its fixed fields. */
+	if (length < GPIO_MINIMUM)
+		return EIO;
+
+	/* A GPIO I/O connection holds no interrupt. */
+	if (descriptor[GPIO_TYPE] != GPIO_TYPE_INTERRUPT)
+		return 0;
+
+	/* Finds the pin table and the controller's name, which end where the next part begins. */
+	pin_table = load_little(descriptor + GPIO_PIN_TABLE, 2);
+	source_name = load_little(descriptor + GPIO_SOURCE_NAME, 2);
+	vendor_data = load_little(descriptor + GPIO_VENDOR_DATA, 2);
+
+	/* Refuses a pin table that is empty, out of order or past the descriptor. */
+	if (pin_table < GPIO_MINIMUM)
+		return EIO;
+	if (source_name < pin_table + 2U)
+		return EIO;
+	if (source_name > length)
+		return EIO;
+
+	/* The controller's name ends at the vendor data, or at the descriptor's end without any. */
+	if (vendor_data == 0U || vendor_data > length || vendor_data < source_name)
+		vendor_data = length;
+
+	/* Describes the interrupt: its first pin and how many pins the table holds. */
+	kern_memset(&resource, 0, sizeof(resource));
+	resource.kind = DRV_ACPI_RESOURCE_GPIO_INT;
+	resource.descriptor = descriptor[0];
+	resource.base = load_little(descriptor + pin_table, 2);
+	resource.length = (source_name - pin_table) / 2U;
+
+	/* A device that does not consume the connection produces it. */
+	if ((descriptor[GPIO_GENERAL_FLAGS] & GPIO_CONSUMER) == 0)
+		resource.producer = 1;
+
+	/* The trigger: edge or level. */
+	flags = load_little(descriptor + GPIO_INTERRUPT_FLAGS, 2);
+	if ((flags & GPIO_EDGE) == 0)
+		resource.level = 1;
+
+	/* The polarity: active low (an interrupt on both edges is not active low). */
+	polarity = (uint8_t)(flags & GPIO_POLARITY_MASK);
+	if (polarity == GPIO_POLARITY_LOW)
+		resource.active_low = 1;
+
+	/* Whether the interrupt is shared, and whether it can wake the machine. */
+	if ((flags & GPIO_SHARED) != 0)
+		resource.shared = 1;
+	if ((flags & GPIO_WAKE) != 0)
+		resource.wake = 1;
+
+	/* The GPIO controller's path. */
+	copy_source(descriptor, length, (size_t)source_name, (size_t)vendor_data, resource.source);
+
+	/* Visits the interrupt. */
+	stop = visitor(&resource, argument);
+	if (stop != 0)
+		return stop;
+
+	/* Succeeded: the interrupt was visited. */
+	return 0;
+}
+
+/*
+ * Visits an I2C serial bus connection (section 6.4.3.8.2.1): the device's
+ * address, its speed and the bus controller.
+ */
+static int
+serial_bus_descriptor(
+	const uint8_t *descriptor,
+	size_t length,
+	drv_acpi_resource_visitor_t visitor,
+	void *argument)
+{
+	struct drv_acpi_resource resource;
+	uint64_t type_length;
+	uint64_t flags;
+	size_t source_name;
+	int stop;
+
+	/* Refuses a descriptor too short for its fixed fields. */
+	if (length < SERIAL_TYPE_DATA)
+		return EIO;
+
+	/* Only an I2C connection is decoded; SPI and UART are stepped over. */
+	if (descriptor[SERIAL_BUS_TYPE] != SERIAL_BUS_I2C)
+		return 0;
+
+	/* Refuses I2C data too short for the speed and address, or past the descriptor. */
+	type_length = load_little(descriptor + SERIAL_TYPE_LENGTH, 2);
+	if (type_length < SERIAL_I2C_DATA)
+		return EIO;
+	if (type_length > length - SERIAL_TYPE_DATA)
+		return EIO;
+
+	/* Describes the connection: the address on the bus and the speed. */
+	kern_memset(&resource, 0, sizeof(resource));
+	resource.kind = DRV_ACPI_RESOURCE_I2C;
+	resource.descriptor = descriptor[0];
+	resource.base = load_little(descriptor + SERIAL_I2C_ADDRESS, 2);
+	resource.length = 1;
+	resource.speed = (uint32_t)load_little(descriptor + SERIAL_I2C_SPEED, 4);
+
+	/* A device that does not consume the connection produces it. */
+	if ((descriptor[SERIAL_GENERAL_FLAGS] & SERIAL_CONSUMER) == 0)
+		resource.producer = 1;
+
+	/* A 10-bit address. */
+	flags = load_little(descriptor + SERIAL_TYPE_FLAGS, 2);
+	if ((flags & SERIAL_I2C_TEN_BIT) != 0)
+		resource.ten_bit = 1;
+
+	/* The bus controller's path follows the type-specific data. */
+	source_name = SERIAL_TYPE_DATA + (size_t)type_length;
+	copy_source(descriptor, length, source_name, length, resource.source);
+
+	/* Visits the connection. */
+	stop = visitor(&resource, argument);
+	if (stop != 0)
+		return stop;
+
+	/* Succeeded: the connection was visited. */
+	return 0;
+}
+
+/*
+ * Copies a resource source's name (a NUL-terminated path between offset
+ * and end of the descriptor) into source, cut short to fit and always
+ * terminated.
+ */
+static void
+copy_source(
+	const uint8_t *descriptor,
+	size_t length,
+	size_t offset,
+	size_t end,
+	char *source)
+{
+	size_t index;
+
+	/* The name may not run past the descriptor. */
+	if (end > length)
+		end = length;
+
+	/* Copies the characters up to the name's NUL, the end or the room. */
+	index = 0;
+	while (offset + index < end && index + 1U < DRV_ACPI_RESOURCE_SOURCE_MAX) {
+		/* The name's own NUL ends it. */
+		if (descriptor[offset + index] == 0U)
+			break;
+
+		/* Copies one character. */
+		source[index] = (char)descriptor[offset + index];
+		index++;
+	}
+
+	/* Succeeded: the name is terminated. */
+	source[index] = '\0';
 }
 
 /* Reads a little-endian number of 2, 4 or 8 bytes. */
