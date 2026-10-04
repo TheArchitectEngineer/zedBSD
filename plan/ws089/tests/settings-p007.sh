@@ -7,10 +7,12 @@
 #  1. No file: ZWL SETTINGS open, the landscape (start.png).
 #  2. wallpaper set: ZWL PREFERENCES key=wallpaper applied and ZWL GLASS wallpaper path=... ms=N (wallpaper.png).
 #  3. window.opacity 85: key=window.opacity applied value=85 (opacity.png).
-#  4. pointer.speed 200, pointer.natural 1, keyboard.repeat.rate 40, keyboard.repeat.delay 250: each applied.
+#  4. mouse.speed 200, mouse.natural 1, touchpad.acceleration 3, keyboard.repeat.rate 40, keyboard.repeat.delay 250:
+#     each applied (ws089-p024: the mouse's and the touch pads' keys).
 #  5. Each reset: the landscape again (ZWL GLASS wallpaper path=-) and the opacity back to 100 (removed.png).
 #  6. zdesktop started again with a wallpaper in the file: it is applied before the look is made (key=wallpaper
-#     applied, no ZWL GLASS wallpaper line) (restart.png).
+#     applied, no ZWL GLASS wallpaper line) (restart.png).  The file also holds the one pointer setting of before
+#     (pointer.speed=200, ws089-p024): it is moved to the mouse's (ZWL SETTINGS migrated ..., mouse.speed applied 200).
 #  7. No ERROR line in zdesktop's log.
 # The pointer's speed on a relative mouse and the repeat seen by a client are checked with Settings' pages (p005).
 #
@@ -102,24 +104,27 @@ expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=8
 shot opacity.png
 
 # 4. The pointer and the keyboards.
-probe set pointer.speed 200 set pointer.natural 1 set keyboard.repeat.rate 40 set keyboard.repeat.delay 250
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=200'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.natural applied value=1'
+probe set mouse.speed 200 set mouse.natural 1 set touchpad.acceleration 3 set keyboard.repeat.rate 40 set keyboard.repeat.delay 250
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=200'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.natural applied value=1'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=touchpad.acceleration applied value=3'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.rate applied value=40'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.delay applied value=250'
 
 # 5. Each setting reset: back to the command line's.
-probe reset wallpaper reset window.opacity reset pointer.speed
+probe reset wallpaper reset window.opacity reset mouse.speed
 expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=- ms='
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=100'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=100'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=150'
 shot removed.png
 
 # 6. A wallpaper in the file when zdesktop starts.
 guest "$stop_all" >/dev/null
-write_conf 'wallpaper=/usr/share/keiland/wallpaper.ppm'
+write_conf 'wallpaper=/usr/share/keiland/wallpaper.ppm' 'pointer.speed=200'
 guest "$start_desktop" >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=wallpaper applied'
+expect_log /tmp/zdesktop.log 'ZWL SETTINGS migrated pointer.speed=200 to mouse.speed error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=200'
 expect_log /tmp/zdesktop.log 'ZWL SETTINGS open'
 refuse_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path='
 refuse_log /tmp/zdesktop.log 'ZWL GLASS no wallpaper'

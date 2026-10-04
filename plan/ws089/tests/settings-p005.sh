@@ -2,9 +2,11 @@
 # ws089-p005: the input and sound pages of Settings on the Venus guest (the lean image, build-settings-image.sh).
 # zdesktop --glass at 1280x800; Settings and zdesktop share root's home (/root/.config/keiland/desktop.conf, removed
 # before and after).  The test waits for the guest's SSH and for zdesktop's READY first (settings-wait.sh).
-#  1. Mouse: the speed's slider dragged to the right end writes pointer.speed=300 and zdesktop applies it; the switch
-#     of natural scrolling writes pointer.natural=1 and zdesktop applies it (mouse.png); back to the middle (100: the
-#     key removed) and the switch off.
+#  1. Mouse (ws089-p024): the speed's slider dragged to the right end writes mouse.speed=300 and zdesktop applies it;
+#     the acceleration's slider to the left end writes mouse.acceleration=0 (None); the switch of natural scrolling
+#     writes mouse.natural=1 and zdesktop applies it (mouse.png); back to 150 (the default) and the switch off.
+#  1b. Touchpad (ws089-p024): the page shows its speed (100%), acceleration (Medium) and natural scrolling on
+#     (touchpad.png); the speed to the right end writes touchpad.speed=300, the switch writes touchpad.natural=0.
 #  2. Keyboard: the rate's slider to the right end (60) and the delay's to the left end (150) are written and
 #     applied (keyboard.png).
 #  3. Sound: the lean image has no audiod; the page says the service is not running (sound.png).  Home (home.png).
@@ -84,7 +86,7 @@ slide() {
 	cy=$((wy + cy0 + ch / 2)); start=$((wx + cx0 + cw / 2))
 	end=$((wx + cx0 + 4))
 	[ "$2" = right ] && end=$((wx + cx0 + cw - 4))
-	[ "$2" = middle ] && { start=$((wx + cx0 + 4)); end=$((wx + cx0 + 12 + (cw - 24) * 75 / 275)); }
+	[ "$2" = middle ] && { start=$((wx + cx0 + 4)); end=$((wx + cx0 + 12 + (cw - 24) * 125 / 275)); }
 	pointer move "$start" "$cy" sleep 200 down sleep 100 move $(((start + end) / 2)) "$cy" sleep 100 move "$end" "$cy" sleep 200 up sleep 1500
 }
 
@@ -104,18 +106,34 @@ wait_desktop
 start_settings mouse
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=3 '
 slide 2 right
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.speed value=300 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=300'
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.speed value=300 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=300'
+slide 6 left
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.acceleration value=0 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.acceleration applied value=0'
 control 3
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.natural value=1 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.natural applied value=1'
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.natural value=1 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.natural applied value=1'
 shot mouse.png
 slide 2 middle
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.speed value=100 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=100'
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.speed value=150 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=150'
 control 3
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=pointer.natural value=0 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.natural applied value=0'
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.natural value=0 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.natural applied value=0'
+
+# 1b. Touchpad.
+guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
+sleep 1
+start_settings touchpad
+expect_log /tmp/s.log 'ZSETTINGS CONTROL index=9 '
+shot touchpad.png
+slide 7 right
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=touchpad.speed value=300 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=touchpad.speed applied value=300'
+control 9
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=touchpad.natural value=0 error=0'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=touchpad.natural applied value=0'
 
 # 2. Keyboard.
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null

@@ -57,6 +57,7 @@
  */
 
 #include "touchpad.h"
+#include "pointer-accel.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -106,14 +107,18 @@
 #define SPEED_SPAN_MS			50U
 
 /*
- * The pointer's gain in pixels per millimetre, in 1/256: GAIN_SLOW up to
- * SPEED_SLOW millimetres per second, rising to GAIN_FAST at SPEED_FAST and
- * above.
+ * The pointer's gain in pixels per millimetre, in 1/256: the level's slow
+ * gain up to SPEED_SLOW millimetres per second, rising to its fast gain at
+ * SPEED_FAST and above (ws089-p024).  The medium level is the curve of
+ * ws159-p004; none keeps one gain at every speed.
  */
-#define GAIN_SLOW			(5 * 256)
-#define GAIN_FAST			(15 * 256)
 #define SPEED_SLOW			20
 #define SPEED_FAST			150
+#define ACCELERATION_LEVELS		4
+
+/* Each level's slow and fast gains (none, mild, medium, strong), in 1/256 pixels per millimetre. */
+static const int64_t gain_slow[ACCELERATION_LEVELS] = { 8 * 256, 6 * 256, 5 * 256, 4 * 256 };
+static const int64_t gain_fast[ACCELERATION_LEVELS] = { 8 * 256, 11 * 256, 15 * 256, 20 * 256 };
 
 /* The time between reports the speed is measured over, at least and at most (milliseconds). */
 #define FRAME_MS_LEAST			1U
@@ -168,8 +173,9 @@ zwl_touchpad_init(
 	if (pad->resolution_y < 1)
 		pad->resolution_y = 1;
 
-	/* Scrolling follows the fingers unless the user turns it off. */
+	/* Scrolling follows the fingers unless the user turns it off; the medium curve. */
 	pad->natural_scroll = 1;
+	pad->acceleration = ZWL_ACCEL_MEDIUM;
 	pad->tap = ZWL_TOUCHPAD_TAP_NONE;
 }
 
@@ -190,6 +196,27 @@ zwl_touchpad_set_size(
 		pad->x_max = x_max;
 		pad->y_max = y_max;
 	}
+}
+
+/*
+ * Takes the user's feel (ws089-p024): the acceleration's level (out of
+ * range: the nearest) and whether the scrolling follows the fingers.
+ */
+void
+zwl_touchpad_set_feel(
+	struct zwl_touchpad *pad,
+	int32_t acceleration,
+	int32_t natural)
+{
+	/* The level, kept in the table. */
+	if (acceleration < 0)
+		acceleration = 0;
+	if (acceleration >= (int32_t)ACCELERATION_LEVELS)
+		acceleration = (int32_t)ACCELERATION_LEVELS - 1;
+	pad->acceleration = acceleration;
+
+	/* The scrolling's direction. */
+	pad->natural_scroll = natural != 0;
 }
 
 /*
@@ -647,6 +674,8 @@ pointer_motion(
 	uint64_t elapsed;
 	int64_t speed;
 	int64_t gain;
+	int64_t slow;
+	int64_t fast;
 	int64_t x;
 	int64_t y;
 
@@ -660,12 +689,14 @@ pointer_motion(
 	/* The finger's speed in millimetres per second (micrometres per millisecond). */
 	speed = (magnitude(dx_um) + magnitude(dy_um)) / (int64_t)elapsed;
 
-	/* The gain: slow, fast, or between them in proportion. */
-	gain = GAIN_SLOW;
+	/* The gain of the user's level: slow, fast, or between them in proportion. */
+	slow = gain_slow[pad->acceleration];
+	fast = gain_fast[pad->acceleration];
+	gain = slow;
 	if (speed >= SPEED_FAST) {
-		gain = GAIN_FAST;
+		gain = fast;
 	} else if (speed > SPEED_SLOW) {
-		gain = GAIN_SLOW + (GAIN_FAST - GAIN_SLOW) * (speed - SPEED_SLOW) / (SPEED_FAST - SPEED_SLOW);
+		gain = slow + (fast - slow) * (speed - SPEED_SLOW) / (SPEED_FAST - SPEED_SLOW);
 	}
 
 	/* The motion in 1/256 pixels, with what the last reports left over. */

@@ -2,10 +2,10 @@
 
 # ws089-p024: Mouse の頁を device ごと（マウス・タッチパッド）の設定にし、pointer の加速を足す。既定は base 150%・加速 強め、自然な方向のスクロールはタッチパッド ON・マウス OFF
 
-Status: planning
+Status: in-progress（実装済み、T1 待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
-Queue: 未定
+Queue: q728（P2、2026-10-05）
 
 ## ユーザーの要望（2026-10-04 夜、UAT-3 の後、原文）
 
@@ -36,3 +36,31 @@ Settings には既に **Mouse** と **Touchpad** の頁が別にある（`userla
 ## 依存
 
 compositor の入力（WS099・WS081）、kl_settings_*（WS135）。
+
+## 設計（2026-10-05、P2）
+
+- **種類ごと**（device ごとではなく）: compositor の入力の device の種類で選ぶ。touchpad の層（`touchpad.c`、multitouch protocol B で INPUT_PROP_POINTER の node）に付いた device は **touchpad**、それ以外の相対の pointer（USB・PS/2 の mouse、PS/2 の mouse に見える touchpad、trackpoint）は **mouse**。絶対の pointer（tablet・touch screen）は対象外（今まで通り）。
+- **設定の key**（`settings-keys.c`、compositor が解決し desktop.conf に保つ）:
+
+| key | 範囲 | 既定 | 意味 |
+| --- | --- | --- | --- |
+| `mouse.speed` | 25〜300 | **150** | 速さ（%） |
+| `mouse.acceleration` | 0〜3 | **3（Strong）** | 加速の段階（0 None・1 Mild・2 Medium・3 Strong） |
+| `mouse.natural` | 0・1 | **0** | wheel の向きを逆に |
+| `touchpad.speed` | 25〜300 | 100 | 速さ（%） |
+| `touchpad.acceleration` | 0〜3 | 2（Medium） | 加速の段階（Medium は ws159-p004 で合わせた今の曲線） |
+| `touchpad.natural` | 0・1 | **1** | 2 本指のスクロールが指に付いて動く |
+
+- **移行**: 旧 `pointer.speed`・`pointer.natural` は表に残し（`KEPT | READ_ONLY`: file からは読むが client からは変えられない）、session の開始で file に旧い値があり新しい key に値が無ければ、その値を `mouse.speed`・`mouse.natural` に選ぶ（`ZWL SETTINGS migrated ...`、session の終わりに新しい key で書かれる）。値が無ければ新しい既定。
+- **mouse の加速の曲線**（`wayland/pointer-accel.c`、新規、host で試験）: 報告ごとの移動（count）を速さ（%）× gain（1/256）で pixel に。gain は mouse の速さ（count/秒、前の動いた報告からの時間で 1〜50 ms に制限、休みの後の最初の報告は 50 ms）で、400 以下は 1、4000 以上は段階の最大（None 1.0・Mild 1.5・Medium 2.25・Strong 3.0）、間は比例。端数は次の報告へ持ち越す（device ごと）。None・100% は以前と同じ（1 count = 1 pixel）。
+- **touchpad の曲線**（`touchpad.c`）: 既存の速さで gain が増える曲線（px/mm）の両端を段階で選ぶ: None 8→8、Mild 6→11、Medium 5→15（今の値）、Strong 4→20。速さ（%）は今まで通り層の出力に掛ける（`pointer_move`）。`zwl_touchpad_set_feel` で段階と自然なスクロールを渡し、設定が変わると付いている全ての touchpad に渡し直す（`zwl_input_touchpads_changed`）。
+- **Settings**: Mouse の頁に Pointer speed・Acceleration（None〜Strong の 4 段の slider）・Natural scrolling。stub だった Touchpad の頁を実装し、同じ 3 項目。Home の summary・検索の項目も。tap・gesture の on/off・2 本指のスクロールの速さは範囲の 6 のとおり WS142・BUG-166 に合わせて後（頁の注記に「coming later」）。
+- 控えの数: compositor の設定の entry の上限 `ZWL_SETTINGS_ENTRIES` を 16 → 24（compositor の key が 15 になった）。
+- **Q1・ユーザーに確かめたい点**: touchpad の既定は速さ 100%・Medium（WS159 で 5330 に合わせた感触を保つ）にした。要望の「150%・強め」は Mouse の既定として入れた。touchpad も 150%・Strong にするかは判断を仰ぐ。
+
+## 確認（2026-10-05）
+
+- host: `plan/ws089/tests/run-host-pointer-accel.sh` PASS（None 100% で 1:1、gain の両端と中間、段階の順、同じ 2000 count が遅いと 2000 px・速いと約 3 倍、150% の端数の持ち越し、休みの後の最初の報告）。`plan/ws159/tests/run-host-touchpad.sh`（25）・`plan/ws142/tests/run-host-gesture.sh`（50）PASS（Medium で以前と同じ）。`plan/ws089/tests/host-build.sh` の settings-render で Mouse・Touchpad の頁を描いて目視。
+- build（warning 0）: zedBSD の wayland・settings・keiland-settings、Linux の Keiland（-Werror）。`plan/tools/keiland-os-boundary/check.sh` PASS。style-check: 新しい file は違反 0、変えた既存の file に新しい違反 0。
+- QEMU（T1 に依頼）: `plan/ws089/tests/settings-p005.sh`（Mouse の speed・acceleration・natural、Touchpad の頁の speed・natural）、`settings-p007.sh`（新しい key の適用、`pointer.speed=200` の移行）。QEMU の pointer は tablet（絶対）なので加速の効き目は host の試験で見る。
+- 未実施: 実機（5330 の touchpad と USB mouse の操作感）は UAT。

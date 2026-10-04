@@ -48,7 +48,10 @@
 /* The input's keys: their ranges and defaults, as zdesktop takes them (userland/desktop/wayland/preferences.c). */
 #define LOOK_SPEED_MIN		25
 #define LOOK_SPEED_MAX		300
-#define LOOK_SPEED_DEFAULT	100
+#define LOOK_MOUSE_SPEED	150
+#define LOOK_MOUSE_ACCEL	3
+#define LOOK_PAD_SPEED		100
+#define LOOK_PAD_ACCEL		2
 #define LOOK_RATE_MIN		5
 #define LOOK_RATE_MAX		60
 #define LOOK_RATE_DEFAULT	25
@@ -100,8 +103,12 @@ se_look_open(
 	/* Nothing read yet. */
 	look = &app->look;
 	look->opacity = LOOK_OPACITY_MAX;
-	look->pointer_speed = LOOK_SPEED_DEFAULT;
-	look->pointer_natural = 0;
+	look->mouse_speed = LOOK_MOUSE_SPEED;
+	look->mouse_acceleration = LOOK_MOUSE_ACCEL;
+	look->mouse_natural = 0;
+	look->touchpad_speed = LOOK_PAD_SPEED;
+	look->touchpad_acceleration = LOOK_PAD_ACCEL;
+	look->touchpad_natural = 1;
 	look->repeat_rate = LOOK_RATE_DEFAULT;
 	look->repeat_delay = LOOK_DELAY_DEFAULT;
 	look->wallpaper[0] = '\0';
@@ -115,7 +122,7 @@ se_look_open(
 	}
 
 	/* Whether the compositor's settings can be changed here (Keiland's extension). */
-	error = kl_settings_get(look->settings, "pointer.speed", value, sizeof(value), NULL);
+	error = kl_settings_get(look->settings, "mouse.speed", value, sizeof(value), NULL);
 	look->writable = 0;
 	if (error != ENOTSUP)
 		look->writable = 1;
@@ -477,9 +484,13 @@ look_read(
 	look = &app->look;
 	look->opacity = kl_settings_get_int(look->settings, "window.opacity", LOOK_OPACITY_MAX);
 
-	/* The pointer and the keyboards. */
-	look->pointer_speed = kl_settings_get_int(look->settings, "pointer.speed", LOOK_SPEED_DEFAULT);
-	look->pointer_natural = kl_settings_get_int(look->settings, "pointer.natural", 0);
+	/* A mouse, the touch pads (ws089-p024) and the keyboards. */
+	look->mouse_speed = kl_settings_get_int(look->settings, "mouse.speed", LOOK_MOUSE_SPEED);
+	look->mouse_acceleration = kl_settings_get_int(look->settings, "mouse.acceleration", LOOK_MOUSE_ACCEL);
+	look->mouse_natural = kl_settings_get_int(look->settings, "mouse.natural", 0);
+	look->touchpad_speed = kl_settings_get_int(look->settings, "touchpad.speed", LOOK_PAD_SPEED);
+	look->touchpad_acceleration = kl_settings_get_int(look->settings, "touchpad.acceleration", LOOK_PAD_ACCEL);
+	look->touchpad_natural = kl_settings_get_int(look->settings, "touchpad.natural", 1);
 	look->repeat_rate = kl_settings_get_int(look->settings, "keyboard.repeat.rate", LOOK_RATE_DEFAULT);
 	look->repeat_delay = kl_settings_get_int(look->settings, "keyboard.repeat.delay", LOOK_DELAY_DEFAULT);
 

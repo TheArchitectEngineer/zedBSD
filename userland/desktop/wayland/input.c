@@ -266,6 +266,7 @@ zwl_input_attach(
 	device->fd = descriptor;
 	device->pointer = pointer;
 	device->keyboard = keyboard;
+	zwl_pointer_accel_init(&device->accel);
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
 	/* An absolute pointer maps its axis ranges onto the surface. */
@@ -677,6 +678,8 @@ apply_frame(
 	const struct input_event *event;
 	int64_t delta_x;
 	int64_t delta_y;
+	int64_t moved_x;
+	int64_t moved_y;
 	int32_t wheel;
 	int32_t horizontal_wheel;
 	int32_t x;
@@ -749,19 +752,14 @@ apply_frame(
 	}
 
 	/*
-	 * The relative movement at the user's speed (ws089-p007, a percentage),
-	 * the hundredths of a pixel carried to the next report so that a slow
-	 * pointer still moves.
+	 * The relative movement at the mouse's speed and acceleration
+	 * (ws089-p024), the fractions of a pixel carried to the next report so
+	 * that a slow pointer still moves.
 	 */
-	if (server->pointer_speed != 100 &&
-	    (delta_x != 0 ||
-	     delta_y != 0)) {
-		delta_x = delta_x * server->pointer_speed + server->pointer_remainder_x;
-		delta_y = delta_y * server->pointer_speed + server->pointer_remainder_y;
-		server->pointer_remainder_x = delta_x % 100;
-		server->pointer_remainder_y = delta_y % 100;
-		delta_x /= 100;
-		delta_y /= 100;
+	if (delta_x != 0 || delta_y != 0) {
+		zwl_pointer_accel_move(&device->accel, delta_x, delta_y, device->frame_time_us, server->mouse_speed, server->mouse_acceleration, &moved_x, &moved_y);
+		delta_x = moved_x;
+		delta_y = moved_y;
 	}
 
 	/* The relative movement, kept on the output. */
@@ -812,8 +810,8 @@ apply_frame(
 			apply_key(server, time, event->code, event->value);
 	}
 
-	/* The user's natural scrolling (ws089-p007) turns the wheel round. */
-	if (server->pointer_natural != 0) {
+	/* The user's natural scrolling for a mouse (ws089-p007, p024) turns the wheel round. */
+	if (server->mouse_natural != 0) {
 		wheel = -wheel;
 		horizontal_wheel = -horizontal_wheel;
 	}
@@ -921,6 +919,27 @@ apply_touchpad_actions(
 }
 
 /*
+ * Gives every touch pad attached the touch pads' acceleration and
+ * scrolling direction again, after the settings changed them (ws089-p024).
+ */
+void
+zwl_input_touchpads_changed(
+	struct zwl_server *server)
+{
+	unsigned index;
+
+	/* Every touch pad in use. */
+	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+		/* A free slot, or a device that is no touch pad. */
+		if (!server->inputs[index].live || !server->inputs[index].touchpad)
+			continue;
+
+		/* The new feel, from the next report on. */
+		zwl_touchpad_set_feel(&server->inputs[index].pad, server->touchpad_acceleration, server->touchpad_natural);
+	}
+}
+
+/*
  * Lets time pass for the touch pads: a tap whose drag did not come
  * completes its click (touchpad.c).
  */
@@ -969,10 +988,10 @@ pointer_move(
 		zwl_damage_pointer(server, server->pointer_x, server->pointer_y);
 	}
 
-	/* The motion at the user's speed (ws089-p007, a percentage), the hundredths carried. */
-	if (server->pointer_speed != 100 && (delta_x != 0 || delta_y != 0)) {
-		delta_x = delta_x * server->pointer_speed + server->pointer_remainder_x;
-		delta_y = delta_y * server->pointer_speed + server->pointer_remainder_y;
+	/* The motion at the touch pads' speed (ws089-p007, p024, a percentage), the hundredths carried. */
+	if (server->touchpad_speed != 100 && (delta_x != 0 || delta_y != 0)) {
+		delta_x = delta_x * server->touchpad_speed + server->pointer_remainder_x;
+		delta_y = delta_y * server->touchpad_speed + server->pointer_remainder_y;
 		server->pointer_remainder_x = delta_x % 100;
 		server->pointer_remainder_y = delta_y % 100;
 		delta_x /= 100;
@@ -1066,6 +1085,7 @@ attach_touchpad(
 	snprintf(device->path, sizeof(device->path), "%s", path);
 	zwl_touchpad_init(&device->pad, x.resolution, y.resolution);
 	zwl_touchpad_set_size(&device->pad, x.maximum, y.maximum);
+	zwl_touchpad_set_feel(&device->pad, server->touchpad_acceleration, server->touchpad_natural);
 
 	/* The slot is published only when it is completely filled in. */
 	device->live = 1;
