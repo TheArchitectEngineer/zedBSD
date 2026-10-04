@@ -13,7 +13,10 @@
  * may be both.  A node that reports BTN_TOOL_PEN and ABS_PRESSURE is a pen
  * tablet instead, whose reports tablet.c applies, and one that speaks
  * multitouch protocol B (ABS_MT_SLOT, ABS_MT_TRACKING_ID and both
- * ABS_MT_POSITION axes) is a touch screen, whose reports touch.c applies.
+ * ABS_MT_POSITION axes) is a touch screen, whose reports touch.c applies,
+ * unless it says it is a pointer (INPUT_PROP_POINTER): then it is a touch
+ * pad, whose reports touchpad.c turns into the pointer's motion, buttons
+ * and scrolling (ws159-p004).
  * Nodes are read without blocking.  Events are gathered until
  * SYN_REPORT and applied as one group: motion first, then buttons and keys in
  * the order they arrived, then wheel scrolling, then a pointer frame.
@@ -99,6 +102,11 @@ static void update_capabilities(struct zwl_server *server);
 static int attach_tablet(struct zwl_server *server, int descriptor, const char *path);
 static int attach_touch(struct zwl_server *server, int descriptor, const char *path);
 static int multitouch(const struct kl_backend_input_caps *capabilities);
+static int touchpad_node(const struct kl_backend_input_caps *capabilities);
+static int attach_touchpad(struct zwl_server *server, int descriptor, const char *path);
+static void apply_touchpad(struct zwl_server *server, struct zwl_input_device *device, uint32_t time);
+static void apply_touchpad_actions(struct zwl_server *server, const struct zwl_touchpad_actions *actions, uint32_t time);
+static int pointer_move(struct zwl_server *server, int64_t delta_x, int64_t delta_y, uint32_t time);
 static ssize_t input_read(struct zwl_server *server, struct zwl_input_device *device, struct input_event *events, size_t capacity);
 
 /*
@@ -135,6 +143,7 @@ zwl_input_probe(
 	unsigned keyboard;
 	unsigned absolute;
 	int touch_screen;
+	int pad;
 	int has_type;
 	int has_first;
 	int has_second;
@@ -153,6 +162,13 @@ zwl_input_probe(
 			error = attach_tablet(server, descriptor, path);
 			return error == 0;
 		}
+	}
+
+	/* A touch pad speaks multitouch protocol B and is a pointer (touchpad.c, ws159-p004). */
+	pad = touchpad_node(capabilities);
+	if (pad) {
+		error = attach_touchpad(server, descriptor, path);
+		return error == 0;
 	}
 
 	/* A touch screen speaks multitouch protocol B (touch.c, WS079 p013); its ABS_X/Y are not a pointer. */
@@ -436,6 +452,8 @@ zwl_input_close(
 	struct zwl_server *server,
 	struct zwl_input_device *device)
 {
+	struct zwl_touchpad_actions actions;
+
 	/* A slot that is not in use has no descriptor. */
 	if (!device->live)
 		return;
@@ -447,6 +465,12 @@ zwl_input_close(
 	/* A touch screen's fingers end (touch.c). */
 	if (device->touch)
 		zwl_touch_remove(server, device, 1);
+
+	/* A touch pad lets go of every button it holds. */
+	if (device->touchpad) {
+		zwl_touchpad_release_all(&device->pad, &actions);
+		apply_touchpad_actions(server, &actions, (uint32_t)zwl_milliseconds());
+	}
 
 	/* The slot is free once its descriptor is closed. */
 	kl_backend_input_close(server->backend, device->fd);
@@ -470,6 +494,8 @@ zwl_input_forget(
 	struct zwl_server *server,
 	struct zwl_input_device *device)
 {
+	struct zwl_touchpad_actions actions;
+
 	/* A slot that is not in use has nothing to forget. */
 	if (!device->live)
 		return;
@@ -479,6 +505,12 @@ zwl_input_forget(
 		zwl_tablet_remove(server, device, 1);
 	if (device->touch)
 		zwl_touch_remove(server, device, 1);
+
+	/* A touch pad lets go of every button it holds. */
+	if (device->touchpad) {
+		zwl_touchpad_release_all(&device->pad, &actions);
+		apply_touchpad_actions(server, &actions, (uint32_t)zwl_milliseconds());
+	}
 
 	/* The slot is free; its descriptor was the seat's. */
 	device->fd = -1;
@@ -602,6 +634,8 @@ consume_event(
 			zwl_tablet_frame(server, device, time);
 		} else if (device->touch) {
 			zwl_touch_frame(server, device, time);
+		} else if (device->touchpad) {
+			apply_touchpad(server, device, time);
 		} else {
 			apply_frame(server, device, time);
 		}
@@ -796,6 +830,242 @@ apply_frame(
 
 	/* Succeeded: the report has been delivered. */
 	return;
+}
+
+/*
+ * Applies one report of a touch pad: its events go to the touch pad layer,
+ * and the layer's actions move the pointer, press its buttons and scroll
+ * (ws159-p004).
+ */
+static void
+apply_touchpad(
+	struct zwl_server *server,
+	struct zwl_input_device *device,
+	uint32_t time)
+{
+	struct zwl_touchpad_actions actions;
+	const struct input_event *event;
+	unsigned index;
+
+	/* The report's events, in order. */
+	for (index = 0; index < device->frame_count; index++) {
+		event = &device->frame[index];
+		zwl_touchpad_event(&device->pad, event->type, event->code, event->value);
+	}
+
+	/* The report's end: what the fingers did. */
+	zwl_touchpad_frame(&device->pad, zwl_milliseconds(), &actions);
+	apply_touchpad_actions(server, &actions, time);
+
+	/* Succeeded: the report has been applied. */
+	return;
+}
+
+/* Carries out the actions of the touch pad layer on the seat, as a mouse's report would. */
+static void
+apply_touchpad_actions(
+	struct zwl_server *server,
+	const struct zwl_touchpad_actions *actions,
+	uint32_t time)
+{
+	const struct zwl_touchpad_action *action;
+	unsigned activity;
+	unsigned index;
+	int moved;
+
+	/* Each action in order. */
+	activity = 0;
+	for (index = 0; index < actions->count; index++) {
+		action = &actions->actions[index];
+
+		/* Its kind. */
+		switch (action->kind) {
+		case ZWL_TOUCHPAD_MOTION:
+			/* The pointer moves, at the user's speed. */
+			moved = pointer_move(server, action->dx, action->dy, time);
+			if (moved)
+				activity = 1;
+			break;
+		case ZWL_TOUCHPAD_BUTTON:
+			/* A button's press or release. */
+			zwl_seat_button(server, time, action->button, action->pressed);
+			activity = 1;
+			break;
+		case ZWL_TOUCHPAD_SCROLL:
+			/* Wheel notches (vertical positive down, as the seat takes them). */
+			zwl_seat_axis(server, time, action->vertical, action->horizontal);
+			activity = 1;
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* Version 5 pointers are told where the actions end. */
+	if (activity)
+		zwl_seat_frame(server);
+
+	/* Succeeded: the actions are carried out. */
+	return;
+}
+
+/*
+ * Lets time pass for the touch pads: a tap whose drag did not come
+ * completes its click (touchpad.c).
+ */
+void
+zwl_input_tick(
+	struct zwl_server *server,
+	uint64_t now)
+{
+	struct zwl_touchpad_actions actions;
+	unsigned index;
+
+	/* Every touch pad in use. */
+	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+		/* A free slot, or a device that is no touch pad, has no time to keep. */
+		if (!server->inputs[index].live || !server->inputs[index].touchpad)
+			continue;
+
+		/* Its layer's timers, and what they give. */
+		zwl_touchpad_tick(&server->inputs[index].pad, now, &actions);
+		apply_touchpad_actions(server, &actions, (uint32_t)now);
+	}
+
+	/* Succeeded: the timers have run. */
+	return;
+}
+
+/*
+ * Moves the pointer by a relative motion at the user's speed, kept on the
+ * output, as a mouse's motion does (apply_frame).  Reports whether it moved.
+ */
+static int
+pointer_move(
+	struct zwl_server *server,
+	int64_t delta_x,
+	int64_t delta_y,
+	uint32_t time)
+{
+	int32_t x;
+	int32_t y;
+	int32_t old_x;
+	int32_t old_y;
+
+	/* The device moved the pointer: its arrow is shown from now on (ws035-p116). */
+	if (server->pointer_unmoved && (delta_x != 0 || delta_y != 0)) {
+		server->pointer_unmoved = 0U;
+		zwl_damage_pointer(server, server->pointer_x, server->pointer_y);
+	}
+
+	/* The motion at the user's speed (ws089-p007, a percentage), the hundredths carried. */
+	if (server->pointer_speed != 100 && (delta_x != 0 || delta_y != 0)) {
+		delta_x = delta_x * server->pointer_speed + server->pointer_remainder_x;
+		delta_y = delta_y * server->pointer_speed + server->pointer_remainder_y;
+		server->pointer_remainder_x = delta_x % 100;
+		server->pointer_remainder_y = delta_y % 100;
+		delta_x /= 100;
+		delta_y /= 100;
+	}
+
+	/* The new place, kept on the output. */
+	x = clamp_position((int64_t)server->pointer_x + delta_x, server->width);
+	y = clamp_position((int64_t)server->pointer_y + delta_y, server->height);
+	if (x == server->pointer_x && y == server->pointer_y)
+		return 0;
+
+	/* The pointer moves; the seat hears it, and the cursor is drawn at its new place. */
+	old_x = server->pointer_x;
+	old_y = server->pointer_y;
+	server->pointer_x = x;
+	server->pointer_y = y;
+	zwl_seat_motion(server, time);
+	zwl_damage_pointer(server, old_x, old_y);
+
+	/* Succeeded: the pointer moved. */
+	return 1;
+}
+
+/* Tells whether a node is a touch pad: multitouch protocol B, and a pointer by its properties. */
+static int
+touchpad_node(
+	const struct kl_backend_input_caps *capabilities)
+{
+	int present;
+
+	/* Multitouch protocol B. */
+	present = multitouch(capabilities);
+	if (!present)
+		return 0;
+
+	/* A pointer, not a screen (a backend that reads no properties offers no touch pad). */
+	present = bit_is_set(capabilities->properties, INPUT_PROP_POINTER);
+	if (!present)
+		return 0;
+
+	/* Succeeded: the node is a touch pad. */
+	return 1;
+}
+
+/*
+ * Takes a touch pad into the seat: its fingers' resolution starts its
+ * layer, and it is the seat's pointer.
+ */
+static int
+attach_touchpad(
+	struct zwl_server *server,
+	int descriptor,
+	const char *path)
+{
+	struct zwl_input_device *device;
+	struct input_absinfo x;
+	struct input_absinfo y;
+	unsigned index;
+	int error;
+
+	/* The fingers' axes; their resolution says how far a unit is. */
+	memset(&x, 0, sizeof(x));
+	memset(&y, 0, sizeof(y));
+	error = kl_backend_input_absinfo(descriptor, ABS_MT_POSITION_X, &x);
+	if (error != 0)
+		return error;
+	error = kl_backend_input_absinfo(descriptor, ABS_MT_POSITION_Y, &y);
+	if (error != 0)
+		return error;
+
+	/* Find a free slot in the fixed device table. */
+	device = NULL;
+	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+		/* A slot not in use can hold the new device. */
+		if (!server->inputs[index].live) {
+			device = &server->inputs[index];
+			break;
+		}
+	}
+
+	/* A full table cannot take another device (the caller's backend closes it). */
+	if (device == NULL)
+		return ENOSPC;
+
+	/* The slot describes this node: a pointer moved by its touch pad layer. */
+	memset(device, 0, sizeof(*device));
+	device->fd = descriptor;
+	device->pointer = 1;
+	device->touchpad = 1;
+	snprintf(device->path, sizeof(device->path), "%s", path);
+	zwl_touchpad_init(&device->pad, x.resolution, y.resolution);
+
+	/* The slot is published only when it is completely filled in. */
+	device->live = 1;
+
+	/* One line lets a test see the touch pad and its resolution. */
+	printf("ZWL INPUT device=%s kind=touchpad abs=0 resolution=%d,%d\n", device->path, x.resolution, y.resolution);
+
+	/* Bound seats learn that a pointer is there. */
+	update_capabilities(server);
+
+	/* Succeeded: the event loop now reads this device. */
+	return 0;
 }
 
 /* Tracks the modifier keys and delivers one key with any modifier change. */
