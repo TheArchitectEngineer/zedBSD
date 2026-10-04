@@ -418,6 +418,7 @@ zwl_glass_draw(
 	struct zwl_object **windows,
 	unsigned count)
 {
+	static const float screen_black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	struct glass_shape shape;
 	struct zwl_object *top;
 	struct zwl_object *cover;
@@ -432,6 +433,12 @@ zwl_glass_draw(
 	int showing;
 	float home;
 	float position;
+
+	/* A screen the closed lid put out is black (backend-host.c, ws132-p008). */
+	if (server->screen_off) {
+		glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, screen_black);
+		return;
+	}
 
 	/* The login screen, or a session's lock screen, is all there is to draw (greeter.c). */
 	if (server->greeter || server->locked) {

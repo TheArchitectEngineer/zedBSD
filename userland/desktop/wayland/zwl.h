@@ -46,6 +46,7 @@
 #include "touchpad.h"
 #include "apps.h"
 #include "switcher.h"
+#include "lid.h"
 #include "super-tap.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -811,6 +812,18 @@ struct zwl_server {
 	struct kl_backend *backend;
 	/* The power as last read (ws132-p003): at start-up and at each power_changed; the bar shows the battery when percent >= 0. */
 	struct kl_backend_power_state power;
+	/*
+	 * The lid (backend-host.c, ws132-p008): its state and whether the lock
+	 * standing is its own (lid.c); whether the screen is out (drawn black);
+	 * the built-in panel's backlight while the compositor has it open (NULL
+	 * on a machine without one, or before the first closing), the
+	 * brightness to give back at the opening, and whether it was put out.
+	 */
+	struct zwl_lid lid;
+	unsigned screen_off;
+	struct kl_backend_backlight *backlight;
+	unsigned backlight_saved;
+	unsigned backlight_out;
 	/* OS device authority can pause composition; zedBSD always leaves this zero. */
 	unsigned os_paused;
 	unsigned windowed;
@@ -1218,6 +1231,8 @@ void zwl_backend_power_button(void *data, unsigned button);
 void zwl_backend_lid_changed(void *data, unsigned open);
 void zwl_power_read(struct zwl_server *server);
 int zwl_lock(struct zwl_server *server, const char *reason);
+void zwl_lock_release(struct zwl_server *server, const char *reason);
+void zwl_lid_screen_restore(struct zwl_server *server);
 void zwl_greeter_answer(struct zwl_server *server, unsigned request, int error);
 int zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 int zwl_emit_fd(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);

@@ -33,7 +33,7 @@ Resume point: p001（設計）を書いた（[phase001](phase001/phase.md)、D1�
 | [ws132-p001](phase001/phase.md) | 設計 | in-progress（2026-10-05 q707-i01 P1: 設計を書いた、D1〜D3 は人間の判断待ち） | — |
 | [ws132-p002](phase002/phase.md) | 事象の核（`/dev/system` の購読・read・poll）、UAPI、送り手（ACPI の電源ボタン・蓋・AC・電池、disk、input、USB、network）、`KERN_SYSTEM_GET_POWER` | cleared（2026-10-05 Q1、T1-132） | p001 |
 | [ws132-p003](phase003/phase.md) | Keiland の backend の事象（events-zedbsd.c、Linux・FreeBSD は stub）、compositor の input の探し直しと電池・AC の表示（D1・D2 に依らない分。2026-10-05 Q1 が電源ボタン・蓋の動作を p008 に分けた） | cleared（2026-10-05 Q1、T1-132） | p002 |
-| ws132-p008 | compositor の電源ボタン・蓋の動作。D1: 電源ボタンの短押しは dialog 無しで S0i3（WS052 の後）。D2: 蓋を閉じたら画面を消して lock、15 分以内に開けたら password 無しで自動の unlock（S0i3 までの間）。蓋の分を先に（q724） | planned（蓋の分、2026-10-05） | p003 |
+| [ws132-p008](phase008/phase.md) | compositor の電源ボタン・蓋の動作。D1: 電源ボタンの短押しは dialog 無しで S0i3（WS052 の後）。D2: 蓋を閉じたら画面を消して lock、15 分以内に開けたら password 無しで自動の unlock（S0i3 までの間）。蓋の分を先に（q724） | in-progress（2026-10-05 P1 / q724: 蓋の分を実装、build warning 0（zedBSD・Linux）、host 29 checks。QEMU は蓋が無く未実施、実機は UAT。電源ボタンは WS052 の後） | p003 |
 | ws132-p004 | volumed（D3 の決定: 自動 mount はせず媒体の追加を通知、double click で /media/ の下に mount、抜去・eject の口） | planned（q723、2026-10-05 D3 決定） | p002 |
 | ws132-p005 | libkeiland の volume の口、Files の左の pane の Devices の group と Today の icon（数回点滅）・double click で mount・eject | planned（q723） | p004 |
 | ws132-p006 | QEMU の試験と全文の規約 | planning | p002〜p005 |
