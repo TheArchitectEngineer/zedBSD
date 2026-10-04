@@ -15,7 +15,7 @@
 | P3 / generation7（2026-10-04、終了） | bug-analyzer（Fable 5.1、high） | BUG-158 の解析（WS005・WS004） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（解析、finished） | — | stopped | 52df29f → main b7bced6 |
 | P3 / generation8（2026-10-04、ラップアップで終了、最後 762efbc） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装、流れ B（q685〜q690）、BUG-165 の残り（P1 の区切りの後） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（実装、T1-089・UAT 待ち）、q685 は読みで中断 | q685 の残り・q686〜q690（generation9 で、P4 の終了の後） | stopped | 5ecc43b・48cf8f6・762efbc を統合 |
 | P4 / generation2（2026-10-04、終了） | hard-debugger（Fable 5.1、high） | BUG-158 の AX211 passthrough での解析（q684-i02） | `/home/awe/zedBSD-worktrees/p4` / `agent/p4` | q684-i02（原因確定、計画を ticket に） | — | stopped | da8577c..828b5b6 を統合 |
-| P3 / generation9（2026-10-04） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装（q684-i03）→ q685〜q690 | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684-i03 | q685〜q690 | running | base main |
+| P3 / generation9（2026-10-04、利用枠でラップアップ、最後 97543a4 → main a5ad8b7） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装（q684-i03）→ q685〜q690 | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | — | 再開: q685（ws033/phase001 の記録）〜q690 | stopped | 全 commit 統合済み |
 | T1（2026-10-04 19 時の generation、T1-091 の後に終了） | test-runner | 試験 | 同上 | — | — | stopped | T1-091 PASS |
 | T1（2026-10-04 17 時の generation、終了） | test-runner | 試験 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | — | — | stopped（必要な時に起動） | TQ-1・TQ-2・T1-086〜T1-090 |
 | P2 / generation13（2026-10-04、利用枠でラップアップ、最後 0304720 → main 1adcc3a） | phase-runner（high） | WS141・WS037 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | — | 再開: ws141-p003 の QEMU 回帰（N0 の revision の判定の危険）→ 実機の N0 → N1、WS037 の判断 5〜18 | stopped | 全 commit 統合済み |
