@@ -420,6 +420,7 @@ p003 の補いの辞書（D3）で、基本の語（私・この・日本・多�
     `73819384159330a0c822915d0fd211c3e21dea77f2cfd2083273ac1ffd121ab9` を確かめてから `$(WORKROOT)/ime-dict-ja/SKK-JISYO.X` に写す（合わなければ
     止まる。p003 で確かめた）。
   - image の `/usr/share/kei/ime/ja/SKK-JISYO.X` と、補いの辞書 `/usr/share/kei/ime/ja/SKK-JISYO.kei`（`userland/desktop/ime/dict/`）に入れる（mode 0644）。
+    **2026-10-05 ws095-p017 で改めた**: 2 つを 1 つの file `/usr/share/keiland/ime/ja/SKK-JISYO.ja`（`userland/desktop/ime/dict/SKK-JISYO.ja`、`merge.sh` で作った）にまとめた。補い（前の `.kei`）の部分の後に行 `;; ==== part: system ====` から REmacs の辞書（前の `.X`）の部分が続き、engine は 1 回読んで 2 つの部分を別の辞書として引く（`ja_dict_load_parts`）。見出しごとに候補を混ぜなかったのは、分割（ja-segment.c）が補いの見出しを system の見出しより重く見るためで、混ぜると変換が変わる（100 文・held-out 2 組の結果が統合の前と同じことを確かめた）。
     remacs の package とは独立（remacs を選ばない image でも IME は辞書を持つ）。
   - package の既定は **選ばない**（n）。IME の program（p004）の package が既定で選ばれ、この package を REQUIRE する形にする（program の無い間に
     全ての image が辞書を取得しないように）。

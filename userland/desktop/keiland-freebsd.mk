@@ -147,10 +147,9 @@ $(eval $(call KEILAND_FREEBSD_DATA,share/keiland/wallpaper.ppm,$(KEILAND_FREEBSD
 KEILAND_FREEBSD_ALL += $(KEILAND_FREEBSD_WALLPAPERS)
 KEILAND_FREEBSD_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .ppm,$(KEILAND_FREEBSD_WALLPAPER_NAMES)))
 
-# The Japanese dictionaries are in the tree (userland/desktop/ime/dict, copied from userland/base/emacs/dict on
-# 2026-10-04); the copyright holder's WS095 D1 relicensing places them under the project license.
-$(eval $(call KEILAND_FREEBSD_DATA,share/kei/ime/ja/SKK-JISYO.X,userland/desktop/ime/dict/SKK-JISYO.X))
-$(eval $(call KEILAND_FREEBSD_DATA,share/kei/ime/ja/SKK-JISYO.kei,userland/desktop/ime/dict/SKK-JISYO.kei))
+# The Japanese dictionary is in the tree (userland/desktop/ime/dict/SKK-JISYO.ja, one file of the supplement and
+# REmacs's dictionary since ws095-p017); the copyright holder's WS095 D1 relicensing places it under the project license.
+$(eval $(call KEILAND_FREEBSD_DATA,share/keiland/ime/ja/SKK-JISYO.ja,userland/desktop/ime/dict/SKK-JISYO.ja))
 
 .PHONY: all libraries install install-headers print-sources header-dependencies
 all: $(KEILAND_FREEBSD_ALL)
