@@ -98,6 +98,13 @@ ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 ARM64_USB_SOURCES += src/drivers/usb/usb-hub.c
 endif
 ARM64_KERNEL_SOURCES += $(ARM64_USB_SOURCES)
+# The BCM2711 graphics driver (ws141): the display path and V3D.
+ifeq ($(CONFIG_DRIVER_BCM2711_GPU),y)
+ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
+	src/drivers/gpu/bcm2711/stage.c src/drivers/gpu/bcm2711/fdt-util.c \
+	src/drivers/gpu/bcm2711/clock.c src/drivers/gpu/bcm2711/display.c \
+	src/drivers/gpu/bcm2711/v3d.c
+endif
 ARM64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
 ARM64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
