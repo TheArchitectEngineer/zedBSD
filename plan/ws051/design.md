@@ -1,8 +1,8 @@
 # WS051 設計: USB-C の DisplayPort Alternate Mode
 
-Status: 案の第 2 版（2026-10-04、ws051-p001、P1 generation16）。WS050 §10 のユーザーの決定（[WS050 design](../ws050/design.md) の末尾）と、
-WS051 §10 のユーザーの決定（この文書の末尾）、Guardrail の「GPU の driver の scanout の規則」（2026-10-04）を反映した。design-reviewer の
-敵対的レビューは第 1 版に対して実施中。
+Status: 案の第 3 版（2026-10-04、ws051-p001、P1 generation16）。WS050 §10 のユーザーの決定（[WS050 design](../ws050/design.md) の末尾）と、
+WS051 §10 のユーザーの決定（この文書の末尾）、Guardrail の「GPU の driver の scanout の規則」（2026-10-04）を反映し（第 2 版）、第 1 版への
+[敵対的レビュー](design-review-2026-10-04.md)（H1〜H8・M1〜M10・L1〜L4）を反映した（第 3 版、§11 に各項目の扱い、§12 に追加の設計）。
 
 ## 1. 目的と範囲
 
@@ -17,7 +17,8 @@ boot の時に GOP が出していた出力先（port・pipe）を引き継い�
 できるよう初期化を試みる（Guardrail の同じ節の補い、2026-10-04 ユーザー「GOPの出力先であれば、scanoutできるようにどのインタフェースでも初期化を
 試みる」）。i915 がその種類の出力にまだ対応していない時は log に出して firmware の画面を保つ（GOP の framebuffer の出力を止めない）。
 
-範囲外（§10・末尾の決定 1）: Thunderbolt の alt mode（TBT-alt。TBT の dock の先の DP。TBT PLL と TC cold off の power well（PCODE の handshake）が要る）、
+範囲外（§10・末尾の決定 1）: Thunderbolt の alt mode（TBT-alt。TBT の dock の先の DP。TBT PLL・AUX_TBT・`DP_AUX_CH_CTL_TBT_IO` が要る。
+ADL-P には TC cold off の well は無い（TGL だけ、レビュー M1）。状態機械の TBT_ALT は「PHY を所有していない」状態として残す、§12）、
 DP MST、DSC、HDMI の alt mode、USB4 の DP tunnel。mirror・拡張の構成と画面の配置は Keiland と WS113 の担当（この WS は i915 の側の出力と通知）。
 
 ## 2. Alder Lake-P の DP-alt の分担
@@ -53,13 +54,20 @@ WS050 design §13。画面を出す判断は常に i915 の値で行う）。た
 - combo PHY（A・B）だけ（`phy.c`）。**Type-C は未移植**: `intel_tc.c` 全体（`hotplug.c` の「intel_tc_port_connected() is not ported and answers
   false」）、DKL PHY とその buffer translation、TC PLL（`takeover.c` は MG/TC PLL の読み出しの表だけ、「icl_ddi_tc_get_pll not ported」）、
   外部 DP の detect（`intel_dp_detect` は「not ported and answers unknown」）、外部 DP の HPD の pulse（`intel_dp_hpd_pulse`）。
-- 既にあるもの: AUX の転送（`aux.c`、TGL+ の register の選び方。TC の AUX の channel で動くかは要確認）、eDP の link training（`dp.c`）、
-  DE・SDE の HPD の割り込みの有効化（`interrupts.c` が TC と TBT の bit を有効にする）、xelpd の power well の表（AUX_USBC・DDI_IO_TC を含む。
-  ICL の AUX の ops の TC の分岐が正しいかは要確認）。`power.c` の「TC cold-off well is not built」は ADL-P では TBT-alt にだけ要る（DP-alt は
-  AUX_USBC の domain、Linux の `adlp_tc_phy_cold_off_domain`）。
-- **既存の誤り（要修正）**: `takeover.c` の VBT の DVO port の code が Linux と違う（`I915_DVO_PORT_DPG` 16・`HDMIG` 15、Linux は DPG 15・HDMIG 16）。
-  XXX の注は「ADL-P の TC1〜TC4 はそこに達しない」と言うが、**5330 の TC2 の child は DP-G（0x0f = 15）なので HDMI-G と読み違える**。p002 で直す
-  （WS031・WS075 の担当の source なので、直す前に Q1 に知らせる）。
+- 既にあるもの: AUX の転送（`aux.c`、USBC の register の選び方は正しい、レビューで確認）、eDP の link training（`dp.c`）、DE の HPD の割り込みの
+  **有効化だけ**（`interrupts.c` は `GEN11_DE_HPD_IIR` を ack して数えるだけで hotplug へ渡さない、レビュー H5）、xelpd の power well の表
+  （AUX_USBC1〜4・DDI_IO_TC1〜4、ただし AUX_USBC の well の enable に TC の分岐（`TBT_IO` の消去、DKL の `UC_HEALTH` の待ち）が無い、H2）、
+  ddi.c の TC の分岐（Linux の順で既にあるが、呼ぶ先の多くが stub、H4）。
+- **既存の誤り（要修正、レビューで判明）**:
+  - **TC の AUX の power domain の計算**（H1）: `dp-internal.h` の `i915_aux_power_domain`、`modeset-internal.h` の
+    `intel_display_power_legacy_aux_domain`、`pipe.c` の `drv_i915_aux_power_domain` が `AUX_A + (aux_ch - AUX_CH_A)` で、`AUX_CH_USBC1 = AUX_CH_D`
+    なので TC1 で AUX_D を点け、AUX_USBC1 を点けない（TC cold を防げない）。Linux の d13 の port の domain の表に置き換える（p002b）。
+  - **TC PLL の enable の register**（H8）: `takeover.c` が TC PLL n を `0x46030 + 4n`（MG_PLL_ENABLE）としているが、ADL-P は
+    `ADLP_PORTTC_PLL_ENABLE`（TC1 0x46038、間隔 8）。readout が別の register を読み、sanitize が TC1 の PLL の bit を消しうる（p002、takeover の修正と一緒に）。
+  - VBT の DVO port の code（`takeover.c` の DPG 16・HDMIG 15、Linux は DPG 15・HDMIG 16）: **第 1 版の「5330 の TC2 を読み違える」は誤り**
+    （レビュー L1）。code 15 は zedBSD でも TC2 に写り、HDMI か DP かは device_type（0x68c6 = DP）で決まるので 5330 は読み違えない。誤るのは code
+    17〜21（TC3・TC4）だけで 5330 には無い。`vbt.c` は既に正しい定義（`intel/vbt-defs.h`）を使っているので、takeover の写像を vbt.c のものに寄せる
+    整理（急ぎでない）として p002 に残す。
 
 ## 5. 移植の範囲（Linux の関数、ADL-P の分だけ）
 
@@ -67,7 +75,7 @@ WS050 design §13。画面を出す判断は常に i915 の値で行う）。た
 | --- | --- | --- |
 | TC の port の状態 | `intel_tc.c`: `intel_tc_port_init`、`adlp_tc_phy_ops`（`hpd_live_status`・`is_ready`・`take_ownership`・`is_owned`・`get_hw_state`・`connect`・`disconnect`・`init`）、`tc_phy_load_fia_params`、`intel_tc_port_max_lane_count`・`intel_tc_port_get_max_lane_count`、`tc_phy_get_current_mode`、`tc_phy_verify_legacy_or_dp_alt_mode`、`intel_tc_port_connected`、`intel_tc_port_lock`・`unlock`・`get_link`・`put_link`（参照の数を数える最小の形） | `display/tc.c`（新）、`intel/tc.h`（register の定義） |
 | TC cold と power | `tc_cold_block`・`unblock`（ADL-P の DP-alt・legacy は AUX_USBCn の domain）、`intel_display_power_legacy_aux_domain`、ICL の AUX の power well の TC の分岐（`icl_aux_power_well_enable` の TC） | `display/power.c` の確認と補い |
-| DKL PHY | `intel_dkl_phy.c`（index の register を lock の下で読み書き）、DDI の `tgl_dkl_phy_set_signal_levels`、`intel_ddi_buf_trans.c` の `tgl_dkl_phy_trans_dp_hbr`・`hbr2` | `display/dkl-phy.c`（新）、`phy.c` の buffer translation の選び方 |
+| DKL PHY | `intel_dkl_phy.c`（index の register を lock の下で読み書き、p002b へ前倒し: AUX_USBC の well の `UC_HEALTH` の待ちが要る、H2）、DDI の `tgl_dkl_phy_set_signal_levels`、ADL-P の表 `adlp_get_dkl_buf_trans`・`adlp_dkl_phy_trans_dp_hbr`・`adlp_dkl_phy_trans_dp_hbr2_hbr3`（第 1 版の tgl の表は誤り、H3）、`icl_program_mg_dp_mode`（pin の割り当てから DKL_DP_MODE の x1・x2）、`adlp_tbt_to_dp_alt_switch_wa` | `display/dkl-phy.c`（新）、`phy.c` の `get_buf_trans` の TC の分岐 |
 | TC PLL | `intel_dpll_mgr.c` の `dkl_pll_funcs`（`dkl_pll_enable`・`disable`・`get_hw_state`）、`icl_calc_mg_pll_state`（DKL の値の計算）、`icl_compute_dplls`・`icl_get_dplls` の TC の port の分（TC PLL n を port に割り当てる）、`icl_ddi_tc_enable_clock`・`disable_clock`・`is_clock_enabled`・`icl_ddi_tc_get_pll` | `display/clock.c`（今の DPLL の管理）と `ddi.c` |
 | 外部 DP の検出 | `intel_dp_detect`（DPCD・sink count・EDID）、`intel_dp_hpd_pulse`（長い pulse = 抜き差し、短い = IRQ_HPD、link の状態の確認）、AUX の I2C over AUX の EDID の読み（既存の `edid-read.c` の経路） | `dp-sink.c`・`hotplug.c` |
 | link training・DDI の enable | 既存の eDP の link training を外部 DP（TC の port、lane 数は FIA の最大、rate は HBR3 まで）へ。`tgl_ddi_pre_enable_dp` の TC の段（`intel_tc_port_get_link`、`DDI_BUF_CTL` の lane の reversal は TC では無し） | `dp.c`・`ddi.c` |
@@ -133,12 +141,15 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 | Phase | 内容 | 依存 | 受け入れ |
 | --- | --- | --- | --- |
 | p001 | 調査と設計（この文書） | — | この文書、レビュー、§10 の判断 |
-| p002 | **GOP の出力先の引き継ぎと外部優先の廃止**（Guardrail の scanout の規則、決定 2）: `takeover.c` が GOP の pipe・transcoder・port を読み取り driver の出力先にする、`output.c` の外部 display の優先をやめる、VBT の DVO port の code の修正（同じ `takeover.c`、i915 の他の利用への影響を確かめる） | p001 | 実機で GOP の出力先（panel・HDMI）がそのまま引き継がれ、外部の display があっても driver が切り替えない。QEMU の boot test（T1）、build warning 0 |
-| p002b | TC の port の核（`tc.c`: live status・FIA・ready・ownership・TC cold・connect/disconnect）、TC の HPD の割り込みから live status へ、診断の log（向きの確かめ（WS050 の決定 4）の register の記録を含む） | p002 | host の fixture の試験、compile・build warning 0、UAT の (1) と向きの記録の手順 |
-| p003 | DKL PHY と TC PLL（`dkl-phy.c`、DKL PLL、DDI の TC の clock、buffer translation） | p002、bare metal の Linux の正解値 | PLL の値の計算が Linux と同じ（host）、build |
-| p004 | 外部 DP の検出と display の UAPI での出力（TC の AUX、DPCD・EDID、`GPU_DISPLAY_QUERY` への TC の output、claim・mode・present での link training・modeset・scanout） | p003、WS113 の契約 | 実機で Keiland（か display の UAPI の試験の program）の claim・present で TC1・TC2 に画面が出る（UAT の (2)） |
-| p005 | 抜き差しの事象（HPD の長い pulse で `GPU_DISPLAY_EVENT_CHANGE`、scanout 中の抜けで pipe を止め PHY を disconnect、IRQ_HPD で link の確認） | p004 | 実機で抜き差しが libvulkan の Display の通知に届き、差し直して Keiland の指示で画面が戻る（UAT の (3)） |
+| p002 | **GOP の出力先の引き継ぎと外部優先の廃止**（Guardrail の scanout の規則、決定 2）: `takeover.c` が GOP の pipe・transcoder・port を読み取り driver の出力先にする、`output.c` の外部 display の優先をやめる、GOP の出力先の種類が未対応なら初期化を試みて GOP の画面を保つ、TC PLL の enable の register の修正（H8）、VBT の DVO の写像を vbt.c に寄せる整理（L1） | p001 | 実機（UAT の環境は §12 の H6）で GOP の出力先（panel・HDMI）がそのまま引き継がれ、外部の display があっても driver が切り替えない。host 試験で TC PLL の番地、QEMU の boot test（T1）、build warning 0 |
+| p002b | TC の port の核（`tc.c`: live status・FIA・ready・ownership・TC cold・connect/disconnect、状態機械（TBT_ALT は未所有の placeholder）、init_mode・sanitize）、TC の AUX の power domain の修正（H1）、AUX_USBC の well の TC の分岐と DKL の index の読み（H2）、DE の HPD の割り込みの配送（`gen11_hpd_irq_handler`、long・short の判定、H5）、診断の log（向きの確かめの register の記録を含む） | p002 | host の fixture の試験（aux_ch と domain の表、connect の順と巻き戻し）、compile・build warning 0、UAT の (1) と向きの記録の手順 |
+| p003 | DKL PHY と TC PLL（`dkl-phy.c` の残り、DKL PLL、`icl_ddi_tc_*`、`icl_update_active_dpll`、ADL-P の DKL の buffer translation、DP_MODE、FIA の lane 数） | p002b、正解値（§12 の H6） | PLL の値の計算が Linux と同じ（host）、build、PLL の lock の bit の読み戻しの診断（M7） |
+| p004a | TC の AUX・DPCD・EDID の診断（modeset なし）、外部 DP の object の model（M6）、調べた後の同期の disconnect（M2）、branch device（protocol converter）の最小の扱いと sink count（H7） | p003 | 実機で TC1・TC2 の DPCD・EDID が読め、調べた後に PHY を手放す |
+| p004b | display の UAPI での出力（`GPU_DISPLAY_QUERY` への TC の output、claim・mode・present での link training（fallback を含む、M3）・modeset・scanout） | p004a、WS113 の契約 | 実機で Keiland（か display の UAPI の試験の program）の claim・present で TC1・TC2 に画面が出る（UAT の (2)） |
+| p005 | 抜き差しの事象（HPD の長い pulse で `GPU_DISPLAY_EVENT_CHANGE`、2 秒の猶予と 5 回の retry、scanout 中の抜けで pipe を止め PHY を disconnect、IRQ_HPD で retrain、M4）、S0ix の口（M10） | p004b | 実機で抜き差しが libvulkan の Display の通知に届き、差し直して Keiland の指示で画面が戻る（UAT の (3)） |
 | p006 | 規約の全文の確認と最終の確認 | p002〜p005 | 規約、build、boot test（T1）、実機の回帰 |
+
+外部の前提（Phase でない）: 正解値の採取（§12 の H6、人の作業と承認）。WS050 p004（SET_NEW_CAM）への条件付きの依存（UAT の (1) で firmware が自分で DP mode に入らない時）。
 
 ## 10. 人間の判断の点（2026-10-04 に決定済み。決定は末尾、この節は第 1 版の案の記録）
 
@@ -148,6 +159,89 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 3. hotplug の範囲の案 → 決定 3・4: driver は切り替えず、Vulkan の Display の拡張の通知で Keiland に知らせる（§6）。
 4. （決定済み）ws.md の依存と前提: 2026-10-04 のユーザーの決定 5 とその補足で「HPD・pin は i915 の TCSS・FIA から、UCSI 2.0 以上で取れる時は
    UCSI からも。WS051 は UCSI を待たずに進める」と決まり、ws.md を直した。
+
+## 11. レビューの項目の扱い
+
+| 項目 | 扱い |
+| --- | --- |
+| H1 TC の AUX の domain | §4 の既存の誤り、p002b |
+| H2 AUX_USBC の well の TC の分岐、DKL の前倒し | §5、p002b |
+| H3 ADL-P の DKL の表 | §5（adlp の表に訂正）、p003 |
+| H4 移植の範囲の不足と stub | §12 の表、各 Phase |
+| H5 DE の HPD の配送 | §4、p002b |
+| H6 試験の環境（VFIO と native） | §12、§13 の人間の判断 |
+| H7 branch device・sink count | §12、p004a |
+| H8 TC PLL の enable の番地 | §4、p002 |
+| M1 TBT_ALT の状態と PCODE の誤り | §1、§12、p002b |
+| M2 調べた後の disconnect | §12、p004a |
+| M3 training の fallback | §12、p004b |
+| M4 debounce・retry・retrain | §12、p005 |
+| M5 起動時の TC と待ち | §12（GOP が USB-C の時、init_mode・sanitize・`icl_ddi_tc_get_pll`） |
+| M6 外部 DP の model | §12、p004a |
+| M7 Phase の分割 | §9（p004 を a・b に、診断を p003 に、外部の前提を明記） |
+| M8 lock の順 | §12 |
+| M9 向きを i915 から取る見込み | §12、Q1 経由でユーザーへ（決定 4 の見直し） |
+| M10 S0ix | §12、p005、WS052 design の device の表 |
+| L1 VBT の主張の誤り | §4 を訂正 |
+| L2 TCSS_DDI_STATUS の pin・HPD_LIVE | §12（ADL-P では診断の値）、WS050 §13 の表に注記を依頼 |
+| L3 採取の正 | §12（debugfs と drm.debug を正、intel_reg の DKL は参考） |
+| L4 weak の口 | §8 の `typec_display_report` に理由の comment を付ける |
+
+## 12. 追加の設計（第 3 版、レビューの反映）
+
+- **移植と置き換える stub**（H4、Linux v6.8.12 の関数 → zedBSD の stub、file はレビューの行番号の時点）:
+
+| Linux | zedBSD の stub | Phase |
+| --- | --- | --- |
+| `intel_tc_port_in_dp_alt_mode`・`intel_tc_port_in_tbt_alt_mode`（`intel_tc.c`） | `modeset-internal.h` の (0)・常に false | p002b |
+| `intel_tc_port_lock`・`connected_locked`（`intel_tc.c:1813-1822` ほか） | `dp-internal.h` の無処理・常に true | p002b |
+| `tc_port_power_domain`・ownership の DDI_LANES_TCn の domain（`intel_tc.c:245-252, 822-846`） | 無し | p002b |
+| `intel_tc_port_init_mode`・`sanitize_mode`（`intel_tc.c:1465-1591`） | `takeover-internal.h` の STEP | p002b |
+| link reset の一式（`intel_tc.c:1621-1745`） | `hotplug-internal.h`・`hotplug.c` の link_reset | p005 |
+| `gen11_hpd_irq_handler`（`intel_hotplug_irq.c:655-688`）、`GEN11_TC_HOTPLUG_CTL` の rmw と long の判定 | `interrupts.c` の ack だけ | p002b |
+| `intel_tc_port_get_link`・`put_link`・`set_fia_lane_count`・`get_pin_assignment_mask` | `modeset-internal.h` の STEP | p003 |
+| `icl_program_mg_dp_mode`（`intel_ddi.c:2082-2164`） | `modeset-internal.h` の GUARD（TC で error） | p003 |
+| `icl_update_active_dpll`・`intel_ddi_update_active_dpll`・`icl_ddi_tc_port_pll_type` | STEP | p003 |
+| `adlp_tbt_to_dp_alt_switch_wa`（`intel_ddi.c:3495-3504`） | ADLP_WA の STEP | p003 |
+| `intel_ddi_hotplug`（TC の 5 回の retry、`intel_dp_retrain_link`、`intel_ddi.c:4515-4575`） | 無し | p005 |
+| `intel_dp_configure_protocol_converter`・downstream の上限 | `modeset-internal.h` の GUARD（branch で error） | p004a |
+
+- **状態機械**（M1）: TBT_ALT を「PHY を所有していない」状態として Linux と同じに残す（既定の mode、connect の失敗の後の状態）。TBT_ALT では出力
+  せず（`connected_locked` が BIT(mode) で絞るので detect は disconnected）、TBT の AUX（`intel_display_power_tbt_aux_domain` は INVALID）を呼ばない。
+- **調べた後の disconnect**（M2）: AUX で port を調べたら、出力しない port の PHY の ownership を同期で手放す（Linux の put_link の flush と同じ。
+  firmware は他の TC の port の HPD を、この port の PHY が disconnect されるまで更新しない）。遅延の work は移さず同期の disconnect に置き換える。
+- **training の失敗**（M3）: fallback（rate を下げ、次に lane を減らす）を移す。全て失敗したら claim・present に error を返し、Keiland が別の出力を
+  選ぶ（driver は自分で panel に戻さない、Guardrail の規則）。
+- **debounce・retry**（M4）: 抜けても 2 秒待ち、まだ link の reset が要る時だけ止める。差した直後の detect は 5 回 retry。IRQ_HPD は retrain。
+- **起動時**（M5）: GOP が USB-C に出していた時は init_mode・sanitize・`icl_ddi_tc_get_pll`（TC PLL の readout）で状態を引き継ぐ。PD の交渉と DP mode の
+  突入に数秒かかる見込みなので、graphical session の列挙は change の事象で後から届いてよい（driver は待たない）。
+- **外部 DP の model**（M6）: eDP 専用の `i915_edp_device` と別に、外部 DP の object（intel_dp、saved_port_bits、DPCD の cache）を TC の port ごとに
+  持つ。pipe と transcoder は claim の時に空きから割り当て（TRANSCODER_EDP は使わない）、lane 数は min(sink、FIA、VBT の X4)、MST は SST に固定
+  （`DP_MSTM_CTRL` = 0）。
+- **branch device**（H7）: DPCD 1.3 以上の branch（USB-C→HDMI・DP の adapter）で protocol converter の最小の設定（HDMI の mode の選択だけ、DSC・
+  YCbCr の変換は範囲外）と downstream の最大の TMDS clock の検査を移す。sink count = 0（adapter だけ）は disconnected として扱う。
+- **lock の順**（M8）: tc の lock → power domains の mutex → DKL の spinlock。`ICL_DPCLKA_CFGCR0` は combo と共有で dpll の lock の下。aux の `put_async`
+  と disconnect の順は `drv_i915_display_power_flush_work` で揃える。WS050 への `typec_display_report` は tc の lock の外、thread の文脈で、block しない。
+- **向き**（M9）: pin C・E（4 lane）では FIA の lane mask は向きによらず 0xF、DP-alt でない接続（USB だけ、充電）では i915 に何も出ない。5330 の ACPI
+  に PMC mux・IOM の device も見当たらない。**i915 から向きが取れるのは、取れたとしても pin D の DP-alt の時だけ**の見込み（推測）。WS050 の決定 4 の
+  受け入れの見直しを Q1 経由でユーザーに仰ぐ。p002b の試験には pin D の adapter（USB-A 付きの multiport）と pin C の adapter の両方が要る。
+- **S0ix**（M10）: suspend で pipe を止め PHY を disconnect（`intel_tc_port_suspend` 相当）、ACPI の TCSS の D3cold（ssdt7）より前に PHY を手放す。
+  resume で init_mode と detect をやり直す（WS052 の device の表の i915 の行に載せる）。
+- **TCSS_DDI_STATUS の pin・HPD_LIVE**（L2）: Linux 6.8 が pin の field を使うのは display 20（LNL）だけで、HPD_LIVE の bit は未使用。ADL-P では
+  診断の値として読み、判断には FIA と DE の HPD を使う。
+- **試験の環境**（H6）: zedBSD の i915 の「実機」の試験は 5330 の上の QEMU の VFIO の passthrough（`plan/ws075/tests/test-hw.sh`、GOP は走らない）。
+  VFIO では FIA・TCSS・DDI は guest から見えるが、DP mode の突入と TCSS の電源は host の Debian（ucsi_acpi、thunderbolt、xHCI の runtime PM）が握り、
+  UAT の (1)・TC cold の結果を汚す。native（zedBSD を 5330 で直接起動）か、VFIO で host の typec・thunderbolt と TCSS の PM を止めるか、正解値を
+  bare metal の Linux で採るか（共有の試験 host の vfio-pci を外す、他の担当の `/tmp/i915-hw.lock` を止める）を §13 で決める。正解値は debugfs の
+  `i915_shared_dplls_info` と `drm.debug=0x1e` の log を正にする（L3。`intel_reg` での DKL の index の読みは参考）。
+
+## 13. 人間の判断が要る点（第 3 版）
+
+1. **試験・正解値の環境**（H6）: (a) UAT を native（zedBSD を 5330 で直接起動）で行うか VFIO で行うか、(b) VFIO なら host の typec・thunderbolt の
+   driver と TCSS の PM を止めてよいか、(c) bare metal の Linux（5330）で register の正解値を採る手順（kernel の版、vfio-pci の解除、試験の lock、
+   他の担当の停止）の承認。
+2. **向き**（M9）: WS050 の決定 4（1.x でも向きを i915 から取る）は、取れても pin D の DP-alt の時だけの見込み。受け入れを「i915 から取れる時だけ
+   （pin D）、それ以外は不明」にしてよいか。
 
 ## ユーザーの決定（2026-10-04、§10）
 

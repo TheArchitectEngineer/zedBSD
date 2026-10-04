@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p001`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-04。[design.md](../design.md) 第 1 版を書いた。design-reviewer のレビュー待ち、§10 の判断待ち）
+Status: in-progress（2026-10-04。[design.md](../design.md) 第 3 版（§10 の決定とレビューを反映）。§13 の人間の判断待ち）
 Phase disposition: normal
 Queue: q680 / q680-i01（P1）
 
@@ -46,3 +46,18 @@ Queue: q680 / q680-i01（P1）
 ## 再開点
 
 - design-reviewer の敵対的レビュー（次）。§10 の 1〜3（TBT-alt を範囲外、1 画面の model、hotplug の範囲）を Q1 経由でユーザーに確かめる。
+
+## 第 2 版・第 3 版（2026-10-04、P1 generation16）
+
+- 第 2 版: WS051 §10 のユーザーの決定（TBT-alt 範囲外、GOP の出力先の引き継ぎ・外部優先の廃止、hotplug は Vulkan の Display の拡張で Keiland へ）と
+  Guardrail の scanout の規則を反映。
+- 第 3 版: design-reviewer の結果（[design-review-2026-10-04.md](../design-review-2026-10-04.md)、高 8・中 10・低 4）を反映（design §11・§12）。
+  特に: TC の AUX の power domain の誤り（H1）、AUX_USBC の well の TC の分岐（H2）、ADL-P の DKL の表（H3）、DE の HPD の配送の欠け（H5）、TC PLL の
+  enable の番地の誤り（H8）を既存の誤りとして記録し Phase に割り振った。**第 1 版の「VBT の DVO の code で 5330 の TC2 を読み違える」は誤り**（L1、
+  Q1 に訂正を報告）。Phase を p002・p002b・p003・p004a・p004b・p005・p006 に分け直した。
+
+## 再開点
+
+- design §13 の人間の判断: (1) 試験・正解値の環境（native か VFIO か、host の TCSS の PM、bare metal の Linux での採取の承認）、(2) 向きの受け入れの
+  見直し（WS050 の決定 4、i915 から取れても pin D の時だけの見込み）。
+- 判断の後、ws.md の Phase の表を第 3 版（p004a・p004b）に合わせる（今の ws.md は第 2 版の表）。
