@@ -45,10 +45,10 @@ Queue: q695
 
 ## 結果（2026-10-04、q695-i01、P2 generation13、途中）
 
-- 改名（temp、commit しない）: `plan/ws141/temp/rename/rename.py` で 612 の定数を独自の名前へ（block の語の置き換え: V3D の hub → `GXH_`、core → `GXC_`、control list → `GXQ_`、MMU → `GXT_`、HVS → `CMP_`、pixelvalve → `TG_`、HDMI → `HX_`、PHY → `HXP_`、PM → `PWR_`、AXI の bridge → `PWB_`、firmware の tag → `FWM_`、block の無い field・packet → `F_`、単独の mnemonic → 意味の名前か `B_` + 13 文字の回転）。Linux の API の名前（`BUG_ON` など 17）は hardware の定数でないので残し、対応表に `linux-api` と記す。道具は旧名が残らないこと（同じ名前の対応が無いこと）を assert で確かめる。改名の版は `temp/rename/renamed/` の 3 file。
+- 改名（temp、commit しない）: `plan/ws141/temp/rename/rename.py` で 630 の定数を独自の名前へ（2026-10-04 の追補で channel の添字が小文字の名前 18 を足した）（block の語の置き換え: V3D の hub → `GXH_`、core → `GXC_`、control list → `GXQ_`、MMU → `GXT_`、HVS → `CMP_`、pixelvalve → `TG_`、HDMI → `HX_`、PHY → `HXP_`、PM → `PWR_`、AXI の bridge → `PWB_`、firmware の tag → `FWM_`、block の無い field・packet → `F_`、単独の mnemonic → 意味の名前か `B_` + 13 文字の回転）。Linux の API の名前（`BUG_ON` など 17）は hardware の定数でないので残し、対応表に `linux-api` と記す。道具は旧名が残らないこと（同じ名前の対応が無いこと）を assert で確かめる。改名の版は `temp/rename/renamed/` の 3 file。
 - code（`src/drivers/gpu/bcm2711/`）: `bcm2711-gpu.h`（attach の口）、`bcm2711-private.h`、`attach.c`（FDT・`rpi4gpu.off=1`・mailbox の準備・P0・V0）、`stage.c`（段の印 79 桁・待ち・parameter）、`fdt-util.c`（node・window・GIC の SPI・map・masked の handler の登録）、`clock.c`（clock の get の tag 3 つ）、`display.c`（P0）、`v3d.c`（V0）。hardware の register は読み書きしない。
 - 組み込み（Q1 の委任 2026-10-04）: `Makefile`（`CONFIG_DRIVER_BCM2711_GPU ?= rpi4 で y`、`-D` の flag）、`config/drivers/architecture/arm64.drivers`（1 行）、`platform/arm64/vmunix.mk`（source）、`src/kern/platform/rpi4.c`（PCIe の後に attach）。`src/kern/boot.c` は変えない。
 - build: rpi4（`config/ci/config-rpi4.mk`、driver y）exit 0・warning 0、rpi4 の driver n exit 0・warning 0、amd64（`config/ci/config-amd64.mk`）exit 0・warning 0（`-DCONFIG_DRIVER_BCM2711_GPU=0`）。`plan/tools/menuconfig-target-host-test.py` PASS。`git diff --check` 0。
 - host の試験: `plan/ws141/tests/stage-host-test.sh` PASS（79 桁の切り、off と stop の語の照合、長すぎる段の名前の拒否、待ちの印）。
-- GPL の名前の照合: `rename-map.tsv` の旧名 612 で `src/drivers/gpu/bcm2711/` を語単位で grep し 0 件。driver の局所の macro も `V3D_` で始めない（`ENGINE_`）。
+- GPL の名前の照合: `rename-map.tsv` の旧名 630 で `src/drivers/gpu/bcm2711/` を語単位で grep し 0 件。driver の局所の macro も `V3D_` で始めない（`ENGINE_`）。
 - 未実施: QEMU の回帰（Q1 経由で T1 に依頼）、実機（ユーザー）。
