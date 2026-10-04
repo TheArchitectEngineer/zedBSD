@@ -236,6 +236,9 @@ drv_acpi_attach(void)
 	if (error != 0 && error != ENODEV)
 		kern_logf("acpi: the LPS0 device did not attach (error %d)\n", error);
 
+	/* Makes the namespace the platform side of the PCI functions' power (ws052-p004). */
+	(void)drv_acpi_pci_power_attach();
+
 	/* Publishes the namespace to user programs. */
 	error = drv_acpi_device_register();
 	if (error != 0)

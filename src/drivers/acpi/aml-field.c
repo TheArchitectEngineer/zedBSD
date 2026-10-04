@@ -471,6 +471,78 @@ drv_acpi_region_prepare(
 	return 0;
 }
 
+/*
+ * Finds the PCI function a device of the namespace stands for.
+ *
+ * The device gives the device and function (_ADR, zero without one), and
+ * the nearest scope above it that has them gives the bus (_BBN) and the
+ * segment (_SEG).  A device behind PCI-to-PCI bridges is on the bus the
+ * last of them leads to, so the bridges between the host bridge and the
+ * device are followed, as ACPICA does (AcpiHwDerivePciId).
+ */
+int
+drv_acpi_pci_location(
+	struct drv_acpi_node *device,
+	uint16_t *segment,
+	uint8_t *bus,
+	uint8_t *slot,
+	uint8_t *function)
+{
+	struct drv_acpi_node *root;
+	uint64_t address;
+	uint64_t bus_number;
+	uint64_t segment_number;
+	int error;
+
+	/* Reads the device and function from its address, zero when it has none. */
+	address = 0;
+	error = evaluate_found(device, "_ADR", true, &address);
+	if (error != 0)
+		return error;
+
+	/* Reads the bus, zero when no scope has one. */
+	bus_number = 0;
+	error = evaluate_found(device, "_BBN", false, &bus_number);
+	if (error != 0)
+		return error;
+
+	/* Reads the segment, zero when no scope has one. */
+	segment_number = 0;
+	error = evaluate_found(device, "_SEG", false, &segment_number);
+	if (error != 0)
+		return error;
+
+	/* Moves to the bus behind the bridges between the host bridge and the device. */
+	root = pci_root_bridge(device);
+	if (root != NULL)
+		pci_follow_bridges(root, device, (uint16_t)segment_number, &bus_number);
+
+	/* Succeeded: reports the function. */
+	*segment = (uint16_t)segment_number;
+	*bus = (uint8_t)bus_number;
+	*slot = (uint8_t)((address >> 16) & 0x1fU);
+	*function = (uint8_t)(address & 0x07U);
+	return 0;
+}
+
+/*
+ * Tells whether a device of the namespace is below a PCI host bridge.
+ */
+bool
+drv_acpi_pci_below_root(
+	struct drv_acpi_node *device)
+{
+	struct drv_acpi_node *root;
+
+	/* Looks for the host bridge above the device. */
+	root = pci_root_bridge(device);
+	if (root == NULL)
+		return false;
+
+	/* The device is below one. */
+	return true;
+}
+
 /* Lets the global lock go after the access of a field whose lock rule took it. */
 static void
 field_lock_release(
@@ -774,21 +846,18 @@ table_region_read(
 /*
  * Finds the PCI function a configuration region belongs to.
  *
- * The device that contains the region gives the device and function
- * (_ADR), and the nearest scope above it that has them gives the bus
- * (_BBN) and the segment (_SEG).  A device behind PCI-to-PCI bridges is on
- * the bus the last of them leads to, so the bridges between the host
- * bridge and the device are followed, as ACPICA does (AcpiHwDerivePciId).
+ * The device that contains the region is the function; see
+ * drv_acpi_pci_location().
  */
 static int
 region_resolve_pci(
 	struct drv_acpi_object *region)
 {
 	struct drv_acpi_node *device;
-	struct drv_acpi_node *root;
-	uint64_t address;
-	uint64_t bus;
-	uint64_t segment;
+	uint16_t segment;
+	uint8_t bus;
+	uint8_t slot;
+	uint8_t function;
 	int error;
 
 	/* The function is found once. */
@@ -804,34 +873,16 @@ region_resolve_pci(
 	if (device == NULL)
 		return EINVAL;
 
-	/* Reads the device and function from its address, zero when it has none. */
-	address = 0;
-	error = evaluate_found(device, "_ADR", true, &address);
+	/* Finds the device's PCI function. */
+	error = drv_acpi_pci_location(device, &segment, &bus, &slot, &function);
 	if (error != 0)
 		return error;
-
-	/* Reads the bus, zero when no scope has one. */
-	bus = 0;
-	error = evaluate_found(device, "_BBN", false, &bus);
-	if (error != 0)
-		return error;
-
-	/* Reads the segment, zero when no scope has one. */
-	segment = 0;
-	error = evaluate_found(device, "_SEG", false, &segment);
-	if (error != 0)
-		return error;
-
-	/* Moves to the bus behind the bridges between the host bridge and the device. */
-	root = pci_root_bridge(device);
-	if (root != NULL)
-		pci_follow_bridges(root, device, (uint16_t)segment, &bus);
 
 	/* Remembers the function; pci_resolved tells every later access it is known. */
-	region->value.region.pci_segment = (uint16_t)segment;
-	region->value.region.pci_bus = (uint8_t)bus;
-	region->value.region.pci_device = (uint8_t)((address >> 16) & 0x1fU);
-	region->value.region.pci_function = (uint8_t)(address & 0x07U);
+	region->value.region.pci_segment = segment;
+	region->value.region.pci_bus = bus;
+	region->value.region.pci_device = slot;
+	region->value.region.pci_function = function;
 	region->value.region.pci_resolved = 1;
 
 	/* Succeeded: the region knows its PCI function. */

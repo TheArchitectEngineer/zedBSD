@@ -39,3 +39,14 @@ $(OUT)/aml-host-sleep: $(SOURCES) $(HEADERS) $(lastword $(MAKEFILE_LIST))
 	@mkdir -p $(OUT)
 	$(CC) -std=gnu11 -g -O1 $(WARNINGS) $(SANITIZE) $(CPPFLAGS) \
 		-Wl,--wrap=drv_acpi_reset -o $@ $(SOURCES)
+
+# ws052-p004: pci-power.c against a simulated PCI layer.
+#   make -C plan/ws052/tests pci-power && build/ws052/host/pci-power
+.PHONY: pci-power
+pci-power: $(OUT)/pci-power
+
+$(OUT)/pci-power: $(REPO)/src/drivers/pci/pci-power.c $(REPO)/plan/ws052/tests/host-pci-power.c \
+		$(REPO)/include/drivers/pci/pci.h $(lastword $(MAKEFILE_LIST))
+	@mkdir -p $(OUT)
+	$(CC) -std=gnu11 -g -O1 $(WARNINGS) $(SANITIZE) -I$(REPO)/include -I$(REPO)/src \
+		-o $@ $(REPO)/src/drivers/pci/pci-power.c $(REPO)/plan/ws052/tests/host-pci-power.c

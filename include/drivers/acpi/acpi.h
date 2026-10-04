@@ -452,6 +452,10 @@ drv_acpi_device_wake_state(
 	struct drv_acpi_node *device,
 	enum drv_acpi_device_state *state);
 
+/* The ACPI side of the PCI functions' power (acpi-pci-power.c, ws052-p004). */
+int
+drv_acpi_pci_power_attach(void);
+
 /* The lid, the AC adapter, the batteries and the buttons as the system's events (acpi-power.c, ws132-p002). */
 int
 drv_acpi_power_attach(void);
