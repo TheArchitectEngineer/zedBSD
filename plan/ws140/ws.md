@@ -9,7 +9,7 @@ Related Milestones: MG006（GTK4 の起動、[ws115-p010](../ws115/phase010/phas
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: none（Q1 が割り当てる）
-Resume point: p001 から。U1・U4 は p001 の着手を止めない。U2（失敗の時の扱い）と U3（他の固定の上限）は範囲と危険の選択なので、Q1 がユーザーの明示の決めを取ってから p001 を始める。
+Resume point: p001 から。U2・U3・U5 はユーザーが決めた（2026-10-04、下の「判断」）。U3 の「入れる」に合わせて p001・p002 の範囲を直してから着手する。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -167,6 +167,11 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
   - 大きな library で TLSDESC が 64 を越える可能性はある（推測、未確認）。越えた時は `rtld_fatal` が出るので見分けられる。
 - **U5 dlpi_subs**: 今の code は、TLS を持たない object を外しても `rtld_object_removals`（`dl_iterate_phdr` の `dlpi_subs`）を増やさない
   （4815-4816 行で TLS の分岐の中にある）。unwinder の cache が古くなる恐れがある、今ある不具合。この WS で直す（1 行を分岐の外へ）か、Bug にするか。推奨は直す（p001 の unload の書き換えと同じ関数）。
+- **ユーザーの決定（2026-10-04、AskUserQuestion）**:
+  - U2: **今と同じ fatal のまま**（推奨の通り）。
+  - U3: **入れる**（推奨と違う）。`tlsdesc_argument[64]`・`phdr[64]`・`RTLD_NAME_MAX` 64 もこの WS で動的にする。p001・p002 の範囲と試験に足す（Q1 が P に指示し、phase.md を直してから着手）。
+  - U5: **この WS で直す**（推奨の通り）。
+  - U4: Q1 が F-070 を直した（2026-10-04）。
 - **U4 F-070 の文**: 「定数を 64・128 に上げた」は事実と違う。Q1 が F-070 を直す（この WS の作業ではない）。
 
 ## Phase
