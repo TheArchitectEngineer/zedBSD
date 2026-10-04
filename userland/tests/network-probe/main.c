@@ -26,6 +26,12 @@
  *   WIFI_PROFILES_CHANGED   (ws089-p003: Settings saved a key) from then on
  *                    "Neighbor 5G" has a profile too
  *   WIFI_DISCONNECT, WIFI_DISABLE, WIFI_ENABLE   as networkd's states
+ *   WIFI_SCAN_START, WIFI_SCAN_STOP   (ws089-p021) the desktop asking for
+ *                    scans, or no longer: answered, and the state's scan=
+ *                    follows (no lease runs out here)
+ *
+ * The state ends, as networkd's does, with the default route's line: the
+ * wired interface em9 carries it ("route default=em9", BUG-189).
  *
  * It starts with the Wi-Fi on and not connected, logs each request
  * ("NETPROBE request op=N ssid=S"), and ends after the seconds given
@@ -59,13 +65,15 @@
 
 /*
  * The stand-in's network: the Wi-Fi's state as networkd names it, the SSID
- * it is on (empty when none), whether the saved profiles changed (which
+ * it is on (empty when none), whether the desktop asks for scans, whether
+ * the saved profiles changed (which
  * gives "Neighbor 5G" a profile), the seconds a join takes, and the
  * watchers' connections (-1 when free).
  */
 struct probe_network {
 	const char *wifi;
 	char ssid[33];
+	int scanning;
 	int profiles_changed;
 	int join_seconds;
 	int watchers[PROBE_WATCHERS];
@@ -326,6 +334,15 @@ probe_answer(
 		probe_send(client, request->request_id, request->opcode, NETWORKD_RESULT_OK, 0, NULL);
 		probe_notify();
 		break;
+	case NETWORKD_OP_WIFI_SCAN_START:
+	case NETWORKD_OP_WIFI_SCAN_STOP:
+		/* The desktop asks for scans, or no longer: the watchers see scan= change. */
+		probe.scanning = 0;
+		if (request->opcode == NETWORKD_OP_WIFI_SCAN_START)
+			probe.scanning = 1;
+		probe_send(client, request->request_id, request->opcode, NETWORKD_RESULT_OK, 0, NULL);
+		probe_notify();
+		break;
 	case NETWORKD_OP_WIFI_PROFILES_CHANGED:
 		/* A key was saved: the network without a profile has one from now on. */
 		probe.profiles_changed = 1;
@@ -446,9 +463,9 @@ probe_state(
 	/* The SSID as hexadecimal ("-" for none). */
 	probe_hex(probe.ssid, hex, sizeof(hex));
 
-	/* The loopback, the wired interface, the radio and the Wi-Fi's line. */
-	(void)snprintf(text, size, "lo0 static online\nem9 static online\n%s\nwifi state=%s interface=wlan0 ssid=%s radios=1\n",
-	    radio, probe.wifi, hex);
+	/* The loopback, the wired interface, the radio, the Wi-Fi's line and the default route's (through em9). */
+	(void)snprintf(text, size, "lo0 static online\nem9 static online\n%s\nwifi state=%s interface=wlan0 ssid=%s radios=1 scan=%d\nroute default=em9\n",
+	    radio, probe.wifi, hex, probe.scanning);
 }
 
 /* Tells every watcher the state. */
@@ -469,7 +486,7 @@ probe_notify(
 	}
 
 	/* The change, for the test. */
-	printf("NETPROBE notify wifi=%s ssid=%s\n", probe.wifi, probe.ssid);
+	printf("NETPROBE notify wifi=%s ssid=%s scan=%d\n", probe.wifi, probe.ssid, probe.scanning);
 	(void)fflush(stdout);
 }
 

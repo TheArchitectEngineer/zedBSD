@@ -242,6 +242,12 @@ se_glyph_draw(
 		/* A chevron pointing right. */
 		glyph_polyline(&pen, chevron, 3);
 		break;
+	case SE_GLYPH_DISCONNECT:
+		/* A cross in a circle: leaving the network (ws089-p021, the system bar's cross alike). */
+		glyph_circle(&pen, 0.50f, 0.50f, 0.38f);
+		glyph_segment(&pen, 0.36f, 0.36f, 0.64f, 0.64f);
+		glyph_segment(&pen, 0.64f, 0.36f, 0.36f, 0.64f);
+		break;
 	default:
 		break;
 	}

@@ -594,6 +594,13 @@ struct zwl_object {
 	uint32_t monitor_period;
 	uint32_t monitor_waiting;
 	uint32_t monitor_info;
+	/*
+	 * A network object of the system extension (system.c, ws089-p021):
+	 * 1 while its client shows the networks around and asked for scans
+	 * (set_scanning), counted once in network.c's holders until it asks
+	 * no longer or goes.
+	 */
+	unsigned network_scanning;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -1225,6 +1232,7 @@ void zwl_system_network_changed(struct zwl_server *server, unsigned changed);
 int zwl_system_network_done(struct zwl_server *server, unsigned request, int error);
 int zwl_system_bar_save_key(struct zwl_server *server, const char *ssid, const char *key);
 void zwl_system_bar_saved(struct zwl_server *server);
+void zwl_system_network_gone(struct zwl_object *object);
 void zwl_system_close(struct zwl_server *server);
 int zwl_sysmon_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
 int zwl_sysmon_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -1316,6 +1324,7 @@ void zwl_network_state(struct kl_backend_network_state *state);
 size_t zwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity);
 void zwl_network_key_failed(struct zwl_server *server, const char *ssid, int error);
 void zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX], size_t count);
+void zwl_network_scan_hold(unsigned on);
 void zwl_volume_tick(struct zwl_server *server);
 void zwl_volume_keep(struct zwl_server *server, const char *why);
 void zwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);

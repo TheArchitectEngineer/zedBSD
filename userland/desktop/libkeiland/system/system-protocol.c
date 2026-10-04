@@ -77,10 +77,10 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, version 2: seven requests (get_monitor since 2) and one event.  It lives for the program. */
+/* kl_system_manager_v1, version 3: seven requests (get_monitor since 2) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
-	2,
+	3,
 	7,
 	system_manager_requests,
 	1,
@@ -117,6 +117,7 @@ static const struct wl_message system_network_requests[] = {
 	{ "request", "uus", system_plain_types },
 	{ "save_key", "uss", system_plain_types },
 	{ "query_details", "u", system_plain_types },
+	{ "set_scanning", "3u", system_plain_types },
 };
 
 /* The events of kl_system_network_v1. */
@@ -132,11 +133,11 @@ static const struct wl_message system_network_events[] = {
 	{ "result", "uuu", system_plain_types },
 };
 
-/* kl_system_network_v1: four requests and nine events.  It lives for the program. */
+/* kl_system_network_v1, version 3: five requests (set_scanning since 3) and nine events.  It lives for the program. */
 const struct wl_interface kl_system_network_v1_interface = {
 	KL_SYSTEM_NETWORK_NAME,
-	1,
-	4,
+	3,
+	5,
 	system_network_requests,
 	9,
 	system_network_events

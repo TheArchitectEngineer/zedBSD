@@ -189,14 +189,6 @@ se_network_wifi(
 }
 
 void
-se_network_scan(
-	struct se_app *app)
-{
-	(void)app;
-	printf("NETWORK scan\n");
-}
-
-void
 se_network_join(
 	struct se_app *app,
 	const char *ssid)

@@ -456,6 +456,35 @@ kl_system_network_save_key(
 }
 
 /*
+ * Asks the compositor to keep the radios scanning while the application
+ * shows the networks around, or no longer.
+ */
+int
+kl_system_network_set_scanning(
+	struct kl_system *system,
+	unsigned on)
+{
+	uint32_t asked;
+
+	/* The network object, of a compositor that knows the request (version 3, ws089-p021). */
+	if (system->network == NULL || system->lost)
+		return ENOTSUP;
+	if (system->manager_version < 3U)
+		return ENOTSUP;
+
+	/* On as 1, off as 0. */
+	asked = 0U;
+	if (on != 0U)
+		asked = 1U;
+
+	/* Sent with the application's next flush; it has no answer. */
+	wl_proxy_marshal(system->network, KL_SYSTEM_NETWORK_SET_SCANNING, asked);
+
+	/* Succeeded: the compositor is told. */
+	return 0;
+}
+
+/*
  * Asks for the network's details.
  */
 int

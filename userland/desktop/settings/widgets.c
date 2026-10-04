@@ -472,6 +472,45 @@ se_button_draw(
 }
 
 /*
+ * Draws a button that is a picture alone, WIDGETS_BUTTON_HEIGHT square with
+ * its top left at (x, y): white within a thin edge, darker under the
+ * pointer, the glyph in the middle.  It is a page's control (index).
+ */
+void
+se_icon_button_draw(
+	struct se_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	unsigned glyph,
+	int index)
+{
+	struct fm_rect rect;
+	fm_color ground;
+	int lit;
+
+	/* The button's square. */
+	rect.x = x;
+	rect.y = y;
+	rect.width = WIDGETS_BUTTON_HEIGHT;
+	rect.height = WIDGETS_BUTTON_HEIGHT;
+
+	/* White, darker under the pointer or while pressed. */
+	ground = FM_RGBA(0xffffff, 225);
+	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
+	if (lit != 0)
+		ground = fm_color_mix(ground, FM_RGB(0x1e2632), 0.08f);
+
+	/* The square, its edge and the picture in the middle. */
+	fm_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
+	fm_canvas_round_border(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, FM_RGBA(0x8a96aa, 70));
+	se_glyph_draw(canvas, glyph, (float)x + 6.0f, (float)y + 6.0f, (float)(WIDGETS_BUTTON_HEIGHT - 12), SE_COLOR_TEXT);
+
+	/* It is clickable. */
+	se_ui_hit(app, &rect, SE_HIT_CONTROL, index);
+}
+
+/*
  * Draws a status dot (green for connected, grey for not) centred at (cx, cy).
  */
 void

@@ -20,6 +20,13 @@
  * readable; the updates look at both connections without waiting, so the
  * caller's loop never stops for the daemon.
  *
+ * Fresh scans (ws089-p021) go on a third connection of their own, one
+ * frame each way like a request but beside it, so that a person's request
+ * never waits behind a scan: while the compositor asks for scans, the
+ * daemon is asked for them (WIFI_SCAN_START, renewed before its lease runs
+ * out) and the scan is read every few seconds (WIFI_LIST); when it stops
+ * asking, the daemon is told (WIFI_SCAN_STOP).
+ *
  * This is the one place in the desktop that knows networkd's protocol
  * (userland/base/net/protocol.h); a change of the daemon's protocol is
  * made here and nowhere else.
@@ -51,6 +58,13 @@
 /* The longest line of a state or a scan that is read. */
 #define NETWORK_LINE_MAX 512U
 
+/* While scans are asked for: how often the scan is read, and how often the daemon's lease is renewed (it lasts 30 s). */
+#define NETWORK_SCAN_LIST_MS 3000U
+#define NETWORK_SCAN_LEASE_MS 10000U
+
+/* How long the daemon may take to answer a frame of the scans' connection before it is given up. */
+#define NETWORK_SCAN_ANSWER_MS 15000U
+
 /*
  * One watch of the network: the SUBSCRIBE connection, the state it last
  * reported, the request outstanding (its connection and kind), the last
@@ -59,6 +73,12 @@
  *
  * watch is -1 while there is no watch; retry_ms is when one is tried
  * again.  request_fd is -1 while no request is outstanding.
+ *
+ * The scans' connection (ws089-p021): scan_wanted while the compositor
+ * asks for scans, scan_leased while the daemon was last asked for them
+ * (and not told to stop), scan_fd the frame outstanding on it (-1 for
+ * none) with its opcode, ID and the time it is given up, scan_list_ms when
+ * the scan is read next and scan_lease_ms when the lease is renewed.
  * The subscriber owns this allocation from open until close; completed
  * requests retain their outcome here after their connection is released.
  */
@@ -75,9 +95,21 @@ struct kl_backend_network {
 	int finished_error;
 	struct kl_backend_network_ap scan[KL_BACKEND_NETWORK_SCAN_MAX];
 	size_t scan_count;
+	unsigned scan_wanted;
+	unsigned scan_leased;
+	int scan_fd;
+	uint32_t scan_opcode;
+	uint32_t scan_id;
+	uint64_t scan_given_up_ms;
+	uint64_t scan_list_ms;
+	uint64_t scan_lease_ms;
 };
 
 static int network_connect(int *descriptor);
+static int network_send(struct kl_backend_network *network, uint32_t opcode, const unsigned char *payload, size_t length, int *descriptor, uint32_t *request_id);
+static void network_scan_step(struct kl_backend_network *network, unsigned *changed);
+static void network_scan_answer(struct kl_backend_network *network, unsigned *changed);
+static void network_scan_send(struct kl_backend_network *network, uint32_t opcode);
 static int network_watch(struct kl_backend_network *network);
 static void network_unwatch(struct kl_backend_network *network, unsigned *changed);
 static int network_readable(int descriptor);
@@ -87,6 +119,7 @@ static int network_fields(const unsigned char *payload, size_t length, uint32_t 
 static void network_parse_state(struct kl_backend_network_state *state, const char *output, size_t length);
 static void network_parse_interface(struct kl_backend_network_state *state, const char *line, char *wired, size_t wired_size, unsigned *wifi_online);
 static void network_parse_wifi(struct kl_backend_network_state *state, const char *line);
+static void network_parse_route(const char *line, char *route, size_t size);
 static unsigned network_wifi_state(const char *name);
 static int network_line(const char *output, size_t length, size_t *start, char *line, size_t size);
 static void network_parse_scan(struct kl_backend_network *network, const char *output, size_t length);
@@ -114,6 +147,7 @@ kl_backend_network_open(
 	/* Starts both connections as unowned and reserves the watch request ID. */
 	network->watch = -1;
 	network->request_fd = -1;
+	network->scan_fd = -1;
 	network->next_id = NETWORK_WATCH_ID + 1U;
 
 	/* The watch, when the daemon is there (otherwise the updates try again). */
@@ -141,6 +175,10 @@ kl_backend_network_close(
 	/* Retires any independent request connection before freeing its record. */
 	if (network->request_fd >= 0)
 		(void)close(network->request_fd);
+
+	/* The scans' connection too (a lease the daemon holds runs out by itself). */
+	if (network->scan_fd >= 0)
+		(void)close(network->scan_fd);
 
 	/* Releases the watch record after neither connection can report to it. */
 	free(network);
@@ -185,6 +223,9 @@ kl_backend_network_update(
 	/* The answer to the request outstanding. */
 	if (network->request_fd >= 0)
 		(void)network_read_answer(network, changed);
+
+	/* The scans asked for, beside the request (ws089-p021). */
+	network_scan_step(network, changed);
 
 	/* Succeeded: *changed says what the reads found. */
 	return 0;
@@ -249,9 +290,9 @@ kl_backend_network_request(
 	unsigned request,
 	const char *ssid)
 {
-	struct networkd_protocol_header header;
 	struct networkd_field_writer writer;
 	unsigned char payload[NETWORKD_REQUEST_MAX];
+	uint32_t request_id;
 	uint32_t opcode;
 	size_t length;
 	int descriptor;
@@ -309,37 +350,56 @@ kl_backend_network_request(
 			return EINVAL;
 	}
 
-	/* A connection of the request's own. */
-	error = network_connect(&descriptor);
+	/* The frame, on a connection of the request's own. */
+	error = network_send(network, opcode, payload, writer.used, &descriptor, &request_id);
 	if (error != 0)
 		return error;
-
-	/* The frame, and the end of what this side sends (the daemon answers after it). */
-	header.request_id = network->next_id;
-	header.opcode = opcode;
-	header.payload_length = writer.used;
-	error = networkd_protocol_write_frame(descriptor, &header, payload);
-	if (error != 0) {
-		error = errno;
-		(void)close(descriptor);
-		return error;
-	}
-
-	/* This side has said all it will. */
-	(void)shutdown(descriptor, SHUT_WR);
-
-	/* The next request gets the next ID (never the watch's, never 0). */
-	network->next_id++;
-	if (network->next_id <= NETWORK_WATCH_ID)
-		network->next_id = NETWORK_WATCH_ID + 1U;
 
 	/* The request is outstanding until its answer is read. */
 	network->request_fd = descriptor;
 	network->request = request;
 	network->request_opcode = opcode;
-	network->request_id = header.request_id;
+	network->request_id = request_id;
 
 	/* Succeeded: the request is on its way. */
+	return 0;
+}
+
+/*
+ * Asks the daemon for fresh scans, or no longer (ws089-p021).
+ */
+int
+kl_backend_network_set_scanning(
+	struct kl_backend_network *network,
+	unsigned on)
+{
+	uint64_t now;
+
+	/* Refuses an operation without its network watch record. */
+	if (network == NULL)
+		return EINVAL;
+
+	/* Asking already: nothing changes. */
+	if (on != 0U && network->scan_wanted != 0U)
+		return 0;
+
+	/* Not asking already: nothing changes either. */
+	if (on == 0U && network->scan_wanted == 0U)
+		return 0;
+
+	/* The asking begins: the daemon is asked now and the scan it has is read at once. */
+	now = network_milliseconds();
+	if (on != 0U) {
+		network->scan_wanted = 1U;
+		network->scan_lease_ms = now;
+		network->scan_list_ms = now;
+		return 0;
+	}
+
+	/* The asking ends: the daemon is told on the next update. */
+	network->scan_wanted = 0U;
+
+	/* Succeeded: the asking is recorded. */
 	return 0;
 }
 
@@ -399,6 +459,177 @@ network_connect(
 	/* Succeeded: the connection is the caller's. */
 	*descriptor = connection;
 	return 0;
+}
+
+/*
+ * Sends one frame on a new connection and ends what this side sends (the
+ * daemon answers after it); the caller owns *descriptor and reads the answer
+ * with *request_id.
+ */
+static int
+network_send(
+	struct kl_backend_network *network,
+	uint32_t opcode,
+	const unsigned char *payload,
+	size_t length,
+	int *descriptor,
+	uint32_t *request_id)
+{
+	struct networkd_protocol_header header;
+	int connection;
+	int error;
+
+	/* A connection of the frame's own. */
+	error = network_connect(&connection);
+	if (error != 0)
+		return error;
+
+	/* The frame. */
+	header.request_id = network->next_id;
+	header.opcode = opcode;
+	header.payload_length = (uint32_t)length;
+	error = networkd_protocol_write_frame(connection, &header, payload);
+	if (error != 0) {
+		error = errno;
+		(void)close(connection);
+		return error;
+	}
+
+	/* This side has said all it will. */
+	(void)shutdown(connection, SHUT_WR);
+
+	/* The next frame gets the next ID (never the watch's, never 0). */
+	network->next_id++;
+	if (network->next_id <= NETWORK_WATCH_ID)
+		network->next_id = NETWORK_WATCH_ID + 1U;
+
+	/* Succeeded: the frame is on its way. */
+	*descriptor = connection;
+	*request_id = header.request_id;
+	return 0;
+}
+
+/*
+ * Moves the scans' connection one step: takes the answer of its frame when
+ * it came, then sends the next frame that is due -- a stop once the asking
+ * ended, a renewal of the lease, or a reading of the scan.
+ */
+static void
+network_scan_step(
+	struct kl_backend_network *network,
+	unsigned *changed)
+{
+	uint64_t now;
+
+	/* The answer of the frame outstanding, or a daemon that took too long. */
+	now = network_milliseconds();
+	if (network->scan_fd >= 0) {
+		network_scan_answer(network, changed);
+		if (network->scan_fd >= 0 && now >= network->scan_given_up_ms) {
+			(void)close(network->scan_fd);
+			network->scan_fd = -1;
+		}
+	}
+
+	/* One frame at a time on this connection. */
+	if (network->scan_fd >= 0)
+		return;
+
+	/* The asking ended while the daemon still holds a lease: it is told. */
+	if (network->scan_wanted == 0U) {
+		if (network->scan_leased != 0U)
+			network_scan_send(network, NETWORKD_OP_WIFI_SCAN_STOP);
+		return;
+	}
+
+	/* The lease, asked for or renewed before it runs out. */
+	if (now >= network->scan_lease_ms) {
+		network->scan_lease_ms = now + NETWORK_SCAN_LEASE_MS;
+		network_scan_send(network, NETWORKD_OP_WIFI_SCAN_START);
+		return;
+	}
+
+	/* The scan, read again when its time came. */
+	if (now >= network->scan_list_ms) {
+		network->scan_list_ms = now + NETWORK_SCAN_LIST_MS;
+		network_scan_send(network, NETWORKD_OP_WIFI_LIST);
+	}
+}
+
+/* Takes the answer of the scans' connection when it has arrived: a reading's networks are the new scan. */
+static void
+network_scan_answer(
+	struct kl_backend_network *network,
+	unsigned *changed)
+{
+	struct networkd_protocol_header header;
+	unsigned char payload[NETWORKD_RESPONSE_MAX];
+	const char *output;
+	size_t output_length;
+	uint32_t status;
+	uint32_t error;
+	int readable;
+	int failed;
+
+	/* Not yet. */
+	readable = network_readable(network->scan_fd);
+	if (!readable)
+		return;
+
+	/* The answer, whole; the frame is over either way. */
+	failed = networkd_protocol_read_frame_timed(network->scan_fd, &header, payload, sizeof(payload), NETWORKD_RESPONSE_MAX, NETWORK_FRAME_SECONDS);
+	(void)close(network->scan_fd);
+	network->scan_fd = -1;
+	if (failed != 0)
+		return;
+
+	/* An answer to another frame, or one that does not read, is passed over. */
+	failed = network_fields(payload, header.payload_length, &status, &error, &output, &output_length);
+	if (failed != 0)
+		return;
+	if (header.request_id != network->scan_id || header.opcode != network->scan_opcode)
+		return;
+
+	/* Only a reading carries networks; one done in part still has them. */
+	if (header.opcode != NETWORKD_OP_WIFI_LIST)
+		return;
+	if (status != NETWORKD_RESULT_OK && status != NETWORKD_RESULT_DEGRADED)
+		return;
+
+	/* The new scan. */
+	network_parse_scan(network, output, output_length);
+	*changed |= KL_BACKEND_NETWORK_CHANGED_SCAN;
+}
+
+/* Sends one frame on the scans' connection; a daemon not there is asked again at the next step that is due. */
+static void
+network_scan_send(
+	struct kl_backend_network *network,
+	uint32_t opcode)
+{
+	uint32_t request_id;
+	int descriptor;
+	int error;
+
+	/* The frame, which carries no field. */
+	error = network_send(network, opcode, NULL, 0U, &descriptor, &request_id);
+	if (error != 0)
+		return;
+
+	/*
+	 * scan_leased follows what the daemon was last asked: a start leaves it
+	 * holding a lease, a stop ends it.
+	 */
+	if (opcode == NETWORKD_OP_WIFI_SCAN_START)
+		network->scan_leased = 1U;
+	if (opcode == NETWORKD_OP_WIFI_SCAN_STOP)
+		network->scan_leased = 0U;
+
+	/* Outstanding until its answer, or until it is given up. */
+	network->scan_fd = descriptor;
+	network->scan_opcode = opcode;
+	network->scan_id = request_id;
+	network->scan_given_up_ms = network_milliseconds() + NETWORK_SCAN_ANSWER_MS;
 }
 
 /* Makes the watch: a connection that asked SUBSCRIBE. */
@@ -689,26 +920,33 @@ network_parse_state(
 {
 	char line[NETWORK_LINE_MAX];
 	char wired[KL_BACKEND_NETWORK_NAME_MAX];
+	char route[KL_BACKEND_NETWORK_NAME_MAX];
 	unsigned wifi_online;
 	size_t start;
 	int more;
 	int differs;
+	int routed;
 
 	/*
-	 * Reads a state: the interfaces' lines and the Wi-Fi's.  The connection is
-	 * the Wi-Fi's when the Wi-Fi is connected and its interface is online, and
-	 * otherwise the first other interface that is online with an address.
+	 * Reads a state: the interfaces' lines, the Wi-Fi's and the default
+	 * route's.  The connection is the one the default route goes through
+	 * (BUG-189): the Wi-Fi's when the route goes through the radio and the
+	 * Wi-Fi is connected and online, else the other interface it goes
+	 * through.  A daemon that names no route has the connection chosen as
+	 * networkd chooses the route (ws005-p019 B3): the first other interface
+	 * online with an address, else a connected Wi-Fi.
 	 */
 
 	/* A reachable daemon with nothing known yet. */
 	memset(state, 0, sizeof(*state));
 	state->reachable = 1;
 
-	/* Starts interface selection without a wired or online radio candidate. */
+	/* Starts interface selection without a wired or online radio candidate, or a route. */
 	wired[0] = '\0';
+	route[0] = '\0';
 	wifi_online = 0;
 
-	/* The Wi-Fi's line first, so that the interfaces' lines know which one is the radio. */
+	/* The Wi-Fi's line and the route's first, so that the interfaces' lines know which one is the radio. */
 	start = 0;
 	for (;;) {
 		/* Stops when the bounded daemon output contains no further line. */
@@ -720,6 +958,11 @@ network_parse_state(
 		differs = strncmp(line, "wifi ", 5);
 		if (differs == 0)
 			network_parse_wifi(state, line);
+
+		/* The default route's line. */
+		differs = strncmp(line, "route ", 6);
+		if (differs == 0)
+			network_parse_route(line, route, sizeof(route));
 	}
 
 	/* Then each interface's line (not the Wi-Fi's, not an empty one). */
@@ -735,6 +978,11 @@ network_parse_state(
 		if (differs == 0 || line[0] == '\0')
 			continue;
 
+		/* Nor is the route's. */
+		differs = strncmp(line, "route ", 6);
+		if (differs == 0)
+			continue;
+
 		/* An interface's line. */
 		network_parse_interface(state, line, wired, sizeof(wired), &wifi_online);
 	}
@@ -742,19 +990,41 @@ network_parse_state(
 	/* The wired interface, whichever carries the connection. */
 	(void)snprintf(state->wired, sizeof(state->wired), "%s", wired);
 
-	/* A connected Wi-Fi carries the connection. */
-	if (state->wifi == KL_BACKEND_WIFI_CONNECTED && wifi_online) {
+	/* The default route through the radio: a connected Wi-Fi carries the connection. */
+	routed = 0;
+	if (route[0] != '\0' && state->wifi_interface[0] != '\0') {
+		differs = strcmp(route, state->wifi_interface);
+		if (differs == 0)
+			routed = 1;
+	}
+	if (routed && state->wifi == KL_BACKEND_WIFI_CONNECTED && wifi_online) {
 		state->connected = 1;
 		state->kind = KL_BACKEND_NETWORK_WIFI;
 		(void)snprintf(state->interface, sizeof(state->interface), "%s", state->wifi_interface);
 		return;
 	}
 
-	/* Otherwise a wired interface that is up with an address. */
+	/* The default route through another interface: that wired interface carries it. */
+	if (route[0] != '\0' && !routed) {
+		state->connected = 1;
+		state->kind = KL_BACKEND_NETWORK_WIRED;
+		(void)snprintf(state->interface, sizeof(state->interface), "%s", route);
+		return;
+	}
+
+	/* Without a route to go by, a wired interface that is up with an address first. */
 	if (wired[0] != '\0') {
 		state->connected = 1;
 		state->kind = KL_BACKEND_NETWORK_WIRED;
 		(void)snprintf(state->interface, sizeof(state->interface), "%s", wired);
+		return;
+	}
+
+	/* Then a connected Wi-Fi whose radio is online. */
+	if (state->wifi == KL_BACKEND_WIFI_CONNECTED && wifi_online) {
+		state->connected = 1;
+		state->kind = KL_BACKEND_NETWORK_WIFI;
+		(void)snprintf(state->interface, sizeof(state->interface), "%s", state->wifi_interface);
 	}
 
 	/* Succeeded: the reachable connection state is classified. */
@@ -893,6 +1163,29 @@ network_parse_wifi(
 
 	/* Succeeded: the radio identity and state are decoded. */
 	return;
+}
+
+/* Reads the default route's line, "route default=IF" ("-" for none): route gets the interface, or stays empty. */
+static void
+network_parse_route(
+	const char *line,
+	char *route,
+	size_t size)
+{
+	char field_text[80];
+	const char *found;
+	int differs;
+
+	/* The interface named, unless the route is none. */
+	found = network_word(line, "default", field_text, sizeof(field_text));
+	if (found == NULL)
+		return;
+	differs = strcmp(field_text, "-");
+	if (differs == 0)
+		return;
+
+	/* The interface, as much as fits. */
+	(void)snprintf(route, size, "%s", field_text);
 }
 
 /* Tells the desktop's Wi-Fi state for networkd's name of it. */

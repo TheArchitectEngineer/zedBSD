@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*). */
-#define KL_VERSION	23U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning). */
+#define KL_VERSION	24U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1339,6 +1339,17 @@ int kl_system_network_save_key(struct kl_system *system, const char *ssid, const
  * Returns 0 when asked, or ENOTSUP.
  */
 int kl_system_network_query_details(struct kl_system *system, uint32_t *request);
+
+/*
+ * Asks the compositor to keep the radios scanning (on 1) while the
+ * application shows the networks around, and no longer (on 0) when it
+ * stops showing them (ws089-p021).  It is no request and has no answer: a
+ * new scan comes as KL_SYSTEM_CHANGED_SCAN.  The compositor counts every
+ * application that asked (and its own Wi-Fi menu), and an application that
+ * closes its system or ends asks no longer.  Returns 0, or ENOTSUP when
+ * the compositor does not know it (one older than KL_VERSION 24).
+ */
+int kl_system_network_set_scanning(struct kl_system *system, unsigned on);
 
 /*
  * Copy up to capacity of the details last asked for and return how many

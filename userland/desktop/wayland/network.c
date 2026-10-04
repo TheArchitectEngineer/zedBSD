@@ -28,7 +28,10 @@
  * BUG-138), the same three steps Settings takes, done by the system
  * extension's thread (system.c).  A click on the switch
  * turns the Wi-Fi on or off.  A click elsewhere, or Esc, closes the menu.
- * Opening the menu asks for a scan.
+ * While the menu is open the radios are kept scanning (ws089-p021): the
+ * menu is one of the holders the compositor counts with the system
+ * extension's network objects that asked for scans, and while any holder
+ * is there libkeiland-backend asks the daemon for fresh scans.
  *
  * From the click on a network until its join is answered, the line under
  * the switch says "Connecting to X..." and the network's row says
@@ -36,7 +39,7 @@
  * the menu's scan and then the join, with nothing shown).
  *
  * libkeiland-backend carries one request at a time.  A switch or a network clicked
- * while another request (the menu's own scan, usually) is still out waits
+ * while another request (a Settings window's, say) is still out waits
  * in one slot and is sent when that one is answered, rather than being
  * refused with "busy".
  *
@@ -77,8 +80,13 @@
 #define NETWORK_KEY_MIN		8U
 #define NETWORK_KEY_MAX		63U
 
-/* The Disconnect button on the row of the network it is on (BUG-148): its width, its inset from the row's top and bottom. */
-#define NETWORK_DISCONNECT_WIDTH	92
+/*
+ * The Disconnect button on the row of the network it is on (BUG-148), an
+ * icon (ws089-p021: the user's "Disconnectボタンは、アイコンにしたい"):
+ * its width, its inset from the row's top and bottom, and the icon's size.
+ */
+#define NETWORK_DISCONNECT_WIDTH	26
+#define NETWORK_DISCONNECT_ICON		12
 #define NETWORK_DISCONNECT_INSET	4
 
 /* The menu's width, its padding, its rows' height, and its corner radius. */
@@ -142,6 +150,13 @@ struct network_row {
  * join is answered or given up; empty otherwise.  The menu shows it as
  * being connected to (BUG-154).
  *
+ * scan_holders counts who asks for scans (ws089-p021): the open menu and
+ * each network object of the system extension that asked (system.c); while
+ * it is not 0 the watch is asked to keep the radios scanning, and its
+ * going from 0 to 1 and back is what the watch is told.  scan_fresh is 1
+ * once a scan arrived since the menu opened, so that an empty list says
+ * "Looking for networks..." until the first one comes.
+ *
  * It lives as long as zdesktop; the menu's rows are laid out again each
  * time the menu is drawn, so they always show the state last read.
  */
@@ -174,6 +189,8 @@ struct network_view {
 	unsigned pending_request;
 	char pending_ssid[KL_BACKEND_NETWORK_SSID_MAX];
 	char connecting[KL_BACKEND_NETWORK_SSID_MAX];
+	unsigned scan_holders;
+	unsigned scan_fresh;
 };
 
 /*
@@ -248,11 +265,13 @@ zwl_network_tick(
 	int owned;
 	int error;
 
-	/* The watch, once (libkeiland-backend connects to the daemon when it can). */
+	/* The watch, once (libkeiland-backend connects to the daemon when it can); holders before it are told to it. */
 	if (!network_view.opened) {
 		network_view.opened = 1;
 		network_view.watch = kl_backend_network_open();
 		network_view.icon_x = -1;
+		if (network_view.watch != NULL && network_view.scan_holders != 0U)
+			(void)kl_backend_network_set_scanning(network_view.watch, 1U);
 	}
 
 	/* No watch could be made (no memory): the icon stays pale. */
@@ -276,6 +295,7 @@ zwl_network_tick(
 		if (network_view.scan_count > KL_BACKEND_NETWORK_SCAN_MAX)
 			network_view.scan_count = KL_BACKEND_NETWORK_SCAN_MAX;
 		printf("ZWL NETWORK scan count=%u\n", (unsigned)network_view.scan_count);
+		network_view.scan_fresh = 1U;
 	}
 
 	/* The system extension's network objects hear the new state and scan (system.c). */
@@ -618,7 +638,36 @@ zwl_network_is_open(
 	return (int)network_view.open;
 }
 
-/* Opens the menu and asks for a scan when the Wi-Fi is on. */
+/*
+ * Counts one more holder of the scans (on 1) or one fewer (on 0): the
+ * system bar's open menu, or a network object that asked (system.c).  The
+ * watch is asked to keep the radios scanning while any holder is there.
+ */
+void
+zwl_network_scan_hold(
+	unsigned on)
+{
+	/* One more: the first holder starts the asking. */
+	if (on != 0U) {
+		network_view.scan_holders++;
+		printf("ZWL NETWORK scan holders=%u\n", network_view.scan_holders);
+		if (network_view.scan_holders == 1U && network_view.watch != NULL)
+			(void)kl_backend_network_set_scanning(network_view.watch, 1U);
+		return;
+	}
+
+	/* One fewer than none is a holder counted twice: nothing changes. */
+	if (network_view.scan_holders == 0U)
+		return;
+
+	/* One fewer: the last holder ends the asking. */
+	network_view.scan_holders--;
+	printf("ZWL NETWORK scan holders=%u\n", network_view.scan_holders);
+	if (network_view.scan_holders == 0U && network_view.watch != NULL)
+		(void)kl_backend_network_set_scanning(network_view.watch, 0U);
+}
+
+/* Opens the menu, which holds the radios scanning while it is open. */
 static void
 network_open_menu(
 	struct zwl_server *server)
@@ -633,12 +682,9 @@ network_open_menu(
 	/* The saved networks, read again by the system extension's thread. */
 	zwl_system_bar_saved(server);
 
-	/* A radio that is on is asked what it sees. */
-	if (network_view.state.wifi == KL_BACKEND_WIFI_ABSENT)
-		return;
-	if (network_view.state.wifi == KL_BACKEND_WIFI_OFF)
-		return;
-	network_request(server, KL_BACKEND_NETWORK_REQUEST_SCAN, NULL);
+	/* The menu holds the radios scanning until it closes (the daemon scans only a radio that is on). */
+	network_view.scan_fresh = 0U;
+	zwl_network_scan_hold(1U);
 }
 
 /* Closes the menu. */
@@ -650,7 +696,9 @@ network_close_menu(
 	/* A key half typed goes with the menu. */
 	network_key_close();
 
-	/* The menu goes; the icon's back goes with it. */
+	/* The menu goes, and with it its holding of the scans; the icon's back goes too. */
+	if (network_view.open)
+		zwl_network_scan_hold(0U);
 	network_view.open = 0;
 	server->dirty = 1;
 	printf("ZWL NETWORK close via=%s\n", via);
@@ -711,14 +759,12 @@ network_layout_rows(
 {
 	const struct kl_backend_network_state *state;
 	char text[96];
-	unsigned request;
 	unsigned index;
 	unsigned key_shown;
 	unsigned others;
 	unsigned shown;
 	int current;
 	int32_t y;
-	int error;
 	int differs;
 
 	(void)server;
@@ -746,9 +792,8 @@ network_layout_rows(
 	if (state->reachable && state->wifi != KL_BACKEND_WIFI_ABSENT && state->wifi != KL_BACKEND_WIFI_OFF) {
 		network_add_row(NETWORK_ROW_SEPARATOR, "", NETWORK_SEPARATOR, 0);
 
-		/* A scan on its way, or one that found nothing, says so. */
-		request = kl_backend_network_get_request(network_view.watch, &error);
-		if (request == KL_BACKEND_NETWORK_REQUEST_SCAN && network_view.scan_count == 0) {
+		/* No scan since the menu opened yet, or one that found nothing, says so. */
+		if (!network_view.scan_fresh && network_view.scan_count == 0) {
 			network_add_row(NETWORK_ROW_NOTE, "Looking for networks...", NETWORK_NOTE_HEIGHT, 0);
 		} else if (network_view.scan_count == 0 && state->wifi != KL_BACKEND_WIFI_CONNECTED) {
 			network_add_row(NETWORK_ROW_NOTE, "No networks found", NETWORK_NOTE_HEIGHT, 0);
@@ -1820,7 +1865,6 @@ network_draw_disconnect(
 	int32_t x;
 	int32_t y;
 	int32_t height;
-	int32_t width;
 
 	/* The button's rectangle. */
 	x = network_view.menu_x + NETWORK_MENU_WIDTH - 10 - NETWORK_DISCONNECT_WIDTH;
@@ -1837,7 +1881,6 @@ network_draw_disconnect(
 		glass_draw_solid(server, command, (float)(x + 1), (float)(y + 1), (float)(NETWORK_DISCONNECT_WIDTH - 2), (float)(height - 2), 5.0f, face);
 	}
 
-	/* Its word, in the middle. */
-	width = glass_text_width(server, SIZE_BAR, "Disconnect");
-	glass_draw_text(server, command, SIZE_BAR, x + (NETWORK_DISCONNECT_WIDTH - width) / 2, y + height / 2 + 5, "Disconnect", NETWORK_DISCONNECT_WIDTH - 4, ink);
+	/* Its icon, the cross of leaving, in the middle (the tests name the button Disconnect). */
+	glass_draw_icon(server, command, GLASS_ICON_CLOSE, x + (NETWORK_DISCONNECT_WIDTH - NETWORK_DISCONNECT_ICON) / 2, y + (height - NETWORK_DISCONNECT_ICON) / 2, NETWORK_DISCONNECT_ICON, ink);
 }

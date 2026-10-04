@@ -36,6 +36,12 @@
  * The details are no request of the daemon's: they are read whenever the
  * thread is free (a key waiting to be saved goes first), and every object
  * that asked meanwhile hears the same reading.
+ *
+ * A network object that shows the networks around asks for scans
+ * (set_scanning, ws089-p021): network.c counts each such object once, with
+ * the system bar's open menu, and keeps the radios scanning while the
+ * count is not 0.  An object's going (its destroy, or its client's end)
+ * takes its asking away.
  */
 
 #include "zwl.h"
@@ -175,6 +181,7 @@ static int system_devices_request(struct zwl_object *object, uint32_t opcode, co
 static uint32_t system_network_send(struct zwl_object *object, uint32_t number, uint32_t what, const char *ssid);
 static int system_network_save_key(struct zwl_server *server, uint64_t client, uint32_t object, uint32_t number, unsigned bar, const char *ssid, const char *key);
 static uint32_t system_network_details(struct zwl_object *object, uint32_t number);
+static void system_network_scanning(struct zwl_object *object, uint32_t on);
 static void system_network_step(struct zwl_server *server, unsigned request);
 static void system_network_snapshot(struct zwl_object *object);
 static void system_network_change(struct zwl_object *object);
@@ -428,6 +435,18 @@ zwl_system_bar_saved(
 }
 
 /*
+ * Takes a network object's asking for scans away when it goes (objects.c
+ * calls it for every network object's destroy, its client's end included).
+ */
+void
+zwl_system_network_gone(
+	struct zwl_object *object)
+{
+	/* An object that asks no longer has the same end as one that never asked. */
+	system_network_scanning(object, 0U);
+}
+
+/*
  * Waits for the threads' jobs at the compositor's end, before the backend
  * closes (the power's thread uses it).
  */
@@ -575,6 +594,14 @@ system_network_request(
 		return 0;
 	}
 
+	/* Scans asked for or no longer (since version 3): the on alone, and no answer. */
+	if (opcode == KL_SYSTEM_NETWORK_SET_SCANNING) {
+		if (object->version < 3U || size != 4U)
+			return EPROTO;
+		system_network_scanning(object, system_word(bytes, 0U));
+		return 0;
+	}
+
 	/* The details: the request's number alone. */
 	if (opcode == KL_SYSTEM_NETWORK_QUERY_DETAILS) {
 		if (size != 4U)
@@ -639,6 +666,35 @@ system_network_request(
 
 	/* Succeeded: the request is answered now, or when it finishes. */
 	return 0;
+}
+
+/*
+ * Records whether a network object asks for scans (any value but 0 is on);
+ * a change counts it in network.c's holders, or out of them.
+ */
+static void
+system_network_scanning(
+	struct zwl_object *object,
+	uint32_t on)
+{
+	unsigned asked;
+
+	/* The object's asking, as 1 or 0. */
+	asked = 0U;
+	if (on != 0U)
+		asked = 1U;
+
+	/* No change: an object is counted once however often it asks. */
+	if (asked == object->network_scanning)
+		return;
+
+	/*
+	 * network_scanning marks the object as one of network.c's holders: the
+	 * radios are kept scanning while any holder is there.
+	 */
+	object->network_scanning = asked;
+	zwl_network_scan_hold(asked);
+	printf("ZWL SYSTEM scanning client=%llu id=%u on=%u\n", (unsigned long long)object->client->number, object->id, asked);
 }
 
 /* Carries out a request of a sound object. */

@@ -41,6 +41,9 @@
 #define NETWORKD_WIFI_OFF_DIRECTORY	"/var/db"
 #define NETWORKD_WIFI_OFF_PATH		"/var/db/wifi-off"
 
+/* How long one WIFI_SCAN_START asks for fresh scans, in seconds (ws089-p021). */
+#define NETWORKD_WIFI_SCAN_LEASE_SECONDS	30U
+
 /* One daemon transaction, including teardown; clients allow transport margin. */
 #define NETWORKD_WIFI_CLEANUP_SECONDS	10U
 #define NETWORKD_WIFI_TRANSPORT_MARGIN	15U
@@ -85,6 +88,23 @@ enum networkd_opcode {
 	 */
 	NETWORKD_OP_WIFI_SESSION_OPEN = 38,
 	NETWORKD_OP_WIFI_SESSION_CLOSE = 39,
+
+	/*
+	 * A desktop that shows the networks around asks for fresh scans
+	 * (ws089-p021, the user's request of 2026-10-04).  SCAN_START asks
+	 * for them for NETWORKD_WIFI_SCAN_LEASE_SECONDS, and is sent again
+	 * before that runs out while the list is shown; SCAN_STOP ends the
+	 * asking.  The lease is the daemon's guard against a desktop that went
+	 * without saying so.  While it holds and the radios are on but not
+	 * connected and not searching on their own (manual-disconnected),
+	 * the daemon starts a scan every NETWORKD_WLAN_RESCAN_SECONDS; the
+	 * automatic search scans on its own, and a connected radio cannot
+	 * scan (the kernel refuses while it is associated).  Neither carries
+	 * a field, and the answer only says the daemon heard; the scans are
+	 * read with WIFI_LIST.  Every admitted peer may ask, as for WIFI_LIST.
+	 */
+	NETWORKD_OP_WIFI_SCAN_START = 40,
+	NETWORKD_OP_WIFI_SCAN_STOP = 41,
 
 	/*
 	 * Wired management.  These say what the daemon is to do from now on

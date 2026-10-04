@@ -9,9 +9,10 @@
  * ws089-p012 (C1), WS131 p011: checks Settings' network requests on the
  * host against a pretend kl_system (the compositor's network) that answers
  * each request once.  A switch, a disconnect or a join asked for while
- * Settings' own request (a scan, usually) is out must wait in the slot and
- * be sent when that one is answered; a scan is not kept; a later ask
- * replaces what waited; a join with a new key is one save_key request,
+ * Settings' own request is out must wait in the slot and be sent when that
+ * one is answered; a later ask replaces what waited; the scans are asked
+ * for while a page lists the networks around and take no request
+ * (ws089-p021); a join with a new key is one save_key request,
  * sent after the outstanding one with the key typed; a request the
  * compositor answers busy (the system bar's request was out) waits a
  * moment and goes again; a join's failures are said in words.  Built and
@@ -30,9 +31,10 @@
 
 /*
  * The pretend compositor: the request outstanding (SE_NETWORK_NONE when
- * none) and its number, the next number, and the requests sent in order
- * with the network named and the key's length.  It lives for the whole
- * test and is reset before each case.
+ * none) and its number, the next number, the requests sent in order
+ * with the network named and the key's length, and whether the scans are
+ * asked for, with how often that was told.  It lives for the whole test
+ * and is reset before each case.
  */
 struct slot_daemon {
 	unsigned outstanding;
@@ -42,6 +44,8 @@ struct slot_daemon {
 	char sent_ssid[SLOT_SENT_MAX][KL_NETWORK_SSID_MAX];
 	size_t sent_key_length[SLOT_SENT_MAX];
 	unsigned sent_count;
+	int scanning;
+	unsigned scanning_calls;
 };
 
 /* The pretend compositor of the case being run. */
@@ -66,45 +70,48 @@ int
 main(void)
 {
 	static struct se_app app;
-	static const unsigned scan_then_off[] = { KL_NETWORK_SCAN, KL_NETWORK_WIFI_OFF };
-	static const unsigned scan_then_join[] = { KL_NETWORK_SCAN, KL_NETWORK_JOIN };
-	static const unsigned scan_then_key[] = { KL_NETWORK_SCAN, SE_NETWORK_SAVE_KEY };
+	static const unsigned join_then_off[] = { KL_NETWORK_JOIN, KL_NETWORK_WIFI_OFF };
+	static const unsigned off_then_join[] = { KL_NETWORK_WIFI_OFF, KL_NETWORK_JOIN };
+	static const unsigned disconnect_then_key[] = { KL_NETWORK_DISCONNECT, SE_NETWORK_SAVE_KEY };
 	static const unsigned join_then_join[] = { KL_NETWORK_JOIN, KL_NETWORK_JOIN };
-	static const unsigned scan_only[] = { KL_NETWORK_SCAN };
-	static const unsigned scan_then_disconnect[] = { KL_NETWORK_SCAN, KL_NETWORK_DISCONNECT };
+	static const unsigned join_then_disconnect[] = { KL_NETWORK_JOIN, KL_NETWORK_DISCONNECT };
 	static const unsigned off_twice[] = { KL_NETWORK_WIFI_OFF, KL_NETWORK_WIFI_OFF };
 
-	/* 1. The switch pressed during a scan is sent after the scan's answer. */
+	/* 1. The switch pressed during a join is sent after the join's answer. */
 	slot_reset(&app);
-	se_network_scan(&app);
+	se_network_join(&app, "OSC Venue");
 	se_network_wifi(&app, 0);
 	slot_expect("1 switch waits", app.network.pending_request == KL_NETWORK_WIFI_OFF);
 	slot_expect("1 no busy refusal", app.network.message_bad == 0);
 	slot_finish(&app, 0);
-	slot_expect_sent("1 scan then off", 2U, scan_then_off);
+	slot_expect_sent("1 join then off", 2U, join_then_off);
 
-	/* 2. A saved network joined during a scan: Connecting is said at once, the join follows the scan. */
+	/* 2. A saved network joined while the switch's request is out: Connecting is said at once, the join follows. */
 	slot_reset(&app);
-	se_network_scan(&app);
+	se_network_wifi(&app, 0);
 	se_network_join(&app, "Cafe Guest");
 	slot_expect("2 joining said", strcmp(app.network.message, "Connecting to Cafe Guest...") == 0);
 	slot_finish(&app, 0);
-	slot_expect_sent("2 scan then join", 2U, scan_then_join);
+	slot_expect_sent("2 off then join", 2U, off_then_join);
 	slot_expect("2 join names the network", strcmp(slot_daemon.sent_ssid[1], "Cafe Guest") == 0);
 	slot_finish(&app, 0);
 	slot_expect("2 connected", strcmp(app.network.message, "Connected to Cafe Guest.") == 0);
 
-	/* 3. A new key during a scan: one save_key request after the scan, with the key typed. */
+	/*
+	 * 3. A new key during a disconnect: one save_key request after it, with
+	 * the key typed.  (A join of another network answered meanwhile wipes
+	 * the key form, BUG-186's area: not this case.)
+	 */
 	slot_reset(&app);
+	se_network_disconnect(&app);
 	(void)snprintf(app.network.key.text, sizeof(app.network.key.text), "%s", "correct horse");
 	app.network.key.length = strlen(app.network.key.text);
 	(void)snprintf(app.network.key_ssid, sizeof(app.network.key_ssid), "%s", "Neighbor 5G");
-	se_network_scan(&app);
 	se_network_join_key(&app, "Neighbor 5G", app.network.key.text);
 	slot_expect("3 save-key waits", app.network.pending_request == SE_NETWORK_SAVE_KEY);
 	slot_expect("3 joining said", strcmp(app.network.message, "Connecting to Neighbor 5G...") == 0);
 	slot_finish(&app, 0);
-	slot_expect_sent("3 scan then save-key", 2U, scan_then_key);
+	slot_expect_sent("3 disconnect then save-key", 2U, disconnect_then_key);
 	slot_expect("3 save-key names the network and the key", strcmp(slot_daemon.sent_ssid[1], "Neighbor 5G") == 0 && slot_daemon.sent_key_length[1] == 13U);
 	slot_finish(&app, 0);
 	slot_expect("3 connected", strcmp(app.network.message, "Connected to Neighbor 5G.") == 0);
@@ -121,21 +128,40 @@ main(void)
 	slot_finish(&app, 0);
 	slot_expect("4 connected", strcmp(app.network.message, "Connected to Kei Lab.") == 0);
 
-	/* 5. The Scan button during a scan is not kept. */
+	/*
+	 * 5. ws089-p021: the scans are asked for while a page lists the networks
+	 * around, once however often it polls, and no longer on another page,
+	 * on Ethernet, or when the window closes; the asking takes no request.
+	 */
 	slot_reset(&app);
-	se_network_scan(&app);
-	se_network_scan(&app);
-	slot_expect("5 scan not kept", app.network.pending_request == SE_NETWORK_NONE);
-	slot_finish(&app, 0);
-	slot_expect_sent("5 one scan", 1U, scan_only);
+	app.page = SE_PAGE_WIFI;
+	se_network_poll(&app, app.now);
+	se_network_poll(&app, app.now + 300U);
+	slot_expect("5 scanning asked once", slot_daemon.scanning == 1 && slot_daemon.scanning_calls == 1U);
+	slot_expect("5 no request for it", slot_daemon.sent_count == 0U && app.network.request == SE_NETWORK_NONE);
+	app.page = SE_PAGE_NETWORK;
+	se_network_poll(&app, app.now + 600U);
+	slot_expect("5 still asked on Network", slot_daemon.scanning == 1 && slot_daemon.scanning_calls == 1U);
+	app.page = SE_PAGE_ETHERNET;
+	se_network_poll(&app, app.now + 900U);
+	slot_expect("5 no longer on Ethernet", slot_daemon.scanning == 0 && slot_daemon.scanning_calls == 2U);
+	app.page = SE_PAGE_WIFI;
+	se_network_poll(&app, app.now + 1200U);
+	app.page = SE_PAGE_HOME;
+	se_network_poll(&app, app.now + 1500U);
+	slot_expect("5 no longer on Home", slot_daemon.scanning == 0 && slot_daemon.scanning_calls == 4U);
+	app.page = SE_PAGE_WIFI;
+	se_network_poll(&app, app.now + 1800U);
+	se_network_close(&app);
+	slot_expect("5 no longer once closed", slot_daemon.scanning == 0 && slot_daemon.scanning_calls == 6U);
 
-	/* 6. Two presses during a scan: the later one waits in place of the first. */
+	/* 6. Two presses during a join: the later one waits in place of the first. */
 	slot_reset(&app);
-	se_network_scan(&app);
+	se_network_join(&app, "OSC Venue");
 	se_network_wifi(&app, 0);
 	se_network_disconnect(&app);
 	slot_finish(&app, 0);
-	slot_expect_sent("6 the later press", 2U, scan_then_disconnect);
+	slot_expect_sent("6 the later press", 2U, join_then_disconnect);
 
 	/* 7. The compositor busy with the system bar's request: the switch waits a moment and goes again. */
 	slot_reset(&app);
@@ -176,7 +202,7 @@ main(void)
 	return 0;
 }
 
-/* Starts a case: a fresh pretend compositor and a fresh Settings following it, on Home (no periodic scan). */
+/* Starts a case: a fresh pretend compositor and a fresh Settings following it, on Home (no scans asked for). */
 static void
 slot_reset(
 	struct se_app *app)
@@ -347,6 +373,20 @@ kl_system_network_save_key(
 	if (length < KL_NETWORK_KEY_MIN || length > KL_NETWORK_KEY_MAX)
 		return EINVAL;
 	slot_sent(SE_NETWORK_SAVE_KEY, ssid, key, request);
+	return 0;
+}
+
+/* The pretend kl_system: the scans asked for or no longer (ws089-p021), remembered with how often. */
+int
+kl_system_network_set_scanning(
+	struct kl_system *system,
+	unsigned on)
+{
+	(void)system;
+	slot_daemon.scanning = 0;
+	if (on != 0U)
+		slot_daemon.scanning = 1;
+	slot_daemon.scanning_calls++;
 	return 0;
 }
 
