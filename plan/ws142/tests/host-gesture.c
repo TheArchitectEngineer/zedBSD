@@ -347,6 +347,8 @@ main(void)
 	int32_t y[3];
 	struct zwl_touchpad_actions released;
 	int32_t travel;
+	int burst;
+	int step;
 
 	/* 1. Two fingers up 20 mm from the bottom edge, quickly: BOTTOM2 begins, follows and ends fast. */
 	start_case(1);
@@ -649,6 +651,65 @@ main(void)
 	frame();
 	check(gestures() == 0U, "no size: no gesture");
 	check(kind_count(ZWL_TOUCHPAD_SCROLL) > 0U, "no size: scrolls");
+
+	/* 20. Slow fingers (2 mm every 60 ms) whose reports come in bursts of three every 180 ms: no flick (T1-126). */
+	start_case(1);
+	x[0] = 500;
+	y[0] = 750;
+	x[1] = 700;
+	y[1] = 745;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	for (burst = 0; burst < 4; burst++) {
+		for (step = 0; step < 3; step++) {
+			y[0] -= 24;
+			y[1] -= 24;
+			finger_move(0, x[0], y[0]);
+			finger_move(1, x[1], y[1]);
+			frame_after((uint64_t)(step == 0) * 180U);
+		}
+	}
+
+	/* Lifted. */
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_END) == 1U, "bursts: bottom2 ends");
+	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "bursts: 33 mm/s read in bursts is no flick");
+	check(last_speed(ZWL_TOUCHPAD_PHASE_END) > 20000, "bursts: about 33 mm/s");
+
+	/* 21. A quick swipe that stops 200 ms before the lift: no flick, with or without reports while still. */
+	start_case(1);
+	y[0] = 750;
+	y[1] = 745;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, -240, 10, 8U);
+	frame_after(200U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "stopped, no reports: no flick");
+	start_case(1);
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, -240, 10, 8U);
+	y[0] -= 240;
+	y[1] -= 240;
+	for (step = 0; step < 25; step++) {
+		finger_move(0, x[0], y[0]);
+		finger_move(1, x[1], y[1]);
+		frame();
+	}
+
+	/* Lifted. */
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "stopped, reports while still: no flick");
 
 	/* The result. */
 	if (failures != 0) {

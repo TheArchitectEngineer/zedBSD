@@ -46,7 +46,9 @@ if grep -q '^power lid=- ac=- battery=- charging=-' "$out/power.txt"; then pass 
 
 # 3. The reader, then the plugs.
 : > "$out/qmp.txt"
-guest '(/bin/systemevents -t 20000 > /tmp/events.txt 2>&1 &) ; sleep 1; cat /tmp/events.txt' > "$out/start.txt"
+# The reader waits up to 90 s without an event (T1-129: once it timed out after the stick's disk add at 20 s, so the
+# system was still, or the reader's wait ended early; its lines now carry times) and is stopped at the end.
+guest '(/bin/systemevents -t 90000 > /tmp/events.txt 2>&1 &) ; sleep 1; cat /tmp/events.txt' > "$out/start.txt"
 if ! grep -q '^ready' "$out/start.txt"; then fail reader-ready; fi
 stick="$out/stick.img"
 truncate -s 16M "$stick"
@@ -67,7 +69,7 @@ send device_del '{"id":"hotnic"}'
 sleep 3
 send system_powerdown
 sleep 3
-guest 'cat /tmp/events.txt' > "$out/events.txt"
+guest 'cat /tmp/events.txt; for p in $(ps -A -o pid,args | grep "[s]ystemevents -t" | awk "{print \$1}"); do kill $p; done' > "$out/events.txt"
 
 # Each expected line, in the order of the plugs.
 check_line() {

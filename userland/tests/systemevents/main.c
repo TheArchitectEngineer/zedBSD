@@ -11,10 +11,14 @@
  *   systemevents [-c CLASSES] [-n COUNT] [-t MS]
  *                 subscribes to CLASSES (a comma list of power, lid, ac,
  *                 battery, disk, input, network, usb, or all, the default),
- *                 prints "ready" once subscribed, then one line an event:
- *                   event SEQ CLASS ACTION VALUE SUBJECT DETAIL
+ *                 prints "ready at_ms=T" once subscribed, then one line an
+ *                 event:
+ *                   event SEQ CLASS ACTION VALUE SUBJECT DETAIL at_ms=T
  *                 and ends after COUNT events or MS milliseconds without one
- *                 (default: never), with "done events=N"
+ *                 (default: never), with "done events=N at_ms=T"; T is the
+ *                 event's time, or the reader's, in milliseconds of the
+ *                 monotonic clock (T1-129: to tell a reader that timed out
+ *                 early from a system that was still)
  *   systemevents -p
  *                 prints the power's state (KERN_SYSTEM_GET_POWER):
  *                   power lid=1 ac=1 battery=50 charging=1
@@ -36,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 #include <uapi/system.h>
 
@@ -68,6 +73,7 @@ static int print_power(void);
 static int refused(int result, int expected, const char *what);
 static int check_refusals(void);
 static int read_events(uint32_t classes, long count, int timeout_ms);
+static unsigned long long now_ms(void);
 static int print_records(const struct system_event *events, ssize_t length, long *seen);
 
 int
@@ -376,7 +382,7 @@ read_events(
 	}
 
 	/* The reader is ready for the events the test makes. */
-	printf("ready\n");
+	printf("ready at_ms=%llu\n", now_ms());
 	fflush(stdout);
 
 	/* Each event, until the count or the time without one. */
@@ -412,9 +418,25 @@ read_events(
 	close(fd);
 
 	/* Succeeded: the count, on both outputs. */
-	printf("done events=%ld\n", seen);
+	printf("done events=%ld at_ms=%llu\n", seen, now_ms());
 	fprintf(stderr, "systemevents: done events=%ld\n", seen);
 	return 0;
+}
+
+/* Gives the monotonic clock in milliseconds. */
+static unsigned long long
+now_ms(void)
+{
+	struct timespec now;
+	int result;
+
+	/* The clock, or 0 when it cannot be read. */
+	result = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (result != 0)
+		return 0;
+
+	/* Succeeded: milliseconds. */
+	return (unsigned long long)now.tv_sec * 1000ULL + (unsigned long long)now.tv_nsec / 1000000ULL;
 }
 
 /* Prints the records of one read.  Reports 1 when the read failed or gave a part of a record. */
@@ -440,10 +462,10 @@ print_records(
 
 	/* One line a record. */
 	for (index = 0; index < (size_t)length / sizeof(events[0]); index++) {
-		printf("event %llu %s %s %d %s %s\n", (unsigned long long)events[index].sequence,
+		printf("event %llu %s %s %d %s %s at_ms=%llu\n", (unsigned long long)events[index].sequence,
 		       class_text(events[index].class_bit), action_text(events[index].action),
 		       (int)events[index].value, text_or_dash(events[index].subject),
-		       text_or_dash(events[index].detail));
+		       text_or_dash(events[index].detail), (unsigned long long)(events[index].time_ns / 1000000U));
 		(*seen)++;
 	}
 

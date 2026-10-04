@@ -55,6 +55,8 @@ Design: [ws132-p001](../phase001/phase.md) の K1・K2
 
 - 2026-10-05 T1-125 の対処（ws132-p003）で guest.py の xHCI が 8＋8 port になり、full-speed の機器の root hub の番号が変わる。p002-guest.sh の usb add/remove の 6 行は port の番号を照合しない（`port=[0-9]+`）。再試験は T1。
 
+- 2026-10-05 T1-129: 1 回目 FAIL、2 回目 PASS。1 回目の events.txt は stick の `usb add`・`disk add` の後に `done events=2`（reader の `-t 20000` は「事象の無い 20 秒」で終わる）。次の事象（4 秒後の stick の抜去）までに 20 秒の空白は試験の手順に無いので、guest が 20 秒以上止まったか、reader の待ちが早く終わったかのどちらか。kernel の `poll` は期限切れ（ETIMEDOUT）で最後の走査をせずに 0 を返すので、止まっていた間に事象が来ていても拾わない（`src/kern/poll.c` の `poll_wait_ready`、ws132 の範囲外なので Q1 に提案）。直し: `systemevents` の行に時刻（`ready at_ms=`・`event … at_ms=`（事象の時刻）・`done events=N at_ms=`）を付けて次に起きた時に区別できるようにし、試験の reader は 90 秒待って最後に止める（`plan/ws132/tests/p002-guest.sh`）。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定（T1、Q1）。
