@@ -52,6 +52,7 @@
  */
 
 #include "zwl.h"
+#include "media.h"
 
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -165,6 +166,17 @@ struct system_network_wait {
 	char key[KL_BACKEND_NETWORK_KEY_MAX + 1U];
 };
 
+/* The most mounts and ejects waiting for volumed's answer at once; one more is answered busy. */
+#define SYSTEM_DEVICES_WAITING	8U
+
+/* A mount or an eject waiting for volumed: the backend's number, and who asked (client, object, request). */
+struct system_devices_wait {
+	uint32_t request;
+	uint64_t client;
+	uint32_t object;
+	uint32_t number;
+};
+
 /* An object waiting for the details: its client by number, its ID and the request's number. */
 struct system_details_wait {
 	uint64_t client;
@@ -209,6 +221,8 @@ struct system_state {
 	unsigned power_started;
 	unsigned power_read;
 	unsigned power_again;
+	struct system_devices_wait devices[SYSTEM_DEVICES_WAITING];
+	unsigned devices_count;
 	uint32_t serial;
 };
 
@@ -246,6 +260,9 @@ static void system_job_wait(struct system_job *job);
 static void *system_job_run(void *argument);
 static void system_audio_state(struct zwl_object *object);
 static void system_power_state(struct zwl_object *object);
+static void system_devices_state(struct zwl_object *object);
+static void system_devices_answers(struct zwl_server *server);
+static struct zwl_object *system_devices_object(struct zwl_server *server, uint64_t number, uint32_t id);
 static void system_tell(struct zwl_server *server, enum zwl_kind kind, void (*tell)(struct zwl_object *object), uint32_t done_opcode);
 static struct zwl_object *system_network_object(struct zwl_server *server, uint64_t number, uint32_t id);
 static void system_result(struct zwl_object *object, uint32_t opcode, uint32_t number, uint32_t applied);
@@ -346,6 +363,7 @@ zwl_system_tick(
 	struct zwl_server *server)
 {
 	struct kl_backend_audio_state audio;
+	unsigned changed;
 	int differs;
 
 	/* The power is read once at the start, so that the clients find its state known. */
@@ -375,6 +393,13 @@ zwl_system_tick(
 
 	/* The monitor's samples, to the monitor objects (sysmon.c, WS134 p012). */
 	zwl_sysmon_tick(server);
+
+	/* The removable media: a new list to every devices object, and volumed's answers (media.c, ws132-p004). */
+	changed = zwl_media_tick(server);
+	if ((changed & KL_BACKEND_VOLUMES_CHANGED_LIST) != 0U)
+		system_tell(server, ZWL_SYSTEM_DEVICES, system_devices_state, KL_SYSTEM_DEVICES_EVENT_DONE);
+	if ((changed & KL_BACKEND_VOLUMES_CHANGED_RESULT) != 0U)
+		system_devices_answers(server);
 
 	/* The sound as volume.c has it, told to every sound object when it changed. */
 	zwl_volume_audio_state(&audio);
@@ -631,6 +656,7 @@ system_manager_request(
 		/* No state, and no done. */
 		break;
 	default:
+		system_devices_state(created);
 		system_done(created, KL_SYSTEM_DEVICES_EVENT_DONE);
 		break;
 	}
@@ -899,7 +925,7 @@ system_power_request(
 	return 0;
 }
 
-/* Carries out a request of a devices object (no device is known until WS132). */
+/* Carries out a request of a devices object: an eject, or a mount (since version 5), sent to volumed. */
 static int
 system_devices_request(
 	struct zwl_object *object,
@@ -907,9 +933,12 @@ system_devices_request(
 	const unsigned char *bytes,
 	size_t size)
 {
+	struct system_devices_wait *wait;
+	uint32_t request;
 	uint32_t number;
 	char *id;
 	size_t end;
+	int mount;
 	int error;
 
 	/* The object goes. */
@@ -920,21 +949,47 @@ system_devices_request(
 		return 0;
 	}
 
-	/* An eject: its number and the device. */
-	if (opcode != KL_SYSTEM_DEVICES_EJECT || size < 4U)
+	/* An eject, or a mount from an object made at version 5: its number and the device. */
+	mount = 0;
+	if (opcode == KL_SYSTEM_DEVICES_MOUNT && object->version >= KL_SYSTEM_DEVICES_SINCE_MOUNT)
+		mount = 1;
+	if ((opcode != KL_SYSTEM_DEVICES_EJECT && !mount) || size < 4U)
 		return EPROTO;
 	number = system_word(bytes, 0U);
 	error = system_read_string(bytes, size, 4U, &id, &end);
 	if (error != 0)
 		return EPROTO;
-	free(id);
-	if (end != size)
+	if (end != size) {
+		free(id);
 		return EPROTO;
+	}
 
-	/* No device can be ejected yet. */
-	system_result(object, KL_SYSTEM_DEVICES_EVENT_RESULT, number, KL_SYSTEM_RESULT_UNSUPPORTED);
+	/* Too many waiting: busy. */
+	if (system_state.devices_count >= SYSTEM_DEVICES_WAITING) {
+		free(id);
+		system_result(object, KL_SYSTEM_DEVICES_EVENT_RESULT, number, KL_SYSTEM_RESULT_BUSY);
+		return 0;
+	}
 
-	/* Succeeded: the request is answered. */
+	/* Sent to volumed; the answer comes later, or the failure to send now. */
+	request = 0U;
+	error = zwl_media_ask(mount, id, &request);
+	printf("ZWL SYSTEM devices client=%llu mount=%d id=%s error=%d\n", (unsigned long long)object->client->number, mount, id, error);
+	free(id);
+	if (error != 0) {
+		system_result(object, KL_SYSTEM_DEVICES_EVENT_RESULT, number, system_result_of(error));
+		return 0;
+	}
+
+	/* Kept until volumed answers. */
+	wait = &system_state.devices[system_state.devices_count];
+	system_state.devices_count++;
+	wait->request = request;
+	wait->client = object->client->number;
+	wait->object = object->id;
+	wait->number = number;
+
+	/* Succeeded: the request is under way. */
 	return 0;
 }
 
@@ -1812,6 +1867,120 @@ system_audio_state(
 	words[5] = state.right;
 	words[6] = state.muted;
 	(void)zwl_emit(object->client, object->id, KL_SYSTEM_AUDIO_EVENT_STATE, words, sizeof(words));
+}
+
+/* Sends a devices object every volume: its ID, kind, state, name and where it is mounted. */
+static void
+system_devices_state(
+	struct zwl_object *object)
+{
+	struct kl_backend_volume volumes[KL_BACKEND_VOLUMES_MAX];
+	unsigned char payload[SYSTEM_EVENT_MAX];
+	const char *name;
+	uint32_t state;
+	size_t count;
+	size_t index;
+	size_t offset;
+
+	/* Each volume. */
+	count = zwl_media_volumes(volumes, KL_BACKEND_VOLUMES_MAX);
+	for (index = 0U; index < count; index++) {
+		/* Mounted, or new (inserted and never mounted since). */
+		state = 0U;
+		if (volumes[index].path[0] != '\0')
+			state |= KL_SYSTEM_DEVICE_MOUNTED;
+		if (volumes[index].fresh != 0U)
+			state |= KL_SYSTEM_DEVICE_NEW;
+
+		/* The label is its name, the disk's name without one. */
+		name = volumes[index].label;
+		if (name[0] == '\0')
+			name = volumes[index].id;
+
+		/* id, kind, state, name, location. */
+		offset = system_put_string(payload, 0U, volumes[index].id);
+		offset = system_put_word(payload, offset, KL_SYSTEM_DEVICE_KIND_STORAGE);
+		offset = system_put_word(payload, offset, state);
+		offset = system_put_string(payload, offset, name);
+		offset = system_put_string(payload, offset, volumes[index].path);
+		(void)zwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_DEVICE, payload, offset);
+	}
+}
+
+/* Answers the mounts and ejects volumed has answered, to the objects still there. */
+static void
+system_devices_answers(
+	struct zwl_server *server)
+{
+	struct system_devices_wait wait;
+	struct zwl_object *object;
+	unsigned char payload[SYSTEM_EVENT_MAX];
+	char user[64];
+	uint32_t request;
+	unsigned index;
+	size_t offset;
+	int error;
+	int taken;
+
+	/* Each answer. */
+	for (;;) {
+		taken = zwl_media_take_result(&request, &error, user, sizeof(user));
+		if (!taken)
+			break;
+
+		/* Who asked it, taken off the waiting. */
+		for (index = 0U; index < system_state.devices_count; index++) {
+			if (system_state.devices[index].request == request)
+				break;
+		}
+
+		/* An answer nobody waits for (its object's request was never kept). */
+		if (index == system_state.devices_count)
+			continue;
+		wait = system_state.devices[index];
+		system_state.devices_count--;
+		system_state.devices[index] = system_state.devices[system_state.devices_count];
+
+		/* The object, if it is still there: the program of a busy eject (version 5), then the result. */
+		object = system_devices_object(server, wait.client, wait.object);
+		printf("ZWL SYSTEM devices answer request=%u error=%d user=%s\n", wait.number, error, user);
+		if (object == NULL)
+			continue;
+		if (error == EBUSY && user[0] != '\0' && object->version >= KL_SYSTEM_DEVICES_SINCE_MOUNT) {
+			offset = system_put_word(payload, 0U, wait.number);
+			offset = system_put_string(payload, offset, user);
+			(void)zwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_BUSY, payload, offset);
+		}
+
+		/* The result. */
+		system_result(object, KL_SYSTEM_DEVICES_EVENT_RESULT, wait.number, system_result_of(error));
+	}
+}
+
+/* Finds a client's devices object by the client's number and the object's ID, if it is still there. */
+static struct zwl_object *
+system_devices_object(
+	struct zwl_server *server,
+	uint64_t number,
+	uint32_t id)
+{
+	struct zwl_client *client;
+	struct zwl_object *object;
+
+	/* The client by its number, and its devices object of that ID. */
+	for (client = server->clients;
+	     client != NULL;
+	     client = client->next) {
+		if (client->number != number || client->fatal)
+			continue;
+		object = zwl_find(client, id);
+		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_DEVICES)
+			return NULL;
+		return object;
+	}
+
+	/* The client went. */
+	return NULL;
 }
 
 /* Sends the power's state as last read (sent only after the first read). */

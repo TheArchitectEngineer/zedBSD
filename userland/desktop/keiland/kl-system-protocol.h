@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 4; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 5; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -80,12 +80,21 @@
  *   event   1 done(uint serial)
  *   event   2 result(uint request, uint applied, uint saved)
  *
- * kl_system_devices_v1 (the frame for WS132; no device yet)
+ * kl_system_devices_v1 (WS132: the removable media, ws132-p004)
  *   request 0 destroy
  *   request 1 eject(uint request, string id)
+ *   request 2 mount(uint request, string id)                  since version 5
  *   event   0 device(string id, uint kind, uint state, string name, string location)
  *   event   1 done(uint serial)
  *   event   2 result(uint request, uint applied, uint saved)
+ *   event   3 busy(uint request, string program)              since version 5: before a busy result, the program
+ *                                                             that keeps the volume from being ejected
+ *   The devices are the volumes volumed lists (zedBSD): kind 1 (removable storage), state the
+ *   KL_SYSTEM_DEVICE_* bits (mounted; new: inserted and never mounted since), name the label (the
+ *   disk's name without one), location where it is mounted ("" when it is not).  Each object hears
+ *   the whole list and a done when it is made and whenever it changes (a device not in the list is
+ *   gone).  A mount puts the volume under /media (nosuid, noexec, the user its owner); an eject
+ *   unmounts it (busy while a program uses it).  Only the seat's user may (denied otherwise).
  *
  * kl_system_account_v1 (ws160-p002: the user's own account)
  *   request 0 destroy
@@ -139,7 +148,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		4U
+#define KL_SYSTEM_MANAGER_VERSION		5U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -225,9 +234,17 @@
 /* kl_system_devices_v1's requests and events. */
 #define KL_SYSTEM_DEVICES_DESTROY		0U
 #define KL_SYSTEM_DEVICES_EJECT			1U
+#define KL_SYSTEM_DEVICES_MOUNT			2U
 #define KL_SYSTEM_DEVICES_EVENT_DEVICE		0U
 #define KL_SYSTEM_DEVICES_EVENT_DONE		1U
 #define KL_SYSTEM_DEVICES_EVENT_RESULT		2U
+#define KL_SYSTEM_DEVICES_EVENT_BUSY		3U
+#define KL_SYSTEM_DEVICES_SINCE_MOUNT		5U
+
+/* A device's kind and its state's bits (ws132-p004). */
+#define KL_SYSTEM_DEVICE_KIND_STORAGE		1U
+#define KL_SYSTEM_DEVICE_MOUNTED		0x1U
+#define KL_SYSTEM_DEVICE_NEW			0x2U
 
 /* kl_system_monitor_v1's requests and events (WS134 p012). */
 #define KL_SYSTEM_MONITOR_DESTROY		0U

@@ -429,6 +429,78 @@ int kl_backend_audio_feedback(struct kl_backend_audio *audio);
 int kl_backend_audio_available(void);
 
 /*
+ * The removable media (ws132-p004): the volumes zedBSD's volumed lists (a
+ * USB stick's FAT or UFS filesystem), mounted only when the user asks.
+ * Like the sound, nothing here waits: kl_backend_volumes_update reads what
+ * has arrived and connects again when the service went (at most every two
+ * seconds); a mount or an eject is sent at once and answered later as a
+ * result.  Linux and FreeBSD offer no volumes yet (every call ENOTSUP or
+ * an empty list).
+ */
+struct kl_backend_volumes;
+
+/* The most volumes kept, and the lengths of a volume's texts with their NULs. */
+#define KL_BACKEND_VOLUMES_MAX		16U
+#define KL_BACKEND_VOLUME_ID_MAX	32U
+#define KL_BACKEND_VOLUME_LABEL_MAX	64U
+#define KL_BACKEND_VOLUME_PATH_MAX	128U
+
+/*
+ * One volume: its ID (the disk's name), filesystem, label ("" without one),
+ * size, where it is mounted ("" when it is not), and whether it was never
+ * mounted since it was inserted (fresh: the desktop shows it).
+ */
+struct kl_backend_volume {
+	char id[KL_BACKEND_VOLUME_ID_MAX];
+	char fs[8];
+	char label[KL_BACKEND_VOLUME_LABEL_MAX];
+	char path[KL_BACKEND_VOLUME_PATH_MAX];
+	uint64_t bytes;
+	unsigned fresh;
+};
+
+/* What kl_backend_volumes_update found changed. */
+#define KL_BACKEND_VOLUMES_CHANGED_LIST		1U	/* the volumes (or the service's reach) changed */
+#define KL_BACKEND_VOLUMES_CHANGED_RESULT	2U	/* a mount or an eject was answered */
+
+/*
+ * Starts following the volumes.  Returns NULL only without memory.
+ */
+struct kl_backend_volumes *kl_backend_volumes_open(void);
+
+/*
+ * Stops following the volumes.
+ */
+void kl_backend_volumes_close(struct kl_backend_volumes *volumes);
+
+/*
+ * Reads what has arrived without waiting, and connects again when the
+ * connection went.  *changed has the KL_BACKEND_VOLUMES_CHANGED_* bits.
+ * Returns 0, or EINVAL.
+ */
+int kl_backend_volumes_update(struct kl_backend_volumes *volumes, unsigned *changed);
+
+/*
+ * Copies up to capacity volumes and returns how many were copied.
+ */
+size_t kl_backend_volumes_get(const struct kl_backend_volumes *volumes, struct kl_backend_volume *list, size_t capacity);
+
+/*
+ * Asks for a volume to be mounted (under /media, nosuid and noexec, owned
+ * by the user) or ejected; *request numbers the answer.  Returns 0 when
+ * asked, ENOTCONN (no service), ENOTSUP, EINVAL, or the error of sending.
+ */
+int kl_backend_volumes_mount(struct kl_backend_volumes *volumes, const char *id, uint32_t *request);
+int kl_backend_volumes_eject(struct kl_backend_volumes *volumes, const char *id, uint32_t *request);
+
+/*
+ * Takes the oldest answer: its request, its errno value (0, EACCES, EBUSY
+ * with the program using the volume in user, ...).  Returns 1 with one,
+ * 0 when none is waiting.
+ */
+int kl_backend_volumes_take_result(struct kl_backend_volumes *volumes, uint32_t *request, int *error, char *user, size_t size);
+
+/*
  * The machine's monitor (WS134 p008, plan/ws134/design.md section 1.3): what
  * the System Monitor shows, as counters that only grow (the CPUs' ticks,
  * the links' and the disks' bytes, the GPUs' busy time) and present values
