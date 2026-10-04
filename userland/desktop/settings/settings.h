@@ -415,6 +415,32 @@ struct se_network {
 	uint32_t sent[SE_USAGE_SAMPLES];
 	unsigned usage_count;
 	unsigned usage_next;
+	uint32_t wired_request;
+};
+
+/*
+ * The Ethernet page's editor of a wired interface's IPv4 configuration
+ * (wired.c, page-wired.c, ws089-p022): the interface being edited (empty
+ * while none is), DHCP or a static address (KL_WIRED_*), the fields
+ * (address, netmask, router, DNS 1, DNS 2; only the DNS servers count with
+ * DHCP), the field with the keyboard, whether an Apply is waiting for its
+ * answer (request), and the last message (red when it tells of a failure).
+ */
+#define SE_WIRED_FIELDS		5
+#define SE_WIRED_ADDRESS	0
+#define SE_WIRED_NETMASK	1
+#define SE_WIRED_ROUTER		2
+#define SE_WIRED_DNS1		3
+#define SE_WIRED_DNS2		4
+struct se_wired {
+	char interface[KL_NETWORK_NAME_MAX];
+	unsigned mode;
+	struct se_field fields[SE_WIRED_FIELDS];
+	int focus;
+	int asked;
+	uint32_t request;
+	char message[SE_MESSAGE];
+	int message_bad;
 };
 
 /* The Users page's password fields: the current password, the new one, the new one again. */
@@ -833,6 +859,9 @@ struct se_app {
 
 	/* The Users page's account and password fields (ws160-p002). */
 	struct se_users users;
+
+	/* The Ethernet page's editor of a wired interface (ws089-p022). */
+	struct se_wired wired;
 };
 
 /* The table of pages (pages.c). */
@@ -894,6 +923,16 @@ int se_network_wifi_on(const struct se_network *network);
 void se_network_join(struct se_app *app, const char *ssid);
 void se_network_join_key(struct se_app *app, const char *ssid, const char *key);
 void se_network_disconnect(struct se_app *app);
+int se_network_configure_wired(struct se_app *app, const struct kl_network_wired_config *config);
+void se_wired_edit(struct se_app *app, const struct kl_network_link *link);
+void se_wired_cancel(struct se_app *app);
+int se_wired_check(const struct se_wired *wired, char *message, size_t size);
+void se_wired_apply(struct se_app *app);
+void se_wired_outcome(struct se_app *app, int error);
+int se_wired_type(struct se_wired *wired, const struct se_event *event);
+void se_wired_press(struct se_app *app, int index);
+int se_wired_key(struct se_app *app, const struct se_event *event);
+int se_wired_card(struct se_app *app, struct fm_canvas *canvas, const struct kl_network_link *link, int x, int top, int width);
 
 /* The text fields (widgets.c). */
 int se_field_key(struct se_field *field, const struct se_event *event);

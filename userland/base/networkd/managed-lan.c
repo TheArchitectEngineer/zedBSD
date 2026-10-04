@@ -84,6 +84,53 @@ networkd_lan_set_policy(
 }
 
 /*
+ * Replaces what the configuration says of one interface, and asks for it
+ * to be configured again when a cable is in it.
+ */
+int
+networkd_lan_set_interface(
+	struct networkd_lan *lan,
+	const struct networkd_lan_policy *policy)
+{
+	struct networkd_lan_interface *item;
+	size_t index;
+	int valid;
+	int differs;
+
+	/* Rejects what cannot be held. */
+	if (lan == NULL || policy == NULL)
+		return -1;
+	valid = name_valid(policy->interface);
+	if (!valid)
+		return -1;
+
+	/* The interface's record. */
+	for (index = 0U; index < lan->policy_count; index++) {
+		differs = strcmp(lan->policy[index].interface, policy->interface);
+		if (differs == 0)
+			break;
+	}
+
+	/* A new one when there is none, while there is room. */
+	if (index == lan->policy_count) {
+		if (lan->policy_count >= NETWORKD_LAN_MAX)
+			return -1;
+		lan->policy_count++;
+	}
+
+	/* Replaced by what was asked. */
+	lan->policy[index] = *policy;
+
+	/* An interface with a cable is configured again, as the user asked. */
+	item = find_interface(lan, policy->interface);
+	if (item != NULL && item->carrier)
+		item->state = NETWORKD_LAN_PENDING;
+
+	/* Reports successful completion. */
+	return 0;
+}
+
+/*
  * Implements the networkd lan enable operation.
  */
 int

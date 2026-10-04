@@ -8,7 +8,7 @@ KL_BACKEND_ZEDBSD_SOURCES := userland/desktop/libkeiland-backend/backend.c \
 	userland/desktop/libkeiland-backend-zedbsd/network-link-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/monitor-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/audio-zedbsd.c \
-	userland/base/net/protocol.c userland/base/net/wifi-conf.c userland/base/net/wifi-store.c \
+	userland/base/net/protocol.c userland/base/net/wifi-conf.c userland/base/net/wifi-store.c userland/base/net/netconf.c \
 	userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/backlight-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/volume-zedbsd.c \

@@ -24,7 +24,7 @@
 const struct se_page se_pages[SE_PAGES] = {
 	{ SE_PAGE_HOME, SE_GROUP_NONE, SE_GLYPH_GRID, "Settings", "Change how Kei looks and works.", "home", "home overview all", 1, se_home_draw, NULL, NULL, NULL },
 	{ SE_PAGE_WIFI, SE_GROUP_CONNECTIVITY, SE_GLYPH_WIFI, "Wi-Fi", "Join wireless networks and turn the radio on or off.", "wifi", "wifi wireless wlan network ssid join key password", 1, se_wifi_page_draw, se_network_press, se_network_key, NULL },
-	{ SE_PAGE_ETHERNET, SE_GROUP_CONNECTIVITY, SE_GLYPH_ETHERNET, "Ethernet", "Wired connections and their addresses.", "ethernet", "ethernet wired lan cable address mac", 1, se_ethernet_page_draw, se_network_press, NULL, NULL },
+	{ SE_PAGE_ETHERNET, SE_GROUP_CONNECTIVITY, SE_GLYPH_ETHERNET, "Ethernet", "Wired connections and their addresses.", "ethernet", "ethernet wired lan cable address mac dhcp static router dns", 1, se_ethernet_page_draw, se_wired_press, se_wired_key, NULL },
 	{ SE_PAGE_BLUETOOTH, SE_GROUP_CONNECTIVITY, SE_GLYPH_BLUETOOTH, "Bluetooth", "Pair and connect wireless devices.", "bluetooth", "bluetooth pair devices headphones", 0, se_soon_draw, NULL, NULL, NULL },
 	{ SE_PAGE_VPN, SE_GROUP_CONNECTIVITY, SE_GLYPH_SHIELD, "VPN", "Connect securely to other networks.", "vpn", "vpn tunnel private network", 0, se_soon_draw, NULL, NULL, NULL },
 	{ SE_PAGE_NETWORK, SE_GROUP_CONNECTIVITY, SE_GLYPH_GLOBE, "Network", "Manage connections and internet settings.", "network", "network internet connection address dns ip usage", 1, se_network_page_draw, se_network_press, se_network_key, NULL },

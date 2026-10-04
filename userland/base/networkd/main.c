@@ -11,11 +11,13 @@
  * Implements the zedBSD networkd userland command.
  */
 
+#include "userland/base/net/netconf.h"
 #include "userland/base/net/netutil.h"
 #include "userland/base/net/protocol.h"
 #include "userland/base/net/publication-trace.h"
 #include "userland/base/net/wifi-store.h"
 #include "userland/base/networkd/confirmed.h"
+#include "userland/base/networkd/lan-configure.h"
 #include "userland/base/networkd/managed-lan.h"
 #include "userland/base/networkd/managed-wlan.h"
 #include "userland/base/networkd/wifi-child.h"
@@ -39,6 +41,7 @@
 #include <sys/time.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -504,6 +507,11 @@ static int run_command_until(char *const [], unsigned, uint64_t,
 static void clean_diagnostic(char *text);
 static int default_route_exists(void);
 static int write_resolver(char *const addresses[], int count);
+static void handle_lan_configure(int client, struct networkd_request *request, const struct kern_peercred *peer);
+static int lan_configure_target(const struct networkd_request *request, char *reason, size_t capacity);
+static int lan_configure_save(const struct networkd_lan_configure *configure, char *reason, size_t capacity);
+static void lan_configure_policy(const struct networkd_request *request, const struct networkd_lan_configure *configure);
+static int lan_configure_apply(struct networkd_request *request, const struct networkd_lan_configure *configure, char diagnostic[CHILD_OUTPUT_MAX]);
 static void handle_signal(int signal_number);
 static void ignore_signal(int signal_number);
 
@@ -3285,7 +3293,8 @@ operation_allowed(
 	    strcmp(operation, "WIFI_SESSION_OPEN") == 0 ||
 	    strcmp(operation, "WIFI_SESSION_CLOSE") == 0 ||
 	    strcmp(operation, "WIFI_SCAN_START") == 0 ||
-	    strcmp(operation, "WIFI_SCAN_STOP") == 0);
+	    strcmp(operation, "WIFI_SCAN_STOP") == 0 ||
+	    strcmp(operation, "LAN_CONFIGURE") == 0);
 
 	/* Returns the computed result. */
 	return function_result;
@@ -3394,6 +3403,12 @@ dispatch_request(
 		send_response(client, request->header.request_id,
 		    request->header.opcode, NETWORKD_RESULT_OK, 0, NULL,
 		    NULL, 0U);
+		return;
+	}
+
+	/* One wired interface's configuration (ws089-p022): written to net.conf and applied now. */
+	if (request->header.opcode == NETWORKD_OP_LAN_CONFIGURE) {
+		handle_lan_configure(client, request, peer);
 		return;
 	}
 
@@ -5526,7 +5541,10 @@ decode_request(
 	    seen == 32U && request->dns_count == 0U) ||
 	    ((request->header.opcode == NETWORKD_OP_WIFI_SESSION_OPEN ||
 	    request->header.opcode == NETWORKD_OP_WIFI_SESSION_CLOSE) &&
-	    seen == 256U && request->dns_count == 0U))
+	    seen == 256U && request->dns_count == 0U) ||
+	    (request->header.opcode == NETWORKD_OP_LAN_CONFIGURE &&
+	    (seen == 1U || seen == 13U || seen == 29U) &&
+	    request->dns_count <= NETWORKD_LAN_CONFIGURE_DNS_MAX))
 		return 0;
 	errno = EINVAL;
 	return -1;
@@ -5572,6 +5590,8 @@ operation_name(
 		return "LAN_ENABLE";
 	if (opcode == NETWORKD_OP_LAN_DISABLE)
 		return "LAN_DISABLE";
+	if (opcode == NETWORKD_OP_LAN_CONFIGURE)
+		return "LAN_CONFIGURE";
 	if (opcode == NETWORKD_OP_CONFIRMED_ARM)
 		return "CONFIRMED_ARM";
 	if (opcode == NETWORKD_OP_CONFIRMED_DISARM)
@@ -8486,4 +8506,318 @@ ignore_signal(
 	int signal_number)
 {
 	(void)signal_number;
+}
+
+/*
+ * Carries out one wired interface's configuration (ws089-p022), from a
+ * member of the network group or root: its fields checked, the interface
+ * an existing wired one, then its entry in net.conf written atomically
+ * under the writer's lock (nothing else of the file changes but the
+ * default route and the name servers it names), the wired policy told,
+ * and the configuration applied now.  Every outcome is logged.
+ */
+static void
+handle_lan_configure(
+	int client,
+	struct networkd_request *request,
+	const struct kern_peercred *peer)
+{
+	struct networkd_lan_configure configure;
+	char diagnostic[CHILD_OUTPUT_MAX];
+	char reason[160];
+	unsigned long euid;
+	unsigned index;
+	const char *mode;
+	int fixed;
+	int result;
+	int error;
+
+	/* The request's fields as a configuration. */
+	memset(&configure, 0, sizeof(configure));
+	configure.interface = request->interface;
+	configure.address = request->address;
+	configure.netmask = request->netmask;
+	configure.gateway = request->gateway;
+	configure.dns_count = request->dns_count;
+	for (index = 0U; index < request->dns_count && index < NETWORKD_LAN_CONFIGURE_DNS_MAX; index++)
+		configure.dns[index] = request->dns[index];
+	diagnostic[0] = '\0';
+	reason[0] = '\0';
+
+	/* Checked strictly. */
+	error = 0;
+	result = networkd_lan_configure_check(&configure, reason, sizeof(reason));
+	if (result != 0)
+		error = EINVAL;
+
+	/* An existing wired interface, while no confirmed transaction owns the wired configuration. */
+	if (error == 0)
+		error = lan_configure_target(request, reason, sizeof(reason));
+
+	/* Its entry in net.conf. */
+	if (error == 0)
+		error = lan_configure_save(&configure, reason, sizeof(reason));
+
+	/* The wired policy follows, and the configuration is applied now. */
+	if (error == 0) {
+		lan_configure_policy(request, &configure);
+		error = lan_configure_apply(request, &configure, diagnostic);
+		if (error != 0)
+			(void)snprintf(reason, sizeof(reason), "%s", "saved, but could not be applied now");
+	}
+
+	/* Who asked, and how. */
+	euid = 0UL;
+	if (peer != NULL)
+		euid = (unsigned long)peer->euid;
+	fixed = networkd_lan_configure_static(&configure);
+	mode = "dhcp";
+	if (fixed)
+		mode = "static";
+
+	/* Logged, every outcome, and answered. */
+	if (error == 0) {
+		syslog(LOG_NOTICE, "LAN_CONFIGURE interface=%s mode=%s address=%s netmask=%s router=%s dns=%u euid=%lu result=ok",
+		    request->interface, mode, request->address, request->netmask, request->gateway, request->dns_count, euid);
+		send_response(client, request->header.request_id, request->header.opcode, NETWORKD_RESULT_OK, 0, NULL, NULL, 0U);
+	} else {
+		syslog(LOG_WARNING, "LAN_CONFIGURE interface=%.15s euid=%lu result=error errno=%d reason=%s",
+		    request->interface, euid, error, reason);
+		send_response(client, request->header.request_id, request->header.opcode, NETWORKD_RESULT_ERROR, error, reason, NULL, 0U);
+	}
+
+	/* Nothing a child printed stays. */
+	networkd_protocol_clear(diagnostic, sizeof(diagnostic));
+}
+
+/*
+ * Checks that a configuration's interface is an existing wired one (not
+ * the loopback, not a radio) and that no confirmed transaction owns the
+ * wired configuration.  Returns 0, ENODEV or EBUSY with the reason.
+ */
+static int
+lan_configure_target(
+	const struct networkd_request *request,
+	char *reason,
+	size_t capacity)
+{
+	uint32_t ifindex;
+	int descriptor;
+	int flags;
+	int radio;
+	int status;
+	int active;
+
+	/* Its flags and index; the loopback is no cable. */
+	flags = 0;
+	ifindex = 0U;
+	(void)snprintf(reason, capacity, "%s", "no such wired interface");
+	status = interface_flags(request->interface, &flags);
+	if (status != 0)
+		return ENODEV;
+	status = interface_index(request->interface, &ifindex);
+	if (status != 0 || (flags & IFF_LOOPBACK) != 0)
+		return ENODEV;
+
+	/* Not a radio. */
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+	if (descriptor < 0)
+		return ENODEV;
+	radio = lan_interface_is_radio(descriptor, request->interface, ifindex);
+	(void)close(descriptor);
+	if (radio)
+		return ENODEV;
+
+	/* No confirmed transaction under way. */
+	active = networkd_confirmed_active(&confirmed);
+	if (active) {
+		(void)snprintf(reason, capacity, "%s", "confirmed transaction");
+		return EBUSY;
+	}
+
+	/* Succeeded: the interface may be configured. */
+	reason[0] = '\0';
+	return 0;
+}
+
+/*
+ * Writes a configuration's entry in net.conf: read under the writer's lock
+ * (a missing file is an empty configuration), edited for the interface,
+ * and saved atomically.  Returns 0 or an errno value with the reason.
+ */
+static int
+lan_configure_save(
+	const struct networkd_lan_configure *configure,
+	char *reason,
+	size_t capacity)
+{
+	struct netconf *configuration;
+	int writer;
+	int result;
+	int error;
+
+	/* Room for the configuration. */
+	configuration = calloc(1, sizeof(*configuration));
+	if (configuration == NULL) {
+		(void)snprintf(reason, capacity, "%s", "no memory");
+		return ENOMEM;
+	}
+
+	/* The writer's lock, as the net command takes it. */
+	writer = netconf_writer_lock(reason, capacity);
+	if (writer < 0) {
+		error = errno;
+		free(configuration);
+		if (error == 0)
+			error = EBUSY;
+		return error;
+	}
+
+	/* The file, or an empty configuration when there is none. */
+	result = netconf_load(NETCONF_PATH, configuration, reason, capacity);
+	error = errno;
+	if (result != 0 && error == ENOENT) {
+		memset(configuration, 0, sizeof(*configuration));
+		configuration->version = 1;
+		configuration->dns_mode = NETCONF_DNS_DHCP;
+		result = 0;
+	}
+
+	/* Edited for the interface. */
+	if (result == 0) {
+		result = networkd_lan_configure_edit(configuration, configure, reason, capacity);
+		error = errno;
+	}
+
+	/* Saved atomically. */
+	if (result == 0) {
+		result = netconf_save_atomic_locked(NETCONF_PATH, configuration, reason, capacity);
+		error = errno;
+	}
+
+	/* The lock and the configuration go. */
+	(void)netconf_writer_unlock(writer);
+	free(configuration);
+
+	/* Reports how it went. */
+	if (result != 0) {
+		if (error == 0)
+			error = EIO;
+		return error;
+	}
+
+	/* Succeeded: net.conf holds the configuration. */
+	return 0;
+}
+
+/* Tells the wired policy what the configuration asks of its interface. */
+static void
+lan_configure_policy(
+	const struct networkd_request *request,
+	const struct networkd_lan_configure *configure)
+{
+	struct networkd_lan_policy policy;
+	int fixed;
+
+	/* DHCP with the default timeout, or the static address. */
+	memset(&policy, 0, sizeof(policy));
+	(void)snprintf(policy.interface, sizeof(policy.interface), "%s", request->interface);
+	policy.mode = NETWORKD_LAN_MODE_DHCP;
+	policy.dhcp_timeout = 10U;
+	fixed = networkd_lan_configure_static(configure);
+	if (fixed) {
+		policy.mode = NETWORKD_LAN_MODE_STATIC;
+		policy.dhcp_timeout = 0U;
+		(void)snprintf(policy.address, sizeof(policy.address), "%s", request->address);
+		(void)snprintf(policy.netmask, sizeof(policy.netmask), "%s", request->netmask);
+	}
+
+	/* The policy's record of the interface. */
+	(void)networkd_lan_set_interface(&managed_lan, &policy);
+}
+
+/*
+ * Applies a wired interface's configuration now: through the wired policy
+ * while it manages the interfaces (its worker configures the address in
+ * the background), else the address directly; the default route replaced
+ * by a static one's router, and the name servers written when named.
+ * Returns 0 or an errno value.
+ */
+static int
+lan_configure_apply(
+	struct networkd_request *request,
+	const struct networkd_lan_configure *configure,
+	char diagnostic[CHILD_OUTPUT_MAX])
+{
+	char *arguments[8];
+	char seconds[16];
+	int present;
+	int result;
+	int fixed;
+
+	/* The address: the policy's worker, or now. */
+	result = 0;
+	fixed = networkd_lan_configure_static(configure);
+	if (managed_lan.enabled) {
+		lan_work_due = 1;
+	} else if (fixed) {
+		arguments[0] = "/sbin/ifconfig";
+		arguments[1] = request->interface;
+		arguments[2] = "inet";
+		arguments[3] = request->address;
+		arguments[4] = "netmask";
+		arguments[5] = request->netmask;
+		arguments[6] = NULL;
+		result = run_command_until(arguments, 10, 0U, diagnostic);
+	} else {
+		(void)snprintf(seconds, sizeof(seconds), "%u", 10U);
+		arguments[0] = "/sbin/dhcpc";
+		arguments[1] = "-t";
+		arguments[2] = seconds;
+		arguments[3] = request->interface;
+		arguments[4] = NULL;
+		result = run_command_until(arguments, 15, 0U, diagnostic);
+	}
+
+	/* An address that could not be given fails the rest. */
+	if (result != 0)
+		return EIO;
+
+	/* A static address's router replaces the default route (without one, another interface's stays). */
+	present = 0;
+	if (fixed && request->gateway[0] != '\0')
+		present = default_route_exists();
+	if (present > 0) {
+		arguments[0] = "/sbin/route";
+		arguments[1] = "delete";
+		arguments[2] = "default";
+		arguments[3] = NULL;
+		(void)run_command_until(arguments, 10, 0U, diagnostic);
+	}
+
+	/* The router comes. */
+	if (fixed && request->gateway[0] != '\0') {
+		arguments[0] = "/sbin/route";
+		arguments[1] = "add";
+		arguments[2] = "default";
+		arguments[3] = request->gateway;
+		arguments[4] = NULL;
+		result = run_command_until(arguments, 10, 0U, diagnostic);
+		if (result != 0)
+			return EIO;
+	}
+
+	/* The name servers named. */
+	if (request->dns_count != 0U) {
+		arguments[0] = request->dns[0];
+		arguments[1] = NULL;
+		if (request->dns_count > 1U)
+			arguments[1] = request->dns[1];
+		result = write_resolver(arguments, (int)request->dns_count);
+		if (result != 0)
+			return EIO;
+	}
+
+	/* Succeeded: the configuration is in effect (or on its way, through the policy). */
+	return 0;
 }

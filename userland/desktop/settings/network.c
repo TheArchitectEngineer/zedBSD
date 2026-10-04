@@ -230,6 +230,14 @@ se_network_result(
 		return 1;
 	}
 
+	/* A wired interface's configuration (ws089-p022): the editor says how it went, and the details are asked again. */
+	if (request != 0U && request == network->wired_request) {
+		network->wired_request = 0U;
+		se_wired_outcome(app, error);
+		network->details_at = 0U;
+		return 1;
+	}
+
 	/* Another request's. */
 	if (network->request == SE_NETWORK_NONE || request != network->request_id)
 		return 0;
@@ -393,6 +401,38 @@ se_network_join_key(
 }
 
 /*
+ * Asks for a wired interface's configuration (ws089-p022); its answer comes
+ * to se_wired_outcome.  It goes beside the Wi-Fi's requests: the compositor
+ * answers busy while another network request is out.  Returns 0 when
+ * asked, EBUSY while the last is not answered, or the errno value of
+ * asking (ENOTSUP from an older desktop).
+ */
+int
+se_network_configure_wired(
+	struct se_app *app,
+	const struct kl_network_wired_config *config)
+{
+	struct se_network *network;
+	int error;
+
+	/* One at a time, on a desktop that offers the network. */
+	network = &app->network;
+	if (network->live == 0 || app->system == NULL)
+		return ENOTSUP;
+	if (network->wired_request != 0U)
+		return EBUSY;
+
+	/* Asked; the answer names this request. */
+	error = kl_system_network_configure_wired(app->system, config, &network->wired_request);
+	se_log("NETWORK wired interface=%s mode=%u address=%s netmask=%s router=%s dns=%s,%s error=%d", config->interface, config->mode, config->address, config->netmask, config->router, config->dns[0], config->dns[1], error);
+	if (error != 0)
+		network->wired_request = 0U;
+
+	/* Reports how the asking went. */
+	return error;
+}
+
+/*
  * Leaves the Wi-Fi network the machine is on.
  */
 void
@@ -416,6 +456,7 @@ network_take_details(
 {
 	struct se_network *network;
 	char addresses[SE_NETWORK_LINKS][KL_NETWORK_ADDRESS_MAX];
+	unsigned modes[SE_NETWORK_LINKS];
 	size_t old_count;
 	int differs;
 	int moved;
@@ -430,8 +471,10 @@ network_take_details(
 	/* The addresses of the last details, to tell whether they moved. */
 	network = &app->network;
 	old_count = network->link_count;
-	for (index = 0; index < old_count; index++)
+	for (index = 0; index < old_count; index++) {
 		(void)snprintf(addresses[index], sizeof(addresses[index]), "%s", network->links[index].address);
+		modes[index] = network->links[index].wired_mode;
+	}
 
 	/* The interfaces, as many as are kept. */
 	count = kl_system_network_get_links(app->system, network->links, SE_NETWORK_LINKS);
@@ -494,6 +537,15 @@ network_take_details(
 	network->received_total = received;
 	network->sent_total = sent;
 	network->sampled_at = now;
+
+	/* The wired interfaces' configuration when it changed, the log line the tests read (ws089-p022). */
+	for (index = 0; index < count; index++) {
+		if (network->links[index].wired_mode == KL_WIRED_UNKNOWN)
+			continue;
+		if (moved == 0 && index < old_count && modes[index] == network->links[index].wired_mode)
+			continue;
+		se_log("NETWORK wired-link name=%s mode=%u address=%s router=%s", network->links[index].name, network->links[index].wired_mode, network->links[index].address, network->links[index].router);
+	}
 
 	/* Succeeded: whether the interfaces moved. */
 	return moved;

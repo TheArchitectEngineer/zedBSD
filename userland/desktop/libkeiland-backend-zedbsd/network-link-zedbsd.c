@@ -16,16 +16,23 @@
  * (userland/base/net/wifi-store.c), which the daemon reads when it is told
  * the saved networks changed.  Nothing here speaks to the daemon or waits
  * for it.
+ *
+ * A wired interface (ws089-p022: not the loopback, not a radio "wlan...")
+ * also says how it is configured, as net.conf names it (an interface it
+ * does not name takes DHCP, as networkd's wired policy gives it), and the
+ * router of the default route through it.
  */
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
+#include "userland/base/net/netconf.h"
 #include "userland/base/net/wifi-store.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <net/route.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +49,9 @@
 static void link_read(int descriptor, const char *name, struct kl_backend_network_link *link);
 static int link_request(int descriptor, const char *name, unsigned long command, struct ifreq *request);
 static void link_address(const struct ifreq *request, char *text, size_t size);
+static void link_wired(int descriptor, struct kl_backend_network_link *links, size_t count);
+static unsigned link_wired_mode(const struct netconf *configuration, const char *name);
+static void link_router(int descriptor, struct kl_backend_network_link *link);
 
 /*
  * Copies up to capacity interfaces and returns how many there are (0 when they cannot be read).
@@ -54,6 +64,7 @@ kl_backend_network_get_links(
 	struct ifconf config;
 	struct ifreq *requests;
 	size_t count;
+	size_t filled;
 	size_t index;
 	int descriptor;
 	int status;
@@ -91,6 +102,12 @@ kl_backend_network_get_links(
 	count = config.ifc_len / sizeof(requests[0]);
 	for (index = 0; index < count && index < capacity; index++)
 		link_read(descriptor, requests[index].ifr_name, &links[index]);
+
+	/* How the wired ones that fit are configured. */
+	filled = count;
+	if (filled > capacity)
+		filled = capacity;
+	link_wired(descriptor, links, filled);
 
 	/* The list and the socket go. */
 	free(requests);
@@ -373,4 +390,115 @@ link_address(
 
 	/* Succeeded: the output holds the dotted address or remains empty. */
 	return;
+}
+
+/*
+ * Gives each wired interface of the list how it is configured and the
+ * router of the default route through it (ws089-p022).
+ */
+static void
+link_wired(
+	int descriptor,
+	struct kl_backend_network_link *links,
+	size_t count)
+{
+	struct netconf *configuration;
+	char error[160];
+	size_t index;
+	int loaded;
+	int wireless;
+
+	/* net.conf, when it can be read (without it every wired interface takes DHCP). */
+	configuration = calloc(1, sizeof(*configuration));
+	loaded = -1;
+	if (configuration != NULL)
+		loaded = netconf_load(NETCONF_PATH, configuration, error, sizeof(error));
+
+	/* Each wired interface. */
+	for (index = 0; index < count; index++) {
+		wireless = strncmp(links[index].name, "wlan", 4U);
+		if (links[index].loopback || wireless == 0)
+			continue;
+		links[index].wired_mode = KL_BACKEND_WIRED_DHCP;
+		if (loaded == 0)
+			links[index].wired_mode = link_wired_mode(configuration, links[index].name);
+		link_router(descriptor, &links[index]);
+	}
+
+	/* The configuration read goes. */
+	free(configuration);
+}
+
+/* Tells how net.conf configures an interface: DHCP, a static address, or not known (disabled). */
+static unsigned
+link_wired_mode(
+	const struct netconf *configuration,
+	const char *name)
+{
+	const struct netconf_interface *item;
+	size_t index;
+	int differs;
+
+	/* The interface's entry. */
+	for (index = 0; index < configuration->interface_count; index++) {
+		item = &configuration->interfaces[index];
+		differs = strcmp(item->name, name);
+		if (differs != 0)
+			continue;
+
+		/* Disabled, DHCP, or a static address. */
+		if (item->enabled_set && !item->enabled)
+			return KL_BACKEND_WIRED_UNKNOWN;
+		if (item->dhcp)
+			return KL_BACKEND_WIRED_DHCP;
+		if (item->address_count != 0U)
+			return KL_BACKEND_WIRED_STATIC;
+		return KL_BACKEND_WIRED_UNKNOWN;
+	}
+
+	/* Not named: DHCP, as the wired policy gives it. */
+	return KL_BACKEND_WIRED_DHCP;
+}
+
+/* Finds the router of the default route through an interface (none: empty). */
+static void
+link_router(
+	int descriptor,
+	struct kl_backend_network_link *link)
+{
+	const struct sockaddr_in *destination;
+	const struct sockaddr_in *mask;
+	const struct sockaddr_in *gateway;
+	struct rtentry route;
+	struct ifreq request;
+	const char *shown;
+	uint32_t ifindex;
+	int status;
+	int error;
+
+	/* The interface's index. */
+	link->router[0] = '\0';
+	error = link_request(descriptor, link->name, SIOCGIFINDEX, &request);
+	if (error != 0)
+		return;
+	ifindex = (uint32_t)request.ifr_ifindex;
+
+	/* Each route, until the default through this interface (the kernel says ENOENT past the last). */
+	memset(&route, 0, sizeof(route));
+	for (route.rt_index = 0;; route.rt_index++) {
+		status = ioctl(descriptor, SIOCGRTENTRY, &route);
+		if (status != 0)
+			return;
+		destination = (const struct sockaddr_in *)&route.rt_dst;
+		mask = (const struct sockaddr_in *)&route.rt_genmask;
+		if (destination->sin_addr.s_addr != 0 || mask->sin_addr.s_addr != 0 || route.rt_ifindex != ifindex)
+			continue;
+
+		/* Its router, as text. */
+		gateway = (const struct sockaddr_in *)&route.rt_gateway;
+		shown = inet_ntop(AF_INET, &gateway->sin_addr, link->router, sizeof(link->router));
+		if (shown == NULL)
+			link->router[0] = '\0';
+		return;
+	}
 }

@@ -102,6 +102,7 @@ static int wifi_backend(uint32_t, const unsigned char *, size_t, int);
 static int wifi_session_command(int argc, char **argv);
 static int session_account(const char *, uint32_t *);
 static int lan_command(int argc, char **argv);
+static int lan_set_command(int argc, char **argv);
 static int startup_command(void);
 static int start_detached(uint32_t opcode);
 static int lan_send_policy(void);
@@ -1491,6 +1492,10 @@ command_help(
 	     "                              saved networks are joined only while it is open\n"
 	     "  net lan enable              manage the wired interfaces\n"
 	     "  net lan disable             stop managing the wired interfaces\n"
+	     "  net lan set IF dhcp [--dns A[,B]]\n"
+	     "  net lan set IF static ADDRESS NETMASK [ROUTER] [--dns A[,B]]\n"
+	     "                              configure a wired interface and keep it in\n"
+	     "                              net.conf (members of the network group too)\n"
 	     "  net startup                 bring the network up, as a boot does");
 
 	/* Computes the function result. */
@@ -2333,6 +2338,15 @@ lan_command(
 	int argc,
 	char **argv)
 {
+	int differs;
+
+	/* One interface's configuration (ws089-p022). */
+	differs = 1;
+	if (argc >= 5)
+		differs = strcmp(argv[2], "set");
+	if (differs == 0)
+		return lan_set_command(argc, argv);
+
 	/* Handles the selected command-line operation. */
 	if (argc != 3)
 		return usage();
@@ -2343,6 +2357,87 @@ lan_command(
 
 	/* Obtains the usage result. */
 	return usage();
+}
+
+/*
+ * Configures one wired interface through networkd (ws089-p022, the
+ * LAN_CONFIGURE request): net lan set IF dhcp [--dns A[,B]], or net lan set
+ * IF static ADDRESS NETMASK [ROUTER] [--dns A[,B]].  The daemon checks the
+ * values, writes the interface's entry in net.conf and applies it.
+ */
+static int
+lan_set_command(
+	int argc,
+	char **argv)
+{
+	struct networkd_field_writer writer;
+	unsigned char payload[NETWORKD_REQUEST_MAX];
+	char servers[64];
+	char *comma;
+	int positional;
+	int index;
+	int fixed;
+	int option;
+	int error;
+	int differs;
+
+	/* The interface. */
+	networkd_field_writer_init(&writer, payload, sizeof(payload));
+	error = networkd_field_write(&writer, NETWORKD_FIELD_INTERFACE, argv[3], strlen(argv[3]));
+
+	/* The mode, and how many words it takes before an option. */
+	fixed = 0;
+	positional = 5;
+	differs = strcmp(argv[4], "static");
+	if (differs == 0) {
+		fixed = 1;
+		positional = 7;
+	} else {
+		differs = strcmp(argv[4], "dhcp");
+		if (differs != 0)
+			return usage();
+	}
+
+	/* The words the mode needs. */
+	if (argc < positional)
+		return usage();
+
+	/* A static address: the address, the netmask, and the router when given. */
+	if (fixed && error == 0)
+		error = networkd_field_write(&writer, NETWORKD_FIELD_ADDRESS, argv[5], strlen(argv[5]));
+	if (fixed && error == 0)
+		error = networkd_field_write(&writer, NETWORKD_FIELD_NETMASK, argv[6], strlen(argv[6]));
+	index = positional;
+	option = 1;
+	if (index < argc)
+		option = strncmp(argv[index], "--", 2U);
+	if (fixed && error == 0 && option != 0) {
+		error = networkd_field_write(&writer, NETWORKD_FIELD_GATEWAY, argv[index], strlen(argv[index]));
+		index++;
+	}
+
+	/* --dns A[,B]: one or two name servers. */
+	option = 1;
+	if (index + 1 < argc)
+		option = strcmp(argv[index], "--dns");
+	if (error == 0 && option == 0) {
+		(void)snprintf(servers, sizeof(servers), "%s", argv[index + 1]);
+		comma = strchr(servers, ',');
+		if (comma != NULL)
+			*comma = '\0';
+		error = networkd_field_write(&writer, NETWORKD_FIELD_DNS, servers, strlen(servers));
+		if (error == 0 && comma != NULL)
+			error = networkd_field_write(&writer, NETWORKD_FIELD_DNS, comma + 1, strlen(comma + 1));
+		index += 2;
+	}
+
+	/* Nothing else may follow. */
+	if (error != 0 || index != argc)
+		return usage();
+
+	/* Sent; the daemon's answer is the outcome. */
+	error = backend_exchange(NETWORKD_OP_LAN_CONFIGURE, payload, writer.used, 1, 30U, 1);
+	return error;
 }
 
 /*

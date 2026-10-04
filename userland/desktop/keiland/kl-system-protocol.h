@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 5; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 6; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -43,6 +43,13 @@
  *   request 3 query_details(uint request)                      the links, the DNS servers, the saved networks
  *   request 4 set_scanning(uint on)                            since version 3 (ws089-p021): the client shows the
  *                                                              networks around (1) or no longer (0)
+ *   request 5 configure_wired(uint request, string interface, uint mode, string address, string netmask,
+ *                             string router, string dns1, string dns2)
+ *                                                              since version 6 (ws089-p022): a wired interface by
+ *                                                              DHCP (mode 1; the strings empty but the DNS servers,
+ *                                                              which may name static ones) or a static IPv4
+ *                                                              address (mode 2; router and DNS may be empty), kept
+ *                                                              by the network daemon for the next start too
  *   event   0 state(uint reachable, uint connected, uint kind, string interface, string wired, uint wifi,
  *                   string wifi_interface, string ssid)
  *   event   1 access_point(string ssid, int rssi, uint secured)
@@ -54,6 +61,9 @@
  *   event   6 details_done()                        the links, servers and networks before it are the whole details
  *   event   7 done(uint serial)
  *   event   8 result(uint request, uint applied, uint saved)
+ *   event   9 wired(string name, uint mode, string router)    since version 6: after a wired interface's link in
+ *                                                              the details, how it is configured (KL_SYSTEM_WIRED_*)
+ *                                                              and the router it was given (empty when none)
  *   One request of the network is outstanding at a time, the system bar's
  *   included; another is answered busy.  query_details is no request of
  *   the daemon's: every object that asked hears the next reading.  A join
@@ -148,7 +158,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		5U
+#define KL_SYSTEM_MANAGER_VERSION		6U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -191,6 +201,7 @@
 #define KL_SYSTEM_NETWORK_SAVE_KEY		2U
 #define KL_SYSTEM_NETWORK_QUERY_DETAILS		3U
 #define KL_SYSTEM_NETWORK_SET_SCANNING		4U
+#define KL_SYSTEM_NETWORK_CONFIGURE_WIRED	5U
 #define KL_SYSTEM_NETWORK_EVENT_STATE		0U
 #define KL_SYSTEM_NETWORK_EVENT_ACCESS_POINT	1U
 #define KL_SYSTEM_NETWORK_EVENT_SCAN_DONE	2U
@@ -200,6 +211,15 @@
 #define KL_SYSTEM_NETWORK_EVENT_DETAILS_DONE	6U
 #define KL_SYSTEM_NETWORK_EVENT_DONE		7U
 #define KL_SYSTEM_NETWORK_EVENT_RESULT		8U
+#define KL_SYSTEM_NETWORK_EVENT_WIRED		9U
+
+/* Since when the network has configure_wired and wired (ws089-p022). */
+#define KL_SYSTEM_NETWORK_SINCE_WIRED		6U
+
+/* How a wired interface is configured (configure_wired's mode and wired's). */
+#define KL_SYSTEM_WIRED_UNKNOWN			0U
+#define KL_SYSTEM_WIRED_DHCP			1U
+#define KL_SYSTEM_WIRED_STATIC			2U
 
 /* The network's requests (request's what; the backend's KL_BACKEND_NETWORK_REQUEST_* values). */
 #define KL_SYSTEM_NETWORK_SCAN			1U

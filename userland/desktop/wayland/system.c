@@ -240,6 +240,8 @@ static void *system_account_run(void *argument);
 static uint32_t system_network_send(struct zwl_object *object, uint32_t number, uint32_t what, const char *ssid);
 static int system_network_save_key(struct zwl_server *server, uint64_t client, uint32_t object, uint32_t number, unsigned bar, const char *ssid, const char *key);
 static uint32_t system_network_details(struct zwl_object *object, uint32_t number);
+static int system_network_wired(struct zwl_object *object, const unsigned char *bytes, size_t size);
+static uint32_t system_network_wired_send(struct zwl_object *object, uint32_t number, const struct kl_backend_wired_config *config);
 static void system_network_scanning(struct zwl_object *object, uint32_t on);
 static void system_scanning_expire(struct zwl_server *server);
 static void system_network_step(struct zwl_server *server, unsigned request);
@@ -704,6 +706,14 @@ system_network_request(
 			return EPROTO;
 		system_network_scanning(object, system_word(bytes, 0U));
 		return 0;
+	}
+
+	/* A wired interface's configuration (since version 6, ws089-p022). */
+	if (opcode == KL_SYSTEM_NETWORK_CONFIGURE_WIRED) {
+		if (object->version < KL_SYSTEM_NETWORK_SINCE_WIRED)
+			return EPROTO;
+		error = system_network_wired(object, bytes, size);
+		return error;
 	}
 
 	/* The details: the request's number alone. */
@@ -1236,6 +1246,134 @@ system_network_send(
 }
 
 /*
+ * Reads a client's configure_wired (its number, the interface, the mode,
+ * the address, netmask and router, two DNS servers) and sends it, or
+ * answers at once when it cannot be.  Returns 0, or EPROTO for a request
+ * that is not well formed.
+ */
+static int
+system_network_wired(
+	struct zwl_object *object,
+	const unsigned char *bytes,
+	size_t size)
+{
+	struct kl_backend_wired_config config;
+	char *texts[6];
+	char *rooms[6];
+	size_t lengths[6];
+	uint32_t number;
+	uint32_t applied;
+	size_t offset;
+	size_t index;
+	size_t length;
+	int error;
+
+	/* The number, then the interface. */
+	if (size < 8U)
+		return EPROTO;
+	memset(&config, 0, sizeof(config));
+	memset(texts, 0, sizeof(texts));
+	number = system_word(bytes, 0U);
+	error = system_read_string(bytes, size, 4U, &texts[0], &offset);
+	if (error != 0)
+		return EPROTO;
+
+	/* The mode. */
+	if (offset + 4U > size) {
+		free(texts[0]);
+		return EPROTO;
+	}
+
+	/* Its word. */
+	config.mode = system_word(bytes, offset);
+	offset += 4U;
+
+	/* The address, netmask, router and two DNS servers. */
+	for (index = 1U; index < 6U && error == 0; index++)
+		error = system_read_string(bytes, size, offset, &texts[index], &offset);
+	if (error != 0 || offset != size) {
+		for (index = 0U; index < 6U; index++)
+			free(texts[index]);
+		return EPROTO;
+	}
+
+	/* Each text into its room; one too long is invalid (answered, not a protocol error). */
+	rooms[0] = config.interface;
+	rooms[1] = config.address;
+	rooms[2] = config.netmask;
+	rooms[3] = config.router;
+	rooms[4] = config.dns[0];
+	rooms[5] = config.dns[1];
+	lengths[0] = sizeof(config.interface);
+	lengths[1] = sizeof(config.address);
+	lengths[2] = sizeof(config.netmask);
+	lengths[3] = sizeof(config.router);
+	lengths[4] = sizeof(config.dns[0]);
+	lengths[5] = sizeof(config.dns[1]);
+	applied = KL_SYSTEM_RESULT_OK;
+	for (index = 0U; index < 6U; index++) {
+		length = strlen(texts[index]);
+		if (length >= lengths[index])
+			applied = KL_SYSTEM_RESULT_INVALID;
+		else
+			memcpy(rooms[index], texts[index], length + 1U);
+		free(texts[index]);
+	}
+
+	/* Sent, or answered at once when it cannot be. */
+	if (applied == KL_SYSTEM_RESULT_OK)
+		applied = system_network_wired_send(object, number, &config);
+	if (applied != KL_SYSTEM_RESULT_OK)
+		system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, number, applied);
+
+	/* Succeeded: the request is answered now, or with the daemon's answer. */
+	return 0;
+}
+
+/* Sends a client's wired configuration to the network daemon; the result comes with the daemon's answer. */
+static uint32_t
+system_network_wired_send(
+	struct zwl_object *object,
+	uint32_t number,
+	const struct kl_backend_wired_config *config)
+{
+	struct system_network_wait *wait;
+	struct kl_backend_network *watch;
+	int error;
+
+	/* A mode of the two and an interface named (the daemon checks the rest). */
+	if (config->mode != KL_BACKEND_WIRED_DHCP && config->mode != KL_BACKEND_WIRED_STATIC)
+		return KL_SYSTEM_RESULT_INVALID;
+	if (config->interface[0] == '\0')
+		return KL_SYSTEM_RESULT_INVALID;
+
+	/* One network request at a time, and the daemon's watch. */
+	wait = &system_state.wait;
+	if (wait->stage != SYSTEM_NETWORK_IDLE)
+		return KL_SYSTEM_RESULT_BUSY;
+	watch = zwl_network_watch();
+	if (watch == NULL)
+		return KL_SYSTEM_RESULT_UNAVAILABLE;
+
+	/* The request (the system bar's may be outstanding: busy). */
+	error = kl_backend_network_configure_wired(watch, config);
+	printf("ZWL SYSTEM network client=%llu wired interface=%s mode=%u error=%d\n", (unsigned long long)object->client->number, config->interface, config->mode, error);
+	if (error != 0)
+		return system_result_of(error);
+
+	/* The answer is waited for. */
+	memset(wait, 0, sizeof(*wait));
+	wait->stage = SYSTEM_NETWORK_REQUEST;
+	wait->request = KL_BACKEND_NETWORK_REQUEST_WIRED;
+	wait->client = object->client->number;
+	wait->object = object->id;
+	wait->number = number;
+
+	/* Succeeded: the result comes with the answer. */
+	return KL_SYSTEM_RESULT_OK;
+}
+
+/*
  * Starts saving a key, of a client's object or the system bar's (bar):
  * on the network's thread now, or as soon as it is free; the daemon is
  * told and the network joined after it.  Returns 0, EINVAL, EBUSY while
@@ -1476,6 +1614,14 @@ system_network_details_send(
 		offset = system_put_word(payload, offset, (uint32_t)(link->sent_bytes >> 32));
 		offset = system_put_word(payload, offset, (uint32_t)link->sent_bytes);
 		(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_LINK, payload, offset);
+
+		/* A wired one's configuration, to a client that knows it (since version 6, ws089-p022). */
+		if (object->version >= KL_SYSTEM_NETWORK_SINCE_WIRED && link->wired_mode != KL_BACKEND_WIRED_UNKNOWN) {
+			offset = system_put_string(payload, 0U, link->name);
+			offset = system_put_word(payload, offset, link->wired_mode);
+			offset = system_put_string(payload, offset, link->router);
+			(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_WIRED, payload, offset);
+		}
 	}
 
 	/* Each DNS server. */
@@ -1515,7 +1661,9 @@ system_network_finish(
 	} else {
 		/* The asking object's result (nothing of the network is kept by the compositor: saved follows applied). */
 		object = system_network_object(server, wait->client, wait->object);
-		if (object != NULL)
+		if (object != NULL && wait->request == KL_BACKEND_NETWORK_REQUEST_WIRED)
+			system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, wait->number, system_result_of(error));
+		else if (object != NULL)
 			system_result(object, KL_SYSTEM_NETWORK_EVENT_RESULT, wait->number, system_network_result_of(error));
 	}
 

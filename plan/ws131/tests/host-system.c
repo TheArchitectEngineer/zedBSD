@@ -128,6 +128,21 @@ zwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity)
 	return count;
 }
 
+/* A wired configuration (ws089-p022): kept as a request of its own, the interface in place of the network, its fields remembered. */
+static struct kl_backend_wired_config wired_seen;
+
+int
+kl_backend_network_configure_wired(struct kl_backend_network *network, const struct kl_backend_wired_config *config)
+{
+	int error;
+
+	pthread_mutex_lock(&world.lock);
+	wired_seen = *config;
+	pthread_mutex_unlock(&world.lock);
+	error = kl_backend_network_request(network, KL_BACKEND_NETWORK_REQUEST_WIRED, config->interface);
+	return error;
+}
+
 int
 kl_backend_network_request(struct kl_backend_network *network, unsigned request, const char *ssid)
 {
@@ -1016,6 +1031,7 @@ test_both_ends(void)
 	pthread_t thread;
 	uint32_t first;
 	uint32_t second;
+	struct kl_network_wired_config wired;
 	uint32_t request;
 	unsigned seen;
 	int taken_error;
@@ -1097,6 +1113,33 @@ test_both_ends(void)
 	pthread_mutex_lock(&world.lock);
 	world.answer_error = 0;
 	pthread_mutex_unlock(&world.lock);
+
+	/* A wired configuration (ws089-p022): every field reaches the backend, and the daemon's answer is the result. */
+	memset(&wired, 0, sizeof(wired));
+	snprintf(wired.interface, sizeof(wired.interface), "%s", "em0");
+	wired.mode = KL_WIRED_STATIC;
+	snprintf(wired.address, sizeof(wired.address), "%s", "192.168.7.20");
+	snprintf(wired.netmask, sizeof(wired.netmask), "%s", "255.255.255.0");
+	snprintf(wired.router, sizeof(wired.router), "%s", "192.168.7.1");
+	snprintf(wired.dns[0], sizeof(wired.dns[0]), "%s", "192.168.7.53");
+	CHECK(kl_system_network_configure_wired(system, &wired, &first) == 0, "wired asked");
+	expect_result(display, system, first, 0, "wired applied");
+
+	/* What the backend saw, then a refusal as the daemon gives a non-member. */
+	pthread_mutex_lock(&world.lock);
+	CHECK(wired_seen.mode == KL_BACKEND_WIRED_STATIC && strcmp(wired_seen.interface, "em0") == 0 && strcmp(wired_seen.address, "192.168.7.20") == 0 &&
+	    strcmp(wired_seen.netmask, "255.255.255.0") == 0 && strcmp(wired_seen.router, "192.168.7.1") == 0 && strcmp(wired_seen.dns[0], "192.168.7.53") == 0 &&
+	    wired_seen.dns[1][0] == '\0', "wired fields reach the backend");
+	world.answer_error = EACCES;
+	pthread_mutex_unlock(&world.lock);
+	wired.mode = KL_WIRED_DHCP;
+	CHECK(kl_system_network_configure_wired(system, &wired, &first) == 0, "wired DHCP asked");
+	expect_result(display, system, first, EPERM, "wired refused to a non-member");
+	pthread_mutex_lock(&world.lock);
+	world.answer_error = 0;
+	pthread_mutex_unlock(&world.lock);
+	wired.mode = 7U;
+	CHECK(kl_system_network_configure_wired(system, &wired, NULL) == EINVAL, "wired mode unknown");
 
 	/* The client checks what it can. */
 	CHECK(kl_system_network_request(system, KL_NETWORK_JOIN, "", NULL) == EINVAL, "join without a network");

@@ -306,6 +306,22 @@ kl_backend_network_request(
 }
 
 /*
+ * Configures a wired interface (ws089-p022): not on Linux and FreeBSD yet
+ * (the beta's backends are zedBSD's; the system's own tools set these).
+ */
+int
+kl_backend_network_configure_wired(
+	struct kl_backend_network *network,
+	const struct kl_backend_wired_config *config)
+{
+	(void)network;
+	(void)config;
+
+	/* Not supported here. */
+	return ENOTSUP;
+}
+
+/*
  * Asks the supplicant for scans every WPA_SCAN_MS while on (ws089-p021).
  */
 int

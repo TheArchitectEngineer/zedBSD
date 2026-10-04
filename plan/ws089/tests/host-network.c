@@ -48,6 +48,8 @@ host_link(
 	uint64_t sent)
 {
 	struct kl_network_link *link;
+	int loopback;
+	int radio;
 
 	link = &network->links[network->link_count];
 	memset(link, 0, sizeof(*link));
@@ -59,6 +61,17 @@ host_link(
 		(void)snprintf(link->netmask, sizeof(link->netmask), "%s", "255.255.255.0");
 	(void)snprintf(link->hardware, sizeof(link->hardware), "52:54:00:00:00:%02x", (unsigned)(network->link_count + 0x10));
 	link->mtu = 1500;
+
+	/* A wired one takes DHCP, with the router when it has an address (ws089-p022). */
+	loopback = strncmp(name, "lo", 2U);
+	radio = strncmp(name, "wlan", 4U);
+	if (loopback != 0 && radio != 0) {
+		link->wired_mode = KL_WIRED_DHCP;
+		if (address[0] != '\0')
+			(void)snprintf(link->router, sizeof(link->router), "%s", "192.168.1.1");
+	}
+
+	/* The counters, and the interface counted. */
 	link->received_bytes = received;
 	link->sent_bytes = sent;
 	network->link_count++;
@@ -230,4 +243,15 @@ se_network_disconnect(
 	printf("NETWORK disconnect\n");
 	app->network.state.wifi = KL_WIFI_DISCONNECTED;
 	app->network.state.ssid[0] = '\0';
+}
+
+/* Prints a wired interface's configuration asked for (ws089-p022), as network.c would send it, and answers it at once. */
+int
+se_network_configure_wired(
+	struct se_app *app,
+	const struct kl_network_wired_config *config)
+{
+	printf("ZSETTINGS NETWORK wired interface=%s mode=%u address=%s netmask=%s router=%s dns=%s,%s\n", config->interface, config->mode, config->address, config->netmask, config->router, config->dns[0], config->dns[1]);
+	app->network.wired_request = 1U;
+	return 0;
 }

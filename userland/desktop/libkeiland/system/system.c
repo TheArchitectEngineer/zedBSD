@@ -76,6 +76,7 @@ struct system_network_listener {
 	void (*details_done)(void *data, struct wl_proxy *proxy);
 	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+	void (*wired)(void *data, struct wl_proxy *proxy, const char *name, uint32_t mode, const char *router);
 };
 
 /* The listener of kl_system_audio_v1's events, in their order. */
@@ -113,6 +114,7 @@ static void system_access_point(void *data, struct wl_proxy *proxy, const char *
 static void system_scan_done(void *data, struct wl_proxy *proxy);
 static void system_link(void *data, struct wl_proxy *proxy, const char *name, uint32_t flags, const char *address, const char *netmask, const char *hardware, uint32_t mtu, uint32_t received_high, uint32_t received_low, uint32_t sent_high, uint32_t sent_low);
 static void system_dns(void *data, struct wl_proxy *proxy, const char *address);
+static void system_wired(void *data, struct wl_proxy *proxy, const char *name, uint32_t mode, const char *router);
 static void system_saved_network(void *data, struct wl_proxy *proxy, const char *ssid);
 static void system_details_done(void *data, struct wl_proxy *proxy);
 static void system_network_done(void *data, struct wl_proxy *proxy, uint32_t serial);
@@ -150,7 +152,8 @@ static const struct system_network_listener system_network_listener = {
 	system_saved_network,
 	system_details_done,
 	system_network_done,
-	system_result
+	system_result,
+	system_wired
 };
 
 /* The sound object's callbacks. */
@@ -498,6 +501,49 @@ kl_system_network_set_scanning(
 	wl_proxy_marshal(system->network, KL_SYSTEM_NETWORK_SET_SCANNING, asked);
 
 	/* Succeeded: the compositor is told. */
+	return 0;
+}
+
+/*
+ * Asks for a wired interface to be configured (ws089-p022).
+ */
+int
+kl_system_network_configure_wired(
+	struct kl_system *system,
+	const struct kl_network_wired_config *config,
+	uint32_t *request)
+{
+	const char *texts[6];
+	const char *end;
+	uint32_t number;
+	size_t index;
+
+	/* The network object, of a compositor that knows the request (version 6). */
+	if (system->network == NULL || system->lost)
+		return ENOTSUP;
+	if (system->manager_version < KL_SYSTEM_NETWORK_SINCE_WIRED)
+		return ENOTSUP;
+
+	/* A mode of the two, and every field ended within its room. */
+	if (config->mode != KL_WIRED_DHCP && config->mode != KL_WIRED_STATIC)
+		return EINVAL;
+	texts[0] = config->interface;
+	texts[1] = config->address;
+	texts[2] = config->netmask;
+	texts[3] = config->router;
+	texts[4] = config->dns[0];
+	texts[5] = config->dns[1];
+	for (index = 0; index < 6U; index++) {
+		end = memchr(texts[index], '\0', KL_NETWORK_ADDRESS_MAX);
+		if (end == NULL)
+			return EINVAL;
+	}
+
+	/* Sent with the application's next flush; the compositor checks the values. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->network, KL_SYSTEM_NETWORK_CONFIGURE_WIRED, number, config->interface, config->mode, config->address, config->netmask, config->router, config->dns[0], config->dns[1]);
+
+	/* Succeeded: the answer comes once it is applied or refused. */
 	return 0;
 }
 
@@ -1000,6 +1046,24 @@ system_link(
 
 	/* Added to the pending details. */
 	system_view_link(&system->view, &link);
+}
+
+/* Gives a wired interface of the details its configuration. */
+static void
+system_wired(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *name,
+	uint32_t mode,
+	const char *router)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* Given to the pending interface of that name. */
+	system = data;
+	system_view_wired(&system->view, name, mode, router);
 }
 
 /* Adds a DNS server of the details. */
