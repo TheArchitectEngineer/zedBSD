@@ -84,6 +84,10 @@ int optreset;
 const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
 const struct in6_addr in6addr_loopback = IN6ADDR_LOOPBACK_INIT;
 
+/* The file uname reads the release from (ws129-p003), and the most of it read. */
+#define UNAME_OS_RELEASE	"/etc/os-release"
+#define UNAME_OS_RELEASE_SIZE	2048U
+
 #define ENVIRONMENT_MAX 256U
 static char *environment_entries[ENVIRONMENT_MAX + 1U];
 static unsigned char environment_owned[ENVIRONMENT_MAX];
@@ -162,6 +166,8 @@ static int ioctl_has_argument(unsigned long request);
 static int ttyname_match(const char *path, const struct stat *wanted, char *buffer, size_t size);
 static int ttyname_scan(const char *directory, const struct stat *wanted, char *buffer, size_t size);
 static long path_limit(int name);
+static void uname_release(struct utsname *name);
+static void uname_field(const char *text, const char *key, char *value, size_t size);
 static int aio_submit(struct aiocb *control, int writing, int notify);
 static void aio_notify(const struct sigevent *event);
 static struct __spawn_action *spawn_action_add(posix_spawn_file_actions_t *actions);
@@ -5321,12 +5327,115 @@ uname(
 	/* Handles a failed gethostname operation. */
 	if (gethostname(name->nodename, sizeof(name->nodename)) != 0)
 		return -1;
-	strcpy(name->release, "0.0.1");
-	strcpy(name->version, "zedBSD 0.0.1");
+	uname_release(name);
 	strcpy(name->machine, machine);
 
 	/* Reports successful completion. */
 	return 0;
+}
+
+/*
+ * Fills uname's release and version from /etc/os-release, which the build
+ * writes from VERSION (ws129-p003): its ZEDBSD_RELEASE and ZEDBSD_VERSION.
+ * A root without the file reports the release unknown.  The file is read
+ * with the system calls themselves, so that uname stays safe in a signal
+ * handler and is no cancellation point, and errno is left as it was.
+ */
+static void
+uname_release(
+	struct utsname *name)
+{
+	char text[UNAME_OS_RELEASE_SIZE];
+	intptr_t count;
+	size_t used;
+	int saved;
+	int fd;
+
+	/* The defaults, for a root without the file or the keys. */
+	strcpy(name->release, "unknown");
+	strcpy(name->version, "zedBSD");
+
+	/* The file, unless there is none (errno as the caller left it). */
+	saved = errno;
+	fd = (int)call(KERN_SYS_open, (uintptr_t)UNAME_OS_RELEASE, O_RDONLY | O_CLOEXEC, 0, 0, 0, 0);
+	if (fd < 0) {
+		errno = saved;
+		return;
+	}
+
+	/* Its start, which holds the keys (a few short lines). */
+	used = 0;
+	while (used < sizeof(text) - 1U) {
+		count = call(KERN_SYS_read, fd, (uintptr_t)(text + used), sizeof(text) - 1U - used, 0, 0, 0);
+		if (count <= 0)
+			break;
+		used += (size_t)count;
+	}
+	text[used] = '\0';
+	(void)call(KERN_SYS_close, fd, 0, 0, 0, 0, 0);
+	errno = saved;
+
+	/* The two keys. */
+	uname_field(text, "ZEDBSD_RELEASE", name->release, sizeof(name->release));
+	uname_field(text, "ZEDBSD_VERSION", name->version, sizeof(name->version));
+}
+
+/*
+ * Copies the value of a key of os-release text (KEY=value or KEY="value",
+ * one a line) into a field, cut to its size; a missing key leaves the
+ * field as it is.
+ */
+static void
+uname_field(
+	const char *text,
+	const char *key,
+	char *value,
+	size_t size)
+{
+	const char *line;
+	const char *start;
+	const char *end;
+	size_t key_length;
+	size_t length;
+	int differs;
+
+	/* The key's line, looked for line by line. */
+	key_length = strlen(key);
+	line = text;
+	for (;;) {
+		/* No more lines: the key is missing. */
+		if (*line == '\0')
+			return;
+
+		/* The line's end. */
+		end = strchr(line, '\n');
+		if (end == NULL)
+			end = line + strlen(line);
+
+		/* Found when it starts with the key and an equals sign. */
+		differs = 1;
+		if ((size_t)(end - line) > key_length && line[key_length] == '=')
+			differs = strncmp(line, key, key_length);
+		if (differs == 0)
+			break;
+
+		/* The next line, if there is one. */
+		if (*end == '\0')
+			return;
+		line = end + 1;
+	}
+
+	/* Its value, without the quotes, cut to the field. */
+	start = line + key_length + 1U;
+	if (end - start >= 2 && start[0] == '"' && end[-1] == '"') {
+		start++;
+		end--;
+	}
+	length = (size_t)(end - start);
+	if (length >= size)
+		length = size - 1U;
+	memcpy(value, start, length);
+	value[length] = '\0';
 }
 
 /*
