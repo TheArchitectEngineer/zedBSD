@@ -3245,6 +3245,15 @@ struct i915_present_window {
 	/* Nonzero once bringing the panel up failed: presentations fail from then on. */
 	int display_failed;
 
+	/*
+	 * Nonzero from a resume until the window is next entered (ws052-p009):
+	 * an HDMI display that does not come up then is taken to have been
+	 * unplugged during the sleep, and the built-in panel is tried in its
+	 * place.  The resume sets it while the worker is parked; only the
+	 * worker reads and clears it afterwards.
+	 */
+	int after_resume;
+
 	/* Presentations completed. */
 	unsigned presents;
 

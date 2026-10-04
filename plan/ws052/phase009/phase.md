@@ -4,7 +4,7 @@
 
 Phase ID: `ws052-p009`
 Parent: [WS052](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17。設計は Q1 が §6 を判断（design の末尾）。段 (a)・(b) を実装（host の試験、vmunix の link）、(c) は未着手）
+Status: in-progress（2026-10-05 P1 generation17。段 (a)・(b)・(c) を実装（host の試験、vmunix の link）。5330 の UAT 待ち）
 Phase disposition: normal
 Queue: Q1 の 2026-10-05 の指示（p004 から i915 を分けた: QEMU で試せず規模が大きい。設計から、検証は 5330 の UAT）
 
@@ -90,3 +90,48 @@ core の再初期化）、GGTT、resume で suspend の前の出力先（panel �
 - DMC の program の無効化（Linux の `intel_dmc_disable_program`）は core の uninit で行っていない（DC9 で消え、resume で再 load する）。
 - hotplug・opregion の suspend・resume は扱っていない（今の driver が 1 出力で hotplug が無い）。monitor が sleep の間に抜かれた時の内蔵の panel
   への切り替え（Q1 の判断 4）は段 (c) の窓の再入で扱う。
+
+## 段 (c): suspend・resume の op の結線、決定 4、UAT の手順（2026-10-05）
+
+- `i915.c`: PCI の driver の `suspend`・`resume` の欄に `i915_suspend`・`i915_resume`。
+  - suspend: `drv_i915_worker_park(device, 2000 ms)` → `drv_i915_device_suspend_hw`。park しない（EBUSY）なら中止、hardware が下りない
+    （DC9 の拒否など）なら `drv_i915_worker_unpark` して中止。どちらも pci-power が原因の device として `pci 0000:00:02.0 i915` を返す。serving で
+    ない device（start が無い・失敗した）は保つ状態が無いので 0、start の実行中は EBUSY。`device->suspended` を立てる。
+  - resume: `suspended` の時だけ `drv_i915_device_resume_hw` → `drv_i915_worker_unpark`（hardware の段が失敗しても worker は serve に戻し、失敗を
+    返す）。
+- `display/present.c`（決定 4）: resume の後の最初の窓（`display->window.after_resume`、`drv_i915_display_resume_end` が立てる）で HDMI の
+  resident run が失敗したら、sleep の間に抜かれたとみなして log を出し、`display->output.hdmi = 0` にして内蔵の panel で 1 度だけ試す。点かなければ
+  今までどおり `display_failed`（presentation が失敗し続ける）で、resume そのものには影響しない。
+- 呼び出し元: p004 の `KERN_SYSTEM_SLEEP` の devices だけの mode（`sleepctl devices`）。p006 の S0i3 の入口・出口も同じ口を使う。
+
+| 確認 | コマンド | 結果 |
+| --- | --- | --- |
+| vmunix の link | `make vmunix` | PASS、warning 0 |
+| host の試験（park・dc9・ggtt・pci-power） | `make -C plan/ws052/tests i915-park i915-dc9 i915-ggtt pci-power` と各実行 | PASS（段 (c) の結線は host の試験の対象外: 実機の UAT で見る） |
+| 規約 | `style-check.py`（i915.c・present.c・display.c は新しい指摘 0） | PASS |
+| QEMU | — | 対象外（QEMU に i915 は無い。p004 の試験は i915 の無い q35） |
+| 実機（5330） | 下の UAT | 未実施 |
+
+### 5330 の UAT の手順（ws159-p005 にそのまま追記できる形）
+
+前提:
+- image に `sleepctl` が要る。ws159 の `plan/ws159/tests/config-amd64-uat.mk` に `ZEDBSD_USER_PROGRAMS += sleepctl` を足す（WS159 の file なので
+  Q1 が足す）。
+- `sleepctl devices` は全 device を suspend して直ちに resume する（CPU の深い idle・S0i3 には入らない。それは p006）。
+- p005（止めて入る）の前なので、suspend は **suspend の口の無い最初の driver**（5330 では LPSS-I2C の touchpad・HDA・Wi-Fi のどれか）で中止し、
+  それより前に suspend された device は巻き戻しで resume される。i915（`0000:00:02.0`）は bus 0 の先頭なので、bridge の先の device（NVMe など）の
+  後、bus 0 の他の device より前に suspend される。中止の device が i915 より後なら、i915 の suspend→resume は巻き戻しで必ず通る。
+- **新しい道（2026-10-05 Q1 の注記）**: 窓を出て**同じ lease のまま**窓に入り直すのは、今回初めて通る道である（今までは hold が切れて次の lease が
+  入る道だけ）。画面を出したままの session で行い、login し直さずに描画が続くことを確かめる。
+
+## 4. sleep の device の suspend・resume（WS052 p004・p009）
+
+| # | 操作 | 期待 | 証拠 |
+| --- | --- | --- | --- |
+| 4.1 | 内蔵の panel で kei で login し、Terminal と、動き続ける app（Gears など）を開いておく。Terminal で `sudo sleepctl devices` | 画面が一瞬消えて**同じ panel に同じ session が戻る**（greeter に戻らない、login し直さない）。Gears が動き続け、Terminal に打てる。Terminal の行は `sleep result=21 resume=0 device=pci 0000:00:XX.X NAME`（21 = EOPNOTSUPP、NAME は suspend の口の無い driver。p005 の後は `result=0`）。`device=` が i915 より前（`0000:00:02.0` より前の bus 0 の番号、または bridge の先）なら i915 は通っていないので、その旨を記録 | `sudo dmesg` の `i915: park: the GT may idle`・`i915: DC9: entered`・`i915: suspend: the hardware is down (interrupts off, display in DC9)`・`i915: DC9: left`・`i915: dmc: program loaded again after the resume`・`i915: resume: N GGTT entries written again`・`i915: resume: the hardware is back`・`i915: unpark: the GT serves again`・`i915: resident display: ended PASS`（窓を出た分）、`nvme: suspended`・`nvme: resumed`、`pci: suspend of … failed (error 21)` |
+| 4.2 | 4.1 を続けて 5 回 | 毎回同じ。disk の読み書き（Files で file を開く・保存）と network（Browser で頁を開く）が続く | 各回の dmesg の `system: sleep (devices): result … resume …` |
+| 4.3 | 4.1 で画面が戻らない、または Gears が止まる | 失敗。電源ボタンの長押しで切る前に、可能なら SSH で `dmesg` を取る（`i915: resident display: the panel did not come up`・`i915: resume: a step failed`・`i915: DC9: not entered/left`・`i915: park: the worker did not park` を探す） | dmesg |
+| 4.4 | （HDMI の monitor がある時）firmware が HDMI を点けた起動（HDMI を挿して電源を入れる）で 4.1 | 画面が**HDMI に**戻る（panel に移らない） | dmesg の `i915: display output: HDMI on DDI B …`・`i915: resident display: ended PASS` |
+
+未実施にする項目（p006 の後）: sleep の間に HDMI を抜いて内蔵の panel に移る（決定 4）は、devices だけの mode では sleep が一瞬なので試せない。S0i3 に
+入れるようになってから（p006）試す。RC6 の residency の増加と SLP_S0 も p006 の後。

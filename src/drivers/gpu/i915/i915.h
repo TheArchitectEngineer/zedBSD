@@ -73,6 +73,12 @@ struct i915_device {
 	 */
 	unsigned start_launched;
 
+	/*
+	 * Nonzero from a suspend that took the hardware down until its resume
+	 * (ws052-p009); only the PCI power code's one thread reads and writes it.
+	 */
+	unsigned suspended;
+
 	/* The name of the start step in progress, for the failure log. */
 	const char *stage;
 
