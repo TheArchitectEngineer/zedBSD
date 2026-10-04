@@ -42,3 +42,11 @@ Queue: q700-i01（P1 generation17、2026-10-05）
 - 直した試験（固定の座標と大きさ）: `plan/ws094/tests/desktop-guest.sh`・`files-desktop-guest.sh`・`desktop-p010.sh`（desktop の surface y=44、1280x756、surface 座標 −10）、`plan/ws102/tests/osk-guest.sh`（flick y=44、756・1036、docked 752）、`plan/ws035/tests/zdesktop-p059.sh`・`p062.sh`・`p134.sh`（docked 1280x752、y=48）、`plan/ws090/tests/sheet-guest.sh`（docked の親の sheet y=48）、`plan/ws005/tests/menu-bug148.sh`（menu の高さの上限 172）、`plan/ws031/tests/i915-capture.py`（実機の取り込みの座標）。bar の中の y=17 の click は 44 px の bar の中に残るので変えていない。
 - 確認: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/q700/img build/q700/img/bin/wayland` exit 0、warning 0。`plan/tools/keiland-os-boundary/check.sh` PASS。`plan/tools/style-check.py` は変えた行に違反 0（network.c・volume.c・input-method.c の既存の違反は p022 の全文規約の Phase へ）。
 - 未実施: QEMU（T1。PNG で bar と title bar が同じ高さ、bar の要素が縦の中央、docked の title の吸着、popup の位置。上の直した試験と criteria.sh C2・C3・C9）、実機の UAT。
+
+## T1-097 の FAIL の直し（2026-10-05 P1）
+
+T1-097 は大半 PASS、bar と title bar の高さは PNG で一致。FAIL 2 つは試験の期待値の誤り（実装は正しい）と判断して直した:
+
+- `plan/ws094/tests/files-desktop-guest.sh`: desktop が 1280x756 になり、grid の行は (756 - 32) / 104 = 6（34 px の bar の時は 766 で 7 行）。7 つ目の item は column=1 row=0（`photo 2.png`）、clean-up の並びは `0,0 … 0,5 1,0`、prune の 100 items は `cells=78 … hidden=22`（13×6）。drag の case は前の case（menu が名前を変え、移し、捨てる）の後でも同じ状態から始まるよう、compositor を 5 つの item と layout 無しで起動し直してから行う（T1-097 は menu の後に drag を流したので notes.txt が無かった）。
+- `plan/ws102/tests/osk-guest.sh` の workarea: QWERTY の panel で docked の窓は 1280x416（800 - 44 - 336 - 4、旧 426）、浮いた窓は area の上端 y=108（旧 98）へ。log の実測（`work docked … height=416`、`work moved … to=390,108`・`to=520,108`）と一致。
+- 気づいた事（判断は Q1・ユーザー）: 800 px 高の画面では desktop の icon の grid が 7 行から 6 行に減った（LAYOUT_MARGIN 16 の上下と 104 px の cell）。7 行に戻すなら Files の desktop の余白か cell の高さを変える別の作業。

@@ -598,7 +598,7 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		;;
 	workarea)
 		# (p007) The work area: Text Editor docked, a floating wltest 500x400 over it; the QWERTY panel shortens the
-		# docked window (told 1280x426 once) and moves the floating one up to the area's top (its bottom overhangs);
+		# docked window (told 1280x416 once: 800 - the 44-pixel bar - the 336-pixel panel - 4, ws099-p031) and moves the floating one up to the area's top (its bottom overhangs);
 		# the flick panel narrows the docked window (962x752); closing gives the docked window its size back and moves
 		# the floating one back; one moved by the user while the panel is out stays where it was put.
 		compositor
@@ -613,11 +613,11 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 		wl=${1:-0}; lx=${2:-0}; ly=${3:-0}
 		echo "docked surface $te, floating surface $wl at $lx,$ly"
-		# The QWERTY panel: the docked window 1280x426, the floating one up to y=98 (the area's top).
+		# The QWERTY panel: the docked window 1280x416, the floating one up to y=108 (the area's top under the 44-pixel bar).
 		swipe 6 792 150 650
 		expect_log 'ZWL OSK work-area right=0 bottom=336'
-		expect_log "ZWL OSK work docked surface=$te width=1280 height=426"
-		expect_log "ZWL OSK work moved surface=$wl from=$lx,$ly to=$lx,98"
+		expect_log "ZWL OSK work docked surface=$te width=1280 height=416"
+		expect_log "ZWL OSK work moved surface=$wl from=$lx,$ly to=$lx,108"
 		sleep 1
 		pointer move 640 200 sleep 300
 		shot workarea-qwerty.png
@@ -656,7 +656,7 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		expect_log "ZWL OSK work moved surface=$wl from=$hx,$hy to=450,$hy"
 		sleep 1
 		swipe 6 792 150 650
-		expect_log "ZWL OSK work moved surface=$wl from=450,$hy to=$hx,98"
+		expect_log "ZWL OSK work moved surface=$wl from=450,$hy to=$hx,108"
 		sleep 1
 		pointer move 1254 488 sleep 200 down sleep 60 up sleep 900
 		expect_log "ZWL OSK work back surface=$wl to=$hx,$hy"
