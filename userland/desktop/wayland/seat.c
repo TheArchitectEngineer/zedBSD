@@ -929,14 +929,23 @@ zwl_seat_key(
 	/*
 	 * The Windows key pressed alone opens or closes App Home (ws142-p002),
 	 * not on the lock or the login screen; every key is followed (so Super+L
-	 * is no tap), and the key still goes on below (Home takes the release
-	 * while it shows).
+	 * is no tap).
 	 */
 	others = server->modifiers & (SEAT_MODIFIER_SHIFT | SEAT_MODIFIER_CONTROL | SEAT_MODIFIER_ALT);
 	tapped = zwl_super_tap_key(&server->super_tap, key, state, others, zwl_milliseconds());
 	if (tapped && server->glass && !server->locked && !server->greeter) {
 		printf("ZWL SUPER home\n");
 		zwl_home_toggle(server, "super");
+	}
+
+	/*
+	 * The Windows key itself is the desktop's and reaches no client (the
+	 * 2026-10-05 user decision D9, plan/ws142/phase001); the modifier mask
+	 * the clients hear with other keys still carries it (input.c).
+	 */
+	if (key == ZWL_SUPER_TAP_LEFT || key == ZWL_SUPER_TAP_RIGHT) {
+		if (!server->locked && !server->greeter)
+			return;
 	}
 
 	/* The lock screen takes every key; Super+L locks a session (ws035-p102). */
