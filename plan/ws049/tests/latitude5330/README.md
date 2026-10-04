@@ -26,3 +26,23 @@ firmware の table は Dell の著作物であり、zedBSD の source ではな�
 | ssdt15.dat | `ADebTabl` | 96cc8839b0e1cc5dd75536f89553d00737652429fbca535227ad8fb68309a387 |
 
 読むには `iasl -d dsdt.dat`（acpica-tools）。
+
+## FACP・LPIT と動的な SSDT（ws052-p002、2026-10-05）
+
+2026-10-05 に同じ 10.0.30.3 から読み取り専用で `sudo cat /sys/firmware/acpi/tables/FACP`・`LPIT`・`dynamic/SSDT16`〜`SSDT23` で取り出した
+（同じ user の許可の範囲、Q1 の指示 q727）。host の設定は変えていない。動的な SSDT は CPU の SSDT（`CpuSsdt`）が `_PDC`・`_OSC` の後に
+`Load` する table（`_CST`・`_PSS`・`_PSD`・HWP）で、sysfs の番号のまま `dynamic/` に置く。
+
+| file | 内容 | sha256 |
+| --- | --- | --- |
+| facp.dat | FADT（revision 6、PM Profile Mobile、SCI 9、flags 0x0020C4F5: **Low Power S0 Idle = 1**、Hardware Reduced = 0） | e8e21d625dcb6722b82c6b5135447dc1de7dbc94e01dae135d122944a3299f95 |
+| lpit.dat | LPIT（3 つの Native C-state、下） | f9ecb17e2b7eae8734176fe09440245ebc9575a2ca21a845f1a321e8c53d6c35 |
+| dynamic/ssdt16.dat | `Cpu0Cst`（`\_SB.PR00._CST`） | a4a961e1fb42b8e74d0a494618433e555137e6923ae2d58be44fb0c379840473 |
+| dynamic/ssdt17.dat | `Cpu0Ist` | ffc6f688d4e02acfce83955db42ccd03d506d9b1e481442a03f391ede918fb80 |
+| dynamic/ssdt18.dat | `Cpu0Psd` | ba3e9f8de1ad969d880705a046efd974629431e9c3a6c1ece3a07468538d53b9 |
+| dynamic/ssdt19.dat | `Cpu0Hwp` | 256b2e6d6b65f0483620a3a406ea0c2249d5c59a7799bb181220e3ab6fa13ccc |
+| dynamic/ssdt20.dat | `ApIst` | d055d1a921660c8a0ee608ef5a1251f6e12cb895acbec78c95313ee093f0c52e |
+| dynamic/ssdt21.dat | `ApHwp` | 472267a40e3b45ae67daf8acfeb925a61eae97d39e9b5fdf0e4ea27a9e2084fc |
+| dynamic/ssdt22.dat | `ApPsd` | be2ffd80acec715c990db021e3b971bcb377dcef1b9e9eb3dc2b13e4bfc6d150 |
+| dynamic/ssdt23.dat | `ApCst` | 2865798497440102e27730660949b1ebb2daa97c612d83e4af6dc44490facf0b |
+

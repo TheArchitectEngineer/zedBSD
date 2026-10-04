@@ -4,7 +4,7 @@
 
 Phase ID: `ws052-p002`
 Parent: [WS052](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17 / q727。HAL の差分の案を置いた。承認と FACP・LPIT の取り出しの許可を待つ）
+Status: in-progress（2026-10-05 P1 generation17 / q727。HAL の差分の案を置き、5330 の FACP・LPIT・動的な SSDT を読んだ。HAL の差分の承認を待つ。残りは承認の後の p006 の実装だけ）
 Phase disposition: normal
 Queue: q727（Q1 の投入、ベータ2 の準備）
 
@@ -33,15 +33,30 @@ Queue: q727（Q1 の投入、ベータ2 の準備）
   p005 は HDA・Wi-Fi などの「止めて入る」経路、p006 は承認された HAL の差分と入口・出口と `/dev/system`、p007 は Keiland の 3 つの契機）。
   [ws.md](../ws.md) の Phase の表も合わせた。
 
+## 5330 の table の読み（2026-10-05、FACP・LPIT・動的な SSDT の取り出しの後）
+
+取り出しは user の許可（2026-10-04 17 時、queue.md の決定 (2): 5330 の ACPI の table の読み取り専用の取り出しと commit）の範囲で、Q1 の指示により
+10.0.30.3 から `sudo cat /sys/firmware/acpi/tables/FACP`・`LPIT`・`dynamic/SSDT16`〜`23`。置き場と sha256 は
+[plan/ws049/tests/latitude5330/README.md](../../ws049/tests/latitude5330/README.md)。host の設定は変えていない。
+
+| 事柄 | 5330 の値 | 意味 |
+| --- | --- | --- |
+| FADT の flags | 0x0020C4F5、**Low Power S0 Idle (bit 21) = 1**、Hardware Reduced = 0、SCI 9 | firmware は S0ix を申告している（S3 の代わり）。§3 の未確認が埋まった |
+| LPIT の state 0 | entry trigger FFH address **0x60**（MWAIT の hint 0x60 = C10）、residency 30 ms、latency 3 ms、counter FFH **0x632**（MSR `PKG_C10_RESIDENCY`） | H1 の hint は 0x60。CPU 側の深さは package の C10 の residency の MSR で確かめる |
+| LPIT の state 1 | 同じ trigger、counter **SystemMemory 0xFE00193C**（32 bit、周波数 0x2005 = 8197 Hz、約 122 µs ごと） | **SLP_S0 の residency の counter**: PMC の PWRM（DSDT の `PWRM`、0xFE000000 の 128 KiB の窓）の offset 0x193C。§8 の確かめ方で読む |
+| LPIT の state 2 | disabled | 使わない |
+| `_CST`（`Cpu0Cst`、動的） | C1（FFH）、C6/C7（FFH の時は hint `C6MW`/`C7MW`）、最深 `CDTM`（FFH の時は hint `CDMW`、latency `CDLT`）。hint は CPU NVS（`CDMW` など）から実行時に入る | 静的な値ではない。p006 では LPIT の 0x60 を使い、`_CST` は確かめ用（評価には `_PDC`・`_OSC` と動的な Load が要る、WS049） |
+| wake の GPE（`_PRW`） | 0x6D: XHCI・TXHC・XDCI・HDAS・CNVW（Wi-Fi）・GLAN・TDM0/1・TXDC、0x69: PCIe の root port（RP01〜・PEG0〜3）とその先、0x72: AWAC（RTC の alarm）、LID0・PBTN: `PPRW`（GPE は Dell の SMI の呼び出し `EEAC (3, 0)` で実行時に決まる、sleep state 3） | p003 の「wake の GPE だけを有効にする」の対象。EC の `_GPE` は 0x6E（eSPI の時） |
+| 電源ボタン | `\_SB.PBTN` の `_STA` は `OSYS >= 0x07DF`（`_OSI ("Windows 2015")`）かつ `\_SB.HIDD.BTLD` の時に 0 を返す。その時の電源ボタンは `\_SB.HIDD`（`INTC1070`、Intel の HID event filter）の Notify で来る | **WS132 の電源ボタンの事象に関わる**: zedBSD が Windows 2015 以降の `_OSI` に真を返すと PBTN が消え、HIDD の扱いが要る。p003 で `_OSI` の答えと HIDD の要否を決める（Q1 に報告） |
+
 ## 人間の判断が要る点
 
 - H1〜H4 の承認（差分ごと）。
-- design §10-4: 5330 の FACP・LPIT を 5330 の Linux から読み取り専用で取り出す許可（`_CST` の C10 の hint、LPIT の SLP_S0 の counter、FADT の
-  `LOW_POWER_S0_IDLE_CAPABLE` を確かめるため）。
+- ~~design §10-4: 5330 の FACP・LPIT の取り出しの許可~~ → 2026-10-04 の許可の範囲で取り出した（上）。
 
 ## 残り（p002 の中）
 
-- 許可の後: FACP・LPIT の読み、`_PRW` の wake の GPE の一覧（DSDT から）、`_CST` の hint、PMC の SLP_S0 の residency の register の所在。
+- ~~FACP・LPIT の読み、wake の GPE の一覧、`_CST` の hint、SLP_S0 の residency の register~~ → 済み（上）。
 - 承認の後: p006 で H1〜H4 の amd64 の実装（他の architecture は `HAL_ERR_UNSUPPORTED`）。
 
 ## 確認
