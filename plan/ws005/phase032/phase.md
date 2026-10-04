@@ -189,3 +189,32 @@ Attempt q697-i01: **cleared**（user が採用した console 条件）。whole w
 - image SHA256: `53256f6fc08a9e581a1f8d02196bae77eff1f45e46d6d76cdb4f5dca91dcd22d`。vmunix SHA256: `3c14a5fef10b4c477e154745f4cfb1e51257cc9f40e6f133a84e80d6faddc59e`。base `62de7d3`。
 - 原本（git 対象外）: `plan/ws004/temp/q697/run1-trace.log`（SHA256 `57edacdd938e61dd2c0260f9ec93541f6f12471b1facdb5d4f77d42222e1a3ff`）、`run1-host-liveness.log`、`run1-final-monitor.txt`、`run1-klog-end-memory.txt`、`console-end.png`。klog は gdb/monitor でメモリから取得し、console/serial log を判定に使っていない。
 - 制限: passthrough の証拠であり、素の実機 UAT・desktop・接続済み通信・長時間耐久の証拠ではない。q698 は残る SW_ERROR の解析。GitHub 公開・共有 Queue/WS/Master の投影は Q1 の統合時に行う。
+
+## q698 の開始（2026-10-04 20:12 JST、P4）
+
+q697 の結果 commit `c61b1c8` を前提に q698-i01 を開始。原因の特定と file:line・試験を含む修正計画までで、製品修正は行わない。調査用 source は temp に baseline と差分を保存し、最後に戻す。まず recovery の停止前に既存の LMAC/UMAC SRAM error table reader を呼び、失敗した scan の channel・flags・command ring の位置を記録する（DWARF 付き調査 build）。次に C1（discrete 用 LTR bootstrap）の除外比較。各 run は最大180秒を基本とし、観測を変えずに同じ条件を繰り返さない。q697 で firmware error の再現は10回確認済み。
+
+q698 の最初の診断起動は59.5秒で中止（firmware error 前）。DWARF があると gdb の関数名 breakpoint が prologue 後へ移り、既存 tracer のレジスタ引数と `rsp` 上の return address の前提が崩れることを発見した。tool を symbol の正確な entry address に合わせ、DWARF の `info address` の表記にも対応させる。q697 は DWARF 無しで entry に置かれており影響無し。
+
+### q698 の途中の観測（2026-10-04 20:23 JST）
+
+- baseline 診断 run（20:15:24〜20:18:24、179.003秒）で同じ SW_ERROR を2回採取。両方 `channel=56 / phase=WAIT_START_ACK / token=0 / flags=0886 / channel-flags=00000000 / command-ring=1/0/1 / next-generation=258`。UMAC `id=20100247 / data=00001000/81000001/deadbeef / hcmd=00ff010d`、LMAC `id=00000071`（UMAC fatal の伝播）。各回 restart 成功。
+- C1 除外 run（20:19:40〜20:20:59、78.401秒）も同じ channel・token・UMAC error で再現し restart 成功。LTR bootstrap の削除だけでは今回の SW_ERROR を防げない。
+- code と OpenBSD `if_iwx.c` rev 1.230 の照合: AX210 以降の hardware pointer は65536で周回し、256 slot の index と分かれる。現 `intel-ax211-transport.c:1369` は slot 用の `command_ring.head` を doorbell に使い、256件目に0へ戻す。data TX は既に16 bit `write_sequence` を別に持つ。
+- 同一 baseline image の gdb で CSR write 直前の edx だけを16 bitの連番に補正する原因確認を実施中。最初の `0xff → 0x100 → 0x101` を越えて scan 継続を観測した。製品の修正はしていない。複数周回と、補正を外す対照で因果を確かめてから結論にする。
+- source の一時診断2ファイルは baseline に復元済み（`git diff --exit-code`）。image と診断差分は `plan/ws004/temp/q698/` の hash・diff と `build/q698-{diag,no-ltr}/` に保持。
+- tracer の DWARF 対応は独立 WIP commit `2615f9d`。Python 3.13.5 syntax、GNU gdb 16.3 で DWARF 有り・無し両 kernel の exact function entry / klog symbol の gdb 検証が PASS。C の製品 source は含まない。LTO が引数を変形した関数の raw register は、disassembly と照合して読む。
+
+### q698 の結果（2026-10-04、P4）
+
+Attempt q698-i01: **cleared（原因解析と修正計画の範囲）**。[BUG-158「SW_ERROR の解析（q698）」](../../bugs/BUG-158.md#sw_error-の解析q698) に実測・source行・試験計画・raw hash・制限を保存した。
+
+- 原因: 256個のDMA slot indexを16 bitのhardware command write pointerとして使い、`intel-ax211-transport.c:1369-1371` が256件目でdoorbellを0へ戻す。AX211は65536で周回する。
+- baseline診断179.003秒でSW_ERROR2回、LTR除外78.401秒で同一SW_ERROR1回。いずれもUMAC `0x20100247`、channel56、pending token0 / next_generation258。C1除外だけでは解消しない。
+- 同じbaseline imageで、CSR callback直前のedxだけをgdbで16 bit連番へ補正した199.088秒では、256・512の境界を越え、SW_ERROR/restartとも0、最終12 vCPU全てidle。
+- 同じgdb観測で512件目から補正を外すと135.847秒のdoorbell0の後に同じUMAC assertが再現。今回はchannel8、pending token255 / next_generation513。channel固有でもgdbのpauseによる改善でもないことを確認した。
+- 対照は152.084秒で終了。意図したassertの後のrestart attempt1に続き、scan stop command timeout(error42、error table valid0)を1回観測し、attempt2のrestart成功。この追加観測もticketに残した。回復全体の製品検証を済ませたとは扱わない。
+- 修正計画: transportに16 bit command_write_sequenceを持ち、publish時だけ進める。slot/wire indexは256のまま。hardware resetで連番を初期化し、prepare/abortで消費せず、CSR write失敗は巻き戻さず既存のreset必須を維持する。実transportをリンクするhost試験（256/512/65536境界、abort、曖昧なwrite、reset）と、値の補正無しの修正imageで10分passthroughを計画。既存boot fixtureはpublishがstubである点に注意。
+- 製品修正は未実装。調査用 `intel-ax211.c` と `intel-ax211-mmio.c` は元へ復元しdiff無し。tracer改善だけ `2615f9d`。HAL・toolchain変更無し、main編集・merge・push無し。
+- 最終host確認20:28:02 JST: QEMU無し、AX211 driver無し、driver_override `(null)`、iwlwifi/iwlmvm blacklist保持、USB有線 `enx6c1ff706148a` でSSH応答。host電源再投入は今回不要だった。
+- whole ws005-p032 は **in-progress**、BUG-158は **tracking**。次は通常のバグ修正QueueによるSW_ERROR修正と実機UAT。P4から次Queueを開始しない。共有Queue/WS/MasterとGitHubの反映はQ1への引き継ぎ事項。
