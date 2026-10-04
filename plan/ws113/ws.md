@@ -19,6 +19,7 @@ Resume point（2026-10-02 ベータ1の計画）: **D-ATOMIC のユーザーの�
 - この WS の p002〜p006 がこの要望の本体（i915 の HPD と複数の出力 → Vulkan の Display の拡張の通知 → compositor の出力の動的な変更 → libkeiland・compositor の拡張 → Settings の Display の頁）。**zedBSD を優先**。
 - p002 に **Guardrail の「GPU の driver の scanout の規則」**（GOP の出力先を起動時の scanout 先にし、他には自分の判断で出さない。GOP の出力先ならどの interface でも初期化を試みる。他の出力先は Keiland の明示の指示の時だけ）の i915 での実装を含める。今の i915 の外部 display の優先（`output.c` の display= の auto・hdmi）をやめる。USB-C の DP-alt の分は [WS051](../ws051/ws.md) p002 と同じ所（`takeover.c`・`output.c`）なので、先に入れた方の実装を他方が使う（重ねて書かない）。
 - **Linux・FreeBSD の KMS での互換の実装は新しい p010 に分けて後に回す**（下の表）。
+- **内蔵の LCD の明るさの調節**（2026-10-04 夜 ユーザー「SettingsのDisplayには、内蔵LCDの場合、明るさ調節がほしい」）: Settings の Display の頁で、内蔵の panel（eDP）の時に明るさの slider を出す。i915 は panel の backlight（`src/drivers/gpu/i915/display/panel.c` に backlight の処理がある、UAPI に明るさの口は無い）を持つ。経路は他の display の設定と同じ: Settings → libkeiland → compositor の拡張 → libkeiland-backend → driver の口（GPU の display の UAPI に明るさを足すか、ACPI の `_BCM`（WS049）を使うかを p001 で決める。UAPI の追加は Q1 と相談、HAL は不変）。Fn の明るさの key（ACPI の Notify 0x86・0x87 か EC）との連動、起動時の値の保存は p001 で決める。Linux・FreeBSD は p010（sysfs の backlight など）。p006 の範囲に入れる。
 - D-ATOMIC は (a) で決定済み（Master の fg019 の表）。p001 の残りの契約の確定（45 分）から再開できる。
 
 ## Objective / scope
