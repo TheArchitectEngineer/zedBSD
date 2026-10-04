@@ -9,7 +9,7 @@ Related Milestones: MG006（GTK4 の起動、[ws115-p010](../ws115/phase010/phas
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: none（Q1 が割り当てる）
-Resume point: p001 から。下の「ユーザーの判断」の U1〜U4 は、どれも p001 の着手を止めない（推奨案のまま進めてよい）。
+Resume point: p001 から。U1・U4 は p001 の着手を止めない。U2（失敗の時の扱い）と U3（他の固定の上限）は範囲と危険の選択なので、Q1 がユーザーの明示の決めを取ってから p001 を始める。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -50,7 +50,7 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
 - **lock を取らずに読む所**: `__tls_get_addr`（713-762）は loader の lock を取らずに `tls_module_count` と `tls_modules[]` を読む。
   `__rtld_dl_iterate_phdr`（1063-1103）も lock を取らずに `objects[]` と `object_count` を読む（C++ の例外の unwind が使う）。
   このため、表を伸ばす時に**今ある要素の address を動かしてはいけない**。realloc のように写して古い領域を捨てる方式は使えない。
-- **constructor は lock の外で走る**: `__rtld_dlopen` は `initialize_object` を lock の外で呼ぶ（987-990）。constructor の中から `dlopen` が再び呼ばれうる。
+- **constructor は lock の外で走る**: `__rtld_dlopen` は `initialize_object` を lock の外で呼ぶ（993-996）。constructor の中から `dlopen` が再び呼ばれうる。
 - **ld.so に malloc は無い**: memory は `tls_map`・`tls_unmap`（1532-1605、匿名の `mmap`・`munmap`、page 単位）で取る。
 - **大きさ**（main の `build/amd64/dynamic/ld.so`、2026-10-04 10:13 の build、host の `size` と `llvm-nm -S`）:
   - text 29,841・data 400・bss 217,944 byte。
@@ -80,18 +80,25 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
   - `parse_dynamic` で先に `DT_NEEDED` を数える。16 を越える時は、`tls_map` で「数 × (4 + pointer の大きさ)」の配列を取る。
   - 外の配列は `unload_object_locked` で解放する。
 - **D4 初期化の順**: 配列 `initialization_order[]` をやめ、`struct rtld_object` の `init_prev`・`init_next` の双方向の list にする。
-  - `initialize_object` は list の尾に足す。
-  - `remove_initialization_record` は list から外す。
-  - `__rtld_process_fini` は尾から頭へたどる。
+  - `initialize_object` は、constructor を呼んだ後に、**loader の lock を取って** list の尾に足す。
+    `initialize_object` は `__rtld_dlopen` から lock の外で呼ばれる。lock は再帰の lock なので、lock を持つ道から呼ばれても止まらない。
+    今の配列も lock の外で足していて、競合で 1 つ落ちうる。list では競合が list を壊すので、lock が要る。
+  - `remove_initialization_record` は list から外し、外した object の `init_prev`・`init_next` を NULL にする（2 回外しても壊れない）。
+  - `__rtld_process_fini` は「lock を取る → 尾を外す → lock を放す → その object の fini を呼ぶ」を list が空になるまで繰り返す。
+    次の object の pointer を前もって覚えない（fini の中の dlclose が list を変えるため）。
   - 上限が無くなり、外す操作は O(1) になる。
 - **D5 dlsym の訪問の印**: bitmask をやめる。`struct rtld_object` に `lookup_mark`（uint32）を置き、`rtld_dlsym_common` が呼ばれるたびに
   大域の `lookup_generation` を 1 増やす。`lookup_handle_graph` は「mark == generation なら訪問済み、違えば mark = generation にして進む」で判定する。
   - generation が 0 に戻る時は、全 object の mark を 0 にしてから 1 にする。
   - これは loader の lock の中で行う（`rtld_dlsym_common` は lock を取っている）。
   - `lookup_handle_graph` の `objects[]` の範囲の確かめ（5046）は、「NULL でない・active・unloading でない」の確かめに置き換える。
-- **D6 dtv を伸ばす**: dtv の最初の大きさは今と同じ 33 項目（定数の名前を `RTLD_DTV_INITIAL` にする）。
+- **D6 dtv を伸ばす**: dtv の最初の大きさは「33 項目（`RTLD_DTV_INITIAL`）」と「その時の `tls_module_count + 1`」の大きい方。
+  `__rtld_thread_alloc` がすでに取っている lock の中で読む。
   - `__tls_get_addr` で `index->module >= tcb->dtv_count` の時は fatal にせず、loader の lock を取って伸ばす。
-    新しい大きさは「module + 1」と「今の大きさ × 2」の大きい方。新しい dtv を取り、中身を写し、古い dtv を `tls_unmap`（大きさは古い `dtv_count`）する。
+    新しい大きさは「module + 1」と「今の大きさ × 2」の大きい方。新しい dtv を取り、中身を写し、差し替える。
+  - **古い dtv は unmap しない**。割り込まれた速い道（`__tls_get_addr` の 747-756 行）が古い dtv の address を register に持っていることがあり、
+    unmap するとそこへ書く恐れがある。古い dtv は tcb ごとの「退いた dtv」の鎖につなぎ、`__rtld_thread_free` でまとめて unmap する。
+    大きさは倍々なので、退いた dtv の合計は今の dtv の大きさを越えない。
   - lock を取るのはこの遅い道だけにする。他の thread の `unload_object_locked` も lock の中で `tcb->dtv` を読むので、lock の下で差し替える。
   - `__rtld_thread_free` の `tls_unmap(tcb->dtv, …)` は、定数ではなく `tcb->dtv_count` で大きさを出す。
 - **D7 静的な TLS の並び**: `layout_static_tls` の局所の配列 `order[RTLD_OBJECT_MAX + 1]` をやめる。2 回の loop にする。
@@ -99,28 +106,40 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
 - **D8 失敗の扱い**: 上限が無いので、失敗は `tls_map` の失敗（memory が取れない時）だけになる。
   - 起動の時と `dlopen` の中の失敗は、今と同じ `rtld_fatal` にする（U2）。
   - handle の chunk が取れない時だけは、今と同じく `dlopen` が NULL と dlerror を返す。
-- **D9 規約**: rtld.c の既存の code は全文規約の前の書き方（`/* Returns the computed result. */`・`function_result` など）が多い。
-  - 変える関数と新しい関数は、[全文規約](../coding-style.md) に従う。
+- **D9 規約**: rtld.c の既存の code は全文規約の前の書き方（`/* Returns the computed result. */`・`function_result`・`goto loaded` など）が多い。
+  2026-10-04 の `style-check.py` で rtld.c は 241 件の違反がある（`parse_dynamic` 10、`rtld_main` 12、`__rtld_dlopen` 9、`unload_object_locked` 5 など）。
+  - **新しい関数と、新しく書いた行・変えた行**は [全文規約](../coding-style.md) に従う（違反 0）。
+  - 変える関数の、変えていない行は直さない。関数ごとの違反の数を作業の前に記録し、作業の後に増えていないことを確かめる。
   - 変えない関数は直さない（無関係な大量の書き換えをしない、Awesome Plan §6）。
   - 新しい static 関数には、file の先頭の forward 宣言の群（rtld.c:350-480 付近）に 1 行の宣言を足す。
 
 ## 完了の条件
 
 1. `RTLD_NEEDED_MAX`・`RTLD_OBJECT_MAX`・`RTLD_HANDLE_MAX` が上限ではなくなる。名前は最初の chunk の大きさや object の中に持つ数として残ってよい。
-   `rtld_fatal("too many …")`・`"initialization order overflow"` と、handle の数で `dlopen` が NULL を返す道が無い。
+   次の 4 つの文字列が rtld.c に無い: `"too many shared objects"`・`"too many dependencies"`・`"too many TLS modules"`・`"initialization order overflow"`。
+   handle の数で `dlopen` が NULL を返す道が無い（memory が取れない時の文は `"cannot allocate dynamic-loader handle"` にする）。
+   他の `too many …`（`"too many object mappings"`・symbol の版の 2 つ・`"too many TLSDESC relocations"`）は U3 の範囲の外なので残す。
 2. `plan/ws140/tests/` の多数の依存の試験が、QEMU の guest で PASS する（T1/T2 が流す）。試験は次の全てを確かめる。
    - 40 個の `DT_NEEDED` を持つ library を link した program が起動し、全ての依存の関数を呼べる。
    - 起動と `dlopen` を合わせて object が 160 個を越える。
    - handle を 200 個開いて閉じられる。
    - TLS を持つ module を 40 個 `dlopen` して、2 つの thread から読み書きできる（dtv が伸びる）。
    - 33 個以上の object がある handle の graph で `dlsym` が見つける。
-3. 回帰が PASS する: 書き直した `dyntest`、`plan/ws073/tests/p038/run-tls-check.sh`、`plan/tools/boot-test.sh`、Files の PDF の縮小表示
+3. 回帰が PASS する: 書き直した `dyntest`、`plan/ws073/tests/p038/run-tls-check.sh`（`BUILD/sysroot` の symlink が要る、p002 の依頼）、`plan/tools/boot-test.sh`、Files の PDF の縮小表示
    （`dlopen("libpdf.so")`、`plan/ws127/tests/files-p002.sh` の 4）。
 4. amd64 と arm64 の `ld.so`・`libc.so` の build が warning 0 で通る。i386 は 2026-10-02 のユーザーの指示で build しない。
    ld.so の bss の増減を記録する（目安: 今の 217,944 byte から大きく増えない）。
 5. 変えた code が全文規約に合う（p003）。
 6. GTK4 の `gtk4-widget-factory` が `ld.so: too many dependencies` で止まらないことの確認は、[ws115-p010](../ws115/phase010/phase.md) の再開の時に行う。
    この WS の完了の条件には入れない。GTK の image の build は重く、WS115 の範囲だからである。
+
+## 残る危険（記録して、この WS では扱わない）
+
+- 再帰の深さに上限が無くなる: `load_object`（`phdr[64]` で 1 段 約 4 KB、2220 行）、`initialize_object`、`unload_object_locked`、`lookup_handle_graph`。
+  小さな stack の thread から深い依存を `dlopen` すると溢れうる（推測）。
+- `unload_object_locked` は fini の間 lock を放す（4793-4795）。その間に他の thread が同じ依存を外すと、局所に写した `dependencies[i]` が古くなりうる（今ある問題）。
+- 信号の handler の中の TLS の初めての参照が dtv を伸ばす時、loader の lock の取り途中（1626-1634 の exchange と owner の設定の間）だと自分を待つ（D6 で増える危険）。
+- i386・sparcv9 の code の道も変わるが、build しない（未実施）。
 
 ## 関係する source の path
 
@@ -141,11 +160,13 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
 ## ユーザーの判断
 
 - **U1 対象の範囲**: TLS の module の数（と dtv）も一緒に動的にする（推奨）。object の数を伸ばすと TLS の module も 33 で止まるので、外すと完了の条件 2 を満たせない。
-- **U2 失敗の時**: memory が取れない時の `dlopen` を、今と同じ fatal のままにする（推奨。最小の変更）。
+- **U2 失敗の時**（範囲と危険の選択。Q1 がユーザーの明示の決めを取る）: memory が取れない時の `dlopen` を、今と同じ fatal のままにする（推奨。最小の変更）。
   dlerror で NULL を返すようにするなら、読み込みかけの object の巻き戻しが要る。その場合は別の Phase にする。
-- **U3 他の固定の上限**: `tlsdesc_argument[64]`（object ごとの TLSDESC の再配置の数）・`phdr[64]`・`RTLD_NAME_MAX` 64 を、この WS に入れるか。
+- **U3 他の固定の上限**（範囲の選択。Q1 がユーザーの明示の決めを取る）: `tlsdesc_argument[64]`（object ごとの TLSDESC の再配置の数）・`phdr[64]`・`RTLD_NAME_MAX` 64 を、この WS に入れるか。
   - 推奨は入れない（F-070 の範囲の外）。
   - 大きな library で TLSDESC が 64 を越える可能性はある（推測、未確認）。越えた時は `rtld_fatal` が出るので見分けられる。
+- **U5 dlpi_subs**: 今の code は、TLS を持たない object を外しても `rtld_object_removals`（`dl_iterate_phdr` の `dlpi_subs`）を増やさない
+  （4815-4816 行で TLS の分岐の中にある）。unwinder の cache が古くなる恐れがある、今ある不具合。この WS で直す（1 行を分岐の外へ）か、Bug にするか。推奨は直す（p001 の unload の書き換えと同じ関数）。
 - **U4 F-070 の文**: 「定数を 64・128 に上げた」は事実と違う。Q1 が F-070 を直す（この WS の作業ではない）。
 
 ## Phase
@@ -154,4 +175,4 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | object の chunk の列（D1・D2）、依存の可変長（D3）、初期化の順の list（D4）、dlsym の印（D5）と、多数の依存の試験（startup と dlopen の object・依存・dlsym） | planned | — |
 | [p002](phase002/phase.md) | handle と TLS module の chunk の列（D1・D2）、dtv を伸ばす（D6）、静的な TLS の並び（D7）、dyntest の handle の試験の書き直し、TLS と handle の多数の試験 | planned | p001（同じ file。p001 の commit の上に重ねる） |
-| p003 | 全文規約の見直し（変えた関数と試験）、amd64・arm64 の build、bss の記録、T への回帰の依頼（完了の条件 2・3）、F-070 と ws115-p010 への結果の反映の案 | planned | p001・p002 |
+| p003（phase.md は p002 の後に書く） | 全文規約の見直し（変えた関数と試験）、amd64・arm64 の build、bss の記録、T への回帰の依頼（完了の条件 2・3）、F-070 と ws115-p010 への結果の反映の案 | planned | p001・p002 |
