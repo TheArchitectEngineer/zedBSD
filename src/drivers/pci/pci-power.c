@@ -22,7 +22,10 @@
  *
  * drv_pci_resume_all() undoes it in the reverse order: the platform
  * powers the function, D0, the configuration written back, the wake
- * disarmed, and the driver's resume.
+ * disarmed, and the driver's resume.  A driver whose resume reports
+ * ESTALE says its function lost the state it had (an xHCI controller
+ * whose Restore State failed); the function is detached and attached
+ * again, which enumerates what is behind it afresh.
  *
  * Functions without a driver are left alone.  The two calls come from the
  * one thread that enters and leaves S0 idle; a second suspend before the
@@ -512,6 +515,34 @@ drv_pci_device_set_wake(
 }
 
 /*
+ * Writes a function's name for messages: "pci SSSS:BB:DD.F DRIVER".
+ */
+void
+drv_pci_device_name(
+	struct drv_pci_device *device,
+	char *text,
+	size_t size)
+{
+	struct drv_pci_address address;
+	struct drv_pci_driver *driver;
+	const char *driver_name;
+
+	/* Nowhere to write is nothing to do. */
+	if (text == NULL || size == 0)
+		return;
+
+	/* Takes the address and the driver's name, "-" without a driver. */
+	drv_pci_device_address(device, &address);
+	driver = drv_pci_device_driver(device);
+	driver_name = "-";
+	if (driver != NULL && driver->name != NULL)
+		driver_name = driver->name;
+
+	/* Writes the name. */
+	(void)kern_snprintf(text, size, "pci %04x:%02x:%02x.%x %s", (unsigned)address.segment, (unsigned)address.bus, (unsigned)address.device, (unsigned)address.function, driver_name);
+}
+
+/*
  * Sets the platform's power operations for the functions.
  *
  * The platform code calls it once at start; NULL means the platform does
@@ -879,16 +910,24 @@ resume_entry(
 
 	/* Lets the driver run the function again. */
 	driver = drv_pci_device_driver(device);
+	error = 0;
 	if (entry->driver_suspended &&
 	    driver != NULL &&
-	    driver->resume != NULL) {
+	    driver->resume != NULL)
 		error = driver->resume(device);
-		if (error != 0 && first_error == 0)
-			first_error = error;
-	}
 
 	/* The function is no longer suspended. */
 	entry->driver_suspended = 0;
+
+	/* A driver whose function lost its state has it detached and attached again. */
+	if (error == ESTALE) {
+		kern_logf("pci: a function lost its state in the sleep; it is attached again\n");
+		error = drv_pci_device_reprobe(device);
+	}
+
+	/* Keeps a resume or a new attach that failed. */
+	if (error != 0 && first_error == 0)
+		first_error = error;
 
 	/* Reports the first step that failed. */
 	if (first_error != 0) {

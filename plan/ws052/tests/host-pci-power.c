@@ -108,6 +108,9 @@ static char trace[TRACE_MAX];
 static struct drv_pci_device *failing_suspend;
 static struct drv_pci_device *failing_platform;
 
+/* The function whose driver's resume reports ESTALE, or NULL. */
+static struct drv_pci_device *stale_resume;
+
 /* How many checks failed. */
 static unsigned failures;
 
@@ -125,6 +128,7 @@ static void test_driver_failure(void);
 static void test_platform_failure(void);
 static void test_no_suspend(void);
 static void test_states(void);
+static void test_stale(void);
 
 /*
  * Runs the checks and reports how many failed.
@@ -139,6 +143,7 @@ main(void)
 	test_platform_failure();
 	test_no_suspend();
 	test_states();
+	test_stale();
 
 	/* Reports the outcome. */
 	if (failures != 0) {
@@ -171,6 +176,7 @@ reset_world(void)
 	trace[0] = '\0';
 	failing_suspend = NULL;
 	failing_platform = NULL;
+	stale_resume = NULL;
 	drv_pci_platform_power_set(&test_platform);
 }
 
@@ -488,6 +494,24 @@ test_states(void)
 	check(error == EINVAL, "states: a wake outside a suspend is EINVAL");
 }
 
+/* Checks that a function that lost its state in the sleep is attached again. */
+static void
+test_stale(void)
+{
+	struct drv_pci_device *failed;
+	int error;
+
+	/* C's resume reports ESTALE: it is reprobed, and the resume still succeeds. */
+	reset_world();
+	stale_resume = &functions[2];
+	error = drv_pci_suspend_all(&failed);
+	check(error == 0, "stale: the suspend succeeds");
+	trace[0] = '\0';
+	error = drv_pci_resume_all();
+	check(error == 0, "stale: the resume succeeds after the new attach");
+	check_trace("platform:C:0 wake:C:0 resume:C reprobe:C platform:A:0 resume:A platform:D:0 resume:D", "stale: trace");
+}
+
 /* The simulated driver's suspend: C asks for its wake, and the failing function refuses. */
 static int
 driver_suspend(
@@ -513,13 +537,15 @@ driver_suspend(
 	return 0;
 }
 
-/* The simulated driver's resume. */
+/* The simulated driver's resume; the stale function reports that it lost its state. */
 static int
 driver_resume(
 	struct drv_pci_device *device)
 {
 	/* Notes the call. */
 	note("resume:%s", device->name);
+	if (device == stale_resume)
+		return ESTALE;
 
 	/* Succeeded: the function runs. */
 	return 0;
@@ -748,6 +774,16 @@ drv_pci_device_map_msix_table(
 	mapping->address = device->msix;
 	mapping->size = sizeof(device->msix);
 	*entries = MSIX_ENTRIES;
+	return 0;
+}
+
+/* Detaches and attaches a function again: noted in the trace. */
+int
+drv_pci_device_reprobe(
+	struct drv_pci_device *device)
+{
+	/* Notes it. */
+	note("reprobe:%s", device->name);
 	return 0;
 }
 

@@ -2,7 +2,7 @@
 
 # ws089-p024: Mouse の頁を device ごと（マウス・タッチパッド）の設定にし、pointer の加速を足す。既定は base 150%・加速 強め、自然な方向のスクロールはタッチパッド ON・マウス OFF
 
-Status: in-progress（実装済み、T1 待ち）
+Status: cleared（2026-10-05 Q1: T1-152 の settings-p005 PASS（touchpad.png）と T1-154 の settings-p007 PASS、touchpad の頁の古い注記を Gestures の card に直した（P2 38972c47、settings-render で目視）。加速の効きは host の試験、体感は 5330 の UAT。タッチパッドの既定（100%・中）はユーザーの判断待ち（master））。以前: in-progress（実装済み、T1 待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q728（P2、2026-10-05）
@@ -68,3 +68,7 @@ compositor の入力（WS099・WS081）、kl_settings_*（WS135）。
 ## T1-152・154 の後（2026-10-05）
 
 - Q1: Touchpad の頁の注記が「Tapping and gestures are coming in a later version of Kei.」のまま → 注記を **Gestures の card** に替えた（Click: Tap with one finger、Scroll: Move two fingers、Switch windows: Tap with three fingers、Wiseview, the desktop: Two fingers in from an edge）。settings-render で幅 900 と 1180 を目視。
+
+## Q1 の判定（2026-10-05）
+
+T1-152 の settings-p005 PASS（touchpad.png）と T1-154 の settings-p007 PASS、touchpad の頁の古い注記を Gestures の card に直した（P2 38972c47、settings-render で目視）。加速の効きは host の試験、体感は 5330 の UAT。タッチパッドの既定（100%・中）はユーザーの判断待ち（master）。**cleared**。

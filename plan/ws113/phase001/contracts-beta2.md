@@ -73,3 +73,4 @@ Status: 設計（文書だけ。製品の source・UAPI・実機は変えてい�
 - protocol の版（2026-10-05 Q1）: kl_system_manager_v1 の version 4 は ws160-p002（Settings の Users の password、account の object）が先に使う。WS113 の get_displays と kl_system_displays_v1 は **version 5** にする（D-PROTO の改訂）。
 - protocol の版（2026-10-05 Q1、改訂）: version 5 は ws132-p004 の devices（mount と new）。WS113 の get_displays と kl_system_displays_v1 は **version 6**。
 - protocol の版（2026-10-05 Q1、再改訂）: version 6 は ws089-p022 の network の configure_wired。WS113 の get_displays と kl_system_displays_v1 は **version 7**。
+- protocol の版（2026-10-05 Q1、再々改訂）: version 7 は ws089-p025 の sharing（実装の順）。WS113 の get_displays と kl_system_displays_v1 は **version 8**。

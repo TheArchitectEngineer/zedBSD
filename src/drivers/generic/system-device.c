@@ -74,6 +74,7 @@ static int system_get_resources(uintptr_t argument);
 static int system_get_process(uintptr_t argument);
 static int system_get_file_usage(uintptr_t argument);
 static int system_swap_ioctl(unsigned long request, uintptr_t argument);
+static int system_sleep(uintptr_t argument);
 static unsigned system_process_file_usage(struct process *process, const struct path *target, unsigned query_flags);
 static int system_file_matches(struct file *candidate, const struct path *target, unsigned query_flags, unsigned *socket_match);
 static int system_path_matches(const struct path *candidate, const struct path *target, unsigned query_flags);
@@ -100,6 +101,22 @@ extern int drv_usb_system_describe(uint32_t index, struct system_usb_device_info
  * unknown.
  */
 extern void drv_acpi_power_get(struct system_power_info *info) __attribute__((weak));
+
+/*
+ * The devices' suspend and resume (pci-power.c, ws052-p004).  They are
+ * weak because only the platforms with PCI power management build them;
+ * a null test makes KERN_SYSTEM_SLEEP answer EOPNOTSUPP on the others.
+ */
+struct drv_pci_device;
+extern int drv_pci_suspend_all(struct drv_pci_device **failed) __attribute__((weak));
+extern int drv_pci_resume_all(void) __attribute__((weak));
+extern void drv_pci_device_name(struct drv_pci_device *device, char *text, size_t size) __attribute__((weak));
+
+/*
+ * Whether a sleep is under way: set by the KERN_SYSTEM_SLEEP that runs and
+ * cleared when it returns, so that a second one is refused with EBUSY.
+ */
+static volatile unsigned system_sleeping;
 
 /* Operations published by the system control device. */
 static const struct cdev_ops system_ops = {
@@ -282,6 +299,76 @@ system_get_power(
 }
 
 /*
+ * Suspends every device and resumes it again (KERN_SYSTEM_SLEEP_DEVICES),
+ * and reports the outcome.  Only root may ask.
+ */
+static int
+system_sleep(
+	uintptr_t argument)
+{
+	struct system_sleep_request request;
+	struct drv_pci_device *failed;
+	struct ucred *credential;
+	unsigned busy;
+	int superuser;
+	int error;
+
+	/* Refuses a caller that is not root. */
+	credential = cred_current_ref();
+	superuser = cred_is_superuser(credential);
+	cred_release(credential);
+	if (!superuser)
+		return EPERM;
+
+	/* Reads the request. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Refuses another mode than the devices', and a reserved word that is not zero. */
+	if (request.mode != KERN_SYSTEM_SLEEP_DEVICES || request.reserved != 0)
+		return EINVAL;
+
+	/* Refuses a platform without the devices' suspend. */
+	if (drv_pci_suspend_all == NULL || drv_pci_resume_all == NULL)
+		return EOPNOTSUPP;
+
+	/* Refuses a sleep while another is under way. */
+	busy = __atomic_exchange_n(&system_sleeping, 1U, __ATOMIC_ACQ_REL);
+	if (busy != 0)
+		return EBUSY;
+
+	/* Suspends the devices; a refusal names the device. */
+	kern_memset(request.device, 0, sizeof(request.device));
+	request.resume_result = 0;
+	kern_logf("system: sleep (devices): suspending\n");
+	failed = NULL;
+	request.result = drv_pci_suspend_all(&failed);
+	if (request.result != 0 &&
+	    failed != NULL &&
+	    drv_pci_device_name != NULL)
+		drv_pci_device_name(failed, request.device, sizeof(request.device));
+
+	/* Resumes them again when the suspend went through. */
+	if (request.result == 0)
+		request.resume_result = drv_pci_resume_all();
+
+	/* Logs the outcome, which the caller also gets. */
+	kern_logf("system: sleep (devices): result %d device \"%s\" resume %d\n", (int)request.result, request.device, (int)request.resume_result);
+
+	/* Another sleep may run from now on. */
+	__atomic_store_n(&system_sleeping, 0U, __ATOMIC_RELEASE);
+
+	/* Copies the outcome out. */
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has the outcome. */
+	return 0;
+}
+
+/*
  * Dispatches one swap ioctl of the system device.
  */
 int
@@ -330,6 +417,9 @@ system_ioctl(
 		break;
 	case KERN_SYSTEM_GET_POWER:
 		error = system_get_power(argument);
+		break;
+	case KERN_SYSTEM_SLEEP:
+		error = system_sleep(argument);
 		break;
 	case KERN_SYSTEM_GET_MOUNTS:
 		error = system_get_mounts(argument);

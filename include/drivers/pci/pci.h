@@ -668,6 +668,12 @@ drv_pci_device_set_wake(
 	bool wake);
 
 void
+drv_pci_device_name(
+	struct drv_pci_device *device,
+	char *text,
+	size_t size);
+
+void
 drv_pci_platform_power_set(
 	const struct drv_pci_platform_power *power);
 
@@ -675,6 +681,7 @@ int
 drv_pci_suspend_all(
 	struct drv_pci_device **failed);
 
+/* A driver's resume that reports ESTALE has its function detached and attached again. */
 int
 drv_pci_resume_all(void);
 
