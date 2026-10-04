@@ -95,3 +95,8 @@ ACPI の蓋・AC・電池は `src/drivers/acpi/` の新しい file（`acpi-power
 - **D3 自動 mount の持ち主と権限**: 案は、console の session の利用者を持ち主として `/media/<label>` に mount（FAT は uid・gid の option、UFS は mount 先の directory の持ち主）し、その利用者が eject（unmount）してよい。nosuid・noexec を付ける。session が無い時（greeter）は mount しない。
 
 D1〜D3 が決まるまでも p002（kernel の核と送り手）は進められる。
+
+## ユーザーの決定（2026-10-05 未明）
+
+- D1: 電源ボタンの短押しは **dialog を出さず、モダンスリープ（S0i3、WS052）に入る**。ユーザー「電源ボタンでダイアログ、と回答してしまいましたが、ダイアログは不要です。モダンスリープに入ることにします。」（一度「dialog を出す」と答えた後の訂正。ws131 D12 の改訂は不要）。S0i3 ができるまでの間の扱いは未定（p008 は WS052 に依る）。
+- D2（蓋）・D3（自動 mount）: 未回答（D2 の質問はユーザーが閉じた）。
