@@ -68,7 +68,7 @@ open_chooser() {
 	glass=$(count 'panels=3 card:0,-14,')
 	pointer move 487 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
 	expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
-	expect_more 'ZWL GLASS sheet at x=260 y=95 ' 0
+	expect_more 'ZWL GLASS sheet at x=260 y=100 ' 0
 	expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
 }
 
@@ -77,7 +77,7 @@ open_chooser() {
 cancel() {
 	set -- $(sheet_xy)
 	chosen=$(guest "grep -ac 'TEXTEDIT CHOSEN' /tmp/te.log" | tail -1)
-	pointer move $(( ${1:-260} + 597 )) $(( ${2:-95} + 447 )) sleep 200 down sleep 60 up sleep 1000
+	pointer move $(( ${1:-260} + 597 )) $(( ${2:-100} + 447 )) sleep 200 down sleep 60 up sleep 1000
 	now=$(guest "grep -ac 'TEXTEDIT CHOSEN' /tmp/te.log" | tail -1)
 	[ "${now:-0}" -gt "${chosen:-0}" ] 2>/dev/null && echo "cancel: the chooser ended ok" || { echo "cancel: the chooser did not end MISSING"; status=1; }
 }
@@ -108,7 +108,7 @@ for step in "$@"; do
 	move)
 		pointer move 340 73 sleep 200 down sleep 150 move 300 90 sleep 80 move 250 110 sleep 80 move 200 130 sleep 200 up sleep 800 move 1250 780 sleep 300
 		expect_more 'ZWL GLASS moved surface=' 0
-		expect_more 'ZWL GLASS sheet at x=120 y=152 ' 0
+		expect_more 'ZWL GLASS sheet at x=120 y=157 ' 0
 		shot moved.png
 		;;
 	hold)

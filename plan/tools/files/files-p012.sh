@@ -75,7 +75,7 @@ click 400 170
 keys '<ctrl-i>'
 expect_log /tmp/f.log 'ZFILES INFO path=/tmp/fhome/Documents/Meeting notes.txt mode=0644 '
 shot info.png
-click 409 453 1500
+click 409 430 1500
 expect_log /tmp/f.log 'ZFILES CHECKSUM done path=/tmp/fhome/Documents/Meeting notes.txt sha256=1369d0d55862634309fac10a53383d6b29b3914ac1784a2c91b8f134761c3259'
 shot info-sum.png
 keys '<esc>'
