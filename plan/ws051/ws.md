@@ -9,12 +9,14 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-04 p001 の design.md 第 1 版（調査と移植の範囲、Phase の案）。次は design-reviewer のレビューと §10 の判断（TBT-alt、1 画面、hotplug の範囲）。i915 の display が前提、UCSI（WS050）は必須でない（2026-10-04 ユーザーの決定 5）
+Resume point: 2026-10-04 p001 の design.md 第 1 版（調査と移植の範囲、Phase の案）。次は design-reviewer のレビューの反映。§10 は 2026-10-04 に決定済み（TBT-alt 範囲外、GOP の出力先の引き継ぎ、hotplug は Vulkan の Display の拡張で Keiland へ）。i915 の display が前提、UCSI（WS050）は必須でない（2026-10-04 ユーザーの決定 5）
 <!-- awesome-plan-current:end -->
 
 ## 目標
 
-USB-C の port につないだ DisplayPort の display（USB-C の monitor、USB-C から DP・HDMI への変換）に、DisplayPort Alternate Mode で画面を出す。
+USB-C の port につないだ DisplayPort の display（USB-C の monitor、USB-C から DP・HDMI への変換）を i915 が DisplayPort Alternate Mode で駆動でき、
+抜き差しを Vulkan の Display の拡張の経路で Keiland に知らせ、Keiland の指示で画面を出す（2026-10-04 ユーザーの決定。mirror・拡張・出力 off は
+Keiland が決める）。i915 は GOP の出力先以外に自分の判断で scanout を始めない（Guardrail「GPU の driver の scanout の規則」）。
 
 ## きっかけ
 
@@ -37,11 +39,15 @@ USB-C の port につないだ DisplayPort の display（USB-C の monitor、USB
 - TCSS・FIA で DP-alt の状態を読み（live status、PHY の ownership、TC cold、lane と pin の割り当て）、HPD を受け取る。読んだ HPD・pin・向きを
   WS050 の Type-C の層に報告する。
 - i915 の TCSS: lane を DP に割り当て、Type-C PHY を DP で使い、DDI・transcoder・pipe を立てて link training、EDID の読み出し。
-- 抜き差しと HPD の IRQ の扱い、画面の構成の変更を上（framebuffer・zdesktop）に通知する。
+- GOP の出力先の引き継ぎ（`takeover.c`）と、今の外部 display の優先の挙動の廃止（Guardrail の規則、決定 2）。GOP の出力先なら eDP・HDMI・DP・
+  USB-C のどれでも初期化を試み、非対応なら firmware の画面を保つ。
+- 抜き差しと HPD の IRQ の扱い。抜き差しは display の UAPI の事象（`GPU_DISPLAY_EVENT_CHANGE`）から libvulkan の Display の拡張の通知へ
+  （WS113 と同じ経路）。TC の output を display の UAPI の列挙に出し、Keiland の claim・present の時だけ出力する。
 
 ## 受け入れ
 
-- 対象機の USB-C port につないだ DP の monitor に画面が出る（mirror か拡張かは p001 で決める）。抜いて差し直すと戻る。
+- 対象機の USB-C port につないだ DP の monitor に、Keiland の指示（display の UAPI の claim・present）で画面が出る。抜き差しが Vulkan の Display の
+  拡張の通知に届き、差し直すと Keiland の指示で戻る。起動時に USB-C の display があっても GOP の出力先がそのまま出る（driver が切り替えない）。
 - 規約の全文、build、boot test。実機の証拠が中心（QEMU には無い）。
 
 ## Phase 一覧
@@ -49,10 +55,11 @@ USB-C の port につないだ DisplayPort の display（USB-C の monitor、USB
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
 | [ws051-p001](phase001/phase.md) | 調査と設計: i915 の TCSS・Type-C PHY（DKL）・TC PLL・DDI の手順、今の i915 の display の範囲、画面の構成、WS050 との連携 | in-progress（2026-10-04。[design.md](design.md) 第 1 版、レビュー待ち） | — | 設計文書 |
-| ws051-p002 | TC の port の核（`tc.c`）、VBT の DVO の code の修正、TC の HPD、診断（向きの確かめを含む） | planned | p001 | `src/drivers/gpu/i915/display/` |
+| ws051-p002 | GOP の出力先の引き継ぎと外部優先の廃止（Guardrail の scanout の規則）、VBT の DVO の code の修正 | planned | p001 | `src/drivers/gpu/i915/display/`（takeover.c・output.c） |
+| ws051-p002b | TC の port の核（`tc.c`）、TC の HPD、診断（向きの確かめを含む） | planned | p002 | `src/drivers/gpu/i915/display/` |
 | ws051-p003 | DKL PHY と TC PLL、DDI の TC の clock、buffer translation | planned | p002、bare metal の Linux の正解値 | 同上 |
-| ws051-p004 | 外部 DP の検出と出力（TC の AUX、DPCD・EDID、link training、modeset、出力の選択） | planned | p003 | 同上 |
-| ws051-p005 | 抜き差し（HPD の pulse、disconnect と再 connect） | planned | p004 | 同上 |
+| ws051-p004 | 外部 DP の検出と display の UAPI での出力（TC の AUX、DPCD・EDID、列挙、claim・present での link training・modeset） | planned | p003、WS113 の契約 | 同上 |
+| ws051-p005 | 抜き差しの事象（`GPU_DISPLAY_EVENT_CHANGE`、scanout 中の抜けの停止、IRQ_HPD） | planned | p004 | 同上 |
 | ws051-p006 | 規約の全文の確認と最終の確認 | planned | p002〜p005 | WS の全 source |
 
 ## 2026-10-04 予定（Q1）
@@ -63,3 +70,9 @@ USB-C の port につないだ DisplayPort の display（USB-C の monitor、USB
 
 決定 5（HPD・pin は i915 の TCSS・FIA から、UCSI 2.0 以上で取れる時は UCSI からも）により、WS051 は UCSI を待たずに進める。決定 4（向きは 1.x でも
 i915 から）により、p002 で TCSS・FIA の register から向きが取れるかを確かめる。i915 の値は WS050 の Type-C の層へ報告する（WS050 p005）。
+
+## 2026-10-04 WS051 §10 のユーザーの決定（Q1 経由、design.md の末尾に記録）
+
+TBT-alt は範囲外。driver は GOP の出力先を引き継ぎ自分で出力先を変えない（今の外部 display の優先はやめる。p002 で直す）、USB-C の DP の接続は
+Keiland が Vulkan の Display の拡張で通知を受け、mirror・拡張・出力 off を決める。Guardrail に「GPU の driver の scanout の規則」（GOP の出力先
+以外に scanout を始めない、GOP の出力先ならどのインタフェースでも初期化を試みる）。

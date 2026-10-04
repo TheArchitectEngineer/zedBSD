@@ -286,7 +286,9 @@ UCSI（p003）が使い、他の driver（WS051・WS052・WS132 の ACPI の利�
 4. **`_CRS` の共通の解析**: Memory32Fixed・QWord/DWord の memory・IO・FixedIO・IRQ・Interrupt を解く関数（今は EC の driver が自分で解いている）。
 5. （要否を p003 で調べる）memory map の型を問う口（A3）。kernel に既にあれば使う。無く、HAL の API が要るなら止めて Q1 に相談する。
 
-（Q1 が q696 ws049-p017 として Queue に入れた。）
+（Q1 が q696 ws049-p017 として Queue に入れ、1〜4 を実装した。5 は ws049-p017 の調べで kernel に口が無く HAL の API（`hal.h` か
+`hal_get_arch_handoff` の新しい名前）が要ると分かり、ユーザーの判断待ち。それまで A3 は「UAT で `UBCB` と memory map の型を記録して確かめる」で
+設計を進める（2026-10-04 Q1）。）
 
 ## 13. HPD・pin・向きの二つの出所（決定 4・5 と補足）
 
