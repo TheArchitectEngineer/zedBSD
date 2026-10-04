@@ -3,7 +3,7 @@
 # guest gets this worktree's compositor, files and libraries (BIN); HOME is /tmp/dhome with a Desktop folder of a
 # folder, a text, a picture, a PDF and a script.  zdesktop --glass at 1280x800 starts /bin/files --desktop itself
 # (--desktop-client), with the token in its environment.
-#   show      the desktop: the role taken, configured 1280x766, the five items laid out from the top-right corner down
+#   show      the desktop: the role taken, configured 1280x756, the five items laid out from the top-right corner down
 #             (ZFILES DESKTOP place/ready), a picture (desktop.png)
 #   watch     a file added to ~/Desktop appears within a few seconds (items=6, added.png), and goes when it is removed
 #   input     click, arrow, Enter (the started program has no token), a double click on a folder (a new window), a
@@ -132,9 +132,9 @@ for step in "$@"; do
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP start pid=[0-9]+ command=/bin/files --desktop'
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=34 width=1280 height=766'
-		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP configure x=0 y=34 width=1280 height=766'
-		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=5 cells=5 width=1280 height=766'
+		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=44 width=1280 height=756'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP configure x=0 y=44 width=1280 height=756'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=5 cells=5 width=1280 height=756'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=[^ ]+ column=0 row=0 x=1168 y=16'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=[^ ]+ column=0 row=4 x=1168 y=432'
 		pointer move 640 600 sleep 300
@@ -183,7 +183,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		pointer move 1100 60 sleep 300 down sleep 100 move 1150 200 sleep 100 move 1260 330 sleep 400 move 1261 331 sleep 1200
 		shot band.png
 		pointer up sleep 500
-		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP band start x=1100 y=26'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP band start x=1100 y=16'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP band end first=0'
 		keys '<esc>'
 		;;
@@ -238,13 +238,13 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		guest "grep -aE 'DESKTOP (prune|ready)' /tmp/zdesktop.log" > "$out/prune-log.txt"
 		;;
 	menu)
-		# The desktop surface is at y=34: a screen point's surface y is 34 less.  Icons from the top right:
+		# The desktop surface is at y=44 (under the system bar): a screen point's surface y is 44 less.  Icons from the top right:
 		# Projects (1216,90), notes.txt (1216,194), photo.png (1216,298), report.pdf (1216,402), script.sh (1216,506).
 		# Rows are numbered 1000 + the action: New Folder 1002, Copy 1010, Paste 1011, Rename 1014, Show in Files 1055,
 		# Clean Up 1056, Change Wallpaper 1057.
 		guest 'rm -rf /tmp/dhome/.local/share/Trash; rm -f /tmp/files.clipboard' >/dev/null
 		rclick 700 400
-		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=700 y=366'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=700 y=356'
 		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1056 depth=1 '
 		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1055 depth=1 '
 		shot menu-empty.png
@@ -313,7 +313,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		# choice at a press on the window, and when another window maps.
 		done=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 		rclick 40 500
-		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=40 y=466'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=40 y=456'
 		sleep 1
 		open=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 		[ "${open:-0}" = "${done:-0}" ] && echo "desktop menu over a window: stays open ok" || { echo "desktop menu over a window: closed MISSING"; status=1; }
@@ -354,8 +354,8 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		fi
 		;;
 	drag)
-		# A cell's column counts from the right edge: the surface point (x, y - 34) is in column
-		# (1280 - 16 - x - 1) / 96 and row (y - 34 - 16) / 104.
+		# A cell's column counts from the right edge: the surface point (x, y - 44) is in column
+		# (1280 - 16 - x - 1) / 96 and row (y - 44 - 16) / 104.
 		# 1. notes.txt (1216,194) to (900,400): the cell 3,3.
 		pointer move 1216 194 sleep 300 down sleep 150 move 1205 200 sleep 100 move 1150 240 sleep 100 move 1050 300 sleep 100 \
 			move 950 370 sleep 100 move 900 400 sleep 900
@@ -431,7 +431,7 @@ up 1
 hold 1500'
 		expect_log /tmp/zdesktop.log 'ZFILES TOUCH long-press'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context name=report.pdf'
-		expect_log /tmp/zdesktop.log 'ZFILES CONTEXT-MENU open rows=[0-9]+ x=1216 y=368 '
+		expect_log /tmp/zdesktop.log 'ZFILES CONTEXT-MENU open rows=[0-9]+ x=1216 y=358 '
 		shot touch-menu.png
 		keys '<esc>'
 		sleep 1

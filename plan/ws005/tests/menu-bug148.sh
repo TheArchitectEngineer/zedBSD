@@ -6,7 +6,7 @@
 #  1. 1280x800: the menu, a click on Kei Lab (joined): the first network row after the switch's lines is Kei Lab, the
 #     button is logged (ZWL NETWORK disconnect ... ssid=Kei Lab) and no row reads "Disconnect from" (joined.png).
 #  2. zdesktop again at 1280x230 (the stand-in stays connected): the menu lists Kei Lab and a note "2 more in Settings >
-#     Wi-Fi" instead of the two others, and its height is within 230 - 34 - 6 - 8 = 182 (short.png).
+#     Wi-Fi" instead of the two others, and its height is within 230 - 44 - 6 - 8 = 172 (short.png).
 #  3. A click on the button: the stand-in is told to disconnect (op=36) and the state says disconnected (left.png).
 #  networkd's socket back and root's /etc/wifi.conf removed at the end; no ERROR line in zdesktop's log.
 #
@@ -116,7 +116,7 @@ click $(($1 + $3 / 2)) $(($2 + $4 / 2)) 1500
 expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=[0-9]+ more in Settings > Wi-Fi'
 last_rows > "$out/rows-short.txt"
 height=$(grep 'ZWL NETWORK menu ' "$out/rows-short.txt" | tail -1 | sed -n 's/.* height=\([0-9]*\).*/\1/p')
-[ "${height:-999}" -le 182 ] 2>/dev/null && echo "menu height $height fits: ok" || { echo "menu height ${height:-?}: FAIL"; status=1; }
+[ "${height:-999}" -le 172 ] 2>/dev/null && echo "menu height $height fits: ok" || { echo "menu height ${height:-?}: FAIL"; status=1; }
 shot short.png
 
 # 3. The button disconnects.

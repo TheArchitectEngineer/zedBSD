@@ -117,7 +117,7 @@ for step in "$@"; do
 		open_chooser
 		pointer move 1029 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
 		expect_more 'ZWL GLASS dock surface=' 0
-		expect_more 'ZWL GLASS sheet at x=260 y=38 ' 0
+		expect_more 'ZWL GLASS sheet at x=260 y=48 ' 0
 		shot docked.png
 		cancel
 		;;

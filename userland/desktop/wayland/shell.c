@@ -140,8 +140,19 @@ static unsigned sheet_lowering;
  * bar's first 40 pixels).
  */
 #define BAR_LAUNCHER_X		10
-#define BAR_LAUNCHER_Y		4
 #define BAR_LAUNCHER_SIZE	26
+#define BAR_LAUNCHER_Y		(ZWL_GLASS_BAR_MIDDLE - BAR_LAUNCHER_SIZE / 2)
+
+/*
+ * The parts of the system bar placed from its middle line (ws099-p031): a
+ * separator's top and length, the desktops' pill's top and height, and the
+ * baseline of the bar's text (the clock, the docked title's "Wiseview").
+ */
+#define BAR_LINE_TOP		(ZWL_GLASS_BAR_MIDDLE - 8)
+#define BAR_LINE_LENGTH		16
+#define BAR_PILL_TOP		(ZWL_GLASS_BAR_MIDDLE - 13)
+#define BAR_PILL_HEIGHT		26
+#define BAR_BASELINE		(ZWL_GLASS_BAR_MIDDLE + 5)
 
 /*
  * The dock animation, a launched window's growing, a double click, and how
@@ -3149,7 +3160,7 @@ draw_system_bar(
 
 	/* The docked window: a line, its mark, title and menu, and its buttons with restore for maximize. */
 	if (docked != NULL) {
-		glass_draw_solid(server, command, (float)bar->menu_line, 9.0f, 1.0f, 16.0f, 0.0f, line);
+		glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
 
 		/* The title shares the room before the buttons with the window's menu. */
 		available = bar->buttons[BUTTON_MINIMIZE] - 24 - bar->title_x - 30;
@@ -3176,8 +3187,8 @@ draw_system_bar(
 	if (progress > 0.0f) {
 		memcpy(label, dark, sizeof(label));
 		label[3] = progress;
-		glass_draw_solid(server, command, (float)bar->menu_line, 9.0f, 1.0f, 16.0f, 0.0f, line);
-		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, 23, "Wiseview", 200, label);
+		glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
+		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, BAR_BASELINE + 1, "Wiseview", 200, label);
 	}
 
 	/* The desktops, then the status. */
@@ -3206,14 +3217,14 @@ draw_desktops(
 	int desktop;
 
 	/* The lines, and the pill. */
-	glass_draw_solid(server, command, (float)bar->desktops_line, 9.0f, 1.0f, 16.0f, 0.0f, line);
-	glass_draw_solid(server, command, (float)bar->status_line, 9.0f, 1.0f, 16.0f, 0.0f, line);
-	glass_draw_solid(server, command, (float)bar->desktops_x, 4.0f, (float)bar->desktops_width, (float)(ZWL_GLASS_BAR - 8), 10.0f, pill);
+	glass_draw_solid(server, command, (float)bar->desktops_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
+	glass_draw_solid(server, command, (float)bar->status_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
+	glass_draw_solid(server, command, (float)bar->desktops_x, (float)BAR_PILL_TOP, (float)bar->desktops_width, (float)BAR_PILL_HEIGHT, 10.0f, pill);
 
 	/* Wiseview brings the desktops forward with a blue edge. */
 	progress = wiseview_progress(server);
 	if (progress > 0.0f) {
-		glass_shape_init(&shape, (float)bar->desktops_x, 4.0f, (float)bar->desktops_width, (float)(ZWL_GLASS_BAR - 8));
+		glass_shape_init(&shape, (float)bar->desktops_x, (float)BAR_PILL_TOP, (float)bar->desktops_width, (float)BAR_PILL_HEIGHT);
 		shape.quad[0] -= 1.0f;
 		shape.quad[1] -= 1.0f;
 		shape.quad[2] += 2.0f;
@@ -3247,7 +3258,7 @@ draw_desktops(
 		/* A desktop with windows has a small dot under its picture. */
 		windows = desktop_windows(server, (unsigned)desktop);
 		if (windows != 0U)
-			glass_draw_solid(server, command, (float)(x + DESKTOP_WIDTH / 2 - 2), (float)(ZWL_GLASS_BAR - 5), 4.0f, 3.0f, 1.5f, current);
+			glass_draw_solid(server, command, (float)(x + DESKTOP_WIDTH / 2 - 2), (float)(ZWL_GLASS_BAR_MIDDLE + DESKTOP_HEIGHT / 2 + 2), 4.0f, 3.0f, 1.5f, current);
 
 		/* The current one is outlined in blue. */
 		if (desktop == (int)server->desktop) {
@@ -3279,10 +3290,10 @@ draw_status(
 	struct glass_shape shape;
 
 	/* The date and time. */
-	glass_draw_text(server, command, SIZE_BAR, bar->clock_x, 22, bar->clock, 400, ink);
+	glass_draw_text(server, command, SIZE_BAR, bar->clock_x, BAR_BASELINE, bar->clock, 400, ink);
 
 	/* The battery: an outline, its charge and its terminal. */
-	glass_shape_init(&shape, (float)bar->battery_x, 11.0f, 22.0f, 12.0f);
+	glass_shape_init(&shape, (float)bar->battery_x, (float)(ZWL_GLASS_BAR_MIDDLE - 6), 22.0f, 12.0f);
 	shape.quad[0] -= 1.0f;
 	shape.quad[1] -= 1.0f;
 	shape.quad[2] += 2.0f;
@@ -3292,8 +3303,8 @@ draw_status(
 	shape.soft = 1.3f;
 	memcpy(shape.color, ink, sizeof(shape.color));
 	glass_shape_draw(server, command, &shape);
-	glass_draw_solid(server, command, (float)(bar->battery_x + 3), 14.0f, 14.0f, 6.0f, 1.5f, ink);
-	glass_draw_solid(server, command, (float)(bar->battery_x + 23), 15.0f, 2.0f, 4.0f, 1.0f, ink);
+	glass_draw_solid(server, command, (float)(bar->battery_x + 3), (float)(ZWL_GLASS_BAR_MIDDLE - 3), 14.0f, 6.0f, 1.5f, ink);
+	glass_draw_solid(server, command, (float)(bar->battery_x + 23), (float)(ZWL_GLASS_BAR_MIDDLE - 2), 2.0f, 4.0f, 1.0f, ink);
 
 	/* The network: Wi-Fi's bars or the wired tree, which opens its menu (network.c). */
 	zwl_network_draw_icon(server, command, bar->signal_x, ink);

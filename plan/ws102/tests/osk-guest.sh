@@ -5,7 +5,7 @@
 # (the pen image's injected touch screen, 1280x800 screen pixels).
 #   install   the compositor and its libraries into the guest
 #   start     zdesktop --glass 1280x800 (started again by each step that needs a fresh one)
-#   pointer   (p002) the pointer's swipes: the bottom-right corner's opens the flick panel (318x766 at 962,34, the right column;
+#   pointer   (p002) the pointer's swipes: the bottom-right corner's opens the flick panel (318x756 at 962,44, the right column;
 #             flick-open.png), its close key closes it; the same swipe twice opens and closes it; the bottom-left
 #             corner's opens the QWERTY panel (1280x336 at 0,464, the bottom row; qwerty-open.png) and the bottom-right's then changes
 #             to the flick panel
@@ -23,7 +23,7 @@
 #   close     (p005) the title band dragged 100 px right closes the flick panel, 100 px down the QWERTY panel; App
 #             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here)
 #   large     (p005; the guest started with VENUS_SIZE=1920x1080, OSK_WIDTH=1920 OSK_HEIGHT=1080) the flick panel is
-#             414x1046 at 1506,34 (keys 96 px), the QWERTY panel 1920x453 at 0,627 (large-flick.png, large-qwerty.png)
+#             414x1036 at 1506,44 (keys 96 px), the QWERTY panel 1920x453 at 0,627 (large-flick.png, large-qwerty.png)
 #   qwerty    (p006) the QWERTY panel: the 30 characters "Hello, World! Kei 2026 (a+b)=c" (capitals by Shift, symbols
 #             by Shift on the digits and by the symbols face) tapped into Text Editor within 6 s (5 characters a second,
 #             qwerty-plan.py), saved by Ctrl+S: the file is the text; Shift twice locks it (ABC typed as capitals);
@@ -220,7 +220,7 @@ for step in "$@"; do
 		expect_log 'ZWL OSK press corner=flick source=pointer x=1272 y=792'
 		expect_log 'ZWL OSK armed corner=flick'
 		expect_log 'ZWL OSK commit corner=flick via=(distance|flick)'
-		expect_log 'ZWL OSK open kind=flick x=962 y=34 width=318 height=766'
+		expect_log 'ZWL OSK open kind=flick x=962 y=44 width=318 height=756'
 		pointer move 700 300 sleep 400
 		shot flick-open.png
 		# Its close key (1228,442 28x28).
@@ -245,7 +245,7 @@ for step in "$@"; do
 	flick)
 		compositor
 		swipe 1272 792 1130 650
-		expect_log 'ZWL OSK open kind=flick x=962 y=34'
+		expect_log 'ZWL OSK open kind=flick x=962 y=44'
 		# A tap on あ, a flick left on か.
 		pointer move 1004 524 sleep 200 down sleep 80 up sleep 500
 		expect_text 'ZWL OSK key face=kana row=0 column=0 dir=center action=0 text=あ'
@@ -373,7 +373,7 @@ hold 800'
 	large)
 		compositor
 		swipe 1912 1072 1770 930
-		expect_log 'ZWL OSK open kind=flick x=1506 y=34 width=414 height=1046'
+		expect_log 'ZWL OSK open kind=flick x=1506 y=44 width=414 height=1036'
 		pointer move 900 400 sleep 400
 		shot large-flick.png
 		swipe 6 1072 150 930
@@ -599,7 +599,7 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 	workarea)
 		# (p007) The work area: Text Editor docked, a floating wltest 500x400 over it; the QWERTY panel shortens the
 		# docked window (told 1280x426 once) and moves the floating one up to the area's top (its bottom overhangs);
-		# the flick panel narrows the docked window (962x762); closing gives the docked window its size back and moves
+		# the flick panel narrows the docked window (962x752); closing gives the docked window its size back and moves
 		# the floating one back; one moved by the user while the panel is out stays where it was put.
 		compositor
 		guest 'rm -f /root/w.txt; printf "The work area.\n" > /root/w.txt' >/dev/null
@@ -624,12 +624,12 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		# Closed: the docked window whole again, the floating one back.
 		pointer move 1254 488 sleep 200 down sleep 60 up sleep 900
 		expect_log 'ZWL OSK work-area right=0 bottom=0'
-		expect_log "ZWL OSK work docked surface=$te width=1280 height=762"
+		expect_log "ZWL OSK work docked surface=$te width=1280 height=752"
 		expect_log "ZWL OSK work back surface=$wl to=$lx,$ly"
-		# The flick panel: the docked window 962x762 (the floating one fits already, or moves left).
+		# The flick panel: the docked window 962x752 (the floating one fits already, or moves left).
 		swipe 1272 792 1130 650
 		expect_log 'ZWL OSK work-area right=318 bottom=0'
-		expect_log "ZWL OSK work docked surface=$te width=962 height=762"
+		expect_log "ZWL OSK work docked surface=$te width=962 height=752"
 		sleep 1
 		pointer move 400 200 sleep 300
 		shot workarea-flick.png
