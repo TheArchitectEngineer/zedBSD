@@ -367,6 +367,15 @@ struct zwl_object {
 	int32_t restore_y;
 	uint32_t restore_width;
 	uint32_t restore_height;
+	/*
+	 * A window the shell docked or brought back whose client has not drawn
+	 * the new size yet (shell.c, BUG-179 and BUG-180): when the size was
+	 * sent (ms; 0 once an image drawn after it came), and the serial of
+	 * the configure that carried it.  Until then a window brought back is
+	 * drawn at the size it was sent, not at its old docked image's.
+	 */
+	uint64_t resized_ms;
+	uint32_t resized_serial;
 	/* A wl_shm buffer's place in its pool (NULL for a GPU buffer), and a pool object's memory. */
 	struct zwl_shm_buffer *shm;
 	struct zwl_pool *pool;
@@ -818,13 +827,16 @@ struct zwl_server {
 	uint64_t click_ms;
 	/*
 	 * The presses of the latest run of quick clicks on click_surface's
-	 * floating title bar (1, 2 or 3), and a window whose double click is
-	 * waiting to dock it: it docks at dock_due_ms unless a third press
-	 * comes first and sends it to the back instead (ws079-p013).
+	 * floating title bar (1, 2 or 3), and the window a double click docked
+	 * at once (BUG-179) with the place of that second press: a third
+	 * press near it before click_docked_due_ms takes the dock back and
+	 * sends the window to the back instead (ws079-p013).
 	 */
 	unsigned click_count;
-	struct zwl_object *dock_waiting;
-	uint64_t dock_due_ms;
+	struct zwl_object *click_docked;
+	uint64_t click_docked_due_ms;
+	int32_t click_docked_x;
+	int32_t click_docked_y;
 	struct zwl_object *pull;
 	int32_t pull_start_y;
 	int32_t pull_distance;
@@ -1280,6 +1292,7 @@ int zwl_glass_overlay(struct zwl_server *server);
 struct zwl_object *zwl_glass_title_at(struct zwl_server *server, int32_t x, int32_t y);
 void zwl_glass_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
 void zwl_glass_mapped(struct zwl_server *server, struct zwl_object *surface);
+void zwl_glass_committed(struct zwl_server *server, struct zwl_object *surface);
 int zwl_glass_key(struct zwl_server *server, uint32_t key, uint32_t state);
 
 /* The network's icon in the system bar and its menu (network.c, ws035-p013; the drawing is in glass.h). */

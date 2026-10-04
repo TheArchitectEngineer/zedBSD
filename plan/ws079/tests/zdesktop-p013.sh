@@ -1,8 +1,9 @@
 #!/bin/sh
 # ws079-p013 (mouse part): a triple click on a floating title bar sends the
-# window to the back and brings the next one forward; a double click still
-# docks, but only once the time a third press has (400 ms) is over.  Checked
-# on the Venus guest (the pattern of plan/ws035/tests/zdesktop-p062.sh).
+# window to the back and brings the next one forward; a double click docks at
+# its second press (BUG-179), and a third press takes that dock back before
+# the window goes to the back.  Checked on the Venus guest (the pattern of
+# plan/ws035/tests/zdesktop-p062.sh).
 #
 # The compositor under test is copied into the running guest.  Three wltest
 # windows a (420x300, f4f7fc), b (500x360, c8d8ec) and c (460x320, e8c8b0)
@@ -16,12 +17,14 @@
 #
 #  0. The three drags land where the pointer took them (a drag is unchanged).
 #  1. A triple click on c's title bar: c goes to the back, b comes forward and
-#     has the keyboard; P_BC shows b; c does not dock.
+#     has the keyboard; P_BC shows b; the dock of the second press is taken
+#     back (undock via=triple-click) and c floats where it was.
 #  2. A triple click on b's title bar: b goes to the back, a comes forward;
 #     P_AB shows a and P_BC shows c (c is above b now).
 #  3. A single click on c's title bar raises it and does nothing else.
-#  4. A double click on c's title bar docks it, 400 ms or more after the
-#     second press; a double click on the title in the bar brings it back.
+#  4. A double click on c's title bar docks it at the second press (the
+#     picture right after it already shows c in the docked space, BUG-179);
+#     a double click on the title in the bar brings it back.
 #  5. A drag of c's title bar moves it by the pointer's way (unchanged).
 #
 #   GUEST_RUNTIME=... plan/ws079/tests/pen-guest.sh start IMAGE
@@ -117,7 +120,7 @@ shot stack --expect 700,450,$C --expect 450,350,$B --expect 200,200,$A || status
 clicks 710 320 3
 sleep 1.5
 expect_log "GLASS lower client=${c%:*} surface=${c#*:} via=triple-click next=$b focus=$b"
-expect_count "c docked by the triple click" "$(count "GLASS (dock|double-click) surface=${c#*:} ")" 0
+expect_log "GLASS undock surface=${c#*:} via=triple-click x=560 y=350"
 pointer move 1200 780 sleep 500 >/dev/null
 shot c-lowered --expect 700,450,$B --expect 450,350,$B --expect 900,640,$C || status=1
 
@@ -125,40 +128,30 @@ shot c-lowered --expect 700,450,$B --expect 450,350,$B --expect 900,640,$C || st
 clicks 450 220 3
 sleep 1.5
 expect_log "GLASS lower client=${b%:*} surface=${b#*:} via=triple-click next=$a focus=$a"
-expect_count "b docked by the triple click" "$(count "GLASS (dock|double-click) surface=${b#*:} ")" 0
+expect_log "GLASS undock surface=${b#*:} via=triple-click x=300 y=250"
 pointer move 1200 780 sleep 500 >/dev/null
 shot b-lowered --expect 450,350,$A --expect 700,450,$C || status=1
 
 # 3. A single click on c's title bar raises it, and nothing else.
 lowers=$(count 'GLASS lower ')
-waits=$(count 'GLASS dock waiting ')
+docks=$(count 'GLASS dock surface=')
 clicks 710 320 1
 sleep 1.5
 pointer move 1200 780 sleep 500 >/dev/null
 expect_count "lowers after a single click" "$(count 'GLASS lower ')" "$lowers"
-expect_count "docks waiting after a single click" "$(count 'GLASS dock waiting ')" "$waits"
-expect_count "docks after a single click" "$(count 'GLASS dock surface=')" 0
+expect_count "docks after a single click" "$(count 'GLASS dock surface=')" "$docks"
 shot c-raised --expect 700,450,$C --expect 450,350,$A || status=1
 
-# 4. A double click on c's title bar docks it, after the third press's time.
+# 4. A double click on c's title bar docks it at once, and no third press takes it back.
+cdocks=$(count "GLASS dock surface=${c#*:} via=double-click")
+undocks=$(count "GLASS undock surface=${c#*:} ")
 clicks 710 320 2
+shot c-docking --expect 500,700,$C || status=1
 sleep 2.5
-expect_log "GLASS dock waiting surface=${c#*:}"
-expect_log "GLASS dock surface=${c#*:} via=double-click"
-waited=$(guest "grep 'GLASS double-click surface=${c#*:} ' /tmp/zdesktop.log | tail -1" | sed -n 's/.*waited_ms=\([0-9]*\).*/\1/p')
-echo "the dock came ${waited:-?} ms after the second press"
-if [ -n "$waited" ] && [ "$waited" -ge 400 ] && [ "$waited" -lt 1000 ]; then
-	echo "delay: ok"
-else
-	echo "delay: FAILED"
-	status=1
-fi
-order=$(guest "grep -nE 'GLASS (dock waiting|double-click|dock) surface=${c#*:}' /tmp/zdesktop.log | cut -d' ' -f3 | tr '\n' ' '")
-echo "order: $order"
-case "$order" in
-*"dock double-click dock"*) echo "order: ok" ;;
-*) echo "order: FAILED"; status=1 ;;
-esac
+expect_count "docks of c by the double click" "$(count "GLASS dock surface=${c#*:} via=double-click")" $((cdocks + 1))
+expect_count "undocks of c after the double click" "$(count "GLASS undock surface=${c#*:} ")" "$undocks"
+resized=$(guest "grep 'GLASS resized surface=${c#*:} docked=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.*after_ms=\([0-9]*\).*/\1/p')
+echo "the client drew the docked size ${resized:-?} ms after the dock (informational: wltest draws every 250 ms)"
 expect_count "lowers from the double click" "$(count 'GLASS lower ')" "$lowers"
 pointer move 1200 780 sleep 500 >/dev/null
 shot c-docked --expect 20,780,$C --expect 1260,60,$C || status=1
@@ -178,7 +171,7 @@ shot c-moved --expect 520,660,$C || status=1
 # Nothing failed.
 guest 'grep -E "ERROR|FAILED" /tmp/zdesktop.log /tmp/a.log /tmp/b.log /tmp/c.log' | tee "$out/${prefix}errors.txt"
 [ -s "$out/${prefix}errors.txt" ] && status=1
-guest 'grep -E "GLASS (dock|undock|moved|lower|double-click)|CONFIGURE" /tmp/zdesktop.log' > "$out/${prefix}log.txt"
+guest 'grep -E "GLASS (dock|undock|moved|lower|resized)|CONFIGURE" /tmp/zdesktop.log' > "$out/${prefix}log.txt"
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "p013: PASS" || echo "p013: FAIL"
 exit $status

@@ -375,6 +375,10 @@ adopt_commit(
 	/* A window resized from its left or top edge keeps its other edges where they were (toplevel.c). */
 	zwl_toplevel_committed(server, surface);
 
+	/* A window docked or brought back by the glass look waits for its image of the new size (shell.c). */
+	if (server->glass)
+		zwl_glass_committed(server, surface);
+
 	/* The replaced image. */
 	zwl_buffer_put(previous);
 }

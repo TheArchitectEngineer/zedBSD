@@ -24,9 +24,10 @@
  *
  * A triple click on a floating title bar sends the window to the back and
  * gives the focus to the window now on top (ws079-p013, "go away"; a quick
- * two-finger flick up on it on a touch screen does the same, touch.c).  So that a
- * triple click never docks first, a double click docks only when the time
- * a third press has (DOUBLE_CLICK_MS after the second) is over.
+ * two-finger flick up on it on a touch screen does the same, touch.c).  A
+ * double click docks at its second press (BUG-179); a third press near it
+ * within DOUBLE_CLICK_MS takes that dock back before it sends the window
+ * to the back.
  *
  * The system bar has three zones: on the left the launcher (the Kei mark,
  * ws035-p117) and the docked window; towards the right four virtual
@@ -143,16 +144,30 @@ static unsigned sheet_lowering;
 #define BAR_LAUNCHER_SIZE	26
 
 /*
- * The dock animation, a double click, and how far a docked title is pulled
- * down to come off (ws035-p064: the window follows the pull on the way,
- * shrinking from the docked space to its own size under the pointer).
+ * The dock animation, a launched window's growing, a double click, and how
+ * far a docked title is pulled down to come off (ws035-p064: the window
+ * follows the pull on the way, shrinking from the docked space to its own
+ * size under the pointer).  A double click shows the docked window within
+ * DOCK_MS of its second press (BUG-179, the 2026-10-04 user's 0.1 s, at
+ * most 0.2 s).
  */
-#define DOCK_MS			220U
+#define DOCK_MS			120U
+#define LAUNCH_MS		220U
 
 /* The kind of the animation that is not a dock or an undock: a launched window growing from its icon (ws035-p071). */
 #define ANIM_LAUNCH		2U
 #define DOUBLE_CLICK_MS		400U
 #define PULL_DISTANCE		140
+
+/* How far from a double click's second press its third may be and still take the dock back (ws079-p013). */
+#define TRIPLE_CLICK_SLOP	8
+
+/*
+ * How long a window brought back from the docked space is drawn at the size
+ * it was sent while its client has not drawn that size (BUG-180): a client
+ * that never does is shown as it draws after this.
+ */
+#define RESIZED_HOLD_MS		1000U
 
 /* A docked body starts this far under the top of the output. */
 #define DOCK_TOP		ZWL_GLASS_DOCK_TOP
@@ -319,7 +334,8 @@ static void window_undock(struct zwl_server *server, struct zwl_object *surface,
 static void window_configure(struct zwl_object *surface);
 static unsigned double_click(struct zwl_server *server, struct zwl_object *surface);
 static unsigned title_clicks(struct zwl_server *server, struct zwl_object *surface);
-static void dock_when_due(struct zwl_server *server);
+static int click_docked_third(struct zwl_server *server);
+static void window_resized(struct zwl_object *surface);
 static void window_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
 static int bar_press(struct zwl_server *server);
 static struct zwl_object *bar_cover(struct zwl_server *server);
@@ -585,6 +601,13 @@ zwl_glass_button(
 		return pressed;
 	}
 
+	/* A third quick press after a double click that docked a window takes the dock back (ws079-p013). */
+	if (state != 0 && button == ZWL_BUTTON_LEFT) {
+		pressed = click_docked_third(server);
+		if (pressed)
+			return 1;
+	}
+
 	/*
 	 * The top-right corner's swipe to Notes (corner.c) takes a press that
 	 * starts in the corner, and that contact's release; before Home, so
@@ -774,19 +797,22 @@ zwl_glass_button(
 
 	/*
 	 * A second quick press on the title bar is a double click, which docks
-	 * the window once a third press can no longer come (dock_when_due).
+	 * the window now (BUG-179); a third press near it soon after takes the
+	 * dock back and sends the window to the back (click_docked_third).
 	 */
 	clicks = title_clicks(server, surface);
 	if (clicks == 2U) {
-		server->dock_waiting = surface;
-		server->dock_due_ms = server->click_ms + DOUBLE_CLICK_MS;
-		printf("ZWL GLASS dock waiting surface=%u\n", surface->id);
+		server->click_docked = surface;
+		server->click_docked_due_ms = server->click_ms + DOUBLE_CLICK_MS;
+		server->click_docked_x = server->pointer_x;
+		server->click_docked_y = server->pointer_y;
+		window_dock(server, surface, surface->x, surface->y, "double-click");
 		return 1;
 	}
 
-	/* A third quick press sends the window to the back instead. */
+	/* A third quick press on a title bar that did not dock sends the window to the back. */
 	if (clicks >= 3U) {
-		server->dock_waiting = NULL;
+		server->click_docked = NULL;
 		server->click_surface = NULL;
 		server->click_count = 0;
 		window_lower(server, surface, "triple-click");
@@ -1401,9 +1427,9 @@ zwl_glass_lower(
 	struct zwl_object *surface,
 	const char *via)
 {
-	/* A run of clicks or a double click's dock waiting on the window is over. */
-	if (server->dock_waiting == surface)
-		server->dock_waiting = NULL;
+	/* A run of clicks, or a double click's dock a third press could take back, on the window is over. */
+	if (server->click_docked == surface)
+		server->click_docked = NULL;
 	if (server->click_surface == surface) {
 		server->click_surface = NULL;
 		server->click_count = 0;
@@ -2014,6 +2040,68 @@ zwl_glass_mapped(
 }
 
 /*
+ * Ends the wait of a window docked or brought back once its client has
+ * drawn the size it was sent: from then on its own image is drawn at its own
+ * size (BUG-180).  The log says how long the client took (BUG-179).
+ */
+void
+zwl_glass_committed(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	struct shell_rect docked;
+	uint32_t width;
+	uint32_t height;
+	uint64_t now;
+	unsigned stale;
+
+	/* Only a window waiting for an image of its new size, with an image. */
+	if (surface->resized_ms == 0U)
+		return;
+	if (surface->current == NULL)
+		return;
+
+	/* An image committed before the client acknowledged the configure was drawn at the old size. */
+	if (surface->acked_serial < surface->resized_serial)
+		return;
+
+	/* The new image's size, and the docked space's. */
+	zwl_surface_size(surface, &width, &height);
+	docked_rect(server, &docked);
+
+	/*
+	 * An image of the size the window had before is one drawn before the
+	 * client read the configure (Files acknowledges a configure when it
+	 * comes and draws later); the wait goes on.
+	 */
+	stale = 0U;
+	if (surface->maximized) {
+		/* Docked: its floating size is the old one. */
+		if (width == surface->restore_width && height == surface->restore_height)
+			stale = 1U;
+	} else {
+		/* Brought back: the docked size is the old one. */
+		if ((int32_t)width == docked.width && (int32_t)height == docked.height)
+			stale = 1U;
+	}
+
+	/* The old size: the wait goes on. */
+	if (stale != 0U)
+		return;
+
+	/* The client has drawn the new size; the log says how long after it was sent. */
+	now = zwl_milliseconds();
+	printf("ZWL GLASS resized surface=%u docked=%u width=%u height=%u after_ms=%llu\n", surface->id, surface->maximized, width, height, (unsigned long long)(now - surface->resized_ms));
+
+	/* The wait is over: the image is drawn at its own size. */
+	surface->resized_ms = 0U;
+	server->dirty = 1;
+
+	/* Succeeded: the window is drawn as its client draws it again. */
+	return;
+}
+
+/*
  * Handles zdesktop's shortcuts: Ctrl+Alt+Left and Right switch to the
  * desktop before and after, Super+Tab opens Wiseview (and while it is open
  * every key is Wiseview's).  Returns 1 when the key is zdesktop's.
@@ -2125,9 +2213,6 @@ zwl_glass_tick(
 
 	/* A finger on a title bar that has waited long enough for a second one, or two that did not flick in time (touch.c). */
 	zwl_touch_tick(server);
-
-	/* A double click on a title bar docks its window once a third press can no longer come. */
-	dock_when_due(server);
 
 	/* An open menu closes when what it belongs to changed (menu-shell.c). */
 	zwl_menu_tick(server);
@@ -3259,6 +3344,7 @@ static float
 animation_progress(
 	struct zwl_server *server)
 {
+	uint64_t duration;
 	uint64_t elapsed;
 	float t;
 
@@ -3266,11 +3352,16 @@ animation_progress(
 	if (server->anim == NULL)
 		return 1.0f;
 
-	/* The time since it started, as a fraction of DOCK_MS. */
+	/* A launched window grows for LAUNCH_MS; a dock and an undock take DOCK_MS. */
+	duration = DOCK_MS;
+	if (server->anim_docking == ANIM_LAUNCH)
+		duration = LAUNCH_MS;
+
+	/* The time since it started, as a fraction of its duration. */
 	elapsed = zwl_milliseconds() - server->anim_start_ms;
-	if (elapsed >= DOCK_MS)
+	if (elapsed >= duration)
 		return 1.0f;
-	t = (float)elapsed / (float)DOCK_MS;
+	t = (float)elapsed / (float)duration;
 
 	/* Eased out: quick at first, slow at the end. */
 	return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
@@ -3326,6 +3417,7 @@ body_rect(
 {
 	struct shell_rect from;
 	struct shell_rect to;
+	uint64_t held;
 	float t;
 
 	/* Between the two while animated. */
@@ -3347,6 +3439,22 @@ body_rect(
 	if (surface->maximized) {
 		docked_rect(server, body);
 		return;
+	}
+
+	/*
+	 * Brought back, but its client has not drawn that size yet: its old
+	 * docked image is drawn at the size it was sent, so the window never
+	 * shows the docked size again on its way back (BUG-180).
+	 */
+	if (surface->resized_ms != 0U) {
+		held = zwl_milliseconds() - surface->resized_ms;
+		if (held < RESIZED_HOLD_MS) {
+			body->x = surface->x;
+			body->y = surface->y;
+			body->width = (int32_t)surface->window_width;
+			body->height = (int32_t)surface->window_height;
+			return;
+		}
 	}
 
 	/* Its place, its image's size. */
@@ -4033,6 +4141,9 @@ window_dock(
 	       bar.buttons[BUTTON_CLOSE], bar.buttons[BUTTON_MAXIMIZE], bar.buttons[BUTTON_MINIMIZE], bar.title_x,
 	       (int)to.x, (int)to.y, (int)to.width, (int)to.height);
 	window_configure(surface);
+
+	/* Until the client draws the docked size, the log waits for its image (BUG-179). */
+	window_resized(surface);
 }
 
 /*
@@ -4057,8 +4168,13 @@ window_undock(
 	/* The place asked for, inside the space: its title bar never under the system bar (ws035-p138). */
 	zwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &x, &y);
 
-	/* From the docked space to that place, at the size it had. */
-	docked_rect(server, &from);
+	/*
+	 * From where the body is drawn now -- the docked space, part of the way
+	 * of a dock still animated, or the end of a pull, where it already has
+	 * its own size under the pointer (BUG-180) -- to that place, at the size
+	 * it had.
+	 */
+	body_rect(server, surface, &from);
 	surface->maximized = 0;
 	surface->x = x;
 	surface->y = y;
@@ -4080,6 +4196,9 @@ window_undock(
 	/* The client draws the size it had. */
 	printf("ZWL GLASS undock surface=%u via=%s x=%d y=%d\n", surface->id, via, x, y);
 	window_configure(surface);
+
+	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180). */
+	window_resized(surface);
 }
 
 /* Tells a window its new size. */
@@ -4093,6 +4212,22 @@ window_configure(
 	error = zwl_window_send_configure(surface);
 	if (error != 0)
 		printf("ZWL GLASS configure errno=%d\n", error);
+}
+
+/*
+ * Marks a window docked or brought back as waiting for its client's image
+ * of the size the configure just sent asked for.
+ */
+static void
+window_resized(
+	struct zwl_object *surface)
+{
+	/* An image drawn after this configure was acknowledged ends the wait (zwl_glass_committed). */
+	surface->resized_ms = zwl_milliseconds();
+	surface->resized_serial = surface->configure_serial;
+
+	/* Succeeded: the window waits for its image of the new size. */
+	return;
 }
 
 /*
@@ -4156,40 +4291,57 @@ title_clicks(
 }
 
 /*
- * Docks the window whose double click has waited out the time a third
- * press had (DOUBLE_CLICK_MS after the second).
+ * Takes a third quick press after a double click that docked a window
+ * (ws079-p013's triple click, BUG-179): the dock is taken back and the
+ * window goes to the back.  Returns 1 when the press was that third one.
  */
-static void
-dock_when_due(
+static int
+click_docked_third(
 	struct zwl_server *server)
 {
 	struct zwl_object *surface;
 	uint64_t now;
+	int32_t dx;
+	int32_t dy;
 
-	/* Nothing waits to dock. */
-	surface = server->dock_waiting;
+	/* No double click docked a window lately. */
+	surface = server->click_docked;
 	if (surface == NULL)
-		return;
+		return 0;
 
-	/* A third press may still come. */
+	/* The time a third press had is over. */
 	now = zwl_milliseconds();
-	if (now < server->dock_due_ms)
-		return;
-	server->dock_waiting = NULL;
-
-	/* A window that went away, docked, was hidden or left the desktop meanwhile stays as it is. */
-	if (surface->dead ||
-	    !surface->mapped ||
-	    surface->maximized ||
-	    surface->minimized ||
-	    surface->desktop != server->desktop) {
-		printf("ZWL GLASS dock dropped surface=%u\n", surface->id);
-		return;
+	if (now >= server->click_docked_due_ms) {
+		server->click_docked = NULL;
+		return 0;
 	}
 
-	/* The double click docks it; the log says how long after the second press. */
-	printf("ZWL GLASS double-click surface=%u waited_ms=%llu\n", surface->id, (unsigned long long)(now - (server->dock_due_ms - DOUBLE_CLICK_MS)));
-	window_dock(server, surface, surface->x, surface->y, "double-click");
+	/* A press away from the second one is no third click (it acts on what it is on). */
+	dx = server->pointer_x - server->click_docked_x;
+	dy = server->pointer_y - server->click_docked_y;
+	if (dx * dx + dy * dy >= TRIPLE_CLICK_SLOP * TRIPLE_CLICK_SLOP) {
+		server->click_docked = NULL;
+		return 0;
+	}
+
+	/* The run of clicks ends with this press. */
+	server->click_docked = NULL;
+	server->click_surface = NULL;
+	server->click_count = 0;
+
+	/* A window that was brought back, hidden or left the desktop meanwhile leaves the press to what it is on. */
+	if (!surface->mapped ||
+	    !surface->maximized ||
+	    surface->minimized ||
+	    surface->desktop != server->desktop)
+		return 0;
+
+	/* The window floats where it was and goes to the back, the next one coming forward. */
+	window_undock(server, surface, surface->restore_x, surface->restore_y, "triple-click");
+	window_lower(server, surface, "triple-click");
+
+	/* Succeeded: the press was the triple click's. */
+	return 1;
 }
 
 /*
@@ -5597,12 +5749,17 @@ glass_motion_take(
 			server->pull_distance = 0;
 		if (server->pull_distance < PULL_DISTANCE)
 			return 1;
-		server->pull_distance = 0;
 
-		/* The same part of the title bar stays under the pointer. */
+		/*
+		 * The same part of the title bar stays under the pointer.  The
+		 * window comes back from where the pull left it (its own size
+		 * there), not from the docked space (BUG-180), so the pull's
+		 * distance is forgotten only after.
+		 */
 		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
 		y = server->pointer_y + ZWL_GLASS_GAP + ZWL_GLASS_TITLE / 2;
 		window_undock(server, surface, x, y, "pull");
+		server->pull_distance = 0;
 		server->pull = NULL;
 		server->drag = surface;
 		server->drag_dx = server->pointer_x - x;
