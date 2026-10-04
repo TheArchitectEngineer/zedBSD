@@ -128,7 +128,7 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
 | p006 | CPU の idle と tick と割り込み（**承認された H1〜H4**）、S0i3 の入口・出口（§2 の段 2〜8: user の freeze、device、LPS0、wake の GPE、全 CPU の深い idle、wake で逆順）、`/dev/system` の ioctl（`KERN_SYSTEM_SLEEP`・`KERN_SYSTEM_SLEEP_INFO`）と事象（WS132: `power.sleep.begin`・`end reason=…`・`failed device=…`） | p002 の承認、p004、p005、p009、WS132 の事象 | 実機で SLP_S0 の residency が増え、wake で戻る。QEMU では「未対応の platform」で安全に失敗（T1） |
 | p007 | Keiland の契機: 蓋を閉じた時（WS132 p008 の蓋の分の「画面を消して lock」を sleep に置き換える）、電源ボタンの短押し（dialog 無し、ws132-p001 D1）、一定時間の無操作（Settings の Power で時間を決める、WS089 の頁）。中止の理由を利用者に示す（通知、WS156） | p006、WS132 p008、WS089 | 実機で 3 つの契機で入り、電源ボタン・蓋で戻る |
 | p008 | 実機の確認（繰り返し 20 回、session と network の継続）と規約の全文の確認 | p007 | 受け入れの全項目、規約、build、boot test |
-| p009 | i915 の suspend・resume: display の suspend（動いている pipe の構成を保って全部を止める）、DC9 と PCH の SBCLK の workaround、GT の idle と RC6、GGTT の復元、resume での display の core の再初期化（CDCLK・DBUF・DMC）と保った出力の設定の再適用（Keiland の指示の分を含む）。設計から（2026-10-05 Q1 が p004 から分けた: QEMU で試せず規模が大きい） | p004 | 設計、build、5330 の UAT（suspend→resume で画面が同じ出力先に戻る） |
+| p009 | i915 の suspend・resume（設計: [design-p009-i915.md](design-p009-i915.md)）: display の suspend（窓を出る）、DC9 と PCH の SBCLK の workaround、GT の idle と RC6、GGTT の復元、resume での display の core の再初期化（CDCLK・DBUF・DMC）と保った出力の設定の再適用（Keiland の指示の分を含む）。設計から（2026-10-05 Q1 が p004 から分けた: QEMU で試せず規模が大きい） | p004 | 設計、build、5330 の UAT（suspend→resume で画面が同じ出力先に戻る） |
 
 ## 10. 人間の判断が要る点
 
