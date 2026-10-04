@@ -167,3 +167,4 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - `ZWL STARTUP step=wallpaper ms=7172`: 起動の時の壁紙に約 7.2 秒（WS138・WS139 の項目）。
 - `usb1: port 10 enumeration failed (3)`。
 - 有線（ue0）は起動の時から挿すと 10.0.30.3 で up（C7 は後から挿した時だけの不具合）。
+| G5 | OK（再現せず） | （ユーザーが AC を抜いた直後に Q1 が SSH で計測、14 時過ぎ）System Monitor の `ZMON FRAME fps=21.5・14.4・22.4`（1 回だけ 14.4、submit_ms 17・callback_ms 56）。5 fps への低下は出ない。`sysctl` に battery・AC の項目が無い（DSDT が読めていないため電源の状態を知らない） | BUG-159（今回は再現せず） |
