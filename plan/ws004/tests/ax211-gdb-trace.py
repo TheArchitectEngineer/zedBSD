@@ -277,5 +277,7 @@ while not tracer.halted:
         tracer.armed = False
         time.sleep(0.5)
     except KeyboardInterrupt:
-        break
+        # The ticker's gdb.interrupt() landed while Python, not the guest,
+        # was running (seen in q684 run 6); nothing stopped, so go on.
+        pass
 print('%s TRACE END (guest halted; gdb stays attached)' % stamp())
