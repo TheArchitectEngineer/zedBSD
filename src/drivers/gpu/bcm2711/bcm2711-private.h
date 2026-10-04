@@ -1,0 +1,127 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * What the parts of the BCM2711 graphics driver share.
+ *
+ * The display path and the V3D engine are kept apart: each has its own state,
+ * its own stage names (P for the display, V for V3D) and, later, its own GPU
+ * device, so that a fault of the render engine does not take the display down.
+ */
+
+#ifndef KERN_DRIVERS_GPU_BCM2711_PRIVATE_H
+#define KERN_DRIVERS_GPU_BCM2711_PRIVATE_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <drivers/generic/fdt.h>
+
+/* The stage-mark family of the display path, and its boot parameter prefix. */
+#define BCM2711_FAMILY_DISPLAY		"rpi4gpu"
+
+/* The stage-mark family of the V3D engine, and its boot parameter prefix. */
+#define BCM2711_FAMILY_V3D		"v3d"
+
+/* The longest stage-mark line, in columns; the console is 80 columns wide. */
+#define BCM2711_STAGE_LINE_COLUMNS	79U
+
+/* How long a stage waits before a write that may blank the screen, in ms. */
+#define BCM2711_STAGE_PAUSE_MS		3000U
+
+/* The two timing generators that feed the HDMI ports: HDMI0 and HDMI1. */
+#define BCM2711_TIMING_COUNT		2U
+
+/* The two HDMI ports. */
+#define BCM2711_HDMI_COUNT		2U
+
+/* The interrupt number that names no interrupt. */
+#define BCM2711_NO_IRQ			(-1)
+
+/*
+ * One register window of a device.
+ *
+ * It records where the device tree says the window is and where the driver
+ * mapped it.  mapped stays NULL until the window is mapped and is never
+ * unmapped: the driver keeps its windows for the life of the system.
+ */
+struct bcm2711_window {
+	uint64_t physical;
+	uint64_t size;
+	volatile uint8_t *mapped;
+};
+
+/*
+ * One interrupt line of a device.
+ *
+ * irq is the kernel's number (the GIC interrupt ID), or BCM2711_NO_IRQ when
+ * the device tree names none.  registered is set once the handler is
+ * installed; the line stays masked until the stage that enables the device's
+ * own interrupts unmasks it.
+ */
+struct bcm2711_irq_line {
+	int irq;
+	bool registered;
+	uint64_t count;
+};
+
+/*
+ * The display path: the compositor, the two timing generators of the HDMI
+ * ports and the HDMI encoders.
+ *
+ * One instance exists for the system, filled by the P0 stage.  present is set
+ * when the compositor was found and mapped; the rest is meaningful only then.
+ */
+struct bcm2711_display {
+	bool present;
+	struct bcm2711_window compositor;
+	struct bcm2711_irq_line compositor_irq;
+	struct bcm2711_window timing[BCM2711_TIMING_COUNT];
+	struct bcm2711_irq_line timing_irq[BCM2711_TIMING_COUNT];
+	uint64_t hdmi_physical[BCM2711_HDMI_COUNT];
+	uint32_t hdmi_window_count[BCM2711_HDMI_COUNT];
+};
+
+/*
+ * The V3D 4.2 render engine.
+ *
+ * One instance exists for the system, filled by the V0 stage.  present is set
+ * when the hub and the core windows were found and mapped.  No register of
+ * the engine is read before its power and clock are up.
+ */
+struct bcm2711_v3d {
+	bool present;
+	struct bcm2711_window hub;
+	struct bcm2711_window core;
+	struct bcm2711_irq_line irq;
+	bool has_power_domain;
+	bool has_reset;
+	uint32_t clock_id;
+};
+
+/* Stage marks and the driver's boot parameters (stage.c). */
+bool bcm2711_stage_driver_off(void);
+bool bcm2711_stage_allowed(const char *family, const char *stage);
+void bcm2711_stage_mark(const char *family, const char *format, ...) __attribute__((format(printf, 2, 3)));
+void bcm2711_stage_pause(const char *family, const char *stage);
+
+/* Device tree helpers shared by both parts (fdt-util.c). */
+int bcm2711_fdt_find(const struct drv_fdt *fdt, const char *compatible, uint32_t *node);
+int bcm2711_fdt_window(const struct drv_fdt *fdt, uint32_t node, unsigned index, struct bcm2711_window *window);
+int bcm2711_fdt_gic_irq(const struct drv_fdt *fdt, uint32_t node, unsigned index, int *irq);
+uint32_t bcm2711_fdt_reg_count(const struct drv_fdt *fdt, uint32_t node);
+int bcm2711_map_window(struct bcm2711_window *window);
+int bcm2711_irq_install(struct bcm2711_irq_line *line);
+
+/* The firmware's clocks, read through the mailbox (clock.c). */
+void bcm2711_clock_report(const char *family, const char *name, uint32_t clock_id);
+
+/* The stages of the two parts (display.c, v3d.c). */
+int bcm2711_display_discover(const struct drv_fdt *fdt, struct bcm2711_display *display);
+int bcm2711_v3d_discover(const struct drv_fdt *fdt, struct bcm2711_v3d *v3d);
+
+#endif

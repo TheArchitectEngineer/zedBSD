@@ -22,6 +22,9 @@
 #include "drivers/platform/rpi4/rpi4-console.h"
 #include "drivers/platform/rpi4/rpi4-pcie.h"
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
+#if CONFIG_DRIVER_BCM2711_GPU
+#include "drivers/gpu/bcm2711/bcm2711-gpu.h"
+#endif
 
 /*
  * Publishes the boot devices described by the Raspberry Pi 4 boot handoff.
@@ -77,6 +80,14 @@ kern_platform_init(
 	 * a usable controller boots without PCI devices.
 	 */
 	(void)drv_rpi4_pcie_init(rpi4->fdt_phys);
+
+#if CONFIG_DRIVER_BCM2711_GPU
+	/*
+	 * Finds the display path and the V3D engine.  A board or emulator
+	 * without them, or a boot with rpi4gpu.off=1, goes on without them.
+	 */
+	(void)drv_bcm2711_gpu_attach(rpi4->fdt_phys);
+#endif
 
 	/* Publishes the SD card as the boot device. */
 	device = &devices[0];

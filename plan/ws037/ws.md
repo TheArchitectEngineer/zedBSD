@@ -32,7 +32,7 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 ## ライセンスの扱い（WS141 と同じ方式、2026-10-04 ユーザー「やりかたはVC4と同じです」）
 
 1. GPL の source（nouveau の GPL の部分があれば、open-gpu-kernel-modules の GPL の側）から作る作業の文書は `plan/ws037/temp/` に置き、**commit しない**。手順の書き写しが基本、表現が難しい所は code の書き写しも可。
-2. zedBSD の code を書く前に、作業の文書の**定数を全て一括で独自の名前に変える**（p002 の最初）。
+2. zedBSD の code を書く前に、作業の文書の**定数を全て一括で独自の名前に変える**（p003 の最初、code を書く前）。
 3. register の定義・method（class の命令）・packet の形は、**MIT の source** から取り、file ごとに path・SHA-256・license を監査の表にする: nouveau（`drivers/gpu/drm/nouveau/`、大部分 MIT。file ごとに確かめる）、Mesa の NVK・NAK（`src/nouveau/`、MIT）、NVIDIA の open-gpu-kernel-modules・open-gpu-doc の MIT の側。
 4. **BLOB**: GSP の firmware（`gsp-*.bin`、NVIDIA の再配布の license）と、source の中の firmware に相当する BLOB は `userland/firmware/`（例 `userland/firmware/nvidia-gsp/`）に置き、file から load する。license を個別に確かめる。
 5. WS の最後に、license と GPL の code との字面・設計の類似を監査する。zedBSD の code は Zlib。
@@ -54,11 +54,11 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 | [p001](phase001/phase.md) | 文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp）、NAK の世代の差、正本と license の監査、interface の対応表、段の印の設計、試験の道 | in-progress（q692、文書あり、review の反映が残り） | なし（host 無しで可） | 6h |
 | [p002](phase002/phase.md) | 試験機（RTX 2070）の調査（読むだけ）と試験の道（A: USB から素で起動、B: VFIO）、今の zedBSD が RTX 2070 の GOP に出ること | planned（**host の情報待ち**） | [host.md](host.md) | 3〜4h |
 | [p003](phase003/phase.md) | 定数の一括の改名、driver の骨格（PCI・BAR・`CONFIG_DRIVER_PCI_NVRTX`）、段の印 N0（chip の ID を読むだけ） | planned | p001・p002 | 4h |
-| p004 | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware の load（`userland/firmware/nvidia-gsp/tu106/`）、RISC-V の GSP の起動、RPC の初期化（段の印 P1〜P2） | planning | p003 | 6h〜 |
-| p005 | MMU・channel・GPFIFO・semaphore の fence・reset（GSP の RPC で channel を作る） | planning | p004 | 6h〜 |
-| p006 | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本） | planning | p004 | 6h〜 |
-| p007 | 3D（TU102_A 系の class）・compute の投入と `drv_gpu_interface` への統合、desktop の表示 | planning | p005・p006 | 6h〜 |
-| p008 | shader の compiler の方針（SPIR-V → SM75、NAK の構成を参考、別 WS にするか） | planning | p001 | 2h |
+| p004 | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware（既定 off の firmware の package、`/lib/firmware/nvidia/tu102/`）の load、RISC-V の GSP の起動、RPC の初期化と停止（[design](nvrtx-design.md) の段 P0〜P3・P7） | planning | p003 | 6h〜 |
+| p005 | VRAM の allocator・MMU・BAR1/BAR2・GR の golden context と TU10x の scrubber・channel・GPFIFO・semaphore の fence・回復（段 P4〜P6） | planning | p004 | 6h〜 |
+| p006 | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本、段 P8）。text console の付け直し | planning | p005（VRAM の allocator と BAR1 の map） | 6h〜 |
+| p007 | 3D（TU102_A 系の class）・compute の投入と `drv_gpu_ops` への統合（段 P9）、desktop の表示 | planning | p005・p006・kernel の Venus の executor と compiler（p008 の方針、[design](nvrtx-design.md) 8.0） | 6h〜 |
+| p008 | kernel の Venus の executor と shader の compiler（SPIR-V → SM75、NAK の構成を参考）の方針、別 WS にするか（design の判断の項目 8・16） | planning | p001 | 2h |
 | p009 | 規約の全文の確認、license と GPL の code との類似の監査、BLOB（GSP の firmware）の確認 | planning | 全て | 4h |
 
-各段の印（GOP の framebuffer）: N0 発見と ID → N1 GOP の readout → P1 FWSEC・booter → P2 GSP の起動と RPC → P3 channel → P4 display の引き継ぎ → P5 最初の 3D の job。i915 の N0・N1・P2 と同じ考え。
+各段の印（GOP の framebuffer）と段の名前の正は [design](nvrtx-design.md) の 3 節: N0 発見と ID → N1 GOP の readout → P0 GSP の起動の準備 → P1 devinit 待ち・FWSEC-FRTS → P2 booter と GSP の起動 → P3 RM の object → P4 VRAM・MMU → P5 channel・fence → P6 回復 → P7 停止 → P8 display の引き継ぎ → P9 最初の 3D の job。i915 の N0・N1・P2 と同じ考え。

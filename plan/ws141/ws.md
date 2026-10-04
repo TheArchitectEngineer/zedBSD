@@ -7,8 +7,8 @@ Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
-Queue: q691（p001、17 時以降）
-Resume point: p001 の文書（[rpi4-gpu-design.md](rpi4-gpu-design.md)・[rpi4-gpu-license-audit.md](rpi4-gpu-license-audit.md)）がそろい review を反映済み（2026-10-04、q691-i01）。p002 は判断の項目 3（disabled の node）・11（device の分割）の答えの後。判断の項目 1 は決定（事実として使う）。
+Queue: q691（p001）、q695（p002）
+Resume point: p002（q695）の骨格を実装済み・QEMU の回帰と実機の写真待ち（2026-10-04）。p001 の文書（[rpi4-gpu-design.md](rpi4-gpu-design.md)・[rpi4-gpu-license-audit.md](rpi4-gpu-license-audit.md)）がそろい review を反映済み（2026-10-04、q691-i01）。判断の項目 1〜17 は決定（1 は事実として使う、2〜17 は既定案、2026-10-04 ユーザー）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -54,7 +54,7 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | Phase | 目的 | Status | 依存 | 目安 |
 | --- | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 文書: Linux の vc4・v3d の初期化の順と command の投入の順、正本の一覧と license の監査、BCM2711 の display と V3D の構成、我々の interface への対応表、段の印の設計 | in-progress（q691、文書と review 済み、判定待ち） | なし | 4〜6h |
-| p002 | **定数の一括の改名**（作業の文書、temp）の後に、段の印の仕組み（framebuffer に進み具合を書く debug の口）と driver の骨格（FDT の attach、MMIO の map、clock・power の mailbox、IRQ） | planning | p001 | 4h |
+| [p002](phase002/phase.md) | **定数の一括の改名**（作業の文書、temp）の後に、段の印の仕組み（framebuffer に進み具合を書く debug の口）と driver の骨格（FDT の attach、MMIO の map、clock・power の mailbox、IRQ） | in-progress（q695、実装済み、QEMU の回帰と実機待ち） | p001 | 4h |
 | p003 | display（[design](rpi4-gpu-design.md) の N0〜N2・P1〜P3・P5、P4 は後）: firmware の framebuffer の readout と引き継ぎ、HVS の plane、pixelvalve・HDMI の mode set、vblank と page flip（i915 の resident display を手本に） | planning | p002 | 6h〜 |
 | p004 | V3D: power・MMU・buffer object、bin/render の control list と CSD の job、reset、fence | planning | p002 | 6h〜 |
 | p005 | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | planning | p003・p004 | 4h〜 |

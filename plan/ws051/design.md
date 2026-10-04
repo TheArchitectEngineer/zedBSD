@@ -121,3 +121,11 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 3. **hotplug の範囲**: 起動時に選んだ port の抜き差しだけを追い、別の port・panel への切り替えはしない案。
 4. （決定済み）ws.md の依存と前提: 2026-10-04 のユーザーの決定 5 とその補足で「HPD・pin は i915 の TCSS・FIA から、UCSI 2.0 以上で取れる時は
    UCSI からも。WS051 は UCSI を待たずに進める」と決まり、ws.md を直した。
+
+## ユーザーの決定（2026-10-04、§10）
+
+1. TBT-alt（Thunderbolt の dock の先の DP）は**範囲外**（クリックの回答「範囲外」）。
+2. 画面の model（ユーザーの回答、原文）:「ドライバは出力先を変更しない。ドライバの出力先については、GOPから引き継ぐときに、GOPの出力先を、ドライバの出力先とする。現状はこれができていないのでドライバの修正が必要。起動時にUSB-Cがあっても、GOPの出力先をドライバの出力先にする。グラフィカルセッションが起動したとき、Keilandが独自の判断で、外部ディスプレイの優先などを決定する。GOPがUSB-Cに出力されていない限り、ドライバはUSB-Cに出力しない。」
+   → (a) i915 は GOP から引き継ぐ時、GOP が出していた出力先（pipe・port）をそのまま driver の出力先にする。driver は自分の判断で出力先を変えない（外部の display を優先して panel を消す今の挙動はやめる）。今の i915 はこれができていないので driver の修正が要る（WS051 の Phase として計画、WS075 の takeover.c に及ぶ）。(b) 起動時に USB-C の display が繋がっていても、GOP の出力先を使う。(c) graphical session の後は Keiland が外部の display の優先などを決め、driver は Keiland の指示（display の UAPI・libvulkan の経路）で出力先を変える。(d) GOP が USB-C に出していない限り、driver は自分から USB-C に出力しない。
+3. hotplug: 2 の決定により、driver は出力先を自分で切り替えず、抜き差しを事象として Keiland（WS132 の /dev/system・display の事象）に知らせ、切り替えは Keiland の判断（Q1 の読み、2 の (c)(d) から）。
+4. 補足（2026-10-04 ユーザー、原文）:「USB-C DPがアタッチされたとき、KeilandがVulkan Display extensionで通知を受けます。この通知を受けたKeilandが、設定ファイルの記録などから総合的に、ミラーや拡張などの判断を行います。出力オフもありえます。」→ hotplug の通知の経路は Vulkan の Display の拡張（libvulkan、WS113 の i915 の接続通知と同じ）。Keiland が設定の記録などから mirror・拡張・出力 off を決める。driver は通知を出し、Keiland の指示で出力するだけ（3 の Q1 の読みのうち、通知の経路は /dev/system でなく Vulkan の Display の拡張に訂正）。
