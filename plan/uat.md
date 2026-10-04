@@ -157,3 +157,13 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | G4 | **NG** | Terminal を多数開くと errno=8 で起動しなくなる | BUG-120 の関連か、新規（調べる） |
 | G5 | 未実施 | | BUG-159 |
 | G6 | OK（一部） | タップは OK、スワイプはトラックパッドで動作しない | BUG-156 と同じ根の可能性 |
+| G2 | **OK** | （Q1 が SSH で、2026-10-04 14:07、AC 電源）System Monitor を 20 秒動かして `ZMON FRAME fps=21.0〜21.4`（目標 15 以上）。submit_ms 約 11、callback_ms 約 31 | ws134-p003 の実機の判定: PASS |
+| G3 | OK | `hw.gputelemetry`: `driver=i915 valid=0xd busy_ns=3186129731 cur_mhz=0 req_mhz=100 min_mhz=100 max_mhz=1200`（idle で cur 0） | ws134-p007 の実機 |
+| H1 | 済み | dmesg・/var/log（messages・sessiond・greeter）・session.log・ps・sysctl を `build/uat-logs/1407/` に | |
+
+### Q1 が log で気付いた点（2026-10-04 14:07）
+
+- **`ACPI: DSDT Dell Inc stopped at offset 0x1c89b (error 13)` → `acpi: the DSDT did not load (error 13)`**。DSDT が読めていない。Shut Down で電源が切れない（A3、BUG-119: `\_S5` は DSDT にある）と、タッチパッド（I2C HID は ACPI で見つける）の 2 本指・押し込みの不具合（B2・B6・G6、BUG-156）の共通の根の候補。最優先で調べる。
+- `ZWL STARTUP step=wallpaper ms=7172`: 起動の時の壁紙に約 7.2 秒（WS138・WS139 の項目）。
+- `usb1: port 10 enumeration failed (3)`。
+- 有線（ue0）は起動の時から挿すと 10.0.30.3 で up（C7 は後から挿した時だけの不具合）。
