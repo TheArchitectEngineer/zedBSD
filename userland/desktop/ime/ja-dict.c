@@ -17,6 +17,11 @@
  * An annotation that is exactly 五段, 一段 or 形容詞 says how a verb's or an
  * adjective's candidate conjugates; any other annotation says nothing to
  * the engine.
+ *
+ * Kei's dictionary is one file of two parts (ws095-p017, SKK-JISYO.ja):
+ * the supplement, then the system dictionary from the comment line
+ * DICT_PART_SYSTEM on.  ja_dict_load_parts reads such a file once and
+ * indexes each part as a dictionary of its own.
  */
 
 #include "ja.h"
@@ -28,12 +33,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* The comment line that begins the system dictionary's part of a dictionary of two parts (ws095-p017). */
+#define DICT_PART_SYSTEM	";; ==== part: system ===="
+
 /* The FNV-1a hash's starting value and its multiplier. */
 #define DICT_HASH_BASIS		2166136261U
 #define DICT_HASH_PRIME		16777619U
 
 static int dict_read_file(const char *path, size_t size_max, char **data, size_t *size);
 static int dict_index(struct ja_dict *dict);
+static size_t dict_part_start(const char *data, size_t size);
 static bool dict_parse_line(const char *line, size_t length, struct ja_dict_entry *entry);
 static void dict_insert(struct ja_dict *dict, const struct ja_dict_entry *entry);
 static uint32_t dict_hash(const char *key, size_t length);
@@ -68,6 +77,81 @@ ja_dict_load(
 	}
 
 	/* Succeeded: the dictionary can be looked in. */
+	return 0;
+}
+
+/*
+ * Reads a dictionary file of two parts (ws095-p017): the part before the
+ * line DICT_PART_SYSTEM into first (the supplement) and the part from it
+ * on into second (the system dictionary).  A file without the line is all
+ * second's, and first is left empty; *split says which it was.
+ *
+ * Returns 0; ENOENT or another errno when the file cannot be read; EFBIG
+ * when it is larger than the limit; ENOMEM.
+ */
+int
+ja_dict_load_parts(
+	struct ja_dict *first,
+	struct ja_dict *second,
+	const char *path,
+	size_t size_max,
+	bool *split)
+{
+	char *data;
+	size_t size;
+	size_t start;
+	int error;
+
+	/* Nothing read yet, and no part found. */
+	memset(first, 0, sizeof(*first));
+	memset(second, 0, sizeof(*second));
+	*split = false;
+
+	/* Reads the whole file once. */
+	error = dict_read_file(path, size_max, &data, &size);
+	if (error != 0)
+		return error;
+
+	/* Without the line, the file is one dictionary: second's. */
+	start = dict_part_start(data, size);
+	if (start == size) {
+		second->data = data;
+		second->size = size;
+		error = dict_index(second);
+		if (error != 0) {
+			ja_dict_free(second);
+			return error;
+		}
+		return 0;
+	}
+
+	/* The system dictionary's part gets bytes of its own, terminated. */
+	second->data = malloc(size - start + 1U);
+	if (second->data == NULL) {
+		free(data);
+		return ENOMEM;
+	}
+	memcpy(second->data, data + start, size - start);
+	second->data[size - start] = '\0';
+	second->size = size - start;
+
+	/* The supplement's part keeps the file's bytes, ended where the other part begins. */
+	data[start] = '\0';
+	first->data = data;
+	first->size = start;
+
+	/* Each part is indexed by its headwords. */
+	error = dict_index(first);
+	if (error == 0)
+		error = dict_index(second);
+	if (error != 0) {
+		ja_dict_free(first);
+		ja_dict_free(second);
+		return error;
+	}
+
+	/* Succeeded: both parts can be looked in. */
+	*split = true;
 	return 0;
 }
 
@@ -344,6 +428,47 @@ dict_index(
 
 	/* Succeeded: every well-formed line is indexed. */
 	return 0;
+}
+
+/*
+ * Finds where the system dictionary's part of a dictionary of two parts
+ * begins: the start of the first line that is exactly DICT_PART_SYSTEM
+ * (a carriage return before its newline allowed), or size when no line
+ * is.
+ */
+static size_t
+dict_part_start(
+	const char *data,
+	size_t size)
+{
+	size_t mark_length;
+	size_t position;
+	size_t end;
+	size_t length;
+	bool same;
+
+	/* Each line, from the start. */
+	mark_length = strlen(DICT_PART_SYSTEM);
+	position = 0;
+	while (position < size) {
+		end = position;
+		while (end < size && data[end] != '\n')
+			end++;
+
+		/* The line without a carriage return at its end. */
+		length = end - position;
+		if (length != 0U && data[end - 1U] == '\r')
+			length--;
+
+		/* The line that begins the system's part. */
+		same = ja_bytes_equal(data + position, length, DICT_PART_SYSTEM, mark_length);
+		if (same)
+			return position;
+		position = end + 1U;
+	}
+
+	/* No such line. */
+	return size;
 }
 
 /*

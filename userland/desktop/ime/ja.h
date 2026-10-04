@@ -263,6 +263,7 @@ bool ja_romaji_backspace(struct ja_romaji *romaji);
 
 /* ja-dict.c */
 int ja_dict_load(struct ja_dict *dict, const char *path, size_t size_max);
+int ja_dict_load_parts(struct ja_dict *first, struct ja_dict *second, const char *path, size_t size_max, bool *split);
 void ja_dict_free(struct ja_dict *dict);
 const struct ja_dict_entry *ja_dict_find(const struct ja_dict *dict, const char *key, size_t key_length);
 bool ja_dict_next_candidate(const struct ja_dict_entry *entry, size_t *position, const char **candidate, size_t *length);

@@ -94,7 +94,7 @@ watch_now() {
 
 # Starts settings on a page with its log, and finds its window.
 start_settings() {
-	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/settings --timeout-s=800 $1 > $2 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/settings --timeout-s=800 $1 > $2 2>&1 </dev/null & echo \$! > $2.pid; sleep 5; echo started" >/dev/null
 	find_window
 	echo "settings: window at $wx,$wy"
 }
@@ -201,7 +201,8 @@ expect_log /tmp/probe.log 'NETPROBE request op=36'
 shot wifi-left.png
 
 # f. A killed without a word: its asking goes with its client, and the stand-in is told to stop.
-guest "pid=\$(ps -A -o pid,args | grep '[s]ettings.* wifi$' | awk '{print \$1}'); kill -9 \$pid" >/dev/null
+# (by the pid it started with: the guest's ps shows no arguments, so the two Settings cannot be told apart by them)
+guest 'kill -9 $(cat /tmp/s.log.pid)' >/dev/null
 expect_last /tmp/zdesktop.log 'ZWL NETWORK scan holders=' 'ZWL NETWORK scan holders=0'
 expect_log /tmp/probe.log 'NETPROBE request op=41 '
 expect_log /tmp/probe.log 'NETPROBE notify .* scan=0'

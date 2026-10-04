@@ -32,9 +32,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* Where the Japanese dictionaries are installed (the package ime-dict-ja). */
-#define MAIN_SYSTEM_DICTIONARY		KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.X"
-#define MAIN_SUPPLEMENT_DICTIONARY	KEILAND_DATADIR "/kei/ime/ja/SKK-JISYO.kei"
+/* Where the Japanese dictionary is installed (the package ime-dict-ja): one file, the supplement and the system dictionary (ws095-p017). */
+#define MAIN_DICTIONARY			KEILAND_DATADIR "/keiland/ime/ja/SKK-JISYO.ja"
 
 /*
  * Set by a SIGTERM, SIGHUP or SIGINT: the loop ends at its next turn, so
@@ -278,10 +277,10 @@ main_engines(
 
 	program->engine_count = 1;
 
-	/* Japanese, with the system dictionary, the supplement and the user's. */
+	/* Japanese, with its one dictionary (the supplement and the system dictionary, ws095-p017) and the user's. */
 	main_user_path(user, sizeof(user));
-	config.system_dictionary = MAIN_SYSTEM_DICTIONARY;
-	config.supplement_dictionary = MAIN_SUPPLEMENT_DICTIONARY;
+	config.system_dictionary = MAIN_DICTIONARY;
+	config.supplement_dictionary = NULL;
 	config.user_dictionary = user;
 	error = ja_engine_create(&program->engines[1], &config);
 	if (error != 0)
