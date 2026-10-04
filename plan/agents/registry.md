@@ -8,7 +8,9 @@
 | P2 / generation6（終了、2026-10-03 夜） | phase-runner（high） | WS134（p001〜p004）・ws099 p025〜p029 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | — | — | stopped | 4d6db219d まで統合済み（ソフトな停止） |
 | P3 / generation5（終了） | phase-runner（high） | WS131 | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | —（q632-i03・q637 終了） | — | stopped | 成果は main に入っている（2026-10-03 夜 Q1 が確認） |
 | P4 / generation1（終了） | phase-runner（high） | WS118 | `/home/awe/zedBSD-worktrees/p4` / `agent/p4` | —（q634-i01 中断） | — | stopped | 59a94c6aa の source と WS118 の記録を 2026-10-03 夜 Q1 が main に取り込み（boot-test は未実施） |
-| P1 / generation15（2026-10-04 17 時） | phase-runner（high） | 優先 WS049（p007・p009、p008 は区切りまで）・WS050・WS051・WS052、塞がった時に WS132 | `/home/awe/zedBSD-worktrees/p1` / `agent/p1` | q677 | q677 は区切りまで（残りは P3）、q678・q693・q679・q680・q681（優先）、q682（ほかの作業） | running | base main |
+| P1 / generation15（2026-10-04 17 時、終了: 権限の停止からの再起動のラップアップ、ed7fd65・5bee3ea → main fd8ec0f） |
+| P1 / generation16（2026-10-04、承認「承認、全部適用」の引用で起動） | phase-runner（high） | WS049 p009（findings の適用）・p007 の切り分け → WS050・WS051・WS052 | 同上 | q693 | q678・q679・q680・q681・q682 | running | base main fd8ec0f |
+| （generation15 の行） | phase-runner（high） | 優先 WS049（p007・p009、p008 は区切りまで）・WS050・WS051・WS052、塞がった時に WS132 | `/home/awe/zedBSD-worktrees/p1` / `agent/p1` | q677 | q677 は区切りまで（残りは P3）、q678・q693・q679・q680・q681（優先）、q682（ほかの作業） | running | base main |
 | P2 / generation11（2026-10-04 17 時） | phase-runner（high） | BUG-170 の後は WS141・WS037 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | q683 | q691 WS141・q692 WS037 | running | base main |
 | P3 / generation7（2026-10-04、終了） | bug-analyzer（Fable 5.1、high） | BUG-158 の解析（WS005・WS004） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（解析、finished） | — | stopped | 52df29f → main b7bced6 |
 | P3 / generation8（2026-10-04 起動） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装、流れ B（q685〜q690）、BUG-165 の残り（P1 の区切りの後） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（実装） | q685〜q690、q677 の残り | running | base main b7bced6 |
