@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p007`
 Parent: [WS049](../ws.md)
-Status: uncleared（2026-10-04、T1-086 で guest-events.sh が FAIL。button・gpe の event が kernel に届かない。切り分け中、P1 generation16 が引き継ぐ）
+Status: in-progress（2026-10-04、q678-i02。T1-086 の FAIL の原因を code で特定して直した（SCI の line を unmask していなかった）。T1 の再試験待ち）
 Phase disposition: normal
 Queue: q678 / q678-i01（P1 generation15）。承認: q677 と同じ（2026-10-04 user の DP Alt Mode の目標と 17 時の体制の指示）
 
@@ -91,3 +91,20 @@ Notify を受けて動く driver（電源の状態、蓋、ボタンの動作）
 - 次の一手（再依頼の前に足す診断）: QMP の `human-monitor-command` の `info irq`（IRQ ごとの割り込みの回数。IRQ 9 が 0 なら配送の前で止まっている）と
   `info pic`、QEMU の gdbstub で `drv_acpi_sci_interrupt`・`drv_acpi_events_process`（public の symbol）に breakpoint。kernel の側に「最初の SCI」
   「ACPI mode に入った（SCI_EN）」「PM1_EN の値」の 1 回だけの log を足すと、script だけで切り分けられる。`guest-events.sh` に `info irq` の取得を足す。
+
+## 原因と修正（2026-10-04、P1 generation16、q678-i02）
+
+- **原因（code を読んで特定）**: `start_events()` は `kern_irq_register(9, sci_interrupt)` の後に `kern_irq_unmask(9)` を呼んでいなかった。
+  amd64 の HAL（`src/hal/amd64/irq.c`）は全ての logical IRQ を masked で初期化し、`hal_irq_register()` は handler を置くだけで unmask しない
+  （dispatch は `!service->masked` のときだけ handler を呼ぶ）。他の driver（ps2-8042・serial-mirror・ne2000・pci の INTx）は全て register の後に
+  `kern_irq_unmask()` を呼ぶ。IRQ 9 が I/O APIC で mask されたままなので、PWRBTN_STS も GPE も SCI として CPU に届かず、log に何も出なかった
+  （button と GPE が両方とも届かない症状、仮説 (b) と一致）。QEMU は起動していない。
+- **修正**: `src/drivers/acpi/acpi-kern.c` の `start_events()` の最後（power button の handler の後）で `kern_irq_unmask((int)irq)`。
+- **診断の log（恒常、1 回だけ）**: `acpi-event.c` の `drv_acpi_events_init()` の最後に `ACPI: SCI_EN n, PM1_EN 0x…, N runtime GPEs`、
+  `acpi-kern.c` の event thread が最初の SCI を処理したときに `acpi: first SCI handled`。
+- **実害の修正（p009 の findings、同じ道）**: `drv_acpi_events_init()` が PM1a の control block の無い FADT で port 0 を読まないよう ENODEV。
+- `guest-events.sh`: QMP の `human-monitor-command` で `info irq`・`info pic` を boot・button の後・GPE の後に `irq-*.txt`・`pic-*.txt` へ取り、
+  summary に `state:`（SCI_EN の行）と `first SCI:` の数を出す。合否の基準は変えない（`sci:`・`button:`・`gpe:`）。
+- 確認（host）: `make -C plan/ws049/tests`（ASan・UBSan）、`make -C plan/ws049/tests kernel-check`（warning 0）、`run-asl.py`（18 passed）、`sh -n guest-events.sh`。
+- T1 の再試験: 依頼の手順は上の「T1 への依頼」の 1〜5 と同じ（この修正の commit を含む main の image で）。追加の合格の目安: `state:` が `SCI_EN 1`、
+  `irq-after-button.txt` の IRQ 9 の数が `irq-boot.txt` より増える。

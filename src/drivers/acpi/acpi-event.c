@@ -235,6 +235,7 @@ static int gpe_method_visitor(struct drv_acpi_node *node, unsigned depth, void *
 static int wake_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static int hex_digit(uint8_t character);
 static void process_gpe(unsigned gpe);
+static void log_event_state(unsigned runtime);
 
 /*
  * Reads the event hardware from the FADT, switches the platform into ACPI
@@ -249,6 +250,7 @@ drv_acpi_events_init(
 	uint32_t flags;
 	unsigned gpe;
 	unsigned total;
+	unsigned runtime;
 	int error;
 
 	/* Refuses a FADT too short to describe the hardware. */
@@ -290,6 +292,10 @@ drv_acpi_events_init(
 	if (events.pm1a_event.port == 0 || events.pm1a_event.length < 4U)
 		return ENODEV;
 
+	/* Refuses a platform without a PM1a control block, whose SCI_EN the switch into ACPI mode reads. */
+	if (events.pm1a_control.port == 0)
+		return ENODEV;
+
 	/* Switches into ACPI mode, so that events raise SCIs. */
 	error = enable_acpi_mode();
 	if (error != 0)
@@ -325,15 +331,20 @@ drv_acpi_events_init(
 	drv_acpi_walk(NULL, gpe_method_visitor, NULL);
 
 	/* Enables the runtime GPEs. */
+	runtime = 0;
 	for (gpe = 0; gpe < events.gpe_count; gpe++) {
 		/* A GPE with a method that does not only wake is a runtime event. */
 		if (events.gpes[gpe].kind != GPE_METHOD || events.gpes[gpe].wake)
 			continue;
 		events.gpes[gpe].enabled = 1;
 		gpe_set_enable(gpe, true);
+		runtime++;
 	}
 
-	/* Succeeded. */
+	/* Logs the mode and the enabled events, so that a boot log shows the event hardware armed. */
+	log_event_state(runtime);
+
+	/* Succeeded: the platform raises SCIs for the enabled events. */
 	return 0;
 }
 
@@ -1119,4 +1130,26 @@ process_gpe(
 		gpe_set_enable(gpe, true);
 		drv_acpi_os_event_unlock(state);
 	}
+}
+
+/* Logs whether SCI_EN is set, the PM1 enable bits and how many GPEs run. */
+static void
+log_event_state(
+	unsigned runtime)
+{
+	uint32_t control;
+	uint16_t enable;
+	int error;
+
+	/* Reads PM1_CNT, whose SCI_EN says the platform raises SCIs. */
+	control = 0;
+	error = drv_acpi_os_port_read(events.pm1a_control.port, 16, &control);
+	if (error != 0)
+		control = 0;
+
+	/* Reads PM1_EN, the fixed events that raise an SCI. */
+	enable = pm1_read(events.pm1a_event.length / 2U);
+
+	/* Writes the line. */
+	drv_acpi_os_log("ACPI: SCI_EN %u, PM1_EN 0x%x, %u runtime GPEs\n", (unsigned)(control & PM1_CNT_SCI_EN), (unsigned)enable, runtime);
 }

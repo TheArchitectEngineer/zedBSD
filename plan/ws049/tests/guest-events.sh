@@ -13,7 +13,11 @@
 #              query-hotpluggable-cpus offers) raises GPE 2; \_GPE._E02 scans
 #              the CPUs and notifies the new one, which the kernel logs as
 #              "Notify(\_SB_.CPUS.Cxxx, 0x1)" (no driver takes it yet)
-# Writes build/ws049/events/*.txt.  Exits 0 when all three pass.
+# Writes build/ws049/events/*.txt, with QEMU's "info irq" and "info pic"
+# (irq-*.txt, pic-*.txt) at boot and after each event, and the kernel's
+# "ACPI: SCI_EN" and "acpi: first SCI handled" lines in the summary, so that
+# a failure shows whether the SCI reached the CPU.  Exits 0 when all three
+# pass.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 image=$1
@@ -42,11 +46,20 @@ else
 	echo "sci: FAILED, see $out/boot-acpi.txt"
 	failed=1
 fi
+echo "state: $(grep -m1 'ACPI: SCI_EN' "$out/boot.txt")"
+
+# Records the interrupt counts before any event, to compare with the ones after.
+irq_counts() {
+	python3 $qmp "$monitor" human-monitor-command '{"command-line": "info irq"}' > "$out/irq-$1.txt"
+	python3 $qmp "$monitor" human-monitor-command '{"command-line": "info pic"}' > "$out/pic-$1.txt"
+}
+irq_counts boot
 
 # 2. The fixed power button.
 python3 $qmp "$monitor" system_powerdown > "$out/qmp-powerdown.txt"
 sleep 3
 python3 $guest run 'dmesg' > "$out/after-button.txt"
+irq_counts after-button
 if grep -q 'acpi: power button' "$out/after-button.txt"; then
 	echo "button: the kernel logged the power button"
 else
@@ -71,6 +84,7 @@ if [ -n "$properties" ]; then
 	python3 $qmp "$monitor" device_add "$properties" > "$out/qmp-device-add.txt"
 	sleep 3
 	python3 $guest run 'dmesg' > "$out/after-gpe.txt"
+	irq_counts after-gpe
 	if grep -q 'Notify(\\_SB_\.CPUS\.C[0-9A-F]*, 0x1)' "$out/after-gpe.txt"; then
 		echo "gpe: $(grep -m1 'Notify(\\_SB_\.CPUS' "$out/after-gpe.txt")"
 	else
@@ -82,5 +96,6 @@ else
 	failed=1
 fi
 
+echo "first SCI: $(grep -c 'acpi: first SCI handled' "$out/after-gpe.txt" "$out/after-button.txt" 2>/dev/null | tr '\n' ' ')"
 python3 $guest stop > /dev/null
 exit $failed
