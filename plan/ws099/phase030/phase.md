@@ -36,3 +36,7 @@ Queue: q670（[Queue](../../queue.md)）
 
 - T2-026（main 3da3610、pen の image）: p030-drag が 2 回 FAIL。落ちたのは B.4 の `count: selections by the finger = 2, expected 3` だけ。A（menu のマウス・touch・docked）、B.1〜B.3・B.5・B.6、ERROR 0 は ok。
 - 読み（search-log.txt）: 指の drag は `ZWL TITLEBAR select … anchor=0 cursor=5` を出しており、compositor の選択は働いている。試験の誤り: 前の数を `TITLEBAR select ` の全部（2 行、B.2 の anchor=1 cursor=1 を含む）で数え、後の数を `anchor=0 cursor=[1-9]` だけ（B.2 の anchor=0 cursor=6 と指の 1 行で 2）で数えていた。前の数も同じ pattern で数えるように直した（期待は 1 → 2）。source は変えない。T2 に再試験を依頼。
+
+## T2-026 の再試験（2026-10-04、T2 の報告）
+
+6cb1536 の script、同じ pen の image（main 3da3610）、新しい guest: `p030-drag: PASS`（96 秒、`count: selections by the finger = 2 ok`）。回帰（pen の image）: titlebar-p010・menu-p003・menu-occlude・zdesktop-p013-touch いずれも PASS。証拠 `/home/awe/zedBSD-worktrees/t2/build/t2-026/p030-drag-3/` と並びの回帰の directory。QEMU の証拠（実機は未実施）。clearance の判定は Q1。
