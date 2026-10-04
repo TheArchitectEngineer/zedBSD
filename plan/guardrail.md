@@ -90,7 +90,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 
 ## WS141（Raspberry Pi 4 の GPU）の GPL の参照の扱い（2026-10-04 ユーザー）
 
-Linux の vc4・v3d（GPL-2.0）から作る作業の文書は `plan/ws141/temp/` に置き commit しない（書き写し可）。zedBSD の code を書く前に定数を全て一括で独自の名前に変え、WS の最後に license と字面・設計の類似を監査する。BLOB は `userland/firmware/` へ移して file から load。register の定義と packet の形は MIT の Mesa（`src/broadcom/`）・Broadcom の公開の文書・device tree の binding から取り、file ごとに license を監査する。zedBSD の code は Zlib。詳細は [WS141](ws141/ws.md) の「ライセンスの扱い」。範囲は WS141 と [WS037](ws037/ws.md)（nvrtx、2026-10-04 ユーザー「やりかたはVC4と同じです」。GSP の firmware は `userland/firmware/`）だけ（他の WS の GPL の参照には適用しない）。
+Linux の vc4・v3d（GPL-2.0）から作る作業の文書は `plan/ws141/temp/` に置き commit しない（書き写し可）。zedBSD の code を書く前に定数を全て一括で独自の名前に変え、WS の最後に license と字面・設計の類似を監査する。BLOB は `userland/firmware/` へ移して file から load。register の定義と packet の形は MIT の Mesa（`src/broadcom/`）・Broadcom の公開の文書・device tree の binding から取り、file ごとに license を監査する。**改訂（2026-10-04 ユーザー、クリックの回答「事実として使う」）**: V3D・HVS・pixelvalve・HDMI の register の offset と bit は GPL の header にしか無いので、値はハードウェアの事実として使ってよい。名前は一括で独自に改名し、配置・comment・構造は写さず自分で書き、WS の最後の類似の監査で確かめる。zedBSD の code は Zlib。詳細は [WS141](ws141/ws.md) の「ライセンスの扱い」。範囲は WS141 と [WS037](ws037/ws.md)（nvrtx、2026-10-04 ユーザー「やりかたはVC4と同じです」。GSP の firmware は `userland/firmware/`）だけ（他の WS の GPL の参照には適用しない）。
 
 ## 決定の出典
 
