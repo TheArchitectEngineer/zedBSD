@@ -191,3 +191,4 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 新規: [BUG-177](bugs/BUG-177.md) Files の検索バーで日本語の IME が使えない、[BUG-178](bugs/BUG-178.md) title bar のタッチのドラッグで押した位置がずれると動かない（「直して」）、[BUG-179](bugs/BUG-179.md) title bar のダブルクリックの最大化が約 0.8 秒（目標 0.1、少なくとも 0.2 秒）、[BUG-180](bugs/BUG-180.md) 最大化した窓を上部のバーからドラッグで外すと一度最大に戻ってから小さくなる（「修正して」）。
 - 他の観点（BUG-165・119・ws049-p007・BUG-170 など）は今回の報告に無い（未確認として扱う）。
 - 追加（ユーザー）: [BUG-181](bugs/BUG-181.md) Browser の URL バーを hover すると長い URL が title bar をはみ出す、[BUG-182](bugs/BUG-182.md) Browser でタップがクリックにならず HTML のボタンを押せない（どちらも WS074、Codex の担当）。
+- 追加（ユーザー）: タッチパッドの 2 本指のスクロールが少なくとも Settings で効かない → [BUG-156](bugs/BUG-156.md) を reopen（BUG-165 の DSDT の修正の後でも再現）。
