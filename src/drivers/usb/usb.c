@@ -58,6 +58,12 @@
 #define USB_DISCONNECT_BARRIER_RUNNING 1U
 #define USB_DISCONNECT_BARRIER_DONE 2U
 
+/*
+ * The system's events (ws132-p002), which hear USB devices come and go.
+ * Weak: the host fixtures of the USB core link without them.
+ */
+extern void kern_system_event_post(uint32_t, uint32_t, int32_t, const char *, const char *) __attribute__((weak));
+
 enum usb_binding_state {
 	USB_BINDING_DEAD,
 	USB_BINDING_PROBING,
@@ -318,6 +324,7 @@ static int configuration_close_io(struct drv_usb_configuration *configuration, s
 static int device_control_try_lock(struct drv_usb_device *device);
 static int device_reset_connection_check(struct drv_usb_bus *bus, struct drv_usb_device *device, uint64_t device_generation, uint64_t port_generation);
 static int configuration_enable_endpoints(struct drv_usb_configuration *configuration);
+static void post_device_event(unsigned bus, unsigned address, unsigned port, const struct drv_usb_device_descriptor *descriptor, uint32_t action);
 static void device_quarantine_recovery(struct drv_usb_device *device, const char *stage, int error);
 static int usb_control_locked(struct drv_usb_device *device, uint8_t request_type, uint8_t request, uint16_t value, uint16_t index, void *buffer, size_t length, unsigned timeout_ms, size_t *actual);
 static int configuration_restore(struct drv_usb_device *device, struct drv_usb_configuration *configuration);
@@ -5509,6 +5516,7 @@ device_finalize(
 	unsigned address = device->address;
 	unsigned port = device->port;
 	unsigned report_disconnect = device->report_disconnect;
+	struct drv_usb_device_descriptor descriptor = device->descriptor;
 
 	/* Process each linked entry. */
 	for (link = &bus->devices; *link != NULL; link = &(*link)->next) {
@@ -5548,7 +5556,35 @@ device_finalize(
 	if (report_disconnect) {
 		kern_logf("usb%u: device %u port %u disconnected\n",
 			   bus->number, address, port);
+		post_device_event(bus->number, address, port, &descriptor, KERN_SYSTEM_EVENT_REMOVE);
 	}
+}
+
+/*
+ * Posts a device's ADD or REMOVE to the system's events: its bus and
+ * address, and in the detail its port, IDs and class.
+ */
+static void
+post_device_event(
+	unsigned bus,
+	unsigned address,
+	unsigned port,
+	const struct drv_usb_device_descriptor *descriptor,
+	uint32_t action)
+{
+	char subject[KERN_SYSTEM_EVENT_SUBJECT_MAX];
+	char detail[KERN_SYSTEM_EVENT_DETAIL_MAX];
+
+	/* A kernel without the system's events posts nothing. */
+	if (kern_system_event_post == NULL)
+		return;
+
+	/* The name, the detail, then the event. */
+	kern_snprintf(subject, sizeof(subject), "usb%u.%u", bus, address);
+	kern_snprintf(detail, sizeof(detail), "port=%u vendor=%04x product=%04x class=%02x",
+		      port, (unsigned)descriptor->vendor, (unsigned)descriptor->product,
+		      (unsigned)descriptor->device_class);
+	kern_system_event_post(KERN_SYSTEM_EVENT_USB, action, 0, subject, detail);
 }
 
 /* Gives every configuration a device read back. */
@@ -5910,6 +5946,7 @@ enumerate_port(
 		   preferred_score == 0
 			   ? " (no supported configuration; first selected)"
 			   : "");
+	post_device_event(bus->number, device->address, port, &device->descriptor, KERN_SYSTEM_EVENT_ADD);
 	/* Process each linked entry. */
 	for (interface = device->interfaces; interface != NULL;
 	     interface = interface->next) {

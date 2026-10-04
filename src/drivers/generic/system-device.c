@@ -11,6 +11,11 @@
  * The device answers ioctls that describe the boot devices, memory, the
  * process table, and which processes use a file or a mount; it forwards the
  * swap controls to the swap layer, and lets init halt or reboot the machine.
+ *
+ * An open that subscribes to classes of the system's events
+ * (KERN_SYSTEM_EVENT_SUBSCRIBE, ws132-p002) reads them and polls for them
+ * (system-event.c); its subscriber is made at its first subscription, so
+ * an open that only asks ioctls costs nothing more.
  */
 
 #include "kern/vm-object.h"
@@ -47,8 +52,17 @@
 #include <kern/uaccess.h>
 #include "kern/pmem.h"
 #include <kern/kcrt.h>
+#include <kern/lock.h>
+#include <kern/system-event.h>
+#include <uapi/fcntl.h>
+#include <uapi/poll.h>
 
 static int system_ioctl(struct file *file, unsigned long request, uintptr_t argument);
+static int system_close(struct file *file);
+static ssize_t system_read(struct file *file, void *buffer, size_t size);
+static int system_poll(struct file *file, short requested, short *returned);
+static int system_event_subscribe(struct file *file, uintptr_t argument);
+static int system_get_power(uintptr_t argument);
 static int system_get_info(uintptr_t argument);
 static int system_get_mounts(uintptr_t argument);
 static int system_get_device(uintptr_t argument);
@@ -80,10 +94,27 @@ extern int drv_pci_system_describe(uint32_t index, struct system_pci_device_info
 /* The USB core describes its devices; without USB there are none. */
 extern int drv_usb_system_describe(uint32_t index, struct system_usb_device_info *info) __attribute__((weak));
 
+/*
+ * The ACPI power devices (lid, AC adapter, battery) describe the power's
+ * state; a platform without ACPI does not link them, and then the state is
+ * unknown.
+ */
+extern void drv_acpi_power_get(struct system_power_info *info) __attribute__((weak));
+
 /* Operations published by the system control device. */
 static const struct cdev_ops system_ops = {
-	.ioctl = system_ioctl
+	.close = system_close,
+	.read = system_read,
+	.ioctl = system_ioctl,
+	.poll = system_poll
 };
+
+/*
+ * Serializes the making of an open's subscriber at its first subscription,
+ * so that two threads subscribing one open make one.  Made when the device
+ * is registered and kept for the kernel's life.
+ */
+static struct mutex subscriber_lock;
 
 _Static_assert(sizeof(((struct kern_swap_control_source_info *)0)->uuid) == KERN_SYSTEM_SWAP_UUID_SIZE, "kernel and UAPI swap UUID sizes differ");
 _Static_assert(sizeof(((struct kern_swap_control_source_info *)0)->label) == KERN_SYSTEM_SWAP_LABEL_SIZE, "kernel and UAPI swap label sizes differ");
@@ -98,12 +129,155 @@ drv_system_device_register(
 {
 	int error;
 
+	/* The lock of the subscribers' making. */
+	error = mutex_init(&subscriber_lock, LOCK_RANK_DEVICE, "system subscribe");
+	if (error != 0)
+		return error;
+
 	/* Reports why the registration failed. */
 	error = cdev_register("system", 0x00010002U, &system_ops, NULL);
 	if (error != 0)
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/* Lets an open's subscriber go with the open. */
+static int
+system_close(
+	struct file *file)
+{
+	/* An open that never subscribed has none. */
+	kern_system_event_close(file->f_data);
+	file->f_data = NULL;
+
+	/* Succeeded: nothing of the open is left. */
+	return 0;
+}
+
+/* Reads whole event records of the classes the open subscribed to. */
+static ssize_t
+system_read(
+	struct file *file,
+	void *buffer,
+	size_t size)
+{
+	ssize_t taken;
+	int nonblock;
+	int flags;
+
+	/* An open that did not subscribe, or a buffer too small for one record. */
+	if (file->f_data == NULL)
+		return -EINVAL;
+	if (size < sizeof(struct system_event))
+		return -EINVAL;
+
+	/* Whether the open waits for a record. */
+	flags = file_status_flags_get(file);
+	nonblock = 0;
+	if ((flags & O_NONBLOCK) != 0)
+		nonblock = 1;
+
+	/* The records. */
+	taken = kern_system_event_read(file->f_data, buffer, size / sizeof(struct system_event), nonblock);
+	if (taken < 0)
+		return taken;
+
+	/* Succeeded: the bytes of the records taken. */
+	return taken * (ssize_t)sizeof(struct system_event);
+}
+
+/* Says whether an open has event records to read. */
+static int
+system_poll(
+	struct file *file,
+	short requested,
+	short *returned)
+{
+	int readable;
+
+	/* Refuses a poll with nowhere to answer. */
+	if (returned == NULL)
+		return EINVAL;
+
+	/* An open that did not subscribe has nothing to read. */
+	*returned = 0;
+	if (file->f_data == NULL)
+		return 0;
+
+	/* Readable while a record waits. */
+	readable = kern_system_event_readable(file->f_data);
+	if (readable)
+		*returned = (short)(requested & (POLLIN | POLLRDNORM));
+
+	/* Succeeded: the answer is in *returned. */
+	return 0;
+}
+
+/* Sets the classes of events an open reads, making its subscriber the first time. */
+static int
+system_event_subscribe(
+	struct file *file,
+	uintptr_t argument)
+{
+	struct system_event_subscription subscription;
+	struct kern_system_subscriber *subscriber;
+	int reserved_zero;
+	int error;
+
+	/* The request, with its reserved words zero. */
+	error = copyin(argument, &subscription, sizeof(subscription));
+	if (error != 0)
+		return error;
+	reserved_zero = words_are_zero(subscription.reserved, sizeof(subscription.reserved) / sizeof(subscription.reserved[0]));
+	if (!reserved_zero)
+		return EINVAL;
+
+	/* The open's subscriber, made once. */
+	mutex_lock(&subscriber_lock);
+
+	error = 0;
+	if (file->f_data == NULL) {
+		error = kern_system_event_open(&subscriber);
+		if (error == 0)
+			file->f_data = subscriber;
+	}
+
+	mutex_unlock(&subscriber_lock);
+
+	/* No subscriber could be made. */
+	if (error != 0)
+		return error;
+
+	/* The classes. */
+	error = kern_system_event_subscribe(file->f_data, subscription.classes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the open reads those classes from now on. */
+	return 0;
+}
+
+/* Copies out the power's present state (unknown without the ACPI power devices). */
+static int
+system_get_power(
+	uintptr_t argument)
+{
+	struct system_power_info info;
+	int error;
+
+	/* Unknown unless the ACPI power devices say. */
+	kern_memset(&info, 0, sizeof(info));
+	if (drv_acpi_power_get != NULL)
+		drv_acpi_power_get(&info);
+
+	/* Copies it out. */
+	error = copyout(&info, argument, sizeof(info));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has the state. */
 	return 0;
 }
 
@@ -149,10 +323,14 @@ system_ioctl(
 {
 	int error;
 
-	(void)file;
-
 	/* Routes the request. */
 	switch (request) {
+	case KERN_SYSTEM_EVENT_SUBSCRIBE:
+		error = system_event_subscribe(file, argument);
+		break;
+	case KERN_SYSTEM_GET_POWER:
+		error = system_get_power(argument);
+		break;
 	case KERN_SYSTEM_GET_MOUNTS:
 		error = system_get_mounts(argument);
 		break;

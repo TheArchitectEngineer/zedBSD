@@ -285,6 +285,91 @@ _Static_assert(offsetof(struct system_usb_device_info, driver) == 32U,
  */
 #define KERN_SYSTEM_POWEROFF _IO(KERN_SYSTEM_IOC_GROUP, 16)
 
+/*
+ * The system's events (ws132-p002).  An open of /dev/system names the
+ * classes of events it wants with KERN_SYSTEM_EVENT_SUBSCRIBE before it
+ * reads; read() then gives whole struct system_event records of those
+ * classes (a buffer too small for one is refused with EINVAL; an open
+ * that has not subscribed is refused with EINVAL), waits for one unless
+ * the file is non-blocking (EAGAIN), and poll() is readable while one
+ * waits.  Each open keeps up to KERN_SYSTEM_EVENT_QUEUE records: when they
+ * overflow the oldest go, and the next read starts with an OVERFLOW event
+ * whose value is how many went, after which the reader asks for the
+ * present state again (KERN_SYSTEM_GET_POWER, the device lists).
+ */
+#define KERN_SYSTEM_EVENT_POWER		0x00000001U	/* the power and sleep buttons */
+#define KERN_SYSTEM_EVENT_LID		0x00000002U	/* the lid opened or closed */
+#define KERN_SYSTEM_EVENT_AC		0x00000004U	/* the AC adapter plugged or unplugged */
+#define KERN_SYSTEM_EVENT_BATTERY	0x00000008U	/* a battery's state or information */
+#define KERN_SYSTEM_EVENT_DISK		0x00000010U	/* a disk or partition added or removed */
+#define KERN_SYSTEM_EVENT_INPUT		0x00000020U	/* an input device added or removed */
+#define KERN_SYSTEM_EVENT_NETWORK	0x00000040U	/* a network interface added or removed */
+#define KERN_SYSTEM_EVENT_USB		0x00000080U	/* a USB device attached or detached */
+#define KERN_SYSTEM_EVENT_OVERFLOW	0x80000000U	/* events were lost (always delivered) */
+#define KERN_SYSTEM_EVENT_CLASSES	0x000000ffU
+
+/* What happened. */
+#define KERN_SYSTEM_EVENT_ADD		1U
+#define KERN_SYSTEM_EVENT_REMOVE	2U
+#define KERN_SYSTEM_EVENT_CHANGE	3U
+#define KERN_SYSTEM_EVENT_PRESS		4U
+
+/* The records each open keeps, and the sizes of a record's texts. */
+#define KERN_SYSTEM_EVENT_QUEUE		64U
+#define KERN_SYSTEM_EVENT_SUBJECT_MAX	32U
+#define KERN_SYSTEM_EVENT_DETAIL_MAX	64U
+
+/* The classes an open subscribes to; the reserved words are zero. */
+struct system_event_subscription {
+	uint32_t classes;
+	uint32_t reserved[3];
+};
+
+/*
+ * One event: its size (sizeof the record), class and action, a value (the
+ * lid 1 open, the AC 1 plugged, a battery's percent, the events lost), the
+ * kernel's sequence number (one more for each event posted), the time it
+ * was posted (CLOCK_MONOTONIC nanoseconds), what it is about ("lid",
+ * "power-button", "da0s1", "event5", "ue0", "usb1.3"), and details as
+ * space-separated key=value words ("removable=1", "name=...").
+ */
+struct system_event {
+	uint32_t size;
+	uint32_t class_bit;
+	uint32_t action;
+	int32_t value;
+	uint64_t sequence;
+	uint64_t time_ns;
+	char subject[KERN_SYSTEM_EVENT_SUBJECT_MAX];
+	char detail[KERN_SYSTEM_EVENT_DETAIL_MAX];
+};
+
+_Static_assert(sizeof(struct system_event) == 128U,
+    "system event ABI must be identical on ILP32 and LP64");
+
+/*
+ * The power's present state: which parts are known (KERN_SYSTEM_POWER_HAS_*),
+ * the lid (1 open), the AC adapter (1 plugged), and the first battery
+ * (percent, 1 charging).  An unknown part reads zero.
+ */
+#define KERN_SYSTEM_POWER_HAS_LID	0x1U
+#define KERN_SYSTEM_POWER_HAS_AC	0x2U
+#define KERN_SYSTEM_POWER_HAS_BATTERY	0x4U
+
+struct system_power_info {
+	uint32_t known;
+	uint32_t lid_open;
+	uint32_t ac_online;
+	uint32_t battery_percent;
+	uint32_t battery_charging;
+	uint32_t reserved[3];
+};
+
+#define KERN_SYSTEM_EVENT_SUBSCRIBE                                         \
+	_IOW(KERN_SYSTEM_IOC_GROUP, 17, struct system_event_subscription)
+#define KERN_SYSTEM_GET_POWER                                               \
+	_IOR(KERN_SYSTEM_IOC_GROUP, 18, struct system_power_info)
+
 #ifdef __cplusplus
 }
 #endif
