@@ -81,7 +81,9 @@ static struct region_handler region_handlers[DRV_ACPI_SPACE_COUNT];
  */
 static bool regions_connected;
 
+static void field_lock_release(struct drv_acpi_eval *eval, const struct drv_acpi_field *unit);
 static int region_access(struct drv_acpi_eval *eval, struct drv_acpi_object *region, uint64_t offset, unsigned bytes, bool write, uint64_t *value);
+static int table_region_read(const struct drv_acpi_region *place, uint64_t offset, unsigned bytes, bool write, uint64_t *value);
 static int region_resolve_pci(struct drv_acpi_object *region);
 static int evaluate_found(struct drv_acpi_node *device, const char *name, bool own, uint64_t *value);
 static struct drv_acpi_node *pci_root_bridge(struct drv_acpi_node *device);
@@ -105,6 +107,7 @@ static int region_connect(enum drv_acpi_space space);
 static int connect_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static int run_reg(struct drv_acpi_node *region, unsigned space);
 
+
 /*
  * Installs the handler of an address space.
  */
@@ -122,36 +125,42 @@ drv_acpi_region_install(
 	if ((unsigned)space >= DRV_ACPI_SPACE_COUNT)
 		return EINVAL;
 
-	/* Refuses a second handler for the same space. */
+	/* Enters the interpreter, so that no AML uses the space while its handler changes. */
 	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+
+	/* Refuses a second handler for the same space. */
 	if (region_handlers[space].handler != NULL) {
 		drv_acpi_leave(thread);
 		return EBUSY;
 	}
 
-	/* Installs it; a handler installed after the tables tells their regions at once. */
+	/* Installs the handler. */
 	region_handlers[space].handler = handler;
 	region_handlers[space].argument = argument;
+
+	/* A handler installed after the tables were connected tells their regions at once. */
 	error = 0;
 	if (regions_connected)
 		error = region_connect(space);
 
-	/* Leaves the interpreter and reports a failed connection. */
+	/* Leaves the interpreter. */
 	drv_acpi_leave(thread);
+
+	/* Reports a failed connection. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the space's regions reach the handler. */
 	return 0;
 }
 
 /*
- * Tells firmware which address spaces have handlers, by running _REG
- * (space, 1) for each region of those spaces, once the tables are loaded.
+ * Tells firmware which address spaces have handlers, once the tables are loaded.
  *
- * System memory and system I/O are always available and get no _REG, as
- * ACPI 6.5 section 6.5.4 lets the operating system choose.  A handler
- * installed afterwards connects its space when it is installed.
+ * It runs _REG (space, 1) for each region of those spaces.  System memory
+ * and system I/O are always available and get no _REG, as ACPI 6.5 section
+ * 6.5.4 lets the operating system choose.  A handler installed afterwards
+ * connects its space when it is installed.
  */
 int
 drv_acpi_region_connect_all(void)
@@ -161,8 +170,10 @@ drv_acpi_region_connect_all(void)
 	unsigned space;
 	int error;
 
-	/* Handlers installed from now on connect at once. */
+	/* Enters the interpreter for the whole connection. */
 	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+
+	/* regions_connected makes the handlers installed from now on connect at once. */
 	regions_connected = true;
 
 	/* Connects each space that has a handler. */
@@ -178,18 +189,21 @@ drv_acpi_region_connect_all(void)
 			break;
 	}
 
-	/* Leaves the interpreter and reports a failed connection. */
+	/* Leaves the interpreter. */
 	drv_acpi_leave(thread);
+
+	/* Reports a failed connection. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: firmware knows every space that has a handler. */
 	return 0;
 }
 
 /*
- * Removes every address space handler, for the host tests that start the
- * interpreter over.
+ * Removes every address space handler.
+ *
+ * The host tests use it to start the interpreter over.
  */
 void
 drv_acpi_region_reset(void)
@@ -200,8 +214,9 @@ drv_acpi_region_reset(void)
 }
 
 /*
- * Reads a field unit and reports its value: an integer when it fits in
- * one, a buffer otherwise.
+ * Reads a field unit and reports its value.
+ *
+ * The value is an integer when it fits in one, a buffer otherwise.
  */
 int
 drv_acpi_field_read(
@@ -231,16 +246,16 @@ drv_acpi_field_read(
 	/* Reads the field's bits. */
 	error = field_read_bits(eval, field, access, first, last, result);
 
-	/* Lets the global lock go and reports a failed read. */
-	if ((unit->flags & DRV_ACPI_FIELD_LOCK) != 0)
-		drv_acpi_global_lock(eval, false);
+	/* Lets the global lock go. */
+	field_lock_release(eval, unit);
+
+	/* Reports a failed read. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: result is the field's value. */
 	return 0;
 }
-
 
 /*
  * Writes a value into a field unit.
@@ -276,18 +291,21 @@ drv_acpi_field_write(
 	/* Writes the field's bits. */
 	error = field_write_bits(eval, field, access, first, last, value);
 
-	/* Lets the global lock go and reports a failed write. */
-	if ((unit->flags & DRV_ACPI_FIELD_LOCK) != 0)
-		drv_acpi_global_lock(eval, false);
+	/* Lets the global lock go. */
+	field_lock_release(eval, unit);
+
+	/* Reports a failed write. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the field holds the value. */
 	return 0;
 }
 
 /*
- * Reads a buffer field: an integer when it fits in one, a buffer otherwise.
+ * Reads a buffer field.
+ *
+ * The value is an integer when it fits in one, a buffer otherwise.
  */
 int
 drv_acpi_buffer_field_read(
@@ -295,6 +313,7 @@ drv_acpi_buffer_field_read(
 	struct drv_acpi_object **result)
 {
 	struct drv_acpi_buffer_field *unit;
+	struct drv_acpi_object *buffer;
 	uint8_t *bits;
 	size_t size;
 	int error;
@@ -305,6 +324,8 @@ drv_acpi_buffer_field_read(
 	bits = drv_acpi_os_alloc(size + 1U);
 	if (bits == NULL)
 		return ENOMEM;
+
+	/* Starts the bytes at zero, so that the bits above the field stay clear. */
 	kern_memset(bits, 0, size + 1U);
 
 	/* Takes the bits out of the buffer. */
@@ -312,20 +333,23 @@ drv_acpi_buffer_field_read(
 
 	/* A CreateField field is always a buffer; the others are integers when they fit. */
 	if (unit->reads_buffer) {
-		*result = drv_acpi_object_buffer_new(bits, size);
+		buffer = drv_acpi_object_buffer_new(bits, size);
 		error = 0;
-		if (*result == NULL)
+		if (buffer == NULL)
 			error = ENOMEM;
+		*result = buffer;
 	} else {
 		error = bits_to_object(bits, unit->bit_length, result);
 	}
 
-	/* Frees the staging bytes and reports a value that could not be made. */
+	/* Frees the staging bytes. */
 	drv_acpi_os_free(bits);
+
+	/* Reports a value that could not be made. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: result is the field's value. */
 	return 0;
 }
 
@@ -348,23 +372,31 @@ drv_acpi_buffer_field_write(
 	bits = drv_acpi_os_alloc(size + 1U);
 	if (bits == NULL)
 		return ENOMEM;
+
+	/* Starts the bytes at zero, so that bits the value lacks are zero. */
 	kern_memset(bits, 0, size + 1U);
 
-	/* Converts the value and puts its bits into the buffer. */
+	/* Converts the value to the field's bits. */
 	error = object_to_bits(value, unit->bit_length, bits);
-	if (error == 0)
-		bits_insert(unit->buffer->value.buffer.bytes, unit->bit_offset, unit->bit_length, bits);
-	drv_acpi_os_free(bits);
-	if (error != 0)
+	if (error != 0) {
+		drv_acpi_os_free(bits);
 		return error;
+	}
 
-	/* Succeeded. */
+	/* Puts the bits into the buffer. */
+	bits_insert(unit->buffer->value.buffer.bytes, unit->bit_offset, unit->bit_length, bits);
+
+	/* Frees the staging bytes. */
+	drv_acpi_os_free(bits);
+
+	/* Succeeded: the buffer holds the value in the field's bits. */
 	return 0;
 }
 
 /*
- * Reads bytes of a region through its handler, one byte at a time, as Load
- * does to read a table from a region.
+ * Reads bytes of a region through its handler, one byte at a time.
+ *
+ * Load reads a table from a region this way.
  */
 int
 drv_acpi_region_read(
@@ -380,20 +412,23 @@ drv_acpi_region_read(
 
 	/* Reads each byte. */
 	for (index = 0; index < length; index++) {
-		/* Reads one byte. */
+		/* Reads the byte at the next offset through the space's handler. */
 		error = region_access(eval, region, offset + index, 1, false, &value);
 		if (error != 0)
 			return error;
+
+		/* Puts it in its place. */
 		bytes[index] = (uint8_t)value;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: bytes holds the region's bytes. */
 	return 0;
 }
 
 /*
- * Evaluates the offset and length of a region defined while a table
- * loaded, the first time the region is used.
+ * Evaluates the offset and length of a region, the first time it is used.
+ *
+ * The region was defined while a table loaded.
  */
 int
 drv_acpi_region_prepare(
@@ -407,24 +442,51 @@ drv_acpi_region_prepare(
 	if (region->value.region.evaluated)
 		return 0;
 
-	/* Runs the offset and length AML in the scope the region was defined in. */
+	/* Prepares to run the offset and length AML in the scope the region was defined in. */
 	table = region->value.region.table;
 	kern_memset(&arguments, 0, sizeof(arguments));
 	arguments.position = region->value.region.arguments_start;
 	arguments.end = region->value.region.arguments_end;
 	arguments.scope = region->value.region.scope;
 	arguments.table = table;
+
+	/* Evaluates the offset. */
 	error = drv_acpi_eval_integer(&arguments, &region->value.region.offset);
-	if (error == 0)
-		error = drv_acpi_eval_integer(&arguments, &region->value.region.length);
 	if (error != 0) {
 		drv_acpi_os_log("ACPI: region arguments could not be evaluated (error %d)\n", error);
 		return error;
 	}
 
-	/* Succeeded: the region has its place. */
+	/* Evaluates the length. */
+	error = drv_acpi_eval_integer(&arguments, &region->value.region.length);
+	if (error != 0) {
+		drv_acpi_os_log("ACPI: region arguments could not be evaluated (error %d)\n", error);
+		return error;
+	}
+
+	/* evaluated tells every later use that the region has its place. */
 	region->value.region.evaluated = 1;
+
+	/* Succeeded: the region has its place. */
 	return 0;
+}
+
+/* Lets the global lock go after the access of a field whose lock rule took it. */
+static void
+field_lock_release(
+	struct drv_acpi_eval *eval,
+	const struct drv_acpi_field *unit)
+{
+	int error;
+
+	/* A field without the lock rule took no lock. */
+	if ((unit->flags & DRV_ACPI_FIELD_LOCK) == 0)
+		return;
+
+	/* Lets the lock go; a release that fails is logged, as the access itself is done. */
+	error = drv_acpi_global_lock(eval, false);
+	if (error != 0)
+		drv_acpi_os_log("ACPI: a field's global lock release failed (error %d)\n", error);
 }
 
 /* Writes the access units that cover a field, filling their other bits by the update rule. */
@@ -461,6 +523,8 @@ field_write_bits(
 	units = drv_acpi_os_alloc(span + size + 1U);
 	if (units == NULL)
 		return ENOMEM;
+
+	/* Starts both at zero; the field's bytes follow the accesses' bytes. */
 	kern_memset(units, 0, span + size + 1U);
 	bits = units + span;
 
@@ -475,11 +539,12 @@ field_write_bits(
 	update = unit->flags & DRV_ACPI_FIELD_UPDATE_MASK;
 	field_start = unit->bit_offset;
 	field_end = field_start + unit->bit_length;
-	for (offset = first; offset < last; offset += access) {
+	for (offset = first;
+	     offset < last;
+	     offset += access) {
+		/* A unit entirely inside the field needs nothing of its own. */
 		unit_start = offset * 8U;
 		unit_end = unit_start + access * 8U;
-
-		/* A unit entirely inside the field needs nothing of its own. */
 		if (unit_start >= field_start && unit_end <= field_end)
 			continue;
 
@@ -501,15 +566,19 @@ field_write_bits(
 			units[offset - first + index] = (uint8_t)(word >> (index * 8U));
 	}
 
-	/* Puts the field's bits in place and writes each unit. */
+	/* Puts the field's bits in place. */
 	bits_insert(units, field_start - first * 8U, unit->bit_length, bits);
-	for (offset = first; offset < last; offset += access) {
+
+	/* Writes each unit. */
+	for (offset = first;
+	     offset < last;
+	     offset += access) {
 		/* Assembles one unit, lowest byte first. */
 		word = 0;
 		for (index = 0; index < access; index++)
 			word |= (uint64_t)units[offset - first + index] << (index * 8U);
 
-		/* Writes it. */
+		/* Writes the unit through the field's region, index or bank. */
 		error = unit_write(eval, field, offset, access, word);
 		if (error != 0) {
 			drv_acpi_os_free(units);
@@ -520,7 +589,7 @@ field_write_bits(
 	/* Frees the staging bytes. */
 	drv_acpi_os_free(units);
 
-	/* Succeeded. */
+	/* Succeeded: the field holds the value. */
 	return 0;
 }
 
@@ -553,12 +622,16 @@ field_read_bits(
 	units = drv_acpi_os_alloc(span + size + 1U);
 	if (units == NULL)
 		return ENOMEM;
+
+	/* Starts both at zero; the field's bytes follow the accesses' bytes. */
 	kern_memset(units, 0, span + size + 1U);
 	bits = units + span;
 
 	/* Reads each access unit into its place, lowest byte first. */
-	for (offset = first; offset < last; offset += access) {
-		/* Reads one unit. */
+	for (offset = first;
+	     offset < last;
+	     offset += access) {
+		/* Reads the unit through the field's region, index or bank. */
 		error = unit_read(eval, field, offset, access, &value);
 		if (error != 0) {
 			drv_acpi_os_free(units);
@@ -570,14 +643,20 @@ field_read_bits(
 			units[offset - first + index] = (uint8_t)(value >> (index * 8U));
 	}
 
-	/* Takes the field's bits out and makes the value. */
+	/* Takes the field's bits out. */
 	bits_extract(units, unit->bit_offset - first * 8U, unit->bit_length, bits);
-	error = bits_to_object(bits, unit->bit_length, result);
-	drv_acpi_os_free(units);
-	if (error != 0)
-		return error;
 
-	/* Succeeded. */
+	/* Makes the value from the bits. */
+	error = bits_to_object(bits, unit->bit_length, result);
+	if (error != 0) {
+		drv_acpi_os_free(units);
+		return error;
+	}
+
+	/* Frees the staging bytes. */
+	drv_acpi_os_free(units);
+
+	/* Succeeded: result is the field's value. */
 	return 0;
 }
 
@@ -594,8 +673,6 @@ region_access(
 	struct drv_acpi_region_access access;
 	struct drv_acpi_region *place;
 	struct region_handler *handler;
-	unsigned index;
-	uint8_t *data;
 	int error;
 
 	UNUSED_PARAMETER(eval);
@@ -604,6 +681,8 @@ region_access(
 	error = drv_acpi_region_prepare(region);
 	if (error != 0)
 		return error;
+
+	/* Takes the place the region now has. */
 	place = &region->value.region;
 
 	/* Refuses an access outside the region. */
@@ -617,13 +696,11 @@ region_access(
 
 	/* A data table region reads the table's bytes, which never change. */
 	if (place->data != NULL) {
-		/* Refuses a write to a table. */
-		if (write)
-			return EPERM;
-		data = (uint8_t *)place->data + offset;
-		*value = 0;
-		for (index = 0; index < bytes; index++)
-			*value |= (uint64_t)data[index] << (index * 8U);
+		error = table_region_read(place, offset, bytes, write, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: value holds the table's bytes. */
 		return 0;
 	}
 
@@ -640,12 +717,16 @@ region_access(
 		return ENODEV;
 	}
 
-	/* Finds the PCI function of a configuration region. */
+	/* Starts the access with every field zero, the PCI function among them. */
 	kern_memset(&access, 0, sizeof(access));
+
+	/* Finds the PCI function of a configuration region. */
 	if (place->space == DRV_ACPI_SPACE_PCI_CONFIG) {
 		error = region_resolve_pci(region);
 		if (error != 0)
 			return error;
+
+		/* Names the function in the access. */
 		access.pci_segment = place->pci_segment;
 		access.pci_bus = place->pci_bus;
 		access.pci_device = place->pci_device;
@@ -660,17 +741,44 @@ region_access(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: a read leaves the space's value in value. */
+	return 0;
+}
+
+/* Reads one access unit of a data table region from the table's bytes. */
+static int
+table_region_read(
+	const struct drv_acpi_region *place,
+	uint64_t offset,
+	unsigned bytes,
+	bool write,
+	uint64_t *value)
+{
+	const uint8_t *data;
+	unsigned index;
+
+	/* Refuses a write to a table. */
+	if (write)
+		return EPERM;
+
+	/* Assembles the unit from the table's bytes, lowest first. */
+	data = place->data + offset;
+	*value = 0;
+	for (index = 0; index < bytes; index++)
+		*value |= (uint64_t)data[index] << (index * 8U);
+
+	/* Succeeded: value holds the table's bytes. */
 	return 0;
 }
 
 /*
- * Finds the PCI function a configuration region belongs to: the device
- * that contains the region gives the device and function (_ADR), and the
- * nearest scope above it that has them gives the bus (_BBN) and the
- * segment (_SEG).  A device behind PCI-to-PCI bridges is on the bus the
- * last of them leads to, so the bridges between the host bridge and the
- * device are followed, as ACPICA does (AcpiHwDerivePciId).
+ * Finds the PCI function a configuration region belongs to.
+ *
+ * The device that contains the region gives the device and function
+ * (_ADR), and the nearest scope above it that has them gives the bus
+ * (_BBN) and the segment (_SEG).  A device behind PCI-to-PCI bridges is on
+ * the bus the last of them leads to, so the bridges between the host
+ * bridge and the device are followed, as ACPICA does (AcpiHwDerivePciId).
  */
 static int
 region_resolve_pci(
@@ -691,6 +799,8 @@ region_resolve_pci(
 	device = NULL;
 	if (region->value.region.node != NULL)
 		device = region->value.region.node->parent;
+
+	/* Refuses a region outside any device. */
 	if (device == NULL)
 		return EINVAL;
 
@@ -700,11 +810,13 @@ region_resolve_pci(
 	if (error != 0)
 		return error;
 
-	/* Reads the bus and the segment, zero when no scope has them. */
+	/* Reads the bus, zero when no scope has one. */
 	bus = 0;
 	error = evaluate_found(device, "_BBN", false, &bus);
 	if (error != 0)
 		return error;
+
+	/* Reads the segment, zero when no scope has one. */
 	segment = 0;
 	error = evaluate_found(device, "_SEG", false, &segment);
 	if (error != 0)
@@ -715,12 +827,14 @@ region_resolve_pci(
 	if (root != NULL)
 		pci_follow_bridges(root, device, (uint16_t)segment, &bus);
 
-	/* Succeeded: remembers the function. */
+	/* Remembers the function; pci_resolved tells every later access it is known. */
 	region->value.region.pci_segment = (uint16_t)segment;
 	region->value.region.pci_bus = (uint8_t)bus;
 	region->value.region.pci_device = (uint8_t)((address >> 16) & 0x1fU);
 	region->value.region.pci_function = (uint8_t)(address & 0x07U);
 	region->value.region.pci_resolved = 1;
+
+	/* Succeeded: the region knows its PCI function. */
 	return 0;
 }
 
@@ -739,10 +853,12 @@ evaluate_found(
 	struct drv_acpi_node *found;
 	int error;
 
-	/* Searches from the device toward the root. */
+	/* Searches from the device toward the root; a name no scope has leaves the value alone. */
 	error = drv_acpi_lookup_path(device, name, true, &found);
 	if (error == ENOENT)
 		return 0;
+
+	/* Reports a lookup that failed otherwise. */
 	if (error != 0)
 		return error;
 
@@ -750,12 +866,12 @@ evaluate_found(
 	if (own && found->parent != device)
 		return 0;
 
-	/* Evaluates it. */
+	/* Evaluates the object as an integer. */
 	error = drv_acpi_evaluate_integer(found, NULL, value);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: value holds the object's integer. */
 	return 0;
 }
 
@@ -768,15 +884,19 @@ pci_root_bridge(
 	bool root;
 
 	/* Looks at each scope above the device, nearest first. */
-	for (node = device->parent; node != NULL; node = node->parent) {
+	for (node = device->parent;
+	     node != NULL;
+	     node = node->parent) {
 		/* Only a device can be a host bridge. */
 		if (node->object == NULL || node->object->type != DRV_ACPI_TYPE_DEVICE)
 			continue;
 
-		/* A host bridge says so in its _HID, or in its _CID. */
+		/* A host bridge says so in its _HID. */
 		root = pci_root_named(node, "_HID");
 		if (root)
 			return node;
+
+		/* Or it says so in its _CID. */
 		root = pci_root_named(node, "_CID");
 		if (root)
 			return node;
@@ -808,11 +928,13 @@ pci_root_named(
 	if (error != 0 || id == NULL)
 		return false;
 
-	/* Compares it, then lets the value go. */
+	/* Compares the identifier with a host bridge's. */
 	root = pci_root_id(id);
+
+	/* The identifier is no longer needed. */
 	drv_acpi_object_release(id);
 
-	/* Reports the answer. */
+	/* Reports whether the identifier is a host bridge's. */
 	return root;
 }
 
@@ -829,17 +951,19 @@ pci_root_id(
 	/* Compares an identifier by its form. */
 	switch (id->type) {
 	case DRV_ACPI_TYPE_INTEGER:
-		/* An EISA identifier. */
+		/* Compares an EISA identifier with PNP0A03, then with PNP0A08. */
 		if (id->value.integer == PCI_ROOT_EISA_ID)
 			return true;
 		if (id->value.integer == PCIE_ROOT_EISA_ID)
 			return true;
 		break;
 	case DRV_ACPI_TYPE_STRING:
-		/* A string identifier. */
+		/* Compares a string identifier with PNP0A03. */
 		compared = kern_strcmp(id->value.string.text, "PNP0A03");
 		if (compared == 0)
 			return true;
+
+		/* Compares it with PNP0A08. */
 		compared = kern_strcmp(id->value.string.text, "PNP0A08");
 		if (compared == 0)
 			return true;
@@ -860,6 +984,7 @@ pci_root_id(
 
 		break;
 	default:
+		/* Any other object names no device. */
 		break;
 	}
 
@@ -891,23 +1016,28 @@ pci_follow_bridges(
 
 	/* Lists the scopes between the host bridge and the device, the device's parent first. */
 	depth = 0;
-	for (node = device->parent; node != NULL && node != root; node = node->parent) {
+	for (node = device->parent;
+	     node != NULL && node != root;
+	     node = node->parent) {
 		/* Leaves a path too deep to follow on the host bridge's bus. */
 		if (depth == PCI_PATH_MAX)
 			return;
+
+		/* Records the scope one level further up. */
 		path[depth] = node;
 		depth++;
 	}
 
 	/* Walks them from the host bridge down. */
 	while (depth != 0) {
+		/* A scope without its own _ADR is not a PCI function. */
 		depth--;
 		node = path[depth];
-
-		/* A scope without its own _ADR is not a PCI function. */
 		error = drv_acpi_lookup_path(node, "_ADR", false, &found);
 		if (error != 0 || found == NULL)
 			continue;
+
+		/* Reads the function's address; one that fails is not followed. */
 		error = drv_acpi_evaluate_integer(found, NULL, &address);
 		if (error != 0)
 			continue;
@@ -916,6 +1046,8 @@ pci_follow_bridges(
 		error = pci_config_read8(segment, (uint8_t)*bus, address, PCI_HEADER_TYPE, &header);
 		if (error != 0)
 			return;
+
+		/* Goes on past a function that is no bridge. */
 		header &= PCI_HEADER_KIND;
 		if (header != PCI_HEADER_BRIDGE && header != PCI_HEADER_CARDBUS)
 			continue;
@@ -957,14 +1089,16 @@ pci_config_read8(
 	access.pci_device = (uint8_t)((address >> 16) & 0x1fU);
 	access.pci_function = (uint8_t)(address & 0x07U);
 
-	/* Reads it. */
+	/* Reads the byte through the handler. */
 	read = 0;
 	error = handler->handler(&access, &read, handler->argument);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Hands over the byte. */
 	*value = (uint8_t)read;
+
+	/* Succeeded: value holds the configuration byte. */
 	return 0;
 }
 
@@ -1000,7 +1134,9 @@ field_access_bytes(
 	/* Tries each width from the narrowest. */
 	start = field->bit_offset;
 	end = start + field->bit_length;
-	for (bytes = 1; bytes <= ACCESS_BYTES_MAX; bytes *= 2U) {
+	for (bytes = 1;
+	     bytes <= ACCESS_BYTES_MAX;
+	     bytes *= 2U) {
 		/* Takes the width when one aligned access holds the whole field. */
 		if (start / (bytes * 8U) == (end - 1U) / (bytes * 8U) &&
 		    (start / (bytes * 8U) + 1U) * bytes <= region_length)
@@ -1035,9 +1171,12 @@ field_span(
 	unit = &field->value.field;
 	region_length = ~0ULL;
 	if (unit->kind != DRV_ACPI_FIELD_INDEX) {
+		/* Refuses a field whose region is not one. */
 		region = unit->region->object;
 		if (region == NULL || region->type != DRV_ACPI_TYPE_REGION)
 			return EINVAL;
+
+		/* Prepares the region, whose length is then known. */
 		error = drv_acpi_region_prepare(region);
 		if (error != 0)
 			return error;
@@ -1060,7 +1199,7 @@ field_span(
 	end = ((uint64_t)unit->bit_offset + unit->bit_length + 7U) / 8U;
 	*last = (end + *access - 1U) / *access * *access;
 
-	/* Succeeded. */
+	/* Succeeded: the caller has the width and the range. */
 	return 0;
 }
 
@@ -1081,29 +1220,32 @@ unit_read(
 	unit = &field->value.field;
 	switch (unit->kind) {
 	case DRV_ACPI_FIELD_INDEX:
-		/* Selects the unit through the index, then reads the data. */
+		/* Selects the unit through the index. */
 		error = named_field_write(eval, unit->index, byte_offset);
 		if (error != 0)
 			return error;
+
+		/* Reads the data. */
 		error = named_field_read(eval, unit->data, value);
-		if (error != 0)
-			return error;
 		break;
 	case DRV_ACPI_FIELD_BANK:
-		/* Selects the bank, then reads the region. */
+		/* Selects the bank. */
 		error = named_field_write(eval, unit->index, unit->bank_value);
 		if (error != 0)
 			return error;
+
+		/* Reads the region. */
 		error = region_access(eval, unit->region->object, byte_offset, bytes, false, value);
-		if (error != 0)
-			return error;
 		break;
 	default:
+		/* Reads the region. */
 		error = region_access(eval, unit->region->object, byte_offset, bytes, false, value);
-		if (error != 0)
-			return error;
 		break;
 	}
+
+	/* Reports a unit that could not be read. */
+	if (error != 0)
+		return error;
 
 	/* Keeps only the unit's bytes. */
 	mask = ~0ULL;
@@ -1111,7 +1253,7 @@ unit_read(
 		mask = (1ULL << (bytes * 8U)) - 1U;
 	*value &= mask;
 
-	/* Succeeded. */
+	/* Succeeded: value holds the unit. */
 	return 0;
 }
 
@@ -1131,31 +1273,34 @@ unit_write(
 	unit = &field->value.field;
 	switch (unit->kind) {
 	case DRV_ACPI_FIELD_INDEX:
-		/* Selects the unit through the index, then writes the data. */
+		/* Selects the unit through the index. */
 		error = named_field_write(eval, unit->index, byte_offset);
 		if (error != 0)
 			return error;
+
+		/* Writes the data. */
 		error = named_field_write(eval, unit->data, value);
-		if (error != 0)
-			return error;
 		break;
 	case DRV_ACPI_FIELD_BANK:
-		/* Selects the bank, then writes the region. */
+		/* Selects the bank. */
 		error = named_field_write(eval, unit->index, unit->bank_value);
 		if (error != 0)
 			return error;
+
+		/* Writes the region. */
 		error = region_access(eval, unit->region->object, byte_offset, bytes, true, &value);
-		if (error != 0)
-			return error;
 		break;
 	default:
+		/* Writes the region. */
 		error = region_access(eval, unit->region->object, byte_offset, bytes, true, &value);
-		if (error != 0)
-			return error;
 		break;
 	}
 
-	/* Succeeded. */
+	/* Reports a unit that could not be written. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the unit holds the value. */
 	return 0;
 }
 
@@ -1172,13 +1317,16 @@ bits_to_object(
 	size_t size;
 	size_t index;
 
-	/* A field no wider than an integer reads as one. */
+	/* A field no wider than an integer reads as one; a wider one as a buffer. */
 	size = (size_t)((bit_length + 7U) / 8U);
 	integer_bits = drv_acpi_integer_bytes() * 8U;
 	if (bit_length <= integer_bits) {
+		/* Assembles the integer, lowest byte first. */
 		value = 0;
 		for (index = 0; index < size; index++)
 			value |= (uint64_t)bytes[index] << (index * 8U);
+
+		/* Makes the integer object. */
 		object = drv_acpi_object_integer_new(value);
 	} else {
 		object = drv_acpi_object_buffer_new(bytes, size);
@@ -1188,14 +1336,18 @@ bits_to_object(
 	if (object == NULL)
 		return ENOMEM;
 
-	/* Succeeded. */
+	/* Hands over the value. */
 	*result = object;
+
+	/* Succeeded: result is the field's value. */
 	return 0;
 }
 
 /*
- * Converts a value to a field's bits: an integer gives its bytes, anything
- * else is converted to a buffer.  Bits the value does not have are zero.
+ * Converts a value to a field's bits.
+ *
+ * An integer gives its bytes, anything else is converted to a buffer.
+ * Bits the value does not have are zero.
  */
 static int
 object_to_bits(
@@ -1228,9 +1380,11 @@ object_to_bits(
 		length = size;
 	if (length != 0)
 		kern_memcpy(bytes, buffer->value.buffer.bytes, length);
+
+	/* The converted buffer is no longer needed. */
 	drv_acpi_object_release(buffer);
 
-	/* Succeeded. */
+	/* Succeeded: bytes holds the value's bits. */
 	return 0;
 }
 
@@ -1247,9 +1401,8 @@ bits_extract(
 
 	/* Copies bit by bit; fields are short and this is not a fast path. */
 	for (index = 0; index < bit_length; index++) {
-		from = bit_offset + index;
-
 		/* Sets the destination bit when the source bit is set. */
+		from = bit_offset + index;
 		if ((source[from / 8U] >> (from % 8U)) & 1U)
 			destination[index / 8U] |= (uint8_t)(1U << (index % 8U));
 	}
@@ -1273,10 +1426,9 @@ bits_insert(
 
 	/* Copies bit by bit. */
 	for (index = 0; index < bit_length; index++) {
+		/* Sets or clears the destination bit as the source bit is. */
 		to = bit_offset + index;
 		mask = (uint8_t)(1U << (to % 8U));
-
-		/* Sets or clears the destination bit. */
 		if ((source[index / 8U] >> (index % 8U)) & 1U) {
 			destination[to / 8U] |= mask;
 		} else {
@@ -1301,16 +1453,18 @@ named_field_write(
 	if (field == NULL || field->type != DRV_ACPI_TYPE_FIELD_UNIT)
 		return EINVAL;
 
-	/* Writes the value. */
+	/* Makes the integer to write. */
 	integer = drv_acpi_object_integer_new(value);
 	if (integer == NULL)
 		return ENOMEM;
+
+	/* Writes it into the field. */
 	error = drv_acpi_field_write(eval, field, integer);
 	drv_acpi_object_release(integer);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the field holds the value. */
 	return 0;
 }
 
@@ -1332,7 +1486,7 @@ region_connect(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: every region of the space is connected. */
 	return 0;
 }
 
@@ -1345,14 +1499,17 @@ connect_visitor(
 {
 	struct drv_acpi_object *region;
 	unsigned space;
+	int error;
 
 	UNUSED_PARAMETER(depth);
 
-	/* Only regions of the wanted space that are not connected yet matter. */
+	/* Only regions matter. */
 	space = *(unsigned *)argument;
 	region = node->object;
 	if (region == NULL || region->type != DRV_ACPI_TYPE_REGION)
 		return 0;
+
+	/* Only regions of the wanted space that are not connected yet matter. */
 	if (region->value.region.space != space || region->value.region.connected)
 		return 0;
 
@@ -1361,7 +1518,11 @@ connect_visitor(
 	 * that the method runs once.
 	 */
 	region->value.region.connected = 1;
-	run_reg(node, space);
+
+	/* Runs its _REG; a _REG that could not run is logged and the walk goes on to the other regions. */
+	error = run_reg(node, space);
+	if (error != 0)
+		drv_acpi_os_log("ACPI: _REG for space %u could not run (error %d)\n", space, error);
 
 	/* Goes on with the walk. */
 	return 0;
@@ -1383,24 +1544,30 @@ run_reg(
 	if (error != 0 || method->parent != region->parent)
 		return 0;
 
-	/* Makes the arguments: the space and "connected". */
+	/* Makes the first argument, the space. */
 	arguments[0] = drv_acpi_object_integer_new(space);
+	if (arguments[0] == NULL)
+		return ENOMEM;
+
+	/* Makes the second argument, "connected". */
 	arguments[1] = drv_acpi_object_integer_new(1);
-	if (arguments[0] == NULL || arguments[1] == NULL) {
+	if (arguments[1] == NULL) {
 		drv_acpi_object_release(arguments[0]);
-		drv_acpi_object_release(arguments[1]);
 		return ENOMEM;
 	}
 
 	/* Runs it; a failing _REG is logged and ignored, as firmware expects. */
+	result = NULL;
 	error = drv_acpi_evaluate(method, NULL, arguments, 2, &result);
 	if (error != 0)
 		drv_acpi_os_log("ACPI: _REG for space %u failed (error %d)\n", space, error);
+
+	/* The result and the arguments are no longer needed. */
 	drv_acpi_object_release(result);
 	drv_acpi_object_release(arguments[0]);
 	drv_acpi_object_release(arguments[1]);
 
-	/* Succeeded. */
+	/* Succeeded: _REG ran, whatever it reported. */
 	return 0;
 }
 
@@ -1420,15 +1587,17 @@ named_field_read(
 	if (field == NULL || field->type != DRV_ACPI_TYPE_FIELD_UNIT)
 		return EINVAL;
 
-	/* Reads it and converts the value. */
+	/* Reads the field. */
 	error = drv_acpi_field_read(eval, field, &object);
 	if (error != 0)
 		return error;
+
+	/* Converts its value to an integer. */
 	error = drv_acpi_convert_integer(object, value);
 	drv_acpi_object_release(object);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: value holds the field's integer. */
 	return 0;
 }
