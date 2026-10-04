@@ -105,7 +105,7 @@
 /* How long a port link may take to change, and the USB 2 resume signalling, in milliseconds. */
 #define XHCI_LINK_WAIT_MS 20U
 #define XHCI_RESUME_SIGNAL_MS 20U
-/* How long the suspend waits for transfers other than interrupt polls to finish. */
+/* How long the suspend waits for the transfers that send or control to finish. */
 #define XHCI_SUSPEND_IDLE_MS 2000U
 /* The suspend's stages: running, gates closed with the controller running, and halted with its state saved. */
 #define XHCI_SUSPEND_NONE 0U
@@ -5982,7 +5982,8 @@ xhci_detach(
  * State of xHCI 1.2 section 4.23.2.
  *
  * The gates close (operations wait, submissions do not ring), the
- * transfers other than interrupt polls finish, the port worker stops,
+ * transfers that send or control finish (the ones waiting for data, an
+ * interrupt poll or a bulk receive, stay), the port worker stops,
  * every running endpoint is stopped with its request left on the ring,
  * the connected root ports go to U3, the controller halts, the
  * registers the Restore State needs are kept and its internal state is
@@ -6005,7 +6006,7 @@ xhci_suspend(
 	if (error != 0)
 		return error;
 
-	/* Waits for the transfers that are not polls. */
+	/* Waits for the transfers that send or control. */
 	error = xhci_suspend_wait_idle(c);
 	if (error != 0) {
 		xhci_suspend_end(c);
@@ -6125,8 +6126,8 @@ xhci_suspend_gate(
 }
 
 /*
- * Waits until no operation, command, recovery or transfer other than an
- * interrupt poll is running; refuses with EBUSY after
+ * Waits until no operation, command, recovery or transfer that sends or
+ * controls is running; refuses with EBUSY after
  * XHCI_SUSPEND_IDLE_MS.
  */
 static int
@@ -6172,7 +6173,7 @@ xhci_suspend_wait_idle(
 	}
 }
 
-/* Tells whether any endpoint runs a transfer other than an interrupt poll, under active_lock. */
+/* Tells whether any endpoint runs a transfer that sends or controls, under active_lock. */
 static bool
 xhci_transfer_busy_locked(
 	struct xhci_controller *c)
@@ -6194,15 +6195,26 @@ xhci_transfer_busy_locked(
 			if (request == NULL || request->urb == NULL)
 				continue;
 
-			/* An interrupt poll may stay across the sleep. */
+			/*
+			 * A transfer that waits for data from the device (an
+			 * interrupt poll, a network adapter's bulk receive) may
+			 * stay across the sleep: stopped, it runs on when the
+			 * endpoint is rung again.  Anything that sends or controls
+			 * is waited for.
+			 */
 			endpoint = drv_usb_urb_endpoint(request->urb);
 			type = drv_usb_endpoint_type(endpoint);
-			if (type != DRV_USB_TRANSFER_INTERRUPT)
-				return true;
+			if (type == DRV_USB_TRANSFER_INTERRUPT)
+				continue;
+			if (type == DRV_USB_TRANSFER_BULK && request->input)
+				continue;
+
+			/* A transfer that sends or controls runs. */
+			return true;
 		}
 	}
 
-	/* Only polls run. */
+	/* Only transfers waiting for data run. */
 	return false;
 }
 

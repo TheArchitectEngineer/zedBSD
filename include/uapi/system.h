@@ -370,6 +370,39 @@ struct system_power_info {
 #define KERN_SYSTEM_GET_POWER                                               \
 	_IOR(KERN_SYSTEM_IOC_GROUP, 18, struct system_power_info)
 
+/*
+ * Sleep (S0 idle, ws052).  KERN_SYSTEM_SLEEP with the mode
+ * KERN_SYSTEM_SLEEP_DEVICES suspends every device and resumes it again at
+ * once, without the processors' low-power idle: the test of the devices'
+ * suspend and resume.  Only root may ask (EPERM); a platform without the
+ * devices' suspend answers EOPNOTSUPP, and a sleep already under way
+ * EBUSY.  When the attempt was made the request succeeds and reports
+ * result, zero when every device was suspended, or the error that stopped
+ * the suspend (the devices suspended before it are resumed again: EBUSY a
+ * device that was busy, EOPNOTSUPP a driver that cannot suspend), with
+ * device naming the device that refused ("pci 0000:00:1b.0 hda");
+ * resume_result is zero when every device came back, or the first error
+ * of their resume.  The reserved words are zero both ways.
+ */
+#define KERN_SYSTEM_SLEEP_DEVICES	1U
+#define KERN_SYSTEM_SLEEP_DEVICE_MAX	48U
+
+struct system_sleep_request {
+	uint32_t mode;
+	int32_t result;
+	int32_t resume_result;
+	uint32_t reserved;
+	char device[KERN_SYSTEM_SLEEP_DEVICE_MAX];
+};
+
+_Static_assert(sizeof(struct system_sleep_request) == 64U,
+    "sleep request ABI must be identical on ILP32 and LP64");
+_Static_assert(offsetof(struct system_sleep_request, device) == 16U,
+    "sleep request device offset is an ABI contract");
+
+#define KERN_SYSTEM_SLEEP                                                   \
+	_IOWR(KERN_SYSTEM_IOC_GROUP, 19, struct system_sleep_request)
+
 #ifdef __cplusplus
 }
 #endif

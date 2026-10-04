@@ -48,11 +48,12 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | [ws052-p001](phase001/phase.md) | 調査と設計: 対象機の FADT・LPS0 の `_DSM`・device の電源の method、PMC の register、driver ごとの suspend/resume の要否と順序、CPU の idle と timer（HAL の口の要否）、`/dev/system` の ioctl の案 | in-progress（2026-10-04。[design.md](design.md) 第 1 版、レビュー待ち） | WS049 の p001 | 設計文書 |
 | [ws052-p002](phase002/phase.md) | 詳細の調査と HAL の差分の案（H1 深い idle、H2 tick の停止、H3 notify の契約、H4 割り込みの suspend）、FACP・LPIT、wake の GPE、`_CST`、PMC | in-progress（2026-10-05 q727: 差分の案を置いた、承認待ち） | p001 | `proposed/` |
 | [ws052-p003](phase003/phase.md) | ACPI の側（LPS0 の `_DSM`、wake の GPE、`_PSx`・`_PRx`・`_DSW`）、`_OSI` と電源ボタンの経路（HIDD は不要） | cleared（2026-10-05 Q1、T1-153） | p001、ws049-p007 | `src/drivers/acpi/acpi-sleep.c`、`acpi-event.c` |
-| [ws052-p004](phase004/phase.md) | device の suspend・resume の口と必須の i915・NVMe・xHCI（失敗で中止と理由） | in-progress（2026-10-05: PCI の口と NVMe を実装、xHCI・i915 は未着手） | p003 | `src/drivers/pci/pci-power.c`、`pci-nvme.c` |
+| [ws052-p004](phase004/phase.md) | device の suspend・resume の口、必須の NVMe・xHCI（失敗で中止と理由）、`KERN_SYSTEM_SLEEP` の devices だけの mode。i915 は p009 へ | in-progress（2026-10-05: 口・NVMe・xHCI・devices だけの ioctl を実装、T1 の QEMU 待ち） | p003 | `src/drivers/pci/pci-power.c`、`pci-nvme.c`、`pci-xhci.c` |
 | ws052-p005 | HDA・Wi-Fi などの「止めて入る」経路 | planned | p004 | |
-| ws052-p006 | CPU の idle・tick・割り込み（承認された HAL の差分）、S0i3 の入口・出口、`/dev/system` の ioctl と事象 | planned | p002 の承認、p004、p005、WS132 | |
+| ws052-p006 | CPU の idle・tick・割り込み（承認された HAL の差分）、S0i3 の入口・出口、`/dev/system` の ioctl と事象 | planned | p002 の承認、p004、p005、p009、WS132 | |
 | ws052-p007 | Keiland の契機（蓋・電源ボタンの短押し・無操作の時間）と中止の理由の表示 | planned | p006、WS132 p008、WS089 | |
 | ws052-p008 | 実機の確認と規約の全文 | planned | p007 | |
+| ws052-p009 | i915 の suspend・resume（display・DC9・GT の RC6・GGTT・display の core の再初期化・出力の設定の再適用）。設計から、検証は 5330 の UAT | planned（2026-10-05 Q1 が p004 から分けた: QEMU で試せず規模が大きい） | p004 | |
 
 ## 人間の判断が要る点
 
