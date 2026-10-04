@@ -196,10 +196,9 @@ scene_fm(
 	for (index = 0; index < DRAW_SE_GLYPHS; index++)
 		se_glyph_draw(canvas, (unsigned)index, 20.0f + (float)(index % 13) * 46.0f, 360.0f + (float)(index / 13) * 46.0f, 30.0f, FM_RGB(0x2f7cf6));
 
-	/* A folder, a file with its band and label, a tag. */
+	/* A folder, and a file with its band and label (Files has no tags since ws127-p012). */
 	fm_icon_folder(canvas, 460.0f, 170.0f, 48.0f, FM_RGB(0x5aa2f5));
 	fm_icon_file(canvas, text, 520.0f, 170.0f, 48.0f, FM_RGB(0xe5484d), "PDF");
-	fm_icon_tag(canvas, 600.0f, 190.0f, 8.0f, FM_RGB(0x33c27f));
 
 	/* A small picture of a colour ramp. */
 	made = fm_image_create(&image, 16, 16);
@@ -268,10 +267,9 @@ scene_kui(
 	for (index = 0; index < DRAW_SE_GLYPHS; index++)
 		kui_icon_draw(canvas, (enum kui_icon)((int)KUI_ICON_TILES + index), 20.0f + (float)(index % 13) * 46.0f, 360.0f + (float)(index / 13) * 46.0f, 30.0f, KUI_RGB(0x2f7cf6));
 
-	/* A folder, a file with its band and label, a tag. */
+	/* A folder, and a file with its band and label (Files has no tags since ws127-p012). */
 	kui_icon_folder(canvas, 460.0f, 170.0f, 48.0f, KUI_RGB(0x5aa2f5));
 	kui_icon_file(canvas, text, 520.0f, 170.0f, 48.0f, KUI_RGB(0xe5484d), "PDF");
-	kui_icon_tag(canvas, 600.0f, 190.0f, 8.0f, KUI_RGB(0x33c27f));
 
 	/* A small picture of a colour ramp. */
 	made = kui_image_create(&image, 16, 16);

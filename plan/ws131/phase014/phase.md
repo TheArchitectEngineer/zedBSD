@@ -2,7 +2,7 @@
 
 # ws131-p014: 旧 libkeiland の名前を kl_・KL_ に
 
-Status: in-progress（q675、P2 generation10、2026-10-04。実装・zedBSD と Linux gcc の build・一部の host 試験まで。ユーザーの指示のラップアップで中断、下の Resume）
+Status: in-progress（q706、P2 generation14、2026-10-05。Resume の残りを済ませた。TQ-1 PASS と合わせて cleared の判定を Q1 に依頼）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q675
@@ -61,3 +61,14 @@ libkeiland の公開の名前（`keiland_*`・`KEILAND_*`、[rename-map.md](../r
 - ユーザーの承認: 「P2のp014の例外対応は問題ないです。承認します。」（互換の macro の無い共有の picture・artwork の内部の名前を kl_ に変えたため、files・imageview・settings・textedit・compositor の glass.c・ui/text.c の source も直した例外）。
 - 統合: ユーザー「P2のコミットをmainに入れたいので、最短のテストだけ実行してからマージしてください。」→ Q1 が agent/p2 40b242a で最短の確認（P2 の worktree の `build/q1-p014/`）: demo の config の zedBSD の image の build exit 0・自前の warning 0、rootfs に libkeiui 0、`plan/tools/boot-test.sh` PASS（login:、`/home/awe/zedBSD-worktrees/p2/build/boot-test/login.png`、QEMU）、`make keiland-linux`（gcc）exit 0・warning 0。→ main 5277761 に統合。
 - 回帰（QEMU の app の試験・Linux の clang と app の PNG・FreeBSD の backend-test）は [test-queue](../../test-queue.md) の TQ-1。Phase は Resume の残りと TQ-1 の後に判定する。
+
+## Resume の残りの実施（q706、P2 generation14、2026-10-05、main 96276cf の上）
+
+- (1) Linux clang: `make -j16 keiland-linux CC=clang KEILAND_LINUX_BUILD=build/p2-q706-clang` exit 0・warning 0、`keiland-linux-install DESTDIR=build/p2-q706-stage` exit 0、`elf-check.sh`: PASS (24 ELF)、`makefile-sync.sh`: PASS、`header-check.sh`（CC=clang）: PASS (380 sources)。
+- (2) FreeBSD の `make -n`: 未実施（ユーザー 2026-10-05: FreeBSD の build はベータ1 まで不要）。TQ-1 の C で FreeBSD の backend-test 9/9 は通っている。
+- (3) xserver・menu-probe・titlebar-probe: `ZEDBSD_USER_PROGRAMS="libkeiland libwayland-client libtruetype libvulkan xserver menu-probe titlebar-probe"`（CI の clang 抜きの config、`BUILD=build/p2-q706`）で rootfs の build exit 0・warning 0、3 つとも rootfs にある。
+  host 試験: ws081 の motion・scroll・filestouch・termtouch・notestouch・browsertouch ok、ws089 host-slot・host-build、ws100 host-audio 14/14、ws128 host-share、ws102 host-inset、ws090 host-input 63/63・host-widgets 94/94・host-draw 12/12、textedit host-core 53/53、imageview run-host、scroll-bar-test PASS。
+  host-draw は ws127-p012（Files の tag を除いた）の後の古い試験で `fm_icon_tag` が無く compile できなかった → tag の描画を両方の scene から除いた（995850a）。
+- (4) 規約: p014 の変更は道具による名前の置き換えだけで、構造（条件・段落・宣言）を変えていない。名前の規則（`function_result` など）に当たる新しい名前も無い。
+- `rename-map.py check-keiland` 203 PASS（p010 で足した `kl_titlebar_set_suggestions` の互換の名前を含む）・`check-ui` 339 PASS、zedBSD の `libkeiland.so` の `keiland_`・`kui_` の定義 0。
+- 回帰の QEMU・Linux の PNG・FreeBSD は TQ-1（T1、main a512ea7）で PASS 済み。
