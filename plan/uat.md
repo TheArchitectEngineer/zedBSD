@@ -9,7 +9,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 | 項目 | 値 |
 | --- | --- |
-| path | `/home/awe/zedBSD-claude1/build/uat-2/hdd-image.img`（2,216,689,664 byte、**sha256 `8c3e51d0b0d85c7eeb2e94a1238a443439c4b7c297c510cc7f7c06d5925d4524`**、2026-10-04 11:45 に作り直し: App Home に System Monitor と Emacs の tile（`plan/ws133/uat-apps.conf`）、config-uat.mk が emacs・monitor・noto-color-emoji を足す。前の版 `4b643284…cb71f` は tile が無い） |
+| path | `/home/awe/zedBSD-claude1/build/uat-2/hdd-image.img`（2,216,689,664 byte、**sha256 `f03920c31d83aa093c17de10d28c877e24c3b52808eed7446880691b3612aa64`**、2026-10-04 12:08 に作り直し（emacs の SKK の辞書の path の直し a1d84b8 を含む）: App Home に System Monitor と Emacs の tile（`plan/ws133/uat-apps.conf`）、config-uat.mk が emacs・monitor・noto-color-emoji を足す。前の版 `4b643284…cb71f` は tile が無い） |
 | 作り方 | `plan/tools/guest/test-image.sh --no-harness plan/ws133/config-uat.mk build/uat-2` に build-demo-image.sh と同じ `--file`（apps.conf・壁紙・authorized_keys）と `I915_TEST_VBT=n`。config-uat.mk は demo の構成（その時の CI の amd64 の構成: emacs・clang 入り）に monitor と noto-color-emoji を足したもの。build/uat-1 はユーザーの新しい CI の構成で emacs が無いので使わない |
 | boot の行 | `kernel=vmunix` `rootpart=PARTLABEL=zedBSD-root` `swap0=PARTLABEL=zedBSD-swap` `logo=logo.ppm` `login=graphical` `kmsg=quiet` `display=edp`（S1 と同じ。同じ名前の行を 2 回書かない） |
 | 利用者 | root / root、kei / kei（kei は起動で自動の login） |
