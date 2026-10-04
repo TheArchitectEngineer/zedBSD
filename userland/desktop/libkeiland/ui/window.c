@@ -98,6 +98,8 @@ static int window_touch_foreign(struct kl_window *window, int32_t id, int forget
 static struct kl_window_event *window_push(struct kl_window *window, unsigned kind);
 static int window_setup(struct kl_window *window, const struct kl_window_options *options);
 static int window_setup_shared(struct kl_window *window, struct xdg_toplevel *parent, const struct kl_window_options *options, uint32_t min_width, uint32_t min_height);
+static int window_setup_app(struct kl_window *window, struct kl_app *app, const struct kl_window_options *options);
+static int window_surface(struct kl_window *window, const struct kl_window_options *options, const char *application);
 static void window_search(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void window_woken(void *data, struct wl_callback *callback, uint32_t time);
 static void window_inset(void *data, int32_t right, int32_t bottom, uint32_t reason);
@@ -192,12 +194,13 @@ kl_window_open(
 		return NULL;
 	}
 
-	/* The record. */
+	/* The record, and its declarative parts' models. */
 	window = calloc(1, sizeof(*window));
 	if (window == NULL) {
 		errno = ENOMEM;
 		return NULL;
 	}
+	keiui_declare_window_init(window);
 
 	/* The connection, the globals, the surface and its first configure. */
 	error = window_setup(window, options);
@@ -221,6 +224,11 @@ kl_window_close(
 	/* No window, nothing to close. */
 	if (window == NULL)
 		return;
+
+	/* Out of its application's windows and queue; its menus, controls and glass before the toplevel they name. */
+	if (window->app != NULL)
+		keiui_app_forget(window->app, window);
+	keiui_declare_window_close(window);
 
 	/* The keyboard's inset and the editing operations before the toplevel they name. */
 	kl_keyboard_inset_destroy(window->inset);
@@ -787,9 +795,10 @@ keiui_window_open_shared(
 		return NULL;
 	}
 
-	/* On the application's connection. */
+	/* On the application's connection, with its declarative parts' models. */
 	window->display = display;
 	window->shared = 1;
+	keiui_declare_window_init(window);
 
 	/* The globals, the surface and its toplevel. */
 	error = window_setup_shared(window, parent, options, min_width, min_height);
@@ -841,6 +850,53 @@ keiui_window_wake(
 		wl_callback_destroy(window->notify_sync);
 		window->notify_sync = NULL;
 	}
+}
+
+/*
+ * Makes a window of an application (kl_app_window_create): it binds what
+ * it needs from the application's registry, without a search of its own,
+ * and is configured when this returns.  Returns NULL with errno set as
+ * kl_window_open does.
+ */
+struct kl_window *
+keiui_window_open_app(
+	struct kl_app *app,
+	const struct kl_window_options *options)
+{
+	struct kl_window *window;
+	int error;
+
+	/* Only the three ways of showing. */
+	if (options == NULL || options->present > KL_PRESENT_NONE) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* The record, on the application's connection, with its declarative parts' models. */
+	window = calloc(1, sizeof(*window));
+	if (window == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	window->display = app->display;
+	window->shared = 1;
+	keiui_declare_window_init(window);
+
+	/* One of the application's windows from now on (its close takes it out again). */
+	window->app = app;
+	window->app_next = app->windows;
+	app->windows = window;
+
+	/* The globals, the surface and its first configure. */
+	error = window_setup_app(window, app, options);
+	if (error != 0) {
+		kl_window_close(window);
+		errno = error;
+		return NULL;
+	}
+
+	/* Succeeded: the window can be drawn into. */
+	return window;
 }
 
 uint64_t
@@ -900,34 +956,10 @@ window_setup(
 	if (window->present == KL_PRESENT_SHM && window->shm == NULL)
 		return EOPNOTSUPP;
 
-	/* The surface, as an xdg surface. */
-	window->surface = wl_compositor_create_surface(window->compositor);
-	if (window->surface == NULL)
-		return ENOMEM;
-	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
-	if (window->role == NULL)
-		return ENOMEM;
-	status = xdg_surface_add_listener(window->role, &surface_listener, window);
+	/* The surface, its toplevel, title and identity. */
+	status = window_surface(window, options, options->application);
 	if (status != 0)
-		return EINVAL;
-
-	/* A toplevel window with its size and close request heard. */
-	window->toplevel = xdg_surface_get_toplevel(window->role);
-	if (window->toplevel == NULL)
-		return ENOMEM;
-	status = xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
-	if (status != 0)
-		return EINVAL;
-
-	/* The title the compositor shows and the application's identity. */
-	if (options->title != NULL)
-		xdg_toplevel_set_title(window->toplevel, options->title);
-	if (options->application != NULL)
-		xdg_toplevel_set_app_id(window->toplevel, options->application);
-
-	/* The full screen from the first configure, when asked (KUI_VERSION 11). */
-	if (options->fullscreen)
-		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
+		return status;
 
 	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told). */
 	window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
@@ -1085,6 +1117,119 @@ window_setup_shared(
 	return 0;
 }
 
+/* Binds the globals from an application's registry, makes the surface and its toplevel, waits for the first configure and makes the presenter; 0 or an errno value. */
+static int
+window_setup_app(
+	struct kl_window *window,
+	struct kl_app *app,
+	const struct kl_window_options *options)
+{
+	const char *application;
+	unsigned index;
+	VkResult result;
+	int status;
+
+	/* The size the window asks for until the compositor gives one, and the key repeat's defaults. */
+	window->width = options->width;
+	window->height = options->height;
+	window->preferred_width = options->width;
+	window->preferred_height = options->height;
+	window->repeat_delay = WINDOW_REPEAT_DELAY;
+	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
+	window->present = options->present;
+
+	/* The globals the application found, bound from its registry as a window of its own connection binds them. */
+	for (index = 0; index < app->global_count; index++)
+		window_global(window, app->registry, app->globals[index].name, app->globals[index].interface, app->globals[index].version);
+
+	/* The clipboard and the primary selection, through the seat (without them the window keeps its own copies). */
+	keiui_clipboard_start(window);
+	keiui_primary_start(window);
+	keiui_text_input_start(window);
+
+	/* A window needs a compositor and a shell, and shared memory to show frames through it. */
+	if (window->compositor == NULL || window->shell == NULL)
+		return EOPNOTSUPP;
+	if (window->present == KL_PRESENT_SHM && window->shm == NULL)
+		return EOPNOTSUPP;
+
+	/* The surface, its toplevel, title and identity (the application's when the options name none). */
+	application = options->application;
+	if (application == NULL)
+		application = app->application;
+	status = window_surface(window, options, application);
+	if (status != 0)
+		return status;
+
+	/* The keyboard's inset and the editing operations, where the compositor has them (bound from the application's registry). */
+	window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
+	keiui_edit_start(window);
+	wl_surface_commit(window->surface);
+
+	/* The first configure (and the seat's devices) before anything is drawn; what it queues is not news. */
+	window->app_quiet = 1;
+	status = wl_display_roundtrip(window->display);
+	window->app_quiet = 0;
+	if (status < 0)
+		return EPROTO;
+	if (window->configured == 0)
+		return EPROTO;
+
+	/* The Vulkan presenter over the surface. */
+	if (window->present == KL_PRESENT_VULKAN) {
+		result = keiui_present_open(&window->vulkan, window);
+		if (result != VK_SUCCESS)
+			return EIO;
+	}
+
+	/* Succeeded: the window is configured. */
+	window->shm_width = window->width;
+	window->shm_height = window->height;
+	return 0;
+}
+
+/* Makes the window's surface and toplevel with its title, identity and full screen; 0 or an errno value. */
+static int
+window_surface(
+	struct kl_window *window,
+	const struct kl_window_options *options,
+	const char *application)
+{
+	int status;
+
+	/* The surface, as an xdg surface. */
+	window->surface = wl_compositor_create_surface(window->compositor);
+	if (window->surface == NULL)
+		return ENOMEM;
+	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
+	if (window->role == NULL)
+		return ENOMEM;
+	status = xdg_surface_add_listener(window->role, &surface_listener, window);
+	if (status != 0)
+		return EINVAL;
+
+	/* A toplevel window with its size and close request heard. */
+	window->toplevel = xdg_surface_get_toplevel(window->role);
+	if (window->toplevel == NULL)
+		return ENOMEM;
+	status = xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
+	if (status != 0)
+		return EINVAL;
+
+	/* The title the compositor shows and the application's identity. */
+	if (options->title != NULL)
+		xdg_toplevel_set_title(window->toplevel, options->title);
+	if (application != NULL)
+		xdg_toplevel_set_app_id(window->toplevel, application);
+
+	/* The full screen from the first configure, when asked (KUI_VERSION 11). */
+	if (options->fullscreen)
+		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
+
+	/* Succeeded. */
+	return 0;
+}
+
 /* Notes a global a window on another's connection needs. */
 static void
 window_search(
@@ -1184,16 +1329,25 @@ window_push(
 	struct kl_window_event *event;
 	unsigned slot;
 
-	/* A full queue drops the input (the user is far ahead of the program). */
-	if (window->event_count == KEIUI_WINDOW_EVENTS)
-		return NULL;
+	/* A window of an application queues on the application's queue (nothing while it is made). */
+	if (window->app != NULL) {
+		if (window->app_quiet)
+			return NULL;
+		event = keiui_app_push(window->app, window);
+		if (event == NULL)
+			return NULL;
+	} else {
+		/* A full queue drops the input (the user is far ahead of the program). */
+		if (window->event_count == KEIUI_WINDOW_EVENTS)
+			return NULL;
 
-	/* The slot after the last one queued. */
-	slot = (window->event_first + window->event_count) % KEIUI_WINDOW_EVENTS;
-	window->event_count++;
+		/* The slot after the last one queued. */
+		slot = (window->event_first + window->event_count) % KEIUI_WINDOW_EVENTS;
+		window->event_count++;
+		event = &window->events[slot];
+	}
 
 	/* The input, with what every input carries. */
-	event = &window->events[slot];
 	memset(event, 0, sizeof(*event));
 	event->kind = kind;
 	event->x = window->pointer_x;

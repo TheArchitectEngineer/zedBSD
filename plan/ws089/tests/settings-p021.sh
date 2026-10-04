@@ -16,7 +16,7 @@
 #     c. Settings B on Network: holders=2; the system bar's menu opened: holders=3, its row of Kei Lab with the
 #        Disconnect picture (menu-connected.png); Esc closes the menu: holders=2;
 #     d. B goes to Ethernet (control 7): ZSETTINGS NETWORK scanning on=0 in B's log, holders=1;
-#     e. A's Disconnect picture (control 3): op=36 (wifi-left.png);
+#     e. B ended (its window lies over A's), holders=1; A's Disconnect picture (control 3): op=36 (wifi-left.png);
 #     f. A killed with SIGKILL (its client ends without a word): holders=0 and the stand-in hears WIFI_SCAN_STOP (op=41).
 #  3. networkd's socket back; no ERROR line in zdesktop's log.
 # PASS: every "ok" line and the last line settings-p021: PASS.  Part 2 is QEMU-only faking (the stand-in's radio).
@@ -194,7 +194,10 @@ control 7 /tmp/s2.log
 expect_log /tmp/s2.log 'ZSETTINGS NETWORK scanning on=0'
 expect_last /tmp/zdesktop.log 'ZWL NETWORK scan holders=' 'ZWL NETWORK scan holders=1'
 
-# e. A's Disconnect picture.
+# e. B ends (its window lies over A's, T1-098), and A's Disconnect picture.
+guest 'kill $(cat /tmp/s2.log.pid)' >/dev/null
+sleep 2
+expect_last /tmp/zdesktop.log 'ZWL NETWORK scan holders=' 'ZWL NETWORK scan holders=1'
 wx=$wa; wy=$wb
 control 3 /tmp/s.log
 expect_log /tmp/probe.log 'NETPROBE request op=36'

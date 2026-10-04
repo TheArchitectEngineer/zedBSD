@@ -16,6 +16,8 @@
 
 #include <keiland.h>
 
+#include "ui/internal.h"
+
 #include <wayland-client.h>
 #include "userland/desktop/libwayland/zed-keyboard-inset-v1-client-protocol.h"
 
@@ -36,20 +38,8 @@ struct kl_keyboard_inset {
 	void *data;
 };
 
-/* What the registry search found: the manager's global name, 0 for none. */
-struct inset_search {
-	uint32_t name;
-};
-
 static struct keiland_keyboard_inset_manager_v1 *inset_bind(struct wl_display *display);
-static void inset_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
-static void inset_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void inset_event(void *data, struct keiland_keyboard_inset_v1 *object, int32_t right, int32_t bottom, uint32_t reason);
-
-/* The registry's callbacks while the manager is looked for. */
-static const struct wl_registry_listener inset_registry_listener = {
-	inset_global, inset_global_remove
-};
 
 /* The inset's callback. */
 static const struct keiland_keyboard_inset_v1_listener inset_listener = {
@@ -150,58 +140,26 @@ inset_event(
 	inset->callback(inset->data, right, bottom, reason);
 }
 
-/* Binds zdesktop's inset manager through a registry of the library's own. */
+/* Binds zdesktop's inset manager: from an application's registry, or found by a search of the library's own. */
 static struct keiland_keyboard_inset_manager_v1 *
 inset_bind(
 	struct wl_display *display)
 {
 	struct keiland_keyboard_inset_manager_v1 *manager;
-	struct inset_search search;
-	struct wl_event_queue *queue;
-	struct wl_display *wrapper;
-	struct wl_registry *registry;
-	int status;
+	struct keiui_global_search search;
+	int error;
 
-	/* The search's own queue, and the display as seen from it. */
-	queue = wl_display_create_queue(display);
-	if (queue == NULL) {
-		errno = ENOMEM;
+	/* The manager's global. */
+	error = keiui_global_find(&search, display, "keiland_keyboard_inset_manager_v1");
+	if (error != 0) {
+		keiui_global_end(&search);
+		errno = error;
 		return NULL;
 	}
 
-	/* The display as the search sees it. */
-	wrapper = wl_proxy_create_wrapper(display);
-	if (wrapper == NULL) {
-		wl_event_queue_destroy(queue);
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	/* What the wrapper makes lives on the search's queue. */
-	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
-
-	/* The globals, announced to this search alone. */
-	search.name = 0;
-	registry = wl_display_get_registry(wrapper);
-	if (registry != NULL) {
-		status = wl_registry_add_listener(registry, &inset_registry_listener, &search);
-		if (status == 0)
-			(void)wl_display_roundtrip_queue(display, queue);
-	}
-
-	/* The manager, bound when announced, is moved to the application's default queue. */
-	manager = NULL;
-	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &keiland_keyboard_inset_manager_v1_interface, INSET_VERSION);
-		if (manager != NULL)
-			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
-	}
-
-	/* The search's objects go. */
-	if (registry != NULL)
-		wl_registry_destroy(registry);
-	wl_proxy_wrapper_destroy(wrapper);
-	wl_event_queue_destroy(queue);
+	/* The manager, bound when announced; the search ends. */
+	manager = keiui_global_bind(&search, &keiland_keyboard_inset_manager_v1_interface, INSET_VERSION);
+	keiui_global_end(&search);
 
 	/* A compositor without the protocol. */
 	if (search.name == 0U) {
@@ -217,38 +175,4 @@ inset_bind(
 
 	/* Succeeded: the manager. */
 	return manager;
-}
-
-/* Notes the manager's global name when the registry announces it. */
-static void
-inset_global(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name,
-	const char *interface,
-	uint32_t version)
-{
-	struct inset_search *search;
-	int match;
-
-	/* Only zdesktop's inset manager is looked for. */
-	(void)registry;
-	(void)version;
-	search = data;
-	match = strcmp(interface, "keiland_keyboard_inset_manager_v1");
-	if (match == 0)
-		search->name = name;
-}
-
-/* A global going away during the short search changes nothing. */
-static void
-inset_global_remove(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Nothing to forget. */
-	(void)data;
-	(void)registry;
-	(void)name;
 }

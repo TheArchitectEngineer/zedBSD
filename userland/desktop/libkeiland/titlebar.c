@@ -19,6 +19,8 @@
 
 #include <keiland.h>
 
+#include "ui/internal.h"
+
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 #include "userland/desktop/libwayland/zed-titlebar-v1-client-protocol.h"
@@ -71,15 +73,7 @@ struct kl_titlebar {
 	uint32_t serial;
 };
 
-/* What the registry search found: the manager's global name (0 for none) and its version. */
-struct titlebar_search {
-	uint32_t name;
-	uint32_t version;
-};
-
 static struct keiland_titlebar_manager_v1 *titlebar_bind(struct wl_display *display);
-static void titlebar_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
-static void titlebar_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void titlebar_activated(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 static void titlebar_text_changed(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, const char *text);
 static void titlebar_text_done(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, const char *text, uint32_t how);
@@ -91,11 +85,6 @@ static void titlebar_drop_target(void *data, struct keiland_titlebar_v1 *proxy, 
 static struct titlebar_entry *titlebar_control(struct kl_titlebar *titlebar, uint32_t id);
 static int titlebar_tab(const struct kl_titlebar *titlebar, uint32_t id);
 static int titlebar_text_ok(const char *text);
-
-/* The registry's callbacks while the manager is looked for. */
-static const struct wl_registry_listener titlebar_registry_listener = {
-	titlebar_global, titlebar_global_remove
-};
 
 /* The titlebar's events, handed on to the application's listener. */
 static const struct keiland_titlebar_v1_listener titlebar_listener = {
@@ -733,49 +722,27 @@ kl_titlebar_set_suggestions(
 }
 
 /*
- * Finds and binds zdesktop's keiland_titlebar_manager_v1 on a queue of its own,
- * so that no event of the application's is dispatched by the search; the
- * binding is moved to the display's default queue.  Returns NULL with errno
- * set.
+ * Binds zdesktop's keiland_titlebar_manager_v1 at the newest version both
+ * sides speak: from an application's registry, or found by a search of the
+ * library's own (on a queue of its own, so that no event of the
+ * application's is dispatched by it); the binding is on the display's
+ * default queue.  Returns NULL with errno set.
  */
 static struct keiland_titlebar_manager_v1 *
 titlebar_bind(
 	struct wl_display *display)
 {
 	struct keiland_titlebar_manager_v1 *manager;
-	struct titlebar_search search;
-	struct wl_event_queue *queue;
-	struct wl_display *wrapper;
-	struct wl_registry *registry;
+	struct keiui_global_search search;
 	uint32_t version;
-	int status;
+	int error;
 
-	/* The search's own queue, and the display as seen from it. */
-	queue = wl_display_create_queue(display);
-	if (queue == NULL) {
-		errno = ENOMEM;
+	/* The manager's global. */
+	error = keiui_global_find(&search, display, "keiland_titlebar_manager_v1");
+	if (error != 0) {
+		keiui_global_end(&search);
+		errno = error;
 		return NULL;
-	}
-
-	/* The display as the search sees it. */
-	wrapper = wl_proxy_create_wrapper(display);
-	if (wrapper == NULL) {
-		wl_event_queue_destroy(queue);
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	/* What the wrapper makes lives on the search's queue. */
-	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
-
-	/* The globals, announced to this search alone. */
-	search.name = 0;
-	search.version = 0;
-	registry = wl_display_get_registry(wrapper);
-	if (registry != NULL) {
-		status = wl_registry_add_listener(registry, &titlebar_registry_listener, &search);
-		if (status == 0)
-			(void)wl_display_roundtrip_queue(display, queue);
 	}
 
 	/* The newest version both sides speak. */
@@ -787,19 +754,9 @@ titlebar_bind(
 	if (search.version >= TITLEBAR_VERSION_SUGGEST)
 		version = TITLEBAR_VERSION_SUGGEST;
 
-	/* The manager, bound when announced, is moved to the application's default queue. */
-	manager = NULL;
-	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &keiland_titlebar_manager_v1_interface, version);
-		if (manager != NULL)
-			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
-	}
-
-	/* The search's objects go. */
-	if (registry != NULL)
-		wl_registry_destroy(registry);
-	wl_proxy_wrapper_destroy(wrapper);
-	wl_event_queue_destroy(queue);
+	/* The manager, bound when announced; the search ends. */
+	manager = keiui_global_bind(&search, &keiland_titlebar_manager_v1_interface, version);
+	keiui_global_end(&search);
 
 	/* A compositor without the Titlebar Presentation. */
 	if (search.name == 0U) {
@@ -815,45 +772,6 @@ titlebar_bind(
 
 	/* Succeeded: the manager. */
 	return manager;
-}
-
-/* Notes the manager's global name when the registry announces it. */
-static void
-titlebar_global(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name,
-	const char *interface,
-	uint32_t version)
-{
-	struct titlebar_search *search;
-	int same;
-
-	/* Only the manager, at a version this library speaks. */
-	(void)registry;
-	search = data;
-	same = strcmp(interface, "keiland_titlebar_manager_v1");
-	if (same != 0 || version < TITLEBAR_VERSION)
-		return;
-
-	/* The first one found is used, at the version it has. */
-	if (search->name == 0U) {
-		search->name = name;
-		search->version = version;
-	}
-}
-
-/* A global going away during the search changes nothing. */
-static void
-titlebar_global_remove(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)registry;
-	(void)name;
 }
 
 /* Hands a chosen control on to the application's listener. */

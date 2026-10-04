@@ -17,6 +17,8 @@
 
 #include <keiland.h>
 
+#include "declare.h"
+
 /* The window's surface is a Wayland one, for Vulkan's surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 
@@ -33,12 +35,66 @@
 /* The shared-memory buffers a frame is drawn into, one while the compositor reads the other. */
 #define KEIUI_SHM_BUFFERS	2
 
+/* The most globals an application keeps, the longest interface name, and the events it queues at most. */
+#define KEIUI_APP_GLOBALS	96U
+#define KEIUI_APP_INTERFACE	64U
+#define KEIUI_APP_EVENTS	512U
+
 struct zwp_primary_selection_device_manager_v1;
 struct kl_keyboard_inset;
 struct kl_edit;
 struct zwp_primary_selection_device_v1;
 struct zwp_primary_selection_source_v1;
 struct zwp_primary_selection_offer_v1;
+struct kl_menu_service;
+struct kl_menu;
+struct kl_window_menu;
+struct kl_context_menu;
+struct kl_titlebar;
+struct kl_glass;
+
+/* One global the compositor announced: its name, version and interface. */
+struct keiui_app_global {
+	uint32_t name;
+	uint32_t version;
+	char interface[KEIUI_APP_INTERFACE];
+};
+
+/*
+ * One application (app.c, WS131 p015), from kl_app_open to kl_app_close:
+ * its connection and the one registry, the globals it announced, the
+ * app_id its windows get, its windows, the events queued (a ring), the
+ * descriptors watched, the system and the menu service (made when first
+ * asked for), and the next application open (the library's list, read by
+ * libkeiland's objects to bind from an application's registry).
+ */
+struct kl_app {
+	struct wl_display *display;
+	struct wl_registry *registry;
+	struct keiui_app_global globals[KEIUI_APP_GLOBALS];
+	unsigned global_count;
+	char *application;
+
+	/* The windows, a list through their app_next. */
+	struct kl_window *windows;
+
+	/* The events waiting: the oldest's slot and how many. */
+	struct kl_app_event events[KEIUI_APP_EVENTS];
+	unsigned event_first;
+	unsigned event_count;
+
+	/* The descriptors watched and what for (KL_APP_FD_*). */
+	int fds[KL_APP_FDS_MAX];
+	unsigned fd_events[KL_APP_FDS_MAX];
+	unsigned fd_count;
+
+	/* The system and the menu service, and whether the service was tried (a compositor without it says so once). */
+	struct kl_system *system;
+	struct kl_menu_service *menu_service;
+	int menu_tried;
+
+	struct kl_app *next;
+};
 
 /* One swapchain image and what draws into it. */
 struct keiui_present_target {
@@ -274,7 +330,49 @@ struct kl_window {
 	unsigned edit_state;
 	kl_window_edit_fn edit_callback;
 	void *edit_data;
+
+	/*
+	 * A window of an application (KL_VERSION 26): the application, the
+	 * next of its windows, and whether its input is kept from the queue
+	 * (while it is made: its first configure is not news).
+	 */
+	struct kl_app *app;
+	struct kl_window *app_next;
+	int app_quiet;
+
+	/*
+	 * The declarative menus, controls and glass (window-declare.c): the
+	 * action states, the menu's, the controls' and the popup's models and
+	 * the objects that show them (a menu service of the window's own when
+	 * it is not an application's), and the glass with the panels sent.
+	 */
+	struct keiui_declare_states action_states;
+	struct keiui_declare_model menu_model;
+	struct keiui_declare_model control_model;
+	struct keiui_declare_model popup_model;
+	struct kl_menu_service *menu_service;
+	struct kl_menu *menu;
+	struct kl_window_menu *window_menu;
+	struct kl_menu *popup_menu;
+	struct kl_context_menu *popup;
+	struct kl_titlebar *titlebar;
+	struct kl_glass *glass;
+	struct kl_glass_panel glass_panels[KL_GLASS_PANELS_MAX];
+	size_t glass_count;
+	int glass_sent;
 };
+
+/* An application's part of its windows (app.c): an event queued for a window (NULL when full), a window gone, and the menu service. */
+struct kl_window_event *keiui_app_push(struct kl_app *app, struct kl_window *window);
+void keiui_app_forget(struct kl_app *app, struct kl_window *window);
+struct kl_menu_service *keiui_app_menu_service(struct kl_app *app);
+
+/* A window of an application (window.c). */
+struct kl_window *keiui_window_open_app(struct kl_app *app, const struct kl_window_options *options);
+
+/* The declarative parts of a window (window-declare.c): their models made, and their objects taken away before the window. */
+void keiui_declare_window_init(struct kl_window *window);
+void keiui_declare_window_close(struct kl_window *window);
 
 /* A window on the application's connection, and its owner's wake-up (window.c). */
 struct kl_window *keiui_window_open_shared(struct wl_display *display, struct xdg_toplevel *parent, const struct kl_window_options *options, uint32_t min_width, uint32_t min_height);

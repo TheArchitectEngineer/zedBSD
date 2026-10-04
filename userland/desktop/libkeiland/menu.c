@@ -20,6 +20,8 @@
 
 #include <keiland.h>
 
+#include "ui/internal.h"
+
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 #include "userland/desktop/libwayland/xdg-toplevel-menu-v1-client-protocol.h"
@@ -83,14 +85,6 @@ struct kl_context_menu {
 	void *data;
 };
 
-/* What the registry search found: the manager's global name (0 for none) and its version. */
-struct menu_search {
-	uint32_t name;
-	uint32_t version;
-};
-
-static void menu_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
-static void menu_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void menu_activated(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static void menu_opened(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t item);
 static void menu_closed(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t item);
@@ -101,11 +95,6 @@ static unsigned menu_depth(const struct kl_menu *menu, uint32_t id);
 static int menu_check_add(const struct kl_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label);
 static int menu_room(struct kl_menu *menu);
 static int menu_change(const struct kl_menu *menu, uint32_t id);
-
-/* The registry's callbacks while the service looks for the manager. */
-static const struct wl_registry_listener menu_registry_listener = {
-	menu_global, menu_global_remove
-};
 
 /* The window menu's events, handed on to the application's listener. */
 static const struct xdg_toplevel_menu_v1_listener menu_place_listener = {
@@ -118,44 +107,25 @@ static const struct xdg_context_menu_v1_listener menu_context_listener = {
 };
 
 /*
- * Opens the connection's menu service: finds and binds zdesktop's
- * xdg_menu_manager_v1.  The search runs on a queue of its own, so no event
- * of the application's is dispatched by it.
+ * Opens the connection's menu service: zdesktop's xdg_menu_manager_v1,
+ * bound from an application's registry or found by a search of the
+ * library's own (on a queue of its own, so no event of the application's
+ * is dispatched by it).
  */
 struct kl_menu_service *
 kl_menu_service_open(
 	struct wl_display *display)
 {
 	struct kl_menu_service *service;
-	struct wl_event_queue *queue;
-	struct wl_display *wrapper;
-	struct wl_registry *registry;
-	struct menu_search search;
-	int status;
+	struct keiui_global_search search;
+	int error;
 
-	/* The search's own queue. */
-	queue = wl_display_create_queue(display);
-	if (queue == NULL)
+	/* The manager's global. */
+	error = keiui_global_find(&search, display, "xdg_menu_manager_v1");
+	if (error != 0) {
+		keiui_global_end(&search);
+		errno = error;
 		return NULL;
-
-	/* The display as seen from it (a wrapper, whose requests make objects on that queue). */
-	wrapper = wl_proxy_create_wrapper(display);
-	if (wrapper == NULL) {
-		wl_event_queue_destroy(queue);
-		return NULL;
-	}
-
-	/* What the wrapper makes lives on the search's queue. */
-	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
-
-	/* The globals, announced to this search alone. */
-	search.name = 0;
-	search.version = 0;
-	registry = wl_display_get_registry(wrapper);
-	if (registry != NULL) {
-		status = wl_registry_add_listener(registry, &menu_registry_listener, &search);
-		if (status == 0)
-			(void)wl_display_roundtrip_queue(display, queue);
 	}
 
 	/* The service's record, when the manager was announced. */
@@ -163,26 +133,17 @@ kl_menu_service_open(
 	if (search.name != 0U)
 		service = calloc(1, sizeof(*service));
 
-	/* The manager, bound at the newest version both sides speak, is moved to the application's default queue. */
+	/* The manager, bound at the newest version both sides speak, on the application's default queue. */
 	if (service != NULL) {
 		service->display = display;
 		service->version = MENU_VERSION;
 		if (search.version >= MENU_VERSION_CONTEXT)
 			service->version = MENU_VERSION_CONTEXT;
-
-		/* The binding; a failed one is reported below. */
-		service->manager = wl_registry_bind(registry, search.name, &xdg_menu_manager_v1_interface, service->version);
-		if (service->manager != NULL)
-			wl_proxy_set_queue((struct wl_proxy *)service->manager, NULL);
+		service->manager = keiui_global_bind(&search, &xdg_menu_manager_v1_interface, service->version);
 	}
 
-	/* The search's registry goes. */
-	if (registry != NULL)
-		wl_registry_destroy(registry);
-
-	/* And so do its wrapper and its queue. */
-	wl_proxy_wrapper_destroy(wrapper);
-	wl_event_queue_destroy(queue);
+	/* The search ends. */
+	keiui_global_end(&search);
 
 	/* A compositor without the System Menu: the application draws its own menus. */
 	if (search.name == 0U) {
@@ -832,45 +793,6 @@ kl_window_menu_destroy(
 	/* The protocol object, then the record. */
 	xdg_toplevel_menu_v1_destroy(window_menu->proxy);
 	free(window_menu);
-}
-
-/* Notes the manager's global name when the registry announces it. */
-static void
-menu_global(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name,
-	const char *interface,
-	uint32_t version)
-{
-	struct menu_search *search;
-	int same;
-
-	/* Only the manager, at a version this library speaks. */
-	(void)registry;
-	search = data;
-	same = strcmp(interface, "xdg_menu_manager_v1");
-	if (same != 0 || version < MENU_VERSION)
-		return;
-
-	/* The first one found is used, at the version it has. */
-	if (search->name == 0U) {
-		search->name = name;
-		search->version = version;
-	}
-}
-
-/* A global going away during the search changes nothing. */
-static void
-menu_global_remove(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)registry;
-	(void)name;
 }
 
 /* Hands a choice on to the application's listener. */

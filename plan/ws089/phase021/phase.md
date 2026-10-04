@@ -52,3 +52,8 @@ WS131 の libkeiland-backend・kl_system_manager_v1（済み）、WS005 の netw
 
 「scan の要求の数え上げですが、アプリが要求を下げる前にクラッシュした場合に、要求が取り下げできない設計になっていると思いました。1つのスキャン要求は1分だけ有効にしましょう。」→ compositor が数える scan の要求（holder）は、**1 つ 1 分だけ有効**にする。要求した client は表示している間 1 分より短い間隔で要求を出し直し（更新）、更新が無い要求は 1 分で compositor が外す。client の切断（crash を含む）で外す今の仕組み（objects.c の destroy の hook）も残す（二重の守り）。networkd への lease（30 秒）は compositor が holders > 0 の間更新する今のまま。system bar の menu の要求も同じ規則。試験（settings-p021.sh）に「更新を止めた client の要求が 1 分で外れる」を足す。
 - 2026-10-05 q703-i01（追加の仕様、1 分の有効期限）: compositor の `system.c` に `SYSTEM_SCAN_MS`（60 秒）、`set_scanning(1)` のたびに object の `network_scanning_until` を今＋60 秒にし、`zwl_system_tick` の `system_scanning_expire` が期限の過ぎた object の印を外す（`ZWL SYSTEM scanning expired`）。切断の hook は残す。Settings は表示の間 30 秒ごとに `set_scanning(1)` を出し直す（`NETWORK_SCANNING_RENEW_MS`）。system bar の menu の holding は compositor 自身の物で、menu を開いている間だけ（compositor より長く残れないので期限は要らない、同じ規則の意図を満たす）。protocol と keiland.h の文に期限を書いた。host: `host-system.sh` に時計を 61 秒進めて期限で外れる check、`host-slot.sh` に case 10（30 秒ごとの出し直し）、どちらも PASS。`settings-p021.sh` の part 1 に SIGSTOP で更新を止めた Settings の要求が 1 分で外れ（holders=0、`net watch` の scan=0）、SIGCONT ですぐ出し直す（holders=1）確かめを足した。
+
+### T1-098 の FAIL の判断（2026-10-05、P2）
+
+- settings-p021 の 1 行だけ `NETPROBE request op=36 MISSING`（2 回とも同じ）。wifi-left.png では Settings B（Ethernet の頁）の窓が A の窓と同じ位置で上に重なっており、A の Disconnect の座標の click が B の Ethernet の頁に当たっていた。**試験の誤り**（実装ではない）。
+- 直し: e の前に B を終える（`kill $(cat /tmp/s2.log.pid)`、holders=1 を確かめる）。その後 A の窓が前に出て、A の control 3 を押す。T1 に settings-p021 だけの再試験を依頼。
