@@ -148,6 +148,11 @@ boot_start(
 	int error;
 	int init_error;
 
+#ifdef ZEDBSD_VERSION
+	/* The version, first in the kernel's log (ws129-p003; the HAL's banner reaches only the console). */
+	kern_logf("zedBSD %s\n", ZEDBSD_VERSION);
+#endif
+
 	/* Reports the boot parameter line the loader handed over. */
 	boot_parameter_line = hal_get_arch_handoff("boot.command-line");
 	kern_logf("boot: parameters: %s\n",

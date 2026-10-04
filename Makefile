@@ -1068,6 +1068,11 @@ endif
 $(BUILD)/src/hal/amd64/cmain.o $(BUILD)/src/hal/i386/cmain.o: $(ZEDBSD_VERSION_STAMP)
 $(BUILD)/src/hal/amd64/cmain.o: AMD64_CPPFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
 $(BUILD)/src/hal/i386/cmain.o: HAL_CC += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
+
+# And so does the kernel's log, its first line (main.c; the HAL's banner reaches only the console).
+$(BUILD)/kern64/src/kern/main.o $(BUILD)/src/kern/main.o: $(ZEDBSD_VERSION_STAMP)
+$(BUILD)/kern64/src/kern/main.o: AMD64_CPPFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
+$(BUILD)/src/kern/main.o: OBJ_CFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
 include tools/release/kei-nightly.mk
 
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)

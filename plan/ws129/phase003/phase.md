@@ -73,3 +73,8 @@ p001、ユーザーの版の名前。
 - QEMU: image（`plan/ws129/tests/config-amd64-ci-noclang.mk`）で `plan/tools/boot-test.sh` の PASS と PNG、SSH で `uname -a`（`zedBSD <host> 1.0.0-beta1+g<hash> zedBSD 1.0.0-beta1+g<hash> (<hash> <日付>) amd64`）と
   `cat /etc/os-release`、`dmesg | grep 'zedBSD 1.0.0-beta1'`（kernel の起動の表示）。
 - About の `PRETTY_NAME` の表示（WS089、main に依頼）。
+
+### T1-104 の直し（2026-10-05、P2）
+
+- `dmesg | grep 'zedBSD 1.0.0-beta1'` が 0 行: HAL の起動の表示（cmain.c）は klog の前で console にだけ出る。直し: `src/kern/main.c` の `boot_start()` の最初（`boot: parameters` の前）に `kern_logf("zedBSD %s\n", ZEDBSD_VERSION)`（`#ifdef ZEDBSD_VERSION`）。Makefile で amd64（`kern64/src/kern/main.o`）と i386・PC-98（`src/kern/main.o`）に `-DZEDBSD_VERSION` と version の stamp への依存を付けた（他の platform は定義が無く、行が出ないだけ）。
+- 確認: vmunix exit 0、kernel include check PASS、vmunix の文字列に `zedBSD 1.0.0-beta1`。QEMU の再試験は T1。
