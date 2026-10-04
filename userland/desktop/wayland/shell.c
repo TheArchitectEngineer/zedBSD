@@ -183,6 +183,14 @@ static unsigned sheet_lowering;
 /* How far a Wiseview tile moves before it is dragged. */
 #define TILE_DRAG_START		8
 
+/*
+ * How far a press on a title bar's menu item or search field moves before it
+ * moves the window instead of clicking (ws099-p030): a mouse's or a pen's
+ * press holds still, a finger wanders a little.
+ */
+#define PRESS_MOVE_POINTER	2
+#define PRESS_MOVE_TOUCH	8
+
 /* Wiseview: where the gesture starts, how far it goes, when it opens, and how long it settles. */
 #define WISEVIEW_EDGE		20
 #define WISEVIEW_DISTANCE	240.0f
@@ -1198,6 +1206,86 @@ zwl_glass_window_at(
 
 	/* Succeeded: the window, or NULL. */
 	return surface;
+}
+
+/*
+ * Tells whether the pointer has gone far enough from a press to move the
+ * window rather than click (the menus' items and the search field,
+ * ws099-p030): two pixels for a mouse or a pen, eight for a finger.
+ */
+int
+zwl_glass_press_moved(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	enum zwl_contact_source source)
+{
+	int32_t least;
+	int32_t dx;
+	int32_t dy;
+
+	/* The distance a press of its kind may wander and still click. */
+	least = PRESS_MOVE_POINTER;
+	if (source == ZWL_CONTACT_TOUCH)
+		least = PRESS_MOVE_TOUCH;
+
+	/* How far the pointer is from the press. */
+	dx = server->pointer_x - x;
+	dy = server->pointer_y - y;
+	if (dx * dx + dy * dy >= least * least)
+		return 1;
+
+	/* Succeeded: still a click. */
+	return 0;
+}
+
+/*
+ * Starts moving a window from a press on its title bar's menu item or
+ * search field that went far enough (ws099-p030): a floating window follows
+ * the pointer with the pressed point under it, as from a press on its title;
+ * a docked window's title in the system bar starts a pull.
+ */
+void
+zwl_glass_press_move(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	unsigned docked,
+	int32_t x,
+	int32_t y)
+{
+	/* Only a shown window of the desktop shown, and no other move or pull. */
+	if (surface == NULL ||
+	    surface->dead ||
+	    !surface->mapped ||
+	    surface->minimized ||
+	    surface->desktop != server->desktop)
+		return;
+	if (server->drag != NULL || server->pull != NULL)
+		return;
+
+	/* A docked window's title is pulled out of the system bar, as its title is. */
+	if (docked != 0U) {
+		if (!surface->maximized)
+			return;
+		server->pull = surface;
+		server->pull_start_y = y;
+		server->pull_distance = 0;
+		printf("ZWL GLASS press pull surface=%u\n", surface->id);
+		return;
+	}
+
+	/* A floating window keeps the pressed point under the pointer. */
+	if (surface->maximized)
+		return;
+	server->drag = surface;
+	server->drag_dx = x - surface->x;
+	server->drag_dy = y - surface->y;
+	server->drag_start_x = surface->x;
+	server->drag_start_y = surface->y;
+	server->dirty = 1;
+
+	/* Succeeded: the log line the tests read. */
+	printf("ZWL GLASS press move surface=%u x=%d y=%d\n", surface->id, x, y);
 }
 
 /*
@@ -5467,6 +5555,11 @@ glass_motion_take(
 
 	/* An open menu follows the pointer (menu-shell.c). */
 	taken = zwl_menu_motion(server);
+	if (taken)
+		return 1;
+
+	/* A press on a titlebar's search field selects text, or waits to be a click or a move (titlebar-shell.c). */
+	taken = zwl_titlebar_motion(server);
 	if (taken)
 		return 1;
 
