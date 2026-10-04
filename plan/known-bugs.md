@@ -36,7 +36,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-165](bugs/BUG-165.md) | 5330 の DSDT が読み込めない（error 13） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | WS049。電源が切れない・タッチパッド・電源の状態の共通の根の候補。修正済み（ws049-p008、無い PCI 機能を全ビット 1 に、host で 5330 の table が全部読める）、実機の UAT 待ち（[ticket](bugs/BUG-165.md)） |
 | [BUG-166](bugs/BUG-166.md) | タッチパッドで title bar を押して動かしても窓が動かない（デグレ） | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS099。仕様をユーザーと決めてから（[ticket](bugs/BUG-166.md)） |
 | [BUG-167](bugs/BUG-167.md) | タッチパッドの押し込み（物理のクリック）が認識されない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS081。BUG-165 の後に再確認（[ticket](bugs/BUG-167.md)） |
-| [BUG-168](bugs/BUG-168.md) | 起動の後に挿した USB の有線 LAN が up しない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS033（networkd の hotplug）（[ticket](bugs/BUG-168.md)） |
+| [BUG-168](bugs/BUG-168.md) | 起動の後に挿した USB の有線 LAN が up しない | reproduced（実機） / resolved（2026-10-05、QEMU T1-145、実機は UAT） | UAT 2026-10-04 | WS033（networkd の hotplug）（[ticket](bugs/BUG-168.md)） |
 | [BUG-169](bugs/BUG-169.md) | ue0 を抜くと Ethernet のメニューに wlan0 が出る | reproduced（実機） / tracking | UAT 2026-10-04 | WS131 か WS033（[ticket](bugs/BUG-169.md)） |
 | [BUG-170](bugs/BUG-170.md) | 音量の slider のドラッグでしばらくフリーズ（system bar・Settings） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | [ws100-p013](ws100/phase013/phase.md)（q683）: 途中の確認の音を無くし離した時に 1 回（実装済み）。QEMU は T1 待ち、実機は次の UAT。根は未確定 |
 | [BUG-171](bugs/BUG-171.md) | 窓の透明度を opaque にしても不透明にならない | reproduced（実機） / tracking | UAT 2026-10-04 | WS089・compositor（[ticket](bugs/BUG-171.md)） |
