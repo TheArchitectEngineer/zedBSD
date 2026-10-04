@@ -274,6 +274,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS156](ws156/ws.md) | ベータ2 | MG006 | 2 | app の通知 |
 | [WS157](ws157/ws.md) | ベータ3 | MG006 | 4 | 写真の管理 |
 | [WS158](ws158/ws.md) | ベータ2 | MG006 | 3 | 翻訳（日本語はベータ2） |
+| [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、段は案でベータ2） | WS049 |
 
 ### リリースの段ごとの見積もり（2026-10-05）
 
