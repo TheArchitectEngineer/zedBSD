@@ -7,7 +7,7 @@ Status: planning
 Primary Milestone: MG006
 Related Milestones: MG003
 Parent: [Master](../master.md)
-Queue: なし（段は Q1 の案でベータ2、ユーザーが決める）
+Queue: q713（**ベータ1**、2026-10-05 ユーザーのクリックの回答。P1・P2 が空いたら優先して着手）
 Resume point: p001（設計）から。WS049（ACPI AML）の後（ユーザー）。WS049 は p007〜p009・p016・p017 まで済み（実機の UAT 待ち）。
 <!-- awesome-plan-current:end -->
 
