@@ -47,3 +47,7 @@ Queue: q668（Q1 の dispatch、2026-10-04）
 
 2026-10-04（続き）: Q1 の委任で G1〜G4 を直した（licenses.md の「足りない本文」の節）。CI の config から clang・libcxx を除いた rootfs で `--rootfs` の確かめ:
 残りは D1 だけ。host 試験の期待を「既知の残り 1 件（remacs）」に直して PASS。
+
+## D1・D2 の判断（2026-10-04 ユーザー）
+
+「i915-oldはもう使っていないので削除です。remacsはuserland/base/emacsとしてコピーを取り込み、作者としてzlibライセンスにします。特別扱いは不要です。」→ q669（P2）で実施。

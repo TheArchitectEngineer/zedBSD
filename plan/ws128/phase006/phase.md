@@ -2,7 +2,7 @@
 
 # ws128-p006: Terminal の改善
 
-Status: in-progress（q666、P2、2026-10-04。実装と host 試験は済み、QEMU は T1 に依頼して結果待ち）
+Status: cleared（q666、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS128](../ws.md)
 Queue: q666（Q1 の dispatch、2026-10-04。user「任せます」→ Q1 の採否: scrollback の検索・色と font の設定の保存）
@@ -56,3 +56,7 @@ QEMU の Venus。 やっていない確認は「未実施」と書く。
 ## Event
 
 2026-10-02 / ws128-beta1-plan: fg019 の計画で新設。
+
+## 判定（Q1、2026-10-04）
+
+cleared。T2-025（QEMU Venus、main 70afbfa＋script 07094f6）で terminal-p006-guest PASS、terminal-p009-guest・menu-p003 PASS。T1-079・T1-080 の FAIL は試験の script（menu の期待値、item_x の引数の形）の誤りで、source は不変。
