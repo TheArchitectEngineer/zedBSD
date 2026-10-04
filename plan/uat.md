@@ -131,3 +131,9 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | C6 | **NG** | 1 分でフリーズ。kernel のフリーズ | BUG-158 |
 | C2 | **NG** | 間違えた鍵で `Could not join (Network is unreachable)` | BUG-157（再現、文言） |
 | C1 | OK | | |
+| C4 | OK | DHCP OK | BUG-145（実機で OK） |
+| C3 | OK | | |
+| C5 | OK | WiFi off → on で 8 秒で自動接続 | |
+| C7 | **NG** | 起動の後に USB LAN を挿すと ue0 は down のまま。WiFi を off にしても down のまま。そのまま ue0 を抜くと、system bar の Ethernet のメニューに wlan0 が出る。ue0 を挿し直しても wlan0 が出たまま | 新規 2 件（後から挿した USB LAN が up しない／Ethernet のメニューに wlan0）。仕様ではない（Q1） |
+| D1 | **NG** | 100% には戻らず調整できた。しかし slider をドラッグすると、しばらくフリーズし、放置で回復。連続で確認の音を鳴らそうとしている疑い | 新規（slider のドラッグでフリーズ） |
+| D2 | **NG** | Settings も、クリックは OK、ドラッグでフリーズ | 同上 |
