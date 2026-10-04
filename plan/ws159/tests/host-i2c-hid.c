@@ -25,6 +25,10 @@
  *   - one finger down, the pad pressed and the finger lifted come out as
  *     protocol B events with BTN_TOOL_FINGER and BTN_LEFT, and an empty
  *     read (length 0) emits nothing.
+ * With the argument "line" the device's GpioInt is an Intel GPIO pad
+ * (the stand-in pad is low, asserted, while a scripted report waits): the
+ * driver reads only while the line is asserted, so no empty read happens;
+ * with "sample" no pad is found and the driver samples the input register.
  * The thread's endless loop is left with a longjmp from the sleep once the
  * script is done.
  *
@@ -105,6 +109,11 @@ static void *thread_argument;
 static jmp_buf thread_exit;
 static unsigned sleeps_after_script;
 
+/* Whether the device's line is a pad (the "line" run), and the pin the driver asked for. */
+static int line_mode;
+static uint32_t line_pin_asked;
+static int fake_pad;
+
 /* The fake clock, in milliseconds and ticks. */
 static uint64_t now_ms;
 
@@ -131,6 +140,8 @@ uint64_t sched_ticks(void);
 void sched_sleep(uint64_t timeout_tick);
 int kthread_create(void (*entry)(void *), void *argument, int priority, void **result);
 int drv_i2c_hid_probe(void);
+int drv_intel_gpio_pad_find(const char *controller, uint32_t pin, void **result);
+int drv_intel_gpio_pad_level(const void *pad);
 static void check(int condition, const char *what);
 static int written(size_t index, const uint8_t *bytes, size_t length);
 static int has_event(uint16_t type, uint16_t code, int32_t value);
@@ -624,6 +635,45 @@ drv_i2c_transfer(
 	return 0;
 }
 
+/* Finds the stand-in pad in the "line" run, and none in the "sample" run. */
+int
+drv_intel_gpio_pad_find(
+	const char *controller,
+	uint32_t pin,
+	void **result)
+{
+	int same;
+
+	/* The touchpad's line is on GPI0. */
+	same = strcmp(controller, "\\_SB.GPI0");
+	check(same == 0, "the line's controller is GPI0");
+	line_pin_asked = pin;
+
+	/* No pad when sampling. */
+	if (!line_mode)
+		return 6;
+
+	/* The pad. */
+	*result = &fake_pad;
+	return 0;
+}
+
+/* The stand-in pad's level: low (asserted) while a scripted report waits. */
+int
+drv_intel_gpio_pad_level(
+	const void *pad)
+{
+	/* Only the stand-in pad is read. */
+	(void)pad;
+
+	/* A report waits: the line is low. */
+	if (report_next < report_count)
+		return 0;
+
+	/* Nothing waits: the line is high. */
+	return 1;
+}
+
 /* Records the input device the driver registers. */
 int
 drv_input_device_register(
@@ -777,11 +827,14 @@ main(
 	FILE *stream;
 	int started;
 
-	/* The report descriptor file. */
-	if (argc != 2) {
-		fprintf(stderr, "usage: host-i2c-hid DESCRIPTOR\n");
+	/* The report descriptor file, and the run: by the line or by sampling. */
+	if (argc != 3) {
+		fprintf(stderr, "usage: host-i2c-hid DESCRIPTOR line|sample\n");
 		return 2;
 	}
+
+	/* The run. */
+	line_mode = strcmp(argv[2], "line") == 0;
 
 	/* Reads it. */
 	stream = fopen(argv[1], "rb");
@@ -836,7 +889,12 @@ main(
 	check(has_event(EV_KEY, BTN_LEFT, 0), "BTN_LEFT released");
 	check(has_event(EV_KEY, BTN_TOUCH, 0), "BTN_TOUCH up");
 	check(has_event(EV_KEY, BTN_TOOL_FINGER, 0), "BTN_TOOL_FINGER released");
-	check(empty_reads >= 1U, "empty reads after the script emit nothing");
+	check(line_pin_asked == 327U, "the line's pin is 327");
+	if (line_mode) {
+		check(empty_reads == 0U, "by the line, no read happens while the line is idle");
+	} else {
+		check(empty_reads >= 1U, "sampling, empty reads after the script emit nothing");
+	}
 
 	/* The verdict. */
 	if (failures != 0) {
@@ -845,6 +903,6 @@ main(
 	}
 
 	/* Succeeded: every check held. */
-	printf("host-i2c-hid: ok (%d checks)\n", checks);
+	printf("host-i2c-hid: ok (%s, %d checks)\n", argv[2], checks);
 	return 0;
 }
