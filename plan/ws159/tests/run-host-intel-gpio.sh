@@ -20,3 +20,4 @@ $cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I "$root/include" $extra \
 	-c "$root/plan/ws159/tests/host-intel-gpio.c" -o "$out/host-intel-gpio.o"
 $cc $extra "$out/host-intel-gpio.o" "$out/intel-gpio.o" -o "$out/host-intel-gpio"
 "$out/host-intel-gpio"
+"$out/host-intel-gpio" nomode

@@ -54,3 +54,12 @@ Status: 設計（文書だけ。製品の source・UAPI・実機は変えてい�
 - libkeiland-backend-zedbsd: `display-zedbsd.c` は何もしない（libvulkan が display に届く）。backlight の module は無い。
 - `kl_system_manager_v1` は version 3（request 6 まで）。peer の UID の検査は無い。
 - Settings の Display の頁（`page-*.c` の `se_display_draw`）は読むだけ。
+
+
+## ユーザーの決定（2026-10-05 未明）
+
+- C1（D-BOOT2）: **全部拡張で点ける**（保存の設定が無い最初の session は、接続された全部の display を拡張の mode で使う）。
+- C4: Q1 が案のとおり決定（GOP の引き継ぎと外部の優先の削除は WS113 p002 part A、WS051 p002 は VBT の DVO と USB-C）。
+- C2: **両方許可**（gpu-display.h の GPU_DISPLAY_POWER・GPU_DISPLAY_REFRESH と新しい include/uapi/backlight.h。HAL は不変）。差分は p012・p013 の記録に示す。
+- C3: Fn の明るさのキーの kernel 側（ACPI video の Notify 0x86/0x87 → input の key）は **WS049 に入れる**（BUG-165 の後）。compositor の KEY_BRIGHTNESS* の扱いは WS113。
+- 出力の数の制限（2026-10-05 未明 ユーザー「GOP以外のディスプレイについて、マシンが同時に表示できる画面数の制限で、有効化できないケースが存在するので、その場合は可能な限りエラーではなく制限であることを返してください。Vulkan Display拡張にそういうエラーがないなら、失敗しても致命的でなく一時的なものとして処理できるようにしてください。」）: GOP 以外の出力が machine の同時表示の数（pipe・transcoder・PLL など）の制限で点けられない時、driver と UAPI は一般の error でなく「制限」と分かる結果を返す。Vulkan の Display の拡張にそれに当たる error が無ければ、失敗を致命的でなく一時的な物として扱う（compositor はその出力を使わずに続け、Settings はその display を制限で使えないと示し、hotplug や他の出力の解放の後に再び試す）。p002・p003・p004・p011 の設計に入れる。

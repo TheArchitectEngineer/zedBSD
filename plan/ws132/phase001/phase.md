@@ -95,3 +95,9 @@ ACPI の蓋・AC・電池は `src/drivers/acpi/` の新しい file（`acpi-power
 - **D3 自動 mount の持ち主と権限**: 案は、console の session の利用者を持ち主として `/media/<label>` に mount（FAT は uid・gid の option、UFS は mount 先の directory の持ち主）し、その利用者が eject（unmount）してよい。nosuid・noexec を付ける。session が無い時（greeter）は mount しない。
 
 D1〜D3 が決まるまでも p002（kernel の核と送り手）は進められる。
+
+## ユーザーの決定（2026-10-05 未明）
+
+- D1: 電源ボタンの短押しは **dialog を出さず、モダンスリープ（S0i3、WS052）に入る**。ユーザー「電源ボタンでダイアログ、と回答してしまいましたが、ダイアログは不要です。モダンスリープに入ることにします。」（一度「dialog を出す」と答えた後の訂正。ws131 D12 の改訂は不要）。S0i3 ができるまでの間の扱いは未定（p008 は WS052 に依る）。
+- D2（蓋、S0i3 ができるまでの間）: **画面を消して lock する。蓋を閉じてから 15 分以内に開けた時は password 無しで自動で unlock する**。ユーザー「画面を消しロックしますが、一定時間以内のスリープ解除のとき、アンロックはパスワードなしで自動にします。」・「15 分」。画面を消すのは内蔵の LCD の backlight（WS113 p013 の backlight の口の後。それまでは黒の画面で代える）。
+- D3（自動 mount）: **自動 mount はしない。通知を出す**。ユーザー「自動mountはせず、通知を出します。通知をクリックするとFilesの左ペインのDevicesグループにアイコンが表示されるほか、Todayにもアイコンが表示され、何回か点滅します。このアイコンをダブルクリックすると/media/以下にマウントできます。」→ volumed は自動 mount せず、媒体の追加を通知（WS156 の通知）。Files の左の pane の Devices の group と Today に icon（数回点滅）、double click で /media/ の下に mount。p004・p005 の設計を直す。

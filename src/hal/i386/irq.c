@@ -372,6 +372,28 @@ hal_irq_set_affinity(
 }
 
 /*
+ * Sets the trigger mode and polarity of one IRQ: this HAL keeps each line as the firmware or the ISA default set it
+ * (the 8259 and the I/O APIC alike), so a change is not supported.
+ */
+int
+hal_irq_set_mode(
+	int irq,
+	int trigger,
+	int polarity)
+{
+	/* A valid IRQ, trigger mode and polarity. */
+	if (irq < 0 || irq > IRQ_MAX)
+		return HAL_ERR_INVALID;
+	if (trigger != HAL_IRQ_TRIGGER_EDGE && trigger != HAL_IRQ_TRIGGER_LEVEL)
+		return HAL_ERR_INVALID;
+	if (polarity != HAL_IRQ_POLARITY_HIGH && polarity != HAL_IRQ_POLARITY_LOW)
+		return HAL_ERR_INVALID;
+
+	/* The controller's configuration is fixed. */
+	return HAL_ERR_UNSUPPORTED;
+}
+
+/*
  * Reports the requested and effective affinity of one IRQ.
  */
 int

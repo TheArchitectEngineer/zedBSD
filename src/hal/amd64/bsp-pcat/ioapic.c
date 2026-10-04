@@ -35,6 +35,12 @@ static void write_reg_unlocked(struct ioapic_state *ioapic, uint8_t reg, uint32_
 static struct ioapic_state *find_gsi(uint32_t gsi, unsigned *pin);
 static int write_route(int irq, uint32_t apic_id, int masked);
 
+/* The ACPI MPS INTI flags: polarity in bits 0-1, trigger in bits 2-3, 1 for high or edge and 3 for low or level. */
+#define INTI_POLARITY_HIGH	0x1U
+#define INTI_POLARITY_LOW	0x3U
+#define INTI_TRIGGER_EDGE	(0x1U << 2)
+#define INTI_TRIGGER_LEVEL	(0x3U << 2)
+
 /*
  * Initializes every ACPI-described I/O APIC and ISA route.
  */
@@ -199,6 +205,53 @@ amd64_ioapic_route(
 
 	/* Returns the route-programming result unchanged. */
 	return error;
+}
+
+/*
+ * Sets the trigger mode and polarity of one masked ISA route, replacing
+ * what ACPI's MADT said (or the ISA default where it said nothing), and
+ * reprograms the route masked; the caller restores its mask.
+ */
+int
+amd64_ioapic_set_mode(
+	int irq,
+	int trigger,
+	int polarity)
+{
+	uint16_t previous;
+	uint16_t flags;
+	int error;
+
+	/* Only the ISA routing table, and only the two values of each. */
+	if (irq < 0 || irq >= 16)
+		return HAL_ERR_INVALID;
+	if (trigger != HAL_IRQ_TRIGGER_EDGE && trigger != HAL_IRQ_TRIGGER_LEVEL)
+		return HAL_ERR_INVALID;
+	if (polarity != HAL_IRQ_POLARITY_HIGH && polarity != HAL_IRQ_POLARITY_LOW)
+		return HAL_ERR_INVALID;
+
+	/* The INTI flags of the new configuration. */
+	flags = INTI_POLARITY_HIGH;
+	if (polarity == HAL_IRQ_POLARITY_LOW)
+		flags = INTI_POLARITY_LOW;
+	if (trigger == HAL_IRQ_TRIGGER_LEVEL) {
+		flags |= INTI_TRIGGER_LEVEL;
+	} else {
+		flags |= INTI_TRIGGER_EDGE;
+	}
+
+	/* The route, rewritten masked; the old flags come back when it cannot be. */
+	previous = irq_flags[irq];
+	irq_flags[irq] = flags;
+	error = write_route(irq, irq_destination[irq], 1);
+	if (error != HAL_OK) {
+		irq_flags[irq] = previous;
+		(void)write_route(irq, irq_destination[irq], 1);
+		return error;
+	}
+
+	/* Succeeded: the route has the new trigger mode and polarity. */
+	return HAL_OK;
 }
 
 /* Reads one selected volatile I/O APIC register. */
