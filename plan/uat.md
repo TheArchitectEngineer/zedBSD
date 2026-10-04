@@ -137,3 +137,16 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | C7 | **NG** | 起動の後に USB LAN を挿すと ue0 は down のまま。WiFi を off にしても down のまま。そのまま ue0 を抜くと、system bar の Ethernet のメニューに wlan0 が出る。ue0 を挿し直しても wlan0 が出たまま | 新規 2 件（後から挿した USB LAN が up しない／Ethernet のメニューに wlan0）。仕様ではない（Q1） |
 | D1 | **NG** | 100% には戻らず調整できた。しかし slider をドラッグすると、しばらくフリーズし、放置で回復。連続で確認の音を鳴らそうとしている疑い | 新規（slider のドラッグでフリーズ） |
 | D2 | **NG** | Settings も、クリックは OK、ドラッグでフリーズ | 同上 |
+| D3 | OK | ミュート → 解除 | |
+| D4 | OK | | BUG-161（実機で OK） |
+| E1 | OK | | BUG-152（実機で OK） |
+| E2 | OK（気付き） | opaque にしても窓が不透明にならない | 新規（窓の透明度の opaque） |
+| E3 | OK | | |
+| F1 | 未実施 | USB メモリが起動用の 1 本しかない | |
+| F2 | 未実施 | 「タブ」が何か分からなかった（手順の説明の不足） | |
+| F3 | OK | PDF の試験の data が image に無く、Notes で PDF を作って表示 | 気付き: UAT の image に見本の file（PDF・PNG）が無い |
+| F4 | OK（一部） | scroll bar は OK。タッチのスクロールができないので慣性スクロールは未テスト | BUG-156 |
+| F5 | 未実施（一部） | PNG が無くテストできず。PPM は Files の中で preview の窓が出た | 気付き: 見本の file が無い |
+| F6 | OK | | |
+| F7 | OK | emacs の保存・終了・SKK | |
+| F8 | OK | | BUG-143・BUG-139（実機で OK） |
