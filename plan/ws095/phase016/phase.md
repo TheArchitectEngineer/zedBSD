@@ -2,10 +2,10 @@
 
 # ws095-p016: IME の状態を app ごとに記憶する（system 全体で 1 つにしない）
 
-Status: planning
+Status: in-progress（q708-i01、P2 generation14、2026-10-05。実装・build 済み、QEMU（T1）待ち）
 Disposition: normal
 Parent: [WS095](../ws.md)
-Queue: 未定
+Queue: q708-i01（P2 generation14）
 
 ## ユーザーの要望（2026-10-04 夜、原文）
 
@@ -28,3 +28,14 @@ Queue: 未定
 ## 依存
 
 WS095 の p005（右上の status）、[WS154](../../ws154/ws.md)（IME の選択・SKK の mode）と設計を合わせる。
+
+## 設計と結果（2026-10-05、q708-i01 P2 generation14）
+
+- **今の状態（確かめた）**: 言語（direct・ja）は keiland-ime の process が 1 つ持ち、compositor（`input-method.c`）は status の `language` で知り、`select`・`next` で選ばせる。system 全体で 1 つだった。
+- **app の単位（範囲 5）**: keyboard の focus の窓の xdg の `app_id`（`surface->app_id`）があればそれ（同じ app_id の窓は別の process でも 1 つの状態）、無ければその client（接続）。desktop は focus が無い時か desktop の surface（`zwl_desktop_is`）が focus の時。
+- **記憶**: compositor の `struct zwl_ime` に app ごとの言語の表（最大 32、`struct zwl_ime_app`）、desktop の言語、今の focus の key。status の `language` が来るたびに今の focus の key（app か desktop）の記憶にする。focus が別の app へ移った時（`zwl_ime_focus`、seat.c からの既存の呼び出しの中、P1 の input.c・seat.c は変えていない）、移る前の言語を前の key に記憶し、移った先が既知の app ならその言語、初めての app なら desktop の言語（desktop が一度も focus を持っていなければ今の言語のまま）、desktop なら desktop の言語を `select` する（今と同じなら送らない）。同じ app の中の窓・widget・caret の移動は key が同じなので何もしない（範囲 2）。log `ZWL IME app key=… language=… from=remembered|inherited|desktop|kept`。
+- **app が終わった時**: その client の最後の接続が終わると記憶を捨てる（client の key は即、app_id の key は同じ app_id の窓を持つ他の接続が無い時）。次の起動は desktop の言語を引き継ぐ（範囲 3 の挙動に合う）。focus を持っていた app が終わった時は、次の focus まで言語を誰の物ともしない。
+- **右上の status**（範囲 4）: indicator は今の言語（`ime->label`）を描くので、focus の app の言語を表示する（追加の変更なし）。
+- **制限**: keiland-ime が落ちて立ち上がり直すと、その時の focus の app の記憶は新しい process の初期の言語（direct）で上書きされる。WS154 の SKK の mode（かな・カナ）は言語の ID の中に入らないので、今は言語（direct・ja）だけを app ごとに持つ（WS154 で mode が language の ID か別の status になったら同じ表に足す）。
+- **確認**: zedBSD の `bin/wayland`・`bin/ime-probe` warning 0（`ZEDBSD_CONFIG=plan/ws095/tests/config-amd64-ime.mk BUILD=build/p2-q703`）。ime-probe に `--app-id=ID` を足した。host の試験は無し（compositor の焦点の経路）。
+- **試験の依頼（T1、Q1 経由）**: `plan/ws095/tests/ime-p016.sh`（probe A・B・C（A と同じ app）・D で、引き継ぎ・記憶・同じ app の共有・desktop の言語の引き継ぎ）。
