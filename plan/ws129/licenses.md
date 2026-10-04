@@ -40,11 +40,18 @@ G3 `userland/base/licenses/i915-driver/`（Linux i915・DRM の display の派�
 
 | # | component | 事実 | 選択肢 |
 | --- | --- | --- | --- |
-| D1 | **remacs**（`/usr/bin/remacs.nap`、CI の config が選ぶ） | GNU Emacs の再実装。README は「Copyright (C) 2025 Free Software Foundation, Inc.、Copyright (C) 2026 Awe Morris」「GNU General Public License」、COPYING は無く版も書いていない。GPL の component が image に入っている。辞書（ime-dict-ja）は ws095 D1 で著作権者が zlib に再 license 済みで、本体の扱いの記録は無い | (a) 著作権者が FSF の部分を含めて license を確かめ、許されるなら再 license／(b) GPL の本文と source の入手方法を image と release に付けて配る／(c) ベータ1 の image から外す（ime-dict-ja は remacs に依らず残せる） |
+| D1（閉じた） | **remacs**（`/usr/bin/remacs.nap`、CI の config が選ぶ） | GNU Emacs の再実装。README は「Copyright (C) 2025 Free Software Foundation, Inc.、Copyright (C) 2026 Awe Morris」「GNU General Public License」、COPYING は無く版も書いていない。GPL の component が image に入っている。辞書（ime-dict-ja）は ws095 D1 で著作権者が zlib に再 license 済みで、本体の扱いの記録は無い | (a) 著作権者が FSF の部分を含めて license を確かめ、許されるなら再 license／(b) GPL の本文と source の入手方法を image と release に付けて配る／(c) ベータ1 の image から外す（ime-dict-ja は remacs に依らず残せる） |
 
-| D2 | `src/drivers/gpu/i915-old/parity/` の GPL-2.0 の file | `lcd/intel_acpi_port.c` に `SPDX-License-Identifier: GPL-2.0`（Linux の intel_acpi.c の生成物）。i915-old は kernel の build に入らない（image には無い）が tree に在る | 消す／GPL の file として tree に残す記録だけにする |
+| D2（閉じた） | `src/drivers/gpu/i915-old/parity/` の GPL-2.0 の file | `lcd/intel_acpi_port.c` に `SPDX-License-Identifier: GPL-2.0`（Linux の intel_acpi.c の生成物）。i915-old は kernel の build に入らない（image には無い）が tree に在る | 消す／GPL の file として tree に残す記録だけにする |
 
-2026-10-04 Q1 がユーザーに上げた（q668 の P2 の報告から）。
+2026-10-04 Q1 がユーザーに上げた（q668 の P2 の報告から）。ユーザーの判断（同日、原文）:「i915-oldはもう使っていないので削除です。remacsはuserland/base/emacsとして
+コピーを取り込み、作者としてzlibライセンスにします。特別扱いは不要です。」→ q669（P2）: `src/drivers/gpu/i915-old/` を削除。REmacs（1a72439）を
+`userland/base/emacs/` に取り込み（.git を除く。noct2 の patch は今の source には不要だった）、README の FSF と GPL の文を zlib の表示に、code の各 file の
+header に `SPDX-License-Identifier: Zlib`、`LICENSE` を置いた。取り込みの前の grep で FSF の著作権・GPL の文は README だけ（辞書と tools の GPL は
+「SKK-JISYO.L（GPL）を使わない」という説明）。package は `userland/base/emacs/Makefile`（名前 `remacs`・install の path は今のまま、REmacs 自身の
+Makefile は `Makefile.remacs`）、`userland/packages/editors/remacs` を削除。作った remacs.nap は git から取った前の build と byte で同じ。
+CI の config（clang・libcxx 抜き）の rootfs で `license-inventory.py --rootfs` の open は 0。ime-dict-ja はまだ REmacs の archive から辞書を取る
+（tree の `userland/base/emacs/dict` に替えるのは WS095 の持ち主の判断、残り）。
 
 ### 確かめて問題の無い物
 
