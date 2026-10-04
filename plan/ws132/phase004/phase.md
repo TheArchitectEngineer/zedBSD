@@ -129,3 +129,17 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 - Q-2: `kl_system_manager_v1` の version 5 を devices に（mount の request と new の bit）。WS113 の displays は version 6（WS113 の契約に記録済み）。
 - Q-3: 案 A（bar の媒体の icon・3 回の点滅・click で `files --devices`、Files の Devices と Today も 3 回点滅）。WS156 ができたら置き換えの候補。
 - Q-4 許可（`rc.conf`・init の service）。
+
+## 実装（2026-10-05、P2）その 1: kernel と volumed の核
+
+| 部分 | file |
+| --- | --- |
+| UAPI | `include/uapi/mount.h`（`MNT_NOEXEC`、`struct mount_args_owner` と `KERN_MOUNT_ARGS_VERSION_OWNER`・`KERN_MOUNT_ARGS_OWNER`）、`include/uapi/statvfs.h`（`ST_NOEXEC`） |
+| kernel | `src/kern/syscall.c`（mount の引数の version 1・2、`MNT_NOEXEC`）、`include/kern/mount.h`（`MOUNT_NOEXEC`、`fat_mount_args` の持ち主）、`src/kern/exec.c`（noexec の mount の file と interpreter を EACCES。新しい goto を使わず、既存の access の検査に足した）、`src/kern/mount.c`（statvfs の `ST_NOEXEC`）、`src/kern/vfs.c`（root の mount の引数を 0 で初期化）、`src/drivers/fs/fat.c`（持ち主の option で root・全 inode・作る file の既定の持ち主） |
+| mount(8) | `userland/base/mount/main.c`（`-o noexec`） |
+| volumed | `userland/base/volumed/`（`main.c`: 事象・300 ms の後の走査・socket・mount・eject・抜去の片付け、`names.c`: 名前・行・権限の規則、`volumed.h`、`volumed.service`、`Makefile`（default n、config で選ぶ））、`userland/base/etc/rc.conf`（enabled・optional） |
+| 試験 | `plan/ws132/tests/run-host-volumed.sh`・`host-volumed.c`（host）、`plan/ws132/tests/p004-guest.sh`・`config-amd64-p004.mk`（T1）、`userland/tests/volumectl/`（probe） |
+
+- 確認: `sh plan/ws132/tests/run-host-volumed.sh` PASS（ASan・UBSan: 名前 10、escape 4、行 8、権限 5、VOLUME の行 2）。build（warning 0）: amd64 vmunix（kernel include check PASS）、volumed・volumectl・mount。style-check: 新しい file は違反 0、exec.c は違反が 1 つ減った。
+- 未実施: QEMU（`p004-guest.sh`、FAT の stick の hotplug、kei の mount・書き込み・noexec・EBUSY の eject・抜去）。
+- 次: compositor の backend（`volume-zedbsd.c`）と `kl_system_devices_v1` の version 5、bar の媒体の icon（案 A）。
