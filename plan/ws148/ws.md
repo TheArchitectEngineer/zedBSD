@@ -30,6 +30,7 @@ Settings の Privacy の頁（今は stub）で何を設定すべきかを検討
   - 診断・crash の報告（zedBSD は外部へ送らない方針なら項目は不要）
 - 各項目について、今の zedBSD・Keiland に実体があるか、他の頁で足りるかを判定する。
 - 結論: (a) 設定すべき項目が無い → 頁を Settings から削除（pages.c の表、search の語、glyph）。(b) ある → 項目・保存先（desktop.conf・kl_settings_*）・compositor と app の口を設計し、実装の Phase を足す。
+- Security の頁（[WS149](../ws149/ws.md)）と項目を分け合う（重ねない）。p001 は WS149 の p001 と並べて行う。
 - 結論はユーザーに確かめてから (a) か (b) に進む（頁を消すのは利用者に見える変更）。
 
 ## Phase（案）
