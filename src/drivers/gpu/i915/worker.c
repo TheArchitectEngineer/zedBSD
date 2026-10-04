@@ -22,6 +22,7 @@
 
 #include "context.h"
 #include "device-info.h"
+#include "display/backlight.h"
 #include "display/present.h"
 #include "engine.h"
 #include "ggtt.h"
@@ -165,6 +166,10 @@ struct i915_worker_sync {
 
 	/* A presentation: the frame, read by the worker while the caller sleeps. */
 	const struct i915_worker_present *present;
+
+	/* A backlight item: whether it sets, and the brightness it sets or reads back (percent). */
+	int backlight_set;
+	uint32_t backlight_percent;
 
 	/* When the item was queued (drv_i915_perf_now()), for the context's queue and round times. */
 	uint64_t queued_at;
@@ -323,6 +328,9 @@ drv_i915_worker_serve(
 
 	kern_logf("i915: resident: GPU node published; serving (RCS0, one request at a time, woken by the engine interrupt) on cpu %u\n", (unsigned)hal_cpu_current());
 
+	/* The panel's light as /dev/backlight/backlight0, answered by this loop; the node works without it (a failure is logged). */
+	(void)drv_i915_display_backlight_register(device);
+
 	/*
 	 * Runs the queued work until a stop is asked for.  The first
 	 * presentation makes the loop return: the panel is lit and the display
@@ -373,6 +381,13 @@ drv_i915_worker_stop(
 	worker = device->worker;
 	if (worker == NULL)
 		return;
+
+	/*
+	 * The panel's light goes while the worker still serves: a request that
+	 * holds the backlight device waits for the worker, and none is queued
+	 * after this returns, so none waits for a worker that has left.
+	 */
+	drv_i915_display_backlight_unregister(device);
 
 	/* Marks the stop and wakes the worker to see it. */
 	irq = spin_lock_irqsave(&device->irq_lock);
@@ -709,6 +724,39 @@ drv_i915_worker_sync_display(
 		return error;
 
 	/* Succeeded: the panel shows the frame, or is given back. */
+	return 0;
+}
+
+/*
+ * Reads (set 0) or sets (set 1) the panel's brightness in percent and
+ * waits until the worker has done it.
+ *
+ * Returns 0 with the brightness in *percent, EBUSY while the panel is not
+ * lit by the driver (outside the display window, or HDMI in its place),
+ * ENODEV when the worker is not serving, or EIO.
+ */
+int
+drv_i915_worker_sync_backlight(
+	struct i915_device *device,
+	int set,
+	uint32_t *percent)
+{
+	struct i915_worker_sync item;
+	int error;
+
+	/* Describes the item. */
+	kern_memset(&item, 0, sizeof(item));
+	item.kind = I915_WORKER_SYNC_BACKLIGHT;
+	item.backlight_set = set;
+	item.backlight_percent = *percent;
+
+	/* Queues it and sleeps until the worker has done it. */
+	error = i915_worker_queue_sync(device, &item);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the brightness the panel has. */
+	*percent = item.backlight_percent;
 	return 0;
 }
 
@@ -1127,6 +1175,10 @@ i915_worker_run_sync_item(
 		error = EIO;
 		if (in_display)
 			error = drv_i915_present_blob_frame(device, item->present);
+		break;
+	case I915_WORKER_SYNC_BACKLIGHT:
+		/* The panel's light, which only the window's lit panel has. */
+		error = drv_i915_display_backlight_serve(device, in_display, item->backlight_set, &item->backlight_percent);
 		break;
 	default:
 		/* A release with the panel down (nothing to stop), or held for the next lease. */

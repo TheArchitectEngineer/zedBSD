@@ -666,6 +666,43 @@ int kl_backend_power_action(struct kl_backend *backend, unsigned action);
 
 
 /*
+ * The backlight (ws113-p013): the brightness of the machine's built-in
+ * panel, in percent (0 is the panel's lowest light, not off).  zedBSD
+ * reads and sets /dev/backlight/backlight0 (the GPU driver's panel, the
+ * device FreeBSD's backlight(9) also has); Linux and FreeBSD answer ENOTSUP
+ * until their sysfs and backlight(9) parts are written.  Nothing is kept
+ * between calls but the open device; the compositor calls these on its own
+ * thread, and a call waits for the driver (briefly).
+ */
+struct kl_backend_backlight;
+
+/*
+ * Opens the built-in panel's backlight.  Returns 0 with *backlight, ENOENT
+ * when the machine has none (no panel, or the driver does not light it),
+ * EACCES when the compositor may not set it, ENOTSUP, ENOMEM, or another
+ * errno value.
+ */
+int kl_backend_backlight_open(struct kl_backend_backlight **backlight);
+
+/*
+ * Reads the brightness into *percent.  Returns 0, EBUSY while the panel is
+ * not lit by the driver (before the compositor's first frame), EINVAL, or
+ * another errno value.
+ */
+int kl_backend_backlight_get(struct kl_backend_backlight *backlight, unsigned *percent);
+
+/*
+ * Sets the brightness (0..100).  Returns 0, EINVAL above 100, EBUSY as
+ * kl_backend_backlight_get, or another errno value.
+ */
+int kl_backend_backlight_set(struct kl_backend_backlight *backlight, unsigned percent);
+
+/*
+ * Closes the backlight.
+ */
+void kl_backend_backlight_close(struct kl_backend_backlight *backlight);
+
+/*
  * The account (ws160-p002): the password of the user the compositor runs
  * as.  zedBSD changes it with passwd (its batch mode, the passwords on a
  * pipe), which checks the current password and the system's rules and
