@@ -10,8 +10,8 @@
  *
  * Favorites are the home dashboard and the usual folders under the home
  * folder; Locations are the recent files, the trash and the computer's
- * root; Tags are the tags' colored dots.  A favorite whose folder does not
- * exist is kept (pale), so the sidebar keeps its shape on a new account.
+ * root.  A favorite whose folder does not exist is kept (pale), so the
+ * sidebar keeps its shape on a new account.
  */
 
 #include "files.h"
@@ -60,18 +60,14 @@ static int places_write(struct fm_places *places, int moved, int to, int removed
 
 /*
  * Fills the sidebar: Favorites (the home dashboard and the user's folders,
- * or the usual ones), Locations (recent files, the trash, the computer and
- * mounted volumes) and the tags.
+ * or the usual ones) and Locations (recent files, the trash, the computer
+ * and mounted volumes).
  */
 void
 fm_places_init(
 	struct fm_places *places,
-	const char *home,
-	const struct fm_tags *tags)
+	const char *home)
 {
-	struct fm_place *place;
-	int index;
-
 	/* The sidebar starts empty. */
 	memset(places, 0, sizeof(*places));
 
@@ -84,19 +80,6 @@ fm_places_init(
 	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_TRASH, "Trash", FM_LOCATION_TRASH, "");
 	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_COMPUTER, "Computer", FM_LOCATION_FOLDER, "/");
 	places_mounts(places);
-
-	/* Tags, each with its color. */
-	for (index = 0; index < tags->count; index++) {
-		place = places_add(places, FM_SECTION_TAGS, 0, tags->items[index].name, FM_LOCATION_TAG, tags->items[index].name);
-		if (place == NULL)
-			break;
-
-		/* Sidebar color retains the same tag identity used by its filter bit. */
-		place->color = tags->items[index].color;
-	}
-
-	/* Succeeded: the sidebar contains its ordered favorites, locations and tags. */
-	return;
 }
 
 /*
@@ -148,7 +131,7 @@ fm_places_remove_favorite(
 	if (removed < 0 || removed >= places->count)
 		return EINVAL;
 
-	/* Home, locations and tags do not belong to the persisted favorite-folder list. */
+	/* Home and the locations do not belong to the persisted favorite-folder list. */
 	if (places->items[removed].section != FM_SECTION_FAVORITES || places->items[removed].location.kind != FM_LOCATION_FOLDER)
 		return EINVAL;
 
@@ -219,9 +202,6 @@ fm_location_name(
 	case FM_LOCATION_TRASH:
 		/* The trash query is a named virtual location. */
 		return "Trash";
-	case FM_LOCATION_TAG:
-		/* A tag location already carries the displayed tag name. */
-		return location->path;
 	case FM_LOCATION_SEARCH:
 		/* The search query has a stable virtual-location name. */
 		return "Search";
@@ -246,65 +226,6 @@ fm_location_name(
 
 	/* Succeeded: the displayed folder name is its final path component. */
 	return slash + 1;
-}
-
-/*
- * Writes the names of the tags of a mask (the sidebar's tags in order,
- * bit n for the n-th), separated by commas.
- */
-void
-fm_tags_text(
-	struct fm_app *app,
-	unsigned tags,
-	char *text,
-	size_t length)
-{
-	const struct fm_place *place;
-	size_t used;
-	int number;
-	int index;
-	int written;
-
-	/* Each tag of the sidebar whose bit is set. */
-	text[0] = '\0';
-	used = 0;
-	number = 0;
-	for (index = 0; index < app->places.count; index++) {
-		place = &app->places.items[index];
-
-		/* Ordinary places do not consume a tag-filter bit. */
-		if (place->section != FM_SECTION_TAGS)
-			continue;
-
-		/* A tag in the mask is named, after a comma when others came before. */
-		if ((tags & (1U << number)) != 0U && used + 1U < length) {
-			/* Separates this selected name from names already written to the bounded output. */
-			if (used != 0U) {
-				written = snprintf(text + used, length - used, ", ");
-				if (written < 0)
-					return;
-
-				/* The formatted extent governs whether another name can fit. */
-				used += (size_t)written;
-			}
-
-			/* Appends only while the bounded destination still has room for a name. */
-			if (used < length) {
-				written = snprintf(text + used, length - used, "%s", place->label);
-				if (written < 0)
-					return;
-
-				/* Retains snprintf's full extent so truncation stops subsequent publication. */
-				used += (size_t)written;
-			}
-		}
-
-		/* The next tag of the sidebar has the next bit. */
-		number++;
-	}
-
-	/* Succeeded: selected tag names occupy the bounded caller buffer in sidebar order. */
-	return;
 }
 
 /* Adds a place to a section of the sidebar; NULL when the sidebar is full. */

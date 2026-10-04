@@ -7,8 +7,8 @@
 
 /*
  * The undo history of files (spec §31): what the window changed
- * (a move, a copy, a move to the trash, a put back, a rename, a new folder,
- * tags), newest last, with the paths needed to change it back.
+ * (a move, a copy, a move to the trash, a put back, a rename, a new
+ * folder), newest last, with the paths needed to change it back.
  *
  * A new change empties the redo history, as editors do.  What undoing
  * means for each kind is the actions' business (actions.c); here are only
@@ -25,7 +25,7 @@ static void undo_free_paths(char ***paths, size_t count);
 static void undo_drop_oldest(struct fm_undo_item *stack, int *count);
 
 /*
- * Records a change (its paths and tags are copied); the redo history is
+ * Records a change (its paths are copied); the redo history is
  * emptied.  A change that cannot be recorded (no memory) is not undoable.
  */
 void
@@ -34,9 +34,7 @@ fm_undo_push(
 	unsigned kind,
 	size_t count,
 	char *const *from,
-	char *const *to,
-	const unsigned *before,
-	const unsigned *after)
+	char *const *to)
 {
 	struct fm_undo_item item;
 	int error;
@@ -49,16 +47,6 @@ fm_undo_push(
 	error = undo_copy_paths(&item.from, from, count);
 	if (error == 0)
 		error = undo_copy_paths(&item.to, to, count);
-	if (error == 0 && before != NULL) {
-		item.before = malloc(count * sizeof(unsigned) + 1U);
-		item.after = malloc(count * sizeof(unsigned) + 1U);
-		if (item.before == NULL || item.after == NULL)
-			error = -1;
-		else {
-			memcpy(item.before, before, count * sizeof(unsigned));
-			memcpy(item.after, after, count * sizeof(unsigned));
-		}
-	}
 
 	/* A change that could not be copied is not recorded. */
 	if (error != 0) {
@@ -193,8 +181,6 @@ fm_undo_item_free(
 	/* The tables. */
 	free(item->from);
 	free(item->to);
-	free(item->before);
-	free(item->after);
 	undo_free_paths(&item->replaced, item->count);
 	memset(item, 0, sizeof(*item));
 }

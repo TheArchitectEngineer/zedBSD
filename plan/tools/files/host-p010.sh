@@ -8,7 +8,7 @@
 #  4. Two selected items (Makefile, then Ctrl+README.md); a press on a selected one keeps both, and the drag
 #     onto Documents in the sidebar moves both (multi.png: the count badge).
 #  5. README.md dragged onto the Trash in the sidebar goes to the trash.
-#  6. README.md dragged onto the first tag in the sidebar gets the tag.
+#  6. (A tag of the sidebar: removed with the tags, ws127-p012.)
 #  7. README.md dragged onto the other tab (Documents, opened by a middle click) moves there.
 #  8. Esc gives up a drag: nothing moves.
 #  9. Without a drag, a click on one of two selected items selects it alone; a drag of a folder onto the
@@ -64,7 +64,7 @@ holds() {
 	fi
 }
 
-# The items' places (icon view, one tab): docs, src, Makefile, README.md; the sidebar's Documents, Trash and first tag.
+# The items' places (icon view, one tab): docs, src, Makefile, README.md; the sidebar's Documents and Trash.
 docs=335,130
 src=447,130
 makefile=559,130
@@ -102,12 +102,6 @@ expect trash "DRAG target kind=trash$"
 expect trash "DRAG drop operation=trash items=1$"
 expect trash "TASK done id=[0-9]+ kind=trash state=done "
 holds trash "[ ! -e '$project/README.md' ]"
-
-# 6. A tag.
-run tag press=$readme drag=640,132 drag=118,441 release=118,441
-expect tag "DRAG target kind=tag tag=[A-Za-z]+$"
-expect tag "DRAG drop operation=tag items=1 tag=[A-Za-z]+$"
-expect tag "TAG tag=[A-Za-z]+ on=1 items=1"
 
 # 7. The other tab (Documents); with two tabs the items are 30 pixels lower.
 run tab middle=118,125 click=350,27 press=671,160 drag=640,162 drag=885,27 release=885,27 wait=400 wait=400

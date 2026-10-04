@@ -405,7 +405,6 @@ preview_one(
 	struct fm_rect box;
 	char modified[64];
 	char where[FM_PATH_MAX];
-	char tags[256];
 	char size[64];
 	int baseline;
 	int y;
@@ -439,12 +438,6 @@ preview_one(
 	y = preview_row(app, canvas, area, y, "Size", size);
 	y = preview_row(app, canvas, area, y, "Modified", modified);
 	y = preview_row(app, canvas, area, y, "Where", where);
-
-	/* Its tags, when it has any. */
-	if (entry->tags != 0U) {
-		fm_tags_text(app, entry->tags, tags, sizeof(tags));
-		y = preview_row(app, canvas, area, y, "Tags", tags);
-	}
 
 	/* Text shows its first lines under the information. */
 	if (app->peek.text != NULL)

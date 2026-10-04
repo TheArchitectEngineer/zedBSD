@@ -213,14 +213,12 @@ enum fm_undo_kind {
 	FM_UNDO_TRASH,
 	FM_UNDO_RESTORE,
 	FM_UNDO_RENAME,
-	FM_UNDO_NEW_FOLDER,
-	FM_UNDO_TAGS
+	FM_UNDO_NEW_FOLDER
 };
 
 /*
  * One change of the history: what it was and the paths it concerned, as
- * pairs (where from, where to).  For a rename, the old and the new path;
- * for tags, the path and the tags before and after in extra.  A copy or a
+ * pairs (where from, where to).  For a rename, the old and the new path.  A copy or a
  * move that replaced items keeps, per pair, where the replaced item went
  * in the trash (NULL for none; the table is NULL when nothing was
  * replaced), so that undo puts it back (ws035-p110).
@@ -230,8 +228,6 @@ struct fm_undo_item {
 	size_t count;
 	char **from;
 	char **to;
-	unsigned *before;
-	unsigned *after;
 	char **replaced;
 };
 
@@ -279,7 +275,7 @@ int fm_trash_of(const char *item, char *trash, size_t size);
 int fm_trash_list(char ***trashes, size_t *count);
 
 /* The undo history (undo.c). */
-void fm_undo_push(struct fm_undo *history, unsigned kind, size_t count, char *const *from, char *const *to, const unsigned *before, const unsigned *after);
+void fm_undo_push(struct fm_undo *history, unsigned kind, size_t count, char *const *from, char *const *to);
 void fm_undo_set_replaced(struct fm_undo *history, char *const *replaced, size_t count);
 void fm_undo_push_item(struct fm_undo *history, struct fm_undo_item *item);
 void fm_undo_push_redo(struct fm_undo *history, struct fm_undo_item *item);

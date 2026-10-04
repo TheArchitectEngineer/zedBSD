@@ -61,7 +61,7 @@
 
 /*
  * The colors of the interface (spec §38: quiet, color only for the
- * selection and the tags).
+ * selection).
  */
 #define FM_COLOR_BACKGROUND_TOP		FM_RGB(0xeef2f7)
 #define FM_COLOR_BACKGROUND_BOTTOM	FM_RGB(0xe6ebf3)
@@ -203,7 +203,6 @@ struct fm_entry {
 	int folder;
 	int link;
 	int child_count;
-	unsigned tags;
 	int selected;
 	int cut;
 };
@@ -231,13 +230,11 @@ enum fm_location_kind {
 	FM_LOCATION_FOLDER,
 	FM_LOCATION_RECENTS,
 	FM_LOCATION_TRASH,
-	FM_LOCATION_TAG,
 	FM_LOCATION_SEARCH
 };
 
 /*
- * A place a tab shows: its kind and its path (a folder), tag name or
- * query.
+ * A place a tab shows: its kind and its path (a folder) or query.
  */
 struct fm_location {
 	unsigned kind;
@@ -380,20 +377,18 @@ struct fm_tab {
  */
 enum fm_place_section {
 	FM_SECTION_FAVORITES,
-	FM_SECTION_LOCATIONS,
-	FM_SECTION_TAGS
+	FM_SECTION_LOCATIONS
 };
 
 /*
- * One place in the sidebar: its section, icon, label and where it leads.
- * color is a tag's; missing marks a favorite whose folder is not there.
+ * One place in the sidebar: its section, icon, label and where it leads;
+ * missing marks a favorite whose folder is not there.
  */
 struct fm_place {
 	unsigned section;
 	unsigned icon;
 	char label[64];
 	struct fm_location location;
-	fm_color color;
 	int missing;
 };
 
@@ -442,7 +437,6 @@ enum fm_column {
 	FM_COLUMN_SIZE,
 	FM_COLUMN_MODIFIED,
 	FM_COLUMN_CHANGED,
-	FM_COLUMN_TAGS,
 	FM_COLUMN_OWNER,
 	FM_COLUMN_LOCATION,
 	FM_COLUMN_DELETED,
@@ -553,31 +547,11 @@ struct fm_layout {
 	int sidebar_height;
 };
 
-/* How many tags the window knows at most. */
-#define FM_TAGS			16
-
 /* A search's longest query, how many words of a kind it keeps and how long a word is, and its most results. */
 #define FM_SEARCH_QUERY		256
 #define FM_SEARCH_WORDS		8
 #define FM_SEARCH_WORD		64
 #define FM_SEARCH_RESULTS	5000U
-
-/*
- * One tag the window knows: its name and color.
- */
-struct fm_tag {
-	char name[48];
-	fm_color color;
-};
-
-/*
- * The tags the window knows, in the sidebar's order (bit n of a tag mask
- * is the n-th).
- */
-struct fm_tags {
-	struct fm_tag items[FM_TAGS];
-	int count;
-};
 
 /*
  * A folder a search is walking: its open directory and its path.
@@ -588,7 +562,7 @@ struct search_walk {
 };
 
 /*
- * A search in progress: what it wants (names, extensions, kinds, tags),
+ * A search in progress: what it wants (names, extensions, kinds),
  * where it looks, and the folders it is walking.
  */
 struct fm_search {
@@ -597,8 +571,6 @@ struct fm_search {
 	int name_count;
 	char extensions[FM_SEARCH_WORDS][FM_SEARCH_WORD];
 	int extension_count;
-	unsigned tag_mask;
-	int unknown_tag;
 	unsigned categories;
 	char base[FM_PATH_MAX];
 	int hidden;
@@ -744,7 +716,7 @@ enum fm_checksum_state {
 /*
  * What the information card (Get Info) shows of one file or folder,
  * gathered when the card opens: its status as lstat sees it (and the
- * target of a link), its type, tags, extended attributes, and the ways it
+ * target of a link), its type, extended attributes, and the ways it
  * can be opened; its SHA-256 checksum is computed only when asked for, a
  * piece each round of the main loop.
  *
@@ -767,7 +739,6 @@ struct fm_info {
 	int child_count;
 	char target[FM_PATH_MAX];
 	const struct fm_mime *mime;
-	unsigned tags;
 	struct fm_attribute attributes[FM_INFO_ATTRIBUTES];
 	int attribute_count;
 	int attributes_more;
@@ -784,7 +755,7 @@ struct fm_info {
 /*
  * What the menus ask the window to do (ui-menu.c).  Each menu item
  * reports one; the ranges at the end carry an index (a list column, a way
- * to open the selection, a tag).
+ * to open the selection, an app to always open with, a place to move to).
  */
 enum fm_action {
 	FM_ACTION_NONE,
@@ -848,7 +819,6 @@ enum fm_action {
 	FM_ACTION_OPEN_IN_NEW_WINDOW,
 	FM_ACTION_COLUMN_FIRST = 100,
 	FM_ACTION_OPEN_WITH_FIRST = 200,
-	FM_ACTION_TAG_FIRST = 300,
 	FM_ACTION_ALWAYS_WITH_FIRST = 400,
 	FM_ACTION_USE_SYSTEM_DEFAULT = 450,
 	/* The context menu's Move To: the selection moved to the sidebar's place of this index (ws127-p002). */
@@ -883,10 +853,9 @@ enum fm_request {
 #define FM_CONTEXT_PLACE	2U
 #define FM_CONTEXT_DROP		3U
 
-/* What a drag of items is over (ui-drag.c): nothing that takes them, a folder, a tag's place, the Trash. */
+/* What a drag of items is over (ui-drag.c): nothing that takes them, a folder, the Trash. */
 #define FM_DRAG_NONE		0U
 #define FM_DRAG_FOLDER		1U
-#define FM_DRAG_TAG		2U
 #define FM_DRAG_TRASH		3U
 
 /* Also: the Favorites' title (the dragged folders are added), and a favorite that a dragged favorite goes to. */
@@ -926,7 +895,7 @@ struct fm_context {
 /*
  * What the menus show of the window's state: which items do something now,
  * which are checked, and the names of the variable items (the ways to open
- * the selection, the tags).  menu.c sends it to zdesktop when it differs
+ * the selection).  menu.c sends it to zdesktop when it differs
  * from what the menus show.
  */
 struct fm_menu_state {
@@ -950,9 +919,6 @@ struct fm_menu_state {
 	int opener_count;
 	char openers[FM_OPENERS][FM_OPENER_NAME];
 	int user_default;
-	int tag_count;
-	char tags[FM_TAGS][48];
-	unsigned tags_checked;
 };
 
 /*
@@ -1138,7 +1104,7 @@ struct fm_app {
 	 * whole selection can be dragged; whether the drag has started, how many
 	 * items it carries (or the favorite dragged in the sidebar, else -1),
 	 * and its target (FM_DRAG_*) with the region under the pointer and the
-	 * folder or tag it stands for.
+	 * folder it stands for.
 	 */
 	int press_x;
 	int press_y;
@@ -1150,7 +1116,6 @@ struct fm_app {
 	unsigned drag_target;
 	unsigned drag_hit_kind;
 	int drag_hit_index;
-	int drag_tag;
 	char drag_folder[FM_PATH_MAX];
 
 	/*
@@ -1244,9 +1209,6 @@ struct fm_app {
 	/* The paths to select once the folder is read again (a finished task's outcome). */
 	char **select_paths;
 	size_t select_count;
-
-	/* The tags the window knows. */
-	struct fm_tags tags;
 
 	/* The search: the field, when it was last typed in (0 when the search is up to date), the scope, the folder it was started from, and the walk. */
 	struct fm_field search_field;
@@ -1443,16 +1405,9 @@ unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
 void fm_field_insert(struct fm_field *field, const char *text, size_t length);
 void fm_field_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_field *field, const struct fm_rect *rect, unsigned pixels, const char *placeholder);
 
-/* The tags (tags.c). */
-void fm_tags_load(struct fm_tags *tags);
-unsigned fm_tags_of(const struct fm_tags *tags, const char *path);
-int fm_tags_write(const struct fm_tags *tags, const char *path, unsigned mask);
-int fm_tags_paths(const struct fm_tags *tags, int tag, char ***paths, size_t *count);
-int fm_tags_find(const struct fm_tags *tags, const char *name);
-
 /* The search (search.c). */
-void fm_search_start(struct fm_search *search, const struct fm_tags *tags, const char *query, const char *base, int hidden);
-int fm_search_step(struct fm_search *search, const struct fm_tags *tags, struct fm_listing *listing, uint64_t budget_ms);
+void fm_search_start(struct fm_search *search, const char *query, const char *base, int hidden);
+int fm_search_step(struct fm_search *search, struct fm_listing *listing, uint64_t budget_ms);
 void fm_search_stop(struct fm_search *search);
 
 /* The home dashboard (ui-home.c). */
@@ -1485,7 +1440,6 @@ void fm_action_rename_begin(struct fm_app *app);
 void fm_action_rename_end(struct fm_app *app, int commit);
 void fm_action_undo(struct fm_app *app, int redo);
 void fm_action_cancel_task(struct fm_app *app, int index);
-void fm_action_toggle_tag(struct fm_app *app, int tag);
 void fm_action_add_favorite(struct fm_app *app);
 int fm_action_transfer(struct fm_app *app, unsigned kind, char *const *paths, size_t count, const char *destination);
 void fm_action_collision(struct fm_app *app, unsigned answer);
@@ -1562,7 +1516,7 @@ int fm_apps_launch(const struct fm_opener *opener, const char *path);
 int fm_apps_spawn(char *const arguments[]);
 
 /* What the information card shows of a file (info.c). */
-int fm_info_gather(struct fm_info *info, const char *path, const struct fm_tags *tags);
+int fm_info_gather(struct fm_info *info, const char *path);
 int fm_info_checksum_start(struct fm_info *info);
 int fm_info_checksum_step(struct fm_info *info, uint64_t budget_ms);
 void fm_info_release(struct fm_info *info);
@@ -1620,11 +1574,10 @@ void fm_help_close(struct fm_app *app);
 void fm_help_draw(struct fm_app *app, struct fm_canvas *canvas);
 
 /* The sidebar's places (places.c). */
-void fm_places_init(struct fm_places *places, const char *home, const struct fm_tags *tags);
+void fm_places_init(struct fm_places *places, const char *home);
 int fm_places_add_favorite(struct fm_places *places, const char *path);
 int fm_places_remove_favorite(struct fm_places *places, int removed);
 int fm_places_move_favorite(struct fm_places *places, int moved, int to);
 const char *fm_location_name(const struct fm_location *location, const char *home);
-void fm_tags_text(struct fm_app *app, unsigned tags, char *text, size_t length);
 
 #endif

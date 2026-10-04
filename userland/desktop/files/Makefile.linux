@@ -26,7 +26,6 @@ KEILAND_LINUX_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/clip.c \
 	userland/desktop/files/actions.c \
 	userland/desktop/files/ui-overlay.c \
-	userland/desktop/files/tags.c \
 	userland/desktop/files/search.c \
 	userland/desktop/files/ui-search.c \
 	userland/desktop/files/ui-home.c \

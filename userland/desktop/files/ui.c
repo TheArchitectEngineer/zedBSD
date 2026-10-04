@@ -97,7 +97,6 @@ fm_app_init(
 	app->hover_index = -1;
 	app->press_index = -1;
 	app->drag_hit_index = -1;
-	app->drag_tag = -1;
 	app->drag_place = -1;
 	app->drop_part = -1;
 	snprintf(app->wallpaper, sizeof(app->wallpaper), "%s", FM_WALLPAPER);
@@ -134,8 +133,7 @@ fm_app_init(
 	snprintf(app->home, sizeof(app->home), "%s", home);
 
 	/* The sidebar. */
-	fm_tags_load(&app->tags);
-	fm_places_init(&app->places, app->home, &app->tags);
+	fm_places_init(&app->places, app->home);
 
 	/* The first tab. */
 	app->tabs[0] = calloc(1, sizeof(*app->tabs[0]));
@@ -708,11 +706,9 @@ fm_ui_reload(
 		fm_search_load(app, tab);
 	}
 
-	/* The items in the window's order (the recent files stay newest first), with their tags, the cut ones marked. */
+	/* The items in the window's order (the recent files stay newest first), the cut ones marked. */
 	if (location->kind != FM_LOCATION_RECENTS)
 		fm_dir_sort(&tab->listing, app->sort, app->sort_reverse);
-	for (index = 0; index < tab->listing.count; index++)
-		tab->listing.entries[index].tags = fm_tags_of(&app->tags, tab->listing.entries[index].path);
 	ui_mark_cut(tab);
 
 	/* Nothing has the cursor yet, and the folder was just checked. */
@@ -892,13 +888,13 @@ ui_layout(
 	layout->content.height -= row;
 }
 
-/* Draws the sidebar: Favorites, Locations and Tags, the place shown lit. */
+/* Draws the sidebar: Favorites and Locations, the place shown lit. */
 static void
 ui_draw_sidebar(
 	struct fm_app *app,
 	struct fm_canvas *canvas)
 {
-	static const char *const titles[] = { "Favorites", "Locations", "Tags" };
+	static const char *const titles[] = { "Favorites", "Locations" };
 	const struct fm_rect *panel;
 	const struct fm_place *place;
 	struct fm_rect row;
@@ -965,12 +961,8 @@ ui_draw_sidebar(
 			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_HOVER);
 		}
 
-		/* The icon, or a tag's dot. */
-		if (place->section == FM_SECTION_TAGS) {
-			fm_icon_tag(canvas, (float)row.x + 17.0f, (float)row.y + UI_SIDEBAR_ROW * 0.5f, 5.0f, place->color);
-		} else {
-			fm_icon_draw(canvas, (enum fm_icon)place->icon, (float)row.x + 8.0f, (float)row.y + 6.0f, 18.0f, ink);
-		}
+		/* The icon. */
+		fm_icon_draw(canvas, (enum fm_icon)place->icon, (float)row.x + 8.0f, (float)row.y + 6.0f, 18.0f, ink);
 
 		/* The label. */
 		(void)fm_text_draw_fit(app->text, canvas, row.x + 36, fm_text_center(UI_TEXT_SIDEBAR, row.y, row.height), place->label, UI_TEXT_SIDEBAR, current, row.width - 44, ink);
@@ -1052,8 +1044,6 @@ ui_location_kind_name(
 		return "recents";
 	case FM_LOCATION_TRASH:
 		return "trash";
-	case FM_LOCATION_TAG:
-		return "tag";
 	case FM_LOCATION_SEARCH:
 		return "search";
 	default:

@@ -25,7 +25,6 @@
 
 /* The submenus' numbers, past any row's. */
 #define CONTEXT_OPEN_WITH	100U
-#define CONTEXT_TAGS		101U
 #define CONTEXT_VIEW		102U
 #define CONTEXT_SORT		103U
 #define CONTEXT_ALWAYS_WITH	104U
@@ -211,7 +210,6 @@ context_items(
 {
 	int single;
 	int folder;
-	int checked;
 	int openable;
 	int index;
 
@@ -258,16 +256,6 @@ context_items(
 	context_add(context, 0U, FM_ROW_ITEM, "Rename", FM_ACTION_RENAME, single);
 	context_add(context, 0U, FM_ROW_ITEM, "Duplicate", FM_ACTION_DUPLICATE, 1);
 	context_move_to(app, context);
-
-	/* The tags, each checked when every selected item has it. */
-	context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
-	context_submenu(context, CONTEXT_TAGS, "Tags", state->tag_count > 0);
-	for (index = 0; index < state->tag_count; index++) {
-		checked = 0;
-		if ((state->tags_checked & (1U << index)) != 0U)
-			checked = 1;
-		context_check(context, CONTEXT_TAGS, state->tags[index], FM_ACTION_TAG_FIRST + (unsigned)index, checked);
-	}
 
 	/* The information (on the desktop, which has no card for it: the desktop's folder in Files), and the trash. */
 	context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
@@ -573,7 +561,7 @@ context_move(
 	fm_paths_free(paths, count);
 }
 
-/* Adds a row that can be checked (a view, an order, a tag), checked or not. */
+/* Adds a row that can be checked (a view, an order), checked or not. */
 static void
 context_check(
 	struct fm_context *context,

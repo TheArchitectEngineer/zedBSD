@@ -9,7 +9,7 @@
  * What the menus of files do (spec §36, §37): the action each
  * item reports, carried out on the window, and the state the menus show
  * (which items do something now, which are checked, the names of the ways
- * to open the selection and of the tags).
+ * to open the selection).
  *
  * zdesktop draws the menus and sends the actions (menu.c); this part knows
  * nothing of Wayland, so the host's tests drive it directly.  The keys
@@ -27,7 +27,6 @@
 static void menu_go_folder(struct fm_app *app, const char *name);
 static void menu_go_kind(struct fm_app *app, unsigned kind, const char *path);
 static void menu_openers(struct fm_app *app, struct fm_menu_state *state);
-static void menu_tags(struct fm_app *app, struct fm_menu_state *state);
 static int menu_in_field(struct fm_app *app);
 static void menu_always(struct fm_app *app, int item, int opener);
 static void menu_system_default(struct fm_app *app, int item);
@@ -74,12 +73,6 @@ fm_ui_action(
 	if (action == FM_ACTION_USE_SYSTEM_DEFAULT) {
 		item = fm_preview_item(app);
 		menu_system_default(app, item);
-		return;
-	}
-
-	/* A tag put on the selection or taken off. */
-	if (action >= FM_ACTION_TAG_FIRST && action < FM_ACTION_TAG_FIRST + FM_TAGS) {
-		fm_action_toggle_tag(app, (int)(action - FM_ACTION_TAG_FIRST));
 		return;
 	}
 
@@ -296,9 +289,8 @@ fm_ui_menu_state(
 	state->preview = app->show_preview;
 	state->hidden = app->show_hidden;
 
-	/* The ways to open the selection, and the tags. */
+	/* The ways to open the selection. */
 	menu_openers(app, state);
-	menu_tags(app, state);
 }
 
 /* Goes to a folder under the home folder by its name, saying so when it is not there. */
@@ -388,36 +380,6 @@ menu_openers(
 	state->user_default = app->menu_user_default;
 	for (index = 0; index < app->menu_opener_count; index++)
 		snprintf(state->openers[index], sizeof(state->openers[index]), "%s", app->menu_openers[index].name);
-}
-
-/* Fills the tags' names, each checked when every selected item has it. */
-static void
-menu_tags(
-	struct fm_app *app,
-	struct fm_menu_state *state)
-{
-	struct fm_tab *tab;
-	unsigned common;
-	size_t index;
-	int tag;
-
-	/* The tags the window knows. */
-	state->tag_count = app->tags.count;
-	for (tag = 0; tag < app->tags.count; tag++)
-		snprintf(state->tags[tag], sizeof(state->tags[tag]), "%s", app->tags.items[tag].name);
-
-	/* The tags every selected item has. */
-	if (state->selection == 0)
-		return;
-	tab = fm_ui_tab(app);
-	common = ~0U;
-	for (index = 0; index < tab->listing.count; index++) {
-		if (tab->listing.entries[index].selected != 0)
-			common &= tab->listing.entries[index].tags;
-	}
-
-	/* Those are checked. */
-	state->tags_checked = common;
 }
 
 /* Tells whether the keyboard types into a text field. */

@@ -8,7 +8,7 @@
 /*
  * What the information card (Get Info, spec §21) shows of one file or
  * folder: its status as lstat sees it, the target of a link, its type,
- * tags, extended attributes and the ways it can be opened, and, when asked
+ * extended attributes and the ways it can be opened, and, when asked
  * for, its SHA-256 checksum.
  *
  * The checksum of a large file takes a while, so it is computed a piece at
@@ -57,8 +57,7 @@ static char info_type_letter(mode_t mode);
 int
 fm_info_gather(
 	struct fm_info *info,
-	const char *path,
-	const struct fm_tags *tags)
+	const char *path)
 {
 	struct stat status;
 	struct stat followed;
@@ -117,8 +116,7 @@ fm_info_gather(
 		info->mime = fm_mime_sniff(path, info->mime);
 	}
 
-	/* Its tags and its extended attributes. */
-	info->tags = fm_tags_of(tags, path);
+	/* Its extended attributes. */
 	info_attributes(info);
 
 	/* The ways a file can be opened (a folder opens in the window). */

@@ -10,7 +10,7 @@
  * --desktop, ws094-p005, plan/ws094/design.md §4).
  *
  * Most actions are the file manager's own (fm_ui_action: the ways to
- * open, the clipboard, Duplicate, the tags, the trash, New Folder, undo);
+ * open, the clipboard, Duplicate, the trash, New Folder, undo);
  * the desktop carries out itself what differs from a window: Open (a
  * folder opens in a new Files window, not in place), the change of a name
  * (the item keeps its cell under its new name), Show in Files, Clean Up
