@@ -256,9 +256,9 @@ volumed_subscribe(
 	if (descriptor < 0)
 		return -1;
 
-	/* The disks' events. */
+	/* The disks' events, and the USB devices' (a stick pulled out while mounted goes as a USB device). */
 	memset(&subscription, 0, sizeof(subscription));
-	subscription.classes = KERN_SYSTEM_EVENT_DISK;
+	subscription.classes = KERN_SYSTEM_EVENT_DISK | KERN_SYSTEM_EVENT_USB;
 	status = ioctl(descriptor, KERN_SYSTEM_EVENT_SUBSCRIBE, &subscription);
 	if (status != 0) {
 		(void)close(descriptor);
@@ -285,12 +285,13 @@ volumed_events(
 		if (count <= 0)
 			return;
 
-		/* A disk added or removed, or events lost: the disks are looked at again once quiet. */
+		/* A disk or a USB device added or removed, or events lost: the disks are looked at again once quiet. */
 		for (index = 0U; index < (size_t)count / sizeof(records[0]); index++) {
 			if (records[index].class_bit != KERN_SYSTEM_EVENT_DISK &&
+			    records[index].class_bit != KERN_SYSTEM_EVENT_USB &&
 			    records[index].class_bit != KERN_SYSTEM_EVENT_OVERFLOW)
 				continue;
-			fprintf(stderr, "VOLUMED EVENT disk=%s action=%u\n", records[index].subject, records[index].action);
+			fprintf(stderr, "VOLUMED EVENT class=0x%x subject=%s action=%u\n", records[index].class_bit, records[index].subject, records[index].action);
 			*due = volumed_now_ms() + VOLUMED_SETTLE_MS;
 		}
 	}
