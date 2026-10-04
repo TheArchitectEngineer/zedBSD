@@ -473,6 +473,66 @@ drv_i915_device_stop(
 }
 
 /*
+ * Lets the GT go idle for a park of the request worker (ws052-p009).
+ *
+ * The worker's thread calls it once it has nothing running: the RPS
+ * evaluations stop and every forcewake domain the published node held is
+ * given back, so that the GT can drop into RC6.  The domains held are kept
+ * in gt->forcewake_parked for drv_i915_device_unpark_gt().
+ */
+void
+drv_i915_device_park_gt(
+	struct i915_device *device)
+{
+	struct i915_gt *gt;
+
+	/* The GT the device runs. */
+	gt = &device->gt;
+
+	/* Stops the RPS interrupts and work while the domains are still held. */
+	drv_i915_rps_stop(&gt->init.rps);
+
+	/* Gives the domains back; forcewake_parked says which to take again. */
+	gt->forcewake_parked = gt->forcewake_held;
+	i915_forcewake_put_all(gt, gt->forcewake_held);
+	gt->forcewake_held = 0U;
+	kern_logf("i915: park: the GT may idle (RPS stopped, %u forcewake domains given back)\n", gt->forcewake_parked);
+}
+
+/*
+ * Wakes the GT again after a park: takes the forcewake domains back and
+ * starts the RPS evaluations.  It reports the forcewake's error, with the
+ * domains it could take held.
+ */
+int
+drv_i915_device_unpark_gt(
+	struct i915_device *device)
+{
+	struct i915_gt *gt;
+	unsigned held;
+	int error;
+
+	/* The GT the device runs. */
+	gt = &device->gt;
+
+	/* Takes every domain again, as the published node held them. */
+	error = i915_forcewake_get_all(gt, &held);
+	gt->forcewake_held = held;
+	gt->forcewake_parked = 0U;
+	if (error != 0) {
+		kern_logf("i915: unpark: forcewake failed (%d, %u domains held)\n", error, held);
+		return error;
+	}
+
+	/* Lets the GT frequency follow the load again. */
+	(void)drv_i915_rps_start(&gt->init.rps, &gt->irq, &gt->mmio);
+
+	/* Succeeded: the GT serves again. */
+	kern_logf("i915: unpark: the GT serves again (%u forcewake domains)\n", held);
+	return 0;
+}
+
+/*
  * Tells the kernel that the device's GPU node is published or will never be.
  *
  * The graphical login stops waiting for the node once no device counts as
