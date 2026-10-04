@@ -46,6 +46,7 @@
 ## 2. 方針の要点
 
 0. **scanout の規則（2026-10-04 ユーザー「GPUドライバはGOPの出力先以外に、scanoutを開始しない.というルールを覚えておいてください。」、Guardrail）**: nvrtx は UEFI の GOP の出力先（GOP が点けた head と connector）以外に scanout を始めない。P8 の自前の surface（判断の項目 7）は同じ出力先に限る。別の connector への出力は compositor の明示の指示がある時だけ。
+   補い（2026-10-04 ユーザー「GPUドライバは、GOPの出力先であれば、scanoutできるようにどのインタフェースでも初期化を試みる、もまた真です。HDMIにせよDPにせよeDPにせよ。」）: GOP の出力先が DP・HDMI・DVI・USB-C（DP alt mode）のどれでも、その出力先で scanout できるよう初期化を試みる（P8 で RM に GOP の head・SOR・connector の種類を聞き、その種類の道を使う）。対応できない場合は log に出して GOP の画面を保つ（GSP の起動で GOP の画面が失われる場合は、その出力先の対応が P8 にあることを GSP の起動の前提にする）。
 1. **GSP-RM の道だけを作る**（判断の項目 3）。Turing は GSP 無しでも nouveau で動くが、GSP 無しの道は clock の管理（reclocking）を持たない見込み（推論、未確認）なので、GSP の道を取る。nouveau で GSP が必須なのは GA100・Ada・Hopper・Blackwell（GA10x と Turing は任意、7 節の表）。**Ampere・Ada は同じ booter 型の起動**（SEC2 の booter と VBIOS の FWSEC）なので Turing の道の延長になるが、**Blackwell（と範囲の外の Hopper）は別の起動の仕組み**（FMC 型の firmware）で、Turing の P1・P2 の段を作り直す（7 節）。
 2. **firmware の版は 570.144 に固定**（判断の項目 4）。RPC の struct は版ごとに変わるので、版を混ぜない。struct の定義は open-gpu-kernel-modules 570.144（MIT）から取る。
 3. **WPR2 を張る前に、失敗しうる準備を全部済ませる**（H4）。P1c（FWSEC-FRTS）の前に、firmware の file の読み込みと検査（大きさ・header・ELF の section、`gsp-570.144.bin` は約 28.5 MB）、GSP に渡す DMA の memory の確保（firmware の page・page table・args・log・queue）、FWSEC-SB の ucode の取り出し、WPR2 の配置の計算を終える。準備のどれかが失敗したら hardware に書かずに止まる。firmware は `/lib/firmware` から読むので、**GSP の起動は root の mount の後に非同期**で行う（attach の時は N0・N1 だけ）。
