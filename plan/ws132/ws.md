@@ -9,7 +9,7 @@ Related Milestones: MG003、MG004
 Objectives: O2, O3
 Parent: [Master](../master.md)
 Queue: none
-Resume point: p001（設計）。**ベータ1 に入れる**（2026-10-04 ユーザーの決定。機能の締切は 10/13）。
+Resume point: p001（設計）。**ベータ1 に入れる、範囲は全部**（2026-10-04 ユーザーの決定「全部をベータ1 に」: 電源管理・PnP の通知・自動 mount・eject。機能の締切は 10/13。間に合わない所はその時にユーザーと削る）。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-03 ユーザー）

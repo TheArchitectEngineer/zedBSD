@@ -52,6 +52,14 @@
 <!-- master:focus:start -->
 - **fg019 ベータ1 のリリース（公開 2026-10-17、RC の commit 10/13 が事実上の機能の締切、名前「Kei/zedBSD 1.0.0 Beta 1」、版 1.0.0-beta1）**。決定は [ws129/release.md](ws129/release.md) の §9。内容は下の「Current Focused Goals」。
 - fg018 Linux 標準 GTK4（WS114 は p007・p008 まで達成、GTK4 の zedBSD 移植 WS115 は後回し）。
+- **17 時（2026-10-04、利用枠の回復）からの候補**（Q1 の案。担当の数 N はユーザーが決める。上ほど優先）:
+  1. [WS132](ws132/ws.md) 全部をベータ1 に（ユーザー「全部をベータ1 に」、10/13 の締切）: p001 設計（kernel-and-driver-designer）→ 実装。間に合わない所はその時にユーザーと削る。
+  2. UAT（[uat.md](uat.md)）で出た不具合の直し。
+  3. [WS129](ws129/ws.md) p003（版 1.0.0-beta1・名前）→ p004（release の構成: zedinst を外す・root の lock・SHA256SUMS と LICENSES.md）→ p005（`docs/release/` に英語の notes）。決定は release.md §9。
+  4. ws131-p014 の残り（phase014 の Resume）と [test-queue](test-queue.md) の TQ-1 の残り → ws131-p026（header の整理）。
+  5. [WS138](ws138/ws.md)（PNG・JPEG の背景）: 着手前に phase.md を判断に合わせて直す。
+  6. [WS139](ws139/ws.md) p001（性能の基準の計測、E1）、[WS140](ws140/ws.md)（ld.so の上限、U3 で範囲を広げてから）。
+  7. [WS080](ws080/ws.md) p004 の続き。
 <!-- master:focus:end -->
 
 <!-- master:blocked:start -->
@@ -61,7 +69,6 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
-- **WS132 をベータ1 に入れる（2026-10-04 決定）が、設計（p001）から未着手で、10/13 の締切まで余裕が少ない。範囲を絞る（例: 自動 mount と eject だけ）か締切を動かすか。**
 - WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
 - host の sysctl の設定を `/etc/sysctl.d` に残すか。
 - docs/ の本文に残る Plan の ID の記述を消すか。
