@@ -2,7 +2,7 @@
 
 # ws122-p001: 要件・設計、libavcodec の package と license の監査
 
-Status: in-progress（2026-10-05、P2。package の build まで済み、判定は Q1）
+Status: cleared（2026-10-05 Q1: libavcodec の package（FFmpeg 9.0.2、署名を確かめ、LGPL の構成）が build でき、release の license の gate が rc=0（22e61acc）、player の試験（T1-133）で decode が動く）。以前: in-progress（2026-10-05、P2。package の build まで済み、判定は Q1）
 Disposition: normal
 Parent: [WS122](../ws.md)
 Queue: Q1 の指示（2026-10-05、ベータ1 に libavcodec と簡単な player を入れるユーザーの決定の後）
@@ -33,3 +33,7 @@ Queue: Q1 の指示（2026-10-05、ベータ1 に libavcodec と簡単な player
 
 - `make ... libavcodec`（clang 抜きの CI の config、worktree の build）exit 0。警告は FFmpeg の source のもの（2083、外部）。`check-dynamic-elf.py` の 2 つの確かめ PASS。
 - 未実施: image に入れての動作（p002 の player と一緒に T1）。CI（`.github/workflows/ci.yml`・`release.yml`）の apt に `nasm` が要る（Q1 に依頼）。config（CI・release）に `libavcodec` と player を足すのは Q1 と。
+
+## Q1 の判定（2026-10-05）
+
+libavcodec の package（FFmpeg 9.0.2、署名を確かめ、LGPL の構成）が build でき、release の license の gate が rc=0（22e61acc）、player の試験（T1-133）で decode が動く。**cleared**。実機は未実施。

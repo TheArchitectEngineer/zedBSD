@@ -2,7 +2,7 @@
 
 # ws122-p002: 簡単な動画 player（開く・再生・一時停止・停止・シーク）
 
-Status: in-progress（2026-10-05、P2。実装と build まで済み、QEMU の試験は T1 に依頼、判定は Q1）
+Status: cleared（2026-10-05 Q1: T1-133 の videoplayer-p002.sh PASS（音の peak=4657、絵・一時停止・シーク・終わり・閉じる）、T1-123 の playing.png を Q1 が目視）。以前: in-progress（2026-10-05、P2。実装と build まで済み、QEMU の試験は T1 に依頼、判定は Q1）
 Disposition: normal
 Parent: [WS122](../ws.md)
 Queue: Q1 の指示（2026-10-05、ベータ1 の RC 10/13 までに簡単な player、ユーザーの決定）
@@ -58,3 +58,7 @@ Queue: Q1 の指示（2026-10-05、ベータ1 の RC 10/13 までに簡単な pl
 ## T1-128（2026-10-05）
 
 - 音は直った（`AUDIO error=0`、`audio=aac`、録音の peak=4134）。残りは `FRAMES shown=100` が待ちの内に出ない 1 行だけ: v.log では `FRAMES shown=100 time_ms=13040`（seek の後）。Venus の guest では 1 秒に 25 枚より少なく表示され（時計に遅れた絵は飛ばす）、100 枚に届くのが遅い。試験は shown=100 を待たず、一時停止の行（`PAUSE shown= time_ms=`）で 10 枚以上・1 秒以上進んだことを見るようにした。player は変えない。
+
+## Q1 の判定（2026-10-05）
+
+T1-133 の videoplayer-p002.sh PASS（音の peak=4657、絵・一時停止・シーク・終わり・閉じる）、T1-123 の playing.png を Q1 が目視。**cleared**。実機は未実施。
