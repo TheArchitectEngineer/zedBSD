@@ -24,6 +24,9 @@
 #include "bsp-pcat/acpi.h"
 #include "bsp-pcat/lapic.h"
 
+/* The version, from VERSION (ws129-p003). */
+#include "zedbsd-version.h"
+
 void prekern_amd64_page_init(void);
 void prekern_amd64_range_page_init(void);
 void prekern_amd64_int_init(void);
@@ -47,7 +50,8 @@ prekern_amd64_cmain(
 	amd64_cpu_init();
 	prekern_amd64_percpu_bootstrap();
 
-	hal_puts("\nzedBSD amd64 HAL\n");
+	hal_puts("\nzedBSD " ZEDBSD_VERSION "\n");
+	hal_puts("zedBSD amd64 HAL\n");
 	hal_puts("A64 ENTRY PASS\n");
 
 	/* Fixes where the image is before anything converts its addresses. */

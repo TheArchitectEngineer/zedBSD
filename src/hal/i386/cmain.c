@@ -18,6 +18,9 @@
 #include "irq.h"
 #include "space.h"
 
+/* The version, from VERSION (ws129-p003). */
+#include "zedbsd-version.h"
+
 void i386_page_init(void);
 void i386_int_init(void);
 void kernel_entry(const void *handoff);
@@ -39,11 +42,11 @@ cmain(
 #if defined(HAL_BOARD_PC98)
 	hal_puts("NEC PC-9800 ｼﾘｰｽﾞ ﾊﾟｰｿﾅﾙ ｺﾝﾋﾟｭｰﾀ\n\n");
 #else
-	hal_puts("\nzedBSD 0.0.1\n"
+	hal_puts("\nzedBSD " ZEDBSD_VERSION "\n"
 	    "Copyright (C) 2005, 2026, Awe Morris.\n\n");
 #endif
 #if defined(HAL_BOARD_PC98)
-	hal_puts("zedBSD ｵﾍﾟﾚｰﾃｨﾝｸﾞ ｼｽﾃﾑ ﾊﾞｰｼﾞｮﾝ 0.0.1\n"
+	hal_puts("zedBSD ｵﾍﾟﾚｰﾃｨﾝｸﾞ ｼｽﾃﾑ ﾊﾞｰｼﾞｮﾝ " ZEDBSD_VERSION "\n"
 	    "Copyright (C) 2005, 2026, Awe Morris.\n\n");
 #endif
 

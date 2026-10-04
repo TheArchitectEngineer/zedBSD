@@ -790,6 +790,49 @@ ZEDBSD_XZED_SESSION_FILES := $(if $(filter zwm,$(ZEDBSD_USER_PROGRAMS)),\
 ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_XZED_SESSION_INPUTS)
 ZEDBSD_PACKAGE_FILES += $(ZEDBSD_XZED_SESSION_FILES)
 
+# The version (ws129-p003): VERSION, at the top of the tree, is its one
+# source (1.0.0-beta1).  The kernel's banner shows it (zedbsd-version.h,
+# rewritten only when VERSION changes, so a commit does not relink the
+# kernel).  Every root carries /etc/os-release with the name, the version
+# and, for uname (libc reads the file), the release: the version itself in a
+# release build (ZEDBSD_RELEASE_BUILD=y, the release job's), the version and
+# the source's revision otherwise (1.0.0-beta1+g1a2b3c4; +unknown without
+# git).  Both files are rewritten only when their text changes.
+ZEDBSD_VERSION := $(strip $(shell cat VERSION 2>/dev/null))
+ifeq ($(shell printf '%s\n' '$(ZEDBSD_VERSION)' | grep -Ex '[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+(\.[a-z0-9]+)*)?'),)
+$(error VERSION must hold one version such as 1.0.0-beta1, not '$(ZEDBSD_VERSION)')
+endif
+ZEDBSD_RELEASE_BUILD ?= n
+ZEDBSD_SOURCE_REVISION := $(or $(shell git rev-parse --short=7 HEAD 2>/dev/null),unknown)
+ZEDBSD_SOURCE_DATE := $(or $(shell git log -1 --format=%cs 2>/dev/null),unknown)
+ZEDBSD_RELEASE := $(ZEDBSD_VERSION)$(if $(filter y,$(ZEDBSD_RELEASE_BUILD)),,+$(patsubst %,g%,$(filter-out unknown,$(ZEDBSD_SOURCE_REVISION)))$(filter unknown,$(ZEDBSD_SOURCE_REVISION)))
+ZEDBSD_VERSION_NAME := $(shell printf '%s\n' '$(ZEDBSD_VERSION)' | sed -e 's/-beta\([0-9][0-9]*\)/ Beta \1/' -e 's/-rc\([0-9][0-9]*\)/ RC \1/' -e 's/\.dev$$/ (development)/')
+ZEDBSD_VERSION_HEADER := $(BUILD)/gen/zedbsd-version.h
+ZEDBSD_OS_RELEASE := $(BUILD)/gen/os-release
+ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_OS_RELEASE)
+ZEDBSD_PACKAGE_FILES += --file /etc/os-release=$(ZEDBSD_OS_RELEASE) \
+	--mode /etc/os-release=0644
+.PHONY: FORCE_ZEDBSD_VERSION
+FORCE_ZEDBSD_VERSION:
+
+$(ZEDBSD_VERSION_HEADER): FORCE_ZEDBSD_VERSION
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '/* Generated from VERSION by the Makefile (ws129-p003). */' \
+ '#define ZEDBSD_VERSION "$(ZEDBSD_VERSION)"' > $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+$(ZEDBSD_OS_RELEASE): FORCE_ZEDBSD_VERSION
+	@mkdir -p $(dir $@)
+	@printf '%s\n' 'NAME="zedBSD"' 'ID=zedbsd' \
+ 'VERSION="$(ZEDBSD_VERSION_NAME)"' 'VERSION_ID=$(ZEDBSD_VERSION)' \
+ 'PRETTY_NAME="Kei/zedBSD $(ZEDBSD_VERSION_NAME)"' \
+ 'BUILD_ID=$(ZEDBSD_SOURCE_REVISION)' 'ZEDBSD_RELEASE=$(ZEDBSD_RELEASE)' \
+ 'ZEDBSD_VERSION="zedBSD $(ZEDBSD_RELEASE) ($(ZEDBSD_SOURCE_REVISION) $(ZEDBSD_SOURCE_DATE))"' > $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+.PHONY: version
+version: $(ZEDBSD_VERSION_HEADER) $(ZEDBSD_OS_RELEASE)
+
 # Files a caller wants in this one image without declaring a package, named on
 # the command line. It exists so that a test can put a program in an image and
 # run it, and is empty in an ordinary build:
@@ -995,6 +1038,11 @@ endef
 ifneq ($(strip $(ZEDBSD_PLATFORM)),)
 include $(PLATFORM_MAKEFILE)
 endif
+
+# The kernels' banners show the version (ws129-p003).
+$(BUILD)/src/hal/amd64/cmain.o $(BUILD)/src/hal/i386/cmain.o: $(ZEDBSD_VERSION_HEADER)
+$(BUILD)/src/hal/amd64/cmain.o: AMD64_CPPFLAGS += -I$(BUILD)/gen
+$(BUILD)/src/hal/i386/cmain.o: HAL_CC += -I$(BUILD)/gen
 include tools/release/kei-nightly.mk
 
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
