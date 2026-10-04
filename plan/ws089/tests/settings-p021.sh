@@ -6,7 +6,9 @@
 #     a. Settings on Wi-Fi asks for scans (ZSETTINGS NETWORK scanning on=1; ZWL NETWORK scan holders=1) and networkd
 #        holds the lease: `net watch` says scan=1 on its wifi line, and route default=IF names the wired interface
 #        that carries the default route (BUG-189's line);
-#     b. Settings ended (kill): the holder goes (holders=0) and networkd is told: `net watch` says scan=0.
+#     b. (the minute, 2026-10-05) Settings stopped (SIGSTOP) asks no more: after a minute its asking ends
+#        (ZWL SYSTEM scanning expired, holders=0) and networkd is told: `net watch` says scan=0;
+#     c. Settings continued (SIGCONT) asks again at once (holders=1); Settings ended (kill): holders=0.
 #  2. The networkd stand-in with a Wi-Fi radio (network-probe; networkd's socket moved aside), "Kei Lab" saved:
 #     a. Settings A on Wi-Fi: the stand-in hears WIFI_SCAN_START (op=40) and WIFI_LIST (op=34) again every few seconds
 #        (at least 3 within 10 s); the list (scan count=3) and no Scan button (no CONTROL index=2) (wifi-auto.png);
@@ -132,12 +134,18 @@ watched=$(watch_now)
 echo "$watched" > "$out/watch-on.txt"
 echo "$watched" | grep -q ' scan=1' && echo "networkd: scan=1 ok" || { echo "networkd: scan=1 MISSING"; status=1; }
 echo "$watched" | grep -qE '^route default=[a-z]+[0-9]+' && echo "networkd: route default ok" || { echo "networkd: route default MISSING"; status=1; }
-guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
+guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill -STOP \$pid" >/dev/null
+sleep 62
+expect_log /tmp/zdesktop.log 'ZWL SYSTEM scanning expired client='
 expect_last /tmp/zdesktop.log 'ZWL NETWORK scan holders=' 'ZWL NETWORK scan holders=0'
 sleep 2
 watched=$(watch_now)
 echo "$watched" > "$out/watch-off.txt"
 echo "$watched" | grep -q ' scan=0' && echo "networkd: scan=0 ok" || { echo "networkd: scan=0 MISSING"; status=1; }
+guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill -CONT \$pid" >/dev/null
+expect_last /tmp/zdesktop.log 'ZWL NETWORK scan holders=' 'ZWL NETWORK scan holders=1'
+guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
+expect_last /tmp/zdesktop.log 'ZWL NETWORK scan holders=' 'ZWL NETWORK scan holders=0'
 
 # 2. The stand-in, with a key saved for Kei Lab first (against the real networkd).
 guest "$stop_all" >/dev/null

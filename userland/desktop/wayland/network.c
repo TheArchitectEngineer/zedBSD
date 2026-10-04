@@ -31,7 +31,10 @@
  * While the menu is open the radios are kept scanning (ws089-p021): the
  * menu is one of the holders the compositor counts with the system
  * extension's network objects that asked for scans, and while any holder
- * is there libkeiland-backend asks the daemon for fresh scans.
+ * is there libkeiland-backend asks the daemon for fresh scans.  A client's
+ * asking holds a minute unless it asks again (system.c); the menu's is the
+ * compositor's own and holds exactly while the menu is open (it cannot
+ * outlive the compositor, which is what the minute guards against).
  *
  * From the click on a network until its join is answered, the line under
  * the switch says "Connecting to X..." and the network's row says

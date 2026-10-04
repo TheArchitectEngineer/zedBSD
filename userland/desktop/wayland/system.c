@@ -41,7 +41,8 @@
  * (set_scanning, ws089-p021): network.c counts each such object once, with
  * the system bar's open menu, and keeps the radios scanning while the
  * count is not 0.  An object's going (its destroy, or its client's end)
- * takes its asking away.
+ * takes its asking away, and so does a minute without its asking again
+ * (SYSTEM_SCAN_MS).
  */
 
 #include "zwl.h"
@@ -63,6 +64,15 @@
 
 /* The largest event payload this file sends. */
 #define SYSTEM_EVENT_MAX	512U
+
+/*
+ * How long one asking for scans holds, in milliseconds (ws089-p021, the
+ * user's decision of 2026-10-05): a client asks again more often while it
+ * shows the networks around, and an asking it does not renew ends, so that
+ * a client that stopped without saying so (hung) cannot keep the radios
+ * scanning.  A client that ends is let go at once (zwl_system_network_gone).
+ */
+#define SYSTEM_SCAN_MS		60000U
 
 /* The most objects waiting for the details at once; one more is answered busy. */
 #define SYSTEM_DETAILS_WAITING	8U
@@ -182,6 +192,7 @@ static uint32_t system_network_send(struct zwl_object *object, uint32_t number, 
 static int system_network_save_key(struct zwl_server *server, uint64_t client, uint32_t object, uint32_t number, unsigned bar, const char *ssid, const char *key);
 static uint32_t system_network_details(struct zwl_object *object, uint32_t number);
 static void system_network_scanning(struct zwl_object *object, uint32_t on);
+static void system_scanning_expire(struct zwl_server *server);
 static void system_network_step(struct zwl_server *server, unsigned request);
 static void system_network_snapshot(struct zwl_object *object);
 static void system_network_change(struct zwl_object *object);
@@ -311,6 +322,9 @@ zwl_system_tick(
 	/* A step of a saved key the system bar's request held up. */
 	if (system_state.wait.stage == SYSTEM_NETWORK_RETRY)
 		system_network_step(server, system_state.wait.request);
+
+	/* An asking for scans not asked again for a minute ends (ws089-p021). */
+	system_scanning_expire(server);
 
 	/* The monitor's samples, to the monitor objects (sysmon.c, WS134 p012). */
 	zwl_sysmon_tick(server);
@@ -679,10 +693,12 @@ system_network_scanning(
 {
 	unsigned asked;
 
-	/* The object's asking, as 1 or 0. */
+	/* The object's asking, as 1 or 0; an asking holds for a minute from now. */
 	asked = 0U;
-	if (on != 0U)
+	if (on != 0U) {
 		asked = 1U;
+		object->network_scanning_until = zwl_milliseconds() + SYSTEM_SCAN_MS;
+	}
 
 	/* No change: an object is counted once however often it asks. */
 	if (asked == object->network_scanning)
@@ -695,6 +711,33 @@ system_network_scanning(
 	object->network_scanning = asked;
 	zwl_network_scan_hold(asked);
 	printf("ZWL SYSTEM scanning client=%llu id=%u on=%u\n", (unsigned long long)object->client->number, object->id, asked);
+}
+
+/* Lets go of each network object's asking for scans that was not asked again within its minute. */
+static void
+system_scanning_expire(
+	struct zwl_server *server)
+{
+	struct zwl_client *client;
+	struct zwl_object *object;
+	uint64_t now;
+
+	/* The time once for the whole walk. */
+	now = zwl_milliseconds();
+
+	/* Every live network object that asks, of every client. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (object = client->objects; object != NULL; object = object->next) {
+			if (object->kind != ZWL_SYSTEM_NETWORK || object->dead)
+				continue;
+			if (object->network_scanning == 0U || now < object->network_scanning_until)
+				continue;
+
+			/* Its minute ran out without its asking again. */
+			printf("ZWL SYSTEM scanning expired client=%llu id=%u\n", (unsigned long long)client->number, object->id);
+			system_network_scanning(object, 0U);
+		}
+	}
 }
 
 /* Carries out a request of a sound object. */

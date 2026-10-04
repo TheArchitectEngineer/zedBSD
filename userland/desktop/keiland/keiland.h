@@ -1346,7 +1346,10 @@ int kl_system_network_query_details(struct kl_system *system, uint32_t *request)
  * stops showing them (ws089-p021).  It is no request and has no answer: a
  * new scan comes as KL_SYSTEM_CHANGED_SCAN.  The compositor counts every
  * application that asked (and its own Wi-Fi menu), and an application that
- * closes its system or ends asks no longer.  Returns 0, or ENOTSUP when
+ * closes its system or ends asks no longer.  One asking holds a minute: an
+ * application that shows the networks longer asks again (every 30 seconds,
+ * say), so that one that hangs does not keep the radios scanning.  Returns
+ * 0, or ENOTSUP when
  * the compositor does not know it (one older than KL_VERSION 24).
  */
 int kl_system_network_set_scanning(struct kl_system *system, unsigned on);
