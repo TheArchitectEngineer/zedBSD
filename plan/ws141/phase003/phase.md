@@ -26,7 +26,7 @@ Queue: none
 ## 受け入れ
 
 - 各段の build（rpi4、warning 0）と、変えた所の host の試験（display list の組み立て・解読、timing の読み取りの計算）。
-- QEMU（Q1 経由で T1）: raspi4b で boot が壊れない（HVS の register は QEMU で 0 を読むので N0 で「display 無し」に抜ける見込み、未観測）。
+- QEMU（Q1 経由で T1）: raspi4b で boot が壊れない（N0 は firmware の revision で emulator と判定し、HVS の register を読まずに抜ける見込み、未観測。QEMU の revision が build の時刻に見える値なら HVS を読んで bus の error になりうるので、この回帰は実機の前に必須）。
 - 実機（ユーザー、判断の項目 6）: 段ごとの写真で印と画面（N1・N2 で画面が変わらない、P1 の vblank の数が 60±1、P2 の flip、P3 の重なり）。
 - `rename-map.tsv` の旧名で driver の source に一致 0。
 
