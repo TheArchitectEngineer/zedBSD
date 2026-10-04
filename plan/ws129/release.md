@@ -159,6 +159,10 @@ Status: **案**（design-reviewer の review を反映した第 2 版、§11）�
 | U3 | 案 A: 既知の password を release notes に書き、変更を促す | p004・p005 |
 | U4 | **今のまま**（sshd は有効、password の login も今の通り） | p004: release の rootfs で sshd・shadow を変えない。release notes に既知の password と sshd が有効であることを明記（p005） |
 | U6 | base を fork の確定した commit で作り直し（ws088-p002）、間に合えば載せる。間に合わなければベータ1 は zip を載せない。今の nightly の zip も同じ扱い | p004、日程 §7 |
+| U2 | 旧インストーラ `zedinst` を外し、開発の環境（header・clang・libcxx）は残す。System Monitor は WS134 の合格しだい | p004・p007 |
+| U5 | `SHA256SUMS` と `LICENSES.md` を載せる | p004 |
+| U7 | rc の tag ごとの Prerelease、合格した rc の asset をそのまま最終の tag に（§5 の promote） | p004・p008 |
+| U9 | RC の commit 10/13（事実上の機能の締切）、rc1 10/14、実機 10/15〜16、公開 10/17 | p006〜p008 |
 
 ## 10. 次の Phase への引き渡し
 
