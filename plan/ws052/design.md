@@ -129,3 +129,9 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
 ## §10 の決定（2026-10-05 ユーザー、クリックの回答、複数選択）
 
 S0i3（modern standby）に入る契機: **蓋を閉じた時**（ACPI の LID の event）、**電源ボタンを短く押した時**（電源ボタンの event を Keiland が /dev/system で受けて判断）、**一定時間操作が無い時**（idle の timeout、Settings の Power で時間を決める）。menu だけに限る案は採らない。
+
+## §10 の決定（続き、2026-10-05 未明ユーザー、Q1 が 1 問ずつ聞いた）
+
+- §10-3 入れない device がある時: **中止して理由を返す**（浅い idle で待つ案は採らない）。Keiland が利用者に理由を示す。
+- §10-5 device の範囲: i915・NVMe・xHCI は必須、**HDA・Wi-Fi は後**。それまでは、その device を止めれば S0i3 に入れる形（Wi-Fi を切って入る等）で中止を避ける。
+- 電源ボタンの短押しは dialog 無しで S0i3（ws132-p001 の D1 の訂正）。蓋は S0i3 ができるまで画面を消して lock、15 分以内の解除は password 無しで自動の unlock（ws132-p001 の D2）。
