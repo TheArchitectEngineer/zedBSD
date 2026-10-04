@@ -207,3 +207,7 @@ Event ws114-gtk-qt-port-projections-20261002: user指定の順序は[全文](sta
 user「AX211のpassthruは、きちんとLinuxドライバをblacklistして再起動すれば動作します。その手順が抜けています。ホストを使ってオーケーです。sudo はパスワードレスで使えるので、設定は変えてオーケーです。」→ 5330（10.0.30.3）の host で iwlwifi（AX211 の Linux の driver）を blacklist して再起動し、AX211（00:14.3）を vfio-pci で QEMU に passthrough してよい。host の設定（modprobe.d の blacklist、vfio-pci の起動時の割り当て、再起動）を変えてよい。2026-10-03 の「iGPU と AX211 を同じ QEMU に同時に passthrough しない」は維持（今回は AX211 だけ）。手順は `plan/tools/` か `plan/ws004/tests/` の script の注記に残す。
 
 追記（2026-10-04 user）:「5330のリセットは何回でも対応するので、気兼ねなくパススルーを試してください。また、i915と同時にパススルーに成功した事例はまだないので避けてください。」→ AX211 の passthrough で host が落ちても試験を続けてよい（担当は落ちたら Q1 に知らせ、Q1 がユーザーに 5330 の電源の再投入を頼む）。iGPU（i915）と AX211 の同時の passthrough はしない。
+
+## GPU の driver の scanout の規則（2026-10-04 ユーザー）
+
+ユーザー「GPUドライバはGOPの出力先以外に、scanoutを開始しない.というルールを覚えておいてください。」（WS051 の決定「ドライバは出力先を変更しない。…GOPから引き継ぐときに、GOPの出力先を、ドライバの出力先とする。…GOPがUSB-Cに出力されていない限り、ドライバはUSB-Cに出力しない。」と、hotplug は Keiland が Vulkan の Display の拡張で受けて mirror・拡張・出力 off を決める、の一般化）→ 全ての GPU の driver（i915・WS037 nvrtx・WS141 bcm2711（GOP に当たるのは firmware の framebuffer の出力先）・今後の物）は、boot の時に firmware（GOP など）が出していた出力先（port・pipe）以外に、自分の判断で scanout を始めない。それ以外の出力先は、graphical session の Keiland の明示の指示（libvulkan の Display の拡張の経路）があった時だけ。今の i915 の外部 display の優先の挙動はこの規則に反するので WS051 で直す。
