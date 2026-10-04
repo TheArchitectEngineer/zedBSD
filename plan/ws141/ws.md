@@ -3,12 +3,12 @@
 # WS141: Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI の display と V3D 4.2）
 
 <!-- awesome-plan-current:start -->
-Status: planned
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: q691（p001、17 時以降）
-Resume point: p001 から（2026-10-04 作成）。他の WS と独立に進める。
+Resume point: p001 の文書（[rpi4-gpu-design.md](rpi4-gpu-design.md)・[rpi4-gpu-license-audit.md](rpi4-gpu-license-audit.md)）がそろい review を反映済み（2026-10-04、q691-i01）。p002 は判断の項目 3（disabled の node）・11（device の分割）の答えの後。判断の項目 1 は決定（事実として使う）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -53,9 +53,9 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 
 | Phase | 目的 | Status | 依存 | 目安 |
 | --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 文書: Linux の vc4・v3d の初期化の順と command の投入の順、正本の一覧と license の監査、BCM2711 の display と V3D の構成、我々の interface への対応表、段の印の設計 | planned | なし | 4〜6h |
+| [p001](phase001/phase.md) | 文書: Linux の vc4・v3d の初期化の順と command の投入の順、正本の一覧と license の監査、BCM2711 の display と V3D の構成、我々の interface への対応表、段の印の設計 | in-progress（q691、文書と review 済み、判定待ち） | なし | 4〜6h |
 | p002 | **定数の一括の改名**（作業の文書、temp）の後に、段の印の仕組み（framebuffer に進み具合を書く debug の口）と driver の骨格（FDT の attach、MMIO の map、clock・power の mailbox、IRQ） | planning | p001 | 4h |
-| p003 | display: firmware の framebuffer の readout と引き継ぎ、HVS の plane、pixelvalve・HDMI の mode set、vblank と page flip（i915 の resident display を手本に） | planning | p002 | 6h〜 |
+| p003 | display（[design](rpi4-gpu-design.md) の N0〜N2・P1〜P3・P5、P4 は後）: firmware の framebuffer の readout と引き継ぎ、HVS の plane、pixelvalve・HDMI の mode set、vblank と page flip（i915 の resident display を手本に） | planning | p002 | 6h〜 |
 | p004 | V3D: power・MMU・buffer object、bin/render の control list と CSD の job、reset、fence | planning | p002 | 6h〜 |
 | p005 | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | planning | p003・p004 | 4h〜 |
 | p006 | 実行器（Vulkan・compiler）の方針の決定（別 WS にするか） | planning | p004 | 2h |
