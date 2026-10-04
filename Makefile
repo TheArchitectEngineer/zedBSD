@@ -52,7 +52,8 @@ ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	llvm-download llvm-source llvm-source-verify llvm-configure llvm-build llvm-toolchain \
 	llvm-host-archive toolchain-cache \
 	sysroot-amd64 sysroot-i386 sysroot-arm64 sysroots \
-	patch openssl-download openssl-source openssh-download openssh-source
+	patch openssl-download openssl-source openssh-download openssh-source \
+	release-info
 ifeq ($(strip $(ZEDBSD_PLATFORM)),)
 ifneq ($(filter-out $(ZEDBSD_CONFIG_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error config.mk is missing or invalid; run 'make menuconfig')
@@ -769,11 +770,20 @@ ARCH_IMAGE_TOOLS := $(BUILD_TOOLS_DIR)/make-arch-overlay-image.py \
 	$(BUILD_TOOLS_DIR)/check-arch-overlay-image.py
 ARCH_UFS_IMAGE_TOOLS := $(BUILD_TOOLS_DIR)/make-arch-overlay-ufs.noct \
 	$(BUILD_TOOLS_DIR)/ufs_format.noct $(ZEDBSD_IMAGE_HOST)
+# The release locks root (ws129-p004, U10): ZEDBSD_ROOT_LOCKED=y installs
+# /etc/shadow with root's password replaced by *, so that nobody logs in as
+# root; otherwise the tree's shadow goes in as it is.
+ZEDBSD_ROOT_LOCKED ?= n
+ifeq ($(ZEDBSD_ROOT_LOCKED),y)
+ZEDBSD_SHADOW := $(BUILD)/gen/shadow
+else
+ZEDBSD_SHADOW := userland/base/etc/shadow
+endif
 ZEDBSD_ACCOUNT_INPUTS := userland/base/etc/passwd userland/base/etc/group \
-	userland/base/etc/shadow userland/base/etc/services
+	$(ZEDBSD_SHADOW) userland/base/etc/services
 ZEDBSD_ACCOUNT_FILES := --file /etc/passwd=userland/base/etc/passwd \
 	--file /etc/group=userland/base/etc/group \
-	--file /etc/shadow=userland/base/etc/shadow \
+	--file /etc/shadow=$(ZEDBSD_SHADOW) \
 	--file /etc/services=userland/base/etc/services \
 	--mode /etc/passwd=0644 --mode /etc/group=0644 \
 	--mode /etc/shadow=0400 --mode /etc/services=0644
@@ -791,9 +801,10 @@ ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_XZED_SESSION_INPUTS)
 ZEDBSD_PACKAGE_FILES += $(ZEDBSD_XZED_SESSION_FILES)
 
 # The version (ws129-p003): VERSION, at the top of the tree, is its one
-# source (1.0.0-beta1).  The kernel's banner shows it (zedbsd-version.h,
-# rewritten only when VERSION changes, so a commit does not relink the
-# kernel).  Every root carries /etc/os-release with the name, the version
+# source (1.0.0-beta1).  The kernel's banner shows it (ZEDBSD_VERSION
+# defined on cmain's command line, so that the kernel reads no header from
+# outside its tree; the stamp $(BUILD)/gen/version, rewritten only when
+# VERSION changes, compiles it again, and a commit does not relink it).  Every root carries /etc/os-release with the name, the version
 # and, for uname (libc reads the file), the release: the version itself in a
 # release build (ZEDBSD_RELEASE_BUILD=y, the release job's), the version and
 # the source's revision otherwise (1.0.0-beta1+g1a2b3c4; +unknown without
@@ -807,7 +818,7 @@ ZEDBSD_SOURCE_REVISION := $(or $(shell git rev-parse --short=7 HEAD 2>/dev/null)
 ZEDBSD_SOURCE_DATE := $(or $(shell git log -1 --format=%cs 2>/dev/null),unknown)
 ZEDBSD_RELEASE := $(ZEDBSD_VERSION)$(if $(filter y,$(ZEDBSD_RELEASE_BUILD)),,+$(patsubst %,g%,$(filter-out unknown,$(ZEDBSD_SOURCE_REVISION)))$(filter unknown,$(ZEDBSD_SOURCE_REVISION)))
 ZEDBSD_VERSION_NAME := $(shell printf '%s\n' '$(ZEDBSD_VERSION)' | sed -e 's/-beta\([0-9][0-9]*\)/ Beta \1/' -e 's/-rc\([0-9][0-9]*\)/ RC \1/' -e 's/\.dev$$/ (development)/')
-ZEDBSD_VERSION_HEADER := $(BUILD)/gen/zedbsd-version.h
+ZEDBSD_VERSION_STAMP := $(BUILD)/gen/version
 ZEDBSD_OS_RELEASE := $(BUILD)/gen/os-release
 ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_OS_RELEASE)
 ZEDBSD_PACKAGE_FILES += --file /etc/os-release=$(ZEDBSD_OS_RELEASE) \
@@ -815,10 +826,9 @@ ZEDBSD_PACKAGE_FILES += --file /etc/os-release=$(ZEDBSD_OS_RELEASE) \
 .PHONY: FORCE_ZEDBSD_VERSION
 FORCE_ZEDBSD_VERSION:
 
-$(ZEDBSD_VERSION_HEADER): FORCE_ZEDBSD_VERSION
+$(ZEDBSD_VERSION_STAMP): FORCE_ZEDBSD_VERSION
 	@mkdir -p $(dir $@)
-	@printf '%s\n' '/* Generated from VERSION by the Makefile (ws129-p003). */' \
- '#define ZEDBSD_VERSION "$(ZEDBSD_VERSION)"' > $@.tmp
+	@printf '%s\n' '$(ZEDBSD_VERSION)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
 $(ZEDBSD_OS_RELEASE): FORCE_ZEDBSD_VERSION
@@ -831,7 +841,22 @@ $(ZEDBSD_OS_RELEASE): FORCE_ZEDBSD_VERSION
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
 .PHONY: version
-version: $(ZEDBSD_VERSION_HEADER) $(ZEDBSD_OS_RELEASE)
+version: $(ZEDBSD_VERSION_STAMP) $(ZEDBSD_OS_RELEASE)
+
+# The shadow of a release, root's password locked.
+$(BUILD)/gen/shadow: userland/base/etc/shadow
+	@mkdir -p $(dir $@)
+	@sed 's/^root:[^:]*:/root:*:/' $< > $@.tmp
+	@grep -q '^root:\*:' $@.tmp || { echo 'shadow: no root line to lock' >&2; rm -f $@.tmp; exit 1; }
+	@mv $@.tmp $@
+
+# What the release workflow needs to know, as NAME=value lines
+# (.github/workflows/release.yml, ws129-p004): the version, its name, and
+# whether the configuration's release carries the Windows zip.
+.PHONY: release-info
+release-info:
+	@printf '%s\n' 'version=$(ZEDBSD_VERSION)' 'name=$(ZEDBSD_VERSION_NAME)' \
+ 'zip=$(if $(filter y,$(ZEDBSD_RELEASE_ZIP)),y,n)'
 
 # Files a caller wants in this one image without declaring a package, named on
 # the command line. It exists so that a test can put a program in an image and
@@ -1040,9 +1065,9 @@ include $(PLATFORM_MAKEFILE)
 endif
 
 # The kernels' banners show the version (ws129-p003).
-$(BUILD)/src/hal/amd64/cmain.o $(BUILD)/src/hal/i386/cmain.o: $(ZEDBSD_VERSION_HEADER)
-$(BUILD)/src/hal/amd64/cmain.o: AMD64_CPPFLAGS += -I$(BUILD)/gen
-$(BUILD)/src/hal/i386/cmain.o: HAL_CC += -I$(BUILD)/gen
+$(BUILD)/src/hal/amd64/cmain.o $(BUILD)/src/hal/i386/cmain.o: $(ZEDBSD_VERSION_STAMP)
+$(BUILD)/src/hal/amd64/cmain.o: AMD64_CPPFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
+$(BUILD)/src/hal/i386/cmain.o: HAL_CC += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
 include tools/release/kei-nightly.mk
 
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
