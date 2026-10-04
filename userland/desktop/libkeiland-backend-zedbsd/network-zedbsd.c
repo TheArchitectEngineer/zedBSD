@@ -12,7 +12,7 @@
  * open: networkd writes the state on it at once and again whenever it
  * changes.  The state is the text "net show" prints -- a line an interface,
  * "NAME static|unconfigured online|offline" -- and a last line on the
- * Wi-Fi, "wifi state=NAME interface=IF ssid=HEX radios=N".
+ * Wi-Fi, "wifi state=NAME interface=IF ssid=HEX radios=N scan=N radio=IF".
  *
  * A request (a scan, a join, a disconnect, the Wi-Fi switch) is one more
  * connection that carries one frame each way, as "net wifi ..." sends it.
@@ -117,8 +117,8 @@ static int network_read_watch(struct kl_backend_network *network, unsigned *chan
 static int network_read_answer(struct kl_backend_network *network, unsigned *changed);
 static int network_fields(const unsigned char *payload, size_t length, uint32_t *status, uint32_t *error, const char **output, size_t *output_length);
 static void network_parse_state(struct kl_backend_network_state *state, const char *output, size_t length);
-static void network_parse_interface(struct kl_backend_network_state *state, const char *line, char *wired, size_t wired_size, unsigned *wifi_online);
-static void network_parse_wifi(struct kl_backend_network_state *state, const char *line);
+static void network_parse_interface(struct kl_backend_network_state *state, const char *line, const char *radio, char *wired, size_t wired_size, unsigned *wifi_online);
+static void network_parse_wifi(struct kl_backend_network_state *state, const char *line, char *radio, size_t radio_size);
 static void network_parse_route(const char *line, char *route, size_t size);
 static unsigned network_wifi_state(const char *name);
 static int network_line(const char *output, size_t length, size_t *start, char *line, size_t size);
@@ -921,6 +921,7 @@ network_parse_state(
 	char line[NETWORK_LINE_MAX];
 	char wired[KL_BACKEND_NETWORK_NAME_MAX];
 	char route[KL_BACKEND_NETWORK_NAME_MAX];
+	char radio[KL_BACKEND_NETWORK_NAME_MAX];
 	unsigned wifi_online;
 	size_t start;
 	int more;
@@ -944,6 +945,7 @@ network_parse_state(
 	/* Starts interface selection without a wired or online radio candidate, or a route. */
 	wired[0] = '\0';
 	route[0] = '\0';
+	radio[0] = '\0';
 	wifi_online = 0;
 
 	/* The Wi-Fi's line and the route's first, so that the interfaces' lines know which one is the radio. */
@@ -957,7 +959,7 @@ network_parse_state(
 		/* The Wi-Fi's line. */
 		differs = strncmp(line, "wifi ", 5);
 		if (differs == 0)
-			network_parse_wifi(state, line);
+			network_parse_wifi(state, line, radio, sizeof(radio));
 
 		/* The default route's line. */
 		differs = strncmp(line, "route ", 6);
@@ -984,20 +986,31 @@ network_parse_state(
 			continue;
 
 		/* An interface's line. */
-		network_parse_interface(state, line, wired, sizeof(wired), &wifi_online);
+		network_parse_interface(state, line, radio, wired, sizeof(wired), &wifi_online);
 	}
 
 	/* The wired interface, whichever carries the connection. */
 	(void)snprintf(state->wired, sizeof(state->wired), "%s", wired);
 
-	/* The default route through the radio: a connected Wi-Fi carries the connection. */
+	/* The default route through the radio (the connection's, or the WLAN interface itself, BUG-169): a connected Wi-Fi carries the connection. */
 	routed = 0;
 	if (route[0] != '\0' && state->wifi_interface[0] != '\0') {
 		differs = strcmp(route, state->wifi_interface);
 		if (differs == 0)
 			routed = 1;
 	}
-	if (routed && state->wifi == KL_BACKEND_WIFI_CONNECTED && wifi_online) {
+
+	/* The WLAN interface itself. */
+	if (route[0] != '\0' && radio[0] != '\0') {
+		differs = strcmp(route, radio);
+		if (differs == 0)
+			routed = 1;
+	}
+
+	/* Then a connected Wi-Fi that is up carries it. */
+	if (routed &&
+	    state->wifi == KL_BACKEND_WIFI_CONNECTED &&
+	    wifi_online) {
 		state->connected = 1;
 		state->kind = KL_BACKEND_NETWORK_WIFI;
 		(void)snprintf(state->interface, sizeof(state->interface), "%s", state->wifi_interface);
@@ -1076,6 +1089,7 @@ static void
 network_parse_interface(
 	struct kl_backend_network_state *state,
 	const char *line,
+	const char *radio,
 	char *wired,
 	size_t wired_size,
 	unsigned *wifi_online)
@@ -1114,6 +1128,11 @@ network_parse_interface(
 		return;
 	}
 
+	/* The WLAN interface while no connection names it is no wired connection either (BUG-169). */
+	differs = strcmp(name, radio);
+	if (radio[0] != '\0' && differs == 0)
+		return;
+
 	/* The first other interface with an address carries a wired connection. */
 	differs = strcmp(address, "static");
 	if (differs == 0 && wired[0] == '\0')
@@ -1123,15 +1142,27 @@ network_parse_interface(
 	return;
 }
 
-/* Reads the Wi-Fi's line, "wifi state=NAME interface=IF ssid=HEX radios=N". */
+/*
+ * Reads the Wi-Fi's line, "wifi state=NAME interface=IF ssid=HEX radios=N
+ * scan=N radio=IF"; radio (the WLAN interface even while no connection uses
+ * it, BUG-169) is copied to the caller's radio, when given.
+ */
 static void
 network_parse_wifi(
 	struct kl_backend_network_state *state,
-	const char *line)
+	const char *line,
+	char *radio,
+	size_t radio_size)
 {
 	char field_text[80];
 	const char *found;
 	int differs;
+
+	/* The WLAN interface, whatever the connection does ("-" for none). */
+	found = network_word(line, "radio", field_text, sizeof(field_text));
+	differs = strcmp(field_text, "-");
+	if (found != NULL && differs != 0)
+		(void)snprintf(radio, radio_size, "%s", field_text);
 
 	/* No radio at all. */
 	found = network_word(line, "radios", field_text, sizeof(field_text));
