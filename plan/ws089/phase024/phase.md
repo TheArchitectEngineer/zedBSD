@@ -22,6 +22,7 @@ Settings には既に **Mouse** と **Touchpad** の頁が別にある（`userla
 3. **既定の値**（ユーザー）: base の速さ 150%、加速は強め。既存の利用者の desktop.conf に値が無い時もこの既定にする。
 4. **device ごとに設定を分ける**（Mouse の頁はマウスの設定、stub の **Touchpad の頁を実装**してタッチパッドの設定を置く。設定の key を `pointer.*` から `mouse.*`・`touchpad.*` に分け、今の `pointer.speed`・`pointer.natural` の値はマウスの既定へ移す）（2026-10-04 夜 ユーザー「Settingsのマウスは、マウスとタッチパッドなど、デバイスごとに設定を分けてほしい。自然な方向のスクロールは、タッチパッドではデフォルトでON、マウスではOFFにしてほしい。」）: マウスとタッチパッド（必要ならトラックポイントなど）で、Pointer Speed・加速・自然な方向のスクロールを別々に持つ。compositor は入力の device の種類（evdev の property・PS/2 か USB の HID か、タッチパッドの判定）で設定を選ぶ。種類ごとの設定か、device（名前・ID）ごとの設定かは設計で決める（まず種類ごと）。
 5. **自然な方向のスクロールの既定**（ユーザー）: タッチパッドは ON、マウスは OFF。
+5b. **Touchpad の頁の項目**（2026-10-04 夜 ユーザー「タッチパッドにも速度と加速とスクロールを追加してほしいです。」）: 速度（Pointer speed）・加速・スクロール（自然な方向の switch、既定 ON。2 本指のスクロールの速さを入れるかは設計で決める）。
 6. Touchpad の頁の他の項目（tap で click、2 本指のスクロールの速さ、gesture の on・off）は [WS142](../../ws142/ws.md)（gesture）と [BUG-166](../../bugs/BUG-166.md)（押し込み＋タップドラッグの仕様）に合わせて設計で決める。
 7. Linux・FreeBSD の Keiland も同じ compositor の曲線と種類ごとの設定を使う。
 
