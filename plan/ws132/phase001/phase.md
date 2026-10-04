@@ -91,7 +91,7 @@ ACPI の蓋・AC・電池は `src/drivers/acpi/` の新しい file（`acpi-power
 ## 人間の判断が要る点
 
 - **D1 電源ボタンの動作**: 案は、session の中で押すと電源の dialog（Lock・Log Out・Restart・Shut Down・Cancel）を出し、greeter では Shut Down の確認を出す。session の中の Restart・Shut Down は sessiond が session の descriptor からの POWER を受ける形への変更（ws131 の D12 の改訂）が要る。代わりの案は、session では Log Out の後に greeter の Shut Down（D12 のまま）。長押し（firmware の強制断）は触らない。
-- **D2 蓋を閉じた時**: 案は session を lock する（suspend は zedBSD に無い）。AC の時と電池の時で同じ。
+- **D2 蓋を閉じた時**: WS052 のユーザーの決定（蓋を閉じた時・電源ボタンの短押し・一定時間の無操作で S0i3 に入る、[WS052](../../ws052/ws.md)）に従う。S0i3 ができるまでの間は session を lock する（案、2026-10-05 Q1 の補足）。電源ボタンの短押し（D1）も、S0i3 ができた後は WS052 の決定（S0i3）と合わせて見直す。
 - **D3 自動 mount の持ち主と権限**: 案は、console の session の利用者を持ち主として `/media/<label>` に mount（FAT は uid・gid の option、UFS は mount 先の directory の持ち主）し、その利用者が eject（unmount）してよい。nosuid・noexec を付ける。session が無い時（greeter）は mount しない。
 
 D1〜D3 が決まるまでも p002（kernel の核と送り手）は進められる。
