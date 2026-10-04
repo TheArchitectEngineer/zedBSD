@@ -250,6 +250,7 @@ static ssize_t check_frame(int fd, unsigned count, int contact_id, int tip, int 
 static int dump(long milliseconds, int with_time);
 static int dump_find(char *path, size_t size);
 static void dump_axes(int fd);
+static void dump_properties(int fd);
 static const char *code_name_of(int type, int code);
 static long long now_ms(void);
 
@@ -1534,6 +1535,7 @@ dump(
 
 	/* The node's path, name and axes. */
 	printf("TOUCHDUMP node=%s name=%s\n", path, TOUCHINJECT_SCREEN_NAME);
+	dump_properties(fd);
 	dump_axes(fd);
 	fflush(stdout);
 
@@ -1652,6 +1654,29 @@ dump_find(
 
 	/* Succeeded: whether the node was found (its path is in path). */
 	return found;
+}
+
+/*
+ * Prints the device's INPUT_PROP_* bits (EVIOCGPROP, ws159-p003): 0x1 a
+ * pointer, 0x2 direct, 0x4 a button pad.
+ */
+static void
+dump_properties(
+	int fd)
+{
+	unsigned char bits[4];
+	int result;
+
+	/* Asks for the bitmap. */
+	memset(bits, 0, sizeof(bits));
+	result = ioctl(fd, EVIOCGPROP(sizeof(bits)), bits);
+	if (result < 0) {
+		printf("TOUCHDUMP props=unknown\n");
+		return;
+	}
+
+	/* Prints it as one number. */
+	printf("TOUCHDUMP props=0x%x\n", (unsigned)bits[0] | ((unsigned)bits[1] << 8) | ((unsigned)bits[2] << 16) | ((unsigned)bits[3] << 24));
 }
 
 /* Prints the range and resolution of the touch screen's six axes. */

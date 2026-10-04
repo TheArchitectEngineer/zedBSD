@@ -1,0 +1,17 @@
+# ws159-p003: the test touch pad of /dev/input-inject (touchinject's pad).
+# One finger down and moving, a second finger, the pad pressed and released
+# with both on it, then both lifted.  The size is the Latitude 5330's pad.
+pad 1336 760 5 scan
+wait 300
+down 0 600 300
+wait 20
+move 0 620 300
+wait 20
+down 1 800 320
+wait 20
+press
+wait 20
+release
+wait 20
+up 0; up 1
+hold 300
