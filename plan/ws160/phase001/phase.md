@@ -94,6 +94,8 @@ Queue: q721 / q721-i01（Q1 の投入、ベータ1）
 | D3 | sudo の認証の記憶（一定時間聞かない） | 記憶しない（毎回聞く）。要るなら後で（tty と session ごと、5 分など） |
 | D4 | wheel の gid が 0 | 今のまま（kei が group 0 の file を読めるようになる。/etc/shadow は 0400 なので読めない） |
 
+- 2026-10-05 T1-118: 23 行 ok、`sudo-env-home` だけ FAIL。sudo の出力は `HOME=/root`・`USER=root`・`LOGNAME=root`・`SUDO_USER=kei` で、設計（U: 環境を作り直し HOME は目標の利用者の home、sudo の always_set_home と同じ）と試験の期待（`^HOME=/root$`）は一致していた。原因は試験の取り方: `-S` の prompt `[sudo] password for kei: `（改行なし、標準エラー）が guest の出力で `HOME=/root` と同じ行に付き、`^HOME=` に合わなかった。試験の `sudo -S env` の標準エラーを捨てるように直した（`plan/ws160/tests/p001-guest.sh`）。sudo は変えない。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定。
