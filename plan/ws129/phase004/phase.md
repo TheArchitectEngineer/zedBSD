@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws129-p004 -->
 # ws129-p004: release の image の config と CI の release の job
 
-Status: planning（p001 と BUG-134 の結果を待つ）
+Status: planned（2026-10-05 Q1: p001 cleared、BUG-134 resolved（AX211 は y）。q714）
 Disposition: normal
 Parent: [WS129](../ws.md)
 Focused goal: fg019（ベータ1）
-Queue: none
+Queue: q714 / q714-i01（P2）
 目安: 3h
 
 ## 範囲

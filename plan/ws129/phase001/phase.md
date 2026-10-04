@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws129-p001 -->
 # ws129-p001: ベータ1 の release の定義
 
-Status: in-progress（q672 / q672-i01、P2、2026-10-04。[release.md](../release.md) の案（第 2 版、design-reviewer の review を反映）とユーザーへの質問 U1〜U15 を Q1 に返した。受け入れの判定は Q1）
+Status: cleared（2026-10-05 Q1: 受け入れの release.md と U1〜U15 を返し、ユーザーの回答は release.md §9 に記録済み）。以前: in-progress（q672 / q672-i01、P2、2026-10-04。[release.md](../release.md) の案（第 2 版、design-reviewer の review を反映）とユーザーへの質問 U1〜U15 を Q1 に返した。受け入れの判定は Q1）
 Disposition: normal
 Parent: [WS129](../ws.md)
 Focused goal: fg019（ベータ1）
