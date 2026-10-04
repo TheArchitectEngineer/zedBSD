@@ -11,6 +11,7 @@ Focused goal: fg019（ベータ1）
 Queue: none
 Resume point: p001（設計）が planned。p001 は下の D1〜D4 を選択肢として提示し、ユーザーの決定を design.md に記録する。実装 Phase（p002〜p006）は D1〜D4 の決定と p001 の成果を待つ planning。
 2026-10-02 user:「対応する形式はベータ1ではm4aのみで開始します。decoder を独自に実装します。」→ ベータ1 の形式は m4a（MP4/ISO BMFF の container ＋ AAC）だけ。WAV・FLAC・MP3・Ogg の計画（p003・p004・p006）は置き換え、MP4 の demux と AAC-LC の decoder を独自（Zlib）に書く。p001 の設計で Phase を切り直す（AAC の profile の範囲、参照の decoder との一致の測り方、特許・license の確認）。
+2026-10-05 user（方針の改訂、原文）:「音楽プレイヤーは、既存音楽サービスとの連携を重視します。ただし、YouTube Musicみたいなサービスもあるので、写真管理ソフトと動画プレイヤーよりも優先度を下げます。ローカルのファイルをコレクションにするプレイヤー機能も必要と思います。」→ (1) 既存の音楽の service との連携を重視する（どの service と、どう連携するか（公式の API・web の player・browser の中で再生）は p001 で調べてユーザーと決める）、(2) local の file を collection にする player の機能も要る（今の p001〜p006 の m4a の計画はこの部分）、(3) **優先度は写真の管理（WS157）と動画の player（WS122）より下**。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-02 ユーザー（ベータ1、リリース目標 10/17））
