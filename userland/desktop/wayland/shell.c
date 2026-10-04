@@ -32,8 +32,10 @@
  * The system bar has three zones: on the left the launcher (the Kei mark,
  * ws035-p117) and the docked window; towards the right four virtual
  * desktops; at the right edge the network, the battery and the clock.  The
- * network's icon opens its menu (network.c, ws035-p013); the battery is
- * drawn only (a mock-up).
+ * network's icon opens its menu (network.c, ws035-p013); the battery shows
+ * the charge the backend reads (ws132-p003), with a "+" while it charges,
+ * and is not drawn on a machine without a battery (its place stays empty,
+ * so the other icons keep their places).
  *
  * A fullscreen window is kept whole (ws035-p119, the 2026-09-28 user
  * decision): while it is the highest of the windows that cover the top of
@@ -311,6 +313,7 @@ static void draw_sign(struct zwl_server *server, VkCommandBuffer command, int bu
 static void draw_system_bar(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
 static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *line);
 static void draw_status(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *ink);
+static void draw_battery(struct zwl_server *server, VkCommandBuffer command, int32_t x, int percent, unsigned charging, const float *ink);
 static void draw_dock_hint(struct zwl_server *server, VkCommandBuffer command);
 static float animation_progress(struct zwl_server *server);
 static void lerp_rect(const struct shell_rect *from, const struct shell_rect *to, float t, struct shell_rect *result);
@@ -3281,7 +3284,7 @@ draw_desktops(
 
 /*
  * Draws the status at the right edge: the network (network.c), the battery
- * (a mock-up) and the date and time.
+ * (when the machine has one) and the date and time.
  */
 static void
 draw_status(
@@ -3290,24 +3293,12 @@ draw_status(
 	const struct shell_bar *bar,
 	const float *ink)
 {
-	struct glass_shape shape;
-
 	/* The date and time. */
 	glass_draw_text(server, command, SIZE_BAR, bar->clock_x, BAR_BASELINE, bar->clock, 400, ink);
 
-	/* The battery: an outline, its charge and its terminal. */
-	glass_shape_init(&shape, (float)bar->battery_x, (float)(ZWL_GLASS_BAR_MIDDLE - 6), 22.0f, 12.0f);
-	shape.quad[0] -= 1.0f;
-	shape.quad[1] -= 1.0f;
-	shape.quad[2] += 2.0f;
-	shape.quad[3] += 2.0f;
-	shape.mode = MODE_RING;
-	shape.radius = 3.5f;
-	shape.soft = 1.3f;
-	memcpy(shape.color, ink, sizeof(shape.color));
-	glass_shape_draw(server, command, &shape);
-	glass_draw_solid(server, command, (float)(bar->battery_x + 3), (float)(ZWL_GLASS_BAR_MIDDLE - 3), 14.0f, 6.0f, 1.5f, ink);
-	glass_draw_solid(server, command, (float)(bar->battery_x + 23), (float)(ZWL_GLASS_BAR_MIDDLE - 2), 2.0f, 4.0f, 1.0f, ink);
+	/* The battery, when the machine has one (ws132-p003). */
+	if (server->power.percent >= 0)
+		draw_battery(server, command, bar->battery_x, server->power.percent, server->power.charging, ink);
 
 	/* The network: Wi-Fi's bars or the wired tree, which opens its menu (network.c). */
 	zwl_network_draw_icon(server, command, bar->signal_x, ink);
@@ -3317,6 +3308,54 @@ draw_status(
 
 	/* The input method's language (A, あ), which a click changes (input-method.c). */
 	zwl_ime_indicator_draw(server, command, bar->ime_x, ink);
+}
+
+/*
+ * Draws the bar's battery at x: an outline, its charge (the inside filled
+ * in proportion to percent, at least a sliver while above zero), its
+ * terminal, and a "+" right of it while it charges.
+ */
+static void
+draw_battery(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	int32_t x,
+	int percent,
+	unsigned charging,
+	const float *ink)
+{
+	struct glass_shape shape;
+	float fill;
+
+	/* The outline. */
+	glass_shape_init(&shape, (float)x, (float)(ZWL_GLASS_BAR_MIDDLE - 6), 22.0f, 12.0f);
+	shape.quad[0] -= 1.0f;
+	shape.quad[1] -= 1.0f;
+	shape.quad[2] += 2.0f;
+	shape.quad[3] += 2.0f;
+	shape.mode = MODE_RING;
+	shape.radius = 3.5f;
+	shape.soft = 1.3f;
+	memcpy(shape.color, ink, sizeof(shape.color));
+	glass_shape_draw(server, command, &shape);
+
+	/* The charge: 16 pixels at 100 %, a sliver above 0 %, nothing at 0 %. */
+	if (percent > 100)
+		percent = 100;
+	fill = 16.0f * (float)percent / 100.0f;
+	if (percent > 0 && fill < 2.0f)
+		fill = 2.0f;
+	if (fill > 0.0f)
+		glass_draw_solid(server, command, (float)(x + 3), (float)(ZWL_GLASS_BAR_MIDDLE - 3), fill, 6.0f, 1.5f, ink);
+
+	/* The terminal. */
+	glass_draw_solid(server, command, (float)(x + 23), (float)(ZWL_GLASS_BAR_MIDDLE - 2), 2.0f, 4.0f, 1.0f, ink);
+
+	/* Charging: a "+" between the terminal and the clock. */
+	if (charging != 0U) {
+		glass_draw_solid(server, command, (float)(x + 29), (float)ZWL_GLASS_BAR_MIDDLE - 0.75f, 7.0f, 1.5f, 0.5f, ink);
+		glass_draw_solid(server, command, (float)(x + 31.75f), (float)(ZWL_GLASS_BAR_MIDDLE - 3) - 0.5f, 1.5f, 7.0f, 0.5f, ink);
+	}
 }
 
 /*

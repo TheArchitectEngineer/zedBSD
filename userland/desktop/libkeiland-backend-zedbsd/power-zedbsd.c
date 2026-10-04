@@ -15,25 +15,34 @@
  * offered (plan/ws131/design.md, decision D12).  The request is one short
  * line written whole.  sessiond's "OK" comes back on the same descriptor
  * as its answers to the login screen's other requests, and the session
- * (session-zedbsd.c) reads them all.  The power source is not read: there
- * is no battery interface yet.
+ * (session-zedbsd.c) reads them all.
+ *
+ * The power source and the battery are the kernel's KERN_SYSTEM_GET_POWER
+ * (ws132-p003), read on a descriptor of /dev/system of their own, so that
+ * the state may be read from any thread: AC when the adapter is plugged,
+ * the battery when it is not, unknown when the machine has no adapter the
+ * kernel knows; the charge in percent of the first battery, -1 without one.
  */
 
 #include "userland/desktop/libkeiland-backend/backend-private.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
+#include <uapi/system.h>
 
 /* The longest request line. */
 #define POWER_LINE_MAX 32U
 
 static unsigned power_actions(const struct kl_backend *backend);
+static void power_read(struct kl_backend_power_state *state);
 
 /*
- * Copies the power's state: the source unknown, and the actions the login
- * screen may ask for.
+ * Copies the power's state: the source and the charge the kernel knows,
+ * and the actions the login screen may ask for.
  */
 int
 kl_backend_power_get_state(
@@ -44,10 +53,8 @@ kl_backend_power_get_state(
 	if (backend == NULL || state == NULL)
 		return EINVAL;
 
-	/* No battery interface: the source and the charge are unknown. */
-	state->source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
-	state->percent = -1;
-	state->charging = 0U;
+	/* The source and the charge, as the kernel knows them. */
+	power_read(state);
 
 	/* The actions sessiond takes from this compositor. */
 	state->actions = power_actions(backend);
@@ -116,4 +123,46 @@ power_actions(
 	actions = KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_POWEROFF) |
 	    KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_REBOOT);
 	return actions;
+}
+
+/*
+ * Reads the source and the charge from the kernel; what it does not know
+ * (or a kernel without KERN_SYSTEM_GET_POWER) stays unknown.
+ */
+static void
+power_read(
+	struct kl_backend_power_state *state)
+{
+	struct system_power_info info;
+	int descriptor;
+	int result;
+
+	/* Unknown unless the kernel says. */
+	state->source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
+	state->percent = -1;
+	state->charging = 0U;
+
+	/* The kernel's state, on a descriptor of this call's own. */
+	descriptor = open("/dev/system", O_RDONLY | O_CLOEXEC);
+	if (descriptor < 0)
+		return;
+	memset(&info, 0, sizeof(info));
+	result = ioctl(descriptor, KERN_SYSTEM_GET_POWER, &info);
+	(void)close(descriptor);
+	if (result != 0)
+		return;
+
+	/* The adapter: plugged or not. */
+	if ((info.known & KERN_SYSTEM_POWER_HAS_AC) != 0U) {
+		state->source = KL_BACKEND_POWER_SOURCE_BATTERY;
+		if (info.ac_online != 0U)
+			state->source = KL_BACKEND_POWER_SOURCE_AC;
+	}
+
+	/* The battery's charge, and whether it charges. */
+	if ((info.known & KERN_SYSTEM_POWER_HAS_BATTERY) != 0U) {
+		state->percent = (int)info.battery_percent;
+		if (info.battery_charging != 0U)
+			state->charging = 1U;
+	}
 }

@@ -11,5 +11,5 @@ b=userland/desktop/libkeiland-backend-linux
 ${CC:-cc} -std=gnu17 -Wall -Wextra -Werror -D_GNU_SOURCE -I. -fsanitize=address,undefined -g \
     userland/desktop/libkeiland-backend/backend.c userland/desktop/libkeiland-backend/session/session-none.c \
     $b/seat-linux.c $b/seat-direct-linux.c $b/seat-logind-linux.c $b/dbus-linux.c $b/power-linux.c \
-    plan/ws131/tests/host-seat-linux.c -o "$out/host-seat-linux"
+    userland/desktop/libkeiland-backend/unsupported/events-unsupported.c plan/ws131/tests/host-seat-linux.c -o "$out/host-seat-linux"
 exec "$out/host-seat-linux" </dev/null

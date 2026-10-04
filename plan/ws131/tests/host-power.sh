@@ -7,12 +7,13 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws131-host
 mkdir -p "$out"
-flags="-std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I. -fsanitize=address,undefined -g"
+flags="-std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I. -Iinclude -fsanitize=address,undefined -g"
 ${CC:-cc} $flags -DHOST_POWER_ZEDBSD userland/desktop/libkeiland-backend/backend.c \
     userland/desktop/libkeiland-backend-zedbsd/session-zedbsd.c userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c \
-    userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c plan/ws131/tests/host-power.c -o "$out/host-power-zedbsd"
+    userland/desktop/libkeiland-backend/unsupported/events-unsupported.c userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c plan/ws131/tests/host-power.c -o "$out/host-power-zedbsd"
 ${CC:-cc} $flags userland/desktop/libkeiland-backend/backend.c userland/desktop/libkeiland-backend/session/session-none.c \
-    userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c userland/desktop/libkeiland-backend/unsupported/power-unsupported.c plan/ws131/tests/host-power.c -o "$out/host-power-unsupported"
+    userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c userland/desktop/libkeiland-backend/unsupported/power-unsupported.c \
+    userland/desktop/libkeiland-backend/unsupported/events-unsupported.c plan/ws131/tests/host-power.c -o "$out/host-power-unsupported"
 # A write to a closed sessiond raises SIGPIPE; the test ignores it to see the write's error (the compositor's
 # behaviour there is the one greeter.c had before ws131-p005).
 status=0
