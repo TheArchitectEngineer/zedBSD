@@ -163,6 +163,10 @@ Status: **案**（design-reviewer の review を反映した第 2 版、§11）�
 | U5 | `SHA256SUMS` と `LICENSES.md` を載せる | p004 |
 | U7 | rc の tag ごとの Prerelease、合格した rc の asset をそのまま最終の tag に（§5 の promote） | p004・p008 |
 | U9 | RC の commit 10/13（事実上の機能の締切）、rc1 10/14、実機 10/15〜16、公開 10/17 | p006〜p008 |
+| U8 | **`docs/release/`**（案の tools/release/notes/ ではなく） | p005 |
+| U10 | root を lock（`root:*`）して管理は `kei` から | p004 |
+| U11 | 入れず実機の確認で代える | p006 |
+| U12 | **試走は不要**（ユーザー「すでに動作しており不要です。」） | p004 |
 
 ## 10. 次の Phase への引き渡し
 
