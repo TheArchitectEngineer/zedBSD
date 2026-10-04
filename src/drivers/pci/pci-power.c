@@ -515,6 +515,34 @@ drv_pci_device_set_wake(
 }
 
 /*
+ * Writes a function's name for messages: "pci SSSS:BB:DD.F DRIVER".
+ */
+void
+drv_pci_device_name(
+	struct drv_pci_device *device,
+	char *text,
+	size_t size)
+{
+	struct drv_pci_address address;
+	struct drv_pci_driver *driver;
+	const char *driver_name;
+
+	/* Nowhere to write is nothing to do. */
+	if (text == NULL || size == 0)
+		return;
+
+	/* Takes the address and the driver's name, "-" without a driver. */
+	drv_pci_device_address(device, &address);
+	driver = drv_pci_device_driver(device);
+	driver_name = "-";
+	if (driver != NULL && driver->name != NULL)
+		driver_name = driver->name;
+
+	/* Writes the name. */
+	(void)kern_snprintf(text, size, "pci %04x:%02x:%02x.%x %s", (unsigned)address.segment, (unsigned)address.bus, (unsigned)address.device, (unsigned)address.function, driver_name);
+}
+
+/*
  * Sets the platform's power operations for the functions.
  *
  * The platform code calls it once at start; NULL means the platform does
