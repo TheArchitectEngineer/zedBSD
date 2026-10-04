@@ -74,12 +74,14 @@ resized=$(guest "grep 'GLASS resized surface=$surface docked=1 ' /tmp/zdesktop.l
 echo "the client drew the docked size ${resized:-?} ms after the dock"
 # The wait split (T1-138: 1.3 s): the configure's acknowledgment, the client's new swapchain, and the rest (its first
 # frame of the new size and the compositor's import), from both logs (one monotonic clock).
-guest "grep 'GLASS resized surface=$surface docked=1 ' /tmp/zdesktop.log | tail -1; grep 'WLTEST RESIZE' /tmp/w.log | tail -1" > "$out/bug179-split.txt"
+guest "grep 'GLASS resized surface=$surface docked=1 ' /tmp/zdesktop.log | tail -1; grep 'WLTEST RESIZE' /tmp/w.log | tail -1; grep -A2 'WLTEST RESIZE' /tmp/w.log | grep 'WLTEST FRAME' | head -2" > "$out/bug179-split.txt"
 acked=$(sed -n 's/.*acked_ms=\([0-9]*\).*/\1/p' "$out/bug179-split.txt" | head -1)
 sent=$(sed -n 's/.*sent_at_ms=\([0-9]*\).*/\1/p' "$out/bug179-split.txt" | head -1)
 took=$(sed -n 's/.*took_ms=\([0-9]*\).*/\1/p' "$out/bug179-split.txt" | head -1)
 began=$(sed -n 's/.*RESIZE.* at_ms=\([0-9]*\).*/\1/p' "$out/bug179-split.txt" | head -1)
-echo "split: acknowledged after ${acked:-?} ms; the client began its swapchain $(( ${began:-0} - ${sent:-0} )) ms after the configure and took ${took:-?} ms"
+committed=$(sed -n 's/.*committed_ms=\([0-9]*\).*/\1/p' "$out/bug179-split.txt" | head -1)
+first=$(sed -n 's/^WLTEST FRAME.* at_ms=\([0-9]*\).*/\1/p' "$out/bug179-split.txt" | head -1)
+echo "split: acknowledged after ${acked:-?} ms; the client began its swapchain $(( ${began:-0} - ${sent:-0} )) ms after the configure and took ${took:-?} ms; its first frame of the new size was presented at $(( ${first:-0} - ${sent:-0} )) ms, its last commit came at ${committed:-?} ms, the compositor took the image at ${resized:-?} ms (after its acquire fence)"
 if [ -n "$resized" ] && [ "$resized" -le 200 ]; then pass bug179-drawn-within-200ms; else fail bug179-drawn-within-200ms; fi
 shot docked
 

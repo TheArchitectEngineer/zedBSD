@@ -850,6 +850,10 @@ surface_commit(
 	uint32_t replaced;
 	int error;
 
+	/* A window waiting for its image of a new size: when its latest commit came (BUG-179). */
+	if (surface->resized_ms != 0U)
+		surface->resized_commit_ms = zwl_milliseconds();
+
 	/* The viewport's pending source and destination apply with the commit (viewport.c). */
 	zwl_viewport_commit(surface);
 
