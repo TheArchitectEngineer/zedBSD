@@ -238,3 +238,17 @@ P4単独の委譲を終了。q697-i01・q698-i01は**ともにcleared（各Queue
 1. 製品のSW_ERROR修正は**未実装**。BUG-158「SW_ERROR の解析（q698）」の修正計画を、user指定の通常のバグ修正エージェント（Opus 5.5 Mid）の次の承認Queueへ選定する。gdb補正のrunを製品修正後の合格に流用しない。
 2. 実機UATは未実施。ws005-p032全体はin-progress、BUG-158はtrackingを維持。対照runでassert後に1回観測したcommand timeout（error42、table valid0、restart attempt2成功）もticketに記録し、修正後のreset/再利用の検証へ渡す。
 3. mainのQueueでq697/q698の結果、q697のconsole条件へのuser承認、T1-095と重なる確認の扱いを反映する。WS/Master/Past Log/必要なGitHub投影はQ1が統合する。P4は共有Boardを書き換えていない。
+
+
+## q699 の開始（2026-10-04 20:35 JST、P4）
+
+user「では、修正してください。」を、直前に提示したq698のcommand write pointer修正計画への実装指示として記録。[P4 lane](../../agents/P4/queue.md)にq699-i01をactive/in-progressで予約し、q698の過去の解析のみのscopeは保持した。P4単独で修正・host検証・既存の承認済みAX211 passthrough手順の10分確認まで行い、製品修正のcommitと結果をQ1へ渡す。Guardrail、全文coding-style、実sourceを再読。mainの状態はcleanで他の担当は停止中、P4のbaseはf1fa284。whole Phaseはin-progressを維持する。
+
+### q699 の実装・host検証（2026-10-04 20:43 JST、P4）
+
+- 製品修正と回帰試験を WIP `acb4afa` に保存。transport の command_write_sequence は16 bit、publish時だけ前進、init/確認済みdevice resetで0。DMA slot・wire indexは256のまま。曖昧なCSR失敗は連番を戻さずreset必須、prepare/abortは連番未消費。HAL・toolchain変更無し。
+- `plan/ws004/tests/run-intel-ax211-transport-test.sh`: 実transportと抽出した実coreをリンクし、65537件のinline/external交互publish、256/512/65536の境界、wire index、invalid/stale/duplicate publish、abort、DMA sync失敗、CSR書込み失敗、active reset拒否、reset後の再利用を確認。ordinary/ASan/UBSanともPASS（GCC 14.2.0、C89、-Wall -Wextra -Werror）。旧transport（f1fa284）で同じfixtureを動かす対照は256件目のdoorbell=0 / expected=256で失敗し、回帰検知を確認した。
+- 全文coding-styleを読み、変更したpublish・init/resetの段落・state・新fixtureを手で確認。C89宣言、実slotとhardware連番の分離、失敗時の所有権、呼出し/条件の分離、static宣言、tab引数、コメントを確認した。encode失敗は、prepareがpayload上限とnullを先に拒否するため有効な固定256 slotの入力では到達しない。fake DMA syncの失敗でprepare rollbackを実行確認した。
+- clang-format 19.1.7を製品の編集範囲と新fixtureに適用し、規約のtab引数を保持。`style-diff.py --base f1fa284`（製品2ファイル）はchanged-line findings 0、新fixtureの`style-check.py --summary`はtotal 0、`sh -n`と`git diff --check`はPASS。
+- `plan/tools/guest/test-image.sh plan/uat/config-uat.mk build/q699`: UAT image作成・image check PASS。image全体はsubmakeのjobserver警告1件、compiler警告/エラー0。最終ソースで同wrapperのtarget `build/q699/vmunix`を再ビルドし、kernel/include check PASS、警告0、実行中ELFのSHA256と一致。Clang 23.1.0（repo toolchain）、既存toolchainのみ使用。
+- 補正無しの製品imageを5330で確認中。gdbのELF専用probeはCSR callback直前の値を読むだけで、register/guest dataを書き換えない。256・512・768件の実doorbell境界を通過、SW_ERROR/restart無し、host応答継続。console10分の最終結果は次の節に記録する。

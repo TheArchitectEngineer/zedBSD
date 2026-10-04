@@ -19,3 +19,16 @@ Next（予約）: ws127-p002（Files の改善）→ ws089-p010
 | P4-005 | q606 | fe52488bc（前回 4ca0b3e80） | config/ci・config-amd64-userland.mk・wayland/{apps.conf,Makefile,home.c}・plan/ws129/phase010 | integrated 9271d769d |
 
 2026-10-02: 利用枠の配分で待機（N=3）。予約 ws127-p002（files-p011.sh の 7 app の期待の直しを含む）→ ws089-p010 は保持。
+
+
+## q699（2026-10-04 20:35 JST、user の追加指示）
+
+Status: active。Executor: P4単独、worktree `/home/awe/zedBSD-worktrees/p4` / branch `agent/p4`、base `f1fa284`。Timebox: この修正と確認を22時まで。q697/q698はclearedで終了済み。
+
+承認元: 現在のuserが q698 の原因・修正計画の報告に続けて「では、修正してください。」と指示した。q698 の「製品実装しない」は当該調査attemptの履歴として保持し、今回の指示で以下の実装を承認したものとする。mainの未予約IDはq699、既存lane・Queueで同IDの使用が無いことを確認してP4のlocal laneに予約。共有Queueへの投影はQ1へ保留。
+
+| Queue / attempt | Phase / Bug | Exact approved scope / criteria | Prerequisite | State |
+| --- | --- | --- | --- | --- |
+| q699 / q699-i01 | ws005-p032 / BUG-158 | q698 ticketの計画どおり、command_write_sequenceを16 bitで持ち、publish時だけ進める。DMA slotとwire tokenは256のまま。init/resetで0、prepare/abortは未消費、曖昧なCSR失敗では巻き戻さずreset必須。実transportの短いhost試験（256/512/65536、inline/external、abort/失敗/reset）、amd64 kernel build・変更範囲の全文規約確認、値の補正無しのUAT imageで5330 AX211単独・profile無し・console10分。host応答、複数の256境界越え、対象SW_ERRORと周期restart無し、正常なvCPU待ちを確認。製品の接続機能やLTR等の追加変更は含めない | q697/q698の実測と計画、base f1fa284 | in-progress |
+
+Graph: q697（cleared）→ q698（cleared）→ q699。source所有: `intel-ax211-transport.c/.h`、そのhost試験とP4の既存tracer（必要なread-only観測のみ）、BUG-158、Bug Boardの該当行、ws005-p032とP4 lane。main編集・merge・pushは従前どおりQ1の統合へ。GitHub公開はpending。
