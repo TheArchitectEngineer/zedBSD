@@ -89,6 +89,16 @@
 #define OPTION_LIST_MAX 64U
 
 /*
+ * The errors the harness reports in place of the kernel's: a page that
+ * could not be allocated, memory that is not there, a table that is not
+ * listed, and an absent PCI function under --absent-pci-fails.
+ */
+#define HOST_ENOMEM	12
+#define HOST_EFAULT	14
+#define HOST_ENOENT	2
+#define HOST_ENODEV	19
+
+/*
  * The options the harness understands.
  */
 enum option_kind {
@@ -131,6 +141,10 @@ struct option_name {
 
 /*
  * What the command line asked for.
+ *
+ * Each list keeps at most OPTION_LIST_MAX entries; its count may run past
+ * that while the arguments are read, and parse_arguments() then refuses
+ * the command line, so a count the rest of the harness sees always fits.
  */
 struct harness_options {
 	const char *tables[OPTION_LIST_MAX];
@@ -187,7 +201,18 @@ struct page {
 };
 
 /*
- * The option names.
+ * The paths of the methods --methods evaluates, collected before any runs,
+ * because a method may load or unload tables and change the namespace.
+ */
+struct method_list {
+	char **paths;
+	size_t count;
+	size_t capacity;
+};
+
+/*
+ * The option names, which option_of() looks the arguments up in.  The
+ * table is constant for the life of the harness.
  */
 static const struct option_name option_names[] = {
 	{ "--dump", OPTION_DUMP, 0 },
@@ -225,6 +250,9 @@ static struct page *pages[PAGE_BUCKETS];
 
 /*
  * The tables LoadTable may load, filled from --dynamic at start.
+ *
+ * dynamic_table_count counts the entries filled, each with a whole header;
+ * the harness frees their data at exit.
  */
 static struct dynamic_table dynamic_tables[OPTION_LIST_MAX];
 static unsigned dynamic_table_count;
@@ -246,7 +274,10 @@ static int absent_fails;
 
 /*
  * The simulated physical memory of --firmware, and the tables found in it.
- * Both live until the harness exits.
+ *
+ * memory_piece_count counts the pieces read, each with its data, which the
+ * harness frees at exit.  firmware_loaded says the firmware record holds
+ * tables, which serve LoadTable and are released at exit.
  */
 static struct memory_piece memory_pieces[OPTION_LIST_MAX];
 static unsigned memory_piece_count;
@@ -275,22 +306,27 @@ static uint64_t slept;
 static int lock_held;
 
 static int parse_arguments(int argc, char **argv, struct harness_options *options);
+static int record_option(enum option_kind kind, const char *value, struct harness_options *options);
 static enum option_kind option_of(const char *text, int *takes_value);
 static int install_spaces(const struct harness_options *options);
 static int start_events(const struct harness_options *options);
 static void run_actions(const struct harness_options *options);
+static bool raise_action(enum option_kind kind, const char *value);
 static void print_fixed_event(enum drv_acpi_fixed_event event, void *argument);
 static int load_tables(const struct harness_options *options);
 static int install_notifications(const struct harness_options *options);
 static int run_main(void);
 static void print_sci(void);
+static void release_all(void);
 static int read_file(const char *path, uint8_t **data, size_t *length);
 static int start_ecdt(const char *path);
 static void preset_ec(const struct harness_options *options);
 static int load_file(const char *path);
 static int load_firmware(const char *description);
+static void read_memory_pieces(FILE *stream, unsigned long long *rsdp);
 static int read_memory(uint64_t address, void *buffer, size_t length, void *argument);
 static int simulated_space(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
+static int simulated_memory(const struct drv_acpi_region_access *access, uint64_t space, uint64_t *value);
 static uint64_t space_key(const struct drv_acpi_region_access *access, unsigned space);
 static int parse_absent(const char *text);
 static int parse_ec_ports(const char *text);
@@ -322,14 +358,18 @@ main(
 	if (error != 0)
 		return 2;
 
-	/* Installs the simulated spaces and presets the EC before any AML runs. */
+	/* Installs the simulated spaces before any AML runs. */
 	error = install_spaces(&options);
 	if (error != 0)
 		return 2;
+
+	/* Presets the EC's bytes before any AML reads them. */
 	preset_ec(&options);
 
-	/* Loads the tables and prepares their objects as the kernel does. */
+	/* Loads the tables; a table that fails makes the exit status 1. */
 	status = load_tables(&options);
+
+	/* Prepares their objects as the kernel does. */
 	error = drv_acpi_initialize_objects();
 	if (error != 0)
 		fprintf(stderr, "initialize_objects: error %d\n", error);
@@ -357,15 +397,20 @@ main(
 	if (error != 0)
 		status = 1;
 
-	/* Starts the events and the EC, then plays the hardware actions. */
+	/* Starts the events and the EC. */
 	error = start_events(&options);
 	if (error != 0)
 		status = 1;
+
+	/* Plays the hardware actions. */
 	run_actions(&options);
 
 	/* Prints the namespace. */
-	if (options.dump)
-		print_namespace();
+	if (options.dump) {
+		error = print_namespace();
+		if (error != 0)
+			status = 1;
+	}
 
 	/* Runs an ASL test's MAIN first, which returns 0 when every check passed. */
 	if (options.run_main) {
@@ -384,15 +429,15 @@ main(
 
 	/* Evaluates the paths the options named, in order. */
 	for (index = 0; index < options.evaluation_count; index++) {
-		/* Evaluates one path. */
+		/* Evaluates one path and prints its result. */
 		error = evaluate_and_print(NULL, options.evaluations[index], options.evaluations[index]);
 		if (error != 0)
 			status = 1;
 	}
 
-	/* Evaluates the identification objects of every device. */
+	/* Evaluates the identification objects of every device; the visitor never stops the walk. */
 	if (options.devices)
-		drv_acpi_walk(NULL, devices_visitor, NULL);
+		(void)drv_acpi_walk(NULL, devices_visitor, NULL);
 
 	/* Evaluates every method that takes no arguments. */
 	if (options.methods) {
@@ -406,15 +451,9 @@ main(
 		printf("stack deepest %zu bytes\n", drv_acpi_stack_deepest());
 
 	/* Frees everything so that the leak checker sees a clean exit. */
-	drv_acpi_reset();
-	if (firmware_loaded)
-		drv_acpi_firmware_release(&firmware);
-	for (index = 0; index < memory_piece_count; index++)
-		free(memory_pieces[index].data);
-	for (index = 0; index < dynamic_table_count; index++)
-		free(dynamic_tables[index].data);
+	release_all();
 
-	/* Reports the outcome. */
+	/* Reports the outcome: 0 when everything passed, 1 when anything failed. */
 	return status;
 }
 
@@ -431,10 +470,12 @@ drv_acpi_os_alloc(
 	if (size == 0)
 		size = 1;
 
-	/* Allocates it. */
+	/* Takes the memory from the host heap. */
 	pointer = malloc(size);
+	if (pointer == NULL)
+		return NULL;
 
-	/* Reports the memory, or NULL. */
+	/* Succeeded: the interpreter owns size bytes until it frees them. */
 	return pointer;
 }
 
@@ -445,7 +486,7 @@ void
 drv_acpi_os_free(
 	void *pointer)
 {
-	/* Frees it. */
+	/* Gives the memory back to the host heap; NULL is allowed. */
 	free(pointer);
 }
 
@@ -463,7 +504,7 @@ drv_acpi_os_log(
 	if (!log_enabled)
 		return;
 
-	/* Prints it. */
+	/* Prints the line to standard error. */
 	va_start(arguments, format);
 	vfprintf(stderr, format, arguments);
 	va_end(arguments);
@@ -486,8 +527,10 @@ void
 drv_acpi_os_sleep(
 	uint64_t milliseconds)
 {
-	/* Moves the clock without waiting; the simulated firmware runs meanwhile. */
+	/* Moves the clock without waiting. */
 	slept += milliseconds * 10000U;
+
+	/* Lets the simulated firmware run meanwhile. */
 	hardware_tick();
 }
 
@@ -510,12 +553,19 @@ drv_acpi_os_timer(void)
 {
 	struct timespec now;
 	uint64_t ticks;
+	int failed;
 
-	/* Reads the host's monotonic clock. */
-	clock_gettime(CLOCK_MONOTONIC, &now);
+	/* Reads the host's monotonic clock; a clock that cannot be read counts as zero. */
+	failed = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (failed != 0) {
+		now.tv_sec = 0;
+		now.tv_nsec = 0;
+	}
 
 	/* Converts it and adds the simulated time. */
 	ticks = (uint64_t)now.tv_sec * 10000000U + (uint64_t)now.tv_nsec / 100U + slept;
+
+	/* Reports the time in 100-nanosecond units. */
 	return ticks;
 }
 
@@ -540,14 +590,16 @@ drv_acpi_os_port_read(
 	/* Anything else is the plain memory of the I/O space. */
 	*value = 0;
 	for (index = 0; index < width / 8U; index++) {
-		/* Reads one byte. */
+		/* Finds the byte's simulated memory. */
 		byte = page_byte(DRV_ACPI_SPACE_SYSTEM_IO, port + index);
 		if (byte == NULL)
-			return 12;
+			return HOST_ENOMEM;
+
+		/* Puts the byte in its place. */
 		*value |= (uint32_t)*byte << (index * 8U);
 	}
 
-	/* Succeeded. */
+	/* Succeeded: value holds the port's bytes. */
 	return 0;
 }
 
@@ -571,14 +623,16 @@ drv_acpi_os_port_write(
 
 	/* Anything else is the plain memory of the I/O space. */
 	for (index = 0; index < width / 8U; index++) {
-		/* Writes one byte. */
+		/* Finds the byte's simulated memory. */
 		byte = page_byte(DRV_ACPI_SPACE_SYSTEM_IO, port + index);
 		if (byte == NULL)
-			return 12;
+			return HOST_ENOMEM;
+
+		/* Stores the byte. */
 		*byte = (uint8_t)(value >> (index * 8U));
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the port holds the value. */
 	return 0;
 }
 
@@ -588,7 +642,7 @@ drv_acpi_os_port_write(
 unsigned long
 drv_acpi_os_event_lock(void)
 {
-	/* Nothing to take. */
+	/* Reports no interrupt state to restore. */
 	return 0;
 }
 
@@ -614,7 +668,7 @@ drv_acpi_os_lock(void)
 		abort();
 	}
 
-	/* Holds it. */
+	/* lock_held says the interpreter runs AML now. */
 	lock_held = 1;
 }
 
@@ -630,7 +684,7 @@ drv_acpi_os_unlock(void)
 		abort();
 	}
 
-	/* Lets it go. */
+	/* lock_held clear says no AML runs. */
 	lock_held = 0;
 }
 
@@ -643,6 +697,8 @@ drv_acpi_os_lock_owned(void)
 	/* The harness's one thread holds it whenever it is held. */
 	if (lock_held)
 		return true;
+
+	/* Reports a lock nobody holds. */
 	return false;
 }
 
@@ -658,6 +714,7 @@ drv_acpi_os_table(
 	size_t *length)
 {
 	struct dynamic_table *table;
+	struct dynamic_table *found;
 	unsigned index;
 	int compared;
 
@@ -669,10 +726,10 @@ drv_acpi_os_table(
 	}
 
 	/* Compares each table's header; an empty identifier matches any. */
+	found = NULL;
 	for (index = 0; index < dynamic_table_count; index++) {
-		table = &dynamic_tables[index];
-
 		/* Skips a table with another signature. */
+		table = &dynamic_tables[index];
 		compared = memcmp(table->data, signature, 4);
 		if (compared != 0)
 			continue;
@@ -687,14 +744,21 @@ drv_acpi_os_table(
 		if (oem_table_id[0] != '\0' && compared != 0)
 			continue;
 
-		/* Reports the matching table. */
-		*data = table->data;
-		*length = table->length;
-		return 0;
+		/* Stops at the matching table. */
+		found = table;
+		break;
 	}
 
 	/* Reports that no table matches. */
-	return 2;
+	if (found == NULL)
+		return HOST_ENOENT;
+
+	/* Hands over the table's bytes. */
+	*data = found->data;
+	*length = found->length;
+
+	/* Succeeded: data and length name the table. */
+	return 0;
 }
 
 /* Reads the command line into the options. */
@@ -715,7 +779,7 @@ parse_arguments(
 
 	/* Reads each argument. */
 	for (index = 1; index < argc; index++) {
-		/* Finds what the argument is and takes its value. */
+		/* Finds what the argument is; it is its own value unless one follows. */
 		kind = option_of(argv[index], &takes_value);
 		value = argv[index];
 		if (takes_value) {
@@ -730,109 +794,149 @@ parse_arguments(
 			value = argv[index];
 		}
 
-		/* Records it. */
-		switch (kind) {
-		case OPTION_DUMP:
-			options->dump = 1;
-			break;
-		case OPTION_DEVICES:
-			options->devices = 1;
-			break;
-		case OPTION_METHODS:
-			options->methods = 1;
-			break;
-		case OPTION_MAIN:
-			options->run_main = 1;
-			break;
-		case OPTION_STACK:
-			options->stack = 1;
-			break;
-		case OPTION_SHARED_PCI:
-			shared_pci = 1;
-			break;
-		case OPTION_ABSENT_PCI:
-			/* Refuses a function the harness cannot read or keep. */
-			refused = parse_absent(value);
-			if (refused != 0) {
-				fprintf(stderr, "--absent-pci needs BUS:DEVICE.FUNCTION: %s\n", value);
-				return 1;
-			}
-
-			break;
-		case OPTION_ABSENT_PCI_FAILS:
-			absent_fails = 1;
-			break;
-		case OPTION_EC_PORTS:
-			/* Refuses ports the harness cannot read. */
-			refused = parse_ec_ports(value);
-			if (refused != 0) {
-				fprintf(stderr, "--ec-ports needs DATA,COMMAND: %s\n", value);
-				return 1;
-			}
-
-			break;
-		case OPTION_EVENTS:
-			options->events = 1;
-			break;
-		case OPTION_EC:
-			options->ec = 1;
-			break;
-		case OPTION_GLOBAL_LOCK:
-			options->global_lock = 1;
-			break;
-		case OPTION_EC_RAM:
-		case OPTION_GPE:
-		case OPTION_POWER_BUTTON:
-		case OPTION_EC_QUERY:
-			/* The hardware actions run in the order given, after the loading. */
-			options->actions[options->action_count % OPTION_LIST_MAX] = value;
-			options->action_kinds[options->action_count % OPTION_LIST_MAX] = kind;
-			options->action_count++;
-			break;
-		case OPTION_REG:
-			options->connect = 1;
-			break;
-		case OPTION_INIT:
-			options->initialize = 1;
-			break;
-		case OPTION_QUIET:
-			log_enabled = 0;
-			break;
-		case OPTION_BUDGET:
-			stack_budget = (size_t)strtoul(value, NULL, 0);
-			break;
-		case OPTION_EVAL:
-			options->evaluations[options->evaluation_count % OPTION_LIST_MAX] = value;
-			options->evaluation_count++;
-			break;
-		case OPTION_NOTIFY:
-			options->notified[options->notified_count % OPTION_LIST_MAX] = value;
-			options->notified_count++;
-			break;
-		case OPTION_DYNAMIC:
-			options->dynamic[options->dynamic_count % OPTION_LIST_MAX] = value;
-			options->dynamic_count++;
-			break;
-		case OPTION_FIRMWARE:
-			options->firmware = value;
-			break;
-		case OPTION_ECDT:
-			options->ecdt = value;
-			break;
-		default:
-			options->tables[options->table_count % OPTION_LIST_MAX] = value;
-			options->table_count++;
-			break;
-		}
+		/* Records the option; one with a bad value refuses the command line. */
+		refused = record_option(kind, value, options);
+		if (refused != 0)
+			return 1;
 	}
 
-	/* Refuses more of a repeatable option than the harness keeps. */
+	/* Refuses more tables or evaluations than the harness keeps. */
 	if (options->table_count > OPTION_LIST_MAX || options->evaluation_count > OPTION_LIST_MAX)
 		return 1;
+
+	/* Refuses more notified nodes or dynamic tables than the harness keeps. */
 	if (options->notified_count > OPTION_LIST_MAX || options->dynamic_count > OPTION_LIST_MAX)
 		return 1;
 
-	/* Succeeded. */
+	/* Refuses more hardware actions than the harness keeps. */
+	if (options->action_count > OPTION_LIST_MAX) {
+		fprintf(stderr, "more than %u --ec-ram, --gpe, --power-button and --ec-query options\n", OPTION_LIST_MAX);
+		return 1;
+	}
+
+	/* Succeeded: options holds what the command line asked for. */
+	return 0;
+}
+
+/*
+ * Records one option and its value.  A list keeps its first entries and
+ * counts the rest, which parse_arguments() refuses afterwards.
+ */
+static int
+record_option(
+	enum option_kind kind,
+	const char *value,
+	struct harness_options *options)
+{
+	int refused;
+
+	/* Records the option by its kind. */
+	refused = 0;
+	switch (kind) {
+	case OPTION_DUMP:
+		options->dump = 1;
+		break;
+	case OPTION_DEVICES:
+		options->devices = 1;
+		break;
+	case OPTION_METHODS:
+		options->methods = 1;
+		break;
+	case OPTION_MAIN:
+		options->run_main = 1;
+		break;
+	case OPTION_STACK:
+		options->stack = 1;
+		break;
+	case OPTION_SHARED_PCI:
+		shared_pci = 1;
+		break;
+	case OPTION_ABSENT_PCI:
+		/* Refuses a function the harness cannot read or keep. */
+		refused = parse_absent(value);
+		if (refused != 0)
+			fprintf(stderr, "--absent-pci needs BUS:DEVICE.FUNCTION: %s\n", value);
+		break;
+	case OPTION_ABSENT_PCI_FAILS:
+		absent_fails = 1;
+		break;
+	case OPTION_EC_PORTS:
+		/* Refuses ports the harness cannot read. */
+		refused = parse_ec_ports(value);
+		if (refused != 0)
+			fprintf(stderr, "--ec-ports needs DATA,COMMAND: %s\n", value);
+		break;
+	case OPTION_EVENTS:
+		options->events = 1;
+		break;
+	case OPTION_EC:
+		options->ec = 1;
+		break;
+	case OPTION_GLOBAL_LOCK:
+		options->global_lock = 1;
+		break;
+	case OPTION_EC_RAM:
+	case OPTION_GPE:
+	case OPTION_POWER_BUTTON:
+	case OPTION_EC_QUERY:
+		/* The hardware actions run in the order given, after the loading. */
+		if (options->action_count < OPTION_LIST_MAX) {
+			options->actions[options->action_count] = value;
+			options->action_kinds[options->action_count] = kind;
+		}
+
+		/* Counts it, kept or not, so that too many refuse the command line. */
+		options->action_count++;
+		break;
+	case OPTION_REG:
+		options->connect = 1;
+		break;
+	case OPTION_INIT:
+		options->initialize = 1;
+		break;
+	case OPTION_QUIET:
+		log_enabled = 0;
+		break;
+	case OPTION_BUDGET:
+		stack_budget = (size_t)strtoul(value, NULL, 0);
+		break;
+	case OPTION_EVAL:
+		/* Keeps a path to evaluate. */
+		if (options->evaluation_count < OPTION_LIST_MAX)
+			options->evaluations[options->evaluation_count] = value;
+		options->evaluation_count++;
+		break;
+	case OPTION_NOTIFY:
+		/* Keeps a node whose notifications are printed. */
+		if (options->notified_count < OPTION_LIST_MAX)
+			options->notified[options->notified_count] = value;
+		options->notified_count++;
+		break;
+	case OPTION_DYNAMIC:
+		/* Keeps a table LoadTable may load. */
+		if (options->dynamic_count < OPTION_LIST_MAX)
+			options->dynamic[options->dynamic_count] = value;
+		options->dynamic_count++;
+		break;
+	case OPTION_FIRMWARE:
+		options->firmware = value;
+		break;
+	case OPTION_ECDT:
+		options->ecdt = value;
+		break;
+	default:
+		/* Keeps a table to load. */
+		if (options->table_count < OPTION_LIST_MAX)
+			options->tables[options->table_count] = value;
+		options->table_count++;
+		break;
+	}
+
+	/* Reports an option whose value was refused. */
+	if (refused != 0)
+		return 1;
+
+	/* Succeeded: the option is recorded. */
 	return 0;
 }
 
@@ -874,13 +978,13 @@ install_spaces(
 		if (options->ec && space == DRV_ACPI_SPACE_EMBEDDED_CONTROL)
 			continue;
 
-		/* Installs one space. */
+		/* Installs the simulated handler; its argument is the space's number. */
 		error = drv_acpi_region_install((enum drv_acpi_space)space, simulated_space, (void *)(uintptr_t)space);
 		if (error != 0)
 			return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: every space has a handler. */
 	return 0;
 }
 
@@ -899,6 +1003,7 @@ start_events(
 
 	/* Reads the event hardware. */
 	if (options->events) {
+		/* Takes the firmware's FADT, or the simulated one without firmware. */
 		table = fadt;
 		length = hardware_default_fadt(fadt, sizeof(fadt));
 		if (firmware_loaded && firmware.fadt != NULL) {
@@ -935,7 +1040,7 @@ start_events(
 		}
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the events and the EC the options asked for run. */
 	return 0;
 }
 
@@ -955,7 +1060,7 @@ preset_ec(
 		if (options->action_kinds[index] != OPTION_EC_RAM)
 			continue;
 
-		/* Stores the byte. */
+		/* Stores the byte; a value that does not parse presets nothing. */
 		fields = sscanf(options->actions[index], "%i=%i", &address, &value);
 		if (fields == 2)
 			hardware_ec_ram((uint8_t)address, (uint8_t)value);
@@ -986,7 +1091,7 @@ start_ecdt(
 		return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the ECDT's EC answers AML. */
 	return 0;
 }
 
@@ -1011,34 +1116,17 @@ run_actions(
 	const struct harness_options *options)
 {
 	unsigned index;
-	int query;
-	int gpe;
-	int fields;
+	bool raised;
 	bool pending;
 
 	/* Plays each action. */
 	for (index = 0; index < options->action_count; index++) {
-		/* Raises the event in the simulated hardware. */
-		switch (options->action_kinds[index]) {
-		case OPTION_GPE:
-			hardware_raise_gpe((unsigned)strtoul(options->actions[index], NULL, 0));
-			break;
-		case OPTION_POWER_BUTTON:
-			hardware_raise_fixed(DRV_ACPI_EVENT_POWER_BUTTON);
-			break;
-		case OPTION_EC_QUERY:
-			/* A "query@gpe" queues the query and raises the EC's GPE. */
-			fields = sscanf(options->actions[index], "%i@%i", &query, &gpe);
-			if (fields != 2)
-				continue;
-			hardware_ec_query((uint8_t)query);
-			hardware_raise_gpe((unsigned)gpe);
-			break;
-		default:
+		/* Raises the event in the simulated hardware; an action that raises none is skipped. */
+		raised = raise_action(options->action_kinds[index], options->actions[index]);
+		if (!raised)
 			continue;
-		}
 
-		/* Handles the SCI as the kernel's interrupt and thread would. */
+		/* Handles the SCI as the kernel's interrupt would. */
 		pending = drv_acpi_sci_interrupt();
 		if (!pending) {
 			printf("SCI none\n");
@@ -1051,6 +1139,45 @@ run_actions(
 	}
 }
 
+/* Raises the event one action names, and reports whether it raised one. */
+static bool
+raise_action(
+	enum option_kind kind,
+	const char *value)
+{
+	unsigned long gpe_number;
+	int query;
+	int gpe;
+	int fields;
+
+	/* Raises the event by the kind of action. */
+	switch (kind) {
+	case OPTION_GPE:
+		/* Raises the GPE the value numbers. */
+		gpe_number = strtoul(value, NULL, 0);
+		hardware_raise_gpe((unsigned)gpe_number);
+		break;
+	case OPTION_POWER_BUTTON:
+		/* Presses the fixed power button. */
+		hardware_raise_fixed(DRV_ACPI_EVENT_POWER_BUTTON);
+		break;
+	case OPTION_EC_QUERY:
+		/* A "query@gpe" queues the query and raises the EC's GPE; another value raises nothing. */
+		fields = sscanf(value, "%i@%i", &query, &gpe);
+		if (fields != 2)
+			return false;
+		hardware_ec_query((uint8_t)query);
+		hardware_raise_gpe((unsigned)gpe);
+		break;
+	default:
+		/* An --ec-ram action raises nothing; it preset the EC already. */
+		return false;
+	}
+
+	/* Reports an event raised. */
+	return true;
+}
+
 /* Prints a fixed event. */
 static void
 print_fixed_event(
@@ -1059,13 +1186,13 @@ print_fixed_event(
 {
 	UNUSED_PARAMETER(argument);
 
-	/* Prints its name. */
+	/* Prints the power button by its name. */
 	if (event == DRV_ACPI_EVENT_POWER_BUTTON) {
 		printf("FIXED power-button\n");
 		return;
 	}
 
-	/* Any other fixed event by its number. */
+	/* Prints any other fixed event by its number. */
 	printf("FIXED %u\n", (unsigned)event);
 }
 
@@ -1082,7 +1209,7 @@ load_tables(
 	/* Reads each table LoadTable may load. */
 	status = 0;
 	for (index = 0; index < options->dynamic_count; index++) {
-		/* Reads one. */
+		/* Reads the file into the next free entry. */
 		table = &dynamic_tables[dynamic_table_count];
 		error = read_file(options->dynamic[index], &table->data, &table->length);
 		if (error != 0) {
@@ -1097,7 +1224,7 @@ load_tables(
 			continue;
 		}
 
-		/* Counts it. */
+		/* The entry is filled; the count keeps it for LoadTable. */
 		dynamic_table_count++;
 	}
 
@@ -1110,13 +1237,13 @@ load_tables(
 
 	/* Loads each table in order. */
 	for (index = 0; index < options->table_count; index++) {
-		/* Loads one. */
+		/* Loads the table the file holds. */
 		error = load_file(options->tables[index]);
 		if (error != 0)
 			status = 1;
 	}
 
-	/* Reports whether every table loaded. */
+	/* Reports 0 when every table loaded, 1 otherwise. */
 	return status;
 }
 
@@ -1131,7 +1258,7 @@ install_notifications(
 
 	/* Resolves each path and installs the printer. */
 	for (index = 0; index < options->notified_count; index++) {
-		/* Resolves one path. */
+		/* Resolves the path. */
 		error = drv_acpi_lookup(NULL, options->notified[index], &node);
 		if (error != 0) {
 			fprintf(stderr, "%s: no such node\n", options->notified[index]);
@@ -1144,7 +1271,7 @@ install_notifications(
 			return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: every named node prints its notifications. */
 	return 0;
 }
 
@@ -1156,24 +1283,48 @@ run_main(void)
 	uint64_t value;
 	int error;
 
-	/* Evaluates it. */
+	/* Evaluates \MAIN. */
 	error = drv_acpi_evaluate(NULL, "\\MAIN", NULL, 0, &result);
 	if (error != 0) {
 		printf("MAIN failed: error %d\n", error);
 		return 1;
 	}
 
-	/* Checks what it returned: zero is success, anything else the failing check. */
+	/* Takes what it returned. */
 	value = drv_acpi_object_integer(result);
 	drv_acpi_object_release(result);
+
+	/* Zero is success, anything else the failing check. */
 	if (value != 0) {
 		printf("MAIN returned 0x%llx\n", (unsigned long long)value);
 		return 1;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: every check of the test passed. */
 	printf("MAIN passed\n");
 	return 0;
+}
+
+/* Frees what the harness holds, so that the leak checker sees a clean exit. */
+static void
+release_all(void)
+{
+	unsigned index;
+
+	/* Forgets the namespace and the tables. */
+	drv_acpi_reset();
+
+	/* Releases the firmware record. */
+	if (firmware_loaded)
+		drv_acpi_firmware_release(&firmware);
+
+	/* Frees the simulated physical memory. */
+	for (index = 0; index < memory_piece_count; index++)
+		free(memory_pieces[index].data);
+
+	/* Frees the tables LoadTable might have loaded. */
+	for (index = 0; index < dynamic_table_count; index++)
+		free(dynamic_tables[index].data);
 }
 
 /* Reads a whole file into memory the caller frees. */
@@ -1187,6 +1338,7 @@ read_file(
 	uint8_t *bytes;
 	long size;
 	size_t count;
+	int failed;
 
 	/* Opens the file. */
 	stream = fopen(path, "rb");
@@ -1195,11 +1347,23 @@ read_file(
 		return 1;
 	}
 
+	/* Moves to its end to measure it. */
+	failed = fseek(stream, 0, SEEK_END);
+	if (failed != 0) {
+		fclose(stream);
+		return 1;
+	}
+
 	/* Measures it. */
-	fseek(stream, 0, SEEK_END);
 	size = ftell(stream);
-	fseek(stream, 0, SEEK_SET);
 	if (size < 0) {
+		fclose(stream);
+		return 1;
+	}
+
+	/* Moves back to its start. */
+	failed = fseek(stream, 0, SEEK_SET);
+	if (failed != 0) {
 		fclose(stream);
 		return 1;
 	}
@@ -1219,9 +1383,11 @@ read_file(
 		return 1;
 	}
 
-	/* Succeeded. */
+	/* Hands over the bytes. */
 	*data = bytes;
 	*length = (size_t)size;
+
+	/* Succeeded: the caller owns the file's bytes. */
 	return 0;
 }
 
@@ -1239,7 +1405,7 @@ load_file(
 	if (error != 0)
 		return error;
 
-	/* Loads it. */
+	/* Loads the table; the interpreter keeps its own copy. */
 	error = drv_acpi_load_table(data, length);
 	free(data);
 	if (error != 0) {
@@ -1247,7 +1413,7 @@ load_file(
 		return 1;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the table's names are in the namespace. */
 	return 0;
 }
 
@@ -1259,14 +1425,8 @@ static int
 load_firmware(
 	const char *description)
 {
-	struct memory_piece *piece;
-	unsigned long long address;
 	unsigned long long rsdp;
-	char line[1024];
-	char path[1024];
-	char *got;
 	FILE *stream;
-	int fields;
 	int error;
 
 	/* Opens the description. */
@@ -1276,30 +1436,9 @@ load_firmware(
 		return 1;
 	}
 
-	/* Reads the RSDP's address and each piece of memory, a line at a time. */
+	/* Reads the RSDP's address and each piece of memory. */
 	rsdp = 0;
-	for (;;) {
-		/* Stops at the end of the description. */
-		got = fgets(line, sizeof(line), stream);
-		if (got == NULL)
-			break;
-
-		/* The RSDP line. */
-		fields = sscanf(line, "rsdp %llx", &rsdp);
-		if (fields == 1)
-			continue;
-
-		/* A piece: an address and the file whose bytes are there. */
-		fields = sscanf(line, "%llx %1023s", &address, path);
-		if (fields != 2 || memory_piece_count == OPTION_LIST_MAX)
-			continue;
-		piece = &memory_pieces[memory_piece_count];
-		error = read_file(path, &piece->data, &piece->length);
-		if (error != 0)
-			continue;
-		piece->address = address;
-		memory_piece_count++;
-	}
+	read_memory_pieces(stream, &rsdp);
 
 	/* The description is read. */
 	fclose(stream);
@@ -1311,7 +1450,7 @@ load_firmware(
 		return 1;
 	}
 
-	/* The record is released at exit and serves LoadTable meanwhile. */
+	/* firmware_loaded says the record is released at exit and serves LoadTable meanwhile. */
 	firmware_loaded = 1;
 
 	/* Loads the DSDT and the SSDTs. */
@@ -1321,8 +1460,51 @@ load_firmware(
 		return 1;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the firmware's tables are loaded. */
 	return 0;
+}
+
+/* Reads the lines of a memory description: the RSDP's address and the pieces. */
+static void
+read_memory_pieces(
+	FILE *stream,
+	unsigned long long *rsdp)
+{
+	struct memory_piece *piece;
+	unsigned long long address;
+	char line[1024];
+	char path[1024];
+	char *got;
+	int fields;
+	int error;
+
+	/* Reads the description a line at a time. */
+	for (;;) {
+		/* Stops at the end of the description. */
+		got = fgets(line, sizeof(line), stream);
+		if (got == NULL)
+			break;
+
+		/* Takes the RSDP line. */
+		fields = sscanf(line, "rsdp %llx", rsdp);
+		if (fields == 1)
+			continue;
+
+		/* Skips a line that is no piece, and any piece beyond those the harness keeps. */
+		fields = sscanf(line, "%llx %1023s", &address, path);
+		if (fields != 2 || memory_piece_count == OPTION_LIST_MAX)
+			continue;
+
+		/* Reads the file whose bytes are at the address; one that cannot be read is skipped. */
+		piece = &memory_pieces[memory_piece_count];
+		error = read_file(path, &piece->data, &piece->length);
+		if (error != 0)
+			continue;
+
+		/* The piece is filled; the count keeps it. */
+		piece->address = address;
+		memory_piece_count++;
+	}
 }
 
 /* Reads the simulated physical memory; a range outside every piece cannot be read. */
@@ -1334,27 +1516,37 @@ read_memory(
 	void *argument)
 {
 	struct memory_piece *piece;
+	struct memory_piece *found;
 	unsigned index;
 
 	UNUSED_PARAMETER(argument);
 
 	/* Finds the piece that holds the whole range. */
+	found = NULL;
 	for (index = 0; index < memory_piece_count; index++) {
+		/* Skips a piece the range does not start in. */
 		piece = &memory_pieces[index];
-
-		/* Skips a piece that does not hold it. */
 		if (address < piece->address || address - piece->address > piece->length)
 			continue;
+
+		/* Skips a piece the range runs past. */
 		if (length > piece->length - (size_t)(address - piece->address))
 			continue;
 
-		/* Copies the bytes. */
-		memcpy(buffer, piece->data + (address - piece->address), length);
-		return 0;
+		/* Stops at the piece. */
+		found = piece;
+		break;
 	}
 
 	/* Reports memory that is not there. */
-	return 14;
+	if (found == NULL)
+		return HOST_EFAULT;
+
+	/* Copies the bytes. */
+	memcpy(buffer, found->data + (address - found->address), length);
+
+	/* Succeeded: buffer holds the memory's bytes. */
+	return 0;
 }
 
 /* Reads or writes a simulated address space. */
@@ -1366,9 +1558,6 @@ simulated_space(
 {
 	uint64_t space;
 	uint32_t port_value;
-	unsigned bytes;
-	unsigned index;
-	uint8_t *byte;
 	int modelled;
 	int absent;
 	int error;
@@ -1378,6 +1567,7 @@ simulated_space(
 		port_value = (uint32_t)*value;
 		modelled = hardware_port((uint32_t)access->address, access->width, access->write, &port_value);
 		if (modelled) {
+			/* Hands a read's value over. */
 			if (!access->write)
 				*value = port_value;
 			return 0;
@@ -1389,14 +1579,36 @@ simulated_space(
 	if ((uintptr_t)argument == DRV_ACPI_SPACE_PCI_CONFIG)
 		absent = absent_function(access);
 
-	/* An absent function answers as the kernel does, without the memory. */
+	/*
+	 * An absent function answers as the kernel does, without the memory;
+	 * anything else is the simulated memory of its space, which the
+	 * argument numbers.
+	 */
 	if (absent) {
 		error = absent_access(access, value);
-		return error;
+	} else {
+		space = space_key(access, (unsigned)(uintptr_t)argument);
+		error = simulated_memory(access, space, value);
 	}
 
-	/* The argument is the number of the space the handler was installed for. */
-	space = space_key(access, (unsigned)(uintptr_t)argument);
+	/* Reports an access that failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: a read leaves the space's value in value. */
+	return 0;
+}
+
+/* Moves the bytes of one access through the simulated memory of a space. */
+static int
+simulated_memory(
+	const struct drv_acpi_region_access *access,
+	uint64_t space,
+	uint64_t *value)
+{
+	unsigned bytes;
+	unsigned index;
+	uint8_t *byte;
 
 	/* A read starts from zero. */
 	bytes = access->width / 8U;
@@ -1408,7 +1620,7 @@ simulated_space(
 		/* Finds the simulated byte. */
 		byte = page_byte(space, access->address + index);
 		if (byte == NULL)
-			return 12;
+			return HOST_ENOMEM;
 
 		/* Stores or loads it. */
 		if (access->write) {
@@ -1418,7 +1630,7 @@ simulated_space(
 		}
 	}
 
-	/* Succeeded. */
+	/* Succeeded: every byte of the access moved. */
 	return 0;
 }
 
@@ -1447,7 +1659,7 @@ space_key(
 	function |= (uint64_t)access->pci_device << 3;
 	function |= access->pci_function;
 
-	/* Leaves room below for the numbers of the spaces. */
+	/* Reports the key, leaving room below for the numbers of the spaces. */
 	return (function + 1U) << 8;
 }
 
@@ -1486,7 +1698,7 @@ parse_absent(
 	absent_functions[absent_function_count] |= (uint64_t)function;
 	absent_function_count++;
 
-	/* Succeeded. */
+	/* Succeeded: accesses to the function answer as absent. */
 	return 0;
 }
 
@@ -1512,7 +1724,7 @@ parse_ec_ports(
 	/* Moves the EC there. */
 	hardware_ec_ports((uint32_t)data, (uint32_t)command);
 
-	/* Succeeded. */
+	/* Succeeded: the EC answers on the ports. */
 	return 0;
 }
 
@@ -1532,6 +1744,7 @@ absent_function(
 
 	/* Looks for it among the absent ones. */
 	for (index = 0; index < absent_function_count; index++) {
+		/* Reports a function --absent-pci named. */
 		if (absent_functions[index] == function)
 			return 1;
 	}
@@ -1552,7 +1765,7 @@ absent_access(
 {
 	/* Fails the access the way the kernel used to. */
 	if (absent_fails)
-		return 19;
+		return HOST_ENODEV;
 
 	/* A write goes nowhere. */
 	if (access->write)
@@ -1582,22 +1795,26 @@ page_byte(
 	/* Finds the page in its bucket. */
 	number = address / PAGE_SIZE;
 	bucket = (unsigned)((number * 31U + space) % PAGE_BUCKETS);
-	for (page = pages[bucket]; page != NULL; page = page->next) {
+	for (page = pages[bucket];
+	     page != NULL;
+	     page = page->next) {
 		/* Stops at the page of this space and number. */
 		if (page->space == space && page->number == number)
 			return &page->bytes[address % PAGE_SIZE];
 	}
 
-	/* Creates it, zero-filled. */
+	/* Allocates the page, zero-filled. */
 	page = calloc(1, sizeof(*page));
 	if (page == NULL)
 		return NULL;
+
+	/* Names it and puts it at the head of its bucket. */
 	page->space = space;
 	page->number = number;
 	page->next = pages[bucket];
 	pages[bucket] = page;
 
-	/* Reports the byte. */
+	/* Succeeded: reports the byte in the new page. */
 	return &page->bytes[address % PAGE_SIZE];
 }
 
@@ -1634,24 +1851,14 @@ devices_visitor(
 		if (error != 0 || found->parent != node)
 			continue;
 
-		/* Evaluates it under the label "device.name". */
+		/* Evaluates it under the label "device.name"; a failure is printed as its value. */
 		snprintf(label, sizeof(label), "%s.%s", path, names[index]);
-		evaluate_and_print(node, names[index], label);
+		(void)evaluate_and_print(node, names[index], label);
 	}
 
 	/* Goes on into the children. */
 	return 0;
 }
-
-/*
- * The paths of the methods --methods evaluates, collected before any runs,
- * because a method may load or unload tables and change the namespace.
- */
-struct method_list {
-	char **paths;
-	size_t count;
-	size_t capacity;
-};
 
 /* Lists every method without arguments, then evaluates each by its path. */
 static int
@@ -1659,20 +1866,32 @@ evaluate_methods(void)
 {
 	struct method_list list;
 	size_t index;
+	int decision;
 
-	/* Lists the methods. */
+	/* Lists the methods; the visitor stops the walk when memory runs out. */
 	memset(&list, 0, sizeof(list));
-	drv_acpi_walk(NULL, method_visitor, &list);
+	decision = drv_acpi_walk(NULL, method_visitor, &list);
 
-	/* Evaluates each; a failure is printed and the next one runs. */
+	/* Evaluates each listed method, unless the list is incomplete. */
 	for (index = 0; index < list.count; index++) {
-		/* Evaluates one method. */
-		evaluate_and_print(NULL, list.paths[index], list.paths[index]);
+		/* Evaluates one method; a failure is printed and the next one runs. */
+		if (decision >= 0)
+			(void)evaluate_and_print(NULL, list.paths[index], list.paths[index]);
+
+		/* Frees the path. */
 		free(list.paths[index]);
 	}
 
 	/* Frees the list. */
 	free(list.paths);
+
+	/* Reports a list the walk could not complete. */
+	if (decision < 0) {
+		fprintf(stderr, "methods: the list of methods ran out of memory\n");
+		return HOST_ENOMEM;
+	}
+
+	/* Succeeded: every method without arguments was evaluated. */
 	return 0;
 }
 
@@ -1686,23 +1905,26 @@ method_visitor(
 	struct method_list *list;
 	char path[PATH_MAX_LENGTH];
 	char **grown;
+	char *copy;
 	int error;
 
 	UNUSED_PARAMETER(depth);
 
-	/* Only methods without arguments are listed. */
+	/* Only methods are listed. */
 	list = argument;
 	if (node->object == NULL || node->object->type != DRV_ACPI_TYPE_METHOD)
 		return 0;
+
+	/* Only methods without arguments are listed. */
 	if (node->object->value.method.argument_count != 0)
 		return 0;
 
-	/* Writes the path. */
+	/* Writes the path; a path too long to print is not listed. */
 	error = drv_acpi_node_path(node, path, sizeof(path));
 	if (error != 0)
 		return 0;
 
-	/* Grows the list when it is full. */
+	/* Grows the list when it is full; running out of memory stops the walk. */
 	if (list->count == list->capacity) {
 		list->capacity = list->capacity * 2U + 64U;
 		grown = realloc(list->paths, list->capacity * sizeof(list->paths[0]));
@@ -1711,13 +1933,16 @@ method_visitor(
 		list->paths = grown;
 	}
 
-	/* Keeps a copy of the path. */
-	list->paths[list->count] = strdup(path);
-	if (list->paths[list->count] == NULL)
+	/* Copies the path; running out of memory stops the walk. */
+	copy = strdup(path);
+	if (copy == NULL)
 		return -1;
+
+	/* Keeps the copy. */
+	list->paths[list->count] = copy;
 	list->count++;
 
-	/* Goes on with the walk. */
+	/* Succeeded: goes on with the walk. */
 	return 0;
 }
 
@@ -1735,14 +1960,18 @@ evaluate_and_print(
 	drv_acpi_text_init(&text);
 	error = drv_acpi_text_evaluate(&text, scope, path, label);
 
-	/* Prints it. */
+	/* Prints it, a failed evaluation's line too. */
 	if (text.data != NULL)
 		fputs(text.data, stdout);
+
+	/* Frees the text. */
 	drv_acpi_text_release(&text);
+
+	/* Reports a failed evaluation. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the result is printed. */
 	return 0;
 }
 
@@ -1757,14 +1986,18 @@ print_namespace(void)
 	drv_acpi_text_init(&text);
 	error = drv_acpi_text_namespace(&text);
 
-	/* Prints them. */
+	/* Prints them, as many as were written. */
 	if (text.data != NULL)
 		fputs(text.data, stdout);
+
+	/* Frees the text. */
 	drv_acpi_text_release(&text);
+
+	/* Reports a namespace that could not be written whole. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the namespace is printed. */
 	return 0;
 }
 
@@ -1780,10 +2013,11 @@ print_notification(
 
 	UNUSED_PARAMETER(argument);
 
-	/* Prints the node and the value. */
+	/* Finds the node's path, or a mark when it does not fit. */
 	error = drv_acpi_node_path(node, path, sizeof(path));
 	if (error != 0)
 		strcpy(path, "(long)");
+
+	/* Prints the node and the value. */
 	printf("NOTIFY %s 0x%X\n", path, (unsigned)value);
 }
-
