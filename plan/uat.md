@@ -13,7 +13,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | 作り方 | `plan/tools/guest/test-image.sh --no-harness plan/ws133/config-uat.mk build/uat-2` に build-demo-image.sh と同じ `--file`（apps.conf・壁紙・authorized_keys）と `I915_TEST_VBT=n`。config-uat.mk は demo の構成（その時の CI の amd64 の構成: emacs・clang 入り）に monitor と noto-color-emoji を足したもの。build/uat-1 はユーザーの新しい CI の構成で emacs が無いので使わない |
 | boot の行 | `kernel=vmunix` `rootpart=PARTLABEL=zedBSD-root` `swap0=PARTLABEL=zedBSD-swap` `logo=logo.ppm` `login=graphical` `kmsg=quiet` `display=edp`（S1 と同じ。同じ名前の行を 2 回書かない） |
 | 利用者 | root / root、kei / kei（kei は起動で自動の login） |
-| QEMU の boot-test | Q1 が image を作った後に流す（結果をここに） |
+| QEMU の boot-test | T1-084 PASS（2026-10-04 10:57、QEMU KVM・framebuffer・GPU なし。GPU が無いので greeter の後に getty の `login:`。`/home/awe/zedBSD-worktrees/t1/build/t1-084/boot/login.png`）。SSH で `/bin/emacs`・`/bin/monitor` が在る |
 
 ## 2. 準備（ユーザー）
 
