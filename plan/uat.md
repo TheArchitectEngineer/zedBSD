@@ -205,4 +205,4 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 ## 次の UAT で採る記録（2026-10-05 Q1）
 
-- [BUG-190](bugs/BUG-190.md) の evdev の記録（手順は ticket の「次の UAT で採る evdev の記録の手順」、約 1 分）。
+- ~~[BUG-190](bugs/BUG-190.md) の evdev の記録~~（2026-10-05 ユーザーの決定で不要。WS159 の後に再評価）。
