@@ -44,6 +44,7 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend-evdev.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "touchpad.h"
+#include "apps.h"
 #include "super-tap.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -352,6 +353,8 @@ struct zwl_object {
 	/* A surface's window: place, stacking (map order, lowest at the bottom), virtual desktop and fullscreen state. */
 	unsigned mapped;
 	uint64_t map_order;
+	/* When the window was first shown (the map order then), which orders the bar's applications (apps.c, ws142-p004). */
+	uint64_t open_order;
 	unsigned desktop;
 	unsigned minimized;
 	int32_t x;
@@ -698,6 +701,37 @@ uint64_t zwl_cycles(void);
  * It alone owns its Vulkan device and output and the connections of its
  * clients.
  */
+/* The virtual desktops that keep a bar order of their own (shell.c has as many). */
+#define ZWL_APPS_DESKTOPS	4U
+
+/* Whether the previews of an application's icon show: not, waiting on the pointer's rest, or shown (by the rest or a click). */
+#define ZWL_APPS_IDLE		0U
+#define ZWL_APPS_ARMED		1U
+#define ZWL_APPS_SHOWN		2U
+#define ZWL_APPS_VIA_HOVER	0U
+#define ZWL_APPS_VIA_CLICK	1U
+
+/*
+ * The bar's applications (apps-bar.c): each desktop's bar order; the
+ * previews' state, the application it is about, when the wait began (or
+ * when the pointer left), and whether it has left the icons and the panel;
+ * a press on an icon (its application, where it began, whether it became
+ * the icon's drag); and the bar as last logged.
+ */
+struct zwl_apps_bar {
+	struct zwl_apps_order orders[ZWL_APPS_DESKTOPS];
+	unsigned state;
+	unsigned via;
+	char key[ZWL_APPS_KEY];
+	uint64_t since_ms;
+	unsigned left;
+	unsigned pressed;
+	char press_key[ZWL_APPS_KEY];
+	int32_t press_x;
+	unsigned dragging;
+	char logged[512];
+};
+
 struct zwl_server {
 	struct zwl_perf perf;
 	int listener;
@@ -963,6 +997,8 @@ struct zwl_server {
 	float desktop_from;
 	float desktop_to;
 	uint64_t desktop_start_ms;
+	/* The applications' icons in the system bar and their previews (apps-bar.c, ws142-p004). */
+	struct zwl_apps_bar apps_bar;
 	/*
 	 * App Home's pages (ws035-p071): the page shown; a press on Home that
 	 * may become a page drag (where it started, the application under it,
@@ -1237,6 +1273,15 @@ void zwl_compose_poll(struct zwl_server *server);
 int zwl_glass_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_glass_motion(struct zwl_server *server);
 void zwl_glass_gesture(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
+int zwl_glass_apps_room(struct zwl_server *server, int32_t *left, int32_t *right);
+void zwl_glass_bring(struct zwl_server *server, struct zwl_object *surface, const char *via);
+void zwl_glass_open_wiseview(struct zwl_server *server, const char *via);
+
+/* The applications' icons in the system bar and their previews (apps-bar.c, ws142-p004; the drawing is in glass.h). */
+int zwl_apps_bar_motion(struct zwl_server *server);
+int zwl_apps_bar_button(struct zwl_server *server, uint32_t button, uint32_t state_value);
+int zwl_apps_bar_key(struct zwl_server *server, uint32_t key, uint32_t state_value);
+void zwl_apps_bar_tick(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
 void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);

@@ -11,7 +11,7 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/touch.c \
 	userland/desktop/wayland/touchpad.c \
 	userland/desktop/wayland/network-info.c \
-	userland/desktop/wayland/super-tap.c \
+	userland/desktop/wayland/super-tap.c userland/desktop/wayland/apps.c userland/desktop/wayland/apps-bar.c \
 	userland/desktop/wayland/compose.c \
 	userland/desktop/wayland/import.c \
 	userland/desktop/wayland/shm.c \
