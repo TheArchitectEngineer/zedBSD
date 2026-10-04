@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws129-p001 -->
 # ws129-p001: ベータ1 の release の定義
 
-Status: planned
+Status: in-progress（q672 / q672-i01、P2、2026-10-04。[release.md](../release.md) の案（第 2 版、design-reviewer の review を反映）とユーザーへの質問 U1〜U15 を Q1 に返した。受け入れの判定は Q1）
 Disposition: normal
 Parent: [WS129](../ws.md)
 Focused goal: fg019（ベータ1）
-Queue: none（未承認）
+Queue: q672 / q672-i01（P2）
 目安: 2h（設計、source は変えない）
 
 ## 範囲
@@ -38,3 +38,10 @@ release.md とユーザーへの質問の一覧を main に返す。
 - 配布物の範囲（Windows の zip、Linux の deb を載せるか）。
 - 機能の凍結の日と RC の日。
 - release を GitHub で prerelease にするか。
+
+## 結果（q672-i01、2026-10-04、P2）
+
+- [release.md](../release.md): 今の main の事実（§1）、版（§2）、配布物（§3）、release の config（§4）、CI の release の job（§5、別 file の release.yml、rc の build と最終の tag の promote）、文書の置き場所（§6）、日程（§7）、最終回帰と実機（§8）、ユーザーの判断 U1〜U15（§9）。
+- design-reviewer の review（高 4・中 6・低 5）を全て反映（§11）。
+- 公開の前に要る判断と現存の問題: 固定の password と root の SSH の login が有効な image（U4・U10）、Windows の zip の GPL の source の commit の未記載（今の nightly も同じ、U6）。
+- code は変えていない。

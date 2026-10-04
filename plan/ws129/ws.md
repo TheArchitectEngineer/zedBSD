@@ -46,7 +46,7 @@ push・GitHub release の公開はユーザーの指示で行う。
 
 | Phase | 目的 | Status | 依存 | 目安 |
 | --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | release の定義（版の付け方の案、配布物、CI の release の設計、文書の置き場所、凍結と回帰と実機の日程の案）。ユーザーへの質問を出す | planned | なし | 2h |
+| [p001](phase001/phase.md) | release の定義（版の付け方の案、配布物、CI の release の設計、文書の置き場所、凍結と回帰と実機の日程の案）。ユーザーへの質問を出す | in-progress（q672、[release.md](release.md) の案と U1〜U15 を返した、ユーザーの判断待ち） | なし | 2h |
 | [p002](phase002/phase.md) | license の一覧（image の全ての component、本文の収集、生成の script、audit） | planned | なし（最後に p007 で再生成） | 3〜4h |
 | [p003](phase003/phase.md) | 版の一つの源（Makefile の変数 → uname・起動の表示・`/etc/os-release`、About は WS089 に依頼） | planning | p001 とユーザーの版の名前 | 2h |
 | [p004](phase004/phase.md) | release の image の config（fg019 の成果、Settings・audiod 等、AX211 の扱い）と CI の release の job | planning | p001、BUG-134 の結果（AX211 の扱い） | 3h |
