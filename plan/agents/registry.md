@@ -18,6 +18,7 @@
 | P3 / generation9（2026-10-04） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装（q684-i03）→ q685〜q690 | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684-i03 | q685〜q690 | running | base main |
 | T1（2026-10-04 19 時の generation、T1-091 の後に終了） | test-runner | 試験 | 同上 | — | — | stopped | T1-091 PASS |
 | T1（2026-10-04 17 時の generation、終了） | test-runner | 試験 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | — | — | stopped（必要な時に起動） | TQ-1・TQ-2・T1-086〜T1-090 |
+| P2 / generation13（2026-10-04、利用枠でラップアップ、最後 0304720 → main 1adcc3a） | phase-runner（high） | WS141・WS037 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | — | 再開: ws141-p003 の QEMU 回帰（N0 の revision の判定の危険）→ 実機の N0 → N1、WS037 の判断 5〜18 | stopped | 全 commit 統合済み |
 | P5〜P8 | — | 未配属 | — | — | — | N=4 の間は起動しない | — |
 
 担当の WS と最初の Queue は、ベータ1（fg019）の内容をユーザーと決めてから割り当てる。
