@@ -29,6 +29,7 @@ Keiland の標準 app として、カレンダー・予定の管理（スケジ�
 - To-do・memo（オーガナイザ）の範囲。
 - 保存の形式（iCalendar（.ics）の file を利用者の領域に、など）と、他の app（Files・通知）との関係。通知（予定の時刻の知らせ）は compositor の通知の仕組みに。
 - libkeiland の UI の部品で作る（他の標準 app と同じ）。Linux・FreeBSD の Keiland でも動く。
+- **system bar の時計からの起動**（2026-10-04 夜 ユーザー「画面右上通知領域の日付・時刻をクリックすると、カレンダーappが表示されるようにします。」）: 右上の通知領域の日付・時刻のクリックで、この app を起動する（起動済みなら前に出す。単一の instance の扱いは ws089-p016 の activation の仕組みと合わせる）。compositor の system bar の側の変更（WS099）も、この WS の Phase に含める。
 - 同期（CalDAV・クラウド）は後の候補（WS146・WS147 と関係）。
 
 ## Phase（案）
