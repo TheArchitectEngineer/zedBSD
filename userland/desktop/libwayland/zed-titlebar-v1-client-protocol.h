@@ -72,6 +72,7 @@ uint32_t keiland_titlebar_manager_v1_get_version(struct keiland_titlebar_manager
 #define KEILAND_TITLEBAR_V1_SET_TAB 13U
 #define KEILAND_TITLEBAR_V1_SET_TABS_OPTIONS 14U
 #define KEILAND_TITLEBAR_V1_FOCUS_CONTROL 15U
+#define KEILAND_TITLEBAR_V1_SET_SUGGESTIONS 16U
 struct keiland_titlebar_v1_listener {
 	void (*control_activated)(void *data, struct keiland_titlebar_v1 *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 	void (*text_changed)(void *data, struct keiland_titlebar_v1 *object, uint32_t id, const char *text);
@@ -101,6 +102,7 @@ void keiland_titlebar_v1_remove_tab(struct keiland_titlebar_v1 *object, uint32_t
 void keiland_titlebar_v1_set_tab(struct keiland_titlebar_v1 *object, uint32_t id, const char *title, uint32_t flags);
 void keiland_titlebar_v1_set_tabs_options(struct keiland_titlebar_v1 *object, uint32_t options);
 void keiland_titlebar_v1_focus_control(struct keiland_titlebar_v1 *object, uint32_t id, uint32_t mode);
+void keiland_titlebar_v1_set_suggestions(struct keiland_titlebar_v1 *object, uint32_t id, struct wl_array *suggestions);
 void keiland_titlebar_v1_set_user_data(struct keiland_titlebar_v1 *object, void *data);
 void *keiland_titlebar_v1_get_user_data(struct keiland_titlebar_v1 *object);
 uint32_t keiland_titlebar_v1_get_version(struct keiland_titlebar_v1 *object);

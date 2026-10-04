@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning). */
-#define KL_VERSION	24U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions). */
+#define KL_VERSION	25U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -460,6 +460,21 @@ int kl_titlebar_set_tabs_options(struct kl_titlebar *titlebar, unsigned options)
  * Gives the keyboard to a committed search or breadcrumb control (KL_FOCUS_*), outside a transaction.
  */
 int kl_titlebar_focus_control(struct kl_titlebar *titlebar, uint32_t id, unsigned mode);
+
+/* The most suggestions a field shows (kl_titlebar_set_suggestions). */
+#define KL_TITLEBAR_SUGGESTIONS_MAX	12U
+
+/*
+ * Gives a committed search or breadcrumb field suggestions, outside a
+ * transaction (ws127-p010): count pairs, each a label shown in a list
+ * under the field and the text it puts in the field when chosen (Up, Down
+ * and Enter, or a click or a tap; the field then reports the text as
+ * changed, as typing does).  The list shows while the field has the
+ * keyboard and goes when its text changes or its editing ends; count 0
+ * takes it away.  Returns 0, ENOTSUP for a compositor without suggestions
+ * (one older than KL_VERSION 25), ENOENT, EINVAL or E2BIG.
+ */
+int kl_titlebar_set_suggestions(struct kl_titlebar *titlebar, uint32_t id, const char *const *labels, const char *const *texts, size_t count);
 
 /*
  * The recent files (WS071).
@@ -1678,6 +1693,7 @@ void kl_system_monitor_close(struct kl_system_monitor *monitor);
 #define keiland_titlebar_set_control_text kl_titlebar_set_control_text
 #define keiland_titlebar_set_control_value kl_titlebar_set_control_value
 #define keiland_titlebar_set_mode kl_titlebar_set_mode
+#define keiland_titlebar_set_suggestions kl_titlebar_set_suggestions
 #define keiland_titlebar_set_tab kl_titlebar_set_tab
 #define keiland_titlebar_set_tabs_options kl_titlebar_set_tabs_options
 #define keiland_version kl_version

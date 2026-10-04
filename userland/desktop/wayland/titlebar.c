@@ -62,6 +62,7 @@
 #define REQUEST_SET_TAB			13U
 #define REQUEST_SET_TABS_OPTIONS	14U
 #define REQUEST_FOCUS_CONTROL		15U
+#define REQUEST_SET_SUGGESTIONS		16U
 
 /* keiland_titlebar_v1's errors. */
 #define ERROR_INVALID_ID		0U
@@ -84,6 +85,9 @@
 /* The version that has drop_target. */
 #define TITLEBAR_DROP_VERSION		2U
 
+/* The version that has set_suggestions (ws127-p010). */
+#define TITLEBAR_SUGGEST_VERSION	4U
+
 static uint32_t titlebar_word(const unsigned char *bytes, size_t offset);
 static int titlebar_string(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
 static int manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -97,6 +101,7 @@ static int titlebar_add_control(struct zwl_object *titlebar, const unsigned char
 static int titlebar_set_text(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
 static int titlebar_set_breadcrumb(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
 static int titlebar_focus(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
+static int titlebar_suggest(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
 static int titlebar_fail(struct zwl_object *titlebar, uint32_t code, const char *reason);
 static struct zwl_titlebar_control *titlebar_find_control(struct zwl_titlebar_state *state, uint32_t id, unsigned *index);
 static struct zwl_titlebar_tab *titlebar_find_tab(struct zwl_titlebar_state *state, uint32_t id, unsigned *index);
@@ -572,6 +577,14 @@ titlebar_request(
 	/* The keyboard asked for a control, outside the transactions. */
 	if (opcode == REQUEST_FOCUS_CONTROL) {
 		error = titlebar_focus(titlebar, bytes, size);
+		return error;
+	}
+
+	/* A text field's suggestions, outside the transactions (since version 4, ws127-p010). */
+	if (opcode == REQUEST_SET_SUGGESTIONS) {
+		if (titlebar->version < TITLEBAR_SUGGEST_VERSION)
+			return EPROTO;
+		error = titlebar_suggest(titlebar, bytes, size);
 		return error;
 	}
 
@@ -1165,6 +1178,90 @@ titlebar_focus(
 	titlebar->client->server->dirty = 1;
 
 	/* Succeeded: the control waits for the keyboard. */
+	return 0;
+}
+
+/*
+ * Takes a text field's suggestions (set_suggestions: id, an array of
+ * NUL-terminated strings, each suggestion a label and the text it puts in
+ * the field), outside the transactions: the presentation shows them under
+ * the field while it has the keyboard, until its text changes.  An empty
+ * array takes them away.
+ */
+static int
+titlebar_suggest(
+	struct zwl_object *titlebar,
+	const unsigned char *bytes,
+	size_t size)
+{
+	const struct zwl_titlebar_control *control;
+	const char *strings[2U * ZWL_TITLEBAR_SUGGESTIONS_MAX];
+	const char *items;
+	uint32_t length;
+	size_t aligned;
+	size_t count;
+	size_t at;
+	size_t text_length;
+	int error;
+
+	/* The control and the array's length, which the payload must hold (padded to a word). */
+	if (size < 8U)
+		return EPROTO;
+	length = titlebar_word(bytes, 4U);
+	aligned = ((size_t)length + 3U) & ~(size_t)3U;
+	if (aligned != size - 8U)
+		return EPROTO;
+	items = (const char *)bytes + 8U;
+
+	/* A search or a breadcrumb that is shown. */
+	control = zwl_titlebar_control(&titlebar->titlebar_model->shown, titlebar_word(bytes, 0U));
+	if (control == NULL) {
+		error = titlebar_fail(titlebar, ERROR_INVALID_ID, "no control shown has the ID");
+		return error;
+	}
+
+	/* Only a text field has suggestions. */
+	if (control->role != ZWL_CONTROL_SEARCH && control->role != ZWL_CONTROL_BREADCRUMB) {
+		error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "suggestions for a control that is not a search or a breadcrumb");
+		return error;
+	}
+
+	/* A list that is not empty ends with a string's NUL. */
+	if (length != 0U && items[length - 1U] != '\0') {
+		error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "suggestions not ended by NUL");
+		return error;
+	}
+
+	/* Each string, as many as the suggestions hold, none longer than a text. */
+	count = 0;
+	at = 0;
+	while (at < length) {
+		if (count == 2U * ZWL_TITLEBAR_SUGGESTIONS_MAX) {
+			error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "more than 12 suggestions");
+			return error;
+		}
+
+		/* The string, which must fit a field. */
+		text_length = strlen(items + at);
+		if (text_length > ZWL_TITLEBAR_TEXT_MAX) {
+			error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "a suggestion longer than 1023 bytes");
+			return error;
+		}
+		strings[count] = items + at;
+		count++;
+		at += text_length + 1U;
+	}
+
+	/* Each suggestion is a label and a text: the strings come in pairs. */
+	if ((count % 2U) != 0U) {
+		error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "a suggestion without its text");
+		return error;
+	}
+
+	/* The presentation shows them when the field is this one's. */
+	zwl_titlebar_suggestions(titlebar->client->server, titlebar, control->id, strings, count / 2U);
+
+	/* Succeeded: the suggestions are taken (or the field had gone). */
 	return 0;
 }
 

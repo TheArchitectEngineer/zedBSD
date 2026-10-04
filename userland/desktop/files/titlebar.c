@@ -60,6 +60,7 @@ static int titlebar_build(struct fm_titlebar *titlebar);
 static int titlebar_state(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
 static int titlebar_state_controls(struct keiland_titlebar *object, const struct fm_titlebar_state *state);
 static int titlebar_state_progress(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
+static void titlebar_suggest(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
 
 /* What the titlebar tells the window: the controls chosen, the text fields' typing, and the part of the path a drag is over. */
 static const struct keiland_titlebar_listener titlebar_listener = {
@@ -355,6 +356,10 @@ titlebar_state(
 			fm_log("TITLEBAR focus-failed id=%u errno=%d", state->focus, error);
 	}
 
+	/* The path's field's suggestions, once for each list made (ws127-p010). */
+	if (state->suggest_serial != titlebar->shown.suggest_serial)
+		titlebar_suggest(titlebar, state);
+
 	/* The log line the tests read: the last part, and the field given the keyboard now (0 for none). */
 	last = "-";
 	if (state->part_count > 0)
@@ -450,4 +455,27 @@ titlebar_state_progress(
 
 	/* Succeeded: the progress shows. */
 	return 0;
+}
+
+/* Gives the path's field the folders it suggests (none takes the list away); a refusal is only logged. */
+static void
+titlebar_suggest(
+	struct fm_titlebar *titlebar,
+	const struct fm_titlebar_state *state)
+{
+	const char *labels[FM_SUGGESTIONS];
+	const char *texts[FM_SUGGESTIONS];
+	int index;
+	int error;
+
+	/* The labels and the texts as the library takes them. */
+	for (index = 0; index < state->suggest_count; index++) {
+		labels[index] = state->suggest_labels[index];
+		texts[index] = state->suggest_texts[index];
+	}
+
+	/* The request; a compositor without suggestions (ENOTSUP) leaves the field as it is. */
+	error = keiland_titlebar_set_suggestions(titlebar->titlebar, FM_CONTROL_PATH, labels, texts, (size_t)state->suggest_count);
+	if (error != 0)
+		fm_log("TITLEBAR suggest-failed errno=%d", error);
 }

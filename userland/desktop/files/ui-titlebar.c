@@ -90,6 +90,14 @@ fm_ui_titlebar_state(
 	/* The text control the window last asked the keyboard for. */
 	state->focus = app->control_focus;
 	state->focus_serial = app->control_focus_serial;
+
+	/* The path's field's suggestions, the last list made (ws127-p010). */
+	state->suggest_serial = app->suggest_serial;
+	state->suggest_count = app->suggest_count;
+	for (index = 0; index < app->suggest_count; index++) {
+		titlebar_copy(state->suggest_labels[index], sizeof(state->suggest_labels[index]), app->suggest_labels[index]);
+		titlebar_copy(state->suggest_texts[index], sizeof(state->suggest_texts[index]), app->suggest_texts[index]);
+	}
 }
 
 /*
@@ -177,10 +185,17 @@ titlebar_activated(
 		fm_ui_go(app, &location);
 		break;
 	case FM_CONTROL_PATH:
-		/* A part before the last goes there (the last is the place shown). */
+		/*
+		 * A part before the last goes there; the last, the place shown, makes
+		 * the path a field to type a path in, all of it selected (ws127-p010,
+		 * as Ctrl+L does).
+		 */
 		count = fm_ui_crumbs(app, crumbs, FM_CRUMBS);
-		if ((int)detail < count - 1)
+		if ((int)detail < count - 1) {
 			fm_ui_go(app, &crumbs[detail].location);
+		} else {
+			fm_input_location(app);
+		}
 		break;
 	case FM_CONTROL_ICONS:
 		app->view = FM_VIEW_ICONS;
@@ -217,10 +232,13 @@ titlebar_changed(
 		return;
 	}
 
-	/* The path's field: kept for its Enter. */
+	/* The path's field: kept for its Enter, and its suggestions made a second after the typing rests (ws127-p010). */
 	if (event->id == FM_CONTROL_PATH) {
 		fm_field_set(&app->location, event->text);
 		app->focus = FM_FOCUS_LOCATION;
+		app->location_typed_at = app->now;
+		if (app->location_typed_at == 0U)
+			app->location_typed_at = 1;
 	}
 }
 
@@ -242,9 +260,10 @@ titlebar_done(
 		return;
 	}
 
-	/* The path: Enter goes to the folder typed; otherwise nothing changes. */
+	/* The path: Enter goes to the folder typed; otherwise nothing changes (no suggestions are due any more). */
 	if (event->id == FM_CONTROL_PATH) {
 		app->focus = FM_FOCUS_CONTENT;
+		app->location_typed_at = 0;
 		if (event->detail != KEILAND_TEXT_SUBMITTED)
 			return;
 		fm_field_set(&app->location, event->text);

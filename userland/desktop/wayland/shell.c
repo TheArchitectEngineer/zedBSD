@@ -551,6 +551,9 @@ zwl_glass_draw(
 	/* An open menu's popups over the system bar (menu-shell.c). */
 	zwl_menu_draw_popups(server, command);
 
+	/* The suggestions under a titlebar's field with the keyboard (titlebar-shell.c, ws127-p010). */
+	zwl_titlebar_draw_suggestions(server, command);
+
 	/* The network's menu, when open (network.c). */
 	zwl_network_draw_menu(server, command);
 

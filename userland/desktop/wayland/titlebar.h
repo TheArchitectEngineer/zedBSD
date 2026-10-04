@@ -63,6 +63,9 @@
 #define ZWL_TITLEBAR_SEGMENTS_MAX	32U
 #define ZWL_TITLEBAR_TEXT_MAX		1023U
 
+/* The most suggestions a text field shows under it (ws127-p010). */
+#define ZWL_TITLEBAR_SUGGESTIONS_MAX	12U
+
 /*
  * One control of a titlebar: what it is (its role), when it gives way (its
  * priority), the segmented pill it joins (its group, 0 for none), its
@@ -153,6 +156,8 @@ int zwl_titlebar_axis(struct zwl_server *server, int32_t vertical, int32_t horiz
 void zwl_titlebar_overflow_chosen(struct zwl_server *server, struct zwl_object *surface, uint32_t id);
 void zwl_titlebar_overflow_opened(struct zwl_object *surface);
 void zwl_titlebar_forget(struct zwl_server *server, struct zwl_object *object);
+void zwl_titlebar_suggestions(struct zwl_server *server, struct zwl_object *titlebar, uint32_t id, const char *const *strings, size_t count);
+void zwl_titlebar_draw_suggestions(struct zwl_server *server, VkCommandBuffer command);
 
 /* The tab events zwl_titlebar_send_tab sends. */
 #define ZWL_TAB_EVENT_ACTIVATED		0U

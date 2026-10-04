@@ -47,7 +47,7 @@ static const struct wl_message titlebar_manager_requests[] = {
 
 /* Describes the global that gives windows their titlebar's presentation. */
 const struct wl_interface keiland_titlebar_manager_v1_interface = {
-	"keiland_titlebar_manager_v1", 3, 2, titlebar_manager_requests,
+	"keiland_titlebar_manager_v1", 4, 2, titlebar_manager_requests,
 	0, NULL
 };
 
@@ -69,6 +69,7 @@ static const struct wl_message titlebar_requests[] = {
 	{ "set_tab", "usu", titlebar_plain_types },
 	{ "set_tabs_options", "u", titlebar_plain_types },
 	{ "focus_control", "uu", titlebar_plain_types },
+	{ "set_suggestions", "4ua", titlebar_plain_types },
 };
 
 /* The arguments of keiland_titlebar_v1.control_activated: control, detail, the seat (or none), serial. */
@@ -93,7 +94,7 @@ static const struct wl_message titlebar_events[] = {
 
 /* Describes one window's titlebar presentation. */
 const struct wl_interface keiland_titlebar_v1_interface = {
-	"keiland_titlebar_v1", 3, 16, titlebar_requests,
+	"keiland_titlebar_v1", 4, 17, titlebar_requests,
 	8, titlebar_events
 };
 
@@ -464,6 +465,25 @@ keiland_titlebar_v1_focus_control(
 	arguments[0].u = id;
 	arguments[1].u = mode;
 	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_FOCUS_CONTROL, NULL, 0, 0, arguments);
+}
+
+/*
+ * Sends keiland_titlebar_v1.set_suggestions (version 4): a text field's
+ * suggestions, NUL-separated, each a label and the text it puts in the
+ * field.
+ */
+void
+keiland_titlebar_v1_set_suggestions(
+	struct keiland_titlebar_v1 *object,
+	uint32_t id,
+	struct wl_array *suggestions)
+{
+	union wl_argument arguments[2];
+
+	/* The control and its suggestions. */
+	arguments[0].u = id;
+	arguments[1].a = suggestions;
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_TITLEBAR_V1_SET_SUGGESTIONS, NULL, 0, 0, arguments);
 }
 
 /*
