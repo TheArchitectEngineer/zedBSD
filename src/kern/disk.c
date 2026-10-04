@@ -42,6 +42,9 @@
 #define DISK_LIVE		2U
 #define DISK_GONE		3U
 #define DISK_HIGH		__attribute__((section(".hightext")))
+
+/* The most disks (a device and its partitions) whose going one removal posts (disk_media_gone). */
+#define DISK_GONE_POST_MAX	32U
 #define ASYNC_ENDPOINTS		4U
 #define ASYNC_SLOTS		4U
 #define ASYNC_QUEUE_LIMIT	2U
@@ -1650,6 +1653,65 @@ disk_media_revoke(
 		disk_persistence_invalidate(leaf);
 	}
 	disk_unlock(enabled);
+}
+
+/*
+ * Revokes the medium of a physical device that went away while it is in use
+ * (a mounted USB stick pulled out, BUG-192), and posts the REMOVE of its
+ * live partitions and of itself to the system's events, once.  The disks
+ * stay registered until they are idle and retired (disk_media_retire); in
+ * the meantime every I/O and open fails with ENXIO, so a reader that looks
+ * again sees them gone.
+ */
+void
+disk_media_gone(
+	struct disk *disk)
+{
+	struct disk *gone[DISK_GONE_POST_MAX];
+	struct disk *leaf;
+	struct disk *child;
+	unsigned count;
+	unsigned index;
+	bool enabled;
+
+	/* Nothing to do without a disk. */
+	if (disk == NULL)
+		return;
+
+	/* The medium goes first: no I/O reaches it from here on. */
+	leaf = disk_leaf(disk);
+	disk_media_revoke(leaf);
+
+	/* Its live partitions and itself, pinned, once. */
+	count = 0;
+	enabled = disk_lock();
+
+	if (!leaf->d_media_gone_posted) {
+		leaf->d_media_gone_posted = 1U;
+		for (child = disk_head; child != NULL && count + 1U < DISK_GONE_POST_MAX; child = child->d_next) {
+			/* A partition of this device. */
+			if (child->d_parent != leaf)
+				continue;
+			refcount_get(&child->d_refs);
+			gone[count] = child;
+			count++;
+		}
+
+		/* The device itself, when it is still listed. */
+		if (leaf->d_state == DISK_LIVE) {
+			refcount_get(&leaf->d_refs);
+			gone[count] = leaf;
+			count++;
+		}
+	}
+
+	disk_unlock(enabled);
+
+	/* Posted outside the registry lock, the partitions before the device; the pins go. */
+	for (index = 0; index < count; index++) {
+		disk_post_event(gone[index], KERN_SYSTEM_EVENT_REMOVE);
+		disk_release(gone[index]);
+	}
 }
 
 /*

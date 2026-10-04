@@ -6,7 +6,8 @@
 #  1. Plugged in: a new interface appears with the adapter's MAC, and within 40 s networkd brings it up and DHCP gives
 #     it a 10.0.5.x address (BUG-168: it stayed down, or fell back to 169.254 with RX packets 0).
 #  2. Its counters move (RX packets > 0): the data interface works after a late attach.
-#  3. Pulled out: the interface goes, networkd stays up; plugged in again: an address again.
+#  3. Pulled out: the interface goes, the guest still answers over SSH (tried for 60 s; T1-140), networkd stays up;
+#     plugged in again: an address again.
 # Each poll's ifconfig, net show and the kernel's usb/net lines go to OUTDIR for the analysis when a step fails.
 #   plan/tools/guest/guest.py start IMAGE; plan/tools/guest/guest.py wait
 #   plan/ws033/tests/lan-hotplug.sh [OUTDIR]
@@ -35,7 +36,7 @@ wait_address() {
 	while [ $i -lt 20 ]; do
 		name=$(hot_name)
 		if [ -n "$name" ]; then
-			guest "ifconfig $name; net show; netstat -rn 2>/dev/null" > "$out/$tag-poll$i.txt"
+			guest "ifconfig $name; net show; route show" > "$out/$tag-poll$i.txt"
 			if grep -q 'inet 10\.0\.5\.' "$out/$tag-poll$i.txt"; then
 				echo "$name"
 				return 0
@@ -69,12 +70,31 @@ if [ -n "$name" ]; then
 	[ $got -eq 0 ] || guest "net dhcp $name --timeout=20; ifconfig $name" > "$out/plug1-manual-dhcp.txt"
 fi
 
-# 3. Pulled out, networkd stays; plugged in again.
+# 3. Pulled out, networkd stays; plugged in again.  The routes before the pull are kept (T1-140: once the guest's SSH,
+# which goes through the harness's adapter ue0, stopped answering after the pull).
+guest "route show; net show" > "$out/before-unplug-routes.txt"
 send device_del '{"id":"hotnic"}'
 sleep 4
 left=$(hot_name)
 [ -z "$left" ] && pass unplugged-gone || fail unplugged-gone
-guest 'ps -A -o args | grep -c "[n]etworkd"' | tail -1 > "$out/networkd-count.txt"
+
+# SSH after the pull, tried for 60 s: a short loss and a guest that stopped are told apart (each try's time is kept).
+i=0
+answered=0
+: > "$out/after-unplug-ssh.txt"
+while [ $i -lt 12 ]; do
+	reply=$(guest 'echo alive; route show; net show; ps -A -o args | grep -c "[n]etworkd"')
+	echo "try $i at $(date +%s): $reply" >> "$out/after-unplug-ssh.txt"
+	if printf '%s\n' "$reply" | grep -q '^alive$'; then
+		answered=1
+		break
+	fi
+	sleep 5
+	i=$((i + 1))
+done
+echo "ssh after the pull: answered=$answered after $i failed tries"
+[ $answered -eq 1 ] && pass ssh-after-unplug || fail ssh-after-unplug
+printf '%s\n' "$reply" | tail -1 > "$out/networkd-count.txt"
 [ "$(cat "$out/networkd-count.txt")" = "1" ] && pass networkd-alive || fail networkd-alive
 send device_add "{\"driver\":\"usb-net\",\"bus\":\"xhci.0\",\"netdev\":\"hotnet\",\"id\":\"hotnic\",\"mac\":\"$mac\"}"
 name=$(wait_address plug2)

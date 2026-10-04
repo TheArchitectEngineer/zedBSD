@@ -124,6 +124,8 @@ struct disk {
 	uint64_t d_media_epoch;
 	/* Irreversible for this object; old references remain releasable. */
 	volatile unsigned d_media_revoked;
+	/* Whether its going (and its partitions') was posted to the system's events (disk_media_gone); registry lock. */
+	unsigned d_media_gone_posted;
 	uint64_t d_stable_epoch;
 	unsigned d_stable_valid;
 	unsigned d_flush_busy;
@@ -215,6 +217,11 @@ void disk_persistence_invalidate(struct disk *disk);
 void disk_persistence_forget(struct disk *disk);
 /* Closes old-medium admission without draining or flushing the current BIO. */
 void disk_media_revoke(struct disk *disk);
+/*
+ * A physical device that went away while in use (BUG-192): revokes its
+ * medium and posts the REMOVE of its partitions and of itself, once.
+ */
+void disk_media_gone(struct disk *disk);
 /* Retires idle revoked physical ancestry; caller then destroys the root slot. */
 int disk_media_retire(struct disk *disk);
 /* Caller retains the disk and its immutable physical ancestry. */
