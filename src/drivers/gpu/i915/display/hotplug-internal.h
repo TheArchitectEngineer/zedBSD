@@ -840,6 +840,22 @@ struct i915_hpd_world {
 	/* The connector names ("HDMI-A-1") the connectors point at. */
 	char hpd_conn_names[I915_HPD_MAX_CONNECTORS][16];
 
+	/*
+	 * The display topology (ws113-p002): the device's sequence, which
+	 * moves when a connector is connected or disconnected (it starts at 1,
+	 * the snapshot a new open must read first), and each connector's
+	 * generation, which moves with its own connection.  Made by the world's
+	 * creation, kept across the path's starts, read by the events operation
+	 * (any context) under topology_lock.
+	 */
+	struct spinlock topology_lock;
+	uint64_t topology_sequence;
+	uint64_t topology_generation[I915_HPD_MAX_CONNECTORS];
+
+	/* Each connector's connection and preferred mode as the topology last took them (under topology_lock). */
+	int topology_connected[I915_HPD_MAX_CONNECTORS];
+	struct i915_hpd_output_mode topology_mode[I915_HPD_MAX_CONNECTORS];
+
 	/* The status each connector was made with; written by the start only, never read. */
 	int hpd_last_status[I915_HPD_MAX_CONNECTORS];
 
