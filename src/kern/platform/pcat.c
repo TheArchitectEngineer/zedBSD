@@ -117,6 +117,9 @@ kern_platform_init(
 #if CONFIG_DRIVER_PCI_HDA
 	int hda_error;
 #endif
+#if CONFIG_DRIVER_ACPI
+	int acpi_error;
+#endif
 
 	count = 0;
 
@@ -229,8 +232,13 @@ kern_platform_init(
 #endif
 #if CONFIG_DRIVER_ACPI
 
-	/* Loads the firmware's ACPI tables once the PCI functions are known. */
-	(void)drv_acpi_attach();
+	/*
+	 * Loads the firmware's ACPI tables once the PCI functions are known.
+	 * A platform without ACPI (ENODEV) was logged by the driver already.
+	 */
+	acpi_error = drv_acpi_attach();
+	if (acpi_error != 0 && acpi_error != ENODEV)
+		kern_logf("acpi: attachment failed (error %d)\n", acpi_error);
 #endif
 
 	/* Lists every BIOS IDE unit as a boot device. */

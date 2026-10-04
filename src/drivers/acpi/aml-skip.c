@@ -101,6 +101,7 @@ static const struct operator_shape operator_shapes[] = {
 	{ DRV_ACPI_OP_FATAL, "BDT" },
 };
 
+static int skip_opcode_term(struct drv_acpi_eval *eval);
 static int skip_operands(struct drv_acpi_eval *eval, const char *operands);
 static int skip_super_name(struct drv_acpi_eval *eval);
 static int skip_name_term(struct drv_acpi_eval *eval);
@@ -114,11 +115,6 @@ int
 drv_acpi_skip_term_arg(
 	struct drv_acpi_eval *eval)
 {
-	const char *operands;
-	const char *text;
-	const uint8_t *end;
-	unsigned opcode;
-	size_t length;
 	bool named;
 	int error;
 
@@ -127,12 +123,33 @@ drv_acpi_skip_term_arg(
 	if (error != 0)
 		return error;
 
-	/* A name may be a method invocation with arguments to step over. */
+	/* A name may be a method invocation with arguments to step over; anything else starts with an opcode. */
 	named = drv_acpi_stream_at_name(eval);
 	if (named) {
 		error = skip_name_term(eval);
-		return error;
+	} else {
+		error = skip_opcode_term(eval);
 	}
+
+	/* Reports a TermArg that could not be stepped over. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the stream is past the TermArg. */
+	return 0;
+}
+
+/* Steps over a TermArg that starts with an opcode. */
+static int
+skip_opcode_term(
+	struct drv_acpi_eval *eval)
+{
+	const char *operands;
+	const char *text;
+	const uint8_t *end;
+	unsigned opcode;
+	size_t length;
+	int error;
 
 	/* Reads the opcode. */
 	error = drv_acpi_stream_opcode(eval, &opcode);
@@ -147,50 +164,62 @@ drv_acpi_skip_term_arg(
 	case DRV_ACPI_OP_REVISION:
 	case DRV_ACPI_OP_DEBUG:
 	case DRV_ACPI_OP_TIMER:
-		return 0;
+		/* A constant is its opcode alone. */
+		error = 0;
+		break;
 	case DRV_ACPI_OP_BYTE_PREFIX:
+		/* Steps over a byte constant. */
 		error = skip_bytes(eval, 1);
-		return error;
+		break;
 	case DRV_ACPI_OP_WORD_PREFIX:
+		/* Steps over a word constant. */
 		error = skip_bytes(eval, 2);
-		return error;
+		break;
 	case DRV_ACPI_OP_DWORD_PREFIX:
+		/* Steps over a double word constant. */
 		error = skip_bytes(eval, 4);
-		return error;
+		break;
 	case DRV_ACPI_OP_QWORD_PREFIX:
+		/* Steps over a quad word constant. */
 		error = skip_bytes(eval, 8);
-		return error;
+		break;
 	case DRV_ACPI_OP_STRING_PREFIX:
+		/* Steps over a string constant and its terminator. */
 		error = drv_acpi_stream_string(eval, &text, &length);
-		return error;
+		break;
 	case DRV_ACPI_OP_BUFFER:
 	case DRV_ACPI_OP_PACKAGE:
 	case DRV_ACPI_OP_VAR_PACKAGE:
 		/* A literal with a package length is stepped over whole. */
 		error = drv_acpi_stream_package_length(eval, &end);
 		if (error != 0)
-			return error;
+			break;
 		eval->position = end;
-		return 0;
+		break;
 	default:
+		/* Locals and arguments are single bytes. */
+		if (opcode >= DRV_ACPI_OP_LOCAL0 && opcode <= DRV_ACPI_OP_ARG6) {
+			error = 0;
+			break;
+		}
+
+		/* Every other TermArg is an operator with a known shape. */
+		operands = shape_of(opcode);
+		if (operands == NULL) {
+			error = EIO;
+			break;
+		}
+
+		/* Steps over its operands. */
+		error = skip_operands(eval, operands);
 		break;
 	}
 
-	/* Locals and arguments are single bytes. */
-	if (opcode >= DRV_ACPI_OP_LOCAL0 && opcode <= DRV_ACPI_OP_ARG6)
-		return 0;
-
-	/* Every other TermArg is an operator with a known shape. */
-	operands = shape_of(opcode);
-	if (operands == NULL)
-		return EIO;
-
-	/* Steps over its operands. */
-	error = skip_operands(eval, operands);
+	/* Reports a TermArg that could not be stepped over. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the stream is past the TermArg. */
 	return 0;
 }
 
@@ -205,28 +234,37 @@ skip_operands(
 	int error;
 
 	/* Steps over each operand in order. */
-	for (letter = operands; *letter != '\0'; letter++) {
+	for (letter = operands;
+	     *letter != '\0';
+	     letter++) {
 		/* Chooses the step by the kind of operand. */
 		switch (*letter) {
 		case SHAPE_TERM:
+			/* Steps over a TermArg. */
 			error = drv_acpi_skip_term_arg(eval);
 			break;
 		case SHAPE_SUPER:
+			/* Steps over a SuperName or a Target. */
 			error = skip_super_name(eval);
 			break;
 		case SHAPE_NAME:
+			/* Steps over a NameString. */
 			error = drv_acpi_stream_name(eval, &name);
 			break;
 		case SHAPE_BYTE:
+			/* Steps over a byte. */
 			error = skip_bytes(eval, 1);
 			break;
 		case SHAPE_WORD:
+			/* Steps over a word. */
 			error = skip_bytes(eval, 2);
 			break;
 		case SHAPE_DWORD:
+			/* Steps over a double word. */
 			error = skip_bytes(eval, 4);
 			break;
 		default:
+			/* Refuses a letter the shapes do not use. */
 			error = EINVAL;
 			break;
 		}
@@ -236,7 +274,7 @@ skip_operands(
 			return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the stream is past every operand. */
 	return 0;
 }
 
@@ -256,13 +294,19 @@ skip_super_name(
 	named = drv_acpi_stream_at_name(eval);
 	if (named) {
 		error = drv_acpi_stream_name(eval, &name);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the stream is past the name. */
+		return 0;
 	}
 
-	/* The null name is one byte. */
+	/* Looks at the first byte. */
 	error = drv_acpi_stream_peek(eval, &byte);
 	if (error != 0)
 		return error;
+
+	/* The null name is one byte. */
 	if (byte == 0x00U) {
 		eval->position++;
 		return 0;
@@ -283,11 +327,13 @@ skip_super_name(
 	operands = shape_of(opcode);
 	if (operands == NULL)
 		return EIO;
+
+	/* Steps over them. */
 	error = skip_operands(eval, operands);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the stream is past the target. */
 	return 0;
 }
 
@@ -311,6 +357,8 @@ skip_name_term(
 	error = drv_acpi_ns_lookup(eval->scope, &name, true, &node);
 	if (error != 0)
 		return 0;
+
+	/* A name of an alias is the node the alias stands for. */
 	node = drv_acpi_ns_resolve_alias(node);
 
 	/* Anything but a method has no arguments. */
@@ -326,7 +374,7 @@ skip_name_term(
 			return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the stream is past the name and its arguments. */
 	return 0;
 }
 
@@ -342,6 +390,8 @@ skip_bytes(
 
 	/* Steps over the bytes. */
 	eval->position += count;
+
+	/* Succeeded: the stream is past the bytes. */
 	return 0;
 }
 

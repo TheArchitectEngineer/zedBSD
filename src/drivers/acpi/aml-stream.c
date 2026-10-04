@@ -38,7 +38,7 @@ drv_acpi_stream_byte(
 	*byte = *eval->position;
 	eval->position++;
 
-	/* Succeeded. */
+	/* Succeeded: byte holds the next byte of the AML. */
 	return 0;
 }
 
@@ -54,14 +54,17 @@ drv_acpi_stream_peek(
 	if (eval->position >= eval->end)
 		return EIO;
 
-	/* Reports the byte and leaves it in the stream. */
+	/* Copies the byte and leaves it in the stream. */
 	*byte = *eval->position;
+
+	/* Succeeded: byte holds the next byte, which the next read gives again. */
 	return 0;
 }
 
 /*
- * Reads an opcode; a two-byte opcode is reported as 0x5b00 plus its second
- * byte.
+ * Reads an opcode.
+ *
+ * A two-byte opcode is reported as 0x5b00 plus its second byte.
  */
 int
 drv_acpi_stream_opcode(
@@ -88,8 +91,10 @@ drv_acpi_stream_opcode(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: reports the combined opcode. */
+	/* Combines the two bytes. */
 	*opcode = DRV_ACPI_EXT(second);
+
+	/* Succeeded: opcode holds the extended opcode. */
 	return 0;
 }
 
@@ -113,10 +118,12 @@ drv_acpi_stream_integer(
 	result = 0;
 	for (index = 0; index < bytes; index++)
 		result |= (uint64_t)eval->position[index] << (index * 8U);
-	eval->position += bytes;
 
-	/* Succeeded. */
+	/* Consumes them and hands over the integer. */
+	eval->position += bytes;
 	*value = result;
+
+	/* Succeeded: value holds the integer. */
 	return 0;
 }
 
@@ -148,8 +155,10 @@ drv_acpi_stream_package_length(
 	if (length > (size_t)(eval->end - start))
 		return EIO;
 
-	/* Succeeded: reports the end of the package. */
+	/* Finds the end of the package. */
 	*end = start + length;
+
+	/* Succeeded: end bounds the package. */
 	return 0;
 }
 
@@ -168,10 +177,12 @@ drv_acpi_stream_field_length(
 	unsigned index;
 	int error;
 
-	/* Reads the lead byte, whose top two bits count the bytes that follow. */
+	/* Reads the lead byte. */
 	error = drv_acpi_stream_byte(eval, &lead);
 	if (error != 0)
 		return error;
+
+	/* Its top two bits count the bytes that follow. */
 	follow = (unsigned)(lead >> 6);
 
 	/* A one-byte length keeps its value in the low six bits. */
@@ -189,11 +200,15 @@ drv_acpi_stream_field_length(
 		error = drv_acpi_stream_byte(eval, &byte);
 		if (error != 0)
 			return error;
+
+		/* Puts its bits above the ones read so far. */
 		result |= (uint32_t)byte << (4U + index * 8U);
 	}
 
-	/* Succeeded. */
+	/* Hands over the length. */
 	*length = result;
+
+	/* Succeeded: length holds the decoded number. */
 	return 0;
 }
 
@@ -213,10 +228,12 @@ drv_acpi_stream_name(
 	/* Starts with an empty relative name. */
 	kern_memset(name, 0, sizeof(*name));
 
-	/* Reads the root prefix, or any number of parent prefixes. */
+	/* Looks at the first byte. */
 	error = drv_acpi_stream_peek(eval, &byte);
 	if (error != 0)
 		return error;
+
+	/* Reads the root prefix, or any number of parent prefixes. */
 	if (byte == DRV_ACPI_OP_ROOT_CHAR) {
 		name->root = true;
 		eval->position++;
@@ -238,40 +255,39 @@ drv_acpi_stream_name(
 	if (error != 0)
 		return error;
 
-	/* Chooses the path form by its first byte. */
+	/* Chooses the number of segments by the path's first byte. */
 	switch (byte) {
 	case 0x00U:
 		/* The null name: prefixes only. */
 		eval->position++;
 		return 0;
 	case DRV_ACPI_OP_DUAL_NAME_PREFIX:
+		/* Two segments follow the prefix. */
 		eval->position++;
-		error = read_segments(eval, 2, name);
-		return error;
+		count = 2;
+		break;
 	case DRV_ACPI_OP_MULTI_NAME_PREFIX:
+		/* The byte after the prefix counts the segments. */
 		eval->position++;
-
-		/* Reads the number of segments. */
 		error = drv_acpi_stream_byte(eval, &count);
 		if (error != 0)
 			return error;
-		error = read_segments(eval, count, name);
-		return error;
+		break;
 	default:
+		/* A single segment must start with a lead name character. */
+		lead = is_lead_name_char(byte);
+		if (!lead)
+			return EIO;
+		count = 1;
 		break;
 	}
 
-	/* A single segment must start with a lead name character. */
-	lead = is_lead_name_char(byte);
-	if (!lead)
-		return EIO;
-
-	/* Reads the one segment. */
-	error = read_segments(eval, 1, name);
+	/* Reads the segments. */
+	error = read_segments(eval, count, name);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: name refers to the segments in the table. */
 	return 0;
 }
 
@@ -288,9 +304,9 @@ drv_acpi_stream_at_name(
 	/* Nothing starts at the end of the term list. */
 	if (eval->position >= eval->end)
 		return false;
-	byte = *eval->position;
 
 	/* A prefix starts a name. */
+	byte = *eval->position;
 	if (byte == DRV_ACPI_OP_ROOT_CHAR || byte == DRV_ACPI_OP_PARENT_PREFIX)
 		return true;
 	if (byte == DRV_ACPI_OP_DUAL_NAME_PREFIX || byte == DRV_ACPI_OP_MULTI_NAME_PREFIX)
@@ -326,9 +342,11 @@ drv_acpi_stream_string(
 	/* Consumes the characters and the terminator. */
 	eval->position = terminator + 1;
 
-	/* Succeeded: the text stays in the table. */
+	/* Hands over the text in place. */
 	*text = (const char *)start;
 	*length = (size_t)(terminator - start);
+
+	/* Succeeded: the text stays in the table. */
 	return 0;
 }
 
@@ -345,7 +363,7 @@ is_lead_name_char(
 	if (byte == '_')
 		return true;
 
-	/* Reports any other byte. */
+	/* Reports a byte that cannot start a segment. */
 	return false;
 }
 
@@ -365,7 +383,7 @@ is_name_char(
 	if (lead)
 		return true;
 
-	/* Reports any other byte. */
+	/* Reports a byte that cannot continue a segment. */
 	return false;
 }
 
@@ -399,9 +417,11 @@ read_segments(
 			return EIO;
 	}
 
-	/* Succeeded: the segments stay in the table. */
+	/* Points the name at the segments and consumes them. */
 	name->segments = eval->position;
 	name->count = count;
 	eval->position += bytes;
+
+	/* Succeeded: the segments stay in the table. */
 	return 0;
 }

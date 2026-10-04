@@ -88,6 +88,13 @@ static int concat_integers(struct drv_acpi_object *left, struct drv_acpi_object 
 static int concat_strings(struct drv_acpi_object *left, struct drv_acpi_object *right, struct drv_acpi_object **result);
 static int concat_buffers(struct drv_acpi_object *left, struct drv_acpi_object *right, struct drv_acpi_object **result);
 static int cond_reference(struct drv_acpi_eval *eval, struct drv_acpi_object **result);
+static int node_reference(struct drv_acpi_node *node, struct drv_acpi_object **result);
+static int slot_reference(struct drv_acpi_eval *eval, struct drv_acpi_target *target, struct drv_acpi_object **result);
+static int deref_path(struct drv_acpi_eval *eval, struct drv_acpi_object *path, struct drv_acpi_object **result);
+static int debug_object(struct drv_acpi_object **result);
+static int new_integer(uint64_t value, struct drv_acpi_object **result);
+static uint64_t buffer_integer(const struct drv_acpi_object *buffer);
+static int integer_order(struct drv_acpi_object *left, struct drv_acpi_object *right, int *order);
 static int target_type(struct drv_acpi_eval *eval, struct drv_acpi_target *target, enum drv_acpi_type *kind);
 static int match_operands(struct drv_acpi_eval *eval, struct match_request *request);
 static int match_search(const struct match_request *request, uint64_t *answer);
@@ -99,15 +106,18 @@ static int finish(struct drv_acpi_eval *eval, struct drv_acpi_object *value, str
 static int finish_integer(struct drv_acpi_eval *eval, uint64_t value, struct drv_acpi_object **result);
 static int target_node(struct drv_acpi_eval *eval, struct drv_acpi_target *target, struct drv_acpi_node **result);
 static int target_object(struct drv_acpi_eval *eval, struct drv_acpi_target *target, struct drv_acpi_object **result);
+static int slot_object(struct drv_acpi_eval *eval, struct drv_acpi_target *target, struct drv_acpi_object **result);
 static int compare_objects(struct drv_acpi_object *left, struct drv_acpi_object *right, int *order);
 static int match_one(struct drv_acpi_object *element, uint64_t operation, struct drv_acpi_object *match, bool *hit);
+static bool order_matches(uint64_t operation, int order);
 static int integer_string(uint64_t value, enum string_form form, struct drv_acpi_object **result);
 static int buffer_string(const uint8_t *bytes, size_t length, enum string_form form, struct drv_acpi_object **result);
 static size_t byte_text(uint8_t byte, enum string_form form, char *text);
 static int string_integer(const char *text, size_t length, bool explicit_form, uint64_t *value);
 static size_t template_length(const struct drv_acpi_object *buffer);
 static enum drv_acpi_type object_type_of(struct drv_acpi_object *object);
-static uint64_t logical(bool value);
+static uint64_t logical(bool truth);
+
 
 /*
  * Evaluates one operator whose opcode has been read.
@@ -120,7 +130,6 @@ drv_acpi_eval_operator(
 	unsigned opcode,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *object;
 	int error;
 
 	/* Chooses the operator by its opcode. */
@@ -220,11 +229,8 @@ drv_acpi_eval_operator(
 		break;
 	case DRV_ACPI_OP_DEBUG:
 		/* The debug object read as a value is itself. */
-		object = drv_acpi_object_new(DRV_ACPI_TYPE_DEBUG);
-		if (object == NULL)
-			return ENOMEM;
-		*result = object;
-		return 0;
+		error = debug_object(result);
+		break;
 	case DRV_ACPI_OP_ACQUIRE:
 	case DRV_ACPI_OP_RELEASE:
 	case DRV_ACPI_OP_SIGNAL:
@@ -238,7 +244,9 @@ drv_acpi_eval_operator(
 		error = drv_acpi_table_operator(eval, opcode, result);
 		break;
 	default:
-		return ENOSYS;
+		/* Reports an opcode that is no operator, for the caller to log. */
+		error = ENOSYS;
+		break;
 	}
 
 	/* Reports a failed operator. */
@@ -260,42 +268,41 @@ drv_acpi_convert_integer(
 	struct drv_acpi_object *object,
 	uint64_t *value)
 {
-	uint64_t result;
-	size_t length;
-	size_t width;
-	size_t index;
 	int error;
 
 	/* Chooses the conversion by the source's type. */
 	switch (object->type) {
 	case DRV_ACPI_TYPE_INTEGER:
+		/* An integer is its own value. */
 		*value = object->value.integer;
-		return 0;
+		error = 0;
+		break;
 	case DRV_ACPI_TYPE_STRING:
+		/* Reads the hexadecimal digits. */
 		error = string_integer(
 			object->value.string.text,
 			object->value.string.length,
 			false,
 			value);
-		return error;
+		break;
 	case DRV_ACPI_TYPE_BUFFER:
-		/* Takes as many bytes as an integer holds. */
-		length = object->value.buffer.length;
-		width = drv_acpi_integer_bytes();
-		if (length > width)
-			length = width;
-		result = 0;
-		for (index = 0; index < length; index++)
-			result |= (uint64_t)object->value.buffer.bytes[index] << (index * 8U);
-		*value = result;
-		return 0;
+		/* Assembles the first bytes. */
+		*value = buffer_integer(object);
+		error = 0;
+		break;
 	default:
+		/* Refuses a source that has no integer value. */
+		drv_acpi_os_log("ACPI: an object of type %u used as an integer\n", (unsigned)object->type);
+		error = EINVAL;
 		break;
 	}
 
-	/* Reports a source that has no integer value. */
-	drv_acpi_os_log("ACPI: an object of type %u used as an integer\n", (unsigned)object->type);
-	return EINVAL;
+	/* Reports a source that could not be converted. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: value holds the integer. */
+	return 0;
 }
 
 /*
@@ -318,23 +325,28 @@ drv_acpi_convert_buffer(
 	/* Chooses the conversion by the source's type. */
 	switch (object->type) {
 	case DRV_ACPI_TYPE_BUFFER:
+		/* Shares a buffer with a reference of the caller's own. */
 		drv_acpi_object_ref(object);
-		*result = object;
-		return 0;
+		buffer = object;
+		break;
 	case DRV_ACPI_TYPE_INTEGER:
 		/* Lays the integer out lowest byte first. */
 		value = object->value.integer;
 		length = drv_acpi_integer_bytes();
 		for (index = 0; index < length; index++)
 			bytes[index] = (uint8_t)(value >> (index * 8U));
+
+		/* Makes the buffer of the bytes. */
 		buffer = drv_acpi_object_buffer_new(bytes, length);
 		break;
 	case DRV_ACPI_TYPE_STRING:
+		/* Makes the buffer of the characters and the terminator. */
 		buffer = drv_acpi_object_buffer_new(
 			object->value.string.text,
 			object->value.string.length + 1U);
 		break;
 	default:
+		/* Refuses a source that has no buffer form. */
 		drv_acpi_os_log("ACPI: an object of type %u used as a buffer\n", (unsigned)object->type);
 		return EINVAL;
 	}
@@ -343,8 +355,10 @@ drv_acpi_convert_buffer(
 	if (buffer == NULL)
 		return ENOMEM;
 
-	/* Succeeded. */
+	/* Hands over the buffer. */
 	*result = buffer;
+
+	/* Succeeded: the caller holds the buffer. */
 	return 0;
 }
 
@@ -365,26 +379,36 @@ drv_acpi_convert_string(
 	/* Chooses the conversion by the source's type. */
 	switch (object->type) {
 	case DRV_ACPI_TYPE_STRING:
+		/* Shares a string with a reference of the caller's own. */
 		drv_acpi_object_ref(object);
 		*result = object;
-		return 0;
+		error = 0;
+		break;
 	case DRV_ACPI_TYPE_INTEGER:
+		/* Writes the integer's digits. */
 		error = integer_string(object->value.integer, STRING_IMPLICIT, result);
-		return error;
+		break;
 	case DRV_ACPI_TYPE_BUFFER:
+		/* Writes the buffer's bytes. */
 		error = buffer_string(
 			object->value.buffer.bytes,
 			object->value.buffer.length,
 			STRING_IMPLICIT,
 			result);
-		return error;
+		break;
 	default:
+		/* Refuses a source that has no string value. */
+		drv_acpi_os_log("ACPI: an object of type %u used as a string\n", (unsigned)object->type);
+		error = EINVAL;
 		break;
 	}
 
-	/* Reports a source that has no string value. */
-	drv_acpi_os_log("ACPI: an object of type %u used as a string\n", (unsigned)object->type);
-	return EINVAL;
+	/* Reports a source that could not be converted. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the string. */
+	return 0;
 }
 
 /* Runs a two-operand integer operator with a target. */
@@ -400,13 +424,17 @@ op_binary(
 	unsigned width;
 	int error;
 
-	/* Evaluates both operands as integers. */
+	/* Evaluates the left operand as an integer. */
 	error = drv_acpi_eval_integer(eval, &left);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the right operand as an integer. */
 	error = drv_acpi_eval_integer(eval, &right);
 	if (error != 0)
 		return error;
+
+	/* Takes the integer width in bits, which bounds the shifts. */
 	width = drv_acpi_integer_bytes() * 8U;
 
 	/* Computes the operation. */
@@ -454,7 +482,7 @@ op_binary(
 			return EDOM;
 		}
 
-		/* The remainder. */
+		/* Mod gives the remainder of the division. */
 		value = left % right;
 		break;
 	}
@@ -464,7 +492,7 @@ op_binary(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the result. */
 	return 0;
 }
 
@@ -480,10 +508,12 @@ op_divide(
 	uint64_t divisor;
 	int error;
 
-	/* Evaluates the dividend and the divisor. */
+	/* Evaluates the dividend. */
 	error = drv_acpi_eval_integer(eval, &dividend);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the divisor. */
 	error = drv_acpi_eval_integer(eval, &divisor);
 	if (error != 0)
 		return error;
@@ -494,10 +524,12 @@ op_divide(
 		return EDOM;
 	}
 
-	/* Stores the remainder into the first target. */
+	/* Makes the remainder. */
 	remainder = drv_acpi_object_integer_new(dividend % divisor);
 	if (remainder == NULL)
 		return ENOMEM;
+
+	/* Stores the remainder into the first target; its value is not Divide's. */
 	error = finish(eval, remainder, &ignored);
 	if (error != 0)
 		return error;
@@ -508,7 +540,7 @@ op_divide(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the quotient. */
 	return 0;
 }
 
@@ -527,6 +559,8 @@ op_unary(
 	error = drv_acpi_eval_integer(eval, &operand);
 	if (error != 0)
 		return error;
+
+	/* Keeps only the bits an integer has. */
 	operand &= drv_acpi_integer_mask();
 
 	/* Computes the operation. */
@@ -553,7 +587,7 @@ op_unary(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the result. */
 	return 0;
 }
 
@@ -610,7 +644,7 @@ from_bcd(
 		operand >>= 4;
 	}
 
-	/* Reports the number. */
+	/* Reports the decimal number the digits make. */
 	return value;
 }
 
@@ -690,8 +724,10 @@ op_step(
 		return error;
 	}
 
-	/* Succeeded: reports the new value. */
+	/* Hands over the new value. */
 	*result = changed;
+
+	/* Succeeded: the caller holds the new value. */
 	return 0;
 }
 
@@ -702,10 +738,9 @@ op_logical(
 	unsigned opcode,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *object;
 	uint64_t left;
 	uint64_t right;
-	bool value;
+	bool truth;
 	int error;
 
 	/* Evaluates the first operand. */
@@ -715,9 +750,9 @@ op_logical(
 
 	/* LNot has only the one. */
 	if (opcode == DRV_ACPI_OP_LNOT) {
-		value = false;
+		truth = false;
 		if (left == 0)
-			value = true;
+			truth = true;
 	} else {
 		/* Evaluates the second operand; AML does not short-circuit. */
 		error = drv_acpi_eval_integer(eval, &right);
@@ -725,23 +760,22 @@ op_logical(
 			return error;
 
 		/* Combines the two truths. */
-		value = false;
+		truth = false;
 		if (opcode == DRV_ACPI_OP_LAND) {
 			if (left != 0 && right != 0)
-				value = true;
+				truth = true;
 		} else {
 			if (left != 0 || right != 0)
-				value = true;
+				truth = true;
 		}
 	}
 
 	/* Makes the truth value. */
-	object = drv_acpi_object_integer_new(logical(value));
-	if (object == NULL)
-		return ENOMEM;
+	error = new_integer(logical(truth), result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = object;
+	/* Succeeded: the caller holds the truth value. */
 	return 0;
 }
 
@@ -754,15 +788,16 @@ op_compare(
 {
 	struct drv_acpi_object *left;
 	struct drv_acpi_object *right;
-	struct drv_acpi_object *object;
-	bool value;
+	bool truth;
 	int order;
 	int error;
 
-	/* Evaluates both operands as data. */
+	/* Evaluates the left operand as data. */
 	error = drv_acpi_eval_data(eval, &left);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the right operand as data. */
 	error = drv_acpi_eval_data(eval, &right);
 	if (error != 0) {
 		drv_acpi_object_release(left);
@@ -777,21 +812,21 @@ op_compare(
 		return error;
 
 	/* Turns the order into the operator's truth. */
-	value = false;
-	if (opcode == DRV_ACPI_OP_LEQUAL && order == 0)
-		value = true;
-	if (opcode == DRV_ACPI_OP_LGREATER && order > 0)
-		value = true;
-	if (opcode == DRV_ACPI_OP_LLESS && order < 0)
-		value = true;
+	truth = false;
+	if (opcode == DRV_ACPI_OP_LEQUAL && order == 0) {
+		truth = true;
+	} else if (opcode == DRV_ACPI_OP_LGREATER && order > 0) {
+		truth = true;
+	} else if (opcode == DRV_ACPI_OP_LLESS && order < 0) {
+		truth = true;
+	}
 
 	/* Makes the truth value. */
-	object = drv_acpi_object_integer_new(logical(value));
-	if (object == NULL)
-		return ENOMEM;
+	error = new_integer(logical(truth), result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = object;
+	/* Succeeded: the caller holds the truth value. */
 	return 0;
 }
 
@@ -825,15 +860,19 @@ op_store(
 		error = drv_acpi_store(eval, source, &target);
 	}
 
-	/* Lets go of the target and reports a failed store. */
+	/* Lets go of the target. */
 	drv_acpi_target_release(&target);
+
+	/* Reports a failed store. */
 	if (error != 0) {
 		drv_acpi_object_release(source);
 		return error;
 	}
 
-	/* Succeeded: the value of a Store is its source. */
+	/* Hands over the source, which is the value of a Store. */
 	*result = source;
+
+	/* Succeeded: the caller holds the stored value. */
 	return 0;
 }
 
@@ -856,13 +895,15 @@ copy_into_node(
 	drv_acpi_ns_attach(node, duplicate);
 	drv_acpi_object_release(duplicate);
 
-	/* Succeeded. */
+	/* Succeeded: the node holds a copy of the value. */
 	return 0;
 }
 
 /*
- * Runs a Concatenate.  The first operand's type decides the result: two
- * integers make a buffer of both, and strings and buffers are joined.
+ * Runs a Concatenate.
+ *
+ * The first operand's type decides the result: two integers make a buffer
+ * of both, and strings and buffers are joined.
  */
 static int
 op_concat(
@@ -874,10 +915,12 @@ op_concat(
 	struct drv_acpi_object *joined;
 	int error;
 
-	/* Evaluates both operands as data. */
+	/* Evaluates the left operand as data. */
 	error = drv_acpi_eval_data(eval, &left);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the right operand as data. */
 	error = drv_acpi_eval_data(eval, &right);
 	if (error != 0) {
 		drv_acpi_object_release(left);
@@ -901,9 +944,11 @@ op_concat(
 		break;
 	}
 
-	/* Lets go of the operands and reports a failed join. */
+	/* Lets go of the operands. */
 	drv_acpi_object_release(left);
 	drv_acpi_object_release(right);
+
+	/* Reports a failed join. */
 	if (error != 0)
 		return error;
 
@@ -912,7 +957,7 @@ op_concat(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the joined value. */
 	return 0;
 }
 
@@ -946,8 +991,10 @@ concat_integers(
 		joined->value.buffer.bytes[width + index] = (uint8_t)(value >> (index * 8U));
 	}
 
-	/* Succeeded. */
+	/* Hands over the buffer. */
 	*result = joined;
+
+	/* Succeeded: the caller holds the buffer of both integers. */
 	return 0;
 }
 
@@ -977,10 +1024,12 @@ concat_strings(
 		return ENOMEM;
 	}
 
-	/* Copies the first text and then the second. */
+	/* Copies the first text and then the second, terminated. */
 	kern_memcpy(text, left->value.string.text, left->value.string.length);
 	kern_memcpy(text + left->value.string.length, converted->value.string.text, converted->value.string.length);
 	text[length] = '\0';
+
+	/* The converted operand is no longer needed. */
 	drv_acpi_object_release(converted);
 
 	/* Makes the string from the joined text. */
@@ -989,8 +1038,10 @@ concat_strings(
 	if (joined == NULL)
 		return ENOMEM;
 
-	/* Succeeded. */
+	/* Hands over the string. */
 	*result = joined;
+
+	/* Succeeded: the caller holds the joined string. */
 	return 0;
 }
 
@@ -1026,16 +1077,22 @@ concat_buffers(
 		kern_memcpy(joined->value.buffer.bytes, left->value.buffer.bytes, left_length);
 	if (right_length != 0)
 		kern_memcpy(joined->value.buffer.bytes + left_length, converted->value.buffer.bytes, right_length);
+
+	/* The converted operand is no longer needed. */
 	drv_acpi_object_release(converted);
 
-	/* Succeeded. */
+	/* Hands over the buffer. */
 	*result = joined;
+
+	/* Succeeded: the caller holds the joined buffer. */
 	return 0;
 }
 
 /*
- * Runs a ConcatenateResTemplate: the two resource templates without their
- * end tags, followed by one end tag with a zero checksum.
+ * Runs a ConcatenateResTemplate.
+ *
+ * The result is the two resource templates without their end tags,
+ * followed by one end tag with a zero checksum.
  */
 static int
 op_concat_res(
@@ -1049,10 +1106,12 @@ op_concat_res(
 	size_t right_length;
 	int error;
 
-	/* Evaluates both templates. */
+	/* Evaluates the first template. */
 	error = drv_acpi_eval_data(eval, &left);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the second template. */
 	error = drv_acpi_eval_data(eval, &right);
 	if (error != 0) {
 		drv_acpi_object_release(left);
@@ -1078,13 +1137,17 @@ op_concat_res(
 		return ENOMEM;
 	}
 
-	/* Joins them and ends the result with a fresh end tag. */
+	/* Joins them. */
 	if (left_length != 0)
 		kern_memcpy(joined->value.buffer.bytes, left->value.buffer.bytes, left_length);
 	if (right_length != 0)
 		kern_memcpy(joined->value.buffer.bytes + left_length, right->value.buffer.bytes, right_length);
+
+	/* Ends the result with a fresh end tag. */
 	joined->value.buffer.bytes[left_length + right_length] = RESOURCE_END_TAG;
 	joined->value.buffer.bytes[left_length + right_length + 1U] = 0;
+
+	/* The operands are no longer needed. */
 	drv_acpi_object_release(left);
 	drv_acpi_object_release(right);
 
@@ -1093,7 +1156,7 @@ op_concat_res(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the joined template. */
 	return 0;
 }
 
@@ -1104,15 +1167,16 @@ op_size_of(
 	struct drv_acpi_object **result)
 {
 	struct drv_acpi_object *object;
-	struct drv_acpi_object *size;
 	struct drv_acpi_target target;
 	uint64_t value;
 	int error;
 
-	/* Reads the object the operand names. */
+	/* Parses the operand. */
 	error = drv_acpi_parse_target(eval, &target);
 	if (error != 0)
 		return error;
+
+	/* Reads the object the operand names. */
 	error = target_object(eval, &target, &object);
 	drv_acpi_target_release(&target);
 	if (error != 0)
@@ -1139,12 +1203,11 @@ op_size_of(
 	drv_acpi_object_release(object);
 
 	/* Makes the size. */
-	size = drv_acpi_object_integer_new(value);
-	if (size == NULL)
-		return ENOMEM;
+	error = new_integer(value, result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = size;
+	/* Succeeded: the caller holds the size. */
 	return 0;
 }
 
@@ -1160,10 +1223,12 @@ op_index(
 	uint64_t count;
 	int error;
 
-	/* Evaluates the container and the index. */
+	/* Evaluates the container. */
 	error = drv_acpi_eval_data(eval, &source);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the index. */
 	error = drv_acpi_eval_integer(eval, &index);
 	if (error != 0) {
 		drv_acpi_object_release(source);
@@ -1196,7 +1261,7 @@ op_index(
 		return EINVAL;
 	}
 
-	/* Makes the reference, which keeps the container alive. */
+	/* Allocates the reference, which keeps the container alive. */
 	reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_INDEX);
 	if (reference == NULL) {
 		drv_acpi_object_release(source);
@@ -1212,7 +1277,7 @@ op_index(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the reference to the element. */
 	return 0;
 }
 
@@ -1222,8 +1287,6 @@ op_ref_of(
 	struct drv_acpi_eval *eval,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *reference;
-	struct drv_acpi_object *object;
 	struct drv_acpi_target target;
 	int error;
 
@@ -1232,51 +1295,92 @@ op_ref_of(
 	if (error != 0)
 		return error;
 
-	/* A name gives a node reference. */
+	/*
+	 * A name gives a node reference, and a reference target already is
+	 * one, which the caller takes over; a local or an argument gives a
+	 * reference to what it holds.
+	 */
 	if (target.kind == DRV_ACPI_TARGET_NODE) {
-		reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_NODE);
-		if (reference == NULL)
-			return ENOMEM;
-		reference->value.reference.node = target.node;
-		*result = reference;
-		return 0;
-	}
-
-	/* A reference target already is one. */
-	if (target.kind == DRV_ACPI_TARGET_REFERENCE) {
+		error = node_reference(target.node, result);
+	} else if (target.kind == DRV_ACPI_TARGET_REFERENCE) {
 		*result = target.reference;
-		return 0;
+		error = 0;
+	} else {
+		error = slot_reference(eval, &target, result);
 	}
 
-	/* A local or an argument gives a reference to what it holds. */
-	error = target_object(eval, &target, &object);
+	/* Reports a reference that could not be made. */
 	if (error != 0)
 		return error;
 
-	/* Passes on a reference the slot already holds. */
-	if (object->type == DRV_ACPI_TYPE_REFERENCE) {
-		*result = object;
-		return 0;
-	}
+	/* Succeeded: the caller holds the reference. */
+	return 0;
+}
 
-	/* Wraps any other object. */
-	reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_OBJECT);
-	if (reference == NULL) {
-		drv_acpi_object_release(object);
+/* Makes a reference to a namespace node. */
+static int
+node_reference(
+	struct drv_acpi_node *node,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_object *reference;
+
+	/* Allocates the reference. */
+	reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_NODE);
+	if (reference == NULL)
 		return ENOMEM;
+
+	/* Points it at the node and hands it over. */
+	reference->value.reference.node = node;
+	*result = reference;
+
+	/* Succeeded: the caller holds the reference. */
+	return 0;
+}
+
+/* Makes a reference to what a local or an argument holds. */
+static int
+slot_reference(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_target *target,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_object *reference;
+	struct drv_acpi_object *object;
+	int error;
+
+	/* Reads what the slot holds. */
+	error = target_object(eval, target, &object);
+	if (error != 0)
+		return error;
+
+	/* A reference the slot already holds is passed on; any other object is wrapped. */
+	if (object->type == DRV_ACPI_TYPE_REFERENCE) {
+		reference = object;
+	} else {
+		/* Allocates the wrapping reference. */
+		reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_OBJECT);
+		if (reference == NULL) {
+			drv_acpi_object_release(object);
+			return ENOMEM;
+		}
+
+		/* It takes over the reference to the object. */
+		reference->value.reference.target = object;
 	}
 
-	/* It takes over the reference to the object. */
-	reference->value.reference.target = object;
-
-	/* Succeeded. */
+	/* Hands over the reference. */
 	*result = reference;
+
+	/* Succeeded: the caller holds the reference. */
 	return 0;
 }
 
 /*
- * Runs a CondRefOf: stores a reference to the named object into the target
- * and reports true, or reports false when the name does not exist.
+ * Runs a CondRefOf.
+ *
+ * It stores a reference to the named object into the target and reports
+ * true, or reports false when the name does not exist.
  */
 static int
 op_cond_ref_of(
@@ -1284,14 +1388,13 @@ op_cond_ref_of(
 	struct drv_acpi_object **result)
 {
 	struct drv_acpi_object *reference;
-	struct drv_acpi_object *truth;
 	struct drv_acpi_target target;
-	bool named;
+	bool exists;
 	int error;
 
 	/* A name that does not exist is not an error here; anything else is RefOf of it. */
-	named = drv_acpi_stream_at_name(eval);
-	if (named) {
+	exists = drv_acpi_stream_at_name(eval);
+	if (exists) {
 		error = cond_reference(eval, &reference);
 	} else {
 		error = op_ref_of(eval, &reference);
@@ -1318,14 +1421,20 @@ op_cond_ref_of(
 		return error;
 	}
 
-	/* Reports whether it exists. */
-	truth = drv_acpi_object_integer_new(logical(reference != NULL));
-	drv_acpi_object_release(reference);
-	if (truth == NULL)
-		return ENOMEM;
+	/* The object exists when there is a reference to it. */
+	exists = false;
+	if (reference != NULL)
+		exists = true;
 
-	/* Succeeded. */
-	*result = truth;
+	/* The reference is in the target now. */
+	drv_acpi_object_release(reference);
+
+	/* Makes the truth value. */
+	error = new_integer(logical(exists), result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds whether the object exists. */
 	return 0;
 }
 
@@ -1335,13 +1444,14 @@ cond_reference(
 	struct drv_acpi_eval *eval,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *reference;
 	struct drv_acpi_name name;
 	struct drv_acpi_node *node;
 	int error;
 
-	/* Reads the name. */
+	/* Starts with no reference, which a name that does not exist leaves. */
 	*result = NULL;
+
+	/* Reads the name. */
 	error = drv_acpi_stream_name(eval, &name);
 	if (error != 0)
 		return error;
@@ -1352,13 +1462,12 @@ cond_reference(
 		return 0;
 
 	/* Makes the reference to the node, or to the one an alias stands for. */
-	reference = drv_acpi_object_reference_new(DRV_ACPI_REFERENCE_NODE);
-	if (reference == NULL)
-		return ENOMEM;
-	reference->value.reference.node = drv_acpi_ns_resolve_alias(node);
+	node = drv_acpi_ns_resolve_alias(node);
+	error = node_reference(node, result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = reference;
+	/* Succeeded: the caller holds the reference. */
 	return 0;
 }
 
@@ -1369,8 +1478,6 @@ op_deref_of(
 	struct drv_acpi_object **result)
 {
 	struct drv_acpi_object *operand;
-	struct drv_acpi_object *value;
-	struct drv_acpi_node *node;
 	int error;
 
 	/* Evaluates the operand. */
@@ -1378,51 +1485,48 @@ op_deref_of(
 	if (error != 0)
 		return error;
 
-	/* A string is the path of a named object. */
+	/* A string is the path of a named object; a reference is followed. */
 	if (operand->type == DRV_ACPI_TYPE_STRING) {
-		error = drv_acpi_lookup_path(eval->scope, operand->value.string.text, true, &node);
-		drv_acpi_object_release(operand);
-		if (error != 0)
-			return error;
-
-		/* Reads the named object. */
-		error = drv_acpi_read_node(eval, node, result);
-		return error;
-	}
-
-	/* Refuses anything else that is not a reference. */
-	if (operand->type != DRV_ACPI_TYPE_REFERENCE) {
+		error = deref_path(eval, operand, result);
+	} else if (operand->type == DRV_ACPI_TYPE_REFERENCE) {
+		error = reference_object(eval, operand, result);
+	} else {
 		drv_acpi_os_log("ACPI: DerefOf an object of type %u\n", (unsigned)operand->type);
-		drv_acpi_object_release(operand);
-		return EINVAL;
-	}
-
-	/* Follows the reference by its kind. */
-	value = NULL;
-	switch (operand->value.reference.kind) {
-	case DRV_ACPI_REFERENCE_NODE:
-		error = drv_acpi_read_node(eval, operand->value.reference.node, &value);
-		break;
-	case DRV_ACPI_REFERENCE_OBJECT:
-		value = operand->value.reference.target;
-		drv_acpi_object_ref(value);
-		error = 0;
-		break;
-	case DRV_ACPI_REFERENCE_INDEX:
-		error = drv_acpi_index_read(eval, operand, &value);
-		break;
-	default:
 		error = EINVAL;
-		break;
 	}
 
-	/* The reference is no longer needed. */
+	/* The operand is no longer needed. */
 	drv_acpi_object_release(operand);
+
+	/* Reports an operand that could not be followed. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
-	*result = value;
+	/* Succeeded: the caller holds what the operand points at. */
+	return 0;
+}
+
+/* Reads the named object a path string names. */
+static int
+deref_path(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_object *path,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_node *node;
+	int error;
+
+	/* Resolves the path with the search rules of references. */
+	error = drv_acpi_lookup_path(eval->scope, path->value.string.text, true, &node);
+	if (error != 0)
+		return error;
+
+	/* Reads the named object. */
+	error = drv_acpi_read_node(eval, node, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the object's value. */
 	return 0;
 }
 
@@ -1432,7 +1536,6 @@ op_object_type(
 	struct drv_acpi_eval *eval,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *type;
 	struct drv_acpi_target target;
 	enum drv_acpi_type kind;
 	int error;
@@ -1449,12 +1552,11 @@ op_object_type(
 		return error;
 
 	/* Makes the type number. */
-	type = drv_acpi_object_integer_new((uint64_t)kind);
-	if (type == NULL)
-		return ENOMEM;
+	error = new_integer((uint64_t)kind, result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = type;
+	/* Succeeded: the caller holds the type number. */
 	return 0;
 }
 
@@ -1483,6 +1585,8 @@ target_type(
 	error = target_object(eval, target, &object);
 	if (error != 0)
 		return error;
+
+	/* Takes the type of what it holds. */
 	*kind = object_type_of(object);
 
 	/* A node reference reports the type of the node's object. */
@@ -1492,8 +1596,10 @@ target_type(
 		*kind = object_type_of(node->object);
 	}
 
-	/* Succeeded. */
+	/* The object is no longer needed. */
 	drv_acpi_object_release(object);
+
+	/* Succeeded: kind is the ObjectType. */
 	return 0;
 }
 
@@ -1503,7 +1609,6 @@ op_match(
 	struct drv_acpi_eval *eval,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *found;
 	struct match_request request;
 	uint64_t answer;
 	int error;
@@ -1523,12 +1628,11 @@ op_match(
 		return error;
 
 	/* Makes the answer: the index, or Ones when nothing matched. */
-	found = drv_acpi_object_integer_new(answer);
-	if (found == NULL)
-		return ENOMEM;
+	error = new_integer(answer, result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = found;
+	/* Succeeded: the caller holds the answer. */
 	return 0;
 }
 
@@ -1540,30 +1644,36 @@ match_operands(
 {
 	int error;
 
-	/* The package to search. */
+	/* Evaluates the package to search. */
 	error = drv_acpi_eval_data(eval, &request->package);
 	if (error != 0)
 		return error;
+
+	/* Refuses anything but a package. */
 	if (request->package->type != DRV_ACPI_TYPE_PACKAGE)
 		return EINVAL;
 
-	/* The first comparison and its object. */
+	/* Reads the first comparison code. */
 	error = drv_acpi_stream_integer(eval, 1, &request->first_operation);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the first comparison's object. */
 	error = drv_acpi_eval_data(eval, &request->first);
 	if (error != 0)
 		return error;
 
-	/* The second comparison and its object. */
+	/* Reads the second comparison code. */
 	error = drv_acpi_stream_integer(eval, 1, &request->second_operation);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the second comparison's object. */
 	error = drv_acpi_eval_data(eval, &request->second);
 	if (error != 0)
 		return error;
 
-	/* The index to start at. */
+	/* Evaluates the index to start at. */
 	error = drv_acpi_eval_integer(eval, &request->start);
 	if (error != 0)
 		return error;
@@ -1572,7 +1682,7 @@ match_operands(
 	if (request->first_operation > MATCH_GREATER || request->second_operation > MATCH_GREATER)
 		return EINVAL;
 
-	/* Succeeded. */
+	/* Succeeded: the request holds every operand. */
 	return 0;
 }
 
@@ -1588,15 +1698,18 @@ match_search(
 	bool second_hit;
 	int error;
 
-	/* Tries each element in order. */
+	/* Starts with Ones, the answer when nothing matches. */
 	*answer = drv_acpi_integer_mask();
-	for (index = request->start; index < request->package->value.package.count; index++) {
-		element = request->package->value.package.elements[index];
 
+	/* Tries each element in order. */
+	for (index = request->start; index < request->package->value.package.count; index++) {
 		/* Tests the first condition. */
+		element = request->package->value.package.elements[index];
 		error = match_one(element, request->first_operation, request->first, &first_hit);
 		if (error != 0)
 			return error;
+
+		/* Skips an element that fails it. */
 		if (!first_hit)
 			continue;
 
@@ -1605,14 +1718,14 @@ match_search(
 		if (error != 0)
 			return error;
 
-		/* Reports the first element that passes both. */
+		/* Stops at the first element that passes both. */
 		if (second_hit) {
 			*answer = index;
-			return 0;
+			break;
 		}
 	}
 
-	/* Succeeded: nothing matched, and the answer is Ones. */
+	/* Succeeded: answer is the element's index, or Ones when nothing matched. */
 	return 0;
 }
 
@@ -1621,7 +1734,7 @@ static void
 match_release(
 	struct match_request *request)
 {
-	/* Each may be NULL when evaluation stopped early. */
+	/* Releases each object; one may be NULL when evaluation stopped early. */
 	drv_acpi_object_release(request->package);
 	drv_acpi_object_release(request->first);
 	drv_acpi_object_release(request->second);
@@ -1640,13 +1753,20 @@ op_mid(
 	uint64_t available;
 	int error;
 
-	/* Evaluates the source, the index and the length. */
+	/* Evaluates the source. */
 	error = drv_acpi_eval_data(eval, &source);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the index. */
 	error = drv_acpi_eval_integer(eval, &index);
-	if (error == 0)
-		error = drv_acpi_eval_integer(eval, &length);
+	if (error != 0) {
+		drv_acpi_object_release(source);
+		return error;
+	}
+
+	/* Evaluates the length. */
+	error = drv_acpi_eval_integer(eval, &length);
 	if (error != 0) {
 		drv_acpi_object_release(source);
 		return error;
@@ -1675,8 +1795,10 @@ op_mid(
 		part = drv_acpi_object_buffer_new(source->value.buffer.bytes + index, (size_t)length);
 	}
 
-	/* Lets go of the source and reports a part that could not be allocated. */
+	/* Lets go of the source. */
 	drv_acpi_object_release(source);
+
+	/* Reports a part that could not be allocated. */
 	if (part == NULL)
 		return ENOMEM;
 
@@ -1685,7 +1807,7 @@ op_mid(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the part. */
 	return 0;
 }
 
@@ -1721,8 +1843,10 @@ op_to_conversion(
 		break;
 	}
 
-	/* Lets go of the source and reports a failed conversion. */
+	/* Lets go of the source. */
 	drv_acpi_object_release(source);
+
+	/* Reports a failed conversion. */
 	if (error != 0)
 		return error;
 
@@ -1731,7 +1855,7 @@ op_to_conversion(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the converted value. */
 	return 0;
 }
 
@@ -1744,7 +1868,6 @@ explicit_integer(
 	struct drv_acpi_object *source,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *integer;
 	uint64_t value;
 	int error;
 
@@ -1760,12 +1883,11 @@ explicit_integer(
 		return error;
 
 	/* Makes the integer at the integer width. */
-	integer = drv_acpi_object_integer_new(value & drv_acpi_integer_mask());
-	if (integer == NULL)
-		return ENOMEM;
+	error = new_integer(value & drv_acpi_integer_mask(), result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = integer;
+	/* Succeeded: the caller holds the integer. */
 	return 0;
 }
 
@@ -1784,21 +1906,31 @@ explicit_string(
 	/* Chooses the conversion by the source's type. */
 	switch (source->type) {
 	case DRV_ACPI_TYPE_STRING:
+		/* Shares a string with a reference of the caller's own. */
 		drv_acpi_object_ref(source);
 		*result = source;
-		return 0;
+		error = 0;
+		break;
 	case DRV_ACPI_TYPE_INTEGER:
+		/* Writes the integer's digits. */
 		error = integer_string(source->value.integer, form, result);
-		return error;
+		break;
 	case DRV_ACPI_TYPE_BUFFER:
+		/* Writes the buffer's bytes. */
 		error = buffer_string(source->value.buffer.bytes, source->value.buffer.length, form, result);
-		return error;
+		break;
 	default:
+		/* Refuses a source that has no string form. */
+		error = EINVAL;
 		break;
 	}
 
-	/* Reports a source that has no string form. */
-	return EINVAL;
+	/* Reports a source that could not be converted. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the string. */
+	return 0;
 }
 
 /* Runs a ToString: the characters of a buffer up to a NUL or a length. */
@@ -1814,10 +1946,12 @@ op_to_string(
 	size_t available;
 	int error;
 
-	/* Evaluates the buffer and the length. */
+	/* Evaluates the buffer. */
 	error = drv_acpi_eval_data(eval, &source);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the length. */
 	error = drv_acpi_eval_integer(eval, &length);
 	if (error != 0) {
 		drv_acpi_object_release(source);
@@ -1830,15 +1964,19 @@ op_to_string(
 		return EINVAL;
 	}
 
-	/* Takes the bytes up to the first NUL, within the length. */
+	/* Takes no more bytes than the length allows. */
 	available = source->value.buffer.length;
 	if (length < available)
 		available = (size_t)length;
+
+	/* Ends the bytes at the first NUL among them. */
 	terminator = NULL;
 	if (available != 0)
 		terminator = kern_memchr(source->value.buffer.bytes, 0, available);
 	if (terminator != NULL)
 		available = (size_t)(terminator - source->value.buffer.bytes);
+
+	/* Makes the string of the bytes; the buffer is no longer needed. */
 	text = drv_acpi_object_string_new_length((const char *)source->value.buffer.bytes, available);
 	drv_acpi_object_release(source);
 	if (text == NULL)
@@ -1849,7 +1987,7 @@ op_to_string(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the string. */
 	return 0;
 }
 
@@ -1864,14 +2002,18 @@ op_notify(
 	uint64_t value;
 	int error;
 
-	/* Resolves the object to notify and evaluates the value. */
+	/* Parses the object to notify. */
 	error = drv_acpi_parse_target(eval, &target);
 	if (error != 0)
 		return error;
+
+	/* Resolves it to its node. */
 	error = target_node(eval, &target, &node);
 	drv_acpi_target_release(&target);
 	if (error != 0)
 		return error;
+
+	/* Evaluates the notification value. */
 	error = drv_acpi_eval_integer(eval, &value);
 	if (error != 0)
 		return error;
@@ -1881,10 +2023,12 @@ op_notify(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: Notify has no value of its own. */
-	*result = drv_acpi_object_integer_new(0);
-	if (*result == NULL)
-		return ENOMEM;
+	/* Makes the value of Notify, which has none of its own. */
+	error = new_integer(0, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the handlers saw the notification. */
 	return 0;
 }
 
@@ -1895,7 +2039,6 @@ op_time(
 	unsigned opcode,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *object;
 	uint64_t value;
 	int error;
 
@@ -1920,12 +2063,11 @@ op_time(
 	}
 
 	/* Makes the value. */
-	object = drv_acpi_object_integer_new(value);
-	if (object == NULL)
-		return ENOMEM;
+	error = new_integer(value, result);
+	if (error != 0)
+		return error;
 
-	/* Succeeded. */
-	*result = object;
+	/* Succeeded: the caller holds the time, or zero. */
 	return 0;
 }
 
@@ -1940,12 +2082,18 @@ op_fatal(
 	uint64_t argument;
 	int error;
 
-	/* Reads the type, the code and the argument. */
+	/* Reads the type. */
 	error = drv_acpi_stream_integer(eval, 1, &type);
-	if (error == 0)
-		error = drv_acpi_stream_integer(eval, 4, &code);
-	if (error == 0)
-		error = drv_acpi_eval_integer(eval, &argument);
+	if (error != 0)
+		return error;
+
+	/* Reads the code. */
+	error = drv_acpi_stream_integer(eval, 4, &code);
+	if (error != 0)
+		return error;
+
+	/* Evaluates the argument. */
+	error = drv_acpi_eval_integer(eval, &argument);
 	if (error != 0)
 		return error;
 
@@ -1956,11 +2104,77 @@ op_fatal(
 		(unsigned long long)code,
 		(unsigned long long)argument);
 
-	/* Succeeded: Fatal has no value of its own. */
-	*result = drv_acpi_object_integer_new(0);
-	if (*result == NULL)
-		return ENOMEM;
+	/* Makes the value of Fatal, which has none of its own. */
+	error = new_integer(0, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the report is logged. */
 	return 0;
+}
+
+/* Makes the debug object, which is the value the Debug operand reads as. */
+static int
+debug_object(
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_object *object;
+
+	/* Allocates the debug object. */
+	object = drv_acpi_object_new(DRV_ACPI_TYPE_DEBUG);
+	if (object == NULL)
+		return ENOMEM;
+
+	/* Hands it over. */
+	*result = object;
+
+	/* Succeeded: the caller holds the debug object. */
+	return 0;
+}
+
+/* Makes an integer object for an operator's value. */
+static int
+new_integer(
+	uint64_t value,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_object *object;
+
+	/* Allocates the integer. */
+	object = drv_acpi_object_integer_new(value);
+	if (object == NULL)
+		return ENOMEM;
+
+	/* Hands it over. */
+	*result = object;
+
+	/* Succeeded: the caller holds the integer. */
+	return 0;
+}
+
+/* Assembles an integer from a buffer's first bytes, lowest first, as many as an integer holds. */
+static uint64_t
+buffer_integer(
+	const struct drv_acpi_object *buffer)
+{
+	uint64_t assembled;
+	size_t length;
+	size_t width;
+	size_t index;
+
+	/* Takes as many bytes as an integer holds. */
+	length = buffer->value.buffer.length;
+	width = drv_acpi_integer_bytes();
+	if (length > width)
+		length = width;
+
+	/* Assembles the integer from its bytes, lowest first. */
+	assembled = 0;
+	for (index = 0; index < length; index++)
+		assembled |= (uint64_t)buffer->value.buffer.bytes[index] << (index * 8U);
+
+	/* Reports the assembled integer. */
+	return assembled;
 }
 
 /* Stores a computed value into the target that follows and hands it back. */
@@ -1988,8 +2202,10 @@ finish(
 		return error;
 	}
 
-	/* Succeeded: the caller holds the value. */
+	/* Hands over the value. */
 	*result = value;
+
+	/* Succeeded: the caller holds the value, which the target holds too. */
 	return 0;
 }
 
@@ -2013,7 +2229,7 @@ finish_integer(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the caller holds the integer. */
 	return 0;
 }
 
@@ -2028,23 +2244,28 @@ target_node(
 	struct drv_acpi_node *node;
 	int error;
 
-	/* A name is the node. */
+	/* A name is the node; anything else must hold a node reference. */
 	if (target->kind == DRV_ACPI_TARGET_NODE) {
-		*result = drv_acpi_ns_resolve_alias(target->node);
-		return 0;
+		node = target->node;
+	} else {
+		/* Reads what the target holds. */
+		error = target_object(eval, target, &object);
+		if (error != 0)
+			return error;
+
+		/* Takes the node it refers to. */
+		node = drv_acpi_object_reference_node(object);
+		drv_acpi_object_release(object);
 	}
 
-	/* Anything else must hold a node reference. */
-	error = target_object(eval, target, &object);
-	if (error != 0)
-		return error;
-	node = drv_acpi_object_reference_node(object);
-	drv_acpi_object_release(object);
+	/* Refuses a target that names no node. */
 	if (node == NULL)
 		return EINVAL;
 
-	/* Succeeded. */
+	/* Hands over the node, or the one an alias stands for. */
 	*result = drv_acpi_ns_resolve_alias(node);
+
+	/* Succeeded: the caller has the node. */
 	return 0;
 }
 
@@ -2058,42 +2279,74 @@ target_object(
 	struct drv_acpi_target *target,
 	struct drv_acpi_object **result)
 {
-	struct drv_acpi_object *object;
 	int error;
 
 	/* Chooses the read by the kind of target. */
 	switch (target->kind) {
 	case DRV_ACPI_TARGET_LOCAL:
-		object = eval->frame->locals[target->index];
-		break;
 	case DRV_ACPI_TARGET_ARGUMENT:
-		object = eval->frame->arguments[target->index];
+		/* Reads what the slot holds. */
+		error = slot_object(eval, target, result);
 		break;
 	case DRV_ACPI_TARGET_NODE:
+		/* Reads the named object. */
 		error = drv_acpi_read_node(eval, target->node, result);
-		return error;
+		break;
 	case DRV_ACPI_TARGET_REFERENCE:
+		/* Reads what the reference points at. */
 		error = reference_object(eval, target->reference, result);
-		return error;
+		break;
 	default:
-		return EINVAL;
+		/* Refuses a target that holds no object. */
+		error = EINVAL;
+		break;
+	}
+
+	/* Reports an object that could not be read. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the object. */
+	return 0;
+}
+
+/* Reads the object a local or an argument holds. */
+static int
+slot_object(
+	struct drv_acpi_eval *eval,
+	struct drv_acpi_target *target,
+	struct drv_acpi_object **result)
+{
+	struct drv_acpi_object *object;
+	int error;
+
+	/* Finds the slot's object. */
+	if (target->kind == DRV_ACPI_TARGET_LOCAL) {
+		object = eval->frame->locals[target->index];
+	} else {
+		object = eval->frame->arguments[target->index];
 	}
 
 	/* A slot that was never set has no value. */
 	if (object == NULL)
 		return EINVAL;
 
-	/* An argument that holds a node reference reads as the node's value. */
+	/* An argument that holds a node reference reads as the node's value; anything else is shared. */
 	if (target->kind == DRV_ACPI_TARGET_ARGUMENT &&
 	    object->type == DRV_ACPI_TYPE_REFERENCE &&
 	    object->value.reference.kind == DRV_ACPI_REFERENCE_NODE) {
 		error = drv_acpi_read_node(eval, object->value.reference.node, result);
-		return error;
+	} else {
+		drv_acpi_object_ref(object);
+		*result = object;
+		error = 0;
 	}
 
-	/* Succeeded: the caller shares the object. */
-	drv_acpi_object_ref(object);
-	*result = object;
+	/* Reports a node that could not be read. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the object. */
 	return 0;
 }
 
@@ -2110,21 +2363,31 @@ reference_object(
 	/* Follows the reference by its kind. */
 	switch (reference->value.reference.kind) {
 	case DRV_ACPI_REFERENCE_NODE:
+		/* Reads the node. */
 		error = drv_acpi_read_node(eval, reference->value.reference.node, result);
-		return error;
+		break;
 	case DRV_ACPI_REFERENCE_INDEX:
+		/* Reads the element. */
 		error = drv_acpi_index_read(eval, reference, result);
-		return error;
+		break;
 	case DRV_ACPI_REFERENCE_OBJECT:
+		/* Shares the object the reference holds. */
 		object = reference->value.reference.target;
+		drv_acpi_object_ref(object);
+		*result = object;
+		error = 0;
 		break;
 	default:
-		return EINVAL;
+		/* Refuses a name reference that never resolved. */
+		error = EINVAL;
+		break;
 	}
 
-	/* Succeeded: the caller shares the object. */
-	drv_acpi_object_ref(object);
-	*result = object;
+	/* Reports a reference that could not be followed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds what the reference points at. */
 	return 0;
 }
 
@@ -2141,7 +2404,6 @@ compare_objects(
 	struct drv_acpi_object *converted;
 	const uint8_t *left_bytes;
 	const uint8_t *right_bytes;
-	uint64_t value;
 	size_t left_length;
 	size_t right_length;
 	size_t shorter;
@@ -2150,32 +2412,33 @@ compare_objects(
 
 	/* Integers compare by value. */
 	if (left->type == DRV_ACPI_TYPE_INTEGER) {
-		error = drv_acpi_convert_integer(right, &value);
+		error = integer_order(left, right, order);
 		if (error != 0)
 			return error;
 
-		/* Orders the two values. */
-		*order = 0;
-		if (left->value.integer < value)
-			*order = -1;
-		if (left->value.integer > value)
-			*order = 1;
+		/* Succeeded: order holds the order of the two values. */
 		return 0;
 	}
 
-	/* Strings and buffers compare their bytes. */
+	/* Strings and buffers compare their bytes; the right operand takes the left one's type. */
 	if (left->type == DRV_ACPI_TYPE_STRING) {
+		/* Converts the right operand to a string. */
 		error = drv_acpi_convert_string(right, &converted);
 		if (error != 0)
 			return error;
+
+		/* Takes the characters of both. */
 		left_bytes = (const uint8_t *)left->value.string.text;
 		left_length = left->value.string.length;
 		right_bytes = (const uint8_t *)converted->value.string.text;
 		right_length = converted->value.string.length;
 	} else if (left->type == DRV_ACPI_TYPE_BUFFER) {
+		/* Converts the right operand to a buffer. */
 		error = drv_acpi_convert_buffer(right, &converted);
 		if (error != 0)
 			return error;
+
+		/* Takes the bytes of both. */
 		left_bytes = left->value.buffer.bytes;
 		left_length = left->value.buffer.length;
 		right_bytes = converted->value.buffer.bytes;
@@ -2185,13 +2448,15 @@ compare_objects(
 		return EINVAL;
 	}
 
-	/* Compares the common part, then the lengths. */
+	/* Compares the common part. */
 	shorter = left_length;
 	if (right_length < shorter)
 		shorter = right_length;
 	compared = 0;
 	if (shorter != 0)
 		compared = kern_memcmp(left_bytes, right_bytes, shorter);
+
+	/* The converted operand is no longer needed. */
 	drv_acpi_object_release(converted);
 
 	/* Orders by the first differing byte, or by length when there is none. */
@@ -2206,7 +2471,34 @@ compare_objects(
 		*order = 1;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: order holds the order of the two values. */
+	return 0;
+}
+
+/* Orders an integer and another value converted to an integer. */
+static int
+integer_order(
+	struct drv_acpi_object *left,
+	struct drv_acpi_object *right,
+	int *order)
+{
+	uint64_t value;
+	int error;
+
+	/* Converts the right operand. */
+	error = drv_acpi_convert_integer(right, &value);
+	if (error != 0)
+		return error;
+
+	/* Orders the two values. */
+	*order = 0;
+	if (left->value.integer < value) {
+		*order = -1;
+	} else if (left->value.integer > value) {
+		*order = 1;
+	}
+
+	/* Succeeded: order holds the order of the two values. */
 	return 0;
 }
 
@@ -2236,37 +2528,56 @@ match_one(
 	    element->type != DRV_ACPI_TYPE_BUFFER)
 		return 0;
 
-	/* Compares the element against the match object. */
+	/*
+	 * Compares the element against the match object.  A comparison that
+	 * fails -- a match object that does not convert to the element's type,
+	 * or memory that runs out while converting it -- counts as no match
+	 * and the search goes on, as ACPICA's AcpiExDoMatch treats it; the
+	 * error is not reported.
+	 */
 	error = compare_objects(element, match, &order);
 	if (error != 0)
 		return 0;
 
 	/* Applies the comparison code. */
+	*hit = order_matches(operation, order);
+
+	/* Succeeded: hit says whether the element passes the test. */
+	return 0;
+}
+
+/* Reports whether an order satisfies a Match comparison code. */
+static bool
+order_matches(
+	uint64_t operation,
+	int order)
+{
+	/* Chooses the test by the comparison code. */
 	switch (operation) {
 	case MATCH_EQUAL:
 		if (order == 0)
-			*hit = true;
+			return true;
 		break;
 	case MATCH_LESS_EQUAL:
 		if (order <= 0)
-			*hit = true;
+			return true;
 		break;
 	case MATCH_LESS:
 		if (order < 0)
-			*hit = true;
+			return true;
 		break;
 	case MATCH_GREATER_EQUAL:
 		if (order >= 0)
-			*hit = true;
+			return true;
 		break;
 	default:
 		if (order > 0)
-			*hit = true;
+			return true;
 		break;
 	}
 
-	/* Succeeded. */
-	return 0;
+	/* Reports an order that fails the test. */
+	return false;
 }
 
 /*
@@ -2291,13 +2602,14 @@ integer_string(
 	/* Writes the digits lowest first. */
 	count = 0;
 	if (form == STRING_DECIMAL) {
+		/* Writes every decimal digit, at least one. */
 		do {
 			reversed[count] = digits[value % 10U];
 			count++;
 			value /= 10U;
 		} while (value != 0);
 	} else if (form == STRING_IMPLICIT) {
-		/* Every digit of the integer, leading zeros included. */
+		/* Writes every hexadecimal digit of the integer, leading zeros included. */
 		width = drv_acpi_integer_bytes() * 2U;
 		while (count < width) {
 			reversed[count] = digits[value & 0x0fU];
@@ -2305,6 +2617,7 @@ integer_string(
 			value >>= 4;
 		}
 	} else {
+		/* Writes the hexadecimal digits without leading zeros, at least one. */
 		do {
 			reversed[count] = digits[value & 0x0fU];
 			count++;
@@ -2312,13 +2625,15 @@ integer_string(
 		} while (value != 0);
 	}
 
-	/* Puts them in reading order behind any prefix. */
+	/* Writes the prefix of ToHexString. */
 	length = 0;
 	if (form == STRING_HEX) {
 		text[0] = '0';
 		text[1] = 'x';
 		length = 2;
 	}
+
+	/* Puts the digits in reading order behind any prefix. */
 	while (count != 0) {
 		count--;
 		text[length] = reversed[count];
@@ -2330,8 +2645,10 @@ integer_string(
 	if (object == NULL)
 		return ENOMEM;
 
-	/* Succeeded. */
+	/* Hands over the string. */
 	*result = object;
+
+	/* Succeeded: the caller holds the integer's digits. */
 	return 0;
 }
 
@@ -2379,8 +2696,10 @@ buffer_string(
 	if (object == NULL)
 		return ENOMEM;
 
-	/* Succeeded. */
+	/* Hands over the string. */
 	*result = object;
+
+	/* Succeeded: the caller holds the buffer's text. */
 	return 0;
 }
 
@@ -2397,37 +2716,35 @@ byte_text(
 	/* Decimal is written without leading zeros. */
 	used = 0;
 	if (form == STRING_DECIMAL) {
-		/* The hundreds, when there are any. */
+		/* Writes the hundreds, when there are any. */
 		if (byte >= 100) {
 			text[used] = digits[byte / 100U];
 			used++;
 		}
 
-		/* The tens, when the number has them. */
+		/* Writes the tens, when the number has them. */
 		if (byte >= 10) {
 			text[used] = digits[(byte / 10U) % 10U];
 			used++;
 		}
 
-		/* The units. */
+		/* Writes the units. */
 		text[used] = digits[byte % 10U];
 		used++;
 		return used;
 	}
 
 	/* Hexadecimal bytes are written with 0x in front, implicit or not. */
-	if (form != STRING_DECIMAL) {
-		text[used] = '0';
-		text[used + 1U] = 'x';
-		used += 2U;
-	}
+	text[used] = '0';
+	text[used + 1U] = 'x';
+	used += 2U;
 
 	/* Hexadecimal is always two digits. */
 	text[used] = digits[byte >> 4];
 	text[used + 1U] = digits[byte & 0x0fU];
 	used += 2U;
 
-	/* Reports the length. */
+	/* Reports how many characters the byte took. */
 	return used;
 }
 
@@ -2443,7 +2760,7 @@ string_integer(
 	bool explicit_form,
 	uint64_t *value)
 {
-	uint64_t result;
+	uint64_t accumulated;
 	unsigned base;
 	unsigned digit;
 	size_t index;
@@ -2461,18 +2778,20 @@ string_integer(
 		base = 10;
 		if (index + 1U < length &&
 		    text[index] == '0' &&
-		    (text[index + 1U] == 'x' || text[index + 1U] == 'X')) {
+		    (text[index + 1U] == 'x' ||
+		     text[index + 1U] == 'X')) {
 			base = 16;
 			index += 2U;
 		}
 	}
 
 	/* Accumulates the digits until one is not a digit of the base. */
-	result = 0;
-	for (; index < length; index++) {
+	accumulated = 0;
+	for (;
+	     index < length;
+	     index++) {
+		/* Decodes the character as a digit; anything else ends the number. */
 		character = text[index];
-
-		/* Decodes the character as a digit. */
 		if (character >= '0' && character <= '9') {
 			digit = (unsigned)(character - '0');
 		} else if (character >= 'a' && character <= 'f') {
@@ -2486,11 +2805,15 @@ string_integer(
 		/* Stops at a digit the base does not have. */
 		if (digit >= base)
 			break;
-		result = result * base + digit;
+
+		/* Adds the digit at the lowest place. */
+		accumulated = accumulated * base + digit;
 	}
 
-	/* Succeeded: the value is cut to the integer width. */
-	*value = result & drv_acpi_integer_mask();
+	/* Hands over the value, cut to the integer width. */
+	*value = accumulated & drv_acpi_integer_mask();
+
+	/* Succeeded: value holds the number the text starts with. */
 	return 0;
 }
 
@@ -2526,17 +2849,17 @@ object_type_of(
 	if (object->type == DRV_ACPI_TYPE_ALIAS)
 		return DRV_ACPI_TYPE_UNINITIALIZED;
 
-	/* Reports the type. */
+	/* Reports the object's own type, which ObjectType numbers the same. */
 	return (enum drv_acpi_type)object->type;
 }
 
 /* Reports the integer AML uses for a truth value. */
 static uint64_t
 logical(
-	bool value)
+	bool truth)
 {
 	/* True is all ones at the integer width. */
-	if (value)
+	if (truth)
 		return drv_acpi_integer_mask();
 
 	/* False is zero. */
