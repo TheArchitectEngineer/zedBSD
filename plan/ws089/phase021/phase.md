@@ -2,7 +2,7 @@
 
 # ws089-p021: Wi-Fi の画面の自動の scan（Scan のボタンを無くす）と Disconnect の icon
 
-Status: in-progress（q703-i01、P2 generation14、2026-10-05。設計を決め、networkd と libkeiland-backend の scan の口まで実装。compositor の数え上げ・libkeiland・Settings・system bar は続き）
+Status: in-progress（q703-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）の試験待ち。実機は UAT）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q703-i01（P2 generation14）
@@ -43,3 +43,7 @@ WS131 の libkeiland-backend・kl_system_manager_v1（済み）、WS005 の netw
 ## 経過
 
 - 2026-10-05 q703-i01: networkd（protocol.h の opcode 40・41、`wifi_scan_request`・`run_requested_scan`・lease、watch の `scan=`）と libkeiland-backend（header、zedBSD の scan の接続、wpa の SCAN）を実装、networkd と backend の object は build warning 0（`ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD=build/p2-q703`）、wpa は host の cc で compile。未試験。同じ commit に、保留にした BUG-185・187・189 の networkd・backend の途中の差分が入る（各 ticket の「保留」）。
+- 2026-10-05 q703-i01（続き）: compositor（`system.c` の `set_scanning`、`objects.c` の destroy の hook `zwl_system_network_gone`、`network.c` の `zwl_network_scan_hold`（holders の数え上げ、menu を開いている間を 1 つ、開いた時の SCAN の要求をやめ、空の一覧は最初の scan まで「Looking for networks...」）、Disconnect を `GLASS_ICON_CLOSE` の icon の button（26×22）に）、protocol（`kl-system-protocol.h` の manager version 3・network の request 4、libkeiland の `kl_system_network_set_scanning`・KL_VERSION 24・exports.map）、Settings（Scan のボタンと周期の scan の要求を削除、Network・Wi-Fi の頁の間 `set_scanning(1)`、Ethernet・他の頁・窓を閉じると 0、「Searching...」は最初の scan まで、接続中の AP の行に Disconnect の icon の button（`se_icon_button_draw`・`SE_GLYPH_DISCONNECT` の丸に×）、Wi-Fi の頁の見出しの文字の Disconnect を削除）、network-probe（op=40・41、`scan=`、`route default=em9`）。
+- 確認（host）: `sh plan/ws089/tests/host-slot.sh` PASS（scan を占める要求に使っていた case を join・switch・disconnect に替え、case 5 に頁ごとの set_scanning の on・off と close を足した）、`sh plan/ws131/tests/host-system.sh build/p2-q703/host-system` PASS（set_scanning の一つの object が 1 holder、off、kl_system_close で 0 を足した。stub の destroy に objects.c と同じ hook）、`sh plan/ws089/tests/host-build.sh` と settings-render の Wi-Fi・Network の頁の絵（接続中の行に icon、click=1036,296 で NETWORK disconnect）。build: zedBSD の `bin/wayland`・`bin/settings`・`bin/networkd`・`bin/network-probe`・`dynamic/libkeiland.so`（`ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD=build/p2-q703`）warning 0、Linux（`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p2-q703-linux all`）warning 0。FreeBSD は未実施（ユーザー 2026-10-05: Linux・FreeBSD の backend はベータ1 まで不要）。OS の境界の checker: B2 以外 PASS、B2 は compositor の `kl_motion_*` を許可の表（`keiland_motion_` の旧い名前）が知らないための FAIL で、この変更の前から（Q1 に報告）。
+- BUG-184 の根（確かめた）: hit の表は毎 frame に描いた位置で作り直し、press と release は同じ frame の表で引く（`ui.c` の `ui_hit_at`）。Wi-Fi の頁の switch（1070,135 52×32）と Scan（二つ目の card の見出し）の矩形は重ならない（settings-render の `hits`）。食い違いではなく、頁が 20 秒ごとに出す Settings 自身の scan の要求が一つだけの要求の枠を占め、その間の off は slot で待ち（switch は state のまま）、見出しが「Searching...」・Scan が押せない形になっていた。scan を要求の枠から外した（D2・D4）ので、この形は無くなる。
+- 試験の依頼（T1、Q1 経由）: `plan/ws089/tests/settings-p021.sh`（image は `plan/ws089/tests/build-settings-image.sh BUILD`、settings-guest.sh の guest）。networkd の変更（scan の lease の on・off、watch の `scan=`・`route default=`）は part 1 の実 networkd で確かめる。manual-disconnected の時の 5 秒ごとの scan は radio の要る確かめで、QEMU（radio 無し）では見られない（RTL8822BU の passthrough か実機の UAT）。

@@ -213,7 +213,8 @@ enum se_glyph {
 	SE_GLYPH_PERSON,
 	SE_GLYPH_REFRESH,
 	SE_GLYPH_INFO,
-	SE_GLYPH_CHEVRON
+	SE_GLYPH_CHEVRON,
+	SE_GLYPH_DISCONNECT
 };
 
 struct se_app;
@@ -309,9 +310,9 @@ struct se_panel {
 #define SE_NETWORK_SAVED	KL_NETWORK_SAVED_MAX
 
 /*
- * The network's requests Settings makes: none, the daemon's (KL_NETWORK_SCAN
- * to KL_NETWORK_WIFI_OFF), and a key saved and its network joined, which
- * the compositor carries out as one request.
+ * The network's requests Settings makes: none, the daemon's (KL_NETWORK_JOIN
+ * to KL_NETWORK_WIFI_OFF; no scan, ws089-p021), and a key saved and its
+ * network joined, which the compositor carries out as one request.
  */
 #define SE_NETWORK_NONE		0U
 #define SE_NETWORK_SAVE_KEY	6U
@@ -355,13 +356,15 @@ struct se_field {
  * and request_id the number its answer carries; join_step and join_ssid
  * carry a join through it.  One request goes at a time, the system bar's
  * included: a switch, a disconnect or a join asked for while another
- * request (a scan, usually) is out waits in one slot -- pending_request
- * (NONE when empty), the join's step and its network -- and is sent when
- * that one is answered (ws089-p012 C1, as the system bar does since
- * ws005-p019); one the compositor answered busy (the system bar's request
- * was out) waits there until retry_at.  A scan is never kept.
- * scan_received tells that a scan's report arrived, so an empty list
- * means no network is in reach rather than none looked for yet.
+ * request is out waits in one slot -- pending_request (NONE when empty),
+ * the join's step and its network -- and is sent when that one is
+ * answered (ws089-p012 C1, as the system bar does since ws005-p019); one
+ * the compositor answered busy (the system bar's request was out) waits
+ * there until retry_at.  scan_received tells that a scan's report arrived,
+ * so an empty list means no network is in reach rather than none looked
+ * for yet.  scanning is 1 while the compositor was asked to keep the
+ * radios scanning, which it is while a page that lists the networks
+ * around is shown (ws089-p021; there is no Scan button).
  * key_ssid names the network whose key is being typed (empty when the key
  * form is closed); key_reveal asks the next frame to scroll the page so
  * that the form, under its network's row, is in sight (BUG-160).  The
@@ -373,8 +376,8 @@ struct se_network {
 	struct kl_network_state state;
 	struct kl_network_ap scan[SE_NETWORK_SCAN];
 	size_t scan_count;
-	uint64_t scanned_at;
 	int scan_received;
+	int scanning;
 	struct kl_network_link links[SE_NETWORK_LINKS];
 	size_t link_count;
 	char dns[SE_NETWORK_DNS][KL_NETWORK_ADDRESS_MAX];
@@ -816,6 +819,7 @@ int se_row_value(struct se_app *app, struct fm_canvas *canvas, int x, int top, i
 void se_mark_draw(struct fm_canvas *canvas, int x, int y, unsigned pixels, float opacity);
 void se_toggle_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int on, int enabled, int index);
 int se_button_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, const char *label, int primary, int enabled, int index);
+void se_icon_button_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, unsigned glyph, int index);
 int se_button_width(struct se_app *app, const char *label);
 void se_dot_draw(struct fm_canvas *canvas, float cx, float cy, fm_color color);
 void se_signal_draw(struct fm_canvas *canvas, float x, float y, int rssi, fm_color color);
@@ -843,7 +847,6 @@ int se_network_result(struct se_app *app, uint32_t request, int error);
 int se_network_wait(struct se_app *app);
 void se_network_close(struct se_app *app);
 void se_network_wifi(struct se_app *app, int on);
-void se_network_scan(struct se_app *app);
 void se_network_join(struct se_app *app, const char *ssid);
 void se_network_join_key(struct se_app *app, const char *ssid, const char *key);
 void se_network_disconnect(struct se_app *app);

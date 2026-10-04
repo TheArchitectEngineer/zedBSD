@@ -323,6 +323,10 @@ zwl_object_destroy(
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_GLASS)
 		zwl_panels_object_gone(object);
 
+	/* A network object that asked for scans asks no longer (system.c, ws089-p021). */
+	if (object->kind == ZWL_SYSTEM_NETWORK)
+		zwl_system_network_gone(object);
+
 	/* A toplevel's keyboard insets name nothing (inset.c). */
 	if (object->kind == ZWL_TOPLEVEL)
 		zwl_inset_object_gone(object);

@@ -11,15 +11,25 @@
  * it) -- the daemon's state and scans as the compositor tells them, the
  * interfaces, the DNS servers and the saved networks as its details, asked
  * for once a second -- and the requests the network pages make: the Wi-Fi
- * switch, a scan, a join, a disconnect, and a join with a new key (the
- * compositor saves the key, tells the daemon and joins, answering once).
+ * switch, a join, a disconnect, and a join with a new key (the compositor
+ * saves the key, tells the daemon and joins, answering once).
+ *
+ * There is no Scan button (ws089-p021, the user's request of 2026-10-04):
+ * while a page that lists the networks around is shown (Network, Wi-Fi),
+ * Settings asks the compositor to keep the radios scanning
+ * (kl_system_network_set_scanning) and the list follows each new scan; the
+ * scan the compositor already has is listed at once.  Leaving those pages
+ * or closing the window asks no longer.  The compositor counts every
+ * window that asks, its own Wi-Fi menu included, so two Settings windows,
+ * or Settings and the menu, keep the scans going until the last one stops.
  *
  * One network request is out at a time, the system bar's included.  A
  * switch, a disconnect or a join asked for while Settings' own request is
  * out waits in one slot and is sent when that one is answered, rather
  * than being refused (ws089-p012 C1, the system bar's way since
  * ws005-p019); one the compositor answered busy (the system bar's request
- * was out) waits there a moment and is sent again.  A scan is not kept.
+ * was out) waits there a moment and is sent again.  The asking for scans is
+ * no request and never takes the slot.
  *
  * Nothing here waits: the main loop calls se_network_poll every round, and
  * the answers arrive through system.c.  Settings never speaks networkd's
@@ -39,9 +49,6 @@
 /* How long a request the compositor answered busy waits before it is sent again, in milliseconds. */
 #define NETWORK_RETRY_MS	500U
 
-/* How long a scan is fresh while a Wi-Fi list is shown, in milliseconds. */
-#define NETWORK_SCAN_MS		20000U
-
 /* How often the main loop polls while a network page is shown or a request is outstanding, in milliseconds. */
 #define NETWORK_POLL_MS		250
 
@@ -53,7 +60,8 @@ static void network_send_waiting(struct se_app *app);
 static void network_send(struct se_app *app, unsigned request, const char *ssid);
 static void network_message(struct se_app *app, int bad, const char *format, const char *ssid);
 static int network_page_shown(const struct se_app *app);
-static int network_radio_on(const struct se_network *network);
+static int network_page_lists(const struct se_app *app);
+static void network_scanning(struct se_app *app, int on);
 
 /*
  * Starts following the network, when the desktop offers it: the state and
@@ -119,8 +127,8 @@ se_network_poll(
 	size_t count;
 	int addresses;
 	int shown;
+	int lists;
 	int error;
-	int radio;
 
 	/* Nothing to follow without the desktop's network. */
 	network = &app->network;
@@ -141,7 +149,6 @@ se_network_poll(
 		if (count > SE_NETWORK_SCAN)
 			count = SE_NETWORK_SCAN;
 		network->scan_count = count;
-		network->scanned_at = now;
 		network->scan_received = 1;
 		se_log("NETWORK scan count=%lu", (unsigned long)network->scan_count);
 		app->dirty = 1;
@@ -168,18 +175,9 @@ se_network_poll(
 	if (network->request == SE_NETWORK_NONE && network->pending_request != SE_NETWORK_NONE && now >= network->retry_at)
 		network_send_waiting(app);
 
-	/* A fresh scan while a Wi-Fi list is shown and the radio is on. */
-	if (shown == 0)
-		return;
-	if (network->request != SE_NETWORK_NONE)
-		return;
-	radio = network_radio_on(network);
-	if (radio == 0)
-		return;
-	if (network->scanned_at != 0U && now - network->scanned_at < NETWORK_SCAN_MS)
-		return;
-	network->scanned_at = now;
-	network_ask(app, KL_NETWORK_SCAN, NULL, SE_JOIN_NONE);
+	/* Scans asked for while a page lists the networks around, and no longer when none does. */
+	lists = network_page_lists(app);
+	network_scanning(app, lists);
 }
 
 /*
@@ -245,7 +243,8 @@ void
 se_network_close(
 	struct se_app *app)
 {
-	/* The key, then the network; a request waiting in the slot is dropped with it. */
+	/* The scans are asked for no longer, then the key and the network go; a request waiting in the slot is dropped with them. */
+	network_scanning(app, 0);
 	se_field_clear(&app->network.key);
 	app->network.live = 0;
 	app->network.pending_request = SE_NETWORK_NONE;
@@ -265,18 +264,6 @@ se_network_wifi(
 	} else {
 		network_ask(app, KL_NETWORK_WIFI_OFF, NULL, SE_JOIN_NONE);
 	}
-}
-
-/*
- * Asks for a scan of the networks around.
- */
-void
-se_network_scan(
-	struct se_app *app)
-{
-	/* The scan's request (not kept when another request is out: that one's answer comes first). */
-	app->network.scanned_at = app->now;
-	network_ask(app, KL_NETWORK_SCAN, NULL, SE_JOIN_NONE);
 }
 
 /*
@@ -456,7 +443,7 @@ network_outcome(
 	app->dirty = 1;
 
 	/* The network was busy with the system bar's request: it waits a moment in the slot, unless something newer waits there. */
-	if (error == EBUSY && request != KL_NETWORK_SCAN) {
+	if (error == EBUSY) {
 		if (network->pending_request == SE_NETWORK_NONE) {
 			network->pending_request = request;
 			network->pending_step = network->join_step;
@@ -541,7 +528,7 @@ network_join_outcome(
 
 /*
  * Asks for something: sent now, or kept in the slot while another request
- * is outstanding (a later ask replaces what waited; a scan is not kept).
+ * is outstanding (a later ask replaces what waited).
  * step is the join the request starts (SE_JOIN_NONE for a request that is
  * no join), and ssid names the join's network.
  */
@@ -558,12 +545,6 @@ network_ask(
 	network = &app->network;
 	if (network->live == 0) {
 		network_message(app, 1, "%s", "Network settings are not available on this desktop.");
-		return;
-	}
-
-	/* Another request is out: a scan is dropped (that request's answer comes first anyway). */
-	if (network->request != SE_NETWORK_NONE && request == KL_NETWORK_SCAN) {
-		se_log("NETWORK request=%u skipped busy=%u", request, network->request);
 		return;
 	}
 
@@ -694,17 +675,42 @@ network_page_shown(
 	return 0;
 }
 
-/* Tells whether the Wi-Fi radio is on (searching, joining, connected, or on and left unconnected). */
+/* Tells whether a page that lists the networks around is shown (Network and Wi-Fi; Ethernet lists none). */
 static int
-network_radio_on(
-	const struct se_network *network)
+network_page_lists(
+	const struct se_app *app)
 {
-	/* A missing radio, and one turned off, are not on. */
-	if (network->state.wifi == KL_WIFI_ABSENT)
-		return 0;
-	if (network->state.wifi == KL_WIFI_OFF)
-		return 0;
+	/* Network and Wi-Fi list them. */
+	if (app->page == SE_PAGE_NETWORK)
+		return 1;
+	if (app->page == SE_PAGE_WIFI)
+		return 1;
 
-	/* Every other state has the radio on. */
-	return 1;
+	/* No other page does. */
+	return 0;
+}
+
+/*
+ * Asks the compositor to keep the radios scanning (on 1), or no longer
+ * (on 0), when that differs from what it was last told (ws089-p021).
+ */
+static void
+network_scanning(
+	struct se_app *app,
+	int on)
+{
+	struct se_network *network;
+	int error;
+
+	/* Told already, or nothing to tell without the desktop's network. */
+	network = &app->network;
+	if (network->live == 0)
+		return;
+	if (on == network->scanning)
+		return;
+
+	/* The compositor is told; one that does not know the asking is not told again. */
+	error = kl_system_network_set_scanning(app->system, (unsigned)on);
+	network->scanning = on;
+	se_log("NETWORK scanning on=%d errno=%d", on, error);
 }

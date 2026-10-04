@@ -18,6 +18,9 @@
  * They draw what network.c keeps (struct se_network) and ask it to act.
  * A click on a network joins it when its key is saved, or opens a line
  * under it to type its key; the key is shown as dots unless Show is on.
+ * The list follows the scans by itself while it is shown (ws089-p021:
+ * there is no Scan button), and the network the machine is on has a
+ * Disconnect button on its row, a picture (a cross in a circle).
  */
 
 #include "settings.h"
@@ -27,7 +30,6 @@
 
 /* The controls of the network pages (the hit indices of SE_HIT_CONTROL); a network of the scan is its index past NETWORK_AP_FIRST. */
 #define NETWORK_WIFI_SWITCH	1
-#define NETWORK_SCAN		2
 #define NETWORK_DISCONNECT	3
 #define NETWORK_KEY_JOIN	4
 #define NETWORK_KEY_CANCEL	5
@@ -49,6 +51,9 @@
 
 /* How many networks the Network page lists before "All Wi-Fi networks". */
 #define NETWORK_COMPACT_ROWS	4
+
+/* The room the Disconnect button takes on the row of the network in use: the button (32) and a margin. */
+#define NETWORK_DISCONNECT_ROOM	40
 
 /* A tile of the connection's state. */
 #define NETWORK_TILE_HEIGHT	78
@@ -159,25 +164,16 @@ se_wifi_page_draw(
 	const struct se_network *network;
 	struct fm_text_line line;
 	char words[96];
-	int connected;
 	int on;
 	int y;
-	int button;
 
-	/* The switch's card: the Wi-Fi's state in words, the switch, and Disconnect while on a network. */
+	/* The switch's card: the Wi-Fi's state in words and the switch (Disconnect is on the network's row). */
 	network = &app->network;
 	on = 0;
 	if (network->state.wifi != KL_WIFI_OFF && network->state.wifi != KL_WIFI_ABSENT)
 		on = 1;
 	(void)network_header(app, canvas, x, top, width, NETWORK_HEADER + 8, "Wi-Fi", network_wifi_words(network));
 	se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KL_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
-	connected = 0;
-	if (network->state.wifi == KL_WIFI_CONNECTED)
-		connected = 1;
-	if (connected != 0) {
-		button = se_button_width(app, "Disconnect");
-		(void)se_button_draw(app, canvas, x + width - NETWORK_PAD - 44 - 16 - button, top + 16, "Disconnect", 0, 1, NETWORK_DISCONNECT);
-	}
 
 	/* The networks around, under the switch's card. */
 	y = network_wifi_card(app, canvas, x, top + NETWORK_HEADER + 8 + NETWORK_GAP, width, 0);
@@ -252,9 +248,6 @@ se_network_press(
 	switch (index) {
 	case NETWORK_WIFI_SWITCH:
 		se_network_wifi(app, network->state.wifi == KL_WIFI_OFF);
-		return;
-	case NETWORK_SCAN:
-		se_network_scan(app);
 		return;
 	case NETWORK_DISCONNECT:
 		se_network_disconnect(app);
@@ -560,19 +553,21 @@ network_wifi_card(
 		height += NETWORK_MESSAGE_LINE;
 	height += 8;
 
-	/* The header: the title, the state in words, and the switch (the compact card) or Scan (the Wi-Fi page). */
+	/*
+	 * The header: the title, the state in words, and the switch on the
+	 * compact card (the Wi-Fi page has it on its own card above).  The list
+	 * follows the scans by itself (ws089-p021): "Searching..." stands until
+	 * the first scan comes.
+	 */
 	title = "Networks";
 	if (compact != 0)
 		title = "Wi-Fi Networks";
 	subtitle = "Connect to available wireless networks.";
-	if (network->request == KL_NETWORK_SCAN)
+	if (on != 0 && network->scan_count == 0 && network->scan_received == 0)
 		subtitle = "Searching...";
 	y = network_header(app, canvas, x, top, width, height, title, subtitle);
-	if (compact != 0) {
+	if (compact != 0)
 		se_toggle_draw(app, canvas, x + width - NETWORK_PAD - 44, top + 20, on, network->state.wifi != KL_WIFI_ABSENT, NETWORK_WIFI_SWITCH);
-	} else {
-		(void)se_button_draw(app, canvas, x + width - NETWORK_PAD - se_button_width(app, "Scan"), top + 16, "Scan", 0, on != 0 && network->request == SE_NETWORK_NONE, NETWORK_SCAN);
-	}
 
 	/* Without the radio, while it is off, or with nothing listed, a line of words. */
 	if (network->state.wifi == KL_WIFI_ABSENT) {
@@ -581,9 +576,7 @@ network_wifi_card(
 	} else if (on == 0) {
 		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "Wi-Fi is off.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
-	} else if (shown == 0 &&
-		   network->scan_received != 0 &&
-		   network->request != KL_NETWORK_SCAN) {
+	} else if (shown == 0 && network->scan_received != 0) {
 		/* A scan came back empty: nothing is in reach. */
 		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "No networks in reach.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
@@ -717,6 +710,7 @@ network_row_draw(
 	int differs;
 	int control;
 	int saved;
+	int words;
 	int lit;
 
 	/* Whether this is the network in use, or the one being joined. */
@@ -779,10 +773,15 @@ network_row_draw(
 		glyph = SE_COLOR_ACCENT;
 	}
 
+	/* The room of the words: less on the network in use, whose row has Disconnect too. */
+	words = width - 140;
+	if (current != 0)
+		words = width - 140 - NETWORK_DISCONNECT_ROOM;
+
 	/* The picture, the SSID and the state. */
 	se_glyph_draw(canvas, SE_GLYPH_WIFI, (float)x + 12.0f, (float)y + 13.0f, 24.0f, glyph);
-	(void)fm_text_draw_fit(app->text, canvas, x + 50, y + 22, row->ssid, NETWORK_TEXT_ROW, current, width - 140, SE_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, x + 50, y + 40, state, NETWORK_TEXT_SMALL, 0, width - 140, ink);
+	(void)fm_text_draw_fit(app->text, canvas, x + 50, y + 22, row->ssid, NETWORK_TEXT_ROW, current, words, SE_COLOR_TEXT);
+	(void)fm_text_draw_fit(app->text, canvas, x + 50, y + 40, state, NETWORK_TEXT_SMALL, 0, words, ink);
 
 	/* The lock of a secured network, and the signal. */
 	if (row->secured != 0)
@@ -792,6 +791,10 @@ network_row_draw(
 	/* A network of the scan is clickable. */
 	if (row->index >= 0)
 		se_ui_hit(app, &rect, SE_HIT_CONTROL, control);
+
+	/* The network in use has Disconnect left of its lock, over the row's region (ws089-p021: a picture, not a word). */
+	if (current != 0)
+		se_icon_button_draw(app, canvas, x + width - 70 - NETWORK_DISCONNECT_ROOM + 4, y + (NETWORK_ROW - 32) / 2, SE_GLYPH_DISCONNECT, NETWORK_DISCONNECT);
 }
 
 /*

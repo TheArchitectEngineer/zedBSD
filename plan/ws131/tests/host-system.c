@@ -82,6 +82,7 @@ static struct {
 	size_t bar_saved_count;
 	char bar_saved_first[KL_BACKEND_NETWORK_SSID_MAX];
 	unsigned bar_saved_calls;
+	unsigned scan_holders;		/* network.c's holders of the scans (ws089-p021) */
 	struct kl_backend_audio_state audio;
 	unsigned set_left;
 	unsigned set_right;
@@ -183,6 +184,28 @@ zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SS
 	if (count > 0U)
 		snprintf(world.bar_saved_first, sizeof(world.bar_saved_first), "%s", ssids[0]);
 	pthread_mutex_unlock(&world.lock);
+}
+
+void
+zwl_network_scan_hold(unsigned on)
+{
+	pthread_mutex_lock(&world.lock);
+	if (on != 0U)
+		world.scan_holders++;
+	else if (world.scan_holders > 0U)
+		world.scan_holders--;
+	pthread_mutex_unlock(&world.lock);
+}
+
+static unsigned
+scan_holders_now(void)
+{
+	unsigned holders;
+
+	pthread_mutex_lock(&world.lock);
+	holders = world.scan_holders;
+	pthread_mutex_unlock(&world.lock);
+	return holders;
 }
 
 size_t
@@ -404,6 +427,8 @@ zwl_object_destroy(struct zwl_object *object)
 {
 	uint32_t id;
 
+	if (object->kind == ZWL_SYSTEM_NETWORK)
+		zwl_system_network_gone(object);
 	object->dead = 1U;
 	id = object->id;
 	if (object->client->fd >= 0)
@@ -974,6 +999,18 @@ test_both_ends(void)
 	CHECK(kl_system_network_request(system, KL_NETWORK_SCAN, NULL, &first) == 0, "scan asked");
 	expect_result(display, system, first, 0, "scan");
 
+	/* Scans asked for and no longer (ws089-p021): the object is one holder however often it asks. */
+	CHECK(kl_system_network_set_scanning(system, 1U) == 0, "scanning asked");
+	CHECK(kl_system_network_set_scanning(system, 1U) == 0, "scanning asked again");
+	(void)pump(display, system, NULL, 3);
+	CHECK(scan_holders_now() == 1U, "one holder (%u)", scan_holders_now());
+	CHECK(kl_system_network_set_scanning(system, 0U) == 0, "scanning no longer");
+	(void)pump(display, system, NULL, 3);
+	CHECK(scan_holders_now() == 0U, "no holder (%u)", scan_holders_now());
+	CHECK(kl_system_network_set_scanning(system, 1U) == 0, "scanning asked until the close");
+	(void)pump(display, system, NULL, 3);
+	CHECK(scan_holders_now() == 1U, "holder until the close (%u)", scan_holders_now());
+
 	/* One network request at a time: the second is busy while the first is out. */
 	pthread_mutex_lock(&world.lock);
 	world.auto_answer = 0U;
@@ -1115,10 +1152,11 @@ test_both_ends(void)
 	CHECK(kl_system_devices_eject(system, "usb0", &first) == 0, "eject asked");
 	expect_result(display, system, first, ENOTSUP, "eject");
 
-	/* Close, and no protocol error on the way. */
+	/* Close, and no protocol error on the way; the closed system's asking for scans went with it. */
 	kl_system_close(system);
 	(void)wl_display_roundtrip(display);
 	CHECK(protocol_errors == 0U, "%u protocol errors", protocol_errors);
+	CHECK(scan_holders_now() == 0U, "no holder after the close (%u)", scan_holders_now());
 	pthread_mutex_lock(&world.lock);
 	world.stop = 1U;
 	pthread_mutex_unlock(&world.lock);
