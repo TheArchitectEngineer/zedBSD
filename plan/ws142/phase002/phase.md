@@ -40,6 +40,8 @@ Design: [ws142-p001](../phase001/phase.md) の C
 - 試験: `plan/ws142/tests/p002-guest.sh BUILD [OUTDIR]`（BUILD/bin/wayland を写す。QMP の key: meta_l・meta_r・tab・esc・shift、qmp-pointer の click）。
 - 合格: 全行 ok（super-opens、super-logged、super-closes、right-super-opens、esc-closes、super-tab-wiseview、super-tab-no-home、click-no-home、long-hold-no-home、shift-no-home、probe-focused、super-not-delivered、plain-key-delivered、super-modifier-delivered、alive、no-error）。`home-open.png` をユーザーに見せる。
 
+- 2026-10-05 T1 の結果: log の確認は PASS、home-open.png が console の文字の画面（QMP screendump は GL の scanout を写さない）。zdesktop-p013 と同じ VNC からの撮影（`plan/ws035/tests/zdesktop-check.py`）に替えた。PNG の再撮影は T1。
+
 ## 残り
 
 - QEMU の結果の判定。Wiseview が開いている時の Super 単独は Home を Wiseview の上に開く（Wiseview を閉じない）。p004・p005 で切り替えの UI と合わせて見直す。

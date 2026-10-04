@@ -5,8 +5,8 @@
 #  1. The compositor's backend subscribes to /dev/system ("KL EVENTS subscribed classes=0x2f") and reads the power
 #     as unknown ("ZWL POWER source=unknown percent=-1"): no battery on the bar (bar.png is for the eye: no battery
 #     outline left of the clock).
-#  2. A USB keyboard plugged in through QMP (usb-kbd on xhci.0 port 5): the compositor hears "ZWL EVENT input changed"
-#     and takes the keyboard ("ZWL INPUT device=... kind=keyboard") within 1.5 s, before its own 2 s scan would.
+#  2. A USB keyboard plugged in through QMP (usb-kbd on xhci.0 port 4; the harness takes ports 1-3, and the other
+#     ports are USB 3 ones): the compositor hears "ZWL EVENT input changed" and takes the keyboard ("ZWL INPUT device=... kind=keyboard") within 1.5 s, before its own 2 s scan would.
 #  3. The new keyboard works: App Home opened with the mouse (the launcher), then Esc typed on the plugged keyboard
 #     only (QMP input-send-event to its device) closes it ("ZWL HOME close via=escape").
 #  4. The keyboard pulled out: "ZWL EVENT input changed" again, and its device closes.
@@ -25,6 +25,8 @@ qmp="$GUEST_RUNTIME/qmp.sock"
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 put() { timeout 90 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2>&1; }
 send() { timeout 40 python3 plan/ws049/tests/qmp-send.py "$qmp" "$@" >> "$out/qmp.txt" 2>&1; }
+# A picture for the eye, read from the Venus head through QEMU's VNC (QMP screendump shows the text console instead).
+shot() { timeout 60 python3 plan/ws035/tests/zdesktop-check.py "$out/$1.png" --runtime "$GUEST_RUNTIME" >> "$out/qmp.txt" 2>&1; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$qmp" "$@"; }
 stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]ltest|[w]lshm" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
@@ -44,11 +46,11 @@ guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 # 1. The subscription and the power.
 expect_log subscribed 'KL EVENTS subscribed classes=0x2f'
 expect_log power-unknown 'ZWL POWER source=unknown percent=-1 charging=0'
-send screendump "{\"filename\":\"$(realpath "$out")/bar.png\",\"format\":\"png\"}"
+shot bar
 
 # 2. The keyboard plugged in; the compositor's scan of 2 s is beaten by the event.
 keyboards_before=$(guest "grep -c 'kind=keyboard' /tmp/zdesktop.log" | tail -1)
-send device_add '{"driver":"usb-kbd","bus":"xhci.0","port":"5","id":"hotkbd"}'
+send device_add '{"driver":"usb-kbd","bus":"xhci.0","port":"4","id":"hotkbd"}'
 sleep 1.5
 guest 'cat /tmp/zdesktop.log' > "$out/after-plug.log"
 if grep -q 'ZWL EVENT input changed' "$out/after-plug.log"; then pass plug-event; else fail plug-event; fi
