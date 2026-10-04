@@ -29,6 +29,10 @@
  * (the stand-in pad is low, asserted, while a scripted report waits): the
  * driver reads only while the line is asserted, so no empty read happens;
  * with "sample" no pad is found and the driver samples the input register.
+ * In the "line" run the pad cannot interrupt (the enable fails) and the
+ * driver watches the line; with "irq" the pad's interrupt is enabled, the
+ * stand-in fires it while a scripted report waits, and the driver reads
+ * the reports and arms the pad again, sleeping at most a second between.
  * The thread's endless loop is left with a longjmp from the sleep once the
  * script is done.
  *
@@ -112,6 +116,15 @@ static unsigned sleeps_after_script;
 
 /* Whether the device's line is a pad (the "line" run), and the pin the driver asked for. */
 static int line_mode;
+static int irq_mode;
+
+/* The pad's interrupt in the "irq" run: its handler, how often it was enabled, armed and fired, and the longest sleep asked. */
+static void (*pad_handler)(void *);
+static void *pad_argument;
+static int irq_enables;
+static int irq_arms;
+static int irq_fires;
+static uint64_t longest_wait_ms;
 static uint32_t line_pin_asked;
 static int fake_pad;
 
@@ -686,6 +699,153 @@ drv_intel_gpio_pad_level(
 	return 1;
 }
 
+/* Enables the stand-in pad's interrupt in the "irq" run; the "line" run's pad cannot interrupt. */
+int
+drv_intel_gpio_pad_irq_enable(
+	void *pad,
+	void (*handler)(void *),
+	void *argument)
+{
+	/* The stand-in pad. */
+	check(pad == &fake_pad, "the interrupt asked is the pad's");
+	irq_enables++;
+	if (!irq_mode)
+		return 95;
+
+	/* Its handler, for the firings. */
+	pad_handler = handler;
+	pad_argument = argument;
+	return 0;
+}
+
+/* Counts the arms. */
+void
+drv_intel_gpio_pad_irq_arm(
+	void *pad)
+{
+	/* The stand-in pad. */
+	(void)pad;
+	irq_arms++;
+}
+
+/* The stand-in interrupt never goes away. */
+int
+drv_intel_gpio_pad_irq_alive(
+	const void *pad)
+{
+	/* Alive. */
+	(void)pad;
+	return 1;
+}
+
+/* The locks and the wait queue: one thread here. */
+void
+spin_init(
+	void *lock,
+	int rank,
+	const char *name)
+{
+	/* Nothing to make. */
+	(void)lock;
+	(void)rank;
+	(void)name;
+}
+
+void
+spin_lock(
+	void *lock)
+{
+	/* Nothing to take. */
+	(void)lock;
+}
+
+void
+spin_unlock(
+	void *lock)
+{
+	/* Nothing to give. */
+	(void)lock;
+}
+
+unsigned long
+spin_lock_irqsave(
+	void *lock)
+{
+	/* Nothing to take. */
+	(void)lock;
+	return 0;
+}
+
+void
+spin_unlock_irqrestore(
+	void *lock,
+	unsigned long state)
+{
+	/* Nothing to give. */
+	(void)lock;
+	(void)state;
+}
+
+void
+waitq_init(
+	void *queue,
+	const char *name)
+{
+	/* Nothing to make. */
+	(void)queue;
+	(void)name;
+}
+
+uint64_t
+waitq_sequence(
+	const void *queue)
+{
+	/* Any value. */
+	(void)queue;
+	return 0;
+}
+
+void
+waitq_wake_all(
+	void *queue)
+{
+	/* The sleep returns by itself. */
+	(void)queue;
+}
+
+/*
+ * The thread waits for the pad: the stand-in fires it while a scripted
+ * report waits, otherwise the deadline passes (and after the script the
+ * thread is left).
+ */
+int
+waitq_sleep(
+	void *queue,
+	void *lock,
+	uint64_t observed,
+	uint64_t deadline,
+	unsigned flags)
+{
+	/* The wait's length. */
+	(void)queue;
+	(void)lock;
+	(void)observed;
+	(void)flags;
+	if (deadline > now_ms && deadline - now_ms > longest_wait_ms)
+		longest_wait_ms = deadline - now_ms;
+
+	/* A report waits: the pad fires. */
+	if (report_next < report_count && pad_handler != NULL) {
+		irq_fires++;
+		pad_handler(pad_argument);
+		return 0;
+	}
+
+	/* Nothing: the deadline passes. */
+	sched_sleep(deadline);
+	return 110;
+}
+
 /* Records the input device the driver registers. */
 int
 drv_input_device_register(
@@ -847,6 +1007,9 @@ main(
 
 	/* The run. */
 	line_mode = strcmp(argv[2], "line") == 0;
+	irq_mode = strcmp(argv[2], "irq") == 0;
+	if (irq_mode)
+		line_mode = 1;
 
 	/* Reads it. */
 	stream = fopen(argv[1], "rb");
@@ -903,6 +1066,14 @@ main(
 	check(has_event(EV_KEY, BTN_TOUCH, 0), "BTN_TOUCH up");
 	check(has_event(EV_KEY, BTN_TOOL_FINGER, 0), "BTN_TOOL_FINGER released");
 	check(line_pin_asked == 327U, "the line's pin is 327");
+	if (irq_mode) {
+		check(irq_enables == 1 && irq_fires >= 1 && irq_arms >= 1, "the pad's interrupt is enabled, fires and is armed again");
+		check(longest_wait_ms >= 1000U && longest_wait_ms <= 1002U, "the thread sleeps at most a second between looks");
+	}
+
+	/* The line run asked for the interrupt, which failed, before it watched the line. */
+	if (line_mode && !irq_mode)
+		check(irq_enables == 1, "the line run asks for the interrupt first");
 	if (line_mode) {
 		check(empty_reads == 0U, "by the line, no read happens while the line is idle");
 	} else {

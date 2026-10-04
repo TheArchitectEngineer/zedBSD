@@ -21,5 +21,6 @@ int amd64_ioapic_init(const struct amd64_acpi_info *acpi, uint32_t bootstrap_api
 void amd64_ioapic_mask(int irq);
 void amd64_ioapic_unmask(int irq);
 int amd64_ioapic_route(int irq, uint32_t apic_id);
+int amd64_ioapic_set_mode(int irq, int trigger, int polarity);
 
 #endif

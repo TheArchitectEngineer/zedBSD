@@ -18,6 +18,17 @@
  * (the 5330's DW0 at rest, 0x80800102, reads high).  A pin in no group and
  * a configuration outside the controller's ranges are refused.
  *
+ * The pad's interrupt (the controller's _HID INTC1055, its _CRS Interrupt
+ * 14, level, active low): another family is refused, a pad the firmware
+ * keeps (HOSTSW_OWN clear) is refused, then the pad's interrupt is enabled
+ * (IRQ 14 registered, set level and low, unmasked; GPI_IE bit 7 of the
+ * group's register at 0x12c set, GPI_IS 0x10c cleared); a firing with the
+ * pad's GPI_IS bit set calls the user's handler once, turns GPI_IE's bit
+ * off, clears GPI_IS's and sends the EOI; arming turns it on again; a
+ * firing for no pad masks IRQ 14 and the pad's interrupt is no longer
+ * alive.  With the argument "nomode" the HAL cannot set the mode: the
+ * enable fails and the interrupt is not alive.
+ *
  *   plan/ws159/tests/run-host-intel-gpio.sh
  */
 
@@ -83,6 +94,26 @@ static uint64_t mapped_page;
 static uint8_t page_memory[4096];
 static uint32_t dw0_value;
 
+/* The group's interrupt registers in the community's page: HOSTSW_OWN, GPI_IS, GPI_IE (group 14 is the community's fourth). */
+#define REG_HOSTSW		0xbcU
+#define REG_STATUS		0x10cU
+#define REG_ENABLE		0x12cU
+#define PAD_BIT			(1U << 7)
+
+/* The controller's _HID, the HAL's answer to the mode, and what the stand-in IRQ calls saw. */
+static const char *controller_hid = "INTC1055";
+static int mode_error;
+static void (*irq_handler)(int, uintptr_t, void *);
+static void *irq_argument;
+static int irq_registered;
+static int irq_masked;
+static int irq_unmasked;
+static unsigned irq_trigger;
+static unsigned irq_polarity;
+static int eoi_count;
+static int user_calls;
+
+
 /* The node the stand-in lookup hands out (compared, never followed). */
 static int fake_node;
 
@@ -91,6 +122,22 @@ void kern_free(void *pointer);
 void kern_logf(const char *format, ...);
 int kern_device_map(uint64_t address, size_t size, unsigned attributes, void **mapped);
 uint32_t kern_mmio_read32(const volatile void *address);
+void kern_mmio_write32(volatile void *address, uint32_t value);
+int kern_strcmp(const char *left, const char *right);
+int kern_irq_register(int irq, void (*handler)(int, uintptr_t, void *), void *argument);
+int kern_irq_unregister(int irq, void (*handler)(int, uintptr_t, void *), void *argument);
+int kern_irq_set_mode(int irq, unsigned trigger, unsigned polarity);
+void kern_irq_mask(int irq);
+void kern_irq_unmask(int irq);
+void kern_irq_send_eoi(uintptr_t acknowledge);
+void spin_init(void *lock, int rank, const char *name);
+void spin_lock(void *lock);
+void spin_unlock(void *lock);
+unsigned long spin_lock_irqsave(void *lock);
+void spin_unlock_irqrestore(void *lock, unsigned long state);
+static void user_handler(void *argument);
+static uint32_t reg(unsigned offset);
+static void set_reg(unsigned offset, uint32_t value);
 static void check(int condition, const char *what);
 static struct drv_acpi_object *integer_object(uint64_t value);
 static struct drv_acpi_object *gpcl_object(void);
@@ -147,14 +194,207 @@ kern_device_map(
 	return 0;
 }
 
-/* Reads the stand-in DW0. */
+/* Reads the stand-in DW0, or a register of the community's page. */
 uint32_t
 kern_mmio_read32(
 	const volatile void *address)
 {
-	/* Only the pad's DW0 is read. */
-	check((const uint8_t *)address == page_memory + (PAD_DW0 & 0xfffU), "the read is of the pad's DW0");
-	return dw0_value;
+	uint32_t value;
+
+	/* The pad's DW0. */
+	if ((const uint8_t *)address == page_memory + (PAD_DW0 & 0xfffU))
+		return dw0_value;
+
+	/* A register of the page (the same page: the community starts at 0xfd6a0000). */
+	check((const uint8_t *)address >= page_memory && (const uint8_t *)address < page_memory + sizeof(page_memory), "the read is of the mapped page");
+	memcpy(&value, (const uint8_t *)address, sizeof(value));
+	return value;
+}
+
+/* Writes a register of the community's page; GPI_IS clears the bits written as ones. */
+void
+kern_mmio_write32(
+	volatile void *address,
+	uint32_t value)
+{
+	unsigned offset;
+	uint32_t old;
+
+	/* Within the page. */
+	offset = (unsigned)((uint8_t *)address - page_memory);
+	check(offset < sizeof(page_memory), "the write is of the mapped page");
+
+	/* GPI_IS: write one to clear. */
+	if (offset == REG_STATUS) {
+		old = reg(REG_STATUS);
+		set_reg(REG_STATUS, old & ~value);
+		return;
+	}
+
+	/* Any other register keeps what is written. */
+	set_reg(offset, value);
+}
+
+/* Compares two strings. */
+int
+kern_strcmp(
+	const char *left,
+	const char *right)
+{
+	/* The host's. */
+	return strcmp(left, right);
+}
+
+/* Records the controller's handler. */
+int
+kern_irq_register(
+	int irq,
+	void (*handler)(int, uintptr_t, void *),
+	void *argument)
+{
+	/* IRQ 14, once. */
+	check(irq == 14, "the controller's IRQ is 14");
+	irq_handler = handler;
+	irq_argument = argument;
+	irq_registered++;
+	return 0;
+}
+
+/* Forgets the controller's handler. */
+int
+kern_irq_unregister(
+	int irq,
+	void (*handler)(int, uintptr_t, void *),
+	void *argument)
+{
+	/* The same registration. */
+	check(irq == 14 && handler == irq_handler && argument == irq_argument, "the registration removed is the one made");
+	irq_registered--;
+	return 0;
+}
+
+/* Records the mode asked for; the "nomode" run refuses it. */
+int
+kern_irq_set_mode(
+	int irq,
+	unsigned trigger,
+	unsigned polarity)
+{
+	/* What was asked. */
+	(void)irq;
+	irq_trigger = trigger;
+	irq_polarity = polarity;
+	return mode_error;
+}
+
+/* Counts the masks. */
+void
+kern_irq_mask(
+	int irq)
+{
+	/* IRQ 14. */
+	(void)irq;
+	irq_masked++;
+}
+
+/* Counts the unmasks. */
+void
+kern_irq_unmask(
+	int irq)
+{
+	/* IRQ 14. */
+	(void)irq;
+	irq_unmasked++;
+}
+
+/* Counts the EOIs. */
+void
+kern_irq_send_eoi(
+	uintptr_t acknowledge)
+{
+	/* The token handed to the handler. */
+	check(acknowledge == 0x1234U, "the EOI is of the firing's token");
+	eoi_count++;
+}
+
+/* The locks: one thread here. */
+void
+spin_init(
+	void *lock,
+	int rank,
+	const char *name)
+{
+	/* Nothing to make. */
+	(void)lock;
+	(void)rank;
+	(void)name;
+}
+
+void
+spin_lock(
+	void *lock)
+{
+	/* Nothing to take. */
+	(void)lock;
+}
+
+void
+spin_unlock(
+	void *lock)
+{
+	/* Nothing to give. */
+	(void)lock;
+}
+
+unsigned long
+spin_lock_irqsave(
+	void *lock)
+{
+	/* Nothing to take. */
+	(void)lock;
+	return 0;
+}
+
+void
+spin_unlock_irqrestore(
+	void *lock,
+	unsigned long state)
+{
+	/* Nothing to give. */
+	(void)lock;
+	(void)state;
+}
+
+/* The pad's user's handler: counted. */
+static void
+user_handler(
+	void *argument)
+{
+	/* The argument given at the enable. */
+	check(argument == &user_calls, "the handler's argument");
+	user_calls++;
+}
+
+/* Reads a register of the stand-in page. */
+static uint32_t
+reg(
+	unsigned offset)
+{
+	uint32_t value;
+
+	/* Little-endian, as the host. */
+	memcpy(&value, page_memory + offset, sizeof(value));
+	return value;
+}
+
+/* Writes a register of the stand-in page. */
+static void
+set_reg(
+	unsigned offset,
+	uint32_t value)
+{
+	/* Little-endian, as the host. */
+	memcpy(page_memory + offset, &value, sizeof(value));
 }
 
 /* Finds the controller. */
@@ -202,9 +442,18 @@ drv_acpi_evaluate(
 {
 	int same;
 
-	/* Only \_SB.GPCL is asked, without arguments. */
-	(void)scope;
+	/* The controller's _HID, a string. */
 	(void)arguments;
+	same = strcmp(path, "_HID");
+	if (same == 0) {
+		check(scope == (struct drv_acpi_node *)&fake_node, "the _HID is the controller's");
+		*result = calloc(1, sizeof(**result));
+		(*result)->type = DRV_ACPI_TYPE_STRING;
+		return 0;
+	}
+
+	/* Otherwise only \_SB.GPCL is asked, without arguments. */
+	(void)scope;
 	same = strcmp(path, "\\_SB.GPCL");
 	check(same == 0 && argument_count == 0U, "the object asked is \\_SB.GPCL");
 	*result = gpcl_object();
@@ -239,8 +488,31 @@ drv_acpi_resources_walk(
 			return stop;
 	}
 
+	/* Its interrupt: 14, level, active low, shared. */
+	memset(&resource, 0, sizeof(resource));
+	resource.kind = DRV_ACPI_RESOURCE_IRQ;
+	resource.base = 14U;
+	resource.level = 1U;
+	resource.active_low = 1U;
+	resource.shared = 1U;
+	stop = visitor(&resource, argument);
+	if (stop != 0)
+		return stop;
+
 	/* Every range was walked. */
 	return 0;
+}
+
+/* Gives a string object's text: the controller's _HID. */
+const char *
+drv_acpi_object_string(
+	const struct drv_acpi_object *object,
+	size_t *length)
+{
+	/* The _HID of the run. */
+	(void)object;
+	*length = strlen(controller_hid);
+	return controller_hid;
 }
 
 /* Releases an object and its elements. */
@@ -355,11 +627,28 @@ gpcl_object(void)
 
 /* Runs the checks. */
 int
-main(void)
+main(
+	int argc,
+	char **argv)
 {
 	struct drv_intel_gpio_pad *pad;
+	struct drv_intel_gpio_pad *irq_pad;
+	int nomode;
 	int error;
 	int level;
+	int alive;
+
+	/* The run: the HAL sets the mode, or ("nomode") it cannot. */
+	nomode = 0;
+	if (argc > 1) {
+		error = strcmp(argv[1], "nomode");
+		if (error == 0)
+			nomode = 1;
+	}
+
+	/* The "nomode" HAL refuses the mode. */
+	if (nomode)
+		mode_error = 95;
 
 	/* 1. The touchpad's pin 327: group 14's pad 7, its DW0 at 0xfd6a0ae0. */
 	pad = NULL;
@@ -375,6 +664,58 @@ main(void)
 		dw0_value = 0x80800100U;
 		level = drv_intel_gpio_pad_level(pad);
 		check(level == 0, "with its input low it reads low");
+	}
+
+	/* 5. The pad's interrupt: another family is refused, then a pad the firmware keeps. */
+	irq_pad = pad;
+	if (irq_pad != NULL) {
+		controller_hid = "INTC1056";
+		error = drv_intel_gpio_pad_irq_enable(irq_pad, user_handler, &user_calls);
+		check(error != 0 && irq_registered == 0, "another family's pad does not interrupt");
+		controller_hid = "INTC1055";
+		set_reg(REG_HOSTSW, 0U);
+		error = drv_intel_gpio_pad_irq_enable(irq_pad, user_handler, &user_calls);
+		check(error != 0 && irq_registered == 0, "a pad the firmware keeps does not interrupt");
+		set_reg(REG_HOSTSW, PAD_BIT);
+	}
+
+	/* 6. The "nomode" run: the enable fails, and the interrupt is not alive. */
+	if (irq_pad != NULL && nomode) {
+		error = drv_intel_gpio_pad_irq_enable(irq_pad, user_handler, &user_calls);
+		alive = drv_intel_gpio_pad_irq_alive(irq_pad);
+		check(error != 0 && alive == 0, "without the mode the pad does not interrupt");
+		check(irq_registered == 0 && irq_unmasked == 0, "and IRQ 14 is given back, never unmasked");
+	}
+
+	/* 7. The enable: IRQ 14 registered, level and low, unmasked; GPI_IE's bit 7 set. */
+	if (irq_pad != NULL && !nomode) {
+		set_reg(REG_STATUS, PAD_BIT);
+		error = drv_intel_gpio_pad_irq_enable(irq_pad, user_handler, &user_calls);
+		check(error == 0, "the pad's interrupt is enabled");
+		check(irq_registered == 1 && irq_trigger == 1U && irq_polarity == 1U && irq_unmasked == 1, "IRQ 14 taken level, active low, unmasked");
+		check((reg(REG_ENABLE) & PAD_BIT) != 0U, "GPI_IE's bit 7 is set");
+		check((reg(REG_STATUS) & PAD_BIT) == 0U, "GPI_IS's bit 7 was cleared first");
+		alive = drv_intel_gpio_pad_irq_alive(irq_pad);
+		check(alive == 1, "the interrupt is alive");
+
+		/* 8. A firing: the user's handler once, GPI_IE's bit off, GPI_IS's cleared, the EOI. */
+		set_reg(REG_STATUS, PAD_BIT | 0x1U);
+		irq_handler(14, 0x1234U, irq_argument);
+		check(user_calls == 1, "the user's handler is called once");
+		check((reg(REG_ENABLE) & PAD_BIT) == 0U, "GPI_IE's bit 7 is off until armed");
+		check((reg(REG_STATUS) & PAD_BIT) == 0U && (reg(REG_STATUS) & 0x1U) != 0U, "only GPI_IS's bit 7 is cleared");
+		check(eoi_count == 1 && irq_masked == 0, "the EOI is sent, IRQ 14 stays unmasked");
+
+		/* 9. Armed again. */
+		drv_intel_gpio_pad_irq_arm(irq_pad);
+		check((reg(REG_ENABLE) & PAD_BIT) != 0U, "arming sets GPI_IE's bit 7 again");
+
+		/* 10. A firing for no pad: IRQ 14 masked, the interrupt no longer alive. */
+		set_reg(REG_STATUS, 0x1U);
+		irq_handler(14, 0x1234U, irq_argument);
+		alive = drv_intel_gpio_pad_irq_alive(irq_pad);
+		check(user_calls == 1 && irq_masked == 1 && eoi_count == 2, "a firing for no pad masks IRQ 14");
+		check(alive == 0, "and the interrupt is given up");
 	}
 
 	/* The pad's state is the driver's allocation; the test lets it go. */
@@ -396,6 +737,6 @@ main(void)
 	}
 
 	/* Succeeded: every check held. */
-	printf("host-intel-gpio: ok (%d checks)\n", checks);
+	printf("host-intel-gpio: ok (nomode=%d, %d checks)\n", nomode, checks);
 	return 0;
 }
