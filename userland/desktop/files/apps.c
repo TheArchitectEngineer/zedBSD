@@ -110,7 +110,7 @@ static const struct apps_builtin apps_builtins[] = {
 	{ "text/html", "Browser", KEILAND_BINDIR "/browser %f", "browser" },
 	{ APPS_TEXT_TYPES, "Text Editor", KEILAND_BINDIR "/textedit %f", "textedit" },
 	{ APPS_TEXT_TYPES, "Terminal (less)", "@terminal less %f", NULL },
-	{ APPS_TEXT_TYPES, "Remacs", "@terminal remacs %f", "remacs" },
+	{ APPS_TEXT_TYPES, "Emacs", "@terminal emacs %f", "emacs" },
 	{ APPS_TEXT_TYPES, "Terminal (ed)", "@terminal ed %f", "ed" },
 	{ "*", "Terminal (less)", "@terminal less %f", NULL }
 };

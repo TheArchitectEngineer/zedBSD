@@ -29,8 +29,13 @@ Parent: [WS129](../ws.md)
 - `license-inventory.py`（CI と demo の config）25 components・0 open items。`license-inventory-test.sh` PASS、`menuconfig-target-host-test.py` PASS。
 - QEMU: 未実施（T1 に remacs-guest.sh を依頼）。zedBSD の kernel で `#!` + symlink の interpreter を通す確認はこの試験で。
 
+## Q1 の判断と追加の変更（2026-10-04、6a84def の統合の後）
+
+- (1) Files の opener（`userland/desktop/files/apps.c:113`）の `@terminal remacs %f`（存在しない command）を `Emacs`・`@terminal emacs %f`・必要な program `emacs` に直した（見つけた担当がすぐ直す方針）。`plan/tools/files/host-default.sh` PASS（その試験の「Remacs」は試験が自分で作る選択で builtin に依らないので変えない）、zedBSD の `bin/files` の build exit 0・warning 0。
+- (2) 試験の config の `remacs` を `emacs` に一括で: ws001 `config-amd64-lean-guest.mk`、ws004 `config-ax211-desktop.mk`・`config-ax211-usb.mk`、ws034 `config-amd64-usr.mk`、ws045 `config-amd64-base.mk`（注記だけ）、ws118 `config-remote-log.mk`・`build-remote-log-image.sh`（注記）。多くは `filter-out … remacs` で、名前を変えないままだと CI の config から来る `emacs` が外れずに入るところだった。
+- (3) `/usr/bin/noct -> /bin/noct` の link は emacs の package に置く（Q1 の判断）。理由: Noct の application の先頭の行は Noct が `#!/usr/bin/noct` と書き、実行の時にその完全一致の行を取り除く。target の noct は `/bin/noct` なので、その path に interpreter が要る。本来は noct の package の役だが、`userland/base/noct/` の build の規則は toolchain の扱いで main の許可が要るため、それを要する emacs の package が持つ。
+
 ## 残り
 
-- Files の「Remacs」で開く（`userland/desktop/files/apps.c:113`、`@terminal remacs %f`）は存在しない `remacs` の command を呼ぶ。`emacs` に直すのは Files の WS の file なので Q1 に知らせた。
-- 他の WS の試験の config（ws001・ws004・ws034・ws045・ws118 の `config-*.mk`）は `remacs` を選んでいる。名前の変更で黙って外れる（未登録の名前は無視される）。Q1 に知らせた。
 - kernel の `src/kern/exec.c:804` の `REMACS_SKK_DICT` の環境変数は辞書の path のままで変更不要。
+- QEMU（T1 の remacs-guest）の結果待ち。

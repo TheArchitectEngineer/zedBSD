@@ -26,9 +26,9 @@ endif
 ZEDBSD_EXTRA_INPUTS += plan/ws118/tests/root-crontab
 ZEDBSD_EXTRA_FILES += --file /var/spool/cron/0=plan/ws118/tests/root-crontab
 
-# REMOTE_LOG_LEAN=y: without clang, libcxx and remacs, the packages that need
+# REMOTE_LOG_LEAN=y: without clang, libcxx and emacs, the packages that need
 # the shared toolchain work trees (an agent's worktree cannot build them).
 # The images handed to the user are built without it.
 ifeq ($(strip $(REMOTE_LOG_LEAN)),y)
-ZEDBSD_USER_PROGRAMS := $(filter-out clang libcxx remacs,$(ZEDBSD_USER_PROGRAMS))
+ZEDBSD_USER_PROGRAMS := $(filter-out clang libcxx emacs,$(ZEDBSD_USER_PROGRAMS))
 endif

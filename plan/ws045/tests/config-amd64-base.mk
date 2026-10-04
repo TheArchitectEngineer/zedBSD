@@ -1,5 +1,5 @@
 # ws045-p008: config/ci/config-amd64.mk with the base userland only: no
-# external packages (clang, openssh, openssl, libcxx, remacs), no firmware
+# external packages (clang, openssh, openssl, libcxx, emacs), no firmware
 # downloads and no desktop programs, so that an image with the WS045
 # utilities builds in the worktree without the package caches, for the boot
 # test.

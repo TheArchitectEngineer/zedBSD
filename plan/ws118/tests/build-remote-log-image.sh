@@ -29,7 +29,7 @@
 # /etc/net.conf instead of DHCP; DNS defaults to the gateway.  Without them
 # networkd gives ue0 DHCP by itself.
 #
-# REMOTE_LOG_LEAN=y in the environment leaves out clang, libcxx and remacs
+# REMOTE_LOG_LEAN=y in the environment leaves out clang, libcxx and emacs
 # (for an agent's worktree, which cannot build them); the user's images are
 # built without it.
 set -eu
