@@ -50,3 +50,14 @@ $(OUT)/pci-power: $(REPO)/src/drivers/pci/pci-power.c $(REPO)/plan/ws052/tests/h
 	@mkdir -p $(OUT)
 	$(CC) -std=gnu11 -g -O1 $(WARNINGS) $(SANITIZE) -I$(REPO)/include -I$(REPO)/src \
 		-o $@ $(REPO)/src/drivers/pci/pci-power.c $(REPO)/plan/ws052/tests/host-pci-power.c
+
+# ws052-p009: the i915 request worker's park (src/drivers/gpu/i915/park.c).
+#   make -C plan/ws052/tests i915-park && build/ws052/host/i915-park
+.PHONY: i915-park
+i915-park: $(OUT)/i915-park
+
+$(OUT)/i915-park: $(REPO)/src/drivers/gpu/i915/park.c $(REPO)/src/drivers/gpu/i915/park.h \
+		$(REPO)/plan/ws052/tests/host-i915-park.c $(lastword $(MAKEFILE_LIST))
+	@mkdir -p $(OUT)
+	$(CC) -std=gnu11 -g -O1 $(WARNINGS) $(SANITIZE) -I$(REPO)/include -I$(REPO)/src \
+		-o $@ $(REPO)/src/drivers/gpu/i915/park.c $(REPO)/plan/ws052/tests/host-i915-park.c

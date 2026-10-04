@@ -62,6 +62,7 @@ int drv_i915_gt_display_bind(struct i915_gt_mem *gm, struct i915_gt_object *o, u
 void drv_i915_gt_display_unbind(struct i915_gt_mem *gm, struct i915_gt_object *o);
 int drv_i915_gt_display_bind_foreign(struct i915_gt_mem *gm, uint64_t phys, unsigned pages, unsigned *ggtt_page_out);
 void drv_i915_gt_display_unbind_foreign(struct i915_gt_mem *gm, unsigned ggtt_page, unsigned pages);
+unsigned drv_i915_gt_ggtt_restore(struct i915_gt_mem *gm);
 
 int drv_i915_gt_init_scratch(struct i915_gt_mem *gm, struct i915_gt_object **out);
 

@@ -21,6 +21,7 @@
 #include "dma.h"
 
 #include <kern/device-io.h>
+#include <kern/klog.h>
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -32,6 +33,8 @@ static int i915_ggtt_window_alloc(struct i915_gt_mem *gm, unsigned pages, unsign
 static void i915_ggtt_write_pte(struct i915_gt_mem *gm, unsigned index, uint64_t pte);
 static int i915_ggtt_display_bit(const struct i915_gt_mem *gm, unsigned page);
 static void i915_ggtt_display_set(struct i915_gt_mem *gm, unsigned first, unsigned pages, int used);
+static void i915_ggtt_foreign_note(struct i915_gt_mem *gm, uint64_t phys, unsigned ggtt_page, unsigned pages);
+static void i915_ggtt_foreign_forget(struct i915_gt_mem *gm, unsigned ggtt_page);
 static int i915_ggtt_display_run_free(const struct i915_gt_mem *gm, unsigned first, unsigned pages);
 
 /*
@@ -578,6 +581,9 @@ drv_i915_gt_display_bind_foreign(
 	drv_i915_gt_ggtt_flush(gm);
 	*ggtt_page_out = gm->display_first + start;
 
+	/* Remembers the range for a resume, while a slot is free. */
+	i915_ggtt_foreign_note(gm, phys, gm->display_first + start, pages);
+
 	/* Succeeded: the plane reaches the firmware framebuffer at the reported page. */
 	return 0;
 }
@@ -622,6 +628,109 @@ drv_i915_gt_display_unbind_foreign(
 	/* Gives the run back to the window. */
 	i915_ggtt_display_set(gm, start, pages, 0);
 	gm->display_allocated_pages -= pages;
+
+	/* Forgets the range. */
+	i915_ggtt_foreign_forget(gm, ggtt_page);
+}
+
+/*
+ * Writes every entry of the two windows again after a resume
+ * (i915_ggtt_resume(), ws052-p009).
+ *
+ * Each page of the GT window and of the display window points at scratch,
+ * then every bound object of the pool and every borrowed display range
+ * gets its pages again, all encoded as their binds encoded them.  A page
+ * that cannot be encoded any more points at scratch and is counted in the
+ * log.  It reports how many entries it wrote.
+ */
+unsigned
+drv_i915_gt_ggtt_restore(
+	struct i915_gt_mem *gm)
+{
+	struct i915_gt_object *object;
+	unsigned written;
+	unsigned failed;
+	unsigned block;
+	unsigned slot;
+	unsigned page;
+	unsigned index;
+	uint64_t dma;
+	uint64_t pte;
+	int encoded;
+	int error;
+
+	/* A memory that is not prepared has no entries. */
+	if (gm == NULL || gm->inited == 0)
+		return 0U;
+
+	/* Points every page of both windows at scratch. */
+	written = 0U;
+	for (page = 0U; page < gm->window_pages; page++) {
+		i915_ggtt_write_pte(gm, gm->window_first + page, gm->scratch_pte);
+		written++;
+	}
+
+	for (page = 0U; page < gm->display_pages; page++) {
+		i915_ggtt_write_pte(gm, gm->display_first + page, gm->scratch_pte);
+		written++;
+	}
+
+	/* Writes every bound object of the pool again. */
+	failed = 0U;
+	for (block = 0U; block < gm->object_block_count; block++) {
+		/* Walks the block's slots. */
+		for (slot = 0U; slot < I915_GT_OBJECT_BLOCK; slot++) {
+			/* Skips a free slot and an object that is not bound. */
+			object = &gm->object_blocks[block][slot];
+			if (!object->in_use || !object->bound)
+				continue;
+
+			/* Writes each page of the object, as its bind encoded it. */
+			for (page = 0U; page < object->pages; page++) {
+				/* Encodes the page; one that cannot be encoded stays at scratch. */
+				dma = 0U;
+				pte = 0U;
+				encoded = 0;
+				error = drv_i915_gt_object_page_dma(object, page, &dma);
+				if (error == 0)
+					encoded = drv_i915_ggtt_pte_encode(drv_i915_dma_addr(dma), (uint64_t)I915_GT_PAGE_BYTES, gm->dma_mask, &pte);
+				if (encoded == 0) {
+					failed++;
+					continue;
+				}
+
+				/* Writes the entry. */
+				i915_ggtt_write_pte(gm, object->ggtt_page + page, pte);
+				written++;
+			}
+		}
+	}
+
+	/* Writes every borrowed display range again. */
+	for (index = 0U; index < I915_GT_FOREIGN_MAX; index++) {
+		/* Writes each page of a remembered range. */
+		for (page = 0U; page < gm->foreign[index].pages; page++) {
+			/* Encodes the page; one that cannot be encoded stays at scratch. */
+			pte = 0U;
+			encoded = drv_i915_ggtt_pte_encode(drv_i915_dma_addr(gm->foreign[index].phys + (uint64_t)page * I915_GT_PAGE_BYTES), (uint64_t)I915_GT_PAGE_BYTES, gm->dma_mask, &pte);
+			if (encoded == 0) {
+				failed++;
+				continue;
+			}
+
+			/* Writes the entry. */
+			i915_ggtt_write_pte(gm, gm->foreign[index].ggtt_page + page, pte);
+			written++;
+		}
+	}
+
+	/* Orders the entries before the GPU and the display use them. */
+	drv_i915_gt_ggtt_flush(gm);
+	if (failed != 0U)
+		kern_logf("i915: ggtt: %u pages could not be encoded again after the resume and point at scratch\n", failed);
+
+	/* Succeeded: reports how many entries were written. */
+	return written;
 }
 
 /*
@@ -844,4 +953,47 @@ i915_ggtt_display_run_free(
 
 	/* Succeeded: the whole run is free. */
 	return 1;
+}
+
+/* Remembers a borrowed display range for a resume; a full table leaves it out, logged. */
+static void
+i915_ggtt_foreign_note(
+	struct i915_gt_mem *gm,
+	uint64_t phys,
+	unsigned ggtt_page,
+	unsigned pages)
+{
+	unsigned index;
+
+	/* Takes the first free slot. */
+	for (index = 0U; index < I915_GT_FOREIGN_MAX; index++) {
+		/* A slot with no pages is free. */
+		if (gm->foreign[index].pages == 0U) {
+			gm->foreign[index].phys = phys;
+			gm->foreign[index].ggtt_page = ggtt_page;
+			gm->foreign[index].pages = pages;
+			return;
+		}
+	}
+
+	/* No slot is free: the range points at scratch after a resume. */
+	kern_logf("i915: ggtt: a borrowed range at page %u is not remembered for a resume\n", ggtt_page);
+}
+
+/* Forgets the borrowed display range that starts at a page. */
+static void
+i915_ggtt_foreign_forget(
+	struct i915_gt_mem *gm,
+	unsigned ggtt_page)
+{
+	unsigned index;
+
+	/* Frees the slot of the range. */
+	for (index = 0U; index < I915_GT_FOREIGN_MAX; index++) {
+		/* The range's own slot. */
+		if (gm->foreign[index].pages != 0U && gm->foreign[index].ggtt_page == ggtt_page) {
+			gm->foreign[index].pages = 0U;
+			return;
+		}
+	}
 }

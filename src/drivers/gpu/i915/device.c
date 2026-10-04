@@ -24,6 +24,8 @@
 #include "submit.h"
 #include "sync.h"
 #include "worker.h"
+#include "engine.h"
+#include "irq.h"
 #include "display/display.h"
 #include "display/diagnostics.h"
 #include <kern/kcrt.h>
@@ -469,6 +471,185 @@ drv_i915_device_stop(
 	i915_start_dump_trace(gt);
 
 	/* Succeeded: no hardware lease remains owned. */
+	return 0;
+}
+
+/*
+ * Lets the GT go idle for a park of the request worker (ws052-p009).
+ *
+ * The worker's thread calls it once it has nothing running: the RPS
+ * evaluations stop and every forcewake domain the published node held is
+ * given back, so that the GT can drop into RC6.  The domains held are kept
+ * in gt->forcewake_parked for drv_i915_device_unpark_gt().
+ */
+void
+drv_i915_device_park_gt(
+	struct i915_device *device)
+{
+	struct i915_gt *gt;
+
+	/* The GT the device runs. */
+	gt = &device->gt;
+
+	/* Stops the RPS interrupts and work while the domains are still held. */
+	drv_i915_rps_stop(&gt->init.rps);
+
+	/* Gives the domains back; forcewake_parked says which to take again. */
+	gt->forcewake_parked = gt->forcewake_held;
+	i915_forcewake_put_all(gt, gt->forcewake_held);
+	gt->forcewake_held = 0U;
+	kern_logf("i915: park: the GT may idle (RPS stopped, %u forcewake domains given back)\n", gt->forcewake_parked);
+}
+
+/*
+ * Wakes the GT again after a park: takes the forcewake domains back and
+ * starts the RPS evaluations.  It reports the forcewake's error, with the
+ * domains it could take held.
+ */
+int
+drv_i915_device_unpark_gt(
+	struct i915_device *device)
+{
+	struct i915_gt *gt;
+	unsigned held;
+	int error;
+
+	/* The GT the device runs. */
+	gt = &device->gt;
+
+	/* Takes every domain again, as the published node held them. */
+	error = i915_forcewake_get_all(gt, &held);
+	gt->forcewake_held = held;
+	gt->forcewake_parked = 0U;
+	if (error != 0) {
+		kern_logf("i915: unpark: forcewake failed (%d, %u domains held)\n", error, held);
+		return error;
+	}
+
+	/* Lets the GT frequency follow the load again. */
+	(void)drv_i915_rps_start(&gt->init.rps, &gt->irq, &gt->mmio);
+
+	/* Succeeded: the GT serves again. */
+	kern_logf("i915: unpark: the GT serves again (%u forcewake domains)\n", held);
+	return 0;
+}
+
+/*
+ * Takes the hardware down for a suspend, after the request worker parked
+ * (ws052-p009).
+ *
+ * The display holds its wells, every interrupt source is masked and
+ * cleared (with the GT awake for the writes), and the display core goes
+ * down into DC9.  A display that does not reach DC9 is brought up again,
+ * the interrupts come back, and the refusal is reported.
+ */
+int
+drv_i915_device_suspend_hw(
+	struct i915_device *device)
+{
+	struct i915_gt *gt;
+	unsigned held;
+	int error;
+
+	/* The GT the device runs. */
+	gt = &device->gt;
+
+	/* Holds the display's wells for the rest of the suspend. */
+	drv_i915_display_suspend_begin(device);
+
+	/* Masks and clears every interrupt source, with the GT awake for the writes. */
+	if (gt->irq_installed != 0U) {
+		(void)i915_forcewake_get_all(gt, &held);
+		drv_i915_irq_reset(&gt->irq);
+		i915_forcewake_put_all(gt, held);
+	}
+
+	/* Takes the display core down into DC9; a refusal undoes the interrupts. */
+	error = drv_i915_display_suspend_end(device);
+	if (error != 0) {
+		/* Brings the interrupts back, with the GT awake for the writes. */
+		if (gt->irq_installed != 0U) {
+			(void)i915_forcewake_get_all(gt, &held);
+			drv_i915_irq_postinstall(&gt->irq);
+			i915_forcewake_put_all(gt, held);
+		}
+
+		kern_logf("i915: suspend: the display did not go down (%d); the device runs on\n", error);
+		return error;
+	}
+
+	/* Succeeded: the device may go to D3hot. */
+	kern_logf("i915: suspend: the hardware is down (interrupts off, display in DC9)\n");
+	return 0;
+}
+
+/*
+ * Brings the hardware back after a resume, before the request worker
+ * leaves its park (ws052-p009).
+ *
+ * The display core comes up again, the GGTT is written again, the GT
+ * resumes (engines, workarounds, MOCS, RC6) with the fence registers
+ * cleared as at the start, and the interrupts come back.  Every step is
+ * tried; the first failure is reported.
+ */
+int
+drv_i915_device_resume_hw(
+	struct i915_device *device)
+{
+	struct i915_gt *gt;
+	unsigned written;
+	unsigned held;
+	unsigned fence;
+	int first_error;
+	int error;
+
+	/* The GT the device runs. */
+	gt = &device->gt;
+
+	/* Brings the display core up again, with its DMC. */
+	first_error = drv_i915_display_resume_begin(device);
+
+	/* Writes every entry of the GGTT windows again. */
+	if (gt->mem_inited != 0U) {
+		written = drv_i915_gt_ggtt_restore(&gt->mem);
+		kern_logf("i915: resume: %u GGTT entries written again\n", written);
+	}
+
+	/* Resumes the GT with every domain awake. */
+	error = i915_forcewake_get_all(gt, &held);
+	if (error != 0 && first_error == 0)
+		first_error = error;
+
+	if (gt->engines_resumed != 0U) {
+		error = drv_i915_gt_resume(&gt->engines, &gt->init, &gt->info, &gt->mmio, &gt->uncore_lock);
+		if (error != 0 && first_error == 0)
+			first_error = error;
+	}
+
+	/* Clears the fence registers, as the start did (intel_ggtt_init_fences). */
+	for (fence = 0U; fence < I915_START_FENCES; fence++) {
+		drv_i915_raw_write32(&gt->mmio, 0x100000U + fence * 8U, 0U);
+		drv_i915_raw_write32(&gt->mmio, 0x100000U + fence * 8U + 4U, 0U);
+	}
+
+	/* Brings the interrupts back. */
+	if (gt->irq_installed != 0U)
+		drv_i915_irq_postinstall(&gt->irq);
+
+	/* Gives the domains back; the request worker takes them when it leaves its park. */
+	i915_forcewake_put_all(gt, held);
+
+	/* Lets DC6 be allowed again. */
+	drv_i915_display_resume_end(device);
+
+	/* Reports the first step that failed. */
+	if (first_error != 0) {
+		kern_logf("i915: resume: a step failed (%d)\n", first_error);
+		return first_error;
+	}
+
+	/* Succeeded: the device runs; the next presentation lights the output. */
+	kern_logf("i915: resume: the hardware is back\n");
 	return 0;
 }
 

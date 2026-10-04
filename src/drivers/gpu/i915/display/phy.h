@@ -21,5 +21,6 @@
 int drv_i915_combo_phy_init(struct i915_mmio *mmio, struct i915_trace *trace, unsigned *initialised_out);
 int drv_i915_combo_phy_verify_state(struct i915_mmio *mmio, unsigned phy);
 void drv_i915_combo_phy_init_one(struct i915_mmio *mmio, unsigned phy);
+void drv_i915_combo_phy_uninit(struct i915_mmio *mmio);
 
 #endif

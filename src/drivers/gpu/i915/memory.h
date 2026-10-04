@@ -77,6 +77,9 @@ struct i915_ppgtt;
 #define I915_GT_OBJECT_BLOCKS		16U
 #define I915_GT_MAX_OBJECTS		(I915_GT_OBJECT_BLOCK * I915_GT_OBJECT_BLOCKS)
 
+/* How many borrowed (firmware) display ranges the memory remembers for a resume (ws052-p009). */
+#define I915_GT_FOREIGN_MAX		4U
+
 /* The page every session object and session page-table page is made of. */
 #define I915_PAGE_BYTES			4096U
 
@@ -179,6 +182,17 @@ struct i915_gt_mem {
 
 	/* How many objects fini had to leave alone because they are kept. */
 	unsigned kept_objects;
+
+	/*
+	 * The borrowed display ranges bound now: their backing's first page and
+	 * their place, so that a resume can write their entries again
+	 * (ws052-p009).  A slot is free while pages is zero.
+	 */
+	struct {
+		uint64_t phys;
+		unsigned ggtt_page;
+		unsigned pages;
+	} foreign[I915_GT_FOREIGN_MAX];
 
 	/*
 	 * The object pool: its blocks (the first object_block_count are

@@ -12,11 +12,12 @@
 #     3. sleepctl devices runs in the background, its output to /tmp/sleep.txt (the SSH session goes away with the
 #        USB adapter).  The host waits, then reconnects for up to 90 s.  It must print
 #        "sleep result=0 resume=0 device=-": NVMe suspended (shutdown, D3hot) and resumed (fresh queues), xHCI
-#        suspended (Save State, ports in U3, D3hot) and, since QEMU's xHCI does not implement Restore State (SRE), attached
-#        again, so that its USB devices (the adapter, the keyboard) are enumerated afresh.
+#        suspended (Save State, ports in U3, D3hot) and resumed: QEMU's xHCI implements no Restore State (SRE), so the
+#        driver runs it with the state it kept and checks that it answers a command (T1-156: detaching it to attach it
+#        again cannot work, the USB core keeps its devices).
 #     4. The guest answers on SSH again, the file reads back with its checksum, a new file of 16 MiB is written,
 #        synced and read back, lsusb lists the adapter and the keyboard again, and the kernel's log (dmesg, read over
-#        SSH) has "nvme: suspended", "nvme: resumed", "xhci: suspended" and "attached again".
+#        SSH) has "nvme: suspended", "nvme: resumed", "xhci: suspended" and "xhci: resumed".
 #
 #   abort       plan/tools/guest/guest.py start --qemu-extra '-device intel-hda -device hda-duplex' IMAGE
 #               plan/tools/guest/guest.py wait; plan/ws052/tests/p004-guest.sh abort [OUTDIR]
@@ -53,7 +54,7 @@ reconnect() {
 
 # Writes 16 MiB, syncs, drops the cache and reads it back; prints "io ok" when the checksums agree.
 io_check() {
-	guest 'dd if=/dev/urandom of=/var/tmp/p004-new bs=1048576 count=16 2>/dev/null && a=$(cksum < /var/tmp/p004-new) && sync && b=$(cksum < /var/tmp/p004-new) && [ "$a" = "$b" ] && echo "io ok"'
+	guest 'mkdir -p /var/tmp && dd if=/dev/urandom of=/var/tmp/p004-new bs=1048576 count=16 2>/dev/null && a=$(cksum < /var/tmp/p004-new) && sync && b=$(cksum < /var/tmp/p004-new) && [ "$a" = "$b" ] && echo "io ok"'
 }
 
 case "$mode" in
@@ -63,7 +64,7 @@ roundtrip)
 	if grep -q '^refusals ok' "$out/refusals.txt"; then pass refusals; else fail refusals; fi
 
 	# 2. A file written before the sleep.
-	guest 'dd if=/dev/urandom of=/var/tmp/p004-old bs=1048576 count=4 2>/dev/null; sync; cksum < /var/tmp/p004-old' > "$out/before.txt"
+	guest 'mkdir -p /var/tmp && dd if=/dev/urandom of=/var/tmp/p004-old bs=1048576 count=4 2>/dev/null; sync; cksum < /var/tmp/p004-old' > "$out/before.txt"
 
 	# 3. The round trip, in the background.
 	guest '(/bin/sleepctl devices > /tmp/sleep.txt 2>&1; echo "exit=$?" >> /tmp/sleep.txt) > /dev/null 2>&1 &
@@ -81,7 +82,7 @@ sleep 1; echo started' > "$out/start.txt"
 	guest '/bin/lsusb' > "$out/lsusb.txt"
 	if grep -qi 'keyboard\|0627:0001' "$out/lsusb.txt"; then pass usb-keyboard; else fail usb-keyboard; fi
 	guest '/bin/dmesg' > "$out/dmesg.txt"
-	for line in 'nvme: suspended' 'nvme: resumed' 'xhci: suspended' 'attached again'; do
+	for line in 'nvme: suspended' 'nvme: resumed' 'xhci: suspended' 'xhci: resumed'; do
 		if grep -q "$line" "$out/dmesg.txt"; then pass "dmesg '$line'"; else fail "dmesg '$line'"; fi
 	done
 	;;

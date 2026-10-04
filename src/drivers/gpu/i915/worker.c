@@ -29,6 +29,8 @@
 #include "i915.h"
 #include "irq.h"
 #include "memory.h"
+#include "park.h"
+#include "device.h"
 #include "ppgtt.h"
 #include "request-queue.h"
 #include "request.h"
@@ -100,6 +102,9 @@
 #define I915_WORKER_SERVE_STOP		0
 #define I915_WORKER_SERVE_ENTER_DISPLAY	1
 #define I915_WORKER_SERVE_LEAVE_DISPLAY	2
+
+/* A pass also returns when a park is asked for outside the window (ws052-p009). */
+#define I915_WORKER_SERVE_PARK		3
 
 /*
  * The hardware context behind one session context of the render engine.
@@ -217,6 +222,9 @@ struct i915_worker {
 	/* Nonzero once a stop was asked for: the worker finishes the queued work and withdraws the node. */
 	int stop;
 
+	/* The park a suspend asks for (park.h), under the IRQ lock; waiters sleep on sync_done. */
+	struct i915_park park;
+
 	/* How much work ended well and how much failed. */
 	unsigned executed;
 	unsigned failed;
@@ -234,6 +242,7 @@ struct i915_worker {
 };
 
 static int i915_worker_loop(struct i915_worker *worker, int in_display);
+static void i915_worker_park_here(struct i915_worker *worker);
 static void i915_worker_run_request(struct i915_worker *worker, struct i915_request *request);
 static void i915_worker_run_sync_item(struct i915_worker *worker, struct i915_worker_sync *item, int in_display);
 static int i915_worker_queue_sync(struct i915_device *device, struct i915_worker_sync *item);
@@ -287,6 +296,7 @@ drv_i915_worker_create(
 	/* Prepares the two wait queues. */
 	waitq_init(&worker->work, "i915 resident");
 	waitq_init(&worker->sync_done, "i915 resident sync");
+	drv_i915_park_init(&worker->park);
 
 	device->worker = worker;
 
@@ -339,6 +349,14 @@ drv_i915_worker_serve(
 	 */
 	for (;;) {
 		outcome = i915_worker_loop(worker, 0);
+
+		/* A park sleeps with the GT idle until the resume, then serves on. */
+		if (outcome == I915_WORKER_SERVE_PARK) {
+			i915_worker_park_here(worker);
+			continue;
+		}
+
+		/* Anything else but a presentation ends the service. */
 		if (outcome != I915_WORKER_SERVE_ENTER_DISPLAY)
 			break;
 
@@ -393,6 +411,102 @@ drv_i915_worker_stop(
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	worker->stop = 1;
+	waitq_wake_all(&worker->work);
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/*
+ * Parks the request worker for a suspend (ws052-p009).
+ *
+ * The worker leaves the display window (the output is stopped, the lease
+ * is kept), finishes the request it runs, lets the GT go idle and sleeps
+ * until drv_i915_worker_unpark(); the requests that come meanwhile wait.
+ * It waits up to timeout_ms for the worker to park and reports EBUSY,
+ * with the park given up, when it did not; ENODEV for a device that does
+ * not serve, which has nothing to park.
+ */
+int
+drv_i915_worker_park(
+	struct i915_device *device,
+	unsigned timeout_ms)
+{
+	struct i915_worker *worker;
+	uint64_t deadline;
+	uint64_t observed;
+	uint64_t now;
+	uint32_t generation;
+	unsigned long irq;
+	int reached;
+	int error;
+
+	/* A device without a serving worker has nothing to park. */
+	worker = device->worker;
+	if (worker == NULL || !worker->serving)
+		return ENODEV;
+
+	/* Asks for the park and wakes the worker to see it. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	error = drv_i915_park_begin(&worker->park);
+	generation = worker->park.generation;
+	waitq_wake_all(&worker->work);
+
+	/* Waits for the worker to park, in the bounded steps of its own wait queue. */
+	deadline = sched_ticks() + kern_ms_to_ticks(timeout_ms);
+	reached = 0;
+	while (error == 0) {
+		/* The worker sleeps parked. */
+		reached = drv_i915_park_reached(&worker->park, generation);
+		if (reached)
+			break;
+
+		/* Gives the park up when the time is up or the worker stopped serving. */
+		now = sched_ticks();
+		if (now >= deadline || !worker->serving) {
+			(void)drv_i915_park_end(&worker->park);
+			waitq_wake_all(&worker->work);
+			error = EBUSY;
+			break;
+		}
+
+		/* Sleeps until the worker says something, or a tick. */
+		observed = waitq_sequence(&worker->sync_done);
+		(void)waitq_sleep(&worker->sync_done, &device->irq_lock, observed, now + 1U, 0U);
+	}
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Reports a worker that did not park. */
+	if (error != 0) {
+		kern_logf("i915: park: the worker did not park (%d)\n", error);
+		return error;
+	}
+
+	/* Succeeded: the worker sleeps parked and the GT may idle. */
+	return 0;
+}
+
+/*
+ * Ends the park: the worker takes the GT back and serves the requests that
+ * waited, and the next presentation lights the output again.
+ */
+void
+drv_i915_worker_unpark(
+	struct i915_device *device)
+{
+	struct i915_worker *worker;
+	unsigned long irq;
+
+	/* A device without a worker has nothing parked. */
+	worker = device->worker;
+	if (worker == NULL)
+		return;
+
+	/* Ends the park and wakes the worker to see it. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	(void)drv_i915_park_end(&worker->park);
 	waitq_wake_all(&worker->work);
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
@@ -964,6 +1078,7 @@ i915_worker_loop(
 	struct i915_device *device;
 	struct i915_request *request;
 	struct i915_worker_sync *item;
+	enum i915_park_action action;
 	uint64_t observed;
 	unsigned long irq;
 	int ready;
@@ -976,10 +1091,24 @@ i915_worker_loop(
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	for (;;) {
-		/* Sleeps in bounded steps until work arrives or a stop is asked for. */
+		/* Leaves the window, or parks, when a suspend asks for it; the queued work waits. */
+		action = drv_i915_park_action(&worker->park, in_display, worker->stop);
+		if (action == I915_PARK_LEAVE_WINDOW) {
+			spin_unlock_irqrestore(&device->irq_lock, irq);
+			return I915_WORKER_SERVE_LEAVE_DISPLAY;
+		}
+
+		/* Outside the window it parks. */
+		if (action == I915_PARK_PARK) {
+			spin_unlock_irqrestore(&device->irq_lock, irq);
+			return I915_WORKER_SERVE_PARK;
+		}
+
+		/* Sleeps in bounded steps until work arrives, a stop or a park is asked for. */
 		while (worker->run_head == NULL &&
 		    worker->sync_head == NULL &&
-		    worker->stop == 0) {
+		    worker->stop == 0 &&
+		    !worker->park.requested) {
 			/* A hold of the last picture that ran out, or that the shutdown ended, leaves the window: the output is stopped. */
 			if (in_display) {
 				hold_over = drv_i915_present_hold_over(device);
@@ -992,6 +1121,10 @@ i915_worker_loop(
 			observed = waitq_sequence(&worker->work);
 			(void)waitq_sleep(&worker->work, &device->irq_lock, observed, sched_ticks() + I915_WORKER_SLEEP_TICKS, 0U);
 		}
+
+		/* A park asked for while the worker slept is decided at the top. */
+		if (worker->park.requested && worker->stop == 0)
+			continue;
 
 		/* Runs a synchronous item before the next request. */
 		if (worker->sync_head != NULL) {
@@ -1065,6 +1198,47 @@ i915_worker_loop(
 
 	/* A stop was asked for and nothing is left to run. */
 	return I915_WORKER_SERVE_STOP;
+}
+
+/* Sleeps parked with the GT idle until the park ends or a stop comes, then takes the GT back. */
+static void
+i915_worker_park_here(
+	struct i915_worker *worker)
+{
+	struct i915_device *device;
+	uint64_t observed;
+	unsigned long irq;
+	int stays;
+
+	/* The device the worker serves. */
+	device = worker->device;
+
+	/* Lets the GT go idle: RPS stopped, forcewake given back. */
+	drv_i915_device_park_gt(device);
+
+	/* Says it parked, and sleeps until the park ends or a stop comes. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	drv_i915_park_entered(&worker->park);
+	waitq_wake_all(&worker->sync_done);
+	for (;;) {
+		/* Leaves when the resume ended the park or a stop came. */
+		stays = drv_i915_park_stays(&worker->park, worker->stop);
+		if (!stays)
+			break;
+
+		/* Sleeps until woken, or for a second at most. */
+		observed = waitq_sequence(&worker->work);
+		(void)waitq_sleep(&worker->work, &device->irq_lock, observed, sched_ticks() + I915_WORKER_SLEEP_TICKS, 0U);
+	}
+
+	/* The worker serves again. */
+	drv_i915_park_left(&worker->park);
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Takes the GT back; a forcewake that failed is logged and the worker serves on. */
+	(void)drv_i915_device_unpark_gt(device);
 }
 
 /* Runs one request, retires it and delivers its completion; the IRQ lock is not held. */

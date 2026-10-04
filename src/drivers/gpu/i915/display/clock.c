@@ -558,6 +558,29 @@ drv_i915_cdclk_init_hw(
 }
 
 /*
+ * Takes the CDCLK down for a suspend (intel_cdclk_uninit_hw() ->
+ * bxt_cdclk_uninit()): the bypass frequency with the PLL off.
+ *
+ * The resume's drv_i915_cdclk_init_hw() finds the PLL off and programs the
+ * CDCLK again.
+ */
+void
+drv_i915_cdclk_uninit_hw(
+	struct i915_cdclk_dev *cd)
+{
+	struct i915_cdclk_config cfg;
+
+	/* The bypass frequency with the VCO off, at the voltage the bypass needs. */
+	cfg = cd->hw;
+	cfg.cdclk = cfg.bypass;
+	cfg.vco = 0U;
+	cfg.voltage_level = i915_cdclk_calc_voltage_level(cd, (int)cfg.cdclk);
+
+	/* Programs it. */
+	drv_i915_bxt_set_cdclk(cd, &cfg);
+}
+
+/*
  * Reports the highest CDCLK of the platform (intel_update_max_cdclk(),
  * display version 11+ except JSL / EHL).
  */

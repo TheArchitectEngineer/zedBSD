@@ -31,6 +31,7 @@ void drv_i915_update_cdclk(struct i915_cdclk_dev *cd);
 void drv_i915_bxt_set_cdclk(struct i915_cdclk_dev *cd, const struct i915_cdclk_config *cfg);
 void drv_i915_bxt_sanitize_cdclk(struct i915_cdclk_dev *cd);
 void drv_i915_cdclk_init_hw(struct i915_cdclk_dev *cd);
+void drv_i915_cdclk_uninit_hw(struct i915_cdclk_dev *cd);
 uint32_t drv_i915_max_cdclk_freq(const struct i915_cdclk_dev *cd);
 
 int drv_i915_icl_hdmi_wrpll(int port_clock, int ref_nssc, uint32_t *cfgcr0, uint32_t *cfgcr1, uint32_t *div0);

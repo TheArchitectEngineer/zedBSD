@@ -42,6 +42,7 @@
 #include "power.h"
 #include "clock.h"
 #include "phy.h"
+#include "dc9.h"
 #include "takeover.h"
 #include "modeset.h"
 #include <kern/kcrt.h>
@@ -116,6 +117,9 @@
 #define DC_STATE_EN			0x45504u
 #define DC_STATE_EN_UPTO_DC5_DC6	0x3u
 #define DC_STATE_EN_DC3CO		0x40000000u
+
+/* SOUTH_CHICKEN1, whose reference-clock bit goes with DC9 (dc9.h). */
+#define I915_SOUTH_CHICKEN1		0xc2000u
 #define UTIL_PIN_CTL			0x48400u
 #define UTIL_PIN_ENABLE			0x80000000u
 #define UTIL_PIN_MODE_MASK		(0x1fu << 24)
@@ -284,6 +288,8 @@ static void i915_icl_mbus_init(struct i915_display_core *dc);
 static void i915_tgl_bw_buddy_init(struct i915_display_core *dc);
 static void i915_core_fault(struct i915_display_core *dc, const char *where);
 static int i915_icl_display_core_init(struct i915_display_core *dc, int resume);
+static void i915_icl_display_core_uninit(struct i915_display_core *dc);
+static int i915_pw2_enabled(struct i915_display_core *dc);
 static unsigned i915_wells_on(struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
 
 /*
@@ -1483,6 +1489,114 @@ drv_i915_power_domains_disable(
 
 	/* Verifies the wells against their counts. */
 	(void)drv_i915_power_domains_verify_state(dc->pd, dc->pwc);
+}
+
+/*
+ * Takes the display core down for a suspend (intel_power_domains_suspend()
+ * -> icl_display_core_uninit(), ws052-p009).
+ *
+ * The caller took the INIT reference with drv_i915_power_domains_disable()
+ * when the suspend began and has stopped every output.  The INIT reference
+ * is given back, so that every well no other reference holds turns off;
+ * the parked puts are finished and the wells checked against their counts;
+ * then the DC states are left, the DBUF, the CDCLK, power well 1 and the
+ * combo PHYs go down.  The resume's drv_i915_power_domains_init_hw(dc, 1)
+ * brings the core up again.
+ */
+void
+drv_i915_power_domains_suspend(
+	struct i915_display_core *dc)
+{
+	/* Gives the INIT reference back. */
+	if (dc->init_wakeref_held) {
+		dc->init_wakeref_held = 0;
+		dc->pm_wakeref = 0;
+		drv_i915_display_power_put(dc->pd, I915_PW_DOMAIN_INIT, dc->pwc);
+	}
+
+	/* Finishes the parked puts and checks every well against its count. */
+	drv_i915_display_power_flush_work_sync(dc->pd);
+	(void)drv_i915_power_domains_verify_state(dc->pd, dc->pwc);
+
+	/* Takes the core down; core_suspended tells the resume to bring it up again. */
+	i915_icl_display_core_uninit(dc);
+	dc->core_suspended = 1;
+}
+
+/*
+ * Puts the display in DC9 for S0 idle (bxt_enable_dc9(), with the PCH's
+ * Wa_14010685332, ws052-p009).
+ *
+ * The display core must be down and the interrupts off (irqs_enabled
+ * zero).  It reports the check's refusal (dc9.h) without writing
+ * anything.
+ */
+int
+drv_i915_display_dc9_enter(
+	struct i915_display_core *dc,
+	int irqs_enabled)
+{
+	uint32_t dc_state;
+	uint32_t value;
+	int pw2_enabled;
+	int error;
+
+	/* Checks that DC9 may be entered. */
+	dc_state = drv_i915_raw_read32(dc->m, DC_STATE_EN);
+	pw2_enabled = i915_pw2_enabled(dc);
+	error = drv_i915_dc9_enter_check(dc_state, pw2_enabled, irqs_enabled);
+	if (error != 0) {
+		kern_logf("i915: DC9: not entered (%d; DC_STATE_EN 0x%x, PW_2 %d, interrupts %d)\n", error, dc_state, pw2_enabled, irqs_enabled);
+		return error;
+	}
+
+	/* Enters DC9 through the verified DC state write. */
+	drv_i915_gen9_set_dc_state(dc->pwc, I915_DC_STATE_EN_DC9);
+
+	/* Lets the PCH stop the display's reference clock in S0 idle. */
+	value = drv_i915_raw_read32(dc->m, I915_SOUTH_CHICKEN1);
+	value = drv_i915_dc9_south_chicken(value, 1);
+	drv_i915_raw_write32(dc->m, I915_SOUTH_CHICKEN1, value);
+
+	/* Succeeded: the display is in DC9. */
+	kern_logf("i915: DC9: entered\n");
+	return 0;
+}
+
+/*
+ * Leaves DC9 after S0 idle (bxt_disable_dc9(), ws052-p009): the PCH's
+ * reference clock first, then the DC state.  It reports the check's
+ * refusal without writing the DC state.
+ */
+int
+drv_i915_display_dc9_leave(
+	struct i915_display_core *dc)
+{
+	uint32_t dc_state;
+	uint32_t value;
+	int pw2_enabled;
+	int error;
+
+	/* Gives the PCH's reference clock back. */
+	value = drv_i915_raw_read32(dc->m, I915_SOUTH_CHICKEN1);
+	value = drv_i915_dc9_south_chicken(value, 0);
+	drv_i915_raw_write32(dc->m, I915_SOUTH_CHICKEN1, value);
+
+	/* Checks that DC9 may be left. */
+	dc_state = drv_i915_raw_read32(dc->m, DC_STATE_EN);
+	pw2_enabled = i915_pw2_enabled(dc);
+	error = drv_i915_dc9_leave_check(dc_state, pw2_enabled);
+	if (error != 0) {
+		kern_logf("i915: DC9: not left (%d; DC_STATE_EN 0x%x, PW_2 %d)\n", error, dc_state, pw2_enabled);
+		return error;
+	}
+
+	/* Leaves DC9 through the verified DC state write. */
+	drv_i915_gen9_set_dc_state(dc->pwc, 0u);
+
+	/* Succeeded: the display left DC9. */
+	kern_logf("i915: DC9: left\n");
+	return 0;
 }
 
 /*
@@ -2999,6 +3113,62 @@ i915_icl_display_core_init(
 	drv_i915_raw_write32(dc->m, XELPD_DISPLAY_ERR_FATAL_MASK, ~0u);
 
 	/* Succeeded: the display core is up. */
+	return 0;
+}
+
+/*
+ * Takes the display core down (icl_display_core_uninit()): the DC states
+ * left, the DBUF off, the CDCLK at the bypass with its PLL off, power well
+ * 1 off and the combo PHYs down.
+ */
+static void
+i915_icl_display_core_uninit(
+	struct i915_display_core *dc)
+{
+	int index;
+
+	/* gen9_disable_dc_states(): through the verified write, so the software copy follows. */
+	drv_i915_gen9_set_dc_state(dc->pwc, 0u);
+
+	/* Turns every DBUF slice off. */
+	drv_i915_gen9_dbuf_slices_update(dc, 0u);
+
+	/* Takes the CDCLK down. */
+	drv_i915_cdclk_uninit_hw(dc->cd);
+
+	/* Turns power well 1 off under the domains lock. */
+	index = drv_i915_power_well_by_id(dc->pd, I915_SKL_DISP_PW_1);
+	if (index >= 0) {
+		mutex_lock(&dc->pd->lock);
+
+		(void)drv_i915_power_well_disable(&dc->pd->power_wells[index], dc->pwc);
+
+		mutex_unlock(&dc->pd->lock);
+	}
+
+	/* Takes the combo PHYs down. */
+	drv_i915_combo_phy_uninit(dc->m);
+}
+
+/* Reports whether power well 2 is on. */
+static int
+i915_pw2_enabled(
+	struct i915_display_core *dc)
+{
+	int index;
+	int enabled;
+
+	/* A display without the well has it off. */
+	index = drv_i915_power_well_by_id(dc->pd, I915_SKL_DISP_PW_2);
+	if (index < 0)
+		return 0;
+
+	/* Asks the well. */
+	enabled = drv_i915_power_well_is_enabled(&dc->pd->power_wells[index], dc->pwc);
+	if (enabled)
+		return 1;
+
+	/* The well is off. */
 	return 0;
 }
 

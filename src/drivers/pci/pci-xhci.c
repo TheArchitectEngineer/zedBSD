@@ -377,6 +377,7 @@ static int xhci_resume_run(struct xhci_controller *c);
 static void xhci_resume_ports(struct xhci_controller *c);
 static void xhci_resume_endpoints(struct xhci_controller *c);
 static void xhci_suspend_end(struct xhci_controller *c);
+static void xhci_resume_fail(struct xhci_controller *c, const char *stage, int error);
 static uint32_t xhci_port_neutral(uint32_t status);
 static void xhci_port_link_set(struct xhci_controller *c, unsigned port, unsigned link);
 static int xhci_port_link_wait(struct xhci_controller *c, unsigned port, unsigned link);
@@ -6051,10 +6052,10 @@ xhci_suspend(
 /*
  * Resumes the controller after S0 idle: the registers are written back
  * and the Restore State brings the internal state back, the controller
- * runs, the ports return to U0 and every endpoint is rung.  A controller
- * whose state did not come back (a Save/Restore Error, as QEMU always
- * reports) reports ESTALE, which makes the PCI power code detach and
- * attach it again: its devices are enumerated afresh.
+ * runs and answers a command, the ports return to U0 and every endpoint is
+ * rung.  A controller that does not come back is quarantined and the
+ * failure reported (detaching it is no way out: the USB core keeps its
+ * devices, so the detach refuses).
  */
 static int
 xhci_resume(
@@ -6068,22 +6069,38 @@ xhci_resume(
 	if (c == NULL)
 		return ENODEV;
 
-	/* Brings the saved state back; a controller attached again starts its own worker. */
+	/*
+	 * Brings the saved state back.  A Save/Restore Error (QEMU's xHCI
+	 * implements no Restore State and always reports it) is cleared and
+	 * the controller is run with the state it kept: a controller whose
+	 * state survived D3hot runs on, and one that lost it fails the command
+	 * check below.
+	 */
 	error = xhci_resume_restore(c);
+	if (error == ESTALE) {
+		wr32(c->operational, XHCI_USBSTS, XHCI_STS_SRE);
+		kern_logf("xhci: Restore State failed (SRE); running with the state the controller kept\n");
+		error = 0;
+	}
+
+	/* Gives up a controller in error. */
 	if (error != 0) {
-		c->suspend_worker = 0;
-		xhci_suspend_end(c);
-		kern_logf("xhci: the saved state did not come back (%d); the controller is attached again\n", error);
-		return ESTALE;
+		xhci_resume_fail(c, "restore", error);
+		return error;
 	}
 
 	/* Runs the controller again. */
 	error = xhci_resume_run(c);
 	if (error != 0) {
-		c->suspend_worker = 0;
-		xhci_suspend_end(c);
-		kern_logf("xhci: the controller did not run after the resume (%d); it is attached again\n", error);
-		return ESTALE;
+		xhci_resume_fail(c, "run", error);
+		return error;
+	}
+
+	/* Checks that the controller answers a command (No Op), which a lost state cannot. */
+	error = command(c, 0, 0, XHCI_TRB_TYPE(23), NULL);
+	if (error != 0) {
+		xhci_resume_fail(c, "command check", error);
+		return error;
 	}
 
 	/* Wakes the ports and rings the endpoints. */
@@ -6096,6 +6113,26 @@ xhci_resume(
 	/* Succeeded: the controller and its devices run again. */
 	kern_logf("xhci: resumed\n");
 	return 0;
+}
+
+/*
+ * Gives a controller that did not come back from the sleep up: it is
+ * quarantined (its devices fail their requests and are gone for the
+ * system) and the gates open, so that nothing waits for it forever.
+ */
+static void
+xhci_resume_fail(
+	struct xhci_controller *c,
+	const char *stage,
+	int error)
+{
+	/* Quarantines the controller and lets the waiting operations see it. */
+	xhci_mark_quarantined(c);
+	c->suspend_worker = 0;
+	xhci_suspend_end(c);
+
+	/* Says why. */
+	kern_logf("xhci: the controller did not come back from the sleep at %s (%d); USB is unavailable until a restart\n", stage, error);
 }
 
 /* Closes the gates of a running controller; one in another transition refuses with EBUSY. */
@@ -6354,7 +6391,9 @@ xhci_suspend_halt(
 
 /*
  * Writes the kept registers back and restores the internal state (CRS).
- * It reports EIO for a Save/Restore Error or a Host Controller Error.
+ * It reports ESTALE for a Save/Restore Error (the internal state did not
+ * come back) and EIO for a Host Controller Error or a controller that is
+ * not ready.
  */
 static int
 xhci_resume_restore(
@@ -6390,10 +6429,12 @@ xhci_resume_restore(
 	if (error != 0)
 		return error;
 
-	/* Refuses a restore the controller reports as failed. */
+	/* Refuses a controller in error, and reports a restore that failed. */
 	status = rd32(c->operational, XHCI_USBSTS);
-	if ((status & (XHCI_STS_SRE | XHCI_STS_HCE)) != 0)
+	if ((status & XHCI_STS_HCE) != 0)
 		return EIO;
+	if ((status & XHCI_STS_SRE) != 0)
+		return ESTALE;
 
 	/* Succeeded: the controller has its state again. */
 	return 0;

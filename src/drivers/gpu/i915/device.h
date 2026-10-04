@@ -22,6 +22,10 @@ void drv_i915_device_start_ops_install(void);
 void drv_i915_device_schedule_start(struct i915_device *device);
 int drv_i915_device_start(struct i915_device *device);
 int drv_i915_device_stop(struct i915_device *device);
+void drv_i915_device_park_gt(struct i915_device *device);
+int drv_i915_device_unpark_gt(struct i915_device *device);
+int drv_i915_device_suspend_hw(struct i915_device *device);
+int drv_i915_device_resume_hw(struct i915_device *device);
 void drv_i915_device_attach_settled(struct i915_device *device);
 
 #endif
