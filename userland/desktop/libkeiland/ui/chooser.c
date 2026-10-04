@@ -424,11 +424,13 @@ chooser_window_gone(
 		chooser->frame = NULL;
 	}
 
-	/* The sheet's titlebar and the glass before their window. */
+	/* The sheet's titlebar before its window. */
 	if (chooser->sheet != NULL) {
 		kl_titlebar_destroy(chooser->sheet);
 		chooser->sheet = NULL;
 	}
+
+	/* The glass before its window, and the panels it had. */
 	kl_glass_destroy(chooser->glass);
 	chooser->glass = NULL;
 	chooser->panel_count = 0;

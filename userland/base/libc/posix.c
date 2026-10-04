@@ -5371,6 +5371,8 @@ uname_release(
 			break;
 		used += (size_t)count;
 	}
+
+	/* The text ends there; the file closed, errno as it was. */
 	text[used] = '\0';
 	(void)call(KERN_SYS_close, fd, 0, 0, 0, 0, 0);
 	errno = saved;
@@ -5425,12 +5427,14 @@ uname_field(
 		line = end + 1;
 	}
 
-	/* Its value, without the quotes, cut to the field. */
+	/* Its value, without the quotes. */
 	start = line + key_length + 1U;
 	if (end - start >= 2 && start[0] == '"' && end[-1] == '"') {
 		start++;
 		end--;
 	}
+
+	/* Copied, cut to the field. */
 	length = (size_t)(end - start);
 	if (length >= size)
 		length = size - 1U;
