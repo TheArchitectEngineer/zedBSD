@@ -97,7 +97,7 @@ kernel の差分はこの Phase の `acpi-kern.c` だけ（config は変えな�
   `PEGx.PEGP.PCCX`（31 個、読みだけ。`PRES`・`PNVM`・`PAHC`・`ISGX` が class code を見る）が bus 0・device 0・function 0（host bridge）を
   読んでしまう。加えて `drv_pci_find_device()`（`src/drivers/pci/pci.c`、他の WS の source）は root の bus の機能しか探さないので、bus を
   正しくしても橋の下の機能は「無い」扱いになる（`drv_pci_foreach_device()` は木を辿る）。書きの field は無く、table の読み込みは止めない。
-  RTD3（WS052）の判断に効くので、WS049 の別の Phase（または p009 の前）で直す案を Q1 に送った。
+  RTD3（WS052）の判断に効くので、WS049 の別の Phase（または p009 の前）で直す案を Q1 に送った → [ws049-p016](../phase016/phase.md)（q694）で直した。
 - `\_SB_.PTID.TSDD` は `\_TZ.TZ00._TMP` を読むが、table に `\_TZ.TZ00` が無い（firmware の不備。ACPICA でも AE_NOT_FOUND）。
 - SSDT の `xh_Dell_` が `\_SB_.PC00.XHCI.RHUB.HS01`〜`HS08` の scope を開くが、DSDT の `HS01` などは GNVS（`PU2C`）の値で作られるので、
   模擬の memory（0）では無い。実機では作られる見込み（host の模擬の限界）。

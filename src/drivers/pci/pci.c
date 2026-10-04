@@ -134,6 +134,7 @@ static struct drv_pci_device * find_device_on_bus(struct drv_pci_bus *bus, const
 static int read_device(struct drv_pci_device *device);
 static int cfg_write(struct drv_pci_bus *bus, const struct drv_pci_address *a, unsigned offset, unsigned width, uint32_t value);
 static int foreach_device_tree(struct drv_pci_bus *b, drv_pci_device_iterator_t fn, void *arg);
+static struct drv_pci_device *find_device_in_tree(struct drv_pci_bus *bus, const struct drv_pci_address *address);
 static int command_set(struct drv_pci_device *d, uint16_t set, uint16_t clear);
 static int pci_bar_read_raw(struct drv_pci_device *device, unsigned index, enum drv_pci_bar_type type, uint32_t *low, uint32_t *high);
 static int pci_command_quiesce(struct drv_pci_device *device, uint16_t command);
@@ -576,7 +577,8 @@ drv_pci_bus_foreach_device(
 }
 
 /*
- * Finds a device by its address.
+ * Finds a device by its address, on a root bus or on any bus behind a
+ * bridge.
  */
 struct drv_pci_device *
 drv_pci_find_device(
@@ -585,20 +587,18 @@ drv_pci_find_device(
 	struct drv_pci_bus *b;
 	struct drv_pci_device *d;
 
-	/* Handles the a condition. */
+	/* Finds nothing for no address. */
 	if (!a)
 		return NULL;
-	/* Process each linked entry. */
+
+	/* Searches each root bus and the buses below it. */
 	for (b = root_buses; b; b = b->next) {
-		/* Process each linked entry. */
-		for (d = b->devices; d; d = d->next) {
-			/* Handles the memcmp condition. */
-			if (kern_memcmp(&d->address, a, sizeof(*a)) == 0)
-				return d;
-		}
+		d = find_device_in_tree(b, a);
+		if (d != NULL)
+			return d;
 	}
 
-	/* Reports that no result is available. */
+	/* No bus has a device at the address. */
 	return NULL;
 }
 
@@ -2494,6 +2494,36 @@ foreach_device_tree(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/* Finds a device by its address on a bus or on any bus below it. */
+static struct drv_pci_device *
+find_device_in_tree(
+	struct drv_pci_bus *bus,
+	const struct drv_pci_address *address)
+{
+	struct drv_pci_device *device;
+	struct drv_pci_device *found;
+
+	/* Looks among the bus's own functions first. */
+	found = find_device_on_bus(bus, address);
+	if (found != NULL)
+		return found;
+
+	/* Then behind each bridge on the bus. */
+	for (device = bus->devices; device != NULL; device = device->next) {
+		/* A function without a bus behind it has nothing more to search. */
+		if (device->subordinate == NULL)
+			continue;
+
+		/* Searches the bus behind the bridge and everything below it. */
+		found = find_device_in_tree(device->subordinate, address);
+		if (found != NULL)
+			return found;
+	}
+
+	/* The address is on none of these buses. */
+	return NULL;
 }
 
 /* Changes selected bits of a device's command register. */
