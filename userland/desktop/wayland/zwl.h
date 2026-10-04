@@ -402,8 +402,9 @@ struct zwl_object {
 	 */
 	uint64_t resized_ms;
 	uint32_t resized_serial;
-	/* When the client acknowledged that configure (ms; 0 before), which splits the wait in the log (BUG-179). */
+	/* When the client acknowledged that configure, and when its latest commit came (ms; 0 before), which split the wait in the log (BUG-179). */
 	uint64_t resized_acked_ms;
+	uint64_t resized_commit_ms;
 	/* A wl_shm buffer's place in its pool (NULL for a GPU buffer), and a pool object's memory. */
 	struct zwl_shm_buffer *shm;
 	struct zwl_pool *pool;

@@ -58,6 +58,7 @@ main(
 	struct wltest_renderer renderer;
 	struct wltest_options options;
 	struct timespec pause;
+	struct timespec drawn;
 	const char *operation;
 	uint64_t present_ns;
 	uint64_t present_max_ns;
@@ -159,13 +160,15 @@ main(
 
 		/* Only completed draws advance the externally observed frame count. */
 		completed++;
+		(void)clock_gettime(CLOCK_MONOTONIC, &drawn);
 		printf(
-			"WLTEST FRAME run=%s frame=%u width=%u height=%u mode=%s\n",
+			"WLTEST FRAME run=%s frame=%u width=%u height=%u mode=%s at_ms=%lld\n",
 			options.token,
 			frame,
 			renderer.extent.width,
 			renderer.extent.height,
-			options.mode_name);
+			options.mode_name,
+			(long long)drawn.tv_sec * 1000LL + (long long)drawn.tv_nsec / 1000000LL);
 		fflush(stdout);
 
 		/* Verification holds the image stable; ordinary animation uses the configured delay. */
