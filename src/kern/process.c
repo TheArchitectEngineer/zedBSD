@@ -1411,6 +1411,9 @@ fork_process(
 	child->auxv_address = parent->auxv_address;
 	child->auxv_size = parent->auxv_size;
 
+	/* A process that changed its identity has a child that did too (ws160-p001). */
+	child->set_id = parent->set_id;
+
 	/* The child runs the same program until it execs, so it has its name. */
 	kern_memcpy(child->command, parent->command, sizeof(child->command));
 	kern_memcpy(child->command_initial, parent->command_initial,

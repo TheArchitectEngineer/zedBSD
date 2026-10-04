@@ -172,6 +172,15 @@ struct process {
 	 */
 	uintptr_t auxv_address;
 	size_t auxv_size;
+
+	/*
+	 * Whether the process changed its identity (ws160-p001): set when an
+	 * exec took an image's set-user-ID or set-group-ID bits, or a set*id
+	 * call changed its credential; cleared by an exec that changes
+	 * nothing.  A process with it set may only be traced by the
+	 * superuser (its memory may hold what its other identity read).
+	 */
+	unsigned set_id;
 };
 
 extern struct process process0;
