@@ -22,6 +22,8 @@
 #define KEILAND_SETTINGS_H
 
 #include "../files/canvas.h"
+#include "storage-scan.h"
+#include "storage-trash.h"
 
 #include <keiland.h>
 
@@ -443,6 +445,31 @@ struct se_wired {
 	int message_bad;
 };
 
+/*
+ * The Storage page's analysis and Trash (storage.c, page-storage.c,
+ * ws089-p023): the folder analysed (the home unless the user went into a
+ * folder) and its scan with the view last copied, the home; the trash's
+ * folder, the scan of its files (its size) and its emptying, whether the
+ * Empty button waits for its confirmation, the last message about it, and
+ * when the page was last drawn again for a new count.
+ */
+struct se_storage {
+	char home[SE_SCAN_PATH];
+	char root[SE_SCAN_PATH];
+	struct se_scan scan;
+	struct se_scan_view view;
+	char trash_path[SE_SCAN_PATH];
+	struct se_scan trash_scan;
+	struct se_scan_view trash_view;
+	int trash_asked;
+	struct se_trash trash;
+	int confirming;
+	char message[SE_MESSAGE];
+	int message_bad;
+	uint64_t drawn_generation;
+	uint64_t drawn_at;
+};
+
 /* The Users page's password fields: the current password, the new one, the new one again. */
 #define SE_USERS_FIELDS		3
 
@@ -862,6 +889,9 @@ struct se_app {
 
 	/* The Ethernet page's editor of a wired interface (ws089-p022). */
 	struct se_wired wired;
+
+	/* The Storage page's analysis and Trash (ws089-p023). */
+	struct se_storage storage;
 };
 
 /* The table of pages (pages.c). */
@@ -925,6 +955,14 @@ void se_network_join_key(struct se_app *app, const char *ssid, const char *key);
 void se_network_disconnect(struct se_app *app);
 int se_network_configure_wired(struct se_app *app, const struct kl_network_wired_config *config);
 void se_wired_edit(struct se_app *app, const struct kl_network_link *link);
+void se_storage_analyze(struct se_app *app, const char *root);
+void se_storage_stop(struct se_app *app);
+void se_storage_empty_trash(struct se_app *app);
+void se_storage_poll(struct se_app *app, uint64_t now);
+int se_storage_wait(const struct se_app *app);
+void se_storage_close(struct se_app *app);
+void se_storage_press(struct se_app *app, int index);
+int se_storage_cards(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 void se_wired_cancel(struct se_app *app);
 int se_wired_check(const struct se_wired *wired, char *message, size_t size);
 void se_wired_apply(struct se_app *app);
