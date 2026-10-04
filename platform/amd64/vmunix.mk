@@ -765,7 +765,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
@@ -1495,6 +1495,32 @@ $(BUILD)/bin/imageview: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
  --needed libpng-compat.so --needed libz-compat.so --needed libjpeg-compat.so --needed libgif-compat.so \
  --needed libc.so $@
+
+# Video Player (WS122 p002) imports standard Wayland, Vulkan, TrueType and C library entry points, the window
+# and the widgets through libkeiland, and FFmpeg's libraries (the libavcodec package, LGPL, built against its
+# staged headers and libraries).
+DYNAMIC_VIDEOPLAYER_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,videoplayer)
+VIDEOPLAYER_FFMPEG := $(ZEDBSD_EXT_libavcodec_STAGEDIR)/usr
+$(DYNAMIC_VIDEOPLAYER_OBJS): DYNAMIC_CPPFLAGS += -isystem $(VIDEOPLAYER_FFMPEG)/include
+$(DYNAMIC_VIDEOPLAYER_OBJS): | $(ZEDBSD_LIBAVCODEC_STAGED)
+
+$(BUILD)/bin/videoplayer: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_VIDEOPLAYER_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(ZEDBSD_LIBAVCODEC_STAGED) \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_VIDEOPLAYER_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) -L$(VIDEOPLAYER_FFMPEG)/lib -Wl,-rpath-link,$(VIDEOPLAYER_FFMPEG)/lib \
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so \
+ -l:libavformat.so.63 -l:libavcodec.so.63 -l:libswscale.so.10 -l:libswresample.so.7 -l:libavutil.so.61 -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libavformat.so.63 --needed libavcodec.so.63 --needed libswscale.so.10 --needed libswresample.so.7 \
+ --needed libavutil.so.61 --needed libc.so $@
 
 # Text Editor (WS092) imports standard Wayland, Vulkan, TrueType and C library entry points, and
 # zdesktop's menus, titlebar, glass and recent files through libkeiland.
