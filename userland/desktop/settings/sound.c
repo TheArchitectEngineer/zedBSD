@@ -18,18 +18,18 @@
  *     session's end and gives it to audiod at the next login.  On a desktop
  *     without Keiland's system extension the page says the sound is not
  *     available.
- *   - The short feedback sound follows the system bar's rules: when a
- *     change is final (a drag let go, mute turned off), at most one every
- *     250 milliseconds while dragging, and never when mute is turned on.
+ *   - The short feedback sound follows the system bar's rules: once when a
+ *     change is final (a drag let go, mute turned off), none for the steps
+ *     of a drag, and never when mute is turned on (BUG-170, 2026-10-04
+ *     user: once, when the slider is let go).
  */
 
 #include "settings.h"
 
 #include <stdio.h>
 
-/* How long a drag holds back its volumes and its sounds, in milliseconds (the system bar's). */
+/* How long a drag holds back its volumes, in milliseconds (the system bar's). */
 #define SOUND_SEND_MS		50U
-#define SOUND_FEEDBACK_MS	250U
 
 /* How often the page follows audiod while it shows, in milliseconds. */
 #define SOUND_POLL_MS		250
@@ -79,8 +79,8 @@ se_sound_open(
 }
 
 /*
- * Follows what zdesktop told of audiod, and sends a volume or a sound a
- * drag held back.
+ * Follows what zdesktop told of audiod, and sends a volume a drag held
+ * back.
  */
 void
 se_sound_poll(
@@ -110,10 +110,6 @@ se_sound_poll(
 	/* A volume held back. */
 	if (sound->send_waiting && now - sound->sent_at >= SOUND_SEND_MS)
 		sound_send(app);
-
-	/* A sound held back. */
-	if (sound->feedback_waiting && now - sound->feedback_at >= SOUND_FEEDBACK_MS)
-		sound_feedback(app);
 }
 
 /*
@@ -124,8 +120,8 @@ int
 se_sound_wait(
 	const struct se_app *app)
 {
-	/* Something held back. */
-	if (app->sound.send_waiting || app->sound.feedback_waiting)
+	/* A volume held back. */
+	if (app->sound.send_waiting)
 		return (int)SOUND_SEND_MS;
 
 	/* The page shows: it follows the system bar's changes. */
@@ -243,7 +239,7 @@ se_sound_drag(
 	sound_set(app, value, app->sound.muted, 0);
 }
 
-/* Sets the volume shown: sent (now when final, else at most every SOUND_SEND_MS), a sound (not for mute), and kept when final. */
+/* Sets the volume shown: sent (now when final, else at most every SOUND_SEND_MS), and a sound once when final (not for mute). */
 static void
 sound_set(
 	struct se_app *app,
@@ -269,13 +265,12 @@ sound_set(
 	if (final || app->now - sound->sent_at >= SOUND_SEND_MS)
 		sound_send(app);
 
-	/* The sound: now when final, during a drag at most every SOUND_FEEDBACK_MS; never when muted. */
-	if (!muted) {
-		if (final || app->now - sound->feedback_at >= SOUND_FEEDBACK_MS)
-			sound_feedback(app);
-		else
-			sound->feedback_waiting = 1;
-	}
+	/* A drag's steps and turning mute on play no sound. */
+	if (!final || muted)
+		return;
+
+	/* The sound, once for the final volume. */
+	sound_feedback(app);
 }
 
 /* Sends the volume shown to zdesktop, which asks audiod for it. */
@@ -306,9 +301,7 @@ sound_feedback(
 {
 	int error;
 
-	/* Once now. */
-	app->sound.feedback_waiting = 0;
-	app->sound.feedback_at = app->now;
+	/* Asks zdesktop to have audiod play it. */
 	error = kl_system_audio_feedback(app->system, NULL);
 	se_log("SOUND feedback error=%d", error);
 }

@@ -91,7 +91,7 @@ WS089 の案 `plan/ws089/proposed/libkeiland-audio.md` の API をそのまま�
   - 音の無いとき: slider と switch を薄くして押せなくし、「Sound service is not running」か「No sound output」の行を出す。
   - popup の外の click と Esc で閉じる。network の menu が開いていれば閉じる（同時に開くのは 1 つ）。
 - **wheel（A3）**: `seat.c` の `zwl_seat_axis` の hook の連鎖（App Home・title bar の後）に `zwl_volume_axis` を 1 行足す。pointer が音量の icon（か開いた popup）の上なら、1 notch で 5%（上で増、下で減）、取ったら client へは渡さない。**`seat.c` は IME の hook を持つ file で、人が作業中**。hook の 1 行が IME の部分と重ならないことを p004 の前に main と確かめる（重なるなら `shell.c` の bar の wheel の経路を探す）。
-- **確かめの音（A4）**: 変えた時に `keiland_audio_feedback`。wheel は notch ごと、slider は離した時と、drag の間は 250 ms に 1 回まで、mute は外した時だけ。重なりは audiod が防ぐ（§3.2）。
+- **確かめの音（A4）**: 変えた時に `keiland_audio_feedback`。wheel は notch ごと、slider は離した時に 1 回だけ（drag の途中は鳴らさない。2026-10-04 user「確認の音は離した時に 1 回」、BUG-170・[p013](phase013/phase.md)。それまでは drag の間 250 ms に 1 回まで）、mute は外した時だけ。重なりは audiod が防ぐ（§3.2）。Settings の Sound の頁も同じ。
 - **audiod へ送る間隔**: drag の間の `DEVICE_VOLUME` は 50 ms に 1 回まで（最後の値は必ず送る）。
 - **保存（A5）**: §3.5。
 - log（試験用）: `ZWL VOLUME icon x= y= state=`・`ZWL VOLUME set value= muted= via=wheel|slider|mute`・`ZWL VOLUME popup open|close`・`ZWL VOLUME reachable=0|1 device=0|1`。
