@@ -51,6 +51,8 @@ Design: [ws132-p001](../phase001/phase.md) の K1・K2
 - 試験: `plan/ws132/tests/p002-guest.sh [OUTDIR]`。QMP で USB stick（16 MiB の空の image）・USB keyboard・USB network adapter を抜き差しし、`system_powerdown` を押す。
 - 合格: 全行 ok（refusals、power-state = 全部不明、stick の usb/disk の add・remove、keyboard の usb/input の add・remove、adapter の usb/network の add・remove、power-button の press、sequence の増加、順、alive）。
 
+- 2026-10-05 T1-122: stick・input・network・order は ok、keyboard と adapter の usb add/remove の 4 行が FAIL。events は `port=8`（期待は 4）。QEMU の port 4 は、SuperSpeed の stick では root hub の port 4、full-speed の keyboard・adapter では port 8 として見える（xHCI は root hub の USB 2 と USB 3 の port を別に番号付けする）。kernel の報告は正しいので、試験の期待を `port=(4|8)` に直した（`plan/ws132/tests/p002-guest.sh`）。ws132 の p003-guest.sh は port の番号を見ていない。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定（T1、Q1）。

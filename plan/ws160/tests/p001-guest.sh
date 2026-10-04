@@ -38,7 +38,7 @@ expect setuid-sudo '^-rwsr-xr-x .* root .*/bin/sudo$' "$modes"
 # 2. sudo for kei.
 expect sudo-root "$(printf '^0$')" "$(as_kei 'printf "kei\n" | /bin/sudo -S /bin/id -u 2>/dev/null')"
 expect sudo-wrong 'status=1' "$(as_kei 'printf "wrong\n" | /bin/sudo -S /bin/id -u; echo status=$?')"
-environment=$(as_kei 'printf "kei\n" | LD_PRELOAD=/tmp/x.so PATH=/tmp:/bin /bin/sudo -S env')
+environment=$(as_kei 'printf "kei\n" | LD_PRELOAD=/tmp/x.so PATH=/tmp:/bin /bin/sudo -S env 2>/dev/null')
 printf '%s\n' "$environment" > "$out/sudo-env.txt"
 if printf '%s\n' "$environment" | grep -q '^LD_PRELOAD='; then fail sudo-env-no-ld-preload; else pass sudo-env-no-ld-preload; fi
 expect sudo-env-path '^PATH=/bin:/sbin:/usr/bin:/usr/sbin$' "$environment"
