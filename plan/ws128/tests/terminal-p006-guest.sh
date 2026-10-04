@@ -98,7 +98,7 @@ expect_log /tmp/t.log 'ZTERM SEARCH run=t1 closed'
 
 # 3. View > Theme > Light (the submenu is waited for before its row is clicked, as menu-p003 does for Text Size).
 zwl_app_clients
-click "$(item_x 1 floating 3 $wx)" $bar
+click "$(item_x 1 3 $wx)" $bar
 expect_log /tmp/zdesktop.log "MENU open client=$zc1 .*item=3 depth=1"
 expect_log /tmp/zdesktop.log 'MENU row item=44 '
 px=$(popup_x)
