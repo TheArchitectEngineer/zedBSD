@@ -21,6 +21,10 @@ Resume point: p001（設計）から。WS049（ACPI AML）の後（ユーザー�
 - ユーザー（原文）:「タップダウンを取れない？それは違うと思います。PS/2でもタップダウンもイベントとして取れているように見えました。でも、2本指スクロールは取れないですね。ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。WSを立ててください。」
 - → タップダウン（BUG-190）は PS/2 の経路のまま P1 が調べ直す（q700）。2 本指のスクロール（[BUG-156](../bugs/BUG-156.md)）と押し込み（[BUG-167](../bugs/BUG-167.md)）、タッチパッドの tap-drag の仕様（[BUG-166](../bugs/BUG-166.md) の native の部分）はこの WS で扱う。
 
+## 許可（2026-10-05 ユーザー）
+
+「5330を起動しました。操作はすべて許可します。」→ 5330 の Linux（`ssh awe@10.0.30.3`、Debian 6.19.13、sudo は password 無し）で、タッチパッドの調べに要る操作を全部してよい（I2C-HID の device `i2c-VEN_06CB:00`（Synaptics）の情報、HID の report descriptor、evdev の capability と記録、ACPI の table、driver の bind・unbind など）。採った物は `plan/ws159/tests/` に置く。iGPU と AX211 の同時の passthrough はしない（Guardrail）。host の設定を変えたら記録し、終わったら戻すか、残すなら記録する。
+
 ## 範囲（p001 で設計して確定）
 
 1. kernel: Intel LPSS の DesignWare I2C の controller の driver（PCI の device、ACPI の `_CRS` の解析は WS049 p017 の `drv_acpi_resources_walk`）、ACPI の PNP0C50（I2C-HID）の発見と HID の descriptor の取得、HID の report の解析（digitizer: contact・x・y・tip・button・contact count）、evdev への MT（`ABS_MT_*`・`BTN_TOUCH`・`BTN_TOOL_*`）と BTN_LEFT（clickpad）の出力。割り込みは GPIO（ACPI の GpioInt）か APIC。PS/2 の互換の mouse との二重の入力を止める（I2C-HID が動く時は PS/2 の aux を使わない）。
