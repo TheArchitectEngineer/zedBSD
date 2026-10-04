@@ -2,7 +2,7 @@
 
 # ws089-p023: Settings の Storage の頁: folder の階層ごとの使用量の解析（multi-thread、逐次の更新、Stop）と Trash を空にする
 
-Status: in-progress（実装済み、T1 待ち）
+Status: cleared（2026-10-05 Q1: T1-159 の settings-p023 PASS（Analyze が du と一致・folder・Stop・Trash の大きさ・確認つきの Empty で removed=5））。以前: in-progress（実装済み、T1 待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q728（P2、2026-10-05）
@@ -49,3 +49,7 @@ WS127（Files の Trash の実装）、libkeiland の thread の扱い。
 ## T1-157 の後（2026-10-05、P2）
 
 - analyze・done・stopped・trash は ok。`STORAGE emptied removed=4` だけ MISSING: 実際は `removed=5`（`files/old.txt`・`files/Old/inner.txt`・`files/Old`・2 つの `.trashinfo`。folder の中身も 1 項目ずつ数える）で、試験の期待の誤り。→ 試験を `removed=5` に。
+
+## Q1 の判定（2026-10-05）
+
+T1-159 の settings-p023 PASS（Analyze が du と一致・folder・Stop・Trash の大きさ・確認つきの Empty で removed=5）。**cleared**。
