@@ -2153,6 +2153,31 @@ print_resource(
 
 	UNUSED_PARAMETER(argument);
 
+	/* A connection is printed with its controller (ws159-p002). */
+	if (resource->kind == DRV_ACPI_RESOURCE_I2C) {
+		printf("RESOURCE i2c address=0x%llX speed=%u ten_bit=%u desc=0x%02X p=%u source=%s\n",
+		       (unsigned long long)resource->base,
+		       (unsigned)resource->speed,
+		       (unsigned)resource->ten_bit,
+		       (unsigned)resource->descriptor,
+		       (unsigned)resource->producer,
+		       resource->source);
+		return 0;
+	}
+	if (resource->kind == DRV_ACPI_RESOURCE_GPIO_INT) {
+		printf("RESOURCE gpio-int pin=0x%llX pins=%llu desc=0x%02X p=%u level=%u low=%u shared=%u wake=%u source=%s\n",
+		       (unsigned long long)resource->base,
+		       (unsigned long long)resource->length,
+		       (unsigned)resource->descriptor,
+		       (unsigned)resource->producer,
+		       (unsigned)resource->level,
+		       (unsigned)resource->active_low,
+		       (unsigned)resource->shared,
+		       (unsigned)resource->wake,
+		       resource->source);
+		return 0;
+	}
+
 	/* Names the kind. */
 	kind = "irq";
 	if (resource->kind == DRV_ACPI_RESOURCE_IO) {

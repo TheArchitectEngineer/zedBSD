@@ -1,0 +1,6 @@
+MAIN passed
+RESOURCE i2c address=0x2C speed=400000 ten_bit=0 desc=0x8E p=0 source=\_SB.PC00.I2C1
+RESOURCE gpio-int pin=0x147 pins=1 desc=0x8C p=0 level=1 low=1 shared=0 wake=1 source=\_SB.GPI0
+RESOURCE gpio-int pin=0x20 pins=1 desc=0x8C p=0 level=0 low=0 shared=1 wake=0 source=\_SB.GPI1
+RESOURCE i2c address=0x150 speed=100000 ten_bit=1 desc=0x8E p=0 source=\_SB.PC00.I2C0
+RESOURCES end

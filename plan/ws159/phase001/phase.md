@@ -2,7 +2,7 @@
 
 # ws159-p001: native のタッチパッドの設計
 
-Status: in-progress（2026-10-05 P1 generation17 / q713-i01。設計を書いた。Q1 の確認待ち）
+Status: cleared の判定待ち（2026-10-05 P1 generation17 / q713-i01。設計を書き、Q1 が「このまま p002 へ」と ACK（main に統合）。Q1 の委任: D3・D6 の移動・EVIOCGPROP・D8 の caps）
 Disposition: normal
 Parent: [WS159](../ws.md)
 Queue: q713 / q713-i01（2026-10-05 ユーザーのクリックの回答「ベータ1」、Q1 の投入）。design-reviewer は省く（2026-10-05 ユーザー）。
@@ -111,6 +111,10 @@ kernel は「指の位置と押し込みを正しく出す」だけを担い、g
 | p003 | D4〜D7: hid の層の移動と PTP、`EVIOCGPROP`、I2C-HID の driver と sampling、PS/2 の停止。host の試験 (a)〜(c)、`input-inject` の touchpad | p002 |
 | p004 | D8: compositor の touchpad.c と backend の props（zedBSD のみ）。host の試験 (d)、QEMU（T1、inject の touchpad） | p003 の `EVIOCGPROP` と inject（host の試験は先に） |
 | p005 | 実機の UAT と全文の規約 | p004 |
+
+## 残り（後の Phase へ確実に移す）
+
+- **D5 の 4 ms の MMIO の sampling は、電池の消費の点でベータ1 だけの仮の形**（2026-10-05 Q1）。Intel の GPIO の割り込み（`INTC1055` の `GPI_IS`・`GPI_IE` と IRQ 14、または pad の IOxAPIC への route）へ移す Phase を WS159 に立てる（p006 の案）。それまでは、指の無い間の sampling の間隔を延ばす（D5）。
 
 ## 未決（人間の判断が要る点）
 
