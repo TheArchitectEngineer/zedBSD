@@ -71,6 +71,7 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p024](phase024/phase.md) | Mouse の頁を device ごと（マウス・タッチパッド）の設定に、pointer の加速、既定 base 150%・加速 強め、自然な方向のスクロールはタッチパッド ON・マウス OFF（2026-10-04 ユーザーの要望） | planning | compositor の入力、WS135 |
 | [ws089-p025](phase025/phase.md) | Sharing の頁に SSHD の ON/OFF（後でクラウドストレージの設定もここに、WS146）（2026-10-04 ユーザーの要望） | planning | WS002（service） |
 | [ws089-p026](phase026/phase.md) | Users の頁の実装（一覧・自分の password・管理者の利用者の追加・削除・group）（2026-10-04 ユーザー） | planning | WS131、account の userland |
+| [ws089-p027](phase027/phase.md) | About に版の名前（`/etc/os-release` の PRETTY_NAME）を出す | in-progress（2026-10-05 q716-i01 P1: 実装・build warning 0・host 10 checks。QEMU は T1 に依頼） | ws129-p003 |
 
 
 ## ベータ1 の到達目標（2026-10-02 計画、fg019）

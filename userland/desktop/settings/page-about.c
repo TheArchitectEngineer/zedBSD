@@ -54,6 +54,7 @@ se_about_draw(
 {
 	struct about_row rows[6];
 	const struct se_about *about;
+	const char *system;
 	char text[64];
 	int count;
 	int y;
@@ -74,9 +75,12 @@ se_about_draw(
 	count = about_add(rows, count, "Display", about->display);
 	y = about_card(app, canvas, x, y + ABOUT_CARD_GAP, width, "This computer", rows, count);
 
-	/* Software: Kei, the kernel, the architecture and the time since the machine started. */
+	/* Software: the system's version (Kei without os-release), the kernel, the architecture and the time since the machine started. */
 	count = 0;
-	count = about_add(rows, count, "Operating system", "Kei");
+	system = "Kei";
+	if (about->system[0] != '\0')
+		system = about->system;
+	count = about_add(rows, count, "Operating system", system);
 	count = about_add(rows, count, "Kernel", about->kernel);
 	count = about_add(rows, count, "Architecture", about->machine);
 	about_uptime(app->now, text, sizeof(text));

@@ -7,8 +7,10 @@
 
 /*
  * What About shows of the machine, read once when Settings starts: the
- * kernel and the architecture (uname), the processor's name (the CPU's own
- * brand string), how many processors are online, and the machine's name.
+ * system's version (PRETTY_NAME of /etc/os-release, or of
+ * /usr/lib/os-release when /etc has none; ws089-p027), the kernel and the
+ * architecture (uname), the processor's name (the CPU's own brand
+ * string), how many processors are online, and the machine's name.
  *
  * These are POSIX interfaces and the processor's instruction, so they are
  * read here directly (plan/ws089/design.md section 6.1).  The graphics
@@ -25,6 +27,7 @@
 #include <unistd.h>
 
 static void about_processor(char *name, size_t size);
+static void about_unquote(char *value);
 static void about_trim(char *text);
 
 /*
@@ -41,6 +44,11 @@ se_about_read(
 
 	/* Nothing known yet. */
 	memset(about, 0, sizeof(*about));
+
+	/* The system's version, from /etc/os-release or the system's own copy. */
+	status = se_about_pretty_name("/etc/os-release", about->system, sizeof(about->system));
+	if (status != 0)
+		(void)se_about_pretty_name("/usr/lib/os-release", about->system, sizeof(about->system));
 
 	/* The kernel's name and release, and the architecture. */
 	status = uname(&names);
@@ -64,7 +72,73 @@ se_about_read(
 	about->host[sizeof(about->host) - 1U] = '\0';
 
 	/* The log line the tests read. */
-	se_log("ABOUT kernel=%s machine=%s cores=%u host=%s", about->kernel, about->machine, about->cores, about->host);
+	se_log("ABOUT system=%s kernel=%s machine=%s cores=%u host=%s", about->system, about->kernel, about->machine,
+	       about->cores, about->host);
+}
+
+/*
+ * Reads PRETTY_NAME of an os-release file (os-release(5): KEY=value lines,
+ * the value maybe in double or single quotes, with backslash escapes in
+ * double quotes, "#" starting a comment).  Returns 0 with the name, cut
+ * short to fit, or -1 when the file cannot be read or has no PRETTY_NAME
+ * (the name is then empty).
+ */
+int
+se_about_pretty_name(
+	const char *path,
+	char *name,
+	size_t size)
+{
+	char line[256];
+	FILE *file;
+	char *read;
+	char *value;
+	size_t length;
+	int same;
+	int found;
+
+	/* Nothing yet. */
+	name[0] = '\0';
+
+	/* The file. */
+	file = fopen(path, "r");
+	if (file == NULL)
+		return -1;
+
+	/* Each line, until PRETTY_NAME. */
+	found = -1;
+	for (;;) {
+		/* The next line; the file's end ends the search. */
+		read = fgets(line, sizeof(line), file);
+		if (read == NULL)
+			break;
+
+		/* The line without its end. */
+		length = strcspn(line, "\r\n");
+		line[length] = '\0';
+
+		/* Only PRETTY_NAME= at the line's start counts. */
+		same = strncmp(line, "PRETTY_NAME=", 12U);
+		if (same != 0)
+			continue;
+
+		/* Its value, without the quotes. */
+		value = line + 12;
+		about_unquote(value);
+		(void)snprintf(name, size, "%s", value);
+		found = 0;
+		break;
+	}
+
+	/* The file is no longer needed. */
+	(void)fclose(file);
+
+	/* An empty name counts as none. */
+	if (found == 0 && name[0] == '\0')
+		found = -1;
+
+	/* Succeeded when the name was found. */
+	return found;
 }
 
 /*
@@ -153,4 +227,42 @@ about_trim(
 
 	/* The text ends after its last word. */
 	text[written] = '\0';
+}
+
+/*
+ * Takes the quotes off an os-release value in place: within double quotes
+ * a backslash keeps the character after it (\", \\, \$, \`); within
+ * single quotes everything is kept; a value without quotes ends at the
+ * first space.
+ */
+static void
+about_unquote(
+	char *value)
+{
+	size_t read;
+	size_t written;
+	char quote;
+
+	/* A value without quotes: up to its first space. */
+	quote = value[0];
+	if (quote != '"' && quote != '\'') {
+		written = strcspn(value, " \t");
+		value[written] = '\0';
+		return;
+	}
+
+	/* Inside the quotes, up to the closing one. */
+	written = 0;
+	for (read = 1; value[read] != '\0' && value[read] != quote; read++) {
+		/* A backslash in double quotes keeps the next character. */
+		if (quote == '"' && value[read] == '\\' && value[read + 1U] != '\0')
+			read++;
+
+		/* The character. */
+		value[written] = value[read];
+		written++;
+	}
+
+	/* The value ends where it was copied to. */
+	value[written] = '\0';
 }
