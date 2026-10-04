@@ -42,6 +42,13 @@
 /* The code of the report's Scan Time, which belongs to no finger either. */
 #define HID_TOUCH_SCAN_TIME_CODE	0x1001U
 
+/*
+ * The code of a touch pad's button n (0 the left, 1 the right, 2 the
+ * middle), which belongs to no finger (ws159-p003).
+ */
+#define HID_TOUCH_BUTTON_CODE(n)	((uint16_t)(0x1002U + (n)))
+#define HID_TOUCH_BUTTONS_MAX		3U
+
 /* The unit of a Scan Time whose descriptor gives none of time (100 us, as Windows requires). */
 #define HID_TOUCH_SCAN_TIME_UNIT_NS	100000U
 
@@ -70,10 +77,13 @@
  * and a whole frame, each at most four events a slot, BTN_TOUCH, ABS_X,
  * ABS_Y, MSC_TIMESTAMP and SYN_REPORT.
  */
-#define HID_TOUCH_EVENT_MAX		(2U * (4U * HID_TOUCH_SLOTS_MAX + 5U))
+#define HID_TOUCH_EVENT_MAX		(2U * (4U * HID_TOUCH_SLOTS_MAX + 5U + 2U + HID_TOUCH_BUTTONS_MAX))
 
-/* The capabilities (MSC_TIMESTAMP only with a Scan Time) and axes a touch screen declares. */
-#define HID_TOUCH_CAPABILITY_COUNT	9U
+/*
+ * The capabilities (MSC_TIMESTAMP only with a Scan Time) and axes a touch
+ * screen declares; a touch pad adds its five finger counts and its buttons.
+ */
+#define HID_TOUCH_CAPABILITY_COUNT	(9U + 5U + HID_TOUCH_BUTTONS_MAX)
 #define HID_TOUCH_AXIS_COUNT		6U
 
 /*
@@ -146,6 +156,17 @@ struct hid_touch_state {
 	uint64_t scan_elapsed_ns;
 	uint32_t report_timestamp;
 	uint32_t frame_timestamp;
+	/*
+	 * A touch pad (drv_hid_touch_set_pad()): the BTN_TOOL_* of the number
+	 * of fingers the readers know (0: none), the buttons they know held
+	 * (bit n for button n), and the buttons the reports say are held, which
+	 * the next frame writes.
+	 */
+	uint8_t pad;
+	uint8_t buttons;
+	uint8_t pending_buttons;
+	uint8_t pad_reserved;
+	uint16_t tool;
 };
 
 /*
@@ -179,6 +200,8 @@ struct hid_touch_description {
 	struct input_abs_axis axes[HID_TOUCH_AXIS_COUNT];
 	size_t axis_count;
 	unsigned slots;
+	/* The INPUT_PROP_* bits of the device (bit n for property n). */
+	uint32_t properties;
 };
 
 int drv_hid_touch_describe(const struct hid_report_touch_info *, struct hid_touch_description *);
@@ -188,5 +211,6 @@ int drv_hid_touch_translate(struct hid_touch_state *, const struct hid_report_in
 int drv_hid_touch_translate_at(struct hid_touch_state *, const struct hid_report_input *, uint64_t,
 	struct hid_touch_output *);
 void drv_hid_touch_set_scan_time(struct hid_touch_state *, const struct hid_report_touch_info *);
+void drv_hid_touch_set_pad(struct hid_touch_state *, const struct hid_report_touch_info *);
 
 #endif

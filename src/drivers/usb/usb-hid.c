@@ -700,6 +700,7 @@ usb_hid_fetch_layout(
 			hid->touch_present = 1U;
 			drv_hid_touch_reset(&hid->touch, hid->touch_description.slots);
 			drv_hid_touch_set_scan_time(&hid->touch, &touch_info);
+			drv_hid_touch_set_pad(&hid->touch, &touch_info);
 		}
 	}
 
@@ -1430,6 +1431,7 @@ usb_hid_activate(
 		info.capability_count = hid->touch_description.capability_count;
 		info.absolute_axes = hid->touch_description.axes;
 		info.absolute_axis_count = hid->touch_description.axis_count;
+		info.properties = hid->touch_description.properties;
 		error = drv_input_device_register(&info, &hid->touch_input);
 	}
 

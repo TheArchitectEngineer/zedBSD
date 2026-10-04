@@ -29,6 +29,13 @@
  * screen writes every frame, changed or not, so that the reports' pace
  * reaches the reader.  The file touches no hardware, so the host tests run
  * it unchanged.
+ *
+ * A touch pad (ws159-p003, a Windows Precision Touchpad over I2C-HID) is
+ * the same fingers with two more things in each frame: the BTN_TOOL_* of
+ * how many fingers touch (BTN_TOOL_FINGER for one up to
+ * BTN_TOOL_QUINTTAP for five or more), and its buttons as BTN_LEFT,
+ * BTN_RIGHT and BTN_MIDDLE.  Its readers move a pointer by the fingers;
+ * the state machine makes no gesture of them.
  */
 
 #include <drivers/generic/hid-touch.h>
@@ -70,9 +77,14 @@ struct touch_report {
 	int32_t count;
 	int scan_present;
 	int32_t scan;
+	/* A touch pad's buttons in this report (bit n for button n), when it has any. */
+	int buttons_present;
+	uint8_t buttons;
 };
 
 static void collect_report(const struct hid_report_input *input, struct touch_report *report);
+static int write_pad(struct hid_touch_state *state, struct hid_touch_output *output);
+static uint16_t pad_tool(unsigned fingers);
 static void scan_take(struct hid_touch_state *state, const struct touch_report *report, uint64_t milliseconds);
 static void frame_begin(struct hid_touch_state *state);
 static void take_entry(struct hid_touch_state *state, const struct touch_entry *entry, unsigned finger);
@@ -92,7 +104,10 @@ static void describe_axis(struct hid_touch_description *description, uint16_t co
  * The capabilities are the report boundary, BTN_TOUCH, ABS_X and ABS_Y (the
  * oldest finger), and the protocol B axes: ABS_MT_SLOT, ABS_MT_TRACKING_ID
  * and ABS_MT_POSITION_X/Y, whose ranges and resolutions are those of the
- * fingers' X and Y.  A screen without a position range is refused.
+ * fingers' X and Y.  A screen without a position range is refused.  A
+ * screen is a direct device; a touch pad is a pointer that also declares
+ * its finger counts and buttons, and a button pad when its only button is
+ * the pad itself (a click pad).
  */
 int
 drv_hid_touch_describe(
@@ -135,6 +150,31 @@ drv_hid_touch_describe(
 	/* A screen with a Scan Time also stamps its frames with it. */
 	if (info->scan_time_present)
 		describe_capability(description, EV_MSC, MSC_TIMESTAMP);
+
+	/* A screen is touched where it shows. */
+	description->properties = 1U << INPUT_PROP_DIRECT;
+
+	/* A touch pad: the counts of its fingers, its buttons, and what kind of pointer it is. */
+	if (info->pad) {
+		describe_capability(description, EV_KEY, BTN_TOOL_FINGER);
+		describe_capability(description, EV_KEY, BTN_TOOL_DOUBLETAP);
+		describe_capability(description, EV_KEY, BTN_TOOL_TRIPLETAP);
+		describe_capability(description, EV_KEY, BTN_TOOL_QUADTAP);
+		describe_capability(description, EV_KEY, BTN_TOOL_QUINTTAP);
+
+		/* Its buttons, left first. */
+		if (info->buttons >= 1U)
+			describe_capability(description, EV_KEY, BTN_LEFT);
+		if (info->buttons >= 2U)
+			describe_capability(description, EV_KEY, BTN_RIGHT);
+		if (info->buttons >= 3U)
+			describe_capability(description, EV_KEY, BTN_MIDDLE);
+
+		/* A pointer; one with a single button is pressed as a whole (a click pad). */
+		description->properties = 1U << INPUT_PROP_POINTER;
+		if (info->buttons == 1U)
+			description->properties |= 1U << INPUT_PROP_BUTTONPAD;
+	}
 
 	/* The oldest finger's position, over the fingers' own range. */
 	description->axis_count = 0;
@@ -224,6 +264,34 @@ drv_hid_touch_reset(
 	state->scan_elapsed_ns = 0;
 	state->report_timestamp = 0;
 	state->frame_timestamp = 0;
+
+	/* A touch screen until drv_hid_touch_set_pad() says otherwise; no button is held. */
+	state->pad = 0;
+	state->buttons = 0;
+	state->pending_buttons = 0;
+	state->pad_reserved = 0;
+	state->tool = 0;
+}
+
+/*
+ * Tells the state machine whether the device is a touch pad, from the
+ * description of its reports (after drv_hid_touch_reset(), which makes it
+ * a touch screen).
+ */
+void
+drv_hid_touch_set_pad(
+	struct hid_touch_state *state,
+	const struct hid_report_touch_info *info)
+{
+	/* No finger count and no button is known to the readers yet. */
+	state->pad = 0;
+	state->buttons = 0;
+	state->pending_buttons = 0;
+	state->tool = 0;
+
+	/* A touch pad writes its finger count and its buttons with each frame. */
+	if (info != NULL && info->pad)
+		state->pad = 1;
 }
 
 /*
@@ -336,6 +404,10 @@ drv_hid_touch_translate_at(
 	/* Moves the screen's clock on to this report. */
 	scan_take(state, &report, milliseconds);
 
+	/* A touch pad's buttons are written with the frame this report ends or goes on with. */
+	if (state->pad && report.buttons_present)
+		state->pending_buttons = report.buttons;
+
 	/* Without a Contact Count the report is a whole frame. */
 	if (!report.count_present) {
 		frame_begin(state);
@@ -405,6 +477,8 @@ collect_report(
 {
 	const struct hid_report_value *value;
 	struct touch_entry *entry;
+	uint16_t button_first;
+	uint16_t button_end;
 	unsigned finger;
 	unsigned item;
 	size_t index;
@@ -431,6 +505,12 @@ collect_report(
 	report->count = 0;
 	report->scan_present = 0;
 	report->scan = 0;
+	report->buttons_present = 0;
+	report->buttons = 0;
+
+	/* The codes of a touch pad's buttons, from the first to past the last. */
+	button_first = HID_TOUCH_BUTTON_CODE(0);
+	button_end = HID_TOUCH_BUTTON_CODE(HID_TOUCH_BUTTONS_MAX);
 
 	/* Stores each touch value under its finger and its item. */
 	for (index = 0; index < input->value_count; index++) {
@@ -451,6 +531,14 @@ collect_report(
 		if (value->code == HID_TOUCH_SCAN_TIME_CODE) {
 			report->scan_present = 1;
 			report->scan = value->value;
+			continue;
+		}
+
+		/* And a touch pad's buttons, one bit each. */
+		if (value->code >= button_first && value->code < button_end) {
+			report->buttons_present = 1;
+			if (value->value != 0)
+				report->buttons |= (uint8_t)(1U << (value->code - button_first));
 			continue;
 		}
 
@@ -764,6 +852,13 @@ frame_write(
 	if (error != 0)
 		return error;
 
+	/* A touch pad's finger count and buttons. */
+	if (state->pad) {
+		error = write_pad(state, output);
+		if (error != 0)
+			return error;
+	}
+
 	/*
 	 * A screen with a Scan Time stamps a frame that changed something,
 	 * and every frame while a finger touches: the pace of its reports is
@@ -949,6 +1044,96 @@ write_pointer(
 
 	/* Succeeded: the pointer is written. */
 	return 0;
+}
+
+/*
+ * Writes a touch pad's BTN_TOOL_* when the number of touching fingers
+ * changed (the old count's tool released before the new one is pressed),
+ * then each button whose state changed.
+ */
+static int
+write_pad(
+	struct hid_touch_state *state,
+	struct hid_touch_output *output)
+{
+	unsigned fingers;
+	unsigned index;
+	unsigned bit;
+	uint16_t tool;
+	int32_t pressed;
+	int error;
+
+	/* Counts the fingers that touch. */
+	fingers = 0;
+	for (index = 0; index < state->slot_count; index++) {
+		if (state->slots[index].active)
+			fingers++;
+	}
+
+	/* The tool of that count, or none. */
+	tool = pad_tool(fingers);
+	if (tool != state->tool) {
+		/* Releases the count the readers knew. */
+		if (state->tool != 0U) {
+			error = append_event(output, EV_KEY, state->tool, 0);
+			if (error != 0)
+				return error;
+		}
+
+		/* Presses the new count. */
+		if (tool != 0U) {
+			error = append_event(output, EV_KEY, tool, 1);
+			if (error != 0)
+				return error;
+		}
+
+		/* Readers now know this count. */
+		state->tool = tool;
+	}
+
+	/* Writes each button that changed, left first. */
+	for (index = 0; index < HID_TOUCH_BUTTONS_MAX; index++) {
+		/* A button whose state the readers know already writes nothing. */
+		bit = 1U << index;
+		if ((state->buttons & bit) == (state->pending_buttons & bit))
+			continue;
+
+		/* The button's new state: pressed or released. */
+		pressed = 0;
+		if ((state->pending_buttons & bit) != 0U)
+			pressed = 1;
+		error = append_event(output, EV_KEY, (uint16_t)(BTN_LEFT + index), pressed);
+		if (error != 0)
+			return error;
+
+		/* Readers now know the button's state. */
+		state->buttons = (uint8_t)(state->buttons ^ bit);
+	}
+
+	/* Succeeded: the readers know the count and the buttons. */
+	return 0;
+}
+
+/* Gives the BTN_TOOL_* of a number of touching fingers; 0 for none. */
+static uint16_t
+pad_tool(
+	unsigned fingers)
+{
+	/* One BTN_TOOL_* for each count up to four, and one for five or more. */
+	switch (fingers) {
+	case 0:
+		return 0;
+	case 1:
+		return BTN_TOOL_FINGER;
+	case 2:
+		return BTN_TOOL_DOUBLETAP;
+	case 3:
+		return BTN_TOOL_TRIPLETAP;
+	case 4:
+		return BTN_TOOL_QUADTAP;
+	default:
+		return BTN_TOOL_QUINTTAP;
+	}
 }
 
 /* Appends one event to the list, refusing to overrun it. */

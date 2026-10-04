@@ -70,6 +70,9 @@
 #define HID_USAGE_TOUCH_SCREEN		0x000d0004U
 #define HID_USAGE_FINGER		0x000d0022U
 
+/* The application collection of a touch pad, whose fingers are a touch screen's (ws159-p003). */
+#define HID_USAGE_TOUCH_PAD		0x000d0005U
+
 /* The Digitizer usages of a finger besides Tip Switch, and the report's Contact Count. */
 #define HID_USAGE_CONFIDENCE		0x47U
 #define HID_USAGE_CONTACT_ID		0x51U
@@ -79,6 +82,12 @@
 /* What touch_item() calls the Contact Count and the Scan Time: above every finger item (HID_TOUCH_ITEM_*). */
 #define TOUCH_ITEM_CONTACT_COUNT	0x10U
 #define TOUCH_ITEM_SCAN_TIME		0x11U
+
+/* What touch_item() calls a touch pad's button n: TOUCH_ITEM_BUTTON + n (ws159-p003). */
+#define TOUCH_ITEM_BUTTON		0x12U
+
+/* The most feature report fields of a Precision Touchpad a layout keeps (ws159-p003). */
+#define HID_FEATURE_FIELDS_MAX		16U
 
 /* The Digitizer usages that are absolute axes of a pen. */
 #define HID_USAGE_TIP_PRESSURE		0x30U
@@ -131,6 +140,26 @@ struct hid_report_description {
 	uint8_t touch_fingers;
 };
 
+/*
+ * One report that has feature items: its identifier and its length in bits
+ * so far (after its identifier byte).  It lives in its layout.
+ */
+struct hid_feature_report {
+	uint8_t id;
+	uint32_t bit_count;
+};
+
+/*
+ * One field of a feature report that a driver sets or reads: its usage,
+ * its report and where it is in that report.  It lives in its layout.
+ */
+struct hid_feature_field {
+	uint32_t usage;
+	uint8_t report_id;
+	uint8_t bit_size;
+	uint32_t bit_offset;
+};
+
 struct hid_report_layout {
 	uint8_t descriptor[HID_REPORT_DESCRIPTOR_SIZE_MAX];
 	size_t descriptor_size;
@@ -161,6 +190,18 @@ struct hid_report_layout {
 	uint8_t touch_scan_present;
 	int32_t touch_scan_maximum;
 	uint32_t touch_scan_unit_ns;
+	/* Whether the fingers are a touch pad's, and how many buttons the pad reports (ws159-p003). */
+	uint8_t touch_pad;
+	uint8_t touch_buttons;
+	/*
+	 * The feature reports (ws159-p003): the length in bits of each report
+	 * that has a feature item, and the fields of the Precision Touchpad's
+	 * usages that a driver sets or reads (hid_feature_usage()).
+	 */
+	struct hid_feature_report feature_reports[HID_REPORT_ID_COUNT_MAX];
+	size_t feature_report_count;
+	struct hid_feature_field feature_fields[HID_FEATURE_FIELDS_MAX];
+	size_t feature_field_count;
 };
 
 struct hid_global_state {
@@ -234,6 +275,10 @@ static int32_t unit_exponent_value(uint32_t raw);
 static int32_t axis_resolution(const struct hid_global_state *global, int32_t logical_minimum, int32_t logical_maximum);
 static void set_axis_resolution(struct hid_report_layout *layout, uint16_t code, int32_t resolution);
 static int parser_in_touch(const struct hid_parser *parser);
+static int parser_in_touch_pad(const struct hid_parser *parser);
+static int parse_feature(struct hid_parser *parser, uint32_t flags);
+static int hid_feature_usage(uint32_t usage);
+static struct hid_feature_report *feature_report(struct hid_report_layout *layout, uint8_t id);
 static unsigned touch_item(uint32_t usage);
 static int add_touch_field(struct hid_parser *parser, struct hid_report_description *report, uint32_t bit_offset, uint32_t usage, int32_t logical_maximum);
 static void touch_axis(const struct hid_global_state *global, int32_t logical_maximum, struct input_absinfo *info);
@@ -1418,10 +1463,16 @@ parse_main(
 			close_collection(parser);
 		break;
 	case HID_MAIN_OUTPUT:
-	case HID_MAIN_FEATURE:
-		/* Output and feature layouts are deliberately outside v1. */
+		/* Output layouts are deliberately outside v1. */
 		if (size == 0U)
 			error = EINVAL;
+		break;
+	case HID_MAIN_FEATURE:
+		/* A feature item: the Precision Touchpad's fields are kept (ws159-p003). */
+		if (size == 0U)
+			error = EINVAL;
+		else
+			error = parse_feature(parser, item_unsigned(data, size));
 		break;
 	default:
 		error = EOPNOTSUPP;
@@ -2142,8 +2193,57 @@ drv_hid_report_layout_get_touch(
 	result->scan_time_maximum = layout->touch_scan_maximum;
 	result->scan_time_unit_ns = layout->touch_scan_unit_ns;
 
+	/* And whether it is a touch pad, with how many buttons. */
+	result->pad = layout->touch_pad;
+	result->buttons = layout->touch_buttons;
+
 	/* Succeeded: the layout has a touch screen. */
 	return 0;
+}
+
+/*
+ * Finds where a feature report field of a Precision Touchpad usage
+ * (HID_REPORT_USAGE_*) is, and how long its report's data is.
+ */
+int
+drv_hid_report_layout_get_feature(
+	const struct hid_report_layout *layout,
+	uint32_t usage,
+	struct hid_report_feature_info *result)
+{
+	const struct hid_feature_field *field;
+	size_t index;
+	size_t report;
+
+	/* Refuses a missing layout or result. */
+	if (layout == NULL || result == NULL)
+		return EINVAL;
+
+	/* Looks for the usage among the kept fields. */
+	for (index = 0; index < layout->feature_field_count; index++) {
+		/* A field of another usage is not it. */
+		field = &layout->feature_fields[index];
+		if (field->usage != usage)
+			continue;
+
+		/* The field's place. */
+		result->report_id = field->report_id;
+		result->bit_offset = field->bit_offset;
+		result->bit_size = field->bit_size;
+
+		/* Its report's data, in whole bytes. */
+		result->data_size = 0;
+		for (report = 0; report < layout->feature_report_count; report++) {
+			if (layout->feature_reports[report].id == field->report_id)
+				result->data_size = (layout->feature_reports[report].bit_count + 7U) / 8U;
+		}
+
+		/* Succeeded: the field is found. */
+		return 0;
+	}
+
+	/* The descriptor has no such feature. */
+	return ENOENT;
 }
 
 /* Takes one field's bits out of a report. */
@@ -2687,9 +2787,31 @@ parser_in_touch(
 		/* A Touch Screen collection holds the fingers. */
 		if (parser->collection_usages[depth] == HID_USAGE_TOUCH_SCREEN)
 			return 1;
+
+		/* So does a Touch Pad collection (ws159-p003). */
+		if (parser->collection_usages[depth] == HID_USAGE_TOUCH_PAD)
+			return 1;
 	}
 
 	/* No touch screen is open. */
+	return 0;
+}
+
+/* Asks whether a Touch Pad application collection is open (ws159-p003). */
+static int
+parser_in_touch_pad(
+	const struct hid_parser *parser)
+{
+	size_t depth;
+
+	/* Looks for the touch pad among the open collections. */
+	for (depth = 0; depth < parser->collection_depth; depth++) {
+		/* A Touch Pad collection's fingers and buttons are a pad's. */
+		if (parser->collection_usages[depth] == HID_USAGE_TOUCH_PAD)
+			return 1;
+	}
+
+	/* No touch pad is open. */
 	return 0;
 }
 
@@ -2716,6 +2838,13 @@ touch_item(
 			return HID_TOUCH_ITEM_X;
 		if (value == HID_USAGE_Y)
 			return HID_TOUCH_ITEM_Y;
+		return 0;
+	}
+
+	/* A touch pad's buttons 1 to 3 are Button page usages (ws159-p003). */
+	if (page == HID_USAGE_PAGE_BUTTON) {
+		if (value >= 1U && value <= HID_TOUCH_BUTTONS_MAX)
+			return TOUCH_ITEM_BUTTON + value - 1U;
 		return 0;
 	}
 
@@ -2757,6 +2886,7 @@ add_touch_field(
 	struct hid_report_layout *layout;
 	unsigned item;
 	uint16_t code;
+	int pad;
 	int error;
 
 	/* Only the usages the touch state machine reads become fields. */
@@ -2765,8 +2895,20 @@ add_touch_field(
 	if (item == 0U)
 		return 0;
 
+	/* A touch screen's fields inside a Touch Pad collection are a pad's (ws159-p003). */
+	pad = parser_in_touch_pad(parser);
+	if (pad)
+		layout->touch_pad = 1;
+
 	/* The Contact Count belongs to the report, outside the fingers. */
-	if (item == TOUCH_ITEM_CONTACT_COUNT) {
+	if (item >= TOUCH_ITEM_BUTTON && item < TOUCH_ITEM_BUTTON + HID_TOUCH_BUTTONS_MAX) {
+		/* A pad's button belongs to the report too, and only a pad has one. */
+		if (parser->finger_depth != 0U || !pad)
+			return 0;
+		code = HID_TOUCH_BUTTON_CODE(item - TOUCH_ITEM_BUTTON);
+		if (item - TOUCH_ITEM_BUTTON + 1U > layout->touch_buttons)
+			layout->touch_buttons = (uint8_t)(item - TOUCH_ITEM_BUTTON + 1U);
+	} else if (item == TOUCH_ITEM_CONTACT_COUNT) {
 		if (parser->finger_depth != 0U)
 			return 0;
 		code = HID_TOUCH_CONTACT_COUNT_CODE;
@@ -2872,4 +3014,126 @@ touch_axis(
 	info->flat = 0;
 	info->resolution = axis_resolution(global, global->logical_minimum,
 					   logical_maximum);
+}
+
+/*
+ * Takes one feature main item (ws159-p003): its fields are laid after the
+ * ones before them in their report, and the fields of the Precision
+ * Touchpad's usages are kept for the driver that sets or reads them.
+ */
+static int
+parse_feature(
+	struct hid_parser *parser,
+	uint32_t flags)
+{
+	struct hid_report_layout *layout;
+	struct hid_feature_report *report;
+	struct hid_feature_field *field;
+	uint32_t count;
+	uint32_t bits;
+	uint32_t index;
+	uint32_t usage;
+	uint32_t bit_offset;
+	int kept;
+	int found;
+
+	/* A feature item without a size or a count is malformed. */
+	layout = parser->layout;
+	if (parser->global.report_size == 0U || parser->global.report_count == 0U)
+		return EINVAL;
+	if (parser->global.report_size > HID_REPORT_BITS_MAX || parser->global.report_count > HID_REPORT_BITS_MAX)
+		return E2BIG;
+
+	/* The report the item belongs to. */
+	report = feature_report(layout, parser->global.report_id);
+	if (report == NULL)
+		return E2BIG;
+
+	/* Refuses a report that grows past what a report may hold. */
+	count = parser->global.report_count;
+	if (count > (HID_REPORT_BITS_MAX - report->bit_count) / parser->global.report_size)
+		return E2BIG;
+	bits = count * parser->global.report_size;
+	bit_offset = report->bit_count;
+
+	/* A constant item is padding: it only moves the next field on. */
+	if ((flags & HID_INPUT_CONSTANT) != 0U) {
+		report->bit_count += bits;
+		return 0;
+	}
+
+	/* Keeps each field of a usage a driver needs. */
+	for (index = 0; index < count; index++) {
+		/* A field without a usage, or of another usage, is not kept. */
+		found = local_usage_at(&parser->local, index, &usage);
+		if (!found)
+			continue;
+		kept = hid_feature_usage(usage);
+		if (!kept)
+			continue;
+
+		/* A layout with no room keeps no more fields. */
+		if (layout->feature_field_count >= HID_FEATURE_FIELDS_MAX)
+			break;
+
+		/* The field: its usage, its report and its place. */
+		field = &layout->feature_fields[layout->feature_field_count];
+		field->usage = usage;
+		field->report_id = parser->global.report_id;
+		field->bit_size = (uint8_t)parser->global.report_size;
+		field->bit_offset = bit_offset + index * parser->global.report_size;
+		layout->feature_field_count++;
+	}
+
+	/* Succeeded: the report is longer by the item. */
+	report->bit_count += bits;
+	return 0;
+}
+
+/* Tells whether a usage is one of the Precision Touchpad's feature usages. */
+static int
+hid_feature_usage(
+	uint32_t usage)
+{
+	/* The usages of HID_REPORT_USAGE_*. */
+	switch (usage) {
+	case HID_REPORT_USAGE_DEVICE_MODE:
+	case HID_REPORT_USAGE_CONTACT_COUNT_MAXIMUM:
+	case HID_REPORT_USAGE_SURFACE_SWITCH:
+	case HID_REPORT_USAGE_BUTTON_SWITCH:
+	case HID_REPORT_USAGE_PAD_TYPE:
+	case HID_REPORT_USAGE_LATENCY_MODE:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/* Finds the feature report of an identifier, adding it when it is new; NULL when the table is full. */
+static struct hid_feature_report *
+feature_report(
+	struct hid_report_layout *layout,
+	uint8_t id)
+{
+	struct hid_feature_report *report;
+	size_t index;
+
+	/* A report already seen. */
+	for (index = 0; index < layout->feature_report_count; index++) {
+		if (layout->feature_reports[index].id == id)
+			return &layout->feature_reports[index];
+	}
+
+	/* No room for another report. */
+	if (layout->feature_report_count >= HID_REPORT_ID_COUNT_MAX)
+		return NULL;
+
+	/* A new report, empty. */
+	report = &layout->feature_reports[layout->feature_report_count];
+	report->id = id;
+	report->bit_count = 0;
+	layout->feature_report_count++;
+
+	/* Succeeded: the report. */
+	return report;
 }
