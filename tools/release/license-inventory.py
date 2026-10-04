@@ -10,7 +10,8 @@ from -- and checks it against tools/release/license-components.json:
   * every selected package is either the project's own (its sources say SPDX Zlib) or a listed component;
   * every non-Zlib SPDX line in the built sources lies under a component's paths;
   * every notice a present component needs is among the files the image installs (and, with --rootfs, on disk);
-  * no component of the image is GPL-family unless it is marked for the user's decision;
+  * no component of the image is GPL-family unless it is marked for the user's decision ("decision", which fails
+    the run until the user decides) or carries the user's decision ("decided" with its "decision" source);
   * with --distfiles, the external packages' archives are searched for GPL text (as audit-licenses.sh does).
 
 It writes the inventory as Markdown (--markdown) and as the plain index the image could carry as
@@ -242,10 +243,12 @@ def main():
 			status = "gap"
 			for notice in missing:
 				problems.append("missing notice of %s: %s" % (component["id"], notice))
-		if GPL_LICENSE.search(component["license"]) and component.get("status") != "decision":
+		if GPL_LICENSE.search(component["license"]) and component.get("status") not in ("decision", "decided"):
 			problems.append("GPL-family component without a decision: %s" % component["id"])
 		if component.get("status") == "decision":
 			problems.append("decision pending: %s (%s)" % (component["id"], component["license"]))
+		if component.get("status") == "decided" and not component.get("decision"):
+			problems.append("decided without the decision's source: %s" % component["id"])
 		rows.append((component, version, status, missing))
 
 	# Notices the image installs that no component names (kept, but listed).
