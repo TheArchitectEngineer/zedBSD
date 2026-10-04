@@ -28,9 +28,11 @@
 #include <poll.h>
 #include <pwd.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
@@ -85,6 +87,7 @@ static int volumed_mount(struct volumed_volume *volume, uid_t uid, gid_t gid);
 static int volumed_eject(struct volumed_volume *volume, char *user, size_t size);
 static void volumed_user(const char *path, char *user, size_t size);
 static void volumed_tidy(struct volumed_volume *volume);
+static void volumed_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static struct volumed_volume *volumed_find(const char *id);
 static uid_t volumed_seat(void);
 static void volumed_send(struct volumed_client *client, const char *line);
@@ -121,8 +124,9 @@ main(
 	int events;
 	int ready;
 
-	/* A client that goes away must not end volumed. */
+	/* A client that goes away must not end volumed; what it does goes to the system's log. */
 	(void)signal(SIGPIPE, SIG_IGN);
+	openlog("volumed", LOG_PID, LOG_DAEMON);
 
 	/* The login screen's account. */
 	greeter = getpwnam(VOLUMED_GREETER);
@@ -136,19 +140,19 @@ main(
 	/* The disks' events first, so a disk inserted during the first scan is not missed. */
 	events = volumed_subscribe();
 	if (events < 0)
-		fprintf(stderr, "volumed: /dev/system events unavailable (%s); disks are looked at only at start\n", strerror(errno));
+		volumed_log("volumed: /dev/system events unavailable (%s); disks are looked at only at start\n", strerror(errno));
 
 	/* The folder volumes are mounted under, and the socket. */
 	(void)mkdir(VOLUMED_MEDIA, 0755);
 	listener = volumed_listen();
 	if (listener < 0) {
-		fprintf(stderr, "volumed: %s: %s\n", VOLUMED_SOCKET, strerror(errno));
+		volumed_log("volumed: %s: %s\n", VOLUMED_SOCKET, strerror(errno));
 		return 1;
 	}
 
 	/* The volumes there are now. */
 	volumed_scan();
-	fprintf(stderr, "VOLUMED READY volumes=%u\n", volumed_volume_count);
+	volumed_log("VOLUMED READY volumes=%u\n", volumed_volume_count);
 
 	/* Events, clients and the settled scans. */
 	due = 0U;
@@ -291,7 +295,7 @@ volumed_events(
 			    records[index].class_bit != KERN_SYSTEM_EVENT_USB &&
 			    records[index].class_bit != KERN_SYSTEM_EVENT_OVERFLOW)
 				continue;
-			fprintf(stderr, "VOLUMED EVENT class=0x%x subject=%s action=%u\n", records[index].class_bit, records[index].subject, records[index].action);
+			volumed_log("VOLUMED EVENT class=0x%x subject=%s action=%u\n", records[index].class_bit, records[index].subject, records[index].action);
 			*due = volumed_now_ms() + VOLUMED_SETTLE_MS;
 		}
 	}
@@ -480,7 +484,7 @@ volumed_merge(
 			volumed_volume_count++;
 			*volume = found[index];
 			volume->fresh = 1U;
-			fprintf(stderr, "VOLUMED ADD id=%s fs=%s label=%s size=%llu\n",
+			volumed_log("VOLUMED ADD id=%s fs=%s label=%s size=%llu\n",
 			    volume->id, volume->fs, volume->label, (unsigned long long)volume->bytes);
 			volumed_broadcast_volume(volume);
 			changed = 1U;
@@ -501,7 +505,7 @@ volumed_merge(
 		}
 
 		/* Tidied, told and taken off the list. */
-		fprintf(stderr, "VOLUMED REMOVE id=%s forced=%u\n", volume->id, volume->path[0] != '\0');
+		volumed_log("VOLUMED REMOVE id=%s forced=%u\n", volume->id, volume->path[0] != '\0');
 		volumed_tidy(volume);
 		(void)snprintf(line, sizeof(line), "GONE id=%s", volume->id);
 		volumed_broadcast(line);
@@ -721,14 +725,14 @@ volumed_mount(
 	if (error != 0) {
 		error = errno;
 		(void)rmdir(path);
-		fprintf(stderr, "VOLUMED MOUNT id=%s path=%s uid=%u error=%d\n", volume->id, path, (unsigned)uid, error);
+		volumed_log("VOLUMED MOUNT id=%s path=%s uid=%u error=%d\n", volume->id, path, (unsigned)uid, error);
 		return error;
 	}
 
 	/* Mounted: told to the clients. */
 	(void)snprintf(volume->path, sizeof(volume->path), "%s", path);
 	volume->fresh = 0U;
-	fprintf(stderr, "VOLUMED MOUNT id=%s path=%s uid=%u error=0\n", volume->id, path, (unsigned)uid);
+	volumed_log("VOLUMED MOUNT id=%s path=%s uid=%u error=0\n", volume->id, path, (unsigned)uid);
 	volumed_broadcast_volume(volume);
 	volumed_broadcast("DONE");
 
@@ -752,7 +756,7 @@ volumed_eject(
 
 	/* Not mounted: nothing holds it, and it may be taken out. */
 	if (volume->path[0] == '\0') {
-		fprintf(stderr, "VOLUMED EJECT id=%s error=0\n", volume->id);
+		volumed_log("VOLUMED EJECT id=%s error=0\n", volume->id);
 		return 0;
 	}
 
@@ -762,14 +766,14 @@ volumed_eject(
 		error = errno;
 		if (error == EBUSY)
 			volumed_user(volume->path, user, size);
-		fprintf(stderr, "VOLUMED EJECT id=%s error=%d user=%s\n", volume->id, error, user);
+		volumed_log("VOLUMED EJECT id=%s error=%d user=%s\n", volume->id, error, user);
 		return error;
 	}
 
 	/* Unmounted: the folder goes, and the clients are told. */
 	(void)rmdir(volume->path);
 	volume->path[0] = '\0';
-	fprintf(stderr, "VOLUMED EJECT id=%s error=0\n", volume->id);
+	volumed_log("VOLUMED EJECT id=%s error=0\n", volume->id);
 	volumed_broadcast_volume(volume);
 	volumed_broadcast("DONE");
 
@@ -835,11 +839,37 @@ volumed_tidy(
 	/* By force: the disk is gone.  A failure is told, for the folder then stays. */
 	result = unmount(volume->path, MNT_FORCE);
 	if (result != 0)
-		fprintf(stderr, "VOLUMED TIDY path=%s unmount=%d\n", volume->path, errno);
+		volumed_log("VOLUMED TIDY path=%s unmount=%d\n", volume->path, errno);
 	result = rmdir(volume->path);
 	if (result != 0)
-		fprintf(stderr, "VOLUMED TIDY path=%s rmdir=%d\n", volume->path, errno);
+		volumed_log("VOLUMED TIDY path=%s rmdir=%d\n", volume->path, errno);
 	volume->path[0] = '\0';
+}
+
+/*
+ * Writes one line of what volumed does to the system's log (/var/log/messages)
+ * and to its standard error.
+ */
+static void
+volumed_log(
+	const char *format,
+	...)
+{
+	char line[512];
+	va_list arguments;
+	size_t length;
+
+	/* The line, without its newline. */
+	va_start(arguments, format);
+	(void)vsnprintf(line, sizeof(line), format, arguments);
+	va_end(arguments);
+	length = strlen(line);
+	if (length > 0U && line[length - 1U] == '\n')
+		line[length - 1U] = '\0';
+
+	/* Both places. */
+	syslog(LOG_NOTICE, "%s", line);
+	fprintf(stderr, "%s\n", line);
 }
 
 /* Finds a known volume by its ID. */

@@ -78,6 +78,16 @@ static struct input_device *keyboard_input;
 static struct input_capability keyboard_capabilities[256];
 static size_t keyboard_capability_count;
 static int keyboard_extended;
+
+/*
+ * The keys held down, one bit per evdev code, kept by the interrupt under
+ * controller_lock.  The keyboard's typematic sends a held key's make code
+ * again and again; each one after the first is published as a repeat
+ * (value 2, as evdev does), not as a new press, so the compositor and the
+ * applications repeat at the user's rate (BUG-191) and Caps Lock does not
+ * toggle while it is held.
+ */
+static uint8_t keyboard_down[(KEY_MAX + 1U + 7U) / 8U];
 static uint8_t packet[4];
 static unsigned packet_index;
 
@@ -1092,8 +1102,10 @@ keyboard_interrupt(
 	uint8_t status;
 	uint8_t value;
 	uint16_t code;
+	uint8_t bit;
 	int pressed;
 	int publish;
+	int held;
 
 	(void)interrupt;
 	(void)argument;
@@ -1133,6 +1145,18 @@ keyboard_interrupt(
 	 */
 	kern_irq_send_eoi(acknowledge);
 
+	/* A make code of a key already down is the typematic's repeat. */
+	if (publish && code <= KEY_MAX) {
+		bit = (uint8_t)(1U << (code % 8U));
+		held = (keyboard_down[code / 8U] & bit) != 0;
+		if (pressed == 0)
+			keyboard_down[code / 8U] &= (uint8_t)~bit;
+		else
+			keyboard_down[code / 8U] |= bit;
+		if (pressed != 0 && held)
+			pressed = 2;
+	}
+
 	/* Publishes the decoded transition. */
 	if (publish && keyboard_input != NULL) {
 		drv_input_device_emit(keyboard_input, EV_KEY, code, pressed);
@@ -1162,6 +1186,7 @@ drv_pcat_ps2_8042_init(
 		.open = mouse_input_open,
 		.close = mouse_input_close,
 	};
+	size_t index;
 	int error;
 
 	/* Starts every lock and counter out empty. */
@@ -1190,8 +1215,10 @@ drv_pcat_ps2_8042_init(
 		return error;
 	}
 
-	/* Publishes the keyboard channel of the same controller. */
+	/* Publishes the keyboard channel of the same controller, no key down. */
 	keyboard_extended = 0;
+	for (index = 0; index < sizeof(keyboard_down); index++)
+		keyboard_down[index] = 0;
 	keyboard_build_capabilities();
 	keyboard_info.capability_count = keyboard_capability_count;
 	kern_irq_mask(PS2_KEYBOARD_IRQ);

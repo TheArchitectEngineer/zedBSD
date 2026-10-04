@@ -106,7 +106,8 @@ main(void)
 	(void)snprintf(app.network.key.text, sizeof(app.network.key.text), "%s", "correct horse");
 	app.network.key.length = strlen(app.network.key.text);
 	(void)snprintf(app.network.key_ssid, sizeof(app.network.key_ssid), "%s", "Neighbor 5G");
-	se_network_join_key(&app, "Neighbor 5G", app.network.key.text);
+	/* The form's own name, as the page passes it (T1-150: it was wiped before it was sent). */
+	se_network_join_key(&app, app.network.key_ssid, app.network.key.text);
 	slot_expect("3 save-key waits", app.network.pending_request == SE_NETWORK_SAVE_KEY);
 	slot_expect("3 joining said", strcmp(app.network.message, "Connecting to Neighbor 5G...") == 0);
 	slot_finish(&app, 0);

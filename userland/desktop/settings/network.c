@@ -358,6 +358,7 @@ se_network_join_key(
 	const char *key)
 {
 	struct se_network *network;
+	char name[KL_NETWORK_SSID_MAX];
 	size_t length;
 
 	/* A key of a WPA key's length (the compositor checks it too). */
@@ -367,6 +368,10 @@ se_network_join_key(
 		network_message(app, 1, "The key of %s must be 8 to 63 characters.", ssid);
 		return;
 	}
+
+	/* The name is copied first: the form's own name and key (which the caller may pass) are wiped below (T1-150). */
+	(void)snprintf(name, sizeof(name), "%s", ssid);
+	ssid = name;
 
 	/*
 	 * The key goes from the form to the join (BUG-186): the form closes as

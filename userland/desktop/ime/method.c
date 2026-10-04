@@ -196,9 +196,11 @@ program_repeat_due(
 	if (now_ms < program->repeat.next_ms)
 		return;
 
-	/* The next one after the rate's interval. */
+	/* The next one an interval after this one was due (BUG-172), from now when the loop fell a whole interval behind. */
 	interval = 1000U / (uint32_t)program->repeat.rate;
-	program->repeat.next_ms = now_ms + interval;
+	program->repeat.next_ms += interval;
+	if (program->repeat.next_ms <= now_ms)
+		program->repeat.next_ms = now_ms + interval;
 	program->repeat.time += interval;
 
 	/* The press again. */

@@ -175,6 +175,7 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 - 直し: `src/drivers/fs/fat.c` に `fat_prepare_unmount_revoked`（media が失われた FAT の mount であることだけを確かめ、状態を変えず I/O をしない）と `fat_commit_unmount_revoked`（mount を read-only にし、FSInfo・遅らせた cluster の解放・書き出し待ちの close を捨てる。I/O をしない）を足した。volumed の `volumed_tidy` は unmount・rmdir の失敗を `VOLUMED TIDY path=… unmount=<errno>` / `rmdir=<errno>` と書くようにした。`p004-guest.sh` の step 5 は guest の `dmesg` の `unmount: /media…` の行も記録する（判定には使わない）。
 - 確認: amd64 vmunix（warning 0、kernel include check PASS）、volumed の build、style-check（volumed 0、fat.c は新しい違反 0）、`run-host-volumed.sh`・`run-host-storage-removal.sh` PASS。
 - 未実施: QEMU の再試験（T1 に依頼）。
+- 追記（2026-10-05 q726、Q1 の許可）: volumed の行は stderr だけで `/var/log/messages` に届かず、T1 の `volumed-log.txt` が空だった。`volumed_log`（`openlog("volumed", LOG_PID, LOG_DAEMON)`・`syslog(LOG_NOTICE)` と stderr の両方）に替えた。build（warning 0）、style-check 0。
 
 ## Q1 の判定（2026-10-05）
 
