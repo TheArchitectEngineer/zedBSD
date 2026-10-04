@@ -27,7 +27,7 @@
 #include <uapi/input.h>
 
 #include <drivers/generic/input-inject.h>
-#include <drivers/usb/hid-touch.h>
+#include <drivers/generic/hid-touch.h>
 
 #include "kern/cdev.h"
 #include "kern/clock.h"

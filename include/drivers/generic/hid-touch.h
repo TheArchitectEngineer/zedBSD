@@ -13,7 +13,7 @@
 #ifndef KERN_DRIVERS_HID_TOUCH_H
 #define KERN_DRIVERS_HID_TOUCH_H
 
-#include <drivers/usb/hid-report.h>
+#include <drivers/generic/hid-report.h>
 #include <kern/input-capability.h>
 
 #include <stddef.h>

@@ -21,8 +21,8 @@
  * are compiled freestanding, as the kernel compiles them.
  */
 
-#include <drivers/usb/hid-digitizer.h>
-#include <drivers/usb/hid-touch.h>
+#include <drivers/generic/hid-digitizer.h>
+#include <drivers/generic/hid-touch.h>
 #include <uapi/input.h>
 
 #include <stdarg.h>

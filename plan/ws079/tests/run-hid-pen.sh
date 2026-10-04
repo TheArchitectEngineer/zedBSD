@@ -13,10 +13,10 @@ cc=${CC:-clang}
 kflags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -ffreestanding -nostdlibinc \
 	-fno-builtin -ffunction-sections -fdata-sections -D__ZEDBSD__ \
 	-DKERN_USER_ABI_LP64 -I $root/include -I $root/src"
-$cc $kflags -c "$root/src/drivers/usb/usb-hid.c" -o "$out/usb-hid.o"
-$cc $kflags -c "$root/src/drivers/usb/hid-digitizer.c" -o "$out/hid-digitizer.o"
+$cc $kflags -c "$root/src/drivers/generic/hid-report.c" -o "$out/hid-report.o"
+$cc $kflags -c "$root/src/drivers/generic/hid-digitizer.c" -o "$out/hid-digitizer.o"
 $cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I "$root/include" \
 	-c "$root/plan/ws079/tests/host-hid-pen.c" -o "$out/host-hid-pen.o"
-$cc -Wl,--gc-sections "$out/host-hid-pen.o" "$out/usb-hid.o" \
+$cc -Wl,--gc-sections "$out/host-hid-pen.o" "$out/hid-report.o" \
 	"$out/hid-digitizer.o" -o "$out/host-hid-pen"
 "$out/host-hid-pen"

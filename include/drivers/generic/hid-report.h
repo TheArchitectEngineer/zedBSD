@@ -27,7 +27,7 @@
  * The value type of a finger field of a touch screen (Tip Switch,
  * Confidence, Contact Identifier, X, Y) and of its Contact Count.  Like a pen
  * switch it lies outside the evdev event types: its code names the finger and
- * the item (include/drivers/usb/hid-touch.h), every such field is reported
+ * the item (include/drivers/generic/hid-touch.h), every such field is reported
  * each time, and only the touch state machine turns the values into
  * multitouch events.
  */

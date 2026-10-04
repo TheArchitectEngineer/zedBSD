@@ -21,8 +21,8 @@
  * allocator and memory functions.
  */
 
-#include <drivers/usb/hid-digitizer.h>
-#include <drivers/usb/hid-touch.h>
+#include <drivers/generic/hid-digitizer.h>
+#include <drivers/generic/hid-touch.h>
 #include <uapi/input.h>
 
 #include <stdio.h>

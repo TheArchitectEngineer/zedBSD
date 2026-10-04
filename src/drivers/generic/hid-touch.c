@@ -31,7 +31,7 @@
  * it unchanged.
  */
 
-#include <drivers/usb/hid-touch.h>
+#include <drivers/generic/hid-touch.h>
 #include <uapi/errno.h>
 #include <uapi/input.h>
 
