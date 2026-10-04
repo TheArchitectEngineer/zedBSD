@@ -219,6 +219,7 @@ se_storage_draw(
 	/* None can be read. */
 	if (app->look.volume_count == 0U) {
 		y = look_note(app, canvas, x, top, width, "No disk could be read.");
+		y = se_storage_cards(app, canvas, x, y + LOOK_GAP, width);
 		return y;
 	}
 
@@ -227,8 +228,9 @@ se_storage_draw(
 	for (index = 0; index < app->look.volume_count; index++)
 		y = look_volume(app, canvas, &app->look.volumes[index], x, y, width) + LOOK_GAP;
 
-	/* The edge below the last card. */
-	return y - LOOK_GAP;
+	/* The folders' use and the Trash (ws089-p023), and the edge below them. */
+	y = se_storage_cards(app, canvas, x, y, width);
+	return y;
 }
 
 /*

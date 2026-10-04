@@ -18,6 +18,10 @@ KEILAND_LINUX_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/page-network.c \
 	userland/desktop/settings/page-wired.c \
 	userland/desktop/settings/wired.c \
+	userland/desktop/settings/page-storage.c \
+	userland/desktop/settings/storage.c \
+	userland/desktop/settings/storage-scan.c \
+	userland/desktop/settings/storage-trash.c \
 	userland/desktop/settings/network.c \
 	userland/desktop/settings/search.c \
 	userland/desktop/settings/look.c \

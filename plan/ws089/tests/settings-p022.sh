@@ -1,8 +1,8 @@
 #!/bin/sh
 # ws089-p022: a wired interface's configuration from the user's session, on the Venus guest of the Settings image
 # (build-settings-image.sh) with the real networkd (not the stand-in of settings-wifi-bugs.sh).  A second wired
-# interface is plugged in through QMP (netdev_add user + device_add usb-net) so that the guest's own network, which
-# the test speaks SSH over, is never touched.  /etc/net.conf and /etc/resolv.conf are kept aside and put back.
+# interface is plugged in through QMP (netdev_add user on 10.0.9.0/24 + device_add usb-net) so that the guest's own
+# network, which the test speaks SSH over, is never touched (its DHCP gives an address of its own subnet).  /etc/net.conf and /etc/resolv.conf are kept aside and put back.
 #  1. net lan set (root): the new interface static 10.0.9.20/24 with DNS 10.0.9.53: answered, its address is up,
 #     net.conf names it (address 10.0.9.20, prefix-length 24), resolv.conf names the server, the system log says
 #     "LAN_CONFIGURE interface=IF mode=static ... result=ok".
@@ -14,6 +14,7 @@
 #     networkd (WIRED result interface=IF errno=0) and net.conf says dhcp for it (ethernet-static.png,
 #     ethernet-dhcp.png).
 #  5. Back as it was: net.conf and resolv.conf restored, the interface unplugged.
+# The image must have su (plan/ws089/tests/config-amd64-settings.mk names it since T1-155).
 # PASS: every "ok" line and the last line settings-p022: PASS.
 #   plan/ws089/tests/settings-guest.sh start              (the guest must be up)
 #   plan/ws089/tests/settings-p022.sh [OUTDIR]            (default build/ws089-shots/p022)
@@ -58,7 +59,7 @@ shot() {
 wait_guest
 guest "$stop_all" >/dev/null
 guest 'cp -p /etc/net.conf /tmp/net.conf.kept; cp -p /etc/resolv.conf /tmp/resolv.conf.kept 2>/dev/null; ifconfig -a | sed -n "s/^\\([a-z][a-z0-9]*\\):.*/\\1/p" > /tmp/if.before; echo kept' >/dev/null
-send netdev_add '{"type":"user","id":"lan2"}'
+send netdev_add '{"type":"user","id":"lan2","net":"10.0.9.0/24"}'
 send device_add '{"driver":"usb-net","bus":"xhci.0","netdev":"lan2","id":"lan2dev"}'
 sleep 5
 interface=$(guest 'ifconfig -a | sed -n "s/^\\([a-z][a-z0-9]*\\):.*/\\1/p" > /tmp/if.after; for i in $(cat /tmp/if.after); do grep -qw "$i" /tmp/if.before || echo $i; done' | tail -1)
@@ -96,9 +97,16 @@ guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/settings --timeout-s=600 eth
 find_window
 expect_log /tmp/s.log "NETWORK wired-link name=$interface mode=2 address=10.0.9.21"
 shot ethernet-static.png
-index=$(guest "grep -a 'ZSETTINGS CONTROL index=34[0-9] ' /tmp/s.log | tail -1" | sed -n 's/.*index=\(34[0-9]\) .*/\1/p')
-set -- $(guest "grep -a 'ZSETTINGS CONTROL index=${index:-340} ' /tmp/s.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p') 0 0 0 0
-cx=$((wx + $1 + $3 / 2)); cy=$((wy + $2 + $4 / 2))
+# ue1's card is below ue0's: the page is scrolled until its Use DHCP is in the window (T1-155).
+cy=9999
+for turn in 1 2 3 4; do
+	index=$(guest "grep -a 'ZSETTINGS CONTROL index=34[0-9] ' /tmp/s.log | tail -1" | sed -n 's/.*index=\(34[0-9]\) .*/\1/p')
+	set -- $(guest "grep -a 'ZSETTINGS CONTROL index=${index:-340} ' /tmp/s.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p') 0 0 0 0
+	cx=$((wx + $1 + $3 / 2)); cy=$((wy + $2 + $4 / 2))
+	[ "$2" -gt 0 ] 2>/dev/null && [ "$cy" -lt 760 ] && break
+	pointer move $((wx + 700)) $((wy + 400)) sleep 200 wheel-down wheel-down wheel-down wheel-down wheel-down wheel-down wheel-down wheel-down sleep 1000
+done
+echo "Use DHCP (index ${index:-none}) at $cx,$cy"
 pointer move $((cx - 2)) "$cy" sleep 150 move "$cx" "$cy" sleep 300 down sleep 60 up sleep 3000
 expect_log /tmp/s.log "WIRED result interface=$interface errno=0" 20
 expect_log /tmp/zdesktop.log "ZWL SYSTEM network client=[0-9]+ wired interface=$interface mode=1 error=0"

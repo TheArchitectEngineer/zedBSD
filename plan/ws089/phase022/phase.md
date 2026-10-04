@@ -51,3 +51,11 @@ Queue: q728（P2、2026-10-05）
 - QEMU（T1 に依頼）: `plan/ws089/tests/settings-p022.sh`（QMP で 2 つ目の usb-net を足し、root・network の member・非 member の `net lan set`、不正な入力の拒否、net.conf・resolv.conf・syslog、Settings の Use DHCP が compositor・backend 経由で networkd に届き net.conf が dhcp に、PNG 2 枚）。
 - 未実施: 実機（UAT）、FreeBSD の Keiland の build（Linux の build で stub を確認）。
 - 既知の制限: DHCP に DNS を名前で指定した時、後の dhcpc が resolver を書き換える可能性（dhcpc の DNS の扱いは未確認）。router を指定しない static への変更では、今動いている default route は消さない（net.conf からは自分の subnet のものを消す: 次の起動で揃う）。
+
+## T1-155 の FAIL と直し（2026-10-05、P2）
+
+- `resolv.conf names the server`: networkd は書いたが、直後の有線の worker の `apply_network_preference` が ue0 の lease の resolver で上書きした（実装の不足）。→ networkd が LAN_CONFIGURE で指定された DNS を覚え（`lan_static_dns`）、network preference が lease の resolver を選んだ後にも書く（指定が無い構成で解除）。
+- `a member of the network group may` ほか: Settings の image に `su` が無かった（`sh: su: not found`、試験の前提）。→ `plan/ws089/tests/config-amd64-settings.mk` に `su` を足した。`bad input changed nothing`（.21 を期待）と Settings の `wired-link ... address=10.0.9.21` はこの連鎖。
+- Settings の Use DHCP が届かない: ue1 の IPv4 の card が窓の下（ethernet-static.png で ue0 の card だけ見える）で、click が窓の外だった（試験の誤り）。→ 試験は wheel で頁を送り、Use DHCP（34N）が窓の中に入ってから click する。
+- 加えて: 2 つ目の usb-net の netdev を `net=10.0.9.0/24` にした（Use DHCP の後に ue1 が ue0 と同じ 10.0.2.0/24 を取り SSH を乱さないように）。
+- 確認: networkd の build（warning 0）、style-check の新しい違反 0。QEMU は T1 の再試験（image の作り直しが要る: config に su）。

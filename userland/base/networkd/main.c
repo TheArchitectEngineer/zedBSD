@@ -239,6 +239,14 @@ static int state_changed;
 /* Set when an event has left the wired policy something to do. */
 static int lan_work_due;
 
+/*
+ * The name servers a wired configuration named (ws089-p022, LAN_CONFIGURE):
+ * while there are any they are the resolver's, over a lease's (the
+ * network preference writes them after it chose a lease's).
+ */
+static char lan_static_dns[NETWORKD_LAN_CONFIGURE_DNS_MAX][INET_ADDRSTRLEN];
+static unsigned lan_static_dns_count;
+
 /* An interface an event asked to be taken down, done at the next turn. */
 static char lan_down_pending[IFNAMSIZ];
 
@@ -507,6 +515,7 @@ static int run_command_until(char *const [], unsigned, uint64_t,
 static void clean_diagnostic(char *text);
 static int default_route_exists(void);
 static int write_resolver(char *const addresses[], int count);
+static void lan_static_resolver(void);
 static void handle_lan_configure(int client, struct networkd_request *request, const struct kern_peercred *peer);
 static int lan_configure_target(const struct networkd_request *request, char *reason, size_t capacity);
 static int lan_configure_save(const struct networkd_lan_configure *configure, char *reason, size_t capacity);
@@ -1932,6 +1941,26 @@ apply_network_preference(
 		    managed_wlan.connection.interface);
 	}
 	(void)close(descriptor);
+
+	/* Name servers a wired configuration named stay the resolver's (ws089-p022). */
+	lan_static_resolver();
+}
+
+/* Writes the name servers a wired configuration named, when there are any (ws089-p022). */
+static void
+lan_static_resolver(void)
+{
+	char *servers[NETWORKD_LAN_CONFIGURE_DNS_MAX];
+	unsigned index;
+
+	/* None named: the lease's stay. */
+	if (lan_static_dns_count == 0U)
+		return;
+
+	/* The ones named. */
+	for (index = 0U; index < lan_static_dns_count; index++)
+		servers[index] = lan_static_dns[index];
+	(void)write_resolver(servers, (int)lan_static_dns_count);
 }
 
 /* Installs one recorded default route unless it is already in the table. */
@@ -8751,6 +8780,7 @@ lan_configure_apply(
 {
 	char *arguments[8];
 	char seconds[16];
+	unsigned index;
 	int present;
 	int result;
 	int fixed;
@@ -8807,13 +8837,20 @@ lan_configure_apply(
 			return EIO;
 	}
 
-	/* The name servers named. */
-	if (request->dns_count != 0U) {
-		arguments[0] = request->dns[0];
+	/* The name servers named, kept over the leases' from now on (none named: the leases' again). */
+	lan_static_dns_count = 0U;
+	for (index = 0U; index < request->dns_count && index < NETWORKD_LAN_CONFIGURE_DNS_MAX; index++) {
+		(void)snprintf(lan_static_dns[index], sizeof(lan_static_dns[index]), "%s", request->dns[index]);
+		lan_static_dns_count++;
+	}
+
+	/* Written now. */
+	if (lan_static_dns_count != 0U) {
+		arguments[0] = lan_static_dns[0];
 		arguments[1] = NULL;
-		if (request->dns_count > 1U)
-			arguments[1] = request->dns[1];
-		result = write_resolver(arguments, (int)request->dns_count);
+		if (lan_static_dns_count > 1U)
+			arguments[1] = lan_static_dns[1];
+		result = write_resolver(arguments, (int)lan_static_dns_count);
 		if (result != 0)
 			return EIO;
 	}

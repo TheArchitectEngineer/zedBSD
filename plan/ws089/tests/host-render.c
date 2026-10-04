@@ -236,6 +236,14 @@ main(
 				(void)usleep(10000);
 				se_look_poll(&app, app.now);
 			}
+
+			/* The Storage page's counts (ws089-p023, on threads) are waited for too. */
+			se_storage_poll(&app, app.now);
+			while (se_storage_wait(&app) >= 0) {
+				(void)usleep(10000);
+				app.now += 10U;
+				se_storage_poll(&app, app.now);
+			}
 			se_ui_draw(&app, &canvas);
 			if (app.dirty != 0)
 				se_ui_draw(&app, &canvas);

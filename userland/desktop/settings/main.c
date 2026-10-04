@@ -192,6 +192,7 @@ main(
 
 	/* Everything goes, the network and the sound before the system, then the titlebar, the menus and the glass before the window they belong to. */
 	se_network_close(&main_app);
+	se_storage_close(&main_app);
 	se_sound_close(&main_app);
 	se_system_close(&main_app);
 	se_look_close(&main_app);
@@ -414,6 +415,7 @@ main_loop(
 		se_system_poll(&main_app);
 		se_network_poll(&main_app, now);
 		se_look_poll(&main_app, now);
+		se_storage_poll(&main_app, now);
 		se_sound_poll(&main_app, now);
 		if (main_app.dirty != 0)
 			inputs++;
@@ -552,6 +554,7 @@ main_timeout(
 	int network;
 	int sound;
 	int look;
+	int storage;
 	int limit;
 
 	/* A frame the last one asked for (a scroll it corrected) is drawn at once. */
@@ -573,6 +576,11 @@ main_timeout(
 	look = se_look_wait(&main_app);
 	if (look >= 0 && look < limit)
 		limit = look;
+
+	/* And while a folder or the Trash is counted or emptied (ws089-p023). */
+	storage = se_storage_wait(&main_app);
+	if (storage >= 0 && storage < limit)
+		limit = storage;
 
 	/* No key is held: the limit. */
 	if (main_window.repeat_key == 0U)

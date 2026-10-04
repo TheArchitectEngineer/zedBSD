@@ -2,10 +2,10 @@
 
 # ws089-p023: Settings の Storage の頁: folder の階層ごとの使用量の解析（multi-thread、逐次の更新、Stop）と Trash を空にする
 
-Status: planning
+Status: in-progress（実装済み、T1 待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
-Queue: 未定
+Queue: q728（P2、2026-10-05）
 
 ## ユーザーの要望（2026-10-04 夜、UAT-3 の後、原文）
 
@@ -31,3 +31,17 @@ Queue: 未定
 ## 依存
 
 WS127（Files の Trash の実装）、libkeiland の thread の扱い。
+
+## 設計（2026-10-05、P2）
+
+- **対象**: 利用者の home（`$HOME`）。folder の行の click でその folder を解析し直し（子へ降りる）、「Up」で上へ（home まで）。他の file system に入らない（du -x と同じ、st_dev）、symbolic link を辿らない（AT_SYMLINK_NOFOLLOW・O_NOFOLLOW）、hard link の file は 1 度だけ数える（device・inode の集合）、大きさは disk の上の大きさ（st_blocks × 512、du と同じ）。読めない folder は数えて別に表示。
+- **解析**（`userland/desktop/settings/storage-scan.c`、UI と独立で host で試験）: root の entry を読み、folder ごとに group（最大 46、超えた分は「Other folders」）、root の直下の file は「Files here」。各 folder は共有の job の list に入り、**4 つの worker の thread** が取って読み、file の大きさを group に足し、子の folder を list に戻す。256 entry ごとに合計を足し stop を見る（Stop は 1 秒以内、数えた分は残る）。UI は描く時に view（大きい順の group と合計・状態・generation）を写すだけで、generation が動いた時に最大 200 ms ごとに描き直す。
+- **Trash**（`storage-trash.c`）: Files と同じ freedesktop.org の home の Trash（`$XDG_DATA_HOME/Trash` か `~/.local/share/Trash`）。大きさは `Trash/files` を同じ解析で数える。「Empty Trash」は確認（Empty・Cancel、「Its items are removed for good.」）の後、別の thread で `files/` と `info/` の中を消す（folder は残す、link は消すが link の先は消さない、他の file system には入らない）。終わったら数え直す。Files は Trash の folder を読み直した時に空になる（Files の側の通知は範囲外）。volume ごとの Trash（`$topdir/.Trash-$uid`）は対象外。
+- **OS の境界**: app 自身の機能の file の走査なので app の中（POSIX の openat・fdopendir・fstatat・unlinkat と pthread、Linux・FreeBSD でも同じ）。
+
+## 確認（2026-10-05）
+
+- host: `plan/ws089/tests/run-host-storage-scan.sh` PASS（ASan・UBSan: 合計が GNU `du -sx -B1` と一致、hard link を 1 度、外への link を辿らない、大きい順、読めない folder を別に、30000 file の木を全て数える、すぐの Stop が 1 秒以内（1 ms）で stopped、数えた分が残る）。`run-host-storage-trash.sh` PASS（home の Trash の場所、files/・info/ の中を全て消し folder は残す、link の先の file は残る）。settings-render で Storage の頁（解析の結果・Trash の確認・空にした後）を描いて目視。
+- build（warning 0）: zedBSD の settings、Linux の Keiland（-Werror）。`keiland-os-boundary/check.sh` PASS。style-check: 新しい file は違反 0。
+- QEMU（T1 に依頼）: `plan/ws089/tests/settings-p023.sh`（/root に 3 MB と 4000 file の folder と 2 項目の Trash を作り、Analyze の合計が `du -skx /root` と一致、folder の行で降りる、Analyze と即 Stop、Trash の大きさ・Empty の確認・空に、PNG 2 枚）。
+- 未実施: 実機（UAT）。
