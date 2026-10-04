@@ -839,6 +839,28 @@ zwl_spawn(
 }
 
 /*
+ * Opens App Home, or closes it when it shows or is opening (the Windows
+ * key pressed alone, ws142-p002, seat.c).
+ */
+void
+zwl_home_toggle(
+	struct zwl_server *server,
+	const char *via)
+{
+	float progress;
+
+	/* Showing or opening: it closes, the way its launcher closes it. */
+	progress = zwl_home_progress(server);
+	if (progress > 0.0f && server->home_to > 0.0f) {
+		zwl_home_dismiss(server, via);
+		return;
+	}
+
+	/* Otherwise it opens from where it is. */
+	home_open(server, progress, via);
+}
+
+/*
  * Closes App Home when it shows or is opening, the way its launcher does
  * (for the top-right corner's swipe, which brings Notes over Home).
  */

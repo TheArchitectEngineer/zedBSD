@@ -67,6 +67,11 @@
 /* The L key and the Super modifier's bit (ws035-p102: Super+L locks). */
 #define SEAT_KEY_L			38U
 #define SEAT_MODIFIER_SUPER		0x40U
+
+/* The modifiers that keep a Super press from being a tap of its own: Shift, Control and Alt. */
+#define SEAT_MODIFIER_SHIFT		0x01U
+#define SEAT_MODIFIER_CONTROL		0x04U
+#define SEAT_MODIFIER_ALT		0x08U
 #define SEAT_NAME_VERSION		2U
 
 /* Protocol enumeration values used on the wire. */
@@ -595,6 +600,10 @@ zwl_seat_button(
 {
 	int taken;
 
+	/* A button while the Windows key is down: no tap of its own (ws142-p002). */
+	if (state != 0U)
+		zwl_super_tap_cancel(&server->super_tap);
+
 	/* zdesktop's own grabs, screens and title bars take the button first. */
 	taken = zwl_seat_button_shell(server, time, button, state);
 	if (taken)
@@ -777,6 +786,9 @@ zwl_seat_axis(
 	uint32_t word;
 	int taken;
 
+	/* The wheel while the Windows key is down: no tap of its own (ws142-p002). */
+	zwl_super_tap_cancel(&server->super_tap);
+
 	/* The wheel does nothing during a drag and drop, nor on the lock screen. */
 	server->lock_input_ms = zwl_milliseconds();
 	if (server->dnd_active || server->locked)
@@ -894,6 +906,8 @@ zwl_seat_key(
 	uint32_t key,
 	uint32_t state)
 {
+	uint32_t others;
+	int tapped;
 	int taken;
 
 	/*
@@ -910,6 +924,19 @@ zwl_seat_key(
 	if (server->dnd_active && key == SEAT_KEY_ESC && state != 0U) {
 		zwl_data_drag_cancel(server);
 		return;
+	}
+
+	/*
+	 * The Windows key pressed alone opens or closes App Home (ws142-p002),
+	 * not on the lock or the login screen; every key is followed (so Super+L
+	 * is no tap), and the key still goes on below (Home takes the release
+	 * while it shows).
+	 */
+	others = server->modifiers & (SEAT_MODIFIER_SHIFT | SEAT_MODIFIER_CONTROL | SEAT_MODIFIER_ALT);
+	tapped = zwl_super_tap_key(&server->super_tap, key, state, others, zwl_milliseconds());
+	if (tapped && server->glass && !server->locked && !server->greeter) {
+		printf("ZWL SUPER home\n");
+		zwl_home_toggle(server, "super");
 	}
 
 	/* The lock screen takes every key; Super+L locks a session (ws035-p102). */

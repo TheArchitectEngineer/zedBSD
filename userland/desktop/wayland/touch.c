@@ -806,6 +806,9 @@ contact_begin(
 	int taken;
 	int inside;
 
+	/* A touch while the Windows key is down: no tap of its own (ws142-p002). */
+	zwl_super_tap_cancel(&server->super_tap);
+
 	/* Where the finger touched. */
 	contact = &screen->contacts[slot];
 	x = contact->place_x / 256;
