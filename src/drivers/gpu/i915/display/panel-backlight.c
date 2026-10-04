@@ -470,6 +470,44 @@ drv_i915_lcd_modeset_brightness(
 }
 
 /*
+ * Reports the brightness of the selected screen as a level of user_max.
+ *
+ * The hardware level scaled to the range, as the Linux backlight device
+ * reports it (ws113-p013, the backlight device's GETSTATUS).
+ * I915_LCD_MS_NOT_PREPARED when the screen is not running, is retained,
+ * or the range is empty.
+ */
+int
+drv_i915_lcd_modeset_brightness_get(
+	struct i915_display *display,
+	uint32_t user_max,
+	uint32_t *user_level)
+{
+	struct i915_lcd_modeset *ms;
+	int retained;
+
+	/* Finds the selected screen. */
+	ms = i915_selected_screen(display);
+
+	/* Only a prepared, running screen that is not retained has a brightness. */
+	if (!ms->prepared)
+		return I915_LCD_MS_NOT_PREPARED;
+	if (!ms->crtc.active)
+		return I915_LCD_MS_NOT_PREPARED;
+	retained = drv_i915_lcd_modeset_retained(display);
+	if (retained)
+		return I915_LCD_MS_NOT_PREPARED;
+
+	/* The range must not be empty. */
+	if (user_max == 0u)
+		return I915_LCD_MS_NOT_PREPARED;
+
+	/* Succeeded: the hardware level in the caller's range. */
+	*user_level = drv_i915_lcd_ms_user_level(ms, user_max);
+	return I915_LCD_MS_OK;
+}
+
+/*
  * Serves an OpRegion (ASLE) brightness request on the selected screen.
  *
  * The Linux intel_backlight_set_acpi(): hw level = clamp_user_to_hw(level,

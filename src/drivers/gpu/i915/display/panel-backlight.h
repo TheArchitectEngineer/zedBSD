@@ -30,6 +30,7 @@ struct i915_display;
  */
 
 int drv_i915_lcd_modeset_brightness(struct i915_display *display, uint32_t user_level, uint32_t user_max);
+int drv_i915_lcd_modeset_brightness_get(struct i915_display *display, uint32_t user_max, uint32_t *user_level);
 int drv_i915_lcd_modeset_backlight_acpi(struct i915_display *display, uint32_t level, uint32_t max);
 int drv_i915_lcd_modeset_backlight(struct i915_display *display, int on);
 

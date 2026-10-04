@@ -13,8 +13,8 @@
  * /dev is synthesized from the character device registry, the disk
  * registry, and the pseudo-terminal table.  Character device inodes are
  * ephemeral and own a reference on the device generation they name, so a
- * re-registered device gets a fresh inode.  The fixed shm, pts, and
- * input directories are recreated whenever they are evicted.  Block
+ * re-registered device gets a fresh inode.  The fixed shm, pts, input
+ * and backlight directories are recreated whenever they are evicted.  Block
  * device files do sector-granular I/O through a bounce buffer under a
  * backing mutation guard.
  */
@@ -53,6 +53,7 @@
 #define DEVFS_PTS_INO 3U
 #define DEVFS_INPUT_INO 4U
 #define DEVFS_FD_INO 5U
+#define DEVFS_BACKLIGHT_INO 6U
 #define DEVFS_PTS_INO_BASE 0x200000000ULL
 #define DEVFS_CHAR_INO_BASE 0x300000000ULL
 #define DEVFS_FD_INO_BASE 0x400000000ULL
@@ -130,6 +131,8 @@ static struct spinlock devfs_attributes_lock = {
 static DEVFS_HIGH int component_equal(const struct componentname *component, const char *text);
 static DEVFS_HIGH int component_copy(const struct componentname *component, char *name, size_t capacity);
 static DEVFS_HIGH int event_name(const char *name);
+static DEVFS_HIGH int backlight_name(const char *name);
+static DEVFS_HIGH ino_t cdev_directory(const char *name);
 static DEVFS_HIGH int devfs_cdev_inode(struct inode *directory, struct cdev *device, struct inode **result);
 static DEVFS_HIGH void devfs_cdev_attributes_apply(struct inode *inode);
 static DEVFS_HIGH int devfs_cdev_setattr(struct inode *inode, const struct stat *attributes, unsigned mask);
@@ -137,7 +140,7 @@ static DEVFS_HIGH int devfs_fixed_inode(struct inode *directory, ino_t number, s
 static DEVFS_HIGH int devfs_lookup(struct inode *directory, const struct componentname *component, struct inode **result);
 static DEVFS_HIGH int devfs_getattr(struct inode *inode, struct stat *status);
 static DEVFS_HIGH int dir_name_exists(const struct devfs_dir_state *state, const char *name);
-static DEVFS_HIGH void devfs_directory_add_cdevs(struct devfs_dir_state *state, int input_directory, struct cdev **snapshot, unsigned count);
+static DEVFS_HIGH void devfs_directory_add_cdevs(struct devfs_dir_state *state, ino_t directory, struct cdev **snapshot, unsigned count);
 static void devfs_cdev_snapshot_release(struct cdev **snapshot, unsigned count);
 static DEVFS_HIGH int devfs_dir_entry_live(const struct devfs_dir_entry *entry);
 static DEVFS_HIGH int devfs_dir_open(struct file *file);
@@ -382,6 +385,44 @@ event_name(
 	return 1;
 }
 
+/* Identifies names owned by the /dev/backlight namespace (ws113-p013). */
+static DEVFS_HIGH int
+backlight_name(
+	const char *name)
+{
+	int comparison;
+
+	/* Backlight nodes are named backlight<n>, as on FreeBSD. */
+	comparison = kern_strncmp(name, "backlight", 9);
+	if (comparison != 0)
+		return 0;
+
+	/* Succeeded: the name is a backlight's. */
+	return 1;
+}
+
+/* Reports the directory a character device's name lives in: the root (1) or a fixed one. */
+static DEVFS_HIGH ino_t
+cdev_directory(
+	const char *name)
+{
+	int input;
+	int backlight;
+
+	/* The event devices live in /dev/input. */
+	input = event_name(name);
+	if (input)
+		return DEVFS_INPUT_INO;
+
+	/* The backlight devices live in /dev/backlight. */
+	backlight = backlight_name(name);
+	if (backlight)
+		return DEVFS_BACKLIGHT_INO;
+
+	/* Every other device is in the root. */
+	return 1;
+}
+
 /* Creates one ephemeral inode which owns a cdev-generation reference. */
 static DEVFS_HIGH int
 devfs_cdev_inode(
@@ -392,6 +433,7 @@ devfs_cdev_inode(
 	struct inode *inode;
 	uint64_t number;
 	mode_t mode;
+	int backlight;
 
 	/* Creates a generation-unique inode and gives it one cdev reference. */
 	number = cdev_generation(device);
@@ -401,9 +443,15 @@ devfs_cdev_inode(
 	if (inode == NULL)
 		return ENOSPC;
 
-	/* Input event nodes are group-readable only. */
+	/*
+	 * Input event nodes are group-readable only; a backlight is read by
+	 * anyone and changed by its owner (the seat's user, given by sessiond).
+	 */
+	backlight = backlight_name(device->name);
 	if (event_name(device->name))
 		mode = 0640U;
+	else if (backlight)
+		mode = 0644U;
 	else if (kern_strcmp(device->name, "input-inject") == 0)
 		mode = 0600U;
 	else
@@ -566,6 +614,7 @@ devfs_fixed_inode(
 	    (number != DEVFS_SHM_INO &&
 	     number != DEVFS_PTS_INO &&
 	     number != DEVFS_INPUT_INO &&
+	     number != DEVFS_BACKLIGHT_INO &&
 	     number != DEVFS_FD_INO))
 		return EINVAL;
 
@@ -763,6 +812,8 @@ devfs_lookup(
 	unsigned i;
 	uint64_t number;
 	unsigned char digit;
+	ino_t owner;
+	int matched;
 	int error;
 
 	/* Dot stays put; dot-dot in a fixed directory goes to the root. */
@@ -771,6 +822,7 @@ devfs_lookup(
 		    (directory->i_ino == DEVFS_SHM_INO ||
 		     directory->i_ino == DEVFS_PTS_INO ||
 		     directory->i_ino == DEVFS_INPUT_INO ||
+		     directory->i_ino == DEVFS_BACKLIGHT_INO ||
 		     directory->i_ino == DEVFS_FD_INO)) {
 			error = inode_get(directory->i_mount, 1, result);
 			return error;
@@ -878,9 +930,11 @@ devfs_lookup(
 	if (error != 0)
 		return error;
 
-	/* /dev/input holds only the event devices. */
-	if (directory->i_ino == DEVFS_INPUT_INO) {
-		if (!event_name(name))
+	/* /dev/input holds only the event devices, /dev/backlight only the backlights. */
+	if (directory->i_ino == DEVFS_INPUT_INO ||
+	    directory->i_ino == DEVFS_BACKLIGHT_INO) {
+		owner = cdev_directory(name);
+		if (owner != directory->i_ino)
 			return ENOENT;
 		device = cdev_find_ref(name);
 		if (device == NULL)
@@ -906,14 +960,22 @@ devfs_lookup(
 		return error;
 	}
 
+	/* The backlight devices' directory (ws113-p013). */
+	matched = component_equal(component, "backlight");
+	if (matched) {
+		error = devfs_fixed_inode(directory, DEVFS_BACKLIGHT_INO, result);
+		return error;
+	}
+
 	if (component_equal(component, "fd")) {
 		error = devfs_fixed_inode(directory, DEVFS_FD_INO, result);
 		return error;
 	}
 
-	/* Keeps input event nodes exclusively below /dev/input. */
+	/* Keeps input event and backlight nodes exclusively below their directories. */
 	device = cdev_find_ref(name);
-	if (device != NULL && !event_name(name)) {
+	owner = cdev_directory(name);
+	if (device != NULL && owner == 1) {
 		error = devfs_cdev_inode(directory, device, result);
 		cdev_release(device);
 		return error;
@@ -997,7 +1059,7 @@ dir_name_exists(
 static DEVFS_HIGH void
 devfs_directory_add_cdevs(
 	struct devfs_dir_state *state,
-	int input_directory,
+	ino_t directory,
 	struct cdev **snapshot,
 	unsigned count)
 {
@@ -1005,13 +1067,13 @@ devfs_directory_add_cdevs(
 	struct devfs_dir_entry *entry;
 	uint64_t generation;
 	unsigned index;
-	int input;
+	ino_t owner;
 
-	/* Keeps event devices under input and other devices under the root. */
+	/* Keeps event devices under input, backlights under backlight and other devices under the root. */
 	for (index = 0; index < count; index++) {
 		device = snapshot[index];
-		input = event_name(device->name);
-		if (input != input_directory)
+		owner = cdev_directory(device->name);
+		if (owner != directory)
 			continue;
 
 		/* Omits generations whose inode number cannot be represented. */
@@ -1212,7 +1274,10 @@ devfs_dir_open(
 		}
 	} else if (file->f_inode->i_ino == DEVFS_INPUT_INO) {
 		/* Copies every event device visible at snapshot acquisition. */
-		devfs_directory_add_cdevs(state, 1, snapshot, character_count);
+		devfs_directory_add_cdevs(state, DEVFS_INPUT_INO, snapshot, character_count);
+	} else if (file->f_inode->i_ino == DEVFS_BACKLIGHT_INO) {
+		/* Copies every backlight device visible at snapshot acquisition. */
+		devfs_directory_add_cdevs(state, DEVFS_BACKLIGHT_INO, snapshot, character_count);
 	} else {
 		/* Publishes the fixed shared-memory directory in the root listing. */
 		entry = &state->entries[state->count];
@@ -1232,6 +1297,13 @@ devfs_dir_open(
 		entry = &state->entries[state->count];
 		kern_strcpy(entry->name, "input");
 		entry->ino = DEVFS_INPUT_INO;
+		entry->type = INODE_DIR;
+		state->count++;
+
+		/* Publishes the fixed backlight directory in the root listing. */
+		entry = &state->entries[state->count];
+		kern_strcpy(entry->name, "backlight");
+		entry->ino = DEVFS_BACKLIGHT_INO;
 		entry->type = INODE_DIR;
 		state->count++;
 
@@ -1256,7 +1328,7 @@ devfs_dir_open(
 		}
 
 		/* Copies every root-level device into its reserved snapshot space. */
-		devfs_directory_add_cdevs(state, 0, snapshot, character_count);
+		devfs_directory_add_cdevs(state, 1, snapshot, character_count);
 
 		/* Obtains the block entries after retaining character-name precedence. */
 		disk_count = 0;

@@ -3358,6 +3358,7 @@ struct i915_display_output {
 };
 
 struct i915_lcd_world;
+struct kern_backlight;
 struct i915_wm_world;
 struct i915_takeover_world;
 struct i915_dp_world;
@@ -3453,6 +3454,9 @@ struct i915_display {
 
 	/* The output the resident run lights: the panel, or the HDMI display (ws075-p012). */
 	struct i915_display_output output;
+
+	/* The panel's backlight device while the node is published with the panel as its output (backlight.c), or NULL. */
+	struct kern_backlight *backlight;
 
 	/*
 	 * The resident present path.
