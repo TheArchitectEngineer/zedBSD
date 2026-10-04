@@ -8,3 +8,7 @@ cc -std=c99 -D_POSIX_C_SOURCE=200809L -include time.h -Wall -Wextra -Werror -Iin
 	plan/ws141/tests/stage-host-test.c src/drivers/gpu/bcm2711/stage.c \
 	-o "$out/stage-host-test"
 "$out/stage-host-test"
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc -I. \
+	plan/ws141/tests/list-host-test.c src/drivers/gpu/bcm2711/list.c \
+	-o "$out/list-host-test"
+"$out/list-host-test"

@@ -2,7 +2,7 @@
 
 # ws141-p003: display（N0 → N1 → N2 → P1 → P2 → P3 → P5、P4 は後）
 
-Status: planned（Queue は Q1 が割り当てる）
+Status: in-progress（q695 の続き、P2 generation13。N0 を実装済み・未試験）
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: none
@@ -34,6 +34,10 @@ Queue: none
 
 （p003 の実装のときに書く。p002 と同じく HDMI0 の画面の写真。serial は画面が消える段だけ。）
 
-## 結果
+## 結果（2026-10-04、P2 generation13、途中でラップアップ）
 
-（未着手）
+- N0 を実装（hardware には書かない）: `src/drivers/gpu/bcm2711/readout.c`（N0）、`list.c`（display list の解読、host で試験できる純粋な関数）、`firmware.c`（`clock.c` を改名し mailbox の get の汎用の口 `bcm2711_firmware_get` と `bcm2711_clock_hz` を追加）。attach の口に firmware の画面（boot の handoff の物理・大きさ・幅・高さ・pitch）を渡す形に変えた（`drv_bcm2711_gpu_attach(fdt_phys, screen)`、`src/kern/platform/rpi4.c` が handoff から埋める）。
+- N0 の順: firmware の revision を mailbox で読み、build の時刻（0x40000000 以上）でなければ emulator として register を読まずに抜ける（QEMU の raspi4b には compositor が無く、その register の読みは bus の error になりうるため。QEMU の binary の未実装の領域の名前に hvs が無いことを strings で確かめた。revision の値は QEMU で未観測）→ mailbox の framebuffer（幅・高さ・depth・order・pitch）と handoff の物理 → HDMI の state machine の clock（13）が 0 なら抜ける → HVS の全体の enable と HDMI0・HDMI1 の channel の選択 → 3 channel の enable・mode・大きさ・次と今の list → firmware の出力先の port（HDMI0 を優先）の今の list の解読（plane ごとに format・order・位置・大きさ・pointer・pitch）→ 最初の plane が framebuffer を 1:1 で指すかの判定 → pv2・pv4 の enable・video・active の大きさ。
+- build: rpi4（driver y）exit 0・warning 0、rpi4 の driver n exit 0・warning 0（amd64 は rpi4.c を build しないので影響なし、未再試験）。host の試験: `plan/ws141/tests/stage-host-test.sh` が stage と list の 2 つを流し両方 PASS。改名の旧名 630 で driver に一致 0。`git diff --check` 0。
+- **再開点**: (1) Q1 経由で T1 に QEMU の回帰（raspi4b の boot-test、login prompt。N0 は emulator の判定で register を読まずに抜けるはず。PNG に行が写らないので、印を見るなら serial の対話か boot の後の dmesg を SSH で読む道を T1 と相談）。(2) 実機の写真（ユーザー）で P0・N0 の行と期待値を照合（N0 の行は 15 行前後で、25 行の console から P0 の行が流れる。必要なら `rpi4gpu.stop=N1` で止めて写真）。(3) 次の段 N1（firmware の list を写した自前の list、「次の list」の切り替え、今の list の一致の poll）。N1 の前に実機の N0 の結果（firmware の list の位置・word の範囲・plane の数）が要る。
+- 未実施: QEMU の回帰（N0 の版）、実機。

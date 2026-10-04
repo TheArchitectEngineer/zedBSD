@@ -229,10 +229,12 @@ zedBSD の libvulkan（`userland/desktop/libvulkan/`）は Venus の protocol �
 
 ## 11. 判断の項目
 
+**2026-10-04 ユーザーの決定（項目 1〜4）**: 1 Turing（TU104・TU106）で進める。2 **MIT の定義も取り込まず自分で書く**（案と違う。WS141 と同じく、事実を自分の言葉で作業の文書（temp）に書き、定数は一括で独自の名前に改名し、WS の最後に license と類似を監査する。MIT の file も出典の事実として読むだけ）。3 GSP の道だけ。4 570.144 に固定。5〜18 は未回答（Q1 がユーザーに聞く）。
+
 | # | 問い | 案・既定 |
 | --- | --- | --- |
 | 1 | 最初の対象の世代と chip: Turing の TU106（RTX 2070）でよいか。実機が RTX 2070 SUPER（TU104）なら同じ手順で進めてよいか | Turing。p002 で boot0 を読んで確かめ、TU104 でも進める |
-| 2 | nouveau・open-gpu-kernel-modules・open-gpu-doc が大部分 MIT であることを受けて、MIT の定義（class・ctrl・RPC の struct、register）を出典付きで取り込んでよいか。Guardrail の WS037 の方式（作業の文書は temp、定数は一括で改名、最後に類似の監査）は維持する。表記の無い file と GPL の file・部分は取り込まない | MIT の file だけを出典にし、表記の無い file は読むだけ。取り込んだ file は i915 の前例（`src/drivers/gpu/i915/intel/commands.h`: SPDX MIT・元の著作権表示・変更の注記・出典の hash）の形にする |
+| 2 | **決定: 取り込まず自分で書く（上）**。nouveau・open-gpu-kernel-modules・open-gpu-doc が大部分 MIT であることを受けて、MIT の定義（class・ctrl・RPC の struct、register）を出典付きで取り込んでよいか。Guardrail の WS037 の方式（作業の文書は temp、定数は一括で改名、最後に類似の監査）は維持する。表記の無い file と GPL の file・部分は取り込まない | MIT の file だけを出典にし、表記の無い file は読むだけ。取り込んだ file は i915 の前例（`src/drivers/gpu/i915/intel/commands.h`: SPDX MIT・元の著作権表示・変更の注記・出典の hash）の形にする |
 | 3 | GSP-RM の道だけを作り、Turing の GSP 無しの道は作らない | GSP の道だけ（clock を上げられ、Ampere・Ada と同じ booter 型の道） |
 | 4 | GSP の firmware を 570.144 に固定する（535.113.01 は扱わない） | 570.144 |
 | 5 | GSP の firmware を既定 off の firmware の package（`userland/firmware/` の規約、`/lib/firmware` へ、LICENCE.nvidia・WHENCE・manifest 付き）にしてよいか（再配布の条件: OSI の open source の OS、binary を変えない、license の写しを添える） | そうする（zedBSD は Zlib で OSI の license） |

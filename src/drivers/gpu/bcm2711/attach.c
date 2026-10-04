@@ -55,7 +55,8 @@ static struct bcm2711_v3d attach_v3d;
  */
 int
 drv_bcm2711_gpu_attach(
-	uint64_t fdt_phys)
+	uint64_t fdt_phys,
+	const struct drv_bcm2711_boot_screen *screen)
 {
 	struct drv_fdt fdt;
 	const void *blob;
@@ -97,6 +98,10 @@ drv_bcm2711_gpu_attach(
 
 	/* Runs the display path's discovery. */
 	display_error = bcm2711_display_discover(&fdt, &attach_display);
+
+	/* Reads the firmware's display once the display path is mapped. */
+	if (display_error == 0)
+		(void)bcm2711_display_readout(&attach_display, screen);
 
 	/* Runs the V3D engine's discovery, whatever became of the display. */
 	v3d_error = bcm2711_v3d_discover(&fdt, &attach_v3d);

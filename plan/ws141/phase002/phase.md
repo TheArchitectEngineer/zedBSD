@@ -51,4 +51,5 @@ Queue: q695
 - build: rpi4（`config/ci/config-rpi4.mk`、driver y）exit 0・warning 0、rpi4 の driver n exit 0・warning 0、amd64（`config/ci/config-amd64.mk`）exit 0・warning 0（`-DCONFIG_DRIVER_BCM2711_GPU=0`）。`plan/tools/menuconfig-target-host-test.py` PASS。`git diff --check` 0。
 - host の試験: `plan/ws141/tests/stage-host-test.sh` PASS（79 桁の切り、off と stop の語の照合、長すぎる段の名前の拒否、待ちの印）。
 - GPL の名前の照合: `rename-map.tsv` の旧名 630 で `src/drivers/gpu/bcm2711/` を語単位で grep し 0 件。driver の局所の macro も `V3D_` で始めない（`ENGINE_`）。
-- 未実施: QEMU の回帰（Q1 経由で T1 に依頼）、実機（ユーザー）。
+- QEMU の回帰: T1-092 PASS（2026-10-04、raspi4b の boot-test で login prompt。P0・V0・clk の行は画面の外に流れて PNG に写らず、値は未取得）。
+- 未実施: 実機（ユーザー）。
