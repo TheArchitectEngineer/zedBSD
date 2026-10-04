@@ -105,7 +105,7 @@ static int multitouch(const struct kl_backend_input_caps *capabilities);
 static int touchpad_node(const struct kl_backend_input_caps *capabilities);
 static int attach_touchpad(struct zwl_server *server, int descriptor, const char *path);
 static void apply_touchpad(struct zwl_server *server, struct zwl_input_device *device, uint32_t time);
-static void apply_touchpad_actions(struct zwl_server *server, const struct zwl_touchpad_actions *actions, uint32_t time);
+static void apply_touchpad_actions(struct zwl_server *server, const struct zwl_touchpad *pad, const struct zwl_touchpad_actions *actions, uint32_t time);
 static int pointer_move(struct zwl_server *server, int64_t delta_x, int64_t delta_y, uint32_t time);
 static ssize_t input_read(struct zwl_server *server, struct zwl_input_device *device, struct input_event *events, size_t capacity);
 
@@ -469,7 +469,7 @@ zwl_input_close(
 	/* A touch pad lets go of every button it holds. */
 	if (device->touchpad) {
 		zwl_touchpad_release_all(&device->pad, &actions);
-		apply_touchpad_actions(server, &actions, (uint32_t)zwl_milliseconds());
+		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)zwl_milliseconds());
 	}
 
 	/* The slot is free once its descriptor is closed. */
@@ -509,7 +509,7 @@ zwl_input_forget(
 	/* A touch pad lets go of every button it holds. */
 	if (device->touchpad) {
 		zwl_touchpad_release_all(&device->pad, &actions);
-		apply_touchpad_actions(server, &actions, (uint32_t)zwl_milliseconds());
+		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)zwl_milliseconds());
 	}
 
 	/* The slot is free; its descriptor was the seat's. */
@@ -855,7 +855,7 @@ apply_touchpad(
 
 	/* The report's end: what the fingers did. */
 	zwl_touchpad_frame(&device->pad, zwl_milliseconds(), &actions);
-	apply_touchpad_actions(server, &actions, time);
+	apply_touchpad_actions(server, &device->pad, &actions, time);
 
 	/* Succeeded: the report has been applied. */
 	return;
@@ -865,6 +865,7 @@ apply_touchpad(
 static void
 apply_touchpad_actions(
 	struct zwl_server *server,
+	const struct zwl_touchpad *pad,
 	const struct zwl_touchpad_actions *actions,
 	uint32_t time)
 {
@@ -872,6 +873,7 @@ apply_touchpad_actions(
 	unsigned activity;
 	unsigned index;
 	int moved;
+	int taken;
 
 	/* Each action in order. */
 	activity = 0;
@@ -892,7 +894,12 @@ apply_touchpad_actions(
 			activity = 1;
 			break;
 		case ZWL_TOUCHPAD_SCROLL:
-			/* Wheel notches (vertical positive down, as the seat takes them). */
+			/* The switcher, while on, takes the two fingers across (switcher-shell.c, ws142-p005). */
+			taken = zwl_switch_pad_scroll(server, action->horizontal, pad->natural_scroll);
+			if (taken)
+				break;
+
+			/* Otherwise wheel notches (vertical positive down, as the seat takes them). */
 			zwl_seat_axis(server, time, action->vertical, action->horizontal);
 			activity = 1;
 			break;
@@ -933,7 +940,7 @@ zwl_input_tick(
 
 		/* Its layer's timers, and what they give. */
 		zwl_touchpad_tick(&server->inputs[index].pad, now, &actions);
-		apply_touchpad_actions(server, &actions, (uint32_t)now);
+		apply_touchpad_actions(server, &server->inputs[index].pad, &actions, (uint32_t)now);
 	}
 
 	/* Succeeded: the timers have run. */

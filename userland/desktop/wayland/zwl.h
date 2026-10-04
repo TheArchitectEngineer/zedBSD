@@ -45,6 +45,7 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "touchpad.h"
 #include "apps.h"
+#include "switcher.h"
 #include "super-tap.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -710,6 +711,7 @@ uint64_t zwl_cycles(void);
 #define ZWL_APPS_SHOWN		2U
 #define ZWL_APPS_VIA_HOVER	0U
 #define ZWL_APPS_VIA_CLICK	1U
+#define ZWL_APPS_VIA_SWITCH	2U
 
 /*
  * The bar's applications (apps-bar.c): each desktop's bar order; the
@@ -999,6 +1001,9 @@ struct zwl_server {
 	uint64_t desktop_start_ms;
 	/* The applications' icons in the system bar and their previews (apps-bar.c, ws142-p004). */
 	struct zwl_apps_bar apps_bar;
+	/* The application switcher (switcher-shell.c, ws142-p005), and a button whose press it took (its release is kept from the windows). */
+	struct zwl_switcher switcher;
+	uint32_t switch_swallow;
 	/*
 	 * App Home's pages (ws035-p071): the page shown; a press on Home that
 	 * may become a page drag (where it started, the application under it,
@@ -1282,6 +1287,18 @@ int zwl_apps_bar_motion(struct zwl_server *server);
 int zwl_apps_bar_button(struct zwl_server *server, uint32_t button, uint32_t state_value);
 int zwl_apps_bar_key(struct zwl_server *server, uint32_t key, uint32_t state_value);
 void zwl_apps_bar_tick(struct zwl_server *server);
+
+/* The application switcher (switcher-shell.c, ws142-p005; the drawing is in glass.h). */
+int zwl_glass_switch_place(struct zwl_server *server, unsigned *placement);
+int zwl_switch_on(struct zwl_server *server);
+int zwl_switch_open(struct zwl_server *server, unsigned via);
+void zwl_switch_step(struct zwl_server *server, int delta, const char *how);
+void zwl_switch_commit(struct zwl_server *server, const char *how);
+void zwl_switch_cancel(struct zwl_server *server, const char *why);
+int zwl_switch_key(struct zwl_server *server, uint32_t key, uint32_t state);
+int zwl_switch_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_switch_pad_scroll(struct zwl_server *server, int32_t horizontal, int natural);
+void zwl_switch_tick(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
 void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
