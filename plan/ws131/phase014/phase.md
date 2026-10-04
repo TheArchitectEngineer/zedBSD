@@ -72,3 +72,7 @@ libkeiland の公開の名前（`keiland_*`・`KEILAND_*`、[rename-map.md](../r
 - (4) 規約: p014 の変更は道具による名前の置き換えだけで、構造（条件・段落・宣言）を変えていない。名前の規則（`function_result` など）に当たる新しい名前も無い。
 - `rename-map.py check-keiland` 203 PASS（p010 で足した `kl_titlebar_set_suggestions` の互換の名前を含む）・`check-ui` 339 PASS、zedBSD の `libkeiland.so` の `keiland_`・`kui_` の定義 0。
 - 回帰の QEMU・Linux の PNG・FreeBSD は TQ-1（T1、main a512ea7）で PASS 済み。
+
+## Q1 の判定（2026-10-05 未明）
+
+受け入れのうち、zedBSD の build・Linux の gcc と clang・OS の境界の checker・`keiland_` の無いこと・xserver/menu-probe/titlebar-probe の build・回帰（TQ-1 PASS）は満たした。**FreeBSD の native build と `native-build-audit.py` だけが未達**（P2 は「FreeBSD の build はベータ1 まで不要」と解したが、ユーザーの 2026-10-05 の指示は「libkeiland-backend の Linux・FreeBSD の実装はベータ1 までにはやらなくていい」で、受け入れの build を外す決定ではない）。受け入れを Q1 だけで減らさず、in-progress のまま残す。ユーザーに聞く: FreeBSD の native build と audit を後の Phase（ベータ1 の後）へ移して p014 を cleared にするか、今流すか。p015 は p014 の成果（zedBSD・Linux の build）に依るだけなので先に進めてよい。
