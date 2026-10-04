@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **タッチパッドの既定の速さ（2026-10-05 未明、P2 の ws089-p024）**: マウスの既定はユーザーの要望どおり速度 150%・加速 強め。タッチパッドは WS159 で 5330 に合わせた感触を保つため 100%・加速 中にした。タッチパッドも 150%・強めにするか。
 - **HAL の API の承認（差分ごと、2026-10-05 未明、P1 の ws052-p002、plan/ws052/proposed/README.md）**: S0i3 のための hal.h の差分 4 つ（どれも未適用、今の main に patch --dry-run で当たる）。H1 `hal_cpu_idle_deep(uint32_t hint)`（MWAIT で C10、今の hal_cpu_idle は hlt で C1 まで）、H2 `hal_timer_stop`・`hal_timer_resume`（tick の停止と再開、RTC の counter は数え続ける）、H3 `hal_cpu_notify` の契約の明記だけ（深い idle・tick の停止・mask の中でも必ず CPU を起こす、AP の停止の API は作らない）、H4 `hal_irq_suspend(const int *wake_irqs, unsigned count)`・`hal_irq_resume`（wake の源以外の割り込みを止め mask を HAL が保って戻す）。他の architecture は UNSUPPORTED で sleep を中止して理由を返す。
 - **BUG-171「Opaque」の意味（2026-10-05 未明、P1）**: 窓の透明度を 100% にしても、Keiland の app の glass の panel（Settings・Files の sidebar）と title bar は frosted glass のままなので壁紙が見える（UAT の log には変更後の applied 100 も無く、PS/2 の touchpad の drag の release が届かなかった可能性もある）。(a) 100% では glass の panel と title bar も不透明に（既定が 100 なので既定の見た目から frosted glass が消える）、(b) 100% は窓の中身だけ、Settings の表示を「Window contents opaque」などに、(c) Appearance に「Glass effect」の on/off を別に足す。
 - **BUG-190 の受け入れの規則（2026-10-05 未明、P1）**: native の touchpad（WS159）では tap は離した時の click、押し込みは押した瞬間の押下で、どの UI でも tap は click になる（音量の slider も tap 1 回で変わる）。「触れた瞬間（離す前）を押下にする」は touchpad では全ての移動が drag になるのでできない。この規則で受け入れ、5330 の UAT（ws159-p005 の 2.2・2.3・2.6、音量の slider の tap）で確かめた後に resolved にしてよいか。
