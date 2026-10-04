@@ -2,11 +2,31 @@
 
 # Queue / all-agent index
 
-Active Queues: q677（P1）・q683（P2）。2026-10-04 17 時から流れ A〜D を P1・P2 で実行中（体制は下の節の冒頭）。
+Active Queues: q697・q698（P4、別の session への委譲、2026-10-04 19時50分〜22時、下の節）。Q1・P1〜P3・T1 は停止中。
 Status: active
 Main executor / plan writer: Q1（単一 Claude Code セッション、[protocol](agents/protocol.md)）。サブエージェント P1〜P8、N=2（P1・P2）＋試験 T1（忙しい時は T2）。
-Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q697（q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
+Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q699（q697・q698 は 2026-10-04 夜の P4 だけの委譲。q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
 
+
+## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
+
+user「P4のみを実行するqueue.mdを書いてください。22時の5時間リミットのリセットまで、ほかのセッションに委譲します。ほかのセッションが十分に引き継げるだけの情報をwsかPhaseに入れておいてください。」（最初「P3」と書き「P4 のみ」に訂正）
+
+**引き継ぐ session への指示（これだけ読めば始められる）**
+
+- 役: 固定名 **P4**（hard-debugger の規則 = `.claude/agents/hard-debugger.md`、QEMU の不具合は gdbstub・QMP で直接解析）。この委譲の間、Q1・P1〜P3・T1 は動かない。引き継ぐ session は P4 として 1 人で動き、Q1 の役（main への merge・queue.md の更新）はしない。成果は worktree に WIP commit して置き、22 時の後に Q1 が統合する。
+- 最初に読む: `AGENTS.md`（特に git・禁止・検証）、`plan/guardrail.md` の末尾 3 節（5330 の AX211 の passthrough の再開と追記、GPU の scanout の規則は無関係）、`plan/bugs/BUG-158.md` の「passthrough での解析（P4 / q684-i02）」と「修正の実装（P3 generation9 / q684-i03）」、`plan/ws005/phase032/phase.md`。
+- 作業場所: worktree `/home/awe/zedBSD-worktrees/p4`（branch `agent/p4`、main 85efbd4 に揃えてある）。main の checkout（`/home/awe/zedBSD-claude1`）は編集しない。build は worktree の `build/` の中だけ。toolchain・HAL の API（`include/hal/hal.h`）は変えない。commit は `git commit -m WIP -- <path>...`（メッセージは WIP だけ）。push しない。
+- 5330（`ssh awe@10.0.30.3`、Latitude 5330 の Debian、sudo は password 無し）: iwlwifi・iwlmvm は `/etc/modprobe.d/vfio-ax211.conf` で blacklist 済み（initramfs にも）。AX211（0000:00:14.3、IOMMU group 11 単独）は driver 無し。**iGPU（00:02.0）と AX211 を同じ QEMU に渡さない**（Guardrail）。host が落ちたら作業を止めてユーザーに電源の再投入を頼む（ユーザー「5330のリセットは何回でも対応するので、気兼ねなくパススルーを試してください」）。前の generation の写し `~/zedbsd-q684-p4/`（image・vmunix・script）は消してよい。
+- 道具: `plan/ws004/tests/run-intel-ax211-vfio-qemu.sh`（`AX211_VFIO_HOST_DRIVER=none`、`AX211_VFIO_GDB_PORT`、AX211 だけ・std VGA）、`plan/ws004/tests/ax211-vfio-trace-run.sh`・`ax211-gdb-trace.py`（gdbstub を起動前に接続、breakpoint は kernel の text が読めてから有効化、2 秒ごとの sample、klog の差分）。trace の原本は worktree の `plan/ws004/temp/`（git に入れない）。
+- QEMU の console・serial の log を判定に使わない（gdb・QMP・SSH の観測で判定）。QEMU の証拠と実機の証拠を分けて書く。
+
+| Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
+| --- | --- | --- | --- | --- | --- |
+| q697 / q697-i01 | P4（委譲の session） | BUG-158 の修正の確認（ws005-p032、T1-095 と同じ） | main 85efbd4（P3 97543a4 を含む）で `plan/uat/config-uat.mk` の image を worktree で作り（`plan/tools/guest/test-image.sh plan/uat/config-uat.mk build/q697`）、5330 へ複写して AX211 passthrough、保存の WiFi profile 無しのまま desktop で **10 分放置**。合格: (a) host が ssh・ping に答え続ける (b) tracer に `ax211_pci_interrupt_drain returned` と `drv_intel_ax211_mmio_stop returned eax=0x0` (c) klog（gdb で `klog_buffer`）に `restarted after recovery attempt=1 error=0` と scan の再開 (d) 10 分後に全 vCPU が idle か正常な待ち。修正前は 64〜65 秒で host が落ちた（run 3〜5）。結果を BUG-158 と ws005/phase032 に「q697 の確認」として書く。FAIL なら原因を gdb で調べ、修正の計画を ticket に書く（実装はしない） | なし | pending |
+| q698 / q698-i01 | P4（委譲の session、q697 の後） | BUG-158 の残課題: firmware の SW_ERROR（hw cause 0x02000000）が起動から約 64 秒（scan の WAIT_START_ACK）で毎回起きる | ticket の「残課題」: (1) 調査用の build（commit しない）で recovery の時に firmware の error table（UMAC/LMAC の error_event_table、PRPH の読み）を klog に出し、どの SCAN_REQ（channel・flags）で assert するかを passthrough で絞る (2) 静的解析の候補 C1（`intel-ax211-mmio.c:741-760` の discrete 向けの LTR の bootstrap を integrated の AX211 に書いている。Linux は integrated では書かない）を調査用の build で外して比べる (3) 原因と修正の計画（file:line、試験）を BUG-158 の新しい節「SW_ERROR の解析（q698）」に書く。**実装はしない**（2026-10-04 user「P4には、原因確定後、どのソースコードのどこを直すかまで計画してもらい、チケットに記録した上で、実装はOpus 5.5 Midの通常のバグ修正サブエージェントに回して」）。診断の出力を足す小さな変更を残す価値があれば、別の commit にして計画に書く | q697 | pending |
+
+**終わり方**: 22 時の前、または q697・q698 が終わった時に、worktree の担当の path（`plan/bugs/BUG-158.md`・`plan/known-bugs.md` の BUG-158 の行・`plan/ws005/phase032/phase.md`・`plan/ws004/tests/` の道具）を WIP commit し、5330 の状態（QEMU を止めたか、blacklist は残す）と、commit の SHA・結果・未了を `plan/ws005/phase032/phase.md` の末尾に「委譲の session の引き継ぎ」として書いて commit する。Q1 は 22 時の後にそれを読んで統合する。
 
 ## 2026-10-04 17 時以降の予定（承認済み・実行中）
 

@@ -153,3 +153,10 @@ INTX cookie なので bit に触らない。command register を書く他の箇�
 - (3) stop で MSI-X を解放しない（Linux と同じ形）は未実装（任意、別 Phase の候補）。
 - firmware の SW_ERROR（hw cause 0x02000000）が起動から約 64 s で毎回起きる件は ticket の残課題のまま（(1) の後は recovery → restart で戻る見込み、約 1 分ごとに WiFi が途切れ得る）。
 - `pci-shared-intx-test.c`・`pci-hcd-irq-teardown-test.c` も hal_* の stub のままで今の tree では link できない（この Phase で触っていない。直すなら別に）。
+
+## 2026-10-04 19時50分の状態と委譲（Q1）
+
+- 実装済み・main に統合: 5ecc43b（panic の可視化・kernel.log）、48cf8f6（scan の失敗からの restart、DMA の release の遅延）、97543a4（bus master off を quiesce・mmio_stop の後へ、PCI の MSI/MSI-X で INTx Disable、quiesce の TRANSPORT_FAILED を stop の失敗にしない）。main 85efbd4。
+- 済んだ確認: host 試験（AX211 boot・core・runtime-start、PCI msi、host-wlan-retire）、build warning 0、T1-089（QEMU で kernel.log の永続化 PASS）。
+- 未了: 5330 の AX211 passthrough での 10 分放置（queue の q697）、firmware の SW_ERROR の解析（q698）、実機の UAT（手順 (B): boot の行から `login=graphical`・`kmsg=quiet` を外し text console で放置、`/var/log/kernel.log.old`）。
+- q697・q698 は 22 時まで別の session の P4 が実行する（queue.md の「2026-10-04 19時50分〜22時の委譲」）。
