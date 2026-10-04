@@ -222,7 +222,10 @@ static uint32_t load_u32(const uint8_t *bytes);
 static void read_soft_off(const uint8_t *fadt, size_t length, uint32_t flags);
 static struct register_block fadt_block(const uint8_t *fadt, size_t length, unsigned legacy, unsigned wide, unsigned block_length);
 static int enable_acpi_mode(void);
+static bool gpe_present(unsigned gpe);
 static void gpe_register(unsigned gpe, uint32_t *port, uint8_t *bit);
+static uint32_t gpe_enable_port(unsigned gpe, uint32_t status_port);
+static void record_gpe_block(const struct register_block *block, unsigned base);
 static uint8_t port_read8(uint32_t port);
 static void port_write8(uint32_t port, uint8_t value);
 static uint16_t pm1_read(unsigned offset);
@@ -251,11 +254,14 @@ drv_acpi_events_init(
 	unsigned gpe;
 	unsigned total;
 	unsigned runtime;
+	bool present;
 	int error;
 
 	/* Refuses a FADT too short to describe the hardware. */
 	if (fadt == NULL || length < FADT_V1_LENGTH)
 		return EINVAL;
+
+	/* Starts from no event hardware known, so that a failure leaves the SCI unready. */
 	kern_memset(&events, 0, sizeof(events));
 
 	/* Learns how the power is turned off, while AML still runs freely. */
@@ -280,12 +286,18 @@ drv_acpi_events_init(
 	events.gpe1 = fadt_block(fadt, length, FADT_GPE1_BLK, FADT_X_GPE1_BLK, fadt[FADT_GPE1_BLK_LEN]);
 	events.gpe1_base = fadt[FADT_GPE1_BASE];
 
-	/* Counts the GPEs the blocks carry, up to the ones methods can name. */
+	/* Counts the GPEs of the first block: each status byte carries eight. */
 	total = events.gpe0.length / 2U * 8U;
+
+	/* A second block ends the numbering at its base plus its own GPEs. */
 	if (events.gpe1.length != 0)
 		total = events.gpe1_base + events.gpe1.length / 2U * 8U;
+
+	/* Keeps only the GPEs _Lxx and _Exx can name. */
 	if (total > GPE_MAX)
 		total = GPE_MAX;
+
+	/* Publishes the count every GPE loop runs to. */
 	events.gpe_count = total;
 
 	/* Refuses a platform without PM1 event registers. */
@@ -305,9 +317,14 @@ drv_acpi_events_init(
 	pm1_write(events.pm1a_event.length / 2U, 0);
 	pm1_write(0, 0xffffU);
 
-	/* Masks and clears every GPE. */
+	/* Masks and clears every GPE the blocks have. */
 	for (gpe = 0; gpe < events.gpe_count; gpe++) {
-		/* Masks one GPE and clears its status. */
+		/* Skips a number between the two blocks, which no register carries. */
+		present = gpe_present(gpe);
+		if (!present)
+			continue;
+
+		/* Masks the GPE and clears its status. */
 		gpe_set_enable(gpe, false);
 		gpe_clear(gpe);
 	}
@@ -316,6 +333,7 @@ drv_acpi_events_init(
 	 * Enables the Global Lock event, which firmware raises when it lets
 	 * the lock go while the operating system waits; the waiter polls the
 	 * lock, so the event needs no handler beyond clearing it.
+	 * fixed_enabled is the set of fixed events the interrupt may record.
 	 */
 	events.fixed_enabled = (uint16_t)(1U << DRV_ACPI_EVENT_GLOBAL_LOCK);
 	pm1_write(events.pm1a_event.length / 2U, events.fixed_enabled);
@@ -336,6 +354,11 @@ drv_acpi_events_init(
 		/* A GPE with a method that does not only wake is a runtime event. */
 		if (events.gpes[gpe].kind != GPE_METHOD || events.gpes[gpe].wake)
 			continue;
+
+		/*
+		 * enabled tells the thread to unmask the GPE again once its
+		 * method ran; the count goes into the boot log.
+		 */
 		events.gpes[gpe].enabled = 1;
 		gpe_set_enable(gpe, true);
 		runtime++;
@@ -354,7 +377,7 @@ drv_acpi_events_init(
 unsigned
 drv_acpi_sci_irq(void)
 {
-	/* The FADT names it. */
+	/* Reports the interrupt the FADT names. */
 	return events.sci_interrupt;
 }
 
@@ -384,20 +407,26 @@ drv_acpi_fixed_event_install(
 	events.fixed[event].handler = handler;
 	events.fixed[event].argument = argument;
 
-	/* Enables the event in PM1_EN. */
+	/*
+	 * Enables the event in PM1_EN.  The bit in fixed_enabled lets the
+	 * interrupt record the event; the one in PM1_EN lets it raise the SCI.
+	 */
 	state = drv_acpi_os_event_lock();
+
 	events.fixed_enabled |= (uint16_t)(1U << event);
 	enable = pm1_read(events.pm1a_event.length / 2U);
 	pm1_write(events.pm1a_event.length / 2U, (uint16_t)(enable | (1U << event)));
+
 	drv_acpi_os_event_unlock(state);
 
-	/* Succeeded. */
+	/* Succeeded: the event raises an SCI and reaches the handler. */
 	return 0;
 }
 
 /*
- * Installs a driver's C handler for a GPE, in place of any method, and
- * enables the GPE.
+ * Installs a driver's C handler for a GPE in place of any method.
+ *
+ * The GPE is enabled as well.
  */
 int
 drv_acpi_gpe_install(
@@ -407,30 +436,42 @@ drv_acpi_gpe_install(
 	void *argument)
 {
 	unsigned long state;
+	bool present;
 
-	/* Refuses a GPE the blocks do not have. */
+	/* Refuses a GPE before initialization or outside the blocks. */
 	if (!events.ready || gpe >= events.gpe_count)
 		return EINVAL;
 
-	/* Installs the handler and enables the GPE. */
+	/* Refuses a number between the two blocks, which no register carries. */
+	present = gpe_present(gpe);
+	if (!present)
+		return EINVAL;
+
+	/*
+	 * Installs the handler and enables the GPE.  The handler kind keeps
+	 * the method walk from replacing it, and enabled tells the thread to
+	 * unmask the GPE again after each event.
+	 */
 	state = drv_acpi_os_event_lock();
+
 	events.gpes[gpe].kind = GPE_HANDLER;
 	events.gpes[gpe].handler = handler;
 	events.gpes[gpe].argument = argument;
 	events.gpes[gpe].edge = (uint8_t)edge;
 	events.gpes[gpe].enabled = 1;
 	gpe_set_enable(gpe, true);
+
 	drv_acpi_os_event_unlock(state);
 
-	/* Succeeded. */
+	/* Succeeded: the GPE raises an SCI and reaches the handler. */
 	return 0;
 }
 
 /*
- * The SCI's interrupt part: records every event whose status and enable
- * bits are both set and masks it, touching only hardware registers.
+ * Records and masks every event that fired, in the SCI's interrupt.
  *
- * It reports whether anything is pending for drv_acpi_events_process().
+ * It touches only hardware registers, and reports whether anything is
+ * pending for drv_acpi_events_process().
  */
 bool
 drv_acpi_sci_interrupt(void)
@@ -439,17 +480,14 @@ drv_acpi_sci_interrupt(void)
 	uint16_t status;
 	uint16_t enable;
 	uint16_t fired;
-	uint32_t status_port;
-	uint32_t enable_port;
-	uint8_t status_byte;
-	uint8_t enable_byte;
-	uint8_t bit;
-	unsigned gpe;
+	unsigned index;
 	bool pending;
 
 	/* Nothing is pending before initialization. */
 	if (!events.ready)
 		return false;
+
+	/* Records the fired events under the lock the thread takes them with. */
 	state = drv_acpi_os_event_lock();
 
 	/* Records and masks the fixed events that fired. */
@@ -461,43 +499,35 @@ drv_acpi_sci_interrupt(void)
 		pm1_write(events.pm1a_event.length / 2U, (uint16_t)(enable & ~fired));
 	}
 
-	/* Records and masks the GPEs that fired, a register at a time. */
-	for (gpe = 0; gpe < events.gpe_count; gpe += 8U) {
-		gpe_register(gpe, &status_port, &bit);
-		enable_port = status_port;
-		if (gpe < events.gpe1_base || events.gpe1.length == 0) {
-			enable_port += events.gpe0.length / 2U;
-		} else {
-			enable_port += events.gpe1.length / 2U;
-		}
+	/* Records and masks the GPEs that fired, block by block. */
+	record_gpe_block(&events.gpe0, 0);
+	if (events.gpe1.length != 0)
+		record_gpe_block(&events.gpe1, events.gpe1_base);
 
-		/* Reads the register's status and enable bits. */
-		status_byte = port_read8(status_port);
-		enable_byte = port_read8(enable_port);
-		if ((status_byte & enable_byte) == 0)
-			continue;
+	/* Anything is pending when a fixed event fired. */
+	pending = false;
+	if (events.fixed_pending != 0)
+		pending = true;
 
-		/* Masks the fired events and records them as pending. */
-		port_write8(enable_port, (uint8_t)(enable_byte & ~(status_byte & enable_byte)));
-		events.gpe_pending[gpe / 8U] |= (uint8_t)(status_byte & enable_byte);
-	}
-
-	/* Reports whether anything is pending. */
-	pending = events.fixed_pending != 0;
-	for (gpe = 0; gpe < GPE_MAX / 8U && !pending; gpe++) {
+	/* Otherwise a GPE is pending when any register of them has a bit set. */
+	for (index = 0; index < GPE_MAX / 8U; index++) {
 		/* Stops at the first pending register. */
-		if (events.gpe_pending[gpe] != 0)
+		if (events.gpe_pending[index] != 0) {
 			pending = true;
+			break;
+		}
 	}
 
-	/* Lets the lock go and reports it. */
 	drv_acpi_os_event_unlock(state);
+
+	/* Reports whether the thread has work. */
 	return pending;
 }
 
 /*
- * The SCI's thread part: runs the handler of every pending event, clears
- * its status and unmasks it again.
+ * Runs the handler of every pending event, in the SCI's thread.
+ *
+ * Each event's status is cleared and the event is unmasked again.
  */
 void
 drv_acpi_events_process(void)
@@ -510,12 +540,14 @@ drv_acpi_events_process(void)
 	unsigned event;
 	unsigned gpe;
 
-	/* Takes the pending events. */
+	/* Takes the pending events, leaving none for the next interrupt to add to. */
 	state = drv_acpi_os_event_lock();
+
 	pending = events.fixed_pending;
 	events.fixed_pending = 0;
 	kern_memcpy(gpe_pending, events.gpe_pending, sizeof(gpe_pending));
 	kern_memset(events.gpe_pending, 0, sizeof(events.gpe_pending));
+
 	drv_acpi_os_event_unlock(state);
 
 	/* Handles each pending fixed event, then clears and unmasks it. */
@@ -524,14 +556,20 @@ drv_acpi_events_process(void)
 		if ((pending & (1U << event)) == 0)
 			continue;
 
-		/* Clears its status, calls its handler and unmasks it. */
+		/* Clears its status, which is written as one. */
 		pm1_write(0, (uint16_t)(1U << event));
+
+		/* Calls its handler. */
 		entry = &events.fixed[event];
 		if (entry->handler != NULL)
 			entry->handler((enum drv_acpi_fixed_event)event, entry->argument);
+
+		/* Unmasks it again in PM1_EN. */
 		state = drv_acpi_os_event_lock();
+
 		enable = pm1_read(events.pm1a_event.length / 2U);
 		pm1_write(events.pm1a_event.length / 2U, (uint16_t)(enable | (1U << event)));
+
 		drv_acpi_os_event_unlock(state);
 	}
 
@@ -540,13 +578,16 @@ drv_acpi_events_process(void)
 		/* Skips a GPE that did not fire. */
 		if ((gpe_pending[gpe / 8U] & (1U << (gpe % 8U))) == 0)
 			continue;
+
+		/* Runs its handler or method, clears it and unmasks it. */
 		process_gpe(gpe);
 	}
 }
 
 /*
- * Tells firmware, with GBL_RLS, that the operating system let the Global
- * Lock go while firmware waited for it.
+ * Tells firmware with GBL_RLS that the Global Lock was let go.
+ *
+ * Firmware waited for the lock while the operating system held it.
  */
 void
 drv_acpi_events_global_release(void)
@@ -559,9 +600,11 @@ drv_acpi_events_global_release(void)
 
 	/* Sets GBL_RLS in each PM1 control block. */
 	state = drv_acpi_os_event_lock();
+
 	pm1_control_set(&events.pm1a_control, PM1_CNT_GBL_RLS);
 	if (events.pm1b_control.length != 0)
 		pm1_control_set(&events.pm1b_control, PM1_CNT_GBL_RLS);
+
 	drv_acpi_os_event_unlock(state);
 }
 
@@ -587,6 +630,7 @@ drv_acpi_poweroff(void)
 	unsigned poll;
 	unsigned gpe;
 	uint8_t control;
+	bool present;
 	int error;
 
 	/* Refuses a platform whose soft-off state is unknown. */
@@ -602,15 +646,19 @@ drv_acpi_poweroff(void)
 			return ENODEV;
 	}
 
-	/* Tells firmware with _PTS that S5 is coming; a firmware without _PTS needs no notice. */
+	/* Allocates the argument of _PTS, the number of the S5 state. */
 	state_number = drv_acpi_object_integer_new(SLEEP_STATE_S5);
 	if (state_number == NULL)
 		return ENOMEM;
+
+	/* Tells firmware with _PTS that S5 is coming. */
 	arguments[0] = state_number;
 	result = NULL;
 	error = drv_acpi_evaluate(NULL, "\\_PTS", arguments, 1, &result);
 	drv_acpi_object_release(result);
 	drv_acpi_object_release(state_number);
+
+	/* A firmware without _PTS needs no notice; a failed _PTS does not stop the power going. */
 	if (error != 0 && error != ENOENT)
 		drv_acpi_os_log("ACPI: _PTS(5) failed (error %d); turning off anyway\n", error);
 
@@ -622,14 +670,26 @@ drv_acpi_poweroff(void)
 
 	/* A hardware-reduced platform sleeps through one byte. */
 	if (soft_off.reduced) {
+		/* Writes the sleep type with SLP_EN in the same byte. */
 		control = (uint8_t)(soft_off.type_a << SLEEP_CONTROL_SLP_TYP_SHIFT);
 		control |= SLEEP_CONTROL_SLP_EN;
 		(void)drv_acpi_os_port_write(soft_off.sleep_control.port, 8, control);
 	} else {
-		/* Masks every event, so that nothing wakes the platform, and clears a stale wake. */
+		/* Masks every fixed event, so that nothing wakes the platform. */
 		pm1_write(events.pm1a_event.length / 2U, 0);
-		for (gpe = 0; gpe < events.gpe_count; gpe++)
+
+		/* Masks every GPE the blocks have. */
+		for (gpe = 0; gpe < events.gpe_count; gpe++) {
+			/* Skips a number between the two blocks, which no register carries. */
+			present = gpe_present(gpe);
+			if (!present)
+				continue;
+
+			/* Masks the GPE. */
 			gpe_set_enable(gpe, false);
+		}
+
+		/* Clears a stale wake, so that the next wake is seen. */
 		pm1_write(0, PM1_STS_WAK_STS);
 
 		/* Writes the sleep type into both blocks first, then the type with SLP_EN, as ACPICA does. */
@@ -650,7 +710,11 @@ drv_acpi_poweroff(void)
 			break;
 	}
 
-	/* Reports a platform that stayed on. */
+	/*
+	 * The function only reaches its end when the platform stayed on: a
+	 * successful soft-off never returns, so this failure is the last
+	 * statement rather than a success return.
+	 */
 	drv_acpi_os_event_unlock(state);
 	drv_acpi_os_log("ACPI: the platform did not turn off\n");
 	return ETIMEDOUT;
@@ -669,7 +733,7 @@ load_u32(
 	value |= (uint32_t)bytes[2] << 16;
 	value |= (uint32_t)bytes[3] << 24;
 
-	/* Reports the value. */
+	/* Reports the assembled value. */
 	return value;
 }
 
@@ -752,20 +816,22 @@ fadt_block(
 	struct register_block block;
 	uint32_t address;
 
-	/* The 32-bit field every FADT has. */
+	/* Takes the 32-bit field every FADT has. */
 	block.port = load_u32(fadt + legacy);
 	block.length = block_length;
 
 	/* A newer FADT's structure wins when it names I/O ports. */
-	if (length >= wide + 12U && fadt[wide] == GAS_SPACE_SYSTEM_IO) {
-		address = load_u32(fadt + wide + 4U);
+	if (length >= wide + GAS_LENGTH && fadt[wide] == GAS_SPACE_SYSTEM_IO) {
+		address = load_u32(fadt + wide + GAS_ADDRESS);
 		if (address != 0)
 			block.port = address;
 	}
 
-	/* Reports the block; a port of zero means the block is absent. */
+	/* A port of zero means the block is absent, which a length of zero tells every user. */
 	if (block.port == 0)
 		block.length = 0;
+
+	/* Reports the block. */
 	return block;
 }
 
@@ -777,11 +843,19 @@ enable_acpi_mode(void)
 	unsigned poll;
 	int error;
 
-	/* A platform already in ACPI mode, or without a way into it, needs nothing. */
+	/* Reads PM1_CNT, whose SCI_EN says whether the platform is in ACPI mode. */
 	error = drv_acpi_os_port_read(events.pm1a_control.port, 16, &value);
 	if (error != 0)
 		return error;
-	if ((value & PM1_CNT_SCI_EN) != 0 || events.smi_command == 0 || events.acpi_enable == 0)
+
+	/* A platform already in ACPI mode needs nothing. */
+	if ((value & PM1_CNT_SCI_EN) != 0)
+		return 0;
+
+	/* A platform without an SMI command port, or without a value to write to it, has no way to switch. */
+	if (events.smi_command == 0)
+		return 0;
+	if (events.acpi_enable == 0)
 		return 0;
 
 	/* Asks the firmware to switch. */
@@ -791,18 +865,53 @@ enable_acpi_mode(void)
 
 	/* Waits for SCI_EN to come on. */
 	for (poll = 0; poll < ACPI_ENABLE_POLLS; poll++) {
-		/* Reads PM1_CNT again. */
+		/* Reads PM1_CNT again, to see whether the firmware has switched. */
 		error = drv_acpi_os_port_read(events.pm1a_control.port, 16, &value);
 		if (error != 0)
 			return error;
+
+		/* Stops waiting once the firmware has switched. */
 		if ((value & PM1_CNT_SCI_EN) != 0)
-			return 0;
+			break;
+
+		/* Gives the firmware 10 microseconds more. */
 		drv_acpi_os_stall(10);
 	}
 
 	/* Reports a firmware that did not switch. */
-	drv_acpi_os_log("ACPI: the platform did not enter ACPI mode\n");
-	return ETIMEDOUT;
+	if ((value & PM1_CNT_SCI_EN) == 0) {
+		drv_acpi_os_log("ACPI: the platform did not enter ACPI mode\n");
+		return ETIMEDOUT;
+	}
+
+	/* Succeeded: the platform raises SCIs from now on. */
+	return 0;
+}
+
+/*
+ * Reports whether a GPE number below the count has a register.  When the
+ * second block's base lies above the end of the first block, the numbers
+ * between them name no register in either block.
+ */
+static bool
+gpe_present(
+	unsigned gpe)
+{
+	unsigned first_count;
+
+	/* Without a second block every number below the count is in the first. */
+	if (events.gpe1.length == 0)
+		return true;
+
+	/* Numbers in the first block, and from the second block's base on, have a register. */
+	first_count = events.gpe0.length / 2U * 8U;
+	if (gpe < first_count)
+		return true;
+	if (gpe >= events.gpe1_base)
+		return true;
+
+	/* Reports a number in the gap between the blocks. */
+	return false;
 }
 
 /* Finds the status register port and bit of a GPE. */
@@ -823,6 +932,69 @@ gpe_register(
 	*bit = (uint8_t)(1U << (gpe % 8U));
 }
 
+/* Finds the enable register that matches a GPE's status register. */
+static uint32_t
+gpe_enable_port(
+	unsigned gpe,
+	uint32_t status_port)
+{
+	/* The enable registers follow the status registers of the GPE's block, the second half of it. */
+	if (events.gpe1.length == 0 || gpe < events.gpe1_base)
+		return status_port + events.gpe0.length / 2U;
+
+	/* Reports the enable register of the second block. */
+	return status_port + events.gpe1.length / 2U;
+}
+
+/*
+ * Records and masks the GPEs that fired in one block, whose first GPE has
+ * the number base.
+ */
+static void
+record_gpe_block(
+	const struct register_block *block,
+	unsigned base)
+{
+	uint32_t status_port;
+	uint32_t enable_port;
+	uint8_t status_byte;
+	uint8_t enable_byte;
+	uint8_t fired;
+	unsigned registers;
+	unsigned index;
+	unsigned bit;
+	unsigned gpe;
+
+	/* Visits each status register with the enable register in the block's second half. */
+	registers = block->length / 2U;
+	for (index = 0; index < registers; index++) {
+		status_port = block->port + index;
+		enable_port = status_port + registers;
+
+		/* Reads the register's status and enable bits. */
+		status_byte = port_read8(status_port);
+		enable_byte = port_read8(enable_port);
+		fired = (uint8_t)(status_byte & enable_byte);
+		if (fired == 0)
+			continue;
+
+		/* Masks the fired events; the thread unmasks each once it is handled. */
+		port_write8(enable_port, (uint8_t)(enable_byte & ~fired));
+
+		/* Records each fired event as pending for the thread. */
+		for (bit = 0; bit < 8U; bit++) {
+			/* Skips a bit that did not fire. */
+			if ((fired & (1U << bit)) == 0)
+				continue;
+
+			/* Records a GPE that the interpreter numbers; only those are ever enabled. */
+			gpe = base + index * 8U + bit;
+			if (gpe < events.gpe_count)
+				events.gpe_pending[gpe / 8U] |= (uint8_t)(1U << (gpe % 8U));
+		}
+	}
+}
+
 /* Reads one byte-wide event register. */
 static uint8_t
 port_read8(
@@ -836,7 +1008,7 @@ port_read8(
 	if (error != 0)
 		return 0;
 
-	/* Reports the byte. */
+	/* Succeeded: reports the register's byte. */
 	return (uint8_t)value;
 }
 
@@ -873,7 +1045,7 @@ pm1_read(
 			b = 0;
 	}
 
-	/* Reports both. */
+	/* Reports the bits of both blocks together, as one register. */
 	return (uint16_t)(a | b);
 }
 
@@ -900,7 +1072,7 @@ pm1_control_set(
 	uint32_t value;
 	int error;
 
-	/* Reads the register. */
+	/* Reads the register, so that SCI_EN and the rest stay as they are. */
 	error = drv_acpi_os_port_read(block->port, 16, &value);
 	if (error != 0)
 		return;
@@ -945,13 +1117,9 @@ gpe_set_enable(
 	uint8_t bit;
 	uint8_t value;
 
-	/* The enable register follows the status registers of its block. */
+	/* Finds the enable register, which follows the status registers of the GPE's block. */
 	gpe_register(gpe, &port, &bit);
-	if (events.gpe1.length == 0 || gpe < events.gpe1_base) {
-		port += events.gpe0.length / 2U;
-	} else {
-		port += events.gpe1.length / 2U;
-	}
+	port = gpe_enable_port(gpe, port);
 
 	/* Changes the one bit. */
 	value = port_read8(port);
@@ -973,7 +1141,7 @@ gpe_clear(
 	uint32_t port;
 	uint8_t bit;
 
-	/* Writes the bit alone. */
+	/* Writes the bit alone, so that the other GPEs of the register keep their status. */
 	gpe_register(gpe, &port, &bit);
 	port_write8(port, bit);
 }
@@ -991,6 +1159,7 @@ gpe_method_visitor(
 	int high;
 	int low;
 	unsigned gpe;
+	bool present;
 
 	UNUSED_PARAMETER(depth);
 	UNUSED_PARAMETER(argument);
@@ -1021,11 +1190,20 @@ gpe_method_visitor(
 	if (gpe >= events.gpe_count)
 		return 0;
 
+	/* Refuses a number between the two blocks, which no register carries. */
+	present = gpe_present(gpe);
+	if (!present)
+		return 0;
+
 	/* Records the method; a GPE a driver handles keeps its handler. */
 	if (events.gpes[gpe].kind == GPE_NONE) {
 		events.gpes[gpe].kind = GPE_METHOD;
 		events.gpes[gpe].method = node;
-		events.gpes[gpe].edge = (uint8_t)(kind == 'E');
+
+		/* An _Exx method handles an edge-triggered event, an _Lxx method a level one. */
+		events.gpes[gpe].edge = 0;
+		if (kind == 'E')
+			events.gpes[gpe].edge = 1;
 	}
 
 	/* Goes on with the walk. */
@@ -1057,6 +1235,8 @@ wake_visitor(
 	error = drv_acpi_evaluate(node, NULL, NULL, 0, &result);
 	if (error != 0 || result == NULL)
 		return 0;
+
+	/* Marks the GPE an integer first element names; wake keeps it masked at runtime. */
 	first = drv_acpi_object_package_element(result, 0);
 	if (first != NULL && first->type == DRV_ACPI_TYPE_INTEGER) {
 		gpe = first->value.integer;
@@ -1076,15 +1256,15 @@ static int
 hex_digit(
 	uint8_t character)
 {
-	/* Decimal digits. */
+	/* Decodes a decimal digit. */
 	if (character >= '0' && character <= '9')
 		return character - '0';
 
-	/* Upper-case letters. */
+	/* Decodes an upper-case letter. */
 	if (character >= 'A' && character <= 'F')
 		return character - 'A' + 10;
 
-	/* Reports anything else. */
+	/* Reports a character that is no digit of a GPE name. */
 	return -1;
 }
 
@@ -1106,7 +1286,7 @@ process_gpe(
 	if (entry->edge)
 		gpe_clear(gpe);
 
-	/* Runs the driver's handler or the GPE method. */
+	/* Runs the driver's handler or the GPE method; a GPE with neither stays masked from now on. */
 	if (entry->kind == GPE_HANDLER && entry->handler != NULL) {
 		entry->handler(gpe, entry->argument);
 	} else if (entry->kind == GPE_METHOD) {
@@ -1124,10 +1304,12 @@ process_gpe(
 	if (!entry->edge)
 		gpe_clear(gpe);
 
-	/* Unmasks it again. */
+	/* Unmasks it again while it is still enabled. */
 	if (entry->enabled) {
 		state = drv_acpi_os_event_lock();
+
 		gpe_set_enable(gpe, true);
+
 		drv_acpi_os_event_unlock(state);
 	}
 }
