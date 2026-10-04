@@ -1156,7 +1156,7 @@ devfs_dir_open(
 	enum inode_type descriptor_type;
 	size_t allocation_bytes;
 	int held;
-	unsigned indices[8];
+	unsigned indices[TTY_PTY_MAX];
 	unsigned count;
 	unsigned character_count;
 	unsigned capacity;
@@ -1185,13 +1185,13 @@ devfs_dir_open(
 		descriptor_count = KERN_OPEN_MAX;
 
 	/* Reserves room for all non-character entries without count overflow. */
-	if (character_count > UINT_MAX - DISK_MAX - descriptor_count - 10U) {
+	if (character_count > UINT_MAX - DISK_MAX - TTY_PTY_MAX - descriptor_count - 10U) {
 		devfs_cdev_snapshot_release(snapshot, character_count);
 		return EOVERFLOW;
 	}
 
 	/* Includes all existing disk slots, terminal slots and fixed directories. */
-	capacity = character_count + DISK_MAX + descriptor_count + 10U;
+	capacity = character_count + DISK_MAX + TTY_PTY_MAX + descriptor_count + 10U;
 
 	/* Rejects byte counts that cannot be represented by this architecture. */
 	allocation_bytes = (size_t)capacity * sizeof(*entry);
@@ -1958,7 +1958,7 @@ devfs_statvfs(
 	struct statvfs *result)
 {
 	struct disk_info disks[DISK_MAX];
-	unsigned indices[8];
+	unsigned indices[TTY_PTY_MAX];
 	unsigned character_count;
 	unsigned disk_count;
 	unsigned terminal_count;
