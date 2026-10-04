@@ -521,6 +521,34 @@ drv_i915_dmc_init(
 }
 
 /*
+ * Loads the DMC's program again after a resume (ws052-p009): DC9 lost it.
+ *
+ * A DMC whose first load completed is loaded from the payload the display
+ * kept.  It reports ENOENT when there is no payload (nothing to load,
+ * which leaves the display without DC states, as at boot), EIO when the
+ * load did not complete.
+ */
+int
+drv_i915_dmc_resume(
+	struct i915_dmc_dev *dev)
+{
+	/* A display without a payload has nothing to load. */
+	if (!dev->main_payload_present)
+		return ENOENT;
+
+	/* Loads the program into the DMC again. */
+	drv_i915_dmc_load_program(&dev->dmc, dev->m, &dev->dc_state);
+	if (!dev->dmc.load_seq_completed) {
+		kern_logf("i915: dmc: the program did not load again after the resume\n");
+		return EIO;
+	}
+
+	/* Succeeded: the DMC runs its program again. */
+	kern_logf("i915: dmc: program loaded again after the resume\n");
+	return 0;
+}
+
+/*
  * Stops the DMC loader: waits for the work (a flush, not a cancel), gives
  * back a reference the work kept, and releases the payload storage.
  */

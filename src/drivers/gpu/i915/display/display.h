@@ -89,6 +89,10 @@ void drv_i915_display_resident_deps(struct i915_device *device);
 
 /* Stops anything still scanned out, the hotplug path, and unregisters the driver (before the GT stop). */
 void drv_i915_display_stop_early(struct i915_device *device);
+void drv_i915_display_suspend_begin(struct i915_device *device);
+int drv_i915_display_suspend_end(struct i915_device *device);
+int drv_i915_display_resume_begin(struct i915_device *device);
+void drv_i915_display_resume_end(struct i915_device *device);
 
 /* Releases the panel connector and the crtc, plane, DPLL and encoder records (before the interrupt uninstall). */
 void drv_i915_display_stop_outputs(struct i915_device *device);

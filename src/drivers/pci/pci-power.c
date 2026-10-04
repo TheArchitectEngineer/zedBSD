@@ -23,9 +23,8 @@
  * drv_pci_resume_all() undoes it in the reverse order: the platform
  * powers the function, D0, the configuration written back, the wake
  * disarmed, and the driver's resume.  A driver whose resume reports
- * ESTALE says its function lost the state it had (an xHCI controller
- * whose Restore State failed); the function is detached and attached
- * again, which enumerates what is behind it afresh.
+ * ESTALE says its function lost the state it had and can be attached
+ * afresh; the function is detached and attached again.
  *
  * Functions without a driver are left alone.  The two calls come from the
  * one thread that enters and leaves S0 idle; a second suspend before the

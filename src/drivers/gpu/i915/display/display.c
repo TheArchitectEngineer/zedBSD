@@ -779,6 +779,133 @@ drv_i915_display_stop_early(
 }
 
 /*
+ * Begins the display's suspend (ws052-p009): takes the INIT reference
+ * again (intel_power_domains_disable()), which keeps every well on while
+ * the suspend goes on.  The outputs were stopped when the request worker
+ * left the display window for its park.
+ */
+void
+drv_i915_display_suspend_begin(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+
+	/* A device without a display has nothing to suspend. */
+	display = device->display;
+	if (display == NULL || !display->power_domains_inited)
+		return;
+
+	/* Holds the wells for the rest of the suspend. */
+	drv_i915_power_domains_disable(&display->dcore);
+}
+
+/*
+ * Ends the display's suspend with the interrupts off: the display core
+ * goes down (intel_power_domains_suspend()) and the display enters DC9.
+ * A DC9 that is refused brings the core up again and is reported.
+ */
+int
+drv_i915_display_suspend_end(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	int error;
+
+	/* A device without a display has nothing to suspend. */
+	display = device->display;
+	if (display == NULL || !display->power_domains_inited)
+		return 0;
+
+	/* Takes the display core down. */
+	drv_i915_power_domains_suspend(&display->dcore);
+
+	/* Enters DC9; a refusal brings the core up again. */
+	error = drv_i915_display_dc9_enter(&display->dcore, 0);
+	if (error != 0) {
+		(void)drv_i915_display_resume_begin(device);
+		drv_i915_display_resume_end(device);
+		return error;
+	}
+
+	/* suspend_dc9 tells the resume to leave DC9. */
+	display->suspend_dc9 = 1;
+
+	/* Succeeded: the display is in DC9. */
+	return 0;
+}
+
+/*
+ * Begins the display's resume, before the interrupts come back: DC9 is
+ * left, the display core comes up again with the INIT reference held
+ * (intel_power_domains_init_hw(resume)), and the DMC's program is loaded
+ * again.  It reports the first step that failed; the later ones still run.
+ */
+int
+drv_i915_display_resume_begin(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	int first_error;
+	int error;
+
+	/* A device without a display has nothing to resume. */
+	display = device->display;
+	if (display == NULL || !display->power_domains_inited)
+		return 0;
+
+	/* Leaves DC9. */
+	first_error = 0;
+	if (display->suspend_dc9) {
+		error = drv_i915_display_dc9_leave(&display->dcore);
+		if (error != 0)
+			first_error = error;
+
+		display->suspend_dc9 = 0;
+	}
+
+	/* Brings the display core up again; the INIT reference is held from here. */
+	if (display->dcore.core_suspended) {
+		drv_i915_power_domains_init_hw(&display->dcore, 1);
+		display->dcore.core_suspended = 0;
+	}
+
+	/* Loads the DMC's program again; a display without one has no DC states, as at boot. */
+	if (display->dmc_inited) {
+		error = drv_i915_dmc_resume(&display->dmc_dev);
+		if (error != 0 && error != ENOENT && first_error == 0)
+			first_error = error;
+	}
+
+	/* Reports the first step that failed. */
+	if (first_error != 0)
+		return first_error;
+
+	/* Succeeded: the display core runs. */
+	return 0;
+}
+
+/*
+ * Ends the display's resume: gives the INIT reference back
+ * (intel_power_domains_enable()), so that DC6 is allowed again.  The
+ * outputs come back with the next presentation, which enters the display
+ * window again.
+ */
+void
+drv_i915_display_resume_end(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+
+	/* A device without a display has nothing to resume. */
+	display = device->display;
+	if (display == NULL || !display->power_domains_inited)
+		return;
+
+	/* Gives the INIT reference back. */
+	drv_i915_power_domains_enable(&display->dprobe, &display->dcore);
+}
+
+/*
  * Releases the panel connector and the display records (after the GT
  * stop, before the interrupt uninstall).
  *

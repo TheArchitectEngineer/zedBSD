@@ -57,6 +57,9 @@ void drv_i915_power_domains_driver_remove(struct i915_display_core *dc);
 unsigned drv_i915_power_domains_verify_state(struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
 void drv_i915_power_domains_enable(struct i915_driver_probe *probe, struct i915_display_core *dc);
 void drv_i915_power_domains_disable(struct i915_display_core *dc);
+void drv_i915_power_domains_suspend(struct i915_display_core *dc);
+int drv_i915_display_dc9_enter(struct i915_display_core *dc, int irqs_enabled);
+int drv_i915_display_dc9_leave(struct i915_display_core *dc);
 
 /*
  * The power hooks of a panel run (the context is its struct

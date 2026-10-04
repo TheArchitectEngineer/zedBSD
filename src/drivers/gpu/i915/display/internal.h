@@ -582,6 +582,7 @@ struct i915_display_core {
 	 */
 	uint8_t is_alderlake_p;
 	int init_wakeref_held;             /* POWER_DOMAIN_INIT domain reference held */
+	int core_suspended;                /* the display core was taken down for a suspend (ws052-p009) */
 	int pm_wakeref;                    /* runtime-PM side of the init wakeref */
 
 	/* Diagnostics. */
@@ -3592,6 +3593,9 @@ struct i915_display {
 	int vga_registered;
 	int power_domains_inited;
 	int dmc_inited;
+
+	/* DC9 was entered for a suspend and is to be left by the resume (ws052-p009). */
+	int suspend_dc9;
 	int modeset_wq_ok;
 	int flip_wq_ok;
 	int dstate_inited;
