@@ -86,3 +86,11 @@ D3hot）にして、戻ったら **suspend の前の出力先**（eDP の panel�
    hotplug が無い今は「次の窓の失敗」として log に出す。
 5. **Phase の分け方**: 案は 3 つの commit: (a) worker の park と窓の suspend の要求（host の試験）、(b) GT と割り込みと display の power と DC9・DMC
    （fake の試験）、(c) i915 の `suspend`・`resume` の op の結線と UAT の手順。
+
+## Q1 の判断（2026-10-05、§6 の 5 つ）
+
+1. GGTT: **resume で毎回書き直す**（Linux と同じ。標本の照合で済ませる案は採らない。書き直しの費用は小さく、取りこぼしの危険を避ける）。
+2. DC9 の前提: 案のとおり Linux の assert_can_enable_dc9 の順に合わせる。
+3. park 中の要求: 案のとおり queue に入れて待たせる。
+4. 出力の記憶: 案のとおり同じ選び方で再計算。sleep の間に外部の monitor が抜かれた時は、失敗の記録に加え、Guardrail の scanout の規則（firmware の画面が無い時は内蔵の panel と判断できる出力、2026-10-05 ユーザー）に合わせて内蔵の panel を点けることを試み、点かなくても起動・resume に影響させない。
+5. commit の分け方: 案のとおり (a)(b)(c) の 3 段。
