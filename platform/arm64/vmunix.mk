@@ -81,7 +81,7 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/kcrt.c src/kern/heap.c \
 	src/kern/random.c src/kern/random-crypto.c \
 	src/kern/tty.c \
- src/drivers/generic/system-device.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
+ src/drivers/generic/system-device.c src/kern/system-event.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/kern/init.c
 # USB behind the Pi 4's PCIe (ws048): the core comes with any USB driver.
 ARM64_USB_SOURCES :=

@@ -25,6 +25,7 @@
 #include <uapi/errno.h>
 
 #include <drivers/acpi/acpi.h>
+#include <kern/system-event.h>
 #include <drivers/pci/pci.h>
 
 #include "kern/clock.h"
@@ -224,6 +225,11 @@ drv_acpi_attach(void)
 	error = drv_acpi_ec_attach();
 	if (error != 0 && error != ENODEV)
 		kern_logf("acpi: the Embedded Controller did not attach (error %d)\n", error);
+
+	/* Follows the lid, the AC adapter, the batteries and the buttons (ws132-p002). */
+	error = drv_acpi_power_attach();
+	if (error != 0 && error != ENODEV)
+		kern_logf("acpi: the power devices did not attach (error %d)\n", error);
 
 	/* Publishes the namespace to user programs. */
 	error = drv_acpi_device_register();
@@ -541,8 +547,11 @@ start_events(void)
 	if (error != 0)
 		return error;
 
-	/* Logs the power button until a driver takes it. */
+	/* Posts the power and sleep buttons as the system's events. */
 	error = drv_acpi_fixed_event_install(DRV_ACPI_EVENT_POWER_BUTTON, power_button, NULL);
+	if (error != 0 && error != ENODEV)
+		return error;
+	error = drv_acpi_fixed_event_install(DRV_ACPI_EVENT_SLEEP_BUTTON, power_button, NULL);
 	if (error != 0 && error != ENODEV)
 		return error;
 
@@ -710,17 +719,27 @@ event_thread(
 	}
 }
 
-/* Logs a press of the power button; the power management WS will act on it. */
+/*
+ * Takes a press of the fixed power or sleep button: logged, and posted as
+ * the system's event for the desktop (ws132-p002).
+ */
 static void
 power_button(
 	enum drv_acpi_fixed_event event,
 	void *argument)
 {
-	UNUSED_PARAMETER(event);
 	UNUSED_PARAMETER(argument);
 
-	/* Records the press in the kernel log. */
+	/* The sleep button. */
+	if (event == DRV_ACPI_EVENT_SLEEP_BUTTON) {
+		kern_logf("acpi: sleep button\n");
+		kern_system_event_post(KERN_SYSTEM_EVENT_POWER, KERN_SYSTEM_EVENT_PRESS, 1, "sleep-button", "");
+		return;
+	}
+
+	/* The power button. */
 	kern_logf("acpi: power button\n");
+	kern_system_event_post(KERN_SYSTEM_EVENT_POWER, KERN_SYSTEM_EVENT_PRESS, 1, "power-button", "");
 }
 
 /* Reads physical memory for the table finder, one page at a time. */

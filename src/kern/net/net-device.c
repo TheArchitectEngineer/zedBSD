@@ -23,6 +23,7 @@
 #include <kern/kcrt.h>
 
 #include <uapi/route.h>
+#include <uapi/system.h>
 
 #include <uapi/errno.h>
 #include <stdbool.h>
@@ -43,6 +44,12 @@ extern void inet_interface_purge_device(struct net_device *)
 extern void arp_purge_device(struct net_device *) __attribute__((weak));
 extern void route_socket_notify(unsigned, uint64_t, unsigned, unsigned)
     __attribute__((weak));
+
+/*
+ * The system's events (ws132-p002), which hear network devices come and
+ * go.  Weak: the host fixtures of the network stack link without them.
+ */
+extern void kern_system_event_post(uint32_t, uint32_t, int32_t, const char *, const char *) __attribute__((weak));
 
 static struct net_device devices[NET_DEVICE_MAX];
 static uint8_t device_used[NET_DEVICE_MAX];
@@ -69,6 +76,7 @@ static void device_wait_removed(struct net_device *device);
 static bool device_lock(void);
 static void device_unlock(bool enabled);
 static int device_name_valid(const char *name);
+static void device_post_event(const struct net_device *device, unsigned ifindex, uint32_t action);
 
 /*
  * Empties the device registry.
@@ -198,6 +206,7 @@ net_device_create(
 	if (route_socket_notify != NULL)
 		route_socket_notify(event_ifindex, event_generation, event_flags,
 		    RTM_IFINFO_ARRIVAL);
+	device_post_event(device, event_ifindex, KERN_SYSTEM_EVENT_ADD);
 
 	/* Reports the published device. */
 	return 0;
@@ -306,6 +315,7 @@ net_device_gone(
 	if (route_socket_notify != NULL)
 		route_socket_notify(event_ifindex, event_generation, event_flags,
 		    RTM_IFINFO_REMOVAL);
+	device_post_event(device, event_ifindex, KERN_SYSTEM_EVENT_REMOVE);
 
 	/*
 	 * A driver close cannot race poll_receive() or ioctl(): once
@@ -1512,4 +1522,25 @@ device_name_valid(
 
 	/* Reports a usable name. */
 	return 1;
+}
+
+/*
+ * Posts a device's ADD or REMOVE to the system's events: its name, and in
+ * the detail its interface index and hardware address length.
+ */
+static void
+device_post_event(
+	const struct net_device *device,
+	unsigned ifindex,
+	uint32_t action)
+{
+	char detail[KERN_SYSTEM_EVENT_DETAIL_MAX];
+
+	/* A kernel without the system's events posts nothing. */
+	if (kern_system_event_post == NULL)
+		return;
+
+	/* The detail, then the event. */
+	kern_snprintf(detail, sizeof(detail), "ifindex=%u mtu=%u", ifindex, (unsigned)device->mtu);
+	kern_system_event_post(KERN_SYSTEM_EVENT_NETWORK, action, 0, device->name, detail);
 }

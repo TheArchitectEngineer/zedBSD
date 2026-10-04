@@ -36,6 +36,7 @@
 #include <uapi/sysctl.h>
 #include "kern/clock.h"
 #include <kern/kcrt.h>
+#include <uapi/system.h>
 
 #define DISK_ALLOCATED		1U
 #define DISK_LIVE		2U
@@ -98,6 +99,12 @@ extern void io_error_record(struct io_error_state *, int) __attribute__((weak));
 extern void *io_pool_borrow(size_t, size_t *) __attribute__((weak));
 extern void io_pool_release(void *) __attribute__((weak));
 
+/*
+ * The system's events (ws132-p002), which hear disks come and go.  Weak:
+ * the host fixtures of the disk layer link without them.
+ */
+extern void kern_system_event_post(uint32_t, uint32_t, int32_t, const char *, const char *) __attribute__((weak));
+
 static struct disk disks[DISK_MAX];
 static uint8_t disk_used[DISK_MAX];
 static struct disk *disk_head;
@@ -124,6 +131,7 @@ static bool disk_lock(void);
 static void disk_unlock(bool enabled);
 static int disk_index(const struct disk *disk);
 static void zero_bytes(void *p, size_t n);
+static void disk_post_event(struct disk *disk, uint32_t action);
 static int name_equal(const char *a, const char *b);
 static int name_valid(const char name[DISK_NAME_MAX]);
 static int sd_name(char name[DISK_NAME_MAX], unsigned number);
@@ -660,6 +668,9 @@ disk_create(
 	/* The registry may change again. */
 	disk_unlock(enabled);
 
+	/* The desktop hears the new disk. */
+	disk_post_event(disk, KERN_SYSTEM_EVENT_ADD);
+
 	/* Reports the published disk. */
 	return 0;
 }
@@ -677,6 +688,7 @@ disk_gone(
 	struct disk **link;
 	struct backing_mutation_guard guard;
 	bool enabled;
+	bool removed;
 
 	/* Ignores a missing disk or one whose backing cannot be quiesced. */
 	if (disk == NULL ||
@@ -688,6 +700,7 @@ disk_gone(
 		return;
 
 	/* Only a live disk is unlinked. */
+	removed = false;
 	enabled = disk_lock();
 	if (disk_leaf(disk)->d_reload_owner != NULL ||
 	    disk_admin_conflict_locked(disk, 0, disk->d_block_count, 0) != 0)
@@ -708,10 +721,15 @@ disk_gone(
 	disk_persistence_invalidate(disk);
 	disk->d_state = DISK_GONE;
 	disk_stats_gone(disk);
+	removed = true;
 
 out:
 	disk_unlock(enabled);
 	backing_mutation_end(&guard);
+
+	/* The desktop hears the disk go, when it went now. */
+	if (removed)
+		disk_post_event(disk, KERN_SYSTEM_EVENT_REMOVE);
 }
 
 /*
@@ -802,6 +820,9 @@ disk_gone_if_idle(
 	disk_stats_gone(disk);
 	disk_unlock(enabled);
 	error = 0;
+
+	/* The desktop hears the disk go. */
+	disk_post_event(disk, KERN_SYSTEM_EVENT_REMOVE);
 
 out:
 	backing_mutation_end(&guard);
@@ -3603,6 +3624,40 @@ zero_bytes(
 		q++;
 		n--;
 	}
+}
+
+/*
+ * Posts a disk's ADD or REMOVE to the system's events: the disk's name, and
+ * in the detail its parent, whether it is removable, and its size.
+ */
+static void
+disk_post_event(
+	struct disk *disk,
+	uint32_t action)
+{
+	char detail[KERN_SYSTEM_EVENT_DETAIL_MAX];
+	const struct disk *leaf;
+	const char *parent;
+	unsigned removable;
+
+	/* A kernel without the system's events posts nothing. */
+	if (kern_system_event_post == NULL)
+		return;
+
+	/* The parent of a partition, and the removable flag of its whole disk. */
+	parent = "-";
+	if (disk->d_parent != NULL)
+		parent = disk->d_parent->d_name;
+	leaf = disk_leaf(disk);
+	removable = 0;
+	if ((leaf->d_flags & DISK_REMOVABLE) != 0U)
+		removable = 1;
+
+	/* The detail, then the event. */
+	kern_snprintf(detail, sizeof(detail), "parent=%s removable=%u block=%u blocks=%llu",
+		      parent, removable, (unsigned)disk->d_block_size,
+		      (unsigned long long)disk->d_block_count);
+	kern_system_event_post(KERN_SYSTEM_EVENT_DISK, action, 0, disk->d_name, detail);
 }
 
 /* Compares two disk names for equality. */
