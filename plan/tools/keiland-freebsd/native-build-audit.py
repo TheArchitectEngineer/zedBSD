@@ -34,7 +34,8 @@ for library in sorted((stage / 'lib').glob('*.so*')):
     assert 'libwayland-client.so.0' not in needed
     assert not any('basu' in dependency for dependency in needed)
     libraries.append({'file': library.name, 'soname': soname, 'needed': needed, 'sha256': hashlib.sha256(library.read_bytes()).hexdigest()})
-assert len(libraries) == 11
+# 10 since ws131-p012: libkeiui.so joined libkeiland.so.
+assert len(libraries) == 10
 assert not (stage / 'lib/libvulkan.so').exists()
 assert (stage / 'include/libseat.h').is_file()
 assert (stage / 'include/wayland-client.h').is_file()
