@@ -150,6 +150,15 @@ struct wlan_radio_ops {
 	 * The driver serializes hardware access and retries its complete close.
 	 * Success proves hardware stop AND common ownership reconciliation. */
 	int (*stop_retry)(void *context);
+	/*
+	 * Optional.  Independent retirement thread, once a driver asked for it
+	 * with wlan_station_restart_request(): no common control/active lease is
+	 * held and the station's work pin keeps detach out.  The driver restarts
+	 * a hardware epoch it stopped by itself while the device stayed up, so a
+	 * failed scan does not leave the interface down until it is cycled
+	 * (BUG-158).  The result is the driver's own; common keeps no state.
+	 */
+	int (*restart)(void *context);
 };
 
 void wlan_core_init(void);
@@ -186,6 +195,12 @@ int wlan_station_stop_cancel(struct wlan_station *station);
 /* Called only by the independent retirement thread, or a deterministic fixture.
  * Station ownership protects the device and driver context across each callback. */
 void wlan_retirement_run(uint64_t now_ticks);
+/*
+ * Asks the retirement thread to call the driver's restart on its next pass,
+ * outside the network worker and every common lease.  Repeated requests before
+ * that pass are one restart.
+ */
+void wlan_station_restart_request(struct wlan_station *station);
 /* Holds common admission closed across a driver's checked hardware stop.
  * begin requires every common caller to have returned; EBUSY keeps closing set
  * to refuse new callers. end keeps closing set

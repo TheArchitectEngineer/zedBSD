@@ -1253,6 +1253,13 @@ drv_intel_ax211_staging_clear(
 #define AX211_DEFERRED_EVENT_LIMIT 16U
 #define AX211_DIRECT_TIMEOUT_US 1000000U
 #define AX211_LIFECYCLE_JOIN_TICKS (5U * KERN_CLOCK_HZ)
+
+/*
+ * How many times in a row a recovery may restart the epoch by itself before
+ * the interface is left down for the user to cycle (BUG-158).  A scan that
+ * completes resets the count.
+ */
+#define AX211_REOPEN_ATTEMPTS_MAX 3U
 #define AX211_ASSOC_STATION_ID 0U
 #define AX211_ASSOC_CCK_ACK_RATES 0x0fU
 #define AX211_ASSOC_OFDM_ACK_RATES 0x15U
@@ -1400,6 +1407,16 @@ struct ax211_pci_controller {
 	uint64_t reject_log_deadline;
 	unsigned net_live;
 	unsigned station_attached;
+	/* The net device is open: ax211_net_open succeeded and no close followed. */
+	unsigned net_opened;
+	/*
+	 * A recovery stopped the epoch while the device stayed open and asked the
+	 * WLAN retirement thread to restart it (BUG-158).  Cleared by the restart,
+	 * by an explicit open or close, and by detach.
+	 */
+	unsigned reopen_pending;
+	/* Restarts since the last scan that completed; bounded by AX211_REOPEN_ATTEMPTS_MAX. */
+	unsigned reopen_attempts;
 };
 
 static int ax211_pci_match(struct drv_pci_device *device, const struct drv_pci_id *identity);
@@ -1499,6 +1516,8 @@ static int ax211_pci_tx_timeout_check(struct ax211_pci_controller *controller, u
 static int ax211_pci_connection_rx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_rx_mpdu *mpdu, uint16_t frame_control);
 
 static int ax211_net_open(struct net_device *device);
+static int ax211_pci_open_locked(struct ax211_pci_controller *controller, int restarting);
+static void ax211_pci_reopen_request_locked(struct ax211_pci_controller *controller);
 static void ax211_net_close(struct net_device *device);
 static int ax211_net_transmit(struct net_device *device, struct packet_buf *packet);
 static unsigned ax211_net_poll_receive(struct net_device *device, unsigned budget);
@@ -1518,6 +1537,7 @@ static int ax211_radio_key_delete(void *context, uint64_t generation, enum wlan_
 static int ax211_radio_keys_activate(void *context, uint64_t generation, uint64_t pairwise_key_generation, uint64_t group_key_generation, uint64_t deadline);
 static int ax211_radio_quiesce(void *context);
 static int ax211_radio_stop_retry(void *context);
+static int ax211_radio_restart(void *context);
 
 static const struct drv_pci_id ax211_pci_ids[] = {
 	{
@@ -1553,7 +1573,8 @@ static const struct wlan_radio_ops ax211_radio_ops = {
 	.key_delete = ax211_radio_key_delete,
 	.keys_activate = ax211_radio_keys_activate,
 	.quiesce = ax211_radio_quiesce,
-	.stop_retry = ax211_radio_stop_retry};
+	.stop_retry = ax211_radio_stop_retry,
+	.restart = ax211_radio_restart};
 
 static const struct net_device_ops ax211_net_ops = {
 	.open = ax211_net_open,
@@ -2878,6 +2899,13 @@ ax211_pci_recovery_run_locked(
 			   stop_error);
 	}
 
+	/*
+	 * The device is still up: the epoch is started again from the WLAN
+	 * retirement thread, after a deferred stop when one is owed, so the
+	 * interface does not stay down until the user cycles it (BUG-158).
+	 */
+	ax211_pci_reopen_request_locked(controller);
+
 	/* Returns the computed result. */
 	return stop_error != 0 ? stop_error : failure;
 }
@@ -3098,6 +3126,35 @@ ax211_pci_stop_defer_locked(
 		   error, controller->runtime_start.state,
 		   controller->irq_established, controller->irq_allocated,
 		   controller->runtime_start.dma_prepared);
+}
+
+/*
+ * Asks the WLAN retirement thread to start a new epoch after a recovery.
+ *
+ * Only an open device is restarted, at most AX211_REOPEN_ATTEMPTS_MAX times
+ * in a row; past that the interface stays down until the user cycles it, as
+ * before (BUG-158).
+ */
+static void
+ax211_pci_reopen_request_locked(
+	struct ax211_pci_controller *controller)
+{
+	/* A closed, detaching, or stationless device has nothing to restart. */
+	if (!controller->net_opened || controller->detaching ||
+	    !controller->station_attached || controller->station == NULL)
+		return;
+
+	/* A run of restarts that never completed a scan is not repeated forever. */
+	if (controller->reopen_attempts >= AX211_REOPEN_ATTEMPTS_MAX) {
+		kern_logf("intel-ax211: recovery left the interface down after "
+			   "%u restarts; cycle WiFi to retry\n",
+			   controller->reopen_attempts);
+		return;
+	}
+
+	/* The retirement thread runs the restart outside the network worker. */
+	controller->reopen_pending = 1U;
+	wlan_station_restart_request(controller->station);
 }
 
 /* Reads the PCIe LTR-enable policy without broadening the device match. */
@@ -6400,17 +6457,7 @@ ax211_net_open(
 	struct net_device *device)
 {
 	struct ax211_pci_controller *controller;
-	struct intel_ax211_protocol_command_table table;
-	struct intel_ax211_protocol_nvm nvm;
-	struct drv_dma_device *dma_device;
-	struct wlan_station *station;
-	const char *stage;
-	unsigned long enabled;
-	int boot_result;
-	int runtime_result;
-	int cleanup_error;
 	int error;
-	int ltr_enabled;
 
 	/* Handles the device availability. */
 	if (device == NULL)
@@ -6433,6 +6480,54 @@ ax211_net_open(
 		return EBUSY;
 	}
 
+	/* Starts the epoch. */
+	error = ax211_pci_open_locked(controller, 0);
+
+	/*
+	 * An open by the user starts a fresh count of restarts, and replaces any
+	 * restart a recovery asked for.
+	 */
+	if (error == 0) {
+		controller->net_opened = 1U;
+		controller->reopen_pending = 0U;
+		controller->reopen_attempts = 0U;
+	}
+
+	/* Lets the poll, the timers, and the retirement thread in again. */
+	mutex_unlock(&controller->lifecycle_lock);
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Starts a new epoch: a stopped NVM pass followed by one retained runtime
+ * pass, after retiring an earlier stopped epoch.  The lifecycle mutex is held
+ * by the caller, the device open or the recovery's restart (BUG-158).  The
+ * retirement of the earlier epoch drops the mutex for a while; a restart
+ * whose device was closed in that window starts nothing (ECANCELED).
+ */
+static int
+ax211_pci_open_locked(
+	struct ax211_pci_controller *controller,
+	int restarting)
+{
+	struct intel_ax211_protocol_command_table table;
+	struct intel_ax211_protocol_nvm nvm;
+	struct drv_dma_device *dma_device;
+	struct wlan_station *station;
+	const char *stage;
+	unsigned long enabled;
+	int boot_result;
+	int runtime_result;
+	int cleanup_error;
+	int error;
+	int ltr_enabled;
+
 	/*
 	 * Finishes an earlier stopped epoch before publishing a fresh scan
 	 * profile.
@@ -6442,13 +6537,13 @@ ax211_net_open(
 	    (controller->close_pending || controller->session_stopped)) {
 		/* Checks the operation status. */
 		error = ax211_pci_close_locked(controller);
-		if (error != 0) {
-			mutex_unlock(&controller->lifecycle_lock);
-
-			/* Failed. */
+		if (error != 0)
 			return error;
-		}
 	}
+
+	/* The user closed the device while the earlier epoch was retired. */
+	if (restarting && !controller->net_opened)
+		return ECANCELED;
 
 	/* Handles the controller condition. */
 	if (controller->detaching || !controller->ready ||
@@ -6724,13 +6819,11 @@ ax211_net_open(
 		ax211_pci_scrub(&nvm, sizeof(nvm));
 	}
 
-	mutex_unlock(&controller->lifecycle_lock);
-
 	/* Reports the failure. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the epoch runs and admission is open. */
 	return 0;
 }
 
@@ -6831,6 +6924,10 @@ ax211_net_close(
 	if (controller == NULL)
 		return;
 	mutex_lock(&controller->lifecycle_lock);
+
+	/* A closed device is not restarted behind the user's back. */
+	controller->net_opened = 0U;
+	controller->reopen_pending = 0U;
 
 	wlan_station_stop_request(controller->station);
 	error = ax211_pci_close_locked(controller);
@@ -7286,7 +7383,6 @@ ax211_radio_scan_stop(
 	struct ax211_pci_controller *controller;
 	uint64_t now;
 	uint8_t phase;
-	int cleanup_error;
 	int error;
 	int result;
 
@@ -7384,6 +7480,10 @@ ax211_radio_scan_stop(
 			else
 				error = ax211_pci_bss_staging_publish(
 					controller, generation);
+
+			/* A scan that completed proves the epoch works: restarts count from zero again. */
+			if (error == 0)
+				controller->reopen_attempts = 0U;
 		} else {
 			/*
 			 * One common generation spans every channel.  Keep
@@ -7411,24 +7511,30 @@ ax211_radio_scan_stop(
 	}
 
 	/*
-	 * An expired or failed command leaves firmware ownership ambiguous.
-	 * Stop the entire epoch so a successful return can never strand a
-	 * producer behind the common WLAN barrier.
+	 * An expired or failed command leaves firmware ownership ambiguous, and
+	 * a timed-out command poisons the command transaction until a device
+	 * reset.  The whole epoch is stopped by the poll's recovery owner, not
+	 * here inside the common scan timer, and the recovery then has the
+	 * retirement thread start a new epoch (BUG-158).  Until the stop, this
+	 * call answers ENETDOWN to the common retry; after it, the runtime is
+	 * inactive and the retry succeeds, so no producer is stranded behind the
+	 * common WLAN barrier.
 	 */
 	error = ax211_pci_scan_result_errno(result);
 	kern_logf("intel-ax211: scan stop generation=%u phase=%u result=%d "
-		   "error=%d\n",
+		   "error=%d; recovering\n",
 		   (unsigned)generation, phase, result, error);
 	ax211_pci_bss_staging_discard(controller);
-	cleanup_error = ax211_pci_session_stop(controller);
-	controller->quarantined = cleanup_error != 0;
+	ax211_pci_recovery_latch_locked(controller, error);
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/*
-	 * The scan failed, but a proven global stop completed its retirement.
-	 */
-	return cleanup_error;
+	/* Failed: the scan is over and the stop is retried after the recovery. */
+	if (error != 0)
+		return error;
+
+	/* Failed without a mapped reason: still retryable after the recovery. */
+	return EIO;
 }
 
 /* Supports the ax211 radio connect start operation. */
@@ -8400,6 +8506,61 @@ ax211_radio_stop_retry(
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Starts a new epoch a recovery asked for (BUG-158).
+ *
+ * Runs on the WLAN retirement thread with the station's work pin held and no
+ * common lease, so the close inside the open can join common retirement.
+ */
+static int
+ax211_radio_restart(
+	void *context)
+{
+	struct ax211_pci_controller *controller;
+	unsigned attempt;
+	int error;
+
+	/* Handles the controller availability. */
+	controller = context;
+	if (controller == NULL)
+		return ENODEV;
+	mutex_lock(&controller->lifecycle_lock);
+
+	/* A request the user's close or open replaced, or a detach, needs nothing. */
+	if (!controller->reopen_pending || !controller->net_opened ||
+	    controller->detaching) {
+		controller->reopen_pending = 0U;
+		mutex_unlock(&controller->lifecycle_lock);
+
+		/* Succeeded: nothing was owed. */
+		return 0;
+	}
+
+	/* Counts this restart against the bound before it runs. */
+	controller->reopen_pending = 0U;
+	controller->reopen_attempts++;
+	attempt = controller->reopen_attempts;
+
+	/* Retires the stopped epoch and starts a new one, as an open does. */
+	error = ax211_pci_open_locked(controller, 1);
+	kern_logf("intel-ax211: restarted after recovery attempt=%u error=%d\n",
+		   attempt, error);
+
+	/* A failed start is tried again on a later pass, within the same bound. */
+	if (error != 0 && error != ECANCELED)
+		ax211_pci_reopen_request_locked(controller);
+
+	/* Lets the poll and the timers in again. */
+	mutex_unlock(&controller->lifecycle_lock);
+
+	/* Reports the failure; a later pass or the user's cycle tries again. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: scans and joins are admitted again. */
 	return 0;
 }
 

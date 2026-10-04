@@ -608,7 +608,8 @@ ax211_runtime_start_stop_and_release(
 	drain_result = session->ops->boot.interrupt_drain(session->argument);
 	quiesce_result = drv_intel_ax211_transport_quiesce(session->transport);
 
-	/* Handles the drain result condition. */
+	/* Resets the device; this stop's master-disable indication is observed afresh. */
+	session->mmio->master_disable_timed_out = 0;
 	stop_result = drv_intel_ax211_mmio_stop(session->mmio);
 	if (drain_result != 0 || stop_result != INTEL_AX211_MMIO_OK) {
 		session->state = INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED;
@@ -616,6 +617,24 @@ ax211_runtime_start_stop_and_release(
 		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_START_STOP_REQUIRED;
 	}
+
+	/*
+	 * Without the master-disable indication, a DMA write already issued may
+	 * still land after the reset.  The first such stop keeps every DMA page
+	 * and asks for a retry; bus mastering is already off, so by the retry,
+	 * after another reset, nothing can be in flight (BUG-158).
+	 */
+	if (session->mmio->master_disable_timed_out &&
+	    !session->dma_release_deferred) {
+		session->dma_release_deferred = 1U;
+		session->state = INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED;
+
+		/* Failed: the DMA is retained for the retry. */
+		return INTEL_AX211_RUNTIME_START_STOP_REQUIRED;
+	}
+
+	/* This stop frees the DMA, deferred before or not. */
+	session->dma_release_deferred = 0U;
 
 	after_reset_result =
 		drv_intel_ax211_transport_command_after_device_reset(

@@ -68,6 +68,7 @@ struct wlan_station {
 	int stop_error;
 	unsigned stop_attempts;
 	uint64_t stop_retry_deadline;
+	int restart_pending;
 	int shutdown_owned;
 	unsigned control_inflight;
 	unsigned active;
@@ -1496,6 +1497,71 @@ wlan_retirement_run(uint64_t now_ticks)
 		station->stop_work_active = 0;
 		spin_unlock_irqrestore(&station->lock, enabled);
 	}
+
+	/* Runs the restarts drivers asked for, under the same work pin. */
+	for (index = 0U; index < NET_DEVICE_MAX; index++) {
+		station = &wlan_stations[index];
+
+		/*
+		 * Claims the request: a stop still owed, a teardown, or any caller
+		 * on the station waits for a later pass.
+		 */
+		enabled = spin_lock_irqsave(&station->lock);
+
+		/* Runs only a pending request on an idle, live station whose driver can restart. */
+		run = station->used && !station->blocked && !station->shutdown_owned &&
+		    station->restart_pending && !station->stop_pending &&
+		    !station->stop_work_active && !station->stop_retry_disabled &&
+		    !station->lifecycle_inflight && station->active == 0U &&
+		    !station->control_inflight && station->ops->restart != NULL;
+		if (run) {
+			/* The request is consumed; the pin keeps detach out while the driver runs. */
+			station->restart_pending = 0;
+			station->stop_work_active = 1;
+		}
+
+		/* Lets other callers see the claim. */
+		spin_unlock_irqrestore(&station->lock, enabled);
+
+		/* Nothing was claimed on this station. */
+		if (!run)
+			continue;
+
+		/* The driver restarts its epoch; its result is its own to report. */
+		(void)station->ops->restart(station->radio_context);
+
+		/* Lets detach and open proceed again. */
+		enabled = spin_lock_irqsave(&station->lock);
+		station->stop_work_active = 0;
+		spin_unlock_irqrestore(&station->lock, enabled);
+	}
+}
+
+/*
+ * Asks the retirement thread to restart a driver's hardware epoch.
+ *
+ * The driver calls it after it stopped the epoch by itself (a recovery) while
+ * the device stayed up.  The restart runs on the retirement thread's next
+ * pass, never on the network worker that may have asked for it.
+ */
+void
+wlan_station_restart_request(struct wlan_station *station)
+{
+	unsigned long enabled;
+
+	/* A missing station has nothing to restart. */
+	if (station == NULL)
+		return;
+
+	/* Records the request; one pending request covers every request before the pass. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	/* A slot no driver owns any more takes no request. */
+	if (station->used)
+		station->restart_pending = 1;
+
+	/* Lets the retirement thread see the request. */
+	spin_unlock_irqrestore(&station->lock, enabled);
 }
 
 /*

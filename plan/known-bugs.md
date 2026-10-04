@@ -46,7 +46,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-175](bugs/BUG-175.md) | Terminal を多数開くと errno=8（ENOSPC）で起動しない | reproduced（実機） / tracking | UAT 2026-10-04 | BUG-120 の関連。QEMU で再現を試す（[ticket](bugs/BUG-175.md)） |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / tracking、低 | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
 | [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132）。UAT 2026-10-04: 再現せず（電源の状態は BUG-165 の後） |
-| [BUG-158](bugs/BUG-158.md) | 操作中・放置中にフリーズし、電源ボタンの長押しが要る | reproduced（実機 S1） / tracking | S1（WS133） | WS005／WS004（AX211）、原因次第。UAT 2026-10-04: 実機で再現（WiFi 未接続で約 1 分、**最優先**） |
+| [BUG-158](bugs/BUG-158.md) | 操作中・放置中にフリーズし、電源ボタンの長押しが要る | reproduced（実機 S1） / tracking | S1（WS133） | WS005／WS004（AX211）、原因次第。UAT 2026-10-04: 実機で再現（WiFi 未接続で約 1 分、**最優先**）。ws005-p032（q684-i01）: panic の可視化・kernel.log の永続化・scan の失敗からの自動の再 open を実装、T1 と次の UAT の (B) 待ち |
 | [BUG-157](bugs/BUG-157.md) | 鍵を間違えたとき「Could not join (Network is down)」と出る（5330 の AX211） | reproduced（実機 S1） / scheduled | S1（WS133） | WS005／WS004（AX211）。UAT 2026-10-04: 実機で再現（Network is unreachable） |
 | [BUG-156](bugs/BUG-156.md) | タッチパッドでスクロールできない | reproduced（実機 S1） / resolved（ws081-p019、QEMU。実機は S2） | S1（WS133） | WS081（touch）か WS006（入力）。UAT 2026-10-04: 実機で再現。原因の候補 BUG-165 |
 | [BUG-155](bugs/BUG-155.md) | Terminal で IME の日本語を入力できない | reproduced（実機 S1） / resolved（ws128-p011、QEMU。実機は S2） | S1（WS133） | WS128（Terminal） |
