@@ -77,8 +77,10 @@ drv_acpi_text_release(
 }
 
 /*
- * Appends formatted characters; a text that ran out of memory keeps
- * ENOMEM in error and takes nothing more.
+ * Appends formatted characters to a text.
+ *
+ * A text that ran out of memory keeps ENOMEM in error and takes nothing
+ * more.
  */
 void
 drv_acpi_text_printf(
@@ -95,6 +97,8 @@ drv_acpi_text_printf(
 	va_start(arguments, format);
 	kern_vsnprintf(piece, sizeof(piece), format, arguments);
 	va_end(arguments);
+
+	/* Measures it. */
 	length = kern_strlen(piece);
 
 	/* Makes room for it and its terminator. */
@@ -125,7 +129,7 @@ drv_acpi_text_namespace(
 	if (text->error != 0)
 		return text->error;
 
-	/* Succeeded. */
+	/* Succeeded: the text holds the whole namespace. */
 	return 0;
 }
 
@@ -142,7 +146,7 @@ drv_acpi_text_evaluate(
 	struct drv_acpi_object *result;
 	int error;
 
-	/* Evaluates it. */
+	/* Evaluates the path; a failure is written as the line's value. */
 	error = drv_acpi_evaluate(scope, path, NULL, 0, &result);
 	if (error != 0) {
 		drv_acpi_text_printf(text, "%s = error %d\n", label, error);
@@ -153,13 +157,15 @@ drv_acpi_text_evaluate(
 	drv_acpi_text_printf(text, "%s = ", label);
 	object_text(text, result, 0);
 	drv_acpi_text_printf(text, "\n");
+
+	/* The result is no longer needed. */
 	drv_acpi_object_release(result);
 
 	/* Reports a text that ran out of memory. */
 	if (text->error != 0)
 		return text->error;
 
-	/* Succeeded. */
+	/* Succeeded: the text holds the evaluation's line. */
 	return 0;
 }
 
@@ -179,8 +185,10 @@ namespace_visitor(
 	if (text->error != 0)
 		return -1;
 
-	/* Writes the line and goes on into the children. */
+	/* Writes the line. */
 	node_line(text, node);
+
+	/* Goes on into the children. */
 	return 0;
 }
 
@@ -191,6 +199,7 @@ node_line(
 	struct drv_acpi_node *node)
 {
 	const struct drv_acpi_object *object;
+	const char *space;
 	char path[PATH_LENGTH_MAX];
 	char name[5];
 	int error;
@@ -228,7 +237,8 @@ node_line(
 		drv_acpi_text_printf(text, "%s Mutex\n", path);
 		break;
 	case DRV_ACPI_TYPE_PROCESSOR:
-		drv_acpi_text_printf(text, "%s Processor id=%02X len=%02X addr=%llX\n",
+		drv_acpi_text_printf(text,
+				     "%s Processor id=%02X len=%02X addr=%llX\n",
 				     path,
 				     (unsigned)object->value.processor.id,
 				     (unsigned)object->value.processor.block_length,
@@ -250,9 +260,11 @@ node_line(
 		drv_acpi_text_printf(text, "%s Method args=%u\n", path, (unsigned)object->value.method.argument_count);
 		break;
 	case DRV_ACPI_TYPE_REGION:
-		drv_acpi_text_printf(text, "%s Region %s addr=%llX len=%llX\n",
+		space = space_name(object->value.region.space);
+		drv_acpi_text_printf(text,
+				     "%s Region %s addr=%llX len=%llX\n",
 				     path,
-				     space_name(object->value.region.space),
+				     space,
 				     (unsigned long long)object->value.region.offset,
 				     (unsigned long long)object->value.region.length);
 		break;
@@ -260,7 +272,8 @@ node_line(
 		field_line(text, path, object);
 		break;
 	case DRV_ACPI_TYPE_BUFFER_FIELD:
-		drv_acpi_text_printf(text, "%s BufferField off=%llX len=%llX\n",
+		drv_acpi_text_printf(text,
+				     "%s BufferField off=%llX len=%llX\n",
 				     path,
 				     (unsigned long long)object->value.buffer_field.bit_offset,
 				     (unsigned long long)object->value.buffer_field.bit_length);
@@ -294,18 +307,26 @@ field_line(
 	/* Writes the line by the kind of field. */
 	if (field->kind == DRV_ACPI_FIELD_INDEX) {
 		segment_text(field->data, first);
-		drv_acpi_text_printf(text, "%s IndexField idx=%s dat=%s off=%X len=%X\n",
-				     path, second, first,
+		drv_acpi_text_printf(text,
+				     "%s IndexField idx=%s dat=%s off=%X len=%X\n",
+				     path,
+				     second,
+				     first,
 				     (unsigned)field->bit_offset,
 				     (unsigned)field->bit_length);
 	} else if (field->kind == DRV_ACPI_FIELD_BANK) {
-		drv_acpi_text_printf(text, "%s BankField rgn=%s bnk=%s off=%X len=%X\n",
-				     path, first, second,
+		drv_acpi_text_printf(text,
+				     "%s BankField rgn=%s bnk=%s off=%X len=%X\n",
+				     path,
+				     first,
+				     second,
 				     (unsigned)field->bit_offset,
 				     (unsigned)field->bit_length);
 	} else {
-		drv_acpi_text_printf(text, "%s RegionField rgn=%s off=%X len=%X\n",
-				     path, first,
+		drv_acpi_text_printf(text,
+				     "%s RegionField rgn=%s off=%X len=%X\n",
+				     path,
+				     first,
 				     (unsigned)field->bit_offset,
 				     (unsigned)field->bit_length);
 	}
@@ -319,8 +340,12 @@ object_text(
 	unsigned depth)
 {
 	struct drv_acpi_node *node;
+	struct drv_acpi_object *element;
 	char path[PATH_LENGTH_MAX];
 	const uint8_t *bytes;
+	const char *characters;
+	enum drv_acpi_type type;
+	uint64_t integer;
 	size_t length;
 	size_t index;
 	unsigned count;
@@ -333,30 +358,42 @@ object_text(
 	}
 
 	/* Writes by type. */
-	switch (drv_acpi_object_type(object)) {
+	type = drv_acpi_object_type(object);
+	switch (type) {
 	case DRV_ACPI_TYPE_INTEGER:
-		drv_acpi_text_printf(text, "Integer 0x%llX", (unsigned long long)drv_acpi_object_integer(object));
+		/* Writes the value in hexadecimal. */
+		integer = drv_acpi_object_integer(object);
+		drv_acpi_text_printf(text, "Integer 0x%llX", (unsigned long long)integer);
 		break;
 	case DRV_ACPI_TYPE_STRING:
-		drv_acpi_text_printf(text, "String \"%s\"", drv_acpi_object_string(object, NULL));
+		/* Writes the characters in quotes. */
+		characters = drv_acpi_object_string(object, NULL);
+		drv_acpi_text_printf(text, "String \"%s\"", characters);
 		break;
 	case DRV_ACPI_TYPE_BUFFER:
-		/* The length and every byte. */
+		/* Writes the length. */
 		bytes = drv_acpi_object_buffer(object, &length);
 		drv_acpi_text_printf(text, "Buffer [%zu]", length);
+
+		/* Writes every byte. */
 		for (index = 0; index < length; index++)
 			drv_acpi_text_printf(text, " %02X", (unsigned)bytes[index]);
 		break;
 	case DRV_ACPI_TYPE_PACKAGE:
-		/* The count, then each element separated by commas; nesting is bounded. */
+		/* Writes the count. */
 		count = drv_acpi_object_package_count(object);
 		drv_acpi_text_printf(text, "Package [%u] {", count);
+
+		/* Writes each element separated by commas; nesting is bounded. */
 		for (index = 0; index < count && depth < 8U; index++) {
 			/* Separates the element from the one before. */
 			if (index != 0)
 				drv_acpi_text_printf(text, ",");
+
+			/* Writes the element after a blank. */
 			drv_acpi_text_printf(text, " ");
-			object_text(text, drv_acpi_object_package_element(object, (unsigned)index), depth + 1U);
+			element = drv_acpi_object_package_element(object, (unsigned)index);
+			object_text(text, element, depth + 1U);
 		}
 
 		/* Closes the package. */
@@ -370,14 +407,17 @@ object_text(
 			break;
 		}
 
-		/* Writes the path, or a mark when it does not fit. */
+		/* Finds the path, or a mark when it does not fit. */
 		error = drv_acpi_node_path(node, path, sizeof(path));
 		if (error != 0)
 			kern_strcpy(path, "(long)");
+
+		/* Writes the path. */
 		drv_acpi_text_printf(text, "Reference %s", path);
 		break;
 	default:
-		drv_acpi_text_printf(text, "Type%u", (unsigned)drv_acpi_object_type(object));
+		/* Writes the type's number. */
+		drv_acpi_text_printf(text, "Type%u", (unsigned)type);
 		break;
 	}
 }
@@ -434,22 +474,26 @@ text_reserve(
 	if (text->error != 0)
 		return false;
 
-	/* Enough room already. */
+	/* A text with enough room already needs nothing. */
 	if (text->length + more <= text->capacity)
 		return true;
 
-	/* Doubles until the characters fit, within the bound. */
+	/* Starts from the present size, or from the first size of an empty text. */
 	capacity = text->capacity;
 	if (capacity == 0)
 		capacity = TEXT_INITIAL_CAPACITY;
+
+	/* Doubles until the characters fit, within the bound. */
 	while (capacity < text->length + more && capacity <= TEXT_CAPACITY_MAX)
 		capacity *= 2U;
+
+	/* Refuses a text beyond the bound; error keeps it failed from now on. */
 	if (capacity > TEXT_CAPACITY_MAX) {
 		text->error = E2BIG;
 		return false;
 	}
 
-	/* Allocates the larger storage and moves the characters over. */
+	/* Allocates the larger storage; error keeps a text that ran out of memory failed. */
 	grown = drv_acpi_os_alloc(capacity);
 	if (grown == NULL) {
 		text->error = ENOMEM;
@@ -459,10 +503,12 @@ text_reserve(
 	/* Moves the characters written so far. */
 	if (text->length != 0)
 		kern_memcpy(grown, text->data, text->length);
+
+	/* Replaces the old storage with the larger one. */
 	drv_acpi_os_free(text->data);
 	text->data = grown;
 	text->capacity = capacity;
 
-	/* Succeeded. */
+	/* Succeeded: the text has room for the characters. */
 	return true;
 }

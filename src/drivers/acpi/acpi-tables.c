@@ -103,13 +103,14 @@ drv_acpi_firmware_discover(
 		if (compared != 0)
 			continue;
 
-		/* Reads it. */
+		/* Reads the FADT and the DSDT header and FACS address it points at. */
 		error = read_fadt(firmware, &firmware->tables[index]);
 		if (error != 0) {
 			drv_acpi_firmware_release(firmware);
 			return error;
 		}
 
+		/* Stops at the first FADT. */
 		break;
 	}
 
@@ -120,7 +121,7 @@ drv_acpi_firmware_discover(
 		return ENOENT;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the record lists the tables and knows the DSDT, the FADT and the FACS. */
 	return 0;
 }
 
@@ -147,9 +148,8 @@ drv_acpi_firmware_load(
 
 	/* Loads each secondary table in order. */
 	for (index = 0; index < firmware->count; index++) {
-		table = &firmware->tables[index];
-
 		/* Only SSDTs and the older PSDTs hold AML to load. */
+		table = &firmware->tables[index];
 		ssdt = kern_strcmp(table->signature, "SSDT");
 		psdt = kern_strcmp(table->signature, "PSDT");
 		if (ssdt != 0 && psdt != 0)
@@ -181,15 +181,16 @@ drv_acpi_firmware_find(
 	size_t *length)
 {
 	struct drv_acpi_firmware_table *table;
+	struct drv_acpi_firmware_table *found;
 	unsigned index;
 	bool equal;
 	int error;
 
-	/* Compares each listed table. */
+	/* Finds the first listed table that matches. */
+	found = NULL;
 	for (index = 0; index < firmware->count; index++) {
-		table = &firmware->tables[index];
-
 		/* Skips a table with another signature. */
+		table = &firmware->tables[index];
 		equal = identifier_equal(table->signature, 4, signature);
 		if (!equal)
 			continue;
@@ -204,19 +205,26 @@ drv_acpi_firmware_find(
 		if (oem_table_id[0] != '\0' && !equal)
 			continue;
 
-		/* Reads the table's bytes. */
-		error = table_bytes(firmware, table);
-		if (error != 0)
-			return error;
-
-		/* Succeeded. */
-		*data = table->copy;
-		*length = table->length;
-		return 0;
+		/* Stops at the match. */
+		found = table;
+		break;
 	}
 
 	/* Reports that the firmware lists no such table. */
-	return ENOENT;
+	if (found == NULL)
+		return ENOENT;
+
+	/* Reads the table's bytes. */
+	error = table_bytes(firmware, found);
+	if (error != 0)
+		return error;
+
+	/* Hands the bytes to the caller. */
+	*data = found->copy;
+	*length = found->length;
+
+	/* Succeeded: the bytes stay valid for the life of the record. */
+	return 0;
 }
 
 /*
@@ -228,9 +236,11 @@ drv_acpi_firmware_release(
 {
 	unsigned index;
 
-	/* Frees each table's copy, then the list. */
+	/* Frees each table's copy. */
 	for (index = 0; index < firmware->count; index++)
 		drv_acpi_os_free(firmware->tables[index].copy);
+
+	/* Frees the list. */
 	drv_acpi_os_free(firmware->tables);
 
 	/* Frees the DSDT's copy and the FADT's. */
@@ -268,6 +278,8 @@ read_rsdp(
 	valid = checksum_ok(rsdp, RSDP_V1_SIZE);
 	if (!valid)
 		return EINVAL;
+
+	/* Keeps the revision, which says which root table the RSDP can name. */
 	firmware->rsdp_revision = rsdp[15];
 
 	/* A revision 1 RSDP has only the RSDT, of 32-bit entries. */
@@ -281,6 +293,8 @@ read_rsdp(
 	error = firmware->read(address, rsdp, RSDP_V2_SIZE, firmware->argument);
 	if (error != 0)
 		return error;
+
+	/* Logs an extended part whose length or checksum is wrong, and uses it anyway, as firmware gets it wrong. */
 	length = load_u32(rsdp + 20);
 	valid = checksum_ok(rsdp, RSDP_V2_SIZE);
 	if (length != RSDP_V2_SIZE || !valid)
@@ -314,10 +328,12 @@ read_root(
 	unsigned index;
 	int error;
 
-	/* Reads the root table whole. */
+	/* Reads the root table's header. */
 	error = read_header(firmware, address, &root);
 	if (error != 0)
 		return error;
+
+	/* Reads the root table whole. */
 	error = table_bytes(firmware, &root);
 	if (error != 0)
 		return error;
@@ -373,8 +389,10 @@ read_header(
 	uint8_t header[TABLE_HEADER_SIZE];
 	int error;
 
-	/* Reads the header. */
+	/* Starts the record empty, so that a failure leaves nothing half known. */
 	kern_memset(table, 0, sizeof(*table));
+
+	/* Reads the header. */
 	error = firmware->read(address, header, sizeof(header), firmware->argument);
 	if (error != 0)
 		return error;
@@ -390,7 +408,7 @@ read_header(
 	kern_memcpy(table->oem_id, header + 10, 6);
 	kern_memcpy(table->oem_table_id, header + 16, 8);
 
-	/* Succeeded. */
+	/* Succeeded: the record knows the table's place, identity and length. */
 	return 0;
 }
 
@@ -403,19 +421,22 @@ read_fadt(
 	struct drv_acpi_firmware_table fadt;
 	uint64_t dsdt;
 	uint64_t facs;
-	uint64_t wide;
+	uint64_t wide_facs;
+	uint64_t wide_dsdt;
 	int error;
 
-	/* Reads the FADT and keeps its copy. */
+	/* Reads the FADT. */
 	fadt = *entry;
 	fadt.copy = NULL;
 	error = table_bytes(firmware, &fadt);
 	if (error != 0)
 		return error;
+
+	/* Keeps its copy, which the event code reads. */
 	firmware->fadt = fadt.copy;
 	firmware->fadt_length = fadt.length;
 
-	/* The 32-bit pointers every FADT has. */
+	/* Takes the 32-bit pointers every FADT has. */
 	dsdt = 0;
 	facs = 0;
 	if (fadt.length >= FADT_DSDT + 4U) {
@@ -423,27 +444,33 @@ read_fadt(
 		dsdt = load_u32(fadt.copy + FADT_DSDT);
 	}
 
-	/* The 64-bit pointers win when a newer FADT has them. */
-	wide = 0;
+	/* The 64-bit FACS pointer wins when a newer FADT has one. */
+	wide_facs = 0;
 	if (fadt.length >= FADT_X_FIRMWARE_CTRL + 8U)
-		wide = load_u64(fadt.copy + FADT_X_FIRMWARE_CTRL);
-	if (wide != 0)
-		facs = wide;
-	wide = 0;
+		wide_facs = load_u64(fadt.copy + FADT_X_FIRMWARE_CTRL);
+	if (wide_facs != 0)
+		facs = wide_facs;
+
+	/* The 64-bit DSDT pointer wins when a newer FADT has one. */
+	wide_dsdt = 0;
 	if (fadt.length >= FADT_X_DSDT + 8U)
-		wide = load_u64(fadt.copy + FADT_X_DSDT);
-	if (wide != 0)
-		dsdt = wide;
+		wide_dsdt = load_u64(fadt.copy + FADT_X_DSDT);
+	if (wide_dsdt != 0)
+		dsdt = wide_dsdt;
+
+	/* Keeps the FACS address, which the Global Lock needs. */
 	firmware->facs_address = facs;
 
-	/* Reads the DSDT's header. */
+	/* A FADT without a DSDT leaves it unknown, which the caller refuses. */
 	if (dsdt == 0)
 		return 0;
+
+	/* Reads the DSDT's header. */
 	error = read_header(firmware, dsdt, &firmware->dsdt);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the record knows the FADT, the FACS address and the DSDT. */
 	return 0;
 }
 
@@ -478,8 +505,10 @@ table_bytes(
 	if (!valid)
 		drv_acpi_os_log("ACPI: table %s has a wrong checksum\n", table->signature);
 
-	/* Succeeded. */
+	/* Keeps the copy for the record's life. */
 	table->copy = copy;
+
+	/* Succeeded: the table's bytes are in its copy. */
 	return 0;
 }
 
@@ -491,17 +520,17 @@ load_one(
 {
 	int error;
 
-	/* Reads it. */
+	/* Reads the table's bytes. */
 	error = table_bytes(firmware, table);
 	if (error != 0)
 		return error;
 
-	/* Loads it. */
+	/* Loads its AML into the namespace. */
 	error = drv_acpi_load_table(table->copy, table->length);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the table's objects are in the namespace. */
 	return 0;
 }
 
@@ -529,7 +558,9 @@ identifier_equal(
 		return false;
 
 	/* The rest of the field must be padding. */
-	for (; index < size; index++) {
+	for (;
+	     index < size;
+	     index++) {
 		/* Stops at a character that is not padding. */
 		if (field[index] != '\0' && field[index] != ' ')
 			return false;
@@ -556,6 +587,8 @@ checksum_ok(
 	/* A valid table sums to zero. */
 	if (sum == 0)
 		return true;
+
+	/* Reports a table whose bytes do not sum to zero. */
 	return false;
 }
 
@@ -572,7 +605,7 @@ load_u32(
 	value |= (uint32_t)bytes[2] << 16;
 	value |= (uint32_t)bytes[3] << 24;
 
-	/* Reports the value. */
+	/* Reports the assembled value. */
 	return value;
 }
 
@@ -587,6 +620,6 @@ load_u64(
 	value = (uint64_t)load_u32(bytes);
 	value |= (uint64_t)load_u32(bytes + 4) << 32;
 
-	/* Reports the value. */
+	/* Reports the assembled value. */
 	return value;
 }
