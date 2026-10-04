@@ -53,6 +53,8 @@ Design: [ws132-p001](../phase001/phase.md) の K1・K2
 
 - 2026-10-05 T1-122: stick・input・network・order は ok、keyboard と adapter の usb add/remove の 4 行が FAIL。events は `port=8`（期待は 4）。QEMU の port 4 は、SuperSpeed の stick では root hub の port 4、full-speed の keyboard・adapter では port 8 として見える（xHCI は root hub の USB 2 と USB 3 の port を別に番号付けする）。kernel の報告は正しいので、試験の期待を `port=(4|8)` に直した（`plan/ws132/tests/p002-guest.sh`）。ws132 の p003-guest.sh は port の番号を見ていない。再試験は T1。
 
+- 2026-10-05 T1-125 の対処（ws132-p003）で guest.py の xHCI が 8＋8 port になり、full-speed の機器の root hub の番号が変わる。p002-guest.sh の usb add/remove の 6 行は port の番号を照合しない（`port=[0-9]+`）。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定（T1、Q1）。
