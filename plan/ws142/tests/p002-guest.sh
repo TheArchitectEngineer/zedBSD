@@ -26,6 +26,8 @@ qmp="$GUEST_RUNTIME/qmp.sock"
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 put() { timeout 90 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2>&1; }
 send() { timeout 40 python3 plan/ws049/tests/qmp-send.py "$qmp" "$@" >> "$out/qmp.txt" 2>&1; }
+# A picture for the eye, read from the Venus head through QEMU's VNC (QMP screendump shows the text console instead).
+shot() { timeout 60 python3 plan/ws035/tests/zdesktop-check.py "$out/$1.png" --runtime "$GUEST_RUNTIME" >> "$out/qmp.txt" 2>&1; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$qmp" "$@"; }
 key() { send input-send-event "{\"events\":[{\"type\":\"key\",\"data\":{\"down\":$2,\"key\":{\"type\":\"qcode\",\"data\":\"$1\"}}}]}"; }
 tap() { key "$1" true; sleep 0.15; key "$1" false; sleep 1; }
@@ -49,7 +51,7 @@ tap meta_l
 expect_count super-opens 'ZWL HOME open via=super' 1
 expect_count super-logged 'ZWL SUPER home' 1
 pointer move 700 500 sleep 300 >/dev/null
-send screendump "{\"filename\":\"$(realpath "$out")/home-open.png\",\"format\":\"png\"}"
+shot home-open
 tap meta_l
 expect_count super-closes 'ZWL HOME close via=super' 1
 

@@ -23,6 +23,8 @@ qmp="$GUEST_RUNTIME/qmp.sock"
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 put() { timeout 90 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2>&1; }
 send() { timeout 40 python3 plan/ws049/tests/qmp-send.py "$qmp" "$@" >> "$out/qmp.txt" 2>&1; }
+# A picture for the eye, read from the Venus head through QEMU's VNC (QMP screendump shows the text console instead).
+shot() { timeout 60 python3 plan/ws035/tests/zdesktop-check.py "$out/$1.png" --runtime "$GUEST_RUNTIME" >> "$out/qmp.txt" 2>&1; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$qmp" "$@"; }
 key() { send input-send-event "{\"events\":[{\"type\":\"key\",\"data\":{\"down\":$2,\"key\":{\"type\":\"qcode\",\"data\":\"$1\"}}}]}"; }
 stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]ltest|[w]lshm" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
@@ -62,7 +64,7 @@ guest 'ifconfig -a' > "$out/ifconfig.txt"
 if [ -n "$address" ] && grep -q "$address" "$out/ifconfig.txt"; then pass "address $address as ifconfig"; else fail "address ($address) as ifconfig"; fi
 if grep -q 'ZWL NETWORK info row label=Received value=' "$out/open.log" && grep -q 'ZWL NETWORK info row label=Sent value=' "$out/open.log"; then pass bytes; else fail bytes; fi
 pointer move 700 500 sleep 300 >/dev/null
-send screendump "{\"filename\":\"$(realpath "$out")/details.png\",\"format\":\"png\"}"
+shot details
 
 # 2. Read again with rates.
 sleep 2

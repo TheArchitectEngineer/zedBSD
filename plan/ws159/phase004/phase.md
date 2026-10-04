@@ -29,6 +29,8 @@ Queue: q713 / q713-i01（設計 [p001](../phase001/phase.md) の D8）
 - `plan/tools/keiland-os-boundary/check.sh` PASS、style-check は新しい file 0、変えた行 0、menuconfig の round-trip PASS。
 - 未実施: QEMU（T1）、実機。
 
+- 2026-10-05 T1-101（pen の束）FAIL 2: `resolution=0,0`（test の injector の pad が resolution を持たなかった）で「touch pad taken」が FAILED、tap-drag で窓が右の止まる所（x 1129）まで行き press-drag が動けなかった。直し: injector の pad の軸に 12 単位/mm（`INPUT_INJECT_PAD_RESOLUTION`、`src/drivers/generic/input-inject.c`）、press-drag は左へ 30 mm（x が減る）。pen の kernel の build は warning 0。再試験は T1。
+
 ## 残り
 
 - touch pad の設定（速度・自然な向き・tap の有無）は Settings の ws089-p024 の口ができてから。今は既定値（自然な向き ON、tap ON、マウスの速度の設定 `pointer_speed` は効く）。

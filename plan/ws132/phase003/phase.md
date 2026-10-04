@@ -60,6 +60,8 @@ build の warning 0（zedBSD と Linux の keiland-linux.mk）、host の試験�
 - 試験: `plan/ws132/tests/p003-guest.sh BUILD [OUTDIR]`（BUILD/bin/wayland を guest に写す）。QMP で usb-kbd（xhci.0 port 5）を挿し、mouse で App Home を開き、挿した keyboard だけに Esc を送り、抜く。
 - 合格: 全行 ok（subscribed、power-unknown、plug-event、plug-keyboard-taken（1.5 秒以内）、home-opened、escape-from-plugged-keyboard、unplug-event、unplug-closed、alive、no-error）。`OUTDIR/bar.png` で bar に電池が無いことを目で見る（ユーザーに見せる）。
 
+- 2026-10-05 T1-107 FAIL 2: QMP の `usb port 5 (bus xhci.0) not found`（T1-106 と同じ）。p003-guest.sh も port 4 に。bar.png が console の文字の画面だった（QMP screendump は GL の scanout を写さない）ので、zdesktop-p013 と同じ VNC からの撮影（`plan/ws035/tests/zdesktop-check.py`）に替えた。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定（T1、Q1）。

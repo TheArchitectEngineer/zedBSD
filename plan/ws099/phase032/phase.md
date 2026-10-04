@@ -60,6 +60,8 @@ Queue: q718 / q718-i01（Q1 の投入）
 - 試験: `plan/ws099/tests/p032-guest.sh BUILD [OUTDIR]`（BUILD/bin/wayland を写す）。QMP で Alt を押したまま icon をクリック、2 秒待つ、Esc、普通のクリック、Esc。
 - 合格: 全行 ok（info-open、no-menu、title-ethernet、status、interface、address が `ifconfig -a` と一致、bytes、rates、esc-closes、plain-click-menu、alive、no-error）。`details.png` をユーザーに見せる。
 
+- 2026-10-05 T1 の結果: log の確認は PASS、details.png が console の文字の画面（QMP screendump は GL の scanout を写さない）。zdesktop-p013 と同じ VNC からの撮影（`plan/ws035/tests/zdesktop-check.py`）に替えた。PNG の再撮影は T1。
+
 ## 残り
 
 - QEMU の結果の判定。実機の Wi-Fi（SSID・Signal の行）は UAT。
