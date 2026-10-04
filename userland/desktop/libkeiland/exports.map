@@ -51,6 +51,7 @@
 		kl_titlebar_set_tab;
 		kl_titlebar_set_tabs_options;
 		kl_titlebar_focus_control;
+		kl_titlebar_set_suggestions;
 		kl_recent_add;
 		kl_recent_list;
 		kl_recent_remove;

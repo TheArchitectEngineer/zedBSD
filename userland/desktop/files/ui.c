@@ -267,6 +267,9 @@ fm_ui_tick(
 	(void)fm_actions_tick(app);
 	fm_search_tick(app);
 
+	/* The path's field suggests folders once its typing rests (ws127-p010). */
+	fm_location_tick(app);
+
 	/* The thumbnail asked for is made, and shown in a new frame. */
 	made = fm_thumb_tick(app);
 	if (made != 0)
@@ -520,6 +523,10 @@ fm_ui_wait(
 	/* A search typed a moment ago starts soon. */
 	if (app->search_typed_at != 0U)
 		return 20;
+
+	/* The path's field typed in a moment ago suggests folders soon (ws127-p010). */
+	if (app->location_typed_at != 0U)
+		return 50;
 
 	/* A drag waits for a folder to spring open, or scrolls at an edge (ws127-p002). */
 	if (app->drag_wait_ms >= 0 && (app->drag != 0 || app->drop_active != 0))

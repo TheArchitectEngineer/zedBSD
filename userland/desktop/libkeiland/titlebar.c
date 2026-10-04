@@ -31,6 +31,7 @@
 #define TITLEBAR_VERSION	1U
 #define TITLEBAR_VERSION_DROP	2U
 #define TITLEBAR_VERSION_SHEET	3U
+#define TITLEBAR_VERSION_SUGGEST	4U
 
 /* The compositor's bounds of one titlebar (plan/ws070/titlebar-design.md section 2.2). */
 #define TITLEBAR_CONTROLS_MAX	64U
@@ -655,6 +656,83 @@ kl_titlebar_focus_control(
 }
 
 /*
+ * Gives a committed search or breadcrumb field its suggestions: count
+ * pairs of a label and the text it puts in the field (none to take them
+ * away).
+ */
+int
+kl_titlebar_set_suggestions(
+	struct kl_titlebar *titlebar,
+	uint32_t id,
+	const char *const *labels,
+	const char *const *texts,
+	size_t count)
+{
+	struct titlebar_entry *entry;
+	struct wl_array items;
+	const char *string;
+	uint32_t version;
+	char *place;
+	size_t length;
+	size_t index;
+	size_t half;
+	int fits;
+
+	/* A compositor that knows suggestions (version 4, ws127-p010). */
+	version = wl_proxy_get_version((struct wl_proxy *)titlebar->proxy);
+	if (version < TITLEBAR_VERSION_SUGGEST)
+		return ENOTSUP;
+
+	/* A search or a breadcrumb that is there and was shown, not too many suggestions. */
+	entry = titlebar_control(titlebar, id);
+	if (entry == NULL)
+		return ENOENT;
+	if (entry->committed == 0U)
+		return EINVAL;
+	if (entry->role != KL_CONTROL_SEARCH && entry->role != KL_CONTROL_BREADCRUMB)
+		return EINVAL;
+	if (count > KL_TITLEBAR_SUGGESTIONS_MAX)
+		return E2BIG;
+
+	/* Each label and text, there and not too long. */
+	for (index = 0; index < count; index++) {
+		if (labels[index] == NULL || texts[index] == NULL)
+			return EINVAL;
+		fits = titlebar_text_ok(labels[index]);
+		if (fits == 0)
+			return E2BIG;
+		fits = titlebar_text_ok(texts[index]);
+		if (fits == 0)
+			return E2BIG;
+	}
+
+	/* The label and the text of each, one after another, each ended by its NUL. */
+	wl_array_init(&items);
+	for (index = 0; index < 2U * count; index++) {
+		half = index / 2U;
+		string = labels[half];
+		if ((index % 2U) != 0U)
+			string = texts[half];
+		length = strlen(string) + 1U;
+		place = wl_array_add(&items, length);
+		if (place == NULL) {
+			wl_array_release(&items);
+			return ENOMEM;
+		}
+
+		/* The string and its NUL. */
+		memcpy(place, string, length);
+	}
+
+	/* The request, then the array goes. */
+	keiland_titlebar_v1_set_suggestions(titlebar->proxy, id, &items);
+	wl_array_release(&items);
+
+	/* Succeeded: the request is sent. */
+	return 0;
+}
+
+/*
  * Finds and binds zdesktop's keiland_titlebar_manager_v1 on a queue of its own,
  * so that no event of the application's is dispatched by the search; the
  * binding is moved to the display's default queue.  Returns NULL with errno
@@ -706,6 +784,8 @@ titlebar_bind(
 		version = TITLEBAR_VERSION_DROP;
 	if (search.version >= TITLEBAR_VERSION_SHEET)
 		version = TITLEBAR_VERSION_SHEET;
+	if (search.version >= TITLEBAR_VERSION_SUGGEST)
+		version = TITLEBAR_VERSION_SUGGEST;
 
 	/* The manager, bound when announced, is moved to the application's default queue. */
 	manager = NULL;

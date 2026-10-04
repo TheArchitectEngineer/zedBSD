@@ -42,6 +42,13 @@
  * keyboard, the keys edit it, and the client hears the text as it changes
  * and how the editing ended.  Hits are tested against the places the
  * controls were last drawn at, so the pointer finds what the user sees.
+ *
+ * A client may give the field with the keyboard a list of suggestions
+ * (set_suggestions, ws127-p010: Files' paths): they drop down under the
+ * field, over everything, until its text changes or its editing ends.  Up
+ * and Down light one, Enter or a click (a tap) on one puts its text in the
+ * field (which the client then hears changed, as typing), and Esc takes
+ * the list away before it would end the editing.
  */
 
 #include "menu.h"
@@ -105,10 +112,19 @@
 #define FIELD_KEY_Z		44U
 #define FIELD_KEY_KPENTER	96U
 #define FIELD_KEY_HOME		102U
+#define FIELD_KEY_UP		103U
+#define FIELD_KEY_DOWN		108U
 #define FIELD_KEY_LEFT		105U
 #define FIELD_KEY_RIGHT		106U
 #define FIELD_KEY_END		107U
 #define FIELD_KEY_DELETE	111U
+
+/* The suggestions' list: its rows' height, its padding, its least width, its gap under the field, the longest label kept. */
+#define SUGGEST_ROW		28
+#define SUGGEST_PADDING		6
+#define SUGGEST_LEAST		280
+#define SUGGEST_GAP		4
+#define SUGGEST_LABEL		128U
 
 /* The keys of the tabs (evdev codes). */
 #define TAB_KEY_TAB		15U
@@ -213,7 +229,8 @@ struct shell_strip {
  * A text field zdesktop owns: the window and the control (NULL when none
  * has the keyboard), whether it edits a breadcrumb's path, and the text
  * with its cursor and the other end of its selection (byte offsets on
- * character boundaries).
+ * character boundaries).  box is where the field was last drawn (on the
+ * output, box_known once it was), under which its suggestions drop down.
  */
 struct shell_field {
 	struct zwl_object *surface;
@@ -223,6 +240,31 @@ struct shell_field {
 	size_t length;
 	size_t cursor;
 	size_t anchor;
+	unsigned box_known;
+	int32_t box_x;
+	int32_t box_y;
+	int32_t box_width;
+	int32_t box_height;
+};
+
+/*
+ * The suggestions of the field with the keyboard (ws127-p010): how many
+ * (0: no list shown), the one lit by Up and Down (-1 for none), each one's
+ * label and the text it puts in the field, and where the list was last
+ * drawn (rows from y, each SUGGEST_ROW high; logged once the list's place
+ * is in the log for the tests).  They belong to the field and
+ * go when its text changes or its editing ends.
+ */
+struct shell_suggestions {
+	size_t count;
+	int lit;
+	char labels[ZWL_TITLEBAR_SUGGESTIONS_MAX][SUGGEST_LABEL];
+	char texts[ZWL_TITLEBAR_SUGGESTIONS_MAX][ZWL_TITLEBAR_TEXT_MAX + 1U];
+	unsigned drawn;
+	unsigned logged;
+	int32_t x;
+	int32_t y;
+	int32_t width;
 };
 
 /* The last layout logged for a window and place (a checksum), so a layout is logged once. */
@@ -238,7 +280,8 @@ struct shell_logged {
  * whether it is a press on the search field that waits to be a click or a
  * move, or one on the field with the keyboard that selects, the text field
  * with the keyboard, a key whose press the field took (so its release is
- * taken too), and the layouts logged.
+ * taken too), the field's suggestions and whether a press on one waits
+ * for its release (which is taken too), and the layouts logged.
  */
 struct shell_titlebar {
 	struct shell_hit hits[SHELL_HITS];
@@ -251,6 +294,8 @@ struct shell_titlebar {
 	unsigned waiting;
 	unsigned selecting;
 	struct shell_field field;
+	struct shell_suggestions suggestions;
+	unsigned suggestion_pressed;
 	uint32_t eaten_key;
 	struct shell_logged logged[SHELL_LOGGED];
 };
@@ -294,6 +339,9 @@ static void shell_field_changed(struct zwl_server *server);
 static void shell_field_insert(const char *text, size_t length);
 static void shell_field_erase(int forward);
 static size_t shell_field_step(size_t at, int step);
+static void shell_suggest_clear(struct zwl_server *server);
+static int shell_suggest_at(int32_t x, int32_t y);
+static void shell_suggest_apply(struct zwl_server *server, int index);
 static void shell_log_layout(struct zwl_object *surface, unsigned docked, const struct shell_item *items, unsigned count, int32_t y, int32_t size, int32_t overflow_x, uint32_t checksum);
 static uint32_t shell_mix(uint32_t checksum, uint32_t value);
 static void shell_colour(float *colour, const float *ink, float alpha);
@@ -420,16 +468,31 @@ zwl_titlebar_button(
 	const struct shell_hit *hit;
 	struct shell_field *field;
 	struct zwl_object *top;
+	int suggestion;
 
 	/* Only the left button. */
 	if (button != ZWL_BUTTON_LEFT)
 		return 0;
+
+	/* The release of a press on a suggestion is taken too. */
+	if (state == 0U && shell_titlebar.suggestion_pressed != 0U) {
+		shell_titlebar.suggestion_pressed = 0;
+		return 1;
+	}
 
 	/* A release ends the press, and acts when it is over the pressed region. */
 	if (state == 0U) {
 		if (shell_titlebar.pressing == 0U)
 			return 0;
 		shell_release(server);
+		return 1;
+	}
+
+	/* A press on a suggestion puts its text in the field, which keeps the keyboard (ws127-p010). */
+	suggestion = shell_suggest_at(server->pointer_x, server->pointer_y);
+	if (suggestion >= 0) {
+		shell_titlebar.suggestion_pressed = 1;
+		shell_suggest_apply(server, suggestion);
 		return 1;
 	}
 
@@ -615,6 +678,28 @@ zwl_titlebar_key(
 	/* The press and its release are the field's from here on. */
 	shell_titlebar.eaten_key = key;
 	server->dirty = 1;
+
+	/* With suggestions shown: Up and Down light one, Enter takes the lit one, Esc takes the list away. */
+	if (shell_titlebar.suggestions.count != 0U) {
+		if (key == FIELD_KEY_DOWN) {
+			if (shell_titlebar.suggestions.lit + 1 < (int)shell_titlebar.suggestions.count)
+				shell_titlebar.suggestions.lit++;
+			return 1;
+		}
+		if (key == FIELD_KEY_UP) {
+			if (shell_titlebar.suggestions.lit >= 0)
+				shell_titlebar.suggestions.lit--;
+			return 1;
+		}
+		if ((key == FIELD_KEY_ENTER || key == FIELD_KEY_KPENTER) && shell_titlebar.suggestions.lit >= 0) {
+			shell_suggest_apply(server, shell_titlebar.suggestions.lit);
+			return 1;
+		}
+		if (key == FIELD_KEY_ESC) {
+			shell_suggest_clear(server);
+			return 1;
+		}
+	}
 
 	/* Each key that edits, moves or ends. */
 	switch (key) {
@@ -977,6 +1062,122 @@ zwl_titlebar_forget(
 	for (index = 0; index < SHELL_LOGGED; index++) {
 		if (shell_titlebar.logged[index].surface == object)
 			shell_titlebar.logged[index].surface = NULL;
+	}
+}
+
+/*
+ * Takes a text field's suggestions from its client (titlebar.c): shown
+ * under the field when it is the one with the keyboard, else not kept.
+ * strings holds count pairs, each a label and the text it puts in the
+ * field.
+ */
+void
+zwl_titlebar_suggestions(
+	struct zwl_server *server,
+	struct zwl_object *titlebar,
+	uint32_t id,
+	const char *const *strings,
+	size_t count)
+{
+	struct shell_suggestions *suggestions;
+	struct zwl_titlebar_model *model;
+	struct zwl_object *owner;
+	size_t index;
+
+	/* Only the field with the keyboard, of this titlebar's window. */
+	if (shell_titlebar.field.surface == NULL || shell_titlebar.field.id != id)
+		return;
+	(void)shell_mode(shell_titlebar.field.surface, &model, &owner);
+	if (owner != titlebar)
+		return;
+
+	/* The list, none lit. */
+	suggestions = &shell_titlebar.suggestions;
+	if (count > ZWL_TITLEBAR_SUGGESTIONS_MAX)
+		count = ZWL_TITLEBAR_SUGGESTIONS_MAX;
+	for (index = 0; index < count; index++) {
+		(void)snprintf(suggestions->labels[index], sizeof(suggestions->labels[index]), "%s", strings[2U * index]);
+		(void)snprintf(suggestions->texts[index], sizeof(suggestions->texts[index]), "%s", strings[2U * index + 1U]);
+	}
+	suggestions->count = count;
+	suggestions->lit = -1;
+	suggestions->drawn = 0;
+	suggestions->logged = 0;
+	server->dirty = 1;
+	printf("ZWL TITLEBAR suggestions id=%u count=%u\n", id, (unsigned)count);
+}
+
+/*
+ * Draws the suggestions of the field with the keyboard under it, over
+ * everything (shell.c calls it after the menus' popups): the row lit by
+ * the keys, or else the one under the pointer, in the accent.
+ */
+void
+zwl_titlebar_draw_suggestions(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float lit_ground[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	struct shell_suggestions *suggestions;
+	struct shell_field *field;
+	struct glass_shape shape;
+	const float *colour;
+	int32_t height;
+	int32_t row_y;
+	int under;
+	size_t index;
+
+	/* Only a list for a field that was drawn. */
+	suggestions = &shell_titlebar.suggestions;
+	field = &shell_titlebar.field;
+	suggestions->drawn = 0;
+	if (suggestions->count == 0U || field->surface == NULL || field->box_known == 0U)
+		return;
+
+	/* Its place: under the field, as wide as it or the least, within the output. */
+	suggestions->x = field->box_x;
+	suggestions->y = field->box_y + field->box_height + SUGGEST_GAP;
+	suggestions->width = field->box_width;
+	if (suggestions->width < SUGGEST_LEAST)
+		suggestions->width = SUGGEST_LEAST;
+	if (suggestions->x + suggestions->width > (int32_t)server->width - 8)
+		suggestions->x = (int32_t)server->width - 8 - suggestions->width;
+	if (suggestions->x < 8)
+		suggestions->x = 8;
+	height = (int32_t)suggestions->count * SUGGEST_ROW + 2 * SUGGEST_PADDING;
+
+	/* Its glass, as white as the menus' popups. */
+	glass_shape_init(&shape, (float)suggestions->x, (float)suggestions->y, (float)suggestions->width, (float)height);
+	shape.mode = MODE_GLASS;
+	shape.radius = 10.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.92f;
+	shape.edge = 0.85f;
+	glass_shape_draw(server, command, &shape);
+
+	/* The list's place, once, for the tests that click its rows. */
+	if (suggestions->logged == 0U) {
+		suggestions->logged = 1;
+		printf("ZWL TITLEBAR suggestions shown x=%d y=%d width=%d row=%d first=%d count=%u\n", suggestions->x, suggestions->y, suggestions->width, SUGGEST_ROW, suggestions->y + SUGGEST_PADDING, (unsigned)suggestions->count);
+	}
+
+	/* Each row: lit by the keys, or under the pointer when none is. */
+	suggestions->drawn = 1;
+	under = shell_suggest_at(server->pointer_x, server->pointer_y);
+	for (index = 0; index < suggestions->count; index++) {
+		row_y = suggestions->y + SUGGEST_PADDING + (int32_t)index * SUGGEST_ROW;
+		colour = ink;
+		if ((int)index == suggestions->lit || (suggestions->lit < 0 && (int)index == under)) {
+			glass_draw_solid(server, command, (float)(suggestions->x + 4), (float)row_y, (float)(suggestions->width - 8), (float)SUGGEST_ROW, 7.0f, lit_ground);
+			colour = white;
+		}
+
+		/* The label. */
+		glass_draw_text(server, command, SIZE_BAR, suggestions->x + 14, row_y + SUGGEST_ROW / 2 + 5, suggestions->labels[index], suggestions->width - 28, colour);
 	}
 }
 
@@ -2378,6 +2579,15 @@ shell_add_field(
 	/* Where its text starts, when the table had room for it. */
 	if (shell_titlebar.hit_count > count)
 		shell_titlebar.hits[count].text_x = text_x;
+
+	/* The field with the keyboard is where its suggestions drop down from. */
+	if (shell_titlebar.field.surface == surface && shell_titlebar.field.id == id) {
+		shell_titlebar.field.box_known = 1;
+		shell_titlebar.field.box_x = x;
+		shell_titlebar.field.box_y = y;
+		shell_titlebar.field.box_width = width;
+		shell_titlebar.field.box_height = height;
+	}
 }
 
 /* Finds the region of the last frame under a point; the latest drawn wins. */
@@ -2590,6 +2800,8 @@ shell_focus(
 	field->length = length;
 	field->anchor = 0;
 	field->cursor = length;
+	field->box_known = 0;
+	shell_suggest_clear(server);
 
 	/* The window has the keyboard; the log line the tests read. */
 	zwl_glass_raise(server, surface);
@@ -2607,9 +2819,10 @@ shell_field_done(
 	struct zwl_object *titlebar;
 	struct zwl_object *surface;
 
-	/* The field goes first (the event may make the client change its controls). */
+	/* The field and its suggestions go first (the event may make the client change its controls). */
 	surface = shell_titlebar.field.surface;
 	shell_titlebar.field.surface = NULL;
+	shell_suggest_clear(server);
 	server->dirty = 1;
 	if (surface == NULL)
 		return;
@@ -2628,8 +2841,8 @@ shell_field_changed(
 	struct zwl_titlebar_model *model;
 	struct zwl_object *titlebar;
 
-	/* The window's titlebar hears the text. */
-	(void)server;
+	/* The suggestions were for the text before; the window's titlebar hears the new one. */
+	shell_suggest_clear(server);
 	(void)shell_mode(shell_titlebar.field.surface, &model, &titlebar);
 	if (titlebar != NULL)
 		zwl_titlebar_send_text(titlebar, shell_titlebar.field.id, shell_titlebar.field.text, 0, 0U);
@@ -2877,4 +3090,70 @@ shell_colour(
 	colour[1] = ink[1];
 	colour[2] = ink[2];
 	colour[3] = ink[3] * alpha;
+}
+
+/* Takes the field's suggestions away. */
+static void
+shell_suggest_clear(
+	struct zwl_server *server)
+{
+	/* A list shown needs a frame without it. */
+	if (shell_titlebar.suggestions.count != 0U)
+		server->dirty = 1;
+	shell_titlebar.suggestions.count = 0;
+	shell_titlebar.suggestions.lit = -1;
+	shell_titlebar.suggestions.drawn = 0;
+}
+
+/* Finds the suggestion under a point of the list last drawn: its index, or -1. */
+static int
+shell_suggest_at(
+	int32_t x,
+	int32_t y)
+{
+	const struct shell_suggestions *suggestions;
+	int32_t row;
+
+	/* Only a list that is drawn. */
+	suggestions = &shell_titlebar.suggestions;
+	if (suggestions->count == 0U || suggestions->drawn == 0U)
+		return -1;
+
+	/* Outside its rows. */
+	if (x < suggestions->x || x >= suggestions->x + suggestions->width)
+		return -1;
+	if (y < suggestions->y + SUGGEST_PADDING)
+		return -1;
+	row = (y - suggestions->y - SUGGEST_PADDING) / SUGGEST_ROW;
+	if (row >= (int32_t)suggestions->count)
+		return -1;
+
+	/* Succeeded: the row under the point. */
+	return (int)row;
+}
+
+/* Puts a suggestion's text in the field, the cursor at its end; the client hears the text changed. */
+static void
+shell_suggest_apply(
+	struct zwl_server *server,
+	int index)
+{
+	struct shell_field *field;
+	size_t length;
+
+	/* The text, as much as a field holds. */
+	field = &shell_titlebar.field;
+	length = strlen(shell_titlebar.suggestions.texts[index]);
+	if (length > ZWL_TITLEBAR_TEXT_MAX)
+		length = ZWL_TITLEBAR_TEXT_MAX;
+	memcpy(field->text, shell_titlebar.suggestions.texts[index], length);
+	field->text[length] = '\0';
+	field->length = length;
+	field->cursor = length;
+	field->anchor = length;
+	printf("ZWL TITLEBAR suggestion chosen index=%d text=%s\n", index, field->text);
+
+	/* The client hears it as typing (and the list goes with the old text). */
+	shell_field_changed(server);
+	server->dirty = 1;
 }

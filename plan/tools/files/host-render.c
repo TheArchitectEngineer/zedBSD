@@ -196,6 +196,12 @@ main(
 			for (x = 0; x < bar.part_count; x++)
 				printf("%s%s", x == 0 ? " path=" : "|", bar.parts[x]);
 			printf(" field=%s query=%s view=%u preview=%d progress=%d focus=%u serial=%u\n", bar.path, bar.query, bar.view, bar.preview, bar.progress, bar.focus, bar.focus_serial);
+		} else if (strcmp(argv[index], "suggestions") == 0) {
+			static struct fm_titlebar_state shown;
+			fm_ui_titlebar_state(&app, &shown);
+			printf("suggest serial=%u count=%d\n", shown.suggest_serial, shown.suggest_count);
+			for (x = 0; x < shown.suggest_count; x++)
+				printf("suggest label=%s text=%s\n", shown.suggest_labels[x], shown.suggest_texts[x]);
 		} else if (strncmp(argv[index], "tb=", 3) == 0) {
 			static struct fm_titlebar_event told;
 			const char *rest;

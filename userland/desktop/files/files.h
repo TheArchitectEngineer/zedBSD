@@ -946,6 +946,9 @@ enum fm_control {
 #define FM_TITLEBAR_TEXT	1024
 #define FM_TITLEBAR_PART	65
 
+/* The most folders the path's field suggests at once (ws127-p010). */
+#define FM_SUGGESTIONS		12
+
 /* The progress control's value while nothing runs (it is then not in the titlebar). */
 #define FM_TITLEBAR_NO_PROGRESS	(-1)
 
@@ -957,8 +960,10 @@ enum fm_control {
  * the preview, the share done of the running operations in thousandths
  * (FM_TITLEBAR_NO_PROGRESS when none run), and the text control the
  * window last asked to give the keyboard to (FM_CONTROL_SEARCH or
- * FM_CONTROL_PATH) with the count of such requests.  titlebar.c sends it
- * to zdesktop when it differs from what the titlebar shows.
+ * FM_CONTROL_PATH) with the count of such requests, and the folders the
+ * path's field suggests (ws127-p010: each a label and the text it puts in
+ * the field) with the count of the lists made.  titlebar.c sends it to
+ * zdesktop when it differs from what the titlebar shows.
  */
 struct fm_titlebar_state {
 	int can_back;
@@ -972,6 +977,10 @@ struct fm_titlebar_state {
 	int progress;
 	unsigned focus;
 	unsigned focus_serial;
+	unsigned suggest_serial;
+	int suggest_count;
+	char suggest_labels[FM_SUGGESTIONS][FM_NAME_MAX];
+	char suggest_texts[FM_SUGGESTIONS][FM_TITLEBAR_TEXT];
 };
 
 /*
@@ -1217,6 +1226,19 @@ struct fm_app {
 	/* The search: the field, when it was last typed in (0 when the search is up to date), the scope, the folder it was started from, and the walk. */
 	struct fm_field search_field;
 	uint64_t search_typed_at;
+
+	/*
+	 * The path's field's suggestions (ws127-p010): when it was last typed
+	 * in (0 when its suggestions are up to date), and the folders it
+	 * suggests (a label and the text it puts in the field each), made a
+	 * second after the typing stops; suggest_serial counts the lists made,
+	 * so that the titlebar sends each once.
+	 */
+	uint64_t location_typed_at;
+	unsigned suggest_serial;
+	int suggest_count;
+	char suggest_labels[FM_SUGGESTIONS][FM_NAME_MAX];
+	char suggest_texts[FM_SUGGESTIONS][FM_TITLEBAR_TEXT];
 	unsigned search_scope;
 	char search_folder[FM_PATH_MAX];
 	struct fm_search search;
@@ -1390,6 +1412,7 @@ void fm_input_open_selection(struct fm_app *app);
 void fm_input_enclosing(struct fm_app *app);
 void fm_input_location(struct fm_app *app);
 void fm_input_location_go(struct fm_app *app);
+void fm_location_tick(struct fm_app *app);
 
 /* The content panel and the icon view (ui-grid.c). */
 void fm_grid_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);

@@ -10,6 +10,7 @@
 #  5. The path's field submitted goes to the folder; a path that is no folder is said so.
 #  6. A copy running shows its progress (0..1001), and none once it is done.
 #  7. home.png: the window without the toolbar (the panels from the top margin).
+#  8. (ws127-p010) The path's last part edits the path; its suggestions a second after the typing rests.
 #
 #   plan/tools/files/host-p014.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -84,6 +85,19 @@ sh plan/tools/files/host-run.sh "--start=$home/Documents" key=30:2 key=46:2 "tb=
 expect progress '^titlebar .* progress=([0-9]|[1-9][0-9]+) '
 expect progress 'TASK done id=[0-9]+ kind=copy state=done '
 tail -1 "$out/progress.txt" | grep -q 'progress=-1 ' && echo "progress: gone when done ok" || { echo "progress: gone when done MISSING"; status=1; }
+
+# 8. ws127-p010: a click on the path's last part makes it a field (focus=4), and a second after the typing rests
+#    the folders that start as typed are suggested (not before), a leading ~ kept in the texts, none for a missing folder.
+run suggest "--start=$home/Documents" tb=activated:4:1 titlebar "tb=changed:4:$home/P" wait=500 suggestions wait=600 suggestions "tb=changed:4:~/D" wait=1100 suggestions "tb=changed:4:~/Nope/x" wait=1100 suggestions
+expect suggest '^titlebar back=0 forward=0 parts=2 path=Home\|Documents .* focus=4 serial=1$'
+expect suggest '^suggest serial=0 count=0$'
+expect suggest '^suggest serial=1 count=2$'
+expect suggest '^suggest label=Pictures/ text=.*/home/Pictures/$'
+expect suggest '^suggest label=Projects/ text=.*/home/Projects/$'
+expect suggest '^suggest serial=2 count=3$'
+expect suggest '^suggest label=Desktop/ text=~/Desktop/$'
+expect suggest '^suggest label=Downloads/ text=~/Downloads/$'
+expect suggest '^suggest serial=3 count=0$'
 
 # 7. The window without the toolbar.
 run draw "--start=$home/Documents" "draw=$out/home.ppm"

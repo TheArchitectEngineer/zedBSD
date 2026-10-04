@@ -18,9 +18,11 @@
 
 #include "files.h"
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 /* A second click this soon after the first on the same region is a double click, in milliseconds. */
@@ -99,6 +101,12 @@ static const struct input_shortcut input_shortcuts[] = {
 };
 #define INPUT_KEY_SPACE		57U
 
+/* How long after the last key the path's field suggests folders, in milliseconds (ws127-p010: "about a second"). */
+#define INPUT_SUGGEST_MS	1000U
+
+/* The most entries of a folder looked at for the suggestions, so that a huge folder does not stop the window. */
+#define INPUT_SUGGEST_SCAN	4096U
+
 /*
  * The selection the log reported last: how many items and which had the
  * cursor.  Only a change is logged; they live for the whole run and start
@@ -108,6 +116,9 @@ static size_t input_reported_count;
 static int input_reported_cursor = -1;
 
 static int input_contains(const struct fm_rect *rect, int x, int y);
+static void input_suggest(struct fm_app *app);
+static int input_suggest_folder(const char *folder, const struct dirent *item);
+static void input_suggest_add(struct fm_app *app, const char *typed_folder, const char *name);
 static void input_press(struct fm_app *app, const struct fm_event *event);
 static void input_middle(struct fm_app *app, const struct fm_event *event);
 static void input_context(struct fm_app *app, struct fm_tab *tab, const struct fm_event *event, unsigned kind, int index);
@@ -977,6 +988,7 @@ fm_input_location_go(
 	struct fm_location location;
 	struct stat status;
 	char message[FM_PATH_MAX + 32];
+	size_t length;
 	int folder;
 	int error;
 
@@ -987,6 +999,13 @@ fm_input_location_go(
 		snprintf(location.path, sizeof(location.path), "%s%s", app->home, app->location.text + 1);
 	else
 		snprintf(location.path, sizeof(location.path), "%s", app->location.text);
+
+	/* A slash at the end (a chosen suggestion's) is dropped, but not the root's. */
+	length = strlen(location.path);
+	while (length > 1U && location.path[length - 1U] == '/') {
+		length--;
+		location.path[length] = '\0';
+	}
 
 	/* It must be a folder. */
 	folder = 0;
@@ -1002,6 +1021,26 @@ fm_input_location_go(
 	/* The typing ends and the tab goes there. */
 	app->focus = FM_FOCUS_CONTENT;
 	fm_ui_go(app, &location);
+}
+
+/*
+ * Makes the path's field's suggestions a second after its last key
+ * (ws127-p010): the folders in the folder the typed path names whose names
+ * start with what follows its last slash.
+ */
+void
+fm_location_tick(
+	struct fm_app *app)
+{
+	/* Nothing typed since the last suggestions, or not a second ago yet. */
+	if (app->location_typed_at == 0U)
+		return;
+	if (app->now < app->location_typed_at + INPUT_SUGGEST_MS)
+		return;
+
+	/* The typing has rested: the suggestions for the text now. */
+	app->location_typed_at = 0;
+	input_suggest(app);
 }
 
 /* Handles the command keys; zero when the key is not one. */
@@ -1456,4 +1495,179 @@ input_shortcut_key(
 
 	/* Not one of them. */
 	return 0;
+}
+
+/*
+ * Lists the folders the path's field suggests for its text: the typed path
+ * up to its last slash is the folder (a leading ~ the home folder), and
+ * what follows is the start of the names, matched without regard to ASCII
+ * case; hidden folders only when the start is a dot or hidden files are
+ * shown.  The names come in order, at most FM_SUGGESTIONS of them, and at
+ * most INPUT_SUGGEST_SCAN entries are looked at.
+ */
+static void
+input_suggest(
+	struct fm_app *app)
+{
+	struct dirent *item;
+	char typed_folder[FM_TITLEBAR_TEXT];
+	char folder[FM_PATH_MAX];
+	const char *prefix;
+	const char *slash;
+	DIR *directory;
+	size_t prefix_length;
+	size_t scanned;
+	int written;
+	int differs;
+	int is_folder;
+
+	/* A new list, empty until the folders are found. */
+	app->suggest_count = 0;
+	app->suggest_serial++;
+
+	/* The folder of the typed path and the start of the names (no slash: nothing to suggest). */
+	slash = strrchr(app->location.text, '/');
+	if (slash == NULL) {
+		fm_log("LOCATION suggest text=%s count=0", app->location.text);
+		return;
+	}
+	(void)snprintf(typed_folder, sizeof(typed_folder), "%.*s", (int)(slash - app->location.text + 1), app->location.text);
+	prefix = slash + 1;
+	prefix_length = strlen(prefix);
+
+	/* The folder on the disk: a leading ~ is the home folder; one too long for a path suggests nothing. */
+	if (typed_folder[0] == '~') {
+		written = snprintf(folder, sizeof(folder), "%s%s", app->home, typed_folder + 1);
+	} else {
+		written = snprintf(folder, sizeof(folder), "%s", typed_folder);
+	}
+	if (written < 0 || (size_t)written >= sizeof(folder)) {
+		fm_log("LOCATION suggest text=%s count=0", app->location.text);
+		return;
+	}
+
+	/* The folder's entries; one that cannot be read suggests nothing. */
+	directory = opendir(folder);
+	if (directory == NULL) {
+		fm_log("LOCATION suggest text=%s count=0", app->location.text);
+		return;
+	}
+
+	/* Each entry whose name starts as typed and that is a folder, as many as are kept. */
+	scanned = 0;
+	for (;;) {
+		item = readdir(directory);
+		if (item == NULL || scanned == INPUT_SUGGEST_SCAN)
+			break;
+		scanned++;
+
+		/* The folder itself and its parent are not suggested. */
+		differs = strcmp(item->d_name, ".");
+		if (differs == 0)
+			continue;
+		differs = strcmp(item->d_name, "..");
+		if (differs == 0)
+			continue;
+
+		/* A hidden name only when asked for (the start is a dot) or hidden files are shown. */
+		if (item->d_name[0] == '.' && prefix[0] != '.' && app->show_hidden == 0)
+			continue;
+
+		/* The start of the name as typed. */
+		differs = strncasecmp(item->d_name, prefix, prefix_length);
+		if (differs != 0)
+			continue;
+
+		/* A folder (a link to one counts). */
+		is_folder = input_suggest_folder(folder, item);
+		if (is_folder == 0)
+			continue;
+		input_suggest_add(app, typed_folder, item->d_name);
+	}
+	(void)closedir(directory);
+
+	/* The log line the tests read. */
+	fm_log("LOCATION suggest text=%s count=%d", app->location.text, app->suggest_count);
+}
+
+/* Tells whether an entry of a folder is a folder, or a link to one; its type when the folder gives it, else from stat. */
+static int
+input_suggest_folder(
+	const char *folder,
+	const struct dirent *item)
+{
+	struct stat status;
+	char path[FM_PATH_MAX];
+	int written;
+	int error;
+
+	/* A folder by the entry's type. */
+	if (item->d_type == DT_DIR)
+		return 1;
+
+	/* A file of another known type is no folder; a link or an unknown type is looked at. */
+	if (item->d_type != DT_UNKNOWN && item->d_type != DT_LNK)
+		return 0;
+	written = snprintf(path, sizeof(path), "%s%s", folder, item->d_name);
+	if (written < 0 || (size_t)written >= sizeof(path))
+		return 0;
+	error = stat(path, &status);
+	if (error != 0)
+		return 0;
+	if (S_ISDIR(status.st_mode) == 0)
+		return 0;
+
+	/* Succeeded: a folder (followed). */
+	return 1;
+}
+
+/*
+ * Adds a folder to the suggestions in the order of the names (without
+ * regard to ASCII case): its label is its name and a slash, its text the
+ * typed folder, its name and a slash, so that typing can go on into it.
+ * A name after the last of a full list is not kept.
+ */
+static void
+input_suggest_add(
+	struct fm_app *app,
+	const char *typed_folder,
+	const char *name)
+{
+	char label[FM_NAME_MAX];
+	char text[FM_TITLEBAR_TEXT];
+	int written;
+	int place;
+	int order;
+
+	/* The folder as shown and as put in the field; one too long for either is not suggested. */
+	written = snprintf(label, sizeof(label), "%s/", name);
+	if (written < 0 || (size_t)written >= sizeof(label))
+		return;
+	written = snprintf(text, sizeof(text), "%s%s/", typed_folder, name);
+	if (written < 0 || (size_t)written >= sizeof(text))
+		return;
+
+	/* Its place among the names already kept. */
+	place = 0;
+	while (place < app->suggest_count) {
+		order = strcasecmp(name, app->suggest_labels[place]);
+		if (order < 0)
+			break;
+		place++;
+	}
+
+	/* A full list keeps only the first names. */
+	if (place == FM_SUGGESTIONS)
+		return;
+
+	/* The names after it move down one (the last of a full list goes). */
+	if (app->suggest_count == FM_SUGGESTIONS)
+		app->suggest_count--;
+	memmove(app->suggest_labels[place + 1], app->suggest_labels[place], (size_t)(app->suggest_count - place) * sizeof(app->suggest_labels[0]));
+	memmove(app->suggest_texts[place + 1], app->suggest_texts[place], (size_t)(app->suggest_count - place) * sizeof(app->suggest_texts[0]));
+
+	/* The folder in its place. */
+	memcpy(app->suggest_labels[place], label, sizeof(label));
+	memcpy(app->suggest_texts[place], text, sizeof(text));
+	app->suggest_count++;
 }
