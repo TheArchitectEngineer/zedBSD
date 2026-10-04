@@ -131,6 +131,15 @@ Resume point: p001 から。F-071 の再考の契機は「S1 の実機試験の�
 
 ## ユーザーの判断
 
+- **ユーザーの決定（2026-10-04、AskUserQuestion）**:
+  - U1: 今日（10/04）の UAT の後に始める（実際の開始は使用量のリセットの後）。
+  - U2: 他の WS の試験の約 194 file と vmunix.mk の Settings の link の規則は、**Q1 が merge の時に main で sed を掛ける**。担当は command と確かめの一覧を渡す。
+  - U3: Linux・FreeBSD の既定の背景は **Birch-Lake.png**（推奨と違う）。過去の build を見るのはやめる。
+  - U4: **PNG と JPEG だけに対応する**（ユーザーの記入「PNGとJPEGのみ対応にする。」）。PPM を読む code は消す。JPEG の読み込み（libjpeg-compat）を範囲に足す。p001・p002 を直してから着手。
+  - U5: **全部最大の圧縮**（generate.py も filter を選ぶ。build の時間が延びる）。
+  - U6: 消えた system の `.ppm` が desktop.conf に残っていても**何もしない**（既定の背景に戻る）。
+  - U7: reset の時の復号は **WS135 の thread の道（`zwl_glass_wallpaper_begin`）に寄せる**。
+  - U8: 透明な所は**黒で合成**する。
 - **U1 始める時期**: F-071 は「S1 の実機試験の後」とある。S1 の実機試験の後に始める（推奨）か、今始めるか。
 - **U2 他の WS の file**: 次を、この WS の担当が直してよいか（Q1 の許可で所有 path を広げる）。
   - 194 file の置き換え（ほとんどが、他の WS の `tests/` の `wallpaper.ppm` → `wallpaper.png` の機械的な置き換え）。
