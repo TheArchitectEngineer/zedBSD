@@ -28,7 +28,11 @@ Keiland 本体（compositor・system bar・greeter・lock の画面）と Keilan
 ## 範囲（p001 で設計して確定）
 
 1. **翻訳の仕組み**（libkeiland の i18n の口）: message の catalog の形式（gettext の `.po`・`.mo` に当たる物を独自に（Zlib）実装するか、key と文の表か）、英語の文を key にするか ID にするか、複数形・語順の差し替え（printf の位置の指定）、日付・時刻・数の書式（locale）、文字の幅と UI の配置（日本語で長くなる・短くなる時の layout）。
-2. **言語の選択**: Settings の Languages の頁で選び、desktop.conf（kl_settings_*）に保存。compositor と各 app が読み、切り替えの時に再起動が要るかは設計で決める（理想は即時の切り替え）。greeter・lock の画面の言語（login の前の system の既定）。
+2. **言語の選択と切り替え**（2026-10-05 ユーザーの方針、原文:「言語設定は、Keilandアプリはコンポジタと通信することで言語を取得して、ログアウトなしに、しかもアプリ再起動もなしに、反映できることを目指します。言語変更の通知を作ればいいです。GNOMEアプリなどは、ログアウトしてログインし直すのが最低ラインで、できればアプリ再起動で言語設定を変えられるように、環境変数をマネージしたいです。」）:
+   - Settings の Languages の頁で選び、desktop.conf（kl_settings_*）に保存する（書くのは compositor）。
+   - **Keiland の app**: 言語を compositor から取得する（compositor の拡張 protocol、kl_settings_* と同じ経路）。compositor が**言語の変更の通知**を出し、app は受けて catalog を読み直し、UI を描き直す。**logout も app の再起動も不要**（目標）。compositor 自身・system bar・greeter・lock も通知で切り替える。
+   - **他の toolkit の app（GNOME の GTK・Qt など）**: 最低でも logout・login で新しい言語になる（session の起動の時に `LANG`・`LC_*`・`LANGUAGE` を desktop.conf の言語から作る）。できれば **app の再起動**で変えられるように、compositor（または sessiond）が app を起動する時の環境変数を管理する（App Home・Files からの起動、`keiland-desktop` の launcher（WS111）で、その時点の言語の環境変数を渡す）。既に動いている他の toolkit の app は再起動まで古い言語のまま、と UI で案内する。
+   - greeter・lock の画面の言語（login の前の system の既定）。
 3. **翻訳の対象**: compositor（system bar・menu・通知（WS156）・Wiseview・dialog）、greeter・lock、Keiland の app 全部（Files・Settings・Text Editor・Terminal・Image Viewer・PDF Viewer・Notes・System Monitor・音量・IME の UI など）。文の抽出の道具（source から英語の文を集める script）。
 4. **日本語の翻訳**（ベータ2 の目標）: 用語集（Files・Settings の頁名・操作の名前の統一）、翻訳の review。
 5. Linux・FreeBSD の Keiland でも同じ仕組み（OS の locale の環境変数との関係）。
