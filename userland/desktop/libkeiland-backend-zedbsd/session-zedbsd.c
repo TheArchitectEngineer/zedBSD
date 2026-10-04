@@ -17,6 +17,7 @@
  *   AUTH name password      OK: the user is in; FAIL; ERROR (login screen)
  *   UNLOCK password         OK; FAIL (a session's lock screen)
  *   POWER poweroff|reboot   OK (login screen, power-zedbsd.c)
+ *   SERVICE sshd on|off|status  SERVICE available= ...; DENIED; ERROR (a session, sharing-zedbsd.c)
  *   LOGOUT                  QUIT: the greeter is up, the session ends
  *   RELEASED                (none): the display has been given back
  *
@@ -328,6 +329,22 @@ kl_backend_session_tick(
 		backend->session_used = 0U;
 }
 
+/*
+ * Sends one request line to sessiond (sharing-zedbsd.c's SERVICE).
+ */
+int
+kl_backend_session_send(
+	struct kl_backend *backend,
+	unsigned request,
+	const char *line)
+{
+	int error;
+
+	/* The line, as the others are sent. */
+	error = session_send(backend, request, line);
+	return error;
+}
+
 /* Returns the descriptor to sessiond: the login screen's, a session's, or -1. */
 static int
 session_descriptor(
@@ -387,9 +404,11 @@ session_answered(
 		return;
 	}
 
-	/* An answer: granted, refused, failed, or not understood. */
+	/* A SERVICE request's answer is the state, or why not (ws089-p025); another: granted, refused, failed, or not understood. */
 	error = EPROTO;
-	if (strcmp(line, "OK") == 0)
+	if (backend->session_request == KL_BACKEND_SESSION_SERVICE)
+		error = kl_backend_sharing_take(backend, line);
+	else if (strcmp(line, "OK") == 0)
 		error = 0;
 	else if (strcmp(line, "FAIL") == 0)
 		error = EACCES;

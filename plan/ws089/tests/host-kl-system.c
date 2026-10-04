@@ -116,3 +116,28 @@ kl_system_account_set_password(struct kl_system *system, const char *current, co
 	printf("HOSTACCOUNT set-password request=%u current_length=%zu new_length=%zu\n", host_account_request, strlen(current), strlen(fresh));
 	return 0;
 }
+
+/* Remote Login (ws089-p025): not offered by the stand-in. */
+void
+kl_system_sharing_get_state(const struct kl_system *system, struct kl_sharing_state *state)
+{
+	(void)system;
+	memset(state, 0, sizeof(*state));
+}
+
+int
+kl_system_sharing_set_ssh(struct kl_system *system, unsigned on, uint32_t *request)
+{
+	(void)system;
+	(void)on;
+	(void)request;
+	return ENOTSUP;
+}
+
+int
+kl_system_sharing_query(struct kl_system *system, uint32_t *request)
+{
+	(void)system;
+	(void)request;
+	return ENOTSUP;
+}

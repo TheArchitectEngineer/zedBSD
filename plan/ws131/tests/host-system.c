@@ -128,6 +128,25 @@ zwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity)
 	return count;
 }
 
+/* Remote Login (ws089-p025): the stand-in's sessiond is not there; its state says it is not available, but the port. */
+int
+kl_backend_sharing_request(struct kl_backend *backend, unsigned action)
+{
+	(void)backend;
+	(void)action;
+	return ENOTSUP;
+}
+
+void
+kl_backend_sharing_get(const struct kl_backend *backend, struct kl_backend_sharing *state)
+{
+	(void)backend;
+	memset(state, 0, sizeof(*state));
+	state->port = 22U;
+	state->allowed = 1U;
+	snprintf(state->fingerprint, sizeof(state->fingerprint), "%s", "SHA256:test");
+}
+
 /* A wired configuration (ws089-p022): kept as a request of its own, the interface in place of the network, its fields remembered. */
 static struct kl_backend_wired_config wired_seen;
 
@@ -1032,6 +1051,7 @@ test_both_ends(void)
 	uint32_t first;
 	uint32_t second;
 	struct kl_network_wired_config wired;
+	struct kl_sharing_state sharing;
 	uint32_t request;
 	unsigned seen;
 	int taken_error;
@@ -1058,7 +1078,7 @@ test_both_ends(void)
 		return;
 	/* The library's table describes the version it binds (zedBSD's libwayland refuses more than the table; T1-144). */
 	CHECK(kl_system_manager_v1_interface.version == (int)KL_SYSTEM_MANAGER_VERSION, "manager table version %d", kl_system_manager_v1_interface.version);
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
@@ -1140,6 +1160,13 @@ test_both_ends(void)
 	pthread_mutex_unlock(&world.lock);
 	wired.mode = 7U;
 	CHECK(kl_system_network_configure_wired(system, &wired, NULL) == EINVAL, "wired mode unknown");
+
+	/* Remote Login (ws089-p025): offered at version 7, its state told, a request without sessiond answered unsupported. */
+	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_SHARING) != 0U, "sharing offered");
+	kl_system_sharing_get_state(system, &sharing);
+	CHECK(sharing.port == 22U && sharing.allowed == 1U && strcmp(sharing.fingerprint, "SHA256:test") == 0, "sharing state told");
+	CHECK(kl_system_sharing_set_ssh(system, 1U, &first) == 0, "ssh on asked");
+	expect_result(display, system, first, ENOTSUP, "ssh on without sessiond");
 
 	/* The client checks what it can. */
 	CHECK(kl_system_network_request(system, KL_NETWORK_JOIN, "", NULL) == EINVAL, "join without a network");

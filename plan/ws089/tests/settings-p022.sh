@@ -6,9 +6,10 @@
 #  1. net lan set (root): the new interface static 10.0.9.20/24 with DNS 10.0.9.53: answered, its address is up,
 #     net.conf names it (address 10.0.9.20, prefix-length 24), resolv.conf names the server, the system log says
 #     "LAN_CONFIGURE interface=IF mode=static ... result=ok".
-#  2. A member of the network group (kei) may: static 10.0.9.21; one who is not (nobody) may not.
-#  3. Bad input is refused and changes nothing: the subnet's broadcast, a gap in the mask, a router outside the
-#     subnet, the loopback, a radio name.
+#  2. A member of the network group (kei) may: static 10.0.9.21 (logged with euid=1000); one who is not (tester,
+#     added for the run) may not, and is told why.
+#  3. Bad input is refused by networkd with its reason in the system log and changes nothing: the subnet's broadcast,
+#     a gap in the mask, a router outside the subnet, the loopback, a radio name.
 #  4. Settings' Ethernet page (zdesktop --glass and Settings as root): the interface shows static (NETWORK wired-link
 #     name=IF mode=2 address=10.0.9.21); "Use DHCP" on its IPv4 card goes through the compositor and the backend to
 #     networkd (WIRED result interface=IF errno=0) and net.conf says dhcp for it (ethernet-static.png,
@@ -75,17 +76,24 @@ grep -q 'address: 10.0.9.20' "$out/root.txt" && grep -q 'prefix-length: 24' "$ou
 grep -q 'nameserver 10.0.9.53' "$out/root.txt" && pass "resolv.conf names the server" || fail "resolv.conf names the server"
 expect_log /var/log/messages "LAN_CONFIGURE interface=$interface mode=static address=10.0.9.20 .*result=ok"
 
-# 2. A member and one who is not.
+# 2. A member and one who is not ("tester", added here and removed at the end: the image has no other user).
+guest 'grep -q "^tester:" /etc/passwd || { echo "tester:x:1001:1001:Tester:/tmp:/bin/sh" >> /etc/passwd; echo "tester:x:1001:" >> /etc/group; }' >/dev/null
 guest "su kei -c 'net lan set $interface static 10.0.9.21 255.255.255.0'; echo exit=\$?; sleep 3; ifconfig $interface" > "$out/member.txt"
 grep -q '^exit=0$' "$out/member.txt" && grep -q 'inet 10.0.9.21' "$out/member.txt" && pass "a member of the network group may" || fail "a member of the network group may"
-guest "su nobody -c 'net lan set $interface dhcp' 2>&1; echo exit=\$?; grep -A3 \"^  $interface:\" /etc/net.conf" > "$out/nobody.txt"
+expect_log /var/log/messages "LAN_CONFIGURE interface=$interface mode=static address=10.0.9.21 .*euid=1000 result=ok"
+guest "su tester -c 'net lan set $interface dhcp' 2>&1; echo exit=\$?; grep -A3 \"^  $interface:\" /etc/net.conf" > "$out/nobody.txt"
 grep -q '^exit=0$' "$out/nobody.txt" && fail "one who is not a member may not" || pass "one who is not a member may not"
+grep -q 'authorization\|not permitted\|Permission\|unavailable' "$out/nobody.txt" && pass "the refusal says why" || fail "the refusal says why"
 grep -q 'dhcp: true' "$out/nobody.txt" && fail "nothing changed for the refused" || pass "nothing changed for the refused"
 
-# 3. Bad input.
-for bad in "$interface static 10.0.9.255 255.255.255.0" "$interface static 10.0.9.30 255.0.255.0" "$interface static 10.0.9.30 255.255.255.0 10.0.8.1" "lo0 dhcp" "wlan0 dhcp"; do
-	result=$(guest "net lan set $bad >/dev/null 2>&1; echo exit=\$?" | tail -1)
-	[ "$result" != "exit=0" ] && pass "refuses: $bad" || fail "refuses: $bad"
+# 3. Bad input: each refused by networkd with its reason (the system log), not by a crash of net (T1-157).
+for bad in "$interface static 10.0.9.255 255.255.255.0:the subnet's own or broadcast address" "$interface static 10.0.9.30 255.0.255.0:invalid netmask" \
+    "$interface static 10.0.9.30 255.255.255.0 10.0.8.1:router outside the subnet" "lo0 dhcp:not a wired interface name" "wlan0 dhcp:not a wired interface name"; do
+	words=${bad%%:*}
+	reason=${bad#*:}
+	result=$(guest "net lan set $words >/dev/null 2>&1; echo exit=\$?" | tail -1)
+	[ "$result" = "exit=1" ] && pass "refuses: $words" || fail "refuses: $words ($result)"
+	expect_log /var/log/messages "LAN_CONFIGURE interface=[a-z0-9]+ euid=0 result=error errno=[0-9]+ reason=$reason" 3
 done
 guest "grep -A9 \"^  $interface:\" /etc/net.conf" > "$out/after-bad.txt"
 grep -q 'address: 10.0.9.21' "$out/after-bad.txt" && pass "bad input changed nothing" || fail "bad input changed nothing"
@@ -116,7 +124,7 @@ shot ethernet-dhcp.png
 
 # 5. Back as it was.
 guest "$stop_all" >/dev/null
-guest 'cp -p /tmp/net.conf.kept /etc/net.conf; [ -f /tmp/resolv.conf.kept ] && cp -p /tmp/resolv.conf.kept /etc/resolv.conf; echo restored' >/dev/null
+guest 'cp -p /tmp/net.conf.kept /etc/net.conf; [ -f /tmp/resolv.conf.kept ] && cp -p /tmp/resolv.conf.kept /etc/resolv.conf; for f in /etc/passwd /etc/group; do grep -v "^tester:" $f > /tmp/p022.f && cat /tmp/p022.f > $f; done; echo restored' >/dev/null
 send device_del '{"id":"lan2dev"}'
 sleep 2
 send netdev_del '{"id":"lan2"}'

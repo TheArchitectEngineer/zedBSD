@@ -194,6 +194,8 @@ enum zwl_kind {
 	ZWL_SYSTEM_DEVICES,
 	/* The system extension's account (system.c, ws160-p002). */
 	ZWL_SYSTEM_ACCOUNT,
+	/* The system extension's Remote Login (system.c, ws089-p025). */
+	ZWL_SYSTEM_SHARING,
 	/* The system extension's monitor (sysmon.c, WS134 p012). */
 	ZWL_SYSTEM_MONITOR,
 };
@@ -1349,6 +1351,7 @@ int zwl_system_bind(struct zwl_object *manager);
 int zwl_system_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void zwl_system_tick(struct zwl_server *server);
 void zwl_system_power_changed(struct zwl_server *server);
+void zwl_system_sharing_answer(struct zwl_server *server, int error);
 void zwl_system_network_changed(struct zwl_server *server, unsigned changed);
 int zwl_system_network_done(struct zwl_server *server, unsigned request, int error);
 int zwl_system_bar_save_key(struct zwl_server *server, const char *ssid, const char *key);

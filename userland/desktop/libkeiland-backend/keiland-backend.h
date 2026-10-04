@@ -849,6 +849,7 @@ int kl_backend_account_set_password(const char *current, const char *fresh);
 #define KL_BACKEND_SESSION_AUTH		1U	/* the login screen's log in */
 #define KL_BACKEND_SESSION_UNLOCK	2U	/* a session's lock screen */
 #define KL_BACKEND_SESSION_POWER	3U	/* kl_backend_power_action */
+#define KL_BACKEND_SESSION_SERVICE	4U	/* kl_backend_sharing_request (ws089-p025) */
 
 /* Why session_stop is called. */
 #define KL_BACKEND_SESSION_QUIT		1U	/* the session's Log Out was answered: end */
@@ -968,5 +969,43 @@ void kl_backend_seat_device_close(struct kl_backend *backend, int descriptor);
  * 0 when the compositor closes it as usual.
  */
 int kl_backend_seat_device_revoked(struct kl_backend *backend, int descriptor);
+
+/*
+ * Sharing (ws089-p025): the Remote Login (sshd) the Sharing page turns on
+ * and off.  On zedBSD the session's manager does it (sessiond's SERVICE,
+ * root or a member of wheel), on the session's descriptor like the lock
+ * screen's requests; its answer comes as
+ * session_answer(KL_BACKEND_SESSION_SERVICE, error): 0 with the state
+ * (kl_backend_sharing_get), EPERM for a user who may not, EIO when it
+ * failed.  Elsewhere it is not supported (ENOTSUP).
+ */
+#define KL_BACKEND_SHARING_STATUS	0U
+#define KL_BACKEND_SHARING_ON		1U
+#define KL_BACKEND_SHARING_OFF		2U
+
+/* The longest host key fingerprint ("SHA256:" and 43 characters of base64, and its end). */
+#define KL_BACKEND_SHARING_FINGERPRINT	64U
+
+/*
+ * Remote Login's state: whether the system has it at all, whether it
+ * starts with the system, whether it runs, the port, whether this user may
+ * change it (root or wheel), whether the state was ever read, and the
+ * host key's fingerprint (empty when there is none).
+ */
+struct kl_backend_sharing {
+	unsigned available;
+	unsigned enabled;
+	unsigned running;
+	unsigned port;
+	unsigned allowed;
+	unsigned known;
+	char fingerprint[KL_BACKEND_SHARING_FINGERPRINT];
+};
+
+/* Asks for Remote Login's state, or to turn it on or off (KL_BACKEND_SHARING_*). Returns 0, EBUSY, ENOTSUP, EINVAL. */
+int kl_backend_sharing_request(struct kl_backend *backend, unsigned action);
+
+/* Copies Remote Login's state as last answered. */
+void kl_backend_sharing_get(const struct kl_backend *backend, struct kl_backend_sharing *state);
 
 #endif

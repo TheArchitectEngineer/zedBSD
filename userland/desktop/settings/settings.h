@@ -470,6 +470,20 @@ struct se_storage {
 	uint64_t drawn_at;
 };
 
+/*
+ * The Sharing page's Remote Login (page-sharing.c, ws089-p025): its state
+ * as the desktop last told it, whether it was asked for since the page was
+ * shown, the request awaited (0 for none), and the last message (red when
+ * it tells of a failure).
+ */
+struct se_sharing {
+	struct kl_sharing_state state;
+	int asked;
+	uint32_t request;
+	char message[SE_MESSAGE];
+	int message_bad;
+};
+
 /* The Users page's password fields: the current password, the new one, the new one again. */
 #define SE_USERS_FIELDS		3
 
@@ -892,6 +906,9 @@ struct se_app {
 
 	/* The Storage page's analysis and Trash (ws089-p023). */
 	struct se_storage storage;
+
+	/* The Sharing page's Remote Login (ws089-p025). */
+	struct se_sharing sharing;
 };
 
 /* The table of pages (pages.c). */
@@ -956,6 +973,10 @@ void se_network_disconnect(struct se_app *app);
 int se_network_configure_wired(struct se_app *app, const struct kl_network_wired_config *config);
 void se_wired_edit(struct se_app *app, const struct kl_network_link *link);
 void se_storage_analyze(struct se_app *app, const char *root);
+int se_sharing_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+void se_sharing_press(struct se_app *app, int index);
+void se_sharing_poll(struct se_app *app);
+int se_sharing_result(struct se_app *app, uint32_t request, int error);
 void se_storage_stop(struct se_app *app);
 void se_storage_empty_trash(struct se_app *app);
 void se_storage_poll(struct se_app *app, uint64_t now);

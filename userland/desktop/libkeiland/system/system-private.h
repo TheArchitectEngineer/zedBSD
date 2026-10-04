@@ -81,6 +81,9 @@ struct system_view {
 	unsigned devices_open;
 	uint32_t busy_request;
 	char busy_program[KL_DEVICE_TEXT_MAX];
+	struct kl_sharing_state sharing;
+	struct kl_sharing_state sharing_pending;
+	unsigned sharing_touched;
 	unsigned changed;
 	struct system_view_result results[SYSTEM_VIEW_RESULTS];
 	unsigned result_head;
@@ -176,6 +179,8 @@ void system_view_details_done(struct system_view *view);
 void system_view_audio_state(struct system_view *view, const struct kl_audio_state *state);
 void system_view_audio_done(struct system_view *view);
 void system_view_power_state(struct system_view *view, const struct kl_power_state *state);
+void system_view_sharing_state(struct system_view *view, const struct kl_sharing_state *state);
+void system_view_sharing_done(struct system_view *view);
 void system_view_power_done(struct system_view *view);
 void system_view_device(struct system_view *view, const struct kl_device *device);
 void system_view_devices_done(struct system_view *view);

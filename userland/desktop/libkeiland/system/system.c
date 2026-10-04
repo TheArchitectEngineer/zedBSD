@@ -49,6 +49,7 @@ struct kl_system {
 	struct wl_proxy *power;
 	struct wl_proxy *devices;
 	struct wl_proxy *account;
+	struct wl_proxy *sharing;
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -98,6 +99,13 @@ struct system_account_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
+/* The listener of kl_system_sharing_v1's events (ws089-p025), in their order. */
+struct system_sharing_listener {
+	void (*state)(void *data, struct wl_proxy *proxy, uint32_t available, uint32_t enabled, uint32_t running, uint32_t port, uint32_t allowed, const char *fingerprint);
+	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
 /* The listener of kl_system_devices_v1's events, in their order. */
 struct system_devices_listener {
 	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
@@ -126,6 +134,8 @@ static void system_device(void *data, struct wl_proxy *proxy, const char *id, ui
 static void system_devices_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static void system_devices_busy(void *data, struct wl_proxy *proxy, uint32_t request, const char *program);
 static void system_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+static void system_sharing_state(void *data, struct wl_proxy *proxy, uint32_t available, uint32_t enabled, uint32_t running, uint32_t port, uint32_t allowed, const char *fingerprint);
+static void system_sharing_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static int system_bind(struct kl_system *system);
 static struct wl_proxy *system_make(struct kl_system *system, uint32_t bit, uint32_t opcode, const struct wl_interface *interface, const void *listener);
 static void system_destroy(struct wl_proxy *proxy, uint32_t opcode);
@@ -172,6 +182,13 @@ static const struct system_power_listener system_power_listener = {
 
 /* The account object's callback (ws160-p002). */
 static const struct system_account_listener system_account_listener = {
+	system_result
+};
+
+/* The sharing object's callbacks (ws089-p025). */
+static const struct system_sharing_listener system_sharing_listener = {
+	system_sharing_state,
+	system_sharing_done,
 	system_result
 };
 
@@ -243,6 +260,7 @@ kl_system_close(
 	system_destroy(system->power, KL_SYSTEM_POWER_DESTROY);
 	system_destroy(system->devices, KL_SYSTEM_DEVICES_DESTROY);
 	system_destroy(system->account, KL_SYSTEM_ACCOUNT_DESTROY);
+	system_destroy(system->sharing, KL_SYSTEM_SHARING_DESTROY);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -309,6 +327,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_DEVICES;
 	if (system->account != NULL)
 		bits |= KL_SYSTEM_HAS_ACCOUNT;
+	if (system->sharing != NULL)
+		bits |= KL_SYSTEM_HAS_SHARING;
 
 	/* The monitor, offered to a manager bound at version 2 (WS134 p012). */
 	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_MONITOR) != 0U && system->manager_version >= 2U)
@@ -544,6 +564,67 @@ kl_system_network_configure_wired(
 	wl_proxy_marshal(system->network, KL_SYSTEM_NETWORK_CONFIGURE_WIRED, number, config->interface, config->mode, config->address, config->netmask, config->router, config->dns[0], config->dns[1]);
 
 	/* Succeeded: the answer comes once it is applied or refused. */
+	return 0;
+}
+
+/*
+ * Copies Remote Login's state (ws089-p025).
+ */
+void
+kl_system_sharing_get_state(
+	const struct kl_system *system,
+	struct kl_sharing_state *state)
+{
+	/* The state last done. */
+	*state = system->view.sharing;
+}
+
+/*
+ * Turns Remote Login on or off.
+ */
+int
+kl_system_sharing_set_ssh(
+	struct kl_system *system,
+	unsigned on,
+	uint32_t *request)
+{
+	uint32_t number;
+	uint32_t asked;
+
+	/* The sharing object. */
+	if (system->sharing == NULL || system->lost)
+		return ENOTSUP;
+
+	/* On as 1, off as 0, sent with the application's next flush. */
+	asked = 0U;
+	if (on != 0U)
+		asked = 1U;
+	number = system_number(system, request);
+	wl_proxy_marshal(system->sharing, KL_SYSTEM_SHARING_SET_SSH, number, asked);
+
+	/* Succeeded: the state and the answer come later. */
+	return 0;
+}
+
+/*
+ * Reads Remote Login's state again.
+ */
+int
+kl_system_sharing_query(
+	struct kl_system *system,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* The sharing object. */
+	if (system->sharing == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->sharing, KL_SYSTEM_SHARING_QUERY, number);
+
+	/* Succeeded: the state and the answer come later. */
 	return 0;
 }
 
@@ -1066,6 +1147,52 @@ system_wired(
 	system_view_wired(&system->view, name, mode, router);
 }
 
+/* Keeps Remote Login's state until its done (ws089-p025). */
+static void
+system_sharing_state(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t available,
+	uint32_t enabled,
+	uint32_t running,
+	uint32_t port,
+	uint32_t allowed,
+	const char *fingerprint)
+{
+	struct kl_system *system;
+	struct kl_sharing_state state;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The state as the application's record. */
+	system = data;
+	memset(&state, 0, sizeof(state));
+	state.available = available;
+	state.enabled = enabled;
+	state.running = running;
+	state.port = port;
+	state.allowed = allowed;
+	system_view_copy(state.fingerprint, sizeof(state.fingerprint), fingerprint);
+	system_view_sharing_state(&system->view, &state);
+}
+
+/* Puts Remote Login's state into effect. */
+static void
+system_sharing_done(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t serial)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(serial);
+
+	/* The state, as one. */
+	system = data;
+	system_view_sharing_done(&system->view);
+}
+
 /* Adds a DNS server of the details. */
 static void
 system_dns(
@@ -1384,6 +1511,10 @@ system_bind(
 	/* The account, offered to a manager bound at version 4 (ws160-p002). */
 	if (system->manager_version >= 4U)
 		system->account = system_make(system, KL_SYSTEM_CAPABILITY_ACCOUNT, KL_SYSTEM_MANAGER_GET_ACCOUNT, &kl_system_account_v1_interface, &system_account_listener);
+
+	/* Remote Login, offered to a manager bound at version 7 (ws089-p025). */
+	if (system->manager_version >= KL_SYSTEM_SINCE_SHARING)
+		system->sharing = system_make(system, KL_SYSTEM_CAPABILITY_SHARING, KL_SYSTEM_MANAGER_GET_SHARING, &kl_system_sharing_v1_interface, &system_sharing_listener);
 
 	/* Waits for their first state: each object's state and its done. */
 	status = wl_display_roundtrip_queue(system->display, system->queue);

@@ -307,6 +307,40 @@ system_view_power_done(
 }
 
 /*
+ * Keeps Remote Login's state (ws089-p025) until its done.
+ */
+void
+system_view_sharing_state(
+	struct system_view *view,
+	const struct kl_sharing_state *state)
+{
+	/* The state, pending. */
+	view->sharing_pending = *state;
+	view->sharing_touched = 1U;
+}
+
+/*
+ * Puts Remote Login's pending state into effect.
+ */
+void
+system_view_sharing_done(
+	struct system_view *view)
+{
+	int differs;
+
+	/* Nothing pending. */
+	if (!view->sharing_touched)
+		return;
+
+	/* The state, told when it changed. */
+	view->sharing_touched = 0U;
+	differs = memcmp(&view->sharing, &view->sharing_pending, sizeof(view->sharing));
+	view->sharing = view->sharing_pending;
+	if (differs != 0)
+		view->changed |= KL_SYSTEM_CHANGED_SHARING;
+}
+
+/*
  * Adds a device to the pending list, starting a new list after the last
  * done.
  */

@@ -7,7 +7,8 @@
 #  2. A click on p023's row analyses it ("STORAGE analyze root=/root/p023").
 #  3. Analyze again and Stop at once: "STORAGE stopped" within a second, what was counted kept.
 #  4. The Trash: its size ("STORAGE trash bytes=... items=2"), Empty Trash (402) asks, Empty (403) empties it
-#     ("STORAGE emptied removed=4 errno=0", files/ and info/ empty) (trash-empty.png).
+#     ("STORAGE emptied removed=5 errno=0": old.txt, Old and its inner.txt, and the two .trashinfo; files/ and info/
+#     empty) (trash-empty.png).
 # PASS: every "ok" line and the last line settings-p023: PASS.
 #   plan/ws089/tests/settings-guest.sh start              (the guest must be up)
 #   plan/ws089/tests/settings-p023.sh [OUTDIR]            (default build/ws089-shots/p023)
@@ -101,7 +102,7 @@ expect_log /tmp/s.log 'STORAGE stopped root=' 5
 # 4. The Trash emptied.
 control 402 600
 control 403 2000
-expect_log /tmp/s.log 'STORAGE emptied removed=4 errno=0' 10
+expect_log /tmp/s.log 'STORAGE emptied removed=5 errno=0' 10
 left=$(guest 'ls -A /root/.local/share/Trash/files /root/.local/share/Trash/info | grep -vc ":$\|^$"' | tail -1)
 [ "${left:-1}" = 0 ] && pass "files/ and info/ are empty" || fail "files/ and info/ are empty (${left:-?} left)"
 shot trash-empty.png

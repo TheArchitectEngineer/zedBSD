@@ -49,6 +49,8 @@ struct kl_backend {
 	unsigned logout_asked;
 	uint64_t logout_ms;
 	int events_descriptor;
+	/* Remote Login's state as sessiond last answered it (ws089-p025). */
+	struct kl_backend_sharing sharing;
 };
 
 /*
@@ -56,6 +58,14 @@ struct kl_backend {
  * reads what its manager sent and keeps its deadlines.
  */
 void kl_backend_session_tick(struct kl_backend *backend, uint64_t now_ms);
+
+/*
+ * Sends one request line to the session's manager and remembers which
+ * request awaits its answer (zedBSD's session-zedbsd.c), and takes the
+ * answer to a SERVICE request (sharing-zedbsd.c, ws089-p025).
+ */
+int kl_backend_session_send(struct kl_backend *backend, unsigned request, const char *line);
+int kl_backend_sharing_take(struct kl_backend *backend, const char *line);
 
 /*
  * The seat's part of the event loop's poll (ws131-p006): each operating

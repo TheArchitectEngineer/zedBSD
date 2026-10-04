@@ -43,6 +43,9 @@ static const struct wl_interface *system_get_monitor_types[] = {
 static const struct wl_interface *system_get_account_types[] = {
 	&kl_system_account_v1_interface,
 };
+static const struct wl_interface *system_get_sharing_types[] = {
+	&kl_system_sharing_v1_interface,
+};
 
 /* The arguments of messages that name no interface (at most sixteen, a monitor's disk's). */
 static const struct wl_interface *system_plain_types[] = {
@@ -74,6 +77,7 @@ static const struct wl_message system_manager_requests[] = {
 	{ "get_devices", "n", system_get_devices_types },
 	{ "get_monitor", "2nu", system_get_monitor_types },
 	{ "get_account", "4n", system_get_account_types },
+	{ "get_sharing", "7n", system_get_sharing_types },
 };
 
 /* The events of kl_system_manager_v1. */
@@ -81,11 +85,11 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: eight requests (get_monitor since 2, get_account since 4) and one event.  It lives for the program. */
+/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: nine requests (get_monitor since 2, get_account since 4, get_sharing since 7) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
 	KL_SYSTEM_MANAGER_VERSION,
-	8,
+	9,
 	system_manager_requests,
 	1,
 	system_manager_events
@@ -270,4 +274,28 @@ const struct wl_interface kl_system_monitor_v1_interface = {
 	system_monitor_requests,
 	9,
 	system_monitor_events
+};
+
+/* The requests of kl_system_sharing_v1 (ws089-p025). */
+static const struct wl_message system_sharing_requests[] = {
+	{ "destroy", "", NULL },
+	{ "set_ssh", "uu", system_plain_types },
+	{ "query", "u", system_plain_types },
+};
+
+/* The events of kl_system_sharing_v1. */
+static const struct wl_message system_sharing_events[] = {
+	{ "state", "uuuuus", system_plain_types },
+	{ "done", "u", system_plain_types },
+	{ "result", "uuu", system_plain_types },
+};
+
+/* kl_system_sharing_v1, made at the manager's version (7): three requests and three events.  It lives for the program. */
+const struct wl_interface kl_system_sharing_v1_interface = {
+	KL_SYSTEM_SHARING_NAME,
+	KL_SYSTEM_SINCE_SHARING,
+	3,
+	system_sharing_requests,
+	3,
+	system_sharing_events
 };

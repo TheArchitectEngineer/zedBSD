@@ -2378,6 +2378,7 @@ lan_set_command(
 	int index;
 	int fixed;
 	int option;
+	int router;
 	int error;
 	int differs;
 
@@ -2408,10 +2409,15 @@ lan_set_command(
 	if (fixed && error == 0)
 		error = networkd_field_write(&writer, NETWORKD_FIELD_NETMASK, argv[6], strlen(argv[6]));
 	index = positional;
-	option = 1;
-	if (index < argc)
+	router = 0;
+	if (index < argc) {
 		option = strncmp(argv[index], "--", 2U);
-	if (fixed && error == 0 && option != 0) {
+		if (option != 0)
+			router = 1;
+	}
+
+	/* The router's field. */
+	if (fixed && error == 0 && router) {
 		error = networkd_field_write(&writer, NETWORKD_FIELD_GATEWAY, argv[index], strlen(argv[index]));
 		index++;
 	}

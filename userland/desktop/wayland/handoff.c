@@ -163,6 +163,12 @@ zwl_handoff_answer(
 	/* The compositor the backend was opened for. */
 	server = data;
 
+	/* Remote Login's answer is the system extension's, also while the screen is locked (ws089-p025). */
+	if (request == KL_BACKEND_SESSION_SERVICE) {
+		zwl_system_sharing_answer(server, error);
+		return;
+	}
+
 	/* The login screen and a locked session's lock screen act on it (greeter.c). */
 	if (server->greeter || server->locked) {
 		zwl_greeter_answer(server, request, error);

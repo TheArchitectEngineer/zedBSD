@@ -45,6 +45,11 @@
  *   UNLOCK password  the lock screen (ws035-p102): checks the session
  *                    user's password as a login does; OK, or FAIL after a
  *                    delay that grows with the failures in a row
+ *   SERVICE name on|off|status
+ *                    a system service the Sharing page turns on or off
+ *                    (ws089-p025, service.c: sshd only, root or wheel);
+ *                    SERVICE available= enabled= running= port=, DENIED,
+ *                    or ERROR
  */
 
 #include "sessiond.h"
@@ -310,6 +315,13 @@ session_request(
 	if (match == 0) {
 		session_unlock(account, control, line + 7);
 		memset(line, 0, sizeof(line));
+		return 0;
+	}
+
+	/* A system service of the Sharing page (ws089-p025). */
+	match = strncmp(line, "SERVICE ", 8);
+	if (match == 0) {
+		sessiond_service(account, control, line + 8);
 		return 0;
 	}
 

@@ -39,7 +39,7 @@ const struct se_page se_pages[SE_PAGES] = {
 	{ SE_PAGE_MOUSE, SE_GROUP_DEVICES, SE_GLYPH_MOUSE, "Mouse", "Pointer speed, acceleration and scrolling.", "mouse", "mouse pointer speed acceleration scroll wheel natural", 1, se_mouse_draw, se_input_press, NULL, se_input_drag },
 	{ SE_PAGE_TOUCHPAD, SE_GROUP_DEVICES, SE_GLYPH_TOUCHPAD, "Touchpad", "Pointer speed, acceleration and scrolling.", "touchpad", "touchpad trackpad pointer speed acceleration scroll natural", 1, se_touchpad_draw, se_input_press, NULL, se_input_drag },
 	{ SE_PAGE_PRINTERS, SE_GROUP_DEVICES, SE_GLYPH_PRINTER, "Printers", "Add and manage printers.", "printers", "printers print scanner", 0, se_soon_draw, NULL, NULL, NULL },
-	{ SE_PAGE_SHARING, SE_GROUP_DEVICES, SE_GLYPH_SHARE, "Sharing", "Share files and the screen.", "sharing", "sharing share files remote", 0, se_soon_draw, NULL, NULL, NULL },
+	{ SE_PAGE_SHARING, SE_GROUP_DEVICES, SE_GLYPH_SHARE, "Sharing", "Remote Login and, later, cloud storage.", "sharing", "sharing share files remote login ssh sshd cloud", 1, se_sharing_draw, se_sharing_press, NULL, NULL },
 	{ SE_PAGE_USERS, SE_GROUP_SYSTEM, SE_GLYPH_PEOPLE, "Users", "Accounts on this computer.", "users", "users accounts people login password", 1, se_users_draw, se_users_press, se_users_key, NULL },
 	{ SE_PAGE_PRIVACY, SE_GROUP_SYSTEM, SE_GLYPH_EYE, "Privacy", "What applications may use.", "privacy", "privacy permissions location camera", 0, se_soon_draw, NULL, NULL, NULL },
 	{ SE_PAGE_SECURITY, SE_GROUP_SYSTEM, SE_GLYPH_LOCK, "Security", "Locking the screen and protecting your data.", "security", "security lock screen encryption firewall", 0, se_soon_draw, NULL, NULL, NULL },
