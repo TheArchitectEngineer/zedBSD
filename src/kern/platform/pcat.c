@@ -47,6 +47,9 @@
 #if CONFIG_DRIVER_PCI_HDA
 #include <drivers/pci/pci-hda.h>
 #endif
+#if CONFIG_DRIVER_PCI_LPSS_I2C
+#include <drivers/i2c/lpss-i2c.h>
+#endif
 #if CONFIG_DRIVER_USB_STORAGE
 #include "drivers/usb/usb-storage.h"
 #include <drivers/usb/usb-uas.h>
@@ -116,6 +119,9 @@ kern_platform_init(
 #endif
 #if CONFIG_DRIVER_PCI_HDA
 	int hda_error;
+#endif
+#if CONFIG_DRIVER_PCI_LPSS_I2C
+	int lpss_error;
 #endif
 #if CONFIG_DRIVER_ACPI
 	int acpi_error;
@@ -212,6 +218,13 @@ kern_platform_init(
 	hda_error = drv_pci_hda_driver_register();
 	if (hda_error != 0)
 		kern_logf("pci: HD Audio driver registration failed (%d)\n", hda_error);
+
+#endif
+#if CONFIG_DRIVER_PCI_LPSS_I2C
+	/* Binds the PCH's I2C controllers, whose buses the I2C-HID touchpad uses (WS159). */
+	lpss_error = drv_pci_lpss_i2c_driver_register();
+	if (lpss_error != 0)
+		kern_logf("pci: LPSS I2C driver registration failed (%d)\n", lpss_error);
 
 #endif
 #if CONFIG_DRIVER_PCI_INTEL_AX211
