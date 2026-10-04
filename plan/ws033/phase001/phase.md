@@ -53,3 +53,20 @@ Queue: q598 / q598-i01（P1、中断）
 - L1 の fetch・抜去（L1/L2 の 2）・`set_link`（3）・`networking.wait`（4）は未実施。`lan-hotplug.sh` は未作成。
 - 再開の手順: 同じ器で、`device_add` の後に `ifconfig ue1`（flags の RUNNING）と `net dhcp ue1 --timeout=20` を手で試し、managed-lan の後挿しの経路
   （RTM_IFINFO → PENDING → dhcp の timeout → 169.254）を読む。
+
+## q685-i01 の途中の結果（P3 generation8、2026-10-04、読みだけ。Q1 のラップアップの依頼で中断）
+
+BUG-168（後挿しの ue0 が up しない）・BUG-169（抜いた後の Ethernet のメニューの wlan0）で再開。source は変えていない。QEMU は起動していない。
+
+- networkd の後挿しの経路（`userland/base/networkd/managed-lan.c`）を読んだ: 知らない ifindex の `RTM_IFINFO` は `NETWORKD_LAN_ACTION_RESNAPSHOT` →
+  snapshot で `networkd_lan_observe`。carrier ありなら PENDING → CONFIGURE（DHCP、取れなければ 169.254 で CONFIGURED にして cable が動くまで再試行しない）、
+  carrier なしなら IDLE のまま `networkd_lan_next` の RAISE で 1 回 up → `RTM_IFINFO_CARRIER_UP` で CONFIGURE。読みの限りでは後挿しも同じ道に入る。
+- q598-i01 の観測（後挿しの ue1 が `UP,RUNNING` で **RX/TX packets 0**、169.254 に後退）と合わせると、networkd ではなく USB CDC（QEMU の usb-net は ECM、
+  実機の RTL8156 は NCM）の後挿しの attach の後に data interface の alt setting／bulk IN の開始が行われていない疑いが第一（未確認）。DHCP が 10 秒の
+  timeout で 169.254 になると、managed-lan は cable が動くまで再試行しないので、後から RX が動いても address を取り直さない（2 つ目の疑い）。
+- BUG-169 は未着手（system bar の Ethernet の device の選び方、`userland/desktop/wayland/` と libkeiland-backend の interface の種類の判定を読む予定）。
+
+再開点: (1) `src/drivers/usb/usb-cdc-ecm.c`・`usb-cdc-ncm*.c` の attach で、起動時と後挿しで違う所（set_interface の alt 1、bulk IN の最初の submit、
+`net_device_set_carrier` の初期値、NETWORK_CONNECTION 通知の待ち）を読む。(2) managed-lan の 169.254 の後の再試行（carrier が変わらない時の周期の
+再 DHCP）を要るか判断。(3) `plan/ws033/tests/lan-hotplug.sh`（QMP の device_add/device_del、SSH の `ifconfig`・`net show` で判定）を作り、T1 に依頼
+（Q1 経由）。(4) BUG-169 の読み。
