@@ -160,3 +160,32 @@ INTX cookie なので bit に触らない。command register を書く他の箇�
 - 済んだ確認: host 試験（AX211 boot・core・runtime-start、PCI msi、host-wlan-retire）、build warning 0、T1-089（QEMU で kernel.log の永続化 PASS）。
 - 未了: 5330 の AX211 passthrough での 10 分放置（queue の q697）、firmware の SW_ERROR の解析（q698）、実機の UAT（手順 (B): boot の行から `login=graphical`・`kmsg=quiet` を外し text console で放置、`/var/log/kernel.log.old`）。
 - q697・q698 は 22 時まで別の session の P4 が実行する（queue.md の「2026-10-04 19時50分〜22時の委譲」）。
+
+## q697 の確認（2026-10-04、委譲の session / P4）
+
+- Attempt: q697-i01、in-progress。承認は Queue の「2026-10-04 19時50分〜22時の委譲」と本 session の user「P4 として実行してください」。
+- 開始: 19:56 JST。worktree `/home/awe/zedBSD-worktrees/p4`、branch `agent/p4`、base `62de7d3`（`97543a4`・`85efbd4` を含む）、開始時 clean。Q1・他担当の再開は行わない。
+- 指定の `plan/tools/guest/test-image.sh plan/uat/config-uat.mk build/q697` は exit 0、native image check OK（19:58 JST）。build log は `build/q697-build.log`。外部 Noct の return-type warning と submake jobserver warning があり、image 全体を warning 0 とは扱わない。
+- 5330 の事前確認: SSH 可、AX211 の driver 無し、iwlwifi/iwlmvm blacklist 保持、SSH は USB Ethernet `enx6c1ff706148a`。QEMU 既存 process 無し。
+- 試験は AX211 のみ、std VGA、gdbstub と host の ping/SSH で観測。原本は `plan/ws004/temp/q697/`（git 対象外）。結果は完了時に追記。
+
+### q697 の条件の調整（2026-10-04 20時台、user の回答）
+
+std VGA では `/dev/gpu0` が無く sessiond が console に戻るため、desktop の条件について本 session で確認した。user は「console での10分確認を採用する」と回答。q697 は AX211 のみ・std VGA の console で、保存済み WiFi profile 無しの scan を10分間観測し、元の (a) host 応答・(b) drain/mmio_stop の帰還・(c) restart と scan 再開・(d) vCPU の正常な待ちで判定する。q698 の範囲は不変。共有 Queue への投影は Q1 の統合時に依頼する。
+
+補正: 開始直後は tracer にまだ AX211 event が無かったが、64 秒以降に scan の SW_ERROR と recovery/restart を観測した。harness の net.conf は wired 用だが、networking の起動で WiFi も enable される。初回の「scan 未開始」は結果でなく開始直後の観測だった。画面は `plan/ws004/temp/q697/desktop-start.png`。
+
+### q697 の結果（2026-10-04 20:11 JST）
+
+Attempt q697-i01: **cleared**（user が採用した console 条件）。whole ws005-p032 は実機 UAT 待ちのため in-progress を維持。
+
+- 観測: 19:59:32〜20:10:43 JST、guest 走行 670.822 秒。console 到達時の画面は20:00台、終了まで10分以上。AX211 のみ、std VGA、12 vCPU・4 GiB、保存 WiFi profile 無し。
+- (a) host: ping 成功 67 回、SSH 成功 67 回（約10秒間隔）、失敗記録無し。
+- (b) gdb: `ax211_pci_interrupt_drain returned eax=0x0` 30 回、`drv_intel_ax211_mmio_stop returned eax=0x0` 30 回。以前 host が停止した bus master off の手前から全て帰還した。
+- (c) klog の guest メモリ観測: SW_ERROR（hw=02000000）10 回、`restarted after recovery attempt=1 error=0` 10 回。その後また scan 中の次の SW_ERROR に到達しており scan 再開を確認。約66秒の周期は残る。
+- (d) gdb の670.053秒の sample: **12 vCPU 全て `sched_idle`**。panic/fatal breakpoint hit 無し。
+- stop の最初の回は `global stop deferred error=5 runtime-state=3 irq=0/0 dma-retained=1` を記録し、後続 cleanup の後に restart が成功する。即座の stop 成功とは報告しない。
+- 終了: QEMU monitor の `quit`、runner exit 0、`restored 0000:00:14.3 to none`。host の WiFi blacklist は保持。
+- image SHA256: `53256f6fc08a9e581a1f8d02196bae77eff1f45e46d6d76cdb4f5dca91dcd22d`。vmunix SHA256: `3c14a5fef10b4c477e154745f4cfb1e51257cc9f40e6f133a84e80d6faddc59e`。base `62de7d3`。
+- 原本（git 対象外）: `plan/ws004/temp/q697/run1-trace.log`（SHA256 `57edacdd938e61dd2c0260f9ec93541f6f12471b1facdb5d4f77d42222e1a3ff`）、`run1-host-liveness.log`、`run1-final-monitor.txt`、`run1-klog-end-memory.txt`、`console-end.png`。klog は gdb/monitor でメモリから取得し、console/serial log を判定に使っていない。
+- 制限: passthrough の証拠であり、素の実機 UAT・desktop・接続済み通信・長時間耐久の証拠ではない。q698 は残る SW_ERROR の解析。GitHub 公開・共有 Queue/WS/Master の投影は Q1 の統合時に行う。
