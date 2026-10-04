@@ -2,7 +2,7 @@
 # ws094-p002: zdesktop's desktop surface (keiland_desktop_v1) on the Venus guest, with the probe client
 # (desktop-probe.c, built by build-probe.sh).  The running guest gets this worktree's compositor and the probe;
 # zdesktop --glass at 1280x800 with --desktop-token=T and no program of its own.
-#   role      the probe with the token takes the role: configured under the system bar (0,34 1280x766), its image
+#   role      the probe with the token takes the role: configured under the system bar (0,44 1280x756), its image
 #             committed and its frame done; a picture of its squares over the wallpaper (role.png)
 #   refuse    a second probe (the role taken) and one with another token are refused
 #   input     a left press, a right press and a key where no window is reach the probe (focus in, surface-local
@@ -87,10 +87,10 @@ for step in "$@"; do
 	role)
 		compositor '--desktop-token=T --desktop-client=none'
 		guest "$env /tmp/desktop-probe --token=T > /tmp/probe.log 2>&1 </dev/null & sleep 3; echo started" >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=34 width=1280 height=766'
-		expect_log /tmp/probe.log 'DESKPROBE configure serial=[0-9]+ x=0 y=34 width=1280 height=766'
+		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=44 width=1280 height=756'
+		expect_log /tmp/probe.log 'DESKPROBE configure serial=[0-9]+ x=0 y=44 width=1280 height=756'
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP ack serial='
-		expect_log /tmp/probe.log 'DESKPROBE commit width=1280 height=766'
+		expect_log /tmp/probe.log 'DESKPROBE commit width=1280 height=756'
 		expect_log /tmp/probe.log 'DESKPROBE frame'
 		pointer move 640 500 sleep 300
 		shot role.png
@@ -108,9 +108,9 @@ for step in "$@"; do
 		pointer move 600 400 sleep 300 down sleep 60 up sleep 500
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP focus client='
 		expect_log /tmp/probe.log 'DESKPROBE focus in'
-		expect_log /tmp/probe.log 'DESKPROBE button x=600 y=366 button=272 state=1'
+		expect_log /tmp/probe.log 'DESKPROBE button x=600 y=356 button=272 state=1'
 		pointer move 700 450 sleep 300 right-down sleep 60 right-up sleep 500
-		expect_log /tmp/probe.log 'DESKPROBE button x=700 y=416 button=273 state=1'
+		expect_log /tmp/probe.log 'DESKPROBE button x=700 y=406 button=273 state=1'
 		keys 'a'
 		expect_log /tmp/probe.log 'DESKPROBE key key=30 state=1'
 		shot input.png
@@ -172,7 +172,7 @@ for step in "$@"; do
 		put "$out/tap.script" /tmp/tap.script
 		result=$(guest "/bin/touchinject /tmp/tap.script 2>&1; echo replay=\$?")
 		printf '%s\n' "$result" | grep -q '^replay=0$' || { echo "touchinject: FAILED"; status=1; }
-		expect_log /tmp/probe.log 'DESKPROBE touch down id=[0-9]+ x=500 y=466'
+		expect_log /tmp/probe.log 'DESKPROBE touch down id=[0-9]+ x=500 y=456'
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP focus client='
 		;;
 	restart)

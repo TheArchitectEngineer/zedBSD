@@ -409,17 +409,17 @@ zwl_volume_draw_icon(
 		printf("ZWL VOLUME icon x=%d y=%d width=%d height=%d\n", volume_view.icon_x, volume_view.icon_y, volume_view.icon_width, volume_view.icon_height);
 	}
 
-	/* While the popup is open its icon has a pale blue back. */
+	/* While the popup is open its icon has a pale blue back, on the bar's middle. */
 	if (volume_view.open)
-		glass_draw_solid(server, command, (float)volume_view.icon_x, (float)volume_view.icon_y, (float)volume_view.icon_width, (float)volume_view.icon_height, 7.0f, blue);
+		glass_draw_solid(server, command, (float)volume_view.icon_x, (float)(ZWL_GLASS_BAR_MIDDLE - 14), (float)volume_view.icon_width, 28.0f, 7.0f, blue);
 
 	/* No sound: a pale speaker, struck through. */
 	sound = volume_sound();
 	if (!sound) {
 		memcpy(faint, ink, sizeof(faint));
 		faint[3] *= 0.35f;
-		glass_draw_icon(server, command, GLASS_ICON_VOLUME_0, x, 7, 20U, faint);
-		glass_draw_solid(server, command, (float)(x + 1), 16.0f, 18.0f, 2.0f, 1.0f, ink);
+		glass_draw_icon(server, command, GLASS_ICON_VOLUME_0, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, faint);
+		glass_draw_solid(server, command, (float)(x + 1), (float)(ZWL_GLASS_BAR_MIDDLE - 1), 18.0f, 2.0f, 1.0f, ink);
 		return;
 	}
 
@@ -436,7 +436,7 @@ zwl_volume_draw_icon(
 	}
 
 	/* The icon. */
-	glass_draw_icon(server, command, icon, x, 7, 20U, ink);
+	glass_draw_icon(server, command, icon, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, ink);
 }
 
 /*

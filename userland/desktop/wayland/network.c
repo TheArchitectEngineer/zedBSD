@@ -328,9 +328,9 @@ zwl_network_draw_icon(
 		printf("ZWL NETWORK icon x=%d y=%d width=%d height=%d\n", network_view.icon_x, network_view.icon_y, network_view.icon_width, network_view.icon_height);
 	}
 
-	/* While the menu is open its icon has a pale blue back. */
+	/* While the menu is open its icon has a pale blue back, on the bar's middle. */
 	if (network_view.open)
-		glass_draw_solid(server, command, (float)network_view.icon_x, (float)network_view.icon_y, (float)network_view.icon_width, (float)network_view.icon_height, 7.0f, blue);
+		glass_draw_solid(server, command, (float)network_view.icon_x, (float)(ZWL_GLASS_BAR_MIDDLE - 14), (float)network_view.icon_width, 28.0f, 7.0f, blue);
 
 	/* A wired connection is the tree. */
 	state = &network_view.state;
@@ -349,14 +349,14 @@ zwl_network_draw_icon(
 		}
 
 		/* The bars. */
-		network_draw_bars(server, command, x, 23, lit, ink, 0.25f);
+		network_draw_bars(server, command, x, ZWL_GLASS_BAR_MIDDLE + 6, lit, ink, 0.25f);
 		return;
 	}
 
 	/* Anything else is pale bars; Wi-Fi that is off is struck through. */
-	network_draw_bars(server, command, x, 23, 0, ink, 0.30f);
+	network_draw_bars(server, command, x, ZWL_GLASS_BAR_MIDDLE + 6, 0, ink, 0.30f);
 	if (state->reachable && state->wifi == KL_BACKEND_WIFI_OFF)
-		glass_draw_solid(server, command, (float)(x - 2), 15.0f, 22.0f, 2.0f, 1.0f, ink);
+		glass_draw_solid(server, command, (float)(x - 2), (float)(ZWL_GLASS_BAR_MIDDLE - 2), 22.0f, 2.0f, 1.0f, ink);
 }
 
 /*
@@ -1166,17 +1166,17 @@ network_draw_wired(
 	const float *ink)
 {
 	/* The upper box, and the stem from it. */
-	glass_draw_solid(server, command, (float)(x + 5), 8.0f, 8.0f, 6.0f, 1.5f, ink);
-	glass_draw_solid(server, command, (float)(x + 8), 14.0f, 2.0f, 3.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 5), (float)(ZWL_GLASS_BAR_MIDDLE - 9), 8.0f, 6.0f, 1.5f, ink);
+	glass_draw_solid(server, command, (float)(x + 8), (float)(ZWL_GLASS_BAR_MIDDLE - 3), 2.0f, 3.0f, 0.0f, ink);
 
 	/* The bar across, and the legs down. */
-	glass_draw_solid(server, command, (float)(x + 2), 17.0f, 14.0f, 2.0f, 0.0f, ink);
-	glass_draw_solid(server, command, (float)(x + 2), 17.0f, 2.0f, 3.0f, 0.0f, ink);
-	glass_draw_solid(server, command, (float)(x + 14), 17.0f, 2.0f, 3.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 2), (float)ZWL_GLASS_BAR_MIDDLE, 14.0f, 2.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 2), (float)ZWL_GLASS_BAR_MIDDLE, 2.0f, 3.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 14), (float)ZWL_GLASS_BAR_MIDDLE, 2.0f, 3.0f, 0.0f, ink);
 
 	/* The two lower boxes. */
-	glass_draw_solid(server, command, (float)(x - 1), 20.0f, 8.0f, 6.0f, 1.5f, ink);
-	glass_draw_solid(server, command, (float)(x + 11), 20.0f, 8.0f, 6.0f, 1.5f, ink);
+	glass_draw_solid(server, command, (float)(x - 1), (float)(ZWL_GLASS_BAR_MIDDLE + 3), 8.0f, 6.0f, 1.5f, ink);
+	glass_draw_solid(server, command, (float)(x + 11), (float)(ZWL_GLASS_BAR_MIDDLE + 3), 8.0f, 6.0f, 1.5f, ink);
 }
 
 /* Draws one row at top: its band when lit, and what the row shows. */

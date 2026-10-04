@@ -497,7 +497,7 @@ def zdesktop(args, qmp, capture, report, wait):
     # cascade step of 32 after the one before, centred under the system bar and a title bar
     # (userland/desktop/wayland/shell.c zwl_glass_place).  The viewer is the fourth mapped: two wl_shm windows
     # and the Vulkan window killed while it draws (wlkill) come before it.
-    top = 34 + 12 + 44 + 8
+    top = 44 + 12 + 44 + 8
     mview_x = (width - 800) // 2 + 32 * 3
     mview_y = top + (height - top - 12 - 560) // 2 + 32 * 3
     title = (mview_x + 300, mview_y - 8 - 22)
@@ -585,9 +585,9 @@ def keiland_home(args, qmp, capture, report):
     time_limit = time.monotonic() + args.timeout
     # The icons of the built-in list (userland/desktop/wayland/home.c home_layout at 1920x1080, six
     # applications in one row since WS035 p070): cells of 144 from x = (1920 - 6 * 144) / 2, the row's top
-    # 34 + 2/5 of the space under the bar less the row, the icon 72 high 20 under the cell's top.
+    # 44 + 2/5 of the space under the bar less the row, the icon 72 high 20 under the cell's top.
     left = (width - 6 * 144) // 2
-    icon_y = 34 + (height - 34 - 152) * 2 // 5 + 20 + 36
+    icon_y = 44 + (height - 44 - 152) * 2 // 5 + 20 + 36
     terminal = (left + 72, icon_y)
     viewer = (left + 144 + 72, icon_y)
 
@@ -653,7 +653,7 @@ def keiland_x11(args, qmp, capture, report):
     width, height = 1920, 1080
     time_limit = time.monotonic() + args.timeout
     left = (width - 6 * 144) // 2
-    icon_y = 34 + (height - 34 - 152) * 2 // 5 + 20 + 36
+    icon_y = 44 + (height - 44 - 152) * 2 // 5 + 20 + 36
     xterm = (left + 4 * 144 + 72, icon_y)
     gears = (left + 5 * 144 + 72, icon_y)
 
@@ -733,7 +733,7 @@ def keiland_menu(args, qmp, capture, report):
     width, height = 1920, 1080
     time_limit = time.monotonic() + args.timeout
     left = (width - 6 * 144) // 2
-    icon_y = 34 + (height - 34 - 152) * 2 // 5 + 20 + 36
+    icon_y = 44 + (height - 44 - 152) * 2 // 5 + 20 + 36
     terminal = (left + 72, icon_y)
 
     def events(items):
@@ -856,10 +856,10 @@ def keiland_files(args, qmp, capture, report):
     width, height = 1920, 1080
     time_limit = time.monotonic() + args.timeout
     # App Home's grid (userland/desktop/wayland/home.c home_layout): seven applications take two rows of six
-    # columns of 144 x 152, the grid 2/5 of the way down the space under the 34-pixel bar, the icon 72 high
+    # columns of 144 x 152, the grid 2/5 of the way down the space under the 44-pixel bar, the icon 72 high
     # 20 under its cell's top.
     left = (width - 6 * 144) // 2
-    grid_top = 34 + (height - 34 - 2 * 152) * 2 // 5
+    grid_top = 44 + (height - 44 - 2 * 152) * 2 // 5
     files_icon = (left + 72, grid_top + 152 + 20 + 36)
     # Where zdesktop places the file manager depends on the windows mapped before it (a cascade step
     # each, shell.c zwl_glass_place), so the window is found in the picture instead: what changed from the

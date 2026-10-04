@@ -71,15 +71,25 @@
 #define ZWL_CASCADE_STEP	32
 
 /*
- * The glass look (glass.c): the system bar's height, a title bar's height,
+ * The glass look (glass.c): a title bar's height, the system bar's height,
  * the gap between a title bar and its body, the margin at the output's edges,
  * and so the highest a body may be.  BTN_LEFT is the left mouse button.
+ *
+ * The system bar is as high as a window's title bar (ws099-p031, the
+ * 2026-10-04 user: the two are one height), so it is defined from it.
  */
-#define ZWL_GLASS_BAR		34
 #define ZWL_GLASS_TITLE		44
+#define ZWL_GLASS_BAR		ZWL_GLASS_TITLE
 #define ZWL_GLASS_GAP		8
 #define ZWL_GLASS_MARGIN	12
 #define ZWL_GLASS_TOP		(ZWL_GLASS_BAR + ZWL_GLASS_MARGIN + ZWL_GLASS_TITLE + ZWL_GLASS_GAP)
+
+/*
+ * The system bar's middle line.  What is drawn in the bar (its icons, its
+ * text's baseline, its separators and pills) keeps its size and is placed
+ * from this line, so it stays centred whatever the bar's height.
+ */
+#define ZWL_GLASS_BAR_MIDDLE	(ZWL_GLASS_BAR / 2)
 
 /* Where a docked (maximized) window's body starts: just under the system bar (shell.c, keyboard.c). */
 #define ZWL_GLASS_DOCK_TOP	(ZWL_GLASS_BAR + 4)
