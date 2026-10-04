@@ -394,4 +394,14 @@ drv_acpi_ec_ecdt(
 int
 drv_acpi_ec_attach(void);
 
+/* The lid, the AC adapter, the batteries and the buttons as the system's events (acpi-power.c, ws132-p002). */
+int
+drv_acpi_power_attach(void);
+
+struct system_power_info;
+
+void
+drv_acpi_power_get(
+	struct system_power_info *info);
+
 #endif

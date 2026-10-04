@@ -28,7 +28,14 @@
 
 #include <uapi/errno.h>
 #include <uapi/fcntl.h>
+#include <uapi/system.h>
 #include "kern/klog.h"
+
+/*
+ * The system's events (ws132-p002), which hear input devices come and go.
+ * Weak: the host fixtures of the input layer link without them.
+ */
+extern void kern_system_event_post(uint32_t, uint32_t, int32_t, const char *, const char *) __attribute__((weak));
 
 #define INPUT_DEVICE_MAX 8U
 #define INPUT_TEXT_MAX 64U
@@ -206,6 +213,7 @@ static int producer_callback_enter(struct input_device *device);
 static void producer_callback_leave(struct input_device *device);
 static int copy_text(const char *text, unsigned long request, uintptr_t argument);
 static int copy_properties(const struct input_device *device, size_t size, uintptr_t argument);
+static void post_device_event(const struct input_device *device, uint32_t action);
 static size_t ioctl_size(unsigned long request);
 static int copy_bits(const uint8_t *bits, size_t bit_size, size_t capacity, uintptr_t argument);
 static int copy_capability_bits(const struct input_device *device, unsigned type, size_t capacity, uintptr_t argument);
@@ -357,6 +365,9 @@ drv_input_device_register(
 
 	*result = device;
 	kern_logf("input: /dev/input/%s: %s\n", node, device->name);
+
+	/* The desktop hears the new device. */
+	post_device_event(device, KERN_SYSTEM_EVENT_ADD);
 
 	/* Succeeded. */
 	return 0;
@@ -827,6 +838,9 @@ drv_input_device_unregister(
 	spin_unlock_irqrestore(&device->publication_lock, publication_irq);
 
 	poll_notify();
+
+	/* The desktop hears the device go. */
+	post_device_event(device, KERN_SYSTEM_EVENT_REMOVE);
 
 	/* DETACH and every transferred producer close are now terminal. */
 	irq = spin_lock_irqsave(&device->lock);
@@ -2107,6 +2121,29 @@ copy_properties(
 
 	/* Succeeded: the caller has the properties. */
 	return 0;
+}
+
+/*
+ * Posts a device's ADD or REMOVE to the system's events: its node, and in
+ * the detail its bus, properties and name.
+ */
+static void
+post_device_event(
+	const struct input_device *device,
+	uint32_t action)
+{
+	char subject[KERN_SYSTEM_EVENT_SUBJECT_MAX];
+	char detail[KERN_SYSTEM_EVENT_DETAIL_MAX];
+
+	/* A kernel without the system's events posts nothing. */
+	if (kern_system_event_post == NULL)
+		return;
+
+	/* The node, the detail, then the event. */
+	kern_snprintf(subject, sizeof(subject), "event%u", device->number);
+	kern_snprintf(detail, sizeof(detail), "bus=%u props=%x name=%s",
+		      (unsigned)device->id.bustype, (unsigned)device->properties, device->name);
+	kern_system_event_post(KERN_SYSTEM_EVENT_INPUT, action, 0, subject, detail);
 }
 
 /* Reports how many bytes one control request asks for. */
