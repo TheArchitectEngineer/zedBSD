@@ -49,6 +49,7 @@ static void check(int ok, const char *format, ...);
 static void test_romaji(void);
 static void test_dict_reader(void);
 static void test_dict_x(void);
+static void test_dict_parts(void);
 static void test_inflect(void);
 static void test_conjugation(void);
 static void test_suru_kuru(void);
@@ -107,6 +108,7 @@ main(
 	test_romaji();
 	test_dict_reader();
 	test_dict_x();
+	test_dict_parts();
 	test_inflect();
 	test_conjugation();
 	test_suru_kuru();
@@ -1209,6 +1211,63 @@ type_text(
 
 	for (i = 0; text[i] != '\0'; i++)
 		key_char(engine, text[i], out);
+}
+
+/*
+ * ws095-p017: a dictionary file of two parts reads as the supplement (before
+ * the line ";; ==== part: system ====") and the system dictionary (from it
+ * on); a file without the line is all the system dictionary's; the engine
+ * given such a file alone looks in its supplement's part first.
+ */
+static void
+test_dict_parts(void)
+{
+	static const char parts_text[] = ";; head\nあい /愛/\n;; ==== part: system ====\nあい /藍/\nうみ /海/\n";
+	struct ja_dict first;
+	struct ja_dict second;
+	struct ja_core core;
+	struct ja_config config;
+	const struct ja_dict_entry *entry;
+	char path[1024];
+	char user[1024];
+	bool split;
+	int error;
+
+	error = write_file("parts.dict", parts_text, path, sizeof(path));
+	check(error == 0, "parts: the file is written");
+	error = ja_dict_load_parts(&first, &second, path, 1U << 20, &split);
+	check(error == 0 && split, "parts: two parts read (error %d)", error);
+	entry = ja_dict_find(&first, "あい", strlen("あい"));
+	check(entry != NULL && strncmp(entry->candidates, "/愛/", strlen("/愛/")) == 0, "parts: the supplement has its headword");
+	entry = ja_dict_find(&first, "うみ", strlen("うみ"));
+	check(entry == NULL, "parts: the supplement ends at the line");
+	entry = ja_dict_find(&second, "うみ", strlen("うみ"));
+	check(entry != NULL, "parts: the system part has its headword");
+	entry = ja_dict_find(&second, "あい", strlen("あい"));
+	check(entry != NULL && strncmp(entry->candidates, "/藍/", strlen("/藍/")) == 0, "parts: the system part keeps its own candidates");
+	ja_dict_free(&first);
+	ja_dict_free(&second);
+
+	error = write_file("one.dict", "うみ /海/\n", path, sizeof(path));
+	check(error == 0, "parts: the file of one part is written");
+	error = ja_dict_load_parts(&first, &second, path, 1U << 20, &split);
+	check(error == 0 && !split, "parts: a file without the line is one part");
+	entry = ja_dict_find(&second, "うみ", strlen("うみ"));
+	check(entry != NULL && first.slot_count == 0U, "parts: all of it is the system dictionary's");
+	ja_dict_free(&first);
+	ja_dict_free(&second);
+
+	error = write_file("parts.dict", parts_text, path, sizeof(path));
+	snprintf(user, sizeof(user), "%s/parts-user.dict", test_dir);
+	(void)unlink(user);
+	config.system_dictionary = path;
+	config.supplement_dictionary = NULL;
+	config.user_dictionary = user;
+	error = ja_core_open(&core, &config);
+	check(error == 0 && core.system_error == 0 && core.has_supplement && core.lexicon.dict_count == 2U && core.lexicon.dicts[0] == &core.supplement,
+	    "parts: the engine given the one file looks in the supplement first");
+	if (error == 0)
+		ja_core_close(&core);
 }
 
 static int

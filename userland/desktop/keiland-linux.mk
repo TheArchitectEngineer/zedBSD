@@ -146,10 +146,9 @@ $(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpaper.ppm,$(KEILAND_LINUX_WAL
 KEILAND_LINUX_ALL += $(KEILAND_LINUX_WALLPAPERS)
 KEILAND_LINUX_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .ppm,$(KEILAND_LINUX_WALLPAPER_NAMES)))
 
-# The Japanese dictionaries are in the tree (userland/desktop/ime/dict, copied from userland/base/emacs/dict on
-# 2026-10-04); the copyright holder's WS095 D1 relicensing places them under the project license.
-$(eval $(call KEILAND_LINUX_DATA,share/kei/ime/ja/SKK-JISYO.X,userland/desktop/ime/dict/SKK-JISYO.X))
-$(eval $(call KEILAND_LINUX_DATA,share/kei/ime/ja/SKK-JISYO.kei,userland/desktop/ime/dict/SKK-JISYO.kei))
+# The Japanese dictionary is in the tree (userland/desktop/ime/dict/SKK-JISYO.ja, one file of the supplement and
+# REmacs's dictionary since ws095-p017); the copyright holder's WS095 D1 relicensing places it under the project license.
+$(eval $(call KEILAND_LINUX_DATA,share/keiland/ime/ja/SKK-JISYO.ja,userland/desktop/ime/dict/SKK-JISYO.ja))
 
 .PHONY: all install clean
 all: $(KEILAND_LINUX_ALL)

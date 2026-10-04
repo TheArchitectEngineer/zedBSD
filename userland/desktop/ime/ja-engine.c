@@ -105,6 +105,7 @@ ja_core_open(
 	const struct ja_config *config)
 {
 	int error;
+	bool split;
 
 	memset(core, 0, sizeof(*core));
 
@@ -139,8 +140,21 @@ ja_core_open(
 		}
 	}
 
-	/* Then the system dictionary. */
-	error = ja_dict_load(&core->system, config->system_dictionary, JA_DICT_SIZE_MAX);
+	/*
+	 * Then the system dictionary.  Without a supplement of its own it may
+	 * be Kei's file of two parts (ws095-p017, SKK-JISYO.ja), whose first
+	 * part is the supplement, looked in before the system's part.
+	 */
+	if (config->supplement_dictionary == NULL) {
+		error = ja_dict_load_parts(&core->supplement, &core->system, config->system_dictionary, JA_DICT_SIZE_MAX, &split);
+		if (error == 0 && split) {
+			core->has_supplement = true;
+			core->lexicon.dicts[core->lexicon.dict_count] = &core->supplement;
+			core->lexicon.dict_count++;
+		}
+	} else {
+		error = ja_dict_load(&core->system, config->system_dictionary, JA_DICT_SIZE_MAX);
+	}
 	core->system_error = error;
 	if (error == ENOMEM) {
 		ja_core_close(core);
