@@ -19,6 +19,7 @@ Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q58
 - **P1・P2 の優先（2026-10-04 user、最新）**: 「WS050, WS052, BUG-165,  WS052を優先としてP1に割り当て、これらがすべてテスト中で先に進めないときに、ほかの作業をP1で進めてください。ほかの作業はPhase完了時に優先作業が着手できるなら切り替えます。P2ではWS141, WS037を進めます。こちらはやることがなくなることはないと思います。テスト中は待機してOKです。しばらくテストはないですが。P2は今作業しているBUG-170が終わったらこのスケジューリングにしてください。」（2 つ目の WS052 は WS051 の意、user のクリックの回答）
 - P1 の優先: **WS049 全体**（2026-10-04 user「P1の優先にWS049を追加です。」: q677 BUG-165・ws049-p008 → q678 ws049-p007 → q694 ws049-p016（bridge の bus、Q1 の追加）→ q693 ws049-p009 規約の全文の確認と最終の確認。WS050・051・052 の実装の前提）、q679 WS050 UCSI・q680 WS051 DP Alt Mode・q681 WS052 電源管理（設計 → 実装の Phase）。優先の作業が全て試験中・依存待ちの時だけ「ほかの作業」（q682 WS132。流れ B は P3 へ移した）を進め、その Phase が終わった時に優先の作業に着手できれば戻る。
 - **Bug の修正を P3 へ（2026-10-04 user）**: 「P3は現在のFable 5.1での作業が終わったら終了して、通常のOpus 5.5 MidでP3を立て直します。バグ修正はP3に移管します。P1で今作業しているDSDTはそのままきりのいいところまで続けて、そのあとはP3に移管してください。」→ P3 generation7（Fable）は BUG-158 の解析の後に終了、generation8（phase-runner-mid）を同じ worktree で起動。P3 の担当: q684 BUG-158 の実装、流れ B の q685〜q690、q677 BUG-165 の残り（P1 の区切りの後）。P4 は起動しない。P1 の「ほかの作業」は q682 WS132 だけになる。
+- BUG-158 の解析の結果（Q1）: 直し方 (1)〜(4)（ticket の「解析」節）を P3 gen8 で実装する。scan の timeout で WiFi が ENETDOWN のまま戻らない機能 bug は新しい ticket を切らず BUG-158 の直し (2) に含める。分ける手順 (A) の 5330 の AX211 passthrough は Guardrail で停止中（host の hang）なので使わない。実機の判定は (B)（text console で放置）を次の UAT で。
 - P2: q683 BUG-170 の後は q691 WS141 と q692 WS037（p001 から番号の順）だけを進める。試験中は待機してよい。
 - 試験: P1・P2 は T1 に直接送らず Q1 に依頼を送る。Q1 が集めて T1 の台帳に積み、T1 は積まれた依頼をできるだけ 1 回の QEMU の起動にまとめて流す。T1 が忙しい時は Q1 が T2 を立てる（QEMU は host で同時に 2 つまで）。実機の確認（5330）はユーザーの次の UAT にまとめ、それまで該当の Phase は uncleared（実機待ち）。
 - BUG-158（q684）の分担（2026-10-04 user）: 「BUG-158はFable 5.1 Highのサブエージェントに解析を割り当ててください。実装はOpus 5.5 Mid,テストはT1です。これは別なサブエージェントを今立ててOKです。」→ 解析は P3（bug-analyzer）、実装は解析の後に P4（phase-runner-mid）、試験は T1（Q1 経由）。P2 の順から外した。
@@ -42,7 +43,7 @@ Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q58
 | Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
 | q683 / q683-i01 | P2（generation11） | [BUG-170](bugs/BUG-170.md)（WS100・WS089） | 音量の slider のドラッグでのフリーズ。確認の音は離した時に 1 回。QEMU で再現と確認 | なし | in-progress |
-| q684 / q684-i01 | 解析 P3（generation7、bug-analyzer = Fable 5.1 high）→ 実装 P3（generation8、phase-runner-mid）→ 試験 T1 | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | in-progress（解析） |
+| q684 / q684-i01 | 解析 P3（generation7、bug-analyzer = Fable 5.1 high）→ 実装 P3（generation8、phase-runner-mid）→ 試験 T1 | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | 解析 finished（P3 gen7 52df29f → main b7bced6）。実装 in-progress（P3 gen8） |
 | q685 / q685-i01 | P2（予定） | [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md)（[ws033-p001](ws033/phase001/phase.md) の再開） | 後から挿した USB LAN が up しない、Ethernet のメニューの wlan0。QEMU の usb-net の device_add で再現 | なし | pending |
 | q686 / q686-i01 | P2（予定） | [BUG-175](bugs/BUG-175.md) | Terminal 多数で errno=8（ENOSPC）。QEMU で再現し、どの資源かを特定（BUG-120 の関連） | なし | pending |
 | q687 / q687-i01 | P2（予定） | [BUG-173](bugs/BUG-173.md) | sh の履歴の全角の幅。host で再現 | なし | pending |

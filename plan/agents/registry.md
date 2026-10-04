@@ -10,8 +10,8 @@
 | P4 / generation1（終了） | phase-runner（high） | WS118 | `/home/awe/zedBSD-worktrees/p4` / `agent/p4` | —（q634-i01 中断） | — | stopped | 59a94c6aa の source と WS118 の記録を 2026-10-03 夜 Q1 が main に取り込み（boot-test は未実施） |
 | P1 / generation15（2026-10-04 17 時） | phase-runner（high） | 優先 WS049（p007・p009、p008 は区切りまで）・WS050・WS051・WS052、塞がった時に WS132 | `/home/awe/zedBSD-worktrees/p1` / `agent/p1` | q677 | q677 は区切りまで（残りは P3）、q678・q693・q679・q680・q681（優先）、q682（ほかの作業） | running | base main |
 | P2 / generation11（2026-10-04 17 時） | phase-runner（high） | BUG-170 の後は WS141・WS037 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | q683 | q691 WS141・q692 WS037 | running | base main |
-| P3 / generation7（2026-10-04） | bug-analyzer（Fable 5.1、high） | BUG-158 の解析（WS005・WS004） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（解析） | — | running | base main a512ea7 |
-| P3 / generation8（予定） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装、流れ B（q685〜q690）、BUG-165 の残り（P1 の区切りの後） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | generation7 の終了の後に起動 | — | not started | — |
+| P3 / generation7（2026-10-04、終了） | bug-analyzer（Fable 5.1、high） | BUG-158 の解析（WS005・WS004） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（解析、finished） | — | stopped | 52df29f → main b7bced6 |
+| P3 / generation8（2026-10-04 起動） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装、流れ B（q685〜q690）、BUG-165 の残り（P1 の区切りの後） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（実装） | q685〜q690、q677 の残り | running | base main b7bced6 |
 | P5〜P8 | — | 未配属 | — | — | — | N=4 の間は起動しない | — |
 
 担当の WS と最初の Queue は、ベータ1（fg019）の内容をユーザーと決めてから割り当てる。
