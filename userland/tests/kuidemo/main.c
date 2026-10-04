@@ -15,6 +15,13 @@
  * What the widgets report is logged on standard error as "KUIDEMO" lines,
  * which the QEMU tests read through the guest's log.
  *
+ * It is also the sample of the application API (WS131 p015, KL_VERSION
+ * 26): one kl_app, its window, one event queue, the window's menu (File >
+ * Quit, Page > the three pages), its titlebar's controls (the page before
+ * and after, disabled at the ends), a context menu of the pages on a right
+ * press, and its glass panels, all given as tables.  An action chosen is
+ * logged as "KUIDEMO ACTION action= id=".
+ *
  *   kuidemo [--display=NAME] [--font=PATH] [--fallback-font=PATH]
  *           [--width=N] [--height=N] [--timeout-s=N] [--shm]
  */
@@ -59,6 +66,12 @@
 /* The evdev code of Q (Ctrl+Q quits). */
 #define DEMO_KEY_Q		16U
 
+/* The actions of the menu, the controls and the context menu. */
+#define DEMO_ACTION_QUIT	1U
+#define DEMO_ACTION_PAGE	10U	/* + the page */
+#define DEMO_ACTION_BEFORE	20U
+#define DEMO_ACTION_AFTER	21U
+
 /* The pages. */
 #define DEMO_PAGE_CONTROLS	0
 #define DEMO_PAGE_LIST		1
@@ -95,12 +108,10 @@ struct demo_options {
 
 /* The sampler's window, its frame, and what its widgets remember. */
 struct demo {
-	/* The window, its input and its glass (NULL without). */
-	struct kui_window *window;
+	/* The application, its window and its input. */
+	struct kl_app *app;
+	struct kl_window *window;
 	struct kui_ui *ui;
-	struct keiland_glass *glass;
-	struct keiland_glass_panel shown[2];
-	int glass_sent;
 
 	/* The frame: its pixels, its size, the canvas over them, the text and the style. */
 	uint32_t *pixels;
@@ -148,12 +159,38 @@ static const enum kui_icon demo_page_icons[DEMO_PAGES] = { KUI_ICON_TILES, KUI_I
 /* The dialog's buttons: the main one first, Cancel last. */
 static const char *const demo_dialog_labels[] = { "Delete", "Cancel" };
 
+/* The window's menu: File > Quit, and Page > each page. */
+static const struct kl_menu_entry demo_menu[] = {
+	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 2U, 1U, KL_MENU_ITEM_NORMAL, "Quit Widgets", DEMO_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
+	{ 3U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Page", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 4U, 3U, KL_MENU_ITEM_RADIO, "Controls", DEMO_ACTION_PAGE + DEMO_PAGE_CONTROLS, KL_MENU_ROLE_NONE, KL_MENU_CTRL, '1' },
+	{ 5U, 3U, KL_MENU_ITEM_RADIO, "List", DEMO_ACTION_PAGE + DEMO_PAGE_LIST, KL_MENU_ROLE_NONE, KL_MENU_CTRL, '2' },
+	{ 6U, 3U, KL_MENU_ITEM_RADIO, "Dialogs", DEMO_ACTION_PAGE + DEMO_PAGE_DIALOGS, KL_MENU_ROLE_NONE, KL_MENU_CTRL, '3' }
+};
+
+/* The titlebar's controls: the page before and the page after. */
+static const struct kl_control_entry demo_controls[] = {
+	{ 1U, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Page before", DEMO_ACTION_BEFORE },
+	{ 2U, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Page after", DEMO_ACTION_AFTER }
+};
+
+/* The context menu of a right press: the pages. */
+static const struct kl_menu_entry demo_context[] = {
+	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_RADIO, "Controls", DEMO_ACTION_PAGE + DEMO_PAGE_CONTROLS, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 2U, KL_MENU_ROOT, KL_MENU_ITEM_RADIO, "List", DEMO_ACTION_PAGE + DEMO_PAGE_LIST, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 3U, KL_MENU_ROOT, KL_MENU_ITEM_RADIO, "Dialogs", DEMO_ACTION_PAGE + DEMO_PAGE_DIALOGS, KL_MENU_ROLE_NONE, 0U, 0U }
+};
+
 static int demo_parse(int argc, char **argv, struct demo_options *options);
 static const char *demo_value(const char *argument, const char *name);
 static int demo_number(const char *text, unsigned maximum, unsigned *value);
 static void demo_log(const char *format, ...);
 static int demo_loop(struct demo *demo, const struct demo_options *options);
 static void demo_event(struct demo *demo, const struct kui_window_event *event);
+static void demo_action(struct demo *demo, uint32_t action, int32_t id);
+static void demo_show_page(struct demo *demo, int page);
+static void demo_states(struct demo *demo);
 static int demo_frame(struct demo *demo);
 static int demo_resize(struct demo *demo);
 static int demo_canvas_make(struct demo *demo);
@@ -175,6 +212,7 @@ main(
 	char **argv)
 {
 	struct kui_window_options window_options;
+	struct kl_app_options app_options;
 	struct demo_options options;
 	static struct demo demo;
 	int status;
@@ -192,17 +230,27 @@ main(
 	if (error != 0)
 		demo_log("FONT missing path=%s error=%d", options.font, error);
 
-	/* The window. */
+	/* The application: the connection and its globals. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.display = options.display;
+	app_options.application = "kuidemo";
+	demo.app = kl_app_open(&app_options);
+	if (demo.app == NULL) {
+		fprintf(stderr, "KUIDEMO FAILED operation=app error=%d\n", errno);
+		kui_text_close(&demo.text);
+		return 1;
+	}
+
+	/* Its window. */
 	memset(&window_options, 0, sizeof(window_options));
-	window_options.display = options.display;
 	window_options.title = "Widgets";
-	window_options.application = "kuidemo";
 	window_options.width = options.width;
 	window_options.height = options.height;
 	window_options.present = options.present;
-	demo.window = kui_window_open(&window_options);
+	demo.window = kl_app_window_create(demo.app, &window_options);
 	if (demo.window == NULL) {
 		fprintf(stderr, "KUIDEMO FAILED operation=window error=%d\n", errno);
+		kl_app_close(demo.app);
 		kui_text_close(&demo.text);
 		return 1;
 	}
@@ -213,25 +261,22 @@ main(
 	if (demo.ui == NULL || error != 0) {
 		fprintf(stderr, "KUIDEMO FAILED operation=memory\n");
 		kui_ui_destroy(demo.ui);
-		kui_window_close(demo.window);
+		kl_app_close(demo.app);
 		kui_text_close(&demo.text);
 		return 1;
 	}
 
-	/* The glass, when the frames are see-through and zdesktop has it. */
-	status = kui_window_see_through(demo.window);
-	if (status) {
-		demo.glass = keiland_glass_create(kui_window_display(demo.window), kui_window_surface(demo.window));
-		if (demo.glass == NULL)
-			demo_log("GLASS off errno=%d", errno);
-	}
+	/* The menu and the titlebar's controls, as tables (a compositor without them leaves the keys and the sidebar). */
+	error = kl_window_set_menu(demo.window, demo_menu, sizeof(demo_menu) / sizeof(demo_menu[0]));
+	demo_log("MENU error=%d", error);
+	error = kl_window_set_controls(demo.window, demo_controls, sizeof(demo_controls) / sizeof(demo_controls[0]));
+	demo_log("CONTROLS error=%d", error);
 
-	/* The widgets' first values. */
+	/* The widgets' first values: on glass when the frames are see-through (the first panels say whether zdesktop has it). */
 	demo.style.text = &demo.text;
 	demo.style.theme = kui_theme_default();
-	demo.style.glass = 0;
-	if (demo.glass != NULL)
-		demo.style.glass = 1;
+	demo.style.glass = kui_window_see_through(demo.window);
+	demo_states(&demo);
 	demo.wifi = 1;
 	demo.volume = 40.0;
 	demo.activated = -1;
@@ -243,14 +288,13 @@ main(
 	/* The loop, until the window closes. */
 	status = demo_loop(&demo, &options);
 
-	/* Everything goes. */
-	keiland_glass_destroy(demo.glass);
+	/* Everything goes (the application closes its window). */
 	kui_list_release(&demo.list);
 	kui_ui_destroy(demo.ui);
 	if (demo.canvas_made)
 		kui_canvas_release(&demo.canvas);
 	free(demo.pixels);
-	kui_window_close(demo.window);
+	kl_app_close(demo.app);
 	kui_text_close(&demo.text);
 
 	/* Reports how the run ended. */
@@ -412,13 +456,12 @@ demo_loop(
 	struct demo *demo,
 	const struct demo_options *options)
 {
-	struct kui_window_event event;
+	struct kl_app_event event;
 	uint64_t started;
 	uint64_t now;
 	int timeout;
 	int taken;
 	int status;
-	int due;
 
 	/* The presenter's size, a canvas of it, and the first frame. */
 	status = demo_resize(demo);
@@ -432,29 +475,30 @@ demo_loop(
 	/* Each round: input, and a frame when something changed or moves. */
 	started = kui_clock_us();
 	for (;;) {
-		/* Waits for the compositor, or a frame's time while something moves, or a key's repeat. */
+		/* Waits for the compositor, or a frame's time while something moves (a held key's repeat is the application's). */
 		timeout = DEMO_IDLE_MS;
 		if (demo->moving)
 			timeout = DEMO_FRAME_MS;
-		due = kui_window_repeat_wait(demo->window, kui_clock_us());
-		if (due >= 0 && due < timeout)
-			timeout = due;
 		if (demo->dirty)
 			timeout = 0;
-		status = kui_window_dispatch(demo->window, timeout);
+		status = kl_app_dispatch(demo->app, timeout);
 		if (status != 0) {
 			demo_log("DONE reason=disconnected");
 			return 0;
 		}
 
-		/* A key held repeats once the compositor's input is in (BUG-111); then every input goes to the widgets. */
+		/* Every event: the window's inputs go to the widgets, its actions to the pages. */
 		now = kui_clock_us();
-		(void)kui_window_repeat(demo->window, now);
 		for (;;) {
-			taken = kui_window_take(demo->window, &event);
+			taken = kl_app_take(demo->app, &event);
 			if (!taken)
 				break;
-			demo_event(demo, &event);
+			if (event.kind != KL_APP_WINDOW || event.window != demo->window)
+				continue;
+			if (event.input.kind == KL_WINDOW_ACTION)
+				demo_action(demo, event.input.code, event.input.id);
+			else
+				demo_event(demo, &event.input);
 		}
 
 		/* The close button, Ctrl+Q or the timeout ends the run. */
@@ -504,10 +548,12 @@ demo_event(
 		(void)kui_ui_pointer_leave(demo->ui);
 		break;
 	case KUI_WINDOW_BUTTON:
-		/* The main button only. */
+		/* The main button goes to the widgets; a right press opens the context menu of the pages. */
 		(void)kui_ui_pointer_motion(demo->ui, event->x, event->y);
 		if (event->code == KUI_BUTTON_LEFT)
 			(void)kui_ui_pointer_button(demo->ui, event->pressed, event->arrival_us);
+		if (event->code == KUI_BUTTON_RIGHT && event->pressed)
+			demo_log("CONTEXT error=%d", kl_window_popup_menu(demo->window, demo_context, sizeof(demo_context) / sizeof(demo_context[0]), (int)event->x, (int)event->y));
 		break;
 	case KUI_WINDOW_AXIS:
 		(void)kui_ui_wheel(demo->ui, event->dx, event->dy, event->arrival_us);
@@ -545,6 +591,72 @@ demo_event(
 	default:
 		break;
 	}
+}
+
+/* Carries out an action chosen in the menu, a control or the context menu. */
+static void
+demo_action(
+	struct demo *demo,
+	uint32_t action,
+	int32_t id)
+{
+	/* The log line the tests read. */
+	demo_log("ACTION action=%u id=%d", (unsigned)action, (int)id);
+
+	/* Quit, a page, or the page before or after. */
+	if (action == DEMO_ACTION_QUIT)
+		demo->quit = 1;
+	else if (action >= DEMO_ACTION_PAGE && action < DEMO_ACTION_PAGE + DEMO_PAGES)
+		demo_show_page(demo, (int)(action - DEMO_ACTION_PAGE));
+	else if (action == DEMO_ACTION_BEFORE && demo->page > 0)
+		demo_show_page(demo, demo->page - 1);
+	else if (action == DEMO_ACTION_AFTER && demo->page < DEMO_PAGES - 1)
+		demo_show_page(demo, demo->page + 1);
+}
+
+/* Shows a page (the dialog closes), and the menu's and controls' states follow. */
+static void
+demo_show_page(
+	struct demo *demo,
+	int page)
+{
+	/* The same page changes nothing. */
+	if (page == demo->page)
+		return;
+
+	/* The page, logged. */
+	demo->page = page;
+	demo->dialog = 0;
+	demo->dirty = 1;
+	demo_log("PAGE %s", demo_page_names[page]);
+	demo_states(demo);
+}
+
+/* Tells the window the actions' states: the page shown is checked, and the controls stop at the ends. */
+static void
+demo_states(
+	struct demo *demo)
+{
+	unsigned state;
+	int page;
+
+	/* Each page's item, checked when it is shown. */
+	for (page = 0; page < DEMO_PAGES; page++) {
+		state = 0;
+		if (page == demo->page)
+			state = KL_ACTION_CHECKED;
+		(void)kl_window_set_action_state(demo->window, DEMO_ACTION_PAGE + (uint32_t)page, state);
+	}
+
+	/* The page before and after, while there is one. */
+	state = 0;
+	if (demo->page == 0)
+		state = KL_ACTION_DISABLED;
+	(void)kl_window_set_action_state(demo->window, DEMO_ACTION_BEFORE, state);
+	state = 0;
+	if (demo->page == DEMO_PAGES - 1)
+		state = KL_ACTION_DISABLED;
+	(void)kl_window_set_action_state(demo->window, DEMO_ACTION_AFTER, state);
 }
 
 /* Draws and shows a frame, remaking a stale swapchain; nonzero when it cannot be shown. */
@@ -745,12 +857,8 @@ demo_draw_sidebar(
 		item.width = demo->sidebar.width - 16;
 		item.height = 30;
 		pressed = kui_sidebar_item(demo->ui, &demo->style, DEMO_ID_PAGES, (uint32_t)index, &item, demo_page_icons[index], demo_page_names[index], index == demo->page);
-		if (pressed && index != demo->page) {
-			demo->page = index;
-			demo->dialog = 0;
-			demo->dirty = 1;
-			demo_log("PAGE %s", demo_page_names[index]);
-		}
+		if (pressed)
+			demo_show_page(demo, index);
 	}
 }
 
@@ -1030,17 +1138,16 @@ demo_value_x(
 	return left + (int)((float)(right - left) * 0.34f);
 }
 
-/* Sends the frame's glass panels (the sidebar and the content) when they changed. */
+/* Gives the window the frame's glass panels (the sidebar and the content; the library sends only a change); without glass the frames are opaque. */
 static void
 demo_glass_refresh(
 	struct demo *demo)
 {
-	struct keiland_glass_panel panels[2];
-	int same;
+	struct kl_glass_panel panels[2];
 	int error;
 
-	/* A window without glass has no panels. */
-	if (demo->glass == NULL)
+	/* Frames that are not on glass have no panels. */
+	if (!demo->style.glass)
 		return;
 
 	/* The two panels. */
@@ -1050,25 +1157,19 @@ demo_glass_refresh(
 	panels[0].width = demo->sidebar.width;
 	panels[0].height = demo->sidebar.height;
 	panels[0].radius = DEMO_RADIUS;
-	panels[0].kind = KEILAND_GLASS_CARD;
+	panels[0].kind = KL_GLASS_CARD;
 	panels[1].x = demo->content.x;
 	panels[1].y = demo->content.y;
 	panels[1].width = demo->content.width;
 	panels[1].height = demo->content.height;
 	panels[1].radius = DEMO_RADIUS;
-	panels[1].kind = KEILAND_GLASS_CARD;
+	panels[1].kind = KL_GLASS_CARD;
 
-	/* Only when they changed. */
-	same = memcmp(panels, demo->shown, sizeof(panels));
-	if (demo->glass_sent && same == 0)
-		return;
-	error = keiland_glass_set_panels(demo->glass, panels, 2U);
+	/* Refused (a compositor without glass): the next frames are opaque. */
+	error = kl_window_set_glass(demo->window, panels, 2U);
 	if (error != 0) {
-		demo_log("GLASS refused errno=%d", error);
-		return;
+		demo_log("GLASS off errno=%d", error);
+		demo->style.glass = 0;
+		demo->dirty = 1;
 	}
-
-	/* Remembered. */
-	memcpy(demo->shown, panels, sizeof(panels));
-	demo->glass_sent = 1;
 }

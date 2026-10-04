@@ -201,8 +201,11 @@ expect(
 	const char *name,
 	const char *wanted)
 {
+	int same;
+
 	checks++;
-	if (strcmp(recorded, wanted) == 0)
+	same = strcmp(recorded, wanted);
+	if (same == 0)
 		return;
 	failures++;
 	printf("FAIL %s: '%s', not '%s'\n", name, recorded, wanted);

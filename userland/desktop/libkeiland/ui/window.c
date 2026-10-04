@@ -194,12 +194,14 @@ kl_window_open(
 		return NULL;
 	}
 
-	/* The record, and its declarative parts' models. */
+	/* The record. */
 	window = calloc(1, sizeof(*window));
 	if (window == NULL) {
 		errno = ENOMEM;
 		return NULL;
 	}
+
+	/* Its declarative parts' models. */
 	keiui_declare_window_init(window);
 
 	/* The connection, the globals, the surface and its first configure. */
@@ -872,12 +874,14 @@ keiui_window_open_app(
 		return NULL;
 	}
 
-	/* The record, on the application's connection, with its declarative parts' models. */
+	/* The record. */
 	window = calloc(1, sizeof(*window));
 	if (window == NULL) {
 		errno = ENOMEM;
 		return NULL;
 	}
+
+	/* On the application's connection, with its declarative parts' models. */
 	window->display = app->display;
 	window->shared = 1;
 	keiui_declare_window_init(window);
