@@ -235,7 +235,7 @@ shot search-drag.png
 touches "down 1 $((fx + fw / 2)) $cy|hold 60|up 1"
 expect_count "focuses after the tap" "$(count 'TITLEBAR focus ')" $((focuses + 1))
 keys 'hello'
-selects=$(count 'TITLEBAR select ')
+selects=$(count 'TITLEBAR select .* anchor=0 cursor=[1-9]')
 touches "down 1 $((tx + 1)) $cy|swipe $((fw - 44)) 0 6 40|up 1"
 expect_count "selections by the finger" "$(count 'TITLEBAR select .* anchor=0 cursor=[1-9]')" $((selects + 1))
 keys '<esc>'

@@ -31,3 +31,8 @@ Queue: q670（[Queue](../../queue.md)）
 
 - `plan/ws099/tests/p030-drag.sh`（pen の image: `plan/ws079/tests/build-pen-image.sh`、guest は `plan/ws079/tests/pen-guest.sh start`）。マウスと touch の両方で: A. terminal の menu の Edit — 押しただけでは開かず離して開く、1 px の揺れはクリック、マウスの drag で窓が (60,80) ちょうど動き menu は開かない、touch の tap（3 px の揺れも）で開く、指の drag で (80,60) 動く、docked の system bar の Edit を下へ drag で pull（undock via=pull）。B. titlebar-probe の検索欄 — クリックでフォーカスとキャレット、フォーカス中の drag で選択（anchor=0 cursor=6、窓は動かない）、Z で置換、クリックでキャレット、フォーカスの無い欄の drag で (50,40) 動きフォーカスしない、touch の tap でフォーカス・指の drag で選択、指の drag で (70,50) 動く、閉じる button は押した時（release の前に GLASS close）。zdesktop の ERROR 0。
 - 回帰（挙動の変わる所の周り）: `plan/tools/titlebar/titlebar-p010.sh`（検索欄のクリック・入力）、`plan/tools/titlebar/menu-p003.sh`（menu のクリック）、`plan/tools/titlebar/menu-occlude.sh`、`plan/ws079/tests/zdesktop-p013-touch.sh`（title bar の touch）。
+
+## T2-026 の結果と試験の直し（2026-10-04）
+
+- T2-026（main 3da3610、pen の image）: p030-drag が 2 回 FAIL。落ちたのは B.4 の `count: selections by the finger = 2, expected 3` だけ。A（menu のマウス・touch・docked）、B.1〜B.3・B.5・B.6、ERROR 0 は ok。
+- 読み（search-log.txt）: 指の drag は `ZWL TITLEBAR select … anchor=0 cursor=5` を出しており、compositor の選択は働いている。試験の誤り: 前の数を `TITLEBAR select ` の全部（2 行、B.2 の anchor=1 cursor=1 を含む）で数え、後の数を `anchor=0 cursor=[1-9]` だけ（B.2 の anchor=0 cursor=6 と指の 1 行で 2）で数えていた。前の数も同じ pattern で数えるように直した（期待は 1 → 2）。source は変えない。T2 に再試験を依頼。
