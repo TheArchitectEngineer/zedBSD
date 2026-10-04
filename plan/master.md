@@ -319,6 +319,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS149](ws149/ws.md) | MG006 | Settings の Security の頁の検討（要らなければ頁を削除、要るなら設計と実装。WS148 の Privacy と項目を分け合う）（2026-10-04 ユーザー） | planning（p001 の検討から、Queue なし） | — |
 | [WS150](ws150/ws.md) | MG004 | userland の file system の kernel の枠組み（FUSE に当たる物）。クラウドストレージ（WS146・WS147）の前提（2026-10-04 ユーザー） | planning（Queue なし） | — |
 | [WS151](ws151/ws.md) | MG006 | Settings の Accessibility の頁の検討（要らなければ頁を削除、要るなら設計と実装。見る・聞く・操作・読み上げ）（2026-10-04 ユーザー） | planning（p001 の検討から、Queue なし） | — |
+| [WS152](ws152/ws.md) | MG007 | system の更新（Settings の Updates の頁の実体）。ベータ3 の実装の項目、p001 は方式の検討（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | WS129 |
 | [WS116](ws116/ws.md) | MG002 | upstream Qt6の範囲をGTK4移植後に検討し `packages/desktop/qt6`へ移植 | planning | WS115の知見後。旧WS034 p030移管、Queue none |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
