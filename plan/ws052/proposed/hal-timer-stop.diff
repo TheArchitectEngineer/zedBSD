@@ -1,0 +1,35 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -477,6 +477,31 @@
+ 
+ 
+ /*
++ * Stop the periodic tick on the current CPU until hal_timer_resume().
++ *
++ * No tick interrupt comes on this CPU meanwhile; the counter of
++ * hal_rtc_read_counter() keeps counting, so that the kernel brings its time
++ * forward by the counter after the resume.  Used before the deepest idle of
++ * a system sleep (S0i3), where a tick would wake the CPU.
++ *
++ * Returns HAL_OK, HAL_ERR_STATE when the tick is already stopped, or
++ * HAL_ERR_UNSUPPORTED when the counter would not keep counting across a
++ * deep idle (on amd64: no invariant TSC), and the tick goes on.
++ */
++int
++hal_timer_stop(void);
++
++/*
++ * Start the periodic tick on the current CPU again, at HAL_TIMER_FREQUENCY,
++ * after hal_timer_stop().
++ *
++ * Returns HAL_OK, or HAL_ERR_STATE when the tick was not stopped.
++ */
++int
++hal_timer_resume(void);
++
++
++/*
+  * Physical RAM Allocation
+  *
+  *  - In some architectures such as x86, the physical RAM is divided

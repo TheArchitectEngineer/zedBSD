@@ -1,6 +1,6 @@
 # WS052 設計: 電源管理（S0i3、modern standby）
 
-Status: 案の第 1 版（2026-10-04、ws052-p001、P1 generation16）。design-reviewer の敵対的レビューは未実施。人間の判断が要る点は §10。
+Status: 案の第 1 版（2026-10-04、ws052-p001、P1 generation16）。§10 は 2026-10-05 にユーザーが決定（末尾）、§9 の Phase と §6 の HAL の差分の案（[proposed/](proposed/README.md)）は 2026-10-05 q727 に改訂。design-reviewer の敵対的レビューは未実施。
 
 ## 1. 目的と範囲
 
@@ -82,6 +82,12 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
 - **wake の割り込み**: SCI（IRQ 9、level）と、wake の要る device の MSI。S0i3 の間に他の割り込みを mask する口。
 - 上の 4 つは `include/hal/hal.h` の API の追加になるので、**差分ごとにユーザーの事前承認が要る**（AGENTS.md）。p002 で差分の案を
   `plan/ws052/proposed/` に置き、承認の前は適用しない。
+- **差分の案（2026-10-05、q727、[proposed/README.md](proposed/README.md)）**:
+  - H1 `hal_cpu_idle_deep(hint)`: 最も深い C-state の idle（hint は `_CST` の FFixedHW か 0 で HAL が CPUID から選ぶ）。
+  - H2 `hal_timer_stop()`・`hal_timer_resume()`: 今の CPU の tick の停止と再開（`hal_rtc_read_counter` は数え続け、kernel は wake の後に時刻を進める）。
+  - H3 `hal_cpu_notify()` の契約の明記: AP の停止は新しい API にせず、各 CPU の idle で H2・H1、wake は notify で起こす。notify は深い idle・tick の停止中・H4 の mask 中も必ず起こす。
+  - H4 `hal_irq_suspend(wake_irqs, count)`・`hal_irq_resume()`: wake の源以外の割り込み（HAL の内部の LVT などを含む）を止め、元に戻す。
+  - 他の architecture は H1・H2・H4 で `HAL_ERR_UNSUPPORTED`、kernel は「未対応の platform」で中止して理由を返す（§10-3）。
 
 ## 7. `/dev/system` の口（WS132 と同じ node）
 
@@ -106,16 +112,21 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
 - 実機（UAT）: S0i3 に入り residency が増える、電源ボタン・蓋で戻る、login した session と network が続く、wake の理由が正しい、20 回の繰り返しで
   失敗が無い（耐久はユーザーに確かめて夜間）。
 
-## 9. Phase の案
+## 9. Phase の案（2026-10-05 §10 の決定に合わせて改訂）
+
+§10 の決定: 入れない device があれば**中止して理由を返す**。device は **i915・NVMe・xHCI が必須**、**HDA・Wi-Fi は後**（それまでは止めれば入れる）。
+契機は**蓋を閉じた時・電源ボタンの短押し・一定時間の無操作**（どれも Keiland が判断して `KERN_SYSTEM_SLEEP` を呼ぶ。kernel は自分から入らない）。
 
 | Phase | 内容 | 依存 | 受け入れ |
 | --- | --- | --- | --- |
-| p001 | 調査と設計（この文書） | WS049 の namespace | この文書、レビュー、§10 の判断 |
-| p002 | 詳細の調査と HAL の差分の案: 5330 の FACP・LPIT（取り出しの許可）、`_PRW` の wake の GPE の一覧、`_CST`、PMC の register、HAL の差分（MWAIT の idle、tick の停止、AP、wake の割り込み）を `proposed/` に | p001、FACP・LPIT の取り出し | 差分の案と承認の依頼、wake の一覧 |
+| p001 | 調査と設計（この文書） | WS049 の namespace | この文書、§10 の判断（済み） |
+| p002 | 詳細の調査と HAL の差分の案: HAL の差分 H1〜H4 を `proposed/` に（**済み、承認待ち**）。残り: 5330 の FACP・LPIT（取り出しの許可、§10-4）、`_PRW` の wake の GPE の一覧、`_CST` の C10 の hint、PMC の SLP_S0 の residency の register | p001、FACP・LPIT の取り出しの許可 | 差分の案と承認の依頼、wake の一覧、`_CST` の hint |
 | p003 | ACPI の側: LPS0 の `_DSM`（display off/on、entry/exit）、wake の GPE だけを有効にする口、`_PS0`/`_PS3`・`_PRx`・`_DSW` の helper、host の試験（5330 の DSDT で `_DSM` の呼び出しの順） | p001、ws049-p007（実機）、ws049-p017 | host の試験、build |
-| p004 | device の suspend・resume の口と各 driver（i915・NVMe・xHCI・HDA・Wi-Fi） | p003 | build、QEMU の boot test、実機で device ごとの suspend・resume（S0i3 の前の段として、各 device の D3 と戻り） |
-| p005 | CPU の idle と tick（承認された HAL の差分）と S0i3 の入口・出口、`/dev/system` の ioctl と事象（WS132） | p002 の承認、p004、WS132 の事象 | 実機で SLP_S0 の residency が増え、wake で戻る |
-| p006 | 実機の確認（繰り返し、session と network の継続）と規約の全文の確認 | p005 | 受け入れの全項目、規約、build、boot test |
+| p004 | device の suspend・resume の口（PCI と platform の driver の ops、子から親への suspend・親から子への resume、**失敗したら既に suspend した device を resume して中止し、原因の device を理由として返す**）と**必須の 3 つ**: i915（scanout の停止、DC6/DC9、GT の RC6、D3hot。resume は suspend の前の出力先へ）、NVMe（flush、最深の power state、D3hot か `_PR3` の D3cold）、xHCI（controller の停止、port の状態の保存、PME） | p003 | build、QEMU の boot test、実機で 3 つの device の D3 と戻り |
+| p005 | **後の device の「止めて入る」経路**: suspend・resume を持たない device（HDA・Wi-Fi・他の任意の device）は、sleep の前に止め（Wi-Fi は networkd が接続を切り interface を down・radio off、HDA は audiod が stream を閉じ controller を reset）、wake の後に初期化し直す。止められない device があれば中止して理由を返す。HDA・Wi-Fi の本当の suspend・resume は後の Phase（WS052 の範囲で別に立てる） | p004 | build、実機で Wi-Fi・HDA があっても中止せずに入る（または止められない時に理由が返る） |
+| p006 | CPU の idle と tick と割り込み（**承認された H1〜H4**）、S0i3 の入口・出口（§2 の段 2〜8: user の freeze、device、LPS0、wake の GPE、全 CPU の深い idle、wake で逆順）、`/dev/system` の ioctl（`KERN_SYSTEM_SLEEP`・`KERN_SYSTEM_SLEEP_INFO`）と事象（WS132: `power.sleep.begin`・`end reason=…`・`failed device=…`） | p002 の承認、p004、p005、WS132 の事象 | 実機で SLP_S0 の residency が増え、wake で戻る。QEMU では「未対応の platform」で安全に失敗（T1） |
+| p007 | Keiland の契機: 蓋を閉じた時（WS132 p008 の蓋の分の「画面を消して lock」を sleep に置き換える）、電源ボタンの短押し（dialog 無し、ws132-p001 D1）、一定時間の無操作（Settings の Power で時間を決める、WS089 の頁）。中止の理由を利用者に示す（通知、WS156） | p006、WS132 p008、WS089 | 実機で 3 つの契機で入り、電源ボタン・蓋で戻る |
+| p008 | 実機の確認（繰り返し 20 回、session と network の継続）と規約の全文の確認 | p007 | 受け入れの全項目、規約、build、boot test |
 
 ## 10. 人間の判断が要る点
 
