@@ -85,6 +85,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 | 2026-09-27 | amd64 の `hal_get_arch_handoff("acpi.rsdp")`: HAL の ACPI の発見が受け入れた RSDP の物理 address を返す（hal.h は不変、HAL の責務の追加。`plan/ws049/proposed/hal-acpi-rsdp.diff`） | WS049 p006。同上 |
 | 2026-09-27 | aarch64 の `include/hal/arch/aarch64.h` に `hal_gpregs`・`hal_fpregs`・`hal_vregs` と `HAL_DEBUG_*`（amd64 と同じ形）、`src/hal/arm64/debug.c`（single step、hardware breakpoint・watchpoint、context switch ごとの debug state）。ptrace のため（commit 27831f19） | WS044 p010。同上 |
 | 2026-09-28 | amd64 pcat の `src/hal/amd64/bsp-pcat/cons.c`: `kmsg=quiet` のとき framebuffer を消さず、右上の 136x40 の進捗の枠を logo の背景で塗り、`console_suspended=1` にする（HAL の責務の変更。hal.h は不変） | ユーザー「HALのdiffは承認します。」（2026-09-28） | `plan/ws035/proposed/hal-quiet-console.diff`（SHA256 3f63a8411d5b3684c8bb790e86e049a0d70122626c6f1aca579e5413cbb8566b） |
+| 2026-10-05 | `hal_irq_set_mode(int irq, int trigger, int polarity)` と `HAL_IRQ_TRIGGER_EDGE/LEVEL`・`HAL_IRQ_POLARITY_HIGH/LOW`（IRQ を mask した間に trigger と極性を設定、表せなければ `HAL_ERR_UNSUPPORTED`）。**ユーザー自身が hal.h に追加**（commit 6cc1bea、「hal_irq_set_mode()を追加しました。HALのインタフェースの追加は私が行いました。実装はサブエージェントに任せましょう。」）。P1 の案 `hal_irq_set_trigger` は不採用。各 architecture の実装は subagent（WS159 p006） | WS159 p006 |
 
 2026-09-25 以降、hal.h を変えない `src/hal/` の実装の変更は承認を要しない（上の規則）。hal.h の変更はこの表の承認が要る。
 
