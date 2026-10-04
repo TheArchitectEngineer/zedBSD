@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 6; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 7; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -21,6 +21,7 @@
  *   request 5 get_devices(new_id kl_system_devices_v1)
  *   request 6 get_monitor(new_id kl_system_monitor_v1, uint period_ms)    since version 2 (WS134 p012)
  *   request 7 get_account(new_id kl_system_account_v1)    since version 4 (ws160-p002)
+ *   request 8 get_sharing(new_id kl_system_sharing_v1)    since version 7 (ws089-p025)
  *   event   0 capabilities(uint bits)              sent when it is bound
  *
  * kl_system_settings_v1
@@ -74,6 +75,20 @@
  *   access points and a scan_done; the object's going ends its asking, and
  *   so does a minute without set_scanning(1) again (a client renews it
  *   while it shows the networks).
+ *
+ * kl_system_sharing_v1 (ws089-p025: the Sharing page's Remote Login, sshd)
+ *   request 0 destroy
+ *   request 1 set_ssh(uint request, uint on)          turns Remote Login on (1) or off (0), now and at
+ *                                                     every start; the result follows the new state
+ *   request 2 query(uint request)                     reads the state again
+ *   event   0 state(uint available, uint enabled, uint running, uint port, uint allowed, string fingerprint)
+ *                                                     whether the system has it, starts it, runs it, its
+ *                                                     port, whether this user may change it (root or wheel),
+ *                                                     the host key's fingerprint ("SHA256:...", or empty)
+ *   event   1 done(uint serial)
+ *   event   2 result(uint request, uint applied, uint saved)
+ *   A new object hears the state last known and a done, and the state is
+ *   read again for it; every change comes to every object.
  *
  * kl_system_audio_v1
  *   request 0 destroy
@@ -158,7 +173,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		6U
+#define KL_SYSTEM_MANAGER_VERSION		7U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -170,6 +185,7 @@
 #define KL_SYSTEM_MANAGER_GET_DEVICES		5U
 #define KL_SYSTEM_MANAGER_GET_MONITOR		6U
 #define KL_SYSTEM_MANAGER_GET_ACCOUNT		7U
+#define KL_SYSTEM_MANAGER_GET_SHARING		8U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -180,6 +196,10 @@
 #define KL_SYSTEM_CAPABILITY_DEVICES		0x10U
 #define KL_SYSTEM_CAPABILITY_MONITOR		0x20U
 #define KL_SYSTEM_CAPABILITY_ACCOUNT		0x40U
+#define KL_SYSTEM_CAPABILITY_SHARING		0x80U
+
+/* Since when the manager has get_sharing (ws089-p025). */
+#define KL_SYSTEM_SINCE_SHARING			7U
 
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
@@ -188,6 +208,15 @@
 #define KL_SYSTEM_DEVICES_NAME			"kl_system_devices_v1"
 #define KL_SYSTEM_MONITOR_NAME			"kl_system_monitor_v1"
 #define KL_SYSTEM_ACCOUNT_NAME			"kl_system_account_v1"
+#define KL_SYSTEM_SHARING_NAME			"kl_system_sharing_v1"
+
+/* kl_system_sharing_v1's requests and events (ws089-p025), and the longest fingerprint it carries. */
+#define KL_SYSTEM_SHARING_DESTROY		0U
+#define KL_SYSTEM_SHARING_SET_SSH		1U
+#define KL_SYSTEM_SHARING_QUERY			2U
+#define KL_SYSTEM_SHARING_EVENT_STATE		0U
+#define KL_SYSTEM_SHARING_EVENT_DONE		1U
+#define KL_SYSTEM_SHARING_EVENT_RESULT		2U
 
 /* kl_system_account_v1's requests and event, and the longest password it carries (without its NUL). */
 #define KL_SYSTEM_ACCOUNT_DESTROY		0U

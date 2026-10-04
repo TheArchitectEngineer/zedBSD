@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired). */
-#define KL_VERSION	29U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*). */
+#define KL_VERSION	30U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1194,6 +1194,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_DEVICES	0x10U
 #define KL_SYSTEM_HAS_MONITOR	0x20U	/* kl_system_monitor_open (WS134 p012) */
 #define KL_SYSTEM_HAS_ACCOUNT	0x40U	/* kl_system_account_set_password (KL_VERSION 27, ws160-p002) */
+#define KL_SYSTEM_HAS_SHARING	0x80U	/* kl_system_sharing_* (KL_VERSION 30, ws089-p025) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
@@ -1203,6 +1204,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_CHANGED_POWER		0x10U
 #define KL_SYSTEM_CHANGED_DEVICES	0x20U
 #define KL_SYSTEM_CHANGED_RESULT	0x40U	/* a request was answered */
+#define KL_SYSTEM_CHANGED_SHARING	0x80U	/* Remote Login's state (KL_VERSION 30) */
 
 /*
  * The network: whether the daemon is reached, whether the machine is
@@ -1412,6 +1414,36 @@ int kl_system_network_set_scanning(struct kl_system *system, unsigned on);
  * too long, or a mode that is neither).
  */
 int kl_system_network_configure_wired(struct kl_system *system, const struct kl_network_wired_config *config, uint32_t *request);
+
+/*
+ * Remote Login (KL_VERSION 30, ws089-p025): whether the system has it,
+ * whether it starts with the system and runs now, its port, whether this
+ * user may change it (root or a member of wheel), whether the state was
+ * ever read, and the host key's fingerprint ("SHA256:...", or empty).
+ */
+#define KL_SHARING_FINGERPRINT_MAX	64U
+struct kl_sharing_state {
+	unsigned available;
+	unsigned enabled;
+	unsigned running;
+	unsigned port;
+	unsigned allowed;
+	char fingerprint[KL_SHARING_FINGERPRINT_MAX];
+};
+
+/* Copies Remote Login's state (all zero without KL_SYSTEM_HAS_SHARING). */
+void kl_system_sharing_get_state(const struct kl_system *system, struct kl_sharing_state *state);
+
+/*
+ * Turns Remote Login on (on 1) or off (0), now and at every start; the
+ * answer names request and comes after the new state.  Returns 0 when
+ * asked, or ENOTSUP without KL_SYSTEM_HAS_SHARING.  The answer is EPERM
+ * for a user who may not.
+ */
+int kl_system_sharing_set_ssh(struct kl_system *system, unsigned on, uint32_t *request);
+
+/* Reads Remote Login's state again (KL_SYSTEM_CHANGED_SHARING follows).  Returns 0 or ENOTSUP. */
+int kl_system_sharing_query(struct kl_system *system, uint32_t *request);
 
 /*
  * Copy up to capacity of the details last asked for and return how many

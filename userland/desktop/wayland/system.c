@@ -223,6 +223,8 @@ struct system_state {
 	unsigned power_again;
 	struct system_devices_wait devices[SYSTEM_DEVICES_WAITING];
 	unsigned devices_count;
+	struct system_devices_wait sharing;
+	unsigned sharing_waiting;
 	uint32_t serial;
 };
 
@@ -230,6 +232,8 @@ struct system_state {
 static struct system_state system_state;
 
 static int system_manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_sharing_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static void system_sharing_state(struct zwl_object *object);
 static int system_network_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_audio_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_power_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -301,6 +305,10 @@ zwl_system_bind(
 		bits |= KL_SYSTEM_CAPABILITY_MONITOR;
 	if (manager->version >= 4U)
 		bits |= KL_SYSTEM_CAPABILITY_ACCOUNT;
+
+	/* Remote Login, at version 7 (ws089-p025). */
+	if (manager->version >= KL_SYSTEM_SINCE_SHARING)
+		bits |= KL_SYSTEM_CAPABILITY_SHARING;
 	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
 	if (error != 0)
 		return error;
@@ -341,6 +349,9 @@ zwl_system_request(
 		break;
 	case ZWL_SYSTEM_ACCOUNT:
 		error = system_account_request(object, opcode, bytes, size);
+		break;
+	case ZWL_SYSTEM_SHARING:
+		error = system_sharing_request(object, opcode, bytes, size);
 		break;
 	default:
 		error = EPROTO;
@@ -625,6 +636,12 @@ system_manager_request(
 			return EPROTO;
 		kind = ZWL_SYSTEM_ACCOUNT;
 		break;
+	case KL_SYSTEM_MANAGER_GET_SHARING:
+		/* Since version 7 (ws089-p025). */
+		if (manager->version < KL_SYSTEM_SINCE_SHARING)
+			return EPROTO;
+		kind = ZWL_SYSTEM_SHARING;
+		break;
 	default:
 		return EPROTO;
 	}
@@ -657,6 +674,12 @@ system_manager_request(
 	case ZWL_SYSTEM_ACCOUNT:
 		/* No state, and no done. */
 		break;
+	case ZWL_SYSTEM_SHARING:
+		/* The state last known, then read again (its answer comes to every object). */
+		system_sharing_state(created);
+		system_done(created, KL_SYSTEM_SHARING_EVENT_DONE);
+		(void)kl_backend_sharing_request(manager->client->server->backend, KL_BACKEND_SHARING_STATUS);
+		break;
 	default:
 		system_devices_state(created);
 		system_done(created, KL_SYSTEM_DEVICES_EVENT_DONE);
@@ -669,6 +692,122 @@ system_manager_request(
 
 	/* Succeeded: the object is the client's. */
 	return 0;
+}
+
+/*
+ * Takes sessiond's answer to a Remote Login request (handoff.c,
+ * ws089-p025): every sharing object hears the state, and the object that
+ * asked its result.
+ */
+void
+zwl_system_sharing_answer(
+	struct zwl_server *server,
+	int error)
+{
+	struct zwl_client *client;
+	struct zwl_object *object;
+	struct system_devices_wait *wait;
+
+	/* Every sharing object, the state and a done. */
+	printf("ZWL SYSTEM sharing answer error=%d\n", error);
+	system_tell(server, ZWL_SYSTEM_SHARING, system_sharing_state, KL_SYSTEM_SHARING_EVENT_DONE);
+
+	/* The result of the request that waited. */
+	if (!system_state.sharing_waiting)
+		return;
+	wait = &system_state.sharing;
+	system_state.sharing_waiting = 0U;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->number != wait->client || client->fatal)
+			continue;
+		object = zwl_find(client, wait->object);
+		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_SHARING)
+			return;
+		system_result(object, KL_SYSTEM_SHARING_EVENT_RESULT, wait->number, system_result_of(error));
+		return;
+	}
+}
+
+/* Carries out a request of a sharing object (ws089-p025). */
+static int
+system_sharing_request(
+	struct zwl_object *object,
+	uint32_t opcode,
+	const unsigned char *bytes,
+	size_t size)
+{
+	uint32_t number;
+	uint32_t on;
+	unsigned action;
+	int error;
+
+	/* The object goes. */
+	if (opcode == KL_SYSTEM_SHARING_DESTROY) {
+		if (size != 0U)
+			return EPROTO;
+		zwl_object_destroy(object);
+		return 0;
+	}
+
+	/* set_ssh(number, on) or query(number). */
+	if (opcode == KL_SYSTEM_SHARING_SET_SSH && size == 8U) {
+		on = system_word(bytes, 4U);
+		action = KL_BACKEND_SHARING_OFF;
+		if (on != 0U)
+			action = KL_BACKEND_SHARING_ON;
+	} else if (opcode == KL_SYSTEM_SHARING_QUERY && size == 4U) {
+		action = KL_BACKEND_SHARING_STATUS;
+	} else {
+		return EPROTO;
+	}
+
+	/* The request's number. */
+	number = system_word(bytes, 0U);
+
+	/* One at a time: another one waiting is busy. */
+	if (system_state.sharing_waiting) {
+		system_result(object, KL_SYSTEM_SHARING_EVENT_RESULT, number, KL_SYSTEM_RESULT_BUSY);
+		return 0;
+	}
+
+	/* Asked of sessiond; the answer comes through zwl_system_sharing_answer. */
+	error = kl_backend_sharing_request(object->client->server->backend, action);
+	printf("ZWL SYSTEM sharing client=%llu action=%u error=%d\n", (unsigned long long)object->client->number, action, error);
+	if (error != 0) {
+		system_result(object, KL_SYSTEM_SHARING_EVENT_RESULT, number, system_result_of(error));
+		return 0;
+	}
+
+	/* Its result waits for the answer. */
+	system_state.sharing.client = object->client->number;
+	system_state.sharing.object = object->id;
+	system_state.sharing.number = number;
+	system_state.sharing_waiting = 1U;
+
+	/* Succeeded: the result comes with the answer. */
+	return 0;
+}
+
+/* Tells a sharing object Remote Login's state (without its done). */
+static void
+system_sharing_state(
+	struct zwl_object *object)
+{
+	struct kl_backend_sharing sharing;
+	unsigned char payload[SYSTEM_EVENT_MAX];
+	size_t offset;
+
+	/* The state the backend keeps. */
+	kl_backend_sharing_get(object->client->server->backend, &sharing);
+
+	/* available, enabled, running, port, allowed, fingerprint. */
+	offset = system_put_word(payload, 0U, sharing.available);
+	offset = system_put_word(payload, offset, sharing.enabled);
+	offset = system_put_word(payload, offset, sharing.running);
+	offset = system_put_word(payload, offset, sharing.port);
+	offset = system_put_word(payload, offset, sharing.allowed);
+	offset = system_put_string(payload, offset, sharing.fingerprint);
+	(void)zwl_emit(object->client, object->id, KL_SYSTEM_SHARING_EVENT_STATE, payload, offset);
 }
 
 /* Carries out a request of a network object. */

@@ -7,7 +7,10 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
 SESSIOND_SOURCES := userland/desktop/sessiond/main.c userland/desktop/sessiond/greeter.c \
-	userland/desktop/sessiond/session.c userland/desktop/sessiond/seat.c userland/base/login/verify.c
+	userland/desktop/sessiond/session.c userland/desktop/sessiond/seat.c userland/base/login/verify.c \
+	userland/desktop/sessiond/service.c userland/desktop/sessiond/service-rules.c userland/base/common/account.c \
+	userland/base/service/rcconf.c userland/base/service/service-config.c userland/base/service/zsv1-client.c \
+	userland/base/service/zsv1-protocol.c
 SESSIOND_DATA := /etc/service.d/greeter=userland/desktop/sessiond/greeter.service \
 	/etc/keiland/session=userland/desktop/sessiond/session.sh \
 	/etc/keiland/autologin=userland/desktop/sessiond/autologin
