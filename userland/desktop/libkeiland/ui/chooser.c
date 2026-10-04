@@ -11,8 +11,14 @@
  *
  * The chooser is a toplevel window of its own on the application's
  * connection (a kl_window made by keiui_window_open_shared), drawn with
- * the widgets on the CPU into wl_shm buffers, opaque on Files' pale
- * ground (no glass shows through it, ws090-p014).  Its objects live on the
+ * the widgets on the CPU into wl_shm buffers.  Where zdesktop has glass
+ * the window is glass (ws090-p016): one frosted panel under the whole
+ * window, the desktop's wallpaper showing blurred through it, and the
+ * sidebar's and the content's cards on it as in Files, both light veils;
+ * elsewhere it keeps Files' opaque pale ground and white content card
+ * (ws090-p014).  A sheet's panel reaches above its top, so that zdesktop,
+ * which cuts it at the parent's title bar, leaves its upper corners
+ * square.  Its objects live on the
  * application's default queue, so the chooser's input, configures and
  * frames run while the application dispatches that queue; the application
  * needs no timer for it.  The window wakes the chooser after the events that queued its
@@ -33,6 +39,13 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The corner radius of the window's panel (zdesktop's windows') and of the two cards on it. */
+#define CHOOSER_GLASS_RADIUS	14
+#define CHOOSER_CARD_RADIUS	16
+
+/* The window's panel and the two cards. */
+#define CHOOSER_PANELS		3U
 
 /* The fonts used unless the application names others. */
 #define CHOOSER_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
@@ -55,6 +68,10 @@ struct kl_file_chooser {
 	struct kl_ui *ui;
 	/* Its titlebar in the sheet mode, hung under the parent's title bar (ws090-p014; NULL for a window of its own). */
 	struct kl_titlebar *sheet;
+	/* zdesktop's glass under the window (ws090-p016; NULL when opaque), and the panels it was last given. */
+	struct kl_glass *glass;
+	struct kl_glass_panel panels[CHOOSER_PANELS];
+	size_t panel_count;
 
 	/* The frame: its pixels and size, the canvas over them, the style, the frame asked for, and whether another is due. */
 	uint32_t *pixels;
@@ -74,6 +91,8 @@ struct kl_file_chooser {
 
 static void chooser_woken(void *data);
 static void chooser_sheet(struct kl_file_chooser *chooser);
+static void chooser_glass(struct kl_file_chooser *chooser);
+static void chooser_glass_panels(struct kl_file_chooser *chooser);
 static void chooser_event(struct kl_file_chooser *chooser, const struct kl_window_event *event);
 static void chooser_draw(struct kl_file_chooser *chooser);
 static int chooser_canvas(struct kl_file_chooser *chooser);
@@ -182,10 +201,10 @@ kl_file_chooser_open(
 	if (parent != NULL)
 		chooser_sheet(chooser);
 
-	/* Opaque, without glass under it: the theme's pale ground and white cards (ws090-p014). */
+	/* The style: on glass where zdesktop has it (ws090-p016), else opaque, the theme's pale ground and white card (ws090-p014). */
 	chooser->style.text = &chooser->text;
 	chooser->style.theme = kl_theme_default();
-	chooser->style.glass = 0;
+	chooser_glass(chooser);
 
 	/* Succeeded: the chooser shows itself once configured. */
 	(void)wl_display_flush(display);
@@ -338,7 +357,8 @@ chooser_draw(
 			(void)wl_callback_add_listener(chooser->frame, &chooser_frame_listener, chooser);
 	}
 
-	/* The frame shown (a buffer the compositor still reads: drawn again when it comes back). */
+	/* The glass panels for the frame's size, then the frame shown (a buffer the compositor still reads: drawn again when it comes back). */
+	chooser_glass_panels(chooser);
 	status = kl_window_present(chooser->window, chooser->pixels, (size_t)chooser->width);
 	if (status != 0)
 		chooser->dirty = 1;
@@ -404,11 +424,14 @@ chooser_window_gone(
 		chooser->frame = NULL;
 	}
 
-	/* The sheet's titlebar before its window. */
+	/* The sheet's titlebar and the glass before their window. */
 	if (chooser->sheet != NULL) {
 		kl_titlebar_destroy(chooser->sheet);
 		chooser->sheet = NULL;
 	}
+	kl_glass_destroy(chooser->glass);
+	chooser->glass = NULL;
+	chooser->panel_count = 0;
 
 	/* The window, with its own shell (zdesktop lets a binding go alone, BUG-112). */
 	kl_window_close(chooser->window);
@@ -482,4 +505,92 @@ chooser_sheet(
 		kl_titlebar_destroy(chooser->sheet);
 		chooser->sheet = NULL;
 	}
+}
+
+/*
+ * Gives the window zdesktop's glass when it can have it (a see-through
+ * frame and a compositor with glass): the style draws on glass then;
+ * otherwise the window stays opaque.
+ */
+static void
+chooser_glass(
+	struct kl_file_chooser *chooser)
+{
+	int see_through;
+
+	/* Opaque unless the glass is made. */
+	chooser->style.glass = 0;
+
+	/* A frame zdesktop does not blend cannot show the glass. */
+	see_through = kl_window_see_through(chooser->window);
+	if (!see_through)
+		return;
+
+	/* The glass, with no panels until the first frame. */
+	chooser->glass = kl_glass_create(chooser->display, kl_window_surface(chooser->window));
+	if (chooser->glass == NULL)
+		return;
+
+	/* Succeeded: the frames leave the ground clear for it. */
+	chooser->style.glass = 1;
+}
+
+/*
+ * Sets the glass panels for the frame's size before it is shown, when
+ * they changed: the window's panel and the two cards on it.
+ */
+static void
+chooser_glass_panels(
+	struct kl_file_chooser *chooser)
+{
+	struct kl_glass_panel panels[CHOOSER_PANELS];
+	struct kl_rect cards[2];
+	size_t count;
+	size_t index;
+	int same;
+	int error;
+
+	/* A window without glass has no panels. */
+	if (chooser->glass == NULL)
+		return;
+
+	/* The window's panel; a sheet's reaches a radius above its top, so that its upper corners are square under the title bar. */
+	memset(panels, 0, sizeof(panels));
+	panels[0].x = 0;
+	panels[0].y = 0;
+	panels[0].width = (int32_t)chooser->width;
+	panels[0].height = (int32_t)chooser->height;
+	panels[0].radius = CHOOSER_GLASS_RADIUS;
+	panels[0].kind = KL_GLASS_CARD;
+	if (chooser->sheet != NULL) {
+		panels[0].y = -CHOOSER_GLASS_RADIUS;
+		panels[0].height += CHOOSER_GLASS_RADIUS;
+	}
+
+	/* The two cards on it, where the view draws them. */
+	count = 1U + keiui_chooser_panels((int)chooser->width, (int)chooser->height, cards, 2U);
+	for (index = 1U; index < count; index++) {
+		panels[index].x = cards[index - 1U].x;
+		panels[index].y = cards[index - 1U].y;
+		panels[index].width = cards[index - 1U].width;
+		panels[index].height = cards[index - 1U].height;
+		panels[index].radius = CHOOSER_CARD_RADIUS;
+		panels[index].kind = KL_GLASS_CARD;
+	}
+
+	/* Nothing to send when zdesktop has these. */
+	if (count == chooser->panel_count) {
+		same = memcmp(panels, chooser->panels, sizeof(panels[0]) * count);
+		if (same == 0)
+			return;
+	}
+
+	/* Sent with the frame; a refused list leaves the old panels. */
+	error = kl_glass_set_panels(chooser->glass, panels, count);
+	if (error != 0)
+		return;
+
+	/* Remembered, to send again only what changes. */
+	memcpy(chooser->panels, panels, sizeof(panels[0]) * count);
+	chooser->panel_count = count;
 }
