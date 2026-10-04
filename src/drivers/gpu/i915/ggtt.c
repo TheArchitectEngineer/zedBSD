@@ -670,6 +670,7 @@ drv_i915_gt_ggtt_restore(
 		written++;
 	}
 
+	/* And every page of the display window. */
 	for (page = 0U; page < gm->display_pages; page++) {
 		i915_ggtt_write_pte(gm, gm->display_first + page, gm->scratch_pte);
 		written++;

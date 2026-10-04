@@ -574,6 +574,7 @@ drv_i915_device_suspend_hw(
 			i915_forcewake_put_all(gt, held);
 		}
 
+		/* Says why the suspend stops here. */
 		kern_logf("i915: suspend: the display did not go down (%d); the device runs on\n", error);
 		return error;
 	}
@@ -620,6 +621,7 @@ drv_i915_device_resume_hw(
 	if (error != 0 && first_error == 0)
 		first_error = error;
 
+	/* Resumes the engines, their workarounds, MOCS and RC6. */
 	if (gt->engines_resumed != 0U) {
 		error = drv_i915_gt_resume(&gt->engines, &gt->init, &gt->info, &gt->mmio, &gt->uncore_lock);
 		if (error != 0 && first_error == 0)

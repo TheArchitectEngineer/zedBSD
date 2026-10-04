@@ -61,3 +61,21 @@ $(OUT)/i915-park: $(REPO)/src/drivers/gpu/i915/park.c $(REPO)/src/drivers/gpu/i9
 	@mkdir -p $(OUT)
 	$(CC) -std=gnu11 -g -O1 $(WARNINGS) $(SANITIZE) -I$(REPO)/include -I$(REPO)/src \
 		-o $@ $(REPO)/src/drivers/gpu/i915/park.c $(REPO)/plan/ws052/tests/host-i915-park.c
+
+# ws052-p009 stage (b): the DC9 decisions (display/dc9.c) and the GGTT restore (ggtt.c).
+#   make -C plan/ws052/tests i915-dc9 i915-ggtt && build/ws052/host/i915-dc9 && build/ws052/host/i915-ggtt
+I915 := $(REPO)/src/drivers/gpu/i915
+I915_HOST_CPPFLAGS := -I$(REPO)/include -I$(REPO)/src -I$(REPO) -DKERN_USER_ABI_LP64
+.PHONY: i915-dc9 i915-ggtt
+i915-dc9: $(OUT)/i915-dc9
+i915-ggtt: $(OUT)/i915-ggtt
+
+$(OUT)/i915-dc9: $(I915)/display/dc9.c $(I915)/display/dc9.h $(REPO)/plan/ws052/tests/host-i915-dc9.c $(lastword $(MAKEFILE_LIST))
+	@mkdir -p $(OUT)
+	$(CC) -std=gnu11 -g -O1 $(WARNINGS) $(SANITIZE) $(I915_HOST_CPPFLAGS) \
+		-o $@ $(I915)/display/dc9.c $(REPO)/plan/ws052/tests/host-i915-dc9.c
+
+$(OUT)/i915-ggtt: $(I915)/ggtt.c $(I915)/ggtt.h $(I915)/memory.h $(REPO)/plan/ws052/tests/host-i915-ggtt.c $(lastword $(MAKEFILE_LIST))
+	@mkdir -p $(OUT)
+	$(CC) -std=gnu11 -g -O1 $(WARNINGS) $(SANITIZE) $(I915_HOST_CPPFLAGS) \
+		-o $@ $(I915)/ggtt.c $(REPO)/plan/ws052/tests/host-i915-ggtt.c
