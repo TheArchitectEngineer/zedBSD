@@ -2,7 +2,7 @@
 
 # ws037-p001: nvrtx の文書（初期化の順・GSP・command の順・世代の差・license）
 
-Status: planned
+Status: in-progress（q692-i01、P2。commit する文書はそろった。design-reviewer の review の反映が残り）
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: q692
@@ -28,3 +28,10 @@ Queue: q692
 ## 検証
 
 design-reviewer の review。code・build・QEMU は無い。
+
+## 結果（2026-10-04、q692-i01、P2 generation12、途中）
+
+- 正本（commit しない、`plan/ws037/temp/`）: Linux v6.19 の nouveau、Mesa 25.3.6 の `src/nouveau`、open-gpu-kernel-modules 570.144（sparse）、open-gpu-doc、linux-firmware `d947e4e8`（`nvidia/tu102`・`tu106`）。
+- 作業の文書（commit しない）: `temp/gsp-boot.md`（689 行）、`temp/channel-mmu-display.md`（726 行）、`temp/mesa-generations.md`（460 行）。実機の観測は無い。
+- commit する文書: [nvrtx-license-audit.md](../nvrtx-license-audit.md)、[nvrtx-design.md](../nvrtx-design.md)（最初の対象 TU106、段 N0〜P8、command の順、段の印、試験の道、世代の差の表、対応表、BLOB、危険、判断の項目 10）。
+- 残り: design-reviewer の review（2026-10-04 に起動、結果の反映が未了）。判断の項目 1〜10 は未決。
