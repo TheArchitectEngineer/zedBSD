@@ -114,3 +114,16 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 追加の確認（2026-10-05 Q1、ws132-p008 の蓋、main 4b4397ad 以降の image）: 蓋を閉じて画面が消える、5 秒で開けて password 無しで desktop、15 分を超えたら lock の画面、Super+L の後に閉じて開けたら lock の画面のまま（plan/ws132/phase008/phase.md）。
 追加の確認（2026-10-05 Q1、main 1ba85bfd 以降の image）: BUG-173: Terminal で長い日本語の行を履歴から呼び出し、左右・Backspace で prompt が消えず崩れないこと。BUG-179: title bar の double click から中身が最大の大きさで描き直されるまでの時間（i915、目標 0.1〜0.2 秒）を目視・動画で。
 追加の確認（2026-10-05 Q1、BUG-175、main 98f89042 以降）: Terminal を 20 以上開いて全部起動すること。
+
+## 9. sleep の device の suspend・resume（WS052 p004・p009）
+
+| # | 操作 | 期待 | 証拠 |
+| --- | --- | --- | --- |
+| 4.1 | 内蔵の panel で kei で login し、Terminal と、動き続ける app（Gears など）を開いておく。Terminal で `sudo sleepctl devices` | 画面が一瞬消えて**同じ panel に同じ session が戻る**（greeter に戻らない、login し直さない）。Gears が動き続け、Terminal に打てる。Terminal の行は `sleep result=21 resume=0 device=pci 0000:00:XX.X NAME`（21 = EOPNOTSUPP、NAME は suspend の口の無い driver。p005 の後は `result=0`）。`device=` が i915 より前（`0000:00:02.0` より前の bus 0 の番号、または bridge の先）なら i915 は通っていないので、その旨を記録 | `sudo dmesg` の `i915: park: the GT may idle`・`i915: DC9: entered`・`i915: suspend: the hardware is down (interrupts off, display in DC9)`・`i915: DC9: left`・`i915: dmc: program loaded again after the resume`・`i915: resume: N GGTT entries written again`・`i915: resume: the hardware is back`・`i915: unpark: the GT serves again`・`i915: resident display: ended PASS`（窓を出た分）、`nvme: suspended`・`nvme: resumed`、`pci: suspend of … failed (error 21)` |
+| 4.2 | 4.1 を続けて 5 回 | 毎回同じ。disk の読み書き（Files で file を開く・保存）と network（Browser で頁を開く）が続く | 各回の dmesg の `system: sleep (devices): result … resume …` |
+| 4.3 | 4.1 で画面が戻らない、または Gears が止まる | 失敗。電源ボタンの長押しで切る前に、可能なら SSH で `dmesg` を取る（`i915: resident display: the panel did not come up`・`i915: resume: a step failed`・`i915: DC9: not entered/left`・`i915: park: the worker did not park` を探す） | dmesg |
+| 4.4 | （HDMI の monitor がある時）firmware が HDMI を点けた起動（HDMI を挿して電源を入れる）で 4.1 | 画面が**HDMI に**戻る（panel に移らない） | dmesg の `i915: display output: HDMI on DDI B …`・`i915: resident display: ended PASS` |
+
+未実施にする項目（p006 の後）: sleep の間に HDMI を抜いて内蔵の panel に移る（決定 4）は、devices だけの mode では sleep が一瞬なので試せない。S0i3 に
+入れるようになってから（p006）試す。RC6 の residency の増加と SLP_S0 も p006 の後。
+
