@@ -1254,6 +1254,7 @@ system_bind(
 	struct system_search search;
 	struct wl_display *wrapper;
 	struct wl_registry *registry;
+	int bind_error;
 	int status;
 
 	/* Makes the library's queue. */
@@ -1295,9 +1296,14 @@ system_bind(
 	if (system->manager_version > KL_SYSTEM_MANAGER_VERSION)
 		system->manager_version = KL_SYSTEM_MANAGER_VERSION;
 	system->manager = wl_registry_bind(registry, search.name, &kl_system_manager_v1_interface, system->manager_version);
+	bind_error = errno;
 	wl_registry_destroy(registry);
-	if (system->manager == NULL)
-		return ENOMEM;
+	if (system->manager == NULL) {
+		/* The library's reason (a version the interface table does not describe is EINVAL), not always memory. */
+		if (bind_error == 0)
+			bind_error = ENOMEM;
+		return bind_error;
+	}
 
 	/* Listens to the manager and waits for what it offers. */
 	(void)wl_proxy_add_listener(system->manager, (void (**)(void))&system_manager_listener, system);

@@ -826,13 +826,19 @@ static void
 volumed_tidy(
 	struct volumed_volume *volume)
 {
+	int result;
+
 	/* Not mounted: nothing to tidy. */
 	if (volume->path[0] == '\0')
 		return;
 
-	/* By force: the disk is gone. */
-	(void)unmount(volume->path, MNT_FORCE);
-	(void)rmdir(volume->path);
+	/* By force: the disk is gone.  A failure is told, for the folder then stays. */
+	result = unmount(volume->path, MNT_FORCE);
+	if (result != 0)
+		fprintf(stderr, "VOLUMED TIDY path=%s unmount=%d\n", volume->path, errno);
+	result = rmdir(volume->path);
+	if (result != 0)
+		fprintf(stderr, "VOLUMED TIDY path=%s rmdir=%d\n", volume->path, errno);
 	volume->path[0] = '\0';
 }
 

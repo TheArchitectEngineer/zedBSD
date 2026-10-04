@@ -87,7 +87,7 @@ expect "mounted again" '^USBSTICK$' "$out/remount.txt"
 send device_del '{"id":"stick"}'
 sleep 4
 send blockdev-del '{"node-name":"stick0"}'
-guest '/bin/volumectl list; ls /media; echo media-end' > "$out/pulled.txt"
+guest '/bin/volumectl list; ls /media; echo media-end; dmesg | grep "unmount: /media" | tail -2' > "$out/pulled.txt"
 refuse "the list is empty" '^VOLUME' "$out/pulled.txt"
 refuse "the folder is gone after the pull" '^USBSTICK$' "$out/pulled.txt"
 guest 'chown root /dev/gpu0; tail -20 /var/log/messages 2>/dev/null | grep VOLUMED' > "$out/volumed-log.txt"
