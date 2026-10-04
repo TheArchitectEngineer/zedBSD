@@ -107,6 +107,13 @@ struct kern_text_ops {
 	void (*reveal)(void);
 
 	/*
+	 * Optionally shows the console for a fatal stop (BUG-158): like reveal,
+	 * but also over a graphics mode that suspended the text, and without
+	 * waiting on a lock this CPU may already hold.  Interrupts are disabled.
+	 */
+	void (*reveal_fatal)(void);
+
+	/*
 	 * Optionally shows that a quiet boot goes on: a record went to the log
 	 * only (end 0: the Kei splash's spinner turns, ws035-p107), or the
 	 * boot's screen is over (end 1: a display was taken for graphics, and
@@ -146,6 +153,7 @@ void kern_text_resume(void);
  * error), which goes to the log while the console is quiet.
  */
 void kern_text_reveal(void);
+void kern_text_reveal_fatal(void);
 void kern_text_kernel_putc(int character);
 void kern_text_progress(void);
 void kern_text_progress_end(void);

@@ -20,6 +20,8 @@
 #include "kern/signal.h"
 #include "kern/thread.h"
 #include "kern/vmspace.h"
+#include "kern/klog.h"
+#include "kern/text-display.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
@@ -245,6 +247,9 @@ user_probe_init(
  * Nothing in the kernel can resume from one yet, so every fault is left to
  * the HAL, which prints its register diagnostics and stops.  The arguments
  * are the same as for a user fault so that a later fixup table can use them.
+ * Before the HAL stops, the fault is kept in the kernel log's ring and the
+ * console is taken back from a quiet boot or a graphics mode, so the stop
+ * is readable and not mistaken for a freeze (BUG-158).
  */
 int
 kernel_sys_fault_handler(
@@ -255,13 +260,26 @@ kernel_sys_fault_handler(
 	uintptr_t vector,
 	uintptr_t error_code)
 {
+	char record[160];
+
 	(void)cause;
 	(void)mode;
-	(void)pc;
-	(void)address;
-	(void)vector;
-	(void)error_code;
 
-	/* Failed. */
+	/* Nothing on this CPU interrupts the stop from here on. */
+	(void)hal_irq_disable();
+
+	/* Keeps the fault in the ring, where a debugger or a later dmesg reads it. */
+	(void)kern_snprintf(record, sizeof(record),
+			    "fatal: supervisor fault vector=%lu pc=0x%lx address=0x%lx error=0x%lx\n",
+			    (unsigned long)vector,
+			    (unsigned long)pc,
+			    (unsigned long)address,
+			    (unsigned long)error_code);
+	kern_log_record_fatal(record);
+
+	/* The HAL's diagnostics that follow go to a console that is on the screen. */
+	kern_text_reveal_fatal();
+
+	/* Failed: the HAL prints the registers and stops. */
 	return HAL_TRAP_RET_FAILED;
 }

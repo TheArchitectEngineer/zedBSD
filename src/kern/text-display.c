@@ -162,6 +162,34 @@ kern_text_reveal(
 }
 
 /*
+ * Shows the console for a fatal stop, even over a graphics mode.
+ *
+ * A board without the fatal form falls back to the ordinary reveal, which
+ * draws only over a quiet boot (BUG-158).
+ */
+void
+kern_text_reveal_fatal(
+	void)
+{
+	const struct kern_text_ops *table;
+
+	/* Kernel messages go to the console again. */
+	kern_log_set_quiet(0);
+
+	/* The backend takes the screen back and draws what it kept. */
+	table = ops();
+	if (table == NULL)
+		return;
+
+	/* The fatal form when the backend has one, else the quiet-boot form. */
+	if (table->reveal_fatal != NULL) {
+		table->reveal_fatal();
+	} else if (table->reveal != NULL) {
+		table->reveal();
+	}
+}
+
+/*
  * Shows that a quiet boot goes on: the log took a record nobody sees
  * (ws035-p107).  A display without the operation shows nothing.
  */
