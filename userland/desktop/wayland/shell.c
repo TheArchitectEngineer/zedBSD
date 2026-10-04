@@ -222,6 +222,16 @@ static unsigned sheet_lowering;
 /* Wiseview: where the gesture starts, how far it goes, when it opens, and how long it settles. */
 #define WISEVIEW_EDGE		20
 #define WISEVIEW_DISTANCE	240.0f
+
+/*
+ * The touch pad's gestures (ws142-p003, D10): the finger travel that opens
+ * Wiseview whole, and that slides the desktops by the output's width
+ * (micrometres); the speed of a flick that finishes either (micrometres a
+ * second).
+ */
+#define GESTURE_WISEVIEW_UM	40000
+#define GESTURE_DESKTOP_UM	60000
+#define GESTURE_FLICK		100000
 #define WISEVIEW_THRESHOLD	0.35f
 #define WISEVIEW_MS		200U
 
@@ -357,6 +367,11 @@ static void bar_cover_log(struct zwl_server *server, const struct zwl_object *co
 static int home_without_bar(struct zwl_server *server, uint32_t button, uint32_t state);
 static float wiseview_progress(struct zwl_server *server);
 static void wiseview_settle(struct zwl_server *server, float from, float to);
+static void gesture_wiseview(struct zwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
+static void gesture_desktop(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
+static int gesture_may_start(struct zwl_server *server);
+static const char *gesture_name(uint32_t gesture);
+static const char *gesture_phase_name(uint32_t phase);
 static int wiseview_showing(struct zwl_server *server);
 static void wiseview_open_key(struct zwl_server *server);
 static void wiseview_key(struct zwl_server *server, uint32_t key, uint32_t state);
@@ -2315,6 +2330,8 @@ bar_layout(
 		bar->battery_x = bar->clock_x;
 		bar->signal_x = bar->clock_x - 36;
 	}
+
+	/* The volume left of the signal. */
 	bar->volume_x = bar->signal_x - 34;
 
 	/* The input method's language left of the volume, when there is an input method (input-method.c). */
@@ -4723,6 +4740,10 @@ wiseview_progress(
 	float t;
 	float value;
 
+	/* The touch pad's gesture: the fingers' travel. */
+	if (server->wiseview_gesture && server->wiseview_pad)
+		return server->wiseview_pad_progress;
+
 	/* The gesture: the distance moved up from where it started. */
 	if (server->wiseview_gesture) {
 		value = (float)(server->wiseview_start_y - server->pointer_y) / WISEVIEW_DISTANCE;
@@ -5520,6 +5541,244 @@ desktop_turn(
 	server->front_surface = zwl_top_window(server);
 	zwl_seat_focus(server);
 	printf("ZWL GLASS desktop=%u via=%s\n", server->desktop + 1U, via);
+}
+
+/*
+ * Carries out a touch pad gesture (touchpad.c, ws142-p003): two fingers up
+ * from the pad's bottom edge or three fingers up open Wiseview, two
+ * fingers in from the left or the right edge switch to the desktop on that
+ * side, each following the fingers as the pointer's edge drags do (D10);
+ * a tap of three fingers will show the switcher (ws142-p005).  Nothing
+ * starts over the login and lock screens, a fullscreen window (D6), App
+ * Home, an open Wiseview or another swipe.
+ */
+void
+zwl_glass_gesture(
+	struct zwl_server *server,
+	uint32_t gesture,
+	uint32_t phase,
+	int32_t travel_um,
+	int32_t speed)
+{
+	const char *name;
+	const char *phase_name;
+	int may;
+
+	/* Logged, for the tests. */
+	name = gesture_name(gesture);
+	phase_name = gesture_phase_name(phase);
+	printf("ZWL GESTURE kind=%s phase=%s travel_um=%d speed=%d\n", name, phase_name, travel_um, speed);
+
+	/* A Wiseview gesture under way goes on. */
+	if (server->wiseview_pad) {
+		gesture_wiseview(server, phase, travel_um, speed);
+		return;
+	}
+
+	/* A desktop swipe under way goes on. */
+	if (server->desktop_pad) {
+		gesture_desktop(server, gesture, phase, travel_um, speed);
+		return;
+	}
+
+	/* Otherwise only a beginning, or a tap, starts anything, and only where a gesture may. */
+	if (phase != ZWL_TOUCHPAD_PHASE_BEGIN && gesture != ZWL_TOUCHPAD_GESTURE_TAP3)
+		return;
+	may = gesture_may_start(server);
+	if (!may)
+		return;
+
+	/* Each gesture. */
+	switch (gesture) {
+	case ZWL_TOUCHPAD_GESTURE_BOTTOM2:
+	case ZWL_TOUCHPAD_GESTURE_UP3:
+		/* Wiseview starts opening; the window on top is the current tile. */
+		server->wiseview_gesture = 1;
+		server->wiseview_pad = 1;
+		server->wiseview_current = sheet_owner(zwl_top_window(server));
+		printf("ZWL WISEVIEW gesture via=pad\n");
+		gesture_wiseview(server, phase, travel_um, speed);
+		break;
+	case ZWL_TOUCHPAD_GESTURE_LEFT2:
+	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
+		/* The desktops start sliding. */
+		server->desktop_pad = 1;
+		server->desktop_dragging = 1;
+		server->desktop_moving = 0;
+		printf("ZWL GLASS desktop swipe via=pad\n");
+		gesture_desktop(server, gesture, phase, travel_um, speed);
+		break;
+	default:
+		/* TAP3: the switcher comes with ws142-p005. */
+		break;
+	}
+}
+
+/* Follows the touch pad's Wiseview gesture: opening with the travel, and open or closed at its end. */
+static void
+gesture_wiseview(
+	struct zwl_server *server,
+	uint32_t phase,
+	int32_t travel_um,
+	int32_t speed)
+{
+	float progress;
+
+	/* A button may have ended the gesture already: the rest of it does nothing. */
+	if (!server->wiseview_gesture) {
+		if (phase == ZWL_TOUCHPAD_PHASE_END || phase == ZWL_TOUCHPAD_PHASE_CANCEL)
+			server->wiseview_pad = 0;
+		return;
+	}
+
+	/* How far it is open. */
+	progress = (float)travel_um / (float)GESTURE_WISEVIEW_UM;
+	if (progress < 0.0f)
+		progress = 0.0f;
+	if (progress > 1.0f)
+		progress = 1.0f;
+	server->wiseview_pad_progress = progress;
+	server->dirty = 1;
+
+	/* Under way: it follows. */
+	if (phase == ZWL_TOUCHPAD_PHASE_BEGIN || phase == ZWL_TOUCHPAD_PHASE_UPDATE)
+		return;
+
+	/* The end: past the threshold or flicked up it opens, otherwise (or given up) it closes. */
+	server->wiseview_gesture = 0;
+	server->wiseview_pad = 0;
+	if (phase == ZWL_TOUCHPAD_PHASE_END && (progress > WISEVIEW_THRESHOLD || speed >= GESTURE_FLICK)) {
+		printf("ZWL WISEVIEW opening from=%.2f\n", (double)progress);
+		wiseview_settle(server, progress, 1.0f);
+	} else {
+		printf("ZWL WISEVIEW cancel from=%.2f\n", (double)progress);
+		wiseview_settle(server, progress, 0.0f);
+	}
+}
+
+/*
+ * Follows the touch pad's desktop gesture: the desktops slide with the
+ * travel (with resistance where there is no neighbour), and at its end
+ * half the output's width or a flick switches to the neighbour, anything
+ * less goes back.
+ */
+static void
+gesture_desktop(
+	struct zwl_server *server,
+	uint32_t gesture,
+	uint32_t phase,
+	int32_t travel_um,
+	int32_t speed)
+{
+	int32_t travel;
+	int32_t offset;
+	int target;
+
+	/* Something else may have ended the slide already: the rest of the gesture does nothing. */
+	if (!server->desktop_dragging) {
+		if (phase == ZWL_TOUCHPAD_PHASE_END || phase == ZWL_TOUCHPAD_PHASE_CANCEL)
+			server->desktop_pad = 0;
+		return;
+	}
+
+	/* The travel in pixels, inward; from the left edge (the fingers going right) the offset is positive, as the pointer's. */
+	travel = (int32_t)((int64_t)travel_um * (int32_t)server->width / GESTURE_DESKTOP_UM);
+	offset = travel;
+	target = (int)server->desktop - 1;
+	if (gesture == ZWL_TOUCHPAD_GESTURE_RIGHT2) {
+		offset = -travel;
+		target = (int)server->desktop + 1;
+	}
+
+	/* No neighbour on that side resists. */
+	if ((offset > 0 && server->desktop == 0U) || (offset < 0 && server->desktop + 1U >= (unsigned)DESKTOPS))
+		offset /= 4;
+	server->desktop_offset = offset;
+	server->dirty = 1;
+
+	/* Under way: it follows. */
+	if (phase == ZWL_TOUCHPAD_PHASE_BEGIN || phase == ZWL_TOUCHPAD_PHASE_UPDATE)
+		return;
+
+	/* The end: far enough or flicked, the neighbour (desktop_turn keeps the end desktops); otherwise, or given up, back. */
+	server->desktop_pad = 0;
+	if (phase == ZWL_TOUCHPAD_PHASE_END && (travel >= (int32_t)server->width / 2 || (speed >= GESTURE_FLICK && travel > 0))) {
+		desktop_turn(server, target, "pad");
+	} else {
+		desktop_turn(server, (int)server->desktop, "pad");
+	}
+}
+
+/* Tells whether a touch pad gesture may start: not over the login and lock screens, a fullscreen window (D6), App Home, Wiseview or another swipe. */
+static int
+gesture_may_start(
+	struct zwl_server *server)
+{
+	struct zwl_object *cover;
+	float home;
+
+	/* The login and lock screens. */
+	if (server->greeter || server->locked)
+		return 0;
+
+	/* A fullscreen window: the compositor's gestures are away (D6). */
+	cover = bar_cover(server);
+	if (cover != NULL)
+		return 0;
+
+	/* Wiseview shown or moving, a desktop swipe or slide. */
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+		return 0;
+	if (server->desktop_press || server->desktop_dragging || server->desktop_moving)
+		return 0;
+
+	/* App Home shown or following its gesture. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f || server->home_to > 0.0f)
+		return 0;
+
+	/* Succeeded: it may. */
+	return 1;
+}
+
+/* Names a touch pad gesture for the log. */
+static const char *
+gesture_name(
+	uint32_t gesture)
+{
+	/* Each one. */
+	switch (gesture) {
+	case ZWL_TOUCHPAD_GESTURE_BOTTOM2:
+		return "bottom2";
+	case ZWL_TOUCHPAD_GESTURE_UP3:
+		return "up3";
+	case ZWL_TOUCHPAD_GESTURE_LEFT2:
+		return "left2";
+	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
+		return "right2";
+	case ZWL_TOUCHPAD_GESTURE_TAP3:
+		return "tap3";
+	default:
+		return "none";
+	}
+}
+
+/* Names a gesture's phase for the log. */
+static const char *
+gesture_phase_name(
+	uint32_t phase)
+{
+	/* Each one. */
+	switch (phase) {
+	case ZWL_TOUCHPAD_PHASE_BEGIN:
+		return "begin";
+	case ZWL_TOUCHPAD_PHASE_UPDATE:
+		return "update";
+	case ZWL_TOUCHPAD_PHASE_END:
+		return "end";
+	default:
+		return "cancel";
+	}
 }
 
 /* Ends a press at the edge: a swipe of a quarter of the output switches to the neighbour, a shorter one goes back. */

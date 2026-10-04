@@ -894,6 +894,9 @@ struct zwl_server {
 	float wiseview;
 	unsigned wiseview_gesture;
 	int32_t wiseview_start_y;
+	/* Whether the gesture is the touch pad's (ws142-p003), and how far it has opened Wiseview by the fingers' travel. */
+	unsigned wiseview_pad;
+	float wiseview_pad_progress;
 	unsigned wiseview_moving;
 	float wiseview_from;
 	float wiseview_to;
@@ -954,6 +957,8 @@ struct zwl_server {
 	unsigned desktop_dragging;
 	int32_t desktop_start_x;
 	int32_t desktop_offset;
+	/* Whether the swipe is the touch pad's gesture (ws142-p003). */
+	unsigned desktop_pad;
 	unsigned desktop_moving;
 	float desktop_from;
 	float desktop_to;
@@ -1231,6 +1236,7 @@ int zwl_compose_waiting(struct zwl_server *server);
 void zwl_compose_poll(struct zwl_server *server);
 int zwl_glass_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_glass_motion(struct zwl_server *server);
+void zwl_glass_gesture(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
 void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
