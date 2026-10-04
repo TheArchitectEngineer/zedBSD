@@ -63,3 +63,9 @@ Status: 設計（文書だけ。製品の source・UAPI・実機は変えてい�
 - C2: **両方許可**（gpu-display.h の GPU_DISPLAY_POWER・GPU_DISPLAY_REFRESH と新しい include/uapi/backlight.h。HAL は不変）。差分は p012・p013 の記録に示す。
 - C3: Fn の明るさのキーの kernel 側（ACPI video の Notify 0x86/0x87 → input の key）は **WS049 に入れる**（BUG-165 の後）。compositor の KEY_BRIGHTNESS* の扱いは WS113。
 - 出力の数の制限（2026-10-05 未明 ユーザー「GOP以外のディスプレイについて、マシンが同時に表示できる画面数の制限で、有効化できないケースが存在するので、その場合は可能な限りエラーではなく制限であることを返してください。Vulkan Display拡張にそういうエラーがないなら、失敗しても致命的でなく一時的なものとして処理できるようにしてください。」）: GOP 以外の出力が machine の同時表示の数（pipe・transcoder・PLL など）の制限で点けられない時、driver と UAPI は一般の error でなく「制限」と分かる結果を返す。Vulkan の Display の拡張にそれに当たる error が無ければ、失敗を致命的でなく一時的な物として扱う（compositor はその出力を使わずに続け、Settings はその display を制限で使えないと示し、hotplug や他の出力の解放の後に再び試す）。p002・p003・p004・p011 の設計に入れる。
+
+### 反映（2026-10-05、P2、q702-i02）: D-LIMIT（出力の数の制限）
+
+| ID | 内容 | 影響 |
+| --- | --- | --- |
+| D-LIMIT | **native**: GOP の出力先でない出力を、同時に出せる数（pipe・transcoder・PLL・帯域、driver が今出せる数を含む）の制限で点けられない時、`GPU_DISPLAY_CLAIM` は `ENOSPC` を返す（他の失敗の errno と区別する。interface を driver が扱えない時は `EOPNOTSUPP`、持ち主の衝突は `EBUSY`）。p002 の i915 は一度に 1 つしか点けないので、resident でない出力の claim は `ENOSPC`（p011 の後は資源が本当に足りない時だけ）。Venus も host の scanout の数を超えたら `ENOSPC`（p003 で確かめる）。**libvulkan**: Vulkan の Display の拡張に「制限」の error は無いので、`ENOSPC` は swapchain の作成（display の claim）で `VK_ERROR_INITIALIZATION_FAILED` にする（device は失わない、致命的でない。今の `display_error()` は未分類の errno を `SURFACE_LOST` にしているので p003 で分ける）。**compositor**: anchor でない出力の swapchain の作成が `INITIALIZATION_FAILED` なら、その出力を「limited」の状態にして使わずに続ける（他の出力と server は保つ）。topology の変化（hotplug）と、他の出力の swapchain の解放の後に再び試す。**protocol と Settings**: snapshot の output の flags に `limited` を足し、Settings はその display を「同時に表示できる数の制限で使えません」と示す（モードの選択は残る出力に効く）。native の QUERY に「制限」の flag を足すかは p012 の UAPI の差分で検討（今は claim の結果だけで分かる） | p002（済み）、p003、p004、p005、p006、p011、p012 |
