@@ -201,3 +201,7 @@ Event ws114-gtk-qt-port-projections-20261002: user指定の順序は[全文](sta
 ## Keiland の OS の境界の改訂予定（2026-10-03）
 
 ユーザーの決定で、desktop の OS の抽象化を libkeiland-backend（compositor が使う、OS ごとに libkeiland-backend-zedbsd・-linux・-freebsd の別の source tree）に集め、compositor の OS の module（seat・logind・evdev・KMS/GPU）も移す。libkeiland は標準 app の UI toolkit と compositor の非標準の機能の wrapper になり、app は OS の抽象化を直接持たない（WiFi・network・音量・電源・PnP・設定は compositor の拡張の protocol を通す）。上の「Keiland の OS の境界」の配置の規則と checker は [WS131](ws131/ws.md) の設計で改訂する（それまでは今の規則のまま）。
+
+## 5330 の AX211 の passthrough の再開（2026-10-04）
+
+user「AX211のpassthruは、きちんとLinuxドライバをblacklistして再起動すれば動作します。その手順が抜けています。ホストを使ってオーケーです。sudo はパスワードレスで使えるので、設定は変えてオーケーです。」→ 5330（10.0.30.3）の host で iwlwifi（AX211 の Linux の driver）を blacklist して再起動し、AX211（00:14.3）を vfio-pci で QEMU に passthrough してよい。host の設定（modprobe.d の blacklist、vfio-pci の起動時の割り当て、再起動）を変えてよい。2026-10-03 の「iGPU と AX211 を同じ QEMU に同時に passthrough しない」は維持（今回は AX211 だけ）。手順は `plan/tools/` か `plan/ws004/tests/` の script の注記に残す。

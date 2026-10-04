@@ -62,7 +62,7 @@
 <!-- master:focus:end -->
 
 <!-- master:blocked:start -->
-- 5330 の AX211 の passthrough は停止（host の hang 2 回）。iGPU は i915 の driver の改善の Phase だけで使い、iGPU と AX211 の同時は禁止。
+- 5330 の AX211 の passthrough は 2026-10-04 に再開を許可（iwlwifi を blacklist して再起動が要る、Guardrail）。iGPU は i915 の driver の改善の Phase だけで使い、iGPU と AX211 の同時は禁止。
 - 2026-10-04 の UAT（[uat.md](uat.md)、証拠 [uat/2026-10-04/](uat/2026-10-04/)）: 実機で OK は BUG-145・152・161・143・139・103・160・153。再現は BUG-158・119・156・157。新規 BUG-165〜176。**最優先は BUG-165（DSDT が読めない: 電源が切れない・タッチパッド・電池の根の候補）・BUG-158（WiFi 未接続で kernel のフリーズ）・BUG-170（音量の slider のフリーズ）**。タッチパッドの操作の仕様（BUG-166）はユーザーと決める。
 - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
@@ -72,7 +72,7 @@
 - WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
 - host の sysctl の設定を `/etc/sysctl.d` に残すか。
 - docs/ の本文に残る Plan の ID の記述を消すか。
-- 5330 の host の設定（AX211 を起動時から vfio-pci、iwlwifi・btusb の blacklist）。
+- 5330 の host の設定: 2026-10-04 user が iwlwifi の blacklist と再起動・設定の変更を許可（T2 が実施）。
 <!-- master:pending-decisions:end -->
 <!-- awesome-plan-current:end -->
 
