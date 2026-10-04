@@ -1,0 +1,45 @@
+<!-- awesome-plan project=zedbsd record=ws156 -->
+
+# WS156: app の通知（画面の下の中央を流れる headline の popup と、ring の形の通知の log）
+
+<!-- awesome-plan-current:start -->
+Status: planning
+Primary Milestone: MG006
+Related Milestones: —
+Parent: [Master](../master.md)
+Queue: なし（担当と時期は未定）
+Resume point: p001（設計）から。今の compositor に app の通知の仕組みは無い（Q1 が source で確かめた、2026-10-04）。
+<!-- awesome-plan-current:end -->
+
+## 単一目標
+
+app から通知を出せる仕組みを作り、画面の下の中央を headline の news の板のように流れる popup で見せ、消えた後も hotkey で ring の形の log を左右にたどれるようにする。
+
+## ユーザーの要望（2026-10-04 夜、原文）
+
+「既存の右上の通知領域ではなく、アプリ通知の実装についてです。WindowsやMacだと、通知領域近辺にポップアップが出て、そのあとは画面右側に通知が一覧になって出ると思います。ポップアップは我々も出そうと思いますが、画面中央の下部に、画面サイズの20%程度のポップアップにしたいです。また、画面右下に、画面右端から出てきて、フェードインしながら画面中央にしゅっと素早く移動して、3秒とどまったら、画面左端にしゅっと素早く移動してアルファ値もフェードアウトして消えていくのがいいです。ヘッドラインニュースのボードみたいなものをイメージしています。通知は消えたあとも、ホットキーでリング上に左右に移動してログを見られるといいですね。通知は表示中はバツボタンで消せるといいです。ログの端、最新まで来ると、通知をすべて消去、というボタンがあるといいです。個別に消した通知はログに残さない方がいいです。」
+
+## 仕様（ユーザーの要望から、Q1 の整理。細部は p001 で決める）
+
+1. **popup の位置と大きさ**: 画面の下の中央、画面の大きさの約 20%。
+2. **動き**（headline の news の板）: 画面の右下、右端の外から現れ、fade-in しながら画面の中央へ素早く（しゅっと）移る → 中央で 3 秒とどまる → 画面の左端へ素早く移りながら alpha を fade-out して消える。続けて通知が来た時の並び（順に流す・前の物を早送りする）は p001 で決める。
+3. **表示中の × ボタン**: 表示中の通知を × で消せる。**個別に消した通知は log に残さない**。
+4. **log**: 消えた（流れ去った）通知は log に残る。**hotkey** で log を開き、**ring の形に左右へ**たどれる。log の端（最新）まで来ると「**通知をすべて消去**」の button がある。
+5. 既存の右上の通知領域（system bar の icon）とは別の仕組み。
+
+## 範囲（p001 で設計して確定）
+
+- app から通知を出す口: 標準の freedesktop の Desktop Notifications（D-Bus）は zedBSD に D-Bus が無いので、Keiland の拡張の Wayland protocol か libkeiland の口（`kl_notify_*` など）。Linux・FreeBSD の Keiland で D-Bus の通知を受けるかも検討。
+- 通知の内容（app の名前・icon・題・本文・動作の button の有無・緊急度）、同じ app の通知の置き換え、全画面の時・lock の時の扱い（Privacy の頁（WS148）の「lock の画面で通知を出すか」と関係）。
+- compositor の描画（Vulkan、animation の曲線、fade、20% の大きさの文字の配置）、hotkey の割り当て、log の保存（session の中だけか、再起動を越えて残すか）。
+- 使う側: カレンダー（WS155）の予定の時刻、system の事象（電池・PnP・WiFi の失敗（BUG-187）など、WS132）。
+
+## Phase（案）
+
+| Phase | 内容 | Status | 依存 |
+| --- | --- | --- | --- |
+| ws156-p001 | 設計（通知の口・内容・popup の動き・log と hotkey・保存・試験の方法） | planning | — |
+| ws156-p002 | 通知の口（protocol・libkeiland）と compositor の受け取り | planning | p001 |
+| ws156-p003 | popup の描画と動き（右から中央、3 秒、左へ fade-out）、× で消す | planning | p002 |
+| ws156-p004 | log（hotkey、ring の左右、すべて消去、個別に消した物は残さない） | planning | p003 |
+| ws156-p005 | 全文の規約と QEMU の回帰（T1）、実機の UAT | planning | p002〜p004 |
