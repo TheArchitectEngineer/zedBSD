@@ -112,3 +112,4 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 追加の確認（2026-10-05 Q1、ws113-p013）: main 780764c3 以降の image なら、compositor が一度描いた後に `backlight-probe`・`backlight-probe 30`・`backlight-probe 100` で内蔵の panel の明るさが変わるのを目視（描く前は EBUSY が正しい）。build/uat-0505 には入っていない。
 追加の確認（2026-10-05 Q1、ws113-p012）: main caa7181e 以降の image なら `display-control` で REFRESH が 60 Hz 程度で進むこと、power OFF で panel が暗くなり ON で戻ること。
 追加の確認（2026-10-05 Q1、ws132-p008 の蓋、main 4b4397ad 以降の image）: 蓋を閉じて画面が消える、5 秒で開けて password 無しで desktop、15 分を超えたら lock の画面、Super+L の後に閉じて開けたら lock の画面のまま（plan/ws132/phase008/phase.md）。
+追加の確認（2026-10-05 Q1、main 1ba85bfd 以降の image）: BUG-173: Terminal で長い日本語の行を履歴から呼び出し、左右・Backspace で prompt が消えず崩れないこと。BUG-179: title bar の double click から中身が最大の大きさで描き直されるまでの時間（i915、目標 0.1〜0.2 秒）を目視・動画で。
