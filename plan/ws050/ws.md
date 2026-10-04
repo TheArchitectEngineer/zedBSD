@@ -45,3 +45,7 @@ Alternate Mode・USB PD の contract）を読み、変化を受け取り、必�
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
 | ws050-p001 | 調査と設計: UCSI の仕様（1.2/2.x）、対象機の `USBC000` の AML（共有 memory の配置、`_DSM` の function）、Type-C の層の設計、公開の形 | planning | WS049 の namespace と評価器 | 設計文書 |
+
+## 2026-10-04 予定（Q1）
+
+ユーザー「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。」→ [queue.md](../queue.md) の q679（WS050 p001）・q680（WS051 p001）・q681（WS052 p001）。設計は WS049 の q677（BUG-165、DSDT）と並走、実装は q677・q678（ws049-p007）の後。

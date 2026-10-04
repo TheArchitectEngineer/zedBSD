@@ -44,3 +44,7 @@ USB-C の port につないだ DisplayPort の display（USB-C の monitor、USB
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
 | ws051-p001 | 調査と設計: DP Alt Mode（VESA）と UCSI の手順、i915 の TCSS・Type-C PHY・DDI の手順（Intel の公開文書から）、今の i915 の display の範囲、画面の構成の通知 | planning | WS050 の p001 | 設計文書 |
+
+## 2026-10-04 予定（Q1）
+
+ユーザー「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。」→ [queue.md](../queue.md) の q679（WS050 p001）・q680（WS051 p001）・q681（WS052 p001）。設計は WS049 の q677（BUG-165、DSDT）と並走、実装は q677・q678（ws049-p007）の後。

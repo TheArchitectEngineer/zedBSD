@@ -82,3 +82,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
 ## 2026-10-04 UAT の結果（Q1）
 
 素の 5330 で DSDT が読み込めない（`ACPI: DSDT Dell Inc stopped at offset 0x1c89b (error 13)`、[BUG-165](../bugs/BUG-165.md)）。電源が切れない（BUG-119）・タッチパッド（BUG-156・167）・電池の情報（BUG-159、ws134-p009）の共通の根の候補。**次の Phase（planned、番号は着手の時に Q1 が振る）**: offset 0x1c89b の AML を特定し、error 13 の原因を直す。5330 の DSDT を取り出して host の試験に入れ、実機で `\_S5` による電源の切断を確かめる。最優先（17 時以降）。
+
+## 2026-10-04 予定（Q1）
+
+USB-C DP Alt Mode（WS050・WS051）・電源管理（WS052）・WS132 の共通の前提。q677（p008: BUG-165 の DSDT と 5330 の table）→ q678（p007: SCI・GPE・電源ボタン・EC）を最初に行う（[queue.md](../queue.md)）。
