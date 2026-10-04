@@ -28,14 +28,14 @@ user（原文）:「では、サブエージェントを起動して作業しま
 | q712 / q712-i01 | 空いた担当 | WS045: dirname の複数の operand（GNU、2026-10-05 user「GNU に合わせる」）と WS の受け入れ | dirname を GNU に（各 operand の dirname を行ごと）、WS001 の dirname-test.sh を直す、WS045 の差分試験と WS043 の POSIX の差分試験、amd64 の build と boot は T1、WS045 を閉じる | なし | pending |
 | q685 / q685-i02 | 空いた担当 | WS033: [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md) | ws033/phase001 の「q685-i01 の途中の結果」の再開点から | なし | pending |
 | q705 / q705-i01 | 空いた担当 | WS127: [ws127-p010](ws127/phase010/phase.md)・[p011](ws127/phase011/phase.md)・[p012](ws127/phase012/phase.md)・[BUG-177](bugs/BUG-177.md) | path の入力と候補、Home は ~/・Today（左の一番上、起動は Today）、Tags の削除（Guardrail の D14 と checker の表は Q1）、検索欄の IME | なし | 新規の分（p010・p011・p012）実装済み・T1-099 の試験待ち（P2 24155d7・d937821・f3ae76d → main）。BUG-177 は保留 |
-| q706 / q706-i01 | 空いた担当 | WS131: [ws131-p014](ws131/phase014/phase.md) の残り → p015〜p022 | phase014 の Resume から番号の順 | なし | pending |
+| q706 / q706-i01 | P2 | WS131: [ws131-p014](ws131/phase014/phase.md) の残り → p015〜p022 | phase014 の Resume から番号の順 | なし | pending |
 | q707 / q707-i01 | P1 | WS132: p001 の設計 → 実装（p002 実装済み・T1-106 の試験待ち、P1 d3dd6e7 → main 8aff921。p003 以降は q717 と D1〜D3 の後） | /dev/system の事象の subscriber（読む前に種類を登録、受け取り手は Keiland、ACPI の電源ボタン・蓋・AC を配る）、PnP の通知、自動 mount、Files の eject | なし | pending |
 | q708 / q708-i01 | P2 | WS095: [ws095-p017](ws095/phase017/phase.md)（辞書の移動と統合）・p005・[p016](ws095/phase016/phase.md)（app ごとの IME の状態） | 各 phase.md の範囲 | なし | pending |
 | q709 / q709-i01 | 空いた担当 | WS090: [ws090-p016](ws090/phase016/phase.md) | File Chooser を (b) 左右とも透かす | なし | 実装済み・T1-103 の試験待ち（P2 ba8f807 → main 37e0de9） |
 | q710 / q710-i01 | P2 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | uncleared（unstarted: planned の Phase が無い。p004 planning＝ベータ1 の後、p007 planning＝実機、p008 in-progress＝q667 の T1 の回帰と実機待ち、2026-10-05 P2 の確認） |
 | q711 / q711-i01 | P2 | WS129: p003〜p005 | release の作業 | なし | p003 実装済み・T1-104 の試験待ち（P2 52c6354 → main）。p004 は q714、p005 の今書ける分は p013 に分けて q715、残りは 10/13 頃 |
 | q714 / q714-i01 | P2 | [ws129-p004](ws129/phase004/phase.md) | release の image の config・CI の release の job（rc の build と promote）・root の lock の option（U10）。zip の有無は U6/ws088-p002 次第、program の最終の一覧は 10/13 の RC。ci.yml は WS112 と共有だが WS112 はベータ4 以降で今は衝突なし | ws129-p001 | 実装済み・T1-105 の試験待ち（P2 4c93a6c・8004a91 → main）。ユーザーの判断 3 つ（master の pending-decisions） |
-| q715 / q715-i01 | P2 | [ws129-p013](ws129/phase013/phase.md) | 利用の手引きと既知の問題の下書き（docs/release/、英語） | ws129-p001 | pending |
+| q715 / q715-i01 | P2 | [ws129-p013](ws129/phase013/phase.md) | 利用の手引きと既知の問題の下書き（docs/release/、英語） | ws129-p001 | 実装済み（P2 b0052b7 → main）。QEMU 不要、ユーザーの review 待ち（4 つの判断の後に p005 が RC で直す） |
 | q716 / q716-i01 | P1 | [ws089-p027](ws089/phase027/phase.md) | About に PRETTY_NAME | ws129-p003（main に統合済み） | pending（P1、q717 の後） |
 | q717 / q717-i01 | P1 | [ws132-p003](ws132/phase003/phase.md) | backend の事象、input の探し直し、電池・AC の表示（D1・D2 に依らない分） | ws132-p002（main 8aff921 に統合、QEMU は T1-106） | in-progress（2026-10-05 P1） |
 | q718 / q718-i01 | P1 | [ws099-p032](ws099/phase032/phase.md) | WiFi の icon の Alt+クリックで IP address と統計（設計から） | なし | pending（P1、q716 の後） |
