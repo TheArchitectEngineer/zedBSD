@@ -319,3 +319,7 @@ UCSI（p003）が使い、他の driver（WS051・WS052・WS132 の ACPI の利�
 5. HPD・pin: 「i915 の TCSS・FIA から」（UCSI は mode に入った事実と能力の補助。WS050・WS051 の ws.md を直し、WS051 は UCSI を待たずに進められる）。
 
 補足（2026-10-04 ユーザー）:「DisplayPort の HPD と pin の割り当ては UCSI 1.x では得られませんが、2.0で取れる場合は取りましょう。i915から取れるなら取りましょう。両方実装があるといいと思います。」→ 5 の改訂: HPD・pin は両方の経路を実装する。UCSI 2.0 以上の PPM で取れる時は UCSI から取り、i915 の TCSS・FIA から取れる時は i915 からも取る（1.x では i915 だけ）。両方ある時の優先と食い違いの扱いは設計で決める。
+
+## A3 の解決（2026-10-05、ユーザーの指摘で Q1 が source を確かめた）
+
+ユーザー「device mapはMMIOのアドレスをマップするAPIですよね。RAM範囲をマップしないようにHAL実装ができているのでは？」→ そのとおり。amd64 の `hal_space_map_device` の実装（`src/hal/amd64/space.c` の `device_window_map`）は、要求の範囲の各 page を `amd64_ram_lookup` で調べ、RAM（allocator が配る範囲）が 1 page でも含まれれば `HAL_ERR_INVALID` で拒む（「Excludes all RAM, including bytes outside partial device boundary pages.」）。よって **HAL の API の追加は不要**: UCSI の driver は mailbox を `hal_space_map_device` で map し、拒まれたら attach しない（RAM に置かれた mailbox は使わない）。Q1 の前の説明（「確かめない」）は誤りだった。残る確かめ: (1) `ram_builder` に BOOT_RECLAIM などの再利用される範囲が入っているか、(2) `device_fixed_range`（boot の時の legacy の固定の写像）を通る範囲は RAM の確かめを通らないので、mailbox がそこに当たらないか。p002 の前に読みで確かめる。ws049-p017 の ⑤（memory map の型を問う口）は不要として閉じる。

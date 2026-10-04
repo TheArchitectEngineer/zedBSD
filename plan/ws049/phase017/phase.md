@@ -48,3 +48,5 @@ QEMU の回帰は T1（guest-events・guest-compare・boot-test）。
 
 - ⑤（memory map の型を問う口、HAL の API が要る）のユーザーの判断。足すことになれば `hal.h` の差分の案を `plan/ws049/proposed/` に作り承認を得る。
 - 実機の確認は WS050 p003 で（UCSI が最初の利用者）。
+
+2026-10-05: ⑤ は不要として閉じる（`hal_space_map_device` の実装が RAM を拒むので、UCSI の driver はその error で判断できる。plan/ws050/design.md の「A3 の解決」）。
