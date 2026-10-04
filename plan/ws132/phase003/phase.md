@@ -63,9 +63,18 @@ build の warning 0（zedBSD と Linux の keiland-linux.mk）、host の試験�
 ## 残り
 
 - QEMU の結果の判定（T1、Q1）。
-- 電池の無い機械で bar の電池の場所を詰めるか（今は空けたまま）。詰めると QEMU の試験の bar の座標が全部動く。必要なら Q1・ユーザーの判断。
+- （済、q722）電池の無い機械で bar の電池の場所を詰める（下）。
 - POWER・LID の動作は p008（D1・D2 の後）。
 
+<<<<<<< HEAD
 ## ユーザーの決定（2026-10-05 未明）
 
 電池の無い機械の bar: 一度「空けたまま」と答えた後、ユーザー「すみません、電池がないときは詰めるに変更します。」→ **詰める**（電池が無ければ他の icon を寄せる）。QEMU の試験の bar の座標を合わせて直す。q722。
+=======
+## q722: 電池の無い機械で bar の電池の場所を詰める（2026-10-05、ユーザーの変更「電池がないときは詰める」）
+
+- `wayland/shell.c` の `bar_layout`: `server->power.percent < 0`（電池が無い）なら、電池の場所（44 px）を取らず、network の icon を時計の 36 px 左に置く。network・音量・IME・desktop・docked の窓の button が 44 px 右へ動く（電池のある機械は今まで通り）。電源の状態は最初の frame の前に読む（`zwl_power_read`）ので、log の位置（`ZWL NETWORK icon`・`ZWL VOLUME icon`・`ZWL GLASS desktops`・`ZWL IME indicator`）は最初から詰めた値。
+- QEMU の試験の bar の座標: plan の試験を探したが、bar の右側（network・音量・IME・desktop・docked の button）の座標は全部 log から読んでいて（menu-bug148・connecting-bug154・zdesktop-p013/p065/p072/p104・zdesktop-p010・volume-*・ime-p005・settings-p021・p032-guest）、決め打ちの x は無かった。zdesktop-p010 の「右上の角の帯が network の icon と重ならない」は、icon が x=1107..1136 になっても帯（x≥1252）の外。直した試験の file は無し。
+- zedBSD の compositor の build: 成功、warning 0。style-check: 変えた hunk の指摘 0。
+- 未実施: QEMU（T1）。電池の無い QEMU の guest で bar の icon が時計の隣に詰まる PNG と、上の log を読む試験が通ること。
+>>>>>>> 0de0ff9
