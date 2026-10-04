@@ -163,6 +163,8 @@ int zwl_ime_key_grab(struct zwl_server *server, uint32_t time, uint32_t key, uin
 void zwl_ime_modifiers(struct zwl_server *server);
 void zwl_ime_focus(struct zwl_server *server, struct zwl_object *previous);
 void zwl_ime_update(struct zwl_server *server, struct zwl_text_input *committed);
+void zwl_ime_field_changed(struct zwl_server *server);
+int zwl_ime_field_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 void zwl_ime_text_input_gone(struct zwl_server *server, struct zwl_text_input *input);
 void zwl_ime_surface_commit(struct zwl_object *surface);
 void zwl_ime_popup_draw(struct zwl_server *server, VkCommandBuffer command);

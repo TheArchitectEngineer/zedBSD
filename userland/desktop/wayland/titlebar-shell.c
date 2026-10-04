@@ -53,6 +53,7 @@
 
 #include "menu.h"
 #include "titlebar.h"
+#include "ime.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -231,6 +232,8 @@ struct shell_strip {
  * with its cursor and the other end of its selection (byte offsets on
  * character boundaries).  box is where the field was last drawn (on the
  * output, box_known once it was), under which its suggestions drop down.
+ * preedit is what the input method composes in it (BUG-177), drawn at the
+ * cursor and not part of the text; empty for none.
  */
 struct shell_field {
 	struct zwl_object *surface;
@@ -245,6 +248,7 @@ struct shell_field {
 	int32_t box_y;
 	int32_t box_width;
 	int32_t box_height;
+	char preedit[ZWL_TITLEBAR_TEXT_MAX + 1U];
 };
 
 /*
@@ -748,6 +752,9 @@ zwl_titlebar_key(
 	if ((modifiers & SEAT_SHIFT) == 0U)
 		field->anchor = field->cursor;
 
+	/* The input method hears where the cursor is. */
+	zwl_ime_field_changed(server);
+
 	/* Succeeded: the key moved the cursor. */
 	return 1;
 }
@@ -1035,7 +1042,6 @@ zwl_titlebar_forget(
 	unsigned kept;
 
 	/* The window's regions. */
-	(void)server;
 	kept = 0;
 	for (index = 0; index < shell_titlebar.hit_count; index++) {
 		if (shell_titlebar.hits[index].surface == object)
@@ -1054,15 +1060,157 @@ zwl_titlebar_forget(
 		shell_titlebar.selecting = 0;
 	}
 
-	/* The field on it stops being edited, without telling the client that goes. */
-	if (shell_titlebar.field.surface == object)
+	/* The field on it stops being edited, without telling the client that goes; the input method stops serving it. */
+	if (shell_titlebar.field.surface == object) {
 		shell_titlebar.field.surface = NULL;
+		shell_titlebar.field.preedit[0] = '\0';
+		zwl_ime_field_changed(server);
+	}
 
 	/* Its logged layouts. */
 	for (index = 0; index < SHELL_LOGGED; index++) {
 		if (shell_titlebar.logged[index].surface == object)
 			shell_titlebar.logged[index].surface = NULL;
 	}
+}
+
+/*
+ * Gives the window whose title bar field has the keyboard (BUG-177: the
+ * input method serves it), or NULL when none has (or the lock screen, the
+ * login screen or App Home takes the keys).
+ */
+struct zwl_object *
+zwl_titlebar_field_surface(
+	struct zwl_server *server)
+{
+	struct zwl_object *surface;
+
+	/* A field, on the window with the keyboard. */
+	surface = shell_titlebar.field.surface;
+	if (surface == NULL || server->focus != surface)
+		return NULL;
+
+	/* Not while the lock screen, the login screen or App Home takes the keys. */
+	if (server->locked || server->greeter)
+		return NULL;
+	if (server->home > 0.0f)
+		return NULL;
+
+	/* Succeeded: the window. */
+	return surface;
+}
+
+/*
+ * Copies the field's state for the input method: its text (cut to size),
+ * the cursor and the selection's other end (byte offsets), and its box
+ * relative to the window (x, y, width, height), where the candidate window
+ * goes under.  Returns 0 when no field has the keyboard.
+ */
+int
+zwl_titlebar_field_state(
+	struct zwl_server *server,
+	char *text,
+	size_t size,
+	int32_t *cursor,
+	int32_t *anchor,
+	int32_t *rectangle)
+{
+	struct shell_field *field;
+	struct zwl_object *surface;
+
+	/* The field with the keyboard. */
+	surface = zwl_titlebar_field_surface(server);
+	if (surface == NULL || size == 0U)
+		return 0;
+
+	/* The text and its offsets, cut to the room given. */
+	field = &shell_titlebar.field;
+	(void)snprintf(text, size, "%s", field->text);
+	*cursor = (int32_t)field->cursor;
+	*anchor = (int32_t)field->anchor;
+	if (field->cursor >= size)
+		*cursor = (int32_t)(size - 1U);
+	if (field->anchor >= size)
+		*anchor = (int32_t)(size - 1U);
+
+	/* The box where it was drawn, relative to the window (above it: the title bar). */
+	rectangle[0] = 0;
+	rectangle[1] = 0;
+	rectangle[2] = 0;
+	rectangle[3] = 0;
+	if (field->box_known) {
+		rectangle[0] = field->box_x - surface->x;
+		rectangle[1] = field->box_y - surface->y;
+		rectangle[2] = field->box_width;
+		rectangle[3] = field->box_height;
+	}
+
+	/* Succeeded: the state. */
+	return 1;
+}
+
+/*
+ * Applies what the input method made to the field with the keyboard
+ * (BUG-177): the text around the cursor deleted (bytes before and after),
+ * the committed text in place of the selection, and the preedit shown at
+ * the cursor (NULL or empty for none).  A change of the text goes to the
+ * client as typing does.
+ */
+void
+zwl_titlebar_field_input(
+	struct zwl_server *server,
+	const char *preedit,
+	const char *commit,
+	uint32_t before,
+	uint32_t after)
+{
+	struct shell_field *field;
+	struct zwl_object *surface;
+	const char *committed;
+	size_t length;
+	unsigned changed;
+
+	/* Only the field with the keyboard. */
+	field = &shell_titlebar.field;
+	surface = zwl_titlebar_field_surface(server);
+	if (surface == NULL)
+		return;
+
+	/* The text around the cursor (within the text) goes. */
+	changed = 0;
+	if (before != 0U || after != 0U) {
+		field->anchor = 0;
+		if (before < field->cursor)
+			field->anchor = field->cursor - before;
+		field->cursor += after;
+		if (field->cursor > field->length)
+			field->cursor = field->length;
+		shell_field_insert("", 0U);
+		changed = 1;
+	}
+
+	/* The committed text in place of the selection. */
+	if (commit != NULL && commit[0] != '\0') {
+		length = strlen(commit);
+		shell_field_insert(commit, length);
+		changed = 1;
+	}
+
+	/* The preedit shown, or none. */
+	field->preedit[0] = '\0';
+	if (preedit != NULL)
+		(void)snprintf(field->preedit, sizeof(field->preedit), "%s", preedit);
+	server->dirty = 1;
+
+	/* Logged for the tests. */
+	committed = "";
+	if (commit != NULL)
+		committed = commit;
+	printf("ZWL TITLEBAR ime commit=%s preedit=%s text=%s\n", committed, field->preedit, field->text);
+
+	/* The client and the input method hear a changed text. */
+	if (changed)
+		shell_field_changed(server);
 }
 
 /*
@@ -1865,6 +2013,9 @@ shell_draw_field_text(
 	static const float selection[4] = { 0.18f, 0.49f, 0.96f, 0.25f };
 	struct shell_field *field;
 	char before[ZWL_TITLEBAR_TEXT_MAX + 1U];
+	char shown[2U * ZWL_TITLEBAR_TEXT_MAX + 1U];
+	size_t preedit_length;
+	int32_t preedit_width;
 	float colour[4];
 	size_t start;
 	size_t end;
@@ -1899,9 +2050,19 @@ shell_draw_field_text(
 		glass_draw_solid(server, command, (float)(x + start_x), (float)(baseline - 14), (float)(end_x - start_x), 18.0f, 2.0f, colour);
 	}
 
-	/* The text, then the cursor. */
+	/* The text with the input method's preedit at the cursor (BUG-177), underlined; the cursor after it. */
+	preedit_length = strlen(field->preedit);
+	memcpy(shown, field->text, field->cursor);
+	memcpy(shown + field->cursor, field->preedit, preedit_length);
+	memcpy(shown + field->cursor + preedit_length, field->text + field->cursor, field->length - field->cursor + 1U);
+	preedit_width = glass_text_width(server, SIZE_BAR, field->preedit);
 	shell_colour(colour, ink, fade);
-	glass_draw_text(server, command, SIZE_BAR, x, baseline, field->text, width, colour);
+	glass_draw_text(server, command, SIZE_BAR, x, baseline, shown, width, colour);
+	if (preedit_length != 0U && cursor_x <= width)
+		glass_draw_solid(server, command, (float)(x + cursor_x), (float)(baseline + 2), (float)preedit_width, 1.0f, 0.0f, colour);
+
+	/* The cursor. */
+	cursor_x += preedit_width;
 	if (cursor_x <= width)
 		glass_draw_solid(server, command, (float)(x + cursor_x), (float)(baseline - 13), 1.5f, 16.0f, 0.0f, colour);
 }
@@ -2801,12 +2962,16 @@ shell_focus(
 	field->anchor = 0;
 	field->cursor = length;
 	field->box_known = 0;
+	field->preedit[0] = '\0';
 	shell_suggest_clear(server);
 
 	/* The window has the keyboard; the log line the tests read. */
 	zwl_glass_raise(server, surface);
 	server->dirty = 1;
 	printf("ZWL TITLEBAR focus client=%llu surface=%u id=%u edit=%u\n", (unsigned long long)surface->client->number, surface->id, control->id, edit);
+
+	/* The input method serves the field (BUG-177). */
+	zwl_ime_field_changed(server);
 }
 
 /* Ends the field's editing and tells the client how. */
@@ -2819,13 +2984,15 @@ shell_field_done(
 	struct zwl_object *titlebar;
 	struct zwl_object *surface;
 
-	/* The field and its suggestions go first (the event may make the client change its controls). */
+	/* The field and its suggestions go first (the event may make the client change its controls); the input method stops serving it. */
 	surface = shell_titlebar.field.surface;
 	shell_titlebar.field.surface = NULL;
+	shell_titlebar.field.preedit[0] = '\0';
 	shell_suggest_clear(server);
 	server->dirty = 1;
 	if (surface == NULL)
 		return;
+	zwl_ime_field_changed(server);
 
 	/* The client hears how it ended, with the text. */
 	(void)shell_mode(surface, &model, &titlebar);
@@ -2846,6 +3013,9 @@ shell_field_changed(
 	(void)shell_mode(shell_titlebar.field.surface, &model, &titlebar);
 	if (titlebar != NULL)
 		zwl_titlebar_send_text(titlebar, shell_titlebar.field.id, shell_titlebar.field.text, 0, 0U);
+
+	/* The input method hears the new text (BUG-177). */
+	zwl_ime_field_changed(server);
 }
 
 /* Replaces the field's selection with some bytes, when there is room. */

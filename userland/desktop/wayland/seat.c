@@ -987,6 +987,9 @@ zwl_seat_key(
 		taken = zwl_menu_grab_key(server, key, state);
 		if (taken)
 			return;
+		taken = zwl_ime_field_key(server, time, key, state);
+		if (taken)
+			return;
 		taken = zwl_titlebar_key(server, key, state);
 		if (taken)
 			return;
