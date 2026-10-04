@@ -92,6 +92,9 @@ static struct mutex interpreter_lock;
 
 /*
  * The firmware's tables, found at attachment and kept for LoadTable.
+ *
+ * drv_acpi_attach() fills it once, before the interpreter first runs, and
+ * nothing changes it afterwards, so its readers need no lock.
  */
 static struct drv_acpi_firmware firmware;
 
@@ -105,8 +108,10 @@ static uint64_t memory_cache_clock;
 
 /*
  * The lock the SCI interrupt and the event code share, the queue the
- * event thread sleeps on, and the number of SCIs it has not handled yet;
- * the thread takes the count, and the interrupt adds to it.
+ * event thread sleeps on, and the number of SCIs it has not handled yet.
+ * event_work is read and written only under event_lock: the interrupt
+ * adds to it, and the thread takes it as a whole; zero means the thread
+ * has nothing to do and sleeps.
  */
 static struct spinlock event_lock;
 static struct wait_queue event_queue;
@@ -166,12 +171,18 @@ drv_acpi_attach(void)
 		return error;
 	}
 
-	/* Installs the handlers of the spaces the kernel reaches directly. */
+	/* Installs the handler of system memory, which the kernel maps directly. */
 	error = drv_acpi_region_install(DRV_ACPI_SPACE_SYSTEM_MEMORY, memory_handler, NULL);
-	if (error == 0)
-		error = drv_acpi_region_install(DRV_ACPI_SPACE_SYSTEM_IO, io_handler, NULL);
-	if (error == 0)
-		error = drv_acpi_region_install(DRV_ACPI_SPACE_PCI_CONFIG, pci_handler, NULL);
+	if (error != 0)
+		return error;
+
+	/* Installs the handler of system I/O ports. */
+	error = drv_acpi_region_install(DRV_ACPI_SPACE_SYSTEM_IO, io_handler, NULL);
+	if (error != 0)
+		return error;
+
+	/* Installs the handler of PCI configuration space, through the PCI driver. */
+	error = drv_acpi_region_install(DRV_ACPI_SPACE_PCI_CONFIG, pci_handler, NULL);
 	if (error != 0)
 		return error;
 
@@ -182,21 +193,28 @@ drv_acpi_attach(void)
 		return error;
 	}
 
-	/* Prepares the objects, tells firmware the spaces are there, and runs _INI. */
+	/* Prepares the objects that need it before any method runs; the rest of the namespace stays usable. */
 	error = drv_acpi_initialize_objects();
 	if (error != 0)
 		kern_logf("acpi: object preparation failed (error %d)\n", error);
+
+	/* Starts the ECDT's EC, so that its space is there when _REG and _INI run. */
 	start_ecdt();
+
+	/* Tells firmware with _REG that the spaces are there. */
 	error = drv_acpi_region_connect_all();
 	if (error != 0)
 		kern_logf("acpi: _REG failed (error %d)\n", error);
+
+	/* Runs _STA and _INI on the devices. */
 	drv_acpi_initialize_devices();
 
-	/* Starts the SCI and its thread, then the Embedded Controller. */
+	/* Starts the SCI and its thread; without them there are no events. */
 	error = start_events();
-	if (error != 0)
+	if (error != 0) {
 		kern_logf("acpi: no ACPI events (error %d)\n", error);
-	if (error == 0) {
+	} else {
+		/* Shares the FACS Global Lock with firmware, which needs the SCI's Global Lock event. */
 		error = start_global_lock();
 		if (error != 0)
 			kern_logf("acpi: the FACS Global Lock is not shared (error %d)\n", error);
@@ -212,7 +230,7 @@ drv_acpi_attach(void)
 	if (error != 0)
 		kern_logf("acpi: /dev/acpi was not published (error %d)\n", error);
 
-	/* Succeeded. */
+	/* Succeeded: the namespace is loaded and drivers may evaluate it. */
 	kern_logf("acpi: %u tables listed, namespace ready\n", firmware.count);
 	return 0;
 }
@@ -226,10 +244,12 @@ drv_acpi_os_alloc(
 {
 	void *pointer;
 
-	/* Allocates it. */
+	/* Takes the memory from the kernel heap. */
 	pointer = kern_malloc(size);
+	if (pointer == NULL)
+		return NULL;
 
-	/* Reports the memory, or NULL. */
+	/* Succeeded: the interpreter owns size bytes until it frees them. */
 	return pointer;
 }
 
@@ -244,7 +264,7 @@ drv_acpi_os_free(
 	if (pointer == NULL)
 		return;
 
-	/* Frees it. */
+	/* Gives the memory back to the kernel heap. */
 	kern_free(pointer);
 }
 
@@ -264,7 +284,7 @@ drv_acpi_os_log(
 	kern_vsnprintf(line, sizeof(line), format, arguments);
 	va_end(arguments);
 
-	/* Writes it. */
+	/* Writes the formatted line to the kernel log. */
 	kern_logf("%s", line);
 }
 
@@ -274,7 +294,7 @@ drv_acpi_os_log(
 size_t
 drv_acpi_os_stack_budget(void)
 {
-	/* Reports the budget. */
+	/* Reports the bytes of stack the interpreter may use below its entry. */
 	return STACK_BUDGET;
 }
 
@@ -286,10 +306,14 @@ drv_acpi_os_sleep(
 	uint64_t milliseconds)
 {
 	uint64_t ticks;
+	uint64_t deadline;
 
-	/* Sleeps until the tick the time ends at. */
+	/* Finds the tick the time ends at. */
 	ticks = kern_ms_to_ticks(milliseconds);
-	sched_sleep(sched_ticks() + ticks);
+	deadline = sched_ticks() + ticks;
+
+	/* Sleeps until that tick. */
+	sched_sleep(deadline);
 }
 
 /*
@@ -331,7 +355,7 @@ drv_acpi_os_timer(void)
 	units = (counter / frequency) * 10000000ULL;
 	units += ((counter % frequency) * 10000000ULL) / frequency;
 
-	/* Reports the time. */
+	/* Succeeded: reports the time in 100-nanosecond units. */
 	return units;
 }
 
@@ -341,7 +365,7 @@ drv_acpi_os_timer(void)
 void
 drv_acpi_os_lock(void)
 {
-	/* Takes it, sleeping while another thread runs AML. */
+	/* Takes the interpreter lock, sleeping while another thread runs AML. */
 	mutex_lock(&interpreter_lock);
 }
 
@@ -351,7 +375,7 @@ drv_acpi_os_lock(void)
 void
 drv_acpi_os_unlock(void)
 {
-	/* Lets it go. */
+	/* Lets another thread run AML. */
 	mutex_unlock(&interpreter_lock);
 }
 
@@ -363,7 +387,7 @@ drv_acpi_os_lock_owned(void)
 {
 	int owned;
 
-	/* Asks the mutex. */
+	/* Asks the mutex whether this thread holds it. */
 	owned = mutex_owned(&interpreter_lock);
 	if (owned)
 		return true;
@@ -389,19 +413,20 @@ drv_acpi_os_port_read(
 	switch (width) {
 	case 8:
 		*value = hal_io_inp8((uint16_t)port);
-		return 0;
+		break;
 	case 16:
 		*value = hal_io_inp16((uint16_t)port);
-		return 0;
+		break;
 	case 32:
 		*value = hal_io_inp32((uint16_t)port);
-		return 0;
-	default:
 		break;
+	default:
+		/* Refuses another width. */
+		return EINVAL;
 	}
 
-	/* Refuses another width. */
-	return EINVAL;
+	/* Succeeded: value holds what the port gave. */
+	return 0;
 }
 
 /*
@@ -421,19 +446,20 @@ drv_acpi_os_port_write(
 	switch (width) {
 	case 8:
 		hal_io_outp8((uint16_t)port, (uint8_t)value);
-		return 0;
+		break;
 	case 16:
 		hal_io_outp16((uint16_t)port, (uint16_t)value);
-		return 0;
+		break;
 	case 32:
 		hal_io_outp32((uint16_t)port, value);
-		return 0;
-	default:
 		break;
+	default:
+		/* Refuses another width. */
+		return EINVAL;
 	}
 
-	/* Refuses another width. */
-	return EINVAL;
+	/* Succeeded: the port has the value. */
+	return 0;
 }
 
 /*
@@ -458,7 +484,7 @@ void
 drv_acpi_os_event_unlock(
 	unsigned long state)
 {
-	/* Lets it go and restores the interrupt state. */
+	/* Lets the event lock go and restores the interrupt state. */
 	spin_unlock_irqrestore(&event_lock, state);
 }
 
@@ -480,7 +506,7 @@ drv_acpi_os_table(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: data and length name the table's bytes. */
 	return 0;
 }
 
@@ -501,10 +527,13 @@ start_events(void)
 	if (error != 0)
 		return error;
 
-	/* Starts the thread that handles the events. */
+	/* Creates the thread that handles the events. */
 	error = kthread_create(event_thread, NULL, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0)
 		return error;
+
+	/* Lets the scheduler run it; a created thread stays new until it is started. */
+	thread_start(thread);
 
 	/* Takes the SCI. */
 	irq = drv_acpi_sci_irq();
@@ -577,11 +606,22 @@ start_global_lock(void)
 	error = hal_space_map_device((hal_physaddr_t)page, size, HAL_SPACE_READ | HAL_SPACE_WRITE, &mapping);
 	if (error != HAL_OK)
 		return EFAULT;
+
+	/* Finds the FACS inside the mapping. */
 	facs = (volatile uint8_t *)mapping + offset;
 
-	/* Refuses a table that is not a FACS. */
-	length = (uint32_t)facs[4] | (uint32_t)facs[5] << 8 | (uint32_t)facs[6] << 16 | (uint32_t)facs[7] << 24;
-	if (facs[0] != 'F' || facs[1] != 'A' || facs[2] != 'C' || facs[3] != 'S' || length < FACS_LOCK_END) {
+	/* Reads the table's length, little-endian. */
+	length = (uint32_t)facs[4];
+	length |= (uint32_t)facs[5] << 8;
+	length |= (uint32_t)facs[6] << 16;
+	length |= (uint32_t)facs[7] << 24;
+
+	/* Refuses a table that is not a FACS, or one too short to hold the lock. */
+	if (facs[0] != 'F' ||
+	    facs[1] != 'A' ||
+	    facs[2] != 'C' ||
+	    facs[3] != 'S' ||
+	    length < FACS_LOCK_END) {
 		(void)hal_space_unmap_device(mapping, size);
 		return EINVAL;
 	}
@@ -593,7 +633,7 @@ start_global_lock(void)
 		return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: Acquire on a Global Lock mutex now takes the lock from firmware too. */
 	return 0;
 }
 
@@ -613,15 +653,20 @@ sci_interrupt(
 	/* Masks what fired; the level SCI goes quiet with it. */
 	pending = drv_acpi_sci_interrupt();
 
-	/* Hands the work to the thread. */
+	/*
+	 * Hands the work to the thread: a nonzero event_work tells it that
+	 * events wait, and the wake ends its sleep.
+	 */
 	if (pending) {
 		state = spin_lock_irqsave(&event_lock);
+
 		event_work++;
 		waitq_wake_all(&event_queue);
+
 		spin_unlock_irqrestore(&event_lock, state);
 	}
 
-	/* Ends the interrupt. */
+	/* Ends the interrupt; the level SCI does not fire again, as its events are masked. */
 	kern_irq_send_eoi(acknowledge);
 }
 
@@ -641,15 +686,19 @@ event_thread(
 
 	/* Sleeps until the SCI records work, then handles it. */
 	for (;;) {
-		/* Waits for work. */
+		/*
+		 * Waits for work, then takes all the work counted so far as a
+		 * whole: zero tells the next SCI to wake the thread again.
+		 */
 		state = spin_lock_irqsave(&event_lock);
+
 		while (event_work == 0) {
 			sequence = waitq_sequence(&event_queue);
 			(void)waitq_sleep(&event_queue, &event_lock, sequence, 0, 0);
 		}
 
-		/* The work counted so far is taken as a whole. */
 		event_work = 0;
+
 		spin_unlock_irqrestore(&event_lock, state);
 
 		/* Logs the first SCI the thread handles. */
@@ -672,7 +721,7 @@ power_button(
 	UNUSED_PARAMETER(event);
 	UNUSED_PARAMETER(argument);
 
-	/* Logs it. */
+	/* Records the press in the kernel log. */
 	kern_logf("acpi: power button\n");
 }
 
@@ -696,8 +745,11 @@ read_physical(
 	/* Copies each page's part of the range. */
 	destination = buffer;
 	while (length != 0) {
+		/* Finds the page the next byte lies in. */
 		page = address & ~(uint64_t)(PAGE_SIZE - 1U);
 		offset = (size_t)(address - page);
+
+		/* Takes the rest of the page, or less when the range ends first. */
 		part = PAGE_SIZE - offset;
 		if (part > length)
 			part = length;
@@ -707,9 +759,13 @@ read_physical(
 		if (error != HAL_OK)
 			return EFAULT;
 
-		/* Copies the part, then lets the mapping go. */
+		/* Copies the part. */
 		kern_memcpy(destination, (const uint8_t *)mapping + offset, part);
-		hal_space_unmap_device(mapping, PAGE_SIZE);
+
+		/* Lets the mapping go; a mapping that will not go only wastes address space. */
+		(void)hal_space_unmap_device(mapping, PAGE_SIZE);
+
+		/* Moves on past the part. */
 		destination += part;
 		address += part;
 		length -= part;
@@ -734,19 +790,27 @@ memory_handler(
 
 	UNUSED_PARAMETER(argument);
 
-	/* An access that crosses a page is made one byte at a time. */
+	/* Finds the pages the first and the last byte lie in. */
 	bytes = access->width / 8U;
 	page = access->address & ~(uint64_t)(PAGE_SIZE - 1U);
 	last_page = (access->address + bytes - 1U) & ~(uint64_t)(PAGE_SIZE - 1U);
+
+	/* An access that crosses a page is made one byte at a time. */
 	if (last_page != page) {
 		error = memory_bytes(access, value);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: every byte of the access moved. */
+		return 0;
 	}
 
 	/* Maps the page. */
 	error = memory_page(page, &virtual_address);
 	if (error != 0)
 		return error;
+
+	/* Finds the access inside the page. */
 	virtual_address += access->address - page;
 
 	/* Makes the access at its width. */
@@ -776,15 +840,16 @@ memory_bytes(
 
 	/* Moves each byte through its own page. */
 	for (index = 0; index < bytes; index++) {
-		address = access->address + index;
-
 		/* Maps the byte's page. */
+		address = access->address + index;
 		error = memory_page(address & ~(uint64_t)(PAGE_SIZE - 1U), &virtual_address);
 		if (error != 0)
 			return error;
+
+		/* Finds the byte inside the page. */
 		virtual_address += address % PAGE_SIZE;
 
-		/* Moves the byte. */
+		/* Moves the byte; a read puts it in its place in the value. */
 		byte = (*value >> (index * 8U)) & 0xffU;
 		memory_move(virtual_address, 8, access->write, &byte);
 		if (!access->write)
@@ -806,6 +871,7 @@ memory_move(
 	/* Chooses the accessor by the width. */
 	switch (width) {
 	case 8:
+		/* Writes or reads one byte. */
 		if (write) {
 			hal_mmio_write8(virtual_address, (uint8_t)*value);
 		} else {
@@ -814,6 +880,7 @@ memory_move(
 
 		break;
 	case 16:
+		/* Writes or reads one word. */
 		if (write) {
 			hal_mmio_write16(virtual_address, (uint16_t)*value);
 		} else {
@@ -822,6 +889,7 @@ memory_move(
 
 		break;
 	case 32:
+		/* Writes or reads one double word. */
 		if (write) {
 			hal_mmio_write32(virtual_address, (uint32_t)*value);
 		} else {
@@ -830,6 +898,7 @@ memory_move(
 
 		break;
 	default:
+		/* Writes or reads one quad word, the only width left. */
 		if (write) {
 			hal_mmio_write64(virtual_address, *value);
 		} else {
@@ -852,13 +921,17 @@ memory_page(
 	unsigned index;
 	int error;
 
+	/*
+	 * Moves the clock, which stamps each use so that the slot used least
+	 * recently is the one a new page replaces.
+	 */
+	memory_cache_clock++;
+
 	/* Uses a mapping of the page when there is one. */
 	oldest = &memory_cache[0];
-	memory_cache_clock++;
 	for (index = 0; index < MEMORY_CACHE_SLOTS; index++) {
+		/* Reports the cached page, stamped as used now. */
 		slot = &memory_cache[index];
-
-		/* Reports the cached page. */
 		if (slot->virtual_address != NULL && slot->page == page) {
 			slot->used = memory_cache_clock;
 			*virtual_address = slot->virtual_address;
@@ -875,14 +948,16 @@ memory_page(
 	if (error != HAL_OK)
 		return EFAULT;
 
-	/* Lets the oldest mapping go and keeps the new one in its slot. */
+	/* Lets the oldest mapping go; a mapping that will not go only wastes address space. */
 	if (oldest->virtual_address != NULL)
-		hal_space_unmap_device(oldest->virtual_address, PAGE_SIZE);
+		(void)hal_space_unmap_device(oldest->virtual_address, PAGE_SIZE);
+
+	/* Keeps the new mapping in the slot, stamped as used now. */
 	oldest->page = page;
 	oldest->virtual_address = mapping;
 	oldest->used = memory_cache_clock;
 
-	/* Succeeded. */
+	/* Succeeded: the caller reaches the page through the mapping. */
 	*virtual_address = mapping;
 	return 0;
 }
@@ -894,18 +969,23 @@ io_handler(
 	uint64_t *value,
 	void *argument)
 {
+	uint64_t last;
 	uint16_t port;
 
 	UNUSED_PARAMETER(argument);
 
-	/* Refuses a port beyond the 64 KiB space. */
-	if (access->address > 0xffffU)
+	/* Refuses an access whose last byte lies beyond the 64 KiB space, so that no port wraps around. */
+	last = access->address + access->width / 8U - 1U;
+	if (last > 0xffffU)
 		return EFAULT;
+
+	/* Takes the first port. */
 	port = (uint16_t)access->address;
 
 	/* Makes the access at its width; 64 bits are two double words. */
 	switch (access->width) {
 	case 8:
+		/* Writes or reads one byte. */
 		if (access->write) {
 			hal_io_outp8(port, (uint8_t)*value);
 		} else {
@@ -914,6 +994,7 @@ io_handler(
 
 		break;
 	case 16:
+		/* Writes or reads one word. */
 		if (access->write) {
 			hal_io_outp16(port, (uint16_t)*value);
 		} else {
@@ -922,6 +1003,7 @@ io_handler(
 
 		break;
 	case 32:
+		/* Writes or reads one double word. */
 		if (access->write) {
 			hal_io_outp32(port, (uint32_t)*value);
 		} else {
@@ -930,6 +1012,7 @@ io_handler(
 
 		break;
 	default:
+		/* Writes or reads two double words, the lower first. */
 		if (access->write) {
 			hal_io_outp32(port, (uint32_t)*value);
 			hal_io_outp32((uint16_t)(port + 4U), (uint32_t)(*value >> 32));
@@ -941,7 +1024,7 @@ io_handler(
 		break;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: a read leaves the ports' value in value. */
 	return 0;
 }
 
@@ -989,7 +1072,7 @@ pci_handler(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: a read leaves the configuration space's value in value. */
 	return 0;
 }
 
@@ -1016,7 +1099,9 @@ pci_absent(
 	/* Logs a function once, not once per access of a region read in a loop. */
 	if (function != pci_absent_logged) {
 		kern_logf("acpi: PCI_Config region of absent function %x:%x.%x reads as all ones\n",
-			  access->pci_bus, access->pci_device, access->pci_function);
+			  access->pci_bus,
+			  access->pci_device,
+			  access->pci_function);
 		pci_absent_logged = function;
 	}
 
@@ -1073,7 +1158,7 @@ pci_read(
 	if (error != 0)
 		return EIO;
 
-	/* Succeeded. */
+	/* Succeeded: value holds the configuration space's bits. */
 	return 0;
 }
 
@@ -1110,6 +1195,6 @@ pci_write(
 	if (error != 0)
 		return EIO;
 
-	/* Succeeded. */
+	/* Succeeded: the configuration space has the value. */
 	return 0;
 }

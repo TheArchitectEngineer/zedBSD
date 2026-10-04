@@ -108,3 +108,14 @@ Notify を受けて動く driver（電源の状態、蓋、ボタンの動作）
 - 確認（host）: `make -C plan/ws049/tests`（ASan・UBSan）、`make -C plan/ws049/tests kernel-check`（warning 0）、`run-asl.py`（18 passed）、`sh -n guest-events.sh`。
 - T1 の再試験: 依頼の手順は上の「T1 への依頼」の 1〜5 と同じ（この修正の commit を含む main の image で）。追加の合格の目安: `state:` が `SCI_EN 1`、
   `irq-after-button.txt` の IRQ 9 の数が `irq-boot.txt` より増える。
+
+## T1-088 の結果と 2 つ目の原因（2026-10-04、P1 generation16）
+
+- T1-088（main 0f7d70c）: guest-events FAIL（2 回とも同じ）、guest-compare PASS、boot-test PASS。`state: ACPI: SCI_EN 1, PM1_EN 0x20, 2 runtime GPEs`、
+  I/O APIC の pin 9 は unmask（`vec=233 active-hi level`）、QMP の `info irq` の IRQ 9 は boot 0 → button の後 1 → GPE の後 2（QEMU は SCI を上げ、
+  CPU に届いている）。しかし `acpi: first SCI handled` は 0。証拠: `/home/awe/zedBSD-worktrees/t1/build/t1-088-events-try1/`。
+- **原因（code を読んで特定）**: `start_events()` は `kthread_create(event_thread, …)` の後に `thread_start()` を呼んでいなかった。`kthread_create()` は
+  thread を `THREAD_NEW` で作るだけで、他の呼び手（buf.c の flusher、vm.c の pageout、process.c の reaper）は全て `thread_start()` を呼ぶ。event thread が
+  一度も走らないので、SCI の割り込みの部分（mask と記録）は動いても、handler・AML・`first SCI` の log は走らなかった（pin 9 が mask されずに残るのも、
+  handler が呼ばれて EOI まで済んだことと合う）。
+- **修正**: `start_events()` で `kthread_create()` の直後に `thread_start(thread)`。
