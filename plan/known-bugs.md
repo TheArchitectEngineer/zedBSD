@@ -44,7 +44,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-173](bugs/BUG-173.md) | sh の履歴の長い日本語の行で表示が崩れ prompt が消える | reproduced（実機） / tracking | UAT 2026-10-04 | sh の行の編集の全角の幅。host で再現可（[ticket](bugs/BUG-173.md)） |
 | [BUG-174](bugs/BUG-174.md) | WiFi の address に SSH で接続できない | reproduced（実機） / tracking | UAT 2026-10-04 | WS005・WS033。実機が要る（[ticket](bugs/BUG-174.md)） |
 | [BUG-175](bugs/BUG-175.md) | Terminal を多数開くと errno=8（ENOSPC）で起動しない | reproduced（実機） / tracking | UAT 2026-10-04 | BUG-120 の関連。QEMU で再現を試す（[ticket](bugs/BUG-175.md)） |
-| [BUG-177](bugs/BUG-177.md) | Files の検索バーで日本語の IME が使えない | reproduced（実機） / tracking | UAT-3 2026-10-04 | WS127（Files）・WS095（IME）（[ticket](bugs/BUG-177.md)） |
+| [BUG-177](bugs/BUG-177.md) | Files の検索バーで日本語の IME が使えない | reproduced（実機） / resolved（2026-10-05、QEMU T1-138、実機は UAT） | UAT-3 2026-10-04 | WS127（Files）・WS095（IME）（[ticket](bugs/BUG-177.md)） |
 | [BUG-178](bugs/BUG-178.md) | title bar のタッチのドラッグで、押した位置と動かし始めの位置がずれると窓が動かない | reproduced（実機） / tracking | UAT-3 2026-10-04 | WS099（title bar のドラッグ、ws099-p030 の続き）・BUG-166 の仕様（[ticket](bugs/BUG-178.md)） |
 | [BUG-179](bugs/BUG-179.md) | title bar のダブルクリックで最大化まで約 0.8 秒かかる（目標 0.1 秒、少なくとも 0.2 秒） | reproduced（実機） / tracking | UAT-3 2026-10-04 | WS099（compositor の窓の操作）（[ticket](bugs/BUG-179.md)） |
 | [BUG-180](bugs/BUG-180.md) | 最大化した窓を上部のバーからドラッグで外すと、いったん外れた後に一度最大の大きさに戻ってから小さくなる | reproduced（実機） / tracking | UAT-3 2026-10-04 | WS099（compositor の窓の操作）（[ticket](bugs/BUG-180.md)） |

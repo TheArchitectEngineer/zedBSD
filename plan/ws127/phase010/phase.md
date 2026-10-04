@@ -2,7 +2,7 @@
 
 # ws127-p010: Files の directory の名前（breadcrumb）をタップ・クリックすると path を入力でき、約 1 秒後に path の候補の dropdown を出す
 
-Status: in-progress（q705-i01、P2 generation14、2026-10-05。範囲 1・2・4 を実装・host 試験済み、QEMU（T1）待ち。範囲 3（IME）は BUG-177 の保留に従い未実施）
+Status: cleared（2026-10-05 Q1: 範囲 1・2・4 は T1-117 の files-regress（files-p010）と ws127 の files-p010.sh で PASS、範囲 3（IME）は BUG-177 の直し（b67a3854）で T1-138 の bug177-guest.sh PASS（path の欄も同じ compositor の text field））。以前: in-progress（q705-i01、P2 generation14、2026-10-05。範囲 1・2・4 を実装・host 試験済み、QEMU（T1）待ち。範囲 3（IME）は BUG-177 の保留に従い未実施）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: q705-i01（P2 generation14）
@@ -35,3 +35,7 @@ Queue: q705-i01（P2 generation14）
 - **確認**: zedBSD の `bin/files`・`bin/wayland`・`libkeiland.so` warning 0、Linux warning 0、FreeBSD は方針で不要、OS の境界の checker PASS。host: `plan/tools/files/host-p014.sh` に case 8（最後の段の click で focus=4、1 秒前は候補なし・後に Pictures/・Projects/、`~/D` で `~/Desktop/` 等、無い folder で 0）、PASS。host-p009・host-p013 PASS。files-render に `suggestions` の命令を足した。
 - **試験の依頼（T1、Q1 経由）**: `plan/ws127/tests/files-p010.sh`（files の image、最後の段の click → 欄、`/tmp/fhome/P` で 2 件の候補と dropdown の PNG、↓Enter で Pictures/、click で 2 行目の Documents/、Esc の 2 段）。
 - **Q1 に依頼**: WS070 の `plan/ws070/titlebar-design.md` の request の表に 16 `set_suggestions`（version 4）と §9 の keyboard（↑↓・Enter・Esc の順）を足す（他の WS の文書）。
+
+## Q1 の判定（2026-10-05）
+
+範囲 1・2・4 は T1-117 の files-regress（files-p010）と ws127 の files-p010.sh で PASS、範囲 3（IME）は BUG-177 の直し（b67a3854）で T1-138 の bug177-guest.sh PASS（path の欄も同じ compositor の text field）。**cleared**。
