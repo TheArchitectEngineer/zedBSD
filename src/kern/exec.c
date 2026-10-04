@@ -1061,7 +1061,12 @@ exec_target_resolve(
 			goto fail;
 		}
 
+		/* Execute permission, and no file (or interpreter) of a noexec mount (ws132-p004). */
 		error = vfs_access(target->file->f_inode, cred, X_OK);
+		if (error == 0 &&
+		    target->file->f_path.p_mount != NULL &&
+		    (target->file->f_path.p_mount->m_flags & MOUNT_NOEXEC) != 0U)
+			error = EACCES;
 		if (error != 0)
 			goto fail;
 		error = inode_getattr(target->file->f_inode, &target->status);
@@ -1071,12 +1076,6 @@ exec_target_resolve(
 			target->mount_flags = target->file->f_path.p_mount->m_flags;
 		else
 			target->mount_flags = 0;
-
-		/* A file (or interpreter) on a noexec mount is not executed (ws132-p004). */
-		if ((target->mount_flags & MOUNT_NOEXEC) != 0U) {
-			error = EACCES;
-			goto fail;
-		}
 
 		/* Reads the head of the file and looks for a #! line. */
 		count = file_content_lease_pread(&target->lease, header,
