@@ -49,7 +49,7 @@ push・GitHub release の公開はユーザーの指示で行う。
 | [p001](phase001/phase.md) | release の定義（版の付け方の案、配布物、CI の release の設計、文書の置き場所、凍結と回帰と実機の日程の案）。ユーザーへの質問を出す | cleared（2026-10-05 Q1、回答は release.md §9） | なし | 2h |
 | [p002](phase002/phase.md) | license の一覧（image の全ての component、本文の収集、生成の script、audit） | planned | なし（最後に p007 で再生成） | 3〜4h |
 | [p003](phase003/phase.md) | 版の一つの源（Makefile の変数 → uname・起動の表示・`/etc/os-release`、About は WS089 に依頼） | in-progress（q711、P2。`VERSION`・os-release・uname・起動の表示、host 済み、QEMU は T1 待ち） | p001 とユーザーの版の名前 | 2h |
-| [p004](phase004/phase.md) | release の image の config（fg019 の成果、Settings・audiod 等、AX211 の扱い）と CI の release の job | planned（q714、2026-10-05。BUG-134 は resolved、AX211 は y） | p001 | 3h |
+| [p004](phase004/phase.md) | release の image の config（fg019 の成果、Settings・audiod 等、AX211 の扱い）と CI の release の job | in-progress（q714、P2。config・release.yml・root の lock・local 済み、QEMU は T1 待ち） | p001 | 3h |
 | [p005](phase005/phase.md) | release notes・既知の問題の一覧・利用の手引き（USB への書き方、対象 platform、WiFi の adapter） | planning（機能の一覧は各 WS の成果を待つ、10/13 頃。今書ける手引きと既知の問題の下書きは p013 に分けた） | p001、各 WS の成果、p013 | 1〜2h |
 | [p006](phase006/phase.md) | 凍結した release candidate で最終回帰（QEMU・host の試験・5330 の passthrough の smoke） | planning | p003〜p005、凍結の日（ユーザー） | 3h |
 | [p013](phase013/phase.md) | 利用の手引き（USB への書き方・BIOS・最初の login・Wi-Fi・U3 の password と sshd）と、Bug Board からの既知の問題の最初の一覧の下書き（docs/release/、英語、U8・U13）。p005 から分けた | planned（q715、2026-10-05） | p001 | 1.5h |
