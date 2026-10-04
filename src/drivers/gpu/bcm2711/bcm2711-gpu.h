@@ -20,14 +20,31 @@
 #include <stdint.h>
 
 /*
+ * The screen the firmware lit before the kernel started.
+ *
+ * The platform fills it from its boot handoff; physical is an ARM physical
+ * address (the firmware's bus address without the VideoCore alias bits).  A
+ * zero size means the firmware lit no screen.
+ */
+struct drv_bcm2711_boot_screen {
+	uint64_t physical;
+	uint64_t size;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	uint32_t format;
+};
+
+/*
  * Finds the display path and the V3D engine in the device tree and prepares
  * them.
  *
  * fdt_phys is the physical address of the device tree the firmware handed
- * over.  A board or emulator without the hardware, and a boot that turned the
- * driver off, leave the machine without it; the boot goes on either way.
+ * over, and screen describes the firmware's screen.  A board or emulator
+ * without the hardware, and a boot that turned the driver off, leave the
+ * machine without it; the boot goes on either way.
  * Returns 0 when at least one part was prepared, ENODEV when none was.
  */
-int drv_bcm2711_gpu_attach(uint64_t fdt_phys);
+int drv_bcm2711_gpu_attach(uint64_t fdt_phys, const struct drv_bcm2711_boot_screen *screen);
 
 #endif

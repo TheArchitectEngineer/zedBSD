@@ -21,6 +21,8 @@
 
 #include <drivers/generic/fdt.h>
 
+#include "drivers/gpu/bcm2711/bcm2711-gpu.h"
+
 /* The stage-mark family of the display path, and its boot parameter prefix. */
 #define BCM2711_FAMILY_DISPLAY		"rpi4gpu"
 
@@ -41,6 +43,54 @@
 
 /* The interrupt number that names no interrupt. */
 #define BCM2711_NO_IRQ			(-1)
+
+/* The compositor's output channels. */
+#define BCM2711_CHANNEL_COUNT		3U
+
+/* The channel number that stands for "no channel feeds this output". */
+#define BCM2711_NO_CHANNEL		3U
+
+/* The words of the compositor's display list memory. */
+#define BCM2711_LIST_WORDS		4096U
+
+/* The most planes of one display list the readout keeps. */
+#define BCM2711_LIST_PLANES		8U
+
+/*
+ * One plane of a display list, as the readout decoded it.
+ *
+ * Only the words of an unscaled plane are decoded; scaled says the plane
+ * carries scaling words, which the readout does not interpret.
+ */
+struct bcm2711_list_plane {
+	uint32_t control;
+	uint32_t words;
+	uint32_t format;
+	uint32_t order;
+	bool scaled;
+	uint32_t x;
+	uint32_t y;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pointer;
+	uint32_t pitch;
+};
+
+/*
+ * A whole display list, as the readout decoded it.
+ *
+ * start is the word the list begins at and end the word of its end marker;
+ * plane_count may exceed BCM2711_LIST_PLANES, of which only the first are
+ * kept.  valid is false when the walk met a malformed word or ran off the
+ * end of the list memory.
+ */
+struct bcm2711_list {
+	bool valid;
+	uint32_t start;
+	uint32_t end;
+	uint32_t plane_count;
+	struct bcm2711_list_plane planes[BCM2711_LIST_PLANES];
+};
 
 /*
  * One register window of a device.
@@ -84,6 +134,21 @@ struct bcm2711_display {
 	struct bcm2711_irq_line timing_irq[BCM2711_TIMING_COUNT];
 	uint64_t hdmi_physical[BCM2711_HDMI_COUNT];
 	uint32_t hdmi_window_count[BCM2711_HDMI_COUNT];
+
+	/*
+	 * What stage N0 read of the firmware's display, all zero before it.
+	 * port is the HDMI port the firmware's screen goes out of, channel the
+	 * compositor channel that feeds it (BCM2711_NO_CHANNEL when none), and
+	 * list the decoded display list the channel shows now.  screen_matches
+	 * is set when that list shows the firmware's framebuffer one to one.
+	 */
+	bool readout_done;
+	struct drv_bcm2711_boot_screen screen;
+	uint32_t port_channel[BCM2711_HDMI_COUNT];
+	uint32_t port;
+	uint32_t channel;
+	struct bcm2711_list list;
+	bool screen_matches;
 };
 
 /*
@@ -117,11 +182,17 @@ uint32_t bcm2711_fdt_reg_count(const struct drv_fdt *fdt, uint32_t node);
 int bcm2711_map_window(struct bcm2711_window *window);
 int bcm2711_irq_install(struct bcm2711_irq_line *line);
 
-/* The firmware's clocks, read through the mailbox (clock.c). */
+/* Questions to the firmware through the mailbox (firmware.c). */
+int bcm2711_firmware_get(uint32_t tag, uint32_t *values, unsigned request_count, unsigned answer_words);
+int bcm2711_clock_hz(uint32_t clock_id, uint32_t *hz);
 void bcm2711_clock_report(const char *family, const char *name, uint32_t clock_id);
+
+/* The decoding of a compositor display list (list.c). */
+void bcm2711_list_decode(const volatile uint32_t *memory, uint32_t start, struct bcm2711_list *list);
 
 /* The stages of the two parts (display.c, v3d.c). */
 int bcm2711_display_discover(const struct drv_fdt *fdt, struct bcm2711_display *display);
+int bcm2711_display_readout(struct bcm2711_display *display, const struct drv_bcm2711_boot_screen *screen);
 int bcm2711_v3d_discover(const struct drv_fdt *fdt, struct bcm2711_v3d *v3d);
 
 #endif

@@ -40,6 +40,9 @@ kern_platform_init(
 {
 	const struct rpi4_boot_handoff *rpi4;
 	struct kern_boot_device *device;
+#if CONFIG_DRIVER_BCM2711_GPU
+	struct drv_bcm2711_boot_screen screen;
+#endif
 	unsigned i;
 
 	rpi4 = (const void *)handoff;
@@ -82,11 +85,19 @@ kern_platform_init(
 	(void)drv_rpi4_pcie_init(rpi4->fdt_phys);
 
 #if CONFIG_DRIVER_BCM2711_GPU
+	/* Describes the firmware's screen to the graphics driver. */
+	screen.physical = rpi4->framebuffer_phys;
+	screen.size = rpi4->framebuffer_size;
+	screen.width = rpi4->framebuffer_width;
+	screen.height = rpi4->framebuffer_height;
+	screen.pitch = rpi4->framebuffer_pitch;
+	screen.format = rpi4->framebuffer_format;
+
 	/*
 	 * Finds the display path and the V3D engine.  A board or emulator
 	 * without them, or a boot with rpi4gpu.off=1, goes on without them.
 	 */
-	(void)drv_bcm2711_gpu_attach(rpi4->fdt_phys);
+	(void)drv_bcm2711_gpu_attach(rpi4->fdt_phys, &screen);
 #endif
 
 	/* Publishes the SD card as the boot device. */

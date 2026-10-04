@@ -45,6 +45,8 @@
 
 ## 2. 方針の要点
 
+0. **scanout の規則（2026-10-04 ユーザー「GPUドライバはGOPの出力先以外に、scanoutを開始しない.というルールを覚えておいてください。」、Guardrail）**: nvrtx は UEFI の GOP の出力先（GOP が点けた head と connector）以外に scanout を始めない。P8 の自前の surface（判断の項目 7）は同じ出力先に限る。別の connector への出力は compositor の明示の指示がある時だけ。
+   補い（2026-10-04 ユーザー「GPUドライバは、GOPの出力先であれば、scanoutできるようにどのインタフェースでも初期化を試みる、もまた真です。HDMIにせよDPにせよeDPにせよ。」）: GOP の出力先が DP・HDMI・DVI・USB-C（DP alt mode）のどれでも、その出力先で scanout できるよう初期化を試みる（P8 で RM に GOP の head・SOR・connector の種類を聞き、その種類の道を使う）。対応できない場合は log に出して GOP の画面を保つ（GSP の起動で GOP の画面が失われる場合は、その出力先の対応が P8 にあることを GSP の起動の前提にする）。
 1. **GSP-RM の道だけを作る**（判断の項目 3）。Turing は GSP 無しでも nouveau で動くが、GSP 無しの道は clock の管理（reclocking）を持たない見込み（推論、未確認）なので、GSP の道を取る。nouveau で GSP が必須なのは GA100・Ada・Hopper・Blackwell（GA10x と Turing は任意、7 節の表）。**Ampere・Ada は同じ booter 型の起動**（SEC2 の booter と VBIOS の FWSEC）なので Turing の道の延長になるが、**Blackwell（と範囲の外の Hopper）は別の起動の仕組み**（FMC 型の firmware）で、Turing の P1・P2 の段を作り直す（7 節）。
 2. **firmware の版は 570.144 に固定**（判断の項目 4）。RPC の struct は版ごとに変わるので、版を混ぜない。struct の定義は open-gpu-kernel-modules 570.144（MIT）から取る。
 3. **WPR2 を張る前に、失敗しうる準備を全部済ませる**（H4）。P1c（FWSEC-FRTS）の前に、firmware の file の読み込みと検査（大きさ・header・ELF の section、`gsp-570.144.bin` は約 28.5 MB）、GSP に渡す DMA の memory の確保（firmware の page・page table・args・log・queue）、FWSEC-SB の ucode の取り出し、WPR2 の配置の計算を終える。準備のどれかが失敗したら hardware に書かずに止まる。firmware は `/lib/firmware` から読むので、**GSP の起動は root の mount の後に非同期**で行う（attach の時は N0・N1 だけ）。
@@ -227,17 +229,17 @@ zedBSD の libvulkan（`userland/desktop/libvulkan/`）は Venus の protocol �
 
 ## 11. 判断の項目
 
-**2026-10-04 ユーザーの回答（1 つずつのクリック、途中）**: 1 Turing（TU104/TU106）、2 **取り込まず自分で書く**（MIT の file も code・定義を取り込まず、WS141 と同じく事実を自分の言葉で、temp・改名・監査）、3 GSP の道だけ、4 570.144 に固定。5〜18 は未回答（利用枠のため中断）。
+**2026-10-04 ユーザーの決定（項目 1〜4）**: 1 Turing（TU104・TU106）で進める。2 **MIT の定義も取り込まず自分で書く**（案と違う。WS141 と同じく、事実を自分の言葉で作業の文書（temp）に書き、定数は一括で独自の名前に改名し、WS の最後に license と類似を監査する。MIT の file も出典の事実として読むだけ）。3 GSP の道だけ。4 570.144 に固定。5〜18 は未回答（Q1 がユーザーに聞く）。
 
 | # | 問い | 案・既定 |
 | --- | --- | --- |
 | 1 | 最初の対象の世代と chip: Turing の TU106（RTX 2070）でよいか。実機が RTX 2070 SUPER（TU104）なら同じ手順で進めてよいか | Turing。p002 で boot0 を読んで確かめ、TU104 でも進める |
-| 2 | nouveau・open-gpu-kernel-modules・open-gpu-doc が大部分 MIT であることを受けて、MIT の定義（class・ctrl・RPC の struct、register）を出典付きで取り込んでよいか。Guardrail の WS037 の方式（作業の文書は temp、定数は一括で改名、最後に類似の監査）は維持する。表記の無い file と GPL の file・部分は取り込まない | MIT の file だけを出典にし、表記の無い file は読むだけ。取り込んだ file は i915 の前例（`src/drivers/gpu/i915/intel/commands.h`: SPDX MIT・元の著作権表示・変更の注記・出典の hash）の形にする |
+| 2 | **決定: 取り込まず自分で書く（上）**。nouveau・open-gpu-kernel-modules・open-gpu-doc が大部分 MIT であることを受けて、MIT の定義（class・ctrl・RPC の struct、register）を出典付きで取り込んでよいか。Guardrail の WS037 の方式（作業の文書は temp、定数は一括で改名、最後に類似の監査）は維持する。表記の無い file と GPL の file・部分は取り込まない | MIT の file だけを出典にし、表記の無い file は読むだけ。取り込んだ file は i915 の前例（`src/drivers/gpu/i915/intel/commands.h`: SPDX MIT・元の著作権表示・変更の注記・出典の hash）の形にする |
 | 3 | GSP-RM の道だけを作り、Turing の GSP 無しの道は作らない | GSP の道だけ（clock を上げられ、Ampere・Ada と同じ booter 型の道） |
 | 4 | GSP の firmware を 570.144 に固定する（535.113.01 は扱わない） | 570.144 |
 | 5 | GSP の firmware を既定 off の firmware の package（`userland/firmware/` の規約、`/lib/firmware` へ、LICENCE.nvidia・WHENCE・manifest 付き）にしてよいか（再配布の条件: OSI の open source の OS、binary を変えない、license の写しを添える） | そうする（zedBSD は Zlib で OSI の license） |
 | 6 | 試験の方式（A: USB から素で起動、B: VFIO）と、B で guest に emulated な display を付けて段の印を撮る形でよいか。RTX の出力の撮り方。方式 A で GSP の起動が止まった時の証拠の残し方 | B を主に、N1・text console の切り離し・P8 は A で。RTX の出力はユーザーの写真か capture。A の証拠は scratch の register の段の番号を次の起動で読む案 |
-| 7 | display: GOP の画面は GSP の起動で消えうる。消える前提で、P8 で RM の display を使い自前の surface に出す形でよいか（GOP の timing は RM と ARMED の register から読む） | そうする |
+| 7 | display: GOP の画面は GSP の起動で消えうる。消える前提で、P8 で RM の display を使い自前の surface に出す形でよいか（GOP の timing は RM と ARMED の register から読む）。出力先は GOP の出力先に限る（2 節の 0 の規則） | そうする |
 | 8 | shader の compiler（SPIR-V → SM75）は別の WS にするか（p008） | 別の WS（i915 の WS031 と同じ形）を提案 |
 | 9 | session ごとの隔離（`isolate`）を提供する条件 | 資源を全部 device が保持し、channel の無効化と preempt を RM で確かめられた時だけ成功、close・destroy は RPC を出さない（8.3）。P6 の後 |
 | 10 | suspend・resume、圧縮、MST、HDMI の音は範囲の外とし、後の Phase にする | そうする |

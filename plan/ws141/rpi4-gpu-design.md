@@ -57,6 +57,8 @@ zedBSD は firmware の DTB（`vendor/raspberrypi-firmware`、commit `3d301dd924
 
 ## 2. 方針の要点
 
+0. **scanout の規則（2026-10-04 ユーザー「GPUドライバはGOPの出力先以外に、scanoutを開始しない.というルールを覚えておいてください。」、Guardrail）**: driver は firmware の framebuffer の出力先（firmware が mode set した HDMI0 か HDMI1）以外に、自分の判断で scanout を始めない。N1 の引き継ぎはこの出力先の上で行う。P4 の full mode set と別の port への出力は、Keiland（compositor）の明示の指示がある時だけ。
+   補い（2026-10-04 ユーザー「GPUドライバは、GOPの出力先であれば、scanoutできるようにどのインタフェースでも初期化を試みる、もまた真です。HDMIにせよDPにせよeDPにせよ。」）: firmware の出力先が HDMI0 でも HDMI1 でも、その出力先で scanout できるよう初期化を試みる（N0 で出力先を読み、その port の pixelvalve・channel を使う）。対応できない場合は log に出して firmware の画面を保つ。
 1. **firmware の画面を消さずに引き継ぐ**（Linux とは違う道）。Linux の vc4 は firmware の画面を読み込まず、HVS の出力の切り替えを外し HDMI を reset してから一から mode set する。zedBSD は firmware の display をまず**読むだけ**で調べ、次に firmware の framebuffer を指す自前の display list に差し替え、すぐに firmware に display の終了を通知する（N2）。**N2 より前に firmware の持つ hardware に書くのは、N1 の display list と「次の list」の register だけ**。pixelvalve・HDMI には mode を変える段（P4）まで書かない（P1 の vblank の割り込みは N2 の後）。
 2. **display と V3D は別の zedBSD の GPU device にする**（判断の項目 11）。V3D の hang と reset が display の device の fault にならないようにする。display の device は display の役、V3D の device は render の役で、互いに companion を指す（`include/uapi/gpu-scanout.h` の役と companion）。
 3. **V3D は display と独立に進める**。V3D の段（V0〜V10）は display に触らないので、firmware の画面の上に印を出しながら debug できる。p003（display）と p004（V3D）は並行できる。V3D の出力を display に載せるのは p005。
