@@ -5,7 +5,7 @@
 Active Queues: なし（2026-10-04 全サブエージェントをラップアップ）。次は 17 時以降に下の「2026-10-04 17 時以降の予定」を開始。
 Status: active
 Main executor / plan writer: Q1（単一 Claude Code セッション、[protocol](agents/protocol.md)）。サブエージェント P1〜P8、N=0。
-Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q691（q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
+Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q692（q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
 
 
 ## 2026-10-04 17 時以降の予定（承認済み・未開始）
@@ -37,6 +37,12 @@ Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q58
 | q688 / q688-i01 | 未定 | [BUG-171](bugs/BUG-171.md)・[BUG-176](bugs/BUG-176.md)・[BUG-157](bugs/BUG-157.md) | 小さな UI の束: opaque が不透明にならない、起動の直後の network の表示、間違えた鍵の文言 | なし | pending |
 | q689 / q689-i01 | 未定 | [BUG-166](bugs/BUG-166.md)・[BUG-167](bugs/BUG-167.md)（WS099・WS081） | タッチパッドの窓のドラッグと押し込み | **タッチパッドの操作の仕様のユーザーの決定**、q677（DSDT）の後 | pending |
 | q690 / q690-i01 | 未定 | [BUG-172](bugs/BUG-172.md)・[BUG-174](bugs/BUG-174.md) | key のリピートの不安定、WiFi の address への SSH（実機が要る調べ） | 実機の日 | pending |
+
+**流れ C（完全に独立）**: 2026-10-04 user「完全に独立した作業として、Raspberry Pi 4のグラフィックドライバを作成します。…これは独立したWSで、17時以降に着手します。スケジューリングと、WSの作成か、既存ならアップデートをお願いします。」
+
+| Queue / attempt | Agent | Phase | Exact scope | 依存 | State |
+| --- | --- | --- | --- | --- | --- |
+| q691 / q691-i01 | kernel-and-driver-designer | [ws141-p001](ws141/phase001/phase.md) | Raspberry Pi 4 の GPU: Linux の vc4・v3d の初期化の順と command の投入の順の文書、正本と license の監査（vc4・v3d は GPL: 事実を自分の言葉で、code は写さない）、我々の interface への対応表、framebuffer の段の印の設計。code は書かない | なし | pending |
 
 依存の図（前提 → 後）: q677 → q678 → {q679・q680 の実装, q681 の実装, q682 の電源の事象}。q679 → q680（実装）。q677 → q689。流れ B の q683〜q688 は依存なし（AML と並走）。
 

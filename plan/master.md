@@ -55,6 +55,7 @@
 - **17 時（2026-10-04）からの予定**（2026-10-04 user「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。そうすると、AMLと併走できる開発項目は、UATで見つかったバグだと思います。スケジューリングだけしてmasterやqueueに記録してください。実行は17時以降に行います。」）。詳細と依存は [queue.md](queue.md) の「2026-10-04 17 時以降の予定」（q677〜q690）。
   - **新規実装の目標: USB-C の DisplayPort Alternate Mode（WS051、WS050 の UCSI の上）**、次に**電源管理（WS052）**。両者は並走し、共通の前提は **WS049（AML）**: q677 ws049-p008（BUG-165 の DSDT）→ q678 ws049-p007（電源ボタン・GPE・EC）。WS132（ベータ1、全部）も同じ前提（q682）。
   - **AML と並走: UAT の Bug**（q683 BUG-170 → q684 BUG-158 → q685 BUG-168・169 → q686 BUG-175 → q687 BUG-173 → q688 BUG-171・176・157 → q689 BUG-166・167（仕様の決めと DSDT の後）→ q690 BUG-172・174（実機））。
+  - **流れ C（完全に独立）: [WS141](ws141/ws.md) Raspberry Pi 4 のグラフィックス**（q691 p001 の文書から）。
   - その次（担当に余裕があれば）: WS129 p003〜p005（release）、ws131-p014 の残り・TQ-1 の残り → p026、WS138・WS139・WS140、WS080 p004。
 <!-- master:focus:end -->
 
@@ -303,6 +304,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS138](ws138/ws.md) | MG006 | 背景の画像を PPM から PNG に（F-071。起動の decode は prefetch の thread へ） | planned（p001 から。判断 U1〜U3・U6〜U8 待ち） | S1 の後（F-071 の契機） |
 | [WS139](ws139/ws.md) | MG006 | desktop の性能の台帳と改善（F-072。開発の host の Venus は lavapipe の CPU、E2 の 5330 の測定は未実施） | planned（p001 から。判断 U2・U3・U5 待ち） | — |
 | [WS140](ws140/ws.md) | MG002 | ld.so の依存・object・handle の上限を動的に（F-070。main は 32・16 のまま） | planned（p001 から。U2・U3 はユーザーの明示の決定が要る。arm64 の sysroot の再 build は Q1 の許可） | — |
+| [WS141](ws141/ws.md) | MG006 | Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI と V3D 4.2）。Linux の vc4・v3d の初期化の順と command の順を先に文書にし、i915 の書き換えを手本に我々の interface へ。framebuffer に段の印。Linux の vc4・v3d は GPL なので code は写さない（2026-10-04 ユーザー） | planned（p001 から、q691） | 独立（他の WS と並走） |
 | [WS116](ws116/ws.md) | MG002 | upstream Qt6の範囲をGTK4移植後に検討し `packages/desktop/qt6`へ移植 | planning | WS115の知見後。旧WS034 p030移管、Queue none |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
