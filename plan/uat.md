@@ -197,3 +197,4 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 追加（ユーザー）: [BUG-186](bugs/BUG-186.md) 鍵の入力欄が Connecting… の間も残る（確定の時点で消す）、[BUG-187](bugs/BUG-187.md) 鍵の誤りで失敗すると他の AP に自動で接続し失敗の表示も出ない（Disconnected にして自動接続しない、失敗を表示）。
 - 追加（ユーザー）: [BUG-188](bugs/BUG-188.md) Settings の AP の一覧でシングルタップでは接続されずダブルタップで接続される（シングルタップで接続すべき）。
 - 要望（ユーザー）: [ws089-p021](ws089/phase021/phase.md) Wi-Fi の画面の自動の scan と Disconnect の icon、[ws089-p022](ws089/phase022/phase.md) Ethernet の頁の設定（compositor 経由、backend が net の command）。
+- 追加（ユーザー）: [BUG-189](bugs/BUG-189.md) WiFi と USB LAN の両方の接続で Active Network が WiFi（USB LAN になるべき、default route が USB LAN かも試験する）。
