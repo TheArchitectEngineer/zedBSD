@@ -168,3 +168,12 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - `usb1: port 10 enumeration failed (3)`。
 - 有線（ue0）は起動の時から挿すと 10.0.30.3 で up（C7 は後から挿した時だけの不具合）。
 | G5 | OK（再現せず） | （ユーザーが AC を抜いた直後に Q1 が SSH で計測、14 時過ぎ）System Monitor の `ZMON FRAME fps=21.5・14.4・22.4`（1 回だけ 14.4、submit_ms 17・callback_ms 56）。5 fps への低下は出ない。`sysctl` に battery・AC の項目が無い（DSDT が読めていないため電源の状態を知らない） | BUG-159（今回は再現せず） |
+| H1 の追加 | 済み | Shut Down の間の log を SSH で連続に取った（`build/uat-logs/1407/shutdown-watch.txt`）: 05:18:15 compositor の正常な終了（`ZWL EXIT error=0`、音量 77 と設定を保存）、05:18:21 i915 の display の lease を返す、05:18:23 process は 10、その後 sshd の停止で接続が切れた。kernel の最後の電源を切る段は見えない | |
+| H2 | **NG** | LCD はオフになるが、ファンが回り続け電源が切れない。強制電源オフ | BUG-119（再現。DSDT が読めない（`\_S5` は DSDT）ことが原因の候補） |
+
+### UAT のまとめ（2026-10-04、Q1）
+
+- 実機で OK を確かめた: BUG-145（DHCP）・152（Wallpaper の頁）・161（音量の保存）・143・139（IME）、emacs・SKK、System Monitor の本物の値と fps 21（AC・バッテリー）、i915 の telemetry。
+- 再現した: BUG-158（WiFi 未接続で約 1 分で kernel のフリーズ）、BUG-119（電源が切れない）、BUG-156（タッチパッドの 2 本指・スワイプ）、BUG-157（間違えた鍵の文言）。
+- 新規（Bug の ticket にする）: DSDT が読めない（error 13）、タッチパッドの窓のドラッグ（デグレ）と押し込みのクリック、後から挿した USB LAN が up しない、Ethernet のメニューの wlan0、音量の slider のドラッグでのフリーズ、opaque が不透明にならない、key のリピートの不安定、sh の履歴の全角の表示、WiFi の address への SSH、Terminal 多数で errno=8（ENOSPC）、起動の直後の「Network service is not …」の表示、起動の時の壁紙 7.2 秒。
+- 未実施: B1（USB マウス）、F1（USB メモリ）、F2（タブ）、F5（PNG の見本が無い）。次の UAT では見本の file（PDF・PNG・JPEG）を image に入れる。
