@@ -25,7 +25,7 @@ Queue: Q1 の指示（2026-10-05、ベータ1 に libavcodec と簡単な player
 
 - configure の表示 `License: LGPL version 2.1 or later`（`config.h` の `FFMPEG_LICENSE`）。package の Makefile が configure の後に確かめ、違えば止まる。`--enable-gpl`・`--enable-version3`・`--enable-nonfree` は使わない。
 - 外部の library は何も link しない（`--disable-autodetect`）。GPL の部品（x264・x265・postproc など）は入らない。
-- LGPL の義務: shared library（利用者が置き換えられる）、license の本文を image に、対応する source は upstream の tarball（patch 無し）と Makefile の configure の option。`tools/release/license-components.json` に `ffmpeg`（LGPL-2.1-or-later、`status: decision`、2026-10-05 のユーザーの決定）を足した。release notes での表示は ws129-p005。
+- LGPL の義務: shared library（利用者が置き換えられる）、license の本文を image に、対応する source は upstream の tarball（patch 無し）と Makefile の configure の option。`tools/release/license-components.json` に `ffmpeg`（LGPL-2.1-or-later、`status: decided`・`decision` に 2026-10-05 のユーザーの決定）を足した。`decided` は license-inventory.py に足した値（`decision` は決定待ちで gate を止める。決定済みは `decided` と決定の出典）。release notes での表示は ws129-p005。
 - 特許: H.264・HEVC などの decoder の特許の扱いは記録だけ（ユーザーの決定で入れる）。
 - ベータ2 の dlopen の add-in（header を使わず `dlsym` で呼ぶ）の license の扱いは、その Phase で調べて記録する（今の player は普通に dynamic link する。LGPL の library への dynamic link は LGPL の範囲）。
 

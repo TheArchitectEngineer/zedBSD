@@ -1,5 +1,5 @@
 {
- "comment": "ws129-p002: the components of a zedBSD image and their licenses, read by tools/release/license-inventory.py. when: always, program:NAME (selected userland package) or driver:CONFIG_NAME (kernel option y). notices: the files under /usr/share/licenses/ the image must carry for the component (empty when the license asks for none in binaries). paths: source path prefixes whose non-Zlib SPDX lines this component's notices cover. version: a literal, ext:NAME (ZEDBSD_EXT_NAME_VERSION) or empty. status: ok, gap (a notice the image lacks) or decision (the user must decide).",
+ "comment": "ws129-p002: the components of a zedBSD image and their licenses, read by tools/release/license-inventory.py. when: always, program:NAME (selected userland package) or driver:CONFIG_NAME (kernel option y). notices: the files under /usr/share/licenses/ the image must carry for the component (empty when the license asks for none in binaries). paths: source path prefixes whose non-Zlib SPDX lines this component's notices cover. version: a literal, ext:NAME (ZEDBSD_EXT_NAME_VERSION) or empty. status: ok, gap (a notice the image lacks), decision (the user must decide) or decided (the user decided; decision: the date and source).",
  "components": [
   {
    "id": "zedbsd",
@@ -614,7 +614,8 @@
    ],
    "paths": [],
    "note": "LGPL 2.1 or later as built (no --enable-gpl, --enable-version3 or --enable-nonfree; configure must report it). Shared libraries, so they can be replaced. In the image by the user's decision of 2026-10-05 (WS122: libavcodec and a simple player in beta 1); the corresponding source is the upstream tarball with no patches and the configure options in the package Makefile.",
-   "status": "decision"
+   "status": "decided",
+   "decision": "2026-10-05 user (WS122): libavcodec in the image from beta 1, with a simple player"
   }
  ]
 }
