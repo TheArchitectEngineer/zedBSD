@@ -2,7 +2,7 @@
 
 # ws127-p004: thumbnail の拡張（F-035）
 
-Status: in-progress（q667、P2、2026-10-04。残りの実装と host 試験は済み、QEMU は p008 の回帰と一緒に T1 へ）
+Status: cleared（q667、2026-10-04。Q1 判定）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: q667（Q1 の dispatch、2026-10-04）
@@ -52,3 +52,7 @@ Settings と共有の `canvas.c`・`text.c`・`icons.c` を変えたら `sh plan
 ## Event
 
 2026-10-02 / ws127-beta1-plan: fg019 の計画で新設（planning）。p001 の結果とユーザーの選択で範囲を確定し planned にする。
+
+## 判定（Q1、2026-10-04）
+
+cleared。host の host-pdf-thumb.sh PASS、T1-081（QEMU、main e3f0d16）: build-files-image.sh の image で files-p002・files-p006・files-regress 14 本 PASS、imageview の image で files-p003・WS094 の desktop・boot-test PASS（imageview の image には見本の home の make-home.sh が無く Files の試験は前提を満たさない、試験の image の違い）。

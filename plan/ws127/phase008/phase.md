@@ -57,3 +57,7 @@ Settings と共有の `canvas.c`・`text.c`・`icons.c` を変えたら `sh plan
 ## Event
 
 2026-10-02 / ws127-beta1-plan: fg019 の計画で新設（planning）。p001 の結果とユーザーの選択で範囲を確定し planned にする。
+
+## QEMU の回帰（Q1、2026-10-04）
+
+T1-081（QEMU、main e3f0d16）: build-files-image.sh の image で files-p002・files-p006・files-regress 14 本 PASS、imageview の image で files-p003・WS094 の desktop・boot-test PASS（imageview の image には見本の home の make-home.sh が無く Files の試験は前提を満たさない、試験の image の違い）。全文規約は P2 の f873f4f。実機の p007 が残るので in-progress。
