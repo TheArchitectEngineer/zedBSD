@@ -113,7 +113,6 @@ main(
 	check(theme->hover == FM_RGBA(0x5a6b85, 18), "theme hover is Files'");
 	check(theme->glass_content == FM_RGBA(0xffffff, 60), "theme glass content is Files'");
 	check(theme->row_height == 28, "theme row height is Files' list row");
-	check(kui_version() == KUI_VERSION, "version");
 
 	/* The colour mixing of both. */
 	check(kui_color_mix(KUI_RGB(0x000000), KUI_RGB(0xffffff), 0.5f) == fm_color_mix(FM_RGB(0x000000), FM_RGB(0xffffff), 0.5f), "color mix");

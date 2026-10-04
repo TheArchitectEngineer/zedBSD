@@ -513,7 +513,7 @@ fm_mark_draw(
 	/* The layers at this size. */
 	if (layers_pixels != pixels) {
 		for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++)
-			keiland_mark_raster(layer, pixels, layers[layer], pixels);
+			kl_mark_raster(layer, pixels, layers[layer], pixels);
 		layers_pixels = pixels;
 	}
 

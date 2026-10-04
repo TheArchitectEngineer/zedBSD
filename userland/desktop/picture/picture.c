@@ -49,7 +49,7 @@ static unsigned long picture_read32(const unsigned char *data, int big_endian);
  * Makes a premultiplied 0xAARRGGBB word of straight components.
  */
 uint32_t
-keiland_picture_premultiply(
+kl_picture_premultiply(
 	unsigned red,
 	unsigned green,
 	unsigned blue,
@@ -75,7 +75,7 @@ keiland_picture_premultiply(
  * its "Exif" header); 1 (as stored) when it has none or cannot be read.
  */
 int
-keiland_picture_exif_orientation(
+kl_picture_exif_orientation(
 	const unsigned char *data,
 	size_t size)
 {
@@ -162,8 +162,8 @@ keiland_picture_exif_orientation(
  * ENOMEM (the picture is then as it was).
  */
 int
-keiland_picture_orient(
-	struct keiland_picture *picture,
+kl_picture_orient(
+	struct kl_picture *picture,
 	int orientation)
 {
 	uint32_t *turned;
@@ -245,20 +245,20 @@ keiland_picture_orient(
 /*
  * Decodes a JPEG, from a file (file) or from memory (data and size when
  * file is NULL), into an opaque picture as stored, and gives its EXIF
- * orientation (1 to 8) for keiland_picture_orient.  A side over max_side
+ * orientation (1 to 8) for kl_picture_orient.  A side over max_side
  * or pixels over max_pixels (0: no limit) are refused.
  *
  * Returns 0, EINVAL for a damaged JPEG or one of a kind not supported,
  * E2BIG for one too large, or ENOMEM; the picture is then empty.
  */
 int
-keiland_picture_jpeg(
+kl_picture_jpeg(
 	FILE *file,
 	const unsigned char *data,
 	size_t size,
 	unsigned max_side,
 	unsigned long max_pixels,
-	struct keiland_picture *picture,
+	struct kl_picture *picture,
 	int *orientation)
 {
 	struct jpeg_decompress_struct info;
@@ -364,7 +364,7 @@ keiland_picture_jpeg(
 		for (x = 0; x < info.output_width; x++) {
 			/* An RGB row has three samples a pixel. */
 			if (!cmyk) {
-				out[x] = keiland_picture_premultiply(line[x * 3U], line[x * 3U + 1U], line[x * 3U + 2U], 255U);
+				out[x] = kl_picture_premultiply(line[x * 3U], line[x * 3U + 1U], line[x * 3U + 2U], 255U);
 				continue;
 			}
 
@@ -383,7 +383,7 @@ keiland_picture_jpeg(
 			}
 
 			/* The inks, now as light, into the picture. */
-			out[x] = keiland_picture_premultiply(cyan * black / 255U, magenta * black / 255U, yellow * black / 255U, 255U);
+			out[x] = kl_picture_premultiply(cyan * black / 255U, magenta * black / 255U, yellow * black / 255U, 255U);
 		}
 	}
 
@@ -400,7 +400,7 @@ keiland_picture_jpeg(
  * Draws one frame of a GIF onto its screen, leaving its transparent colour's pixels as they are.
  */
 void
-keiland_picture_gif_draw(
+kl_picture_gif_draw(
 	const GifFileType *gif,
 	int index,
 	int transparent,
@@ -444,7 +444,7 @@ keiland_picture_gif_draw(
 
 			/* The map's colour, opaque, onto the screen. */
 			colour = &map->Colors[colour_index];
-			screen[(size_t)screen_y * (size_t)gif->SWidth + (size_t)screen_x] = keiland_picture_premultiply(colour->Red, colour->Green, colour->Blue, 255U);
+			screen[(size_t)screen_y * (size_t)gif->SWidth + (size_t)screen_x] = kl_picture_premultiply(colour->Red, colour->Green, colour->Blue, 255U);
 		}
 	}
 
@@ -459,11 +459,11 @@ keiland_picture_gif_draw(
  * ENOMEM; the picture is then empty.
  */
 int
-keiland_picture_gif_first(
+kl_picture_gif_first(
 	GifFileType *gif,
 	unsigned max_side,
 	unsigned long max_pixels,
-	struct keiland_picture *picture)
+	struct kl_picture *picture)
 {
 	GraphicsControlBlock control;
 	int large;
@@ -497,13 +497,13 @@ keiland_picture_gif_first(
 		control.TransparentColor = NO_TRANSPARENT_COLOR;
 
 	/* Draws the first frame using any available transparency metadata. */
-	keiland_picture_gif_draw(gif, 0, control.TransparentColor, picture->pixels);
+	kl_picture_gif_draw(gif, 0, control.TransparentColor, picture->pixels);
 
 	/* Succeeded: the first frame on its screen. */
 	return 0;
 }
 
-/* Ends a JPEG's decoding at an error: back to keiland_picture_jpeg(). */
+/* Ends a JPEG's decoding at an error: back to kl_picture_jpeg(). */
 static void
 picture_jpeg_exit(
 	j_common_ptr info)
@@ -545,7 +545,7 @@ picture_jpeg_orientation(
 			continue;
 
 		/* A readable orientation other than the default. */
-		orientation = keiland_picture_exif_orientation(marker->data, marker->data_length);
+		orientation = kl_picture_exif_orientation(marker->data, marker->data_length);
 		if (orientation != 1)
 			return orientation;
 	}

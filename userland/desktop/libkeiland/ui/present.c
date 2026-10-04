@@ -56,7 +56,7 @@ static void present_record(struct keiui_present *present, uint32_t image);
 VkResult
 keiui_present_open(
 	struct keiui_present *present,
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;

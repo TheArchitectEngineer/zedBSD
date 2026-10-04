@@ -76,7 +76,7 @@ struct keiui_chooser_entry {
 struct keiui_chooser_place {
 	char label[KEIUI_CHOOSER_LABEL_MAX];
 	char path[KEIUI_CHOOSER_PATH_MAX];
-	enum kui_icon icon;
+	enum kl_icon icon;
 };
 
 /* One filter: its label and its extensions (empty: every file). */
@@ -86,7 +86,7 @@ struct keiui_chooser_filter {
 };
 
 /*
- * One file chooser's state, from kui_file_chooser_open to its destruction.
+ * One file chooser's state, from kl_file_chooser_open to its destruction.
  * The entries array belongs to it and is refilled whenever another folder
  * is shown; the list holds the selection and the scroll.  answered becomes
  * 1 once, with result and answer; nothing changes after that.
@@ -104,19 +104,19 @@ struct keiui_chooser {
 	struct keiui_chooser_entry *entries;
 	size_t count;
 	size_t capacity;
-	struct kui_list list;
+	struct kl_list list;
 	int show_hidden;
 
 	/* The sidebar and the filters. */
 	struct keiui_chooser_place places[KEIUI_CHOOSER_PLACES_MAX];
 	size_t place_count;
-	struct keiui_chooser_filter filters[KUI_FILE_CHOOSER_FILTERS_MAX];
+	struct keiui_chooser_filter filters[KL_FILE_CHOOSER_FILTERS_MAX];
 	size_t filter_count;
 	size_t filter;
 
 	/* The name typed (Save), the path typed (Ctrl+L) while its field shows. */
-	struct kui_field name;
-	struct kui_field path;
+	struct kl_field name;
+	struct kl_field path;
 	int typing_path;
 
 	/* The widget that takes the keyboard in the next frame (0: none asked). */
@@ -139,7 +139,7 @@ struct keiui_chooser {
 };
 
 /* The model (chooser-model.c). */
-int keiui_chooser_init(struct keiui_chooser *chooser, const struct kui_file_chooser_options *options);
+int keiui_chooser_init(struct keiui_chooser *chooser, const struct kl_file_chooser_options *options);
 void keiui_chooser_fini(struct keiui_chooser *chooser);
 int keiui_chooser_go(struct keiui_chooser *chooser, const char *path);
 void keiui_chooser_go_recent(struct keiui_chooser *chooser);
@@ -163,7 +163,7 @@ int keiui_chooser_is_place(const struct keiui_chooser *chooser, size_t place);
 const char *keiui_chooser_home(void);
 
 /* The view (chooser-view.c): one frame of the window at a size and a time, with its input (1: another frame is wanted); the glass panels under it. */
-int keiui_chooser_frame(struct keiui_chooser *chooser, struct kui_ui *ui, const struct kui_style *style, int width, int height, uint64_t now_us);
-size_t keiui_chooser_panels(int width, int height, struct kui_rect *panels, size_t capacity);
+int keiui_chooser_frame(struct keiui_chooser *chooser, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
+size_t keiui_chooser_panels(int width, int height, struct kl_rect *panels, size_t capacity);
 
 #endif

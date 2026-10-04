@@ -30,9 +30,9 @@
  * One window's inset: its keiland_keyboard_inset_v1, and the application's
  * callback and its data.
  */
-struct keiland_keyboard_inset {
+struct kl_keyboard_inset {
 	struct keiland_keyboard_inset_v1 *proxy;
-	keiland_keyboard_inset_fn callback;
+	kl_keyboard_inset_fn callback;
 	void *data;
 };
 
@@ -61,15 +61,15 @@ static const struct keiland_keyboard_inset_v1_listener inset_listener = {
  * application's default queue.  Returns NULL with errno set: ENOTSUP for a
  * compositor without the protocol, EINVAL, ENOMEM.
  */
-struct keiland_keyboard_inset *
-keiland_keyboard_inset_create(
+struct kl_keyboard_inset *
+kl_keyboard_inset_create(
 	struct wl_display *display,
 	struct xdg_toplevel *toplevel,
-	keiland_keyboard_inset_fn callback,
+	kl_keyboard_inset_fn callback,
 	void *data)
 {
 	struct keiland_keyboard_inset_manager_v1 *manager;
-	struct keiland_keyboard_inset *inset;
+	struct kl_keyboard_inset *inset;
 	int error;
 
 	/* A window and a callback. */
@@ -119,8 +119,8 @@ keiland_keyboard_inset_create(
  * Stops hearing the keyboard: the protocol object and the record go.
  */
 void
-keiland_keyboard_inset_destroy(
-	struct keiland_keyboard_inset *inset)
+kl_keyboard_inset_destroy(
+	struct kl_keyboard_inset *inset)
 {
 	/* No inset, nothing to destroy. */
 	if (inset == NULL)
@@ -140,7 +140,7 @@ inset_event(
 	int32_t bottom,
 	uint32_t reason)
 {
-	struct keiland_keyboard_inset *inset;
+	struct kl_keyboard_inset *inset;
 
 	/* The record the listener was given. */
 	(void)object;

@@ -2,10 +2,10 @@
 
 # ws131-p013: 旧 libkeiui の名前を kl_・KL_ に
 
-Status: planning（p002 第 2 版はユーザーのレビュー済み（2026-10-03、D7 は確認中）。開始はユーザーの承認と P2 の終了の後に Q1 が指示）
+Status: in-progress（q673 の続き、P2 generation10、2026-10-04。Q1「While T2 runs, start ws131-p013 … on top of 488f96c, under the same delegation」。実装・build・host 試験済み、QEMU は後でまとめて）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
-Queue: none
+Queue: q673（p012 と同じ Queue の続き、Q1 の指示）
 依存: p012 cleared
 目安: 3〜4h（1 Queue）。実行者: Q1 が割り当てる（high）
 所有 path: `userland/desktop/libkeiland/ui/`、`userland/desktop/keiland/`（新しい `keiland-ui.h`、互換の `keiui.h`、`keiland.h` の include）、`plan/ws131/tools/rename-map.py`、`plan/ws131/`
@@ -39,3 +39,24 @@ Queue: none
 ## Resume
 
 依存の Phase の cleared と main への統合、関係する判断の決定の後に、Q1 が Queue を作る。
+
+## 実施（P2 generation10、2026-10-04、488f96c の上）
+
+- 対応表: `python3 plan/ws131/tools/rename-map.py public > plan/ws131/rename-map.md` で今の header から作り直した（keiland.h 202・keiui.h 341、解決の要る衝突 0。keiland.h の数が 266 から減ったのは p003〜p011 で一部が既に `kl_`）。新しい `kl_`・`KL_` の名前は keiland.h の既存の `kl_`・`KL_`（`kl_settings_*`・`kl_system_*`・`KL_MONITOR_*` など）と重ならない（確かめた）。**注**: 変換の後の `keiui.h` は互換の macro だけなので、`public` を今流すと表は意味を失う。p014 の前に、`public` が `keiland-ui.h` を読むように直す。
+- 変換は道具で一度だけ: `rename-map.py apply-ui`（同じ file に足した）が keiui.h の公開の名前の表（`kinds_of` と SPECIAL）から、
+  1. `keiland/keiland-ui.h` = keiui.h の名前を改名したもの（guard `KEILAND_UI_H`、`kui_version`・`KUI_VERSION` の宣言と定義を除く。版の歴史の comment の `KUI_VERSION n` は残した）、
+  2. `libkeiland/ui/` の source の改名と `#include <keiui.h>` → `<keiland.h>`（内部の `keiui_*`・`KEIUI_*` は保つ）、
+  3. 互換の `keiui.h`（`#include <keiland.h>`、`KUI_VERSION 12U`、旧名 339 の `#define kui_X kl_X` の列、「generated … do not edit」の印）
+  を書く。印のある keiui.h には二度と走らない。`rename-map.py check-ui` が互換の macro の行き先が全て keiland-ui.h にあり、keiland-ui.h の code に旧名が無いことを確かめる（PASS、339）。
+- 例外の扱い: `kui_edit_fn` → `kl_window_edit_fn`、`kui_keyboard_inset_fn` → `kl_window_keyboard_inset_fn`、`KUI_EDIT_*`・`KUI_KEYBOARD_INSET_*` は keiland-ui.h に `KL_*` を一つずつ（`KEILAND_*` は p014 まで keiland.h に残る）。`kui_version` は除き、`ui/version.c` を消した（Makefile 3 本と host 試験の source の一覧からも）。
+- `keiland.h` の最後で `#include <keiland-ui.h>`。`exports.py` は keiland.h と keiland-ui.h を読む。FreeBSD の公開の header の表に `keiland-ui.h`（`keiui.h` も残す）。zedBSD の sysroot は `userland/desktop/keiland` の全 file を拾うので toolchain の変更は要らない。
+- host の試験: keiland.h を include の directory に写す・link する 12 本に keiland-ui.h も（ws081 の 6 本・ws089 の 2 本・ws100・ws131・ws128・files の host-build、ws090・ws102・keiui・textedit の 6 本）。内部の header だけを include していた `host-chooser.c`・`host-inset.c` に `#include <keiui.h>`。`host-draw.c` の `kui_version()` の確かめを除いた（12/12）。
+- 古い試験の直し（main c21f9ab の素の tree でも失敗、WS134 の sysmon の追加の後）: `plan/ws131/tests/host-system.sh` に `wayland/sysmon.c`、`host-system.c` に monitor の backend の偽物（open は NULL、他は ENOTSUP）と `zwl_milliseconds`、能力の期待に `KL_SYSTEM_HAS_MONITOR`。
+
+### 確かめ
+- 利用者の source の diff 0（app・ime・kuidemo・files・monitor は無変更、`git status` で確かめた）。
+- zedBSD: CI の clang 抜きの config の rootfs の build exit 0・自前の warning 0。`llvm-nm -D libkeiland.so` は 270 で `kui_` 0、旧 `kui_*`（kui_version を除く 150）の全てに `kl_*` がある、header の一覧と一致。
+- Linux: gcc・clang exit 0・warning 0、`nm -D` が zedBSD と同じ、elf-check PASS（24）、makefile-sync PASS、header-check PASS（380）。FreeBSD は `make -n` まで（native build は T）。
+- `keiland-os-boundary/check.sh` PASS、`rename-map.py check-ui` PASS。
+- host の試験（全 PASS）: host-draw 12/12、host-input 63/63、host-widgets 94/94、host-chooser 85/85、scroll-bar-test、host-inset、textedit host-core 53/53、files host-default、imageview run-host、ws128 host-share、ws089 host-slot、ws100 host-audio 14/14、ws131 host-system、ws081 の motion・scroll・filestouch・termtouch・notestouch・browsertouch。
+- QEMU（p012 と同じ組）・Linux の PNG・FreeBSD の native build は後でまとめて T に。

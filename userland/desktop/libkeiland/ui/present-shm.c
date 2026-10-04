@@ -34,8 +34,8 @@
  */
 static unsigned shm_serial;
 
-static struct keiui_shm_buffer *shm_ready(struct kui_window *window);
-static int shm_make(struct kui_window *window, struct keiui_shm_buffer *buffer, int width, int height);
+static struct keiui_shm_buffer *shm_ready(struct kl_window *window);
+static int shm_make(struct kl_window *window, struct keiui_shm_buffer *buffer, int width, int height);
 static void shm_free(struct keiui_shm_buffer *buffer);
 static void shm_release(void *data, struct wl_buffer *buffer);
 
@@ -51,7 +51,7 @@ static const struct wl_buffer_listener shm_listener = {
  */
 int
 keiui_shm_present(
-	struct kui_window *window,
+	struct kl_window *window,
 	const uint32_t *pixels,
 	size_t stride)
 {
@@ -82,7 +82,7 @@ keiui_shm_present(
  */
 void
 keiui_shm_close(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	int index;
 
@@ -94,7 +94,7 @@ keiui_shm_close(
 /* Finds a buffer the compositor has given back, of the frame's size (remade when the size changed); NULL when none is free. */
 static struct keiui_shm_buffer *
 shm_ready(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	struct keiui_shm_buffer *buffer;
 	int index;
@@ -125,7 +125,7 @@ shm_ready(
 /* Makes a wl_shm buffer of a size in a shared memory object of its own; 0 or an errno value. */
 static int
 shm_make(
-	struct kui_window *window,
+	struct kl_window *window,
 	struct keiui_shm_buffer *buffer,
 	int width,
 	int height)

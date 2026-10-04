@@ -33,7 +33,7 @@
 /*
  * One surface's glass: its keiland_glass_v1.
  */
-struct keiland_glass {
+struct kl_glass {
 	struct keiland_glass_v1 *proxy;
 	uint32_t version;
 };
@@ -47,7 +47,7 @@ struct glass_search {
 static struct keiland_glass_manager_v1 *glass_bind(struct wl_display *display, uint32_t *version);
 static void glass_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void glass_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static int glass_check(const struct keiland_glass_panel *panel);
+static int glass_check(const struct kl_glass_panel *panel);
 
 /* The registry's callbacks while the manager is looked for. */
 static const struct wl_registry_listener glass_registry_listener = {
@@ -59,13 +59,13 @@ static const struct wl_registry_listener glass_registry_listener = {
  * set: ENOTSUP for a compositor without glass, ENOMEM when the objects
  * cannot be made.
  */
-struct keiland_glass *
-keiland_glass_create(
+struct kl_glass *
+kl_glass_create(
 	struct wl_display *display,
 	struct wl_surface *surface)
 {
 	struct keiland_glass_manager_v1 *manager;
-	struct keiland_glass *glass;
+	struct kl_glass *glass;
 	uint32_t version;
 
 	/* zdesktop's manager, bound for this surface. */
@@ -99,18 +99,18 @@ keiland_glass_create(
  * Sets the surface's panels for its next commit.
  */
 int
-keiland_glass_set_panels(
-	struct keiland_glass *glass,
-	const struct keiland_glass_panel *panels,
+kl_glass_set_panels(
+	struct kl_glass *glass,
+	const struct kl_glass_panel *panels,
 	size_t count)
 {
-	int32_t words[KEILAND_GLASS_PANELS_MAX * GLASS_PANEL_WORDS];
+	int32_t words[KL_GLASS_PANELS_MAX * GLASS_PANEL_WORDS];
 	struct wl_array array;
 	size_t index;
 	int error;
 
 	/* No more panels than the compositor keeps. */
-	if (count > KEILAND_GLASS_PANELS_MAX)
+	if (count > KL_GLASS_PANELS_MAX)
 		return E2BIG;
 
 	/* Each panel checked and laid out as its six words. */
@@ -143,8 +143,8 @@ keiland_glass_set_panels(
  * (ws075-p029).  Returns ENOTSUP when the compositor's glass is older.
  */
 int
-keiland_glass_set_blur(
-	struct keiland_glass *glass,
+kl_glass_set_blur(
+	struct kl_glass *glass,
 	int enabled)
 {
 	uint32_t value;
@@ -167,8 +167,8 @@ keiland_glass_set_blur(
  * Takes the glass away; the surface's next commit shows it without panels.
  */
 void
-keiland_glass_destroy(
-	struct keiland_glass *glass)
+kl_glass_destroy(
+	struct kl_glass *glass)
 {
 	/* No glass, nothing to destroy. */
 	if (glass == NULL)
@@ -291,18 +291,18 @@ glass_global_remove(
 /* Checks one panel against the compositor's bounds. */
 static int
 glass_check(
-	const struct keiland_glass_panel *panel)
+	const struct kl_glass_panel *panel)
 {
 	/* An empty panel. */
 	if (panel->width <= 0 || panel->height <= 0)
 		return EINVAL;
 
 	/* A radius that is negative or past the largest. */
-	if (panel->radius < 0 || panel->radius > KEILAND_GLASS_RADIUS_MAX)
+	if (panel->radius < 0 || panel->radius > KL_GLASS_RADIUS_MAX)
 		return EINVAL;
 
 	/* A kind that does not exist. */
-	if (panel->kind != KEILAND_GLASS_CARD)
+	if (panel->kind != KL_GLASS_CARD)
 		return EINVAL;
 
 	/* Succeeded. */

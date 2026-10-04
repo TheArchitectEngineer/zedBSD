@@ -38,9 +38,9 @@
  * The desktop surface of a program: its keiland_desktop_surface_v1 and the
  * program's listener with its data.
  */
-struct keiland_desktop {
+struct kl_desktop {
 	struct wl_proxy *proxy;
-	const struct keiland_desktop_listener *listener;
+	const struct kl_desktop_listener *listener;
 	void *data;
 };
 
@@ -134,19 +134,19 @@ static struct wl_proxy *desktop_bind(struct wl_display *display);
  * Gives a surface the desktop's role with the token the compositor gave
  * the program.  The listener hears configure (where the surface is and its
  * size) before anything is drawn; the program acknowledges it with
- * keiland_desktop_ack.  Returns NULL with errno set: EINVAL without a
+ * kl_desktop_ack.  Returns NULL with errno set: EINVAL without a
  * token, ENOTSUP for a compositor without the desktop, ENOMEM.  A token
  * the compositor does not know ends the connection (a protocol error).
  */
-struct keiland_desktop *
-keiland_desktop_create(
+struct kl_desktop *
+kl_desktop_create(
 	struct wl_display *display,
 	struct wl_surface *surface,
 	const char *token,
-	const struct keiland_desktop_listener *listener,
+	const struct kl_desktop_listener *listener,
 	void *data)
 {
-	struct keiland_desktop *desktop;
+	struct kl_desktop *desktop;
 	struct wl_proxy *manager;
 	int status;
 
@@ -205,8 +205,8 @@ keiland_desktop_create(
  * Acknowledges a configure: the next commit is drawn for it.
  */
 void
-keiland_desktop_ack(
-	struct keiland_desktop *desktop,
+kl_desktop_ack(
+	struct kl_desktop *desktop,
 	uint32_t serial)
 {
 	/* The request, sent with the next flush. */
@@ -220,8 +220,8 @@ keiland_desktop_ack(
  * Gives the desktop's role up; the surface shows nothing more.
  */
 void
-keiland_desktop_destroy(
-	struct keiland_desktop *desktop)
+kl_desktop_destroy(
+	struct kl_desktop *desktop)
 {
 	/* No desktop, nothing to destroy. */
 	if (desktop == NULL)
@@ -371,7 +371,7 @@ desktop_configure(
 	int32_t width,
 	int32_t height)
 {
-	struct keiland_desktop *desktop;
+	struct kl_desktop *desktop;
 
 	UNUSED_PARAMETER(proxy);
 

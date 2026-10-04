@@ -9,12 +9,12 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws090/host-draw}
 shots=build/ws090-shots
 mkdir -p "$(dirname "$out")/inc" "$shots"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
+cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiland-ui.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
 ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
 U=userland/desktop
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I. -I$U/libkeiland/ui -I$U/libtruetype \
 	plan/ws090/tests/host-draw.c \
-	$U/libkeiland/ui/version.c $U/libkeiland/ui/canvas.c $U/libkeiland/ui/text.c $U/libkeiland/ui/icons.c $U/libkeiland/ui/icons-line.c $U/libkeiland/ui/theme.c \
+	$U/libkeiland/ui/canvas.c $U/libkeiland/ui/text.c $U/libkeiland/ui/icons.c $U/libkeiland/ui/icons-line.c $U/libkeiland/ui/theme.c \
 	$U/files/canvas.c $U/files/text.c $U/files/icons.c $U/settings/glyphs.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
 	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"

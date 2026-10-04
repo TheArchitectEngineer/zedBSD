@@ -67,14 +67,14 @@ enum image_kind {
 };
 
 static enum image_kind image_kind(const char *path, const char **format, int *error);
-static int image_png(struct iv_image *image, struct keiland_picture *picture);
+static int image_png(struct iv_image *image, struct kl_picture *picture);
 static void image_jpeg_refuse(struct iv_image *image, int error);
-static int image_jpeg(struct iv_image *image, struct keiland_picture *picture);
-static int image_gif(struct iv_image *image, struct keiland_picture *picture);
+static int image_jpeg(struct iv_image *image, struct kl_picture *picture);
+static int image_gif(struct iv_image *image, struct kl_picture *picture);
 static int image_gif_frames(struct iv_image *image, GifFileType *gif, uint32_t *screen);
 static void image_gif_clear(GifFileType *gif, int index, uint32_t *screen);
 static int image_halve(const uint32_t *pixels, int width, int height, uint32_t **result, int *result_width, int *result_height);
-static int image_fit(struct iv_image *image, struct keiland_picture *picture, int max_dimension);
+static int image_fit(struct iv_image *image, struct kl_picture *picture, int max_dimension);
 static void image_checker(uint32_t *pixels, int width, int height);
 static int image_levels(struct iv_image *image);
 static void image_refuse(struct iv_image *image, int error, const char *reason);
@@ -93,7 +93,7 @@ iv_image_load(
 	const char *path,
 	int max_dimension)
 {
-	struct keiland_picture picture;
+	struct kl_picture picture;
 	enum image_kind kind;
 	uint64_t started;
 	uint64_t elapsed;
@@ -228,7 +228,7 @@ iv_image_orientation(
 	int orientation;
 
 	/* The shared reading (userland/desktop/picture). */
-	orientation = keiland_picture_exif_orientation(data, size);
+	orientation = kl_picture_exif_orientation(data, size);
 
 	/* Succeeded: the orientation the file gives. */
 	return orientation;
@@ -323,7 +323,7 @@ image_kind(
 static int
 image_png(
 	struct iv_image *image,
-	struct keiland_picture *picture)
+	struct kl_picture *picture)
 {
 	png_image png;
 	const char *interlaced;
@@ -396,7 +396,7 @@ image_png(
 
 	/* Each pixel's straight RGBA into a premultiplied word. */
 	for (index = 0; index < count; index++) {
-		picture->pixels[index] = keiland_picture_premultiply(bytes[index * 4U], bytes[index * 4U + 1U], bytes[index * 4U + 2U], bytes[index * 4U + 3U]);
+		picture->pixels[index] = kl_picture_premultiply(bytes[index * 4U], bytes[index * 4U + 1U], bytes[index * 4U + 2U], bytes[index * 4U + 3U]);
 
 		/* A pixel that lets anything through makes the picture need the checkerboard. */
 		if (bytes[index * 4U + 3U] != 255U)
@@ -441,7 +441,7 @@ image_jpeg_refuse(
 static int
 image_jpeg(
 	struct iv_image *image,
-	struct keiland_picture *picture)
+	struct kl_picture *picture)
 {
 	int orientation;
 	int error;
@@ -458,7 +458,7 @@ image_jpeg(
 	}
 
 	/* The picture as stored and its orientation (the shared decoding, userland/desktop/picture). */
-	error = keiland_picture_jpeg(file, NULL, 0U, IMAGE_SIDE_MAX, 0UL, picture, &orientation);
+	error = kl_picture_jpeg(file, NULL, 0U, IMAGE_SIDE_MAX, 0UL, picture, &orientation);
 	if (error != 0) {
 		fclose(file);
 		image_jpeg_refuse(image, error);
@@ -471,7 +471,7 @@ image_jpeg(
 	/* The picture turned upright. */
 	image->file_width = picture->width;
 	image->file_height = picture->height;
-	error = keiland_picture_orient(picture, orientation);
+	error = kl_picture_orient(picture, orientation);
 	if (error != 0) {
 		image_refuse(image, error, "There is not enough memory for this image");
 		return error;
@@ -491,7 +491,7 @@ image_jpeg(
 static int
 image_gif(
 	struct iv_image *image,
-	struct keiland_picture *picture)
+	struct kl_picture *picture)
 {
 	GifFileType *gif;
 	uint32_t *screen;
@@ -604,7 +604,7 @@ image_gif_frames(
 		memset(&control, 0, sizeof(control));
 		control.TransparentColor = NO_TRANSPARENT_COLOR;
 		(void)DGifSavedExtensionToGCB(gif, 0, &control);
-		keiland_picture_gif_draw(gif, 0, control.TransparentColor, screen);
+		kl_picture_gif_draw(gif, 0, control.TransparentColor, screen);
 
 		/* Succeeded: one frame on the screen. */
 		return 0;
@@ -641,7 +641,7 @@ image_gif_frames(
 			memcpy(saved, screen, count * sizeof(uint32_t));
 
 		/* The frame over what the frames before it left. */
-		keiland_picture_gif_draw(gif, index, control.TransparentColor, screen);
+		kl_picture_gif_draw(gif, index, control.TransparentColor, screen);
 
 		/* The composed frame over the checkerboard. */
 		image->frames[index] = malloc(count * sizeof(uint32_t));
@@ -781,7 +781,7 @@ image_halve(
 static int
 image_fit(
 	struct iv_image *image,
-	struct keiland_picture *picture,
+	struct kl_picture *picture,
 	int max_dimension)
 {
 	uint32_t *half;

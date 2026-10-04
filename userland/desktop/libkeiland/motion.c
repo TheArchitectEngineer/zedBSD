@@ -181,7 +181,7 @@ struct motion_axis {
  * device), and the sums of device and host time over the check window
  * that decide whether the Scan Time is trusted.
  */
-struct keiland_motion_device {
+struct kl_motion_device {
 	double interval;
 	double delay;
 	double noise[MOTION_NOISE_STROKES];
@@ -207,8 +207,8 @@ struct keiland_motion_device {
  * then it follows the wanted value at once, afterwards by at most
  * MOTION_BEHIND_STEP a call.
  */
-struct keiland_motion {
-	struct keiland_motion_device *device;
+struct kl_motion {
+	struct kl_motion_device *device;
 	struct motion_report reports[MOTION_REPORTS_MAX];
 	unsigned count;
 	unsigned added;
@@ -225,26 +225,26 @@ struct keiland_motion {
 static double seconds_between(uint64_t later, uint64_t earlier);
 static void sort_values(double *values, unsigned count);
 static double median(double *values, unsigned count);
-static double stroke_interval(const struct keiland_motion *motion, int *measured);
-static double stroke_delay(const struct keiland_motion *motion);
-static double device_noise(const struct keiland_motion_device *device);
-static unsigned build_samples(const struct keiland_motion *motion, double interval, int fill_gaps, struct motion_sample *samples);
+static double stroke_interval(const struct kl_motion *motion, int *measured);
+static double stroke_delay(const struct kl_motion *motion);
+static double device_noise(const struct kl_motion_device *device);
+static unsigned build_samples(const struct kl_motion *motion, double interval, int fill_gaps, struct motion_sample *samples);
 static unsigned window_first(const struct motion_sample *samples, unsigned count, double window, unsigned minimum);
 static int fit(const struct motion_sample *samples, unsigned first, unsigned count, int degree, double *cx, double *cy);
 static void filter_start(struct motion_axis *axis, double position);
 static void filter_update(struct motion_axis *axis, double dt, double measure, double noise);
-static void stroke_noise_measure(struct keiland_motion *motion);
-static void clock_restart(struct keiland_motion_device *device, uint64_t host_us, uint32_t device_us);
-static void clock_check(struct keiland_motion_device *device, uint64_t device_step, uint64_t host_step);
+static void stroke_noise_measure(struct kl_motion *motion);
+static void clock_restart(struct kl_motion_device *device, uint64_t host_us, uint32_t device_us);
+static void clock_check(struct kl_motion_device *device, uint64_t device_step, uint64_t host_step);
 
 /*
  * Creates a device, knowing nothing of it yet.
  */
-struct keiland_motion_device *
-keiland_motion_device_create(
+struct kl_motion_device *
+kl_motion_device_create(
 	void)
 {
-	struct keiland_motion_device *device;
+	struct kl_motion_device *device;
 
 	/* Everything starts at zero: nothing measured, no clock. */
 	device = calloc(1, sizeof(*device));
@@ -259,8 +259,8 @@ keiland_motion_device_create(
  * Destroys a device.
  */
 void
-keiland_motion_device_destroy(
-	struct keiland_motion_device *device)
+kl_motion_device_destroy(
+	struct kl_motion_device *device)
 {
 	/* The device owns nothing else. */
 	free(device);
@@ -275,8 +275,8 @@ keiland_motion_device_destroy(
  * the panel's clock.
  */
 int
-keiland_motion_device_time(
-	struct keiland_motion_device *device,
+kl_motion_device_time(
+	struct kl_motion_device *device,
 	uint64_t host_us,
 	uint32_t device_us,
 	uint64_t *stamp_us)
@@ -365,8 +365,8 @@ keiland_motion_device_time(
  * Reports the device's measured report period in microseconds.
  */
 uint32_t
-keiland_motion_device_interval(
-	const struct keiland_motion_device *device)
+kl_motion_device_interval(
+	const struct kl_motion_device *device)
 {
 	/* Nothing is known of a missing device. */
 	if (device == NULL)
@@ -380,8 +380,8 @@ keiland_motion_device_interval(
  * Reports the device's measured noise in pixels.
  */
 double
-keiland_motion_device_noise(
-	const struct keiland_motion_device *device)
+kl_motion_device_noise(
+	const struct kl_motion_device *device)
 {
 	double noise;
 
@@ -397,11 +397,11 @@ keiland_motion_device_noise(
 /*
  * Creates a motion for contacts of a device.
  */
-struct keiland_motion *
-keiland_motion_create(
-	struct keiland_motion_device *device)
+struct kl_motion *
+kl_motion_create(
+	struct kl_motion_device *device)
 {
-	struct keiland_motion *motion;
+	struct kl_motion *motion;
 
 	/* A motion learns into a device. */
 	if (device == NULL)
@@ -421,8 +421,8 @@ keiland_motion_create(
  * Destroys a motion.
  */
 void
-keiland_motion_destroy(
-	struct keiland_motion *motion)
+kl_motion_destroy(
+	struct kl_motion *motion)
 {
 	/* The motion owns nothing else. */
 	free(motion);
@@ -432,8 +432,8 @@ keiland_motion_destroy(
  * Starts a stroke.
  */
 void
-keiland_motion_begin(
-	struct keiland_motion *motion)
+kl_motion_begin(
+	struct kl_motion *motion)
 {
 	/* Nothing to start. */
 	if (motion == NULL)
@@ -453,8 +453,8 @@ keiland_motion_begin(
  * Adds one report of the stroke.
  */
 int
-keiland_motion_add(
-	struct keiland_motion *motion,
+kl_motion_add(
+	struct kl_motion *motion,
 	uint64_t stamp_us,
 	uint64_t arrival_us,
 	double x,
@@ -523,8 +523,8 @@ keiland_motion_add(
  * Gives the point to draw at a frame.
  */
 int
-keiland_motion_point(
-	struct keiland_motion *motion,
+kl_motion_point(
+	struct kl_motion *motion,
 	uint64_t now_us,
 	uint32_t extrapolation_us,
 	double *x,
@@ -679,8 +679,8 @@ keiland_motion_point(
  * Gives the velocity the finger had when it lifted.
  */
 int
-keiland_motion_velocity(
-	struct keiland_motion *motion,
+kl_motion_velocity(
+	struct kl_motion *motion,
 	uint64_t lift_us,
 	double *vx,
 	double *vy)
@@ -759,10 +759,10 @@ keiland_motion_velocity(
  * Ends a stroke and teaches its device.
  */
 void
-keiland_motion_end(
-	struct keiland_motion *motion)
+kl_motion_end(
+	struct kl_motion *motion)
 {
-	struct keiland_motion_device *device;
+	struct kl_motion_device *device;
 	double interval;
 	double delay;
 	double noise;
@@ -803,7 +803,7 @@ keiland_motion_end(
 	}
 
 	/* The motion is empty for the next stroke. */
-	keiland_motion_begin(motion);
+	kl_motion_begin(motion);
 }
 
 /* Measures the signed time from one microsecond count to a later one, in seconds. */
@@ -866,7 +866,7 @@ median(
  */
 static double
 stroke_interval(
-	const struct keiland_motion *motion,
+	const struct kl_motion *motion,
 	int *measured)
 {
 	double intervals[MOTION_HISTORY];
@@ -925,7 +925,7 @@ stroke_interval(
  */
 static double
 stroke_delay(
-	const struct keiland_motion *motion)
+	const struct kl_motion *motion)
 {
 	const struct motion_report *report;
 	double delays[MOTION_HISTORY];
@@ -963,7 +963,7 @@ stroke_delay(
  */
 static double
 device_noise(
-	const struct keiland_motion_device *device)
+	const struct kl_motion_device *device)
 {
 	double sorted[MOTION_NOISE_STROKES];
 	double noise;
@@ -990,7 +990,7 @@ device_noise(
  */
 static unsigned
 build_samples(
-	const struct keiland_motion *motion,
+	const struct kl_motion *motion,
 	double interval,
 	int fill_gaps,
 	struct motion_sample *samples)
@@ -1223,7 +1223,7 @@ filter_update(
  */
 static void
 stroke_noise_measure(
-	struct keiland_motion *motion)
+	struct kl_motion *motion)
 {
 	struct motion_sample samples[MOTION_SAMPLES_MAX];
 	double cx[3];
@@ -1266,7 +1266,7 @@ stroke_noise_measure(
  */
 static void
 clock_restart(
-	struct keiland_motion_device *device,
+	struct kl_motion_device *device,
 	uint64_t host_us,
 	uint32_t device_us)
 {
@@ -1294,7 +1294,7 @@ clock_restart(
  */
 static void
 clock_check(
-	struct keiland_motion_device *device,
+	struct kl_motion_device *device,
 	uint64_t device_step,
 	uint64_t host_step)
 {

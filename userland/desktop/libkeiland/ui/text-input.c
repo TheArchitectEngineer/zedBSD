@@ -12,7 +12,7 @@
  * on-screen keyboard.  Only the public client header is used; the
  * compositor's and the input method's sides are not this library's.
  *
- * The application asks for text (kui_window_text_input) where it edits
+ * The application asks for text (kl_window_text_input) where it edits
  * text; the text input is enabled while it asks and the text input is on
  * the window's surface (enter), and each change of that, or of the caret's
  * rectangle, is committed.  What arrives before a done is kept and queued
@@ -32,7 +32,7 @@ static void text_preedit(void *data, struct zwp_text_input_v3 *input, const char
 static void text_commit(void *data, struct zwp_text_input_v3 *input, const char *text);
 static void text_delete(void *data, struct zwp_text_input_v3 *input, uint32_t before, uint32_t after);
 static void text_done(void *data, struct zwp_text_input_v3 *input, uint32_t serial);
-static void text_state(struct kui_window *window);
+static void text_state(struct kl_window *window);
 static void text_copy(char *out, const char *text);
 
 /* The text input's events. */
@@ -50,7 +50,7 @@ static const struct zwp_text_input_v3_listener text_listener = {
  */
 void
 keiui_text_input_bind(
-	struct kui_window *window,
+	struct kl_window *window,
 	struct wl_registry *registry,
 	uint32_t name)
 {
@@ -63,7 +63,7 @@ keiui_text_input_bind(
  */
 void
 keiui_text_input_start(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	int status;
 
@@ -87,7 +87,7 @@ keiui_text_input_start(
  */
 void
 keiui_text_input_close(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	/* The text input before its manager. */
 	if (window->text_input != NULL)
@@ -104,8 +104,8 @@ keiui_text_input_close(
  * (a dialog, a chooser).
  */
 void
-kui_window_text_input(
-	struct kui_window *window,
+kl_window_text_input(
+	struct kl_window *window,
 	int enabled)
 {
 	/* The same as before: nothing to say. */
@@ -123,8 +123,8 @@ kui_window_text_input(
  * keyboard stays out of its way; sent when it changes.
  */
 void
-kui_window_text_cursor(
-	struct kui_window *window,
+kl_window_text_cursor(
+	struct kl_window *window,
 	int x,
 	int y,
 	int width,
@@ -153,7 +153,7 @@ text_enter(
 	struct zwp_text_input_v3 *input,
 	struct wl_surface *surface)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Only the window's own surface (a chooser's window has its own). */
 	(void)input;
@@ -171,7 +171,7 @@ text_leave(
 	struct zwp_text_input_v3 *input,
 	struct wl_surface *surface)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Only the window's own surface. */
 	(void)input;
@@ -191,7 +191,7 @@ text_preedit(
 	int32_t begin,
 	int32_t end)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Kept (none is an empty text). */
 	(void)input;
@@ -209,7 +209,7 @@ text_commit(
 	struct zwp_text_input_v3 *input,
 	const char *text)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Kept. */
 	(void)input;
@@ -225,7 +225,7 @@ text_delete(
 	uint32_t before,
 	uint32_t after)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Kept. */
 	(void)input;
@@ -241,8 +241,8 @@ text_done(
 	struct zwp_text_input_v3 *input,
 	uint32_t serial)
 {
-	struct kui_window_event *event;
-	struct kui_window *window;
+	struct kl_window_event *event;
+	struct kl_window *window;
 
 	/* The serial is the compositor's count of the window's commits; a text for an older state is still taken. */
 	(void)input;
@@ -251,7 +251,7 @@ text_done(
 
 	/* The bytes to delete around the caret. */
 	if (window->text_before != 0U || window->text_after != 0U) {
-		event = keiui_window_push(window, KUI_WINDOW_TEXT_DELETE);
+		event = keiui_window_push(window, KL_WINDOW_TEXT_DELETE);
 		if (event != NULL) {
 			event->before = window->text_before;
 			event->after = window->text_after;
@@ -260,14 +260,14 @@ text_done(
 
 	/* The text to commit. */
 	if (window->text_commit[0] != '\0') {
-		event = keiui_window_push(window, KUI_WINDOW_TEXT_COMMIT);
+		event = keiui_window_push(window, KL_WINDOW_TEXT_COMMIT);
 		if (event != NULL)
 			memcpy(event->text, window->text_commit, sizeof(event->text));
 	}
 
 	/* The text being composed, when it came or when one shown goes. */
 	if (window->text_preedit_set && (window->text_preedit[0] != '\0' || window->text_preedit_shown)) {
-		event = keiui_window_push(window, KUI_WINDOW_TEXT_PREEDIT);
+		event = keiui_window_push(window, KL_WINDOW_TEXT_PREEDIT);
 		if (event != NULL) {
 			memcpy(event->text, window->text_preedit, sizeof(event->text));
 			event->begin = window->text_preedit_begin;
@@ -289,7 +289,7 @@ text_done(
 /* Enables the text input while the application asks and it is on the window, disables it otherwise; each change is committed. */
 static void
 text_state(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	int enabled;
 
@@ -333,8 +333,8 @@ text_copy(
 
 	/* What fits, back to a character's start. */
 	length = strlen(text);
-	if (length >= KUI_WINDOW_TEXT_MAX) {
-		length = KUI_WINDOW_TEXT_MAX - 1U;
+	if (length >= KL_WINDOW_TEXT_MAX) {
+		length = KL_WINDOW_TEXT_MAX - 1U;
 		while (length > 0U && ((unsigned char)text[length] & 0xc0U) == 0x80U)
 			length--;
 	}

@@ -4,54 +4,44 @@
 
 正本は [design.md §5](design.md)。2026-10-03 のユーザーの最終の規則: 関数・型・変数は `kl_`、macro と enum の定数は `KL_`。`userland/desktop/paths.h` の install の path の macro（`KEILAND_BINDIR`・`KEILAND_DATADIR`・`KEILAND_LIBEXECDIR`・`KEILAND_SYSCONFDIR`）はそのまま。対象は公開の header の `keiland.h` と `keiui.h` が comment の外に書く名前。Wayland の protocol の識別子（`keiland_*_v1`・`KEILAND_*_V1_*`）と、app・libbrowser の include guard はこの表の外（design.md §5.2、判断 D15・D16）。
 
-件数: keiland.h 266、keiui.h 341（合計 607、解決の要る衝突 0）
+件数: keiland.h 202、keiui.h 341（合計 543、解決の要る衝突 0）
 
 | 旧名 | 種類 | 新名 | 宣言 | 注 |
 | --- | --- | --- | --- | --- |
-| `keiland_audio` | struct | `kl_audio` | keiland.h:1188 |  |
-| `keiland_audio_available` | function | `kl_audio_available` | keiland.h:1254 |  |
-| `keiland_audio_close` | function | `kl_audio_close` | keiland.h:1214 |  |
-| `keiland_audio_fd` | function | `kl_audio_fd` | keiland.h:1220 |  |
-| `keiland_audio_feedback` | function | `kl_audio_feedback` | keiland.h:1246 |  |
-| `keiland_audio_get_state` | function | `kl_audio_get_state` | keiland.h:1232 |  |
-| `keiland_audio_open` | function | `kl_audio_open` | keiland.h:1209 |  |
-| `keiland_audio_set_volume` | function | `kl_audio_set_volume` | keiland.h:1239 |  |
-| `keiland_audio_state` | struct | `kl_audio_state` | keiland.h:1191 |  |
-| `keiland_audio_update` | function | `kl_audio_update` | keiland.h:1227 |  |
 | `keiland_context_menu` | struct | `kl_context_menu` | keiland.h:260 |  |
 | `keiland_context_menu_destroy` | function | `kl_context_menu_destroy` | keiland.h:278 |  |
 | `keiland_context_menu_listener` | struct | `kl_context_menu_listener` | keiland.h:261 |  |
-| `keiland_desktop` | struct | `kl_desktop` | keiland.h:1151 |  |
-| `keiland_desktop_ack` | function | `kl_desktop_ack` | keiland.h:1173 |  |
-| `keiland_desktop_create` | function | `kl_desktop_create` | keiland.h:1168 |  |
-| `keiland_desktop_destroy` | function | `kl_desktop_destroy` | keiland.h:1178 |  |
-| `keiland_desktop_listener` | struct | `kl_desktop_listener` | keiland.h:1158 |  |
-| `keiland_edit` | struct | `kl_edit` | keiland.h:1299 |  |
-| `keiland_edit_create` | function | `kl_edit_create` | keiland.h:1326 |  |
-| `keiland_edit_destroy` | function | `kl_edit_destroy` | keiland.h:1337 |  |
-| `keiland_edit_fn` | typedef | `kl_edit_fn` | keiland.h:1319 |  |
-| `keiland_edit_set_state` | function | `kl_edit_set_state` | keiland.h:1332 |  |
-| `keiland_gesture` | struct | `kl_gesture` | keiland.h:993 |  |
-| `keiland_gesture_cancel` | function | `kl_gesture_cancel` | keiland.h:1045 |  |
-| `keiland_gesture_create` | function | `kl_gesture_create` | keiland.h:1024 |  |
-| `keiland_gesture_destroy` | function | `kl_gesture_destroy` | keiland.h:1027 |  |
-| `keiland_gesture_down` | function | `kl_gesture_down` | keiland.h:1034 |  |
-| `keiland_gesture_drag_offset` | function | `kl_gesture_drag_offset` | keiland.h:1058 |  |
-| `keiland_gesture_event` | struct | `kl_gesture_event` | keiland.h:1008 |  |
-| `keiland_gesture_motion` | function | `kl_gesture_motion` | keiland.h:1038 |  |
-| `keiland_gesture_next` | function | `kl_gesture_next` | keiland.h:1051 |  |
-| `keiland_gesture_pinch` | function | `kl_gesture_pinch` | keiland.h:1065 |  |
-| `keiland_gesture_up` | function | `kl_gesture_up` | keiland.h:1042 |  |
+| `keiland_desktop` | struct | `kl_desktop` | keiland.h:893 |  |
+| `keiland_desktop_ack` | function | `kl_desktop_ack` | keiland.h:915 |  |
+| `keiland_desktop_create` | function | `kl_desktop_create` | keiland.h:910 |  |
+| `keiland_desktop_destroy` | function | `kl_desktop_destroy` | keiland.h:920 |  |
+| `keiland_desktop_listener` | struct | `kl_desktop_listener` | keiland.h:900 |  |
+| `keiland_edit` | struct | `kl_edit` | keiland.h:965 |  |
+| `keiland_edit_create` | function | `kl_edit_create` | keiland.h:992 |  |
+| `keiland_edit_destroy` | function | `kl_edit_destroy` | keiland.h:1003 |  |
+| `keiland_edit_fn` | typedef | `kl_edit_fn` | keiland.h:985 |  |
+| `keiland_edit_set_state` | function | `kl_edit_set_state` | keiland.h:998 |  |
+| `keiland_gesture` | struct | `kl_gesture` | keiland.h:796 |  |
+| `keiland_gesture_cancel` | function | `kl_gesture_cancel` | keiland.h:848 |  |
+| `keiland_gesture_create` | function | `kl_gesture_create` | keiland.h:827 |  |
+| `keiland_gesture_destroy` | function | `kl_gesture_destroy` | keiland.h:830 |  |
+| `keiland_gesture_down` | function | `kl_gesture_down` | keiland.h:837 |  |
+| `keiland_gesture_drag_offset` | function | `kl_gesture_drag_offset` | keiland.h:861 |  |
+| `keiland_gesture_event` | struct | `kl_gesture_event` | keiland.h:811 |  |
+| `keiland_gesture_motion` | function | `kl_gesture_motion` | keiland.h:841 |  |
+| `keiland_gesture_next` | function | `kl_gesture_next` | keiland.h:854 |  |
+| `keiland_gesture_pinch` | function | `kl_gesture_pinch` | keiland.h:868 |  |
+| `keiland_gesture_up` | function | `kl_gesture_up` | keiland.h:845 |  |
 | `keiland_glass` | struct | `kl_glass` | keiland.h:524 |  |
 | `keiland_glass_create` | function | `kl_glass_create` | keiland.h:550 |  |
 | `keiland_glass_destroy` | function | `kl_glass_destroy` | keiland.h:569 |  |
 | `keiland_glass_panel` | struct | `kl_glass_panel` | keiland.h:537 |  |
 | `keiland_glass_set_blur` | function | `kl_glass_set_blur` | keiland.h:564 |  |
 | `keiland_glass_set_panels` | function | `kl_glass_set_panels` | keiland.h:555 |  |
-| `keiland_keyboard_inset` | struct | `kl_keyboard_inset` | keiland.h:1266 |  |
-| `keiland_keyboard_inset_create` | function | `kl_keyboard_inset_create` | keiland.h:1282 |  |
-| `keiland_keyboard_inset_destroy` | function | `kl_keyboard_inset_destroy` | keiland.h:1287 |  |
-| `keiland_keyboard_inset_fn` | typedef | `kl_keyboard_inset_fn` | keiland.h:1275 |  |
+| `keiland_keyboard_inset` | struct | `kl_keyboard_inset` | keiland.h:932 |  |
+| `keiland_keyboard_inset_create` | function | `kl_keyboard_inset_create` | keiland.h:948 |  |
+| `keiland_keyboard_inset_destroy` | function | `kl_keyboard_inset_destroy` | keiland.h:953 |  |
+| `keiland_keyboard_inset_fn` | typedef | `kl_keyboard_inset_fn` | keiland.h:941 |  |
 | `keiland_menu` | struct | `kl_menu` | keiland.h:91 |  |
 | `keiland_menu_append` | function | `kl_menu_append` | keiland.h:182 |  |
 | `keiland_menu_begin` | function | `kl_menu_begin` | keiland.h:172 |  |
@@ -72,57 +62,34 @@
 | `keiland_menu_set_role` | function | `kl_menu_set_role` | keiland.h:222 |  |
 | `keiland_menu_set_shortcut` | function | `kl_menu_set_shortcut` | keiland.h:232 |  |
 | `keiland_menu_set_visible` | function | `kl_menu_set_visible` | keiland.h:212 |  |
-| `keiland_motion` | struct | `kl_motion` | keiland.h:802 |  |
-| `keiland_motion_add` | function | `kl_motion_add` | keiland.h:860 |  |
-| `keiland_motion_begin` | function | `kl_motion_begin` | keiland.h:850 |  |
-| `keiland_motion_create` | function | `kl_motion_create` | keiland.h:841 |  |
-| `keiland_motion_destroy` | function | `kl_motion_destroy` | keiland.h:844 |  |
-| `keiland_motion_device` | struct | `kl_motion_device` | keiland.h:799 |  |
-| `keiland_motion_device_create` | function | `kl_motion_device_create` | keiland.h:809 |  |
-| `keiland_motion_device_destroy` | function | `kl_motion_device_destroy` | keiland.h:814 |  |
-| `keiland_motion_device_interval` | function | `kl_motion_device_interval` | keiland.h:831 |  |
-| `keiland_motion_device_noise` | function | `kl_motion_device_noise` | keiland.h:834 |  |
-| `keiland_motion_device_time` | function | `kl_motion_device_time` | keiland.h:827 |  |
-| `keiland_motion_end` | function | `kl_motion_end` | keiland.h:888 |  |
-| `keiland_motion_point` | function | `kl_motion_point` | keiland.h:871 |  |
-| `keiland_motion_velocity` | function | `kl_motion_velocity` | keiland.h:882 |  |
-| `keiland_network` | struct | `kl_network` | keiland.h:591 |  |
-| `keiland_network_ap` | struct | `kl_network_ap` | keiland.h:653 |  |
-| `keiland_network_close` | function | `kl_network_close` | keiland.h:668 |  |
-| `keiland_network_get_dns` | function | `kl_network_get_dns` | keiland.h:753 |  |
-| `keiland_network_get_links` | function | `kl_network_get_links` | keiland.h:747 |  |
-| `keiland_network_get_request` | function | `kl_network_get_request` | keiland.h:699 |  |
-| `keiland_network_get_saved` | function | `kl_network_get_saved` | keiland.h:766 |  |
-| `keiland_network_get_scan` | function | `kl_network_get_scan` | keiland.h:686 |  |
-| `keiland_network_get_state` | function | `kl_network_get_state` | keiland.h:680 |  |
-| `keiland_network_link` | struct | `kl_network_link` | keiland.h:730 |  |
-| `keiland_network_open` | function | `kl_network_open` | keiland.h:663 |  |
-| `keiland_network_request` | function | `kl_network_request` | keiland.h:692 |  |
-| `keiland_network_save_key` | function | `kl_network_save_key` | keiland.h:760 |  |
-| `keiland_network_state` | struct | `kl_network_state` | keiland.h:637 |  |
-| `keiland_network_update` | function | `kl_network_update` | keiland.h:675 |  |
-| `keiland_preferences` | struct | `kl_preferences` | keiland.h:1088 |  |
-| `keiland_preferences_close` | function | `kl_preferences_close` | keiland.h:1105 |  |
-| `keiland_preferences_get` | function | `kl_preferences_get` | keiland.h:1118 |  |
-| `keiland_preferences_get_int` | function | `kl_preferences_get_int` | keiland.h:1125 |  |
-| `keiland_preferences_open` | function | `kl_preferences_open` | keiland.h:1100 |  |
-| `keiland_preferences_reload` | function | `kl_preferences_reload` | keiland.h:1112 |  |
-| `keiland_preferences_set` | function | `kl_preferences_set` | keiland.h:1132 |  |
-| `keiland_preferences_unset` | function | `kl_preferences_unset` | keiland.h:1138 |  |
+| `keiland_motion` | struct | `kl_motion` | keiland.h:605 |  |
+| `keiland_motion_add` | function | `kl_motion_add` | keiland.h:663 |  |
+| `keiland_motion_begin` | function | `kl_motion_begin` | keiland.h:653 |  |
+| `keiland_motion_create` | function | `kl_motion_create` | keiland.h:644 |  |
+| `keiland_motion_destroy` | function | `kl_motion_destroy` | keiland.h:647 |  |
+| `keiland_motion_device` | struct | `kl_motion_device` | keiland.h:602 |  |
+| `keiland_motion_device_create` | function | `kl_motion_device_create` | keiland.h:612 |  |
+| `keiland_motion_device_destroy` | function | `kl_motion_device_destroy` | keiland.h:617 |  |
+| `keiland_motion_device_interval` | function | `kl_motion_device_interval` | keiland.h:634 |  |
+| `keiland_motion_device_noise` | function | `kl_motion_device_noise` | keiland.h:637 |  |
+| `keiland_motion_device_time` | function | `kl_motion_device_time` | keiland.h:630 |  |
+| `keiland_motion_end` | function | `kl_motion_end` | keiland.h:691 |  |
+| `keiland_motion_point` | function | `kl_motion_point` | keiland.h:674 |  |
+| `keiland_motion_velocity` | function | `kl_motion_velocity` | keiland.h:685 |  |
 | `keiland_recent_add` | function | `kl_recent_add` | keiland.h:494 |  |
 | `keiland_recent_item` | struct | `kl_recent_item` | keiland.h:484 |  |
 | `keiland_recent_list` | function | `kl_recent_list` | keiland.h:499 |  |
 | `keiland_recent_remove` | function | `kl_recent_remove` | keiland.h:504 |  |
-| `keiland_scroller` | struct | `kl_scroller` | keiland.h:909 |  |
-| `keiland_scroller_cancel` | function | `kl_scroller_cancel` | keiland.h:959 |  |
-| `keiland_scroller_create` | function | `kl_scroller_create` | keiland.h:920 |  |
-| `keiland_scroller_destroy` | function | `kl_scroller_destroy` | keiland.h:923 |  |
-| `keiland_scroller_drag` | function | `kl_scroller_drag` | keiland.h:949 |  |
-| `keiland_scroller_press` | function | `kl_scroller_press` | keiland.h:941 |  |
-| `keiland_scroller_release` | function | `kl_scroller_release` | keiland.h:956 |  |
-| `keiland_scroller_set_bounds` | function | `kl_scroller_set_bounds` | keiland.h:931 |  |
-| `keiland_scroller_set_position` | function | `kl_scroller_set_position` | keiland.h:935 |  |
-| `keiland_scroller_step` | function | `kl_scroller_step` | keiland.h:966 |  |
+| `keiland_scroller` | struct | `kl_scroller` | keiland.h:712 |  |
+| `keiland_scroller_cancel` | function | `kl_scroller_cancel` | keiland.h:762 |  |
+| `keiland_scroller_create` | function | `kl_scroller_create` | keiland.h:723 |  |
+| `keiland_scroller_destroy` | function | `kl_scroller_destroy` | keiland.h:726 |  |
+| `keiland_scroller_drag` | function | `kl_scroller_drag` | keiland.h:752 |  |
+| `keiland_scroller_press` | function | `kl_scroller_press` | keiland.h:744 |  |
+| `keiland_scroller_release` | function | `kl_scroller_release` | keiland.h:759 |  |
+| `keiland_scroller_set_bounds` | function | `kl_scroller_set_bounds` | keiland.h:734 |  |
+| `keiland_scroller_set_position` | function | `kl_scroller_set_position` | keiland.h:738 |  |
+| `keiland_scroller_step` | function | `kl_scroller_step` | keiland.h:769 |  |
 | `keiland_titlebar` | struct | `kl_titlebar` | keiland.h:294 |  |
 | `keiland_titlebar_add_control` | function | `kl_titlebar_add_control` | keiland.h:407 |  |
 | `keiland_titlebar_add_tab` | function | `kl_titlebar_add_tab` | keiland.h:442 |  |
@@ -148,8 +115,6 @@
 | `keiland_window_menu_destroy` | function | `kl_window_menu_destroy` | keiland.h:248 |  |
 | `keiland_window_menu_listener` | struct | `kl_window_menu_listener` | keiland.h:140 |  |
 | `keiland_window_menu_set` | function | `kl_window_menu_set` | keiland.h:243 |  |
-| `KEILAND_AUDIO_CHANGED_REACHABLE` | macro | `KL_AUDIO_CHANGED_REACHABLE` | keiland.h:1202 |  |
-| `KEILAND_AUDIO_CHANGED_VOLUME` | macro | `KL_AUDIO_CHANGED_VOLUME` | keiland.h:1203 |  |
 | `KEILAND_CONTROL_BACK` | macro | `KL_CONTROL_BACK` | keiland.h:309 |  |
 | `KEILAND_CONTROL_BREADCRUMB` | macro | `KL_CONTROL_BREADCRUMB` | keiland.h:313 |  |
 | `KEILAND_CONTROL_FILTER` | macro | `KL_CONTROL_FILTER` | keiland.h:319 |  |
@@ -166,33 +131,33 @@
 | `KEILAND_CONTROL_VIEW_COLUMNS` | macro | `KL_CONTROL_VIEW_COLUMNS` | keiland.h:317 |  |
 | `KEILAND_CONTROL_VIEW_GRID` | macro | `KL_CONTROL_VIEW_GRID` | keiland.h:315 |  |
 | `KEILAND_CONTROL_VIEW_LIST` | macro | `KL_CONTROL_VIEW_LIST` | keiland.h:316 |  |
-| `KEILAND_EDIT_CAN_PASTE` | macro | `KL_EDIT_CAN_PASTE` | keiland.h:1313 | same value as `KEILAND_EDIT_CAN_PASTE`, `KUI_EDIT_CAN_PASTE`: one definition |
-| `KEILAND_EDIT_CAN_REDO` | macro | `KL_EDIT_CAN_REDO` | keiland.h:1315 | same value as `KEILAND_EDIT_CAN_REDO`, `KUI_EDIT_CAN_REDO`: one definition |
-| `KEILAND_EDIT_CAN_UNDO` | macro | `KL_EDIT_CAN_UNDO` | keiland.h:1314 | same value as `KEILAND_EDIT_CAN_UNDO`, `KUI_EDIT_CAN_UNDO`: one definition |
-| `KEILAND_EDIT_COPY` | macro | `KL_EDIT_COPY` | keiland.h:1302 | same value as `KEILAND_EDIT_COPY`, `KUI_EDIT_COPY`: one definition |
-| `KEILAND_EDIT_CUT` | macro | `KL_EDIT_CUT` | keiland.h:1303 | same value as `KEILAND_EDIT_CUT`, `KUI_EDIT_CUT`: one definition |
-| `KEILAND_EDIT_HAS_SELECTION` | macro | `KL_EDIT_HAS_SELECTION` | keiland.h:1312 | same value as `KEILAND_EDIT_HAS_SELECTION`, `KUI_EDIT_HAS_SELECTION`: one definition |
-| `KEILAND_EDIT_PASTE` | macro | `KL_EDIT_PASTE` | keiland.h:1304 | same value as `KEILAND_EDIT_PASTE`, `KUI_EDIT_PASTE`: one definition |
-| `KEILAND_EDIT_REDO` | macro | `KL_EDIT_REDO` | keiland.h:1306 | same value as `KEILAND_EDIT_REDO`, `KUI_EDIT_REDO`: one definition |
-| `KEILAND_EDIT_SELECTING` | macro | `KL_EDIT_SELECTING` | keiland.h:1316 |  |
-| `KEILAND_EDIT_SELECT_ALL` | macro | `KL_EDIT_SELECT_ALL` | keiland.h:1307 | same value as `KEILAND_EDIT_SELECT_ALL`, `KUI_EDIT_SELECT_ALL`: one definition |
-| `KEILAND_EDIT_SELECT_BEGIN` | macro | `KL_EDIT_SELECT_BEGIN` | keiland.h:1308 | same value as `KEILAND_EDIT_SELECT_BEGIN`, `KUI_EDIT_SELECT_BEGIN`: one definition |
-| `KEILAND_EDIT_SELECT_END` | macro | `KL_EDIT_SELECT_END` | keiland.h:1309 | same value as `KEILAND_EDIT_SELECT_END`, `KUI_EDIT_SELECT_END`: one definition |
-| `KEILAND_EDIT_UNDO` | macro | `KL_EDIT_UNDO` | keiland.h:1305 | same value as `KEILAND_EDIT_UNDO`, `KUI_EDIT_UNDO`: one definition |
+| `KEILAND_EDIT_CAN_PASTE` | macro | `KL_EDIT_CAN_PASTE` | keiland.h:979 | same value as `KEILAND_EDIT_CAN_PASTE`, `KUI_EDIT_CAN_PASTE`: one definition |
+| `KEILAND_EDIT_CAN_REDO` | macro | `KL_EDIT_CAN_REDO` | keiland.h:981 | same value as `KEILAND_EDIT_CAN_REDO`, `KUI_EDIT_CAN_REDO`: one definition |
+| `KEILAND_EDIT_CAN_UNDO` | macro | `KL_EDIT_CAN_UNDO` | keiland.h:980 | same value as `KEILAND_EDIT_CAN_UNDO`, `KUI_EDIT_CAN_UNDO`: one definition |
+| `KEILAND_EDIT_COPY` | macro | `KL_EDIT_COPY` | keiland.h:968 | same value as `KEILAND_EDIT_COPY`, `KUI_EDIT_COPY`: one definition |
+| `KEILAND_EDIT_CUT` | macro | `KL_EDIT_CUT` | keiland.h:969 | same value as `KEILAND_EDIT_CUT`, `KUI_EDIT_CUT`: one definition |
+| `KEILAND_EDIT_HAS_SELECTION` | macro | `KL_EDIT_HAS_SELECTION` | keiland.h:978 | same value as `KEILAND_EDIT_HAS_SELECTION`, `KUI_EDIT_HAS_SELECTION`: one definition |
+| `KEILAND_EDIT_PASTE` | macro | `KL_EDIT_PASTE` | keiland.h:970 | same value as `KEILAND_EDIT_PASTE`, `KUI_EDIT_PASTE`: one definition |
+| `KEILAND_EDIT_REDO` | macro | `KL_EDIT_REDO` | keiland.h:972 | same value as `KEILAND_EDIT_REDO`, `KUI_EDIT_REDO`: one definition |
+| `KEILAND_EDIT_SELECTING` | macro | `KL_EDIT_SELECTING` | keiland.h:982 |  |
+| `KEILAND_EDIT_SELECT_ALL` | macro | `KL_EDIT_SELECT_ALL` | keiland.h:973 | same value as `KEILAND_EDIT_SELECT_ALL`, `KUI_EDIT_SELECT_ALL`: one definition |
+| `KEILAND_EDIT_SELECT_BEGIN` | macro | `KL_EDIT_SELECT_BEGIN` | keiland.h:974 | same value as `KEILAND_EDIT_SELECT_BEGIN`, `KUI_EDIT_SELECT_BEGIN`: one definition |
+| `KEILAND_EDIT_SELECT_END` | macro | `KL_EDIT_SELECT_END` | keiland.h:975 | same value as `KEILAND_EDIT_SELECT_END`, `KUI_EDIT_SELECT_END`: one definition |
+| `KEILAND_EDIT_UNDO` | macro | `KL_EDIT_UNDO` | keiland.h:971 | same value as `KEILAND_EDIT_UNDO`, `KUI_EDIT_UNDO`: one definition |
 | `KEILAND_FOCUS_EDIT` | macro | `KL_FOCUS_EDIT` | keiland.h:342 |  |
 | `KEILAND_FOCUS_FIELD` | macro | `KL_FOCUS_FIELD` | keiland.h:341 |  |
-| `KEILAND_GESTURE_CANCEL` | macro | `KL_GESTURE_CANCEL` | keiland.h:1000 |  |
-| `KEILAND_GESTURE_DOUBLE_TAP` | macro | `KL_GESTURE_DOUBLE_TAP` | keiland.h:996 |  |
-| `KEILAND_GESTURE_DRAG_BEGIN` | macro | `KL_GESTURE_DRAG_BEGIN` | keiland.h:998 |  |
-| `KEILAND_GESTURE_DRAG_END` | macro | `KL_GESTURE_DRAG_END` | keiland.h:999 |  |
-| `KEILAND_GESTURE_LONG_PRESS` | macro | `KL_GESTURE_LONG_PRESS` | keiland.h:997 |  |
-| `KEILAND_GESTURE_TAP` | macro | `KL_GESTURE_TAP` | keiland.h:995 |  |
+| `KEILAND_GESTURE_CANCEL` | macro | `KL_GESTURE_CANCEL` | keiland.h:803 |  |
+| `KEILAND_GESTURE_DOUBLE_TAP` | macro | `KL_GESTURE_DOUBLE_TAP` | keiland.h:799 |  |
+| `KEILAND_GESTURE_DRAG_BEGIN` | macro | `KL_GESTURE_DRAG_BEGIN` | keiland.h:801 |  |
+| `KEILAND_GESTURE_DRAG_END` | macro | `KL_GESTURE_DRAG_END` | keiland.h:802 |  |
+| `KEILAND_GESTURE_LONG_PRESS` | macro | `KL_GESTURE_LONG_PRESS` | keiland.h:800 |  |
+| `KEILAND_GESTURE_TAP` | macro | `KL_GESTURE_TAP` | keiland.h:798 |  |
 | `KEILAND_GLASS_CARD` | macro | `KL_GLASS_CARD` | keiland.h:527 |  |
 | `KEILAND_GLASS_PANELS_MAX` | macro | `KL_GLASS_PANELS_MAX` | keiland.h:530 |  |
 | `KEILAND_GLASS_RADIUS_MAX` | macro | `KL_GLASS_RADIUS_MAX` | keiland.h:531 |  |
-| `KEILAND_KEYBOARD_INSET_BOTTOM` | macro | `KL_KEYBOARD_INSET_BOTTOM` | keiland.h:1272 | same value as `KEILAND_KEYBOARD_INSET_BOTTOM`, `KUI_KEYBOARD_INSET_BOTTOM`: one definition |
-| `KEILAND_KEYBOARD_INSET_NONE` | macro | `KL_KEYBOARD_INSET_NONE` | keiland.h:1270 | same value as `KEILAND_KEYBOARD_INSET_NONE`, `KUI_KEYBOARD_INSET_NONE`: one definition |
-| `KEILAND_KEYBOARD_INSET_RIGHT` | macro | `KL_KEYBOARD_INSET_RIGHT` | keiland.h:1271 | same value as `KEILAND_KEYBOARD_INSET_RIGHT`, `KUI_KEYBOARD_INSET_RIGHT`: one definition |
+| `KEILAND_KEYBOARD_INSET_BOTTOM` | macro | `KL_KEYBOARD_INSET_BOTTOM` | keiland.h:938 | same value as `KEILAND_KEYBOARD_INSET_BOTTOM`, `KUI_KEYBOARD_INSET_BOTTOM`: one definition |
+| `KEILAND_KEYBOARD_INSET_NONE` | macro | `KL_KEYBOARD_INSET_NONE` | keiland.h:936 | same value as `KEILAND_KEYBOARD_INSET_NONE`, `KUI_KEYBOARD_INSET_NONE`: one definition |
+| `KEILAND_KEYBOARD_INSET_RIGHT` | macro | `KL_KEYBOARD_INSET_RIGHT` | keiland.h:937 | same value as `KEILAND_KEYBOARD_INSET_RIGHT`, `KUI_KEYBOARD_INSET_RIGHT`: one definition |
 | `KEILAND_MENU_ALT` | macro | `KL_MENU_ALT` | keiland.h:129 |  |
 | `KEILAND_MENU_CTRL` | macro | `KL_MENU_CTRL` | keiland.h:128 |  |
 | `KEILAND_MENU_ITEM_CHECKBOX` | macro | `KL_MENU_ITEM_CHECKBOX` | keiland.h:100 |  |
@@ -223,31 +188,8 @@
 | `KEILAND_MENU_ROOT` | macro | `KL_MENU_ROOT` | keiland.h:95 |  |
 | `KEILAND_MENU_SHIFT` | macro | `KL_MENU_SHIFT` | keiland.h:127 |  |
 | `KEILAND_MENU_SUPER` | macro | `KL_MENU_SUPER` | keiland.h:130 |  |
-| `KEILAND_MOTION_EXTRAPOLATION_CONTENT` | macro | `KL_MOTION_EXTRAPOLATION_CONTENT` | keiland.h:793 |  |
-| `KEILAND_MOTION_EXTRAPOLATION_INK` | macro | `KL_MOTION_EXTRAPOLATION_INK` | keiland.h:796 |  |
-| `KEILAND_NETWORK_ADDRESS_MAX` | macro | `KL_NETWORK_ADDRESS_MAX` | keiland.h:719 |  |
-| `KEILAND_NETWORK_CHANGED_DONE` | macro | `KL_NETWORK_CHANGED_DONE` | keiland.h:618 |  |
-| `KEILAND_NETWORK_CHANGED_SCAN` | macro | `KL_NETWORK_CHANGED_SCAN` | keiland.h:617 |  |
-| `KEILAND_NETWORK_CHANGED_STATE` | macro | `KL_NETWORK_CHANGED_STATE` | keiland.h:616 |  |
-| `KEILAND_NETWORK_DNS_MAX` | macro | `KL_NETWORK_DNS_MAX` | keiland.h:718 |  |
-| `KEILAND_NETWORK_KEY_MAX` | macro | `KL_NETWORK_KEY_MAX` | keiland.h:723 |  |
-| `KEILAND_NETWORK_KEY_MIN` | macro | `KL_NETWORK_KEY_MIN` | keiland.h:722 |  |
-| `KEILAND_NETWORK_LINKS_MAX` | macro | `KL_NETWORK_LINKS_MAX` | keiland.h:717 |  |
-| `KEILAND_NETWORK_NAME_MAX` | macro | `KL_NETWORK_NAME_MAX` | keiland.h:597 |  |
-| `KEILAND_NETWORK_NONE` | macro | `KL_NETWORK_NONE` | keiland.h:603 |  |
-| `KEILAND_NETWORK_REQUEST_DISCONNECT` | macro | `KL_NETWORK_REQUEST_DISCONNECT` | keiland.h:624 |  |
-| `KEILAND_NETWORK_REQUEST_JOIN` | macro | `KL_NETWORK_REQUEST_JOIN` | keiland.h:623 |  |
-| `KEILAND_NETWORK_REQUEST_NONE` | macro | `KL_NETWORK_REQUEST_NONE` | keiland.h:621 |  |
-| `KEILAND_NETWORK_REQUEST_PROFILES` | macro | `KL_NETWORK_REQUEST_PROFILES` | keiland.h:627 |  |
-| `KEILAND_NETWORK_REQUEST_SCAN` | macro | `KL_NETWORK_REQUEST_SCAN` | keiland.h:622 |  |
-| `KEILAND_NETWORK_REQUEST_WIFI_OFF` | macro | `KL_NETWORK_REQUEST_WIFI_OFF` | keiland.h:626 |  |
-| `KEILAND_NETWORK_REQUEST_WIFI_ON` | macro | `KL_NETWORK_REQUEST_WIFI_ON` | keiland.h:625 |  |
-| `KEILAND_NETWORK_SCAN_MAX` | macro | `KL_NETWORK_SCAN_MAX` | keiland.h:600 |  |
-| `KEILAND_NETWORK_SSID_MAX` | macro | `KL_NETWORK_SSID_MAX` | keiland.h:594 |  |
-| `KEILAND_NETWORK_WIFI` | macro | `KL_NETWORK_WIFI` | keiland.h:605 |  |
-| `KEILAND_NETWORK_WIRED` | macro | `KL_NETWORK_WIRED` | keiland.h:604 |  |
-| `KEILAND_PREFERENCES_KEY_MAX` | macro | `KL_PREFERENCES_KEY_MAX` | keiland.h:1091 |  |
-| `KEILAND_PREFERENCES_VALUE_MAX` | macro | `KL_PREFERENCES_VALUE_MAX` | keiland.h:1092 |  |
+| `KEILAND_MOTION_EXTRAPOLATION_CONTENT` | macro | `KL_MOTION_EXTRAPOLATION_CONTENT` | keiland.h:596 |  |
+| `KEILAND_MOTION_EXTRAPOLATION_INK` | macro | `KL_MOTION_EXTRAPOLATION_INK` | keiland.h:599 |  |
 | `KEILAND_PRIORITY_NORMAL` | macro | `KL_PRIORITY_NORMAL` | keiland.h:328 |  |
 | `KEILAND_PRIORITY_PRIMARY` | macro | `KL_PRIORITY_PRIMARY` | keiland.h:327 |  |
 | `KEILAND_PRIORITY_SECONDARY` | macro | `KL_PRIORITY_SECONDARY` | keiland.h:329 |  |
@@ -255,7 +197,7 @@
 | `KEILAND_RECENT_KEPT` | macro | `KL_RECENT_KEPT` | keiland.h:478 |  |
 | `KEILAND_RECENT_NAME_MAX` | macro | `KL_RECENT_NAME_MAX` | keiland.h:475 |  |
 | `KEILAND_RECENT_PATH_MAX` | macro | `KL_RECENT_PATH_MAX` | keiland.h:474 |  |
-| `KEILAND_SCROLLER_FLING_MIN` | macro | `KL_SCROLLER_FLING_MIN` | keiland.h:912 |  |
+| `KEILAND_SCROLLER_FLING_MIN` | macro | `KL_SCROLLER_FLING_MIN` | keiland.h:715 |  |
 | `KEILAND_TABS_NEW_BUTTON` | macro | `KL_TABS_NEW_BUTTON` | keiland.h:338 |  |
 | `KEILAND_TAB_ACTIVE` | macro | `KL_TAB_ACTIVE` | keiland.h:335 |  |
 | `KEILAND_TAB_ATTENTION` | macro | `KL_TAB_ATTENTION` | keiland.h:336 |  |
@@ -268,350 +210,344 @@
 | `KEILAND_TITLEBAR_SHEET` | macro | `KL_TITLEBAR_SHEET` | keiland.h:306 |  |
 | `KEILAND_TITLEBAR_TABS` | macro | `KL_TITLEBAR_TABS` | keiland.h:305 |  |
 | `KEILAND_VERSION` | macro | `KL_VERSION` | keiland.h:49 |  |
-| `KEILAND_WIFI_ABSENT` | macro | `KL_WIFI_ABSENT` | keiland.h:608 |  |
-| `KEILAND_WIFI_CONNECTED` | macro | `KL_WIFI_CONNECTED` | keiland.h:612 |  |
-| `KEILAND_WIFI_CONNECTING` | macro | `KL_WIFI_CONNECTING` | keiland.h:611 |  |
-| `KEILAND_WIFI_DISCONNECTED` | macro | `KL_WIFI_DISCONNECTED` | keiland.h:613 |  |
-| `KEILAND_WIFI_OFF` | macro | `KL_WIFI_OFF` | keiland.h:609 |  |
-| `KEILAND_WIFI_SEARCHING` | macro | `KL_WIFI_SEARCHING` | keiland.h:610 |  |
-| `kui_button` | function | `kl_button` | keiui.h:977 |  |
-| `kui_button_width` | function | `kl_button_width` | keiui.h:978 |  |
-| `kui_canvas` | struct | `kl_canvas` | keiui.h:117 |  |
-| `kui_canvas_circle` | function | `kl_canvas_circle` | keiui.h:256 |  |
-| `kui_canvas_clear` | function | `kl_canvas_clear` | keiui.h:249 |  |
-| `kui_canvas_clip_pop` | function | `kl_canvas_clip_pop` | keiui.h:248 |  |
-| `kui_canvas_clip_push` | function | `kl_canvas_clip_push` | keiui.h:247 |  |
-| `kui_canvas_fill` | function | `kl_canvas_fill` | keiui.h:250 |  |
-| `kui_canvas_gradient` | function | `kl_canvas_gradient` | keiui.h:251 |  |
-| `kui_canvas_image` | function | `kl_canvas_image` | keiui.h:261 |  |
-| `kui_canvas_init` | function | `kl_canvas_init` | keiui.h:245 |  |
-| `kui_canvas_line` | function | `kl_canvas_line` | keiui.h:259 |  |
-| `kui_canvas_mask` | function | `kl_canvas_mask` | keiui.h:260 |  |
-| `kui_canvas_polygon` | function | `kl_canvas_polygon` | keiui.h:258 |  |
-| `kui_canvas_release` | function | `kl_canvas_release` | keiui.h:246 |  |
-| `kui_canvas_ring` | function | `kl_canvas_ring` | keiui.h:257 |  |
-| `kui_canvas_round` | function | `kl_canvas_round` | keiui.h:252 |  |
-| `kui_canvas_round_border` | function | `kl_canvas_round_border` | keiui.h:254 |  |
-| `kui_canvas_round_gradient` | function | `kl_canvas_round_gradient` | keiui.h:253 |  |
-| `kui_canvas_shadow` | function | `kl_canvas_shadow` | keiui.h:255 |  |
-| `kui_card` | function | `kl_card` | keiui.h:991 |  |
-| `kui_chip` | function | `kl_chip` | keiui.h:995 |  |
-| `kui_clock_us` | function | `kl_clock_us` | keiui.h:899 |  |
-| `kui_color` | typedef | `kl_color` | keiui.h:76 |  |
-| `kui_color_mix` | function | `kl_color_mix` | keiui.h:265 |  |
-| `kui_dialog` | function | `kl_dialog` | keiui.h:994 |  |
-| `kui_edit_fn` | typedef | `kl_window_edit_fn` | keiui.h:877 | kl_edit_fn is keiland_edit_fn (void, uint32_t); the window callback differs |
-| `kui_event` | struct | `kl_event` | keiui.h:644 |  |
-| `kui_field` | struct | `kl_field` | keiui.h:950 |  |
-| `kui_field_set` | function | `kl_field_set` | keiui.h:981 |  |
-| `kui_file_chooser` | struct | `kl_file_chooser` | keiui.h:1016 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
-| `kui_file_chooser_destroy` | function | `kl_file_chooser_destroy` | keiui.h:1090 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
-| `kui_file_chooser_listener` | struct | `kl_file_chooser_listener` | keiui.h:1073 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
-| `kui_file_chooser_open` | function | `kl_file_chooser_open` | keiui.h:1085 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
-| `kui_file_chooser_options` | struct | `kl_file_chooser_options` | keiui.h:1053 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
-| `kui_file_filter` | struct | `kl_file_filter` | keiui.h:1035 |  |
-| `kui_glyph` | struct | `kl_glyph` | keiui.h:140 |  |
-| `kui_header` | function | `kl_header` | keiui.h:993 |  |
-| `kui_icon` | enum | `kl_icon` | keiui.h:191 |  |
-| `kui_icon_draw` | function | `kl_icon_draw` | keiui.h:344 |  |
-| `kui_icon_file` | function | `kl_icon_file` | keiui.h:346 |  |
-| `kui_icon_folder` | function | `kl_icon_folder` | keiui.h:345 |  |
-| `kui_icon_tag` | function | `kl_icon_tag` | keiui.h:347 |  |
-| `kui_image` | struct | `kl_image` | keiui.h:103 |  |
-| `kui_image_create` | function | `kl_image_create` | keiui.h:262 |  |
-| `kui_image_release` | function | `kl_image_release` | keiui.h:263 |  |
-| `kui_image_scale` | function | `kl_image_scale` | keiui.h:264 |  |
-| `kui_key_character` | function | `kl_key_character` | keiui.h:512 |  |
-| `kui_keyboard_inset_fn` | typedef | `kl_window_keyboard_inset_fn` | keiui.h:846 | kl_keyboard_inset_fn is keiland_keyboard_inset_fn; the window callback differs |
-| `kui_list` | struct | `kl_list` | keiui.h:963 |  |
-| `kui_list_begin` | function | `kl_list_begin` | keiui.h:985 |  |
-| `kui_list_end` | function | `kl_list_end` | keiui.h:987 |  |
-| `kui_list_init` | function | `kl_list_init` | keiui.h:983 |  |
-| `kui_list_release` | function | `kl_list_release` | keiui.h:984 |  |
-| `kui_list_row` | function | `kl_list_row` | keiui.h:986 |  |
-| `kui_panel` | function | `kl_panel` | keiui.h:990 |  |
-| `kui_progress` | function | `kl_progress` | keiui.h:996 |  |
-| `kui_rect` | struct | `kl_rect` | keiui.h:90 |  |
-| `kui_row` | function | `kl_row` | keiui.h:992 |  |
-| `kui_scroll` | struct | `kl_scroll` | keiui.h:377 |  |
-| `kui_scroll_bar` | struct | `kl_scroll_bar` | keiui.h:451 |  |
-| `kui_scroll_bar_busy` | function | `kl_scroll_bar_busy` | keiui.h:482 |  |
-| `kui_scroll_bar_drag` | function | `kl_scroll_bar_drag` | keiui.h:480 |  |
-| `kui_scroll_bar_draw` | function | `kl_scroll_bar_draw` | keiui.h:483 |  |
-| `kui_scroll_bar_hover` | function | `kl_scroll_bar_hover` | keiui.h:476 |  |
-| `kui_scroll_bar_leave` | function | `kl_scroll_bar_leave` | keiui.h:477 |  |
-| `kui_scroll_bar_moved` | function | `kl_scroll_bar_moved` | keiui.h:475 |  |
-| `kui_scroll_bar_press` | function | `kl_scroll_bar_press` | keiui.h:479 |  |
-| `kui_scroll_bar_release` | function | `kl_scroll_bar_release` | keiui.h:481 |  |
-| `kui_scroll_bar_shape` | struct | `kl_scroll_bar_shape` | keiui.h:462 |  |
-| `kui_scroll_cancel` | function | `kl_scroll_cancel` | keiui.h:414 |  |
-| `kui_scroll_drag` | function | `kl_scroll_drag` | keiui.h:412 |  |
-| `kui_scroll_draw_bars` | function | `kl_scroll_draw_bars` | keiui.h:418 |  |
-| `kui_scroll_fling` | function | `kl_scroll_fling` | keiui.h:413 |  |
-| `kui_scroll_init` | function | `kl_scroll_init` | keiui.h:404 |  |
-| `kui_scroll_key` | function | `kl_scroll_key` | keiui.h:410 |  |
-| `kui_scroll_limit_x` | function | `kl_scroll_limit_x` | keiui.h:416 |  |
-| `kui_scroll_limit_y` | function | `kl_scroll_limit_y` | keiui.h:417 |  |
-| `kui_scroll_move_to` | function | `kl_scroll_move_to` | keiui.h:408 |  |
-| `kui_scroll_press` | function | `kl_scroll_press` | keiui.h:411 |  |
-| `kui_scroll_release` | function | `kl_scroll_release` | keiui.h:405 |  |
-| `kui_scroll_reveal` | function | `kl_scroll_reveal` | keiui.h:409 |  |
-| `kui_scroll_set_size` | function | `kl_scroll_set_size` | keiui.h:406 |  |
-| `kui_scroll_step` | function | `kl_scroll_step` | keiui.h:415 |  |
-| `kui_scroll_wheel` | function | `kl_scroll_wheel` | keiui.h:407 |  |
-| `kui_sidebar_item` | function | `kl_sidebar_item` | keiui.h:989 |  |
-| `kui_sidebar_section` | function | `kl_sidebar_section` | keiui.h:988 |  |
-| `kui_slider` | function | `kl_slider` | keiui.h:980 |  |
-| `kui_style` | struct | `kl_style` | keiui.h:917 |  |
-| `kui_switch` | function | `kl_switch` | keiui.h:979 |  |
-| `kui_text` | struct | `kl_text` | keiui.h:168 |  |
-| `kui_text_break` | function | `kl_text_break` | keiui.h:276 |  |
-| `kui_text_center` | function | `kl_text_center` | keiui.h:271 |  |
-| `kui_text_close` | function | `kl_text_close` | keiui.h:269 |  |
-| `kui_text_draw` | function | `kl_text_draw` | keiui.h:273 |  |
-| `kui_text_draw_fit` | function | `kl_text_draw_fit` | keiui.h:274 |  |
-| `kui_text_face` | struct | `kl_text_face` | keiui.h:154 |  |
-| `kui_text_fit` | function | `kl_text_fit` | keiui.h:275 |  |
-| `kui_text_line` | struct | `kl_text_line` | keiui.h:182 |  |
-| `kui_text_metrics` | function | `kl_text_metrics` | keiui.h:270 |  |
-| `kui_text_open` | function | `kl_text_open` | keiui.h:268 |  |
-| `kui_text_touch` | struct | `kl_text_touch` | keiui.h:554 |  |
-| `kui_text_touch_drag` | function | `kl_text_touch_drag` | keiui.h:588 |  |
-| `kui_text_touch_drag_begin` | function | `kl_text_touch_drag_begin` | keiui.h:587 |  |
-| `kui_text_touch_drag_end` | function | `kl_text_touch_drag_end` | keiui.h:589 |  |
-| `kui_text_touch_draw_handles` | function | `kl_text_touch_draw_handles` | keiui.h:592 |  |
-| `kui_text_touch_edge` | function | `kl_text_touch_edge` | keiui.h:590 |  |
-| `kui_text_touch_init` | function | `kl_text_touch_init` | keiui.h:583 |  |
-| `kui_text_touch_long_press` | function | `kl_text_touch_long_press` | keiui.h:586 |  |
-| `kui_text_touch_set_selection` | function | `kl_text_touch_set_selection` | keiui.h:584 |  |
-| `kui_text_touch_take` | function | `kl_text_touch_take` | keiui.h:591 |  |
-| `kui_text_touch_tap` | function | `kl_text_touch_tap` | keiui.h:585 |  |
-| `kui_text_view` | struct | `kl_text_view` | keiui.h:531 |  |
-| `kui_text_width` | function | `kl_text_width` | keiui.h:272 |  |
-| `kui_theme` | struct | `kl_theme` | keiui.h:285 |  |
-| `kui_theme_default` | function | `kl_theme_default` | keiui.h:341 |  |
-| `kui_ui` | struct | `kl_ui` | keiui.h:618 |  |
-| `kui_ui_begin` | function | `kl_ui_begin` | keiui.h:666 |  |
-| `kui_ui_clear_focus` | function | `kl_ui_clear_focus` | keiui.h:972 |  |
-| `kui_ui_create` | function | `kl_ui_create` | keiui.h:656 |  |
-| `kui_ui_destroy` | function | `kl_ui_destroy` | keiui.h:657 |  |
-| `kui_ui_drag_offset` | function | `kl_ui_drag_offset` | keiui.h:672 |  |
-| `kui_ui_end` | function | `kl_ui_end` | keiui.h:670 |  |
-| `kui_ui_has_focus` | function | `kl_ui_has_focus` | keiui.h:973 |  |
-| `kui_ui_hit` | function | `kl_ui_hit` | keiui.h:667 |  |
-| `kui_ui_key` | function | `kl_ui_key` | keiui.h:970 |  |
-| `kui_ui_pointer` | function | `kl_ui_pointer` | keiui.h:974 |  |
-| `kui_ui_pointer_button` | function | `kl_ui_pointer_button` | keiui.h:660 |  |
-| `kui_ui_pointer_leave` | function | `kl_ui_pointer_leave` | keiui.h:659 |  |
-| `kui_ui_pointer_motion` | function | `kl_ui_pointer_motion` | keiui.h:658 |  |
-| `kui_ui_scroll_region` | function | `kl_ui_scroll_region` | keiui.h:668 |  |
-| `kui_ui_set_focus` | function | `kl_ui_set_focus` | keiui.h:971 |  |
-| `kui_ui_take` | function | `kl_ui_take` | keiui.h:671 |  |
-| `kui_ui_text_region` | function | `kl_ui_text_region` | keiui.h:669 |  |
-| `kui_ui_touch_cancel` | function | `kl_ui_touch_cancel` | keiui.h:665 |  |
-| `kui_ui_touch_down` | function | `kl_ui_touch_down` | keiui.h:662 |  |
-| `kui_ui_touch_motion` | function | `kl_ui_touch_motion` | keiui.h:663 |  |
-| `kui_ui_touch_up` | function | `kl_ui_touch_up` | keiui.h:664 |  |
-| `kui_ui_wheel` | function | `kl_ui_wheel` | keiui.h:661 |  |
-| `kui_utf8_next` | function | `kl_utf8_next` | keiui.h:277 |  |
-| `kui_version` | function | `(removed)` | keiui.h:59 | kl_version() (from keiland_version) is the one version call |
-| `kui_window` | struct | `kl_window` | keiui.h:702 |  |
-| `kui_window_can_paste` | function | `kl_window_can_paste` | keiui.h:820 |  |
-| `kui_window_close` | function | `kl_window_close` | keiui.h:800 |  |
-| `kui_window_copy` | function | `kl_window_copy` | keiui.h:818 |  |
-| `kui_window_dispatch` | function | `kl_window_dispatch` | keiui.h:801 |  |
-| `kui_window_dispatch_fds` | function | `kl_window_dispatch_fds` | keiui.h:898 |  |
-| `kui_window_display` | function | `kl_window_display` | keiui.h:811 |  |
-| `kui_window_edit_state` | function | `kl_window_edit_state` | keiui.h:879 |  |
-| `kui_window_event` | struct | `kl_window_event` | keiui.h:778 |  |
-| `kui_window_fullscreen` | function | `kl_window_fullscreen` | keiui.h:889 |  |
-| `kui_window_keyboard_inset` | function | `kl_window_keyboard_inset` | keiui.h:848 |  |
-| `kui_window_on_edit` | function | `kl_window_on_edit` | keiui.h:878 |  |
-| `kui_window_on_keyboard_inset` | function | `kl_window_on_keyboard_inset` | keiui.h:847 |  |
-| `kui_window_open` | function | `kl_window_open` | keiui.h:799 |  |
-| `kui_window_options` | struct | `kl_window_options` | keiui.h:757 |  |
-| `kui_window_paste` | function | `kl_window_paste` | keiui.h:819 |  |
-| `kui_window_paste_primary` | function | `kl_window_paste_primary` | keiui.h:881 |  |
-| `kui_window_post` | function | `kl_window_post` | keiui.h:803 |  |
-| `kui_window_present` | function | `kl_window_present` | keiui.h:809 |  |
-| `kui_window_present_resize` | function | `kl_window_present_resize` | keiui.h:808 |  |
-| `kui_window_press_serial` | function | `kl_window_press_serial` | keiui.h:815 |  |
-| `kui_window_repeat` | function | `kl_window_repeat` | keiui.h:804 |  |
-| `kui_window_repeat_wait` | function | `kl_window_repeat_wait` | keiui.h:805 |  |
-| `kui_window_seat` | function | `kl_window_seat` | keiui.h:817 |  |
-| `kui_window_see_through` | function | `kl_window_see_through` | keiui.h:810 |  |
-| `kui_window_select` | function | `kl_window_select` | keiui.h:823 |  |
-| `kui_window_selecting` | function | `kl_window_selecting` | keiui.h:880 |  |
-| `kui_window_serial` | function | `kl_window_serial` | keiui.h:814 |  |
-| `kui_window_set_fullscreen` | function | `kl_window_set_fullscreen` | keiui.h:888 |  |
-| `kui_window_set_serial` | function | `kl_window_set_serial` | keiui.h:816 |  |
-| `kui_window_set_title` | function | `kl_window_set_title` | keiui.h:806 |  |
-| `kui_window_size` | function | `kl_window_size` | keiui.h:807 |  |
-| `kui_window_surface` | function | `kl_window_surface` | keiui.h:812 |  |
-| `kui_window_take` | function | `kl_window_take` | keiui.h:802 |  |
-| `kui_window_text_cursor` | function | `kl_window_text_cursor` | keiui.h:822 |  |
-| `kui_window_text_input` | function | `kl_window_text_input` | keiui.h:821 |  |
-| `kui_window_toplevel` | function | `kl_window_toplevel` | keiui.h:813 |  |
-| `KUI_BUTTON_DANGER` | macro | `KL_BUTTON_DANGER` | keiui.h:929 |  |
-| `KUI_BUTTON_DISABLED` | macro | `KL_BUTTON_DISABLED` | keiui.h:930 |  |
-| `KUI_BUTTON_LEFT` | macro | `KL_BUTTON_LEFT` | keiui.h:746 |  |
-| `KUI_BUTTON_MIDDLE` | macro | `KL_BUTTON_MIDDLE` | keiui.h:748 |  |
-| `KUI_BUTTON_PRIMARY` | macro | `KL_BUTTON_PRIMARY` | keiui.h:928 |  |
-| `KUI_BUTTON_RIGHT` | macro | `KL_BUTTON_RIGHT` | keiui.h:747 |  |
-| `KUI_CANVAS_CLIPS` | macro | `KL_CANVAS_CLIPS` | keiui.h:62 |  |
-| `KUI_EDIT_CAN_PASTE` | macro | `KL_EDIT_CAN_PASTE` | keiui.h:874 | same value as `KEILAND_EDIT_CAN_PASTE`, `KUI_EDIT_CAN_PASTE`: one definition |
-| `KUI_EDIT_CAN_REDO` | macro | `KL_EDIT_CAN_REDO` | keiui.h:876 | same value as `KEILAND_EDIT_CAN_REDO`, `KUI_EDIT_CAN_REDO`: one definition |
-| `KUI_EDIT_CAN_UNDO` | macro | `KL_EDIT_CAN_UNDO` | keiui.h:875 | same value as `KEILAND_EDIT_CAN_UNDO`, `KUI_EDIT_CAN_UNDO`: one definition |
-| `KUI_EDIT_COPY` | macro | `KL_EDIT_COPY` | keiui.h:865 | same value as `KEILAND_EDIT_COPY`, `KUI_EDIT_COPY`: one definition |
-| `KUI_EDIT_CUT` | macro | `KL_EDIT_CUT` | keiui.h:866 | same value as `KEILAND_EDIT_CUT`, `KUI_EDIT_CUT`: one definition |
-| `KUI_EDIT_HAS_SELECTION` | macro | `KL_EDIT_HAS_SELECTION` | keiui.h:873 | same value as `KEILAND_EDIT_HAS_SELECTION`, `KUI_EDIT_HAS_SELECTION`: one definition |
-| `KUI_EDIT_PASTE` | macro | `KL_EDIT_PASTE` | keiui.h:867 | same value as `KEILAND_EDIT_PASTE`, `KUI_EDIT_PASTE`: one definition |
-| `KUI_EDIT_REDO` | macro | `KL_EDIT_REDO` | keiui.h:869 | same value as `KEILAND_EDIT_REDO`, `KUI_EDIT_REDO`: one definition |
-| `KUI_EDIT_SELECT_ALL` | macro | `KL_EDIT_SELECT_ALL` | keiui.h:870 | same value as `KEILAND_EDIT_SELECT_ALL`, `KUI_EDIT_SELECT_ALL`: one definition |
-| `KUI_EDIT_SELECT_BEGIN` | macro | `KL_EDIT_SELECT_BEGIN` | keiui.h:871 | same value as `KEILAND_EDIT_SELECT_BEGIN`, `KUI_EDIT_SELECT_BEGIN`: one definition |
-| `KUI_EDIT_SELECT_END` | macro | `KL_EDIT_SELECT_END` | keiui.h:872 | same value as `KEILAND_EDIT_SELECT_END`, `KUI_EDIT_SELECT_END`: one definition |
-| `KUI_EDIT_UNDO` | macro | `KL_EDIT_UNDO` | keiui.h:868 | same value as `KEILAND_EDIT_UNDO`, `KUI_EDIT_UNDO`: one definition |
-| `KUI_EVENT_DOUBLE_TAP` | macro | `KL_EVENT_DOUBLE_TAP` | keiui.h:633 |  |
-| `KUI_EVENT_DRAG_BEGIN` | macro | `KL_EVENT_DRAG_BEGIN` | keiui.h:635 |  |
-| `KUI_EVENT_DRAG_END` | macro | `KL_EVENT_DRAG_END` | keiui.h:636 |  |
-| `KUI_EVENT_KEY` | macro | `KL_EVENT_KEY` | keiui.h:925 |  |
-| `KUI_EVENT_LONG_PRESS` | macro | `KL_EVENT_LONG_PRESS` | keiui.h:634 |  |
-| `KUI_EVENT_PRESS` | macro | `KL_EVENT_PRESS` | keiui.h:629 |  |
-| `KUI_EVENT_RELEASE` | macro | `KL_EVENT_RELEASE` | keiui.h:630 |  |
-| `KUI_EVENT_TAP` | macro | `KL_EVENT_TAP` | keiui.h:632 |  |
-| `KUI_EVENT_WHEEL` | macro | `KL_EVENT_WHEEL` | keiui.h:631 |  |
-| `KUI_FIELD_CANCELLED` | macro | `KL_FIELD_CANCELLED` | keiui.h:935 |  |
-| `KUI_FIELD_CHANGED` | macro | `KL_FIELD_CHANGED` | keiui.h:933 |  |
-| `KUI_FIELD_MAX` | macro | `KL_FIELD_MAX` | keiui.h:943 |  |
-| `KUI_FIELD_SUBMITTED` | macro | `KL_FIELD_SUBMITTED` | keiui.h:934 |  |
-| `KUI_FILE_CHOOSER_CANCELLED` | macro | `KL_FILE_CHOOSER_CANCELLED` | keiui.h:1024 |  |
-| `KUI_FILE_CHOOSER_CHOSEN` | macro | `KL_FILE_CHOOSER_CHOSEN` | keiui.h:1023 |  |
-| `KUI_FILE_CHOOSER_FILTERS_MAX` | macro | `KL_FILE_CHOOSER_FILTERS_MAX` | keiui.h:1027 |  |
-| `KUI_FILE_CHOOSER_OPEN` | macro | `KL_FILE_CHOOSER_OPEN` | keiui.h:1019 |  |
-| `KUI_FILE_CHOOSER_SAVE` | macro | `KL_FILE_CHOOSER_SAVE` | keiui.h:1020 |  |
-| `KUI_HIT_ACTIVE` | macro | `KL_HIT_ACTIVE` | keiui.h:622 |  |
-| `KUI_HIT_CLICKED` | macro | `KL_HIT_CLICKED` | keiui.h:623 |  |
-| `KUI_HIT_DOUBLE` | macro | `KL_HIT_DOUBLE` | keiui.h:624 |  |
-| `KUI_HIT_FOCUSED` | macro | `KL_HIT_FOCUSED` | keiui.h:625 |  |
-| `KUI_HIT_HOT` | macro | `KL_HIT_HOT` | keiui.h:621 |  |
-| `KUI_HIT_TOUCHED` | macro | `KL_HIT_TOUCHED` | keiui.h:626 |  |
-| `KUI_ICON_BACK` | enum constant | `KL_ICON_BACK` | keiui.h:204 |  |
-| `KUI_ICON_BATTERY` | enum constant | `KL_ICON_BATTERY` | keiui.h:229 |  |
-| `KUI_ICON_BELL` | enum constant | `KL_ICON_BELL` | keiui.h:225 |  |
-| `KUI_ICON_BLUETOOTH` | enum constant | `KL_ICON_BLUETOOTH` | keiui.h:220 |  |
-| `KUI_ICON_CHEVRON` | enum constant | `KL_ICON_CHEVRON` | keiui.h:210 |  |
-| `KUI_ICON_CLOSE` | enum constant | `KL_ICON_CLOSE` | keiui.h:211 |  |
-| `KUI_ICON_COMPUTER` | enum constant | `KL_ICON_COMPUTER` | keiui.h:202 |  |
-| `KUI_ICON_DESKTOP` | enum constant | `KL_ICON_DESKTOP` | keiui.h:193 |  |
-| `KUI_ICON_DISCLOSURE` | enum constant | `KL_ICON_DISCLOSURE` | keiui.h:241 |  |
-| `KUI_ICON_DISK` | enum constant | `KL_ICON_DISK` | keiui.h:228 |  |
-| `KUI_ICON_DOCUMENTS` | enum constant | `KL_ICON_DOCUMENTS` | keiui.h:194 |  |
-| `KUI_ICON_DOWN` | enum constant | `KL_ICON_DOWN` | keiui.h:214 |  |
-| `KUI_ICON_DOWNLOADS` | enum constant | `KL_ICON_DOWNLOADS` | keiui.h:195 |  |
-| `KUI_ICON_ETHERNET` | enum constant | `KL_ICON_ETHERNET` | keiui.h:219 |  |
-| `KUI_ICON_EYE` | enum constant | `KL_ICON_EYE` | keiui.h:236 |  |
-| `KUI_ICON_FOLDER_LINE` | enum constant | `KL_ICON_FOLDER_LINE` | keiui.h:199 |  |
-| `KUI_ICON_FORWARD` | enum constant | `KL_ICON_FORWARD` | keiui.h:205 |  |
-| `KUI_ICON_GLOBE` | enum constant | `KL_ICON_GLOBE` | keiui.h:222 |  |
-| `KUI_ICON_GRID` | enum constant | `KL_ICON_GRID` | keiui.h:207 |  |
-| `KUI_ICON_HOME` | enum constant | `KL_ICON_HOME` | keiui.h:192 |  |
-| `KUI_ICON_INFO` | enum constant | `KL_ICON_INFO` | keiui.h:240 |  |
-| `KUI_ICON_KEYBOARD` | enum constant | `KL_ICON_KEYBOARD` | keiui.h:230 |  |
-| `KUI_ICON_LIST` | enum constant | `KL_ICON_LIST` | keiui.h:208 |  |
-| `KUI_ICON_LOCK` | enum constant | `KL_ICON_LOCK` | keiui.h:237 |  |
-| `KUI_ICON_MONITOR` | enum constant | `KL_ICON_MONITOR` | keiui.h:227 |  |
-| `KUI_ICON_MOUSE` | enum constant | `KL_ICON_MOUSE` | keiui.h:231 |  |
-| `KUI_ICON_MOVIES` | enum constant | `KL_ICON_MOVIES` | keiui.h:198 |  |
-| `KUI_ICON_MUSIC` | enum constant | `KL_ICON_MUSIC` | keiui.h:197 |  |
-| `KUI_ICON_PALETTE` | enum constant | `KL_ICON_PALETTE` | keiui.h:223 |  |
-| `KUI_ICON_PEOPLE` | enum constant | `KL_ICON_PEOPLE` | keiui.h:235 |  |
-| `KUI_ICON_PERSON` | enum constant | `KL_ICON_PERSON` | keiui.h:238 |  |
-| `KUI_ICON_PICTURE` | enum constant | `KL_ICON_PICTURE` | keiui.h:224 |  |
-| `KUI_ICON_PICTURES` | enum constant | `KL_ICON_PICTURES` | keiui.h:196 |  |
-| `KUI_ICON_PLUS` | enum constant | `KL_ICON_PLUS` | keiui.h:212 |  |
-| `KUI_ICON_PREVIEW` | enum constant | `KL_ICON_PREVIEW` | keiui.h:209 |  |
-| `KUI_ICON_PRINTER` | enum constant | `KL_ICON_PRINTER` | keiui.h:233 |  |
-| `KUI_ICON_RECENTS` | enum constant | `KL_ICON_RECENTS` | keiui.h:200 |  |
-| `KUI_ICON_REFRESH` | enum constant | `KL_ICON_REFRESH` | keiui.h:239 |  |
-| `KUI_ICON_SEARCH` | enum constant | `KL_ICON_SEARCH` | keiui.h:206 |  |
-| `KUI_ICON_SHARE` | enum constant | `KL_ICON_SHARE` | keiui.h:234 |  |
-| `KUI_ICON_SHIELD` | enum constant | `KL_ICON_SHIELD` | keiui.h:221 |  |
-| `KUI_ICON_SPEAKER` | enum constant | `KL_ICON_SPEAKER` | keiui.h:226 |  |
-| `KUI_ICON_TILES` | enum constant | `KL_ICON_TILES` | keiui.h:217 |  |
-| `KUI_ICON_TOUCHPAD` | enum constant | `KL_ICON_TOUCHPAD` | keiui.h:232 |  |
-| `KUI_ICON_TRASH` | enum constant | `KL_ICON_TRASH` | keiui.h:201 |  |
-| `KUI_ICON_UP` | enum constant | `KL_ICON_UP` | keiui.h:213 |  |
-| `KUI_ICON_VOLUME` | enum constant | `KL_ICON_VOLUME` | keiui.h:203 |  |
-| `KUI_ICON_WIFI` | enum constant | `KL_ICON_WIFI` | keiui.h:218 |  |
-| `KUI_KEYBOARD_INSET_BOTTOM` | macro | `KL_KEYBOARD_INSET_BOTTOM` | keiui.h:845 | same value as `KEILAND_KEYBOARD_INSET_BOTTOM`, `KUI_KEYBOARD_INSET_BOTTOM`: one definition |
-| `KUI_KEYBOARD_INSET_NONE` | macro | `KL_KEYBOARD_INSET_NONE` | keiui.h:843 | same value as `KEILAND_KEYBOARD_INSET_NONE`, `KUI_KEYBOARD_INSET_NONE`: one definition |
-| `KUI_KEYBOARD_INSET_RIGHT` | macro | `KL_KEYBOARD_INSET_RIGHT` | keiui.h:844 | same value as `KEILAND_KEYBOARD_INSET_RIGHT`, `KUI_KEYBOARD_INSET_RIGHT`: one definition |
-| `KUI_KEY_BACKSPACE` | macro | `KL_KEY_BACKSPACE` | keiui.h:491 |  |
-| `KUI_KEY_DELETE` | macro | `KL_KEY_DELETE` | keiui.h:504 |  |
-| `KUI_KEY_DOWN` | macro | `KL_KEY_DOWN` | keiui.h:502 |  |
-| `KUI_KEY_END` | macro | `KL_KEY_END` | keiui.h:501 |  |
-| `KUI_KEY_ENTER` | macro | `KL_KEY_ENTER` | keiui.h:493 |  |
-| `KUI_KEY_ESC` | macro | `KL_KEY_ESC` | keiui.h:490 |  |
-| `KUI_KEY_HOME` | macro | `KL_KEY_HOME` | keiui.h:496 |  |
-| `KUI_KEY_KPENTER` | macro | `KL_KEY_KPENTER` | keiui.h:495 |  |
-| `KUI_KEY_LEFT` | macro | `KL_KEY_LEFT` | keiui.h:499 |  |
-| `KUI_KEY_PAGEDOWN` | macro | `KL_KEY_PAGEDOWN` | keiui.h:503 |  |
-| `KUI_KEY_PAGEUP` | macro | `KL_KEY_PAGEUP` | keiui.h:498 |  |
-| `KUI_KEY_RIGHT` | macro | `KL_KEY_RIGHT` | keiui.h:500 |  |
-| `KUI_KEY_SPACE` | macro | `KL_KEY_SPACE` | keiui.h:494 |  |
-| `KUI_KEY_TAB` | macro | `KL_KEY_TAB` | keiui.h:492 |  |
-| `KUI_KEY_UP` | macro | `KL_KEY_UP` | keiui.h:497 |  |
-| `KUI_LIST_ACTIVATED` | macro | `KL_LIST_ACTIVATED` | keiui.h:939 |  |
-| `KUI_LIST_SELECTED` | macro | `KL_LIST_SELECTED` | keiui.h:938 |  |
-| `KUI_LIST_TOUCHED` | macro | `KL_LIST_TOUCHED` | keiui.h:940 |  |
-| `KUI_MOD_ALT` | macro | `KL_MOD_ALT` | keiui.h:509 |  |
-| `KUI_MOD_CTRL` | macro | `KL_MOD_CTRL` | keiui.h:508 |  |
-| `KUI_MOD_SHIFT` | macro | `KL_MOD_SHIFT` | keiui.h:507 |  |
-| `KUI_MOD_SUPER` | macro | `KL_MOD_SUPER` | keiui.h:510 |  |
-| `KUI_POLYGON_POINTS` | macro | `KL_POLYGON_POINTS` | keiui.h:65 |  |
-| `KUI_PRESENT_NONE` | macro | `KL_PRESENT_NONE` | keiui.h:711 |  |
-| `KUI_PRESENT_SHM` | macro | `KL_PRESENT_SHM` | keiui.h:710 |  |
-| `KUI_PRESENT_VULKAN` | macro | `KL_PRESENT_VULKAN` | keiui.h:709 |  |
-| `KUI_RGB` | function | `KL_RGB` | keiui.h:79 |  |
-| `KUI_RGBA` | function | `KL_RGBA` | keiui.h:82 |  |
-| `KUI_SCROLL_BAR_FADE_US` | macro | `KL_SCROLL_BAR_FADE_US` | keiui.h:442 |  |
-| `KUI_SCROLL_BAR_GAP` | macro | `KL_SCROLL_BAR_GAP` | keiui.h:439 |  |
-| `KUI_SCROLL_BAR_MIN` | macro | `KL_SCROLL_BAR_MIN` | keiui.h:440 |  |
-| `KUI_SCROLL_BAR_REACH` | macro | `KL_SCROLL_BAR_REACH` | keiui.h:438 |  |
-| `KUI_SCROLL_BAR_SHOW_US` | macro | `KL_SCROLL_BAR_SHOW_US` | keiui.h:441 |  |
-| `KUI_SCROLL_BAR_THICK` | macro | `KL_SCROLL_BAR_THICK` | keiui.h:437 |  |
-| `KUI_SCROLL_BAR_THIN` | macro | `KL_SCROLL_BAR_THIN` | keiui.h:436 |  |
-| `KUI_SCROLL_FADE_US` | macro | `KL_SCROLL_FADE_US` | keiui.h:375 |  |
-| `KUI_SCROLL_GLIDE_US` | macro | `KL_SCROLL_GLIDE_US` | keiui.h:374 |  |
-| `KUI_SCROLL_X` | macro | `KL_SCROLL_X` | keiui.h:370 |  |
-| `KUI_SCROLL_Y` | macro | `KL_SCROLL_Y` | keiui.h:371 |  |
-| `KUI_TEXT_EDGE` | macro | `KL_TEXT_EDGE` | keiui.h:546 |  |
-| `KUI_TEXT_EDGE_SPEED` | macro | `KL_TEXT_EDGE_SPEED` | keiui.h:547 |  |
-| `KUI_TEXT_EMOJI` | macro | `KL_TEXT_EMOJI` | keiui.h:73 |  |
-| `KUI_TEXT_FACES` | macro | `KL_TEXT_FACES` | keiui.h:72 |  |
-| `KUI_TEXT_HANDLE` | macro | `KL_TEXT_HANDLE` | keiui.h:542 |  |
-| `KUI_TEXT_HANDLE_ANCHOR` | macro | `KL_TEXT_HANDLE_ANCHOR` | keiui.h:551 |  |
-| `KUI_TEXT_HANDLE_CARET` | macro | `KL_TEXT_HANDLE_CARET` | keiui.h:552 |  |
-| `KUI_TEXT_HANDLE_NONE` | macro | `KL_TEXT_HANDLE_NONE` | keiui.h:550 |  |
-| `KUI_TEXT_HANDLE_REACH` | macro | `KL_TEXT_HANDLE_REACH` | keiui.h:543 |  |
-| `KUI_TEXT_TOUCH_MENU` | macro | `KL_TEXT_TOUCH_MENU` | keiui.h:539 |  |
-| `KUI_TEXT_TOUCH_SELECTION` | macro | `KL_TEXT_TOUCH_SELECTION` | keiui.h:538 |  |
-| `KUI_VERSION` | macro | `(removed)` | keiui.h:51 | KL_VERSION (from KEILAND_VERSION) is the one version macro; not raised (2026-10-03 user: ABI may change) |
-| `KUI_WINDOW_AXIS` | macro | `KL_WINDOW_AXIS` | keiui.h:717 |  |
-| `KUI_WINDOW_BUTTON` | macro | `KL_WINDOW_BUTTON` | keiui.h:716 |  |
-| `KUI_WINDOW_CLOSE` | macro | `KL_WINDOW_CLOSE` | keiui.h:725 |  |
-| `KUI_WINDOW_FDS_MAX` | macro | `KL_WINDOW_FDS_MAX` | keiui.h:897 |  |
-| `KUI_WINDOW_FOCUS` | macro | `KL_WINDOW_FOCUS` | keiui.h:719 |  |
-| `KUI_WINDOW_KEY` | macro | `KL_WINDOW_KEY` | keiui.h:718 |  |
-| `KUI_WINDOW_LEAVE` | macro | `KL_WINDOW_LEAVE` | keiui.h:715 |  |
-| `KUI_WINDOW_MOTION` | macro | `KL_WINDOW_MOTION` | keiui.h:714 |  |
-| `KUI_WINDOW_POST` | macro | `KL_WINDOW_POST` | keiui.h:726 |  |
-| `KUI_WINDOW_RESIZE` | macro | `KL_WINDOW_RESIZE` | keiui.h:724 |  |
-| `KUI_WINDOW_TEXT_COMMIT` | macro | `KL_WINDOW_TEXT_COMMIT` | keiui.h:738 |  |
-| `KUI_WINDOW_TEXT_DELETE` | macro | `KL_WINDOW_TEXT_DELETE` | keiui.h:740 |  |
-| `KUI_WINDOW_TEXT_MAX` | macro | `KL_WINDOW_TEXT_MAX` | keiui.h:743 |  |
-| `KUI_WINDOW_TEXT_PREEDIT` | macro | `KL_WINDOW_TEXT_PREEDIT` | keiui.h:739 |  |
-| `KUI_WINDOW_TOUCH_CANCEL` | macro | `KL_WINDOW_TOUCH_CANCEL` | keiui.h:723 |  |
-| `KUI_WINDOW_TOUCH_DOWN` | macro | `KL_WINDOW_TOUCH_DOWN` | keiui.h:720 |  |
-| `KUI_WINDOW_TOUCH_MOTION` | macro | `KL_WINDOW_TOUCH_MOTION` | keiui.h:721 |  |
-| `KUI_WINDOW_TOUCH_UP` | macro | `KL_WINDOW_TOUCH_UP` | keiui.h:722 |  |
+| `kui_button` | function | `kl_button` | keiland-ui.h:968 |  |
+| `kui_button_width` | function | `kl_button_width` | keiland-ui.h:969 |  |
+| `kui_canvas` | struct | `kl_canvas` | keiland-ui.h:108 |  |
+| `kui_canvas_circle` | function | `kl_canvas_circle` | keiland-ui.h:247 |  |
+| `kui_canvas_clear` | function | `kl_canvas_clear` | keiland-ui.h:240 |  |
+| `kui_canvas_clip_pop` | function | `kl_canvas_clip_pop` | keiland-ui.h:239 |  |
+| `kui_canvas_clip_push` | function | `kl_canvas_clip_push` | keiland-ui.h:238 |  |
+| `kui_canvas_fill` | function | `kl_canvas_fill` | keiland-ui.h:241 |  |
+| `kui_canvas_gradient` | function | `kl_canvas_gradient` | keiland-ui.h:242 |  |
+| `kui_canvas_image` | function | `kl_canvas_image` | keiland-ui.h:252 |  |
+| `kui_canvas_init` | function | `kl_canvas_init` | keiland-ui.h:236 |  |
+| `kui_canvas_line` | function | `kl_canvas_line` | keiland-ui.h:250 |  |
+| `kui_canvas_mask` | function | `kl_canvas_mask` | keiland-ui.h:251 |  |
+| `kui_canvas_polygon` | function | `kl_canvas_polygon` | keiland-ui.h:249 |  |
+| `kui_canvas_release` | function | `kl_canvas_release` | keiland-ui.h:237 |  |
+| `kui_canvas_ring` | function | `kl_canvas_ring` | keiland-ui.h:248 |  |
+| `kui_canvas_round` | function | `kl_canvas_round` | keiland-ui.h:243 |  |
+| `kui_canvas_round_border` | function | `kl_canvas_round_border` | keiland-ui.h:245 |  |
+| `kui_canvas_round_gradient` | function | `kl_canvas_round_gradient` | keiland-ui.h:244 |  |
+| `kui_canvas_shadow` | function | `kl_canvas_shadow` | keiland-ui.h:246 |  |
+| `kui_card` | function | `kl_card` | keiland-ui.h:982 |  |
+| `kui_chip` | function | `kl_chip` | keiland-ui.h:986 |  |
+| `kui_clock_us` | function | `kl_clock_us` | keiland-ui.h:890 |  |
+| `kui_color` | typedef | `kl_color` | keiland-ui.h:67 |  |
+| `kui_color_mix` | function | `kl_color_mix` | keiland-ui.h:256 |  |
+| `kui_dialog` | function | `kl_dialog` | keiland-ui.h:985 |  |
+| `kui_edit_fn` | typedef | `kl_window_edit_fn` | keiland-ui.h:868 |  |
+| `kui_event` | struct | `kl_event` | keiland-ui.h:635 |  |
+| `kui_field` | struct | `kl_field` | keiland-ui.h:941 |  |
+| `kui_field_set` | function | `kl_field_set` | keiland-ui.h:972 |  |
+| `kui_file_chooser` | struct | `kl_file_chooser` | keiland-ui.h:1007 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
+| `kui_file_chooser_destroy` | function | `kl_file_chooser_destroy` | keiland-ui.h:1081 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
+| `kui_file_chooser_listener` | struct | `kl_file_chooser_listener` | keiland-ui.h:1064 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
+| `kui_file_chooser_open` | function | `kl_file_chooser_open` | keiland-ui.h:1076 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
+| `kui_file_chooser_options` | struct | `kl_file_chooser_options` | keiland-ui.h:1044 | reuses the name of the KEILAND_VERSION 12-15 chooser (removed in 16) |
+| `kui_file_filter` | struct | `kl_file_filter` | keiland-ui.h:1026 |  |
+| `kui_glyph` | struct | `kl_glyph` | keiland-ui.h:131 |  |
+| `kui_header` | function | `kl_header` | keiland-ui.h:984 |  |
+| `kui_icon` | enum | `kl_icon` | keiland-ui.h:182 |  |
+| `kui_icon_draw` | function | `kl_icon_draw` | keiland-ui.h:335 |  |
+| `kui_icon_file` | function | `kl_icon_file` | keiland-ui.h:337 |  |
+| `kui_icon_folder` | function | `kl_icon_folder` | keiland-ui.h:336 |  |
+| `kui_icon_tag` | function | `kl_icon_tag` | keiland-ui.h:338 |  |
+| `kui_image` | struct | `kl_image` | keiland-ui.h:94 |  |
+| `kui_image_create` | function | `kl_image_create` | keiland-ui.h:253 |  |
+| `kui_image_release` | function | `kl_image_release` | keiland-ui.h:254 |  |
+| `kui_image_scale` | function | `kl_image_scale` | keiland-ui.h:255 |  |
+| `kui_key_character` | function | `kl_key_character` | keiland-ui.h:503 |  |
+| `kui_keyboard_inset_fn` | typedef | `kl_window_keyboard_inset_fn` | keiland-ui.h:837 |  |
+| `kui_list` | struct | `kl_list` | keiland-ui.h:954 |  |
+| `kui_list_begin` | function | `kl_list_begin` | keiland-ui.h:976 |  |
+| `kui_list_end` | function | `kl_list_end` | keiland-ui.h:978 |  |
+| `kui_list_init` | function | `kl_list_init` | keiland-ui.h:974 |  |
+| `kui_list_release` | function | `kl_list_release` | keiland-ui.h:975 |  |
+| `kui_list_row` | function | `kl_list_row` | keiland-ui.h:977 |  |
+| `kui_panel` | function | `kl_panel` | keiland-ui.h:981 |  |
+| `kui_progress` | function | `kl_progress` | keiland-ui.h:987 |  |
+| `kui_rect` | struct | `kl_rect` | keiland-ui.h:81 |  |
+| `kui_row` | function | `kl_row` | keiland-ui.h:983 |  |
+| `kui_scroll` | struct | `kl_scroll` | keiland-ui.h:368 |  |
+| `kui_scroll_bar` | struct | `kl_scroll_bar` | keiland-ui.h:442 |  |
+| `kui_scroll_bar_busy` | function | `kl_scroll_bar_busy` | keiland-ui.h:473 |  |
+| `kui_scroll_bar_drag` | function | `kl_scroll_bar_drag` | keiland-ui.h:471 |  |
+| `kui_scroll_bar_draw` | function | `kl_scroll_bar_draw` | keiland-ui.h:474 |  |
+| `kui_scroll_bar_hover` | function | `kl_scroll_bar_hover` | keiland-ui.h:467 |  |
+| `kui_scroll_bar_leave` | function | `kl_scroll_bar_leave` | keiland-ui.h:468 |  |
+| `kui_scroll_bar_moved` | function | `kl_scroll_bar_moved` | keiland-ui.h:466 |  |
+| `kui_scroll_bar_press` | function | `kl_scroll_bar_press` | keiland-ui.h:470 |  |
+| `kui_scroll_bar_release` | function | `kl_scroll_bar_release` | keiland-ui.h:472 |  |
+| `kui_scroll_bar_shape` | struct | `kl_scroll_bar_shape` | keiland-ui.h:453 |  |
+| `kui_scroll_cancel` | function | `kl_scroll_cancel` | keiland-ui.h:405 |  |
+| `kui_scroll_drag` | function | `kl_scroll_drag` | keiland-ui.h:403 |  |
+| `kui_scroll_draw_bars` | function | `kl_scroll_draw_bars` | keiland-ui.h:409 |  |
+| `kui_scroll_fling` | function | `kl_scroll_fling` | keiland-ui.h:404 |  |
+| `kui_scroll_init` | function | `kl_scroll_init` | keiland-ui.h:395 |  |
+| `kui_scroll_key` | function | `kl_scroll_key` | keiland-ui.h:401 |  |
+| `kui_scroll_limit_x` | function | `kl_scroll_limit_x` | keiland-ui.h:407 |  |
+| `kui_scroll_limit_y` | function | `kl_scroll_limit_y` | keiland-ui.h:408 |  |
+| `kui_scroll_move_to` | function | `kl_scroll_move_to` | keiland-ui.h:399 |  |
+| `kui_scroll_press` | function | `kl_scroll_press` | keiland-ui.h:402 |  |
+| `kui_scroll_release` | function | `kl_scroll_release` | keiland-ui.h:396 |  |
+| `kui_scroll_reveal` | function | `kl_scroll_reveal` | keiland-ui.h:400 |  |
+| `kui_scroll_set_size` | function | `kl_scroll_set_size` | keiland-ui.h:397 |  |
+| `kui_scroll_step` | function | `kl_scroll_step` | keiland-ui.h:406 |  |
+| `kui_scroll_wheel` | function | `kl_scroll_wheel` | keiland-ui.h:398 |  |
+| `kui_sidebar_item` | function | `kl_sidebar_item` | keiland-ui.h:980 |  |
+| `kui_sidebar_section` | function | `kl_sidebar_section` | keiland-ui.h:979 |  |
+| `kui_slider` | function | `kl_slider` | keiland-ui.h:971 |  |
+| `kui_style` | struct | `kl_style` | keiland-ui.h:908 |  |
+| `kui_switch` | function | `kl_switch` | keiland-ui.h:970 |  |
+| `kui_text` | struct | `kl_text` | keiland-ui.h:159 |  |
+| `kui_text_break` | function | `kl_text_break` | keiland-ui.h:267 |  |
+| `kui_text_center` | function | `kl_text_center` | keiland-ui.h:262 |  |
+| `kui_text_close` | function | `kl_text_close` | keiland-ui.h:260 |  |
+| `kui_text_draw` | function | `kl_text_draw` | keiland-ui.h:264 |  |
+| `kui_text_draw_fit` | function | `kl_text_draw_fit` | keiland-ui.h:265 |  |
+| `kui_text_face` | struct | `kl_text_face` | keiland-ui.h:145 |  |
+| `kui_text_fit` | function | `kl_text_fit` | keiland-ui.h:266 |  |
+| `kui_text_line` | struct | `kl_text_line` | keiland-ui.h:173 |  |
+| `kui_text_metrics` | function | `kl_text_metrics` | keiland-ui.h:261 |  |
+| `kui_text_open` | function | `kl_text_open` | keiland-ui.h:259 |  |
+| `kui_text_touch` | struct | `kl_text_touch` | keiland-ui.h:545 |  |
+| `kui_text_touch_drag` | function | `kl_text_touch_drag` | keiland-ui.h:579 |  |
+| `kui_text_touch_drag_begin` | function | `kl_text_touch_drag_begin` | keiland-ui.h:578 |  |
+| `kui_text_touch_drag_end` | function | `kl_text_touch_drag_end` | keiland-ui.h:580 |  |
+| `kui_text_touch_draw_handles` | function | `kl_text_touch_draw_handles` | keiland-ui.h:583 |  |
+| `kui_text_touch_edge` | function | `kl_text_touch_edge` | keiland-ui.h:581 |  |
+| `kui_text_touch_init` | function | `kl_text_touch_init` | keiland-ui.h:574 |  |
+| `kui_text_touch_long_press` | function | `kl_text_touch_long_press` | keiland-ui.h:577 |  |
+| `kui_text_touch_set_selection` | function | `kl_text_touch_set_selection` | keiland-ui.h:575 |  |
+| `kui_text_touch_take` | function | `kl_text_touch_take` | keiland-ui.h:582 |  |
+| `kui_text_touch_tap` | function | `kl_text_touch_tap` | keiland-ui.h:576 |  |
+| `kui_text_view` | struct | `kl_text_view` | keiland-ui.h:522 |  |
+| `kui_text_width` | function | `kl_text_width` | keiland-ui.h:263 |  |
+| `kui_theme` | struct | `kl_theme` | keiland-ui.h:276 |  |
+| `kui_theme_default` | function | `kl_theme_default` | keiland-ui.h:332 |  |
+| `kui_ui` | struct | `kl_ui` | keiland-ui.h:609 |  |
+| `kui_ui_begin` | function | `kl_ui_begin` | keiland-ui.h:657 |  |
+| `kui_ui_clear_focus` | function | `kl_ui_clear_focus` | keiland-ui.h:963 |  |
+| `kui_ui_create` | function | `kl_ui_create` | keiland-ui.h:647 |  |
+| `kui_ui_destroy` | function | `kl_ui_destroy` | keiland-ui.h:648 |  |
+| `kui_ui_drag_offset` | function | `kl_ui_drag_offset` | keiland-ui.h:663 |  |
+| `kui_ui_end` | function | `kl_ui_end` | keiland-ui.h:661 |  |
+| `kui_ui_has_focus` | function | `kl_ui_has_focus` | keiland-ui.h:964 |  |
+| `kui_ui_hit` | function | `kl_ui_hit` | keiland-ui.h:658 |  |
+| `kui_ui_key` | function | `kl_ui_key` | keiland-ui.h:961 |  |
+| `kui_ui_pointer` | function | `kl_ui_pointer` | keiland-ui.h:965 |  |
+| `kui_ui_pointer_button` | function | `kl_ui_pointer_button` | keiland-ui.h:651 |  |
+| `kui_ui_pointer_leave` | function | `kl_ui_pointer_leave` | keiland-ui.h:650 |  |
+| `kui_ui_pointer_motion` | function | `kl_ui_pointer_motion` | keiland-ui.h:649 |  |
+| `kui_ui_scroll_region` | function | `kl_ui_scroll_region` | keiland-ui.h:659 |  |
+| `kui_ui_set_focus` | function | `kl_ui_set_focus` | keiland-ui.h:962 |  |
+| `kui_ui_take` | function | `kl_ui_take` | keiland-ui.h:662 |  |
+| `kui_ui_text_region` | function | `kl_ui_text_region` | keiland-ui.h:660 |  |
+| `kui_ui_touch_cancel` | function | `kl_ui_touch_cancel` | keiland-ui.h:656 |  |
+| `kui_ui_touch_down` | function | `kl_ui_touch_down` | keiland-ui.h:653 |  |
+| `kui_ui_touch_motion` | function | `kl_ui_touch_motion` | keiland-ui.h:654 |  |
+| `kui_ui_touch_up` | function | `kl_ui_touch_up` | keiland-ui.h:655 |  |
+| `kui_ui_wheel` | function | `kl_ui_wheel` | keiland-ui.h:652 |  |
+| `kui_utf8_next` | function | `kl_utf8_next` | keiland-ui.h:268 |  |
+| `kui_window` | struct | `kl_window` | keiland-ui.h:693 |  |
+| `kui_window_can_paste` | function | `kl_window_can_paste` | keiland-ui.h:811 |  |
+| `kui_window_close` | function | `kl_window_close` | keiland-ui.h:791 |  |
+| `kui_window_copy` | function | `kl_window_copy` | keiland-ui.h:809 |  |
+| `kui_window_dispatch` | function | `kl_window_dispatch` | keiland-ui.h:792 |  |
+| `kui_window_dispatch_fds` | function | `kl_window_dispatch_fds` | keiland-ui.h:889 |  |
+| `kui_window_display` | function | `kl_window_display` | keiland-ui.h:802 |  |
+| `kui_window_edit_state` | function | `kl_window_edit_state` | keiland-ui.h:870 |  |
+| `kui_window_event` | struct | `kl_window_event` | keiland-ui.h:769 |  |
+| `kui_window_fullscreen` | function | `kl_window_fullscreen` | keiland-ui.h:880 |  |
+| `kui_window_keyboard_inset` | function | `kl_window_keyboard_inset` | keiland-ui.h:839 |  |
+| `kui_window_on_edit` | function | `kl_window_on_edit` | keiland-ui.h:869 |  |
+| `kui_window_on_keyboard_inset` | function | `kl_window_on_keyboard_inset` | keiland-ui.h:838 |  |
+| `kui_window_open` | function | `kl_window_open` | keiland-ui.h:790 |  |
+| `kui_window_options` | struct | `kl_window_options` | keiland-ui.h:748 |  |
+| `kui_window_paste` | function | `kl_window_paste` | keiland-ui.h:810 |  |
+| `kui_window_paste_primary` | function | `kl_window_paste_primary` | keiland-ui.h:872 |  |
+| `kui_window_post` | function | `kl_window_post` | keiland-ui.h:794 |  |
+| `kui_window_present` | function | `kl_window_present` | keiland-ui.h:800 |  |
+| `kui_window_present_resize` | function | `kl_window_present_resize` | keiland-ui.h:799 |  |
+| `kui_window_press_serial` | function | `kl_window_press_serial` | keiland-ui.h:806 |  |
+| `kui_window_repeat` | function | `kl_window_repeat` | keiland-ui.h:795 |  |
+| `kui_window_repeat_wait` | function | `kl_window_repeat_wait` | keiland-ui.h:796 |  |
+| `kui_window_seat` | function | `kl_window_seat` | keiland-ui.h:808 |  |
+| `kui_window_see_through` | function | `kl_window_see_through` | keiland-ui.h:801 |  |
+| `kui_window_select` | function | `kl_window_select` | keiland-ui.h:814 |  |
+| `kui_window_selecting` | function | `kl_window_selecting` | keiland-ui.h:871 |  |
+| `kui_window_serial` | function | `kl_window_serial` | keiland-ui.h:805 |  |
+| `kui_window_set_fullscreen` | function | `kl_window_set_fullscreen` | keiland-ui.h:879 |  |
+| `kui_window_set_serial` | function | `kl_window_set_serial` | keiland-ui.h:807 |  |
+| `kui_window_set_title` | function | `kl_window_set_title` | keiland-ui.h:797 |  |
+| `kui_window_size` | function | `kl_window_size` | keiland-ui.h:798 |  |
+| `kui_window_surface` | function | `kl_window_surface` | keiland-ui.h:803 |  |
+| `kui_window_take` | function | `kl_window_take` | keiland-ui.h:793 |  |
+| `kui_window_text_cursor` | function | `kl_window_text_cursor` | keiland-ui.h:813 |  |
+| `kui_window_text_input` | function | `kl_window_text_input` | keiland-ui.h:812 |  |
+| `kui_window_toplevel` | function | `kl_window_toplevel` | keiland-ui.h:804 |  |
+| `KUI_BUTTON_DANGER` | macro | `KL_BUTTON_DANGER` | keiland-ui.h:920 |  |
+| `KUI_BUTTON_DISABLED` | macro | `KL_BUTTON_DISABLED` | keiland-ui.h:921 |  |
+| `KUI_BUTTON_LEFT` | macro | `KL_BUTTON_LEFT` | keiland-ui.h:737 |  |
+| `KUI_BUTTON_MIDDLE` | macro | `KL_BUTTON_MIDDLE` | keiland-ui.h:739 |  |
+| `KUI_BUTTON_PRIMARY` | macro | `KL_BUTTON_PRIMARY` | keiland-ui.h:919 |  |
+| `KUI_BUTTON_RIGHT` | macro | `KL_BUTTON_RIGHT` | keiland-ui.h:738 |  |
+| `KUI_CANVAS_CLIPS` | macro | `KL_CANVAS_CLIPS` | keiland-ui.h:53 |  |
+| `KUI_EDIT_CAN_PASTE` | macro | `KL_EDIT_CAN_PASTE` | keiland-ui.h:865 | same value as `KEILAND_EDIT_CAN_PASTE`, `KUI_EDIT_CAN_PASTE`: one definition |
+| `KUI_EDIT_CAN_REDO` | macro | `KL_EDIT_CAN_REDO` | keiland-ui.h:867 | same value as `KEILAND_EDIT_CAN_REDO`, `KUI_EDIT_CAN_REDO`: one definition |
+| `KUI_EDIT_CAN_UNDO` | macro | `KL_EDIT_CAN_UNDO` | keiland-ui.h:866 | same value as `KEILAND_EDIT_CAN_UNDO`, `KUI_EDIT_CAN_UNDO`: one definition |
+| `KUI_EDIT_COPY` | macro | `KL_EDIT_COPY` | keiland-ui.h:856 | same value as `KEILAND_EDIT_COPY`, `KUI_EDIT_COPY`: one definition |
+| `KUI_EDIT_CUT` | macro | `KL_EDIT_CUT` | keiland-ui.h:857 | same value as `KEILAND_EDIT_CUT`, `KUI_EDIT_CUT`: one definition |
+| `KUI_EDIT_HAS_SELECTION` | macro | `KL_EDIT_HAS_SELECTION` | keiland-ui.h:864 | same value as `KEILAND_EDIT_HAS_SELECTION`, `KUI_EDIT_HAS_SELECTION`: one definition |
+| `KUI_EDIT_PASTE` | macro | `KL_EDIT_PASTE` | keiland-ui.h:858 | same value as `KEILAND_EDIT_PASTE`, `KUI_EDIT_PASTE`: one definition |
+| `KUI_EDIT_REDO` | macro | `KL_EDIT_REDO` | keiland-ui.h:860 | same value as `KEILAND_EDIT_REDO`, `KUI_EDIT_REDO`: one definition |
+| `KUI_EDIT_SELECT_ALL` | macro | `KL_EDIT_SELECT_ALL` | keiland-ui.h:861 | same value as `KEILAND_EDIT_SELECT_ALL`, `KUI_EDIT_SELECT_ALL`: one definition |
+| `KUI_EDIT_SELECT_BEGIN` | macro | `KL_EDIT_SELECT_BEGIN` | keiland-ui.h:862 | same value as `KEILAND_EDIT_SELECT_BEGIN`, `KUI_EDIT_SELECT_BEGIN`: one definition |
+| `KUI_EDIT_SELECT_END` | macro | `KL_EDIT_SELECT_END` | keiland-ui.h:863 | same value as `KEILAND_EDIT_SELECT_END`, `KUI_EDIT_SELECT_END`: one definition |
+| `KUI_EDIT_UNDO` | macro | `KL_EDIT_UNDO` | keiland-ui.h:859 | same value as `KEILAND_EDIT_UNDO`, `KUI_EDIT_UNDO`: one definition |
+| `KUI_EVENT_DOUBLE_TAP` | macro | `KL_EVENT_DOUBLE_TAP` | keiland-ui.h:624 |  |
+| `KUI_EVENT_DRAG_BEGIN` | macro | `KL_EVENT_DRAG_BEGIN` | keiland-ui.h:626 |  |
+| `KUI_EVENT_DRAG_END` | macro | `KL_EVENT_DRAG_END` | keiland-ui.h:627 |  |
+| `KUI_EVENT_KEY` | macro | `KL_EVENT_KEY` | keiland-ui.h:916 |  |
+| `KUI_EVENT_LONG_PRESS` | macro | `KL_EVENT_LONG_PRESS` | keiland-ui.h:625 |  |
+| `KUI_EVENT_PRESS` | macro | `KL_EVENT_PRESS` | keiland-ui.h:620 |  |
+| `KUI_EVENT_RELEASE` | macro | `KL_EVENT_RELEASE` | keiland-ui.h:621 |  |
+| `KUI_EVENT_TAP` | macro | `KL_EVENT_TAP` | keiland-ui.h:623 |  |
+| `KUI_EVENT_WHEEL` | macro | `KL_EVENT_WHEEL` | keiland-ui.h:622 |  |
+| `KUI_FIELD_CANCELLED` | macro | `KL_FIELD_CANCELLED` | keiland-ui.h:926 |  |
+| `KUI_FIELD_CHANGED` | macro | `KL_FIELD_CHANGED` | keiland-ui.h:924 |  |
+| `KUI_FIELD_MAX` | macro | `KL_FIELD_MAX` | keiland-ui.h:934 |  |
+| `KUI_FIELD_SUBMITTED` | macro | `KL_FIELD_SUBMITTED` | keiland-ui.h:925 |  |
+| `KUI_FILE_CHOOSER_CANCELLED` | macro | `KL_FILE_CHOOSER_CANCELLED` | keiland-ui.h:1015 |  |
+| `KUI_FILE_CHOOSER_CHOSEN` | macro | `KL_FILE_CHOOSER_CHOSEN` | keiland-ui.h:1014 |  |
+| `KUI_FILE_CHOOSER_FILTERS_MAX` | macro | `KL_FILE_CHOOSER_FILTERS_MAX` | keiland-ui.h:1018 |  |
+| `KUI_FILE_CHOOSER_OPEN` | macro | `KL_FILE_CHOOSER_OPEN` | keiland-ui.h:1010 |  |
+| `KUI_FILE_CHOOSER_SAVE` | macro | `KL_FILE_CHOOSER_SAVE` | keiland-ui.h:1011 |  |
+| `KUI_HIT_ACTIVE` | macro | `KL_HIT_ACTIVE` | keiland-ui.h:613 |  |
+| `KUI_HIT_CLICKED` | macro | `KL_HIT_CLICKED` | keiland-ui.h:614 |  |
+| `KUI_HIT_DOUBLE` | macro | `KL_HIT_DOUBLE` | keiland-ui.h:615 |  |
+| `KUI_HIT_FOCUSED` | macro | `KL_HIT_FOCUSED` | keiland-ui.h:616 |  |
+| `KUI_HIT_HOT` | macro | `KL_HIT_HOT` | keiland-ui.h:612 |  |
+| `KUI_HIT_TOUCHED` | macro | `KL_HIT_TOUCHED` | keiland-ui.h:617 |  |
+| `KUI_ICON_BACK` | enum constant | `KL_ICON_BACK` | keiland-ui.h:195 |  |
+| `KUI_ICON_BATTERY` | enum constant | `KL_ICON_BATTERY` | keiland-ui.h:220 |  |
+| `KUI_ICON_BELL` | enum constant | `KL_ICON_BELL` | keiland-ui.h:216 |  |
+| `KUI_ICON_BLUETOOTH` | enum constant | `KL_ICON_BLUETOOTH` | keiland-ui.h:211 |  |
+| `KUI_ICON_CHEVRON` | enum constant | `KL_ICON_CHEVRON` | keiland-ui.h:201 |  |
+| `KUI_ICON_CLOSE` | enum constant | `KL_ICON_CLOSE` | keiland-ui.h:202 |  |
+| `KUI_ICON_COMPUTER` | enum constant | `KL_ICON_COMPUTER` | keiland-ui.h:193 |  |
+| `KUI_ICON_DESKTOP` | enum constant | `KL_ICON_DESKTOP` | keiland-ui.h:184 |  |
+| `KUI_ICON_DISCLOSURE` | enum constant | `KL_ICON_DISCLOSURE` | keiland-ui.h:232 |  |
+| `KUI_ICON_DISK` | enum constant | `KL_ICON_DISK` | keiland-ui.h:219 |  |
+| `KUI_ICON_DOCUMENTS` | enum constant | `KL_ICON_DOCUMENTS` | keiland-ui.h:185 |  |
+| `KUI_ICON_DOWN` | enum constant | `KL_ICON_DOWN` | keiland-ui.h:205 |  |
+| `KUI_ICON_DOWNLOADS` | enum constant | `KL_ICON_DOWNLOADS` | keiland-ui.h:186 |  |
+| `KUI_ICON_ETHERNET` | enum constant | `KL_ICON_ETHERNET` | keiland-ui.h:210 |  |
+| `KUI_ICON_EYE` | enum constant | `KL_ICON_EYE` | keiland-ui.h:227 |  |
+| `KUI_ICON_FOLDER_LINE` | enum constant | `KL_ICON_FOLDER_LINE` | keiland-ui.h:190 |  |
+| `KUI_ICON_FORWARD` | enum constant | `KL_ICON_FORWARD` | keiland-ui.h:196 |  |
+| `KUI_ICON_GLOBE` | enum constant | `KL_ICON_GLOBE` | keiland-ui.h:213 |  |
+| `KUI_ICON_GRID` | enum constant | `KL_ICON_GRID` | keiland-ui.h:198 |  |
+| `KUI_ICON_HOME` | enum constant | `KL_ICON_HOME` | keiland-ui.h:183 |  |
+| `KUI_ICON_INFO` | enum constant | `KL_ICON_INFO` | keiland-ui.h:231 |  |
+| `KUI_ICON_KEYBOARD` | enum constant | `KL_ICON_KEYBOARD` | keiland-ui.h:221 |  |
+| `KUI_ICON_LIST` | enum constant | `KL_ICON_LIST` | keiland-ui.h:199 |  |
+| `KUI_ICON_LOCK` | enum constant | `KL_ICON_LOCK` | keiland-ui.h:228 |  |
+| `KUI_ICON_MONITOR` | enum constant | `KL_ICON_MONITOR` | keiland-ui.h:218 |  |
+| `KUI_ICON_MOUSE` | enum constant | `KL_ICON_MOUSE` | keiland-ui.h:222 |  |
+| `KUI_ICON_MOVIES` | enum constant | `KL_ICON_MOVIES` | keiland-ui.h:189 |  |
+| `KUI_ICON_MUSIC` | enum constant | `KL_ICON_MUSIC` | keiland-ui.h:188 |  |
+| `KUI_ICON_PALETTE` | enum constant | `KL_ICON_PALETTE` | keiland-ui.h:214 |  |
+| `KUI_ICON_PEOPLE` | enum constant | `KL_ICON_PEOPLE` | keiland-ui.h:226 |  |
+| `KUI_ICON_PERSON` | enum constant | `KL_ICON_PERSON` | keiland-ui.h:229 |  |
+| `KUI_ICON_PICTURE` | enum constant | `KL_ICON_PICTURE` | keiland-ui.h:215 |  |
+| `KUI_ICON_PICTURES` | enum constant | `KL_ICON_PICTURES` | keiland-ui.h:187 |  |
+| `KUI_ICON_PLUS` | enum constant | `KL_ICON_PLUS` | keiland-ui.h:203 |  |
+| `KUI_ICON_PREVIEW` | enum constant | `KL_ICON_PREVIEW` | keiland-ui.h:200 |  |
+| `KUI_ICON_PRINTER` | enum constant | `KL_ICON_PRINTER` | keiland-ui.h:224 |  |
+| `KUI_ICON_RECENTS` | enum constant | `KL_ICON_RECENTS` | keiland-ui.h:191 |  |
+| `KUI_ICON_REFRESH` | enum constant | `KL_ICON_REFRESH` | keiland-ui.h:230 |  |
+| `KUI_ICON_SEARCH` | enum constant | `KL_ICON_SEARCH` | keiland-ui.h:197 |  |
+| `KUI_ICON_SHARE` | enum constant | `KL_ICON_SHARE` | keiland-ui.h:225 |  |
+| `KUI_ICON_SHIELD` | enum constant | `KL_ICON_SHIELD` | keiland-ui.h:212 |  |
+| `KUI_ICON_SPEAKER` | enum constant | `KL_ICON_SPEAKER` | keiland-ui.h:217 |  |
+| `KUI_ICON_TILES` | enum constant | `KL_ICON_TILES` | keiland-ui.h:208 |  |
+| `KUI_ICON_TOUCHPAD` | enum constant | `KL_ICON_TOUCHPAD` | keiland-ui.h:223 |  |
+| `KUI_ICON_TRASH` | enum constant | `KL_ICON_TRASH` | keiland-ui.h:192 |  |
+| `KUI_ICON_UP` | enum constant | `KL_ICON_UP` | keiland-ui.h:204 |  |
+| `KUI_ICON_VOLUME` | enum constant | `KL_ICON_VOLUME` | keiland-ui.h:194 |  |
+| `KUI_ICON_WIFI` | enum constant | `KL_ICON_WIFI` | keiland-ui.h:209 |  |
+| `KUI_KEYBOARD_INSET_BOTTOM` | macro | `KL_KEYBOARD_INSET_BOTTOM` | keiland-ui.h:836 | same value as `KEILAND_KEYBOARD_INSET_BOTTOM`, `KUI_KEYBOARD_INSET_BOTTOM`: one definition |
+| `KUI_KEYBOARD_INSET_NONE` | macro | `KL_KEYBOARD_INSET_NONE` | keiland-ui.h:834 | same value as `KEILAND_KEYBOARD_INSET_NONE`, `KUI_KEYBOARD_INSET_NONE`: one definition |
+| `KUI_KEYBOARD_INSET_RIGHT` | macro | `KL_KEYBOARD_INSET_RIGHT` | keiland-ui.h:835 | same value as `KEILAND_KEYBOARD_INSET_RIGHT`, `KUI_KEYBOARD_INSET_RIGHT`: one definition |
+| `KUI_KEY_BACKSPACE` | macro | `KL_KEY_BACKSPACE` | keiland-ui.h:482 |  |
+| `KUI_KEY_DELETE` | macro | `KL_KEY_DELETE` | keiland-ui.h:495 |  |
+| `KUI_KEY_DOWN` | macro | `KL_KEY_DOWN` | keiland-ui.h:493 |  |
+| `KUI_KEY_END` | macro | `KL_KEY_END` | keiland-ui.h:492 |  |
+| `KUI_KEY_ENTER` | macro | `KL_KEY_ENTER` | keiland-ui.h:484 |  |
+| `KUI_KEY_ESC` | macro | `KL_KEY_ESC` | keiland-ui.h:481 |  |
+| `KUI_KEY_HOME` | macro | `KL_KEY_HOME` | keiland-ui.h:487 |  |
+| `KUI_KEY_KPENTER` | macro | `KL_KEY_KPENTER` | keiland-ui.h:486 |  |
+| `KUI_KEY_LEFT` | macro | `KL_KEY_LEFT` | keiland-ui.h:490 |  |
+| `KUI_KEY_PAGEDOWN` | macro | `KL_KEY_PAGEDOWN` | keiland-ui.h:494 |  |
+| `KUI_KEY_PAGEUP` | macro | `KL_KEY_PAGEUP` | keiland-ui.h:489 |  |
+| `KUI_KEY_RIGHT` | macro | `KL_KEY_RIGHT` | keiland-ui.h:491 |  |
+| `KUI_KEY_SPACE` | macro | `KL_KEY_SPACE` | keiland-ui.h:485 |  |
+| `KUI_KEY_TAB` | macro | `KL_KEY_TAB` | keiland-ui.h:483 |  |
+| `KUI_KEY_UP` | macro | `KL_KEY_UP` | keiland-ui.h:488 |  |
+| `KUI_LIST_ACTIVATED` | macro | `KL_LIST_ACTIVATED` | keiland-ui.h:930 |  |
+| `KUI_LIST_SELECTED` | macro | `KL_LIST_SELECTED` | keiland-ui.h:929 |  |
+| `KUI_LIST_TOUCHED` | macro | `KL_LIST_TOUCHED` | keiland-ui.h:931 |  |
+| `KUI_MOD_ALT` | macro | `KL_MOD_ALT` | keiland-ui.h:500 |  |
+| `KUI_MOD_CTRL` | macro | `KL_MOD_CTRL` | keiland-ui.h:499 |  |
+| `KUI_MOD_SHIFT` | macro | `KL_MOD_SHIFT` | keiland-ui.h:498 |  |
+| `KUI_MOD_SUPER` | macro | `KL_MOD_SUPER` | keiland-ui.h:501 |  |
+| `KUI_POLYGON_POINTS` | macro | `KL_POLYGON_POINTS` | keiland-ui.h:56 |  |
+| `KUI_PRESENT_NONE` | macro | `KL_PRESENT_NONE` | keiland-ui.h:702 |  |
+| `KUI_PRESENT_SHM` | macro | `KL_PRESENT_SHM` | keiland-ui.h:701 |  |
+| `KUI_PRESENT_VULKAN` | macro | `KL_PRESENT_VULKAN` | keiland-ui.h:700 |  |
+| `KUI_RGB` | function | `KL_RGB` | keiland-ui.h:70 |  |
+| `KUI_RGBA` | function | `KL_RGBA` | keiland-ui.h:73 |  |
+| `KUI_SCROLL_BAR_FADE_US` | macro | `KL_SCROLL_BAR_FADE_US` | keiland-ui.h:433 |  |
+| `KUI_SCROLL_BAR_GAP` | macro | `KL_SCROLL_BAR_GAP` | keiland-ui.h:430 |  |
+| `KUI_SCROLL_BAR_MIN` | macro | `KL_SCROLL_BAR_MIN` | keiland-ui.h:431 |  |
+| `KUI_SCROLL_BAR_REACH` | macro | `KL_SCROLL_BAR_REACH` | keiland-ui.h:429 |  |
+| `KUI_SCROLL_BAR_SHOW_US` | macro | `KL_SCROLL_BAR_SHOW_US` | keiland-ui.h:432 |  |
+| `KUI_SCROLL_BAR_THICK` | macro | `KL_SCROLL_BAR_THICK` | keiland-ui.h:428 |  |
+| `KUI_SCROLL_BAR_THIN` | macro | `KL_SCROLL_BAR_THIN` | keiland-ui.h:427 |  |
+| `KUI_SCROLL_FADE_US` | macro | `KL_SCROLL_FADE_US` | keiland-ui.h:366 |  |
+| `KUI_SCROLL_GLIDE_US` | macro | `KL_SCROLL_GLIDE_US` | keiland-ui.h:365 |  |
+| `KUI_SCROLL_X` | macro | `KL_SCROLL_X` | keiland-ui.h:361 |  |
+| `KUI_SCROLL_Y` | macro | `KL_SCROLL_Y` | keiland-ui.h:362 |  |
+| `KUI_TEXT_EDGE` | macro | `KL_TEXT_EDGE` | keiland-ui.h:537 |  |
+| `KUI_TEXT_EDGE_SPEED` | macro | `KL_TEXT_EDGE_SPEED` | keiland-ui.h:538 |  |
+| `KUI_TEXT_EMOJI` | macro | `KL_TEXT_EMOJI` | keiland-ui.h:64 |  |
+| `KUI_TEXT_FACES` | macro | `KL_TEXT_FACES` | keiland-ui.h:63 |  |
+| `KUI_TEXT_HANDLE` | macro | `KL_TEXT_HANDLE` | keiland-ui.h:533 |  |
+| `KUI_TEXT_HANDLE_ANCHOR` | macro | `KL_TEXT_HANDLE_ANCHOR` | keiland-ui.h:542 |  |
+| `KUI_TEXT_HANDLE_CARET` | macro | `KL_TEXT_HANDLE_CARET` | keiland-ui.h:543 |  |
+| `KUI_TEXT_HANDLE_NONE` | macro | `KL_TEXT_HANDLE_NONE` | keiland-ui.h:541 |  |
+| `KUI_TEXT_HANDLE_REACH` | macro | `KL_TEXT_HANDLE_REACH` | keiland-ui.h:534 |  |
+| `KUI_TEXT_TOUCH_MENU` | macro | `KL_TEXT_TOUCH_MENU` | keiland-ui.h:530 |  |
+| `KUI_TEXT_TOUCH_SELECTION` | macro | `KL_TEXT_TOUCH_SELECTION` | keiland-ui.h:529 |  |
+| `KUI_WINDOW_AXIS` | macro | `KL_WINDOW_AXIS` | keiland-ui.h:708 |  |
+| `KUI_WINDOW_BUTTON` | macro | `KL_WINDOW_BUTTON` | keiland-ui.h:707 |  |
+| `KUI_WINDOW_CLOSE` | macro | `KL_WINDOW_CLOSE` | keiland-ui.h:716 |  |
+| `KUI_WINDOW_FDS_MAX` | macro | `KL_WINDOW_FDS_MAX` | keiland-ui.h:888 |  |
+| `KUI_WINDOW_FOCUS` | macro | `KL_WINDOW_FOCUS` | keiland-ui.h:710 |  |
+| `KUI_WINDOW_KEY` | macro | `KL_WINDOW_KEY` | keiland-ui.h:709 |  |
+| `KUI_WINDOW_LEAVE` | macro | `KL_WINDOW_LEAVE` | keiland-ui.h:706 |  |
+| `KUI_WINDOW_MOTION` | macro | `KL_WINDOW_MOTION` | keiland-ui.h:705 |  |
+| `KUI_WINDOW_POST` | macro | `KL_WINDOW_POST` | keiland-ui.h:717 |  |
+| `KUI_WINDOW_RESIZE` | macro | `KL_WINDOW_RESIZE` | keiland-ui.h:715 |  |
+| `KUI_WINDOW_TEXT_COMMIT` | macro | `KL_WINDOW_TEXT_COMMIT` | keiland-ui.h:729 |  |
+| `KUI_WINDOW_TEXT_DELETE` | macro | `KL_WINDOW_TEXT_DELETE` | keiland-ui.h:731 |  |
+| `KUI_WINDOW_TEXT_MAX` | macro | `KL_WINDOW_TEXT_MAX` | keiland-ui.h:734 |  |
+| `KUI_WINDOW_TEXT_PREEDIT` | macro | `KL_WINDOW_TEXT_PREEDIT` | keiland-ui.h:730 |  |
+| `KUI_WINDOW_TOUCH_CANCEL` | macro | `KL_WINDOW_TOUCH_CANCEL` | keiland-ui.h:714 |  |
+| `KUI_WINDOW_TOUCH_DOWN` | macro | `KL_WINDOW_TOUCH_DOWN` | keiland-ui.h:711 |  |
+| `KUI_WINDOW_TOUCH_MOTION` | macro | `KL_WINDOW_TOUCH_MOTION` | keiland-ui.h:712 |  |
+| `KUI_WINDOW_TOUCH_UP` | macro | `KL_WINDOW_TOUCH_UP` | keiland-ui.h:713 |  |
+| `kui_version` | removed | `(removed)` | - | kl_version() (from keiland_version) is the one version call |
+| `KUI_VERSION` | removed | `(removed)` | - | KL_VERSION (from KEILAND_VERSION) is the one version macro; not raised (2026-10-03 user: ABI may change) |

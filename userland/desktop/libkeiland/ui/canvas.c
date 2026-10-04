@@ -20,7 +20,7 @@
  * edge is smooth in both directions.
  */
 
-#include <keiui.h>
+#include <keiland.h>
 
 #include <errno.h>
 #include <math.h>
@@ -31,7 +31,7 @@
 #define CANVAS_SUBROWS		4
 
 /* The most edges one sub-row of a polygon crosses. */
-#define CANVAS_CROSSINGS	(KUI_POLYGON_POINTS + 2)
+#define CANVAS_CROSSINGS	(KL_POLYGON_POINTS + 2)
 
 /* The corners given to one round end of a line. */
 #define CANVAS_CAP_POINTS	8
@@ -48,17 +48,17 @@ struct canvas_crossing {
 	int direction;
 };
 
-static int canvas_bounds(const struct kui_canvas *canvas, float x, float y, float width, float height, int *left, int *top, int *right, int *bottom);
+static int canvas_bounds(const struct kl_canvas *canvas, float x, float y, float width, float height, int *left, int *top, int *right, int *bottom);
 static float canvas_round_distance(float px, float py, float cx, float cy, float half_width, float half_height, float radius);
 static float canvas_clamp(float value);
-static void canvas_blend(uint32_t *pixel, kui_color color, float coverage);
+static void canvas_blend(uint32_t *pixel, kl_color color, float coverage);
 static void canvas_blend_premultiplied(uint32_t *pixel, uint32_t source);
 static void canvas_span(float *row, float from, float to, float weight, int low, int high);
 static int canvas_crossings(const float *points, int count, float y, struct canvas_crossing *crossings);
-static uint32_t canvas_sample(const struct kui_image *image, float u, float v);
+static uint32_t canvas_sample(const struct kl_image *image, float u, float v);
 static uint32_t canvas_lerp_pixel(uint32_t first, uint32_t second, unsigned weight);
 static int canvas_inner_span(float x, float y, float width, float height, float radius, float band, int py, int *from, int *to);
-static void canvas_run(uint32_t *row, int from, int to, kui_color color);
+static void canvas_run(uint32_t *row, int from, int to, kl_color color);
 
 /*
  * Makes a canvas over pixels the caller owns.
@@ -66,8 +66,8 @@ static void canvas_run(uint32_t *row, int from, int to, kui_color color);
  * Returns 0, or ENOMEM when the polygon row cannot be allocated.
  */
 int
-kui_canvas_init(
-	struct kui_canvas *canvas,
+kl_canvas_init(
+	struct kl_canvas *canvas,
 	uint32_t *pixels,
 	size_t stride,
 	int width,
@@ -95,8 +95,8 @@ kui_canvas_init(
  * Releases what the canvas allocated (not the pixels).
  */
 void
-kui_canvas_release(
-	struct kui_canvas *canvas)
+kl_canvas_release(
+	struct kl_canvas *canvas)
 {
 	/* The scratch row goes; the pixels stay with their owner. */
 	free(canvas->coverage);
@@ -105,14 +105,14 @@ kui_canvas_release(
 
 /*
  * Narrows the clip to its intersection with a rectangle, until the
- * matching kui_canvas_clip_pop.
+ * matching kl_canvas_clip_pop.
  */
 void
-kui_canvas_clip_push(
-	struct kui_canvas *canvas,
-	const struct kui_rect *rect)
+kl_canvas_clip_push(
+	struct kl_canvas *canvas,
+	const struct kl_rect *rect)
 {
-	struct kui_rect clip;
+	struct kl_rect clip;
 	int right;
 	int bottom;
 
@@ -138,7 +138,7 @@ kui_canvas_clip_push(
 		clip.height = 0;
 
 	/* Keeps the clip being replaced, when there is room for it. */
-	if (canvas->clip_depth < KUI_CANVAS_CLIPS) {
+	if (canvas->clip_depth < KL_CANVAS_CLIPS) {
 		canvas->clips[canvas->clip_depth] = canvas->clip;
 		canvas->clip_depth++;
 	}
@@ -148,11 +148,11 @@ kui_canvas_clip_push(
 }
 
 /*
- * Restores the clip that the last kui_canvas_clip_push replaced.
+ * Restores the clip that the last kl_canvas_clip_push replaced.
  */
 void
-kui_canvas_clip_pop(
-	struct kui_canvas *canvas)
+kl_canvas_clip_pop(
+	struct kl_canvas *canvas)
 {
 	/* An unmatched pop leaves the clip as it is. */
 	if (canvas->clip_depth == 0)
@@ -167,8 +167,8 @@ kui_canvas_clip_pop(
  * Makes the whole canvas clear: every pixel transparent, whatever the clip.
  */
 void
-kui_canvas_clear(
-	struct kui_canvas *canvas)
+kl_canvas_clear(
+	struct kl_canvas *canvas)
 {
 	uint32_t *row;
 	int y;
@@ -184,10 +184,10 @@ kui_canvas_clear(
  * Fills a rectangle with a color.
  */
 void
-kui_canvas_fill(
-	struct kui_canvas *canvas,
-	const struct kui_rect *rect,
-	kui_color color)
+kl_canvas_fill(
+	struct kl_canvas *canvas,
+	const struct kl_rect *rect,
+	kl_color color)
 {
 	uint32_t *row;
 	int inside;
@@ -216,14 +216,14 @@ kui_canvas_fill(
  * bottom one.
  */
 void
-kui_canvas_gradient(
-	struct kui_canvas *canvas,
-	const struct kui_rect *rect,
-	kui_color top_color,
-	kui_color bottom_color)
+kl_canvas_gradient(
+	struct kl_canvas *canvas,
+	const struct kl_rect *rect,
+	kl_color top_color,
+	kl_color bottom_color)
 {
 	uint32_t *row;
-	kui_color color;
+	kl_color color;
 	float amount;
 	int inside;
 	int left;
@@ -243,7 +243,7 @@ kui_canvas_gradient(
 		amount = 0.0f;
 		if (rect->height > 1)
 			amount = (float)(y - rect->y) / (float)(rect->height - 1);
-		color = kui_color_mix(top_color, bottom_color, amount);
+		color = kl_color_mix(top_color, bottom_color, amount);
 		row = canvas->pixels + (size_t)y * canvas->stride;
 		for (x = left; x < right; x++)
 			canvas_blend(&row[x], color, 1.0f);
@@ -254,17 +254,17 @@ kui_canvas_gradient(
  * Fills a rounded rectangle with a color, its edges antialiased.
  */
 void
-kui_canvas_round(
-	struct kui_canvas *canvas,
+kl_canvas_round(
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float width,
 	float height,
 	float radius,
-	kui_color color)
+	kl_color color)
 {
 	/* A single color is a gradient between the same two. */
-	kui_canvas_round_gradient(canvas, x, y, width, height, radius, color, color);
+	kl_canvas_round_gradient(canvas, x, y, width, height, radius, color, color);
 }
 
 /*
@@ -272,18 +272,18 @@ kui_canvas_round(
  * antialiased.
  */
 void
-kui_canvas_round_gradient(
-	struct kui_canvas *canvas,
+kl_canvas_round_gradient(
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float width,
 	float height,
 	float radius,
-	kui_color top_color,
-	kui_color bottom_color)
+	kl_color top_color,
+	kl_color bottom_color)
 {
 	uint32_t *row;
-	kui_color color;
+	kl_color color;
 	float half_width;
 	float half_height;
 	float cx;
@@ -321,7 +321,7 @@ kui_canvas_round_gradient(
 		amount = 0.0f;
 		if (height > 1.0f)
 			amount = ((float)py + 0.5f - y) / height;
-		color = kui_color_mix(top_color, bottom_color, amount);
+		color = kl_color_mix(top_color, bottom_color, amount);
 		row = canvas->pixels + (size_t)py * canvas->stride;
 
 		/* The part of the row wholly inside is filled at once; only the edges are measured. */
@@ -352,15 +352,15 @@ kui_canvas_round_gradient(
  * Draws the outline of a rounded rectangle, a thickness inside its edge.
  */
 void
-kui_canvas_round_border(
-	struct kui_canvas *canvas,
+kl_canvas_round_border(
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float width,
 	float height,
 	float radius,
 	float thickness,
-	kui_color color)
+	kl_color color)
 {
 	uint32_t *row;
 	float half_width;
@@ -418,15 +418,15 @@ kui_canvas_round_border(
  * the softness on both sides of the edge.
  */
 void
-kui_canvas_shadow(
-	struct kui_canvas *canvas,
+kl_canvas_shadow(
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float width,
 	float height,
 	float radius,
 	float softness,
-	kui_color color)
+	kl_color color)
 {
 	uint32_t *row;
 	float half_width;
@@ -497,15 +497,15 @@ kui_canvas_shadow(
  * Fills a circle.
  */
 void
-kui_canvas_circle(
-	struct kui_canvas *canvas,
+kl_canvas_circle(
+	struct kl_canvas *canvas,
 	float cx,
 	float cy,
 	float radius,
-	kui_color color)
+	kl_color color)
 {
 	/* A circle is a square whose radius is half its side. */
-	kui_canvas_round(canvas, cx - radius, cy - radius, 2.0f * radius, 2.0f * radius, radius, color);
+	kl_canvas_round(canvas, cx - radius, cy - radius, 2.0f * radius, 2.0f * radius, radius, color);
 }
 
 /*
@@ -513,14 +513,14 @@ kui_canvas_circle(
  * draws all of it (a progress indicator).
  */
 void
-kui_canvas_ring(
-	struct kui_canvas *canvas,
+kl_canvas_ring(
+	struct kl_canvas *canvas,
 	float cx,
 	float cy,
 	float radius,
 	float thickness,
 	float fraction,
-	kui_color color)
+	kl_color color)
 {
 	uint32_t *row;
 	float dx;
@@ -574,11 +574,11 @@ kui_canvas_ring(
  * Fills a polygon (x, y pairs; the nonzero rule), its edges antialiased.
  */
 void
-kui_canvas_polygon(
-	struct kui_canvas *canvas,
+kl_canvas_polygon(
+	struct kl_canvas *canvas,
 	const float *points,
 	int count,
-	kui_color color)
+	kl_color color)
 {
 	struct canvas_crossing crossings[CANVAS_CROSSINGS];
 	uint32_t *row;
@@ -601,7 +601,7 @@ kui_canvas_polygon(
 	int py;
 
 	/* A polygon has three corners at least and no more than the filler keeps. */
-	if (count < 3 || count > KUI_POLYGON_POINTS)
+	if (count < 3 || count > KL_POLYGON_POINTS)
 		return;
 
 	/* The polygon's bounding box. */
@@ -656,14 +656,14 @@ kui_canvas_polygon(
  * Draws a line of a thickness with round ends.
  */
 void
-kui_canvas_line(
-	struct kui_canvas *canvas,
+kl_canvas_line(
+	struct kl_canvas *canvas,
 	float x0,
 	float y0,
 	float x1,
 	float y1,
 	float thickness,
-	kui_color color)
+	kl_color color)
 {
 	float points[2 * (2 * CANVAS_CAP_POINTS + 2)];
 	float length;
@@ -683,7 +683,7 @@ kui_canvas_line(
 
 	/* A point is a dot. */
 	if (length < 0.001f) {
-		kui_canvas_circle(canvas, x0, y0, half, color);
+		kl_canvas_circle(canvas, x0, y0, half, color);
 		return;
 	}
 
@@ -708,22 +708,22 @@ kui_canvas_line(
 	}
 
 	/* The outline is filled as one polygon, so a translucent line is even. */
-	kui_canvas_polygon(canvas, points, count, color);
+	kl_canvas_polygon(canvas, points, count, color);
 }
 
 /*
  * Blends a color through a coverage mask (a glyph): 255 is the full color.
  */
 void
-kui_canvas_mask(
-	struct kui_canvas *canvas,
+kl_canvas_mask(
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	const uint8_t *mask,
 	int width,
 	int height,
 	size_t stride,
-	kui_color color)
+	kl_color color)
 {
 	const uint8_t *source;
 	uint32_t *row;
@@ -756,9 +756,9 @@ kui_canvas_mask(
  * and an opacity.
  */
 void
-kui_canvas_image(
-	struct kui_canvas *canvas,
-	const struct kui_image *image,
+kl_canvas_image(
+	struct kl_canvas *canvas,
+	const struct kl_image *image,
 	float x,
 	float y,
 	float width,
@@ -844,8 +844,8 @@ kui_canvas_image(
  * Returns 0, EINVAL for an empty size, or ENOMEM.
  */
 int
-kui_image_create(
-	struct kui_image *image,
+kl_image_create(
+	struct kl_image *image,
 	int width,
 	int height)
 {
@@ -870,8 +870,8 @@ kui_image_create(
  * Frees a picture's pixels.
  */
 void
-kui_image_release(
-	struct kui_image *image)
+kl_image_release(
+	struct kl_image *image)
 {
 	/* The pixels go and the picture is empty. */
 	free(image->pixels);
@@ -884,9 +884,9 @@ kui_image_release(
  * sample when growing.
  */
 void
-kui_image_scale(
-	const struct kui_image *source,
-	struct kui_image *target)
+kl_image_scale(
+	const struct kl_image *source,
+	struct kl_image *target)
 {
 	const uint32_t *row;
 	uint32_t pixel;
@@ -955,10 +955,10 @@ kui_image_scale(
 /*
  * Mixes two colors (alpha included): 0 is the first, 1 the second.
  */
-kui_color
-kui_color_mix(
-	kui_color from,
-	kui_color to,
+kl_color
+kl_color_mix(
+	kl_color from,
+	kl_color to,
 	float amount)
 {
 	unsigned weight;
@@ -1043,7 +1043,7 @@ canvas_run(
 	uint32_t *row,
 	int from,
 	int to,
-	kui_color color)
+	kl_color color)
 {
 	uint32_t premultiplied;
 	unsigned alpha;
@@ -1073,7 +1073,7 @@ canvas_run(
 /* Clips a rectangle of the canvas to the clip and to whole pixels; zero when nothing is left. */
 static int
 canvas_bounds(
-	const struct kui_canvas *canvas,
+	const struct kl_canvas *canvas,
 	float x,
 	float y,
 	float width,
@@ -1164,7 +1164,7 @@ canvas_clamp(
 static void
 canvas_blend(
 	uint32_t *pixel,
-	kui_color color,
+	kl_color color,
 	float coverage)
 {
 	unsigned alpha;
@@ -1329,7 +1329,7 @@ canvas_crossings(
 /* Samples a picture between its pixels (bilinear), its edges repeated outward. */
 static uint32_t
 canvas_sample(
-	const struct kui_image *image,
+	const struct kl_image *image,
 	float u,
 	float v)
 {

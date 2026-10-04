@@ -8,8 +8,8 @@
 /*
  * The window's clipboard through zdesktop's (ws090-p004, Text Editor's
  * clipboard.c moved here, itself Terminal's without the drag and drop):
- * kui_window_copy makes the application's text the selection (a
- * wl_data_source offering UTF-8 and plain text), and kui_window_paste
+ * kl_window_copy makes the application's text the selection (a
+ * wl_data_source offering UTF-8 and plain text), and kl_window_paste
  * receives the selection's text through a pipe.  While the window's own
  * text is the selection, a paste takes it directly (asking itself to write
  * into a pipe it reads would wait on itself).
@@ -82,7 +82,7 @@ static const struct wl_data_source_listener source_listener = {
  */
 void
 keiui_clipboard_bind(
-	struct kui_window *window,
+	struct kl_window *window,
 	struct wl_registry *registry,
 	uint32_t name,
 	uint32_t version)
@@ -99,7 +99,7 @@ keiui_clipboard_bind(
  */
 void
 keiui_clipboard_start(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	/* Nothing to share through. */
 	if (window->data_manager == NULL || window->seat == NULL)
@@ -116,8 +116,8 @@ keiui_clipboard_start(
  * sent from there.
  */
 void
-kui_window_copy(
-	struct kui_window *window,
+kl_window_copy(
+	struct kl_window *window,
 	const char *text,
 	size_t length)
 {
@@ -155,8 +155,8 @@ kui_window_copy(
  * CLIPBOARD_RECEIVE_MS.  Returns the bytes (0 for none).
  */
 size_t
-kui_window_paste(
-	struct kui_window *window,
+kl_window_paste(
+	struct kl_window *window,
 	char *text,
 	size_t size)
 {
@@ -227,8 +227,8 @@ kui_window_paste(
  * text, or another program's).
  */
 int
-kui_window_can_paste(
-	const struct kui_window *window)
+kl_window_can_paste(
+	const struct kl_window *window)
 {
 	/* The window's own text. */
 	if (window->data_source != NULL && window->clipboard_length != 0U)
@@ -247,7 +247,7 @@ kui_window_can_paste(
  */
 void
 keiui_clipboard_close(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	/* The offer, the source, the device and the manager. */
 	if (window->data_offer != NULL)
@@ -271,7 +271,7 @@ clipboard_offer(
 	struct wl_data_device *device,
 	struct wl_data_offer *offer)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The offer being described, with no text type yet. */
 	(void)device;
@@ -349,7 +349,7 @@ clipboard_selection(
 	struct wl_data_device *device,
 	struct wl_data_offer *offer)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The last offer goes. */
 	(void)device;
@@ -371,7 +371,7 @@ clipboard_type(
 	struct wl_data_offer *offer,
 	const char *mime_type)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	int utf8;
 	int plain;
 
@@ -431,7 +431,7 @@ clipboard_send(
 	const char *mime_type,
 	int32_t fd)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	size_t written;
 	ssize_t count;
 
@@ -459,7 +459,7 @@ clipboard_cancelled(
 	void *data,
 	struct wl_data_source *source)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The source is destroyed; a paste now takes the other client's selection. */
 	window = data;

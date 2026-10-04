@@ -14,6 +14,7 @@
  *   host-inset
  */
 
+#include <keiui.h>
 #include "internal.h"
 
 #include <stdio.h>

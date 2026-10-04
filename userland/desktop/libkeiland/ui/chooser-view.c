@@ -56,15 +56,15 @@
 #define VIEW_TEXT_LOCATION	14U
 
 /* The warning's colours (a refusal's message). */
-#define VIEW_WARNING_TEXT	KUI_RGB(0xc8313a)
-#define VIEW_WARNING_GROUND	KUI_RGB(0xfff1f1)
-#define VIEW_WARNING_EDGE	KUI_RGB(0xf6c9cb)
+#define VIEW_WARNING_TEXT	KL_RGB(0xc8313a)
+#define VIEW_WARNING_GROUND	KL_RGB(0xfff1f1)
+#define VIEW_WARNING_EDGE	KL_RGB(0xf6c9cb)
 
 /* The item icons' colours: a folder's body and tab, a page's edge and lines. */
-#define VIEW_FOLDER		KUI_RGB(0x5aa2f5)
-#define VIEW_FOLDER_BACK	KUI_RGB(0x3d86e0)
-#define VIEW_PAGE_EDGE		KUI_RGB(0xc5ccd6)
-#define VIEW_PAGE_LINES		KUI_RGB(0xb8c1ce)
+#define VIEW_FOLDER		KL_RGB(0x5aa2f5)
+#define VIEW_FOLDER_BACK	KL_RGB(0x3d86e0)
+#define VIEW_PAGE_EDGE		KL_RGB(0xc5ccd6)
+#define VIEW_PAGE_LINES		KL_RGB(0xb8c1ce)
 
 /* The evdev codes of the letters of the chooser's commands (Ctrl+H, Ctrl+L). */
 #define VIEW_KEY_H		35U
@@ -81,34 +81,34 @@ static const char *const view_confirm_labels[] = { "Replace", "Cancel" };
  * Where the window's parts are for its size.
  */
 struct view_layout {
-	struct kui_rect sidebar;
-	struct kui_rect content;
-	struct kui_rect up;
-	struct kui_rect location;
-	struct kui_rect header;
-	struct kui_rect list;
-	struct kui_rect bar;
-	struct kui_rect name;
-	struct kui_rect filter;
-	struct kui_rect cancel;
-	struct kui_rect accept;
+	struct kl_rect sidebar;
+	struct kl_rect content;
+	struct kl_rect up;
+	struct kl_rect location;
+	struct kl_rect header;
+	struct kl_rect list;
+	struct kl_rect bar;
+	struct kl_rect name;
+	struct kl_rect filter;
+	struct kl_rect cancel;
+	struct kl_rect accept;
 };
 
-static void view_layout(const struct keiui_chooser *chooser, const struct kui_style *style, int width, int height, struct view_layout *layout);
-static int view_sidebar(struct keiui_chooser *chooser, struct kui_ui *ui, const struct kui_style *style, const struct view_layout *layout);
-static int view_location(struct keiui_chooser *chooser, struct kui_ui *ui, const struct kui_style *style, const struct view_layout *layout);
-static void view_location_text(const struct keiui_chooser *chooser, const struct kui_style *style, char *out, size_t size, int width);
-static int view_list(struct keiui_chooser *chooser, struct kui_ui *ui, const struct kui_style *style, const struct view_layout *layout);
-static void view_row(const struct keiui_chooser *chooser, const struct kui_style *style, const struct view_layout *layout, size_t index, const struct kui_rect *row, kui_color ink, int modified);
-static void view_item_icon(const struct kui_style *style, int folder, int x, int y, int lit);
+static void view_layout(const struct keiui_chooser *chooser, const struct kl_style *style, int width, int height, struct view_layout *layout);
+static int view_sidebar(struct keiui_chooser *chooser, struct kl_ui *ui, const struct kl_style *style, const struct view_layout *layout);
+static int view_location(struct keiui_chooser *chooser, struct kl_ui *ui, const struct kl_style *style, const struct view_layout *layout);
+static void view_location_text(const struct keiui_chooser *chooser, const struct kl_style *style, char *out, size_t size, int width);
+static int view_list(struct keiui_chooser *chooser, struct kl_ui *ui, const struct kl_style *style, const struct view_layout *layout);
+static void view_row(const struct keiui_chooser *chooser, const struct kl_style *style, const struct view_layout *layout, size_t index, const struct kl_rect *row, kl_color ink, int modified);
+static void view_item_icon(const struct kl_style *style, int folder, int x, int y, int lit);
 static void view_size_text(int64_t size, char *out, size_t size_out);
 static void view_time_text(int64_t when, char *out, size_t size);
-static int view_bar(struct keiui_chooser *chooser, struct kui_ui *ui, const struct kui_style *style, const struct view_layout *layout);
-static void view_message(const struct keiui_chooser *chooser, const struct kui_style *style, const struct view_layout *layout);
-static int view_confirm(struct keiui_chooser *chooser, struct kui_ui *ui, const struct kui_style *style, const struct view_layout *layout);
-static int view_key(struct keiui_chooser *chooser, struct kui_ui *ui, uint32_t code, unsigned modifiers);
+static int view_bar(struct keiui_chooser *chooser, struct kl_ui *ui, const struct kl_style *style, const struct view_layout *layout);
+static void view_message(const struct keiui_chooser *chooser, const struct kl_style *style, const struct view_layout *layout);
+static int view_confirm(struct keiui_chooser *chooser, struct kl_ui *ui, const struct kl_style *style, const struct view_layout *layout);
+static int view_key(struct keiui_chooser *chooser, struct kl_ui *ui, uint32_t code, unsigned modifiers);
 static void view_move(struct keiui_chooser *chooser, long delta);
-static void view_set(struct kui_rect *rect, int x, int y, int width, int height);
+static void view_set(struct kl_rect *rect, int x, int y, int width, int height);
 
 /*
  * Draws one frame of the chooser at a size and a time and carries out the
@@ -118,15 +118,15 @@ static void view_set(struct kui_rect *rect, int x, int y, int width, int height)
 int
 keiui_chooser_frame(
 	struct keiui_chooser *chooser,
-	struct kui_ui *ui,
-	const struct kui_style *style,
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	int width,
 	int height,
 	uint64_t now_us)
 {
 	struct view_layout layout;
-	struct kui_event event;
-	struct kui_rect whole;
+	struct kl_event event;
+	struct kl_rect whole;
 	uint32_t index;
 	int changed;
 	int moving;
@@ -134,7 +134,7 @@ keiui_chooser_frame(
 
 	/* The frame's time, and the parts' places. */
 	chooser->now_us = now_us;
-	kui_ui_begin(ui, now_us);
+	kl_ui_begin(ui, now_us);
 	view_layout(chooser, style, width, height, &layout);
 
 	/* The widget the model wants to have the keyboard (the list by its own record). */
@@ -142,7 +142,7 @@ keiui_chooser_frame(
 		index = 0U;
 		if (chooser->want_focus == KEIUI_CHOOSER_ID_LIST)
 			index = KEIUI_CHOOSER_LIST_SELF;
-		kui_ui_set_focus(ui, chooser->want_focus, index);
+		kl_ui_set_focus(ui, chooser->want_focus, index);
 		chooser->want_focus = 0U;
 	}
 
@@ -152,11 +152,11 @@ keiui_chooser_frame(
 	whole.width = width;
 	whole.height = height;
 	if (style->glass)
-		kui_canvas_clear(style->canvas);
+		kl_canvas_clear(style->canvas);
 	else
-		kui_canvas_gradient(style->canvas, &whole, style->theme->ground_top, style->theme->ground_bottom);
-	kui_panel(style, &layout.sidebar, 1);
-	kui_panel(style, &layout.content, 0);
+		kl_canvas_gradient(style->canvas, &whole, style->theme->ground_top, style->theme->ground_bottom);
+	kl_panel(style, &layout.sidebar, 1);
+	kl_panel(style, &layout.content, 0);
 
 	/* The sidebar, the location, the list, the bar and a refusal's message. */
 	changed = view_sidebar(chooser, ui, style, &layout);
@@ -170,12 +170,12 @@ keiui_chooser_frame(
 		changed |= view_confirm(chooser, ui, style, &layout);
 
 	/* The frame is drawn; the keys no widget took are the chooser's commands. */
-	moving = kui_ui_end(ui, now_us);
+	moving = kl_ui_end(ui, now_us);
 	for (;;) {
-		taken = kui_ui_take(ui, &event);
+		taken = kl_ui_take(ui, &event);
 		if (!taken)
 			break;
-		if (event.kind == KUI_EVENT_KEY)
+		if (event.kind == KL_EVENT_KEY)
 			changed |= view_key(chooser, ui, event.code, event.modifiers);
 	}
 
@@ -193,7 +193,7 @@ size_t
 keiui_chooser_panels(
 	int width,
 	int height,
-	struct kui_rect *panels,
+	struct kl_rect *panels,
 	size_t capacity)
 {
 	/* Room for both. */
@@ -212,12 +212,12 @@ keiui_chooser_panels(
 static void
 view_layout(
 	const struct keiui_chooser *chooser,
-	const struct kui_style *style,
+	const struct kl_style *style,
 	int width,
 	int height,
 	struct view_layout *layout)
 {
-	struct kui_rect cards[2];
+	struct kl_rect cards[2];
 	int middle;
 	int right;
 	int left;
@@ -245,7 +245,7 @@ view_layout(
 
 	/* Open: the filter on the left, no name. */
 	left = layout->bar.x;
-	if (chooser->mode != KUI_FILE_CHOOSER_SAVE) {
+	if (chooser->mode != KL_FILE_CHOOSER_SAVE) {
 		view_set(&layout->filter, left, middle, VIEW_FILTER_WIDTH, VIEW_BUTTON);
 		if (chooser->filter_count < 2U)
 			view_set(&layout->filter, 0, 0, 0, 0);
@@ -269,11 +269,11 @@ view_layout(
 static int
 view_sidebar(
 	struct keiui_chooser *chooser,
-	struct kui_ui *ui,
-	const struct kui_style *style,
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	const struct view_layout *layout)
 {
-	struct kui_rect row;
+	struct kl_rect row;
 	size_t index;
 	int current;
 	int pressed;
@@ -281,15 +281,15 @@ view_sidebar(
 	int top;
 
 	/* The section's title. */
-	top = kui_sidebar_section(style, layout->sidebar.x + 8, layout->sidebar.y + 8, layout->sidebar.width - 16, "Places");
+	top = kl_sidebar_section(style, layout->sidebar.x + 8, layout->sidebar.y + 8, layout->sidebar.width - 16, "Places");
 
 	/* Each place, lit when it is shown; a click shows it. */
 	changed = 0;
-	kui_canvas_clip_push(style->canvas, &layout->sidebar);
+	kl_canvas_clip_push(style->canvas, &layout->sidebar);
 	for (index = 0; index < chooser->place_count; index++) {
 		view_set(&row, layout->sidebar.x + 8, top + (int)index * VIEW_PLACE, layout->sidebar.width - 16, VIEW_PLACE);
 		current = keiui_chooser_is_place(chooser, index);
-		pressed = kui_sidebar_item(ui, style, KEIUI_CHOOSER_ID_PLACES, (uint32_t)index, &row, chooser->places[index].icon, chooser->places[index].label, current);
+		pressed = kl_sidebar_item(ui, style, KEIUI_CHOOSER_ID_PLACES, (uint32_t)index, &row, chooser->places[index].icon, chooser->places[index].label, current);
 		if (pressed && !chooser->confirm) {
 			keiui_chooser_go_place(chooser, index);
 			changed = 1;
@@ -297,7 +297,7 @@ view_sidebar(
 	}
 
 	/* Drawing reaches the whole window again. */
-	kui_canvas_clip_pop(style->canvas);
+	kl_canvas_clip_pop(style->canvas);
 	return changed;
 }
 
@@ -305,13 +305,13 @@ view_sidebar(
 static int
 view_location(
 	struct keiui_chooser *chooser,
-	struct kui_ui *ui,
-	const struct kui_style *style,
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	const struct view_layout *layout)
 {
-	const struct kui_theme *theme;
+	const struct kl_theme *theme;
 	char shown[KEIUI_CHOOSER_PATH_MAX];
-	kui_color ink;
+	kl_color ink;
 	unsigned changes;
 	unsigned state;
 	float middle_x;
@@ -322,21 +322,21 @@ view_location(
 	/* The button: a round ground under the pointer, and an arrow, pale when there is nothing above. */
 	theme = style->theme;
 	changed = 0;
-	state = kui_ui_hit(ui, KEIUI_CHOOSER_ID_UP, 0U, &layout->up);
+	state = kl_ui_hit(ui, KEIUI_CHOOSER_ID_UP, 0U, &layout->up);
 	enabled = keiui_chooser_can_go_up(chooser);
 	ink = theme->icon;
 	if (!enabled)
 		ink = theme->text_faint;
 	middle_x = (float)layout->up.x + (float)layout->up.width * 0.5f;
 	middle_y = (float)layout->up.y + (float)layout->up.height * 0.5f;
-	if (enabled && (state & KUI_HIT_HOT) != 0U)
-		kui_canvas_circle(style->canvas, middle_x, middle_y, (float)layout->up.width * 0.5f, theme->hover);
-	kui_canvas_line(style->canvas, middle_x, middle_y - 6.0f, middle_x, middle_y + 6.0f, 1.8f, ink);
-	kui_canvas_line(style->canvas, middle_x - 5.0f, middle_y - 1.0f, middle_x, middle_y - 6.0f, 1.8f, ink);
-	kui_canvas_line(style->canvas, middle_x + 5.0f, middle_y - 1.0f, middle_x, middle_y - 6.0f, 1.8f, ink);
+	if (enabled && (state & KL_HIT_HOT) != 0U)
+		kl_canvas_circle(style->canvas, middle_x, middle_y, (float)layout->up.width * 0.5f, theme->hover);
+	kl_canvas_line(style->canvas, middle_x, middle_y - 6.0f, middle_x, middle_y + 6.0f, 1.8f, ink);
+	kl_canvas_line(style->canvas, middle_x - 5.0f, middle_y - 1.0f, middle_x, middle_y - 6.0f, 1.8f, ink);
+	kl_canvas_line(style->canvas, middle_x + 5.0f, middle_y - 1.0f, middle_x, middle_y - 6.0f, 1.8f, ink);
 
 	/* A click goes to the folder above. */
-	if (enabled && (state & KUI_HIT_CLICKED) != 0U && !chooser->confirm) {
+	if (enabled && (state & KL_HIT_CLICKED) != 0U && !chooser->confirm) {
 		chooser->message[0] = '\0';
 		keiui_chooser_go_up(chooser);
 		changed = 1;
@@ -344,16 +344,16 @@ view_location(
 
 	/* The path's field while a path is typed: Enter goes there, Esc closes it. */
 	if (chooser->typing_path) {
-		changes = kui_field(ui, style, KEIUI_CHOOSER_ID_PATH, &layout->location, &chooser->path, NULL);
-		if ((changes & KUI_FIELD_CHANGED) != 0U)
+		changes = kl_field(ui, style, KEIUI_CHOOSER_ID_PATH, &layout->location, &chooser->path, NULL);
+		if ((changes & KL_FIELD_CHANGED) != 0U)
 			chooser->message[0] = '\0';
-		if ((changes & KUI_FIELD_SUBMITTED) != 0U) {
+		if ((changes & KL_FIELD_SUBMITTED) != 0U) {
 			keiui_chooser_accept_path(chooser);
 			changed = 1;
 		}
 
 		/* Esc closes it. */
-		if ((changes & KUI_FIELD_CANCELLED) != 0U) {
+		if ((changes & KL_FIELD_CANCELLED) != 0U) {
 			keiui_chooser_close_path(chooser);
 			changed = 1;
 		}
@@ -363,12 +363,12 @@ view_location(
 	}
 
 	/* The location's parts, lit under the pointer; a click types a path. */
-	state = kui_ui_hit(ui, KEIUI_CHOOSER_ID_LOCATION, 0U, &layout->location);
-	if ((state & KUI_HIT_HOT) != 0U)
-		kui_canvas_round(style->canvas, (float)layout->location.x, (float)layout->location.y, (float)layout->location.width, (float)layout->location.height, 8.0f, theme->hover);
+	state = kl_ui_hit(ui, KEIUI_CHOOSER_ID_LOCATION, 0U, &layout->location);
+	if ((state & KL_HIT_HOT) != 0U)
+		kl_canvas_round(style->canvas, (float)layout->location.x, (float)layout->location.y, (float)layout->location.width, (float)layout->location.height, 8.0f, theme->hover);
 	view_location_text(chooser, style, shown, sizeof(shown), layout->location.width - 20);
-	(void)kui_text_draw(style->text, style->canvas, layout->location.x + 10, kui_text_center(VIEW_TEXT_LOCATION, layout->location.y, layout->location.height), shown, strlen(shown), VIEW_TEXT_LOCATION, 1, theme->text);
-	if ((state & KUI_HIT_CLICKED) != 0U && !chooser->confirm) {
+	(void)kl_text_draw(style->text, style->canvas, layout->location.x + 10, kl_text_center(VIEW_TEXT_LOCATION, layout->location.y, layout->location.height), shown, strlen(shown), VIEW_TEXT_LOCATION, 1, theme->text);
+	if ((state & KL_HIT_CLICKED) != 0U && !chooser->confirm) {
 		chooser->message[0] = '\0';
 		keiui_chooser_open_path(chooser);
 		changed = 1;
@@ -386,7 +386,7 @@ view_location(
 static void
 view_location_text(
 	const struct keiui_chooser *chooser,
-	const struct kui_style *style,
+	const struct kl_style *style,
 	char *out,
 	size_t size,
 	int width)
@@ -439,7 +439,7 @@ view_location_text(
 
 	/* The whole location when it fits. */
 	start = parts;
-	fits = kui_text_width(style->text, start, strlen(start), VIEW_TEXT_LOCATION, 1);
+	fits = kl_text_width(style->text, start, strlen(start), VIEW_TEXT_LOCATION, 1);
 	if (fits <= width) {
 		snprintf(out, size, "%s", parts);
 		return;
@@ -452,28 +452,28 @@ view_location_text(
 			break;
 		start = crumb + strlen(VIEW_CRUMB);
 		snprintf(out, size, "%s%s%s", VIEW_ELLIPSIS, VIEW_CRUMB, start);
-		fits = kui_text_width(style->text, out, strlen(out), VIEW_TEXT_LOCATION, 1);
+		fits = kl_text_width(style->text, out, strlen(out), VIEW_TEXT_LOCATION, 1);
 		if (fits <= width)
 			return;
 	}
 
 	/* Only the last part, cut to the width. */
-	(void)kui_text_fit(style->text, start, VIEW_TEXT_LOCATION, 1, width, out, size);
+	(void)kl_text_fit(style->text, start, VIEW_TEXT_LOCATION, 1, width, out, size);
 }
 
 /* Draws the list's header and its rows (or why it has none), and carries out what the list reports; 1 when the model changed. */
 static int
 view_list(
 	struct keiui_chooser *chooser,
-	struct kui_ui *ui,
-	const struct kui_style *style,
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	const struct view_layout *layout)
 {
-	const struct kui_theme *theme;
-	const struct kui_rect *header;
+	const struct kl_theme *theme;
+	const struct kl_rect *header;
 	char line[KEIUI_CHOOSER_MESSAGE_MAX];
-	struct kui_rect row;
-	kui_color ink;
+	struct kl_rect row;
+	kl_color ink;
 	unsigned changes;
 	size_t first;
 	size_t last;
@@ -489,28 +489,28 @@ view_list(
 	modified = 0;
 	if (layout->list.width >= VIEW_MODIFIED_MIN)
 		modified = 1;
-	baseline = kui_text_center(VIEW_TEXT_HEADER, header->y, header->height);
-	(void)kui_text_draw(style->text, style->canvas, header->x + 34, baseline, "Name", 4U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
+	baseline = kl_text_center(VIEW_TEXT_HEADER, header->y, header->height);
+	(void)kl_text_draw(style->text, style->canvas, header->x + 34, baseline, "Name", 4U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
 	if (modified) {
-		(void)kui_text_draw(style->text, style->canvas, header->x + header->width - VIEW_MODIFIED_WIDTH + 4, baseline, "Modified", 8U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
-		(void)kui_text_draw(style->text, style->canvas, header->x + header->width - VIEW_MODIFIED_WIDTH - VIEW_SIZE_WIDTH + 4, baseline, "Size", 4U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
+		(void)kl_text_draw(style->text, style->canvas, header->x + header->width - VIEW_MODIFIED_WIDTH + 4, baseline, "Modified", 8U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
+		(void)kl_text_draw(style->text, style->canvas, header->x + header->width - VIEW_MODIFIED_WIDTH - VIEW_SIZE_WIDTH + 4, baseline, "Size", 4U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
 	} else {
-		(void)kui_text_draw(style->text, style->canvas, header->x + header->width - VIEW_SIZE_WIDTH + 4, baseline, "Size", 4U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
+		(void)kl_text_draw(style->text, style->canvas, header->x + header->width - VIEW_SIZE_WIDTH + 4, baseline, "Size", 4U, VIEW_TEXT_HEADER, 0, theme->text_secondary);
 	}
 
 	/* The line under the titles. */
 	view_set(&row, header->x, header->y + header->height - 1, header->width, 1);
-	kui_canvas_fill(style->canvas, &row, theme->separator);
+	kl_canvas_fill(style->canvas, &row, theme->separator);
 
 	/* The rows that show. */
-	changes = kui_list_begin(ui, style, KEIUI_CHOOSER_ID_LIST, &layout->list, &chooser->list, chooser->count, &first, &last);
+	changes = kl_list_begin(ui, style, KEIUI_CHOOSER_ID_LIST, &layout->list, &chooser->list, chooser->count, &first, &last);
 	for (index = first; index < last; index++) {
-		changes |= kui_list_row(ui, style, KEIUI_CHOOSER_ID_LIST, &layout->list, &chooser->list, index, &row, &ink);
+		changes |= kl_list_row(ui, style, KEIUI_CHOOSER_ID_LIST, &layout->list, &chooser->list, index, &row, &ink);
 		view_row(chooser, style, layout, index, &row, ink, modified);
 	}
 
 	/* The list ends. */
-	kui_list_end(ui, style, &layout->list, &chooser->list);
+	kl_list_end(ui, style, &layout->list, &chooser->list);
 
 	/* An empty list says why. */
 	if (chooser->count == 0U) {
@@ -520,8 +520,8 @@ view_list(
 			snprintf(line, sizeof(line), "No recent files");
 		else
 			snprintf(line, sizeof(line), "This folder is empty");
-		width = kui_text_width(style->text, line, strlen(line), VIEW_TEXT_ROW, 0);
-		(void)kui_text_draw(style->text, style->canvas, layout->list.x + (layout->list.width - width) / 2, kui_text_center(VIEW_TEXT_ROW, layout->list.y, layout->list.height / 2), line, strlen(line), VIEW_TEXT_ROW, 0, theme->text_secondary);
+		width = kl_text_width(style->text, line, strlen(line), VIEW_TEXT_ROW, 0);
+		(void)kl_text_draw(style->text, style->canvas, layout->list.x + (layout->list.width - width) / 2, kl_text_center(VIEW_TEXT_ROW, layout->list.y, layout->list.height / 2), line, strlen(line), VIEW_TEXT_ROW, 0, theme->text_secondary);
 	}
 
 	/* Nothing reported, or a question asked: nothing to do. */
@@ -531,19 +531,19 @@ view_list(
 	selected = chooser->list.selected;
 
 	/* A double click, a double tap or Enter activates; a finger's tap on a folder goes into it at once. */
-	if ((changes & KUI_LIST_ACTIVATED) != 0U) {
+	if ((changes & KL_LIST_ACTIVATED) != 0U) {
 		keiui_chooser_activate(chooser, selected);
 		return 1;
 	}
 
 	/* A finger's tap on a folder goes into it at once. */
-	if ((changes & KUI_LIST_TOUCHED) != 0U && selected >= 0L && (size_t)selected < chooser->count && chooser->entries[selected].folder) {
+	if ((changes & KL_LIST_TOUCHED) != 0U && selected >= 0L && (size_t)selected < chooser->count && chooser->entries[selected].folder) {
 		keiui_chooser_activate(chooser, selected);
 		return 1;
 	}
 
 	/* A selection (Save's name follows a file). */
-	if ((changes & KUI_LIST_SELECTED) != 0U)
+	if ((changes & KL_LIST_SELECTED) != 0U)
 		keiui_chooser_select(chooser, selected);
 	return 1;
 }
@@ -552,16 +552,16 @@ view_list(
 static void
 view_row(
 	const struct keiui_chooser *chooser,
-	const struct kui_style *style,
+	const struct kl_style *style,
 	const struct view_layout *layout,
 	size_t index,
-	const struct kui_rect *row,
-	kui_color ink,
+	const struct kl_rect *row,
+	kl_color ink,
 	int modified)
 {
 	const struct keiui_chooser_entry *entry;
 	char cell[64];
-	kui_color faint;
+	kl_color faint;
 	int baseline;
 	int name_width;
 	int width;
@@ -573,54 +573,54 @@ view_row(
 	faint = style->theme->text_secondary;
 	lit = 0;
 	if (ink != style->theme->text) {
-		faint = KUI_RGBA(0xffffff, 210);
+		faint = KL_RGBA(0xffffff, 210);
 		lit = 1;
 	}
 
 	/* The icon and the name. */
-	baseline = kui_text_center(VIEW_TEXT_ROW, row->y, row->height);
+	baseline = kl_text_center(VIEW_TEXT_ROW, row->y, row->height);
 	view_item_icon(style, entry->folder, row->x + 6, row->y + 3, lit);
 	name_width = layout->list.width - 34 - VIEW_SIZE_WIDTH - 8;
 	if (modified)
 		name_width -= VIEW_MODIFIED_WIDTH;
-	(void)kui_text_draw_fit(style->text, style->canvas, row->x + 34, baseline, entry->name, VIEW_TEXT_ROW, 0, name_width - 8, ink);
+	(void)kl_text_draw_fit(style->text, style->canvas, row->x + 34, baseline, entry->name, VIEW_TEXT_ROW, 0, name_width - 8, ink);
 
 	/* The size, to the right of its column ("--" for a folder). */
 	if (entry->folder)
 		snprintf(cell, sizeof(cell), "--");
 	else
 		view_size_text(entry->size, cell, sizeof(cell));
-	width = kui_text_width(style->text, cell, strlen(cell), VIEW_TEXT_ROW, 0);
+	width = kl_text_width(style->text, cell, strlen(cell), VIEW_TEXT_ROW, 0);
 	right = layout->list.x + layout->list.width - 16;
 	if (modified)
 		right -= VIEW_MODIFIED_WIDTH;
-	(void)kui_text_draw(style->text, style->canvas, right - width, baseline, cell, strlen(cell), VIEW_TEXT_ROW, 0, faint);
+	(void)kl_text_draw(style->text, style->canvas, right - width, baseline, cell, strlen(cell), VIEW_TEXT_ROW, 0, faint);
 
 	/* The time it changed. */
 	if (modified) {
 		view_time_text(entry->modified, cell, sizeof(cell));
-		(void)kui_text_draw_fit(style->text, style->canvas, layout->list.x + layout->list.width - VIEW_MODIFIED_WIDTH + 4, baseline, cell, VIEW_TEXT_ROW, 0, VIEW_MODIFIED_WIDTH - 16, faint);
+		(void)kl_text_draw_fit(style->text, style->canvas, layout->list.x + layout->list.width - VIEW_MODIFIED_WIDTH + 4, baseline, cell, VIEW_TEXT_ROW, 0, VIEW_MODIFIED_WIDTH - 16, faint);
 	}
 }
 
 /* Draws an item's small icon in a 22-pixel square: a blue folder, or a white page (its lines in the accent on a lit row). */
 static void
 view_item_icon(
-	const struct kui_style *style,
+	const struct kl_style *style,
 	int folder,
 	int x,
 	int y,
 	int lit)
 {
-	struct kui_rect line;
-	kui_color lines;
+	struct kl_rect line;
+	kl_color lines;
 
 	/* A folder: its tab behind, its body in front, a light edge on top. */
 	if (folder) {
-		kui_canvas_round(style->canvas, (float)(x + 2), (float)(y + 3), 9.0f, 6.0f, 2.0f, VIEW_FOLDER_BACK);
-		kui_canvas_round(style->canvas, (float)(x + 2), (float)(y + 5), 19.0f, 14.0f, 3.0f, VIEW_FOLDER);
+		kl_canvas_round(style->canvas, (float)(x + 2), (float)(y + 3), 9.0f, 6.0f, 2.0f, VIEW_FOLDER_BACK);
+		kl_canvas_round(style->canvas, (float)(x + 2), (float)(y + 5), 19.0f, 14.0f, 3.0f, VIEW_FOLDER);
 		view_set(&line, x + 3, y + 6, 17, 1);
-		kui_canvas_fill(style->canvas, &line, KUI_RGBA(0xffffff, 90));
+		kl_canvas_fill(style->canvas, &line, KL_RGBA(0xffffff, 90));
 		return;
 	}
 
@@ -628,14 +628,14 @@ view_item_icon(
 	lines = VIEW_PAGE_LINES;
 	if (lit)
 		lines = style->theme->accent;
-	kui_canvas_round(style->canvas, (float)(x + 4), (float)(y + 1), 15.0f, 20.0f, 3.0f, KUI_RGB(0xffffff));
-	kui_canvas_round_border(style->canvas, (float)(x + 4), (float)(y + 1), 15.0f, 20.0f, 3.0f, 1.0f, VIEW_PAGE_EDGE);
+	kl_canvas_round(style->canvas, (float)(x + 4), (float)(y + 1), 15.0f, 20.0f, 3.0f, KL_RGB(0xffffff));
+	kl_canvas_round_border(style->canvas, (float)(x + 4), (float)(y + 1), 15.0f, 20.0f, 3.0f, 1.0f, VIEW_PAGE_EDGE);
 	view_set(&line, x + 7, y + 7, 9, 1);
-	kui_canvas_fill(style->canvas, &line, lines);
+	kl_canvas_fill(style->canvas, &line, lines);
 	line.y = y + 10;
-	kui_canvas_fill(style->canvas, &line, lines);
+	kl_canvas_fill(style->canvas, &line, lines);
 	view_set(&line, x + 7, y + 13, 6, 1);
-	kui_canvas_fill(style->canvas, &line, lines);
+	kl_canvas_fill(style->canvas, &line, lines);
 }
 
 /* Writes a file's size as people read it (Files' units: bytes, KB, MB, GB of 1000). */
@@ -683,12 +683,12 @@ view_time_text(
 static int
 view_bar(
 	struct keiui_chooser *chooser,
-	struct kui_ui *ui,
-	const struct kui_style *style,
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	const struct view_layout *layout)
 {
-	const struct kui_rect *filter;
-	struct kui_rect line;
+	const struct kl_rect *filter;
+	struct kl_rect line;
 	const char *accept;
 	unsigned changes;
 	unsigned state;
@@ -701,40 +701,40 @@ view_bar(
 
 	/* The line above the bar. */
 	view_set(&line, layout->bar.x, layout->bar.y, layout->bar.width, 1);
-	kui_canvas_fill(style->canvas, &line, style->theme->separator);
+	kl_canvas_fill(style->canvas, &line, style->theme->separator);
 
 	/* Save: the name's label and field; Enter saves, Esc cancels. */
 	changed = 0;
-	if (chooser->mode == KUI_FILE_CHOOSER_SAVE) {
-		(void)kui_text_draw(style->text, style->canvas, layout->bar.x + 2, kui_text_center(VIEW_TEXT_ROW, layout->name.y, layout->name.height), "Name", 4U, VIEW_TEXT_ROW, 0, style->theme->text_secondary);
-		changes = kui_field(ui, style, KEIUI_CHOOSER_ID_NAME, &layout->name, &chooser->name, "Name");
+	if (chooser->mode == KL_FILE_CHOOSER_SAVE) {
+		(void)kl_text_draw(style->text, style->canvas, layout->bar.x + 2, kl_text_center(VIEW_TEXT_ROW, layout->name.y, layout->name.height), "Name", 4U, VIEW_TEXT_ROW, 0, style->theme->text_secondary);
+		changes = kl_field(ui, style, KEIUI_CHOOSER_ID_NAME, &layout->name, &chooser->name, "Name");
 		if (changes != 0U) {
 			chooser->message[0] = '\0';
 			changed = 1;
 		}
 
 		/* Enter saves. */
-		if ((changes & KUI_FIELD_SUBMITTED) != 0U && !chooser->confirm)
+		if ((changes & KL_FIELD_SUBMITTED) != 0U && !chooser->confirm)
 			keiui_chooser_accept(chooser);
 
 		/* Esc cancels. */
-		if ((changes & KUI_FIELD_CANCELLED) != 0U && !chooser->confirm)
+		if ((changes & KL_FIELD_CANCELLED) != 0U && !chooser->confirm)
 			keiui_chooser_cancel(chooser);
 	}
 
 	/* The filter as a pill with its label and a small chevron, when there is a choice and room: a click shows the next. */
 	if (layout->filter.width > 0) {
 		filter = &layout->filter;
-		state = kui_ui_hit(ui, KEIUI_CHOOSER_ID_FILTER, 0U, filter);
-		kui_canvas_round(style->canvas, (float)filter->x, (float)filter->y, (float)filter->width, (float)filter->height, (float)filter->height * 0.5f, style->theme->hover);
-		if ((state & KUI_HIT_HOT) != 0U)
-			kui_canvas_round(style->canvas, (float)filter->x, (float)filter->y, (float)filter->width, (float)filter->height, (float)filter->height * 0.5f, style->theme->hover);
-		(void)kui_text_draw_fit(style->text, style->canvas, filter->x + 14, kui_text_center(VIEW_TEXT_ROW, filter->y, filter->height), chooser->filters[chooser->filter].label, VIEW_TEXT_ROW, 0, filter->width - 40, style->theme->text);
+		state = kl_ui_hit(ui, KEIUI_CHOOSER_ID_FILTER, 0U, filter);
+		kl_canvas_round(style->canvas, (float)filter->x, (float)filter->y, (float)filter->width, (float)filter->height, (float)filter->height * 0.5f, style->theme->hover);
+		if ((state & KL_HIT_HOT) != 0U)
+			kl_canvas_round(style->canvas, (float)filter->x, (float)filter->y, (float)filter->width, (float)filter->height, (float)filter->height * 0.5f, style->theme->hover);
+		(void)kl_text_draw_fit(style->text, style->canvas, filter->x + 14, kl_text_center(VIEW_TEXT_ROW, filter->y, filter->height), chooser->filters[chooser->filter].label, VIEW_TEXT_ROW, 0, filter->width - 40, style->theme->text);
 		middle_x = (float)(filter->x + filter->width - 18);
 		middle_y = (float)filter->y + (float)filter->height * 0.5f;
-		kui_canvas_line(style->canvas, middle_x - 4.0f, middle_y - 2.0f, middle_x, middle_y + 2.0f, 1.5f, style->theme->text_secondary);
-		kui_canvas_line(style->canvas, middle_x + 4.0f, middle_y - 2.0f, middle_x, middle_y + 2.0f, 1.5f, style->theme->text_secondary);
-		if ((state & KUI_HIT_CLICKED) != 0U && !chooser->confirm) {
+		kl_canvas_line(style->canvas, middle_x - 4.0f, middle_y - 2.0f, middle_x, middle_y + 2.0f, 1.5f, style->theme->text_secondary);
+		kl_canvas_line(style->canvas, middle_x + 4.0f, middle_y - 2.0f, middle_x, middle_y + 2.0f, 1.5f, style->theme->text_secondary);
+		if ((state & KL_HIT_CLICKED) != 0U && !chooser->confirm) {
 			chooser->message[0] = '\0';
 			keiui_chooser_next_filter(chooser);
 			changed = 1;
@@ -742,7 +742,7 @@ view_bar(
 	}
 
 	/* Cancel. */
-	pressed = kui_button(ui, style, KEIUI_CHOOSER_ID_CANCEL, &layout->cancel, "Cancel", 0U);
+	pressed = kl_button(ui, style, KEIUI_CHOOSER_ID_CANCEL, &layout->cancel, "Cancel", 0U);
 	if (pressed && !chooser->confirm) {
 		keiui_chooser_cancel(chooser);
 		changed = 1;
@@ -750,13 +750,13 @@ view_bar(
 
 	/* The main button, faded when it cannot be pressed. */
 	accept = "Open";
-	if (chooser->mode == KUI_FILE_CHOOSER_SAVE)
+	if (chooser->mode == KL_FILE_CHOOSER_SAVE)
 		accept = "Save";
-	flags = KUI_BUTTON_PRIMARY;
+	flags = KL_BUTTON_PRIMARY;
 	can = keiui_chooser_can_accept(chooser);
 	if (!can)
-		flags |= KUI_BUTTON_DISABLED;
-	pressed = kui_button(ui, style, KEIUI_CHOOSER_ID_ACCEPT, &layout->accept, accept, flags);
+		flags |= KL_BUTTON_DISABLED;
+	pressed = kl_button(ui, style, KEIUI_CHOOSER_ID_ACCEPT, &layout->accept, accept, flags);
 	if (pressed && !chooser->confirm) {
 		chooser->message[0] = '\0';
 		keiui_chooser_accept(chooser);
@@ -771,10 +771,10 @@ view_bar(
 static void
 view_message(
 	const struct keiui_chooser *chooser,
-	const struct kui_style *style,
+	const struct kl_style *style,
 	const struct view_layout *layout)
 {
-	struct kui_rect chip;
+	struct kl_rect chip;
 	int width;
 
 	/* No message, nothing. */
@@ -782,21 +782,21 @@ view_message(
 		return;
 
 	/* The chip at the list's bottom. */
-	width = kui_text_width(style->text, chooser->message, strlen(chooser->message), VIEW_TEXT_ROW, 0) + 28;
+	width = kl_text_width(style->text, chooser->message, strlen(chooser->message), VIEW_TEXT_ROW, 0) + 28;
 	if (width > layout->list.width)
 		width = layout->list.width;
 	view_set(&chip, layout->list.x + (layout->list.width - width) / 2, layout->list.y + layout->list.height - 38, width, 32);
-	kui_canvas_round(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, 10.0f, VIEW_WARNING_GROUND);
-	kui_canvas_round_border(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, 10.0f, 1.0f, VIEW_WARNING_EDGE);
-	(void)kui_text_draw_fit(style->text, style->canvas, chip.x + 14, kui_text_center(VIEW_TEXT_ROW, chip.y, chip.height), chooser->message, VIEW_TEXT_ROW, 0, chip.width - 28, VIEW_WARNING_TEXT);
+	kl_canvas_round(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, 10.0f, VIEW_WARNING_GROUND);
+	kl_canvas_round_border(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, 10.0f, 1.0f, VIEW_WARNING_EDGE);
+	(void)kl_text_draw_fit(style->text, style->canvas, chip.x + 14, kl_text_center(VIEW_TEXT_ROW, chip.y, chip.height), chooser->message, VIEW_TEXT_ROW, 0, chip.width - 28, VIEW_WARNING_TEXT);
 }
 
 /* Draws the question before a file is replaced over the content, and carries out its answer; 1 when answered. */
 static int
 view_confirm(
 	struct keiui_chooser *chooser,
-	struct kui_ui *ui,
-	const struct kui_style *style,
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	const struct view_layout *layout)
 {
 	char where[KEIUI_CHOOSER_PATH_MAX];
@@ -827,7 +827,7 @@ view_confirm(
 	/* The question and why it is asked, over the content. */
 	snprintf(title, sizeof(title), "Replace \"%s\"?", name);
 	snprintf(body, sizeof(body), "A file with that name already exists in \"%s\". Replacing it overwrites its contents.", folder);
-	answer = kui_dialog(ui, style, KEIUI_CHOOSER_ID_CONFIRM, &layout->content, title, body, view_confirm_labels, 2);
+	answer = kl_dialog(ui, style, KEIUI_CHOOSER_ID_CONFIRM, &layout->content, title, body, view_confirm_labels, 2);
 
 	/* Replace answers; Cancel keeps the file. */
 	if (answer == 0) {
@@ -849,7 +849,7 @@ view_confirm(
 static int
 view_key(
 	struct keiui_chooser *chooser,
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	uint32_t code,
 	unsigned modifiers)
 {
@@ -860,13 +860,13 @@ view_key(
 	/* An answered chooser, or one asking its question, takes nothing more. */
 	if (chooser->answered || chooser->confirm)
 		return 0;
-	control = modifiers & KUI_MOD_CTRL;
-	alt = modifiers & KUI_MOD_ALT;
+	control = modifiers & KL_MOD_CTRL;
+	alt = modifiers & KL_MOD_ALT;
 	chooser->message[0] = '\0';
 
 	/* The keys that mean the same wherever the keyboard is. */
 	switch (code) {
-	case KUI_KEY_ESC:
+	case KL_KEY_ESC:
 		/* Esc closes the path's field first, then cancels. */
 		if (chooser->typing_path) {
 			keiui_chooser_close_path(chooser);
@@ -876,14 +876,14 @@ view_key(
 		/* Otherwise the chooser ends without a path. */
 		keiui_chooser_cancel(chooser);
 		return 1;
-	case KUI_KEY_ENTER:
-	case KUI_KEY_KPENTER:
+	case KL_KEY_ENTER:
+	case KL_KEY_KPENTER:
 		keiui_chooser_accept(chooser);
 		return 1;
-	case KUI_KEY_BACKSPACE:
+	case KL_KEY_BACKSPACE:
 		keiui_chooser_go_up(chooser);
 		return 1;
-	case KUI_KEY_UP:
+	case KL_KEY_UP:
 		/* Alt+Up goes to the folder above; Up alone selects the item above. */
 		if (alt != 0U) {
 			keiui_chooser_go_up(chooser);
@@ -893,13 +893,13 @@ view_key(
 		/* Up alone: the item above. */
 		view_move(chooser, -1L);
 		break;
-	case KUI_KEY_DOWN:
+	case KL_KEY_DOWN:
 		view_move(chooser, 1L);
 		break;
-	case KUI_KEY_HOME:
+	case KL_KEY_HOME:
 		view_move(chooser, -(long)chooser->count);
 		break;
-	case KUI_KEY_END:
+	case KL_KEY_END:
 		view_move(chooser, (long)chooser->count);
 		break;
 	default:
@@ -907,8 +907,8 @@ view_key(
 	}
 
 	/* A key of the list moved the selection, and the list has the keyboard. */
-	if (code == KUI_KEY_UP || code == KUI_KEY_DOWN || code == KUI_KEY_HOME || code == KUI_KEY_END) {
-		kui_ui_set_focus(ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF);
+	if (code == KL_KEY_UP || code == KL_KEY_DOWN || code == KL_KEY_HOME || code == KL_KEY_END) {
+		kl_ui_set_focus(ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF);
 		return 1;
 	}
 
@@ -930,10 +930,10 @@ view_key(
 	}
 
 	/* A character selects the next item whose name starts with it. */
-	character = kui_key_character(code, modifiers);
+	character = kl_key_character(code, modifiers);
 	if (character != 0U && alt == 0U) {
 		keiui_chooser_type_select(chooser, character);
-		kui_ui_set_focus(ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF);
+		kl_ui_set_focus(ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF);
 		return 1;
 	}
 
@@ -972,7 +972,7 @@ view_move(
 /* Sets a rectangle. */
 static void
 view_set(
-	struct kui_rect *rect,
+	struct kl_rect *rect,
 	int x,
 	int y,
 	int width,

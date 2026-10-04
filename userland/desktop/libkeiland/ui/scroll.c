@@ -10,7 +10,7 @@
  * one part of a window whose content is larger than the part.
  *
  * Three things move the content, one at a time: a glide (the wheel and
- * the keys), which closes on its target by e every KUI_SCROLL_GLIDE_US and
+ * the keys), which closes on its target by e every KL_SCROLL_GLIDE_US and
  * is a pure function of the time since it started (Text Editor's glide);
  * a finger, whose drag and fling libkeiland's scroller follows with its
  * inertia and rubber band; and a move to a place at once.  The latest one
@@ -18,7 +18,7 @@
  * finger that touches stops a glide.
  */
 
-#include <keiui.h>
+#include <keiland.h>
 #include <keiland.h>
 
 #include <errno.h>
@@ -34,32 +34,32 @@
 #define SCROLL_BAR_GAP		3
 #define SCROLL_BAR_ALPHA	110.0
 
-static void scroll_bounds(struct kui_scroll *scroll);
-static void scroll_clamp(struct kui_scroll *scroll);
-static void scroll_place(struct kui_scroll *scroll, double x, double y, uint64_t now_us);
+static void scroll_bounds(struct kl_scroll *scroll);
+static void scroll_clamp(struct kl_scroll *scroll);
+static void scroll_place(struct kl_scroll *scroll, double x, double y, uint64_t now_us);
 static double scroll_within(double value, double limit);
 
 /*
- * Makes a scroll along some axes (KUI_SCROLL_X, KUI_SCROLL_Y), at 0, 0
+ * Makes a scroll along some axes (KL_SCROLL_X, KL_SCROLL_Y), at 0, 0
  * with nothing to scroll yet.
  *
  * Returns 0, EINVAL (no axis) or ENOMEM.
  */
 int
-kui_scroll_init(
-	struct kui_scroll *scroll,
+kl_scroll_init(
+	struct kl_scroll *scroll,
 	unsigned axes)
 {
 	/* Nothing moves yet. */
 	memset(scroll, 0, sizeof(*scroll));
 
 	/* At least one axis. */
-	if ((axes & (KUI_SCROLL_X | KUI_SCROLL_Y)) == 0U)
+	if ((axes & (KL_SCROLL_X | KL_SCROLL_Y)) == 0U)
 		return EINVAL;
 	scroll->axes = axes;
 
 	/* The finger's scroller. */
-	scroll->scroller = keiland_scroller_create();
+	scroll->scroller = kl_scroller_create();
 	if (scroll->scroller == NULL)
 		return ENOMEM;
 
@@ -71,12 +71,12 @@ kui_scroll_init(
  * Frees what a scroll holds.
  */
 void
-kui_scroll_release(
-	struct kui_scroll *scroll)
+kl_scroll_release(
+	struct kl_scroll *scroll)
 {
 	/* The scroller, when it was made. */
 	if (scroll->scroller != NULL)
-		keiland_scroller_destroy(scroll->scroller);
+		kl_scroller_destroy(scroll->scroller);
 	memset(scroll, 0, sizeof(*scroll));
 }
 
@@ -85,8 +85,8 @@ kui_scroll_release(
  * ends moves back within them (unless a finger holds the content).
  */
 void
-kui_scroll_set_size(
-	struct kui_scroll *scroll,
+kl_scroll_set_size(
+	struct kl_scroll *scroll,
 	double content_width,
 	double content_height,
 	double viewport_width,
@@ -104,8 +104,8 @@ kui_scroll_set_size(
 		scroll_clamp(scroll);
 
 	/* A glide's target within the new ends too. */
-	scroll->to_x = scroll_within(scroll->to_x, kui_scroll_limit_x(scroll));
-	scroll->to_y = scroll_within(scroll->to_y, kui_scroll_limit_y(scroll));
+	scroll->to_x = scroll_within(scroll->to_x, kl_scroll_limit_x(scroll));
+	scroll->to_y = scroll_within(scroll->to_y, kl_scroll_limit_y(scroll));
 }
 
 /*
@@ -113,8 +113,8 @@ kui_scroll_set_size(
  * glide under way), within its ends.
  */
 void
-kui_scroll_wheel(
-	struct kui_scroll *scroll,
+kl_scroll_wheel(
+	struct kl_scroll *scroll,
 	double dx,
 	double dy,
 	uint64_t now_us)
@@ -131,13 +131,13 @@ kui_scroll_wheel(
 	}
 
 	/* Only the axes the scroll moves along. */
-	if ((scroll->axes & KUI_SCROLL_X) != 0U)
+	if ((scroll->axes & KL_SCROLL_X) != 0U)
 		x += dx;
-	if ((scroll->axes & KUI_SCROLL_Y) != 0U)
+	if ((scroll->axes & KL_SCROLL_Y) != 0U)
 		y += dy;
 
 	/* A glide there. */
-	kui_scroll_move_to(scroll, x, y, 1, now_us);
+	kl_scroll_move_to(scroll, x, y, 1, now_us);
 }
 
 /*
@@ -145,16 +145,16 @@ kui_scroll_wheel(
  * A finger's flight stops.
  */
 void
-kui_scroll_move_to(
-	struct kui_scroll *scroll,
+kl_scroll_move_to(
+	struct kl_scroll *scroll,
 	double x,
 	double y,
 	int glide,
 	uint64_t now_us)
 {
 	/* The place within the ends. */
-	x = scroll_within(x, kui_scroll_limit_x(scroll));
-	y = scroll_within(y, kui_scroll_limit_y(scroll));
+	x = scroll_within(x, kl_scroll_limit_x(scroll));
+	y = scroll_within(y, kl_scroll_limit_y(scroll));
 
 	/* The finger no longer owns the content. */
 	scroll->touched = 0;
@@ -181,9 +181,9 @@ kui_scroll_move_to(
  * coordinates) whole, or its start when it is larger than the viewport.
  */
 void
-kui_scroll_reveal(
-	struct kui_scroll *scroll,
-	const struct kui_rect *rect,
+kl_scroll_reveal(
+	struct kl_scroll *scroll,
+	const struct kl_rect *rect,
 	uint64_t now_us)
 {
 	double x;
@@ -214,7 +214,7 @@ kui_scroll_reveal(
 		return;
 
 	/* A glide there. */
-	kui_scroll_move_to(scroll, x, y, 1, now_us);
+	kl_scroll_move_to(scroll, x, y, 1, now_us);
 }
 
 /*
@@ -223,8 +223,8 @@ kui_scroll_reveal(
  * Returns 1 when the key was a scrolling one.
  */
 int
-kui_scroll_key(
-	struct kui_scroll *scroll,
+kl_scroll_key(
+	struct kl_scroll *scroll,
 	uint32_t key,
 	unsigned modifiers,
 	double line,
@@ -249,25 +249,25 @@ kui_scroll_key(
 
 	/* The key's move. */
 	switch (key) {
-	case KUI_KEY_UP:
+	case KL_KEY_UP:
 		y -= line;
 		break;
-	case KUI_KEY_DOWN:
+	case KL_KEY_DOWN:
 		y += line;
 		break;
-	case KUI_KEY_LEFT:
+	case KL_KEY_LEFT:
 		x -= line;
 		break;
-	case KUI_KEY_RIGHT:
+	case KL_KEY_RIGHT:
 		x += line;
 		break;
-	case KUI_KEY_PAGEUP:
+	case KL_KEY_PAGEUP:
 		y -= page;
 		break;
-	case KUI_KEY_PAGEDOWN:
-	case KUI_KEY_SPACE:
+	case KL_KEY_PAGEDOWN:
+	case KL_KEY_SPACE:
 		/* Space pages down, and Shift+Space up. */
-		if (key == KUI_KEY_SPACE && (modifiers & KUI_MOD_SHIFT) != 0U) {
+		if (key == KL_KEY_SPACE && (modifiers & KL_MOD_SHIFT) != 0U) {
 			y -= page;
 			break;
 		}
@@ -275,21 +275,21 @@ kui_scroll_key(
 		/* The rest go down a page. */
 		y += page;
 		break;
-	case KUI_KEY_HOME:
+	case KL_KEY_HOME:
 		/* Home goes to the start (with or without Control). */
 		y = 0.0;
-		if ((modifiers & KUI_MOD_CTRL) == 0U)
+		if ((modifiers & KL_MOD_CTRL) == 0U)
 			x = 0.0;
 		break;
-	case KUI_KEY_END:
-		y = kui_scroll_limit_y(scroll);
+	case KL_KEY_END:
+		y = kl_scroll_limit_y(scroll);
 		break;
 	default:
 		return 0;
 	}
 
 	/* A glide there. */
-	kui_scroll_move_to(scroll, x, y, 1, now_us);
+	kl_scroll_move_to(scroll, x, y, 1, now_us);
 	return 1;
 }
 
@@ -299,8 +299,8 @@ kui_scroll_key(
  * then only stops it and does not tap).
  */
 int
-kui_scroll_press(
-	struct kui_scroll *scroll,
+kl_scroll_press(
+	struct kl_scroll *scroll,
 	uint64_t now_us)
 {
 	int caught;
@@ -308,14 +308,14 @@ kui_scroll_press(
 	/* The scroller from where the content is (a glide stops there). */
 	if (!scroll->touched) {
 		scroll_bounds(scroll);
-		keiland_scroller_set_position(scroll->scroller, scroll->x, scroll->y);
+		kl_scroller_set_position(scroll->scroller, scroll->x, scroll->y);
 	}
 
 	/* A glide under way ends where the content is. */
 	scroll->gliding = 0;
 
 	/* The finger holds the content. */
-	caught = keiland_scroller_press(scroll->scroller, now_us);
+	caught = kl_scroller_press(scroll->scroller, now_us);
 	scroll->touched = 1;
 	scroll->released = 0;
 
@@ -327,8 +327,8 @@ kui_scroll_press(
  * The finger has moved by dx, dy since it touched (the total).
  */
 void
-kui_scroll_drag(
-	struct kui_scroll *scroll,
+kl_scroll_drag(
+	struct kl_scroll *scroll,
 	double dx,
 	double dy)
 {
@@ -337,7 +337,7 @@ kui_scroll_drag(
 		return;
 
 	/* The scroller moves the content the other way (a finger moving down shows what is above). */
-	keiland_scroller_drag(scroll->scroller, dx, dy);
+	kl_scroller_drag(scroll->scroller, dx, dy);
 }
 
 /*
@@ -345,8 +345,8 @@ kui_scroll_drag(
  * the content flies on, or settles within its ends.
  */
 void
-kui_scroll_fling(
-	struct kui_scroll *scroll,
+kl_scroll_fling(
+	struct kl_scroll *scroll,
 	double vx,
 	double vy,
 	uint64_t now_us)
@@ -356,7 +356,7 @@ kui_scroll_fling(
 		return;
 
 	/* The scroller takes the velocity; the content is the scroller's until it rests. */
-	keiland_scroller_release(scroll->scroller, now_us, vx, vy);
+	kl_scroller_release(scroll->scroller, now_us, vx, vy);
 	scroll->released = 1;
 }
 
@@ -365,8 +365,8 @@ kui_scroll_fling(
  * back.
  */
 void
-kui_scroll_cancel(
-	struct kui_scroll *scroll,
+kl_scroll_cancel(
+	struct kl_scroll *scroll,
 	uint64_t now_us)
 {
 	/* Only a held content. */
@@ -374,7 +374,7 @@ kui_scroll_cancel(
 		return;
 
 	/* The scroller springs back. */
-	keiland_scroller_cancel(scroll->scroller, now_us);
+	kl_scroller_cancel(scroll->scroller, now_us);
 	scroll->released = 1;
 }
 
@@ -384,8 +384,8 @@ kui_scroll_cancel(
  * draw the next frame).
  */
 int
-kui_scroll_step(
-	struct kui_scroll *scroll,
+kl_scroll_step(
+	struct kl_scroll *scroll,
 	uint64_t now_us)
 {
 	double share;
@@ -397,7 +397,7 @@ kui_scroll_step(
 
 	/* A finger's content is where the scroller has it. */
 	if (scroll->touched) {
-		moving = keiland_scroller_step(scroll->scroller, now_us, &x, &y);
+		moving = kl_scroller_step(scroll->scroller, now_us, &x, &y);
 		scroll_place(scroll, x, y, now_us);
 
 		/* At rest after the finger lifted: the content is the scroll's again. */
@@ -418,7 +418,7 @@ kui_scroll_step(
 	/* The glide's share done by now: 1 - e^(-t / time constant). */
 	share = 1.0;
 	if (now_us > scroll->glide_us)
-		share = 1.0 - exp(-(double)(now_us - scroll->glide_us) / (double)KUI_SCROLL_GLIDE_US);
+		share = 1.0 - exp(-(double)(now_us - scroll->glide_us) / (double)KL_SCROLL_GLIDE_US);
 	if (now_us <= scroll->glide_us)
 		share = 0.0;
 	x = scroll->from_x + (scroll->to_x - scroll->from_x) * share;
@@ -443,11 +443,11 @@ kui_scroll_step(
  * scroll across).
  */
 double
-kui_scroll_limit_x(
-	const struct kui_scroll *scroll)
+kl_scroll_limit_x(
+	const struct kl_scroll *scroll)
 {
 	/* An axis the scroll does not move along. */
-	if ((scroll->axes & KUI_SCROLL_X) == 0U)
+	if ((scroll->axes & KL_SCROLL_X) == 0U)
 		return 0.0;
 
 	/* Content that fits. */
@@ -463,11 +463,11 @@ kui_scroll_limit_x(
  * scroll down).
  */
 double
-kui_scroll_limit_y(
-	const struct kui_scroll *scroll)
+kl_scroll_limit_y(
+	const struct kl_scroll *scroll)
 {
 	/* An axis the scroll does not move along. */
-	if ((scroll->axes & KUI_SCROLL_Y) == 0U)
+	if ((scroll->axes & KL_SCROLL_Y) == 0U)
 		return 0.0;
 
 	/* Content that fits. */
@@ -484,11 +484,11 @@ kui_scroll_limit_y(
  * draw again).
  */
 int
-kui_scroll_draw_bars(
-	const struct kui_scroll *scroll,
-	struct kui_canvas *canvas,
-	const struct kui_rect *viewport,
-	const struct kui_theme *theme,
+kl_scroll_draw_bars(
+	const struct kl_scroll *scroll,
+	struct kl_canvas *canvas,
+	const struct kl_rect *viewport,
+	const struct kl_theme *theme,
 	uint64_t now_us)
 {
 	double since;
@@ -496,29 +496,29 @@ kui_scroll_draw_bars(
 	double length;
 	double place;
 	double limit;
-	kui_color color;
+	kl_color color;
 
 	/* Never moved, or long enough ago: no bars. */
 	if (scroll->moved_us == 0U || now_us < scroll->moved_us)
 		return 0;
 	since = (double)(now_us - scroll->moved_us);
-	if (since >= (double)KUI_SCROLL_FADE_US)
+	if (since >= (double)KL_SCROLL_FADE_US)
 		return 0;
 
 	/* The ink, fading over the last half of the time. */
 	alpha = SCROLL_BAR_ALPHA;
-	if (since > (double)KUI_SCROLL_FADE_US / 2.0)
-		alpha *= 1.0 - (since - (double)KUI_SCROLL_FADE_US / 2.0) / ((double)KUI_SCROLL_FADE_US / 2.0);
+	if (since > (double)KL_SCROLL_FADE_US / 2.0)
+		alpha *= 1.0 - (since - (double)KL_SCROLL_FADE_US / 2.0) / ((double)KL_SCROLL_FADE_US / 2.0);
 	color = (theme->icon & 0x00ffffffU) | ((uint32_t)alpha << 24);
 
 	/* The vertical bar, when the content is taller than the viewport. */
-	limit = kui_scroll_limit_y(scroll);
+	limit = kl_scroll_limit_y(scroll);
 	if (limit > 0.0) {
 		length = (double)viewport->height * scroll->viewport_height / scroll->content_height;
 		if (length < (double)SCROLL_BAR_MIN)
 			length = (double)SCROLL_BAR_MIN;
 		place = scroll_within(scroll->y, limit) / limit * ((double)viewport->height - length - 2.0 * SCROLL_BAR_GAP);
-		kui_canvas_round(canvas, (float)(viewport->x + viewport->width - SCROLL_BAR_WIDTH - SCROLL_BAR_GAP),
+		kl_canvas_round(canvas, (float)(viewport->x + viewport->width - SCROLL_BAR_WIDTH - SCROLL_BAR_GAP),
 				 (float)((double)viewport->y + SCROLL_BAR_GAP + place),
 				 (float)SCROLL_BAR_WIDTH,
 				 (float)length,
@@ -527,13 +527,13 @@ kui_scroll_draw_bars(
 	}
 
 	/* The horizontal bar, when the content is wider. */
-	limit = kui_scroll_limit_x(scroll);
+	limit = kl_scroll_limit_x(scroll);
 	if (limit > 0.0) {
 		length = (double)viewport->width * scroll->viewport_width / scroll->content_width;
 		if (length < (double)SCROLL_BAR_MIN)
 			length = (double)SCROLL_BAR_MIN;
 		place = scroll_within(scroll->x, limit) / limit * ((double)viewport->width - length - 2.0 * SCROLL_BAR_GAP);
-		kui_canvas_round(canvas, (float)((double)viewport->x + SCROLL_BAR_GAP + place),
+		kl_canvas_round(canvas, (float)((double)viewport->x + SCROLL_BAR_GAP + place),
 				 (float)(viewport->y + viewport->height - SCROLL_BAR_WIDTH - SCROLL_BAR_GAP),
 				 (float)length,
 				 (float)SCROLL_BAR_WIDTH,
@@ -548,7 +548,7 @@ kui_scroll_draw_bars(
 /* Gives the scroller the ends and the viewport (it needs a viewport above zero). */
 static void
 scroll_bounds(
-	struct kui_scroll *scroll)
+	struct kl_scroll *scroll)
 {
 	double width;
 	double height;
@@ -562,23 +562,23 @@ scroll_bounds(
 		height = 1.0;
 
 	/* The ends of each axis (an axis that does not move has none). */
-	(void)keiland_scroller_set_bounds(scroll->scroller, 0.0, kui_scroll_limit_x(scroll), 0.0, kui_scroll_limit_y(scroll), width, height);
+	(void)kl_scroller_set_bounds(scroll->scroller, 0.0, kl_scroll_limit_x(scroll), 0.0, kl_scroll_limit_y(scroll), width, height);
 }
 
 /* Keeps the position within the ends. */
 static void
 scroll_clamp(
-	struct kui_scroll *scroll)
+	struct kl_scroll *scroll)
 {
 	/* Each axis within its end. */
-	scroll->x = scroll_within(scroll->x, kui_scroll_limit_x(scroll));
-	scroll->y = scroll_within(scroll->y, kui_scroll_limit_y(scroll));
+	scroll->x = scroll_within(scroll->x, kl_scroll_limit_x(scroll));
+	scroll->y = scroll_within(scroll->y, kl_scroll_limit_y(scroll));
 }
 
 /* Puts the content at a place, noting when it moved. */
 static void
 scroll_place(
-	struct kui_scroll *scroll,
+	struct kl_scroll *scroll,
 	double x,
 	double y,
 	uint64_t now_us)
@@ -619,36 +619,36 @@ scroll_within(
  * changes with time (the window should draw again), 0 otherwise.
  */
 int
-kui_scroll_bar_draw(
-	const struct kui_scroll_bar *bar,
-	struct kui_canvas *canvas,
-	const struct kui_rect *viewport,
+kl_scroll_bar_draw(
+	const struct kl_scroll_bar *bar,
+	struct kl_canvas *canvas,
+	const struct kl_rect *viewport,
 	double content,
 	double offset,
 	uint64_t now_us)
 {
-	struct kui_scroll_bar_shape shape;
-	kui_color track;
-	kui_color thumb;
+	struct kl_scroll_bar_shape shape;
+	kl_color track;
+	kl_color thumb;
 	int shown;
 	int busy;
 
 	/* What shows now; nothing is drawn of a bar that does not. */
-	shown = kui_scroll_bar_shape(bar, viewport, content, offset, now_us, &shape);
-	busy = kui_scroll_bar_busy(bar, now_us);
+	shown = kl_scroll_bar_shape(bar, viewport, content, offset, now_us, &shape);
+	busy = kl_scroll_bar_busy(bar, now_us);
 	if (shown == 0)
 		return busy;
 
 	/* The track, light and faint, only while the bar is thick. */
 	if (shape.thick != 0) {
 		track = 0x00f4f4f4U | ((uint32_t)(150.0 * shape.alpha) << 24);
-		kui_canvas_round(canvas, (float)shape.track_x, (float)shape.track_y, (float)shape.track_width,
+		kl_canvas_round(canvas, (float)shape.track_x, (float)shape.track_y, (float)shape.track_width,
 				 (float)shape.track_height, (float)shape.track_width / 2.0f, track);
 	}
 
 	/* The thumb, a dark grey rounded at its ends. */
 	thumb = 0x00303030U | ((uint32_t)(SCROLL_BAR_ALPHA * shape.alpha) << 24);
-	kui_canvas_round(canvas, (float)shape.thumb_x, (float)shape.thumb_y, (float)shape.thumb_width,
+	kl_canvas_round(canvas, (float)shape.thumb_x, (float)shape.thumb_y, (float)shape.thumb_width,
 			 (float)shape.thumb_height, (float)shape.thumb_width / 2.0f, thumb);
 
 	/* Succeeded: reports whether it changes on. */

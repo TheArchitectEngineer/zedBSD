@@ -16,6 +16,7 @@
  *   host-chooser FONT FALLBACK OUTPUT-PREFIX
  */
 
+#include <keiui.h>
 #include "chooser.h"
 
 #include <errno.h>

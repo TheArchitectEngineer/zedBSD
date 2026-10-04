@@ -13,7 +13,7 @@
  *
  * Nothing here knows Wayland or draws; the view (chooser-view.c) carries
  * out what the widgets report through these calls.  The list's selection
- * and scroll are a kui_list's, the name and the path kui_fields.
+ * and scroll are a kl_list's, the name and the path kl_fields.
  */
 
 #include "chooser.h"
@@ -31,7 +31,7 @@
 #define MODEL_ENTRIES_FIRST	64U
 
 static void model_places(struct keiui_chooser *chooser);
-static void model_add_place(struct keiui_chooser *chooser, const char *label, const char *path, enum kui_icon icon);
+static void model_add_place(struct keiui_chooser *chooser, const char *label, const char *path, enum kl_icon icon);
 static int model_is_folder(const char *path);
 static int model_read(struct keiui_chooser *chooser, const char *folder);
 static int model_add_entry(struct keiui_chooser *chooser, const char *name, const char *path, const struct stat *status);
@@ -44,7 +44,7 @@ static void model_accept_save(struct keiui_chooser *chooser);
 static void model_answer(struct keiui_chooser *chooser, const char *path);
 static void model_join(const char *folder, const char *name, char *out, size_t size);
 static void model_message(struct keiui_chooser *chooser, const char *format, const char *name);
-static void model_field_stem(struct kui_field *field, const char *text);
+static void model_field_stem(struct kl_field *field, const char *text);
 static const char *model_base(const char *path);
 
 /*
@@ -57,9 +57,9 @@ static const char *model_base(const char *path);
 int
 keiui_chooser_init(
 	struct keiui_chooser *chooser,
-	const struct kui_file_chooser_options *options)
+	const struct kl_file_chooser_options *options)
 {
-	const struct kui_file_filter *filter;
+	const struct kl_file_filter *filter;
 	const char *start;
 	size_t index;
 	int folder;
@@ -71,9 +71,9 @@ keiui_chooser_init(
 	/* Only the two modes, and filters within the bounds. */
 	if (options == NULL)
 		return EINVAL;
-	if (options->mode != KUI_FILE_CHOOSER_OPEN && options->mode != KUI_FILE_CHOOSER_SAVE)
+	if (options->mode != KL_FILE_CHOOSER_OPEN && options->mode != KL_FILE_CHOOSER_SAVE)
 		return EINVAL;
-	if (options->filter_count > KUI_FILE_CHOOSER_FILTERS_MAX)
+	if (options->filter_count > KL_FILE_CHOOSER_FILTERS_MAX)
 		return EINVAL;
 	if (options->filter_count > 0U && options->filters == NULL)
 		return EINVAL;
@@ -82,14 +82,14 @@ keiui_chooser_init(
 	chooser->mode = options->mode;
 
 	/* The list's selection and scroll. */
-	error = kui_list_init(&chooser->list);
+	error = kl_list_init(&chooser->list);
 	if (error != 0)
 		return error;
 
 	/* The window's title, given or the mode's. */
 	if (options->title != NULL) {
 		snprintf(chooser->title, sizeof(chooser->title), "%s", options->title);
-	} else if (chooser->mode == KUI_FILE_CHOOSER_SAVE) {
+	} else if (chooser->mode == KL_FILE_CHOOSER_SAVE) {
 		snprintf(chooser->title, sizeof(chooser->title), "Save As");
 	} else {
 		snprintf(chooser->title, sizeof(chooser->title), "Open");
@@ -113,7 +113,7 @@ keiui_chooser_init(
 
 	/* Save starts with the name given, selected up to its extension, and types into it; Open types into the list. */
 	chooser->want_focus = KEIUI_CHOOSER_ID_LIST;
-	if (chooser->mode == KUI_FILE_CHOOSER_SAVE) {
+	if (chooser->mode == KL_FILE_CHOOSER_SAVE) {
 		if (options->name != NULL)
 			model_field_stem(&chooser->name, options->name);
 		chooser->want_focus = KEIUI_CHOOSER_ID_NAME;
@@ -150,7 +150,7 @@ keiui_chooser_fini(
 	chooser->capacity = 0;
 
 	/* The list's scroll. */
-	kui_list_release(&chooser->list);
+	kl_list_release(&chooser->list);
 }
 
 /*
@@ -199,7 +199,7 @@ void
 keiui_chooser_go_recent(
 	struct keiui_chooser *chooser)
 {
-	struct keiland_recent_item *items;
+	struct kl_recent_item *items;
 	struct stat status;
 	size_t count;
 	size_t index;
@@ -222,7 +222,7 @@ keiui_chooser_go_recent(
 
 	/* The list, newest first. */
 	count = 0;
-	error = keiland_recent_list(items, KEIUI_CHOOSER_RECENT_MAX, &count);
+	error = kl_recent_list(items, KEIUI_CHOOSER_RECENT_MAX, &count);
 	if (error != 0) {
 		free(items);
 		return;
@@ -310,9 +310,9 @@ keiui_chooser_select(
 	struct keiui_chooser *chooser,
 	long index)
 {
-	const struct kui_theme *theme;
+	const struct kl_theme *theme;
 	struct keiui_chooser_entry *entry;
-	struct kui_rect row;
+	struct kl_rect row;
 
 	/* Only an item of the list, or none. */
 	if (index < -1L || index >= (long)chooser->count)
@@ -324,16 +324,16 @@ keiui_chooser_select(
 		return;
 
 	/* In sight. */
-	theme = kui_theme_default();
+	theme = kl_theme_default();
 	row.x = 0;
 	row.y = (int)index * theme->row_height;
 	row.width = 1;
 	row.height = theme->row_height;
-	kui_scroll_reveal(&chooser->list.scroll, &row, chooser->now_us);
+	kl_scroll_reveal(&chooser->list.scroll, &row, chooser->now_us);
 
 	/* Save takes a file's name as the name to save as. */
 	entry = &chooser->entries[index];
-	if (chooser->mode == KUI_FILE_CHOOSER_SAVE && !entry->folder)
+	if (chooser->mode == KL_FILE_CHOOSER_SAVE && !entry->folder)
 		model_field_stem(&chooser->name, entry->name);
 }
 
@@ -388,7 +388,7 @@ keiui_chooser_accept(
 	}
 
 	/* Save checks the name and the folder. */
-	if (chooser->mode == KUI_FILE_CHOOSER_SAVE) {
+	if (chooser->mode == KL_FILE_CHOOSER_SAVE) {
 		model_accept_save(chooser);
 		return;
 	}
@@ -451,7 +451,7 @@ keiui_chooser_accept_path(
 	}
 
 	/* Open chooses a file that exists. */
-	if (chooser->mode == KUI_FILE_CHOOSER_OPEN) {
+	if (chooser->mode == KL_FILE_CHOOSER_OPEN) {
 		if (!regular) {
 			model_message(chooser, "There is no file \"%s\".", path);
 			return;
@@ -482,7 +482,7 @@ keiui_chooser_accept_path(
 	}
 
 	/* The name, and Save goes on as if it was typed there. */
-	kui_field_set(&chooser->name, model_base(path));
+	kl_field_set(&chooser->name, model_base(path));
 	keiui_chooser_close_path(chooser);
 	model_accept_save(chooser);
 }
@@ -505,7 +505,7 @@ keiui_chooser_open_path(
 	model_join(folder, "", text, sizeof(text));
 
 	/* The field has the keyboard, its caret at the end. */
-	kui_field_set(&chooser->path, text);
+	kl_field_set(&chooser->path, text);
 	chooser->typing_path = 1;
 	chooser->want_focus = KEIUI_CHOOSER_ID_PATH;
 }
@@ -521,7 +521,7 @@ keiui_chooser_close_path(
 	/* The location shows again. */
 	chooser->typing_path = 0;
 	chooser->want_focus = KEIUI_CHOOSER_ID_LIST;
-	if (chooser->mode == KUI_FILE_CHOOSER_SAVE)
+	if (chooser->mode == KL_FILE_CHOOSER_SAVE)
 		chooser->want_focus = KEIUI_CHOOSER_ID_NAME;
 }
 
@@ -631,7 +631,7 @@ keiui_chooser_cancel(
 
 	/* Cancelled, with no path. */
 	chooser->answered = 1;
-	chooser->result = KUI_FILE_CHOOSER_CANCELLED;
+	chooser->result = KL_FILE_CHOOSER_CANCELLED;
 	chooser->answer[0] = '\0';
 }
 
@@ -650,7 +650,7 @@ keiui_chooser_can_accept(
 		return 1;
 
 	/* Save needs a name. */
-	if (chooser->mode == KUI_FILE_CHOOSER_SAVE) {
+	if (chooser->mode == KL_FILE_CHOOSER_SAVE) {
 		if (chooser->name.length == 0U)
 			return 0;
 		return 1;
@@ -729,7 +729,7 @@ model_places(
 	struct keiui_chooser *chooser)
 {
 	static const char *const names[] = { "Desktop", "Documents", "Downloads" };
-	static const enum kui_icon icons[] = { KUI_ICON_DESKTOP, KUI_ICON_DOCUMENTS, KUI_ICON_DOWNLOADS };
+	static const enum kl_icon icons[] = { KL_ICON_DESKTOP, KL_ICON_DOCUMENTS, KL_ICON_DOWNLOADS };
 	char path[KEIUI_CHOOSER_PATH_MAX];
 	const char *home;
 	size_t index;
@@ -738,15 +738,15 @@ model_places(
 
 	/* Recent files, which only Open can choose from. */
 	chooser->place_count = 0;
-	if (chooser->mode == KUI_FILE_CHOOSER_OPEN)
-		model_add_place(chooser, "Recent", "", KUI_ICON_RECENTS);
+	if (chooser->mode == KL_FILE_CHOOSER_OPEN)
+		model_add_place(chooser, "Recent", "", KL_ICON_RECENTS);
 
 	/* Home, when there is one. */
 	home = keiui_chooser_home();
 	folder = model_is_folder(home);
 	root = strcmp(home, "/");
 	if (folder && root != 0) {
-		model_add_place(chooser, "Home", home, KUI_ICON_HOME);
+		model_add_place(chooser, "Home", home, KL_ICON_HOME);
 
 		/* Its usual folders that exist. */
 		for (index = 0; index < sizeof(names) / sizeof(names[0]); index++) {
@@ -758,7 +758,7 @@ model_places(
 	}
 
 	/* The whole computer. */
-	model_add_place(chooser, "Computer", "/", KUI_ICON_COMPUTER);
+	model_add_place(chooser, "Computer", "/", KL_ICON_COMPUTER);
 }
 
 /* Adds a place to the sidebar, when there is room. */
@@ -767,7 +767,7 @@ model_add_place(
 	struct keiui_chooser *chooser,
 	const char *label,
 	const char *path,
-	enum kui_icon icon)
+	enum kl_icon icon)
 {
 	struct keiui_chooser_place *place;
 
@@ -1051,7 +1051,7 @@ model_shown(
 	/* The selection and the scroll. */
 	chooser->list.selected = -1;
 	chooser->list.count = chooser->count;
-	kui_scroll_move_to(&chooser->list.scroll, 0.0, 0.0, 0, chooser->now_us);
+	kl_scroll_move_to(&chooser->list.scroll, 0.0, 0.0, 0, chooser->now_us);
 
 	/* The message. */
 	chooser->message[0] = '\0';
@@ -1118,7 +1118,7 @@ model_accept_save(
 	/* A folder of that name is gone into. */
 	if (folder) {
 		(void)keiui_chooser_go(chooser, path);
-		kui_field_set(&chooser->name, "");
+		kl_field_set(&chooser->name, "");
 		return;
 	}
 
@@ -1159,7 +1159,7 @@ model_answer(
 	/* Chosen, with its path. */
 	snprintf(chooser->answer, sizeof(chooser->answer), "%s", path);
 	chooser->answered = 1;
-	chooser->result = KUI_FILE_CHOOSER_CHOSEN;
+	chooser->result = KL_FILE_CHOOSER_CHOSEN;
 	chooser->confirm = 0;
 }
 
@@ -1198,13 +1198,13 @@ model_message(
 /* Sets a field's text with the name up to its extension selected (all of a name without one). */
 static void
 model_field_stem(
-	struct kui_field *field,
+	struct kl_field *field,
 	const char *text)
 {
 	const char *dot;
 
 	/* The text, the caret at its end. */
-	kui_field_set(field, text);
+	kl_field_set(field, text);
 
 	/* The name up to its extension selected. */
 	field->anchor = 0;

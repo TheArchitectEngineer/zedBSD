@@ -21,9 +21,9 @@ LIBKEILAND_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/lib
 	userland/desktop/libkeiland/system/system-protocol.c userland/desktop/libkeiland/system/system-monitor.c \
 	userland/desktop/libkeiland/system/system-monitor-rate.c
 
-# The desktop's shared widgets and controls (WS090; their own library until WS131 p012, the kui_ names stay until
-# p013): the drawing layer, the scroll and the input, the window, the widgets and the file chooser.
-LIBKEILAND_SOURCES += userland/desktop/libkeiland/ui/version.c \
+# The desktop's shared widgets and controls (WS090; their own library until WS131 p012, named kl_ since p013,
+# <keiland-ui.h>): the drawing layer, the scroll and the input, the window, the widgets and the file chooser.
+LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/ui/canvas.c \
 	userland/desktop/libkeiland/ui/text.c \
 	userland/desktop/libkeiland/ui/icons.c \
