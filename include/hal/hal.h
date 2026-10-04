@@ -261,6 +261,14 @@ hal_cpu_mask_test(
 
 #define HAL_IRQ_ACK_NONE	((hal_irq_ack_t)0)
 
+/* IRQ trigger mode. */
+#define HAL_IRQ_TRIGGER_EDGE	0
+#define HAL_IRQ_TRIGGER_LEVEL	1
+
+/* IRQ polarity. */
+#define HAL_IRQ_POLARITY_HIGH	0
+#define HAL_IRQ_POLARITY_LOW	1
+
 /*
  * IRQ acknowledge number.
  */
@@ -299,6 +307,24 @@ hal_irq_get_affinity(
 	int irq,
 	struct hal_cpu_mask *requested,
 	struct hal_cpu_mask *effective);
+
+/*
+ * Set the trigger mode and polarity of a numbered IRQ.
+ *
+ * The IRQ must be masked while its configuration is changed.
+ *
+ *  irq      ... IRQ number.
+ *  trigger  ... HAL_IRQ_TRIGGER_EDGE or HAL_IRQ_TRIGGER_LEVEL.
+ *  polarity ... HAL_IRQ_POLARITY_HIGH or HAL_IRQ_POLARITY_LOW.
+ *
+ * Returns HAL_ERR_UNSUPPORTED if the interrupt controller cannot
+ * represent the requested configuration.
+ */
+int
+hal_irq_set_mode(
+	int irq,
+	int trigger,
+	int polarity);
 
 /*
  * Set an IRQ mask.
