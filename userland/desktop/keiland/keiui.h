@@ -18,7 +18,7 @@
 
 #include <keiland.h>
 
-/* The last version of the old interface (the version calls are keiland_version and KEILAND_VERSION). */
+/* The last version of the old interface (the version calls are kl_version and KL_VERSION). */
 #define KUI_VERSION	12U
 
 #define kui_button kl_button

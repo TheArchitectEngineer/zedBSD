@@ -31,9 +31,9 @@
  * callback and its data, and the operations and the state last sent (so
  * that an unchanged state is not sent again).
  */
-struct keiland_edit {
+struct kl_edit {
 	struct keiland_edit_v1 *proxy;
-	keiland_edit_fn callback;
+	kl_edit_fn callback;
 	void *data;
 	int sent;
 	uint32_t actions;
@@ -63,18 +63,18 @@ static const struct keiland_edit_v1_listener edit_listener = {
 /*
  * Asks for a window's edit object: callback hears each operation on the
  * application's default queue.  The window takes no operation until
- * keiland_edit_set_state says which.  Returns NULL with errno set: ENOTSUP
+ * kl_edit_set_state says which.  Returns NULL with errno set: ENOTSUP
  * for a compositor without the protocol, EINVAL, ENOMEM.
  */
-struct keiland_edit *
-keiland_edit_create(
+struct kl_edit *
+kl_edit_create(
 	struct wl_display *display,
 	struct xdg_toplevel *toplevel,
-	keiland_edit_fn callback,
+	kl_edit_fn callback,
 	void *data)
 {
 	struct keiland_edit_manager_v1 *manager;
-	struct keiland_edit *edit;
+	struct kl_edit *edit;
 	int error;
 
 	/* A window and a callback. */
@@ -122,12 +122,12 @@ keiland_edit_create(
 
 /*
  * Says which operations the window carries out (bit 1 <<
- * KEILAND_EDIT_*) and its state (KEILAND_EDIT_HAS_SELECTION ...); an
+ * KL_EDIT_*) and its state (KL_EDIT_HAS_SELECTION ...); an
  * unchanged pair is not sent again.
  */
 void
-keiland_edit_set_state(
-	struct keiland_edit *edit,
+kl_edit_set_state(
+	struct kl_edit *edit,
 	uint32_t actions,
 	uint32_t state)
 {
@@ -148,8 +148,8 @@ keiland_edit_set_state(
  * Stops taking operations: the protocol object and the record go.
  */
 void
-keiland_edit_destroy(
-	struct keiland_edit *edit)
+kl_edit_destroy(
+	struct kl_edit *edit)
 {
 	/* No edit object, nothing to destroy. */
 	if (edit == NULL)
@@ -167,7 +167,7 @@ edit_event(
 	struct keiland_edit_v1 *object,
 	uint32_t action)
 {
-	struct keiland_edit *edit;
+	struct kl_edit *edit;
 
 	/* The record the listener was given. */
 	(void)object;

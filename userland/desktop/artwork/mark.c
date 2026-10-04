@@ -93,7 +93,7 @@ static float mark_sample(const struct mark_leaf *leaf, unsigned layer, float u, 
  * (rows stride bytes apart).
  */
 void
-keiland_mark_raster(
+kl_mark_raster(
 	unsigned layer,
 	unsigned pixels,
 	uint8_t *coverage,

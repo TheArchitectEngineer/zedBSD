@@ -26,7 +26,7 @@
  * edge, and the sheen on the upper part of the panes (ws035-p109).  The
  * last two are drawn in white.
  */
-enum keiland_mark_layer {
+enum kl_mark_layer {
 	KEILAND_MARK_BAR,
 	KEILAND_MARK_BAR_SHADE,
 	KEILAND_MARK_LEAF,
@@ -37,6 +37,6 @@ enum keiland_mark_layer {
 	KEILAND_MARK_LAYERS
 };
 
-void keiland_mark_raster(unsigned layer, unsigned pixels, uint8_t *coverage, size_t stride);
+void kl_mark_raster(unsigned layer, unsigned pixels, uint8_t *coverage, size_t stride);
 
 #endif

@@ -17,9 +17,9 @@
  * Reports the interface version of this library.
  */
 unsigned
-keiland_version(
+kl_version(
 	void)
 {
 	/* Returns the version this library was built as. */
-	return KEILAND_VERSION;
+	return KL_VERSION;
 }

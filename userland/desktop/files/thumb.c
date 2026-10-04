@@ -67,7 +67,7 @@ static int thumb_signed(const unsigned char *data, size_t size, const char *sign
 static int thumb_jpeg(const unsigned char *data, size_t size, struct fm_image *image);
 static int thumb_gif(const unsigned char *data, size_t size, struct fm_image *image);
 static int thumb_gif_read(GifFileType *gif, GifByteType *bytes, int count);
-static void thumb_adopt(struct keiland_picture *picture, struct fm_image *image);
+static void thumb_adopt(struct kl_picture *picture, struct fm_image *image);
 static int thumb_number(const unsigned char *data, size_t size, size_t *at);
 static int thumb_space(unsigned char byte);
 static struct fm_thumb *thumb_find(struct fm_app *app, const char *path, time_t modified);
@@ -685,19 +685,19 @@ thumb_jpeg(
 	size_t size,
 	struct fm_image *image)
 {
-	struct keiland_picture picture;
+	struct kl_picture picture;
 	int orientation;
 	int error;
 
 	/* The picture as stored, within the sizes the thumbnails take. */
-	error = keiland_picture_jpeg(NULL, data, size, THUMB_SIDE_MAX, THUMB_PIXELS_MAX, &picture, &orientation);
+	error = kl_picture_jpeg(NULL, data, size, THUMB_SIDE_MAX, THUMB_PIXELS_MAX, &picture, &orientation);
 	if (error == E2BIG)
 		return EFBIG;
 	if (error != 0)
 		return error;
 
 	/* Turned upright. */
-	error = keiland_picture_orient(&picture, orientation);
+	error = kl_picture_orient(&picture, orientation);
 	if (error != 0) {
 		free(picture.pixels);
 		return error;
@@ -716,7 +716,7 @@ thumb_gif(
 	struct fm_image *image)
 {
 	struct thumb_gif_source source;
-	struct keiland_picture picture;
+	struct kl_picture picture;
 	GifFileType *gif;
 	int status;
 	int error;
@@ -738,7 +738,7 @@ thumb_gif(
 	}
 
 	/* The first frame on its clear screen, within the sizes the thumbnails take. */
-	error = keiland_picture_gif_first(gif, THUMB_SIDE_MAX, THUMB_PIXELS_MAX, &picture);
+	error = kl_picture_gif_first(gif, THUMB_SIDE_MAX, THUMB_PIXELS_MAX, &picture);
 	if (error != 0) {
 		(void)DGifCloseFile(gif, &status);
 		if (error == E2BIG)
@@ -781,7 +781,7 @@ thumb_gif_read(
 /* Makes a decoded picture the image (the same pixels, freed by fm_image_release). */
 static void
 thumb_adopt(
-	struct keiland_picture *picture,
+	struct kl_picture *picture,
 	struct fm_image *image)
 {
 	/* The image takes the pixels; the picture no longer owns them. */

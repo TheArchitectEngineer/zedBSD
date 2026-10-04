@@ -195,3 +195,7 @@ p012 の依存「ベータ1 の app の区切り」は Master の pending decisi
 ## Q1 の判定（2026-10-04）
 
 q673 は報告どおり受け入れ（Q1）。`grep -rn libkeiui` の残り 2 行（`keiland-linux.mk`・`keiland-freebsd.mk` の `*_RETIRED := lib/libkeiui.so`、install で古い library を消す規則）は受け入れの例外として認められた。委任の外の直し（ws128 の imageview の config、ws134 の preview.sh、comment の文字）も受け入れ。merge は UAT の image の build とユーザーの `config/ci/config-amd64.mk` の変更の整理の後に Q1 が行う（CI の config の `libkeiui` の行は Q1 が merge で解く）。QEMU・Linux の PNG・FreeBSD は T2 の結果待ち。
+
+## T2-027 の結果（2026-10-04、T2 の報告）
+
+488f96c で: A（zedBSD QEMU）boot-test・textinput-p013・demo-s8-s9・viewers-p008・files-regress（14/14）全 PASS、全 image の rootfs と動いている guest に libkeiui 無し。B（Linux）`make keiland-linux` rc 0・warning 0、elf-check PASS（24）、stage と guest の /opt/keiland/lib に libkeiui 無し、compositor READY・ERROR 0、Text Editor・Image Viewer・PDF Viewer・Notes・Terminal・Files・Settings・kuidemo・monitor が起動して窓を描く（PNG `/home/awe/zedBSD-worktrees/t2/build/t2-027/linux/`、`contact.png`）。C（FreeBSD）fb27059 の audit で backend-test 9 段 全 PASS、stage の lib は 10、libkeiui 無し。判定は Q1。

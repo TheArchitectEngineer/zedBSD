@@ -2179,7 +2179,7 @@ atlas_mark(
 	/* Each layer's coverage, into the atlas, and its place. */
 	pen_x = 0;
 	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
-		keiland_mark_raster(layer, GLASS_MARK_PIXELS, bitmap, GLASS_MARK_PIXELS);
+		kl_mark_raster(layer, GLASS_MARK_PIXELS, bitmap, GLASS_MARK_PIXELS);
 		atlas_put(glass, bitmap, pen_x, *pen_y, GLASS_MARK_PIXELS, GLASS_MARK_PIXELS);
 		glyph = &glass->mark[layer];
 		glyph->x = pen_x;
@@ -2201,7 +2201,7 @@ atlas_mark(
 
 	/* Each small layer's coverage, into its cell of the column, and its place. */
 	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
-		keiland_mark_raster(layer, GLASS_MARK_SMALL_PIXELS, bitmap, GLASS_MARK_SMALL_PIXELS);
+		kl_mark_raster(layer, GLASS_MARK_SMALL_PIXELS, bitmap, GLASS_MARK_SMALL_PIXELS);
 		glyph = &glass->mark_small[layer];
 		glyph->x = column_x + (layer % GLASS_MARK_SMALL_ACROSS) * (GLASS_MARK_SMALL_PIXELS + 1U);
 		glyph->y = *pen_y + (layer / GLASS_MARK_SMALL_ACROSS) * (GLASS_MARK_SMALL_PIXELS + 1U);
@@ -2462,7 +2462,7 @@ glass_cache_color(
 	int line;
 
 	/* The glyph's colours at the size, which must fit a cell. */
-	error = keiland_color_glyph(glass->faces[glass->emoji_face], id, glass_pixels[size], &image);
+	error = kl_color_glyph(glass->faces[glass->emoji_face], id, glass_pixels[size], &image);
 	if (error != 0)
 		return NULL;
 	if (image.width > (int)GLASS_CELL || image.height > (int)GLASS_CELL) {

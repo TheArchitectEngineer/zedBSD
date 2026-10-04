@@ -5,9 +5,13 @@
 #   python3 plan/ws131/tools/rename-map.py apply-ui    (p013, once: keiui.h -> keiland-ui.h with the kl_ / KL_ names,
 #                                                       libkeiland/ui renamed, keiui.h the old names' macros)
 #   python3 plan/ws131/tools/rename-map.py check-ui    (p013: keiui.h names every old name of keiland-ui.h's)
+#   python3 plan/ws131/tools/rename-map.py apply-keiland  (p014, once: keiland.h and libkeiland renamed to kl_ / KL_,
+#                                                       the old names a KL_COMPAT block, the shared sources' names)
+#   python3 plan/ws131/tools/rename-map.py check-keiland  (p014: the block names every old name keiland.h had)
 # Run from the repository root.  The maps are generated, never edited by hand; a rename Phase applies them mechanically.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -257,7 +261,7 @@ def apply_ui():
         '',
         '#include <keiland.h>',
         '',
-        '/* The last version of the old interface (the version calls are keiland_version and KEILAND_VERSION). */',
+        '/* The last version of the old interface (the version calls are kl_version and KL_VERSION). */',
         '#define KUI_VERSION\t12U',
         '',
     ]
@@ -270,7 +274,7 @@ def apply_ui():
 
 
 def check_ui():
-    """Fails unless keiui.h maps every name of keiland-ui.h's old name space, and keiland-ui.h has no old name."""
+    """Fails unless keiui.h maps every old name to one keiland-ui.h (or keiland.h) has, and keiland-ui.h has no old name."""
     compat = dict(re.findall(r'^#define ((?:kui|KUI)_\w+) (\w+)$', KEIUI.read_text(), flags=re.M))
     header = UI_HEADER.read_text()
     code = re.sub(r'/\*.*?\*/', '', header, flags=re.S)
@@ -279,16 +283,119 @@ def check_ui():
         print('check-ui: old name in keiland-ui.h: ' + name)
         failed += 1
     targets = set(compat.values())
+    # A name may be keiland.h's since p014 (the edit operations and the keyboard inset, defined once).
+    both = code + re.sub(r'/\*.*?\*/', '', KEILAND.read_text(), flags=re.S)
     for old, new in compat.items():
-        if not re.search(r'\b%s\b' % re.escape(new), code):
-            print('check-ui: %s names %s, which keiland-ui.h does not have' % (old, new))
+        if not re.search(r'\b%s\b' % re.escape(new), both):
+            print('check-ui: %s names %s, which keiland-ui.h and keiland.h do not have' % (old, new))
             failed += 1
     print('check-ui: %d old names, %s' % (len(compat), 'FAIL' if failed else 'PASS'))
     return 1 if failed else 0
 
 
+LIBKEILAND = Path('userland/desktop/libkeiland')
+SHARED = (Path('userland/desktop/picture'), Path('userland/desktop/artwork'))
+SHARED_NAMES = r'\bkeiland_(?:picture|color_glyph|mark)\w*'
+
+
+def keiland_map():
+    """Returns {old: new} for keiland.h's public names (paths.h's install-path macros stay)."""
+    rows, keep = public_rows()
+    return {row[0]: row[2] for row in rows if re.match(r'(?:keiland|KEILAND)_', row[0]) and not row[2].startswith('(')}
+
+
+def token_rename(text, names):
+    """Renames whole tokens of a map in a text; a prefix in a comment (KEILAND_EDIT_*) follows too."""
+    def one(match):
+        token = match.group(0)
+        if token in names:
+            return names[token]
+        if token.endswith('_') and any(name.startswith(token) for name in names):
+            return re.sub(r'^keiland_', 'kl_', re.sub(r'^KEILAND_', 'KL_', token))
+        return token
+    return re.sub(r'\b(?:keiland|KEILAND)_[A-Za-z0-9_]*', one, text)
+
+
+def apply_keiland():
+    """Renames keiland.h and libkeiland to kl_ / KL_, adds the old names' block, and renames the shared sources."""
+    text = KEILAND.read_text()
+    if '#ifndef KL_COMPAT' in text:
+        sys.exit('rename-map: keiland.h has its compatibility block already')
+    names = keiland_map()
+
+    # keiland.h, renamed; the edit operations and the keyboard inset are defined once, here (keiland-ui.h drops its,
+    # and takes the new names of what it uses of keiland.h, such as struct kl_scroller).
+    text = token_rename(text, names)
+    ui = token_rename(UI_HEADER.read_text(), names)
+    for name in sorted(n for n in names.values() if re.match(r'KL_(?:EDIT|KEYBOARD_INSET)_', n)):
+        here = re.search(r'^#define %s\s+(\S+)$' % name, text, flags=re.M)
+        there = re.search(r'^#define %s\s+(\S+)\n' % name, ui, flags=re.M)
+        if there is None:
+            continue
+        if here is None or here.group(1) != there.group(1):
+            sys.exit('rename-map: %s differs between keiland.h and keiland-ui.h' % name)
+        ui = ui[:there.start()] + ui[there.end():]
+    UI_HEADER.write_text(ui)
+
+    # The old names, each a macro of its new one, until the applications move (p016-p020); p023 removes the block.
+    block = ['', '/*', ' * The old names of the library (keiland_, KEILAND_ until WS131 p014), each a macro of the',
+             ' * name it has now: a program written with them builds unchanged.  A program that defines',
+             ' * KL_COMPAT before it includes this header sees only the new names.  ' + 'Generated by',
+             ' * plan/ws131/tools/rename-map.py apply-keiland; do not edit.', ' */', '#ifndef KL_COMPAT']
+    for old in sorted(names, key=lambda n: (n[0].isupper(), n)):
+        block.append('#define %s %s' % (old, names[old]))
+    block.append('#endif /* KL_COMPAT */')
+    tail = '\n/* The desktop\'s widgets and controls (WS090; part of libkeiland since WS131 p012). */\n#include <keiland-ui.h>\n'
+    if tail not in text:
+        sys.exit('rename-map: the end of keiland.h is not where expected')
+    text = text.replace(tail, tail + '\n'.join(block) + '\n', 1)
+    KEILAND.write_text(text)
+
+    # The library's own sources, the widgets' too.
+    for path in sorted(LIBKEILAND.rglob('*.[ch]')):
+        source = path.read_text()
+        renamed = token_rename(source, names)
+        if renamed != source:
+            path.write_text(renamed)
+
+    # The shared sources' inner names (picture, artwork; D16), wherever they are used.
+    apply_shared()
+
+
+def apply_shared():
+    """Renames the shared sources' inner names (picture, artwork; D16) wherever they are used."""
+    shared = subprocess.run(['git', 'grep', '-lE', r'\<keiland_(picture|color_glyph|mark)', '--', 'userland'],
+                            capture_output=True, text=True).stdout.split()
+    for name in shared:
+        path = Path(name)
+        source = path.read_text()
+        renamed = re.sub(SHARED_NAMES, lambda m: 'kl_' + m.group(0)[len('keiland_'):], source)
+        if renamed != source:
+            path.write_text(renamed)
+
+
+def check_keiland():
+    """Fails unless keiland.h's block maps every old name to one keiland.h declares, and its code has no old name."""
+    compat = compat_of(KEILAND)
+    text = KEILAND.read_text()
+    code = re.sub(r'#ifndef KL_COMPAT\n.*?#endif /\* KL_COMPAT \*/', '', text, flags=re.S)
+    code = re.sub(r'/\*.*?\*/', '', code, flags=re.S)
+    keep = set(re.findall(r'#define\s+(KEILAND_[A-Z0-9_]+)', PATHS.read_text()))
+    both = code + re.sub(r'/\*.*?\*/', '', UI_HEADER.read_text(), flags=re.S)
+    failed = 0
+    for name in sorted(set(re.findall(r'\b(?:keiland|KEILAND)_\w+', code)) - keep - {'KEILAND_H'}):
+        print('check-keiland: old name in keiland.h: ' + name)
+        failed += 1
+    for old, new in sorted(compat.items()):
+        if not re.search(r'\b%s\b' % re.escape(new), both):
+            print('check-keiland: %s names %s, which keiland.h does not have' % (old, new))
+            failed += 1
+    print('check-keiland: %d old names, %s' % (len(compat), 'FAIL' if failed else 'PASS'))
+    return 1 if failed else 0
+
+
 if __name__ == '__main__':
-    modes = ('public', 'compositor', 'apply-ui', 'check-ui')
+    modes = ('public', 'compositor', 'apply-ui', 'check-ui', 'apply-keiland', 'check-keiland')
     if len(sys.argv) != 2 or sys.argv[1] not in modes:
         sys.exit('usage: rename-map.py ' + '|'.join(modes))
     if sys.argv[1] == 'public':
@@ -297,5 +404,9 @@ if __name__ == '__main__':
         compositor()
     elif sys.argv[1] == 'apply-ui':
         apply_ui()
-    else:
+    elif sys.argv[1] == 'check-ui':
         sys.exit(check_ui())
+    elif sys.argv[1] == 'apply-keiland':
+        apply_keiland()
+    else:
+        sys.exit(check_keiland())

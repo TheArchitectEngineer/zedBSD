@@ -199,7 +199,7 @@ void
 keiui_chooser_go_recent(
 	struct keiui_chooser *chooser)
 {
-	struct keiland_recent_item *items;
+	struct kl_recent_item *items;
 	struct stat status;
 	size_t count;
 	size_t index;
@@ -222,7 +222,7 @@ keiui_chooser_go_recent(
 
 	/* The list, newest first. */
 	count = 0;
-	error = keiland_recent_list(items, KEIUI_CHOOSER_RECENT_MAX, &count);
+	error = kl_recent_list(items, KEIUI_CHOOSER_RECENT_MAX, &count);
 	if (error != 0) {
 		free(items);
 		return;

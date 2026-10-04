@@ -120,7 +120,7 @@ struct kl_ui {
 	uint64_t last_click_us;
 
 	/* The fingers: the gestures, how many are down, the touch's targets and what its drag does. */
-	struct keiland_gesture *gesture;
+	struct kl_gesture *gesture;
 	unsigned fingers;
 	struct ui_key touch_hit;
 	struct ui_record touch_region;
@@ -177,7 +177,7 @@ static int ui_target(const struct ui_key *target, uint32_t id, uint32_t index);
 static void ui_click(struct kl_ui *ui, const struct ui_key *key, int twice, uint64_t now_us);
 static struct kl_event *ui_push(struct kl_ui *ui, unsigned kind, double x, double y);
 static void ui_gestures(struct kl_ui *ui, uint64_t now_us);
-static void ui_gesture(struct kl_ui *ui, const struct keiland_gesture_event *gesture, uint64_t now_us);
+static void ui_gesture(struct kl_ui *ui, const struct kl_gesture_event *gesture, uint64_t now_us);
 static void ui_drag_step(struct kl_ui *ui, uint64_t now_us);
 static void ui_content(const struct kl_ui *ui, double x, double y, double *content_x, double *content_y);
 static void ui_record(struct kl_ui *ui, enum ui_kind kind, uint32_t id, uint32_t index, unsigned flags, const struct kl_rect *rect, struct kl_scroll *scroll, struct kl_text_touch *touch);
@@ -216,7 +216,7 @@ kl_ui_create(void)
 	}
 
 	/* The gestures of the fingers. */
-	ui->gesture = keiland_gesture_create();
+	ui->gesture = kl_gesture_create();
 	if (ui->gesture == NULL) {
 		kl_ui_destroy(ui);
 		return NULL;
@@ -239,7 +239,7 @@ kl_ui_destroy(
 
 	/* The gestures and the records. */
 	if (ui->gesture != NULL)
-		keiland_gesture_destroy(ui->gesture);
+		kl_gesture_destroy(ui->gesture);
 	free(ui->shown);
 	free(ui->drawing);
 	free(ui);
@@ -432,7 +432,7 @@ kl_ui_touch_down(
 	}
 
 	/* The finger to the gestures. */
-	error = keiland_gesture_down(ui->gesture, id, time_us, now_us, x, y);
+	error = kl_gesture_down(ui->gesture, id, time_us, now_us, x, y);
 	if (error == 0)
 		ui->fingers++;
 
@@ -454,7 +454,7 @@ kl_ui_touch_motion(
 	double y)
 {
 	/* To the gestures, and what they mean. */
-	(void)keiland_gesture_motion(ui->gesture, id, time_us, now_us, x, y);
+	(void)kl_gesture_motion(ui->gesture, id, time_us, now_us, x, y);
 	ui_gestures(ui, now_us);
 
 	/* A drag moves something each frame. */
@@ -476,7 +476,7 @@ kl_ui_touch_up(
 	int error;
 
 	/* To the gestures. */
-	error = keiland_gesture_up(ui->gesture, id, time_us);
+	error = kl_gesture_up(ui->gesture, id, time_us);
 	if (error == 0 && ui->fingers > 0U)
 		ui->fingers--;
 
@@ -494,7 +494,7 @@ kl_ui_touch_cancel(
 	uint64_t now_us)
 {
 	/* The gestures end without their lift. */
-	keiland_gesture_cancel(ui->gesture);
+	kl_gesture_cancel(ui->gesture);
 	ui->fingers = 0;
 	ui_gestures(ui, now_us);
 	return 1;
@@ -752,7 +752,7 @@ kl_ui_drag_offset(
 		return ENOENT;
 
 	/* The gestures' offset. */
-	error = keiland_gesture_drag_offset(ui->gesture, now_us, dx, dy);
+	error = kl_gesture_drag_offset(ui->gesture, now_us, dx, dy);
 	if (error != 0)
 		return error;
 
@@ -1179,7 +1179,7 @@ ui_gestures(
 	struct kl_ui *ui,
 	uint64_t now_us)
 {
-	struct keiland_gesture_event gestures[UI_GESTURES];
+	struct kl_gesture_event gestures[UI_GESTURES];
 	struct kl_scroll *scroll;
 	int count;
 	int index;
@@ -1188,7 +1188,7 @@ ui_gestures(
 	/* The gestures found by now. */
 	count = 0;
 	while (count < UI_GESTURES) {
-		taken = keiland_gesture_next(ui->gesture, now_us, &gestures[count]);
+		taken = kl_gesture_next(ui->gesture, now_us, &gestures[count]);
 		if (taken == 0)
 			break;
 		count++;
@@ -1196,7 +1196,7 @@ ui_gestures(
 
 	/* Each in turn; a tap the next double tap stands for is skipped. */
 	for (index = 0; index < count; index++) {
-		if (gestures[index].kind == KEILAND_GESTURE_TAP && index + 1 < count && gestures[index + 1].kind == KEILAND_GESTURE_DOUBLE_TAP)
+		if (gestures[index].kind == KL_GESTURE_TAP && index + 1 < count && gestures[index + 1].kind == KL_GESTURE_DOUBLE_TAP)
 			continue;
 		ui_gesture(ui, &gestures[index], now_us);
 	}
@@ -1213,7 +1213,7 @@ ui_gestures(
 static void
 ui_gesture(
 	struct kl_ui *ui,
-	const struct keiland_gesture_event *gesture,
+	const struct kl_gesture_event *gesture,
 	uint64_t now_us)
 {
 	const struct ui_record *owner;
@@ -1230,11 +1230,11 @@ ui_gesture(
 
 	/* What the gesture means. */
 	switch (gesture->kind) {
-	case KEILAND_GESTURE_TAP:
-	case KEILAND_GESTURE_DOUBLE_TAP:
+	case KL_GESTURE_TAP:
+	case KL_GESTURE_DOUBLE_TAP:
 		/* A tap that caught flying content only stops it. */
 		twice = 0;
-		if (gesture->kind == KEILAND_GESTURE_DOUBLE_TAP)
+		if (gesture->kind == KL_GESTURE_DOUBLE_TAP)
 			twice = 1;
 		if (ui->caught)
 			break;
@@ -1266,7 +1266,7 @@ ui_gesture(
 
 		/* The tap is carried out. */
 		break;
-	case KEILAND_GESTURE_LONG_PRESS:
+	case KL_GESTURE_LONG_PRESS:
 		/* A text view asks for its context menu; elsewhere the application hears it, with the region. */
 		if (ui->touch_has_region && ui->touch_region.kind == UI_KIND_TEXT && !ui->touch_hit.valid) {
 			kl_text_touch_long_press(ui->touch_region.touch, gesture->x, gesture->y);
@@ -1280,7 +1280,7 @@ ui_gesture(
 		if (event != NULL && ui->touch_hit.valid)
 			event->region = ui->touch_hit.id;
 		break;
-	case KEILAND_GESTURE_DRAG_BEGIN:
+	case KL_GESTURE_DRAG_BEGIN:
 		/* One finger in a text view selects; otherwise a region scrolls; with no region the drag is the application's. */
 		ui->finger_x = gesture->x;
 		ui->finger_y = gesture->y;
@@ -1305,7 +1305,7 @@ ui_gesture(
 
 		/* The drag has begun. */
 		break;
-	case KEILAND_GESTURE_DRAG_END:
+	case KL_GESTURE_DRAG_END:
 		/* The scroll flies on; a selection keeps its handles; the application hears the end of its drag. */
 		if (ui->drag == UI_DRAG_SCROLL && scroll != NULL)
 			kl_scroll_fling(scroll, gesture->vx, gesture->vy, now_us);
@@ -1332,7 +1332,7 @@ ui_gesture(
 		/* No drag any more. */
 		ui->drag = UI_DRAG_NONE;
 		break;
-	case KEILAND_GESTURE_CANCEL:
+	case KL_GESTURE_CANCEL:
 		/* Taken away: the scroll springs back, a selection ends where it is. */
 		if (scroll != NULL)
 			kl_scroll_cancel(scroll, now_us);
@@ -1370,7 +1370,7 @@ ui_drag_step(
 	scroll = ui->touch_region.scroll;
 
 	/* The fingers' movement for the frame. */
-	error = keiland_gesture_drag_offset(ui->gesture, now_us, &dx, &dy);
+	error = kl_gesture_drag_offset(ui->gesture, now_us, &dx, &dy);
 	if (error != 0)
 		return;
 

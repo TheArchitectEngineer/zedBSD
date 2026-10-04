@@ -223,7 +223,7 @@ kl_window_close(
 		return;
 
 	/* The keyboard's inset and the editing operations before the toplevel they name. */
-	keiland_keyboard_inset_destroy(window->inset);
+	kl_keyboard_inset_destroy(window->inset);
 	keiui_edit_close(window);
 
 	/* The presenter before the surface it shows on. */
@@ -930,7 +930,7 @@ window_setup(
 		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
 
 	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told). */
-	window->inset = keiland_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
+	window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
 
 	/* The editing operations of the keyboard's buttons, where the compositor has them (KUI_VERSION 8). */
 	keiui_edit_start(window);

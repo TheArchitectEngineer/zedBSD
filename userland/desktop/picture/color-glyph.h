@@ -32,6 +32,6 @@ struct keiland_color_image {
 	int advance;
 };
 
-int keiland_color_glyph(struct truetype_face *face, unsigned glyph, unsigned pixels, struct keiland_color_image *out);
+int kl_color_glyph(struct truetype_face *face, unsigned glyph, unsigned pixels, struct keiland_color_image *out);
 
 #endif

@@ -33,7 +33,7 @@ static int color_round(float value);
  * has no colour image, or another errno value.
  */
 int
-keiland_color_glyph(
+kl_color_glyph(
 	struct truetype_face *face,
 	unsigned glyph,
 	unsigned pixels,

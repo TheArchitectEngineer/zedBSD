@@ -58,9 +58,9 @@ struct titlebar_entry {
  * the mirror of its controls and tabs, whether a transaction is open, and
  * the serial of the last one.
  */
-struct keiland_titlebar {
+struct kl_titlebar {
 	struct keiland_titlebar_v1 *proxy;
-	const struct keiland_titlebar_listener *listener;
+	const struct kl_titlebar_listener *listener;
 	void *data;
 	struct titlebar_entry controls[TITLEBAR_CONTROLS_MAX];
 	unsigned control_count;
@@ -87,8 +87,8 @@ static void titlebar_tab_close(void *data, struct keiland_titlebar_v1 *proxy, ui
 static void titlebar_new_tab(void *data, struct keiland_titlebar_v1 *proxy, uint32_t serial);
 static void titlebar_overflow(void *data, struct keiland_titlebar_v1 *proxy);
 static void titlebar_drop_target(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t detail);
-static struct titlebar_entry *titlebar_control(struct keiland_titlebar *titlebar, uint32_t id);
-static int titlebar_tab(const struct keiland_titlebar *titlebar, uint32_t id);
+static struct titlebar_entry *titlebar_control(struct kl_titlebar *titlebar, uint32_t id);
+static int titlebar_tab(const struct kl_titlebar *titlebar, uint32_t id);
 static int titlebar_text_ok(const char *text);
 
 /* The registry's callbacks while the manager is looked for. */
@@ -113,15 +113,15 @@ static const struct keiland_titlebar_v1_listener titlebar_listener = {
  * Returns NULL with errno set: ENOTSUP for a compositor without the
  * protocol, ENOMEM or EINVAL when the objects cannot be made.
  */
-struct keiland_titlebar *
-keiland_titlebar_create(
+struct kl_titlebar *
+kl_titlebar_create(
 	struct wl_display *display,
 	struct xdg_toplevel *toplevel,
-	const struct keiland_titlebar_listener *listener,
+	const struct kl_titlebar_listener *listener,
 	void *data)
 {
 	struct keiland_titlebar_manager_v1 *manager;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 	struct wl_event_queue *queue;
 	int status;
 
@@ -172,8 +172,8 @@ keiland_titlebar_create(
  * Takes the titlebar presentation away; the window shows its menu again.
  */
 void
-keiland_titlebar_destroy(
-	struct keiland_titlebar *titlebar)
+kl_titlebar_destroy(
+	struct kl_titlebar *titlebar)
 {
 	/* No titlebar, nothing to destroy. */
 	if (titlebar == NULL)
@@ -188,8 +188,8 @@ keiland_titlebar_destroy(
  * Starts a transaction.
  */
 int
-keiland_titlebar_begin(
-	struct keiland_titlebar *titlebar)
+kl_titlebar_begin(
+	struct kl_titlebar *titlebar)
 {
 	/* One at a time. */
 	if (titlebar->updating != 0U)
@@ -208,8 +208,8 @@ keiland_titlebar_begin(
  * Ends a transaction; zdesktop shows its changes at once.
  */
 int
-keiland_titlebar_commit(
-	struct keiland_titlebar *titlebar)
+kl_titlebar_commit(
+	struct kl_titlebar *titlebar)
 {
 	unsigned index;
 
@@ -233,8 +233,8 @@ keiland_titlebar_commit(
  * Chooses the presentation.
  */
 int
-keiland_titlebar_set_mode(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_mode(
+	struct kl_titlebar *titlebar,
 	unsigned mode)
 {
 	uint32_t version;
@@ -245,7 +245,7 @@ keiland_titlebar_set_mode(
 
 	/* The sheet only where zdesktop knows it (ws090-p014). */
 	version = wl_proxy_get_version((struct wl_proxy *)titlebar->proxy);
-	if (mode == KEILAND_TITLEBAR_SHEET && version < TITLEBAR_VERSION_SHEET)
+	if (mode == KL_TITLEBAR_SHEET && version < TITLEBAR_VERSION_SHEET)
 		return ENOTSUP;
 
 	/* Succeeded: the request is sent. */
@@ -257,8 +257,8 @@ keiland_titlebar_set_mode(
  * Adds a control at the end.
  */
 int
-keiland_titlebar_add_control(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_add_control(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	unsigned role,
 	unsigned priority,
@@ -300,8 +300,8 @@ keiland_titlebar_add_control(
  * Removes a control.
  */
 int
-keiland_titlebar_remove_control(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_remove_control(
+	struct kl_titlebar *titlebar,
 	uint32_t id)
 {
 	struct titlebar_entry *entry;
@@ -328,8 +328,8 @@ keiland_titlebar_remove_control(
  * Sets a control's label.
  */
 int
-keiland_titlebar_set_control_label(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_control_label(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	const char *label)
 {
@@ -357,8 +357,8 @@ keiland_titlebar_set_control_label(
  * Sets whether a control works now and whether it is checked (any nonzero is yes).
  */
 int
-keiland_titlebar_set_control_state(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_control_state(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	int enabled,
 	int checked)
@@ -391,20 +391,20 @@ keiland_titlebar_set_control_state(
  * Sets a progress control's share done.
  */
 int
-keiland_titlebar_set_control_value(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_control_value(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	unsigned value)
 {
 	struct titlebar_entry *entry;
 
 	/* Inside a transaction, a progress control that is there, a value it takes. */
-	if (titlebar->updating == 0U || value > KEILAND_PROGRESS_UNKNOWN)
+	if (titlebar->updating == 0U || value > KL_PROGRESS_UNKNOWN)
 		return EINVAL;
 	entry = titlebar_control(titlebar, id);
 	if (entry == NULL)
 		return ENOENT;
-	if (entry->role != KEILAND_CONTROL_PROGRESS)
+	if (entry->role != KL_CONTROL_PROGRESS)
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
@@ -416,8 +416,8 @@ keiland_titlebar_set_control_value(
  * Sets a search's or a breadcrumb's text and placeholder (NULL is empty).
  */
 int
-keiland_titlebar_set_control_text(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_control_text(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	const char *text,
 	const char *placeholder)
@@ -432,7 +432,7 @@ keiland_titlebar_set_control_text(
 	entry = titlebar_control(titlebar, id);
 	if (entry == NULL)
 		return ENOENT;
-	if (entry->role != KEILAND_CONTROL_SEARCH && entry->role != KEILAND_CONTROL_BREADCRUMB)
+	if (entry->role != KL_CONTROL_SEARCH && entry->role != KL_CONTROL_BREADCRUMB)
 		return EINVAL;
 
 	/* No text is an empty one. */
@@ -456,8 +456,8 @@ keiland_titlebar_set_control_text(
  * Sets a breadcrumb's parts.
  */
 int
-keiland_titlebar_set_breadcrumb(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_breadcrumb(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	const char *const *segments,
 	size_t count)
@@ -475,7 +475,7 @@ keiland_titlebar_set_breadcrumb(
 	entry = titlebar_control(titlebar, id);
 	if (entry == NULL)
 		return ENOENT;
-	if (entry->role != KEILAND_CONTROL_BREADCRUMB)
+	if (entry->role != KL_CONTROL_BREADCRUMB)
 		return EINVAL;
 	if (count > TITLEBAR_SEGMENTS_MAX)
 		return E2BIG;
@@ -515,8 +515,8 @@ keiland_titlebar_set_breadcrumb(
  * Adds a tab at the end.
  */
 int
-keiland_titlebar_add_tab(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_add_tab(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	const char *title)
 {
@@ -550,8 +550,8 @@ keiland_titlebar_add_tab(
  * Removes a tab.
  */
 int
-keiland_titlebar_remove_tab(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_remove_tab(
+	struct kl_titlebar *titlebar,
 	uint32_t id)
 {
 	int index;
@@ -576,8 +576,8 @@ keiland_titlebar_remove_tab(
  * Sets a tab's title and flags.
  */
 int
-keiland_titlebar_set_tab(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_tab(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	const char *title,
 	unsigned flags)
@@ -610,8 +610,8 @@ keiland_titlebar_set_tab(
  * Sets the tab strip's options.
  */
 int
-keiland_titlebar_set_tabs_options(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_set_tabs_options(
+	struct kl_titlebar *titlebar,
 	unsigned options)
 {
 	/* Inside a transaction, the options known. */
@@ -629,8 +629,8 @@ keiland_titlebar_set_tabs_options(
  * Gives the keyboard to a committed search or breadcrumb control.
  */
 int
-keiland_titlebar_focus_control(
-	struct keiland_titlebar *titlebar,
+kl_titlebar_focus_control(
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	unsigned mode)
 {
@@ -644,9 +644,9 @@ keiland_titlebar_focus_control(
 		return EINVAL;
 
 	/* A search takes it as a field, a breadcrumb as a field or as a path to edit. */
-	if (entry->role != KEILAND_CONTROL_SEARCH && entry->role != KEILAND_CONTROL_BREADCRUMB)
+	if (entry->role != KL_CONTROL_SEARCH && entry->role != KL_CONTROL_BREADCRUMB)
 		return EINVAL;
-	if (mode > KEILAND_FOCUS_EDIT)
+	if (mode > KL_FOCUS_EDIT)
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
@@ -786,7 +786,7 @@ titlebar_activated(
 	struct wl_seat *seat,
 	uint32_t serial)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -806,7 +806,7 @@ titlebar_text_changed(
 	uint32_t id,
 	const char *text)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -827,7 +827,7 @@ titlebar_text_done(
 	const char *text,
 	uint32_t how)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -847,7 +847,7 @@ titlebar_tab_activated(
 	uint32_t id,
 	uint32_t serial)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -866,7 +866,7 @@ titlebar_tab_close(
 	struct keiland_titlebar_v1 *proxy,
 	uint32_t id)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -885,7 +885,7 @@ titlebar_new_tab(
 	struct keiland_titlebar_v1 *proxy,
 	uint32_t serial)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -903,7 +903,7 @@ titlebar_overflow(
 	void *data,
 	struct keiland_titlebar_v1 *proxy)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -923,7 +923,7 @@ titlebar_drop_target(
 	uint32_t id,
 	uint32_t detail)
 {
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* The application's callback, if it has one. */
 	(void)proxy;
@@ -938,7 +938,7 @@ titlebar_drop_target(
 /* Finds a control in the mirror; NULL when there is none. */
 static struct titlebar_entry *
 titlebar_control(
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t id)
 {
 	unsigned index;
@@ -956,7 +956,7 @@ titlebar_control(
 /* Finds a tab in the mirror; its index, or -1 when there is none. */
 static int
 titlebar_tab(
-	const struct keiland_titlebar *titlebar,
+	const struct kl_titlebar *titlebar,
 	uint32_t id)
 {
 	unsigned index;

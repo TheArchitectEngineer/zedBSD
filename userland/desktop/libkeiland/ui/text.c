@@ -797,7 +797,7 @@ text_render_color(
 	int error;
 
 	/* The glyph's colours at the size (the face's size changes with it). */
-	error = keiland_color_glyph(text->faces[2].face, glyph_index, pixels, &image);
+	error = kl_color_glyph(text->faces[2].face, glyph_index, pixels, &image);
 	text->faces[2].pixels = pixels;
 	if (error != 0)
 		return error;

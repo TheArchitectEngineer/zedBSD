@@ -41,9 +41,9 @@
 
 /*
  * A connection's way to the System Menu: the display and the bound
- * xdg_menu_manager_v1.  It lives until keiland_menu_service_close.
+ * xdg_menu_manager_v1.  It lives until kl_menu_service_close.
  */
-struct keiland_menu_service {
+struct kl_menu_service {
 	struct wl_display *display;
 	struct xdg_menu_manager_v1 *manager;
 	uint32_t version;
@@ -60,7 +60,7 @@ struct menu_entry {
  * One menu: its xdg_menu_v1, the mirror of its items (in no particular
  * order), whether a transaction is open, and the serial of the last one.
  */
-struct keiland_menu {
+struct kl_menu {
 	struct xdg_menu_v1 *proxy;
 	struct menu_entry *entries;
 	unsigned count;
@@ -70,16 +70,16 @@ struct keiland_menu {
 };
 
 /* A window's place for a menu: its xdg_toplevel_menu_v1 and the application's listener. */
-struct keiland_window_menu {
+struct kl_window_menu {
 	struct xdg_toplevel_menu_v1 *proxy;
-	const struct keiland_window_menu_listener *listener;
+	const struct kl_window_menu_listener *listener;
 	void *data;
 };
 
 /* A context menu: its xdg_context_menu_v1 and the application's listener. */
-struct keiland_context_menu {
+struct kl_context_menu {
 	struct xdg_context_menu_v1 *proxy;
-	const struct keiland_context_menu_listener *listener;
+	const struct kl_context_menu_listener *listener;
 	void *data;
 };
 
@@ -96,11 +96,11 @@ static void menu_opened(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t
 static void menu_closed(void *data, struct xdg_toplevel_menu_v1 *proxy, uint32_t item);
 static void menu_context_activated(void *data, struct xdg_context_menu_v1 *proxy, uint32_t item, uint32_t action, uint32_t serial);
 static void menu_context_done(void *data, struct xdg_context_menu_v1 *proxy);
-static int menu_find(const struct keiland_menu *menu, uint32_t id);
-static unsigned menu_depth(const struct keiland_menu *menu, uint32_t id);
-static int menu_check_add(const struct keiland_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label);
-static int menu_room(struct keiland_menu *menu);
-static int menu_change(const struct keiland_menu *menu, uint32_t id);
+static int menu_find(const struct kl_menu *menu, uint32_t id);
+static unsigned menu_depth(const struct kl_menu *menu, uint32_t id);
+static int menu_check_add(const struct kl_menu *menu, uint32_t id, uint32_t parent, uint32_t before, unsigned type, const char *label);
+static int menu_room(struct kl_menu *menu);
+static int menu_change(const struct kl_menu *menu, uint32_t id);
 
 /* The registry's callbacks while the service looks for the manager. */
 static const struct wl_registry_listener menu_registry_listener = {
@@ -122,11 +122,11 @@ static const struct xdg_context_menu_v1_listener menu_context_listener = {
  * xdg_menu_manager_v1.  The search runs on a queue of its own, so no event
  * of the application's is dispatched by it.
  */
-struct keiland_menu_service *
-keiland_menu_service_open(
+struct kl_menu_service *
+kl_menu_service_open(
 	struct wl_display *display)
 {
-	struct keiland_menu_service *service;
+	struct kl_menu_service *service;
 	struct wl_event_queue *queue;
 	struct wl_display *wrapper;
 	struct wl_registry *registry;
@@ -205,8 +205,8 @@ keiland_menu_service_open(
  * Closes a menu service; the menus and window menus made from it stay.
  */
 void
-keiland_menu_service_close(
-	struct keiland_menu_service *service)
+kl_menu_service_close(
+	struct kl_menu_service *service)
 {
 	/* No service, nothing to close. */
 	if (service == NULL)
@@ -220,11 +220,11 @@ keiland_menu_service_close(
 /*
  * Makes an empty menu.
  */
-struct keiland_menu *
-keiland_menu_create(
-	struct keiland_menu_service *service)
+struct kl_menu *
+kl_menu_create(
+	struct kl_menu_service *service)
 {
-	struct keiland_menu *menu;
+	struct kl_menu *menu;
 
 	/* The record, with an empty mirror. */
 	menu = calloc(1, sizeof(*menu));
@@ -249,8 +249,8 @@ keiland_menu_create(
  * Destroys a menu; windows showing it show no menu.
  */
 void
-keiland_menu_destroy(
-	struct keiland_menu *menu)
+kl_menu_destroy(
+	struct kl_menu *menu)
 {
 	/* No menu, nothing to destroy. */
 	if (menu == NULL)
@@ -266,8 +266,8 @@ keiland_menu_destroy(
  * Starts a transaction.
  */
 int
-keiland_menu_begin(
-	struct keiland_menu *menu)
+kl_menu_begin(
+	struct kl_menu *menu)
 {
 	/* One at a time. */
 	if (menu->updating)
@@ -288,8 +288,8 @@ keiland_menu_begin(
  * Ends a transaction; zdesktop shows its changes at once.
  */
 int
-keiland_menu_commit(
-	struct keiland_menu *menu)
+kl_menu_commit(
+	struct kl_menu *menu)
 {
 	/* Only an open transaction ends. */
 	if (!menu->updating)
@@ -309,8 +309,8 @@ keiland_menu_commit(
  * Adds an item as the last child of a parent.
  */
 int
-keiland_menu_append(
-	struct keiland_menu *menu,
+kl_menu_append(
+	struct kl_menu *menu,
 	uint32_t id,
 	uint32_t parent,
 	unsigned type,
@@ -320,7 +320,7 @@ keiland_menu_append(
 	int error;
 
 	/* The same as an insert before nothing. */
-	error = keiland_menu_insert(menu, id, parent, 0U, type, label, action);
+	error = kl_menu_insert(menu, id, parent, 0U, type, label, action);
 	if (error != 0)
 		return error;
 
@@ -332,8 +332,8 @@ keiland_menu_append(
  * Adds an item before one of a parent's children (0 appends).
  */
 int
-keiland_menu_insert(
-	struct keiland_menu *menu,
+kl_menu_insert(
+	struct kl_menu *menu,
 	uint32_t id,
 	uint32_t parent,
 	uint32_t before,
@@ -380,8 +380,8 @@ keiland_menu_insert(
  * Removes an item and everything under it.
  */
 int
-keiland_menu_remove(
-	struct keiland_menu *menu,
+kl_menu_remove(
+	struct kl_menu *menu,
 	uint32_t id)
 {
 	unsigned char *doomed;
@@ -450,8 +450,8 @@ keiland_menu_remove(
  * Sets an item's label.
  */
 int
-keiland_menu_set_label(
-	struct keiland_menu *menu,
+kl_menu_set_label(
+	struct kl_menu *menu,
 	uint32_t id,
 	const char *label)
 {
@@ -481,8 +481,8 @@ keiland_menu_set_label(
  * Sets the action an item's choice reports.
  */
 int
-keiland_menu_set_action(
-	struct keiland_menu *menu,
+kl_menu_set_action(
+	struct kl_menu *menu,
 	uint32_t id,
 	uint32_t action)
 {
@@ -502,8 +502,8 @@ keiland_menu_set_action(
  * Sets whether an item can be chosen.
  */
 int
-keiland_menu_set_enabled(
-	struct keiland_menu *menu,
+kl_menu_set_enabled(
+	struct kl_menu *menu,
 	uint32_t id,
 	int enabled)
 {
@@ -529,8 +529,8 @@ keiland_menu_set_enabled(
  * Sets whether an item is shown.
  */
 int
-keiland_menu_set_visible(
-	struct keiland_menu *menu,
+kl_menu_set_visible(
+	struct kl_menu *menu,
 	uint32_t id,
 	int visible)
 {
@@ -556,8 +556,8 @@ keiland_menu_set_visible(
  * Sets whether a checkbox or radio item is checked.
  */
 int
-keiland_menu_set_checked(
-	struct keiland_menu *menu,
+kl_menu_set_checked(
+	struct kl_menu *menu,
 	uint32_t id,
 	int checked)
 {
@@ -574,7 +574,7 @@ keiland_menu_set_checked(
 	/* Only a checkbox or a radio item has a checked state. */
 	found = menu_find(menu, id);
 	type = menu->entries[found].type;
-	if (type != KEILAND_MENU_ITEM_CHECKBOX && type != KEILAND_MENU_ITEM_RADIO)
+	if (type != KL_MENU_ITEM_CHECKBOX && type != KL_MENU_ITEM_RADIO)
 		return EINVAL;
 
 	/* Any nonzero value is true on the wire's 0 or 1. */
@@ -591,8 +591,8 @@ keiland_menu_set_checked(
  * Sets an item's role.
  */
 int
-keiland_menu_set_role(
-	struct keiland_menu *menu,
+kl_menu_set_role(
+	struct kl_menu *menu,
 	uint32_t id,
 	unsigned role)
 {
@@ -616,8 +616,8 @@ keiland_menu_set_role(
  * Sets an item's icon name.
  */
 int
-keiland_menu_set_icon_name(
-	struct keiland_menu *menu,
+kl_menu_set_icon_name(
+	struct kl_menu *menu,
 	uint32_t id,
 	const char *icon_name)
 {
@@ -647,8 +647,8 @@ keiland_menu_set_icon_name(
  * Sets an item's shortcut.
  */
 int
-keiland_menu_set_shortcut(
-	struct keiland_menu *menu,
+kl_menu_set_shortcut(
+	struct kl_menu *menu,
 	uint32_t id,
 	unsigned modifiers,
 	uint32_t keysym)
@@ -672,14 +672,14 @@ keiland_menu_set_shortcut(
 /*
  * Makes the place on a window that shows a menu.
  */
-struct keiland_window_menu *
-keiland_window_menu_create(
-	struct keiland_menu_service *service,
+struct kl_window_menu *
+kl_window_menu_create(
+	struct kl_menu_service *service,
 	struct xdg_toplevel *toplevel,
-	const struct keiland_window_menu_listener *listener,
+	const struct kl_window_menu_listener *listener,
 	void *data)
 {
-	struct keiland_window_menu *window_menu;
+	struct kl_window_menu *window_menu;
 	struct wl_event_queue *queue;
 	int status;
 
@@ -724,19 +724,19 @@ keiland_window_menu_create(
  * press (its seat and serial).  Returns NULL with errno set: ENOTSUP for a
  * compositor without context menus, ENOMEM or EINVAL.
  */
-struct keiland_context_menu *
-keiland_menu_popup(
-	struct keiland_menu_service *service,
-	struct keiland_menu *menu,
+struct kl_context_menu *
+kl_menu_popup(
+	struct kl_menu_service *service,
+	struct kl_menu *menu,
 	struct wl_surface *surface,
 	int32_t x,
 	int32_t y,
 	struct wl_seat *seat,
 	uint32_t serial,
-	const struct keiland_context_menu_listener *listener,
+	const struct kl_context_menu_listener *listener,
 	void *data)
 {
-	struct keiland_context_menu *context_menu;
+	struct kl_context_menu *context_menu;
 	struct wl_event_queue *queue;
 	int status;
 
@@ -786,8 +786,8 @@ keiland_menu_popup(
  * Destroys a context menu; one still open closes without telling.
  */
 void
-keiland_context_menu_destroy(
-	struct keiland_context_menu *context_menu)
+kl_context_menu_destroy(
+	struct kl_context_menu *context_menu)
 {
 	/* No context menu, nothing to destroy. */
 	if (context_menu == NULL)
@@ -802,9 +802,9 @@ keiland_context_menu_destroy(
  * Shows a menu on the window (NULL shows none).
  */
 int
-keiland_window_menu_set(
-	struct keiland_window_menu *window_menu,
-	struct keiland_menu *menu)
+kl_window_menu_set(
+	struct kl_window_menu *window_menu,
+	struct kl_menu *menu)
 {
 	struct xdg_menu_v1 *proxy;
 
@@ -822,8 +822,8 @@ keiland_window_menu_set(
  * Destroys a window's place for a menu.
  */
 void
-keiland_window_menu_destroy(
-	struct keiland_window_menu *window_menu)
+kl_window_menu_destroy(
+	struct kl_window_menu *window_menu)
 {
 	/* No place, nothing to destroy. */
 	if (window_menu == NULL)
@@ -883,7 +883,7 @@ menu_activated(
 	struct wl_seat *seat,
 	uint32_t serial)
 {
-	struct keiland_window_menu *window_menu;
+	struct kl_window_menu *window_menu;
 
 	/* The window menu the event is for. */
 	(void)proxy;
@@ -902,7 +902,7 @@ menu_opened(
 	struct xdg_toplevel_menu_v1 *proxy,
 	uint32_t item)
 {
-	struct keiland_window_menu *window_menu;
+	struct kl_window_menu *window_menu;
 
 	/* The window menu the event is for. */
 	(void)proxy;
@@ -921,7 +921,7 @@ menu_closed(
 	struct xdg_toplevel_menu_v1 *proxy,
 	uint32_t item)
 {
-	struct keiland_window_menu *window_menu;
+	struct kl_window_menu *window_menu;
 
 	/* The window menu the event is for. */
 	(void)proxy;
@@ -936,13 +936,13 @@ menu_closed(
 /* Finds an entry of the mirror by its ID; -1 when there is none (and for the root). */
 static int
 menu_find(
-	const struct keiland_menu *menu,
+	const struct kl_menu *menu,
 	uint32_t id)
 {
 	unsigned index;
 
 	/* The root is not an item. */
-	if (id == KEILAND_MENU_ROOT)
+	if (id == KL_MENU_ROOT)
 		return -1;
 
 	/* A search of at most MENU_ITEMS_MAX entries. */
@@ -959,7 +959,7 @@ menu_find(
 /* Tells how deep an item is (the root 0, a top-level item 1). */
 static unsigned
 menu_depth(
-	const struct keiland_menu *menu,
+	const struct kl_menu *menu,
 	uint32_t id)
 {
 	unsigned depth;
@@ -967,7 +967,7 @@ menu_depth(
 
 	/* Up the parents; the bound keeps a broken chain from looping. */
 	depth = 0;
-	while (id != KEILAND_MENU_ROOT && depth <= MENU_DEPTH_MAX) {
+	while (id != KL_MENU_ROOT && depth <= MENU_DEPTH_MAX) {
 		/* An ID the mirror does not have ends the chain. */
 		found = menu_find(menu, id);
 		if (found < 0)
@@ -985,7 +985,7 @@ menu_depth(
 /* Checks a new item as the compositor would: 0, or why it would be refused. */
 static int
 menu_check_add(
-	const struct keiland_menu *menu,
+	const struct kl_menu *menu,
 	uint32_t id,
 	uint32_t parent,
 	uint32_t before,
@@ -999,7 +999,7 @@ menu_check_add(
 	/* Only inside a transaction, with an ID (0 is none) of a known type. */
 	if (!menu->updating ||
 	    id == 0U ||
-	    type > KEILAND_MENU_ITEM_SUBMENU)
+	    type > KL_MENU_ITEM_SUBMENU)
 		return EINVAL;
 
 	/* The ID must be new. */
@@ -1008,13 +1008,13 @@ menu_check_add(
 		return EEXIST;
 
 	/* The parent is the top level or an item that is there... */
-	if (parent != KEILAND_MENU_ROOT) {
+	if (parent != KL_MENU_ROOT) {
 		found = menu_find(menu, parent);
 		if (found < 0)
 			return ENOENT;
 
 		/* ...and a submenu. */
-		if (menu->entries[found].type != KEILAND_MENU_ITEM_SUBMENU)
+		if (menu->entries[found].type != KL_MENU_ITEM_SUBMENU)
 			return EINVAL;
 	}
 
@@ -1044,7 +1044,7 @@ menu_check_add(
 /* Makes room for one more entry in the mirror. */
 static int
 menu_room(
-	struct keiland_menu *menu)
+	struct kl_menu *menu)
 {
 	struct menu_entry *grown;
 	unsigned capacity;
@@ -1072,7 +1072,7 @@ menu_room(
 /* Checks a change of an existing item: in a transaction, of an item that is there. */
 static int
 menu_change(
-	const struct keiland_menu *menu,
+	const struct kl_menu *menu,
 	uint32_t id)
 {
 	int found;
@@ -1099,7 +1099,7 @@ menu_context_activated(
 	uint32_t action,
 	uint32_t serial)
 {
-	struct keiland_context_menu *context_menu;
+	struct kl_context_menu *context_menu;
 
 	/* The context menu the event is for. */
 	(void)proxy;
@@ -1116,7 +1116,7 @@ menu_context_done(
 	void *data,
 	struct xdg_context_menu_v1 *proxy)
 {
-	struct keiland_context_menu *context_menu;
+	struct kl_context_menu *context_menu;
 
 	/* The context menu the event is for. */
 	(void)proxy;

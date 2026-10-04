@@ -54,7 +54,7 @@ struct kl_file_chooser {
 	struct kl_window *window;
 	struct kl_ui *ui;
 	/* Its titlebar in the sheet mode, hung under the parent's title bar (ws090-p014; NULL for a window of its own). */
-	struct keiland_titlebar *sheet;
+	struct kl_titlebar *sheet;
 
 	/* The frame: its pixels and size, the canvas over them, the style, the frame asked for, and whether another is due. */
 	uint32_t *pixels;
@@ -406,7 +406,7 @@ chooser_window_gone(
 
 	/* The sheet's titlebar before its window. */
 	if (chooser->sheet != NULL) {
-		keiland_titlebar_destroy(chooser->sheet);
+		kl_titlebar_destroy(chooser->sheet);
 		chooser->sheet = NULL;
 	}
 
@@ -456,7 +456,7 @@ chooser_tell_done(
 
 /*
  * Asks zdesktop to hang the chooser under its parent's title bar: its
- * titlebar in the sheet mode (KEILAND_VERSION 20).  A compositor without
+ * titlebar in the sheet mode (KL_VERSION 20).  A compositor without
  * sheets leaves it a window of its own.
  */
 static void
@@ -466,20 +466,20 @@ chooser_sheet(
 	int error;
 
 	/* The window's titlebar presentation. */
-	chooser->sheet = keiland_titlebar_create(chooser->display, chooser->window->toplevel, NULL, NULL);
+	chooser->sheet = kl_titlebar_create(chooser->display, chooser->window->toplevel, NULL, NULL);
 	if (chooser->sheet == NULL)
 		return;
 
 	/* The sheet mode, in one transaction. */
-	error = keiland_titlebar_begin(chooser->sheet);
+	error = kl_titlebar_begin(chooser->sheet);
 	if (error == 0)
-		error = keiland_titlebar_set_mode(chooser->sheet, KEILAND_TITLEBAR_SHEET);
+		error = kl_titlebar_set_mode(chooser->sheet, KL_TITLEBAR_SHEET);
 	if (error == 0)
-		error = keiland_titlebar_commit(chooser->sheet);
+		error = kl_titlebar_commit(chooser->sheet);
 
 	/* Refused: a window of its own, as before. */
 	if (error != 0) {
-		keiland_titlebar_destroy(chooser->sheet);
+		kl_titlebar_destroy(chooser->sheet);
 		chooser->sheet = NULL;
 	}
 }

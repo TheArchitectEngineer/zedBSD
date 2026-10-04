@@ -299,7 +299,7 @@ draw_mark(
 	if (layers_pixels != pixels) {
 		/* Each layer's coverage at the size. */
 		for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++)
-			keiland_mark_raster(layer, pixels, layers[layer], pixels);
+			kl_mark_raster(layer, pixels, layers[layer], pixels);
 
 		/* The size the layers are now of. */
 		layers_pixels = pixels;

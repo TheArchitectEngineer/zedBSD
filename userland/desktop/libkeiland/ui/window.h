@@ -34,8 +34,8 @@
 #define KEIUI_SHM_BUFFERS	2
 
 struct zwp_primary_selection_device_manager_v1;
-struct keiland_keyboard_inset;
-struct keiland_edit;
+struct kl_keyboard_inset;
+struct kl_edit;
 struct zwp_primary_selection_device_v1;
 struct zwp_primary_selection_source_v1;
 struct zwp_primary_selection_offer_v1;
@@ -256,7 +256,7 @@ struct kl_window {
 	 * object (NULL with a compositor without it), the covered widths from
 	 * the right and bottom edges last heard, and the application's callback.
 	 */
-	struct keiland_keyboard_inset *inset;
+	struct kl_keyboard_inset *inset;
 	int inset_right;
 	int inset_bottom;
 	kl_window_keyboard_inset_fn inset_callback;
@@ -268,7 +268,7 @@ struct kl_window {
 	 * selection is being made, the state the application told and whether
 	 * it did, and the application's callback.
 	 */
-	struct keiland_edit *edit;
+	struct kl_edit *edit;
 	int selecting;
 	int edit_told;
 	unsigned edit_state;

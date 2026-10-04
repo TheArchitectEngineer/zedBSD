@@ -27,18 +27,18 @@
  * A decoded picture: its premultiplied pixels (malloc'd, width by height,
  * no padding), its size and whether any pixel is not opaque.
  */
-struct keiland_picture {
+struct kl_picture {
 	uint32_t *pixels;
 	int width;
 	int height;
 	int has_alpha;
 };
 
-uint32_t keiland_picture_premultiply(unsigned red, unsigned green, unsigned blue, unsigned alpha);
-int keiland_picture_exif_orientation(const unsigned char *data, size_t size);
-int keiland_picture_orient(struct keiland_picture *picture, int orientation);
-int keiland_picture_jpeg(FILE *file, const unsigned char *data, size_t size, unsigned max_side, unsigned long max_pixels, struct keiland_picture *picture, int *orientation);
-void keiland_picture_gif_draw(const GifFileType *gif, int index, int transparent, uint32_t *screen);
-int keiland_picture_gif_first(GifFileType *gif, unsigned max_side, unsigned long max_pixels, struct keiland_picture *picture);
+uint32_t kl_picture_premultiply(unsigned red, unsigned green, unsigned blue, unsigned alpha);
+int kl_picture_exif_orientation(const unsigned char *data, size_t size);
+int kl_picture_orient(struct kl_picture *picture, int orientation);
+int kl_picture_jpeg(FILE *file, const unsigned char *data, size_t size, unsigned max_side, unsigned long max_pixels, struct kl_picture *picture, int *orientation);
+void kl_picture_gif_draw(const GifFileType *gif, int index, int transparent, uint32_t *screen);
+int kl_picture_gif_first(GifFileType *gif, unsigned max_side, unsigned long max_pixels, struct kl_picture *picture);
 
 #endif

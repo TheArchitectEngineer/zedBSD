@@ -99,7 +99,7 @@ struct scroll_axis {
  * velocity and time of the motion a press last caught (for a fling that
  * follows it).
  */
-struct keiland_scroller {
+struct kl_scroller {
 	struct scroll_axis axes[2];
 	int lock_decided;
 	int caught;
@@ -125,10 +125,10 @@ static double angle_between(double ax, double ay, double bx, double by);
 /*
  * Creates a scroller at 0 that scrolls nowhere yet.
  */
-struct keiland_scroller *
-keiland_scroller_create(void)
+struct kl_scroller *
+kl_scroller_create(void)
 {
-	struct keiland_scroller *scroller;
+	struct kl_scroller *scroller;
 	int index;
 
 	/* Everything at zero: at rest at 0, bounds 0..0. */
@@ -148,8 +148,8 @@ keiland_scroller_create(void)
  * Destroys a scroller.
  */
 void
-keiland_scroller_destroy(
-	struct keiland_scroller *scroller)
+kl_scroller_destroy(
+	struct kl_scroller *scroller)
 {
 	/* The scroller owns nothing else. */
 	free(scroller);
@@ -159,8 +159,8 @@ keiland_scroller_destroy(
  * Sets the bounds and the viewport of both axes.
  */
 int
-keiland_scroller_set_bounds(
-	struct keiland_scroller *scroller,
+kl_scroller_set_bounds(
+	struct kl_scroller *scroller,
 	double minimum_x,
 	double maximum_x,
 	double minimum_y,
@@ -214,8 +214,8 @@ keiland_scroller_set_bounds(
  * Moves the position at once, within the bounds, stopping any motion.
  */
 void
-keiland_scroller_set_position(
-	struct keiland_scroller *scroller,
+kl_scroller_set_position(
+	struct kl_scroller *scroller,
 	double x,
 	double y)
 {
@@ -246,8 +246,8 @@ keiland_scroller_set_position(
  * A finger touches: catches moving content and starts a drag.
  */
 int
-keiland_scroller_press(
-	struct keiland_scroller *scroller,
+kl_scroller_press(
+	struct kl_scroller *scroller,
 	uint64_t now_us)
 {
 	struct scroll_axis *axis;
@@ -296,8 +296,8 @@ keiland_scroller_press(
  * The finger has moved by dx, dy since the press.
  */
 void
-keiland_scroller_drag(
-	struct keiland_scroller *scroller,
+kl_scroller_drag(
+	struct kl_scroller *scroller,
 	double dx,
 	double dy)
 {
@@ -351,8 +351,8 @@ keiland_scroller_drag(
  * content settles (springs back from past a bound).
  */
 void
-keiland_scroller_release(
-	struct keiland_scroller *scroller,
+kl_scroller_release(
+	struct kl_scroller *scroller,
 	uint64_t now_us,
 	double vx,
 	double vy)
@@ -385,7 +385,7 @@ keiland_scroller_release(
 	speed = sqrt(velocity[0] * velocity[0] + velocity[1] * velocity[1]);
 
 	/* Too slow to fling: every axis settles. */
-	if (speed < KEILAND_SCROLLER_FLING_MIN) {
+	if (speed < KL_SCROLLER_FLING_MIN) {
 		for (index = 0; index < 2; index++)
 			axis_settle(&scroller->axes[index], now_us, velocity[index]);
 		scroller->caught = 0;
@@ -436,8 +436,8 @@ keiland_scroller_release(
  * The touch was taken away: no fling; content past a bound springs back.
  */
 void
-keiland_scroller_cancel(
-	struct keiland_scroller *scroller,
+kl_scroller_cancel(
+	struct kl_scroller *scroller,
 	uint64_t now_us)
 {
 	int index;
@@ -457,8 +457,8 @@ keiland_scroller_cancel(
  * by itself.
  */
 int
-keiland_scroller_step(
-	struct keiland_scroller *scroller,
+kl_scroller_step(
+	struct kl_scroller *scroller,
 	uint64_t now_us,
 	double *x,
 	double *y)

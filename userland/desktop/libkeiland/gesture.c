@@ -62,7 +62,7 @@ struct gesture_finger {
 	int32_t id;
 	double x;
 	double y;
-	struct keiland_motion *motion;
+	struct kl_motion *motion;
 };
 
 /*
@@ -73,8 +73,8 @@ struct gesture_finger {
  * tap (for a double tap), whether a long press came before the drag, and
  * the gestures waiting to be taken (a ring).
  */
-struct keiland_gesture {
-	struct keiland_motion_device *device;
+struct kl_gesture {
+	struct kl_motion_device *device;
 	struct gesture_finger fingers[GESTURE_FINGERS];
 	unsigned count;
 	enum gesture_state state;
@@ -91,26 +91,26 @@ struct keiland_gesture {
 	uint64_t last_tap_us;
 	double last_tap_x;
 	double last_tap_y;
-	struct keiland_gesture_event queue[GESTURE_QUEUE];
+	struct kl_gesture_event queue[GESTURE_QUEUE];
 	unsigned queue_head;
 	unsigned queue_count;
 };
 
-static struct gesture_finger *finger_of(struct keiland_gesture *gesture, int32_t id);
-static void raw_centroid(const struct keiland_gesture *gesture, double *x, double *y);
-static void resampled_centroid(struct keiland_gesture *gesture, uint64_t now_us, double *x, double *y);
-static void reanchor(struct keiland_gesture *gesture, uint64_t time_us, double old_x, double old_y);
-static void pinch_start(struct keiland_gesture *gesture);
-static void emit(struct keiland_gesture *gesture, unsigned kind, double x, double y, double vx, double vy);
-static void tap(struct keiland_gesture *gesture, uint64_t time_us);
+static struct gesture_finger *finger_of(struct kl_gesture *gesture, int32_t id);
+static void raw_centroid(const struct kl_gesture *gesture, double *x, double *y);
+static void resampled_centroid(struct kl_gesture *gesture, uint64_t now_us, double *x, double *y);
+static void reanchor(struct kl_gesture *gesture, uint64_t time_us, double old_x, double old_y);
+static void pinch_start(struct kl_gesture *gesture);
+static void emit(struct kl_gesture *gesture, unsigned kind, double x, double y, double vx, double vy);
+static void tap(struct kl_gesture *gesture, uint64_t time_us);
 
 /*
  * Creates the gestures of one surface.
  */
-struct keiland_gesture *
-keiland_gesture_create(void)
+struct kl_gesture *
+kl_gesture_create(void)
 {
-	struct keiland_gesture *gesture;
+	struct kl_gesture *gesture;
 
 	/* Everything at zero: no finger, idle. */
 	gesture = calloc(1, sizeof(*gesture));
@@ -118,7 +118,7 @@ keiland_gesture_create(void)
 		return NULL;
 
 	/* The motion device the fingers teach. */
-	gesture->device = keiland_motion_device_create();
+	gesture->device = kl_motion_device_create();
 	if (gesture->device == NULL) {
 		free(gesture);
 		return NULL;
@@ -132,8 +132,8 @@ keiland_gesture_create(void)
  * Destroys the gestures of a surface.
  */
 void
-keiland_gesture_destroy(
-	struct keiland_gesture *gesture)
+kl_gesture_destroy(
+	struct kl_gesture *gesture)
 {
 	unsigned index;
 
@@ -143,8 +143,8 @@ keiland_gesture_destroy(
 
 	/* The fingers' motions, the device, the gestures. */
 	for (index = 0; index < GESTURE_FINGERS; index++)
-		keiland_motion_destroy(gesture->fingers[index].motion);
-	keiland_motion_device_destroy(gesture->device);
+		kl_motion_destroy(gesture->fingers[index].motion);
+	kl_motion_device_destroy(gesture->device);
 	free(gesture);
 }
 
@@ -152,8 +152,8 @@ keiland_gesture_destroy(
  * A finger touches.
  */
 int
-keiland_gesture_down(
-	struct keiland_gesture *gesture,
+kl_gesture_down(
+	struct kl_gesture *gesture,
 	int32_t id,
 	uint64_t time_us,
 	uint64_t arrival_us,
@@ -192,11 +192,11 @@ keiland_gesture_down(
 
 	/* The finger's motion starts with this report. */
 	if (finger->motion == NULL)
-		finger->motion = keiland_motion_create(gesture->device);
+		finger->motion = kl_motion_create(gesture->device);
 	if (finger->motion == NULL)
 		return ENOMEM;
-	keiland_motion_begin(finger->motion);
-	(void)keiland_motion_add(finger->motion, time_us, arrival_us, x, y);
+	kl_motion_begin(finger->motion);
+	(void)kl_motion_add(finger->motion, time_us, arrival_us, x, y);
 	finger->used = 1;
 	finger->id = id;
 	finger->x = x;
@@ -233,8 +233,8 @@ keiland_gesture_down(
  * A finger moves.
  */
 int
-keiland_gesture_motion(
-	struct keiland_gesture *gesture,
+kl_gesture_motion(
+	struct kl_gesture *gesture,
 	int32_t id,
 	uint64_t time_us,
 	uint64_t arrival_us,
@@ -255,10 +255,10 @@ keiland_gesture_motion(
 		return ENOENT;
 
 	/* The report goes into the finger's motion; a report out of order starts its stroke again. */
-	error = keiland_motion_add(finger->motion, time_us, arrival_us, x, y);
+	error = kl_motion_add(finger->motion, time_us, arrival_us, x, y);
 	if (error != 0) {
-		keiland_motion_begin(finger->motion);
-		(void)keiland_motion_add(finger->motion, time_us, arrival_us, x, y);
+		kl_motion_begin(finger->motion);
+		(void)kl_motion_add(finger->motion, time_us, arrival_us, x, y);
 	}
 
 	/* The finger's last place. */
@@ -283,7 +283,7 @@ keiland_gesture_motion(
 	gesture->base_y = 0.0;
 	gesture->anchor_x = gesture->press_x;
 	gesture->anchor_y = gesture->press_y;
-	emit(gesture, KEILAND_GESTURE_DRAG_BEGIN, gesture->press_x, gesture->press_y, 0.0, 0.0);
+	emit(gesture, KL_GESTURE_DRAG_BEGIN, gesture->press_x, gesture->press_y, 0.0, 0.0);
 
 	/* Succeeded: the drag began. */
 	return 0;
@@ -293,8 +293,8 @@ keiland_gesture_motion(
  * A finger lifts.
  */
 int
-keiland_gesture_up(
-	struct keiland_gesture *gesture,
+kl_gesture_up(
+	struct kl_gesture *gesture,
 	int32_t id,
 	uint64_t time_us)
 {
@@ -320,8 +320,8 @@ keiland_gesture_up(
 	/* The finger's velocity at the lift; its stroke teaches the device. */
 	vx = 0.0;
 	vy = 0.0;
-	(void)keiland_motion_velocity(finger->motion, time_us, &vx, &vy);
-	keiland_motion_end(finger->motion);
+	(void)kl_motion_velocity(finger->motion, time_us, &vx, &vy);
+	kl_motion_end(finger->motion);
 	finger->used = 0;
 	gesture->count--;
 
@@ -335,7 +335,7 @@ keiland_gesture_up(
 	/* A drag ends with the last finger, with its velocity; before that it follows the fingers left. */
 	if (gesture->state == GESTURE_DRAG) {
 		if (gesture->count == 0U) {
-			emit(gesture, KEILAND_GESTURE_DRAG_END, finger->x, finger->y, vx, vy);
+			emit(gesture, KL_GESTURE_DRAG_END, finger->x, finger->y, vx, vy);
 			gesture->state = GESTURE_IDLE;
 		} else {
 			reanchor(gesture, time_us, old_x, old_y);
@@ -359,8 +359,8 @@ keiland_gesture_up(
  * The compositor took the fingers.
  */
 void
-keiland_gesture_cancel(
-	struct keiland_gesture *gesture)
+kl_gesture_cancel(
+	struct kl_gesture *gesture)
 {
 	unsigned index;
 
@@ -372,7 +372,7 @@ keiland_gesture_cancel(
 	for (index = 0; index < GESTURE_FINGERS; index++) {
 		if (!gesture->fingers[index].used)
 			continue;
-		keiland_motion_begin(gesture->fingers[index].motion);
+		kl_motion_begin(gesture->fingers[index].motion);
 		gesture->fingers[index].used = 0;
 	}
 
@@ -381,17 +381,17 @@ keiland_gesture_cancel(
 
 	/* Whatever was going on ends. */
 	gesture->state = GESTURE_IDLE;
-	emit(gesture, KEILAND_GESTURE_CANCEL, 0.0, 0.0, 0.0, 0.0);
+	emit(gesture, KL_GESTURE_CANCEL, 0.0, 0.0, 0.0, 0.0);
 }
 
 /*
  * Takes the next gesture, after judging the time now.
  */
 int
-keiland_gesture_next(
-	struct keiland_gesture *gesture,
+kl_gesture_next(
+	struct kl_gesture *gesture,
 	uint64_t now_us,
-	struct keiland_gesture_event *event)
+	struct kl_gesture_event *event)
 {
 	/* Refuses a missing surface or result. */
 	if (gesture == NULL)
@@ -404,7 +404,7 @@ keiland_gesture_next(
 	    now_us >= gesture->press_us &&
 	    now_us - gesture->press_us >= GESTURE_LONG_PRESS) {
 		gesture->state = GESTURE_LONG;
-		emit(gesture, KEILAND_GESTURE_LONG_PRESS, gesture->press_x, gesture->press_y, 0.0, 0.0);
+		emit(gesture, KL_GESTURE_LONG_PRESS, gesture->press_x, gesture->press_y, 0.0, 0.0);
 	}
 
 	/* Nothing waiting. */
@@ -423,8 +423,8 @@ keiland_gesture_next(
  * began, for a frame drawn at now_us.
  */
 int
-keiland_gesture_drag_offset(
-	struct keiland_gesture *gesture,
+kl_gesture_drag_offset(
+	struct kl_gesture *gesture,
 	uint64_t now_us,
 	double *dx,
 	double *dy)
@@ -456,8 +456,8 @@ keiland_gesture_drag_offset(
  * centroid, for a frame drawn at now_us.
  */
 int
-keiland_gesture_pinch(
-	struct keiland_gesture *gesture,
+kl_gesture_pinch(
+	struct kl_gesture *gesture,
 	uint64_t now_us,
 	double *scale,
 	double *x,
@@ -488,7 +488,7 @@ keiland_gesture_pinch(
 		if (!gesture->fingers[index].used)
 			continue;
 		pair[found] = &gesture->fingers[index];
-		error = keiland_motion_point(pair[found]->motion, now_us, KEILAND_MOTION_EXTRAPOLATION_CONTENT,
+		error = kl_motion_point(pair[found]->motion, now_us, KL_MOTION_EXTRAPOLATION_CONTENT,
 					     &points[found][0], &points[found][1]);
 		if (error != 0) {
 			points[found][0] = pair[found]->x;
@@ -512,7 +512,7 @@ keiland_gesture_pinch(
 /* Finds the finger down with a wl_touch id; NULL when none is. */
 static struct gesture_finger *
 finger_of(
-	struct keiland_gesture *gesture,
+	struct kl_gesture *gesture,
 	int32_t id)
 {
 	unsigned index;
@@ -530,7 +530,7 @@ finger_of(
 /* Gives the centroid of the fingers' last reported places. */
 static void
 raw_centroid(
-	const struct keiland_gesture *gesture,
+	const struct kl_gesture *gesture,
 	double *x,
 	double *y)
 {
@@ -559,7 +559,7 @@ raw_centroid(
 /* Gives the centroid of the fingers where their motions put them for a frame. */
 static void
 resampled_centroid(
-	struct keiland_gesture *gesture,
+	struct kl_gesture *gesture,
 	uint64_t now_us,
 	double *x,
 	double *y)
@@ -579,7 +579,7 @@ resampled_centroid(
 		finger = &gesture->fingers[index];
 		if (!finger->used)
 			continue;
-		error = keiland_motion_point(finger->motion, now_us, KEILAND_MOTION_EXTRAPOLATION_CONTENT, &point_x, &point_y);
+		error = kl_motion_point(finger->motion, now_us, KL_MOTION_EXTRAPOLATION_CONTENT, &point_x, &point_y);
 		if (error != 0) {
 			point_x = finger->x;
 			point_y = finger->y;
@@ -607,7 +607,7 @@ resampled_centroid(
  */
 static void
 reanchor(
-	struct keiland_gesture *gesture,
+	struct kl_gesture *gesture,
 	uint64_t time_us,
 	double old_x,
 	double old_y)
@@ -628,7 +628,7 @@ reanchor(
 /* Starts a pinch from the distance of the two fingers down. */
 static void
 pinch_start(
-	struct keiland_gesture *gesture)
+	struct kl_gesture *gesture)
 {
 	double points[2][2];
 	unsigned found;
@@ -653,14 +653,14 @@ pinch_start(
 /* Queues a gesture (the oldest is dropped when the queue is full). */
 static void
 emit(
-	struct keiland_gesture *gesture,
+	struct kl_gesture *gesture,
 	unsigned kind,
 	double x,
 	double y,
 	double vx,
 	double vy)
 {
-	struct keiland_gesture_event *event;
+	struct kl_gesture_event *event;
 	unsigned slot;
 
 	/* A full queue loses its oldest gesture. */
@@ -685,14 +685,14 @@ emit(
 /* Queues a tap at the press, and a double tap when it follows the last tap closely. */
 static void
 tap(
-	struct keiland_gesture *gesture,
+	struct kl_gesture *gesture,
 	uint64_t time_us)
 {
 	double distance;
 	int twice;
 
 	/* The tap. */
-	emit(gesture, KEILAND_GESTURE_TAP, gesture->press_x, gesture->press_y, 0.0, 0.0);
+	emit(gesture, KL_GESTURE_TAP, gesture->press_x, gesture->press_y, 0.0, 0.0);
 
 	/* A double tap: soon after and near the last tap (which is then used up). */
 	twice = 0;
@@ -703,7 +703,7 @@ tap(
 	    distance <= GESTURE_DOUBLE_NEAR)
 		twice = 1;
 	if (twice) {
-		emit(gesture, KEILAND_GESTURE_DOUBLE_TAP, gesture->press_x, gesture->press_y, 0.0, 0.0);
+		emit(gesture, KL_GESTURE_DOUBLE_TAP, gesture->press_x, gesture->press_y, 0.0, 0.0);
 		gesture->last_tap = 0;
 		return;
 	}

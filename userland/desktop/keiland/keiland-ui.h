@@ -355,7 +355,7 @@ void kl_icon_tag(struct kl_canvas *canvas, float cx, float cy, float radius, kl_
  * kl_scroll_draw_bars, so a program that draws its own content with
  * Vulkan (Terminal, Notes) uses the same scroll without the canvas.
  */
-struct keiland_scroller;
+struct kl_scroller;
 
 /* The axes a scroll moves along. */
 #define KL_SCROLL_X		1U
@@ -384,7 +384,7 @@ struct kl_scroll {
 	uint64_t glide_us;
 
 	/* The finger's scroller, whether it owns the content (a finger holds it or it flies on), and whether the finger has lifted. */
-	struct keiland_scroller *scroller;
+	struct kl_scroller *scroller;
 	int touched;
 	int released;
 
@@ -829,11 +829,9 @@ void kl_window_select(struct kl_window *window, const char *text, size_t length)
  * view the keyboard leaves, as far as the scroll goes (not past the text's
  * start or end; a view that does not scroll stays).  The application may
  * hear the inset first: its callback returns 1 when it took care of it
- * itself (the default is skipped), 0 to keep the default.
+ * itself (the default is skipped), 0 to keep the default.  The reasons are
+ * KL_KEYBOARD_INSET_* of <keiland.h> (one definition since WS131 p014).
  */
-#define KL_KEYBOARD_INSET_NONE		0U
-#define KL_KEYBOARD_INSET_RIGHT	1U
-#define KL_KEYBOARD_INSET_BOTTOM	2U
 typedef int (*kl_window_keyboard_inset_fn)(void *data, int right, int bottom, unsigned reason);
 void kl_window_on_keyboard_inset(struct kl_window *window, kl_window_keyboard_inset_fn callback, void *data);
 void kl_window_keyboard_inset(const struct kl_window *window, int *right, int *bottom);
@@ -851,20 +849,10 @@ void kl_window_keyboard_inset(const struct kl_window *window, int *right, int *b
  * (kl_window_edit_state: KL_EDIT_HAS_SELECTION ...); otherwise a
  * selection, undo and redo are taken to be there and paste follows the
  * clipboard.  The application may hear an operation first: its callback
- * returns 1 when it carried it out itself (the default is skipped).
+ * returns 1 when it carried it out itself (the default is skipped).  The
+ * operations and the state's bits are KL_EDIT_* of <keiland.h> (one
+ * definition since WS131 p014).
  */
-#define KL_EDIT_COPY		0U
-#define KL_EDIT_CUT		1U
-#define KL_EDIT_PASTE		2U
-#define KL_EDIT_UNDO		3U
-#define KL_EDIT_REDO		4U
-#define KL_EDIT_SELECT_ALL	5U
-#define KL_EDIT_SELECT_BEGIN	6U
-#define KL_EDIT_SELECT_END	7U
-#define KL_EDIT_HAS_SELECTION	1U
-#define KL_EDIT_CAN_PASTE	2U
-#define KL_EDIT_CAN_UNDO	4U
-#define KL_EDIT_CAN_REDO	8U
 typedef int (*kl_window_edit_fn)(void *data, unsigned operation);
 void kl_window_on_edit(struct kl_window *window, kl_window_edit_fn callback, void *data);
 void kl_window_edit_state(struct kl_window *window, unsigned state);
@@ -988,7 +976,7 @@ void kl_progress(const struct kl_style *style, const struct kl_rect *rect, doubl
 
 /*
  * The file chooser (KUI_VERSION 5; libkeiland's keiland_file_chooser of
- * KEILAND_VERSION 12, moved here by ws090-p006 and made of the widgets):
+ * KL_VERSION 12, moved here by ws090-p006 and made of the widgets):
  * the Open and Save As window every application shares.  It shows the
  * folders and files of a folder, the sidebar's places (Recent, Home and
  * its usual folders, Computer), the filter chosen, and in Save mode takes

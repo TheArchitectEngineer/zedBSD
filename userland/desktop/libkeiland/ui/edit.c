@@ -8,7 +8,7 @@
 /*
  * The editing operations of the on-screen keyboard's buttons for a window
  * (KUI_VERSION 8, ws102-p017, plan/ws102/design.md section 2.10), through
- * libkeiland's keiland_edit.  The window says it carries out every
+ * libkeiland's kl_edit.  The window says it carries out every
  * operation, with its state before each wait, and turns each operation
  * into the keys it stands for, queued as its own key inputs, so that an
  * application that takes those keys (Text Editor) needs nothing more.
@@ -52,7 +52,7 @@ keiui_edit_start(
 	struct kl_window *window)
 {
 	/* libkeiland's object; NULL when the compositor has no such protocol. */
-	window->edit = keiland_edit_create(window->display, window->toplevel, edit_operation, window);
+	window->edit = kl_edit_create(window->display, window->toplevel, edit_operation, window);
 }
 
 /*
@@ -85,7 +85,7 @@ keiui_edit_update(
 		state |= EDIT_SELECTING;
 
 	/* Succeeded: sent when it changed. */
-	keiland_edit_set_state(window->edit, EDIT_OPERATIONS, state);
+	kl_edit_set_state(window->edit, EDIT_OPERATIONS, state);
 }
 
 /*
@@ -126,7 +126,7 @@ keiui_edit_close(
 	struct kl_window *window)
 {
 	/* The object (none: nothing), and it is forgotten. */
-	keiland_edit_destroy(window->edit);
+	kl_edit_destroy(window->edit);
 	window->edit = NULL;
 }
 

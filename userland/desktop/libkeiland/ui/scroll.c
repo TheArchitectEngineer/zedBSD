@@ -59,7 +59,7 @@ kl_scroll_init(
 	scroll->axes = axes;
 
 	/* The finger's scroller. */
-	scroll->scroller = keiland_scroller_create();
+	scroll->scroller = kl_scroller_create();
 	if (scroll->scroller == NULL)
 		return ENOMEM;
 
@@ -76,7 +76,7 @@ kl_scroll_release(
 {
 	/* The scroller, when it was made. */
 	if (scroll->scroller != NULL)
-		keiland_scroller_destroy(scroll->scroller);
+		kl_scroller_destroy(scroll->scroller);
 	memset(scroll, 0, sizeof(*scroll));
 }
 
@@ -308,14 +308,14 @@ kl_scroll_press(
 	/* The scroller from where the content is (a glide stops there). */
 	if (!scroll->touched) {
 		scroll_bounds(scroll);
-		keiland_scroller_set_position(scroll->scroller, scroll->x, scroll->y);
+		kl_scroller_set_position(scroll->scroller, scroll->x, scroll->y);
 	}
 
 	/* A glide under way ends where the content is. */
 	scroll->gliding = 0;
 
 	/* The finger holds the content. */
-	caught = keiland_scroller_press(scroll->scroller, now_us);
+	caught = kl_scroller_press(scroll->scroller, now_us);
 	scroll->touched = 1;
 	scroll->released = 0;
 
@@ -337,7 +337,7 @@ kl_scroll_drag(
 		return;
 
 	/* The scroller moves the content the other way (a finger moving down shows what is above). */
-	keiland_scroller_drag(scroll->scroller, dx, dy);
+	kl_scroller_drag(scroll->scroller, dx, dy);
 }
 
 /*
@@ -356,7 +356,7 @@ kl_scroll_fling(
 		return;
 
 	/* The scroller takes the velocity; the content is the scroller's until it rests. */
-	keiland_scroller_release(scroll->scroller, now_us, vx, vy);
+	kl_scroller_release(scroll->scroller, now_us, vx, vy);
 	scroll->released = 1;
 }
 
@@ -374,7 +374,7 @@ kl_scroll_cancel(
 		return;
 
 	/* The scroller springs back. */
-	keiland_scroller_cancel(scroll->scroller, now_us);
+	kl_scroller_cancel(scroll->scroller, now_us);
 	scroll->released = 1;
 }
 
@@ -397,7 +397,7 @@ kl_scroll_step(
 
 	/* A finger's content is where the scroller has it. */
 	if (scroll->touched) {
-		moving = keiland_scroller_step(scroll->scroller, now_us, &x, &y);
+		moving = kl_scroller_step(scroll->scroller, now_us, &x, &y);
 		scroll_place(scroll, x, y, now_us);
 
 		/* At rest after the finger lifted: the content is the scroll's again. */
@@ -562,7 +562,7 @@ scroll_bounds(
 		height = 1.0;
 
 	/* The ends of each axis (an axis that does not move has none). */
-	(void)keiland_scroller_set_bounds(scroll->scroller, 0.0, kl_scroll_limit_x(scroll), 0.0, kl_scroll_limit_y(scroll), width, height);
+	(void)kl_scroller_set_bounds(scroll->scroller, 0.0, kl_scroll_limit_x(scroll), 0.0, kl_scroll_limit_y(scroll), width, height);
 }
 
 /* Keeps the position within the ends. */
