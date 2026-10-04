@@ -2,10 +2,10 @@
 
 # Queue / all-agent index
 
-Active Queues: なし。委譲の session の P4 は q697・q698・q699 を cleared で終了（main efe846a に統合）。uat-3 の image を作成（plan/uat.md）。
+Active Queues: なし（次の P3 の Queue: q700 の UAT-3 の Bug、下の節の表）。委譲の session の P4 は q697・q698・q699 を cleared で終了（main efe846a に統合）。uat-3 の image を作成（plan/uat.md）。
 Status: active
 Main executor / plan writer: Q1（単一 Claude Code セッション、[protocol](agents/protocol.md)）。サブエージェント P1〜P8、N=2（P1・P2）＋試験 T1（忙しい時は T2）。
-Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q699（q697・q698 は 2026-10-04 夜の P4 だけの委譲。q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
+Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q701（q700 は UAT-3 の Bug（BUG-177〜180）。q697・q698 は 2026-10-04 夜の P4 だけの委譲。q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
 
 
 ## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
@@ -74,6 +74,7 @@ user「P4のみを実行するqueue.mdを書いてください。22時の5時間
 
 | Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
+| q700 / q700-i01 | P3（予定、phase-runner-mid） | [BUG-178](bugs/BUG-178.md)・[BUG-179](bugs/BUG-179.md)・[BUG-180](bugs/BUG-180.md)・[BUG-177](bugs/BUG-177.md)（UAT-3、2026-10-04 夜） | 窓の操作の 3 件（タッチのドラッグの位置のずれ、ダブルクリックの最大化を 0.1 秒（遅くとも 0.2 秒）に、最大化からのドラッグで一度最大に戻る件）を先に、次に Files の検索欄の IME。BUG-178 は BUG-166（q689）の仕様と合わせる。QEMU は T1（マウス・タッチ）、実機は次の UAT | なし | pending |
 | q683 / q683-i01 | P2（generation11） | [BUG-170](bugs/BUG-170.md)（WS100・WS089） | 音量の slider のドラッグでのフリーズ。確認の音は離した時に 1 回。QEMU で再現と確認 | なし | finished / uncleared（P2 2eea840 → main 645d104、T1-087 QEMU PASS 3/3。根は読みで未確定、実機 D1・D2 は次の UAT） |
 | q684 / q684-i01 | 解析 P3（generation7、bug-analyzer = Fable 5.1 high）→ 実装 P3（generation8、phase-runner-mid）→ 試験 T1 | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | 解析 finished（P3 gen7 52df29f → main b7bced6）。実装 in-progress（P3 gen8） |
 | q685 / q685-i01 | P2（予定） | [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md)（[ws033-p001](ws033/phase001/phase.md) の再開） | 後から挿した USB LAN が up しない、Ethernet のメニューの wlan0。QEMU の usb-net の device_add で再現 | なし | pending |

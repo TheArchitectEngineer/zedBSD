@@ -184,3 +184,9 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 作り方: `plan/tools/guest/test-image.sh --no-harness plan/uat/config-uat.mk build/uat-3` に `--file /etc/keiland/apps.conf=plan/uat/uat-apps.conf`・壁紙（`/usr/share/keiland/wallpaper.ppm` と `wallpapers/*.ppm`）・`/root/.ssh/authorized_keys`（guest harness の鍵）、`I915_TEST_VBT=n ZEDBSD_TEST_IMAGE_TAG=uat-3`。compiler の warning は外部 Noct の 1 件（interpreter.c の -Wreturn-type、既知）と submake の jobserver の 1 件。
 - QEMU の boot-test: PASS（Q1、複写 `build/uat-3-boot/uat.img`、`build/boot-test/login.png`、GPU なしなので greeter の後に getty の `login:`）。
 - 実機で見る観点（BUG-158）: WiFi を未接続（保存の profile 無し、または AP の圏外）のまま desktop で 10 分以上放置して止まらないこと。前は約 1 分で全停止。止まった時は再起動の後に `/var/log/kernel.log.old` を見る（panic・fatal の行と AX211 の recovery の行）。あわせて DSDT の読み込み（BUG-165）、Shut Down で電源が切れる（BUG-119）、電源ボタン・蓋・AC（ws049-p007）、タッチパッド、音量の slider（BUG-170）。
+
+### uat-3 の結果（2026-10-04 夜、ユーザー）
+
+- WiFi（BUG-158）: 「WiFiは問題ないです。解決。」→ resolved。
+- 新規: [BUG-177](bugs/BUG-177.md) Files の検索バーで日本語の IME が使えない、[BUG-178](bugs/BUG-178.md) title bar のタッチのドラッグで押した位置がずれると動かない（「直して」）、[BUG-179](bugs/BUG-179.md) title bar のダブルクリックの最大化が約 0.8 秒（目標 0.1、少なくとも 0.2 秒）、[BUG-180](bugs/BUG-180.md) 最大化した窓を上部のバーからドラッグで外すと一度最大に戻ってから小さくなる（「修正して」）。
+- 他の観点（BUG-165・119・ws049-p007・BUG-170 など）は今回の報告に無い（未確認として扱う）。

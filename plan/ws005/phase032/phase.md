@@ -262,3 +262,7 @@ user「では、修正してください。」を、直前に提示したq698の
 - host最終確認20:49:54 JST: QEMU停止、AX211 driver無し、override(null)、blacklist保持、USB有線で応答。電源再投入不要。local rawはplan/ws004/temp/q699、remoteは~/zedbsd-q699-p4。試験・monitorは終了済み。
 - q699のscopeは実装と今回の確認で満たした。whole Phaseはin-progress、BUG-158はtrackingを維持。実機UAT（未接続10分・接続通信・desktop/入力）は未了。q698のassert後error42の原因解明・実deviceへのreset注入試験を済ませたとはしない。
 - 本追補は20:30の引き継ぎ後にuserが追加した実装指示の結果。以前の「未実装」は当時の履歴であり、現在はacb4afaで修正済み。main変更・merge・push・GitHub公開無し。Q1はbase f1fa284以降を統合し、共有Queueでq699の承認/結果、WS/Master/Past Logを投影する。次のQueueは開始しない。
+
+## 実機の受け入れ（2026-10-04 夜、Q1）
+
+ad-hoc UAT-3（uat-3 の image、main efe846a）で、ユーザー「WiFiは問題ないです。解決。」。Phase は **cleared**（Q1 の判定）。BUG-158 は resolved。i915 の graphical での panic の文字の表示（hook）は未実装のまま残り（別件）。
