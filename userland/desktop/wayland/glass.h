@@ -95,6 +95,7 @@ VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 int zwl_apps_bar_draw(struct zwl_server *server, VkCommandBuffer command);
 void zwl_apps_bar_draw_popup(struct zwl_server *server, VkCommandBuffer command);
 void zwl_glass_draw_app_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t size, float alpha);
+void zwl_switch_draw(struct zwl_server *server, VkCommandBuffer command);
 void zwl_glass_draw_preview(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height, int over);
 
 /* The login screen in place of the desktop (greeter.c). */

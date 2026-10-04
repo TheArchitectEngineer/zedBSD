@@ -33,6 +33,7 @@
 
 #include "zwl.h"
 #include "apps.h"
+#include "apps-bar.h"
 #include "desktop.h"
 #include "glass.h"
 #include "extras.h"
@@ -45,19 +46,8 @@
 #define HOVER_MS		400U
 #define LEAVE_MS		300U
 
-/* An icon's place in the bar, its mark's size, and how far a press moves before it is the icon's drag (pixels). */
-#define ICON_WIDTH		36
-#define ICON_MARK		28
+/* How far a press moves before it is the icon's drag (pixels). */
 #define DRAG_START		8
-
-/* The panel of previews: its distance under the bar, its padding, the gap between previews and the room for a preview's label (pixels). */
-#define PANEL_DROP		8
-#define PANEL_PAD		16
-#define PREVIEW_GAP		16
-#define PREVIEW_LABEL		46
-
-/* The most windows looked at on a desktop. */
-#define VIEW_WINDOWS		64U
 
 /* The key of the "+N" place. */
 #define MORE_KEY		"+"
@@ -66,44 +56,9 @@
 #define SLOT_NONE		(-1)
 #define SLOT_MORE		(-2)
 
-/* A rectangle on the output. */
-struct apps_rect {
-	int32_t x;
-	int32_t y;
-	int32_t width;
-	int32_t height;
-};
-
-/* The bar's applications this moment, and where their icons go. */
-struct apps_view {
-	struct zwl_apps apps;
-	struct zwl_apps_window described[VIEW_WINDOWS];
-	struct zwl_object *surfaces[VIEW_WINDOWS];
-	unsigned window_count;
-	int32_t left;
-	int32_t right;
-	unsigned shown;
-	unsigned hidden;
-	int current;
-};
-
-/* The previews of the application whose previews show. */
-struct apps_panel {
-	int app;
-	unsigned count;
-	struct zwl_object *surfaces[ZWL_APPS_WINDOWS];
-	struct apps_rect tiles[ZWL_APPS_WINDOWS];
-	struct apps_rect rect;
-};
-
-static int view_build(struct zwl_server *server, struct apps_view *view);
 static int slot_at(const struct apps_view *view, int32_t x, int32_t y);
 static void slot_rect(const struct apps_view *view, unsigned slot, struct apps_rect *rect);
 static int panel_build(struct zwl_server *server, const struct apps_view *view, const char *key, struct apps_panel *panel);
-static int tile_at(const struct apps_panel *panel, int32_t x, int32_t y);
-static int inside(const struct apps_rect *rect, int32_t x, int32_t y);
-static void show(struct zwl_server *server, const struct apps_view *view, const char *key, unsigned via);
-static void hide(struct zwl_server *server, const char *why);
 static void log_bar(struct zwl_server *server, const struct apps_view *view);
 static void draw_more(struct zwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, unsigned hidden, float light);
 static void draw_light(struct zwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, float strength);
@@ -129,7 +84,7 @@ zwl_apps_bar_draw(
 
 	/* No icons where the bar has no room for them. */
 	state = &server->apps_bar;
-	built = view_build(server, &view);
+	built = zwl_apps_view_build(server, &view);
 	if (!built)
 		return 0;
 
@@ -207,7 +162,7 @@ zwl_apps_bar_draw_popup(
 	state = &server->apps_bar;
 	if (state->state != ZWL_APPS_SHOWN)
 		return;
-	built = view_build(server, &view);
+	built = zwl_apps_view_build(server, &view);
 	if (built)
 		built = panel_build(server, &view, state->key, &panel);
 	if (!built)
@@ -238,7 +193,7 @@ zwl_apps_bar_draw_popup(
 	glass_shape_draw(server, command, &shape);
 
 	/* Each window's preview, the one under the pointer lit, a minimized one faint (D11). */
-	over = tile_at(&panel, server->pointer_x, server->pointer_y);
+	over = zwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
 	for (index = 0; index < panel.count; index++) {
 		zwl_glass_draw_preview(server, command, panel.surfaces[index], panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height, over == (int)index);
 		if (panel.surfaces[index]->minimized)
@@ -270,19 +225,34 @@ zwl_apps_bar_motion(
 
 	/* Without the icons, nothing shows or waits. */
 	state = &server->apps_bar;
-	built = view_build(server, &view);
+	built = zwl_apps_view_build(server, &view);
 	if (!built) {
 		if (state->state != ZWL_APPS_IDLE)
-			hide(server, "away");
+			zwl_apps_bar_hide(server, "away");
 		state->pressed = 0;
 		state->dragging = 0;
 		return 0;
 	}
 
+	/* The switcher's previews stay as it shows them; the motion over them is the bar's. */
+	if (server->switcher.on) {
+		in_panel = 0;
+		if (state->state == ZWL_APPS_SHOWN) {
+			built = panel_build(server, &view, state->key, &panel);
+			if (built)
+				in_panel = zwl_apps_inside(&panel.rect, server->pointer_x, server->pointer_y);
+		}
+
+		/* Over the previews the motion lights them. */
+		if (in_panel)
+			server->dirty = 1;
+		return in_panel;
+	}
+
 	/* A window's move or pull, or a desktop swipe, passing over the bar starts no wait. */
 	if (server->drag != NULL || server->pull != NULL || server->desktop_press) {
 		if (state->state == ZWL_APPS_ARMED)
-			hide(server, "move");
+			zwl_apps_bar_hide(server, "move");
 		return 0;
 	}
 
@@ -292,7 +262,7 @@ zwl_apps_bar_motion(
 		same = strcmp(state->press_key, MORE_KEY);
 		if (!state->dragging && same != 0 && (dx >= DRAG_START || dx <= -DRAG_START)) {
 			state->dragging = 1;
-			hide(server, "drag");
+			zwl_apps_bar_hide(server, "drag");
 			printf("ZWL APPS drag app=%s\n", state->press_key);
 		}
 
@@ -320,7 +290,7 @@ zwl_apps_bar_motion(
 	if (state->state == ZWL_APPS_SHOWN) {
 		built = panel_build(server, &view, state->key, &panel);
 		if (built)
-			in_panel = inside(&panel.rect, server->pointer_x, server->pointer_y);
+			in_panel = zwl_apps_inside(&panel.rect, server->pointer_x, server->pointer_y);
 	}
 
 	/* Resting on nothing yet: an application's icon starts the wait. */
@@ -361,7 +331,7 @@ zwl_apps_bar_motion(
 	if (slot >= 0) {
 		same = strcmp(view.apps.apps[slot].key, state->key);
 		if (same != 0)
-			show(server, &view, view.apps.apps[slot].key, ZWL_APPS_VIA_HOVER);
+			zwl_apps_bar_show(server, &view, view.apps.apps[slot].key, ZWL_APPS_VIA_HOVER);
 		state->left = 0;
 		return 0;
 	}
@@ -413,7 +383,7 @@ zwl_apps_bar_button(
 		if (!state->pressed || button != ZWL_BUTTON_LEFT)
 			return 0;
 		state->pressed = 0;
-		built = view_build(server, &view);
+		built = zwl_apps_view_build(server, &view);
 
 		/* A drag ends where it is. */
 		if (state->dragging) {
@@ -429,7 +399,7 @@ zwl_apps_bar_button(
 		/* The "+N" place opens Wiseview. */
 		same = strcmp(state->press_key, MORE_KEY);
 		if (same == 0) {
-			hide(server, "more");
+			zwl_apps_bar_hide(server, "more");
 			zwl_glass_open_wiseview(server, "apps");
 			return 1;
 		}
@@ -444,7 +414,7 @@ zwl_apps_bar_button(
 		/* One window: it comes to the top. */
 		app = &view.apps.apps[found];
 		if (app->window_count == 1U) {
-			hide(server, "raise");
+			zwl_apps_bar_hide(server, "raise");
 			zwl_glass_bring(server, view.surfaces[app->windows[0]], "bar");
 			return 1;
 		}
@@ -452,20 +422,20 @@ zwl_apps_bar_button(
 		/* More: a second click on the shown icon hides its previews, otherwise they show at once. */
 		same = strcmp(state->key, app->key);
 		if (state->state == ZWL_APPS_SHOWN && state->via == ZWL_APPS_VIA_CLICK && same == 0) {
-			hide(server, "click");
+			zwl_apps_bar_hide(server, "click");
 			return 1;
 		}
 
 		/* Shown by the click. */
-		show(server, &view, app->key, ZWL_APPS_VIA_CLICK);
+		zwl_apps_bar_show(server, &view, app->key, ZWL_APPS_VIA_CLICK);
 		return 1;
 	}
 
 	/* Without the icons the bar takes nothing. */
-	built = view_build(server, &view);
+	built = zwl_apps_view_build(server, &view);
 	if (!built) {
 		if (state->state != ZWL_APPS_IDLE)
-			hide(server, "away");
+			zwl_apps_bar_hide(server, "away");
 		return 0;
 	}
 
@@ -474,9 +444,9 @@ zwl_apps_bar_button(
 		built = panel_build(server, &view, state->key, &panel);
 		in_panel = 0;
 		if (built)
-			in_panel = inside(&panel.rect, server->pointer_x, server->pointer_y);
+			in_panel = zwl_apps_inside(&panel.rect, server->pointer_x, server->pointer_y);
 		if (in_panel) {
-			tile = tile_at(&panel, server->pointer_x, server->pointer_y);
+			tile = zwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
 			if (tile < 0 || button != ZWL_BUTTON_LEFT)
 				return 1;
 			surface = panel.surfaces[tile];
@@ -489,7 +459,7 @@ zwl_apps_bar_button(
 			}
 
 			/* The preview: its window comes to the top. */
-			hide(server, "preview");
+			zwl_apps_bar_hide(server, "preview");
 			zwl_glass_bring(server, surface, "preview");
 			return 1;
 		}
@@ -509,7 +479,7 @@ zwl_apps_bar_button(
 
 	/* A press elsewhere hides the previews, and goes on. */
 	if (state->state != ZWL_APPS_IDLE)
-		hide(server, "press");
+		zwl_apps_bar_hide(server, "press");
 	return 0;
 }
 
@@ -526,12 +496,12 @@ zwl_apps_bar_key(
 
 	/* A wait only stops (the key goes on); shown previews hide and take it. */
 	if (server->apps_bar.state == ZWL_APPS_ARMED) {
-		hide(server, "escape");
+		zwl_apps_bar_hide(server, "escape");
 		return 0;
 	}
 
 	/* Hidden. */
-	hide(server, "escape");
+	zwl_apps_bar_hide(server, "escape");
 	return 1;
 }
 
@@ -551,30 +521,76 @@ zwl_apps_bar_tick(
 		return;
 
 	/* The icons gone (a window docked, Home, Wiseview, a fullscreen window): nothing shows. */
-	built = view_build(server, &view);
+	built = zwl_apps_view_build(server, &view);
 	if (!built) {
-		hide(server, "away");
+		zwl_apps_bar_hide(server, "away");
 		return;
 	}
 
 	/* The rest on an icon. */
 	now = zwl_milliseconds();
 	if (state->state == ZWL_APPS_ARMED && now - state->since_ms >= HOVER_MS) {
-		show(server, &view, state->key, ZWL_APPS_VIA_HOVER);
+		zwl_apps_bar_show(server, &view, state->key, ZWL_APPS_VIA_HOVER);
 		return;
 	}
 
 	/* The absence from the icons and the panel hides what the rest showed (a click's previews stay). */
 	if (state->state == ZWL_APPS_SHOWN && state->via == ZWL_APPS_VIA_HOVER && state->left && now - state->since_ms >= LEAVE_MS)
-		hide(server, "leave");
+		zwl_apps_bar_hide(server, "leave");
 }
 
 /*
  * Gathers the bar's applications and their icons' places.  Returns 0 when
  * the bar has no room for icons now, or no application.
  */
-static int
-view_build(
+int
+zwl_apps_view_build(
+	struct zwl_server *server,
+	struct apps_view *view)
+{
+	unsigned slots;
+	int room;
+	int collected;
+
+	/* Room in the bar. */
+	room = zwl_glass_apps_room(server, &view->left, &view->right);
+	if (!room)
+		return 0;
+
+	/* The applications. */
+	collected = zwl_apps_view_collect(server, view);
+	if (!collected)
+		return 0;
+
+	/* As many icons as there is room for; the last place says how many more when they do not fit. */
+	slots = 0;
+	if (view->right > view->left)
+		slots = (unsigned)((view->right - view->left) / ICON_WIDTH);
+	if (slots == 0U)
+		return 0;
+	view->shown = view->apps.count;
+	view->hidden = 0;
+	if (view->apps.count > slots) {
+		view->shown = slots - 1U;
+		view->hidden = view->apps.count - view->shown;
+	}
+
+	/* The current application only when its icon is shown. */
+	if (view->current >= (int)view->shown)
+		view->current = -1;
+
+	/* Succeeded: there are icons. */
+	return 1;
+}
+
+/*
+ * Gathers the applications of the desktop shown (in its bar order) and the
+ * application of the window on top, without the icons' places (the
+ * switcher in the middle of the output needs no room in the bar).  Returns
+ * 0 when there is none.
+ */
+int
+zwl_apps_view_collect(
 	struct zwl_server *server,
 	struct apps_view *view)
 {
@@ -583,19 +599,20 @@ view_build(
 	struct zwl_object *parent;
 	struct zwl_object *top;
 	struct zwl_apps_window *window;
-	unsigned slots;
 	unsigned index;
 	unsigned app;
 	int desktop_surface;
-	int room;
 
-	/* Room in the bar, on a desktop that keeps an order. */
-	room = zwl_glass_apps_room(server, &view->left, &view->right);
-	if (!room || server->desktop >= ZWL_APPS_DESKTOPS)
+	/* A desktop that keeps an order. */
+	view->shown = 0;
+	view->hidden = 0;
+	view->current = -1;
+	view->window_count = 0;
+	view->apps.count = 0;
+	if (server->desktop >= ZWL_APPS_DESKTOPS)
 		return 0;
 
 	/* The windows of the desktop shown, as Wiseview has them (a sheet comes with its parent). */
-	view->window_count = 0;
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->fatal)
 			continue;
@@ -636,33 +653,19 @@ view_build(
 	if (view->apps.count == 0U)
 		return 0;
 
-	/* As many icons as there is room for; the last place says how many more when they do not fit. */
-	slots = 0;
-	if (view->right > view->left)
-		slots = (unsigned)((view->right - view->left) / ICON_WIDTH);
-	if (slots == 0U)
-		return 0;
-	view->shown = view->apps.count;
-	view->hidden = 0;
-	if (view->apps.count > slots) {
-		view->shown = slots - 1U;
-		view->hidden = view->apps.count - view->shown;
-	}
-
-	/* The application of the window on top, if it is shown. */
-	view->current = -1;
+	/* The application of the window on top. */
 	top = zwl_top_window(server);
 	parent = zwl_sheet_parent(top);
 	if (parent != NULL)
 		top = parent;
-	for (app = 0; app < view->shown && top != NULL; app++) {
+	for (app = 0; app < view->apps.count && top != NULL; app++) {
 		for (index = 0; index < view->apps.apps[app].window_count; index++) {
 			if (view->surfaces[view->apps.apps[app].windows[index]] == top)
 				view->current = (int)app;
 		}
 	}
 
-	/* Succeeded: there are icons. */
+	/* Succeeded: there are applications. */
 	return 1;
 }
 
@@ -704,12 +707,19 @@ slot_rect(
 	rect->height = ZWL_GLASS_BAR;
 }
 
-/*
- * Lays out the previews of an application under its icon: each window at
- * most a quarter of the output's width and height (D4), keeping its shape;
- * all of them smaller together (to half) when one row is wider than the
- * output, then in more rows.  Returns 0 when the application is not shown.
- */
+/* Lays out the previews of an application under its icon, for the switcher (switcher-shell.c).  Returns 0 when it has no icon. */
+int
+zwl_apps_bar_panel(
+	struct zwl_server *server,
+	const struct apps_view *view,
+	const char *key,
+	struct apps_panel *panel)
+{
+	/* As the bar's own. */
+	return panel_build(server, view, key, panel);
+}
+
+/* Lays out the previews of an application under its icon (zwl_apps_tiles_layout).  Returns 0 when the application has no icon. */
 static int
 panel_build(
 	struct zwl_server *server,
@@ -717,8 +727,55 @@ panel_build(
 	const char *key,
 	struct apps_panel *panel)
 {
-	const struct zwl_app *app;
 	struct apps_rect icon;
+	int32_t center;
+	unsigned index;
+	int found;
+
+	/* The application, among those with an icon. */
+	found = zwl_apps_find(&view->apps, key);
+	if (found < 0 || found >= (int)view->shown)
+		return 0;
+	zwl_apps_tiles_layout(server, view, (unsigned)found, panel);
+
+	/* The panel under the icon, inside the output. */
+	slot_rect(view, (unsigned)found, &icon);
+	center = icon.x + icon.width / 2;
+	panel->rect.width += 2 * PANEL_PAD;
+	panel->rect.height += PANEL_PAD;
+	panel->rect.x = center - panel->rect.width / 2;
+	if (panel->rect.x + panel->rect.width > (int32_t)server->width - 16)
+		panel->rect.x = (int32_t)server->width - 16 - panel->rect.width;
+	if (panel->rect.x < 16)
+		panel->rect.x = 16;
+	panel->rect.y = ZWL_GLASS_BAR + PANEL_DROP;
+
+	/* The previews moved into the panel. */
+	for (index = 0; index < panel->count; index++) {
+		panel->tiles[index].x += panel->rect.x + PANEL_PAD;
+		panel->tiles[index].y += panel->rect.y + PANEL_PAD;
+	}
+
+	/* Succeeded: laid out. */
+	return 1;
+}
+
+/*
+ * Lays out an application's windows as previews from 0, 0: each at most a
+ * quarter of the output's width and height (D4), keeping its shape; all
+ * of them smaller together (to half) when one row is wider than the
+ * output, then in more rows; under each row the room for the previews'
+ * labels.  The panel's rectangle gets the size they take (no padding, no
+ * place).
+ */
+void
+zwl_apps_tiles_layout(
+	struct zwl_server *server,
+	const struct apps_view *view,
+	unsigned found,
+	struct apps_panel *panel)
+{
+	const struct zwl_app *app;
 	uint32_t width;
 	uint32_t height;
 	int32_t sizes[ZWL_APPS_WINDOWS][2];
@@ -728,18 +785,13 @@ panel_build(
 	int32_t row_y;
 	int32_t row_height;
 	int32_t widest;
-	int32_t center;
 	float scale;
 	float shrink;
 	unsigned index;
-	int found;
 
-	/* The application, among those with an icon. */
-	found = zwl_apps_find(&view->apps, key);
-	if (found < 0 || found >= (int)view->shown)
-		return 0;
+	/* The application and its windows. */
 	app = &view->apps.apps[found];
-	panel->app = found;
+	panel->app = (int)found;
 	panel->count = app->window_count;
 
 	/* Each window's size at most a quarter of the output's width and height. */
@@ -800,32 +852,18 @@ panel_build(
 			row_height = sizes[index][1];
 	}
 
-	/* The panel under the icon, inside the output. */
-	slot_rect(view, (unsigned)found, &icon);
-	center = icon.x + icon.width / 2;
-	panel->rect.width = widest + 2 * PANEL_PAD;
-	panel->rect.height = row_y + row_height + PREVIEW_LABEL + PANEL_PAD;
-	panel->rect.x = center - panel->rect.width / 2;
-	if (panel->rect.x + panel->rect.width > (int32_t)server->width - 16)
-		panel->rect.x = (int32_t)server->width - 16 - panel->rect.width;
-	if (panel->rect.x < 16)
-		panel->rect.x = 16;
-	panel->rect.y = ZWL_GLASS_BAR + PANEL_DROP;
-
-	/* The previews moved into the panel. */
-	for (index = 0; index < panel->count; index++) {
-		panel->tiles[index].x += panel->rect.x + PANEL_PAD;
-		panel->tiles[index].y += panel->rect.y + PANEL_PAD;
-	}
-
-	/* Succeeded: laid out. */
-	return 1;
+	/* The size they take, with the last row's labels. */
+	panel->rect.x = 0;
+	panel->rect.y = 0;
+	panel->rect.width = widest;
+	panel->rect.height = row_y + row_height + PREVIEW_LABEL;
 }
 
 /* Tells which preview is under a point, or -1. */
-static int
-tile_at(
-	const struct apps_panel *panel,
+int
+zwl_apps_tile_at(
+	const struct apps_rect *tiles,
+	unsigned count,
 	int32_t x,
 	int32_t y)
 {
@@ -833,8 +871,8 @@ tile_at(
 	int hit;
 
 	/* Each preview. */
-	for (index = 0; index < panel->count; index++) {
-		hit = inside(&panel->tiles[index], x, y);
+	for (index = 0; index < count; index++) {
+		hit = zwl_apps_inside(&tiles[index], x, y);
 		if (hit)
 			return (int)index;
 	}
@@ -844,8 +882,8 @@ tile_at(
 }
 
 /* Tells whether a point is inside a rectangle. */
-static int
-inside(
+int
+zwl_apps_inside(
 	const struct apps_rect *rect,
 	int32_t x,
 	int32_t y)
@@ -859,8 +897,8 @@ inside(
 }
 
 /* Shows an application's previews, and says where they are. */
-static void
-show(
+void
+zwl_apps_bar_show(
 	struct zwl_server *server,
 	const struct apps_view *view,
 	const char *key,
@@ -876,7 +914,7 @@ show(
 	state = &server->apps_bar;
 	built = panel_build(server, view, key, &panel);
 	if (!built) {
-		hide(server, "gone");
+		zwl_apps_bar_hide(server, "gone");
 		return;
 	}
 
@@ -891,14 +929,16 @@ show(
 	how = "hover";
 	if (via == ZWL_APPS_VIA_CLICK)
 		how = "click";
+	if (via == ZWL_APPS_VIA_SWITCH)
+		how = "switch";
 	printf("ZWL APPS preview app=%s windows=%u via=%s at_ms=%llu\n", key, panel.count, how, (unsigned long long)zwl_milliseconds());
 	for (index = 0; index < panel.count; index++)
 		printf("ZWL APPS preview window surface=%u x=%d y=%d width=%d height=%d\n", panel.surfaces[index]->id, panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height);
 }
 
 /* Hides the previews (or stops the wait for them). */
-static void
-hide(
+void
+zwl_apps_bar_hide(
 	struct zwl_server *server,
 	const char *why)
 {

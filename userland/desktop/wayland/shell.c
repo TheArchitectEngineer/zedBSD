@@ -566,8 +566,9 @@ zwl_glass_draw(
 	if (cover == NULL)
 		draw_system_bar(server, command, &bar);
 
-	/* The previews of an application's icon in the bar, over the windows (apps-bar.c). */
+	/* The previews of an application's icon in the bar, over the windows (apps-bar.c), or the switcher in the middle (switcher-shell.c). */
 	zwl_apps_bar_draw_popup(server, command);
+	zwl_switch_draw(server, command);
 
 	/* An open menu's popups over the system bar (menu-shell.c). */
 	zwl_menu_draw_popups(server, command);
@@ -629,6 +630,11 @@ zwl_glass_button(
 		pressed = zwl_greeter_button(server, button, state);
 		return pressed;
 	}
+
+	/* The switcher, while on, takes every button, and the release of a press it took (switcher-shell.c). */
+	pressed = zwl_switch_button(server, button, state);
+	if (pressed)
+		return 1;
 
 	/* Wiseview, open or being opened, takes every button. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
@@ -2158,6 +2164,11 @@ zwl_glass_key(
 	int step;
 	int taken;
 
+	/* The switcher: Alt+Tab, and its keys while it is on (switcher-shell.c, ws142-p005). */
+	taken = zwl_switch_key(server, key, state);
+	if (taken)
+		return 1;
+
 	/* The volume's open popup takes every key (volume.c). */
 	taken = zwl_volume_key(server, key, state);
 	if (taken)
@@ -2247,8 +2258,9 @@ zwl_glass_tick(
 	/* The sheets where their parents are (ws090-p014). */
 	sheet_place(server);
 
-	/* The previews of the bar's applications show and hide in time (apps-bar.c). */
+	/* The previews of the bar's applications show and hide in time (apps-bar.c), and the switcher goes when it may not show. */
 	zwl_apps_bar_tick(server);
+	zwl_switch_tick(server);
 
 	/* App Home's animation, and the applications it started that have ended. */
 	zwl_home_tick(server);
@@ -5641,6 +5653,47 @@ zwl_glass_open_wiseview(
 }
 
 /*
+ * Tells whether the switcher may show (switcher-shell.c, ws142-p005), and
+ * where: the glass look's windows, no login or lock screen, no fullscreen
+ * window (D6), neither App Home nor Wiseview; in the middle with a docked
+ * window (its title has the bar), otherwise at the bar's icons.
+ */
+int
+zwl_glass_switch_place(
+	struct zwl_server *server,
+	unsigned *placement)
+{
+	struct zwl_object *cover;
+	struct zwl_object *docked;
+	float home;
+
+	/* Only the glass look's window mode, and not over the login or lock screen. */
+	if (!server->glass || !server->windowed || server->greeter || server->locked)
+		return 0;
+
+	/* Not over a fullscreen window. */
+	cover = bar_cover(server);
+	if (cover != NULL)
+		return 0;
+
+	/* Not with App Home, or Wiseview. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f || server->home_to > 0.0f)
+		return 0;
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+		return 0;
+
+	/* In the middle with a docked window. */
+	docked = docked_window(server);
+	*placement = ZWL_SWITCHER_BAR;
+	if (docked != NULL)
+		*placement = ZWL_SWITCHER_CENTER;
+
+	/* Succeeded: it may. */
+	return 1;
+}
+
+/*
  * Draws an application's mark at a size (the bar's icons): the picture in
  * the application's colour, or a blue square with a letter.
  */
@@ -5757,12 +5810,21 @@ zwl_glass_gesture(
 {
 	const char *name;
 	const char *phase_name;
+	int switching;
 	int may;
 
 	/* Logged, for the tests. */
 	name = gesture_name(gesture);
 	phase_name = gesture_phase_name(phase);
 	printf("ZWL GESTURE kind=%s phase=%s travel_um=%d speed=%d\n", name, phase_name, travel_um, speed);
+
+	/* While the switcher is on, a tap of three fingers moves it on, and nothing else starts (switcher-shell.c). */
+	switching = zwl_switch_on(server);
+	if (switching) {
+		if (gesture == ZWL_TOUCHPAD_GESTURE_TAP3)
+			zwl_switch_step(server, 1, "tap3");
+		return;
+	}
 
 	/* A Wiseview gesture under way goes on. */
 	if (server->wiseview_pad) {
@@ -5804,7 +5866,8 @@ zwl_glass_gesture(
 		gesture_desktop(server, gesture, phase, travel_um, speed);
 		break;
 	default:
-		/* TAP3: the switcher comes with ws142-p005. */
+		/* TAP3: the switcher (D1). */
+		(void)zwl_switch_open(server, ZWL_SWITCHER_VIA_PAD);
 		break;
 	}
 }
