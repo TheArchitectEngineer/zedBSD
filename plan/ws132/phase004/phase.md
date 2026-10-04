@@ -115,3 +115,10 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 ## 状態
 
 - 2026-10-05: 設計を書いた（この file）。Q-1〜Q-4 の答えの後に kernel・protocol を実装する。答えに依らない volumed の核（検出・一覧・socket・権限）は先に進める。
+
+## Q1 の決定（2026-10-05 未明、夜の自律の間。ユーザーが起きたら朝の報告で示す）
+
+- Q-1（kernel と UAPI）: **許可**。MNT_NOEXEC・ST_NOEXEC・struct mount_args の version 2（owner_uid・owner_gid・flags、version 1 も受ける）、sys_mount_call・struct mount・exec の EACCES・FAT の持ち主の option。D3 の決定（nosuid・noexec で mount、利用者が使える）に要る。HAL は変えない。kernel は vmunix の link まで、host の試験を足す。
+- Q-2（protocol）: **kl_system_manager_v1 の version 5** を ws132 の devices（mount の request と new の bit）に。WS113 の displays（D-PROTO）は version 6 に繰り下げる（Q1 が WS113 の契約に記録）。
+- Q-3（WS156 の通知の代わり）: **案 A**（system bar の通知の領域に媒体の icon、new の volume がある間に出して 3 回点滅、click で `files --devices`、Files は Devices の group と Today の icon を 3 回点滅、mount か抜去で消える）。D3 の「通知をクリックすると Files の Devices と Today に icon が出て点滅」に最も近い。WS156 の通知ができたら通知に置き換える候補（朝にユーザーに確かめる）。
+- Q-4（共有の file）: **許可**。rc.conf に volumed（enabled・optional）、init の services と Makefile に service（networkd と同じ形）。
