@@ -27,6 +27,8 @@ Settings に Languages の頁を足して、使う IME を「日本語」「SKK�
 
 ## 範囲（p001 で設計して確定）
 
+0. Languages の頁には UI の言語の選択も置く（[WS158](../ws158/ws.md) の翻訳、2026-10-05 ユーザー「SettingsのLanguagesタブで選択」）。
+
 1. **Settings の Languages の頁**（新しい頁。pages.c の表・glyph・検索の語）: IME の選択（日本語・SKK・なし）。設定は kl_settings_* → compositor の desktop.conf（Guardrail の「app と設定」）。選択を変えると login の session の中ですぐ切り替わる（再 login 不要かは設計で決める）。
 2. **IME の切り替えの仕組み**: compositor の input method（zwp_input_method_v2 の側、keiland-ime の process）が選んだ IME を起動・切り替える。今の IME の on・off の key・右上の IME の status（A／あ、ws095-p005）との関係、SKK の mode の表示（▽・▼・かな・カナ・英数）。
 3. **SKK の IME の新しい実装**: SKK の操作の状態機械、送り仮名、変換の候補の選択（space・x・候補の窓）、辞書の登録（再帰の登録の mode）、利用者の辞書の保存（今の日本語の IME の辞書の保存（BUG-143、入力が無い 3 分の後）と同じ考え）。
