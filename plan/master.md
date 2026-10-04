@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **BUG-171「Opaque」の意味（2026-10-05 未明、P1）**: 窓の透明度を 100% にしても、Keiland の app の glass の panel（Settings・Files の sidebar）と title bar は frosted glass のままなので壁紙が見える（UAT の log には変更後の applied 100 も無く、PS/2 の touchpad の drag の release が届かなかった可能性もある）。(a) 100% では glass の panel と title bar も不透明に（既定が 100 なので既定の見た目から frosted glass が消える）、(b) 100% は窓の中身だけ、Settings の表示を「Window contents opaque」などに、(c) Appearance に「Glass effect」の on/off を別に足す。
 - **BUG-190 の受け入れの規則（2026-10-05 未明、P1）**: native の touchpad（WS159）では tap は離した時の click、押し込みは押した瞬間の押下で、どの UI でも tap は click になる（音量の slider も tap 1 回で変わる）。「触れた瞬間（離す前）を押下にする」は touchpad では全ての移動が drag になるのでできない。この規則で受け入れ、5330 の UAT（ws159-p005 の 2.2・2.3・2.6、音量の slider の tap）で確かめた後に resolved にしてよいか。
 - **ws132-p004 の Q1 の決定の確認（2026-10-05 未明、ユーザーへ報告）**: WS156 の通知が無い間の代わりに system bar に媒体の icon（3 回点滅、click で Files の Devices）を出す案 A を Q1 が選んだ。kernel に noexec と FAT の持ち主の mount の option（UAPI の mount.h の追加）を許可した。
 - **WS160 の判断 D1〜D4（2026-10-05 未明、P1 の ws160-p001、案で実装済み）**: D1 password の最短 8 文字（kei の今の "kei" は残る、利用者が新しく選ぶ時は 8 以上）。D2 sudoers の file は無く、wheel は全部できる。D3 sudo は認証を記憶せず毎回聞く。D4 wheel は gid 0 のまま（kei は group 0 の file を読める、shadow は 0400 なので読めない）。あわせて P1 が見つけた既存の security の穴 2 つ（PT_ATTACH に権限の確かめが無く誰でも root の daemon を trace できた、trace 中の process が set-id の image を exec すると昇格したまま）を直した。kei を base の group で wheel に入れた（全部の image）。
