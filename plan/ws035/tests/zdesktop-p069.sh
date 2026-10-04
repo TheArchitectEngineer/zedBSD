@@ -54,7 +54,9 @@ pointer move 23 17 sleep 300 down sleep 60 up sleep 1200
 pointer move 700 500 sleep 400
 check "$out/home.png" >/dev/null
 expect_log 'ZWL HOME open via=launcher'
-expect_log 'ZWL HOME opened apps=7'
+# The number of tiles depends on the programs the image has (App Home leaves out an entry whose program is not
+# there), so only the opening is checked (2026-10-04: System Monitor joined the default list).
+expect_log 'ZWL HOME opened apps='
 
 # 2. The Terminal icon starts the terminal and closes Home.
 set -- $(icon Terminal)
