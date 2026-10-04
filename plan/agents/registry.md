@@ -97,3 +97,5 @@
 2026-10-04 Q1: P2 generation7 は 9bea552（統合 63c5d7d）で終了（WS135・ws127-p009・BUG-053・WS131 p009〜p011）。P2 generation8 を q660（ws134-p004）で起動。WS131 p012 はユーザーの判断待ち（標準 app のベータ1 と app の移行の順）。
 
 2026-10-04 Q1: P2 generation8 は終了（ws134-p004〜p013、WS136 p003、BUG-135・163・164 の直し、全て統合済み）。P2 generation9（phase-runner-mid）を q666（ws127-p003・p006、ws128-p005・p006）で起動。
+
+2026-10-04 Q1: P2 generation9 は終了（q666〜q669: Files・Image Viewer・Terminal のベータ1、ws129-p002 の license の一覧と G1〜G4、i915-old の削除、remacs を userland/base/emacs に zlib で取り込み）。P2 generation10（phase-runner）を q670（ws099-p030、タイトルバーのドラッグ）で起動。
