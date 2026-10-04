@@ -668,9 +668,9 @@ struct se_look {
  * sound.c): live when the desktop offers the sound (Keiland's system
  * extension), what the compositor last reported of the sound service, the
  * volume and mute shown (the service's, or the one being set), a drag in
- * progress, a volume or a feedback sound held back (at most one every 50
- * and 250 milliseconds while dragging, as the system bar does), and the
- * slider's place in the last frame.
+ * progress, a volume held back (at most one every 50 milliseconds while
+ * dragging, as the system bar does; the feedback sound plays only when a
+ * change is final, BUG-170), and the slider's place in the last frame.
  */
 struct se_sound {
 	int live;
@@ -679,9 +679,7 @@ struct se_sound {
 	int muted;
 	int dragging;
 	int send_waiting;
-	int feedback_waiting;
 	uint64_t sent_at;
-	uint64_t feedback_at;
 	struct fm_rect slider;
 };
 

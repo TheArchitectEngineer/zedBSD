@@ -38,7 +38,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-167](bugs/BUG-167.md) | タッチパッドの押し込み（物理のクリック）が認識されない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS081。BUG-165 の後に再確認（[ticket](bugs/BUG-167.md)） |
 | [BUG-168](bugs/BUG-168.md) | 起動の後に挿した USB の有線 LAN が up しない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS033（networkd の hotplug）（[ticket](bugs/BUG-168.md)） |
 | [BUG-169](bugs/BUG-169.md) | ue0 を抜くと Ethernet のメニューに wlan0 が出る | reproduced（実機） / tracking | UAT 2026-10-04 | WS131 か WS033（[ticket](bugs/BUG-169.md)） |
-| [BUG-170](bugs/BUG-170.md) | 音量の slider のドラッグでしばらくフリーズ（system bar・Settings） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | WS100・WS089。確認の音は離した時に 1 回（[ticket](bugs/BUG-170.md)） |
+| [BUG-170](bugs/BUG-170.md) | 音量の slider のドラッグでしばらくフリーズ（system bar・Settings） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | [ws100-p013](ws100/phase013/phase.md)（q683）: 途中の確認の音を無くし離した時に 1 回（実装済み）。QEMU は T1 待ち、実機は次の UAT。根は未確定 |
 | [BUG-171](bugs/BUG-171.md) | 窓の透明度を opaque にしても不透明にならない | reproduced（実機） / tracking | UAT 2026-10-04 | WS089・compositor（[ticket](bugs/BUG-171.md)） |
 | [BUG-172](bugs/BUG-172.md) | key のリピートが安定しない | reproduced（実機、観察） / tracking | UAT 2026-10-04 | WS081・WS139 の P-02（[ticket](bugs/BUG-172.md)） |
 | [BUG-173](bugs/BUG-173.md) | sh の履歴の長い日本語の行で表示が崩れ prompt が消える | reproduced（実機） / tracking | UAT 2026-10-04 | sh の行の編集の全角の幅。host で再現可（[ticket](bugs/BUG-173.md)） |

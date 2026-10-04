@@ -15,9 +15,10 @@
  * A click on the icon opens the popup; a press or drag on the slider sets
  * the volume, a press on the mute row switches it; a click elsewhere, or
  * Esc, closes it.  The wheel over the icon (or the open popup) moves the
- * volume by VOLUME_WHEEL_STEP a notch.  Each change plays audiod's short
- * feedback sound (a drag at most every VOLUME_FEEDBACK_MS, and once at its
- * end).
+ * volume by VOLUME_WHEEL_STEP a notch.  A wheel notch, the end of a drag
+ * and switching mute off each play audiod's short feedback sound once; the
+ * steps of a drag play none (BUG-170, 2026-10-04 user: once, when the slider
+ * is let go).
  *
  * During a session audiod alone holds the volume: the system bar and
  * Settings' Sound page both set it there and follow what it reports, and
@@ -71,9 +72,8 @@
 /* The wheel: percent a notch (zwl_seat_axis counts notches, as evdev's wheel does). */
 #define VOLUME_WHEEL_STEP	5
 
-/* How often a drag sends the volume, and how often it plays the feedback sound, in milliseconds. */
+/* How often a drag sends the volume, in milliseconds. */
 #define VOLUME_SEND_MS		50U
-#define VOLUME_FEEDBACK_MS	250U
 
 /* The preferences' keys. */
 #define VOLUME_KEY_VOLUME	"sound.volume"
@@ -84,8 +84,8 @@
  * on the desktop's first tick), what it last reported, the volume shown
  * (while a drag or a wheel leads, ahead of audiod's report), whether the
  * popup is open and where, where the icon was drawn, whether the slider
- * is dragged, the times of the last send and feedback, and what is
- * waiting to be sent or played.
+ * is dragged, the time of the last send, and whether a volume is waiting
+ * to be sent.
  *
  * restored is set once the preferences' volume has been applied (on the
  * first connection to audiod); an audiod reached again later gets the
@@ -110,9 +110,7 @@ struct volume_view {
 	unsigned icon_logged;
 	unsigned dragging;
 	uint64_t sent_ms;
-	uint64_t feedback_ms;
 	unsigned send_waiting;
-	unsigned feedback_waiting;
 	unsigned applied;
 	unsigned restored;
 	unsigned kept;
@@ -140,9 +138,8 @@ static int32_t volume_mute_top(void);
 static void volume_draw_switch(struct zwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on, float fade);
 
 /*
- * Reads what audiod has reported since the last tick, sends a volume a drag
- * held back, and plays a feedback sound held back.  The link is made on
- * the desktop's first tick.
+ * Reads what audiod has reported since the last tick, and sends a volume a
+ * drag held back.  The link is made on the desktop's first tick.
  */
 void
 zwl_volume_tick(
@@ -189,16 +186,10 @@ zwl_volume_tick(
 		}
 	}
 
-	/* A volume or a sound held back. */
+	/* A volume a drag held back. */
 	now = zwl_milliseconds();
 	if (volume_view.send_waiting && now - volume_view.sent_ms >= VOLUME_SEND_MS)
 		volume_send(server);
-	if (volume_view.feedback_waiting && now - volume_view.feedback_ms >= VOLUME_FEEDBACK_MS) {
-		volume_view.feedback_waiting = 0U;
-		volume_view.feedback_ms = now;
-		(void)kl_backend_audio_feedback(volume_view.audio);
-		printf("ZWL VOLUME feedback at_ms=%llu via=held\n", (unsigned long long)now);
-	}
 }
 
 /*
@@ -780,10 +771,9 @@ volume_close_popup(
 
 /*
  * Shows and sends a volume: a drag's steps are sent at most every
- * VOLUME_SEND_MS and play a sound at most every VOLUME_FEEDBACK_MS; a final
- * one (a wheel notch, the end of a drag, mute) is sent now and plays now,
- * except that switching mute on plays nothing.  The change is kept a moment
- * after it settles.
+ * VOLUME_SEND_MS and play no sound; a final one (a wheel notch, the end of a
+ * drag, mute) is sent now and plays the feedback sound once, except that
+ * switching mute on plays nothing (BUG-170).
  */
 static void
 volume_set(
@@ -811,17 +801,13 @@ volume_set(
 	if (final || now - volume_view.sent_ms >= VOLUME_SEND_MS)
 		volume_send(server);
 
-	/* The sound: now when final (not for muting), during a drag at most every VOLUME_FEEDBACK_MS. */
-	if (!muted) {
-		if (final || now - volume_view.feedback_ms >= VOLUME_FEEDBACK_MS) {
-			volume_view.feedback_waiting = 0U;
-			volume_view.feedback_ms = now;
-			(void)kl_backend_audio_feedback(volume_view.audio);
-			printf("ZWL VOLUME feedback at_ms=%llu via=%s\n", (unsigned long long)now, via);
-		} else {
-			volume_view.feedback_waiting = 1U;
-		}
-	}
+	/* A drag's steps and switching mute on play no sound. */
+	if (!final || muted)
+		return;
+
+	/* The sound, once for the final volume, at that volume. */
+	(void)kl_backend_audio_feedback(volume_view.audio);
+	printf("ZWL VOLUME feedback at_ms=%llu via=%s\n", (unsigned long long)now, via);
 }
 
 /* Sends the volume shown to audiod. */
