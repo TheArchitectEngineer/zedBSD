@@ -71,7 +71,11 @@ struct intel_ax211_boot_received_event {
  * receive_event must return no later than deadline_us.  publish_pnvm
  * synchronizes the PNVM table and sections before ringing the PNVM doorbell.
  * interrupt_drain masks, disestablishes, and drains the sole MSI-X handler
- * before returning success.
+ * before returning success; it leaves PCI bus mastering on.
+ * bus_master_disable turns PCI bus mastering off.  It is called only after
+ * a successful controller reset (STOP_MASTER and SW_RESET), because turning
+ * it off while the firmware still writes RX DMA hangs the integrated CNVi
+ * platform (BUG-158).
  */
 struct intel_ax211_boot_ops {
 	int (*receive_epoch_begin)(void *argument, uint32_t generation);
@@ -88,6 +92,7 @@ struct intel_ax211_boot_ops {
 	int (*post_alive)(void *argument,
 			  const struct intel_ax211_protocol_alive *alive);
 	int (*interrupt_drain)(void *argument);
+	int (*bus_master_disable)(void *argument);
 	int (*clock_us)(void *argument, uint64_t *time_us);
 };
 

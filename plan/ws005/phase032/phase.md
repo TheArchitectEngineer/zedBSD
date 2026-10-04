@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws005-p032 -->
 # ws005-p032: BUG-158 — panic を見える・残る形にし、AX211 の scan の失敗から off→on なしに戻る
 
-Status: in-progress（q684-i01、P3 generation8、2026-10-04。実装・host 試験済み。T1 の QEMU の試験と実機の UAT 待ち）
+Status: in-progress（q684-i01: 実装・T1-089 PASS、UAT 待ち。q684-i03（P3 generation9、2026-10-04）: P4 の原因の確定を受けた修正 (1)(2)(4) を実装・host 試験済み、5330 の AX211 passthrough の確認と UAT 待ち）
 Disposition: normal
 Parent: [WS005](../ws.md)
 Bug: [BUG-158](../../bugs/BUG-158.md)（解析は同 ticket の「解析（2026-10-04、P3 / q684-i01）」と「割り込みの観点」）
-Queue: q684（2026-10-04 user「BUG-158は…実装はOpus 5.5 Mid,テストはT1です。」「バグ修正はP3に移管します。」）
+Queue: q684（2026-10-04 user「BUG-158は…実装はOpus 5.5 Mid,テストはT1です。」「バグ修正はP3に移管します。」）。q684-i03: 2026-10-04 user「P4には、原因確定後、どのソースコードのどこを直すかまで計画してもらい、チケットに記録した上で、実装はOpus 5.5 Midの通常のバグ修正サブエージェントに回して、順番が回ってきたときに修正しましょう。」
 
 ## 範囲
 
@@ -102,3 +102,54 @@ thread が `lifecycle_lock` を持って firmware を起こす間、network work
 - フリーズの直接の原因は未確定（P4 の q684-i02 の gdbstub と、次の UAT の (B)・`kernel.log`）。
 - ticket の「割り込みの観点」の案（ISR で cause の claim、RF_KILL の扱い）は未実装（原因が決まるまで後）。
 - QEMU（T1）と実機（UAT）の確認が終わるまで、この Phase は cleared にしない。
+
+## q684-i03: 原因の確定を受けた修正（2026-10-04、P3 generation9）
+
+原因（[BUG-158](../../bugs/BUG-158.md) の P4 の節、5330 の passthrough と gdbstub）: 未接続の scan で firmware が assert（SW_ERROR）→ recovery の stop の
+`ax211_pci_interrupt_drain` が RX DMA の進行中に PCI の Bus Master Enable を落とし、PCH 内蔵の CNVi で platform ごと止まる。
+
+### 範囲
+
+ticket の「修正の計画」(1) 必須・(4) recovery の EIO・(2) 推奨（PCI 層の INTx Disable）。(3)（stop で MSI-X を解放しない）は計画で任意・別 Phase とされており、入れない。
+HAL（`include/hal/hal.h`・`src/hal/`）・toolchain は変えていない。PCI 層（`src/drivers/pci/pci.c`）の変更は Q1 の委任（起動の指示）。
+
+### 受け入れ
+
+- CI の kernel の build（AX211・i915 有効）が warning 0。
+- host: AX211 の boot・core 試験、新しい runtime-start の stop の table 試験、PCI の MSI 試験が PASS。style の変えた行の findings 0、`git diff --check` 空。
+- QEMU passthrough（5330、計画 (5)、Q1 経由）: 修正後の UAT 構成の image を profile 無しで 10 分放置し、host が落ちない、tracer に `ax211_pci_interrupt_drain returned`・
+  `drv_intel_ax211_mmio_stop returned eax=0x0` が出る、klog に `restarted after recovery attempt=1 error=0` が出て scan が再び回る、10 分後に全 vCPU が正常な待ち。
+- 実機（UAT）: WiFi 未接続のまま 10 分放置して固まらない。
+
+### 実装
+
+| 直し | file | 変更 |
+| --- | --- | --- |
+| (1) | `src/drivers/wifi/intel-ax211/intel-ax211-boot.h`・`intel-ax211-boot.c`・`intel-ax211-runtime-start.c` | boot ops に `bus_master_disable` を追加（ops の検査に NULL を足す）。runtime と boot の stop は drain → quiesce → `mmio_stop` が成功した後に `bus_master_disable`、その後に command の reset と DMA の release。drain/reset の失敗・master-disable の timeout の最初の stop・bus master off の失敗は bus master と DMA を残して STOP_REQUIRED（次の cleanup で reset → bus master off → release） |
+| (1) | `src/drivers/wifi/intel-ax211/intel-ax211.c` | `ax211_pci_interrupt_drain` から bus master off を外す。`ax211_pci_bus_master_disable` を足して `ax211_runtime_start_ops.boot` に登録。`ax211_pci_session_stop` の coordinator の居ない IRQ の drain（firmware は走っていない）は drain の後に bus master off を続ける（前と同じ）。DMA barrier の comment を「quiesce・STOP_MASTER・SW_RESET の後の bus master off」に書き直した。attach・detach（`release_resources`）・`quarantine`・bind の巻き戻しの bus master off は firmware 未起動か reset 後なので変えていない（`quarantine` は attach の失敗だけから呼ばれ、recovery の `quarantined` は flag だけ） |
+| (4) | `intel-ax211-runtime-start.c` | quiesce が `TRANSPORT_FAILED`（RX DMA は idle、command が残っていた。transport の quiesce でこの値を返すのはこの場合だけ）なら stop の失敗にしない。reset 後の `command_after_device_reset` が捨てる。run 6 の「global stop deferred error=5」を経ずに `session_stopped` になり、7e2225a の restart が働く |
+| (2) | `src/drivers/pci/pci.c` | `drv_pci_device_establish_irq` が MSI/MSI-X の成功の後に INTx Disable を立てる（前から立っていれば触らない、cookie の `intx_disable_set` に印）。`drv_pci_device_disestablish_irq_checked` は capability を戻した後に、その cookie が立てた bit だけを戻す。config の access の失敗は guard を飛ばすだけ |
+| 試験 | `plan/ws004/tests/intel-ax211-boot-test.c` | fake の `bus_master_disable`（trace `M`）。成功・部分失敗の unwind で `s` < `M` < `f`、drain/reset 失敗の stop で `M` が出ない、新しい `test_bus_master_after_reset`（bus master off の失敗で DMA を残し、cleanup で reset → `M` → release） |
+| 試験 | `plan/ws004/tests/intel-ax211-runtime-start-test.c`・`run-intel-ax211-runtime-start-test.sh`（新） | running の session を直接作り、stop と cleanup の trace の table 7 行（健全 `iqsMzf`、command の残り → OK、RX 非 idle → TRANSPORT だが `M` の後に release、drain 失敗・reset 失敗・master-disable の timeout → `iqs` で保持し cleanup で `iqsMzf`、bus master off の失敗 → `iqsM` で保持） |
+| 試験 | `plan/ws004/tests/pci-msi-test.c`・`run-pci-msi-test.sh`（新） | stale だった（hal_* の stub、kern_* の移行の後に link できない）ので kern_* に直した。MSI・MSI-X の establish で INTx Disable が立ち disestablish で戻る、前から立っていた bit は残る、を assert |
+
+7e2225a（recovery → restart）との整合: restart の `ax211_pci_open_locked` → `ax211_pci_transport_bind` が bus master を立て直し、stop は reset の後に落とすので、
+restart ごとの stop も同じ安全な順になる。(4) で recovery の stop が OK で終わるので、restart は遅れた close を待たずに要求される。
+
+他の driver への影響（(2)、読み）: hda（MSI|INTX）・nvme（MSIX|MSI）・xhci（MSIX|MSI|INTX）・venus（MSIX|INTX）は全部 1 vector。INTx に fallback した時は
+INTX cookie なので bit に触らない。command register を書く他の箇所（`restore_enable_state`・`pci_command_quiesce`・BAR の割り当て）は IO/MEM/MASTER の外の bit を
+保つので INTx Disable を壊さない。
+
+### 検証（2026-10-04、P3）
+
+- build: `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/p3-q684/ci build/p3-q684/ci/vmunix` → exit 0、`warning:` 0、`kernel include check: PASS`、`amd64 vmunix check: PASS`。
+- host: `sh plan/ws004/tests/run-intel-ax211-boot-test.sh` → PASS（ordinary・ASan/UBSan・analyzer・amd64/i386 syntax）。`run-intel-ax211-core-test.sh` → PASS。
+  `run-intel-ax211-runtime-start-test.sh` → `intel ax211 runtime stop: ordinary, ASan/UBSan PASS`。`run-pci-msi-test.sh` → `pci msi: ordinary, ASan/UBSan PASS`。
+- style: `python3 plan/ws073/tests/style-diff.py`（変えた C の file）→ findings on changed lines: 0。`git diff --check` 空。
+- QEMU passthrough: 未実施（Q1 に依頼）。実機: 未実施（UAT）。
+
+### 残り
+
+- (3) stop で MSI-X を解放しない（Linux と同じ形）は未実装（任意、別 Phase の候補）。
+- firmware の SW_ERROR（hw cause 0x02000000）が起動から約 64 s で毎回起きる件は ticket の残課題のまま（(1) の後は recovery → restart で戻る見込み、約 1 分ごとに WiFi が途切れ得る）。
+- `pci-shared-intx-test.c`・`pci-hcd-irq-teardown-test.c` も hal_* の stub のままで今の tree では link できない（この Phase で触っていない。直すなら別に）。

@@ -42,7 +42,8 @@ enum test_fail_stage {
 	TEST_FAIL_PNVM_PUBLISH = 8,
 	TEST_FAIL_POST_ALIVE = 9,
 	TEST_FAIL_DRAIN = 10,
-	TEST_FAIL_STOP = 11
+	TEST_FAIL_STOP = 11,
+	TEST_FAIL_BUS_MASTER = 12
 };
 
 struct test_event {
@@ -126,12 +127,14 @@ static int test_receive_event(void *argument, uint64_t deadline_us,
 static int test_publish_pnvm(void *argument, struct intel_ax211_dma_resources *dma);
 static int test_post_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
 static int test_interrupt_drain(void *argument);
+static int test_bus_master_disable(void *argument);
 static int test_clock_us(void *argument, uint64_t *time_us);
 static void test_success(void);
 static void test_malformed_and_timeout(void);
 static void test_stale_and_duplicate(void);
 static void test_partial_failure_unwind(void);
 static void test_stop_retry_retains_dma(void);
+static void test_bus_master_after_reset(void);
 static void test_command_duplicate(void);
 static void test_command_timeout(void);
 static void test_command_poison_reset(void);
@@ -744,6 +747,7 @@ test_fixture_init(
 	fixture->ops.publish_pnvm = test_publish_pnvm;
 	fixture->ops.post_alive = test_post_alive;
 	fixture->ops.interrupt_drain = test_interrupt_drain;
+	fixture->ops.bus_master_disable = test_bus_master_disable;
 	fixture->ops.clock_us = test_clock_us;
 	result = drv_intel_ax211_boot_init(&fixture->boot, &fixture->ops, fixture,
 	    fixture->dma_device, &fixture->mmio, &fixture->transport, 0x0370U,
@@ -1088,6 +1092,20 @@ test_interrupt_drain(
 	return 0;
 }
 
+/* Records the bus-master disable which must follow the reset (BUG-158). */
+static int
+test_bus_master_disable(
+	void *argument)
+{
+	struct test_fixture *fixture;
+
+	fixture = argument;
+	test_trace(fixture, 'M');
+	if (fixture->fail_stage == TEST_FAIL_BUS_MASTER)
+		return -1;
+	return 0;
+}
+
 static int
 test_clock_us(
 	void *argument,
@@ -1111,6 +1129,7 @@ test_success(void)
 	size_t pnvm_prepare;
 	size_t drain;
 	size_t stop;
+	size_t bus_master;
 	size_t dma_release;
 	int result;
 
@@ -1146,11 +1165,14 @@ test_success(void)
 	file_release = test_trace_find(&fixture, 'F', 0U);
 	drain = test_trace_find(&fixture, 'i', 0U);
 	stop = test_trace_find(&fixture, 's', drain + 1U);
-	dma_release = test_trace_find(&fixture, 'f', stop + 1U);
+	bus_master = test_trace_find(&fixture, 'M', stop + 1U);
+	dma_release = test_trace_find(&fixture, 'f', bus_master + 1U);
 	assert(boot_release < pnvm_prepare);
 	assert(pnvm_prepare < file_release);
 	assert(drain < stop);
-	assert(stop < dma_release);
+	assert(stop < bus_master);
+	assert(bus_master < dma_release);
+	assert(strchr(fixture.trace, 'M') == fixture.trace + bus_master);
 }
 
 static void
@@ -1216,6 +1238,7 @@ test_partial_failure_unwind(void)
 	size_t failure_index;
 	size_t drain;
 	size_t stop;
+	size_t bus_master;
 	size_t release;
 	int result;
 
@@ -1238,9 +1261,11 @@ test_partial_failure_unwind(void)
 		if (failures[failure_index] > TEST_FAIL_BIND) {
 			drain = test_trace_find(&fixture, 'i', 0U);
 			stop = test_trace_find(&fixture, 's', drain + 1U);
-			release = test_trace_find(&fixture, 'f', stop + 1U);
+			bus_master = test_trace_find(&fixture, 'M', stop + 1U);
+			release = test_trace_find(&fixture, 'f', bus_master + 1U);
 			assert(drain < stop);
-			assert(stop < release);
+			assert(stop < bus_master);
+			assert(bus_master < release);
 		}
 	}
 }
@@ -1260,6 +1285,7 @@ test_stop_retry_retains_dma(void)
 	assert(fixture.boot.state == INTEL_AX211_BOOT_STATE_STOP_REQUIRED);
 	assert(fixture.boot.dma_prepared);
 	assert(!fixture.dma_released);
+	assert(strchr(fixture.trace, 'M') == NULL);
 	fixture.fail_stage = TEST_FAIL_NONE;
 	result = drv_intel_ax211_boot_cleanup(&fixture.boot);
 	assert(result == INTEL_AX211_BOOT_OK);
@@ -1274,10 +1300,48 @@ test_stop_retry_retains_dma(void)
 	assert(result == INTEL_AX211_BOOT_STOP_REQUIRED);
 	assert(fixture.boot.dma_prepared);
 	assert(!fixture.dma_released);
+	assert(strchr(fixture.trace, 'M') == NULL);
 	fixture.fail_stage = TEST_FAIL_NONE;
 	result = drv_intel_ax211_boot_cleanup(&fixture.boot);
 	assert(result == INTEL_AX211_BOOT_OK);
 	assert(fixture.dma_released);
+}
+
+/*
+ * Bus mastering goes off only after a successful reset, and a refused
+ * bus-master disable keeps the DMA for the retry (BUG-158).
+ */
+static void
+test_bus_master_after_reset(void)
+{
+	struct intel_ax211_protocol_nvm nvm;
+	struct test_fixture fixture;
+	size_t stop;
+	size_t bus_master;
+	size_t release;
+	int result;
+
+	test_fixture_init(&fixture);
+	test_success_events(&fixture);
+	fixture.fail_stage = TEST_FAIL_BUS_MASTER;
+	result = drv_intel_ax211_boot_run(&fixture.boot, &nvm);
+	assert(result == INTEL_AX211_BOOT_STOP_REQUIRED);
+	assert(fixture.boot.state == INTEL_AX211_BOOT_STATE_STOP_REQUIRED);
+	assert(fixture.boot.dma_prepared);
+	assert(!fixture.dma_released);
+	stop = test_trace_find(&fixture, 's', 0U);
+	bus_master = test_trace_find(&fixture, 'M', stop + 1U);
+	assert(stop < bus_master);
+
+	fixture.fail_stage = TEST_FAIL_NONE;
+	result = drv_intel_ax211_boot_cleanup(&fixture.boot);
+	assert(result == INTEL_AX211_BOOT_OK);
+	assert(fixture.dma_released);
+	stop = test_trace_find(&fixture, 's', bus_master + 1U);
+	bus_master = test_trace_find(&fixture, 'M', stop + 1U);
+	release = test_trace_find(&fixture, 'f', bus_master + 1U);
+	assert(stop < bus_master);
+	assert(bus_master < release);
 }
 
 static void
@@ -1519,6 +1583,7 @@ main(void)
 	test_stale_and_duplicate();
 	test_partial_failure_unwind();
 	test_stop_retry_retains_dma();
+	test_bus_master_after_reset();
 	test_command_duplicate();
 	test_command_timeout();
 	test_command_poison_reset();

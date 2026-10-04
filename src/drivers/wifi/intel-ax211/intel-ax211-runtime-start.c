@@ -348,6 +348,10 @@ ax211_runtime_start_ops_valid(
 		return 0;
 	}
 
+	/* Refuses ops which cannot end the DMA ownership after a reset. */
+	if (ops->boot.bus_master_disable == NULL)
+		return 0;
+
 	/* Reports operation failure. */
 	return 1;
 }
@@ -536,6 +540,7 @@ ax211_runtime_start_stop_and_release(
 	uint32_t retired_generation;
 	int command_result;
 	int after_reset_result;
+	int bus_master_result;
 	int drain_result;
 	int nic_unlock_result;
 	int quiesce_result;
@@ -605,6 +610,12 @@ ax211_runtime_start_stop_and_release(
 					      : INTEL_AX211_RUNTIME_START_IO;
 	}
 
+	/*
+	 * Silences the interrupt handler and stops RX DMA on the device.  Bus
+	 * mastering stays on here: the firmware may still be writing scan
+	 * frames, and turning it off under that DMA hangs the integrated CNVi
+	 * platform (BUG-158).
+	 */
 	drain_result = session->ops->boot.interrupt_drain(session->argument);
 	quiesce_result = drv_intel_ax211_transport_quiesce(session->transport);
 
@@ -614,15 +625,15 @@ ax211_runtime_start_stop_and_release(
 	if (drain_result != 0 || stop_result != INTEL_AX211_MMIO_OK) {
 		session->state = INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED;
 
-		/* Returns the computed result. */
+		/* Failed: the DMA and bus mastering are retained for the retry. */
 		return INTEL_AX211_RUNTIME_START_STOP_REQUIRED;
 	}
 
 	/*
 	 * Without the master-disable indication, a DMA write already issued may
 	 * still land after the reset.  The first such stop keeps every DMA page
-	 * and asks for a retry; bus mastering is already off, so by the retry,
-	 * after another reset, nothing can be in flight (BUG-158).
+	 * and bus mastering and asks for a retry; by the retry, after another
+	 * reset, nothing can be in flight (BUG-158).
 	 */
 	if (session->mmio->master_disable_timed_out &&
 	    !session->dma_release_deferred) {
@@ -633,8 +644,30 @@ ax211_runtime_start_stop_and_release(
 		return INTEL_AX211_RUNTIME_START_STOP_REQUIRED;
 	}
 
+	/*
+	 * Ends the device's DMA ownership now that the reset has stopped it.
+	 * This is the barrier the DMA release below relies on.
+	 */
+	bus_master_result = session->ops->boot.bus_master_disable(
+		session->argument);
+	if (bus_master_result != 0) {
+		session->state = INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED;
+
+		/* Failed: the DMA is retained until bus mastering is off. */
+		return INTEL_AX211_RUNTIME_START_STOP_REQUIRED;
+	}
+
 	/* This stop frees the DMA, deferred before or not. */
 	session->dma_release_deferred = 0U;
+
+	/*
+	 * A command still outstanding when the stop began is not a failure of
+	 * the stop: RX DMA went idle and the reset made every doorbell
+	 * unobservable, so the command reset below retires it.  Treating it as
+	 * a failure left the recovery stop reporting EIO (BUG-158).
+	 */
+	if (quiesce_result == INTEL_AX211_TRANSPORT_FAILED)
+		quiesce_result = INTEL_AX211_TRANSPORT_OK;
 
 	after_reset_result =
 		drv_intel_ax211_transport_command_after_device_reset(

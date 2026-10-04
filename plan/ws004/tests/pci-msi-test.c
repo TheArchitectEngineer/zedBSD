@@ -1,5 +1,8 @@
 #include <drivers/pci/pci.h>
-#include <hal/hal.h>
+#include <kern/irq.h>
+#include <kern/device-io.h>
+#include <kern/kmem.h>
+#include <kern/klog.h>
 
 #include <assert.h>
 #include <errno.h>
@@ -7,44 +10,59 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The PCI command register's INTx Disable bit (BUG-158). */
+#define TEST_PCI_COMMAND_INTX_DISABLE 0x0400U
+
 static uint8_t config[4096];
 static uint32_t msix_table[4];
 static int registered_irq = -1;
 static int unregistered_irq = -1;
 static char registered_source[17];
 
-void *hal_malloc(size_t size) { return malloc(size); }
-void hal_free(void *pointer) { free(pointer); }
-int hal_printf(const char *format, ...) { (void)format; return 0; }
-bool hal_irq_disable(void) { return true; }
-void hal_irq_enable(void) { }
-void hal_irq_mask(int irq) { (void)irq; }
-void hal_irq_unmask(int irq) { (void)irq; }
-void hal_irq_send_eoi(hal_irq_ack_t acknowledge) { (void)acknowledge; }
-void hal_io_mb(void) { }
-void hal_io_rmb(void) { }
-int hal_irq_set_handler(int irq, hal_irq_handler_t handler, void *argument)
-{ (void)irq; (void)handler; (void)argument; return HAL_OK; }
+void *kern_malloc(size_t size) { return malloc(size); }
+void *kern_calloc(size_t count, size_t size) { return calloc(count, size); }
+void kern_free(void *pointer) { free(pointer); }
+void kern_logf(const char *format, ...) { (void)format; }
+bool kern_irq_disable(void) { return true; }
+void kern_irq_enable(void) { }
+void kern_irq_mask(int irq) { (void)irq; }
+void kern_irq_unmask(int irq) { (void)irq; }
+void kern_irq_send_eoi(kern_irq_ack_t acknowledge) { (void)acknowledge; }
+void kern_io_barrier(void) { }
+void kern_io_read_barrier(void) { }
+int kern_irq_register(int irq, kern_irq_handler_t handler, void *argument)
+{ (void)irq; (void)handler; (void)argument; return 0; }
+int kern_irq_unregister(int irq, kern_irq_handler_t handler, void *argument)
+{ (void)irq; (void)handler; (void)argument; return 0; }
 
 int
-hal_irq_register_msi(const char *source, hal_irq_handler_t handler,
-	void *argument, int *irq, paddr_t *address, uint32_t *event)
+kern_irq_register_msi(const char *source, kern_irq_handler_t handler,
+	void *argument, int *irq, uint64_t *address, uint32_t *event)
 {
 	(void)handler;
 	(void)argument;
 	memcpy(registered_source, source, 17);
 	registered_irq = 16;
 	*irq = registered_irq;
-	*address = (paddr_t)0xfee00000U;
+	*address = 0xfee00000U;
 	*event = 0xd0U;
-	return HAL_OK;
+	return 0;
 }
 
 int
-hal_irq_unregister_msi(int irq)
+kern_irq_unregister_msi(int irq)
 {
 	unregistered_irq = irq;
-	return HAL_OK;
+	return 0;
+}
+
+static uint16_t
+command_read(void)
+{
+	uint16_t command;
+
+	memcpy(&command, config + 0x04, sizeof(command));
+	return command;
 }
 
 static int
@@ -176,7 +194,9 @@ main(void)
 	assert((value & 0xffffU) == 0xd0U);
 	assert((config[0x52] & 1U) != 0);
 	assert((config[0x52] & 0x70U) == 0);
+	assert((command_read() & TEST_PCI_COMMAND_INTX_DISABLE) != 0);
 	drv_pci_device_disestablish_irq(device, cookie);
+	assert((command_read() & TEST_PCI_COMMAND_INTX_DISABLE) == 0);
 	assert(unregistered_irq == registered_irq);
 	memcpy(&value, config + 0x54, sizeof(value));
 	assert(value == 0U);
@@ -203,12 +223,24 @@ main(void)
 	assert(msix_table[1] == 0);
 	assert(msix_table[2] == 0xd0U);
 	assert((msix_table[3] & 1U) == 0);
+	assert((command_read() & TEST_PCI_COMMAND_INTX_DISABLE) != 0);
 	drv_pci_device_disestablish_irq(device, cookie);
+	assert((command_read() & TEST_PCI_COMMAND_INTX_DISABLE) == 0);
 	assert(msix_table[0] == 0x11111111U);
 	assert(msix_table[1] == 0x22222222U);
 	assert(msix_table[2] == 0x33333333U);
 	assert(msix_table[3] == 0x44444444U);
 	memcpy(&value, config + 0x52, sizeof(uint16_t));
 	assert((value & 0xffffU) == 0x4000U);
+
+	/* An INTx Disable set before the message interrupt stays set. */
+	put16(0x04, (uint16_t)(command_read() | TEST_PCI_COMMAND_INTX_DISABLE));
+	assert(drv_pci_device_allocate_irqs(device, DRV_PCI_IRQ_ALLOW_MSIX,
+	    1, 1, &irq, &count) == 0);
+	assert(drv_pci_device_establish_irq(device, &irq, handler, NULL, "test",
+	    &cookie) == 0);
+	assert((command_read() & TEST_PCI_COMMAND_INTX_DISABLE) != 0);
+	drv_pci_device_disestablish_irq(device, cookie);
+	assert((command_read() & TEST_PCI_COMMAND_INTX_DISABLE) != 0);
 	return 0;
 }

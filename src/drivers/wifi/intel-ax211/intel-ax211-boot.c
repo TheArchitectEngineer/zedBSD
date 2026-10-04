@@ -303,6 +303,10 @@ ax211_boot_ops_valid(
 	if (ops->interrupt_drain == NULL || ops->clock_us == NULL)
 		return 0;
 
+	/* Refuses ops which cannot end the DMA ownership after a reset. */
+	if (ops->bus_master_disable == NULL)
+		return 0;
+
 	/* Reports operation failure. */
 	return 1;
 }
@@ -505,6 +509,7 @@ ax211_boot_stop_and_release(
 	struct intel_ax211_boot *boot)
 {
 	int after_reset_result;
+	int bus_master_result;
 	int drain_result;
 	int quiesce_result;
 	int stop_result;
@@ -563,12 +568,24 @@ ax211_boot_stop_and_release(
 	quiesce_result = drv_intel_ax211_transport_quiesce(boot->transport);
 	drain_result = boot->ops->interrupt_drain(boot->argument);
 
-	/* Handles the drain result condition. */
+	/* Resets the device, which stops its DMA; bus mastering is still on. */
 	stop_result = drv_intel_ax211_mmio_stop(boot->mmio);
 	if (drain_result != 0 || stop_result != INTEL_AX211_MMIO_OK) {
 		boot->state = INTEL_AX211_BOOT_STATE_STOP_REQUIRED;
 
-		/* Returns the computed result. */
+		/* Failed: the DMA and bus mastering are retained for the retry. */
+		return INTEL_AX211_BOOT_STOP_REQUIRED;
+	}
+
+	/*
+	 * Ends the device's DMA ownership only after the reset, never while the
+	 * firmware may still write DMA (BUG-158).
+	 */
+	bus_master_result = boot->ops->bus_master_disable(boot->argument);
+	if (bus_master_result != 0) {
+		boot->state = INTEL_AX211_BOOT_STATE_STOP_REQUIRED;
+
+		/* Failed: the DMA is retained until bus mastering is off. */
 		return INTEL_AX211_BOOT_STOP_REQUIRED;
 	}
 
