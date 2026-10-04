@@ -77,10 +77,10 @@
 /*
  * The embedded controller the driver found.
  *
- * drv_acpi_ec_ecdt() and drv_acpi_ec_attach() fill it; attached says
- * the address space handler is installed, and from_ecdt that the ECDT
- * installed it.  The ports are used and changed only under the
- * interpreter lock.
+ * drv_acpi_ec_ecdt() and drv_acpi_ec_attach() fill it; from_ecdt says
+ * the ECDT installed the address space handler, so that the attachment
+ * does not install it a second time.  The ports are used and changed only
+ * under the interpreter lock.
  */
 static struct {
 	struct drv_acpi_node *device;
@@ -89,7 +89,6 @@ static struct {
 	unsigned gpe;
 	uint8_t global_lock;
 	uint8_t has_gpe;
-	uint8_t attached;
 	uint8_t from_ecdt;
 } ec;
 
@@ -130,10 +129,15 @@ drv_acpi_ec_ecdt(
 	size_t index;
 	int error;
 
-	/* Refuses a table too short for its EC_ID, or one that is not the ECDT. */
+	/* Refuses a table too short for its EC_ID. */
 	if (ecdt == NULL || length < ECDT_EC_ID + 1U)
 		return EINVAL;
-	if (ecdt[0] != 'E' || ecdt[1] != 'C' || ecdt[2] != 'D' || ecdt[3] != 'T')
+
+	/* Refuses a table that is not the ECDT. */
+	if (ecdt[0] != 'E' ||
+	    ecdt[1] != 'C' ||
+	    ecdt[2] != 'D' ||
+	    ecdt[3] != 'T')
 		return EINVAL;
 
 	/* The ports must be system I/O ports. */
@@ -141,7 +145,12 @@ drv_acpi_ec_ecdt(
 	data = load_u64(ecdt + ECDT_EC_DATA + GAS_ADDRESS);
 	if (ecdt[ECDT_EC_CONTROL] != GAS_SPACE_SYSTEM_IO || ecdt[ECDT_EC_DATA] != GAS_SPACE_SYSTEM_IO)
 		return ENOTSUP;
-	if (control == 0 || data == 0 || control > 0xffffU || data > 0xffffU)
+
+	/* Refuses a port of zero or one beyond the 64 KiB space. */
+	if (control == 0 ||
+	    data == 0 ||
+	    control > 0xffffU ||
+	    data > 0xffffU)
 		return EINVAL;
 
 	/* The EC_ID must end within the table. */
@@ -172,15 +181,13 @@ drv_acpi_ec_ecdt(
 	}
 
 	/* Installs the address space; its _REG runs with the others. */
-	ec.attached = 1;
 	error = drv_acpi_region_install(DRV_ACPI_SPACE_EMBEDDED_CONTROL, ec_region, NULL);
 	if (error != 0) {
-		ec.attached = 0;
 		ec.from_ecdt = 0;
 		return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: AML reaches the EC's space before the namespace is initialized. */
 	drv_acpi_os_log("ACPI: EC from the ECDT at ports 0x%x/0x%x, GPE 0x%x\n", ec.data_port, ec.command_port, ec.gpe);
 	return 0;
 }
@@ -200,7 +207,7 @@ drv_acpi_ec_attach(void)
 	struct drv_acpi_thread *thread;
 	int error;
 
-	/* Holds the interpreter, so that no AML reaches the EC while it changes. */
+	/* Finds the device and installs the space, holding the interpreter so that no AML reaches the EC while it changes. */
 	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
 	error = attach_device();
 	drv_acpi_leave(thread);
@@ -214,7 +221,7 @@ drv_acpi_ec_attach(void)
 			drv_acpi_os_log("ACPI: the EC's GPE 0x%x cannot be handled (error %d)\n", ec.gpe, error);
 	}
 
-	/* Succeeded. */
+	/* Succeeded: AML reaches the EC, and its queries run their methods. */
 	drv_acpi_os_log("ACPI: EC at ports 0x%x/0x%x, GPE 0x%x\n", ec.data_port, ec.command_port, ec.gpe);
 	return 0;
 }
@@ -234,6 +241,8 @@ attach_device(void)
 	drv_acpi_walk(NULL, find_visitor, &found);
 	if (found == NULL)
 		found = ec.device;
+
+	/* Refuses a platform with no EC at all. */
 	if (found == NULL && !ec.from_ecdt)
 		return ENODEV;
 
@@ -255,8 +264,12 @@ attach_device(void)
 
 	/* Takes _CRS's ports, noting when they differ from the ECDT's. */
 	if (error == 0) {
-		if (ec.from_ecdt && (data != ec.data_port || command != ec.command_port))
+		if (ec.from_ecdt &&
+		    (data != ec.data_port ||
+		     command != ec.command_port))
 			drv_acpi_os_log("ACPI: the ECDT's EC ports differ from _CRS; _CRS is used\n");
+
+		/* Uses _CRS's ports from now on. */
 		ec.data_port = data;
 		ec.command_port = command;
 	}
@@ -278,12 +291,11 @@ attach_device(void)
 		return 0;
 
 	/* Installs the address space; the EC's _REG runs now. */
-	ec.attached = 1;
 	error = drv_acpi_region_install(DRV_ACPI_SPACE_EMBEDDED_CONTROL, ec_region, NULL);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: AML reaches the EC's space. */
 	return 0;
 }
 
@@ -303,12 +315,16 @@ find_visitor(
 	if (node->object == NULL || node->object->type != DRV_ACPI_TYPE_DEVICE)
 		return 0;
 
-	/* Stops at the EC. */
+	/* Goes on past a device that is not the EC. */
 	matched = is_ec(node);
 	if (!matched)
 		return 0;
+
+	/* Hands the EC to the caller. */
 	found = argument;
 	*found = node;
+
+	/* Stops the walk: the first EC is the one. */
 	return -1;
 }
 
@@ -343,7 +359,7 @@ is_ec(
 	/* The _HID is no longer needed. */
 	drv_acpi_object_release(hid);
 
-	/* Reports the answer. */
+	/* Reports whether the _HID named PNP0C09. */
 	return matched;
 }
 
@@ -380,9 +396,8 @@ read_ports(
 	count = 0;
 	offset = 0;
 	while (offset < length && count < 2U) {
-		tag = bytes[offset];
-
 		/* Ends at the end tag or at a large descriptor, which holds no port. */
+		tag = bytes[offset];
 		if (tag == RESOURCE_END || (tag & 0x80U) != 0)
 			break;
 
@@ -406,9 +421,11 @@ read_ports(
 	if (count != 2U)
 		return ENOENT;
 
-	/* Succeeded. */
+	/* Hands the ports to the caller. */
 	*data = ports[0];
 	*command = ports[1];
+
+	/* Succeeded: the caller has the data port and the command port. */
 	return 0;
 }
 
@@ -425,7 +442,7 @@ load_u64(
 	for (index = 8; index != 0; index--)
 		value = value << 8 | bytes[index - 1U];
 
-	/* Reports it. */
+	/* Reports the assembled value. */
 	return value;
 }
 
@@ -454,9 +471,11 @@ ec_region(
 	if (access->write)
 		command = EC_COMMAND_WRITE;
 
-	/* Moves each byte through one EC transaction. */
+	/* A read starts from zero and gathers its bytes. */
 	if (!access->write)
 		*value = 0;
+
+	/* Moves each byte through one EC transaction. */
 	for (index = 0; index < bytes; index++) {
 		/* Writes or reads one byte. */
 		byte = (uint8_t)(*value >> (index * 8U));
@@ -469,7 +488,7 @@ ec_region(
 			*value |= (uint64_t)byte << (index * 8U);
 	}
 
-	/* Succeeded. */
+	/* Succeeded: every byte of the access moved. */
 	return 0;
 }
 
@@ -493,8 +512,10 @@ ec_gpe(
 	UNUSED_PARAMETER(gpe);
 	UNUSED_PARAMETER(argument);
 
-	/* Drains the queries, as a bounded number of rounds. */
+	/* Enters the interpreter, so that the queries do not mix with AML's accesses. */
 	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+
+	/* Drains the queries, as a bounded number of rounds. */
 	for (count = 0; count < EC_QUERIES_MAX; count++) {
 		/* Stops when the EC has nothing more. */
 		status = read_status();
@@ -527,6 +548,7 @@ ec_transaction(
 	bool write,
 	uint8_t *data)
 {
+	int release_error;
 	int error;
 
 	/* Takes the Global Lock for a controller that shares itself with the firmware. */
@@ -539,15 +561,20 @@ ec_transaction(
 	/* Exchanges the bytes. */
 	error = ec_exchange(command, address, has_address, write, data);
 
-	/* Lets the Global Lock go and reports a failed exchange. */
-	if (ec.global_lock)
-		drv_acpi_global_lock(NULL, false);
+	/* Lets the Global Lock go; a release that fails leaves nothing more to undo here. */
+	if (ec.global_lock) {
+		release_error = drv_acpi_global_lock(NULL, false);
+		if (release_error != 0)
+			drv_acpi_os_log("ACPI: the EC's Global Lock release failed (error %d)\n", release_error);
+	}
+
+	/* Reports a failed exchange. */
 	if (error != 0) {
 		drv_acpi_os_log("ACPI: EC command 0x%x failed (error %d)\n", command, error);
 		return error;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: a read leaves the EC's byte in data. */
 	return 0;
 }
 
@@ -574,21 +601,21 @@ ec_exchange(
 			return error;
 	}
 
-	/* A write sends the byte and waits until the EC took it. */
+	/* A write sends the byte and waits until the EC took it; a read waits for the EC's byte and takes it. */
 	if (write) {
 		error = ec_send(ec.data_port, *data);
 		if (error != 0)
 			return error;
 		error = wait_status(EC_STATUS_IBF, 0);
-		return error;
+	} else {
+		error = ec_receive(data);
 	}
 
-	/* A read waits for the EC's byte and takes it. */
-	error = ec_receive(data);
+	/* Reports a byte that did not move. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the transaction's bytes moved. */
 	return 0;
 }
 
@@ -610,7 +637,7 @@ ec_send(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the EC has the byte. */
 	return 0;
 }
 
@@ -627,13 +654,15 @@ ec_receive(
 	if (error != 0)
 		return error;
 
-	/* Reads it. */
+	/* Reads the byte from the data port. */
 	error = drv_acpi_os_port_read(ec.data_port, 8, &value);
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Hands the byte to the caller. */
 	*byte = (uint8_t)value;
+
+	/* Succeeded: the caller has the EC's byte. */
 	return 0;
 }
 
@@ -645,18 +674,28 @@ wait_status(
 {
 	uint8_t status;
 	unsigned poll;
+	bool reached;
 
 	/* Polls the status register. */
+	reached = false;
 	for (poll = 0; poll < EC_POLLS; poll++) {
-		/* Reports success as soon as the bits are right. */
+		/* Stops as soon as the bits are right. */
 		status = read_status();
-		if ((status & mask) == wanted)
-			return 0;
+		if ((status & mask) == wanted) {
+			reached = true;
+			break;
+		}
+
+		/* Gives the EC 10 microseconds more. */
 		drv_acpi_os_stall(10);
 	}
 
 	/* Reports an EC that did not answer. */
-	return ETIMEDOUT;
+	if (!reached)
+		return ETIMEDOUT;
+
+	/* Succeeded: the status bits are as wanted. */
+	return 0;
 }
 
 /* Reads the EC's status register. */
@@ -671,7 +710,7 @@ read_status(void)
 	if (error != 0)
 		return EC_STATUS_IBF;
 
-	/* Reports it. */
+	/* Reports the status byte. */
 	return (uint8_t)value;
 }
 

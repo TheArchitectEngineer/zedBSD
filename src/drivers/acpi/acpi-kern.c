@@ -686,10 +686,7 @@ event_thread(
 
 	/* Sleeps until the SCI records work, then handles it. */
 	for (;;) {
-		/*
-		 * Waits for work, then takes all the work counted so far as a
-		 * whole: zero tells the next SCI to wake the thread again.
-		 */
+		/* Waits for work and takes it. */
 		state = spin_lock_irqsave(&event_lock);
 
 		while (event_work == 0) {
@@ -697,6 +694,7 @@ event_thread(
 			(void)waitq_sleep(&event_queue, &event_lock, sequence, 0, 0);
 		}
 
+		/* Takes all the work counted so far as a whole; zero tells the next SCI to wake the thread again. */
 		event_work = 0;
 
 		spin_unlock_irqrestore(&event_lock, state);

@@ -12,7 +12,9 @@ any.  The rules (with the section of coding-style.md):
   paragraph-comment   5   a paragraph inside a function that does not start
                           with a comment after its blank line (a lone break
                           or continue that ends a case or a turn is not a
-                          paragraph of its own)
+                          paragraph of its own; the blank lines right after
+                          a lock is taken and right before it is let go
+                          bound a critical section and need no comment)
   nested-declaration  4   a declaration inside a nested block, or in a for
   conditional         6   the conditional operator (listed; a short
                           symmetric choice may stay)
@@ -43,6 +45,13 @@ DECLARATION = re.compile(
 	r"(struct\s+\w+|union\s+\w+|enum\s+\w+|int|char|long|short|double|float|"
 	r"size_t|ssize_t|off_t|pid_t|FILE|regex_t|regmatch_t|va_list|\w+_t)"
 	r"(\s+|\s*\*+\s*)\**\w+(\s*\[[^\]]*\])?(\s*=.*)?;\s*$")
+
+# The blank lines of a critical section (coding-style.md section 5): the one
+# right after the statement that takes a lock, and the one right before the
+# statement that lets it go, bound the section's body and are not paragraph
+# boundaries that need a comment.
+CRITICAL_ACQUIRE = re.compile(r"^(?!.*unlock)(\w+\s*=\s*)?(\(void\)\s*)?\w*lock(_irqsave|_irq|_read|_write|_shared|_exclusive)?\s*\(.*\);$")
+CRITICAL_RELEASE = re.compile(r"^(\(void\)\s*)?\w*unlock\w*\s*\(.*\);$")
 
 
 def strip_line(line: str, in_comment: bool) -> tuple[str, bool]:
@@ -167,11 +176,14 @@ def check_file(path: str) -> list[tuple[int, str, str]]:
 
 		if line.strip() == "" and depths[index] >= 1 and index + 1 < len(raw):
 			nxt = following.strip()
+			previous = stripped[index - 1].strip() if index > 0 else ""
 			if (nxt and not nxt.startswith("/*") and not nxt.startswith("}") and
 			    not nxt.startswith("#") and
 			    not re.match(r"^(case\b|default\s*:|UNUSED_PARAMETER|assert\s*\(|break;|continue;)", nxt) and
 			    not re.match(r"^\w+:\s*$", nxt) and
-			    not DECLARATION.match(following)):
+			    not DECLARATION.match(following) and
+			    not CRITICAL_ACQUIRE.search(previous) and
+			    not CRITICAL_RELEASE.match(nxt)):
 				problems.append((number + 1, "paragraph-comment", nxt))
 
 		if depths[index] >= 2 and not in_type[index] and DECLARATION.match(text) and not text.strip().startswith("return"):
