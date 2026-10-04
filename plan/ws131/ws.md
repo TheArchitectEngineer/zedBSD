@@ -76,7 +76,7 @@ app は OS の抽象化を直接持たない。例: Settings → libkeiland → 
 | [p022](phase022/phase.md) | compositor の log の接頭辞を `KWL ` に（試験 201 本と同時） | planning | p021 | 3〜4h |
 | [p025](phase025/phase.md) | browser の shell の窓（D7、p020 の後・p023 の前、WS074 との衝突は開始の前に Q1 がユーザーに確認） | planning | p020 | 4〜5h |
 | [p023](phase023/phase.md) | 互換の除去・`keiland.h` 一本化・PnP の接続（WS134 の system monitor も移行の対象に含める） | planning | p016〜p020・p025・p022（PnP は WS132）・ws134-p010 | 3〜4h |
-| [p026](phase026/phase.md) | 公開の header の整理: `keiland/` → `keiland-headers/`、`<keiland/keiland.h>`、`<keiland/ui.h>` は内部（app は keiland.h だけ）、Wayland の header の重複の整理（2026-10-04 user） | planning | p014 | 3〜4h |
+| [p026](phase026/phase.md) | 公開の header の整理: `keiland/` → `keiland-headers/`、`<keiland/keiland.h>`、`<keiland/ui.h>` は内部（app は keiland.h だけ）、Wayland の header の重複の整理（2026-10-04 user） | planned（手順を詳細化、2026-10-04。truetype.h・browser.h はそのまま＝user） | p013・p014 の統合（TQ-1） | 3〜4h |
 | [p024](phase024/phase.md) | 全文規約と 3 OS の回帰、WS の完了 | planning | 全て | 4〜6h |
 
 ### 他の WS との関係（p002 の計画で更新、詳細は [design.md](design.md) §7.2・§8）
