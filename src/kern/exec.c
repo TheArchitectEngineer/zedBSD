@@ -692,6 +692,7 @@ process_spawn_from(
 	 */
 	process_cred_commit_reserved(process, prospective_cred,
 				     cred_reservation);
+	process->set_id = secure;
 	prospective_cred = NULL;
 	cred_reservation = NULL;
 
@@ -1288,6 +1289,7 @@ process_exec_file(
 	size_t auxv_size;
 	uintptr_t execution_entry;
 	uintptr_t interpreter_base;
+	unsigned mount_flags;
 	unsigned secure;
 	unsigned long process_irq;
 	bool irq_enabled;
@@ -1341,8 +1343,15 @@ process_exec_file(
 		goto out;
 	}
 
+	/*
+	 * A traced process takes no set-id bits (ws160-p001): its tracer
+	 * would otherwise hold a process of another identity.
+	 */
+	mount_flags = target.mount_flags;
+	if (process->traced)
+		mount_flags |= MOUNT_NOSUID;
 	exec_credential_prepare(prospective_cred, &target.status,
-				target.mount_flags, 0, &secure);
+				mount_flags, 0, &secure);
 	error = process_cred_reserve(process, &cred_reservation);
 	if (error != 0)
 		goto out;
@@ -1480,6 +1489,7 @@ process_exec_file(
 	 */
 	process_cred_commit_reserved(process, prospective_cred,
 				     cred_reservation);
+	process->set_id = secure;
 	prospective_cred = NULL;
 	cred_reservation = NULL;
 	if (irq_enabled)

@@ -49,6 +49,27 @@ cred_in_group(
 	const struct ucred *cred,
 	gid_t group);
 
+/*
+ * Tells whether two credentials differ in a user or group identity (the
+ * real, effective and saved ones; the supplementary groups do not count).
+ */
+int
+cred_ids_differ(
+	const struct ucred *left,
+	const struct ucred *right);
+
+/*
+ * Tells whether a credential may trace a process of another: the superuser
+ * may trace any; anyone else only a process whose real, effective and
+ * saved user and group identities are all the tracer's real ones (and its
+ * effective ones), and which has not changed its identity (set_id).
+ */
+int
+cred_may_trace(
+	const struct ucred *tracer,
+	const struct ucred *target,
+	unsigned target_set_id);
+
 const struct ucred *
 cred_current(void);
 

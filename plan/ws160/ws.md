@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws160 -->
 # WS160: su・sudo・passwd
 
-Status: planning（2026-10-05 未明 Q1、**ベータ1**）
+Status: incomplete（2026-10-05 P1: p001 を実装、QEMU は T1 に依頼。**ベータ1**）
 Master: [master](../master.md)
 Primary Milestone: MG002
 Related: WS129（ベータ1 の release、U3・U10）
@@ -29,5 +29,5 @@ Queue: q721
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws160-p001 | 設計（既存の login・crypt・shadow の扱い、setuid の kernel の対応、規則の file の形、Settings からの変更の経路）と passwd・su・sudo の実装・試験 | planned（q721） | なし |
-| ws160-p002 | Settings の Users の頁の password の変更（GUI） | planning | p001 |
+| [ws160-p001](phase001/phase.md) | 設計（既存の login・crypt・shadow の扱い、setuid の kernel の対応、規則の file の形、Settings からの変更の経路）と passwd・su・sudo の実装・試験 | in-progress（2026-10-05 q721-i01 P1: kernel の ptrace・set-id の穴を直し、passwd・su・sudo と共通の核を実装。build warning 0、host 15＋32 checks。QEMU は T1 に依頼。D1〜D4 は既定で実装） | なし |
+| ws160-p002 | Settings の Users の頁の password の変更（GUI）。経路は p001 の S: Settings は `/bin/passwd -s` を pipe で起動し、終了 status で結果を出す（Settings に権限を持たせない） | planning | p001 |
