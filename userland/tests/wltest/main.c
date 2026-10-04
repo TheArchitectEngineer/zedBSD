@@ -568,6 +568,9 @@ follow_size(
 	struct wltest_window *window,
 	const struct wltest_options *options)
 {
+	struct timespec before;
+	struct timespec after;
+	long long took_ms;
 	VkResult result;
 
 	/* The same size needs nothing. */
@@ -575,15 +578,19 @@ follow_size(
 	    window->height == renderer->extent.height)
 		return VK_SUCCESS;
 
-	/* A new chain of the configured size. */
+	/* A new chain of the configured size, timed (BUG-179: how much of a resize is the swapchain's). */
+	(void)clock_gettime(CLOCK_MONOTONIC, &before);
 	renderer->extent.width = window->width;
 	renderer->extent.height = window->height;
 	result = wltest_renderer_recreate(renderer);
 	if (result != VK_SUCCESS)
 		return result;
+	(void)clock_gettime(CLOCK_MONOTONIC, &after);
+	took_ms = (long long)(after.tv_sec - before.tv_sec) * 1000LL + (long long)(after.tv_nsec - before.tv_nsec) / 1000000LL;
 
-	/* Succeeded: the harness sees the new size. */
-	printf("WLTEST RESIZE run=%s width=%u height=%u\n", options->token, window->width, window->height);
+	/* Succeeded: the harness sees the new size and how long the chain took. */
+	printf("WLTEST RESIZE run=%s width=%u height=%u took_ms=%lld at_ms=%lld\n", options->token, window->width, window->height, took_ms,
+	       (long long)before.tv_sec * 1000LL + (long long)before.tv_nsec / 1000000LL);
 	return VK_SUCCESS;
 }
 

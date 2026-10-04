@@ -28,7 +28,7 @@ POSIX の option は p024（2026-09-27）で済んでいた（-0 と -r も）�
 | host の差分試験（POSIX mode）`xargs`・`xargs-gnu` | 54/54・11/11 |
 | host の差分試験（GNU mode、`--gnu`）`xargs`・`xargs-gnu` | 54/54・11/11 |
 | host の全 case `util-diff.py --bin build/ws001/bin` | 1080/1080 |
-| WS045 の GNU の case `util-diff.py --cases plan/ws045/tests/cases --gnu` | 515/515 |
+| WS045 の GNU の case `util-diff.py --cases plan/tools/gnu-utils/cases --gnu` | 515/515 |
 | 端末の case `tty-host-test.py`（xargs -p を含む） | 11/11 |
 | 期待値の case `pinned-cases.py` | 11/11 |
 | configure の比較 `plan/tools/utils/configure-diff.sh build/ws001/bin expat-2.8.5 coreutils-9.12`（`DISTFILES` は main の tree の `build/distfiles` を読むだけ） | expat・coreutils とも same（1 回目は configure が build/ws001/bin の install と dd を見つけた path だけが違った。configure-diff.sh は BIN_DIR の他の道具も `/usr/bin/` と書き換えるようにした） |

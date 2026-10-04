@@ -43,6 +43,10 @@
 #include <unistd.h>
 
 #define CHILD_OUTPUT_MAX 384
+
+/* How often, and how far apart, an up of a wired interface is tried (BUG-168: an adapter still attaching refuses it). */
+#define LAN_RAISE_ATTEMPTS	5U
+#define LAN_RAISE_RETRY_NS	200000000L
 #define NETWORKD_AUTH_LOG_MAX 512U
 #define NETWORKD_GROUP_DATABASE_MAX 8192U
 #define NETWORKD_GROUP_BUFFER_MAX 2048U
@@ -2075,15 +2079,36 @@ lan_raise(
 {
 	char diagnostic[CHILD_OUTPUT_MAX];
 	char *arguments[4];
+	struct timespec delay;
+	unsigned attempt;
+	int result;
 
-	/* Runs ifconfig up, bounded like every other step. */
-	diagnostic[0] = '\0';
+	/*
+	 * Runs ifconfig up, bounded like every other step.  An adapter plugged
+	 * in while networkd runs is announced before its driver has finished
+	 * attaching (the data interface's setting comes last), and an up in
+	 * that moment is refused (ENETDOWN); it is tried again a few times
+	 * before the interface is taken as raised (BUG-168).
+	 */
 	arguments[0] = (char *)"/sbin/ifconfig";
 	arguments[1] = (char *)name;
 	arguments[2] = (char *)"up";
 	arguments[3] = NULL;
-	(void)run_command_until(arguments, 10U,
-	    netutil_monotonic_us() + 15000000ULL, diagnostic);
+	delay.tv_sec = 0;
+	delay.tv_nsec = LAN_RAISE_RETRY_NS;
+	result = -1;
+	for (attempt = 0U; attempt < LAN_RAISE_ATTEMPTS && result != 0; attempt++) {
+		/* A pause before each try but the first. */
+		if (attempt != 0U)
+			(void)nanosleep(&delay, NULL);
+		diagnostic[0] = '\0';
+		result = run_command_until(arguments, 10U,
+		    netutil_monotonic_us() + 15000000ULL, diagnostic);
+	}
+
+	/* Logged when every try failed; it counts as raised all the same (the next cable or removal starts again). */
+	if (result != 0)
+		fprintf(stderr, "networkd: %s up failed after %u tries: %s\n", name, LAN_RAISE_ATTEMPTS, diagnostic);
 	(void)networkd_lan_raised(&managed_lan, name);
 }
 
@@ -2936,7 +2961,9 @@ accept_subscriber(
  * The SSID is the network the managed connection is on or joining, in
  * lower-case hexadecimal because an SSID is bytes, not text ("-" when there
  * is none); radios counts the WLAN interfaces, so that a machine without
- * one is told apart from one whose Wi-Fi is off.
+ * one is told apart from one whose Wi-Fi is off; radio names the first
+ * WLAN interface ("-" for none) even while no connection uses it, so that
+ * a reader never takes the radio for a wired interface (BUG-169).
  */
 static int
 watch_state(
@@ -2949,6 +2976,7 @@ watch_state(
 	char ssid[WLAN_SSID_MAX * 2U + 1U];
 	char route_name[IFNAMSIZ];
 	const char *interface;
+	const char *radio;
 	size_t radio_count;
 	size_t used;
 	size_t index;
@@ -2989,9 +3017,12 @@ watch_state(
 	interface = "-";
 	if (managed_wlan.connection.interface[0] != '\0')
 		interface = managed_wlan.connection.interface;
-	count = snprintf(state + used, capacity - used, "wifi state=%s interface=%s ssid=%s radios=%u scan=%u\n",
+	radio = "-";
+	if (radio_count > 0U && radios[0].interface[0] != '\0')
+		radio = radios[0].interface;
+	count = snprintf(state + used, capacity - used, "wifi state=%s interface=%s ssid=%s radios=%u scan=%u radio=%s\n",
 	    managed_state_name(managed_wlan.state), interface, ssid, (unsigned)radio_count,
-	    (unsigned)wifi_scan_wanted());
+	    (unsigned)wifi_scan_wanted(), radio);
 	if (count < 0 || (size_t)count >= capacity - used) {
 		errno = EOVERFLOW;
 		return -1;

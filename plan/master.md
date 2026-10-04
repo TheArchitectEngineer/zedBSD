@@ -198,7 +198,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS038](ws038/ws.md) | ベータ4 以降 | MG006 | 16 | Intel Arc dGPU |
 | [WS039](ws039/ws.md) | ベータ4 以降 | MG006 | 20 | AMD RDNA |
 | [WS044](ws044/ws.md) | ベータ4 以降 | MG008 | 1.5 | rpi4 の font・FAT32・lldb |
-| [WS045](ws045/ws.md) | ベータ1 | MG002 | 0.3 | 受け入れの判断と merge |
+| [WS045](ws045/ws.md) | ベータ1 | MG002 | 0 | 完了（2026-10-05） |
 | [WS046](ws046/ws.md) | ベータ3 | MG002 | 1.5 | GNU 互換の make |
 | [WS047](ws047/ws.md) | キャンセル | MG001 | 3 | build.sh と Noct の build system |
 | [WS048](ws048/ws.md) | ベータ4 以降 | MG008 | 1.5 | rpi4 の USB |
@@ -345,7 +345,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS041](ws041/ws.md) | MG006 | 起きた thread の即時実行 | completed | — |
 | [WS042](ws042/ws.md) | MG002 | `/bin/sh` の POSIX 互換性 | completed | — |
 | [WS043](ws043/ws.md) | MG002 | base の utility を POSIX に（sed・grep・awk ほか） | completed | — |
-| [WS045](ws045/ws.md) | MG002 | base の text utility の GNU 拡張（sed・awk・grep ほか） | incomplete | p001〜p009 cleared（サブエージェント、2026-09-27 に main へ merge）。GNU の case 515/515、POSIX 492/492、7 package の configure の比較が同じ。3 点は 2026-09-27 夜に決定（dirname は GNU 風、mktemp・install・base64 は追加、xargs は WS001 でよい → WS001）。amd64 以外の image は未実施 |
+| [WS045](ws045/ws.md) | MG002 | base の text utility の GNU 拡張（sed・awk・grep ほか） | completed | 2026-10-05 完了（GNU の差分 518/518・POSIX 1080/1080・amd64 の boot、試験は plan/tools/gnu-utils） |
 | [WS046](ws046/ws.md) | MG002 | GNU 互換の make（autotools の出力を実行できる範囲。並列・jobserver は WS064） | incomplete | p002〜p004・p006 cleared。p007 uncleared（BUG-033 の主因を直した）。p009・p012 cleared（BUG-033: configure 204〜252 → 91 秒、link 0.36 秒、file の fault 15 µs/page）。p013 cleared（libc の mount の一覧の API。coreutils の cross build が通った）。次は p014（p011 の当て直し）・p005 |
 | [WS047](ws047/ws.md) | MG001 | build.sh と Noct による build system（TUI・kernel・base・packages を別の system に。Makefile は当面残す） | canceled（2026-10-05 ユーザー） | p001 調査と設計 |
 | [WS048](ws048/ws.md) | MG008 | Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード） | incomplete | p001〜p003 cleared（FDT、brcmstb の PCIe、firmware の mailbox と VL805 の firmware。host 試験と QEMU の起動、実機は未実施）。p004 cleared（承認済みの hal.h の差分 `hal_pmem_map_uncached` を適用、実機は未実施）。p005 は config の有効化が残り uncleared。2026-09-27 サブエージェント、main へ merge |
@@ -485,6 +485,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | tool | 用途 | 使い方 |
 | --- | --- | --- |
+| [gnu-utils/](tools/gnu-utils/)（WS045） | base の text utility の GNU 拡張の差分の試験: `cases/`（awk・grep・misc・sed・sort）を GNU の実物と比べる（`plan/tools/utils/util-diff.py` が使う）、base の image の config（`config-amd64-base.mk`、他の試験の config が include する）、guest での case（`build-guest-utils.sh`・`guest-batches.sh`、full の guest image が要る） | `python3 plan/tools/utils/util-diff.py`（WS043・WS045 の手順）、`make ZEDBSD_CONFIG=plan/tools/gnu-utils/config-amd64-base.mk BUILD=… disk-image` |
 | [FreeBSD 15.1 の試験の guest と backend の試験](tools/keiland-freebsd/README.md)（WS137） | 公式の 15.1 の image（CHECKSUM を q550 の記録と照合）と NoCloud の seed から作る QEMU+KVM の guest。loopback の SSH と QMP の PNG を使い、serial の log は読まない。guest の中で keiland-freebsd.mk を native で build（warning 0）し、audit と ws131 の host 試験を流す。GPU は無い | `build-guest.sh [--force] [OUT]`、`guest.sh start\|stop\|status\|ssh\|put\|get\|copy\|shot`、`backend-test.sh [OUT]`。T1・T2 は自分の build/ に作るか GUEST_DIR で読み取り専用で使う。2 つ同時は GUEST_RUN と SSH_PORT を分ける |
 | [settings/](tools/settings/) | WS135 の設定の試験: compositor の store（`host-store.sh`）、libkeiland の `kl_settings_*`（`host-settings.sh`）、Wayland 無しの stand-in（`host-kl-settings.c`、Files・Terminal・Settings の host 試験が使う）、QEMU の `settings-p003.sh` と image の `config-amd64-settings.mk` | `sh plan/tools/settings/host-store.sh`、`sh plan/tools/settings/host-settings.sh` |
 | `plan/tools/git-hooks/commit-msg` | git の commit-msg の hook（メッセージが `WIP` ちょうどでない commit を拒否、Co-Authored-By などの混入の防止、2026-10-03） | `cp plan/tools/git-hooks/commit-msg .git/hooks/ && chmod +x .git/hooks/commit-msg`（clone・作り直しの後に毎回） |

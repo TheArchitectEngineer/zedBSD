@@ -6,7 +6,7 @@
 # back-references of ws045-p002) is linked into each program, where its
 # regcomp and regexec take the place of the image's libc's.
 #
-#   sh plan/ws045/tests/build-guest-utils.sh IMAGE_BUILD [OUTPUT_DIR]
+#   sh plan/tools/gnu-utils/build-guest-utils.sh IMAGE_BUILD [OUTPUT_DIR]
 #
 # IMAGE_BUILD is the build directory of the image the guest runs (read only),
 # the full guest image's (plan/tools/guest/build-full-image.sh); its

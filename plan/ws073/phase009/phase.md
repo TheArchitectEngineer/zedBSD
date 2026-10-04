@@ -46,7 +46,7 @@ BOOT の無い UEFI だけの image では `/boot` は root の directory で、
   type fat (rw,bind)`、`/boot/esp/zedbsd.cfg` が見える、`/boot` 自体には何も mount されていない、`/boot/esp` での mkdir・rmdir、`mount -t auto
   /dev/nvme0n1p1` は EBUSY のまま、`umount /boot/esp` で消え、その後も partition は kernel が持つ（EBUSY）。
 - boot test（画面の login）:
-  - amd64 lean（native、UEFI、`plan/ws045/tests/config-amd64-base.mk`、warning 0）: PASS、画面に `vfs: ESP published at /boot/esp`
+  - amd64 lean（native、UEFI、`plan/tools/gnu-utils/config-amd64-base.mk`、warning 0）: PASS、画面に `vfs: ESP published at /boot/esp`
     （`build/ws073-img/boot-test-p009/login.png`）。
   - amd64 hybrid（`tests/config-amd64-hybrid.mk`）UEFI: PASS、画面に `vfs: boot filesystem published at /boot`（`build/ws073-hybrid/boot-test/login.png`）。
     BIOS（`QEMU=qemu-system-x86_64 BOOT_MODE=bios-ide`）: PASS（`boot-test-bios64/login.png`）。`qemu-system-i386`（bios-ide の既定）では

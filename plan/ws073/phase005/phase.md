@@ -47,7 +47,7 @@ Bug: [BUG-028](../../bugs/BUG-028.md)
   （修正前の kernel では 8 件 FAIL）。追加の確認: `ping -c 2 10.0.2.15` 2/2、`ping 127.0.0.1`・`ping 10.0.2.2`（gateway）も応答、
   `ssh 10.0.2.15` が鍵の交換まで進む、UDP の `127.0.0.1`・`10.0.2.15` 宛てが届く、`10.0.2.2:1` への connect は従来どおり ECONNREFUSED、
   host からの SSH（guest の操作そのもの）は変わらず使える。lldb の `gdb-remote 127.0.0.1:1234` は約 5 秒で `Failed to connect`。
-- boot test: `make -j48 ZEDBSD_CONFIG=plan/ws045/tests/config-amd64-base.mk BUILD=build/ws073-img disk-image`（warning 0）で
+- boot test: `make -j48 ZEDBSD_CONFIG=plan/tools/gnu-utils/config-amd64-base.mk BUILD=build/ws073-img disk-image`（warning 0）で
   `plan/tools/boot-test.sh` PASS（`build/ws073-img/boot-test/login.png`）。
 - 規約: `tests/style-diff.py`（tcp.c・ipv4.c・icmp.c・core.c・inet-socket.c・internal.h）0。全文の規約で見直した。
 

@@ -36,6 +36,6 @@ console の `POSIX-R2.ELF` が続けて status 0 で終わる（BUG-046 の受�
 - `pty-backpressure 200`（SSH）: 0/200 失敗（修正前 3/50・9/100）。
 - console の `POSIX-R2.ELF`（p007 と同じ手順。`/bin/sh` にも置く）: **10 回続けて status 0**、毎回 `R2:TIMER:PASS`・`R2:01-06:PASS`。
   p007 の exec の修正と合わせて BUG-046 の受け入れの案（5 回連続）を満たす（BUG-046 の判断と ws056-p001 の clear は WS056・ユーザーの側）。
-- boot test: lean amd64 image（`plan/ws045/tests/config-amd64-base.mk`、exec.c と tty.c の修正を含む）で `plan/tools/boot-test.sh` PASS
+- boot test: lean amd64 image（`plan/tools/gnu-utils/config-amd64-base.mk`、exec.c と tty.c の修正を含む）で `plan/tools/boot-test.sh` PASS
   （`build/ws073-img/boot-test-p008/login.png`）。
 - 規約: `tests/style-diff.py src/kern/tty.c` 0。

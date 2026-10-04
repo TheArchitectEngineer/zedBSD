@@ -32,11 +32,11 @@ main の測定用 guest image（`build/ws053-full-hal-guest`）の既存の util
 
 ## 検証（QEMU、KVM、4 GiB、4 vCPU、NVMe。実機は未実施）
 
-- build: `make -j16 ZEDBSD_CONFIG=plan/ws045/tests/config-amd64-base.mk BUILD=build/ws073-u build/ws073-u/bin/truncate build/ws073-u/bin/mount`
+- build: `make -j16 ZEDBSD_CONFIG=plan/tools/gnu-utils/config-amd64-base.mk BUILD=build/ws073-u build/ws073-u/bin/truncate build/ws073-u/bin/mount`
   warning 0。
 - guest（main の測定用 image。新しい binary を `/tmp` に置いて比べた）: [tests/truncate-mount-options.sh](../tests/truncate-mount-options.sh)
   27 件。新しい binary で全て PASS、既存の binary では 19 件 FAIL（再現）。追加の確認: FIFO への `truncate -s 1` は待たずに ENXIO で 1、
   知らない option は usage で 1、`truncate -s 5 -- -dash` は `-dash` を作る。
-- boot test: `make -j48 ZEDBSD_CONFIG=plan/ws045/tests/config-amd64-base.mk BUILD=build/ws073-img disk-image`（warning 0）の image で
+- boot test: `make -j48 ZEDBSD_CONFIG=plan/tools/gnu-utils/config-amd64-base.mk BUILD=build/ws073-img disk-image`（warning 0）の image で
   `plan/tools/boot-test.sh` PASS（`build/ws073-img/boot-test/login.png`。fstab の mount の経路を含む起動）。
 - 規約: truncate は全文の規約で書き直し `style-check.py` 0。mount は既存の file で `tests/style-diff.py` 0（変えた行）。
