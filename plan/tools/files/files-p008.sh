@@ -9,7 +9,7 @@
 #  3. view-menu.png: View by the pointer; List chosen (ACTION 16, the list view).
 #  4. Meeting notes.txt selected; open-with.png: File > Open With lists Record and the built-in ways.
 #  5. Ctrl+I is Get Info's shortcut (zdesktop activates it, via=shortcut): the card; Esc.
-#  6. tags-menu.png: Edit > Tags; Work chosen (TAG tag=Work on=1).
+#  6. (Edit > Tags: removed with the tags, ws127-p012.)
 #  7. help-shortcuts.png: Help > Keyboard Shortcuts (HELP open card=2); Esc.
 #  8. Ctrl+Shift+D goes to Desktop, Alt+Left back to Documents (both via the menus' shortcuts).
 #  9. two-windows.png: Ctrl+N starts a second window (f1-new, READY) on Documents; its
@@ -123,13 +123,6 @@ expect_log /tmp/zdesktop.log "MENU activate client=$zc1 .*item=1004 action=4 .*v
 expect_log /tmp/f.log 'ZFILES INFO path=/tmp/fhome/Documents/Meeting notes.txt '
 keys '<esc>'
 expect_log /tmp/f.log 'ZFILES INFO close'
-
-# 6. Edit > Tags > Work.
-menu 2
-click $(( $(popup_x) + 60 )) "$(row_y 11)" 900
-shot tags-menu.png
-click $(( $(popup_x) + 60 )) "$(row_y 1300)" 900
-expect_log /tmp/f.log 'ZFILES TAG tag=Work on=1 items=1'
 
 # 7. Help > Keyboard Shortcuts.
 menu 6

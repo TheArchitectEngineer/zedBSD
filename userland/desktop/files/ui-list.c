@@ -46,8 +46,6 @@ static void list_row(struct fm_app *app, struct fm_canvas *canvas, struct fm_ent
 static void list_cell_text(struct fm_app *app, struct fm_entry *entry, unsigned column, char *text, size_t size);
 static const char *list_title(unsigned column);
 static unsigned list_sort_of(unsigned column);
-static int list_tag_count(unsigned tags);
-static void list_tag_dots(struct fm_app *app, struct fm_canvas *canvas, unsigned tags, int x, int y);
 
 /*
  * Draws the items as a list in the panel's inner rectangle, and records
@@ -187,7 +185,7 @@ list_layout(
 	const struct fm_rect *inner,
 	struct list_column *columns)
 {
-	static const int widths[FM_COLUMN_COUNT] = { 0, 150, 90, 150, 150, 120, 110, 200, 150 };
+	static const int widths[FM_COLUMN_COUNT] = { 0, 150, 90, 150, 150, 110, 200, 150 };
 	const struct fm_location *location;
 	struct fm_tab *tab;
 	unsigned shown;
@@ -202,7 +200,7 @@ list_layout(
 	tab = fm_ui_tab(app);
 	location = &tab->history[tab->history_index].location;
 	shown = app->columns | (1U << FM_COLUMN_NAME);
-	if (location->kind == FM_LOCATION_SEARCH || location->kind == FM_LOCATION_RECENTS || location->kind == FM_LOCATION_TAG)
+	if (location->kind == FM_LOCATION_SEARCH || location->kind == FM_LOCATION_RECENTS)
 		shown |= 1U << FM_COLUMN_LOCATION;
 	if (location->kind == FM_LOCATION_TRASH) {
 		shown |= 1U << FM_COLUMN_LOCATION;
@@ -318,7 +316,6 @@ list_row(
 	int baseline;
 	int column;
 	int width;
-	int drawn;
 
 	/* The ground: the accent when selected, faint under the pointer. */
 	ink = FM_COLOR_TEXT;
@@ -360,8 +357,7 @@ list_row(
 		field.width -= 8;
 		fm_field_draw(app, canvas, &app->rename, &field, LIST_TEXT, NULL);
 	} else {
-		drawn = fm_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width - 8 * list_tag_count(entry->tags), ink);
-		list_tag_dots(app, canvas, entry->tags, columns[0].x + 30 + drawn + 10, row->y + row->height / 2);
+		(void)fm_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width, ink);
 	}
 
 	/* The other columns' cells. */
@@ -416,9 +412,6 @@ list_cell_text(
 	case FM_COLUMN_OWNER:
 		fm_owner_text(entry->uid, entry->gid, text, size);
 		break;
-	case FM_COLUMN_TAGS:
-		fm_tags_text(app, entry->tags, text, size);
-		break;
 	case FM_COLUMN_LOCATION:
 		if (entry->detail != NULL)
 			snprintf(text, size, "%s", entry->detail);
@@ -445,8 +438,6 @@ list_title(
 		return "Date Modified";
 	case FM_COLUMN_CHANGED:
 		return "Date Changed";
-	case FM_COLUMN_TAGS:
-		return "Tags";
 	case FM_COLUMN_OWNER:
 		return "Owner";
 	case FM_COLUMN_LOCATION:
@@ -482,42 +473,4 @@ list_sort_of(
 
 	/* The others do not. */
 	return FM_SORT_COUNT;
-}
-
-/* Counts the tags of a mask. */
-static int
-list_tag_count(
-	unsigned tags)
-{
-	int count;
-
-	/* Each bit set. */
-	count = 0;
-	while (tags != 0U) {
-		count += (int)(tags & 1U);
-		tags >>= 1;
-	}
-
-	/* Reports the count. */
-	return count;
-}
-
-/* Draws the dots of an item's tags after its name, overlapping. */
-static void
-list_tag_dots(
-	struct fm_app *app,
-	struct fm_canvas *canvas,
-	unsigned tags,
-	int x,
-	int y)
-{
-	int index;
-
-	/* Each tag's dot in the sidebar's order. */
-	for (index = 0; index < app->tags.count; index++) {
-		if ((tags & (1U << index)) == 0U)
-			continue;
-		fm_icon_tag(canvas, (float)x, (float)y, 4.5f, app->tags.items[index].color);
-		x += 8;
-	}
 }

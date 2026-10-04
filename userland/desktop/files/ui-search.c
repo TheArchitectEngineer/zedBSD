@@ -7,8 +7,8 @@
 
 /*
  * The places of files that are not one folder: the search
- * results (spec §7), the recent files (spec §19) and a tag's files (spec
- * §20), and the search field that leads to the first.
+ * results (spec §7) and the recent files (spec §19), and the search field
+ * that leads to the first.
  *
  * Typing in the search field starts a search a moment after the last key
  * (FM_SEARCH_DELAY_MS), in a place of its own in the tab's history; typing
@@ -175,7 +175,7 @@ fm_search_tick(
 	/* A search in progress walks on. */
 	if (app->search.active == 0)
 		return;
-	more = fm_search_step(&app->search, &app->tags, &tab->listing, SEARCH_BUDGET_MS);
+	more = fm_search_step(&app->search, &tab->listing, SEARCH_BUDGET_MS);
 	app->dirty = 1;
 	if (more == 0)
 		search_finish(app, tab);
@@ -197,8 +197,8 @@ fm_search_scope(
 
 /*
  * Reads the items of a place that is not one folder into the tab's
- * listing: the search's (started, results come in the ticks), the recent
- * files, or a tag's files.
+ * listing: the search's (started, results come in the ticks), or the
+ * recent files.
  */
 void
 fm_search_load(
@@ -210,13 +210,11 @@ fm_search_load(
 	struct stat status;
 	const char *base;
 	char folder[KEILAND_RECENT_PATH_MAX];
-	char **paths;
 	char *slash;
 	size_t count;
 	size_t index;
 	int folder_entry;
 	int error;
-	int tag;
 
 	/* The place. */
 	location = &tab->history[tab->history_index].location;
@@ -230,7 +228,7 @@ fm_search_load(
 			base = "/";
 		if (base[0] == '\0')
 			base = app->home;
-		fm_search_start(&app->search, &app->tags, location->path, base, app->show_hidden);
+		fm_search_start(&app->search, location->path, base, app->show_hidden);
 		fm_log("SEARCH start query=%s base=%s", location->path, base);
 		return;
 	}
@@ -265,29 +263,6 @@ fm_search_load(
 		/* Recents are read. */
 		return;
 	}
-
-	/* A tag's files, from the index (each checked). */
-	if (location->kind == FM_LOCATION_TAG) {
-		tag = fm_tags_find(&app->tags, location->path);
-		error = fm_tags_paths(&app->tags, tag, &paths, &count);
-		for (index = 0; error == 0 && index < count; index++) {
-			snprintf(folder, sizeof(folder), "%s", paths[index]);
-			slash = strrchr(folder, '/');
-			if (slash == NULL)
-				continue;
-			*slash = '\0';
-			if (folder[0] == '\0')
-				snprintf(folder, sizeof(folder), "/");
-			entry = fm_dir_add(&tab->listing, folder, slash + 1);
-			if (entry == NULL)
-				break;
-			search_home_text(app, folder, folder, sizeof(folder));
-			entry->detail = strdup(folder);
-		}
-
-		/* The paths are not needed any more. */
-		fm_paths_free(paths, count);
-	}
 }
 
 /*
@@ -305,7 +280,7 @@ fm_recent_add(
 		fm_log("RECENT add failed path=%s error=%d", path, error);
 }
 
-/* Finishes a search: the results sorted as the window sorts, their tags read, and the outcome logged. */
+/* Finishes a search: the results sorted as the window sorts, and the outcome logged. */
 static void
 search_finish(
 	struct fm_app *app,
@@ -314,16 +289,13 @@ search_finish(
 	char folder[FM_PATH_MAX];
 	size_t index;
 
-	/* Each result's folder shown from the home folder (~/...) and its tags. */
+	/* Each result's folder shown from the home folder (~/...). */
 	for (index = 0; index < tab->listing.count; index++) {
-		if (tab->listing.entries[index].detail != NULL) {
-			search_home_text(app, tab->listing.entries[index].detail, folder, sizeof(folder));
-			free(tab->listing.entries[index].detail);
-			tab->listing.entries[index].detail = strdup(folder);
-		}
-
-		/* Its tags. */
-		tab->listing.entries[index].tags = fm_tags_of(&app->tags, tab->listing.entries[index].path);
+		if (tab->listing.entries[index].detail == NULL)
+			continue;
+		search_home_text(app, tab->listing.entries[index].detail, folder, sizeof(folder));
+		free(tab->listing.entries[index].detail);
+		tab->listing.entries[index].detail = strdup(folder);
 	}
 
 	/* The results in the window's order. */

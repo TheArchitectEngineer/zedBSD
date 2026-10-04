@@ -10,8 +10,8 @@
  * a press on an item that moves more than a few pixels drags the whole
  * selection.  Under the pointer a folder among the items, a place of the
  * sidebar or a tab is the target; the release moves the items there (on the
- * same device, else copies them), Ctrl copies, Ctrl+Shift makes links; a
- * tag's place tags them, the Trash throws them away, and the Favorites'
+ * same device, else copies them), Ctrl copies, Ctrl+Shift makes links;
+ * the Trash throws them away, and the Favorites'
  * title adds the dragged folders to the Favorites.  A favorite folder
  * dragged onto another one moves to its place in the list.  Esc gives up.
  *
@@ -68,13 +68,12 @@ static void drag_start(struct fm_app *app);
 static void drag_start_place(struct fm_app *app);
 static void drag_find(struct fm_app *app, int x, int y);
 static void drag_find_place(struct fm_app *app, int x, int y);
-static void drag_target(struct fm_app *app, unsigned target, unsigned kind, int index, int tag, const char *folder);
+static void drag_target(struct fm_app *app, unsigned target, unsigned kind, int index, const char *folder);
 static int drag_favorite(const struct fm_app *app, int index);
 static unsigned drag_operation(struct fm_app *app);
 static const char *drag_first(struct fm_app *app);
 static const char *drag_verb(unsigned operation);
 static void drag_drop_folder(struct fm_app *app);
-static void drag_drop_tag(struct fm_app *app);
 static void drag_drop_favorites(struct fm_app *app);
 static void drag_drop_reorder(struct fm_app *app);
 static void drag_end(struct fm_app *app);
@@ -169,9 +168,6 @@ fm_drag_release(
 	switch (app->drag_target) {
 	case FM_DRAG_FOLDER:
 		drag_drop_folder(app);
-		break;
-	case FM_DRAG_TAG:
-		drag_drop_tag(app);
 		break;
 	case FM_DRAG_TRASH:
 		fm_log("DRAG drop operation=trash items=%lu", (unsigned long)app->drag_count);
@@ -472,7 +468,6 @@ drag_start(
 	app->drag_target = FM_DRAG_NONE;
 	app->drag_hit_kind = FM_HIT_NONE;
 	app->drag_hit_index = -1;
-	app->drag_tag = -1;
 	app->drag_folder[0] = '\0';
 	app->press_deferred = 0;
 	app->band = 0;
@@ -511,13 +506,12 @@ drag_start_place(
 	app->drag_target = FM_DRAG_NONE;
 	app->drag_hit_kind = FM_HIT_NONE;
 	app->drag_hit_index = -1;
-	app->drag_tag = -1;
 	app->drag_folder[0] = '\0';
 	app->press_deferred = 0;
 	fm_log("DRAG start place=%d path=%s", app->press_index, app->places.items[app->press_index].location.path);
 }
 
-/* Finds the target under a point: a folder, a tag, the Trash or the Favorites' title; logged when it changes. */
+/* Finds the target under a point: a folder, the Trash or the Favorites' title; logged when it changes. */
 static void
 drag_find(
 	struct fm_app *app,
@@ -532,7 +526,6 @@ drag_find(
 	unsigned target;
 	unsigned kind;
 	int index;
-	int tag;
 	int same;
 	size_t entry_index;
 	char folder[FM_PATH_MAX];
@@ -541,7 +534,6 @@ drag_find(
 	(void)fm_input_hit_at(app, x, y, &kind, &index);
 	tab = fm_ui_tab(app);
 	target = FM_DRAG_NONE;
-	tag = -1;
 	folder[0] = '\0';
 
 	/* What each region stands for. */
@@ -558,7 +550,7 @@ drag_find(
 
 		break;
 	case FM_HIT_PLACE:
-		/* A place of the sidebar: a folder that is there, a tag, or the Trash. */
+		/* A place of the sidebar: a folder that is there, or the Trash. */
 		if (index < 0 || index >= app->places.count)
 			break;
 		place = &app->places.items[index];
@@ -567,10 +559,6 @@ drag_find(
 		if (place->location.kind == FM_LOCATION_FOLDER) {
 			target = FM_DRAG_FOLDER;
 			snprintf(folder, sizeof(folder), "%s", place->location.path);
-		} else if (place->location.kind == FM_LOCATION_TAG) {
-			tag = fm_tags_find(&app->tags, place->location.path);
-			if (tag >= 0)
-				target = FM_DRAG_TAG;
 		} else if (place->location.kind == FM_LOCATION_TRASH) {
 			if (tab->history[tab->history_index].location.kind != FM_LOCATION_TRASH)
 				target = FM_DRAG_TRASH;
@@ -635,7 +623,7 @@ drag_find(
 	}
 
 	/* The target. */
-	drag_target(app, target, kind, index, tag, folder);
+	drag_target(app, target, kind, index, folder);
 }
 
 /* Finds the target of a dragged favorite under a point: another favorite folder. */
@@ -662,7 +650,7 @@ drag_find_place(
 	}
 
 	/* The target. */
-	drag_target(app, target, kind, index, -1, "");
+	drag_target(app, target, kind, index, "");
 }
 
 /* Keeps a new target and logs it; an unchanged one is left alone. */
@@ -672,7 +660,6 @@ drag_target(
 	unsigned target,
 	unsigned kind,
 	int index,
-	int tag,
 	const char *folder)
 {
 	int spring_tab;
@@ -685,7 +672,6 @@ drag_target(
 	app->drag_target = target;
 	app->drag_hit_kind = kind;
 	app->drag_hit_index = index;
-	app->drag_tag = tag;
 	snprintf(app->drag_folder, sizeof(app->drag_folder), "%s", folder);
 
 	/* A folder among the items or of the sidebar springs open if the drag rests on it. */
@@ -702,9 +688,6 @@ drag_target(
 	switch (target) {
 	case FM_DRAG_FOLDER:
 		fm_log("DRAG target kind=folder path=%s", folder);
-		break;
-	case FM_DRAG_TAG:
-		fm_log("DRAG target kind=tag tag=%s", app->tags.items[tag].name);
 		break;
 	case FM_DRAG_TRASH:
 		fm_log("DRAG target kind=trash");
@@ -850,40 +833,6 @@ drag_drop_folder(
 	fm_paths_free(paths, count);
 }
 
-/* Drops the items on a tag's place: they get the tag, unless all have it already. */
-static void
-drag_drop_tag(
-	struct fm_app *app)
-{
-	struct fm_tab *tab;
-	size_t index;
-	unsigned tags;
-	int all;
-	char message[96];
-
-	/* Whether every dragged item has the tag. */
-	tab = fm_ui_tab(app);
-	all = 1;
-	for (index = 0; index < tab->listing.count; index++) {
-		if (tab->listing.entries[index].selected == 0)
-			continue;
-		tags = fm_tags_of(&app->tags, tab->listing.entries[index].path);
-		if ((tags & (1U << app->drag_tag)) == 0U)
-			all = 0;
-	}
-
-	/* A drop only adds the tag (the menus take it off). */
-	fm_log("DRAG drop operation=tag items=%lu tag=%s", (unsigned long)app->drag_count, app->tags.items[app->drag_tag].name);
-	if (all != 0) {
-		snprintf(message, sizeof(message), "Already tagged %s", app->tags.items[app->drag_tag].name);
-		fm_ui_message(app, message);
-		return;
-	}
-
-	/* The tag goes on, as Alt+number does. */
-	fm_action_toggle_tag(app, app->drag_tag);
-}
-
 /* Drops folders on the Favorites' title: each dragged folder that is not there yet is added. */
 static void
 drag_drop_favorites(
@@ -908,7 +857,7 @@ drag_drop_favorites(
 			continue;
 
 		/* The sidebar with it (the next folder is added after it). */
-		fm_places_init(&app->places, app->home, &app->tags);
+		fm_places_init(&app->places, app->home);
 		fm_log("FAVORITE add path=%s", entry->path);
 		added++;
 	}
@@ -943,7 +892,7 @@ drag_drop_reorder(
 	}
 
 	/* The sidebar in its new order. */
-	fm_places_init(&app->places, app->home, &app->tags);
+	fm_places_init(&app->places, app->home);
 }
 
 /* Ends a drag: no target, no ghost. */
@@ -958,7 +907,6 @@ drag_end(
 	app->drag_target = FM_DRAG_NONE;
 	app->drag_hit_kind = FM_HIT_NONE;
 	app->drag_hit_index = -1;
-	app->drag_tag = -1;
 	app->drag_folder[0] = '\0';
 	app->press_deferred = 0;
 	app->dirty = 1;
@@ -1151,24 +1099,24 @@ drop_find(
 
 	/* A drag without file names has no target here. */
 	if (app->drop_self == 0 && app->drop_files == 0) {
-		drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, -1, "");
+		drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, "");
 	} else if (app->drop_part >= 0) {
 		/* A part of the path: its folder (the folder shown is no target for the window's own items). */
 		count = fm_ui_crumbs(app, crumbs, FM_CRUMBS);
-		drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, -1, "");
+		drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, "");
 		if (app->drop_part < count && crumbs[app->drop_part].location.kind == FM_LOCATION_FOLDER) {
 			shown = fm_current_folder(app);
 			same = 1;
 			if (shown != NULL)
 				same = strcmp(shown, crumbs[app->drop_part].location.path);
 			if (app->drop_self == 0 || same != 0)
-				drag_target(app, FM_DRAG_FOLDER, FM_HIT_NONE, -2 - app->drop_part, -1, crumbs[app->drop_part].location.path);
+				drag_target(app, FM_DRAG_FOLDER, FM_HIT_NONE, -2 - app->drop_part, crumbs[app->drop_part].location.path);
 		}
 	} else {
 		/* Under the pointer as for a drag within the window; only a folder counts. */
 		drag_find(app, app->drop_x, app->drop_y);
 		if (app->drag_target != FM_DRAG_FOLDER)
-			drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, -1, "");
+			drag_target(app, FM_DRAG_NONE, FM_HIT_NONE, -1, "");
 
 		/* Another window's items can go into the folder shown, anywhere on the content. */
 		shown = fm_current_folder(app);
@@ -1176,7 +1124,7 @@ drop_find(
 		if (app->drop_self == 0 && app->drag_target == FM_DRAG_NONE && shown != NULL &&
 		    app->drop_x >= content->x && app->drop_x < content->x + content->width &&
 		    app->drop_y >= content->y && app->drop_y < content->y + content->height)
-			drag_target(app, FM_DRAG_FOLDER, FM_HIT_NONE, -1, -1, shown);
+			drag_target(app, FM_DRAG_FOLDER, FM_HIT_NONE, -1, shown);
 	}
 
 	/* A changed target is answered. */

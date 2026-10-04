@@ -184,9 +184,9 @@ main(
 		} else if (strcmp(argv[index], "state") == 0) {
 			struct fm_menu_state state;
 			fm_ui_menu_state(&app, &state);
-			printf("state selection=%d folder=%d trash=%d field=%d paste=%d undo=%d redo=%d back=%d forward=%d enclose=%d view=%u sort=%u columns=%u sidebar=%d preview=%d hidden=%d openers=%d first=%s tags=%d checked=%u tabs=%d\n",
+			printf("state selection=%d folder=%d trash=%d field=%d paste=%d undo=%d redo=%d back=%d forward=%d enclose=%d view=%u sort=%u columns=%u sidebar=%d preview=%d hidden=%d openers=%d first=%s tabs=%d\n",
 			    state.selection, state.folder, state.trash, state.field, state.can_paste, state.can_undo, state.can_redo, state.can_back, state.can_forward, state.can_enclose,
-			    state.view, state.sort, state.columns, state.sidebar, state.preview, state.hidden, state.opener_count, state.opener_count > 0 ? state.openers[0] : "-", state.tag_count, state.tags_checked, state.tabs);
+			    state.view, state.sort, state.columns, state.sidebar, state.preview, state.hidden, state.opener_count, state.opener_count > 0 ? state.openers[0] : "-", state.tabs);
 		} else if (strcmp(argv[index], "context") == 0) {
 			host_context(&app);
 		} else if (strcmp(argv[index], "titlebar") == 0) {

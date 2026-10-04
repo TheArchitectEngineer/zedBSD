@@ -1304,8 +1304,6 @@ input_operation_key(
 		fm_info_open(app);
 	} else if (event->key == INPUT_KEY_F && event->modifiers == FM_MOD_CTRL) {
 		fm_search_focus(app);
-	} else if (event->key >= INPUT_KEY_1 && event->key <= INPUT_KEY_1 + 8U && event->modifiers == FM_MOD_ALT) {
-		fm_action_toggle_tag(app, (int)(event->key - INPUT_KEY_1));
 	} else {
 		handled = 0;
 	}

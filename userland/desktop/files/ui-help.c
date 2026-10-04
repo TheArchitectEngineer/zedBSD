@@ -43,15 +43,15 @@ static const struct help_line help_guide[] = {
 	{ NULL, "Files shows the folders of this computer and what they hold." },
 	{ NULL, "" },
 	{ NULL, "Home is a dashboard: your folders, and the files you opened last." },
-	{ NULL, "The sidebar leads to your favorite folders, the trash and the tags." },
+	{ NULL, "The sidebar leads to your favorite folders and the trash." },
 	{ NULL, "Double-click a folder to open it, a file to open it with its application." },
 	{ NULL, "Space shows a file large (Quick Look); Get Info shows everything about it," },
 	{ NULL, "its owner and permissions, its attributes and its checksum." },
 	{ NULL, "" },
 	{ NULL, "Deleted items go to the Trash, from which they can be put back." },
 	{ NULL, "Almost everything can be undone with Undo in the Edit menu." },
-	{ NULL, "Type in the search field to find items by name, kind (kind:image)," },
-	{ NULL, "extension (.png) or tag (tag:Work)." }
+	{ NULL, "Type in the search field to find items by name, kind (kind:image)" },
+	{ NULL, "or extension (.png)." }
 };
 
 /* The keyboard shortcuts. */
@@ -74,8 +74,7 @@ static const struct help_line help_shortcuts[] = {
 	{ "Ctrl+Up", "Enclosing folder" },
 	{ "Ctrl+1  Ctrl+2", "Icons, list" },
 	{ "Ctrl+H", "Show hidden files" },
-	{ "Ctrl+Alt+P", "Show the preview" },
-	{ "Alt+1 ... Alt+9", "Put a tag on or take it off" }
+	{ "Ctrl+Alt+P", "Show the preview" }
 };
 
 /* About. */

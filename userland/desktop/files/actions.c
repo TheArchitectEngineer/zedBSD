@@ -407,7 +407,7 @@ fm_action_new_folder(
 
 	/* Recorded for undo; the folder read again with the new one selected, and its name being changed. */
 	paths[0] = path;
-	fm_undo_push(&app->undo, FM_UNDO_NEW_FOLDER, 1, paths, paths, NULL, NULL);
+	fm_undo_push(&app->undo, FM_UNDO_NEW_FOLDER, 1, paths, paths);
 	fm_log("NEWFOLDER path=%s", path);
 	actions_select_after(app, paths, 1);
 	fm_ui_reload(app, fm_ui_tab(app));
@@ -522,7 +522,7 @@ fm_action_rename_end(
 	/* Recorded for undo, and the folder read again with the item selected under its new name. */
 	from[0] = app->rename_path;
 	to[0] = target;
-	fm_undo_push(&app->undo, FM_UNDO_RENAME, 1, from, to, NULL, NULL);
+	fm_undo_push(&app->undo, FM_UNDO_RENAME, 1, from, to);
 	fm_log("RENAME from=%s to=%s", app->rename_path, target);
 	actions_select_after(app, to, 1);
 	fm_ui_reload(app, fm_ui_tab(app));
@@ -906,7 +906,7 @@ actions_record(
 
 	/* A change with something in it is recorded, with the replaced items when there are any. */
 	if (count != 0) {
-		fm_undo_push(&app->undo, kind, count, from, to, NULL, NULL);
+		fm_undo_push(&app->undo, kind, count, from, to);
 		if (replacing != 0)
 			fm_undo_set_replaced(&app->undo, replaced, count);
 	}
@@ -1061,16 +1061,6 @@ actions_undo_item(
 			(void)actions_start(app, FM_TASK_RESTORE, item->from, item->count, trash, 1);
 		else
 			(void)actions_start(app, FM_TASK_TRASH, item->to, item->count, trash, 1);
-		break;
-	case FM_UNDO_TAGS:
-		for (index = 0; index < item->count; index++) {
-			if (redo != 0)
-				(void)fm_tags_write(&app->tags, item->to[index], item->after[index]);
-			else
-				(void)fm_tags_write(&app->tags, item->to[index], item->before[index]);
-		}
-
-		/* Every item has its tags back (or again). */
 		break;
 	case FM_UNDO_NEW_FOLDER:
 		if (redo != 0) {
@@ -1367,79 +1357,6 @@ fm_action_collision_left(
 }
 
 /*
- * Turns a tag on for the selected items, or off when they all have it
- * (Alt+1 to Alt+9); recorded for undo.
- */
-void
-fm_action_toggle_tag(
-	struct fm_app *app,
-	int tag)
-{
-	struct fm_tab *tab;
-	unsigned *before;
-	unsigned *after;
-	char **paths;
-	char message[96];
-	size_t count;
-	size_t index;
-	int all;
-	int error;
-
-	/* A tag the window knows, and a selection. */
-	if (tag < 0 || tag >= app->tags.count)
-		return;
-	error = fm_selected_paths(app, &paths, &count);
-	if (error != 0 || count == 0) {
-		fm_paths_free(paths, count);
-		return;
-	}
-
-	/* The tags before, and whether every item has this one already. */
-	before = calloc(count, sizeof(unsigned));
-	after = calloc(count, sizeof(unsigned));
-	if (before == NULL || after == NULL) {
-		free(before);
-		free(after);
-		fm_paths_free(paths, count);
-		return;
-	}
-
-	/* Whether every item has the tag already. */
-	all = 1;
-	for (index = 0; index < count; index++) {
-		before[index] = fm_tags_of(&app->tags, paths[index]);
-		if ((before[index] & (1U << tag)) == 0U)
-			all = 0;
-	}
-
-	/* Each item gets the tag, or loses it when all had it. */
-	for (index = 0; index < count; index++) {
-		after[index] = before[index] | (1U << tag);
-		if (all != 0)
-			after[index] = before[index] & ~(1U << tag);
-		error = fm_tags_write(&app->tags, paths[index], after[index]);
-		if (error != 0) {
-			actions_error(app, "Couldn't tag", error, paths[index]);
-			after[index] = before[index];
-		}
-	}
-
-	/* Recorded for undo, said, and the items read again with their tags. */
-	fm_undo_push(&app->undo, FM_UNDO_TAGS, count, paths, paths, before, after);
-	if (all != 0)
-		snprintf(message, sizeof(message), "Removed the tag %s", app->tags.items[tag].name);
-	else
-		snprintf(message, sizeof(message), "Tagged %s", app->tags.items[tag].name);
-	fm_ui_message(app, message);
-	fm_log("TAG tag=%s on=%d items=%lu", app->tags.items[tag].name, all == 0, (unsigned long)count);
-	free(before);
-	free(after);
-	fm_paths_free(paths, count);
-	tab = fm_ui_tab(app);
-	fm_ui_reload(app, tab);
-}
-
-/*
  * Adds the folder shown to the sidebar's Favorites (Ctrl+Alt+T).
  */
 void
@@ -1470,7 +1387,7 @@ fm_action_add_favorite(
 	}
 
 	/* The sidebar with it. */
-	fm_places_init(&app->places, app->home, &app->tags);
+	fm_places_init(&app->places, app->home);
 	fm_log("FAVORITE add path=%s", location->path);
 	app->dirty = 1;
 }
@@ -1490,7 +1407,7 @@ fm_action_remove_favorite(
 	if (error != 0)
 		return;
 	fm_log("FAVORITE remove path=%s", app->places.items[place].location.path);
-	fm_places_init(&app->places, app->home, &app->tags);
+	fm_places_init(&app->places, app->home);
 	app->dirty = 1;
 }
 

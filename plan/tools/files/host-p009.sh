@@ -3,7 +3,7 @@
 # Builds nothing: run host-build.sh first.  Each case runs files-render on a fresh sample home,
 # started in Documents (the Trash for 3), and checks the lines it prints:
 #  1. A right press on an item: the item is selected, the window asks for a context menu of items
-#     (request 5, where 0) with Open, Open With, Cut, Copy, Rename, Tags, Get Info, Move to Trash;
+#     (request 5, where 0) with Open, Open With, Cut, Copy, Rename, Get Info, Move to Trash;
 #     Paste is disabled while the clipboard is empty.
 #  2. A right press on the empty part of the content: nothing stays selected; New Folder, View (as Icons
 #     checked), Sort By (Name checked), Show Hidden Files.
@@ -48,7 +48,6 @@ expect items "^row id=1003 parent=0 kind=0 enabled=1 checked=0 action=3 label=Op
 expect items "^row id=100 parent=0 kind=4 enabled=1 .* label=Open With\$"
 expect items "^row id=1011 parent=0 kind=0 enabled=0 checked=0 action=11 label=Paste\$"
 expect items "^row id=1014 parent=0 kind=0 enabled=1 checked=0 action=14 label=Rename\$"
-expect items "^row id=1300 parent=101 kind=2 enabled=1 checked=0 action=300 label=Work\$"
 expect items "^row id=1004 .* label=Get Info\$"
 expect items "^row id=1005 .* label=Move to Trash\$"
 

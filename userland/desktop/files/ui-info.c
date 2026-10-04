@@ -98,7 +98,7 @@ fm_info_open(
 	}
 
 	/* What the card shows, over the window (Quick Look gives way). */
-	(void)fm_info_gather(&app->info, path, &app->tags);
+	(void)fm_info_gather(&app->info, path);
 	app->info_open = 1;
 	app->quicklook = 0;
 	app->dirty = 1;
@@ -411,12 +411,6 @@ info_rows(
 	is_link = S_ISLNK(info->mode);
 	if (is_link != 0)
 		info_add(rows, &count, "Link to", info->target);
-
-	/* Its tags. */
-	snprintf(value, sizeof(value), "None");
-	if (info->tags != 0U)
-		fm_tags_text(app, info->tags, value, sizeof(value));
-	info_add(rows, &count, "Tags", value);
 
 	/* Its extended attributes, one a row. */
 	if (info->attribute_count == 0)

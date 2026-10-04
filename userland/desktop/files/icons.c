@@ -285,22 +285,6 @@ fm_icon_file(
 	(void)fm_text_draw(text, canvas, label_x, baseline, label, strlen(label), pixels, 1, FM_RGB(0xffffff));
 }
 
-/*
- * Draws a tag's dot: a circle of its color with a light rim.
- */
-void
-fm_icon_tag(
-	struct fm_canvas *canvas,
-	float cx,
-	float cy,
-	float radius,
-	fm_color color)
-{
-	/* The rim, then the dot inside it. */
-	fm_canvas_circle(canvas, cx, cy, radius + 1.0f, FM_RGBA(0xffffff, 200));
-	fm_canvas_circle(canvas, cx, cy, radius, color);
-}
-
 /* Draws joined line segments through points given as fractions of the icon's box. */
 static void
 icons_polyline(

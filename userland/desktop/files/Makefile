@@ -16,7 +16,7 @@ KEILAND_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/task.c userland/desktop/files/trash.c \
 	userland/desktop/files/undo.c userland/desktop/files/clip.c \
 	userland/desktop/files/actions.c userland/desktop/files/ui-overlay.c \
-	userland/desktop/files/tags.c userland/desktop/files/search.c \
+	userland/desktop/files/search.c \
 	userland/desktop/files/ui-search.c userland/desktop/files/ui-home.c \
 	userland/desktop/files/thumb.c userland/desktop/files/thumb-cache.c userland/desktop/files/peek.c \
 	userland/desktop/files/ui-preview.c userland/desktop/files/apps.c \

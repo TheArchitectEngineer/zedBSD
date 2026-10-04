@@ -7,9 +7,9 @@
 
 /*
  * The search of files (spec §7): the items under a folder whose
- * name, extension, kind and tags match the words typed.
+ * name, extension and kind match the words typed.
  *
- * Words are all required.  tag:NAME wants a tag, kind:image (text, code,
+ * Words are all required.  kind:image (text, code,
  * audio, video, archive, pdf, folder, program) a kind, .png, *.png or
  * ext:png an extension (any of those given), and any other word is part of
  * the name (without regard to ASCII case).  The folders are walked a few
@@ -52,11 +52,11 @@ static const struct search_kind search_kinds[] = {
 	{ "document", FM_CATEGORY_DOCUMENT }
 };
 
-static void search_parse(struct fm_search *search, const struct fm_tags *tags, const char *query);
-static void search_word(struct fm_search *search, const struct fm_tags *tags, const char *word);
+static void search_parse(struct fm_search *search, const char *query);
+static void search_word(struct fm_search *search, const char *word);
 static void search_extension(struct fm_search *search, const char *extension);
 static int search_passed(const struct fm_search *search, const char *name);
-static int search_matches(struct fm_search *search, const struct fm_tags *tags, const struct fm_entry *entry);
+static int search_matches(struct fm_search *search, const struct fm_entry *entry);
 static int search_contains(const char *text, const char *word);
 static int search_push(struct fm_search *search, const char *path);
 static void search_pop(struct fm_search *search);
@@ -69,7 +69,6 @@ static int search_skipped(const char *path);
 void
 fm_search_start(
 	struct fm_search *search,
-	const struct fm_tags *tags,
 	const char *query,
 	const char *base,
 	int hidden)
@@ -78,7 +77,7 @@ fm_search_start(
 	fm_search_stop(search);
 
 	/* The query's words and the base folder. */
-	search_parse(search, tags, query);
+	search_parse(search, query);
 	snprintf(search->base, sizeof(search->base), "%s", base);
 	search->hidden = hidden;
 	search->active = 1;
@@ -95,7 +94,6 @@ fm_search_start(
 int
 fm_search_step(
 	struct fm_search *search,
-	const struct fm_tags *tags,
 	struct fm_listing *listing,
 	uint64_t budget_ms)
 {
@@ -156,7 +154,7 @@ fm_search_step(
 			snprintf(path, sizeof(path), "%s", entry->path);
 
 			/* A match stays in the listing with its folder shown; any other goes again. */
-			matched = search_matches(search, tags, entry);
+			matched = search_matches(search, entry);
 			if (matched != 0) {
 				entry->detail = strdup(walk->path);
 			} else {
@@ -198,11 +196,10 @@ fm_search_stop(
 	search->active = 0;
 }
 
-/* Splits a query into its words: names, extensions, kinds and tags. */
+/* Splits a query into its words: names, extensions and kinds. */
 static void
 search_parse(
 	struct fm_search *search,
-	const struct fm_tags *tags,
 	const char *query)
 {
 	char copy[FM_SEARCH_QUERY];
@@ -212,8 +209,6 @@ search_parse(
 	/* Nothing yet. */
 	search->name_count = 0;
 	search->extension_count = 0;
-	search->tag_mask = 0;
-	search->unknown_tag = 0;
 	search->categories = 0;
 
 	/* Each word between spaces, sorted by what it asks for. */
@@ -230,37 +225,21 @@ search_parse(
 		end = strchr(word, ' ');
 		if (end != NULL)
 			*end = '\0';
-		search_word(search, tags, word);
+		search_word(search, word);
 		if (end == NULL)
 			break;
 		word = end + 1;
 	}
 }
 
-/* Takes one word of a query: a tag, a kind, an extension, or part of the name. */
+/* Takes one word of a query: a kind, an extension, or part of the name. */
 static void
 search_word(
 	struct fm_search *search,
-	const struct fm_tags *tags,
 	const char *word)
 {
 	size_t index;
 	int match;
-	int tag;
-
-	/* tag:NAME wants a tag (one the window does not know matches nothing). */
-	match = strncasecmp(word, "tag:", 4);
-	if (match == 0) {
-		tag = fm_tags_find(tags, word + 4);
-		if (tag < 0) {
-			search->unknown_tag = 1;
-		} else {
-			search->tag_mask |= 1U << tag;
-		}
-
-		/* The tag is taken. */
-		return;
-	}
 
 	/* kind:WORD wants a kind. */
 	match = strncasecmp(word, "kind:", 5);
@@ -344,21 +323,16 @@ search_passed(
 static int
 search_matches(
 	struct fm_search *search,
-	const struct fm_tags *tags,
 	const struct fm_entry *entry)
 {
 	const char *dot;
-	unsigned mask;
 	int index;
 	int found;
 	int match;
 
-	/* A tag the window does not know matches nothing; an empty query nothing either. */
-	if (search->unknown_tag != 0)
-		return 0;
+	/* An empty query matches nothing. */
 	if (search->name_count == 0 &&
 	    search->extension_count == 0 &&
-	    search->tag_mask == 0U &&
 	    search->categories == 0U)
 		return 0;
 
@@ -391,13 +365,6 @@ search_matches(
 	/* One of the kinds is the entry's. */
 	if (search->categories != 0U && (search->categories & (1U << entry->mime->category)) == 0U)
 		return 0;
-
-	/* Every tag is the file's (read only when tags are asked for). */
-	if (search->tag_mask != 0U) {
-		mask = fm_tags_of(tags, entry->path);
-		if ((mask & search->tag_mask) != search->tag_mask)
-			return 0;
-	}
 
 	/* Every word matched. */
 	return 1;

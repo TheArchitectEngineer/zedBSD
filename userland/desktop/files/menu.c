@@ -39,7 +39,6 @@
 
 /* The submenus. */
 #define MENU_OPEN_WITH		10U
-#define MENU_TAGS		11U
 #define MENU_SORT		12U
 #define MENU_COLUMNS		13U
 #define MENU_ALWAYS_WITH	14U
@@ -72,7 +71,7 @@
 #define MENU_ALT		KEILAND_MENU_ALT
 
 /* The list columns the View menu names, after the name (which is always shown). */
-#define MENU_COLUMN_COUNT	6
+#define MENU_COLUMN_COUNT	5
 
 /*
  * One item of the menus as the window builds them: its ID, its parent,
@@ -91,7 +90,7 @@ struct menu_item {
 
 /*
  * The fixed items, in the order they are shown.  The ways to open the
- * selection, the tags and the list columns are added after them by
+ * selection and the list columns are added after them by
  * menu_build.
  */
 static const struct menu_item menu_items[] = {
@@ -119,7 +118,6 @@ static const struct menu_item menu_items[] = {
 	{ MENU_ACTION_ID(FM_ACTION_SELECT_ALL), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Select All", FM_ACTION_SELECT_ALL, KEILAND_MENU_ROLE_SELECT_ALL, MENU_CTRL, 'a' },
 	{ MENU_LINE + 3U, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ACTION_ID(FM_ACTION_RENAME), MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Rename", FM_ACTION_RENAME, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_TAGS, MENU_EDIT, KEILAND_MENU_ITEM_SUBMENU, "Tags", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ACTION_ID(FM_ACTION_VIEW_ICONS), MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "Icons", FM_ACTION_VIEW_ICONS, KEILAND_MENU_ROLE_NONE, MENU_CTRL, '1' },
 	{ MENU_ACTION_ID(FM_ACTION_VIEW_LIST), MENU_VIEW, KEILAND_MENU_ITEM_RADIO, "List", FM_ACTION_VIEW_LIST, KEILAND_MENU_ROLE_NONE, MENU_CTRL, '2' },
@@ -171,7 +169,6 @@ static const unsigned menu_columns[MENU_COLUMN_COUNT] = {
 	FM_COLUMN_SIZE,
 	FM_COLUMN_MODIFIED,
 	FM_COLUMN_CHANGED,
-	FM_COLUMN_TAGS,
 	FM_COLUMN_OWNER
 };
 
@@ -181,7 +178,6 @@ static const char *const menu_column_labels[MENU_COLUMN_COUNT] = {
 	"Size",
 	"Date Modified",
 	"Changed",
-	"Tags",
 	"Owner"
 };
 
@@ -559,7 +555,7 @@ menu_add(
 
 /*
  * Adds the slots of the variable items: a way to open the selection each
- * (Open With), a checkbox a tag (Tags), a checkbox a list column; the
+ * (Open With), a checkbox a list column; the
  * state names them and hides the ones not used.
  */
 static int
@@ -615,18 +611,6 @@ menu_add_slots(
 	if (error != 0)
 		return error;
 
-	/* The tags. */
-	for (index = 0; index < FM_TAGS; index++) {
-		item.id = MENU_ACTION_ID(FM_ACTION_TAG_FIRST + index);
-		item.parent = MENU_TAGS;
-		item.type = KEILAND_MENU_ITEM_CHECKBOX;
-		item.label = "-";
-		item.action = FM_ACTION_TAG_FIRST + index;
-		error = menu_add(menu, &item);
-		if (error != 0)
-			return error;
-	}
-
 	/* The list columns. */
 	for (index = 0; index < MENU_COLUMN_COUNT; index++) {
 		item.id = MENU_ACTION_ID(FM_ACTION_COLUMN_FIRST + menu_columns[index]);
@@ -679,7 +663,7 @@ menu_state(
 
 	/* Succeeded: the menus show the state. */
 	menu->shown = *state;
-	fm_log("MENU state selection=%d folder=%d paste=%d undo=%d back=%d view=%u sort=%u openers=%d tags=%d", state->selection, state->folder, state->can_paste, state->can_undo, state->can_back, state->view, state->sort, state->opener_count, state->tag_count);
+	fm_log("MENU state selection=%d folder=%d paste=%d undo=%d back=%d view=%u sort=%u openers=%d", state->selection, state->folder, state->can_paste, state->can_undo, state->can_back, state->view, state->sort, state->opener_count);
 	return 0;
 }
 
@@ -695,7 +679,6 @@ menu_state_items(
 	int undo;
 	int redo;
 	int paste;
-	int tags;
 	int error;
 
 	/* A selection to act on, outside a text field (whose keys stay its own) and outside the trash. */
@@ -706,13 +689,10 @@ menu_state_items(
 	if (state->trash != 0)
 		editable = 0;
 
-	/* One item to rename, and tags to put on the selection. */
+	/* One item to rename. */
 	renamable = 0;
 	if (editable != 0 && state->selection == 1)
 		renamable = 1;
-	tags = 0;
-	if (selected != 0 && state->tag_count > 0)
-		tags = 1;
 
 	/* The histories and the clipboard, which a text field's own keys leave alone. */
 	undo = 0;
@@ -748,8 +728,6 @@ menu_state_items(
 		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_DUPLICATE), editable);
 	if (error == 0)
 		error = keiland_menu_set_enabled(model, MENU_ACTION_ID(FM_ACTION_RENAME), renamable);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_TAGS, tags);
 
 	/* View: the view and the sort as radio items, the panels as checkboxes; the views of later versions off. */
 	if (error == 0)
@@ -818,17 +796,6 @@ menu_state_slots(
 			error = keiland_menu_set_label(model, id, state->openers[index]);
 		if (error == 0)
 			error = keiland_menu_set_visible(model, id, index < state->opener_count);
-	}
-
-	/* The tags, each checked when every selected item has it, the rest hidden. */
-	for (index = 0; index < FM_TAGS && error == 0; index++) {
-		id = MENU_ACTION_ID(FM_ACTION_TAG_FIRST + (unsigned)index);
-		if (index < state->tag_count)
-			error = keiland_menu_set_label(model, id, state->tags[index]);
-		if (error == 0)
-			error = keiland_menu_set_visible(model, id, index < state->tag_count);
-		if (error == 0)
-			error = keiland_menu_set_checked(model, id, (state->tags_checked & (1U << index)) != 0U);
 	}
 
 	/* The list columns shown. */

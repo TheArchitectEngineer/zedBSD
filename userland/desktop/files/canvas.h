@@ -205,6 +205,5 @@ uint32_t fm_utf8_next(const char *string, size_t length, size_t *index);
 void fm_icon_draw(struct fm_canvas *canvas, enum fm_icon icon, float x, float y, float size, fm_color color);
 void fm_icon_folder(struct fm_canvas *canvas, float x, float y, float size, fm_color tint);
 void fm_icon_file(struct fm_canvas *canvas, struct fm_text *text, float x, float y, float size, fm_color band, const char *label);
-void fm_icon_tag(struct fm_canvas *canvas, float cx, float cy, float radius, fm_color color);
 
 #endif

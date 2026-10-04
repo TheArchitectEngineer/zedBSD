@@ -1606,7 +1606,7 @@ task_copy_chunk(
 	/* The buffer is not needed any more. */
 	free(buffer);
 
-	/* The copy gets the source's mode, times and extended attributes (tags among them). */
+	/* The copy gets the source's mode, times and extended attributes. */
 	status = fchmod(task->copy_out, step->mode);
 	(void)status;
 	task_copy_xattrs(task->copy_in, task->copy_out);

@@ -85,7 +85,7 @@ main(
 	mkdir(path, 0700);
 	setenv("XDG_RUNTIME_DIR", path, 1);
 
-	/* A source tree: a file, a folder with a file, a nested folder and a link, a tag on a file. */
+	/* A source tree: a file, a folder with a file, a nested folder and a link, an extended attribute on a file. */
 	snprintf(path, sizeof(path), "%s/src", root);
 	mkdir(path, 0755);
 	snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
@@ -105,7 +105,7 @@ main(
 	snprintf(path, sizeof(path), "%s/dst", root);
 	mkdir(path, 0755);
 
-	/* 1. Copy a file and a folder; the copy keeps contents, the link and the tag. */
+	/* 1. Copy a file and a folder; the copy keeps contents, the link and the extended attribute. */
 	snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
 	sources[0] = strdup(path);
 	snprintf(path, sizeof(path), "%s/src/Folder.v1", root);
@@ -117,7 +117,7 @@ main(
 	snprintf(path, sizeof(path), "%s/dst/Report.pdf", root);
 	check(file_is(path, "report"), "copy: the file's contents");
 	length = getxattr(path, "user.keiland.tags", value, sizeof(value));
-	check(length == 4 && memcmp(value, "Work", 4) == 0, "copy: the tag (xattr) came along");
+	check(length == 4 && memcmp(value, "Work", 4) == 0, "copy: the extended attribute came along");
 	snprintf(path, sizeof(path), "%s/dst/Folder.v1/deep/leaf.txt", root);
 	check(file_is(path, "leaf"), "copy: a nested file");
 	snprintf(path, sizeof(path), "%s/dst/Folder.v1/link", root);
@@ -552,12 +552,12 @@ main(
 
 	/* 11. The undo history: push, take, redo, and a new change empties the redo. */
 	memset(&history, 0, sizeof(history));
-	fm_undo_push(&history, FM_UNDO_RENAME, 1, sources, targets, NULL, NULL);
-	fm_undo_push(&history, FM_UNDO_MOVE, 2, sources, targets, NULL, NULL);
+	fm_undo_push(&history, FM_UNDO_RENAME, 1, sources, targets);
+	fm_undo_push(&history, FM_UNDO_MOVE, 2, sources, targets);
 	check(fm_undo_take(&history, 0, &item) == 1 && item.kind == FM_UNDO_MOVE && item.count == 2, "undo: the newest change");
 	fm_undo_push_redo(&history, &item);
 	check(history.redo_count == 1 && history.undo_count == 1, "undo: kept for redo");
-	fm_undo_push(&history, FM_UNDO_COPY, 1, sources, targets, NULL, NULL);
+	fm_undo_push(&history, FM_UNDO_COPY, 1, sources, targets);
 	check(history.redo_count == 0 && history.undo_count == 2, "undo: a new change empties the redo");
 	fm_undo_free(&history);
 
@@ -580,10 +580,6 @@ main(
 	/* 14. The recent list (libkeiland): newest first, a path once, removal. */
 	{
 		static struct keiland_recent_item items[8];
-		struct fm_tags tags;
-		char **tagged;
-		size_t tagged_count;
-		unsigned mask;
 
 		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
 		check(keiland_recent_add(path, "test") == 0, "recent: add");
@@ -594,22 +590,7 @@ main(
 		check(keiland_recent_remove(path) == 0, "recent: remove");
 		check(keiland_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
 
-		/* 15. Tags: the xattr, unknown names kept, and the index. */
-		fm_tags_load(&tags);
-		check(tags.count == 5 && strcmp(tags.items[0].name, "Work") == 0, "tags: the five defaults");
-		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
-		setxattr(path, "user.keiland.tags", "Work\nMine\n", 10, 0);
-		mask = fm_tags_of(&tags, path);
-		check(mask == 1U, "tags: Work read (Mine unknown)");
-		check(fm_tags_write(&tags, path, (1U << 2) | 1U) == 0, "tags: write Work and Ideas");
-		length = getxattr(path, "user.keiland.tags", value, sizeof(value));
-		value[length > 0 ? length : 0] = '\0';
-		check(strstr(value, "Mine") != NULL && strstr(value, "Ideas") != NULL, "tags: the unknown name kept");
-		check(fm_tags_paths(&tags, 2, &tagged, &tagged_count) == 0 && tagged_count == 1 && strcmp(tagged[0], path) == 0, "tags: the index lists the file under Ideas");
-		fm_paths_free(tagged, tagged_count);
-		check(fm_tags_write(&tags, path, 0) == 0, "tags: clear the known ones");
-		check(fm_tags_paths(&tags, 2, &tagged, &tagged_count) == 0 && tagged_count == 0, "tags: the index forgets it");
-		fm_paths_free(tagged, tagged_count);
+		/* 15. (Tags, removed in ws127-p012.) */
 	}
 
 	/* 16. Pictures (p007): PPM and PGM read, damaged headers refused, thumbnails fitted; the peek of text. */
@@ -702,7 +683,6 @@ main(
 	/* 17. Opening (p012): the lists' order, the executable first, the quoting; the information and its checksum. */
 	{
 		static struct fm_info info;
-		static struct fm_tags no_tags;
 		struct fm_opener openers[FM_OPENERS];
 		char output[FM_PATH_MAX + 64];
 		char config[2 * FM_PATH_MAX];
@@ -754,13 +734,13 @@ main(
 		make_file(path, "abc");
 		setxattr(path, "user.note", "hello", 5, 0);
 		fm_info_release(&info);
-		check(fm_info_gather(&info, path, &no_tags) == 0 && info.size == 3 && info.attribute_count == 1 && strcmp(info.attributes[0].name, "user.note") == 0 && info.attributes[0].size == 5, "info: gathered, with the attribute and its size");
+		check(fm_info_gather(&info, path) == 0 && info.size == 3 && info.attribute_count == 1 && strcmp(info.attributes[0].name, "user.note") == 0 && info.attributes[0].size == 5, "info: gathered, with the attribute and its size");
 		check(fm_info_checksum_start(&info) == 0 && info.checksum_state == FM_CHECKSUM_RUNNING, "info: checksum started");
 		for (tries = 0; tries < 10 && info.checksum_state == FM_CHECKSUM_RUNNING; tries++)
 			fm_info_checksum_step(&info, 10);
 		check(info.checksum_state == FM_CHECKSUM_DONE && strcmp(info.checksum, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0, "info: SHA-256 of abc");
 		snprintf(path, sizeof(path), "%s/no-such", root);
-		check(fm_info_gather(&info, path, &no_tags) == ENOENT, "info: a missing path says ENOENT");
+		check(fm_info_gather(&info, path) == ENOENT, "info: a missing path says ENOENT");
 		fm_info_release(&info);
 	}
 

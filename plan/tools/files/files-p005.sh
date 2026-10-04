@@ -1,9 +1,8 @@
 #!/bin/sh
-# ws071-p005: tags, search, recent files and the sidebar's favorites of files on the
+# ws071-p005: search, recent files and the sidebar's favorites of files on the
 # Venus guest (the lean image, build-files-image.sh).  zdesktop --glass at 1280x800;
 # files at 1000x640 on the sample home (/tmp/fhome), opened on Documents.
-#  1. tagged.png: Alt+1 and Alt+3 tag Report.pdf Work and Ideas (TAG lines; the dots on its icon).
-#  2. tag.png: the sidebar's Work lists it (LOCATION kind=tag path=Work items=1).
+#  1, 2. (The tags: removed in ws127-p012.)
 #  3. search.png: "note" typed in the search field finds Meeting notes.txt (SEARCH done results=1);
 #     the Computer chip searches the whole computer (a second SEARCH start with base=/).
 #  4. Down and Enter open the result (OPEN), and the sidebar's Recents lists it (items=1).
@@ -58,7 +57,7 @@ control() {
 
 guest "$stop_all" >/dev/null
 # With FILES_ON_UFS=1 the sample home lives on the root file system (UFS) and /tmp/fhome links to it,
-# so that the tags (extended attributes) are kept by UFS rather than tmpfs.
+# so that extended attributes are kept by UFS rather than tmpfs.
 make_home='sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 [ "${FILES_ON_UFS:-0}" = 1 ] && make_home='rm -rf /fhome; sh /usr/share/files-tests/make-home.sh /fhome >/dev/null; ln -s /fhome /tmp/fhome'
 guest "rm -f /tmp/wayland-0 /tmp/files.clipboard; rm -rf /tmp/fhome; $make_home"
@@ -71,21 +70,6 @@ set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=6 error=0'
-
-# 1. Tags.
-click 779 120
-keys '<alt-1>'
-sleep 0.8
-keys '<alt-3>'
-sleep 0.8
-expect_log /tmp/f.log 'ZFILES TAG tag=Work on=1 items=1'
-expect_log /tmp/f.log 'ZFILES TAG tag=Ideas on=1 items=1'
-shot tagged.png
-
-# 2. The tag's place.
-click 100 441
-expect_log /tmp/f.log 'ZFILES LOCATION kind=tag path=Work items=1 error=0'
-shot tag.png
 
 # 3. Search, then the whole computer.
 control 5
