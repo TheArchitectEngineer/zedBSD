@@ -34,7 +34,7 @@ user（原文）:「では、サブエージェントを起動して作業しま
 | q709 / q709-i01 | 空いた担当 | WS090: [ws090-p016](ws090/phase016/phase.md) | File Chooser を (b) 左右とも透かす | なし | 実装済み・T1-103 の試験待ち（P2 ba8f807 → main 37e0de9） |
 | q710 / q710-i01 | P2 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | uncleared（unstarted: planned の Phase が無い。p004 planning＝ベータ1 の後、p007 planning＝実機、p008 in-progress＝q667 の T1 の回帰と実機待ち、2026-10-05 P2 の確認） |
 | q711 / q711-i01 | P2 | WS129: p003〜p005 | release の作業 | なし | p003 実装済み・T1-104 の試験待ち（P2 52c6354 → main）。p004 は q714、p005 の今書ける分は p013 に分けて q715、残りは 10/13 頃 |
-| q714 / q714-i01 | P2 | [ws129-p004](ws129/phase004/phase.md) | release の image の config・CI の release の job（rc の build と promote）・root の lock の option（U10）。zip の有無は U6/ws088-p002 次第、program の最終の一覧は 10/13 の RC。ci.yml は WS112 と共有だが WS112 はベータ4 以降で今は衝突なし | ws129-p001 | pending |
+| q714 / q714-i01 | P2 | [ws129-p004](ws129/phase004/phase.md) | release の image の config・CI の release の job（rc の build と promote）・root の lock の option（U10）。zip の有無は U6/ws088-p002 次第、program の最終の一覧は 10/13 の RC。ci.yml は WS112 と共有だが WS112 はベータ4 以降で今は衝突なし | ws129-p001 | 実装済み・T1-105 の試験待ち（P2 4c93a6c・8004a91 → main）。ユーザーの判断 3 つ（master の pending-decisions） |
 | q715 / q715-i01 | P2 | [ws129-p013](ws129/phase013/phase.md) | 利用の手引きと既知の問題の下書き（docs/release/、英語） | ws129-p001 | pending |
 | q716 / q716-i01 | 空いた担当 | [ws089-p027](ws089/phase027/phase.md) | About に PRETTY_NAME | ws129-p003（main に統合済み） | pending |
 
