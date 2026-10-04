@@ -38,7 +38,7 @@ user（原文）:「では、サブエージェントを起動して作業しま
 | q715 / q715-i01 | P2 | [ws129-p013](ws129/phase013/phase.md) | 利用の手引きと既知の問題の下書き（docs/release/、英語） | ws129-p001 | 実装済み（P2 b0052b7 → main）。QEMU 不要、ユーザーの review 待ち（4 つの判断の後に p005 が RC で直す） |
 | q716 / q716-i01 | P1 | [ws089-p027](ws089/phase027/phase.md) | About に PRETTY_NAME | ws129-p003（main に統合済み） | 実装済み・T1-108 の試験待ち（P1 c20e75c → main） |
 | q717 / q717-i01 | P1 | [ws132-p003](ws132/phase003/phase.md) | backend の事象、input の探し直し、電池・AC の表示（D1・D2 に依らない分） | ws132-p002（main 8aff921 に統合、QEMU は T1-106） | 実装済み・T1-107 の試験待ち（P1 78fe304 → main）。電池の無い機械の bar の空きを詰めるかはユーザーの判断（詰めると QEMU の試験の座標が全部動く） |
-| q718 / q718-i01 | P1 | [ws099-p032](ws099/phase032/phase.md) | WiFi の icon の Alt+クリックで IP address と統計（設計から） | なし | in-progress（2026-10-05 P1） |
+| q718 / q718-i01 | P1 | [ws099-p032](ws099/phase032/phase.md) | WiFi の icon の Alt+クリックで IP address と統計（設計から） | なし | 実装済み・T1-110 の試験待ち（P1 df68df7 → main）。router・BSSID・channel・IPv6 などは backend に源が無く別の Phase の候補 |
 
 ## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
 
