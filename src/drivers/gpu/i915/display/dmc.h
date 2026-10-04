@@ -24,5 +24,6 @@ int drv_i915_dmc_has_payload(const struct i915_dmc *dmc);
 void drv_i915_dmc_load_program(struct i915_dmc *dmc, struct i915_mmio *mmio, uint32_t *dc_state_out);
 void drv_i915_dmc_init(struct i915_dmc_dev *dev, struct i915_workqueue *wq, struct i915_mmio *mmio, struct i915_power_domains *pd, struct i915_pw_ctx *pwc, int display_ver, int is_alderlake_p, char stepping, char substepping, const char *fw_path);
 void drv_i915_dmc_fini(struct i915_dmc_dev *dev, uint64_t deadline);
+int drv_i915_dmc_resume(struct i915_dmc_dev *dev);
 
 #endif

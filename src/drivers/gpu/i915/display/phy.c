@@ -281,6 +281,37 @@ drv_i915_combo_phy_init_one(
 }
 
 /*
+ * Takes combo PHYs A and B down for a suspend (intel_combo_phy_uninit()):
+ * the DE IO comp powered down where the PHY has PHY_MISC, and COMP_INIT
+ * cleared.  The resume's drv_i915_combo_phy_init() programs them again.
+ */
+void
+drv_i915_combo_phy_uninit(
+	struct i915_mmio *mmio)
+{
+	unsigned phy;
+	uint32_t value;
+	int has_misc;
+
+	/* for_each_combo_phy: PHY A, then PHY B. */
+	for (phy = 0u; phy < I915_COMBO_PHY_NUM; phy++) {
+		/* Powers the DE IO comp down where the PHY has PHY_MISC. */
+		has_misc = i915_has_phy_misc(phy);
+		if (has_misc) {
+			value = drv_i915_raw_read32(mmio, i915_phy_misc(phy));
+			value |= PHY_MISC_DE_IO_COMP_PWR_DOWN;
+			drv_i915_raw_write32(mmio, i915_phy_misc(phy), value);
+		}
+
+		/* Clears COMP_INIT. */
+		i915_phy_rmw(mmio, i915_comp_dw(phy, 0u), COMP_INIT, 0u);
+	}
+
+	/* Logs what was done, as the init does. */
+	kern_logf("i915: intel_combo_phy_uninit: combo PHYs A/B\n");
+}
+
+/*
  * Powers a combo PHY port's lanes up (intel_combo_phy_power_up_lanes()).
  */
 void
