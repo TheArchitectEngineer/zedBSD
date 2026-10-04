@@ -144,9 +144,9 @@ fm_app_init(
 	app->tab_count = 1;
 	app->tab_index = 0;
 
-	/* It shows the start folder, or the home dashboard. */
+	/* It shows the start folder, or Today (the dashboard, ws127-p011: Files starts on it). */
 	memset(&location, 0, sizeof(location));
-	location.kind = FM_LOCATION_HOME;
+	location.kind = FM_LOCATION_TODAY;
 	snprintf(location.path, sizeof(location.path), "%s", app->home);
 	if (start != NULL) {
 		location.kind = FM_LOCATION_FOLDER;
@@ -700,7 +700,7 @@ fm_ui_reload(
 		(void)fm_dir_read(&tab->listing, path, app->show_hidden);
 	} else if (location->kind == FM_LOCATION_TRASH) {
 		(void)fm_dir_read_trash(&tab->listing);
-	} else if (location->kind == FM_LOCATION_HOME) {
+	} else if (location->kind == FM_LOCATION_TODAY) {
 		fm_home_gather(app);
 	} else {
 		fm_search_load(app, tab);
@@ -970,8 +970,7 @@ ui_draw_sidebar(
 
 		/* A favorite folder under the pointer offers a small button that takes it off the sidebar. */
 		removable = 0;
-		if (place->section == FM_SECTION_FAVORITES && place->location.kind == FM_LOCATION_FOLDER)
-			removable = 1;
+		removable = fm_place_is_favorite_folder(place);
 		hovered = 0;
 		if (app->hover_kind == FM_HIT_PLACE && app->hover_index == index)
 			hovered = 1;
@@ -1016,8 +1015,8 @@ ui_place_current(
 	if (location->kind != place->location.kind)
 		return 0;
 
-	/* The dashboard and the recent files are one place each. */
-	if (location->kind == FM_LOCATION_HOME || location->kind == FM_LOCATION_RECENTS || location->kind == FM_LOCATION_TRASH)
+	/* Today and the recent files are one place each. */
+	if (location->kind == FM_LOCATION_TODAY || location->kind == FM_LOCATION_RECENTS || location->kind == FM_LOCATION_TRASH)
 		return 1;
 
 	/* Others are the same place when their paths are. */
@@ -1036,8 +1035,8 @@ ui_location_kind_name(
 {
 	/* Each kind's word. */
 	switch (kind) {
-	case FM_LOCATION_HOME:
-		return "home";
+	case FM_LOCATION_TODAY:
+		return "today";
 	case FM_LOCATION_FOLDER:
 		return "folder";
 	case FM_LOCATION_RECENTS:

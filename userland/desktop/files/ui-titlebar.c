@@ -170,8 +170,9 @@ titlebar_activated(
 		fm_ui_forward(app);
 		break;
 	case FM_CONTROL_HOME:
+		/* The home folder itself (ws127-p011; Today is the dashboard's place of its own). */
 		memset(&location, 0, sizeof(location));
-		location.kind = FM_LOCATION_HOME;
+		location.kind = FM_LOCATION_FOLDER;
 		snprintf(location.path, sizeof(location.path), "%s", app->home);
 		fm_ui_go(app, &location);
 		break;

@@ -2,8 +2,8 @@
 # ws071-p014: the titlebar's state and events of files on the host (files-render, host-render.c).
 # Builds nothing: run host-build.sh first.  Each case runs files-render on a fresh sample home and
 # checks the lines it prints:
-#  1. The dashboard: one part (Home), nothing to go back to, no query, no progress, no focus asked.
-#  2. The path's first part, Back and Forward; Home.
+#  1. The dashboard (Today since ws127-p011): one part (Today), nothing to go back to, no query, no progress, no focus asked.
+#  2. The path's first part, Back and Forward; Home (the home folder since ws127-p011).
 #  3. The search typed (changed), searched 150 ms later (query), cancelled (Esc: back, no query).
 #  4. Icons/List, Preview; Ctrl+F, and Ctrl+L once the search field is left, ask for the keyboard
 #     (focus 5, then 4, the count rising).
@@ -39,7 +39,7 @@ expect() {
 
 # 1. The dashboard.
 run dashboard titlebar
-expect dashboard '^titlebar back=0 forward=0 parts=1 path=Home field=.*/home query= view=0 preview=0 progress=-1 focus=0 serial=0$'
+expect dashboard '^titlebar back=0 forward=0 parts=1 path=Today field=.*/home query= view=0 preview=0 progress=-1 focus=0 serial=0$'
 
 # 2. The path, Back, Forward, Home.
 run path "--start=$home/Documents" titlebar tb=activated:4:0 titlebar tb=activated:1:0 titlebar tb=activated:2:0 titlebar tb=activated:3:0 titlebar
@@ -48,7 +48,7 @@ expect path 'LOCATION kind=folder path=.*/home items=7 '
 expect path '^titlebar back=1 forward=0 parts=1 path=Home '
 expect path '^titlebar back=0 forward=1 parts=2 '
 expect path '^titlebar back=1 forward=0 parts=1 path=Home .*serial=0$'
-expect path 'LOCATION kind=home '
+expect path 'LOCATION kind=folder path=.*/home items=7 error=0$'
 
 # 3. The search typed, searched, cancelled.
 run search "--start=$home/Documents" tb=changed:5:note titlebar wait=200 titlebar tb=done:5:1:note titlebar

@@ -102,7 +102,7 @@ expect_log /tmp/f.log 'ZFILES CONTEXT-MENU item=1016 action=16 '
 expect_log /tmp/f.log 'ZFILES ACTION action=16'
 
 # 3. Downloads in the sidebar: Open in New Tab.
-rclick 100 155
+rclick 100 185
 expect_log /tmp/zdesktop.log 'ZWL MENU row item=1049 depth=1 '
 click $(( $(popup_x 1) + 60 )) "$(row_y 1049)" 1200
 expect_log /tmp/f.log 'ZFILES TABS new index=1 count=2'

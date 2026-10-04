@@ -342,7 +342,7 @@ preview_place(
 	preview_centered(app, canvas, area, baseline, fm_location_name(location, app->home), PREVIEW_TEXT_NAME, 1, FM_COLOR_TEXT);
 
 	/* How many items it holds (the dashboard lists none of its own). */
-	if (location->kind != FM_LOCATION_HOME && tab->listing.error == 0) {
+	if (location->kind != FM_LOCATION_TODAY && tab->listing.error == 0) {
 		fm_dir_items_text((long)tab->listing.count, count, sizeof(count));
 		preview_centered(app, canvas, area, baseline + 22, count, PREVIEW_TEXT_INFO, 0, FM_COLOR_TEXT_SECONDARY);
 	}

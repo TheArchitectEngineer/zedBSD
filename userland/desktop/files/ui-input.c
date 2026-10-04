@@ -702,13 +702,16 @@ input_click(
 	int double_click,
 	uint32_t modifiers)
 {
+	int favorite;
+
 	/* What each region does. */
 	switch (kind) {
 	case FM_HIT_PLACE:
 		/* A place goes there; a favorite folder at the release, as it may be dragged to another place in the list. */
 		if (index < 0 || index >= app->places.count)
 			break;
-		if (app->places.items[index].section == FM_SECTION_FAVORITES && app->places.items[index].location.kind == FM_LOCATION_FOLDER) {
+		favorite = fm_place_is_favorite_folder(&app->places.items[index]);
+		if (favorite != 0) {
 			app->press_deferred = 1;
 			break;
 		}

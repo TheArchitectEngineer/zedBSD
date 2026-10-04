@@ -6,8 +6,11 @@
  */
 
 /*
- * The home dashboard of files (spec §5, §19, §28): not a listing
- * of the home folder but a place to start work from.
+ * Today, the dashboard of files (spec §5, §19, §28): not a listing
+ * of the home folder but a place to start work from.  It was the place
+ * called Home until ws127-p011 (the user's decision of 2026-10-04/05):
+ * Home is now the home folder itself, and the dashboard is Today, at the
+ * top of the sidebar, where Files starts.
  *
  * At the top a hero card shows the desktop's wallpaper (the picture the
  * system carries at /usr/share/keiland/wallpaper.ppm, or --wallpaper=;

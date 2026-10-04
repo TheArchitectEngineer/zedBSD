@@ -80,7 +80,7 @@ keys '<esc>'
 expect_log /tmp/f.log 'ZFILES LOOK close'
 
 # 4. Text: Documents in the list view, Meeting notes.txt (the third row), then Quick Look.
-click 100 125
+click 100 155
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=6 error=0'
 keys '<ctrl-2>'
 click 400 170
