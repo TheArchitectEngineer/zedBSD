@@ -78,7 +78,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential cmake curl git grub-common gzip ninja-build \
-            mtools patch xz-utils
+            mtools nasm patch xz-utils
 
       - name: Acquire verified source inputs
         run: make download

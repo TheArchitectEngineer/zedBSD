@@ -30,3 +30,7 @@ p001、各 WS の成果。
 ## 未決の判断
 
 なし（内容の review はユーザー）。
+
+## 追加（2026-10-05 Q1、ws122-p001 の P2 の依頼）
+
+release notes に FFmpeg（libavcodec ほか、LGPL 2.1 以降）の告知と source の在り処（FFmpeg 9.0.2 の tarball の URL と sha256、zedBSD の build の Makefile）を書く。image には `/usr/share/licenses/ffmpeg/` に COPYING.LGPLv2.1 と LICENSE.md が入る。
