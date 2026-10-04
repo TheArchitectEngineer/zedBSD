@@ -101,3 +101,9 @@ PASS: `plan/tools/boot-test.sh` PASS（graphical login か desktop の PNG）、
 - (2) root の lock: ユーザー「su, sudoを実装してください。」→ 新しい [WS160](../../ws160/ws.md)（ベータ1）。root は lock のまま、管理は kei（wheel）の sudo。
 - (3) nightly の CI の config: **今のまま**（clang・libcxx・emacs・zedinst を外したまま）。
 - (4) passwd が無い件: **passwd を実装する**（WS160）。手引き（ws129-p013）は WS160 の後に p005 で直す。
+
+### T1-105 の直し（2026-10-05、P2）: /home/kei が無い
+
+- 原因: rootfs には `/home` だけがあり、`/home/kei` は sessiond が graphical session を始める時に作る（`session.c` の home の作成）。session の前に SSH・console で login すると home が無い。CI の image も同じ（image の builder は所有者を付けられないので rootfs に作れない）。
+- 直し: boot の oneshot の service `homes`（`userland/base/init/services/homes`、`/usr/libexec/make-homes` を `/bin/sh` で実行、`rc.conf` で enabled）が、`/etc/passwd` が `/home/名前` を指していて無い home を mode 0700・その uid と gid で作る（何かあれば触らない、`/home` の直下の名前だけ）。sessiond の作り方と同じ規則。
+- 確認: host で script の論理（作る・既存を残す・入れ子を除く）を確かめた。rootfs の build で `/etc/service.d/homes`・`/usr/libexec/make-homes`・rc.conf の行を確かめた。QEMU の再試験は T1（SSH で kei の login に chdir の警告が無く、`ls -ld /home/kei` が kei の 0700）。

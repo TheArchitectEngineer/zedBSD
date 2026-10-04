@@ -8,7 +8,8 @@
 #     "watasi" Space Enter commits 私; every done's serial is the number of the probe's commits.
 #  4. Alt+Space goes back to direct input; x reaches the probe as a key.
 #  5. A password field (ime-probe --password): the input method is not activated and a is a key, not a preedit.
-#  6. The input method stopped (SIGSTOP): a key is passed by after 500 ms (ZWL IME bypass) and the next reaches the
+#  6. A new probe (the desktop's language, direct, since ws095-p016) is switched to Japanese with Alt+Space; the input
+#     method stopped (SIGSTOP): a key is passed by after 500 ms (ZWL IME bypass) and the next reaches the
 #     probe; SIGCONT: it answers again (ZWL IME answering).
 #  7. The input method killed: zdesktop lets go (ZWL IME lost) and starts it again (a second KEI-IME READY).
 #
@@ -143,6 +144,12 @@ guest 'kill $(cat /tmp/pw.log.pid); sleep 2' >/dev/null
 # A new probe for the rest (zdesktop gives the keyboard to the next window only when one is shown).
 start_probe /tmp/p2.log
 expect_log /tmp/zdesktop.log 'ZWL IME activate client=' 2
+
+# The new probe starts with the desktop's language, direct (ws095-p016), whose keys never reach the input method:
+# Japanese first, so that the keys of step 6 go to it.
+before=$(count /tmp/zdesktop.log 'ZWL IME language=ja')
+keys '<alt-spc>'
+expect_log /tmp/zdesktop.log 'ZWL IME language=ja' $((before + 1))
 
 # 6. A stopped input method is passed by, and heard again when it goes on.
 pid=$(guest "grep 'ZWL IME started pid=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | tail -1)
