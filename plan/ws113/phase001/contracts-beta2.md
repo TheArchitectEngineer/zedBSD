@@ -60,3 +60,5 @@ Status: 設計（文書だけ。製品の source・UAPI・実機は変えてい�
 
 - C1（D-BOOT2）: **全部拡張で点ける**（保存の設定が無い最初の session は、接続された全部の display を拡張の mode で使う）。
 - C4: Q1 が案のとおり決定（GOP の引き継ぎと外部の優先の削除は WS113 p002 part A、WS051 p002 は VBT の DVO と USB-C）。
+- C2: **両方許可**（gpu-display.h の GPU_DISPLAY_POWER・GPU_DISPLAY_REFRESH と新しい include/uapi/backlight.h。HAL は不変）。差分は p012・p013 の記録に示す。
+- C3: Fn の明るさのキーの kernel 側（ACPI video の Notify 0x86/0x87 → input の key）は **WS049 に入れる**（BUG-165 の後）。compositor の KEY_BRIGHTNESS* の扱いは WS113。
