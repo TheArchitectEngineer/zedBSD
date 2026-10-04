@@ -92,7 +92,21 @@ view_menu() {
 }
 
 guest "$stop_all" >/dev/null
-timeout 60 python3 plan/tools/guest/guest.py put plan/ws128/tests/terminal-p009-sample.txt /tmp/p009.txt >/dev/null
+# The guest's SSH must be up before the sample goes in, and the sample must be there: a run whose sample is missing shows
+# "No such file" on every screen and proves nothing (T2-025, 2026-10-04), so it fails here instead.
+timeout 260 python3 plan/tools/guest/guest.py wait --timeout 240 >/dev/null 2>&1 || { echo "guest: SSH not up FAILED"; echo "terminal-p009-guest: FAIL"; exit 1; }
+if ! timeout 60 python3 plan/tools/guest/guest.py put plan/ws128/tests/terminal-p009-sample.txt /tmp/p009.txt >/dev/null 2>&1; then
+	echo "guest: put the sample FAILED"
+	echo "terminal-p009-guest: FAIL"
+	exit 1
+fi
+want=$(wc -c < plan/ws128/tests/terminal-p009-sample.txt | tr -d ' ')
+got=$(guest 'wc -c < /tmp/p009.txt' | tail -1 | tr -d ' ')
+if [ "$got" != "$want" ]; then
+	echo "guest: the sample is $got bytes, want $want FAILED"
+	echo "terminal-p009-guest: FAIL"
+	exit 1
+fi
 guest 'rm -f $HOME/.config/keiland/terminal.conf; rm -f /tmp/t.log' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null

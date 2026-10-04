@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws129-p002 -->
 # ws129-p002: image の license の一覧
 
-Status: in-progress（q668、P2、2026-10-04。一覧・script・host 試験・audit・足りない本文 G1〜G4 の直しは済み。remacs（D1）と i915-old の GPL の file（D2）はユーザーの判断待ち）
+Status: in-progress（q668・q669、P2、2026-10-04。一覧・script・host 試験・audit・G1〜G4・D1・D2 は済み、open 0。CI の config の完全な rootfs の確かめと QEMU の remacs の起動は T 待ち）
 Disposition: normal
 Parent: [WS129](../ws.md)
 Focused goal: fg019（ベータ1）
@@ -51,3 +51,7 @@ Queue: q668（Q1 の dispatch、2026-10-04）
 ## D1・D2 の判断（2026-10-04 ユーザー）
 
 「i915-oldはもう使っていないので削除です。remacsはuserland/base/emacsとしてコピーを取り込み、作者としてzlibライセンスにします。特別扱いは不要です。」→ q669（P2）で実施。
+
+2026-10-04 q669: ユーザーの判断で D1（remacs を userland/base/emacs に取り込み zlib に）・D2（i915-old を削除）を実施（licenses.md）。kernel の build と
+check-kernel-includes（`amd64 vmunix check: PASS`）、rootfs の build rc=0・新しい warning 0、`license-inventory.py --rootfs` の open 0、host 試験 PASS
+（期待を open 0 に）、menuconfig の host 試験 PASS。

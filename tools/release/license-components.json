@@ -167,22 +167,23 @@
   },
   {
    "id": "remacs",
-   "name": "Remacs editor (remacs.nap)",
+   "name": "Remacs editor (remacs.nap, userland/base/emacs)",
    "when": "program:remacs",
-   "license": "GPL (version not stated)",
-   "upstream": "github.com/awemorris/remacs (README: Copyright FSF and Awe Morris, GNU GPL; no COPYING file)",
+   "license": "Zlib",
+   "upstream": "userland/base/emacs (REmacs at 1a72439, taken into the tree 2026-10-04; its author licensed it under zlib)",
    "version": "",
    "notices": [],
-   "paths": [],
-   "status": "decision",
-   "note": "A GPL component in the image. 2026-10-04 Q1 raised it to the user; the user decides (relicense by the copyright holder, ship with the GPL text and source offer, or leave it out)."
+   "paths": [
+    "userland/base/emacs/"
+   ],
+   "note": "2026-10-04 user: taken into userland/base/emacs and licensed by its author under zlib; no special treatment (D1 closed)."
   },
   {
    "id": "ime-dict-ja",
    "name": "Japanese input dictionary (from the Remacs dictionary)",
    "when": "program:ime-dict-ja",
    "license": "Zlib",
-   "upstream": "Remacs SKK-JISYO.remacs, relicensed by its copyright holder (ws095 D1, 2026-09-29)",
+   "upstream": "the Remacs dictionary (userland/base/emacs/dict, zlib since 2026-10-04); this package still fetches it from the Remacs archive at 1a724393053e",
    "version": "ext:ime-dict-ja",
    "notices": [],
    "paths": [],
