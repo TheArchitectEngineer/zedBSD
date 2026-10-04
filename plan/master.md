@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **desktop の icon の行数（2026-10-05 未明、P1 の ws099-p031）**: bar を 44 px にしたので、800 px の高さの画面で desktop の icon の grid が 7 行から 6 行に減った。7 行に戻すなら Files の desktop の余白か cell の高さを変える別の作業。今のままでよいか。
 - **ws131-p014 の受け入れ（2026-10-05 未明、Q1）**: FreeBSD の native build と `native-build-audit.py` だけが未達（他は満たし、TQ-1 PASS）。ベータ1 の後の Phase へ移して p014 を cleared にするか、今流すか。あわせて ws132-p003 の bar: 電池の無い機械で電池の場所を空けたままにするか詰めるか（詰めると QEMU の試験の bar の座標が全部動く）。
 - **WS129 release の image の判断 3 つ（2026-10-05 未明、P2 の ws129-p004、詳細は plan/ws129/phase004/phase.md の「発見」）**: (1) 自動の login: CI の image（と release の image）は `/etc/keiland/autologin` で kei が boot で login する（2026-09-29 の決定）。release.md §4 は自動 login 無しを前提にしていた。notes に password を載せる（U3）上で release でも自動 login を保つか外すか。(2) U10 の root の lock: image に su・doas・sudo が無く kei は wheel に居ないので、lock すると管理の作業の道が無い（2026-09-28 のデモの image では「root に password を設定する」と回答）。今の実装は U10 のとおり lock。lock のまま／root の password を保ち notes に書く／su を足す Phase を立てる、のどれか。(3) CI の config: 60a1d3f（2026-10-04 10:55）で config/ci/config-amd64.mk から clang・libcxx・emacs・zedinst が外れた（意図の記録なし）。release の config は U2 で clang・libcxx・emacs を戻した。nightly をどうするか。
 - **WS129 の判断 (4)（2026-10-05 未明、P2 の ws129-p013）**: password を変える道具が無い（userland/base にも image にも passwd が無い）ので、U3「既知の password を公開し変更を求める」ができない。U4 で sshd と password の login を残すと、同じ network の誰でも公開の password で kei として SSH で入れ、kei は sshd を止められない。手引きには「ベータ1 では password を変えられない、信頼できる network だけで使う」と書く。直すなら: passwd を足す Phase を立てる／release で sshd を止める／U4 のまま、のどれか。
