@@ -80,7 +80,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p028](phase028/phase.md) | zdesktop の log に NUL が入る（`>` の log を次の run が切り詰めた後の古い offset への write）。stdout・stderr に O_APPEND | cleared（2026-10-03 Q1、T1-035） | — |
 | [ws099-p030](phase030/phase.md) | タイトルバーの検索欄・menu の項目のドラッグで窓を動かす（閾値 mouse 2 px・touch 8 px、離してクリック、フォーカス中の欄はキャレットと選択）。2026-10-04 user | cleared（q670、T2-026） | — |
 | [ws099-p031](phase031/phase.md) | 上部の system bar の高さを窓の title bar に揃える（34 → 44 px）（2026-10-04 ユーザー） | in-progress（2026-10-05 q700-i01 P1: 実装・build warning 0・試験の座標の直しまで、T1 の試験待ち） | WS142・BUG-180 と順を合わせる |
-| [ws099-p032](phase032/phase.md) | system bar の WiFi の icon の Alt+クリックで IP address と統計の情報の popup（2026-10-04 ユーザーの要望） | planning | ws089-p022 と同じ network の情報の口 |
+| [ws099-p032](phase032/phase.md) | system bar の WiFi の icon の Alt+クリックで IP address と統計の情報の popup（2026-10-04 ユーザーの要望） | in-progress（2026-10-05 q718-i01 P1: 設計・実装・build warning 0（zedBSD・Linux）・host 31 checks・境界 PASS。QEMU は T1 に依頼） | ws089-p022 と同じ network の情報の口 |
 
 ## ベータ1 の到達目標（2026-10-02 計画、fg019）
 

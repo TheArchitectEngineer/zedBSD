@@ -53,9 +53,19 @@
  * The watch is shared with Keiland's system extension (system.c, WS131
  * p010): each tick tells it the new state and scan, and hands it the
  * answer of a request it sent; the slot is still sent after that answer.
+ *
+ * An Alt+click on the icon (ws099-p032, as Option+click on macOS) opens
+ * the details instead of the menu: the network, the interface, its IPv4
+ * address and mask, the DNS servers, its hardware address and MTU, the
+ * Wi-Fi's signal and the bytes received and sent with their rates
+ * (network-info.c).  The interfaces and the DNS servers are read on the
+ * system extension's thread (the details reading, system.c), at the
+ * opening and again each NETWORK_INFO_REFRESH_MS while the details show.
+ * A click anywhere, or Esc, closes them.
  */
 
 #include "glass.h"
+#include "userland/desktop/wayland/network-info.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
@@ -99,6 +109,11 @@
 #define NETWORK_NOTE_HEIGHT	22
 #define NETWORK_SEPARATOR	9
 #define NETWORK_MENU_RADIUS	12.0f
+
+/* The details' row height, their title's, and how often they are read again while they show. */
+#define NETWORK_INFO_ROW		24
+#define NETWORK_INFO_TITLE		34
+#define NETWORK_INFO_REFRESH_MS		1000U
 
 /* The most rows the menu has: the switch, the state, the networks, the key field's four, the wired line, disconnect, a message. */
 #define NETWORK_ROWS_MAX	(KL_BACKEND_NETWORK_SCAN_MAX + 12)
@@ -160,6 +175,12 @@ struct network_row {
  * once a scan arrived since the menu opened, so that an empty list says
  * "Looking for networks..." until the first one comes.
  *
+ * The details (ws099-p032): info_open while they show, when they were
+ * last asked to be read (info_asked_ms, zwl_milliseconds' clock), their
+ * height, their rows as last worked out (info_rows, info_count), and the
+ * sample of the last reading for the rates (info_sample).  They take the
+ * menu's place (menu_x, menu_y).
+ *
  * It lives as long as zdesktop; the menu's rows are laid out again each
  * time the menu is drawn, so they always show the state last read.
  */
@@ -194,6 +215,12 @@ struct network_view {
 	char connecting[KL_BACKEND_NETWORK_SSID_MAX];
 	unsigned scan_holders;
 	unsigned scan_fresh;
+	unsigned info_open;
+	uint64_t info_asked_ms;
+	int32_t info_height;
+	struct zwl_network_info_row info_rows[ZWL_NETWORK_INFO_ROWS];
+	unsigned info_count;
+	struct zwl_network_info_sample info_sample;
 };
 
 /*
@@ -254,6 +281,10 @@ static void network_key_wipe(void);
 static void network_finished(struct zwl_server *server, unsigned request, int error);
 static void network_send_waiting(struct zwl_server *server);
 static void network_connecting(const char *ssid);
+static void network_info_open(struct zwl_server *server);
+static void network_info_close(struct zwl_server *server, const char *via);
+static void network_info_place(struct zwl_server *server);
+static void network_info_draw(struct zwl_server *server, VkCommandBuffer command);
 
 /*
  * Reads what the network watch has brought since the last tick, and makes
@@ -265,6 +296,7 @@ zwl_network_tick(
 {
 	unsigned changed;
 	unsigned request;
+	uint64_t now;
 	int owned;
 	int error;
 
@@ -275,6 +307,15 @@ zwl_network_tick(
 		network_view.icon_x = -1;
 		if (network_view.watch != NULL && network_view.scan_holders != 0U)
 			(void)kl_backend_network_set_scanning(network_view.watch, 1U);
+	}
+
+	/* The details, read again each second while they show. */
+	if (network_view.info_open) {
+		now = zwl_milliseconds();
+		if (now - network_view.info_asked_ms >= NETWORK_INFO_REFRESH_MS) {
+			network_view.info_asked_ms = now;
+			zwl_system_bar_saved(server);
+		}
 	}
 
 	/* No watch could be made (no memory): the icon stays pale. */
@@ -396,6 +437,12 @@ zwl_network_draw_menu(
 	unsigned index;
 	int32_t top;
 
+	/* The details, when they show instead. */
+	if (network_view.info_open) {
+		network_info_draw(server, command);
+		return;
+	}
+
 	/* Only an open menu. */
 	if (!network_view.open)
 		return;
@@ -452,6 +499,14 @@ zwl_network_button(
 	const struct network_row *row;
 	int32_t top;
 	int inside;
+	int alt;
+
+	/* While the details show, every press closes them and goes no further; releases are theirs too. */
+	if (network_view.info_open) {
+		if (state != 0)
+			network_info_close(server, "click");
+		return 1;
+	}
 
 	/* With the menu closed, only a left press on the icon. */
 	if (!network_view.open) {
@@ -464,7 +519,14 @@ zwl_network_button(
 		if (!inside)
 			return 0;
 
-		/* The menu opens. */
+		/* With Alt held, the details open (ws099-p032); otherwise the menu. */
+		alt = zwl_input_alt_held(server);
+		if (alt) {
+			network_info_open(server);
+			return 1;
+		}
+
+		/* The menu. */
 		network_open_menu(server);
 		return 1;
 	}
@@ -511,6 +573,13 @@ zwl_network_key(
 	uint32_t key,
 	uint32_t state)
 {
+	/* While the details show, Esc closes them, and every key is theirs. */
+	if (network_view.info_open) {
+		if (key == NETWORK_KEY_ESC && state != 0)
+			network_info_close(server, "key");
+		return 1;
+	}
+
 	/* A closed menu takes no key. */
 	if (!network_view.open)
 		return 0;
@@ -637,7 +706,9 @@ int
 zwl_network_is_open(
 	void)
 {
-	/* Open or not. */
+	/* Open or not, the menu or the details. */
+	if (network_view.info_open)
+		return 1;
 	return (int)network_view.open;
 }
 
@@ -668,6 +739,52 @@ zwl_network_scan_hold(
 	printf("ZWL NETWORK scan holders=%u\n", network_view.scan_holders);
 	if (network_view.scan_holders == 0U && network_view.watch != NULL)
 		(void)kl_backend_network_set_scanning(network_view.watch, 0U);
+}
+
+/*
+ * Takes a reading of the interfaces and the DNS servers the system
+ * extension's thread made (system.c), and works out the details' rows from
+ * it while they show.
+ */
+void
+zwl_network_details(
+	struct zwl_server *server,
+	const struct kl_backend_network_link *links,
+	size_t link_count,
+	const char (*dns)[KL_BACKEND_NETWORK_ADDRESS_MAX],
+	size_t dns_count)
+{
+	struct zwl_network_info_input input;
+	unsigned index;
+
+	/* Only while the details show. */
+	if (!network_view.info_open)
+		return;
+
+	/* The reading's counts are of what there is; only what was copied is read. */
+	if (link_count > KL_BACKEND_NETWORK_LINKS_MAX)
+		link_count = KL_BACKEND_NETWORK_LINKS_MAX;
+	if (dns_count > KL_BACKEND_NETWORK_DNS_MAX)
+		dns_count = KL_BACKEND_NETWORK_DNS_MAX;
+
+	/* The rows, from the watch's state and scan and this reading. */
+	memset(&input, 0, sizeof(input));
+	input.state = &network_view.state;
+	input.scan = network_view.scan;
+	input.scan_count = network_view.scan_count;
+	input.links = links;
+	input.link_count = link_count;
+	input.dns = dns;
+	input.dns_count = dns_count;
+	input.now_ms = zwl_milliseconds();
+	network_view.info_count = zwl_network_info_build(&input, &network_view.info_sample, network_view.info_rows, ZWL_NETWORK_INFO_ROWS);
+
+	/* Shown, and logged for the tests. */
+	network_info_place(server);
+	server->dirty = 1;
+	printf("ZWL NETWORK info rows=%u\n", network_view.info_count);
+	for (index = 0; index < network_view.info_count; index++)
+		printf("ZWL NETWORK info row label=%s value=%s\n", network_view.info_rows[index].label, network_view.info_rows[index].value);
 }
 
 /* Opens the menu, which holds the radios scanning while it is open. */
@@ -1886,4 +2003,128 @@ network_draw_disconnect(
 
 	/* Its icon, the cross of leaving, in the middle (the tests name the button Disconnect). */
 	glass_draw_icon(server, command, GLASS_ICON_CLOSE, x + (NETWORK_DISCONNECT_WIDTH - NETWORK_DISCONNECT_ICON) / 2, y + (height - NETWORK_DISCONNECT_ICON) / 2, NETWORK_DISCONNECT_ICON, ink);
+}
+
+/*
+ * Opens the details: the title until the first reading comes, which is
+ * asked for at once.
+ */
+static void
+network_info_open(
+	struct zwl_server *server)
+{
+	/* No reading yet: the title alone, and no rate from an earlier showing. */
+	network_view.info_open = 1U;
+	memset(&network_view.info_sample, 0, sizeof(network_view.info_sample));
+	network_view.info_count = 1U;
+	(void)snprintf(network_view.info_rows[0].label, sizeof(network_view.info_rows[0].label), "%s", "");
+	(void)snprintf(network_view.info_rows[0].value, sizeof(network_view.info_rows[0].value), "%s", "Network");
+	network_info_place(server);
+	server->dirty = 1;
+	printf("ZWL NETWORK info open\n");
+
+	/* The first reading. */
+	network_view.info_asked_ms = zwl_milliseconds();
+	zwl_system_bar_saved(server);
+}
+
+/* Closes the details. */
+static void
+network_info_close(
+	struct zwl_server *server,
+	const char *via)
+{
+	/* Gone. */
+	network_view.info_open = 0U;
+	server->dirty = 1;
+	printf("ZWL NETWORK info close via=%s\n", via);
+}
+
+/* Places the details where the menu goes, as tall as their rows. */
+static void
+network_info_place(
+	struct zwl_server *server)
+{
+	/* Under the icon, its right edge a little in from the output's (the menu's place). */
+	network_view.menu_x = network_view.icon_x + network_view.icon_width - NETWORK_MENU_WIDTH + 60;
+	if (network_view.menu_x + NETWORK_MENU_WIDTH > (int32_t)server->width - 8)
+		network_view.menu_x = (int32_t)server->width - 8 - NETWORK_MENU_WIDTH;
+	if (network_view.menu_x < 8)
+		network_view.menu_x = 8;
+	network_view.menu_y = ZWL_GLASS_BAR + 6;
+
+	/* The title, then the rows. */
+	network_view.info_height = NETWORK_MENU_PADDING + NETWORK_INFO_TITLE + NETWORK_MENU_PADDING;
+	if (network_view.info_count > 1U)
+		network_view.info_height += (int32_t)(network_view.info_count - 1U) * NETWORK_INFO_ROW;
+}
+
+/*
+ * Draws the details: the shadow and the glass of the menu, the title, and
+ * each row with its label on the left and its value on the right.
+ */
+static void
+network_info_draw(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
+	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
+	const struct zwl_network_info_row *row;
+	struct glass_shape shape;
+	unsigned index;
+	int32_t left;
+	int32_t right;
+	int32_t width;
+	int32_t baseline;
+	int32_t value_x;
+
+	/* The shadow, as the menu's. */
+	glass_shape_init(&shape, (float)network_view.menu_x, (float)network_view.menu_y + 6.0f, (float)NETWORK_MENU_WIDTH, (float)network_view.info_height);
+	shape.quad[0] -= 40.0f;
+	shape.quad[1] -= 40.0f;
+	shape.quad[2] += 80.0f;
+	shape.quad[3] += 80.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = NETWORK_MENU_RADIUS;
+	shape.soft = 18.0f;
+	shape.color[0] = 0.10f;
+	shape.color[1] = 0.18f;
+	shape.color[2] = 0.35f;
+	shape.color[3] = 0.24f;
+	glass_shape_draw(server, command, &shape);
+
+	/* The glass, as the menu's. */
+	glass_shape_init(&shape, (float)network_view.menu_x, (float)network_view.menu_y, (float)NETWORK_MENU_WIDTH, (float)network_view.info_height);
+	shape.mode = MODE_GLASS;
+	shape.radius = NETWORK_MENU_RADIUS;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.86f;
+	shape.edge = 0.85f;
+	glass_shape_draw(server, command, &shape);
+
+	/* The title, and a line under it. */
+	left = network_view.menu_x + 14;
+	right = network_view.menu_x + NETWORK_MENU_WIDTH - 14;
+	baseline = network_view.menu_y + NETWORK_MENU_PADDING + NETWORK_INFO_TITLE / 2 + 6;
+	if (network_view.info_count > 0U)
+		glass_draw_text(server, command, SIZE_TITLE, left, baseline, network_view.info_rows[0].value, NETWORK_MENU_WIDTH - 28, dark);
+	glass_draw_solid(server, command, (float)(left - 2), (float)(network_view.menu_y + NETWORK_MENU_PADDING + NETWORK_INFO_TITLE - 1),
+			 (float)(NETWORK_MENU_WIDTH - 24), 1.0f, 0.0f, line);
+
+	/* Each row: the label soft at the left, the value dark at the right (cut at the label's column when too long). */
+	baseline = network_view.menu_y + NETWORK_MENU_PADDING + NETWORK_INFO_TITLE + NETWORK_INFO_ROW / 2 + 5;
+	for (index = 1; index < network_view.info_count; index++) {
+		row = &network_view.info_rows[index];
+		glass_draw_text(server, command, SIZE_BAR, left, baseline, row->label, 104, soft);
+		width = glass_text_width(server, SIZE_BAR, row->value);
+		value_x = right - width;
+		if (value_x < left + 108)
+			value_x = left + 108;
+		glass_draw_text(server, command, SIZE_BAR, value_x, baseline, row->value, right - value_x, dark);
+		baseline += NETWORK_INFO_ROW;
+	}
 }
