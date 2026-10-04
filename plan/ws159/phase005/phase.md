@@ -111,3 +111,4 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 
 追加の確認（2026-10-05 Q1、ws113-p013）: main 780764c3 以降の image なら、compositor が一度描いた後に `backlight-probe`・`backlight-probe 30`・`backlight-probe 100` で内蔵の panel の明るさが変わるのを目視（描く前は EBUSY が正しい）。build/uat-0505 には入っていない。
 追加の確認（2026-10-05 Q1、ws113-p012）: main caa7181e 以降の image なら `display-control` で REFRESH が 60 Hz 程度で進むこと、power OFF で panel が暗くなり ON で戻ること。
+追加の確認（2026-10-05 Q1、ws132-p008 の蓋、main 4b4397ad 以降の image）: 蓋を閉じて画面が消える、5 秒で開けて password 無しで desktop、15 分を超えたら lock の画面、Super+L の後に閉じて開けたら lock の画面のまま（plan/ws132/phase008/phase.md）。
