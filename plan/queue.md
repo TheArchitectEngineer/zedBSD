@@ -15,6 +15,7 @@ user（原文）:「では、サブエージェントを起動して作業しま
 - 体制: P1・P2（phase-runner、high）、T1（test-runner、試験の依頼がある時に起動、QEMU は同時に 1 つ、依頼はできるだけ 1 つの image・実行にまとめる）。design-reviewer は省く（ユーザー）。WS073 の Bug の掃討（q686〜q688）は朝まで止める。実機の要る物（WS049・WS100・WS134・BUG-156）は順位を下げる。
 - 決定（2026-10-05）: WS090 p016 は (b) 左右とも透かす。WS127 p011 は Today を左の pane の一番上・起動は Today。IME の辞書は /usr/share/keiland/ime へ移し 1 つにまとめる（ws095-p017）。WS045 は説明を求められた（Q1 が説明する）。
 - 割り当て: 最初は P1 = q700、P2 = q703。以後は下の表の上から、空いた担当に Q1 が投入する。
+- **2026-10-05 未明 user**:「そういえば、libkeiland-backendのLinux、FreeBSDの実装は、ベータ1までにはやらなくていいです。」→ ベータ1 までの作業は libkeiland-backend の zedBSD の実装だけ。Linux・FreeBSD の backend（`libkeiland-backend-linux/`・`-freebsd/`）の新しい口の実装は後（ベータ2 以降）。新しい口を足す時は、Linux・FreeBSD の側は build が通る stub（ENOTSUP など）に留めてよい。
 - **2026-10-05 未明 user（方針の変更）**:「既存BUGはいったん保留して、新規実装を進める方針でお願いします。」→ Bug の修正（q700 の BUG-178・179・180・190、q703 の BUG-183・185〜189、q685 の BUG-168・169、q712 の dirname、BUG-177）は保留。今の Bug の作業は安全な commit の地点で止めて保存する。新規の実装を優先: P1 = ws099-p031（bar を 44 px）→ q713 WS159（native の touchpad）、P2 = ws089-p021（自動の scan・Disconnect の icon、BUG-184 は p021 に含まれる分だけ）→ q705 の新規の分（ws127-p010・p011・p012）。その後 q706 WS131 → q707 WS132 → q708 WS095（p017・p005・p016）→ q709 WS090 p016 → q710 WS128 → q711 WS129。
 
 | Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
