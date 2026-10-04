@@ -1,0 +1,602 @@
+{
+ "comment": "ws129-p002: the components of a zedBSD image and their licenses, read by tools/release/license-inventory.py. when: always, program:NAME (selected userland package) or driver:CONFIG_NAME (kernel option y). notices: the files under /usr/share/licenses/ the image must carry for the component (empty when the license asks for none in binaries). paths: source path prefixes whose non-Zlib SPDX lines this component's notices cover. version: a literal, ext:NAME (ZEDBSD_EXT_NAME_VERSION) or empty. status: ok, gap (a notice the image lacks) or decision (the user must decide).",
+ "components": [
+  {
+   "id": "zedbsd",
+   "name": "zedBSD (kernel, libc, base and desktop programs)",
+   "when": "always",
+   "license": "Zlib",
+   "upstream": "this repository (LICENSE)",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/zedbsd/LICENSE"
+   ],
+   "paths": [],
+   "note": "The zlib license asks for no notice in binaries; the image still carries the project's license as the list's first entry."
+  },
+  {
+   "id": "llvm-runtime",
+   "name": "LLVM compiler-rt builtins (linked into every program)",
+   "when": "always",
+   "license": "Apache-2.0 WITH LLVM-exception",
+   "upstream": "build/llvm (toolchain)",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/llvm/LICENSE.TXT"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "musl-regex",
+   "name": "libc regular expressions (musl libc, with TRE)",
+   "when": "always",
+   "license": "MIT AND BSD-2-Clause",
+   "upstream": "TRE (src/libc/regex/LICENSE) and musl libc",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/libc-regex/LICENSE"
+   ],
+   "paths": [
+    "src/libc/regex/"
+   ],
+   "note": "src/libc/regex/LICENSE has TRE's BSD-2-Clause text but only names musl's MIT license; it needs musl's MIT text added, and the libc package does not install it."
+  },
+  {
+   "id": "i915-intel",
+   "name": "i915 GPU driver parts derived from Linux i915 (Intel)",
+   "when": "driver:CONFIG_DRIVER_PCI_I915",
+   "license": "MIT",
+   "upstream": "Linux drivers/gpu/drm/i915 (Intel, MIT parts)",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/i915-driver/LICENSE"
+   ],
+   "paths": [
+    "src/drivers/gpu/i915/"
+   ],
+   "note": "The kernel carries Intel MIT code; the image has no notice for it yet."
+  },
+  {
+   "id": "intel-ax211-driver",
+   "name": "Intel AX211 WiFi driver (derived from OpenBSD iwx(4) and Intel)",
+   "when": "driver:CONFIG_DRIVER_PCI_INTEL_AX211",
+   "license": "ISC AND BSD-3-Clause",
+   "upstream": "OpenBSD iwx(4), Intel iwlwifi",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/intel-ax211-driver/LICENSE"
+   ],
+   "paths": [
+    "src/drivers/wifi/intel-ax211/"
+   ],
+   "note": ""
+  },
+  {
+   "id": "rtl8822b-tables",
+   "name": "RTL8822B initialization tables",
+   "when": "driver:CONFIG_DRIVER_USB_RTL8822BU",
+   "license": "BSD-3-Clause",
+   "upstream": "Linux rtw88 tables",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/rtl8822b-tables/LICENSE"
+   ],
+   "paths": [
+    "src/drivers/wifi/rtl8822b/"
+   ],
+   "note": ""
+  },
+  {
+   "id": "khronos-headers",
+   "name": "Khronos headers (EGL, GLES, Vulkan) in /usr/include",
+   "when": "always",
+   "license": "Apache-2.0 OR MIT (per header)",
+   "upstream": "Khronos Group",
+   "version": "",
+   "notices": [],
+   "paths": [
+    "include/libc/EGL/",
+    "include/libc/GLES2/",
+    "include/libc/GLES3/",
+    "include/libc/vulkan/",
+    "include/libc/KHR/"
+   ],
+   "note": "Each header carries its own license text, which travels with it into the development root filesystem."
+  },
+  {
+   "id": "libvulkan-registry",
+   "name": "libvulkan's Venus protocol declarations (virglrenderer 1.1.0, Google)",
+   "when": "program:libvulkan",
+   "license": "MIT",
+   "upstream": "virglrenderer 1.1.0 (userland/desktop/libvulkan/LICENSE-PROTOCOL)",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/libvulkan/LICENSE-PROTOCOL"
+   ],
+   "paths": [
+    "userland/desktop/libvulkan/"
+   ],
+   "note": "opcodes.h carries virglrenderer's MIT declarations; LICENSE-PROTOCOL is in the tree but the libvulkan package does not install it."
+  },
+  {
+   "id": "browser-data",
+   "name": "Browser tables (Unicode data, WHATWG named character references)",
+   "when": "program:libbrowser",
+   "license": "Unicode-3.0 AND BSD-3-Clause",
+   "upstream": "Unicode, WHATWG",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/browser/Unicode-License-V3",
+    "/usr/share/licenses/browser/WHATWG-entities"
+   ],
+   "paths": [
+    "userland/desktop/libbrowser/base/unicode-",
+    "userland/desktop/libbrowser/html/entities-table.c"
+   ],
+   "note": ""
+  },
+  {
+   "id": "keiland-fonts",
+   "name": "Desktop fonts (Inter, JetBrains Mono, Droid Sans Fallback)",
+   "when": "program:wayland",
+   "license": "OFL-1.1 AND Apache-2.0",
+   "upstream": "rsms/inter, JetBrains/JetBrainsMono, AOSP",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/keiland-fonts/Inter-OFL.txt",
+    "/usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt",
+    "/usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt",
+    "/usr/share/licenses/keiland-fonts/Apache-2.0.txt"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "noct",
+   "name": "NoctLang interpreter (/bin/noct)",
+   "when": "program:noct",
+   "license": "Zlib",
+   "upstream": "NoctLang (Awe Morris)",
+   "version": "",
+   "notices": [],
+   "paths": [
+    "userland/base/noct/"
+   ],
+   "note": "Zlib asks for no notice in binaries. The clang resource headers in its tree are not installed."
+  },
+  {
+   "id": "remacs",
+   "name": "Remacs editor (remacs.nap)",
+   "when": "program:remacs",
+   "license": "GPL (version not stated)",
+   "upstream": "github.com/awemorris/remacs (README: Copyright FSF and Awe Morris, GNU GPL; no COPYING file)",
+   "version": "",
+   "notices": [],
+   "paths": [],
+   "status": "decision",
+   "note": "A GPL component in the image. 2026-10-04 Q1 raised it to the user; the user decides (relicense by the copyright holder, ship with the GPL text and source offer, or leave it out)."
+  },
+  {
+   "id": "ime-dict-ja",
+   "name": "Japanese input dictionary (from the Remacs dictionary)",
+   "when": "program:ime-dict-ja",
+   "license": "Zlib",
+   "upstream": "Remacs SKK-JISYO.remacs, relicensed by its copyright holder (ws095 D1, 2026-09-29)",
+   "version": "ext:ime-dict-ja",
+   "notices": [],
+   "paths": [],
+   "note": "Under the project's license file (ws095 D1)."
+  },
+  {
+   "id": "clang",
+   "name": "Clang, LLD, LLDB and LLVM tools",
+   "when": "program:clang",
+   "license": "Apache-2.0 WITH LLVM-exception",
+   "upstream": "LLVM project",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/clang/LICENSE.TXT"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "libcxx",
+   "name": "libc++ and libc++abi",
+   "when": "program:libcxx",
+   "license": "Apache-2.0 WITH LLVM-exception",
+   "upstream": "LLVM project",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/libcxx/LICENSE.TXT"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "openssl",
+   "name": "OpenSSL",
+   "when": "program:openssl",
+   "license": "Apache-2.0",
+   "upstream": "openssl.org",
+   "version": "ext:openssl",
+   "notices": [
+    "/usr/share/licenses/openssl/LICENSE.txt"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "openssh",
+   "name": "OpenSSH",
+   "when": "program:openssh",
+   "license": "LicenseRef-OpenSSH (BSD-style)",
+   "upstream": "openssh.com",
+   "version": "ext:openssh",
+   "notices": [
+    "/usr/share/licenses/openssh/LICENCE"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "curl",
+   "name": "curl and libcurl",
+   "when": "program:curl",
+   "license": "curl",
+   "upstream": "curl.se",
+   "version": "ext:curl",
+   "notices": [
+    "/usr/share/licenses/curl/COPYING"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "expat",
+   "name": "Expat",
+   "when": "program:expat",
+   "license": "MIT",
+   "upstream": "libexpat",
+   "version": "ext:expat",
+   "notices": [
+    "/usr/share/licenses/expat/COPYING"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "zlib",
+   "name": "zlib",
+   "when": "program:zlib",
+   "license": "Zlib",
+   "upstream": "zlib.net",
+   "version": "ext:zlib",
+   "notices": [
+    "/usr/share/licenses/zlib/LICENSE"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "ca-certificates",
+   "name": "Mozilla CA certificates",
+   "when": "program:ca-certificates",
+   "license": "MPL-2.0",
+   "upstream": "curl.se/ca (Mozilla NSS)",
+   "version": "ext:ca-certificates",
+   "notices": [
+    "/usr/share/licenses/ca-certificates/MPL-2.0.txt"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "noto-color-emoji",
+   "name": "Noto Color Emoji",
+   "when": "program:noto-color-emoji",
+   "license": "OFL-1.1",
+   "upstream": "googlefonts/noto-emoji",
+   "version": "ext:noto-color-emoji",
+   "notices": [
+    "/usr/share/licenses/noto-color-emoji/OFL-1.1.txt"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "i915-firmware",
+   "name": "Intel i915 display firmware (DMC)",
+   "when": "program:i915-firmware",
+   "license": "LicenseRef-Intel-i915-firmware (redistribution allowed)",
+   "upstream": "linux-firmware",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/i915-firmware/LICENSE.i915",
+    "/usr/share/licenses/i915-firmware/WHENCE"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "intelax211-firmware",
+   "name": "Intel AX211 WiFi firmware",
+   "when": "program:intelax211-firmware",
+   "license": "LicenseRef-iwlwifi-firmware (redistribution allowed)",
+   "upstream": "linux-firmware",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/intelax211-firmware/LICENCE.iwlwifi_firmware",
+    "/usr/share/licenses/intelax211-firmware/WHENCE"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "rtl8822b-firmware",
+   "name": "Realtek RTL8822B firmware",
+   "when": "program:rtl8822b-firmware",
+   "license": "LicenseRef-rtlwifi-firmware (redistribution allowed)",
+   "upstream": "linux-firmware",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/rtl8822b-firmware/LICENCE.rtlwifi_firmware.txt"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "gtk4",
+   "name": "GTK 4",
+   "when": "program:gtk4",
+   "license": "LGPL-2.1-or-later",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:gtk4",
+   "notices": [
+    "/usr/share/licenses/gtk4/COPYING"
+   ],
+   "paths": [],
+   "note": "LGPL: outside the release image; adding it needs the user's decision (the guardrail keeps GPL-family code out).",
+   "status": "decision"
+  },
+  {
+   "id": "glib",
+   "name": "GLib",
+   "when": "program:glib",
+   "license": "LGPL-2.1-or-later",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:glib",
+   "notices": [
+    "/usr/share/licenses/glib/COPYING"
+   ],
+   "paths": [],
+   "note": "LGPL: outside the release image; adding it needs the user's decision (the guardrail keeps GPL-family code out).",
+   "status": "decision"
+  },
+  {
+   "id": "pango",
+   "name": "Pango",
+   "when": "program:pango",
+   "license": "LGPL-2.1-or-later",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:pango",
+   "notices": [
+    "/usr/share/licenses/pango/COPYING"
+   ],
+   "paths": [],
+   "note": "LGPL: outside the release image; adding it needs the user's decision (the guardrail keeps GPL-family code out).",
+   "status": "decision"
+  },
+  {
+   "id": "cairo",
+   "name": "cairo",
+   "when": "program:cairo",
+   "license": "LGPL-2.1-only OR MPL-1.1",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:cairo",
+   "notices": [],
+   "paths": [],
+   "note": "Its license files are chosen by the package's Makefile; LGPL: outside the release image; adding it needs the user's decision (the guardrail keeps GPL-family code out).",
+   "status": "decision"
+  },
+  {
+   "id": "fribidi",
+   "name": "GNU FriBidi",
+   "when": "program:fribidi",
+   "license": "LGPL-2.1-or-later",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:fribidi",
+   "notices": [
+    "/usr/share/licenses/fribidi/COPYING"
+   ],
+   "paths": [],
+   "note": "LGPL: outside the release image; adding it needs the user's decision (the guardrail keeps GPL-family code out).",
+   "status": "decision"
+  },
+  {
+   "id": "gdk-pixbuf",
+   "name": "GdkPixbuf",
+   "when": "program:gdk-pixbuf",
+   "license": "LGPL-2.1-or-later",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:gdk-pixbuf",
+   "notices": [
+    "/usr/share/licenses/gdk-pixbuf/COPYING"
+   ],
+   "paths": [],
+   "note": "LGPL: outside the release image; adding it needs the user's decision (the guardrail keeps GPL-family code out).",
+   "status": "decision"
+  },
+  {
+   "id": "harfbuzz",
+   "name": "HarfBuzz",
+   "when": "program:harfbuzz",
+   "license": "MIT-Modern-Variant",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:harfbuzz",
+   "notices": [
+    "/usr/share/licenses/harfbuzz/COPYING"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "freetype",
+   "name": "FreeType",
+   "when": "program:freetype",
+   "license": "FTL OR GPL-2.0-or-later (FTL taken)",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:freetype",
+   "notices": [
+    "/usr/share/licenses/freetype/FTL.TXT"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "fontconfig",
+   "name": "Fontconfig",
+   "when": "program:fontconfig",
+   "license": "HPND-sell-variant AND MIT",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:fontconfig",
+   "notices": [
+    "/usr/share/licenses/fontconfig/COPYING"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "pixman",
+   "name": "pixman",
+   "when": "program:pixman",
+   "license": "MIT",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:pixman",
+   "notices": [
+    "/usr/share/licenses/pixman/COPYING"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "libepoxy",
+   "name": "libepoxy",
+   "when": "program:libepoxy",
+   "license": "MIT",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:libepoxy",
+   "notices": [
+    "/usr/share/licenses/libepoxy/COPYING"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "graphene",
+   "name": "Graphene",
+   "when": "program:graphene",
+   "license": "MIT",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:graphene",
+   "notices": [
+    "/usr/share/licenses/graphene/LICENSE.txt"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "libffi",
+   "name": "libffi",
+   "when": "program:libffi",
+   "license": "MIT",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:libffi",
+   "notices": [
+    "/usr/share/licenses/libffi/LICENSE"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "pcre2",
+   "name": "PCRE2",
+   "when": "program:pcre2",
+   "license": "BSD-3-Clause WITH PCRE2-exception",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:pcre2",
+   "notices": [
+    "/usr/share/licenses/pcre2/LICENCE.md"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "libpng",
+   "name": "libpng",
+   "when": "program:libpng",
+   "license": "libpng-2.0",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:libpng",
+   "notices": [
+    "/usr/share/licenses/libpng/LICENSE"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "libjpeg-turbo",
+   "name": "libjpeg-turbo",
+   "when": "program:libjpeg-turbo",
+   "license": "IJG AND BSD-3-Clause AND Zlib",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:libjpeg-turbo",
+   "notices": [
+    "/usr/share/licenses/libjpeg-turbo/LICENSE.md",
+    "/usr/share/licenses/libjpeg-turbo/README.ijg"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "libtiff",
+   "name": "libtiff",
+   "when": "program:libtiff",
+   "license": "libtiff",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:libtiff",
+   "notices": [
+    "/usr/share/licenses/libtiff/LICENSE.md"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "libxkbcommon",
+   "name": "libxkbcommon",
+   "when": "program:libxkbcommon",
+   "license": "MIT",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:libxkbcommon",
+   "notices": [
+    "/usr/share/licenses/libxkbcommon/LICENSE"
+   ],
+   "paths": [],
+   "note": ""
+  },
+  {
+   "id": "xkeyboard-config",
+   "name": "xkeyboard-config",
+   "when": "program:xkeyboard-config",
+   "license": "MIT AND HPND",
+   "upstream": "external package (userland/packages)",
+   "version": "ext:xkeyboard-config",
+   "notices": [
+    "/usr/share/licenses/xkeyboard-config/COPYING"
+   ],
+   "paths": [],
+   "note": ""
+  }
+ ]
+}
