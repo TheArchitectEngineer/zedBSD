@@ -71,8 +71,43 @@ enum drv_acpi_space {
 	DRV_ACPI_SPACE_COUNT = 12
 };
 
+/*
+ * The kinds of resource a resource template (_CRS) describes.
+ */
+enum drv_acpi_resource_kind {
+	DRV_ACPI_RESOURCE_IO = 1,
+	DRV_ACPI_RESOURCE_MEMORY = 2,
+	DRV_ACPI_RESOURCE_IRQ = 3
+};
+
 struct drv_acpi_node;
 struct drv_acpi_object;
+
+/*
+ * One resource of a device, as drv_acpi_resources_walk() decodes it from a
+ * resource template.
+ *
+ * base and length are the range of an I/O or memory resource (the minimum
+ * address and the length the descriptor gives; an address space
+ * descriptor's translation is not added), and base is the interrupt number
+ * of an IRQ, whose length is 1.  descriptor is the tag byte the resource
+ * came from (0x47 an I/O port, 0x86 a fixed 32-bit memory range, and so
+ * on), for a driver that cares which form firmware used.  writable says a
+ * memory range may be written; producer says an address space descriptor
+ * gives the range to its children rather than using it.  level, active_low
+ * and shared describe an interrupt.
+ */
+struct drv_acpi_resource {
+	enum drv_acpi_resource_kind kind;
+	uint64_t base;
+	uint64_t length;
+	uint8_t descriptor;
+	uint8_t writable;
+	uint8_t producer;
+	uint8_t level;
+	uint8_t active_low;
+	uint8_t shared;
+};
 
 /*
  * A walk visitor.
@@ -134,6 +169,20 @@ typedef void (*drv_acpi_fixed_handler_t)(enum drv_acpi_fixed_event event, void *
  * the event thread.
  */
 typedef void (*drv_acpi_gpe_handler_t)(unsigned gpe, void *argument);
+
+/*
+ * The work drv_acpi_run_locked() runs inside the interpreter with an AML
+ * mutex held: it reports zero or the error the call reports.
+ */
+typedef int (*drv_acpi_locked_work_t)(void *argument);
+
+/*
+ * A resource visitor: called once for each resource of a template, in the
+ * template's order.  It returns 0 to go on and anything else to stop the
+ * walk, which then reports that value; a negative value tells a stop the
+ * visitor chose from the positive errno values the walk reports itself.
+ */
+typedef int (*drv_acpi_resource_visitor_t)(const struct drv_acpi_resource *resource, void *argument);
 
 int
 drv_acpi_attach(void);
@@ -207,6 +256,16 @@ drv_acpi_object_buffer_new(
 	const void *bytes,
 	size_t length);
 
+struct drv_acpi_object *
+drv_acpi_object_package_new(
+	uint32_t count);
+
+int
+drv_acpi_object_package_set(
+	struct drv_acpi_object *package,
+	unsigned index,
+	struct drv_acpi_object *element);
+
 void
 drv_acpi_object_release(
 	struct drv_acpi_object *object);
@@ -255,6 +314,25 @@ int
 drv_acpi_notify_install(
 	struct drv_acpi_node *node,
 	drv_acpi_notify_handler_t handler,
+	void *argument);
+
+int
+drv_acpi_notify_remove(
+	struct drv_acpi_node *node,
+	drv_acpi_notify_handler_t handler,
+	void *argument);
+
+int
+drv_acpi_run_locked(
+	const char *mutex_path,
+	drv_acpi_locked_work_t work,
+	void *argument);
+
+int
+drv_acpi_resources_walk(
+	struct drv_acpi_node *device,
+	const char *method,
+	drv_acpi_resource_visitor_t visitor,
 	void *argument);
 
 int

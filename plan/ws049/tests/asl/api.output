@@ -1,0 +1,20 @@
+MAIN passed
+NOTIFY-ONCE calls 1
+RESOURCE io base=0x62 len=0x1 desc=0x47 w=0 p=0 level=0 low=0 shared=0
+RESOURCE io base=0x66 len=0x1 desc=0x4B w=0 p=0 level=0 low=0 shared=0
+RESOURCE irq base=0x1 len=0x1 desc=0x22 w=0 p=0 level=0 low=0 shared=0
+RESOURCE irq base=0xC len=0x1 desc=0x22 w=0 p=0 level=0 low=0 shared=0
+RESOURCE irq base=0x9 len=0x1 desc=0x23 w=0 p=0 level=1 low=1 shared=1
+RESOURCE memory base=0x10000 len=0x1000 desc=0x81 w=1 p=0 level=0 low=0 shared=0
+RESOURCE memory base=0xFED00000 len=0x400 desc=0x85 w=0 p=0 level=0 low=0 shared=0
+RESOURCE memory base=0xFE000000 len=0x1000 desc=0x86 w=1 p=0 level=0 low=0 shared=0
+RESOURCE io base=0x0 len=0xCF8 desc=0x88 w=0 p=1 level=0 low=0 shared=0
+RESOURCE memory base=0x80000000 len=0x10000000 desc=0x87 w=1 p=0 level=0 low=0 shared=0
+RESOURCE memory base=0x400000000 len=0x100000000 desc=0x8A w=0 p=1 level=0 low=0 shared=0
+RESOURCE memory base=0x500000000 len=0x1000 desc=0x8B w=1 p=0 level=0 low=0 shared=0
+RESOURCE irq base=0x20 len=0x1 desc=0x89 w=0 p=0 level=0 low=0 shared=0
+RESOURCE irq base=0x21 len=0x1 desc=0x89 w=0 p=0 level=0 low=0 shared=0
+RESOURCES end
+LOCKED held
+\TAKE = Integer 0x55
+PACKAGE-ARG \PKG = 0x0

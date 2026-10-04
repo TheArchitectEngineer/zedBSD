@@ -47,6 +47,16 @@
  *     --global-lock   share a simulated FACS Global Lock with a simulated
  *                     firmware (with --events); after MAIN, print the lock
  *                     and handle the SCI firmware raised
+ *     --resources PATH  after MAIN, walk the resources of the device PATH
+ *                     (drv_acpi_resources_walk) and print one line each
+ *     --run-locked MUTEX,PATH  after MAIN, evaluate PATH inside
+ *                     drv_acpi_run_locked(MUTEX) and print whether the work
+ *                     held the mutex
+ *     --notify-once PATH  install a handler on PATH that removes itself at
+ *                     its first notification; print how often it ran
+ *     --package-arg PATH  after MAIN, evaluate PATH with a package built by
+ *                     drv_acpi_object_package_new/set (Integer 0x1234,
+ *                     String "zed") as its argument
  *     --stack         print the deepest stack use of the interpreter
  *     --budget BYTES  the stack budget (default 1 MiB)
  *     --quiet         do not print the interpreter's log
@@ -99,6 +109,12 @@
 #define HOST_ENODEV	19
 
 /*
+ * The error drv_acpi_object_package_set() reports for an index past the
+ * end, which the --package-arg check expects.
+ */
+#define HOST_EINVAL	22
+
+/*
  * The options the harness understands.
  */
 enum option_kind {
@@ -127,7 +143,11 @@ enum option_kind {
 	OPTION_REG,
 	OPTION_INIT,
 	OPTION_BUDGET,
-	OPTION_QUIET
+	OPTION_QUIET,
+	OPTION_RESOURCES,
+	OPTION_RUN_LOCKED,
+	OPTION_NOTIFY_ONCE,
+	OPTION_PACKAGE_ARG
 };
 
 /*
@@ -153,6 +173,10 @@ struct harness_options {
 	const char *dynamic[OPTION_LIST_MAX];
 	const char *firmware;
 	const char *ecdt;
+	const char *resources;
+	const char *run_locked;
+	const char *notify_once;
+	const char *package_arg;
 	unsigned table_count;
 	unsigned evaluation_count;
 	unsigned notified_count;
@@ -211,6 +235,15 @@ struct method_list {
 };
 
 /*
+ * The mutex and the path the --run-locked work uses, which the work reads
+ * because drv_acpi_run_locked() hands it one argument.
+ */
+struct locked_request {
+	const char *mutex;
+	const char *path;
+};
+
+/*
  * The option names, which option_of() looks the arguments up in.  The
  * table is constant for the life of the harness.
  */
@@ -240,6 +273,10 @@ static const struct option_name option_names[] = {
 	{ "--init", OPTION_INIT, 0 },
 	{ "--budget", OPTION_BUDGET, 1 },
 	{ "--quiet", OPTION_QUIET, 0 },
+	{ "--resources", OPTION_RESOURCES, 1 },
+	{ "--run-locked", OPTION_RUN_LOCKED, 1 },
+	{ "--notify-once", OPTION_NOTIFY_ONCE, 1 },
+	{ "--package-arg", OPTION_PACKAGE_ARG, 1 },
 };
 
 /*
@@ -300,6 +337,13 @@ static size_t stack_budget = 1024U * 1024U;
 static uint64_t slept;
 
 /*
+ * How often the --notify-once handler ran; it removes itself at its first
+ * notification, so anything but 1 after a test that notifies twice is a
+ * failure of drv_acpi_notify_remove().
+ */
+static unsigned notify_once_calls;
+
+/*
  * Whether the interpreter lock is held.  The harness has one thread, so
  * the lock only checks that the interpreter takes and lets it go in pairs.
  */
@@ -339,6 +383,13 @@ static int evaluate_and_print(struct drv_acpi_node *scope, const char *path, con
 static int print_namespace(void);
 static int evaluate_methods(void);
 static int method_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
+static int check_resources(const char *path);
+static int print_resource(const struct drv_acpi_resource *resource, void *argument);
+static int check_run_locked(const char *request);
+static int locked_work(void *argument);
+static int install_notify_once(const char *path);
+static void notify_once(struct drv_acpi_node *node, uint32_t value, void *argument);
+static int check_package_arg(const char *path);
 
 /*
  * Runs the harness.
@@ -397,6 +448,13 @@ main(
 	if (error != 0)
 		status = 1;
 
+	/* Installs the handler that removes itself at its first notification. */
+	if (options.notify_once != NULL) {
+		error = install_notify_once(options.notify_once);
+		if (error != 0)
+			status = 1;
+	}
+
 	/* Starts the events and the EC. */
 	error = start_events(&options);
 	if (error != 0)
@@ -415,6 +473,28 @@ main(
 	/* Runs an ASL test's MAIN first, which returns 0 when every check passed. */
 	if (options.run_main) {
 		error = run_main();
+		if (error != 0)
+			status = 1;
+	}
+
+	/* Reports how often the self-removing handler ran. */
+	if (options.notify_once != NULL)
+		printf("NOTIFY-ONCE calls %u\n", notify_once_calls);
+
+	/* Walks the resources of the device the options named; the lines printed (api.output) are the check, a refused template included. */
+	if (options.resources != NULL)
+		(void)check_resources(options.resources);
+
+	/* Runs an evaluation with an AML mutex held. */
+	if (options.run_locked != NULL) {
+		error = check_run_locked(options.run_locked);
+		if (error != 0)
+			status = 1;
+	}
+
+	/* Evaluates a method with a package a driver built. */
+	if (options.package_arg != NULL) {
+		error = check_package_arg(options.package_arg);
 		if (error != 0)
 			status = 1;
 	}
@@ -923,6 +1003,18 @@ record_option(
 		break;
 	case OPTION_ECDT:
 		options->ecdt = value;
+		break;
+	case OPTION_RESOURCES:
+		options->resources = value;
+		break;
+	case OPTION_RUN_LOCKED:
+		options->run_locked = value;
+		break;
+	case OPTION_NOTIFY_ONCE:
+		options->notify_once = value;
+		break;
+	case OPTION_PACKAGE_ARG:
+		options->package_arg = value;
 		break;
 	default:
 		/* Keeps a table to load. */
@@ -2020,4 +2112,242 @@ print_notification(
 
 	/* Prints the node and the value. */
 	printf("NOTIFY %s 0x%X\n", path, (unsigned)value);
+}
+
+/* Walks the resources of a device and prints one line each. */
+static int
+check_resources(
+	const char *path)
+{
+	struct drv_acpi_node *device;
+	int error;
+
+	/* Finds the device. */
+	error = drv_acpi_lookup(NULL, path, &device);
+	if (error != 0) {
+		fprintf(stderr, "%s: no such device\n", path);
+		return error;
+	}
+
+	/* Walks its _CRS. */
+	error = drv_acpi_resources_walk(device, NULL, print_resource, NULL);
+	if (error != 0) {
+		printf("RESOURCES error %d\n", error);
+		return error;
+	}
+
+	/* Marks the end of the list. */
+	printf("RESOURCES end\n");
+
+	/* Succeeded: every resource is printed. */
+	return 0;
+}
+
+/* Prints one resource of a walk. */
+static int
+print_resource(
+	const struct drv_acpi_resource *resource,
+	void *argument)
+{
+	const char *kind;
+
+	UNUSED_PARAMETER(argument);
+
+	/* Names the kind. */
+	kind = "irq";
+	if (resource->kind == DRV_ACPI_RESOURCE_IO) {
+		kind = "io";
+	} else if (resource->kind == DRV_ACPI_RESOURCE_MEMORY) {
+		kind = "memory";
+	}
+
+	/* Prints the resource. */
+	printf("RESOURCE %s base=0x%llX len=0x%llX desc=0x%02X w=%u p=%u level=%u low=%u shared=%u\n",
+	       kind,
+	       (unsigned long long)resource->base,
+	       (unsigned long long)resource->length,
+	       (unsigned)resource->descriptor,
+	       (unsigned)resource->writable,
+	       (unsigned)resource->producer,
+	       (unsigned)resource->level,
+	       (unsigned)resource->active_low,
+	       (unsigned)resource->shared);
+
+	/* Goes on to the next resource. */
+	return 0;
+}
+
+/* Evaluates a path inside drv_acpi_run_locked(), as "MUTEX,PATH" names them. */
+static int
+check_run_locked(
+	const char *request)
+{
+	struct locked_request locked;
+	char mutex[PATH_MAX_LENGTH];
+	const char *comma;
+	size_t length;
+	int error;
+
+	/* Splits the mutex from the path. */
+	comma = strchr(request, ',');
+	if (comma == NULL || (size_t)(comma - request) >= sizeof(mutex)) {
+		fprintf(stderr, "--run-locked needs MUTEX,PATH: %s\n", request);
+		return 1;
+	}
+
+	/* Copies the mutex's name, terminated. */
+	length = (size_t)(comma - request);
+	memcpy(mutex, request, length);
+	mutex[length] = '\0';
+
+	/* Runs the work. */
+	locked.mutex = mutex;
+	locked.path = comma + 1;
+	error = drv_acpi_run_locked(mutex, locked_work, &locked);
+	if (error != 0) {
+		printf("LOCKED error %d\n", error);
+		return error;
+	}
+
+	/* Succeeded: the work ran with the mutex held. */
+	return 0;
+}
+
+/* The --run-locked work: reports whether the entry holds the mutex, then evaluates the path. */
+static int
+locked_work(
+	void *argument)
+{
+	struct locked_request *locked;
+	struct drv_acpi_node *node;
+	struct drv_acpi_thread *thread;
+	int error;
+
+	/* Finds the mutex. */
+	locked = argument;
+	error = drv_acpi_lookup(NULL, locked->mutex, &node);
+	if (error != 0)
+		return error;
+
+	/* Prints whether the running entry owns it. */
+	thread = drv_acpi_active_thread();
+	if (node->object != NULL && node->object->value.mutex.owner == thread) {
+		printf("LOCKED held\n");
+	} else {
+		printf("LOCKED not-held\n");
+	}
+
+	/* Evaluates the path, which may acquire the mutex again. */
+	error = evaluate_and_print(NULL, locked->path, locked->path);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the path was evaluated with the mutex held. */
+	return 0;
+}
+
+/* Installs the handler that removes itself at its first notification. */
+static int
+install_notify_once(
+	const char *path)
+{
+	struct drv_acpi_node *node;
+	int error;
+
+	/* Finds the node. */
+	error = drv_acpi_lookup(NULL, path, &node);
+	if (error != 0) {
+		fprintf(stderr, "%s: no such node\n", path);
+		return error;
+	}
+
+	/* Installs the handler. */
+	error = drv_acpi_notify_install(node, notify_once, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the node's first notification reaches the handler. */
+	return 0;
+}
+
+/* Counts a notification and removes the handler, so that no later one reaches it. */
+static void
+notify_once(
+	struct drv_acpi_node *node,
+	uint32_t value,
+	void *argument)
+{
+	int error;
+
+	UNUSED_PARAMETER(value);
+	UNUSED_PARAMETER(argument);
+
+	/* Counts the call. */
+	notify_once_calls++;
+
+	/* Removes the handler from inside the delivery. */
+	error = drv_acpi_notify_remove(node, notify_once, NULL);
+	if (error != 0)
+		printf("NOTIFY-ONCE remove error %d\n", error);
+}
+
+/* Evaluates a method with a package of an integer and a string as its argument. */
+static int
+check_package_arg(
+	const char *path)
+{
+	struct drv_acpi_object *arguments[1];
+	struct drv_acpi_object *package;
+	struct drv_acpi_object *integer;
+	struct drv_acpi_object *string;
+	struct drv_acpi_object *result;
+	int error;
+
+	/* Allocates the package of two elements. */
+	package = drv_acpi_object_package_new(2);
+	if (package == NULL)
+		return HOST_ENOMEM;
+
+	/* Sets the integer element; the package takes a reference of its own. */
+	integer = drv_acpi_object_integer_new(0x1234);
+	error = drv_acpi_object_package_set(package, 0, integer);
+	drv_acpi_object_release(integer);
+	if (error != 0) {
+		drv_acpi_object_release(package);
+		return error;
+	}
+
+	/* Sets the string element the same way. */
+	string = drv_acpi_object_string_new("zed");
+	error = drv_acpi_object_package_set(package, 1, string);
+	drv_acpi_object_release(string);
+	if (error != 0) {
+		drv_acpi_object_release(package);
+		return error;
+	}
+
+	/* Checks that the setter refuses an index past the end. */
+	error = drv_acpi_object_package_set(package, 2, NULL);
+	if (error != HOST_EINVAL) {
+		printf("PACKAGE-ARG index past the end gave %d\n", error);
+		drv_acpi_object_release(package);
+		return 1;
+	}
+
+	/* Evaluates the method with the package; the package is done with afterwards. */
+	arguments[0] = package;
+	result = NULL;
+	error = drv_acpi_evaluate(NULL, path, arguments, 1, &result);
+	drv_acpi_object_release(package);
+	if (error != 0) {
+		printf("PACKAGE-ARG error %d\n", error);
+		return error;
+	}
+
+	/* Prints the method's answer. */
+	printf("PACKAGE-ARG %s = 0x%llX\n", path, (unsigned long long)drv_acpi_object_integer(result));
+	drv_acpi_object_release(result);
+
+	/* Succeeded: the method saw the package. */
+	return 0;
 }

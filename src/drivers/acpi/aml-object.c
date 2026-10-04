@@ -354,6 +354,44 @@ drv_acpi_object_package_new(
 }
 
 /*
+ * Sets one element of a package a driver builds, such as a method's argument.
+ *
+ * The package takes its own reference to the element, which the caller
+ * keeps; the element replaces any the slot held.  NULL leaves the slot
+ * uninitialized.
+ */
+int
+drv_acpi_object_package_set(
+	struct drv_acpi_object *package,
+	unsigned index,
+	struct drv_acpi_object *element)
+{
+	struct drv_acpi_object *old;
+
+	/* Refuses anything but a package. */
+	if (package == NULL || package->type != DRV_ACPI_TYPE_PACKAGE)
+		return EINVAL;
+
+	/* Refuses an index past the end. */
+	if (index >= package->value.package.count)
+		return EINVAL;
+
+	/* The package takes its own reference to the new element. */
+	if (element != NULL)
+		drv_acpi_object_ref(element);
+
+	/* Replaces the element. */
+	old = package->value.package.elements[index];
+	package->value.package.elements[index] = element;
+
+	/* Lets go of the old element. */
+	drv_acpi_object_release(old);
+
+	/* Succeeded: the package holds the element at the index. */
+	return 0;
+}
+
+/*
  * Creates an empty reference object of one kind.
  */
 struct drv_acpi_object *
