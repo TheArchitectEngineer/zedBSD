@@ -40,6 +40,11 @@ hardware_ec_ram(
 	uint8_t address,
 	uint8_t value);
 
+void
+hardware_ec_ports(
+	uint32_t data,
+	uint32_t command);
+
 uint8_t
 hardware_ec_ram_read(
 	uint8_t address);

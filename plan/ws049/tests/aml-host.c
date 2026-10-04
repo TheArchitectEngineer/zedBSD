@@ -28,12 +28,19 @@
  *     --shared-pci    simulate one PCI configuration space for every
  *                     function, as acpiexec does (it keeps one buffer per
  *                     region address, and PCI regions all start at 0)
+ *     --absent-pci B:D.F  the PCI function (hex) is not there: its
+ *                     configuration space reads as all ones and drops
+ *                     writes, as the kernel answers (repeatable)
+ *     --absent-pci-fails  fail an access to an absent function with ENODEV
+ *                     instead, as the kernel did before BUG-165
  *     --events        read the event hardware from the FADT (the firmware's,
  *                     or a simulated q35-like one) and enable the GPEs
  *     --ec            attach the Embedded Controller (PNP0C09)
  *     --ecdt FILE     start the EC from an ECDT before _REG and _INI, as
  *                     the kernel does when firmware lists one
  *     --ec-ram A=V    preset byte A of the simulated EC (repeatable)
+ *     --ec-ports D,C  the simulated EC's data and command ports (hex),
+ *                     where a real table's _CRS puts them (default 62,66)
  *     --gpe N         raise GPE N and handle the SCI (repeatable, in order)
  *     --power-button  press the fixed power button and handle the SCI
  *     --ec-query Q@G  queue EC query Q, raise the EC's GPE G, handle the SCI
@@ -96,10 +103,13 @@ enum option_kind {
 	OPTION_FIRMWARE,
 	OPTION_STACK,
 	OPTION_SHARED_PCI,
+	OPTION_ABSENT_PCI,
+	OPTION_ABSENT_PCI_FAILS,
 	OPTION_EVENTS,
 	OPTION_EC,
 	OPTION_ECDT,
 	OPTION_EC_RAM,
+	OPTION_EC_PORTS,
 	OPTION_GPE,
 	OPTION_POWER_BUTTON,
 	OPTION_EC_QUERY,
@@ -190,10 +200,13 @@ static const struct option_name option_names[] = {
 	{ "--firmware", OPTION_FIRMWARE, 1 },
 	{ "--stack", OPTION_STACK, 0 },
 	{ "--shared-pci", OPTION_SHARED_PCI, 0 },
+	{ "--absent-pci", OPTION_ABSENT_PCI, 1 },
+	{ "--absent-pci-fails", OPTION_ABSENT_PCI_FAILS, 0 },
 	{ "--events", OPTION_EVENTS, 0 },
 	{ "--ec", OPTION_EC, 0 },
 	{ "--ecdt", OPTION_ECDT, 1 },
 	{ "--ec-ram", OPTION_EC_RAM, 1 },
+	{ "--ec-ports", OPTION_EC_PORTS, 1 },
 	{ "--gpe", OPTION_GPE, 1 },
 	{ "--power-button", OPTION_POWER_BUTTON, 0 },
 	{ "--ec-query", OPTION_EC_QUERY, 1 },
@@ -220,6 +233,16 @@ static unsigned dynamic_table_count;
  * Whether every PCI function shares one simulated configuration space.
  */
 static int shared_pci;
+
+/*
+ * The PCI functions --absent-pci named, as segment, bus, device and
+ * function packed the way space_key() packs them, and whether an access to
+ * one fails (--absent-pci-fails) instead of reading all ones.  Filled from
+ * the command line and kept until the harness exits.
+ */
+static uint64_t absent_functions[OPTION_LIST_MAX];
+static unsigned absent_function_count;
+static int absent_fails;
 
 /*
  * The simulated physical memory of --firmware, and the tables found in it.
@@ -269,6 +292,10 @@ static int load_firmware(const char *description);
 static int read_memory(uint64_t address, void *buffer, size_t length, void *argument);
 static int simulated_space(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static uint64_t space_key(const struct drv_acpi_region_access *access, unsigned space);
+static int parse_absent(const char *text);
+static int parse_ec_ports(const char *text);
+static int absent_function(const struct drv_acpi_region_access *access);
+static int absent_access(const struct drv_acpi_region_access *access, uint64_t *value);
 static uint8_t *page_byte(uint64_t space, uint64_t address);
 static int devices_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static void print_notification(struct drv_acpi_node *node, uint32_t value, void *argument);
@@ -680,6 +707,7 @@ parse_arguments(
 	enum option_kind kind;
 	const char *value;
 	int takes_value;
+	int refused;
 	int index;
 
 	/* Starts with nothing asked for. */
@@ -721,6 +749,27 @@ parse_arguments(
 			break;
 		case OPTION_SHARED_PCI:
 			shared_pci = 1;
+			break;
+		case OPTION_ABSENT_PCI:
+			/* Refuses a function the harness cannot read or keep. */
+			refused = parse_absent(value);
+			if (refused != 0) {
+				fprintf(stderr, "--absent-pci needs BUS:DEVICE.FUNCTION: %s\n", value);
+				return 1;
+			}
+
+			break;
+		case OPTION_ABSENT_PCI_FAILS:
+			absent_fails = 1;
+			break;
+		case OPTION_EC_PORTS:
+			/* Refuses ports the harness cannot read. */
+			refused = parse_ec_ports(value);
+			if (refused != 0) {
+				fprintf(stderr, "--ec-ports needs DATA,COMMAND: %s\n", value);
+				return 1;
+			}
+
 			break;
 		case OPTION_EVENTS:
 			options->events = 1;
@@ -1321,6 +1370,8 @@ simulated_space(
 	unsigned index;
 	uint8_t *byte;
 	int modelled;
+	int absent;
+	int error;
 
 	/* The simulated hardware answers for its I/O ports. */
 	if ((uintptr_t)argument == DRV_ACPI_SPACE_SYSTEM_IO) {
@@ -1331,6 +1382,17 @@ simulated_space(
 				*value = port_value;
 			return 0;
 		}
+	}
+
+	/* Finds whether the access is to a PCI function that is not there. */
+	absent = 0;
+	if ((uintptr_t)argument == DRV_ACPI_SPACE_PCI_CONFIG)
+		absent = absent_function(access);
+
+	/* An absent function answers as the kernel does, without the memory. */
+	if (absent) {
+		error = absent_access(access, value);
+		return error;
 	}
 
 	/* The argument is the number of the space the handler was installed for. */
@@ -1387,6 +1449,124 @@ space_key(
 
 	/* Leaves room below for the numbers of the spaces. */
 	return (function + 1U) << 8;
+}
+
+/* Records the PCI function an --absent-pci value names (hex bus:device.function). */
+static int
+parse_absent(
+	const char *text)
+{
+	unsigned long bus;
+	unsigned long device;
+	unsigned long function;
+	char *end;
+
+	/* Refuses more functions than the harness keeps. */
+	if (absent_function_count >= OPTION_LIST_MAX)
+		return 1;
+
+	/* Reads the bus, which a colon ends. */
+	bus = strtoul(text, &end, 16);
+	if (*end != ':' || bus > 0xffU)
+		return 1;
+
+	/* Reads the device, which a dot ends. */
+	device = strtoul(end + 1, &end, 16);
+	if (*end != '.' || device > 0x1fU)
+		return 1;
+
+	/* Reads the function, which ends the value. */
+	function = strtoul(end + 1, &end, 16);
+	if (*end != '\0' || function > 7U)
+		return 1;
+
+	/* Keeps it packed as space_key() packs a function of segment 0. */
+	absent_functions[absent_function_count] = (uint64_t)bus << 8;
+	absent_functions[absent_function_count] |= (uint64_t)device << 3;
+	absent_functions[absent_function_count] |= (uint64_t)function;
+	absent_function_count++;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Moves the simulated EC to the ports an --ec-ports value names (hex data,command). */
+static int
+parse_ec_ports(
+	const char *text)
+{
+	unsigned long data;
+	unsigned long command;
+	char *end;
+
+	/* Reads the data port, which a comma ends. */
+	data = strtoul(text, &end, 16);
+	if (*end != ',' || data > 0xffffU)
+		return 1;
+
+	/* Reads the command port, which ends the value. */
+	command = strtoul(end + 1, &end, 16);
+	if (*end != '\0' || command > 0xffffU)
+		return 1;
+
+	/* Moves the EC there. */
+	hardware_ec_ports((uint32_t)data, (uint32_t)command);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Reports whether a PCI_Config access is to a function --absent-pci named. */
+static int
+absent_function(
+	const struct drv_acpi_region_access *access)
+{
+	uint64_t function;
+	unsigned index;
+
+	/* Packs the function the access is to. */
+	function = (uint64_t)access->pci_segment << 16;
+	function |= (uint64_t)access->pci_bus << 8;
+	function |= (uint64_t)access->pci_device << 3;
+	function |= access->pci_function;
+
+	/* Looks for it among the absent ones. */
+	for (index = 0; index < absent_function_count; index++) {
+		if (absent_functions[index] == function)
+			return 1;
+	}
+
+	/* The function is there. */
+	return 0;
+}
+
+/*
+ * Answers an access to an absent PCI function: every bit set on a read and
+ * a write dropped, as the bus and the kernel do, or ENODEV with
+ * --absent-pci-fails, as the kernel did before BUG-165.
+ */
+static int
+absent_access(
+	const struct drv_acpi_region_access *access,
+	uint64_t *value)
+{
+	/* Fails the access the way the kernel used to. */
+	if (absent_fails)
+		return 19;
+
+	/* A write goes nowhere. */
+	if (access->write)
+		return 0;
+
+	/* A read finds every bit of its width set; 64 bits are all of them. */
+	if (access->width >= 64U) {
+		*value = UINT64_MAX;
+	} else {
+		*value = ((uint64_t)1 << access->width) - 1U;
+	}
+
+	/* Succeeded: the read has its value. */
+	return 0;
 }
 
 /* Finds the simulated byte at an address, creating its page. */

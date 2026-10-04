@@ -112,6 +112,14 @@ static struct spinlock event_lock;
 static struct wait_queue event_queue;
 static unsigned event_work;
 
+/*
+ * The PCI function whose absence was logged last, as segment, bus, device
+ * and function packed one above the other, plus one so that zero means none
+ * yet.  Only the PCI_Config handler, under the interpreter lock, touches it;
+ * it keeps a region read in a loop from logging once per access.
+ */
+static uint64_t pci_absent_logged;
+
 static int start_events(void);
 static int start_global_lock(void);
 static void start_ecdt(void);
@@ -125,6 +133,7 @@ static void memory_move(uint8_t *virtual_address, unsigned width, bool write, ui
 static int memory_page(uint64_t page, uint8_t **virtual_address);
 static int io_handler(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static int pci_handler(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
+static void pci_absent(const struct drv_acpi_region_access *access, uint64_t *value);
 static int pci_read(struct drv_pci_device *device, unsigned offset, unsigned width, uint64_t *value);
 static int pci_write(struct drv_pci_device *device, unsigned offset, unsigned width, uint64_t value);
 
@@ -945,9 +954,8 @@ pci_handler(
 	address.function = access->pci_function;
 	device = drv_pci_find_device(&address);
 	if (device == NULL) {
-		kern_logf("acpi: PCI_Config region of absent function %x:%x.%x\n",
-			  access->pci_bus, access->pci_device, access->pci_function);
-		return ENODEV;
+		pci_absent(access, value);
+		return 0;
 	}
 
 	/* Refuses an offset outside the extended configuration space. */
@@ -967,6 +975,45 @@ pci_handler(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Answers an access to the configuration space of a function that is not
+ * there, as the PCI bus does: a read finds every bit set and a write is
+ * dropped.  Firmware tests for exactly that (a vendor ID of 0xFFFF) to skip
+ * a device the BIOS disabled, so failing the access would stop the table.
+ */
+static void
+pci_absent(
+	const struct drv_acpi_region_access *access,
+	uint64_t *value)
+{
+	uint64_t function;
+
+	/* Packs the function's address, plus one so that zero stays "none". */
+	function = (uint64_t)access->pci_segment << 16;
+	function |= (uint64_t)access->pci_bus << 8;
+	function |= (uint64_t)access->pci_device << 3;
+	function |= access->pci_function;
+	function++;
+
+	/* Logs a function once, not once per access of a region read in a loop. */
+	if (function != pci_absent_logged) {
+		kern_logf("acpi: PCI_Config region of absent function %x:%x.%x reads as all ones\n",
+			  access->pci_bus, access->pci_device, access->pci_function);
+		pci_absent_logged = function;
+	}
+
+	/* A write goes nowhere. */
+	if (access->write)
+		return;
+
+	/* A read finds every bit of its width set; 64 bits are all of them. */
+	if (access->width >= 64U) {
+		*value = UINT64_MAX;
+	} else {
+		*value = ((uint64_t)1 << access->width) - 1U;
+	}
 }
 
 /* Reads configuration space at one width; 64 bits are two double words. */

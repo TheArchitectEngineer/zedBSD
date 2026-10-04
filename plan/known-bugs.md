@@ -33,7 +33,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-162](bugs/BUG-162.md) | desktop.conf を Settings と zdesktop の通信路に使っている（1 秒ごとの poll） | reproduced（code） / resolved（WS135、2026-10-04） | ユーザーの問い（BUG-161 の後） | WS135 |
 | [BUG-163](bugs/BUG-163.md) | UFS の fsync の後、line を後の transaction が pin し直すと普通の content が durable でない窓（約 1 秒） | reproduced（QEMU、volume の開始が 4 KiB に揃わない時） / resolved（ws073-p053、2026-10-04） | ws073-p051 の読み | UFS の Phase（直し方の候補は ticket） |
 | [BUG-164](bugs/BUG-164.md) | crash の後に orphan の inode（nlink 0・size 0）が allocated のまま残ることがある | reproduced / resolved（ws073-p054、2026-10-04） | ws073-p053 の試験 | UFS の Phase（unlink と free の transaction） |
-| [BUG-165](bugs/BUG-165.md) | 5330 の DSDT が読み込めない（error 13） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | WS049。電源が切れない・タッチパッド・電源の状態の共通の根の候補（[ticket](bugs/BUG-165.md)） |
+| [BUG-165](bugs/BUG-165.md) | 5330 の DSDT が読み込めない（error 13） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | WS049。電源が切れない・タッチパッド・電源の状態の共通の根の候補。修正済み（ws049-p008、無い PCI 機能を全ビット 1 に、host で 5330 の table が全部読める）、実機の UAT 待ち（[ticket](bugs/BUG-165.md)） |
 | [BUG-166](bugs/BUG-166.md) | タッチパッドで title bar を押して動かしても窓が動かない（デグレ） | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS099。仕様をユーザーと決めてから（[ticket](bugs/BUG-166.md)） |
 | [BUG-167](bugs/BUG-167.md) | タッチパッドの押し込み（物理のクリック）が認識されない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS081。BUG-165 の後に再確認（[ticket](bugs/BUG-167.md)） |
 | [BUG-168](bugs/BUG-168.md) | 起動の後に挿した USB の有線 LAN が up しない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS033（networkd の hotplug）（[ticket](bugs/BUG-168.md)） |
