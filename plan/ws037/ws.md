@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q692（p001）
-Resume point: p001 から（2026-10-04、番号の予約から作り直し）。他の WS と独立。
+Resume point: p001 から（2026-10-04、番号の予約から作り直し）。他の WS と独立。**実機は RTX 2070**（ユーザーが host を後で伝える）。host がわかったら [host.md](host.md) を埋め、p002 を始める。p001 は host 無しで始められる。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -47,13 +47,18 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 
 ## Phase 一覧
 
+最初の対象は **RTX 2070（TU106、Turing）**（2026-10-04 ユーザー「RTX 2070の実機があり」）。Ampere 以降は後で足す（class の番号と GSP の firmware の版の差分）。
+
 | Phase | 目的 | Status | 依存 | 目安 |
 | --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 文書: 初期化の順・GSP の RPC・channel の command の順・display・MMU、NAK の世代の差、正本と license の監査、最初の対象の世代、interface の対応表、段の印の設計 | planned | なし | 6h |
-| p002 | 定数の一括の改名の後に、driver の骨格（PCI の attach、BAR の map、GOP の framebuffer の段の印）と GSP の firmware の置き場所（`userland/firmware/`） | planning | p001 | 4h |
-| p003 | GSP の boot と RPC | planning | p002 | 6h〜 |
-| p004 | MMU・channel・GPFIFO・fence・reset | planning | p003 | 6h〜 |
-| p005 | display（GOP の引き継ぎ、mode set、page flip） | planning | p003 | 6h〜 |
-| p006 | 3D・compute の class の投入と `drv_gpu_interface` への統合、desktop の表示 | planning | p004・p005 | 6h〜 |
-| p007 | shader の compiler の方針（SPIR-V → SM70 系、別 WS にするか） | planning | p001 | 2h |
-| p008 | 規約の全文の確認、license と GPL の code との類似の監査、BLOB の確認 | planning | 全て | 4h |
+| [p001](phase001/phase.md) | 文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp）、NAK の世代の差、正本と license の監査、interface の対応表、段の印の設計、試験の道 | planned（q692） | なし（host 無しで可） | 6h |
+| [p002](phase002/phase.md) | 試験機（RTX 2070）の調査（読むだけ）と試験の道（A: USB から素で起動、B: VFIO）、今の zedBSD が RTX 2070 の GOP に出ること | planned（**host の情報待ち**） | [host.md](host.md) | 3〜4h |
+| [p003](phase003/phase.md) | 定数の一括の改名、driver の骨格（PCI・BAR・`CONFIG_DRIVER_PCI_NVRTX`）、段の印 N0（chip の ID を読むだけ） | planned | p001・p002 | 4h |
+| p004 | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware の load（`userland/firmware/nvidia-gsp/tu106/`）、RISC-V の GSP の起動、RPC の初期化（段の印 P1〜P2） | planning | p003 | 6h〜 |
+| p005 | MMU・channel・GPFIFO・semaphore の fence・reset（GSP の RPC で channel を作る） | planning | p004 | 6h〜 |
+| p006 | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本） | planning | p004 | 6h〜 |
+| p007 | 3D（TU102_A 系の class）・compute の投入と `drv_gpu_interface` への統合、desktop の表示 | planning | p005・p006 | 6h〜 |
+| p008 | shader の compiler の方針（SPIR-V → SM75、NAK の構成を参考、別 WS にするか） | planning | p001 | 2h |
+| p009 | 規約の全文の確認、license と GPL の code との類似の監査、BLOB（GSP の firmware）の確認 | planning | 全て | 4h |
+
+各段の印（GOP の framebuffer）: N0 発見と ID → N1 GOP の readout → P1 FWSEC・booter → P2 GSP の起動と RPC → P3 channel → P4 display の引き継ぎ → P5 最初の 3D の job。i915 の N0・N1・P2 と同じ考え。
