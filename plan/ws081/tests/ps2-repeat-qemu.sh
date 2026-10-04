@@ -1,9 +1,11 @@
 #!/bin/sh
 # BUG-191: the PS/2 keyboard's typematic on a QEMU guest (q35's i8042; plan/tools/guest/guest.py start).  QEMU's PS/2
 # keyboard sends a make code for every key-down QMP gives it, as a real keyboard's typematic sends one while a key
-# is held.  The run:
+# is held.  QMP's keys go to the keyboard added last, which is guest.py's usb-kbd (T1-151: the PS/2 keyboard heard
+# nothing), so the run takes the usb-kbd out first (device_del by its QOM path under /machine/peripheral-anon).
+# The run:
 #  1. ps2keys (ps2keys.c, built here and put into the guest over SSH) reads the PS/2 keyboard's input device.
-#  2. Through QMP: A down five times 100 ms apart, then A up; later A down and up once more.
+#  2. Through QMP: the usb-kbd removed; A down five times 100 ms apart, then A up; later A down and up once more.
 #  3. ps2keys' counts for A: press=2 repeat=4 release=2 (before BUG-191's fix: press=6 repeat=0).
 # The image is any Kei image with the kernel under test (no desktop is needed).
 #   plan/ws081/tests/ps2-repeat-qemu.sh IMAGE [BUILD] [OUTDIR]
@@ -55,6 +57,12 @@ def send(command, arguments=None):
 def key(down):
 	send("input-send-event", {"events": [{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": "a"}}}]})
 send("qmp_capabilities")
+# The usb-kbd goes, so that the keys reach the PS/2 keyboard.
+listed = send("qom-list", {"path": "/machine/peripheral-anon"})
+for child in listed.get("return", []):
+	if child.get("type") == "child<usb-kbd>":
+		print("removing", child["name"], send("device_del", {"id": "/machine/peripheral-anon/" + child["name"]}))
+time.sleep(2)
 for index in range(5):
 	key(True)
 	time.sleep(0.1)
