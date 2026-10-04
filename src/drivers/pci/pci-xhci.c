@@ -278,6 +278,16 @@ struct xhci_controller {
 	uint32_t saved_dnctrl, saved_config, saved_imod, saved_erstsz;
 	uint64_t saved_dcbaap, saved_erstba;
 	uint8_t suspended_ports[32];
+
+	/*
+	 * The root ports whose connection a reset after the sleep reports as
+	 * changed (ws052-p004), so that the USB core takes the devices it
+	 * knew away and enumerates the ports again.  Cleared by the hub's
+	 * ClearPortFeature(C_PORT_CONNECTION).  Under active_lock for writes
+	 * by the resume; the root hub requests read and clear it on the port
+	 * worker's thread.
+	 */
+	uint8_t forced_port_change[32];
 };
 
 static struct xhci_controller *controllers;
@@ -378,6 +388,11 @@ static void xhci_resume_ports(struct xhci_controller *c);
 static void xhci_resume_endpoints(struct xhci_controller *c);
 static void xhci_suspend_end(struct xhci_controller *c);
 static void xhci_resume_fail(struct xhci_controller *c, const char *stage, int error);
+static int xhci_resume_reinit(struct xhci_controller *c);
+static int xhci_reinit_forget_devices(struct xhci_controller *c);
+static int xhci_reinit_reset(struct xhci_controller *c);
+static int xhci_reinit_start(struct xhci_controller *c);
+static int xhci_port_forced(const struct xhci_controller *c, unsigned port);
 static uint32_t xhci_port_neutral(uint32_t status);
 static void xhci_port_link_set(struct xhci_controller *c, unsigned port, unsigned link);
 static int xhci_port_link_wait(struct xhci_controller *c, unsigned port, unsigned link);
@@ -4421,6 +4436,7 @@ xhci_root_status(
 	struct xhci_controller *c = hcd_controller(h);
 	uint8_t *bits = b;
 	unsigned p, bytes = (c->ports + 1U + 7U) / 8U;
+	int forced;
 
 	/* Handles the b condition. */
 	if (!b || n < bytes)
@@ -4430,6 +4446,11 @@ xhci_root_status(
 	for (p = 0; p < c->ports; p++) {
 		/* Checks the rd32 result. */
 		if (rd32(c->operational, XHCI_PORTSC(p)) & XHCI_PORT_CHANGE)
+			bits[(p + 1U) / 8U] |= (uint8_t)(1U << ((p + 1U) & 7U));
+
+		/* A connection a reset after the sleep reports as changed. */
+		forced = xhci_port_forced(c, p);
+		if (forced)
 			bits[(p + 1U) / 8U] |= (uint8_t)(1U << ((p + 1U) & 7U));
 	}
 
@@ -4453,6 +4474,8 @@ xhci_root_control(
 	struct xhci_controller *c = hcd_controller(h);
 	unsigned p;
 	uint32_t s, v = 0;
+	int forced;
+	unsigned long irq;
 
 	/* Handles the r condition. */
 	if (!r || r->index < 1 || r->index > c->ports)
@@ -4490,6 +4513,11 @@ xhci_root_control(
 
 		/* Checks the current string state. */
 		if (s & (1U << 17))
+			v |= 0x10000U;
+
+		/* A connection a reset after the sleep reports as changed. */
+		forced = xhci_port_forced(c, p);
+		if (forced)
 			v |= 0x10000U;
 
 		/* Checks the current string state. */
@@ -4538,6 +4566,13 @@ xhci_root_control(
 
 	/* Handles the r condition. */
 	if (r->request == 1) {
+		/* Clearing the connection change also clears one a reset after the sleep reported. */
+		if (r->value == 16 && p < 256U) {
+			irq = spin_lock_irqsave(&c->active_lock);
+			c->forced_port_change[p / 8U] &= (uint8_t)~(1U << (p % 8U));
+			spin_unlock_irqrestore(&c->active_lock, irq);
+		}
+
 		/* Handles the r condition. */
 		change = 0;
 		if (r->value == 16)
@@ -6053,9 +6088,10 @@ xhci_suspend(
  * Resumes the controller after S0 idle: the registers are written back
  * and the Restore State brings the internal state back, the controller
  * runs and answers a command, the ports return to U0 and every endpoint is
- * rung.  A controller that does not come back is quarantined and the
- * failure reported (detaching it is no way out: the USB core keeps its
- * devices, so the detach refuses).
+ * rung.  A controller whose state did not come back is reset in place and
+ * its devices are enumerated again (its devices' transfers end with
+ * DISCONNECTED, and the USB core takes them away and attaches them anew);
+ * one that cannot even be reset is quarantined and the failure reported.
  */
 static int
 xhci_resume(
@@ -6070,37 +6106,29 @@ xhci_resume(
 		return ENODEV;
 
 	/*
-	 * Brings the saved state back.  A Save/Restore Error (QEMU's xHCI
-	 * implements no Restore State and always reports it) is cleared and
-	 * the controller is run with the state it kept: a controller whose
-	 * state survived D3hot runs on, and one that lost it fails the command
-	 * check below.
+	 * Brings the saved state back.  A controller whose state did not come
+	 * back (a Save/Restore Error, which QEMU's xHCI always reports since
+	 * it implements no Restore State), or that does not run or answer a
+	 * command, is reset and its devices enumerated again.
 	 */
 	error = xhci_resume_restore(c);
-	if (error == ESTALE) {
-		wr32(c->operational, XHCI_USBSTS, XHCI_STS_SRE);
-		kern_logf("xhci: Restore State failed (SRE); running with the state the controller kept\n");
-		error = 0;
-	}
-
-	/* Gives up a controller in error. */
+	if (error == 0)
+		error = xhci_resume_run(c);
+	if (error == 0)
+		error = command(c, 0, 0, XHCI_TRB_TYPE(23), NULL);
 	if (error != 0) {
-		xhci_resume_fail(c, "restore", error);
-		return error;
-	}
+		/* Resets the controller and enumerates its ports again. */
+		kern_logf("xhci: the saved state did not come back (%d); resetting the controller and enumerating its devices again\n", error);
+		error = xhci_resume_reinit(c);
+		if (error != 0) {
+			xhci_resume_fail(c, "reset", error);
+			return error;
+		}
 
-	/* Runs the controller again. */
-	error = xhci_resume_run(c);
-	if (error != 0) {
-		xhci_resume_fail(c, "run", error);
-		return error;
-	}
-
-	/* Checks that the controller answers a command (No Op), which a lost state cannot. */
-	error = command(c, 0, 0, XHCI_TRB_TYPE(23), NULL);
-	if (error != 0) {
-		xhci_resume_fail(c, "command check", error);
-		return error;
+		/* Opens the gates; the port worker takes the old devices away and enumerates the ports. */
+		xhci_suspend_end(c);
+		kern_logf("xhci: resumed after a reset\n");
+		return 0;
 	}
 
 	/* Wakes the ports and rings the endpoints. */
@@ -6112,6 +6140,259 @@ xhci_resume(
 
 	/* Succeeded: the controller and its devices run again. */
 	kern_logf("xhci: resumed\n");
+	return 0;
+}
+
+/*
+ * Resets a controller whose state did not come back from the sleep, and
+ * sets the USB core up to enumerate its devices again: every transfer of
+ * the devices it knew ends with DISCONNECTED, their slots are gone, the
+ * controller is reset and started on its own memory again, and every root
+ * port reports a connection change.
+ */
+static int
+xhci_resume_reinit(
+	struct xhci_controller *c)
+{
+	unsigned long irq;
+	unsigned port;
+	int error;
+
+	/* HALTED makes the interrupt leave the controller alone while it is reset. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	c->suspend_state = XHCI_SUSPEND_HALTED;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Turns the interrupter off. */
+	event_lock(c);
+	c->interrupter_enabled = 0U;
+	xhci_interrupter_write_locked(c, 1U);
+	event_unlock(c);
+
+	/* Stops and resets the controller. */
+	error = xhci_reinit_reset(c);
+	if (error != 0)
+		return error;
+
+	/* Waits for an interrupt handler still running. */
+	error = xhci_irq_quiesce(c);
+	if (error != 0)
+		return error;
+
+	/* Takes the devices' slots and transfers away; the reset controller no longer reaches their memory. */
+	error = xhci_reinit_forget_devices(c);
+	if (error != 0)
+		return error;
+
+	/* Starts the controller on its own memory again. */
+	error = xhci_reinit_start(c);
+	if (error != 0)
+		return error;
+
+	/* The ports were not suspended by this controller's state any more. */
+	kern_memset(c->suspended_ports, 0, sizeof(c->suspended_ports));
+
+	/* Every root port reports a connection change, and the gates admit work again. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	for (port = 0; port < c->ports && port < 256U; port++)
+		c->forced_port_change[port / 8U] |= (uint8_t)(1U << (port % 8U));
+	c->suspend_state = XHCI_SUSPEND_GATED;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Succeeded: the port worker enumerates the devices again. */
+	return 0;
+}
+
+/*
+ * Forgets the devices' hardware state after the controller lost it: their
+ * transfers end with DISCONNECTED, their endpoints are disabled and their
+ * slots counted as disabled, so that the USB core's teardown releases them
+ * without a command to the controller.  It reports EBUSY when a
+ * submission does not leave, which the drain must not cross.
+ */
+static int
+xhci_reinit_forget_devices(
+	struct xhci_controller *c)
+{
+	struct xhci_device *device;
+	unsigned long irq;
+	uint64_t started;
+	uint64_t bound;
+	uint64_t now;
+	unsigned busy;
+	unsigned dci;
+
+	/* dma_quiesced refuses new submissions and tells the drain the hardware no longer reaches the transfers. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	c->dma_quiesced = 1U;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Waits for submissions and endpoint recoveries under way, which the drain must not cross. */
+	started = sched_ticks();
+	bound = kern_ms_to_ticks(XHCI_WAIT_MS);
+	for (;;) {
+		/* Reads the counts. */
+		irq = spin_lock_irqsave(&c->active_lock);
+		busy = c->submissions_busy + c->endpoint_recoveries_busy;
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		if (busy == 0U)
+			break;
+
+		/* Gives up after the bound: the drain must not cross a submission. */
+		now = sched_ticks();
+		if (now - started >= bound) {
+			kern_logf("xhci: submissions did not leave before the reset (%u)\n", busy);
+			return EBUSY;
+		}
+
+		/* Lets them run. */
+		sched_yield();
+	}
+
+	/* Ends every transfer. */
+	xhci_controller_drain_requests(c);
+
+	/* Disables every endpoint and slot in the driver's records. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	for (device = c->devices;
+	     device != NULL;
+	     device = device->next) {
+		/* Each endpoint is off; the slot is gone. */
+		for (dci = 1; dci < 32U; dci++)
+			device->endpoints[dci].enabled = 0U;
+		device->slot_disabled = 1U;
+	}
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Gives back the default slot an enumeration held. */
+	for (device = c->devices;
+	     device != NULL;
+	     device = device->next)
+		xhci_default_owner_release(c, device);
+
+	/* Succeeded: the devices hold no hardware state. */
+	return 0;
+}
+
+/* Stops the controller and resets it (HCRST), waiting until it is ready again. */
+static int
+xhci_reinit_reset(
+	struct xhci_controller *c)
+{
+	uint32_t command_value;
+	int error;
+
+	/* Waits for a controller that is ready, and stops it. */
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_CNR, 0);
+	if (error != 0)
+		return error;
+
+	/* Clears Run/Stop and waits for HCHalted. */
+	command_value = rd32(c->operational, XHCI_USBCMD);
+	wr32(c->operational, XHCI_USBCMD, command_value & ~(XHCI_CMD_RUN | XHCI_CMD_INTE));
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_HALTED, XHCI_STS_HALTED);
+	if (error != 0)
+		return error;
+
+	/* Resets it and waits until it is ready again. */
+	wr32(c->operational, XHCI_USBCMD, XHCI_CMD_RESET);
+	error = wait_bits(c->operational, XHCI_USBCMD, XHCI_CMD_RESET, 0);
+	if (error != 0)
+		return error;
+
+	/* Waits until the reset controller is ready. */
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_CNR, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller is reset and halted. */
+	return 0;
+}
+
+/*
+ * Starts a reset controller on the memory it already has: the device
+ * context array empty but for the scratchpads, the command and event rings
+ * empty, and the interrupter enabled.
+ */
+static int
+xhci_reinit_start(
+	struct xhci_controller *c)
+{
+	struct xhci_erst *erst;
+	int error;
+
+	/* Empties the device context array, keeping the scratchpads. */
+	kern_memset(c->dcbaa.address, 0, 4096U);
+	if (c->scratchpad_count != 0U)
+		((uint64_t *)c->dcbaa.address)[0] = c->scratchpad_array.device_address;
+
+	/* Empties the command ring. */
+	kern_memset(c->command.dma.address, 0, 4096U);
+	c->command.enqueue = 0;
+	c->command.cycle = 1;
+	c->command_failed = 0;
+	c->command_event_ready = 0;
+	c->default_slot = 0;
+
+	/* Empties the event ring; its segment table stays as it was. */
+	kern_memset(c->event_memory.address, 0, 4096U);
+	c->event_dequeue = 0;
+	c->event_cycle = 1;
+	erst = c->erst_memory.address;
+	erst->address = c->event_memory.device_address;
+	erst->size = XHCI_RING_TRBS;
+	kern_io_write_barrier();
+
+	/* Points the controller at its memory and enables the interrupter, as the start does. */
+	wr64(c->operational, XHCI_DCBAAP, c->dcbaa.device_address);
+	wr64(c->operational, XHCI_CRCR, c->command.dma.device_address | 1U);
+	wr32(c->runtime, XHCI_ERSTSZ, 1);
+	wr64(c->runtime, XHCI_ERSTBA, c->erst_memory.device_address);
+	wr64(c->runtime, XHCI_ERDP, c->event_memory.device_address);
+	wr32(c->runtime, XHCI_IMOD, KERN_XHCI_IMOD);
+	event_lock(c);
+	c->interrupter_enabled = 1U;
+	xhci_interrupter_write_locked(c, 1U);
+	event_unlock(c);
+	wr32(c->operational, XHCI_CONFIG, c->max_slots);
+
+	/* The hardware may reach the rings again. */
+	c->dma_quiesced = 0U;
+
+	/* Runs it. */
+	wr32(c->operational, XHCI_USBSTS, 0xffffffffU);
+	wr32(c->operational, XHCI_USBCMD, XHCI_CMD_RUN | XHCI_CMD_INTE);
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_HALTED, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller runs with no device. */
+	return 0;
+}
+
+/* Tells whether a reset after the sleep reports a root port's connection as changed. */
+static int
+xhci_port_forced(
+	const struct xhci_controller *c,
+	unsigned port)
+{
+	/* A port beyond the bitmap has no forced change. */
+	if (port >= 256U)
+		return 0;
+
+	/* The port's bit. */
+	if ((c->forced_port_change[port / 8U] & (1U << (port % 8U))) != 0)
+		return 1;
+
+	/* No forced change. */
 	return 0;
 }
 
