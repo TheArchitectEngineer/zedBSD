@@ -83,3 +83,4 @@ Future Work は実行を許可しない。
 | F-074 | Image Viewer の画像の copy（image/png を clipboard へ） | clipboard の API が text/plain だけで、libkeiui に画像の mime の API と PNG の書き出しが要る | 2026-10-04 ws128-p005（P2） | WS131 の app の移行（libkeiui を libkeiland に吸収、ベータ1 の後）の時に `kl_` の clipboard の API として入れる。WS131 の間は WS090（libkeiui）を動かさない決め（D9）のため今は入れない |
 
 | fw-docs-ids | docs/ の本文に残る Plan の ID（WS・BUG・q の番号、2026-10-05 で 58 箇所、docs/agent は対象外）を消し、必要なら中身を言葉で書く | docs は目標の設計で plan に依らない規則 | 2026-10-05 ユーザー「消します。ただし後回しでいいです。」 | 決定済み・後回し | 空いた枠、または ws129-p005（RC）の文書の見直し | — |
+| fw-audiod-client | video player（ws122-p002）に内蔵した audiod の client（48 kHz S16 stereo）を共有の library に移し、音楽の app（WS120）や通知の音でも使う | 同じ client の重複を避ける | 2026-10-05 ws122-p002（P2） | 後回し | WS120 の着手、または 2 つ目の audiod の client が要る時 | plan/ws122/phase002/phase.md |
