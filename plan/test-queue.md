@@ -25,9 +25,9 @@
 
 | # | 対象 | 前提 | 優先 | 結果 |
 | --- | --- | --- | --- | --- |
-| TQ-1 | ws131-p013・p014（libkeiui・libkeiland の名前の改名）の 3 OS の回帰。**2026-10-04 Q1 が main 006c113 で一部を流した（下の「結果」）。残り: titlebar-p010・menu-p003・Linux の 9 app の起動の PNG** | source は **main 5277761 以降**（P2 の 40b242a を 2026-10-04 に Q1 の最短の確認（zedBSD build・boot-test・Linux gcc）の後に統合）。p014 は途中（phase014 の Resume）。元 T1-085（P2 が T1 のラップアップの後に送った同じ依頼、未実行）をこの項目にまとめた | 高 | 未実施 |
-| TQ-2 | WS127 Files: `files-open.sh`（mouse・always・info）（元 T1-008） | なし | 中 | 未実施 |
-| TQ-3 | ws131-p007 の残り: demo-s8-s9（元 T1-044 の 3） | なし（TQ-1 の A に含まれるので、TQ-1 を流したら不要） | 低 | 未実施 |
+| TQ-1 | ws131-p013・p014（libkeiui・libkeiland の名前の改名）の 3 OS の回帰。**2026-10-04 Q1 が main 006c113 で一部を流した（下の「結果」）。残り: titlebar-p010・menu-p003・Linux の 9 app の起動の PNG** | source は **main 5277761 以降**（P2 の 40b242a を 2026-10-04 に Q1 の最短の確認（zedBSD build・boot-test・Linux gcc）の後に統合）。p014 は途中（phase014 の Resume）。元 T1-085（P2 が T1 のラップアップの後に送った同じ依頼、未実行）をこの項目にまとめた | 高 | **PASS**（T1、2026-10-04 17:20〜17:51、main a512ea7、QEMU のみ。A: libkeiui 0、textinput-p013・viewers-p008・demo-s8-s9・files-regress 14/14・titlebar-p010・menu-p003 PASS。B: Linux gcc・clang warning 0、install・elf-check、9 app 起動 PASS。C: FreeBSD backend-test 9/9。証拠 /home/awe/zedBSD-worktrees/t1/build/tq-1/） |
+| TQ-2 | WS127 Files: `files-open.sh`（mouse・always・info）（元 T1-008） | なし | 中 | **PASS**（T1、2026-10-04、TQ-1 の files の guest で、build/tq-2/） |
+| TQ-3 | ws131-p007 の残り: demo-s8-s9（元 T1-044 の 3） | なし（TQ-1 の A に含まれるので、TQ-1 を流したら不要） | 低 | 不要（TQ-1 の A で PASS） |
 | TQ-4 | WS005 の venus-session-check の再実施（元 T1-007、image の作り方が原因の候補） | WS005 を再開するとき | 低 | 未実施 |
 | TQ-5 | BUG-053 の swaphog 1300 MiB（元 T1-049、負荷試験） | **ユーザーの確認を取ってから夜間に**（AGENTS.md: 負荷試験は別枠） | 低 | 未実施 |
 
