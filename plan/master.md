@@ -12,7 +12,7 @@
 ## 現在の状況
 
 <!-- master:updated:start -->
-更新: 2026-10-04 朝 Q1（夜の自律の実行のまとめ）
+更新: 2026-10-04 12時 Q1（全サブエージェントのラップアップ、UAT の準備、判断の記録。17 時に利用枠が回復）
 <!-- master:updated:end -->
 
 <!-- master:agents:start -->
@@ -50,7 +50,7 @@
 - **host の状態**（repo の外）: sysctl の一時の設定（`vm.dirty_background_bytes=512M`・`vm.dirty_bytes=2G`・`vm.swappiness=10`、2026-10-03 user「sysctl の調整はやってみてください」）は再起動で戻る。残すかは user の判断待ち。fstrim は 2026-10-03 に実行済み（35 分、204.6 GiB）。
 
 <!-- master:focus:start -->
-- **fg019 ベータ1 のリリース（目標 2026-10-17、凍結なし、できた所までをベータ1 に。版 zedbsd-0.1.0-beta1）**。内容は下の「Current Focused Goals」。
+- **fg019 ベータ1 のリリース（公開 2026-10-17、RC の commit 10/13 が事実上の機能の締切、名前「Kei/zedBSD 1.0.0 Beta 1」、版 1.0.0-beta1）**。決定は [ws129/release.md](ws129/release.md) の §9。内容は下の「Current Focused Goals」。
 - fg018 Linux 標準 GTK4（WS114 は p007・p008 まで達成、GTK4 の zedBSD 移植 WS115 は後回し）。
 <!-- master:focus:end -->
 
@@ -61,10 +61,10 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
-- WS135（設定の一本化、BUG-162）の担当と開始の時期。WS131 の p010・p011 の設定の部分は WS135 が引き取る。
+- **WS132 をベータ1 に入れる（2026-10-04 決定）が、設計（p001）から未着手で、10/13 の締切まで余裕が少ない。範囲を絞る（例: 自動 mount と eject だけ）か締切を動かすか。**
+- WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
 - host の sysctl の設定を `/etc/sysctl.d` に残すか。
 - docs/ の本文に残る Plan の ID の記述を消すか。
-- WS132（PnP の通知・自動 mount・eject）をベータ1 に入れるか。
 - 5330 の host の設定（AX211 を起動時から vfio-pci、iwlwifi・btusb の blacklist）。
 <!-- master:pending-decisions:end -->
 <!-- awesome-plan-current:end -->
@@ -240,7 +240,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | canceled（2026-10-04 user: PC-98 の対応をやめる） | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
 | [WS078](ws078/ws.md) | MG006 | Kei Operating System への名前の移行（2026-09-28 ユーザーの決定: OS の名前 Kei、カーネルの内部名 zedbsd、Keiland、`/bin/wayland`・`/bin/xserver`・`/bin/browser`、`KERN_` の接頭辞、ロゴは Kei の 3 文字） | incomplete | 2026-09-28: p002・p003・p006・BUG-080・retro への移動は済み、p004 はほぼ済み。残り: 注釈と log の名前、p005 |
 | [WS079](ws079/ws.md) | MG006 | 手書きノート（Notes、筆圧 4096 段階の USB のペンタブレット、PDF に保存し編集の metadata を持つ）と PDF Viewer（scroll と page の swipe）、上の右端から左下へのスワイプで Notes を起動・最前面・全画面（2026-09-28 ユーザー） | incomplete | 2026-09-30: 段 L1（全 Phase）と L2 の QEMU の分（ws079-p016: 台本 S8・S9 を注入の touch と pen で自動で通す、PDF の頁送りの最長 142 ms ≤ 200 ms）を満たした。残り: 実機と Windows の QEMU での確かめ（ユーザー、`plan/ws079/demo-s8-s9-manual.md`）、L3 の実機のペン |
-| [WS080](ws080/ws.md) | MG002 | `ld.coff`: Win64 PE32+ の動的ローダ（PE/COFF の mapping・relocation・DLL・import/export・Microsoft x64 ABI・最小の TEB/PEB・GS base）。NT の loader は再現せず `AddressOfEntryPoint` へ直接。互換の DLL は上に積む（2026-09-28 ユーザーの仕様 [spec.md](ws080/spec.md)） | planning | p001（設計）から。GS base は swapgs（案 A）に決定、差分は p001 で承認を得る。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/`（商標のため Win64 の名前を OS に出さない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/`。橋の DLL は置かず互換の DLL が zedBSD の UAPI を直接呼び Wayland と直接通信。判断待ち: 優先度 |
+| [WS080](ws080/ws.md) | MG002 | `ld.coff`: Win64 PE32+ の動的ローダ（PE/COFF の mapping・relocation・DLL・import/export・Microsoft x64 ABI・最小の TEB/PEB・GS base）。NT の loader は再現せず `AddressOfEntryPoint` へ直接。互換の DLL は上に積む（2026-09-28 ユーザーの仕様 [spec.md](ws080/spec.md)） | incomplete（p001 の設計の文書まで、p004 in-progress・p005 planned、2026-10-04） | p001（設計）から。GS base は swapgs（案 A）に決定、差分は p001 で承認を得る。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/`（商標のため Win64 の名前を OS に出さない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/`。橋の DLL は置かず互換の DLL が zedBSD の UAPI を直接呼び Wayland と直接通信。判断待ち: 優先度 |
 | [WS081](ws081/ws.md) | MG006 | touch の操作の質: 慣性のある scroll と、低い fps の安い touch panel の数式による補間・予測。HID の driver・compositor・ブラウザ（と Keiland の app）にまたがる計画をこの 1 か所で（2026-09-28 ユーザー） | incomplete | 2026-09-30: L2 の準備 p016 cleared（touch の報告の記録の道具 `plan/ws081/tests/touchlog.c`、Linux の QEMU で 60 Hz・90 Hz の数と欠けを正しく数えた、ユーザーの 3 行の手順 `windows-touch.md`）。次は Windows の QEMU 用の image（p018、P4）→ ユーザーの計測 → L3 の p017 |
 | [WS082](ws082/ws.md) | MG002 | Linux の `/dev/kvm` の移植の検討（eventfd 等の非 POSIX の fd の代わりに unix socket の message で MMIO・IRQ の通知。ioctl を直接の移植・別の仕組みでの代替・実装不能に分類）（2026-09-28 ユーザー） | incomplete | p001 cleared（[study.md](ws082/study.md)）。§10 の 11 項目のユーザーの判断待ち |
 | [WS083](ws083/ws.md) | MG006 | Vulkan Video の拡張（`VK_KHR_video_queue`・`video_decode_queue`・`video_decode_h264`）と i915 の VCS・MFX の対応、最初の目標は H.264 の decode（2026-09-28 ユーザー。OSC のデモには必須ではない） | planning | p001（設計）から。デモの後 |
@@ -291,8 +291,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS129](ws129/ws.md) | MG007 | ベータ1 のリリース作業（版・release notes・既知の問題・CI の release・最終回帰）（fg019） | incomplete | p009（デモの image を CI 土台に）・p010（全 desktop app と base の program を config へ）cleared。版 zedbsd-0.1.0-beta1、Prerelease を user が手で昇格 |
 | [WS130](ws130/ws.md) | MG005 | IPv6 の network stack（ベータ1 は計画だけ、実装はベータ2 以降。DHCPv6 は `dhcpc -6`） | planning | p001 設計 |
 | [WS131](ws131/ws.md) | MG006 | libkeiland を GUI toolkit 兼 desktop 機能の抽象化層にする（app の窓の作成を含む GUI の構築を共通化） | incomplete | p003〜p005 cleared、p006（Linux は T1-042 PASS、zedBSD の T2-007 は未実行）・p007（demo-s8-s9 未実行）・p008（試験未依頼）は uncleared。次は p008 の試験と p009。設定の部分は WS135 へ |
-| [WS132](ws132/ws.md) | MG006 | /dev/system の電源管理と PnP の通知（subscriber が事象を指定）、自動 mount、Files の eject | planning | p001 設計（/dev/system に電源管理と PnP の通知、subscriber が事象を指定） |
-| [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | planning | 安定版 S1 の内容と試験の一覧はユーザーと決める |
+| [WS132](ws132/ws.md) | MG006 | /dev/system の電源管理と PnP の通知（subscriber が事象を指定）、自動 mount、Files の eject | planning（ベータ1 に入れる、2026-10-04 ユーザー） | p001 設計（/dev/system に電源管理と PnP の通知、subscriber が事象を指定） |
+| [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | incomplete（S1 は 2026-10-03、UAT は 2026-10-04 13 時、[uat.md](uat.md)） | 安定版 S1 の内容と試験の一覧はユーザーと決める |
 | [WS134](ws134/ws.md) | MG006 | システムモニターのアプリ（Analytic Spatial UI、中央の状態コア、層構造、2026-10-03 ユーザー） | incomplete | p001・p002 cleared、p003 uncleared（sim の fps 4.7）、p004 uncleared（`interact.c` まで） |
 | [WS135](ws135/ws.md) | MG006 | 設定の読み書きを libkeiland に一本化（libkeiland が直接か compositor の拡張で解決、監視と通知の API、desktop.conf は compositor の内部で session の開始・終了だけ読み書き。BUG-162、2026-10-03 ユーザー） | completed（2026-10-04） | — |
 | [WS136](ws136/ws.md) | MG007 | 試験の image を「WS の tests/ の config.mk ＋個別の file の複写」に揃え、過去の build/ を入力にしない（2026-10-04 ユーザー） | completed（2026-10-04） | — |

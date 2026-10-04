@@ -48,7 +48,7 @@ push・GitHub release の公開はユーザーの指示で行う。
 | --- | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | release の定義（版の付け方の案、配布物、CI の release の設計、文書の置き場所、凍結と回帰と実機の日程の案）。ユーザーへの質問を出す | in-progress（q672、[release.md](release.md) の案と U1〜U15 を返した、ユーザーの判断待ち） | なし | 2h |
 | [p002](phase002/phase.md) | license の一覧（image の全ての component、本文の収集、生成の script、audit） | planned | なし（最後に p007 で再生成） | 3〜4h |
-| [p003](phase003/phase.md) | 版の一つの源（Makefile の変数 → uname・起動の表示・`/etc/os-release`、About は WS089 に依頼） | planning | p001 とユーザーの版の名前 | 2h |
+| [p003](phase003/phase.md) | 版の一つの源（Makefile の変数 → uname・起動の表示・`/etc/os-release`、About は WS089 に依頼） | planned（U1・U15 は決定: Kei/zedBSD 1.0.0 Beta 1、公開後 1.0.0-beta2.dev） | p001 とユーザーの版の名前 | 2h |
 | [p004](phase004/phase.md) | release の image の config（fg019 の成果、Settings・audiod 等、AX211 の扱い）と CI の release の job | planning | p001、BUG-134 の結果（AX211 の扱い） | 3h |
 | [p005](phase005/phase.md) | release notes・既知の問題の一覧・利用の手引き（USB への書き方、対象 platform、WiFi の adapter） | planning | p001、各 WS の成果（10/13 頃に集める） | 2〜3h |
 | [p006](phase006/phase.md) | 凍結した release candidate で最終回帰（QEMU・host の試験・5330 の passthrough の smoke） | planning | p003〜p005、凍結の日（ユーザー） | 3h |

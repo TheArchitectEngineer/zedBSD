@@ -191,3 +191,9 @@ desktop の回帰（Files の PDF の縮小表示 `dlopen("libpdf.so")`、`plan/
 ## 結果
 
 （未実施）
+
+## 着手前に直す点（2026-10-04 ユーザーの判断の反映、Q1。詳細は [ws.md](../ws.md) の「判断」）
+
+- U3: **他の固定の上限も入れる**。`tlsdesc_argument[64]`（object ごとの TLSDESC の再配置の数）・`phdr[64]`・`RTLD_NAME_MAX` 64 もこの WS で動的にする（または上限を十分に大きくし、越えたら dlerror で返す。決めは担当の設計で、phase.md に書いてから実装）。範囲・受け入れ・試験（rtld-many に TLSDESC 65 個以上・長い名前の dlopen を足す）へ反映してから着手する。
+- U2: memory が取れない時の `dlopen` は今と同じ fatal のまま。
+- U5: `dlpi_subs`（`rtld_object_removals`）を TLS を持たない object の unload でも増やす直しを、この WS で入れる。

@@ -196,3 +196,16 @@ image は 2 つ。同じ T が 1 つずつ順に QEMU で流す。合わせて 3
 ## 結果
 
 （未実施）
+
+## 着手前に直す点（2026-10-04 ユーザーの判断の反映、Q1。詳細は [ws.md](../ws.md) の「ユーザーの決定」）
+
+この Phase の本文は判断の前に書いた。着手する担当は、最初に次を本文（範囲・受け入れ・手順）へ反映してから実装する。
+
+- U3: Linux・FreeBSD の既定の背景は **Birch-Lake.png**（Aurora ではない）。`KEILAND_LINUX_WALLPAPER` の既定から過去の build（`build/ws035-wallpaper/`）を見る道を消す。
+- U4: 背景は **PNG と JPEG だけ**に対応する。PPM を読む code は消す（compositor・Settings・Files の背景の読み込み）。JPEG は既存の `libjpeg-compat` を使う。試験に JPEG の背景を 1 枚足す。
+- U5: PNG は**全部最大の圧縮**（tree の 2 枚も generate.py の生成も、行ごとに filter を選ぶ）。build の時間の増え方を phase.md に記録する。
+- U6: desktop.conf に残った古い system の `.ppm` には**何もしない**（既定の背景に戻る。`.png` に読み替える code は書かない）。
+- U7: Settings の reset の時の復号も **WS135 の thread の道（`zwl_glass_wallpaper_begin`）**に寄せる（同期の復号の道を消す）。
+- U8: alpha のある画像の透明な所は**黒で合成**する。
+- U2: 他の WS の試験の約 194 file と `platform/amd64/vmunix.mk` の Settings の link の規則は、担当が直さず、**Q1 が merge の時に main で sed を掛ける**。担当は command と確かめの一覧を phase.md に書いて渡す。
+- U1: 開始は 2026-10-04 の UAT の後（17 時の利用枠の回復の後）。
