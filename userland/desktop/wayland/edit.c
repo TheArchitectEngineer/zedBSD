@@ -11,7 +11,7 @@
  * on-screen keyboard's tool face (its buttons come with ws102-p016).
  *
  * keiland_edit_v1: a window that asks for it (keiland_edit_manager_v1.get_edit;
- * libkeiui's windows do) tells which editing operations it carries out and
+ * libkeiland's windows do) tells which editing operations it carries out and
  * its state -- whether it has a selection, something to paste, something
  * to undo or redo, and whether a selection is being made -- and hears the
  * operations as actions.  zwl_edit_action sends an operation to the

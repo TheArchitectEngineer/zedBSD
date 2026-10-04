@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws102-p015: the keyboard inset (keiland_keyboard_inset_v1, libkeiui's default) on the Venus guest of the inset image
+# ws102-p015: the keyboard inset (keiland_keyboard_inset_v1, libkeiland's default) on the Venus guest of the inset image
 # (plan/ws102/tests/build-inset-image.sh: the WS079 demo image with Text Editor).  zdesktop --glass at 1280x800.
 #  1. Text Editor on a document of 200 lines ("L001" ...; line 150 is a row of M's), the caret put on line 150 with the
 #     keys (Ctrl+End to the empty line 201, then Up 51 times).  before.png.
@@ -8,7 +8,7 @@
 #     in the middle of the part of its text the row leaves: the M row's centre within one line of the middle between
 #     the first and the last text row seen above the keyboard.  after.png.
 #  3. The row closes (ZWL INSET ... right=0 bottom=0 reason=0).
-#  4. wlshm (no libkeiui, no inset) under the keyboard: it keeps drawing, gets no inset, and nothing fails.
+#  4. wlshm (no libkeiland, no inset) under the keyboard: it keeps drawing, gets no inset, and nothing fails.
 # Prints "INSET RESULT ..." and "inset-guest: PASS" or "inset-guest: FAIL".
 #
 #   plan/ws102/tests/inset-guest.sh IMAGE OUTDIR

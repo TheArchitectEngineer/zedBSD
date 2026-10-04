@@ -1,6 +1,6 @@
 #!/bin/sh
-# ws090-p008: PDF Viewer and Image Viewer on libkeiui's window, on the Venus guest of the WS079 demo image
-# (plan/ws079/tests/config-amd64-demo.mk built from this tree: zdesktop, the viewers, libkeiui).  zdesktop --glass at
+# ws090-p008: PDF Viewer and Image Viewer on libkeiland's window, on the Venus guest of the WS079 demo image
+# (plan/ws079/tests/config-amd64-demo.mk built from this tree: zdesktop, the viewers, libkeiland).  zdesktop --glass at
 # 1280x800.  Pictures and the programs' own logs (read over SSH); nothing reads the console.
 #  PDF Viewer
 #   1. The encrypted document (run-pdfviewer-host.sh's password.pdf, user password "secret"): the password card
@@ -9,7 +9,7 @@
 #      bottom>0) and the card stands in the part of the window the row leaves (pdf-card-keyboard.png); the row
 #      closes again (inset 0).
 #   3. "secret" and Enter open the document (PASSWORD accepted, OPEN ... pages=3).
-#   4. Ctrl+O shows libkeiui's chooser at /root (CHOOSER open folder=/root; pdf-chooser.png); "a" selects a4.pdf,
+#   4. Ctrl+O shows libkeiland's chooser at /root (CHOOSER open folder=/root; pdf-chooser.png); "a" selects a4.pdf,
 #      Enter opens it (CHOOSER chose path=/root/a4.pdf, OPEN ... pages=10; pdf-chosen.png).
 #   5. Ctrl+O and Escape: CHOOSER cancelled, the document stays.
 #  Image Viewer

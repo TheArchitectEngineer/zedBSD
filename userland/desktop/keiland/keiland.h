@@ -45,7 +45,7 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to libkeiui with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiui's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*). */
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: keiland_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*). */
 #define KEILAND_VERSION	23U
 
 /*
@@ -868,7 +868,7 @@ int keiland_gesture_drag_offset(struct keiland_gesture *gesture, uint64_t now_us
 int keiland_gesture_pinch(struct keiland_gesture *gesture, uint64_t now_us, double *scale, double *x, double *y);
 
 /*
- * The file chooser of KEILAND_VERSION 12 (ws092-p003) moved to libkeiui
+ * The file chooser of KEILAND_VERSION 12 (ws092-p003) moved to the widgets
  * with KEILAND_VERSION 16 (ws090-p006): kui_file_chooser_* in <keiui.h>,
  * made of the desktop's widgets.  keiland_file_chooser_* is gone.
  */

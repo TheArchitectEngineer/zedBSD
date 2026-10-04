@@ -12,4 +12,4 @@ KEILAND_LINUX_MONITOR_SOURCES := userland/desktop/monitor/main.c \
 	userland/desktop/monitor/interact.c \
 	userland/desktop/monitor/system-source.c \
 	userland/desktop/monitor/render.c
-$(eval $(call KEILAND_LINUX_PROGRAM,monitor,bin,$(KEILAND_LINUX_MONITOR_SOURCES),libkeiui.so libkeiland.so libwayland-client.so libtruetype.so libvulkan.so.1 libkeiland-compat.a,-lm))
+$(eval $(call KEILAND_LINUX_PROGRAM,monitor,bin,$(KEILAND_LINUX_MONITOR_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libvulkan.so.1 libkeiland-compat.a,-lm))

@@ -6,7 +6,7 @@
  */
 
 /*
- * The Wayland window of terminal: libkeiui's window (ws090-p011), whose
+ * The Wayland window of terminal: libkeiland's window (ws090-p011), whose
  * surface the terminal draws on with its own Vulkan (KUI_PRESENT_NONE).
  *
  * The window queues its input; this file takes it into what the main loop
@@ -48,7 +48,7 @@
 
 /*
  * How far the window's wheel moves for one notch of zdesktop's (its step of
- * 15 surface units, which libkeiui scales by 4): the terminal scrolls by
+ * 15 surface units, which libkeiland scales by 4): the terminal scrolls by
  * notches.
  */
 #define WINDOW_WHEEL_NOTCH	60.0
@@ -91,7 +91,7 @@ terminal_window_open(
 	/* Nothing held yet. */
 	memset(window, 0, sizeof(*window));
 
-	/* libkeiui's window, the size asked for until the compositor gives one; the terminal draws on it itself. */
+	/* libkeiland's window, the size asked for until the compositor gives one; the terminal draws on it itself. */
 	memset(&options, 0, sizeof(options));
 	options.display = display;
 	options.title = "Terminal";
@@ -740,7 +740,7 @@ window_touch_push(
 		kept->serial = event->serial;
 }
 
-/* Turns libkeiui's modifier bits into wl_keyboard's, which keys.c and the selection read. */
+/* Turns libkeiland's modifier bits into wl_keyboard's, which keys.c and the selection read. */
 static uint32_t
 window_modifiers(
 	unsigned modifiers)

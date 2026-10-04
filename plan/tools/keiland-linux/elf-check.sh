@@ -14,7 +14,7 @@ prefix = os.environ.get('KEILAND_PREFIX', '/opt/keiland')
 library_dir = stage / prefix.lstrip('/') / 'lib'
 failed = False
 count = 0
-ours = {'libwayland-client.so', 'libkeiland.so', 'libkeiui.so', 'libtruetype.so', 'libpdf.so',
+ours = {'libwayland-client.so', 'libkeiland.so', 'libtruetype.so', 'libpdf.so',
 	'libz-compat.so', 'libpng-compat.so', 'libjpeg-compat.so', 'libgif-compat.so', 'libvulkan.so.1'}
 for path in sorted(stage.rglob('*')):
 	if not path.is_file():

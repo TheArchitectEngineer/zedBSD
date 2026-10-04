@@ -277,7 +277,7 @@ struct iv_animation {
  * The viewer: the images, the folder, how the image is shown, the pointer's
  * drag, the swipe to the next image, the chip and the message, whether the
  * file chooser is asked for (chooser_open: the viewer waits for the answer
- * of libkeiui's chooser, which the window shows starting at chooser_folder,
+ * of libkeiland's chooser, which the window shows starting at chooser_folder,
  * ws090-p008), and what the window is asked to do.
  *
  * The view: the image is turned by rotation quarter turns clockwise and

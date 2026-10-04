@@ -6,7 +6,7 @@
  */
 
 /*
- * ws127-p002: checks libkeiui's overlay scroll bar (scroll-bar.c) on the host: hidden until the content moves,
+ * ws127-p002: checks libkeiland's overlay scroll bar (scroll-bar.c) on the host: hidden until the content moves,
  * thin while it moves, thick near the edge, the thumb's size and place, a drag of the thumb, a page from the
  * track, and the fade.  Prints one line a check and "scroll-bar-test: PASS" or "FAIL".
  *   sh plan/ws127/tests/scroll-bar-test.sh

@@ -34,6 +34,6 @@ ZEDBSD_USER_PROGRAMS := lspci lsusb libkeiland Xzed zshell zterm zwm admin ar at
 # libraries with App Home's X11 Gears.  Test clients stay where each test configuration adds them.
 ZEDBSD_USER_PROGRAMS += audiod base64 install mktemp pwd zedinst \
 	libgif-compat libjpeg-compat libpdf libpng-compat libz-compat \
-	libvulkan libwayland-client libwayland-egl libegl libglesv2 libgl libtruetype libkeiui \
+	libvulkan libwayland-client libwayland-egl libegl libglesv2 libgl libtruetype libkeiland \
 	wayland sessiond terminal files notes pdfviewer imageview textedit settings browser libbrowser xserver zgears \
 	keiland-ime ime-dict-ja

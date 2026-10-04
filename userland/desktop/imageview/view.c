@@ -2028,7 +2028,7 @@ view_can_swipe(
 }
 
 /*
- * Asks for the file chooser (libkeiui's, which the window shows: main.c) at
+ * Asks for the file chooser (libkeiland's, which the window shows: main.c) at
  * the shown image's folder, or the home folder.
  */
 static void

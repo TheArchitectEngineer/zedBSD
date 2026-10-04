@@ -11,4 +11,4 @@ KEILAND_NOTES_SOURCES := userland/desktop/notes/main.c \
 	userland/desktop/notes/window.c userland/desktop/notes/menu.c \
 	userland/desktop/notes/tablet.c userland/desktop/notes/ui.c \
 	userland/desktop/notes/touch.c
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,notes,Handwritten notebook,amd64,y,basic,$(KEILAND_NOTES_SOURCES),y,desktop,desktop/notes,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libkeiui desktop/libtruetype base/libpdf,0755,program,,,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,notes,Handwritten notebook,amd64,y,basic,$(KEILAND_NOTES_SOURCES),y,desktop,desktop/notes,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype base/libpdf,0755,program,,,bin))

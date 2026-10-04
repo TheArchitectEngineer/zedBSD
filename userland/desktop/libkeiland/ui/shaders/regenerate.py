@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compiles the library's shaders and writes userland/desktop/libkeiui/shaders.h.
+"""Compiles the library's shaders and writes userland/desktop/libkeiland/ui/shaders.h.
 
 The build uses the checked-in header, so no shader compiler is needed to
-build libkeiui; run this (with glslc and spirv-val on PATH) after
+build libkeiland; run this (with glslc and spirv-val on PATH) after
 changing a shader.
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 """

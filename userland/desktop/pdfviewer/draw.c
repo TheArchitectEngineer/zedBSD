@@ -10,7 +10,7 @@
  * is shown, and beside it the pages where the view lays them out, the page
  * indicator, the notice that a page drawn has content libpdf could not
  * show and the message over them; the password card over everything (the
- * file chooser is libkeiui's window of its own, ws090-p008).
+ * file chooser is libkeiland's window of its own, ws090-p008).
  *
  * The pages come from the document's cache of rasters (document.c), made
  * when a page is first drawn at the scale in force.  The pages' part of the

@@ -41,7 +41,7 @@
 /* How often frames are drawn while the fingers or the view's scroll move, in milliseconds. */
 #define MAIN_FRAME_MS		16
 
-/* The text view's id among the parts the fingers' input records, and the dialog's (libkeiui's kui_dialog). */
+/* The text view's id among the parts the fingers' input records, and the dialog's (libkeiland's kui_dialog). */
 #define MAIN_TEXT_REGION	1U
 #define MAIN_DIALOG		2U
 
@@ -95,7 +95,7 @@ struct main_options {
  * The program's parts, for the whole run.  They are file-scope because
  * the window's input queue and the editor are too large for the stack.
  *
- * The window: libkeiui's window (the Wayland connection and surface, the
+ * The window: libkeiland's window (the Wayland connection and surface, the
  * Vulkan presenter, the clipboard and the primary selection) and the
  * editor's queue of inputs, from the start of the run to its end.
  */
@@ -106,7 +106,7 @@ static uint32_t main_width;
 static uint32_t main_height;
 
 /*
- * The fingers' input (libkeiui): which part of the window a finger meant,
+ * The fingers' input (libkeiland): which part of the window a finger meant,
  * the text view's touch (one finger selects, two scroll) and the scroll.
  * Made with the window, destroyed before it.
  */
@@ -157,11 +157,11 @@ static uint32_t *main_pixels;
 /* The canvas over main_pixels, which the editor draws each frame into. */
 static struct te_canvas main_canvas;
 
-/* libkeiui's canvas over the same pixels, which the text view's handles, a message's chip and a dialog are drawn with (made with main_canvas). */
+/* libkeiland's canvas over the same pixels, which the text view's handles, a message's chip and a dialog are drawn with (made with main_canvas). */
 static struct kui_canvas main_handles;
 static int main_handles_made;
 
-/* The interface's font as libkeiui's text, for the chip and the dialog (open when main_widgets_text is 1). */
+/* The interface's font as libkeiland's text, for the chip and the dialog (open when main_widgets_text is 1). */
 static struct kui_text main_widgets;
 static int main_widgets_text;
 
@@ -169,7 +169,7 @@ static int main_widgets_text;
 static char main_title[MAIN_TITLE_MAX];
 
 /*
- * The file chooser open for Open or Save As (libkeiui's), or NULL.  It
+ * The file chooser open for Open or Save As (libkeiland's), or NULL.  It
  * is destroyed when it answers, and by the main loop when the editor stops
  * waiting for it (Quit while it is open).
  */
@@ -243,7 +243,7 @@ main(
 	if (error != 0)
 		te_log("FONT missing path=%s error=%d", options.ui_font, error);
 
-	/* The chip and the dialog draw with it too, as libkeiui's text. */
+	/* The chip and the dialog draw with it too, as libkeiland's text. */
 	error = kui_text_open(&main_widgets, options.ui_font, options.fallback);
 	if (error == 0)
 		main_widgets_text = 1;
@@ -565,7 +565,7 @@ main_loop(
 		main_app.now = now;
 		(void)kui_window_repeat(main_window.kui, kui_clock_us());
 
-		/* The window's input: the pointer, the keys and the focus become the editor's, the fingers go to libkeiui. */
+		/* The window's input: the pointer, the keys and the focus become the editor's, the fingers go to libkeiland. */
 		for (;;) {
 			taken = kui_window_take(main_window.kui, &window_event);
 			if (taken == 0)
@@ -692,7 +692,7 @@ main_frame(void)
 	return -1;
 }
 
-/* Draws a message's chip and the dialog shown (libkeiui's), and carries out the dialog's answer. */
+/* Draws a message's chip and the dialog shown (libkeiland's), and carries out the dialog's answer. */
 static void
 main_overlay(
 	uint64_t now_us)
@@ -737,7 +737,7 @@ main_overlay(
 		return;
 	}
 
-	/* Any other dialog: its words and buttons (libkeiui's dialog). */
+	/* Any other dialog: its words and buttons (libkeiland's dialog). */
 	te_app_dialog_words(&main_app, title, sizeof(title), &words, &labels, &count);
 	kui_ui_begin(main_input, now_us);
 	answer = kui_dialog(main_input, &style, MAIN_DIALOG, &area, title, words, labels, count);
@@ -802,7 +802,7 @@ main_canvas_make(void)
 	te_canvas_unclip(&main_canvas);
 	main_app.dirty = 1;
 
-	/* libkeiui's canvas over the same pixels, for the handles. */
+	/* libkeiland's canvas over the same pixels, for the handles. */
 	if (main_handles_made)
 		kui_canvas_release(&main_handles);
 	main_handles_made = 0;
@@ -1285,7 +1285,7 @@ main_window_event(
 	main_window.pointer_y = (int)event->y;
 	main_window.modifiers = event->modifiers;
 
-	/* A dialog takes the pointer and the keys (libkeiui's). */
+	/* A dialog takes the pointer and the keys (libkeiland's). */
 	main_dialog_input = 0;
 	if (main_app.dialog != TE_DIALOG_NONE && main_input != NULL)
 		main_dialog_input = main_dialog_event(event);

@@ -11,7 +11,7 @@
 #     composed frames over the checkerboard, with their delays.
 #  5. view: fit, zoom about a point, turns, the quad, next and previous, the neighbours decoded ahead, a swipe.
 #
-# ws090-p008: the chooser is libkeiui's file chooser (a window of its own), so chooser.c is gone.
+# ws090-p008: the chooser is libkeiland's file chooser (a window of its own), so chooser.c is gone.
 #   plan/tools/imageview/run-host.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu

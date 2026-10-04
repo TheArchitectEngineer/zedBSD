@@ -172,7 +172,7 @@ main(
 	check(app.want_annotate == 1, "Ctrl+E asks to annotate");
 
 	/*
-	 * The chooser (ws090-p008: libkeiui's file chooser, a window of its own
+	 * The chooser (ws090-p008: libkeiland's file chooser, a window of its own
 	 * that the program shows while the viewer waits for it): Ctrl+O asks for
 	 * it at the document's folder, a cancel leaves the document, and the path
 	 * chosen opens.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws128-p011 (BUG-155): Terminal takes the input method's text (text-input-v3 through libkeiui's window) on the Venus
+# ws128-p011 (BUG-155): Terminal takes the input method's text (text-input-v3 through libkeiland's window) on the Venus
 # guest of the Settings image with the input method (plan/ws089/tests/config-amd64-settings-ime.mk, which has the
 # terminal, keiland-ime and its Japanese dictionary).  zdesktop --glass at 1280x800 starts /usr/libexec/keiland-ime;
 # the terminal runs the shell.  Checks:

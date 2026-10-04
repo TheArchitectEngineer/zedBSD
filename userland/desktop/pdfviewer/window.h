@@ -7,7 +7,7 @@
 
 /*
  * The parts of PDF Viewer that speak Wayland and zdesktop's extensions:
- * the window (libkeiui's kui_window since ws090-p008: the toplevel, the
+ * the window (libkeiland's kui_window since ws090-p008: the toplevel, the
  * seat's input and the frames shown with Vulkan), the menus (menu.c) and
  * the titlebar's controls (titlebar.c).  The host tests build the rest of
  * the program without them.
@@ -25,7 +25,7 @@
 #include <keiui.h>
 
 /*
- * The window: libkeiui's window, which queues the input (the menus' and
+ * The window: libkeiland's window, which queues the input (the menus' and
  * the titlebar's actions among it, posted in the order they came) and
  * shows the frames.
  *

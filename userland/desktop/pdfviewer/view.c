@@ -1660,7 +1660,7 @@ handle_axis(
 }
 
 /*
- * Asks for the file chooser (libkeiui's, which the window shows: main.c) at
+ * Asks for the file chooser (libkeiland's, which the window shows: main.c) at
  * the open document's folder, or the home folder.
  */
 static void

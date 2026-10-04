@@ -6,7 +6,7 @@
  */
 
 /*
- * The Wayland window of Notes: libkeiui's window (ws090-p011), whose
+ * The Wayland window of Notes: libkeiland's window (ws090-p011), whose
  * surface Notes draws on with its own Vulkan (KUI_PRESENT_NONE), and the
  * queue of input events the main loop draws from.
  *
@@ -70,7 +70,7 @@ notes_window_open(
 	/* Nothing held yet. */
 	memset(window, 0, sizeof(*window));
 
-	/* libkeiui's window: the title, the application's identity (the gesture finds Notes by it), the size and the full screen asked for. */
+	/* libkeiland's window: the title, the application's identity (the gesture finds Notes by it), the size and the full screen asked for. */
 	memset(&options, 0, sizeof(options));
 	options.title = "Notes";
 	options.application = "notes";
@@ -433,7 +433,7 @@ window_touch_push(
 	kept->arrival = event->arrival_us;
 }
 
-/* Turns libkeiui's modifier bits into wl_keyboard's, which the shortcuts read. */
+/* Turns libkeiland's modifier bits into wl_keyboard's, which the shortcuts read. */
 static uint32_t
 window_modifiers(
 	unsigned modifiers)

@@ -434,7 +434,7 @@ struct te_app {
 	int wrap;
 
 	/*
-	 * Where the view is scrolled to (pixels): the libkeiui scroll that
+	 * Where the view is scrolled to (pixels): the libkeiland scroll that
 	 * moves it (the wheel's glide, the fingers' drag and flight), and the
 	 * place drawn, copied from the scroll by te_app_sync_scroll.
 	 */
@@ -442,7 +442,7 @@ struct te_app {
 	double scroll_x;
 	double scroll_y;
 
-	/* The fingers' selection in the text (libkeiui's text view touch: one finger selects, two scroll), and whether its handles are drawn. */
+	/* The fingers' selection in the text (libkeiland's text view touch: one finger selects, two scroll), and whether its handles are drawn. */
 	struct kui_text_touch touch;
 	int handles_shown;
 
@@ -489,7 +489,7 @@ struct te_app {
 	char message[160];
 	uint64_t message_until;
 
-	/* The dialog shown (drawn and answered by libkeiui's kui_dialog in main.c), and what waits for it. */
+	/* The dialog shown (drawn and answered by libkeiland's kui_dialog in main.c), and what waits for it. */
 	enum te_dialog dialog;
 	enum te_after after;
 

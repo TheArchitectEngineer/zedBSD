@@ -8,7 +8,7 @@
 /*
  * A colour glyph (a colour emoji font's PNG, libtruetype's
  * truetype_color_glyph) decoded and scaled to a size, for the programs that
- * draw text themselves: libkeiui's text and the compositor's (ws102-p019).
+ * draw text themselves: libkeiland's text and the compositor's (ws102-p019).
  * The source is compiled into each of them; they link libpng-compat.
  */
 

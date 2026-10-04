@@ -16,4 +16,4 @@ KEILAND_FREEBSD_TEXTEDIT_SOURCES := userland/desktop/textedit/main.c \
 	userland/desktop/textedit/canvas.c \
 	userland/desktop/textedit/text.c \
 	userland/desktop/picture/color-glyph.c
-$(eval $(call KEILAND_FREEBSD_PROGRAM,textedit,bin,$(KEILAND_FREEBSD_TEXTEDIT_SOURCES),libkeiui.so libkeiland.so libtruetype.so libpng-compat.so libz-compat.so libwayland-client.so libvulkan.so.1,-lm))
+$(eval $(call KEILAND_FREEBSD_PROGRAM,textedit,bin,$(KEILAND_FREEBSD_TEXTEDIT_SOURCES),libkeiland.so libtruetype.so libpng-compat.so libz-compat.so libwayland-client.so libvulkan.so.1,-lm))

@@ -8,7 +8,7 @@
 /*
  * keiland_keyboard_inset_v1 (ws102-p015, plan/ws102/design.md section 2.8):
  * a window that asks for it (keiland_keyboard_inset_manager_v1.get_inset,
- * libkeiui does) hears how much of it the on-screen keyboard covers, in its
+ * libkeiland does) hears how much of it the on-screen keyboard covers, in its
  * own pixels from its right and bottom edges, whenever the keyboard opens,
  * closes or changes the windows (the work area of ws102-p007 calls this
  * before its configure).  A window can then keep what matters -- the

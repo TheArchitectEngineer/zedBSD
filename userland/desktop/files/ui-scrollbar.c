@@ -8,7 +8,7 @@
 /*
  * The content's overlay scroll bar (ws127-p002): the macOS-style bar the
  * user chose on 2026-10-02 for the icons and the list, the shared part of
- * libkeiui (kui_scroll_bar, scroll-bar.c) drawn with files' own canvas.
+ * libkeiland (kui_scroll_bar, scroll-bar.c) drawn with files' own canvas.
  *
  * It comes out thin when the content scrolls, thick near the window's
  * right edge, can be dragged and paged, and fades after a while; a frame

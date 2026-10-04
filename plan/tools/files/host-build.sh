@@ -51,8 +51,8 @@ if [ -f userland/desktop/libkeiland/recent.c ]; then
 	objects="$objects $out/obj/zdesktop-recent.o"
 fi
 
-# libkeiui's overlay scroll bar (files/ui-scrollbar.c uses it since ws127-p002), which needs no canvas.
-"$cc" $flags -c userland/desktop/libkeiui/scroll-bar.c -o "$out/obj/keiui-scroll-bar.o"
+# libkeiland's overlay scroll bar (files/ui-scrollbar.c uses it since ws127-p002), which needs no canvas.
+"$cc" $flags -c userland/desktop/libkeiland/ui/scroll-bar.c -o "$out/obj/keiui-scroll-bar.o"
 objects="$objects $out/obj/keiui-scroll-bar.o"
 
 # The desktop's settings (files/apps.c keeps the chosen ways there since WS135): libkeiland's cache and application

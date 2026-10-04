@@ -14,7 +14,7 @@
  * shows it), and a move made elsewhere in the meantime (a key, the wheel,
  * an action, a resize) is taken over rather than undone.  The view is
  * placed at the frame's time, from the fingers' motion resampled for it.
- * The fingers come from libkeiui's window (ws090-p008), their times already
+ * The fingers come from libkeiland's window (ws090-p008), their times already
  * turned into microseconds of CLOCK_MONOTONIC.
  */
 

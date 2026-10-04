@@ -12,7 +12,7 @@
  * faint ground under the pointer; 30-pixel places under an 11-pixel
  * section title, the place shown in the accent).
  *
- * A list scrolls with libkeiui's scroll (the wheel's glide, a finger's
+ * A list scrolls with libkeiland's scroll (the wheel's glide, a finger's
  * drag and flight); a click or a tap selects a row and a double one
  * activates it; while the list has the keyboard, the arrows, Page Up,
  * Page Down, Home and End move the selection and Enter activates it.  The

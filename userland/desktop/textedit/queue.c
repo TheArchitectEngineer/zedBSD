@@ -7,7 +7,7 @@
 
 /*
  * The editor's queue of inputs (ws090-p004): the window's pointer, keys
- * and focus, which the main loop turns from libkeiui's window events into
+ * and focus, which the main loop turns from libkeiland's window events into
  * te_event values, and the actions of the menus, the titlebar and the
  * file chooser, carried out in the order they came.
  */
@@ -72,7 +72,7 @@ te_window_push(
 
 /*
  * Queues an action of the menus or the titlebar among the window's inputs
- * (libkeiui's queue), so that it is carried out in the order it came: the
+ * (libkeiland's queue), so that it is carried out in the order it came: the
  * menus' shortcuts arrive during the dispatch, while the keys typed before
  * them wait in the window's queue.
  */

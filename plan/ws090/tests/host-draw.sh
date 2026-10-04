@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws090-p002: builds and runs the host test of libkeiui's drawing layer (host-draw.c) with libkeiui,
+# ws090-p002: builds and runs the host test of libkeiland's drawing layer (host-draw.c) with libkeiland,
 # the file manager's canvas, text and icons, Settings' line pictures and libtruetype, on Linux:
 # the same scene drawn by both must match to the byte.  Pictures go to build/ws090-shots.
 #   sh plan/ws090/tests/host-draw.sh [OUTPUT]   (default build/ws090/host-draw)
@@ -12,9 +12,9 @@ mkdir -p "$(dirname "$out")/inc" "$shots"
 cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiui.h "$(dirname "$out")/inc/"
 ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
 U=userland/desktop
-cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiui -I$U/libtruetype \
+cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I. -I$U/libkeiland/ui -I$U/libtruetype \
 	plan/ws090/tests/host-draw.c \
-	$U/libkeiui/version.c $U/libkeiui/canvas.c $U/libkeiui/text.c $U/libkeiui/icons.c $U/libkeiui/icons-line.c $U/libkeiui/theme.c \
+	$U/libkeiland/ui/version.c $U/libkeiland/ui/canvas.c $U/libkeiland/ui/text.c $U/libkeiland/ui/icons.c $U/libkeiland/ui/icons-line.c $U/libkeiland/ui/theme.c \
 	$U/files/canvas.c $U/files/text.c $U/files/icons.c $U/settings/glyphs.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
 	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"

@@ -6,7 +6,7 @@
  */
 
 /*
- * Host test of libkeiui's default for the on-screen keyboard's inset
+ * Host test of libkeiland's default for the on-screen keyboard's inset
  * (ws102-p015): the next kui_ui_end moves the frame's text view so that
  * the caret's line is in the middle of the part the keyboard leaves.
  * Built on Linux with ui.c and its neighbours (host-inset.sh).
