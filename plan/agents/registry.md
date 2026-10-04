@@ -8,6 +8,8 @@
 | P2 / generation6（終了、2026-10-03 夜） | phase-runner（high） | WS134（p001〜p004）・ws099 p025〜p029 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | — | — | stopped | 4d6db219d まで統合済み（ソフトな停止） |
 | P3 / generation5（終了） | phase-runner（high） | WS131 | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | —（q632-i03・q637 終了） | — | stopped | 成果は main に入っている（2026-10-03 夜 Q1 が確認） |
 | P4 / generation1（終了） | phase-runner（high） | WS118 | `/home/awe/zedBSD-worktrees/p4` / `agent/p4` | —（q634-i01 中断） | — | stopped | 59a94c6aa の source と WS118 の記録を 2026-10-03 夜 Q1 が main に取り込み（boot-test は未実施） |
+| P1 / generation15（2026-10-04 17 時） | phase-runner（high） | 流れ A・C（WS049・WS050・WS051・WS052・WS141） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1` | q677 | q678・q679・q680・q681・q691（Q1 が pool から投入） | running | base main |
+| P2 / generation11（2026-10-04 17 時） | phase-runner（high） | 流れ B・D（UAT の Bug・WS132・WS037） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | q683 | q684〜q689・q682・q692（Q1 が pool から投入） | running | base main |
 | P5〜P8 | — | 未配属 | — | — | — | N=4 の間は起動しない | — |
 
 担当の WS と最初の Queue は、ベータ1（fg019）の内容をユーザーと決めてから割り当てる。

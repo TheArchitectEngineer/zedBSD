@@ -2,53 +2,60 @@
 
 # Queue / all-agent index
 
-Active Queues: なし（2026-10-04 全サブエージェントをラップアップ）。次は 17 時以降に下の「2026-10-04 17 時以降の予定」を開始。
+Active Queues: q677（P1）・q683（P2）。2026-10-04 17 時から流れ A〜D を P1・P2 で実行中（体制は下の節の冒頭）。
 Status: active
-Main executor / plan writer: Q1（単一 Claude Code セッション、[protocol](agents/protocol.md)）。サブエージェント P1〜P8、N=0。
+Main executor / plan writer: Q1（単一 Claude Code セッション、[protocol](agents/protocol.md)）。サブエージェント P1〜P8、N=2（P1・P2）＋試験 T1（忙しい時は T2）。
 Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q693（q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
 
 
-## 2026-10-04 17 時以降の予定（承認済み・未開始）
+## 2026-10-04 17 時以降の予定（承認済み・実行中）
 
 承認: 2026-10-04 user「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。そうすると、AMLと併走できる開発項目は、UATで見つかったバグだと思います。スケジューリングだけしてmasterやqueueに記録してください。実行は17時以降に行います。」
 
 2 つの流れを並走する。担当の数 N はユーザーが決める（未定）。開始は 17 時以降、各 Queue の依存を満たしてから。QEMU・実機の試験は試験の担当（T）。
 
+**体制（2026-10-04 17 時 user）**: 「設計と実装を進めるサブエージェントはP1, P2です。テストはメインエージェントが集約してサブエージェントT1に送り、T1はキューにあるテストを可能な限りバッチ化して1回のqemu起動に詰めて実行します。P1,P2はテスト中に待機することなく、依存関係が満たされていて取りかかれる作業に移って、作業を進めます。よって、WSごとに取り組むと言うよりは、対象となるWS群をまんべんなく進めることになります。T1がビジーなとき、T2を立ててオーケーです。流れA,B,C,Dが対象となる処理群です。」
+- 対象は流れ A〜D の q677〜q692 だけ（共有の pool）。P1・P2 はどちらも phase-runner（high）。下の「主の順」は目安で、取りかかれない時（試験待ち・依存・判断待ち）は Q1 が pool の中の依存を満たす別の Queue を投入する（同じ Queue を二重に割り当てない）。
+- P1 の主の順: q677 → q678（流れ A の critical path）、その合間に q679 → q680 → q681（設計）→ q691（流れ C）。
+- P2 の主の順: q683 → q684 → q685 → q686 → q687 → q688 →（q677 の統合の後）q689、合間に q682（設計）→ q692（流れ D）。
+- 試験: P1・P2 は T1 に直接送らず Q1 に依頼を送る。Q1 が集めて T1 の台帳に積み、T1 は積まれた依頼をできるだけ 1 回の QEMU の起動にまとめて流す。T1 が忙しい時は Q1 が T2 を立てる（QEMU は host で同時に 2 つまで）。実機の確認（5330）はユーザーの次の UAT にまとめ、それまで該当の Phase は uncleared（実機待ち）。
+- 決定（2026-10-04 17 時、user のクリックの回答）: (1) BUG-166 のタッチパッドの仕様は「押し込み＋タップドラッグ」: 物理の押し込みのまま動かすとドラッグ、タップの直後（約 300ms 以内）に触れて動かすとドラッグ（2 回タップ→ドラッグも同じ）。(2) q677 の担当は 10.0.30.3（5330 の Linux）に SSH し、ACPI の table を読み取り専用で取り出して（`sudo cat /sys/firmware/acpi/tables/DSDT`・`SSDT*`）`plan/ws049/tests/` に commit してよい（host の設定・GPU・VM には触らない）。
+
 **流れ A（AML → USB-C DP Alt Mode と電源管理）**: 共通の前提は WS049（AML）。
 
 | Queue / attempt | Agent | Phase | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
-| q677 / q677-i01 | 未定（high） | [ws049-p008](ws049/ws.md)（対象機 5330 の table と実機の確認） | **BUG-165**: 無い PCI 機能の PCI_Config の region は読みは全ビット 1・書きは無視（`acpi-kern.c`）、host の試験。5330 の DSDT を取り出して host の試験に入れ、読み込みが最後まで進むまで直す。実機で DSDT の読み込み・Shut Down の電源 OFF（BUG-119）・タッチパッド（BUG-156・167）・電池（BUG-159）を確かめ直す | なし | pending |
-| q678 / q678-i01 | 未定（high） | [ws049-p007](ws049/ws.md) | SCI・GPE・固定 event（電源ボタン）・EC の kernel での確認（QEMU の `system_powerdown`、実機の電源ボタン・蓋・AC） | q677 | pending |
-| q679 / q679-i01 | kernel-and-driver-designer | [WS050](ws050/ws.md) p001 | UCSI の設計（ACPI の device と `_DSM`、5330 の Type-C の port、通知） | 設計は q677 と並走可、実装は q677・q678 の後 | pending |
-| q680 / q680-i01 | kernel-and-driver-designer | [WS051](ws051/ws.md) p001 | **目標: USB-C の DisplayPort Alternate Mode**。設計（UCSI の alt mode の入り、i915 の Type-C の port（TC の PHY・DP の lane）、HPD）。HAL の API の変更が要るなら差分を plan に置くだけ | 設計は q679 と並走、実装は WS050 の後 | pending |
-| q681 / q681-i01 | kernel-and-driver-designer | [WS052](ws052/ws.md) p001 | 電源管理の設計（S0i3・modern standby、`/dev/system` での制御。S3・S4 は対応しない） | 設計は並走可、実装は q678 の後 | pending |
-| q682 / q682-i01 | kernel-and-driver-designer → phase-runner | [WS132](ws132/ws.md) p001〜 | ベータ1（全部）: `/dev/system` の電源管理と PnP の通知、自動 mount、Files の eject。電源・AC・ボタンの事象は q678 の後 | 設計は並走可、電源の事象の実装は q678 の後。10/13 の締切 | pending |
+| q677 / q677-i01 | P1（generation15） | [ws049-p008](ws049/ws.md)（対象機 5330 の table と実機の確認） | **BUG-165**: 無い PCI 機能の PCI_Config の region は読みは全ビット 1・書きは無視（`acpi-kern.c`）、host の試験。5330 の DSDT を取り出して host の試験に入れ、読み込みが最後まで進むまで直す。実機で DSDT の読み込み・Shut Down の電源 OFF（BUG-119）・タッチパッド（BUG-156・167）・電池（BUG-159）を確かめ直す | なし | in-progress |
+| q678 / q678-i01 | P1（予定） | [ws049-p007](ws049/ws.md) | SCI・GPE・固定 event（電源ボタン）・EC の kernel での確認（QEMU の `system_powerdown`、実機の電源ボタン・蓋・AC） | q677 | pending |
+| q679 / q679-i01 | P1（予定、設計） | [WS050](ws050/ws.md) p001 | UCSI の設計（ACPI の device と `_DSM`、5330 の Type-C の port、通知） | 設計は q677 と並走可、実装は q677・q678 の後 | pending |
+| q680 / q680-i01 | P1（予定、設計） | [WS051](ws051/ws.md) p001 | **目標: USB-C の DisplayPort Alternate Mode**。設計（UCSI の alt mode の入り、i915 の Type-C の port（TC の PHY・DP の lane）、HPD）。HAL の API の変更が要るなら差分を plan に置くだけ | 設計は q679 と並走、実装は WS050 の後 | pending |
+| q681 / q681-i01 | P1（予定、設計） | [WS052](ws052/ws.md) p001 | 電源管理の設計（S0i3・modern standby、`/dev/system` での制御。S3・S4 は対応しない） | 設計は並走可、実装は q678 の後 | pending |
+| q682 / q682-i01 | P2（予定、設計 → 実装） | [WS132](ws132/ws.md) p001〜 | ベータ1（全部）: `/dev/system` の電源管理と PnP の通知、自動 mount、Files の eject。電源・AC・ボタンの事象は q678 の後 | 設計は並走可、電源の事象の実装は q678 の後。10/13 の締切 | pending |
 
 **流れ B（AML と並走: UAT の Bug、優先の順）**
 
 | Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
-| q683 / q683-i01 | 未定 | [BUG-170](bugs/BUG-170.md)（WS100・WS089） | 音量の slider のドラッグでのフリーズ。確認の音は離した時に 1 回。QEMU で再現と確認 | なし | pending |
-| q684 / q684-i01 | 未定（high） | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | pending |
-| q685 / q685-i01 | 未定 | [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md)（[ws033-p001](ws033/phase001/phase.md) の再開） | 後から挿した USB LAN が up しない、Ethernet のメニューの wlan0。QEMU の usb-net の device_add で再現 | なし | pending |
-| q686 / q686-i01 | 未定 | [BUG-175](bugs/BUG-175.md) | Terminal 多数で errno=8（ENOSPC）。QEMU で再現し、どの資源かを特定（BUG-120 の関連） | なし | pending |
-| q687 / q687-i01 | 未定 | [BUG-173](bugs/BUG-173.md) | sh の履歴の全角の幅。host で再現 | なし | pending |
-| q688 / q688-i01 | 未定 | [BUG-171](bugs/BUG-171.md)・[BUG-176](bugs/BUG-176.md)・[BUG-157](bugs/BUG-157.md) | 小さな UI の束: opaque が不透明にならない、起動の直後の network の表示、間違えた鍵の文言 | なし | pending |
-| q689 / q689-i01 | 未定 | [BUG-166](bugs/BUG-166.md)・[BUG-167](bugs/BUG-167.md)（WS099・WS081） | タッチパッドの窓のドラッグと押し込み | **タッチパッドの操作の仕様のユーザーの決定**、q677（DSDT）の後 | pending |
-| q690 / q690-i01 | 未定 | [BUG-172](bugs/BUG-172.md)・[BUG-174](bugs/BUG-174.md) | key のリピートの不安定、WiFi の address への SSH（実機が要る調べ） | 実機の日 | pending |
+| q683 / q683-i01 | P2（generation11） | [BUG-170](bugs/BUG-170.md)（WS100・WS089） | 音量の slider のドラッグでのフリーズ。確認の音は離した時に 1 回。QEMU で再現と確認 | なし | in-progress |
+| q684 / q684-i01 | P2（予定） | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | pending |
+| q685 / q685-i01 | P2（予定） | [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md)（[ws033-p001](ws033/phase001/phase.md) の再開） | 後から挿した USB LAN が up しない、Ethernet のメニューの wlan0。QEMU の usb-net の device_add で再現 | なし | pending |
+| q686 / q686-i01 | P2（予定） | [BUG-175](bugs/BUG-175.md) | Terminal 多数で errno=8（ENOSPC）。QEMU で再現し、どの資源かを特定（BUG-120 の関連） | なし | pending |
+| q687 / q687-i01 | P2（予定） | [BUG-173](bugs/BUG-173.md) | sh の履歴の全角の幅。host で再現 | なし | pending |
+| q688 / q688-i01 | P2（予定） | [BUG-171](bugs/BUG-171.md)・[BUG-176](bugs/BUG-176.md)・[BUG-157](bugs/BUG-157.md) | 小さな UI の束: opaque が不透明にならない、起動の直後の network の表示、間違えた鍵の文言 | なし | pending |
+| q689 / q689-i01 | P2（予定） | [BUG-166](bugs/BUG-166.md)・[BUG-167](bugs/BUG-167.md)（WS099・WS081） | タッチパッドの窓のドラッグと押し込み | 仕様は決定済み（上の決定 (1)）、q677（DSDT）の後 | pending |
+| q690 / q690-i01 | P2（予定） | [BUG-172](bugs/BUG-172.md)・[BUG-174](bugs/BUG-174.md) | key のリピートの不安定、WiFi の address への SSH（実機が要る調べ） | 実機の日 | pending |
 
 **流れ C（完全に独立）**: 2026-10-04 user「完全に独立した作業として、Raspberry Pi 4のグラフィックドライバを作成します。…これは独立したWSで、17時以降に着手します。スケジューリングと、WSの作成か、既存ならアップデートをお願いします。」
 
 | Queue / attempt | Agent | Phase | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
-| q691 / q691-i01 | kernel-and-driver-designer | [ws141-p001](ws141/phase001/phase.md) | Raspberry Pi 4 の GPU: Linux の vc4・v3d の初期化の順と command の投入の順の文書、正本と license の監査（vc4・v3d は GPL: 事実を自分の言葉で、code は写さない）、我々の interface への対応表、framebuffer の段の印の設計。code は書かない | なし | pending |
+| q691 / q691-i01 | P1（予定） | [ws141-p001](ws141/phase001/phase.md) | Raspberry Pi 4 の GPU: Linux の vc4・v3d の初期化の順と command の投入の順の文書、正本と license の監査（vc4・v3d は GPL: 事実を自分の言葉で、code は写さない）、我々の interface への対応表、framebuffer の段の印の設計。code は書かない | なし | pending |
 
 **流れ D（完全に独立）**: 2026-10-04 user「rtx 2000以降を対象に、nvrtxというドライバを開発します。やりかたはVC4と同じです。WSを作ってください。」
 
 | Queue / attempt | Agent | Phase | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
-| q692 / q692-i01 | kernel-and-driver-designer | [ws037-p001](ws037/phase001/phase.md) | nvrtx の文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp、commit しない）、NAK の世代の差（Mesa の source で確かめる）、正本と license の監査、最初の対象の世代の提案、interface の対応表、段の印、VFIO の試験の道。code は書かない | なし | pending |
+| q692 / q692-i01 | P2（予定） | [ws037-p001](ws037/phase001/phase.md) | nvrtx の文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp、commit しない）、NAK の世代の差（Mesa の source で確かめる）、正本と license の監査、最初の対象の世代の提案、interface の対応表、段の印、VFIO の試験の道。code は書かない | なし | pending |
 
 依存の図（前提 → 後）: q677 → q678 → {q679・q680 の実装, q681 の実装, q682 の電源の事象}。q679 → q680（実装）。q677 → q689。流れ B の q683〜q688 は依存なし（AML と並走）。
 
