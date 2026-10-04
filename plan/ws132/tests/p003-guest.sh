@@ -5,8 +5,8 @@
 #  1. The compositor's backend subscribes to /dev/system ("KL EVENTS subscribed classes=0x2f") and reads the power
 #     as unknown ("ZWL POWER source=unknown percent=-1"): no battery on the bar (bar.png is for the eye: no battery
 #     outline left of the clock).
-#  2. A USB keyboard plugged in through QMP (usb-kbd on xhci.0 port 4; the harness takes ports 1-3, and the other
-#     ports are USB 3 ones): the compositor hears "ZWL EVENT input changed" and takes the keyboard ("ZWL INPUT device=... kind=keyboard") within 1.5 s, before its own 2 s scan would.
+#  2. A USB keyboard plugged in through QMP (usb-kbd on xhci.0, on a free port QEMU chooses: the pen harness takes ports 1-4, and the
+#     controller has 8 since T1-125): the compositor hears "ZWL EVENT input changed" and takes the keyboard ("ZWL INPUT device=... kind=keyboard") within 1.5 s, before its own 2 s scan would.
 #  3. The new keyboard works: App Home opened with the mouse (the launcher), then Esc typed on the plugged keyboard
 #     only (QMP input-send-event to its device) closes it ("ZWL HOME close via=escape").
 #  4. The keyboard pulled out: "ZWL EVENT input changed" again, and its device closes.
@@ -50,7 +50,7 @@ shot bar
 
 # 2. The keyboard plugged in; the compositor's scan of 2 s is beaten by the event.
 keyboards_before=$(guest "grep -c 'kind=keyboard' /tmp/zdesktop.log" | tail -1)
-send device_add '{"driver":"usb-kbd","bus":"xhci.0","port":"4","id":"hotkbd"}'
+send device_add '{"driver":"usb-kbd","bus":"xhci.0","id":"hotkbd"}'
 sleep 1.5
 guest 'cat /tmp/zdesktop.log' > "$out/after-plug.log"
 if grep -q 'ZWL EVENT input changed' "$out/after-plug.log"; then pass plug-event; else fail plug-event; fi
