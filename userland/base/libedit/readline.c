@@ -215,6 +215,21 @@ static struct vi_state vi_state;
 static const char *completion_prompt;
 
 /*
+ * Where the terminal's cursor is, as a row and a column counted from the
+ * start of the prompt (BUG-173): the line is drawn by display columns, a
+ * wide character taking two and a line longer than the terminal wrapping
+ * to the next row, so that the cursor can be brought back across rows.
+ * Set when the prompt is written; kept by every move and redraw of one
+ * call of readline().
+ */
+static size_t display_row;
+static size_t display_col;
+
+/* Where the text drawn last ends (the same count), so that only a shorter line clears what is past its end. */
+static size_t display_end_row;
+static size_t display_end_col;
+
+/*
  * Whether the key before this one was a Tab, and whether this one is.
  * readline() moves the second to the first before each key; a Tab that
  * leaves the line as it was lists the matches when the first is set.
@@ -241,9 +256,18 @@ static int grow(char **line, size_t *capacity, size_t need);
 static int line_insert(const struct edit_line *edit, size_t position, const char *text, size_t count);
 static void line_delete(const struct edit_line *edit, size_t start, size_t end);
 static void line_changed(size_t position);
-static void update_display(const char *line, size_t old_length, size_t old_point, size_t length, size_t point, size_t changed_from);
-static void move_cursor(size_t from, size_t to);
+static void update_display(const char *line, size_t length, size_t point, size_t changed_from);
+static void redraw(const char *line, size_t length, size_t point, size_t from);
+static void prompt_drawn(void);
+static void line_position(const char *line, size_t upto, size_t width, size_t *row, size_t *col);
+static void text_advance(const char *text, size_t size, size_t width, size_t *row, size_t *col);
+static size_t char_width(const unsigned char *bytes, size_t size, size_t *used);
+static size_t terminal_columns(void);
+static void cursor_to(size_t row, size_t col);
 static void cursor_step(size_t columns, char direction);
+static size_t char_next(const char *text, size_t length, size_t at);
+static size_t char_previous(const char *text, size_t at);
+static int char_incomplete(const char *text, size_t at);
 static enum line_result complete_key(const struct edit_line *edit);
 static size_t complete_word_start(const struct edit_line *edit);
 static int complete_replace(const struct edit_line *edit, size_t start, const char *replacement);
@@ -470,10 +494,11 @@ readline(
 	size_t capacity;
 	size_t length;
 	size_t point;
-	size_t old_length;
-	size_t old_point;
+	size_t end_row;
+	size_t end_col;
 	int attributes_error;
 	int terminal;
+	int partial;
 
 	/* No prompt writes nothing. */
 	if (prompt == NULL)
@@ -520,6 +545,7 @@ readline(
 	completion_previous_tab = 0;
 	completion_this_tab = 0;
 	(void)write_all(prompt, strlen(prompt));
+	prompt_drawn();
 
 	/* Each key edits the line until one ends it. */
 	for (;;) {
@@ -534,8 +560,6 @@ readline(
 		}
 
 		/* The key edits the line in the current mode; a Tab marks itself as one. */
-		old_length = length;
-		old_point = point;
 		line_changed_from = (size_t)-1;
 		completion_previous_tab = completion_this_tab;
 		completion_this_tab = 0;
@@ -546,11 +570,13 @@ readline(
 			result = emacs_key(&edit, byte);
 		}
 
-		/* The caller and the terminal see the line as the key left it. */
+		/* The caller sees the line as the key left it; the terminal too, unless a character is only partly typed. */
 		rl_line_buffer = line;
 		rl_point = (int)point;
 		rl_end = (int)length;
-		update_display(line, old_length, old_point, length, point, line_changed_from);
+		partial = char_incomplete(line, point);
+		if (!partial)
+			update_display(line, length, point, line_changed_from);
 
 		/* A Tab that found nothing to do rings the bell after the line is drawn. */
 		if (completion_bell)
@@ -560,6 +586,10 @@ readline(
 		if (result != LINE_CONTINUE)
 			break;
 	}
+
+	/* The cursor goes to the end of the line (its last row) before the next line starts. */
+	line_position(line, length, terminal_columns(), &end_row, &end_col);
+	cursor_to(end_row, end_col);
 
 	/* Enter goes to the next line; Ctrl-C leaves an empty line. */
 	if (result == LINE_ACCEPT) {
@@ -729,14 +759,14 @@ emacs_key(
 	if (byte == 4) {
 		if (*edit->length == 0)
 			return LINE_END;
-		line_delete(edit, *edit->point, *edit->point + 1U);
+		line_delete(edit, *edit->point, char_next(*edit->text, *edit->length, *edit->point));
 		return LINE_CONTINUE;
 	}
 
-	/* Backspace erases the character before the cursor. */
+	/* Backspace erases the character before the cursor (all its bytes). */
 	if (byte == 8 || byte == 0x7f) {
 		if (*edit->point > 0)
-			line_delete(edit, *edit->point - 1U, *edit->point);
+			line_delete(edit, char_previous(*edit->text, *edit->point), *edit->point);
 		return LINE_CONTINUE;
 	}
 
@@ -867,15 +897,13 @@ emacs_edit_key(
 		*edit->point = *edit->length;
 		break;
 	case EDIT_LEFT:
-		if (*edit->point > 0)
-			(*edit->point)--;
+		*edit->point = char_previous(*edit->text, *edit->point);
 		break;
 	case EDIT_RIGHT:
-		if (*edit->point < *edit->length)
-			(*edit->point)++;
+		*edit->point = char_next(*edit->text, *edit->length, *edit->point);
 		break;
 	case EDIT_DELETE:
-		line_delete(edit, *edit->point, *edit->point + 1U);
+		line_delete(edit, *edit->point, char_next(*edit->text, *edit->length, *edit->point));
 		break;
 	case EDIT_UP:
 		/* The older entry replaces the line, with the cursor at its end. */
@@ -1032,57 +1060,384 @@ line_changed(
 }
 
 /*
- * Brings the terminal from the line it shows to the line as it is now: the
- * text from changed_from on is written again ((size_t)-1 when only the
- * cursor moved), spaces cover what a shorter line leaves, and the cursor
- * goes to point.
+ * Brings the terminal to the line as it is now: the whole line is drawn
+ * again when it changed (changed_from is (size_t)-1 when only the cursor
+ * moved), and the cursor goes to point.
  */
 static void
 update_display(
 	const char *line,
-	size_t old_length,
-	size_t old_point,
 	size_t length,
 	size_t point,
 	size_t changed_from)
 {
-	size_t spaces;
-	size_t drawn_to;
+	size_t row;
+	size_t col;
 
 	/* Only the cursor moves. */
 	if (changed_from == (size_t)-1) {
-		move_cursor(old_point, point);
+		line_position(line, point, terminal_columns(), &row, &col);
+		cursor_to(row, col);
 		return;
 	}
 
-	/* The text from the first change on is written again. */
-	move_cursor(old_point, changed_from);
-	(void)write_all(line + changed_from, length - changed_from);
-	drawn_to = length;
-
-	/* Spaces cover the end of a line that became shorter. */
-	if (old_length > length) {
-		for (spaces = old_length - length; spaces != 0U; spaces--)
-			(void)write_all(" ", 1);
-		drawn_to = old_length;
-	}
-
-	/* The cursor goes back to its place. */
-	move_cursor(drawn_to, point);
+	/* The line again from its first change. */
+	redraw(line, length, point, changed_from);
 }
 
-/* Moves the terminal's cursor from one column of the line to another. */
+/*
+ * Draws the line again from a byte offset on (the text before it is as it
+ * was drawn): the text, the rest of the screen below it cleared when the
+ * line became shorter, and the cursor at point.  A line that ends exactly
+ * at the terminal's right edge goes on to the next row, so that the cursor
+ * is never left in the pending wrap.
+ */
 static void
-move_cursor(
-	size_t from,
-	size_t to)
+redraw(
+	const char *line,
+	size_t length,
+	size_t point,
+	size_t from)
 {
-	/* Left to an earlier column, right to a later one. */
-	if (to < from) {
-		cursor_step(from - to, 'D');
-	} else {
-		cursor_step(to - from, 'C');
+	size_t width;
+	size_t row;
+	size_t col;
+
+	/* From the offset (on a character's start), to the end. */
+	width = terminal_columns();
+	if (from > length)
+		from = length;
+	while (from > 0U && ((unsigned char)line[from] & 0xc0U) == 0x80U)
+		from--;
+	line_position(line, from, width, &row, &col);
+	cursor_to(row, col);
+	(void)write_all(line + from, length - from);
+
+	/* Where the text ends: the next row's start when it filled its last row. */
+	row = 0;
+	col = 0;
+	text_advance(completion_prompt, strlen(completion_prompt), width, &row, &col);
+	text_advance(line, length, width, &row, &col);
+	if (col >= width) {
+		(void)write_all("\r\n", 2);
+		row++;
+		col = 0;
 	}
+
+	/* The cursor is at the text's end. */
+	display_row = row;
+	display_col = col;
+
+	/* What a longer line left is cleared (from here to the end of the screen). */
+	if (display_end_row > row || (display_end_row == row && display_end_col > col))
+		(void)write_all("\033[J", 3);
+	display_end_row = row;
+	display_end_col = col;
+
+	/* The cursor at point. */
+	line_position(line, point, terminal_columns(), &row, &col);
+	cursor_to(row, col);
+}
+
+/*
+ * Notes that the prompt was just written from the first column: the cursor
+ * is where it ended (on the next row when it filled its last one).
+ */
+static void
+prompt_drawn(
+	void)
+{
+	size_t width;
+
+	/* The prompt's end. */
+	width = terminal_columns();
+	display_row = 0;
+	display_col = 0;
+	text_advance(completion_prompt, strlen(completion_prompt), width, &display_row, &display_col);
+
+	/* A prompt that filled its last row leaves the cursor on the next one. */
+	if (display_col >= width) {
+		(void)write_all("\r\n", 2);
+		display_row++;
+		display_col = 0;
+	}
+
+	/* No text is drawn after it yet. */
+	display_end_row = display_row;
+	display_end_col = display_col;
+}
+
+/*
+ * Tells the row and column of a byte offset of the line, counted from the
+ * start of the prompt; an offset at a full row's end is the next row's start.
+ */
+static void
+line_position(
+	const char *line,
+	size_t upto,
+	size_t width,
+	size_t *row,
+	size_t *col)
+{
+	/* The prompt, then the line's text before the offset. */
+	*row = 0;
+	*col = 0;
+	text_advance(completion_prompt, strlen(completion_prompt), width, row, col);
+	text_advance(line, upto, width, row, col);
+
+	/* The pending wrap is the next row's start. */
+	if (*col >= width) {
+		(*row)++;
+		*col = 0;
+	}
+}
+
+/*
+ * Moves a row and a column over text as a terminal writes it: each
+ * character takes its display width, and one that does not fit in what is
+ * left of the row starts the next row.
+ */
+static void
+text_advance(
+	const char *text,
+	size_t size,
+	size_t width,
+	size_t *row,
+	size_t *col)
+{
+	size_t at;
+	size_t used;
+	size_t cells;
+
+	/* Each character. */
+	at = 0;
+	while (at < size) {
+		cells = char_width((const unsigned char *)text + at, size - at, &used);
+		at += used;
+		if (cells == 0U)
+			continue;
+
+		/* Not enough room left: the next row. */
+		if (*col + cells > width) {
+			(*row)++;
+			*col = 0;
+		}
+
+		/* The character's cells. */
+		*col += cells;
+	}
+}
+
+/*
+ * Tells the display width of the character at bytes (0, 1 or 2 columns)
+ * and how many bytes it takes: UTF-8 decoded, an escape sequence (CSI)
+ * taking no column, a control character none, a byte that is no UTF-8 one
+ * column.  The wide ranges are libc's wcwidth's (src/libc/wide.c), so that
+ * the editor counts as the system's terminal draws.
+ */
+static size_t
+char_width(
+	const unsigned char *bytes,
+	size_t size,
+	size_t *used)
+{
+	unsigned long value;
+	size_t count;
+	size_t index;
+
+	/* An escape sequence: ESC [ parameters and a final letter. */
+	*used = 1;
+	if (bytes[0] == 0x1bU) {
+		if (size >= 2U && bytes[1] == '[') {
+			index = 2;
+			while (index < size && (bytes[index] < 0x40U || bytes[index] > 0x7eU))
+				index++;
+			if (index < size)
+				index++;
+			*used = index;
+		}
+
+		/* No column. */
+		return 0;
+	}
+
+	/* ASCII: a control character takes none, the others one. */
+	if (bytes[0] < 0x80U) {
+		if (bytes[0] < 0x20U || bytes[0] == 0x7fU)
+			return 0;
+		return 1;
+	}
+
+	/* The lead byte says how many continuation bytes follow; a stray byte is one column. */
+	count = 0;
+	value = 0;
+	if ((bytes[0] & 0xe0U) == 0xc0U) {
+		count = 1;
+		value = bytes[0] & 0x1fU;
+	} else if ((bytes[0] & 0xf0U) == 0xe0U) {
+		count = 2;
+		value = bytes[0] & 0x0fU;
+	} else if ((bytes[0] & 0xf8U) == 0xf0U) {
+		count = 3;
+		value = bytes[0] & 0x07U;
+	}
+
+	/* A stray byte, or a sequence cut short, is one column. */
+	if (count == 0U || count >= size)
+		return 1;
+	for (index = 1; index <= count; index++) {
+		if ((bytes[index] & 0xc0U) != 0x80U)
+			return 1;
+		value = (value << 6) | (bytes[index] & 0x3fU);
+	}
+
+	/* The whole character is used. */
+	*used = count + 1U;
+
+	/* Combining marks take none. */
+	if ((value >= 0x0300UL && value <= 0x036fUL) ||
+	    (value >= 0x1ab0UL && value <= 0x1affUL) ||
+	    (value >= 0x1dc0UL && value <= 0x1dffUL) ||
+	    (value >= 0x20d0UL && value <= 0x20ffUL) ||
+	    (value >= 0xfe00UL && value <= 0xfe0fUL) ||
+	    (value >= 0xfe20UL && value <= 0xfe2fUL))
+		return 0;
+
+	/* East Asian wide and fullwidth characters take two. */
+	if ((value >= 0x1100UL && value <= 0x115fUL) ||
+	    (value >= 0x2e80UL && value <= 0xa4cfUL) ||
+	    (value >= 0xac00UL && value <= 0xd7a3UL) ||
+	    (value >= 0xf900UL && value <= 0xfaffUL) ||
+	    (value >= 0xfe10UL && value <= 0xfe6fUL) ||
+	    (value >= 0xff01UL && value <= 0xff60UL) ||
+	    (value >= 0xffe0UL && value <= 0xffe6UL) ||
+	    (value >= 0x1f300UL && value <= 0x1faffUL) ||
+	    (value >= 0x20000UL && value <= 0x3fffdUL))
+		return 2;
+
+	/* Succeeded: one column. */
+	return 1;
+}
+
+/* Tells the terminal's width in columns, or the usual 80 when it does not say. */
+static size_t
+terminal_columns(
+	void)
+{
+	struct winsize size;
+	int error;
+
+	/* What the terminal says. */
+	memset(&size, 0, sizeof(size));
+	error = ioctl(STDOUT_FILENO, TIOCGWINSZ, &size);
+	if (error != 0 || size.ws_col == 0)
+		return COMPLETION_WIDTH;
+
+	/* Succeeded: its width. */
+	return size.ws_col;
+}
+
+/*
+ * Moves the terminal's cursor to a row and a column of the line: up or down
+ * (ESC [ n A, ESC [ n B), then left or right (ESC [ n D, ESC [ n C).
+ */
+static void
+cursor_to(
+	size_t row,
+	size_t col)
+{
+	/* The row. */
+	if (row < display_row) {
+		cursor_step(display_row - row, 'A');
+	} else {
+		cursor_step(row - display_row, 'B');
+	}
+
+	/* The column. */
+	if (col < display_col) {
+		cursor_step(display_col - col, 'D');
+	} else {
+		cursor_step(col - display_col, 'C');
+	}
+
+	/* Succeeded: the cursor is there. */
+	display_row = row;
+	display_col = col;
+}
+
+/* Gives the offset of the character after the one at an offset (over UTF-8's continuation bytes). */
+static size_t
+char_next(
+	const char *text,
+	size_t length,
+	size_t at)
+{
+	/* At the end, nothing comes after. */
+	if (at >= length)
+		return length;
+
+	/* One byte, then its continuation bytes. */
+	at++;
+	while (at < length && ((unsigned char)text[at] & 0xc0U) == 0x80U)
+		at++;
+
+	/* Succeeded: the next character's offset. */
+	return at;
+}
+
+/* Gives the offset of the character before an offset (over UTF-8's continuation bytes). */
+static size_t
+char_previous(
+	const char *text,
+	size_t at)
+{
+	/* At the start, nothing comes before. */
+	if (at == 0U)
+		return 0;
+
+	/* One byte back, then back over continuation bytes to the lead byte. */
+	at--;
+	while (at > 0U && ((unsigned char)text[at] & 0xc0U) == 0x80U)
+		at--;
+
+	/* Succeeded: the previous character's offset. */
+	return at;
+}
+
+/*
+ * Tells whether the bytes just before an offset are a UTF-8 character
+ * still being typed (its lead byte without all its continuation bytes).
+ */
+static int
+char_incomplete(
+	const char *text,
+	size_t at)
+{
+	size_t lead;
+	size_t need;
+	unsigned char byte;
+
+	/* The lead byte of the last character before the offset. */
+	if (at == 0U)
+		return 0;
+	lead = char_previous(text, at);
+	byte = (unsigned char)text[lead];
+
+	/* How many bytes it needs. */
+	need = 1;
+	if ((byte & 0xe0U) == 0xc0U)
+		need = 2;
+	else if ((byte & 0xf0U) == 0xe0U)
+		need = 3;
+	else if ((byte & 0xf8U) == 0xf0U)
+		need = 4;
+
+	/* Fewer bytes than it needs are there. */
+	if (at - lead < need)
+		return 1;
+
+	/* Succeeded: complete. */
+	return 0;
 }
 
 /*
@@ -1325,6 +1680,8 @@ complete_list(
 	char **matches)
 {
 	size_t count;
+	size_t row;
+	size_t col;
 	int wanted;
 
 	/* The matches to list are those after the replacement. */
@@ -1332,9 +1689,10 @@ complete_list(
 	while (matches[count + 1U] != NULL)
 		count++;
 
-	/* The list starts on the line after the one being edited. */
-	move_cursor(*edit->point, *edit->length);
-	(void)write_all("\n", 1);
+	/* The list starts on the line after the one being edited (after its last row). */
+	line_position(*edit->text, *edit->length, terminal_columns(), &row, &col);
+	cursor_to(row, col);
+	(void)write_all("\r\n", 2);
 
 	/* Many matches are listed only when the answer is yes. */
 	wanted = 1;
@@ -1345,8 +1703,8 @@ complete_list(
 
 	/* The prompt and the line again, with the cursor back at its place. */
 	(void)write_all(completion_prompt, strlen(completion_prompt));
-	(void)write_all(*edit->text, *edit->length);
-	move_cursor(*edit->length, *edit->point);
+	prompt_drawn();
+	redraw(*edit->text, *edit->length, *edit->point, 0);
 }
 
 /* Asks whether to list many matches; returns 1 for y, Y or a blank. */
