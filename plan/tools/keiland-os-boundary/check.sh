@@ -118,7 +118,7 @@ for binary in "${BUILD:-build/amd64}/bin/wayland" "${KEILAND_LINUX_BUILD:-build/
         continue
     fi
     nm -u "$binary" | awk -v binary="$binary" '{name = $NF; sub(/@.*/, "", name)}
-        name ~ /^(keiland_|kl_)/ && name !~ /^(keiland_motion_|keiland_scroller_|keiland_gesture_|keiland_version$|kl_version$)/ {
+        name ~ /^(keiland_|kl_)/ && name !~ /^(keiland_motion_|keiland_scroller_|keiland_gesture_|kl_motion_|kl_scroller_|kl_gesture_|keiland_version$|kl_version$)/ {
             print binary ": uses " name " of libkeiland"
         }'
 done > "$work/B2"
