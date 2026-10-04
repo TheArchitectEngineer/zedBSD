@@ -7,9 +7,11 @@
 #     nonblocking read) -> "refusals ok".
 #  2. systemevents -p: the power's state is unknown -> "power lid=- ac=- battery=- charging=-".
 #  3. A reader subscribed to every class while the host, through QMP, plugs in and pulls out a USB
-#     stick (blank, 16 MiB), a USB keyboard and a USB network adapter, then presses the power button
+#     stick (blank, 16 MiB), a USB keyboard and a USB network adapter, one after the other on the same
+#     port 4 (the harness's devices take ports 1-3, and qemu-xhci's other ports are USB 3 ones a
+#     full-speed device cannot use; T1-106), then presses the power button
 #     (system_powerdown).  The reader must print, in increasing sequence:
-#       usb add / disk add (removable=1) / disk remove / usb remove     (the stick)
+#       usb add / disk add (removable=1; a disk is named sda) / disk remove / usb remove     (the stick)
 #       usb add / input add / input remove / usb remove                 (the keyboard)
 #       usb add / network add / network remove / usb remove             (the adapter)
 #       power press 1 power-button
@@ -51,12 +53,12 @@ sleep 4
 send device_del '{"id":"hotstick"}'
 sleep 3
 send blockdev-del '{"node-name":"hotstick0"}'
-send device_add '{"driver":"usb-kbd","bus":"xhci.0","port":"5","id":"hotkbd"}'
+send device_add '{"driver":"usb-kbd","bus":"xhci.0","port":"4","id":"hotkbd"}'
 sleep 3
 send device_del '{"id":"hotkbd"}'
 sleep 3
 send netdev_add '{"type":"user","id":"hotnet"}'
-send device_add '{"driver":"usb-net","bus":"xhci.0","port":"6","netdev":"hotnet","id":"hotnic","mac":"52:54:00:33:00:02"}'
+send device_add '{"driver":"usb-net","bus":"xhci.0","port":"4","netdev":"hotnet","id":"hotnic","mac":"52:54:00:33:00:02"}'
 sleep 4
 send device_del '{"id":"hotnic"}'
 sleep 3
@@ -69,17 +71,17 @@ check_line() {
 	if grep -Eq "$2" "$out/events.txt"; then pass "$1"; else fail "$1"; fi
 }
 check_line stick-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=4 vendor=46f4 product=0001'
-check_line stick-disk-add '^event [0-9]+ disk add 0 [a-z]+[0-9]+ parent=- removable=1 block=512 blocks=32768'
-check_line stick-disk-remove '^event [0-9]+ disk remove 0 [a-z]+[0-9]+ parent=- removable=1'
+check_line stick-disk-add '^event [0-9]+ disk add 0 [a-z]+[0-9]* parent=- removable=1 block=512 blocks=32768'
+check_line stick-disk-remove '^event [0-9]+ disk remove 0 [a-z]+[0-9]* parent=- removable=1'
 check_line stick-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=4 vendor=46f4'
-check_line keyboard-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=5 vendor=0627'
+check_line keyboard-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=4 vendor=0627'
 check_line keyboard-input-add '^event [0-9]+ input add 0 event[0-9]+ bus=3 '
 check_line keyboard-input-remove '^event [0-9]+ input remove 0 event[0-9]+ bus=3 '
-check_line keyboard-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=5 vendor=0627'
-check_line nic-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=6 '
+check_line keyboard-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=4 vendor=0627'
+check_line nic-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=4 vendor=0525'
 check_line nic-network-add '^event [0-9]+ network add 0 [a-z]+[0-9]+ ifindex=[0-9]+'
 check_line nic-network-remove '^event [0-9]+ network remove 0 [a-z]+[0-9]+ ifindex=[0-9]+'
-check_line nic-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=6 '
+check_line nic-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=4 vendor=0525'
 check_line power-button '^event [0-9]+ power press 1 power-button -'
 check_line any-event '^event'
 if grep -Eq ' (overflow|unknown) ' "$out/events.txt"; then fail no-overflow-or-unknown-lines; fi
