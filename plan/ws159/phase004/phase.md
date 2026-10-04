@@ -2,7 +2,7 @@
 
 # ws159-p004: compositor の touchpad の層
 
-Status: in-progress（2026-10-05 P1 generation17 / q713-i01。実装・host の試験・build まで。QEMU は T1、実機は UAT）
+Status: cleared（2026-10-05 Q1: T1-125 の ws159-p004 PASS（pad の resolution の直しの後）、T1-101 の zdesktop-p013-touch PASS。実機は p005）。以前: in-progress（2026-10-05 P1 generation17 / q713-i01。実装・host の試験・build まで。QEMU は T1、実機は UAT）
 Disposition: normal
 Parent: [WS159](../ws.md)
 Queue: q713 / q713-i01（設計 [p001](../phase001/phase.md) の D8）
@@ -36,3 +36,7 @@ Queue: q713 / q713-i01（設計 [p001](../phase001/phase.md) の D8）
 - touch pad の設定（速度・自然な向き・tap の有無）は Settings の ws089-p024 の口ができてから。今は既定値（自然な向き ON、tap ON、マウスの速度の設定 `pointer_speed` は効く）。
 - 慣性の scroll、3・4 本指の gesture（WS142）、手のひらの除外（kernel が Confidence 0 の指を出さないので最低限は済む）は後。
 - BUG-190・166・167・156 の再評価は実機の UAT（ユーザー「I2C-HIDの実装後に再度評価しましょう」）。
+
+## Q1 の判定（2026-10-05）
+
+T1-125 の ws159-p004 PASS（pad の resolution の直しの後）、T1-101 の zdesktop-p013-touch PASS。実機は p005。**cleared**。

@@ -2,7 +2,7 @@
 
 # ws142-p002: Super（Windows キー）単独で App Home を開く・閉じる
 
-Status: in-progress（2026-10-05 P1 generation17 / q719-i01。q720 の後に再開し、実装・build・host の試験まで。QEMU は T1 に依頼。結果の判定まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-125 の p002-guest PASS（D9 の Super を渡さない段を含む）、home-open.png を Q1 が目視（App Home））。以前: in-progress（2026-10-05 P1 generation17 / q719-i01。q720 の後に再開し、実装・build・host の試験まで。QEMU は T1 に依頼。結果の判定まで cleared にしない）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: q719 / q719-i01（Q1 の投入）
@@ -51,3 +51,7 @@ Design: [ws142-p001](../phase001/phase.md) の C
 - `seat.c`: Super（125・126）の key は client に届けない（上の表）。D9 は host の試験の範囲（super-tap.c の判定）には関わらないので host の試験は変えない（16 checks のまま）。
 - `p002-guest.sh` に 8 を足した: focus を持つ `/bin/seat-probe` に Super の key（125・126）が届かず、普通の key（a = 30）と Super+a の modifier（depressed=64）は届く。
 - zedBSD の compositor の build: 成功、warning 0。
+
+## Q1 の判定（2026-10-05）
+
+T1-125 の p002-guest PASS（D9 の Super を渡さない段を含む）、home-open.png を Q1 が目視（App Home）。**cleared**。
