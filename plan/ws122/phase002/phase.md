@@ -54,3 +54,7 @@ Queue: Q1 の指示（2026-10-05、ベータ1 の RC 10/13 までに簡単な pl
 - 映像は全部 ok（OPEN・FRAMES・一時停止・SEEK・END・ENDED・DONE、playing.png は試料の絵と 0:14/0:20 の slider を Q1 が目視）。音だけ FAIL ×2: `VIDEOPLAYER AUDIO error=13`、録音の peak=0。
 - 解析: zedBSD の errno 13 は **ENODEV**（EACCES ではない）。player が ENODEV を返すのは audiod の WELCOME が `device=0`（sound device が無い audiod）の時だけ。試験は audiod を kill して自分の audiod を起こしていたが、image の `rc.conf` は audiod を service（`restart=on-failure`）で起動するので、kill された boot の audiod を init が起こし直し、それが `/dev/dsp0` を開けずに（試験の audiod が持っている）device 無しのまま `/run/audiod.sock` を作り直して接続を取った、と見る（QEMU での確認はまだ）。host で audiod と player の client（`audio.c`）を host の build で動かし、HELLO・STREAM_CREATE・共有の ring・START・書き込みと読み位置の進みが通ることを確かめた（device の確かめを外した写し、scratch で）。
 - 直し: 試験は audiod を kill・起動せず、system の service の audiod を使う（`service start audiod`、`a.log` は `service status audiod` と ps）。player は変えない。
+
+## T1-128（2026-10-05）
+
+- 音は直った（`AUDIO error=0`、`audio=aac`、録音の peak=4134）。残りは `FRAMES shown=100` が待ちの内に出ない 1 行だけ: v.log では `FRAMES shown=100 time_ms=13040`（seek の後）。Venus の guest では 1 秒に 25 枚より少なく表示され（時計に遅れた絵は飛ばす）、100 枚に届くのが遅い。試験は shown=100 を待たず、一時停止の行（`PAUSE shown= time_ms=`）で 10 枚以上・1 秒以上進んだことを見るようにした。player は変えない。

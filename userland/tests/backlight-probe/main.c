@@ -14,7 +14,8 @@
  *   backlight-probe [-f DEVICE] PERCENT    sets the brightness, then prints it
  *
  * Each line is "BACKLIGHT ..." on standard output; the exit status is 0, or
- * 1 with "BACKLIGHT error=<errno> step=<what>".
+ * 1 with "BACKLIGHT error=<errno> step=<what> reason=<strerror>" (zedBSD's errno
+ * numbers are its own: ENOENT is 6).
  */
 
 #include <errno.h>
@@ -122,6 +123,6 @@ probe_fail(
 	int error)
 {
 	/* The line the test reads. */
-	printf("BACKLIGHT error=%d step=%s\n", error, step);
+	printf("BACKLIGHT error=%d step=%s reason=%s\n", error, step, strerror(error));
 	return 1;
 }
