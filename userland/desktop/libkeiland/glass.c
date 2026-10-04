@@ -17,6 +17,8 @@
 
 #include <keiland.h>
 
+#include "ui/internal.h"
+
 #include <wayland-client.h>
 #include "userland/desktop/libwayland/zed-glass-v1-client-protocol.h"
 
@@ -38,21 +40,8 @@ struct kl_glass {
 	uint32_t version;
 };
 
-/* What the registry search found: the manager's global name (0 for none) and version. */
-struct glass_search {
-	uint32_t name;
-	uint32_t version;
-};
-
 static struct keiland_glass_manager_v1 *glass_bind(struct wl_display *display, uint32_t *version);
-static void glass_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
-static void glass_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static int glass_check(const struct kl_glass_panel *panel);
-
-/* The registry's callbacks while the manager is looked for. */
-static const struct wl_registry_listener glass_registry_listener = {
-	glass_global, glass_global_remove
-};
 
 /*
  * Gives a surface its glass, with no panels yet.  Returns NULL with errno
@@ -179,63 +168,30 @@ kl_glass_destroy(
 	free(glass);
 }
 
-/* Binds zdesktop's glass manager through a registry of the library's own. */
+/* Binds zdesktop's glass manager at the version both speak: from an application's registry, or found by a search of the library's own. */
 static struct keiland_glass_manager_v1 *
 glass_bind(
 	struct wl_display *display,
 	uint32_t *version)
 {
 	struct keiland_glass_manager_v1 *manager;
-	struct glass_search search;
-	struct wl_event_queue *queue;
-	struct wl_display *wrapper;
-	struct wl_registry *registry;
-	int status;
+	struct keiui_global_search search;
+	int error;
 
-	/* The search's own queue, and the display as seen from it. */
-	queue = wl_display_create_queue(display);
-	if (queue == NULL) {
-		errno = ENOMEM;
+	/* The manager's global. */
+	error = keiui_global_find(&search, display, "keiland_glass_manager_v1");
+	if (error != 0) {
+		keiui_global_end(&search);
+		errno = error;
 		return NULL;
 	}
 
-	/* The display as the search sees it. */
-	wrapper = wl_proxy_create_wrapper(display);
-	if (wrapper == NULL) {
-		wl_event_queue_destroy(queue);
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	/* What the wrapper makes lives on the search's queue. */
-	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
-
-	/* The globals, announced to this search alone. */
-	search.name = 0;
-	search.version = 0;
-	registry = wl_display_get_registry(wrapper);
-	if (registry != NULL) {
-		status = wl_registry_add_listener(registry, &glass_registry_listener, &search);
-		if (status == 0)
-			(void)wl_display_roundtrip_queue(display, queue);
-	}
-
-	/* The manager, bound when announced at the version both speak, is moved to the application's default queue. */
-	manager = NULL;
+	/* The manager, bound when announced at the version both speak; the search ends. */
 	*version = search.version;
 	if (*version > GLASS_VERSION)
 		*version = GLASS_VERSION;
-	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &keiland_glass_manager_v1_interface, *version);
-		if (manager != NULL)
-			wl_proxy_set_queue((struct wl_proxy *)manager, NULL);
-	}
-
-	/* The search's objects go. */
-	if (registry != NULL)
-		wl_registry_destroy(registry);
-	wl_proxy_wrapper_destroy(wrapper);
-	wl_event_queue_destroy(queue);
+	manager = keiui_global_bind(&search, &keiland_glass_manager_v1_interface, *version);
+	keiui_global_end(&search);
 
 	/* A compositor without glass. */
 	if (search.name == 0U) {
@@ -251,41 +207,6 @@ glass_bind(
 
 	/* Succeeded: the manager. */
 	return manager;
-}
-
-/* Notes the manager's global name when the registry announces it. */
-static void
-glass_global(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name,
-	const char *interface,
-	uint32_t version)
-{
-	struct glass_search *search;
-	int match;
-
-	/* Only zdesktop's glass manager is looked for. */
-	(void)registry;
-	search = data;
-	match = strcmp(interface, "keiland_glass_manager_v1");
-	if (match == 0) {
-		search->name = name;
-		search->version = version;
-	}
-}
-
-/* A global going away during the short search changes nothing. */
-static void
-glass_global_remove(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Nothing to forget. */
-	(void)data;
-	(void)registry;
-	(void)name;
 }
 
 /* Checks one panel against the compositor's bounds. */

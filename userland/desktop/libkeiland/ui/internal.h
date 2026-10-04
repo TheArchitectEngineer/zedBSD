@@ -15,6 +15,36 @@
 
 #include <keiland.h>
 
+struct wl_display;
+struct wl_registry;
+struct wl_event_queue;
+struct wl_interface;
+
+/*
+ * A search for one global of a display (globals.c, WS131 p015), for
+ * libkeiland's objects: the global's name (0 when the compositor has none)
+ * and version, the registry it is bound from -- an application's, when
+ * the display is one (no search then), otherwise a registry of the
+ * search's own on a queue of its own -- and the search's objects.
+ */
+struct keiui_global_search {
+	uint32_t name;
+	uint32_t version;
+	struct wl_registry *registry;
+	struct wl_event_queue *queue;
+	struct wl_display *wrapper;
+	struct wl_registry *own;
+	const char *interface;
+};
+
+/* Finds a global (0 or ENOMEM), binds it on the default queue (NULL when it cannot), and ends the search. */
+int keiui_global_find(struct keiui_global_search *search, struct wl_display *display, const char *interface);
+void *keiui_global_bind(struct keiui_global_search *search, const struct wl_interface *type, uint32_t version);
+void keiui_global_end(struct keiui_global_search *search);
+
+/* The registry of a display's application, with its global of an interface (*name 0 when none); NULL when the display is no application's (app.c). */
+struct wl_registry *keiui_app_global(struct wl_display *display, const char *interface, uint32_t *name, uint32_t *version);
+
 /*
  * What a widget's record says of it (ui.c): it takes the keyboard, it
  * takes a drag (a slider), it shuts out the widgets drawn before it from

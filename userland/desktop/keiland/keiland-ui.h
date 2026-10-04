@@ -878,6 +878,186 @@ int kl_window_dispatch_fds(struct kl_window *window, const int *fds, unsigned co
 uint64_t kl_clock_us(void);
 
 /*
+ * KL_VERSION 26 (WS131 p015, plan/ws131/design.md section 6): the
+ * application.  One kl_app is one connection to the compositor: its
+ * globals are learnt with one roundtrip when it opens, and its windows,
+ * menus, titlebars and glass bind what they need from that one registry
+ * without searching again.  Its windows' input, the actions chosen in their
+ * menus and controls, and the descriptors it watches arrive as one queue of
+ * kl_app_event values, in the order they happened: the application waits
+ * with kl_app_dispatch and takes them with kl_app_take (a window of an
+ * application has no queue of its own; kl_window_take finds nothing).  A
+ * held key repeats by itself within kl_app_dispatch, after the events read
+ * with it (a release read in the same dispatch stops it first, BUG-111).
+ * The desktop's system (network, sound, power, kl_system) is the
+ * application's too.  A window made by kl_window_open is still a
+ * connection of its own.
+ *
+ * Every call is made from the one thread that opened the application.
+ */
+struct kl_app;
+struct kl_system;
+struct kl_glass_panel;
+
+/* The most descriptors an application watches. */
+#define KL_APP_FDS_MAX		16U
+
+/* What a watched descriptor is waited for, and what it became (a hang-up or an error is always told). */
+#define KL_APP_FD_READ		1U
+#define KL_APP_FD_WRITE	2U
+#define KL_APP_FD_HANGUP	4U
+
+/* The kinds of an application's event. */
+#define KL_APP_WINDOW		1U
+#define KL_APP_FD		2U
+
+/*
+ * What an application is opened with.  Either pointer may be NULL:
+ * display (the WAYLAND_DISPLAY one) and application (the app_id its
+ * windows get when their options name none).
+ */
+struct kl_app_options {
+	const char *display;
+	const char *application;
+};
+
+/*
+ * One event of an application: its kind; for KL_APP_WINDOW the window and
+ * its input (as kl_window_take gave it; KL_WINDOW_ACTION for an action
+ * chosen), for KL_APP_FD the descriptor and what it became (KL_APP_FD_*).
+ */
+struct kl_app_event {
+	unsigned kind;
+	struct kl_window *window;
+	struct kl_window_event input;
+	int fd;
+	unsigned ready;
+};
+
+/*
+ * Opens an application: connects, learns the globals and binds what every
+ * window shares.  Returns NULL with errno set: a connection's error,
+ * EOPNOTSUPP (no compositor or shell), EPROTO, ENOMEM.
+ */
+struct kl_app *kl_app_open(const struct kl_app_options *options);
+
+/*
+ * Closes the windows still open, the system, and the connection.
+ */
+void kl_app_close(struct kl_app *app);
+
+/*
+ * Waits up to a timeout (milliseconds, -1 for ever; no wait while events
+ * are queued or a repeat is due) for the compositor or a watched
+ * descriptor, and queues what happened.  Returns 0, or -1 when the
+ * connection is broken.
+ */
+int kl_app_dispatch(struct kl_app *app, int timeout_ms);
+
+/*
+ * Watches a descriptor for KL_APP_FD_READ and KL_APP_FD_WRITE (0 stops
+ * watching it): while it is ready, each dispatch queues a KL_APP_FD event.
+ * Returns 0, EINVAL, or ENOSPC past KL_APP_FDS_MAX.
+ */
+int kl_app_watch_fd(struct kl_app *app, int fd, unsigned events);
+
+/*
+ * Takes the oldest event.  Returns 1 with it in *event, 0 when none is queued.
+ */
+int kl_app_take(struct kl_app *app, struct kl_app_event *event);
+
+/*
+ * The application's system, opened the first time it is asked for; NULL
+ * with errno set when the compositor has none (kl_system_open).
+ */
+struct kl_system *kl_app_system(struct kl_app *app);
+
+/* The application's connection, for libkeiland's other objects. */
+struct wl_display *kl_app_display(const struct kl_app *app);
+
+/*
+ * Makes a window of the application (options->display is not used; a
+ * NULL application takes the application's).  It is configured when this
+ * returns, as kl_window_open's is.  Returns NULL with errno set as
+ * kl_window_open does.
+ */
+struct kl_window *kl_app_window_create(struct kl_app *app, const struct kl_window_options *options);
+
+/*
+ * The declarative menus, controls and glass of a window (KL_VERSION 26).
+ * The application gives each as a table, as often as it likes; the
+ * library compares it with the one shown and sends only what changed.
+ * An item or a control chosen is queued among the window's inputs as a
+ * KL_WINDOW_ACTION input: its action in code, the item's or control's ID
+ * in id, and a breadcrumb's part in begin (0 otherwise).  An action's
+ * state applies to every item and control of that action, in the menu,
+ * the controls and later popups.  Without the compositor's System Menu,
+ * Titlebar Presentation or glass, the calls return ENOTSUP and nothing is
+ * shown; the window works as before.  Each returns 0 or an errno value.
+ */
+#define KL_WINDOW_ACTION	17U
+
+/* An action's state (bits; 0 is enabled, unchecked and shown). */
+#define KL_ACTION_DISABLED	1U
+#define KL_ACTION_CHECKED	2U
+#define KL_ACTION_HIDDEN	4U
+
+/*
+ * One menu item: its ID and its parent's (KL_MENU_ROOT for a top-level
+ * item), its type (KL_MENU_ITEM_*), label, action, role (KL_MENU_ROLE_*)
+ * and shortcut (KL_MENU_* modifiers and an XKB keysym, 0 for none) -- the
+ * fields of libkeiland's menu, in one row.
+ */
+struct kl_menu_entry {
+	uint32_t id;
+	uint32_t parent;
+	unsigned type;
+	const char *label;
+	uint32_t action;
+	unsigned role;
+	unsigned modifiers;
+	uint32_t keysym;
+};
+
+/*
+ * One titlebar control: its ID, role (KL_CONTROL_*), priority
+ * (KL_PRIORITY_*), group, label, and the action its choice queues.
+ */
+struct kl_control_entry {
+	uint32_t id;
+	unsigned role;
+	unsigned priority;
+	unsigned group;
+	const char *label;
+	uint32_t action;
+};
+
+/* The window's menu in zdesktop's System Menu (count 0 takes it away). */
+int kl_window_set_menu(struct kl_window *window, const struct kl_menu_entry *entries, size_t count);
+
+/* The window's titlebar controls (count 0 gives the titlebar back to the menu). */
+int kl_window_set_controls(struct kl_window *window, const struct kl_control_entry *entries, size_t count);
+
+/* The state of an action (KL_ACTION_* bits) in the window's menu, controls and popups. */
+int kl_window_set_action_state(struct kl_window *window, uint32_t action, unsigned state);
+
+/* A context menu of top-level items at (x, y) of the window, for its last press. */
+int kl_window_popup_menu(struct kl_window *window, const struct kl_menu_entry *entries, size_t count, int x, int y);
+
+/* The window's glass panels, from its next frame (count 0 takes them away). */
+int kl_window_set_glass(struct kl_window *window, const struct kl_glass_panel *panels, size_t count);
+
+/*
+ * A Vulkan surface over a window shown with KL_PRESENT_NONE, for an
+ * application drawing with its own Vulkan instance (which enabled
+ * VK_KHR_wayland_surface).  Declared for a program that included the
+ * Vulkan header first.  Returns 0, EINVAL, or EIO when Vulkan refused.
+ */
+#if defined(VK_VERSION_1_0)
+int kl_window_vulkan_surface(struct kl_window *window, VkInstance instance, VkSurfaceKHR *surface);
+#endif
+
+/*
  * The widgets (widgets.c, field.c, list.c, cards.c; KUI_VERSION 4,
  * plan/ws090/design.md section 3): each is drawn by one call during a
  * frame, which also records where it is for the input and reports what
