@@ -15,6 +15,7 @@
 | P3 / generation7（2026-10-04、終了） | bug-analyzer（Fable 5.1、high） | BUG-158 の解析（WS005・WS004） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（解析、finished） | — | stopped | 52df29f → main b7bced6 |
 | P3 / generation8（2026-10-04、ラップアップで終了、最後 762efbc） | phase-runner-mid（Opus 5.5、medium） | Bug の修正: BUG-158 の実装、流れ B（q685〜q690）、BUG-165 の残り（P1 の区切りの後） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q684（実装、T1-089・UAT 待ち）、q685 は読みで中断 | q685 の残り・q686〜q690（generation9 で、P4 の終了の後） | stopped | 5ecc43b・48cf8f6・762efbc を統合 |
 | P4 / generation2（2026-10-04） | hard-debugger（Fable 5.1、high） | BUG-158 の AX211 passthrough での解析（q684-i02） | `/home/awe/zedBSD-worktrees/p4` / `agent/p4` | q684-i02 | — | running | base main |
+| T1（2026-10-04 19 時の generation、T1-091 の後に終了） | test-runner | 試験 | 同上 | — | — | stopped | T1-091 PASS |
 | T1（2026-10-04 17 時の generation、終了） | test-runner | 試験 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | — | — | stopped（必要な時に起動） | TQ-1・TQ-2・T1-086〜T1-090 |
 | P5〜P8 | — | 未配属 | — | — | — | N=4 の間は起動しない | — |
 
