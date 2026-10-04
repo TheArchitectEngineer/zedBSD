@@ -2,7 +2,7 @@
 
 # ws132-p002: /dev/system の事象の核、UAPI、送り手、KERN_SYSTEM_GET_POWER
 
-Status: in-progress（2026-10-05 P1 generation17 / q707-i01。実装・build・host の試験まで。QEMU の試験を Q1 経由で T1 に依頼する。結果の判定まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-132 で p002-guest を新しい guest で 2 回とも PASS（kernel の poll の直し 6c4b9e10 を含む image）、T1-106 の stick の事象）。以前: in-progress（2026-10-05 P1 generation17 / q707-i01。実装・build・host の試験まで。QEMU の試験を Q1 経由で T1 に依頼する。結果の判定まで cleared にしない）
 Disposition: normal
 Parent: [WS132](../ws.md)
 Queue: q707 / q707-i01（Q1 の投入）。design-reviewer は省く（2026-10-05 ユーザー）
@@ -72,3 +72,7 @@ T1-106 の `p002-guest.sh` は FAIL ×2（2 回とも同じ）。どちらも試
 - stick の disk: 照合が subject を `[a-z]+[0-9]+` としていたが、disk は `sda`（数字無し）。`[a-z]+[0-9]*` に直した。
 - keyboard・adapter: QMP の device_add が `usb port 5 (bus xhci.0) not found (in use?)`・`port 6` で断られた。harness の device が port 1〜3 を使い、qemu-xhci の残りは USB 3 の port（full speed の device は付かない）。stick を抜いた後の port 4 に keyboard、その後に adapter を挿すようにした（期待の `port=` も 4、adapter は vendor 0525）。
 - 再試験: T1 に Q1 経由で依頼（同じ image、`plan/ws132/tests/p002-guest.sh`）。
+
+## Q1 の判定（2026-10-05）
+
+T1-132 で p002-guest を新しい guest で 2 回とも PASS（kernel の poll の直し 6c4b9e10 を含む image）、T1-106 の stick の事象。**cleared**。

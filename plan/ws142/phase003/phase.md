@@ -2,7 +2,7 @@
 
 # ws142-p003: タッチパッドの gesture
 
-Status: in-progress（2026-10-05 P1 generation17。実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定と実機の UAT まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-132 で p003-guest を 2 回とも PASS（速さの計算の直し 3e5b9f20 の後）、wiseview-pad.png を Q1 が目視（pad の gesture で開いた Wiseview））。以前: in-progress（2026-10-05 P1 generation17。実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定と実機の UAT まで cleared にしない）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: Q1 の指示（2026-10-05、D1・D3・D10 決定済み）
@@ -52,3 +52,7 @@ Queue: Q1 の指示（2026-10-05、D1・D3・D10 決定済み）
 
 - QEMU の結果の判定、実機の UAT。
 - TAP3 と 2 本指の左右（切り替えの中での移動）は p005。
+
+## Q1 の判定（2026-10-05）
+
+T1-132 で p003-guest を 2 回とも PASS（速さの計算の直し 3e5b9f20 の後）、wiseview-pad.png を Q1 が目視（pad の gesture で開いた Wiseview）。**cleared**。
