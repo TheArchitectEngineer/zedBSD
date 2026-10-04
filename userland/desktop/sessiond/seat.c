@@ -6,9 +6,10 @@
  */
 
 /*
- * The seat's devices: the display (/dev/gpu*) and the input devices
- * (/dev/input/event*) belong to the seat's user, 0600, while sessiond runs
- * a greeter or a session, and go back to root when it stops.
+ * The seat's devices: the display (/dev/gpu*), the input devices
+ * (/dev/input/event*) and the panel's light (/dev/backlight/backlight*,
+ * ws113-p013) belong to the seat's user, 0600, while sessiond runs a
+ * greeter or a session, and go back to root when it stops.
  *
  * devfs keeps an owner and a mode given to a name, also for a node made
  * again under that name (a keyboard plugged in again).  A node that appears
@@ -34,9 +35,13 @@
 /* The input devices' directory. */
 #define SEAT_INPUT_DIRECTORY	"/dev/input"
 
+/* The backlight devices sessiond looks for: /dev/backlight/backlight0 to backlight3. */
+#define SEAT_BACKLIGHT_COUNT	4U
+
 /* devfs's own modes, which the devices go back to. */
 #define SEAT_GPU_MODE		0666
 #define SEAT_INPUT_MODE		0640
+#define SEAT_BACKLIGHT_MODE	0644
 
 /* The wheel group, which owns the input devices when no one has the seat. */
 #define SEAT_WHEEL_GID		0
@@ -63,6 +68,12 @@ sessiond_seat_give(
 
 	/* Every input device. */
 	seat_input(uid, gid, 0600);
+
+	/* Every backlight, which the session's compositor sets. */
+	for (index = 0U; index < SEAT_BACKLIGHT_COUNT; index++) {
+		snprintf(path, sizeof(path), "/dev/backlight/backlight%u", index);
+		seat_set(path, uid, gid, 0600);
+	}
 }
 
 /*
@@ -83,6 +94,12 @@ sessiond_seat_restore(
 
 	/* Every input device, which root and wheel read. */
 	seat_input(0, SEAT_WHEEL_GID, SEAT_INPUT_MODE);
+
+	/* Every backlight, which anyone reads and root sets. */
+	for (index = 0U; index < SEAT_BACKLIGHT_COUNT; index++) {
+		snprintf(path, sizeof(path), "/dev/backlight/backlight%u", index);
+		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_BACKLIGHT_MODE);
+	}
 }
 
 /* Gives one device node an owner and a mode, when the node is there. */
