@@ -81,3 +81,5 @@ Future Work は実行を許可しない。
 | F-072 | パフォーマンス改善のチケット（まとめて改善） | 2026-10-03 user「C5の200msは問題視しません。clearでOKです。理由は、あとでパフォーマンス改善のチケットを作ってまとめて改善するからです。」 最初の項目: C5 の窓の開閉の最初の frame（QEMU で 1 回目だけ 200 ms 前後、T1-006）。他の速さの項目（WS094 の L3、WS127 の速さ、WS102 の手書きの遅れ、BUG-143 の入力の遅れなど）もここに集める | WS099・WS094・WS127・WS102 | promoted（[WS139](ws139/ws.md)、2026-10-04） | ユーザーがチケットを作るとき | — |
 | F-073 | 試験の image の作り方の残り（WS136 から）: ws101 の accel の noct（toolchain の変更の許可が要る）、指定の image の FAT を差し替える道具（ws073 p015-hybrid・ws044 ptrace・ws013・boot-shots） | WS136 の規則（config.mk ＋ tree の file の複写）にそろえる | 2026-10-04 WS136 の完了 | 使う時に直す、toolchain はユーザーの許可 |
 | F-074 | Image Viewer の画像の copy（image/png を clipboard へ） | clipboard の API が text/plain だけで、libkeiui に画像の mime の API と PNG の書き出しが要る | 2026-10-04 ws128-p005（P2） | WS131 の app の移行（libkeiui を libkeiland に吸収、ベータ1 の後）の時に `kl_` の clipboard の API として入れる。WS131 の間は WS090（libkeiui）を動かさない決め（D9）のため今は入れない |
+
+| fw-docs-ids | docs/ の本文に残る Plan の ID（WS・BUG・q の番号、2026-10-05 で 58 箇所、docs/agent は対象外）を消し、必要なら中身を言葉で書く | docs は目標の設計で plan に依らない規則 | 2026-10-05 ユーザー「消します。ただし後回しでいいです。」 | 決定済み・後回し | 空いた枠、または ws129-p005（RC）の文書の見直し | — |

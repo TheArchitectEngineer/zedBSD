@@ -73,8 +73,6 @@
 <!-- master:pending-decisions:start -->
 - 2026-10-04 17 時に決定: BUG-166 のタッチパッドは「押し込み＋タップドラッグ」、5330 の ACPI の table の読み取り専用の取り出しと commit を許可（queue.md の決定 (1)(2)）。
 - WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
-- host の sysctl の設定を `/etc/sysctl.d` に残すか。
-- docs/ の本文に残る Plan の ID の記述を消すか。
 - 5330 の host の設定: 2026-10-04 user が iwlwifi の blacklist と再起動・設定の変更を許可（P4 が実施）。
 <!-- master:pending-decisions:end -->
 <!-- awesome-plan-current:end -->
