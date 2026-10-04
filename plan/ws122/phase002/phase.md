@@ -12,7 +12,7 @@ Queue: Q1 の指示（2026-10-05、ベータ1 の RC 10/13 までに簡単な pl
 
 - libkeiland の `kl_app` で書く player `videoplayer`（`userland/desktop/videoplayer/`）。FFmpeg の library（p001 の package、LGPL）で demux・decode し、絵を libkeiland の canvas に、音を audiod に出す。
 - できること: 開く（引数の file、または File > Open の file chooser）、再生・一時停止、停止（先頭で一時停止）、10 秒の前後のシーク（key と menu）、bar の slider でのシーク、全画面。
-- 範囲の外: GPU の decode（WS083、ベータ2）、独自の container の読み込みと dlopen の add-in（ws.md の段 2・3）、字幕・音量・playlist、App Home・Files への登録（下の「残り」）。
+- 範囲の外: GPU の decode（WS083、ベータ2）、独自の container の読み込みと dlopen の add-in（ws.md の段 2・3）、字幕・音量・playlist。
 
 ## 設計
 
@@ -41,5 +41,10 @@ Queue: Q1 の指示（2026-10-05、ベータ1 の RC 10/13 までに簡単な pl
 
 ## 残り
 
-- App Home の一覧（`userland/desktop/wayland/apps.conf`、無い program の行は出ない）と Files の「開く」（`userland/desktop/files/apps.c` の built-in に `video/*`）への登録は他の WS の source なので Q1 に提案する。
-- audiod の client の共有の library への移動（上）。
+- audiod の client の共有の library への移動（上）。Q1 が Future Work に `fw-audiod-client` として登録した。
+
+## 追加（2026-10-05、Q1 が WS122 の範囲に足した）
+
+- App Home: `userland/desktop/wayland/apps.conf` に `Video Player|/bin/videoplayer|video movie player mp4 mkv webm film|7a4fd0|`（絵は無く頭文字。無い program の行は出ないので videoplayer の無い image は変わらない）。
+- Files: `userland/desktop/files/apps.c` の built-in に `video/*` → `/bin/videoplayer %f`（needs `videoplayer`、入っている時だけ出る）。Files の image（videoplayer 無し）では mp4 の扱いは変わらない。
+- 確認: `sh plan/tools/files/host-default.sh` PASS、files の zedBSD の build warning 0、style-check 違反 0。Files の guest の試験は mp4 を開かない（`make-home.sh` の `Movies/Trip.mp4` を開く試験は無い）。
