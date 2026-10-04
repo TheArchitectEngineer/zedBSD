@@ -84,7 +84,7 @@ user「P4のみを実行するqueue.mdを書いてください。22時の5時間
 | q687 / q687-i01 | P2（予定） | [BUG-173](bugs/BUG-173.md) | sh の履歴の全角の幅。host で再現 | なし | pending |
 | q688 / q688-i01 | P2（予定） | [BUG-171](bugs/BUG-171.md)・[BUG-176](bugs/BUG-176.md)・[BUG-157](bugs/BUG-157.md) | 小さな UI の束: opaque が不透明にならない、起動の直後の network の表示、間違えた鍵の文言 | なし | pending |
 | q689 / q689-i01 | P2（予定） | [BUG-166](bugs/BUG-166.md)・[BUG-167](bugs/BUG-167.md)（WS099・WS081） | タッチパッドの窓のドラッグと押し込み | 仕様は決定済み（上の決定 (1)）、q677（DSDT）の後 | pending |
-| q690 / q690-i01 | P2（予定） | [BUG-172](bugs/BUG-172.md)・[BUG-174](bugs/BUG-174.md) | key のリピートの不安定、WiFi の address への SSH（実機が要る調べ） | 実機の日 | pending |
+| q690 / q690-i01 | P2（予定） | [BUG-172](bugs/BUG-172.md)・[BUG-191](bugs/BUG-191.md)・[BUG-174](bugs/BUG-174.md) | key のリピートの不安定と Settings の repeat の設定が効かない（同じ根の見込み、読みと QEMU は先に進められる）、WiFi の address への SSH（実機が要る調べ） | 実機の日 | pending |
 
 **流れ C（完全に独立）**: 2026-10-04 user「完全に独立した作業として、Raspberry Pi 4のグラフィックドライバを作成します。…これは独立したWSで、17時以降に着手します。スケジューリングと、WSの作成か、既存ならアップデートをお願いします。」
 
