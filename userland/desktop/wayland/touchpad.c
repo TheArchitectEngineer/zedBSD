@@ -98,6 +98,14 @@
 #define DECIDED_SPENT			3U
 
 /*
+ * A gesture's speed is its travel over about the last SPEED_WINDOW_MS,
+ * never divided by less than SPEED_SPAN_MS: reports read in a burst (the
+ * compositor late, the reports bunched) then give no false flick (T1-126).
+ */
+#define SPEED_WINDOW_MS			100U
+#define SPEED_SPAN_MS			50U
+
+/*
  * The pointer's gain in pixels per millimetre, in 1/256: GAIN_SLOW up to
  * SPEED_SLOW millimetres per second, rising to GAIN_FAST at SPEED_FAST and
  * above.
@@ -123,7 +131,9 @@ static void fingers_changed(struct zwl_touchpad *pad, uint64_t now_ms, unsigned 
 static uint32_t edges_of_fingers(const struct zwl_touchpad *pad);
 static void gesture_motion(struct zwl_touchpad *pad, uint64_t now_ms, unsigned fingers, int64_t dx_um, int64_t dy_um, struct zwl_touchpad_actions *actions);
 static void gesture_begin(struct zwl_touchpad *pad, uint64_t now_ms, uint32_t gesture, unsigned fingers, struct zwl_touchpad_actions *actions);
-static void gesture_end(struct zwl_touchpad *pad, uint32_t phase, struct zwl_touchpad_actions *actions);
+static void gesture_end(struct zwl_touchpad *pad, uint32_t phase, uint64_t now_ms, struct zwl_touchpad_actions *actions);
+static void gesture_sample(struct zwl_touchpad *pad, uint64_t now_ms);
+static int64_t gesture_speed_at(const struct zwl_touchpad *pad, uint64_t now_ms);
 static int64_t gesture_along(uint32_t gesture, int64_t dx_um, int64_t dy_um);
 static void push_gesture(struct zwl_touchpad_actions *actions, uint32_t gesture, uint32_t phase, int64_t travel_um, int64_t speed);
 static void push_button(struct zwl_touchpad_actions *actions, uint32_t button, uint32_t pressed);
@@ -339,7 +349,7 @@ zwl_touchpad_release_all(
 
 	/* A gesture under way is given up. */
 	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
-		gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, actions);
+		gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, pad->last_frame_ms, actions);
 		pad->decided = DECIDED_SPENT;
 	}
 }
@@ -385,7 +395,7 @@ take_button(
 
 		/* A gesture under way is given up, and the touch makes no other. */
 		if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
-			gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, actions);
+			gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, pad->last_frame_ms, actions);
 			pad->decided = DECIDED_SPENT;
 		}
 
@@ -570,7 +580,7 @@ touch_end(
 
 	/* A gesture ends with its fingers. */
 	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
-		gesture_end(pad, ZWL_TOUCHPAD_PHASE_END, actions);
+		gesture_end(pad, ZWL_TOUCHPAD_PHASE_END, now_ms, actions);
 		return;
 	}
 
@@ -716,15 +726,12 @@ fingers_changed(
 	unsigned fingers,
 	struct zwl_touchpad_actions *actions)
 {
-	/* The time is not needed: the end's speed is the last update's. */
-	(void)now_ms;
-
 	/* A gesture under way. */
 	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
 		if (fingers > pad->gesture_fingers) {
-			gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, actions);
+			gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, now_ms, actions);
 		} else {
-			gesture_end(pad, ZWL_TOUCHPAD_PHASE_END, actions);
+			gesture_end(pad, ZWL_TOUCHPAD_PHASE_END, now_ms, actions);
 		}
 
 		/* The rest of the touch neither scrolls nor makes another gesture. */
@@ -797,9 +804,7 @@ gesture_motion(
 	int64_t dy_um,
 	struct zwl_touchpad_actions *actions)
 {
-	uint64_t elapsed;
 	int64_t delta;
-	int64_t instant;
 	int64_t across;
 	int64_t down;
 	uint32_t gesture;
@@ -808,12 +813,8 @@ gesture_motion(
 	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
 		delta = gesture_along(pad->gesture, dx_um, dy_um);
 		pad->gesture_travel_um += delta;
-		elapsed = now_ms - pad->gesture_last_ms;
-		if (elapsed < FRAME_MS_LEAST)
-			elapsed = FRAME_MS_LEAST;
-		instant = delta * 1000 / (int64_t)elapsed;
-		pad->gesture_speed = (pad->gesture_speed + instant) / 2;
-		pad->gesture_last_ms = now_ms;
+		gesture_sample(pad, now_ms);
+		pad->gesture_speed = gesture_speed_at(pad, now_ms);
 		push_gesture(actions, pad->gesture, ZWL_TOUCHPAD_PHASE_UPDATE, pad->gesture_travel_um, pad->gesture_speed);
 		return;
 	}
@@ -888,23 +889,83 @@ gesture_begin(
 	pad->decided = DECIDED_GESTURE;
 	pad->gesture_travel_um = gesture_along(gesture, pad->gesture_dx_um, pad->gesture_dy_um);
 	pad->gesture_speed = 0;
-	pad->gesture_last_ms = now_ms;
+	pad->gesture_sample_next = 0;
+	pad->gesture_sample_count = 0;
+	gesture_sample(pad, now_ms);
 	pad->touch_travel_um += TAP_TRAVEL_UM;
 	push_gesture(actions, gesture, ZWL_TOUCHPAD_PHASE_BEGIN, pad->gesture_travel_um, 0);
 }
 
-/* Ends a gesture (its fingers lifted) or gives it up (a finger more). */
+/* Ends a gesture (its fingers lifted) or gives it up (a finger more), with its speed at that time. */
 static void
 gesture_end(
 	struct zwl_touchpad *pad,
 	uint32_t phase,
+	uint64_t now_ms,
 	struct zwl_touchpad_actions *actions)
 {
-	/* The end, with the travel and the last speed. */
+	/* The end, with the travel and the speed (fingers that stopped before they lifted are slow). */
+	pad->gesture_speed = gesture_speed_at(pad, now_ms);
 	push_gesture(actions, pad->gesture, phase, pad->gesture_travel_um, pad->gesture_speed);
 	pad->gesture = ZWL_TOUCHPAD_GESTURE_NONE;
 	pad->gesture_travel_um = 0;
 	pad->gesture_speed = 0;
+}
+
+/* Keeps the gesture's travel at a report, the oldest kept one giving way. */
+static void
+gesture_sample(
+	struct zwl_touchpad *pad,
+	uint64_t now_ms)
+{
+	/* In the ring. */
+	pad->gesture_sample_ms[pad->gesture_sample_next] = now_ms;
+	pad->gesture_sample_um[pad->gesture_sample_next] = pad->gesture_travel_um;
+	pad->gesture_sample_next = (pad->gesture_sample_next + 1U) % ZWL_TOUCHPAD_SAMPLES;
+	if (pad->gesture_sample_count < ZWL_TOUCHPAD_SAMPLES)
+		pad->gesture_sample_count++;
+}
+
+/*
+ * Measures a gesture's speed at a time (micrometres a second): its travel
+ * since the newest kept report at least SPEED_WINDOW_MS old (or the oldest
+ * kept), over that time but never less than SPEED_SPAN_MS.
+ */
+static int64_t
+gesture_speed_at(
+	const struct zwl_touchpad *pad,
+	uint64_t now_ms)
+{
+	uint64_t base_ms;
+	uint64_t span;
+	int64_t base_um;
+	unsigned found;
+	unsigned age;
+	unsigned slot;
+
+	/* No report kept: no speed. */
+	if (pad->gesture_sample_count == 0U)
+		return 0;
+
+	/* From the newest back, the first old enough; else the oldest. */
+	base_ms = 0;
+	base_um = 0;
+	found = 0;
+	for (age = 1; age <= pad->gesture_sample_count && !found; age++) {
+		slot = (pad->gesture_sample_next + ZWL_TOUCHPAD_SAMPLES - age) % ZWL_TOUCHPAD_SAMPLES;
+		base_ms = pad->gesture_sample_ms[slot];
+		base_um = pad->gesture_sample_um[slot];
+		if (now_ms >= base_ms && now_ms - base_ms >= SPEED_WINDOW_MS)
+			found = 1;
+	}
+
+	/* The travel since over the time since, at least SPEED_SPAN_MS. */
+	span = SPEED_SPAN_MS;
+	if (now_ms >= base_ms && now_ms - base_ms > span)
+		span = now_ms - base_ms;
+
+	/* Succeeded: the speed. */
+	return (pad->gesture_travel_um - base_um) * 1000 / (int64_t)span;
 }
 
 /* Gives a motion along a gesture's way: up for BOTTOM2 and UP3, right for LEFT2, left for RIGHT2. */
