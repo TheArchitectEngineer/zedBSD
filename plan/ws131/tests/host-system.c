@@ -28,6 +28,7 @@
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "userland/desktop/libkeiland/system/system-private.h"
+#include "userland/desktop/libkeiland/system/system-protocol.h"
 
 #include <keiland.h>
 #include <wayland-client.h>
@@ -1039,6 +1040,8 @@ test_both_ends(void)
 	CHECK(system != NULL, "open: errno %d", errno);
 	if (system == NULL)
 		return;
+	/* The library's table describes the version it binds (zedBSD's libwayland refuses more than the table; T1-144). */
+	CHECK(kl_system_manager_v1_interface.version == (int)KL_SYSTEM_MANAGER_VERSION, "manager table version %d", kl_system_manager_v1_interface.version);
 	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");

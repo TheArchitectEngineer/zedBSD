@@ -31,3 +31,12 @@ Queue: q723（P2）
 - build（warning 0）: zedBSD の files・wayland・settings・monitor（libkeiland）、Linux の Keiland 全体（-Werror）。`keiland-os-boundary/check.sh` PASS。style-check: 新しい file は違反 0、変えた既存の file は新しい違反 0。
 - 未実施: QEMU（T1: `config-amd64-p004.mk` の image で `p005-guest.sh`）、実機。
 - 既知の制限: mount したまま抜かれた媒体は kernel の BUG-192 のため一覧に残る（p004 の記録）。
+
+## T1-144・145（2026-10-05）
+
+- bar の媒体の icon（new・icon=1・click で `files --devices`）と抜去で消えるのは ok。FAIL ×2: Files の `ZFILES DEVICE …` の行が一つも出ない。
+- 原因: `libkeiland/system/system-protocol.c` の `kl_system_manager_v1_interface` の version が 4 のままで、p005 で bind を version 5 にした。zedBSD の libwayland の `wl_registry_bind` は interface の表の version を超える bind を EINVAL で断るので manager が NULL になり、`system_bind` はそれを ENOMEM と報告していた（Files の log `ZFILES DEVICES none errno=4`）。host の試験は Linux の libwayland で走り、これを断らないため通っていた。**同じ表を使う kl_system の全 client（Settings・Monitor など）も p005 の後は guest で manager を取れなかった。**
+- 直し: 表の version を `KL_SYSTEM_MANAGER_VERSION`（5）に。`system_bind` は bind の失敗の errno（無ければ ENOMEM）を返す。`plan/ws131/tests/host-system.c` に表の version が `KL_SYSTEM_MANAGER_VERSION` と等しいことの確認を足した。
+- 確認: `plan/ws131/tests/host-system.sh` PASS、`run-host-files-devices.sh` PASS、build（warning 0）: zedBSD の files・settings・wayland・monitor・volumed、Linux の Keiland（-Werror）。style-check: 変えた file に新しい違反 0。
+- 未実施: QEMU の再試験（T1 に依頼）。
+- T1-147（WS089 の `settings-wifi-bugs.sh`、`ZSETTINGS NETWORK none`）も同じ原因: 88296ab（T1-109）では表と `KL_SYSTEM_MANAGER_VERSION` がどちらも 3、ws160 で両方 4、p005 で定数だけ 5 にした。表を定数に結んだので、この直しで Settings の kl_system も戻る（`settings-p021.sh` も同じ）。

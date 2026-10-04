@@ -84,7 +84,7 @@ static const struct wl_message system_manager_events[] = {
 /* kl_system_manager_v1, version 4: eight requests (get_monitor since 2, get_account since 4) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
-	4,
+	KL_SYSTEM_MANAGER_VERSION,
 	8,
 	system_manager_requests,
 	1,

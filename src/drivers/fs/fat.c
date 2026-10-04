@@ -17,6 +17,7 @@
 #include <kern/io-stats.h>
 #include "kern/namecache.h"
 #include "kern/namei.h"
+#include "kern/panic.h"
 #include "kern/clock.h"
 #include <kern/kcrt.h>
 
@@ -596,6 +597,8 @@ static int fat_identify(struct disk *disk, struct block_identity *identity);
 static int fat_mount_impl(struct mount *mountp);
 static int fat_sync_mount(struct mount *mountp);
 static void fat_unmount_impl(struct mount *mountp);
+static int fat_prepare_unmount_revoked(struct mount *mountp);
+static void fat_commit_unmount_revoked(struct mount *mountp);
 static int fat_statvfs(struct mount *mountp, struct statvfs *result);
 static int fat_sfn_equal(const uint8_t entry[32], const char name[11]);
 static int valid_cluster(uint32_t cluster, uint32_t end_of_chain);
@@ -854,6 +857,8 @@ const struct filesystem_type drv_fat_filesystem_type = {
 	.mount = fat_mount_impl,
 	.sync = fat_sync_mount,
 	.statvfs = fat_statvfs,
+	.prepare_unmount_revoked = fat_prepare_unmount_revoked,
+	.commit_unmount_revoked = fat_commit_unmount_revoked,
 	.unmount = fat_unmount_impl,
 	.alloc_inode = fat_alloc_inode,
 	.free_inode = fat_free_inode,
@@ -11708,6 +11713,72 @@ fat_sync_mount(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Checks that a mount whose medium is gone (a stick pulled out while
+ * mounted) may be taken down without writing to it.  Nothing changes here.
+ */
+static int
+fat_prepare_unmount_revoked(
+	struct mount *mountp)
+{
+	struct fat_mount_state *state;
+	int media;
+
+	/* Only a mount of this driver on a medium that is gone for good. */
+	if (mountp == NULL || mountp->m_disk == NULL)
+		return EINVAL;
+	media = disk_media_status(mountp->m_disk);
+	if (media == 0)
+		return EINVAL;
+	state = fat_mount_state(mountp);
+	if (state == NULL)
+		return EINVAL;
+
+	/* Succeeded: the caller has every file and inode owner in hand. */
+	return 0;
+}
+
+/*
+ * Drops what the mount still owed the lost medium: no write, no sync, no
+ * FSInfo.  The closes and chains that were waiting go with it.
+ */
+static void
+fat_commit_unmount_revoked(
+	struct mount *mountp)
+{
+	struct fat_mount_state *state;
+	struct fat_file_state *file;
+	unsigned long irq;
+	unsigned i;
+	int eligible;
+
+	/* The preflight held and admission is closed. */
+	eligible = fat_prepare_unmount_revoked(mountp);
+	if (eligible != 0)
+		KERN_FATAL("FAT revoked commit without an eligible mount");
+	if (mountp->m_state != MOUNT_STATE_DYING)
+		KERN_FATAL("FAT revoked commit without closed admission");
+	state = fat_mount_state(mountp);
+
+	/* Nothing more is written: a reclaim from here on only defers. */
+	mutex_lock(&state->lock);
+	state->read_only = 1;
+	state->fsinfo_dirty = 0;
+	state->pending_orphan_count = 0;
+	kern_memset(state->pending_orphans, 0, sizeof(state->pending_orphans));
+
+	/* The closes that were still to be written out are given up. */
+	for (i = 0; i < FAT_FILE_MAX; i++) {
+		file = &fat_files[i];
+		irq = spin_lock_irqsave(&fat_pool_lock);
+		if (file->used && file->mount == state)
+			kern_memset(file, 0, sizeof(*file));
+		spin_unlock_irqrestore(&fat_pool_lock, irq);
+	}
+
+	mutex_unlock(&state->lock);
 }
 
 /* Takes a mount out of service and gives its state back. */
