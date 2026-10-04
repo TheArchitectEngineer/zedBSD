@@ -1,0 +1,60 @@
+[  945.964012] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 00 08
+[  946.025971] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 00 01
+[  946.026534] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_finish_hwreset: waiting...
+[  946.029671] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_finish_hwreset: finished.
+[  946.029675] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_power
+[  946.029677] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 00 08
+[  946.094091] i2c_hid_acpi i2c-VEN_06CB:00: asking HID report descriptor
+[  946.094095] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=21 00
+[  946.114331] i2c_hid_acpi i2c-VEN_06CB:00: Report Descriptor: 05 01 09 02 a1 01 85 02 09 01 a1 00 05 09 19 01 29 02 15 00 25 01 75 01 95 02 81 02 95 06 81 01 05 01 09 30 09 31 15 81 25 7f 75 08 95 02 81 06 c0 c0 05 0d 09 05 a1 01 85 03 05 0d 09 22 a1 02
+[  946.114928] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.114930] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 38 02 23 00
+[  946.115488] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.115489] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 38 02 23 00
+[  946.116044] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_get_report
+[  946.116045] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 37 02 23 00
+[  946.123997] input: VEN_06CB:00 06CB:CE65 Mouse as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0005/input/input17
+[  946.124262] input: VEN_06CB:00 06CB:CE65 Touchpad as /devices/pci0000:00/0000:00:15.1/i2c_designware.1/i2c-2/i2c-VEN_06CB:00/0018:06CB:CE65.0005/input/input18
+[  946.124631] hid-multitouch 0018:06CB:CE65.0005: input,hidraw0: I2C HID v1.00 Mouse [VEN_06CB:00 06CB:CE65] on i2c-VEN_06CB:00
+[  946.124636] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.124638] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 00
+[  946.125148] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.125150] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.125623] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.125626] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 03
+[  946.127270] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.127274] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 00
+[  946.127840] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.127843] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.128385] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.128388] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 03
+[  946.142065] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.142069] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 01
+[  946.142912] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.142916] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.143652] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.143655] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 00
+[  946.178245] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.178249] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 00
+[  946.179053] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.179057] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.179895] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.179899] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 03
+[  946.206077] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.206081] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 01
+[  946.206971] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.206976] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.207857] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.207862] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 00
+[  946.216074] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.216078] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 00
+[  946.217105] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.217109] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.217963] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.217966] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 03
+[  946.246056] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.246060] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 3d 03 23 00 04 00 0d 01
+[  946.247050] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.247054] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 34 03 23 00 04 00 04 03
+[  946.248121] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_set_or_send_report
+[  946.248125] i2c_hid_acpi i2c-VEN_06CB:00: i2c_hid_xfer: cmd=22 00 36 03 23 00 04 00 06 00

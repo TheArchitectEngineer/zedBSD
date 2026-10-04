@@ -1,0 +1,22 @@
+/dev/i2c-0
+/dev/i2c-1
+/dev/i2c-2
+hid-descriptor 1e 00 00 01 99 02 21 00 24 00 40 00 25 00 17 00 22 00 23 00 cb 06 65 ce 02 04 00 00 00 00
+plain-read 0 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 1 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 2 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 3 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 4 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 5 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 6 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 7 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 8 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+plain-read 9 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+register-read 0 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+register-read 1 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+register-read 2 length 0 00 00 00 00 00 00 00 00 00 00 00 00
+bind
+i2c-VEN_06CB:00
+module
+uevent
+unbind

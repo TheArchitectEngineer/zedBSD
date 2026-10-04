@@ -1,0 +1,20 @@
+0000:00:15.1 Serial bus controller [0c80]: Intel Corporation Alder Lake PCH Serial IO I2C Controller #1 [8086:51e9] (rev 01)
+	Subsystem: Dell Device [1028:0b02]
+	Control: I/O- Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-
+	Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
+	Latency: 0, Cache Line Size: 64 bytes
+	Interrupt: pin B routed to IRQ 40
+	IOMMU group: 12
+	Region 0: Memory at 4017001000 (64-bit, non-prefetchable) [size=4K]
+	Capabilities: [80] Power Management version 3
+		Flags: PMEClk- DSI- D1- D2- AuxCurrent=0mA PME(D0-,D1-,D2-,D3hot-,D3cold-)
+		Status: D3 NoSoftRst+ PME-Enable- DSel=0 DScale=0 PME-
+	Capabilities: [90] Vendor Specific Information: Len=14 <?>
+	Kernel driver in use: intel-lpss
+	Kernel modules: intel_lpss_pci
+
+0000:00:15.0 Serial bus controller [0c80]: Intel Corporation Alder Lake PCH Serial IO I2C Controller #0 [8086:51e8] (rev 01)
+	Subsystem: Dell Device [1028:0b02]
+	Control: I/O- Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-
+	Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
+	Latency: 0, Cache Line Size: 64 bytes

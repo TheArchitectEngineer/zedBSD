@@ -1,0 +1,1146 @@
+05 01 09 02 a1 01 85 02 09 01 a1 00 05 09 19 01 29 02 15 00 25 01 75 01 95 02 81 02 95 06 81 01 05 01 09 30 09 31 15 81 25 7f 75 08 95 02 81 06 c0 c0 05 0d 09 05 a1 01 85 03 05 0d 09 22 a1 02 15 00 25 01 09 47 09 42 95 02 75 01 81 02 95 01 75 03 25 05 09 51 81 02 75 01 95 03 81 03 05 01 15 00 26 38 05 75 10 55 0e 65 11 09 30 35 00 46 58 04 95 01 81 02 46 79 02 26 f8 02 09 31 81 02 c0 05 0d 09 22 a1 02 15 00 25 01 09 47 09 42 95 02 75 01 81 02 95 01 75 03 25 05 09 51 81 02 75 01 95 03 81 03 05 01 15 00 26 38 05 75 10 55 0e 65 11 09 30 35 00 46 58 04 95 01 81 02 46 79 02 26 f8 02 09 31 81 02 c0 05 0d 09 22 a1 02 15 00 25 01 09 47 09 42 95 02 75 01 81 02 95 01 75 03 25 05 09 51 81 02 75 01 95 03 81 03 05 01 15 00 26 38 05 75 10 55 0e 65 11 09 30 35 00 46 58 04 95 01 81 02 46 79 02 26 f8 02 09 31 81 02 c0 05 0d 09 22 a1 02 15 00 25 01 09 47 09 42 95 02 75 01 81 02 95 01 75 03 25 05 09 51 81 02 75 01 95 03 81 03 05 01 15 00 26 38 05 75 10 55 0e 65 11 09 30 35 00 46 58 04 95 01 81 02 46 79 02 26 f8 02 09 31 81 02 c0 05 0d 09 22 a1 02 15 00 25 01 09 47 09 42 95 02 75 01 81 02 95 01 75 03 25 05 09 51 81 02 75 01 95 03 81 03 05 01 15 00 26 38 05 75 10 55 0e 65 11 09 30 35 00 46 58 04 95 01 81 02 46 79 02 26 f8 02 09 31 81 02 c0 05 0d 55 0c 66 01 10 47 ff ff 00 00 27 ff ff 00 00 75 10 95 01 09 56 81 02 09 54 25 7f 95 01 75 08 81 02 05 09 09 01 25 01 75 01 95 01 81 02 95 07 81 03 05 0d 85 08 09 55 09 59 75 04 95 02 25 0f b1 02 85 0d 09 60 75 01 95 01 15 00 25 01 b1 02 95 07 b1 03 85 07 06 00 ff 09 c5 15 00 26 ff 00 75 08 96 00 01 b1 02 c0 05 0d 09 0e a1 01 85 04 09 22 a1 02 09 52 15 00 25 0a 75 08 95 01 b1 02 c0 09 22 a1 00 85 06 09 57 09 58 75 01 95 02 25 01 b1 02 95 06 b1 03 c0 c0 06 00 ff 09 01 a1 01 85 09 09 02 15 00 26 ff 00 75 08 95 14 91 02 85 0a 09 03 15 00 26 ff 00 75 08 95 14 91 02 85 0b 09 04 15 00 26 ff 00 75 08 95 3d 81 02 85 0c 09 05 15 00 26 ff 00 75 08 95 3d 81 02 85 0f 09 06 15 00 26 ff 00 75 08 95 03 b1 02 85 0e 09 07 15 00 26 ff 00 75 08 95 01 b1 02 c0 
+
+  INPUT(2)[INPUT]
+    Field(0)
+      Physical(GenericDesktop.Pointer)
+      Application(GenericDesktop.Mouse)
+      Usage(2)
+        Button.0001
+        Button.0002
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Report Size(1)
+      Report Count(2)
+      Report Offset(0)
+      Flags( Variable Absolute )
+    Field(1)
+      Physical(GenericDesktop.Pointer)
+      Application(GenericDesktop.Mouse)
+      Usage(2)
+        GenericDesktop.X
+        GenericDesktop.Y
+      Logical Minimum(-127)
+      Logical Maximum(127)
+      Report Size(8)
+      Report Count(2)
+      Report Offset(8)
+      Flags( Variable Relative )
+  INPUT(3)[INPUT]
+    Field(0)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(2)
+        Digitizers.TouchValid
+        Digitizers.TipSwitch
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Report Size(1)
+      Report Count(2)
+      Report Offset(0)
+      Flags( Variable Absolute )
+    Field(1)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.ContactIdentifier
+      Logical Minimum(0)
+      Logical Maximum(5)
+      Report Size(3)
+      Report Count(1)
+      Report Offset(2)
+      Flags( Variable Absolute )
+    Field(2)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.X
+      Logical Minimum(0)
+      Logical Maximum(1336)
+      Physical Minimum(0)
+      Physical Maximum(1112)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(8)
+      Flags( Variable Absolute )
+    Field(3)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.Y
+      Logical Minimum(0)
+      Logical Maximum(760)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(24)
+      Flags( Variable Absolute )
+    Field(4)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(2)
+        Digitizers.TouchValid
+        Digitizers.TipSwitch
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(1)
+      Report Count(2)
+      Report Offset(40)
+      Flags( Variable Absolute )
+    Field(5)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.ContactIdentifier
+      Logical Minimum(0)
+      Logical Maximum(5)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(3)
+      Report Count(1)
+      Report Offset(42)
+      Flags( Variable Absolute )
+    Field(6)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.X
+      Logical Minimum(0)
+      Logical Maximum(1336)
+      Physical Minimum(0)
+      Physical Maximum(1112)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(48)
+      Flags( Variable Absolute )
+    Field(7)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.Y
+      Logical Minimum(0)
+      Logical Maximum(760)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(64)
+      Flags( Variable Absolute )
+    Field(8)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(2)
+        Digitizers.TouchValid
+        Digitizers.TipSwitch
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(1)
+      Report Count(2)
+      Report Offset(80)
+      Flags( Variable Absolute )
+    Field(9)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.ContactIdentifier
+      Logical Minimum(0)
+      Logical Maximum(5)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(3)
+      Report Count(1)
+      Report Offset(82)
+      Flags( Variable Absolute )
+    Field(10)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.X
+      Logical Minimum(0)
+      Logical Maximum(1336)
+      Physical Minimum(0)
+      Physical Maximum(1112)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(88)
+      Flags( Variable Absolute )
+    Field(11)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.Y
+      Logical Minimum(0)
+      Logical Maximum(760)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(104)
+      Flags( Variable Absolute )
+    Field(12)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(2)
+        Digitizers.TouchValid
+        Digitizers.TipSwitch
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(1)
+      Report Count(2)
+      Report Offset(120)
+      Flags( Variable Absolute )
+    Field(13)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.ContactIdentifier
+      Logical Minimum(0)
+      Logical Maximum(5)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(3)
+      Report Count(1)
+      Report Offset(122)
+      Flags( Variable Absolute )
+    Field(14)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.X
+      Logical Minimum(0)
+      Logical Maximum(1336)
+      Physical Minimum(0)
+      Physical Maximum(1112)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(128)
+      Flags( Variable Absolute )
+    Field(15)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.Y
+      Logical Minimum(0)
+      Logical Maximum(760)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(144)
+      Flags( Variable Absolute )
+    Field(16)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(2)
+        Digitizers.TouchValid
+        Digitizers.TipSwitch
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(1)
+      Report Count(2)
+      Report Offset(160)
+      Flags( Variable Absolute )
+    Field(17)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.ContactIdentifier
+      Logical Minimum(0)
+      Logical Maximum(5)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(3)
+      Report Count(1)
+      Report Offset(162)
+      Flags( Variable Absolute )
+    Field(18)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.X
+      Logical Minimum(0)
+      Logical Maximum(1336)
+      Physical Minimum(0)
+      Physical Maximum(1112)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(168)
+      Flags( Variable Absolute )
+    Field(19)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        GenericDesktop.Y
+      Logical Minimum(0)
+      Logical Maximum(760)
+      Physical Minimum(0)
+      Physical Maximum(633)
+      Unit Exponent(-2)
+      Unit(SI Linear : Centimeter)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(184)
+      Flags( Variable Absolute )
+    Field(20)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.ScanTime
+      Logical Minimum(0)
+      Logical Maximum(65535)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(16)
+      Report Count(1)
+      Report Offset(200)
+      Flags( Variable Absolute )
+    Field(21)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.ContactCount
+      Logical Minimum(0)
+      Logical Maximum(127)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(1)
+      Report Offset(216)
+      Flags( Variable Absolute )
+    Field(22)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Button.0001
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(1)
+      Report Count(1)
+      Report Offset(224)
+      Flags( Variable Absolute )
+  INPUT(11)[INPUT]
+    Field(0)
+      Application(ff00.0001)
+      Usage(61)
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+        ff00.0004
+      Logical Minimum(0)
+      Logical Maximum(255)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(61)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  INPUT(12)[INPUT]
+    Field(0)
+      Application(ff00.0001)
+      Usage(61)
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+        ff00.0005
+      Logical Minimum(0)
+      Logical Maximum(255)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(61)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  OUTPUT(9)[OUTPUT]
+    Field(0)
+      Application(ff00.0001)
+      Usage(20)
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+        ff00.0002
+      Logical Minimum(0)
+      Logical Maximum(255)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(20)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  OUTPUT(10)[OUTPUT]
+    Field(0)
+      Application(ff00.0001)
+      Usage(20)
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+        ff00.0003
+      Logical Minimum(0)
+      Logical Maximum(255)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(20)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  FEATURE(8)[FEATURE]
+    Field(0)
+      Application(Digitizers.TouchPad)
+      Usage(2)
+        Digitizers.ContactCountMaximum
+        Digitizers.PadType
+      Logical Minimum(0)
+      Logical Maximum(15)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(4)
+      Report Count(2)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  FEATURE(13)[FEATURE]
+    Field(0)
+      Application(Digitizers.TouchPad)
+      Usage(1)
+        Digitizers.LatencyMode
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(1)
+      Report Count(1)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  FEATURE(7)[FEATURE]
+    Field(0)
+      Application(Digitizers.TouchPad)
+      Usage(256)
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+        ff00.00c5
+      Logical Minimum(0)
+      Logical Maximum(255)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(256)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  FEATURE(4)[FEATURE]
+    Field(0)
+      Logical(Digitizers.Finger)
+      Application(Digitizers.DeviceConfiguration)
+      Usage(1)
+        Digitizers.DeviceMode
+      Logical Minimum(0)
+      Logical Maximum(10)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(1)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  FEATURE(6)[FEATURE]
+    Field(0)
+      Physical(Digitizers.Finger)
+      Application(Digitizers.DeviceConfiguration)
+      Usage(2)
+        Digitizers.SurfaceSwitch
+        Digitizers.ButtonSwitch
+      Logical Minimum(0)
+      Logical Maximum(1)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(1)
+      Report Count(2)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  FEATURE(15)[FEATURE]
+    Field(0)
+      Application(ff00.0001)
+      Usage(3)
+        ff00.0006
+        ff00.0006
+        ff00.0006
+      Logical Minimum(0)
+      Logical Maximum(255)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(3)
+      Report Offset(0)
+      Flags( Variable Absolute )
+  FEATURE(14)[FEATURE]
+    Field(0)
+      Application(ff00.0001)
+      Usage(1)
+        ff00.0007
+      Logical Minimum(0)
+      Logical Maximum(255)
+      Physical Minimum(0)
+      Physical Maximum(65535)
+      Unit Exponent(-4)
+      Unit(SI Linear : Seconds)
+      Report Size(8)
+      Report Count(1)
+      Report Offset(0)
+      Flags( Variable Absolute )
+
+Button.0001 ---> Key.LeftBtn
+Button.0002 ---> Key.RightBtn
+GenericDesktop.X ---> Relative.X
+GenericDesktop.Y ---> Relative.Y
+Digitizers.TouchValid ---> Sync.Report
+Digitizers.TipSwitch ---> Sync.Report
+Digitizers.ContactIdentifier ---> Sync.Report
+GenericDesktop.X ---> Sync.Report
+GenericDesktop.Y ---> Sync.Report
+Digitizers.TouchValid ---> Sync.Report
+Digitizers.TipSwitch ---> Sync.Report
+Digitizers.ContactIdentifier ---> Sync.Report
+GenericDesktop.X ---> Sync.Report
+GenericDesktop.Y ---> Sync.Report
+Digitizers.TouchValid ---> Sync.Report
+Digitizers.TipSwitch ---> Sync.Report
+Digitizers.ContactIdentifier ---> Sync.Report
+GenericDesktop.X ---> Sync.Report
+GenericDesktop.Y ---> Sync.Report
+Digitizers.TouchValid ---> Sync.Report
+Digitizers.TipSwitch ---> Sync.Report
+Digitizers.ContactIdentifier ---> Sync.Report
+GenericDesktop.X ---> Sync.Report
+GenericDesktop.Y ---> Sync.Report
+Digitizers.TouchValid ---> Sync.Report
+Digitizers.TipSwitch ---> Sync.Report
+Digitizers.ContactIdentifier ---> Sync.Report
+GenericDesktop.X ---> Sync.Report
+GenericDesktop.Y ---> Sync.Report
+Digitizers.ScanTime ---> Sync.Report
+Digitizers.ContactCount ---> Sync.Report
+Button.0001 ---> Key.LeftBtn
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0004 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0005 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0002 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report
+ff00.0003 ---> Sync.Report

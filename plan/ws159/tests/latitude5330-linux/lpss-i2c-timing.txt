@@ -1,0 +1,45 @@
+ 0000:00:15.1                        0       0        0        133000000   0          0     50000      Y   i2c_designware.1                no_connection_id         
+                                                                                                           i2c_designware.1                pclk                     
+ 0000:00:15.0                        0       0        0        133000000   0          0     50000      Y   i2c_designware.0                no_connection_id         
+                                                                                                           i2c_designware.0                pclk                     
+i2c_designware
+[ 1059.502557] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.502782] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.503361] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.532615] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.532821] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.533472] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.533637] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.533862] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.534439] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.534597] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.534748] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.535215] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.550737] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.550891] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.551467] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.551549] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.551645] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.552031] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.552092] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.552143] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.552567] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.580657] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.580808] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.581466] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.581552] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.581675] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.582144] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+[ 1059.582239] i2c_designware i2c_designware.1: i2c_dw_xfer: msgs: 1
+[ 1059.582385] i2c_designware i2c_designware.1: enabled=0x1 stat=0x10
+[ 1059.582852] i2c_designware i2c_designware.1: enabled=0x1 stat=0x710
+bind
+i2c-VEN_06CB:00
+module
+uevent
+unbind
+1
+[ 1059.266177] i2c_designware i2c_designware.1: Standard Mode HCNT:LCNT = 552:652
+[ 1059.266180] i2c_designware i2c_designware.1: Fast Mode HCNT:LCNT = 100:200
+[ 1059.266201] i2c_designware i2c_designware.1: SDA Hold Time TX:RX = 6:1
+[ 1059.266202] i2c_designware i2c_designware.1: Bus speed: Fast Mode (400 kHz)
