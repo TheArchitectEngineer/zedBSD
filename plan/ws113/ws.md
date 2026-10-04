@@ -51,7 +51,7 @@ zedBSD i915で外部ディスプレイの接続/切断をVulkan Display拡張か
 | ID/link | Purpose | Goal | Status | Dependencies |
 | --- | --- | --- | --- | --- |
 | [ws113-p001](phase001/phase.md) | 契約・能力と実機fixture | hotplug/複数出力/拡張とmirror/Settings/窓所属の仕様を確定 | in-progress（q702-i01、[contracts-beta2.md](phase001/contracts-beta2.md)、確認 C1〜C4、判定は Q1）。q586-i01 は uncleared | — |
-| [ws113-p002](phase002/phase.md) | i915 の scanout の規則・inventory・HPD（2026-10-05 に絞った） | GOP の出力先だけを引き継ぎ外部の優先を廃止、接続の全出力の列挙と HPD の topology の sequence（WS051 p002 と共有、C4） | planned（3〜4h） | p001 |
+| [ws113-p002](phase002/phase.md) | i915 の scanout の規則・inventory・HPD（2026-10-05 に絞った） | GOP の出力先だけを引き継ぎ外部の優先を廃止、接続の全出力の列挙と HPD の topology の sequence（WS051 p002 と共有、C4） | in-progress（q702-i02、P2。part A・B の実装と host 済み、QEMU・実機は T1 待ち） | p001 |
 | [ws113-p003](phase003/phase.md) | Vulkan Displayの列挙・通知 | libvulkanから標準Display API/拡張でhotplugと複数出力を公開 | planned（3h） | p002、p012 |
 | [ws113-p004](phase004/phase.md) | compositorの出力・表示モード | 全拡張または全mirrorで複数outputを描画、hotplug、displays.conf | planned（4〜5h） | p003 |
 | [ws113-p005](phase005/phase.md) | compositor拡張とlibkeiland | `kl_system_manager_v1` v4 の `kl_system_displays_v1` と `kl_system_displays_*`、明るさ、Fn の key | planned（3〜4h） | p004、p013 |

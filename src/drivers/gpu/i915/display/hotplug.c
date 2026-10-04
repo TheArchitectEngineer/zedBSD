@@ -99,6 +99,7 @@
 #include "hotplug.h"
 #include "gmbus.h"
 #include "hdmi.h"
+#include "output.h"
 #include "power.h"
 #include "../mmio.h"
 #include <kern/kcrt.h>
@@ -107,6 +108,7 @@
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
+#include <kern/poll.h>
 #include <kern/sched.h>
 
 #include <uapi/errno.h>
@@ -143,6 +145,7 @@
 #define I915_HPD_SYNC_SECONDS		5u
 
 static struct i915_hpd_world *i915_hpd_display_world(struct i915_display *display);
+static void i915_hpd_topology_update(struct i915_hpd_world *world, unsigned idx, int publish);
 static uint32_t i915_hpd_uncore_rmw(struct i915_mmio *m, uint32_t reg, uint32_t clear, uint32_t set);
 static uint32_t i915_gen11_tc_hotplug(int pin);
 static uint32_t i915_gen11_tbt_hotplug(int pin);
@@ -233,11 +236,18 @@ drv_i915_hpd_world_create(
 	struct i915_display *display)
 {
 	struct i915_hpd_world *world;
+	unsigned index;
 
 	/* Allocates the world; a zero world has run no instance yet. */
 	world = kern_calloc(1U, sizeof(*world));
 	if (world == NULL)
 		return ENOMEM;
+
+	/* The topology: the first snapshot, and every connector's first generation (ws113-p002). */
+	spin_init(&world->topology_lock, LOCK_RANK_DEVICE, "i915 display topology");
+	world->topology_sequence = 1U;
+	for (index = 0U; index < I915_HPD_MAX_CONNECTORS; index++)
+		world->topology_generation[index] = 1U;
 
 	/* Publishes the world to the display. */
 	display->hpd_world = world;
@@ -982,24 +992,182 @@ drv_i915_hpd_connector_status(
  */
 
 /*
- * Reports the topology sequence of the display lease.
- *
- * It is the events operation of the resident display operations.
+ * Reports the display topology's sequence (ws113-p002): 1, the first
+ * snapshot, until a connector is connected or disconnected.  No hardware
+ * access and no wait: the display events operation reads it in any
+ * context.
+ */
+uint64_t
+drv_i915_hpd_topology_sequence(
+	struct i915_display *display)
+{
+	struct i915_hpd_world *world;
+	unsigned long irq;
+	uint64_t sequence;
+
+	/* A display without a hotplug world has only its first snapshot. */
+	world = i915_hpd_display_world(display);
+	if (world == NULL)
+		return 1U;
+
+	/* The sequence now, under the short topology lock. */
+	irq = spin_lock_irqsave(&world->topology_lock);
+	sequence = world->topology_sequence;
+	spin_unlock_irqrestore(&world->topology_lock, irq);
+	return sequence;
+}
+
+/*
+ * Describes one connector of the hotplug path for the display inventory
+ * (ws113-p002): its kind, port, whether a sink is connected, its
+ * generation and its name.  0, or ENOENT for a connector the path does not
+ * have.
  */
 int
-drv_i915_hpd_events(
-	void *device,
-	void *session,
-	uint64_t *sequence)
+drv_i915_hpd_output(
+	struct i915_display *display,
+	unsigned idx,
+	struct i915_hpd_output *output)
 {
-	UNUSED_PARAMETER(device);
-	UNUSED_PARAMETER(session);
+	struct i915_hpd_world *world;
+	struct intel_connector *connector;
+	unsigned long irq;
+	int type;
 
-	/* XXX: no topology change is ever published. */
-	*sequence = 1U;
+	/* A connector of the running path. */
+	world = i915_hpd_display_world(display);
+	if (world == NULL || idx >= world->hpd.num)
+		return ENOENT;
 
-	/* Succeeded: the sequence never moves. */
+	/* Its kind, from the connector type. */
+	connector = &world->hpd_conns[idx];
+	type = connector->base.connector_type;
+	output->kind = I915_HPD_OUTPUT_OTHER;
+	if (type == DRM_MODE_CONNECTOR_eDP)
+		output->kind = I915_HPD_OUTPUT_EDP;
+	if (type == DRM_MODE_CONNECTOR_HDMIA)
+		output->kind = I915_HPD_OUTPUT_HDMI;
+	if (type == DRM_MODE_CONNECTOR_DisplayPort)
+		output->kind = I915_HPD_OUTPUT_DP;
+
+	/* Its port and its name. */
+	output->port = (int)world->hpd_ports[idx].base.port;
+	output->name = world->hpd_conn_names[idx];
+
+	/* Its connection, generation and preferred mode as the topology took them, under the topology lock. */
+	irq = spin_lock_irqsave(&world->topology_lock);
+	output->connected = world->topology_connected[idx];
+	output->generation = world->topology_generation[idx];
+	output->width = world->topology_mode[idx].width;
+	output->height = world->topology_mode[idx].height;
+	output->refresh_millihz = world->topology_mode[idx].refresh_millihz;
+	output->width_mm = world->topology_mode[idx].width_mm;
+	output->height_mm = world->topology_mode[idx].height_mm;
+	spin_unlock_irqrestore(&world->topology_lock, irq);
+
+	/* Succeeded: the connector is described. */
 	return 0;
+}
+
+/*
+ * Reports how many connectors the hotplug path has (0 before it starts).
+ */
+unsigned
+drv_i915_hpd_output_count(
+	struct i915_display *display)
+{
+	struct i915_hpd_world *world;
+
+	/* The connectors the start made. */
+	world = i915_hpd_display_world(display);
+	if (world == NULL)
+		return 0U;
+	return world->hpd.num;
+}
+
+/*
+ * Takes a connector's connection and preferred mode into the topology
+ * once, without publishing a change: the baseline the first snapshot
+ * reads (the resident output's choice probes the HDMI connector at the
+ * device start, ws113-p002).
+ */
+void
+drv_i915_hpd_output_take(
+	struct i915_display *display,
+	unsigned idx)
+{
+	struct i915_hpd_world *world;
+
+	/* A connector of the running path. */
+	world = i915_hpd_display_world(display);
+	if (world == NULL || idx >= world->hpd.num)
+		return;
+
+	/* Its state, with no change published. */
+	i915_hpd_topology_update(world, idx, 0);
+}
+
+/*
+ * Takes a connector's connection and preferred mode (from the EDID its
+ * detection read) into the topology under the short lock; with publish,
+ * its generation and the device's topology sequence move too and pollers
+ * are woken outside the lock (ws113-p002).  Runs in the hotplug work or
+ * the start, never in interrupt context.
+ */
+static void
+i915_hpd_topology_update(
+	struct i915_hpd_world *world,
+	unsigned idx,
+	int publish)
+{
+	struct i915_hpd_output_mode taken;
+	struct i915_lcd_mode mode;
+	const uint8_t *edid;
+	const char *source;
+	unsigned edid_size;
+	unsigned long irq;
+	uint64_t pixels;
+	int connected;
+	int error;
+
+	/* The connection, and the preferred mode of a connected sink with an EDID. */
+	kern_memset(&taken, 0, sizeof(taken));
+	connected = 0;
+	if (world->hpd_conns[idx].base.status == connector_status_connected)
+		connected = 1;
+	edid_size = 0U;
+	edid = NULL;
+	if (connected)
+		edid = drv_i915_hpd_edid_bytes(world, idx, &edid_size);
+	error = EINVAL;
+	if (edid != NULL)
+		error = drv_i915_output_pick_mode(0U, 0U, 0U, edid, edid_size, &mode, &source);
+	pixels = 0U;
+	if (error == 0)
+		pixels = (uint64_t)mode.htotal * mode.vtotal;
+	if (pixels != 0U) {
+		taken.width = mode.hdisplay;
+		taken.height = mode.vdisplay;
+		taken.refresh_millihz = (uint32_t)(((uint64_t)mode.clock_khz * 1000000ULL + pixels / 2U) / pixels);
+		taken.width_mm = mode.width_mm;
+		taken.height_mm = mode.height_mm;
+	}
+
+	/* The topology's copy, and a change when asked. */
+	irq = spin_lock_irqsave(&world->topology_lock);
+	world->topology_connected[idx] = connected;
+	world->topology_mode[idx] = taken;
+	if (publish) {
+		world->topology_generation[idx]++;
+		world->topology_sequence++;
+	}
+
+	/* The lock goes before anyone is woken. */
+	spin_unlock_irqrestore(&world->topology_lock, irq);
+
+	/* A display session waiting for the change hears of it. */
+	if (publish)
+		poll_notify();
 }
 
 /*
@@ -3029,6 +3197,11 @@ i915_hpd_hotplug_recorded(
 		r->edid_rc = ei.rc;
 		r->edid_blocks = ei.blocks;
 	}
+
+	/* A connector connected or disconnected is a topology change (ws113-p002). */
+	if (old != (int)connector->base.status &&
+	    (connector->base.status == connector_status_connected || old == connector_status_connected))
+		i915_hpd_topology_update(world, idx, 1);
 
 	/* Counts the HDMI connector's transitions. */
 	if ((int)idx == world->hpd.hdmi && old != (int)connector->base.status) {

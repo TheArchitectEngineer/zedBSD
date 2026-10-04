@@ -184,6 +184,8 @@ static const struct i915_lcd_mode i915_output_cea_modes[] = {
 
 static int i915_output_hdmi(struct i915_display *display, const char **reason);
 static void i915_output_hdmi_wait(struct i915_display *display, const char *name);
+static void i915_output_choose(struct i915_display *display);
+static void i915_output_inventory(struct i915_display *display);
 static int i915_output_wanted_mode(uint32_t *width, uint32_t *height, uint32_t *refresh_hz);
 static uint32_t i915_output_refresh_hz(const struct i915_lcd_mode *mode);
 static int i915_output_mode_matches(const struct i915_lcd_mode *mode, uint32_t width, uint32_t height, uint32_t refresh_hz);
@@ -284,6 +286,16 @@ drv_i915_gop_output_name(
  */
 void
 drv_i915_display_output_select(
+	struct i915_display *display)
+{
+	/* The resident output, then every connector's state for the inventory. */
+	i915_output_choose(display);
+	i915_output_inventory(display);
+}
+
+/* Chooses the resident output: the firmware's (see drv_i915_display_output_select). */
+static void
+i915_output_choose(
 	struct i915_display *display)
 {
 	const struct kern_boot_parameters *parameters;
@@ -802,6 +814,46 @@ i915_output_hdmi_wait(
 
 	/* Succeeded: the HDMI display is the output. */
 	display->output.hdmi = 1;
+}
+
+/*
+ * Takes every connector's connection and preferred mode into the display
+ * inventory once (ws113-p002): an HDMI connector other than the resident
+ * output's is detected first (it reads the sink's EDID); the resident
+ * HDMI connector was detected by its choice.  No scanout starts.  Type-C
+ * DP connectors are left to their hotplug (WS051).
+ */
+static void
+i915_output_inventory(
+	struct i915_display *display)
+{
+	struct i915_hpd_summary summary;
+	struct i915_hpd_output output;
+	unsigned count;
+	unsigned index;
+	int status;
+	int error;
+
+	/* Nothing without the hotplug path. */
+	if (!display->hpd_started)
+		return;
+
+	/* Each connector. */
+	drv_i915_hpd_summary(display, &summary);
+	count = drv_i915_hpd_output_count(display);
+	for (index = 0U; index < count; index++) {
+		/* An HDMI connector the resident choice did not detect is detected now. */
+		error = drv_i915_hpd_output(display, index, &output);
+		if (error != 0)
+			continue;
+		if (output.kind == I915_HPD_OUTPUT_HDMI && !(display->output.hdmi && (int)index == summary.hdmi_connector)) {
+			status = drv_i915_hpd_probe_connector(display, index);
+			kern_logf("i915: display inventory: %s detected at the start (status %d), not lit\n", output.name, status);
+		}
+
+		/* Its state, the baseline of the first snapshot. */
+		drv_i915_hpd_output_take(display, index);
+	}
 }
 
 /* Reads display.mode=: 0 with the wanted size and rate, all 0 when it is not given, or EINVAL. */

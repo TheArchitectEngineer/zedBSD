@@ -80,6 +80,7 @@
 
 #include "internal.h"
 #include "capture.h"
+#include "display.h"
 #include "hotplug.h"
 #include "present.h"
 #include "scanout.h"
@@ -172,7 +173,7 @@ static const struct drv_gpu_display_ops i915_capture_ops = {
 	i915_capture_release,
 	i915_capture_present,
 	drv_i915_present_display_wait,
-	drv_i915_hpd_events
+	drv_i915_display_events
 };
 
 /*

@@ -78,6 +78,14 @@ int drv_i915_hpd_connector_status(struct i915_display *display, unsigned idx);
  * ==== The display lease's topology events ====
  */
 
-int drv_i915_hpd_events(void *device, void *session, uint64_t *sequence);
+uint64_t drv_i915_hpd_topology_sequence(struct i915_display *display);
+
+/*
+ * ==== The connectors for the display inventory (ws113-p002) ====
+ */
+
+int drv_i915_hpd_output(struct i915_display *display, unsigned idx, struct i915_hpd_output *output);
+unsigned drv_i915_hpd_output_count(struct i915_display *display);
+void drv_i915_hpd_output_take(struct i915_display *display, unsigned idx);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_HOTPLUG_H */

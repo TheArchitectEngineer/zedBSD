@@ -2892,6 +2892,34 @@ struct i915_hpd_hotplug_record {
 /*
  * What the hotplug path saw and did.
  */
+/* One connector of the hotplug path as the display inventory sees it (ws113-p002). */
+#define I915_HPD_OUTPUT_OTHER	0U
+#define I915_HPD_OUTPUT_EDP	1U
+#define I915_HPD_OUTPUT_HDMI	2U
+#define I915_HPD_OUTPUT_DP	3U
+
+struct i915_hpd_output {
+	unsigned kind;
+	int port;
+	int connected;
+	uint64_t generation;
+	const char *name;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh_millihz;
+	uint32_t width_mm;
+	uint32_t height_mm;
+};
+
+/* A connector's preferred mode as the topology last took it from its EDID (0 when none). */
+struct i915_hpd_output_mode {
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh_millihz;
+	uint32_t width_mm;
+	uint32_t height_mm;
+};
+
 struct i915_hpd_summary {
 	int started, live;
 	unsigned num_connectors;

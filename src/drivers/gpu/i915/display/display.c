@@ -111,6 +111,13 @@
 #define I915_DISPLAY_ID			1U
 #define I915_DISPLAY_GENERATION		1U
 
+/*
+ * The display ID of another connector of the inventory (ws113-p002): this
+ * base plus the hotplug path's connector index, the same while the device
+ * lives, whatever is connected.
+ */
+#define I915_DISPLAY_OTHER_ID		0x100U
+
 /* The largest frame the node's display accepts (64 MiB). */
 #define I915_DISPLAY_MAX_FRAME_BYTES	(64ULL << 20)
 
@@ -185,14 +192,24 @@ static int i915_next_isa_bridge(struct i915_display *display, unsigned index, ui
 static int i915_display_query(void *device, void *session, struct gpu_display_info *request);
 static int i915_display_mode(void *device, void *session, struct gpu_display_mode *request);
 static int i915_display_claim(void *device, void *session, struct gpu_display_claim *request);
+static int i915_display_resident_connector(struct i915_display *display);
+static unsigned i915_display_count(struct i915_display *display, int resident);
+static int i915_display_other(struct i915_display *display, int resident, uint32_t index, unsigned *connector);
+static void i915_display_key(struct i915_device *device, unsigned kind, int port, char *name, unsigned size);
+static int i915_display_other_query(struct i915_device *device, unsigned connector, struct gpu_display_info *request);
+static int i915_display_other_mode(struct i915_display *display, struct gpu_display_mode *request);
 
 /*
  * The display operations of the resident node.
  *
- * One output, the eDP panel, with one full-output plane; query, mode and
- * claim are answered here, present, wait and release by the present path,
- * and the event sequence by the hotplug path (no topology change is ever
- * published).  The table never changes.
+ * The resident output -- the firmware's output (the GPU scanout rule) --
+ * is display 0, with one full-output plane; the hotplug path's other
+ * connectors follow it in the inventory, connected or not, and are
+ * described but not lit (claiming one is refused until ws113-p011).  Query,
+ * mode and claim are answered here, present, wait and release by the
+ * present path, and the topology sequence by the hotplug path, which
+ * moves it when a connector is connected or disconnected (ws113-p002).
+ * The table never changes.
  */
 static const struct drv_gpu_display_ops i915_display_ops = {
 	i915_display_query,
@@ -201,7 +218,7 @@ static const struct drv_gpu_display_ops i915_display_ops = {
 	drv_i915_present_display_release,
 	drv_i915_present_display_present,
 	drv_i915_present_display_wait,
-	drv_i915_hpd_events
+	drv_i915_display_events
 };
 
 /*
@@ -2510,6 +2527,7 @@ i915_display_query(
 	void *session,
 	struct gpu_display_info *request)
 {
+	struct i915_hpd_output output;
 	struct i915_device *owner_device;
 	struct i915_display *display;
 	uint32_t width;
@@ -2517,7 +2535,10 @@ i915_display_query(
 	uint32_t refresh;
 	uint32_t width_mm;
 	uint32_t height_mm;
-	const char *name;
+	unsigned connector;
+	unsigned kind;
+	int resident;
+	int port;
 	int error;
 	int size_error;
 
@@ -2526,19 +2547,29 @@ i915_display_query(
 	owner_device = device;
 	display = owner_device->display;
 
-	/* One display exists while the panel is known. */
+	/* The resident output while its mode is known, then the other connectors. */
 	error = drv_i915_display_panel(display, &width, &height, &refresh);
+	resident = i915_display_resident_connector(display);
 	request->count = 0U;
 	if (error == 0)
-		request->count = 1U;
+		request->count = i915_display_count(display, resident);
 
 	/* Only the count was asked for. */
 	if (request->index == GPU_DISPLAY_COUNT_ONLY)
 		return 0;
 
-	/* Only display 0 exists. */
-	if (error != 0 || request->index != 0U)
+	/* Nothing without the resident output, or past the inventory. */
+	if (error != 0 || request->index >= request->count)
 		return EINVAL;
+
+	/* Another connector of the inventory. */
+	if (request->index != 0U) {
+		error = i915_display_other(display, resident, request->index, &connector);
+		if (error != 0)
+			return error;
+		error = i915_display_other_query(owner_device, connector, request);
+		return error;
+	}
 
 	/* The display, its state and its formats. */
 	request->display_id = I915_DISPLAY_ID;
@@ -2568,9 +2599,23 @@ i915_display_query(
 		request->physical_height_mm = height_mm;
 	}
 
-	/* The output's name: the panel, or the HDMI display (ws075-p012). */
-	name = drv_i915_display_output_name(display);
-	kern_memcpy(request->name, name, kern_strlen(name) + 1U);
+	/* The output's name: its port's key (ws113-p002, D-ID A2): the panel's DDI A, or the HDMI display's DDI B. */
+	kind = I915_HPD_OUTPUT_EDP;
+	port = 0;
+	if (display->output.hdmi) {
+		kind = I915_HPD_OUTPUT_HDMI;
+		port = I915_OUTPUT_HDMI_PORT;
+	}
+
+	/* The port of its connector, when the hotplug path has one. */
+	if (resident >= 0) {
+		error = drv_i915_hpd_output(display, (unsigned)resident, &output);
+		if (error == 0)
+			port = output.port;
+	}
+
+	/* The key. */
+	i915_display_key(owner_device, kind, port, request->name, sizeof(request->name));
 
 	/* Succeeded: the display is described. */
 	return 0;
@@ -2601,7 +2646,13 @@ i915_display_mode(
 
 	owner_device = device;
 
-	/* Only the one display of this generation exists. */
+	/* Another connector of the inventory: its preferred mode, which it is not lit with. */
+	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
+		error = i915_display_other_mode(owner_device->display, request);
+		return error;
+	}
+
+	/* The resident display of this generation. */
 	if (request->display_id != I915_DISPLAY_ID)
 		return ENOENT;
 	if (request->generation != I915_DISPLAY_GENERATION)
@@ -2666,7 +2717,13 @@ i915_display_claim(
 	owner_device = device;
 	rd = &owner_device->display->rd;
 
-	/* Only plane 0 of the one display of this generation exists. */
+	/* Another connector is not lit by this driver yet (ws113-p011): refused, not pretended. */
+	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
+		kern_logf("i915: resident display: claim of display %u refused: only the firmware's output is lit\n", request->display_id);
+		return EOPNOTSUPP;
+	}
+
+	/* Only plane 0 of the resident display of this generation exists. */
 	if (request->display_id != I915_DISPLAY_ID)
 		return ENOENT;
 	if (request->generation != I915_DISPLAY_GENERATION)
@@ -2696,5 +2753,244 @@ i915_display_claim(
 	kern_logf("i915: resident display: lease %llu claimed\n", (unsigned long long)request->lease);
 
 	/* Succeeded: the session holds the display. */
+	return 0;
+}
+
+/*
+ * Reports the display topology's sequence (the display events operation):
+ * the hotplug path moves it when a connector is connected or disconnected
+ * (ws113-p002).  Any context: no hardware access, no wait.
+ */
+int
+drv_i915_display_events(
+	void *device,
+	void *session,
+	uint64_t *sequence)
+{
+	struct i915_device *owner_device;
+
+	UNUSED_PARAMETER(session);
+
+	/* The sequence of the device's display, or the first snapshot without one. */
+	owner_device = device;
+	*sequence = 1U;
+	if (owner_device->display != NULL)
+		*sequence = drv_i915_hpd_topology_sequence(owner_device->display);
+
+	/* Succeeded: the sequence is sampled. */
+	return 0;
+}
+
+/*
+ * Finds the hotplug path's connector of the resident output: the HDMI
+ * connector when it drives HDMI, the eDP connector otherwise; -1 when the
+ * path has none.
+ */
+static int
+i915_display_resident_connector(
+	struct i915_display *display)
+{
+	struct i915_hpd_summary summary;
+	struct i915_hpd_output output;
+	unsigned count;
+	unsigned index;
+	int error;
+
+	/* Nothing without the hotplug path. */
+	if (!display->hpd_started)
+		return -1;
+
+	/* The HDMI connector. */
+	if (display->output.hdmi) {
+		drv_i915_hpd_summary(display, &summary);
+		return summary.hdmi_connector;
+	}
+
+	/* The first eDP connector. */
+	count = drv_i915_hpd_output_count(display);
+	for (index = 0U; index < count; index++) {
+		error = drv_i915_hpd_output(display, index, &output);
+		if (error == 0 && output.kind == I915_HPD_OUTPUT_EDP)
+			return (int)index;
+	}
+
+	/* None. */
+	return -1;
+}
+
+/* Counts the inventory: the resident output and the hotplug path's other connectors. */
+static unsigned
+i915_display_count(
+	struct i915_display *display,
+	int resident)
+{
+	unsigned count;
+
+	/* The other connectors, without the resident output's. */
+	count = drv_i915_hpd_output_count(display);
+	if (resident >= 0 && count > 0U)
+		count--;
+
+	/* And the resident output. */
+	return count + 1U;
+}
+
+/* Finds the connector of an inventory index past 0 (the connectors in order, the resident output's left out); 0 or EINVAL. */
+static int
+i915_display_other(
+	struct i915_display *display,
+	int resident,
+	uint32_t index,
+	unsigned *connector)
+{
+	unsigned count;
+	unsigned slot;
+	unsigned found;
+
+	/* Walks the connectors, counting those that are not the resident output's. */
+	count = drv_i915_hpd_output_count(display);
+	found = 0U;
+	for (slot = 0U; slot < count; slot++) {
+		if ((int)slot == resident)
+			continue;
+		found++;
+		if (found == index) {
+			*connector = slot;
+			return 0;
+		}
+	}
+
+	/* Past the inventory. */
+	return EINVAL;
+}
+
+/*
+ * Writes a connector's key (main's adoption A2, ws113-p001): the version,
+ * the GPU's PCI segment, bus, device and function, the kind and the port,
+ * for example "zedbsd-port-v1:pci:0000:00:02.0:edp:A".
+ */
+static void
+i915_display_key(
+	struct i915_device *device,
+	unsigned kind,
+	int port,
+	char *name,
+	unsigned size)
+{
+	static const char *const kinds[] = { "other", "edp", "hdmi", "dp" };
+	struct drv_pci_address address;
+	char letter[8];
+
+	/* The GPU's place on the PCI bus. */
+	drv_pci_device_address(device->pci, &address);
+
+	/* The port: A, B, C, then the Type-C ports. */
+	if (port >= 3)
+		kern_snprintf(letter, sizeof(letter), "TC%d", port - 2);
+	else if (port >= 0)
+		kern_snprintf(letter, sizeof(letter), "%c", 'A' + port);
+	else
+		kern_snprintf(letter, sizeof(letter), "none");
+
+	/* The key. */
+	kern_snprintf(name, size, "zedbsd-port-v1:pci:%04x:%02x:%02x.%x:%s:%s",
+	    (unsigned)address.segment,
+	    (unsigned)address.bus,
+	    (unsigned)address.device,
+	    (unsigned)address.function,
+	    kinds[kind & 3U],
+	    letter);
+}
+
+/*
+ * Describes another connector of the inventory: connected or not, its
+ * preferred mode (from its EDID) as the current, preferred and largest
+ * one, one plane, not active (this driver does not light it).
+ */
+static int
+i915_display_other_query(
+	struct i915_device *device,
+	unsigned connector,
+	struct gpu_display_info *request)
+{
+	struct i915_hpd_output output;
+	int error;
+
+	/* The connector as the topology last took it. */
+	error = drv_i915_hpd_output(device->display, connector, &output);
+	if (error != 0)
+		return EINVAL;
+
+	/* Its identity and state. */
+	request->display_id = I915_DISPLAY_OTHER_ID + connector;
+	request->generation = output.generation;
+	request->flags = GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
+	if (output.connected)
+		request->flags |= GPU_DISPLAY_CONNECTED;
+	request->plane_count = 1U;
+	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
+	request->max_frame_bytes = I915_DISPLAY_MAX_FRAME_BYTES;
+
+	/* Its preferred mode and size, when its EDID gave them. */
+	request->current_width = output.width;
+	request->current_height = output.height;
+	request->preferred_width = output.width;
+	request->preferred_height = output.height;
+	request->max_width = output.width;
+	request->max_height = output.height;
+	request->refresh_millihz = output.refresh_millihz;
+	request->physical_width_mm = output.width_mm;
+	request->physical_height_mm = output.height_mm;
+
+	/* Its key. */
+	i915_display_key(device, output.kind, output.port, request->name, sizeof(request->name));
+
+	/* Succeeded: the connector is described. */
+	return 0;
+}
+
+/*
+ * Enumerates or checks the mode of another connector: its preferred mode
+ * only, of its current generation, while it is connected.
+ */
+static int
+i915_display_other_mode(
+	struct i915_display *display,
+	struct gpu_display_mode *request)
+{
+	struct i915_hpd_output output;
+	int error;
+
+	/* The connector of the ID, of this generation, connected and with a mode. */
+	error = drv_i915_hpd_output(display, request->display_id - I915_DISPLAY_OTHER_ID, &output);
+	if (error != 0)
+		return ENOENT;
+	if (request->generation != output.generation)
+		return ESTALE;
+	if (!output.connected || output.width == 0U)
+		return ENOENT;
+
+	/* Enumeration: the one preferred mode. */
+	if (request->operation == GPU_DISPLAY_MODE_ENUMERATE) {
+		request->count = 1U;
+		if (request->index == GPU_DISPLAY_COUNT_ONLY)
+			return 0;
+		if (request->index != 0U)
+			return EINVAL;
+		request->width = output.width;
+		request->height = output.height;
+		request->refresh_millihz = output.refresh_millihz;
+		return 0;
+	}
+
+	/* Validation: the preferred mode only (0 asks for its refresh). */
+	if (request->width != output.width || request->height != output.height)
+		return EINVAL;
+	if (request->refresh_millihz == 0U)
+		request->refresh_millihz = output.refresh_millihz;
+	if (request->refresh_millihz != output.refresh_millihz)
+		return EINVAL;
+
+	/* Succeeded: the mode is the connector's. */
 	return 0;
 }

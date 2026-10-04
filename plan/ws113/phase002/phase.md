@@ -3,10 +3,10 @@
 # ws113-p002: i915のHPD・複数display出力
 
 Parent: [WS113](../ws.md)
-Status: planned
+Status: in-progress（q702、P2、2026-10-05。part A・B の実装・build・host 試験まで、QEMU・実機は T1 待ち。判定は Q1）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
-Queue / attempts: none / 実装未承認
+Queue / attempts: q702 / q702-i02（P2、C4 の Q1 の決定の後）
 Purpose / goal: driverからGPU表示イベントを提供し、複数出力を同時に扱う
 Prerequisites: p001 cleared/driver契約
 Investigation bound: 120分の有限1 Phase Queue案。選定時にscope/時間を再照合する。
@@ -65,3 +65,39 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 試験: host（上の 4）、QEMU は i915 が無いので boot-test だけ（Venus の画面が変わらないこと）。実機（T1 が 5330 で、または p008 に寄せる）: eDP だけ・eDP+HDMI（GOP は eDP）で起動して、HDMI が点かないこと、`GPU_DISPLAY_QUERY` が 2 つ（eDP ACTIVE、HDMI CONNECTED）を返すこと、HDMI の抜き差しで sequence が進むこと（`plan/ws113/tests/` に小さい probe を足す: native の QUERY・EVENTS を読むだけの test program）。
 受け入れ: 上の実機の 3 点と host の試験の PASS、build の warning 0、規約。目安 3〜4h。依存: p001（C4 の分担の決定）。衝突: WS051 p002（同じ file、C4）、WS075・WS084 の i915 の Phase（Q1 が確かめる）。
+
+## 実施（2026-10-05、q702-i02、P2）
+
+C4 は Q1 が決定（GOP の引き継ぎと外部の優先の削除は WS113 p002 part A で 1 回、WS051 p002 は VBT の DVO と USB-C）。新しい UAPI は使わない。
+
+### part A: scanout の規則（`output.c`・`display.c`・`internal.h`）
+
+- `drv_i915_gop_output_read()`: N0 の報告（firmware が残した pipe ごとの TRANSCONF・TRANS_DDI_FUNC_CTL）から firmware の出力を読む。lit な pipe を全部記録し、enable で port を駆動する最初の pipe を出力とする（clone なら一番低い pipe）。DDI A の DP SST は eDP、DDI B の HDMI・DVI は HDMI、それ以外（Type-C の DP・DDI B の DP など）は「この driver が点けられない interface」。
+- `i915_display_native_check()`（最初の display の書き込みの前）: firmware の出力を log（`i915: N0: the firmware's output: DP SST on DDI A, pipe A (lit pipes 0x1)`）。点けられない interface なら display を absent にして**firmware の画面を保つ**（何も書かない）。
+- `drv_i915_display_output_select()`: `display=` の auto・hdmi・edp の選択と外部の優先を廃止し、`display=` は「ignored」を log。firmware の出力が eDP → panel、HDMI → HDMI の経路（sink が答えるまで 6 s 待つ。駆動できなければ**出力なし**、panel を代わりに点けない）、lit な pipe が無い → 内蔵の panel（firmware の画面が無い時の扱い。下の「確認」）。
+### part B: inventory と HPD の topology（`hotplug.c`・`hotplug.h`・`hotplug-internal.h`・`display.c`・`display.h`・`capture.c`）
+
+- hotplug の world に topology（sequence は 1 から、connector ごとの generation、接続と EDID の preferred mode の写し、短い spinlock）。HPD の work で connector の接続・切断が変わったら写しを更新して generation と sequence を進め、lock の外で `poll_notify()`。events の操作（`drv_i915_display_events`、capture の表も）は lock の中で sequence を読むだけ（固定 1 を置き換え）。
+- 起動の時（resident の出力の選択の後）に、resident でない HDMI の connector を一度検出（EDID を読む、点けない）して写しの baseline に（`i915: display inventory: HDMI-A-1 detected at the start (status N), not lit`）。Type-C の DP は WS051 の hotplug に任せる。
+- `GPU_DISPLAY_QUERY`: index 0 は今までの resident の出力（ID 1、ACTIVE は scanout 中）。続けて hotplug の path の他の connector（固定の slot、ID は 0x100 + connector の番号、CONNECTED は接続中だけ、ACTIVE は付けない、mode と大きさは EDID の preferred）。name は全て D-ID A2 の key（`zedbsd-port-v1:pci:0000:00:02.0:edp:A` の形、PCI の位置は `drv_pci_device_address`）。
+- `GPU_DISPLAY_MODE`: 他の connector は preferred mode の列挙と検査だけ（旧 generation は ESTALE、未接続は ENOENT）。`GPU_DISPLAY_CLAIM`: 他の connector は `EOPNOTSUPP`（p011 まで、偽の成功を返さない）。
+- libvulkan（`wsi.c`）は既に接続中の native の出力だけを VkDisplayKHR にし、slot ごとに handle を保つ。compositor は最初の display（index 0 = resident）を使うので、今の 1 画面の動作は変わらない。lease の POLLPRI は resident の generation が変わらない限り surface を保つ（`display_validate_surface`）。
+
+### 道具
+
+- `userland/tests/display-inventory`（試験の image だけ）: node を自分で開き、sequence と inventory を `DISPLAY-INVENTORY ...` の行で出し ACK する。`--watch=秒` で POLLPRI を待ち、変わるたびに出し直す。
+- `plan/ws113/tests/host-gop.sh`（`host-gop.c`、output.c から 2 関数を sed で取り出す）: 10/10（none、eDP、clone、HDMI、DVI、TC1 の DP、DDI B の DP、TC2 の HDMI、plane だけ lit、読めない pipe）。
+- `plan/ws113/tests/config-amd64-p002.mk`: CI の clang 抜きの config + display-inventory。
+
+### 確認
+
+- build: zedBSD amd64 の vmunix（`plan/ws129/tests/config-amd64-ci-noclang.mk`）exit 0・warning 0・kernel include check PASS（315 objects）。`I915_TEST_CAPTURE=y` の vmunix も exit 0・kernel include check PASS。display-inventory の build warning 0。
+- 規約の checker: 変えた file で新しい違反 0（既存の違反は変更の外）。
+- host-gop 10/10。
+
+### 未実施（T1・実機）
+
+- QEMU（T1、`config-amd64-p002.mk`）: i915 は QEMU に無いので回帰だけ: `plan/tools/boot-test.sh` PASS、guest で `display-inventory` が Venus の inventory（count 1 以上、sequence 1）を出す。
+- 実機（5330、i915 の lock、ユーザーと。p008 にまとめてよい）: (1) eDP だけで起動 → `i915: N0: the firmware's output: DP SST on DDI A`、desktop が eDP に出る、display-inventory が eDP 1 行。(2) eDP + HDMI（GOP は eDP）で起動 → HDMI が点かない、display-inventory が 2 行（eDP active=1、HDMI connected=1 active=0 mode=EDID の値）。(3) `display-inventory --watch=60` の間に HDMI を抜き差し → sequence が進み HDMI の connected が 0・1 と変わる、desktop は eDP のまま。(4) `display=hdmi` を付けて起動 → 「ignored」の log、eDP のまま。
+- 未確認の点（Q1）: lit な pipe が無い時に内蔵の panel を点けるのは規則の外の判断（firmware の画面が無いので）。UEFI の起動では起きない見込み。GOP が HDMI で HDMI を駆動できない時は出力なし（画面が暗い）。
+- WS075 の古い試験（`plan/ws075/tests/hdmi-h2-hw.sh`、`display=hdmi` で HDMI を強制する前提）と demo の `display=edp` は、この変更で意味が無くなった（log に ignored と出るだけ）。WS075 の物なので変えていない。
