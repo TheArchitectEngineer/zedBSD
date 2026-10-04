@@ -75,6 +75,7 @@ request（変更は `begin_update`〜`commit` の間だけ。menu と同じ tran
 | 13 | `set_tab` | `uint id`、`string title`、`uint flags` | flags: `active = 1`、`attention = 2`、`closable = 4` |
 | 14 | `set_tabs_options` | `uint options` | `new_tab_button = 1` |
 | 15 | `focus_control` | `uint id`、`uint mode` | keyboard を control へ（`mode`: SEARCH は `focus = 0`、BREADCRUMB は `edit = 1` で path の欄に）。transaction の外で可 |
+| 16 | `set_suggestions` | 候補の文字列の列（breadcrumb の path の候補、最大 12） | **version 4**（2026-10-05、[ws127-p010](../ws127/phase010/phase.md)）。compositor が欄の下に一覧を出す（全ての上、menu の popup の後に描く）。↑↓・Enter・click/tap で text を欄へ入れて `text_changed`、Esc はまず一覧を消す。transaction の外で可 |
 
 event:
 
@@ -215,6 +216,8 @@ int keiland_titlebar_focus_control(struct keiland_titlebar *titlebar, uint32_t i
 - **touch**（仕様案 §26）: zdesktop は `wl_touch` を持たないので pointer mode だけ作る。配置の定数を「大きさの組」（pointer・touch）の
   表にし、touch の組は値だけ置く（Future Work: 入力の装置に応じて切り替える）。
 - **accessibility**（仕様案 §25）: model は zdesktop にあるので後で足せる。範囲外（screen reader が無い）。
+
+- 2026-10-05（ws127-p010）: breadcrumb の欄に候補の一覧（request 16）が出ている間の keyboard の順: ↑↓ は候補の選択、Enter は選んだ候補を欄へ入れる（選んでいなければ欄の text で移動）、Esc はまず一覧を消し、2 回目で編集を終える。
 
 ## 10. docking と restore の animation（仕様案 §17、§18）
 
