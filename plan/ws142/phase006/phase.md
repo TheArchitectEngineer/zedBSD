@@ -2,7 +2,7 @@
 
 # ws142-p006: 全文の規約の確認と QEMU の回帰
 
-Status: in-progress（2026-10-05 P1 generation17 / q724。全文の規約の確認と直し、build、host の試験まで。QEMU の回帰は Q1 経由で T1 に依頼。結果の判定と実機の UAT まで cleared にしない）
+Status: cleared（2026-10-05 Q1: WS142 の C の全文の規約の確認（style-check 0、build warning 0、host の試験 PASS）と T1-136 の回帰 p002〜p005 が全部 PASS。FreeBSD の build は未実施（host に環境が無い））。以前: in-progress（2026-10-05 P1 generation17 / q724。全文の規約の確認と直し、build、host の試験まで。QEMU の回帰は Q1 経由で T1 に依頼。結果の判定と実機の UAT まで cleared にしない）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: q724（Q1 の投入）
@@ -61,3 +61,7 @@ pen の image（`plan/ws079/tests/build-pen-image.sh BUILD`、main の最新）�
 
 - QEMU の回帰の判定、実機の UAT（WS142 の全部）。
 - WS142 の完了（ws.md の受け入れの確認）は Q1。
+
+## Q1 の判定（2026-10-05）
+
+WS142 の C の全文の規約の確認（style-check 0、build warning 0、host の試験 PASS）と T1-136 の回帰 p002〜p005 が全部 PASS。FreeBSD の build は未実施（host に環境が無い）。**cleared**。

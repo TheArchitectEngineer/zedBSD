@@ -2,7 +2,7 @@
 
 # ws142-p005: 切り替えの UI（Alt+Tab・3 本指の tap・2 本指、中央の popup）
 
-Status: in-progress（2026-10-05 P1 generation17。実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定と実機の UAT まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-136 の p005-guest PASS（docked の段を含む、試験の直し 830beb9e の後）、switch-center.png を Q1 が目視（docked の窓の上の中央に C のプレビューと MRU の A・C・B））。以前: in-progress（2026-10-05 P1 generation17。実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定と実機の UAT まで cleared にしない）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: Q1 の指示（2026-10-05、D1・D2 決定済み、fullscreen の間は動かさない）
@@ -52,3 +52,7 @@ Queue: Q1 の指示（2026-10-05、D1・D2 決定済み、fullscreen の間は�
 
 - QEMU の結果の判定、実機の UAT（Alt+Tab の慣れ、2 本指の 12 mm、3 本指の tap）。遅れの目標（操作から最初の frame まで 100 ms）は log の `at_ms` で T1・UAT で見る。
 - p006: 全文の規約の確認と QEMU の回帰。
+
+## Q1 の判定（2026-10-05）
+
+T1-136 の p005-guest PASS（docked の段を含む、試験の直し 830beb9e の後）、switch-center.png を Q1 が目視（docked の窓の上の中央に C のプレビューと MRU の A・C・B）。**cleared**。

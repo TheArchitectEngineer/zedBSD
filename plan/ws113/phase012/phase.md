@@ -123,3 +123,5 @@ struct gpu_display_refresh {
 
 - `display-control-p012.sh` は 1 行だけ FAIL ×2: claim の前の測り `refresh now boundaries=0 ... error=42`（ETIMEDOUT）。その時の QUERY の flags は 0x16f で ACTIVE（0x10）が無い: greeter と compositor を止めた直後で、Venus の出力は何も scanout していなかった（console の画もまだ無い）。ON の後は boundaries=76 virtual=1 で正しい。
 - 判定: **driver が正しい**（scanout していない出力は境界を作らない、i915 の止まった pipe と同じ契約。VK_EXT_display_control でも消えている display に vblank は来ない）。試験の順が誤り: probe は present の後にも 1 秒測る（`refresh shown`）ようにし、試験は `shown` に 40〜80 を求め、`now` は「ETIMEDOUT か、画があれば 40〜80」を受ける。
+
+Q1（2026-10-05）: QEMU（Venus）の分は T1-135 で PASS。i915 の分（refresh が約 60 Hz、power OFF で panel が暗くなり ON で戻る）は 5330 の UAT の後に判定。
