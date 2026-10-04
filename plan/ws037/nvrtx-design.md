@@ -45,6 +45,7 @@
 
 ## 2. 方針の要点
 
+0. **scanout の規則（2026-10-04 ユーザー「GPUドライバはGOPの出力先以外に、scanoutを開始しない.というルールを覚えておいてください。」、Guardrail）**: nvrtx は UEFI の GOP の出力先（GOP が点けた head と connector）以外に scanout を始めない。P8 の自前の surface（判断の項目 7）は同じ出力先に限る。別の connector への出力は compositor の明示の指示がある時だけ。
 1. **GSP-RM の道だけを作る**（判断の項目 3）。Turing は GSP 無しでも nouveau で動くが、GSP 無しの道は clock の管理（reclocking）を持たない見込み（推論、未確認）なので、GSP の道を取る。nouveau で GSP が必須なのは GA100・Ada・Hopper・Blackwell（GA10x と Turing は任意、7 節の表）。**Ampere・Ada は同じ booter 型の起動**（SEC2 の booter と VBIOS の FWSEC）なので Turing の道の延長になるが、**Blackwell（と範囲の外の Hopper）は別の起動の仕組み**（FMC 型の firmware）で、Turing の P1・P2 の段を作り直す（7 節）。
 2. **firmware の版は 570.144 に固定**（判断の項目 4）。RPC の struct は版ごとに変わるので、版を混ぜない。struct の定義は open-gpu-kernel-modules 570.144（MIT）から取る。
 3. **WPR2 を張る前に、失敗しうる準備を全部済ませる**（H4）。P1c（FWSEC-FRTS）の前に、firmware の file の読み込みと検査（大きさ・header・ELF の section、`gsp-570.144.bin` は約 28.5 MB）、GSP に渡す DMA の memory の確保（firmware の page・page table・args・log・queue）、FWSEC-SB の ucode の取り出し、WPR2 の配置の計算を終える。準備のどれかが失敗したら hardware に書かずに止まる。firmware は `/lib/firmware` から読むので、**GSP の起動は root の mount の後に非同期**で行う（attach の時は N0・N1 だけ）。
@@ -235,7 +236,7 @@ zedBSD の libvulkan（`userland/desktop/libvulkan/`）は Venus の protocol �
 | 4 | GSP の firmware を 570.144 に固定する（535.113.01 は扱わない） | 570.144 |
 | 5 | GSP の firmware を既定 off の firmware の package（`userland/firmware/` の規約、`/lib/firmware` へ、LICENCE.nvidia・WHENCE・manifest 付き）にしてよいか（再配布の条件: OSI の open source の OS、binary を変えない、license の写しを添える） | そうする（zedBSD は Zlib で OSI の license） |
 | 6 | 試験の方式（A: USB から素で起動、B: VFIO）と、B で guest に emulated な display を付けて段の印を撮る形でよいか。RTX の出力の撮り方。方式 A で GSP の起動が止まった時の証拠の残し方 | B を主に、N1・text console の切り離し・P8 は A で。RTX の出力はユーザーの写真か capture。A の証拠は scratch の register の段の番号を次の起動で読む案 |
-| 7 | display: GOP の画面は GSP の起動で消えうる。消える前提で、P8 で RM の display を使い自前の surface に出す形でよいか（GOP の timing は RM と ARMED の register から読む） | そうする |
+| 7 | display: GOP の画面は GSP の起動で消えうる。消える前提で、P8 で RM の display を使い自前の surface に出す形でよいか（GOP の timing は RM と ARMED の register から読む）。出力先は GOP の出力先に限る（2 節の 0 の規則） | そうする |
 | 8 | shader の compiler（SPIR-V → SM75）は別の WS にするか（p008） | 別の WS（i915 の WS031 と同じ形）を提案 |
 | 9 | session ごとの隔離（`isolate`）を提供する条件 | 資源を全部 device が保持し、channel の無効化と preempt を RM で確かめられた時だけ成功、close・destroy は RPC を出さない（8.3）。P6 の後 |
 | 10 | suspend・resume、圧縮、MST、HDMI の音は範囲の外とし、後の Phase にする | そうする |
