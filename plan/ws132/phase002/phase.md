@@ -57,6 +57,8 @@ Design: [ws132-p001](../phase001/phase.md) の K1・K2
 
 - 2026-10-05 T1-129: 1 回目 FAIL、2 回目 PASS。1 回目の events.txt は stick の `usb add`・`disk add` の後に `done events=2`（reader の `-t 20000` は「事象の無い 20 秒」で終わる）。次の事象（4 秒後の stick の抜去）までに 20 秒の空白は試験の手順に無いので、guest が 20 秒以上止まったか、reader の待ちが早く終わったかのどちらか。kernel の `poll` は期限切れ（ETIMEDOUT）で最後の走査をせずに 0 を返すので、止まっていた間に事象が来ていても拾わない（`src/kern/poll.c` の `poll_wait_ready`、ws132 の範囲外なので Q1 に提案）。直し: `systemevents` の行に時刻（`ready at_ms=`・`event … at_ms=`（事象の時刻）・`done events=N at_ms=`）を付けて次に起きた時に区別できるようにし、試験の reader は 90 秒待って最後に止める（`plan/ws132/tests/p002-guest.sh`）。再試験は T1。
 
+- 2026-10-05 Q1 の許可で `src/kern/poll.c` の `poll_wait_ready` を直した: 期限切れ（sleep の ETIMEDOUT、または起きた時に期限を過ぎていた）の時に `poll_scan` を 1 回してから返す（今までは走査せずに 0）。host の試験 `sh plan/ws132/tests/run-host-poll-timeout.sh`（`poll.c` をそのまま compile、ASan・UBSan でも）: 12 checks ok（すぐ ready・何も無く期限切れ・期限切れと同時に ready（直した所）・期限前に起こされる・期限後に起こされて ready（直した所）・期限後に何も無く起こされる）。直す前の `poll.c` では直した所の 2 つが FAIL することを確かめた。amd64 の vmunix（CI の config、kernel include check）: 成功、warning 0。
+
 ## 残り
 
 - QEMU の結果の判定（T1、Q1）。
