@@ -1,0 +1,41 @@
+<!-- awesome-plan project=zedbsd record=ws148 -->
+
+# WS148: Settings の Privacy の頁の検討（要らなければ削除、要るなら設計と実装）
+
+<!-- awesome-plan-current:start -->
+Status: planning
+Primary Milestone: MG006
+Related Milestones: —
+Parent: [Master](../master.md)
+Queue: なし（担当と時期は未定）
+Resume point: p001（検討）から。
+<!-- awesome-plan-current:end -->
+
+## 単一目標
+
+Settings の Privacy の頁（今は stub）で何を設定すべきかを検討し、zedBSD・Keiland に設定すべき項目が無ければ頁を削除し、あれば設計して実装する。
+
+## ユーザーの指示（2026-10-04 夜、原文）
+
+「SettingsのPrivacyタブは、何を設定するのかわかりません。WSを作って検討し、必要ないならタブを削除、必要なら設計、実装をお願いします。」
+
+## 検討の観点（p001）
+
+- 他の desktop（GNOME・KDE・macOS・Windows）の Privacy の頁の項目を調べ、Keiland に当てはまる物を選ぶ。候補の例:
+  - 画面の lock（時間・自動の lock）と lock の画面での通知の表示（今の lock の機能（WS035）との関係、別の頁（Display・Power）に置く方が自然か）
+  - 最近使った file の履歴（Files・app の recent の記録）の on・off と消去
+  - Trash の自動の削除（[ws089-p023](../ws089/phase023/phase.md) の Storage の Trash と重なる）
+  - location・camera・microphone の app ごとの許可（今の zedBSD に該当の device・仕組みがあるか。無ければ対象外）
+  - 画面の共有・録画の許可（screencopy などの protocol の許可）
+  - 診断・crash の報告（zedBSD は外部へ送らない方針なら項目は不要）
+- 各項目について、今の zedBSD・Keiland に実体があるか、他の頁で足りるかを判定する。
+- 結論: (a) 設定すべき項目が無い → 頁を Settings から削除（pages.c の表、search の語、glyph）。(b) ある → 項目・保存先（desktop.conf・kl_settings_*）・compositor と app の口を設計し、実装の Phase を足す。
+- 結論はユーザーに確かめてから (a) か (b) に進む（頁を消すのは利用者に見える変更）。
+
+## Phase（案）
+
+| Phase | 内容 | Status | 依存 |
+| --- | --- | --- | --- |
+| ws148-p001 | 検討（上の観点、他の desktop の調べ、今の実体の有無）と結論の案、ユーザーの判断 | planning | — |
+| ws148-p002 | (a) 頁の削除、または (b) 設計 | planning | p001 の判断 |
+| ws148-p003 | (b) の時の実装と回帰 | planning | p002 |
