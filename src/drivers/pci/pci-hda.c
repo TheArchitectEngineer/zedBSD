@@ -201,12 +201,24 @@ struct hda_path {
 	unsigned length;
 };
 
-/* One stream descriptor and the descriptor list that covers the ring. */
+/*
+ * One stream descriptor and the descriptor list that covers the ring.
+ *
+ * The saved fields are what a suspend read from the descriptor (ws052-p005):
+ * whether it was prepared and running, its control without RUN, its ring
+ * length, last descriptor and format, which the resume writes back.
+ */
 struct hda_stream {
 	unsigned present;
 	unsigned index;
 	uint8_t converter;
 	struct drv_dma_buffer bdl;
+	unsigned saved_prepared;
+	unsigned saved_running;
+	uint32_t saved_control;
+	uint32_t saved_length;
+	uint16_t saved_last;
+	uint16_t saved_format;
 };
 
 /* One supported format and whether the input converter takes it too. */
@@ -263,6 +275,12 @@ struct hda_controller {
 	struct hda_stream streams[2];
 	struct drv_audio_device *audio;
 	unsigned stream_errors;
+
+	/*
+	 * Nonzero from a suspend to its resume (ws052-p005): the controller is
+	 * held in reset, and a stream is neither prepared nor started.
+	 */
+	unsigned suspended;
 };
 
 /*
@@ -273,6 +291,13 @@ static int hda_detach(struct drv_pci_device *device, unsigned flags);
 static int hda_publish(struct drv_pci_device *device, void *argument);
 static int hda_unpublish(struct drv_pci_device *device, void *argument);
 static int hda_start(struct hda_controller *controller);
+static int hda_suspend(struct drv_pci_device *device);
+static int hda_resume(struct drv_pci_device *device);
+static void hda_stream_save(struct hda_controller *controller, struct hda_stream *stream);
+static int hda_stream_restore(struct hda_controller *controller, struct hda_stream *stream);
+static int hda_codec_restore(struct hda_controller *controller);
+static int hda_command_rings_point(struct hda_controller *controller);
+static void hda_interrupt_enable(struct hda_controller *controller);
 static int hda_stop(struct hda_controller *controller);
 static uint8_t hda_read8(struct hda_controller *controller, unsigned offset);
 static uint16_t hda_read16(struct hda_controller *controller, unsigned offset);
@@ -329,7 +354,7 @@ drv_pci_hda_driver_register(void)
 	};
 	static struct drv_pci_driver driver = {
 		"hda", identifiers, 1U, NULL, hda_attach, hda_detach,
-		NULL, NULL, NULL, { 0U, 0U, 0U, 0U }
+		NULL, hda_suspend, hda_resume, { 0U, 0U, 0U, 0U }
 	};
 	int error;
 
@@ -445,6 +470,227 @@ hda_detach(
 	kern_free(controller);
 
 	/* Succeeded: PCI may clear the binding. */
+	return 0;
+}
+
+/*
+ * Suspends the controller for S0 idle (ws052-p005): every stream that
+ * runs is stopped with its programming saved, the interrupt is masked,
+ * the command rings stop and the controller is held in reset.  /dev/dsp
+ * stays published; a stream that was running starts again at the resume
+ * (the position restarts at the beginning of the ring, which a client
+ * sees as a jump).
+ */
+static int
+hda_suspend(
+	struct drv_pci_device *device)
+{
+	struct hda_controller *controller;
+	unsigned index;
+	uint32_t control;
+
+	/* A controller that is not there has nothing to suspend. */
+	controller = drv_pci_device_driver_data(device);
+	if (controller == NULL || controller->registers.address == NULL)
+		return 0;
+
+	/* suspended keeps new streams from being prepared or started. */
+	controller->suspended = 1U;
+
+	/* Saves and stops each stream. */
+	for (index = 0; index < 2U; index++) {
+		/* Skips a stream the controller does not have. */
+		if (controller->streams[index].present == 0U)
+			continue;
+
+		/* Saves its programming, then stops and resets it. */
+		hda_stream_save(controller, &controller->streams[index]);
+		(void)hda_stream_reset(controller, &controller->streams[index]);
+	}
+
+	/* Masks the interrupt, stops the command rings and holds the controller in reset. */
+	hda_write32(controller, HDA_INTCTL, 0U);
+	hda_command_rings_stop(controller);
+	control = hda_read32(controller, HDA_GCTL);
+	hda_write32(controller, HDA_GCTL, control & ~HDA_GCTL_CRST);
+
+	/* Succeeded: the controller may go to D3hot. */
+	kern_logf("hda: suspended (playback %s)\n", controller->streams[HDA_PLAYBACK].saved_running ? "was running" : "idle");
+	return 0;
+}
+
+/*
+ * Resumes the controller after S0 idle: out of reset, the command rings
+ * pointed at again, the codec's power, paths and volume programmed again,
+ * the streams written back and the ones that were running started, and
+ * the interrupt enabled.  Every step is tried; the first failure is
+ * reported, and the controller takes streams again either way.
+ */
+static int
+hda_resume(
+	struct drv_pci_device *device)
+{
+	struct hda_controller *controller;
+	unsigned index;
+	int first_error;
+	int error;
+
+	/* A controller that was not suspended has nothing to resume. */
+	controller = drv_pci_device_driver_data(device);
+	if (controller == NULL || controller->suspended == 0U)
+		return 0;
+
+	/* Makes DMA snoop again and takes the controller out of reset. */
+	hda_force_snoop(controller);
+	first_error = hda_controller_reset(controller);
+
+	/* Points the controller at the command rings again. */
+	if (first_error == 0)
+		first_error = hda_command_rings_point(controller);
+
+	/* Programs the codec again. */
+	if (first_error == 0)
+		first_error = hda_codec_restore(controller);
+
+	/* Writes each stream back and starts the ones that ran. */
+	for (index = 0; index < 2U; index++) {
+		/* Skips a stream the controller does not have. */
+		if (controller->streams[index].present == 0U)
+			continue;
+
+		/* Writes it back; the first failure is kept. */
+		error = hda_stream_restore(controller, &controller->streams[index]);
+		if (error != 0 && first_error == 0)
+			first_error = error;
+	}
+
+	/* Enables the interrupt, and lets streams be prepared and started again. */
+	hda_interrupt_enable(controller);
+	controller->suspended = 0U;
+
+	/* Reports the first step that failed. */
+	if (first_error != 0) {
+		kern_logf("hda: resume failed (%d); sound may be silent until a restart\n", first_error);
+		return first_error;
+	}
+
+	/* Succeeded: the controller plays again. */
+	kern_logf("hda: resumed\n");
+	return 0;
+}
+
+/* Reads what a stream's descriptor holds, for the resume. */
+static void
+hda_stream_save(
+	struct hda_controller *controller,
+	struct hda_stream *stream)
+{
+	unsigned base;
+	uint32_t control;
+
+	/* Reads the control, the ring length, the last descriptor and the format. */
+	base = HDA_SD_BASE + stream->index * HDA_SD_SIZE;
+	control = hda_read32(controller, base + HDA_SD_CTL) & 0x00ffffffU;
+	stream->saved_length = hda_read32(controller, base + HDA_SD_CBL);
+	stream->saved_last = hda_read16(controller, base + HDA_SD_LVI);
+	stream->saved_format = hda_read16(controller, base + HDA_SD_FMT);
+
+	/* A descriptor with a ring was prepared; one with RUN set was running. */
+	stream->saved_control = control & ~HDA_SD_CTL_RUN;
+	stream->saved_prepared = 0U;
+	if (stream->saved_length != 0U)
+		stream->saved_prepared = 1U;
+
+	stream->saved_running = 0U;
+	if ((control & HDA_SD_CTL_RUN) != 0U)
+		stream->saved_running = 1U;
+}
+
+/* Writes a saved stream back into its descriptor and its converter, and starts it when it ran. */
+static int
+hda_stream_restore(
+	struct hda_controller *controller,
+	struct hda_stream *stream)
+{
+	unsigned base;
+	int error;
+
+	/* Resets the descriptor. */
+	error = hda_stream_reset(controller, stream);
+	if (error != 0)
+		return error;
+
+	/* A stream that was never prepared needs nothing more. */
+	if (!stream->saved_prepared)
+		return 0;
+
+	/* Writes the ring length, last descriptor, format, list address and control back. */
+	base = HDA_SD_BASE + stream->index * HDA_SD_SIZE;
+	hda_write32(controller, base + HDA_SD_CBL, stream->saved_length);
+	hda_write16(controller, base + HDA_SD_LVI, stream->saved_last);
+	hda_write16(controller, base + HDA_SD_FMT, stream->saved_format);
+	hda_write32(controller, base + HDA_SD_BDPL, (uint32_t)stream->bdl.device_address);
+	hda_write32(controller, base + HDA_SD_BDPU, (uint32_t)(stream->bdl.device_address >> 32));
+	hda_write32(controller, base + HDA_SD_CTL, stream->saved_control);
+
+	/* Binds the converter to the stream tag and gives it the format again. */
+	error = hda_verb(controller, stream->converter, HDA_VERB_SET_CHANNEL_STREAM, HDA_STREAM_TAG << 4, NULL);
+	if (error != 0)
+		return error;
+
+	error = hda_verb4(controller, stream->converter, HDA_VERB4_SET_FORMAT, stream->saved_format);
+	if (error != 0)
+		return error;
+
+	/* Starts a stream that ran. */
+	if (stream->saved_running)
+		hda_write32(controller, base + HDA_SD_CTL, stream->saved_control | HDA_SD_CTL_RUN);
+
+	/* Succeeded: the stream is as it was. */
+	return 0;
+}
+
+/* Programs the chosen codec again after a reset: its power, its paths and its volume. */
+static int
+hda_codec_restore(
+	struct hda_controller *controller)
+{
+	uint16_t present;
+	unsigned index;
+	int error;
+
+	/* Acknowledges the codecs' announcements. */
+	present = hda_read16(controller, HDA_STATESTS);
+	hda_write16(controller, HDA_STATESTS, present);
+
+	/* Powers the function group up. */
+	error = hda_verb(controller, controller->function_group, HDA_VERB_SET_POWER_STATE, 0U, NULL);
+	if (error != 0)
+		return error;
+
+	/* Programs every chosen path. */
+	for (index = 0; index < controller->output_count; index++) {
+		/* One output path. */
+		error = hda_path_program(controller, &controller->outputs[index], 0);
+		if (error != 0)
+			return error;
+	}
+
+	/* The input path, when the codec has one. */
+	if (controller->has_input != 0U) {
+		error = hda_path_program(controller, &controller->input, 1);
+		if (error != 0)
+			return error;
+	}
+
+	/* Writes the volume the user had. */
+	if (controller->volume_steps != 0U) {
+		error = hda_volume_write(controller, &controller->volume);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the codec is as it was. */
 	return 0;
 }
 
@@ -999,7 +1245,6 @@ hda_command_rings_start(
 	struct hda_controller *controller)
 {
 	uint64_t address;
-	uint8_t select;
 	int error;
 
 	/* Allocates the page both rings live in. */
@@ -1012,7 +1257,29 @@ hda_command_rings_start(
 	if (controller->dma64 == 0U && (address >> 32) != 0U)
 		return EINVAL;
 
+	/* Points the controller at the rings and starts them. */
+	error = hda_command_rings_point(controller);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: codec verbs can be sent. */
+	return 0;
+}
+
+/*
+ * Points the controller at the command rings and starts them, the
+ * memory already allocated: at the start, and after a resume.
+ */
+static int
+hda_command_rings_point(
+	struct hda_controller *controller)
+{
+	uint64_t address;
+	uint8_t select;
+	int error;
+
 	/* Sizes the CORB and points the controller at it. */
+	address = controller->command_rings.device_address;
 	controller->corb_entries = hda_ring_entries(hda_read8(controller, HDA_CORBSIZE), &select);
 	hda_write8(controller, HDA_CORBSIZE, select);
 	hda_write32(controller, HDA_CORBLBASE, (uint32_t)address);
@@ -2061,7 +2328,6 @@ static int
 hda_interrupt_start(
 	struct hda_controller *controller)
 {
-	uint32_t enable;
 	unsigned count;
 	int error;
 
@@ -2091,16 +2357,28 @@ hda_interrupt_start(
 		return error;
 
 	/* Enables the global interrupt and those of the streams in use. */
+	hda_interrupt_enable(controller);
+
+	/* Succeeded: stream interrupts reach the handler. */
+	return 0;
+}
+
+/* Enables the global interrupt and those of the streams in use. */
+static void
+hda_interrupt_enable(
+	struct hda_controller *controller)
+{
+	uint32_t enable;
+
+	/* The global enable and one bit per stream in use. */
 	enable = HDA_INTCTL_GIE;
 	if (controller->streams[HDA_PLAYBACK].present != 0U)
 		enable |= 1U << controller->streams[HDA_PLAYBACK].index;
 	if (controller->streams[HDA_CAPTURE].present != 0U)
 		enable |= 1U << controller->streams[HDA_CAPTURE].index;
 
+	/* Writes them. */
 	hda_write32(controller, HDA_INTCTL, enable);
-
-	/* Succeeded: stream interrupts reach the handler. */
-	return 0;
 }
 
 /*
@@ -2174,11 +2452,13 @@ hda_ops_prepare(
 	unsigned index;
 	int error;
 
-	/* Finds the stream and the hardware code of the format. */
+	/* Finds the stream and the hardware code of the format; a suspended controller takes none. */
 	controller = private_data;
 	stream = &controller->streams[capture];
 	if (stream->present == 0U)
 		return ENODEV;
+	if (controller->suspended != 0U)
+		return EBUSY;
 
 	chosen = NULL;
 	for (index = 0; index < controller->format_count; index++) {
@@ -2255,11 +2535,13 @@ hda_ops_start(
 	uint32_t control;
 	unsigned base;
 
-	/* Sets RUN on the descriptor. */
+	/* Sets RUN on the descriptor; a suspended controller starts nothing. */
 	controller = private_data;
 	stream = &controller->streams[capture];
 	if (stream->present == 0U)
 		return ENODEV;
+	if (controller->suspended != 0U)
+		return EBUSY;
 
 	base = HDA_SD_BASE + stream->index * HDA_SD_SIZE;
 	control = hda_read32(controller, base + HDA_SD_CTL) & 0x00ffffffU;

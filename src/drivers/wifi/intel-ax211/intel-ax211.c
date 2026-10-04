@@ -1417,11 +1417,18 @@ struct ax211_pci_controller {
 	unsigned reopen_pending;
 	/* Restarts since the last scan that completed; bounded by AX211_REOPEN_ATTEMPTS_MAX. */
 	unsigned reopen_attempts;
+	/*
+	 * Set by a suspend that found the radio off, until its resume
+	 * (ws052-p005): an open is refused meanwhile.  Under lifecycle_lock.
+	 */
+	unsigned suspended;
 };
 
 static int ax211_pci_match(struct drv_pci_device *device, const struct drv_pci_id *identity);
 static int ax211_pci_attach(struct drv_pci_device *device, const struct drv_pci_id *identity);
 static int ax211_pci_detach(struct drv_pci_device *device, unsigned flags);
+static int ax211_pci_suspend(struct drv_pci_device *device);
+static int ax211_pci_resume(struct drv_pci_device *device);
 static int ax211_pci_identity_matches(const struct drv_pci_device *device);
 static int ax211_pci_bar_validate(const struct drv_pci_bar *bar);
 static uint32_t ax211_pci_read32(const struct ax211_pci_controller *controller, unsigned offset);
@@ -1558,6 +1565,8 @@ static struct drv_pci_driver ax211_pci_driver = {
 	.match = ax211_pci_match,
 	.attach = ax211_pci_attach,
 	.detach = ax211_pci_detach,
+	.suspend = ax211_pci_suspend,
+	.resume = ax211_pci_resume,
 };
 
 /* This table is the permanent common-WLAN boundary for the AX211 backend. */
@@ -6515,6 +6524,12 @@ ax211_net_open(
 		return EBUSY;
 	}
 
+	/* A controller suspended for the sleep is not opened until its resume. */
+	if (controller->suspended) {
+		mutex_unlock(&controller->lifecycle_lock);
+		return EBUSY;
+	}
+
 	/* Starts the epoch. */
 	error = ax211_pci_open_locked(controller, 0);
 
@@ -6536,6 +6551,74 @@ ax211_net_open(
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Suspends the controller for S0 idle (ws052-p005).
+ *
+ * Only a radio that is off goes to sleep this way: no runtime session runs
+ * on the controller, so D3hot loses nothing the next open does not start
+ * afresh.  A radio that is on refuses with EBUSY: the network daemon turns
+ * it off before the sleep (Wi-Fi's own suspend is later work).  Opens are
+ * refused until the resume.
+ */
+static int
+ax211_pci_suspend(
+	struct drv_pci_device *device)
+{
+	struct ax211_pci_controller *controller;
+	int busy;
+
+	/* A controller that is not there has nothing to suspend. */
+	controller = drv_pci_device_driver_data(device);
+	if (controller == NULL)
+		return 0;
+
+	/* Refuses a radio that is on; otherwise refuses opens until the resume. */
+	mutex_lock(&controller->lifecycle_lock);
+
+	busy = 0;
+	if (controller->net_opened || controller->reopen_pending || controller->active_dma != NULL)
+		busy = 1;
+	if (!busy)
+		controller->suspended = 1U;
+
+	mutex_unlock(&controller->lifecycle_lock);
+
+	/* Says why a radio that is on stops the sleep. */
+	if (busy) {
+		kern_logf("intel-ax211: the radio is on; it is turned off before the sleep\n");
+		return EBUSY;
+	}
+
+	/* Succeeded: the controller may go to D3hot. */
+	return 0;
+}
+
+/*
+ * Resumes the controller after S0 idle: opens are taken again; the next
+ * open boots the firmware as it always does.
+ */
+static int
+ax211_pci_resume(
+	struct drv_pci_device *device)
+{
+	struct ax211_pci_controller *controller;
+
+	/* A controller that is not there has nothing to resume. */
+	controller = drv_pci_device_driver_data(device);
+	if (controller == NULL)
+		return 0;
+
+	/* Takes opens again. */
+	mutex_lock(&controller->lifecycle_lock);
+
+	controller->suspended = 0U;
+
+	mutex_unlock(&controller->lifecycle_lock);
+
+	/* Succeeded: the radio can be turned on again. */
 	return 0;
 }
 

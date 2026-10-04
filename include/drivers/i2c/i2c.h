@@ -55,4 +55,13 @@ int drv_i2c_bus_register(const struct drv_i2c_bus_ops *ops, struct drv_i2c_bus *
 int drv_i2c_bus_find_acpi(const char *path, struct drv_i2c_bus **result);
 int drv_i2c_transfer(struct drv_i2c_bus *bus, uint16_t address, uint32_t speed, const uint8_t *write, size_t write_length, uint8_t *read, size_t read_length);
 
+/*
+ * Holds a bus for its controller's suspend (ws052-p005): the transfer under
+ * way ends, and later transfers wait until the release.  The controller's
+ * driver holds it from its suspend to its resume, on the PCI power code's
+ * one thread.
+ */
+void drv_i2c_bus_hold(struct drv_i2c_bus *bus);
+void drv_i2c_bus_release(struct drv_i2c_bus *bus);
+
 #endif

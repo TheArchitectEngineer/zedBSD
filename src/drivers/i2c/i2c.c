@@ -222,3 +222,26 @@ drv_i2c_transfer(
 	/* Succeeded: the bytes were written and read. */
 	return 0;
 }
+
+/*
+ * Holds a bus for its controller's suspend: waits for the transfer under
+ * way and keeps later ones waiting until drv_i2c_bus_release().
+ */
+void
+drv_i2c_bus_hold(
+	struct drv_i2c_bus *bus)
+{
+	/* Takes the lock every transfer takes. */
+	mutex_lock(&bus->lock);
+}
+
+/*
+ * Lets the transfers that waited for a suspended controller run.
+ */
+void
+drv_i2c_bus_release(
+	struct drv_i2c_bus *bus)
+{
+	/* Gives the lock back. */
+	mutex_unlock(&bus->lock);
+}
