@@ -1026,6 +1026,11 @@ service_cleanup(
 	/* Returns the OS resources after input and display cleanup. */
 	zwl_os_close(server);
 
+	/* A screen the lid put out is lit for whoever comes next, and the backlight closed (backend-host.c, ws132-p008). */
+	zwl_lid_screen_restore(server);
+	kl_backend_backlight_close(server->backlight);
+	server->backlight = NULL;
+
 	/* Closes the operating system's side last, after everything that used it. */
 	kl_backend_close(server->backend);
 	server->backend = NULL;

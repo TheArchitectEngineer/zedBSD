@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 
+static void lid_screen_off(struct zwl_server *server);
 static struct zwl_input_device *backend_input(struct zwl_server *server, const char *path);
 static const char *power_source_text(unsigned source);
 
@@ -217,23 +218,86 @@ zwl_backend_power_button(
 }
 
 /*
- * The lid opened or closed (ws132-p003).  What it does waits for the
- * decision D2 (ws132-p008); it is only written in the log.
+ * The lid opened or closed (ws132-p003; what it does is ws132-p008, the
+ * decision D2): closing it puts the screen out and locks the session;
+ * opening it within 15 minutes unlocks the lock the closing made (lid.c).
  */
 void
 zwl_backend_lid_changed(
 	void *data,
 	unsigned open)
 {
-	/* Only the log, until p008. */
-	(void)data;
+	struct zwl_server *server;
+	unsigned actions;
+	int session;
+	int locked;
+
+	/* The change, logged. */
+	server = data;
 	if (open != 0U) {
 		printf("ZWL EVENT lid open\n");
-		return;
+	} else {
+		printf("ZWL EVENT lid closed\n");
 	}
 
-	/* Closed. */
-	printf("ZWL EVENT lid closed\n");
+	/* What it asks for: a session is any but the login screen's. */
+	session = 1;
+	if (server->greeter)
+		session = 0;
+	locked = 0;
+	if (server->locked)
+		locked = 1;
+	if (open != 0U) {
+		actions = zwl_lid_open(&server->lid, zwl_milliseconds(), locked);
+	} else {
+		actions = zwl_lid_close(&server->lid, zwl_milliseconds(), session, locked);
+	}
+
+	/* The lock first, so that the screen never lights on the desktop. */
+	if ((actions & ZWL_LID_LOCK) != 0U) {
+		locked = zwl_lock(server, "lid");
+		if (!locked)
+			zwl_lid_lock_failed(&server->lid);
+	}
+
+	/* The screen out. */
+	if ((actions & ZWL_LID_SCREEN_OFF) != 0U)
+		lid_screen_off(server);
+
+	/* The lid's own lock goes without the password. */
+	if ((actions & ZWL_LID_UNLOCK) != 0U)
+		zwl_lock_release(server, "lid");
+
+	/* The screen lit again. */
+	if ((actions & ZWL_LID_SCREEN_ON) != 0U)
+		zwl_lid_screen_restore(server);
+}
+
+/*
+ * Lights the screen again: the panel's backlight at the brightness it had
+ * when the lid put it out, and the desktop drawn instead of black.  Also
+ * called as the compositor ends, so a closed lid leaves no dark panel to
+ * the next session.
+ */
+void
+zwl_lid_screen_restore(
+	struct zwl_server *server)
+{
+	int error;
+
+	/* The backlight back, when the lid put it out. */
+	if (server->backlight_out) {
+		error = kl_backend_backlight_set(server->backlight, server->backlight_saved);
+		printf("ZWL LID backlight on percent=%u error=%d\n", server->backlight_saved, error);
+		server->backlight_out = 0;
+	}
+
+	/* The desktop drawn again. */
+	if (server->screen_off) {
+		server->screen_off = 0;
+		server->dirty = 1;
+		printf("ZWL LID screen on\n");
+	}
 }
 
 /*
@@ -299,4 +363,54 @@ backend_input(
 
 	/* No input of that path. */
 	return NULL;
+}
+
+/*
+ * Puts the screen out: the panel's backlight off when the machine has one
+ * the compositor may set (its brightness kept for the opening), and black
+ * drawn in any case (WS113 p013's backlight, or none).
+ */
+static void
+lid_screen_off(
+	struct zwl_server *server)
+{
+	unsigned percent;
+	int error;
+
+	/* Black from the next frame. */
+	if (!server->screen_off) {
+		server->screen_off = 1;
+		server->dirty = 1;
+		printf("ZWL LID screen off\n");
+	}
+
+	/* The backlight, opened the first time it is needed. */
+	if (server->backlight == NULL) {
+		error = kl_backend_backlight_open(&server->backlight);
+		if (error != 0) {
+			server->backlight = NULL;
+			printf("ZWL LID backlight none error=%d\n", error);
+			return;
+		}
+	}
+
+	/* Already out. */
+	if (server->backlight_out)
+		return;
+
+	/* Its brightness kept (full when it cannot say, or was already dark), then off. */
+	percent = 100U;
+	error = kl_backend_backlight_get(server->backlight, &percent);
+	if (error != 0 || percent == 0U)
+		percent = 100U;
+	error = kl_backend_backlight_set(server->backlight, 0U);
+	if (error != 0) {
+		printf("ZWL LID backlight off error=%d\n", error);
+		return;
+	}
+
+	/* Succeeded: out, to come back at the opening. */
+	server->backlight_saved = percent;
+	server->backlight_out = 1;
+	printf("ZWL LID backlight off saved=%u\n", percent);
 }

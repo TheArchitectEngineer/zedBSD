@@ -249,9 +249,13 @@ zwl_lock(
 	const char *reason)
 {
 	struct passwd *entry;
+	int managed;
 
 	/* Only a session a session manager started (it unlocks), and once. */
-	if (server->greeter || !kl_backend_session_managed(server->backend))
+	if (server->greeter)
+		return 0;
+	managed = kl_backend_session_managed(server->backend);
+	if (!managed)
 		return 0;
 	if (server->locked)
 		return 1;
@@ -277,6 +281,31 @@ zwl_lock(
 	server->dirty = 1;
 	printf("ZWL LOCK locked reason=%s user=%s\n", reason, greeter_users[0].name);
 	return 1;
+}
+
+/*
+ * Unlocks the session without the password (the lid opened soon after it
+ * locked it, ws132-p008): what was typed is erased and the desktop shows.
+ */
+void
+zwl_lock_release(
+	struct zwl_server *server,
+	const char *reason)
+{
+	/* Only a locked session. */
+	if (!server->locked)
+		return;
+
+	/* Nothing typed stays, and an answer still on its way acts on nothing. */
+	greeter_erase();
+	greeter_message[0] = '\0';
+	greeter_waiting = 0U;
+
+	/* Succeeded: the desktop shows; the idle time starts again. */
+	server->locked = 0U;
+	server->lock_input_ms = zwl_milliseconds();
+	server->dirty = 1;
+	printf("ZWL LOCK unlocked reason=%s\n", reason);
 }
 
 /*
@@ -1034,6 +1063,8 @@ greeter_submit(
 		printf("ZWL GREETER send errno=%d\n", error);
 		greeter_waiting = 0;
 	}
+
+	/* The screen shows the wait. */
 	server->dirty = 1;
 	printf("ZWL GREETER auth user=%s\n", greeter_users[greeter_selected].name);
 }
@@ -1175,6 +1206,7 @@ greeter_answered(
 		greeter_waiting = 0;
 		server->locked = 0U;
 		server->lock_input_ms = zwl_milliseconds();
+		zwl_lid_unlocked(&server->lid);
 		printf("ZWL LOCK unlocked\n");
 		return;
 	}
