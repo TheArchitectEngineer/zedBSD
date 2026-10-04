@@ -2,7 +2,7 @@
 
 # ws131-p015: app の骨組みの API（kl_app）
 
-Status: in-progress（q706、P2 generation14、2026-10-05。実装・3 OS のうち zedBSD と Linux の build・host 試験まで、QEMU は T1 待ち。判定は Q1）
+Status: cleared（2026-10-05 Q1: T1-111 の kuidemo-p015 PASS（PNG start・list・context）、回帰の組は textinput-p013・viewers-p008・titlebar-p010 が T1-111 で、menu-p003・files-regress 14/14 が T1-117 で PASS）。以前: in-progress（q706、P2 generation14、2026-10-05。実装・3 OS のうち zedBSD と Linux の build・host 試験まで、QEMU は T1 待ち。判定は Q1）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q706（P2）
@@ -68,3 +68,7 @@ design.md §6 の `kl_app`（一つの registry と一度の roundtrip、pull �
 
 - QEMU: `plan/ws131/tests/kuidemo-p015.sh`（image `plan/ws131/tests/config-amd64-p015.mk`）と、bind の変更（titlebar・menu・glass・edit・inset）の退行の確認に既存の回帰（files-regress・textinput-p013・viewers-p008・menu-p003・titlebar-p010、TQ-1 の A と同じ組）。
 - Linux の kuidemo の PNG（Debian guest）。FreeBSD の native build。
+
+## Q1 の判定（2026-10-05）
+
+T1-111 の kuidemo-p015 PASS（PNG start・list・context）、回帰の組は textinput-p013・viewers-p008・titlebar-p010 が T1-111 で、menu-p003・files-regress 14/14 が T1-117 で PASS。受け入れを満たしたので **cleared**。

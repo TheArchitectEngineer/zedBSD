@@ -65,8 +65,8 @@ app は OS の抽象化を直接持たない。例: Settings → libkeiland → 
 | [p011](phase011/phase.md) | Settings を拡張へ、毎秒の監視の除去、libkeiland の OS を 0 に | cleared（q659、T2-021・022・024・T1-062） | p010、WS089・P1 の区切り | 4〜5h |
 | [p012](phase012/phase.md) | libkeiui を libkeiland へ移す（名前は変えない） | cleared（q673、T2-027、main 5ec60b4） | p003 の merge、ベータ1 の app の区切り | 4h |
 | [p013](phase013/phase.md) | 旧 libkeiui の名前を `kl_`・`KL_` に | in-progress（実装・host 試験済み、main に統合 2026-10-04。Q1 の最短の確認だけ PASS、回帰は test-queue の TQ-1） | p012 | 3〜4h |
-| [p014](phase014/phase.md) | 旧 libkeiland の名前を `kl_`・`KL_` に | in-progress（途中、main に統合 2026-10-04。Resume は phase.md。app の source の例外はユーザーが承認） | p013・p011 | 3〜4h |
-| [p015](phase015/phase.md) | app の骨組みの API（`kl_app`） | in-progress（q706、P2。実装・host 済み、QEMU は T1 待ち） | p014・p010 | 4〜5h |
+| [p014](phase014/phase.md) | 旧 libkeiland の名前を `kl_`・`KL_` に | cleared（2026-10-05、T1-116 で FreeBSD の build と audit PASS） | p013・p011 | 3〜4h |
+| [p015](phase015/phase.md) | app の骨組みの API（`kl_app`） | cleared（2026-10-05 Q1） | p014・p010 | 4〜5h |
 | [p016](phase016/phase.md) | Text Editor | planning | p015 | 3〜4h |
 | [p017](phase017/phase.md) | PDF Viewer・Image Viewer | planning | p016 | 3〜4h |
 | [p018](phase018/phase.md) | Terminal・Notes | planning | p016 | 4〜5h |

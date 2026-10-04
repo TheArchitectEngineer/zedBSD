@@ -2,7 +2,7 @@
 
 # ws099-p031: 上部の system bar の高さを窓の title bar に揃える（34 → 44 px）
 
-Status: in-progress（実装済み・T1 の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-097 の PASS 群（bar と title bar が同じ高さを PNG で目視）、FAIL の 2 つは T1-112 で PASS、sheet-guest・menu-p003 は T1-117 で PASS）。以前: in-progress（実装済み・T1 の試験待ち）
 Disposition: normal
 Parent: [WS099](../ws.md)
 Queue: q700-i01（P1 generation17、2026-10-05）
@@ -52,3 +52,7 @@ T1-097 は大半 PASS、bar と title bar の高さは PNG で一致。FAIL 2 �
 - 気づいた事（判断は Q1・ユーザー）: 800 px 高の画面では desktop の icon の grid が 7 行から 6 行に減った（LAYOUT_MARGIN 16 の上下と 104 px の cell）。7 行に戻すなら Files の desktop の余白か cell の高さを変える別の作業。
 
 ユーザーの決定（2026-10-05 未明）: 800 px の画面の desktop の icon は **6 行のまま**。
+
+## Q1 の判定（2026-10-05）
+
+T1-097 の PASS 群（bar と title bar が同じ高さを PNG で目視）、FAIL の 2 つは T1-112 で PASS、sheet-guest・menu-p003 は T1-117 で PASS。受け入れを満たしたので **cleared**。

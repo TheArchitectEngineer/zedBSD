@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window). */
-#define KL_VERSION	26U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password). */
+#define KL_VERSION	27U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1193,6 +1193,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_POWER	0x8U
 #define KL_SYSTEM_HAS_DEVICES	0x10U
 #define KL_SYSTEM_HAS_MONITOR	0x20U	/* kl_system_monitor_open (WS134 p012) */
+#define KL_SYSTEM_HAS_ACCOUNT	0x40U	/* kl_system_account_set_password (KL_VERSION 27, ws160-p002) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
@@ -1416,6 +1417,19 @@ size_t kl_system_devices_get(const struct kl_system *system, struct kl_device *d
  * ENOTSUP, or EINVAL.
  */
 int kl_system_devices_eject(struct kl_system *system, const char *id, uint32_t *request);
+
+/*
+ * Asks for the password of the user the desktop runs as to be changed
+ * from current to fresh (KL_VERSION 27, ws160-p002), answered by a result
+ * (kl_system_take_result): 0, EPERM when current is wrong, EINVAL when
+ * fresh breaks the system's rules (on zedBSD: at least 8 characters, not
+ * the old one), ENOTSUP where the desktop cannot change it, EBUSY while
+ * another change is under way, EIO when it failed.
+ * Returns 0 when asked, ENOTSUP without KL_SYSTEM_HAS_ACCOUNT, or EINVAL
+ * (an empty password, or one longer than 256 bytes).  The caller wipes
+ * its copies; the library keeps none.
+ */
+int kl_system_account_set_password(struct kl_system *system, const char *current, const char *fresh, uint32_t *request);
 
 /*
  * The machine's monitor (WS134 p012, plan/ws134/design.md section 1.3):

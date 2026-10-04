@@ -17,6 +17,9 @@ ZEDBSD_ROOT_LOCKED := y
 ZEDBSD_USER_PROGRAMS := $(filter-out zedinst,$(ZEDBSD_USER_PROGRAMS))
 ZEDBSD_USER_PROGRAMS += $(filter-out $(ZEDBSD_USER_PROGRAMS),clang libcxx emacs)
 
+# FFmpeg's libraries (LGPL 2.1 or later, ws122-p001) and the simple video player are in from beta 1 (the user's decision of 2026-10-05).
+ZEDBSD_USER_PROGRAMS += $(filter-out $(ZEDBSD_USER_PROGRAMS),libavcodec)
+
 # The Windows zip (U6): n until the base archive is rebuilt with the fork's confirmed commits (ws088-p002);
 # y makes the release job package it, refusing a draft base, and fail when it cannot.
 ZEDBSD_RELEASE_ZIP := n

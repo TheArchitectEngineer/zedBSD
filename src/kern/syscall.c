@@ -5794,6 +5794,7 @@ sys_cred_set_call(
 	uid_t uids[3];
 	gid_t gids[3];
 	unsigned i;
+	int changed;
 	int error;
 
 	process = current_process();
@@ -5973,11 +5974,14 @@ sys_cred_set_call(
 		break;
 	}
 
-	/* Installs the copy, or drops it on failure. */
+	/* Installs the copy, or drops it on failure; a changed identity marks the process (ws160-p001). */
 	if (error == 0) {
+		changed = cred_ids_differ(old, cred);
 		error = replace_cred(process, cred);
 		if (error != 0)
 			cred_release(cred);
+		if (error == 0 && changed)
+			process->set_id = 1;
 	} else {
 		cred_release(cred);
 	}

@@ -129,6 +129,7 @@
 		kl_system_power_action;
 		kl_system_devices_get;
 		kl_system_devices_eject;
+		kl_system_account_set_password;
 		kl_system_monitor_open;
 		kl_system_monitor_take;
 		kl_system_monitor_info;

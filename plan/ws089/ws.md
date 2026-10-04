@@ -65,13 +65,13 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p017](phase017/phase.md) | accent の色・dark の外観（D2） | planning（ユーザーの判断: ベータ1 に入れるか。zdesktop と全 app の固定の色に及ぶ） | p010 |
 | [ws089-p018](phase018/phase.md) | 全文規約と回帰（WS の最後）、完了の処理の準備 | planning（最後） | 選んだ実装の Phase |
 | [ws089-p020](phase020/phase.md) | BUG-152: Wallpaper の頁の縮小表示を別の thread で読み、頁を先に出す | cleared（2026-10-03 Q1、T1-011） | — |
-| [ws089-p021](phase021/phase.md) | Wi-Fi の画面の自動の scan（Scan のボタンを無くす、compositor が要求を数えて libkeiland-backend 経由で networkd に on・off）と Disconnect の icon（2026-10-04 ユーザーの要望）、BUG-184 | planning | WS131・WS005、q700 の Wi-Fi の Bug と同じ担当 |
+| [ws089-p021](phase021/phase.md) | Wi-Fi の画面の自動の scan（Scan のボタンを無くす、compositor が要求を数えて libkeiland-backend 経由で networkd に on・off）と Disconnect の icon（2026-10-04 ユーザーの要望）、BUG-184 | cleared（2026-10-05、T1-109・T1-098 PASS） | WS131・WS005、q700 の Wi-Fi の Bug と同じ担当 |
 | [ws089-p022](phase022/phase.md) | Ethernet の頁で設定の取得・変更（IPv4 DHCP/Static・Address・Mask・Router、IPv6 Auto/Static・Address・Router、MTU、DNS 1/2、MAC などは読むだけ）。compositor 経由、libkeiland-backend が net の command で設定（2026-10-04 ユーザーの要望） | planning | WS131・WS005・WS033、IPv6 は WS130 |
 | [ws089-p023](phase023/phase.md) | Storage の頁: 解析の button で folder の階層ごとの使用量を multi-thread で解析し逐次に表示、Stop で止める。Trash を空にする（2026-10-04 ユーザーの要望） | planning | WS127（Trash） |
 | [ws089-p024](phase024/phase.md) | Mouse の頁を device ごと（マウス・タッチパッド）の設定に、pointer の加速、既定 base 150%・加速 強め、自然な方向のスクロールはタッチパッド ON・マウス OFF（2026-10-04 ユーザーの要望） | planning | compositor の入力、WS135 |
 | [ws089-p025](phase025/phase.md) | Sharing の頁に SSHD の ON/OFF（後でクラウドストレージの設定もここに、WS146）（2026-10-04 ユーザーの要望） | planning | WS002（service） |
 | [ws089-p026](phase026/phase.md) | Users の頁の実装（一覧・自分の password・管理者の利用者の追加・削除・group）（2026-10-04 ユーザー） | planning | WS131、account の userland |
-| [ws089-p027](phase027/phase.md) | About に版の名前（`/etc/os-release` の PRETTY_NAME）を出す | in-progress（2026-10-05 q716-i01 P1: 実装・build warning 0・host 10 checks。QEMU は T1 に依頼） | ws129-p003 |
+| [ws089-p027](phase027/phase.md) | About に版の名前（`/etc/os-release` の PRETTY_NAME）を出す | cleared（2026-10-05、T1-108 PASS） | ws129-p003 |
 
 
 ## ベータ1 の到達目標（2026-10-02 計画、fg019）

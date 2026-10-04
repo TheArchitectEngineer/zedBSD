@@ -142,6 +142,64 @@ cred_in_group(
 }
 
 /*
+ * Tells whether two credentials differ in a user or group identity.
+ */
+int
+cred_ids_differ(
+	const struct ucred *left,
+	const struct ucred *right)
+{
+	/* The user identities. */
+	if (left->ruid != right->ruid || left->euid != right->euid || left->suid != right->suid)
+		return 1;
+
+	/* The group identities. */
+	if (left->rgid != right->rgid || left->egid != right->egid || left->sgid != right->sgid)
+		return 1;
+
+	/* The same. */
+	return 0;
+}
+
+/*
+ * Tells whether a credential may trace a process of another (ws160-p001).
+ */
+int
+cred_may_trace(
+	const struct ucred *tracer,
+	const struct ucred *target,
+	unsigned target_set_id)
+{
+	int superuser;
+
+	/* Missing credentials allow nothing. */
+	if (tracer == NULL || target == NULL)
+		return 0;
+
+	/* The superuser traces any process. */
+	superuser = cred_is_superuser(tracer);
+	if (superuser)
+		return 1;
+
+	/* A tracer of one identity: its real and effective ones the same. */
+	if (tracer->euid != tracer->ruid || tracer->egid != tracer->rgid)
+		return 0;
+
+	/* The target of exactly that identity, all three of each. */
+	if (target->ruid != tracer->ruid || target->euid != tracer->ruid || target->suid != tracer->ruid)
+		return 0;
+	if (target->rgid != tracer->rgid || target->egid != tracer->rgid || target->sgid != tracer->rgid)
+		return 0;
+
+	/* And never one that changed its identity. */
+	if (target_set_id)
+		return 0;
+
+	/* Succeeded: it may. */
+	return 1;
+}
+
+/*
  * Reads the credential of the current process without a reference.
  */
 const struct ucred *

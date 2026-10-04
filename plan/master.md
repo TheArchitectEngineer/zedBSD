@@ -71,6 +71,8 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS160 の判断 D1〜D4（2026-10-05 未明、P1 の ws160-p001、案で実装済み）**: D1 password の最短 8 文字（kei の今の "kei" は残る、利用者が新しく選ぶ時は 8 以上）。D2 sudoers の file は無く、wheel は全部できる。D3 sudo は認証を記憶せず毎回聞く。D4 wheel は gid 0 のまま（kei は group 0 の file を読める、shadow は 0400 なので読めない）。あわせて P1 が見つけた既存の security の穴 2 つ（PT_ATTACH に権限の確かめが無く誰でも root の daemon を trace できた、trace 中の process が set-id の image を exec すると昇格したまま）を直した。kei を base の group で wheel に入れた（全部の image）。
+- 2026-10-05 未明 user「では、私は寝ます。自律駆動で自走をお願いします。」→ 10 時ごろまで自律。新規の実装を優先（P1 = WS160 → q722、P2 = T1-102 の IME の FAIL → WS122）、尽きるか止まったら Bug の一覧から。判断が要る点は uncleared にして記録し次へ。
 - 2026-10-05 未明 決定: WS122 の libavcodec をベータ1 の image に入れ、簡単な player もベータ1（RC 10/13）に（段をベータ1 へ。見積もりの表の段の改訂は Q1）。
 - 2026-10-04 17 時に決定: BUG-166 のタッチパッドは「押し込み＋タップドラッグ」、5330 の ACPI の table の読み取り専用の取り出しと commit を許可（queue.md の決定 (1)(2)）。
 - WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。

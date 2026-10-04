@@ -21,6 +21,7 @@
  * form belongs to the machine it describes.
  */
 
+#include <kern/cred.h>
 #include "kern/process.h"
 #include "kern/thread.h"
 #include "kern/vmspace.h"
@@ -526,6 +527,9 @@ kern_ptrace(
 	struct fpreg user_fpreg;
 	struct ptrace_io_desc io;
 	struct ptrace_state state;
+	struct ucred *tracer_cred;
+	struct ucred *target_cred;
+	int allowed;
 	int error;
 
 	caller = curthread != NULL ? curthread->proc : NULL;
@@ -544,6 +548,18 @@ kern_ptrace(
 		process = process_find_ref(pid);
 		if (process == NULL)
 			return ESRCH;
+
+		/* Only a process of the caller's own identity, unless the caller is the superuser (ws160-p001). */
+		tracer_cred = cred_process_ref(caller);
+		target_cred = cred_process_ref(process);
+		allowed = cred_may_trace(tracer_cred, target_cred, process->set_id);
+		cred_release(target_cred);
+		cred_release(tracer_cred);
+		if (!allowed) {
+			process_release(process);
+			return EPERM;
+		}
+
 		error = process_trace_attach(process, caller);
 		if (error == 0)
 			error = signal_send_process(process, SIGSTOP);

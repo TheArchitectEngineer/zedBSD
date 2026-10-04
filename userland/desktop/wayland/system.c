@@ -8,8 +8,14 @@
 /*
  * Keiland's system extension in the compositor (WS131 p010, plan/ws131/
  * design.md section 4; keiland/kl-system-protocol.h): the manager, and the
- * network, the sound, the power and the devices it gives clients.  The
- * settings are settings.c's.
+ * network, the sound, the power, the devices and the account it gives
+ * clients.  The settings are settings.c's.
+ *
+ * The account (ws160-p002): a client's set_password goes to
+ * libkeiland-backend on a thread of the account's own, one change at a
+ * time (busy otherwise), and its result to the asking object when the
+ * thread is done.  The passwords are wiped from the request's bytes, the
+ * copies and the job as soon as they are handed on, and never logged.
  *
  * The compositor holds the system: the network through network.c's watch
  * (one request at a time, the system bar's included), the sound through
@@ -85,6 +91,29 @@
 #define SYSTEM_NETWORK_PROFILES	4U	/* the daemon is told the saved networks changed */
 #define SYSTEM_NETWORK_JOINING	5U	/* the network of the saved key is joined */
 #define SYSTEM_NETWORK_RETRY	6U	/* a step the system bar's request held up, sent again next pass */
+
+/*
+ * The account's job (ws160-p002): the thread, its lock, the passwords
+ * (wiped when the job is taken), its answer, whether it is under way and
+ * done, and who asked (the client's number, the object and the request's
+ * number).
+ */
+struct system_account_job {
+	pthread_t thread;
+	pthread_mutex_t lock;
+	unsigned lock_ready;
+	char current[KL_SYSTEM_PASSWORD_MAX + 1U];
+	char fresh[KL_SYSTEM_PASSWORD_MAX + 1U];
+	int error;
+	unsigned done;
+	unsigned started;
+	uint64_t client;
+	uint32_t object;
+	uint32_t number;
+};
+
+/* The account's one job, the event loop's thread's but the fields the thread fills under the lock. */
+static struct system_account_job system_account_job;
 
 /* The jobs of the threads. */
 #define SYSTEM_JOB_SAVE_KEY	1U
@@ -191,6 +220,9 @@ static int system_network_request(struct zwl_object *object, uint32_t opcode, co
 static int system_audio_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_power_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_devices_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_account_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static void system_account_take(struct zwl_server *server);
+static void *system_account_run(void *argument);
 static uint32_t system_network_send(struct zwl_object *object, uint32_t number, uint32_t what, const char *ssid);
 static int system_network_save_key(struct zwl_server *server, uint64_t client, uint32_t object, uint32_t number, unsigned bar, const char *ssid, const char *key);
 static uint32_t system_network_details(struct zwl_object *object, uint32_t number);
@@ -245,9 +277,11 @@ zwl_system_bind(
 	    KL_SYSTEM_CAPABILITY_POWER |
 	    KL_SYSTEM_CAPABILITY_DEVICES;
 
-	/* The monitor, to a manager bound at version 2 (WS134 p012). */
+	/* The monitor, to a manager bound at version 2 (WS134 p012); the account, at version 4 (ws160-p002). */
 	if (manager->version >= 2U)
 		bits |= KL_SYSTEM_CAPABILITY_MONITOR;
+	if (manager->version >= 4U)
+		bits |= KL_SYSTEM_CAPABILITY_ACCOUNT;
 	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
 	if (error != 0)
 		return error;
@@ -286,6 +320,9 @@ zwl_system_request(
 	case ZWL_SYSTEM_DEVICES:
 		error = system_devices_request(object, opcode, bytes, size);
 		break;
+	case ZWL_SYSTEM_ACCOUNT:
+		error = system_account_request(object, opcode, bytes, size);
+		break;
 	default:
 		error = EPROTO;
 		break;
@@ -318,6 +355,7 @@ zwl_system_tick(
 	}
 
 	/* The threads' jobs, once they are done, and the network thread's next job. */
+	system_account_take(server);
 	system_network_job_take(server);
 	system_power_job_take(server);
 	system_network_job_next(server);
@@ -485,6 +523,14 @@ zwl_system_close(
 	/* A job under way ends on its own (a file read or written to its end, a bus call answered). */
 	system_job_wait(&system_state.network_job);
 	system_job_wait(&system_state.power_job);
+	if (system_account_job.started) {
+		(void)pthread_join(system_account_job.thread, NULL);
+		system_account_job.started = 0U;
+	}
+
+	/* No password stays. */
+	system_wipe(system_account_job.current, sizeof(system_account_job.current));
+	system_wipe(system_account_job.fresh, sizeof(system_account_job.fresh));
 
 	/* Nothing waits any more, and no key stays in memory. */
 	system_wipe(system_state.wait.key, sizeof(system_state.wait.key));
@@ -546,6 +592,12 @@ system_manager_request(
 	case KL_SYSTEM_MANAGER_GET_DEVICES:
 		kind = ZWL_SYSTEM_DEVICES;
 		break;
+	case KL_SYSTEM_MANAGER_GET_ACCOUNT:
+		/* Since version 4 (ws160-p002). */
+		if (manager->version < 4U)
+			return EPROTO;
+		kind = ZWL_SYSTEM_ACCOUNT;
+		break;
 	default:
 		return EPROTO;
 	}
@@ -574,6 +626,9 @@ system_manager_request(
 			break;
 		system_power_state(created);
 		system_done(created, KL_SYSTEM_POWER_EVENT_DONE);
+		break;
+	case ZWL_SYSTEM_ACCOUNT:
+		/* No state, and no done. */
 		break;
 	default:
 		system_done(created, KL_SYSTEM_DEVICES_EVENT_DONE);
@@ -881,6 +936,193 @@ system_devices_request(
 
 	/* Succeeded: the request is answered. */
 	return 0;
+}
+
+/*
+ * Carries out a request of an account object (ws160-p002): a password
+ * change starts the account's thread, or is answered busy, invalid or
+ * failed at once.  The passwords are wiped from the request and the copies.
+ */
+static int
+system_account_request(
+	struct zwl_object *object,
+	uint32_t opcode,
+	const unsigned char *bytes,
+	size_t size)
+{
+	struct system_account_job *job;
+	uint32_t number;
+	char *current;
+	char *fresh;
+	size_t current_length;
+	size_t fresh_length;
+	size_t next;
+	size_t end;
+	int error;
+
+	/* The object goes. */
+	if (opcode == KL_SYSTEM_ACCOUNT_DESTROY) {
+		if (size != 0U)
+			return EPROTO;
+		zwl_object_destroy(object);
+		return 0;
+	}
+
+	/* A password change: its number and the two passwords. */
+	if (opcode != KL_SYSTEM_ACCOUNT_SET_PASSWORD || size < 4U)
+		return EPROTO;
+	number = system_word(bytes, 0U);
+	current = NULL;
+	fresh = NULL;
+	error = system_read_string(bytes, size, 4U, &current, &next);
+	if (error == 0)
+		error = system_read_string(bytes, size, next, &fresh, &end);
+	if (error == 0 && end != size)
+		error = EPROTO;
+
+	/* The request's own bytes held the passwords: wiped now that they are copied (the message is taken). */
+	system_wipe((char *)(uintptr_t)bytes, size);
+	if (error != 0) {
+		/* A malformed request: what was copied goes. */
+		if (current != NULL) {
+			system_wipe(current, strlen(current));
+			free(current);
+		}
+
+		/* Both of them. */
+		if (fresh != NULL) {
+			system_wipe(fresh, strlen(fresh));
+			free(fresh);
+		}
+
+		/* The client is ended. */
+		return EPROTO;
+	}
+
+	/* One change at a time; passwords that fit. */
+	job = &system_account_job;
+	current_length = strlen(current);
+	fresh_length = strlen(fresh);
+	error = 0;
+	if (job->started)
+		error = EBUSY;
+	if (error == 0 && (current_length > KL_SYSTEM_PASSWORD_MAX || fresh_length > KL_SYSTEM_PASSWORD_MAX))
+		error = EINVAL;
+
+	/* The job's inputs. */
+	if (error == 0) {
+		memcpy(job->current, current, current_length + 1U);
+		memcpy(job->fresh, fresh, fresh_length + 1U);
+	}
+
+	/* The copies go. */
+	system_wipe(current, current_length);
+	system_wipe(fresh, fresh_length);
+	free(current);
+	free(fresh);
+
+	/* The lock, once, and the thread. */
+	if (error == 0 && !job->lock_ready) {
+		error = pthread_mutex_init(&job->lock, NULL);
+		if (error == 0)
+			job->lock_ready = 1U;
+	}
+
+	/* The thread, with who asked. */
+	if (error == 0) {
+		job->error = 0;
+		job->done = 0U;
+		job->client = object->client->number;
+		job->object = object->id;
+		job->number = number;
+		error = pthread_create(&job->thread, NULL, system_account_run, job);
+	}
+
+	/* Started: the answer comes when the thread is done. */
+	if (error == 0) {
+		job->started = 1U;
+		printf("ZWL SYSTEM account set-password client=%llu number=%u\n", (unsigned long long)job->client, number);
+		return 0;
+	}
+
+	/* Not started: the passwords go, and the answer is now. */
+	if (!job->started) {
+		system_wipe(job->current, sizeof(job->current));
+		system_wipe(job->fresh, sizeof(job->fresh));
+	}
+
+	/* The answer. */
+	system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, number, system_result_of(error));
+
+	/* Succeeded: the request is answered. */
+	return 0;
+}
+
+/* The account's thread: the password changed through libkeiland-backend, away from the event loop. */
+static void *
+system_account_run(
+	void *argument)
+{
+	struct system_account_job *job;
+	int error;
+
+	/* The change. */
+	job = argument;
+	error = kl_backend_account_set_password(job->current, job->fresh);
+
+	/* How it went, for the event loop. */
+	(void)pthread_mutex_lock(&job->lock);
+
+	job->error = error;
+	job->done = 1U;
+
+	(void)pthread_mutex_unlock(&job->lock);
+
+	/* Succeeded: the thread ends. */
+	return NULL;
+}
+
+/* Takes the account's finished job: the passwords wiped, the answer to the asking object if it is still there. */
+static void
+system_account_take(
+	struct zwl_server *server)
+{
+	struct system_account_job *job;
+	struct zwl_client *client;
+	struct zwl_object *object;
+	unsigned done;
+
+	/* Nothing under way. */
+	job = &system_account_job;
+	if (!job->started)
+		return;
+
+	/* Done yet. */
+	(void)pthread_mutex_lock(&job->lock);
+
+	done = job->done;
+
+	(void)pthread_mutex_unlock(&job->lock);
+	if (!done)
+		return;
+
+	/* The thread's end; no password stays. */
+	(void)pthread_join(job->thread, NULL);
+	job->started = 0U;
+	system_wipe(job->current, sizeof(job->current));
+	system_wipe(job->fresh, sizeof(job->fresh));
+	printf("ZWL SYSTEM account result client=%llu number=%u error=%d\n", (unsigned long long)job->client, job->number, job->error);
+
+	/* The asking object, when its client and it are still there. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->number != job->client || client->fatal)
+			continue;
+		object = zwl_find(client, job->object);
+		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_ACCOUNT)
+			return;
+		system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, job->number, system_result_of(job->error));
+		return;
+	}
 }
 
 /* Sends a client's request to the network daemon; the result comes with the daemon's answer. */

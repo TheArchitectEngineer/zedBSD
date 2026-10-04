@@ -8,8 +8,8 @@
 /*
  * The desktop's system for applications (keiland.h's kl_system_*; WS131
  * p010, plan/ws131/design.md section 4.4): the client of Keiland's system
- * extension (kl_system_manager_v1 and its network, sound, power and
- * devices objects; keiland/kl-system-protocol.h).
+ * extension (kl_system_manager_v1 and its network, sound, power, devices
+ * and account objects; keiland/kl-system-protocol.h).
  *
  * As the settings do (settings.c), the objects live on a queue of the
  * library's own, which stays theirs, so that a change sent right after the
@@ -48,6 +48,7 @@ struct kl_system {
 	struct wl_proxy *audio;
 	struct wl_proxy *power;
 	struct wl_proxy *devices;
+	struct wl_proxy *account;
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -88,6 +89,11 @@ struct system_audio_listener {
 struct system_power_listener {
 	void (*state)(void *data, struct wl_proxy *proxy, uint32_t source, int32_t percent, uint32_t charging, uint32_t actions);
 	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
+/* The listener of kl_system_account_v1's event. */
+struct system_account_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
@@ -159,6 +165,11 @@ static const struct system_power_listener system_power_listener = {
 	system_result
 };
 
+/* The account object's callback (ws160-p002). */
+static const struct system_account_listener system_account_listener = {
+	system_result
+};
+
 /* The devices object's callbacks. */
 static const struct system_devices_listener system_devices_listener = {
 	system_device,
@@ -225,6 +236,7 @@ kl_system_close(
 	system_destroy(system->audio, KL_SYSTEM_AUDIO_DESTROY);
 	system_destroy(system->power, KL_SYSTEM_POWER_DESTROY);
 	system_destroy(system->devices, KL_SYSTEM_DEVICES_DESTROY);
+	system_destroy(system->account, KL_SYSTEM_ACCOUNT_DESTROY);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -289,6 +301,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_POWER;
 	if (system->devices != NULL)
 		bits |= KL_SYSTEM_HAS_DEVICES;
+	if (system->account != NULL)
+		bits |= KL_SYSTEM_HAS_ACCOUNT;
 
 	/* The monitor, offered to a manager bound at version 2 (WS134 p012). */
 	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_MONITOR) != 0U && system->manager_version >= 2U)
@@ -718,6 +732,43 @@ kl_system_devices_eject(
 	/* Sent with the application's next flush. */
 	number = system_number(system, request);
 	wl_proxy_marshal(system->devices, KL_SYSTEM_DEVICES_EJECT, number, id);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Asks for the user's password to be changed (ws160-p002).  Neither
+ * password is kept here: they go out with the application's next flush.
+ */
+int
+kl_system_account_set_password(
+	struct kl_system *system,
+	const char *current,
+	const char *fresh,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t current_length;
+	size_t fresh_length;
+
+	/* The account object. */
+	if (system->account == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Two passwords that are not empty and fit. */
+	if (current == NULL || fresh == NULL)
+		return EINVAL;
+	current_length = strlen(current);
+	fresh_length = strlen(fresh);
+	if (current_length == 0U || fresh_length == 0U)
+		return EINVAL;
+	if (current_length > KL_SYSTEM_PASSWORD_MAX || fresh_length > KL_SYSTEM_PASSWORD_MAX)
+		return EINVAL;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->account, KL_SYSTEM_ACCOUNT_SET_PASSWORD, number, current, fresh);
 
 	/* Succeeded: the answer comes as a result. */
 	return 0;
@@ -1183,6 +1234,10 @@ system_bind(
 	system->audio = system_make(system, KL_SYSTEM_CAPABILITY_AUDIO, KL_SYSTEM_MANAGER_GET_AUDIO, &kl_system_audio_v1_interface, &system_audio_listener);
 	system->power = system_make(system, KL_SYSTEM_CAPABILITY_POWER, KL_SYSTEM_MANAGER_GET_POWER, &kl_system_power_v1_interface, &system_power_listener);
 	system->devices = system_make(system, KL_SYSTEM_CAPABILITY_DEVICES, KL_SYSTEM_MANAGER_GET_DEVICES, &kl_system_devices_v1_interface, &system_devices_listener);
+
+	/* The account, offered to a manager bound at version 4 (ws160-p002). */
+	if (system->manager_version >= 4U)
+		system->account = system_make(system, KL_SYSTEM_CAPABILITY_ACCOUNT, KL_SYSTEM_MANAGER_GET_ACCOUNT, &kl_system_account_v1_interface, &system_account_listener);
 
 	/* Waits for their first state: each object's state and its done. */
 	status = wl_display_roundtrip_queue(system->display, system->queue);

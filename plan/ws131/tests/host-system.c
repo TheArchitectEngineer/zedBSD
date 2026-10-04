@@ -186,6 +186,28 @@ zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SS
 	pthread_mutex_unlock(&world.lock);
 }
 
+/* The system bar's network details (ws099-p032): nothing to show here. */
+void
+zwl_network_details(struct zwl_server *server, const struct kl_backend_network_link *links, size_t link_count, const char (*dns)[KL_BACKEND_NETWORK_ADDRESS_MAX], size_t dns_count)
+{
+	(void)server;
+	(void)links;
+	(void)link_count;
+	(void)dns;
+	(void)dns_count;
+}
+
+/* The account (ws160-p002): "kei" is the current password, a new one shorter than 8 characters is refused. */
+int
+kl_backend_account_set_password(const char *current, const char *fresh)
+{
+	if (strcmp(current, "kei") != 0)
+		return EACCES;
+	if (strlen(fresh) < 8U)
+		return EINVAL;
+	return 0;
+}
+
 void
 zwl_network_scan_hold(unsigned on)
 {
@@ -982,7 +1004,7 @@ test_both_ends(void)
 	CHECK(system != NULL, "open: errno %d", errno);
 	if (system == NULL)
 		return;
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
@@ -1160,6 +1182,15 @@ test_both_ends(void)
 	/* The devices: none can be ejected yet. */
 	CHECK(kl_system_devices_eject(system, "usb0", &first) == 0, "eject asked");
 	expect_result(display, system, first, ENOTSUP, "eject");
+
+	/* The account (ws160-p002): changed, the current password wrong, the new one refused, two at once busy. */
+	CHECK(kl_system_account_set_password(system, "kei", "newpass123", &first) == 0, "password change asked");
+	expect_result(display, system, first, 0, "password changed");
+	CHECK(kl_system_account_set_password(system, "wrong", "newpass123", &first) == 0, "wrong current asked");
+	expect_result(display, system, first, EPERM, "the current password wrong");
+	CHECK(kl_system_account_set_password(system, "kei", "short", &first) == 0, "short new asked");
+	expect_result(display, system, first, EINVAL, "the new password refused");
+	CHECK(kl_system_account_set_password(system, "", "newpass123", &first) == EINVAL, "an empty password is refused by the library");
 
 	/* Close, and no protocol error on the way; the closed system's asking for scans went with it. */
 	kl_system_close(system);

@@ -2,7 +2,7 @@
 
 # ws131-p014: 旧 libkeiland の名前を kl_・KL_ に
 
-Status: in-progress（q706、P2 generation14、2026-10-05。Resume の残りを済ませた。TQ-1 PASS と合わせて cleared の判定を Q1 に依頼）
+Status: cleared（2026-10-05 Q1: FreeBSD の native build と audit が T1-116 で PASS、他の受け入れは前に満たした）。以前: in-progress（q706、P2 generation14、2026-10-05。Resume の残りを済ませた。TQ-1 PASS と合わせて cleared の判定を Q1 に依頼）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q675
@@ -78,3 +78,7 @@ libkeiland の公開の名前（`keiland_*`・`KEILAND_*`、[rename-map.md](../r
 受け入れのうち、zedBSD の build・Linux の gcc と clang・OS の境界の checker・`keiland_` の無いこと・xserver/menu-probe/titlebar-probe の build・回帰（TQ-1 PASS）は満たした。**FreeBSD の native build と `native-build-audit.py` だけが未達**（P2 は「FreeBSD の build はベータ1 まで不要」と解したが、ユーザーの 2026-10-05 の指示は「libkeiland-backend の Linux・FreeBSD の実装はベータ1 までにはやらなくていい」で、受け入れの build を外す決定ではない）。受け入れを Q1 だけで減らさず、in-progress のまま残す。ユーザーに聞く: FreeBSD の native build と audit を後の Phase（ベータ1 の後）へ移して p014 を cleared にするか、今流すか。p015 は p014 の成果（zedBSD・Linux の build）に依るだけなので先に進めてよい。
 
 ユーザーの決定（2026-10-05 未明）: FreeBSD の native build と audit は「今流す」→ T1-116。結果の後に Q1 が判定。
+
+## 結果（2026-10-05 Q1）
+
+T1-116 PASS（FreeBSD 15.1-RELEASE-p4 の guest、main ed901bbf、`plan/tools/keiland-freebsd/backend-test.sh`: build PASS・warning 0・install PASS・`native-build-audit.py` PASS、host-seat-freebsd・host-session・host-power も PASS。証拠 /home/awe/zedBSD-worktrees/t1/build/t1-116/）。受け入れを全部満たしたので **cleared**。
