@@ -40,9 +40,12 @@
 #define GLOBAL_LOCK_OWNED	0x2U
 
 /*
- * The Global Lock's dword in the FACS, which firmware takes too; NULL
- * until drv_acpi_global_lock_attach(), and then \_GL_ is only an AML
- * mutex among the operating system's threads.
+ * The Global Lock's dword in the FACS, which firmware takes too.
+ *
+ * It is NULL until drv_acpi_global_lock_attach(), and while it is NULL
+ * \_GL_ is only an AML mutex among the operating system's threads.  It is
+ * set once at attachment and never changes afterwards; the dword itself is
+ * changed only by atomic exchanges, as firmware changes it concurrently.
  */
 static volatile uint32_t *hardware_lock;
 
@@ -53,6 +56,7 @@ static struct drv_acpi_object *global_lock_object(void);
 static bool is_hardware_lock(struct drv_acpi_object *mutex);
 static bool hardware_acquire(void);
 static bool hardware_release(void);
+static void held_mutex_drop(struct drv_acpi_thread *thread, struct drv_acpi_object *mutex);
 static int event_wait(struct drv_acpi_object *event, uint64_t timeout, bool *timed_out);
 
 /*
@@ -77,7 +81,7 @@ drv_acpi_notify_install(
 	notify->next = node->notify;
 	node->notify = notify;
 
-	/* Succeeded. */
+	/* Succeeded: the node's notifications reach the handler. */
 	return 0;
 }
 
@@ -98,18 +102,23 @@ drv_acpi_notify(
 
 	/* Logs a notification that has no handler. */
 	if (node->notify == NULL) {
+		/* Finds the node's path, or a mark when it does not fit. */
 		error = drv_acpi_node_path(node, path, sizeof(path));
 		if (error != 0)
 			kern_strcpy(path, "(long path)");
+
+		/* Writes the log line; the notification is dropped. */
 		drv_acpi_os_log("ACPI: Notify(%s, 0x%x) has no handler\n", path, (unsigned)value);
 		return 0;
 	}
 
 	/* Calls each handler. */
-	for (notify = node->notify; notify != NULL; notify = notify->next)
+	for (notify = node->notify;
+	     notify != NULL;
+	     notify = notify->next)
 		notify->handler(node, value, notify->argument);
 
-	/* Succeeded. */
+	/* Succeeded: every handler saw the notification. */
 	return 0;
 }
 
@@ -132,9 +141,11 @@ drv_acpi_mutex_acquire(
 	bool hardware;
 	bool taken;
 
-	/* Refuses a mutex below the level the thread already holds. */
+	/* Starts with no timeout seen. */
 	state = &mutex->value.mutex;
 	*timed_out = false;
+
+	/* Refuses a mutex below the level the thread already holds. */
 	if (state->sync_level < thread->sync_level) {
 		drv_acpi_os_log(
 			"ACPI: Acquire of a sync level %u mutex while holding level %u\n",
@@ -143,7 +154,7 @@ drv_acpi_mutex_acquire(
 		return EDEADLK;
 	}
 
-	/* A mutex the thread already owns is acquired again. */
+	/* A mutex the thread already owns is acquired again: depth counts the Releases it waits for. */
 	if (state->owner == thread) {
 		state->depth++;
 		return 0;
@@ -159,9 +170,12 @@ drv_acpi_mutex_acquire(
 	for (;;) {
 		/* Takes the mutex when no thread and no firmware owns it. */
 		if (state->owner == NULL) {
+			/* The Global Lock is also taken from firmware. */
 			taken = true;
 			if (hardware)
 				taken = hardware_acquire();
+
+			/* Stops waiting once it is taken. */
 			if (taken)
 				break;
 		}
@@ -190,7 +204,7 @@ drv_acpi_mutex_acquire(
 	thread->held = mutex;
 	thread->sync_level = state->sync_level;
 
-	/* Succeeded. */
+	/* Succeeded: the thread owns the mutex. */
 	return 0;
 }
 
@@ -225,13 +239,15 @@ drv_acpi_mutex_release(
 		return EDEADLK;
 	}
 
-	/* Only the last matching Release frees it. */
+	/* Only the last matching Release frees it: depth counts the Acquires not yet released. */
 	state->depth--;
 	if (state->depth != 0)
 		return 0;
 
-	/* Unlinks it from the thread's list of held mutexes. */
-	for (link = &thread->held; *link != NULL; link = &(*link)->value.mutex.next_held) {
+	/* Finds the link to it in the thread's list of held mutexes. */
+	for (link = &thread->held;
+	     *link != NULL;
+	     link = &(*link)->value.mutex.next_held) {
 		/* Stops at the link that points at this mutex. */
 		if (*link == mutex)
 			break;
@@ -260,7 +276,7 @@ drv_acpi_mutex_release(
 	/* The list's reference goes. */
 	drv_acpi_object_release(mutex);
 
-	/* Succeeded. */
+	/* Succeeded: no thread owns the mutex. */
 	return 0;
 }
 
@@ -273,14 +289,22 @@ drv_acpi_thread_end(
 	struct drv_acpi_thread *thread)
 {
 	struct drv_acpi_object *mutex;
+	int error;
 
 	/* Releases the held mutexes one at a time, whatever their depth. */
 	while (thread->held != NULL) {
+		/* Logs the newest mutex still held. */
 		mutex = thread->held;
 		drv_acpi_os_log("ACPI: a mutex was still held when the evaluation ended\n");
+
+		/* Makes the next Release the last one, at the mutex's level. */
 		mutex->value.mutex.depth = 1;
 		thread->sync_level = mutex->value.mutex.sync_level;
-		drv_acpi_mutex_release(thread, mutex);
+
+		/* Releases it; one that will not release is dropped, so that the list still shrinks. */
+		error = drv_acpi_mutex_release(thread, mutex);
+		if (error != 0)
+			held_mutex_drop(thread, mutex);
 	}
 }
 
@@ -302,20 +326,22 @@ drv_acpi_global_lock(
 	lock = global_lock_object();
 	if (lock == NULL)
 		return 0;
+
+	/* Finds the thread that takes or lets go of it. */
 	thread = drv_acpi_eval_thread(eval);
 
-	/* Releases it. */
+	/* Releases it, or acquires it, waiting as long as it takes. */
 	if (!acquire) {
 		error = drv_acpi_mutex_release(thread, lock);
-		return error;
+	} else {
+		error = drv_acpi_mutex_acquire(thread, lock, TIMEOUT_FOREVER, &timed_out);
 	}
 
-	/* Acquires it, waiting as long as it takes. */
-	error = drv_acpi_mutex_acquire(thread, lock, TIMEOUT_FOREVER, &timed_out);
+	/* Reports a lock that could not be taken or let go. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the thread holds the lock, or no longer does. */
 	return 0;
 }
 
@@ -338,7 +364,7 @@ drv_acpi_global_lock_attach(
 	/* Uses it from the next Acquire of \_GL_ on. */
 	hardware_lock = word;
 
-	/* Succeeded. */
+	/* Succeeded: \_GL_ is shared with firmware from now on. */
 	return 0;
 }
 
@@ -358,10 +384,12 @@ drv_acpi_sync_operator(
 	bool timed_out;
 	int error;
 
-	/* Finds the mutex or event the operator names. */
+	/* Acquire and Release name a mutex; the others name an event. */
 	type = DRV_ACPI_TYPE_EVENT;
 	if (opcode == DRV_ACPI_OP_ACQUIRE || opcode == DRV_ACPI_OP_RELEASE)
 		type = DRV_ACPI_TYPE_MUTEX;
+
+	/* Finds the mutex or event the operator names. */
 	error = sync_object(eval, type, &object);
 	if (error != 0)
 		return error;
@@ -375,19 +403,25 @@ drv_acpi_sync_operator(
 		error = drv_acpi_stream_integer(eval, 2, &timeout);
 		if (error != 0)
 			break;
+
+		/* Acquires the mutex within the timeout. */
 		error = mutex_acquire(eval, object, timeout, &timed_out);
 		break;
 	case DRV_ACPI_OP_RELEASE:
+		/* Releases the mutex. */
 		error = mutex_release(eval, object);
 		break;
 	case DRV_ACPI_OP_SIGNAL:
-		/* A signal is counted until a Wait takes it. */
+		/* A signal is counted until a Wait takes it: pending counts the signals not yet taken. */
 		object->value.event.pending++;
 		break;
 	case DRV_ACPI_OP_WAIT:
+		/* Evaluates the timeout. */
 		error = drv_acpi_eval_integer(eval, &timeout);
 		if (error != 0)
 			break;
+
+		/* Takes one signal within the timeout. */
 		error = event_wait(object, timeout, &timed_out);
 		break;
 	default:
@@ -396,20 +430,26 @@ drv_acpi_sync_operator(
 		break;
 	}
 
-	/* Lets go of the object and reports a failed operator. */
+	/* Lets go of the object. */
 	drv_acpi_object_release(object);
+
+	/* Reports a failed operator. */
 	if (error != 0)
 		return error;
 
-	/* Acquire and Wait report true when they timed out; the rest report zero. */
+	/* Makes the operator's value. */
 	answer = drv_acpi_object_integer_new(0);
 	if (answer == NULL)
 		return ENOMEM;
+
+	/* Acquire and Wait report true when they timed out; the rest report zero. */
 	if (timed_out)
 		answer->value.integer = drv_acpi_integer_mask();
 
-	/* Succeeded. */
+	/* Hands over the value. */
 	*result = answer;
+
+	/* Succeeded: result is the operator's value. */
 	return 0;
 }
 
@@ -437,8 +477,10 @@ sync_object(
 		object = node->object;
 	} else if (target.kind == DRV_ACPI_TARGET_REFERENCE) {
 		node = drv_acpi_object_reference_node(target.reference);
-		if (node != NULL)
-			object = drv_acpi_ns_resolve_alias(node)->object;
+		if (node != NULL) {
+			node = drv_acpi_ns_resolve_alias(node);
+			object = node->object;
+		}
 	} else if (target.kind == DRV_ACPI_TARGET_LOCAL) {
 		object = eval->frame->locals[target.index];
 	} else if (target.kind == DRV_ACPI_TARGET_ARGUMENT) {
@@ -450,10 +492,13 @@ sync_object(
 
 	/* A local or an argument may hold a reference to the object. */
 	if (object != NULL && object->type == DRV_ACPI_TYPE_REFERENCE) {
+		/* Follows the reference to the node it names, through any alias. */
 		node = drv_acpi_object_reference_node(object);
 		object = NULL;
-		if (node != NULL)
-			object = drv_acpi_ns_resolve_alias(node)->object;
+		if (node != NULL) {
+			node = drv_acpi_ns_resolve_alias(node);
+			object = node->object;
+		}
 	}
 
 	/* Refuses anything but the expected type. */
@@ -462,9 +507,11 @@ sync_object(
 		return EINVAL;
 	}
 
-	/* Succeeded: the caller shares the object. */
+	/* Hands over the object with a reference of the caller's own. */
 	drv_acpi_object_ref(object);
 	*result = object;
+
+	/* Succeeded: the caller shares the object. */
 	return 0;
 }
 
@@ -485,7 +532,7 @@ mutex_acquire(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the thread owns the mutex, unless timed_out says the wait ran out. */
 	return 0;
 }
 
@@ -504,11 +551,11 @@ mutex_release(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the thread let the mutex go. */
 	return 0;
 }
 
-/* Finds the mutex of the global lock, \\_GL_. */
+/* Finds the mutex of the global lock, \_GL_. */
 static struct drv_acpi_object *
 global_lock_object(void)
 {
@@ -524,7 +571,7 @@ global_lock_object(void)
 	if (node->object == NULL || node->object->type != DRV_ACPI_TYPE_MUTEX)
 		return NULL;
 
-	/* Reports the mutex. */
+	/* Reports the mutex \_GL_ holds. */
 	return node->object;
 }
 
@@ -533,12 +580,19 @@ static bool
 is_hardware_lock(
 	struct drv_acpi_object *mutex)
 {
+	struct drv_acpi_object *lock;
+
 	/* Only an attached lock is shared with firmware. */
 	if (hardware_lock == NULL)
 		return false;
 
 	/* The mutex must be the one \_GL_ names. */
-	return mutex == global_lock_object();
+	lock = global_lock_object();
+	if (mutex == lock)
+		return true;
+
+	/* Reports an ordinary AML mutex. */
+	return false;
 }
 
 /*
@@ -556,17 +610,23 @@ hardware_acquire(void)
 	/* Sets owned, and pending when it was owned already, in one exchange. */
 	old = *hardware_lock;
 	for (;;) {
-		/* Computes the new value from the one read; a failed exchange rereads it. */
+		/* Computes the new value from the one read. */
 		new = (old & ~GLOBAL_LOCK_PENDING) | GLOBAL_LOCK_OWNED;
 		if ((old & GLOBAL_LOCK_OWNED) != 0)
 			new |= GLOBAL_LOCK_PENDING;
+
+		/* Exchanges it; a failed exchange rereads the value and tries again. */
 		exchanged = __atomic_compare_exchange_n(hardware_lock, &old, new, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 		if (exchanged)
 			break;
 	}
 
-	/* It is taken when the new value is not pending. */
-	return (new & GLOBAL_LOCK_PENDING) == 0;
+	/* A pending new value means firmware owns the lock and will signal its release. */
+	if ((new & GLOBAL_LOCK_PENDING) != 0)
+		return false;
+
+	/* Reports the lock taken. */
+	return true;
 }
 
 /*
@@ -583,15 +643,49 @@ hardware_release(void)
 	/* Clears owned and pending in one exchange. */
 	old = *hardware_lock;
 	for (;;) {
-		/* Computes the new value from the one read; a failed exchange rereads it. */
+		/* Exchanges the value without the two bits; a failed exchange rereads it. */
 		new = old & ~(GLOBAL_LOCK_PENDING | GLOBAL_LOCK_OWNED);
 		exchanged = __atomic_compare_exchange_n(hardware_lock, &old, new, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 		if (exchanged)
 			break;
 	}
 
-	/* Reports whether firmware waits. */
-	return (old & GLOBAL_LOCK_PENDING) != 0;
+	/* A pending old value means firmware waits for the lock. */
+	if ((old & GLOBAL_LOCK_PENDING) != 0)
+		return true;
+
+	/* Reports that firmware does not wait. */
+	return false;
+}
+
+/*
+ * Drops a held mutex whose Release failed when its thread ended, so that
+ * the thread's list still shrinks.
+ *
+ * The Release fails only when another thread owns the mutex, so the
+ * owner, its depth and the Global Lock are left to that thread: the mutex
+ * is only unlinked and the list's reference released.
+ */
+static void
+held_mutex_drop(
+	struct drv_acpi_thread *thread,
+	struct drv_acpi_object *mutex)
+{
+	struct drv_acpi_mutex *state;
+
+	/* Logs the mutex that could not be released. */
+	state = &mutex->value.mutex;
+	drv_acpi_os_log("ACPI: a held mutex could not be released; it is dropped\n");
+
+	/* Unlinks it from the head of the list, where the thread's end found it. */
+	thread->held = state->next_held;
+	state->next_held = NULL;
+
+	/* The thread is back at the level it had before acquiring it. */
+	thread->sync_level = state->original_sync_level;
+
+	/* The list's reference goes. */
+	drv_acpi_object_release(mutex);
 }
 
 /* Takes one signal of an event, waiting up to the timeout in milliseconds. */
@@ -618,9 +712,9 @@ event_wait(
 		waited += POLL_MILLISECONDS;
 	}
 
-	/* Takes the signal. */
+	/* Takes the signal: one fewer is left for the next Wait. */
 	event->value.event.pending--;
 
-	/* Succeeded. */
+	/* Succeeded: the wait took a signal. */
 	return 0;
 }
