@@ -416,9 +416,12 @@ struct se_network {
 /*
  * What About shows of the machine, read once when the program starts
  * (about.c).  An empty text is a value that could not be read, and the
- * row is not shown.
+ * row is not shown; system is the version's name of /etc/os-release
+ * (PRETTY_NAME, ws089-p027), shown as the operating system, which is
+ * "Kei" when it is empty.
  */
 struct se_about {
+	char system[128];
 	char kernel[160];
 	char machine[80];
 	char processor[64];
@@ -917,5 +920,6 @@ int se_soon_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, i
 
 /* What About shows of the machine (about.c). */
 void se_about_read(struct se_about *about);
+int se_about_pretty_name(const char *path, char *name, size_t size);
 
 #endif
