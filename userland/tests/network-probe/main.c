@@ -38,8 +38,13 @@
  * (default 300), removing its socket.  JOIN-SECONDS (default 0) makes each
  * join take that long before it is answered, with the state left as it
  * was meanwhile, as a slow radio's join looks to the desktop (BUG-154).
+ * REFUSE names a network whose key is wrong: its join is answered EACCES
+ * and the Wi-Fi left manual-disconnected, joining nothing else, as networkd
+ * does after an explicit join failed (BUG-187); "-" for none.  TELL 1 makes
+ * the state say connecting (with the network) while a join waits, as
+ * networkd tells its watchers during a join (BUG-185).
  *
- *   network-probe [SECONDS [JOIN-SECONDS]]
+ *   network-probe [SECONDS [JOIN-SECONDS [REFUSE [TELL]]]]
  */
 
 #include "userland/base/net/protocol.h"
@@ -76,6 +81,8 @@ struct probe_network {
 	int scanning;
 	int profiles_changed;
 	int join_seconds;
+	const char *refuse;
+	int tell;
 	int watchers[PROBE_WATCHERS];
 	uint32_t watcher_ids[PROBE_WATCHERS];
 };
@@ -123,6 +130,17 @@ main(
 	probe.join_seconds = 0;
 	if (count > 2)
 		probe.join_seconds = atoi(arguments[2]);
+
+	/* The network whose key is wrong ("-": none), and whether a waiting join is told as connecting. */
+	probe.refuse = "";
+	if (count > 3)
+		probe.refuse = arguments[3];
+	index = strcmp(probe.refuse, "-");
+	if (index == 0)
+		probe.refuse = "";
+	probe.tell = 0;
+	if (count > 4)
+		probe.tell = atoi(arguments[4]);
 
 	/* Wi-Fi on, not connected, nobody watching. */
 	probe.wifi = "manual-disconnected";
@@ -402,11 +420,30 @@ probe_join(
 		return;
 	}
 
-	/* A slow join: the answer and the new state come only after the wait. */
+	/* A slow join: the answer and the new state come only after the wait (told as connecting with TELL). */
 	if (probe.join_seconds > 0) {
 		printf("NETPROBE join waits seconds=%d ssid=%s\n", probe.join_seconds, ssid);
 		(void)fflush(stdout);
+		if (probe.tell != 0) {
+			probe.wifi = "connecting";
+			(void)snprintf(probe.ssid, sizeof(probe.ssid), "%s", ssid);
+			probe_notify();
+		}
+
+		/* The wait. */
 		(void)sleep((unsigned)probe.join_seconds);
+	}
+
+	/* The network whose key is wrong: refused, and the Wi-Fi left unconnected (nothing else is joined). */
+	differs = strcmp(ssid, probe.refuse);
+	if (probe.refuse[0] != '\0' && differs == 0) {
+		printf("NETPROBE join refused ssid=%s\n", ssid);
+		(void)fflush(stdout);
+		probe.wifi = "manual-disconnected";
+		probe.ssid[0] = '\0';
+		probe_send(client, request->request_id, request->opcode, NETWORKD_RESULT_ERROR, EACCES, NULL);
+		probe_notify();
+		return;
 	}
 
 	/* Connected, and the watchers are told. */

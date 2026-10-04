@@ -188,6 +188,16 @@ se_network_wifi(
 	app->network.state.wifi = on != 0 ? KL_WIFI_SEARCHING : KL_WIFI_OFF;
 }
 
+/* The switch shows the state here (the made-up network answers at once). */
+int
+se_network_wifi_on(
+	const struct se_network *network)
+{
+	if (network->state.wifi == KL_WIFI_OFF || network->state.wifi == KL_WIFI_ABSENT)
+		return 0;
+	return 1;
+}
+
 void
 se_network_join(
 	struct se_app *app,
