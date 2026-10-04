@@ -578,4 +578,104 @@ drv_pci_driver_match(
 void
 drv_pci_dump(void);
 
+/*
+ * The power of PCI functions across S0 idle (ws052-p004, pci-power.c).
+ */
+
+/* The PCI power states a function is put in: D0, and D3hot. */
+#define DRV_PCI_D0		0U
+#define DRV_PCI_D3_HOT		3U
+
+/* The PCI Express and other extended registers a saved state keeps. */
+#define DRV_PCI_SAVED_PCIE	4U
+
+/*
+ * The configuration of one function, saved before it goes to D3hot and
+ * written back after it returns to D0, because a function without
+ * No_Soft_Reset loses it there.  It keeps the first 64 bytes of the
+ * configuration space, the MSI capability, the PCI Express control
+ * registers, the LTR latencies and the L1 PM Substates controls, and the
+ * whole MSI-X table, which drv_pci_device_save_state() allocates and
+ * drv_pci_device_restore_state() or drv_pci_device_discard_state() frees.
+ * A zero offset means the function lacks that capability.
+ */
+struct drv_pci_saved_state {
+	uint32_t header[16];
+	uint32_t msi[6];
+	uint32_t pcie[DRV_PCI_SAVED_PCIE];
+	uint32_t ltr;
+	uint32_t l1ss[2];
+	uint32_t *msix_table;
+	unsigned msix_entries;
+	uint16_t msix_control;
+	uint16_t msi_offset;
+	uint16_t msix_offset;
+	uint16_t pcie_offset;
+	uint16_t ltr_offset;
+	uint16_t l1ss_offset;
+	uint8_t saved;
+};
+
+/*
+ * What the platform does for a function's power beyond its own PCI power
+ * management: on ACPI, the function's _PSx, power resources and wake
+ * (_PRW, _DSW).  set_state takes DRV_PCI_D0 or DRV_PCI_D3_HOT; wake arms or
+ * disarms the function's platform wake.  Either may be NULL.  A function
+ * the platform knows nothing about reports ENOENT, which is no failure.
+ */
+struct drv_pci_platform_power {
+	int (
+		*set_state)(
+		void *,
+		struct drv_pci_device *,
+		unsigned);
+	int (
+		*wake)(
+		void *,
+		struct drv_pci_device *,
+		bool);
+	void *argument;
+};
+
+int
+drv_pci_device_save_state(
+	struct drv_pci_device *device,
+	struct drv_pci_saved_state *state);
+
+int
+drv_pci_device_restore_state(
+	struct drv_pci_device *device,
+	struct drv_pci_saved_state *state);
+
+void
+drv_pci_device_discard_state(
+	struct drv_pci_saved_state *state);
+
+int
+drv_pci_device_set_power_state(
+	struct drv_pci_device *device,
+	unsigned state);
+
+int
+drv_pci_device_map_msix_table(
+	struct drv_pci_device *device,
+	struct drv_pci_mapping *mapping,
+	unsigned *entries);
+
+int
+drv_pci_device_set_wake(
+	struct drv_pci_device *device,
+	bool wake);
+
+void
+drv_pci_platform_power_set(
+	const struct drv_pci_platform_power *power);
+
+int
+drv_pci_suspend_all(
+	struct drv_pci_device **failed);
+
+int
+drv_pci_resume_all(void);
+
 #endif

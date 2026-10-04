@@ -619,6 +619,18 @@ drv_acpi_ns_resolve_alias(
 	struct drv_acpi_node *node);
 
 int
+drv_acpi_pci_location(
+	struct drv_acpi_node *device,
+	uint16_t *segment,
+	uint8_t *bus,
+	uint8_t *slot,
+	uint8_t *function);
+
+bool
+drv_acpi_pci_below_root(
+	struct drv_acpi_node *device);
+
+int
 drv_acpi_lookup_path(
 	struct drv_acpi_node *scope,
 	const char *path,

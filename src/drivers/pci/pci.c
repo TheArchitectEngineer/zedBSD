@@ -43,6 +43,8 @@
 #define PCI_MSIX_FUNCTION_MASK 0x4000U
 #define PCI_MSIX_ENTRY_SIZE 16U
 #define PCI_MSIX_ENTRY_MASK 0x00000001U
+#define PCI_MSIX_TABLE_SIZE 0x07ffU
+#define PCI_CAPABILITY_MSIX 0x11U
 
 struct drv_pci_bus {
 	uint16_t segment;
@@ -1448,6 +1450,77 @@ drv_pci_device_map_bar(
 
 	/* Returns the computed result. */
 	return error;
+}
+
+/*
+ * Maps a function's whole MSI-X table.
+ *
+ * It does not ask whether the driver claimed the register the table lives
+ * in, because the power code (pci-power.c) saves and restores the table
+ * of whatever function it suspends.  entries receives the number of
+ * entries.  It reports ENOENT for a function without MSI-X.  The mapping
+ * is let go with drv_pci_device_unmap_bar().
+ */
+int
+drv_pci_device_map_msix_table(
+	struct drv_pci_device *device,
+	struct drv_pci_mapping *mapping,
+	unsigned *entries)
+{
+	struct drv_pci_bar bar;
+	unsigned capability;
+	unsigned bir;
+	uint64_t offset;
+	uint64_t size;
+	uint32_t table;
+	uint16_t control;
+	int error;
+
+	/* Refuses no function and nowhere to put the mapping. */
+	if (device == NULL || mapping == NULL || entries == NULL)
+		return EINVAL;
+
+	/* Refuses a bus that cannot map a register. */
+	if (device->bus->ops->map_bar == NULL)
+		return ENOTSUP;
+
+	/* Finds the MSI-X capability. */
+	error = drv_pci_device_find_capability(device, PCI_CAPABILITY_MSIX, &capability);
+	if (error != 0)
+		return error;
+
+	/* Reads the table's size. */
+	error = drv_pci_device_config_read16(device, capability + PCI_MSIX_CONTROL, &control);
+	if (error != 0)
+		return EIO;
+
+	/* Reads the table's register and its offset in the register. */
+	error = drv_pci_device_config_read32(device, capability + PCI_MSIX_TABLE, &table);
+	if (error != 0)
+		return EIO;
+
+	/* Refuses a table outside its register. */
+	bir = table & 7U;
+	offset = (uint64_t)(table & ~7U);
+	size = ((uint64_t)(control & PCI_MSIX_TABLE_SIZE) + 1U) * PCI_MSIX_ENTRY_SIZE;
+	if (bir >= device->bar_count)
+		return EINVAL;
+
+	/* Refuses a table that does not fit in its register. */
+	bar = device->bars[bir];
+	if (offset > bar.size || size > bar.size - offset)
+		return EINVAL;
+
+	/* Maps the table uncached. */
+	bar.bus_address += offset;
+	bar.size = size;
+	error = device->bus->ops->map_bar(device->bus->host, device, &bar, DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE, mapping);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller holds the table's mapping. */
+	*entries = (unsigned)(size / PCI_MSIX_ENTRY_SIZE);
+	return 0;
 }
 
 /*
