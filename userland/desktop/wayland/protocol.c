@@ -1176,6 +1176,12 @@ shell_request(
 			/* Buffer-bearing commits may now publish this configured surface; a resize's end waits for this serial. */
 			surface->acknowledged = 1;
 			surface->acked_serial = serial;
+
+			/* The acknowledgment of a resize's configure is timed (BUG-179). */
+			if (surface->resized_ms != 0U &&
+			    surface->resized_acked_ms == 0U &&
+			    serial >= surface->resized_serial)
+				surface->resized_acked_ms = zwl_milliseconds();
 			return 0;
 		}
 

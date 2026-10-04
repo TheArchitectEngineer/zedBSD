@@ -2115,6 +2115,7 @@ zwl_glass_committed(
 	uint32_t width;
 	uint32_t height;
 	uint64_t now;
+	uint64_t acked;
 	unsigned stale;
 
 	/* Only a window waiting for an image of its new size, with an image. */
@@ -2151,9 +2152,12 @@ zwl_glass_committed(
 	if (stale != 0U)
 		return;
 
-	/* The client has drawn the new size; the log says how long after it was sent. */
+	/* The client has drawn the new size; the log says how long after it was sent, and when it acknowledged (BUG-179). */
 	now = zwl_milliseconds();
-	printf("ZWL GLASS resized surface=%u docked=%u width=%u height=%u after_ms=%llu\n", surface->id, surface->maximized, width, height, (unsigned long long)(now - surface->resized_ms));
+	acked = 0U;
+	if (surface->resized_acked_ms >= surface->resized_ms)
+		acked = surface->resized_acked_ms - surface->resized_ms;
+	printf("ZWL GLASS resized surface=%u docked=%u width=%u height=%u after_ms=%llu acked_ms=%llu sent_at_ms=%llu\n", surface->id, surface->maximized, width, height, (unsigned long long)(now - surface->resized_ms), (unsigned long long)acked, (unsigned long long)surface->resized_ms);
 
 	/* The wait is over: the image is drawn at its own size. */
 	surface->resized_ms = 0U;
@@ -4361,6 +4365,7 @@ window_resized(
 	/* An image drawn after this configure was acknowledged ends the wait (zwl_glass_committed). */
 	surface->resized_ms = zwl_milliseconds();
 	surface->resized_serial = surface->configure_serial;
+	surface->resized_acked_ms = 0U;
 
 	/* Succeeded: the window waits for its image of the new size. */
 	return;
