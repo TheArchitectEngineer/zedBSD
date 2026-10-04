@@ -9,7 +9,7 @@ features inside sed, grep and awk programs) with the number of packages
 and files that use it.  The count is heuristic: it reads command lines
 textually and does not run anything.
 
-  python3 plan/ws045/tests/survey.py TREE_DIR [--util sed] [--examples N]
+  python3 plan/tools/gnu-utils/survey.py TREE_DIR [--util sed] [--examples N]
 
 TREE_DIR holds one directory per package (for example the files of every
 tarball in build/distfiles unpacked there).

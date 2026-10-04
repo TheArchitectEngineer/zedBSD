@@ -55,7 +55,7 @@ namespace と `_STA`・`_CRS`・`_HID` の評価を確かめる。build（warnin
 
 | 確認 | 結果 |
 | --- | --- |
-| lean の image `make -j48 ZEDBSD_CONFIG=plan/ws045/tests/config-amd64-base.mk BUILD=build/ws049/image disk-image` | status 0、warning 0、`kernel include check: PASS (301 objects, 7813 dependencies)`、`amd64 vmunix check: PASS`、`vmunix` の ACPI の symbol 76、SHA256 `48f57073…` |
+| lean の image `make -j48 ZEDBSD_CONFIG=plan/tools/gnu-utils/config-amd64-base.mk BUILD=build/ws049/image disk-image` | status 0、warning 0、`kernel include check: PASS (301 objects, 7813 dependencies)`、`amd64 vmunix check: PASS`、`vmunix` の ACPI の symbol 76、SHA256 `48f57073…` |
 | boot test `OUTPUT=build/ws049/boot-lean plan/tools/boot-test.sh build/ws049/image/hdd-image.img`（uefi-usb、ACPI が動く kernel） | **PASS**（`build/ws049/boot-lean/login.png`、login prompt） |
 | `sh plan/tools/guest/hybrid-image.sh build/ws049/image build/ws049/hybrid.img` の後 `sh plan/ws049/tests/guest-compare.sh build/ws049/hybrid.img`（q35・OVMF・8 GiB・4 CPU、SSH） | namespace: host 278 行・guest 278 行、**同じ**。device の評価 105 行（`_HID` 29・`_CRS` 28・`_UID` 23・`_STA` 16・`_ADR` 7・`_CID` 2）: 94 行同じ、11 行が違う。違いは全て firmware が決める hardware の状態を AML が読むもの: `LNKA`〜`LNKH` の `_CRS` の IRQ（guest は OVMF が割り当てた 10・11、host の dump は firmware が走らず 0）、`PCI0._CRS` と `DRAC._CRS` の 64 bit の窓（OVMF の設定）、`HPET._STA`（guest 0xF、host 0）。guest の値が正しい |
 | style（`style-check.py`） | 変えた kernel と HAL の file の件数は変わらない（`pcat.c` 31、`acpi.c` 3、`boot.c` 23、HEAD と同じ）、`acpi-kern.c` 0 |

@@ -4,7 +4,7 @@
 # headers of an earlier build, so that a warning is found without building
 # an image.  Compiles only; nothing is linked or installed.
 #
-#   sh plan/ws045/tests/target-check.sh [SYSROOT_BUILD] FILE.c...
+#   sh plan/tools/gnu-utils/target-check.sh [SYSROOT_BUILD] FILE.c...
 #
 # SYSROOT_BUILD is the build directory whose amd64/ and i386/ sysroots are
 # used (default this tree's build, read only; ws136-p003: it was another

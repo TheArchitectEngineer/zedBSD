@@ -37,7 +37,7 @@ guest の [tests/evdev-keys.c](../tests/evdev-keys.c) で全ての event device 
   `<>` 86、Ro 89、Yen 124、Henkan 92、Muhenkan 94、Katakana/Hiragana 93、a、Caps Lock）。残りの 3 つ（`menu`・`f13`・`f24`）は QEMU の usb-kbd が
   標準の usage を送らない（`f13` は usage 0x6c＝F17 の 187 として届き、`menu`・`f24` は何も届かない）ためで、driver の表は Linux と同じ（0x65→Compose、
   0x68〜0x73→F13〜F24）。この 3 つは実機で確かめる（未実施）。
-- boot test: lean amd64（`plan/ws045/tests/config-amd64-base.mk`、warning 0）PASS（`build/ws073-img/boot-test-p011/login.png`）。
+- boot test: lean amd64（`plan/tools/gnu-utils/config-amd64-base.mk`、warning 0）PASS（`build/ws073-img/boot-test-p011/login.png`）。
 - 規約: `tests/style-diff.py`（usb-hid.c・input.h）0。
 
 ## 残り

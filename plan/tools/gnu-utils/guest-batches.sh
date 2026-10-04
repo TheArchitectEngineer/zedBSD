@@ -1,11 +1,11 @@
 #!/bin/sh
-# ws045: runs the GNU cases (plan/ws045/tests/cases) on the amd64 guest with
+# ws045: runs the GNU cases (plan/tools/gnu-utils/cases) on the amd64 guest with
 # the utilities build-guest-utils.sh made, 40 at a time, starting the guest
 # again every 10 batches (BUG-029), and writes each batch's FAIL lines and
 # PASS count to OUTPUT; the last line is ALL-BATCHES-FINISHED.  With POSIX=1
 # the WS043 POSIX cases (plan/tools/utils/cases, with POSIXLY_CORRECT on
 # both sides) are run instead.
-#   IMAGE=... [POSIX=1] sh plan/ws045/tests/guest-batches.sh [OUTPUT]
+#   IMAGE=... [POSIX=1] sh plan/tools/gnu-utils/guest-batches.sh [OUTPUT]
 #   (default OUTPUT build/ws045/guest-all.out; IMAGE the full guest image,
 #   plan/tools/guest/build-full-image.sh, booted from NVMe, read only: the
 #   guest runs on a copy; ws136-p003: the default was another tree's image)
@@ -28,7 +28,7 @@ if [ -n "${POSIX-}" ]; then
 	    --export build/ws045/guest-export > /dev/null
 else
 	python3 plan/tools/utils/util-diff.py --bin build/ws045/bin \
-	    --cases plan/ws045/tests/cases --gnu \
+	    --cases plan/tools/gnu-utils/cases --gnu \
 	    --export build/ws045/guest-export > /dev/null
 fi
 
@@ -45,7 +45,7 @@ for batch in "$work"/batch.*; do
 		$guest stop >/dev/null 2>&1
 		$guest start --disk nvme "$image" >/dev/null 2>&1
 		$guest wait >/dev/null 2>&1
-		$guest put plan/ws045/tests/guest-diff.sh /root/ws045-diff.sh
+		$guest put plan/tools/gnu-utils/guest-diff.sh /root/ws045-diff.sh
 		$guest put "$work/bin.tar" /root/ws045-bin.tar
 		$guest run 'cd /root && rm -rf guest-bin && pax -r -f ws045-bin.tar && rm -f ws045-bin.tar'
 		if [ -n "${SH-}" ]; then

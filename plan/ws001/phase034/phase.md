@@ -62,7 +62,7 @@ coordinator の指示で main（WS045 の GNU 拡張、WS036 の zedbsd7 toolcha
 | `userland/base/sh/builtins.c` | WS001 の `env` builtin の削除を保つ（WS045 の builtin の GNU option の転送は `/usr/bin/env` が全部を持つので要らない） |
 | `plan/tools/utils/build-host-utils.sh` | WS045 の TRE の regex と一覧に、WS001 の追加の source（mv の copy.c、mkdir の mode.c）を足した |
 
-確認（host）: `util-diff.py --bin build/ws001/bin` 1024/1024、`util-diff.py --bin build/ws001/bin --cases plan/ws045/tests/cases --gnu` 515/515、
+確認（host）: `util-diff.py --bin build/ws001/bin` 1024/1024、`util-diff.py --bin build/ws001/bin --cases plan/tools/gnu-utils/cases --gnu` 515/515、
 `pinned-cases.py` 10/10、`tty-host-test.py` 11/11、`diff-random-host-test.py --count 300 --patch build/ws001/bin/patch` 300/300、style 0・warning 0。
 toolchain は `build/llvm` を llvm-zedbsd7 へ向け、`make sysroots` を流した。
 

@@ -75,7 +75,7 @@ rate limit で止まったサブエージェントの作業（`salvage/ws048` 4b
 | host 試験 `make -f plan/ws048/tests/host-test.mk run DTB=<main の vendor の bcm2711-rpi-4-b.dtb>` | dma（uncached 無し）46、dma（uncached あり）81、fdt 74、brcmstb 1280、firmware 200140 checks、全て通過 |
 | rpi4 の image `make -j48 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws048/rpi4 disk-image` | status 0、warning 0（firmware の file は main の checkout の `vendor/raspberrypi-firmware/boot` を読むだけ） |
 | QEMU raspi4b の boot test `BOOT_MODE=raspi4b OUTPUT=build/ws048/boot-rpi4 plan/tools/boot-test.sh build/ws048/rpi4/hdd-image.img` | **PASS**（login prompt） |
-| amd64 の lean の image（`plan/ws045/tests/config-amd64-base.mk`）と boot test（uefi-usb） | status 0、warning 0、`amd64 vmunix check: PASS`、boot test **PASS** |
+| amd64 の lean の image（`plan/tools/gnu-utils/config-amd64-base.mk`）と boot test（uefi-usb） | status 0、warning 0、`amd64 vmunix check: PASS`、boot test **PASS** |
 | QEMU の uncached の窓の確認（受け入れ 3） | 上の「差分の検証」の scratch の probe（同じ差分）の結果による。この適用の後には再実行していない（probe は差分に含まれない一時的な code で、既定の rpi4 の config には非 coherent な DMA の利用者が無く、窓の経路は通らない。xHCI を有効にする p005 で通る） |
 | style | `uncached.c` 0、`space.c` 29・`hal.h` 4（差分の前と同じ） |
 | 実機 | 未実施（cache の効果そのものは実機だけで確かめられる） |

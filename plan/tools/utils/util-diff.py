@@ -13,7 +13,7 @@ only the output (for utilities whose error status POSIX leaves as ">0").
 
 ws045: --cases reads the case files from another directory, and --gnu runs
 both sides without POSIXLY_CORRECT, for the cases of the GNU extensions
-(plan/ws045/tests/cases).
+(plan/tools/gnu-utils/cases).
 """
 
 import argparse

@@ -36,7 +36,7 @@ lookup ごとに作り直す一時の inode なので、node に書いても次�
 - guest（`tests/kernel-image.sh`、main の mesg を `build/ws073-u/bin/mesg` として置いた）: `MESG=/tmp/mesg sh tests/devfs-chmod.sh` 22 件全て PASS
   （修正前 16 件 FAIL）。salvage/ws001 の `pinned/guest.sh` の「mesg on the console」の期待（`mesg n` で 1、`is n`、group と other の write が `--`、
   `mesg y` で 0、`is y`、`w`）と同じ内容を含む。uid 65534 の process の `chmod /dev/null`・`chown /dev/console` は EPERM（47）。
-- boot test: lean amd64 image（`plan/ws045/tests/config-amd64-base.mk`、warning 0）で `plan/tools/boot-test.sh` PASS（`build/ws073-img/boot-test-p006/login.png`）。
+- boot test: lean amd64 image（`plan/tools/gnu-utils/config-amd64-base.mk`、warning 0）で `plan/tools/boot-test.sh` PASS（`build/ws073-img/boot-test-p006/login.png`）。
 - 規約: `tests/style-diff.py src/kern/devfs.c` 0。
 
 ## 残り

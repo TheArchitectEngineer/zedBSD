@@ -57,7 +57,7 @@ Bug: [BUG-073](../../bugs/BUG-073.md)（この Phase の試験で発見し、こ
 
 ## 検証（QEMU、KVM、NVMe、amd64 だけ。実機は未実施）
 
-- build: `plan/ws035/tests/config-amd64-guest.mk` の vmunix（`-Werror`）、lean native（`plan/ws045/tests/config-amd64-base.mk`）と hybrid
+- build: `plan/ws035/tests/config-amd64-guest.mk` の vmunix（`-Werror`）、lean native（`plan/tools/gnu-utils/config-amd64-base.mk`）と hybrid
   （[tests/config-amd64-hybrid-serial.mk](../tests/config-amd64-hybrid-serial.mk)、serial の mirror）の disk-image。
 - 規約: `tests/style-diff.py`（vfs.c・swap.c・mount.c・buf.c・backing-claim.c・swap-control.h・backing-claim.h）変えた行の finding 0。
 - native（[tests/p015-native.sh](../tests/p015-native.sh): main の測定用 image の vmunix を差し替え、2 つ目の NVMe に 512 B・2 KiB・4 KiB cluster の
