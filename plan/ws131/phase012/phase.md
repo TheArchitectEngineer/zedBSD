@@ -2,7 +2,7 @@
 
 # ws131-p012: libkeiui を libkeiland へ移す（名前は変えない）
 
-Status: in-progress（q673、P2、2026-10-04。ユーザーの承認「WS13(1),WS128は進めてOKです。」）
+Status: cleared（Q1 判定 2026-10-04。T2-027: zedBSD QEMU の boot-test・textinput-p013・demo-s8-s9・viewers-p008・files-regress 14/14 PASS、rootfs・guest に libkeiui 無し。FreeBSD backend-test 9/9 PASS（audit は fb27059 の 10 に直して PASS、lib の .so 10）。Linux（Debian 13）build rc 0・warning 0、elf-check PASS、9 app の窓の PNG。証拠 /home/awe/zedBSD-worktrees/t2/build/t2-027/。統合 P2 488f96c..fb27059 → main 5ec60b4（ユーザーの CI の構成の libkeiui を除いて衝突を解いた）。grep の例外 2 行は Q1 が承認）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: [q673](../../queue.md)
