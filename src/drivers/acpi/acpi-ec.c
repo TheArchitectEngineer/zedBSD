@@ -228,6 +228,18 @@ drv_acpi_ec_attach(void)
 		error = drv_acpi_gpe_install(ec.gpe, true, ec_gpe, NULL);
 		if (error != 0)
 			drv_acpi_os_log("ACPI: the EC's GPE 0x%x cannot be handled (error %d)\n", ec.gpe, error);
+
+		/*
+		 * Arms a handled GPE as a wake source of S0 idle for as long as
+		 * the kernel runs: the lid, the power button and the AC reach
+		 * many machines only as EC queries (the Latitude 5330's power
+		 * button is its query 0x66).
+		 */
+		if (error == 0) {
+			error = drv_acpi_gpe_wake_set(ec.gpe, true);
+			if (error != 0)
+				drv_acpi_os_log("ACPI: the EC's GPE 0x%x cannot wake the system (error %d)\n", ec.gpe, error);
+		}
 	}
 
 	/* Succeeded: AML reaches the EC, and its queries run their methods. */

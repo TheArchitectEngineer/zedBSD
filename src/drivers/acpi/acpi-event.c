@@ -134,6 +134,16 @@
 #define FIXED_EVENT_COUNT	16U
 
 /*
+ * What woken_gpe holds while no GPE has fired since the sleep began.
+ */
+#define GPE_WOKEN_NONE		0xffffU
+
+/*
+ * The most wake sources one GPE can be armed for.
+ */
+#define GPE_ARMED_MAX		0xffffU
+
+/*
  * The kinds of GPE handling.
  */
 enum gpe_kind {
@@ -154,12 +164,17 @@ struct register_block {
  * How one GPE is handled: by its _Lxx or _Exx method or by a driver's C
  * handler.  edge says the event is edge-triggered (_Exx), which clears
  * its status before the handler runs instead of after.  enabled is what
- * the event should be once its handling ends.
+ * the event should be at runtime once its handling ends; wake says a
+ * device's _PRW names it, which keeps it masked at runtime when nothing
+ * else enables it.  armed counts the wake sources that want the GPE to
+ * wake the system from S0 idle: while the system sleeps, exactly the GPEs
+ * with a nonzero count raise SCIs.
  */
 struct gpe_entry {
 	struct drv_acpi_node *method;
 	drv_acpi_gpe_handler_t handler;
 	void *argument;
+	uint16_t armed;
 	uint8_t kind;
 	uint8_t edge;
 	uint8_t enabled;
@@ -180,6 +195,10 @@ struct fixed_entry {
  * drv_acpi_events_init() fills it; the interrupt and the processing
  * thread share it, and the pending masks are read and written only under
  * the event lock of aml-os.h.  ready is zero until the FADT was read.
+ * sleeping is set between drv_acpi_events_sleep_begin() and
+ * drv_acpi_events_sleep_end(), and is read and written under the event
+ * lock: while it is set only the armed GPEs are unmasked, and woken_gpe
+ * keeps the first GPE whose SCI came (GPE_WOKEN_NONE until one does).
  */
 static struct {
 	struct register_block pm1a_event;
@@ -195,8 +214,10 @@ static struct {
 	uint16_t sci_interrupt;
 	uint16_t fixed_enabled;
 	uint16_t fixed_pending;
+	uint16_t woken_gpe;
 	uint8_t acpi_enable;
 	uint8_t ready;
+	uint8_t sleeping;
 	uint8_t gpe_pending[GPE_MAX / 8U];
 	struct gpe_entry gpes[GPE_MAX];
 	struct fixed_entry fixed[FIXED_EVENT_COUNT];
@@ -238,6 +259,8 @@ static int gpe_method_visitor(struct drv_acpi_node *node, unsigned depth, void *
 static int wake_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static int hex_digit(uint8_t character);
 static void process_gpe(unsigned gpe);
+static bool gpe_wanted(unsigned gpe);
+static bool gpe_is_pending(unsigned gpe);
 static void log_event_state(unsigned runtime);
 
 /*
@@ -464,6 +487,231 @@ drv_acpi_gpe_install(
 	drv_acpi_os_event_unlock(state);
 
 	/* Succeeded: the GPE raises an SCI and reaches the handler. */
+	return 0;
+}
+
+/*
+ * Arms or disarms a GPE as a wake source of S0 idle.
+ *
+ * Each wake source that wants the GPE to wake the system (a device whose
+ * _PRW names it, or the EC whose queries carry the lid and the buttons)
+ * arms it once and disarms it once; the GPE stays armed while any source
+ * holds it.  During a sleep the change reaches the enable register at
+ * once.  It reports EINVAL for a GPE the blocks do not have or one
+ * disarmed more often than armed, and EOVERFLOW when the count is full.
+ */
+int
+drv_acpi_gpe_wake_set(
+	unsigned gpe,
+	bool arm)
+{
+	struct gpe_entry *entry;
+	unsigned long state;
+	bool present;
+	bool pending;
+	bool wanted;
+
+	/* Refuses a GPE before initialization or outside the blocks. */
+	if (!events.ready || gpe >= events.gpe_count)
+		return EINVAL;
+
+	/* Refuses a number between the two blocks, which no register carries. */
+	present = gpe_present(gpe);
+	if (!present)
+		return EINVAL;
+
+	/* Counts the source in or out, and follows the count in hardware while the system sleeps. */
+	entry = &events.gpes[gpe];
+	state = drv_acpi_os_event_lock();
+
+	/* Moves the count of the sources that want the GPE. */
+	if (arm) {
+		/* Refuses a count that cannot grow. */
+		if (entry->armed == GPE_ARMED_MAX) {
+			drv_acpi_os_event_unlock(state);
+			return EOVERFLOW;
+		}
+
+		/* One more source wants the GPE to wake the system. */
+		entry->armed++;
+	} else {
+		/* Refuses a disarm that no arm matches. */
+		if (entry->armed == 0) {
+			drv_acpi_os_event_unlock(state);
+			return EINVAL;
+		}
+
+		/* One source fewer; zero means nothing wakes the system through the GPE. */
+		entry->armed--;
+	}
+
+	/*
+	 * During a sleep the enable bit follows the count at once, except for
+	 * a GPE the thread has still to handle, which it unmasks itself.
+	 */
+	pending = gpe_is_pending(gpe);
+	if (events.sleeping && !pending) {
+		wanted = gpe_wanted(gpe);
+		gpe_set_enable(gpe, wanted);
+	}
+
+	drv_acpi_os_event_unlock(state);
+
+	/* Succeeded: the GPE is armed as often as its sources want. */
+	return 0;
+}
+
+/*
+ * Leaves only the armed GPEs able to raise SCIs, for S0 idle.
+ *
+ * Every other GPE is masked; the runtime ones are unmasked again by
+ * drv_acpi_events_sleep_end().  A wake-only GPE (one that is masked at
+ * runtime) has its status cleared before it is unmasked, because the
+ * status may have latched while it was masked and would wake the system
+ * at once.  A runtime GPE keeps its status, which is an event still to be
+ * handled.  A GPE the interrupt recorded and the thread has not yet
+ * handled is left to the thread, which unmasks it after its handler when
+ * it is armed.  The PM1 fixed events are left as they are: the fixed
+ * power button and the RTC alarm wake the system as they are.  It reports
+ * ENODEV before the event hardware is known and EBUSY during a sleep.
+ */
+int
+drv_acpi_events_sleep_begin(void)
+{
+	struct gpe_entry *entry;
+	unsigned long state;
+	unsigned gpe;
+	unsigned armed;
+	bool present;
+	bool pending;
+
+	/* Refuses before the event hardware is known. */
+	if (!events.ready)
+		return ENODEV;
+
+	/* Switches the GPE blocks to the armed GPEs alone, with the interrupt kept out. */
+	state = drv_acpi_os_event_lock();
+
+	/* Refuses a sleep inside a sleep. */
+	if (events.sleeping) {
+		drv_acpi_os_event_unlock(state);
+		return EBUSY;
+	}
+
+	/*
+	 * sleeping tells the thread to unmask only armed GPEs after their
+	 * handlers, and the interrupt to keep the first GPE that fires.
+	 */
+	events.sleeping = 1;
+	events.woken_gpe = GPE_WOKEN_NONE;
+
+	/* Masks every GPE but the armed ones, and counts those for the log. */
+	armed = 0;
+	for (gpe = 0; gpe < events.gpe_count; gpe++) {
+		/* Skips a number between the two blocks, which no register carries. */
+		present = gpe_present(gpe);
+		if (!present)
+			continue;
+
+		/* Masks a GPE that wakes nothing. */
+		entry = &events.gpes[gpe];
+		if (entry->armed == 0) {
+			gpe_set_enable(gpe, false);
+			continue;
+		}
+
+		/* Leaves a recorded GPE to the thread, which unmasks it after its handler. */
+		pending = gpe_is_pending(gpe);
+		if (pending)
+			continue;
+
+		/* Clears the stale status of a GPE masked at runtime. */
+		if (!entry->enabled)
+			gpe_clear(gpe);
+
+		/* Unmasks the wake GPE. */
+		gpe_set_enable(gpe, true);
+		armed++;
+	}
+
+	drv_acpi_os_event_unlock(state);
+
+	/* Logs how many GPEs can wake the system, so that a sleep's log shows the wake sources armed. */
+	drv_acpi_os_log("ACPI: sleeping with %u wake GPEs\n", armed);
+
+	/* Succeeded: only the armed GPEs raise SCIs until the sleep ends. */
+	return 0;
+}
+
+/*
+ * Unmasks the runtime GPEs again after S0 idle, and reports the first GPE
+ * that fired while the system slept.
+ *
+ * Each GPE is set back to what it is at runtime: unmasked when it is
+ * enabled, masked otherwise (the wake-only GPEs).  A GPE the interrupt
+ * recorded and the thread has not yet handled stays masked; the thread
+ * unmasks it after its handler.  woken receives the GPE whose SCI came
+ * first during the sleep, or DRV_ACPI_GPE_NONE when none did; it may be
+ * NULL.  It reports EINVAL when no sleep began.
+ */
+int
+drv_acpi_events_sleep_end(
+	unsigned *woken)
+{
+	unsigned long state;
+	unsigned gpe;
+	unsigned first;
+	bool present;
+	bool pending;
+	bool runtime;
+
+	/* Refuses before the event hardware is known. */
+	if (!events.ready)
+		return EINVAL;
+
+	/* Sets every GPE back to its runtime state, with the interrupt kept out. */
+	state = drv_acpi_os_event_lock();
+
+	/* Refuses an end without a sleep. */
+	if (!events.sleeping) {
+		drv_acpi_os_event_unlock(state);
+		return EINVAL;
+	}
+
+	/* Ends the sleep for the thread and the interrupt, and takes the GPE that woke the system. */
+	events.sleeping = 0;
+	first = DRV_ACPI_GPE_NONE;
+	if (events.woken_gpe != GPE_WOKEN_NONE)
+		first = events.woken_gpe;
+
+	/* Puts each GPE back to its runtime enable bit. */
+	for (gpe = 0; gpe < events.gpe_count; gpe++) {
+		/* Skips a number between the two blocks, which no register carries. */
+		present = gpe_present(gpe);
+		if (!present)
+			continue;
+
+		/* Leaves a recorded GPE to the thread, which unmasks it after its handler. */
+		pending = gpe_is_pending(gpe);
+		if (pending)
+			continue;
+
+		/* Unmasks a runtime GPE and masks a wake-only one. */
+		runtime = false;
+		if (events.gpes[gpe].enabled)
+			runtime = true;
+
+		/* Writes the bit. */
+		gpe_set_enable(gpe, runtime);
+	}
+
+	drv_acpi_os_event_unlock(state);
+
+	/* Reports the GPE that woke the system. */
+	if (woken != NULL)
+		*woken = first;
+
+	/* Succeeded: the runtime GPEs raise SCIs again. */
 	return 0;
 }
 
@@ -987,10 +1235,15 @@ record_gpe_block(
 			if ((fired & (1U << bit)) == 0)
 				continue;
 
-			/* Records a GPE that the interpreter numbers; only those are ever enabled. */
+			/* Skips a GPE that the interpreter does not number; only those are ever enabled. */
 			gpe = base + index * 8U + bit;
-			if (gpe < events.gpe_count)
-				events.gpe_pending[gpe / 8U] |= (uint8_t)(1U << (gpe % 8U));
+			if (gpe >= events.gpe_count)
+				continue;
+
+			/* Records it, and keeps the first GPE that fires during a sleep as what woke the system. */
+			events.gpe_pending[gpe / 8U] |= (uint8_t)(1U << (gpe % 8U));
+			if (events.sleeping && events.woken_gpe == GPE_WOKEN_NONE)
+				events.woken_gpe = (uint16_t)gpe;
 		}
 	}
 }
@@ -1279,6 +1532,7 @@ process_gpe(
 	struct gpe_entry *entry;
 	struct drv_acpi_object *result;
 	unsigned long state;
+	bool wanted;
 	int error;
 
 	/* An edge event is cleared first, so that a new edge is not lost. */
@@ -1304,14 +1558,62 @@ process_gpe(
 	if (!entry->edge)
 		gpe_clear(gpe);
 
-	/* Unmasks it again while it is still enabled. */
-	if (entry->enabled) {
-		state = drv_acpi_os_event_lock();
+	/* Unmasks it again while it is wanted: enabled at runtime, armed during a sleep. */
+	state = drv_acpi_os_event_lock();
 
+	wanted = gpe_wanted(gpe);
+	if (wanted)
 		gpe_set_enable(gpe, true);
 
-		drv_acpi_os_event_unlock(state);
+	drv_acpi_os_event_unlock(state);
+}
+
+/*
+ * Tells whether a GPE should be unmasked now, under the event lock: an
+ * armed GPE with a handler or a method during a sleep, an enabled one
+ * otherwise.  An armed GPE with neither fires once to wake the system and
+ * stays masked, so that a level source nobody clears does not storm.
+ */
+static bool
+gpe_wanted(
+	unsigned gpe)
+{
+	struct gpe_entry *entry;
+
+	/* During a sleep only the armed GPEs that something handles raise SCIs. */
+	entry = &events.gpes[gpe];
+	if (events.sleeping) {
+		/* A GPE no wake source wants stays masked. */
+		if (entry->armed == 0)
+			return false;
+
+		/* A GPE nothing handles fires once and stays masked. */
+		if (entry->kind == GPE_NONE)
+			return false;
+
+		/* The armed GPE wakes the system. */
+		return true;
 	}
+
+	/* At runtime a GPE raises SCIs while its handling keeps it enabled. */
+	if (entry->enabled)
+		return true;
+
+	/* The GPE stays masked. */
+	return false;
+}
+
+/* Tells whether the interrupt recorded a GPE that the thread has not yet handled, under the event lock. */
+static bool
+gpe_is_pending(
+	unsigned gpe)
+{
+	/* A recorded GPE has its bit in the pending mask. */
+	if ((events.gpe_pending[gpe / 8U] & (1U << (gpe % 8U))) != 0)
+		return true;
+
+	/* The thread has nothing of the GPE to handle. */
+	return false;
 }
 
 /* Logs whether SCI_EN is set, the PM1 enable bits and how many GPEs run. */
