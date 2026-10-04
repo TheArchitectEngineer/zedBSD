@@ -676,3 +676,12 @@ ls -l g | cut -c1-10
 mkdir d
 touch f
 cp -T f d/g; ls d
+
+#### dirname with several operands (GNU; the user's decision, 2026-10-05)
+dirname /usr/bin/sh a/b c /
+
+#### dirname -z with several operands
+dirname -z a/b c | od -c | head -n 2
+
+#### dirname --zero and --
+dirname --zero -- -x/y z/w | od -c | head -n 2
