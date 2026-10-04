@@ -78,7 +78,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p027](phase027/phase.md) | BUG-095: oneshot の service の `/sbin/poweroff` と init の待ち合い。init が oneshot を待つ間も control socket に答え（system の action・読むだけの要求はすぐ、起こす・止めるは loop で）、action で待ちを終える。試験 `tests/bug095/` | cleared（q645、T2-003 PASS、実機は S2） | — |
 | [ws099-p029](phase029/phase.md) | BUG-142（入力 device を時刻の順に merge して読む、`input.c`・`main.c`）と BUG-141（zdesktop が motion を取ったら client に leave、`seat.c`）。試験 `bug142-order.sh`・`bug141-hover.sh` | cleared（q645、T2-008 の再試験 PASS） | — |
 | [ws099-p028](phase028/phase.md) | zdesktop の log に NUL が入る（`>` の log を次の run が切り詰めた後の古い offset への write）。stdout・stderr に O_APPEND | cleared（2026-10-03 Q1、T1-035） | — |
-| [ws099-p030](phase030/phase.md) | タイトルバーの検索欄・menu の項目のドラッグで窓を動かす（閾値 mouse 2 px・touch 8 px、離してクリック、フォーカス中の欄はキャレットと選択）。2026-10-04 user | in-progress（q670、実装・build 済み、T1 の QEMU 待ち） | — |
+| [ws099-p030](phase030/phase.md) | タイトルバーの検索欄・menu の項目のドラッグで窓を動かす（閾値 mouse 2 px・touch 8 px、離してクリック、フォーカス中の欄はキャレットと選択）。2026-10-04 user | cleared（q670、T2-026） | — |
 
 ## ベータ1 の到達目標（2026-10-02 計画、fg019）
 
