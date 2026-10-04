@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- 2026-10-05 未明 決定: WS122 の libavcodec をベータ1 の image に入れ、簡単な player もベータ1（RC 10/13）に（段をベータ1 へ。見積もりの表の段の改訂は Q1）。
 - 2026-10-04 17 時に決定: BUG-166 のタッチパッドは「押し込み＋タップドラッグ」、5330 の ACPI の table の読み取り専用の取り出しと commit を許可（queue.md の決定 (1)(2)）。
 - WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
 - 5330 の host の設定: 2026-10-04 user が iwlwifi の blacklist と再起動・設定の変更を許可（P4 が実施）。
