@@ -5,7 +5,7 @@
 Active Queues: q700（P1）・q703（P2）。2026-10-05 未明のベータ1 の実装の束（下の節）。委譲の session の P4 は q697・q698・q699 を cleared で終了（main efe846a に統合）。uat-3 の image を作成（plan/uat.md）。
 Status: active
 Main executor / plan writer: Q1（単一 Claude Code セッション、[protocol](agents/protocol.md)）。サブエージェント P1〜P8、N=2（P1・P2）＋試験 T1（忙しい時は T2）。
-Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q714（q713 は WS159 native の touchpad、ベータ1。q712 は WS045 の dirname と受け入れ。q703〜q711 は 2026-10-05 の実装の束。q702 は ws113-p001 の新しい attempt（Settings の Display の頁の要望）。q701 は ws142-p001 の設計。q700 は UAT-3 の Bug（BUG-177〜180）。q697・q698 は 2026-10-04 夜の P4 だけの委譲。q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
+Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q717（q714 は ws129-p004 release の image の config と CI の release の job、q715 は ws129-p013 利用の手引きと既知の問題の下書き、q716 は ws089-p027 About の PRETTY_NAME。q713 は WS159 native の touchpad、ベータ1。q712 は WS045 の dirname と受け入れ。q703〜q711 は 2026-10-05 の実装の束。q702 は ws113-p001 の新しい attempt（Settings の Display の頁の要望）。q701 は ws142-p001 の設計。q700 は UAT-3 の Bug（BUG-177〜180）。q697・q698 は 2026-10-04 夜の P4 だけの委譲。q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
 
 
 ## 2026-10-05 未明: ベータ1 の実装の束（P1・P2、T1）
@@ -33,7 +33,10 @@ user（原文）:「では、サブエージェントを起動して作業しま
 | q708 / q708-i01 | P2 | WS095: [ws095-p017](ws095/phase017/phase.md)（辞書の移動と統合）・p005・[p016](ws095/phase016/phase.md)（app ごとの IME の状態） | 各 phase.md の範囲 | なし | pending |
 | q709 / q709-i01 | 空いた担当 | WS090: [ws090-p016](ws090/phase016/phase.md) | File Chooser を (b) 左右とも透かす | なし | 実装済み・T1-103 の試験待ち（P2 ba8f807 → main 37e0de9） |
 | q710 / q710-i01 | P2 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | uncleared（unstarted: planned の Phase が無い。p004 planning＝ベータ1 の後、p007 planning＝実機、p008 in-progress＝q667 の T1 の回帰と実機待ち、2026-10-05 P2 の確認） |
-| q711 / q711-i01 | P2 | WS129: p003〜p005 | release の作業 | なし | in-progress（2026-10-05 P2、p003 から。p004・p005 は依存を確かめて報告） |
+| q711 / q711-i01 | P2 | WS129: p003〜p005 | release の作業 | なし | p003 実装済み・T1-104 の試験待ち（P2 52c6354 → main）。p004 は q714、p005 の今書ける分は p013 に分けて q715、残りは 10/13 頃 |
+| q714 / q714-i01 | P2 | [ws129-p004](ws129/phase004/phase.md) | release の image の config・CI の release の job（rc の build と promote）・root の lock の option（U10）。zip の有無は U6/ws088-p002 次第、program の最終の一覧は 10/13 の RC。ci.yml は WS112 と共有だが WS112 はベータ4 以降で今は衝突なし | ws129-p001 | pending |
+| q715 / q715-i01 | P2 | [ws129-p013](ws129/phase013/phase.md) | 利用の手引きと既知の問題の下書き（docs/release/、英語） | ws129-p001 | pending |
+| q716 / q716-i01 | 空いた担当 | [ws089-p027](ws089/phase027/phase.md) | About に PRETTY_NAME | ws129-p003（main に統合済み） | pending |
 
 ## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
 
