@@ -205,3 +205,5 @@ Event ws114-gtk-qt-port-projections-20261002: user指定の順序は[全文](sta
 ## 5330 の AX211 の passthrough の再開（2026-10-04）
 
 user「AX211のpassthruは、きちんとLinuxドライバをblacklistして再起動すれば動作します。その手順が抜けています。ホストを使ってオーケーです。sudo はパスワードレスで使えるので、設定は変えてオーケーです。」→ 5330（10.0.30.3）の host で iwlwifi（AX211 の Linux の driver）を blacklist して再起動し、AX211（00:14.3）を vfio-pci で QEMU に passthrough してよい。host の設定（modprobe.d の blacklist、vfio-pci の起動時の割り当て、再起動）を変えてよい。2026-10-03 の「iGPU と AX211 を同じ QEMU に同時に passthrough しない」は維持（今回は AX211 だけ）。手順は `plan/tools/` か `plan/ws004/tests/` の script の注記に残す。
+
+追記（2026-10-04 user）:「5330のリセットは何回でも対応するので、気兼ねなくパススルーを試してください。また、i915と同時にパススルーに成功した事例はまだないので避けてください。」→ AX211 の passthrough で host が落ちても試験を続けてよい（担当は落ちたら Q1 に知らせ、Q1 がユーザーに 5330 の電源の再投入を頼む）。iGPU（i915）と AX211 の同時の passthrough はしない。
