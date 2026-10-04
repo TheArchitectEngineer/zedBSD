@@ -23,6 +23,11 @@
 
 #include <drivers/acpi/acpi.h>
 
+/*
+ * Marks a parameter a function does not use.  The kernel's headers define
+ * it already; the host test harness, which does not include them, gets
+ * this one.
+ */
 #ifndef UNUSED_PARAMETER
 #define UNUSED_PARAMETER(parameter) ((void)(parameter))
 #endif
@@ -168,6 +173,22 @@
 #define DRV_ACPI_OWNER_PREDEFINED	0U
 
 /*
+ * The field flags byte of ACPI 6.5 section 19.6.48.
+ */
+#define DRV_ACPI_FIELD_ACCESS_MASK	0x0fU
+#define DRV_ACPI_FIELD_ACCESS_ANY	0U
+#define DRV_ACPI_FIELD_ACCESS_BYTE	1U
+#define DRV_ACPI_FIELD_ACCESS_WORD	2U
+#define DRV_ACPI_FIELD_ACCESS_DWORD	3U
+#define DRV_ACPI_FIELD_ACCESS_QWORD	4U
+#define DRV_ACPI_FIELD_ACCESS_BUFFER	5U
+#define DRV_ACPI_FIELD_LOCK		0x10U
+#define DRV_ACPI_FIELD_UPDATE_MASK	0x60U
+#define DRV_ACPI_FIELD_UPDATE_PRESERVE	0x00U
+#define DRV_ACPI_FIELD_UPDATE_ONES	0x20U
+#define DRV_ACPI_FIELD_UPDATE_ZEROS	0x40U
+
+/*
  * The kinds of reference object.
  */
 enum drv_acpi_reference_kind {
@@ -197,20 +218,17 @@ enum drv_acpi_control {
 };
 
 /*
- * The field flags byte of ACPI 6.5 section 19.6.48.
+ * Where a store goes: nowhere, a local, an argument, a namespace node, the
+ * debug object, or through a reference object.
  */
-#define DRV_ACPI_FIELD_ACCESS_MASK	0x0fU
-#define DRV_ACPI_FIELD_ACCESS_ANY	0U
-#define DRV_ACPI_FIELD_ACCESS_BYTE	1U
-#define DRV_ACPI_FIELD_ACCESS_WORD	2U
-#define DRV_ACPI_FIELD_ACCESS_DWORD	3U
-#define DRV_ACPI_FIELD_ACCESS_QWORD	4U
-#define DRV_ACPI_FIELD_ACCESS_BUFFER	5U
-#define DRV_ACPI_FIELD_LOCK		0x10U
-#define DRV_ACPI_FIELD_UPDATE_MASK	0x60U
-#define DRV_ACPI_FIELD_UPDATE_PRESERVE	0x00U
-#define DRV_ACPI_FIELD_UPDATE_ONES	0x20U
-#define DRV_ACPI_FIELD_UPDATE_ZEROS	0x40U
+enum drv_acpi_target_kind {
+	DRV_ACPI_TARGET_NONE = 0,
+	DRV_ACPI_TARGET_LOCAL = 1,
+	DRV_ACPI_TARGET_ARGUMENT = 2,
+	DRV_ACPI_TARGET_NODE = 3,
+	DRV_ACPI_TARGET_DEBUG = 4,
+	DRV_ACPI_TARGET_REFERENCE = 5
+};
 
 struct drv_acpi_eval;
 struct drv_acpi_frame;
@@ -344,39 +362,57 @@ struct drv_acpi_object {
 	uint8_t type;
 	union {
 		uint64_t integer;
+
+		/* A string: its characters, terminated, and their count. */
 		struct {
 			char *text;
 			size_t length;
 		} string;
+
+		/* A buffer: its bytes, which a buffer field may write in place, and their count. */
 		struct {
 			uint8_t *bytes;
 			size_t length;
 		} buffer;
+
+		/* A package: its elements, each holding one reference or NULL, and their count. */
 		struct {
 			struct drv_acpi_object **elements;
 			uint32_t count;
 		} package;
+
 		struct drv_acpi_method method;
 		struct drv_acpi_region region;
 		struct drv_acpi_field field;
 		struct drv_acpi_buffer_field buffer_field;
 		struct drv_acpi_mutex mutex;
+
+		/* An event: how many Signals no Wait has taken yet. */
 		struct {
 			uint32_t pending;
 		} event;
+
+		/* A processor: the block of its P_BLK registers and its processor ID. */
 		struct {
 			uint32_t block_address;
 			uint8_t id;
 			uint8_t block_length;
 		} processor;
+
+		/* A power resource: the order it is turned on in, and the deepest sleep state it serves. */
 		struct {
 			uint16_t resource_order;
 			uint8_t system_level;
 		} power;
+
 		struct drv_acpi_reference reference;
+
+		/* A DDB handle: the loaded table it names, or NULL after Unload. */
 		struct {
 			struct drv_acpi_table *table;
 		} ddb;
+
+		/* An alias: the node it stands for. */
 		struct {
 			struct drv_acpi_node *target;
 		} alias;
@@ -492,19 +528,6 @@ struct drv_acpi_eval {
 	struct drv_acpi_thread *thread;
 	struct drv_acpi_object *return_value;
 	int control;
-};
-
-/*
- * Where a store goes: nowhere, a local, an argument, a namespace node, the
- * debug object, or through a reference object.
- */
-enum drv_acpi_target_kind {
-	DRV_ACPI_TARGET_NONE = 0,
-	DRV_ACPI_TARGET_LOCAL = 1,
-	DRV_ACPI_TARGET_ARGUMENT = 2,
-	DRV_ACPI_TARGET_NODE = 3,
-	DRV_ACPI_TARGET_DEBUG = 4,
-	DRV_ACPI_TARGET_REFERENCE = 5
 };
 
 /*
