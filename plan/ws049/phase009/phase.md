@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p009`
 Parent: [WS049](../ws.md)
-Status: in-progress（2026-10-04。findings の全件を適用し host の確認は済み。QEMU の回帰（T1）待ち）
+Status: cleared（2026-10-04、Q1 の判定。findings の全件を適用、host の確認と T1-091 の QEMU の回帰が PASS）
 Phase disposition: normal
 Queue: q693 / q693-i01（P1）
 
@@ -87,9 +87,14 @@ P7 の public comment の最初の文、protocol の flag・counter、critical s
 | `make ZEDBSD_CONFIG=config/ci/config-amd64.mk vmunix`（CONFIG_DRIVER_ACPI=y） | warning 0、include check PASS、amd64 vmunix check PASS |
 | `sh plan/ws014/tests/run-pci-service-lifecycle-host.sh` | PASS |
 | `git diff --check` | 問題なし |
-| QEMU（T1） | **依頼中**（下） |
+| QEMU（T1-091、main 832f8ec、KVM） | PASS: guest-events（first SCI 1）、guest-compare namespace same・device の違い 10 項目（HPET._STA は今回一致）、boot-test |
 
 ### T1 への依頼（Q1 経由）
 
 p007 の T1-090 と同じ組: `test-image.sh plan/ws049/tests/config-acpi.mk build/ws049-acpi` → `guest-events.sh`（sci・button・gpe、終了 0、first SCI 1 以上）・
 `guest-compare.sh`（namespace same、device の違いは p006 の 11 行）・`boot-test.sh`（login prompt の PNG）。
+
+## T1-091 の結果（2026-10-04、Q1 の判定: cleared）
+
+main 832f8ec の image（`config-acpi.mk`）で guest-events PASS（sci・button・gpe、first SCI 1）、guest-compare namespace same（device の評価の違い
+10 項目、p006 の 11 項目のうち `HPET._STA` は今回一致）、boot-test PASS。
