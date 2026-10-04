@@ -177,3 +177,10 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 再現した: BUG-158（WiFi 未接続で約 1 分で kernel のフリーズ）、BUG-119（電源が切れない）、BUG-156（タッチパッドの 2 本指・スワイプ）、BUG-157（間違えた鍵の文言）。
 - 新規（BUG-165〜176、[Bug Board](known-bugs.md)）: DSDT が読めない（error 13）、タッチパッドの窓のドラッグ（デグレ）と押し込みのクリック、後から挿した USB LAN が up しない、Ethernet のメニューの wlan0、音量の slider のドラッグでのフリーズ、opaque が不透明にならない、key のリピートの不安定、sh の履歴の全角の表示、WiFi の address への SSH、Terminal 多数で errno=8（ENOSPC）、起動の直後の「Network service is not …」の表示、起動の時の壁紙 7.2 秒。
 - 未実施: B1（USB マウス）、F1（USB メモリ）、F2（タブ）、F5（PNG の見本が無い）。次の UAT では見本の file（PDF・PNG・JPEG）を image に入れる。
+
+## uat-3（2026-10-04 夜、BUG-158 の ad-hoc UAT）
+
+- image: `/home/awe/zedBSD-claude1/build/uat-3/hdd-image.img`（2,216,689,664 byte、**sha256 `ada4492e004dababea62e89388e377d4f47d94f0c3cc60f21ea2d55fa5469c08`**、20:55）。source は main `efe846a`（BUG-158 の修正 97543a4（bus master off の順）と acb4afa（AX211 の command の write pointer を 16 bit の連番に、firmware の SW_ERROR の原因）、kernel.log の永続化、WS049 の ACPI の修正（BUG-165 の DSDT、SCI・event thread）を含む）。
+- 作り方: `plan/tools/guest/test-image.sh --no-harness plan/uat/config-uat.mk build/uat-3` に `--file /etc/keiland/apps.conf=plan/uat/uat-apps.conf`・壁紙（`/usr/share/keiland/wallpaper.ppm` と `wallpapers/*.ppm`）・`/root/.ssh/authorized_keys`（guest harness の鍵）、`I915_TEST_VBT=n ZEDBSD_TEST_IMAGE_TAG=uat-3`。compiler の warning は外部 Noct の 1 件（interpreter.c の -Wreturn-type、既知）と submake の jobserver の 1 件。
+- QEMU の boot-test: PASS（Q1、複写 `build/uat-3-boot/uat.img`、`build/boot-test/login.png`、GPU なしなので greeter の後に getty の `login:`）。
+- 実機で見る観点（BUG-158）: WiFi を未接続（保存の profile 無し、または AP の圏外）のまま desktop で 10 分以上放置して止まらないこと。前は約 1 分で全停止。止まった時は再起動の後に `/var/log/kernel.log.old` を見る（panic・fatal の行と AX211 の recovery の行）。あわせて DSDT の読み込み（BUG-165）、Shut Down で電源が切れる（BUG-119）、電源ボタン・蓋・AC（ws049-p007）、タッチパッド、音量の slider（BUG-170）。
