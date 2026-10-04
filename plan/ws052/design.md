@@ -36,8 +36,9 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
   entry（EC の `EISC (0x81, 0xB9, 1)`、`GUAM (1)`、xHCI の `PSLI (5)`、`GPRV`、GPIO）、6 = exit。
 - `_DSM`（Microsoft の UUID `11e00d56-ce64-47ce-837b-1f898f9aa461`）: function 0 は `_OSI ("Windows 2020")` で `{0xFF, 0x01}`、他は空。
 - UUID `57a6512e-…` の function 1 は `LBUF`（用途は p002 で確かめる）。
-- `S0ID`（GNVS、BIOS の設定の S0 idle の有効）が 1 であることが前提。FADT の `LOW_POWER_S0_IDLE_CAPABLE`（flags の bit 21）は FACP を
-  取り出していないので未確認（UAT か、Linux の 5330 から FACP を取り出す。§9）。
+- `S0ID`（GNVS、BIOS の設定の S0 idle の有効）が 1 であることが前提。FADT の `LOW_POWER_S0_IDLE_CAPABLE`（flags の bit 21）は **1**（2026-10-05 に
+  FACP を取り出して確かめた）。LPIT: S0ix の entry は MWAIT の hint 0x60（C10）、SLP_S0 の residency の counter は PMC の MMIO 0xFE00193C（8197 Hz）、
+  package C10 の residency は MSR 0x632。wake の GPE・`_CST`・電源ボタン（`HIDD`）の読みは [phase002](phase002/phase.md)。
 - EC: 蓋・ボタン・AC は EC の `_Qxx` から `Notify`（WS049 p007 の実機の UAT で確かめる）。EC の GPE は `_PRW` で wake の GPE（p002 で一覧を作る）。
 
 ## 4. 今の zedBSD の状態
