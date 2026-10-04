@@ -18,7 +18,7 @@
  * test supplies the kernel allocator.
  */
 
-#include <drivers/usb/hid-digitizer.h>
+#include <drivers/generic/hid-digitizer.h>
 
 #include <stdio.h>
 #include <stdlib.h>

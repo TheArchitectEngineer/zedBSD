@@ -42,6 +42,12 @@
  *                         itself) while the fingers move at a steady speed over
  *                         STEPS * MS, as a panel that scans unevenly sees them
  *   wait MS / hold MS     sleeps (a decimal)
+ *   pad W H [N] [scan]    declares a touch pad instead of a screen (ws159-p003):
+ *                         the same fingers, read back with BTN_TOOL_FINGER to
+ *                         BTN_TOOL_QUINTTAP and BTN_LEFT (the first command)
+ *   press / release       holds the pad's button from this frame on, or lets
+ *                         it go; with finger commands on the same line they
+ *                         make one frame
  * The script's times are a schedule from the screen's declaration: each
  * frame is written as soon as its time has come, so late wakes do not add
  * up and a Scan Time stays with the real clock, as a panel's does.
@@ -82,6 +88,7 @@
 /* The directory of the evdev nodes, and the name the test touch screen's node reports. */
 #define TOUCHINJECT_INPUT_DIRECTORY	"/dev/input"
 #define TOUCHINJECT_SCREEN_NAME		"Test touchscreen (input-inject)"
+#define TOUCHINJECT_PAD_NAME		"Test touchpad (input-inject)"
 
 /* The commands of a script. */
 enum touch_command {
@@ -92,6 +99,9 @@ enum touch_command {
 	COMMAND_UP,
 	COMMAND_SWIPE,
 	COMMAND_WAIT,
+	COMMAND_PAD,
+	COMMAND_PRESS,
+	COMMAND_RELEASE,
 };
 
 /*
@@ -138,6 +148,9 @@ struct touch_screen {
 	unsigned long long scan_us;
 	long long origin_us;
 	unsigned long long jitter_state;
+	/* The device is a touch pad (ws159-p003), and whether its button is held. */
+	int pad;
+	int pressed;
 	struct touch_finger fingers[INPUT_INJECT_TOUCH_CONTACTS];
 };
 
@@ -175,6 +188,9 @@ static const struct touch_command_word touch_commands[] = {
 	{ "swipe", COMMAND_SWIPE },
 	{ "wait", COMMAND_WAIT },
 	{ "hold", COMMAND_WAIT },
+	{ "pad", COMMAND_PAD },
+	{ "press", COMMAND_PRESS },
+	{ "release", COMMAND_RELEASE },
 };
 
 /*
@@ -190,6 +206,12 @@ static const struct code_name code_names[] = {
 	{ EV_ABS, ABS_MT_POSITION_X, "ABS_MT_POSITION_X" },
 	{ EV_ABS, ABS_MT_POSITION_Y, "ABS_MT_POSITION_Y" },
 	{ EV_KEY, BTN_TOUCH, "BTN_TOUCH" },
+	{ EV_KEY, BTN_LEFT, "BTN_LEFT" },
+	{ EV_KEY, BTN_TOOL_FINGER, "BTN_TOOL_FINGER" },
+	{ EV_KEY, BTN_TOOL_DOUBLETAP, "BTN_TOOL_DOUBLETAP" },
+	{ EV_KEY, BTN_TOOL_TRIPLETAP, "BTN_TOOL_TRIPLETAP" },
+	{ EV_KEY, BTN_TOOL_QUADTAP, "BTN_TOOL_QUADTAP" },
+	{ EV_KEY, BTN_TOOL_QUINTTAP, "BTN_TOOL_QUINTTAP" },
 	{ EV_MSC, MSC_TIMESTAMP, "MSC_TIMESTAMP" },
 	{ EV_SYN, SYN_REPORT, "SYN_REPORT" },
 };
@@ -201,12 +223,12 @@ static int replay(const char *path);
 static int run_line(struct touch_screen *screen, char *line, unsigned number);
 static int run_part(struct touch_screen *screen, char *part, int *frame);
 static enum touch_command command_of(const char *word);
-static int run_size(struct touch_screen *screen, const char *part);
+static int run_size(struct touch_screen *screen, const char *part, int pad);
 static int run_finger(struct touch_screen *screen, enum touch_command command, const char *part);
 static int run_swipe(struct touch_screen *screen, const char *part);
 static int run_wait(struct touch_screen *screen, const char *part);
 static struct touch_finger * finger_of(struct touch_screen *screen, int contact_id);
-static int screen_declare(struct touch_screen *screen, int width, int height, int per_report, int scan_time);
+static int screen_declare(struct touch_screen *screen, int width, int height, int per_report, int scan_time, int pad);
 static int screen_frame(struct touch_screen *screen);
 static void sleep_ms(long milliseconds);
 static void sleep_us(long long microseconds);
@@ -228,6 +250,7 @@ static ssize_t check_frame(int fd, unsigned count, int contact_id, int tip, int 
 static int dump(long milliseconds, int with_time);
 static int dump_find(char *path, size_t size);
 static void dump_axes(int fd);
+static void dump_properties(int fd);
 static const char *code_name_of(int type, int code);
 static long long now_ms(void);
 
@@ -386,7 +409,7 @@ replay(
 
 	/* Declares a default screen for a script without commands. */
 	if (!screen.declared) {
-		error = screen_declare(&screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT, 0);
+		error = screen_declare(&screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT, 0, 0);
 		if (error != 0) {
 			fprintf(stderr, "touchinject: declaring the default screen failed\n");
 			return 1;
@@ -485,10 +508,10 @@ run_part(
 	if (count != 1)
 		return 0;
 
-	/* Any first command but size declares the default screen. */
+	/* Any first command but size and pad declares the default screen. */
 	command = command_of(word);
-	if (!screen->declared && command != COMMAND_SIZE) {
-		error = screen_declare(screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT, 0);
+	if (!screen->declared && command != COMMAND_SIZE && command != COMMAND_PAD) {
+		error = screen_declare(screen, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_SIZE, TOUCHINJECT_DEFAULT_PER_REPORT, 0, 0);
 		if (error != 0)
 			return 1;
 	}
@@ -496,7 +519,23 @@ run_part(
 	/* Runs the command. */
 	switch (command) {
 	case COMMAND_SIZE:
-		error = run_size(screen, part);
+		error = run_size(screen, part, 0);
+		break;
+	case COMMAND_PAD:
+		error = run_size(screen, part, 1);
+		break;
+	case COMMAND_PRESS:
+	case COMMAND_RELEASE:
+		/* Only a touch pad has a button; the change is written with the line's frame. */
+		error = -1;
+		if (screen->pad) {
+			screen->pressed = 0;
+			if (command == COMMAND_PRESS)
+				screen->pressed = 1;
+			*frame = 1;
+			error = 0;
+		}
+
 		break;
 	case COMMAND_DOWN:
 	case COMMAND_MOVE:
@@ -544,11 +583,12 @@ command_of(
 	return COMMAND_NONE;
 }
 
-/* Declares the screen's size and fingers per report; only as the first command. */
+/* Declares the screen's (or the touch pad's) size and fingers per report; only as the first command. */
 static int
 run_size(
 	struct touch_screen *screen,
-	const char *part)
+	const char *part,
+	int pad)
 {
 	char scan[TOUCHINJECT_WORD_MAX];
 	int width;
@@ -580,7 +620,7 @@ run_size(
 	}
 
 	/* Declares the screen. */
-	error = screen_declare(screen, width, height, per_report, scan_time);
+	error = screen_declare(screen, width, height, per_report, scan_time, pad);
 	if (error != 0)
 		return 1;
 
@@ -825,7 +865,8 @@ screen_declare(
 	int width,
 	int height,
 	int per_report,
-	int scan_time)
+	int scan_time,
+	int pad)
 {
 	struct input_inject_setup setup;
 	ssize_t written;
@@ -834,6 +875,8 @@ screen_declare(
 	memset(&setup, 0, sizeof(setup));
 	setup.magic = INPUT_INJECT_MAGIC;
 	setup.kind = INPUT_INJECT_KIND_TOUCH;
+	if (pad)
+		setup.kind = INPUT_INJECT_KIND_TOUCHPAD;
 	setup.x_max = width;
 	setup.y_max = height;
 	setup.report_contacts = (uint32_t)per_report;
@@ -855,6 +898,8 @@ screen_declare(
 	screen->scan_us = 0;
 	screen->origin_us = now_us();
 	screen->jitter_state = 0x9e3779b97f4a7c15ULL;
+	screen->pad = pad;
+	screen->pressed = 0;
 	return 0;
 }
 
@@ -876,6 +921,10 @@ screen_frame(
 	memset(&frame, 0, sizeof(frame));
 	if (screen->scan_time)
 		frame.reserved = (uint32_t)((screen->scan_us / 100ULL) % (INPUT_INJECT_SCAN_TIME_MAX + 1ULL));
+
+	/* A touch pad's held button rides above the Scan Time. */
+	if (screen->pad && screen->pressed)
+		frame.reserved |= 1U << INPUT_INJECT_PAD_BUTTONS_SHIFT;
 	for (index = 0; index < INPUT_INJECT_TOUCH_CONTACTS; index++) {
 		finger = &screen->fingers[index];
 		if (!finger->used)
@@ -1013,7 +1062,7 @@ check(void)
 	check_expect(&result, "setup-reserved", written, errno, EINVAL);
 	written = check_setup(fd, INPUT_INJECT_KIND_PEN, 2, 0);
 	check_expect(&result, "setup-pen-with-fingers", written, errno, EINVAL);
-	written = check_setup(fd, 3, 2, 0);
+	written = check_setup(fd, 4, 2, 0);
 	check_expect(&result, "setup-unknown-kind", written, errno, EINVAL);
 
 	/* A good setup declares the touch screen. */
@@ -1486,6 +1535,7 @@ dump(
 
 	/* The node's path, name and axes. */
 	printf("TOUCHDUMP node=%s name=%s\n", path, TOUCHINJECT_SCREEN_NAME);
+	dump_properties(fd);
 	dump_axes(fd);
 	fflush(stdout);
 
@@ -1594,6 +1644,9 @@ dump_find(
 		same = strcmp(name, TOUCHINJECT_SCREEN_NAME);
 		if (same == 0)
 			found = 1;
+		same = strcmp(name, TOUCHINJECT_PAD_NAME);
+		if (same == 0)
+			found = 1;
 	}
 
 	/* The directory stream is no longer needed. */
@@ -1601,6 +1654,29 @@ dump_find(
 
 	/* Succeeded: whether the node was found (its path is in path). */
 	return found;
+}
+
+/*
+ * Prints the device's INPUT_PROP_* bits (EVIOCGPROP, ws159-p003): 0x1 a
+ * pointer, 0x2 direct, 0x4 a button pad.
+ */
+static void
+dump_properties(
+	int fd)
+{
+	unsigned char bits[4];
+	int result;
+
+	/* Asks for the bitmap. */
+	memset(bits, 0, sizeof(bits));
+	result = ioctl(fd, EVIOCGPROP(sizeof(bits)), bits);
+	if (result < 0) {
+		printf("TOUCHDUMP props=unknown\n");
+		return;
+	}
+
+	/* Prints it as one number. */
+	printf("TOUCHDUMP props=0x%x\n", (unsigned)bits[0] | ((unsigned)bits[1] << 8) | ((unsigned)bits[2] << 16) | ((unsigned)bits[3] << 24));
 }
 
 /* Prints the range and resolution of the touch screen's six axes. */

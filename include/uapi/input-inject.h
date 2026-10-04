@@ -37,6 +37,15 @@
  * a USB touch screen with one.  Without it a frame's reserved word is 0.
  * Every other bit of the setup's reserved word is 0.
  *
+ * INPUT_INJECT_KIND_TOUCHPAD (ws159-p003) declares a virtual touch pad: the
+ * same frames and fingers as the touch screen, run through the touch state
+ * machine in touch pad mode (a Windows Precision Touchpad's), with one
+ * button, the pad itself (a click pad).  Readers get the fingers in
+ * protocol B, BTN_TOOL_FINGER to BTN_TOOL_QUINTTAP for how many touch,
+ * BTN_LEFT, and the properties INPUT_PROP_POINTER and
+ * INPUT_PROP_BUTTONPAD.  A frame's reserved word holds its Scan Time in
+ * its low 16 bits (on a pad declared with one, else 0) and the buttons
+ * held in INPUT_INJECT_PAD_BUTTONS (bit 0 the left button).
  * The device appears as /dev/input/eventN.  Closing the file removes it.
  */
 
@@ -52,6 +61,7 @@ extern "C" {
 #define INPUT_INJECT_MAGIC		0x6e706e69U
 #define INPUT_INJECT_KIND_PEN		1U
 #define INPUT_INJECT_KIND_TOUCH		2U
+#define INPUT_INJECT_KIND_TOUCHPAD	3U
 #define INPUT_INJECT_AXIS_MAX		65535
 #define INPUT_INJECT_PRESSURE_MAX	4095
 #define INPUT_INJECT_TILT_MAX		60
@@ -64,6 +74,10 @@ extern "C" {
 /* A touch setup's reserved word: the frames carry a Scan Time (100 us units, 0..INPUT_INJECT_SCAN_TIME_MAX). */
 #define INPUT_INJECT_TOUCH_SCAN_TIME	1U
 #define INPUT_INJECT_SCAN_TIME_MAX	65535U
+
+/* A touch pad frame's reserved word: the buttons held, bit 0 the left one, above the Scan Time. */
+#define INPUT_INJECT_PAD_BUTTONS_SHIFT	16U
+#define INPUT_INJECT_PAD_BUTTONS_MASK	0x1U
 
 /* The first write on an open: the device it declares. */
 struct input_inject_setup {

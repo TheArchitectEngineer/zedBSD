@@ -12,7 +12,7 @@
 #ifndef KERN_DRIVERS_HID_DIGITIZER_H
 #define KERN_DRIVERS_HID_DIGITIZER_H
 
-#include <drivers/usb/hid-report.h>
+#include <drivers/generic/hid-report.h>
 
 #include <stddef.h>
 #include <stdint.h>

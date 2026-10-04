@@ -74,6 +74,13 @@ struct input_device_info {
 	int (*open)(void *);
 	void (*close)(void *);
 	void *context;
+	/*
+	 * The device's INPUT_PROP_* properties, one bit each (bit n for
+	 * property n), which EVIOCGPROP reports: a touchpad is a pointer and
+	 * may be a button pad, a touch screen is direct (ws159-p003).  Zero
+	 * for a device without any.
+	 */
+	uint32_t properties;
 };
 
 /*

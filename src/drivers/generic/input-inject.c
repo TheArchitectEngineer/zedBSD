@@ -27,7 +27,7 @@
 #include <uapi/input.h>
 
 #include <drivers/generic/input-inject.h>
-#include <drivers/usb/hid-touch.h>
+#include <drivers/generic/hid-touch.h>
 
 #include "kern/cdev.h"
 #include "kern/clock.h"
@@ -256,8 +256,8 @@ inject_write(
 		return (ssize_t)size;
 	}
 
-	/* A touch screen takes frames of fingers, a pen events. */
-	if (state->kind == INPUT_INJECT_KIND_TOUCH) {
+	/* A touch screen and a touch pad take frames of fingers, a pen events. */
+	if (state->kind == INPUT_INJECT_KIND_TOUCH || state->kind == INPUT_INJECT_KIND_TOUCHPAD) {
 		written = inject_write_touch(state, buffer, size);
 	} else {
 		written = inject_write_pen(state, buffer, size);
@@ -338,8 +338,8 @@ inject_declare(
 	if (!valid)
 		return EINVAL;
 
-	/* A touch screen is declared apart. */
-	if (setup.kind == INPUT_INJECT_KIND_TOUCH) {
+	/* A touch screen, and a touch pad (ws159-p003), are declared apart. */
+	if (setup.kind == INPUT_INJECT_KIND_TOUCH || setup.kind == INPUT_INJECT_KIND_TOUCHPAD) {
 		error = inject_declare_touch(state, &setup);
 		if (error != 0)
 			return error;
@@ -523,7 +523,7 @@ inject_axis(
 }
 
 /*
- * Registers the touch screen a setup record declares: ten slots, fingers in
+ * Registers the touch screen or touch pad a setup record declares: ten slots, fingers in
  * 0..x_max and 0..y_max, reports of report_contacts fingers each, and a
  * Scan Time when the setup asks for one.
  */
@@ -554,6 +554,12 @@ inject_declare_touch(
 	touch.y.minimum = 0;
 	touch.y.maximum = setup->y_max;
 
+	/* A touch pad: one button, the pad itself (ws159-p003). */
+	if (setup->kind == INPUT_INJECT_KIND_TOUCHPAD) {
+		touch.pad = 1;
+		touch.buttons = 1U;
+	}
+
 	/* A Scan Time, when the setup asks for one, as a Windows touch screen has it. */
 	if ((setup->reserved & INPUT_INJECT_TOUCH_SCAN_TIME) != 0U) {
 		touch.scan_time_present = 1;
@@ -570,6 +576,7 @@ inject_declare_touch(
 	/* No finger touches yet; the state machine counts the Scan Time, if any. */
 	drv_hid_touch_reset(&state->touch, state->touch_description.slots);
 	drv_hid_touch_set_scan_time(&state->touch, &touch);
+	drv_hid_touch_set_pad(&state->touch, &touch);
 	state->report_contacts = setup->report_contacts;
 	state->touch_x_max = setup->x_max;
 	state->touch_y_max = setup->y_max;
@@ -577,18 +584,21 @@ inject_declare_touch(
 	/* Registers the touch screen as an ordinary input device. */
 	kern_memset(&info, 0, sizeof(info));
 	info.name = "Test touchscreen (input-inject)";
+	if (touch.pad)
+		info.name = "Test touchpad (input-inject)";
 	info.physical_path = "input-inject";
 	info.id.bustype = BUS_VIRTUAL;
 	info.capabilities = state->touch_description.capabilities;
 	info.capability_count = state->touch_description.capability_count;
 	info.absolute_axes = state->touch_description.axes;
 	info.absolute_axis_count = state->touch_description.axis_count;
+	info.properties = state->touch_description.properties;
 	error = drv_input_device_register(&info, &state->device);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: later writes are frames of fingers. */
-	state->kind = INPUT_INJECT_KIND_TOUCH;
+	state->kind = setup->kind;
 	return 0;
 }
 
@@ -660,6 +670,7 @@ inject_frame_valid(
 	const struct inject_open *state,
 	const struct input_inject_touch_frame *frame)
 {
+	uint32_t reserved;
 	uint32_t index;
 	int valid;
 
@@ -667,12 +678,17 @@ inject_frame_valid(
 	if (frame->count > INPUT_INJECT_TOUCH_CONTACTS)
 		return 0;
 
-	/* The reserved word is the Scan Time on a screen with one, and 0 on any other. */
+	/* A touch pad's buttons sit above the Scan Time and are set aside before it is checked. */
+	reserved = frame->reserved;
+	if (state->kind == INPUT_INJECT_KIND_TOUCHPAD)
+		reserved &= ~(INPUT_INJECT_PAD_BUTTONS_MASK << INPUT_INJECT_PAD_BUTTONS_SHIFT);
+
+	/* The rest of the reserved word is the Scan Time on a screen with one, and 0 on any other. */
 	if (state->touch_scan_time) {
-		if (frame->reserved > INPUT_INJECT_SCAN_TIME_MAX)
+		if (reserved > INPUT_INJECT_SCAN_TIME_MAX)
 			return 0;
 	} else {
-		if (frame->reserved != 0U)
+		if (reserved != 0U)
 			return 0;
 	}
 
@@ -729,6 +745,8 @@ inject_touch_report(
 	const struct input_inject_contact *contact;
 	struct hid_report_input *report;
 	uint32_t finger;
+	uint32_t scan_time;
+	uint32_t buttons;
 	int32_t contact_count;
 	int error;
 
@@ -740,9 +758,21 @@ inject_touch_report(
 		contact_count = (int32_t)frame->count;
 	inject_report_value(report, HID_TOUCH_CONTACT_COUNT_CODE, contact_count);
 
+	/* A touch pad's frame keeps its buttons above its Scan Time. */
+	scan_time = frame->reserved;
+	buttons = 0U;
+	if (state->kind == INPUT_INJECT_KIND_TOUCHPAD) {
+		buttons = (frame->reserved >> INPUT_INJECT_PAD_BUTTONS_SHIFT) & INPUT_INJECT_PAD_BUTTONS_MASK;
+		scan_time = frame->reserved & INPUT_INJECT_SCAN_TIME_MAX;
+	}
+
 	/* Every report of the frame carries the frame's Scan Time, on a screen with one. */
 	if (state->touch_scan_time)
-		inject_report_value(report, HID_TOUCH_SCAN_TIME_CODE, (int32_t)frame->reserved);
+		inject_report_value(report, HID_TOUCH_SCAN_TIME_CODE, (int32_t)scan_time);
+
+	/* A touch pad's first report of the frame carries its left button. */
+	if (state->kind == INPUT_INJECT_KIND_TOUCHPAD && first == 0U)
+		inject_report_value(report, HID_TOUCH_BUTTON_CODE(0), (int32_t)(buttons & 1U));
 
 	/* Each finger in its place in the report, confident. */
 	for (finger = 0; finger < count; finger++) {

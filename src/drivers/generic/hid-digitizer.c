@@ -17,7 +17,7 @@
  * tests run it unchanged.
  */
 
-#include <drivers/usb/hid-digitizer.h>
+#include <drivers/generic/hid-digitizer.h>
 #include <uapi/errno.h>
 #include <uapi/input.h>
 

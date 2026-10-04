@@ -185,6 +185,10 @@ endif
 AMD64_I2C_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_LPSS_I2C),y)
 AMD64_I2C_SOURCES += src/drivers/i2c/i2c.c src/drivers/i2c/lpss-i2c.c
+# HID over I2C finds its devices in the ACPI namespace (WS159).
+ifeq ($(CONFIG_DRIVER_ACPI),y)
+AMD64_I2C_SOURCES += src/drivers/i2c/i2c-hid.c
+endif
 endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
@@ -219,7 +223,13 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/usb/hid-digitizer.c src/drivers/usb/hid-touch.c
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c
+endif
+# The HID report parser and the pen and touch state machines serve every HID
+# transport (USB, I2C-HID) and the test injector (ws159-p003).
+AMD64_HID_SOURCES :=
+ifneq ($(filter y,$(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_PCI_LPSS_I2C) $(CONFIG_INPUT_TEST_INJECT)),)
+AMD64_HID_SOURCES += src/drivers/generic/hid-report.c src/drivers/generic/hid-digitizer.c src/drivers/generic/hid-touch.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
@@ -245,6 +255,7 @@ AMD64_KERNEL_SOURCES := \
 	src/drivers/generic/loop.c src/drivers/generic/dma.c src/drivers/pci/pci.c \
 	src/drivers/pci/pci-pcat.c src/drivers/usb/usb.c $(AMD64_USB_HCD_SOURCES) \
 	$(AMD64_USB_CLASS_SOURCES) \
+	$(AMD64_HID_SOURCES) \
 	$(AMD64_NVME_SOURCES) \
 	$(AMD64_VENUS_SOURCES) \
 	$(AMD64_HDA_SOURCES) \
@@ -279,10 +290,6 @@ AMD64_KERNEL_SOURCES := \
 	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 AMD64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
-# The injector's touch screen runs the USB touch screen's state machine.
-ifneq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_KERNEL_SOURCES += src/drivers/usb/hid-touch.c
-endif
 endif
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \

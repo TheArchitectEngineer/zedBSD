@@ -27,7 +27,7 @@
  * The value type of a finger field of a touch screen (Tip Switch,
  * Confidence, Contact Identifier, X, Y) and of its Contact Count.  Like a pen
  * switch it lies outside the evdev event types: its code names the finger and
- * the item (include/drivers/usb/hid-touch.h), every such field is reported
+ * the item (include/drivers/generic/hid-touch.h), every such field is reported
  * each time, and only the touch state machine turns the values into
  * multitouch events.
  */
@@ -102,6 +102,40 @@ struct hid_report_touch_info {
 	int scan_time_present;
 	int32_t scan_time_maximum;
 	uint32_t scan_time_unit_ns;
+	/*
+	 * Whether the fingers are a touch pad's (a Touch Pad application
+	 * collection, a pointer device moved relatively) rather than a touch
+	 * screen's, and how many buttons of the Button page the pad's reports
+	 * carry beside the fingers (ws159-p003).
+	 */
+	int pad;
+	size_t buttons;
+};
+
+/*
+ * The Digitizer usages of the feature reports a Windows Precision Touchpad
+ * declares (ws159-p003): the device's mode (3 makes it report its fingers),
+ * the switches of its surface and its buttons, its latency mode, the most
+ * fingers it reports and whether it is a click pad.
+ */
+#define HID_REPORT_USAGE_DEVICE_MODE		0x000d0052U
+#define HID_REPORT_USAGE_CONTACT_COUNT_MAXIMUM	0x000d0055U
+#define HID_REPORT_USAGE_SURFACE_SWITCH		0x000d0057U
+#define HID_REPORT_USAGE_BUTTON_SWITCH		0x000d0058U
+#define HID_REPORT_USAGE_PAD_TYPE		0x000d0059U
+#define HID_REPORT_USAGE_LATENCY_MODE		0x000d0060U
+
+/*
+ * Where one field of a feature report is: its report's identifier (0 for a
+ * descriptor without identifiers), the field's bit offset and size within
+ * the report's data (after the identifier byte), and the length of that
+ * data in bytes, which a GET or SET of the report carries.
+ */
+struct hid_report_feature_info {
+	uint8_t report_id;
+	uint32_t bit_offset;
+	uint8_t bit_size;
+	size_t data_size;
 };
 
 struct hid_report_report_info {
@@ -126,6 +160,8 @@ int drv_hid_report_layout_get_absolute_axis(const struct hid_report_layout *,
 	size_t, struct input_abs_axis *);
 int drv_hid_report_layout_get_touch(const struct hid_report_layout *,
 	struct hid_report_touch_info *);
+int drv_hid_report_layout_get_feature(const struct hid_report_layout *,
+	uint32_t, struct hid_report_feature_info *);
 
 int drv_hid_report_decode(const struct hid_report_layout *, const void *, size_t,
 	struct hid_report_input *);

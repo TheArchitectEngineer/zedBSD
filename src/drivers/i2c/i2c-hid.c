@@ -1,0 +1,986 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * HID over I2C (ws159-p003): the touch pads (and touch screens) the ACPI
+ * tables name as PNP0C50 devices on an I2C bus.
+ *
+ * Each device's _CRS gives its bus (the controller's ACPI path), its
+ * address and its speed, and its _DSM gives the register of its HID
+ * descriptor.  A thread of its own reads the descriptor, powers the device
+ * on, resets it, reads its report descriptor and parses it with the HID
+ * layer shared with USB (hid-report.c).  A Windows Precision Touchpad is
+ * then put in its touch pad mode (Device Mode 3) with its surface and its
+ * button switched on, which is what makes it report its fingers rather
+ * than a mouse's motion.  The fingers go through the touch state machine
+ * (hid-touch.c), and the device is published as an evdev node that speaks
+ * multitouch protocol B.
+ *
+ * The device's interrupt line (a GPIO interrupt) is not used yet: the
+ * thread reads the input register every few milliseconds while fingers
+ * move and less often when the pad has been still for a second.  A device
+ * with nothing to say answers that read with an empty report (a length of
+ * zero), as the Latitude 5330's touchpad does (plan/ws159/phase001).
+ * Reading the line itself, then its interrupt, replaces the sampling in a
+ * later Phase of WS159.
+ */
+
+#include <drivers/acpi/acpi.h>
+#include <drivers/generic/hid-report.h>
+#include <drivers/generic/hid-touch.h>
+#include <drivers/i2c/i2c.h>
+#include <drivers/i2c/i2c-hid.h>
+#include <kern/clock.h>
+#include <kern/input-device.h>
+#include <kern/kcrt.h>
+#include <kern/klog.h>
+#include <kern/kmem.h>
+#include <kern/sched.h>
+#include <kern/thread.h>
+#include <uapi/errno.h>
+#include <uapi/input.h>
+
+#include <stdbool.h>
+
+/* The most HID over I2C devices the driver takes. */
+#define I2C_HID_DEVICES_MAX		4U
+
+/* PNP0C50 as a string and as the EISA identifier _HID and _CID may give instead. */
+#define I2C_HID_ID_STRING		"PNP0C50"
+#define I2C_HID_ID_EISA			0x500cd041U
+
+/* _STA: the device is present. */
+#define ACPI_STATUS_PRESENT		0x01U
+
+/*
+ * The _DSM of HID over I2C: its UUID 3cdff6f7-4267-4555-ad05-b30a3d8938de
+ * in the byte order of an ACPI buffer, its revision, and the function
+ * that gives the HID descriptor's register.
+ */
+#define I2C_HID_DSM_REVISION		1U
+#define I2C_HID_DSM_DESCRIPTOR		1U
+
+/* The HID descriptor: its length and the specification's version 1.00. */
+#define I2C_HID_DESCRIPTOR_LENGTH	30U
+#define I2C_HID_VERSION			0x0100U
+
+/* The commands (opcodes) sent to the command register, and the power state "on". */
+#define I2C_HID_OPCODE_RESET		0x01U
+#define I2C_HID_OPCODE_SET_REPORT	0x03U
+#define I2C_HID_OPCODE_SET_POWER	0x08U
+#define I2C_HID_POWER_ON		0x00U
+
+/* A feature report's type in a command, and the report identifier that needs a byte of its own. */
+#define I2C_HID_REPORT_FEATURE		0x30U
+#define I2C_HID_REPORT_ID_EXTENDED	0x0fU
+
+/* The largest input report the driver reads, and the largest feature report it writes. */
+#define I2C_HID_INPUT_MAX		512U
+#define I2C_HID_FEATURE_MAX		32U
+
+/* The Precision Touchpad's touch pad mode, and its switches on. */
+#define I2C_HID_DEVICE_MODE_TOUCHPAD	3U
+#define I2C_HID_SWITCH_ON		1U
+
+/*
+ * How long the device is given after a reset before it is read, how often
+ * it is read while fingers move and when it is still, and how long after
+ * the last report it counts as moving (milliseconds).
+ */
+#define I2C_HID_RESET_SETTLE_MS		100U
+#define I2C_HID_POLL_ACTIVE_MS		6U
+#define I2C_HID_POLL_IDLE_MS		25U
+#define I2C_HID_ACTIVE_HOLD_MS		1000U
+
+/* After this many failed reads in a row the thread says so and waits a second. */
+#define I2C_HID_ERRORS_BEFORE_PAUSE	50U
+#define I2C_HID_ERROR_PAUSE_MS		1000U
+
+/* The longest ACPI path and device name the driver keeps. */
+#define I2C_HID_TEXT_MAX		64U
+
+/*
+ * One HID over I2C device: where it is (its ACPI node, bus, address and
+ * speed), its HID descriptor's registers, its parsed reports, the touch
+ * state machine and the input device it is published as.
+ *
+ * It is allocated by the probe and lives for the kernel's life: the
+ * touchpad of a laptop does not go away, and its thread never ends after a
+ * successful start.
+ */
+struct i2c_hid_device {
+	struct drv_acpi_node *node;
+	char path[I2C_HID_TEXT_MAX];
+	char bus_path[DRV_ACPI_RESOURCE_SOURCE_MAX];
+	struct drv_i2c_bus *bus;
+	uint16_t address;
+	uint32_t speed;
+	uint16_t descriptor_register;
+	uint16_t report_descriptor_length;
+	uint16_t report_descriptor_register;
+	uint16_t input_register;
+	uint16_t max_input_length;
+	uint16_t command_register;
+	uint16_t data_register;
+	uint16_t vendor;
+	uint16_t product;
+	uint16_t version;
+	struct hid_report_layout *layout;
+	struct hid_report_touch_info touch;
+	struct hid_touch_description description;
+	struct hid_touch_state state;
+	struct hid_report_input decoded;
+	struct hid_touch_output output;
+	struct input_device *input;
+	char name[I2C_HID_TEXT_MAX];
+	uint8_t input_buffer[I2C_HID_INPUT_MAX];
+	struct thread *thread;
+};
+
+/*
+ * What the probe's walk of the namespace found: the PNP0C50 devices that
+ * are present, in the namespace's order.  It lives on the probe's stack.
+ */
+struct i2c_hid_found {
+	struct drv_acpi_node *nodes[I2C_HID_DEVICES_MAX];
+	unsigned count;
+};
+
+/* The UUID of the HID over I2C _DSM, as the bytes of its ACPI buffer. */
+static const uint8_t i2c_hid_dsm_uuid[16] = {
+	0xf7, 0xf6, 0xdf, 0x3c, 0x67, 0x42, 0x55, 0x45,
+	0xad, 0x05, 0xb3, 0x0a, 0x3d, 0x89, 0x38, 0xde
+};
+
+static int find_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
+static bool is_hid_over_i2c(struct drv_acpi_node *node);
+static bool id_matches(const struct drv_acpi_object *object);
+static bool device_present(struct drv_acpi_node *node);
+static int device_from_acpi(struct i2c_hid_device *device);
+static int resource_visitor(const struct drv_acpi_resource *resource, void *argument);
+static int descriptor_register(struct i2c_hid_device *device);
+static void worker(void *argument);
+static int device_start(struct i2c_hid_device *device);
+static int read_hid_descriptor(struct i2c_hid_device *device);
+static int send_command(struct i2c_hid_device *device, uint8_t opcode, uint8_t argument);
+static int read_report_descriptor(struct i2c_hid_device *device);
+static void set_touchpad_mode(struct i2c_hid_device *device);
+static int set_feature(struct i2c_hid_device *device, uint32_t usage, uint32_t value);
+static int publish(struct i2c_hid_device *device);
+static int poll_input(struct i2c_hid_device *device, bool *reported);
+static void take_report(struct i2c_hid_device *device, const uint8_t *report, size_t length);
+static uint16_t le16(const uint8_t *bytes);
+static void put_bits(uint8_t *data, uint32_t offset, uint32_t bits, uint32_t value);
+static void sleep_ms(unsigned milliseconds);
+
+/*
+ * Finds the HID over I2C devices the ACPI tables name and starts a thread
+ * for each, which brings it up and publishes it.  Reports how many were
+ * started (0 is no error: most machines have none).
+ */
+int
+drv_i2c_hid_probe(void)
+{
+	struct i2c_hid_found found;
+	struct i2c_hid_device *device;
+	unsigned index;
+	unsigned started;
+	int error;
+
+	/* Walks the namespace for present PNP0C50 devices. */
+	kern_memset(&found, 0, sizeof(found));
+	error = drv_acpi_walk(NULL, find_visitor, &found);
+	if (error < 0 || found.count == 0U)
+		return 0;
+
+	/* Starts each device. */
+	started = 0;
+	for (index = 0; index < found.count; index++) {
+		/* Allocates the device's state. */
+		device = kern_calloc(1U, sizeof(*device));
+		if (device == NULL) {
+			kern_logf("i2c-hid: no memory for a device\n");
+			break;
+		}
+
+		/* The device's node. */
+		device->node = found.nodes[index];
+
+		/* Reads where the device is from its ACPI objects, and finds its bus. */
+		error = device_from_acpi(device);
+		if (error != 0) {
+			kern_logf("i2c-hid: %s not taken (%d)\n", device->path, error);
+			kern_free(device);
+			continue;
+		}
+
+		/* Its thread brings it up and reads it. */
+		error = kthread_create(worker, device, SCHED_PRIORITY_DEFAULT, &device->thread);
+		if (error != 0) {
+			kern_logf("i2c-hid: %s thread not started (%d)\n", device->path, error);
+			kern_free(device);
+			continue;
+		}
+
+		/* One more device runs. */
+		started++;
+	}
+
+	/* Succeeded: the number of devices started. */
+	return (int)started;
+}
+
+/* Collects each present PNP0C50 device of the namespace. */
+static int
+find_visitor(
+	struct drv_acpi_node *node,
+	unsigned depth,
+	void *argument)
+{
+	struct i2c_hid_found *found;
+	enum drv_acpi_type type;
+	bool matched;
+	bool present;
+
+	/* The walk's depth does not matter. */
+	(void)depth;
+
+	/* Only a device can be one. */
+	type = drv_acpi_node_type(node);
+	if (type != DRV_ACPI_TYPE_DEVICE)
+		return 0;
+
+	/* A device that is not PNP0C50, or that is not present, is passed over. */
+	matched = is_hid_over_i2c(node);
+	if (!matched)
+		return 0;
+	present = device_present(node);
+	if (!present)
+		return 0;
+
+	/* Keeps the device; a full table ends the walk. */
+	found = argument;
+	found->nodes[found->count] = node;
+	found->count++;
+	if (found->count >= I2C_HID_DEVICES_MAX)
+		return -1;
+
+	/* Goes on with the next device. */
+	return 0;
+}
+
+/* Tells whether a device's _HID or _CID names PNP0C50. */
+static bool
+is_hid_over_i2c(
+	struct drv_acpi_node *node)
+{
+	struct drv_acpi_object *object;
+	struct drv_acpi_object *element;
+	enum drv_acpi_type type;
+	unsigned count;
+	unsigned index;
+	bool matched;
+	int error;
+
+	/* The hardware identifier first. */
+	object = NULL;
+	error = drv_acpi_evaluate(node, "_HID", NULL, 0, &object);
+	if (error == 0) {
+		/* A _HID of PNP0C50 is enough. */
+		matched = id_matches(object);
+		drv_acpi_object_release(object);
+		if (matched)
+			return true;
+	}
+
+	/* Then the compatible identifiers: one, or a package of them. */
+	object = NULL;
+	error = drv_acpi_evaluate(node, "_CID", NULL, 0, &object);
+	if (error != 0 || object == NULL)
+		return false;
+
+	/* A package names several; any of them may be PNP0C50. */
+	matched = false;
+	type = drv_acpi_object_type(object);
+	if (type == DRV_ACPI_TYPE_PACKAGE) {
+		count = drv_acpi_object_package_count(object);
+		for (index = 0; index < count; index++) {
+			/* The first PNP0C50 among them is enough. */
+			element = drv_acpi_object_package_element(object, index);
+			matched = id_matches(element);
+			if (matched)
+				break;
+		}
+	} else {
+		matched = id_matches(object);
+	}
+
+	/* The object is no longer needed. */
+	drv_acpi_object_release(object);
+
+	/* Succeeded: whether the device is HID over I2C. */
+	return matched;
+}
+
+/* Tells whether an identifier object is PNP0C50, as a string or an EISA identifier. */
+static bool
+id_matches(
+	const struct drv_acpi_object *object)
+{
+	enum drv_acpi_type type;
+	const char *text;
+	uint64_t value;
+	size_t length;
+	int compared;
+
+	/* No object names nothing. */
+	if (object == NULL)
+		return false;
+
+	/* The EISA form. */
+	type = drv_acpi_object_type(object);
+	if (type == DRV_ACPI_TYPE_INTEGER) {
+		value = drv_acpi_object_integer(object);
+		if (value == I2C_HID_ID_EISA)
+			return true;
+		return false;
+	}
+
+	/* The string form. */
+	if (type != DRV_ACPI_TYPE_STRING)
+		return false;
+	text = drv_acpi_object_string(object, &length);
+	if (text == NULL)
+		return false;
+	compared = kern_strcmp(text, I2C_HID_ID_STRING);
+	if (compared != 0)
+		return false;
+
+	/* Succeeded: the identifier is PNP0C50. */
+	return true;
+}
+
+/* Tells whether a device is present: its _STA says so, or it has none. */
+static bool
+device_present(
+	struct drv_acpi_node *node)
+{
+	uint64_t status;
+	int error;
+
+	/* A device without _STA is present. */
+	error = drv_acpi_evaluate_integer(node, "_STA", &status);
+	if (error != 0)
+		return true;
+
+	/* The present bit. */
+	if ((status & ACPI_STATUS_PRESENT) == 0U)
+		return false;
+
+	/* Succeeded: the device is present. */
+	return true;
+}
+
+/*
+ * Reads a device's place from ACPI: its path, its I2C connection (bus,
+ * address, speed), its HID descriptor's register, and the bus's driver.
+ */
+static int
+device_from_acpi(
+	struct i2c_hid_device *device)
+{
+	int error;
+
+	/* The path, for the log. */
+	error = drv_acpi_node_path(device->node, device->path, sizeof(device->path));
+	if (error != 0)
+		(void)kern_snprintf(device->path, sizeof(device->path), "(unnamed)");
+
+	/* The I2C connection from _CRS. */
+	error = drv_acpi_resources_walk(device->node, NULL, resource_visitor, device);
+	if (error != 0)
+		return error;
+	if (device->bus_path[0] == '\0')
+		return ENODEV;
+
+	/* The HID descriptor's register from _DSM. */
+	error = descriptor_register(device);
+	if (error != 0)
+		return error;
+
+	/* The bus, which the LPSS driver registered under the controller's path. */
+	error = drv_i2c_bus_find_acpi(device->bus_path, &device->bus);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device can be reached. */
+	return 0;
+}
+
+/* Takes the first I2C connection of a device's resources. */
+static int
+resource_visitor(
+	const struct drv_acpi_resource *resource,
+	void *argument)
+{
+	struct i2c_hid_device *device;
+
+	/* Only the first I2C connection matters. */
+	device = argument;
+	if (resource->kind != DRV_ACPI_RESOURCE_I2C || device->bus_path[0] != '\0')
+		return 0;
+
+	/* The address, the speed and the controller. */
+	device->address = (uint16_t)resource->base;
+	device->speed = resource->speed;
+	(void)kern_snprintf(device->bus_path, sizeof(device->bus_path), "%s", resource->source);
+
+	/* Goes on: the other resources are not needed. */
+	return 0;
+}
+
+/*
+ * Asks the device's _DSM for its HID descriptor's register.  Evaluating it
+ * also tells a Dell's firmware that the OS drives the touchpad over I2C
+ * (its PS/2 mouse then reports itself absent, plan/ws159/phase001 D7).
+ */
+static int
+descriptor_register(
+	struct i2c_hid_device *device)
+{
+	struct drv_acpi_object *arguments[4];
+	struct drv_acpi_object *result;
+	enum drv_acpi_type type;
+	unsigned index;
+	int error;
+
+	/* The UUID, the revision, the function, and an empty package. */
+	arguments[0] = drv_acpi_object_buffer_new(i2c_hid_dsm_uuid, sizeof(i2c_hid_dsm_uuid));
+	arguments[1] = drv_acpi_object_integer_new(I2C_HID_DSM_REVISION);
+	arguments[2] = drv_acpi_object_integer_new(I2C_HID_DSM_DESCRIPTOR);
+	arguments[3] = drv_acpi_object_package_new(0U);
+
+	/* Evaluates the _DSM when every argument was made. */
+	result = NULL;
+	error = 0;
+	for (index = 0; index < 4U; index++) {
+		if (arguments[index] == NULL)
+			error = ENOMEM;
+	}
+
+	/* The evaluation itself. */
+	if (error == 0)
+		error = drv_acpi_evaluate(device->node, "_DSM", arguments, 4U, &result);
+
+	/* The arguments are no longer needed. */
+	for (index = 0; index < 4U; index++)
+		drv_acpi_object_release(arguments[index]);
+
+	/* A failed evaluation, or an answer that is not a register. */
+	if (error != 0)
+		return error;
+	if (result == NULL)
+		return EINVAL;
+	type = drv_acpi_object_type(result);
+	if (type != DRV_ACPI_TYPE_INTEGER) {
+		drv_acpi_object_release(result);
+		return EINVAL;
+	}
+
+	/* The register. */
+	device->descriptor_register = (uint16_t)drv_acpi_object_integer(result);
+	drv_acpi_object_release(result);
+
+	/* Succeeded: the descriptor can be read. */
+	return 0;
+}
+
+/*
+ * Brings one device up and reads it for as long as the kernel runs: often
+ * while fingers move, less often while the pad is still.
+ */
+static void
+worker(
+	void *argument)
+{
+	struct i2c_hid_device *device;
+	uint64_t last_report_ms;
+	uint64_t now;
+	unsigned interval;
+	unsigned errors;
+	bool reported;
+	int error;
+
+	/* The device the probe started this thread for. */
+	device = argument;
+
+	/* Brings it up; a device that does not come up is left alone. */
+	error = device_start(device);
+	if (error != 0) {
+		kern_logf("i2c-hid: %s did not start (%d); its PS/2 mouse, if any, stays\n", device->path, error);
+		return;
+	}
+
+	/* Reads it for as long as the kernel runs. */
+	last_report_ms = 0;
+	errors = 0;
+	for (;;) {
+		/* One read of the input register. */
+		reported = false;
+		error = poll_input(device, &reported);
+		now = clock_milliseconds(NULL);
+
+		/* Too many failures in a row: says so and waits before trying again. */
+		if (error != 0) {
+			errors++;
+			if (errors >= I2C_HID_ERRORS_BEFORE_PAUSE) {
+				kern_logf("i2c-hid: %s: %u reads failed (last %d), pausing\n", device->path, errors, error);
+				errors = 0;
+				sleep_ms(I2C_HID_ERROR_PAUSE_MS);
+			}
+		} else {
+			errors = 0;
+		}
+
+		/* A report keeps the reads frequent for a while. */
+		if (reported)
+			last_report_ms = now;
+
+		/* Reads often while fingers move, less often when the pad is still. */
+		interval = I2C_HID_POLL_IDLE_MS;
+		if (now - last_report_ms < I2C_HID_ACTIVE_HOLD_MS)
+			interval = I2C_HID_POLL_ACTIVE_MS;
+		sleep_ms(interval);
+	}
+}
+
+/*
+ * Brings a device up: its HID descriptor, power on, reset, its report
+ * descriptor, the touch pad mode, and its input device.
+ */
+static int
+device_start(
+	struct i2c_hid_device *device)
+{
+	int error;
+
+	/* The HID descriptor gives every register. */
+	error = read_hid_descriptor(device);
+	if (error != 0)
+		return error;
+
+	/* Powers the device on, and resets it. */
+	error = send_command(device, I2C_HID_OPCODE_SET_POWER, I2C_HID_POWER_ON);
+	if (error != 0)
+		return error;
+	error = send_command(device, I2C_HID_OPCODE_RESET, 0U);
+	if (error != 0)
+		return error;
+
+	/* Gives the reset its time, and takes the empty report that ends it. */
+	sleep_ms(I2C_HID_RESET_SETTLE_MS);
+	(void)drv_i2c_transfer(device->bus, device->address, device->speed, NULL, 0U, device->input_buffer, device->max_input_length);
+
+	/* The report descriptor, parsed. */
+	error = read_report_descriptor(device);
+	if (error != 0)
+		return error;
+
+	/* A device with no fingers is not one this driver publishes. */
+	error = drv_hid_report_layout_get_touch(device->layout, &device->touch);
+	if (error != 0) {
+		kern_logf("i2c-hid: %s %04x:%04x has no touch pad or touch screen\n", device->path, device->vendor, device->product);
+		return ENODEV;
+	}
+
+	/* A Precision Touchpad reports its fingers only in its touch pad mode. */
+	if (device->touch.pad)
+		set_touchpad_mode(device);
+
+	/* Publishes the input device. */
+	error = publish(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the log says what came up. */
+	kern_logf("i2c-hid: %s %04x:%04x at 0x%02x on %s: %s, %u fingers, %u buttons\n",
+		  device->path,
+		  device->vendor,
+		  device->product,
+		  device->address,
+		  device->bus_path,
+		  device->name,
+		  (unsigned)device->touch.contacts,
+		  (unsigned)device->touch.buttons);
+	return 0;
+}
+
+/* Reads and checks the HID descriptor, and keeps its registers. */
+static int
+read_hid_descriptor(
+	struct i2c_hid_device *device)
+{
+	uint8_t request[2];
+	uint8_t descriptor[I2C_HID_DESCRIPTOR_LENGTH];
+	uint16_t length;
+	uint16_t version;
+	int error;
+
+	/* Reads the descriptor at its register. */
+	request[0] = (uint8_t)(device->descriptor_register & 0xffU);
+	request[1] = (uint8_t)(device->descriptor_register >> 8);
+	error = drv_i2c_transfer(device->bus, device->address, device->speed, request, sizeof(request), descriptor, sizeof(descriptor));
+	if (error != 0)
+		return error;
+
+	/* Refuses a descriptor of another length or version. */
+	length = le16(descriptor + 0);
+	if (length != I2C_HID_DESCRIPTOR_LENGTH)
+		return EIO;
+	version = le16(descriptor + 2);
+	if (version != I2C_HID_VERSION)
+		return EIO;
+
+	/* The registers and the lengths. */
+	device->report_descriptor_length = le16(descriptor + 4);
+	device->report_descriptor_register = le16(descriptor + 6);
+	device->input_register = le16(descriptor + 8);
+	device->max_input_length = le16(descriptor + 10);
+	device->command_register = le16(descriptor + 16);
+	device->data_register = le16(descriptor + 18);
+	device->vendor = le16(descriptor + 20);
+	device->product = le16(descriptor + 22);
+	device->version = le16(descriptor + 24);
+
+	/* Refuses an input report larger than the buffer, or too small for its length. */
+	if (device->max_input_length > I2C_HID_INPUT_MAX || device->max_input_length < 2U)
+		return EIO;
+	if (device->report_descriptor_length == 0U || device->report_descriptor_length > HID_REPORT_DESCRIPTOR_SIZE_MAX)
+		return EIO;
+
+	/* Succeeded: the registers are known. */
+	return 0;
+}
+
+/* Sends one command without data: the opcode and its argument to the command register. */
+static int
+send_command(
+	struct i2c_hid_device *device,
+	uint8_t opcode,
+	uint8_t argument)
+{
+	uint8_t command[4];
+	int error;
+
+	/* The command register, then the argument and the opcode. */
+	command[0] = (uint8_t)(device->command_register & 0xffU);
+	command[1] = (uint8_t)(device->command_register >> 8);
+	command[2] = argument;
+	command[3] = opcode;
+	error = drv_i2c_transfer(device->bus, device->address, device->speed, command, sizeof(command), NULL, 0U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device took the command. */
+	return 0;
+}
+
+/* Reads the report descriptor and parses it into the device's layout. */
+static int
+read_report_descriptor(
+	struct i2c_hid_device *device)
+{
+	uint8_t request[2];
+	uint8_t *descriptor;
+	int error;
+
+	/* A buffer for the descriptor. */
+	descriptor = kern_calloc(1U, device->report_descriptor_length);
+	if (descriptor == NULL)
+		return ENOMEM;
+
+	/* Reads it at its register. */
+	request[0] = (uint8_t)(device->report_descriptor_register & 0xffU);
+	request[1] = (uint8_t)(device->report_descriptor_register >> 8);
+	error = drv_i2c_transfer(device->bus, device->address, device->speed, request, sizeof(request), descriptor, device->report_descriptor_length);
+
+	/* Parses it with the HID layer. */
+	if (error == 0)
+		error = drv_hid_report_layout_parse(descriptor, device->report_descriptor_length, &device->layout);
+
+	/* The bytes are no longer needed; the layout keeps what it uses. */
+	kern_free(descriptor);
+
+	/* Reports a descriptor that could not be read or parsed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the layout is ready. */
+	return 0;
+}
+
+/*
+ * Puts a Precision Touchpad in its touch pad mode with its surface and its
+ * button on, and its latency normal.  A feature the descriptor does not
+ * have is passed over; the log says when the mode could not be set.
+ */
+static void
+set_touchpad_mode(
+	struct i2c_hid_device *device)
+{
+	int error;
+
+	/* The latency mode first, normal; then the switches; the mode last, as Linux sends them. */
+	(void)set_feature(device, HID_REPORT_USAGE_LATENCY_MODE, 0U);
+	(void)set_feature(device, HID_REPORT_USAGE_SURFACE_SWITCH, I2C_HID_SWITCH_ON);
+	(void)set_feature(device, HID_REPORT_USAGE_BUTTON_SWITCH, I2C_HID_SWITCH_ON);
+	error = set_feature(device, HID_REPORT_USAGE_DEVICE_MODE, I2C_HID_DEVICE_MODE_TOUCHPAD);
+	if (error != 0)
+		kern_logf("i2c-hid: %s: touch pad mode not set (%d)\n", device->path, error);
+}
+
+/*
+ * Sets one field of a feature report with SET_REPORT: the command register
+ * names the report, the data register takes its length, its identifier and
+ * its data.  The report's other fields are written as zero, except the
+ * two switches, which share a report and are both turned on.
+ */
+static int
+set_feature(
+	struct i2c_hid_device *device,
+	uint32_t usage,
+	uint32_t value)
+{
+	struct hid_report_feature_info feature;
+	struct hid_report_feature_info other;
+	uint8_t message[12U + I2C_HID_FEATURE_MAX];
+	uint8_t *data;
+	size_t length;
+	size_t data_offset;
+	uint16_t data_length;
+	int error;
+
+	/* Where the field is; a descriptor without it has nothing to set. */
+	error = drv_hid_report_layout_get_feature(device->layout, usage, &feature);
+	if (error != 0)
+		return error;
+	if (feature.data_size == 0U || feature.data_size > I2C_HID_FEATURE_MAX)
+		return EINVAL;
+
+	/* The command register, the report's type and identifier, and SET_REPORT. */
+	kern_memset(message, 0, sizeof(message));
+	length = 0;
+	message[length++] = (uint8_t)(device->command_register & 0xffU);
+	message[length++] = (uint8_t)(device->command_register >> 8);
+	if (feature.report_id < I2C_HID_REPORT_ID_EXTENDED) {
+		message[length++] = (uint8_t)(I2C_HID_REPORT_FEATURE | feature.report_id);
+		message[length++] = I2C_HID_OPCODE_SET_REPORT;
+	} else {
+		/* An identifier of 15 or more follows the opcode in a byte of its own. */
+		message[length++] = (uint8_t)(I2C_HID_REPORT_FEATURE | I2C_HID_REPORT_ID_EXTENDED);
+		message[length++] = I2C_HID_OPCODE_SET_REPORT;
+		message[length++] = feature.report_id;
+	}
+
+	/* The data register, and the length of what follows it (itself, the identifier and the data). */
+	message[length++] = (uint8_t)(device->data_register & 0xffU);
+	message[length++] = (uint8_t)(device->data_register >> 8);
+	data_length = (uint16_t)(2U + 1U + feature.data_size);
+	message[length++] = (uint8_t)(data_length & 0xffU);
+	message[length++] = (uint8_t)(data_length >> 8);
+
+	/* The identifier, then the data with the field set. */
+	message[length++] = feature.report_id;
+	data_offset = length;
+	data = message + data_offset;
+	put_bits(data, feature.bit_offset, feature.bit_size, value);
+	length += feature.data_size;
+
+	/* The surface switch and the button switch share a report: both are turned on together. */
+	if (usage == HID_REPORT_USAGE_SURFACE_SWITCH || usage == HID_REPORT_USAGE_BUTTON_SWITCH) {
+		error = drv_hid_report_layout_get_feature(device->layout, HID_REPORT_USAGE_SURFACE_SWITCH, &other);
+		if (error == 0 && other.report_id == feature.report_id)
+			put_bits(data, other.bit_offset, other.bit_size, I2C_HID_SWITCH_ON);
+		error = drv_hid_report_layout_get_feature(device->layout, HID_REPORT_USAGE_BUTTON_SWITCH, &other);
+		if (error == 0 && other.report_id == feature.report_id)
+			put_bits(data, other.bit_offset, other.bit_size, I2C_HID_SWITCH_ON);
+	}
+
+	/* Writes the command and the data in one transfer. */
+	error = drv_i2c_transfer(device->bus, device->address, device->speed, message, length, NULL, 0U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device has the feature. */
+	return 0;
+}
+
+/* Describes the device to the touch state machine and registers its input device. */
+static int
+publish(
+	struct i2c_hid_device *device)
+{
+	struct input_device_info info;
+	const char *kind;
+	int error;
+
+	/* The capabilities, axes and properties of a touch pad or a touch screen. */
+	error = drv_hid_touch_describe(&device->touch, &device->description);
+	if (error != 0)
+		return error;
+
+	/* No finger touches yet; the Scan Time and the pad's mode are known. */
+	drv_hid_touch_reset(&device->state, device->description.slots);
+	drv_hid_touch_set_scan_time(&device->state, &device->touch);
+	drv_hid_touch_set_pad(&device->state, &device->touch);
+
+	/* Its name, as "vendor:product Touchpad". */
+	kind = "Touchscreen";
+	if (device->touch.pad)
+		kind = "Touchpad";
+	(void)kern_snprintf(device->name, sizeof(device->name), "%04X:%04X %s", device->vendor, device->product, kind);
+
+	/* Registers it. */
+	kern_memset(&info, 0, sizeof(info));
+	info.name = device->name;
+	info.physical_path = device->path;
+	info.id.bustype = BUS_I2C;
+	info.id.vendor = device->vendor;
+	info.id.product = device->product;
+	info.id.version = device->version;
+	info.capabilities = device->description.capabilities;
+	info.capability_count = device->description.capability_count;
+	info.absolute_axes = device->description.axes;
+	info.absolute_axis_count = device->description.axis_count;
+	info.properties = device->description.properties;
+	error = drv_input_device_register(&info, &device->input);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: readers can open the device. */
+	return 0;
+}
+
+/*
+ * Reads the input register once: an empty report says nothing happened, a
+ * report goes through the touch state machine.  *reported says whether a
+ * report came.
+ */
+static int
+poll_input(
+	struct i2c_hid_device *device,
+	bool *reported)
+{
+	uint16_t length;
+	int error;
+
+	/* A plain read gives the report the device holds, its length first. */
+	error = drv_i2c_transfer(device->bus, device->address, device->speed, NULL, 0U, device->input_buffer, device->max_input_length);
+	if (error != 0)
+		return error;
+
+	/* An empty report (length 0, or the two bytes of the length alone) says nothing happened. */
+	length = le16(device->input_buffer);
+	if (length <= 2U)
+		return 0;
+
+	/* A length past what was read is not a report. */
+	if (length > device->max_input_length)
+		return EIO;
+
+	/* Takes the report: its identifier and data after the length. */
+	take_report(device, device->input_buffer + 2, (size_t)length - 2U);
+	*reported = true;
+
+	/* Succeeded: the report was taken. */
+	return 0;
+}
+
+/* Decodes one input report and emits what the touch state machine makes of it. */
+static void
+take_report(
+	struct i2c_hid_device *device,
+	const uint8_t *report,
+	size_t length)
+{
+	uint64_t now;
+	size_t index;
+	int is_touch;
+	int error;
+
+	/* Decodes the report; one the layout does not know is dropped. */
+	error = drv_hid_report_decode(device->layout, report, length, &device->decoded);
+	if (error != 0)
+		return;
+
+	/* Only the reports of the fingers go to the touch state machine (the mouse report is not published). */
+	is_touch = drv_hid_touch_report_is_touch(&device->decoded);
+	if (!is_touch)
+		return;
+
+	/* Turns the report into events at the time it arrived. */
+	now = clock_milliseconds(NULL);
+	error = drv_hid_touch_translate_at(&device->state, &device->decoded, now, &device->output);
+	if (error != 0)
+		return;
+
+	/* Emits them in order. */
+	for (index = 0; index < device->output.event_count; index++) {
+		drv_input_device_emit_at(device->input,
+					 device->output.events[index].type,
+					 device->output.events[index].code,
+					 device->output.events[index].value,
+					 now);
+	}
+}
+
+/* Reads a 16-bit little-endian field. */
+static uint16_t
+le16(
+	const uint8_t *bytes)
+{
+	uint16_t value;
+
+	/* The low byte, then the high one. */
+	value = (uint16_t)bytes[0];
+	value = (uint16_t)(value | ((uint16_t)bytes[1] << 8));
+
+	/* Succeeded: the field's value. */
+	return value;
+}
+
+/* Stores a value of some bits at a bit offset, least significant bit first. */
+static void
+put_bits(
+	uint8_t *data,
+	uint32_t offset,
+	uint32_t bits,
+	uint32_t value)
+{
+	uint32_t index;
+	uint32_t bit;
+
+	/* One bit at a time; the bits of the value past 32 are zero. */
+	for (index = 0; index < bits && index < 32U; index++) {
+		/* A clear bit leaves the data as it is. */
+		if (((value >> index) & 1U) == 0U)
+			continue;
+
+		/* Sets the data's bit. */
+		bit = offset + index;
+		data[bit / 8U] = (uint8_t)(data[bit / 8U] | (1U << (bit % 8U)));
+	}
+}
+
+/* Sleeps the thread for a number of milliseconds. */
+static void
+sleep_ms(
+	unsigned milliseconds)
+{
+	/* At least one tick. */
+	sched_sleep(sched_ticks() + kern_ms_to_ticks(milliseconds) + 1U);
+}

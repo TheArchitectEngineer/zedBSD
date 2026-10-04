@@ -206,9 +206,14 @@ struct input_absinfo {
 #define BTN_DIGI	0x140
 #define BTN_TOOL_PEN	0x140
 #define BTN_TOOL_RUBBER	0x141
+#define BTN_TOOL_FINGER	0x145
+#define BTN_TOOL_QUINTTAP	0x148
 #define BTN_TOUCH	0x14a
 #define BTN_STYLUS	0x14b
 #define BTN_STYLUS2	0x14c
+#define BTN_TOOL_DOUBLETAP	0x14d
+#define BTN_TOOL_TRIPLETAP	0x14e
+#define BTN_TOOL_QUADTAP	0x14f
 
 /*
  * EV_MSC codes.  MSC_TIMESTAMP is a touch screen's own scan time in
@@ -242,12 +247,14 @@ struct input_absinfo {
 
 #define INPUT_PROP_POINTER	0x00
 #define INPUT_PROP_DIRECT	0x01
+#define INPUT_PROP_BUTTONPAD	0x02
 #define INPUT_PROP_MAX		0x1f
 
 #define BUS_PCI		0x01
 #define BUS_USB		0x03
 #define BUS_BLUETOOTH	0x05
 #define BUS_VIRTUAL	0x06
+#define BUS_I2C		0x18
 #define BUS_HOST	0x19
 
 #define EVIOCGVERSION _IOR(KERN_EVDEV_IOC_GROUP, 0x01, int)

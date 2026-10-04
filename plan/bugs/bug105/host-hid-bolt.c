@@ -11,7 +11,7 @@
  *
  * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
  */
-#include <drivers/usb/hid-report.h>
+#include <drivers/generic/hid-report.h>
 #include <uapi/input.h>
 
 #include <stdio.h>

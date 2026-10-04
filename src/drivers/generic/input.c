@@ -61,6 +61,8 @@ struct input_device {
 	unsigned number;
 	unsigned flags;
 	unsigned producer_callbacks;
+	/* The INPUT_PROP_* bits the driver declared, which EVIOCGPROP reports. */
+	uint32_t properties;
 	int registered;
 	int retiring;
 	int resyncing;
@@ -203,6 +205,7 @@ static struct input_reader *file_reader(struct file *file);
 static int producer_callback_enter(struct input_device *device);
 static void producer_callback_leave(struct input_device *device);
 static int copy_text(const char *text, unsigned long request, uintptr_t argument);
+static int copy_properties(const struct input_device *device, size_t size, uintptr_t argument);
 static size_t ioctl_size(unsigned long request);
 static int copy_bits(const uint8_t *bits, size_t bit_size, size_t capacity, uintptr_t argument);
 static int copy_capability_bits(const struct input_device *device, unsigned type, size_t capacity, uintptr_t argument);
@@ -302,6 +305,7 @@ drv_input_device_register(
 	device->close = info->close;
 	device->context = info->context;
 	device->flags = info->flags;
+	device->properties = info->properties;
 	spin_init(&device->lock, LOCK_RANK_DEVICE, "input device");
 	spin_init(&device->publication_lock, LOCK_RANK_DEVICE,
 		  "input publication");
@@ -2068,6 +2072,43 @@ copy_text(
 	return error;
 }
 
+/*
+ * Copies a device's property bitmap (EVIOCGPROP): byte n holds properties
+ * 8n to 8n + 7, as long as the caller's buffer and the bitmap both go.
+ */
+static int
+copy_properties(
+	const struct input_device *device,
+	size_t size,
+	uintptr_t argument)
+{
+	uint8_t bytes[(INPUT_PROP_MAX + 1) / 8];
+	size_t length;
+	size_t index;
+	int error;
+
+	/* Refuses a buffer of no bytes. */
+	if (size == 0U)
+		return EINVAL;
+
+	/* The bitmap, least significant property first. */
+	for (index = 0; index < sizeof(bytes); index++)
+		bytes[index] = (uint8_t)((device->properties >> (index * 8U)) & 0xffU);
+
+	/* As much of it as the caller's buffer holds. */
+	length = sizeof(bytes);
+	if (length > size)
+		length = size;
+
+	/* Copies it out. */
+	error = copyout(bytes, argument, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has the properties. */
+	return 0;
+}
+
 /* Reports how many bytes one control request asks for. */
 static size_t
 ioctl_size(
@@ -2214,6 +2255,7 @@ input_ioctl(
 	unsigned number = (unsigned)(request & 0xffU);
 	size_t size = ioctl_size(request);
 	unsigned long irq;
+	unsigned long property_request;
 	int value, error = 0;
 
 	/* Handles the device availability. */
@@ -2278,6 +2320,19 @@ input_ioctl(
 
 			/* Returns the computed result. */
 			return function_result;
+		case 0x09:
+			/* Refuses a request of this number that is not EVIOCGPROP of its size. */
+			property_request = EVIOCGPROP(size);
+			if (request != property_request)
+				return ENOTTY;
+
+			/* Copies the device's property bits (ws159-p003). */
+			error = copy_properties(device, size, argument);
+			if (error != 0)
+				return error;
+
+			/* Succeeded: the caller has the properties. */
+			return 0;
 		default:
 			break;
 		}
