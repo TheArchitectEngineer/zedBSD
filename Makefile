@@ -214,7 +214,9 @@ CONFIG_DRIVER_BCM2711_GPU ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_DRIVER_ACPI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 # The Intel LPSS I2C controllers and the I2C-HID touchpad on them (WS159)
 # build on amd64, where ACPI names the touchpad.
-CONFIG_DRIVER_PCI_LPSS_I2C ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+# Off by default until the compositor's touchpad layer (ws159-p004) lands:
+# without it the I2C-HID touchpad would be taken as a touch screen.
+CONFIG_DRIVER_PCI_LPSS_I2C ?= n
 CONFIG_DRIVER_USB_STORAGE ?= y
 CONFIG_DRIVER_USB_CDC_NCM ?= y
 CONFIG_DRIVER_USB_CDC_ECM ?= y

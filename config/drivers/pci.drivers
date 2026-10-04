@@ -7,4 +7,4 @@ CONFIG_DRIVER_PCI_INTEL_AX211|bool|Intel AX211 CNVio2 WLAN (experimental)|amd64|
 CONFIG_DRIVER_PCI_VENUS|bool|Venus GPU (QEMU Vulkan transport)|amd64|y|
 CONFIG_DRIVER_PCI_I915|bool|Intel i915 GPU (Alder Lake-P, experimental)|amd64|y|
 CONFIG_DRIVER_PCI_HDA|bool|HD Audio controller (/dev/dsp)|amd64|y|
-CONFIG_DRIVER_PCI_LPSS_I2C|bool|Intel LPSS I2C controller (I2C-HID touchpad)|amd64|y|
+CONFIG_DRIVER_PCI_LPSS_I2C|bool|Intel LPSS I2C controller (I2C-HID touchpad)|amd64|n|
