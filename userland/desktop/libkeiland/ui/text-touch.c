@@ -13,27 +13,27 @@
  * This file keeps the selection the fingers make: a tap puts the caret, a
  * double tap selects a word, one finger's drag selects from where it
  * touched, and a drag that starts on a handle moves that end.  Which
- * finger's gesture is which is kui_ui's (ui.c); the positions are the
+ * finger's gesture is which is kl_ui's (ui.c); the positions are the
  * view's (its three answers).  All points here are in the view's content
  * coordinates except the context menu's place, which is the window's.
  */
 
-#include <keiui.h>
+#include <keiland.h>
 
 #include <math.h>
 #include <string.h>
 
-static int touch_near_handle(const struct kui_text_touch *touch, size_t position, double x, double y);
-static void touch_grip(struct kui_text_touch *touch, double x, double y);
+static int touch_near_handle(const struct kl_text_touch *touch, size_t position, double x, double y);
+static void touch_grip(struct kl_text_touch *touch, double x, double y);
 static double touch_edge_speed(double place, double size);
 
 /*
  * Makes a text view's touch, with the caret at position 0.
  */
 void
-kui_text_touch_init(
-	struct kui_text_touch *touch,
-	const struct kui_text_view *view,
+kl_text_touch_init(
+	struct kl_text_touch *touch,
+	const struct kl_text_view *view,
 	void *data)
 {
 	/* Nothing selected, no finger. */
@@ -47,8 +47,8 @@ kui_text_touch_init(
  * the handles go, since the selection is no longer the fingers'.
  */
 void
-kui_text_touch_set_selection(
-	struct kui_text_touch *touch,
+kl_text_touch_set_selection(
+	struct kl_text_touch *touch,
 	size_t anchor,
 	size_t caret)
 {
@@ -56,7 +56,7 @@ kui_text_touch_set_selection(
 	touch->anchor = anchor;
 	touch->caret = caret;
 	touch->handles = 0;
-	touch->handle = KUI_TEXT_HANDLE_NONE;
+	touch->handle = KL_TEXT_HANDLE_NONE;
 }
 
 /*
@@ -64,8 +64,8 @@ kui_text_touch_set_selection(
  * with its handles.
  */
 void
-kui_text_touch_tap(
-	struct kui_text_touch *touch,
+kl_text_touch_tap(
+	struct kl_text_touch *touch,
 	double x,
 	double y,
 	int twice)
@@ -77,14 +77,14 @@ kui_text_touch_tap(
 	/* The position under the finger. */
 	position = touch->view->position_at(touch->data, x, y);
 	touch->selecting = 0;
-	touch->handle = KUI_TEXT_HANDLE_NONE;
+	touch->handle = KL_TEXT_HANDLE_NONE;
 
 	/* Once: the caret there, nothing selected. */
 	if (!twice) {
 		touch->anchor = position;
 		touch->caret = position;
 		touch->handles = 0;
-		touch->changes |= KUI_TEXT_TOUCH_SELECTION;
+		touch->changes |= KL_TEXT_TOUCH_SELECTION;
 		return;
 	}
 
@@ -97,7 +97,7 @@ kui_text_touch_tap(
 	touch->handles = 0;
 	if (end != start)
 		touch->handles = 1;
-	touch->changes |= KUI_TEXT_TOUCH_SELECTION;
+	touch->changes |= KL_TEXT_TOUCH_SELECTION;
 }
 
 /*
@@ -105,15 +105,15 @@ kui_text_touch_tap(
  * place of the window).
  */
 void
-kui_text_touch_long_press(
-	struct kui_text_touch *touch,
+kl_text_touch_long_press(
+	struct kl_text_touch *touch,
 	double window_x,
 	double window_y)
 {
 	/* The request and its place. */
 	touch->menu_x = window_x;
 	touch->menu_y = window_y;
-	touch->changes |= KUI_TEXT_TOUCH_MENU;
+	touch->changes |= KL_TEXT_TOUCH_MENU;
 }
 
 /*
@@ -121,8 +121,8 @@ kui_text_touch_long_press(
  * anywhere else it selects from the point.
  */
 void
-kui_text_touch_drag_begin(
-	struct kui_text_touch *touch,
+kl_text_touch_drag_begin(
+	struct kl_text_touch *touch,
 	double x,
 	double y)
 {
@@ -133,7 +133,7 @@ kui_text_touch_drag_begin(
 	touch->finger_x = x;
 	touch->finger_y = y;
 	touch->selecting = 1;
-	touch->handle = KUI_TEXT_HANDLE_NONE;
+	touch->handle = KL_TEXT_HANDLE_NONE;
 	touch->grip_x = 0.0;
 	touch->grip_y = 0.0;
 
@@ -141,7 +141,7 @@ kui_text_touch_drag_begin(
 	if (touch->handles) {
 		near = touch_near_handle(touch, touch->caret, x, y);
 		if (near) {
-			touch->handle = KUI_TEXT_HANDLE_CARET;
+			touch->handle = KL_TEXT_HANDLE_CARET;
 			touch_grip(touch, x, y);
 			return;
 		}
@@ -152,7 +152,7 @@ kui_text_touch_drag_begin(
 			other = touch->caret;
 			touch->caret = touch->anchor;
 			touch->anchor = other;
-			touch->handle = KUI_TEXT_HANDLE_ANCHOR;
+			touch->handle = KL_TEXT_HANDLE_ANCHOR;
 			touch_grip(touch, x, y);
 			return;
 		}
@@ -162,15 +162,15 @@ kui_text_touch_drag_begin(
 	touch->anchor = touch->view->position_at(touch->data, x, y);
 	touch->caret = touch->anchor;
 	touch->handles = 0;
-	touch->changes |= KUI_TEXT_TOUCH_SELECTION;
+	touch->changes |= KL_TEXT_TOUCH_SELECTION;
 }
 
 /*
  * The selecting finger is at a point: the caret follows it.
  */
 void
-kui_text_touch_drag(
-	struct kui_text_touch *touch,
+kl_text_touch_drag(
+	struct kl_text_touch *touch,
 	double x,
 	double y)
 {
@@ -187,15 +187,15 @@ kui_text_touch_drag(
 	if (position == touch->caret)
 		return;
 	touch->caret = position;
-	touch->changes |= KUI_TEXT_TOUCH_SELECTION;
+	touch->changes |= KL_TEXT_TOUCH_SELECTION;
 }
 
 /*
  * The selecting finger lifts: a selection it made keeps its handles.
  */
 void
-kui_text_touch_drag_end(
-	struct kui_text_touch *touch)
+kl_text_touch_drag_end(
+	struct kl_text_touch *touch)
 {
 	/* Only a finger that selected. */
 	if (!touch->selecting)
@@ -203,7 +203,7 @@ kui_text_touch_drag_end(
 
 	/* The drag is over; a selection (not a caret) shows its handles. */
 	touch->selecting = 0;
-	touch->handle = KUI_TEXT_HANDLE_NONE;
+	touch->handle = KL_TEXT_HANDLE_NONE;
 	touch->handles = 0;
 	if (touch->anchor != touch->caret)
 		touch->handles = 1;
@@ -215,9 +215,9 @@ kui_text_touch_drag_end(
  * from the edges).  Returns 1 when it should scroll.
  */
 int
-kui_text_touch_edge(
-	const struct kui_text_touch *touch,
-	const struct kui_scroll *scroll,
+kl_text_touch_edge(
+	const struct kl_text_touch *touch,
+	const struct kl_scroll *scroll,
 	double *vx,
 	double *vy)
 {
@@ -228,9 +228,9 @@ kui_text_touch_edge(
 		return 0;
 
 	/* Each axis the scroll moves along, by how near the finger is to its edges in the viewport. */
-	if ((scroll->axes & KUI_SCROLL_X) != 0U)
+	if ((scroll->axes & KL_SCROLL_X) != 0U)
 		*vx = touch_edge_speed(touch->finger_x - scroll->x, scroll->viewport_width);
-	if ((scroll->axes & KUI_SCROLL_Y) != 0U)
+	if ((scroll->axes & KL_SCROLL_Y) != 0U)
 		*vy = touch_edge_speed(touch->finger_y - scroll->y, scroll->viewport_height);
 
 	/* Away from the edges. */
@@ -243,11 +243,11 @@ kui_text_touch_edge(
 
 /*
  * Reports what the fingers changed since the last call
- * (KUI_TEXT_TOUCH_* bits), and forgets it.
+ * (KL_TEXT_TOUCH_* bits), and forgets it.
  */
 unsigned
-kui_text_touch_take(
-	struct kui_text_touch *touch)
+kl_text_touch_take(
+	struct kl_text_touch *touch)
 {
 	unsigned changes;
 
@@ -265,14 +265,14 @@ kui_text_touch_take(
  * content's 0, 0 is in the window (the viewport's corner less the scroll).
  */
 void
-kui_text_touch_draw_handles(
-	const struct kui_text_touch *touch,
-	struct kui_canvas *canvas,
+kl_text_touch_draw_handles(
+	const struct kl_text_touch *touch,
+	struct kl_canvas *canvas,
 	double origin_x,
 	double origin_y,
-	const struct kui_theme *theme)
+	const struct kl_theme *theme)
 {
-	struct kui_rect rect;
+	struct kl_rect rect;
 	size_t ends[2];
 	float x;
 	float top;
@@ -291,19 +291,19 @@ kui_text_touch_draw_handles(
 		x = (float)(origin_x + (double)rect.x);
 		top = (float)(origin_y + (double)rect.y);
 		bottom = top + (float)rect.height;
-		kui_canvas_line(canvas, x, top, x, bottom, 2.0f, theme->accent);
-		kui_canvas_circle(canvas, x, bottom + (float)KUI_TEXT_HANDLE / 2.0f, (float)KUI_TEXT_HANDLE / 2.0f, theme->accent);
+		kl_canvas_line(canvas, x, top, x, bottom, 2.0f, theme->accent);
+		kl_canvas_circle(canvas, x, bottom + (float)KL_TEXT_HANDLE / 2.0f, (float)KL_TEXT_HANDLE / 2.0f, theme->accent);
 	}
 }
 
 /* Keeps how far a finger on the caret's handle is from the middle of the caret. */
 static void
 touch_grip(
-	struct kui_text_touch *touch,
+	struct kl_text_touch *touch,
 	double x,
 	double y)
 {
-	struct kui_rect rect;
+	struct kl_rect rect;
 
 	/* The caret's middle, and the finger's distance from it. */
 	touch->view->caret_rect(touch->data, touch->caret, &rect);
@@ -314,12 +314,12 @@ touch_grip(
 /* Tells whether a point is within a finger's reach of an end's handle. */
 static int
 touch_near_handle(
-	const struct kui_text_touch *touch,
+	const struct kl_text_touch *touch,
 	size_t position,
 	double x,
 	double y)
 {
-	struct kui_rect rect;
+	struct kl_rect rect;
 	double centre_x;
 	double centre_y;
 	double distance;
@@ -327,11 +327,11 @@ touch_near_handle(
 	/* The knob's centre under the end's caret. */
 	touch->view->caret_rect(touch->data, position, &rect);
 	centre_x = (double)rect.x;
-	centre_y = (double)(rect.y + rect.height) + (double)KUI_TEXT_HANDLE / 2.0;
+	centre_y = (double)(rect.y + rect.height) + (double)KL_TEXT_HANDLE / 2.0;
 
 	/* Within the reach. */
 	distance = hypot(x - centre_x, y - centre_y);
-	if (distance > (double)KUI_TEXT_HANDLE_REACH / 2.0)
+	if (distance > (double)KL_TEXT_HANDLE_REACH / 2.0)
 		return 0;
 
 	/* Succeeded: the finger is on the handle. */
@@ -351,19 +351,19 @@ touch_edge_speed(
 	double depth;
 
 	/* Near the start: toward the start. */
-	if (place < (double)KUI_TEXT_EDGE) {
-		depth = ((double)KUI_TEXT_EDGE - place) / (double)KUI_TEXT_EDGE;
+	if (place < (double)KL_TEXT_EDGE) {
+		depth = ((double)KL_TEXT_EDGE - place) / (double)KL_TEXT_EDGE;
 		if (depth > 1.0)
 			depth = 1.0;
-		return -KUI_TEXT_EDGE_SPEED * depth;
+		return -KL_TEXT_EDGE_SPEED * depth;
 	}
 
 	/* Near the end: toward the end. */
-	if (place > size - (double)KUI_TEXT_EDGE) {
-		depth = (place - (size - (double)KUI_TEXT_EDGE)) / (double)KUI_TEXT_EDGE;
+	if (place > size - (double)KL_TEXT_EDGE) {
+		depth = (place - (size - (double)KL_TEXT_EDGE)) / (double)KL_TEXT_EDGE;
 		if (depth > 1.0)
 			depth = 1.0;
-		return KUI_TEXT_EDGE_SPEED * depth;
+		return KL_TEXT_EDGE_SPEED * depth;
 	}
 
 	/* Away from both. */

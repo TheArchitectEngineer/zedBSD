@@ -29,19 +29,19 @@
 #define FIELD_DOT		"\xe2\x80\xa2"
 
 static int field_wants(uint32_t code, unsigned modifiers);
-static unsigned field_key(struct kui_field *field, uint32_t code, unsigned modifiers);
-static void field_erase(struct kui_field *field);
-static size_t field_prev(const struct kui_field *field, size_t at);
-static size_t field_next(const struct kui_field *field, size_t at);
-static size_t field_shown(const struct kui_field *field, char *out, size_t size, size_t through);
-static size_t field_at(const struct kui_style *style, const struct kui_field *field, int x);
+static unsigned field_key(struct kl_field *field, uint32_t code, unsigned modifiers);
+static void field_erase(struct kl_field *field);
+static size_t field_prev(const struct kl_field *field, size_t at);
+static size_t field_next(const struct kl_field *field, size_t at);
+static size_t field_shown(const struct kl_field *field, char *out, size_t size, size_t through);
+static size_t field_at(const struct kl_style *style, const struct kl_field *field, int x);
 
 /*
  * Sets a field's text, with the caret at its end and nothing selected.
  */
 void
-kui_field_set(
-	struct kui_field *field,
+kl_field_set(
+	struct kl_field *field,
 	const char *text)
 {
 	/* The text, cut to the field. */
@@ -57,21 +57,21 @@ kui_field_set(
 
 /*
  * Draws a text field in a rectangle and takes its input; reports what
- * happened (KUI_FIELD_* bits).  placeholder (may be NULL) shows while it
+ * happened (KL_FIELD_* bits).  placeholder (may be NULL) shows while it
  * is empty.
  */
 unsigned
-kui_field(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_field(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
-	const struct kui_rect *rect,
-	struct kui_field *field,
+	const struct kl_rect *rect,
+	struct kl_field *field,
 	const char *placeholder)
 {
-	const struct kui_theme *theme;
-	struct kui_rect inside;
-	char shown[KUI_FIELD_MAX * 3U];
+	const struct kl_theme *theme;
+	struct kl_rect inside;
+	char shown[KL_FIELD_MAX * 3U];
 	uint32_t code;
 	unsigned modifiers;
 	unsigned changes;
@@ -93,16 +93,16 @@ kui_field(
 	theme = style->theme;
 	state = keiui_ui_widget(ui, id, 0U, rect, KEIUI_FOCUSABLE);
 	focused = 0;
-	if ((state & KUI_HIT_FOCUSED) != 0U)
+	if ((state & KL_HIT_FOCUSED) != 0U)
 		focused = 1;
 
 	/* A click or a tap puts the caret at the point (twice: the whole text selected). */
 	changes = 0;
-	if ((state & KUI_HIT_CLICKED) != 0U) {
-		kui_ui_pointer(ui, &pointer_x, &pointer_y);
+	if ((state & KL_HIT_CLICKED) != 0U) {
+		kl_ui_pointer(ui, &pointer_x, &pointer_y);
 		field->caret = field_at(style, field, (int)pointer_x - rect->x - FIELD_SIDE + field->scroll);
 		field->anchor = field->caret;
-		if ((state & KUI_HIT_DOUBLE) != 0U) {
+		if ((state & KL_HIT_DOUBLE) != 0U) {
 			field->anchor = 0;
 			field->caret = field->length;
 		}
@@ -117,11 +117,11 @@ kui_field(
 	}
 
 	/* The ground: white, with the accent's edge while it has the keyboard. */
-	kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, KUI_RGB(0xffffff));
+	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, KL_RGB(0xffffff));
 	if (focused)
-		kui_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, 1.5f, theme->accent);
+		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, 1.5f, theme->accent);
 	else
-		kui_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, 1.0f, theme->control_edge);
+		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, 1.0f, theme->control_edge);
 
 	/* The text as shown (dots for a secret one), and where the caret and the selection's ends are in it. */
 	length = field_shown(field, shown, sizeof(shown), field->length);
@@ -133,9 +133,9 @@ kui_field(
 	}
 
 	/* Where the caret and the selection's ends stand across. */
-	caret_x = kui_text_width(style->text, shown, field_shown(field, NULL, 0U, field->caret), FIELD_TEXT, 0);
-	left_x = kui_text_width(style->text, shown, field_shown(field, NULL, 0U, start), FIELD_TEXT, 0);
-	right_x = kui_text_width(style->text, shown, field_shown(field, NULL, 0U, end), FIELD_TEXT, 0);
+	caret_x = kl_text_width(style->text, shown, field_shown(field, NULL, 0U, field->caret), FIELD_TEXT, 0);
+	left_x = kl_text_width(style->text, shown, field_shown(field, NULL, 0U, start), FIELD_TEXT, 0);
+	right_x = kl_text_width(style->text, shown, field_shown(field, NULL, 0U, end), FIELD_TEXT, 0);
 
 	/* The text scrolls across just enough to keep the caret inside. */
 	width = rect->width - 2 * FIELD_SIDE;
@@ -149,17 +149,17 @@ kui_field(
 	inside.y = rect->y;
 	inside.width = rect->width - FIELD_SIDE;
 	inside.height = rect->height;
-	kui_canvas_clip_push(style->canvas, &inside);
-	baseline = kui_text_center(FIELD_TEXT, rect->y, rect->height);
+	kl_canvas_clip_push(style->canvas, &inside);
+	baseline = kl_text_center(FIELD_TEXT, rect->y, rect->height);
 	if (start != end && focused)
-		kui_canvas_round(style->canvas, (float)(rect->x + FIELD_SIDE + left_x - field->scroll), (float)rect->y + 7.0f, (float)(right_x - left_x), (float)rect->height - 14.0f, 2.0f, theme->selection);
+		kl_canvas_round(style->canvas, (float)(rect->x + FIELD_SIDE + left_x - field->scroll), (float)rect->y + 7.0f, (float)(right_x - left_x), (float)rect->height - 14.0f, 2.0f, theme->selection);
 	if (field->length == 0 && placeholder != NULL)
-		(void)kui_text_draw(style->text, style->canvas, rect->x + FIELD_SIDE, baseline, placeholder, strlen(placeholder), FIELD_TEXT, 0, theme->text_faint);
+		(void)kl_text_draw(style->text, style->canvas, rect->x + FIELD_SIDE, baseline, placeholder, strlen(placeholder), FIELD_TEXT, 0, theme->text_faint);
 	else
-		(void)kui_text_draw(style->text, style->canvas, rect->x + FIELD_SIDE - field->scroll, baseline, shown, length, FIELD_TEXT, 0, theme->text);
+		(void)kl_text_draw(style->text, style->canvas, rect->x + FIELD_SIDE - field->scroll, baseline, shown, length, FIELD_TEXT, 0, theme->text);
 	if (focused)
-		kui_canvas_line(style->canvas, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)rect->y + 8.0f, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)(rect->y + rect->height) - 8.0f, 1.5f, theme->accent);
-	kui_canvas_clip_pop(style->canvas);
+		kl_canvas_line(style->canvas, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)rect->y + 8.0f, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)(rect->y + rect->height) - 8.0f, 1.5f, theme->accent);
+	kl_canvas_clip_pop(style->canvas);
 
 	/* Reports what happened. */
 	return changes;
@@ -174,9 +174,9 @@ field_wants(
 	uint32_t character;
 
 	/* Control's only key is A (select all); Alt and Super are commands. */
-	if ((modifiers & (KUI_MOD_ALT | KUI_MOD_SUPER)) != 0U)
+	if ((modifiers & (KL_MOD_ALT | KL_MOD_SUPER)) != 0U)
 		return 0;
-	if ((modifiers & KUI_MOD_CTRL) != 0U) {
+	if ((modifiers & KL_MOD_CTRL) != 0U) {
 		if (code == 30U)
 			return 1;
 		return 0;
@@ -184,31 +184,31 @@ field_wants(
 
 	/* The editing keys. */
 	switch (code) {
-	case KUI_KEY_LEFT:
-	case KUI_KEY_RIGHT:
-	case KUI_KEY_HOME:
-	case KUI_KEY_END:
-	case KUI_KEY_BACKSPACE:
-	case KUI_KEY_DELETE:
-	case KUI_KEY_ENTER:
-	case KUI_KEY_KPENTER:
-	case KUI_KEY_ESC:
+	case KL_KEY_LEFT:
+	case KL_KEY_RIGHT:
+	case KL_KEY_HOME:
+	case KL_KEY_END:
+	case KL_KEY_BACKSPACE:
+	case KL_KEY_DELETE:
+	case KL_KEY_ENTER:
+	case KL_KEY_KPENTER:
+	case KL_KEY_ESC:
 		return 1;
 	default:
 		break;
 	}
 
 	/* A key that types a character. */
-	character = kui_key_character(code, modifiers);
+	character = kl_key_character(code, modifiers);
 	if (character != 0U)
 		return 1;
 	return 0;
 }
 
-/* Carries out one key in a field; reports what happened (KUI_FIELD_* bits). */
+/* Carries out one key in a field; reports what happened (KL_FIELD_* bits). */
 static unsigned
 field_key(
-	struct kui_field *field,
+	struct kl_field *field,
 	uint32_t code,
 	unsigned modifiers)
 {
@@ -217,11 +217,11 @@ field_key(
 	size_t at;
 
 	/* Shift keeps the other end of the selection where it is. */
-	shift = modifiers & KUI_MOD_SHIFT;
+	shift = modifiers & KL_MOD_SHIFT;
 
 	/* The keys that move, erase, submit and cancel. */
 	switch (code) {
-	case KUI_KEY_LEFT:
+	case KL_KEY_LEFT:
 		at = field_prev(field, field->caret);
 		if (field->caret != field->anchor && shift == 0U && field->anchor < field->caret)
 			at = field->anchor;
@@ -229,7 +229,7 @@ field_key(
 		if (shift == 0U)
 			field->anchor = at;
 		return 0;
-	case KUI_KEY_RIGHT:
+	case KL_KEY_RIGHT:
 		at = field_next(field, field->caret);
 		if (field->caret != field->anchor && shift == 0U && field->anchor > field->caret)
 			at = field->anchor;
@@ -237,49 +237,49 @@ field_key(
 		if (shift == 0U)
 			field->anchor = at;
 		return 0;
-	case KUI_KEY_HOME:
+	case KL_KEY_HOME:
 		field->caret = 0;
 		if (shift == 0U)
 			field->anchor = 0;
 		return 0;
-	case KUI_KEY_END:
+	case KL_KEY_END:
 		field->caret = field->length;
 		if (shift == 0U)
 			field->anchor = field->length;
 		return 0;
-	case KUI_KEY_BACKSPACE:
+	case KL_KEY_BACKSPACE:
 		if (field->caret == field->anchor)
 			field->anchor = field_prev(field, field->caret);
 		field_erase(field);
-		return KUI_FIELD_CHANGED;
-	case KUI_KEY_DELETE:
+		return KL_FIELD_CHANGED;
+	case KL_KEY_DELETE:
 		if (field->caret == field->anchor)
 			field->anchor = field_next(field, field->caret);
 		field_erase(field);
-		return KUI_FIELD_CHANGED;
-	case KUI_KEY_ENTER:
-	case KUI_KEY_KPENTER:
-		return KUI_FIELD_SUBMITTED;
-	case KUI_KEY_ESC:
-		return KUI_FIELD_CANCELLED;
+		return KL_FIELD_CHANGED;
+	case KL_KEY_ENTER:
+	case KL_KEY_KPENTER:
+		return KL_FIELD_SUBMITTED;
+	case KL_KEY_ESC:
+		return KL_FIELD_CANCELLED;
 	default:
 		break;
 	}
 
 	/* Ctrl+A selects the whole text. */
-	if ((modifiers & KUI_MOD_CTRL) != 0U) {
+	if ((modifiers & KL_MOD_CTRL) != 0U) {
 		field->anchor = 0;
 		field->caret = field->length;
 		return 0;
 	}
 
 	/* A character replaces the selection (a full field takes no more). */
-	character = kui_key_character(code, modifiers);
+	character = kl_key_character(code, modifiers);
 	if (character == 0U)
 		return 0;
 	field_erase(field);
 	if (field->length + 1U >= sizeof(field->text))
-		return KUI_FIELD_CHANGED;
+		return KL_FIELD_CHANGED;
 	memmove(field->text + field->caret + 1U, field->text + field->caret, field->length - field->caret + 1U);
 	field->text[field->caret] = (char)character;
 	field->length++;
@@ -287,13 +287,13 @@ field_key(
 	field->anchor = field->caret;
 
 	/* Succeeded: the text changed. */
-	return KUI_FIELD_CHANGED;
+	return KL_FIELD_CHANGED;
 }
 
 /* Erases the selection (nothing when the caret and the anchor meet). */
 static void
 field_erase(
-	struct kui_field *field)
+	struct kl_field *field)
 {
 	size_t start;
 	size_t end;
@@ -316,7 +316,7 @@ field_erase(
 /* Reports the start of the character before an offset. */
 static size_t
 field_prev(
-	const struct kui_field *field,
+	const struct kl_field *field,
 	size_t at)
 {
 	/* Nothing before the start. */
@@ -335,7 +335,7 @@ field_prev(
 /* Reports the offset after the character at an offset. */
 static size_t
 field_next(
-	const struct kui_field *field,
+	const struct kl_field *field,
 	size_t at)
 {
 	/* Nothing after the end. */
@@ -358,7 +358,7 @@ field_next(
  */
 static size_t
 field_shown(
-	const struct kui_field *field,
+	const struct kl_field *field,
 	char *out,
 	size_t size,
 	size_t through)
@@ -394,11 +394,11 @@ field_shown(
 /* Reports the byte offset of the character boundary nearest a place (pixels from the text's start). */
 static size_t
 field_at(
-	const struct kui_style *style,
-	const struct kui_field *field,
+	const struct kl_style *style,
+	const struct kl_field *field,
 	int x)
 {
-	char shown[KUI_FIELD_MAX * 3U];
+	char shown[KL_FIELD_MAX * 3U];
 	size_t best;
 	size_t at;
 	int width;
@@ -413,7 +413,7 @@ field_at(
 	nearest = -1;
 	at = 0;
 	for (;;) {
-		width = kui_text_width(style->text, shown, field_shown(field, NULL, 0U, at), FIELD_TEXT, 0);
+		width = kl_text_width(style->text, shown, field_shown(field, NULL, 0U, at), FIELD_TEXT, 0);
 		distance = width - x;
 		if (distance < 0)
 			distance = -distance;

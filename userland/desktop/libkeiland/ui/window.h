@@ -15,7 +15,7 @@
 #ifndef KEIUI_WINDOW_H
 #define KEIUI_WINDOW_H
 
-#include <keiui.h>
+#include <keiland.h>
 
 /* The window's surface is a Wayland one, for Vulkan's surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
@@ -107,7 +107,7 @@ struct keiui_present {
 
 /* One wl_shm buffer: its window, the pixels mapped, their size, and whether the compositor still reads it. */
 struct keiui_shm_buffer {
-	struct kui_window *window;
+	struct kl_window *window;
 	struct wl_buffer *buffer;
 	uint32_t *pixels;
 	size_t size;
@@ -117,12 +117,12 @@ struct keiui_shm_buffer {
 };
 
 /*
- * One window, from kui_window_open to kui_window_close: the connection
+ * One window, from kl_window_open to kl_window_close: the connection
  * and its globals, the surface and its roles, the size, the input's state
  * and queue, the presenter, and the clipboard's and the primary
  * selection's objects and copies.
  */
-struct kui_window {
+struct kl_window {
 	/* The connection and the globals bound from it. */
 	struct wl_display *display;
 	struct wl_registry *registry;
@@ -152,7 +152,7 @@ struct kui_window {
 	int fullscreen;
 
 	/*
-	 * The pointer's place, the modifiers held (KUI_MOD_*), the serial of
+	 * The pointer's place, the modifiers held (KL_MOD_*), the serial of
 	 * the last input (for the selections), and the serial of the last press
 	 * of a button or a finger (a context menu opens for a press).
 	 */
@@ -179,7 +179,7 @@ struct kui_window {
 	uint32_t repeat_interval;
 
 	/* The inputs waiting, a ring: the oldest's slot and how many. */
-	struct kui_window_event events[KEIUI_WINDOW_EVENTS];
+	struct kl_window_event events[KEIUI_WINDOW_EVENTS];
 	unsigned event_first;
 	unsigned event_count;
 
@@ -230,8 +230,8 @@ struct kui_window {
 	int text_enabled;
 	uint32_t text_commits;
 	int32_t text_cursor[4];
-	char text_commit[KUI_WINDOW_TEXT_MAX];
-	char text_preedit[KUI_WINDOW_TEXT_MAX];
+	char text_commit[KL_WINDOW_TEXT_MAX];
+	char text_preedit[KL_WINDOW_TEXT_MAX];
 	int32_t text_preedit_begin;
 	int32_t text_preedit_end;
 	int text_preedit_set;
@@ -259,7 +259,7 @@ struct kui_window {
 	struct keiland_keyboard_inset *inset;
 	int inset_right;
 	int inset_bottom;
-	kui_keyboard_inset_fn inset_callback;
+	kl_window_keyboard_inset_fn inset_callback;
 	void *inset_data;
 
 	/*
@@ -272,46 +272,46 @@ struct kui_window {
 	int selecting;
 	int edit_told;
 	unsigned edit_state;
-	kui_edit_fn edit_callback;
+	kl_window_edit_fn edit_callback;
 	void *edit_data;
 };
 
 /* A window on the application's connection, and its owner's wake-up (window.c). */
-struct kui_window *keiui_window_open_shared(struct wl_display *display, struct xdg_toplevel *parent, const struct kui_window_options *options, uint32_t min_width, uint32_t min_height);
-void keiui_window_set_notify(struct kui_window *window, void (*notify)(void *data), void *data);
-void keiui_window_wake(struct kui_window *window);
+struct kl_window *keiui_window_open_shared(struct wl_display *display, struct xdg_toplevel *parent, const struct kl_window_options *options, uint32_t min_width, uint32_t min_height);
+void keiui_window_set_notify(struct kl_window *window, void (*notify)(void *data), void *data);
+void keiui_window_wake(struct kl_window *window);
 
 /* The window's clock in milliseconds (window.c). */
 uint64_t keiui_clock_ms(void);
 
 /* The Vulkan presenter (present.c). */
-VkResult keiui_present_open(struct keiui_present *present, struct kui_window *window);
+VkResult keiui_present_open(struct keiui_present *present, struct kl_window *window);
 VkResult keiui_present_resize(struct keiui_present *present, uint32_t width, uint32_t height);
 VkResult keiui_present_frame(struct keiui_present *present, const uint32_t *pixels, size_t stride);
 void keiui_present_close(struct keiui_present *present);
 
 /* The shared-memory presenter (present-shm.c). */
-int keiui_shm_present(struct kui_window *window, const uint32_t *pixels, size_t stride);
-void keiui_shm_close(struct kui_window *window);
+int keiui_shm_present(struct kl_window *window, const uint32_t *pixels, size_t stride);
+void keiui_shm_close(struct kl_window *window);
 
 /* The clipboard (clipboard.c) and the primary selection (primary.c). */
-void keiui_clipboard_bind(struct kui_window *window, struct wl_registry *registry, uint32_t name, uint32_t version);
-void keiui_clipboard_start(struct kui_window *window);
-void keiui_clipboard_close(struct kui_window *window);
-void keiui_primary_bind(struct kui_window *window, struct wl_registry *registry, uint32_t name);
-void keiui_primary_start(struct kui_window *window);
-void keiui_primary_close(struct kui_window *window);
+void keiui_clipboard_bind(struct kl_window *window, struct wl_registry *registry, uint32_t name, uint32_t version);
+void keiui_clipboard_start(struct kl_window *window);
+void keiui_clipboard_close(struct kl_window *window);
+void keiui_primary_bind(struct kl_window *window, struct wl_registry *registry, uint32_t name);
+void keiui_primary_start(struct kl_window *window);
+void keiui_primary_close(struct kl_window *window);
 
 /* The text input (text-input.c). */
-void keiui_text_input_bind(struct kui_window *window, struct wl_registry *registry, uint32_t name);
-void keiui_text_input_start(struct kui_window *window);
-void keiui_text_input_close(struct kui_window *window);
-struct kui_window_event *keiui_window_push(struct kui_window *window, unsigned kind);
+void keiui_text_input_bind(struct kl_window *window, struct wl_registry *registry, uint32_t name);
+void keiui_text_input_start(struct kl_window *window);
+void keiui_text_input_close(struct kl_window *window);
+struct kl_window_event *keiui_window_push(struct kl_window *window, unsigned kind);
 
 /* The editing operations (edit.c): made with the window, the state sent before each wait, a key moved with Shift while selecting, and the end. */
-void keiui_edit_start(struct kui_window *window);
-void keiui_edit_update(struct kui_window *window);
-void keiui_edit_key(struct kui_window *window, struct kui_window_event *event);
-void keiui_edit_close(struct kui_window *window);
+void keiui_edit_start(struct kl_window *window);
+void keiui_edit_update(struct kl_window *window);
+void keiui_edit_key(struct kl_window *window, struct kl_window_event *event);
+void keiui_edit_close(struct kl_window *window);
 
 #endif

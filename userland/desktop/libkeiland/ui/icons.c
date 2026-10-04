@@ -27,21 +27,21 @@
 #define ICONS_FOLDER_BACK	0.78f
 #define ICONS_FOLDER_FRONT_TOP	0.18f
 
-static void icons_polyline(struct kui_canvas *canvas, float x, float y, float size, const float *points, int count, float thickness, kui_color color);
-static void icons_segment(struct kui_canvas *canvas, float x, float y, float size, float x0, float y0, float x1, float y1, float thickness, kui_color color);
-static void icons_frame(struct kui_canvas *canvas, float x, float y, float size, float left, float top, float width, float height, float radius, float thickness, kui_color color);
+static void icons_polyline(struct kl_canvas *canvas, float x, float y, float size, const float *points, int count, float thickness, kl_color color);
+static void icons_segment(struct kl_canvas *canvas, float x, float y, float size, float x0, float y0, float x1, float y1, float thickness, kl_color color);
+static void icons_frame(struct kl_canvas *canvas, float x, float y, float size, float left, float top, float width, float height, float radius, float thickness, kl_color color);
 
 /*
  * Draws a line icon in a square box of a size at (x, y).
  */
 void
-kui_icon_draw(
-	struct kui_canvas *canvas,
-	enum kui_icon icon,
+kl_icon_draw(
+	struct kl_canvas *canvas,
+	enum kl_icon icon,
 	float x,
 	float y,
 	float size,
-	kui_color color)
+	kl_color color)
 {
 	static const float roof[] = { 0.14f, 0.50f, 0.50f, 0.17f, 0.86f, 0.50f };
 	static const float house[] = { 0.25f, 0.43f, 0.25f, 0.84f, 0.75f, 0.84f, 0.75f, 0.43f };
@@ -60,7 +60,7 @@ kui_icon_draw(
 	float thickness;
 
 	/* The line pictures are drawn by their own pen. */
-	if (icon >= KUI_ICON_TILES) {
+	if (icon >= KL_ICON_TILES) {
 		keiui_icon_line_draw(canvas, icon, x, y, size, color);
 		return;
 	}
@@ -72,38 +72,38 @@ kui_icon_draw(
 
 	/* Each icon's lines. */
 	switch (icon) {
-	case KUI_ICON_HOME:
+	case KL_ICON_HOME:
 		icons_polyline(canvas, x, y, size, roof, 3, thickness, color);
 		icons_polyline(canvas, x, y, size, house, 4, thickness, color);
 		icons_segment(canvas, x, y, size, 0.50f, 0.84f, 0.50f, 0.66f, thickness, color);
 		break;
-	case KUI_ICON_DESKTOP:
+	case KL_ICON_DESKTOP:
 		icons_frame(canvas, x, y, size, 0.10f, 0.18f, 0.80f, 0.54f, 0.08f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.50f, 0.74f, 0.50f, 0.84f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.34f, 0.85f, 0.66f, 0.85f, thickness, color);
 		break;
-	case KUI_ICON_DOCUMENTS:
+	case KL_ICON_DOCUMENTS:
 		icons_frame(canvas, x, y, size, 0.22f, 0.10f, 0.56f, 0.80f, 0.08f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.36f, 0.34f, 0.64f, 0.34f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.36f, 0.50f, 0.64f, 0.50f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.36f, 0.66f, 0.54f, 0.66f, thickness, color);
 		break;
-	case KUI_ICON_DOWNLOADS:
+	case KL_ICON_DOWNLOADS:
 		icons_segment(canvas, x, y, size, 0.50f, 0.14f, 0.50f, 0.64f, thickness, color);
 		icons_polyline(canvas, x, y, size, arrow_down, 3, thickness, color);
 		icons_polyline(canvas, x, y, size, tray, 4, thickness, color);
 		break;
-	case KUI_ICON_PICTURES:
+	case KL_ICON_PICTURES:
 		icons_frame(canvas, x, y, size, 0.10f, 0.18f, 0.80f, 0.64f, 0.10f, thickness, color);
-		kui_canvas_circle(canvas, x + 0.35f * size, y + 0.38f * size, 0.07f * size, color);
+		kl_canvas_circle(canvas, x + 0.35f * size, y + 0.38f * size, 0.07f * size, color);
 		icons_polyline(canvas, x, y, size, mountains, 5, thickness, color);
 		break;
-	case KUI_ICON_MUSIC:
+	case KL_ICON_MUSIC:
 		icons_segment(canvas, x, y, size, 0.62f, 0.18f, 0.62f, 0.70f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.62f, 0.18f, 0.82f, 0.28f, thickness, color);
-		kui_canvas_circle(canvas, x + 0.49f * size, y + 0.72f * size, 0.14f * size, color);
+		kl_canvas_circle(canvas, x + 0.49f * size, y + 0.72f * size, 0.14f * size, color);
 		break;
-	case KUI_ICON_MOVIES:
+	case KL_ICON_MOVIES:
 		icons_frame(canvas, x, y, size, 0.10f, 0.20f, 0.80f, 0.60f, 0.10f, thickness, color);
 		play[0] = x + 0.42f * size;
 		play[1] = y + 0.36f * size;
@@ -111,73 +111,73 @@ kui_icon_draw(
 		play[3] = y + 0.50f * size;
 		play[4] = x + 0.42f * size;
 		play[5] = y + 0.64f * size;
-		kui_canvas_polygon(canvas, play, 3, color);
+		kl_canvas_polygon(canvas, play, 3, color);
 		break;
-	case KUI_ICON_FOLDER_LINE:
+	case KL_ICON_FOLDER_LINE:
 		icons_polyline(canvas, x, y, size, folder, 8, thickness, color);
 		break;
-	case KUI_ICON_RECENTS:
-		kui_canvas_ring(canvas, x + 0.5f * size, y + 0.5f * size, 0.38f * size, thickness, 1.0f, color);
+	case KL_ICON_RECENTS:
+		kl_canvas_ring(canvas, x + 0.5f * size, y + 0.5f * size, 0.38f * size, thickness, 1.0f, color);
 		icons_polyline(canvas, x, y, size, clock_hands, 3, thickness, color);
 		break;
-	case KUI_ICON_TRASH:
+	case KL_ICON_TRASH:
 		icons_segment(canvas, x, y, size, 0.18f, 0.26f, 0.82f, 0.26f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.40f, 0.26f, 0.42f, 0.16f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.42f, 0.16f, 0.58f, 0.16f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.58f, 0.16f, 0.60f, 0.26f, thickness, color);
 		icons_polyline(canvas, x, y, size, can, 4, thickness, color);
 		break;
-	case KUI_ICON_COMPUTER:
+	case KL_ICON_COMPUTER:
 		icons_frame(canvas, x, y, size, 0.16f, 0.20f, 0.68f, 0.48f, 0.08f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.06f, 0.80f, 0.94f, 0.80f, thickness, color);
 		break;
-	case KUI_ICON_VOLUME:
+	case KL_ICON_VOLUME:
 		icons_frame(canvas, x, y, size, 0.10f, 0.32f, 0.80f, 0.38f, 0.10f, thickness, color);
-		kui_canvas_circle(canvas, x + 0.72f * size, y + 0.51f * size, 0.05f * size, color);
+		kl_canvas_circle(canvas, x + 0.72f * size, y + 0.51f * size, 0.05f * size, color);
 		break;
-	case KUI_ICON_BACK:
+	case KL_ICON_BACK:
 		icons_polyline(canvas, x, y, size, back, 3, thickness, color);
 		break;
-	case KUI_ICON_FORWARD:
+	case KL_ICON_FORWARD:
 		icons_polyline(canvas, x, y, size, forward, 3, thickness, color);
 		break;
-	case KUI_ICON_SEARCH:
-		kui_canvas_ring(canvas, x + 0.43f * size, y + 0.43f * size, 0.27f * size, thickness, 1.0f, color);
+	case KL_ICON_SEARCH:
+		kl_canvas_ring(canvas, x + 0.43f * size, y + 0.43f * size, 0.27f * size, thickness, 1.0f, color);
 		icons_segment(canvas, x, y, size, 0.63f, 0.63f, 0.84f, 0.84f, thickness, color);
 		break;
-	case KUI_ICON_GRID:
-		kui_canvas_round(canvas, x + 0.14f * size, y + 0.14f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
-		kui_canvas_round(canvas, x + 0.55f * size, y + 0.14f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
-		kui_canvas_round(canvas, x + 0.14f * size, y + 0.55f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
-		kui_canvas_round(canvas, x + 0.55f * size, y + 0.55f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
+	case KL_ICON_GRID:
+		kl_canvas_round(canvas, x + 0.14f * size, y + 0.14f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
+		kl_canvas_round(canvas, x + 0.55f * size, y + 0.14f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
+		kl_canvas_round(canvas, x + 0.14f * size, y + 0.55f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
+		kl_canvas_round(canvas, x + 0.55f * size, y + 0.55f * size, 0.31f * size, 0.31f * size, 0.08f * size, color);
 		break;
-	case KUI_ICON_LIST:
-		kui_canvas_circle(canvas, x + 0.20f * size, y + 0.26f * size, 0.06f * size, color);
-		kui_canvas_circle(canvas, x + 0.20f * size, y + 0.50f * size, 0.06f * size, color);
-		kui_canvas_circle(canvas, x + 0.20f * size, y + 0.74f * size, 0.06f * size, color);
+	case KL_ICON_LIST:
+		kl_canvas_circle(canvas, x + 0.20f * size, y + 0.26f * size, 0.06f * size, color);
+		kl_canvas_circle(canvas, x + 0.20f * size, y + 0.50f * size, 0.06f * size, color);
+		kl_canvas_circle(canvas, x + 0.20f * size, y + 0.74f * size, 0.06f * size, color);
 		icons_segment(canvas, x, y, size, 0.36f, 0.26f, 0.86f, 0.26f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.36f, 0.50f, 0.86f, 0.50f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.36f, 0.74f, 0.86f, 0.74f, thickness, color);
 		break;
-	case KUI_ICON_PREVIEW:
+	case KL_ICON_PREVIEW:
 		icons_frame(canvas, x, y, size, 0.10f, 0.16f, 0.80f, 0.68f, 0.12f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.60f, 0.16f, 0.60f, 0.84f, thickness, color);
 		break;
-	case KUI_ICON_CHEVRON:
+	case KL_ICON_CHEVRON:
 		icons_polyline(canvas, x, y, size, chevron, 3, thickness, color);
 		break;
-	case KUI_ICON_CLOSE:
+	case KL_ICON_CLOSE:
 		icons_segment(canvas, x, y, size, 0.28f, 0.28f, 0.72f, 0.72f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.72f, 0.28f, 0.28f, 0.72f, thickness, color);
 		break;
-	case KUI_ICON_PLUS:
+	case KL_ICON_PLUS:
 		icons_segment(canvas, x, y, size, 0.50f, 0.22f, 0.50f, 0.78f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.22f, 0.50f, 0.78f, 0.50f, thickness, color);
 		break;
-	case KUI_ICON_UP:
+	case KL_ICON_UP:
 		icons_polyline(canvas, x, y, size, up, 3, thickness, color);
 		break;
-	case KUI_ICON_DOWN:
+	case KL_ICON_DOWN:
 		icons_polyline(canvas, x, y, size, down, 3, thickness, color);
 		break;
 	default:
@@ -190,36 +190,36 @@ kui_icon_draw(
  * accent blue for ordinary folders).
  */
 void
-kui_icon_folder(
-	struct kui_canvas *canvas,
+kl_icon_folder(
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float size,
-	kui_color tint)
+	kl_color tint)
 {
-	kui_color back;
-	kui_color front_top;
-	kui_color front_bottom;
-	kui_color edge;
+	kl_color back;
+	kl_color front_top;
+	kl_color front_bottom;
+	kl_color edge;
 
 	/* The back is the tint darkened, the front light at the top and the tint at the bottom. */
-	back = kui_color_mix(KUI_RGB(0x000000), tint, ICONS_FOLDER_BACK);
-	front_top = kui_color_mix(tint, KUI_RGB(0xffffff), ICONS_FOLDER_FRONT_TOP);
+	back = kl_color_mix(KL_RGB(0x000000), tint, ICONS_FOLDER_BACK);
+	front_top = kl_color_mix(tint, KL_RGB(0xffffff), ICONS_FOLDER_FRONT_TOP);
 	front_bottom = tint;
-	edge = KUI_RGBA(0xffffff, 110);
+	edge = KL_RGBA(0xffffff, 110);
 
 	/* A soft shadow under the whole folder. */
-	kui_canvas_shadow(canvas, x + 0.08f * size, y + 0.26f * size, 0.84f * size, 0.62f * size, 0.08f * size, 0.06f * size, KUI_RGBA(0x1f3a66, 40));
+	kl_canvas_shadow(canvas, x + 0.08f * size, y + 0.26f * size, 0.84f * size, 0.62f * size, 0.08f * size, 0.06f * size, KL_RGBA(0x1f3a66, 40));
 
 	/* The back with its tab. */
-	kui_canvas_round(canvas, x + 0.06f * size, y + 0.14f * size, 0.38f * size, 0.16f * size, 0.05f * size, back);
-	kui_canvas_round(canvas, x + 0.06f * size, y + 0.20f * size, 0.88f * size, 0.64f * size, 0.08f * size, back);
+	kl_canvas_round(canvas, x + 0.06f * size, y + 0.14f * size, 0.38f * size, 0.16f * size, 0.05f * size, back);
+	kl_canvas_round(canvas, x + 0.06f * size, y + 0.20f * size, 0.88f * size, 0.64f * size, 0.08f * size, back);
 
 	/* The front, lighter, over most of the back. */
-	kui_canvas_round_gradient(canvas, x + 0.06f * size, y + 0.30f * size, 0.88f * size, 0.56f * size, 0.08f * size, front_top, front_bottom);
+	kl_canvas_round_gradient(canvas, x + 0.06f * size, y + 0.30f * size, 0.88f * size, 0.56f * size, 0.08f * size, front_top, front_bottom);
 
 	/* A thin light line along the front's top edge. */
-	kui_canvas_round(canvas, x + 0.10f * size, y + 0.30f * size, 0.80f * size, 0.012f * size + 1.0f, 0.5f, edge);
+	kl_canvas_round(canvas, x + 0.10f * size, y + 0.30f * size, 0.80f * size, 0.012f * size + 1.0f, 0.5f, edge);
 }
 
 /*
@@ -227,16 +227,16 @@ kui_icon_folder(
  * its kind, with a label (the extension) on the band when there is room.
  */
 void
-kui_icon_file(
-	struct kui_canvas *canvas,
-	struct kui_text *text,
+kl_icon_file(
+	struct kl_canvas *canvas,
+	struct kl_text *text,
 	float x,
 	float y,
 	float size,
-	kui_color band,
+	kl_color band,
 	const char *label)
 {
-	struct kui_text_line line;
+	struct kl_text_line line;
 	float corner[6];
 	float fold;
 	float page_x;
@@ -256,9 +256,9 @@ kui_icon_file(
 	fold = 0.16f * size;
 
 	/* The page's shadow, the page and its edge. */
-	kui_canvas_shadow(canvas, page_x, page_y + 0.02f * size, page_width, page_height, 0.06f * size, 0.05f * size, KUI_RGBA(0x1f3a66, 36));
-	kui_canvas_round(canvas, page_x, page_y, page_width, page_height, 0.06f * size, KUI_RGB(0xffffff));
-	kui_canvas_round_border(canvas, page_x, page_y, page_width, page_height, 0.06f * size, 1.0f, KUI_RGB(0xd6dce6));
+	kl_canvas_shadow(canvas, page_x, page_y + 0.02f * size, page_width, page_height, 0.06f * size, 0.05f * size, KL_RGBA(0x1f3a66, 36));
+	kl_canvas_round(canvas, page_x, page_y, page_width, page_height, 0.06f * size, KL_RGB(0xffffff));
+	kl_canvas_round_border(canvas, page_x, page_y, page_width, page_height, 0.06f * size, 1.0f, KL_RGB(0xd6dce6));
 
 	/* The folded corner at the top right. */
 	corner[0] = page_x + page_width - fold;
@@ -267,10 +267,10 @@ kui_icon_file(
 	corner[3] = page_y + fold;
 	corner[4] = page_x + page_width - fold;
 	corner[5] = page_y + fold;
-	kui_canvas_polygon(canvas, corner, 3, KUI_RGB(0xe3e8ef));
+	kl_canvas_polygon(canvas, corner, 3, KL_RGB(0xe3e8ef));
 
 	/* The band of the kind's color near the bottom. */
-	kui_canvas_round(canvas, page_x + 0.06f * size, page_y + page_height - 0.30f * size, page_width - 0.12f * size, 0.18f * size, 0.04f * size, band);
+	kl_canvas_round(canvas, page_x + 0.06f * size, page_y + page_height - 0.30f * size, page_width - 0.12f * size, 0.18f * size, 0.04f * size, band);
 
 	/* The label on the band, when the icon is large enough to read it. */
 	if (text == NULL ||
@@ -281,44 +281,44 @@ kui_icon_file(
 
 	/* The label's size, and its place centred on the band. */
 	pixels = (unsigned)(size * 0.13f);
-	kui_text_metrics(text, pixels, &line);
-	width = kui_text_width(text, label, strlen(label), pixels, 1);
+	kl_text_metrics(text, pixels, &line);
+	width = kl_text_width(text, label, strlen(label), pixels, 1);
 	if ((float)width > page_width - 0.16f * size)
 		return;
 
 	/* Draws the label in white, its middle on the band's. */
 	label_x = (int)(page_x + (page_width - (float)width) * 0.5f);
 	baseline = (int)(page_y + page_height - 0.21f * size + (float)line.ascent * 0.5f - 1.0f);
-	(void)kui_text_draw(text, canvas, label_x, baseline, label, strlen(label), pixels, 1, KUI_RGB(0xffffff));
+	(void)kl_text_draw(text, canvas, label_x, baseline, label, strlen(label), pixels, 1, KL_RGB(0xffffff));
 }
 
 /*
  * Draws a tag's dot: a circle of its color with a light rim.
  */
 void
-kui_icon_tag(
-	struct kui_canvas *canvas,
+kl_icon_tag(
+	struct kl_canvas *canvas,
 	float cx,
 	float cy,
 	float radius,
-	kui_color color)
+	kl_color color)
 {
 	/* The rim, then the dot inside it. */
-	kui_canvas_circle(canvas, cx, cy, radius + 1.0f, KUI_RGBA(0xffffff, 200));
-	kui_canvas_circle(canvas, cx, cy, radius, color);
+	kl_canvas_circle(canvas, cx, cy, radius + 1.0f, KL_RGBA(0xffffff, 200));
+	kl_canvas_circle(canvas, cx, cy, radius, color);
 }
 
 /* Draws joined line segments through points given as fractions of the icon's box. */
 static void
 icons_polyline(
-	struct kui_canvas *canvas,
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float size,
 	const float *points,
 	int count,
 	float thickness,
-	kui_color color)
+	kl_color color)
 {
 	int index;
 
@@ -331,7 +331,7 @@ icons_polyline(
 /* Draws one line between two points given as fractions of the icon's box. */
 static void
 icons_segment(
-	struct kui_canvas *canvas,
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float size,
@@ -340,16 +340,16 @@ icons_segment(
 	float x1,
 	float y1,
 	float thickness,
-	kui_color color)
+	kl_color color)
 {
 	/* The points in the canvas's pixels. */
-	kui_canvas_line(canvas, x + x0 * size, y + y0 * size, x + x1 * size, y + y1 * size, thickness, color);
+	kl_canvas_line(canvas, x + x0 * size, y + y0 * size, x + x1 * size, y + y1 * size, thickness, color);
 }
 
 /* Draws the outline of a rounded rectangle given in fractions of the icon's box. */
 static void
 icons_frame(
-	struct kui_canvas *canvas,
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	float size,
@@ -359,8 +359,8 @@ icons_frame(
 	float height,
 	float radius,
 	float thickness,
-	kui_color color)
+	kl_color color)
 {
 	/* The rectangle in the canvas's pixels, the stroke centred on its edge. */
-	kui_canvas_round_border(canvas, x + left * size - thickness * 0.5f, y + top * size - thickness * 0.5f, width * size + thickness, height * size + thickness, radius * size + thickness * 0.5f, thickness, color);
+	kl_canvas_round_border(canvas, x + left * size - thickness * 0.5f, y + top * size - thickness * 0.5f, width * size + thickness, height * size + thickness, radius * size + thickness * 0.5f, thickness, color);
 }

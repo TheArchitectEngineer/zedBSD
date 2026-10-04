@@ -12,7 +12,7 @@
  * Terminal, PDF Viewer and the file chooser each carried a copy of.
  */
 
-#include <keiui.h>
+#include <keiland.h>
 
 /* How many codes the character tables cover (up to the space bar). */
 #define INPUT_KEYS		58U
@@ -37,19 +37,19 @@ static const char input_shifted[INPUT_KEYS] = {
 };
 
 /*
- * Reports the character a key types with the modifiers held (KUI_MOD_*),
+ * Reports the character a key types with the modifiers held (KL_MOD_*),
  * or 0 for a key that types none (a key with Control, Alt or Super types
  * none either).
  */
 uint32_t
-kui_key_character(
+kl_key_character(
 	uint32_t key,
 	unsigned modifiers)
 {
 	char character;
 
 	/* Control, Alt and Super make a key a command, not a character. */
-	if ((modifiers & (KUI_MOD_CTRL | KUI_MOD_ALT | KUI_MOD_SUPER)) != 0U)
+	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT | KL_MOD_SUPER)) != 0U)
 		return 0U;
 
 	/* Only the keys of the tables type characters. */
@@ -58,7 +58,7 @@ kui_key_character(
 
 	/* The character, shifted or not. */
 	character = input_plain[key];
-	if ((modifiers & KUI_MOD_SHIFT) != 0U)
+	if ((modifiers & KL_MOD_SHIFT) != 0U)
 		character = input_shifted[key];
 
 	/* Succeeded: the character, or 0. */

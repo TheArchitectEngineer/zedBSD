@@ -15,28 +15,28 @@
  * the last of these.  This file is the bar's state and geometry only: it
  * draws nothing and needs neither the window nor the canvas, so a program
  * with a canvas of its own (Files) uses it as the library's programs do
- * (kui_scroll_bar_draw in scroll.c draws it on a kui_canvas).
+ * (kl_scroll_bar_draw in scroll.c draws it on a kl_canvas).
  */
 
-#include <keiui.h>
+#include <keiland.h>
 
 #include <string.h>
 
 /* How far a press on the track moves the content: this share of the viewport. */
 #define SCROLL_BAR_PAGE		0.9
 
-static double scroll_bar_limit(const struct kui_rect *viewport, double content);
-static double scroll_bar_track(const struct kui_rect *viewport);
-static double scroll_bar_thumb(const struct kui_rect *viewport, double content);
-static double scroll_bar_alpha(const struct kui_scroll_bar *bar, uint64_t now_us);
+static double scroll_bar_limit(const struct kl_rect *viewport, double content);
+static double scroll_bar_track(const struct kl_rect *viewport);
+static double scroll_bar_thumb(const struct kl_rect *viewport, double content);
+static double scroll_bar_alpha(const struct kl_scroll_bar *bar, uint64_t now_us);
 
 /*
  * Tells the bar the content moved (a wheel, a key, a finger, a jump): it
  * comes out thin, or stays out.
  */
 void
-kui_scroll_bar_moved(
-	struct kui_scroll_bar *bar,
+kl_scroll_bar_moved(
+	struct kl_scroll_bar *bar,
 	uint64_t now_us)
 {
 	/* The bar is active from now; the time zero is kept for "never". */
@@ -47,13 +47,13 @@ kui_scroll_bar_moved(
 
 /*
  * Tells the bar where the pointer is over the view: near the right edge
- * (within KUI_SCROLL_BAR_REACH of it) of content that does not fit, the bar
+ * (within KL_SCROLL_BAR_REACH of it) of content that does not fit, the bar
  * comes out thick.  Returns 1 when the bar's look changed (draw again).
  */
 int
-kui_scroll_bar_hover(
-	struct kui_scroll_bar *bar,
-	const struct kui_rect *viewport,
+kl_scroll_bar_hover(
+	struct kl_scroll_bar *bar,
+	const struct kl_rect *viewport,
 	double content,
 	double x,
 	double y,
@@ -69,19 +69,19 @@ kui_scroll_bar_hover(
 	    y >= (double)viewport->y &&
 	    y < (double)(viewport->y + viewport->height) &&
 	    x < (double)(viewport->x + viewport->width) &&
-	    x >= (double)(viewport->x + viewport->width - KUI_SCROLL_BAR_REACH))
+	    x >= (double)(viewport->x + viewport->width - KL_SCROLL_BAR_REACH))
 		near = 1;
 
 	/* Nothing changes while the pointer stays where it was. */
 	if (near == bar->near) {
 		if (near != 0)
-			kui_scroll_bar_moved(bar, now_us);
+			kl_scroll_bar_moved(bar, now_us);
 		return 0;
 	}
 
 	/* Coming near brings the bar out; going away starts its wait to fade. */
 	bar->near = near;
-	kui_scroll_bar_moved(bar, now_us);
+	kl_scroll_bar_moved(bar, now_us);
 
 	/* Succeeded: the bar grew or shrank. */
 	return 1;
@@ -92,8 +92,8 @@ kui_scroll_bar_hover(
  * changed.
  */
 int
-kui_scroll_bar_leave(
-	struct kui_scroll_bar *bar,
+kl_scroll_bar_leave(
+	struct kl_scroll_bar *bar,
 	uint64_t now_us)
 {
 	/* A pointer that was not near changes nothing. */
@@ -102,7 +102,7 @@ kui_scroll_bar_leave(
 
 	/* The bar shrinks and waits to fade. */
 	bar->near = 0;
-	kui_scroll_bar_moved(bar, now_us);
+	kl_scroll_bar_moved(bar, now_us);
 
 	/* Succeeded: the bar shrank. */
 	return 1;
@@ -114,13 +114,13 @@ kui_scroll_bar_leave(
  * Returns 1 when something shows (shape filled), 0 when nothing does.
  */
 int
-kui_scroll_bar_shape(
-	const struct kui_scroll_bar *bar,
-	const struct kui_rect *viewport,
+kl_scroll_bar_shape(
+	const struct kl_scroll_bar *bar,
+	const struct kl_rect *viewport,
 	double content,
 	double offset,
 	uint64_t now_us,
-	struct kui_scroll_bar_shape *shape)
+	struct kl_scroll_bar_shape *shape)
 {
 	double limit;
 	double track;
@@ -142,16 +142,16 @@ kui_scroll_bar_shape(
 		return 0;
 
 	/* Thick while the pointer is near or holds it, thin otherwise. */
-	width = (double)KUI_SCROLL_BAR_THIN;
+	width = (double)KL_SCROLL_BAR_THIN;
 	if (bar->near != 0 || bar->dragging != 0) {
-		width = (double)KUI_SCROLL_BAR_THICK;
+		width = (double)KL_SCROLL_BAR_THICK;
 		shape->thick = 1;
 	}
 
 	/* The track along the right edge, the gap kept from the edges. */
 	track = scroll_bar_track(viewport);
-	shape->track_x = (double)(viewport->x + viewport->width - KUI_SCROLL_BAR_GAP) - width;
-	shape->track_y = (double)(viewport->y + KUI_SCROLL_BAR_GAP);
+	shape->track_x = (double)(viewport->x + viewport->width - KL_SCROLL_BAR_GAP) - width;
+	shape->track_y = (double)(viewport->y + KL_SCROLL_BAR_GAP);
 	shape->track_width = width;
 	shape->track_height = track;
 
@@ -178,9 +178,9 @@ kui_scroll_bar_shape(
  * act on it), 0 when the press is not the bar's.
  */
 int
-kui_scroll_bar_press(
-	struct kui_scroll_bar *bar,
-	const struct kui_rect *viewport,
+kl_scroll_bar_press(
+	struct kl_scroll_bar *bar,
+	const struct kl_rect *viewport,
 	double content,
 	double offset,
 	double x,
@@ -188,7 +188,7 @@ kui_scroll_bar_press(
 	uint64_t now_us,
 	double *new_offset)
 {
-	struct kui_scroll_bar_shape shape;
+	struct kl_scroll_bar_shape shape;
 	double limit;
 	double page;
 	int shown;
@@ -197,12 +197,12 @@ kui_scroll_bar_press(
 	*new_offset = offset;
 
 	/* Only a bar that shows, near the pointer, takes a press. */
-	shown = kui_scroll_bar_shape(bar, viewport, content, offset, now_us, &shape);
+	shown = kl_scroll_bar_shape(bar, viewport, content, offset, now_us, &shape);
 	if (shown == 0 || bar->near == 0)
 		return 0;
 
 	/* Only on the band of the edge. */
-	if (x < (double)(viewport->x + viewport->width - KUI_SCROLL_BAR_REACH))
+	if (x < (double)(viewport->x + viewport->width - KL_SCROLL_BAR_REACH))
 		return 0;
 
 	/* On the thumb: a drag that holds the thumb where it was pressed. */
@@ -210,7 +210,7 @@ kui_scroll_bar_press(
 	if (y >= shape.thumb_y && y < shape.thumb_y + shape.thumb_height) {
 		bar->dragging = 1;
 		bar->grab = y - shape.thumb_y;
-		kui_scroll_bar_moved(bar, now_us);
+		kl_scroll_bar_moved(bar, now_us);
 		return 1;
 	}
 
@@ -227,7 +227,7 @@ kui_scroll_bar_press(
 		*new_offset = 0.0;
 	if (*new_offset > limit)
 		*new_offset = limit;
-	kui_scroll_bar_moved(bar, now_us);
+	kl_scroll_bar_moved(bar, now_us);
 
 	/* Succeeded: the press paged the content. */
 	return 1;
@@ -239,9 +239,9 @@ kui_scroll_bar_press(
  * no drag is on.
  */
 int
-kui_scroll_bar_drag(
-	struct kui_scroll_bar *bar,
-	const struct kui_rect *viewport,
+kl_scroll_bar_drag(
+	struct kl_scroll_bar *bar,
+	const struct kl_rect *viewport,
 	double content,
 	double y,
 	uint64_t now_us,
@@ -265,14 +265,14 @@ kui_scroll_bar_drag(
 	/* The thumb's top under the pointer, within the track, gives the offset. */
 	track = scroll_bar_track(viewport);
 	thumb = scroll_bar_thumb(viewport, content);
-	top = y - bar->grab - (double)(viewport->y + KUI_SCROLL_BAR_GAP);
+	top = y - bar->grab - (double)(viewport->y + KL_SCROLL_BAR_GAP);
 	if (top < 0.0)
 		top = 0.0;
 	if (top > track - thumb)
 		top = track - thumb;
 	if (track - thumb > 0.0)
 		*new_offset = top / (track - thumb) * limit;
-	kui_scroll_bar_moved(bar, now_us);
+	kl_scroll_bar_moved(bar, now_us);
 
 	/* Succeeded: the content follows the thumb. */
 	return 1;
@@ -282,8 +282,8 @@ kui_scroll_bar_drag(
  * The button was let go.  Returns 1 when that ended a drag of the thumb.
  */
 int
-kui_scroll_bar_release(
-	struct kui_scroll_bar *bar,
+kl_scroll_bar_release(
+	struct kl_scroll_bar *bar,
 	uint64_t now_us)
 {
 	/* A release without a drag is not the bar's. */
@@ -292,7 +292,7 @@ kui_scroll_bar_release(
 
 	/* The drag ends; the bar waits to fade. */
 	bar->dragging = 0;
-	kui_scroll_bar_moved(bar, now_us);
+	kl_scroll_bar_moved(bar, now_us);
 
 	/* Succeeded: the drag ended. */
 	return 1;
@@ -303,8 +303,8 @@ kui_scroll_bar_release(
  * finished fading): the view should draw again soon.
  */
 int
-kui_scroll_bar_busy(
-	const struct kui_scroll_bar *bar,
+kl_scroll_bar_busy(
+	const struct kl_scroll_bar *bar,
 	uint64_t now_us)
 {
 	double alpha;
@@ -325,7 +325,7 @@ kui_scroll_bar_busy(
 /* Reports how far the content scrolls (0 when it fits). */
 static double
 scroll_bar_limit(
-	const struct kui_rect *viewport,
+	const struct kl_rect *viewport,
 	double content)
 {
 	/* Content that fits the view does not scroll. */
@@ -339,12 +339,12 @@ scroll_bar_limit(
 /* Reports the track's length: the view's height less the gaps at its ends. */
 static double
 scroll_bar_track(
-	const struct kui_rect *viewport)
+	const struct kl_rect *viewport)
 {
 	double track;
 
 	/* The gaps at both ends, never below a pixel. */
-	track = (double)viewport->height - 2.0 * (double)KUI_SCROLL_BAR_GAP;
+	track = (double)viewport->height - 2.0 * (double)KL_SCROLL_BAR_GAP;
 	if (track < 1.0)
 		track = 1.0;
 
@@ -352,10 +352,10 @@ scroll_bar_track(
 	return track;
 }
 
-/* Reports the thumb's length: the share of the content that shows, not shorter than KUI_SCROLL_BAR_MIN. */
+/* Reports the thumb's length: the share of the content that shows, not shorter than KL_SCROLL_BAR_MIN. */
 static double
 scroll_bar_thumb(
-	const struct kui_rect *viewport,
+	const struct kl_rect *viewport,
 	double content)
 {
 	double track;
@@ -368,8 +368,8 @@ scroll_bar_thumb(
 		thumb = track * (double)viewport->height / content;
 
 	/* Long enough to be held, and never longer than the track. */
-	if (thumb < (double)KUI_SCROLL_BAR_MIN)
-		thumb = (double)KUI_SCROLL_BAR_MIN;
+	if (thumb < (double)KL_SCROLL_BAR_MIN)
+		thumb = (double)KL_SCROLL_BAR_MIN;
 	if (thumb > track)
 		thumb = track;
 
@@ -377,10 +377,10 @@ scroll_bar_thumb(
 	return thumb;
 }
 
-/* Reports the strength of the bar's ink now: full while out, fading after KUI_SCROLL_BAR_SHOW_US, 0 when gone. */
+/* Reports the strength of the bar's ink now: full while out, fading after KL_SCROLL_BAR_SHOW_US, 0 when gone. */
 static double
 scroll_bar_alpha(
-	const struct kui_scroll_bar *bar,
+	const struct kl_scroll_bar *bar,
 	uint64_t now_us)
 {
 	uint64_t since;
@@ -395,14 +395,14 @@ scroll_bar_alpha(
 
 	/* Full for a while after it came out. */
 	since = now_us - bar->active_us;
-	if (since < (uint64_t)KUI_SCROLL_BAR_SHOW_US)
+	if (since < (uint64_t)KL_SCROLL_BAR_SHOW_US)
 		return 1.0;
 
 	/* Gone after the fade. */
-	since -= (uint64_t)KUI_SCROLL_BAR_SHOW_US;
-	if (since >= (uint64_t)KUI_SCROLL_BAR_FADE_US)
+	since -= (uint64_t)KL_SCROLL_BAR_SHOW_US;
+	if (since >= (uint64_t)KL_SCROLL_BAR_FADE_US)
 		return 0.0;
 
 	/* Reports the share of the fade left. */
-	return 1.0 - (double)since / (double)KUI_SCROLL_BAR_FADE_US;
+	return 1.0 - (double)since / (double)KL_SCROLL_BAR_FADE_US;
 }

@@ -12,6 +12,7 @@ mkdir -p "$out/include"
 # Only <keiland.h> is taken from include/libc: the rest of that directory is
 # zedBSD's C library, which must not stand in for the host's.
 ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ln -sf "$root/userland/desktop/keiland/keiland-ui.h" "$out/include/keiland-ui.h"
 
 cc=${CC:-clang}
 extra=${EXTRA_CFLAGS:-}

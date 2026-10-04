@@ -1555,4 +1555,7 @@ void kl_system_monitor_close(struct kl_system_monitor *monitor);
 }
 #endif
 
+/* The desktop's widgets and controls (WS090; part of libkeiland since WS131 p012). */
+#include <keiland-ui.h>
+
 #endif

@@ -42,14 +42,14 @@
 #define EDIT_SELECTING		16U
 
 static void edit_operation(void *data, uint32_t operation);
-static void edit_keys(struct kui_window *window, uint32_t key, unsigned modifiers);
+static void edit_keys(struct kl_window *window, uint32_t key, unsigned modifiers);
 
 /*
  * Makes the window's edit object (nothing with a compositor without it).
  */
 void
 keiui_edit_start(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	/* libkeiland's object; NULL when the compositor has no such protocol. */
 	window->edit = keiland_edit_create(window->display, window->toplevel, edit_operation, window);
@@ -61,7 +61,7 @@ keiui_edit_start(
  */
 void
 keiui_edit_update(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	unsigned state;
 	int paste;
@@ -74,10 +74,10 @@ keiui_edit_update(
 	if (window->edit_told) {
 		state = window->edit_state;
 	} else {
-		state = KUI_EDIT_HAS_SELECTION | KUI_EDIT_CAN_UNDO | KUI_EDIT_CAN_REDO;
-		paste = kui_window_can_paste(window);
+		state = KL_EDIT_HAS_SELECTION | KL_EDIT_CAN_UNDO | KL_EDIT_CAN_REDO;
+		paste = kl_window_can_paste(window);
 		if (paste)
-			state |= KUI_EDIT_CAN_PASTE;
+			state |= KL_EDIT_CAN_PASTE;
 	}
 
 	/* A selection being made. */
@@ -94,8 +94,8 @@ keiui_edit_update(
  */
 void
 keiui_edit_key(
-	struct kui_window *window,
-	struct kui_window_event *event)
+	struct kl_window *window,
+	struct kl_window_event *event)
 {
 	/* Only while a selection is being made. */
 	if (!window->selecting)
@@ -111,7 +111,7 @@ keiui_edit_key(
 	case EDIT_KEY_END:
 	case EDIT_KEY_DOWN:
 	case EDIT_KEY_PAGE_DOWN:
-		event->modifiers |= KUI_MOD_SHIFT;
+		event->modifiers |= KL_MOD_SHIFT;
 		break;
 	default:
 		break;
@@ -123,7 +123,7 @@ keiui_edit_key(
  */
 void
 keiui_edit_close(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	/* The object (none: nothing), and it is forgotten. */
 	keiland_edit_destroy(window->edit);
@@ -135,9 +135,9 @@ keiui_edit_close(
  * 1 when it carried the operation out itself (the default is skipped).
  */
 void
-kui_window_on_edit(
-	struct kui_window *window,
-	kui_edit_fn callback,
+kl_window_on_edit(
+	struct kl_window *window,
+	kl_window_edit_fn callback,
 	void *data)
 {
 	/* The callback (NULL: none) and its data. */
@@ -146,17 +146,17 @@ kui_window_on_edit(
 }
 
 /*
- * Tells the window's editing state (KUI_EDIT_HAS_SELECTION ...), sent
+ * Tells the window's editing state (KL_EDIT_HAS_SELECTION ...), sent
  * before the next wait; from now on the state is the application's.
  */
 void
-kui_window_edit_state(
-	struct kui_window *window,
+kl_window_edit_state(
+	struct kl_window *window,
 	unsigned state)
 {
 	/* The application's state. */
 	window->edit_told = 1;
-	window->edit_state = state & (KUI_EDIT_HAS_SELECTION | KUI_EDIT_CAN_PASTE | KUI_EDIT_CAN_UNDO | KUI_EDIT_CAN_REDO);
+	window->edit_state = state & (KL_EDIT_HAS_SELECTION | KL_EDIT_CAN_PASTE | KL_EDIT_CAN_UNDO | KL_EDIT_CAN_REDO);
 }
 
 /*
@@ -164,8 +164,8 @@ kui_window_edit_state(
  * select_end, a copy or a cut).
  */
 int
-kui_window_selecting(
-	const struct kui_window *window)
+kl_window_selecting(
+	const struct kl_window *window)
 {
 	/* Succeeded: the mode. */
 	return window->selecting;
@@ -180,7 +180,7 @@ edit_operation(
 	void *data,
 	uint32_t operation)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	int handled;
 
 	/* The application first, when it listens. */
@@ -193,30 +193,30 @@ edit_operation(
 
 	/* The keys each operation stands for; the selection's mode is the window's. */
 	switch (operation) {
-	case KUI_EDIT_COPY:
+	case KL_EDIT_COPY:
 		window->selecting = 0;
-		edit_keys(window, EDIT_KEY_C, KUI_MOD_CTRL);
+		edit_keys(window, EDIT_KEY_C, KL_MOD_CTRL);
 		break;
-	case KUI_EDIT_CUT:
+	case KL_EDIT_CUT:
 		window->selecting = 0;
-		edit_keys(window, EDIT_KEY_X, KUI_MOD_CTRL);
+		edit_keys(window, EDIT_KEY_X, KL_MOD_CTRL);
 		break;
-	case KUI_EDIT_PASTE:
-		edit_keys(window, EDIT_KEY_V, KUI_MOD_CTRL);
+	case KL_EDIT_PASTE:
+		edit_keys(window, EDIT_KEY_V, KL_MOD_CTRL);
 		break;
-	case KUI_EDIT_UNDO:
-		edit_keys(window, EDIT_KEY_Z, KUI_MOD_CTRL);
+	case KL_EDIT_UNDO:
+		edit_keys(window, EDIT_KEY_Z, KL_MOD_CTRL);
 		break;
-	case KUI_EDIT_REDO:
-		edit_keys(window, EDIT_KEY_Z, KUI_MOD_CTRL | KUI_MOD_SHIFT);
+	case KL_EDIT_REDO:
+		edit_keys(window, EDIT_KEY_Z, KL_MOD_CTRL | KL_MOD_SHIFT);
 		break;
-	case KUI_EDIT_SELECT_ALL:
-		edit_keys(window, EDIT_KEY_A, KUI_MOD_CTRL);
+	case KL_EDIT_SELECT_ALL:
+		edit_keys(window, EDIT_KEY_A, KL_MOD_CTRL);
 		break;
-	case KUI_EDIT_SELECT_BEGIN:
+	case KL_EDIT_SELECT_BEGIN:
 		window->selecting = 1;
 		break;
-	case KUI_EDIT_SELECT_END:
+	case KL_EDIT_SELECT_END:
 		window->selecting = 0;
 		break;
 	default:
@@ -227,16 +227,16 @@ edit_operation(
 /* Queues a key's press and release with modifiers, as the window's own key inputs. */
 static void
 edit_keys(
-	struct kui_window *window,
+	struct kl_window *window,
 	uint32_t key,
 	unsigned modifiers)
 {
-	struct kui_window_event *event;
+	struct kl_window_event *event;
 	int pressed;
 
 	/* The press, then the release. */
 	for (pressed = 1; pressed >= 0; pressed--) {
-		event = keiui_window_push(window, KUI_WINDOW_KEY);
+		event = keiui_window_push(window, KL_WINDOW_KEY);
 		if (event == NULL)
 			return;
 		event->code = key;

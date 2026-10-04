@@ -32,7 +32,7 @@
 #define WIDGETS_DISABLED_FADE	0.6f
 
 /* The faded ground a disabled control mixes into. */
-#define WIDGETS_FADED		KUI_RGB(0xeef1f5)
+#define WIDGETS_FADED		KL_RGB(0xeef1f5)
 
 /* The switch's knob: its radius and its distance from the track's ends. */
 #define WIDGETS_KNOB_RADIUS	9.5f
@@ -49,7 +49,7 @@
 #define WIDGETS_RING_GAP	3.0f
 #define WIDGETS_RING		2.0f
 
-static void widgets_ring(const struct kui_style *style, const struct kui_rect *rect, float radius);
+static void widgets_ring(const struct kl_style *style, const struct kl_rect *rect, float radius);
 static int widgets_slider_key(uint32_t code, unsigned modifiers);
 static double widgets_snap(double value, double minimum, double maximum, double step);
 
@@ -57,29 +57,29 @@ static double widgets_snap(double value, double minimum, double maximum, double 
  * Reports how wide a button with a label is.
  */
 int
-kui_button_width(
-	const struct kui_style *style,
+kl_button_width(
+	const struct kl_style *style,
 	const char *label)
 {
 	int width;
 
 	/* The label, bold, and a margin each side. */
-	width = kui_text_width(style->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
+	width = kl_text_width(style->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
 
 	/* Reports the button's width. */
 	return width + 2 * WIDGETS_BUTTON_SIDE;
 }
 
 /*
- * Draws a button (KUI_BUTTON_* flags) and reports 1 when it was pressed
+ * Draws a button (KL_BUTTON_* flags) and reports 1 when it was pressed
  * since the last frame.
  */
 int
-kui_button(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_button(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
-	const struct kui_rect *rect,
+	const struct kl_rect *rect,
 	const char *label,
 	unsigned flags)
 {
@@ -96,18 +96,18 @@ kui_button(
  */
 int
 keiui_button(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
 	uint32_t index,
-	const struct kui_rect *rect,
+	const struct kl_rect *rect,
 	const char *label,
 	unsigned flags)
 {
-	const struct kui_theme *theme;
-	kui_color ground;
-	kui_color edge;
-	kui_color ink;
+	const struct kl_theme *theme;
+	kl_color ground;
+	kl_color edge;
+	kl_color ink;
 	unsigned state;
 	int enabled;
 	int width;
@@ -117,7 +117,7 @@ keiui_button(
 	/* The record: a working button takes the keyboard. */
 	theme = style->theme;
 	enabled = 1;
-	if ((flags & KUI_BUTTON_DISABLED) != 0U)
+	if ((flags & KL_BUTTON_DISABLED) != 0U)
 		enabled = 0;
 	state = 0;
 	if (enabled)
@@ -128,36 +128,36 @@ keiui_button(
 	ground = theme->control;
 	edge = theme->control_edge;
 	ink = theme->text;
-	if ((flags & KUI_BUTTON_PRIMARY) != 0U) {
+	if ((flags & KL_BUTTON_PRIMARY) != 0U) {
 		ground = theme->accent;
 		edge = theme->accent;
-		ink = KUI_RGB(0xffffff);
+		ink = KL_RGB(0xffffff);
 	}
 
 	/* A dangerous one is red. */
-	if ((flags & KUI_BUTTON_DANGER) != 0U) {
+	if ((flags & KL_BUTTON_DANGER) != 0U) {
 		ground = theme->danger;
 		edge = theme->danger;
-		ink = KUI_RGB(0xffffff);
+		ink = KL_RGB(0xffffff);
 	}
 
 	/* Darker under the pointer or while held, faded when it does nothing. */
-	if ((state & (KUI_HIT_HOT | KUI_HIT_ACTIVE)) != 0U)
-		ground = kui_color_mix(ground, theme->text, WIDGETS_HOVER_SHADE);
+	if ((state & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
+		ground = kl_color_mix(ground, theme->text, WIDGETS_HOVER_SHADE);
 	if (!enabled) {
-		ground = kui_color_mix(ground, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
-		edge = kui_color_mix(edge, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
+		ground = kl_color_mix(ground, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
+		edge = kl_color_mix(edge, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
 		ink = theme->text_faint;
-		if ((flags & (KUI_BUTTON_PRIMARY | KUI_BUTTON_DANGER)) != 0U)
-			ink = KUI_RGBA(0xffffff, 220);
+		if ((flags & (KL_BUTTON_PRIMARY | KL_BUTTON_DANGER)) != 0U)
+			ink = KL_RGBA(0xffffff, 220);
 	}
 
 	/* The button, its label in the middle, and the focus's ring. */
-	kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, ground);
-	kui_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, 1.0f, edge);
-	width = kui_text_width(style->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
-	(void)kui_text_draw(style->text, style->canvas, rect->x + (rect->width - width) / 2, kui_text_center(WIDGETS_TEXT_BUTTON, rect->y, rect->height), label, strlen(label), WIDGETS_TEXT_BUTTON, 1, ink);
-	if ((state & KUI_HIT_FOCUSED) != 0U && ring)
+	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, ground);
+	kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, 1.0f, edge);
+	width = kl_text_width(style->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
+	(void)kl_text_draw(style->text, style->canvas, rect->x + (rect->width - width) / 2, kl_text_center(WIDGETS_TEXT_BUTTON, rect->y, rect->height), label, strlen(label), WIDGETS_TEXT_BUTTON, 1, ink);
+	if ((state & KL_HIT_FOCUSED) != 0U && ring)
 		widgets_ring(style, rect, theme->control_radius);
 
 	/* A disabled button is never pressed. */
@@ -166,9 +166,9 @@ keiui_button(
 
 	/* Pressed: clicked, tapped, or Enter or Space while it has the focus. */
 	pressed = 0;
-	if ((state & KUI_HIT_CLICKED) != 0U)
+	if ((state & KL_HIT_CLICKED) != 0U)
 		pressed = 1;
-	if ((state & KUI_HIT_FOCUSED) != 0U)
+	if ((state & KL_HIT_FOCUSED) != 0U)
 		pressed |= keiui_ui_take_activate(ui, id, index);
 
 	/* Reports whether it was pressed. */
@@ -178,23 +178,23 @@ keiui_button(
 /*
  * Draws a switch with its top left at (x, y) (the theme's size) and flips
  * *on when it is pressed; reports 1 when it changed.  flags:
- * KUI_BUTTON_DISABLED.
+ * KL_BUTTON_DISABLED.
  */
 int
-kui_switch(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_switch(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
 	int x,
 	int y,
 	int *on,
 	unsigned flags)
 {
-	const struct kui_theme *theme;
-	struct kui_rect rect;
-	struct kui_rect reach;
-	kui_color track;
-	kui_color knob;
+	const struct kl_theme *theme;
+	struct kl_rect rect;
+	struct kl_rect reach;
+	kl_color track;
+	kl_color knob;
 	unsigned state;
 	float knob_x;
 	int ring;
@@ -212,7 +212,7 @@ kui_switch(
 	reach.width = rect.width + 8;
 	reach.height = rect.height + 8;
 	enabled = 1;
-	if ((flags & KUI_BUTTON_DISABLED) != 0U)
+	if ((flags & KL_BUTTON_DISABLED) != 0U)
 		enabled = 0;
 	state = 0;
 	if (enabled)
@@ -221,9 +221,9 @@ kui_switch(
 
 	/* Flipped: clicked, tapped, or Enter or Space while it has the focus. */
 	changed = 0;
-	if ((state & KUI_HIT_CLICKED) != 0U)
+	if ((state & KL_HIT_CLICKED) != 0U)
 		changed = 1;
-	if ((state & KUI_HIT_FOCUSED) != 0U)
+	if ((state & KL_HIT_FOCUSED) != 0U)
 		changed |= keiui_ui_take_activate(ui, id, 0U);
 
 	/* The switch flips. */
@@ -239,16 +239,16 @@ kui_switch(
 	}
 
 	/* The knob is white; a switch that does nothing is faded. */
-	knob = KUI_RGB(0xffffff);
+	knob = KL_RGB(0xffffff);
 	if (!enabled) {
-		track = kui_color_mix(track, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
-		knob = KUI_RGB(0xf6f7f9);
+		track = kl_color_mix(track, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
+		knob = KL_RGB(0xf6f7f9);
 	}
 
 	/* The track, the knob and the focus's ring. */
-	kui_canvas_round(style->canvas, (float)x, (float)y, (float)rect.width, (float)rect.height, (float)rect.height * 0.5f, track);
-	kui_canvas_circle(style->canvas, knob_x, (float)y + (float)rect.height * 0.5f, WIDGETS_KNOB_RADIUS, knob);
-	if ((state & KUI_HIT_FOCUSED) != 0U && ring)
+	kl_canvas_round(style->canvas, (float)x, (float)y, (float)rect.width, (float)rect.height, (float)rect.height * 0.5f, track);
+	kl_canvas_circle(style->canvas, knob_x, (float)y + (float)rect.height * 0.5f, WIDGETS_KNOB_RADIUS, knob);
+	if ((state & KL_HIT_FOCUSED) != 0U && ring)
 		widgets_ring(style, &rect, (float)rect.height * 0.5f);
 
 	/* Reports whether it changed. */
@@ -261,17 +261,17 @@ kui_switch(
  * reports 1 when it changed.
  */
 int
-kui_slider(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_slider(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
-	const struct kui_rect *rect,
+	const struct kl_rect *rect,
 	double minimum,
 	double maximum,
 	double step,
 	double *value)
 {
-	const struct kui_theme *theme;
+	const struct kl_theme *theme;
 	uint32_t code;
 	unsigned modifiers;
 	unsigned state;
@@ -296,8 +296,8 @@ kui_slider(
 	right = (float)(rect->x + rect->width) - WIDGETS_SLIDER_KNOB;
 
 	/* Held or clicked: the value where the pointer or the finger is along the track. */
-	if ((state & (KUI_HIT_ACTIVE | KUI_HIT_CLICKED)) != 0U && right > left) {
-		kui_ui_pointer(ui, &pointer_x, &pointer_y);
+	if ((state & (KL_HIT_ACTIVE | KL_HIT_CLICKED)) != 0U && right > left) {
+		kl_ui_pointer(ui, &pointer_x, &pointer_y);
 		share = ((double)pointer_x - (double)left) / (double)(right - left);
 		*value = widgets_snap(minimum + share * (maximum - minimum), minimum, maximum, step);
 	}
@@ -311,24 +311,24 @@ kui_slider(
 		if (!taken)
 			break;
 		switch (code) {
-		case KUI_KEY_LEFT:
-		case KUI_KEY_DOWN:
+		case KL_KEY_LEFT:
+		case KL_KEY_DOWN:
 			*value -= key_step;
 			break;
-		case KUI_KEY_RIGHT:
-		case KUI_KEY_UP:
+		case KL_KEY_RIGHT:
+		case KL_KEY_UP:
 			*value += key_step;
 			break;
-		case KUI_KEY_PAGEDOWN:
+		case KL_KEY_PAGEDOWN:
 			*value -= key_step * WIDGETS_SLIDER_PAGE;
 			break;
-		case KUI_KEY_PAGEUP:
+		case KL_KEY_PAGEUP:
 			*value += key_step * WIDGETS_SLIDER_PAGE;
 			break;
-		case KUI_KEY_HOME:
+		case KL_KEY_HOME:
 			*value = minimum;
 			break;
-		case KUI_KEY_END:
+		case KL_KEY_END:
 			*value = maximum;
 			break;
 		default:
@@ -347,12 +347,12 @@ kui_slider(
 	middle = (float)rect->y + (float)rect->height * 0.5f;
 
 	/* The track, the part up to the knob in the accent, the knob with a soft edge, and the focus's ring. */
-	kui_canvas_round(style->canvas, left, middle - WIDGETS_TRACK * 0.5f, right - left, WIDGETS_TRACK, WIDGETS_TRACK * 0.5f, theme->track);
-	kui_canvas_round(style->canvas, left, middle - WIDGETS_TRACK * 0.5f, knob - left, WIDGETS_TRACK, WIDGETS_TRACK * 0.5f, theme->accent);
-	kui_canvas_circle(style->canvas, knob, middle + 1.0f, WIDGETS_SLIDER_KNOB + 1.0f, KUI_RGBA(0x1f3a66, 40));
-	kui_canvas_circle(style->canvas, knob, middle, WIDGETS_SLIDER_KNOB, KUI_RGB(0xffffff));
-	kui_canvas_ring(style->canvas, knob, middle, WIDGETS_SLIDER_KNOB, 1.0f, 1.0f, theme->control_edge);
-	if ((state & KUI_HIT_FOCUSED) != 0U && ring)
+	kl_canvas_round(style->canvas, left, middle - WIDGETS_TRACK * 0.5f, right - left, WIDGETS_TRACK, WIDGETS_TRACK * 0.5f, theme->track);
+	kl_canvas_round(style->canvas, left, middle - WIDGETS_TRACK * 0.5f, knob - left, WIDGETS_TRACK, WIDGETS_TRACK * 0.5f, theme->accent);
+	kl_canvas_circle(style->canvas, knob, middle + 1.0f, WIDGETS_SLIDER_KNOB + 1.0f, KL_RGBA(0x1f3a66, 40));
+	kl_canvas_circle(style->canvas, knob, middle, WIDGETS_SLIDER_KNOB, KL_RGB(0xffffff));
+	kl_canvas_ring(style->canvas, knob, middle, WIDGETS_SLIDER_KNOB, 1.0f, 1.0f, theme->control_edge);
+	if ((state & KL_HIT_FOCUSED) != 0U && ring)
 		widgets_ring(style, rect, (float)rect->height * 0.5f);
 
 	/* Reports whether the value changed. */
@@ -364,17 +364,17 @@ kui_slider(
 /* Draws the keyboard focus's ring around a control. */
 static void
 widgets_ring(
-	const struct kui_style *style,
-	const struct kui_rect *rect,
+	const struct kl_style *style,
+	const struct kl_rect *rect,
 	float radius)
 {
 	/* A ring of the accent a little outside the control. */
-	kui_canvas_round_border(style->canvas, (float)rect->x - WIDGETS_RING_GAP, (float)rect->y - WIDGETS_RING_GAP,
+	kl_canvas_round_border(style->canvas, (float)rect->x - WIDGETS_RING_GAP, (float)rect->y - WIDGETS_RING_GAP,
 				(float)rect->width + 2.0f * WIDGETS_RING_GAP,
 				(float)rect->height + 2.0f * WIDGETS_RING_GAP,
 				radius + WIDGETS_RING_GAP,
 				WIDGETS_RING,
-				KUI_RGBA(0x2f7cf6, 150));
+				KL_RGBA(0x2f7cf6, 150));
 }
 
 /* Keeps a value within its ends and on its steps (none when step is 0). */
@@ -410,19 +410,19 @@ widgets_slider_key(
 	unsigned modifiers)
 {
 	/* A command is the application's. */
-	if ((modifiers & (KUI_MOD_CTRL | KUI_MOD_ALT)) != 0U)
+	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT)) != 0U)
 		return 0;
 
 	/* The keys that move the value. */
 	switch (code) {
-	case KUI_KEY_LEFT:
-	case KUI_KEY_RIGHT:
-	case KUI_KEY_UP:
-	case KUI_KEY_DOWN:
-	case KUI_KEY_PAGEUP:
-	case KUI_KEY_PAGEDOWN:
-	case KUI_KEY_HOME:
-	case KUI_KEY_END:
+	case KL_KEY_LEFT:
+	case KL_KEY_RIGHT:
+	case KL_KEY_UP:
+	case KL_KEY_DOWN:
+	case KL_KEY_PAGEUP:
+	case KL_KEY_PAGEDOWN:
+	case KL_KEY_HOME:
+	case KL_KEY_END:
 		return 1;
 	default:
 		break;

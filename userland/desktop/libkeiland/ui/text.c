@@ -18,11 +18,11 @@
  * set one character after another.
  *
  * A character neither font has is looked for in the colour emoji font
- * (KUI_TEXT_EMOJI, opened the first time one is drawn, ws102-p019) and
+ * (KL_TEXT_EMOJI, opened the first time one is drawn, ws102-p019) and
  * drawn in its colours (userland/desktop/picture/color-glyph.c).
  */
 
-#include <keiui.h>
+#include <keiland.h>
 
 #include "../../picture/color-glyph.h"
 #include "userland/desktop/paths.h"
@@ -47,13 +47,13 @@
 /* The code point drawn for bytes that are not UTF-8. */
 #define TEXT_REPLACEMENT	0xfffdU
 
-static int text_face_open(struct kui_text_face *face, const char *path);
-static const struct kui_glyph *text_glyph(struct kui_text *text, uint32_t codepoint, unsigned pixels, int bold);
-static struct kui_glyph *text_slot(struct kui_text *text, uint32_t key);
-static int text_render(struct kui_text *text, int face_index, unsigned glyph_index, unsigned pixels, int bold, struct kui_glyph *glyph);
-static int text_set_size(struct kui_text_face *face, unsigned pixels);
-static void text_clear(struct kui_text *text);
-static int text_render_color(struct kui_text *text, unsigned glyph_index, unsigned pixels, struct kui_glyph *glyph);
+static int text_face_open(struct kl_text_face *face, const char *path);
+static const struct kl_glyph *text_glyph(struct kl_text *text, uint32_t codepoint, unsigned pixels, int bold);
+static struct kl_glyph *text_slot(struct kl_text *text, uint32_t key);
+static int text_render(struct kl_text *text, int face_index, unsigned glyph_index, unsigned pixels, int bold, struct kl_glyph *glyph);
+static int text_set_size(struct kl_text_face *face, unsigned pixels);
+static void text_clear(struct kl_text *text);
+static int text_render_color(struct kl_text *text, unsigned glyph_index, unsigned pixels, struct kl_glyph *glyph);
 
 /*
  * Opens the main font and, when a path is given and readable, the fallback.
@@ -61,8 +61,8 @@ static int text_render_color(struct kui_text *text, unsigned glyph_index, unsign
  * Returns 0, or an errno value when the main font cannot be used.
  */
 int
-kui_text_open(
-	struct kui_text *text,
+kl_text_open(
+	struct kl_text *text,
 	const char *primary,
 	const char *fallback)
 {
@@ -80,7 +80,7 @@ kui_text_open(
 	/* The main font, which every string needs. */
 	error = text_face_open(&text->faces[0], primary);
 	if (error != 0) {
-		kui_text_close(text);
+		kl_text_close(text);
 		return error;
 	}
 
@@ -102,8 +102,8 @@ kui_text_open(
  * Closes the fonts and frees the glyph cache.
  */
 void
-kui_text_close(
-	struct kui_text *text)
+kl_text_close(
+	struct kl_text *text)
 {
 	int index;
 
@@ -114,7 +114,7 @@ kui_text_close(
 	free(text->scratch);
 
 	/* The faces, then the bytes they read. */
-	for (index = 0; index < KUI_TEXT_FACES; index++) {
+	for (index = 0; index < KL_TEXT_FACES; index++) {
 		if (text->faces[index].face != NULL)
 			truetype_close(text->faces[index].face);
 		free(text->faces[index].data);
@@ -128,10 +128,10 @@ kui_text_close(
  * Reports the ascent, descent and line height of the main font at a size.
  */
 void
-kui_text_metrics(
-	struct kui_text *text,
+kl_text_metrics(
+	struct kl_text *text,
 	unsigned pixels,
-	struct kui_text_line *line)
+	struct kl_text_line *line)
 {
 	struct truetype_metrics metrics;
 	int error;
@@ -163,7 +163,7 @@ kui_text_metrics(
  * font's ascent, which leaves room for accents).
  */
 int
-kui_text_center(
+kl_text_center(
 	unsigned pixels,
 	int top,
 	int height)
@@ -181,14 +181,14 @@ kui_text_center(
  * Reports how wide a string (of a byte length) is at a size, in pixels.
  */
 int
-kui_text_width(
-	struct kui_text *text,
+kl_text_width(
+	struct kl_text *text,
 	const char *string,
 	size_t length,
 	unsigned pixels,
 	int bold)
 {
-	const struct kui_glyph *glyph;
+	const struct kl_glyph *glyph;
 	uint32_t codepoint;
 	size_t index;
 	int width;
@@ -197,7 +197,7 @@ kui_text_width(
 	width = 0;
 	index = 0;
 	while (index < length) {
-		codepoint = kui_utf8_next(string, length, &index);
+		codepoint = kl_utf8_next(string, length, &index);
 		glyph = text_glyph(text, codepoint, pixels, bold);
 		if (glyph != NULL)
 			width += glyph->advance;
@@ -212,19 +212,19 @@ kui_text_width(
  * pen moved.
  */
 int
-kui_text_draw(
-	struct kui_text *text,
-	struct kui_canvas *canvas,
+kl_text_draw(
+	struct kl_text *text,
+	struct kl_canvas *canvas,
 	int x,
 	int baseline,
 	const char *string,
 	size_t length,
 	unsigned pixels,
 	int bold,
-	kui_color color)
+	kl_color color)
 {
-	const struct kui_glyph *glyph;
-	struct kui_image image;
+	const struct kl_glyph *glyph;
+	struct kl_image image;
 	uint32_t codepoint;
 	size_t index;
 	int pen;
@@ -233,20 +233,20 @@ kui_text_draw(
 	pen = x;
 	index = 0;
 	while (index < length) {
-		codepoint = kui_utf8_next(string, length, &index);
+		codepoint = kl_utf8_next(string, length, &index);
 		glyph = text_glyph(text, codepoint, pixels, bold);
 		if (glyph == NULL)
 			continue;
 
 		/* The glyph's coverage, in the color; a colour glyph in its own colours, as opaque as the color. */
 		if (glyph->bitmap != NULL)
-			kui_canvas_mask(canvas, pen + glyph->left, baseline - glyph->top, glyph->bitmap, glyph->width, glyph->height, (size_t)glyph->width, color);
+			kl_canvas_mask(canvas, pen + glyph->left, baseline - glyph->top, glyph->bitmap, glyph->width, glyph->height, (size_t)glyph->width, color);
 		if (glyph->pixels != NULL) {
 			image.pixels = glyph->pixels;
 			image.width = glyph->width;
 			image.height = glyph->height;
 			image.stride = (size_t)glyph->width;
-			kui_canvas_image(canvas, &image, (float)(pen + glyph->left), (float)(baseline - glyph->top), (float)glyph->width, (float)glyph->height, 0.0f,
+			kl_canvas_image(canvas, &image, (float)(pen + glyph->left), (float)(baseline - glyph->top), (float)glyph->width, (float)glyph->height, 0.0f,
 					 (float)(color >> 24) / 255.0f);
 		}
 
@@ -263,26 +263,26 @@ kui_text_draw(
  * wide what was drawn is.
  */
 int
-kui_text_draw_fit(
-	struct kui_text *text,
-	struct kui_canvas *canvas,
+kl_text_draw_fit(
+	struct kl_text *text,
+	struct kl_canvas *canvas,
 	int x,
 	int baseline,
 	const char *string,
 	unsigned pixels,
 	int bold,
 	int width,
-	kui_color color)
+	kl_color color)
 {
 	char fitted[1024];
 	size_t length;
 	int drawn;
 
 	/* The string as much of it as fits. */
-	length = kui_text_fit(text, string, pixels, bold, width, fitted, sizeof(fitted));
+	length = kl_text_fit(text, string, pixels, bold, width, fitted, sizeof(fitted));
 
 	/* Draws it. */
-	drawn = kui_text_draw(text, canvas, x, baseline, fitted, length, pixels, bold, color);
+	drawn = kl_text_draw(text, canvas, x, baseline, fitted, length, pixels, bold, color);
 
 	/* Reports its width. */
 	return drawn;
@@ -293,8 +293,8 @@ kui_text_draw_fit(
  * ellipsis when it was cut, and returns the copy's byte length.
  */
 size_t
-kui_text_fit(
-	struct kui_text *text,
+kl_text_fit(
+	struct kl_text *text,
 	const char *string,
 	unsigned pixels,
 	int bold,
@@ -302,7 +302,7 @@ kui_text_fit(
 	char *out,
 	size_t size)
 {
-	const struct kui_glyph *glyph;
+	const struct kl_glyph *glyph;
 	uint32_t codepoint;
 	size_t length;
 	size_t index;
@@ -313,7 +313,7 @@ kui_text_fit(
 
 	/* The string's length and whole width. */
 	length = strlen(string);
-	total = kui_text_width(text, string, length, pixels, bold);
+	total = kl_text_width(text, string, length, pixels, bold);
 
 	/* A string that fits (and fits the buffer) is copied as it is. */
 	if (total <= width && length < size) {
@@ -323,12 +323,12 @@ kui_text_fit(
 	}
 
 	/* The characters that fit together with the ellipsis. */
-	ellipsis = kui_text_width(text, TEXT_ELLIPSIS, sizeof(TEXT_ELLIPSIS) - 1U, pixels, bold);
+	ellipsis = kl_text_width(text, TEXT_ELLIPSIS, sizeof(TEXT_ELLIPSIS) - 1U, pixels, bold);
 	used = 0;
 	kept = 0;
 	index = 0;
 	while (index < length) {
-		codepoint = kui_utf8_next(string, length, &index);
+		codepoint = kl_utf8_next(string, length, &index);
 		glyph = text_glyph(text, codepoint, pixels, bold);
 		if (glyph != NULL)
 			used += glyph->advance;
@@ -358,14 +358,14 @@ kui_text_fit(
  * first line (the whole string when it fits).
  */
 size_t
-kui_text_break(
-	struct kui_text *text,
+kl_text_break(
+	struct kl_text *text,
 	const char *string,
 	unsigned pixels,
 	int bold,
 	int width)
 {
-	const struct kui_glyph *glyph;
+	const struct kl_glyph *glyph;
 	uint32_t codepoint;
 	size_t length;
 	size_t index;
@@ -382,7 +382,7 @@ kui_text_break(
 	spaced = 0;
 	index = 0;
 	while (index < length) {
-		codepoint = kui_utf8_next(string, length, &index);
+		codepoint = kl_utf8_next(string, length, &index);
 		glyph = text_glyph(text, codepoint, pixels, bold);
 		if (glyph != NULL)
 			used += glyph->advance;
@@ -415,7 +415,7 @@ kui_text_break(
 	/* Otherwise after the last character that fits (at least one). */
 	if (fits == 0) {
 		index = 0;
-		(void)kui_utf8_next(string, length, &index);
+		(void)kl_utf8_next(string, length, &index);
 		return index;
 	}
 
@@ -430,7 +430,7 @@ kui_text_break(
  * skipped alone, so a broken file name still draws.
  */
 uint32_t
-kui_utf8_next(
+kl_utf8_next(
 	const char *string,
 	size_t length,
 	size_t *index)
@@ -498,7 +498,7 @@ kui_utf8_next(
 /* Reads a font file into memory and opens its face. */
 static int
 text_face_open(
-	struct kui_text_face *face,
+	struct kl_text_face *face,
 	const char *path)
 {
 	struct stat status;
@@ -563,14 +563,14 @@ text_face_open(
 }
 
 /* Finds a character's glyph at a size in the cache, drawing it the first time; NULL when it cannot be drawn. */
-static const struct kui_glyph *
+static const struct kl_glyph *
 text_glyph(
-	struct kui_text *text,
+	struct kl_text *text,
 	uint32_t codepoint,
 	unsigned pixels,
 	int bold)
 {
-	struct kui_glyph *glyph;
+	struct kl_glyph *glyph;
 	unsigned glyph_index;
 	int face_index;
 	uint32_t weight;
@@ -632,9 +632,9 @@ text_glyph(
 }
 
 /* Finds the slot of a key: the one holding it, or the empty one where it would go. */
-static struct kui_glyph *
+static struct kl_glyph *
 text_slot(
-	struct kui_text *text,
+	struct kl_text *text,
 	uint32_t key)
 {
 	unsigned slot;
@@ -651,14 +651,14 @@ text_slot(
 /* Draws a glyph of a face at a size into a cache slot (widened by a pixel when bold). */
 static int
 text_render(
-	struct kui_text *text,
+	struct kl_text *text,
 	int face_index,
 	unsigned glyph_index,
 	unsigned pixels,
 	int bold,
-	struct kui_glyph *glyph)
+	struct kl_glyph *glyph)
 {
-	struct kui_text_face *face;
+	struct kl_text_face *face;
 	struct truetype_glyph metrics;
 	size_t needed;
 	uint8_t *grown;
@@ -748,7 +748,7 @@ text_render(
 /* Sets a face's size when it is not set already. */
 static int
 text_set_size(
-	struct kui_text_face *face,
+	struct kl_text_face *face,
 	unsigned pixels)
 {
 	int error;
@@ -770,7 +770,7 @@ text_set_size(
 /* Empties the glyph cache. */
 static void
 text_clear(
-	struct kui_text *text)
+	struct kl_text *text)
 {
 	unsigned slot;
 
@@ -788,10 +788,10 @@ text_clear(
 /* Draws a colour glyph of the emoji font at a size into a cache slot (bold draws it as it is). */
 static int
 text_render_color(
-	struct kui_text *text,
+	struct kl_text *text,
 	unsigned glyph_index,
 	unsigned pixels,
-	struct kui_glyph *glyph)
+	struct kl_glyph *glyph)
 {
 	struct keiland_color_image image;
 	int error;

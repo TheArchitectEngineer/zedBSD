@@ -16,6 +16,7 @@ src=userland/desktop/files
 mkdir -p "$out/include" "$out/obj"
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ln -sf "$(pwd)/userland/desktop/keiland/keiland-ui.h" "$out/include/keiland-ui.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiui.h" "$out/include/keiui.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"

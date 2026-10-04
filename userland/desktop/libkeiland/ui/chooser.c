@@ -10,7 +10,7 @@
  * the Open and Save As window every application shares.
  *
  * The chooser is a toplevel window of its own on the application's
- * connection (a kui_window made by keiui_window_open_shared), drawn with
+ * connection (a kl_window made by keiui_window_open_shared), drawn with
  * the widgets on the CPU into wl_shm buffers, opaque on Files' pale
  * ground (no glass shows through it, ws090-p014).  Its objects live on the
  * application's default queue, so the chooser's input, configures and
@@ -41,18 +41,18 @@
 /*
  * One file chooser: the model, the text, the window and its input, the
  * frame being drawn, and who is told the answer.  It lives from
- * kui_file_chooser_open to kui_file_chooser_destroy; the window goes when
+ * kl_file_chooser_open to kl_file_chooser_destroy; the window goes when
  * the answer is known.
  */
-struct kui_file_chooser {
+struct kl_file_chooser {
 	struct keiui_chooser model;
-	struct kui_text text;
+	struct kl_text text;
 	int text_open;
 
 	/* The application's connection, the window (NULL once gone) and the input of its frames. */
 	struct wl_display *display;
-	struct kui_window *window;
-	struct kui_ui *ui;
+	struct kl_window *window;
+	struct kl_ui *ui;
 	/* Its titlebar in the sheet mode, hung under the parent's title bar (ws090-p014; NULL for a window of its own). */
 	struct keiland_titlebar *sheet;
 
@@ -60,25 +60,25 @@ struct kui_file_chooser {
 	uint32_t *pixels;
 	uint32_t width;
 	uint32_t height;
-	struct kui_canvas canvas;
+	struct kl_canvas canvas;
 	int canvas_made;
-	struct kui_style style;
+	struct kl_style style;
 	struct wl_callback *frame;
 	int dirty;
 
 	/* The answer's delivery, and who hears it. */
 	struct wl_callback *telling;
-	const struct kui_file_chooser_listener *listener;
+	const struct kl_file_chooser_listener *listener;
 	void *data;
 };
 
 static void chooser_woken(void *data);
-static void chooser_sheet(struct kui_file_chooser *chooser);
-static void chooser_event(struct kui_file_chooser *chooser, const struct kui_window_event *event);
-static void chooser_draw(struct kui_file_chooser *chooser);
-static int chooser_canvas(struct kui_file_chooser *chooser);
-static void chooser_answered(struct kui_file_chooser *chooser);
-static void chooser_window_gone(struct kui_file_chooser *chooser);
+static void chooser_sheet(struct kl_file_chooser *chooser);
+static void chooser_event(struct kl_file_chooser *chooser, const struct kl_window_event *event);
+static void chooser_draw(struct kl_file_chooser *chooser);
+static int chooser_canvas(struct kl_file_chooser *chooser);
+static void chooser_answered(struct kl_file_chooser *chooser);
+static void chooser_window_gone(struct kl_file_chooser *chooser);
 static void chooser_frame_done(void *data, struct wl_callback *callback, uint32_t time);
 static void chooser_tell_done(void *data, struct wl_callback *callback, uint32_t time);
 
@@ -95,16 +95,16 @@ static const struct wl_callback_listener chooser_tell_listener = {
 /*
  * Opens a file chooser over an application's window.
  */
-struct kui_file_chooser *
-kui_file_chooser_open(
+struct kl_file_chooser *
+kl_file_chooser_open(
 	struct wl_display *display,
 	struct xdg_toplevel *parent,
-	const struct kui_file_chooser_options *options,
-	const struct kui_file_chooser_listener *listener,
+	const struct kl_file_chooser_options *options,
+	const struct kl_file_chooser_listener *listener,
 	void *data)
 {
-	struct kui_window_options window_options;
-	struct kui_file_chooser *chooser;
+	struct kl_window_options window_options;
+	struct kl_file_chooser *chooser;
 	const char *font;
 	const char *fallback;
 	int error;
@@ -130,7 +130,7 @@ kui_file_chooser_open(
 	/* The model, which checks the options and lists the first folder. */
 	error = keiui_chooser_init(&chooser->model, options);
 	if (error != 0) {
-		kui_file_chooser_destroy(chooser);
+		kl_file_chooser_destroy(chooser);
 		errno = error;
 		return NULL;
 	}
@@ -142,9 +142,9 @@ kui_file_chooser_open(
 	fallback = CHOOSER_FALLBACK_FONT;
 	if (options->fallback_font != NULL)
 		fallback = options->fallback_font;
-	error = kui_text_open(&chooser->text, font, fallback);
+	error = kl_text_open(&chooser->text, font, fallback);
 	if (error != 0) {
-		kui_file_chooser_destroy(chooser);
+		kl_file_chooser_destroy(chooser);
 		errno = error;
 		return NULL;
 	}
@@ -153,9 +153,9 @@ kui_file_chooser_open(
 	chooser->text_open = 1;
 
 	/* The input of the frames. */
-	chooser->ui = kui_ui_create();
+	chooser->ui = kl_ui_create();
 	if (chooser->ui == NULL) {
-		kui_file_chooser_destroy(chooser);
+		kl_file_chooser_destroy(chooser);
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -166,11 +166,11 @@ kui_file_chooser_open(
 	window_options.application = options->application;
 	window_options.width = KEIUI_CHOOSER_WIDTH;
 	window_options.height = KEIUI_CHOOSER_HEIGHT;
-	window_options.present = KUI_PRESENT_SHM;
+	window_options.present = KL_PRESENT_SHM;
 	chooser->window = keiui_window_open_shared(display, parent, &window_options, KEIUI_CHOOSER_MIN_WIDTH, KEIUI_CHOOSER_MIN_HEIGHT);
 	if (chooser->window == NULL) {
 		error = errno;
-		kui_file_chooser_destroy(chooser);
+		kl_file_chooser_destroy(chooser);
 		errno = error;
 		return NULL;
 	}
@@ -184,7 +184,7 @@ kui_file_chooser_open(
 
 	/* Opaque, without glass under it: the theme's pale ground and white cards (ws090-p014). */
 	chooser->style.text = &chooser->text;
-	chooser->style.theme = kui_theme_default();
+	chooser->style.theme = kl_theme_default();
 	chooser->style.glass = 0;
 
 	/* Succeeded: the chooser shows itself once configured. */
@@ -196,8 +196,8 @@ kui_file_chooser_open(
  * Closes a chooser; one still open closes without telling.
  */
 void
-kui_file_chooser_destroy(
-	struct kui_file_chooser *chooser)
+kl_file_chooser_destroy(
+	struct kl_file_chooser *chooser)
 {
 	/* No chooser, nothing to close. */
 	if (chooser == NULL)
@@ -209,12 +209,12 @@ kui_file_chooser_destroy(
 		wl_callback_destroy(chooser->telling);
 
 	/* The input, the frame, the fonts and the model. */
-	kui_ui_destroy(chooser->ui);
+	kl_ui_destroy(chooser->ui);
 	if (chooser->canvas_made)
-		kui_canvas_release(&chooser->canvas);
+		kl_canvas_release(&chooser->canvas);
 	free(chooser->pixels);
 	if (chooser->text_open)
-		kui_text_close(&chooser->text);
+		kl_text_close(&chooser->text);
 	keiui_chooser_fini(&chooser->model);
 	free(chooser);
 }
@@ -224,14 +224,14 @@ static void
 chooser_woken(
 	void *data)
 {
-	struct kui_file_chooser *chooser;
-	struct kui_window_event event;
+	struct kl_file_chooser *chooser;
+	struct kl_window_event event;
 	int taken;
 
 	/* Each input queued. */
 	chooser = data;
 	for (;;) {
-		taken = kui_window_take(chooser->window, &event);
+		taken = kl_window_take(chooser->window, &event);
 		if (!taken)
 			break;
 		chooser_event(chooser, &event);
@@ -251,45 +251,45 @@ chooser_woken(
 /* Gives one input of the window to the widgets. */
 static void
 chooser_event(
-	struct kui_file_chooser *chooser,
-	const struct kui_window_event *event)
+	struct kl_file_chooser *chooser,
+	const struct kl_window_event *event)
 {
 	/* Any input may change the window. */
 	chooser->dirty = 1;
 
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
-		(void)kui_ui_pointer_motion(chooser->ui, event->x, event->y);
+	case KL_WINDOW_MOTION:
+		(void)kl_ui_pointer_motion(chooser->ui, event->x, event->y);
 		break;
-	case KUI_WINDOW_LEAVE:
-		(void)kui_ui_pointer_leave(chooser->ui);
+	case KL_WINDOW_LEAVE:
+		(void)kl_ui_pointer_leave(chooser->ui);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		/* The main button only. */
-		(void)kui_ui_pointer_motion(chooser->ui, event->x, event->y);
-		if (event->code == KUI_BUTTON_LEFT)
-			(void)kui_ui_pointer_button(chooser->ui, event->pressed, event->arrival_us);
+		(void)kl_ui_pointer_motion(chooser->ui, event->x, event->y);
+		if (event->code == KL_BUTTON_LEFT)
+			(void)kl_ui_pointer_button(chooser->ui, event->pressed, event->arrival_us);
 		break;
-	case KUI_WINDOW_AXIS:
-		(void)kui_ui_wheel(chooser->ui, event->dx, event->dy, event->arrival_us);
+	case KL_WINDOW_AXIS:
+		(void)kl_ui_wheel(chooser->ui, event->dx, event->dy, event->arrival_us);
 		break;
-	case KUI_WINDOW_KEY:
-		(void)kui_ui_key(chooser->ui, event->code, event->pressed, event->modifiers);
+	case KL_WINDOW_KEY:
+		(void)kl_ui_key(chooser->ui, event->code, event->pressed, event->modifiers);
 		break;
-	case KUI_WINDOW_TOUCH_DOWN:
-		(void)kui_ui_touch_down(chooser->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
+	case KL_WINDOW_TOUCH_DOWN:
+		(void)kl_ui_touch_down(chooser->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
-		(void)kui_ui_touch_motion(chooser->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
+	case KL_WINDOW_TOUCH_MOTION:
+		(void)kl_ui_touch_motion(chooser->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
-	case KUI_WINDOW_TOUCH_UP:
-		(void)kui_ui_touch_up(chooser->ui, event->id, event->time_us, event->arrival_us);
+	case KL_WINDOW_TOUCH_UP:
+		(void)kl_ui_touch_up(chooser->ui, event->id, event->time_us, event->arrival_us);
 		break;
-	case KUI_WINDOW_TOUCH_CANCEL:
-		(void)kui_ui_touch_cancel(chooser->ui, event->arrival_us);
+	case KL_WINDOW_TOUCH_CANCEL:
+		(void)kl_ui_touch_cancel(chooser->ui, event->arrival_us);
 		break;
-	case KUI_WINDOW_CLOSE:
+	case KL_WINDOW_CLOSE:
 		keiui_chooser_cancel(&chooser->model);
 		break;
 	default:
@@ -300,7 +300,7 @@ chooser_event(
 /* Draws a frame when one is due and shows it, asking for the next while something moves. */
 static void
 chooser_draw(
-	struct kui_file_chooser *chooser)
+	struct kl_file_chooser *chooser)
 {
 	uint32_t width;
 	uint32_t height;
@@ -312,7 +312,7 @@ chooser_draw(
 		return;
 
 	/* The frame's size: the window's (a new canvas when it changed). */
-	(void)kui_window_present_resize(chooser->window, &width, &height);
+	(void)kl_window_present_resize(chooser->window, &width, &height);
 	if (width != chooser->width || height != chooser->height || !chooser->canvas_made) {
 		chooser->width = width;
 		chooser->height = height;
@@ -322,7 +322,7 @@ chooser_draw(
 	}
 
 	/* The frame and its input. */
-	again = keiui_chooser_frame(&chooser->model, chooser->ui, &chooser->style, (int)chooser->width, (int)chooser->height, kui_clock_us());
+	again = keiui_chooser_frame(&chooser->model, chooser->ui, &chooser->style, (int)chooser->width, (int)chooser->height, kl_clock_us());
 	chooser->dirty = again;
 
 	/* An answer closes the window. */
@@ -333,13 +333,13 @@ chooser_draw(
 
 	/* The next frame asked for while something moves, and the frame shown. */
 	if (again && chooser->frame == NULL) {
-		chooser->frame = wl_surface_frame(kui_window_surface(chooser->window));
+		chooser->frame = wl_surface_frame(kl_window_surface(chooser->window));
 		if (chooser->frame != NULL)
 			(void)wl_callback_add_listener(chooser->frame, &chooser_frame_listener, chooser);
 	}
 
 	/* The frame shown (a buffer the compositor still reads: drawn again when it comes back). */
-	status = kui_window_present(chooser->window, chooser->pixels, (size_t)chooser->width);
+	status = kl_window_present(chooser->window, chooser->pixels, (size_t)chooser->width);
 	if (status != 0)
 		chooser->dirty = 1;
 	(void)wl_display_flush(chooser->display);
@@ -348,7 +348,7 @@ chooser_draw(
 /* Makes the frame's memory and canvas at its size; nonzero when memory runs out. */
 static int
 chooser_canvas(
-	struct kui_file_chooser *chooser)
+	struct kl_file_chooser *chooser)
 {
 	uint32_t *pixels;
 	size_t count;
@@ -362,11 +362,11 @@ chooser_canvas(
 
 	/* The canvas over it, in place of the old one. */
 	if (chooser->canvas_made)
-		kui_canvas_release(&chooser->canvas);
+		kl_canvas_release(&chooser->canvas);
 	chooser->canvas_made = 0;
 	free(chooser->pixels);
 	chooser->pixels = pixels;
-	status = kui_canvas_init(&chooser->canvas, chooser->pixels, (size_t)chooser->width, (int)chooser->width, (int)chooser->height);
+	status = kl_canvas_init(&chooser->canvas, chooser->pixels, (size_t)chooser->width, (int)chooser->width, (int)chooser->height);
 	if (status != 0)
 		return -1;
 	chooser->canvas_made = 1;
@@ -379,7 +379,7 @@ chooser_canvas(
 /* The answer is known: the window goes, and the answer is told after a roundtrip. */
 static void
 chooser_answered(
-	struct kui_file_chooser *chooser)
+	struct kl_file_chooser *chooser)
 {
 	/* Once. */
 	if (chooser->telling != NULL || chooser->window == NULL)
@@ -396,7 +396,7 @@ chooser_answered(
 /* Takes the window away (the answer is known, or the chooser is destroyed). */
 static void
 chooser_window_gone(
-	struct kui_file_chooser *chooser)
+	struct kl_file_chooser *chooser)
 {
 	/* The frame asked for. */
 	if (chooser->frame != NULL) {
@@ -411,7 +411,7 @@ chooser_window_gone(
 	}
 
 	/* The window, with its own shell (zdesktop lets a binding go alone, BUG-112). */
-	kui_window_close(chooser->window);
+	kl_window_close(chooser->window);
 	chooser->window = NULL;
 }
 
@@ -422,7 +422,7 @@ chooser_frame_done(
 	struct wl_callback *callback,
 	uint32_t time)
 {
-	struct kui_file_chooser *chooser;
+	struct kl_file_chooser *chooser;
 
 	/* The callback is used up. */
 	(void)time;
@@ -442,7 +442,7 @@ chooser_tell_done(
 	struct wl_callback *callback,
 	uint32_t time)
 {
-	struct kui_file_chooser *chooser;
+	struct kl_file_chooser *chooser;
 
 	/* The callback is used up. */
 	(void)time;
@@ -461,7 +461,7 @@ chooser_tell_done(
  */
 static void
 chooser_sheet(
-	struct kui_file_chooser *chooser)
+	struct kl_file_chooser *chooser)
 {
 	int error;
 

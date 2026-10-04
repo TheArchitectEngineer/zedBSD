@@ -9,13 +9,13 @@
  * The window of the library (ws090-p004, Text Editor's window.c moved
  * here, itself PDF Viewer's): an xdg-shell toplevel of its own connection,
  * and its seat's pointer, keyboard and touch screen, whose input becomes
- * kui_window_event values in a queue the application takes.  The last
+ * kl_window_event values in a queue the application takes.  The last
  * input's serial is kept for the clipboard and the primary selection
  * (clipboard.c, primary.c), whose managers are bound here, and for the
  * context menus.
  *
  * zdesktop does not repeat keys, so a key held past the repeat delay is
- * pressed again on each interval -- only by kui_window_repeat, which the
+ * pressed again on each interval -- only by kl_window_repeat, which the
  * application calls after a dispatch, so that a release read in the same
  * dispatch stops it first (BUG-111).
  */
@@ -87,17 +87,17 @@ static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32
 static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
 static int window_modifier_key(uint32_t key);
-static void window_touch_push(struct kui_window *window, unsigned kind, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_stamp(struct kui_window_event *event, uint32_t time);
+static void window_touch_push(struct kl_window *window, unsigned kind, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
+static void window_stamp(struct kl_window_event *event, uint32_t time);
 static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
 static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_frame(void *data, struct wl_touch *touch);
 static void window_touch_cancel(void *data, struct wl_touch *touch);
-static int window_touch_foreign(struct kui_window *window, int32_t id, int forget);
-static struct kui_window_event *window_push(struct kui_window *window, unsigned kind);
-static int window_setup(struct kui_window *window, const struct kui_window_options *options);
-static int window_setup_shared(struct kui_window *window, struct xdg_toplevel *parent, const struct kui_window_options *options, uint32_t min_width, uint32_t min_height);
+static int window_touch_foreign(struct kl_window *window, int32_t id, int forget);
+static struct kl_window_event *window_push(struct kl_window *window, unsigned kind);
+static int window_setup(struct kl_window *window, const struct kl_window_options *options);
+static int window_setup_shared(struct kl_window *window, struct xdg_toplevel *parent, const struct kl_window_options *options, uint32_t min_width, uint32_t min_height);
 static void window_search(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void window_woken(void *data, struct wl_callback *callback, uint32_t time);
 static void window_inset(void *data, int32_t right, int32_t bottom, uint32_t reason);
@@ -172,22 +172,22 @@ static const struct wl_keyboard_listener keyboard_listener = {
 /*
  * Connects to the compositor and makes a toplevel window, configured and
  * ready to be drawn into (the presenter made, except for
- * KUI_PRESENT_NONE).
+ * KL_PRESENT_NONE).
  *
  * Returns NULL with errno set: EINVAL (no options, an unknown way of
  * showing), a connection's error, EOPNOTSUPP (no compositor or shell, or
- * no shared memory for KUI_PRESENT_SHM), EPROTO (no configure), ENOMEM,
+ * no shared memory for KL_PRESENT_SHM), EPROTO (no configure), ENOMEM,
  * EIO (Vulkan refused).
  */
-struct kui_window *
-kui_window_open(
-	const struct kui_window_options *options)
+struct kl_window *
+kl_window_open(
+	const struct kl_window_options *options)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	int error;
 
 	/* Only the three ways of showing. */
-	if (options == NULL || options->present > KUI_PRESENT_NONE) {
+	if (options == NULL || options->present > KL_PRESENT_NONE) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -202,7 +202,7 @@ kui_window_open(
 	/* The connection, the globals, the surface and its first configure. */
 	error = window_setup(window, options);
 	if (error != 0) {
-		kui_window_close(window);
+		kl_window_close(window);
 		errno = error;
 		return NULL;
 	}
@@ -215,8 +215,8 @@ kui_window_open(
  * Destroys the window's objects and disconnects.
  */
 void
-kui_window_close(
-	struct kui_window *window)
+kl_window_close(
+	struct kl_window *window)
 {
 	/* No window, nothing to close. */
 	if (window == NULL)
@@ -227,7 +227,7 @@ kui_window_close(
 	keiui_edit_close(window);
 
 	/* The presenter before the surface it shows on. */
-	if (window->present == KUI_PRESENT_VULKAN)
+	if (window->present == KL_PRESENT_VULKAN)
 		keiui_present_close(&window->vulkan);
 	keiui_shm_close(window);
 
@@ -278,19 +278,19 @@ kui_window_close(
 
 /*
  * Waits up to a timeout (milliseconds, -1 for ever) for the compositor's
- * events and runs them; they queue input for kui_window_take.
+ * events and runs them; they queue input for kl_window_take.
  *
  * Returns 0, or -1 when the connection is broken.
  */
 int
-kui_window_dispatch(
-	struct kui_window *window,
+kl_window_dispatch(
+	struct kl_window *window,
 	int timeout_ms)
 {
 	int status;
 
 	/* The compositor alone. */
-	status = kui_window_dispatch_fds(window, NULL, 0U, timeout_ms, NULL);
+	status = kl_window_dispatch_fds(window, NULL, 0U, timeout_ms, NULL);
 	if (status != 0)
 		return -1;
 
@@ -307,14 +307,14 @@ kui_window_dispatch(
  * gone, 0 otherwise.  Returns 0, or -1 when the connection is broken.
  */
 int
-kui_window_dispatch_fds(
-	struct kui_window *window,
+kl_window_dispatch_fds(
+	struct kl_window *window,
 	const int *fds,
 	unsigned count,
 	int timeout_ms,
 	int *ready)
 {
-	struct pollfd descriptors[1U + KUI_WINDOW_FDS_MAX];
+	struct pollfd descriptors[1U + KL_WINDOW_FDS_MAX];
 	unsigned index;
 	unsigned used;
 	int status;
@@ -353,12 +353,12 @@ kui_window_dispatch_fds(
 	if (window->event_count != 0U)
 		timeout_ms = 0;
 
-	/* The compositor's descriptor, then each other one (at most KUI_WINDOW_FDS_MAX). */
+	/* The compositor's descriptor, then each other one (at most KL_WINDOW_FDS_MAX). */
 	descriptors[0].fd = wl_display_get_fd(window->display);
 	descriptors[0].events = POLLIN;
 	descriptors[0].revents = 0;
 	used = 1U;
-	for (index = 0; index < count && index < KUI_WINDOW_FDS_MAX; index++) {
+	for (index = 0; index < count && index < KL_WINDOW_FDS_MAX; index++) {
 		descriptors[used].fd = fds[index];
 		descriptors[used].events = POLLIN;
 		descriptors[used].revents = 0;
@@ -404,9 +404,9 @@ kui_window_dispatch_fds(
  * there is none.
  */
 int
-kui_window_take(
-	struct kui_window *window,
-	struct kui_window_event *event)
+kl_window_take(
+	struct kl_window *window,
+	struct kl_window_event *event)
 {
 	/* An empty queue. */
 	if (window->event_count == 0U)
@@ -423,19 +423,19 @@ kui_window_take(
 
 /*
  * Queues an input of the application's own (a code of its choosing, as a
- * KUI_WINDOW_POST event) after the inputs queued so far: a choice heard
+ * KL_WINDOW_POST event) after the inputs queued so far: a choice heard
  * through another object during the dispatch keeps its place among the
  * window's keys.
  */
 void
-kui_window_post(
-	struct kui_window *window,
+kl_window_post(
+	struct kl_window *window,
 	uint32_t code)
 {
-	struct kui_window_event *event;
+	struct kl_window_event *event;
 
 	/* The input; a full queue drops it. */
-	event = window_push(window, KUI_WINDOW_POST);
+	event = window_push(window, KL_WINDOW_POST);
 	if (event == NULL)
 		return;
 	event->code = code;
@@ -447,11 +447,11 @@ kui_window_post(
  * next repeat is due (-1 when no key is held).
  */
 int
-kui_window_repeat(
-	struct kui_window *window,
+kl_window_repeat(
+	struct kl_window *window,
 	uint64_t now_us)
 {
-	struct kui_window_event *event;
+	struct kl_window_event *event;
 	uint64_t now;
 
 	/* No key held. */
@@ -464,7 +464,7 @@ kui_window_repeat(
 		return (int)(window->repeat_at - now);
 
 	/* The key once more. */
-	event = window_push(window, KUI_WINDOW_KEY);
+	event = window_push(window, KL_WINDOW_KEY);
 	if (event != NULL) {
 		event->code = window->repeat_key;
 		event->pressed = 1;
@@ -486,8 +486,8 @@ kui_window_repeat(
  * repeat is pressed (BUG-111).
  */
 int
-kui_window_repeat_wait(
-	const struct kui_window *window,
+kl_window_repeat_wait(
+	const struct kl_window *window,
 	uint64_t now_us)
 {
 	uint64_t now;
@@ -509,8 +509,8 @@ kui_window_repeat_wait(
  * Sets the title the compositor shows.
  */
 void
-kui_window_set_title(
-	struct kui_window *window,
+kl_window_set_title(
+	struct kl_window *window,
 	const char *title)
 {
 	/* The request, sent with the next flush. */
@@ -519,11 +519,11 @@ kui_window_set_title(
 
 /*
  * Reports the size the compositor gives the window (the one a frame is
- * drawn at after kui_window_present_resize).
+ * drawn at after kl_window_present_resize).
  */
 void
-kui_window_size(
-	const struct kui_window *window,
+kl_window_size(
+	const struct kl_window *window,
 	uint32_t *width,
 	uint32_t *height)
 {
@@ -537,15 +537,15 @@ kui_window_size(
  * is drawn at.  Returns 0, or EIO when Vulkan refused.
  */
 int
-kui_window_present_resize(
-	struct kui_window *window,
+kl_window_present_resize(
+	struct kl_window *window,
 	uint32_t *width,
 	uint32_t *height)
 {
 	VkResult result;
 
 	/* Vulkan: a swapchain of the size, whose extent may differ. */
-	if (window->present == KUI_PRESENT_VULKAN) {
+	if (window->present == KL_PRESENT_VULKAN) {
 		result = keiui_present_resize(&window->vulkan, window->width, window->height);
 		if (result != VK_SUCCESS)
 			return EIO;
@@ -566,14 +566,14 @@ kui_window_present_resize(
 
 /*
  * Shows a frame (premultiplied 0xAARRGGBB words, stride words a row) of
- * the size kui_window_present_resize reported.  Returns 0, EAGAIN when it
+ * the size kl_window_present_resize reported.  Returns 0, EAGAIN when it
  * could not be shown now (the swapchain is out of date: resize and draw
  * again; no shared-memory buffer is free: draw again later), EINVAL for
- * KUI_PRESENT_NONE, or EIO.
+ * KL_PRESENT_NONE, or EIO.
  */
 int
-kui_window_present(
-	struct kui_window *window,
+kl_window_present(
+	struct kl_window *window,
 	const uint32_t *pixels,
 	size_t stride)
 {
@@ -581,7 +581,7 @@ kui_window_present(
 	int error;
 
 	/* Shared memory. */
-	if (window->present == KUI_PRESENT_SHM) {
+	if (window->present == KL_PRESENT_SHM) {
 		error = keiui_shm_present(window, pixels, stride);
 		if (error != 0)
 			return error;
@@ -589,7 +589,7 @@ kui_window_present(
 	}
 
 	/* The application draws its own frames. */
-	if (window->present != KUI_PRESENT_VULKAN)
+	if (window->present != KL_PRESENT_VULKAN)
 		return EINVAL;
 
 	/* Vulkan: out of date asks for a resize and another frame. */
@@ -608,15 +608,15 @@ kui_window_present(
  * swapchain, or shared memory), which zdesktop's glass needs.
  */
 int
-kui_window_see_through(
-	const struct kui_window *window)
+kl_window_see_through(
+	const struct kl_window *window)
 {
 	/* Shared memory is ARGB, blended by its alpha. */
-	if (window->present == KUI_PRESENT_SHM)
+	if (window->present == KL_PRESENT_SHM)
 		return 1;
 
 	/* Vulkan: when the swapchain is premultiplied. */
-	if (window->present == KUI_PRESENT_VULKAN && window->vulkan.premultiplied)
+	if (window->present == KL_PRESENT_VULKAN && window->vulkan.premultiplied)
 		return 1;
 
 	/* Opaque. */
@@ -627,8 +627,8 @@ kui_window_see_through(
  * Reports the window's connection (for libkeiland's menus, titlebar and glass).
  */
 struct wl_display *
-kui_window_display(
-	const struct kui_window *window)
+kl_window_display(
+	const struct kl_window *window)
 {
 	/* The connection. */
 	return window->display;
@@ -638,8 +638,8 @@ kui_window_display(
  * Reports the window's surface.
  */
 struct wl_surface *
-kui_window_surface(
-	const struct kui_window *window)
+kl_window_surface(
+	const struct kl_window *window)
 {
 	/* The surface. */
 	return window->surface;
@@ -649,8 +649,8 @@ kui_window_surface(
  * Reports the window's toplevel.
  */
 struct xdg_toplevel *
-kui_window_toplevel(
-	const struct kui_window *window)
+kl_window_toplevel(
+	const struct kl_window *window)
 {
 	/* The toplevel. */
 	return window->toplevel;
@@ -659,11 +659,11 @@ kui_window_toplevel(
 /*
  * Asks the compositor to make the window fullscreen (on the output it is
  * on), or to take it out of the full screen (KUI_VERSION 10).  The answer
- * is a configure: kui_window_fullscreen tells once it came.
+ * is a configure: kl_window_fullscreen tells once it came.
  */
 void
-kui_window_set_fullscreen(
-	struct kui_window *window,
+kl_window_set_fullscreen(
+	struct kl_window *window,
 	int fullscreen)
 {
 	/* The request, sent with the next flush. */
@@ -679,8 +679,8 @@ kui_window_set_fullscreen(
  * fullscreen (KUI_VERSION 10).
  */
 int
-kui_window_fullscreen(
-	const struct kui_window *window)
+kl_window_fullscreen(
+	const struct kl_window *window)
 {
 	/* The state as last configured. */
 	return window->fullscreen;
@@ -690,8 +690,8 @@ kui_window_fullscreen(
  * Reports the serial of the window's last input.
  */
 uint32_t
-kui_window_serial(
-	const struct kui_window *window)
+kl_window_serial(
+	const struct kl_window *window)
 {
 	/* The serial. */
 	return window->serial;
@@ -702,8 +702,8 @@ kui_window_serial(
  * window (a context menu opens for a press).
  */
 uint32_t
-kui_window_press_serial(
-	const struct kui_window *window)
+kl_window_press_serial(
+	const struct kl_window *window)
 {
 	/* The press's serial. */
 	return window->press_serial;
@@ -715,8 +715,8 @@ kui_window_press_serial(
  * in answer carries it.
  */
 void
-kui_window_set_serial(
-	struct kui_window *window,
+kl_window_set_serial(
+	struct kl_window *window,
 	uint32_t serial)
 {
 	/* The latest input's serial. */
@@ -727,8 +727,8 @@ kui_window_set_serial(
  * Reports the window's seat (for a context menu's popup).
  */
 struct wl_seat *
-kui_window_seat(
-	const struct kui_window *window)
+kl_window_seat(
+	const struct kl_window *window)
 {
 	/* The seat. */
 	return window->seat;
@@ -739,7 +739,7 @@ kui_window_seat(
  * times).
  */
 uint64_t
-kui_clock_us(void)
+kl_clock_us(void)
 {
 	struct timespec now;
 
@@ -763,19 +763,19 @@ kui_clock_us(void)
  * Returns NULL with errno set: EINVAL, EOPNOTSUPP (no compositor, shell
  * or shared memory), ENOMEM.
  */
-struct kui_window *
+struct kl_window *
 keiui_window_open_shared(
 	struct wl_display *display,
 	struct xdg_toplevel *parent,
-	const struct kui_window_options *options,
+	const struct kl_window_options *options,
 	uint32_t min_width,
 	uint32_t min_height)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	int error;
 
 	/* A connection, and frames through shared memory. */
-	if (display == NULL || options == NULL || options->present != KUI_PRESENT_SHM) {
+	if (display == NULL || options == NULL || options->present != KL_PRESENT_SHM) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -794,7 +794,7 @@ keiui_window_open_shared(
 	/* The globals, the surface and its toplevel. */
 	error = window_setup_shared(window, parent, options, min_width, min_height);
 	if (error != 0) {
-		kui_window_close(window);
+		kl_window_close(window);
 		errno = error;
 		return NULL;
 	}
@@ -809,7 +809,7 @@ keiui_window_open_shared(
  */
 void
 keiui_window_set_notify(
-	struct kui_window *window,
+	struct kl_window *window,
 	void (*notify)(void *data),
 	void *data)
 {
@@ -824,7 +824,7 @@ keiui_window_set_notify(
  */
 void
 keiui_window_wake(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	int status;
 
@@ -849,7 +849,7 @@ keiui_clock_ms(void)
 	uint64_t now;
 
 	/* The microseconds' clock. */
-	now = kui_clock_us();
+	now = kl_clock_us();
 
 	/* Reports it in milliseconds. */
 	return now / 1000U;
@@ -858,8 +858,8 @@ keiui_clock_ms(void)
 /* Connects, binds the globals, makes the surface and its toplevel, waits for the first configure and makes the presenter; 0 or an errno value. */
 static int
 window_setup(
-	struct kui_window *window,
-	const struct kui_window_options *options)
+	struct kl_window *window,
+	const struct kl_window_options *options)
 {
 	VkResult result;
 	int status;
@@ -897,7 +897,7 @@ window_setup(
 	/* A window needs a compositor and a shell, and shared memory to show frames through it. */
 	if (window->compositor == NULL || window->shell == NULL)
 		return EOPNOTSUPP;
-	if (window->present == KUI_PRESENT_SHM && window->shm == NULL)
+	if (window->present == KL_PRESENT_SHM && window->shm == NULL)
 		return EOPNOTSUPP;
 
 	/* The surface, as an xdg surface. */
@@ -947,7 +947,7 @@ window_setup(
 	window->event_count = 0;
 
 	/* The Vulkan presenter over the surface. */
-	if (window->present == KUI_PRESENT_VULKAN) {
+	if (window->present == KL_PRESENT_VULKAN) {
 		result = keiui_present_open(&window->vulkan, window);
 		if (result != VK_SUCCESS)
 			return EIO;
@@ -962,9 +962,9 @@ window_setup(
 /* Finds the globals through a queue of the window's own, binds them onto the application's queue, and makes the toplevel; 0 or an errno value. */
 static int
 window_setup_shared(
-	struct kui_window *window,
+	struct kl_window *window,
 	struct xdg_toplevel *parent,
-	const struct kui_window_options *options,
+	const struct kl_window_options *options,
 	uint32_t min_width,
 	uint32_t min_height)
 {
@@ -1143,7 +1143,7 @@ window_woken(
 	struct wl_callback *callback,
 	uint32_t time)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The sync is used up, and another may be asked for. */
 	(void)time;
@@ -1160,12 +1160,12 @@ window_woken(
  * Queues a new input of a kind for the library's other parts (the text
  * input); NULL when the queue is full.
  */
-struct kui_window_event *
+struct kl_window_event *
 keiui_window_push(
-	struct kui_window *window,
+	struct kl_window *window,
 	unsigned kind)
 {
-	struct kui_window_event *event;
+	struct kl_window_event *event;
 
 	/* As the window's own inputs. */
 	event = window_push(window, kind);
@@ -1176,12 +1176,12 @@ keiui_window_push(
  * Queues a new input of a kind at the pointer's place with the modifiers
  * held; NULL when the queue is full (the input is dropped).
  */
-static struct kui_window_event *
+static struct kl_window_event *
 window_push(
-	struct kui_window *window,
+	struct kl_window *window,
 	unsigned kind)
 {
-	struct kui_window_event *event;
+	struct kl_window_event *event;
 	unsigned slot;
 
 	/* A full queue drops the input (the user is far ahead of the program). */
@@ -1200,7 +1200,7 @@ window_push(
 	event->y = window->pointer_y;
 	event->modifiers = window->modifiers;
 	event->serial = window->serial;
-	event->arrival_us = kui_clock_us();
+	event->arrival_us = kl_clock_us();
 	event->time_us = event->arrival_us;
 
 	/* The owner of a window on another's connection hears of it after the events being run. */
@@ -1219,7 +1219,7 @@ window_global(
 	const char *interface,
 	uint32_t version)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	int match;
 
 	/* The compositor makes surfaces; version 4 is enough. */
@@ -1314,7 +1314,7 @@ window_configure(
 	struct xdg_surface *surface,
 	uint32_t serial)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The acknowledgement comes before any image of the new state. */
 	window = data;
@@ -1332,7 +1332,7 @@ window_toplevel_configure(
 	int32_t height,
 	struct wl_array *states)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	const uint32_t *state;
 	size_t count;
 	size_t index;
@@ -1379,7 +1379,7 @@ window_toplevel_configure(
 
 	/* The application hears of a new size. */
 	if (resized)
-		(void)window_push(window, KUI_WINDOW_RESIZE);
+		(void)window_push(window, KL_WINDOW_RESIZE);
 }
 
 /* The compositor asks the window to close (its close button). */
@@ -1388,12 +1388,12 @@ window_toplevel_close(
 	void *data,
 	struct xdg_toplevel *toplevel)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The application decides (it may ask about unsaved work first). */
 	(void)toplevel;
 	window = data;
-	(void)window_push(window, KUI_WINDOW_CLOSE);
+	(void)window_push(window, KL_WINDOW_CLOSE);
 }
 
 /* Keeps the largest size the compositor lets the window choose for itself (0: not known). */
@@ -1404,7 +1404,7 @@ window_toplevel_bounds(
 	int32_t width,
 	int32_t height)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The width, when known. */
 	(void)toplevel;
@@ -1426,7 +1426,7 @@ window_seat_capabilities(
 	struct wl_seat *seat,
 	uint32_t capabilities)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* A pointer, once. */
 	window = data;
@@ -1474,7 +1474,7 @@ window_pointer_enter(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Another surface of the program (the file chooser's) is not the window's. */
 	(void)pointer;
@@ -1488,7 +1488,7 @@ window_pointer_enter(
 	window->serial = serial;
 	window->pointer_x = wl_fixed_to_double(x);
 	window->pointer_y = wl_fixed_to_double(y);
-	(void)window_push(window, KUI_WINDOW_MOTION);
+	(void)window_push(window, KL_WINDOW_MOTION);
 }
 
 /* The pointer leaves the window. */
@@ -1499,7 +1499,7 @@ window_pointer_leave(
 	uint32_t serial,
 	struct wl_surface *surface)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Only leaving the window's own surface matters. */
 	(void)pointer;
@@ -1510,7 +1510,7 @@ window_pointer_leave(
 	window->pointer_ours = 0;
 
 	/* The view hears that the pointer left. */
-	(void)window_push(window, KUI_WINDOW_LEAVE);
+	(void)window_push(window, KL_WINDOW_LEAVE);
 }
 
 /* The pointer moves over the window. */
@@ -1522,8 +1522,8 @@ window_pointer_motion(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct kui_window *window;
-	struct kui_window_event *event;
+	struct kl_window *window;
+	struct kl_window_event *event;
 
 	/* Only over the window's own surface. */
 	(void)pointer;
@@ -1534,7 +1534,7 @@ window_pointer_motion(
 	/* The new place, as a motion at the compositor's time (KUI_VERSION 11: a stroke's samples keep their times). */
 	window->pointer_x = wl_fixed_to_double(x);
 	window->pointer_y = wl_fixed_to_double(y);
-	event = window_push(window, KUI_WINDOW_MOTION);
+	event = window_push(window, KL_WINDOW_MOTION);
 	if (event != NULL)
 		window_stamp(event, time);
 }
@@ -1549,8 +1549,8 @@ window_pointer_button(
 	uint32_t button,
 	uint32_t state)
 {
-	struct kui_window *window;
-	struct kui_window_event *event;
+	struct kl_window *window;
+	struct kl_window_event *event;
 
 	/* Only over the window's own surface. */
 	(void)pointer;
@@ -1562,7 +1562,7 @@ window_pointer_button(
 	window->serial = serial;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
 		window->press_serial = serial;
-	event = window_push(window, KUI_WINDOW_BUTTON);
+	event = window_push(window, KL_WINDOW_BUTTON);
 	if (event == NULL)
 		return;
 	window_stamp(event, time);
@@ -1581,8 +1581,8 @@ window_pointer_axis(
 	uint32_t axis,
 	wl_fixed_t value)
 {
-	struct kui_window *window;
-	struct kui_window_event *event;
+	struct kl_window *window;
+	struct kl_window_event *event;
 
 	/* Only over the window's own surface. */
 	(void)pointer;
@@ -1592,7 +1592,7 @@ window_pointer_axis(
 		return;
 
 	/* The distance, scaled to the window's pixels, on its axis. */
-	event = window_push(window, KUI_WINDOW_AXIS);
+	event = window_push(window, KL_WINDOW_AXIS);
 	if (event == NULL)
 		return;
 	if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
@@ -1682,8 +1682,8 @@ window_keyboard_enter(
 	struct wl_surface *surface,
 	struct wl_array *keys)
 {
-	struct kui_window *window;
-	struct kui_window_event *event;
+	struct kl_window *window;
+	struct kl_window_event *event;
 
 	/* Keys already held when focus came are not pressed again. */
 	(void)keyboard;
@@ -1699,7 +1699,7 @@ window_keyboard_enter(
 	window->serial = serial;
 
 	/* The focus came. */
-	event = window_push(window, KUI_WINDOW_FOCUS);
+	event = window_push(window, KL_WINDOW_FOCUS);
 	if (event != NULL)
 		event->pressed = 1;
 }
@@ -1712,7 +1712,7 @@ window_keyboard_leave(
 	uint32_t serial,
 	struct wl_surface *surface)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Only leaving the window's own surface matters. */
 	(void)keyboard;
@@ -1727,7 +1727,7 @@ window_keyboard_leave(
 	window->modifiers = 0U;
 
 	/* The focus went. */
-	(void)window_push(window, KUI_WINDOW_FOCUS);
+	(void)window_push(window, KL_WINDOW_FOCUS);
 }
 
 /* A key is pressed (it repeats while held) or let go. */
@@ -1740,8 +1740,8 @@ window_keyboard_key(
 	uint32_t key,
 	uint32_t state)
 {
-	struct kui_window *window;
-	struct kui_window_event *event;
+	struct kl_window *window;
+	struct kl_window_event *event;
 	int modifier;
 
 	/* Only while the window's own surface has the keys. */
@@ -1753,7 +1753,7 @@ window_keyboard_key(
 
 	/* The key as an input; its serial may set a selection. */
 	window->serial = serial;
-	event = window_push(window, KUI_WINDOW_KEY);
+	event = window_push(window, KL_WINDOW_KEY);
 	if (event != NULL) {
 		event->code = key;
 		event->pressed = 0;
@@ -1788,7 +1788,7 @@ window_keyboard_modifiers(
 	uint32_t locked,
 	uint32_t group)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Only the held modifiers count; zdesktop latches and locks nothing. */
 	(void)keyboard;
@@ -1799,13 +1799,13 @@ window_keyboard_modifiers(
 	window = data;
 	window->modifiers = 0U;
 	if ((depressed & WINDOW_WAYLAND_SHIFT) != 0U)
-		window->modifiers |= KUI_MOD_SHIFT;
+		window->modifiers |= KL_MOD_SHIFT;
 	if ((depressed & WINDOW_WAYLAND_CTRL) != 0U)
-		window->modifiers |= KUI_MOD_CTRL;
+		window->modifiers |= KL_MOD_CTRL;
 	if ((depressed & WINDOW_WAYLAND_ALT) != 0U)
-		window->modifiers |= KUI_MOD_ALT;
+		window->modifiers |= KL_MOD_ALT;
 	if ((depressed & WINDOW_WAYLAND_SUPER) != 0U)
-		window->modifiers |= KUI_MOD_SUPER;
+		window->modifiers |= KL_MOD_SUPER;
 }
 
 /* Takes the compositor's repeat rate and delay, when it gives a rate. */
@@ -1816,7 +1816,7 @@ window_keyboard_repeat(
 	int32_t rate,
 	int32_t delay)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* A positive rate is keys per second. */
 	(void)keyboard;
@@ -1855,14 +1855,14 @@ window_modifier_key(
 /* Queues a touch input with its time turned into the monotonic clock's microseconds. */
 static void
 window_touch_push(
-	struct kui_window *window,
+	struct kl_window *window,
 	unsigned kind,
 	uint32_t time,
 	int32_t id,
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct kui_window_event *event;
+	struct kl_window_event *event;
 
 	/* The input; a full queue drops it. */
 	event = window_push(window, kind);
@@ -1873,7 +1873,7 @@ window_touch_push(
 	event->y = wl_fixed_to_double(y);
 
 	/* The event's time (a cancel has none: the reading's). */
-	if (kind != KUI_WINDOW_TOUCH_CANCEL)
+	if (kind != KL_WINDOW_TOUCH_CANCEL)
 		window_stamp(event, time);
 }
 
@@ -1885,7 +1885,7 @@ window_touch_push(
  */
 static void
 window_stamp(
-	struct kui_window_event *event,
+	struct kl_window_event *event,
 	uint32_t time)
 {
 	uint64_t arrival_ms;
@@ -1915,7 +1915,7 @@ window_touch_down(
 	wl_fixed_t x,
 	wl_fixed_t y)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* A finger on another surface of the program (the file chooser's) is remembered and left alone. */
 	(void)touch;
@@ -1933,7 +1933,7 @@ window_touch_down(
 	/* Queued, its serial kept for a long press's context menu. */
 	window->serial = serial;
 	window->press_serial = serial;
-	window_touch_push(window, KUI_WINDOW_TOUCH_DOWN, time, id, x, y);
+	window_touch_push(window, KL_WINDOW_TOUCH_DOWN, time, id, x, y);
 }
 
 /* A finger lifts. */
@@ -1955,7 +1955,7 @@ window_touch_up(
 		return;
 
 	/* Queued, with no place. */
-	window_touch_push(data, KUI_WINDOW_TOUCH_UP, time, id, 0, 0);
+	window_touch_push(data, KL_WINDOW_TOUCH_UP, time, id, 0, 0);
 }
 
 /* A finger moves. */
@@ -1977,7 +1977,7 @@ window_touch_motion(
 		return;
 
 	/* Queued. */
-	window_touch_push(data, KUI_WINDOW_TOUCH_MOTION, time, id, x, y);
+	window_touch_push(data, KL_WINDOW_TOUCH_MOTION, time, id, x, y);
 }
 
 /* The end of a frame of touch events: each event was queued as it came. */
@@ -1997,19 +1997,19 @@ window_touch_cancel(
 	void *data,
 	struct wl_touch *touch)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* Every finger goes, the other surfaces' too; the window's are cancelled. */
 	(void)touch;
 	window = data;
 	window->foreign_count = 0;
-	window_touch_push(data, KUI_WINDOW_TOUCH_CANCEL, 0, -1, 0, 0);
+	window_touch_push(data, KL_WINDOW_TOUCH_CANCEL, 0, -1, 0, 0);
 }
 
 /* Tells whether a finger is down on another surface of the program, and forgets it when asked (its lift). */
 static int
 window_touch_foreign(
-	struct kui_window *window,
+	struct kl_window *window,
 	int32_t id,
 	int forget)
 {
@@ -2036,13 +2036,13 @@ window_touch_foreign(
 
 /*
  * Lets the application hear the on-screen keyboard's inset (KUI_VERSION 7):
- * callback runs during kui_window_dispatch and returns 1 when the
+ * callback runs during kl_window_dispatch and returns 1 when the
  * application kept its caret in sight itself (the default is skipped).
  */
 void
-kui_window_on_keyboard_inset(
-	struct kui_window *window,
-	kui_keyboard_inset_fn callback,
+kl_window_on_keyboard_inset(
+	struct kl_window *window,
+	kl_window_keyboard_inset_fn callback,
 	void *data)
 {
 	/* The callback (NULL: none) and its data. */
@@ -2055,8 +2055,8 @@ kui_window_on_keyboard_inset(
  * its right and bottom edges (0 each without a keyboard).
  */
 void
-kui_window_keyboard_inset(
-	const struct kui_window *window,
+kl_window_keyboard_inset(
+	const struct kl_window *window,
 	int *right,
 	int *bottom)
 {
@@ -2077,10 +2077,10 @@ window_inset(
 	int32_t bottom,
 	uint32_t reason)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	int handled;
 
-	/* The widths, kept for kui_window_keyboard_inset. */
+	/* The widths, kept for kl_window_keyboard_inset. */
 	window = data;
 	window->inset_right = right;
 	window->inset_bottom = bottom;

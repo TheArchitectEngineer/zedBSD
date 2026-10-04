@@ -28,7 +28,7 @@
 #define CARDS_CARD_TITLE	46
 
 /* A card's ground on a white panel (no glass under it). */
-#define CARDS_CARD_PLAIN	KUI_RGBA(0x8a96aa, 16)
+#define CARDS_CARD_PLAIN	KL_RGBA(0x8a96aa, 16)
 
 /* A row: its height, its text's size, and the share of the row its label takes. */
 #define CARDS_ROW_HEIGHT	40
@@ -70,34 +70,34 @@ static int cards_dialog_key(uint32_t code, unsigned modifiers);
  * glass a light veil, otherwise Files' opaque look.
  */
 void
-kui_panel(
-	const struct kui_style *style,
-	const struct kui_rect *rect,
+kl_panel(
+	const struct kl_style *style,
+	const struct kl_rect *rect,
 	int sidebar)
 {
-	const struct kui_theme *theme;
+	const struct kl_theme *theme;
 
 	/* On glass: the veil (zdesktop draws the glass under it). */
 	theme = style->theme;
 	if (style->glass) {
 		if (sidebar)
-			kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->glass_sidebar);
+			kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->glass_sidebar);
 		else
-			kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->glass_content);
+			kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->glass_content);
 		return;
 	}
 
 	/* Without glass: the sidebar's veil with a bright edge, the content's white card with its shadow. */
 	if (sidebar) {
-		kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->sidebar);
-		kui_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 1.0f, KUI_RGBA(0xffffff, 170));
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->sidebar);
+		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 1.0f, KL_RGBA(0xffffff, 170));
 		return;
 	}
 
 	/* The content's white panel with its shadow and edge. */
-	kui_canvas_shadow(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 12.0f, theme->shadow);
-	kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->panel);
-	kui_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 1.0f, theme->panel_edge);
+	kl_canvas_shadow(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 12.0f, theme->shadow);
+	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->panel);
+	kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 1.0f, theme->panel_edge);
 }
 
 /*
@@ -105,22 +105,22 @@ kui_panel(
  * NULL) and reports the top of its content.
  */
 int
-kui_card(
-	const struct kui_style *style,
-	const struct kui_rect *rect,
+kl_card(
+	const struct kl_style *style,
+	const struct kl_rect *rect,
 	const char *title,
 	const char *subtitle)
 {
-	struct kui_text_line line;
+	struct kl_text_line line;
 	int baseline;
 
 	/* The card: on glass a whiter veil with a bright edge (Settings'), on a white panel a faint grey with a quiet edge. */
 	if (style->glass) {
-		kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, style->theme->card);
-		kui_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, 1.0f, style->theme->card_edge);
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, style->theme->card);
+		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, 1.0f, style->theme->card_edge);
 	} else {
-		kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, CARDS_CARD_PLAIN);
-		kui_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, 1.0f, style->theme->control_edge);
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, CARDS_CARD_PLAIN);
+		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_CARD_RADIUS, 1.0f, style->theme->control_edge);
 	}
 
 	/* A card without a title starts at its margin. */
@@ -128,16 +128,16 @@ kui_card(
 		return rect->y + CARDS_CARD_PAD;
 
 	/* The title, bold. */
-	kui_text_metrics(style->text, CARDS_TEXT_CARD, &line);
+	kl_text_metrics(style->text, CARDS_TEXT_CARD, &line);
 	baseline = rect->y + CARDS_CARD_PAD + line.ascent;
-	(void)kui_text_draw_fit(style->text, style->canvas, rect->x + CARDS_CARD_PAD + 2, baseline, title, CARDS_TEXT_CARD, 1, rect->width - 2 * CARDS_CARD_PAD, style->theme->text);
+	(void)kl_text_draw_fit(style->text, style->canvas, rect->x + CARDS_CARD_PAD + 2, baseline, title, CARDS_TEXT_CARD, 1, rect->width - 2 * CARDS_CARD_PAD, style->theme->text);
 
 	/* The subtitle under it, when there is one. */
 	if (subtitle != NULL) {
 		baseline += line.descent + 4;
-		kui_text_metrics(style->text, CARDS_TEXT_CARD_SUB, &line);
+		kl_text_metrics(style->text, CARDS_TEXT_CARD_SUB, &line);
 		baseline += line.ascent;
-		(void)kui_text_draw_fit(style->text, style->canvas, rect->x + CARDS_CARD_PAD + 2, baseline, subtitle, CARDS_TEXT_CARD_SUB, 0, rect->width - 2 * CARDS_CARD_PAD, style->theme->text_secondary);
+		(void)kl_text_draw_fit(style->text, style->canvas, rect->x + CARDS_CARD_PAD + 2, baseline, subtitle, CARDS_TEXT_CARD_SUB, 0, rect->width - 2 * CARDS_CARD_PAD, style->theme->text_secondary);
 		return baseline + line.descent + 10;
 	}
 
@@ -150,8 +150,8 @@ kui_card(
  * line under it unless it is the last) and reports the edge below it.
  */
 int
-kui_row(
-	const struct kui_style *style,
+kl_row(
+	const struct kl_style *style,
 	int x,
 	int y,
 	int width,
@@ -165,18 +165,18 @@ kui_row(
 	int right;
 
 	/* The row's text line, and the columns of the label and the value. */
-	baseline = kui_text_center(CARDS_TEXT_ROW, y, CARDS_ROW_HEIGHT);
+	baseline = kl_text_center(CARDS_TEXT_ROW, y, CARDS_ROW_HEIGHT);
 	left = x + CARDS_CARD_PAD + 2;
 	right = x + width - CARDS_CARD_PAD;
 	label_width = (int)((float)(right - left) * CARDS_LABEL_SHARE);
 
 	/* The label, quiet, and the value, plain. */
-	(void)kui_text_draw_fit(style->text, style->canvas, left, baseline, label, CARDS_TEXT_ROW, 0, label_width - 12, style->theme->text_secondary);
-	(void)kui_text_draw_fit(style->text, style->canvas, left + label_width, baseline, value, CARDS_TEXT_ROW, 0, right - left - label_width, style->theme->text);
+	(void)kl_text_draw_fit(style->text, style->canvas, left, baseline, label, CARDS_TEXT_ROW, 0, label_width - 12, style->theme->text_secondary);
+	(void)kl_text_draw_fit(style->text, style->canvas, left + label_width, baseline, value, CARDS_TEXT_ROW, 0, right - left - label_width, style->theme->text);
 
 	/* The line under the row, unless it is the last. */
 	if (!last)
-		kui_canvas_line(style->canvas, (float)left, (float)(y + CARDS_ROW_HEIGHT) - 0.5f, (float)right, (float)(y + CARDS_ROW_HEIGHT) - 0.5f, 1.0f, style->theme->row_separator);
+		kl_canvas_line(style->canvas, (float)left, (float)(y + CARDS_ROW_HEIGHT) - 0.5f, (float)right, (float)(y + CARDS_ROW_HEIGHT) - 0.5f, 1.0f, style->theme->row_separator);
 
 	/* Reports the edge below the row. */
 	return y + CARDS_ROW_HEIGHT;
@@ -187,31 +187,31 @@ kui_row(
  * NULL), and reports the edge below it.
  */
 int
-kui_header(
-	const struct kui_style *style,
+kl_header(
+	const struct kl_style *style,
 	int x,
 	int y,
 	int width,
 	const char *title,
 	const char *summary)
 {
-	struct kui_text_line title_line;
-	struct kui_text_line summary_line;
+	struct kl_text_line title_line;
+	struct kl_text_line summary_line;
 	int baseline;
 
 	/* The two lines' measurements. */
-	kui_text_metrics(style->text, CARDS_TEXT_TITLE, &title_line);
-	kui_text_metrics(style->text, CARDS_TEXT_SUMMARY, &summary_line);
+	kl_text_metrics(style->text, CARDS_TEXT_TITLE, &title_line);
+	kl_text_metrics(style->text, CARDS_TEXT_SUMMARY, &summary_line);
 
 	/* The title, bold. */
 	baseline = y + title_line.ascent;
-	(void)kui_text_draw_fit(style->text, style->canvas, x, baseline, title, CARDS_TEXT_TITLE, 1, width, style->theme->text);
+	(void)kl_text_draw_fit(style->text, style->canvas, x, baseline, title, CARDS_TEXT_TITLE, 1, width, style->theme->text);
 	if (summary == NULL)
 		return y + title_line.height;
 
 	/* The summary under it. */
 	baseline = y + title_line.height + 2 + summary_line.ascent;
-	(void)kui_text_draw_fit(style->text, style->canvas, x, baseline, summary, CARDS_TEXT_SUMMARY, 0, width, style->theme->text_secondary);
+	(void)kl_text_draw_fit(style->text, style->canvas, x, baseline, summary, CARDS_TEXT_SUMMARY, 0, width, style->theme->text_secondary);
 
 	/* Reports the edge below the summary. */
 	return y + title_line.height + 2 + summary_line.height;
@@ -225,19 +225,19 @@ kui_header(
  * the button chosen since the last frame, or -1.
  */
 int
-kui_dialog(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_dialog(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
-	const struct kui_rect *area,
+	const struct kl_rect *area,
 	const char *title,
 	const char *body,
 	const char *const *labels,
 	int count)
 {
-	const struct kui_theme *theme;
-	struct kui_rect card;
-	struct kui_rect button;
+	const struct kl_theme *theme;
+	struct kl_rect card;
+	struct kl_rect button;
 	uint32_t code;
 	unsigned modifiers;
 	unsigned flags;
@@ -256,13 +256,13 @@ kui_dialog(
 
 	/* The veil, which also takes every press under the dialog and shuts what is under it out of Tab. */
 	theme = style->theme;
-	kui_canvas_round(style->canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, CARDS_PANEL_RADIUS, KUI_RGBA(0x0f172a, 46));
+	kl_canvas_round(style->canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, CARDS_PANEL_RADIUS, KL_RGBA(0x0f172a, 46));
 	(void)keiui_ui_widget(ui, id, CARDS_DIALOG_SELF, area, KEIUI_FOCUSABLE | KEIUI_MODAL);
 
 	/* The dialog (itself or one of its buttons) has the keyboard while it shows. */
 	focused = keiui_ui_focused(ui, &focus_id, &focus_index);
 	if (!focused || focus_id != id)
-		kui_ui_set_focus(ui, id, CARDS_DIALOG_SELF);
+		kl_ui_set_focus(ui, id, CARDS_DIALOG_SELF);
 
 	/* The card's size: the title, up to three lines of body, and the buttons. */
 	card.width = CARDS_DIALOG_WIDTH;
@@ -273,22 +273,22 @@ kui_dialog(
 	card.y = area->y + (area->height - card.height) / 2;
 
 	/* The card with its soft shadow. */
-	kui_canvas_shadow(style->canvas, (float)card.x, (float)card.y + 2.0f, (float)card.width, (float)card.height, 14.0f, 10.0f, KUI_RGBA(0x1f3a66, 40));
-	kui_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, theme->panel);
-	kui_canvas_round_border(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, 1.0f, theme->panel_edge);
+	kl_canvas_shadow(style->canvas, (float)card.x, (float)card.y + 2.0f, (float)card.width, (float)card.height, 14.0f, 10.0f, KL_RGBA(0x1f3a66, 40));
+	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, theme->panel);
+	kl_canvas_round_border(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, 1.0f, theme->panel_edge);
 
 	/* The question, bold, and its explanation broken into lines. */
 	baseline = card.y + CARDS_DIALOG_PAD + 16;
-	(void)kui_text_draw_fit(style->text, style->canvas, card.x + CARDS_DIALOG_PAD, baseline, title, CARDS_TEXT_DIALOG, 1, card.width - 2 * CARDS_DIALOG_PAD, theme->text);
+	(void)kl_text_draw_fit(style->text, style->canvas, card.x + CARDS_DIALOG_PAD, baseline, title, CARDS_TEXT_DIALOG, 1, card.width - 2 * CARDS_DIALOG_PAD, theme->text);
 	done = 0;
 	for (lines = 0; body != NULL && body[done] != '\0' && lines < CARDS_DIALOG_LINES; lines++) {
-		length = kui_text_break(style->text, body + done, CARDS_TEXT_BODY, 0, card.width - 2 * CARDS_DIALOG_PAD);
+		length = kl_text_break(style->text, body + done, CARDS_TEXT_BODY, 0, card.width - 2 * CARDS_DIALOG_PAD);
 		if (length == 0U)
 			break;
 		baseline += CARDS_BODY_LINE;
 		if (lines == 0)
 			baseline += CARDS_BODY_GAP;
-		(void)kui_text_draw(style->text, style->canvas, card.x + CARDS_DIALOG_PAD, baseline, body + done, length, CARDS_TEXT_BODY, 0, theme->text_secondary);
+		(void)kl_text_draw(style->text, style->canvas, card.x + CARDS_DIALOG_PAD, baseline, body + done, length, CARDS_TEXT_BODY, 0, theme->text_secondary);
 		done += length;
 		while (body[done] == ' ')
 			done++;
@@ -298,13 +298,13 @@ kui_dialog(
 	chosen = -1;
 	right = card.x + card.width - CARDS_DIALOG_PAD + 2;
 	for (index = 0; index < count; index++) {
-		button.width = kui_button_width(style, labels[index]);
+		button.width = kl_button_width(style, labels[index]);
 		button.height = theme->control_height;
 		button.x = right - button.width;
 		button.y = card.y + card.height - 16 - button.height;
 		flags = 0;
 		if (index == 0)
-			flags = KUI_BUTTON_PRIMARY;
+			flags = KL_BUTTON_PRIMARY;
 		pressed = keiui_button(ui, style, id, (uint32_t)index, &button, labels[index], flags);
 		if (pressed)
 			chosen = index;
@@ -316,7 +316,7 @@ kui_dialog(
 		taken = keiui_ui_take_key(ui, id, KEIUI_ANY, cards_dialog_key, &code, &modifiers);
 		if (!taken)
 			break;
-		if (code == KUI_KEY_ESC)
+		if (code == KL_KEY_ESC)
 			chosen = count - 1;
 		else
 			chosen = 0;
@@ -331,27 +331,27 @@ kui_dialog(
  * bottom (the message of a moment: saved, not found).
  */
 void
-kui_chip(
-	const struct kui_style *style,
+kl_chip(
+	const struct kl_style *style,
 	int centre_x,
 	int bottom,
 	const char *message)
 {
-	struct kui_rect chip;
+	struct kl_rect chip;
 	int width;
 
 	/* As wide as its words. */
-	width = kui_text_width(style->text, message, strlen(message), CARDS_TEXT_CHIP, 0);
+	width = kl_text_width(style->text, message, strlen(message), CARDS_TEXT_CHIP, 0);
 	chip.width = width + 28;
 	chip.height = CARDS_CHIP_HEIGHT;
 	chip.x = centre_x - chip.width / 2;
 	chip.y = bottom - chip.height;
 
 	/* A white chip with an edge and a soft shadow, the words in the middle. */
-	kui_canvas_shadow(style->canvas, (float)chip.x, (float)chip.y + 2.0f, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, 8.0f, style->theme->shadow);
-	kui_canvas_round(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, KUI_RGBA(0xffffff, 240));
-	kui_canvas_round_border(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, 1.0f, style->theme->panel_edge);
-	(void)kui_text_draw(style->text, style->canvas, chip.x + 14, kui_text_center(CARDS_TEXT_CHIP, chip.y, chip.height), message, strlen(message), CARDS_TEXT_CHIP, 0, style->theme->text);
+	kl_canvas_shadow(style->canvas, (float)chip.x, (float)chip.y + 2.0f, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, 8.0f, style->theme->shadow);
+	kl_canvas_round(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, KL_RGBA(0xffffff, 240));
+	kl_canvas_round_border(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, 1.0f, style->theme->panel_edge);
+	(void)kl_text_draw(style->text, style->canvas, chip.x + 14, kl_text_center(CARDS_TEXT_CHIP, chip.y, chip.height), message, strlen(message), CARDS_TEXT_CHIP, 0, style->theme->text);
 }
 
 /*
@@ -359,9 +359,9 @@ kui_chip(
  * unknown length (a part that crosses the bar with the time).
  */
 void
-kui_progress(
-	const struct kui_style *style,
-	const struct kui_rect *rect,
+kl_progress(
+	const struct kl_style *style,
+	const struct kl_rect *rect,
 	double fraction,
 	uint64_t now_us)
 {
@@ -372,13 +372,13 @@ kui_progress(
 
 	/* The track. */
 	radius = (float)rect->height * 0.5f;
-	kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, radius, style->theme->track);
+	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, radius, style->theme->track);
 
 	/* A share done: the accent up to it. */
 	if (fraction >= 0.0) {
 		if (fraction > 1.0)
 			fraction = 1.0;
-		kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)((double)rect->width * fraction), (float)rect->height, radius, style->theme->accent);
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)((double)rect->width * fraction), (float)rect->height, radius, style->theme->accent);
 		return;
 	}
 
@@ -386,9 +386,9 @@ kui_progress(
 	phase = (double)(now_us % CARDS_PROGRESS_US) / (double)CARDS_PROGRESS_US;
 	span = (float)((double)rect->width * CARDS_PROGRESS_SPAN);
 	start = (float)rect->x + (float)(phase * ((double)rect->width + (double)span)) - span;
-	kui_canvas_clip_push(style->canvas, rect);
-	kui_canvas_round(style->canvas, start, (float)rect->y, span, (float)rect->height, radius, style->theme->accent);
-	kui_canvas_clip_pop(style->canvas);
+	kl_canvas_clip_push(style->canvas, rect);
+	kl_canvas_round(style->canvas, start, (float)rect->y, span, (float)rect->height, radius, style->theme->accent);
+	kl_canvas_clip_pop(style->canvas);
 }
 
 /* Tells whether a dialog takes a key: Enter and Esc. */
@@ -401,7 +401,7 @@ cards_dialog_key(
 	(void)modifiers;
 
 	/* Enter and Esc answer the dialog. */
-	if (code == KUI_KEY_ENTER || code == KUI_KEY_KPENTER || code == KUI_KEY_ESC)
+	if (code == KL_KEY_ENTER || code == KL_KEY_KPENTER || code == KL_KEY_ESC)
 		return 1;
 	return 0;
 }

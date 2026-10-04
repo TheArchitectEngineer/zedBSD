@@ -13,7 +13,7 @@
  * viewports and text views -- in the order they were drawn.  Input is
  * resolved as it arrives against the records of the frame last drawn (the
  * one on the screen), the latest record first, since what was drawn last
- * is on top.  kui_ui_end makes the frame just drawn the one input is
+ * is on top.  kl_ui_end makes the frame just drawn the one input is
  * resolved against.
  *
  * The fingers go through one libkeiland gesture recognizer.  The first
@@ -73,9 +73,9 @@ struct ui_record {
 	uint32_t id;
 	uint32_t index;
 	unsigned flags;
-	struct kui_rect rect;
-	struct kui_scroll *scroll;
-	struct kui_text_touch *touch;
+	struct kl_rect rect;
+	struct kl_scroll *scroll;
+	struct kl_text_touch *touch;
 };
 
 /* A widget's identity: its id and index, whether there is one, and its record's flags (KEIUI_*). */
@@ -95,12 +95,12 @@ struct ui_press {
 };
 
 /*
- * One window's input state, from kui_ui_create to kui_ui_destroy.
+ * One window's input state, from kl_ui_create to kl_ui_destroy.
  *
  * shown is the frame on the screen, against which input is resolved;
- * drawing is the frame being drawn.  kui_ui_end swaps them.
+ * drawing is the frame being drawn.  kl_ui_end swaps them.
  */
-struct kui_ui {
+struct kl_ui {
 	struct ui_record *shown;
 	size_t shown_count;
 	struct ui_record *drawing;
@@ -134,7 +134,7 @@ struct kui_ui {
 	uint64_t edge_us;
 
 	/* The inputs no part took, a ring. */
-	struct kui_event events[UI_EVENTS];
+	struct kl_event events[UI_EVENTS];
 	unsigned event_first;
 	unsigned event_count;
 
@@ -144,7 +144,7 @@ struct kui_ui {
 	struct ui_press keys[UI_KEYS];
 	unsigned key_count;
 
-	/* The time of the frame being drawn (kui_ui_begin's). */
+	/* The time of the frame being drawn (kl_ui_begin's). */
 	uint64_t now_us;
 
 	/* The keyboard inset last acted on (ui_inset's serial, ws102-p015). */
@@ -155,10 +155,10 @@ struct kui_ui {
  * The on-screen keyboard's inset a window heard last (window.c,
  * keiui_ui_inset_note; ws102-p015): a serial counted up with each, the
  * window's size, the widths covered from its right and bottom edges, and
- * the reason (KUI_KEYBOARD_INSET_*), and the caret's rectangle in the
- * window the application told (kui_window_text_cursor; height 0 when it
+ * the reason (KL_KEYBOARD_INSET_*), and the caret's rectangle in the
+ * window the application told (kl_window_text_cursor; height 0 when it
  * has not).  Each window's input acts on a serial
- * once (kui_ui_end).  The library runs on one thread.
+ * once (kl_ui_end).  The library runs on one thread.
  */
 static struct {
 	unsigned serial;
@@ -170,31 +170,31 @@ static struct {
 	int32_t caret[4];
 } ui_inset;
 
-static const struct ui_record *ui_find(const struct kui_ui *ui, double x, double y, int regions);
-static int ui_inside(const struct kui_rect *rect, double x, double y);
+static const struct ui_record *ui_find(const struct kl_ui *ui, double x, double y, int regions);
+static int ui_inside(const struct kl_rect *rect, double x, double y);
 static int ui_same(const struct ui_key *key, uint32_t id, uint32_t index);
 static int ui_target(const struct ui_key *target, uint32_t id, uint32_t index);
-static void ui_click(struct kui_ui *ui, const struct ui_key *key, int twice, uint64_t now_us);
-static struct kui_event *ui_push(struct kui_ui *ui, unsigned kind, double x, double y);
-static void ui_gestures(struct kui_ui *ui, uint64_t now_us);
-static void ui_gesture(struct kui_ui *ui, const struct keiland_gesture_event *gesture, uint64_t now_us);
-static void ui_drag_step(struct kui_ui *ui, uint64_t now_us);
-static void ui_content(const struct kui_ui *ui, double x, double y, double *content_x, double *content_y);
-static void ui_record(struct kui_ui *ui, enum ui_kind kind, uint32_t id, uint32_t index, unsigned flags, const struct kui_rect *rect, struct kui_scroll *scroll, struct kui_text_touch *touch);
-static void ui_focus_press(struct kui_ui *ui, const struct ui_record *record, double x, double y);
-static const struct ui_record *ui_focus_owner(const struct ui_key *key, const struct kui_ui *ui, double x, double y);
-static int ui_focus_move(struct kui_ui *ui, int backward);
-static int ui_inset_center(struct kui_ui *ui, uint64_t now_us);
+static void ui_click(struct kl_ui *ui, const struct ui_key *key, int twice, uint64_t now_us);
+static struct kl_event *ui_push(struct kl_ui *ui, unsigned kind, double x, double y);
+static void ui_gestures(struct kl_ui *ui, uint64_t now_us);
+static void ui_gesture(struct kl_ui *ui, const struct keiland_gesture_event *gesture, uint64_t now_us);
+static void ui_drag_step(struct kl_ui *ui, uint64_t now_us);
+static void ui_content(const struct kl_ui *ui, double x, double y, double *content_x, double *content_y);
+static void ui_record(struct kl_ui *ui, enum ui_kind kind, uint32_t id, uint32_t index, unsigned flags, const struct kl_rect *rect, struct kl_scroll *scroll, struct kl_text_touch *touch);
+static void ui_focus_press(struct kl_ui *ui, const struct ui_record *record, double x, double y);
+static const struct ui_record *ui_focus_owner(const struct ui_key *key, const struct kl_ui *ui, double x, double y);
+static int ui_focus_move(struct kl_ui *ui, int backward);
+static int ui_inset_center(struct kl_ui *ui, uint64_t now_us);
 
 /*
  * Makes a window's input state.
  *
  * Returns NULL when memory is short.
  */
-struct kui_ui *
-kui_ui_create(void)
+struct kl_ui *
+kl_ui_create(void)
 {
-	struct kui_ui *ui;
+	struct kl_ui *ui;
 
 	/* The state. */
 	ui = calloc(1, sizeof(*ui));
@@ -204,21 +204,21 @@ kui_ui_create(void)
 	/* The records of the frame shown. */
 	ui->shown = calloc(UI_RECORDS, sizeof(ui->shown[0]));
 	if (ui->shown == NULL) {
-		kui_ui_destroy(ui);
+		kl_ui_destroy(ui);
 		return NULL;
 	}
 
 	/* The records of the frame being drawn. */
 	ui->drawing = calloc(UI_RECORDS, sizeof(ui->drawing[0]));
 	if (ui->drawing == NULL) {
-		kui_ui_destroy(ui);
+		kl_ui_destroy(ui);
 		return NULL;
 	}
 
 	/* The gestures of the fingers. */
 	ui->gesture = keiland_gesture_create();
 	if (ui->gesture == NULL) {
-		kui_ui_destroy(ui);
+		kl_ui_destroy(ui);
 		return NULL;
 	}
 
@@ -230,8 +230,8 @@ kui_ui_create(void)
  * Frees a window's input state.
  */
 void
-kui_ui_destroy(
-	struct kui_ui *ui)
+kl_ui_destroy(
+	struct kl_ui *ui)
 {
 	/* No state, nothing to free. */
 	if (ui == NULL)
@@ -249,8 +249,8 @@ kui_ui_destroy(
  * The pointer moves to a point of the window.
  */
 int
-kui_ui_pointer_motion(
-	struct kui_ui *ui,
+kl_ui_pointer_motion(
+	struct kl_ui *ui,
 	double x,
 	double y)
 {
@@ -292,8 +292,8 @@ kui_ui_pointer_motion(
  * The pointer leaves the window.
  */
 int
-kui_ui_pointer_leave(
-	struct kui_ui *ui)
+kl_ui_pointer_leave(
+	struct kl_ui *ui)
 {
 	/* Nothing lit any more. */
 	ui->pointer_inside = 0;
@@ -309,13 +309,13 @@ kui_ui_pointer_leave(
  * The main button is pressed or released at the pointer.
  */
 int
-kui_ui_pointer_button(
-	struct kui_ui *ui,
+kl_ui_pointer_button(
+	struct kl_ui *ui,
 	int pressed,
 	uint64_t now_us)
 {
 	const struct ui_record *record;
-	struct kui_event *event;
+	struct kl_event *event;
 	int same;
 
 	/* The part under the pointer, of any kind. */
@@ -333,7 +333,7 @@ kui_ui_pointer_button(
 		}
 
 		/* Anywhere else: the application's press, naming the region under it. */
-		event = ui_push(ui, KUI_EVENT_PRESS, ui->pointer_x, ui->pointer_y);
+		event = ui_push(ui, KL_EVENT_PRESS, ui->pointer_x, ui->pointer_y);
 		if (event != NULL && record != NULL)
 			event->region = record->id;
 		return 1;
@@ -353,7 +353,7 @@ kui_ui_pointer_button(
 	}
 
 	/* A release of a press nothing took is the application's. */
-	event = ui_push(ui, KUI_EVENT_RELEASE, ui->pointer_x, ui->pointer_y);
+	event = ui_push(ui, KL_EVENT_RELEASE, ui->pointer_x, ui->pointer_y);
 	if (event != NULL && record != NULL)
 		event->region = record->id;
 	return 1;
@@ -364,24 +364,24 @@ kui_ui_pointer_button(
  * glides, else the application hears it.
  */
 int
-kui_ui_wheel(
-	struct kui_ui *ui,
+kl_ui_wheel(
+	struct kl_ui *ui,
 	double dx,
 	double dy,
 	uint64_t now_us)
 {
 	const struct ui_record *record;
-	struct kui_event *event;
+	struct kl_event *event;
 
 	/* The scroll or text view under the pointer. */
 	record = ui_find(ui, ui->pointer_x, ui->pointer_y, 1);
 	if (record != NULL && record->scroll != NULL) {
-		kui_scroll_wheel(record->scroll, dx, dy, now_us);
+		kl_scroll_wheel(record->scroll, dx, dy, now_us);
 		return 1;
 	}
 
 	/* Nothing scrolls there: the application's wheel. */
-	event = ui_push(ui, KUI_EVENT_WHEEL, ui->pointer_x, ui->pointer_y);
+	event = ui_push(ui, KL_EVENT_WHEEL, ui->pointer_x, ui->pointer_y);
 	if (event == NULL)
 		return 0;
 	event->dx = dx;
@@ -393,8 +393,8 @@ kui_ui_wheel(
  * A finger touches: the first finger chooses the touch's targets.
  */
 int
-kui_ui_touch_down(
-	struct kui_ui *ui,
+kl_ui_touch_down(
+	struct kl_ui *ui,
 	int32_t id,
 	uint64_t time_us,
 	uint64_t now_us,
@@ -422,7 +422,7 @@ kui_ui_touch_down(
 		if (record != NULL) {
 			ui->touch_region = *record;
 			ui->touch_has_region = 1;
-			ui->caught = kui_scroll_press(record->scroll, now_us);
+			ui->caught = kl_scroll_press(record->scroll, now_us);
 		}
 
 		/* No drag yet. */
@@ -445,8 +445,8 @@ kui_ui_touch_down(
  * A finger moves.
  */
 int
-kui_ui_touch_motion(
-	struct kui_ui *ui,
+kl_ui_touch_motion(
+	struct kl_ui *ui,
 	int32_t id,
 	uint64_t time_us,
 	uint64_t now_us,
@@ -467,8 +467,8 @@ kui_ui_touch_motion(
  * A finger lifts.
  */
 int
-kui_ui_touch_up(
-	struct kui_ui *ui,
+kl_ui_touch_up(
+	struct kl_ui *ui,
 	int32_t id,
 	uint64_t time_us,
 	uint64_t now_us)
@@ -489,8 +489,8 @@ kui_ui_touch_up(
  * The compositor took the fingers away.
  */
 int
-kui_ui_touch_cancel(
-	struct kui_ui *ui,
+kl_ui_touch_cancel(
+	struct kl_ui *ui,
 	uint64_t now_us)
 {
 	/* The gestures end without their lift. */
@@ -505,8 +505,8 @@ kui_ui_touch_cancel(
  * followed, and every scroll of the frame shown moved on to the time.
  */
 void
-kui_ui_begin(
-	struct kui_ui *ui,
+kl_ui_begin(
+	struct kl_ui *ui,
 	uint64_t now_us)
 {
 	size_t index;
@@ -521,7 +521,7 @@ kui_ui_begin(
 	/* Each scroll of the frame shown, at the frame's time. */
 	for (index = 0; index < ui->shown_count; index++) {
 		if (ui->shown[index].scroll != NULL)
-			(void)kui_scroll_step(ui->shown[index].scroll, now_us);
+			(void)kl_scroll_step(ui->shown[index].scroll, now_us);
 	}
 
 	/* The frame being drawn records its parts from none. */
@@ -530,14 +530,14 @@ kui_ui_begin(
 
 /*
  * Records a widget of the frame being drawn and reports what the input
- * did to it (KUI_HIT_* bits).
+ * did to it (KL_HIT_* bits).
  */
 unsigned
-kui_ui_hit(
-	struct kui_ui *ui,
+kl_ui_hit(
+	struct kl_ui *ui,
 	uint32_t id,
 	uint32_t index,
-	const struct kui_rect *rect)
+	const struct kl_rect *rect)
 {
 	unsigned state;
 	int same;
@@ -551,7 +551,7 @@ kui_ui_hit(
 	if (ui->hot.valid)
 		same = ui_same(&ui->hot, id, index);
 	if (same)
-		state |= KUI_HIT_HOT;
+		state |= KL_HIT_HOT;
 
 	/* Held: a press on it has not been released (or a drag of it was let go since the last frame). */
 	same = 0;
@@ -560,18 +560,18 @@ kui_ui_hit(
 	if (ui->released.valid && !same)
 		same = ui_same(&ui->released, id, index);
 	if (same)
-		state |= KUI_HIT_ACTIVE;
+		state |= KL_HIT_ACTIVE;
 
 	/* Clicked since the last frame, once or as the second of two. */
 	same = 0;
 	if (ui->clicked.valid)
 		same = ui_same(&ui->clicked, id, index);
 	if (same) {
-		state |= KUI_HIT_CLICKED;
+		state |= KL_HIT_CLICKED;
 		if (ui->clicked_double)
-			state |= KUI_HIT_DOUBLE;
+			state |= KL_HIT_DOUBLE;
 		if (ui->clicked_touch)
-			state |= KUI_HIT_TOUCHED;
+			state |= KL_HIT_TOUCHED;
 	}
 
 	/* Reports the state. */
@@ -583,11 +583,11 @@ kui_ui_hit(
  * finger's drag over it move the scroll.
  */
 void
-kui_ui_scroll_region(
-	struct kui_ui *ui,
+kl_ui_scroll_region(
+	struct kl_ui *ui,
 	uint32_t id,
-	const struct kui_rect *rect,
-	struct kui_scroll *scroll)
+	const struct kl_rect *rect,
+	struct kl_scroll *scroll)
 {
 	/* The record. */
 	ui_record(ui, UI_KIND_SCROLL, id, 0U, 0U, rect, scroll, NULL);
@@ -598,12 +598,12 @@ kui_ui_scroll_region(
  * takes the wheel and two fingers, its touch takes one finger.
  */
 void
-kui_ui_text_region(
-	struct kui_ui *ui,
+kl_ui_text_region(
+	struct kl_ui *ui,
 	uint32_t id,
-	const struct kui_rect *rect,
-	struct kui_scroll *scroll,
-	struct kui_text_touch *touch)
+	const struct kl_rect *rect,
+	struct kl_scroll *scroll,
+	struct kl_text_touch *touch)
 {
 	/* The record. */
 	ui_record(ui, UI_KIND_TEXT, id, 0U, 0U, rect, scroll, touch);
@@ -615,13 +615,13 @@ kui_ui_text_region(
  * window should draw the next frame).
  */
 int
-kui_ui_end(
-	struct kui_ui *ui,
+kl_ui_end(
+	struct kl_ui *ui,
 	uint64_t now_us)
 {
 	struct ui_record *swap;
-	struct kui_scroll *scroll;
-	struct kui_event *event;
+	struct kl_scroll *scroll;
+	struct kl_event *event;
 	size_t index;
 	unsigned kept;
 	int moving;
@@ -661,7 +661,7 @@ kui_ui_end(
 
 		/* The first is the application's. */
 		delivered = 1;
-		event = ui_push(ui, KUI_EVENT_KEY, ui->pointer_x, ui->pointer_y);
+		event = ui_push(ui, KL_EVENT_KEY, ui->pointer_x, ui->pointer_y);
 		if (event == NULL)
 			continue;
 		event->code = ui->keys[index].code;
@@ -681,7 +681,7 @@ kui_ui_end(
 	if (ui->active.valid && (ui->active.flags & KEIUI_DRAGGABLE) != 0U)
 		held = 1;
 	if (ui->pointer_inside && !held) {
-		lit = kui_ui_pointer_motion(ui, ui->pointer_x, ui->pointer_y);
+		lit = kl_ui_pointer_motion(ui, ui->pointer_x, ui->pointer_y);
 		if (lit)
 			moving = 1;
 	}
@@ -689,7 +689,7 @@ kui_ui_end(
 	/* A keyboard that came or changed keeps the text view's caret in sight (the frame just drawn has the view). */
 	if (ui->inset_serial != ui_inset.serial) {
 		ui->inset_serial = ui_inset.serial;
-		if (ui_inset.reason != KUI_KEYBOARD_INSET_NONE) {
+		if (ui_inset.reason != KL_KEYBOARD_INSET_NONE) {
 			moved = ui_inset_center(ui, now_us);
 			if (moved)
 				moving = 1;
@@ -703,7 +703,7 @@ kui_ui_end(
 			continue;
 		if (scroll->gliding || scroll->touched)
 			moving = 1;
-		if (scroll->moved_us != 0U && now_us >= scroll->moved_us && now_us - scroll->moved_us < KUI_SCROLL_FADE_US)
+		if (scroll->moved_us != 0U && now_us >= scroll->moved_us && now_us - scroll->moved_us < KL_SCROLL_FADE_US)
 			moving = 1;
 	}
 
@@ -716,9 +716,9 @@ kui_ui_end(
  * when there is none.
  */
 int
-kui_ui_take(
-	struct kui_ui *ui,
-	struct kui_event *event)
+kl_ui_take(
+	struct kl_ui *ui,
+	struct kl_event *event)
 {
 	/* None left. */
 	if (ui->event_count == 0U)
@@ -739,8 +739,8 @@ kui_ui_take(
  * drag goes on.
  */
 int
-kui_ui_drag_offset(
-	struct kui_ui *ui,
+kl_ui_drag_offset(
+	struct kl_ui *ui,
 	uint64_t now_us,
 	double *dx,
 	double *dy)
@@ -767,13 +767,13 @@ kui_ui_drag_offset(
  * Returns 1 when the window must draw again.
  */
 int
-kui_ui_key(
-	struct kui_ui *ui,
+kl_ui_key(
+	struct kl_ui *ui,
 	uint32_t key,
 	int pressed,
 	unsigned modifiers)
 {
-	struct kui_event *event;
+	struct kl_event *event;
 	int moved;
 
 	/* Releases do nothing. */
@@ -781,15 +781,15 @@ kui_ui_key(
 		return 0;
 
 	/* Tab moves the focus, when there is somewhere to move it. */
-	if (key == UI_KEY_TAB && (modifiers & (KUI_MOD_CTRL | KUI_MOD_ALT)) == 0U) {
-		moved = ui_focus_move(ui, (modifiers & KUI_MOD_SHIFT) != 0U);
+	if (key == UI_KEY_TAB && (modifiers & (KL_MOD_CTRL | KL_MOD_ALT)) == 0U) {
+		moved = ui_focus_move(ui, (modifiers & KL_MOD_SHIFT) != 0U);
 		if (moved)
 			return 1;
 	}
 
 	/* Without a focused widget (and no key waiting before it) the key is the application's at once. */
 	if ((!ui->focus.valid && ui->key_count == 0U) || ui->key_count == UI_KEYS) {
-		event = ui_push(ui, KUI_EVENT_KEY, ui->pointer_x, ui->pointer_y);
+		event = ui_push(ui, KL_EVENT_KEY, ui->pointer_x, ui->pointer_y);
 		if (event == NULL)
 			return 0;
 		event->code = key;
@@ -812,8 +812,8 @@ kui_ui_key(
  * Gives a widget the keyboard's focus.
  */
 void
-kui_ui_set_focus(
-	struct kui_ui *ui,
+kl_ui_set_focus(
+	struct kl_ui *ui,
 	uint32_t id,
 	uint32_t index)
 {
@@ -829,8 +829,8 @@ kui_ui_set_focus(
  * Takes the keyboard's focus from every widget.
  */
 void
-kui_ui_clear_focus(
-	struct kui_ui *ui)
+kl_ui_clear_focus(
+	struct kl_ui *ui)
 {
 	/* No widget. */
 	ui->focus.valid = 0;
@@ -840,8 +840,8 @@ kui_ui_clear_focus(
  * Tells whether a widget has the keyboard's focus.
  */
 int
-kui_ui_has_focus(
-	const struct kui_ui *ui,
+kl_ui_has_focus(
+	const struct kl_ui *ui,
 	uint32_t id,
 	uint32_t index)
 {
@@ -861,8 +861,8 @@ kui_ui_has_focus(
  * finger that tapped or drags a widget.
  */
 void
-kui_ui_pointer(
-	const struct kui_ui *ui,
+kl_ui_pointer(
+	const struct kl_ui *ui,
 	double *x,
 	double *y)
 {
@@ -873,23 +873,23 @@ kui_ui_pointer(
 
 /*
  * Records a widget with its flags (KEIUI_*) and reports what the input did
- * to it (KUI_HIT_* bits, with KUI_HIT_FOCUSED).
+ * to it (KL_HIT_* bits, with KL_HIT_FOCUSED).
  */
 unsigned
 keiui_ui_widget(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	uint32_t id,
 	uint32_t index,
-	const struct kui_rect *rect,
+	const struct kl_rect *rect,
 	unsigned flags)
 {
 	unsigned state;
 	size_t before;
 	int same;
 
-	/* The record, and what kui_ui_hit reports of it; the flags go on the record when it was made (a full frame makes none). */
+	/* The record, and what kl_ui_hit reports of it; the flags go on the record when it was made (a full frame makes none). */
 	before = ui->drawing_count;
-	state = kui_ui_hit(ui, id, index, rect);
+	state = kl_ui_hit(ui, id, index, rect);
 	if (ui->drawing_count > before)
 		ui->drawing[before].flags = flags;
 
@@ -898,7 +898,7 @@ keiui_ui_widget(
 	if (ui->focus.valid)
 		same = ui_same(&ui->focus, id, index);
 	if (same)
-		state |= KUI_HIT_FOCUSED;
+		state |= KL_HIT_FOCUSED;
 
 	/* Reports the state. */
 	return state;
@@ -911,7 +911,7 @@ keiui_ui_widget(
  */
 int
 keiui_ui_take_key(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	uint32_t id,
 	uint32_t index,
 	keiui_wants_key wants,
@@ -948,7 +948,7 @@ keiui_ui_take_key(
  */
 int
 keiui_ui_take_activate(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	uint32_t id,
 	uint32_t index)
 {
@@ -966,7 +966,7 @@ keiui_ui_take_activate(
 		same = ui_target(&ui->keys[slot].target, id, index);
 		if (!same)
 			continue;
-		if (code != KUI_KEY_ENTER && code != KUI_KEY_KPENTER && code != KUI_KEY_SPACE)
+		if (code != KL_KEY_ENTER && code != KL_KEY_KPENTER && code != KL_KEY_SPACE)
 			break;
 		ui->keys[slot].taken = 1;
 		pressed = 1;
@@ -982,7 +982,7 @@ keiui_ui_take_activate(
  */
 int
 keiui_ui_focused(
-	const struct kui_ui *ui,
+	const struct kl_ui *ui,
 	uint32_t *id,
 	uint32_t *index)
 {
@@ -1002,7 +1002,7 @@ keiui_ui_focused(
  */
 int
 keiui_ui_focus_ring(
-	const struct kui_ui *ui)
+	const struct kl_ui *ui)
 {
 	/* Moved by Tab and still there. */
 	if (!ui->focus.valid)
@@ -1011,12 +1011,12 @@ keiui_ui_focus_ring(
 }
 
 /*
- * Reports the time of the frame being drawn (the time kui_ui_begin was
+ * Reports the time of the frame being drawn (the time kl_ui_begin was
  * given), which the widgets glide and fade by.
  */
 uint64_t
 keiui_ui_now(
-	const struct kui_ui *ui)
+	const struct kl_ui *ui)
 {
 	/* The frame's time. */
 	return ui->now_us;
@@ -1025,7 +1025,7 @@ keiui_ui_now(
 /* Finds the latest record of the frame shown under a point: any kind, or (regions) only a scroll or a text view. */
 static const struct ui_record *
 ui_find(
-	const struct kui_ui *ui,
+	const struct kl_ui *ui,
 	double x,
 	double y,
 	int regions)
@@ -1051,7 +1051,7 @@ ui_find(
 /* Tells whether a point is in a rectangle. */
 static int
 ui_inside(
-	const struct kui_rect *rect,
+	const struct kl_rect *rect,
 	double x,
 	double y)
 {
@@ -1112,7 +1112,7 @@ ui_same(
 /* Clicks a widget (twice: the second of a double click or tap). */
 static void
 ui_click(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	const struct ui_key *key,
 	int twice,
 	uint64_t now_us)
@@ -1139,14 +1139,14 @@ ui_click(
 }
 
 /* Keeps an input no part took (the oldest goes when the ring is full). */
-static struct kui_event *
+static struct kl_event *
 ui_push(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	unsigned kind,
 	double x,
 	double y)
 {
-	struct kui_event *event;
+	struct kl_event *event;
 	unsigned slot;
 
 	/* A full ring drops its oldest. */
@@ -1176,11 +1176,11 @@ ui_push(
  */
 static void
 ui_gestures(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	uint64_t now_us)
 {
 	struct keiland_gesture_event gestures[UI_GESTURES];
-	struct kui_scroll *scroll;
+	struct kl_scroll *scroll;
 	int count;
 	int index;
 	int taken;
@@ -1206,19 +1206,19 @@ ui_gestures(
 		return;
 	scroll = ui->touch_region.scroll;
 	if (scroll->touched && !scroll->released)
-		kui_scroll_fling(scroll, 0.0, 0.0, now_us);
+		kl_scroll_fling(scroll, 0.0, 0.0, now_us);
 }
 
 /* Carries out one gesture on the touch's targets. */
 static void
 ui_gesture(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	const struct keiland_gesture_event *gesture,
 	uint64_t now_us)
 {
 	const struct ui_record *owner;
-	struct kui_scroll *scroll;
-	struct kui_event *event;
+	struct kl_scroll *scroll;
+	struct kl_event *event;
 	double x;
 	double y;
 	int twice;
@@ -1257,11 +1257,11 @@ ui_gesture(
 			ui->clicked_touch = 1;
 		} else if (ui->touch_has_region && ui->touch_region.kind == UI_KIND_TEXT) {
 			ui_content(ui, gesture->x, gesture->y, &x, &y);
-			kui_text_touch_tap(ui->touch_region.touch, x, y, twice);
+			kl_text_touch_tap(ui->touch_region.touch, x, y, twice);
 		} else if (twice) {
-			(void)ui_push(ui, KUI_EVENT_DOUBLE_TAP, gesture->x, gesture->y);
+			(void)ui_push(ui, KL_EVENT_DOUBLE_TAP, gesture->x, gesture->y);
 		} else {
-			(void)ui_push(ui, KUI_EVENT_TAP, gesture->x, gesture->y);
+			(void)ui_push(ui, KL_EVENT_TAP, gesture->x, gesture->y);
 		}
 
 		/* The tap is carried out. */
@@ -1269,12 +1269,12 @@ ui_gesture(
 	case KEILAND_GESTURE_LONG_PRESS:
 		/* A text view asks for its context menu; elsewhere the application hears it, with the region. */
 		if (ui->touch_has_region && ui->touch_region.kind == UI_KIND_TEXT && !ui->touch_hit.valid) {
-			kui_text_touch_long_press(ui->touch_region.touch, gesture->x, gesture->y);
+			kl_text_touch_long_press(ui->touch_region.touch, gesture->x, gesture->y);
 			break;
 		}
 
 		/* The application's long press, naming the widget or else the region under it. */
-		event = ui_push(ui, KUI_EVENT_LONG_PRESS, gesture->x, gesture->y);
+		event = ui_push(ui, KL_EVENT_LONG_PRESS, gesture->x, gesture->y);
 		if (event != NULL && ui->touch_has_region)
 			event->region = ui->touch_region.id;
 		if (event != NULL && ui->touch_hit.valid)
@@ -1293,12 +1293,12 @@ ui_gesture(
 		} else if (ui->touch_has_region && ui->touch_region.kind == UI_KIND_TEXT && gesture->fingers == 1U) {
 			ui->drag = UI_DRAG_SELECT;
 			ui_content(ui, gesture->x, gesture->y, &x, &y);
-			kui_text_touch_drag_begin(ui->touch_region.touch, x, y);
+			kl_text_touch_drag_begin(ui->touch_region.touch, x, y);
 		} else if (ui->touch_has_region) {
 			ui->drag = UI_DRAG_SCROLL;
 		} else {
 			ui->drag = UI_DRAG_OUTSIDE;
-			event = ui_push(ui, KUI_EVENT_DRAG_BEGIN, gesture->x, gesture->y);
+			event = ui_push(ui, KL_EVENT_DRAG_BEGIN, gesture->x, gesture->y);
 			if (event != NULL)
 				event->fingers = gesture->fingers;
 		}
@@ -1308,15 +1308,15 @@ ui_gesture(
 	case KEILAND_GESTURE_DRAG_END:
 		/* The scroll flies on; a selection keeps its handles; the application hears the end of its drag. */
 		if (ui->drag == UI_DRAG_SCROLL && scroll != NULL)
-			kui_scroll_fling(scroll, gesture->vx, gesture->vy, now_us);
+			kl_scroll_fling(scroll, gesture->vx, gesture->vy, now_us);
 		if (ui->drag == UI_DRAG_SELECT) {
-			kui_text_touch_drag_end(ui->touch_region.touch);
-			kui_scroll_fling(scroll, 0.0, 0.0, now_us);
+			kl_text_touch_drag_end(ui->touch_region.touch);
+			kl_scroll_fling(scroll, 0.0, 0.0, now_us);
 		}
 
 		/* The application's drag ends with the fingers' velocity. */
 		if (ui->drag == UI_DRAG_OUTSIDE) {
-			event = ui_push(ui, KUI_EVENT_DRAG_END, gesture->x, gesture->y);
+			event = ui_push(ui, KL_EVENT_DRAG_END, gesture->x, gesture->y);
 			if (event != NULL) {
 				event->dx = gesture->vx;
 				event->dy = gesture->vy;
@@ -1335,9 +1335,9 @@ ui_gesture(
 	case KEILAND_GESTURE_CANCEL:
 		/* Taken away: the scroll springs back, a selection ends where it is. */
 		if (scroll != NULL)
-			kui_scroll_cancel(scroll, now_us);
+			kl_scroll_cancel(scroll, now_us);
 		if (ui->drag == UI_DRAG_SELECT)
-			kui_text_touch_drag_end(ui->touch_region.touch);
+			kl_text_touch_drag_end(ui->touch_region.touch);
 		if (ui->drag == UI_DRAG_WIDGET)
 			ui->active.valid = 0;
 		ui->drag = UI_DRAG_NONE;
@@ -1350,10 +1350,10 @@ ui_gesture(
 /* Follows a drag at a frame's time: the scroll with the fingers, or the selection with its finger and the edges. */
 static void
 ui_drag_step(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	uint64_t now_us)
 {
-	struct kui_scroll *scroll;
+	struct kl_scroll *scroll;
 	double seconds;
 	double dx;
 	double dy;
@@ -1383,7 +1383,7 @@ ui_drag_step(
 
 	/* A scroll follows the fingers. */
 	if (ui->drag == UI_DRAG_SCROLL) {
-		kui_scroll_drag(scroll, dx, dy);
+		kl_scroll_drag(scroll, dx, dy);
 		return;
 	}
 
@@ -1391,10 +1391,10 @@ ui_drag_step(
 	ui->finger_x = ui->down_x + dx;
 	ui->finger_y = ui->down_y + dy;
 	ui_content(ui, ui->finger_x, ui->finger_y, &x, &y);
-	kui_text_touch_drag(ui->touch_region.touch, x, y);
+	kl_text_touch_drag(ui->touch_region.touch, x, y);
 
 	/* Near an edge the content scrolls by itself, at a speed for the time since the last frame. */
-	edge = kui_text_touch_edge(ui->touch_region.touch, scroll, &vx, &vy);
+	edge = kl_text_touch_edge(ui->touch_region.touch, scroll, &vx, &vy);
 	seconds = 0.0;
 	if (now_us > ui->edge_us)
 		seconds = (double)(now_us - ui->edge_us) / 1000000.0;
@@ -1403,16 +1403,16 @@ ui_drag_step(
 		return;
 
 	/* The content moves, and the selection follows the finger over the content that moved under it. */
-	kui_scroll_move_to(scroll, scroll->x + vx * seconds, scroll->y + vy * seconds, 0, now_us);
-	(void)kui_scroll_press(scroll, now_us);
+	kl_scroll_move_to(scroll, scroll->x + vx * seconds, scroll->y + vy * seconds, 0, now_us);
+	(void)kl_scroll_press(scroll, now_us);
 	ui_content(ui, ui->finger_x, ui->finger_y, &x, &y);
-	kui_text_touch_drag(ui->touch_region.touch, x, y);
+	kl_text_touch_drag(ui->touch_region.touch, x, y);
 }
 
 /* Turns a point of the window into the touch's text view's content coordinates. */
 static void
 ui_content(
-	const struct kui_ui *ui,
+	const struct kl_ui *ui,
 	double x,
 	double y,
 	double *content_x,
@@ -1426,14 +1426,14 @@ ui_content(
 /* Adds a record to the frame being drawn (none past the most a frame keeps). */
 static void
 ui_record(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	enum ui_kind kind,
 	uint32_t id,
 	uint32_t index,
 	unsigned flags,
-	const struct kui_rect *rect,
-	struct kui_scroll *scroll,
-	struct kui_text_touch *touch)
+	const struct kl_rect *rect,
+	struct kl_scroll *scroll,
+	struct kl_text_touch *touch)
 {
 	struct ui_record *record;
 
@@ -1456,7 +1456,7 @@ ui_record(
 /* A press lands on a record (or on nothing): the widget that takes the keyboard there takes the focus, anything else takes it away. */
 static void
 ui_focus_press(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	const struct ui_record *record,
 	double x,
 	double y)
@@ -1492,7 +1492,7 @@ ui_focus_press(
 static const struct ui_record *
 ui_focus_owner(
 	const struct ui_key *key,
-	const struct kui_ui *ui,
+	const struct kl_ui *ui,
 	double x,
 	double y)
 {
@@ -1521,7 +1521,7 @@ ui_focus_owner(
 /* Moves the focus to the next (or the previous) widget that takes the keyboard, in the order drawn from the last dialog on; 1 when it moved. */
 static int
 ui_focus_move(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	int backward)
 {
 	const struct ui_record *record;
@@ -1576,7 +1576,7 @@ ui_focus_move(
 
 /*
  * Notes the on-screen keyboard's inset a window heard (window.c): each
- * window's input acts on it in its next kui_ui_end.
+ * window's input acts on it in its next kl_ui_end.
  */
 void
 keiui_ui_inset_note(
@@ -1605,13 +1605,13 @@ keiui_ui_inset_note(
  */
 static int
 ui_inset_center(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	uint64_t now_us)
 {
 	const struct ui_record *record;
-	struct kui_text_touch *touch;
-	struct kui_scroll *scroll;
-	struct kui_rect caret;
+	struct kl_text_touch *touch;
+	struct kl_scroll *scroll;
+	struct kl_rect caret;
 	size_t index;
 	double largest;
 	double middle;
@@ -1639,7 +1639,7 @@ ui_inset_center(
 
 	/* A view that does not scroll down stays. */
 	largest = scroll->content_height - scroll->viewport_height;
-	if ((scroll->axes & KUI_SCROLL_Y) == 0U || largest <= 0.0)
+	if ((scroll->axes & KL_SCROLL_Y) == 0U || largest <= 0.0)
 		return 0;
 
 	/* The part of the view the keyboard leaves: from its top down to the keyboard's top edge. */
@@ -1674,6 +1674,6 @@ ui_inset_center(
 		return 0;
 
 	/* Succeeded: the scroll goes there at once. */
-	kui_scroll_move_to(scroll, scroll->x, target, 0, now_us);
+	kl_scroll_move_to(scroll, scroll->x, target, 0, now_us);
 	return 1;
 }

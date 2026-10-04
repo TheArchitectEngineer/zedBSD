@@ -9,6 +9,7 @@ out=build/ws128-share-host
 mkdir -p "$out/include"
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+ln -sf "$(pwd)/userland/desktop/keiland/keiland-ui.h" "$out/include/keiland-ui.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiui.h" "$out/include/keiui.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}

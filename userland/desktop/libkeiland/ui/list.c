@@ -39,15 +39,15 @@
 #define LIST_TEXT_PLACE		14U
 
 static int list_wants(uint32_t code, unsigned modifiers);
-static int list_focused(const struct kui_ui *ui, uint32_t id);
-static void list_select(struct kui_list *list, long index, const struct kui_rect *rect, int row_height, uint64_t now_us);
+static int list_focused(const struct kl_ui *ui, uint32_t id);
+static void list_select(struct kl_list *list, long index, const struct kl_rect *rect, int row_height, uint64_t now_us);
 
 /*
  * Makes a list's state: no items, none selected, at the top.
  */
 int
-kui_list_init(
-	struct kui_list *list)
+kl_list_init(
+	struct kl_list *list)
 {
 	int error;
 
@@ -56,7 +56,7 @@ kui_list_init(
 	list->selected = -1;
 
 	/* The scroll, down only. */
-	error = kui_scroll_init(&list->scroll, KUI_SCROLL_Y);
+	error = kl_scroll_init(&list->scroll, KL_SCROLL_Y);
 	if (error != 0)
 		return error;
 
@@ -68,27 +68,27 @@ kui_list_init(
  * Frees what a list's state holds.
  */
 void
-kui_list_release(
-	struct kui_list *list)
+kl_list_release(
+	struct kl_list *list)
 {
 	/* The scroll. */
-	kui_scroll_release(&list->scroll);
+	kl_scroll_release(&list->scroll);
 }
 
 /*
  * Starts drawing a list of count items in a rectangle: its scroll's
  * viewport is recorded, the drawing is clipped to it, the keys move the
  * selection, and *first and *last are the rows that show (the application
- * draws each with kui_list_row).  Reports what the keys did
- * (KUI_LIST_* bits).
+ * draws each with kl_list_row).  Reports what the keys did
+ * (KL_LIST_* bits).
  */
 unsigned
-kui_list_begin(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_list_begin(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
-	const struct kui_rect *rect,
-	struct kui_list *list,
+	const struct kl_rect *rect,
+	struct kl_list *list,
 	size_t count,
 	size_t *first,
 	size_t *last)
@@ -106,10 +106,10 @@ kui_list_begin(
 	list->count = count;
 	if (list->selected >= (long)count)
 		list->selected = -1;
-	kui_scroll_set_size(&list->scroll, (double)rect->width, (double)count * (double)height, (double)rect->width, (double)rect->height);
+	kl_scroll_set_size(&list->scroll, (double)rect->width, (double)count * (double)height, (double)rect->width, (double)rect->height);
 
 	/* The viewport takes the wheel and a finger's drag; the list itself takes the keyboard (a Tab reaches it). */
-	kui_ui_scroll_region(ui, id, rect, &list->scroll);
+	kl_ui_scroll_region(ui, id, rect, &list->scroll);
 	(void)keiui_ui_widget(ui, id, LIST_SELF, rect, KEIUI_FOCUSABLE);
 
 	/* The keys pressed while the list had the keyboard. */
@@ -123,31 +123,31 @@ kui_list_begin(
 			break;
 
 		/* Enter activates the selected item. */
-		if (code == KUI_KEY_ENTER || code == KUI_KEY_KPENTER) {
+		if (code == KL_KEY_ENTER || code == KL_KEY_KPENTER) {
 			if (list->selected >= 0)
-				changes |= KUI_LIST_ACTIVATED;
+				changes |= KL_LIST_ACTIVATED;
 			continue;
 		}
 
 		/* The others move the selection. */
 		selected = list->selected;
 		switch (code) {
-		case KUI_KEY_UP:
+		case KL_KEY_UP:
 			selected--;
 			break;
-		case KUI_KEY_DOWN:
+		case KL_KEY_DOWN:
 			selected++;
 			break;
-		case KUI_KEY_PAGEUP:
+		case KL_KEY_PAGEUP:
 			selected -= page;
 			break;
-		case KUI_KEY_PAGEDOWN:
+		case KL_KEY_PAGEDOWN:
 			selected += page;
 			break;
-		case KUI_KEY_HOME:
+		case KL_KEY_HOME:
 			selected = 0;
 			break;
-		case KUI_KEY_END:
+		case KL_KEY_END:
 			selected = (long)count - 1L;
 			break;
 		default:
@@ -161,7 +161,7 @@ kui_list_begin(
 			selected = (long)count - 1L;
 		if (selected != list->selected && count > 0U) {
 			list_select(list, selected, rect, height, keiui_ui_now(ui));
-			changes |= KUI_LIST_SELECTED;
+			changes |= KL_LIST_SELECTED;
 		}
 	}
 
@@ -174,7 +174,7 @@ kui_list_begin(
 		*first = *last;
 
 	/* The rows stay inside the viewport. */
-	kui_canvas_clip_push(style->canvas, rect);
+	kl_canvas_clip_push(style->canvas, rect);
 
 	/* Reports what the keys did. */
 	return changes;
@@ -183,20 +183,20 @@ kui_list_begin(
 /*
  * Draws the ground of one row of a list and takes its clicks: *row is
  * where the application draws its content, *ink the colour to draw it in.
- * Reports what happened (KUI_LIST_* bits).
+ * Reports what happened (KL_LIST_* bits).
  */
 unsigned
-kui_list_row(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_list_row(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
-	const struct kui_rect *rect,
-	struct kui_list *list,
+	const struct kl_rect *rect,
+	struct kl_list *list,
 	size_t index,
-	struct kui_rect *row,
-	kui_color *ink)
+	struct kl_rect *row,
+	kl_color *ink)
 {
-	const struct kui_theme *theme;
+	const struct kl_theme *theme;
 	unsigned changes;
 	unsigned state;
 	int focused;
@@ -213,14 +213,14 @@ kui_list_row(
 
 	/* A click selects it; a double click (or tap) activates it. */
 	changes = 0;
-	if ((state & KUI_HIT_CLICKED) != 0U) {
+	if ((state & KL_HIT_CLICKED) != 0U) {
 		if ((long)index != list->selected)
-			changes |= KUI_LIST_SELECTED;
+			changes |= KL_LIST_SELECTED;
 		list->selected = (long)index;
-		if ((state & KUI_HIT_DOUBLE) != 0U)
-			changes |= KUI_LIST_ACTIVATED;
-		if ((state & KUI_HIT_TOUCHED) != 0U)
-			changes |= KUI_LIST_TOUCHED;
+		if ((state & KL_HIT_DOUBLE) != 0U)
+			changes |= KL_LIST_ACTIVATED;
+		if ((state & KL_HIT_TOUCHED) != 0U)
+			changes |= KL_LIST_TOUCHED;
 	}
 
 	/* The ground: the accent when selected (pale without the keyboard), faint under the pointer. */
@@ -228,13 +228,13 @@ kui_list_row(
 	*ink = theme->text;
 	if ((long)index == list->selected) {
 		if (focused) {
-			kui_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->accent);
-			*ink = KUI_RGB(0xffffff);
+			kl_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->accent);
+			*ink = KL_RGB(0xffffff);
 		} else {
-			kui_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->selection_inactive);
+			kl_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->selection_inactive);
 		}
-	} else if ((state & KUI_HIT_HOT) != 0U) {
-		kui_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->hover);
+	} else if ((state & KL_HIT_HOT) != 0U) {
+		kl_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->hover);
 	}
 
 	/* Reports what happened. */
@@ -246,17 +246,17 @@ kui_list_row(
  * moves.
  */
 void
-kui_list_end(
-	struct kui_ui *ui,
-	const struct kui_style *style,
-	const struct kui_rect *rect,
-	struct kui_list *list)
+kl_list_end(
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *rect,
+	struct kl_list *list)
 {
 	/* The clip of the rows goes. */
-	kui_canvas_clip_pop(style->canvas);
+	kl_canvas_clip_pop(style->canvas);
 
 	/* The bar, at the frame's time. */
-	(void)kui_scroll_draw_bars(&list->scroll, style->canvas, rect, style->theme, keiui_ui_now(ui));
+	(void)kl_scroll_draw_bars(&list->scroll, style->canvas, rect, style->theme, keiui_ui_now(ui));
 }
 
 /*
@@ -264,20 +264,20 @@ kui_list_end(
  * first place.
  */
 int
-kui_sidebar_section(
-	const struct kui_style *style,
+kl_sidebar_section(
+	const struct kl_style *style,
 	int x,
 	int y,
 	int width,
 	const char *title)
 {
-	kui_color ink;
+	kl_color ink;
 
 	/* Secondary, on glass and on an opaque ground alike (the faint ink is under 3:1 on the sidebar, ws090-p014). */
 	ink = style->theme->text_secondary;
 
 	/* The title, small and bold. */
-	(void)kui_text_draw_fit(style->text, style->canvas, x + 8, y + LIST_SECTION - 10, title, LIST_TEXT_SECTION, 1, width - 16, ink);
+	(void)kl_text_draw_fit(style->text, style->canvas, x + 8, y + LIST_SECTION - 10, title, LIST_TEXT_SECTION, 1, width - 16, ink);
 
 	/* Reports where the places start. */
 	return y + LIST_SECTION;
@@ -289,39 +289,39 @@ kui_sidebar_section(
  * clicked or tapped.
  */
 int
-kui_sidebar_item(
-	struct kui_ui *ui,
-	const struct kui_style *style,
+kl_sidebar_item(
+	struct kl_ui *ui,
+	const struct kl_style *style,
 	uint32_t id,
 	uint32_t index,
-	const struct kui_rect *rect,
-	enum kui_icon icon,
+	const struct kl_rect *rect,
+	enum kl_icon icon,
 	const char *label,
 	int current)
 {
-	const struct kui_theme *theme;
-	kui_color ink;
+	const struct kl_theme *theme;
+	kl_color ink;
 	unsigned state;
 
 	/* The record. */
 	theme = style->theme;
-	state = kui_ui_hit(ui, id, index, rect);
+	state = kl_ui_hit(ui, id, index, rect);
 
 	/* The ground and the ink: the accent for the place shown, faint under the pointer. */
 	ink = theme->text;
 	if (current) {
-		kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, LIST_PLACE_RADIUS, theme->selection);
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, LIST_PLACE_RADIUS, theme->selection);
 		ink = theme->accent;
-	} else if ((state & KUI_HIT_HOT) != 0U) {
-		kui_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, LIST_PLACE_RADIUS, theme->hover);
+	} else if ((state & KL_HIT_HOT) != 0U) {
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, LIST_PLACE_RADIUS, theme->hover);
 	}
 
 	/* The icon and the label (bold for the place shown). */
-	kui_icon_draw(style->canvas, icon, (float)rect->x + 8.0f, (float)rect->y + ((float)rect->height - 18.0f) * 0.5f, 18.0f, ink);
-	(void)kui_text_draw_fit(style->text, style->canvas, rect->x + 36, kui_text_center(LIST_TEXT_PLACE, rect->y, rect->height), label, LIST_TEXT_PLACE, current, rect->width - 44, ink);
+	kl_icon_draw(style->canvas, icon, (float)rect->x + 8.0f, (float)rect->y + ((float)rect->height - 18.0f) * 0.5f, 18.0f, ink);
+	(void)kl_text_draw_fit(style->text, style->canvas, rect->x + 36, kl_text_center(LIST_TEXT_PLACE, rect->y, rect->height), label, LIST_TEXT_PLACE, current, rect->width - 44, ink);
 
 	/* Reports whether it was clicked. */
-	if ((state & KUI_HIT_CLICKED) != 0U)
+	if ((state & KL_HIT_CLICKED) != 0U)
 		return 1;
 	return 0;
 }
@@ -333,19 +333,19 @@ list_wants(
 	unsigned modifiers)
 {
 	/* A command is the application's. */
-	if ((modifiers & (KUI_MOD_CTRL | KUI_MOD_ALT)) != 0U)
+	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT)) != 0U)
 		return 0;
 
 	/* The keys that move and activate. */
 	switch (code) {
-	case KUI_KEY_UP:
-	case KUI_KEY_DOWN:
-	case KUI_KEY_PAGEUP:
-	case KUI_KEY_PAGEDOWN:
-	case KUI_KEY_HOME:
-	case KUI_KEY_END:
-	case KUI_KEY_ENTER:
-	case KUI_KEY_KPENTER:
+	case KL_KEY_UP:
+	case KL_KEY_DOWN:
+	case KL_KEY_PAGEUP:
+	case KL_KEY_PAGEDOWN:
+	case KL_KEY_HOME:
+	case KL_KEY_END:
+	case KL_KEY_ENTER:
+	case KL_KEY_KPENTER:
 		return 1;
 	default:
 		break;
@@ -358,7 +358,7 @@ list_wants(
 /* Tells whether the keyboard's focus is on a list (on itself or one of its rows). */
 static int
 list_focused(
-	const struct kui_ui *ui,
+	const struct kl_ui *ui,
 	uint32_t id)
 {
 	uint32_t focus_id;
@@ -379,13 +379,13 @@ list_focused(
 /* Selects an item and glides the list just enough to show it. */
 static void
 list_select(
-	struct kui_list *list,
+	struct kl_list *list,
 	long index,
-	const struct kui_rect *rect,
+	const struct kl_rect *rect,
 	int row_height,
 	uint64_t now_us)
 {
-	struct kui_rect row;
+	struct kl_rect row;
 
 	/* The selection. */
 	list->selected = index;
@@ -395,5 +395,5 @@ list_select(
 	row.y = (int)index * row_height;
 	row.width = rect->width;
 	row.height = row_height;
-	kui_scroll_reveal(&list->scroll, &row, now_us);
+	kl_scroll_reveal(&list->scroll, &row, now_us);
 }

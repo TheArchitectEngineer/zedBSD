@@ -7,9 +7,9 @@
 
 /*
  * The window's primary selection through zdesktop's (ws090-p004, Text
- * Editor's primary.c moved here, itself Terminal's): kui_window_select
+ * Editor's primary.c moved here, itself Terminal's): kl_window_select
  * makes the text selected the primary selection (a source offering UTF-8
- * and plain text), and kui_window_paste_primary receives it (a middle
+ * and plain text), and kl_window_paste_primary receives it (a middle
  * click).  While the window's own text is it, a paste takes it directly
  * (asking itself to write into a pipe it reads would wait on itself).
  *
@@ -62,7 +62,7 @@ static const struct zwp_primary_selection_source_v1_listener source_listener = {
  */
 void
 keiui_primary_bind(
-	struct kui_window *window,
+	struct kl_window *window,
 	struct wl_registry *registry,
 	uint32_t name)
 {
@@ -75,7 +75,7 @@ keiui_primary_bind(
  */
 void
 keiui_primary_start(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	/* Nothing to share through. */
 	if (window->primary_manager == NULL || window->seat == NULL)
@@ -92,8 +92,8 @@ keiui_primary_start(
  * copy, sent from there.
  */
 void
-kui_window_select(
-	struct kui_window *window,
+kl_window_select(
+	struct kl_window *window,
 	const char *text,
 	size_t length)
 {
@@ -131,8 +131,8 @@ kui_window_select(
  * its end or PRIMARY_RECEIVE_MS).  Returns the bytes (0 for none).
  */
 size_t
-kui_window_paste_primary(
-	struct kui_window *window,
+kl_window_paste_primary(
+	struct kl_window *window,
 	char *text,
 	size_t size)
 {
@@ -203,7 +203,7 @@ kui_window_paste_primary(
  */
 void
 keiui_primary_close(
-	struct kui_window *window)
+	struct kl_window *window)
 {
 	/* The offer, the source, the device and the manager. */
 	if (window->primary_offer != NULL)
@@ -227,7 +227,7 @@ primary_offer(
 	struct zwp_primary_selection_device_v1 *device,
 	struct zwp_primary_selection_offer_v1 *offer)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The offer being described, with no text type yet. */
 	(void)device;
@@ -243,7 +243,7 @@ primary_selection(
 	struct zwp_primary_selection_device_v1 *device,
 	struct zwp_primary_selection_offer_v1 *offer)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The offer before goes. */
 	(void)device;
@@ -265,7 +265,7 @@ primary_type(
 	struct zwp_primary_selection_offer_v1 *offer,
 	const char *mime_type)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	int utf8;
 	int plain;
 
@@ -286,7 +286,7 @@ primary_send(
 	const char *mime_type,
 	int32_t fd)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 	size_t written;
 	ssize_t count;
 
@@ -314,7 +314,7 @@ primary_cancelled(
 	void *data,
 	struct zwp_primary_selection_source_v1 *source)
 {
-	struct kui_window *window;
+	struct kl_window *window;
 
 	/* The source. */
 	window = data;

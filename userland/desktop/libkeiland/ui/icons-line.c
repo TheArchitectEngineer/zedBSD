@@ -35,12 +35,12 @@
  * and the colour.  It lives for one call of keiui_icon_line_draw.
  */
 struct glyph_pen {
-	struct kui_canvas *canvas;
+	struct kl_canvas *canvas;
 	float x;
 	float y;
 	float size;
 	float thickness;
-	kui_color color;
+	kl_color color;
 };
 
 static void glyph_segment(const struct glyph_pen *pen, float x0, float y0, float x1, float y1);
@@ -53,17 +53,17 @@ static void glyph_ellipse(const struct glyph_pen *pen, float cx, float cy, float
 static void glyph_refresh(const struct glyph_pen *pen);
 
 /*
- * Draws a line picture (KUI_ICON_TILES and after) in a square box of a
+ * Draws a line picture (KL_ICON_TILES and after) in a square box of a
  * size at (x, y).
  */
 void
 keiui_icon_line_draw(
-	struct kui_canvas *canvas,
-	enum kui_icon icon,
+	struct kl_canvas *canvas,
+	enum kl_icon icon,
 	float x,
 	float y,
 	float size,
-	kui_color color)
+	kl_color color)
 {
 	static const float bluetooth[] = { 0.30f, 0.32f, 0.70f, 0.68f, 0.50f, 0.86f, 0.50f, 0.14f, 0.70f, 0.32f, 0.30f, 0.68f };
 	static const float shield[] = { 0.50f, 0.10f, 0.82f, 0.22f, 0.80f, 0.50f, 0.66f, 0.74f, 0.50f, 0.90f, 0.34f, 0.74f, 0.20f, 0.50f, 0.18f, 0.22f, 0.50f, 0.10f };
@@ -87,34 +87,34 @@ keiui_icon_line_draw(
 
 	/* Each picture's lines. */
 	switch (icon) {
-	case KUI_ICON_TILES:
+	case KL_ICON_TILES:
 		/* Four tiles. */
 		glyph_frame(&pen, 0.14f, 0.14f, 0.30f, 0.30f, 0.07f);
 		glyph_frame(&pen, 0.56f, 0.14f, 0.30f, 0.30f, 0.07f);
 		glyph_frame(&pen, 0.14f, 0.56f, 0.30f, 0.30f, 0.07f);
 		glyph_frame(&pen, 0.56f, 0.56f, 0.30f, 0.30f, 0.07f);
 		break;
-	case KUI_ICON_WIFI:
+	case KL_ICON_WIFI:
 		/* Three waves over a dot. */
 		glyph_arc(&pen, 0.50f, 0.80f, 0.62f, -GLYPHS_PI / 4.0f, GLYPHS_PI / 4.0f);
 		glyph_arc(&pen, 0.50f, 0.80f, 0.42f, -GLYPHS_PI / 4.0f, GLYPHS_PI / 4.0f);
 		glyph_arc(&pen, 0.50f, 0.80f, 0.22f, -GLYPHS_PI / 4.0f, GLYPHS_PI / 4.0f);
 		glyph_dot(&pen, 0.50f, 0.80f, 0.07f);
 		break;
-	case KUI_ICON_ETHERNET:
+	case KL_ICON_ETHERNET:
 		/* A computer on a wire: a screen and its base. */
 		glyph_frame(&pen, 0.20f, 0.20f, 0.60f, 0.42f, 0.06f);
 		glyph_segment(&pen, 0.10f, 0.76f, 0.90f, 0.76f);
 		break;
-	case KUI_ICON_BLUETOOTH:
+	case KL_ICON_BLUETOOTH:
 		/* The rune. */
 		glyph_polyline(&pen, bluetooth, 6);
 		break;
-	case KUI_ICON_SHIELD:
+	case KL_ICON_SHIELD:
 		/* A shield. */
 		glyph_polyline(&pen, shield, 9);
 		break;
-	case KUI_ICON_GLOBE:
+	case KL_ICON_GLOBE:
 		/* A globe: its rim, a meridian, the equator and two parallels. */
 		glyph_circle(&pen, 0.50f, 0.50f, 0.38f);
 		glyph_ellipse(&pen, 0.50f, 0.50f, 0.16f, 0.38f);
@@ -122,7 +122,7 @@ keiui_icon_line_draw(
 		glyph_segment(&pen, 0.18f, 0.32f, 0.82f, 0.32f);
 		glyph_segment(&pen, 0.18f, 0.68f, 0.82f, 0.68f);
 		break;
-	case KUI_ICON_PALETTE:
+	case KL_ICON_PALETTE:
 		/* A palette with three dabs of paint. */
 		glyph_circle(&pen, 0.50f, 0.50f, 0.38f);
 		glyph_dot(&pen, 0.36f, 0.40f, 0.06f);
@@ -130,43 +130,43 @@ keiui_icon_line_draw(
 		glyph_dot(&pen, 0.68f, 0.50f, 0.06f);
 		glyph_circle(&pen, 0.44f, 0.66f, 0.07f);
 		break;
-	case KUI_ICON_PICTURE:
+	case KL_ICON_PICTURE:
 		/* A framed landscape with the sun. */
 		glyph_frame(&pen, 0.12f, 0.20f, 0.76f, 0.60f, 0.08f);
 		glyph_polyline(&pen, mountains, 5);
 		glyph_dot(&pen, 0.66f, 0.36f, 0.06f);
 		break;
-	case KUI_ICON_BELL:
+	case KL_ICON_BELL:
 		/* A bell and its clapper. */
 		glyph_polyline(&pen, bell, 10);
 		glyph_segment(&pen, 0.44f, 0.84f, 0.56f, 0.84f);
 		glyph_dot(&pen, 0.50f, 0.16f, 0.05f);
 		break;
-	case KUI_ICON_SPEAKER:
+	case KL_ICON_SPEAKER:
 		/* A speaker and two waves. */
 		glyph_polyline(&pen, speaker, 7);
 		glyph_arc(&pen, 0.52f, 0.50f, 0.16f, GLYPHS_PI / 4.0f, 3.0f * GLYPHS_PI / 4.0f);
 		glyph_arc(&pen, 0.52f, 0.50f, 0.32f, GLYPHS_PI / 4.0f, 3.0f * GLYPHS_PI / 4.0f);
 		break;
-	case KUI_ICON_MONITOR:
+	case KL_ICON_MONITOR:
 		/* A screen on its stand. */
 		glyph_frame(&pen, 0.10f, 0.16f, 0.80f, 0.54f, 0.08f);
 		glyph_segment(&pen, 0.50f, 0.70f, 0.50f, 0.82f);
 		glyph_segment(&pen, 0.34f, 0.84f, 0.66f, 0.84f);
 		break;
-	case KUI_ICON_DISK:
+	case KL_ICON_DISK:
 		/* A drive with its light. */
 		glyph_frame(&pen, 0.12f, 0.30f, 0.76f, 0.40f, 0.08f);
 		glyph_segment(&pen, 0.24f, 0.50f, 0.50f, 0.50f);
 		glyph_dot(&pen, 0.72f, 0.50f, 0.05f);
 		break;
-	case KUI_ICON_BATTERY:
+	case KL_ICON_BATTERY:
 		/* A battery, half full. */
 		glyph_frame(&pen, 0.10f, 0.30f, 0.70f, 0.40f, 0.08f);
 		glyph_frame(&pen, 0.86f, 0.43f, 0.03f, 0.14f, 0.01f);
-		kui_canvas_round(canvas, x + 0.19f * size, y + 0.39f * size, 0.38f * size, 0.22f * size, 0.03f * size, color);
+		kl_canvas_round(canvas, x + 0.19f * size, y + 0.39f * size, 0.38f * size, 0.22f * size, 0.03f * size, color);
 		break;
-	case KUI_ICON_KEYBOARD:
+	case KL_ICON_KEYBOARD:
 		/* A keyboard: two rows of keys and the space bar. */
 		glyph_frame(&pen, 0.08f, 0.26f, 0.84f, 0.48f, 0.08f);
 		for (row = 0; row < 2; row++) {
@@ -177,24 +177,24 @@ keiui_icon_line_draw(
 		/* The space bar. */
 		glyph_segment(&pen, 0.32f, 0.64f, 0.68f, 0.64f);
 		break;
-	case KUI_ICON_MOUSE:
+	case KL_ICON_MOUSE:
 		/* A mouse and the line between its buttons. */
 		glyph_frame(&pen, 0.28f, 0.12f, 0.44f, 0.76f, 0.22f);
 		glyph_segment(&pen, 0.50f, 0.14f, 0.50f, 0.36f);
 		break;
-	case KUI_ICON_TOUCHPAD:
+	case KL_ICON_TOUCHPAD:
 		/* A touchpad and its two buttons. */
 		glyph_frame(&pen, 0.14f, 0.18f, 0.72f, 0.64f, 0.10f);
 		glyph_segment(&pen, 0.16f, 0.64f, 0.84f, 0.64f);
 		glyph_segment(&pen, 0.50f, 0.64f, 0.50f, 0.80f);
 		break;
-	case KUI_ICON_PRINTER:
+	case KL_ICON_PRINTER:
 		/* A printer with its paper in and out. */
 		glyph_frame(&pen, 0.28f, 0.14f, 0.44f, 0.20f, 0.03f);
 		glyph_frame(&pen, 0.12f, 0.36f, 0.76f, 0.32f, 0.06f);
 		glyph_frame(&pen, 0.28f, 0.58f, 0.44f, 0.28f, 0.03f);
 		break;
-	case KUI_ICON_SHARE:
+	case KL_ICON_SHARE:
 		/* Three nodes and the lines between them. */
 		glyph_segment(&pen, 0.34f, 0.46f, 0.64f, 0.30f);
 		glyph_segment(&pen, 0.34f, 0.54f, 0.64f, 0.70f);
@@ -202,19 +202,19 @@ keiui_icon_line_draw(
 		glyph_circle(&pen, 0.72f, 0.26f, 0.09f);
 		glyph_circle(&pen, 0.72f, 0.74f, 0.09f);
 		break;
-	case KUI_ICON_PEOPLE:
+	case KL_ICON_PEOPLE:
 		/* Two people, one behind the other. */
 		glyph_circle(&pen, 0.40f, 0.34f, 0.12f);
 		glyph_arc(&pen, 0.40f, 0.86f, 0.26f, -GLYPHS_PI / 2.0f, GLYPHS_PI / 2.0f);
 		glyph_circle(&pen, 0.70f, 0.38f, 0.09f);
 		glyph_arc(&pen, 0.72f, 0.84f, 0.18f, 0.0f, GLYPHS_PI / 2.0f);
 		break;
-	case KUI_ICON_EYE:
+	case KL_ICON_EYE:
 		/* An eye. */
 		glyph_ellipse(&pen, 0.50f, 0.50f, 0.38f, 0.22f);
 		glyph_dot(&pen, 0.50f, 0.50f, 0.10f);
 		break;
-	case KUI_ICON_LOCK:
+	case KL_ICON_LOCK:
 		/* A padlock and its keyhole. */
 		glyph_frame(&pen, 0.22f, 0.44f, 0.56f, 0.42f, 0.08f);
 		glyph_arc(&pen, 0.50f, 0.40f, 0.17f, -GLYPHS_PI / 2.0f, GLYPHS_PI / 2.0f);
@@ -222,7 +222,7 @@ keiui_icon_line_draw(
 		glyph_segment(&pen, 0.67f, 0.40f, 0.67f, 0.44f);
 		glyph_dot(&pen, 0.50f, 0.64f, 0.05f);
 		break;
-	case KUI_ICON_PERSON:
+	case KL_ICON_PERSON:
 		/* A person with open arms. */
 		glyph_dot(&pen, 0.50f, 0.18f, 0.08f);
 		glyph_segment(&pen, 0.20f, 0.36f, 0.80f, 0.36f);
@@ -230,17 +230,17 @@ keiui_icon_line_draw(
 		glyph_segment(&pen, 0.50f, 0.60f, 0.34f, 0.86f);
 		glyph_segment(&pen, 0.50f, 0.60f, 0.66f, 0.86f);
 		break;
-	case KUI_ICON_REFRESH:
+	case KL_ICON_REFRESH:
 		/* A turning arrow. */
 		glyph_refresh(&pen);
 		break;
-	case KUI_ICON_INFO:
+	case KL_ICON_INFO:
 		/* An i in a circle. */
 		glyph_circle(&pen, 0.50f, 0.50f, 0.38f);
 		glyph_dot(&pen, 0.50f, 0.32f, 0.05f);
 		glyph_segment(&pen, 0.50f, 0.46f, 0.50f, 0.70f);
 		break;
-	case KUI_ICON_DISCLOSURE:
+	case KL_ICON_DISCLOSURE:
 		/* A chevron pointing right. */
 		glyph_polyline(&pen, chevron, 3);
 		break;
@@ -259,7 +259,7 @@ glyph_segment(
 	float y1)
 {
 	/* The points in the canvas's pixels. */
-	kui_canvas_line(pen->canvas, pen->x + x0 * pen->size, pen->y + y0 * pen->size, pen->x + x1 * pen->size, pen->y + y1 * pen->size, pen->thickness, pen->color);
+	kl_canvas_line(pen->canvas, pen->x + x0 * pen->size, pen->y + y0 * pen->size, pen->x + x1 * pen->size, pen->y + y1 * pen->size, pen->thickness, pen->color);
 }
 
 /* Draws the lines joining a run of points (x, y pairs) given as fractions of the box. */
@@ -290,7 +290,7 @@ glyph_frame(
 
 	/* The rectangle in the canvas's pixels, the stroke centred on its edge. */
 	thickness = pen->thickness;
-	kui_canvas_round_border(pen->canvas, pen->x + left * pen->size - thickness * 0.5f, pen->y + top * pen->size - thickness * 0.5f, width * pen->size + thickness, height * pen->size + thickness, radius * pen->size + thickness * 0.5f, thickness, pen->color);
+	kl_canvas_round_border(pen->canvas, pen->x + left * pen->size - thickness * 0.5f, pen->y + top * pen->size - thickness * 0.5f, width * pen->size + thickness, height * pen->size + thickness, radius * pen->size + thickness * 0.5f, thickness, pen->color);
 }
 
 /* Draws the outline of a circle given in fractions of the box, the stroke centred on it. */
@@ -302,7 +302,7 @@ glyph_circle(
 	float radius)
 {
 	/* A whole ring. */
-	kui_canvas_ring(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size + pen->thickness * 0.5f, pen->thickness, 1.0f, pen->color);
+	kl_canvas_ring(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size + pen->thickness * 0.5f, pen->thickness, 1.0f, pen->color);
 }
 
 /* Draws a filled dot given in fractions of the box. */
@@ -314,7 +314,7 @@ glyph_dot(
 	float radius)
 {
 	/* A filled circle. */
-	kui_canvas_circle(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size, pen->color);
+	kl_canvas_circle(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size, pen->color);
 }
 
 /*
@@ -364,9 +364,9 @@ glyph_arc(
 	}
 
 	/* The band, then its round ends. */
-	kui_canvas_polygon(pen->canvas, points, count, pen->color);
-	kui_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(from), centre_y - radius * pen->size * cosf(from), pen->thickness * 0.5f, pen->color);
-	kui_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(to), centre_y - radius * pen->size * cosf(to), pen->thickness * 0.5f, pen->color);
+	kl_canvas_polygon(pen->canvas, points, count, pen->color);
+	kl_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(from), centre_y - radius * pen->size * cosf(from), pen->thickness * 0.5f, pen->color);
+	kl_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(to), centre_y - radius * pen->size * cosf(to), pen->thickness * 0.5f, pen->color);
 }
 
 /* Draws the outline of an ellipse given in fractions of the box, as a run of short lines. */

@@ -4,54 +4,44 @@
 
 正本は [design.md §5](design.md)。2026-10-03 のユーザーの最終の規則: 関数・型・変数は `kl_`、macro と enum の定数は `KL_`。`userland/desktop/paths.h` の install の path の macro（`KEILAND_BINDIR`・`KEILAND_DATADIR`・`KEILAND_LIBEXECDIR`・`KEILAND_SYSCONFDIR`）はそのまま。対象は公開の header の `keiland.h` と `keiui.h` が comment の外に書く名前。Wayland の protocol の識別子（`keiland_*_v1`・`KEILAND_*_V1_*`）と、app・libbrowser の include guard はこの表の外（design.md §5.2、判断 D15・D16）。
 
-件数: keiland.h 266、keiui.h 341（合計 607、解決の要る衝突 0）
+件数: keiland.h 202、keiui.h 341（合計 543、解決の要る衝突 0）
 
 | 旧名 | 種類 | 新名 | 宣言 | 注 |
 | --- | --- | --- | --- | --- |
-| `keiland_audio` | struct | `kl_audio` | keiland.h:1188 |  |
-| `keiland_audio_available` | function | `kl_audio_available` | keiland.h:1254 |  |
-| `keiland_audio_close` | function | `kl_audio_close` | keiland.h:1214 |  |
-| `keiland_audio_fd` | function | `kl_audio_fd` | keiland.h:1220 |  |
-| `keiland_audio_feedback` | function | `kl_audio_feedback` | keiland.h:1246 |  |
-| `keiland_audio_get_state` | function | `kl_audio_get_state` | keiland.h:1232 |  |
-| `keiland_audio_open` | function | `kl_audio_open` | keiland.h:1209 |  |
-| `keiland_audio_set_volume` | function | `kl_audio_set_volume` | keiland.h:1239 |  |
-| `keiland_audio_state` | struct | `kl_audio_state` | keiland.h:1191 |  |
-| `keiland_audio_update` | function | `kl_audio_update` | keiland.h:1227 |  |
 | `keiland_context_menu` | struct | `kl_context_menu` | keiland.h:260 |  |
 | `keiland_context_menu_destroy` | function | `kl_context_menu_destroy` | keiland.h:278 |  |
 | `keiland_context_menu_listener` | struct | `kl_context_menu_listener` | keiland.h:261 |  |
-| `keiland_desktop` | struct | `kl_desktop` | keiland.h:1151 |  |
-| `keiland_desktop_ack` | function | `kl_desktop_ack` | keiland.h:1173 |  |
-| `keiland_desktop_create` | function | `kl_desktop_create` | keiland.h:1168 |  |
-| `keiland_desktop_destroy` | function | `kl_desktop_destroy` | keiland.h:1178 |  |
-| `keiland_desktop_listener` | struct | `kl_desktop_listener` | keiland.h:1158 |  |
-| `keiland_edit` | struct | `kl_edit` | keiland.h:1299 |  |
-| `keiland_edit_create` | function | `kl_edit_create` | keiland.h:1326 |  |
-| `keiland_edit_destroy` | function | `kl_edit_destroy` | keiland.h:1337 |  |
-| `keiland_edit_fn` | typedef | `kl_edit_fn` | keiland.h:1319 |  |
-| `keiland_edit_set_state` | function | `kl_edit_set_state` | keiland.h:1332 |  |
-| `keiland_gesture` | struct | `kl_gesture` | keiland.h:993 |  |
-| `keiland_gesture_cancel` | function | `kl_gesture_cancel` | keiland.h:1045 |  |
-| `keiland_gesture_create` | function | `kl_gesture_create` | keiland.h:1024 |  |
-| `keiland_gesture_destroy` | function | `kl_gesture_destroy` | keiland.h:1027 |  |
-| `keiland_gesture_down` | function | `kl_gesture_down` | keiland.h:1034 |  |
-| `keiland_gesture_drag_offset` | function | `kl_gesture_drag_offset` | keiland.h:1058 |  |
-| `keiland_gesture_event` | struct | `kl_gesture_event` | keiland.h:1008 |  |
-| `keiland_gesture_motion` | function | `kl_gesture_motion` | keiland.h:1038 |  |
-| `keiland_gesture_next` | function | `kl_gesture_next` | keiland.h:1051 |  |
-| `keiland_gesture_pinch` | function | `kl_gesture_pinch` | keiland.h:1065 |  |
-| `keiland_gesture_up` | function | `kl_gesture_up` | keiland.h:1042 |  |
+| `keiland_desktop` | struct | `kl_desktop` | keiland.h:893 |  |
+| `keiland_desktop_ack` | function | `kl_desktop_ack` | keiland.h:915 |  |
+| `keiland_desktop_create` | function | `kl_desktop_create` | keiland.h:910 |  |
+| `keiland_desktop_destroy` | function | `kl_desktop_destroy` | keiland.h:920 |  |
+| `keiland_desktop_listener` | struct | `kl_desktop_listener` | keiland.h:900 |  |
+| `keiland_edit` | struct | `kl_edit` | keiland.h:965 |  |
+| `keiland_edit_create` | function | `kl_edit_create` | keiland.h:992 |  |
+| `keiland_edit_destroy` | function | `kl_edit_destroy` | keiland.h:1003 |  |
+| `keiland_edit_fn` | typedef | `kl_edit_fn` | keiland.h:985 |  |
+| `keiland_edit_set_state` | function | `kl_edit_set_state` | keiland.h:998 |  |
+| `keiland_gesture` | struct | `kl_gesture` | keiland.h:796 |  |
+| `keiland_gesture_cancel` | function | `kl_gesture_cancel` | keiland.h:848 |  |
+| `keiland_gesture_create` | function | `kl_gesture_create` | keiland.h:827 |  |
+| `keiland_gesture_destroy` | function | `kl_gesture_destroy` | keiland.h:830 |  |
+| `keiland_gesture_down` | function | `kl_gesture_down` | keiland.h:837 |  |
+| `keiland_gesture_drag_offset` | function | `kl_gesture_drag_offset` | keiland.h:861 |  |
+| `keiland_gesture_event` | struct | `kl_gesture_event` | keiland.h:811 |  |
+| `keiland_gesture_motion` | function | `kl_gesture_motion` | keiland.h:841 |  |
+| `keiland_gesture_next` | function | `kl_gesture_next` | keiland.h:854 |  |
+| `keiland_gesture_pinch` | function | `kl_gesture_pinch` | keiland.h:868 |  |
+| `keiland_gesture_up` | function | `kl_gesture_up` | keiland.h:845 |  |
 | `keiland_glass` | struct | `kl_glass` | keiland.h:524 |  |
 | `keiland_glass_create` | function | `kl_glass_create` | keiland.h:550 |  |
 | `keiland_glass_destroy` | function | `kl_glass_destroy` | keiland.h:569 |  |
 | `keiland_glass_panel` | struct | `kl_glass_panel` | keiland.h:537 |  |
 | `keiland_glass_set_blur` | function | `kl_glass_set_blur` | keiland.h:564 |  |
 | `keiland_glass_set_panels` | function | `kl_glass_set_panels` | keiland.h:555 |  |
-| `keiland_keyboard_inset` | struct | `kl_keyboard_inset` | keiland.h:1266 |  |
-| `keiland_keyboard_inset_create` | function | `kl_keyboard_inset_create` | keiland.h:1282 |  |
-| `keiland_keyboard_inset_destroy` | function | `kl_keyboard_inset_destroy` | keiland.h:1287 |  |
-| `keiland_keyboard_inset_fn` | typedef | `kl_keyboard_inset_fn` | keiland.h:1275 |  |
+| `keiland_keyboard_inset` | struct | `kl_keyboard_inset` | keiland.h:932 |  |
+| `keiland_keyboard_inset_create` | function | `kl_keyboard_inset_create` | keiland.h:948 |  |
+| `keiland_keyboard_inset_destroy` | function | `kl_keyboard_inset_destroy` | keiland.h:953 |  |
+| `keiland_keyboard_inset_fn` | typedef | `kl_keyboard_inset_fn` | keiland.h:941 |  |
 | `keiland_menu` | struct | `kl_menu` | keiland.h:91 |  |
 | `keiland_menu_append` | function | `kl_menu_append` | keiland.h:182 |  |
 | `keiland_menu_begin` | function | `kl_menu_begin` | keiland.h:172 |  |
@@ -72,57 +62,34 @@
 | `keiland_menu_set_role` | function | `kl_menu_set_role` | keiland.h:222 |  |
 | `keiland_menu_set_shortcut` | function | `kl_menu_set_shortcut` | keiland.h:232 |  |
 | `keiland_menu_set_visible` | function | `kl_menu_set_visible` | keiland.h:212 |  |
-| `keiland_motion` | struct | `kl_motion` | keiland.h:802 |  |
-| `keiland_motion_add` | function | `kl_motion_add` | keiland.h:860 |  |
-| `keiland_motion_begin` | function | `kl_motion_begin` | keiland.h:850 |  |
-| `keiland_motion_create` | function | `kl_motion_create` | keiland.h:841 |  |
-| `keiland_motion_destroy` | function | `kl_motion_destroy` | keiland.h:844 |  |
-| `keiland_motion_device` | struct | `kl_motion_device` | keiland.h:799 |  |
-| `keiland_motion_device_create` | function | `kl_motion_device_create` | keiland.h:809 |  |
-| `keiland_motion_device_destroy` | function | `kl_motion_device_destroy` | keiland.h:814 |  |
-| `keiland_motion_device_interval` | function | `kl_motion_device_interval` | keiland.h:831 |  |
-| `keiland_motion_device_noise` | function | `kl_motion_device_noise` | keiland.h:834 |  |
-| `keiland_motion_device_time` | function | `kl_motion_device_time` | keiland.h:827 |  |
-| `keiland_motion_end` | function | `kl_motion_end` | keiland.h:888 |  |
-| `keiland_motion_point` | function | `kl_motion_point` | keiland.h:871 |  |
-| `keiland_motion_velocity` | function | `kl_motion_velocity` | keiland.h:882 |  |
-| `keiland_network` | struct | `kl_network` | keiland.h:591 |  |
-| `keiland_network_ap` | struct | `kl_network_ap` | keiland.h:653 |  |
-| `keiland_network_close` | function | `kl_network_close` | keiland.h:668 |  |
-| `keiland_network_get_dns` | function | `kl_network_get_dns` | keiland.h:753 |  |
-| `keiland_network_get_links` | function | `kl_network_get_links` | keiland.h:747 |  |
-| `keiland_network_get_request` | function | `kl_network_get_request` | keiland.h:699 |  |
-| `keiland_network_get_saved` | function | `kl_network_get_saved` | keiland.h:766 |  |
-| `keiland_network_get_scan` | function | `kl_network_get_scan` | keiland.h:686 |  |
-| `keiland_network_get_state` | function | `kl_network_get_state` | keiland.h:680 |  |
-| `keiland_network_link` | struct | `kl_network_link` | keiland.h:730 |  |
-| `keiland_network_open` | function | `kl_network_open` | keiland.h:663 |  |
-| `keiland_network_request` | function | `kl_network_request` | keiland.h:692 |  |
-| `keiland_network_save_key` | function | `kl_network_save_key` | keiland.h:760 |  |
-| `keiland_network_state` | struct | `kl_network_state` | keiland.h:637 |  |
-| `keiland_network_update` | function | `kl_network_update` | keiland.h:675 |  |
-| `keiland_preferences` | struct | `kl_preferences` | keiland.h:1088 |  |
-| `keiland_preferences_close` | function | `kl_preferences_close` | keiland.h:1105 |  |
-| `keiland_preferences_get` | function | `kl_preferences_get` | keiland.h:1118 |  |
-| `keiland_preferences_get_int` | function | `kl_preferences_get_int` | keiland.h:1125 |  |
-| `keiland_preferences_open` | function | `kl_preferences_open` | keiland.h:1100 |  |
-| `keiland_preferences_reload` | function | `kl_preferences_reload` | keiland.h:1112 |  |
-| `keiland_preferences_set` | function | `kl_preferences_set` | keiland.h:1132 |  |
-| `keiland_preferences_unset` | function | `kl_preferences_unset` | keiland.h:1138 |  |
+| `keiland_motion` | struct | `kl_motion` | keiland.h:605 |  |
+| `keiland_motion_add` | function | `kl_motion_add` | keiland.h:663 |  |
+| `keiland_motion_begin` | function | `kl_motion_begin` | keiland.h:653 |  |
+| `keiland_motion_create` | function | `kl_motion_create` | keiland.h:644 |  |
+| `keiland_motion_destroy` | function | `kl_motion_destroy` | keiland.h:647 |  |
+| `keiland_motion_device` | struct | `kl_motion_device` | keiland.h:602 |  |
+| `keiland_motion_device_create` | function | `kl_motion_device_create` | keiland.h:612 |  |
+| `keiland_motion_device_destroy` | function | `kl_motion_device_destroy` | keiland.h:617 |  |
+| `keiland_motion_device_interval` | function | `kl_motion_device_interval` | keiland.h:634 |  |
+| `keiland_motion_device_noise` | function | `kl_motion_device_noise` | keiland.h:637 |  |
+| `keiland_motion_device_time` | function | `kl_motion_device_time` | keiland.h:630 |  |
+| `keiland_motion_end` | function | `kl_motion_end` | keiland.h:691 |  |
+| `keiland_motion_point` | function | `kl_motion_point` | keiland.h:674 |  |
+| `keiland_motion_velocity` | function | `kl_motion_velocity` | keiland.h:685 |  |
 | `keiland_recent_add` | function | `kl_recent_add` | keiland.h:494 |  |
 | `keiland_recent_item` | struct | `kl_recent_item` | keiland.h:484 |  |
 | `keiland_recent_list` | function | `kl_recent_list` | keiland.h:499 |  |
 | `keiland_recent_remove` | function | `kl_recent_remove` | keiland.h:504 |  |
-| `keiland_scroller` | struct | `kl_scroller` | keiland.h:909 |  |
-| `keiland_scroller_cancel` | function | `kl_scroller_cancel` | keiland.h:959 |  |
-| `keiland_scroller_create` | function | `kl_scroller_create` | keiland.h:920 |  |
-| `keiland_scroller_destroy` | function | `kl_scroller_destroy` | keiland.h:923 |  |
-| `keiland_scroller_drag` | function | `kl_scroller_drag` | keiland.h:949 |  |
-| `keiland_scroller_press` | function | `kl_scroller_press` | keiland.h:941 |  |
-| `keiland_scroller_release` | function | `kl_scroller_release` | keiland.h:956 |  |
-| `keiland_scroller_set_bounds` | function | `kl_scroller_set_bounds` | keiland.h:931 |  |
-| `keiland_scroller_set_position` | function | `kl_scroller_set_position` | keiland.h:935 |  |
-| `keiland_scroller_step` | function | `kl_scroller_step` | keiland.h:966 |  |
+| `keiland_scroller` | struct | `kl_scroller` | keiland.h:712 |  |
+| `keiland_scroller_cancel` | function | `kl_scroller_cancel` | keiland.h:762 |  |
+| `keiland_scroller_create` | function | `kl_scroller_create` | keiland.h:723 |  |
+| `keiland_scroller_destroy` | function | `kl_scroller_destroy` | keiland.h:726 |  |
+| `keiland_scroller_drag` | function | `kl_scroller_drag` | keiland.h:752 |  |
+| `keiland_scroller_press` | function | `kl_scroller_press` | keiland.h:744 |  |
+| `keiland_scroller_release` | function | `kl_scroller_release` | keiland.h:759 |  |
+| `keiland_scroller_set_bounds` | function | `kl_scroller_set_bounds` | keiland.h:734 |  |
+| `keiland_scroller_set_position` | function | `kl_scroller_set_position` | keiland.h:738 |  |
+| `keiland_scroller_step` | function | `kl_scroller_step` | keiland.h:769 |  |
 | `keiland_titlebar` | struct | `kl_titlebar` | keiland.h:294 |  |
 | `keiland_titlebar_add_control` | function | `kl_titlebar_add_control` | keiland.h:407 |  |
 | `keiland_titlebar_add_tab` | function | `kl_titlebar_add_tab` | keiland.h:442 |  |
@@ -148,8 +115,6 @@
 | `keiland_window_menu_destroy` | function | `kl_window_menu_destroy` | keiland.h:248 |  |
 | `keiland_window_menu_listener` | struct | `kl_window_menu_listener` | keiland.h:140 |  |
 | `keiland_window_menu_set` | function | `kl_window_menu_set` | keiland.h:243 |  |
-| `KEILAND_AUDIO_CHANGED_REACHABLE` | macro | `KL_AUDIO_CHANGED_REACHABLE` | keiland.h:1202 |  |
-| `KEILAND_AUDIO_CHANGED_VOLUME` | macro | `KL_AUDIO_CHANGED_VOLUME` | keiland.h:1203 |  |
 | `KEILAND_CONTROL_BACK` | macro | `KL_CONTROL_BACK` | keiland.h:309 |  |
 | `KEILAND_CONTROL_BREADCRUMB` | macro | `KL_CONTROL_BREADCRUMB` | keiland.h:313 |  |
 | `KEILAND_CONTROL_FILTER` | macro | `KL_CONTROL_FILTER` | keiland.h:319 |  |
@@ -166,33 +131,33 @@
 | `KEILAND_CONTROL_VIEW_COLUMNS` | macro | `KL_CONTROL_VIEW_COLUMNS` | keiland.h:317 |  |
 | `KEILAND_CONTROL_VIEW_GRID` | macro | `KL_CONTROL_VIEW_GRID` | keiland.h:315 |  |
 | `KEILAND_CONTROL_VIEW_LIST` | macro | `KL_CONTROL_VIEW_LIST` | keiland.h:316 |  |
-| `KEILAND_EDIT_CAN_PASTE` | macro | `KL_EDIT_CAN_PASTE` | keiland.h:1313 | same value as `KEILAND_EDIT_CAN_PASTE`, `KUI_EDIT_CAN_PASTE`: one definition |
-| `KEILAND_EDIT_CAN_REDO` | macro | `KL_EDIT_CAN_REDO` | keiland.h:1315 | same value as `KEILAND_EDIT_CAN_REDO`, `KUI_EDIT_CAN_REDO`: one definition |
-| `KEILAND_EDIT_CAN_UNDO` | macro | `KL_EDIT_CAN_UNDO` | keiland.h:1314 | same value as `KEILAND_EDIT_CAN_UNDO`, `KUI_EDIT_CAN_UNDO`: one definition |
-| `KEILAND_EDIT_COPY` | macro | `KL_EDIT_COPY` | keiland.h:1302 | same value as `KEILAND_EDIT_COPY`, `KUI_EDIT_COPY`: one definition |
-| `KEILAND_EDIT_CUT` | macro | `KL_EDIT_CUT` | keiland.h:1303 | same value as `KEILAND_EDIT_CUT`, `KUI_EDIT_CUT`: one definition |
-| `KEILAND_EDIT_HAS_SELECTION` | macro | `KL_EDIT_HAS_SELECTION` | keiland.h:1312 | same value as `KEILAND_EDIT_HAS_SELECTION`, `KUI_EDIT_HAS_SELECTION`: one definition |
-| `KEILAND_EDIT_PASTE` | macro | `KL_EDIT_PASTE` | keiland.h:1304 | same value as `KEILAND_EDIT_PASTE`, `KUI_EDIT_PASTE`: one definition |
-| `KEILAND_EDIT_REDO` | macro | `KL_EDIT_REDO` | keiland.h:1306 | same value as `KEILAND_EDIT_REDO`, `KUI_EDIT_REDO`: one definition |
-| `KEILAND_EDIT_SELECTING` | macro | `KL_EDIT_SELECTING` | keiland.h:1316 |  |
-| `KEILAND_EDIT_SELECT_ALL` | macro | `KL_EDIT_SELECT_ALL` | keiland.h:1307 | same value as `KEILAND_EDIT_SELECT_ALL`, `KUI_EDIT_SELECT_ALL`: one definition |
-| `KEILAND_EDIT_SELECT_BEGIN` | macro | `KL_EDIT_SELECT_BEGIN` | keiland.h:1308 | same value as `KEILAND_EDIT_SELECT_BEGIN`, `KUI_EDIT_SELECT_BEGIN`: one definition |
-| `KEILAND_EDIT_SELECT_END` | macro | `KL_EDIT_SELECT_END` | keiland.h:1309 | same value as `KEILAND_EDIT_SELECT_END`, `KUI_EDIT_SELECT_END`: one definition |
-| `KEILAND_EDIT_UNDO` | macro | `KL_EDIT_UNDO` | keiland.h:1305 | same value as `KEILAND_EDIT_UNDO`, `KUI_EDIT_UNDO`: one definition |
+| `KEILAND_EDIT_CAN_PASTE` | macro | `KL_EDIT_CAN_PASTE` | keiland.h:979 | same value as `KEILAND_EDIT_CAN_PASTE`, `KUI_EDIT_CAN_PASTE`: one definition |
+| `KEILAND_EDIT_CAN_REDO` | macro | `KL_EDIT_CAN_REDO` | keiland.h:981 | same value as `KEILAND_EDIT_CAN_REDO`, `KUI_EDIT_CAN_REDO`: one definition |
+| `KEILAND_EDIT_CAN_UNDO` | macro | `KL_EDIT_CAN_UNDO` | keiland.h:980 | same value as `KEILAND_EDIT_CAN_UNDO`, `KUI_EDIT_CAN_UNDO`: one definition |
+| `KEILAND_EDIT_COPY` | macro | `KL_EDIT_COPY` | keiland.h:968 | same value as `KEILAND_EDIT_COPY`, `KUI_EDIT_COPY`: one definition |
+| `KEILAND_EDIT_CUT` | macro | `KL_EDIT_CUT` | keiland.h:969 | same value as `KEILAND_EDIT_CUT`, `KUI_EDIT_CUT`: one definition |
+| `KEILAND_EDIT_HAS_SELECTION` | macro | `KL_EDIT_HAS_SELECTION` | keiland.h:978 | same value as `KEILAND_EDIT_HAS_SELECTION`, `KUI_EDIT_HAS_SELECTION`: one definition |
+| `KEILAND_EDIT_PASTE` | macro | `KL_EDIT_PASTE` | keiland.h:970 | same value as `KEILAND_EDIT_PASTE`, `KUI_EDIT_PASTE`: one definition |
+| `KEILAND_EDIT_REDO` | macro | `KL_EDIT_REDO` | keiland.h:972 | same value as `KEILAND_EDIT_REDO`, `KUI_EDIT_REDO`: one definition |
+| `KEILAND_EDIT_SELECTING` | macro | `KL_EDIT_SELECTING` | keiland.h:982 |  |
+| `KEILAND_EDIT_SELECT_ALL` | macro | `KL_EDIT_SELECT_ALL` | keiland.h:973 | same value as `KEILAND_EDIT_SELECT_ALL`, `KUI_EDIT_SELECT_ALL`: one definition |
+| `KEILAND_EDIT_SELECT_BEGIN` | macro | `KL_EDIT_SELECT_BEGIN` | keiland.h:974 | same value as `KEILAND_EDIT_SELECT_BEGIN`, `KUI_EDIT_SELECT_BEGIN`: one definition |
+| `KEILAND_EDIT_SELECT_END` | macro | `KL_EDIT_SELECT_END` | keiland.h:975 | same value as `KEILAND_EDIT_SELECT_END`, `KUI_EDIT_SELECT_END`: one definition |
+| `KEILAND_EDIT_UNDO` | macro | `KL_EDIT_UNDO` | keiland.h:971 | same value as `KEILAND_EDIT_UNDO`, `KUI_EDIT_UNDO`: one definition |
 | `KEILAND_FOCUS_EDIT` | macro | `KL_FOCUS_EDIT` | keiland.h:342 |  |
 | `KEILAND_FOCUS_FIELD` | macro | `KL_FOCUS_FIELD` | keiland.h:341 |  |
-| `KEILAND_GESTURE_CANCEL` | macro | `KL_GESTURE_CANCEL` | keiland.h:1000 |  |
-| `KEILAND_GESTURE_DOUBLE_TAP` | macro | `KL_GESTURE_DOUBLE_TAP` | keiland.h:996 |  |
-| `KEILAND_GESTURE_DRAG_BEGIN` | macro | `KL_GESTURE_DRAG_BEGIN` | keiland.h:998 |  |
-| `KEILAND_GESTURE_DRAG_END` | macro | `KL_GESTURE_DRAG_END` | keiland.h:999 |  |
-| `KEILAND_GESTURE_LONG_PRESS` | macro | `KL_GESTURE_LONG_PRESS` | keiland.h:997 |  |
-| `KEILAND_GESTURE_TAP` | macro | `KL_GESTURE_TAP` | keiland.h:995 |  |
+| `KEILAND_GESTURE_CANCEL` | macro | `KL_GESTURE_CANCEL` | keiland.h:803 |  |
+| `KEILAND_GESTURE_DOUBLE_TAP` | macro | `KL_GESTURE_DOUBLE_TAP` | keiland.h:799 |  |
+| `KEILAND_GESTURE_DRAG_BEGIN` | macro | `KL_GESTURE_DRAG_BEGIN` | keiland.h:801 |  |
+| `KEILAND_GESTURE_DRAG_END` | macro | `KL_GESTURE_DRAG_END` | keiland.h:802 |  |
+| `KEILAND_GESTURE_LONG_PRESS` | macro | `KL_GESTURE_LONG_PRESS` | keiland.h:800 |  |
+| `KEILAND_GESTURE_TAP` | macro | `KL_GESTURE_TAP` | keiland.h:798 |  |
 | `KEILAND_GLASS_CARD` | macro | `KL_GLASS_CARD` | keiland.h:527 |  |
 | `KEILAND_GLASS_PANELS_MAX` | macro | `KL_GLASS_PANELS_MAX` | keiland.h:530 |  |
 | `KEILAND_GLASS_RADIUS_MAX` | macro | `KL_GLASS_RADIUS_MAX` | keiland.h:531 |  |
-| `KEILAND_KEYBOARD_INSET_BOTTOM` | macro | `KL_KEYBOARD_INSET_BOTTOM` | keiland.h:1272 | same value as `KEILAND_KEYBOARD_INSET_BOTTOM`, `KUI_KEYBOARD_INSET_BOTTOM`: one definition |
-| `KEILAND_KEYBOARD_INSET_NONE` | macro | `KL_KEYBOARD_INSET_NONE` | keiland.h:1270 | same value as `KEILAND_KEYBOARD_INSET_NONE`, `KUI_KEYBOARD_INSET_NONE`: one definition |
-| `KEILAND_KEYBOARD_INSET_RIGHT` | macro | `KL_KEYBOARD_INSET_RIGHT` | keiland.h:1271 | same value as `KEILAND_KEYBOARD_INSET_RIGHT`, `KUI_KEYBOARD_INSET_RIGHT`: one definition |
+| `KEILAND_KEYBOARD_INSET_BOTTOM` | macro | `KL_KEYBOARD_INSET_BOTTOM` | keiland.h:938 | same value as `KEILAND_KEYBOARD_INSET_BOTTOM`, `KUI_KEYBOARD_INSET_BOTTOM`: one definition |
+| `KEILAND_KEYBOARD_INSET_NONE` | macro | `KL_KEYBOARD_INSET_NONE` | keiland.h:936 | same value as `KEILAND_KEYBOARD_INSET_NONE`, `KUI_KEYBOARD_INSET_NONE`: one definition |
+| `KEILAND_KEYBOARD_INSET_RIGHT` | macro | `KL_KEYBOARD_INSET_RIGHT` | keiland.h:937 | same value as `KEILAND_KEYBOARD_INSET_RIGHT`, `KUI_KEYBOARD_INSET_RIGHT`: one definition |
 | `KEILAND_MENU_ALT` | macro | `KL_MENU_ALT` | keiland.h:129 |  |
 | `KEILAND_MENU_CTRL` | macro | `KL_MENU_CTRL` | keiland.h:128 |  |
 | `KEILAND_MENU_ITEM_CHECKBOX` | macro | `KL_MENU_ITEM_CHECKBOX` | keiland.h:100 |  |
@@ -223,31 +188,8 @@
 | `KEILAND_MENU_ROOT` | macro | `KL_MENU_ROOT` | keiland.h:95 |  |
 | `KEILAND_MENU_SHIFT` | macro | `KL_MENU_SHIFT` | keiland.h:127 |  |
 | `KEILAND_MENU_SUPER` | macro | `KL_MENU_SUPER` | keiland.h:130 |  |
-| `KEILAND_MOTION_EXTRAPOLATION_CONTENT` | macro | `KL_MOTION_EXTRAPOLATION_CONTENT` | keiland.h:793 |  |
-| `KEILAND_MOTION_EXTRAPOLATION_INK` | macro | `KL_MOTION_EXTRAPOLATION_INK` | keiland.h:796 |  |
-| `KEILAND_NETWORK_ADDRESS_MAX` | macro | `KL_NETWORK_ADDRESS_MAX` | keiland.h:719 |  |
-| `KEILAND_NETWORK_CHANGED_DONE` | macro | `KL_NETWORK_CHANGED_DONE` | keiland.h:618 |  |
-| `KEILAND_NETWORK_CHANGED_SCAN` | macro | `KL_NETWORK_CHANGED_SCAN` | keiland.h:617 |  |
-| `KEILAND_NETWORK_CHANGED_STATE` | macro | `KL_NETWORK_CHANGED_STATE` | keiland.h:616 |  |
-| `KEILAND_NETWORK_DNS_MAX` | macro | `KL_NETWORK_DNS_MAX` | keiland.h:718 |  |
-| `KEILAND_NETWORK_KEY_MAX` | macro | `KL_NETWORK_KEY_MAX` | keiland.h:723 |  |
-| `KEILAND_NETWORK_KEY_MIN` | macro | `KL_NETWORK_KEY_MIN` | keiland.h:722 |  |
-| `KEILAND_NETWORK_LINKS_MAX` | macro | `KL_NETWORK_LINKS_MAX` | keiland.h:717 |  |
-| `KEILAND_NETWORK_NAME_MAX` | macro | `KL_NETWORK_NAME_MAX` | keiland.h:597 |  |
-| `KEILAND_NETWORK_NONE` | macro | `KL_NETWORK_NONE` | keiland.h:603 |  |
-| `KEILAND_NETWORK_REQUEST_DISCONNECT` | macro | `KL_NETWORK_REQUEST_DISCONNECT` | keiland.h:624 |  |
-| `KEILAND_NETWORK_REQUEST_JOIN` | macro | `KL_NETWORK_REQUEST_JOIN` | keiland.h:623 |  |
-| `KEILAND_NETWORK_REQUEST_NONE` | macro | `KL_NETWORK_REQUEST_NONE` | keiland.h:621 |  |
-| `KEILAND_NETWORK_REQUEST_PROFILES` | macro | `KL_NETWORK_REQUEST_PROFILES` | keiland.h:627 |  |
-| `KEILAND_NETWORK_REQUEST_SCAN` | macro | `KL_NETWORK_REQUEST_SCAN` | keiland.h:622 |  |
-| `KEILAND_NETWORK_REQUEST_WIFI_OFF` | macro | `KL_NETWORK_REQUEST_WIFI_OFF` | keiland.h:626 |  |
-| `KEILAND_NETWORK_REQUEST_WIFI_ON` | macro | `KL_NETWORK_REQUEST_WIFI_ON` | keiland.h:625 |  |
-| `KEILAND_NETWORK_SCAN_MAX` | macro | `KL_NETWORK_SCAN_MAX` | keiland.h:600 |  |
-| `KEILAND_NETWORK_SSID_MAX` | macro | `KL_NETWORK_SSID_MAX` | keiland.h:594 |  |
-| `KEILAND_NETWORK_WIFI` | macro | `KL_NETWORK_WIFI` | keiland.h:605 |  |
-| `KEILAND_NETWORK_WIRED` | macro | `KL_NETWORK_WIRED` | keiland.h:604 |  |
-| `KEILAND_PREFERENCES_KEY_MAX` | macro | `KL_PREFERENCES_KEY_MAX` | keiland.h:1091 |  |
-| `KEILAND_PREFERENCES_VALUE_MAX` | macro | `KL_PREFERENCES_VALUE_MAX` | keiland.h:1092 |  |
+| `KEILAND_MOTION_EXTRAPOLATION_CONTENT` | macro | `KL_MOTION_EXTRAPOLATION_CONTENT` | keiland.h:596 |  |
+| `KEILAND_MOTION_EXTRAPOLATION_INK` | macro | `KL_MOTION_EXTRAPOLATION_INK` | keiland.h:599 |  |
 | `KEILAND_PRIORITY_NORMAL` | macro | `KL_PRIORITY_NORMAL` | keiland.h:328 |  |
 | `KEILAND_PRIORITY_PRIMARY` | macro | `KL_PRIORITY_PRIMARY` | keiland.h:327 |  |
 | `KEILAND_PRIORITY_SECONDARY` | macro | `KL_PRIORITY_SECONDARY` | keiland.h:329 |  |
@@ -255,7 +197,7 @@
 | `KEILAND_RECENT_KEPT` | macro | `KL_RECENT_KEPT` | keiland.h:478 |  |
 | `KEILAND_RECENT_NAME_MAX` | macro | `KL_RECENT_NAME_MAX` | keiland.h:475 |  |
 | `KEILAND_RECENT_PATH_MAX` | macro | `KL_RECENT_PATH_MAX` | keiland.h:474 |  |
-| `KEILAND_SCROLLER_FLING_MIN` | macro | `KL_SCROLLER_FLING_MIN` | keiland.h:912 |  |
+| `KEILAND_SCROLLER_FLING_MIN` | macro | `KL_SCROLLER_FLING_MIN` | keiland.h:715 |  |
 | `KEILAND_TABS_NEW_BUTTON` | macro | `KL_TABS_NEW_BUTTON` | keiland.h:338 |  |
 | `KEILAND_TAB_ACTIVE` | macro | `KL_TAB_ACTIVE` | keiland.h:335 |  |
 | `KEILAND_TAB_ATTENTION` | macro | `KL_TAB_ATTENTION` | keiland.h:336 |  |
@@ -268,12 +210,6 @@
 | `KEILAND_TITLEBAR_SHEET` | macro | `KL_TITLEBAR_SHEET` | keiland.h:306 |  |
 | `KEILAND_TITLEBAR_TABS` | macro | `KL_TITLEBAR_TABS` | keiland.h:305 |  |
 | `KEILAND_VERSION` | macro | `KL_VERSION` | keiland.h:49 |  |
-| `KEILAND_WIFI_ABSENT` | macro | `KL_WIFI_ABSENT` | keiland.h:608 |  |
-| `KEILAND_WIFI_CONNECTED` | macro | `KL_WIFI_CONNECTED` | keiland.h:612 |  |
-| `KEILAND_WIFI_CONNECTING` | macro | `KL_WIFI_CONNECTING` | keiland.h:611 |  |
-| `KEILAND_WIFI_DISCONNECTED` | macro | `KL_WIFI_DISCONNECTED` | keiland.h:613 |  |
-| `KEILAND_WIFI_OFF` | macro | `KL_WIFI_OFF` | keiland.h:609 |  |
-| `KEILAND_WIFI_SEARCHING` | macro | `KL_WIFI_SEARCHING` | keiland.h:610 |  |
 | `kui_button` | function | `kl_button` | keiui.h:977 |  |
 | `kui_button_width` | function | `kl_button_width` | keiui.h:978 |  |
 | `kui_canvas` | struct | `kl_canvas` | keiui.h:117 |  |

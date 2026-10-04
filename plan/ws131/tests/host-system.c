@@ -251,6 +251,48 @@ kl_backend_power_action(struct kl_backend *backend, unsigned action)
 	return error;
 }
 
+/*
+ * The system monitor's backend (WS134, compositor's sysmon.c): none on this host, so the monitor's requests are
+ * refused; this test does not exercise it, it only links the compositor's system.c that reaches it.
+ */
+struct kl_backend_monitor *
+kl_backend_monitor_open(void)
+{
+	return NULL;
+}
+
+int
+kl_backend_monitor_info(struct kl_backend_monitor *monitor, struct kl_backend_monitor_info *info)
+{
+	(void)monitor;
+	(void)info;
+	return ENOTSUP;
+}
+
+int
+kl_backend_monitor_sample(struct kl_backend_monitor *monitor, struct kl_backend_monitor_sample *sample)
+{
+	(void)monitor;
+	(void)sample;
+	return ENOTSUP;
+}
+
+void
+kl_backend_monitor_close(struct kl_backend_monitor *monitor)
+{
+	(void)monitor;
+}
+
+/* The compositor's clock (main.c), for the monitor's tick. */
+uint64_t
+zwl_milliseconds(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
+}
+
 void
 zwl_volume_audio_state(struct kl_backend_audio_state *state)
 {
@@ -912,7 +954,7 @@ test_both_ends(void)
 	CHECK(system != NULL, "open: errno %d", errno);
 	if (system == NULL)
 		return;
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
