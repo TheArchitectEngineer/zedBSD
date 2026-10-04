@@ -98,7 +98,7 @@ expect_log /tmp/f.log 'ZFILES THUMB path=/tmp/fhome/Desktop/Screenshot.png error
 shot thumbs.png
 
 # 2. Logo.png (the first item) onto Pictures in the sidebar; the picture while the button is held.
-drag 330 110 100 173
+drag 330 110 100 203
 expect_log /tmp/f.log 'ZFILES DRAG start items=1$'
 expect_log /tmp/f.log 'ZFILES DRAG target kind=folder path=/tmp/fhome/Pictures$'
 check "$out/drag.png" >/dev/null
@@ -130,12 +130,13 @@ cancelled=$(guest "grep -c 'DRAG drop' /tmp/f.log" | tail -1)
 [ "${cancelled:-0}" = 0 ] && echo "cancel: no drop ok" || { echo "cancel: drops $cancelled MISSING"; status=1; }
 expect_guest '[ -f /tmp/fhome/Projects/zedBSD/Makefile ] && [ ! -e /tmp/fhome/Projects/zedBSD/src/Makefile ]' 'Makefile stayed'
 
-# 4. Pictures (the fifth place) dragged onto Desktop (the second) in the sidebar: first of the Favorites.
-drag 100 173 100 83
-expect_log /tmp/f.log 'ZFILES DRAG target kind=place place=1$'
+# 4. Pictures (the sixth place: Today and Home come first since ws127-p011) dragged onto Desktop (the third) in the
+# sidebar: first of the favorite folders.
+drag 100 203 100 113
+expect_log /tmp/f.log 'ZFILES DRAG target kind=place place=2$'
 check "$out/drag-place.png" >/dev/null
 release
-expect_log /tmp/f.log 'ZFILES DRAG drop operation=reorder place=4 to=1 error=0$'
+expect_log /tmp/f.log 'ZFILES DRAG drop operation=reorder place=5 to=2 error=0$'
 expect_guest 'head -1 /tmp/fhome/.config/files/sidebar | grep -qx /tmp/fhome/Pictures' 'Pictures first in the sidebar list'
 shot reordered.png
 

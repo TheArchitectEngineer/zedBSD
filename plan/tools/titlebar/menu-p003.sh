@@ -178,7 +178,7 @@ expect_log /tmp/zdesktop.log "GLASS dock surface=$surface via=double-click"
 expect_log /tmp/zdesktop.log "MENU bar client=$zc1 surface=$surface where=docked item=2 "
 click "$(item_x 1 docked 2 0)" 17
 check "$out/docked-edit.png" >/dev/null
-expect_log /tmp/zdesktop.log "MENU open client=$zc1 surface=$surface item=2 depth=1 x=[0-9]+ y=40 "
+expect_log /tmp/zdesktop.log "MENU open client=$zc1 surface=$surface item=2 depth=1 x=[0-9]+ y=50 "
 keys '<esc>'
 sleep 0.5
 
