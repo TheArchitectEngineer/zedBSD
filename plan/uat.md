@@ -9,15 +9,15 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 | 項目 | 値 |
 | --- | --- |
-| path | `/home/awe/zedBSD-claude1/build/uat-1/hdd-image.img`（Q1 が 11:30 頃に作る。作ったら sha256 と source の commit をここに書く） |
-| 作り方 | `plan/ws075/demo/build-demo-image.sh build/uat-1`（S1 と同じ: CI の amd64 の構成が土台、demo の追加、passthrough の VBT 無し） |
-| boot の行 | S1 と同じ（`login=graphical` を二重に書かない、memory の注意） |
+| path | `/home/awe/zedBSD-claude1/build/uat-2/hdd-image.img`（2,216,689,664 byte、sha256 `4b64328432171f0134797394d735629a55d368ff686949711ac9f4ea543cb71f`、source は main 52e15c0、2026-10-04 10:55） |
+| 作り方 | `plan/tools/guest/test-image.sh --no-harness plan/ws133/config-uat.mk build/uat-2` に build-demo-image.sh と同じ `--file`（apps.conf・壁紙・authorized_keys）と `I915_TEST_VBT=n`。config-uat.mk は demo の構成（その時の CI の amd64 の構成: emacs・clang 入り）に monitor と noto-color-emoji を足したもの。build/uat-1 はユーザーの新しい CI の構成で emacs が無いので使わない |
+| boot の行 | `kernel=vmunix` `rootpart=PARTLABEL=zedBSD-root` `swap0=PARTLABEL=zedBSD-swap` `logo=logo.ppm` `login=graphical` `kmsg=quiet` `display=edp`（S1 と同じ。同じ名前の行を 2 回書かない） |
 | 利用者 | root / root、kei / kei（kei は起動で自動の login） |
 | QEMU の boot-test | Q1 が image を作った後に流す（結果をここに） |
 
 ## 2. 準備（ユーザー）
 
-1. USB に書く: `sudo dd if=build/uat-1/hdd-image.img of=/dev/sdX bs=4M conv=fsync status=progress`。読み戻して sha256 を比べると確実。
+1. USB に書く: `sudo dd if=build/uat-2/hdd-image.img of=/dev/sdX bs=4M conv=fsync status=progress`。読み戻して sha256 を比べると確実。
 2. 5330 を UEFI で USB から起動。有線は USB の LAN（RTL8156）をつなぐ。USB マウス（Logi Bolt の受信機）も挿す。
 3. 起動したら有線の IP を Q1 に伝える（DHCP）。エージェントは `ssh -i plan/tmp/guest/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@IP` で入り、log を集める。
 4. WiFi の鍵はユーザーが画面で入れる（エージェントは鍵を扱わない）。
