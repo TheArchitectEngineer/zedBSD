@@ -102,3 +102,7 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 - WS159 の受け入れ: 1・2 が ok で、2.10 は WS142 p003 の後に再確認。
 - 他の WS の Phase（WS132 p002・p003、WS142 p002、WS099 p032、WS160 p001・p002、WS089 p027）の実機の確認は、各 phase.md の「実機: 未実施」をこの結果で埋める（Q1）。
 - 全文の規約の確認（p005 の後半）は、UAT の結果を受けて別に行う。
+
+## UAT の image（2026-10-05 04:29 Q1）
+
+`plan/tools/guest/test-image.sh --no-harness plan/ws159/tests/config-amd64-uat.mk build/uat-0505` を main 7debc4ba（ws159-p006 の割り込み・i2c-hid の thread_start の直し・WS160 p001/p002・q722・WS132 p003 を含む）で build、exit 0、`check-amd64-native-image: OK`。`/home/awe/zedBSD-claude1/build/uat-0505/hdd-image.img`（2216689664 byte、sha256 830d2498f85213e8bda5ff0a0d9d1d938f05df92c57a13ebafdc5b1b115206c6）。QEMU の boot の確認は T1-124。video player（ws122）と release の license の直しはこの image に入っていない。
