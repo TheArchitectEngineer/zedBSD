@@ -25,7 +25,7 @@
 
 | # | 対象 | 前提 | 優先 | 結果 |
 | --- | --- | --- | --- | --- |
-| TQ-1 | ws131-p013・p014（libkeiui・libkeiland の名前の改名）の 3 OS の回帰 | source は **agent/p2 40b242a**（main には未 merge。PASS の後に Q1 が merge）。p014 は途中（phase014 の Resume）で、P2 が T1 に送った依頼は T1 の終了の後に届いたので未実行 | 高 | 未実施 |
+| TQ-1 | ws131-p013・p014（libkeiui・libkeiland の名前の改名）の 3 OS の回帰 | source は **main 5277761 以降**（P2 の 40b242a を 2026-10-04 に Q1 の最短の確認（zedBSD build・boot-test・Linux gcc）の後に統合）。p014 は途中（phase014 の Resume）。元 T1-085（P2 が T1 のラップアップの後に送った同じ依頼、未実行）をこの項目にまとめた | 高 | 未実施 |
 | TQ-2 | WS127 Files: `files-open.sh`（mouse・always・info）（元 T1-008） | なし | 中 | 未実施 |
 | TQ-3 | ws131-p007 の残り: demo-s8-s9（元 T1-044 の 3） | なし（TQ-1 の A に含まれるので、TQ-1 を流したら不要） | 低 | 未実施 |
 | TQ-4 | WS005 の venus-session-check の再実施（元 T1-007、image の作り方が原因の候補） | WS005 を再開するとき | 低 | 未実施 |
@@ -37,12 +37,7 @@
 
 ## TQ-1: ws131-p013・p014 の 3 OS の回帰
 
-ws131-p012 の試験（T2-027、2026-10-04 PASS）と同じ組。source は agent/p2 40b242a を自分の directory に出して、そこで build する（main の checkout を切り替えない）:
-
-```sh
-mkdir -p build/tq-1/src && git archive 40b242a | tar -x -C build/tq-1/src
-cd build/tq-1/src   # 以下の command はこの tree の中で流す（共有の toolchain は main の build/ を読み取り専用で使う。T2-027 と同じ）
-```
+ws131-p012 の試験（T2-027、2026-10-04 PASS）と同じ組。source は main（`git rev-parse --short main` を記録する）。main の checkout で流す時は `build/tq-1/` の下だけに書く。済み（Q1、2026-10-04）: demo の image の build・boot-test・Linux gcc の build。残り: 下の A の boot-test 以外・B の clang と app・C の全部
 
 ### A. zedBSD（QEMU）
 

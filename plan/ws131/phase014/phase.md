@@ -55,3 +55,9 @@ libkeiland の公開の名前（`keiland_*`・`KEILAND_*`、[rename-map.md](../r
 ## Resume（2026-10-04、ユーザーの指示のラップアップで中断）
 
 残り: (1) Linux の clang の build と install・elf-check・makefile-sync・header-check（p013 で通った手順）、(2) FreeBSD は `make -n`、(3) 受け入れの xserver・menu-probe・titlebar-probe の build（CI の config に入らない test の probe は `ZEDBSD_USER_PROGRAMS=` で個別に）と、p013 で流した残りの host 試験（ws081 の 6 本・ws089・ws100・ws128・ws102・textedit・imageview・scroll-bar）、(4) 全文規約の確かめ（`plan/tools/style-check.py` を変えた C に）。QEMU（p012 と同じ組に titlebar の probe の手順 `plan/tools/titlebar/` を足す）・Linux の PNG・FreeBSD の native build と audit は T1 に依頼済み（p013 と p014 をまとめて、このラップアップの時点の SHA で）。
+
+## Q1 の記録（2026-10-04）
+
+- ユーザーの承認: 「P2のp014の例外対応は問題ないです。承認します。」（互換の macro の無い共有の picture・artwork の内部の名前を kl_ に変えたため、files・imageview・settings・textedit・compositor の glass.c・ui/text.c の source も直した例外）。
+- 統合: ユーザー「P2のコミットをmainに入れたいので、最短のテストだけ実行してからマージしてください。」→ Q1 が agent/p2 40b242a で最短の確認（P2 の worktree の `build/q1-p014/`）: demo の config の zedBSD の image の build exit 0・自前の warning 0、rootfs に libkeiui 0、`plan/tools/boot-test.sh` PASS（login:、`/home/awe/zedBSD-worktrees/p2/build/boot-test/login.png`、QEMU）、`make keiland-linux`（gcc）exit 0・warning 0。→ main 5277761 に統合。
+- 回帰（QEMU の app の試験・Linux の clang と app の PNG・FreeBSD の backend-test）は [test-queue](../../test-queue.md) の TQ-1。Phase は Resume の残りと TQ-1 の後に判定する。
