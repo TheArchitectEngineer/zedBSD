@@ -56,6 +56,7 @@
   - **新規実装の目標: USB-C の DisplayPort Alternate Mode（WS051、WS050 の UCSI の上）**、次に**電源管理（WS052）**。両者は並走し、共通の前提は **WS049（AML）**: q677 ws049-p008（BUG-165 の DSDT）→ q678 ws049-p007（電源ボタン・GPE・EC）。WS132（ベータ1、全部）も同じ前提（q682）。
   - **AML と並走: UAT の Bug**（q683 BUG-170 → q684 BUG-158 → q685 BUG-168・169 → q686 BUG-175 → q687 BUG-173 → q688 BUG-171・176・157 → q689 BUG-166・167（仕様の決めと DSDT の後）→ q690 BUG-172・174（実機））。
   - **流れ C（完全に独立）: [WS141](ws141/ws.md) Raspberry Pi 4 のグラフィックス**（q691 p001 の文書から）。
+  - **流れ D（完全に独立）: [WS037](ws037/ws.md) nvrtx（NVIDIA RTX 2000 以降）**（q692 p001 の文書から）。
   - その次（担当に余裕があれば）: WS129 p003〜p005（release）、ws131-p014 の残り・TQ-1 の残り → p026、WS138・WS139・WS140、WS080 p004。
 <!-- master:focus:end -->
 
@@ -201,7 +202,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
 | [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | completed | 2026-09-30 ユーザーの判断で閉じた（目標が 2026-09-23 のまま古く、ゴールが不明確）。p001〜p138: compositor・sessiond・greeter・lock・Keiland の app・audiod・起動の短縮ほか。Chromium は取り消し（ユーザー「独自にBrowserを書いているから」）。デモまでの仕上げは WS099。`plan/ws035/tests/` は共有の道具として残す（plan/tools への移動は後の整理） |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
-| [WS037](ws037/ws.md) | MG006 | NVIDIA GPU（予約） | planning | 番号のみ |
+| [WS037](ws037/ws.md) | MG006 | **nvrtx**: NVIDIA RTX 2000 以降（Turing〜Blackwell、GTX 16xx を含む）の GPU driver。WS141 の vc4 と同じ進め方（文書が先、GPL の作業の文書は commit しない、定数の一括の改名、最後に類似の監査、GSP の firmware は userland/firmware）。Pascal 以前は範囲の外（2026-10-04 ユーザー） | planned（p001 から、q692） | 独立。試験は centris に挿す NVIDIA の GPU の VFIO |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
 | [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（予約） | planning | 番号のみ |
 | [WS040](ws040/ws.md) | MG008 | 時間の単位を tick 周期から導く | completed | — |
