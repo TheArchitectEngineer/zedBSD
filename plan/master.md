@@ -71,9 +71,6 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
-- **WS113 p002 の確かめ（2026-10-05 未明、P2）**: firmware の画面が全く無い（点いた pipe が無い）時、driver は内蔵の panel を点ける実装にした。Guardrail の「GOP の出力だけに scanout」の文言の外（UEFI の起動では起きない見込み）。この扱いでよいか。あわせて WS075 の `hdmi-h2-hw.sh`（`display=hdmi` で HDMI を強いる）と demo の `display=edp` は効かなくなった（WS075 の物なので触っていない）。
-- **desktop の icon の行数（2026-10-05 未明、P1 の ws099-p031）**: bar を 44 px にしたので、800 px の高さの画面で desktop の icon の grid が 7 行から 6 行に減った。7 行に戻すなら Files の desktop の余白か cell の高さを変える別の作業。今のままでよいか。
-- **ws131-p014 の受け入れ（2026-10-05 未明、Q1）**: FreeBSD の native build と `native-build-audit.py` だけが未達（他は満たし、TQ-1 PASS）。ベータ1 の後の Phase へ移して p014 を cleared にするか、今流すか。あわせて ws132-p003 の bar: 電池の無い機械で電池の場所を空けたままにするか詰めるか（詰めると QEMU の試験の bar の座標が全部動く）。
 - 2026-10-04 17 時に決定: BUG-166 のタッチパッドは「押し込み＋タップドラッグ」、5330 の ACPI の table の読み取り専用の取り出しと commit を許可（queue.md の決定 (1)(2)）。
 - WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
 - host の sysctl の設定を `/etc/sysctl.d` に残すか。
