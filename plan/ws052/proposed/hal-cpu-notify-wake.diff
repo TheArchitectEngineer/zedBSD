@@ -1,0 +1,18 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -152,7 +152,13 @@
+ 	struct hal_cpu_mask *result);
+ 
+ /*
+- * XXX: Add explanation.
++ * Interrupt another CPU so that it looks for work.
++ *
++ * The CPU is woken from hal_cpu_idle() and from hal_cpu_idle_deep()
++ * whatever state the latter entered, also with its periodic tick stopped
++ * (hal_timer_stop), and also while hal_irq_suspend() has the other
++ * interrupt sources masked: the notification is always a wake source.
++ * This is how the kernel brings the other CPUs back from a system sleep.
+  */
+ int
+ hal_cpu_notify(

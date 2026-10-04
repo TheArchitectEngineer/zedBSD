@@ -2,7 +2,7 @@
 
 # ws132-p005: libkeiland の devices（mount）と Files の Devices・Today・点滅・double click での mount・eject
 
-Status: in-progress（2026-10-05、P2 / q723。実装・build・host の試験まで。QEMU は T1、判定は Q1）
+Status: cleared（2026-10-05 Q1: T1-150 の p005-guest PASS、files.png を Q1 が目視（Files の左の Devices に USBSTICK、Today の Devices の card「Double-click…」、bar の媒体の icon））。以前: in-progress（2026-10-05、P2 / q723。実装・build・host の試験まで。QEMU は T1、判定は Q1）
 Disposition: normal
 Parent: [WS132](../ws.md)
 Focused goal: fg019（ベータ1）
@@ -40,3 +40,7 @@ Queue: q723（P2）
 - 確認: `plan/ws131/tests/host-system.sh` PASS、`run-host-files-devices.sh` PASS、build（warning 0）: zedBSD の files・settings・wayland・monitor・volumed、Linux の Keiland（-Werror）。style-check: 変えた file に新しい違反 0。
 - 未実施: QEMU の再試験（T1 に依頼）。
 - T1-147（WS089 の `settings-wifi-bugs.sh`、`ZSETTINGS NETWORK none`）も同じ原因: 88296ab（T1-109）では表と `KL_SYSTEM_MANAGER_VERSION` がどちらも 3、ws160 で両方 4、p005 で定数だけ 5 にした。表を定数に結んだので、この直しで Settings の kl_system も戻る（`settings-p021.sh` も同じ）。
+
+## Q1 の判定（2026-10-05）
+
+T1-150 の p005-guest PASS、files.png を Q1 が目視（Files の左の Devices に USBSTICK、Today の Devices の card「Double-click…」、bar の媒体の icon）。**cleared**。実機は UAT。

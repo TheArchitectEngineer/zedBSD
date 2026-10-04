@@ -2,7 +2,7 @@
 
 # ws132-p004: volumed（媒体の検出・通知・利用者の操作での mount・eject・抜去の片付け）
 
-Status: in-progress（2026-10-05、P2 / q723。設計を書いた。下の Q-1〜Q-4 を Q1 に確かめてから kernel と protocol の部分を実装する）
+Status: cleared（2026-10-05 Q1: T1-150 の p004-guest PASS（step 5 の mount 中の抜去を含む、BUG-192 の kernel の直しと FAT の force unmount の後））。以前: in-progress（2026-10-05、P2 / q723。設計を書いた。下の Q-1〜Q-4 を Q1 に確かめてから kernel と protocol の部分を実装する）
 Disposition: normal
 Parent: [WS132](../ws.md)
 Focused goal: fg019（ベータ1）
@@ -176,3 +176,7 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 - 確認: amd64 vmunix（warning 0、kernel include check PASS）、volumed の build、style-check（volumed 0、fat.c は新しい違反 0）、`run-host-volumed.sh`・`run-host-storage-removal.sh` PASS。
 - 未実施: QEMU の再試験（T1 に依頼）。
 - 追記（2026-10-05 q726、Q1 の許可）: volumed の行は stderr だけで `/var/log/messages` に届かず、T1 の `volumed-log.txt` が空だった。`volumed_log`（`openlog("volumed", LOG_PID, LOG_DAEMON)`・`syslog(LOG_NOTICE)` と stderr の両方）に替えた。build（warning 0）、style-check 0。
+
+## Q1 の判定（2026-10-05）
+
+T1-150 の p004-guest PASS（step 5 の mount 中の抜去を含む、BUG-192 の kernel の直しと FAT の force unmount の後）。**cleared**。実機は UAT。

@@ -1,0 +1,42 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -327,6 +327,38 @@
+ 	int polarity);
+ 
+ /*
++ * Mask every interrupt source of the platform except the given IRQs, for a
++ * system sleep (S0i3), until hal_irq_resume().
++ *
++ *  wake_irqs ... the numbered IRQs that wake the system (the ACPI SCI, a
++ *                wake device's line); they stay as they are.
++ *  count     ... how many.
++ *
++ * The sources HAL owns that the kernel does not see are masked too (on
++ * amd64: the local APIC's thermal, performance-counter, corrected-error
++ * and LINT entries, and the I/O APIC pins of no registered IRQ).  MSI and
++ * MSI-X vectors are their devices': the kernel has the devices quiet
++ * (suspended) before.  hal_cpu_notify() stays a wake source.  The masks
++ * as they were are kept inside HAL; only one suspension is held at once.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist,
++ * HAL_ERR_STATE when the sources are already suspended, or
++ * HAL_ERR_UNSUPPORTED when the platform cannot mask them selectively.
++ */
++int
++hal_irq_suspend(
++	const int *wake_irqs,
++	unsigned count);
++
++/*
++ * Put back every mask hal_irq_suspend() changed, as it was before.
++ *
++ * Returns HAL_OK, or HAL_ERR_STATE when the sources were not suspended.
++ */
++int
++hal_irq_resume(void);
++
++/*
+  * Set an IRQ mask.
+  */
+ void

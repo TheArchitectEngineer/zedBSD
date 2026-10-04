@@ -3,13 +3,13 @@
 # WS052: 電源管理（S0i3、modern standby）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（2026-10-05 q727: HAL の差分の案 H1〜H4 を [proposed/](proposed/README.md) に置き承認待ち、§10 の決定に合わせて Phase を p002〜p008 に改訂）
 Primary Milestone: MG003
 Related Milestones: MG004, MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-04 p001 の design.md 第 1 版（S0i3 の仕組み、5330 の LPS0、HAL の差分が要る点、Phase の案）。次はレビューと §10 の判断
+Resume point: HAL の差分 H1〜H4 の承認（差分ごと）、5330 の FACP・LPIT の取り出しの許可（design §10-4）。p003（ACPI の側）は HAL に依らず始められる
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -46,6 +46,13 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
 | [ws052-p001](phase001/phase.md) | 調査と設計: 対象機の FADT・LPS0 の `_DSM`・device の電源の method、PMC の register、driver ごとの suspend/resume の要否と順序、CPU の idle と timer（HAL の口の要否）、`/dev/system` の ioctl の案 | in-progress（2026-10-04。[design.md](design.md) 第 1 版、レビュー待ち） | WS049 の p001 | 設計文書 |
+| [ws052-p002](phase002/phase.md) | 詳細の調査と HAL の差分の案（H1 深い idle、H2 tick の停止、H3 notify の契約、H4 割り込みの suspend）、FACP・LPIT、wake の GPE、`_CST`、PMC | in-progress（2026-10-05 q727: 差分の案を置いた、承認待ち） | p001 | `proposed/` |
+| ws052-p003 | ACPI の側（LPS0 の `_DSM`、wake の GPE、`_PSx`・`_PRx`・`_DSW`） | planned | p001、ws049-p007 | |
+| ws052-p004 | device の suspend・resume の口と必須の i915・NVMe・xHCI（失敗で中止と理由） | planned | p003 | |
+| ws052-p005 | HDA・Wi-Fi などの「止めて入る」経路 | planned | p004 | |
+| ws052-p006 | CPU の idle・tick・割り込み（承認された HAL の差分）、S0i3 の入口・出口、`/dev/system` の ioctl と事象 | planned | p002 の承認、p004、p005、WS132 | |
+| ws052-p007 | Keiland の契機（蓋・電源ボタンの短押し・無操作の時間）と中止の理由の表示 | planned | p006、WS132 p008、WS089 | |
+| ws052-p008 | 実機の確認と規約の全文 | planned | p007 | |
 
 ## 人間の判断が要る点
 

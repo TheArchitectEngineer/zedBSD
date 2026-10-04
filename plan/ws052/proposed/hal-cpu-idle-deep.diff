@@ -1,0 +1,32 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -184,6 +184,28 @@
+ hal_cpu_idle(void);
+ 
+ /*
++ * Idle the current CPU in its deepest power state until one interrupt
++ * arrives, as hal_cpu_idle() does: interrupts are enabled for the wait and
++ * disabled again on return.
++ *
++ *  hint ... the platform's own name of that state, as the firmware gives it
++ *           (on amd64 the MWAIT hint of an ACPI _CST FFixedHW entry, eax of
++ *           MWAIT); 0 asks HAL to choose the deepest state the CPU reports
++ *           (on amd64 from CPUID leaf 5).
++ *
++ * The state may stop the periodic tick's timer and the caches; the caller
++ * has stopped the tick first (hal_timer_stop) and takes it up again after
++ * the wake.  hal_cpu_notify() wakes a CPU in this state.
++ *
++ * Returns HAL_OK after a wake, HAL_ERR_INVALID for a hint the CPU does not
++ * take, or HAL_ERR_UNSUPPORTED when the CPU has no state deeper than
++ * hal_cpu_idle()'s (nothing was waited for; the caller uses hal_cpu_idle()).
++ */
++int
++hal_cpu_idle_deep(
++	uint32_t hint);
++
++/*
+  * XXX: Rename to hal_cpu_halt().
+  * XXX: Is this same to hal_cpu_idle()??
+  *
