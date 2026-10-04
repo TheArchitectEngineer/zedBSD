@@ -25,4 +25,9 @@ Queue: q670（[Queue](../../queue.md)）
 
 - build: `make ZEDBSD_CONFIG=plan/ws099/tests/config-amd64-criteria.mk BUILD=build/ws099-p030/img build/ws099-p030/img/bin/wayland` exit 0・warning 0。`make keiland-linux KEILAND_LINUX_BUILD=build/p2-keiland-linux` exit 0・warning 0。FreeBSD は未実施。
 - `plan/tools/style-check.py`（titlebar-shell.c・menu-shell.c・shell.c）: 新しい違反 0（titlebar-shell.c の 1 件は変更前からの行）。
-- QEMU: 未実施（T1 に依頼する）。
+- QEMU: 未実施。T1 に依頼（下）。
+
+## QEMU の試験（T1 に依頼、2026-10-04）
+
+- `plan/ws099/tests/p030-drag.sh`（pen の image: `plan/ws079/tests/build-pen-image.sh`、guest は `plan/ws079/tests/pen-guest.sh start`）。マウスと touch の両方で: A. terminal の menu の Edit — 押しただけでは開かず離して開く、1 px の揺れはクリック、マウスの drag で窓が (60,80) ちょうど動き menu は開かない、touch の tap（3 px の揺れも）で開く、指の drag で (80,60) 動く、docked の system bar の Edit を下へ drag で pull（undock via=pull）。B. titlebar-probe の検索欄 — クリックでフォーカスとキャレット、フォーカス中の drag で選択（anchor=0 cursor=6、窓は動かない）、Z で置換、クリックでキャレット、フォーカスの無い欄の drag で (50,40) 動きフォーカスしない、touch の tap でフォーカス・指の drag で選択、指の drag で (70,50) 動く、閉じる button は押した時（release の前に GLASS close）。zdesktop の ERROR 0。
+- 回帰（挙動の変わる所の周り）: `plan/tools/titlebar/titlebar-p010.sh`（検索欄のクリック・入力）、`plan/tools/titlebar/menu-p003.sh`（menu のクリック）、`plan/tools/titlebar/menu-occlude.sh`、`plan/ws079/tests/zdesktop-p013-touch.sh`（title bar の touch）。
