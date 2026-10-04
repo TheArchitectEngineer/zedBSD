@@ -9,7 +9,7 @@ Related Milestones: MG003、MG004
 Objectives: O2, O3
 Parent: [Master](../master.md)
 Queue: q707 / q707-i01（P1 generation17、2026-10-05）
-Resume point: p001（設計）を書いた（[phase001](phase001/phase.md)、D1〜D3 は人間の判断待ち）。p002（kernel の事象の核・UAPI・送り手・`KERN_SYSTEM_GET_POWER`）を実装し build と host の試験まで済んだ（[phase002](phase002/phase.md)）。QEMU の試験を T1 に依頼中。次は D1〜D3 の後に p003・p004。**ベータ1 に入れる、範囲は全部**（2026-10-04 ユーザーの決定「全部をベータ1 に」: 電源管理・PnP の通知・自動 mount・eject。機能の締切は 10/13。間に合わない所はその時にユーザーと削る）。
+Resume point: p001（設計）を書いた（[phase001](phase001/phase.md)、D1〜D3 は人間の判断待ち）。p002（kernel の事象の核・UAPI・送り手・`KERN_SYSTEM_GET_POWER`）を実装し build と host の試験まで済んだ（[phase002](phase002/phase.md)）。QEMU の試験を T1 に依頼中（T1-106）。p003（backend の事象、input の探し直し、bar の電池）を実装し host の試験まで済んだ（[phase003](phase003/phase.md)）、QEMU は T1 に依頼。次は D1〜D3 の後に p004・p008。**ベータ1 に入れる、範囲は全部**（2026-10-04 ユーザーの決定「全部をベータ1 に」: 電源管理・PnP の通知・自動 mount・eject。機能の締切は 10/13。間に合わない所はその時にユーザーと削る）。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-03 ユーザー）
@@ -32,7 +32,7 @@ Resume point: p001（設計）を書いた（[phase001](phase001/phase.md)、D1�
 | --- | --- | --- | --- |
 | [ws132-p001](phase001/phase.md) | 設計 | in-progress（2026-10-05 q707-i01 P1: 設計を書いた、D1〜D3 は人間の判断待ち） | — |
 | [ws132-p002](phase002/phase.md) | 事象の核（`/dev/system` の購読・read・poll）、UAPI、送り手（ACPI の電源ボタン・蓋・AC・電池、disk、input、USB、network）、`KERN_SYSTEM_GET_POWER` | in-progress（2026-10-05 q707-i01 P1: 実装・build warning 0・host の試験 527＋137 checks。QEMU は T1 に依頼） | p001 |
-| [ws132-p003](phase003/phase.md) | Keiland の backend の事象（events-zedbsd.c、Linux・FreeBSD は stub）、compositor の input の探し直しと電池・AC の表示（D1・D2 に依らない分。2026-10-05 Q1 が電源ボタン・蓋の動作を p008 に分けた） | planned（q717） | p002 |
+| [ws132-p003](phase003/phase.md) | Keiland の backend の事象（events-zedbsd.c、Linux・FreeBSD は stub）、compositor の input の探し直しと電池・AC の表示（D1・D2 に依らない分。2026-10-05 Q1 が電源ボタン・蓋の動作を p008 に分けた） | in-progress（2026-10-05 q717-i01 P1: 実装・build warning 0（zedBSD・Linux）・host 54 checks・境界 PASS。QEMU は T1 に依頼） | p002 |
 | ws132-p008 | compositor の電源ボタン・蓋の動作（D1・D2 の決定に従う。蓋は WS052 の S0i3 までの間の扱い） | planning | p003、D1・D2 |
 | ws132-p004 | volumed（自動 mount・抜去・eject の口） | planning | p002、D3 |
 | ws132-p005 | libkeiland の volume の口、Files の eject・Locations | planning | p004 |

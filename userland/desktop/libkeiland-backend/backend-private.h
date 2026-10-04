@@ -34,6 +34,9 @@
  * the manager closed a session's descriptor (it no longer listens);
  * logout_asked and logout_ms say a Log Out was asked and when the first
  * tick after it saw it (0 until then).
+ *
+ * events_descriptor is where the system's events are read (ws132-p003),
+ * or -1 when the system has none.
  */
 struct kl_backend {
 	struct kl_backend_host host;
@@ -45,6 +48,7 @@ struct kl_backend {
 	unsigned session_gone;
 	unsigned logout_asked;
 	uint64_t logout_ms;
+	int events_descriptor;
 };
 
 /*
@@ -61,5 +65,18 @@ void kl_backend_session_tick(struct kl_backend *backend, uint64_t now_ms);
 size_t kl_backend_seat_poll_count(const struct kl_backend *backend);
 void kl_backend_seat_poll_fill(struct kl_backend *backend, struct pollfd *descriptors);
 void kl_backend_seat_poll_done(struct kl_backend *backend, const struct pollfd *descriptors);
+
+/*
+ * The system's events (ws132-p003): each operating system opens where it
+ * hears them (kl_backend_events_open sets events_descriptor, or leaves it
+ * -1), closes it, and counts, fills and handles its part of the poll; the
+ * events go to the host's input_changed, power_changed, power_button and
+ * lid_changed.
+ */
+void kl_backend_events_open(struct kl_backend *backend);
+void kl_backend_events_close(struct kl_backend *backend);
+size_t kl_backend_events_poll_count(const struct kl_backend *backend);
+void kl_backend_events_poll_fill(struct kl_backend *backend, struct pollfd *descriptors);
+void kl_backend_events_poll_done(struct kl_backend *backend, const struct pollfd *descriptors);
 
 #endif

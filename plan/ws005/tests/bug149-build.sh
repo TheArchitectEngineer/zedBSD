@@ -32,7 +32,7 @@ link "$out/bug149-poll.o" -o "$out/bug149-poll"
 # alone.  backend.c's session and seat are the no-op ones (the probe opens no backend).
 objects="$out/bug149-keiland.o"
 for source in userland/desktop/libkeiland-backend/backend.c userland/desktop/libkeiland-backend/session/session-none.c \
-	userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c \
+	userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c userland/desktop/libkeiland-backend/unsupported/events-unsupported.c \
 	userland/desktop/libkeiland-backend-zedbsd/network-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/network-link-zedbsd.c \
 	userland/base/net/protocol.c userland/base/net/wifi-conf.c userland/base/net/wifi-store.c; do

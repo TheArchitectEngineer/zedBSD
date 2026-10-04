@@ -100,6 +100,10 @@ main(
 	backend_host.input_gone = zwl_backend_input_gone;
 	backend_host.input_known = zwl_backend_input_known;
 	backend_host.input_found = zwl_backend_input_found;
+	backend_host.input_changed = zwl_backend_input_changed;
+	backend_host.power_changed = zwl_backend_power_changed;
+	backend_host.power_button = zwl_backend_power_button;
+	backend_host.lid_changed = zwl_backend_lid_changed;
 
 	/* Reads the command line; a mistake ends the run with the usage. */
 	error = parse_options(&server, count, arguments);
@@ -168,6 +172,9 @@ main(
 	error = kl_backend_open(&backend_options, &backend_host, &server.backend);
 	if (error != 0)
 		printf("ZWL BACKEND unavailable errno=%d\n", error);
+
+	/* The power as the backend knows it now, for the bar's battery (ws132-p003). */
+	zwl_power_read(&server);
 
 	/* Takes the OS's seat resources before Vulkan opens the display. */
 	if (error == 0) {

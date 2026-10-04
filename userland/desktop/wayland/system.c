@@ -155,7 +155,9 @@ struct system_details_wait {
  *   - what the objects were last told of the sound and the power (so that
  *     only a change is told): power_started once the first read of the
  *     power began, power_read once one ended (a power object made before
- *     then hears its first state at that end);
+ *     then hears its first state at that end), power_again when the power
+ *     changed (ws132-p003) and is to be read again once no read is under
+ *     way;
  *   - the serial of the last done.
  *
  * One per process; only the event loop's thread touches it, but the jobs'
@@ -177,6 +179,7 @@ struct system_state {
 	struct kl_backend_power_state power;
 	unsigned power_started;
 	unsigned power_read;
+	unsigned power_again;
 	uint32_t serial;
 };
 
@@ -318,6 +321,12 @@ zwl_system_tick(
 	system_network_job_take(server);
 	system_power_job_take(server);
 	system_network_job_next(server);
+
+	/* The power changed: read again once the read under way (begun before the change) is done (ws132-p003). */
+	if (system_state.power_again && !system_state.power_job.started) {
+		system_state.power_again = 0U;
+		system_power_read(server);
+	}
 
 	/* A step of a saved key the system bar's request held up. */
 	if (system_state.wait.stage == SYSTEM_NETWORK_RETRY)
@@ -1368,6 +1377,19 @@ system_power_job_take(
 	system_state.power_read = 1U;
 	if (differs != 0 || first)
 		system_tell(server, ZWL_SYSTEM_POWER, system_power_state, KL_SYSTEM_POWER_EVENT_DONE);
+}
+
+/*
+ * The power changed (backend-host.c, ws132-p003): the clients' state is
+ * read again at the next tick, after any read under way.
+ */
+void
+zwl_system_power_changed(
+	struct zwl_server *server)
+{
+	/* The next tick reads. */
+	(void)server;
+	system_state.power_again = 1U;
 }
 
 /* Starts reading the power's state on its thread, unless a read is under way. */

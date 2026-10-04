@@ -768,6 +768,8 @@ struct zwl_server {
 	struct zwl_compose *compose;
 	/* The operating system's side (libkeiland-backend, WS131): opened before the OS resources, closed after them; NULL before. */
 	struct kl_backend *backend;
+	/* The power as last read (ws132-p003): at start-up and at each power_changed; the bar shows the battery when percent >= 0. */
+	struct kl_backend_power_state power;
 	/* OS device authority can pause composition; zedBSD always leaves this zero. */
 	unsigned os_paused;
 	unsigned windowed;
@@ -1159,6 +1161,11 @@ void zwl_backend_input_resumed(void *data, const char *path, int descriptor);
 void zwl_backend_input_gone(void *data, const char *path);
 int zwl_backend_input_known(void *data, const char *path);
 int zwl_backend_input_found(void *data, int descriptor, const char *path, const struct kl_backend_input_caps *caps);
+void zwl_backend_input_changed(void *data);
+void zwl_backend_power_changed(void *data);
+void zwl_backend_power_button(void *data, unsigned button);
+void zwl_backend_lid_changed(void *data, unsigned open);
+void zwl_power_read(struct zwl_server *server);
 int zwl_lock(struct zwl_server *server, const char *reason);
 void zwl_greeter_answer(struct zwl_server *server, unsigned request, int error);
 int zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
@@ -1239,6 +1246,7 @@ int zwl_settings_request(struct zwl_object *object, uint32_t opcode, const unsig
 int zwl_system_bind(struct zwl_object *manager);
 int zwl_system_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void zwl_system_tick(struct zwl_server *server);
+void zwl_system_power_changed(struct zwl_server *server);
 void zwl_system_network_changed(struct zwl_server *server, unsigned changed);
 int zwl_system_network_done(struct zwl_server *server, unsigned request, int error);
 int zwl_system_bar_save_key(struct zwl_server *server, const char *ssid, const char *key);

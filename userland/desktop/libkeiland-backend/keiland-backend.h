@@ -70,7 +70,26 @@ struct kl_backend_host {
 	void (*input_gone)(void *data, const char *path);
 	int (*input_known)(void *data, const char *path);
 	int (*input_found)(void *data, int descriptor, const char *path, const struct kl_backend_input_caps *caps);
+	void (*input_changed)(void *data);
+	void (*power_changed)(void *data);
+	void (*power_button)(void *data, unsigned button);
+	void (*lid_changed)(void *data, unsigned open);
 };
+
+/*
+ * The system's events (ws132-p003), told through the host's last four
+ * callbacks from kl_backend_poll_done: input_changed when an input device
+ * came or went (the compositor scans the devices again), power_changed
+ * when the AC adapter or a battery changed (kl_backend_power_get_state
+ * reads the new state), power_button when a power or sleep button was
+ * pressed (KL_BACKEND_BUTTON_*), and lid_changed with 1 when the lid
+ * opened and 0 when it closed.  When events were lost, input_changed and
+ * power_changed are both called.  A system without the events never calls
+ * them, and the compositor finds devices by scanning on its own.  A host
+ * may leave any of them NULL.
+ */
+#define KL_BACKEND_BUTTON_POWER		1U
+#define KL_BACKEND_BUTTON_SLEEP		2U
 
 /*
  * How the compositor is started.
@@ -603,8 +622,9 @@ int kl_backend_peer_uid(int descriptor, uid_t *uid);
  * logind on Linux) and the machine then ends or sleeps.  On zedBSD
  * sessiond's answer comes as session_answer(KL_BACKEND_SESSION_POWER); on
  * Linux logind answers the call itself and the action's return value is
- * the answer.  One action is asked at a time.  The power source is not read on any system yet: the state
- * says unknown.
+ * the answer.  One action is asked at a time.  The power source is read on
+ * zedBSD (ws132-p003, the kernel's KERN_SYSTEM_GET_POWER); elsewhere the
+ * state says unknown.  The state may be read from any thread.
  */
 
 /* The actions (kl_backend_power_action), and their bits in the state's actions. */

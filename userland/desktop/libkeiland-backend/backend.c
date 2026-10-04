@@ -46,6 +46,10 @@ kl_backend_open(
 	opened->host = *host;
 	opened->options = *options;
 
+	/* The system's events, when the system has them (ws132-p003). */
+	opened->events_descriptor = -1;
+	kl_backend_events_open(opened);
+
 	/* Succeeded: the compositor owns the backend until it closes it. */
 	*backend = opened;
 	return 0;
@@ -58,7 +62,12 @@ void
 kl_backend_close(
 	struct kl_backend *backend)
 {
-	/* Frees the backend (free takes NULL). */
+	/* A backend that did not open has nothing to close. */
+	if (backend == NULL)
+		return;
+
+	/* The system's events, then the backend. */
+	kl_backend_events_close(backend);
 	free(backend);
 }
 
@@ -75,8 +84,9 @@ kl_backend_poll_count(
 	if (backend == NULL)
 		return 0;
 
-	/* The seat's service (ws131-p006). */
+	/* The seat's service (ws131-p006), then the system's events (ws132-p003). */
 	count = kl_backend_seat_poll_count(backend);
+	count += kl_backend_events_poll_count(backend);
 	return count;
 }
 
@@ -88,12 +98,16 @@ kl_backend_poll_fill(
 	struct kl_backend *backend,
 	struct pollfd *descriptors)
 {
+	size_t seat;
+
 	/* A compositor whose backend did not open has nothing to fill. */
 	if (backend == NULL)
 		return;
 
-	/* The seat's service (ws131-p006). */
+	/* The seat's service (ws131-p006), then the system's events after it (ws132-p003). */
+	seat = kl_backend_seat_poll_count(backend);
 	kl_backend_seat_poll_fill(backend, descriptors);
+	kl_backend_events_poll_fill(backend, descriptors + seat);
 }
 
 /*
@@ -104,12 +118,16 @@ kl_backend_poll_done(
 	struct kl_backend *backend,
 	const struct pollfd *descriptors)
 {
+	size_t seat;
+
 	/* A compositor whose backend did not open was told nothing. */
 	if (backend == NULL)
 		return;
 
-	/* The seat's pauses and resumes (ws131-p006). */
+	/* The seat's pauses and resumes (ws131-p006), then the system's events after them (ws132-p003). */
+	seat = kl_backend_seat_poll_count(backend);
 	kl_backend_seat_poll_done(backend, descriptors);
+	kl_backend_events_poll_done(backend, descriptors + seat);
 }
 
 /*

@@ -8,7 +8,9 @@
 /*
  * The seat's callbacks of libkeiland-backend (ws131-p006): what the
  * compositor does when the seat takes the display and the input devices
- * away (another session has the display) and gives them back.
+ * away (another session has the display) and gives them back; and the
+ * system's events (ws132-p003): input devices that came or went, the
+ * power's changes, the buttons and the lid.
  *
  * The backend calls these from kl_backend_poll_done, and the input
  * devices' two from kl_backend_input_scan; they change the compositor's
@@ -23,6 +25,7 @@
 #include <string.h>
 
 static struct zwl_input_device *backend_input(struct zwl_server *server, const char *path);
+static const char *power_source_text(unsigned source);
 
 /*
  * The seat is paused: drawing stops and the output closes now (Vulkan's
@@ -157,6 +160,123 @@ zwl_backend_input_found(
 	/* The seat's classification (input.c). */
 	kept = zwl_input_probe(data, descriptor, path, caps);
 	return kept;
+}
+
+/*
+ * An input device came or went (ws132-p003): the devices are scanned again
+ * in the event loop's next pass instead of at the next ZWL_INPUT_SCAN_MS.
+ */
+void
+zwl_backend_input_changed(
+	void *data)
+{
+	struct zwl_server *server;
+
+	/* The next pass scans (main.c compares the time of the last scan). */
+	server = data;
+	server->input_scan_time = 0;
+	printf("ZWL EVENT input changed\n");
+}
+
+/*
+ * The AC adapter or a battery changed (ws132-p003): the power is read
+ * again for the bar, and the system extension reads it again for its
+ * clients.
+ */
+void
+zwl_backend_power_changed(
+	void *data)
+{
+	struct zwl_server *server;
+
+	/* The bar's state, then the extension's. */
+	server = data;
+	zwl_power_read(server);
+	zwl_system_power_changed(server);
+	zwl_schedule(server);
+}
+
+/*
+ * A power or sleep button was pressed (ws132-p003).  What it does waits
+ * for the decision D1 (ws132-p008); it is only written in the log.
+ */
+void
+zwl_backend_power_button(
+	void *data,
+	unsigned button)
+{
+	/* Only the log, until p008. */
+	(void)data;
+	if (button == KL_BACKEND_BUTTON_SLEEP) {
+		printf("ZWL EVENT sleep button\n");
+		return;
+	}
+
+	/* The power button. */
+	printf("ZWL EVENT power button\n");
+}
+
+/*
+ * The lid opened or closed (ws132-p003).  What it does waits for the
+ * decision D2 (ws132-p008); it is only written in the log.
+ */
+void
+zwl_backend_lid_changed(
+	void *data,
+	unsigned open)
+{
+	/* Only the log, until p008. */
+	(void)data;
+	if (open != 0U) {
+		printf("ZWL EVENT lid open\n");
+		return;
+	}
+
+	/* Closed. */
+	printf("ZWL EVENT lid closed\n");
+}
+
+/*
+ * Reads the power's state for the bar: unknown (no battery shown) when the
+ * backend did not open or cannot say.
+ */
+void
+zwl_power_read(
+	struct zwl_server *server)
+{
+	struct kl_backend_power_state state;
+	int error;
+
+	/* Unknown unless the backend says. */
+	memset(&state, 0, sizeof(state));
+	state.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
+	state.percent = -1;
+	error = kl_backend_power_get_state(server->backend, &state);
+	if (error != 0) {
+		state.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
+		state.percent = -1;
+		state.charging = 0U;
+	}
+
+	/* Kept for the bar, and written in the log. */
+	server->power = state;
+	printf("ZWL POWER source=%s percent=%d charging=%u\n", power_source_text(state.source), state.percent,
+	       state.charging);
+}
+
+/* Names a power source for the log. */
+static const char *
+power_source_text(
+	unsigned source)
+{
+	/* The two the kernel tells, and the rest. */
+	if (source == KL_BACKEND_POWER_SOURCE_AC)
+		return "ac";
+	if (source == KL_BACKEND_POWER_SOURCE_BATTERY)
+		return "battery";
+
+	/* Succeeded: not known. */
+	return "unknown";
 }
 
 /* Finds the input the compositor keeps for a device path, or NULL. */
