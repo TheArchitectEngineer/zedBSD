@@ -107,6 +107,7 @@ static size_t event_count;
 static void (*thread_entry)(void *);
 static void *thread_argument;
 static jmp_buf thread_exit;
+static int thread_started;
 static unsigned sleeps_after_script;
 
 /* Whether the device's line is a pad (the "line" run), and the pin the driver asked for. */
@@ -139,6 +140,7 @@ uint64_t clock_milliseconds(void *context);
 uint64_t sched_ticks(void);
 void sched_sleep(uint64_t timeout_tick);
 int kthread_create(void (*entry)(void *), void *argument, int priority, void **result);
+void thread_start(void *thread);
 int drv_i2c_hid_probe(void);
 int drv_intel_gpio_pad_find(const char *controller, uint32_t pin, void **result);
 int drv_intel_gpio_pad_level(const void *pad);
@@ -294,6 +296,16 @@ kthread_create(
 	thread_argument = argument;
 	*result = NULL;
 	return 0;
+}
+
+/* Starts the recorded thread: the test runs it itself, and checks that the driver started it. */
+void
+thread_start(
+	void *thread)
+{
+	/* The thread the driver made (the stand-in hands out none). */
+	(void)thread;
+	thread_started++;
 }
 
 /* Walks the stand-in namespace: one device, the touchpad. */
@@ -853,7 +865,8 @@ main(
 	/* The probe takes the touchpad and starts its thread. */
 	started = drv_i2c_hid_probe();
 	check(started == 1, "the probe starts one device");
-	check(thread_entry != NULL, "the probe started a thread");
+	check(thread_entry != NULL, "the probe made a thread");
+	check(thread_started == 1, "and started it (thread_start)");
 	if (thread_entry == NULL) {
 		printf("host-i2c-hid: FAIL (no thread)\n");
 		return 1;

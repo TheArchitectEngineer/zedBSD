@@ -242,6 +242,9 @@ drv_i2c_hid_probe(void)
 			continue;
 		}
 
+		/* A created thread stays new until it is started. */
+		thread_start(device->thread);
+
 		/* One more device runs. */
 		started++;
 	}
