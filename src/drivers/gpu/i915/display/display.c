@@ -26,6 +26,7 @@
 
 #include "internal.h"
 #include "clock.h"
+#include "control.h"
 #include "diagnostics.h"
 #include "display.h"
 #include "dmc.h"
@@ -198,6 +199,9 @@ static int i915_display_other(struct i915_display *display, int resident, uint32
 static void i915_display_key(struct i915_device *device, unsigned kind, int port, char *name, unsigned size);
 static int i915_display_other_query(struct i915_device *device, unsigned connector, struct gpu_display_info *request);
 static int i915_display_other_mode(struct i915_display *display, struct gpu_display_mode *request);
+static int i915_display_power(void *device, void *session, const struct gpu_display_power *request);
+static int i915_display_refresh(void *device, void *session, struct gpu_display_refresh *request);
+static int i915_display_other_check(struct i915_display *display, uint32_t display_id, uint64_t generation, int *connected);
 
 /*
  * The display operations of the resident node.
@@ -210,7 +214,8 @@ static int i915_display_other_mode(struct i915_display *display, struct gpu_disp
  * mode and claim are answered here, present, wait and release by the
  * present path, and the topology sequence by the hotplug path, which
  * moves it when a connector is connected or disconnected (ws113-p002).
- * The table never changes.
+ * Power and refresh (ws113-p012) check the display here and are done by
+ * the display control (control.c).  The table never changes.
  */
 static const struct drv_gpu_display_ops i915_display_ops = {
 	i915_display_query,
@@ -219,7 +224,9 @@ static const struct drv_gpu_display_ops i915_display_ops = {
 	drv_i915_present_display_release,
 	drv_i915_present_display_present,
 	drv_i915_present_display_wait,
-	drv_i915_display_events
+	drv_i915_display_events,
+	i915_display_power,
+	i915_display_refresh
 };
 
 /*
@@ -245,6 +252,9 @@ drv_i915_display_create(
 		return ENOMEM;
 
 	display->device = device;
+
+	/* The resident output's refresh boundaries start with nothing counted. */
+	drv_i915_display_refresh_init(display);
 
 	/* Allocates each Linux environment's state. */
 	error = i915_display_create_worlds(display);
@@ -988,7 +998,7 @@ drv_i915_display_bind_ops(
 	/* The display and the display-only pairing, with their capabilities. */
 	ops->display = &i915_display_ops;
 	ops->scanout = &drv_i915_scanout_ops;
-	ops->capabilities |= GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS;
+	ops->capabilities |= GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL;
 }
 
 /*
@@ -2580,6 +2590,13 @@ i915_display_query(
 	if (display->rd.active)
 		request->flags |= GPU_DISPLAY_ACTIVE;
 
+	/* The pipe's frames are its refresh boundaries; the panel's light is its power (not an HDMI display's). */
+	request->flags |= GPU_DISPLAY_REFRESH_COUNTER;
+	if (!display->output.hdmi && !display->output.none)
+		request->flags |= GPU_DISPLAY_POWER_CONTROL;
+	if (display->rd.power_off)
+		request->flags |= GPU_DISPLAY_POWERED_OFF;
+
 	request->plane_count = 1U;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->max_frame_bytes = I915_DISPLAY_MAX_FRAME_BYTES;
@@ -2930,8 +2947,10 @@ i915_display_other_query(
 	request->display_id = I915_DISPLAY_OTHER_ID + connector;
 	request->generation = output.generation;
 	request->flags = GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
+
+	/* A connected one is not lit: the limit of outputs shown at once (D-LIMIT, its claim answers ENOSPC). */
 	if (output.connected)
-		request->flags |= GPU_DISPLAY_CONNECTED;
+		request->flags |= GPU_DISPLAY_CONNECTED | GPU_DISPLAY_LIMITED;
 	request->plane_count = 1U;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->max_frame_bytes = I915_DISPLAY_MAX_FRAME_BYTES;
@@ -2997,5 +3016,131 @@ i915_display_other_mode(
 		return EINVAL;
 
 	/* Succeeded: the mode is the connector's. */
+	return 0;
+}
+
+/*
+ * Powers the resident display's panel off or on for the open holding its
+ * lease (the display power operation, ws113-p012).
+ *
+ * Another connector is not lit and has no lease: EBUSY (ENOENT or ESTALE
+ * for an unknown one).  An HDMI display in the panel's place has no light
+ * to switch: EOPNOTSUPP.
+ */
+static int
+i915_display_power(
+	void *device,
+	void *session,
+	const struct gpu_display_power *request)
+{
+	struct i915_device *owner_device;
+	struct i915_display *display;
+	int connected;
+	int off;
+	int error;
+
+	/* The device's display. */
+	owner_device = device;
+	display = owner_device->display;
+
+	/* Another connector of this generation: nobody leases it while the resident output is lit. */
+	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
+		error = i915_display_other_check(display, request->display_id, request->generation, &connected);
+		if (error != 0)
+			return error;
+		if (!connected)
+			return ENXIO;
+		return EBUSY;
+	}
+
+	/* The resident display of this generation. */
+	if (request->display_id != I915_DISPLAY_ID)
+		return ENOENT;
+	if (request->generation != I915_DISPLAY_GENERATION)
+		return ESTALE;
+
+	/* Only the eDP panel's light is switched. */
+	if (display->output.hdmi || display->output.none)
+		return EOPNOTSUPP;
+
+	/* The display control switches it for the lease holder. */
+	off = 0;
+	if (request->state != GPU_DISPLAY_POWER_ON)
+		off = 1;
+	error = drv_i915_display_power_set(owner_device, session, off);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the panel has the requested power. */
+	return 0;
+}
+
+/*
+ * Waits for a refresh boundary of a display (the display refresh
+ * operation, ws113-p012): the resident output's pipe frames.  Another
+ * connector is not lit and makes no boundary.
+ */
+static int
+i915_display_refresh(
+	void *device,
+	void *session,
+	struct gpu_display_refresh *request)
+{
+	struct i915_device *owner_device;
+	struct i915_display *display;
+	int connected;
+	int lit_possible;
+	int error;
+
+	UNUSED_PARAMETER(session);
+
+	/* The device's display. */
+	owner_device = device;
+	display = owner_device->display;
+
+	/* Another connector of this generation, or the resident display of its own. */
+	lit_possible = 1;
+	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
+		error = i915_display_other_check(display, request->display_id, request->generation, &connected);
+		if (error != 0)
+			return error;
+		if (!connected)
+			return ENXIO;
+		lit_possible = 0;
+	} else if (request->display_id != I915_DISPLAY_ID) {
+		return ENOENT;
+	} else if (request->generation != I915_DISPLAY_GENERATION) {
+		return ESTALE;
+	}
+
+	/* The display control waits for the boundary. */
+	error = drv_i915_display_refresh_wait(owner_device, lit_possible, request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the boundary after the cursor. */
+	return 0;
+}
+
+/* Checks another connector's ID and generation; ENOENT or ESTALE, with whether it is connected. */
+static int
+i915_display_other_check(
+	struct i915_display *display,
+	uint32_t display_id,
+	uint64_t generation,
+	int *connected)
+{
+	struct i915_hpd_output output;
+	int error;
+
+	/* The connector of the ID, of this generation. */
+	error = drv_i915_hpd_output(display, display_id - I915_DISPLAY_OTHER_ID, &output);
+	if (error != 0)
+		return ENOENT;
+	if (generation != output.generation)
+		return ESTALE;
+
+	/* Succeeded: the connector is known. */
+	*connected = output.connected;
 	return 0;
 }

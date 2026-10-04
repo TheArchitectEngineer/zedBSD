@@ -26,8 +26,13 @@
 
 struct i915_device;
 
+/* What a backlight item of the worker does: read or set the brightness, or switch the light (ws113-p012). */
+#define I915_BACKLIGHT_GET	0
+#define I915_BACKLIGHT_SET	1
+#define I915_BACKLIGHT_POWER	2
+
 int drv_i915_display_backlight_register(struct i915_device *device);
 void drv_i915_display_backlight_unregister(struct i915_device *device);
-int drv_i915_display_backlight_serve(struct i915_device *device, int in_display, int set, uint32_t *percent);
+int drv_i915_display_backlight_serve(struct i915_device *device, int in_display, int op, uint32_t *value);
 
 #endif

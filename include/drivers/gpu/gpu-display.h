@@ -37,6 +37,15 @@ struct drv_gpu_display_ops {
 	 * without dereferencing a borrowed common registration handle.
 	 */
 	int (*events)(void *, void *, uint64_t *);
+
+	/*
+	 * GPU_CAP_DISPLAY_CONTROL: both, or neither.  power gets a checked request
+	 * (state ON, OFF or SUSPEND, reserved zero) from a writable open, inside the
+	 * ordinary admission; refresh gets one from a readable open outside it, with
+	 * timeout_ns bounded by the core, and may sleep that long.
+	 */
+	int (*power)(void *, void *, const struct gpu_display_power *);
+	int (*refresh)(void *, void *, struct gpu_display_refresh *);
 };
 
 #endif

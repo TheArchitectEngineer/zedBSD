@@ -26,7 +26,7 @@
 #include <uapi/errno.h>
 #include <limits.h>
 
-#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)
+#define VENUS_CAPABILITIES	(63U | GPU_CAP_DISPLAY | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)
 
 static int venus_attach(struct drv_pci_device *device, const struct drv_pci_id *id);
 static int venus_start(struct venus_controller *controller, struct drv_pci_device *device);

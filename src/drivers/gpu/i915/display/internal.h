@@ -3204,6 +3204,28 @@ struct i915_resident_display {
 
 	/* Nonzero while the panel shows this node's frames. */
 	int active;
+
+	/* Nonzero while the lease holder has the panel's light off (GPU_DISPLAY_POWER, ws113-p012); the lease's end clears it. */
+	int power_off;
+};
+
+/*
+ * The refresh boundaries of the resident output (GPU_DISPLAY_REFRESH,
+ * ws113-p012): the pipe's hardware frame counter, read while the display
+ * window is up and extended to a count that never goes back.  The lock
+ * covers the window's display_up too: the worker lowers it under the lock
+ * before the pipe stops, so the counter is never read from a stopped pipe.
+ */
+struct i915_display_refresh {
+	struct spinlock lock;
+
+	/* Boundaries counted so far, and the time the count last moved (ns, scheduler clock). */
+	uint64_t count;
+	uint64_t time_ns;
+
+	/* The frame counter last read, and whether it was read since the pipe was lit. */
+	uint32_t frame;
+	int frame_valid;
 };
 
 /*
@@ -3457,6 +3479,9 @@ struct i915_display {
 
 	/* The panel's backlight device while the node is published with the panel as its output (backlight.c), or NULL. */
 	struct kern_backlight *backlight;
+
+	/* The resident output's refresh boundaries (control.c). */
+	struct i915_display_refresh refresh;
 
 	/*
 	 * The resident present path.

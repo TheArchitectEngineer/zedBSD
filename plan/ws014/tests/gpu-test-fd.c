@@ -322,3 +322,12 @@ tty_console_input_unhold(
 	/* Succeeded: nothing to release. */
 	return;
 }
+
+/* The boot splash's end at a display claim (ws035-p107) has no splash in the host peer. */
+void
+kern_text_progress_end(
+	void)
+{
+	/* Succeeded: nothing to end. */
+	return;
+}

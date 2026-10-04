@@ -52,6 +52,7 @@
 #include "modeset.h"
 #include "present.h"
 #include "scanout.h"
+#include "control.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -913,6 +914,9 @@ i915_present_release_locked(
 
 	rd = &device->display->rd;
 
+	/* A light the lease switched off comes back first (ws113-p012). */
+	drv_i915_display_power_restore_locked(device);
+
 	/* The panel shows this node's frames: the worker stops it. */
 	error = 0;
 	if (rd->active) {
@@ -1081,13 +1085,13 @@ i915_present_window_serve(
 
 	display = ctx;
 
-	/* The worker is inside the window while it serves. */
-	display->window.display_up = 1;
+	/* The worker is inside the window while it serves; the pipe's refresh boundaries can be read from now on. */
+	drv_i915_display_refresh_up(display, 1);
 	drv_i915_worker_serve_window(display->device);
 
 	/* The mappings go first; the window is left. */
 	drv_i915_scanout_unmap_panel(display);
-	display->window.display_up = 0;
+	drv_i915_display_refresh_up(display, 0);
 
 	/* The window was served. */
 	return 0;
