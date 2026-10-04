@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p017`
 Parent: [WS049](../ws.md)
-Status: in-progress（2026-10-04、P1 generation16）
+Status: in-progress（2026-10-04。実装と host の確認、T1-093 の QEMU の回帰が PASS。Q1 の判定待ち。⑤ はユーザーの判断待ち）
 Phase disposition: normal
 Queue: q696 / q696-i01（P1）。承認: Q1 の Queue（[queue.md](../../queue.md) の q696、WS050 design §12 の提案、2026-10-04）
 
@@ -41,4 +41,10 @@ QEMU の回帰は T1（guest-events・guest-compare・boot-test）。
   `--package-arg` を足した。
 - `make -C plan/ws049/tests`（ASan・UBSan）warning 0、`run-asl.py` 20 passed、style-check total 0、kernel-check warning 0、check-latitude5330
   （1349 method、EC の port は新しい walk で 930/934）、ecdt-check 500 0 failures、`git diff --check`。
-- 未実施: vmunix の build、QEMU（T1: guest-events・guest-compare・boot-test）。
+- vmunix（CI config）warning 0・vmunix check PASS。
+- QEMU（T1-093、main da07422、KVM）: guest-events PASS（first SCI 1）、guest-compare namespace same・device の違い 10 項目（T1-091 と同じ）、boot-test PASS。
+
+## 再開点
+
+- ⑤（memory map の型を問う口、HAL の API が要る）のユーザーの判断。足すことになれば `hal.h` の差分の案を `plan/ws049/proposed/` に作り承認を得る。
+- 実機の確認は WS050 p003 で（UCSI が最初の利用者）。

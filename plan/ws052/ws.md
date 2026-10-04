@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001 から。WS049（AML interpreter）が前提
+Resume point: 2026-10-04 p001 の design.md 第 1 版（S0i3 の仕組み、5330 の LPS0、HAL の差分が要る点、Phase の案）。次はレビューと §10 の判断
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -45,7 +45,7 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
-| ws052-p001 | 調査と設計: 対象機の FADT・LPS0 の `_DSM`・device の電源の method、PMC の register、driver ごとの suspend/resume の要否と順序、CPU の idle と timer（HAL の口の要否）、`/dev/system` の ioctl の案 | planning | WS049 の p001 | 設計文書 |
+| [ws052-p001](phase001/phase.md) | 調査と設計: 対象機の FADT・LPS0 の `_DSM`・device の電源の method、PMC の register、driver ごとの suspend/resume の要否と順序、CPU の idle と timer（HAL の口の要否）、`/dev/system` の ioctl の案 | in-progress（2026-10-04。[design.md](design.md) 第 1 版、レビュー待ち） | WS049 の p001 | 設計文書 |
 
 ## 人間の判断が要る点
 
