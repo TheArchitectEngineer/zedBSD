@@ -100,6 +100,12 @@ struct intel_ax211_runtime_start {
 	uint8_t mcc_valid;
 	uint8_t ltr_enabled;
 	uint8_t nic_locked;
+	/*
+	 * A stop saw the master-disable indication time out and kept the DMA
+	 * for one later retry instead of freeing pages the device may still be
+	 * writing (BUG-158).  The retry, after another reset, frees it.
+	 */
+	uint8_t dma_release_deferred;
 	uint8_t state;
 	uint8_t last_error;
 };

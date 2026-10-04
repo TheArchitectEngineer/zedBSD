@@ -153,6 +153,7 @@ Shared tests: [WS005 test index](tests/README.md)
 | [ws005-p021](phase021/phase.md) | planning | ベータ1: AX211 の PCI passthrough で desktop の通し（BUG-134 待ち） |
 | [ws005-p022](phase022/phase.md) | planning | ベータ1: 全文規約の確認と回帰 |
 | [ws005-p023](phase023/phase.md) | planning | ベータ1: 実機の受け入れ（ユーザーの時期） |
+| [ws005-p032](phase032/phase.md) | in-progress（q684-i01） | BUG-158: panic・fatal を ring と画面に残し kernel log を disk へ。AX211 の scan の失敗を recovery に回し off→on なしに再 open。T1 の QEMU と実機の UAT 待ち |
 
 `ws002-p020` remains historical ownership of the current wired
 `networkd`/`net` baseline; it is not renumbered into this WS. Native device and

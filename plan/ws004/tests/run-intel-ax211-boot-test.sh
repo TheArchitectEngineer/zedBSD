@@ -9,7 +9,8 @@ build_dir=$(mktemp -d "${TMPDIR:-/tmp}/zedbsd-intel-ax211-boot.XXXXXX")
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 cc=${CC:-cc}
-warnings="-std=c89 -pedantic -Wno-long-long -Wall -Wextra -Werror"
+# _DEFAULT_SOURCE: the host mapping of kcrt.h calls vsnprintf, which strict c89 does not declare.
+warnings="-std=c89 -D_DEFAULT_SOURCE -pedantic -Wno-long-long -Wall -Wextra -Werror"
 core="$repo_root/build/driver-fragments/src/drivers/intel-ax211.c"
 protocol="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211-protocol.c"
 init="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211-init.c"
