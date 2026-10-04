@@ -52,14 +52,10 @@
 <!-- master:focus:start -->
 - **fg019 ベータ1 のリリース（公開 2026-10-17、RC の commit 10/13 が事実上の機能の締切、名前「Kei/zedBSD 1.0.0 Beta 1」、版 1.0.0-beta1）**。決定は [ws129/release.md](ws129/release.md) の §9。内容は下の「Current Focused Goals」。
 - fg018 Linux 標準 GTK4（WS114 は p007・p008 まで達成、GTK4 の zedBSD 移植 WS115 は後回し）。
-- **17 時（2026-10-04、利用枠の回復）からの候補**（Q1 の案。担当の数 N はユーザーが決める。上ほど優先）:
-  1. [WS132](ws132/ws.md) 全部をベータ1 に（ユーザー「全部をベータ1 に」、10/13 の締切）: p001 設計（kernel-and-driver-designer）→ 実装。間に合わない所はその時にユーザーと削る。
-  2. UAT（[uat.md](uat.md)）で出た不具合の直し: **BUG-165（WS049、DSDT）・BUG-158（WS005）・BUG-170（WS100）を最優先**（WS132 と並行）、次に BUG-168・166（仕様の決めの後）・167・175・173・171・169・172・174・176。
-  3. [WS129](ws129/ws.md) p003（版 1.0.0-beta1・名前）→ p004（release の構成: zedinst を外す・root の lock・SHA256SUMS と LICENSES.md）→ p005（`docs/release/` に英語の notes）。決定は release.md §9。
-  4. ws131-p014 の残り（phase014 の Resume）と [test-queue](test-queue.md) の TQ-1 の残り → ws131-p026（header の整理）。
-  5. [WS138](ws138/ws.md)（PNG・JPEG の背景）: 着手前に phase.md を判断に合わせて直す。
-  6. [WS139](ws139/ws.md) p001（性能の基準の計測、E1）、[WS140](ws140/ws.md)（ld.so の上限、U3 で範囲を広げてから）。
-  7. [WS080](ws080/ws.md) p004 の続き。
+- **17 時（2026-10-04）からの予定**（2026-10-04 user「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。そうすると、AMLと併走できる開発項目は、UATで見つかったバグだと思います。スケジューリングだけしてmasterやqueueに記録してください。実行は17時以降に行います。」）。詳細と依存は [queue.md](queue.md) の「2026-10-04 17 時以降の予定」（q677〜q690）。
+  - **新規実装の目標: USB-C の DisplayPort Alternate Mode（WS051、WS050 の UCSI の上）**、次に**電源管理（WS052）**。両者は並走し、共通の前提は **WS049（AML）**: q677 ws049-p008（BUG-165 の DSDT）→ q678 ws049-p007（電源ボタン・GPE・EC）。WS132（ベータ1、全部）も同じ前提（q682）。
+  - **AML と並走: UAT の Bug**（q683 BUG-170 → q684 BUG-158 → q685 BUG-168・169 → q686 BUG-175 → q687 BUG-173 → q688 BUG-171・176・157 → q689 BUG-166・167（仕様の決めと DSDT の後）→ q690 BUG-172・174（実機））。
+  - その次（担当に余裕があれば）: WS129 p003〜p005（release）、ws131-p014 の残り・TQ-1 の残り → p026、WS138・WS139・WS140、WS080 p004。
 <!-- master:focus:end -->
 
 <!-- master:blocked:start -->
