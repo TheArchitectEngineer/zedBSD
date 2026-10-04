@@ -40,3 +40,7 @@ Queue: q670（[Queue](../../queue.md)）
 ## 判定（Q1、2026-10-04、T2-026、QEMU、pen の image、main 3da3610）
 
 cleared。p030-drag は数え方の誤り（6cb1536 で直した）の後 PASS（マウスと touch: menu は離して開く・揺れはクリック・drag で move・docked の pull、検索欄のフォーカス・選択・move、閉じるは押した時）。回帰 titlebar-p010・menu-p003・menu-occlude・zdesktop-p013-touch PASS。FreeBSD の build と実機は未実施。
+
+## T2-026 の再試験（2026-10-04、T2 の報告）
+
+6cb1536 の script、同じ pen の image（main 3da3610）、新しい guest: `p030-drag: PASS`（96 秒、`count: selections by the finger = 2 ok`）。回帰（pen の image）: titlebar-p010・menu-p003・menu-occlude・zdesktop-p013-touch いずれも PASS。証拠 `/home/awe/zedBSD-worktrees/t2/build/t2-026/p030-drag-3/` と並びの回帰の directory。QEMU の証拠（実機は未実施）。clearance の判定は Q1。
