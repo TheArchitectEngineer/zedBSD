@@ -21,6 +21,8 @@
 
 #include "userland/desktop/paths.h"
 
+#include <keiland.h>
+
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -62,6 +64,7 @@ struct main_options {
 	unsigned height;
 	unsigned timeout;
 	int desktop;
+	int devices;
 };
 
 /*
@@ -109,6 +112,17 @@ static struct fm_touch main_touch;
 
 /* In how many milliseconds the fingers want the next round (-1: none). */
 static int main_touch_due = -1;
+
+/*
+ * The desktop's system (libkeiland's kl_system_*, ws132-p005): the
+ * removable devices it tells and the mounts and ejects asked of it, with the
+ * one request waiting for its answer (0: none) and the device it was for.
+ * NULL without Keiland's system extension.
+ */
+static struct kl_system *main_system;
+static uint32_t main_device_request;
+static unsigned main_device_kind;
+static char main_device_id[64];
 
 /*
  * The window's menus in zdesktop, opened with the window and closed before
@@ -165,6 +179,11 @@ static int main_desktop_prepare(struct main_options *options);
 static int main_open_decorations(void);
 static void main_open_context_menus(void);
 static void main_dispatch(const struct fm_event *event);
+static void main_devices_open(const struct main_options *options);
+static void main_devices_poll(void);
+static void main_devices_take(int blink_all);
+static void main_devices_ask(unsigned request);
+static void main_devices_result(uint32_t request, int error);
 
 /*
  * Runs the file manager.
@@ -183,7 +202,7 @@ main(
 	main_startup.entered = fm_clock();
 	status = main_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: files [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--wallpaper=PATH] [--token=NAME] [--timeout-s=N] [--desktop] [FOLDER]\n");
+		fprintf(stderr, "usage: files [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--wallpaper=PATH] [--token=NAME] [--timeout-s=N] [--desktop] [--devices] [FOLDER]\n");
 		return 2;
 	}
 
@@ -288,8 +307,17 @@ main(
 		}
 	}
 
+	/* The desktop's removable devices, for the window (not the desktop's icons). */
+	if (!options.desktop)
+		main_devices_open(&options);
+
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
+
+	/* The system goes before the window's display. */
+	if (main_system != NULL)
+		kl_system_close(main_system);
+	main_system = NULL;
 
 	/* Everything goes, the titlebar, the menus, the glass and the app before the window they belong to. */
 	fm_titlebar_close(&main_titlebar);
@@ -392,6 +420,13 @@ main_parse(
 		status = strcmp(argv[index], "--desktop");
 		if (status == 0) {
 			options->desktop = 1;
+			continue;
+		}
+
+		/* Started from the bar's media icon: the new removable devices blink (ws132-p005). */
+		status = strcmp(argv[index], "--devices");
+		if (status == 0) {
+			options->devices = 1;
 			continue;
 		}
 
@@ -529,6 +564,9 @@ main_loop(
 			fm_log("DONE reason=disconnected");
 			return 0;
 		}
+
+		/* The desktop's news of the removable devices, and the answers to their mounts and ejects (ws132-p005). */
+		main_devices_poll();
 
 		/* The held key's repeat, and every input queued (the menus' choices among them); the desktop has its own (ui-desktop.c). */
 		now = fm_clock();
@@ -780,6 +818,10 @@ main_request(
 		break;
 	case FM_REQUEST_MINIMIZE:
 		fm_window_minimize(&main_window);
+		break;
+	case FM_REQUEST_DEVICE_MOUNT:
+	case FM_REQUEST_DEVICE_EJECT:
+		main_devices_ask(request);
 		break;
 	case FM_REQUEST_ZOOM:
 		fm_window_zoom(&main_window);
@@ -1292,4 +1334,196 @@ main_dispatch(
 
 	/* Succeeded: the window has received its input. */
 	return;
+}
+
+/*
+ * Opens the desktop's system on the window's display for its removable
+ * devices; started from the bar's media icon (--devices), the new ones blink.
+ */
+static void
+main_devices_open(
+	const struct main_options *options)
+{
+	unsigned capabilities;
+
+	/* The system; without it (not Keiland) there are no devices. */
+	main_system = kl_system_open(main_window.display);
+	if (main_system == NULL) {
+		fm_log("DEVICES none errno=%d", errno);
+		return;
+	}
+
+	/* Without the devices, nothing to follow. */
+	capabilities = kl_system_capabilities(main_system);
+	if ((capabilities & KL_SYSTEM_HAS_DEVICES) == 0U) {
+		fm_log("DEVICES unsupported");
+		return;
+	}
+
+	/* The devices there are now. */
+	main_devices_take(options->devices);
+}
+
+/* Takes what the desktop sent: a new list of devices, and the answers. */
+static void
+main_devices_poll(
+	void)
+{
+	uint32_t request;
+	unsigned changed;
+	int status;
+	int taken;
+	int error;
+
+	/* Nothing to follow. */
+	if (main_system == NULL)
+		return;
+
+	/* The news; a desktop that went leaves the list as it was. */
+	changed = 0U;
+	status = kl_system_dispatch(main_system, &changed);
+	if (status != 0)
+		return;
+	if ((changed & KL_SYSTEM_CHANGED_DEVICES) != 0U)
+		main_devices_take(0);
+
+	/* Each answer. */
+	for (;;) {
+		taken = kl_system_take_result(main_system, &request, &error);
+		if (!taken)
+			break;
+		main_devices_result(request, error);
+	}
+}
+
+/* Gives the file manager the desktop's list of devices. */
+static void
+main_devices_take(
+	int blink_all)
+{
+	struct kl_device list[KL_DEVICES_MAX];
+	struct fm_device devices[FM_DEVICES_MAX];
+	size_t count;
+	size_t index;
+
+	/* The desktop's list, as the file manager's. */
+	count = kl_system_devices_get(main_system, list, KL_DEVICES_MAX);
+	if (count > FM_DEVICES_MAX)
+		count = FM_DEVICES_MAX;
+	memset(devices, 0, sizeof(devices));
+	for (index = 0U; index < count; index++) {
+		(void)snprintf(devices[index].id, sizeof(devices[index].id), "%s", list[index].id);
+		(void)snprintf(devices[index].name, sizeof(devices[index].name), "%s", list[index].name);
+		(void)snprintf(devices[index].path, sizeof(devices[index].path), "%s", list[index].location);
+		if ((list[index].state & KL_DEVICE_MOUNTED) != 0U)
+			devices[index].mounted = 1;
+		if ((list[index].state & KL_DEVICE_NEW) != 0U)
+			devices[index].fresh = 1;
+	}
+
+	/* Taken, at the time now. */
+	main_app.now = fm_clock();
+	fm_devices_set(&main_app, devices, (int)count, blink_all);
+}
+
+/* Asks the desktop to mount or eject the device the file manager named. */
+static void
+main_devices_ask(
+	unsigned request)
+{
+	uint32_t number;
+	int error;
+
+	/* Without the system, or with an answer still waited for: refused. */
+	if (main_system == NULL) {
+		fm_ui_message(&main_app, "Devices are not available on this desktop.");
+		return;
+	}
+
+	/* One request at a time. */
+	if (main_device_request != 0U) {
+		fm_ui_message(&main_app, "Another device is being mounted or ejected.");
+		return;
+	}
+
+	/* The request. */
+	number = 0U;
+	if (request == FM_REQUEST_DEVICE_MOUNT) {
+		error = kl_system_devices_mount(main_system, main_app.device_asked, &number);
+	} else {
+		error = kl_system_devices_eject(main_system, main_app.device_asked, &number);
+	}
+
+	/* Logged for the tests. */
+	fm_log("DEVICE ask id=%s mount=%d error=%d", main_app.device_asked, request == FM_REQUEST_DEVICE_MOUNT, error);
+
+	/* A request that could not be sent. */
+	if (error != 0) {
+		fm_ui_message(&main_app, "The device could not be asked for.");
+		return;
+	}
+
+	/* Waited for, and sent now. */
+	main_device_request = number;
+	main_device_kind = request;
+	(void)snprintf(main_device_id, sizeof(main_device_id), "%s", main_app.device_asked);
+	(void)wl_display_flush(main_window.display);
+}
+
+/* Tells what became of a mount or an eject. */
+static void
+main_devices_result(
+	uint32_t request,
+	int error)
+{
+	char program[KL_DEVICE_TEXT_MAX];
+	char message[192];
+	int named;
+
+	/* Another request's answer. */
+	if (request != main_device_request || main_device_request == 0U) {
+		fm_log("SYSTEM result request=%u errno=%d", request, error);
+		return;
+	}
+
+	/* No longer waited for. */
+	main_device_request = 0U;
+	fm_log("DEVICE result id=%s mount=%d errno=%d", main_device_id, main_device_kind == FM_REQUEST_DEVICE_MOUNT, error);
+
+	/* A mount: it opens when the devices' change says where (fm_devices_set); a failure says why. */
+	if (main_device_kind == FM_REQUEST_DEVICE_MOUNT) {
+		if (error == EACCES) {
+			main_app.device_open[0] = '\0';
+			fm_ui_message(&main_app, "Only the user of this session can mount the device.");
+		} else if (error != 0) {
+			main_app.device_open[0] = '\0';
+			fm_ui_message(&main_app, "The device could not be mounted.");
+		}
+
+		/* The mount is answered. */
+		return;
+	}
+
+	/* An eject: safe to take out, in use (by what), or refused. */
+	if (error == 0) {
+		fm_ui_message(&main_app, "The device can be taken out safely.");
+		return;
+	}
+
+	/* In use: by the program the desktop named. */
+	if (error == EBUSY) {
+		named = kl_system_devices_busy_program(main_system, request, program, sizeof(program));
+		if (named) {
+			(void)snprintf(message, sizeof(message), "The device is in use by %s.", program);
+		} else {
+			(void)snprintf(message, sizeof(message), "The device is in use.");
+		}
+
+		/* Said. */
+		fm_ui_message(&main_app, message);
+		return;
+	}
+
+	/* Refused, or failed. */
+	fm_ui_message(&main_app, "The device could not be ejected.");
 }

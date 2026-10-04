@@ -532,6 +532,13 @@ fm_ui_wait(
 	if (app->drag_wait_ms >= 0 && (app->drag != 0 || app->drop_active != 0))
 		return app->drag_wait_ms;
 
+	/* A new removable device blinks: frames soon (ws132-p005). */
+	busy = fm_devices_blinking(app);
+	if (busy != 0) {
+		app->dirty = 1;
+		return 33;
+	}
+
 	/* The overlay scroll bar waits to fade, or fades: a frame soon. */
 	busy = fm_scrollbar_busy(app);
 	if (busy != 0) {
@@ -895,13 +902,16 @@ ui_layout(
 	layout->content.height -= row;
 }
 
-/* Draws the sidebar: Favorites and Locations, the place shown lit. */
+/* Draws the sidebar: Favorites, Devices and Locations, the place shown lit. */
 static void
 ui_draw_sidebar(
 	struct fm_app *app,
 	struct fm_canvas *canvas)
 {
-	static const char *const titles[] = { "Favorites", "Locations" };
+	static const char *const titles[] = { "Favorites", "Locations", "Devices" };
+	const struct fm_device *device;
+	struct fm_rect eject;
+	float bright;
 	const struct fm_rect *panel;
 	const struct fm_place *place;
 	struct fm_rect row;
@@ -968,6 +978,20 @@ ui_draw_sidebar(
 			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_HOVER);
 		}
 
+		/* A new removable device blinks: its row lit and dimmed three times (ws132-p005). */
+		device = NULL;
+		if (place->device > 0 && place->device <= app->places.device_count)
+			device = &app->places.devices[place->device - 1];
+		bright = 1.0f;
+		if (device != NULL)
+			bright = fm_devices_blink(app, device);
+		if (bright < 1.0f)
+			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
+
+		/* A device not mounted is drawn faint until a double click mounts it. */
+		if (device != NULL && !device->mounted && current == 0)
+			ink = FM_COLOR_TEXT_SECONDARY;
+
 		/* The icon. */
 		fm_icon_draw(canvas, (enum fm_icon)place->icon, (float)row.x + 8.0f, (float)row.y + 6.0f, 18.0f, ink);
 
@@ -993,9 +1017,29 @@ ui_draw_sidebar(
 			fm_ui_hit(app, &remove, FM_HIT_BUTTON, FM_BUTTON_REMOVE_PLACE + index);
 		}
 
+		/* A device's row is logged once after the list changed (the tests click it). */
+		if (device != NULL && !app->device_rows_logged)
+			fm_log("DEVICE row id=%s x=%d y=%d width=%d height=%d", device->id, row.x, row.y, row.width, row.height);
+
+		/* A mounted device has an eject button at its right. */
+		if (device != NULL && device->mounted) {
+			eject.x = row.x + row.width - 26;
+			eject.y = row.y + 5;
+			eject.width = 20;
+			eject.height = 20;
+			if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_EJECT_PLACE + index)
+				fm_canvas_circle(canvas, (float)eject.x + 10.0f, (float)eject.y + 10.0f, 9.0f, FM_RGBA(0x5a6b85, 40));
+			fm_canvas_round(canvas, (float)eject.x + 5.0f, (float)eject.y + 12.0f, 10.0f, 2.0f, 1.0f, FM_COLOR_TEXT_SECONDARY);
+			fm_canvas_round(canvas, (float)eject.x + 6.0f, (float)eject.y + 5.0f, 8.0f, 5.0f, 1.5f, FM_COLOR_TEXT_SECONDARY);
+			fm_ui_hit(app, &eject, FM_HIT_BUTTON, FM_BUTTON_EJECT_PLACE + index);
+		}
+
 		/* The next row. */
 		y += UI_SIDEBAR_ROW;
 	}
+
+	/* The devices' rows are logged. */
+	app->device_rows_logged = 1;
 
 	/* How tall the list is, which the scrolling is kept within. */
 	app->layout.sidebar_height = y + app->sidebar_scroll - panel->y + 8;

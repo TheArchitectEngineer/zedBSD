@@ -79,6 +79,8 @@ struct system_view {
 	struct kl_device devices_pending[KL_DEVICES_MAX];
 	size_t devices_pending_count;
 	unsigned devices_open;
+	uint32_t busy_request;
+	char busy_program[KL_DEVICE_TEXT_MAX];
 	unsigned changed;
 	struct system_view_result results[SYSTEM_VIEW_RESULTS];
 	unsigned result_head;

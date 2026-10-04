@@ -377,7 +377,28 @@ struct fm_tab {
  */
 enum fm_place_section {
 	FM_SECTION_FAVORITES,
-	FM_SECTION_LOCATIONS
+	FM_SECTION_LOCATIONS,
+	FM_SECTION_DEVICES
+};
+
+/* The most removable devices shown, and how long and how often a new one blinks (ws132-p005). */
+#define FM_DEVICES_MAX		16
+#define FM_DEVICE_BLINK_MS	1800U
+#define FM_DEVICE_BLINK_PERIOD	600U
+
+/*
+ * One removable device (a USB stick's volume, ws132-p005) as the desktop
+ * tells it: its ID, the name shown (its label), where it is mounted ("" when
+ * it is not), whether it is new (inserted and never mounted since), and
+ * when its blinks began (0: not blinking).
+ */
+struct fm_device {
+	char id[64];
+	char name[64];
+	char path[FM_PATH_MAX];
+	int mounted;
+	int fresh;
+	uint64_t blink_at;
 };
 
 /*
@@ -394,6 +415,7 @@ struct fm_place {
 	struct fm_location location;
 	int missing;
 	int fixed;
+	int device;
 };
 
 /*
@@ -410,6 +432,10 @@ struct fm_crumb {
 struct fm_places {
 	struct fm_place items[FM_PLACES];
 	int count;
+
+	/* The removable devices, which fm_places_init keeps and shows in the Devices section (device is index + 1). */
+	struct fm_device devices[FM_DEVICES_MAX];
+	int device_count;
 };
 
 /*
@@ -844,7 +870,9 @@ enum fm_request {
 	FM_REQUEST_DRAG_OUT,
 	FM_REQUEST_DROP,
 	FM_REQUEST_DROP_ASK,
-	FM_REQUEST_DROP_CANCEL
+	FM_REQUEST_DROP_CANCEL,
+	FM_REQUEST_DEVICE_MOUNT,
+	FM_REQUEST_DEVICE_EJECT
 };
 
 /* How many rows a context menu has at most, and the longest label. */
@@ -1063,6 +1091,18 @@ struct fm_app {
 	int show_preview;
 	int show_hidden;
 	unsigned columns;
+
+	/*
+	 * The removable device a mount or an eject was asked for
+	 * (FM_REQUEST_DEVICE_*, ws132-p005), and the one to be opened once the
+	 * desktop says it is mounted.
+	 */
+	char device_asked[64];
+	char device_open[64];
+
+	/* Whether the devices' rows and Today's cards were logged since the list changed (for the tests). */
+	int device_rows_logged;
+	int device_cards_logged;
 
 	/* The sidebar and the tabs. */
 	struct fm_places places;
@@ -1331,6 +1371,7 @@ enum fm_dialog {
 #define FM_OVERLAY_INFO_GROUND	2
 #define FM_OVERLAY_HELP_GROUND	3
 #define FM_BUTTON_REMOVE_PLACE	200
+#define FM_BUTTON_EJECT_PLACE	300
 
 /* The interface (ui.c). */
 int fm_app_init(struct fm_app *app, struct fm_text *text, const char *start);
@@ -1607,5 +1648,12 @@ int fm_places_remove_favorite(struct fm_places *places, int removed);
 int fm_places_move_favorite(struct fm_places *places, int moved, int to);
 const char *fm_location_name(const struct fm_location *location, const char *home);
 int fm_place_is_favorite_folder(const struct fm_place *place);
+
+/* The removable devices (devices.c, ws132-p005). */
+void fm_devices_set(struct fm_app *app, const struct fm_device *list, int count, int blink_all);
+float fm_devices_blink(const struct fm_app *app, const struct fm_device *device);
+int fm_devices_blinking(const struct fm_app *app);
+void fm_devices_mount(struct fm_app *app, int index);
+void fm_devices_eject(struct fm_app *app, int index);
 
 #endif

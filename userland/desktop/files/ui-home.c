@@ -56,6 +56,9 @@
 /* The largest Kei mark drawn, in pixels a side (its layers are kept rendered at the last size). */
 #define HOME_MARK_MAX		128U
 
+/* The first card index of the removable devices (the folders' cards are 0.., the recent folders' 100..). */
+#define HOME_DEVICE_CARD	200
+
 /* The mark's size on the hero card. */
 #define HOME_HERO_MARK		56
 
@@ -94,6 +97,7 @@ static void home_hero_art(struct fm_image *image);
 static void home_hero_brand(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static int home_section(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width, const char *title, int link);
 static int home_cards(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
+static int home_devices(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static int home_recents(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static int home_folder_pills(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static void home_where(struct fm_app *app, const char *path, char *text, size_t size);
@@ -306,6 +310,12 @@ fm_home_draw(
 	home_hero(app, canvas, x, y, width);
 	y += HOME_HERO_HEIGHT + HOME_SECTION_GAP;
 
+	/* The removable devices, while there are some (ws132-p005). */
+	if (app->places.device_count > 0) {
+		y = home_section(app, canvas, x, y, width, "Devices", -1);
+		y = home_devices(app, canvas, x, y, width) + HOME_SECTION_GAP;
+	}
+
 	/* The folders. */
 	y = home_section(app, canvas, x, y, width, "Folders", 0);
 	y = home_cards(app, canvas, x, y, width) + HOME_SECTION_GAP;
@@ -344,6 +354,13 @@ fm_home_click(
 	char folder[FM_PATH_MAX];
 	char *slash;
 	int found;
+
+	/* A removable device: a mounted one opens, one not mounted is mounted by a double click (ws132-p005). */
+	if (kind == FM_HIT_CARD && index >= HOME_DEVICE_CARD && index - HOME_DEVICE_CARD < app->places.device_count) {
+		if (app->places.devices[index - HOME_DEVICE_CARD].mounted || double_click != 0)
+			fm_devices_mount(app, index - HOME_DEVICE_CARD);
+		return;
+	}
 
 	/* Each region's place. */
 	memset(&location, 0, sizeof(location));
@@ -684,6 +701,72 @@ home_cards(
 	if (app->dashboard.card_count == 0)
 		return y;
 	return y + ((app->dashboard.card_count + per_row - 1) / per_row) * (HOME_CARD_HEIGHT + HOME_CARD_GAP) - HOME_CARD_GAP;
+}
+
+/*
+ * Draws the removable devices as cards (a volume, its name, and where it is
+ * mounted or that a double click mounts it), a new one blinking, and
+ * returns where they end.
+ */
+static int
+home_devices(
+	struct fm_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	int width)
+{
+	const struct fm_device *device;
+	struct fm_rect rect;
+	const char *where;
+	float bright;
+	int per_row;
+	int card_width;
+	int index;
+
+	/* As many cards a row as fit, at most the folders' width each. */
+	per_row = (width + HOME_CARD_GAP) / (HOME_CARD_WIDTH + HOME_CARD_GAP);
+	if (per_row < 1)
+		per_row = 1;
+	card_width = (width - (per_row - 1) * HOME_CARD_GAP) / per_row;
+
+	/* Each device: a white card with a volume, its name and its state. */
+	for (index = 0; index < app->places.device_count; index++) {
+		device = &app->places.devices[index];
+		rect.x = x + (index % per_row) * (card_width + HOME_CARD_GAP);
+		rect.y = y + (index / per_row) * (HOME_CARD_HEIGHT + HOME_CARD_GAP);
+		rect.width = card_width;
+		rect.height = HOME_CARD_HEIGHT;
+		fm_canvas_shadow(canvas, (float)rect.x, (float)rect.y + 3.0f, (float)rect.width, (float)rect.height, 14.0f, 8.0f, FM_RGBA(0x1f3a66, 22));
+		fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_PANEL);
+		fm_canvas_round_border(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, 1.0f, FM_COLOR_PANEL_EDGE);
+		if (app->hover_kind == FM_HIT_CARD && app->hover_index == HOME_DEVICE_CARD + index)
+			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_HOVER);
+
+		/* A new device blinks: the card lit and dimmed three times. */
+		bright = fm_devices_blink(app, device);
+		if (bright < 1.0f)
+			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
+
+		/* The volume, the name, and where it is or how to mount it. */
+		fm_icon_draw(canvas, FM_ICON_VOLUME, (float)rect.x + 14.0f, (float)rect.y + 12.0f, 40.0f, FM_COLOR_ACCENT);
+		(void)fm_text_draw_fit(app->text, canvas, rect.x + 14, rect.y + 70, device->name, 14U, 1, rect.width - 28, FM_COLOR_TEXT);
+		where = "Double-click to mount";
+		if (device->mounted)
+			where = device->path;
+		(void)fm_text_draw_fit(app->text, canvas, rect.x + 64, rect.y + 36, where, 12U, 0, rect.width - 72, FM_COLOR_TEXT_SECONDARY);
+		fm_ui_hit(app, &rect, FM_HIT_CARD, HOME_DEVICE_CARD + index);
+
+		/* A card is logged once after the list changed (the tests click it). */
+		if (!app->device_cards_logged)
+			fm_log("DEVICE card id=%s x=%d y=%d width=%d height=%d", device->id, rect.x, rect.y, rect.width, rect.height);
+	}
+
+	/* The cards are logged. */
+	app->device_cards_logged = 1;
+
+	/* Reports where the cards end. */
+	return y + ((app->places.device_count + per_row - 1) / per_row) * (HOME_CARD_HEIGHT + HOME_CARD_GAP) - HOME_CARD_GAP;
 }
 
 /* Draws the recent files as rows (icon, name, where it is, when), and returns where they end. */
