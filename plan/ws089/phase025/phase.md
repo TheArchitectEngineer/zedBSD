@@ -22,3 +22,5 @@ Queue: 未定
 
 - switch で sshd が起動・停止し、再起動の後も設定が保たれる。SSH で接続できる・できないを QEMU で確かめる（T1）。
 - C の全文の規約、build warning 0、OS の境界の checker。
+
+2026-10-04 夜 ユーザー「SharingにOneDriveを追加したいです。これは独立WSにします。」→ OneDrive は [WS147](../../ws147/ws.md)。この頁はその設定の場所にもなる。

@@ -70,6 +70,7 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p023](phase023/phase.md) | Storage の頁: 解析の button で folder の階層ごとの使用量を multi-thread で解析し逐次に表示、Stop で止める。Trash を空にする（2026-10-04 ユーザーの要望） | planning | WS127（Trash） |
 | [ws089-p024](phase024/phase.md) | Mouse の頁を device ごと（マウス・タッチパッド）の設定に、pointer の加速、既定 base 150%・加速 強め、自然な方向のスクロールはタッチパッド ON・マウス OFF（2026-10-04 ユーザーの要望） | planning | compositor の入力、WS135 |
 | [ws089-p025](phase025/phase.md) | Sharing の頁に SSHD の ON/OFF（後でクラウドストレージの設定もここに、WS146）（2026-10-04 ユーザーの要望） | planning | WS002（service） |
+| [ws089-p026](phase026/phase.md) | Users の頁の実装（一覧・自分の password・管理者の利用者の追加・削除・group）（2026-10-04 ユーザー） | planning | WS131、account の userland |
 
 
 ## ベータ1 の到達目標（2026-10-02 計画、fg019）
