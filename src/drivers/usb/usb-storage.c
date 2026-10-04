@@ -12,6 +12,7 @@
 #include <drivers/usb/usb-storage.h>
 #include <drivers/usb/usb-storage-bot.h>
 #include <drivers/usb/usb-storage-scsi.h>
+#include <drivers/usb/usb-storage-removal.h>
 #include <drivers/usb/usb.h>
 #include <uapi/errno.h>
 #include <kern/disk.h>
@@ -2053,9 +2054,11 @@ storage_detach(
 	unsigned flags)
 {
 	struct usb_storage *storage = drv_usb_interface_driver_data(interface);
+	enum storage_removal_step step;
+	int revoked;
+	int status;
+	int force;
 	int error;
-
-	(void)flags;
 
 	/* Handles the storage availability. */
 	if (storage == NULL)
@@ -2066,11 +2069,30 @@ storage_detach(
 	if (storage->disk != NULL) {
 		/* Handles the storage condition. */
 		if (!storage->media_retired) {
-			/* Checks the operation status. */
-			error = disk_media_status(storage->disk) != 0
-					? partition_retire_media(storage->disk)
-					: disk_gone_if_idle(storage->disk);
-			if (error != 0)
+			/* A revoked medium is retired, a live disk removed, each only when idle. */
+			revoked = 0;
+			status = disk_media_status(storage->disk);
+			if (status != 0)
+				revoked = 1;
+			if (revoked) {
+				error = partition_retire_media(storage->disk);
+			} else {
+				error = disk_gone_if_idle(storage->disk);
+			}
+
+			/*
+			 * A mounted disk whose device was pulled out (BUG-192): its
+			 * medium is revoked and its going posted, so that volumed
+			 * sees it gone and unmounts it; the USB core tries this
+			 * detach again until the disk is idle.
+			 */
+			force = 0;
+			if ((flags & DRV_USB_DETACH_FORCE) != 0U)
+				force = 1;
+			step = storage_removal_decide(revoked, error, force);
+			if (step == STORAGE_REMOVAL_REVOKE)
+				disk_media_gone(storage->disk);
+			if (step != STORAGE_REMOVAL_DESTROY)
 				goto unlock;
 			storage->media_retired = 1;
 		}

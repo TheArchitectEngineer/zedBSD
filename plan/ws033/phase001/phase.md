@@ -78,3 +78,11 @@ BUG-168（後挿しの ue0 が up しない）・BUG-169（抜いた後の Ether
 - q598 の観測（後挿しの ue1 が `UP,RUNNING` で RX/TX 0、169.254）は別の可能性が残る（data の bulk が後挿しで動かない）。読みだけでは決められないので、QEMU の試験 `plan/ws033/tests/lan-hotplug.sh` を作った（usb-net を QMP で後挿し、40 秒以内の 10.0.5.x の DHCP、RX packets > 0、抜いて networkd が生きていること、挿し直しで再び address。失敗した時は poll ごとの ifconfig・net show・kernel の行と手での `net dhcp` を残す）。T1 に依頼（Q1 経由）。
 - 確認: `make BUILD=build/q713 build/q713/bin/networkd` warning 0、`make managed-lan-host-test` PASS（MLAN-T001）。
 - BUG-169 は [ticket](../../bugs/BUG-169.md)（networkd の state に `radio=` を足し、backend が WLAN の interface を有線と取らない）。
+
+## T1-140 の結果（2026-10-05）
+
+- 1 回目 FAIL、2 回目 PASS。1 回目も後挿しは ok（ue1 が UP・10.0.5.15・RX 2/TX 2、xHCI の port 9。harness の ue0 は port 10、鍵盤は 11）、抜去で ue1 が消えたのも ok。その後の SSH が `Connection timed out during banner exchange`（host の hostfwd は接続を受けるので、guest の sshd が答えなかった）で、networkd-alive と挿し直しが FAIL。
+- BUG-168 の直し（up の再試行）は 1 回目の時点で後挿しの up と DHCP が通ったことで確かめられた（後挿しの 3 行が ok）。
+- 抜去の後の SSH の喪失の原因は読みだけでは決まらない。候補: (a) 同じ xHCI の上の抜去（port 9 の device の slot の無効化・endpoint の停止）が harness の ue0（port 10）の転送を止めた、(b) networkd が ue1 の lease を忘れて network の好みを決め直す時に ue0 の route を一時外した、(c) guest の停止。kernel の route の掃除は device の pointer ごと（`route_purge_device`）で ue0 の route は消さない。
+- 試験を直した（`plan/ws033/tests/lan-hotplug.sh`）: 抜去の前の `route show`・`net show` を残し、抜去の後の SSH を 60 秒（5 秒ごとに 12 回）試して、一時の途切れか止まりかを分け、各試みの時刻と route を残す（`after-unplug-ssh.txt`）。T1 に再試験を依頼（Q1 経由）。止まったままなら、T1 で gdbstub の `bt`（guest の止まり）か、xHCI の状態（QMP の `info usb`）を採ってもらう。
+
