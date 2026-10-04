@@ -84,6 +84,7 @@ static void drag_draw_place(struct fm_app *app, struct fm_canvas *canvas);
 static void drag_go_out(struct fm_app *app);
 static void drop_find(struct fm_app *app);
 static int drag_spring_tick(struct fm_app *app, uint64_t now);
+static int drag_spring_tab(const struct fm_app *app);
 static int drag_edge_tick(struct fm_app *app, uint64_t now);
 static int drag_pointer(const struct fm_app *app, int *x, int *y);
 static void drag_refind(struct fm_app *app);
@@ -413,7 +414,8 @@ fm_drop_perform(
 /*
  * Moves a drag on with time, at the time now of fm_ui_tick (ws127-p002,
  * F-039): a folder the drag rested on for DRAG_SPRING_MS opens
- * (spring-loaded), and the pointer near the content's top or bottom edge
+ * (spring-loaded), another tab it rested on comes to the front (ws127-p006),
+ * and the pointer near the content's top or bottom edge
  * scrolls it, faster nearer the edge.  Works for the window's own drag and
  * for a drop coming in.  Returns how many milliseconds to the next step
  * (the loop wakes then), or -1 when nothing waits; the same is kept in
@@ -452,8 +454,10 @@ drag_start(
 	struct fm_app *app)
 {
 	struct fm_tab *tab;
+	const char *shown;
 	uint64_t bytes;
 	size_t count;
+	int error;
 
 	/* Only a selection is dragged. */
 	tab = fm_ui_tab(app);
@@ -473,14 +477,18 @@ drag_start(
 	app->press_deferred = 0;
 	app->band = 0;
 
-	/* The paths and their folder, kept for a drop after a folder sprang open. */
-	if (fm_selected_paths(app, &app->drag_paths, &app->drag_path_count) != 0) {
+	/* The paths, kept for a drop after a folder sprang open. */
+	error = fm_selected_paths(app, &app->drag_paths, &app->drag_path_count);
+	if (error != 0) {
 		app->drag_paths = NULL;
 		app->drag_path_count = 0;
 	}
+
+	/* The folder they came from, whose items are no target. */
 	app->drag_source[0] = '\0';
-	if (fm_current_folder(app) != NULL)
-		snprintf(app->drag_source, sizeof(app->drag_source), "%s", fm_current_folder(app));
+	shown = fm_current_folder(app);
+	if (shown != NULL)
+		snprintf(app->drag_source, sizeof(app->drag_source), "%s", shown);
 	fm_log("DRAG start items=%lu", (unsigned long)count);
 }
 
@@ -667,6 +675,8 @@ drag_target(
 	int tag,
 	const char *folder)
 {
+	int spring_tab;
+
 	/* Unchanged: nothing more to do. */
 	if (target == app->drag_target && kind == app->drag_hit_kind && index == app->drag_hit_index)
 		return;
@@ -681,6 +691,11 @@ drag_target(
 	/* A folder among the items or of the sidebar springs open if the drag rests on it. */
 	app->spring_ms = 0U;
 	if (target == FM_DRAG_FOLDER && (kind == FM_HIT_ITEM || kind == FM_HIT_PLACE))
+		app->spring_ms = app->now;
+
+	/* Another tab, whatever it shows, comes to the front if the drag rests on it (ws127-p006). */
+	spring_tab = drag_spring_tab(app);
+	if (spring_tab >= 0)
 		app->spring_ms = app->now;
 
 	/* Logged by its kind. */
@@ -821,6 +836,8 @@ drag_drop_folder(
 		(void)fm_action_transfer(app, operation, app->drag_paths, app->drag_path_count, app->drag_folder);
 		return;
 	}
+
+	/* Otherwise the selection's paths. */
 	error = fm_selected_paths(app, &paths, &count);
 	if (error != 0 || count == 0) {
 		fm_paths_free(paths, count);
@@ -1177,10 +1194,18 @@ drag_spring_tick(
 {
 	struct fm_location location;
 	uint64_t rested;
+	int spring_tab;
 
-	/* Only a folder target that springs. */
-	if (app->spring_ms == 0U || app->drag_target != FM_DRAG_FOLDER || app->drag_folder[0] == '\0')
+	/* Nothing rests on a target that springs. */
+	if (app->spring_ms == 0U)
 		return -1;
+
+	/* Another tab springs whatever it shows; anything else only as a folder (ws127-p006). */
+	spring_tab = drag_spring_tab(app);
+	if (spring_tab < 0) {
+		if (app->drag_target != FM_DRAG_FOLDER || app->drag_folder[0] == '\0')
+			return -1;
+	}
 
 	/* Not long enough yet: the time left. */
 	rested = now - app->spring_ms;
@@ -1188,6 +1213,16 @@ drag_spring_tick(
 		rested = 0U;
 	if (rested < (uint64_t)DRAG_SPRING_MS)
 		return (int)((uint64_t)DRAG_SPRING_MS - rested);
+
+	/* A tab comes to the front, and the drag goes on over what it shows. */
+	if (spring_tab >= 0) {
+		fm_log("DRAG spring tab=%d", spring_tab);
+		app->spring_ms = 0U;
+		fm_tabs_select(app, spring_tab);
+		drag_refind(app);
+		app->dirty = 1;
+		return 16;
+	}
 
 	/* The folder opens in the tab under the drag, which goes on over it. */
 	memset(&location, 0, sizeof(location));
@@ -1203,6 +1238,27 @@ drag_spring_tick(
 	return 16;
 }
 
+/* Reports the tab other than the one shown that the drag's target lies on, or -1 (ws127-p006). */
+static int
+drag_spring_tab(
+	const struct fm_app *app)
+{
+	/* Only a tab's region (its body or its close button). */
+	if (app->drag_hit_kind != FM_HIT_TAB && app->drag_hit_kind != FM_HIT_TAB_CLOSE)
+		return -1;
+
+	/* A tab that is there. */
+	if (app->drag_hit_index < 0 || app->drag_hit_index >= app->tab_count)
+		return -1;
+
+	/* The tab shown has nothing to bring to the front. */
+	if (app->drag_hit_index == app->tab_index)
+		return -1;
+
+	/* Succeeded: that tab springs. */
+	return app->drag_hit_index;
+}
+
 /* Scrolls the content when the drag is near its top or bottom edge; returns 16 while it does, -1 otherwise. */
 static int
 drag_edge_tick(
@@ -1210,8 +1266,10 @@ drag_edge_tick(
 	uint64_t now)
 {
 	const struct fm_rect *content;
+	struct fm_tab *tab;
 	uint64_t elapsed;
 	double nearness;
+	double depth;
 	double speed;
 	int amount;
 	int inside;
@@ -1245,13 +1303,18 @@ drag_edge_tick(
 		app->edge_ms = now;
 		return 16;
 	}
+
+	/* The step's time, at most 50 ms (a stalled loop does not jump). */
 	elapsed = now - app->edge_ms;
 	if (elapsed > 50U)
 		elapsed = 50U;
 	app->edge_ms = now;
 
 	/* The speed grows towards the edge; up for the top, down for the bottom. */
-	speed = DRAG_EDGE_SLOW + (DRAG_EDGE_FAST - DRAG_EDGE_SLOW) * (nearness < 0.0 ? -nearness : nearness);
+	depth = nearness;
+	if (depth < 0.0)
+		depth = -depth;
+	speed = DRAG_EDGE_SLOW + (DRAG_EDGE_FAST - DRAG_EDGE_SLOW) * depth;
 	amount = (int)(speed * (double)elapsed + 0.5);
 	if (amount < 1)
 		amount = 1;
@@ -1259,9 +1322,11 @@ drag_edge_tick(
 		amount = -amount;
 
 	/* The content scrolls, and the target under the pointer is found again. */
-	before = fm_ui_tab(app)->scroll;
+	tab = fm_ui_tab(app);
+	before = tab->scroll;
 	fm_input_scroll(app, amount);
-	if (fm_ui_tab(app)->scroll != before)
+	tab = fm_ui_tab(app);
+	if (tab->scroll != before)
 		drag_refind(app);
 
 	/* Succeeded: the next step soon. */
@@ -1303,6 +1368,8 @@ drag_refind(
 		drop_find(app);
 		return;
 	}
+
+	/* The window's own drag finds its target under the pointer. */
 	if (app->drag != 0)
 		drag_find(app, app->pointer_x, app->pointer_y);
 }

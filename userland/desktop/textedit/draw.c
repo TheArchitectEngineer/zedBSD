@@ -303,6 +303,7 @@ draw_glyphs(
 			composing = 0;
 		}
 
+		/* The character, the cells it takes from its column, and where it is drawn. */
 		codepoint = te_buffer_char(&app->buffer, position, &next);
 		cells = te_layout_cells(codepoint, (unsigned)column, app->layout.tab);
 		x = text->x + (int)((double)column * (double)app->cell - app->scroll_x);
@@ -367,6 +368,7 @@ draw_preedit(
 				focused = 1;
 		}
 
+		/* The ground and the line under the composed character. */
 		if (focused) {
 			/* The segment: the selection's tint and a line two pixels thick. */
 			te_canvas_fill(canvas, x, top, (int)cells * app->cell, app->row_height, DRAW_PREEDIT_FOCUS);
@@ -377,6 +379,7 @@ draw_preedit(
 			te_canvas_fill(canvas, x, top + app->row_height - 2, (int)cells * app->cell, 1, DRAW_PREEDIT_LINE);
 		}
 
+		/* The character over them, and the cells used. */
 		draw_glyph(app, canvas, x, baseline, codepoint, cells, DRAW_TEXT);
 		used += cells;
 	}

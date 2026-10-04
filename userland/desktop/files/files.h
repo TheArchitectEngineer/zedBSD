@@ -1519,7 +1519,7 @@ void fm_dir_sort(struct fm_listing *listing, unsigned sort, int reverse);
 void fm_dir_free(struct fm_listing *listing);
 struct fm_entry *fm_dir_add(struct fm_listing *listing, const char *folder, const char *name);
 int fm_dir_count(const char *path, int hidden);
-int fm_dir_read_trash(struct fm_listing *listing, const char *trash);
+int fm_dir_read_trash(struct fm_listing *listing);
 void fm_dir_size_text(uint64_t size, char *text, size_t length);
 void fm_dir_items_text(long count, char *text, size_t length);
 void fm_owner_text(uid_t uid, gid_t gid, char *text, size_t length);
@@ -1597,6 +1597,7 @@ int fm_thumb_is_pdf(const unsigned char *data, size_t size);
 int fm_thumb_pdf(const unsigned char *data, size_t size, struct fm_image *image);
 int fm_thumb_cache_read(const char *path, struct fm_image *image);
 int fm_thumb_cache_write(const char *path, const struct fm_image *image);
+int fm_thumb_cache_trim(unsigned maximum, unsigned keep);
 int fm_drop_accepts(const struct fm_app *app);
 void fm_drop_perform(struct fm_app *app, char *const *paths, size_t count);
 

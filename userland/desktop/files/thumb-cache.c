@@ -18,10 +18,17 @@
  * SHA-256 of the file's path, as a binary PPM whose comment line records the
  * file's modification time and size.  A file that changed has a stale
  * record, which is made again; the folder is the user's alone (0700).
+ *
+ * The cache is kept small (ws127-p004): when a write leaves more than
+ * CACHE_RECORDS_MAX records, the oldest written are removed until
+ * CACHE_RECORDS_KEEP are left.  A record is named by the SHA-256 of a
+ * path, so a record whose file is gone cannot be told apart; it goes in
+ * its turn.
  */
 
 #include "files.h"
 
+#include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -41,6 +48,10 @@
 
 /* The largest thumbnail read back from the cache, a side in pixels. */
 #define CACHE_SIDE_MAX		1024
+
+/* How many records the cache holds before a write trims it, and how many the trim leaves (ws127-p004). */
+#define CACHE_RECORDS_MAX	2000U
+#define CACHE_RECORDS_KEEP	1800U
 
 /* The cache's folder under the user's cache folder, and the comment that marks a record. */
 #define CACHE_FOLDER		"keiland/thumbnails"
@@ -64,10 +75,22 @@ struct cache_pdf_calls {
 	int (*rasterize)(const struct pdf_display_list *list, uint32_t *pixels, size_t stride, size_t width, size_t height, double scale, double offset_x, double offset_y);
 };
 
+/*
+ * One record of the cache as a trim sees it: its name in the cache's
+ * folder and when it was written.
+ */
+struct cache_entry {
+	char *name;
+	time_t written;
+};
+
 /* libpdf's calls, opened on the first PDF (see the structure). */
 static struct cache_pdf_calls cache_pdf;
 
 static int cache_pdf_load(void);
+static int cache_trim(const char *folder, unsigned maximum, unsigned keep);
+static int cache_trim_list(const char *folder, struct cache_entry **entries, size_t *count);
+static int cache_compare_written(const void *left, const void *right);
 static int cache_record_path(const char *path, char *record, size_t size);
 static int cache_folder(char *folder, size_t size);
 static int cache_header(FILE *file, long long *modified, unsigned long long *size, int *width, int *height);
@@ -81,7 +104,9 @@ fm_thumb_kind(
 	const struct fm_entry *entry)
 {
 	/* Folders and items without a path have none. */
-	if (entry->folder != 0 || entry->path == NULL || entry->mime == NULL)
+	if (entry->folder != 0 ||
+	    entry->path == NULL ||
+	    entry->mime == NULL)
 		return 0;
 
 	/* Pictures. */
@@ -154,11 +179,15 @@ fm_thumb_pdf(
 		fm_log("THUMB pdf stage=open error=%d", error);
 		return EINVAL;
 	}
+
+	/* A document without pages has no thumbnail. */
 	count = cache_pdf.page_count(document);
 	if (count == 0) {
 		cache_pdf.close(document);
 		return EINVAL;
 	}
+
+	/* The first page's box. */
 	memset(&box, 0, sizeof(box));
 	error = cache_pdf.page_box(document, 0, &box);
 	if (error != 0) {
@@ -166,16 +195,22 @@ fm_thumb_pdf(
 		cache_pdf.close(document);
 		return EINVAL;
 	}
+
+	/* The size libpdf shows the page at, else the crop box's. */
 	width = box.width;
 	height = box.height;
 	if (width <= 0.0 || height <= 0.0) {
 		width = box.crop_right - box.crop_left;
 		height = box.crop_top - box.crop_bottom;
 	}
+
+	/* Without either, the media box's. */
 	if (width <= 0.0 || height <= 0.0) {
 		width = box.media_right - box.media_left;
 		height = box.media_top - box.media_bottom;
 	}
+
+	/* A page of no size cannot be drawn. */
 	if (width <= 0.0 || height <= 0.0) {
 		fm_log("THUMB pdf stage=size width=%g height=%g", width, height);
 		cache_pdf.close(document);
@@ -199,6 +234,8 @@ fm_thumb_pdf(
 		cache_pdf.close(document);
 		return error;
 	}
+
+	/* Every pixel white. */
 	for (index = 0; index < (size_t)pixels_wide * (size_t)pixels_high; index++)
 		image->pixels[index] = 0xffffffffU;
 
@@ -209,6 +246,8 @@ fm_thumb_pdf(
 		error = cache_pdf.rasterize(list, image->pixels, image->stride, (size_t)pixels_wide, (size_t)pixels_high, scale, 0.0, 0.0);
 		cache_pdf.list_destroy(list);
 	}
+
+	/* The document is not needed any more. */
 	cache_pdf.close(document);
 
 	/* A page that could not be drawn leaves no thumbnail. */
@@ -274,12 +313,16 @@ fm_thumb_cache_read(
 		fclose(file);
 		return ENOENT;
 	}
+
+	/* A row of the record's bytes. */
 	row = malloc((size_t)width * 3U);
 	if (row == NULL) {
 		fm_image_release(image);
 		fclose(file);
 		return ENOENT;
 	}
+
+	/* Each row's bytes into the image's pixels. */
 	for (y = 0; y < height; y++) {
 		got = fread(row, 3U, (size_t)width, file);
 		if (got != (size_t)width)
@@ -289,6 +332,8 @@ fm_thumb_cache_read(
 			    0xff000000U | ((uint32_t)row[x * 3] << 16) | ((uint32_t)row[x * 3 + 1] << 8) | (uint32_t)row[x * 3 + 2];
 		}
 	}
+
+	/* The row and the record are let go. */
 	free(row);
 	fclose(file);
 
@@ -316,9 +361,11 @@ fm_thumb_cache_write(
 	struct stat status;
 	char record[FM_PATH_MAX];
 	char temporary[FM_PATH_MAX + 16];
+	char folder[FM_PATH_MAX];
 	unsigned char *row;
 	uint32_t pixel;
 	FILE *file;
+	int closed;
 	int error;
 	int x;
 	int y;
@@ -343,6 +390,8 @@ fm_thumb_cache_write(
 		unlink(temporary);
 		return ENOMEM;
 	}
+
+	/* Each row of the image as bytes. */
 	for (y = 0; y < image->height; y++) {
 		for (x = 0; x < image->width; x++) {
 			pixel = image->pixels[(size_t)y * (image->stride) + (size_t)x];
@@ -350,18 +399,27 @@ fm_thumb_cache_write(
 			row[x * 3 + 1] = (unsigned char)(pixel >> 8);
 			row[x * 3 + 2] = (unsigned char)pixel;
 		}
+
+		/* The row into the record. */
 		(void)fwrite(row, 3U, (size_t)image->width, file);
 	}
+
+	/* The row is let go. */
 	free(row);
 
 	/* The record takes its name once it is whole. */
 	error = ferror(file);
-	if (fclose(file) != 0)
+	closed = fclose(file);
+	if (closed != 0)
 		error = 1;
+
+	/* A record that could not be written whole goes. */
 	if (error != 0) {
 		unlink(temporary);
 		return EIO;
 	}
+
+	/* The whole record takes its name. */
 	error = rename(temporary, record);
 	if (error != 0) {
 		error = errno;
@@ -369,8 +427,42 @@ fm_thumb_cache_write(
 		return error;
 	}
 
+	/* The cache trimmed when it grew past its bound; a trim that fails leaves it as it is. */
+	error = cache_folder(folder, sizeof(folder));
+	if (error == 0)
+		(void)cache_trim(folder, CACHE_RECORDS_MAX, CACHE_RECORDS_KEEP);
+
 	/* Succeeded: the thumbnail is kept. */
 	return 0;
+}
+
+/*
+ * Trims the cache to keep records when it has more than maximum (the
+ * oldest written go first); the host tests call it with small bounds.
+ * Returns how many records were removed, or -1 when the cache's folder
+ * cannot be read.
+ */
+int
+fm_thumb_cache_trim(
+	unsigned maximum,
+	unsigned keep)
+{
+	char folder[FM_PATH_MAX];
+	int removed;
+	int error;
+
+	/* The cache's folder. */
+	error = cache_folder(folder, sizeof(folder));
+	if (error != 0)
+		return -1;
+
+	/* The trim. */
+	removed = cache_trim(folder, maximum, keep);
+	if (removed < 0)
+		return -1;
+
+	/* Succeeded: reports how many went. */
+	return removed;
 }
 
 /* Opens libpdf and finds its calls the first time; returns 1 when they are there, 0 otherwise. */
@@ -468,6 +560,8 @@ cache_folder(
 	} else {
 		return ENOENT;
 	}
+
+	/* A path too long for the caller's room. */
 	if (written < 0 || (size_t)written >= size)
 		return ENAMETOOLONG;
 
@@ -479,6 +573,8 @@ cache_folder(
 		if (error != 0 && errno != EEXIST)
 			return errno;
 	}
+
+	/* The folder itself. */
 	error = mkdir(folder, 0700);
 	if (error != 0 && errno != EEXIST)
 		return errno;
@@ -532,12 +628,18 @@ cache_header(
 	if (text == NULL)
 		return EINVAL;
 	value = strtol(line, &end, 10);
-	if (end == line || *end != ' ' || value < 1 || value > 65535)
+	if (end == line ||
+	    *end != ' ' ||
+	    value < 1 ||
+	    value > 65535)
 		return EINVAL;
 	*width = (int)value;
 	text = end + 1;
 	value = strtol(text, &end, 10);
-	if (end == text || *end != '\n' || value < 1 || value > 65535)
+	if (end == text ||
+	    *end != '\n' ||
+	    value < 1 ||
+	    value > 65535)
 		return EINVAL;
 	*height = (int)value;
 
@@ -551,4 +653,174 @@ cache_header(
 
 	/* Succeeded: the pixels follow. */
 	return 0;
+}
+
+/*
+ * Removes the oldest written records of the cache's folder until keep are
+ * left, when it has more than maximum.  Returns how many were removed, or
+ * -1 when the folder cannot be read.
+ */
+static int
+cache_trim(
+	const char *folder,
+	unsigned maximum,
+	unsigned keep)
+{
+	struct cache_entry *entries;
+	char record[2 * FM_PATH_MAX];
+	size_t count;
+	size_t index;
+	int removed;
+	int error;
+
+	/* The folder's records with their times. */
+	error = cache_trim_list(folder, &entries, &count);
+	if (error != 0)
+		return -1;
+
+	/* Nothing to do while the cache is within its bound. */
+	removed = 0;
+	if (count > (size_t)maximum) {
+		/* The oldest first; the first count - keep go. */
+		qsort(entries, count, sizeof(entries[0]), cache_compare_written);
+		for (index = 0; index + (size_t)keep < count; index++) {
+			snprintf(record, sizeof(record), "%s/%s", folder, entries[index].name);
+			error = unlink(record);
+			if (error == 0)
+				removed++;
+		}
+
+		/* The log line the tests read. */
+		fm_log("THUMB cache trim records=%lu removed=%d", (unsigned long)count, removed);
+	}
+
+	/* The list goes. */
+	for (index = 0; index < count; index++)
+		free(entries[index].name);
+	free(entries);
+
+	/* Reports how many went. */
+	return removed;
+}
+
+/* Lists the records of the cache's folder (its regular files that are not hidden) with their times; returns 0 or an errno value. */
+static int
+cache_trim_list(
+	const char *folder,
+	struct cache_entry **entries,
+	size_t *count)
+{
+	struct cache_entry *grown;
+	struct dirent *item;
+	struct stat status;
+	char path[2 * FM_PATH_MAX];
+	size_t capacity;
+	DIR *directory;
+	int regular;
+	int error;
+
+	/* Nothing listed yet. */
+	*entries = NULL;
+	*count = 0;
+	capacity = 0;
+
+	/* The folder. */
+	directory = opendir(folder);
+	if (directory == NULL)
+		return errno;
+
+	/* Each regular file of the folder that is not hidden. */
+	error = 0;
+	for (;;) {
+		item = readdir(directory);
+		if (item == NULL)
+			break;
+
+		/* The folder itself, its parent and hidden names are no records. */
+		if (item->d_name[0] == '.')
+			continue;
+
+		/* Only a regular file, with the time it was written. */
+		snprintf(path, sizeof(path), "%s/%s", folder, item->d_name);
+		error = lstat(path, &status);
+		if (error != 0) {
+			error = 0;
+			continue;
+		}
+
+		/* Only a regular file is a record. */
+		regular = S_ISREG(status.st_mode);
+		if (regular == 0)
+			continue;
+
+		/* Room for one more. */
+		if (*count == capacity) {
+			capacity += 256U;
+			grown = realloc(*entries, capacity * sizeof(grown[0]));
+			if (grown == NULL) {
+				error = ENOMEM;
+				break;
+			}
+
+			/* The grown list. */
+			*entries = grown;
+		}
+
+		/* The record's name and time. */
+		(*entries)[*count].name = strdup(item->d_name);
+		if ((*entries)[*count].name == NULL) {
+			error = ENOMEM;
+			break;
+		}
+
+		/* When it was written. */
+		(*entries)[*count].written = status.st_mtime;
+		(*count)++;
+	}
+
+	/* The folder is closed whatever happened. */
+	closedir(directory);
+
+	/* Memory that ran out lists nothing. */
+	if (error != 0) {
+		while (*count > 0) {
+			(*count)--;
+			free((*entries)[*count].name);
+		}
+
+		/* The list itself goes. */
+		free(*entries);
+		*entries = NULL;
+		return error;
+	}
+
+	/* Succeeded: the records are listed. */
+	return 0;
+}
+
+/* Orders records by the time they were written, the oldest first (names break ties). */
+static int
+cache_compare_written(
+	const void *left,
+	const void *right)
+{
+	const struct cache_entry *first;
+	const struct cache_entry *second;
+	int order;
+
+	/* The two records. */
+	first = left;
+	second = right;
+
+	/* The older one first. */
+	if (first->written < second->written)
+		return -1;
+	if (first->written > second->written)
+		return 1;
+
+	/* The same time: by name, so the order is the same on every run. */
+	order = strcmp(first->name, second->name);
+
+	/* Reports the names' order. */
+	return order;
 }

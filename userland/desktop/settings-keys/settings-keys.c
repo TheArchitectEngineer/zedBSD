@@ -32,6 +32,8 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "sound.muted", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
 	{ "sound.available", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_READ_ONLY },
 	{ "terminal.ambiguous-wide", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, 0U },
+	{ "terminal.font-size", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 8, 32, 16, 0U },
+	{ "terminal.theme", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2, 0, 0U },
 	{ "files.open-with.", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_OPENER, 0, 0, 0, KL_SETTINGS_KEY_PREFIX }
 };
 

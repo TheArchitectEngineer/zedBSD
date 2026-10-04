@@ -47,12 +47,12 @@ Resume point（2026-10-02 計画）: **p001（棚卸し・回帰の取り直し�
 | --- | --- | --- | --- | --- |
 | [ws127-p001](phase001/phase.md) | 棚卸し: 現在の main で回帰の取り直し、spec.md と実装の照合表、QEMU での実使用の通しと不具合の表、改善の候補の一覧（価値・規模・危険・依存）。最後にユーザーが選ぶ | cleared（2026-10-02 の q595、表を 2026-10-03 Q1 が更新） | — | 3h |
 | [ws127-p002](phase002/phase.md) | p001 で見つけた不具合の直し（重い・中） | planning（p001 の不具合の表が要る） | p001 | 3h |
-| [ws127-p003](phase003/phase.md) | 名前の衝突と Trash の残り（F-050: Replace で消さずに Trash、cut の Esc で clipboard を戻す、folder の merge。F-041 の一部: `$topdir/.Trash-$uid`） | planning（p001 でユーザーの採否） | p001 | 3h |
-| [ws127-p004](phase004/phase.md) | thumbnail の拡張（F-035: PDF の 1 頁目を libpdf で、disk の thumbnail の cache。動画は WS122 の後で外） | planning（p001 でユーザーの採否） | p001 | 3h |
+| [ws127-p003](phase003/phase.md) | 名前の衝突と Trash の残り。F-050 の 3 つ（Replace で消さずに Trash、cut の Esc で clipboard を保つ、folder の merge）は実装済み（ws035-p110・p115）。この Phase は F-041 の一部 `$topdir/.Trash-$uid`（volume の trash） | cleared（q666、T1-077） | p001 | 3h |
+| [ws127-p004](phase004/phase.md) | thumbnail の拡張（F-035）。PDF の thumbnail と disk の cache は ws127-p002 で実装済み。この Phase は cache の上限（2000→1800）と壊れた PDF の試験。動画は WS122 の後 | in-progress（q667、P2。host PASS、QEMU は p008 と T1 へ） | p001 | 1h |
 | [ws127-p005](phase005/phase.md) | 日本語の UI の文言と、名前の変更での IME（F-041 の残り）。Settings と共通の翻訳の仕組み | planning（ユーザーの判断: 日本語の UI をベータ1 に入れるか。WS095 の IME の状態） | p001、WS095、WS089 p016 と仕組みを共有 | 4h |
-| [ws127-p006](phase006/phase.md) | DnD の自動の scroll と spring-loaded（F-039） | planning（p001 でユーザーの採否） | p001 | 2h |
+| [ws127-p006](phase006/phase.md) | DnD の自動の scroll と spring-loaded（F-039）。端の自動 scroll と item・sidebar の folder の spring は実装済み（ws127-p002）。この Phase は tab の上で待つと tab が切り替わる spring | cleared（q666、T1-077） | p001 | 1h |
 | [ws127-p007](phase007/phase.md) | 5330 の実機での操作と速さ。遅ければ描き直しを damage の矩形に絞る（F-037） | planning（p002〜p006 の後、実機とユーザーの時間） | p002〜p006 の選んだ物 | 2h + ユーザー 20 分 |
-| [ws127-p008](phase008/phase.md) | 全文規約と回帰（WS の最後） | planning | 実装の Phase | 2h |
+| [ws127-p008](phase008/phase.md) | 全文規約と回帰（WS の最後） | in-progress（q667、P2。規約・build・host 済み、QEMU 回帰・FreeBSD は T1 待ち、実機 p007 待ち） | 実装の Phase | 2h |
 | [ws127-p009](phase009/phase.md) | Files の host 試験 p009・p010・p013 の FAIL（host-render の既定の font が作り直した build/ に無い path を指していた。試験を tree の font に） | cleared（q656、host 3 本 PASS） | — | 0.5h |
 
 候補のうち Phase にしていない物（p001 で選ばれたら Phase を足す）: F-033（カラム・ギャラリーの表示、4h 以上）、F-036（装置の unmount・eject、USB の storage の hotplug の通知が要る）、
@@ -77,3 +77,7 @@ F-032・F-034・F-040（ベータ1 の外の見込み）。
 ## Event
 
 2026-10-02 / ws127-beta1-plan: fg019 の計画エージェントが到達目標 F1〜F5 と p001〜p008 を作成。p001 だけ planned、他は p001 のユーザーの選択待ちの planning。Queue は未投入。
+
+2026-10-04 Q1（user「任せます」で判断を委ねられた）: ベータ1 に向け、標準 app の作業を WS131 の app の移行より先にする。p001 の候補から Q1 が採る: p003（名前の衝突と Trash の残り: Replace で消さずに Trash、cut の Esc で clipboard を戻す、folder の merge）、p006（DnD の自動の scroll と spring-loaded）。p004（PDF の thumbnail）は p003・p006 の後に時間があれば。p005（日本語の UI の文言）は翻訳の方針の判断が要るのでユーザーに残す。p007 は実機。
+
+2026-10-04 P2（q666）: p003・p006 の範囲を source と記録で照合。F-050 の 3 つは ws035-p110・p115、F-039 の端の scroll と folder の spring は ws127-p002 で実装・QEMU 試験済み。残り（p003 は volume の trash、p006 は tab の spring）だけを実装する（Q1 了承）。

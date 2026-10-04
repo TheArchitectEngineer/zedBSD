@@ -50,6 +50,13 @@ struct truetype_face;
 /* The most memory the frames of one animated GIF may take, in bytes (more: its first frame only). */
 #define IV_FRAMES_BYTES_MAX	(256U * 1024U * 1024U)
 
+/* How many applications Open With offers, and the longest name of one shown (ws128-p005). */
+#define IV_OPENERS		8
+#define IV_OPENER_NAME		64
+
+/* How long a slideshow shows each image, in milliseconds (ws128-p005). */
+#define IV_SLIDESHOW_MS		3000U
+
 /* The modifiers of an input. */
 #define IV_MOD_SHIFT		0x01U
 #define IV_MOD_CTRL		0x02U
@@ -73,6 +80,7 @@ struct truetype_face;
 #define IV_KEY_SPACE		57U
 #define IV_KEY_KP_MINUS		74U
 #define IV_KEY_KP_PLUS		78U
+#define IV_KEY_F5		63U
 #define IV_KEY_F11		87U
 #define IV_KEY_KP_ENTER		96U
 #define IV_KEY_HOME		102U
@@ -83,6 +91,7 @@ struct truetype_face;
 #define IV_KEY_END		107U
 #define IV_KEY_DOWN		108U
 #define IV_KEY_PAGE_DOWN	109U
+#define IV_KEY_DELETE		111U
 
 /* The pointer's buttons (evdev BTN_LEFT, BTN_RIGHT). */
 #define IV_BUTTON_LEFT		0x110U
@@ -141,8 +150,16 @@ enum iv_action {
 	IV_ACTION_FIRST,
 	IV_ACTION_LAST,
 	IV_ACTION_PLAY,
-	IV_ACTION_ABOUT
+	IV_ACTION_ABOUT,
+	IV_ACTION_TRASH,
+	IV_ACTION_SLIDESHOW
 };
+
+/*
+ * The actions of Open With's applications (ws128-p005): the first one's,
+ * then one more for each further application, up to IV_OPENERS.
+ */
+#define IV_ACTION_OPEN_WITH_FIRST	100U
 
 /*
  * A surface to draw on: the caller's pixels (premultiplied 0xAARRGGBB),
@@ -282,6 +299,14 @@ struct iv_animation {
  * cards must be drawn again; dirty that a frame must be shown.  chip_*
  * is where the frame last drew the chip (a zero width: not drawn), for
  * the glass under it.
+ *
+ * want_trash asks the window to move the image shown to the trash, and
+ * want_open_with (-1 for none) to open it in that application of Open
+ * With; the window then tells the viewer (iv_app_removed) when the image
+ * went (ws128-p005).  A slideshow (slideshow) goes on to the next image
+ * every IV_SLIDESHOW_MS, the next step due at slideshow_due; it made the
+ * window fill the screen when slideshow_screen is set, and leaves it again
+ * when it stops.
  */
 struct iv_app {
 	struct iv_image *current;
@@ -336,6 +361,11 @@ struct iv_app {
 	int chooser_open;
 	char chooser_folder[IV_PATH_MAX];
 	int want_close;
+	int want_trash;
+	int want_open_with;
+	int slideshow;
+	int slideshow_screen;
+	uint64_t slideshow_due;
 	int want_context;
 	int context_x;
 	int context_y;
@@ -406,6 +436,13 @@ double iv_app_chip_opacity(const struct iv_app *app);
 void iv_app_open_button(const struct iv_app *app, int *x, int *y, int *width, int *height);
 void iv_app_layout(struct iv_app *app);
 void iv_app_chosen(struct iv_app *app, const char *path);
+void iv_app_removed(struct iv_app *app);
+void iv_app_slideshow(struct iv_app *app, int on);
+
+/* What the viewer shares with Files: the trash and Open With (share.c). */
+int iv_share_trash(const char *path, char *trashed, size_t size);
+int iv_share_openers(const char *path, const char *format, char names[][IV_OPENER_NAME], int capacity);
+int iv_share_open_with(const char *path, const char *format, int index);
 
 /* The canvas of words and cards (draw.c). */
 void iv_draw(struct iv_app *app, struct iv_canvas *canvas);

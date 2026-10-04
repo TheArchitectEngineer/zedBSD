@@ -43,6 +43,10 @@
 #define MENU_PASTE		21U
 #define MENU_EDIT_LINE		22U
 #define MENU_SELECT_ALL		23U
+#define MENU_FIND_LINE		24U
+#define MENU_FIND		25U
+#define MENU_FIND_NEXT		26U
+#define MENU_FIND_PREVIOUS	27U
 
 /* View, and its Text Size submenu. */
 #define MENU_ZOOM_IN		30U
@@ -56,6 +60,12 @@
 #define MENU_SIZE_MEDIUM	41U
 #define MENU_SIZE_LARGE		42U
 #define MENU_SIZE_HUGE		43U
+
+/* View > Theme and its themes (ws128-p006). */
+#define MENU_THEME		44U
+#define MENU_THEME_DARK		45U
+#define MENU_THEME_LIGHT	46U
+#define MENU_THEME_CONTRAST	47U
 
 /* Session. */
 #define MENU_INTERRUPT		50U
@@ -101,6 +111,10 @@ static const struct menu_item menu_items[] = {
 	{ MENU_PASTE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Paste", TERMINAL_ACTION_PASTE, KEILAND_MENU_ROLE_PASTE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'v' },
 	{ MENU_EDIT_LINE, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_SELECT_ALL, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Select All", TERMINAL_ACTION_SELECT_ALL, KEILAND_MENU_ROLE_SELECT_ALL, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'a' },
+	{ MENU_FIND_LINE, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_FIND, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Find...", TERMINAL_ACTION_FIND, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'f' },
+	{ MENU_FIND_NEXT, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Find Next", TERMINAL_ACTION_FIND_NEXT, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'g' },
+	{ MENU_FIND_PREVIOUS, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Find Previous", TERMINAL_ACTION_FIND_PREVIOUS, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'h' },
 	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ZOOM_IN, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Zoom In", TERMINAL_ACTION_ZOOM_IN, KEILAND_MENU_ROLE_ZOOM_IN, KEILAND_MENU_CTRL, MENU_KEY_PLUS },
 	{ MENU_ZOOM_OUT, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Zoom Out", TERMINAL_ACTION_ZOOM_OUT, KEILAND_MENU_ROLE_ZOOM_OUT, KEILAND_MENU_CTRL, MENU_KEY_MINUS },
@@ -110,6 +124,10 @@ static const struct menu_item menu_items[] = {
 	{ MENU_SIZE_MEDIUM, MENU_TEXT_SIZE, KEILAND_MENU_ITEM_RADIO, "Medium", TERMINAL_ACTION_SIZE_MEDIUM, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_SIZE_LARGE, MENU_TEXT_SIZE, KEILAND_MENU_ITEM_RADIO, "Large", TERMINAL_ACTION_SIZE_LARGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_SIZE_HUGE, MENU_TEXT_SIZE, KEILAND_MENU_ITEM_RADIO, "Huge", TERMINAL_ACTION_SIZE_HUGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_THEME, MENU_VIEW, KEILAND_MENU_ITEM_SUBMENU, "Theme", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_THEME_DARK, MENU_THEME, KEILAND_MENU_ITEM_RADIO, "Dark", TERMINAL_ACTION_THEME_DARK, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_THEME_LIGHT, MENU_THEME, KEILAND_MENU_ITEM_RADIO, "Light", TERMINAL_ACTION_THEME_LIGHT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_THEME_CONTRAST, MENU_THEME, KEILAND_MENU_ITEM_RADIO, "High Contrast", TERMINAL_ACTION_THEME_CONTRAST, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_VIEW_LINE, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_FULLSCREEN, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Fullscreen", TERMINAL_ACTION_FULLSCREEN, KEILAND_MENU_ROLE_FULLSCREEN, 0U, MENU_KEY_F11 },
 	{ MENU_AMBIGUOUS_WIDE, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Treat Ambiguous-Width Characters as Wide", TERMINAL_ACTION_AMBIGUOUS_WIDE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
@@ -126,6 +144,7 @@ static const struct menu_item menu_items[] = {
 static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static int menu_build(struct terminal_window *window);
 static int menu_state(struct terminal_window *window, const struct terminal_menu_state *state);
+static int menu_same(uint32_t checked, uint32_t item);
 
 /* What the window menu tells the terminal: only the choices. */
 static const struct keiland_window_menu_listener menu_listener = {
@@ -331,7 +350,8 @@ menu_build(
 /*
  * Shows a state in the menus in one transaction: Copy and Paste enabled,
  * Zoom In and Out within the sizes, the size's radio item, Fullscreen and
- * Treat Ambiguous-Width Characters as Wide checked.
+ * Treat Ambiguous-Width Characters as Wide checked, the theme's radio item
+ * and Find Next and Find Previous enabled (ws128-p006).
  */
 static int
 menu_state(
@@ -342,6 +362,9 @@ menu_state(
 	uint32_t checked_size;
 	int larger;
 	int smaller;
+	int dark;
+	int light;
+	int contrast;
 	int error;
 
 	/* Zooming stops at the largest and the smallest size. */
@@ -351,6 +374,18 @@ menu_state(
 	smaller = 0;
 	if (state->pixels > TERMINAL_PIXELS_MIN)
 		smaller = 1;
+
+	/* The theme's radio item that is checked (ws128-p006). */
+	dark = 0;
+	light = 0;
+	contrast = 0;
+	if (state->theme == TERMINAL_THEME_LIGHT) {
+		light = 1;
+	} else if (state->theme == TERMINAL_THEME_CONTRAST) {
+		contrast = 1;
+	} else {
+		dark = 1;
+	}
 
 	/* The radio item of the size, if the size is one the menu names. */
 	checked_size = 0;
@@ -382,13 +417,13 @@ menu_state(
 
 	/* One radio item of the four is checked, or none for a size between them. */
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_SMALL, checked_size == MENU_SIZE_SMALL);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_SMALL, menu_same(checked_size, MENU_SIZE_SMALL));
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_MEDIUM, checked_size == MENU_SIZE_MEDIUM);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_MEDIUM, menu_same(checked_size, MENU_SIZE_MEDIUM));
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_LARGE, checked_size == MENU_SIZE_LARGE);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_LARGE, menu_same(checked_size, MENU_SIZE_LARGE));
 	if (error == 0)
-		error = keiland_menu_set_checked(menu, MENU_SIZE_HUGE, checked_size == MENU_SIZE_HUGE);
+		error = keiland_menu_set_checked(menu, MENU_SIZE_HUGE, menu_same(checked_size, MENU_SIZE_HUGE));
 
 	/* Fullscreen is checked while the window is. */
 	if (error == 0)
@@ -397,6 +432,20 @@ menu_state(
 	/* Treat Ambiguous-Width Characters as Wide is checked while the setting is on (ws128-p009). */
 	if (error == 0)
 		error = keiland_menu_set_checked(menu, MENU_AMBIGUOUS_WIDE, state->ambiguous_wide);
+
+	/* The theme's radio item (ws128-p006). */
+	if (error == 0)
+		error = keiland_menu_set_checked(menu, MENU_THEME_DARK, dark);
+	if (error == 0)
+		error = keiland_menu_set_checked(menu, MENU_THEME_LIGHT, light);
+	if (error == 0)
+		error = keiland_menu_set_checked(menu, MENU_THEME_CONTRAST, contrast);
+
+	/* Find Next and Find Previous need a text looked for. */
+	if (error == 0)
+		error = keiland_menu_set_enabled(menu, MENU_FIND_NEXT, state->can_find_again);
+	if (error == 0)
+		error = keiland_menu_set_enabled(menu, MENU_FIND_PREVIOUS, state->can_find_again);
 
 	/*
 	 * A refused change still ends the transaction, so that the menu is not
@@ -414,7 +463,21 @@ menu_state(
 
 	/* Succeeded: the menus show the state. */
 	window->menu_state = *state;
-	printf("ZTERM MENU state selection=%d clipboard=%d pixels=%u fullscreen=%d ambiguous_wide=%d\n", state->selection, state->clipboard, state->pixels, state->fullscreen, state->ambiguous_wide);
+	printf("ZTERM MENU state selection=%d clipboard=%d pixels=%u fullscreen=%d ambiguous_wide=%d theme=%u find=%d\n", state->selection, state->clipboard, state->pixels, state->fullscreen, state->ambiguous_wide, state->theme, state->can_find_again);
 	fflush(stdout);
+	return 0;
+}
+
+/* Tells whether a radio item is the one checked (1) or not (0). */
+static int
+menu_same(
+	uint32_t checked,
+	uint32_t item)
+{
+	/* The item checked. */
+	if (checked == item)
+		return 1;
+
+	/* Another item. */
 	return 0;
 }

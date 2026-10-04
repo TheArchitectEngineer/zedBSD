@@ -1775,6 +1775,7 @@ te_app_caret_rect(
 	if (app->preedit[0] == '\0')
 		return;
 
+	/* The cursor's row and column, and the composed text's length. */
 	te_layout_place((struct te_layout *)&app->layout, &app->buffer, app->cursor, &row, &column);
 	offset = strlen(app->preedit);
 	if (app->preedit_begin >= 0 && (size_t)app->preedit_begin < offset)

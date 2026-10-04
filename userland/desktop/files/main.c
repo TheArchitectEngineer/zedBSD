@@ -226,6 +226,8 @@ main(
 	} else {
 		status = fm_window_open(&main_window, options.display, options.width, options.height, "Files", "files");
 	}
+
+	/* A window that could not be opened ends the program. */
 	if (status != 0) {
 		fprintf(stderr, "ZFILES FAILED operation=window error=%d\n", errno);
 		fm_text_close(&main_text);
@@ -639,6 +641,8 @@ main_frame(void)
 		} else {
 			fm_ui_draw(&main_app, &main_canvas);
 		}
+
+		/* The time drawing took, the first frame's kept for the start-up log. */
 		drawn = fm_clock();
 		if (main_startup.draw_ms == 0U)
 			main_startup.draw_ms = drawn - started;

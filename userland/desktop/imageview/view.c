@@ -99,6 +99,7 @@ static void view_motion(struct iv_app *app, const struct iv_event *event);
 static void view_axis(struct iv_app *app, const struct iv_event *event);
 static int view_can_swipe(const struct iv_app *app);
 static void open_chooser(struct iv_app *app);
+static void view_slideshow_tick(struct iv_app *app, uint64_t now, int *due);
 
 /*
  * Starts the viewer with no image, for a window of a size.
@@ -116,6 +117,7 @@ iv_app_init(
 	app->fit = 1;
 	app->scale = 1.0;
 	app->glass = 1;
+	app->want_open_with = -1;
 	app->now = iv_clock();
 	iv_app_resize(app, width, height);
 	app->dirty = 1;
@@ -785,6 +787,96 @@ iv_app_chosen(
 }
 
 /*
+ * Goes on after the image shown left its folder (moved to the trash,
+ * ws128-p005): the folder is read again and the image now in its place
+ * is shown (the one before it at the end); a folder with no image left
+ * shows nothing.
+ */
+void
+iv_app_removed(
+	struct iv_app *app)
+{
+	char directory[IV_PATH_MAX];
+	size_t index;
+	int error;
+
+	/* The place the image had, and its folder. */
+	index = app->folder.index;
+	snprintf(directory, sizeof(directory), "%s", app->folder.directory);
+
+	/* The neighbours decoded ahead may be the wrong ones now. */
+	view_free_image(&app->previous);
+	view_free_image(&app->next);
+
+	/* The folder as it is now. */
+	error = iv_folder_read(&app->folder, directory);
+	if (error != 0 || app->folder.count == 0) {
+		iv_log("REMOVED left=0");
+		iv_app_slideshow(app, 0);
+		iv_app_close_image(app);
+		return;
+	}
+
+	/* The image now in its place, or the last one when it was the last. */
+	if (index >= app->folder.count)
+		index = app->folder.count - 1U;
+	iv_log("REMOVED left=%lu index=%lu", (unsigned long)app->folder.count, (unsigned long)index);
+
+	/* That image is decoded and shown (no neighbour is held, so view_go decodes it). */
+	view_go(app, index);
+}
+
+/*
+ * Starts (on) or stops a slideshow (ws128-p005): the images of the folder
+ * one after another, each for IV_SLIDESHOW_MS, around from the last to the
+ * first, on the full screen.  A slideshow that made the window fill the
+ * screen leaves it when it stops.
+ */
+void
+iv_app_slideshow(
+	struct iv_app *app,
+	int on)
+{
+	/* A stop, of a slideshow that runs. */
+	if (!on) {
+		if (!app->slideshow)
+			return;
+
+		/* The full screen the slideshow made goes with it. */
+		app->slideshow = 0;
+		if (app->slideshow_screen && app->fullscreen)
+			app->want_fullscreen = 1;
+		app->slideshow_screen = 0;
+
+		/* Says so, for the user and the tests. */
+		iv_app_message(app, "Slideshow stopped", 1200U);
+		iv_log("SLIDESHOW stop");
+		app->dirty = 1;
+		return;
+	}
+
+	/* A slideshow needs an image to start from. */
+	if (!app->has_image || app->folder.count == 0) {
+		iv_app_message(app, "There are no images for a slideshow.", VIEW_MESSAGE_MS);
+		return;
+	}
+
+	/* It starts, on the full screen, the next image due after a while. */
+	app->slideshow = 1;
+	app->slideshow_due = app->now + IV_SLIDESHOW_MS;
+	app->slideshow_screen = 0;
+	if (!app->fullscreen) {
+		app->want_fullscreen = 1;
+		app->slideshow_screen = 1;
+	}
+
+	/* Says so, for the user and the tests. */
+	iv_app_message(app, "Slideshow \xe2\x80\x94 Esc stops", 1500U);
+	iv_log("SLIDESHOW start count=%lu", (unsigned long)app->folder.count);
+	app->dirty = 1;
+}
+
+/*
  * Takes one input of the window.
  */
 void
@@ -833,6 +925,15 @@ iv_app_action(
 	middle_x = (double)app->area_x + (double)app->area_width / 2.0;
 	middle_y = (double)app->area_y + (double)app->area_height / 2.0;
 	iv_log("ACTION %d", (int)action);
+
+	/* An application of Open With is the window's to start on the image shown (ws128-p005). */
+	if ((unsigned)action >= IV_ACTION_OPEN_WITH_FIRST &&
+	    (unsigned)action < IV_ACTION_OPEN_WITH_FIRST + IV_OPENERS) {
+		if (app->has_image)
+			app->want_open_with = (int)((unsigned)action - IV_ACTION_OPEN_WITH_FIRST);
+		app->dirty = 1;
+		return;
+	}
 
 	/* Each action. */
 	switch (action) {
@@ -917,6 +1018,20 @@ iv_app_action(
 	case IV_ACTION_ABOUT:
 		iv_app_message(app, "Image Viewer \xe2\x80\x94 Kei", VIEW_MESSAGE_MS);
 		break;
+	case IV_ACTION_TRASH:
+		/* The window moves the image shown to the trash, then tells the viewer (ws128-p005). */
+		if (app->has_image && app->current != NULL)
+			app->want_trash = 1;
+		break;
+	case IV_ACTION_SLIDESHOW:
+		/* A slideshow starts, or stops (ws128-p005). */
+		if (app->slideshow) {
+			iv_app_slideshow(app, 0);
+		} else {
+			iv_app_slideshow(app, 1);
+		}
+
+		break;
 	case IV_ACTION_NONE:
 		break;
 	}
@@ -1000,6 +1115,9 @@ iv_app_tick(
 		if (due < 0 || wait < due)
 			due = wait;
 	}
+
+	/* A slideshow goes on to the next image when it is due (ws128-p005). */
+	view_slideshow_tick(app, now, &due);
 
 	/* The chip fades and goes. */
 	if (app->chip_until != 0) {
@@ -1587,9 +1705,21 @@ view_key(
 		iv_app_action(app, IV_ACTION_FULLSCREEN);
 		break;
 	case IV_KEY_ESCAPE:
-		/* Esc leaves the full screen. */
-		if (app->fullscreen)
+		/* Esc stops a slideshow (which leaves the full screen it made), else leaves the full screen. */
+		if (app->slideshow) {
+			iv_app_slideshow(app, 0);
+		} else if (app->fullscreen) {
 			iv_app_action(app, IV_ACTION_FULLSCREEN);
+		}
+
+		break;
+	case IV_KEY_DELETE:
+		/* Delete moves the image to the trash (ws128-p005). */
+		iv_app_action(app, IV_ACTION_TRASH);
+		break;
+	case IV_KEY_F5:
+		/* F5 starts or stops a slideshow (ws128-p005). */
+		iv_app_action(app, IV_ACTION_SLIDESHOW);
 		break;
 	case IV_KEY_SPACE:
 		/* Space plays an animated image, and goes on otherwise. */
@@ -1639,7 +1769,9 @@ view_toggle_key(
 	switch (key) {
 	case IV_KEY_ESCAPE:
 	case IV_KEY_F:
+	case IV_KEY_F5:
 	case IV_KEY_F11:
+	case IV_KEY_DELETE:
 	case IV_KEY_R:
 	case IV_KEY_0:
 	case IV_KEY_1:
@@ -1923,4 +2055,45 @@ open_chooser(
 	snprintf(app->chooser_folder, sizeof(app->chooser_folder), "%s", folder);
 	app->chooser_open = 1;
 	iv_log("CHOOSER open folder=%s", app->chooser_folder);
+}
+
+/*
+ * Moves a slideshow on: when the next image is due, the folder's next one
+ * (the first after the last) is shown; due becomes the time to wait.
+ */
+static void
+view_slideshow_tick(
+	struct iv_app *app,
+	uint64_t now,
+	int *due)
+{
+	size_t index;
+	int wait;
+
+	/* Only while a slideshow runs on an image. */
+	if (!app->slideshow || !app->has_image)
+		return;
+
+	/* The next image when its time has come. */
+	if (now >= app->slideshow_due) {
+		/* The folder may have changed; the image after the one shown, around at the end. */
+		view_refresh_folder(app);
+		index = app->folder.index + 1U;
+		if (index >= app->folder.count)
+			index = 0;
+
+		/* A folder of one image keeps showing it. */
+		if (app->folder.count > 1U && index != app->folder.index) {
+			iv_log("SLIDESHOW next index=%lu", (unsigned long)index);
+			view_go(app, index);
+		}
+
+		/* The step after this one. */
+		app->slideshow_due = now + IV_SLIDESHOW_MS;
+	}
+
+	/* Waits no longer than the next step. */
+	wait = (int)(app->slideshow_due - now);
+	if (*due < 0 || wait < *due)
+		*due = wait;
 }

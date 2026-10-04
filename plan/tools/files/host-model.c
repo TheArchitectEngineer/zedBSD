@@ -52,6 +52,9 @@ main(
 	char *sources[4];
 	char *targets[4];
 	char *sources_merge[2];
+	char *volume_items[2];
+	char text[512];
+	int descriptor;
 	char **paths;
 	struct fm_task *task;
 	struct fm_task *folder_task;
@@ -67,7 +70,7 @@ main(
 	int error;
 
 	if (argc < 2) {
-		fprintf(stderr, "usage: files-model TEMPORARY-FOLDER [OTHER-FILE-SYSTEM-FOLDER]\n");
+		fprintf(stderr, "usage: files-model TEMPORARY-FOLDER [OTHER-FILE-SYSTEM-FOLDER [VOLUME-FOLDER]]\n");
 		return 2;
 	}
 	mkdir(argv[1], 0755);
@@ -331,8 +334,11 @@ main(
 		task->collisions[0] = FM_COLLISION_REPLACE;
 		task->collisions[1] = FM_COLLISION_REPLACE;
 		check(run(task) == 0 && task->error_count == 0, "replace across file systems: no error");
-		snprintf(path, sizeof(path), "%s/data-other/Trash/files/", argv[2]);
-		check(task->replaced[0] != NULL && strncmp(task->replaced[0], path, strlen(path)) == 0 && file_is(task->replaced[0], "old"), "replace across file systems: the file is in the other file system's trash");
+		/* The replaced items go to the trash of their own volume (ws127-p003), renamed there rather than copied home. */
+		snprintf(other, sizeof(other), "%s/xfs/dst/Old.txt", root);
+		error = fm_trash_for(other, trash, sizeof(trash));
+		snprintf(path, sizeof(path), "%s/files/", trash);
+		check(task->replaced[0] != NULL && strncmp(task->replaced[0], path, strlen(path)) == 0 && file_is(task->replaced[0], "old"), "replace across file systems: the file is in the trash fm_trash_for chose (the home trash for /dev/shm)");
 		snprintf(other, sizeof(other), "%s/x.txt", task->replaced[1] != NULL ? task->replaced[1] : "-");
 		check(file_is(other, "x"), "replace across file systems: the folder is in that trash with its contents");
 		snprintf(path, sizeof(path), "%s/xfs/dst/Old.txt", root);
@@ -349,6 +355,16 @@ main(
 		fm_trash_path(trash, sizeof(trash));
 		task = fm_task_new(FM_TASK_TRASH, paths, 2, trash);
 		run(task);
+		/* The copies trashed here are removed with their records, so no volume's trash keeps them (ws127-p003). */
+		for (index = 0; index < 2; index++) {
+			if (task->results[index] == NULL || fm_trash_of(task->results[index], original, sizeof(original)) != 0)
+				continue;
+			snprintf(path, sizeof(path), "%s/info/%s.trashinfo", original, strrchr(task->results[index], '/') + 1);
+			unlink(path);
+		}
+		folder_task = fm_task_new(FM_TASK_DELETE, task->results, 2, NULL);
+		run(folder_task);
+		fm_task_free(folder_task);
 		fm_task_free(task);
 		task = fm_task_new(FM_TASK_RESTORE, targets, 2, trash);
 		run(task);
@@ -420,7 +436,7 @@ main(
 
 	/* 7b. The trash's listing shows both under the name they had, of its kind (BUG-140, ws127-p002). */
 	memset(&listing, 0, sizeof(listing));
-	error = fm_dir_read_trash(&listing, trash);
+	error = fm_dir_read_trash(&listing);
 	shown = 0;
 	for (index = 0; error == 0 && index < listing.count; index++) {
 		if (strcmp(listing.entries[index].name, "Report 2.pdf.2") == 0)
@@ -442,6 +458,71 @@ main(
 	check(file_is(targets[0], "report"), "put back: the file is where it was");
 	check(!exists(other), "put back: the record is gone");
 	fm_task_free(task);
+
+	/* 8a. An item on a system's mount (the second folder, /dev/shm) goes to the home trash, not a trash of that mount (ws127-p008). */
+	if (argc > 2) {
+		snprintf(path, sizeof(path), "%s/System.txt", argv[2]);
+		make_file(path, "system");
+		error = fm_trash_for(path, other, sizeof(other));
+		check(error == 0 && strcmp(other, trash) == 0, "system mount: an item of /dev/shm goes to the home trash");
+		unlink(path);
+	}
+
+	/* 8b. An item on another volume (the third folder, a tmpfs of the user's) goes to that volume's trash, $topdir/.Trash-$uid (ws127-p003). */
+	if (argc > 3) {
+		snprintf(path, sizeof(path), "%s/volume", argv[3]);
+		fm_ops_mkdir_parents(path);
+		snprintf(path, sizeof(path), "%s/volume/Notes.txt", argv[3]);
+		make_file(path, "notes");
+		volume_items[0] = strdup(path);
+		error = fm_trash_for(volume_items[0], other, sizeof(other));
+		snprintf(value, sizeof(value), "/.Trash-%lu", (unsigned long)getuid());
+		if (error == 0 && strstr(other, value) != NULL) {
+			task = fm_task_new(FM_TASK_TRASH, volume_items, 1, trash);
+			run(task);
+			check(task->error_count == 0 && task->results[0] != NULL && strncmp(task->results[0], other, strlen(other)) == 0 && !exists(volume_items[0]), "volume trash: the item is in its volume's trash");
+			snprintf(path, sizeof(path), "%s/info/Notes.txt.trashinfo", other);
+			length = -1;
+			descriptor = open(path, O_RDONLY);
+			if (descriptor >= 0) {
+				length = read(descriptor, text, sizeof(text) - 1);
+				close(descriptor);
+			}
+			if (length > 0)
+				text[length] = '\0';
+			check(length > 0 && strstr(text, "\nPath=/") == NULL && strstr(text, "\nPath=") != NULL, "volume trash: the record's path is relative to the volume's top");
+			error = fm_trash_info_read(other, "Notes.txt", original, sizeof(original), &deleted);
+			check(error == 0 && strcmp(original, volume_items[0]) == 0, "volume trash: the record reads back as the whole path");
+			memset(&listing, 0, sizeof(listing));
+			error = fm_dir_read_trash(&listing);
+			shown = 0;
+			for (index = 0; error == 0 && index < listing.count; index++) {
+				if (strcmp(listing.entries[index].path, task->results[0]) == 0 && listing.entries[index].detail != NULL && strstr(volume_items[0], listing.entries[index].detail) == volume_items[0])
+					shown = 1;
+			}
+			check(shown == 1, "volume trash: the trash's listing shows the item and where it was");
+			fm_dir_free(&listing);
+			error = fm_trash_of(task->results[0], path, sizeof(path));
+			check(error == 0 && strcmp(path, other) == 0, "volume trash: the item's trash is found from its path");
+			error = fm_trash_of(volume_items[0], path, sizeof(path));
+			check(error != 0, "volume trash: an item outside a trash is in none");
+			volume_items[1] = strdup(task->results[0]);
+			fm_task_free(task);
+			task = fm_task_new(FM_TASK_RESTORE, volume_items + 1, 1, trash);
+			run(task);
+			snprintf(path, sizeof(path), "%s/info/Notes.txt.trashinfo", other);
+			check(task->error_count == 0 && file_is(volume_items[0], "notes") && !exists(path), "volume trash: put back returns it and removes the record");
+			fm_task_free(task);
+			snprintf(path, sizeof(path), "%s/volume/Notes.txt", argv[3]);
+			unlink(path);
+			free(volume_items[1]);
+		} else {
+			check(0, "volume trash: the third folder's volume holds a trash");
+		}
+		free(volume_items[0]);
+	} else {
+		printf("skip: volume trash (no third folder on a volume of the user's)\n");
+	}
 
 	/* 9. Delete a folder tree for good. */
 	snprintf(path, sizeof(path), "%s/dst/Folder.v1 2", root);

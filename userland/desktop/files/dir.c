@@ -44,6 +44,8 @@ static int dir_compare(const void *first, const void *second);
 static int dir_compare_names(const char *first, const char *second);
 static char *dir_join(const char *folder, const char *name);
 static int dir_is_dot(const char *name);
+static int dir_read_into(struct fm_listing *listing, const char *path, int hidden);
+static void dir_trash_details(struct fm_listing *listing, size_t first, const char *trash);
 
 /*
  * Reads a folder's items into a listing (emptied first).
@@ -58,121 +60,62 @@ fm_dir_read(
 	const char *path,
 	int hidden)
 {
-	struct dirent *item;
-	struct stat status;
-	struct fm_entry *entry;
-	DIR *folder;
 	int error;
-	int dot;
 
 	/* The listing starts empty. */
 	fm_dir_free(listing);
 
-	/* The folder's own modification time, which tells later whether it changed. */
-	error = stat(path, &status);
-	if (error == 0)
-		listing->modified = status.st_mtime;
-
-	/* The folder. */
-	folder = opendir(path);
-	if (folder == NULL) {
-		listing->error = errno;
-		return listing->error;
-	}
-
-	/* Each item but . and .., and the hidden ones unless they are asked for. */
-	for (;;) {
-		errno = 0;
-		item = readdir(folder);
-		if (item == NULL)
-			break;
-
-		/* The folder itself and its parent are not items. */
-		dot = dir_is_dot(item->d_name);
-		if (dot != 0)
-			continue;
-
-		/* A hidden item, unless hidden ones are shown. */
-		if (item->d_name[0] == '.' && hidden == 0)
-			continue;
-
-		/* The item, with what its status says. */
-		entry = fm_dir_add(listing, path, item->d_name);
-		if (entry == NULL) {
-			listing->error = ENOMEM;
-			break;
-		}
-	}
-
-	/* The folder is closed whatever happened. */
-	closedir(folder);
-
-	/* Reports the error the listing ended with, if any. */
-	if (listing->error != 0)
-		return listing->error;
+	/* The folder's items are added to it. */
+	error = dir_read_into(listing, path, hidden);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the listing holds the folder's items. */
 	return 0;
 }
 
 /*
- * Reads the trash's items into a listing (emptied first): each item of
- * its files folder, with where it was (its folder, as detail) and when it
- * was trashed (extra_time) from its record.
+ * Reads the items of every trash of the user into a listing (emptied
+ * first): the home trash's and those at the tops of the mounted volumes
+ * (ws127-p003), each with where it was (its folder, as detail) and when
+ * it was trashed (extra_time) from its record.
  *
- * Returns 0, or the errno value of a trash that cannot be read.
+ * Returns 0, or the errno value of a list of trashes that cannot be made.
  */
 int
 fm_dir_read_trash(
-	struct fm_listing *listing,
-	const char *trash)
+	struct fm_listing *listing)
 {
-	struct fm_entry *entry;
-	char files[FM_PATH_MAX];
-	char original[FM_PATH_MAX];
-	char *slash;
-	char *shown;
+	char files[FM_PATH_MAX + 8];
+	char **trashes;
+	size_t trash_count;
+	size_t first;
 	size_t index;
-	time_t deleted;
 	int error;
 
-	/* The items of the trash's files folder, hidden ones too (they were trashed like any other). */
-	snprintf(files, sizeof(files), "%s/files", trash);
-	error = fm_dir_read(listing, files, 1);
-	if (error != 0)
+	/* The listing starts empty. */
+	fm_dir_free(listing);
+
+	/* The user's trashes. */
+	error = fm_trash_list(&trashes, &trash_count);
+	if (error != 0) {
+		listing->error = error;
 		return error;
-
-	/* Each item's record: the folder it was in and the time it was trashed. */
-	for (index = 0; index < listing->count; index++) {
-		entry = &listing->entries[index];
-		error = fm_trash_info_read(trash, entry->name, original, sizeof(original), &deleted);
-		if (error != 0)
-			continue;
-
-		/*
-		 * The item shows under the name it had (BUG-140): a second item
-		 * of the same name is kept in the trash's files as "NAME.2", but
-		 * it is still NAME, of NAME's kind.  The path stays the one in
-		 * the trash, which is what Put Back and Delete Immediately use.
-		 */
-		slash = strrchr(original, '/');
-		if (slash != NULL && slash[1] != '\0') {
-			shown = strdup(slash + 1);
-			if (shown != NULL) {
-				free(entry->name);
-				entry->name = shown;
-				entry->mime = fm_mime_guess(entry->name, entry->mode);
-			}
-		}
-
-		/* The folder is the original path without its last part. */
-		if (slash != NULL && slash != original)
-			*slash = '\0';
-		entry->detail = strdup(original);
-		entry->extra_time = deleted;
 	}
 
-	/* Succeeded: the listing holds the trash's items. */
+	/* The items of each trash's files folder, hidden ones too (they were trashed like any other). */
+	for (index = 0; index < trash_count; index++) {
+		first = listing->count;
+		snprintf(files, sizeof(files), "%s/files", trashes[index]);
+		(void)dir_read_into(listing, files, 1);
+		dir_trash_details(listing, first, trashes[index]);
+	}
+
+	/* A trash that could not be read leaves the others listed. */
+	listing->error = 0;
+	fm_paths_free(trashes, trash_count);
+
+	/* Succeeded: the listing holds the trashes' items. */
 	return 0;
 }
 
@@ -630,4 +573,119 @@ dir_is_dot(
 
 	/* Any other name. */
 	return 0;
+}
+
+/*
+ * Adds a folder's items to a listing (what it has stays), as fm_dir_read
+ * does; returns 0, or the errno value of a folder that cannot be read
+ * (also kept in the listing).
+ */
+static int
+dir_read_into(
+	struct fm_listing *listing,
+	const char *path,
+	int hidden)
+{
+	struct dirent *item;
+	struct stat status;
+	struct fm_entry *entry;
+	DIR *folder;
+	int error;
+	int dot;
+
+	/* The folder's own modification time, which tells later whether it changed. */
+	error = stat(path, &status);
+	if (error == 0)
+		listing->modified = status.st_mtime;
+
+	/* The folder. */
+	folder = opendir(path);
+	if (folder == NULL) {
+		listing->error = errno;
+		return listing->error;
+	}
+
+	/* Each item but . and .., and the hidden ones unless they are asked for. */
+	for (;;) {
+		errno = 0;
+		item = readdir(folder);
+		if (item == NULL)
+			break;
+
+		/* The folder itself and its parent are not items. */
+		dot = dir_is_dot(item->d_name);
+		if (dot != 0)
+			continue;
+
+		/* A hidden item, unless hidden ones are shown. */
+		if (item->d_name[0] == '.' && hidden == 0)
+			continue;
+
+		/* The item, with what its status says. */
+		entry = fm_dir_add(listing, path, item->d_name);
+		if (entry == NULL) {
+			listing->error = ENOMEM;
+			break;
+		}
+	}
+
+	/* The folder is closed whatever happened. */
+	closedir(folder);
+
+	/* Reports the error the listing ended with, if any. */
+	if (listing->error != 0)
+		return listing->error;
+
+	/* Succeeded: the listing holds the folder's items. */
+	return 0;
+}
+
+/*
+ * Gives the items of one trash, from the entry first on, what their
+ * records say: the name each had (BUG-140), the folder it was in and when
+ * it was trashed.
+ */
+static void
+dir_trash_details(
+	struct fm_listing *listing,
+	size_t first,
+	const char *trash)
+{
+	struct fm_entry *entry;
+	char original[FM_PATH_MAX];
+	char *slash;
+	char *shown;
+	size_t index;
+	time_t deleted;
+	int error;
+
+	/* Each item's record: the folder it was in and the time it was trashed. */
+	for (index = first; index < listing->count; index++) {
+		entry = &listing->entries[index];
+		error = fm_trash_info_read(trash, entry->name, original, sizeof(original), &deleted);
+		if (error != 0)
+			continue;
+
+		/*
+		 * The item shows under the name it had (BUG-140): a second item
+		 * of the same name is kept in the trash's files as "NAME.2", but
+		 * it is still NAME, of NAME's kind.  The path stays the one in
+		 * the trash, which is what Put Back and Delete Immediately use.
+		 */
+		slash = strrchr(original, '/');
+		if (slash != NULL && slash[1] != '\0') {
+			shown = strdup(slash + 1);
+			if (shown != NULL) {
+				free(entry->name);
+				entry->name = shown;
+				entry->mime = fm_mime_guess(entry->name, entry->mode);
+			}
+		}
+
+		/* The folder is the original path without its last part. */
+		if (slash != NULL && slash != original)
+			*slash = '\0';
+		entry->detail = strdup(original);
+		entry->extra_time = deleted;
+	}
 }

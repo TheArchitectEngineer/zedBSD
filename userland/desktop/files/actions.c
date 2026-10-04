@@ -246,17 +246,12 @@ fm_action_empty_trash(
 	struct fm_app *app)
 {
 	struct fm_listing listing;
-	char trash[FM_PATH_MAX];
 	char **paths;
 	size_t index;
-	int error;
 
-	/* The trash's items. */
-	error = fm_trash_path(trash, sizeof(trash));
-	if (error != 0)
-		return;
+	/* The items of every trash (the home trash's and the volumes', ws127-p003). */
 	memset(&listing, 0, sizeof(listing));
-	(void)fm_dir_read_trash(&listing, trash);
+	(void)fm_dir_read_trash(&listing);
 	if (listing.count == 0) {
 		fm_dir_free(&listing);
 		fm_ui_message(app, "The trash is empty");
@@ -291,13 +286,12 @@ fm_action_confirm(
 	int confirmed)
 {
 	char trash[FM_PATH_MAX];
-	char files[FM_PATH_MAX + 8];
 	char path[2 * FM_PATH_MAX + 32];
+	const char *name;
 	size_t index;
 	unsigned dialog;
 	int trash_error;
 	int error;
-	int match;
 
 	/* A question about a taken name: Enter merges two folders or keeps both (ws035-p115), Esc stops the operation. */
 	if (app->dialog == FM_DIALOG_COLLISION) {
@@ -318,15 +312,19 @@ fm_action_confirm(
 	if (confirmed != 0 && dialog != FM_DIALOG_NONE) {
 		error = actions_start(app, FM_TASK_DELETE, app->dialog_paths, app->dialog_count, NULL, 0);
 
-		/* Items deleted from the trash take their records with them (the records are small, removed at once). */
-		trash_error = fm_trash_path(trash, sizeof(trash));
-		snprintf(files, sizeof(files), "%s/files", trash);
-		for (index = 0; error == 0 && trash_error == 0 && index < app->dialog_count; index++) {
-			actions_parent(app->dialog_paths[index], path, sizeof(path));
-			match = strcmp(path, files);
-			if (match != 0)
+		/*
+		 * Items deleted from a trash (the home trash or a volume's,
+		 * ws127-p003) take their records with them (the records are
+		 * small, removed at once).
+		 */
+		for (index = 0; error == 0 && index < app->dialog_count; index++) {
+			trash_error = fm_trash_of(app->dialog_paths[index], trash, sizeof(trash));
+			if (trash_error != 0)
 				continue;
-			snprintf(path, sizeof(path), "%s/info/%s.trashinfo", trash, app->dialog_paths[index] + strlen(files) + 1U);
+
+			/* The record of the item by its name in the trash's files (the trash has a slash before it). */
+			name = strrchr(app->dialog_paths[index], '/') + 1;
+			snprintf(path, sizeof(path), "%s/info/%s.trashinfo", trash, name);
 			(void)unlink(path);
 		}
 	}
