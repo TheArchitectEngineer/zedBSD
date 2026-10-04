@@ -23,6 +23,7 @@
 #include "reset.h"
 #include "resource.h"
 #include "session.h"
+#include "worker.h"
 #include "render/render.h"
 #include <kern/kcrt.h>
 
@@ -42,9 +43,14 @@
 /* Builds one exact-match identity row for an Intel graphics product. */
 #define I915_ID(product)	{ 0x8086U, (product), DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U }
 
+/* How long a suspend waits for the request worker to park, in milliseconds (ws052-p009). */
+#define I915_SUSPEND_PARK_MS	2000U
+
 static int i915_attach(struct drv_pci_device *pci, const struct drv_pci_id *id);
 static int i915_detach(struct drv_pci_device *pci, unsigned flags);
 static void i915_shutdown(struct drv_pci_device *pci);
+static int i915_suspend(struct drv_pci_device *pci);
+static int i915_resume(struct drv_pci_device *pci);
 
 /*
  * Registers the i915 PCI driver for the Gen12 Xe graphics devices it covers.
@@ -71,8 +77,8 @@ drv_pci_i915_driver_register(void)
 		i915_attach,
 		i915_detach,
 		i915_shutdown,
-		NULL,
-		NULL,
+		i915_suspend,
+		i915_resume,
 		{ 0U, 0U, 0U, 0U }
 	};
 	int error;
@@ -325,4 +331,82 @@ i915_shutdown(
 
 	/* Stops a held picture and refuses later holds. */
 	drv_i915_present_shutdown(device);
+}
+
+/*
+ * Suspends the device for S0 idle (ws052-p009): the request worker parks
+ * (the output is stopped, the lease kept, the GT left idle), then the
+ * hardware goes down into DC9.  A worker that does not park, or hardware
+ * that does not go down, refuses the suspend with the worker serving
+ * again.  A device that does not serve (its start has not run, or failed)
+ * has no state to keep: its start is refused while it runs.
+ */
+static int
+i915_suspend(
+	struct drv_pci_device *pci)
+{
+	struct i915_device *device;
+	int error;
+
+	/* An attach that already cleaned up has nothing to suspend. */
+	device = drv_pci_device_driver_data(pci);
+	if (device == NULL)
+		return 0;
+
+	/* Parks the request worker. */
+	error = drv_i915_worker_park(device, I915_SUSPEND_PARK_MS);
+	if (error == ENODEV) {
+		/* A start that is running cannot be suspended under it. */
+		if (device->start_launched != 0U && device->start_returned == 0U)
+			return EBUSY;
+
+		/* A device that does not serve has nothing to keep. */
+		return 0;
+	}
+
+	/* Refuses a worker that did not park. */
+	if (error != 0)
+		return error;
+
+	/* Takes the hardware down; a refusal lets the worker serve again. */
+	error = drv_i915_device_suspend_hw(device);
+	if (error != 0) {
+		drv_i915_worker_unpark(device);
+		return error;
+	}
+
+	/* suspended tells the resume to bring the hardware back. */
+	device->suspended = 1U;
+
+	/* Succeeded: the device may go to D3hot. */
+	return 0;
+}
+
+/*
+ * Resumes the device after S0 idle: the hardware comes back, then the
+ * request worker leaves its park; the next presentation lights the output
+ * again.  The worker serves even when a step of the hardware failed, and
+ * the failure is reported.
+ */
+static int
+i915_resume(
+	struct drv_pci_device *pci)
+{
+	struct i915_device *device;
+	int error;
+
+	/* A device that was not suspended has nothing to resume. */
+	device = drv_pci_device_driver_data(pci);
+	if (device == NULL || device->suspended == 0U)
+		return 0;
+
+	/* Brings the hardware back, then lets the worker serve. */
+	error = drv_i915_device_resume_hw(device);
+	drv_i915_worker_unpark(device);
+	device->suspended = 0U;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device serves again. */
+	return 0;
 }

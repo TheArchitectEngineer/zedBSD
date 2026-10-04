@@ -904,6 +904,9 @@ drv_i915_display_resume_end(
 
 	/* Gives the INIT reference back. */
 	drv_i915_power_domains_enable(&display->dprobe, &display->dcore);
+
+	/* The next entry into the window is the first after the sleep. */
+	display->window.after_resume = 1;
 }
 
 /*

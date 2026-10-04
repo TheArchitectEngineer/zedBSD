@@ -572,12 +572,27 @@ drv_i915_present_window(
 {
 	struct i915_display *display;
 	unsigned long irq;
+	int after_resume;
 	int error;
 
 	display = device->display;
 
 	/* Lights the panel; the window serves until a hold is over or a stop. */
 	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+
+	/*
+	 * The first entry after a sleep whose HDMI display did not come up:
+	 * the display was unplugged during the sleep, and the built-in panel is
+	 * tried in its place once (ws052-p009, decided 2026-10-05).  A panel
+	 * that does not come up either ends as any failed run does.
+	 */
+	after_resume = display->window.after_resume;
+	display->window.after_resume = 0;
+	if (error != 0 && after_resume && display->output.hdmi) {
+		kern_logf("i915: resident display: the HDMI display did not come back after the sleep (%d); trying the built-in panel\n", error);
+		display->output.hdmi = 0;
+		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+	}
 
 	/*
 	 * The output is stopped: no picture is held any more (a shutdown waiting
