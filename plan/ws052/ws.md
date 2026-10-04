@@ -53,7 +53,7 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | ws052-p006 | CPU の idle・tick・割り込み（承認された HAL の差分）、S0i3 の入口・出口、`/dev/system` の ioctl と事象 | planned | p002 の承認、p004、p005、p009、WS132 | |
 | ws052-p007 | Keiland の契機（蓋・電源ボタンの短押し・無操作の時間）と中止の理由の表示 | planned | p006、WS132 p008、WS089 | |
 | ws052-p008 | 実機の確認と規約の全文 | planned | p007 | |
-| [ws052-p009](phase009/phase.md) | i915 の suspend・resume（display・DC9・GT の RC6・GGTT・display の core の再初期化・出力の設定の再適用）。設計から、検証は 5330 の UAT | planning（2026-10-05: 設計の第 1 版 [design-p009-i915.md](design-p009-i915.md)、Q1 のレビュー待ち） | p004 | |
+| [ws052-p009](phase009/phase.md) | i915 の suspend・resume（display・DC9・GT の RC6・GGTT・display の core の再初期化・出力の設定の再適用）。設計から、検証は 5330 の UAT | in-progress（2026-10-05: 設計は Q1 の判断済み、段 (a) worker の park を実装） | p004 | `src/drivers/gpu/i915/park.c`、`worker.c` |
 
 ## 人間の判断が要る点
 
