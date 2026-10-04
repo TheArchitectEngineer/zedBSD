@@ -21,7 +21,7 @@
 #             press on the window and when a new window maps); Clean Up (the items in order again); Change Wallpaper
 #             when Settings is installed (menu-empty.png, rename-field.png, menu-item.png, collision.png, trash.png,
 #             show-in-files.png, cleanup.png)
-#   drag      (ws094-p006, after show) the pointer drags: notes.txt to an empty cell (moved there and saved; drag-over.png,
+#   drag      (ws094-p006; starts the desktop again from the five items) the pointer drags: notes.txt to an empty cell (moved there and saved; drag-over.png,
 #             drag-moved.png); photo.png onto the folder Projects (moved into it); a Files window's note.txt out to the
 #             desktop (moved into ~/Desktop, placed at the cell of the drop; drop-in.png); the desktop's report.pdf onto the
 #             Files window (moved into its folder; drop-out.png)
@@ -231,9 +231,10 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		expected=$(printf 'notes.txt\t3\t3')
 		printf '%s\n' "$layout" | grep -qx "$expected" || { echo 'prune: moved saved name MISSING'; status=1; }
 		shot prune.png
-		# Exactly 100 items exceed the 13-by-7 grid by nine, with their display policy preserved.
+		# Exactly 100 items exceed the 13-by-6 grid (756 pixels under the 44-pixel bar, ws099-p031) by 22, with their display
+		# policy preserved.
 		guest 'i=0; while [ $i -lt 95 ]; do printf x > /tmp/dhome/Desktop/overflow-$i.txt; i=$((i+1)); done' >/dev/null
-		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=100 cells=91 .* hidden=9$'
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=100 cells=78 .* hidden=22$'
 		shot overflow.png
 		guest "grep -aE 'DESKTOP (prune|ready)' /tmp/zdesktop.log" > "$out/prune-log.txt"
 		;;
@@ -275,7 +276,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		choose 1011
 		expect_log /tmp/zdesktop.log 'ZFILES TASK done id=[0-9]+ kind=copy state=done files=1 '
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=7 cells=7'
-		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=photo 2.png column=0 row=6 '
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=photo 2.png column=1 row=0 '
 		# Another folder's report.pdf on the clipboard (Files' clipboard file), pasted: the name is taken, the
 		# question is over the desktop, and Enter keeps both.
 		guest 'mkdir -p /tmp/dhome/Other; printf "other\n" > /tmp/dhome/Other/report.pdf; printf "copy\n/tmp/dhome/Other/report.pdf\n" > /tmp/files.clipboard' >/dev/null
@@ -330,13 +331,14 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		sleep 1
 		keys '<ctrl-w>'
 		sleep 1
-		# Clean Up: the items in order down the first column again (the trashed item's cell is taken back).
+		# Clean Up: the items in order down the first column again (the trashed item's cell is taken back), the seventh at
+		# the top of the second column: the 756-pixel desktop under the 44-pixel bar has six rows (ws099-p031).
 		rclick 700 400
 		choose 1056
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP clean-up error=0'
 		sleep 1
 		rows=$(guest "awk '/DESKTOP clean-up/{f=1} f && /DESKTOP place/' /tmp/zdesktop.log | sed -n 's/.* column=\\([0-9]*\\) row=\\([0-9]*\\) .*/\\1,\\2/p' | sort | tr '\\n' ' '" | tail -1)
-		[ "$rows" = "0,0 0,1 0,2 0,3 0,4 0,5 0,6 " ] && echo "clean-up: in order ok" || { echo "clean-up: ($rows) MISSING"; status=1; }
+		[ "$rows" = "0,0 0,1 0,2 0,3 0,4 0,5 1,0 " ] && echo "clean-up: in order ok" || { echo "clean-up: ($rows) MISSING"; status=1; }
 		pointer move 640 600 sleep 300
 		shot cleanup.png
 		# Change Wallpaper, when the menu has it (Settings installed).
@@ -354,6 +356,15 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		fi
 		;;
 	drag)
+		# From the five items of install and no saved layout, whatever ran before (menu renames, moves and trashes
+		# items; T1-097 ran drag after menu): the compositor started again with Files.
+		guest "$stop_all" >/dev/null
+		fresh_desktop
+		guest 'rm -f /tmp/dhome/.config/keiland/desktop-layout' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=notes.txt column=0 row=1 '
 		# A cell's column counts from the right edge: the surface point (x, y - 44) is in column
 		# (1280 - 16 - x - 1) / 96 and row (y - 44 - 16) / 104.
 		# 1. notes.txt (1216,194) to (900,400): the cell 3,3.
