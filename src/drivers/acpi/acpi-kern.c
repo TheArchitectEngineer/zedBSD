@@ -517,7 +517,13 @@ start_events(void)
 	if (error != 0 && error != ENODEV)
 		return error;
 
-	/* Succeeded. */
+	/*
+	 * Lets the SCI line through.  A registered line stays masked until its
+	 * owner unmasks it, so without this no SCI is ever delivered.
+	 */
+	kern_irq_unmask((int)irq);
+
+	/* Succeeded: the SCI is delivered to sci_interrupt() from now on. */
 	kern_logf("acpi: SCI on IRQ %u\n", irq);
 	return 0;
 }
@@ -626,8 +632,12 @@ event_thread(
 {
 	unsigned long state;
 	uint64_t sequence;
+	bool first;
 
 	UNUSED_PARAMETER(argument);
+
+	/* The first SCI is logged once, so that a boot log shows SCIs arrive. */
+	first = true;
 
 	/* Sleeps until the SCI records work, then handles it. */
 	for (;;) {
@@ -641,6 +651,12 @@ event_thread(
 		/* The work counted so far is taken as a whole. */
 		event_work = 0;
 		spin_unlock_irqrestore(&event_lock, state);
+
+		/* Logs the first SCI the thread handles. */
+		if (first) {
+			kern_logf("acpi: first SCI handled\n");
+			first = false;
+		}
 
 		/* Runs the handlers and the AML. */
 		drv_acpi_events_process();
