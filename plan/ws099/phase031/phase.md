@@ -50,3 +50,5 @@ T1-097 は大半 PASS、bar と title bar の高さは PNG で一致。FAIL 2 �
 - `plan/ws094/tests/files-desktop-guest.sh`: desktop が 1280x756 になり、grid の行は (756 - 32) / 104 = 6（34 px の bar の時は 766 で 7 行）。7 つ目の item は column=1 row=0（`photo 2.png`）、clean-up の並びは `0,0 … 0,5 1,0`、prune の 100 items は `cells=78 … hidden=22`（13×6）。drag の case は前の case（menu が名前を変え、移し、捨てる）の後でも同じ状態から始まるよう、compositor を 5 つの item と layout 無しで起動し直してから行う（T1-097 は menu の後に drag を流したので notes.txt が無かった）。
 - `plan/ws102/tests/osk-guest.sh` の workarea: QWERTY の panel で docked の窓は 1280x416（800 - 44 - 336 - 4、旧 426）、浮いた窓は area の上端 y=108（旧 98）へ。log の実測（`work docked … height=416`、`work moved … to=390,108`・`to=520,108`）と一致。
 - 気づいた事（判断は Q1・ユーザー）: 800 px 高の画面では desktop の icon の grid が 7 行から 6 行に減った（LAYOUT_MARGIN 16 の上下と 104 px の cell）。7 行に戻すなら Files の desktop の余白か cell の高さを変える別の作業。
+
+ユーザーの決定（2026-10-05 未明）: 800 px の画面の desktop の icon は **6 行のまま**。

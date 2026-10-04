@@ -19,7 +19,7 @@ Resume point: p001（要件・設計）。
 1. **今（ベータ1 の後すぐ）**: 外部 package `userland/packages/multimedia/libavcodec/`（FFmpeg の libavcodec・libavformat・libavutil・libswscale・libswresample の必要な分。tarball の取得と検証と patch、Guardrail の外部 package の規則）を足し、動画 player の app をそれで作る。**license の監査**: FFmpeg を LGPL の構成で build し、GPL・nonfree の部品（`--enable-gpl` の codec・filter）を入れない。configure の option と出来た library の license の表を記録する（`plan/tools/packages/audit-licenses.sh`）。
 2. **ベータ2**: player の既定の経路から libavcodec を外し、**独自の container の読み込みの library**（MP4・MKV などの demux、Zlib の独自実装）と **動画の再生の支援**（GPU の decode、[WS083](../ws083/ws.md) の Vulkan Video と i915）だけで再生する。
 3. **ベータ2 の add-in**: libavcodec が system にあれば使える、**dynamic link の add-in**。build の時に libavcodec の header を使わず、実行の時に `dlopen`・`dlsym` だけで呼ぶ（ユーザーの見立て:「コンパイル時にヘッダもいらなくて、純粋にdlopenするなら、ライセンス的にも問題ない」）。呼ぶ関数の宣言は自分で書く（ABI の版の確かめ、無い時は add-in を使わない）。この方式の license の扱い（LGPL の library を dlopen で使う app の義務、header を使わない宣言の独自の記述）は p001 で確かめて記録する。
-4. 段 1 の package を image の既定に入れるか（ベータ1・2 の配布物に libavcodec を含めるか）はユーザーと決める。
+4. 段 1 の package を image の既定に入れるか → **2026-10-05 未明ユーザーの決定: ベータ1 から image に入れる**。あわせて「ベータ1 に簡単な player を入れる」（libavcodec で再生する最小の player: 開く・再生・停止・シーク、10/13 の RC まで）。LGPL の義務は release の license の一覧と notes で果たす（ws129）。
 
 
 ## 目標（2026-10-02 ユーザー（ベータ1、リリース目標 10/17））

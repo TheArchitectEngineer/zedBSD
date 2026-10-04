@@ -9,7 +9,9 @@
 #  5. Super held while the mouse clicks the window: Home does not open.
 #  6. Super held 1.5 s: Home does not open.
 #  7. Shift+Super: Home does not open.
-#  8. The compositor is still up, with no ERROR in its log.
+#  8. The Windows key reaches no client (the user's decision D9): /bin/seat-probe focused hears neither Super's key
+#     (125, 126), while a plain key (a, 30) and Super's bit in the modifiers (depressed=64 with Super+a) still come.
+#  9. The compositor is still up, with no ERROR in its log.
 #
 #   plan/ws079/tests/pen-guest.sh start IMAGE
 #   plan/ws142/tests/p002-guest.sh BUILD [OUTDIR]
@@ -77,7 +79,21 @@ expect_count long-hold-no-home 'ZWL HOME open via=super' 2
 key shift true; sleep 0.1; key meta_l true; sleep 0.1; key meta_l false; sleep 0.1; key shift false; sleep 1
 expect_count shift-no-home 'ZWL HOME open via=super' 2
 
-# 8. Still up, no ERROR.
+# 8. Super reaches no client: seat-probe has the focus.
+guest 'export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/seat-probe --timeout-s=40 --token=k > /tmp/k.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+tap meta_l
+tap esc
+tap meta_r
+tap esc
+key meta_l true; sleep 0.1; key a true; sleep 0.05; key a false; sleep 0.1; key meta_l false; sleep 0.5
+tap a
+guest 'cat /tmp/k.log' > "$out/seat-probe.log"
+if grep -q 'SEATPROBE focus' "$out/seat-probe.log"; then pass probe-focused; else fail probe-focused; fi
+if grep -Eq 'SEATPROBE key (125|126) ' "$out/seat-probe.log"; then fail super-not-delivered; else pass super-not-delivered; fi
+if grep -q 'SEATPROBE key 30 state=1' "$out/seat-probe.log"; then pass plain-key-delivered; else fail plain-key-delivered; fi
+if grep -q 'SEATPROBE modifiers depressed=64 ' "$out/seat-probe.log"; then pass super-modifier-delivered; else fail super-modifier-delivered; fi
+
+# 9. Still up, no ERROR.
 guest 'cat /tmp/zdesktop.log' > "$out/zdesktop.log"
 if guest 'ps -A -o args' | grep -qE '[w]ayland( |$)'; then pass alive; else fail alive; fi
 if grep -q ERROR "$out/zdesktop.log"; then fail no-error; else pass no-error; fi
