@@ -2,7 +2,7 @@
 
 # ws159-p003: I2C-HID と Precision Touchpad、EVIOCGPROP、input-inject の touchpad
 
-Status: in-progress（2026-10-05 P1 generation17 / q713-i01。実装・host の試験・build まで。QEMU は T1 の試験待ち、実機は UAT）
+Status: cleared（2026-10-05 Q1: T1-100 の ws159-p003 PASS と CI の boot PASS）。以前: in-progress（2026-10-05 P1 generation17 / q713-i01。実装・host の試験・build まで。QEMU は T1 の試験待ち、実機は UAT）
 Disposition: normal
 Parent: [WS159](../ws.md)
 Queue: q713 / q713-i01（設計 [p001](../phase001/phase.md) の D4〜D7）
@@ -37,3 +37,7 @@ Queue: q713 / q713-i01（設計 [p001](../phase001/phase.md) の D4〜D7）
 - **GpioInt を使わない sampling は電池の点で仮**（p001 の残り）。pad の RX の状態の MMIO の確認（D5 の第一案）もまだ実装していない（今は 6/25 ms の sampling だけ）。GPIO の割り込みの Phase を立てる。
 - D7（PS/2 の aux の停止）は実装していない。Linux の 60 秒の記録で PS/2 は 0 event なので、二重の入力は起きない見込み。p005 の UAT で zedBSD の PS/2 の event を見て、要れば足す。
 - report の時刻は読んだ時刻（`clock_milliseconds`）。Scan Time の MSC_TIMESTAMP は状態機械が出す。
+
+## Q1 の判定（2026-10-05）
+
+T1-100: `plan/ws159/tests/p003-guest.sh` PASS（pen の image＋LPSS_I2C=y）、CI の config の boot-test PASS（T1-113）。**cleared**。実機は p005。
