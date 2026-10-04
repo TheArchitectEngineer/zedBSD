@@ -95,7 +95,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 | # | 手順 | 見ること | 誰 | 結果 |
 | --- | --- | --- | --- | --- |
-| G1 | App Home から System Monitor を開く | CPU・memory・disk・network が本物の値で動く | U | |
+| G1 | System Monitor を開く。**この image の App Home には System Monitor の tile が無い**（`/bin/monitor` は入っているが apps.conf に行が無い）。Terminal で `monitor &`、または A が SSH で `echo 'System Monitor|/bin/monitor|monitor system cpu memory|4a6a8f|' >> /etc/keiland/apps.conf` の後に Log Out → login で tile を出す | CPU・memory・disk・network が本物の値で動く | U | |
 | G2 | A が monitor の log の `ZMON FRAME fps=` を読む | **fps 15 以上**（ws134-p003 の判定は実機の値、2026-10-04 Q1） | A | |
 | G3 | A が `sysctl hw.gputelemetry` | i915 の busy と周波数が出る（ws134-p007） | A | |
 | G4 | 窓を 30 個以上開く（Terminal を多数） | GPU の object の枠で落ちない（BUG-120） | U | |
