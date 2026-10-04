@@ -1,0 +1,2 @@
+touchpad=/dev/input/event2 ps2=/dev/input/event3 seconds=60
+pad events: 20070  ps2 events: 0
