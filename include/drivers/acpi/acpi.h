@@ -83,11 +83,13 @@ struct drv_acpi_object;
 typedef int (*drv_acpi_walk_visitor_t)(struct drv_acpi_node *node, unsigned depth, void *argument);
 
 /*
- * An address space handler.
+ * One access an operation region makes to its address space, as the
+ * interpreter hands it to the space's handler.
  *
  * address is the byte address inside the space (for PCI configuration
- * space, the offset in the function's space, with the function in pci), and
- * width is the access width in bits: 8, 16, 32 or 64.
+ * space, the offset in the function's space, with the function in the pci
+ * fields), width is the access width in bits: 8, 16, 32 or 64, and write
+ * says whether the handler stores the value or reads it.
  */
 struct drv_acpi_region_access {
 	uint64_t address;
@@ -99,6 +101,10 @@ struct drv_acpi_region_access {
 	uint8_t pci_function;
 };
 
+/*
+ * An address space handler: makes one access and reports zero, or the
+ * error that fails the AML which made it.
+ */
 typedef int (*drv_acpi_region_handler_t)(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 
 /*

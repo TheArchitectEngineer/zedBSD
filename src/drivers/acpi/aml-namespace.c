@@ -57,6 +57,7 @@ static int predefined_create(const struct predefined_node *definition);
 static struct drv_acpi_node *child_find(struct drv_acpi_node *parent, uint32_t segment);
 static int walk_node(struct drv_acpi_node *node, unsigned depth, drv_acpi_walk_visitor_t visitor, void *argument);
 static void segment_text(uint32_t segment, char *text);
+static int ns_search_upward(struct drv_acpi_node *start, const struct drv_acpi_name *name, struct drv_acpi_node **result);
 
 /*
  * Reports the root node of the namespace.
@@ -69,12 +70,11 @@ drv_acpi_root(void)
 }
 
 /*
- * Finds a node by a path in text, such as "\\_SB.PCI0" or "_STA", for a
- * driver.
+ * Finds a node for a driver by a path in text, such as "\\_SB.PCI0".
  *
- * A relative path starts at scope, or at the root when scope is NULL, and
- * is not searched for toward the root: a driver asking a device for _STA
- * wants the device's own.
+ * A relative path, such as "_STA", starts at scope, or at the root when
+ * scope is NULL, and is not searched for toward the root: a driver asking
+ * a device for _STA wants the device's own.
  */
 int
 drv_acpi_lookup(
@@ -89,13 +89,15 @@ drv_acpi_lookup(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: result names the node. */
 	return 0;
 }
 
 /*
- * Finds a node by a path in text; with search set, a single relative name
- * is searched for toward the root as AML references are.
+ * Finds a node by a path in text.
+ *
+ * With search set, a single relative name is searched for toward the root
+ * as AML references are.
  */
 int
 drv_acpi_lookup_path(
@@ -127,8 +129,10 @@ drv_acpi_lookup_path(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: an alias is reported as the node it stands for. */
+	/* Hands over the node; an alias is reported as the node it stands for. */
 	*result = drv_acpi_ns_resolve_alias(node);
+
+	/* Succeeded: result names the node. */
 	return 0;
 }
 
@@ -153,7 +157,9 @@ drv_acpi_walk(
 		return 0;
 
 	/* Visits each child subtree in creation order. */
-	for (child = scope->child; child != NULL; child = child->next) {
+	for (child = scope->child;
+	     child != NULL;
+	     child = child->next) {
 		/* Visits one subtree and stops when the visitor asked to. */
 		decision = walk_node(child, 0, visitor, argument);
 		if (decision < 0)
@@ -185,10 +191,14 @@ drv_acpi_node_path(
 
 	/* Collects the nodes from this one up to below the root. */
 	depth = 0;
-	for (walk = node; walk != NULL && walk->parent != NULL; walk = walk->parent) {
+	for (walk = node;
+	     walk != NULL && walk->parent != NULL;
+	     walk = walk->parent) {
 		/* Refuses a path deeper than the namespace allows. */
 		if (depth == NAMESPACE_DEPTH_MAX)
 			return ENOSPC;
+
+		/* Records the node one level further up. */
 		chain[depth] = walk;
 		depth++;
 	}
@@ -199,9 +209,8 @@ drv_acpi_node_path(
 
 	/* Appends the segments from the top down, separated by dots. */
 	while (depth != 0) {
-		depth--;
-
 		/* Refuses a buffer too small for the next segment and terminator. */
+		depth--;
 		if (used + 6U > size)
 			return ENOSPC;
 
@@ -217,8 +226,10 @@ drv_acpi_node_path(
 		used += 4U;
 	}
 
-	/* Succeeded: the path is terminated. */
+	/* Terminates the path. */
 	buffer[used] = '\0';
+
+	/* Succeeded: the buffer holds the full path. */
 	return 0;
 }
 
@@ -233,7 +244,7 @@ drv_acpi_node_type(
 	if (node == NULL || node->object == NULL)
 		return DRV_ACPI_TYPE_UNINITIALIZED;
 
-	/* Reports the object's type. */
+	/* Reports the type of the node's object. */
 	return (enum drv_acpi_type)node->object->type;
 }
 
@@ -255,22 +266,34 @@ drv_acpi_ns_init(void)
 	namespace_root = drv_acpi_os_alloc(sizeof(*namespace_root));
 	if (namespace_root == NULL)
 		return ENOMEM;
+
+	/* Names the root, which has no parent and no children yet. */
 	kern_memset(namespace_root, 0, sizeof(*namespace_root));
 	namespace_root->name = drv_acpi_ns_segment((const uint8_t *)"\\___");
 
-	/* The root is a scope for every name defined at the top level. */
+	/*
+	 * Makes the root a scope for every name defined at the top level.  A
+	 * failure deletes the half-made root, so that the next initialization
+	 * starts again instead of finding a namespace that exists.
+	 */
 	object = drv_acpi_object_new(DRV_ACPI_TYPE_SCOPE);
-	if (object == NULL)
+	if (object == NULL) {
+		drv_acpi_ns_reset();
 		return ENOMEM;
+	}
+
+	/* The root takes its own reference to the scope object. */
 	drv_acpi_ns_attach(namespace_root, object);
 	drv_acpi_object_release(object);
 
 	/* Creates each predefined name. */
 	for (index = 0; index < sizeof(predefined_nodes) / sizeof(predefined_nodes[0]); index++) {
-		/* Creates one name and its initial object. */
+		/* Creates one name and its initial object; a failure deletes the half-made namespace. */
 		error = predefined_create(&predefined_nodes[index]);
-		if (error != 0)
+		if (error != 0) {
+			drv_acpi_ns_reset();
 			return error;
+		}
 	}
 
 	/* Succeeded: tables can be loaded now. */
@@ -292,6 +315,8 @@ drv_acpi_ns_reset(void)
 	/* Forgets the root first so that nothing resolves into the dying tree. */
 	root = namespace_root;
 	namespace_root = NULL;
+
+	/* Deletes the tree. */
 	drv_acpi_ns_delete(root);
 }
 
@@ -331,9 +356,9 @@ drv_acpi_ns_lookup(
 {
 	struct drv_acpi_node *start;
 	struct drv_acpi_node *node;
-	struct drv_acpi_node *found;
 	uint32_t segment;
 	uint32_t index;
+	int error;
 
 	/* Starts at the root for an absolute path and at the scope otherwise. */
 	start = scope;
@@ -345,6 +370,8 @@ drv_acpi_ns_lookup(
 		/* Refuses a parent prefix above the root. */
 		if (start->parent == NULL)
 			return ENOENT;
+
+		/* Climbs one level. */
 		start = start->parent;
 	}
 
@@ -355,21 +382,16 @@ drv_acpi_ns_lookup(
 	}
 
 	/* Searches toward the root for a single unprefixed name. */
-	if (search && name->count == 1 && !name->root && name->parents == 0) {
-		segment = drv_acpi_ns_segment(name->segments);
+	if (search &&
+	    name->count == 1 &&
+	    !name->root &&
+	    name->parents == 0) {
+		error = ns_search_upward(start, name, result);
+		if (error != 0)
+			return error;
 
-		/* Tries the scope and then each enclosing scope. */
-		for (node = start; node != NULL; node = node->parent) {
-			/* Reports the first scope that has the name. */
-			found = child_find(node, segment);
-			if (found != NULL) {
-				*result = found;
-				return 0;
-			}
-		}
-
-		/* Reports a name no enclosing scope has. */
-		return ENOENT;
+		/* Succeeded: result names the node an enclosing scope has. */
+		return 0;
 	}
 
 	/* Walks down the segments one level each. */
@@ -385,8 +407,10 @@ drv_acpi_ns_lookup(
 			return ENOENT;
 	}
 
-	/* Succeeded: every segment existed. */
+	/* Hands over the node the last segment named. */
 	*result = node;
+
+	/* Succeeded: every segment existed. */
 	return 0;
 }
 
@@ -421,6 +445,8 @@ drv_acpi_ns_create(
 	error = drv_acpi_ns_lookup(eval->scope, &parent_name, false, &parent);
 	if (error != 0)
 		return error;
+
+	/* A scope named through an alias is the node the alias stands for. */
 	parent = drv_acpi_ns_resolve_alias(parent);
 
 	/* The table that runs the definition owns the node. */
@@ -428,13 +454,18 @@ drv_acpi_ns_create(
 	if (eval->table != NULL)
 		owner = eval->table->id;
 
-	/* Creates the child, or reports the one that is there. */
+	/* Creates the child, or reports the one that is there; any other failure leaves no node. */
+	node = NULL;
 	segment = drv_acpi_ns_segment(name->segments + parent_name.count * 4U);
 	error = drv_acpi_ns_create_child(parent, segment, owner, &node);
-	if (error != 0) {
+	if (error == EEXIST) {
 		*result = node;
 		return error;
 	}
+
+	/* Reports a node that could not be created. */
+	if (error != 0)
+		return error;
 
 	/* A node made by a method invocation lives as long as the invocation. */
 	if (eval->frame != NULL) {
@@ -442,8 +473,10 @@ drv_acpi_ns_create(
 		eval->frame->created = node;
 	}
 
-	/* Succeeded: the caller attaches the object. */
+	/* Hands over the new node. */
 	*result = node;
+
+	/* Succeeded: the caller attaches the object. */
 	return 0;
 }
 
@@ -470,6 +503,8 @@ drv_acpi_ns_create_child(
 	node = drv_acpi_os_alloc(sizeof(*node));
 	if (node == NULL)
 		return ENOMEM;
+
+	/* Names the node and links it to its parent and its owning table. */
 	kern_memset(node, 0, sizeof(*node));
 	node->name = segment;
 	node->owner = owner;
@@ -485,8 +520,10 @@ drv_acpi_ns_create_child(
 	/* The new node is the tail the next child is appended after. */
 	parent->last_child = node;
 
-	/* Succeeded: the node has no object yet. */
+	/* Hands over the new node. */
 	*result = node;
+
+	/* Succeeded: the node has no object yet. */
 	return 0;
 }
 
@@ -509,8 +546,11 @@ drv_acpi_ns_delete(
 	/* Unlinks the node from its parent's list of children. */
 	parent = node->parent;
 	if (parent != NULL) {
+		/* Finds the child before the node. */
 		previous = NULL;
-		for (walk = parent->child; walk != NULL && walk != node; walk = walk->next)
+		for (walk = parent->child;
+		     walk != NULL && walk != node;
+		     walk = walk->next)
 			previous = walk;
 
 		/* Joins the neighbors around the node. */
@@ -527,13 +567,16 @@ drv_acpi_ns_delete(
 
 	/* Frees the notification handlers installed on the node. */
 	while (node->notify != NULL) {
+		/* Unlinks the first handler and frees it. */
 		notify = node->notify;
 		node->notify = notify->next;
 		drv_acpi_os_free(notify);
 	}
 
-	/* Releases the object and frees the node. */
+	/* Releases the object. */
 	drv_acpi_object_release(node->object);
+
+	/* Frees the node. */
 	drv_acpi_os_free(node);
 }
 
@@ -551,9 +594,11 @@ drv_acpi_ns_attach(
 	if (object != NULL)
 		drv_acpi_object_ref(object);
 
-	/* Replaces the value, then lets go of the old one. */
+	/* Replaces the value. */
 	old = node->object;
 	node->object = object;
+
+	/* Lets go of the old value. */
 	drv_acpi_object_release(old);
 }
 
@@ -573,6 +618,8 @@ drv_acpi_ns_resolve_alias(
 			return node;
 		if (node->object->type != DRV_ACPI_TYPE_ALIAS)
 			return node;
+
+		/* Follows the alias one step. */
 		node = node->object->value.alias.target;
 	}
 
@@ -619,6 +666,8 @@ drv_acpi_ns_parse_path(
 		/* Refuses more segments than the storage holds. */
 		if ((size_t)(name->count + 1U) * 4U > capacity)
 			return ENOSPC;
+
+		/* Finds the storage of the next segment. */
 		segment = segments + name->count * 4U;
 
 		/* Copies up to four characters of the segment. */
@@ -627,6 +676,8 @@ drv_acpi_ns_parse_path(
 			/* Refuses a segment longer than four characters. */
 			if (length == 4)
 				return EINVAL;
+
+			/* Copies one character. */
 			segment[length] = (uint8_t)text[position];
 			length++;
 			position++;
@@ -700,8 +751,10 @@ drv_acpi_ns_name_text(
 		used += 4U;
 	}
 
-	/* Succeeded: the text is terminated. */
+	/* Terminates the text. */
 	buffer[used] = '\0';
+
+	/* Succeeded: the buffer holds the name. */
 	return 0;
 }
 
@@ -732,6 +785,7 @@ predefined_create(
 		object = drv_acpi_object_string_new("Microsoft Windows NT");
 		break;
 	default:
+		/* Every other predefined name starts as an empty object of its type. */
 		object = drv_acpi_object_new(definition->type);
 		break;
 	}
@@ -757,7 +811,9 @@ child_find(
 	struct drv_acpi_node *child;
 
 	/* Compares each child's segment in turn. */
-	for (child = parent->child; child != NULL; child = child->next) {
+	for (child = parent->child;
+	     child != NULL;
+	     child = child->next) {
 		/* Reports the child with the segment. */
 		if (child->name == segment)
 			return child;
@@ -785,10 +841,11 @@ walk_node(
 		return decision;
 
 	/* Visits the children; the next one is read first so a visitor may delete. */
-	for (child = node->child; child != NULL; child = next) {
-		next = child->next;
-
+	for (child = node->child;
+	     child != NULL;
+	     child = next) {
 		/* Visits one subtree and stops when the visitor asked to. */
+		next = child->next;
 		decision = walk_node(child, depth + 1U, visitor, argument);
 		if (decision < 0)
 			return decision;
@@ -810,4 +867,38 @@ segment_text(
 	text[2] = (char)((segment >> 16) & 0xffU);
 	text[3] = (char)((segment >> 24) & 0xffU);
 	text[4] = '\0';
+}
+
+/* Searches a scope and then each enclosing scope for a single name. */
+static int
+ns_search_upward(
+	struct drv_acpi_node *start,
+	const struct drv_acpi_name *name,
+	struct drv_acpi_node **result)
+{
+	struct drv_acpi_node *node;
+	struct drv_acpi_node *found;
+	uint32_t segment;
+
+	/* Tries the scope and then each enclosing scope, stopping at the first that has the name. */
+	segment = drv_acpi_ns_segment(name->segments);
+	found = NULL;
+	for (node = start;
+	     node != NULL;
+	     node = node->parent) {
+		/* Stops at the first scope that has the name. */
+		found = child_find(node, segment);
+		if (found != NULL)
+			break;
+	}
+
+	/* Reports a name no enclosing scope has. */
+	if (found == NULL)
+		return ENOENT;
+
+	/* Hands over the node. */
+	*result = found;
+
+	/* Succeeded: result names the nearest node with the name. */
+	return 0;
 }
