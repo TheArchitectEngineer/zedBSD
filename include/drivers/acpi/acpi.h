@@ -82,6 +82,22 @@ enum drv_acpi_resource_kind {
 	DRV_ACPI_RESOURCE_GPIO_INT = 5
 };
 
+/*
+ * The device power states of _PSx and _PRx (ACPI 6.5 section 2.3).  D3hot
+ * keeps the power resources _PR3 names on; D3cold turns every power
+ * resource of the device off.
+ */
+enum drv_acpi_device_state {
+	DRV_ACPI_D0 = 0,
+	DRV_ACPI_D1 = 1,
+	DRV_ACPI_D2 = 2,
+	DRV_ACPI_D3_HOT = 3,
+	DRV_ACPI_D3_COLD = 4
+};
+
+/* What drv_acpi_events_sleep_end() reports when no GPE fired during the sleep. */
+#define DRV_ACPI_GPE_NONE	0xffffffffU
+
 /* The longest controller path a serial bus or GPIO resource keeps, with its terminating NUL. */
 #define DRV_ACPI_RESOURCE_SOURCE_MAX	64U
 
@@ -393,6 +409,52 @@ drv_acpi_ec_ecdt(
 
 int
 drv_acpi_ec_attach(void);
+
+/* The GPE wake sources of S0 idle (acpi-event.c, ws052-p003). */
+int
+drv_acpi_gpe_wake_set(
+	unsigned gpe,
+	bool arm);
+
+int
+drv_acpi_events_sleep_begin(void);
+
+int
+drv_acpi_events_sleep_end(
+	unsigned *woken);
+
+/* The LPS0 notifications and the device power of S0 idle (acpi-sleep.c, ws052-p003). */
+int
+drv_acpi_lps0_attach(void);
+
+int
+drv_acpi_lps0_enter(void);
+
+int
+drv_acpi_lps0_exit(void);
+
+int
+drv_acpi_device_power_set(
+	struct drv_acpi_node *device,
+	enum drv_acpi_device_state state);
+
+int
+drv_acpi_device_wake_enable(
+	struct drv_acpi_node *device,
+	enum drv_acpi_device_state state);
+
+int
+drv_acpi_device_wake_disable(
+	struct drv_acpi_node *device);
+
+int
+drv_acpi_device_wake_state(
+	struct drv_acpi_node *device,
+	enum drv_acpi_device_state *state);
+
+/* The ACPI side of the PCI functions' power (acpi-pci-power.c, ws052-p004). */
+int
+drv_acpi_pci_power_attach(void);
 
 /* The lid, the AC adapter, the batteries and the buttons as the system's events (acpi-power.c, ws132-p002). */
 int

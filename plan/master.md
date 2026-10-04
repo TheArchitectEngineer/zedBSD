@@ -71,6 +71,8 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **ws089-p022 Ethernet の頁（2026-10-05 未明、P2）**: (a) networkd に有線の設定の op（DHCP・static・router・DNS、/etc/net.conf を net の netconf.c で書く）を足し、network の group の利用者に開く（2026-10-02 の Wi-Fi と同じ規則）。Q1 は Wi-Fi の前例に合うとして進めさせた（root の daemon の攻撃面が広がる点の確認をお願いしたい）。(b) MTU の設定: 今の stack には SIOCSIFMTU が無く、設定には kernel と driver の作業（別の WS）が要る。ユーザーの要望は MTU も設定できること。ベータ1 は読むだけで、設定は別の WS にしてよいか。
+- **タッチパッドの既定の速さ（2026-10-05 未明、P2 の ws089-p024）**: マウスの既定はユーザーの要望どおり速度 150%・加速 強め。タッチパッドは WS159 で 5330 に合わせた感触を保つため 100%・加速 中にした。タッチパッドも 150%・強めにするか。
 - **HAL の API の承認（差分ごと、2026-10-05 未明、P1 の ws052-p002、plan/ws052/proposed/README.md）**: S0i3 のための hal.h の差分 4 つ（どれも未適用、今の main に patch --dry-run で当たる）。H1 `hal_cpu_idle_deep(uint32_t hint)`（MWAIT で C10、今の hal_cpu_idle は hlt で C1 まで）、H2 `hal_timer_stop`・`hal_timer_resume`（tick の停止と再開、RTC の counter は数え続ける）、H3 `hal_cpu_notify` の契約の明記だけ（深い idle・tick の停止・mask の中でも必ず CPU を起こす、AP の停止の API は作らない）、H4 `hal_irq_suspend(const int *wake_irqs, unsigned count)`・`hal_irq_resume`（wake の源以外の割り込みを止め mask を HAL が保って戻す）。他の architecture は UNSUPPORTED で sleep を中止して理由を返す。
 - **BUG-171「Opaque」の意味（2026-10-05 未明、P1）**: 窓の透明度を 100% にしても、Keiland の app の glass の panel（Settings・Files の sidebar）と title bar は frosted glass のままなので壁紙が見える（UAT の log には変更後の applied 100 も無く、PS/2 の touchpad の drag の release が届かなかった可能性もある）。(a) 100% では glass の panel と title bar も不透明に（既定が 100 なので既定の見た目から frosted glass が消える）、(b) 100% は窓の中身だけ、Settings の表示を「Window contents opaque」などに、(c) Appearance に「Glass effect」の on/off を別に足す。
 - **BUG-190 の受け入れの規則（2026-10-05 未明、P1）**: native の touchpad（WS159）では tap は離した時の click、押し込みは押した瞬間の押下で、どの UI でも tap は click になる（音量の slider も tap 1 回で変わる）。「触れた瞬間（離す前）を押下にする」は touchpad では全ての移動が drag になるのでできない。この規則で受け入れ、5330 の UAT（ws159-p005 の 2.2・2.3・2.6、音量の slider の tap）で確かめた後に resolved にしてよいか。
@@ -355,7 +357,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS049](ws049/ws.md) | MG003 | kernel 内の ACPI AML interpreter | incomplete | p001〜p006・p010〜p015 cleared（p006 kernel への統合: 承認済みの `acpi.rsdp` の差分を適用、amd64 の既定で ACPI の driver が起動、guest の `/dev/acpi` が host の dump と一致。2026-09-27 merge）。次は p007。ACPI はデスクトップが片付くかリミットが余るとき（2026-09-27 方針） |
 | [WS050](ws050/ws.md) | MG003 | USB-C の UCSI driver | planning | WS049 が前提 |
 | [WS051](ws051/ws.md) | MG006 | USB-C の DisplayPort Alternate Mode | planning | WS050 と i915 の display が前提 |
-| [WS052](ws052/ws.md) | MG003 | 電源管理（S0i3、modern standby、`/dev/system` で制御。S3・S4 は対応しない） | planning | WS049 が前提 |
+| [WS052](ws052/ws.md) | MG003 | 電源管理（S0i3、modern standby、`/dev/system` で制御。S3・S4 は対応しない） | incomplete | p001 設計（§10 決定済み）、p002 調べ（HAL の差分 H1〜H4 は承認待ち）、p003 ACPI の側（実装・host 試験済み、T1 の boot 待ち）。次は p004（HAL に依らない） |
 | [WS053](ws053/ws.md) | MG001 | clang/LLVM の LTO を vmunix に安全に適用する（優先度高め） | completed | 4 platform の vmunix は既定で full LTO（HAL を含む）。実機はユーザー |
 | [WS054](ws054/ws.md) | MG004 | UFS の directory を複数の block に育てる（BUG-038） | completed | 直接の 12 block まで。実機はユーザー |
 | [WS055](ws055/ws.md) | MG001 | zedBSD の clang が link に `--undefined-version` を既定で渡す（F-009） | completed | 2026-09-27 完了: zedBSD の clang の linker に `--undefined-version` を既定で（LLVM の patch を zedbsd8 へ）。main の toolchain を zedbsd8 に切り替えた |

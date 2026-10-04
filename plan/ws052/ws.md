@@ -3,13 +3,13 @@
 # WS052: 電源管理（S0i3、modern standby）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-05 q727: HAL の差分の案 H1〜H4 を [proposed/](proposed/README.md) に置き承認待ち、§10 の決定に合わせて Phase を p002〜p008 に改訂）
+Status: incomplete（2026-10-05: HAL の差分の案 H1〜H4 を [proposed/](proposed/README.md) に置き承認待ち、p003 の ACPI の側を実装し T1 の boot test 待ち）
 Primary Milestone: MG003
 Related Milestones: MG004, MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: HAL の差分 H1〜H4 の承認（差分ごと）、5330 の FACP・LPIT の取り出しの許可（design §10-4）。p003（ACPI の側）は HAL に依らず始められる
+Resume point: HAL の差分 H1〜H4 の承認（差分ごと）。p003（ACPI の側）は実装済みで T1 の boot test 待ち。p004（device の suspend・resume の口と i915・NVMe・xHCI）は p003 の helper を使って始められる
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -47,8 +47,8 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | --- | --- | --- | --- | --- |
 | [ws052-p001](phase001/phase.md) | 調査と設計: 対象機の FADT・LPS0 の `_DSM`・device の電源の method、PMC の register、driver ごとの suspend/resume の要否と順序、CPU の idle と timer（HAL の口の要否）、`/dev/system` の ioctl の案 | in-progress（2026-10-04。[design.md](design.md) 第 1 版、レビュー待ち） | WS049 の p001 | 設計文書 |
 | [ws052-p002](phase002/phase.md) | 詳細の調査と HAL の差分の案（H1 深い idle、H2 tick の停止、H3 notify の契約、H4 割り込みの suspend）、FACP・LPIT、wake の GPE、`_CST`、PMC | in-progress（2026-10-05 q727: 差分の案を置いた、承認待ち） | p001 | `proposed/` |
-| ws052-p003 | ACPI の側（LPS0 の `_DSM`、wake の GPE、`_PSx`・`_PRx`・`_DSW`） | planned | p001、ws049-p007 | |
-| ws052-p004 | device の suspend・resume の口と必須の i915・NVMe・xHCI（失敗で中止と理由） | planned | p003 | |
+| [ws052-p003](phase003/phase.md) | ACPI の側（LPS0 の `_DSM`、wake の GPE、`_PSx`・`_PRx`・`_DSW`）、`_OSI` と電源ボタンの経路（HIDD は不要） | cleared（2026-10-05 Q1、T1-153） | p001、ws049-p007 | `src/drivers/acpi/acpi-sleep.c`、`acpi-event.c` |
+| [ws052-p004](phase004/phase.md) | device の suspend・resume の口と必須の i915・NVMe・xHCI（失敗で中止と理由） | in-progress（2026-10-05: PCI の口と NVMe を実装、xHCI・i915 は未着手） | p003 | `src/drivers/pci/pci-power.c`、`pci-nvme.c` |
 | ws052-p005 | HDA・Wi-Fi などの「止めて入る」経路 | planned | p004 | |
 | ws052-p006 | CPU の idle・tick・割り込み（承認された HAL の差分）、S0i3 の入口・出口、`/dev/system` の ioctl と事象 | planned | p002 の承認、p004、p005、WS132 | |
 | ws052-p007 | Keiland の契機（蓋・電源ボタンの短押し・無操作の時間）と中止の理由の表示 | planned | p006、WS132 p008、WS089 | |

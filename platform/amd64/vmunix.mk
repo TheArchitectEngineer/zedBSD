@@ -253,7 +253,7 @@ AMD64_KERNEL_SOURCES := \
 	src/kern/resource.c src/kern/poll.c src/kern/usync.c \
 	src/kern/disk.c src/kern/partition.c \
 	src/drivers/generic/loop.c src/drivers/generic/dma.c src/drivers/pci/pci.c \
-	src/drivers/pci/pci-pcat.c src/drivers/usb/usb.c $(AMD64_USB_HCD_SOURCES) \
+	src/drivers/pci/pci-pcat.c src/drivers/pci/pci-power.c src/drivers/usb/usb.c $(AMD64_USB_HCD_SOURCES) \
 	$(AMD64_USB_CLASS_SOURCES) \
 	$(AMD64_HID_SOURCES) \
 	$(AMD64_NVME_SOURCES) \

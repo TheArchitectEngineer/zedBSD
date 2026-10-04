@@ -47,7 +47,7 @@ Queue: q727（Q1 の投入、ベータ2 の準備）
 | LPIT の state 2 | disabled | 使わない |
 | `_CST`（`Cpu0Cst`、動的） | C1（FFH）、C6/C7（FFH の時は hint `C6MW`/`C7MW`）、最深 `CDTM`（FFH の時は hint `CDMW`、latency `CDLT`）。hint は CPU NVS（`CDMW` など）から実行時に入る | 静的な値ではない。p006 では LPIT の 0x60 を使い、`_CST` は確かめ用（評価には `_PDC`・`_OSC` と動的な Load が要る、WS049） |
 | wake の GPE（`_PRW`） | 0x6D: XHCI・TXHC・XDCI・HDAS・CNVW（Wi-Fi）・GLAN・TDM0/1・TXDC、0x69: PCIe の root port（RP01〜・PEG0〜3）とその先、0x72: AWAC（RTC の alarm）、LID0・PBTN: `PPRW`（GPE は Dell の SMI の呼び出し `EEAC (3, 0)` で実行時に決まる、sleep state 3） | p003 の「wake の GPE だけを有効にする」の対象。EC の `_GPE` は 0x6E（eSPI の時） |
-| 電源ボタン | `\_SB.PBTN` の `_STA` は `OSYS >= 0x07DF`（`_OSI ("Windows 2015")`）かつ `\_SB.HIDD.BTLD` の時に 0 を返す。その時の電源ボタンは `\_SB.HIDD`（`INTC1070`、Intel の HID event filter）の Notify で来る | **WS132 の電源ボタンの事象に関わる**: zedBSD が Windows 2015 以降の `_OSI` に真を返すと PBTN が消え、HIDD の扱いが要る。p003 で `_OSI` の答えと HIDD の要否を決める（Q1 に報告） |
+| 電源ボタン | `\_SB.PBTN` の `_STA` は `OSYS >= 0x07DF`（`_OSI ("Windows 2015")`）かつ `\_SB.HIDD.BTLD` の時に 0 を返す。その時の電源ボタンは `\_SB.HIDD`（`INTC1070`、Intel の HID event filter）の Notify で来る | **WS132 の電源ボタンの事象に関わる**: zedBSD が Windows 2015 以降の `_OSI` に真を返すと PBTN が消え、HIDD の扱いが要る。p003 で `_OSI` の答えと HIDD の要否を決める（Q1 に報告）→ [p003](../phase003/phase.md) で確かめた: `HIDD.BTLD` を 1 にするのは OS が呼ぶ `HIDD.BTNL` だけで zedBSD は呼ばないので PBTN は present のまま、HIDD の扱いは要らない |
 
 ## 人間の判断が要る点
 

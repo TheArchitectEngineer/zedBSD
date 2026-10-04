@@ -289,6 +289,16 @@ struct nvme_controller {
 	unsigned detach_busy;
 	unsigned stopping;
 	unsigned quarantined;
+
+	/*
+	 * suspended is set from the start of nvme_suspend() to the end of
+	 * nvme_resume() (ws052-p004): new block requests wait for it to
+	 * clear instead of failing.  The interrupt's capability and control
+	 * from before the suspend masked it are what the resume unmasks.
+	 */
+	unsigned suspended;
+	unsigned suspend_irq_capability;
+	uint16_t suspend_irq_control;
 };
 
 /*
@@ -341,6 +351,14 @@ static int nvme_lifecycle_irq_remove(void *context);
 static int nvme_lifecycle_master_disable(void *context);
 static int nvme_lifecycle_pci_restore(void *context);
 static void nvme_shutdown(struct drv_pci_device *device);
+static int nvme_suspend(struct drv_pci_device *device);
+static int nvme_resume(struct drv_pci_device *device);
+static struct nvme_controller *nvme_controller_of(struct drv_pci_device *device);
+static int nvme_suspend_wait_idle(struct nvme_controller *controller);
+static int nvme_suspend_stop(struct nvme_controller *controller);
+static int nvme_resume_start(struct nvme_controller *controller);
+static int nvme_resume_steps(struct nvme_controller *controller);
+static void nvme_suspend_end(struct nvme_controller *controller);
 static int nvme_shutdown_bus_master_disable(void *context);
 static int nvme_shutdown_controller_disable(void *context);
 static int nvme_shutdown_normal(void *context);
@@ -389,6 +407,8 @@ static struct drv_pci_driver nvme_driver = {
 	.attach = nvme_attach,
 	.detach = nvme_detach,
 	.shutdown = nvme_shutdown,
+	.suspend = nvme_suspend,
+	.resume = nvme_resume,
 };
 
 static __inline void drv_nvme_lifecycle_init(struct drv_nvme_lifecycle *lifecycle);
@@ -2022,6 +2042,295 @@ nvme_shutdown(
 	}
 
 	nvme_detach_release(controller, 0);
+}
+
+/*
+ * Suspends the controller for S0 idle (ws052-p004).
+ *
+ * New block requests wait from here on; the ones admitted already finish
+ * first.  Then the interrupt is masked, the controller is shut down
+ * normally (which writes its volatile cache back), disabled and taken off
+ * the bus, and its I/O path is quiesced.  A controller busy with a probe,
+ * a detach or a recovery, or quarantined, refuses with EBUSY.  On a
+ * failure after the controller was touched it is started again, and the
+ * failure is reported.
+ */
+static int
+nvme_suspend(
+	struct drv_pci_device *device)
+{
+	struct nvme_controller *controller;
+	int error;
+
+	/* Finds the controller. */
+	controller = nvme_controller_of(device);
+	if (controller == NULL)
+		return ENODEV;
+
+	/* Stops admitting requests and waits for the admitted ones. */
+	error = nvme_suspend_wait_idle(controller);
+	if (error != 0)
+		return error;
+
+	/* Stops the controller; one that cannot be stopped is started again. */
+	error = nvme_suspend_stop(controller);
+	if (error != 0) {
+		(void)nvme_resume_start(controller);
+		nvme_suspend_end(controller);
+		kern_logf("nvme: suspend failed (%d); the controller runs on\n", error);
+		return error;
+	}
+
+	/* Succeeded: the controller is off until nvme_resume(). */
+	kern_logf("nvme: suspended\n");
+	return 0;
+}
+
+/*
+ * Resumes the controller after S0 idle: the PCI core gave its
+ * configuration back, so the controller is enabled again with fresh
+ * queues, its interrupt unmasked, its I/O queue created, and the waiting
+ * requests let in.  A controller that does not come back is quarantined
+ * and its disk fails its requests.
+ */
+static int
+nvme_resume(
+	struct drv_pci_device *device)
+{
+	struct nvme_controller *controller;
+	int error;
+
+	/* Finds the controller. */
+	controller = nvme_controller_of(device);
+	if (controller == NULL)
+		return ENODEV;
+
+	/* Starts the controller again, then lets the waiting requests in. */
+	error = nvme_resume_start(controller);
+	nvme_suspend_end(controller);
+	if (error != 0) {
+		kern_logf("nvme: resume failed (%d); disk unavailable\n", error);
+		return error;
+	}
+
+	/* Succeeded: the controller takes requests again. */
+	kern_logf("nvme: resumed epoch=%u\n", controller->io_epoch);
+	return 0;
+}
+
+/* Finds the controller a PCI function is, or NULL. */
+static struct nvme_controller *
+nvme_controller_of(
+	struct drv_pci_device *device)
+{
+	struct nvme_controller *controller;
+	unsigned long irq;
+
+	/* Looks through the registry. */
+	irq = spin_lock_irqsave(&nvme_registry_lock);
+
+	for (controller = nvme_controllers;
+	     controller != NULL;
+	     controller = controller->next) {
+		/* The function's own controller. */
+		if (controller->pci == device)
+			break;
+	}
+
+	spin_unlock_irqrestore(&nvme_registry_lock, irq);
+
+	/* Succeeded: reports the controller, or NULL. */
+	return controller;
+}
+
+/*
+ * Marks the controller suspended, so that new requests wait, and waits
+ * for the admitted ones to finish.  It refuses with EBUSY a controller
+ * busy with something else, and one whose requests do not finish in time.
+ */
+static int
+nvme_suspend_wait_idle(
+	struct nvme_controller *controller)
+{
+	uint64_t deadline;
+	unsigned long irq;
+	int error;
+
+	/* Refuses a controller another transition owns, and admits no new request. */
+	deadline = sched_ticks() + controller->timeout_ticks;
+	irq = spin_lock_irqsave(&controller->command_lock);
+
+	if (controller->detach_busy ||
+	    controller->probe_busy ||
+	    controller->quarantined ||
+	    controller->io_recovery_busy ||
+	    controller->io_recovery_needed ||
+	    controller->suspended ||
+	    !controller->io_queue_ready) {
+		spin_unlock_irqrestore(&controller->command_lock, irq);
+		return EBUSY;
+	}
+
+	/* suspended makes nvme_io_ensure_online() hold new requests back. */
+	controller->suspended = 1;
+
+	/* Waits for the admitted requests and their commands. */
+	error = 0;
+	while (controller->io_calls != 0U ||
+	       controller->io_owned != 0U ||
+	       controller->io_pending != 0U ||
+	       controller->command_pending) {
+		/* Waits for one to finish; a timeout gives the suspend up. */
+		error = nvme_io_wait_locked(controller, &controller->io_state_waitq, deadline, &irq);
+		if (error != 0)
+			break;
+	}
+
+	spin_unlock_irqrestore(&controller->command_lock, irq);
+
+	/* Lets the held requests in again when the requests did not finish. */
+	if (error != 0) {
+		nvme_suspend_end(controller);
+		return EBUSY;
+	}
+
+	/* Succeeded: nothing runs on the controller. */
+	return 0;
+}
+
+/*
+ * Stops an idle controller: masks its interrupt, shuts it down normally,
+ * disables it, takes it off the bus, drains its interrupt and quiesces
+ * its I/O path.
+ */
+static int
+nvme_suspend_stop(
+	struct nvme_controller *controller)
+{
+	int error;
+
+	/* Masks the interrupt, keeping its control for the resume. */
+	error = nvme_runtime_irq_mask(controller, &controller->suspend_irq_capability, &controller->suspend_irq_control);
+	if (error != 0)
+		return error;
+
+	/* Shuts the controller down normally, which writes its cache back. */
+	error = nvme_controller_shutdown_normal(controller);
+	if (error != 0)
+		return error;
+
+	/* Disables it, which proves it no longer touches its queues. */
+	error = nvme_controller_disable(controller);
+	if (error != 0)
+		return error;
+
+	/* Takes it off the bus. */
+	error = nvme_bus_master_disable(controller);
+	if (error != 0)
+		return error;
+
+	/* Waits for an interrupt handler still running. */
+	error = nvme_irq_drain(controller);
+	if (error != 0)
+		return error;
+
+	/* Quiesces the I/O path, which the resume puts online again. */
+	error = nvme_io_lifecycles_quiesce(controller);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller is stopped. */
+	return 0;
+}
+
+/*
+ * Starts a stopped controller (nvme_resume_steps()); a controller that
+ * does not start is quarantined.
+ */
+static int
+nvme_resume_start(
+	struct nvme_controller *controller)
+{
+	int error;
+
+	/* Starts it. */
+	error = nvme_resume_steps(controller);
+	if (error != 0) {
+		/* A controller that does not start fails its requests from now on. */
+		nvme_io_quarantine(controller, error, 1);
+		return error;
+	}
+
+	/* Succeeded: the controller runs. */
+	return 0;
+}
+
+/*
+ * Disables the controller (a reset in D0 may have left it in any state),
+ * resets the queue memory, enables it, unmasks the interrupt and creates
+ * the I/O queue.
+ */
+static int
+nvme_resume_steps(
+	struct nvme_controller *controller)
+{
+	int error;
+
+	/* Disables the controller, whatever the reset left. */
+	error = nvme_controller_disable(controller);
+	if (error != 0)
+		return error;
+
+	/* Quiesces the I/O path again, as a stop that failed may have left it online. */
+	error = nvme_io_lifecycles_quiesce(controller);
+	if (error != 0)
+		return error;
+
+	/* Starts the admin queue afresh. */
+	error = nvme_admin_queue_memory_reset(controller);
+	if (error != 0)
+		return error;
+
+	/* Starts the I/O queue afresh. */
+	error = nvme_io_queue_memory_reset(controller);
+	if (error != 0)
+		return error;
+
+	/* Enables the controller, which also lets it on the bus. */
+	error = nvme_controller_enable(controller);
+	if (error != 0)
+		return error;
+
+	/* Unmasks the interrupt as it was before the suspend. */
+	if (controller->suspend_irq_capability != 0) {
+		error = nvme_runtime_irq_restore(controller, controller->suspend_irq_capability, controller->suspend_irq_control);
+		if (error != 0)
+			return error;
+	}
+
+	/* Creates the I/O queue, which puts the I/O path online. */
+	error = nvme_io_queue_create(controller, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller runs. */
+	return 0;
+}
+
+/* Clears suspended and lets the held requests in. */
+static void
+nvme_suspend_end(
+	struct nvme_controller *controller)
+{
+	unsigned long irq;
+
+	/* Clears it and wakes the waiters, who find the controller running or quarantined. */
+	irq = spin_lock_irqsave(&controller->command_lock);
+
+	controller->suspended = 0;
+	waitq_wake_all(&controller->io_state_waitq);
+
+	spin_unlock_irqrestore(&controller->command_lock, irq);
 }
 
 /* Reads one 32-bit controller register. */
@@ -3792,8 +4101,17 @@ nvme_io_ensure_online(
 
 	/* Continue until the operation reaches a terminal state. */
 	for (;;) {
-		/* Handles the controller condition. */
+		/* Waits out a suspend: the request runs once the controller resumed. */
 		irq = spin_lock_irqsave(&controller->command_lock);
+		while (controller->suspended) {
+			error = nvme_io_wait_locked(controller, &controller->io_state_waitq, 0, &irq);
+			if (error != 0) {
+				spin_unlock_irqrestore(&controller->command_lock, irq);
+				return error;
+			}
+		}
+
+		/* Handles the controller condition. */
 		if (controller->io_queue_ready && !controller->stopping &&
 		    !controller->quarantined &&
 		    !controller->io_recovery_needed) {

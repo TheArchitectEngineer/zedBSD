@@ -231,6 +231,14 @@ drv_acpi_attach(void)
 	if (error != 0 && error != ENODEV)
 		kern_logf("acpi: the power devices did not attach (error %d)\n", error);
 
+	/* Finds the LPS0 device of S0 idle and its _DSM functions (ws052-p003); a platform without one only lacks S0 idle. */
+	error = drv_acpi_lps0_attach();
+	if (error != 0 && error != ENODEV)
+		kern_logf("acpi: the LPS0 device did not attach (error %d)\n", error);
+
+	/* Makes the namespace the platform side of the PCI functions' power (ws052-p004). */
+	(void)drv_acpi_pci_power_attach();
+
 	/* Publishes the namespace to user programs. */
 	error = drv_acpi_device_register();
 	if (error != 0)

@@ -72,3 +72,4 @@ Status: 設計（文書だけ。製品の source・UAPI・実機は変えてい�
 - firmware の画面が全く無い時（点いた pipe が無い）: ユーザー「この場合、内蔵のPanelと判断できるものを点灯してください。すべて点灯できなかった場合も、起動に影響させません。ただ、そんなケースはまず存在しない気がします。」→ 内蔵の panel と判断できる出力を点ける。どれも点けられなくても起動に影響させない。
 - protocol の版（2026-10-05 Q1）: kl_system_manager_v1 の version 4 は ws160-p002（Settings の Users の password、account の object）が先に使う。WS113 の get_displays と kl_system_displays_v1 は **version 5** にする（D-PROTO の改訂）。
 - protocol の版（2026-10-05 Q1、改訂）: version 5 は ws132-p004 の devices（mount と new）。WS113 の get_displays と kl_system_displays_v1 は **version 6**。
+- protocol の版（2026-10-05 Q1、再改訂）: version 6 は ws089-p022 の network の configure_wired。WS113 の get_displays と kl_system_displays_v1 は **version 7**。
