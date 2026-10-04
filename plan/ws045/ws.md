@@ -46,6 +46,7 @@ WS001（POSIX 準拠）が並行して utility と libc の POSIX の振る舞�
 | [ws045-p007](phase007/phase.md) | file utility の long option と小さな拡張（`cp -v`/`-t`、`mv -v`/`-n`、`rm -v`、`mkdir -v`、`ln -n`/`-r`、`basename -s`/`-a`、`cut --complement` ほか） | cleared（GNU の case 全 517 件） | p001 |
 | [ws045-p008](phase008/phase.md) | 実際の script と guest の回帰（GNU の case を guest で、configure-diff を拡張を使う package で） | cleared（guest の GNU の case 515/515、POSIX 492/492、configure-diff 7 package same、amd64 の boot test PASS。amd64 以外の image と実機は未実施） | p002〜p007 |
 | [ws045-p009](phase009/phase.md) | 全文の規約確認（WS の全 source 変更） | cleared（新規・書き直しの file 0、legacy の file は全て減るか同じ、足した行の findings 0、3 architecture で warning 0） | p002〜p008 |
+| [ws045-p010](phase010/phase.md) | dirname の複数の operand（GNU、2026-10-05 ユーザーの決定）と WS の受け入れ | in-progress（2026-10-05 P1 / q712: dirname は既に GNU の形、GNU の case 518/518・POSIX 1080/1080。amd64 の boot は T1） | p009 |
 
 2026-09-24 追記（ws042-p006）: guest の sh の試験で要ると分かった GNU 拡張: `grep -o`（`egrep -o` を含む）、`tail --bytes`（長い option）、`echo -e`（`/bin/echo`）。 ws042-p012: `grep -A`（oils の `set | grep -A1`）。→ p002・p005 に入れた。
 
