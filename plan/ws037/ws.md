@@ -10,6 +10,7 @@ Objectives: O2
 Parent: [Master](../master.md)
 Queue: q692（p001）
 Resume point: p001 から（2026-10-04、番号の予約から作り直し）。他の WS と独立。**実機は RTX 2070**（ユーザーが host を後で伝える）。host がわかったら [host.md](host.md) を埋め、p002 を始める。p001 は host 無しで始められる。
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標

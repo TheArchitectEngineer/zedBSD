@@ -12,6 +12,7 @@ Focused goal: fg019（ベータ1、2026-10-02 user: WS118 の次）
 Queue: none
 Resume point: [p001](phase001/phase.md)（旧 zedinst・image の構成・base の道具の調査と、要件の案・選択肢をユーザーへ出す、planned）。要件が決まるまで p002 以降は planning。
 2026-10-02 user:「ディスク全体のみ。UEFIのみ。」→ インストーラは導入先の disk 全体を使う（他の OS との共存は無し）、UEFI だけ。他の要件（入力の項目・UI の言語・起動の入口）は p001 で案を出す。
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-02 ユーザー）

@@ -12,6 +12,7 @@ Focused goal: fg019（ベータ1、2026-10-02 user: ネットワークの次）
 Queue: q634（P4、p001 の残りと p005）
 Resume point: [p005](phase005/phase.md) と [p001](phase001/phase.md) の「q634-i01 の途中の結果」（2026-10-03 P4、host 再起動のラップアップで中断: 実装と D の build・host 試験は済み、C の build・QEMU の SSH・boot-test は未実施）。実機は user が D を起動し console で root で login して `ifconfig ue0` の address を伝える（DHCP）。
 2026-10-02 user:「使うネットワークの手段はUSB の LAN の RTL8156。これは明日の朝以降にやります。」→ 5320 は RTL8156 の USB の LAN で遠隔の log を取る。実機の作業は 2026-10-03 の朝以降、時期はユーザーに確かめる。
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-02 ユーザー）

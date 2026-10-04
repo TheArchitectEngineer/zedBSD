@@ -10,6 +10,7 @@ Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: p001 の設計の文書（[design.md](design.md)）と HAL の差分の案（[proposed/hal-gs-base.md](proposed/hal-gs-base.md)、未適用）まで完了（2026-09-29）。design-reviewer の review、design.md §19 の判断 D1〜D17、HAL の承認（A1・A2）を待つ。p003・p004・p005 は承認を待たずに始められる。GS base は案 A（swapgs）に決定（差分の承認は p001 の後）。path は `/usr/libexec/ld.coff`・`/usr/lib/coff64/` に決定（Win64 の名前は使わない）。source は `userland/base/ld-coff/`・`userland/desktop/w64/` に決定。native の橋は置かない（互換の DLL が UAPI を直接呼ぶ）に決定。優先度: デモ critical の後に loader を先に仕上げ、DLL は下位のモデルで継続（決定）
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標

@@ -9,6 +9,7 @@ Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: q691（p001）、q695（p002）
 Resume point: p002（q695）の骨格を実装済み・QEMU の回帰と実機の写真待ち（2026-10-04）。p001 の文書（[rpi4-gpu-design.md](rpi4-gpu-design.md)・[rpi4-gpu-license-audit.md](rpi4-gpu-license-audit.md)）がそろい review を反映済み（2026-10-04、q691-i01）。判断の項目 1〜17 は決定（1 は事実として使う、2〜17 は既定案、2026-10-04 ユーザー）。
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標

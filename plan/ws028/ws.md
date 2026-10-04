@@ -3,13 +3,14 @@
 # WS028: インストーラ実機動作
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: canceled（2026-10-05 ユーザーの判断でキャンセル。前の状態: planning）
 Primary Milestone: MG003
 Related Milestones: MG004
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: 4 機種の実機受け入れ。NVMe の未動作を切り分ける
+2026-10-05 **キャンセル**: 2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」
 <!-- awesome-plan-current:end -->
 
 ## 単一の到達目標

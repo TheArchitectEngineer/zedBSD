@@ -10,6 +10,7 @@ Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: p001・p005〜p009 cleared（実機の結果待ち）。p002（FAT32）・p010（aarch64 の ptrace、HAL の追加は 2026-09-27 にユーザーが承認）・p011（aarch64 の package の基盤と libcxx）cleared（QEMU まで）。次は p003（lldb）
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標

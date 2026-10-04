@@ -11,6 +11,7 @@ Parent: [Master](../master.md)
 Queue: なし
 Resume point: p001（設計）から
 2026-10-02（計画担当）: 前提の知見は WS114（Linux GTK4）と WS115（upstream GTK4 の zedBSD 移植）から受ける。ベータ1（fg019）の対象外。
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-09-29 ユーザー）

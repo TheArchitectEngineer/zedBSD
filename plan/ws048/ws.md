@@ -10,6 +10,7 @@ Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし（2026-09-27 ユーザー指示でサブエージェントが worktree の branch で実行。main session が merge する）
 Resume point: p004 cleared（2026-09-27、承認済みの hal.h の差分 `hal_pmem_map_uncached` を適用、rpi4・amd64 の boot test PASS）。次は p005 の config を有効に → p006 → 実機（ユーザー）→ p007
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標

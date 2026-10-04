@@ -11,6 +11,7 @@ Focused goal: fg019（ベータ1）
 Queue: none
 Resume point: p001（取得・検証・license 監査と cross build の方針）が planned。すぐ Queue にできる。p004 は ws125-p002（staged tree の image への導入）の成果を待つ。GUI 版の要否はユーザーの判断（下の D1、既定案は端末版だけ）。
 2026-10-02 user:「Emacs はまずターミナル版のみにします。あとでGUIツールキットをどうするか考えます。リリースのイメージに入れます。」→ ベータ1 は `emacs -nw` の端末版のみ、release の image に既定で入れる。GUI は後で toolkit を決める。
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-02 ユーザー（ベータ1、リリース目標 10/17））

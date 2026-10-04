@@ -3,7 +3,7 @@
 # WS077: PC-98 の PCI を有効にする（BUG-024）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: canceled（2026-10-05 ユーザーの判断でキャンセル。前の状態: planning）
 Disposition: canceled（2026-10-04 user「PC-98対応をもうやらないです。」、BUG-024 も「対応不要で終了」）
 Primary Milestone: MG001
 Related Milestones: MG002
@@ -11,6 +11,7 @@ Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: p001（調査と設計）から。2026-09-28 ユーザー「Bug024は優先度を下げます。」→ 低い優先度、着手は未定
+2026-10-05 **キャンセル**: 2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」
 <!-- awesome-plan-current:end -->
 
 ## 目標

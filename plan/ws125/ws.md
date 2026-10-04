@@ -11,6 +11,7 @@ Focused goal: fg019（ベータ1）
 Queue: none
 Resume point: p001（取得・検証・監査・cross build）と p002（staged tree を image に入れる共通の仕組み、WS124・WS126 も使う）が planned。互いに独立で、すぐ Queue にできる。
 2026-10-02 user: packages（Emacs・vim・Python）は「リリースのイメージに入れます」→ vim も release の image に既定で入れる。
+Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-02 ユーザー（ベータ1、リリース目標 10/17））
