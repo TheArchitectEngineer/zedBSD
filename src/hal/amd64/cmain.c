@@ -24,8 +24,10 @@
 #include "bsp-pcat/acpi.h"
 #include "bsp-pcat/lapic.h"
 
-/* The version, from VERSION (ws129-p003). */
-#include "zedbsd-version.h"
+/* The version, from VERSION (ws129-p003): the Makefile defines it on the command line. */
+#ifndef ZEDBSD_VERSION
+#error ZEDBSD_VERSION is not defined
+#endif
 
 void prekern_amd64_page_init(void);
 void prekern_amd64_range_page_init(void);

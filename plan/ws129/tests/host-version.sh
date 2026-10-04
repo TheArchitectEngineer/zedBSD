@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws129-p003: the version's one source, on the host.
-#  1. make version writes $(BUILD)/gen/os-release and zedbsd-version.h from VERSION: the nightly release
+#  1. make version writes $(BUILD)/gen/os-release and the version stamp from VERSION: the nightly release
 #     (VERSION+g<revision>), the release build's (ZEDBSD_RELEASE_BUILD=y: VERSION itself), a development version's
 #     name (1.0.0-beta2.dev: "1.0.0 Beta 2 (development)"), +unknown without git, a VERSION that is no version
 #     refused; a second make leaves the files as they were (their time unchanged).
@@ -36,11 +36,11 @@ make_version
 expect "$release" 'NAME="zedBSD"'
 expect "$release" "VERSION_ID=$saved"
 expect "$release" "ZEDBSD_RELEASE=$saved+g$revision"
-expect "$build/gen/zedbsd-version.h" "#define ZEDBSD_VERSION \"$saved\""
-before=$(stat -c %Y "$release" "$build/gen/zedbsd-version.h")
+expect "$build/gen/version" "$saved"
+before=$(stat -c %Y "$release" "$build/gen/version")
 sleep 1
 make_version
-after=$(stat -c %Y "$release" "$build/gen/zedbsd-version.h")
+after=$(stat -c %Y "$release" "$build/gen/version")
 if [ "$before" = "$after" ]; then passed=$((passed + 1)); else echo "FAIL: a second make rewrote the files"; failed=$((failed + 1)); fi
 make_version ZEDBSD_RELEASE_BUILD=y
 expect "$release" "ZEDBSD_RELEASE=$saved"
@@ -51,7 +51,7 @@ printf '1.0.0-beta2.dev\n' > VERSION
 make_version
 expect "$release" 'VERSION="1.0.0 Beta 2 (development)"'
 expect "$release" 'PRETTY_NAME="Kei/zedBSD 1.0.0 Beta 2 (development)"'
-expect "$build/gen/zedbsd-version.h" '#define ZEDBSD_VERSION "1.0.0-beta2.dev"'
+expect "$build/gen/version" '1.0.0-beta2.dev'
 printf '1.0.0-beta1\n' > VERSION
 make_version
 expect "$release" 'VERSION="1.0.0 Beta 1"'
