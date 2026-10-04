@@ -63,6 +63,8 @@ plan/tools/files/files-regress.sh $OUT/files-regress                   # 約 10 
 ls $OUT/*/rootfs/lib | grep -c libkeiui    # 0 であること
 ```
 
+P2 の依頼（T1-085）で足された 2 本も同じ demo の image で流す: `plan/tools/titlebar/titlebar-p010.sh`・`plan/tools/titlebar/menu-p003.sh`（引数は各 script の先頭の注記）。
+
 合格: 全て PASS、`libkeiui` 0。各 script の先頭の注記に image・BIN の既定があるので、引数の形が違えば注記に従う。
 
 ### B. Linux（Debian 13 の QEMU+KVM guest）
@@ -70,7 +72,8 @@ ls $OUT/*/rootfs/lib | grep -c libkeiui    # 0 であること
 手順の詳細は [keiland-linux/README.md](tools/keiland-linux/README.md)。
 
 ```sh
-make keiland-linux 2>&1 | tee build/tq-1/linux-build.log      # exit 0、"warning:" が 0
+make keiland-linux 2>&1 | tee build/tq-1/linux-build.log      # gcc。exit 0、"warning:" が 0
+make keiland-linux KEILAND_LINUX_CC=clang 2>&1 | tee build/tq-1/linux-clang.log   # clang も（変数名は keiland-linux.mk の先頭で確かめる）
 sh plan/tools/keiland-linux/elf-check.sh                        # PASS
 timeout 600 sh plan/tools/keiland-linux/build-guest.sh '' gdm   # 既存の image を使う。--force は使わない
 timeout 200 sh plan/tools/keiland-linux/guest.sh start
@@ -93,6 +96,8 @@ cat build/tq-1/freebsd/summary.txt
 合格: summary の 9 行が全て PASS（build・install・audit・host-*・sync-rejected・dmabuf-export-rejected）。guest は止めると build と stage が消えるので、audit だけの再実行はできない（やり直すときは backend-test を丸ごと）。
 
 ---
+
+注意: p014 は途中（`plan/ws131/phase014/phase.md` の Resume: Linux clang・install・elf-check・makefile-sync・header-check、FreeBSD make -n、xserver・menu-probe・titlebar-probe の build、残りの host 試験、style-check が未実施）。TQ-1 の FAIL がこれらの未完の所なら、FAIL として記録し、直さない。
 
 ## TQ-2: WS127 Files の files-open
 
