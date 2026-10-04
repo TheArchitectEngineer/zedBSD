@@ -218,3 +218,23 @@ Attempt q698-i01: **cleared（原因解析と修正計画の範囲）**。[BUG-1
 - 製品修正は未実装。調査用 `intel-ax211.c` と `intel-ax211-mmio.c` は元へ復元しdiff無し。tracer改善だけ `2615f9d`。HAL・toolchain変更無し、main編集・merge・push無し。
 - 最終host確認20:28:02 JST: QEMU無し、AX211 driver無し、driver_override `(null)`、iwlwifi/iwlmvm blacklist保持、USB有線 `enx6c1ff706148a` でSSH応答。host電源再投入は今回不要だった。
 - whole ws005-p032 は **in-progress**、BUG-158は **tracking**。次は通常のバグ修正QueueによるSW_ERROR修正と実機UAT。P4から次Queueを開始しない。共有Queue/WS/MasterとGitHubの反映はQ1への引き継ぎ事項。
+
+## 委譲の session の引き継ぎ（2026-10-04 20:30 JST、P4 → Q1）
+
+P4単独の委譲を終了。q697-i01・q698-i01は**ともにcleared（各Queueの限定範囲）**。P4は以後実行を続けず、次のQueueは選ばない。worktree `/home/awe/zedBSD-worktrees/p4`、branch `agent/p4`。mainのcheckoutは編集していない。merge・push・GitHub公開はしていない。
+
+| commit | 内容 |
+| --- | --- |
+| `c61b1c8`（WIP） | q697のconsole10分確認。670.822秒、host ping/SSH各67回成功、drain/mmio_stop帰還各30回、SW_ERROR/restart各10回、最後の12 vCPUすべてidle。userの明示回答「console での10分確認を採用する」をPhaseへ記録 |
+| `2615f9d`（WIP） | `plan/ws004/tests/ax211-gdb-trace.py` のDWARF対応。関数の正確なentryにbreakpointを置き、名前を別に保持。DWARF有り・無しのsymbol解決とentry一致、Python syntaxを確認 |
+| `76556be`（WIP） | q698の結果・BUG-158の原因とfile:line/検証計画・Bug Boardの該当行。hardware command pointerを256で巻き戻す不具合を確定。LTR除外でも再現し、16 bit値へのgdb補正で199秒エラー無し、2周目で補正を外すと同じassertが別channelで再現 |
+
+本節を含む最後のWIPは引き継ぎ記録だけ。上の3 commitはbase `62de7d3` から順に積んである。製品sourceの診断差分は復元済みで、`src/`・`include/` の差分無し。恒久の変更は担当の計画3ファイルとtracerだけ。最終の `git diff --check` はPASS。
+
+**5330の残した状態**（20:28:02 JST確認）: QEMU停止、`0000:00:14.3` にdriver無し、driver_override `(null)`。`/etc/modprobe.d/vfio-ax211.conf` の `blacklist iwlwifi` / `blacklist iwlmvm` とinitramfsは維持。iGPUは渡していない。SSHはUSB有線 `enx6c1ff706148a`（10.0.30.3）、応答正常。今回hostの電源再投入は不要。remoteの `~/zedbsd-q697-p4/`・`~/zedbsd-q698-p4/` にimage/ELF/runner/trace、従前の `~/zedbsd-q684-p4/` も残る。起動中の作業は無い。localのrawは `plan/ws004/temp/q697/`・`q698/`（git対象外）、再現可能な要点とhashはticketに保存した。
+
+**未了・Q1へ渡すもの**:
+
+1. 製品のSW_ERROR修正は**未実装**。BUG-158「SW_ERROR の解析（q698）」の修正計画を、user指定の通常のバグ修正エージェント（Opus 5.5 Mid）の次の承認Queueへ選定する。gdb補正のrunを製品修正後の合格に流用しない。
+2. 実機UATは未実施。ws005-p032全体はin-progress、BUG-158はtrackingを維持。対照runでassert後に1回観測したcommand timeout（error42、table valid0、restart attempt2成功）もticketに記録し、修正後のreset/再利用の検証へ渡す。
+3. mainのQueueでq697/q698の結果、q697のconsole条件へのuser承認、T1-095と重なる確認の扱いを反映する。WS/Master/Past Log/必要なGitHub投影はQ1が統合する。P4は共有Boardを書き換えていない。
