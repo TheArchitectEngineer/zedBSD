@@ -23,8 +23,12 @@ Queue: 未定
 3. 入力の検査（address・mask・router の形、MTU の範囲、DNS）、適用の失敗の表示、DHCP に戻す操作。設定の永続化は networkd の設定（netconf）に任せる。
 4. 権限: 有線の設定の変更を誰に許すか（WiFi の `network` group の規則（Guardrail 2026-10-02）と揃える案）を設計で決める。
 
+## ユーザーの決定（2026-10-04 夜）
+
+「IPv6はまだないので、zedBSDでは設定できない項目にします。Linux, FreeBSDでは設定できてよいと思います。」→ IPv6 の欄は zedBSD では設定できない項目（灰色・非対応の表示、値が取れれば読むだけ）。Linux・FreeBSD の backend では IPv6 も設定できる（各 OS の仕組みで）。
+
 ## 依存と注意
 
-- IPv6 の Static と Auto: zedBSD の IPv6 は [WS130](../../ws130/ws.md)（計画だけ、実装はベータ2 以降）。networkd・kernel が IPv6 の設定を受けられるかを p001 の調べで確かめ、出来ない間は IPv6 の欄を読むだけか非対応の表示にする（範囲の決めはユーザーに確かめる）。
+- IPv6 の Static と Auto: zedBSD の IPv6 は [WS130](../../ws130/ws.md)（計画だけ、実装はベータ2 以降）。zedBSD では上の決定のとおり設定できない項目にする。
 - 後挿しの USB LAN（[BUG-168](../../bugs/BUG-168.md)・[BUG-169](../../bugs/BUG-169.md)、q685）と同じ有線の経路。
 - C の全文の規約、build warning 0、OS の境界の checker、QEMU（virtio-net・usb-net）は T1、実機は UAT。
