@@ -227,6 +227,8 @@ zedBSD の libvulkan（`userland/desktop/libvulkan/`）は Venus の protocol �
 
 ## 11. 判断の項目
 
+**2026-10-04 ユーザーの回答（1 つずつのクリック、途中）**: 1 Turing（TU104/TU106）、2 **取り込まず自分で書く**（MIT の file も code・定義を取り込まず、WS141 と同じく事実を自分の言葉で、temp・改名・監査）、3 GSP の道だけ、4 570.144 に固定。5〜18 は未回答（利用枠のため中断）。
+
 | # | 問い | 案・既定 |
 | --- | --- | --- |
 | 1 | 最初の対象の世代と chip: Turing の TU106（RTX 2070）でよいか。実機が RTX 2070 SUPER（TU104）なら同じ手順で進めてよいか | Turing。p002 で boot0 を読んで確かめ、TU104 でも進める |
