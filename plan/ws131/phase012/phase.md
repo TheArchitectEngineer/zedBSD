@@ -191,3 +191,7 @@ p012 の依存「ベータ1 の app の区切り」は Master の pending decisi
 - host の試験: `host-draw` 13/13、`host-input` 63/63、`host-widgets` 94/94、`host-chooser` 85/85、`scroll-bar-test` PASS、`host-inset` PASS、`textedit/host-core` 53/53、`files/host-default` PASS、`imageview/run-host` PASS。`run-pdfviewer-host.sh` は前提の `run-pdf-render.sh` が要り未実施。
 - 古い試験の直し（main c21f9ab の素の tree でも同じく失敗していた）: host-draw・host-widgets・host-chooser に `-I.`（`ui/text.c` が `userland/desktop/paths.h` を include する）、host-input・host-inset・host-widgets・host-chooser に `scroll-bar.c`（`ui/scroll.c` が `kui_scroll_bar_*` を呼ぶ）。
 - QEMU（`textinput-p013.sh`・`viewers-p008.sh`・`demo-s8-s9.sh`・`files-regress.sh`・boot-test）と Linux の 8 app の PNG、FreeBSD の native build は T1/T2 に最後にまとめて依頼する。
+
+## Q1 の判定（2026-10-04）
+
+q673 は報告どおり受け入れ（Q1）。`grep -rn libkeiui` の残り 2 行（`keiland-linux.mk`・`keiland-freebsd.mk` の `*_RETIRED := lib/libkeiui.so`、install で古い library を消す規則）は受け入れの例外として認められた。委任の外の直し（ws128 の imageview の config、ws134 の preview.sh、comment の文字）も受け入れ。merge は UAT の image の build とユーザーの `config/ci/config-amd64.mk` の変更の整理の後に Q1 が行う（CI の config の `libkeiui` の行は Q1 が merge で解く）。QEMU・Linux の PNG・FreeBSD は T2 の結果待ち。
