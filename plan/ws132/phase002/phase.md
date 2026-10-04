@@ -56,3 +56,11 @@ Design: [ws132-p001](../phase001/phase.md) の K1・K2
 - QEMU の結果の判定（T1、Q1）。
 - 蓋・AC・電池は QEMU に無い。実機で確かめる（p007）。
 - p003〜 は D1〜D3 の判断の後。
+
+## T1-106 の FAIL の直し（2026-10-05）
+
+T1-106 の `p002-guest.sh` は FAIL ×2（2 回とも同じ）。どちらも試験の誤りで、kernel の事象は正しく出ていた（`event 12 disk add 0 sda parent=- removable=1 block=512 blocks=32768`・`event 13 disk remove …`、usb の add・remove、power の press）:
+
+- stick の disk: 照合が subject を `[a-z]+[0-9]+` としていたが、disk は `sda`（数字無し）。`[a-z]+[0-9]*` に直した。
+- keyboard・adapter: QMP の device_add が `usb port 5 (bus xhci.0) not found (in use?)`・`port 6` で断られた。harness の device が port 1〜3 を使い、qemu-xhci の残りは USB 3 の port（full speed の device は付かない）。stick を抜いた後の port 4 に keyboard、その後に adapter を挿すようにした（期待の `port=` も 4、adapter は vendor 0525）。
+- 再試験: T1 に Q1 経由で依頼（同じ image、`plan/ws132/tests/p002-guest.sh`）。
