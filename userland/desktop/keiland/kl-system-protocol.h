@@ -60,7 +60,9 @@
  *   its own failures.  set_scanning is no request and has no answer: the
  *   compositor keeps the radios scanning while any object asked for it
  *   (or the system bar's menu is open), and a new scan comes as the
- *   access points and a scan_done; the object's going ends its asking.
+ *   access points and a scan_done; the object's going ends its asking, and
+ *   so does a minute without set_scanning(1) again (a client renews it
+ *   while it shows the networks).
  *
  * kl_system_audio_v1
  *   request 0 destroy

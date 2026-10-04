@@ -191,6 +191,20 @@ main(void)
 	slot_expect("9 short key said", strcmp(app.network.message, "The key of Neighbor 5G must be 8 to 63 characters.") == 0);
 	slot_expect("9 nothing sent", slot_daemon.sent_count == 0U);
 
+	/* 10. ws089-p021: the asking is renewed every 30 seconds while shown (the compositor drops one a minute old). */
+	slot_reset(&app);
+	app.page = SE_PAGE_WIFI;
+	se_network_poll(&app, app.now);
+	app.now += 29000U;
+	se_network_poll(&app, app.now);
+	slot_expect("10 not renewed before 30 s", slot_daemon.scanning_calls == 1U);
+	app.now += 1500U;
+	se_network_poll(&app, app.now);
+	slot_expect("10 renewed after 30 s", slot_daemon.scanning == 1 && slot_daemon.scanning_calls == 2U);
+	app.now += 31000U;
+	se_network_poll(&app, app.now);
+	slot_expect("10 renewed again", slot_daemon.scanning == 1 && slot_daemon.scanning_calls == 3U);
+
 	/* The verdict. */
 	if (slot_failures != 0) {
 		printf("host-slot: FAIL (%d)\n", slot_failures);

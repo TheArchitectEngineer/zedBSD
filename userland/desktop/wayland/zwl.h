@@ -598,9 +598,12 @@ struct zwl_object {
 	 * A network object of the system extension (system.c, ws089-p021):
 	 * 1 while its client shows the networks around and asked for scans
 	 * (set_scanning), counted once in network.c's holders until it asks
-	 * no longer or goes.
+	 * no longer, goes, or lets its asking run out: network_scanning_until
+	 * is when an asking not asked again ends (zwl_milliseconds' clock,
+	 * ZWL_SYSTEM_SCAN_MS after the last set_scanning(1)).
 	 */
 	unsigned network_scanning;
+	uint64_t network_scanning_until;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */

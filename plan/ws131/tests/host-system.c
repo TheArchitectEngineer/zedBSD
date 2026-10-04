@@ -306,14 +306,17 @@ kl_backend_monitor_close(struct kl_backend_monitor *monitor)
 	(void)monitor;
 }
 
-/* The compositor's clock (main.c), for the monitor's tick. */
+/* How far the test moved the compositor's clock ahead (ws089-p021: a minute passes at once). */
+static uint64_t clock_ahead_ms;
+
+/* The compositor's clock (main.c), for the monitor's tick and the scans' minute. */
 uint64_t
 zwl_milliseconds(void)
 {
 	struct timespec now;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
+	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U + __atomic_load_n(&clock_ahead_ms, __ATOMIC_SEQ_CST);
 }
 
 void
@@ -1007,6 +1010,12 @@ test_both_ends(void)
 	CHECK(kl_system_network_set_scanning(system, 0U) == 0, "scanning no longer");
 	(void)pump(display, system, NULL, 3);
 	CHECK(scan_holders_now() == 0U, "no holder (%u)", scan_holders_now());
+	CHECK(kl_system_network_set_scanning(system, 1U) == 0, "scanning asked, then not again");
+	(void)pump(display, system, NULL, 3);
+	CHECK(scan_holders_now() == 1U, "holder before its minute (%u)", scan_holders_now());
+	__atomic_add_fetch(&clock_ahead_ms, 61000U, __ATOMIC_SEQ_CST);
+	(void)pump(display, system, NULL, 5);
+	CHECK(scan_holders_now() == 0U, "an asking not renewed for a minute ends (%u)", scan_holders_now());
 	CHECK(kl_system_network_set_scanning(system, 1U) == 0, "scanning asked until the close");
 	(void)pump(display, system, NULL, 3);
 	CHECK(scan_holders_now() == 1U, "holder until the close (%u)", scan_holders_now());

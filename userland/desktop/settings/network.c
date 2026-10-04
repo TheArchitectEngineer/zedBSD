@@ -22,6 +22,9 @@
  * or closing the window asks no longer.  The compositor counts every
  * window that asks, its own Wi-Fi menu included, so two Settings windows,
  * or Settings and the menu, keep the scans going until the last one stops.
+ * An asking holds a minute in the compositor, so Settings asks again every
+ * NETWORK_SCANNING_RENEW_MS while it shows the list (a Settings that hangs
+ * stops keeping the radios busy).
  *
  * One network request is out at a time, the system bar's included.  A
  * switch, a disconnect or a join asked for while Settings' own request is
@@ -48,6 +51,9 @@
 
 /* How long a request the compositor answered busy waits before it is sent again, in milliseconds. */
 #define NETWORK_RETRY_MS	500U
+
+/* How often the asking for scans is renewed while a list of networks is shown (the compositor drops it after a minute), in milliseconds. */
+#define NETWORK_SCANNING_RENEW_MS	30000U
 
 /* How often the main loop polls while a network page is shown or a request is outstanding, in milliseconds. */
 #define NETWORK_POLL_MS		250
@@ -692,7 +698,9 @@ network_page_lists(
 
 /*
  * Asks the compositor to keep the radios scanning (on 1), or no longer
- * (on 0), when that differs from what it was last told (ws089-p021).
+ * (on 0), when that differs from what it was last told, and asks again
+ * while on when the last asking is NETWORK_SCANNING_RENEW_MS old
+ * (ws089-p021: an asking holds a minute).
  */
 static void
 network_scanning(
@@ -700,17 +708,26 @@ network_scanning(
 	int on)
 {
 	struct se_network *network;
+	int renew;
 	int error;
 
-	/* Told already, or nothing to tell without the desktop's network. */
+	/* Nothing to tell without the desktop's network. */
 	network = &app->network;
 	if (network->live == 0)
 		return;
-	if (on == network->scanning)
+
+	/* An asking still on that is due to be asked again. */
+	renew = 0;
+	if (on != 0 && network->scanning != 0 && app->now - network->scanning_at >= NETWORK_SCANNING_RENEW_MS)
+		renew = 1;
+
+	/* Told already, and not due. */
+	if (on == network->scanning && renew == 0)
 		return;
 
-	/* The compositor is told; one that does not know the asking is not told again. */
+	/* The compositor is told; one that does not know the asking (ENOTSUP) is told the same way again later, harmlessly. */
 	error = kl_system_network_set_scanning(app->system, (unsigned)on);
 	network->scanning = on;
-	se_log("NETWORK scanning on=%d errno=%d", on, error);
+	network->scanning_at = app->now;
+	se_log("NETWORK scanning on=%d renew=%d errno=%d", on, renew, error);
 }

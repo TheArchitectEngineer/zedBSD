@@ -364,7 +364,9 @@ struct se_field {
  * so an empty list means no network is in reach rather than none looked
  * for yet.  scanning is 1 while the compositor was asked to keep the
  * radios scanning, which it is while a page that lists the networks
- * around is shown (ws089-p021; there is no Scan button).
+ * around is shown (ws089-p021; there is no Scan button), and scanning_at
+ * is when it was last asked (asked again every 30 seconds: the compositor
+ * lets an asking go after a minute).
  * key_ssid names the network whose key is being typed (empty when the key
  * form is closed); key_reveal asks the next frame to scroll the page so
  * that the form, under its network's row, is in sight (BUG-160).  The
@@ -378,6 +380,7 @@ struct se_network {
 	size_t scan_count;
 	int scan_received;
 	int scanning;
+	uint64_t scanning_at;
 	struct kl_network_link links[SE_NETWORK_LINKS];
 	size_t link_count;
 	char dns[SE_NETWORK_DNS][KL_NETWORK_ADDRESS_MAX];
