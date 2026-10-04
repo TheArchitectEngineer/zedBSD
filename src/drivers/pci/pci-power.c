@@ -22,7 +22,10 @@
  *
  * drv_pci_resume_all() undoes it in the reverse order: the platform
  * powers the function, D0, the configuration written back, the wake
- * disarmed, and the driver's resume.
+ * disarmed, and the driver's resume.  A driver whose resume reports
+ * ESTALE says its function lost the state it had (an xHCI controller
+ * whose Restore State failed); the function is detached and attached
+ * again, which enumerates what is behind it afresh.
  *
  * Functions without a driver are left alone.  The two calls come from the
  * one thread that enters and leaves S0 idle; a second suspend before the
@@ -879,16 +882,24 @@ resume_entry(
 
 	/* Lets the driver run the function again. */
 	driver = drv_pci_device_driver(device);
+	error = 0;
 	if (entry->driver_suspended &&
 	    driver != NULL &&
-	    driver->resume != NULL) {
+	    driver->resume != NULL)
 		error = driver->resume(device);
-		if (error != 0 && first_error == 0)
-			first_error = error;
-	}
 
 	/* The function is no longer suspended. */
 	entry->driver_suspended = 0;
+
+	/* A driver whose function lost its state has it detached and attached again. */
+	if (error == ESTALE) {
+		kern_logf("pci: a function lost its state in the sleep; it is attached again\n");
+		error = drv_pci_device_reprobe(device);
+	}
+
+	/* Keeps a resume or a new attach that failed. */
+	if (error != 0 && first_error == 0)
+		first_error = error;
 
 	/* Reports the first step that failed. */
 	if (first_error != 0) {

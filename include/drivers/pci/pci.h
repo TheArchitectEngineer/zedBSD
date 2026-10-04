@@ -675,6 +675,7 @@ int
 drv_pci_suspend_all(
 	struct drv_pci_device **failed);
 
+/* A driver's resume that reports ESTALE has its function detached and attached again. */
 int
 drv_pci_resume_all(void);
 

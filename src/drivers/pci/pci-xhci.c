@@ -73,6 +73,44 @@
 /* TRSTRCY, the recovery interval after a port reset. */
 #define XHCI_PORT_RECOVERY_MS 10U
 #define XHCI_PCI_COMMAND 0x04U
+/*
+ * Save and Restore State (xHCI 1.2 section 4.23.2, ws052-p004): the
+ * command bits, the status bits, the device notification register, the
+ * interrupter's registers, the port link states and the Stopped
+ * completion codes.
+ */
+#define XHCI_DNCTRL 0x14U
+#define XHCI_CMD_CSS 0x00000100U
+#define XHCI_CMD_CRS 0x00000200U
+#define XHCI_STS_SSS 0x00000100U
+#define XHCI_STS_RSS 0x00000200U
+#define XHCI_STS_SRE 0x00000400U
+#define XHCI_STS_HCE 0x00001000U
+#define XHCI_IMOD 0x24U
+#define XHCI_ERSTSZ 0x28U
+#define XHCI_ERSTBA 0x30U
+#define XHCI_ERDP 0x38U
+#define XHCI_PORT_PLS_SHIFT 5U
+#define XHCI_PORT_PLS_MASK 0x000001e0U
+#define XHCI_PORT_LWS 0x00010000U
+#define XHCI_PORT_SPEED_SHIFT 10U
+#define XHCI_PORT_SPEED_MASK 0x00003c00U
+#define XHCI_PORT_PRESERVE 0x0e00c3e0U
+#define XHCI_LINK_U0 0U
+#define XHCI_LINK_U3 3U
+#define XHCI_LINK_RESUME 15U
+#define XHCI_SPEED_SUPER 4U
+#define XHCI_COMPLETION_STOPPED 26U
+#define XHCI_COMPLETION_STOPPED_LENGTH 27U
+/* How long a port link may take to change, and the USB 2 resume signalling, in milliseconds. */
+#define XHCI_LINK_WAIT_MS 20U
+#define XHCI_RESUME_SIGNAL_MS 20U
+/* How long the suspend waits for transfers other than interrupt polls to finish. */
+#define XHCI_SUSPEND_IDLE_MS 2000U
+/* The suspend's stages: running, gates closed with the controller running, and halted with its state saved. */
+#define XHCI_SUSPEND_NONE 0U
+#define XHCI_SUSPEND_GATED 1U
+#define XHCI_SUSPEND_HALTED 2U
 #define XHCI_PCI_BAR0 0x10U
 #define XHCI_PCI_COMMAND_IO 0x0001U
 #define XHCI_PCI_COMMAND_MEMORY 0x0002U
@@ -222,6 +260,24 @@ struct xhci_controller {
 	unsigned legacy_offset, legacy_claimed;
 	uint32_t legacy_control;
 	struct xhci_controller *next;
+
+	/*
+	 * S0 idle (ws052-p004).  suspend_state, read and written under
+	 * active_lock (and read by the interrupt), moves from
+	 * XHCI_SUSPEND_NONE to GATED at the start of xhci_suspend(): from then
+	 * on operations wait, a submission puts its TRBs on the ring without
+	 * ringing the doorbell, and a Stopped transfer event leaves its
+	 * request on the ring.  HALTED means the controller is halted with its
+	 * internal state saved and the interrupt ignores the controller.
+	 * The registers below are what the Restore State needs written back,
+	 * suspended_ports marks the root ports the suspend put in U3, and
+	 * suspend_worker says the port worker ran and is to be started again.
+	 */
+	volatile unsigned suspend_state;
+	unsigned suspend_worker;
+	uint32_t saved_dnctrl, saved_config, saved_imod, saved_erstsz;
+	uint64_t saved_dcbaap, saved_erstba;
+	uint8_t suspended_ports[32];
 };
 
 static struct xhci_controller *controllers;
@@ -308,6 +364,23 @@ static int xhci_cancel_request(struct xhci_controller *c, struct xhci_device *d,
 static void xhci_cancel_diagnose(struct xhci_controller *c, const struct xhci_request *r);
 static int xhci_urb_dequeue(struct drv_usb_hcd *h, struct drv_usb_urb *u);
 static int xhci_endpoint_quiesce(struct xhci_controller *c, struct xhci_device *d, unsigned dci);
+static int xhci_suspend(struct drv_pci_device *device);
+static int xhci_resume(struct drv_pci_device *device);
+static int xhci_suspend_gate(struct xhci_controller *c);
+static int xhci_suspend_wait_idle(struct xhci_controller *c);
+static bool xhci_transfer_busy_locked(struct xhci_controller *c);
+static int xhci_suspend_stop_endpoints(struct xhci_controller *c);
+static void xhci_suspend_ports(struct xhci_controller *c);
+static int xhci_suspend_halt(struct xhci_controller *c);
+static int xhci_resume_restore(struct xhci_controller *c);
+static int xhci_resume_run(struct xhci_controller *c);
+static void xhci_resume_ports(struct xhci_controller *c);
+static void xhci_resume_endpoints(struct xhci_controller *c);
+static void xhci_suspend_end(struct xhci_controller *c);
+static uint32_t xhci_port_neutral(uint32_t status);
+static void xhci_port_link_set(struct xhci_controller *c, unsigned port, unsigned link);
+static int xhci_port_link_wait(struct xhci_controller *c, unsigned port, unsigned link);
+static void xhci_sleep_ms(unsigned milliseconds);
 static int xhci_device_quiesce(struct drv_usb_hcd *h, struct drv_usb_device *u);
 static uint32_t xhci_frame(struct drv_usb_hcd *h);
 static int xhci_root_status(struct drv_usb_hcd *h, void *b, size_t n, size_t *a);
@@ -378,7 +451,9 @@ static struct drv_pci_driver driver = {
 	.ids = ids,
 	.id_count = 1,
 	.attach = xhci_attach,
-	.detach = xhci_detach
+	.detach = xhci_detach,
+	.suspend = xhci_suspend,
+	.resume = xhci_resume
 };
 
 /*
@@ -2219,6 +2294,18 @@ transfer_claim(
 		return 0;
 	}
 
+	/*
+	 * During a suspend, a request that Stop Endpoint stopped stays on its
+	 * ring: the resume rings the endpoint and the controller runs it on
+	 * from where it stopped (ws052-p004).
+	 */
+	if (c->suspend_state != XHCI_SUSPEND_NONE &&
+	    (code == XHCI_COMPLETION_STOPPED ||
+	     code == XHCI_COMPLETION_STOPPED_LENGTH)) {
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		return 0;
+	}
+
 	/* Handles the request condition. */
 	if (request->cancelling) {
 		request->transfer_seen = 1U;
@@ -2481,6 +2568,7 @@ xhci_irq(
 	int available;
 	int handled = 0;
 	uint32_t status;
+	unsigned suspend_state;
 
 	io_stats_record(IO_XHCI_IRQ_ENTRY, 0);
 
@@ -2488,8 +2576,14 @@ xhci_irq(
 	if (atomic_raw_fetch_add_relaxed(&c->irq_busy, 1U) == UINT_MAX)
 		__builtin_trap();
 
-	/* Checks the operation status. */
-	status = rd32(c->operational, XHCI_USBSTS);
+	/*
+	 * Checks the operation status; a controller halted for S0 idle is not
+	 * touched, since in D3hot it reads all ones (ws052-p004).
+	 */
+	suspend_state = __atomic_load_n(&c->suspend_state, __ATOMIC_ACQUIRE);
+	status = 0;
+	if (suspend_state != XHCI_SUSPEND_HALTED)
+		status = rd32(c->operational, XHCI_USBSTS);
 	if (!(status & (XHCI_STS_EINT | XHCI_STS_FATAL)))
 		goto out;
 	io_stats_record(IO_XHCI_IRQ_OWNED, 0);
@@ -3206,8 +3300,15 @@ xhci_operation_enter(
 {
 	unsigned long irq;
 
-	/* Classifies the current input character. */
+	/* Waits out a suspend: operations need the running controller (ws052-p004). */
 	irq = spin_lock_irqsave(&c->active_lock);
+	while (c->suspend_state != XHCI_SUSPEND_NONE) {
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		xhci_sleep_ms(XHCI_LINK_WAIT_MS);
+		irq = spin_lock_irqsave(&c->active_lock);
+	}
+
+	/* Classifies the current input character. */
 	if (c->controller_stopping || c->dma_quiesced) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
@@ -3696,7 +3797,11 @@ xhci_urb_enqueue(
 		}
 	}
 
-	wr32(c->doorbells, d->slot * 4U, dci | (r->stream_id << 16));
+	/* Rings the endpoint, unless a suspend holds it: the resume rings every endpoint (ws052-p004). */
+	if (c->suspend_state == XHCI_SUSPEND_NONE)
+		wr32(c->doorbells, d->slot * 4U, dci | (r->stream_id << 16));
+
+	/* Leaves the endpoint's recovery window. */
 	xhci_recovery_leave_locked(c, ep);
 
 	spin_unlock_irqrestore(&c->active_lock, irq);
@@ -5870,6 +5975,622 @@ xhci_detach(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Suspends the controller for S0 idle (ws052-p004), following the Save
+ * State of xHCI 1.2 section 4.23.2.
+ *
+ * The gates close (operations wait, submissions do not ring), the
+ * transfers other than interrupt polls finish, the port worker stops,
+ * every running endpoint is stopped with its request left on the ring,
+ * the connected root ports go to U3, the controller halts, the
+ * registers the Restore State needs are kept and its internal state is
+ * saved.  A failure starts everything again and is reported.
+ */
+static int
+xhci_suspend(
+	struct drv_pci_device *device)
+{
+	struct xhci_controller *c;
+	int error;
+
+	/* Finds the controller. */
+	c = drv_pci_device_driver_data(device);
+	if (c == NULL)
+		return ENODEV;
+
+	/* Closes the gates. */
+	error = xhci_suspend_gate(c);
+	if (error != 0)
+		return error;
+
+	/* Waits for the transfers that are not polls. */
+	error = xhci_suspend_wait_idle(c);
+	if (error != 0) {
+		xhci_suspend_end(c);
+		return error;
+	}
+
+	/* Stops the port worker, which would read the ports while they sleep. */
+	c->suspend_worker = 0;
+	if (c->port_worker != NULL) {
+		c->suspend_worker = 1;
+		xhci_worker_stop(c);
+	}
+
+	/* Stops the endpoints; on a failure the stopped ones are rung again. */
+	error = xhci_suspend_stop_endpoints(c);
+	if (error != 0) {
+		xhci_resume_endpoints(c);
+		xhci_suspend_end(c);
+		kern_logf("xhci: suspend failed stopping endpoints (%d)\n", error);
+		return error;
+	}
+
+	/* Suspends the connected root ports. */
+	xhci_suspend_ports(c);
+
+	/* Halts the controller and saves its state; on a failure it runs again. */
+	error = xhci_suspend_halt(c);
+	if (error != 0) {
+		(void)xhci_resume_run(c);
+		xhci_resume_ports(c);
+		xhci_resume_endpoints(c);
+		xhci_suspend_end(c);
+		kern_logf("xhci: suspend failed halting (%d)\n", error);
+		return error;
+	}
+
+	/* Succeeded: the controller sleeps until xhci_resume(). */
+	kern_logf("xhci: suspended\n");
+	return 0;
+}
+
+/*
+ * Resumes the controller after S0 idle: the registers are written back
+ * and the Restore State brings the internal state back, the controller
+ * runs, the ports return to U0 and every endpoint is rung.  A controller
+ * whose state did not come back (a Save/Restore Error, as QEMU always
+ * reports) reports ESTALE, which makes the PCI power code detach and
+ * attach it again: its devices are enumerated afresh.
+ */
+static int
+xhci_resume(
+	struct drv_pci_device *device)
+{
+	struct xhci_controller *c;
+	int error;
+
+	/* Finds the controller. */
+	c = drv_pci_device_driver_data(device);
+	if (c == NULL)
+		return ENODEV;
+
+	/* Brings the saved state back; a controller attached again starts its own worker. */
+	error = xhci_resume_restore(c);
+	if (error != 0) {
+		c->suspend_worker = 0;
+		xhci_suspend_end(c);
+		kern_logf("xhci: the saved state did not come back (%d); the controller is attached again\n", error);
+		return ESTALE;
+	}
+
+	/* Runs the controller again. */
+	error = xhci_resume_run(c);
+	if (error != 0) {
+		c->suspend_worker = 0;
+		xhci_suspend_end(c);
+		kern_logf("xhci: the controller did not run after the resume (%d); it is attached again\n", error);
+		return ESTALE;
+	}
+
+	/* Wakes the ports and rings the endpoints. */
+	xhci_resume_ports(c);
+	xhci_resume_endpoints(c);
+
+	/* Opens the gates and starts the port worker again. */
+	xhci_suspend_end(c);
+
+	/* Succeeded: the controller and its devices run again. */
+	kern_logf("xhci: resumed\n");
+	return 0;
+}
+
+/* Closes the gates of a running controller; one in another transition refuses with EBUSY. */
+static int
+xhci_suspend_gate(
+	struct xhci_controller *c)
+{
+	unsigned long irq;
+
+	/* Moves to GATED under the lock the gates read it under. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	if (c->quarantined ||
+	    c->dma_quiesced ||
+	    c->controller_stopping ||
+	    c->suspend_state != XHCI_SUSPEND_NONE) {
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		return EBUSY;
+	}
+
+	/* GATED makes operations wait and submissions leave the doorbell alone. */
+	c->suspend_state = XHCI_SUSPEND_GATED;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Succeeded: no new operation starts. */
+	return 0;
+}
+
+/*
+ * Waits until no operation, command, recovery or transfer other than an
+ * interrupt poll is running; refuses with EBUSY after
+ * XHCI_SUSPEND_IDLE_MS.
+ */
+static int
+xhci_suspend_wait_idle(
+	struct xhci_controller *c)
+{
+	uint64_t deadline;
+	uint64_t now;
+	unsigned long irq;
+	unsigned command_busy;
+	bool busy;
+
+	/* Looks again and again until nothing runs or the time is up. */
+	deadline = sched_ticks() + kern_ms_to_ticks(XHCI_SUSPEND_IDLE_MS);
+	for (;;) {
+		/* Looks at the counts and the active transfers. */
+		irq = spin_lock_irqsave(&c->active_lock);
+
+		busy = xhci_transfer_busy_locked(c);
+		if (c->operations_busy != 0 ||
+		    c->endpoint_recoveries_busy != 0 ||
+		    c->completion_dispatch_busy != 0)
+			busy = true;
+
+		spin_unlock_irqrestore(&c->active_lock, irq);
+
+		/* A command may still poll. */
+		command_busy = __atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE);
+		if (command_busy != 0)
+			busy = true;
+
+		/* Nothing runs any more. */
+		if (!busy)
+			return 0;
+
+		/* Gives the suspend up when the time is up. */
+		now = sched_ticks();
+		if (now >= deadline)
+			return EBUSY;
+
+		/* Waits a little. */
+		xhci_sleep_ms(XHCI_LINK_WAIT_MS);
+	}
+}
+
+/* Tells whether any endpoint runs a transfer other than an interrupt poll, under active_lock. */
+static bool
+xhci_transfer_busy_locked(
+	struct xhci_controller *c)
+{
+	struct xhci_device *device;
+	struct xhci_request *request;
+	struct drv_usb_endpoint *endpoint;
+	enum drv_usb_transfer_type type;
+	unsigned dci;
+
+	/* Looks at every endpoint of every device. */
+	for (device = c->devices;
+	     device != NULL;
+	     device = device->next) {
+		/* Looks at each endpoint's active request. */
+		for (dci = 1; dci < 32U; dci++) {
+			/* An endpoint without a request runs nothing. */
+			request = device->endpoints[dci].active;
+			if (request == NULL || request->urb == NULL)
+				continue;
+
+			/* An interrupt poll may stay across the sleep. */
+			endpoint = drv_usb_urb_endpoint(request->urb);
+			type = drv_usb_endpoint_type(endpoint);
+			if (type != DRV_USB_TRANSFER_INTERRUPT)
+				return true;
+		}
+	}
+
+	/* Only polls run. */
+	return false;
+}
+
+/* Stops every running endpoint of every device with Stop Endpoint (Suspend set). */
+static int
+xhci_suspend_stop_endpoints(
+	struct xhci_controller *c)
+{
+	struct xhci_device *device;
+	unsigned completion;
+	unsigned state;
+	unsigned dci;
+	int error;
+
+	/* Stops each endpoint that runs. */
+	for (device = c->devices;
+	     device != NULL;
+	     device = device->next) {
+		/* Skips a device being taken away. */
+		if (device->slot == 0 || device->slot_disabled || device->quiescing)
+			continue;
+
+		/* Stops its running endpoints. */
+		for (dci = 1; dci < 32U; dci++) {
+			/* Only an enabled endpoint the controller runs needs stopping. */
+			state = xhci_endpoint_state(c, device, dci);
+			if (!device->endpoints[dci].enabled || state != DRV_XHCI_ENDPOINT_RUNNING)
+				continue;
+
+			/* Stop Endpoint (type 15) with Suspend (bit 23); the controller answers Context State Error when it stopped meanwhile. */
+			completion = 0;
+			error = command_ex(c, 0, 0, XHCI_TRB_TYPE(15) | (dci << 16) | (1U << 23) | XHCI_TRB_SLOT(device->slot), NULL, &completion);
+			if (error != 0 && completion != 19U)
+				return error;
+		}
+	}
+
+	/* Succeeded: no endpoint runs. */
+	return 0;
+}
+
+/* Puts every root port with an enabled device in U0 into U3, and marks it. */
+static void
+xhci_suspend_ports(
+	struct xhci_controller *c)
+{
+	uint32_t status;
+	unsigned port;
+	unsigned link;
+	int error;
+
+	/* Looks at each root port. */
+	kern_memset(c->suspended_ports, 0, sizeof(c->suspended_ports));
+	for (port = 0; port < c->ports && port < 256U; port++) {
+		/* Only a connected, enabled port in U0 is suspended. */
+		status = rd32(c->operational, XHCI_PORTSC(port));
+		link = (status & XHCI_PORT_PLS_MASK) >> XHCI_PORT_PLS_SHIFT;
+		if ((status & XHCI_PORT_CCS) == 0 ||
+		    (status & XHCI_PORT_PED) == 0 ||
+		    link != XHCI_LINK_U0)
+			continue;
+
+		/* Writes U3 and waits for it; a port that does not reach it is left as it is. */
+		xhci_port_link_set(c, port, XHCI_LINK_U3);
+		error = xhci_port_link_wait(c, port, XHCI_LINK_U3);
+		if (error != 0) {
+			kern_logf("xhci: port %u did not suspend (%d)\n", port + 1U, error);
+			continue;
+		}
+
+		/* Marks the port, which the resume wakes. */
+		c->suspended_ports[port / 8U] |= (uint8_t)(1U << (port % 8U));
+	}
+}
+
+/*
+ * Halts the controller, turns its interrupter off, waits for the
+ * interrupt handler, keeps the registers the Restore State needs, and
+ * saves the internal state (CSS).
+ */
+static int
+xhci_suspend_halt(
+	struct xhci_controller *c)
+{
+	uint32_t command;
+	uint32_t status;
+	unsigned long irq;
+	int error;
+
+	/* Clears Run/Stop and waits for HCHalted. */
+	command = rd32(c->operational, XHCI_USBCMD);
+	wr32(c->operational, XHCI_USBCMD, command & ~(XHCI_CMD_RUN | XHCI_CMD_INTE));
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_HALTED, XHCI_STS_HALTED);
+	if (error != 0)
+		return error;
+
+	/* Turns the interrupter off and discards a pending interrupt. */
+	event_lock(c);
+	c->interrupter_enabled = 0U;
+	xhci_interrupter_write_locked(c, 1U);
+	event_unlock(c);
+
+	/* Waits for an interrupt handler still running. */
+	error = xhci_irq_quiesce(c);
+	if (error != 0)
+		return error;
+
+	/* Keeps the registers the Restore State needs. */
+	c->saved_dnctrl = rd32(c->operational, XHCI_DNCTRL);
+	c->saved_config = rd32(c->operational, XHCI_CONFIG);
+	c->saved_dcbaap = (uint64_t)rd32(c->operational, XHCI_DCBAAP) | (uint64_t)rd32(c->operational, XHCI_DCBAAP + 4U) << 32;
+	c->saved_imod = rd32(c->runtime, XHCI_IMOD);
+	c->saved_erstsz = rd32(c->runtime, XHCI_ERSTSZ);
+	c->saved_erstba = (uint64_t)rd32(c->runtime, XHCI_ERSTBA) | (uint64_t)rd32(c->runtime, XHCI_ERSTBA + 4U) << 32;
+
+	/* Saves the internal state and waits for the save to end. */
+	wr32(c->operational, XHCI_USBCMD, (command & ~(XHCI_CMD_RUN | XHCI_CMD_INTE)) | XHCI_CMD_CSS);
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_SSS, 0);
+	if (error != 0)
+		return error;
+
+	/* Refuses a save the controller reports as failed. */
+	status = rd32(c->operational, XHCI_USBSTS);
+	if ((status & XHCI_STS_SRE) != 0)
+		return EIO;
+
+	/* HALTED makes the interrupt leave the controller alone from now on. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	c->suspend_state = XHCI_SUSPEND_HALTED;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Succeeded: the controller's state is saved. */
+	return 0;
+}
+
+/*
+ * Writes the kept registers back and restores the internal state (CRS).
+ * It reports EIO for a Save/Restore Error or a Host Controller Error.
+ */
+static int
+xhci_resume_restore(
+	struct xhci_controller *c)
+{
+	uint64_t dequeue;
+	uint32_t status;
+	int error;
+
+	/* Refuses a controller that did not leave D3hot ready. */
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_CNR, 0);
+	if (error != 0)
+		return error;
+
+	/* Writes the operational registers back. */
+	wr32(c->operational, XHCI_DNCTRL, c->saved_dnctrl);
+	wr64(c->operational, XHCI_DCBAAP, c->saved_dcbaap);
+	wr32(c->operational, XHCI_CONFIG, c->saved_config);
+
+	/* Writes the interrupter back, its dequeue pointer at the driver's place in the event ring. */
+	dequeue = c->event_memory.device_address + (uint64_t)c->event_dequeue * sizeof(struct xhci_trb);
+	wr32(c->runtime, XHCI_ERSTSZ, c->saved_erstsz);
+	wr64(c->runtime, XHCI_ERSTBA, c->saved_erstba);
+	wr64(c->runtime, XHCI_ERDP, dequeue);
+	wr32(c->runtime, XHCI_IMOD, c->saved_imod);
+
+	/* Points the command ring at the driver's place in it. */
+	wr64(c->operational, XHCI_CRCR, (c->command.dma.device_address + (uint64_t)c->command.enqueue * sizeof(struct xhci_trb)) | c->command.cycle);
+
+	/* Restores the internal state and waits for the restore to end. */
+	wr32(c->operational, XHCI_USBCMD, XHCI_CMD_CRS);
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_RSS, 0);
+	if (error != 0)
+		return error;
+
+	/* Refuses a restore the controller reports as failed. */
+	status = rd32(c->operational, XHCI_USBSTS);
+	if ((status & (XHCI_STS_SRE | XHCI_STS_HCE)) != 0)
+		return EIO;
+
+	/* Succeeded: the controller has its state again. */
+	return 0;
+}
+
+/* Sets Run/Stop with interrupts and turns the interrupter on again. */
+static int
+xhci_resume_run(
+	struct xhci_controller *c)
+{
+	unsigned long irq;
+	int error;
+
+	/* The interrupt may touch the controller again. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	c->suspend_state = XHCI_SUSPEND_GATED;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Turns the interrupter on. */
+	event_lock(c);
+	c->interrupter_enabled = 1U;
+	xhci_interrupter_write_locked(c, 1U);
+	event_unlock(c);
+
+	/* Runs the controller and waits for it to leave HCHalted. */
+	wr32(c->operational, XHCI_USBCMD, XHCI_CMD_RUN | XHCI_CMD_INTE);
+	error = wait_bits(c->operational, XHCI_USBSTS, XHCI_STS_HALTED, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller runs. */
+	return 0;
+}
+
+/*
+ * Wakes the root ports the suspend put in U3: a USB 3 port goes straight
+ * to U0, a USB 2 port signals Resume for 20 milliseconds first.
+ */
+static void
+xhci_resume_ports(
+	struct xhci_controller *c)
+{
+	uint32_t status;
+	unsigned port;
+	unsigned speed;
+	int error;
+
+	/* Wakes each marked port. */
+	for (port = 0; port < c->ports && port < 256U; port++) {
+		/* Skips a port the suspend did not put in U3. */
+		if ((c->suspended_ports[port / 8U] & (1U << (port % 8U))) == 0)
+			continue;
+
+		/* Signals Resume on a USB 2 port first. */
+		status = rd32(c->operational, XHCI_PORTSC(port));
+		speed = (status & XHCI_PORT_SPEED_MASK) >> XHCI_PORT_SPEED_SHIFT;
+		if (speed < XHCI_SPEED_SUPER) {
+			xhci_port_link_set(c, port, XHCI_LINK_RESUME);
+			xhci_sleep_ms(XHCI_RESUME_SIGNAL_MS);
+		}
+
+		/* Returns the port to U0; a port that does not get there is left to the hub code, which sees its change. */
+		xhci_port_link_set(c, port, XHCI_LINK_U0);
+		error = xhci_port_link_wait(c, port, XHCI_LINK_U0);
+		if (error != 0)
+			kern_logf("xhci: port %u did not resume (%d)\n", port + 1U, error);
+	}
+
+	/* No port is marked any more. */
+	kern_memset(c->suspended_ports, 0, sizeof(c->suspended_ports));
+}
+
+/* Rings every enabled endpoint of every device, which runs the requests the suspend left on the rings. */
+static void
+xhci_resume_endpoints(
+	struct xhci_controller *c)
+{
+	struct xhci_device *device;
+	struct xhci_endpoint *endpoint;
+	unsigned long irq;
+	unsigned dci;
+	unsigned stream;
+
+	/* Rings the endpoints with the lock that the submissions ring under. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	for (device = c->devices;
+	     device != NULL;
+	     device = device->next) {
+		/* Skips a device being taken away. */
+		if (device->slot == 0 || device->slot_disabled || device->quiescing)
+			continue;
+
+		/* Rings each enabled endpoint, each of its streams when it has them. */
+		for (dci = 1; dci < 32U; dci++) {
+			/* Skips an endpoint that is not enabled. */
+			endpoint = &device->endpoints[dci];
+			if (!endpoint->enabled)
+				continue;
+
+			/* An endpoint without streams is rung once. */
+			if (endpoint->maximum_stream_id == 0) {
+				wr32(c->doorbells, device->slot * 4U, dci);
+				continue;
+			}
+
+			/* Rings each stream. */
+			for (stream = 1; stream <= endpoint->maximum_stream_id; stream++)
+				wr32(c->doorbells, device->slot * 4U, dci | (stream << 16));
+		}
+	}
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+}
+
+/* Opens the gates and starts the port worker again when the suspend stopped it. */
+static void
+xhci_suspend_end(
+	struct xhci_controller *c)
+{
+	unsigned long irq;
+	int error;
+
+	/* NONE lets the operations in and the submissions ring again. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	c->suspend_state = XHCI_SUSPEND_NONE;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Starts the port worker again, which also looks at the ports for changes made during the sleep. */
+	if (c->suspend_worker) {
+		c->suspend_worker = 0;
+		error = xhci_worker_start(c);
+		if (error != 0)
+			kern_logf("xhci: the port worker did not start again (%d)\n", error);
+
+		/* Makes the worker look at the ports at once. */
+		port_change_defer(c);
+	}
+}
+
+/*
+ * Reports the value that writes a PORTSC back without changing it: the
+ * read-only and the preserved bits kept, the bits that clear or act when
+ * written as one cleared.
+ */
+static uint32_t
+xhci_port_neutral(
+	uint32_t status)
+{
+	/* Keeps the link state, PP, PIC and the wake enables; the rest is read-only or acts when written as one. */
+	return status & XHCI_PORT_PRESERVE;
+}
+
+/* Writes a port's link state with the strobe. */
+static void
+xhci_port_link_set(
+	struct xhci_controller *c,
+	unsigned port,
+	unsigned link)
+{
+	uint32_t status;
+
+	/* Writes the new link state into a neutral value. */
+	status = xhci_port_neutral(rd32(c->operational, XHCI_PORTSC(port)));
+	status &= ~XHCI_PORT_PLS_MASK;
+	status |= (link << XHCI_PORT_PLS_SHIFT) | XHCI_PORT_LWS;
+	wr32(c->operational, XHCI_PORTSC(port), status);
+}
+
+/* Waits for a port's link to reach a state; ETIMEDOUT after XHCI_LINK_WAIT_MS. */
+static int
+xhci_port_link_wait(
+	struct xhci_controller *c,
+	unsigned port,
+	unsigned link)
+{
+	uint64_t deadline;
+	uint64_t now;
+	uint32_t status;
+
+	/* Looks at the link until it is there or the time is up. */
+	deadline = sched_ticks() + kern_ms_to_ticks(XHCI_LINK_WAIT_MS);
+	for (;;) {
+		/* The link is there. */
+		status = rd32(c->operational, XHCI_PORTSC(port));
+		if (((status & XHCI_PORT_PLS_MASK) >> XHCI_PORT_PLS_SHIFT) == link)
+			return 0;
+
+		/* Gives up when the time is up. */
+		now = sched_ticks();
+		if (now >= deadline)
+			return ETIMEDOUT;
+
+		/* Lets other threads run meanwhile. */
+		sched_yield();
+	}
+}
+
+/* Sleeps for some milliseconds. */
+static void
+xhci_sleep_ms(
+	unsigned milliseconds)
+{
+	/* Sleeps until the tick the time ends at. */
+	sched_sleep(sched_ticks() + kern_ms_to_ticks(milliseconds));
 }
 
 /* The same immutable plan drives publication and short-event accounting. */
