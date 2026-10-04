@@ -32,8 +32,8 @@ user（原文）:「では、サブエージェントを起動して作業しま
 | q707 / q707-i01 | P1 | WS132: p001 の設計 → 実装 | /dev/system の事象の subscriber（読む前に種類を登録、受け取り手は Keiland、ACPI の電源ボタン・蓋・AC を配る）、PnP の通知、自動 mount、Files の eject | なし | pending |
 | q708 / q708-i01 | P2 | WS095: [ws095-p017](ws095/phase017/phase.md)（辞書の移動と統合）・p005・[p016](ws095/phase016/phase.md)（app ごとの IME の状態） | 各 phase.md の範囲 | なし | pending |
 | q709 / q709-i01 | 空いた担当 | WS090: [ws090-p016](ws090/phase016/phase.md) | File Chooser を (b) 左右とも透かす | なし | 実装済み・T1-103 の試験待ち（P2 ba8f807 → main 37e0de9） |
-| q710 / q710-i01 | P2 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | in-progress（2026-10-05 P2） |
-| q711 / q711-i01 | 空いた担当 | WS129: p003〜p005 | release の作業 | なし | pending |
+| q710 / q710-i01 | P2 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | uncleared（unstarted: planned の Phase が無い。p004 planning＝ベータ1 の後、p007 planning＝実機、p008 in-progress＝q667 の T1 の回帰と実機待ち、2026-10-05 P2 の確認） |
+| q711 / q711-i01 | P2 | WS129: p003〜p005 | release の作業 | なし | in-progress（2026-10-05 P2、p003 から。p004・p005 は依存を確かめて報告） |
 
 ## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
 
