@@ -1072,6 +1072,12 @@ exec_target_resolve(
 		else
 			target->mount_flags = 0;
 
+		/* A file (or interpreter) on a noexec mount is not executed (ws132-p004). */
+		if ((target->mount_flags & MOUNT_NOEXEC) != 0U) {
+			error = EACCES;
+			goto fail;
+		}
+
 		/* Reads the head of the file and looks for a #! line. */
 		count = file_content_lease_pread(&target->lease, header,
 						 sizeof(header), 0);

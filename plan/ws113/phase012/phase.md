@@ -118,3 +118,8 @@ struct gpu_display_refresh {
 - ws014 の GPU の core の host 試験 10 本（framework・scanout・sharing・placement・fence・job・supervision・fence-close・fence-reuse・fence-payload）PASS（`gpu-test-fd.c` の stub の後）。
 - build（warning 0）: amd64 vmunix を release の config（i915）と p012/p013 の config（Venus）で（kernel include check PASS）、`display-control`。style-check: 新規 file は違反 0、既存 file（gpu.c・venus/display.c・i915 の display.c ほか）は新しい違反 0。
 - 未実施: QEMU（T1: `config-amd64-p012.mk` の image で `display-control-p012.sh`）、実機（5330: `display-control` で eDP の REFRESH が 60 Hz 程度、POWER OFF で panel が暗く ON で戻る。p008 または ws159 の UAT に）。libvulkan の `VK_EXT_display_control` は p003。
+
+## T1-133（2026-10-05）
+
+- `display-control-p012.sh` は 1 行だけ FAIL ×2: claim の前の測り `refresh now boundaries=0 ... error=42`（ETIMEDOUT）。その時の QUERY の flags は 0x16f で ACTIVE（0x10）が無い: greeter と compositor を止めた直後で、Venus の出力は何も scanout していなかった（console の画もまだ無い）。ON の後は boundaries=76 virtual=1 で正しい。
+- 判定: **driver が正しい**（scanout していない出力は境界を作らない、i915 の止まった pipe と同じ契約。VK_EXT_display_control でも消えている display に vblank は来ない）。試験の順が誤り: probe は present の後にも 1 秒測る（`refresh shown`）ようにし、試験は `shown` に 40〜80 を求め、`now` は「ETIMEDOUT か、画があれば 40〜80」を受ける。

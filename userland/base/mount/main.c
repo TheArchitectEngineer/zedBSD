@@ -38,6 +38,7 @@ static const struct mount_flag_option mount_flag_options[] = {
 	{ "nosuid", MNT_NOSUID },
 	{ "writethru", MNT_WRITETHRU },
 	{ "nojournal", MNT_NOJOURNAL },
+	{ "noexec", MNT_NOEXEC },
 };
 
 static void print_mount_options(const struct kern_mount_info *entry);
@@ -163,7 +164,7 @@ main(
 	/* Handles the type availability. */
 	if (type == NULL || target == NULL) {
 		fprintf(stderr,
-			"usage: mount -t type [-r] [-o ro|rw|nosuid|writethru|nojournal|fspec=disk[,...]] "
+			"usage: mount -t type [-r] [-o ro|rw|nosuid|noexec|writethru|nojournal|fspec=disk[,...]] "
 			"[disk] directory\n");
 
 		/* Reports operation failure. */

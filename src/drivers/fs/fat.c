@@ -139,6 +139,11 @@ struct fat_chain_cursor {
 struct fat_mount_state {
 	const struct io_context *write_context;
 	struct mount *owner;
+
+	/* The owner every file shows (the mount's option, ws132-p004; root without it). */
+	uid_t file_uid;
+	gid_t file_gid;
+
 	struct disk *disk;
 	struct mutex lock;
 	struct fat_metadata_table *metadata;
@@ -8580,8 +8585,8 @@ fat_creation_representation(
 		*gid = metadata->gid;
 	} else {
 		*mode = 0755U;
-		*uid = 0;
-		*gid = 0;
+		*uid = state->file_uid;
+		*gid = state->file_gid;
 	}
 
 	/* Succeeded. */
@@ -8891,6 +8896,7 @@ fat_make_inode(
 {
 	struct fat_inode_info *info;
 	struct fat_inode_slot *slot;
+	struct fat_mount_state *state;
 	struct inode *inode;
 	ino_t ino = fat_ino(lba, offset);
 	int error = inode_get(mountp, ino, result);
@@ -8926,8 +8932,16 @@ fat_make_inode(
 	inode->i_ino = ino;
 	inode->i_data = info;
 	inode->i_linkcount = 1;
-	inode->i_uid = inode->i_gid = 0;
+	inode->i_uid = 0;
+	inode->i_gid = 0;
 	inode->i_size = (off_t)entry->size;
+
+	/* The owner the mount shows for every file (root unless the mount names one). */
+	state = fat_mount_state(mountp);
+	if (state != NULL) {
+		inode->i_uid = state->file_uid;
+		inode->i_gid = state->file_gid;
+	}
 
 	/* A directory and a file are given different operations. */
 	if (attributes & FAT_ATTRIBUTE_DIRECTORY) {
@@ -11507,6 +11521,7 @@ static int
 fat_mount_impl(
 	struct mount *mountp)
 {
+	const struct fat_mount_args *args;
 	struct fat_mount_state *state = NULL;
 	struct inode *root;
 	struct fat_inode_info *info;
@@ -11540,6 +11555,15 @@ fat_mount_impl(
 	(void)mutex_init(&state->lock, LOCK_RANK_INODE, "FAT mount");
 	state->disk = mountp->m_disk;
 	state->owner = mountp;
+
+	/* The owner the mount's option names for every file, or root (ws132-p004). */
+	args = mountp->m_data;
+	if (args != NULL && args->owner_set != 0U) {
+		state->file_uid = args->owner_uid;
+		state->file_gid = args->owner_gid;
+	}
+
+	/* Whether the mount or its disk is read-only. */
 	state->read_only = (mountp->m_flags & MOUNT_READ_ONLY) != 0 ||
 			   (mountp->m_disk->d_flags & DISK_READ_ONLY) != 0;
 
@@ -11602,6 +11626,8 @@ fat_mount_impl(
 	root->i_type = INODE_DIR;
 	root->i_ino = 1;
 	root->i_mode = S_IFDIR | 0755U;
+	root->i_uid = state->file_uid;
+	root->i_gid = state->file_gid;
 	root->i_linkcount = 1;
 	root->i_flags = INODE_ROOT;
 	root->i_data = info;

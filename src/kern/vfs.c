@@ -1564,6 +1564,7 @@ vfs_mount_legacy_root(
 	int matches;
 
 	root_partition = NULL;
+	kern_memset(&args, 0, sizeof(args));
 
 	/* The loader must have identified its boot partition. */
 	*root_disk_out = NULL;
@@ -1936,6 +1937,9 @@ vfs_mount_native_root(
 	struct fat_mount_args args;
 	unsigned boot_slot;
 	int error;
+
+	/* The mount data names only the disk. */
+	kern_memset(&args, 0, sizeof(args));
 
 	/* Rejects a missing disk or result. */
 	if (disk == NULL || root_out == NULL) {

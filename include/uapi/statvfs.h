@@ -25,6 +25,7 @@ typedef uint64_t fsfilcnt_t;
 
 #define ST_RDONLY 0x00000001UL
 #define ST_NOSUID 0x00000002UL
+#define ST_NOEXEC 0x00000010UL
 /*
  * The filesystem is held by this machine rather than reached over a
  * network.  This is not one of the two flags the standard defines; it is

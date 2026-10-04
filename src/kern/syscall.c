@@ -4139,11 +4139,12 @@ sys_mount_call(
 	const uintptr_t args[6])
 {
 	struct process *process;
-	struct mount_args requested;
+	struct mount_args_owner requested;
 	struct fat_mount_args internal;
 	struct fat_mount_args *mount_arguments;
 	char type[NAME_MAX + 1U];
 	char directory[PATH_MAX];
+	uint32_t header[2];
 	int flags;
 	int mount_flags;
 	int error;
@@ -4157,23 +4158,46 @@ sys_mount_call(
 	if (!cred_is_superuser(process->cred))
 		return -EPERM;
 	if ((flags & ~(int)(MNT_RDONLY | MNT_NOSUID | MNT_WRITETHRU |
-	    MNT_NOJOURNAL)) != 0)
+	    MNT_NOJOURNAL | MNT_NOEXEC)) != 0)
 		return -EINVAL;
 
-	/* Copies the type, the directory, and the optional arguments. */
+	/* Copies the type and the directory. */
 	error = copyinstr(args[0], type, sizeof(type), NULL);
 	if (error == 0)
 		error = copyinstr(args[1], directory, sizeof(directory), NULL);
 	kern_memset(&requested, 0, sizeof(requested));
 	kern_memset(&internal, 0, sizeof(internal));
+
+	/* The optional arguments: version 1 names the disk, version 2 also the owner (ws132-p004). */
+	if (error == 0 && args[3] != 0)
+		error = copyin(args[3], header, sizeof(header));
 	if (error == 0 && args[3] != 0) {
-		error = copyin(args[3], &requested, sizeof(requested));
-		if (error == 0 && (requested.size != sizeof(requested) ||
-		    requested.version != KERN_MOUNT_ARGS_VERSION ||
-		    kern_memchr(requested.fspec, '\0', sizeof(requested.fspec)) == NULL))
+		if (header[0] == sizeof(struct mount_args) && header[1] == KERN_MOUNT_ARGS_VERSION) {
+			error = copyin(args[3], &requested, sizeof(struct mount_args));
+		} else if (header[0] == sizeof(struct mount_args_owner) && header[1] == KERN_MOUNT_ARGS_VERSION_OWNER) {
+			error = copyin(args[3], &requested, sizeof(struct mount_args_owner));
+		} else {
 			error = EINVAL;
-		if (error == 0 && requested.fspec[0] != '\0')
+		}
+	}
+
+	/* The disk's name must end within its field; version 2's flags and reserved are known. */
+	if (error == 0 && args[3] != 0) {
+		if (kern_memchr(requested.fspec, '\0', sizeof(requested.fspec)) == NULL ||
+		    (requested.flags & ~KERN_MOUNT_ARGS_OWNER) != 0U ||
+		    requested.reserved != 0U)
+			error = EINVAL;
+	}
+
+	/* The disk, and the owner a filesystem without owners shows. */
+	if (error == 0 && args[3] != 0) {
+		if (requested.fspec[0] != '\0')
 			internal.fspec = requested.fspec;
+		if ((requested.flags & KERN_MOUNT_ARGS_OWNER) != 0U) {
+			internal.owner_set = 1U;
+			internal.owner_uid = (uid_t)requested.owner_uid;
+			internal.owner_gid = (gid_t)requested.owner_gid;
+		}
 	}
 
 	/* Translates the flags and performs the mount. */
@@ -4187,7 +4211,9 @@ sys_mount_call(
 			mount_flags |= MOUNT_WRITE_THROUGH;
 		if ((flags & MNT_NOJOURNAL) != 0)
 			mount_flags |= MOUNT_NO_JOURNAL;
-		if (internal.fspec != NULL)
+		if ((flags & MNT_NOEXEC) != 0)
+			mount_flags |= MOUNT_NOEXEC;
+		if (internal.fspec != NULL || internal.owner_set != 0U)
 			mount_arguments = &internal;
 		else
 			mount_arguments = NULL;
