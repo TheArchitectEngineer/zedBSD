@@ -44,6 +44,7 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend-evdev.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "touchpad.h"
+#include "pointer-accel.h"
 #include "apps.h"
 #include "switcher.h"
 #include "lid.h"
@@ -292,6 +293,8 @@ struct zwl_input_device {
 	 */
 	unsigned touchpad;
 	struct zwl_touchpad pad;
+	/* A relative mouse's acceleration (pointer-accel.c, ws089-p024): its fractions and its last report's time. */
+	struct zwl_pointer_accel accel;
 	unsigned discarding;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
@@ -884,16 +887,24 @@ struct zwl_server {
 	 * wallpaper_started are what the command line gave, which a setting
 	 * reset returns to; wallpaper_path above is the picture shown, and
 	 * wallpaper_chosen the settings' (empty for the command line's).  The
-	 * pointer's speed is a percentage of the relative pointer's movement,
-	 * with the hundredths of a pixel carried over; natural turns the wheel
-	 * round.  The keyboards' repeat is what wl_keyboard.repeat_info tells a
-	 * keyboard bound from then on.
+	 * pointer is set for each kind of device (ws089-p024): a mouse's speed
+	 * (a percentage of its counts), its acceleration's level
+	 * (pointer-accel.h) and whether its wheel turns round (natural), and the
+	 * same for the touch pads, whose layer (touchpad.c) takes the level and
+	 * the scrolling's direction and whose motion is scaled by the speed with
+	 * the hundredths of a pixel carried over (pointer_remainder).  The
+	 * keyboards' repeat is what wl_keyboard.repeat_info tells a keyboard
+	 * bound from then on.
 	 */
 	float window_opacity_started;
 	const char *wallpaper_started;
 	char wallpaper_chosen[256];
-	int32_t pointer_speed;
-	int32_t pointer_natural;
+	int32_t mouse_speed;
+	int32_t mouse_acceleration;
+	int32_t mouse_natural;
+	int32_t touchpad_speed;
+	int32_t touchpad_acceleration;
+	int32_t touchpad_natural;
 	int64_t pointer_remainder_x;
 	int64_t pointer_remainder_y;
 	int32_t repeat_rate;
@@ -1488,6 +1499,7 @@ int zwl_input_alt_held(const struct zwl_server *server);
 int zwl_input_attach(struct zwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
 void zwl_input_read_devices(struct zwl_server *server, struct zwl_input_device **devices, size_t count);
 void zwl_input_tick(struct zwl_server *server, uint64_t now);
+void zwl_input_touchpads_changed(struct zwl_server *server);
 void zwl_input_close(struct zwl_server *server, struct zwl_input_device *device);
 void zwl_input_forget(struct zwl_server *server, struct zwl_input_device *device);
 void zwl_input_cleanup(struct zwl_server *server);

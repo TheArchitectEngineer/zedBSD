@@ -667,7 +667,8 @@ struct se_volume {
  * compositor's can be changed here (Keiland's extension); a change made
  * elsewhere comes to a watch.  opacity
  * is the windows' opacity shown (a drag moves it before it is written),
- * and so are the pointer's speed (percent), natural scrolling and the
+ * and so are a mouse's and the touch pads' speed (percent), acceleration
+ * (0 none to 3 strong) and natural scrolling (ws089-p024) and the
  * keyboards' repeat (keys a second, milliseconds before it starts);
  * wallpaper is the settings' picture (empty for the default).  The
  * pictures are found and read when the Wallpaper page is first shown; the
@@ -682,13 +683,17 @@ struct se_look {
 	int open_error;
 	int writable;
 	int opacity;
-	int pointer_speed;
-	int pointer_natural;
+	int mouse_speed;
+	int mouse_acceleration;
+	int mouse_natural;
+	int touchpad_speed;
+	int touchpad_acceleration;
+	int touchpad_natural;
 	int repeat_rate;
 	int repeat_delay;
 	int dragging;
 	struct fm_rect slider;
-	struct fm_rect sliders[4];
+	struct fm_rect sliders[8];
 	char wallpaper[SE_PATH];
 	struct se_wallpaper wallpapers[SE_WALLPAPERS];
 	unsigned wallpaper_count;
@@ -916,6 +921,7 @@ void se_look_drag(struct se_app *app, int index, int x, unsigned phase);
 
 /* The input and sound pages (page-input.c). */
 int se_mouse_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_touchpad_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 int se_keyboard_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 int se_sound_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 void se_input_press(struct se_app *app, int index);

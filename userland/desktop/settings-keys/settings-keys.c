@@ -19,13 +19,25 @@
 /*
  * Every setting the desktop knows, in the order the compositor reports
  * them.  The compositor's keys come first; the ranges are the ones
- * zdesktop and Settings used before (ws089-p007).
+ * zdesktop and Settings used before (ws089-p007).  The pointer is set for
+ * a mouse and for the touch pads apart (ws089-p024): the speed in percent,
+ * the acceleration's level (0 none, 1 mild, 2 medium, 3 strong) and the
+ * natural scrolling; a mouse 150% and strong without natural scrolling, a
+ * touch pad 100% and medium (the curve of ws159-p004) with it.  The one
+ * pointer setting of before (pointer.*) is only read, to be moved to the
+ * mouse's (settings.c).
  */
 static const struct kl_settings_key settings_keys[] = {
 	{ "wallpaper", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_PATH, 0, 0, 0, KL_SETTINGS_KEY_KEPT },
 	{ "window.opacity", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 85, 100, 100, KL_SETTINGS_KEY_KEPT },
-	{ "pointer.speed", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 25, 300, 100, KL_SETTINGS_KEY_KEPT },
-	{ "pointer.natural", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
+	{ "mouse.speed", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 25, 300, 150, KL_SETTINGS_KEY_KEPT },
+	{ "mouse.acceleration", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 3, 3, KL_SETTINGS_KEY_KEPT },
+	{ "mouse.natural", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
+	{ "touchpad.speed", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 25, 300, 100, KL_SETTINGS_KEY_KEPT },
+	{ "touchpad.acceleration", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 3, 2, KL_SETTINGS_KEY_KEPT },
+	{ "touchpad.natural", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 1, KL_SETTINGS_KEY_KEPT },
+	{ "pointer.speed", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 25, 300, 100, KL_SETTINGS_KEY_KEPT | KL_SETTINGS_KEY_READ_ONLY },
+	{ "pointer.natural", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT | KL_SETTINGS_KEY_READ_ONLY },
 	{ "keyboard.repeat.rate", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 5, 60, 25, KL_SETTINGS_KEY_KEPT },
 	{ "keyboard.repeat.delay", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 150, 1000, 400, KL_SETTINGS_KEY_KEPT },
 	{ "sound.volume", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 100, 100, KL_SETTINGS_KEY_KEPT },

@@ -298,11 +298,21 @@ home_state(
 		/* The state is in the text. */
 		return 1;
 	case SE_PAGE_MOUSE:
-		/* The pointer's speed, and natural scrolling when on. */
-		if (app->look.pointer_natural != 0) {
-			(void)snprintf(text, size, "Speed %d%% \xc2\xb7 natural scrolling", app->look.pointer_speed);
+		/* A mouse's speed, and natural scrolling when on. */
+		if (app->look.mouse_natural != 0) {
+			(void)snprintf(text, size, "Speed %d%% \xc2\xb7 natural scrolling", app->look.mouse_speed);
 		} else {
-			(void)snprintf(text, size, "Speed %d%%", app->look.pointer_speed);
+			(void)snprintf(text, size, "Speed %d%%", app->look.mouse_speed);
+		}
+
+		/* The state is in the text. */
+		return 1;
+	case SE_PAGE_TOUCHPAD:
+		/* The touch pads' speed, and natural scrolling when on (ws089-p024). */
+		if (app->look.touchpad_natural != 0) {
+			(void)snprintf(text, size, "Speed %d%% \xc2\xb7 natural scrolling", app->look.touchpad_speed);
+		} else {
+			(void)snprintf(text, size, "Speed %d%%", app->look.touchpad_speed);
 		}
 
 		/* The state is in the text. */

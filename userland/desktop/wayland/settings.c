@@ -78,6 +78,7 @@ struct settings_state {
 static struct settings_state settings_state;
 
 static int settings_home(char *home, size_t size);
+static void settings_migrate(struct zwl_settings_store *store, const char *old_name, const char *new_name);
 static void settings_apply(struct zwl_server *server, const char *name, int starting);
 static void settings_apply_all(struct zwl_server *server, int starting);
 static void settings_apply_wallpaper(struct zwl_server *server, int starting);
@@ -155,6 +156,10 @@ zwl_settings_open(
 	error = zwl_settings_store_load(store);
 	if (error != 0)
 		printf("ZWL SETTINGS read-failed errno=%d\n", error);
+
+	/* The one pointer setting of before becomes the mouse's (ws089-p024). */
+	settings_migrate(store, "pointer.speed", "mouse.speed");
+	settings_migrate(store, "pointer.natural", "mouse.natural");
 
 	/* Gives the server the store, and puts every setting into effect before anything is drawn. */
 	server->settings = store;
@@ -426,6 +431,34 @@ settings_home(
 	return 0;
 }
 
+/*
+ * Moves a setting kept under its old name to its new one: a value the file
+ * held for the old name, when it held none for the new one, is chosen for
+ * the new one (and written under it at the session's end).
+ */
+static void
+settings_migrate(
+	struct zwl_settings_store *store,
+	const char *old_name,
+	const char *new_name)
+{
+	struct zwl_settings_entry *old_entry;
+	struct zwl_settings_entry *new_entry;
+	int error;
+
+	/* Both settings, the old one read from the file and the new one not. */
+	old_entry = zwl_settings_store_find(store, old_name);
+	new_entry = zwl_settings_store_find(store, new_name);
+	if (old_entry == NULL || new_entry == NULL)
+		return;
+	if (!old_entry->start_chosen || new_entry->start_chosen)
+		return;
+
+	/* The old value, chosen under the new name. */
+	error = zwl_settings_store_choose(store, new_name, old_entry->start);
+	printf("ZWL SETTINGS migrated %s=%s to %s error=%d\n", old_name, old_entry->start, new_name, error);
+}
+
 /* Puts every setting into effect (starting: before the look is made). */
 static void
 settings_apply_all(
@@ -462,17 +495,47 @@ settings_apply(
 		return;
 	}
 
-	/* Sets the pointer's speed. */
-	differs = strcmp(name, "pointer.speed");
+	/* Sets a mouse's speed, acceleration and wheel's direction (ws089-p024). */
+	differs = strcmp(name, "mouse.speed");
 	if (differs == 0) {
-		settings_apply_number(server, name, &server->pointer_speed);
+		settings_apply_number(server, name, &server->mouse_speed);
 		return;
 	}
 
-	/* Sets the wheel's direction. */
-	differs = strcmp(name, "pointer.natural");
+	/* A mouse's acceleration. */
+	differs = strcmp(name, "mouse.acceleration");
 	if (differs == 0) {
-		settings_apply_number(server, name, &server->pointer_natural);
+		settings_apply_number(server, name, &server->mouse_acceleration);
+		return;
+	}
+
+	/* A mouse's wheel's direction. */
+	differs = strcmp(name, "mouse.natural");
+	if (differs == 0) {
+		settings_apply_number(server, name, &server->mouse_natural);
+		return;
+	}
+
+	/* Sets the touch pads' speed, and their acceleration and scrolling's direction, which their layers take now. */
+	differs = strcmp(name, "touchpad.speed");
+	if (differs == 0) {
+		settings_apply_number(server, name, &server->touchpad_speed);
+		return;
+	}
+
+	/* The touch pads' acceleration. */
+	differs = strcmp(name, "touchpad.acceleration");
+	if (differs == 0) {
+		settings_apply_number(server, name, &server->touchpad_acceleration);
+		zwl_input_touchpads_changed(server);
+		return;
+	}
+
+	/* The touch pads' scrolling's direction. */
+	differs = strcmp(name, "touchpad.natural");
+	if (differs == 0) {
+		settings_apply_number(server, name, &server->touchpad_natural);
+		zwl_input_touchpads_changed(server);
 		return;
 	}
 

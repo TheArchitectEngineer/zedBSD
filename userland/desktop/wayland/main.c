@@ -74,7 +74,12 @@ main(
 	server.font_path = KEILAND_DATADIR "/fonts/keiland.ttf";
 	server.fallback_font_path = KEILAND_DATADIR "/fonts/keiland-fallback.ttf";
 	server.window_opacity = 1.0f;
-	server.pointer_speed = 100;
+	server.mouse_speed = 150;
+	server.mouse_acceleration = ZWL_ACCEL_STRONG;
+	server.mouse_natural = 0;
+	server.touchpad_speed = 100;
+	server.touchpad_acceleration = ZWL_ACCEL_MEDIUM;
+	server.touchpad_natural = 1;
 	server.repeat_rate = 25;
 	server.repeat_delay_ms = 400;
 	server.width = 320;

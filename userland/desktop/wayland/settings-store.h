@@ -24,7 +24,7 @@
 #include <stdint.h>
 
 /* The most compositor settings the store holds (the table's compositor rows). */
-#define ZWL_SETTINGS_ENTRIES	16U
+#define ZWL_SETTINGS_ENTRIES	24U
 
 /* The longest path of the file, with its NUL. */
 #define ZWL_SETTINGS_PATH_MAX	1024U

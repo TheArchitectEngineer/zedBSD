@@ -120,7 +120,9 @@ enum zwl_touchpad_tap {
  * say and the button that press was given as, the tap, the touch now on
  * the pad (when it began, the most fingers, how far it went), and the
  * remainders of the motion and the scrolling that did not make a whole
- * pixel or notch.
+ * pixel or notch; the user's feel (ws089-p024): the acceleration's level
+ * (ZWL_ACCEL_* of pointer-accel.h, which chooses the gain's curve) and
+ * whether the scrolling follows the fingers.
  *
  * It lives in its input device from attach (zwl_touchpad_init) to detach.
  */
@@ -149,6 +151,7 @@ struct zwl_touchpad {
 	int64_t scroll_travel_y_um;
 	uint64_t last_frame_ms;
 	int32_t natural_scroll;
+	int32_t acceleration;
 	/*
 	 * The gestures (ws142-p003): the pad's size in units (0 while it is not
 	 * known: no edge then), the edges both fingers of a two-finger touch
@@ -176,6 +179,7 @@ struct zwl_touchpad {
 
 void zwl_touchpad_init(struct zwl_touchpad *pad, int32_t resolution_x, int32_t resolution_y);
 void zwl_touchpad_set_size(struct zwl_touchpad *pad, int32_t x_max, int32_t y_max);
+void zwl_touchpad_set_feel(struct zwl_touchpad *pad, int32_t acceleration, int32_t natural);
 void zwl_touchpad_event(struct zwl_touchpad *pad, uint16_t type, uint16_t code, int32_t value);
 void zwl_touchpad_frame(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touchpad_actions *actions);
 void zwl_touchpad_tick(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touchpad_actions *actions);
