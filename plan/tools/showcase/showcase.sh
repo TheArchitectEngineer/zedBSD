@@ -60,11 +60,60 @@ guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f 
 sleep 10
 shot 01-desktop.png 3
 
-# 1. App Home (the launcher at the top left).
-pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
+# 1. App Home: a click on the launcher at the top left, then (if Home did not open) a drag from the corner.
+home_open() {
+	pointer move 23 17 sleep 800 down sleep 150 up sleep 2500
+	guest 'grep -c "ZWL HOME open" /tmp/zdesktop.log' | tail -1 > "$out/.home"
+	if [ "$(cat "$out/.home")" = "${home_seen:-0}" ]; then
+		pointer move 4 4 sleep 500 down sleep 100 move 120 90 sleep 80 move 360 260 sleep 80 move 700 520 sleep 80 up sleep 2500
+	fi
+	home_seen=$(guest 'grep -c "ZWL HOME open" /tmp/zdesktop.log' | tail -1)
+}
+home_close() { keys '<esc>'; sleep 2; }
+home_open
 shot 02-app-home.png 2
-keys '<esc>'
-sleep 2
+home_close
+[ "${SHOWCASE_ONLY:-}" = fix ] && {
+	WAIT=8 app imageview /bin/imageview /root/Pictures/01-splash.png; shot 07-image-viewer.png 2
+	close_all
+	WAIT=10 app imageview /bin/imageview /root/Pictures/02-landscape.jpg; shot 07b-image-viewer-photo.png 3
+	close_all
+	app notes /bin/notes
+	python3 - "$out/pen.pen" $W $H <<'PEN'
+import math, sys
+w, h = int(sys.argv[2]), int(sys.argv[3])
+def raw(x, y):
+    return round(x * 21600 / (w - 1)), round(y * 13500 / (h - 1))
+lines = ["size 21600 13500", "wait 1500", "tool pen"]
+def stroke(points):
+    x, y = raw(*points[0])
+    lines.extend(["hover %d %d" % (x, y), "wait 100", "down %d %d 1800" % (x, y)])
+    for px, py in points[1:]:
+        x, y = raw(px, py)
+        lines.extend(["move %d %d 2200" % (x, y), "wait 8"])
+    lines.extend(["up", "wait 200"])
+# A wave and a circle on the page (the page is near the middle of the screen).
+stroke([(780 + 360 * i / 80, 420 + 40 * math.sin(i / 80 * 4 * math.pi)) for i in range(81)])
+stroke([(960 + 120 * math.cos(i / 60 * 2 * math.pi), 650 + 120 * math.sin(i / 60 * 2 * math.pi)) for i in range(61)])
+stroke([(800 + 320 * i / 60, 860 - 80 * (i / 60)) for i in range(61)])
+open(sys.argv[1], "w").write("\n".join(lines) + "\n")
+PEN
+	put "$out/pen.pen" /tmp/pen.pen
+	guest 'timeout 60 /bin/peninject /tmp/pen.pen; echo pen=$?' | tail -1
+	shot 09-notes.png 2
+	close_all
+	WAIT=3 app files /bin/files
+	WAIT=3 app terminal /bin/terminal
+	WAIT=8 app pdfviewer /bin/pdfviewer /root/Documents/manual.pdf
+	sleep 3
+	home_open
+	shot 15-app-home-over-windows.png 2
+	home_close
+	close_all
+	sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
+	ls "$out"/*.png | wc -l | sed 's/^/pictures: /'
+	exit 0
+}
 
 # 2. Each application alone.
 app files /bin/files; shot 03-files.png
@@ -79,7 +128,7 @@ app textedit /bin/textedit /root/Documents/hello.txt; shot 05-text-editor.png
 close_all
 app settings /bin/settings; shot 06-settings.png
 close_all
-WAIT=8 app imageview /bin/imageview /root/Pictures/Birch-Lake.ppm; shot 07-image-viewer.png
+WAIT=8 app imageview /bin/imageview /root/Pictures/01-splash.png; shot 07-image-viewer.png
 close_all
 WAIT=10 app pdfviewer /bin/pdfviewer /root/Documents/manual.pdf; shot 08-pdf-viewer.png 3
 close_all
@@ -89,10 +138,7 @@ WAIT=15 app browser /bin/browser /usr/share/browser/start.html; shot 10-browser.
 close_all
 WAIT=10 app mview /bin/mview --windowed --size=1200x800; shot 11-model-viewer.png 3
 close_all
-WAIT=8 app zgears /bin/zgears; shot 12-gears.png 2
-close_all
-WAIT=8 app monitor /bin/monitor; shot 13-system-monitor.png 3
-close_all
+[ -x build/tq-1/demo/rootfs/bin/monitor ] && { WAIT=8 app monitor /bin/monitor; shot 13-system-monitor.png 3; close_all; }
 
 # 3. A desktop of several windows.
 WAIT=3 app files /bin/files
@@ -101,9 +147,9 @@ WAIT=3 app textedit /bin/textedit /root/Documents/hello.txt
 WAIT=8 app pdfviewer /bin/pdfviewer /root/Documents/manual.pdf
 sleep 4
 shot 14-many-windows.png 3
-pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
+home_open
 shot 15-app-home-over-windows.png 2
-keys '<esc>'
+home_close
 close_all
 
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
