@@ -255,6 +255,17 @@ int kl_backend_network_request(struct kl_backend_network *network, unsigned requ
 unsigned kl_backend_network_get_request(const struct kl_backend_network *network, int *error);
 
 /*
+ * Asks the daemon for fresh scans while on is 1, and no longer when it is 0
+ * (ws089-p021: the compositor counts the windows that show the networks
+ * around).  It is no request: it goes beside the one outstanding and never
+ * makes one busy.  While it is on, the scan is read again every few
+ * seconds and a new one comes as KL_BACKEND_NETWORK_CHANGED_SCAN; a radio
+ * that is connected keeps the last scan (it cannot scan while it is on a
+ * network).  Returns 0, or EINVAL without a watch.
+ */
+int kl_backend_network_set_scanning(struct kl_backend_network *network, unsigned on);
+
+/*
  * The network's details for Settings (ws089-p003): each
  * interface as the kernel reports it, the DNS servers, and the keys of the
  * Wi-Fi networks the user has saved.  These read the kernel and the files

@@ -2,10 +2,10 @@
 
 # ws089-p021: Wi-Fi の画面の自動の scan（Scan のボタンを無くす）と Disconnect の icon
 
-Status: planning
+Status: in-progress（q703-i01、P2 generation14、2026-10-05。設計を決め、networkd と libkeiland-backend の scan の口まで実装。compositor の数え上げ・libkeiland・Settings・system bar は続き）
 Disposition: normal
 Parent: [WS089](../ws.md)
-Queue: 未定（q700 の Settings の Wi-Fi の Bug と一緒か、その後）
+Queue: q703-i01（P2 generation14）
 
 ## ユーザーの要望（2026-10-04 夜、UAT-3 の後、原文）
 
@@ -30,3 +30,16 @@ Queue: 未定（q700 の Settings の Wi-Fi の Bug と一緒か、その後）
 ## 依存
 
 WS131 の libkeiland-backend・kl_system_manager_v1（済み）、WS005 の networkd。BUG-183・185・186・187・188（q700）と同じ経路なので、同じ担当が続けて行う。
+
+## 設計（2026-10-05、q703-i01 P2 generation14）
+
+- **D1 数え上げ**: kl_system_network_v1 に request 4 `set_scanning(uint on)`（kl_system_manager_v1 の version 3 から）を足す。compositor は network の object ごとに「scan を求めている」の印を持ち、印の付いた object の数と system bar の Wi-Fi の menu が開いていること（1 つと数える）の和が 0→1 で libkeiland-backend に scan の on、1→0 で off を求める。object の destroy と client の切断（crash を含む）は `zwl_object_destroy` を通るので、そこで印を外す。同じ object の on の繰り返しは 1 つ（印であり数ではない）。libkeiland は `kl_system_network_set_scanning(system, on)`（KL_VERSION 24）、compositor が version 3 未満なら ENOTSUP。
+- **D2 libkeiland-backend**: `kl_backend_network_set_scanning(network, on)`。要求（one outstanding）とは別の口で、利用者の switch・join を scan の後ろで待たせない（BUG-184 の「オフが効かない」の一因: Settings の頁の scan が一つだけの要求の枠を占め、off が slot で待った）。zedBSD: scan の専用の接続で、on の間は networkd に `WIFI_SCAN_START`（lease 30 秒、10 秒ごとに更新）と 3 秒ごとの `WIFI_LIST`（新しい scan は KL_BACKEND_NETWORK_CHANGED_SCAN）、off で `WIFI_SCAN_STOP`。Linux・FreeBSD（wpa_supplicant）: on の間 10 秒ごとに `SCAN`（結果は event から）。
+- **D3 networkd の scan の on・off**: `NETWORKD_OP_WIFI_SCAN_START`（40）・`_STOP`（41）。lease（`NETWORKD_WIFI_SCAN_LEASE_SECONDS` 30 秒）は compositor が黙って消えた時の守り。lease の間、policy が on で未接続（manual-disconnected）なら 5 秒ごとに各 radio で scan を始める（background の作業なので利用者の要求が来れば止まる）。auto-searching は自分で 5 秒ごとに scan する（BUG-158 の search）ので足さない。接続中の radio は kernel が scan を断る（associated の間 EBUSY）ので、一覧は接続の前の scan のまま。disabled は何もしない。watch の Wi-Fi の行と `net wifi` の状態に `scan=0|1`（受け入れの「networkd の状態で確かめる」）。WIFI_LIST と同じく、受け入れた全ての peer が求められる。
+- **D4 Settings**: Scan のボタンを無くす。Network と Wi-Fi の頁を表示している間は set_scanning(1)、他の頁へ移る・窓を閉じると 0。最小化は client に知らされない（xdg の toplevel に戻りの通知が無い）ので数えたまま（未接続の時に 5 秒ごとの scan が続くだけ）。頁を開いた時は compositor の持つ一覧（cache）をすぐ出す。Searching... の表示は scan の要求の間ではなく、一覧がまだ無い間の文にする。
+- **D5 system bar**: menu を開いている間を 1 つと数える（開いた時の一回の SCAN の要求をやめる）。
+- **D6 Disconnect の icon**: Settings の Wi-Fi の頁の switch の横の文字の Disconnect を icon（切断の印）の button にし、接続中の AP の行の右にも置く。tooltip は無いので accessible な名前として log・hit の名前に「Disconnect」を残す。system bar の menu も文字の button を icon に揃える。
+
+## 経過
+
+- 2026-10-05 q703-i01: networkd（protocol.h の opcode 40・41、`wifi_scan_request`・`run_requested_scan`・lease、watch の `scan=`）と libkeiland-backend（header、zedBSD の scan の接続、wpa の SCAN）を実装、networkd と backend の object は build warning 0（`ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD=build/p2-q703`）、wpa は host の cc で compile。未試験。同じ commit に、保留にした BUG-185・187・189 の networkd・backend の途中の差分が入る（各 ticket の「保留」）。

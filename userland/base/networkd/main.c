@@ -296,6 +296,24 @@ static size_t wifi_rejection_count;
  * is still saved there, and leaves it when it was deleted (net wifi delete).
  */
 static int wifi_connection_recheck_due;
+
+/*
+ * Until when a desktop asked for fresh scans (ws089-p021), on the monotonic
+ * clock in microseconds; 0 when nobody asks.  WIFI_SCAN_START moves it
+ * NETWORKD_WIFI_SCAN_LEASE_SECONDS ahead and WIFI_SCAN_STOP sets it to 0;
+ * a time already past means the desktop that asked went without saying
+ * so.  Only the event loop touches it.
+ */
+static uint64_t wifi_scan_until;
+
+/*
+ * When the next asked-for scan starts, on the same clock (0: none is
+ * planned).  A scan is planned only while the lease above holds and the
+ * policy is on and left unconnected (manual-disconnected); each one plans
+ * the next NETWORKD_WLAN_RESCAN_SECONDS later.  Only the event loop
+ * touches it.
+ */
+static uint64_t wifi_scan_due;
 static struct networkd_wifi_work wifi_work;
 static struct networkd_wifi_observation wifi_observations[NETWORKD_WLAN_RADIO_MAX];
 static size_t wifi_observation_bytes;
@@ -453,6 +471,11 @@ static int wifi_rejection_find(uid_t, const unsigned char *, size_t);
 static void wifi_rejection_forget(uid_t, const unsigned char *, size_t);
 static void wifi_rejection_forget_store(uid_t);
 static void wifi_join_failed(void);
+static void wifi_scan_request(int, const struct networkd_request *);
+static int wifi_scan_wanted(void);
+static int wifi_scan_poll_timeout(void);
+static void run_requested_scan(void);
+static int default_route_index(uint32_t *);
 static void recheck_connection_profile(void);
 static void wifi_off_remember(int);
 static int append_hex(char *, size_t, size_t *, const unsigned char *, size_t);
@@ -2462,12 +2485,20 @@ event_poll_timeout(
 {
 	int automatic;
 	int rollback;
+	int scan;
 
 	/* Wired work that is waiting is done before anything is waited for. */
 	if (lan_work_due)
 		return 0;
 	automatic = networkd_confirmed_active(&confirmed) ? -1 :
 	    automatic_poll_timeout();
+
+	/* A scan a desktop asked for, or the end of its lease, wakes the loop too (ws089-p021). */
+	scan = -1;
+	if (!networkd_confirmed_active(&confirmed))
+		scan = wifi_scan_poll_timeout();
+	if (scan >= 0 && (automatic < 0 || scan < automatic))
+		automatic = scan;
 	rollback = networkd_confirmed_poll_timeout(&confirmed,
 	    netutil_monotonic_us());
 	if (automatic < 0)
@@ -2526,6 +2557,11 @@ run_due_work(
 		else
 			run_automatic_work();
 	}
+
+	/* A scan a desktop asked for, while the radios are on and left unconnected (ws089-p021). */
+	if (!networkd_confirmed_active(&confirmed) &&
+	    wifi_scan_poll_timeout() == 0)
+		run_requested_scan();
 }
 
 /* Retires the sole connection while preserving its active policy owner. */
@@ -2911,13 +2947,17 @@ watch_state(
 	static const char digits[] = "0123456789abcdef";
 	struct networkd_wlan_radio radios[NETWORKD_WLAN_RADIO_MAX];
 	char ssid[WLAN_SSID_MAX * 2U + 1U];
+	char route_name[IFNAMSIZ];
 	const char *interface;
 	size_t radio_count;
 	size_t used;
 	size_t index;
+	uint32_t route_index;
+	int descriptor;
 	int known;
 	int count;
 	int error;
+	int found;
 
 	/* The interfaces. */
 	error = show_interfaces(NULL, state, capacity);
@@ -2949,8 +2989,30 @@ watch_state(
 	interface = "-";
 	if (managed_wlan.connection.interface[0] != '\0')
 		interface = managed_wlan.connection.interface;
-	count = snprintf(state + used, capacity - used, "wifi state=%s interface=%s ssid=%s radios=%u\n",
-	    managed_state_name(managed_wlan.state), interface, ssid, (unsigned)radio_count);
+	count = snprintf(state + used, capacity - used, "wifi state=%s interface=%s ssid=%s radios=%u scan=%u\n",
+	    managed_state_name(managed_wlan.state), interface, ssid, (unsigned)radio_count,
+	    (unsigned)wifi_scan_wanted());
+	if (count < 0 || (size_t)count >= capacity - used) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	used += (size_t)count;
+
+	/* The interface the default route goes through ("-" for none or one that cannot be named, BUG-189). */
+	(void)snprintf(route_name, sizeof(route_name), "-");
+	found = default_route_index(&route_index);
+	if (found > 0) {
+		descriptor = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (descriptor >= 0) {
+			error = netutil_ifname(descriptor, route_index, route_name);
+			if (error != 0)
+				(void)snprintf(route_name, sizeof(route_name), "-");
+			(void)close(descriptor);
+		}
+	}
+
+	/* The route's line, last. */
+	count = snprintf(state + used, capacity - used, "route default=%s\n", route_name);
 	if (count < 0 || (size_t)count >= capacity - used) {
 		errno = EOVERFLOW;
 		return -1;
@@ -2991,6 +3053,11 @@ deliver_state_changes(
 {
 	static enum networkd_managed_wlan_state told_wlan_state;
 	static int told_wlan_valid;
+	static int told_scan;
+	static uint32_t told_route;
+	uint32_t route;
+	int scan;
+	int found;
 
 	/*
 	 * The Wi-Fi state is compared rather than reported from each place
@@ -3002,6 +3069,28 @@ deliver_state_changes(
 	if (!told_wlan_valid || told_wlan_state != managed_wlan.state) {
 		told_wlan_state = managed_wlan.state;
 		told_wlan_valid = 1;
+		state_changed = 1;
+	}
+
+	/* A desktop's asking for scans began or ended (ws089-p021), as the lease says now. */
+	scan = wifi_scan_wanted();
+	if (scan != told_scan) {
+		told_scan = scan;
+		state_changed = 1;
+	}
+
+	/*
+	 * The default route moved to another interface (BUG-189: the desktop
+	 * shows the connection that carries it).  Routes change from several
+	 * places (dhcpc, the network preference, an administrator), so the
+	 * table is compared, as the Wi-Fi state is.
+	 */
+	route = 0U;
+	found = default_route_index(&route);
+	if (found <= 0)
+		route = 0U;
+	if (route != told_route) {
+		told_route = route;
 		state_changed = 1;
 	}
 
@@ -3163,7 +3252,9 @@ operation_allowed(
 	    strcmp(operation, "WIFI_DISCONNECT") == 0 ||
 	    strcmp(operation, "WIFI_PROFILES_CHANGED") == 0 ||
 	    strcmp(operation, "WIFI_SESSION_OPEN") == 0 ||
-	    strcmp(operation, "WIFI_SESSION_CLOSE") == 0);
+	    strcmp(operation, "WIFI_SESSION_CLOSE") == 0 ||
+	    strcmp(operation, "WIFI_SCAN_START") == 0 ||
+	    strcmp(operation, "WIFI_SCAN_STOP") == 0);
 
 	/* Returns the computed result. */
 	return function_result;
@@ -3347,6 +3438,15 @@ dispatch_request(
 		send_response(client, request->header.request_id,
 		    request->header.opcode, NETWORKD_RESULT_ERROR, EBUSY,
 		    "confirmed transaction", NULL, 0U);
+		return;
+	}
+
+	/* A desktop asking for scans, or no longer, is only recorded (ws089-p021). */
+	if (request->header.opcode == NETWORKD_OP_WIFI_SCAN_START ||
+	    request->header.opcode == NETWORKD_OP_WIFI_SCAN_STOP) {
+		wifi_scan_request(client, request);
+		networkd_protocol_clear(response, sizeof(response));
+		networkd_protocol_clear(diagnostic, sizeof(diagnostic));
 		return;
 	}
 
@@ -3998,7 +4098,7 @@ wifi_request_connect(
 		return -1;
 	}
 
-	/* The join; a key the network refused is remembered, and any failure goes back to searching. */
+	/* The join; a key the network refused is remembered, and any failure leaves the policy unconnected (BUG-187). */
 	l2_succeeded = 0;
 	work->stage = "wifi connect";
 	joined = run_managed_connect(work->radios[winner].interface, profile,
@@ -4610,32 +4710,249 @@ recheck_connection_profile(
 }
 
 /*
- * Goes back to searching for the saved networks after an explicit join
- * failed once it had left the earlier connection.
+ * Leaves the policy on and unconnected after an explicit join failed
+ * (BUG-187, the user's decision of 2026-10-05).
  *
- * The join left that connection on purpose, but a failed join is not a
- * request to stay unconnected: the radio searches again, so the network
- * the machine was on comes back while the one that failed is not in reach
- * or refused its key (ws005-p020, q631).
+ * The join left the earlier connection on purpose, and a join the person
+ * chose that failed is not followed by a join of another saved network:
+ * the radio stays on and unconnected (manual-disconnected) until the
+ * person acts again -- joins a network, or turns Wi-Fi off and on.  A new
+ * boot and a new login search on their own as before.  This replaces
+ * ws005-p020's searching again after a failed join (q631).
  */
 static void
 wifi_join_failed(
 	void)
 {
-	int retired;
+	/* No automatic wave is planned for a policy the person left unconnected. */
+	if (managed_wlan.state == NETWORKD_WLAN_MANUAL_DISCONNECTED)
+		automatic_retry_at = 0U;
 
-	/* Only a policy the join left idle and unconnected moves; any other state is kept. */
-	if (managed_wlan.state != NETWORKD_WLAN_MANUAL_DISCONNECTED)
-		return;
-	if (managed_wlan.connection.interface[0] != '\0')
-		return;
+	/* The failure is told; the policy stays as the join left it. */
+	fprintf(stderr, "networkd: explicit Wi-Fi join failed; not joining another network until the user acts\n");
+}
 
-	/* The idle policy starts searching, at once. */
-	retired = retire_managed_connection(NETWORKD_WLAN_AUTO_SEARCHING, 1);
-	if (retired != 0)
+/*
+ * Records a desktop's asking for scans, or its end, and answers it
+ * (ws089-p021).
+ *
+ * A start asks for NETWORKD_WIFI_SCAN_LEASE_SECONDS from now and, when the
+ * radios are on and left unconnected, starts a scan at once; a stop ends
+ * the asking.  The scans themselves are read with WIFI_LIST.
+ */
+static void
+wifi_scan_request(
+	int client,
+	const struct networkd_request *request)
+{
+	uint64_t now;
+	int wanted;
+
+	/* The lease: renewed by a start, ended by a stop. */
+	now = netutil_monotonic_us();
+	wanted = wifi_scan_wanted();
+	if (request->header.opcode == NETWORKD_OP_WIFI_SCAN_START) {
+		wifi_scan_until = now + (uint64_t)NETWORKD_WIFI_SCAN_LEASE_SECONDS * 1000000ULL;
+
+		/* A first start scans at once; a renewal keeps the plan it has. */
+		if (!wanted || wifi_scan_due == 0U)
+			wifi_scan_due = now;
+	} else {
+		wifi_scan_until = 0U;
+		wifi_scan_due = 0U;
+	}
+
+	/* The answer only says the daemon heard; the watchers see scan= change. */
+	send_response(client, request->header.request_id, request->header.opcode,
+	    NETWORKD_RESULT_OK, 0, NULL, NULL, 0U);
+	notify_state_changed();
+}
+
+/* Tells whether a desktop's lease on fresh scans holds now. */
+static int
+wifi_scan_wanted(
+	void)
+{
+	uint64_t now;
+
+	/* Nobody asked, or the asking ended. */
+	if (wifi_scan_until == 0U)
+		return 0;
+
+	/* The lease ran out: the desktop that asked went without saying so. */
+	now = netutil_monotonic_us();
+	if (now >= wifi_scan_until)
+		return 0;
+
+	/* Succeeded: the lease holds. */
+	return 1;
+}
+
+/*
+ * Reports how long the event loop may wait before an asked-for scan is due
+ * or the lease ends (0: now), or -1 when nothing about scans is waited for.
+ */
+static int
+wifi_scan_poll_timeout(
+	void)
+{
+	uint64_t milliseconds;
+	uint64_t deadline;
+	uint64_t now;
+
+	/* Nobody asks: nothing is waited for (an ended lease plans nothing more). */
+	if (wifi_scan_until == 0U)
+		return -1;
+
+	/* A lease that ran out is forgotten now, so that the watchers hear scan=0. */
+	now = netutil_monotonic_us();
+	if (now >= wifi_scan_until) {
+		wifi_scan_until = 0U;
+		wifi_scan_due = 0U;
+		return 0;
+	}
+
+	/* The lease's end, or the next scan when one is planned for an idle policy. */
+	deadline = wifi_scan_until;
+	if (wifi_scan_due != 0U &&
+	    managed_wlan.state == NETWORKD_WLAN_MANUAL_DISCONNECTED &&
+	    wifi_scan_due < deadline)
+		deadline = wifi_scan_due;
+
+	/* Due now. */
+	if (deadline <= now)
+		return 0;
+
+	/* The milliseconds to wait, rounded up. */
+	milliseconds = (deadline - now + 999ULL) / 1000ULL;
+	if (milliseconds > (uint64_t)INT_MAX)
+		return INT_MAX;
+	return (int)milliseconds;
+}
+
+/*
+ * Starts a scan on each radio that is on, idle and not scanning, while a
+ * desktop asks for scans and the policy is on and left unconnected
+ * (ws089-p021), and plans the next one.
+ *
+ * The automatic search scans on its own and a connected radio cannot scan,
+ * so only manual-disconnected is served.  The work is background work: a
+ * person's request that arrives meanwhile stops it.
+ */
+static void
+run_requested_scan(
+	void)
+{
+	struct networkd_wlan_radio radios[NETWORKD_WLAN_RADIO_MAX];
+	struct networkd_wifi_child_result child;
+	size_t radio_count;
+	size_t index;
+	uint64_t now;
+	int error;
+	int saved;
+
+	/* The lease ended: nothing is planned any more. */
+	now = netutil_monotonic_us();
+	if (!wifi_scan_wanted()) {
+		wifi_scan_until = 0U;
+		wifi_scan_due = 0U;
 		return;
-	automatic_candidate_skip = 0U;
-	schedule_automatic_work(0U);
+	}
+
+	/* Only an idle, unconnected policy is scanned for; the next scan waits for one. */
+	if (managed_wlan.state != NETWORKD_WLAN_MANUAL_DISCONNECTED) {
+		wifi_scan_due = now + (uint64_t)NETWORKD_WLAN_RESCAN_SECONDS * 1000000ULL;
+		return;
+	}
+
+	/* The radios as they are now. */
+	wifi_work_begin(NETWORKD_OP_WIFI_LIST, 1);
+	memset(radios, 0, sizeof(radios));
+	radio_count = 0U;
+	error = enumerate_wlan_radios(radios, NETWORKD_WLAN_RADIO_MAX, &radio_count);
+	if (error != 0)
+		radio_count = 0U;
+
+	/* A scan on each radio that is up, idle and not scanning already. */
+	for (index = 0U; index < radio_count; index++) {
+		if (wifi_work.cancelled)
+			break;
+		if (radios[index].observation_error != 0 || radios[index].stop_flags != 0U)
+			continue;
+		if (!radios[index].administrative_up || radios[index].association_active)
+			continue;
+		if (radios[index].scan_state == WLAN_SCAN_RUNNING)
+			continue;
+
+		/* The radio's scan; one that fails is tried again at the next plan. */
+		memset(&child, 0, sizeof(child));
+		error = run_wifi(radios[index].interface, "search-start", NULL, 10U, &child);
+		if (error != 0) {
+			saved = errno;
+			if (saved == 0)
+				saved = EIO;
+			fprintf(stderr, "networkd: %s: asked-for scan: %s\n",
+			    radios[index].interface, strerror(saved));
+		}
+		networkd_wifi_child_result_clear(&child);
+	}
+
+	/* The work ends, and the next scan is planned. */
+	wifi_work_end();
+	wifi_scan_due = netutil_monotonic_us() + (uint64_t)NETWORKD_WLAN_RESCAN_SECONDS * 1000000ULL;
+}
+
+/*
+ * Finds the interface the default route goes through: 1 with its index,
+ * 0 when the table has no default route, -1 when the table cannot be read.
+ * The first default route of the table is the one in effect (BUG-189).
+ */
+static int
+default_route_index(
+	uint32_t *ifindex)
+{
+	const struct sockaddr_in *destination;
+	const struct sockaddr_in *mask;
+	struct rtentry route;
+	unsigned ordinal;
+	int descriptor;
+	int error;
+	int found;
+
+	/* A socket for the route table. */
+	descriptor = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (descriptor < 0)
+		return -1;
+
+	/* Each route of the table until the first default one. */
+	found = 0;
+	error = 0;
+	for (ordinal = 0U;; ordinal++) {
+		memset(&route, 0, sizeof(route));
+		route.rt_index = ordinal;
+		error = ioctl(descriptor, SIOCGRTENTRY, &route);
+		if (error != 0)
+			break;
+
+		/* A route to everything with no mask is the default one. */
+		destination = (const struct sockaddr_in *)&route.rt_dst;
+		mask = (const struct sockaddr_in *)&route.rt_genmask;
+		if (destination->sin_addr.s_addr != 0U || mask->sin_addr.s_addr != 0U)
+			continue;
+		*ifindex = route.rt_ifindex;
+		found = 1;
+		break;
+	}
+
+	/* The end of the table is ENOENT; anything else is a table not read. */
+	if (found == 0 && error != 0 && errno != ENOENT) {
+		(void)close(descriptor);
+		return -1;
+	}
+	(void)close(descriptor);
+
+	/* Succeeded: whether a default route was found. */
+	return found;
 }
 
 /* Resumes deferred control only after the interrupted actor has unwound. */
@@ -4800,6 +5117,13 @@ service_wifi_wait(
 	int interrupts;
 	uint64_t cleanup_deadline;
 
+	/*
+	 * The watchers hear a state the running work reached (connecting, while
+	 * it joins), not only the one it ends in (BUG-185: the desktop never
+	 * saw Connecting).
+	 */
+	deliver_state_changes();
+
 	if (wifi_work.cleanup)
 		return 0;
 	if (stopping || wifi_work.cancelled)
@@ -4839,6 +5163,10 @@ service_wifi_wait(
 	    managed_wlan.state == NETWORKD_WLAN_CONNECTED ||
 	    managed_wlan.state == NETWORKD_WLAN_RECONNECTING))) {
 		send_wifi_observation(client, &request);
+	} else if (request.header.opcode == NETWORKD_OP_WIFI_SCAN_START ||
+	    request.header.opcode == NETWORKD_OP_WIFI_SCAN_STOP) {
+		/* Asking for scans only records the lease; the running work goes on. */
+		wifi_scan_request(client, &request);
 	} else if (request.header.opcode == NETWORKD_OP_WIFI_PROFILES_CHANGED) {
 		wifi_profiles_changed(&peer);
 		send_response(client, request.header.request_id, request.header.opcode,
@@ -5159,7 +5487,9 @@ decode_request(
 	    request->header.opcode == NETWORKD_OP_WIFI_DISABLE ||
 	    request->header.opcode == NETWORKD_OP_WIFI_LIST ||
 	    request->header.opcode == NETWORKD_OP_WIFI_DISCONNECT ||
-	    request->header.opcode == NETWORKD_OP_WIFI_PROFILES_CHANGED) &&
+	    request->header.opcode == NETWORKD_OP_WIFI_PROFILES_CHANGED ||
+	    request->header.opcode == NETWORKD_OP_WIFI_SCAN_START ||
+	    request->header.opcode == NETWORKD_OP_WIFI_SCAN_STOP) &&
 	    seen == 0U && request->dns_count == 0U) ||
 	    (request->header.opcode == NETWORKD_OP_WIFI_CONNECT &&
 	    seen == 32U && request->dns_count == 0U) ||
@@ -5237,6 +5567,10 @@ operation_name(
 		return "WIFI_SESSION_OPEN";
 	if (opcode == NETWORKD_OP_WIFI_SESSION_CLOSE)
 		return "WIFI_SESSION_CLOSE";
+	if (opcode == NETWORKD_OP_WIFI_SCAN_START)
+		return "WIFI_SCAN_START";
+	if (opcode == NETWORKD_OP_WIFI_SCAN_STOP)
+		return "WIFI_SCAN_STOP";
 	return NULL;
 }
 
@@ -6625,9 +6959,10 @@ append_managed_status(
 	/* The record. */
 	count = snprintf(output + *output_length,
 	    capacity - *output_length,
-	    "wifi state=%s interface=%s owner=%u store=%s sessions=%s ssid=%s rejected=%s\n",
+	    "wifi state=%s interface=%s owner=%u store=%s sessions=%s ssid=%s rejected=%s scan=%u\n",
 	    managed_state_name(managed_wlan.state), interface,
-	    (unsigned)managed_wlan.owner_uid, store, sessions, ssid, rejected);
+	    (unsigned)managed_wlan.owner_uid, store, sessions, ssid, rejected,
+	    (unsigned)wifi_scan_wanted());
 	if (count < 0 || (size_t)count >= capacity - *output_length) {
 		errno = EOVERFLOW;
 		return -1;

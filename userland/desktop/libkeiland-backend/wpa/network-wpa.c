@@ -26,6 +26,9 @@
 #define WPA_DEADLINE_MS 2000U
 #define WPA_RETRY_MS 1000U
 
+/* While scans are asked for (ws089-p021), how often the supplicant is asked for one. */
+#define WPA_SCAN_MS 10000U
+
 /* Each command has one response and a continuation, never an event response. */
 enum network_command {
 	COMMAND_NONE,
@@ -37,12 +40,16 @@ enum network_command {
 	COMMAND_SELECT,
 	COMMAND_DISCONNECT,
 	COMMAND_OFF,
-	COMMAND_RECONNECT
+	COMMAND_RECONNECT,
+	COMMAND_SCAN_ASKED
 };
 
 /*
  * One caller owns both sockets, the cached state and scan, and one request.
  * Closed sockets are -1; pending commands retain their deadline until reply.
+ * scan_wanted is set while the compositor asks for scans (ws089-p021), and
+ * scan_due is when the supplicant is asked for the next one; such a scan is
+ * no request and never finishes one.
  */
 struct kl_backend_network {
 	struct kl_backend_network *next;
@@ -63,6 +70,8 @@ struct kl_backend_network {
 	int finished_error;
 	unsigned profile;
 	char joining[KL_BACKEND_NETWORK_SSID_MAX];
+	unsigned scan_wanted;
+	uint64_t scan_due;
 };
 
 /*
@@ -293,6 +302,34 @@ kl_backend_network_request(
 	network->finished_error = 0;
 
 	/* Succeeded: a later update sends and completes the request. */
+	return 0;
+}
+
+/*
+ * Asks the supplicant for scans every WPA_SCAN_MS while on (ws089-p021).
+ */
+int
+kl_backend_network_set_scanning(
+	struct kl_backend_network *network,
+	unsigned on)
+{
+	/* Requires the watch. */
+	if (network == NULL)
+		return EINVAL;
+
+	/* The asking ends: no scan is asked for any more. */
+	if (on == 0U) {
+		network->scan_wanted = 0U;
+		return 0;
+	}
+
+	/* The asking begins: a scan is asked for at the next free step. */
+	if (network->scan_wanted == 0U) {
+		network->scan_wanted = 1U;
+		network->scan_due = kwpa_milliseconds();
+	}
+
+	/* Succeeded: the asking is recorded. */
 	return 0;
 }
 
@@ -843,6 +880,7 @@ network_next(
 {
 	enum network_command pending;
 	const char *command;
+	uint64_t now;
 	int error;
 
 	/* Credential refresh is already performed by the independent save operation. */
@@ -852,6 +890,7 @@ network_next(
 	}
 
 	/* Each public operation begins with the daemon's corresponding command. */
+	now = kwpa_milliseconds();
 	pending = COMMAND_NONE;
 	command = NULL;
 	if (network->request == KL_BACKEND_NETWORK_REQUEST_SCAN) {
@@ -880,6 +919,11 @@ network_next(
 		network->need_scan = 0;
 		pending = COMMAND_RESULTS;
 		command = "SCAN_RESULTS";
+	} else if (network->scan_wanted != 0U && now >= network->scan_due) {
+		/* A scan the compositor asks for; its results come as an event. */
+		network->scan_due = now + WPA_SCAN_MS;
+		pending = COMMAND_SCAN_ASKED;
+		command = "SCAN";
 	} else if (network->need_status != 0) {
 		network->need_status = 0;
 		pending = COMMAND_STATUS;
@@ -918,6 +962,10 @@ network_answer(
 			return error;
 		return 0;
 	}
+
+	/* An asked-for scan's acknowledgement finishes nothing (a busy radio scans already). */
+	if (pending == COMMAND_SCAN_ASKED)
+		return 0;
 
 	/* Scan results belong to the cache rather than a command acknowledgement. */
 	if (pending == COMMAND_RESULTS) {
