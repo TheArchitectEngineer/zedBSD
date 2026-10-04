@@ -17,7 +17,11 @@ Queue: 未定
 - `kl_panel`（`userland/desktop/libkeiland/ui/cards.c:73-`）は、glass の時は左右とも薄い veil（`theme->glass_sidebar`・`theme->glass_content`、compositor が下に glass を描く）、glass でない時は左が sidebar の veil、右が **白い card と影**（Files の不透明の見た目）。
 - [ws090-p014](../phase014/phase.md) で chooser を親の窓の title bar にぶら下がる sheet にし、**chooser は不透明**にした。そのため右の pane が白い card になっている。
 
-## 範囲（案は 2 つ、設計でユーザーと決める）
+## ユーザーの決定（2026-10-05）
+
+「WS090 p016	File Chooser の右の pane を左右とも透かす」→ **案 (b)**: sheet を glass にし、左右とも desktop の背景を少し透かす veil にする。
+
+## 範囲（案は 2 つ、(b) に決定）
 
 - (a) **右の pane を左と同じ系統の色に**: 不透明の時の content の panel を sidebar と同じ veil の色（または少し明るい同系の色）にし、白い card と影をやめる。chooser だけに効く style の指定にするか、`kl_panel` の不透明の時の見た目を全 app で変えるか（Files・Text Editor・PDF Viewer などへの影響）を決める。
 - (b) **左右とも desktop の背景を少し透かす**: sheet を glass（compositor が下に desktop の背景の blur を描く）にし、左右を glass の veil にする。sheet が親の窓の上に重なるので、何を透かすか（親の窓か desktop の壁紙か）と、読みやすさ（文字の contrast）を確かめる。ws090-p014 で不透明にした理由を確かめて、glass に戻して問題が無いかを見る。

@@ -2,11 +2,32 @@
 
 # Queue / all-agent index
 
-Active Queues: なし（次の P3 の Queue: q700 の UAT-3 の Bug、下の節の表）。委譲の session の P4 は q697・q698・q699 を cleared で終了（main efe846a に統合）。uat-3 の image を作成（plan/uat.md）。
+Active Queues: q700（P1）・q703（P2）。2026-10-05 未明のベータ1 の実装の束（下の節）。委譲の session の P4 は q697・q698・q699 を cleared で終了（main efe846a に統合）。uat-3 の image を作成（plan/uat.md）。
 Status: active
 Main executor / plan writer: Q1（単一 Claude Code セッション、[protocol](agents/protocol.md)）。サブエージェント P1〜P8、N=2（P1・P2）＋試験 T1（忙しい時は T2）。
-Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q703（q702 は ws113-p001 の新しい attempt（Settings の Display の頁の要望）。q701 は ws142-p001 の設計。q700 は UAT-3 の Bug（BUG-177〜180）。q697・q698 は 2026-10-04 夜の P4 だけの委譲。q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
+Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q589.md)。過去の Queue は [Past Log](history/index.md)。次の未予約 ID は q712（q703〜q711 は 2026-10-05 の実装の束。q702 は ws113-p001 の新しい attempt（Settings の Display の頁の要望）。q701 は ws142-p001 の設計。q700 は UAT-3 の Bug（BUG-177〜180）。q697・q698 は 2026-10-04 夜の P4 だけの委譲。q696 は ws049-p017 driver 向けの公開の口。q695 は ws141-p002。q684-i02 は P4 の BUG-158 の passthrough の解析。q694 は ws049-p016 PCI の bridge の secondary bus。q693 は ws049-p009。q692 は WS037 p001 nvrtx。q691 は WS141 p001。q677〜q690 は 2026-10-04 17 時以降の予定、下の節。q676 は P1 generation14 の WS080 p004。q675 は P2 の WS131 p014。q674 は P2 の WS131 p013。q673 は P2 の WS131 p012。q650 は P1 の WS131 p004〜。q649 は P2 の WS134 p001。q648 は T2。q647 は P1 の Venus の hostmem の拡大。q646 は全試験の KVM の統一（予約）。q645 は P2 の Bug の並行処理。q644 は P2 の BUG-151。q643 は P1 の Bug の連続処理。q642 は P1 の BUG-160。q641 は P1 の BUG-151・BUG-157。q640 は P1 の BUG-156。q638・q639 は次のセッションの提案。q637 は P3 の p013 の試験の直し。q636 は P2 の BUG-150。q635 は P1 の BUG-149 に予約。BUG-145 の調査は 5330 の復旧後に新しい ID で）。
 
+
+## 2026-10-05 未明: ベータ1 の実装の束（P1・P2、T1）
+
+user（原文）:「では、サブエージェントを起動して作業します。設計、実装担当のP1, P2でN=1の作業を行います。テストはサブエージェントT1がバックグラウンド実行します。テスト用のqemuは同時に1つだけ実行するとして、キューイングされたテストは1つのqemuイメージや実行にバッチングすることを目指しますが、バッチ化できない場合やキューが1つしかない場合は単独実行でもOKです。T1はOpus 5.5 Lowで起動します。T1にはmaster.mdなどあまりコンテキストを読ませないでOKです。メインエージェントQ1は、タスクの優先度制御や計画の更新、サブエージェントの成果のマージを専任で行います。現在、ベータ1に向けて、あまり難しい実装はなさそうなので、設計レビューのサブエージェントの実行は省略してください。WSの優先順位は、そのリストでよいです。実機が必要なものは順位を下げます。バグの掃討は朝までやめておいて、この時間は実装に集中しましょう。P1, P2には空いている順にスケジューリングしてOKです。テスト待ちはせずに、次に取り組める作業に移る方針でお願いします。」
+
+- 体制: P1・P2（phase-runner、high）、T1（test-runner、試験の依頼がある時に起動、QEMU は同時に 1 つ、依頼はできるだけ 1 つの image・実行にまとめる）。design-reviewer は省く（ユーザー）。WS073 の Bug の掃討（q686〜q688）は朝まで止める。実機の要る物（WS049・WS100・WS134・BUG-156）は順位を下げる。
+- 決定（2026-10-05）: WS090 p016 は (b) 左右とも透かす。WS127 p011 は Today を左の pane の一番上・起動は Today。IME の辞書は /usr/share/keiland/ime へ移し 1 つにまとめる（ws095-p017）。WS045 は説明を求められた（Q1 が説明する）。
+- 割り当て: 最初は P1 = q700、P2 = q703。以後は下の表の上から、空いた担当に Q1 が投入する。
+
+| Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
+| --- | --- | --- | --- | --- | --- |
+| q700 / q700-i01 | P1（generation17） | WS099: [BUG-178](bugs/BUG-178.md)・[BUG-179](bugs/BUG-179.md)・[BUG-180](bugs/BUG-180.md)・[BUG-190](bugs/BUG-190.md)、続けて [ws099-p031](ws099/phase031/phase.md) | 窓の操作（タッチのドラッグの位置のずれ、ダブルクリックの最大化を 0.1 秒（遅くとも 0.2 秒）、最大化からのドラッグで一度最大に戻る、タップダウンを押下に（BUG-166 の仕様と揃える））、system bar を 44 px に。BUG-156 は実機の採取が要るので後 | なし | in-progress |
+| q703 / q703-i01 | P2（generation14） | WS089・WS005: [BUG-183](bugs/BUG-183.md)〜[BUG-189](bugs/BUG-189.md)、[ws089-p021](ws089/phase021/phase.md) | Settings・system bar の Wi-Fi（オンの反応、Scan のボタンを無くす自動の scan と compositor の数え上げ、Connecting の表示、鍵の欄を確定で消す、鍵の誤りの後の自動接続を止め失敗を出す、シングルタップで接続、Active Network と default route の試験、Disconnect の icon） | なし | in-progress |
+| q685 / q685-i02 | 空いた担当 | WS033: [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md) | ws033/phase001 の「q685-i01 の途中の結果」の再開点から | なし | pending |
+| q705 / q705-i01 | 空いた担当 | WS127: [ws127-p010](ws127/phase010/phase.md)・[p011](ws127/phase011/phase.md)・[p012](ws127/phase012/phase.md)・[BUG-177](bugs/BUG-177.md) | path の入力と候補、Home は ~/・Today（左の一番上、起動は Today）、Tags の削除（Guardrail の D14 と checker の表は Q1）、検索欄の IME | なし | pending |
+| q706 / q706-i01 | 空いた担当 | WS131: [ws131-p014](ws131/phase014/phase.md) の残り → p015〜p022 | phase014 の Resume から番号の順 | なし | pending |
+| q707 / q707-i01 | 空いた担当 | WS132: p001 の設計 → 実装 | /dev/system の事象の subscriber（読む前に種類を登録、受け取り手は Keiland、ACPI の電源ボタン・蓋・AC を配る）、PnP の通知、自動 mount、Files の eject | なし | pending |
+| q708 / q708-i01 | 空いた担当 | WS095: [ws095-p017](ws095/phase017/phase.md)（辞書の移動と統合）・p005・[p016](ws095/phase016/phase.md)（app ごとの IME の状態） | 各 phase.md の範囲 | なし | pending |
+| q709 / q709-i01 | 空いた担当 | WS090: [ws090-p016](ws090/phase016/phase.md) | File Chooser を (b) 左右とも透かす | なし | pending |
+| q710 / q710-i01 | 空いた担当 | WS128: 標準 app の仕上げの残り | ws128 の planned の Phase | なし | pending |
+| q711 / q711-i01 | 空いた担当 | WS129: p003〜p005 | release の作業 | なし | pending |
 
 ## 2026-10-04 19時50分〜22時の委譲: P4 だけ（別の session が実行）
 

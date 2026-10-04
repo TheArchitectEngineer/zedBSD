@@ -15,6 +15,10 @@ Queue: 未定
 
 - 左の pane の Home は `FM_LOCATION_HOME`（`userland/desktop/files/places.c:79`）で、`fm_location_name` が dashboard と home の folder の両方を「Home」と呼ぶ（`places.c:200-236`）。Home を開くと `ui-grid.c:75` で dashboard（`ui-home.c`: 壁紙の hero と挨拶、よく使う folder の card と件数、最近の file、最近開いた folder）を描き、`~/` の一覧ではない。
 
+## ユーザーの決定（2026-10-05）
+
+「WS127 p011	Today の置き場所と起動時の頁（ 左の pane の一番上、起動は Today）」→ Today は左の pane の一番上、Files の起動の時の頁は Today。
+
 ## 範囲
 
 1. 左の pane の **Home** は `~/` の folder の一覧（普通の folder の location、`FM_LOCATION_FOLDER` で path は `$HOME`）にする。title bar・breadcrumb・history・戻る・新しい tab・Go の menu（`ui-menu.c:182`）・title bar の Home の control（`ui-titlebar.c:174`）も `~/` を開く。
