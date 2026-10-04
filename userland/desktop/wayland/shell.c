@@ -33,9 +33,9 @@
  * ws035-p117) and the docked window; towards the right four virtual
  * desktops; at the right edge the network, the battery and the clock.  The
  * network's icon opens its menu (network.c, ws035-p013); the battery shows
- * the charge the backend reads (ws132-p003), with a "+" while it charges,
- * and is not drawn on a machine without a battery (its place stays empty,
- * so the other icons keep their places).
+ * the charge the backend reads (ws132-p003), with a "+" while it charges;
+ * a machine without a battery has none, and the icons left of it move
+ * right into its place (ws132-p003, the 2026-10-05 user decision).
  *
  * A fullscreen window is kept whole (ws035-p119, the 2026-09-28 user
  * decision): while it is the highest of the windows that cover the top of
@@ -2304,9 +2304,17 @@ bar_layout(
 	(void)strftime(bar->clock, sizeof(bar->clock), "%a %b %e  %H:%M", &local);
 	bar->clock_x = (int32_t)server->width - 16 - glass_text_width(server, SIZE_BAR, bar->clock);
 
-	/* The battery and the signal left of it, and a line. */
+	/*
+	 * The battery and the signal left of it, and a line.  A machine
+	 * without a battery leaves no room for it (the 2026-10-05 user
+	 * decision): the signal comes next to the clock.
+	 */
 	bar->battery_x = bar->clock_x - 44;
 	bar->signal_x = bar->battery_x - 36;
+	if (server->power.percent < 0) {
+		bar->battery_x = bar->clock_x;
+		bar->signal_x = bar->clock_x - 36;
+	}
 	bar->volume_x = bar->signal_x - 34;
 
 	/* The input method's language left of the volume, when there is an input method (input-method.c). */
