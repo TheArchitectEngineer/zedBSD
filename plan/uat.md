@@ -192,3 +192,4 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 他の観点（BUG-165・119・ws049-p007・BUG-170 など）は今回の報告に無い（未確認として扱う）。
 - 追加（ユーザー）: [BUG-181](bugs/BUG-181.md) Browser の URL バーを hover すると長い URL が title bar をはみ出す、[BUG-182](bugs/BUG-182.md) Browser でタップがクリックにならず HTML のボタンを押せない（どちらも WS074、Codex の担当）。
 - 追加（ユーザー）: タッチパッドの 2 本指のスクロールが少なくとも Settings で効かない → [BUG-156](bugs/BUG-156.md) を reopen（BUG-165 の DSDT の修正の後でも再現）。
+- 追加（ユーザー）: [BUG-183](bugs/BUG-183.md) WiFi をオンにすると switch が青くなるまで約 1 秒（オフは一瞬）、[BUG-184](bugs/BUG-184.md) Settings で WiFi をオンにした後のオフのクリックが Scan のボタンに取られる。
