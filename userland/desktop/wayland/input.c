@@ -1434,3 +1434,19 @@ multitouch(
 	/* Succeeded: the node is a touch screen. */
 	return 1;
 }
+
+/*
+ * Tells whether an Alt key is held now (the network's icon opens its
+ * details on an Alt+click, network.c, ws099-p032).
+ */
+int
+zwl_input_alt_held(
+	const struct zwl_server *server)
+{
+	/* Either Alt. */
+	if ((server->modifier_keys & (HELD_LEFTALT | HELD_RIGHTALT)) != 0U)
+		return 1;
+
+	/* Neither. */
+	return 0;
+}

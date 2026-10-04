@@ -1338,6 +1338,10 @@ system_details_take(
 		if (count > KL_BACKEND_NETWORK_SCAN_MAX)
 			count = KL_BACKEND_NETWORK_SCAN_MAX;
 		zwl_network_saved(server, job->saved, count);
+
+		/* The interfaces and the DNS servers, for the bar's details (network.c, ws099-p032). */
+		zwl_network_details(server, job->links, job->link_count, (const char (*)[KL_BACKEND_NETWORK_ADDRESS_MAX])job->dns,
+				    job->dns_count);
 	}
 }
 
