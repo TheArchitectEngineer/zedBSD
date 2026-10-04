@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws129-p002 -->
 # ws129-p002: image の license の一覧
 
-Status: planned
+Status: in-progress（q668、P2、2026-10-04。一覧・script・host 試験・audit は済み。足りない本文 G1〜G4 は main に依頼、remacs（D1）はユーザーの判断待ち）
 Disposition: normal
 Parent: [WS129](../ws.md)
 Focused goal: fg019（ベータ1）
-Queue: none（未承認）
+Queue: q668（Q1 の dispatch、2026-10-04）
 目安: 3〜4h
 
 ## 範囲
@@ -34,3 +34,13 @@ Queue: none（未承認）
 
 
 2026-10-02 Q1: `plan/tools/packages/audit-licenses.sh` は openssl・openssh の tarball だけを見ている（ws115-p005 で判明）。この Phase で全外部 package（glib・pcre2・libffi 以降の GTK の依存、Emacs・vim・Python を含む）に広げる。
+
+## 実施（2026-10-04、q668、P2）
+
+- 一覧: [licenses.md](../licenses.md)（要約・足りない本文・判断・audit）、生成物 [licenses-generated.md](../licenses-generated.md)・[licenses-index.txt](../licenses-index.txt)。
+- script: `tools/release/license-inventory.py` と `tools/release/license-components.json`（44 の component、image の分は 25）。make に image の中身を聞く
+  （`--eval` の断片で、選んだ package・kernel の option・`/usr/share/licenses/` の file・外部の版と archive・source）。`--rootfs` で disk の上も確かめる。
+- host 試験 [license-inventory-test.sh](../tests/license-inventory-test.sh) PASS（8 件）。T1 の CI の image の rootfs（`t1-full`）に `--rootfs` で当て、入っている本文は全て在る。
+- audit: `plan/tools/packages/audit-licenses.sh` を全 archive に広げた（Q1 の 2026-10-02 の記録の指示）。main の distfiles（29 archive）で all known: yes。
+- 残り: G1 zedBSD の LICENSE、G2 libc の regex（TRE の BSD-2・musl の MIT）、G3 i915 の Intel の MIT、G4 libvulkan の LICENSE-PROTOCOL を image に入れる
+  （各 package の Makefile、main と持ち主に依頼）。D1 remacs（GPL）はユーザーの判断待ち（Q1 が上げた）。release の config が p004 で決まったら再生成。
