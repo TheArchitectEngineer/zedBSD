@@ -2,7 +2,7 @@
 # ws129-p002: host test of tools/release/license-inventory.py on the CI image's configuration.
 #  1. The real table: no open item (G1-G4 added, remacs taken into the tree under zlib, 2026-10-04).
 #  2. A table without the AX211 component: its ISC/BSD sources are reported uncovered.
-#  3. A table where remacs were GPL without the decision mark: reported as a GPL component without a decision.
+#  3. A table where emacs (REmacs) were GPL without the decision mark: reported as a GPL component without a decision.
 #  4. An empty root filesystem: every installed notice is reported missing on disk.
 #  5. The index has one line per component, four fields each.
 #   sh plan/ws129/tests/license-inventory-test.sh
@@ -38,10 +38,10 @@ python3 -c "
 import json
 d=json.load(open('tools/release/license-components.json'))
 for c in d['components']:
-    if c['id']=='remacs': c['license']='GPL-3.0-or-later'
+    if c['id']=='emacs': c['license']='GPL-3.0-or-later'
 json.dump(d,open('$work/gpl.json','w'))"
 run --components "$work/gpl.json"
-expect "GPL-family component without a decision: remacs" "a GPL component needs the decision mark"
+expect "GPL-family component without a decision: emacs" "a GPL component needs the decision mark"
 
 # 4.
 mkdir -p "$work/rootfs"

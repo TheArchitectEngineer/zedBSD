@@ -3,19 +3,23 @@
 #
 # REmacs (github.com/awemorris/remacs at 1a72439) is part of this tree, under
 # the zlib license of its author.  It is built from here: the editor's Noct
-# sources are compiled by the host's Noct into one bytecode file,
-# /usr/bin/remacs.nap, which the target's noct runs; the bundled SKK dictionary
-# goes to /usr/share/remacs/skkjisyo.dic.  REmacs's own Makefile is
-# Makefile.remacs; it runs in a copy under BUILD, so the tree stays clean.
+# sources are compiled by the host's Noct into one Noct application, which is
+# installed as the command /bin/emacs (2026-10-04 user: "remacs のコマンド名は
+# /bin/emacs でお願いします").  The application starts with the line
+# "#!/usr/bin/noct", which Noct writes and strips itself, so the kernel runs
+# it with the interpreter: /usr/bin/noct is a link to the target's /bin/noct.
+# The bundled SKK dictionary goes to /usr/share/remacs/skkjisyo.dic.  REmacs's
+# own Makefile is Makefile.remacs; it runs in a copy under BUILD, so the tree
+# stays clean.
 ZEDBSD_REMACS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 include $(ZEDBSD_REMACS_DIR)../../../build-jobs.mk
 include $(ZEDBSD_REMACS_DIR)../package.mk
 include $(ZEDBSD_REMACS_DIR)../noct/version.mk
 
 REQUIRE = base/noct
-# Remacs is written in Noct, so choosing it chooses the interpreter that
-# runs it.  The menu files it with the editors.
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,remacs,Remacs editor,*,n,package,,y,\
+# Emacs (REmacs) is written in Noct, so choosing it chooses the interpreter
+# that runs it.  The menu files it with the editors.
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,emacs,Emacs editor,*,n,package,,y,\
 	packages/editors,base/emacs,$(REQUIRE)))
 REQUIRE =
 
@@ -33,11 +37,14 @@ REMACS_DICTIONARY := $(REMACS_SOURCE_DIR)/dict/SKK-JISYO.remacs
 
 # These recursive additions are evaluated after config.mk dependencies have
 # been expanded.
-ZEDBSD_PACKAGE_INPUTS += $(if $(filter remacs,$(ZEDBSD_USER_PROGRAMS)),\
+ZEDBSD_PACKAGE_INPUTS += $(if $(filter emacs,$(ZEDBSD_USER_PROGRAMS)),\
 	$(REMACS_NAP) $(REMACS_DICTIONARY))
-ZEDBSD_PACKAGE_FILES += $(if $(filter remacs,$(ZEDBSD_USER_PROGRAMS)),\
-	--file $(ZEDBSD_PACKAGE_BINDIR)/remacs.nap=$(REMACS_NAP) \
+ZEDBSD_PACKAGE_FILES += $(if $(filter emacs,$(ZEDBSD_USER_PROGRAMS)),\
+	--file /bin/emacs=$(REMACS_NAP) \
+	--mode /bin/emacs=0755 \
 	--file /usr/share/remacs/skkjisyo.dic=$(REMACS_DICTIONARY))
+ZEDBSD_PACKAGE_LINKS += $(if $(filter emacs,$(ZEDBSD_USER_PROGRAMS)),\
+	/usr/bin/noct=/bin/noct)
 
 # The bytecode, built in a fresh copy of the sources with the host's Noct.
 $(REMACS_NAP): $(REMACS_SOURCES) $(REMACS_HOST_NOCT_STAMP)
@@ -50,6 +57,8 @@ $(REMACS_NAP): $(REMACS_SOURCES) $(REMACS_HOST_NOCT_STAMP)
 	$(MAKE) -C $(REMACS_WORK_DIR) -f Makefile.remacs NOCT=$(abspath $(NOCT_HOST_ARTIFACT)) build/remacs.nap
 	@mkdir -p $(dir $@)
 	cp -f $(REMACS_WORK_DIR)/build/remacs.nap $@
+	@head -c 16 $@ | grep -qx '#!/usr/bin/noct' || \
+		{ echo 'remacs: $@ does not start with #!/usr/bin/noct' >&2; rm -f $@; exit 1; }
 
-.PHONY: remacs
-remacs: $(REMACS_NAP)
+.PHONY: emacs
+emacs: $(REMACS_NAP)
