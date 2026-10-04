@@ -65,6 +65,7 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p017](phase017/phase.md) | accent の色・dark の外観（D2） | planning（ユーザーの判断: ベータ1 に入れるか。zdesktop と全 app の固定の色に及ぶ） | p010 |
 | [ws089-p018](phase018/phase.md) | 全文規約と回帰（WS の最後）、完了の処理の準備 | planning（最後） | 選んだ実装の Phase |
 | [ws089-p020](phase020/phase.md) | BUG-152: Wallpaper の頁の縮小表示を別の thread で読み、頁を先に出す | cleared（2026-10-03 Q1、T1-011） | — |
+| [ws089-p021](phase021/phase.md) | Wi-Fi の画面の自動の scan（Scan のボタンを無くす、compositor が要求を数えて libkeiland-backend 経由で networkd に on・off）と Disconnect の icon（2026-10-04 ユーザーの要望）、BUG-184 | planning | WS131・WS005、q700 の Wi-Fi の Bug と同じ担当 |
 
 
 ## ベータ1 の到達目標（2026-10-02 計画、fg019）
