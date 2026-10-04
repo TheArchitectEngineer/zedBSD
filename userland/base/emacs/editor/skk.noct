@@ -30,7 +30,12 @@ func skkInit() {
     // Used when the user has not installed the full SKK-JISYO.L (EUC-JP).
     SkkBundledPath = System.getEnv("REMACS_SKK_DICT");
     if (Type.of(SkkBundledPath) != "string" || SkkBundledPath == "") {
-        SkkBundledPath = "dict/SKK-JISYO.remacs";
+        // The installed copy (userland/base/emacs/Makefile), then the
+        // source tree's when remacs runs from there.
+        SkkBundledPath = "/usr/share/remacs/skkjisyo.dic";
+        if (FileUtil.checkFileExists(SkkBundledPath) != 1) {
+            SkkBundledPath = "dict/SKK-JISYO.remacs";
+        }
     }
     // Composition state (one segment at a time).
     Skk = {
