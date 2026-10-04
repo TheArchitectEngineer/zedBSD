@@ -2,7 +2,7 @@
 
 # ws132-p004: volumed（媒体の検出・通知・利用者の操作での mount・eject・抜去の片付け）
 
-Status: in-progress（2026-10-05、P2 / q723。設計を書いた。下の Q-1〜Q-4 を Q1 に確かめてから kernel と protocol の部分を実装する）
+Status: cleared（2026-10-05 Q1: T1-150 の p004-guest PASS（step 5 の mount 中の抜去を含む、BUG-192 の kernel の直しと FAT の force unmount の後））。以前: in-progress（2026-10-05、P2 / q723。設計を書いた。下の Q-1〜Q-4 を Q1 に確かめてから kernel と protocol の部分を実装する）
 Disposition: normal
 Parent: [WS132](../ws.md)
 Focused goal: fg019（ベータ1）
@@ -175,3 +175,7 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 - 直し: `src/drivers/fs/fat.c` に `fat_prepare_unmount_revoked`（media が失われた FAT の mount であることだけを確かめ、状態を変えず I/O をしない）と `fat_commit_unmount_revoked`（mount を read-only にし、FSInfo・遅らせた cluster の解放・書き出し待ちの close を捨てる。I/O をしない）を足した。volumed の `volumed_tidy` は unmount・rmdir の失敗を `VOLUMED TIDY path=… unmount=<errno>` / `rmdir=<errno>` と書くようにした。`p004-guest.sh` の step 5 は guest の `dmesg` の `unmount: /media…` の行も記録する（判定には使わない）。
 - 確認: amd64 vmunix（warning 0、kernel include check PASS）、volumed の build、style-check（volumed 0、fat.c は新しい違反 0）、`run-host-volumed.sh`・`run-host-storage-removal.sh` PASS。
 - 未実施: QEMU の再試験（T1 に依頼）。
+
+## Q1 の判定（2026-10-05）
+
+T1-150 の p004-guest PASS（step 5 の mount 中の抜去を含む、BUG-192 の kernel の直しと FAT の force unmount の後）。**cleared**。実機は UAT。
