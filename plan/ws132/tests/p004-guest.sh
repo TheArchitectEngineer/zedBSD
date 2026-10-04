@@ -2,7 +2,7 @@
 # ws132-p004: volumed on the Venus guest of plan/ws132/tests/config-amd64-p004.mk (started with
 #   plan/tools/files/files-guest.sh start IMAGE).  No compositor: the test speaks to volumed with volumectl.
 #  1. volumed runs (the boot's service) and lists no volume.
-#  2. The host plugs in a FAT stick (16 MiB, label USBSTICK, HELLO.TXT and RUN.SH) on xhci port 4: volumed lists
+#  2. The host plugs in a FAT stick (16 MiB, label USBSTICK, HELLO.TXT and RUN.SH) on a free xhci port (QEMU chooses: the Venus guest's tablet takes port 4, T1-137): volumed lists
 #     "VOLUME id=sd? state=available fs=fat ... label=USBSTICK path=- new=1" and mounts nothing by itself.
 #  3. kei (uid 1000) may not mount while root owns the seat's display (RESULT 13 = EACCES); with /dev/gpu0 given to
 #     kei (as sessiond does), kei mounts it: RESULT 0, /media/USBSTICK, HELLO.TXT reads "hi", its files show kei as
@@ -49,7 +49,7 @@ refuse "no volume yet" '^VOLUME' "$out/list0.txt"
 
 # 2.
 send blockdev-add "{\"driver\":\"raw\",\"node-name\":\"stick0\",\"file\":{\"driver\":\"file\",\"filename\":\"$(realpath "$stick")\"}}"
-send device_add '{"driver":"usb-storage","bus":"xhci.0","port":"4","drive":"stick0","id":"stick"}'
+send device_add '{"driver":"usb-storage","bus":"xhci.0","drive":"stick0","id":"stick"}'
 sleep 4
 guest '/bin/volumectl list; ls /media' > "$out/list1.txt"
 expect "the stick is listed, available and new" '^VOLUME id=sd[a-z] state=available fs=fat size=16777216 label=USBSTICK path=- new=1$' "$out/list1.txt"

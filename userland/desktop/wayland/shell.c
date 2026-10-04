@@ -86,6 +86,7 @@
 #include "touch.h"
 #include "edit.h"
 #include "ime.h"
+#include "media.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -290,6 +291,7 @@ struct shell_bar {
 	int32_t battery_x;
 	int32_t signal_x;
 	int32_t volume_x;
+	int32_t media_x;
 	int32_t ime_x;
 	int32_t status_line;
 	int32_t desktops_x;
@@ -689,6 +691,13 @@ zwl_glass_button(
 	/* A button Home took goes no further. */
 	if (pressed)
 		return 1;
+
+	/* The removable media's icon takes a press on it: Files on its devices (media.c). */
+	if (cover == NULL) {
+		pressed = zwl_media_button(server, button, state);
+		if (pressed)
+			return 1;
+	}
 
 	/* The input method's indicator takes a press on it: the next language (input-method.c). */
 	if (cover == NULL) {
@@ -2362,8 +2371,11 @@ bar_layout(
 	/* The volume left of the signal. */
 	bar->volume_x = bar->signal_x - 34;
 
-	/* The input method's language left of the volume, when there is an input method (input-method.c). */
-	bar->ime_x = bar->volume_x - zwl_ime_indicator_width(server);
+	/* The removable media's icon left of the volume, while a new volume is there (media.c, ws132-p004). */
+	bar->media_x = bar->volume_x - zwl_media_width();
+
+	/* The input method's language left of that, when there is an input method (input-method.c). */
+	bar->ime_x = bar->media_x - zwl_ime_indicator_width(server);
 	bar->status_line = bar->ime_x - 16;
 
 	/* The desktops, and a line. */
@@ -3366,6 +3378,9 @@ draw_status(
 
 	/* The volume's speaker, which opens its popup (volume.c, ws100-p004). */
 	zwl_volume_draw_icon(server, command, bar->volume_x, ink);
+
+	/* The removable media's stick, which starts Files (media.c). */
+	zwl_media_draw_icon(server, command, bar->media_x, ink);
 
 	/* The input method's language (A, あ), which a click changes (input-method.c). */
 	zwl_ime_indicator_draw(server, command, bar->ime_x, ink);

@@ -143,3 +143,20 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 - 確認: `sh plan/ws132/tests/run-host-volumed.sh` PASS（ASan・UBSan: 名前 10、escape 4、行 8、権限 5、VOLUME の行 2）。build（warning 0）: amd64 vmunix（kernel include check PASS）、volumed・volumectl・mount。style-check: 新しい file は違反 0、exec.c は違反が 1 つ減った。
 - 未実施: QEMU（`p004-guest.sh`、FAT の stick の hotplug、kei の mount・書き込み・noexec・EBUSY の eject・抜去）。
 - 次: compositor の backend（`volume-zedbsd.c`）と `kl_system_devices_v1` の version 5、bar の媒体の icon（案 A）。
+
+## T1-137（2026-10-05）
+
+- volumed の応答・自動 mount しない・抜去の後始末は ok。FAIL ×2 は試験の環境: stick の `device_add` が `usb port 4 (bus xhci.0) not found (in use?)`。原因は port の数ではなく（guest.py の qemu-xhci は既に `p2=8,p3=8`）、zdesktop-guest.sh の Venus の guest が `usb-tablet` を port 4 に挿していること。直し: `p004-guest.sh` は bus だけを指定し、port は QEMU に任せる（zdesktop-guest.sh は変えない）。
+- guest の `ls` に POSIX の `-n` が無かった → `userland/base/ls/main.c` に `-n`（`-l` と同じで、持ち主と group を数で）を足した。host の試験 `plan/ws132/tests/run-host-ls-n.sh` PASS。
+
+## 実装 その 2: compositor（2026-10-05、P2）
+
+| 部分 | file |
+| --- | --- |
+| backend | `keiland-backend.h`（`kl_backend_volumes_*`、`struct kl_backend_volume`）、`libkeiland-backend-zedbsd/volume-zedbsd.c`（volumed の行、2 秒ごとの繋ぎ直し、DONE で一揃い、RESULT の queue）、`libkeiland-backend/unsupported/volume-unsupported.c`（Linux・FreeBSD）、`sources.mk`・`Makefile.linux`・`Makefile.freebsd` |
+| protocol | `keiland/kl-system-protocol.h`: `kl_system_manager_v1` version 5、`kl_system_devices_v1` に request 2 `mount`（since 5）・event 3 `busy(request, program)`（since 5）、`KL_SYSTEM_DEVICE_KIND_STORAGE`・`KL_SYSTEM_DEVICE_MOUNTED`・`KL_SYSTEM_DEVICE_NEW` |
+| compositor | `wayland/media.c`・`media.h`（新規: 一覧、bar の USB の stick の icon、new の volume で 3 回点滅、click で `files --devices`）、`wayland/system.c`（devices の object に一覧と done、変化で全 object に、mount・eject を volumed に渡し答えを `result`（busy の時は先に `busy` で program 名））、`wayland/shell.c`（bar の volume の左に icon、press）、`Makefile`・`Makefile.linux`・`Makefile.freebsd` |
+| 試験 | `plan/ws132/tests/run-host-volumes.sh`・`host-volumes.c`（偽の volumed に対する backend の試験）、`plan/ws131/tests/host-system.c` に media の偽物（compositor の system.c が media を呼ぶようになったため） |
+
+- 確認: `run-host-volumes.sh` PASS（ASan・UBSan、15）、`run-host-volumed.sh` PASS、`plan/ws131/tests/host-system.sh` PASS、zedBSD の `wayland`・`ls` と Linux の Keiland（`keiland-linux.mk all`、-Werror）の build、`keiland-os-boundary/check.sh` PASS、新しい file の style-check 違反 0、system.c・shell.c は新しい違反 0。
+- 未実施: QEMU（bar の icon と devices の object は p005 の Files の試験とまとめて T1）。

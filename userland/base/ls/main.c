@@ -114,6 +114,7 @@ struct options {
 	int directory;		/* -d: a directory operand as itself */
 	int classify;		/* -F: a mark after the name for the type */
 	int human;		/* -h: sizes with a unit */
+	int numeric;		/* -n: the long format with the owner's and the group's numbers */
 	int recursive;		/* -R: the subdirectories too */
 	int reverse;		/* -r: the order reversed */
 	int time_sort;		/* -t: newest first */
@@ -230,8 +231,8 @@ static void write_bytes(struct text_writer *writer, const char *bytes, size_t le
 static void write_char(struct text_writer *writer, char character);
 static void measure_long(const struct entry *items, size_t count, const struct options *options, struct long_widths *widths);
 static void human_size(off_t value, char out[16]);
-static const char *uid_name(uid_t id, char out[24]);
-static const char *gid_name(gid_t id, char out[24]);
+static const char *uid_name(uid_t id, int numeric, char out[24]);
+static const char *gid_name(gid_t id, int numeric, char out[24]);
 static int print_long(const char *directory, const struct entry *item, const struct options *options, const struct long_widths *widths, const struct name_layout *layout);
 static void print_link_target(const char *path, const struct options *options);
 static void mode_text(mode_t mode, char out[11]);
@@ -344,7 +345,7 @@ parse_options(
 	scan.argc = argc;
 	scan.argv = argv;
 	scan.program = "ls";
-	scan.letters = "1aCdFhiLlmNqRrtxT:w:";
+	scan.letters = "1aCdFhiLlmnNqRrtxT:w:";
 	scan.names = ls_long_options;
 	command_options_start(&scan);
 
@@ -390,6 +391,12 @@ parse_options(
 			options->time_sort = 1;
 			break;
 		case 'l':
+			options->format = LS_FORMAT_LONG;
+			options->format_given = 1;
+			break;
+		case 'n':
+			/* POSIX: -l with the numbers of the owner and the group. */
+			options->numeric = 1;
 			options->format = LS_FORMAT_LONG;
 			options->format_given = 1;
 			break;
@@ -442,7 +449,7 @@ parse_options(
 			options->tab_given = 1;
 			break;
 		default:
-			fprintf(stderr, "usage: ls [-1aCdFhiLlmNqRrtx] [-T cols] [-w cols] [file...]\n");
+			fprintf(stderr, "usage: ls [-1aCdFhiLlmnNqRrtx] [-T cols] [-w cols] [file...]\n");
 			return 1;
 		}
 	}
@@ -2500,8 +2507,8 @@ measure_long(
 		}
 
 		/* The owner and the group by name. */
-		user = uid_name(items[index].status.st_uid, user_buffer);
-		group = gid_name(items[index].status.st_gid, group_buffer);
+		user = uid_name(items[index].status.st_uid, options->numeric, user_buffer);
+		group = gid_name(items[index].status.st_gid, options->numeric, group_buffer);
 
 		/* The link count. */
 		length = strlen(links);
@@ -2581,16 +2588,23 @@ human_size(
 	}
 }
 
-/* Returns the name of a user, or the number when it has no name. */
+/* Returns the name of a user, or the number when it has no name or numeric (-n) asks for it. */
 static const char *
 uid_name(
 	uid_t id,
+	int numeric,
 	char out[24])
 {
 	struct passwd record;
 	struct passwd *found;
 	char buffer[512];
 	int error;
+
+	/* -n: the number. */
+	if (numeric) {
+		snprintf(out, 24, "%u", (unsigned)id);
+		return out;
+	}
 
 	/* The name from the user database. */
 	found = NULL;
@@ -2607,16 +2621,23 @@ uid_name(
 	return out;
 }
 
-/* Returns the name of a group, or the number when it has no name. */
+/* Returns the name of a group, or the number when it has no name or numeric (-n) asks for it. */
 static const char *
 gid_name(
 	gid_t id,
+	int numeric,
 	char out[24])
 {
 	struct group record;
 	struct group *found;
 	char buffer[512];
 	int error;
+
+	/* -n: the number. */
+	if (numeric) {
+		snprintf(out, 24, "%u", (unsigned)id);
+		return out;
+	}
 
 	/* The name from the group database. */
 	found = NULL;
@@ -2676,8 +2697,8 @@ print_long(
 
 	/* The time, and the owner and the group by name. */
 	ls_time(item->status.st_mtime, when);
-	user = uid_name(item->status.st_uid, user_buffer);
-	group = gid_name(item->status.st_gid, group_buffer);
+	user = uid_name(item->status.st_uid, options->numeric, user_buffer);
+	group = gid_name(item->status.st_gid, options->numeric, group_buffer);
 
 	/* -i: the file serial number first, as wide as the widest. */
 	if (options->inode) {

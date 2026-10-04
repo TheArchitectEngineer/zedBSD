@@ -349,6 +349,41 @@ zwl_volume_audio_state(struct kl_backend_audio_state *state)
 	pthread_mutex_unlock(&world.lock);
 }
 
+/* The removable media (media.c, ws132-p004): none here, and a request is not offered (as on a system without volumed). */
+unsigned
+zwl_media_tick(struct zwl_server *server)
+{
+	(void)server;
+	return 0U;
+}
+
+size_t
+zwl_media_volumes(struct kl_backend_volume *list, size_t capacity)
+{
+	(void)list;
+	(void)capacity;
+	return 0U;
+}
+
+int
+zwl_media_ask(int mount, const char *id, uint32_t *request)
+{
+	(void)mount;
+	(void)id;
+	(void)request;
+	return ENOTSUP;
+}
+
+int
+zwl_media_take_result(uint32_t *request, int *error, char *user, size_t size)
+{
+	(void)request;
+	(void)error;
+	(void)user;
+	(void)size;
+	return 0;
+}
+
 int
 zwl_volume_feedback(void)
 {
