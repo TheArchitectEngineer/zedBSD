@@ -388,6 +388,10 @@ drv_intel_ax211_transport_initialize_rings(
 		return INTEL_AX211_TRANSPORT_FAILED;
 	}
 
+	/* Starts the newly initialized hardware command queue at zero. */
+	transport->command_write_sequence = 0U;
+
+	/* Initializes RX consumers and the unpublished credit marker. */
 	transport->rx_head = 0U;
 	transport->rx_tail = 0U;
 	transport->rx_pending = 0U;
@@ -1342,42 +1346,51 @@ drv_intel_ax211_transport_command_publish(
 	struct intel_ax211_transport *transport,
 	const struct intel_ax211_ring_token *token)
 {
+	uint32_t write_pointer;
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || token == NULL)
+	/* Refuses an uninitialized transport or a missing prepared token. */
+	valid = ax211_transport_valid(transport);
+	if (!valid || token == NULL)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (!transport->rings_initialized || !transport->interrupts_enabled ||
-	    transport->quiesced || transport->failed ||
+	/* Requires an active queue and the DMA publication made by prepare. */
+	if (!transport->rings_initialized ||
+	    !transport->interrupts_enabled ||
+	    transport->quiesced ||
+	    transport->failed ||
 	    !transport->command_prepared) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
-	/* Handles the token condition. */
+	/* Rejects a token that does not own the prepared DMA command. */
 	if (token->queue != transport->command_prepared_token.queue ||
 	    token->index != transport->command_prepared_token.index) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_STALE;
 	}
 
 	/*
-	 * A write error is ambiguous: hardware may have consumed the doorbell.
+	 * Advances the hardware pointer modulo 65536 independently of the
+	 * 256 DMA slots. A failed write may already have reached hardware,
+	 * so only a proven device reset may discard this sequence.
 	 */
-	result = ax211_csr_write(transport, AX211_HBUS_TARG_WRPTR,
-				 ((uint32_t)token->queue << 16) |
-					 transport->command_ring.head);
+	transport->command_write_sequence =
+	    (uint16_t)(transport->command_write_sequence + 1U);
+	write_pointer = ((uint32_t)token->queue << 16) |
+			transport->command_write_sequence;
+	result = ax211_csr_write(
+	    transport,
+	    AX211_HBUS_TARG_WRPTR,
+	    write_pointer);
 	transport->command_prepared = 0U;
 	if (result != INTEL_AX211_TRANSPORT_OK) {
+		/* Prevents reuse until reset resolves the ambiguous doorbell. */
 		transport->command_reset_required = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_AMBIGUOUS;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: firmware can consume the prepared command once. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1708,6 +1721,10 @@ drv_intel_ax211_transport_command_after_device_reset(
 		return INTEL_AX211_TRANSPORT_FAILED;
 	}
 
+	/* Discards prior doorbells only after the proven hardware reset. */
+	transport->command_write_sequence = 0U;
+
+	/* Releases prepared and external ownership after the DMA scrub. */
 	kern_memset(&transport->command_prepared_token, 0,
 	       sizeof(transport->command_prepared_token));
 	kern_memset(&transport->command_external_token, 0,
