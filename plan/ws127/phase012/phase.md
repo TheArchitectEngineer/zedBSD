@@ -2,7 +2,7 @@
 
 # ws127-p012: Files の Tags の機能を削除する
 
-Status: in-progress（q705-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）待ち）
+Status: cleared（2026-10-05 Q1: T1-117 の files-regress 14/14 PASS（files-p012 の直しの後））。以前: in-progress（q705-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）待ち）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: q705-i01（P2 generation14）
@@ -30,3 +30,7 @@ Queue: q705-i01（P2 generation14）
 - 確認: zedBSD の `bin/files`（`ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD=build/p2-q703`）warning 0、Linux（keiland-linux.mk）warning 0、FreeBSD は未実施（ユーザーの方針でベータ1 は不要）。host: `plan/tools/files/host-build.sh` の後 host-model・host-p009・host-p010・host-p013・host-p014・host-default・host-png が全て PASS（全行 ok）。OS の境界の checker PASS。`grep -i tag userland/desktop/files` は stage・storage の語だけ。
 - Q1 に依頼: Guardrail の D14 の文（Files の xattr は `tags.c`・`info.c`・`task.c`）から tags.c を外す。`plan/ws071/spec.md` §20 タグ・§34 の tags の行に「削除（ws127-p012、2026-10-04 ユーザー）」の注記（他の WS の文書なので Q1 の判断）。
 - 試験の依頼（T1、Q1 経由）: Files の回帰（`plan/tools/files/files-regress.sh`、直した files-p005・files-p008 を含む）。
+
+## Q1 の判定（2026-10-05）
+
+T1-117 の files-regress 14/14 PASS（files-p012 の直しの後）。受け入れを満たしたので **cleared**。

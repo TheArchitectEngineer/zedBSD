@@ -2,7 +2,7 @@
 
 # ws090-p016: File Chooser の右の pane の白い背景を、左の pane と揃える（または左右とも desktop の背景を少し透かす）
 
-Status: in-progress（T1 の QEMU の結果を Q1 が判定するまで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-117 の sheet-guest install open saveas dock PASS（glass の panels=3・sheet の位置）、open.png を Q1 が目視（左右の pane が透け白い card が無い、sheet の上の角が title bar の下で角張る）。実機の確認は未実施）。以前: in-progress（T1 の QEMU の結果を Q1 が判定するまで cleared にしない）
 Disposition: normal
 Parent: [WS090](../ws.md)
 Queue: q709（P2）
@@ -70,3 +70,7 @@ Queue: q709（P2）
 - QEMU（Venus、zdesktop `--glass`）: `plan/ws090/tests/sheet-guest.sh OUT install open saveas` の PASS と open.png・saveas.png の目視
   （左右とも壁紙が少し透ける veil、白い card が無い、上の角が title bar に接して角張る）。image は `plan/ws090/tests/config-amd64-textinput.mk`。
 - 実機の UAT（ユーザー）。
+
+## Q1 の判定（2026-10-05）
+
+T1-117 の sheet-guest install open saveas dock PASS（glass の panels=3・sheet の位置）、open.png を Q1 が目視（左右の pane が透け白い card が無い、sheet の上の角が title bar の下で角張る）。実機の確認は未実施。受け入れを満たしたので **cleared**。

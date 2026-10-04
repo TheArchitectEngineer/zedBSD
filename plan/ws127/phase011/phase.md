@@ -2,7 +2,7 @@
 
 # ws127-p011: 左の pane の Home は ~/ の一覧に、今の抽象ホーム（dashboard）は「Today」という別の頁に
 
-Status: in-progress（q705-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）待ち）
+Status: cleared（2026-10-05 Q1: T1-117 の files-regress 14/14 PASS（home.png の起動が Today）と T1-099 の PASS）。以前: in-progress（q705-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）待ち）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: q705-i01（P2 generation14）
@@ -37,3 +37,7 @@ Queue: q705-i01（P2 generation14）
 - 確認: zedBSD の `bin/files` warning 0、Linux warning 0（FreeBSD は方針で不要）。host: host-build の後 host-model・host-p009・host-p010・host-p013・host-p014・host-default・host-png PASS。左の pane の絵（Today・Home・Desktop…）を files-render で確認。
 - 試験の直し（左の pane の行が 1 つ増え、Today 以降の行が 30 px 下・place の番号が 1 つ後ろ）: host-p009（place=4、Move To の 504）、host-p010（Documents 155・Trash 373・並べ替えの place=5→2）、host-p013（middle 100,180）、host-p014（dashboard の path=Today、Home の control は folder）、guest の files-p002・p004・p005・p006・p007・p009・p012・p013・p014（座標を +30、`kind=home` を `kind=today` か folder に、p006 の Home の button を左の pane の Today に）、ws035 の zdesktop-p108・p109（起動の頁は `kind=today`、所有外の古い期待の直し）。
 - Q1 に依頼: `plan/ws071/spec.md` §5 ホーム・§28 ホームダッシュボードに「Today に改名、Home は ~/（ws127-p011）」の注記（他の WS の文書）。
+
+## Q1 の判定（2026-10-05）
+
+T1-117 の files-regress 14/14 PASS（home.png の起動が Today）と T1-099 の PASS。受け入れを満たしたので **cleared**。
