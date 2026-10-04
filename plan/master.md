@@ -63,6 +63,7 @@
 <!-- master:focus:end -->
 
 <!-- master:blocked:start -->
+- [WS155](ws155/ws.md)（カレンダー・スケジューラ・オーガナイザ）: ユーザーの宿題（app の外観の画像の提出）まで止める（2026-10-04 ユーザー）。
 - 5330 の AX211 の passthrough は 2026-10-04 に再開を許可（iwlwifi を blacklist して再起動が要る、Guardrail）。iGPU は i915 の driver の改善の Phase だけで使い、iGPU と AX211 の同時は禁止。
 - 2026-10-04 の UAT（[uat.md](uat.md)、証拠 [uat/2026-10-04/](uat/2026-10-04/)）: 実機で OK は BUG-145・152・161・143・139・103・160・153。再現は BUG-158・119・156・157。新規 BUG-165〜176。**最優先は BUG-165（DSDT が読めない: 電源が切れない・タッチパッド・電池の根の候補）・BUG-158（WiFi 未接続で kernel のフリーズ）・BUG-170（音量の slider のフリーズ）**。タッチパッドの操作の仕様（BUG-166）はユーザーと決める。
 - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
@@ -322,6 +323,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS152](ws152/ws.md) | MG007 | system の更新（Settings の Updates の頁の実体）。ベータ3 の実装の項目、p001 は方式の検討（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | WS129 |
 | [WS153](ws153/ws.md) | MG007 | Settings の Apps の頁と third-party の app の repository（userland/packages とは別）。p001 は package の仕組みの検討（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | — |
 | [WS154](ws154/ws.md) | MG006 | Settings の Languages の頁で IME を選ぶ（日本語・SKK・なし=英語）と、SKK の IME の新しい実装（辞書は Emacs の物）（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | WS095 |
+| [WS155](ws155/ws.md) | MG006 | Keiland の app: カレンダー・スケジューラ・オーガナイザ（まず簡単な物）（2026-10-04 ユーザー） | planning、**blocked: ユーザーの宿題（app の外観の画像の提出）** | — |
 | [WS116](ws116/ws.md) | MG002 | upstream Qt6の範囲をGTK4移植後に検討し `packages/desktop/qt6`へ移植 | planning | WS115の知見後。旧WS034 p030移管、Queue none |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
