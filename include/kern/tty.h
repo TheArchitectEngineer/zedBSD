@@ -155,6 +155,21 @@ tty_controlling_poll(
 	short events,
 	short *revents);
 
+/*
+ * The most pseudo terminals at once (BUG-175: a desktop with many Terminal
+ * windows and tabs, an SSH session each; the 8 there were ran out, and a
+ * new Terminal failed with ENOSPC).  Each pair is about 7 KiB of the
+ * kernel's static memory, so the 32-bit boards with little memory (PC-98,
+ * X68000, i386) keep fewer.
+ */
+#ifndef TTY_PTY_MAX
+#if defined(KERN_USER_ABI_LP64)
+#define TTY_PTY_MAX 64U
+#else
+#define TTY_PTY_MAX 16U
+#endif
+#endif
+
 int
 tty_pty_register(void);
 

@@ -55,7 +55,7 @@
  * background-process checks as the physical console; only its byte
  * transport is different.
  */
-#define PTY_MAX 8U
+#define PTY_MAX TTY_PTY_MAX
 #define PTY_OUTPUT_MAX 4096U
 
 struct tty_record {
