@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws089-p027 -->
 # ws089-p027: About に版の名前（PRETTY_NAME）を出す
 
-Status: in-progress（2026-10-05 P1 generation17 / q716-i01。実装・build・host の試験まで。QEMU の About の PNG を Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-108 PASS、about.png を目視。実装 P1 c20e75c）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q716 / q716-i01

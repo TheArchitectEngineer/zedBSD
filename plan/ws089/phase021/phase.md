@@ -2,7 +2,7 @@
 
 # ws089-p021: Wi-Fi の画面の自動の scan（Scan のボタンを無くす）と Disconnect の icon
 
-Status: in-progress（q703-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）の試験待ち。実機は UAT）
+Status: cleared（2026-10-05 Q1: T1-109 の settings-p021 PASS、T1-098 の p003・menu-bug148 PASS）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q703-i01（P2 generation14）
@@ -57,3 +57,7 @@ WS131 の libkeiland-backend・kl_system_manager_v1（済み）、WS005 の netw
 
 - settings-p021 の 1 行だけ `NETPROBE request op=36 MISSING`（2 回とも同じ）。wifi-left.png では Settings B（Ethernet の頁）の窓が A の窓と同じ位置で上に重なっており、A の Disconnect の座標の click が B の Ethernet の頁に当たっていた。**試験の誤り**（実装ではない）。
 - 直し: e の前に B を終える（`kill $(cat /tmp/s2.log.pid)`、holders=1 を確かめる）。その後 A の窓が前に出て、A の control 3 を押す。T1 に settings-p021 だけの再試験を依頼。
+
+## Q1 の判定（2026-10-05）
+
+T1-109 で settings-p021 PASS（試験の直し f3c1347 の後）、T1-098 で settings-p003・menu-bug148 PASS。受け入れを満たしたので **cleared**。
