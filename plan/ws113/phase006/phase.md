@@ -51,3 +51,19 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p006: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 非重複/辺連結edge snapを配置draft/Apply検査へ。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
 2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p006: mainのD-ID A2/旧bootpreferred技術採択messageを受領。Settingsはkind/portから人向けlabelを表示、driver EDIDnameの同handle書換に依存しない。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+
+## 2026-10-05 計画（q702、ベータ2）
+
+入力: [契約の確定](../phase001/contracts-beta2.md) D-MODES・D-BRIGHT、contracts.md §8 の Settings の段。
+
+範囲（`userland/desktop/settings/`、`page-look.c` の `se_display_draw` を新しい `page-display.c` へ）: libkeiland の `kl_system_displays_*` だけを使う。
+- 頁の上: 出力の配置の図（出力ごとの card に label・解像度、内蔵は panel の印）。拡張の時は card を drag で動かせ、離すと辺に snap（重ならない・辺で連結）。drag は draft だけを変え、Apply で送る。
+- モード: 「Extend」・「Mirror」の二択（segmented）。mirror の時は配置の drag を無効にする。
+- 明るさ: snapshot に has_backlight の出力（内蔵の panel）がある時だけ slider（0〜100）。drag 中は 100 ms ごとに set_brightness、離した時に最後の値。Fn の key の変更は snapshot の変更で slider に反映。
+- Apply・Revert、結果の表示（stale は再読み込みして「画面の構成が変わりました」、unsupported・backend_failed は理由、saved=0 は「保存できませんでした」）。hotplug で一覧を更新。出力が 1 つの時は配置の図を 1 つの card で示し、モードは選べるが効果は同じと示す。
+- 解像度・refresh・回転・出力ごとの off は出さない（D-MODES）。
+
+手順: 1) 頁の model（draft・snap の計算）を描画と分け、host の試験（`plan/ws089/tests/` の settings-render に Display の頁の絵、snap の計算の case）。2) 描画と入力（既存の Settings の widget）。3) 明るさの slider。
+
+試験: host（settings-render の Display の頁の PNG: 1 出力・2 出力の拡張・mirror・明るさの slider あり／なし、snap の case）。QEMU（T1、Venus の 2 出力）: Settings の Display の頁で拡張 ⇔ mirror を 5 回、card の drag で左右を入れ替え（M2）、PNG。実機（p008）: 明るさの slider と Fn の key。
+受け入れ: M2 の QEMU の PASS と PNG、host の PASS、warning 0、規約。目安 3h。依存: p005。衝突: WS089 の Settings の Phase と直列（`page-*.c`・`pages.c`）。

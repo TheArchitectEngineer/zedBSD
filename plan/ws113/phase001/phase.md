@@ -3,10 +3,10 @@
 # ws113-p001: 契約・能力と実機fixture
 
 Parent: [WS113](../ws.md)
-Status: uncleared
+Status: in-progress（q702-i01、P2、2026-10-05。残りの契約を [contracts-beta2.md](contracts-beta2.md) に確定。確認の 4 点 C1〜C4 は Q1・ユーザー、判定は Q1）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
-Queue / attempts: q586 / q586-i01 / A3（契約調査のみ）
+Queue / attempts: q586 / q586-i01 / A3（契約調査のみ、uncleared）、q702 / q702-i01 / P2（残りの契約の確定）
 Purpose / goal: hotplug/複数出力/拡張とmirror/Settings/窓所属の仕様を確定
 Prerequisites: 既存WS075/WS089/WS103の実出力を確認（context）
 Investigation bound: q586-i01で07:12–08:42 UTC（2026-10-02）、90分の有限1 Phase。scopeは読取契約設計とWS113文書/証拠だけ。
@@ -63,3 +63,11 @@ Residual / resume: D-ATOMIC採択を要求と検証へ投影し、必要なsourc
 2026-10-02 / ws113-beta1-plan-p001: fg019 の計画で、次の attempt を 0.75h（D-ATOMIC の採択の反映と whole-Phase の契約の確定だけ）と見積もった。D-ATOMIC のユーザーの回答までは開始しない。Status は uncleared のまま。
 
 2026-10-02 user（D-ATOMIC）:「WS113は推奨でよいです。」→ **(a) logical owner の同時更新**を受け入れの解釈として採択。pointer の境界で窓の所属を compositor の中で一度に切り替え、最大 1 frame 程度の両画面での見え・不表示は許容。present_wait/present_id の追加と 2 head の同時 latch は要求しない。p001 の残り（0.75h、採択の反映と whole-Phase の契約の確定）を次の attempt で行う。
+
+## q702-i01（2026-10-05、P2）: 残りの契約の確定
+
+- [contracts-beta2.md](contracts-beta2.md) を作った（contracts.md の上に重ね、食い違いはこちらが優先）。確定: D-ATOMIC (a)、D-GOP（Guardrail の scanout の規則）、D-GOP-INV、D-RELEASE、D-BOOT2、D-HOTPLUG、D-MODES、D-EXT（4 entry 全部、counter は 0）、D-UAPI、D-PROTO（`kl_system_manager_v1` version 4 の `kl_system_displays_v1`）、D-AUTH2、D-STORE、D-BRIGHT（FreeBSD の backlight(9) と同じ形の kernel の device、i915 が provider、backend 経由）、D-BRIGHT-KEY、D-BRIGHT-BOOT、D-QEMU（Venus の `max_outputs=2`）。
+- 実出力の照合: main `41633f4` の source を読んだ（native の UAPI、i915 の `output.c`・`panel-backlight.c`、Venus の scanout と topology の sequence、libvulkan の KHR_display、compositor の `compose_display()`、backend の display、`kl_system_manager_v1` version 3、Settings の Display の頁）。
+- 確認が要る点: C1（最初の session で GOP の出力先以外も拡張で点けてよいか、推奨は全て拡張）、C2（共有の UAPI の追加 2 件、推奨は許可）、C3（Fn の key の kernel の部分を WS049 へ）、C4（WS051 p002 との分担、推奨は WS113 p002 で行う）。
+- 後続の構成の変更: p002 を絞り（規則・inventory・HPD）、p011（2 つ目の出力）・p012（native の power・refresh）・p013（明るさの下層）を足した。依存は ws.md の図。
+- 未実施: build・実機（文書だけ）。この attempt の範囲は計画で、製品の source は変えていない。

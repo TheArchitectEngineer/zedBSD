@@ -7,8 +7,8 @@ Primary Milestone: MG006
 Related Milestones: MG001（GPU/API契約と回帰証拠）
 Parent: [Master](../master.md)
 Focused goal: fg019（ベータ1、2026-10-17。2026-10-02 user「複数 display は標準アプリの次」）
-Queue: none（q586 / A3 は p001 の契約調査で uncleared 終端）
-Resume point（2026-10-02 ベータ1の計画）: **D-ATOMIC のユーザーの回答 → p001 の新しい attempt（45 分、残りの契約の確定だけ）→ p002 → p003 → p004 → {p005 → p006, p007} → p008（5330 + 外部 display）→ p009**。下の「ベータ1 の計画」。
+Queue: q702（P2、p001 の残りの契約の確定と p002〜p006 の計画）
+Resume point（2026-10-05 q702、ベータ2、zedBSD 優先）: p001 の残りの契約を [contracts-beta2.md](phase001/contracts-beta2.md) に確定（判定は Q1、確認 C1〜C4）。順は **p002 → {p011, p012} → p003 → p004 → {p005 → p006, p007} → p008 → p009**、p013（明るさの下層）は C2 の許可の後いつでも、p005 の前に。p010（Linux・FreeBSD の KMS）は後。
 過去の resume: p001/q586-i01 uncleared（90分上限、D-ATOMIC未決）。契約/能力20行/fixture/次候補保存、D-ID A2等main採択済み。
 
 ## ユーザーの指示（2026-10-04 夜、UAT-3 の後、原文）
@@ -50,18 +50,21 @@ zedBSD i915で外部ディスプレイの接続/切断をVulkan Display拡張か
 
 | ID/link | Purpose | Goal | Status | Dependencies |
 | --- | --- | --- | --- | --- |
-| [ws113-p001](phase001/phase.md) | 契約・能力と実機fixture | hotplug/複数出力/拡張とmirror/Settings/窓所属の仕様を確定 | uncleared / q586-i01。次の attempt（0.75h）は D-ATOMIC の回答待ち（planning の扱い） | 既存WS075/WS089/WS103の実出力を確認（context）、D-ATOMIC |
-| [ws113-p002](phase002/phase.md) | i915のHPD・複数display出力 | driverからGPU表示イベントを提供し、複数出力を同時に扱う | planned | p001 cleared/driver契約 |
-| [ws113-p003](phase003/phase.md) | Vulkan Displayの列挙・通知 | libvulkanから標準Display API/拡張でhotplugと複数出力を公開 | planned | p002 cleared/実driverイベント |
-| [ws113-p004](phase004/phase.md) | compositorの出力・表示モード | 全拡張または全mirrorで複数outputを描画 | planned | p003 cleared/Vulkanの実複数出力 |
-| [ws113-p005](phase005/phase.md) | compositor拡張とlibkeiland | Settings用の照会/変更/通知APIを公開 | planned | p004 cleared/出力状態と適用API |
-| [ws113-p006](phase006/phase.md) | Settings Displayページ | モード選択とドラッグ配置を提供 | planned | p005 cleared/libkeiland公開API |
+| [ws113-p001](phase001/phase.md) | 契約・能力と実機fixture | hotplug/複数出力/拡張とmirror/Settings/窓所属の仕様を確定 | in-progress（q702-i01、[contracts-beta2.md](phase001/contracts-beta2.md)、確認 C1〜C4、判定は Q1）。q586-i01 は uncleared | — |
+| [ws113-p002](phase002/phase.md) | i915 の scanout の規則・inventory・HPD（2026-10-05 に絞った） | GOP の出力先だけを引き継ぎ外部の優先を廃止、接続の全出力の列挙と HPD の topology の sequence（WS051 p002 と共有、C4） | planned（3〜4h） | p001 |
+| [ws113-p003](phase003/phase.md) | Vulkan Displayの列挙・通知 | libvulkanから標準Display API/拡張でhotplugと複数出力を公開 | planned（3h） | p002、p012 |
+| [ws113-p004](phase004/phase.md) | compositorの出力・表示モード | 全拡張または全mirrorで複数outputを描画、hotplug、displays.conf | planned（4〜5h） | p003 |
+| [ws113-p005](phase005/phase.md) | compositor拡張とlibkeiland | `kl_system_manager_v1` v4 の `kl_system_displays_v1` と `kl_system_displays_*`、明るさ、Fn の key | planned（3〜4h） | p004、p013 |
+| [ws113-p006](phase006/phase.md) | Settings Displayページ | 拡張・mirror の二択、配置の drag、内蔵の panel の明るさの slider | planned（3h） | p005 |
 | [ws113-p007](phase007/phase.md) | 窓の出力所属と画面間移動 | 拡張表示で窓全体を1出力にだけ表示 | planned | p004 cleared/論理座標・出力描画（p006とは独立） |
 | [ws113-p008](phase008/phase.md) | 実i915の全経路受け入れ | 接続からSettings・表示・窓移動まで実機で確認 | planned | p002〜p007 cleared/実driver・API・UI・窓出力 |
 | [ws113-p009](phase009/phase.md) | 最終全文規約とWS受け入れ | 全変更sourceと実証結果の最終照合 | planned | p008 cleared/最終source・実機証拠 |
+| [ws113-p011](phase011/phase.md) | i915 の 2 つ目の出力 | Keiland の claim・present の時だけ 2 つ目の pipe で同時に scanout、release で消灯 | planned（4〜6h、実機） | p002 |
+| [ws113-p012](phase012/phase.md) | native の power と refresh の境界 | `GPU_DISPLAY_POWER`・`GPU_DISPLAY_REFRESH`（i915・Venus）、EXT display_control の下層（C2 の許可） | planned（3h） | p002、C2 |
+| [ws113-p013](phase013/phase.md) | 内蔵の panel の明るさの下層 | kernel の backlight の device（FreeBSD の backlight(9) と同じ形）、i915 の provider、backend の口（C2 の許可） | planned（2〜3h） | C2 |
 | ws113-p010 | Linux・FreeBSD の KMS での互換の実装（libkeiland-backend-linux・-freebsd の出力の列挙・hotplug・出力の変更を zedBSD と同じ compositor の契約に） | 2026-10-04 ユーザー「KMSでのLinux・FreeBSD用互換実装は、あとまわしにしてよいです（別Phaseにする）」 | planning（後回し） | p004〜p006（zedBSD の経路） |
 
-Dependency graph: WS075/WS103/WS089 context → p001 → p002 → p003 → p004 → {p005→p006, p007} → p008 → p009。
+Dependency graph（2026-10-05）: p001 → p002 → {p011, p012} → p003 → p004 → {p005 → p006, p007} → p008 → p009。C2 → p012・p013、p013 → p005。p010 は p004〜p006 の後。
 p008はp002〜p007の実出力を要する。見込みは実装許可ではない。
 
 ## ベータ1 の計画（2026-10-02、fg019）
@@ -81,7 +84,7 @@ p008はp002〜p007の実出力を要する。見込みは実装許可ではな�
 並列と衝突:
 - p002（i915 driver、`src/` の GPU display）と p003（`userland/desktop/libvulkan/`）は他の WS の desktop の Phase と file が重ならず並列可。ただし WS075・WS084（i915）・WS083（Vulkan Video、libvulkan）の Phase とは重なりうる（Q1 が確かめる）。
 - p004・p007 は compositor の `display.c`・`compose.c`・`shell.c`・`seat.c`・`cursor.c` を大きく変える → WS099 p020・p021、WS094 p014、WS102 p022、WS114 の compositor の Phase と同時に流さない。**WS099 p020・p021 の後に始める**のがよい。
-- p005 は libkeiland（KEILAND_VERSION）と新しい protocol → WS089 p013 と直列。p006 は `settings/page-*.c` の Display → WS089 の Phase と直列。
+- p005 は libkeiland（KL_VERSION）と `kl_system_manager_v1` v4 → WS089・WS131 の kl_system を変える Phase と直列。p006 は `settings/page-*.c` の Display → WS089 の Phase と直列。
 - p008 は 5330・i915 の lock・外部 display を使う。
 
 未決の判断:
@@ -111,3 +114,5 @@ p008はp002〜p007の実出力を要する。見込みは実装許可ではな�
 2026-10-02 user（D-ATOMIC）:「WS113は推奨でよいです。」→ **(a) logical owner の同時更新**を受け入れの解釈として採択。pointer の境界で窓の所属を compositor の中で一度に切り替え、最大 1 frame 程度の両画面での見え・不表示は許容。present_wait/present_id の追加と 2 head の同時 latch は要求しない。p001 の残り（0.75h、採択の反映と whole-Phase の契約の確定）を次の attempt で行う。
 
 2026-10-04 Q1: `kl_system_manager_v1` の version 2 は WS134（システムモニター）の `get_monitor` が先に使う（WS113 は未実装のため）。WS113 の `get_displays` は実装する時に、その時の最新の次の version にする（今の見込み 3）。
+
+2026-10-05 / q702-i01（P2）: p001 の残りの契約を [contracts-beta2.md](phase001/contracts-beta2.md) に確定（D-ATOMIC (a)、Guardrail の scanout の規則 D-GOP、kl_system v4 の D-PROTO、明るさ D-BRIGHT ほか）。p002 を絞り p011・p012・p013 を足した（構成の変更、Q1 に報告）。p002〜p006 に 2026-10-05 の計画（範囲・file・手順・試験・受け入れ・目安・衝突）を書いた。確認 C1〜C4 は Q1・ユーザー。製品の source は変えていない。

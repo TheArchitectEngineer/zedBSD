@@ -51,3 +51,17 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p002: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 初回fixture eDP+HDMIとall-connected初回extendedを入力にする。未移植portを完成扱いにしない。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
 2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p002: mainのD-ID A2/旧bootpreferred技術採択messageを受領。既存PCI address+kind/DDIでname[64]内のlocal key生成。ordinal禁止。旧bootはpreferred anchor。GPU UUID nativequeryを必須APIから外す（比較としてのみ残す）。power/timing能力はnative-contract.mdの差分review入力。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+
+## 2026-10-05 計画（q702、ベータ2、zedBSD 優先）
+
+入力: [残りの契約の確定](../phase001/contracts-beta2.md)（D-GOP・D-GOP-INV・D-RELEASE・D-BOOT2）。**範囲を絞った**: 2 つ目の出力を同時に出すのは [p011](../phase011/phase.md)、native の power・refresh は [p012](../phase012/phase.md) に分けた。
+
+範囲（i915、`src/drivers/gpu/i915/display/`）:
+- A. **scanout の規則（Guardrail、WS051 p002 と共有、C4）**: 起動の時は firmware の出力先（takeover の readout で active だった pipe・port）だけを引き継いで scanout する。eDP・HDMI・DP（USB-C の DP-alt は WS051 の TC の port の後）のどれでも初期化を試み、対応していない interface なら `i915: GOP output on PORT not supported, firmware picture kept` を log に出して firmware の framebuffer を保つ。`output.c` の `display=` の auto・hdmi・edp の選択と `I915_OUTPUT_HDMI_WAIT_MS` の待ちを除き、`display=` を見たら「ignored」を log に出す。
+- B. **inventory と HPD**: 接続している全ての connector（eDP・HDMI・DP）を `GPU_DISPLAY_QUERY` に出す（固定の slot、非 0 の display_id、output の generation）。scanout 中の物にだけ ACTIVE。HPD の worker が接続・EDID・mode を確定してから短い lock で publish し、device の topology の sequence を進め、lock の外で `poll_notify()`。固定 1 の sequence を実の HPD に置き換える。D-ID A2 の key（`zedbsd-port-v1:pci:SEG:BB:DD.F:KIND:PORT`）を `name[64]` に。
+- C. 列挙・mode の問い合わせは scanout を始めない（D-GOP-INV）。GOP の出力先でない connector の CLAIM は p011 まで `EOPNOTSUPP`（偽の成功を返さない）。
+
+手順: 1) takeover の readout の結果から GOP の出力先（pipe・transcoder・DDI・port の種類）を記録する口を作る。2) `output.c` を「GOP の出力先を引き継ぐ」に書き換え、HDMI の優先を除く。3) connector の表と generation・topology の sequence を HPD の worker に。4) host の試験（`src/drivers/gpu/i915/tests/display/` の host の modeset の試験に、GOP の出力先が eDP・HDMI の各場合と、HPD の plug・unplug の sequence・ACK の race（H01〜H03・H07））。5) build（zedBSD の kernel、vmunix の kernel include check まで）。
+
+試験: host（上の 4）、QEMU は i915 が無いので boot-test だけ（Venus の画面が変わらないこと）。実機（T1 が 5330 で、または p008 に寄せる）: eDP だけ・eDP+HDMI（GOP は eDP）で起動して、HDMI が点かないこと、`GPU_DISPLAY_QUERY` が 2 つ（eDP ACTIVE、HDMI CONNECTED）を返すこと、HDMI の抜き差しで sequence が進むこと（`plan/ws113/tests/` に小さい probe を足す: native の QUERY・EVENTS を読むだけの test program）。
+受け入れ: 上の実機の 3 点と host の試験の PASS、build の warning 0、規約。目安 3〜4h。依存: p001（C4 の分担の決定）。衝突: WS051 p002（同じ file、C4）、WS075・WS084 の i915 の Phase（Q1 が確かめる）。

@@ -51,3 +51,14 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p004: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 初回全extended/internal anchor、非重複/辺で連結/edge snapをoutput state/input契約へ。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
 2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p004: mainのD-ID A2/旧bootpreferred技術採択messageを受領。保存keyはlocal port scope。connected集合を旧bootpreferredで隠さず全参加。unknown/invalid keyでもworking状態を保ち、mode/capability validate。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+
+## 2026-10-05 計画（q702、ベータ2）
+
+入力: [契約の確定](../phase001/contracts-beta2.md) D-BOOT2・D-HOTPLUG・D-RELEASE・D-STORE・D-QEMU、contracts.md §5・§6。
+
+範囲（compositor `userland/desktop/wayland/`、GPU は libvulkan だけ）: 出力の表（token・persistent key・generation・状態 detected → validated → claimed → active → retiring → gone）、出力ごとの display の surface・swapchain・合成、global の論理座標（signed、half-open、辺で連結）、全拡張と全 mirror（mirror は各出力の native の mode へ aspect-fit、黒い帯、独立の swapchain）、device event の fence で再列挙して出力を足す・外す、0 台で server を保つ、出力ごとの `wl_output` の global（add・remove）、displays.conf の読み書き（D-STORE、明るさは p005）、設定の transaction（validate → 準備 → 再照合 → 適用 → 実 present の確認 → snapshot の publish、失敗は rollback か実状態を degraded で公開）。input の clamp を出力の集合の境界に（contracts.md §6 の共有の辺の処理）。
+
+手順: 1) `compose.c` の 1 出力の state を出力の配列へ（swapchain・frame・damage）。2) `display.c`・`shell.c` の画面の大きさの参照を「窓の owner の出力」「論理の desktop」に分ける（窓の所属そのものは p007、p004 は全ての窓を anchor の出力に置く）。3) hotplug（fence → 再列挙 → transaction）。4) mirror の aspect-fit。5) host の試験（座標・辺の判定・transaction の validate・aspect-fit の計算、`plan/ws113/tests/host-layout.c`）。
+
+試験: host（上の 5）。QEMU（T1、Venus の `max_outputs=2`、zdesktop `--glass`）: 拡張で 2 つの出力の PNG（`zdesktop-check.py` を出力ごとに撮れるか確かめる、QMP の screendump は head を選べる）、mirror で同じ絵、1 出力の guest で今までの回帰（boot-test、files-regress）。guest の起動に `max_outputs=2` の選択肢を足す（`plan/tools/guest/`、Q1 の許可）。実機は p008。
+受け入れ: QEMU で拡張・mirror の 2 出力の PNG、1 出力の回帰 PASS、出力が 0 になっても落ちない（QEMU で起こせれば）、Linux・FreeBSD の単一 display の build を壊さない（KMS の複数出力は p010）、warning 0、規約。目安 4〜5h。依存: p003。衝突: WS099 の compositor の Phase（`compose.c`・`shell.c`・`display.c`）と同時に流さない。

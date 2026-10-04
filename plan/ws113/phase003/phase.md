@@ -51,3 +51,14 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p003: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 私有Vulkan identity拡張は不採用。standard短portkeyのpolicyと実GPU UUIDqueryを別gateにする。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
 2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p003: mainのD-ID A2/旧bootpreferred技術採択messageを受領。local keyをimmutable standard displayNameへ転送、instance handleのname寿命を保持。GPU UUIDのmissing queryは別能力。core display-event waitの切断をSURFACE_LOSTなど非規範resultへ変えない。native capabilityを全EXTentryへ結線。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+
+## 2026-10-05 計画（q702、ベータ2）
+
+入力: [契約の確定](../phase001/contracts-beta2.md) D-EXT・D-ATOMIC（present_wait は足さない）・D-QEMU。
+
+範囲（`userland/desktop/libvulkan/`）: `VK_EXT_display_surface_counter`（instance、`vkGetPhysicalDeviceSurfaceCapabilities2EXT`、counter は 0）と `VK_EXT_display_control`（device、4 entry）を、header（Vulkan-Headers 1.3.269 の宣言）・API-PROVENANCE・`api-commands.tsv`・dispatch・procaddr の gating・extension の bit と一緒に足す。device event の monitor（lease 用と別の native の open、contracts.md §4.1 の per-fence の cursor、idle・0 台でも POLLPRI を見る）、display event（p012 の `GPU_DISPLAY_REFRESH`）、power（p012 の `GPU_DISPLAY_POWER`）。`vkGetPhysicalDeviceDisplayPropertiesKHR` は接続している出力だけを返し、VkDisplayKHR は instance の寿命の間は同じ connector に同じ handle（切断しても再利用しない）。切断した出力の swapchain は `VK_ERROR_SURFACE_LOST_KHR`・`OUT_OF_DATE`、他の出力は続ける。
+
+手順: 1) 宣言と dispatch（`tools/maintain-api.noct`・`maintain-dispatch.noct` で生成）。2) monitor の thread と fence の payload（contracts.md §4.2 の寿命）。3) display の handle の表を connector の slot と generation に結ぶ（wsi.c）。4) host の試験: fence の寿命（H06）、per-fence の cursor（H05 の host の部分）、ABI（LP64）、未 enable の procaddr。5) 独立の Vulkan の試験 program（`userland/tests/` に `display-events`: 登録 → 待つ → 再列挙 → 再登録を log に出す）。
+
+試験: host（上の 4）。QEMU（T1、Venus の `max_outputs=2`）: `display-events` が 2 つの display を列挙し、2 つの display に別々の swapchain で present できること、抜き差しを QEMU で起こせるか確かめる（QMP・monitor で virtio-gpu の出力を無効にする方法を探す。無ければ実機だけ）。実機: HDMI の抜き差しで fence が発火し再列挙の結果が変わる（p008 にまとめてよい）。
+受け入れ: 4 entry と surface counter の依存が全部揃ってから広告、host の試験 PASS、QEMU の 2 出力の列挙と present、build warning 0（zedBSD、Linux の libvulkan は対象外）、規約。目安 3h。依存: p002（i915 の inventory）、p012（power・refresh の native。Venus の分も p012）。衝突: WS083（Vulkan Video、libvulkan）の Phase と同じ file に当たるか Q1 が確かめる。
