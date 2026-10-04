@@ -110,6 +110,12 @@ struct pci_irq_cookie {
 	unsigned msix_state_saved;
 	uint16_t msix_control_saved;
 	uint32_t msix_entry_saved[4];
+	/*
+	 * This message interrupt set INTx Disable in the command register, so
+	 * its disestablish clears the bit again.  Zero when the bit was
+	 * already set before, or the interrupt is INTx.
+	 */
+	unsigned intx_disable_set;
 };
 
 struct pci_intx_line {
@@ -150,6 +156,8 @@ static void pci_source(const struct drv_pci_address *address, char result[17]);
 static int establish_msix(struct pci_irq_cookie *cookie);
 static int map_msix_entry(struct pci_irq_cookie *cookie);
 static int disestablish_intx(struct pci_irq_cookie *cookie);
+static void pci_intx_mask_for_message(struct pci_irq_cookie *cookie);
+static void pci_intx_unmask_after_message(struct pci_irq_cookie *cookie);
 static void pci_irq_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static void pci_intx_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static int describe_visit(struct drv_pci_device *device, void *argument);
@@ -1575,6 +1583,10 @@ drv_pci_device_establish_irq(
 		return error;
 	}
 
+	/* Keeps the legacy INTx pin quiet while a message interrupt is used. */
+	if (irq->type == DRV_PCI_IRQ_MSI || irq->type == DRV_PCI_IRQ_MSIX)
+		pci_intx_mask_for_message(cookie);
+
 	*result = cookie;
 	/* Succeeded. */
 	return 0;
@@ -1707,6 +1719,9 @@ drv_pci_device_disestablish_irq_checked(
 		/* Failed. */
 		return EINVAL;
 	}
+
+	/* Gives the INTx pin back now that the message capability is off. */
+	pci_intx_unmask_after_message(cookie);
 
 	kern_free(cookie);
 
@@ -3358,4 +3373,62 @@ drv_pci_system_describe(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Sets INTx Disable while a message interrupt is in use.
+ *
+ * With MSI or MSI-X on, the device must not also assert its legacy INTx
+ * pin, and when MSI-X is later turned off a pending cause would otherwise
+ * move to a level INTx line shared with other devices (BUG-158).  Linux
+ * (pci_intx_for_msi) and OpenBSD do the same.  The bit is a guard that
+ * message delivery does not depend on, so a failed config access leaves
+ * the interrupt established and only skips the guard.
+ */
+static void
+pci_intx_mask_for_message(
+	struct pci_irq_cookie *cookie)
+{
+	uint16_t command;
+	int error;
+
+	/* Reads whether INTx is already disabled by someone else. */
+	error = drv_pci_device_config_read16(cookie->device, PCI_COMMAND,
+					     &command);
+	if (error != 0)
+		return;
+
+	/* Leaves a bit this cookie did not set alone. */
+	if ((command & PCI_COMMAND_INTX_DISABLE) != 0)
+		return;
+
+	/* Disables INTx; the disestablish of this cookie enables it again. */
+	error = command_set(cookie->device, PCI_COMMAND_INTX_DISABLE, 0);
+	if (error != 0)
+		return;
+	cookie->intx_disable_set = 1;
+}
+
+/*
+ * Clears the INTx Disable this message interrupt set.
+ *
+ * The message capability has already been restored, so a later INTx user
+ * of the device sees its pin enabled again.  The capability state is gone
+ * at this point, so a failed config access cannot be retried and is left.
+ */
+static void
+pci_intx_unmask_after_message(
+	struct pci_irq_cookie *cookie)
+{
+	int error;
+
+	/* Leaves a bit this cookie did not set. */
+	if (!cookie->intx_disable_set)
+		return;
+
+	/* Enables INTx again. */
+	error = command_set(cookie->device, 0, PCI_COMMAND_INTX_DISABLE);
+	if (error != 0)
+		return;
+	cookie->intx_disable_set = 0;
 }

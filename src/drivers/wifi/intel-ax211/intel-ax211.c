@@ -1462,6 +1462,7 @@ static int ax211_pci_receive_event(void *argument, uint64_t deadline_us, uint8_t
 static int ax211_pci_publish_pnvm(void *argument, struct intel_ax211_dma_resources *dma);
 static int ax211_pci_post_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
 static int ax211_pci_interrupt_drain(void *argument);
+static int ax211_pci_bus_master_disable(void *argument);
 static int ax211_pci_clock_us(void *argument, uint64_t *time_us);
 static int ax211_pci_nic_lock(void *argument);
 static int ax211_pci_nic_unlock(void *argument);
@@ -1591,6 +1592,7 @@ static const struct intel_ax211_runtime_start_ops ax211_runtime_start_ops = {
 		 .publish_pnvm = ax211_pci_publish_pnvm,
 		 .post_alive = ax211_pci_post_alive,
 		 .interrupt_drain = ax211_pci_interrupt_drain,
+		 .bus_master_disable = ax211_pci_bus_master_disable,
 		 .clock_us = ax211_pci_clock_us},
 	.nic_lock = ax211_pci_nic_lock,
 	.nic_unlock = ax211_pci_nic_unlock};
@@ -3055,18 +3057,28 @@ ax211_pci_session_stop(
 			result = EIO;
 	}
 
-	/* Checks the operation result. */
+	/*
+	 * Drains an interrupt lifetime no coordinator owns any more.  No
+	 * firmware runs in this case, so bus mastering is turned off with it,
+	 * as the drain did before BUG-158.
+	 */
 	if (result == 0 &&
 	    (controller->irq_established || controller->irq_allocated)) {
-		/* Checks the operation result. */
 		result = ax211_pci_interrupt_drain(controller);
+
+		/* Ends the DMA ownership once the handler is gone. */
+		if (result == 0)
+			result = ax211_pci_bus_master_disable(controller);
+
+		/* The tx ring may now be released as quiesced hardware. */
 		if (result == 0)
 			hardware_quiesced = 1;
 	}
 
 	/*
-	 * A successful runtime stop includes interrupt drain, controller reset,
-	 * and PCI bus-master disable, which is the global queue-1 DMA barrier.
+	 * A successful runtime stop includes interrupt drain, RX DMA quiesce,
+	 * controller reset (STOP_MASTER and SW_RESET), and only then PCI
+	 * bus-master disable, which is the global queue-1 DMA barrier.
 	 */
 	if (result == 0 && controller->tx_ring_allocated) {
 		/* Handles the release result condition. */
@@ -3706,10 +3718,11 @@ ax211_pci_interrupt_drain(
 		controller->irq_allocated = 0U;
 	}
 
-	/* Checks the drv pci device set bus master result. */
-	if (result == 0 &&
-	    drv_pci_device_set_bus_master(controller->device, false) != 0)
-		result = EIO;
+	/*
+	 * Bus mastering stays on: the firmware may still be writing RX DMA, and
+	 * turning it off under that DMA hangs the integrated CNVi platform.  The
+	 * stop turns it off after the controller reset (BUG-158).
+	 */
 	if (result == 0) {
 		enabled = spin_lock_irqsave(&controller->interrupt_lock);
 		controller->active_dma = NULL;
@@ -3722,6 +3735,28 @@ ax211_pci_interrupt_drain(
 
 	/* Returns the computed result. */
 	return disable_result == INTEL_AX211_TRANSPORT_OK ? 0 : -1;
+}
+
+/* Turns PCI bus mastering off once the controller reset stopped its DMA. */
+static int
+ax211_pci_bus_master_disable(
+	void *argument)
+{
+	struct ax211_pci_controller *controller;
+	int error;
+
+	/* Refuses a stop without its controller. */
+	controller = argument;
+	if (controller == NULL)
+		return -1;
+
+	/* Clears Bus Master Enable in the PCI command register. */
+	error = drv_pci_device_set_bus_master(controller->device, false);
+	if (error != 0)
+		return -1;
+
+	/* Succeeded: the device can no longer reach host memory. */
+	return 0;
 }
 
 /* Supports the ax211 pci clock us operation. */
