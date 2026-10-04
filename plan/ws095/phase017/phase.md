@@ -2,7 +2,7 @@
 
 # ws095-p017: IME の辞書を /usr/share/keiland/ime へ移し、1 つの file にまとめる
 
-Status: in-progress（q708-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）待ち）
+Status: cleared（2026-10-05 Q1: T1-119 の ime-p004 status=0（新しい場所の 1 file の辞書で kanji→漢字・watasi→私、試験の直しの後））。以前: in-progress（q708-i01、P2 generation14、2026-10-05。実装・host 試験済み、QEMU（T1）待ち）
 Disposition: normal
 Parent: [WS095](../ws.md)
 Queue: q708-i01（P2 generation14）
@@ -30,3 +30,7 @@ Queue: q708-i01（P2 generation14）
 - **install**: `/usr/share/keiland/ime/ja/SKK-JISYO.ja`（`dict/Makefile`、`keiland-linux.mk`・`keiland-freebsd.mk` の `share/keiland/ime/ja/`）。まとめる script `userland/desktop/ime/dict/merge.sh` を tree に置き、結果を commit、元の 2 file は tree から外した（履歴は git）。`userland/base/emacs/dict/SKK-JISYO.X`（REmacs の側、WS154 の SKK も別の複写）は触れていない。
 - **確認（host）**: `plan/ws095/tests/measure.sh` で 100 文（97/100）・held-out（109/125）・held-out2（81/110）を「`.X`＋`.kei` の 2 file」と「`SKK-JISYO.ja` の 1 file」で流し、**各文の出力が byte で同じ**（`cmp`）。`plan/ws095/tests/host-engine.sh` に 2 つの部分の読み・区切りの無い file・engine が補いを先に引く check を足し、233 passed 0 failed。build: zedBSD の `bin/keiland-ime` warning 0（`ZEDBSD_CONFIG=plan/ws095/tests/config-amd64-ime.mk BUILD=build/p2-q703`）、Linux warning 0（`share/keiland/ime/ja/SKK-JISYO.ja` を install）、FreeBSD は方針で不要。design.md §9.1 に改めた点を書いた。
 - **試験の依頼（T1、Q1 経由）**: image `plan/ws095/tests/build-ime-image.sh <BUILD>`、`plan/ws095/tests/ime-guest.sh start`、`plan/ws095/tests/ime-p004.sh`（kanji→漢字、watasi→私 の変換が新しい path の辞書で通る）。
+
+## Q1 の判定（2026-10-05）
+
+T1-119 の ime-p004 status=0（新しい場所の 1 file の辞書で kanji→漢字・watasi→私、試験の直しの後）。**cleared**。

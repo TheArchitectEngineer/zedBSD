@@ -2,7 +2,7 @@
 
 # ws095-p016: IME の状態を app ごとに記憶する（system 全体で 1 つにしない）
 
-Status: in-progress（q708-i01、P2 generation14、2026-10-05。実装・build 済み、QEMU（T1）待ち）
+Status: cleared（2026-10-05 Q1: T1-119 の ime-p016 status=0（手順 5 の直し ac1c8a2 の後）、T1-102 の手順 1〜4 ok）。以前: in-progress（q708-i01、P2 generation14、2026-10-05。実装・build 済み、QEMU（T1）待ち）
 Disposition: normal
 Parent: [WS095](../ws.md)
 Queue: q708-i01（P2 generation14）
@@ -45,3 +45,7 @@ WS095 の p005（右上の status）、[WS154](../../ws154/ws.md)（IME の選�
 - ime-p016 手順 5 の FAIL は**実装の不足**: keyboard の focus を持つ app の窓が無くなると seat.c は focus を NULL にするだけで `zwl_ime_focus` を呼ばないので、IME は desktop に focus が移ったことを知らず、desktop の言語に戻らなかった（`app key=desktop` の行が無い）。直し: `ime_app_forget` で focus を持つ app が終わったら keyboard を desktop の物とし、desktop の言語を選ぶ（`ZWL IME app key=desktop language=… from=desktop`）。旧の「誰の物でもない」（`IME_APP_GONE`）は除いた。seat.c は変えていない。
 - ime-p004（ws095-p004 の試験）手順 6 の FAIL は**試験の前提の古さ**: 新しい probe は p016 の仕様で desktop の言語（direct）で始まり、direct の key は input method に届かないので bypass が起きない。直し: 手順 6 の前に Alt+Space で日本語にする（`ZWL IME language=ja` が 1 つ増える）。
 - build: compositor（`bin/wayland`）warning 0、規約の新しい違反 0。T1 に ime-p004・ime-p016 の再試験を依頼。
+
+## Q1 の判定（2026-10-05）
+
+T1-119 の ime-p016 status=0（手順 5 の直し ac1c8a2 の後）、T1-102 の手順 1〜4 ok。**cleared**。
