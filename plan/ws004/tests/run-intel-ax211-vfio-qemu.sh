@@ -1,6 +1,27 @@
 #!/bin/sh
 # Bounded exact-device AX211/CNVio2 VFIO development runner.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+#
+# Host preparation (2026-10-04 user, BUG-158/BUG-145; q684): the Linux WiFi
+# driver must be blacklisted and the host rebooted BEFORE the AX211 is handed
+# to QEMU.  Unbinding a live iwlwifi and then letting vfio-pci reset the CNVi
+# hung the 5330 host twice on 2026-10-03 (BUG-145), so the runner's original
+# "unbind iwlwifi, bind vfio-pci, rebind iwlwifi on exit" mode is only for a
+# host that is expendable.  On the test host 5330 (10.0.30.3) do once:
+#
+#   sudo tee /etc/modprobe.d/vfio-ax211.conf <<'EOF'
+#   blacklist iwlwifi
+#   blacklist iwlmvm
+#   EOF
+#   sudo update-initramfs -u && sudo systemctl reboot
+#
+# then verify `lspci -nnk -s 00:14.3` shows no "Kernel driver in use" and
+# run this script with AX211_VFIO_HOST_DRIVER=none: the device is bound to
+# vfio-pci through driver_override for the run and left unbound (no driver)
+# on exit.  To undo on the host: delete the conf file, run
+# `sudo update-initramfs -u`, and reboot.  The 5330 also keeps its iGPU on
+# vfio-pci (/etc/modprobe.d/vfio-igd.conf, WS031); never pass the iGPU and the
+# AX211 to the same QEMU (plan/guardrail.md 2026-10-03).
 
 set -eu
 umask 077
@@ -34,6 +55,10 @@ gdb_port=${AX211_VFIO_GDB_PORT:-}
 gdb_wait=${AX211_VFIO_GDB_WAIT:-0}
 memory=${AX211_VFIO_MEMORY:-1024}
 smp=${AX211_VFIO_SMP:-4}
+# The driver that owns the AX211 before the run and gets it back afterwards:
+# iwlwifi (the original live-unbind mode) or none (iwlwifi blacklisted and the
+# host rebooted, see the header).
+host_driver=${AX211_VFIO_HOST_DRIVER:-iwlwifi}
 
 fail()
 {
@@ -72,17 +97,19 @@ restore_host()
 	fi
 	# A newline, rather than a zero-byte write, clears driver_override.
 	printf '\n' > "$device/driver_override" || restore_failed=1
-	modprobe iwlwifi || restore_failed=1
-	if [ "$(current_driver)" != iwlwifi ]; then
-		printf '%s' "$bdf" > /sys/bus/pci/drivers_probe ||
-			restore_failed=1
+	if [ "$host_driver" = iwlwifi ]; then
+		modprobe iwlwifi || restore_failed=1
+		if [ "$(current_driver)" != iwlwifi ]; then
+			printf '%s' "$bdf" > /sys/bus/pci/drivers_probe ||
+				restore_failed=1
+		fi
 	fi
 	restore_wait=0
-	while [ "$(current_driver)" != iwlwifi ] && [ "$restore_wait" -lt 10 ]; do
+	while [ "$(current_driver)" != "$host_driver" ] && [ "$restore_wait" -lt 10 ]; do
 		sleep 1
 		restore_wait=$((restore_wait + 1))
 	done
-	[ "$(current_driver)" = iwlwifi ] || restore_failed=1
+	[ "$(current_driver)" = "$host_driver" ] || restore_failed=1
 	driver_override=$(cat "$device/driver_override" 2>/dev/null)
 	if [ "$?" -ne 0 ] ||
 	    { [ -n "$driver_override" ] && [ "$driver_override" != '(null)' ]; };
@@ -107,7 +134,7 @@ restore_host()
 		[ "$restore_failed" -ne 0 ] || echo "AX211-VFIO: USB WLAN $usb_wlan_port released" >&2
 	fi
 	if [ "$restore_failed" -eq 0 ]; then
-		echo "AX211-VFIO: restored $bdf to iwlwifi" >&2
+		echo "AX211-VFIO: restored $bdf to $host_driver" >&2
 	else
 		echo "AX211-VFIO: ERROR: host driver, route, or VFIO ownership was not restored" >&2
 	fi
@@ -139,7 +166,12 @@ finish()
 	fail "$bdf has the wrong subsystem device"
 [ "$(cat "$device/revision")" = 0x01 ] || fail "$bdf has the wrong revision"
 [ "$(cat "$device/class")" = 0x028000 ] || fail "$bdf has the wrong PCI class"
-[ "$(current_driver)" = iwlwifi ] || fail "$bdf is not owned by iwlwifi"
+case $host_driver in
+	iwlwifi|none) ;;
+	*) fail "AX211_VFIO_HOST_DRIVER must be iwlwifi or none" ;;
+esac
+[ "$(current_driver)" = "$host_driver" ] ||
+	fail "$bdf is owned by $(current_driver), expected $host_driver"
 case $run_timeout in
 	''|*[!0-9]*|0) fail "AX211_VFIO_RUN_TIMEOUT must be a positive integer" ;;
 esac
@@ -217,7 +249,8 @@ trap finish EXIT
 trap 'exit 130' HUP INT TERM
 modprobe vfio-pci
 printf '%s' vfio-pci > "$device/driver_override"
-printf '%s' "$bdf" > /sys/bus/pci/drivers/iwlwifi/unbind
+[ "$host_driver" = none ] ||
+	printf '%s' "$bdf" > "/sys/bus/pci/drivers/$host_driver/unbind"
 printf '%s' "$bdf" > /sys/bus/pci/drivers_probe
 [ "$(current_driver)" = vfio-pci ] || fail "cannot bind $bdf to vfio-pci"
 
