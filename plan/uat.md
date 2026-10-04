@@ -121,26 +121,26 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | A1 | **NG** | desktop は起動。1 分放置でフリーズ → 再起動。WiFi 未接続だとフリーズ、WiFi 接続で問題なし。WiFi 未接続の時の bug と確認 | BUG-158（再現: 実機、未接続で約 1 分で kernel のフリーズ） |
 | A2 | OK | | |
 | A3 | **NG** | Shutting Down から画面が黒くなり、電源が切れない。手動で電源を切った | BUG-119（再現） |
-| A3 の後 | 観察 | 再起動で WiFi は自動で接続したが、それまでの約 10 秒「Network service is not …」（network の service が使えない）と表示 | 新規（起動の直後の networkd の待ち） |
+| A3 の後 | 観察 | 再起動で WiFi は自動で接続したが、それまでの約 10 秒「Network service is not …」（network の service が使えない）と表示 | [BUG-176](bugs/BUG-176.md) |
 | B1 | 未実施 | USB マウスが手元に無い（後で） | |
 | B2 | **NG** | タッチパッドの 2 本指のスクロールができない（Browser で確認） | BUG-156（再現） |
-| B3 | **NG（デグレ）** | タッチパッドで窓の移動ができない。タッチしてクリックしてから別の指で動かすとドラッグできた。2 回タップして動かすのもできた。押下（トラックパッドの押し込み）で動かすかは仕様の検討漏れ | 新規（ws099-p030 の後の touch の drag。仕様の調整が要る） |
-| B4 | OK（条件付き） | B3 と一緒に仕様の調整が必須 | 同上 |
-| B5 | OK（条件付き） | 同上 | 同上 |
-| B6 | OK（条件付き） | 同上。**トラックパッドのクリック（押し込み）が認識されない** | 新規 |
+| B3 | **NG（デグレ）** | タッチパッドで窓の移動ができない。タッチしてクリックしてから別の指で動かすとドラッグできた。2 回タップして動かすのもできた。押下（トラックパッドの押し込み）で動かすかは仕様の検討漏れ | [BUG-166](bugs/BUG-166.md)（仕様の決めが先） |
+| B4 | OK（条件付き） | B3 と一緒に仕様の調整が必須 | BUG-166 |
+| B5 | OK（条件付き） | 同上 | BUG-166 |
+| B6 | OK（条件付き） | 同上。**トラックパッドのクリック（押し込み）が認識されない** | [BUG-167](bugs/BUG-167.md)（押し込み）、BUG-166 |
 | C6 | **NG** | 1 分でフリーズ。kernel のフリーズ | BUG-158 |
 | C2 | **NG** | 間違えた鍵で `Could not join (Network is unreachable)` | BUG-157（再現、文言） |
 | C1 | OK | | |
 | C4 | OK | DHCP OK | BUG-145（実機で OK） |
 | C3 | OK | | |
 | C5 | OK | WiFi off → on で 8 秒で自動接続 | |
-| C7 | **NG** | 起動の後に USB LAN を挿すと ue0 は down のまま。WiFi を off にしても down のまま。そのまま ue0 を抜くと、system bar の Ethernet のメニューに wlan0 が出る。ue0 を挿し直しても wlan0 が出たまま | 新規 2 件（後から挿した USB LAN が up しない／Ethernet のメニューに wlan0）。仕様ではない（Q1） |
-| D1 | **NG** | 100% には戻らず調整できた。しかし slider をドラッグすると、しばらくフリーズし、放置で回復。連続で確認の音を鳴らそうとしている疑い | 新規（slider のドラッグでフリーズ） |
-| D2 | **NG** | Settings も、クリックは OK、ドラッグでフリーズ | 同上 |
+| C7 | **NG** | 起動の後に USB LAN を挿すと ue0 は down のまま。WiFi を off にしても down のまま。そのまま ue0 を抜くと、system bar の Ethernet のメニューに wlan0 が出る。ue0 を挿し直しても wlan0 が出たまま | [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md)（仕様ではない） |
+| D1 | **NG** | 100% には戻らず調整できた。しかし slider をドラッグすると、しばらくフリーズし、放置で回復。連続で確認の音を鳴らそうとしている疑い | [BUG-170](bugs/BUG-170.md) |
+| D2 | **NG** | Settings も、クリックは OK、ドラッグでフリーズ | BUG-170 |
 | D3 | OK | ミュート → 解除 | |
 | D4 | OK | | BUG-161（実機で OK） |
 | E1 | OK | | BUG-152（実機で OK） |
-| E2 | OK（気付き） | opaque にしても窓が不透明にならない | 新規（窓の透明度の opaque） |
+| E2 | OK（気付き） | opaque にしても窓が不透明にならない | [BUG-171](bugs/BUG-171.md) |
 | E3 | OK | | |
 | F1 | 未実施 | USB メモリが起動用の 1 本しかない | |
 | F2 | 未実施 | 「タブ」が何か分からなかった（手順の説明の不足） | |
@@ -150,30 +150,30 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | F6 | OK | | |
 | F7 | OK | emacs の保存・終了・SKK | |
 | F8 | OK | | BUG-143・BUG-139（実機で OK） |
-| F9 | OK（気付き） | IME を off にした入力は OK だが、key のリピートが安定しない（表示が安定しないだけかも） | 新規（key のリピートの不安定） |
-| F10 | OK（NG あり） | 履歴は出るが、長めの日本語の文字列が履歴にある時、表示に改行が入り、履歴が行頭から表示されて prompt が見えなくなる | 新規（sh の行の編集の幅の計算、全角） |
+| F9 | OK（気付き） | IME を off にした入力は OK だが、key のリピートが安定しない（表示が安定しないだけかも） | [BUG-172](bugs/BUG-172.md) |
+| F10 | OK（NG あり） | 履歴は出るが、長めの日本語の文字列が履歴にある時、表示に改行が入り、履歴が行頭から表示されて prompt が見えなくなる | [BUG-173](bugs/BUG-173.md) |
 | G1 | OK | System Monitor の本物の値 | |
-| G2・G3 | 未実施 | WiFi だと SSH できない（有線は C7 の不具合で使えない） | 新規（WiFi の address への SSH が通らない） |
-| G4 | **NG** | Terminal を多数開くと errno=8 で起動しなくなる | BUG-120 の関連か、新規（調べる） |
+| G2・G3 | 未実施 | WiFi だと SSH できない（有線は C7 の不具合で使えない） | [BUG-174](bugs/BUG-174.md) |
+| G4 | **NG** | Terminal を多数開くと errno=8 で起動しなくなる | [BUG-175](bugs/BUG-175.md)（BUG-120 の関連を調べる） |
 | G5 | 未実施 | | BUG-159 |
 | G6 | OK（一部） | タップは OK、スワイプはトラックパッドで動作しない | BUG-156 と同じ根の可能性 |
 | G2 | **OK** | （Q1 が SSH で、2026-10-04 14:07、AC 電源）System Monitor を 20 秒動かして `ZMON FRAME fps=21.0〜21.4`（目標 15 以上）。submit_ms 約 11、callback_ms 約 31 | ws134-p003 の実機の判定: PASS |
 | G3 | OK | `hw.gputelemetry`: `driver=i915 valid=0xd busy_ns=3186129731 cur_mhz=0 req_mhz=100 min_mhz=100 max_mhz=1200`（idle で cur 0） | ws134-p007 の実機 |
-| H1 | 済み | dmesg・/var/log（messages・sessiond・greeter）・session.log・ps・sysctl を `build/uat-logs/1407/` に | |
+| H1 | 済み | dmesg・/var/log（messages・sessiond・greeter）・session.log・ps・sysctl を [plan/uat/2026-10-04/](uat/2026-10-04/) に（元は `build/uat-logs/1407/`） | |
 
 ### Q1 が log で気付いた点（2026-10-04 14:07）
 
-- **`ACPI: DSDT Dell Inc stopped at offset 0x1c89b (error 13)` → `acpi: the DSDT did not load (error 13)`**。DSDT が読めていない。Shut Down で電源が切れない（A3、BUG-119: `\_S5` は DSDT にある）と、タッチパッド（I2C HID は ACPI で見つける）の 2 本指・押し込みの不具合（B2・B6・G6、BUG-156）の共通の根の候補。最優先で調べる。
+- **[BUG-165](bugs/BUG-165.md): `ACPI: DSDT Dell Inc stopped at offset 0x1c89b (error 13)` → `acpi: the DSDT did not load (error 13)`**。DSDT が読めていない。Shut Down で電源が切れない（A3、BUG-119: `\_S5` は DSDT にある）と、タッチパッド（I2C HID は ACPI で見つける）の 2 本指・押し込みの不具合（B2・B6・G6、BUG-156）の共通の根の候補。最優先で調べる。
 - `ZWL STARTUP step=wallpaper ms=7172`: 起動の時の壁紙に約 7.2 秒（WS138・WS139 の項目）。
 - `usb1: port 10 enumeration failed (3)`。
 - 有線（ue0）は起動の時から挿すと 10.0.30.3 で up（C7 は後から挿した時だけの不具合）。
 | G5 | OK（再現せず） | （ユーザーが AC を抜いた直後に Q1 が SSH で計測、14 時過ぎ）System Monitor の `ZMON FRAME fps=21.5・14.4・22.4`（1 回だけ 14.4、submit_ms 17・callback_ms 56）。5 fps への低下は出ない。`sysctl` に battery・AC の項目が無い（DSDT が読めていないため電源の状態を知らない） | BUG-159（今回は再現せず） |
-| H1 の追加 | 済み | Shut Down の間の log を SSH で連続に取った（`build/uat-logs/1407/shutdown-watch.txt`）: 05:18:15 compositor の正常な終了（`ZWL EXIT error=0`、音量 77 と設定を保存）、05:18:21 i915 の display の lease を返す、05:18:23 process は 10、その後 sshd の停止で接続が切れた。kernel の最後の電源を切る段は見えない | |
+| H1 の追加 | 済み | Shut Down の間の log を SSH で連続に取った（[shutdown-watch.txt](uat/2026-10-04/shutdown-watch.txt)）: 05:18:15 compositor の正常な終了（`ZWL EXIT error=0`、音量 77 と設定を保存）、05:18:21 i915 の display の lease を返す、05:18:23 process は 10、その後 sshd の停止で接続が切れた。kernel の最後の電源を切る段は見えない | |
 | H2 | **NG** | LCD はオフになるが、ファンが回り続け電源が切れない。電源ボタンの**長押しは要らず、1 回押すだけで切れた**（OS が止まった後に firmware が電源ボタンを扱っている形） | BUG-119（再現。DSDT が読めない（`\_S5` は DSDT）ことが原因の候補） |
 
 ### UAT のまとめ（2026-10-04、Q1）
 
 - 実機で OK を確かめた: BUG-145（DHCP）・152（Wallpaper の頁）・161（音量の保存）・143・139（IME）、emacs・SKK、System Monitor の本物の値と fps 21（AC・バッテリー）、i915 の telemetry。
 - 再現した: BUG-158（WiFi 未接続で約 1 分で kernel のフリーズ）、BUG-119（電源が切れない）、BUG-156（タッチパッドの 2 本指・スワイプ）、BUG-157（間違えた鍵の文言）。
-- 新規（Bug の ticket にする）: DSDT が読めない（error 13）、タッチパッドの窓のドラッグ（デグレ）と押し込みのクリック、後から挿した USB LAN が up しない、Ethernet のメニューの wlan0、音量の slider のドラッグでのフリーズ、opaque が不透明にならない、key のリピートの不安定、sh の履歴の全角の表示、WiFi の address への SSH、Terminal 多数で errno=8（ENOSPC）、起動の直後の「Network service is not …」の表示、起動の時の壁紙 7.2 秒。
+- 新規（BUG-165〜176、[Bug Board](known-bugs.md)）: DSDT が読めない（error 13）、タッチパッドの窓のドラッグ（デグレ）と押し込みのクリック、後から挿した USB LAN が up しない、Ethernet のメニューの wlan0、音量の slider のドラッグでのフリーズ、opaque が不透明にならない、key のリピートの不安定、sh の履歴の全角の表示、WiFi の address への SSH、Terminal 多数で errno=8（ENOSPC）、起動の直後の「Network service is not …」の表示、起動の時の壁紙 7.2 秒。
 - 未実施: B1（USB マウス）、F1（USB メモリ）、F2（タブ）、F5（PNG の見本が無い）。次の UAT では見本の file（PDF・PNG・JPEG）を image に入れる。
