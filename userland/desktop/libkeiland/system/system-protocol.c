@@ -198,6 +198,7 @@ const struct wl_interface kl_system_power_v1_interface = {
 static const struct wl_message system_devices_requests[] = {
 	{ "destroy", "", NULL },
 	{ "eject", "us", system_plain_types },
+	{ "mount", "5us", system_plain_types },
 };
 
 /* The events of kl_system_devices_v1. */
@@ -205,15 +206,16 @@ static const struct wl_message system_devices_events[] = {
 	{ "device", "suuss", system_plain_types },
 	{ "done", "u", system_plain_types },
 	{ "result", "uuu", system_plain_types },
+	{ "busy", "5us", system_plain_types },
 };
 
-/* kl_system_devices_v1: two requests and three events.  It lives for the program. */
+/* kl_system_devices_v1: three requests and four events (ws132-p004: mount and busy since version 5).  It lives for the program. */
 const struct wl_interface kl_system_devices_v1_interface = {
 	KL_SYSTEM_DEVICES_NAME,
-	1,
-	2,
-	system_devices_requests,
+	5,
 	3,
+	system_devices_requests,
+	4,
 	system_devices_events
 };
 

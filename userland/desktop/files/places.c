@@ -10,7 +10,8 @@
  *
  * Favorites are Today (the dashboard), the home folder and the user's
  * favorite folders (by default the usual ones under the home folder);
- * Locations are the recent files, the trash and the computer's
+ * Devices are the removable devices the desktop tells (ws132-p005), mounted
+ * or not; Locations are the recent files, the trash and the computer's
  * root.  A favorite whose folder does not exist is kept (pale), so the
  * sidebar keeps its shape on a new account.
  */
@@ -55,7 +56,9 @@ static const char *const places_system_folders[] = {
 static struct fm_place *places_add(struct fm_places *places, unsigned section, unsigned icon, const char *label, unsigned kind, const char *path);
 static void places_favorites(struct fm_places *places, const char *home);
 static void places_add_folder(struct fm_places *places, const char *path, const char *home);
+static void places_devices(struct fm_places *places);
 static void places_mounts(struct fm_places *places);
+static int places_device_path(const struct fm_places *places, const char *path);
 static int places_file(char *path, size_t size);
 static int places_write(struct fm_places *places, int moved, int to, int removed, const char *added);
 
@@ -69,10 +72,18 @@ fm_places_init(
 	struct fm_places *places,
 	const char *home)
 {
+	struct fm_device devices[FM_DEVICES_MAX];
 	struct fm_place *place;
+	int device_count;
 
-	/* The sidebar starts empty. */
+	/* The sidebar starts empty, but for the removable devices, which only the desktop's news changes. */
+	device_count = places->device_count;
+	if (device_count < 0 || device_count > FM_DEVICES_MAX)
+		device_count = 0;
+	memcpy(devices, places->devices, (size_t)device_count * sizeof(devices[0]));
 	memset(places, 0, sizeof(*places));
+	memcpy(places->devices, devices, (size_t)device_count * sizeof(devices[0]));
+	places->device_count = device_count;
 
 	/*
 	 * Favorites: Today (the dashboard) at the top and the home folder under
@@ -86,6 +97,9 @@ fm_places_init(
 	if (place != NULL)
 		place->fixed = 1;
 	places_favorites(places, home);
+
+	/* Devices: the removable devices (ws132-p005). */
+	places_devices(places);
 
 	/* Locations: the recent files, the trash, the computer's root and the volumes. */
 	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_RECENTS, "Recents", FM_LOCATION_RECENTS, "");
@@ -405,6 +419,44 @@ places_add_folder(
 	return;
 }
 
+/* Adds the removable devices: a mounted one leads to its folder, one not mounted is mounted by a double click. */
+static void
+places_devices(
+	struct fm_places *places)
+{
+	struct fm_place *place;
+	int index;
+
+	/* Each device, as the desktop told it. */
+	for (index = 0; index < places->device_count; index++) {
+		place = places_add(places, FM_SECTION_DEVICES, FM_ICON_VOLUME, places->devices[index].name, FM_LOCATION_FOLDER, places->devices[index].path);
+		if (place != NULL)
+			place->device = index + 1;
+	}
+}
+
+/* Tells whether a path is where a removable device is mounted (it is shown under Devices). */
+static int
+places_device_path(
+	const struct fm_places *places,
+	const char *path)
+{
+	int index;
+	int match;
+
+	/* Each mounted device. */
+	for (index = 0; index < places->device_count; index++) {
+		if (!places->devices[index].mounted)
+			continue;
+		match = strcmp(places->devices[index].path, path);
+		if (match == 0)
+			return 1;
+	}
+
+	/* No device's. */
+	return 0;
+}
+
 /* Adds the mounted volumes other than the root and the virtual file systems. */
 static void
 places_mounts(
@@ -453,6 +505,11 @@ places_mounts(
 			if (match == 0)
 				hidden = 1;
 		}
+
+		/* A removable device's mount is shown under Devices (ws132-p005). */
+		match = places_device_path(places, mount.path);
+		if (match != 0)
+			hidden = 1;
 
 		/* Neither a virtual filesystem nor a system folder becomes a user volume. */
 		if (hidden != 0)

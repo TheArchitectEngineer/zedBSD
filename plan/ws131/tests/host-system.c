@@ -1217,6 +1217,8 @@ test_both_ends(void)
 	/* The devices: none can be ejected yet. */
 	CHECK(kl_system_devices_eject(system, "usb0", &first) == 0, "eject asked");
 	expect_result(display, system, first, ENOTSUP, "eject");
+	CHECK(kl_system_devices_mount(system, "usb0", &first) == 0, "mount asked (version 5, ws132-p004)");
+	expect_result(display, system, first, ENOTSUP, "mount");
 
 	/* The account (ws160-p002): changed, the current password wrong, the new one refused, two at once busy. */
 	CHECK(kl_system_account_set_password(system, "kei", "newpass123", &first) == 0, "password change asked");

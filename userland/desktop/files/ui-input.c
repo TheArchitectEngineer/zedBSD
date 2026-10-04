@@ -714,6 +714,7 @@ input_click(
 	uint32_t modifiers)
 {
 	int favorite;
+	int device;
 
 	/* What each region does. */
 	switch (kind) {
@@ -721,6 +722,16 @@ input_click(
 		/* A place goes there; a favorite folder at the release, as it may be dragged to another place in the list. */
 		if (index < 0 || index >= app->places.count)
 			break;
+
+		/* A removable device not mounted is mounted by a double click, and then opened (ws132-p005). */
+		device = app->places.items[index].device;
+		if (device > 0 && device <= app->places.device_count && !app->places.devices[device - 1].mounted) {
+			if (double_click != 0)
+				fm_devices_mount(app, device - 1);
+			break;
+		}
+
+		/* A favorite folder at the release. */
 		favorite = fm_place_is_favorite_folder(&app->places.items[index]);
 		if (favorite != 0) {
 			app->press_deferred = 1;
@@ -1389,6 +1400,8 @@ input_button(
 	struct fm_app *app,
 	int index)
 {
+	int place;
+
 	/* Each button. */
 	if (index == FM_BUTTON_CANCEL) {
 		fm_action_confirm(app, 0);
@@ -1416,6 +1429,11 @@ input_button(
 		fm_info_button(app, index);
 	} else if (index >= FM_BUTTON_OPENER && index < FM_BUTTON_OPENER + FM_OPENERS) {
 		fm_info_button(app, index);
+	} else if (index >= FM_BUTTON_EJECT_PLACE) {
+		/* A mounted removable device's eject button (ws132-p005). */
+		place = index - FM_BUTTON_EJECT_PLACE;
+		if (place < app->places.count && app->places.items[place].device > 0)
+			fm_devices_eject(app, app->places.items[place].device - 1);
 	} else if (index >= FM_BUTTON_REMOVE_PLACE) {
 		fm_action_remove_favorite(app, index - FM_BUTTON_REMOVE_PLACE);
 	} else if (index >= FM_BUTTON_TASK_CANCEL) {

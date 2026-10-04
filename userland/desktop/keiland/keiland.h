@@ -46,7 +46,7 @@ extern "C" {
 #endif
 
 /* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password). */
-#define KL_VERSION	27U
+#define KL_VERSION	28U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1273,7 +1273,16 @@ struct kl_power_state {
 	unsigned actions;
 };
 
-/* One removable device (none until the devices arrive, WS132): its ID, kind, state, name and where it is. */
+/*
+ * One removable device (KL_VERSION 28, ws132-p004: a volume volumed lists):
+ * its ID (the disk's name), kind (KL_DEVICE_STORAGE), state (the
+ * KL_DEVICE_* bits: mounted; new, inserted and never mounted since), name
+ * (the label, or the disk's name) and where it is mounted ("" when not).
+ */
+#define KL_DEVICE_STORAGE	1U
+#define KL_DEVICE_MOUNTED	0x1U
+#define KL_DEVICE_NEW		0x2U
+
 struct kl_device {
 	char id[KL_DEVICE_TEXT_MAX];
 	unsigned kind;
@@ -1413,10 +1422,26 @@ int kl_system_power_action(struct kl_system *system, unsigned action, uint32_t *
 size_t kl_system_devices_get(const struct kl_system *system, struct kl_device *devices, size_t capacity);
 
 /*
- * Asks for a removable device to be ejected.  Returns 0 when asked,
- * ENOTSUP, or EINVAL.
+ * Asks for a removable device to be ejected (unmounted; a device that is not
+ * mounted may simply be taken out), answered by a result: 0, EBUSY while a
+ * program uses it (kl_system_devices_busy_program names it), EACCES for a
+ * user who is not the session's.  Returns 0 when asked, ENOTSUP, or EINVAL.
  */
 int kl_system_devices_eject(struct kl_system *system, const char *id, uint32_t *request);
+
+/*
+ * Asks for a removable device to be mounted under /media (KL_VERSION 28,
+ * ws132-p004), answered by a result: 0 (its location then comes with the
+ * devices' change), EACCES, or another errno value.  Returns 0 when asked,
+ * ENOTSUP (a compositor without it), or EINVAL.
+ */
+int kl_system_devices_mount(struct kl_system *system, const char *id, uint32_t *request);
+
+/*
+ * Copies the program that keeps a device from being ejected, for a request
+ * answered EBUSY (KL_VERSION 28).  Returns 1 with it, 0 without one.
+ */
+int kl_system_devices_busy_program(const struct kl_system *system, uint32_t request, char *program, size_t size);
 
 /*
  * Asks for the password of the user the desktop runs as to be changed

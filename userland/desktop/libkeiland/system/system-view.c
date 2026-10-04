@@ -298,16 +298,17 @@ system_view_device(
 }
 
 /*
- * Puts the pending devices into effect (a done with no device before it
- * leaves the list as it was).
+ * Puts the pending devices into effect: the compositor sends the whole list
+ * before each done, so a done with no device before it empties the list
+ * (ws132-p004: the last volume went).
  */
 void
 system_view_devices_done(
 	struct system_view *view)
 {
-	/* Nothing pending. */
+	/* A done after no device: an empty list. */
 	if (!view->devices_open)
-		return;
+		view->devices_pending_count = 0U;
 
 	/* The list, as one state. */
 	view->devices_open = 0U;

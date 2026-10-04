@@ -102,6 +102,7 @@ struct system_devices_listener {
 	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
 	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+	void (*busy)(void *data, struct wl_proxy *proxy, uint32_t request, const char *program);
 };
 
 static void system_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
@@ -121,6 +122,7 @@ static void system_power_state(void *data, struct wl_proxy *proxy, uint32_t sour
 static void system_power_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static void system_device(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
 static void system_devices_done(void *data, struct wl_proxy *proxy, uint32_t serial);
+static void system_devices_busy(void *data, struct wl_proxy *proxy, uint32_t request, const char *program);
 static void system_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 static int system_bind(struct kl_system *system);
 static struct wl_proxy *system_make(struct kl_system *system, uint32_t bit, uint32_t opcode, const struct wl_interface *interface, const void *listener);
@@ -174,7 +176,8 @@ static const struct system_account_listener system_account_listener = {
 static const struct system_devices_listener system_devices_listener = {
 	system_device,
 	system_devices_done,
-	system_result
+	system_result,
+	system_devices_busy
 };
 
 /*
@@ -738,6 +741,61 @@ kl_system_devices_eject(
 }
 
 /*
+ * Asks for a removable device to be mounted (ws132-p004).
+ */
+int
+kl_system_devices_mount(
+	struct kl_system *system,
+	const char *id,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t length;
+
+	/* The devices object of a compositor with the mount (version 5). */
+	if (system->devices == NULL || system->lost)
+		return ENOTSUP;
+	if (system->manager_version < KL_SYSTEM_DEVICES_SINCE_MOUNT)
+		return ENOTSUP;
+
+	/* A device's ID that fits. */
+	if (id == NULL)
+		return EINVAL;
+	length = strlen(id);
+	if (length == 0U || length >= KL_DEVICE_TEXT_MAX)
+		return EINVAL;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->devices, KL_SYSTEM_DEVICES_MOUNT, number, id);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Copies the program that keeps a device from being ejected, for a request
+ * answered EBUSY.  Returns 1 with it, 0 when the compositor named none.
+ */
+int
+kl_system_devices_busy_program(
+	const struct kl_system *system,
+	uint32_t request,
+	char *program,
+	size_t size)
+{
+	/* The program named for that request, if any. */
+	if (system == NULL || program == NULL || size == 0U)
+		return 0;
+	if (system->view.busy_request != request || system->view.busy_program[0] == '\0')
+		return 0;
+
+	/* Succeeded: the program. */
+	system_view_copy(program, size, system->view.busy_program);
+	return 1;
+}
+
+/*
  * Asks for the user's password to be changed (ws160-p002).  Neither
  * password is kept here: they go out with the application's next flush.
  */
@@ -1144,6 +1202,24 @@ system_devices_done(
 	/* The devices, as one state. */
 	system = data;
 	system_view_devices_done(&system->view);
+}
+
+/* Keeps the program that keeps a volume from being ejected, for the busy result after it. */
+static void
+system_devices_busy(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t request,
+	const char *program)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The request and its program. */
+	system = data;
+	system->view.busy_request = request;
+	system_view_copy(system->view.busy_program, sizeof(system->view.busy_program), program);
 }
 
 /* Keeps an answered request of any object. */

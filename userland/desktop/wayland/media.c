@@ -51,6 +51,7 @@ struct media_view {
 	int32_t icon_y;
 	int32_t icon_width;
 	int32_t icon_height;
+	unsigned icon_logged;
 };
 
 static int media_fresh(const char *id);
@@ -233,8 +234,16 @@ zwl_media_draw_icon(
 	media_view.icon_y = 3;
 	media_view.icon_width = MEDIA_ICON_ROOM - 4;
 	media_view.icon_height = ZWL_GLASS_BAR - 6;
-	if (!media_view.shown)
+	if (!media_view.shown) {
+		media_view.icon_logged = 0U;
 		return;
+	}
+
+	/* Where it is, once each time it shows (the tests click it). */
+	if (!media_view.icon_logged) {
+		media_view.icon_logged = 1U;
+		printf("ZWL MEDIA icon x=%d y=%d width=%d height=%d\n", media_view.icon_x, media_view.icon_y, media_view.icon_width, media_view.icon_height);
+	}
 
 	/* The ink, fading in each blink's first half and coming back in its second. */
 	memcpy(color, ink, sizeof(color));
