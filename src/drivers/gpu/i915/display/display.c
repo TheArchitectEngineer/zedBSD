@@ -860,6 +860,7 @@ drv_i915_display_resume_begin(
 		if (error != 0)
 			first_error = error;
 
+		/* DC9 is behind the display either way. */
 		display->suspend_dc9 = 0;
 	}
 
