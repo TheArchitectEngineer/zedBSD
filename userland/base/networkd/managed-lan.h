@@ -130,6 +130,15 @@ void networkd_lan_init(struct networkd_lan *);
 int networkd_lan_set_policy(struct networkd_lan *,
 			    const struct networkd_lan_policy *, size_t);
 
+/*
+ * Replaces (or adds) what the configuration says of one interface
+ * (ws089-p022, a configuration asked through LAN_CONFIGURE) and has the
+ * interface configured again when a cable is in it, a configured one too:
+ * the user asked for the change.  Returns 0, or -1 for a name that could
+ * not be an interface or no room for another.
+ */
+int networkd_lan_set_interface(struct networkd_lan *, const struct networkd_lan_policy *);
+
 int networkd_lan_enable(struct networkd_lan *);
 int networkd_lan_disable(struct networkd_lan *);
 

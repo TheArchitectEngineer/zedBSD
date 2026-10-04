@@ -1677,6 +1677,8 @@ network_request_name(
 		return "turn Wi-Fi off";
 	case KL_BACKEND_NETWORK_REQUEST_PROFILES:
 		return "save the key";
+	case KL_BACKEND_NETWORK_REQUEST_WIRED:
+		return "configure wired";
 	default:
 		break;
 	}

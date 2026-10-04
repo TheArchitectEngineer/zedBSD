@@ -116,6 +116,17 @@ enum networkd_opcode {
 	NETWORKD_OP_LAN_DISABLE = 49,
 
 	/*
+	 * One wired interface's configuration, from a member of the network
+	 * group as well as root (ws089-p022, net lan set): INTERFACE alone is
+	 * DHCP; with ADDRESS and NETMASK (and a GATEWAY) a static IPv4
+	 * address; up to two DNS fields name static name servers (none: the
+	 * servers DHCP gives).  The daemon checks every field, writes that
+	 * interface's entry in net.conf (and the default route and the name
+	 * servers), and applies it now; the answer says whether it did.
+	 */
+	NETWORKD_OP_LAN_CONFIGURE = 50,
+
+	/*
 	 * Watching the network instead of asking about it.
 	 *
 	 * SUBSCRIBE does not end its connection.  The daemon answers it once

@@ -137,6 +137,37 @@ system_view_link(
 }
 
 /*
+ * Gives a pending interface its wired configuration (ws089-p022): how it
+ * is configured and its router; a name not among them changes nothing.
+ */
+void
+system_view_wired(
+	struct system_view *view,
+	const char *name,
+	unsigned mode,
+	const char *router)
+{
+	struct kl_network_link *link;
+	size_t index;
+	int differs;
+
+	/* Only within details being received. */
+	if (!view->details_open)
+		return;
+
+	/* The pending interface of that name. */
+	for (index = 0; index < view->links_pending_count; index++) {
+		link = &view->links_pending[index];
+		differs = strcmp(link->name, name);
+		if (differs != 0)
+			continue;
+		link->wired_mode = mode;
+		system_view_copy(link->router, sizeof(link->router), router);
+		return;
+	}
+}
+
+/*
  * Adds a DNS server to the pending details.
  */
 void

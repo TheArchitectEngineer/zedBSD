@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password). */
-#define KL_VERSION	28U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired). */
+#define KL_VERSION	29U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1231,7 +1231,9 @@ struct kl_network_ap {
 /*
  * One interface: its name, whether it is up, has its link and is the
  * loopback, its IPv4 address and netmask (empty when none), its hardware
- * address as text, its MTU, and the bytes it has received and sent.
+ * address as text, its MTU, and the bytes it has received and sent; for a
+ * wired one (KL_VERSION 29) how it is configured (KL_WIRED_*, unknown for
+ * any other or an older compositor) and the router it was given.
  */
 struct kl_network_link {
 	char name[KL_NETWORK_NAME_MAX];
@@ -1244,6 +1246,28 @@ struct kl_network_link {
 	unsigned mtu;
 	uint64_t received_bytes;
 	uint64_t sent_bytes;
+	unsigned wired_mode;
+	char router[KL_NETWORK_ADDRESS_MAX];
+};
+
+/* How a wired interface is configured (KL_VERSION 29). */
+#define KL_WIRED_UNKNOWN	0U
+#define KL_WIRED_DHCP		1U
+#define KL_WIRED_STATIC		2U
+
+/*
+ * A wired interface's configuration asked for (KL_VERSION 29): its name,
+ * DHCP or a static IPv4 address (KL_WIRED_*), the address, netmask and
+ * router of a static one (empty otherwise; the router may be empty), and
+ * up to two DNS servers (empty: the servers DHCP gives).
+ */
+struct kl_network_wired_config {
+	char interface[KL_NETWORK_NAME_MAX];
+	unsigned mode;
+	char address[KL_NETWORK_ADDRESS_MAX];
+	char netmask[KL_NETWORK_ADDRESS_MAX];
+	char router[KL_NETWORK_ADDRESS_MAX];
+	char dns[2][KL_NETWORK_ADDRESS_MAX];
 };
 
 /*
@@ -1378,6 +1402,16 @@ int kl_system_network_query_details(struct kl_system *system, uint32_t *request)
  * the compositor does not know it (one older than KL_VERSION 24).
  */
 int kl_system_network_set_scanning(struct kl_system *system, unsigned on);
+
+/*
+ * Asks for a wired interface to be configured (KL_VERSION 29, ws089-p022):
+ * DHCP or a static IPv4 address, with its router and DNS servers; the
+ * network daemon keeps it for the next start too.  request (may be NULL)
+ * names its answer, which comes once it is applied or refused.  Returns 0
+ * when asked, ENOTSUP (an older compositor), or EINVAL (a field that is
+ * too long, or a mode that is neither).
+ */
+int kl_system_network_configure_wired(struct kl_system *system, const struct kl_network_wired_config *config, uint32_t *request);
 
 /*
  * Copy up to capacity of the details last asked for and return how many

@@ -119,6 +119,7 @@
 		kl_system_network_save_key;
 		kl_system_network_query_details;
 		kl_system_network_set_scanning;
+		kl_system_network_configure_wired;
 		kl_system_network_get_links;
 		kl_system_network_get_dns;
 		kl_system_network_get_saved;

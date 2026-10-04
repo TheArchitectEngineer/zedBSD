@@ -200,6 +200,7 @@ struct kl_backend_network;
 #define KL_BACKEND_NETWORK_REQUEST_WIFI_ON	4U
 #define KL_BACKEND_NETWORK_REQUEST_WIFI_OFF	5U
 #define KL_BACKEND_NETWORK_REQUEST_PROFILES	6U	/* the user's saved networks changed */
+#define KL_BACKEND_NETWORK_REQUEST_WIRED	7U	/* a wired interface configured (ws089-p022) */
 
 /*
  * The network as last reported: connected (an interface is up with an
@@ -324,6 +325,8 @@ struct kl_backend_network_link {
 	unsigned mtu;
 	uint64_t received_bytes;
 	uint64_t sent_bytes;
+	unsigned wired_mode;
+	char router[KL_BACKEND_NETWORK_ADDRESS_MAX];
 };
 
 /*
@@ -331,6 +334,36 @@ struct kl_backend_network_link {
  * they cannot be read).
  */
 size_t kl_backend_network_get_links(struct kl_backend_network_link *links, size_t capacity);
+
+/* How a wired interface is configured (ws089-p022): not known, DHCP, a static IPv4 address. */
+#define KL_BACKEND_WIRED_UNKNOWN	0U
+#define KL_BACKEND_WIRED_DHCP		1U
+#define KL_BACKEND_WIRED_STATIC		2U
+
+/*
+ * A wired interface's configuration asked for (ws089-p022): its name, the
+ * mode, the address, netmask and router of a static one (the router may be
+ * empty), and up to two DNS servers (empty: the servers DHCP gives).
+ */
+struct kl_backend_wired_config {
+	char interface[KL_BACKEND_NETWORK_NAME_MAX];
+	unsigned mode;
+	char address[KL_BACKEND_NETWORK_ADDRESS_MAX];
+	char netmask[KL_BACKEND_NETWORK_ADDRESS_MAX];
+	char router[KL_BACKEND_NETWORK_ADDRESS_MAX];
+	char dns[2][KL_BACKEND_NETWORK_ADDRESS_MAX];
+};
+
+/*
+ * Sends a wired interface's configuration as a request of its own
+ * (KL_BACKEND_NETWORK_REQUEST_WIRED, one at a time like the others): the
+ * daemon keeps it for the next start and applies it now, and the answer
+ * comes as KL_BACKEND_NETWORK_CHANGED_DONE.  Returns 0, EBUSY while
+ * another request is outstanding, EINVAL for a field that does not fit,
+ * ENOTSUP where the OS's backend cannot configure an interface, or the
+ * errno value of reaching the daemon.
+ */
+int kl_backend_network_configure_wired(struct kl_backend_network *network, const struct kl_backend_wired_config *config);
 
 /*
  * Copies up to capacity DNS servers of /etc/resolv.conf (dotted IPv4) and

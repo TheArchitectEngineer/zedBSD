@@ -106,6 +106,7 @@ struct kl_backend_network {
 };
 
 static int network_connect(int *descriptor);
+static int network_text_field(struct networkd_field_writer *writer, uint16_t type, const char *text, size_t room, int required);
 static int network_send(struct kl_backend_network *network, uint32_t opcode, const unsigned char *payload, size_t length, int *descriptor, uint32_t *request_id);
 static void network_scan_step(struct kl_backend_network *network, unsigned *changed);
 static void network_scan_answer(struct kl_backend_network *network, unsigned *changed);
@@ -400,6 +401,104 @@ kl_backend_network_set_scanning(
 	network->scan_wanted = 0U;
 
 	/* Succeeded: the asking is recorded. */
+	return 0;
+}
+
+/*
+ * Sends a wired interface's configuration (ws089-p022) as the request
+ * LAN_CONFIGURE: the interface, a static one's address, netmask and router,
+ * and the DNS servers named; the daemon checks the values.
+ */
+int
+kl_backend_network_configure_wired(
+	struct kl_backend_network *network,
+	const struct kl_backend_wired_config *config)
+{
+	struct networkd_field_writer writer;
+	unsigned char payload[NETWORKD_REQUEST_MAX];
+	uint32_t request_id;
+	size_t index;
+	int descriptor;
+	int error;
+
+	/* A watch, a configuration of a mode the daemon knows, and no request outstanding. */
+	if (network == NULL || config == NULL)
+		return EINVAL;
+	if (config->mode != KL_BACKEND_WIRED_DHCP && config->mode != KL_BACKEND_WIRED_STATIC)
+		return EINVAL;
+	if (network->request_fd >= 0)
+		return EBUSY;
+
+	/* The interface. */
+	networkd_field_writer_init(&writer, payload, sizeof(payload));
+	error = network_text_field(&writer, NETWORKD_FIELD_INTERFACE, config->interface, sizeof(config->interface), 1);
+
+	/* A static one's address and netmask, and its router when it has one. */
+	if (error == 0 && config->mode == KL_BACKEND_WIRED_STATIC) {
+		error = network_text_field(&writer, NETWORKD_FIELD_ADDRESS, config->address, sizeof(config->address), 1);
+		if (error == 0)
+			error = network_text_field(&writer, NETWORKD_FIELD_NETMASK, config->netmask, sizeof(config->netmask), 1);
+		if (error == 0)
+			error = network_text_field(&writer, NETWORKD_FIELD_GATEWAY, config->router, sizeof(config->router), 0);
+	}
+
+	/* The DNS servers named. */
+	for (index = 0; error == 0 && index < 2U; index++)
+		error = network_text_field(&writer, NETWORKD_FIELD_DNS, config->dns[index], sizeof(config->dns[index]), 0);
+	if (error != 0)
+		return error;
+
+	/* The frame, on a connection of the request's own. */
+	error = network_send(network, NETWORKD_OP_LAN_CONFIGURE, payload, writer.used, &descriptor, &request_id);
+	if (error != 0)
+		return error;
+
+	/* The request is outstanding until its answer is read. */
+	network->request_fd = descriptor;
+	network->request = KL_BACKEND_NETWORK_REQUEST_WIRED;
+	network->request_opcode = NETWORKD_OP_LAN_CONFIGURE;
+	network->request_id = request_id;
+
+	/* Succeeded: the request is on its way. */
+	return 0;
+}
+
+/*
+ * Writes a text field of a configuration: one ended within its room, not
+ * empty when it is required (an empty one that is not is left out).
+ * Returns 0 or EINVAL.
+ */
+static int
+network_text_field(
+	struct networkd_field_writer *writer,
+	uint16_t type,
+	const char *text,
+	size_t room,
+	int required)
+{
+	const char *end;
+	size_t length;
+	int error;
+
+	/* Ended within its room. */
+	end = memchr(text, '\0', room);
+	if (end == NULL)
+		return EINVAL;
+	length = (size_t)(end - text);
+
+	/* An empty one: refused when required, else left out. */
+	if (length == 0U) {
+		if (required)
+			return EINVAL;
+		return 0;
+	}
+
+	/* The field. */
+	error = networkd_field_write(writer, type, text, length);
+	if (error != 0)
+		return EINVAL;
+
+	/* Succeeded: the field is written. */
 	return 0;
 }
 

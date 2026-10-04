@@ -139,9 +139,15 @@ se_touchpad_draw(
 	/* A line about saving first, when nothing can be saved. */
 	card = input_saving(app, canvas, x, top, width);
 
-	/* The card, then what it applies to. */
+	/* The card, then the gestures the touch pad knows (WS159 taps, WS142 gestures). */
 	y = input_pointer_card(app, canvas, x, card, width, "Pointer", INPUT_PAD_SPEED, INPUT_PAD_ACCEL, INPUT_PAD_NATURAL, app->look.touchpad_natural, "The content moves with two fingers, as on a phone.");
-	y = input_note(app, canvas, x, y + INPUT_GAP, width, "These apply to a touch pad. Tapping and gestures are coming in a later version of Kei.");
+	top = y + INPUT_GAP;
+	y = se_card_begin(app, canvas, x, top, width, se_card_height(4, 1), "Gestures", NULL);
+	y = se_row_value(app, canvas, x, y, width, "Click", "Tap with one finger", 0);
+	y = se_row_value(app, canvas, x, y, width, "Scroll", "Move two fingers", 0);
+	y = se_row_value(app, canvas, x, y, width, "Switch windows", "Tap with three fingers", 0);
+	(void)se_row_value(app, canvas, x, y, width, "Wiseview, the desktop", "Two fingers in from an edge", 1);
+	y = top + se_card_height(4, 1);
 
 	/* The edge below the cards. */
 	return y;

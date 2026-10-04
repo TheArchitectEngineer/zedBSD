@@ -212,7 +212,14 @@ se_ethernet_page_draw(
 		if (wired == 0)
 			continue;
 		y = network_link_card(app, canvas, &network->links[index], x, y + NETWORK_GAP, width);
+		y = se_wired_card(app, canvas, &network->links[index], x, y + NETWORK_GAP, width);
 		shown++;
+	}
+
+	/* The last Apply's answer once the editor closed (ws089-p022). */
+	if (app->wired.interface[0] == '\0' && app->wired.message[0] != '\0') {
+		(void)fm_text_draw_fit(app->text, canvas, x + 2, y + NETWORK_GAP + 16, app->wired.message, NETWORK_TEXT_SUB, 0, width, SE_COLOR_TEXT_SECONDARY);
+		y += NETWORK_GAP + 24;
 	}
 
 	/* A machine without one says so. */

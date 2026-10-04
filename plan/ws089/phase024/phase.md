@@ -64,3 +64,7 @@ compositor の入力（WS099・WS081）、kl_settings_*（WS135）。
 - build（warning 0）: zedBSD の wayland・settings・keiland-settings、Linux の Keiland（-Werror）。`plan/tools/keiland-os-boundary/check.sh` PASS。style-check: 新しい file は違反 0、変えた既存の file に新しい違反 0。
 - QEMU（T1 に依頼）: `plan/ws089/tests/settings-p005.sh`（Mouse の speed・acceleration・natural、Touchpad の頁の speed・natural）、`settings-p007.sh`（新しい key の適用、`pointer.speed=200` の移行）。QEMU の pointer は tablet（絶対）なので加速の効き目は host の試験で見る。
 - 未実施: 実機（5330 の touchpad と USB mouse の操作感）は UAT。
+
+## T1-152・154 の後（2026-10-05）
+
+- Q1: Touchpad の頁の注記が「Tapping and gestures are coming in a later version of Kei.」のまま → 注記を **Gestures の card** に替えた（Click: Tap with one finger、Scroll: Move two fingers、Switch windows: Tap with three fingers、Wiseview, the desktop: Two fingers in from an edge）。settings-render で幅 900 と 1180 を目視。

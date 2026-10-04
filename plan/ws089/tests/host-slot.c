@@ -431,6 +431,30 @@ kl_system_network_request(
 	return 0;
 }
 
+/* The pretend kl_system: a wired configuration (ws089-p022) is answered elsewhere; here it is only accepted. */
+int
+kl_system_network_configure_wired(
+	struct kl_system *system,
+	const struct kl_network_wired_config *config,
+	uint32_t *request)
+{
+	(void)system;
+	(void)config;
+	if (request != NULL)
+		*request = 900U;
+	return 0;
+}
+
+/* The Ethernet page's editor hears a wired answer (wired.c in the program); not used here. */
+void
+se_wired_outcome(
+	struct se_app *app,
+	int error)
+{
+	(void)app;
+	(void)error;
+}
+
 /* The pretend kl_system: a key with its network, sent (its length checked as the library does). */
 int
 kl_system_network_save_key(
