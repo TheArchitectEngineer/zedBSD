@@ -10,7 +10,7 @@ browser-data	-	Unicode-3.0 AND BSD-3-Clause	/usr/share/licenses/browser/Unicode-
 keiland-fonts	-	OFL-1.1 AND Apache-2.0	/usr/share/licenses/keiland-fonts/Inter-OFL.txt /usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt /usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt /usr/share/licenses/keiland-fonts/Apache-2.0.txt
 noct	-	Zlib	-
 emacs	-	Zlib	-
-ime-dict-ja	1a724393053e	Zlib	-
+ime-dict-ja	-	Zlib	-
 clang	-	Apache-2.0 WITH LLVM-exception	/usr/share/licenses/clang/LICENSE.TXT
 libcxx	-	Apache-2.0 WITH LLVM-exception	/usr/share/licenses/libcxx/LICENSE.TXT
 openssl	3.5.8	Apache-2.0	/usr/share/licenses/openssl/LICENSE.txt

@@ -39,3 +39,14 @@ Parent: [WS129](../ws.md)
 
 - kernel の `src/kern/exec.c:804` の `REMACS_SKK_DICT` の環境変数は辞書の path のままで変更不要。
 - QEMU（T1 の remacs-guest）の結果待ち。
+
+## T1-082 の結果と試験の直し（2026-10-04）
+
+- T1-082（6dbcc5b、CI の config の image、Venus KVM）: `remacs-guest: FAIL` ×2。落ちたのは「emacs runs」だけ。file の確認・C-x C-s の保存・C-x C-c の終了は ok、remacs.png に terminal の中の emacs（hello、`Wrote /tmp/remacs-test.txt`）。boot-test PASS、license-inventory（`--rootfs`）open 0。
+- 読み: T1 の `ps-during.txt` で該当の process の args は `emacs` だけ（`noct /bin/emacs` の形でない）。editor は動いており、試験の探す文字列の誤り。process の確認を `(^|[ /])emacs( |$)` に直した（`emacs`・`/usr/bin/noct /bin/emacs …` の両方に合い、`grep`・`terminal` には合わない）。T1 に再試験を依頼する。zedBSD の ps が `#!` で起きた process をどう見せるか（argv の書き換えの有無）は今回調べていない。
+
+## IME の辞書を tree に（2026-10-04、ユーザー「IME の辞書はコピーして取り込んでください。」）
+
+- `userland/base/emacs/dict/SKK-JISYO.X` を `userland/desktop/ime/dict/SKK-JISYO.X` に写した（SHA-256 `73819384…ab9`、前の archive からの取得と同じ byte）。`userland/desktop/ime/dict/Makefile` は REmacs の archive の取得（`ZEDBSD_EXTERNAL_SOURCE`）をやめて tree の file を入れる。`keiland-linux.mk`・`keiland-freebsd.mk` も archive の取得をやめ、tree の file を `*_DATA` で写す。
+- `tools/release/license-components.json` の ime-dict-ja（version を空、paths を `userland/desktop/ime/dict/`）、`plan/ws129/licenses-generated.md`・`licenses-index.txt` を再生成（25 components、open 0）、`plan/tools/packages/audit-licenses.sh` の GPL の archive の一覧から REmacs の archive を外した。
+- 確かめ: CI（clang 抜き）の rootfs の build exit 0・warning 0、`usr/share/kei/ime/ja/SKK-JISYO.X` の SHA-256 が同じ。`make keiland-linux` exit 0・warning 0、curl・tar の取得なしで同じ SHA-256。FreeBSD は `make -n keiland-freebsd` で tree からの cp を確かめただけ（FreeBSD の上の build は未実施）。`license-inventory-test.sh` PASS。QEMU の IME の試験は未実施（辞書の byte が同じなので挙動は変わらない見込み）。
