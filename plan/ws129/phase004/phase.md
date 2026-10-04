@@ -94,3 +94,10 @@ workflow の tag の検査を local でも同じに流せるように shell の 
 
 image: `plan/ws129/tests/config-amd64-release-noclang.mk`（INDEX は `license-inventory.py --config config/release/config-amd64-beta1.mk --index <BUILD>/INDEX` で作り `ZEDBSD_EXTRA_FILES` で入れる、config の注記の通り）。
 PASS: `plan/tools/boot-test.sh` PASS（graphical login か desktop の PNG）、guest で `uname -r` が `1.0.0-beta1`（+g なし）、root の password の login が拒まれ（SSH）、kei の password の login が通る（SSH）、`/usr/share/licenses/INDEX` がある。
+
+## ユーザーの決定（2026-10-05 未明、Q1 が 1 問ずつ聞いた）
+
+- (1) 自動 login: **保つ**（release でも kei が自動で login）。
+- (2) root の lock: ユーザー「su, sudoを実装してください。」→ 新しい [WS160](../../ws160/ws.md)（ベータ1）。root は lock のまま、管理は kei（wheel）の sudo。
+- (3) nightly の CI の config: **今のまま**（clang・libcxx・emacs・zedinst を外したまま）。
+- (4) passwd が無い件: **passwd を実装する**（WS160）。手引き（ws129-p013）は WS160 の後に p005 で直す。
