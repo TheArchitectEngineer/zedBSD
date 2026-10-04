@@ -12,7 +12,7 @@
     "/usr/share/licenses/zedbsd/LICENSE"
    ],
    "paths": [],
-   "note": "The zlib license asks for no notice in binaries; the image still carries the project's license as the list's first entry."
+   "note": "The zlib license asks for no notice in binaries; the image carries the project's license (the zedbsd-license package, always selected) as the list's first entry."
   },
   {
    "id": "llvm-runtime",
@@ -40,7 +40,7 @@
    "paths": [
     "src/libc/regex/"
    ],
-   "note": "src/libc/regex/LICENSE has TRE's BSD-2-Clause text but only names musl's MIT license; it needs musl's MIT text added, and the libc package does not install it."
+   "note": "src/libc/regex/LICENSE holds TRE's BSD-2-Clause and musl's MIT texts; the zedbsd-license package installs it, as libc is in every image."
   },
   {
    "id": "i915-intel",
@@ -55,7 +55,7 @@
    "paths": [
     "src/drivers/gpu/i915/"
    ],
-   "note": "The kernel carries Intel MIT code; the image has no notice for it yet."
+   "note": "userland/base/licenses/i915-driver/LICENSE (the copyright notices of the derived parts and the MIT permission notice), installed by i915-driver-license, selected with CONFIG_DRIVER_PCI_I915."
   },
   {
    "id": "intel-ax211-driver",
@@ -117,7 +117,7 @@
    "paths": [
     "userland/desktop/libvulkan/"
    ],
-   "note": "opcodes.h carries virglrenderer's MIT declarations; LICENSE-PROTOCOL is in the tree but the libvulkan package does not install it."
+   "note": "The libvulkan package installs LICENSE-PROTOCOL beside the library."
   },
   {
    "id": "browser-data",

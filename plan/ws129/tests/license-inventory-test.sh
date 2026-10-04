@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws129-p002: host test of tools/release/license-inventory.py on the CI image's configuration.
-#  1. The real table: the known open items only (the four missing notices and the remacs decision, 2026-10-04).
+#  1. The real table: the known open item only (the remacs decision; the missing notices G1-G4 were added 2026-10-04).
 #  2. A table without the AX211 component: its ISC/BSD sources are reported uncovered.
 #  3. A table where remacs is GPL without the decision mark: reported as a GPL component without a decision.
 #  4. An empty root filesystem: every installed notice is reported missing on disk.
@@ -21,8 +21,8 @@ expect() {
 # 1.
 run --index "$work/index.txt"
 open=$(grep -c "^license-inventory: \(missing notice\|decision pending\|uncovered\|unlisted\|GPL-family\)" "$work/err")
-if [ "$open" = 5 ]; then echo "ok: the real table has the 5 known open items"; else echo "FAIL: the real table has $open open items"; status=1; fi
-expect "missing notice of i915-intel" "the i915 MIT notice is missing"
+if [ "$open" = 1 ]; then echo "ok: the real table has the 1 known open item"; else echo "FAIL: the real table has $open open items"; status=1; fi
+expect "decision pending: remacs" "the open item is remacs"
 expect "decision pending: remacs" "remacs waits for the user's decision"
 
 # 2.

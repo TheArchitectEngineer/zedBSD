@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws129-p002 -->
 # ws129-p002: image の license の一覧
 
-Status: in-progress（q668、P2、2026-10-04。一覧・script・host 試験・audit は済み。足りない本文 G1〜G4 は main に依頼、remacs（D1）はユーザーの判断待ち）
+Status: in-progress（q668、P2、2026-10-04。一覧・script・host 試験・audit・足りない本文 G1〜G4 の直しは済み。remacs（D1）と i915-old の GPL の file（D2）はユーザーの判断待ち）
 Disposition: normal
 Parent: [WS129](../ws.md)
 Focused goal: fg019（ベータ1）
@@ -44,3 +44,6 @@ Queue: q668（Q1 の dispatch、2026-10-04）
 - audit: `plan/tools/packages/audit-licenses.sh` を全 archive に広げた（Q1 の 2026-10-02 の記録の指示）。main の distfiles（29 archive）で all known: yes。
 - 残り: G1 zedBSD の LICENSE、G2 libc の regex（TRE の BSD-2・musl の MIT）、G3 i915 の Intel の MIT、G4 libvulkan の LICENSE-PROTOCOL を image に入れる
   （各 package の Makefile、main と持ち主に依頼）。D1 remacs（GPL）はユーザーの判断待ち（Q1 が上げた）。release の config が p004 で決まったら再生成。
+
+2026-10-04（続き）: Q1 の委任で G1〜G4 を直した（licenses.md の「足りない本文」の節）。CI の config から clang・libcxx を除いた rootfs で `--rootfs` の確かめ:
+残りは D1 だけ。host 試験の期待を「既知の残り 1 件（remacs）」に直して PASS。

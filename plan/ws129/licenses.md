@@ -19,7 +19,7 @@ image に入る component は 25（自作の zedBSD・LLVM の runtime・kernel 
 IME の辞書・clang・libcxx・openssl・openssh・curl・expat・zlib・CA 証明書・emoji・firmware 3）。227 の userland package は全て自作か表の component。
 外部 package の版は make の `ZEDBSD_EXT_*_VERSION` から。
 
-### 足りない本文（image に無い。直すのは各 package の Makefile なので main に依頼）
+### 足りない本文（2026-10-04 に見つけ、同日 P2 が直した。Q1 の委任）
 
 | # | component | license | 足りない物 | 直し方の案 | 持ち主 |
 | --- | --- | --- | --- | --- | --- |
@@ -28,11 +28,21 @@ IME の辞書・clang・libcxx・openssl・openssh・curl・expat・zlib・CA �
 | G3 | i915 の driver（Linux i915 由来、Intel） | MIT | `/usr/share/licenses/i915-driver/LICENSE` | `src/drivers/gpu/i915/display`・`intel` の 17 file が Intel の MIT。Intel の MIT の本文を `userland/base/licenses/i915-driver/` に置き、AX211 と同じく `CONFIG_DRIVER_PCI_I915=y` で自動で選ぶ | main（kernel の GPU） |
 | G4 | libvulkan の Venus の宣言（virglrenderer 1.1.0、Google） | MIT | `/usr/share/licenses/libvulkan/LICENSE-PROTOCOL` | tree の `userland/desktop/libvulkan/LICENSE-PROTOCOL` を libvulkan の package の DATA で入れる | libvulkan の持ち主 |
 
+直し（commit は phase.md）: G1 `userland/base/licenses/zedbsd/`（package `zedbsd-license`、全ての image で自動で選ぶ、Makefile の選択の行）。
+G2 `src/libc/regex/LICENSE` に musl の MIT の全文を足し、libc は全ての image に在るので `zedbsd-license` が `/usr/share/licenses/libc-regex/LICENSE` として入れる。
+G3 `userland/base/licenses/i915-driver/`（Linux i915・DRM の display の派生部分の著作権表示 50 行と MIT の許諾文、package `i915-driver-license`、
+`CONFIG_DRIVER_PCI_I915=y` で自動、AX211 と同じ形）。G4 libvulkan の package の DATA に `LICENSE-PROTOCOL`。
+確かめ: CI の config から clang・libcxx を除いた config（`plan/ws129/tests/config-amd64-ci-noclang.mk`、subagent は target の clang を build しない）で
+`build/p2-ci/rootfs` を作り（rc=0、新しい warning なし）、`license-inventory.py --config plan/ws129/tests/config-amd64-ci-noclang.mk --rootfs build/p2-ci/rootfs`
+→ 残りは remacs の判断だけ。CI の config そのものに当てると clang・libcxx の本文が disk に無いと出る（build していないため。T1 の `t1-full` の CI の image では在った）。
+
 ### ユーザーの判断が要る物
 
 | # | component | 事実 | 選択肢 |
 | --- | --- | --- | --- |
 | D1 | **remacs**（`/usr/bin/remacs.nap`、CI の config が選ぶ） | GNU Emacs の再実装。README は「Copyright (C) 2025 Free Software Foundation, Inc.、Copyright (C) 2026 Awe Morris」「GNU General Public License」、COPYING は無く版も書いていない。GPL の component が image に入っている。辞書（ime-dict-ja）は ws095 D1 で著作権者が zlib に再 license 済みで、本体の扱いの記録は無い | (a) 著作権者が FSF の部分を含めて license を確かめ、許されるなら再 license／(b) GPL の本文と source の入手方法を image と release に付けて配る／(c) ベータ1 の image から外す（ime-dict-ja は remacs に依らず残せる） |
+
+| D2 | `src/drivers/gpu/i915-old/parity/` の GPL-2.0 の file | `lcd/intel_acpi_port.c` に `SPDX-License-Identifier: GPL-2.0`（Linux の intel_acpi.c の生成物）。i915-old は kernel の build に入らない（image には無い）が tree に在る | 消す／GPL の file として tree に残す記録だけにする |
 
 2026-10-04 Q1 がユーザーに上げた（q668 の P2 の報告から）。
 
@@ -41,8 +51,7 @@ IME の辞書・clang・libcxx・openssl・openssh・curl・expat・zlib・CA �
 - 自作の source: kernel の 381 file と選んだ program の source の SPDX は Zlib。非 Zlib の行は全て表の component の範囲（i915 の MIT 17、AX211 の
   ISC AND BSD-3-Clause 8、RTL8822B の BSD-3-Clause 1、regex の MIT 1、libvulkan の MIT 1）。SPDX の無い第三者の文（AX211 の OpenBSD・Intel の
   header、TRE、Unicode・WHATWG の生成表）も全て component の範囲。SPDX も他の著作権も無い自作の file は 1（`userland/base/curses/curses.h`、空の file）。
-- `src/drivers/gpu/i915-old/parity/lcd/intel_acpi_port.c` は `GPL-2.0` の SPDX だが、i915-old は kernel の build に入らない（`platform/amd64/vmunix.mk`
-  の source の一覧に無い）。tree に残る GPL の file として記録する（消すかは i915 の持ち主の判断）。
+- i915-old の GPL-2.0 の file は上の D2（kernel の build に入らない）。
 - Khronos の header（EGL・GLES・Vulkan、Apache-2.0 か MIT）は各 header の中に本文があり、development の rootfs にそのまま入る。
 - noct（NoctLang、Zlib、著作権者は同じ）: binary に表示を求めない。tree の clang の resource の header は install されない。
 

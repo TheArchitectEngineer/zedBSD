@@ -321,10 +321,19 @@ ifeq ($(strip $(CONFIG_DRIVER_PCI_INTEL_AX211)),y)
 override ZEDBSD_USER_PROGRAMS := $(sort \
 	$(ZEDBSD_USER_PROGRAMS) intel-ax211-driver-license)
 endif
+# The i915 driver contains MIT code derived from the Linux i915 and DRM display
+# drivers; binary images containing it reproduce that notice (ws129-p002).
+ifeq ($(strip $(CONFIG_DRIVER_PCI_I915)),y)
+override ZEDBSD_USER_PROGRAMS := $(sort \
+	$(ZEDBSD_USER_PROGRAMS) i915-driver-license)
+endif
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 override ZEDBSD_USER_PROGRAMS := $(sort \
 	$(ZEDBSD_USER_PROGRAMS) llvm-runtime-license)
 endif
+# Every image carries the project's own license first in its list (ws129-p002).
+override ZEDBSD_USER_PROGRAMS := $(sort \
+	$(ZEDBSD_USER_PROGRAMS) zedbsd-license)
 # A saved configuration may be reused after changing targets. Do not let
 # packages selected for another ABI become impossible prerequisites of the
 # current root filesystem (PC/AT i386 is named "pcat" by the build system).
