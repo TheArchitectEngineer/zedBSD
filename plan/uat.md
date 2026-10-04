@@ -198,3 +198,4 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 追加（ユーザー）: [BUG-188](bugs/BUG-188.md) Settings の AP の一覧でシングルタップでは接続されずダブルタップで接続される（シングルタップで接続すべき）。
 - 要望（ユーザー）: [ws089-p021](ws089/phase021/phase.md) Wi-Fi の画面の自動の scan と Disconnect の icon、[ws089-p022](ws089/phase022/phase.md) Ethernet の頁の設定（compositor 経由、backend が net の command）。
 - 追加（ユーザー）: [BUG-189](bugs/BUG-189.md) WiFi と USB LAN の両方の接続で Active Network が WiFi（USB LAN になるべき、default route が USB LAN かも試験する）。
+- 追加（ユーザー）: [BUG-190](bugs/BUG-190.md) タップダウンが全ての UI の要素で押下として効かない（押下と同じ扱いにすべき）。
