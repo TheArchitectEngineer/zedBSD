@@ -33,10 +33,10 @@
  * shortcuts): a terminal's shell needs Ctrl+W and Ctrl+T.
  *
  * A press on a control is taken here and the control acts on the release
- * over it.  A press on the search field waits instead (ws099-p030): its
- * release where it was pressed gives the field the keyboard with the cursor
- * there, and a press that goes far enough moves the window, as a press on
- * its title does.  On the field that has the keyboard a press puts the
+ * over it, unless the press went far enough first: then it moves the
+ * window, as a press on its title does (ws099-p030, BUG-178).  The search
+ * field's release where it was pressed gives it the keyboard with the
+ * cursor there.  On the field that has the keyboard a press puts the
  * cursor and a drag selects.  The search field, and the breadcrumb when the client asks for
  * the path to be edited, are text fields zdesktop owns: while one has the
  * keyboard, the keys edit it, and the client hears the text as it changes
@@ -405,9 +405,9 @@ zwl_titlebar_draw(
 
 /*
  * Handles a pointer button for the controls: a left press on one is taken
- * and the control acts on the release over it; a press on the search field
- * waits for its release to give it the keyboard (or moves the window when it
- * goes far enough, zwl_titlebar_motion); a press on the field with the
+ * and the control acts on the release over it, or moves the window when it
+ * goes far enough first (zwl_titlebar_motion); the search field's release
+ * gives it the keyboard; a press on the field with the
  * keyboard puts its cursor; a press elsewhere ends the editing of a field.
  * Returns 1 when the button was the controls'.
  */
@@ -448,6 +448,7 @@ zwl_titlebar_button(
 			hit = NULL;
 	}
 
+	/* No control of a window on top is under the press. */
 	if (hit == NULL) {
 		/* A press anywhere but on the field ends its editing, and goes on to what it is on. */
 		if (shell_titlebar.field.surface != NULL)
@@ -471,9 +472,15 @@ zwl_titlebar_button(
 	shell_titlebar.selecting = 0;
 	server->dirty = 1;
 
-	/* Any other control than a field waits for its release only. */
-	if (hit->kind != KIND_FIELD)
+	/*
+	 * Any other control than a field waits to be a click or a move, as the
+	 * search field does: a press anywhere on the title bar that goes far
+	 * enough moves the window (BUG-178, ws099-p030).
+	 */
+	if (hit->kind != KIND_FIELD) {
+		shell_titlebar.waiting = 1;
 		return 1;
+	}
 
 	/* The search field without the keyboard waits to be a click or a move. */
 	field = &shell_titlebar.field;
@@ -490,11 +497,11 @@ zwl_titlebar_button(
 }
 
 /*
- * Follows the pointer while a press on the search field waits or selects:
- * a waiting press that goes far enough moves the window (shell.c) from the
- * pressed point, and a selecting one moves the field's cursor, its
- * selection's other end staying where it was pressed.  Returns 1 when the
- * motion is the field's.
+ * Follows the pointer while a press on a control waits or one on the search
+ * field selects: a waiting press that goes far enough moves the window
+ * (shell.c) from the pressed point, and a selecting one moves the field's
+ * cursor, its selection's other end staying where it was pressed.  Returns
+ * 1 when the motion is the control's.
  */
 int
 zwl_titlebar_motion(
@@ -505,7 +512,7 @@ zwl_titlebar_motion(
 	size_t cursor;
 	int moved;
 
-	/* Only a press on a field. */
+	/* Only a press on a control. */
 	if (shell_titlebar.pressing == 0U)
 		return 0;
 
@@ -2397,9 +2404,10 @@ shell_hit_at(
 }
 
 /*
- * Ends a press on a control with its release: a selection ends; a waiting
- * press on the search field gives it the keyboard with the cursor where it
- * was pressed; any other control acts when the release is over it.
+ * Ends a press on a control with its release: a selection ends; a press
+ * that went far enough moved the window and is no click; a press on the
+ * search field gives it the keyboard with the cursor where it was pressed;
+ * any other control acts when the release is over it.
  */
 static void
 shell_release(
@@ -2446,6 +2454,7 @@ shell_release(
 
 	/* Succeeded: a search field that took the keyboard has its cursor where it was pressed. */
 	if (waiting != 0U &&
+	    pressed.kind == KIND_FIELD &&
 	    field->surface == pressed.surface &&
 	    field->id == pressed.id) {
 		field->cursor = shell_field_at(server, pressed.text_x, shell_titlebar.press_x);
