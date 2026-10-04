@@ -37,7 +37,7 @@ Resume point: p001（設計）から。WS049（ACPI AML）の後（ユーザー�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws159-p001](phase001/phase.md) | 設計（LPSS I2C・I2C-HID・HID の digitizer・evdev の MT・PS/2 との切替・compositor の touchpad の層・試験） | in-progress（2026-10-05 q713-i01 P1: 5330 の Linux の採取と設計を書いた、Q1 の確認待ち） | WS049 |
-| ws159-p002 | LPSS の DesignWare I2C の driver | planning | p001 |
-| ws159-p003 | I2C-HID と HID の digitizer、evdev の MT | planning | p002 |
+| [ws159-p002](phase002/phase.md) | LPSS の DesignWare I2C の driver と ACPI の I2cSerialBus・GpioInt | in-progress（2026-10-05 q713-i01 P1: 実装・host・build、QEMU と実機の待ち） | p001 |
+| [ws159-p003](phase003/phase.md) | I2C-HID と Precision Touchpad、EVIOCGPROP、input-inject の touchpad | in-progress（2026-10-05 q713-i01 P1: 実装・host の試験（Linux と同じ byte 列）・build、QEMU と実機の待ち） | p002 |
 | ws159-p004 | compositor の touchpad の層（tap・tap-drag・押し込み・2 本指のスクロール） | planning | p003（host の試験は先に） |
 | ws159-p005 | 実機の UAT と全文の規約 | planning | p004 |
