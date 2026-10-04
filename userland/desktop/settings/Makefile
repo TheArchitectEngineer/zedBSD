@@ -10,7 +10,7 @@ KEILAND_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/menu.c userland/desktop/settings/ui.c \
 	userland/desktop/settings/widgets.c userland/desktop/settings/glyphs.c \
 	userland/desktop/settings/pages.c userland/desktop/settings/about.c \
-	userland/desktop/settings/page-home.c userland/desktop/settings/page-about.c \
+	userland/desktop/settings/page-home.c userland/desktop/settings/page-about.c userland/desktop/settings/page-users.c \
 	userland/desktop/settings/page-soon.c userland/desktop/settings/page-network.c \
 	userland/desktop/settings/network.c userland/desktop/settings/search.c \
 	userland/desktop/settings/look.c userland/desktop/settings/page-look.c userland/desktop/settings/page-input.c userland/desktop/settings/sound.c userland/desktop/settings/system.c \

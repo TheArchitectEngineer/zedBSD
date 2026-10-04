@@ -321,7 +321,8 @@ zwl_dispatch(
 	case ZWL_SYSTEM_AUDIO:
 	case ZWL_SYSTEM_POWER:
 	case ZWL_SYSTEM_DEVICES:
-		/* Keiland's system extension: the manager, the network, the sound, the power and the devices (system.c, WS131 p010). */
+	case ZWL_SYSTEM_ACCOUNT:
+		/* Keiland's system extension: the manager, the network, the sound, the power, the devices and the account (system.c, WS131 p010, ws160-p002). */
 		error = zwl_system_request(object, opcode, bytes, size);
 		break;
 	case ZWL_SYSTEM_MONITOR:

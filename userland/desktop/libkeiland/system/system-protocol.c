@@ -40,6 +40,9 @@ static const struct wl_interface *system_get_monitor_types[] = {
 	&kl_system_monitor_v1_interface,
 	NULL,
 };
+static const struct wl_interface *system_get_account_types[] = {
+	&kl_system_account_v1_interface,
+};
 
 /* The arguments of messages that name no interface (at most sixteen, a monitor's disk's). */
 static const struct wl_interface *system_plain_types[] = {
@@ -70,6 +73,7 @@ static const struct wl_message system_manager_requests[] = {
 	{ "get_power", "n", system_get_power_types },
 	{ "get_devices", "n", system_get_devices_types },
 	{ "get_monitor", "2nu", system_get_monitor_types },
+	{ "get_account", "4n", system_get_account_types },
 };
 
 /* The events of kl_system_manager_v1. */
@@ -77,11 +81,11 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, version 3: seven requests (get_monitor since 2) and one event.  It lives for the program. */
+/* kl_system_manager_v1, version 4: eight requests (get_monitor since 2, get_account since 4) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
-	3,
-	7,
+	4,
+	8,
 	system_manager_requests,
 	1,
 	system_manager_events
@@ -211,6 +215,27 @@ const struct wl_interface kl_system_devices_v1_interface = {
 	system_devices_requests,
 	3,
 	system_devices_events
+};
+
+/* The requests of kl_system_account_v1 (ws160-p002). */
+static const struct wl_message system_account_requests[] = {
+	{ "destroy", "", NULL },
+	{ "set_password", "uss", system_plain_types },
+};
+
+/* The event of kl_system_account_v1. */
+static const struct wl_message system_account_events[] = {
+	{ "result", "uuu", system_plain_types },
+};
+
+/* kl_system_account_v1: two requests and one event.  It lives for the program. */
+const struct wl_interface kl_system_account_v1_interface = {
+	KL_SYSTEM_ACCOUNT_NAME,
+	1,
+	2,
+	system_account_requests,
+	1,
+	system_account_events
 };
 
 /* The requests of kl_system_monitor_v1 (WS134 p012). */

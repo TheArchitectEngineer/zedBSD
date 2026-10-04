@@ -188,6 +188,8 @@ enum zwl_kind {
 	ZWL_SYSTEM_AUDIO,
 	ZWL_SYSTEM_POWER,
 	ZWL_SYSTEM_DEVICES,
+	/* The system extension's account (system.c, ws160-p002). */
+	ZWL_SYSTEM_ACCOUNT,
 	/* The system extension's monitor (sysmon.c, WS134 p012). */
 	ZWL_SYSTEM_MONITOR,
 };

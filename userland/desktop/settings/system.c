@@ -77,6 +77,8 @@ se_system_poll(
 			break;
 		consumed = se_network_result(app, request, error);
 		if (!consumed)
+			consumed = se_users_result(app, request, error);
+		if (!consumed)
 			se_log("SYSTEM result request=%u errno=%d", request, error);
 	}
 }
@@ -88,6 +90,9 @@ void
 se_system_close(
 	struct se_app *app)
 {
+	/* No password typed stays (ws160-p002). */
+	se_users_close(app);
+
 	/* The system, once. */
 	if (app->system != NULL)
 		kl_system_close(app->system);
