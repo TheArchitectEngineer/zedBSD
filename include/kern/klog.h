@@ -45,4 +45,14 @@ kern_log_set_quiet(
 int
 kern_log_quiet(void);
 
+/*
+ * Keeps the text of a fatal stop in the ring only (BUG-158): no console is
+ * written, and the ring's lock is taken only when this CPU does not already
+ * hold it and another CPU gives it up within a bound.  Called with
+ * interrupts disabled on the way to a stop.
+ */
+void
+kern_log_record_fatal(
+	const char *text);
+
 #endif
