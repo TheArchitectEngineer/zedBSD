@@ -39,6 +39,8 @@
 
 user「テストはメインエージェントが集約してサブエージェントT1に送り、T1はキューにあるテストを可能な限りバッチ化して1回のqemu起動に詰めて実行します。P1,P2はテスト中に待機することなく、依存関係が満たされていて取りかかれる作業に移って、作業を進めます。…T1がビジーなとき、T2を立ててオーケーです。」→ 実装の担当は試験の依頼（image の作り方、流す試験、合否の基準）を Q1 に SendMessage し、T1 には直接送らない。Q1 が `plan/agents/T1/requests.md` に積んで T1 に送る。T1 は台帳の未実行の依頼をまとめて 1 回の QEMU の起動で流す。T1 が忙しく依頼が溜まった時は Q1 が T2 を立てる。結果は Q1 が判定し、FAIL は直す Queue にして元の担当へ（担当は次の区切りで受ける）。
 
+2026-10-04 夜 user「T1が空いていますね。いったん終了して、必要なときに起動しましょう。」→ T1 は台帳の未実行が無くなったら終了し、Q1 が依頼を持った時に新しい generation で起動する（待機させない）。
+
 ## 頻繁な統合
 
 1. 各担当は独立worktree `/home/awe/zedBSD-worktrees/p<番号>`、branch `agent/p<番号>`（固定）を使う。worktreeはmainが作り、絶対pathを起動指示で渡す。既存の古い worktree（`.claude/worktrees`、旧 `codex/` branch）を消したり再利用したりしない。担当はmain checkoutや所有外ファイルを編集しない。build directory、QEMU port/socketは担当ごとに隔離し、共有build/toolchainを書かない。
