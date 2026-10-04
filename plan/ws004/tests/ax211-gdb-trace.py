@@ -80,7 +80,7 @@ def run(command):
 
 def symbol_address(name):
     text = run('info address %s' % name)
-    match = re.search(r'at (0x[0-9a-f]+)', text)
+    match = re.search(r'at (?:address )?(0x[0-9a-f]+)', text)
     if match is None:
         raise gdb.error('no address for %s: %s' % (name, text.strip()))
     return int(match.group(1), 16)
@@ -117,6 +117,7 @@ class Tracer:
     def __init__(self):
         self.inner = {}
         self.events = []
+        self.function_names = {}
         self.return_bp = None
         self.stop_depth = 0
         self.halted = False
@@ -126,9 +127,13 @@ class Tracer:
         # loader run, so software breakpoints cannot be inserted yet; they
         # start disabled and are armed at the first sample that finds the
         # kernel mapped (arm_if_mapped).
+        # DWARF moves a function-name breakpoint past its prologue. The
+        # register arguments and stack return address below require the
+        # exact entry instruction, regardless of debug information.
         for name in EVENT_FUNCTIONS:
             try:
-                bp = gdb.Breakpoint(name)
+                bp = gdb.Breakpoint('*%#x' % symbol_address(name))
+                self.function_names[bp.number] = name
                 bp.silent = True
                 bp.enabled = False
                 self.events.append(bp)
@@ -138,7 +143,8 @@ class Tracer:
             self.inner[outer] = []
             for name in names:
                 try:
-                    bp = gdb.Breakpoint(name)
+                    bp = gdb.Breakpoint('*%#x' % symbol_address(name))
+                    self.function_names[bp.number] = name
                     bp.silent = True
                     bp.enabled = False
                     self.inner[outer].append(bp)
@@ -243,7 +249,7 @@ class Tracer:
                     self.return_bp = None
                     self.set_inner(self.inner_outer, False)
                     continue
-                self.event(bp.location)
+                self.event(self.function_names.get(bp.number, bp.location))
         elif isinstance(ev, gdb.SignalEvent):
             self.sample()
         else:
