@@ -12,6 +12,9 @@
 #   minimize  Open again, the parent's minimize button: both hide (minimized.png); Wiseview (Super+Tab) shows the
 #             parent alone, Right picks its tile and Enter brings both back (restored.png); Cancel
 #   saveas    Text Editor without a file, "abc" typed and Ctrl+S: Save As is a sheet too (saveas.png); Cancel
+#   open and saveas (ws090-p016): the sheet is glass: its panels are the whole sheet, reaching 14 above its top
+#             (ZWL GLASS ... panels=3 card:0,-14,...), and the two cards; open.png and saveas.png show both panes as light
+#             veils on the blurred wallpaper, no white card
 #   GUEST_RUNTIME=... BIN=build/amd64 plan/ws090/tests/sheet-guest.sh OUTDIR STEP...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -62,9 +65,11 @@ start() {
 # Text Editor's Open (its title bar's button at 487,73 while the window is where it opens).
 open_chooser() {
 	before=$(count 'ZWL GLASS sheet surface=')
+	glass=$(count 'panels=3 card:0,-14,')
 	pointer move 487 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
 	expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
 	expect_more 'ZWL GLASS sheet at x=260 y=95 ' 0
+	expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
 }
 
 # The chooser's Cancel (its place at the bottom right of the sheet, as the chooser lays it out at 760x480); Text Editor
@@ -139,10 +144,12 @@ for step in "$@"; do
 		start ''
 		keys 'abc'
 		before=$(count 'ZWL GLASS sheet surface=')
+		glass=$(count 'panels=3 card:0,-14,')
 		keys '<ctrl-s>'
 		sleep 1.5
 		pointer move 1250 780 sleep 300
 		expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
+		expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
 		shot saveas.png
 		cancel
 		;;
