@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws129-p003 -->
 # ws129-p003: 版の一つの源
 
-Status: in-progress（q711、P2、2026-10-05。実装・build・host 試験は済み、QEMU は T1 待ち。判定は Q1）
+Status: cleared（2026-10-05 Q1: T1-104 の uname・os-release PASS と T1-119 の dmesg の版の行 1 行（kernel の log の直し 4f2ac69 の後））。以前: in-progress（q711、P2、2026-10-05。実装・build・host 試験は済み、QEMU は T1 待ち。判定は Q1）
 Disposition: normal
 Parent: [WS129](../ws.md)
 Focused goal: fg019（ベータ1）
@@ -78,3 +78,7 @@ p001、ユーザーの版の名前。
 
 - `dmesg | grep 'zedBSD 1.0.0-beta1'` が 0 行: HAL の起動の表示（cmain.c）は klog の前で console にだけ出る。直し: `src/kern/main.c` の `boot_start()` の最初（`boot: parameters` の前）に `kern_logf("zedBSD %s\n", ZEDBSD_VERSION)`（`#ifdef ZEDBSD_VERSION`）。Makefile で amd64（`kern64/src/kern/main.o`）と i386・PC-98（`src/kern/main.o`）に `-DZEDBSD_VERSION` と version の stamp への依存を付けた（他の platform は定義が無く、行が出ないだけ）。
 - 確認: vmunix exit 0、kernel include check PASS、vmunix の文字列に `zedBSD 1.0.0-beta1`。QEMU の再試験は T1。
+
+## Q1 の判定（2026-10-05）
+
+T1-104 の uname・os-release PASS と T1-119 の dmesg の版の行 1 行（kernel の log の直し 4f2ac69 の後）。**cleared**。

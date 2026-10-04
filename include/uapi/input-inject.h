@@ -43,7 +43,8 @@
  * button, the pad itself (a click pad).  Readers get the fingers in
  * protocol B, BTN_TOOL_FINGER to BTN_TOOL_QUINTTAP for how many touch,
  * BTN_LEFT, and the properties INPUT_PROP_POINTER and
- * INPUT_PROP_BUTTONPAD.  A frame's reserved word holds its Scan Time in
+ * INPUT_PROP_BUTTONPAD.  Its position axes have INPUT_INJECT_PAD_RESOLUTION
+ * units a millimetre (a Latitude 5330's pad's).  A frame's reserved word holds its Scan Time in
  * its low 16 bits (on a pad declared with one, else 0) and the buttons
  * held in INPUT_INJECT_PAD_BUTTONS (bit 0 the left button).
  * The device appears as /dev/input/eventN.  Closing the file removes it.
@@ -62,6 +63,7 @@ extern "C" {
 #define INPUT_INJECT_KIND_PEN		1U
 #define INPUT_INJECT_KIND_TOUCH		2U
 #define INPUT_INJECT_KIND_TOUCHPAD	3U
+#define INPUT_INJECT_PAD_RESOLUTION	12
 #define INPUT_INJECT_AXIS_MAX		65535
 #define INPUT_INJECT_PRESSURE_MAX	4095
 #define INPUT_INJECT_TILT_MAX		60

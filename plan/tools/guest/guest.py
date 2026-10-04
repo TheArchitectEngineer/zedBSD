@@ -185,7 +185,9 @@ def start(arguments: argparse.Namespace) -> int:
 		"-smp", str(arguments.cpus), "-cpu", "host" if acceleration else "max",
 		"-drive", f"if=pflash,format=raw,readonly=on,file={arguments.ovmf_code}",
 		"-drive", f"if=pflash,format=raw,file={nvram}",
-		"-device", "qemu-xhci,id=xhci",
+		# Eight USB 2 and eight USB 3 ports: the harnesses take ports 1 to 4
+		# (the pen guest adds a tablet), and tests plug more in (T1-125).
+		"-device", "qemu-xhci,id=xhci,p2=8,p3=8",
 		"-drive", f"if=none,id=boot,file={disk},format=raw",
 		*boot_device,
 		"-netdev", "user,id=net0,net=10.0.2.0/24,host=10.0.2.2,"

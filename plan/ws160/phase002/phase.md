@@ -2,7 +2,7 @@
 
 # ws160-p002: Settings の Users の頁の password の変更（GUI）
 
-Status: in-progress（2026-10-05 P1 generation17。実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-121 PASS（9 行すべて ok、no-password-in-logs を含む）、users-changed.png を Q1 が目視（「Your password is changed. Use the new one from now on.」）。kei の desktop からの経路は 5330 の UAT（ws159-p005 の項目 6））。以前: in-progress（2026-10-05 P1 generation17。実装・build・host の試験まで。QEMU は Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
 Disposition: normal
 Parent: [WS160](../ws.md)
 Queue: Q1 の指示（q722 の後、2026-10-05）
@@ -54,3 +54,7 @@ Settings（Users の頁）→ libkeiland の `kl_system_account_set_password`（
 
 - QEMU の結果の判定。kei の desktop での確認（今の password を確かめる経路）は実機の UAT（release の image）。
 - Linux・FreeBSD の backend（logind・PAM・chpasswd など）はベータ1 の後。
+
+## Q1 の判定（2026-10-05）
+
+T1-121 PASS（9 行すべて ok、no-password-in-logs を含む）、users-changed.png を Q1 が目視（「Your password is changed. Use the new one from now on.」）。kei の desktop からの経路は 5330 の UAT（ws159-p005 の項目 6）。**cleared**。

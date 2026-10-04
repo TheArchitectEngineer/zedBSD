@@ -4,7 +4,8 @@
 # injector's test touch pad and touchinject's pad, ws159-p003).  The
 # compositor under test (BUILD/bin/wayland) is copied into the running
 # guest; the output is 1280x800.  The pad is declared with the Latitude
-# 5330's size (1336x760 units, 12 a millimetre).  Each script waits 2.6 s
+# 5330's size (1336x760 units; the injector gives a pad 12 units a
+# millimetre, INPUT_INJECT_PAD_RESOLUTION).  Each script waits 2.6 s
 # first: the compositor looks for new evdev nodes every 2 s.
 #
 #  1. The compositor takes the injector's touch pad as a touch pad (not as
@@ -14,8 +15,9 @@
 #     right) on a wltest window's title bar, where the mouse (QMP) first put
 #     the pointer: the window moves right (GLASS moved with a larger x),
 #     the BUG-166 tap-drag.
-#  3. The pad pressed and moved 30 mm right on the same title bar: the
-#     window moves right again (the click pad's drag).
+#  3. The pad pressed and moved 30 mm left on the same title bar: the
+#     window moves left (the click pad's drag; left, as the first drag may
+#     have taken the window to where it stops at the right).
 #  4. The compositor stays up, with no ERROR in its log.
 #
 #   plan/ws079/tests/pen-guest.sh start IMAGE
@@ -69,13 +71,13 @@ else
 	status=1
 fi
 
-# 3. The pad pressed and moved 30 mm right on the title bar (the pointer is still on it after the drag).
+# 3. The pad pressed and moved 30 mm left on the title bar (the pointer is still on it after the drag).
 before=${after:-$wx}
-guest 'printf "pad 1336 760 5 scan\nwait 2600\ndown 0 400 600\nwait 30\npress; move 0 401 600\nwait 30\nswipe 360 0 12 16\nrelease; move 0 761 600\nwait 30\nup 0\nhold 800\n" | /bin/touchinject; echo replay=$?' > "$out/pressdrag.txt"
+guest 'printf "pad 1336 760 5 scan\nwait 2600\ndown 0 800 600\nwait 30\npress; move 0 799 600\nwait 30\nswipe -360 0 12 16\nrelease; move 0 439 600\nwait 30\nup 0\nhold 800\n" | /bin/touchinject; echo replay=$?' > "$out/pressdrag.txt"
 grep -q '^replay=0$' "$out/pressdrag.txt" || { echo "press-drag replay: FAILED"; status=1; }
 after=$(moved_x "$surface")
 echo "press-drag: x $before -> ${after:-?}"
-if [ -n "$after" ] && [ "$after" -gt $((before + 50)) ]; then
+if [ -n "$after" ] && [ "$after" -lt $((before - 50)) ]; then
 	echo "press-drag moves the window: ok"
 else
 	echo "press-drag moves the window: FAILED"

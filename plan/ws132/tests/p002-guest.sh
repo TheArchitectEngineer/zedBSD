@@ -8,8 +8,11 @@
 #  2. systemevents -p: the power's state is unknown -> "power lid=- ac=- battery=- charging=-".
 #  3. A reader subscribed to every class while the host, through QMP, plugs in and pulls out a USB
 #     stick (blank, 16 MiB), a USB keyboard and a USB network adapter, one after the other on the same
-#     port 4 (the harness's devices take ports 1-3, and qemu-xhci's other ports are USB 3 ones a
-#     full-speed device cannot use; T1-106), then presses the power button
+#     port 4 (the harness's devices take ports 1-3; T1-106).  The root hub's port number the kernel
+#     reports is not checked: xHCI numbers a root hub's USB 2 and USB 3 ports apart, so QEMU's port 4
+#     is one number for the SuperSpeed stick and another for the full-speed keyboard and adapter
+#     (T1-122), and both move with the controller's port counts (T1-125).  Then the host presses the
+#     power button
 #     (system_powerdown).  The reader must print, in increasing sequence:
 #       usb add / disk add (removable=1; a disk is named sda) / disk remove / usb remove     (the stick)
 #       usb add / input add / input remove / usb remove                 (the keyboard)
@@ -70,18 +73,18 @@ guest 'cat /tmp/events.txt' > "$out/events.txt"
 check_line() {
 	if grep -Eq "$2" "$out/events.txt"; then pass "$1"; else fail "$1"; fi
 }
-check_line stick-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=4 vendor=46f4 product=0001'
+check_line stick-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=[0-9]+ vendor=46f4 product=0001'
 check_line stick-disk-add '^event [0-9]+ disk add 0 [a-z]+[0-9]* parent=- removable=1 block=512 blocks=32768'
 check_line stick-disk-remove '^event [0-9]+ disk remove 0 [a-z]+[0-9]* parent=- removable=1'
-check_line stick-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=4 vendor=46f4'
-check_line keyboard-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=4 vendor=0627'
+check_line stick-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=[0-9]+ vendor=46f4'
+check_line keyboard-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=[0-9]+ vendor=0627'
 check_line keyboard-input-add '^event [0-9]+ input add 0 event[0-9]+ bus=3 '
 check_line keyboard-input-remove '^event [0-9]+ input remove 0 event[0-9]+ bus=3 '
-check_line keyboard-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=4 vendor=0627'
-check_line nic-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=4 vendor=0525'
+check_line keyboard-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=[0-9]+ vendor=0627'
+check_line nic-usb-add '^event [0-9]+ usb add 0 usb[0-9]+\.[0-9]+ port=[0-9]+ vendor=0525'
 check_line nic-network-add '^event [0-9]+ network add 0 [a-z]+[0-9]+ ifindex=[0-9]+'
 check_line nic-network-remove '^event [0-9]+ network remove 0 [a-z]+[0-9]+ ifindex=[0-9]+'
-check_line nic-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=4 vendor=0525'
+check_line nic-usb-remove '^event [0-9]+ usb remove 0 usb[0-9]+\.[0-9]+ port=[0-9]+ vendor=0525'
 check_line power-button '^event [0-9]+ power press 1 power-button -'
 check_line any-event '^event'
 if grep -Eq ' (overflow|unknown) ' "$out/events.txt"; then fail no-overflow-or-unknown-lines; fi

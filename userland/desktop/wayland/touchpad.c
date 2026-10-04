@@ -28,6 +28,26 @@
  *     direction (the content follows the fingers) unless that is turned
  *     off.
  *
+ * The gestures (ws142-p003; the 2026-10-04 user requests and the decisions
+ * D1, D3 and D10 of plan/ws142/phase001):
+ *
+ *   - two fingers that both touch within EDGE_UM of the bottom edge and
+ *     move up, of the left edge and move right, or of the right edge and
+ *     move left, are a gesture (BOTTOM2, LEFT2, RIGHT2) rather than a
+ *     scroll: the first DECIDE_UM of their mean travel decides, and is held
+ *     back meanwhile (a touch that turns out to be a scroll scrolls by it
+ *     then);
+ *   - three fingers that move up (DECIDE3_UM, mostly up) are UP3; three
+ *     fingers moving otherwise do nothing (they move no pointer);
+ *   - a tap of three fingers is TAP3 (the switcher), not the middle button,
+ *     which pressing the pad with three fingers still gives.
+ *
+ * A gesture follows the fingers: it begins, reports their travel along its
+ * way (inward from its edge, or up) with every report, and ends when they
+ * lift (with their speed) or is given up when a finger more comes.  The
+ * pad's size (zwl_touchpad_set_size) is needed for the edges; without it
+ * only UP3 and TAP3 are made.
+ *
  * A tap's press is given when the finger lifts (only then is it a tap), and
  * its release when TAP_DRAG_MS have passed without another touch
  * (zwl_touchpad_tick): a press-to-act control reacts at the lift, a click
@@ -61,6 +81,22 @@
 /* The finger travel of one wheel notch when two fingers scroll (micrometres). */
 #define SCROLL_NOTCH_UM			2500
 
+/* The edges' band, and the travel that decides a two-finger and a three-finger gesture (micrometres). */
+#define EDGE_UM				6000
+#define DECIDE_UM			4000
+#define DECIDE3_UM			8000
+
+/* The edges both fingers of a two-finger touch started in. */
+#define EDGE_BOTTOM			0x1U
+#define EDGE_LEFT			0x2U
+#define EDGE_RIGHT			0x4U
+
+/* Whether a touch of two or three fingers is decided: not yet, as no gesture (a scroll, or nothing), or as a gesture. */
+#define DECIDED_NOT			0U
+#define DECIDED_OTHER			1U
+#define DECIDED_GESTURE			2U
+#define DECIDED_SPENT			3U
+
 /*
  * The pointer's gain in pixels per millimetre, in 1/256: GAIN_SLOW up to
  * SPEED_SLOW millimetres per second, rising to GAIN_FAST at SPEED_FAST and
@@ -83,6 +119,13 @@ static void touch_end(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touc
 static void pointer_motion(struct zwl_touchpad *pad, uint64_t now_ms, int64_t dx_um, int64_t dy_um, struct zwl_touchpad_actions *actions);
 static void scroll(struct zwl_touchpad *pad, int64_t dx_um, int64_t dy_um, struct zwl_touchpad_actions *actions);
 static void tap_finish(struct zwl_touchpad *pad, struct zwl_touchpad_actions *actions);
+static void fingers_changed(struct zwl_touchpad *pad, uint64_t now_ms, unsigned fingers, struct zwl_touchpad_actions *actions);
+static uint32_t edges_of_fingers(const struct zwl_touchpad *pad);
+static void gesture_motion(struct zwl_touchpad *pad, uint64_t now_ms, unsigned fingers, int64_t dx_um, int64_t dy_um, struct zwl_touchpad_actions *actions);
+static void gesture_begin(struct zwl_touchpad *pad, uint64_t now_ms, uint32_t gesture, unsigned fingers, struct zwl_touchpad_actions *actions);
+static void gesture_end(struct zwl_touchpad *pad, uint32_t phase, struct zwl_touchpad_actions *actions);
+static int64_t gesture_along(uint32_t gesture, int64_t dx_um, int64_t dy_um);
+static void push_gesture(struct zwl_touchpad_actions *actions, uint32_t gesture, uint32_t phase, int64_t travel_um, int64_t speed);
 static void push_button(struct zwl_touchpad_actions *actions, uint32_t button, uint32_t pressed);
 static void push_motion(struct zwl_touchpad_actions *actions, int32_t dx, int32_t dy);
 static void push_scroll(struct zwl_touchpad_actions *actions, int32_t vertical, int32_t horizontal);
@@ -118,6 +161,25 @@ zwl_touchpad_init(
 	/* Scrolling follows the fingers unless the user turns it off. */
 	pad->natural_scroll = 1;
 	pad->tap = ZWL_TOUCHPAD_TAP_NONE;
+}
+
+/*
+ * Gives the pad's size, its largest place across and down in its units
+ * (the axes' maxima), which the edges' gestures need.
+ */
+void
+zwl_touchpad_set_size(
+	struct zwl_touchpad *pad,
+	int32_t x_max,
+	int32_t y_max)
+{
+	/* A size of nothing is not known. */
+	pad->x_max = 0;
+	pad->y_max = 0;
+	if (x_max > 0 && y_max > 0) {
+		pad->x_max = x_max;
+		pad->y_max = y_max;
+	}
 }
 
 /*
@@ -211,6 +273,10 @@ zwl_touchpad_frame(
 	if (fingers > pad->touch_fingers)
 		pad->touch_fingers = fingers;
 
+	/* A finger came or went during the touch: a gesture under way ends or is given up, a new count starts deciding. */
+	if (fingers != 0U && fingers != pad->fingers_before && pad->fingers_before != 0U)
+		fingers_changed(pad, now_ms, fingers, actions);
+
 	/* The fingers' motion moves the pointer or scrolls. */
 	if (fingers != 0U)
 		take_motion(pad, now_ms, fingers, actions);
@@ -250,7 +316,8 @@ zwl_touchpad_tick(
 }
 
 /*
- * Lets every button the pad holds go (the device is going away).
+ * Lets every button the pad holds go and gives up a gesture under way (the
+ * device is going away).
  */
 void
 zwl_touchpad_release_all(
@@ -269,6 +336,12 @@ zwl_touchpad_release_all(
 	if (pad->button_sent != 0U)
 		push_button(actions, pad->button_sent, 0U);
 	pad->button_sent = 0;
+
+	/* A gesture under way is given up. */
+	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
+		gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, actions);
+		pad->decided = DECIDED_SPENT;
+	}
 }
 
 /* Counts the fingers on the pad. */
@@ -309,6 +382,12 @@ take_button(
 	/* A press: a tap waiting for its drag is done first. */
 	if (pad->button_down && pad->button_sent == 0U) {
 		tap_finish(pad, actions);
+
+		/* A gesture under way is given up, and the touch makes no other. */
+		if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
+			gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, actions);
+			pad->decided = DECIDED_SPENT;
+		}
 
 		/* The button of the fingers on the pad. */
 		button = ZWL_TOUCHPAD_BUTTON_LEFT;
@@ -368,6 +447,15 @@ touch_begin(
 		pad->touch_clicked = 1;
 	pad->scroll_travel_x_um = 0;
 	pad->scroll_travel_y_um = 0;
+
+	/* No gesture yet; two fingers that came at once start deciding, with the edges they touched. */
+	pad->gesture = ZWL_TOUCHPAD_GESTURE_NONE;
+	pad->decided = DECIDED_NOT;
+	pad->edges = 0;
+	pad->gesture_dx_um = 0;
+	pad->gesture_dy_um = 0;
+	if (fingers == 2U)
+		pad->edges = edges_of_fingers(pad);
 }
 
 /*
@@ -430,13 +518,17 @@ take_motion(
 	/* The touch's travel, which decides a tap and a drag. */
 	pad->touch_travel_um += best;
 
+	/* The fingers left after a gesture move nothing. */
+	if (pad->decided == DECIDED_SPENT)
+		return;
+
 	/* A touch after a tap that moves far enough is a drag. */
 	if (pad->tap == ZWL_TOUCHPAD_TAP_SECOND && pad->touch_travel_um >= DRAG_START_UM)
 		pad->tap = ZWL_TOUCHPAD_TAP_DRAG;
 
-	/* Two fingers with nothing pressed scroll by their mean motion. */
-	if (fingers == 2U && pad->button_sent == 0U && pad->tap == ZWL_TOUCHPAD_TAP_NONE) {
-		scroll(pad, sum_dx_um / (int64_t)moving, sum_dy_um / (int64_t)moving, actions);
+	/* Two or three fingers with nothing pressed: a gesture, a scroll (two), or nothing (three). */
+	if (fingers >= 2U && pad->button_sent == 0U && pad->tap == ZWL_TOUCHPAD_TAP_NONE) {
+		gesture_motion(pad, now_ms, fingers, sum_dx_um / (int64_t)moving, sum_dy_um / (int64_t)moving, actions);
 		return;
 	}
 
@@ -476,6 +568,12 @@ touch_end(
 	pad->scroll_travel_x_um = 0;
 	pad->scroll_travel_y_um = 0;
 
+	/* A gesture ends with its fingers. */
+	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
+		gesture_end(pad, ZWL_TOUCHPAD_PHASE_END, actions);
+		return;
+	}
+
 	/* A tap drag ends with its finger. */
 	if (pad->tap == ZWL_TOUCHPAD_TAP_DRAG) {
 		push_button(actions, ZWL_TOUCHPAD_BUTTON_LEFT, 0U);
@@ -510,13 +608,12 @@ touch_end(
 		return;
 	}
 
-	/* A tap of two fingers clicks the right button, of three or more the middle one. */
+	/* A tap of two fingers clicks the right button; of three or more it is the switcher's gesture (D1). */
 	if (pad->touch_fingers == 2U) {
 		push_button(actions, ZWL_TOUCHPAD_BUTTON_RIGHT, 1U);
 		push_button(actions, ZWL_TOUCHPAD_BUTTON_RIGHT, 0U);
 	} else {
-		push_button(actions, ZWL_TOUCHPAD_BUTTON_MIDDLE, 1U);
-		push_button(actions, ZWL_TOUCHPAD_BUTTON_MIDDLE, 0U);
+		push_gesture(actions, ZWL_TOUCHPAD_GESTURE_TAP3, ZWL_TOUCHPAD_PHASE_END, 0, 0);
 	}
 }
 
@@ -605,6 +702,229 @@ scroll(
 		push_scroll(actions, (int32_t)vertical, (int32_t)horizontal);
 }
 
+/*
+ * A finger came or went while the pad is touched: a gesture under way
+ * ends (fingers lifting one after the other) or is given up (a finger
+ * more), and the rest of the touch does nothing; otherwise the new count
+ * starts deciding afresh (fingers seldom land in the same report).  Two
+ * fingers keep their edges only while the touch has hardly moved.
+ */
+static void
+fingers_changed(
+	struct zwl_touchpad *pad,
+	uint64_t now_ms,
+	unsigned fingers,
+	struct zwl_touchpad_actions *actions)
+{
+	/* The time is not needed: the end's speed is the last update's. */
+	(void)now_ms;
+
+	/* A gesture under way. */
+	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
+		if (fingers > pad->gesture_fingers) {
+			gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, actions);
+		} else {
+			gesture_end(pad, ZWL_TOUCHPAD_PHASE_END, actions);
+		}
+
+		/* The rest of the touch neither scrolls nor makes another gesture. */
+		pad->decided = DECIDED_SPENT;
+		return;
+	}
+
+	/* A spent touch stays so. */
+	if (pad->decided == DECIDED_SPENT)
+		return;
+
+	/* A new count decides afresh. */
+	pad->decided = DECIDED_NOT;
+	pad->edges = 0;
+	pad->gesture_dx_um = 0;
+	pad->gesture_dy_um = 0;
+	if (fingers == 2U && pad->touch_travel_um < TAP_TRAVEL_UM)
+		pad->edges = edges_of_fingers(pad);
+}
+
+/* Tells the edges every finger on the pad touches (EDGE_* bits; none while the pad's size is not known). */
+static uint32_t
+edges_of_fingers(
+	const struct zwl_touchpad *pad)
+{
+	const struct zwl_touchpad_finger *finger;
+	int32_t band_x;
+	int32_t band_y;
+	uint32_t edges;
+	unsigned index;
+
+	/* Without the size there is no edge. */
+	if (pad->x_max <= 0 || pad->y_max <= 0)
+		return 0;
+
+	/* The band in units, and every edge until a finger is outside it. */
+	band_x = (int32_t)((int64_t)EDGE_UM * pad->resolution_x / 1000);
+	band_y = (int32_t)((int64_t)EDGE_UM * pad->resolution_y / 1000);
+	edges = EDGE_BOTTOM | EDGE_LEFT | EDGE_RIGHT;
+	for (index = 0; index < ZWL_TOUCHPAD_SLOTS; index++) {
+		/* Each finger. */
+		finger = &pad->fingers[index];
+		if (finger->tracking < 0)
+			continue;
+
+		/* An edge it is not near is not the touch's. */
+		if (finger->y < pad->y_max - band_y)
+			edges &= ~EDGE_BOTTOM;
+		if (finger->x > band_x)
+			edges &= ~EDGE_LEFT;
+		if (finger->x < pad->x_max - band_x)
+			edges &= ~EDGE_RIGHT;
+	}
+
+	/* Succeeded: the edges. */
+	return edges;
+}
+
+/*
+ * Takes two or three fingers' mean motion with nothing pressed: a gesture
+ * under way follows it; an undecided touch gathers it until it decides;
+ * a touch decided as no gesture scrolls (two fingers) or does nothing.
+ */
+static void
+gesture_motion(
+	struct zwl_touchpad *pad,
+	uint64_t now_ms,
+	unsigned fingers,
+	int64_t dx_um,
+	int64_t dy_um,
+	struct zwl_touchpad_actions *actions)
+{
+	uint64_t elapsed;
+	int64_t delta;
+	int64_t instant;
+	int64_t across;
+	int64_t down;
+	uint32_t gesture;
+
+	/* A gesture under way: its travel and speed. */
+	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
+		delta = gesture_along(pad->gesture, dx_um, dy_um);
+		pad->gesture_travel_um += delta;
+		elapsed = now_ms - pad->gesture_last_ms;
+		if (elapsed < FRAME_MS_LEAST)
+			elapsed = FRAME_MS_LEAST;
+		instant = delta * 1000 / (int64_t)elapsed;
+		pad->gesture_speed = (pad->gesture_speed + instant) / 2;
+		pad->gesture_last_ms = now_ms;
+		push_gesture(actions, pad->gesture, ZWL_TOUCHPAD_PHASE_UPDATE, pad->gesture_travel_um, pad->gesture_speed);
+		return;
+	}
+
+	/* A spent touch does nothing. */
+	if (pad->decided == DECIDED_SPENT)
+		return;
+
+	/* Decided as no gesture: two fingers scroll, three do nothing. */
+	if (pad->decided == DECIDED_OTHER) {
+		if (fingers == 2U)
+			scroll(pad, dx_um, dy_um, actions);
+		return;
+	}
+
+	/* Two fingers that touch no edge scroll at once. */
+	if (fingers == 2U && pad->edges == 0U) {
+		pad->decided = DECIDED_OTHER;
+		scroll(pad, dx_um, dy_um, actions);
+		return;
+	}
+
+	/* Undecided: the travel gathers until it decides. */
+	pad->gesture_dx_um += dx_um;
+	pad->gesture_dy_um += dy_um;
+	across = magnitude(pad->gesture_dx_um);
+	down = magnitude(pad->gesture_dy_um);
+	if (fingers == 2U && across + down < DECIDE_UM)
+		return;
+	if (fingers >= 3U && across + down < DECIDE3_UM)
+		return;
+
+	/* Two fingers: inward from an edge they touch, mostly along it. */
+	gesture = ZWL_TOUCHPAD_GESTURE_NONE;
+	if (fingers == 2U) {
+		if ((pad->edges & EDGE_BOTTOM) != 0U && pad->gesture_dy_um < 0 && down >= 2 * across)
+			gesture = ZWL_TOUCHPAD_GESTURE_BOTTOM2;
+		if ((pad->edges & EDGE_LEFT) != 0U && pad->gesture_dx_um > 0 && across >= 2 * down)
+			gesture = ZWL_TOUCHPAD_GESTURE_LEFT2;
+		if ((pad->edges & EDGE_RIGHT) != 0U && pad->gesture_dx_um < 0 && across >= 2 * down)
+			gesture = ZWL_TOUCHPAD_GESTURE_RIGHT2;
+	}
+
+	/* Three fingers: up, mostly up. */
+	if (fingers >= 3U && pad->gesture_dy_um < 0 && down >= 2 * across)
+		gesture = ZWL_TOUCHPAD_GESTURE_UP3;
+
+	/* No gesture: two fingers scroll by what was held back. */
+	if (gesture == ZWL_TOUCHPAD_GESTURE_NONE) {
+		pad->decided = DECIDED_OTHER;
+		if (fingers == 2U)
+			scroll(pad, pad->gesture_dx_um, pad->gesture_dy_um, actions);
+		return;
+	}
+
+	/* The gesture begins with the travel so far. */
+	gesture_begin(pad, now_ms, gesture, fingers, actions);
+}
+
+/* Begins a gesture with the fingers' travel so far. */
+static void
+gesture_begin(
+	struct zwl_touchpad *pad,
+	uint64_t now_ms,
+	uint32_t gesture,
+	unsigned fingers,
+	struct zwl_touchpad_actions *actions)
+{
+	/* Under way, from the travel that decided it; this touch is no tap. */
+	pad->gesture = gesture;
+	pad->gesture_fingers = fingers;
+	pad->decided = DECIDED_GESTURE;
+	pad->gesture_travel_um = gesture_along(gesture, pad->gesture_dx_um, pad->gesture_dy_um);
+	pad->gesture_speed = 0;
+	pad->gesture_last_ms = now_ms;
+	pad->touch_travel_um += TAP_TRAVEL_UM;
+	push_gesture(actions, gesture, ZWL_TOUCHPAD_PHASE_BEGIN, pad->gesture_travel_um, 0);
+}
+
+/* Ends a gesture (its fingers lifted) or gives it up (a finger more). */
+static void
+gesture_end(
+	struct zwl_touchpad *pad,
+	uint32_t phase,
+	struct zwl_touchpad_actions *actions)
+{
+	/* The end, with the travel and the last speed. */
+	push_gesture(actions, pad->gesture, phase, pad->gesture_travel_um, pad->gesture_speed);
+	pad->gesture = ZWL_TOUCHPAD_GESTURE_NONE;
+	pad->gesture_travel_um = 0;
+	pad->gesture_speed = 0;
+}
+
+/* Gives a motion along a gesture's way: up for BOTTOM2 and UP3, right for LEFT2, left for RIGHT2. */
+static int64_t
+gesture_along(
+	uint32_t gesture,
+	int64_t dx_um,
+	int64_t dy_um)
+{
+	/* Each gesture's way. */
+	switch (gesture) {
+	case ZWL_TOUCHPAD_GESTURE_LEFT2:
+		return dx_um;
+	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
+		return -dx_um;
+	default:
+		return -dy_um;
+	}
+}
+
 /* Completes a tap's click: its left button goes. */
 static void
 tap_finish(
@@ -683,6 +1003,32 @@ push_scroll(
 	action->kind = ZWL_TOUCHPAD_SCROLL;
 	action->vertical = vertical;
 	action->horizontal = horizontal;
+	actions->count++;
+}
+
+/* Adds a gesture's phase to the actions. */
+static void
+push_gesture(
+	struct zwl_touchpad_actions *actions,
+	uint32_t gesture,
+	uint32_t phase,
+	int64_t travel_um,
+	int64_t speed)
+{
+	struct zwl_touchpad_action *action;
+
+	/* A full list takes no more. */
+	if (actions->count >= ZWL_TOUCHPAD_ACTIONS)
+		return;
+
+	/* The gesture. */
+	action = &actions->actions[actions->count];
+	memset(action, 0, sizeof(*action));
+	action->kind = ZWL_TOUCHPAD_GESTURE;
+	action->gesture = gesture;
+	action->phase = phase;
+	action->travel_um = (int32_t)travel_um;
+	action->speed = (int32_t)speed;
 	actions->count++;
 }
 

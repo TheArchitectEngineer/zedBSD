@@ -30,4 +30,4 @@ Queue: q721
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws160-p001](phase001/phase.md) | 設計（既存の login・crypt・shadow の扱い、setuid の kernel の対応、規則の file の形、Settings からの変更の経路）と passwd・su・sudo の実装・試験 | in-progress（2026-10-05 q721-i01 P1: kernel の ptrace・set-id の穴を直し、passwd・su・sudo と共通の核を実装。build warning 0、host 15＋32 checks。QEMU は T1 に依頼。D1〜D4 は既定で実装） | なし |
-| [ws160-p002](phase002/phase.md) | Settings の Users の頁の password の変更（GUI）。Settings → libkeiland の kl_system_account → compositor → libkeiland-backend → zedBSD の `passwd -s`（Settings に権限を持たせない） | in-progress（2026-10-05 P1: 実装・build warning 0（zedBSD・Linux）・host 10＋12 checks・境界 PASS。QEMU は T1 に依頼） | p001 |
+| [ws160-p002](phase002/phase.md) | Settings の Users の頁の password の変更（GUI）。Settings → libkeiland の kl_system_account → compositor → libkeiland-backend → zedBSD の `passwd -s`（Settings に権限を持たせない） | cleared（2026-10-05 Q1、T1-121） | p001 |

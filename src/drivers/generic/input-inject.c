@@ -554,10 +554,12 @@ inject_declare_touch(
 	touch.y.minimum = 0;
 	touch.y.maximum = setup->y_max;
 
-	/* A touch pad: one button, the pad itself (ws159-p003). */
+	/* A touch pad: one button, the pad itself (ws159-p003), and a size in millimetres (its resolution). */
 	if (setup->kind == INPUT_INJECT_KIND_TOUCHPAD) {
 		touch.pad = 1;
 		touch.buttons = 1U;
+		touch.x.resolution = INPUT_INJECT_PAD_RESOLUTION;
+		touch.y.resolution = INPUT_INJECT_PAD_RESOLUTION;
 	}
 
 	/* A Scan Time, when the setup asks for one, as a Windows touch screen has it. */

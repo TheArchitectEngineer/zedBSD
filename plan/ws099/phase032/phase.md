@@ -2,7 +2,7 @@
 
 # ws099-p032: system bar の WiFi の icon の Alt+クリックで IP address と統計の情報を出す
 
-Status: in-progress（2026-10-05 P1 generation17 / q718-i01。設計・実装・build・host の試験まで。QEMU の試験を Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-125 の p032-guest PASS、details.png を Q1 が目視（Ethernet の詳細の popup: interface・状態・IPv4・mask・DNS・MAC・MTU・受信と送信と毎秒）。Wi-Fi の行は 5330 の UAT）。以前: in-progress（2026-10-05 P1 generation17 / q718-i01。設計・実装・build・host の試験まで。QEMU の試験を Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
 Disposition: normal
 Parent: [WS099](../ws.md)
 Queue: q718 / q718-i01（Q1 の投入）
@@ -60,7 +60,13 @@ Queue: q718 / q718-i01（Q1 の投入）
 - 試験: `plan/ws099/tests/p032-guest.sh BUILD [OUTDIR]`（BUILD/bin/wayland を写す）。QMP で Alt を押したまま icon をクリック、2 秒待つ、Esc、普通のクリック、Esc。
 - 合格: 全行 ok（info-open、no-menu、title-ethernet、status、interface、address が `ifconfig -a` と一致、bytes、rates、esc-closes、plain-click-menu、alive、no-error）。`details.png` をユーザーに見せる。
 
+- 2026-10-05 T1 の結果: log の確認は PASS、details.png が console の文字の画面（QMP screendump は GL の scanout を写さない）。zdesktop-p013 と同じ VNC からの撮影（`plan/ws035/tests/zdesktop-check.py`）に替えた。PNG の再撮影は T1。
+
 ## 残り
 
 - QEMU の結果の判定。実機の Wi-Fi（SSID・Signal の行）は UAT。
 - router・BSSID・channel・PHY rate・packet/error・接続時間は backend の口を足す別 Phase（必要ならユーザーの判断で）。
+
+## Q1 の判定（2026-10-05）
+
+T1-125 の p032-guest PASS、details.png を Q1 が目視（Ethernet の詳細の popup: interface・状態・IPv4・mask・DNS・MAC・MTU・受信と送信と毎秒）。Wi-Fi の行は 5330 の UAT。**cleared**。

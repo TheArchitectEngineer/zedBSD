@@ -32,7 +32,32 @@
 enum zwl_touchpad_action_kind {
 	ZWL_TOUCHPAD_MOTION,
 	ZWL_TOUCHPAD_BUTTON,
-	ZWL_TOUCHPAD_SCROLL
+	ZWL_TOUCHPAD_SCROLL,
+	ZWL_TOUCHPAD_GESTURE
+};
+
+/*
+ * The gestures (ws142-p003, plan/ws142/phase001 D): two fingers from the
+ * bottom edge up, three fingers up anywhere (both open Wiseview), two
+ * fingers from the left edge to the right and from the right edge to the
+ * left (the desktop on that side), and a tap of three fingers (the
+ * application switcher, D1).
+ */
+enum zwl_touchpad_gesture {
+	ZWL_TOUCHPAD_GESTURE_NONE,
+	ZWL_TOUCHPAD_GESTURE_BOTTOM2,
+	ZWL_TOUCHPAD_GESTURE_UP3,
+	ZWL_TOUCHPAD_GESTURE_LEFT2,
+	ZWL_TOUCHPAD_GESTURE_RIGHT2,
+	ZWL_TOUCHPAD_GESTURE_TAP3
+};
+
+/* A gesture's phases: it begins, follows the fingers, ends with them lifted, or is given up (a finger more). */
+enum zwl_touchpad_phase {
+	ZWL_TOUCHPAD_PHASE_BEGIN,
+	ZWL_TOUCHPAD_PHASE_UPDATE,
+	ZWL_TOUCHPAD_PHASE_END,
+	ZWL_TOUCHPAD_PHASE_CANCEL
 };
 
 /*
@@ -49,6 +74,11 @@ struct zwl_touchpad_action {
 	uint32_t pressed;
 	int32_t vertical;
 	int32_t horizontal;
+	/* A gesture: which, its phase, the fingers' travel along its way (micrometres, inward from the edge or up) and their speed (micrometres a second). */
+	uint32_t gesture;
+	uint32_t phase;
+	int32_t travel_um;
+	int32_t speed;
 };
 
 /* The actions of one call, in order; the caller owns the storage. */
@@ -116,9 +146,29 @@ struct zwl_touchpad {
 	int64_t scroll_travel_y_um;
 	uint64_t last_frame_ms;
 	int32_t natural_scroll;
+	/*
+	 * The gestures (ws142-p003): the pad's size in units (0 while it is not
+	 * known: no edge then), the edges both fingers of a two-finger touch
+	 * started in (EDGE_* bits), whether the touch is decided (a scroll, or
+	 * none, or a gesture), the gesture under way and its fingers, the
+	 * fingers' mean travel since the decision began (micrometres), the
+	 * travel along its way, and its speed and the time of its last update.
+	 */
+	int32_t x_max;
+	int32_t y_max;
+	uint32_t edges;
+	uint32_t decided;
+	uint32_t gesture;
+	uint32_t gesture_fingers;
+	int64_t gesture_dx_um;
+	int64_t gesture_dy_um;
+	int64_t gesture_travel_um;
+	int64_t gesture_speed;
+	uint64_t gesture_last_ms;
 };
 
 void zwl_touchpad_init(struct zwl_touchpad *pad, int32_t resolution_x, int32_t resolution_y);
+void zwl_touchpad_set_size(struct zwl_touchpad *pad, int32_t x_max, int32_t y_max);
 void zwl_touchpad_event(struct zwl_touchpad *pad, uint16_t type, uint16_t code, int32_t value);
 void zwl_touchpad_frame(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touchpad_actions *actions);
 void zwl_touchpad_tick(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touchpad_actions *actions);

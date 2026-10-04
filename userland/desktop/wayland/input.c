@@ -896,6 +896,10 @@ apply_touchpad_actions(
 			zwl_seat_axis(server, time, action->vertical, action->horizontal);
 			activity = 1;
 			break;
+		case ZWL_TOUCHPAD_GESTURE:
+			/* A gesture is the shell's (ws142-p003); no client hears it. */
+			zwl_glass_gesture(server, action->gesture, action->phase, action->travel_um, action->speed);
+			break;
 		default:
 			break;
 		}
@@ -1054,12 +1058,13 @@ attach_touchpad(
 	device->touchpad = 1;
 	snprintf(device->path, sizeof(device->path), "%s", path);
 	zwl_touchpad_init(&device->pad, x.resolution, y.resolution);
+	zwl_touchpad_set_size(&device->pad, x.maximum, y.maximum);
 
 	/* The slot is published only when it is completely filled in. */
 	device->live = 1;
 
 	/* One line lets a test see the touch pad and its resolution. */
-	printf("ZWL INPUT device=%s kind=touchpad abs=0 resolution=%d,%d\n", device->path, x.resolution, y.resolution);
+	printf("ZWL INPUT device=%s kind=touchpad abs=0 resolution=%d,%d size=%d,%d\n", device->path, x.resolution, y.resolution, x.maximum, y.maximum);
 
 	/* Bound seats learn that a pointer is there. */
 	update_capabilities(server);
@@ -1397,6 +1402,8 @@ input_read(
 		errno = ENODEV;
 		return -1;
 	}
+
+	/* Retained: the descriptor is forgotten until the seat gives the device back. */
 	printf("ZWL SEAT input_revoked path=%s lease=retained\n", device->path);
 	device->fd = -1;
 	errno = EAGAIN;
