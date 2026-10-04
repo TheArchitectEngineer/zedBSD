@@ -50,7 +50,9 @@ zwl_super_tap_key(
 
 	/* A press: a Super alone arms the tap, anything else disarms it. */
 	if (state != 0U) {
-		if (super && !tap->armed && others_held == 0U) {
+		if (super &&
+		    !tap->armed &&
+		    others_held == 0U) {
 			tap->armed = 1U;
 			tap->key = key;
 			tap->down_ms = now_ms;
@@ -77,7 +79,9 @@ zwl_super_tap_key(
 	return 1;
 }
 
-/* Disarms the tap: something else happened while Super was down. */
+/*
+ * Disarms the tap: something else happened while Super was down.
+ */
 void
 zwl_super_tap_cancel(
 	struct zwl_super_tap *tap)

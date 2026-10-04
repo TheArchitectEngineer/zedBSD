@@ -933,7 +933,10 @@ zwl_seat_key(
 	 */
 	others = server->modifiers & (SEAT_MODIFIER_SHIFT | SEAT_MODIFIER_CONTROL | SEAT_MODIFIER_ALT);
 	tapped = zwl_super_tap_key(&server->super_tap, key, state, others, zwl_milliseconds());
-	if (tapped && server->glass && !server->locked && !server->greeter) {
+	if (tapped &&
+	    server->glass &&
+	    !server->locked &&
+	    !server->greeter) {
 		printf("ZWL SUPER home\n");
 		zwl_home_toggle(server, "super");
 	}

@@ -96,9 +96,13 @@ bar_is(
 
 	/* The same text. */
 	same = strcmp(line, expected);
-	if (same != 0)
+	if (same != 0) {
 		printf("  bar: %s (expected %s)\n", line, expected);
-	return same == 0;
+		return 0;
+	}
+
+	/* Succeeded: the same. */
+	return 1;
 }
 
 /* Runs every case. */

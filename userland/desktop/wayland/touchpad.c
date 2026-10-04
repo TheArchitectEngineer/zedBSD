@@ -284,7 +284,9 @@ zwl_touchpad_frame(
 		pad->touch_fingers = fingers;
 
 	/* A finger came or went during the touch: a gesture under way ends or is given up, a new count starts deciding. */
-	if (fingers != 0U && fingers != pad->fingers_before && pad->fingers_before != 0U)
+	if (fingers != 0U &&
+	    fingers != pad->fingers_before &&
+	    pad->fingers_before != 0U)
 		fingers_changed(pad, now_ms, fingers, actions);
 
 	/* The fingers' motion moves the pointer or scrolls. */
@@ -537,7 +539,9 @@ take_motion(
 		pad->tap = ZWL_TOUCHPAD_TAP_DRAG;
 
 	/* Two or three fingers with nothing pressed: a gesture, a scroll (two), or nothing (three). */
-	if (fingers >= 2U && pad->button_sent == 0U && pad->tap == ZWL_TOUCHPAD_TAP_NONE) {
+	if (fingers >= 2U &&
+	    pad->button_sent == 0U &&
+	    pad->tap == ZWL_TOUCHPAD_TAP_NONE) {
 		gesture_motion(pad, now_ms, fingers, sum_dx_um / (int64_t)moving, sum_dy_um / (int64_t)moving, actions);
 		return;
 	}
@@ -850,16 +854,24 @@ gesture_motion(
 	/* Two fingers: inward from an edge they touch, mostly along it. */
 	gesture = ZWL_TOUCHPAD_GESTURE_NONE;
 	if (fingers == 2U) {
-		if ((pad->edges & EDGE_BOTTOM) != 0U && pad->gesture_dy_um < 0 && down >= 2 * across)
+		if ((pad->edges & EDGE_BOTTOM) != 0U &&
+		    pad->gesture_dy_um < 0 &&
+		    down >= 2 * across)
 			gesture = ZWL_TOUCHPAD_GESTURE_BOTTOM2;
-		if ((pad->edges & EDGE_LEFT) != 0U && pad->gesture_dx_um > 0 && across >= 2 * down)
+		if ((pad->edges & EDGE_LEFT) != 0U &&
+		    pad->gesture_dx_um > 0 &&
+		    across >= 2 * down)
 			gesture = ZWL_TOUCHPAD_GESTURE_LEFT2;
-		if ((pad->edges & EDGE_RIGHT) != 0U && pad->gesture_dx_um < 0 && across >= 2 * down)
+		if ((pad->edges & EDGE_RIGHT) != 0U &&
+		    pad->gesture_dx_um < 0 &&
+		    across >= 2 * down)
 			gesture = ZWL_TOUCHPAD_GESTURE_RIGHT2;
 	}
 
 	/* Three fingers: up, mostly up. */
-	if (fingers >= 3U && pad->gesture_dy_um < 0 && down >= 2 * across)
+	if (fingers >= 3U &&
+	    pad->gesture_dy_um < 0 &&
+	    down >= 2 * across)
 		gesture = ZWL_TOUCHPAD_GESTURE_UP3;
 
 	/* No gesture: two fingers scroll by what was held back. */

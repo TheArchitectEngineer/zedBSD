@@ -25,7 +25,9 @@ static void add_window(struct zwl_app *app, const struct zwl_apps_window *window
 static unsigned order_place(const struct zwl_apps_order *order, const char *key);
 static int comes_before(const struct zwl_app *app, unsigned place, const struct zwl_app *other, unsigned other_place);
 
-/* Writes an application's key: its application ID, or its client's for a window without one. */
+/*
+ * Writes an application's key: its application ID, or its client's for a window without one.
+ */
 void
 zwl_apps_key(
 	const char *app_id,
@@ -159,14 +161,23 @@ zwl_apps_move(
 	return 0;
 }
 
-/* Finds an application by its key: its index in the bar's order, or -1. */
+/*
+ * Finds an application by its key: its index in the bar's order, or -1.
+ */
 int
 zwl_apps_find(
 	const struct zwl_apps *apps,
 	const char *key)
 {
+	int found;
+
 	/* Among all of them. */
-	return find_key(apps, apps->count, key);
+	found = find_key(apps, apps->count, key);
+	if (found < 0)
+		return -1;
+
+	/* Succeeded: its index. */
+	return found;
 }
 
 /* Finds a key among the first applications: its index, or -1. */
@@ -255,9 +266,15 @@ comes_before(
 	unsigned other_place)
 {
 	/* Different places decide. */
-	if (place != other_place)
-		return place < other_place;
+	if (place < other_place)
+		return 1;
+	if (place > other_place)
+		return 0;
 
 	/* Both new: the earlier opening first. */
-	return app->open_order < other->open_order;
+	if (app->open_order < other->open_order)
+		return 1;
+
+	/* Succeeded: it does not. */
+	return 0;
 }

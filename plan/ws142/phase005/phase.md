@@ -46,6 +46,8 @@ Queue: Q1 の指示（2026-10-05、D1・D2 決定済み、fullscreen の間は�
 - 試験: `plan/ws142/tests/p005-guest.sh BUILD [OUTDIR]`（wltest `--app-id` で apps.a・apps.b（2 窓）・apps.c、QMP の key、touchinject の pad）。
 - 合格: 全行 ok（keys-open、keys-bar-preview、keys-tab、keys-shift-tab、keys-commit、keys-raise、escape-cancels、escape-brings-nothing、quick-back、pad-open、pad-step、pad-commit、docked、center-open、center-shown、center-commit、fullscreen-no-switcher、alive、no-error）。`switch-bar.png`（apps.b の icon の下に 2 枚）と `switch-center.png`（中央の popup）を目で見る。
 
+- 2026-10-05 T1-134: 16 行 ok、dock の段の 3 行（docked・center-open・center-shown）が FAIL。原因は試験: surface の番号は client ごとなので全部の窓が `surface=6` で、試験は commit した窓（apps.a）ではなく最後に map した窓（apps.c）の位置で double click し、それは前にある apps.a の本体の上だった（dock されず、切り替えは bar に出た。実装は正しい）。直し: `ZWL APPS raise`・`ZWL SWITCH commit`・`ZWL APPS preview window` の行の最後に `client=N` を足し、試験は窓を client で探す（`plan/ws142/tests/p005-guest.sh`、同じ誤りのあった `p004-guest.sh` も）。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定、実機の UAT（Alt+Tab の慣れ、2 本指の 12 mm、3 本指の tap）。遅れの目標（操作から最初の frame まで 100 ms）は log の `at_ms` で T1・UAT で見る。

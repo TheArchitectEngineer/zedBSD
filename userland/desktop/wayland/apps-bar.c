@@ -63,7 +63,9 @@ static void log_bar(struct zwl_server *server, const struct apps_view *view);
 static void draw_more(struct zwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, unsigned hidden, float light);
 static void draw_light(struct zwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, float strength);
 
-/* Draws the applications' icons in the system bar (draw_system_bar, when no window is docked).  Returns 1 when it drew any. */
+/*
+ * Draws the applications' icons in the system bar (draw_system_bar, when no window is docked).  Returns 1 when it drew any.
+ */
 int
 zwl_apps_bar_draw(
 	struct zwl_server *server,
@@ -143,7 +145,9 @@ zwl_apps_bar_draw(
 	return 1;
 }
 
-/* Draws the panel of previews, when it shows (over the windows, under the menus). */
+/*
+ * Draws the panel of previews, when it shows (over the windows, under the menus).
+ */
 void
 zwl_apps_bar_draw_popup(
 	struct zwl_server *server,
@@ -243,14 +247,19 @@ zwl_apps_bar_motion(
 				in_panel = zwl_apps_inside(&panel.rect, server->pointer_x, server->pointer_y);
 		}
 
+		/* Elsewhere the motion goes on. */
+		if (!in_panel)
+			return 0;
+
 		/* Over the previews the motion lights them. */
-		if (in_panel)
-			server->dirty = 1;
-		return in_panel;
+		server->dirty = 1;
+		return 1;
 	}
 
 	/* A window's move or pull, or a desktop swipe, passing over the bar starts no wait. */
-	if (server->drag != NULL || server->pull != NULL || server->desktop_press) {
+	if (server->drag != NULL ||
+	    server->pull != NULL ||
+	    server->desktop_press) {
 		if (state->state == ZWL_APPS_ARMED)
 			zwl_apps_bar_hide(server, "move");
 		return 0;
@@ -260,7 +269,9 @@ zwl_apps_bar_motion(
 	if (state->pressed) {
 		dx = server->pointer_x - state->press_x;
 		same = strcmp(state->press_key, MORE_KEY);
-		if (!state->dragging && same != 0 && (dx >= DRAG_START || dx <= -DRAG_START)) {
+		if (!state->dragging &&
+		    same != 0 &&
+		    (dx >= DRAG_START || dx <= -DRAG_START)) {
 			state->dragging = 1;
 			zwl_apps_bar_hide(server, "drag");
 			printf("ZWL APPS drag app=%s\n", state->press_key);
@@ -275,7 +286,9 @@ zwl_apps_bar_motion(
 			if (target >= (int)view.shown)
 				target = (int)view.shown - 1;
 			from = zwl_apps_find(&view.apps, state->press_key);
-			if (from >= 0 && target >= 0 && from != target)
+			if (from >= 0 &&
+			    target >= 0 &&
+			    from != target)
 				(void)zwl_apps_move(order, (unsigned)from, (unsigned)target);
 			server->dirty = 1;
 		}
@@ -421,7 +434,9 @@ zwl_apps_bar_button(
 
 		/* More: a second click on the shown icon hides its previews, otherwise they show at once. */
 		same = strcmp(state->key, app->key);
-		if (state->state == ZWL_APPS_SHOWN && state->via == ZWL_APPS_VIA_CLICK && same == 0) {
+		if (state->state == ZWL_APPS_SHOWN &&
+		    state->via == ZWL_APPS_VIA_CLICK &&
+		    same == 0) {
 			zwl_apps_bar_hide(server, "click");
 			return 1;
 		}
@@ -483,7 +498,9 @@ zwl_apps_bar_button(
 	return 0;
 }
 
-/* Takes a key: Esc hides the previews.  Returns 1 when the key was the bar's. */
+/*
+ * Takes a key: Esc hides the previews.  Returns 1 when the key was the bar's.
+ */
 int
 zwl_apps_bar_key(
 	struct zwl_server *server,
@@ -491,7 +508,9 @@ zwl_apps_bar_key(
 	uint32_t state_value)
 {
 	/* Only Esc's press while the previews show or wait. */
-	if (key != ZWL_KEY_ESC || state_value == 0U || server->apps_bar.state == ZWL_APPS_IDLE)
+	if (key != ZWL_KEY_ESC ||
+	    state_value == 0U ||
+	    server->apps_bar.state == ZWL_APPS_IDLE)
 		return 0;
 
 	/* A wait only stops (the key goes on); shown previews hide and take it. */
@@ -505,7 +524,9 @@ zwl_apps_bar_key(
 	return 1;
 }
 
-/* Lets time pass: a rest long enough shows the previews, an absence long enough hides them. */
+/*
+ * Lets time pass: a rest long enough shows the previews, an absence long enough hides them.
+ */
 void
 zwl_apps_bar_tick(
 	struct zwl_server *server)
@@ -535,7 +556,10 @@ zwl_apps_bar_tick(
 	}
 
 	/* The absence from the icons and the panel hides what the rest showed (a click's previews stay). */
-	if (state->state == ZWL_APPS_SHOWN && state->via == ZWL_APPS_VIA_HOVER && state->left && now - state->since_ms >= LEAVE_MS)
+	if (state->state == ZWL_APPS_SHOWN &&
+	    state->via == ZWL_APPS_VIA_HOVER &&
+	    state->left &&
+	    now - state->since_ms >= LEAVE_MS)
 		zwl_apps_bar_hide(server, "leave");
 }
 
@@ -679,7 +703,9 @@ slot_at(
 	int32_t slot;
 
 	/* Only in the bar, in the icons' span. */
-	if (y < 0 || y >= ZWL_GLASS_BAR || x < view->left)
+	if (y < 0 ||
+	    y >= ZWL_GLASS_BAR ||
+	    x < view->left)
 		return SLOT_NONE;
 	slot = (x - view->left) / ICON_WIDTH;
 
@@ -707,7 +733,9 @@ slot_rect(
 	rect->height = ZWL_GLASS_BAR;
 }
 
-/* Lays out the previews of an application under its icon, for the switcher (switcher-shell.c).  Returns 0 when it has no icon. */
+/*
+ * Lays out the previews of an application under its icon, for the switcher (switcher-shell.c).  Returns 0 when it has no icon.
+ */
 int
 zwl_apps_bar_panel(
 	struct zwl_server *server,
@@ -715,8 +743,15 @@ zwl_apps_bar_panel(
 	const char *key,
 	struct apps_panel *panel)
 {
+	int built;
+
 	/* As the bar's own. */
-	return panel_build(server, view, key, panel);
+	built = panel_build(server, view, key, panel);
+	if (!built)
+		return 0;
+
+	/* Succeeded: laid out. */
+	return 1;
 }
 
 /* Lays out the previews of an application under its icon (zwl_apps_tiles_layout).  Returns 0 when the application has no icon. */
@@ -859,7 +894,9 @@ zwl_apps_tiles_layout(
 	panel->rect.height = row_y + row_height + PREVIEW_LABEL;
 }
 
-/* Tells which preview is under a point, or -1. */
+/*
+ * Tells which preview is under a point, or -1.
+ */
 int
 zwl_apps_tile_at(
 	const struct apps_rect *tiles,
@@ -881,7 +918,9 @@ zwl_apps_tile_at(
 	return -1;
 }
 
-/* Tells whether a point is inside a rectangle. */
+/*
+ * Tells whether a point is inside a rectangle.
+ */
 int
 zwl_apps_inside(
 	const struct apps_rect *rect,
@@ -896,7 +935,9 @@ zwl_apps_inside(
 	return 1;
 }
 
-/* Shows an application's previews, and says where they are. */
+/*
+ * Shows an application's previews, and says where they are.
+ */
 void
 zwl_apps_bar_show(
 	struct zwl_server *server,
@@ -933,10 +974,12 @@ zwl_apps_bar_show(
 		how = "switch";
 	printf("ZWL APPS preview app=%s windows=%u via=%s at_ms=%llu\n", key, panel.count, how, (unsigned long long)zwl_milliseconds());
 	for (index = 0; index < panel.count; index++)
-		printf("ZWL APPS preview window surface=%u x=%d y=%d width=%d height=%d\n", panel.surfaces[index]->id, panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height);
+		printf("ZWL APPS preview window surface=%u x=%d y=%d width=%d height=%d client=%llu\n", panel.surfaces[index]->id, panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height, (unsigned long long)panel.surfaces[index]->client->number);
 }
 
-/* Hides the previews (or stops the wait for them). */
+/*
+ * Hides the previews (or stops the wait for them).
+ */
 void
 zwl_apps_bar_hide(
 	struct zwl_server *server,
