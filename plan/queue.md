@@ -33,7 +33,7 @@ Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q58
 | Queue / attempt | Agent | Phase | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
 | q677 / q677-i01 | P1（generation15）→ 残りは P3 | [ws049-p008](ws049/ws.md)（対象機 5330 の table と実機の確認） | **BUG-165**: 無い PCI 機能の PCI_Config の region は読みは全ビット 1・書きは無視（`acpi-kern.c`）、host の試験。5330 の DSDT を取り出して host の試験に入れ、読み込みが最後まで進むまで直す。実機で DSDT の読み込み・Shut Down の電源 OFF（BUG-119）・タッチパッド（BUG-156・167）・電池（BUG-159）を確かめ直す | なし | in-progress（P1 aad625b → main 統合、host の 5330 の試験 PASS。実機の UAT 待ち、残りは P3） |
-| q678 / q678-i01 | P1（予定） | [ws049-p007](ws049/ws.md) | SCI・GPE・固定 event（電源ボタン）・EC の kernel での確認（QEMU の `system_powerdown`、実機の電源ボタン・蓋・AC） | q677 | pending |
+| q678 / q678-i01 | P1（予定） | [ws049-p007](ws049/ws.md) | SCI・GPE・固定 event（電源ボタン）・EC の kernel での確認（QEMU の `system_powerdown`、実機の電源ボタン・蓋・AC） | q677 | QEMU PASS（T1-090、P1 b5da642・cc33171）。実機（電源ボタン・蓋・AC・EC）は次の UAT |
 | q694 / q694-i01 | P1（優先、p009 の前） | ws049-p016（新） | P1 の q677 の発見: `aml-field.c` の region_resolve_pci が bridge の secondary bus を辿らない（ACPICA の AcpiHwDerivePciId と違う）ため、5330 の RPxx.PXSX.PCCX など 31 個の PCI_Config の region が 0:0.0 を読む。加えて `drv_pci_find_device` が root bus だけを探す。bus の導出を直し、kernel の側の device の検索が bridge の先の bus も引けるようにする（`src/drivers/pci/` の検索の最小の変更は Q1 が委任、API の意味を変える時は止めて Q1 へ）。host の試験（5330 の table）、build warning 0、QEMU は T1。RTD3（WS052）の前提 | q677 の統合（済、main 側） | pending |
 | q693 / q693-i01 | P1（予定、優先） | [WS049](ws049/ws.md) p009 | 規約の全文の確認と最終の確認（WS049 の全 source、build warning 0、host の試験、QEMU の回帰は T1） | q677・q678 | pending |
 | q679 / q679-i01 | P1（予定、設計） | [WS050](ws050/ws.md) p001 | UCSI の設計（ACPI の device と `_DSM`、5330 の Type-C の port、通知） | 設計は q677 と並走可、実装は q677・q678 の後 | pending |
