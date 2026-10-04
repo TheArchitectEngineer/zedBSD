@@ -53,7 +53,9 @@ zwl_switcher_open(
 	return 0;
 }
 
-/* Moves the selection by a number of steps, around at the ends. */
+/*
+ * Moves the selection by a number of steps, around at the ends.
+ */
 void
 zwl_switcher_step(
 	struct zwl_switcher *switcher,
@@ -98,7 +100,9 @@ zwl_switcher_travel(
 	return steps;
 }
 
-/* Gives the selected application's key, or NULL while off. */
+/*
+ * Gives the selected application's key, or NULL while off.
+ */
 const char *
 zwl_switcher_selected(
 	const struct zwl_switcher *switcher)
@@ -111,7 +115,9 @@ zwl_switcher_selected(
 	return switcher->keys[switcher->index];
 }
 
-/* Closes the switcher. */
+/*
+ * Closes the switcher.
+ */
 void
 zwl_switcher_close(
 	struct zwl_switcher *switcher)

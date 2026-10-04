@@ -97,8 +97,10 @@ n=$(count 'ZWL SWITCH step index=[0-9]* app=[^ ]* via=pad'); [ "${n:-0}" -ge 1 ]
 expect_count pad-commit 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=pad' 1
 
 # 5. A docked window: the switcher in the middle.
+# The window the pad brought is on top; surface numbers are each client's own, so it is found by its client (T1-134).
 top=$(guest "grep 'ZWL SWITCH commit app=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) .*/\1/p')
-set -- $(guest "grep 'ZWL MAP client=[0-9]* surface=${top:-0} ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+topc=$(guest "grep 'ZWL SWITCH commit app=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\).*/\1/p')
+set -- $(guest "grep 'ZWL MAP client=${topc:-0} ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-300}; ty=${2:-300}
 pointer move $((tx + 150)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500
 n=$(count "ZWL GLASS dock surface=${top:-0} "); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass docked || fail docked

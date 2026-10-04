@@ -55,4 +55,4 @@ Keiland の compositor（`userland/desktop/wayland/`）で、ユーザーの要�
 | [ws142-p003](phase003/phase.md) | タッチパッドの gesture（下の端から 2 本指の上 → Wiseview、左右の端から 2 本指 → 仮想デスクトップ、代わりの 3 本指） | cleared（2026-10-05 Q1、T1-132） | p001、D1・D3・D10、BUG-166・167・178 の直し（q689・q700）と衝突しない順 |
 | [ws142-p004](phase004/phase.md) | 上部のバーのアプリの一覧とプレビュー（hover・click・複数の窓、drag の並べ替え） | cleared（2026-10-05 Q1、T1-131） | p001、D2・D4〜D8・D11 |
 | [ws142-p005](phase005/phase.md) | 切り替えの UI（3 本指のタップ・Alt+Tab、中央のポップアップ） | in-progress（2026-10-05 P1: 実装・build warning 0（zedBSD・Linux）・host 20 checks・境界 PASS。QEMU は T1 に依頼） | p003（TAP3・2 本指）、p004、D1・D2 |
-| ws142-p006 | 全文の規約の確認と QEMU の回帰（T1）、実機の UAT | planning | p002〜p005 |
+| [ws142-p006](phase006/phase.md) | 全文の規約の確認と QEMU の回帰（T1）、実機の UAT | in-progress（2026-10-05 P1 / q724: 規約の確認と直し、build warning 0（zedBSD・Linux）、host の試験 ok。QEMU の回帰は T1 に依頼） | p002〜p005 |

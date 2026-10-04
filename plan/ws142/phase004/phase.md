@@ -44,6 +44,8 @@ Queue: Q1 の指示（2026-10-05、D2・D4〜D8・D11 と並べ替えの要望�
 - 試験: `plan/ws142/tests/p004-guest.sh BUILD [OUTDIR]`（BUILD の bin/wayland を写す。wltest `--app-id` で apps.a・apps.b（2 窓）・apps.c、デスクトップ 2 に apps.d）。
 - 合格: 全行 ok（bar-opening-order、icons-left-to-right、hover-preview、hover-leaves、click-single-raises、click-preview、preview-raises、second-click-hides、escape-hides、drag-reorders、drag-bar、desktop2-bar、desktop1-order-kept、docked、docked-no-preview、alive、no-error）。`preview-hover.png`（apps.b の 2 枚のプレビュー）と `docked.png`（題がバーにあり icon が無い）を目で見る。
 
+- 2026-10-05 T1-134（p005）で分かった試験の誤り: surface の番号は client ごとで、p004-guest.sh の click-single-raises・preview-raises・dock の段も surface の番号だけで窓を探していた（偶然一致しうる）。log の行に `client=N` を足し、client で探す形に直した。再試験は T1。
+
 ## 残り
 
 - QEMU の結果の判定、実機の UAT（hover の時間、プレビューの大きさ、drag の感じ）。

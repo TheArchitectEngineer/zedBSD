@@ -48,7 +48,8 @@ expect_some() { n=$(count "$2"); if [ "${n:-0}" -ge 1 ] 2>/dev/null; then pass "
 icon_x() { guest "grep 'ZWL APPS icon app=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) .*/\1/p' | tail -1; }
 # A window of an application: wltest with that ID and colour, then its surface from the newest map.
 open_app() { guest "$env /bin/wltest --windowed --size=$3 --color=$2 --app-id=$1 --frames=3600 --delay-ms=250 > /tmp/$1-$$.log 2>&1 </dev/null & sleep 3; echo started" >/dev/null; }
-last_map() { guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n "s/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\\$1/p"; }
+# The newest window's client (surface numbers are each client's own, so a window is found by its client).
+last_client() { guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*ZWL MAP client=\([0-9]*\) .*/\1/p'; }
 : > "$out/qmp.txt"
 
 # The compositor under test, and the applications.
@@ -57,7 +58,7 @@ put "$build/bin/wayland" /bin/wayland
 guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
 open_app apps.a f4d0d0 380x260
-surface_a=$(last_map 1)
+client_a=$(last_client)
 open_app apps.b d0f4d0 400x280
 open_app apps.b c0e4c0 360x240
 open_app apps.c d0d0f4 420x300
@@ -79,15 +80,15 @@ expect_count hover-leaves 'ZWL APPS preview close via=leave' 1
 
 # 3. A click on apps.a's icon brings its window.
 pointer move $((ax + 18)) 22 sleep 100 down sleep 60 up sleep 500
-expect_count click-single-raises "ZWL APPS raise surface=${surface_a:-0} via=bar" 1
+expect_count click-single-raises "ZWL APPS raise surface=[0-9]* via=bar at_ms=[0-9]* client=${client_a:-0}\$" 1
 
 # 4. A click on apps.b's icon: its previews at once; the first preview brings its window.
 pointer move $((bx + 18)) 22 sleep 100 down sleep 60 up sleep 300
 expect_count click-preview 'ZWL APPS preview app=apps.b windows=2 via=click' 1
-set -- $(guest "grep 'ZWL APPS preview window surface=' /tmp/zdesktop.log | tail -2 | head -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4 \5/p')
-ps=${1:-0}; px=${2:-0}; py=${3:-0}; pw=${4:-0}; ph=${5:-0}
+set -- $(guest "grep 'ZWL APPS preview window surface=' /tmp/zdesktop.log | tail -2 | head -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\) client=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
+ps=${1:-0}; px=${2:-0}; py=${3:-0}; pw=${4:-0}; ph=${5:-0}; pc=${6:-0}
 pointer move $((px + pw / 2)) $((py + ph / 2)) sleep 200 down sleep 60 up sleep 500
-expect_count preview-raises "ZWL APPS raise surface=$ps via=preview" 1
+expect_count preview-raises "ZWL APPS raise surface=$ps via=preview at_ms=[0-9]* client=$pc\$" 1
 
 # 5. Shown and hidden by clicks; shown, hidden by Esc.
 pointer move $((bx + 18)) 22 sleep 100 down sleep 60 up sleep 400 down sleep 60 up sleep 400
@@ -112,8 +113,8 @@ sleep 1
 n=$(count 'ZWL APPS bar count=3 hidden=0 desktop=1 apps=apps.c,apps.a,apps.b')
 [ "${n:-0}" -ge 2 ] 2>/dev/null && pass desktop1-order-kept || fail "desktop1-order-kept (${n:-?})"
 
-# 8. A docked window: the window brought by the preview (on top since) docked by a double click on its title.
-set -- $(guest "grep 'ZWL MAP client=[0-9]* surface=$ps ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3/p')
+# 8. A docked window: the window brought by the preview (on top since; found by its client, T1-134) docked by a double click on its title.
+set -- $(guest "grep 'ZWL MAP client=$pc ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-300}; ty=${2:-300}
 pointer move $((tx + 150)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500
 expect_some docked "ZWL GLASS dock surface=$ps "

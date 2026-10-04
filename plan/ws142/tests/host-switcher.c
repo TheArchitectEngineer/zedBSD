@@ -62,7 +62,11 @@ selected_is(
 
 	/* The same key. */
 	same = strcmp(selected, key);
-	return same == 0;
+	if (same != 0)
+		return 0;
+
+	/* Succeeded: it is. */
+	return 1;
 }
 
 /* Runs every case. */

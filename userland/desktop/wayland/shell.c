@@ -5598,7 +5598,10 @@ zwl_glass_apps_room(
 	float home;
 
 	/* Only the glass look's window mode has the bar, and not over the login or lock screen. */
-	if (!server->glass || !server->windowed || server->greeter || server->locked)
+	if (!server->glass ||
+	    !server->windowed ||
+	    server->greeter ||
+	    server->locked)
 		return 0;
 
 	/* A fullscreen window, or a docked window's title. */
@@ -5611,7 +5614,9 @@ zwl_glass_apps_room(
 	home = zwl_home_progress(server);
 	if (home > 0.0f || server->home_to > 0.0f)
 		return 0;
-	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+	if (server->wiseview_gesture ||
+	    server->wiseview > 0.0f ||
+	    server->wiseview_moving)
 		return 0;
 
 	/* The span. */
@@ -5623,7 +5628,9 @@ zwl_glass_apps_room(
 	return 1;
 }
 
-/* Brings a window to the top for the bar's applications (back from minimized), with the focus. */
+/*
+ * Brings a window to the top for the bar's applications (back from minimized), with the focus.
+ */
 void
 zwl_glass_bring(
 	struct zwl_server *server,
@@ -5636,10 +5643,12 @@ zwl_glass_bring(
 	server->front_surface = zwl_top_window(server);
 	zwl_seat_focus(server);
 	server->dirty = 1;
-	printf("ZWL APPS raise surface=%u via=%s at_ms=%llu\n", surface->id, via, (unsigned long long)zwl_milliseconds());
+	printf("ZWL APPS raise surface=%u via=%s at_ms=%llu client=%llu\n", surface->id, via, (unsigned long long)zwl_milliseconds(), (unsigned long long)surface->client->number);
 }
 
-/* Opens Wiseview for the bar's "+N" place, as Super+Tab does. */
+/*
+ * Opens Wiseview for the bar's "+N" place, as Super+Tab does.
+ */
 void
 zwl_glass_open_wiseview(
 	struct zwl_server *server,
@@ -5668,7 +5677,10 @@ zwl_glass_switch_place(
 	float home;
 
 	/* Only the glass look's window mode, and not over the login or lock screen. */
-	if (!server->glass || !server->windowed || server->greeter || server->locked)
+	if (!server->glass ||
+	    !server->windowed ||
+	    server->greeter ||
+	    server->locked)
 		return 0;
 
 	/* Not over a fullscreen window. */
@@ -5680,7 +5692,9 @@ zwl_glass_switch_place(
 	home = zwl_home_progress(server);
 	if (home > 0.0f || server->home_to > 0.0f)
 		return 0;
-	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+	if (server->wiseview_gesture ||
+	    server->wiseview > 0.0f ||
+	    server->wiseview_moving)
 		return 0;
 
 	/* In the middle with a docked window. */
@@ -5769,7 +5783,9 @@ zwl_glass_draw_app_mark(
 	glass_draw_text(server, command, SIZE_TITLE, x + size / 2 - width / 2, middle + 6, letter, size, white);
 }
 
-/* Draws a window's preview for the bar's applications: Wiseview's tile, settled. */
+/*
+ * Draws a window's preview for the bar's applications: Wiseview's tile, settled.
+ */
 void
 zwl_glass_draw_preview(
 	struct zwl_server *server,
@@ -5905,7 +5921,8 @@ gesture_wiseview(
 	/* The end: past the threshold or flicked up it opens, otherwise (or given up) it closes. */
 	server->wiseview_gesture = 0;
 	server->wiseview_pad = 0;
-	if (phase == ZWL_TOUCHPAD_PHASE_END && (progress > WISEVIEW_THRESHOLD || speed >= GESTURE_FLICK)) {
+	if (phase == ZWL_TOUCHPAD_PHASE_END &&
+	    (progress > WISEVIEW_THRESHOLD || speed >= GESTURE_FLICK)) {
 		printf("ZWL WISEVIEW opening from=%.2f\n", (double)progress);
 		wiseview_settle(server, progress, 1.0f);
 	} else {
@@ -5949,7 +5966,8 @@ gesture_desktop(
 	}
 
 	/* No neighbour on that side resists. */
-	if ((offset > 0 && server->desktop == 0U) || (offset < 0 && server->desktop + 1U >= (unsigned)DESKTOPS))
+	if ((offset > 0 && server->desktop == 0U) ||
+	    (offset < 0 && server->desktop + 1U >= (unsigned)DESKTOPS))
 		offset /= 4;
 	server->desktop_offset = offset;
 	server->dirty = 1;
@@ -5960,7 +5978,8 @@ gesture_desktop(
 
 	/* The end: far enough or flicked, the neighbour (desktop_turn keeps the end desktops); otherwise, or given up, back. */
 	server->desktop_pad = 0;
-	if (phase == ZWL_TOUCHPAD_PHASE_END && (travel >= (int32_t)server->width / 2 || (speed >= GESTURE_FLICK && travel > 0))) {
+	if (phase == ZWL_TOUCHPAD_PHASE_END &&
+	    (travel >= (int32_t)server->width / 2 || (speed >= GESTURE_FLICK && travel > 0))) {
 		desktop_turn(server, target, "pad");
 	} else {
 		desktop_turn(server, (int)server->desktop, "pad");
@@ -5985,9 +6004,13 @@ gesture_may_start(
 		return 0;
 
 	/* Wiseview shown or moving, a desktop swipe or slide. */
-	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
+	if (server->wiseview_gesture ||
+	    server->wiseview > 0.0f ||
+	    server->wiseview_moving)
 		return 0;
-	if (server->desktop_press || server->desktop_dragging || server->desktop_moving)
+	if (server->desktop_press ||
+	    server->desktop_dragging ||
+	    server->desktop_moving)
 		return 0;
 
 	/* App Home shown or following its gesture. */

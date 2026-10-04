@@ -225,7 +225,9 @@ gesture_count(
 	/* Every gesture action of that kind and phase. */
 	count = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_GESTURE && seen[index].gesture == gesture && seen[index].phase == phase)
+		if (seen[index].kind == ZWL_TOUCHPAD_GESTURE &&
+		    seen[index].gesture == gesture &&
+		    seen[index].phase == phase)
 			count++;
 	}
 
@@ -237,8 +239,13 @@ gesture_count(
 static unsigned
 gestures(void)
 {
+	unsigned count;
+
 	/* Of the gesture kind. */
-	return kind_count(ZWL_TOUCHPAD_GESTURE);
+	count = kind_count(ZWL_TOUCHPAD_GESTURE);
+
+	/* Succeeded: the count. */
+	return count;
 }
 
 /* Counts the actions of a kind. */
@@ -331,7 +338,9 @@ button_count(
 	/* Every button action of that button and state. */
 	count = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_BUTTON && seen[index].button == code && seen[index].pressed == pressed)
+		if (seen[index].kind == ZWL_TOUCHPAD_BUTTON &&
+		    seen[index].button == code &&
+		    seen[index].pressed == pressed)
 			count++;
 	}
 

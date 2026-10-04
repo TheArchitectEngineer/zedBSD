@@ -72,16 +72,24 @@ static void close_switcher(struct zwl_server *server);
 static const char *via_name(unsigned via);
 static const char *placement_name(unsigned placement);
 
-/* Tells whether the switcher is on. */
+/*
+ * Tells whether the switcher is on.
+ */
 int
 zwl_switch_on(
 	struct zwl_server *server)
 {
-	/* Its state. */
-	return server->switcher.on != 0U;
+	/* Off. */
+	if (server->switcher.on == 0U)
+		return 0;
+
+	/* Succeeded: on. */
+	return 1;
 }
 
-/* Opens the switcher (Alt+Tab, a tap of three fingers).  Returns 1 when it opened. */
+/*
+ * Opens the switcher (Alt+Tab, a tap of three fingers).  Returns 1 when it opened.
+ */
 int
 zwl_switch_open(
 	struct zwl_server *server,
@@ -115,7 +123,9 @@ zwl_switch_open(
 	return 1;
 }
 
-/* Moves the selection. */
+/*
+ * Moves the selection.
+ */
 void
 zwl_switch_step(
 	struct zwl_server *server,
@@ -135,7 +145,9 @@ zwl_switch_step(
 	present(server);
 }
 
-/* Brings the selected application's latest window, and closes the switcher. */
+/*
+ * Brings the selected application's latest window, and closes the switcher.
+ */
 void
 zwl_switch_commit(
 	struct zwl_server *server,
@@ -160,7 +172,9 @@ zwl_switch_commit(
 	bring_app(server, &view, found, how);
 }
 
-/* Gives the switcher up, changing nothing. */
+/*
+ * Gives the switcher up, changing nothing.
+ */
 void
 zwl_switch_cancel(
 	struct zwl_server *server,
@@ -190,19 +204,33 @@ zwl_switch_key(
 	int delta;
 	int held;
 	int opened;
+	int on;
 
 	/* Alt+Tab (not with Control or Super): opens, or moves on; Shift+Alt+Tab moves back. */
-	if (key == KEY_TAB && (server->modifiers & SWITCH_ALT) != 0U && (server->modifiers & (SWITCH_CONTROL | SWITCH_SUPER)) == 0U) {
-		if (state == 0U)
-			return server->switcher.on != 0U;
+	if (key == KEY_TAB &&
+	    (server->modifiers & SWITCH_ALT) != 0U &&
+	    (server->modifiers & (SWITCH_CONTROL | SWITCH_SUPER)) == 0U) {
+		/* Tab's release is the switcher's while it is on. */
+		if (state == 0U) {
+			on = zwl_switch_on(server);
+			if (!on)
+				return 0;
+			return 1;
+		}
+
+		/* On with Shift, back. */
 		delta = 1;
 		if ((server->modifiers & SWITCH_SHIFT) != 0U)
 			delta = -1;
+
+		/* Off: it opens (with Shift on the one before). */
 		if (!server->switcher.on) {
 			opened = zwl_switch_open(server, ZWL_SWITCHER_VIA_KEYS);
-			if (opened && delta < 0)
+			if (!opened)
+				return 0;
+			if (delta < 0)
 				zwl_switch_step(server, -1, "shift-tab");
-			return opened;
+			return 1;
 		}
 
 		/* On: the next (or the one before). */
@@ -215,29 +243,48 @@ zwl_switch_key(
 		return 0;
 
 	/* Alt let go: the keyboard's switcher brings its selection; the release goes on. */
-	if ((key == KEY_LEFTALT || key == KEY_RIGHTALT) && state == 0U) {
+	if ((key == KEY_LEFTALT || key == KEY_RIGHTALT) &&
+	    state == 0U) {
 		held = zwl_input_alt_held(server);
 		if (!held && server->switcher.via == ZWL_SWITCHER_VIA_KEYS)
 			zwl_switch_commit(server, "alt");
+
+		/* The release goes on to the windows. */
 		return 0;
 	}
 
 	/* The arrows, Enter and Esc; their releases too. */
-	if (key == KEY_RIGHT || key == KEY_LEFT || key == KEY_ENTER || key == KEY_ESC || key == KEY_TAB) {
+	if (key == KEY_RIGHT ||
+	    key == KEY_LEFT ||
+	    key == KEY_ENTER ||
+	    key == KEY_ESC ||
+	    key == KEY_TAB) {
+		/* A release only stays from the windows. */
 		if (state == 0U)
 			return 1;
-		if (key == KEY_TAB && (server->modifiers & SWITCH_SHIFT) == 0U)
-			zwl_switch_step(server, 1, "tab");
+
+		/* Shift turns Tab back. */
 		if (key == KEY_TAB && (server->modifiers & SWITCH_SHIFT) != 0U)
-			zwl_switch_step(server, -1, "shift-tab");
-		if (key == KEY_RIGHT)
-			zwl_switch_step(server, 1, "right");
-		if (key == KEY_LEFT)
-			zwl_switch_step(server, -1, "left");
-		if (key == KEY_ENTER)
+			key = KEY_LEFT;
+
+		/* Each key's work. */
+		switch (key) {
+		case KEY_TAB:
+		case KEY_RIGHT:
+			zwl_switch_step(server, 1, "key");
+			break;
+		case KEY_LEFT:
+			zwl_switch_step(server, -1, "key");
+			break;
+		case KEY_ENTER:
 			zwl_switch_commit(server, "enter");
-		if (key == KEY_ESC)
+			break;
+		default:
 			zwl_switch_cancel(server, "escape");
+			break;
+		}
+
+		/* The key was the switcher's. */
 		return 1;
 	}
 
@@ -275,7 +322,9 @@ zwl_switch_button(
 		}
 
 		/* Another release is the switcher's while it is on. */
-		return server->switcher.on != 0U;
+		if (server->switcher.on == 0U)
+			return 0;
+		return 1;
 	}
 
 	/* Off: not the switcher's. */
@@ -308,7 +357,7 @@ zwl_switch_button(
 
 	/* A preview: its window. */
 	if (built && tile >= 0) {
-		printf("ZWL SWITCH commit app=%s surface=%u via=preview\n", view.apps.apps[found].key, panel.surfaces[tile]->id);
+		printf("ZWL SWITCH commit app=%s surface=%u via=preview client=%llu\n", view.apps.apps[found].key, panel.surfaces[tile]->id, (unsigned long long)panel.surfaces[tile]->client->number);
 		close_switcher(server);
 		zwl_glass_bring(server, panel.surfaces[tile], "switch");
 		return 1;
@@ -357,7 +406,9 @@ zwl_switch_pad_scroll(
 	return 1;
 }
 
-/* Gives the switcher up when it may no longer show (App Home, Wiseview, a fullscreen window, the lock). */
+/*
+ * Gives the switcher up when it may no longer show (App Home, Wiseview, a fullscreen window, the lock).
+ */
 void
 zwl_switch_tick(
 	struct zwl_server *server)
@@ -375,7 +426,9 @@ zwl_switch_tick(
 		zwl_switch_cancel(server, "away");
 }
 
-/* Draws the switcher in the middle of the output, when it shows there. */
+/*
+ * Draws the switcher in the middle of the output, when it shows there.
+ */
 void
 zwl_switch_draw(
 	struct zwl_server *server,
@@ -588,6 +641,7 @@ bar_panel(
 	struct apps_panel *panel)
 {
 	struct apps_view bar;
+	const char *selected;
 	int built;
 
 	/* The bar's own view, with the icons' places. */
@@ -597,8 +651,13 @@ bar_panel(
 		return 0;
 
 	/* Its panel of the selection. */
-	built = zwl_apps_bar_panel(server, &bar, zwl_switcher_selected(&server->switcher), panel);
-	return built;
+	selected = zwl_switcher_selected(&server->switcher);
+	built = zwl_apps_bar_panel(server, &bar, selected, panel);
+	if (!built)
+		return 0;
+
+	/* Succeeded: laid out. */
+	return 1;
 }
 
 /* Brings an application's latest window, and closes the switcher. */
@@ -613,7 +672,7 @@ bring_app(
 
 	/* Its latest raised window. */
 	surface = view->surfaces[view->apps.apps[found].windows[0]];
-	printf("ZWL SWITCH commit app=%s surface=%u via=%s at_ms=%llu\n", view->apps.apps[found].key, surface->id, how, (unsigned long long)zwl_milliseconds());
+	printf("ZWL SWITCH commit app=%s surface=%u via=%s at_ms=%llu client=%llu\n", view->apps.apps[found].key, surface->id, how, (unsigned long long)zwl_milliseconds(), (unsigned long long)surface->client->number);
 
 	/* Closed, then brought. */
 	close_switcher(server);
