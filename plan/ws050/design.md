@@ -262,3 +262,11 @@ UCSI（p003）が使い、他の driver（WS051・WS052・WS132 の ACPI の利�
    配送と競合しない形に。
 4. **`_CRS` の共通の解析**: Memory32Fixed・QWord/DWord の memory・IO・FixedIO・IRQ・Interrupt を解く関数（今は EC の driver が自分で解いている）。
 5. （要否を p003 で調べる）memory map の型を問う口（A3）。kernel に既にあれば使う。無く、HAL の API が要るなら止めて Q1 に相談する。
+
+## ユーザーの決定（2026-10-04、§10 の 5 項目、クリックの回答を 1 つずつ）
+
+1. 公開の口: 「/dev/typec の診断 text→正式は /dev/system」（UAPI を足さない診断の text の /dev/typec で始め、利用者への正式な通知は WS132 の /dev/system の事象（Keiland が受け取る）に任せる）。
+2. role の切替（SET_UOR/SET_PDR）・CONNECTOR_RESET・Alternate Mode の選択（SET_NEW_CAM）: **「入れる」**（WS050 の範囲に残す。案の「範囲外」は不採用）。ws.md の目標は今のまま、Phase を足す。
+3. UCSI の版: **「1.x と 2.x の両方」**（2.x の大きな MESSAGE_IN と追加の field も最初から扱う。配置は AML の region で決め、VERSION で field の意味を選ぶ。2.x の実機は無いので host の試験で）。
+4. 向き（CC1/CC2）: **「1.x でも i915 から取る」**（1.x の時は i915 の TCSS の register から向きを取る。WS051 との連携が要る。取れるかは未確認で、p001 の改訂で確かめる。2.x では UCSI の field）。
+5. HPD・pin: 「i915 の TCSS・FIA から」（UCSI は mode に入った事実と能力の補助。WS050・WS051 の ws.md を直し、WS051 は UCSI を待たずに進められる）。
