@@ -6,7 +6,7 @@
  */
 
 /*
- * Host tests of libkeiui's widgets (ws090-p005): a page of every widget is
+ * Host tests of libkeiland's widgets (ws090-p005): a page of every widget is
  * drawn frame by frame, and the pointer, the keyboard and a finger are
  * given to it through kui_ui; the tests check what each widget reports,
  * where the keyboard's focus goes, and which keys stay the application's.
@@ -258,7 +258,7 @@ frame(
 
 	/* The content: its header and a card of controls. */
 	kui_panel(&page->style, &content, 0);
-	(void)kui_header(&page->style, 240, 24, 520, "Widgets", "Every control of libkeiui");
+	(void)kui_header(&page->style, 240, 24, 520, "Widgets", "Every control of libkeiland");
 	top = kui_card(&page->style, &card, "Controls", "Buttons, a switch, a slider and a field");
 	(void)top;
 	report->saved = kui_button(page->ui, &page->style, ID_SAVE, &save, "Save", KUI_BUTTON_PRIMARY);

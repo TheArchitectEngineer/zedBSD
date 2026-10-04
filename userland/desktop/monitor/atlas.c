@@ -7,7 +7,7 @@
 
 /*
  * The System Monitor's glyph atlas (design.md section 4.1): every text
- * style's printable ASCII glyphs drawn once on the CPU with libkeiui's
+ * style's printable ASCII glyphs drawn once on the CPU with libkeiland's
  * text, white with their coverage as alpha, packed in rows of cells.  The
  * values' digits come from the monospaced font so that a number keeps its
  * width as it changes; the labels from the interface font.  A frame draws

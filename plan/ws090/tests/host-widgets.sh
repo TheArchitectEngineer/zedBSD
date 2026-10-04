@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws090-p005: builds and runs the host test of libkeiui's widgets (host-widgets.c) with the drawing layer,
+# ws090-p005: builds and runs the host test of libkeiland's widgets (host-widgets.c) with the drawing layer,
 # the input, libkeiland's scroller and gestures and libtruetype, on Linux.  The gallery (the page of
 # widgets, and with a dialog) goes to build/ws090-shots.
 #   sh plan/ws090/tests/host-widgets.sh [OUTPUT]   (default build/ws090/host-widgets)
@@ -14,10 +14,10 @@ cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userla
 # libpng-compat, whose headers are the C library's compat ones.
 ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
 U=userland/desktop
-K=$U/libkeiui
-cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$K -I$U/libtruetype \
+K=$U/libkeiland/ui
+cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I. -I$K -I$U/libtruetype \
 	plan/ws090/tests/host-widgets.c \
-	$K/version.c $K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c \
+	$K/version.c $K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c $K/scroll-bar.c \
 	$K/text-touch.c $K/ui.c $K/widgets.c $K/field.c $K/list.c $K/cards.c \
 	$U/libkeiland/gesture.c $U/libkeiland/motion.c $U/libkeiland/scroll.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \

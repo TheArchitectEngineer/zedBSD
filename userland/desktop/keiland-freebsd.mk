@@ -101,7 +101,6 @@ KEILAND_FREEBSD_PACKAGES ?= userland/base/libz-compat/Makefile.freebsd \
 	userland/desktop/libvulkan-compat/Makefile.freebsd \
 	userland/desktop/libkeiland-backend-freebsd/Makefile.freebsd \
 	userland/desktop/libkeiland/Makefile.freebsd \
-	userland/desktop/libkeiui/Makefile.freebsd \
 	userland/base/libpdf/Makefile.freebsd \
 	userland/packages/libseat/Makefile.freebsd \
 	userland/desktop/wayland/Makefile.freebsd \
@@ -158,12 +157,17 @@ all: $(KEILAND_FREEBSD_ALL)
 libraries: $(filter %.a %.so %.so.1,$(KEILAND_FREEBSD_ALL))
 
 # FreeBSD install has no GNU -D; create each destination directory explicitly.
+# Libraries an earlier Keiland installed that are part of another now: the widgets joined libkeiland (WS131 p012).
+# An install over an earlier one removes them, so that nothing loads a stale copy.
+KEILAND_FREEBSD_RETIRED := lib/libkeiui.so
+
 install: all install-headers
 	@set -e; for f in $(KEILAND_FREEBSD_INSTALL); do \
 		mode=0644; case $$f in lib/*|bin/*|libexec/*) mode=0755 ;; esac; \
 		mkdir -p "$(DESTDIR)$(KEILAND_PREFIX)/$$(dirname "$$f")"; \
 		install -m $$mode "$(KEILAND_FREEBSD_BUILD)/$$f" "$(DESTDIR)$(KEILAND_PREFIX)/$$f"; \
 	done
+	@set -e; for f in $(KEILAND_FREEBSD_RETIRED); do rm -f "$(DESTDIR)$(KEILAND_PREFIX)/$$f"; done
 
 KEILAND_FREEBSD_PUBLIC_HEADERS := $(shell find userland/desktop/keiland/wayland -type f -name '*.h') \
 	$(addprefix userland/desktop/keiland/,wayland-client.h wayland-client-core.h wayland-client-protocol.h \

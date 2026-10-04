@@ -11,6 +11,6 @@ ZEDBSD_USER_PROGRAMS += libz-compat libpng-compat files browser
 # ws079-p006: PDF Viewer and libpdf (with libjpeg-compat).
 ZEDBSD_USER_PROGRAMS += libjpeg-compat libpdf pdfviewer textedit
 # ws090-p004: the desktop's shared widgets, which Text Editor's window, scroll and touch come from.
-ZEDBSD_USER_PROGRAMS += libkeiui
+ZEDBSD_USER_PROGRAMS += libkeiland
 # ws090-p005: the widgets' sampler, in this test image only (not the default image).
 ZEDBSD_USER_PROGRAMS += kuidemo

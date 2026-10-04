@@ -6,7 +6,7 @@
  */
 
 /*
- * Host tests of libkeiui's scroll, input and text view touch (ws090-p003),
+ * Host tests of libkeiland's scroll, input and text view touch (ws090-p003),
  * built on Linux with libkeiland's scroller, gestures and touch motion:
  * times are given, so every position is checked against the formulas.
  *

@@ -88,7 +88,7 @@ main(void)
 }
 
 /*
- * The test's clock, standing in for libkeiui's.
+ * The test's clock, standing in for libkeiland's.
  */
 uint64_t
 kui_clock_us(void)
@@ -191,7 +191,7 @@ finger(
 {
 	struct kui_window_event event;
 
-	/* The event as libkeiui gives it. */
+	/* The event as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
 	event.kind = kind;
 	event.id = id;
@@ -210,7 +210,7 @@ key(
 {
 	struct kui_window_event event;
 
-	/* The press as libkeiui gives it. */
+	/* The press as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
 	event.kind = KUI_WINDOW_KEY;
 	event.code = code;
@@ -229,7 +229,7 @@ button(
 {
 	struct kui_window_event event;
 
-	/* The button as libkeiui gives it. */
+	/* The button as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
 	event.kind = KUI_WINDOW_BUTTON;
 	event.code = code;
@@ -247,7 +247,7 @@ pointer(
 {
 	struct kui_window_event event;
 
-	/* The motion as libkeiui gives it. */
+	/* The motion as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
 	event.kind = KUI_WINDOW_MOTION;
 	event.x = x;

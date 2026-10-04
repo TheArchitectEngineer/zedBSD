@@ -6,7 +6,7 @@
  */
 
 /*
- * The widgets' sampler (ws090-p005): a window of libkeiui's widgets on
+ * The widgets' sampler (ws090-p005): a window of libkeiland's widgets on
  * three pages -- buttons, switches, a slider, fields and progress; a list
  * of a hundred rows; a dialog and a chip -- for a person (or a test) to
  * try with the pointer, the keyboard and the fingers.  It is in the test

@@ -1,4 +1,4 @@
-# The FreeBSD build of libkeiland.so; the zedBSD build remains in Makefile.
+# The FreeBSD build of libkeiland.so (with the widgets of libkeiland/ui, WS131 p012); the zedBSD build remains in Makefile.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 KEILAND_FREEBSD_KEILAND_SOURCES := userland/desktop/libkeiland/version.c \
 	userland/desktop/libkeiland/menu.c \
@@ -19,5 +19,31 @@ KEILAND_FREEBSD_KEILAND_SOURCES := userland/desktop/libkeiland/version.c \
 	userland/desktop/libkeiland/system/system-protocol.c \
 	userland/desktop/libkeiland/system/system-monitor.c \
 	userland/desktop/libkeiland/system/system-monitor-rate.c \
-	userland/desktop/settings-keys/settings-keys.c
-$(eval $(call KEILAND_FREEBSD_LIBRARY,keiland,libkeiland.so,$(KEILAND_FREEBSD_KEILAND_SOURCES),libwayland-client.so,-lm,userland/desktop/libkeiland/exports.map))
+	userland/desktop/settings-keys/settings-keys.c \
+	userland/desktop/libkeiland/ui/version.c \
+	userland/desktop/libkeiland/ui/canvas.c \
+	userland/desktop/libkeiland/ui/text.c \
+	userland/desktop/libkeiland/ui/icons.c \
+	userland/desktop/libkeiland/ui/icons-line.c \
+	userland/desktop/libkeiland/ui/theme.c \
+	userland/desktop/libkeiland/ui/input.c \
+	userland/desktop/libkeiland/ui/scroll.c \
+	userland/desktop/libkeiland/ui/scroll-bar.c \
+	userland/desktop/libkeiland/ui/text-touch.c \
+	userland/desktop/libkeiland/ui/ui.c \
+	userland/desktop/libkeiland/ui/window.c \
+	userland/desktop/libkeiland/ui/present.c \
+	userland/desktop/libkeiland/ui/present-shm.c \
+	userland/desktop/libkeiland/ui/clipboard.c \
+	userland/desktop/libkeiland/ui/primary.c \
+	userland/desktop/libkeiland/ui/text-input.c \
+	userland/desktop/libkeiland/ui/edit.c \
+	userland/desktop/libkeiland/ui/widgets.c \
+	userland/desktop/libkeiland/ui/field.c \
+	userland/desktop/libkeiland/ui/list.c \
+	userland/desktop/libkeiland/ui/cards.c \
+	userland/desktop/libkeiland/ui/chooser.c \
+	userland/desktop/libkeiland/ui/chooser-model.c \
+	userland/desktop/libkeiland/ui/chooser-view.c \
+	userland/desktop/picture/color-glyph.c
+$(eval $(call KEILAND_FREEBSD_LIBRARY,keiland,libkeiland.so,$(KEILAND_FREEBSD_KEILAND_SOURCES),libwayland-client.so libtruetype.so libpng-compat.so libvulkan.so.1,-lm,userland/desktop/libkeiland/exports.map))

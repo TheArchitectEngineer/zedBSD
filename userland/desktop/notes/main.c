@@ -32,7 +32,7 @@
  * the strokes (libpdf draws them into the background picture) and each
  * save adds the strokes to the file as a new revision, leaving its own
  * bytes as they were.  An encrypted or signed PDF is left as it is and a
- * new notebook starts.  Ctrl+O opens another PDF with libkeiui's file
+ * new notebook starts.  Ctrl+O opens another PDF with libkeiland's file
  * chooser (the notebook shown is saved first), and Ctrl+Shift+S saves the
  * notebook as another file, which Notes goes on writing (ws128-p002).
  *
@@ -239,7 +239,7 @@ struct notes_app {
 	int quit;
 
 	/*
-	 * File > Open and Save As (ws128-p002): libkeiui's file chooser while it
+	 * File > Open and Save As (ws128-p002): libkeiland's file chooser while it
 	 * is shown (NULL otherwise) and its mode, and the path it answered with,
 	 * kept until the main loop carries it out (ready says it waits; an empty
 	 * path is a cancel).
@@ -1012,7 +1012,7 @@ app_action(
 		(void)app_save(app, "request");
 		break;
 	case NOTES_ACTION_OPEN:
-		/* Another PDF, chosen in libkeiui's file chooser (ws128-p002). */
+		/* Another PDF, chosen in libkeiland's file chooser (ws128-p002). */
 		app_choose(app, KUI_FILE_CHOOSER_OPEN);
 		break;
 	case NOTES_ACTION_SAVE_AS:
@@ -2149,7 +2149,7 @@ app_microseconds(void)
 }
 
 /*
- * Shows libkeiui's file chooser for File > Open (KUI_FILE_CHOOSER_OPEN) or
+ * Shows libkeiland's file chooser for File > Open (KUI_FILE_CHOOSER_OPEN) or
  * Save As (KUI_FILE_CHOOSER_SAVE), at the notebook's folder, the PDFs
  * shown first (ws128-p002).  One already shown answers in its time.
  */

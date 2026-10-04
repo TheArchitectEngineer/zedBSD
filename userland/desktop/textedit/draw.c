@@ -100,7 +100,7 @@ te_draw(
 	draw_cursor(app, canvas, &text);
 	te_canvas_unclip(canvas);
 
-	/* The scroll bar and the status (a message's chip and a dialog are libkeiui's, drawn over the frame by main.c). */
+	/* The scroll bar and the status (a message's chip and a dialog are libkeiland's, drawn over the frame by main.c). */
 	draw_scroll(app, canvas, &text);
 	draw_status(app, canvas);
 

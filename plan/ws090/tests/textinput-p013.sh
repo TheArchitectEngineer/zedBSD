@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws090-p013: Text Editor takes the text of zdesktop's text input (libkeiui's kui_window, text-input-unstable-v3) on the
+# ws090-p013: Text Editor takes the text of zdesktop's text input (libkeiland's kui_window, text-input-unstable-v3) on the
 # Venus guest of the text input image (config-amd64-textinput.mk: WS095's input method image with Text Editor).
 # zdesktop --glass at 1280x800 starts /usr/libexec/keiland-ime; Text Editor opens /root/ti.txt.  Checks:
 #  1. Direct input: "ab" typed as keys (Text Editor's own typing); no text input commit.

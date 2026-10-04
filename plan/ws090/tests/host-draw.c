@@ -6,9 +6,9 @@
  */
 
 /*
- * Host tests of libkeiui's drawing layer (ws090-p002): the same scene is
+ * Host tests of libkeiland's drawing layer (ws090-p002): the same scene is
  * drawn with the file manager's canvas, text and icons (fm_, and Settings'
- * line pictures, se_) and with libkeiui (kui_), and the two frames must be
+ * line pictures, se_) and with libkeiland (kui_), and the two frames must be
  * the same to the byte -- the library was moved from them unchanged, so an
  * application moved onto it draws the same pixels.  The frames are also
  * written as PPM for a person to look at.
@@ -94,7 +94,7 @@ main(
 
 	/* How many differ, and none may. */
 	printf("pixels that differ: %zu\n", differ);
-	check(differ == 0, "libkeiui draws the scene as Files and Settings do");
+	check(differ == 0, "libkeiland draws the scene as Files and Settings do");
 
 	/* Something was drawn at all (a blank frame would also match). */
 	differ = 0;
@@ -223,7 +223,7 @@ scene_fm(
 	fm_image_release(&image);
 }
 
-/* Draws the same scene with libkeiui. */
+/* Draws the same scene with libkeiland. */
 static void
 scene_kui(
 	struct kui_canvas *canvas,

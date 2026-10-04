@@ -17,7 +17,7 @@
  * one line on standard error: IMAGEVIEW DONE with the reason, or
  * IMAGEVIEW FAILED naming what failed; IMAGEVIEW READY says the first
  * frame is shown, and IMAGEVIEW SHOW each image shown.  ws090-p008: the
- * window and its input are libkeiui's (kui_window); the viewer's own
+ * window and its input are libkeiland's (kui_window); the viewer's own
  * presenter draws the image and the canvas on its surface.
  */
 
@@ -65,7 +65,7 @@ struct main_options {
  * The program's parts, for the whole run.  They are file-scope because
  * the viewer is too large for the stack.
  *
- * The window: libkeiui's window (the Wayland connection, the surface and
+ * The window: libkeiland's window (the Wayland connection, the surface and
  * the input queue), from the start of the run to its end.
  */
 static struct iv_window main_window;
@@ -99,7 +99,7 @@ static struct iv_glass main_glass;
 static struct iv_touch main_touch;
 
 /*
- * libkeiui's file chooser while the viewer waits for it (File > Open), a
+ * libkeiland's file chooser while the viewer waits for it (File > Open), a
  * window of its own over the viewer's; NULL otherwise.
  */
 static struct kui_file_chooser *main_chooser;
@@ -776,7 +776,7 @@ main_canvas_make(void)
 }
 
 /*
- * Shows libkeiui's file chooser when the viewer asks for it, at the folder
+ * Shows libkeiland's file chooser when the viewer asks for it, at the folder
  * it names, and closes one it no longer waits for.
  */
 static void

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws079-p006: builds PDF Viewer's core (view, frame, document cache, canvas, text; the chooser is libkeiui's since ws090-p008) with libpdf and
+# ws079-p006: builds PDF Viewer's core (view, frame, document cache, canvas, text; the chooser is libkeiland's since ws090-p008) with libpdf and
 # libtruetype for the host (plain and ASan), and runs host-pdfviewer on the Notes-like document of
 # run-pdf-render.sh: the scroll mode, the page mode's swipe and keys, the zoom, the chooser.  The frames are
 # written to build/ws079-p006-host/viewer-*/ as PPM and converted to PNG.  ws079-p015: the sidebar of thumbnails and the

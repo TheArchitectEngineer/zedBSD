@@ -166,7 +166,7 @@ struct notes_tablet_tool {
 /*
  * The Wayland window, its seat and what arrived for the main loop.
  *
- * The window is libkeiui's (ws090-p011: the toplevel and the seat's input;
+ * The window is libkeiland's (ws090-p011: the toplevel and the seat's input;
  * Notes draws on its surface with its own Vulkan).  The pointer's left
  * button is turned into NOTES_SOURCE_POINTER input events (window.c); a
  * tablet's tools add pen and eraser events with their pressure and tilt
@@ -176,7 +176,7 @@ struct notes_tablet_tool {
  */
 struct notes_window {
 	/*
-	 * libkeiui's window, and the objects it owns that Notes' parts use
+	 * libkeiland's window, and the objects it owns that Notes' parts use
 	 * (borrowed, never destroyed here): the connection, the seat, the
 	 * surface and its toplevel.  The registry is Notes' own, for the tablet
 	 * manager.

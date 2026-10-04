@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws102-p017: the editing operations (keiland_edit_v1, libkeiui's default), the keys for a window without them, and the
+# ws102-p017: the editing operations (keiland_edit_v1, libkeiland's default), the keys for a window without them, and the
 # previous application, on the Venus guest of the inset image (plan/ws102/tests/build-inset-image.sh: the WS079 demo
 # image with Text Editor and Terminal).  zdesktop --glass at 1280x800; the tool face's buttons are not there yet
 # (ws102-p016), so the shortcuts that stand in for them are pressed: Super+Alt with S (select_begin), C, V and P.

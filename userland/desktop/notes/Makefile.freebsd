@@ -12,4 +12,4 @@ KEILAND_FREEBSD_NOTES_SOURCES := userland/desktop/notes/main.c \
 	userland/desktop/notes/tablet.c \
 	userland/desktop/notes/ui.c \
 	userland/desktop/notes/touch.c
-$(eval $(call KEILAND_FREEBSD_PROGRAM,notes,bin,$(KEILAND_FREEBSD_NOTES_SOURCES),libkeiui.so libkeiland.so libwayland-client.so libtruetype.so libpdf.so libvulkan.so.1 libkeiland-compat.a,-lm))
+$(eval $(call KEILAND_FREEBSD_PROGRAM,notes,bin,$(KEILAND_FREEBSD_NOTES_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libpdf.so libvulkan.so.1 libkeiland-compat.a,-lm))

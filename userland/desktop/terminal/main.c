@@ -2411,7 +2411,7 @@ main_touch_queue(
 /*
  * Tells the input method where the cursor's cell is on the window (surface
  * pixels), so that its candidate list opens beside the text being composed
- * (BUG-155); libkeiui sends only a change.
+ * (BUG-155); libkeiland sends only a change.
  */
 static void
 main_text_cursor(void)

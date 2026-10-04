@@ -79,7 +79,7 @@ static int app_inside(const struct te_rect *rect, int x, int y);
 static void app_error_message(struct te_app *app, const char *what, const char *name, int error);
 
 /*
- * The text's answers to the fingers' selection (libkeiui's text view
+ * The text's answers to the fingers' selection (libkeiland's text view
  * touch), in the text's content coordinates: the position at a point, the
  * cursor's rectangle at a position, and the word around a position.  The
  * table is constant for the program's life.
@@ -584,7 +584,7 @@ te_app_sync_scroll(
 }
 
 /*
- * Takes what the fingers did to the text (libkeiui's text view touch): the
+ * Takes what the fingers did to the text (libkeiland's text view touch): the
  * selection they made, and a long press's context menu.
  */
 void
@@ -942,7 +942,7 @@ app_pointer(
 	app->pointer_x = event->x;
 	app->pointer_y = event->y;
 
-	/* A dialog takes the pointer (libkeiui's, through main.c). */
+	/* A dialog takes the pointer (libkeiland's, through main.c). */
 	if (app->dialog != TE_DIALOG_NONE)
 		return;
 
@@ -1130,7 +1130,7 @@ app_wheel(
 		return;
 	}
 
-	/* Otherwise the view glides to the new place, within the text (libkeiui's scroll). */
+	/* Otherwise the view glides to the new place, within the text (libkeiland's scroll). */
 	kui_scroll_wheel(&app->scroll, (double)event->scroll_x, (double)event->scroll, app->now * 1000U);
 	app->dirty = 1;
 }
@@ -1147,7 +1147,7 @@ app_key(
 	if (!event->pressed)
 		return;
 
-	/* A dialog takes the keys (libkeiui's, through main.c). */
+	/* A dialog takes the keys (libkeiland's, through main.c). */
 	if (app->dialog != TE_DIALOG_NONE)
 		return;
 

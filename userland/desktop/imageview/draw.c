@@ -14,7 +14,7 @@
  * It holds the empty window (the Kei mark, what to do, the Open button),
  * the card of an image that cannot be shown, the chip at the bottom (the
  * image's name, its place in the folder, its size and the zoom), a
- * message (the file chooser is libkeiui's window of its own, ws090-p008).
+ * message (the file chooser is libkeiland's window of its own, ws090-p008).
  */
 
 #include "imageview.h"

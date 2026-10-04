@@ -24,7 +24,7 @@
 
 #include <keiui.h>
 
-#include "../picture/color-glyph.h"
+#include "../../picture/color-glyph.h"
 #include "userland/desktop/paths.h"
 
 #include <errno.h>

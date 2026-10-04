@@ -15,7 +15,7 @@
  * keys.c turns the compositor's key codes into the bytes a shell reads;
  * font.c draws the glyphs of a monospaced TrueType font into an atlas;
  * render.c draws the grid from that atlas; window.c holds the Wayland
- * window (libkeiui's) and turns its input into the terminal's; menu.c gives zdesktop the window's menus
+ * window (libkeiland's) and turns its input into the terminal's; menu.c gives zdesktop the window's menus
  * (Shell, Edit, View, Session, Help) through libkeiland; tabs.c gives it
  * the window's tabs (the titlebar's TABS mode, ws035-p086); main.c runs a
  * shell on a pseudo-terminal for each tab and ties them together.
@@ -474,13 +474,13 @@ struct terminal_renderer {
 };
 
 /*
- * The Wayland window: libkeiui's window (ws090-p011: the toplevel, the
+ * The Wayland window: libkeiland's window (ws090-p011: the toplevel, the
  * seat's input and the key repeat; the terminal draws on its surface with
  * its own Vulkan), and what its input has left for the main loop.
  */
 struct terminal_window {
 	/*
-	 * libkeiui's window, and the objects it owns that the terminal's parts
+	 * libkeiland's window, and the objects it owns that the terminal's parts
 	 * use (borrowed, never destroyed here): the connection, the seat, the
 	 * surface and its toplevel.  The registry is the terminal's own, for
 	 * the clipboard's and the primary selection's managers.
@@ -519,7 +519,7 @@ struct terminal_window {
 
 	/*
 	 * The input method's text being composed (BUG-155, text-input-v3
-	 * through libkeiui's window): shown over the cells from the cursor
+	 * through libkeiland's window): shown over the cells from the cursor
 	 * until it is committed (its bytes then go to the shell like typed
 	 * keys) or replaced; empty for none.  preedit_begin and preedit_end
 	 * are the byte range of the segment being converted (-1, or equal,

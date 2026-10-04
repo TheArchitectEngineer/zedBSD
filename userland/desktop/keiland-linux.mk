@@ -107,7 +107,6 @@ include userland/tests/vkdemo/Makefile.linux
 include userland/tests/wltest/Makefile.linux
 include userland/tests/mview/Makefile.linux
 
-include userland/desktop/libkeiui/Makefile.linux
 include userland/base/libpdf/Makefile.linux
 include userland/desktop/terminal/Makefile.linux
 include userland/desktop/files/Makefile.linux
@@ -155,11 +154,16 @@ $(eval $(call KEILAND_LINUX_DATA,share/kei/ime/ja/SKK-JISYO.kei,userland/desktop
 .PHONY: all install clean
 all: $(KEILAND_LINUX_ALL)
 
+# Libraries an earlier Keiland installed that are part of another now: the widgets joined libkeiland (WS131 p012).
+# An install over an earlier one removes them, so that nothing loads a stale copy.
+KEILAND_LINUX_RETIRED := lib/libkeiui.so
+
 install: all
 	@set -e; for f in $(KEILAND_LINUX_INSTALL); do \
 		mode=0644; case $$f in lib/*|bin/*|libexec/*) mode=0755 ;; esac; \
 		install -D -m $$mode $(KEILAND_LINUX_BUILD)/$$f $(DESTDIR)$(KEILAND_PREFIX)/$$f; \
 	done
+	@set -e; for f in $(KEILAND_LINUX_RETIRED); do rm -f $(DESTDIR)$(KEILAND_PREFIX)/$$f; done
 
 clean:
 	rm -rf $(KEILAND_LINUX_BUILD)/obj $(KEILAND_LINUX_BUILD)/lib $(KEILAND_LINUX_BUILD)/bin $(KEILAND_LINUX_BUILD)/libexec \

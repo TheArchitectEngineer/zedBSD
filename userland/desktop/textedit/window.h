@@ -6,7 +6,7 @@
  */
 
 /*
- * The parts of Text Editor that speak to zdesktop through libkeiui's
+ * The parts of Text Editor that speak to zdesktop through libkeiland's
  * window (the window, its presenter, the clipboard and the primary
  * selection, WS090) and libkeiland's extensions: the editor's queue of
  * inputs (queue.c), the menus and the context menu (menu.c), the
@@ -26,7 +26,7 @@
 #define TE_WINDOW_EVENTS	256U
 
 /*
- * The editor's window: libkeiui's window, and the queue of the editor's
+ * The editor's window: libkeiland's window, and the queue of the editor's
  * inputs -- the window's pointer, keys and focus turned into te_event
  * values by the main loop, and the actions of the menus, the titlebar and
  * the file chooser -- in the order they came.  It lives for the whole run.

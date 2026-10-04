@@ -12,7 +12,7 @@
 # The font is the release's file as published; nothing converts it.  It is
 # under the SIL Open Font License 1.1, whose text (the release's
 # fonts/LICENSE) sits beside this Makefile.  It is installed as
-# /usr/share/fonts/keiland-emoji.ttf, the path libkeiui's text and the
+# /usr/share/fonts/keiland-emoji.ttf, the path libkeiland's text and the
 # compositor open.
 #
 # To update: take fonts/NotoColorEmoji.ttf of a newer tag of

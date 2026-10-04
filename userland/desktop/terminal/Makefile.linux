@@ -13,4 +13,4 @@ KEILAND_LINUX_TERMINAL_SOURCES := userland/desktop/terminal/main.c \
 	userland/desktop/terminal/touch.c \
 	userland/desktop/terminal/width.c \
 	userland/desktop/terminal/settings.c userland/desktop/terminal/search.c
-$(eval $(call KEILAND_LINUX_PROGRAM,terminal,bin,$(KEILAND_LINUX_TERMINAL_SOURCES),libkeiui.so libkeiland.so libwayland-client.so libtruetype.so libvulkan.so.1,-lm))
+$(eval $(call KEILAND_LINUX_PROGRAM,terminal,bin,$(KEILAND_LINUX_TERMINAL_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libvulkan.so.1,-lm))

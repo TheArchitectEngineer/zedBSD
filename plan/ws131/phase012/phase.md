@@ -161,3 +161,33 @@ p012 の依存「ベータ1 の app の区切り」は Master の pending decisi
 2026-10-04 Q1（user「任せます」）: 標準 app のベータ1 の作業（WS127・WS128）を先にし、WS131 の p012 以降（app の移行）はベータ1（2026-10-17）の後に再開する。
 
 2026-10-04 昼 user「WS13,WS128は進めてOKです。」（直前の「WS131,」と合わせて WS131 と読む）→ ベータ1 の後に回した Q1 の決めを取り消し、p012 以降を進めてよい。
+
+## 実施（q673-i01、P2 generation10、2026-10-04、main c21f9ab の上）
+
+### 1. 移動
+- `git mv userland/desktop/libkeiui/* userland/desktop/libkeiland/ui/`（source・header・`shaders/`）。`ui/Makefile`・`Makefile.linux`・`Makefile.freebsd`・`exports.map` は除いた（root の Makefile は `userland/*/*/*/Makefile` を package として読むので、残すと別の package になる）。`ui/text.c` の `../picture/color-glyph.h` を `../../picture/color-glyph.h` に。`shaders/regenerate.py` の path の文。
+
+### 2. build
+- libkeiland の Makefile 3 本に `ui/` の 25 file と `picture/color-glyph.c`。zedBSD の package の REQUIRE に `desktop/libvulkan base/libpng-compat base/libz-compat`。Linux・FreeBSD の link に `libtruetype.so libpng-compat.so libvulkan.so.1`。
+- `platform/amd64/vmunix.mk`: libkeiui.so の規則を除き、libkeiland.so に libvulkan・libpng-compat・libz-compat の link と NEEDED、link の前に `exports.py --check`。7 つの app（ime・ime-probe の client を含む）の link・依存・NEEDED から libkeiui.so を除いた。
+- app の Makefile: Linux・FreeBSD の `libkeiui.so libkeiland.so` → `libkeiland.so`（textedit・imageview・pdfviewer・notes・terminal・ime・kuidemo・**monitor**（WS134、§2.4 の表に無かった））、zedBSD の REQUIRE の `desktop/libkeiui` を除く（ime は `desktop/libkeiland` に）、Files の 3 本の `scroll-bar.c` の path。
+- `keiland-linux.mk`・`keiland-freebsd.mk`: libkeiui の Makefile の include を除き、install で古い `lib/libkeiui.so` を消す（`KEILAND_*_RETIRED`）。FreeBSD の公開の header の表の `keiui.h` は p013 まで残す。
+
+### 3. 取りこぼし
+- package 名: `config/ci/config-amd64.mk`（除く、libkeiland は既に在る）、`plan/ws035/tests/config-amd64-zdesktop.mk`・`config-amd64-userland.mk`・`plan/ws081/tests/config-amd64-demo-win.mk`・`plan/ws090/tests/config-amd64-textinput.mk` と、§2.4 の表に無かった `plan/ws128/tests/config-amd64-imageview.mk`（→ libkeiland）。
+- `plan/tools/keiland-linux/elf-check.sh` の我々の library の表から除いた。host の試験の path（`$U/libkeiui` → `$U/libkeiland/ui`）。`plan/ws134/tests/host/preview.sh` の `-lkeiui` も除いた（未実行）。
+- comment の `libkeiui` は `libkeiland` に（userland と plan の試験の script・C）。
+- `grep -rn libkeiui`（plan の文書・history を除く）: 残りは install で古い library を消す 2 行（`keiland-linux.mk`・`keiland-freebsd.mk` の `*_RETIRED := lib/libkeiui.so`）だけ。消す規則そのものが名前を要る（意図した例外）。
+
+### 4. exports.map
+- `userland/desktop/libkeiland/exports.py` が `keiland.h`・`keiui.h` の top level の関数の宣言を名前で並べて `exports.map` を書く（`--check` で照合、`--list`）。glob は無い。
+- 変わったこと: 旧 libkeiland の `keiland_desktop_*` の glob が protocol の表 `keiland_desktop_manager_v1_interface`・`keiland_desktop_surface_v1_interface` を出していた。tree の中に外の利用者は無く、design.md §5.4 どおり出さない。
+
+### 確かめ
+- zedBSD: `make ZEDBSD_CONFIG=plan/ws129/tests/config-amd64-ci-noclang.mk BUILD=build/p2-ci build/p2-ci/rootfs/.stamp` exit 0・自前の warning 0。kuidemo・monitor も build exit 0。rootfs に libkeiui.so 無し。`llvm-nm -D` の libkeiland.so（271）= header の一覧 = 旧 libkeiland（122）と旧 libkeiui（151）の和から上の protocol の表 2 つを除いたもの。libkeiland.so の NEEDED は libwayland-client・libtruetype・libvulkan・libpng-compat・libz-compat・libc。8 つの app と keiland-ime の NEEDED に libkeiui 無し。
+- Linux: `make keiland-linux` の gcc・clang とも exit 0・warning 0。install の stage に libkeiui.so 無し（前からあった物は install で消えた）、`elf-check.sh` PASS（24 ELF）、`makefile-sync.sh` PASS、`header-check.sh` PASS（381）、`nm -D` = header の一覧。
+- FreeBSD: `make -n keiland-freebsd` で `libkeiland/ui` の compile と link の規則まで。native build・`native-build-audit.py` は未実施（FreeBSD の guest は T に依頼）。
+- `plan/tools/keiland-os-boundary/check.sh` PASS。`menuconfig-target-host-test.py` PASS。
+- host の試験: `host-draw` 13/13、`host-input` 63/63、`host-widgets` 94/94、`host-chooser` 85/85、`scroll-bar-test` PASS、`host-inset` PASS、`textedit/host-core` 53/53、`files/host-default` PASS、`imageview/run-host` PASS。`run-pdfviewer-host.sh` は前提の `run-pdf-render.sh` が要り未実施。
+- 古い試験の直し（main c21f9ab の素の tree でも同じく失敗していた）: host-draw・host-widgets・host-chooser に `-I.`（`ui/text.c` が `userland/desktop/paths.h` を include する）、host-input・host-inset・host-widgets・host-chooser に `scroll-bar.c`（`ui/scroll.c` が `kui_scroll_bar_*` を呼ぶ）。
+- QEMU（`textinput-p013.sh`・`viewers-p008.sh`・`demo-s8-s9.sh`・`files-regress.sh`・boot-test）と Linux の 8 app の PNG、FreeBSD の native build は T1/T2 に最後にまとめて依頼する。

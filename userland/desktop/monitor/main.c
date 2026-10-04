@@ -14,7 +14,7 @@
  *		[--size=WxH] [--cpus=N] [--gpus=N] [--calm] [--clock=fixed:MS]
  *		[--range=0..3] [--timeout-s=N] [--token=T]
  *
- * The window is libkeiui's (KUI_PRESENT_NONE) and the drawing the
+ * The window is libkeiland's (KUI_PRESENT_NONE) and the drawing the
  * monitor's own Vulkan (render.c), like Notes.  A frame is drawn only once
  * the compositor has shown the last one: the monitor asks for a frame
  * callback with each frame and waits for it before the next, so a hidden

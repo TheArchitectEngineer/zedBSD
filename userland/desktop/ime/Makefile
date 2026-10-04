@@ -10,4 +10,4 @@ IME_SOURCES := userland/desktop/ime/main.c userland/desktop/ime/method.c userlan
 	userland/desktop/ime/ja-kana.c userland/desktop/ime/ja-romaji.c userland/desktop/ime/ja-dict.c \
 	userland/desktop/ime/ja-user.c userland/desktop/ime/ja-inflect.c userland/desktop/ime/ja-segment.c \
 	userland/desktop/ime/ja-engine.c userland/desktop/ime/ja-keys.c userland/desktop/ime/popup.c
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,keiland-ime,Input method,amd64,n,basic,$(IME_SOURCES),y,desktop,desktop/ime,desktop/libwayland desktop/libkeiui desktop/ime/dict,0755,program,,,usr/libexec))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,keiland-ime,Input method,amd64,n,basic,$(IME_SOURCES),y,desktop,desktop/ime,desktop/libwayland desktop/libkeiland desktop/ime/dict,0755,program,,,usr/libexec))

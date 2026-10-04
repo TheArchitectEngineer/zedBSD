@@ -19,7 +19,7 @@
  * naming what failed; PDFVIEWER READY says the first frame is shown.
  * ws081-p012: the touch screen scrolls with inertia, zooms with two
  * fingers and swipes pages (touch.c).  ws090-p008: the window, its input
- * and the frames shown with Vulkan are libkeiui's (kui_window).
+ * and the frames shown with Vulkan are libkeiland's (kui_window).
  */
 
 #include "window.h"
@@ -67,7 +67,7 @@ struct main_options {
  * The program's parts, for the whole run.  They are file-scope because
  * the viewer is too large for the stack.
  *
- * The window: libkeiui's window (the Wayland connection, the surface, the
+ * The window: libkeiland's window (the Wayland connection, the surface, the
  * input queue and the Vulkan presenter), from the start of the run to its
  * end.
  */
@@ -100,7 +100,7 @@ static struct pv_titlebar main_titlebar;
 static struct pv_touch main_touch;
 
 /*
- * libkeiui's file chooser while the viewer waits for it (File > Open), a
+ * libkeiland's file chooser while the viewer waits for it (File > Open), a
  * window of its own over the viewer's; NULL otherwise.
  */
 static struct kui_file_chooser *main_chooser;
@@ -707,7 +707,7 @@ main_event(
 }
 
 /*
- * Hears the on-screen keyboard's inset (libkeiui's KUI_VERSION 7): the
+ * Hears the on-screen keyboard's inset (libkeiland's KUI_VERSION 7): the
  * password card stays in the middle of the part of the window the keyboard
  * leaves.  The viewer has no text view whose caret the library would keep
  * in sight, so the default has nothing to do.
@@ -759,7 +759,7 @@ main_canvas_make(void)
 }
 
 /*
- * Shows libkeiui's file chooser when the viewer asks for it, at the folder
+ * Shows libkeiland's file chooser when the viewer asks for it, at the folder
  * it names, and closes one it no longer waits for.
  */
 static void

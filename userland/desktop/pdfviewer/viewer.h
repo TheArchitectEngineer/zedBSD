@@ -244,7 +244,7 @@ struct pv_document {
  * while zooming, the frame shows the pages' rasters stretched to the new
  * scale instead of drawing them again, until the fingers stop.
  *
- * ws090-p008: choosing says the viewer waits for the answer of libkeiui's
+ * ws090-p008: choosing says the viewer waits for the answer of libkeiland's
  * file chooser, which the window shows starting at chooser_folder
  * (pv_app_chosen takes the answer).  keyboard_right and keyboard_bottom are how much of the
  * window the on-screen keyboard covers from its right and its bottom edge

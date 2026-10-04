@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws128-p002: Notes' File > Open and Save As with libkeiui's file chooser, on a Venus guest of an image with Notes and
+# ws128-p002: Notes' File > Open and Save As with libkeiland's file chooser, on a Venus guest of an image with Notes and
 # libpdf (for example plan/ws089/tests/build-settings-image.sh's).  zdesktop --glass at 1280x800, root's home; the
 # notebooks are in /root/Documents/Notes, where foreign.pdf (make-foreign-pdf.py: another program's PDF) is put.
 #  1. A new notebook: a line with the pointer, Ctrl+S (NOTES SAVE ... path=A, A the new notebook).

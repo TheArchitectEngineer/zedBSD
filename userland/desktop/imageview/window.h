@@ -7,7 +7,7 @@
 
 /*
  * The parts of Image Viewer that speak Wayland, Vulkan and zdesktop's
- * extensions: the window (libkeiui's kui_window since ws090-p008: the
+ * extensions: the window (libkeiland's kui_window since ws090-p008: the
  * toplevel and the seat's input; its surface is left to the presenter),
  * the presenter of the image and the drawn canvas (present.c), the menus
  * (menu.c), the titlebar's controls (titlebar.c) and the window's glass
@@ -28,10 +28,10 @@
 #include <keiui.h>
 
 /*
- * The window: libkeiui's window, which queues the input (the menus' and
+ * The window: libkeiland's window, which queues the input (the menus' and
  * the titlebar's actions among it, posted in the order they came).  The
  * viewer's own presenter draws on its surface (KUI_PRESENT_NONE): the
- * image is a texture under the canvas, which libkeiui's presenter does not
+ * image is a texture under the canvas, which libkeiland's presenter does not
  * have.
  *
  * One lives for the whole run.

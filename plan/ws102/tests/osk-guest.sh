@@ -203,7 +203,7 @@ for step in "$@"; do
 		for library in $(cd "$bin/dynamic" && ls *.so | grep -vE '^(libc|ld)\.so$'); do
 			put "$bin/dynamic/$library" "/lib/$library"
 		done
-		# The colour emoji font (ws102-p019), which the compositor and libkeiui open.
+		# The colour emoji font (ws102-p019), which the compositor and libkeiland open.
 		emoji=build/distfiles/NotoColorEmoji-2.047.ttf
 		[ -f "$emoji" ] && put "$emoji" /usr/share/fonts/keiland-emoji.ttf
 		guest 'chmod 755 /bin/wayland' >/dev/null
