@@ -187,7 +187,7 @@ ifeq ($(CONFIG_DRIVER_PCI_LPSS_I2C),y)
 AMD64_I2C_SOURCES += src/drivers/i2c/i2c.c src/drivers/i2c/lpss-i2c.c
 # HID over I2C finds its devices in the ACPI namespace (WS159).
 ifeq ($(CONFIG_DRIVER_ACPI),y)
-AMD64_I2C_SOURCES += src/drivers/i2c/i2c-hid.c
+AMD64_I2C_SOURCES += src/drivers/i2c/i2c-hid.c src/drivers/gpio/intel-gpio.c
 endif
 endif
 AMD64_INTEL_WLAN_SOURCES :=

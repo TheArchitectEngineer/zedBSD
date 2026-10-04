@@ -20,18 +20,22 @@
  * (hid-touch.c), and the device is published as an evdev node that speaks
  * multitouch protocol B.
  *
- * The device's interrupt line (a GPIO interrupt) is not used yet: the
+ * The device's interrupt line (its GpioInt) is watched rather than taken
+ * as an interrupt (ws159-p006; the controller's interrupt needs a HAL
+ * change that waits for the user's decision): when the line is on an Intel
+ * PCH GPIO pad (intel-gpio.c), the thread looks at the pad every
+ * LINE_POLL_MS and reads the input register only while the line is
+ * asserted, so a still pad costs no I2C transfer.  Without such a pad the
  * thread reads the input register every few milliseconds while fingers
- * move and less often when the pad has been still for a second.  A device
- * with nothing to say answers that read with an empty report (a length of
- * zero), as the Latitude 5330's touchpad does (plan/ws159/phase001).
- * Reading the line itself, then its interrupt, replaces the sampling in a
- * later Phase of WS159.
+ * move and less often when the pad has been still for a second; a device
+ * with nothing to say answers with an empty report (a length of zero), as
+ * the Latitude 5330's touchpad does (plan/ws159/phase001).
  */
 
 #include <drivers/acpi/acpi.h>
 #include <drivers/generic/hid-report.h>
 #include <drivers/generic/hid-touch.h>
+#include <drivers/gpio/intel-gpio.h>
 #include <drivers/i2c/i2c.h>
 #include <drivers/i2c/i2c-hid.h>
 #include <kern/clock.h>
@@ -96,6 +100,10 @@
 #define I2C_HID_POLL_IDLE_MS		25U
 #define I2C_HID_ACTIVE_HOLD_MS		1000U
 
+/* How often the interrupt line is looked at, and the most reports read while it stays asserted. */
+#define I2C_HID_LINE_POLL_MS		4U
+#define I2C_HID_LINE_READS_MAX		8U
+
 /* After this many failed reads in a row the thread says so and waits a second. */
 #define I2C_HID_ERRORS_BEFORE_PAUSE	50U
 #define I2C_HID_ERROR_PAUSE_MS		1000U
@@ -120,6 +128,11 @@ struct i2c_hid_device {
 	uint16_t address;
 	uint32_t speed;
 	uint16_t descriptor_register;
+	/* The interrupt line: its GPIO controller, pin and polarity, and the pad when it is an Intel one. */
+	char line_path[DRV_ACPI_RESOURCE_SOURCE_MAX];
+	uint32_t line_pin;
+	uint8_t line_active_low;
+	struct drv_intel_gpio_pad *line;
 	uint16_t report_descriptor_length;
 	uint16_t report_descriptor_register;
 	uint16_t input_register;
@@ -164,6 +177,9 @@ static int device_from_acpi(struct i2c_hid_device *device);
 static int resource_visitor(const struct drv_acpi_resource *resource, void *argument);
 static int descriptor_register(struct i2c_hid_device *device);
 static void worker(void *argument);
+static void watch_line(struct i2c_hid_device *device);
+static void sample(struct i2c_hid_device *device);
+static bool line_asserted(const struct i2c_hid_device *device);
 static int device_start(struct i2c_hid_device *device);
 static int read_hid_descriptor(struct i2c_hid_device *device);
 static int send_command(struct i2c_hid_device *device, uint8_t opcode, uint8_t argument);
@@ -421,7 +437,7 @@ device_from_acpi(
 	return 0;
 }
 
-/* Takes the first I2C connection of a device's resources. */
+/* Takes the first I2C connection and the first GPIO interrupt of a device's resources. */
 static int
 resource_visitor(
 	const struct drv_acpi_resource *resource,
@@ -429,8 +445,16 @@ resource_visitor(
 {
 	struct i2c_hid_device *device;
 
-	/* Only the first I2C connection matters. */
+	/* The first GPIO interrupt is the device's line. */
 	device = argument;
+	if (resource->kind == DRV_ACPI_RESOURCE_GPIO_INT && device->line_path[0] == '\0') {
+		(void)kern_snprintf(device->line_path, sizeof(device->line_path), "%s", resource->source);
+		device->line_pin = (uint32_t)resource->base;
+		device->line_active_low = resource->active_low;
+		return 0;
+	}
+
+	/* Only the first I2C connection matters. */
 	if (resource->kind != DRV_ACPI_RESOURCE_I2C || device->bus_path[0] != '\0')
 		return 0;
 
@@ -500,19 +524,15 @@ descriptor_register(
 }
 
 /*
- * Brings one device up and reads it for as long as the kernel runs: often
- * while fingers move, less often while the pad is still.
+ * Brings one device up and reads it for as long as the kernel runs: when
+ * its interrupt line is an Intel GPIO pad, while the line is asserted;
+ * otherwise often while fingers move and less often while the pad is still.
  */
 static void
 worker(
 	void *argument)
 {
 	struct i2c_hid_device *device;
-	uint64_t last_report_ms;
-	uint64_t now;
-	unsigned interval;
-	unsigned errors;
-	bool reported;
 	int error;
 
 	/* The device the probe started this thread for. */
@@ -525,7 +545,95 @@ worker(
 		return;
 	}
 
-	/* Reads it for as long as the kernel runs. */
+	/* The line, when it is a pad this kernel can read. */
+	error = ENOENT;
+	if (device->line_path[0] != '\0')
+		error = drv_intel_gpio_pad_find(device->line_path, device->line_pin, &device->line);
+
+	/* Reads it for as long as the kernel runs, by its line or by sampling. */
+	if (error == 0) {
+		kern_logf("i2c-hid: %s reads on its line (%s pin %u)\n", device->path, device->line_path, device->line_pin);
+		watch_line(device);
+	} else {
+		kern_logf("i2c-hid: %s samples its input (line: %d)\n", device->path, error);
+		sample(device);
+	}
+}
+
+/*
+ * Reads the device while its interrupt line is asserted, looking at the
+ * line every LINE_POLL_MS: a still pad costs no transfer.
+ */
+static void
+watch_line(
+	struct i2c_hid_device *device)
+{
+	unsigned reads;
+	bool asserted;
+	bool reported;
+	int error;
+
+	/* For as long as the kernel runs. */
+	for (;;) {
+		/* Reads while the line says a report waits, a few at a time. */
+		reads = 0;
+		asserted = line_asserted(device);
+		while (asserted && reads < I2C_HID_LINE_READS_MAX) {
+			/* One report; a failed read leaves the line to be looked at again. */
+			reported = false;
+			error = poll_input(device, &reported);
+			if (error != 0)
+				break;
+			reads++;
+			asserted = line_asserted(device);
+		}
+
+		/* Looks at the line again a little later. */
+		sleep_ms(I2C_HID_LINE_POLL_MS);
+	}
+}
+
+/* Tells whether the device's interrupt line is asserted. */
+static bool
+line_asserted(
+	const struct i2c_hid_device *device)
+{
+	int level;
+
+	/* The line's level on the wire. */
+	level = drv_intel_gpio_pad_level(device->line);
+
+	/* An active low line is asserted low, an active high one high. */
+	if (device->line_active_low) {
+		if (level == 0)
+			return true;
+		return false;
+	}
+
+	/* An active high line is asserted high. */
+	if (level != 0)
+		return true;
+
+	/* Succeeded: the line is not asserted. */
+	return false;
+}
+
+/*
+ * Reads the device without its line: often while fingers move, less often
+ * while the pad is still.
+ */
+static void
+sample(
+	struct i2c_hid_device *device)
+{
+	uint64_t last_report_ms;
+	uint64_t now;
+	unsigned interval;
+	unsigned errors;
+	bool reported;
+	int error;
+
+	/* For as long as the kernel runs. */
 	last_report_ms = 0;
 	errors = 0;
 	for (;;) {

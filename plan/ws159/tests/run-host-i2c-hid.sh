@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds and runs the host test of the HID over I2C driver (ws159-p003)
-# with the Latitude 5330's touchpad descriptors.  The driver and the HID
+# with the Latitude 5330's touchpad descriptors, by its line and by sampling.  The driver and the HID
 # files are compiled freestanding like the kernel; the test supplies the
 # ACPI, I2C, input and scheduler stand-ins with the host C library.
 # Usage: plan/ws159/tests/run-host-i2c-hid.sh [build-dir]
@@ -24,4 +24,5 @@ $cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I "$root/include" $extra \
 	-c "$root/plan/ws159/tests/host-i2c-hid.c" -o "$out/host-i2c-hid.o"
 $cc -Wl,--gc-sections $extra "$out/host-i2c-hid.o" "$out/i2c-hid.o" "$out/hid-report.o" \
 	"$out/hid-digitizer.o" "$out/hid-touch.o" -o "$out/host-i2c-hid"
-"$out/host-i2c-hid" "$root/plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin"
+"$out/host-i2c-hid" "$root/plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin" line
+"$out/host-i2c-hid" "$root/plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin" sample
