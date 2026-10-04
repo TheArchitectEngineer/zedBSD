@@ -21,6 +21,7 @@ Queue: q691（17 時以降）
 
 - GPL の vc4・v3d から作る文書は **`plan/ws141/temp/` に置き、commit しない**（書き写し可、表現が難しい所は code の書き写しも可）。
 - commit する物は、GPL を含まない物だけ: 正本の一覧と license の監査の表（path・SHA-256・license）、我々の interface への対応表（zedBSD の言葉で）、段の印の設計、判断の項目。
+- register の定義・packet の形の出典は MIT の Mesa（`src/broadcom/`）・Broadcom の公開の文書・device tree の binding とし、file ごとに license を監査の表に（2026-10-04 ユーザー）。
 - 定数の一括の改名は p002 の最初（code を書く前）。BLOB は `userland/firmware/` へ移す候補として一覧にする。
 
 ## 受け入れ
