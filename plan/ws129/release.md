@@ -151,6 +151,15 @@ Status: **案**（design-reviewer の review を反映した第 2 版、§11）�
 
 （U14 は U6 にまとめた。）
 
+### ユーザーの決定（2026-10-04、AskUserQuestion）
+
+| # | 決定 | 影響 |
+| --- | --- | --- |
+| U1 | **「Kei/zedBSD 1.0.0 Beta 1」**（ユーザーの記入。案の 0.1.0 ではなく **1.0.0**） | p003: `VERSION` は 1.0.0 の系（`1.0.0-beta1`）、os-release・About・release の題。U15 の案も `1.0.0-beta2.dev` に読み替える（U15 は未決） |
+| U3 | 案 A: 既知の password を release notes に書き、変更を促す | p004・p005 |
+| U4 | **今のまま**（sshd は有効、password の login も今の通り） | p004: release の rootfs で sshd・shadow を変えない。release notes に既知の password と sshd が有効であることを明記（p005） |
+| U6 | base を fork の確定した commit で作り直し（ws088-p002）、間に合えば載せる。間に合わなければベータ1 は zip を載せない。今の nightly の zip も同じ扱い | p004、日程 §7 |
+
 ## 10. 次の Phase への引き渡し
 
 - p003: U1・U15 の後。`VERSION`・生成の header・os-release・uname・i386 の表示・`.git` の無い build の fallback。
