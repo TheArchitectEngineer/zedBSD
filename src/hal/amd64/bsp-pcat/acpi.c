@@ -567,13 +567,21 @@ find_rsdp(
 	ebda_segment = map_physical(0x40eU, sizeof(*ebda_segment));
 	if (ebda_segment == NULL)
 		return NULL;
+
+	/* Converts the segment to the EBDA's physical address. */
 	ebda = (uintptr_t)*ebda_segment << 4;
 
-	/* Searches a plausible EBDA before the high BIOS area. */
+	/* Searches a plausible EBDA first. */
 	if (ebda >= 0x400U && ebda < 0xa0000U)
 		result = scan_rsdp(ebda, ebda + 1024U, found);
+
+	/* Falls back to the high BIOS area when the EBDA holds none. */
 	if (result == NULL)
 		result = scan_rsdp(0xe0000U, 0x100000U, found);
+
+	/* Reports a firmware without a valid RSDP. */
+	if (result == NULL)
+		return NULL;
 
 	/* Returns the first valid firmware RSDP. */
 	return result;

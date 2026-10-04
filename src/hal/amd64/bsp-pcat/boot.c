@@ -414,8 +414,12 @@ hal_get_arch_handoff(
 	/* Exposes the RSDP address that ACPI discovery accepted. */
 	match = handoff_name_is(name, "acpi.rsdp");
 	if (match) {
-		/* Returns NULL when discovery found no valid RSDP. */
+		/* Reports no handoff when discovery found no valid RSDP. */
 		rsdp = amd64_acpi_rsdp_handoff();
+		if (rsdp == NULL)
+			return NULL;
+
+		/* Returns the RSDP's physical address for its stable handoff name. */
 		return rsdp;
 	}
 
