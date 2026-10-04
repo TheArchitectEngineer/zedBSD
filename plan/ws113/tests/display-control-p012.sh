@@ -1,8 +1,9 @@
 #!/bin/sh
 # ws113-p012: GPU_DISPLAY_REFRESH and GPU_DISPLAY_POWER on the Venus guest (image of plan/ws113/tests/config-amd64-p012.mk,
 # started with plan/tools/files/files-guest.sh start IMAGE), no compositor: display-control --hold=5 on /dev/gpu0.
-#  1. The display offers both (power=1 counter=1); the refresh boundaries of a second are 40 to 80 (Venus's virtual
-#     clock at the output's refresh, virtual=1); the claim and the present of one solid green frame work.
+#  1. The display offers both (power=1 counter=1); before the claim an output with no picture makes no boundary
+#     (ETIMEDOUT); the claim and the present of one solid green frame work, and with it shown the refresh boundaries
+#     of a second are 40 to 80 (Venus's virtual clock at the output's refresh, virtual=1).
 #  2. Power off works, the query says powered_off=1, no boundary comes while it is off (refresh-off error=<zedBSD ETIMEDOUT>,
 #     its number read from include/uapi/errno.h) and the screen is not the green frame (off.png).
 #  3. Power on works, the boundaries come again (40 to 80 in a second) and the screen is the green frame again (on.png).
@@ -42,7 +43,7 @@ guest 'service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep
 guest 'nohup /bin/display-control --hold=5 > /tmp/control.txt 2>&1 </dev/null & echo started' >/dev/null
 sleep 4
 check "$out/shown.png" >/dev/null; shown=$(centre "$out/shown.png")
-sleep 5
+sleep 6
 check "$out/off.png" >/dev/null; off=$(centre "$out/off.png")
 sleep 6
 check "$out/on.png" >/dev/null; on=$(centre "$out/on.png")
@@ -51,7 +52,10 @@ guest 'cat /tmp/control.txt' > "$out/control.txt"
 
 # 1.
 expect_line 'DISPLAY-CONTROL display id=[0-9]+ .* power=1 counter=1' "the display offers power and refresh"
-expect_line 'DISPLAY-CONTROL refresh now boundaries=(4[0-9]|[5-7][0-9]|80) ms=1[0-9][0-9][0-9] virtual=1 ' "40 to 80 virtual boundaries a second"
+# Before the claim the output may scan nothing out (no compositor, no console picture yet): then no boundary
+# comes (ETIMEDOUT), as on a stopped pipe; with a picture they come.  T1-133 saw the former.
+expect_line "DISPLAY-CONTROL refresh now boundaries=([0-9]+ ms=[0-9]+ virtual=[01] error=$etimedout|(4[0-9]|[5-7][0-9]|80) ms=1[0-9][0-9][0-9] virtual=1 error=0)\$" "before the claim: boundaries only while a picture is scanned out"
+expect_line 'DISPLAY-CONTROL refresh shown boundaries=(4[0-9]|[5-7][0-9]|80) ms=1[0-9][0-9][0-9] virtual=1 ' "40 to 80 virtual boundaries a second with the frame shown"
 expect_line 'DISPLAY-CONTROL claim lease=[1-9]' "the claim"
 expect_line 'DISPLAY-CONTROL present error=0' "the present of the green frame"
 [ "$shown" = 30c060 ] && echo "ok: the green frame is shown ($shown)" || { echo "FAIL: the shown frame is $shown"; status=1; }

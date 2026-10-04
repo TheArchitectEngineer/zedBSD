@@ -15,7 +15,9 @@
  * read:
  *
  *   DISPLAY-CONTROL display id=ID generation=G flags=0xF power=0|1 counter=0|1
- *   DISPLAY-CONTROL refresh boundaries=N ms=M virtual=0|1      (and "off", "on" after the power changes)
+ *   DISPLAY-CONTROL refresh now|shown|on boundaries=N ms=M virtual=0|1 error=E
+ *       (now: before the claim, when an output that scans nothing out makes no boundary; shown: with the
+ *       lease's frame; on: after power on)
  *   DISPLAY-CONTROL claim lease=L / present error=E / power state=off|on error=E
  *   DISPLAY-CONTROL refresh-off error=E                         (ETIMEDOUT while off is right)
  *   DISPLAY-CONTROL done error=E
@@ -131,6 +133,9 @@ main(
 	/* One solid frame, when the node takes storage (the boundaries then follow the lease's frame). */
 	error = control_present(fd, &info, claim.lease);
 	printf("DISPLAY-CONTROL present error=%d\n", error);
+
+	/* The boundaries of a second while the lease's frame is shown. */
+	control_count(fd, &info, "shown");
 	sleep(hold);
 
 	/* Off: no boundary while it is off, and the query says so. */
