@@ -1869,6 +1869,25 @@ struct i915_native_pipe {
 };
 
 /*
+ * The output the firmware (GOP) was scanning out when the driver started
+ * (ws113-p002, the GPU scanout rule): the kind of interface, the pipe and
+ * the port (enum port, PORT_NONE when none), the transcoder's mode select
+ * (TRANS_DDI_FUNC_CTL bits 26:24), and every pipe the firmware had lit.
+ */
+#define I915_GOP_NONE		0U	/* no pipe was lit */
+#define I915_GOP_EDP		1U	/* DDI A in DP SST mode: the built-in panel */
+#define I915_GOP_HDMI		2U	/* DDI B in HDMI or DVI mode: the driver's HDMI path */
+#define I915_GOP_OTHER		3U	/* an interface this driver cannot light yet */
+
+struct i915_gop_output {
+	unsigned kind;
+	unsigned pipe;
+	int port;
+	unsigned mode;
+	unsigned pipes;
+};
+
+/*
  * What the firmware left on the display before the first display write,
  * and the decision taken from it.
  */
@@ -3300,6 +3319,9 @@ struct i915_display_output {
 	/* Nonzero: the HDMI display of DDI B on pipe B, in DVI mode, in place of the panel. */
 	int hdmi;
 
+	/* Nonzero: the node drives no output (the firmware's output could not be driven, ws113-p002). */
+	int none;
+
 	/* The HDMI mode (its physical size included, 0 when unknown), link and WRPLL. */
 	struct i915_lcd_state state;
 
@@ -3387,6 +3409,9 @@ struct i915_display {
 	/* The firmware display the start found before its first display write, and the MMIO it read with. */
 	struct i915_native_report n0;
 	struct i915_mmio *n0_mmio;
+
+	/* The firmware's output read from it, the only one the driver lights by itself (ws113-p002). */
+	struct i915_gop_output gop;
 
 	/* Nonzero once the display core was initialized (intel_power_domains_init_hw). */
 	int display_core_inited;

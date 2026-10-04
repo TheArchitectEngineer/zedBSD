@@ -6,13 +6,15 @@
  */
 
 /*
- * The choice of the resident node's output (output.c, ws075-p012).
+ * The choice of the resident node's output (output.c, ws075-p012; the GPU
+ * scanout rule since ws113-p002).
  *
- * The boot parameter display= picks the output the resident node lights:
- * auto (the default) is the eDP panel; hdmi is the HDMI display of DDI B,
- * on pipe B in DVI mode, when a sink is connected at the device start, and
- * the panel otherwise.  display.mode=WxH[@R] picks the HDMI mode; without
- * it the sink's EDID picks its preferred mode.
+ * The resident node lights only the output the firmware (GOP) was
+ * scanning out: the eDP panel, or the HDMI display of DDI B on pipe B in
+ * DVI mode.  The firmware's output on another interface is not lit by this
+ * driver: the display is left as the firmware left it.  display= no longer
+ * chooses.  display.mode=WxH[@R] picks the HDMI mode; without it the
+ * sink's EDID picks its preferred mode.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_OUTPUT_H
@@ -25,8 +27,21 @@
 #define I915_OUTPUT_HDMI_PIPE		1
 
 /*
- * Chooses the output of the resident node from display= and the HDMI sink
- * connected now; the choice is logged and kept in display->output.
+ * Reads the firmware's output from what it left on the display (the N0
+ * report): the first lit pipe whose transcoder drives a port, and every
+ * lit pipe.  Pure: reads only the report.
+ */
+void drv_i915_gop_output_read(const struct i915_native_report *report, struct i915_gop_output *gop);
+
+/*
+ * Names the firmware's output for the log ("eDP on DDI A", "HDMI on DDI B",
+ * "DP SST on DDI TC1", "none") into a buffer of at least 32 bytes.
+ */
+void drv_i915_gop_output_name(const struct i915_gop_output *gop, char *name, unsigned size);
+
+/*
+ * Chooses the output of the resident node: the firmware's output (the GPU
+ * scanout rule); the choice is logged and kept in display->output.
  */
 void drv_i915_display_output_select(struct i915_display *display);
 

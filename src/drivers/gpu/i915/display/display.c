@@ -1618,6 +1618,7 @@ i915_display_native_check(
 	struct i915_native_deps nd;
 	struct i915_gt *gt;
 	uint32_t reserved;
+	char name[48];
 
 	display = device->display;
 	gt = &device->gt;
@@ -1675,6 +1676,17 @@ i915_display_native_check(
 	/* A STOP: nothing on the display was touched, and nothing will be. */
 	if (!display->n0.proceed) {
 		kern_logf("i915: N0: the display is not used (native-precheck before any display write); the GPU node has no display\n");
+		display->absent = 1;
+	}
+
+	/* The firmware's output, the only one the driver lights by itself (the GPU scanout rule, ws113-p002). */
+	drv_i915_gop_output_read(&display->n0, &display->gop);
+	drv_i915_gop_output_name(&display->gop, name, sizeof(name));
+	kern_logf("i915: N0: the firmware's output: %s (lit pipes 0x%x)\n", name, display->gop.pipes);
+
+	/* One on an interface this driver cannot light keeps the firmware's picture: nothing on the display is touched. */
+	if (display->n0.proceed && display->gop.kind == I915_GOP_OTHER) {
+		kern_logf("i915: N0: the firmware's output (%s) is not one this driver lights: the firmware's picture is kept and the GPU node has no display\n", name);
 		display->absent = 1;
 	}
 

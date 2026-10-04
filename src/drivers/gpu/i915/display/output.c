@@ -6,16 +6,23 @@
  */
 
 /*
- * The choice of the resident node's output (ws075-p012).
+ * The choice of the resident node's output (ws075-p012; the GPU scanout
+ * rule since ws113-p002).
  *
- * The resident node has one display.  An external display found at the
- * device start comes first: by default (no display=, display=auto or
- * display=hdmi) it is the HDMI display of DDI B when a sink is connected,
- * so the machine shows one full screen on the external monitor while the
- * panel stays dark, and the eDP panel otherwise (2026-09-29 user decision).
- * display=edp (or display=panel) keeps the panel even with a sink.  The
- * HDMI output runs on pipe B in DVI mode (no infoframes, no audio): the
- * combination the HDMI-B test scenario proved on this machine.
+ * The resident node has one display, and it is the output the firmware
+ * (GOP) was scanning out when the driver started: the driver starts no
+ * scanout of its own choosing on any other output (plan/guardrail.md, the
+ * GPU driver's scanout rule, 2026-10-04 user decision, replacing the
+ * external display first of 2026-09-29).  The firmware's output is read
+ * from the transcoders it left lit (the N0 report): DDI A in DP SST mode is
+ * the eDP panel; DDI B in HDMI or DVI mode is the HDMI display, which runs
+ * on pipe B in DVI mode (no infoframes, no audio), the combination the
+ * HDMI-B test scenario proved on this machine.  The firmware's output on
+ * any other interface is one this driver cannot light yet: the display is
+ * then left as the firmware left it (display.c marks the node without a
+ * display before the first display write).  Without a lit pipe (no
+ * firmware picture at all) the built-in panel is the output.  display= no
+ * longer chooses and is logged as ignored.
  *
  * The HDMI mode is the one display.mode=WxH[@R] names -- looked up in the
  * sink's EDID, then in the CEA modes every HDMI sink takes, then computed
@@ -38,6 +45,27 @@
 
 /* The connector status of a connected sink (enum connector_status). */
 #define I915_OUTPUT_CONNECTED		1
+
+/* TRANS_DDI_FUNC_CTL: the enable bit, the port select of display 12+ (port + 1, 0 for none) and the mode select. */
+#define I915_OUTPUT_DDI_FUNC_ENABLE	0x80000000U
+#define I915_OUTPUT_DDI_PORT_SHIFT	27U
+#define I915_OUTPUT_DDI_PORT_MASK	0xfU
+#define I915_OUTPUT_DDI_MODE_SHIFT	24U
+#define I915_OUTPUT_DDI_MODE_MASK	7U
+
+/* The transcoder's mode selects: HDMI, DVI, DP SST and DP MST. */
+#define I915_OUTPUT_MODE_HDMI		0U
+#define I915_OUTPUT_MODE_DVI		1U
+#define I915_OUTPUT_MODE_DP_SST		2U
+#define I915_OUTPUT_MODE_DP_MST		3U
+
+/* The ports: A (the panel's DDI), B (the HDMI path's), and the first Type-C port (enum port). */
+#define I915_OUTPUT_PORT_A		0
+#define I915_OUTPUT_PORT_B		1
+#define I915_OUTPUT_PORT_TC1		3
+
+/* The pipes N0 reads. */
+#define I915_OUTPUT_PIPES		4U
 
 /* The connector status of a sink that is not there (enum connector_status). */
 #define I915_OUTPUT_DISCONNECTED	2
@@ -155,6 +183,7 @@ static const struct i915_lcd_mode i915_output_cea_modes[] = {
 #define I915_OUTPUT_CEA_COUNT		(sizeof(i915_output_cea_modes) / sizeof(i915_output_cea_modes[0]))
 
 static int i915_output_hdmi(struct i915_display *display, const char **reason);
+static void i915_output_hdmi_wait(struct i915_display *display, const char *name);
 static int i915_output_wanted_mode(uint32_t *width, uint32_t *height, uint32_t *refresh_hz);
 static uint32_t i915_output_refresh_hz(const struct i915_lcd_mode *mode);
 static int i915_output_mode_matches(const struct i915_lcd_mode *mode, uint32_t width, uint32_t height, uint32_t refresh_hz);
@@ -164,70 +193,142 @@ static void i915_output_edid_size(const uint8_t *edid, unsigned edid_size, struc
 static uint32_t i915_output_cvt_vsync(uint32_t width, uint32_t height);
 
 /*
- * Chooses the output of the resident node from display= and the HDMI sink
- * connected now.
+ * Reads the firmware's output from the N0 report.
  *
- * Without display=edp or display=panel, a connected sink whose mode the
- * WRPLL can serve is the output; anything else leaves the panel as the
- * output, and the reason is logged.
+ * Every lit pipe is recorded; the output is the first lit pipe whose
+ * transcoder is enabled and drives a port (a firmware that clones onto two
+ * outputs gives the lowest pipe, the panel's on this machine).
+ */
+void
+drv_i915_gop_output_read(
+	const struct i915_native_report *report,
+	struct i915_gop_output *gop)
+{
+	const struct i915_native_pipe *pipe;
+	unsigned select;
+	unsigned index;
+	uint32_t function;
+
+	/* Nothing lit until a pipe says so. */
+	gop->kind = I915_GOP_NONE;
+	gop->pipe = 0U;
+	gop->port = -1;
+	gop->mode = 0U;
+	gop->pipes = 0U;
+
+	/* Each lit pipe; the first that drives a port is the output. */
+	for (index = 0U; index < I915_OUTPUT_PIPES; index++) {
+		/* A pipe the firmware did not light. */
+		pipe = &report->pipe[index];
+		if (pipe->cls != I915_N0_READABLE_ACTIVE)
+			continue;
+		gop->pipes |= 1U << index;
+
+		/* A transcoder that is off or drives no port is not an output. */
+		function = pipe->trans_ddi_func;
+		select = (function >> I915_OUTPUT_DDI_PORT_SHIFT) & I915_OUTPUT_DDI_PORT_MASK;
+		if ((function & I915_OUTPUT_DDI_FUNC_ENABLE) == 0U || select == 0U)
+			continue;
+		if (gop->kind != I915_GOP_NONE)
+			continue;
+
+		/* The output: its pipe, port and mode. */
+		gop->pipe = index;
+		gop->port = (int)select - 1;
+		gop->mode = (function >> I915_OUTPUT_DDI_MODE_SHIFT) & I915_OUTPUT_DDI_MODE_MASK;
+		gop->kind = I915_GOP_OTHER;
+
+		/* DDI A in DP SST mode is the panel; DDI B in HDMI or DVI mode is the HDMI path. */
+		if (gop->port == I915_OUTPUT_PORT_A && gop->mode == I915_OUTPUT_MODE_DP_SST)
+			gop->kind = I915_GOP_EDP;
+		if (gop->port == I915_OUTPUT_PORT_B && (gop->mode == I915_OUTPUT_MODE_HDMI || gop->mode == I915_OUTPUT_MODE_DVI))
+			gop->kind = I915_GOP_HDMI;
+	}
+}
+
+/*
+ * Names the firmware's output for the log.
+ */
+void
+drv_i915_gop_output_name(
+	const struct i915_gop_output *gop,
+	char *name,
+	unsigned size)
+{
+	static const char *const modes[] = { "HDMI", "DVI", "DP SST", "DP MST", "FDI", "mode 5", "mode 6", "mode 7" };
+	char port[8];
+
+	/* No lit output. */
+	if (gop->kind == I915_GOP_NONE) {
+		kern_snprintf(name, size, "none");
+		return;
+	}
+
+	/* The port: A, B, C, then the Type-C ports. */
+	if (gop->port >= I915_OUTPUT_PORT_TC1)
+		kern_snprintf(port, sizeof(port), "TC%d", gop->port - I915_OUTPUT_PORT_TC1 + 1);
+	else
+		kern_snprintf(port, sizeof(port), "%c", 'A' + gop->port);
+
+	/* The mode, the port and the pipe. */
+	kern_snprintf(name, size, "%s on DDI %s, pipe %c", modes[gop->mode & I915_OUTPUT_DDI_MODE_MASK], port, 'A' + (int)gop->pipe);
+}
+
+/*
+ * Chooses the output of the resident node: the firmware's output.
+ *
+ * The panel when the firmware lit the panel, or lit nothing; the HDMI
+ * display when the firmware lit it and its mode can be driven (the sink is
+ * asked again for a while, since the firmware was driving it); otherwise
+ * no output -- the driver does not light another output in its place.
  */
 void
 drv_i915_display_output_select(
 	struct i915_display *display)
 {
 	const struct kern_boot_parameters *parameters;
-	const char *reason;
 	const char *wanted;
+	char name[48];
 	uint32_t refresh;
-	unsigned waited_ms;
-	int compared;
-	int error;
 
-	/* The panel until HDMI is chosen and proven. */
+	/* The panel until the firmware's output says otherwise. */
 	kern_memset(&display->output, 0, sizeof(display->output));
+	drv_i915_gop_output_name(&display->gop, name, sizeof(name));
 
-	/* display=edp and display=panel keep the panel; without display=, auto and hdmi look for the external display first. */
+	/* display= no longer chooses the output. */
 	parameters = kern_boot_parameters_current();
 	wanted = kern_boot_parameters_value(parameters, KERN_BOOT_PARAMETER_DISPLAY);
-	if (wanted == NULL)
-		wanted = "auto";
-	compared = kern_strcmp(wanted, "edp");
-	if (compared == 0) {
-		kern_logf("i915: display output: eDP panel (display=%s)\n", wanted);
-		return;
-	}
-	compared = kern_strcmp(wanted, "panel");
-	if (compared == 0) {
-		kern_logf("i915: display output: eDP panel (display=%s)\n", wanted);
+	if (wanted != NULL)
+		kern_logf("i915: display output: display=%s ignored: the driver lights the firmware's output only (GPU scanout rule)\n", wanted);
+
+	/* No firmware picture at all: the built-in panel. */
+	if (display->gop.kind == I915_GOP_NONE) {
+		kern_logf("i915: display output: eDP panel (the firmware lit no output)\n");
 		return;
 	}
 
-	/* HDMI when a sink is connected and its mode can be driven; the panel otherwise. */
-	reason = NULL;
-	error = i915_output_hdmi(display, &reason);
-
-	/* display=hdmi waits a while for a sink that is not answering yet. */
-	compared = kern_strcmp(wanted, "hdmi");
-	waited_ms = 0U;
-	while (error == EAGAIN && compared == 0 && waited_ms < I915_OUTPUT_HDMI_WAIT_MS) {
-		kern_usleep_range(I915_OUTPUT_HDMI_RETRY_MS * 1000U, I915_OUTPUT_HDMI_RETRY_MS * 1000U);
-		waited_ms += I915_OUTPUT_HDMI_RETRY_MS;
-		kern_memset(&display->output, 0, sizeof(display->output));
-		error = i915_output_hdmi(display, &reason);
-	}
-	if (waited_ms != 0U)
-		kern_logf("i915: display output: waited %u ms for the HDMI sink (rc=%d)\n", waited_ms, error);
-
-	if (error != 0) {
-		kern_memset(&display->output, 0, sizeof(display->output));
-		kern_logf("i915: display output: eDP panel (display=%s, but %s: rc=%d)\n", wanted, reason, error);
+	/* The firmware's panel. */
+	if (display->gop.kind == I915_GOP_EDP) {
+		kern_logf("i915: display output: eDP panel, the firmware's output (%s, lit pipes 0x%x)\n", name, display->gop.pipes);
 		return;
 	}
+
+	/* An interface this driver cannot light: display.c left the display as the firmware did. */
+	if (display->gop.kind != I915_GOP_HDMI) {
+		display->output.none = 1;
+		kern_logf("i915: display output: none: the firmware's output (%s) is not one this driver lights\n", name);
+		return;
+	}
+
+	/* The firmware's HDMI display, asked again while its sink is not answering yet. */
+	i915_output_hdmi_wait(display, name);
+	if (!display->output.hdmi)
+		return;
 
 	/* The node shows the HDMI display from here on. */
-	display->output.hdmi = 1;
 	refresh = i915_output_refresh_hz(&display->output.state.mode);
-	kern_logf("i915: display output: HDMI on DDI B, pipe B, DVI mode: %ux%u@%u Hz %d kHz (mode from %s) %ux%u mm; the eDP panel stays dark\n",
+	kern_logf("i915: display output: HDMI on DDI B, pipe B, DVI mode, the firmware's output (%s): %ux%u@%u Hz %d kHz (mode from %s) %ux%u mm\n",
+	    name,
 	    display->output.state.mode.hdisplay,
 	    display->output.state.mode.vdisplay,
 	    refresh,
@@ -254,8 +355,8 @@ drv_i915_display_output_mode(
 	uint64_t pixels;
 	int error;
 
-	/* The node has an output only once the resident dependencies exist. */
-	if (display->rctx.lcd == NULL)
+	/* The node has an output only once the resident dependencies exist, and when one was chosen. */
+	if (display->rctx.lcd == NULL || display->output.none)
 		return ENXIO;
 
 	/* The panel: its own timing. */
@@ -289,6 +390,10 @@ drv_i915_display_output_size_mm(
 	uint32_t *height_mm)
 {
 	int error;
+
+	/* No output, no size. */
+	if (display->output.none)
+		return ENODEV;
 
 	/* The panel: the size its EDID reported. */
 	if (!display->output.hdmi) {
@@ -653,6 +758,50 @@ i915_output_hdmi(
 
 	/* Succeeded: the HDMI display can be lit. */
 	return 0;
+}
+
+/*
+ * Makes the firmware's HDMI display the output: its sink is asked again
+ * for a while (on bare metal the first probe can come before a USB-powered
+ * LCD's controller answers the EDID read, ws084).  When it cannot be
+ * driven the node has no output: the panel does not take its place.
+ */
+static void
+i915_output_hdmi_wait(
+	struct i915_display *display,
+	const char *name)
+{
+	const char *reason;
+	unsigned waited_ms;
+	int error;
+
+	/* The first answer. */
+	reason = NULL;
+	error = i915_output_hdmi(display, &reason);
+
+	/* A sink not answering yet is asked again. */
+	waited_ms = 0U;
+	while (error == EAGAIN && waited_ms < I915_OUTPUT_HDMI_WAIT_MS) {
+		kern_usleep_range(I915_OUTPUT_HDMI_RETRY_MS * 1000U, I915_OUTPUT_HDMI_RETRY_MS * 1000U);
+		waited_ms += I915_OUTPUT_HDMI_RETRY_MS;
+		kern_memset(&display->output, 0, sizeof(display->output));
+		error = i915_output_hdmi(display, &reason);
+	}
+
+	/* How long it waited, when it did. */
+	if (waited_ms != 0U)
+		kern_logf("i915: display output: waited %u ms for the HDMI sink (rc=%d)\n", waited_ms, error);
+
+	/* Not drivable: no output. */
+	if (error != 0) {
+		kern_memset(&display->output, 0, sizeof(display->output));
+		display->output.none = 1;
+		kern_logf("i915: display output: none: the firmware's HDMI output (%s) cannot be driven (%s: rc=%d)\n", name, reason, error);
+		return;
+	}
+
+	/* Succeeded: the HDMI display is the output. */
+	display->output.hdmi = 1;
 }
 
 /* Reads display.mode=: 0 with the wanted size and rate, all 0 when it is not given, or EINVAL. */
