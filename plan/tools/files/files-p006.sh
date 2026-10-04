@@ -1,10 +1,10 @@
 #!/bin/sh
-# ws071-p006: the home dashboard of files on the Venus guest (the lean image,
+# ws071-p006: the dashboard (Today since ws127-p011) of files on the Venus guest (the lean image,
 # build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper; files at
 # 1000x640 on the sample home (/tmp/fhome), opened on the dashboard.
 #  1. dashboard.png: the hero card (the wallpaper, the greeting), the folder cards, no recent files.
 #  2. The Pictures card opens Pictures (LOCATION .../Pictures items=4; 2 before p007 added two pictures).
-#  3. Report.pdf opened in Documents (OPEN); the Home button: dashboard-recent.png shows it
+#  3. Report.pdf opened in Documents (OPEN); Today in the sidebar (ws127-p011; the Home button is the home folder now): dashboard-recent.png shows it
 #     among the recent files.
 #  4. A click on the recent file shows it in its folder, selected (LOCATION Documents, SELECT count=1).
 #  5. Show all opens the home folder's listing (LOCATION kind=folder path=/tmp/fhome items=7).
@@ -69,18 +69,18 @@ surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"
 
 # 1. The dashboard.
-expect_log /tmp/f.log 'ZFILES LOCATION kind=home path=/tmp/fhome items=0 error=0'
+expect_log /tmp/f.log 'ZFILES LOCATION kind=today path=/tmp/fhome items=0 error=0'
 shot dashboard.png
 
 # 2. The Pictures card (the second).
 click 520 310
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Pictures items=4 error=0'
 
-# 3. A file opened, then Home.
-click 100 125
+# 3. A file opened, then Today (the sidebar's first place).
+click 100 155
 double 779 120
 expect_log /tmp/f.log 'ZFILES OPEN path=/tmp/fhome/Documents/Report.pdf'
-control 3
+click 100 65
 shot dashboard-recent.png
 
 # 4. The recent file (the first row under Recent Files).
@@ -90,7 +90,7 @@ found=$(guest "grep -c 'LOCATION kind=folder path=/tmp/fhome/Documents ' /tmp/f.
 expect_log /tmp/f.log 'ZFILES SELECT count=1 '
 
 # 5. Show all.
-control 3
+click 100 65
 click 932 235
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome items=7 error=0'
 

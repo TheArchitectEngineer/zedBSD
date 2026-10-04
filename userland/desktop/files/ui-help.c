@@ -42,7 +42,7 @@ struct help_line {
 static const struct help_line help_guide[] = {
 	{ NULL, "Files shows the folders of this computer and what they hold." },
 	{ NULL, "" },
-	{ NULL, "Home is a dashboard: your folders, and the files you opened last." },
+	{ NULL, "Today is a dashboard: your folders, and the files you opened last; Home is your home folder." },
 	{ NULL, "The sidebar leads to your favorite folders and the trash." },
 	{ NULL, "Double-click a folder to open it, a file to open it with its application." },
 	{ NULL, "Space shows a file large (Quick Look); Get Info shows everything about it," },

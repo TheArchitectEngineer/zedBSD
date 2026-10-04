@@ -65,7 +65,7 @@ expect_log /tmp/f.log 'ZFILES TABS new index=1 count=2'
 shot two.png
 
 # 2. Downloads in the second tab (the sidebar keeps its place; the tabs are over the content), then a third tab.
-click 100 155
+click 100 185
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Downloads '
 keys '<ctrl-t>'
 expect_log /tmp/f.log 'ZFILES TABS new index=2 count=3'

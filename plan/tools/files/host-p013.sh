@@ -57,7 +57,7 @@ expect close "^tabs count=1 shown=0 0=$docs\$"
 expect close "^request 4\$"
 
 # 4. A middle click on Downloads in the sidebar.
-run middle middle=100,150 tabs
+run middle middle=100,180 tabs
 expect middle "^tabs count=2 shown=1 0=$docs 1=$home/Downloads\$"
 
 # 5. The row of tabs at the top of the content panel: a click on the first tab, then on its close button.

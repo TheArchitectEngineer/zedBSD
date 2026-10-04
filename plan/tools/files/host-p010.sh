@@ -90,21 +90,21 @@ expect link "DRAG drop operation=link items=1 destination=$project/src$"
 holds link "[ -L '$project/src/README.md' ] && [ -f '$project/README.md' ]"
 
 # 4. Two items onto Documents in the sidebar.
-run multi click=$makefile click=$readme:2 mods=0 wait=500 press=$readme drag=640,132 drag=118,125 draw="$out/multi.ppm" release=118,125 wait=400 wait=400
+run multi click=$makefile click=$readme:2 mods=0 wait=500 press=$readme drag=640,132 drag=118,155 draw="$out/multi.ppm" release=118,155 wait=400 wait=400
 expect multi "DRAG start items=2$"
 expect multi "DRAG target kind=folder path=$home/Documents$"
 expect multi "DRAG drop operation=move items=2 destination=$home/Documents$"
 holds multi "[ -f '$home/Documents/README.md' ] && [ -f '$home/Documents/Makefile' ] && [ ! -e '$project/Makefile' ]"
 
 # 5. The Trash.
-run trash press=$readme drag=640,132 drag=118,343 release=118,343 wait=400 wait=400
+run trash press=$readme drag=640,132 drag=118,373 release=118,373 wait=400 wait=400
 expect trash "DRAG target kind=trash$"
 expect trash "DRAG drop operation=trash items=1$"
 expect trash "TASK done id=[0-9]+ kind=trash state=done "
 holds trash "[ ! -e '$project/README.md' ]"
 
 # 7. The other tab (Documents); with two tabs the items are 30 pixels lower.
-run tab middle=118,125 click=350,27 press=671,160 drag=640,162 drag=885,27 release=885,27 wait=400 wait=400
+run tab middle=118,155 click=350,27 press=671,160 drag=640,162 drag=885,27 release=885,27 wait=400 wait=400
 expect tab "DRAG target kind=folder path=$home/Documents$"
 expect tab "DRAG drop operation=move items=1 destination=$home/Documents$"
 holds tab "[ -f '$home/Documents/README.md' ]"
@@ -130,12 +130,12 @@ expect favorite "FAVORITE add path=$project/docs$"
 expect favorite "DRAG drop operation=favorites added=1$"
 holds favorite "tail -1 '$sidebar' | grep -qx '$project/docs'"
 
-# 11. Pictures (the fifth place) dragged onto Desktop (the second): first in the list; a click on the fourth
-#     place, Documents now, still goes there (at the release).
-run reorder press=118,185 drag=118,170 drag=118,95 draw="$out/reorder.ppm" release=118,95 click=118,155
-expect reorder "DRAG start place=4 path=$home/Pictures$"
-expect reorder "DRAG target kind=place place=1$"
-expect reorder "DRAG drop operation=reorder place=4 to=1 error=0$"
+# 11. Pictures (the sixth place, after Today and Home) dragged onto Desktop (the third): first in the list; a click
+#     on the fifth place, Documents now, still goes there (at the release).
+run reorder press=118,215 drag=118,200 drag=118,125 draw="$out/reorder.ppm" release=118,125 click=118,185
+expect reorder "DRAG start place=5 path=$home/Pictures$"
+expect reorder "DRAG target kind=place place=2$"
+expect reorder "DRAG drop operation=reorder place=5 to=2 error=0$"
 expect reorder "LOCATION kind=folder path=$home/Documents "
 refuse reorder "LOCATION kind=folder path=$home/Pictures "
 holds reorder "head -1 '$sidebar' | grep -qx '$home/Pictures'"

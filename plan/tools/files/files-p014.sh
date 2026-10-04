@@ -154,7 +154,7 @@ expect_log /tmp/zdesktop.log "GLASS dock surface=$surface"
 expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 surface=$surface where=docked id=6 .* shown=1"
 shot docked.png
 control 1 docked 3
-expect_log /tmp/f.log 'ZFILES LOCATION kind=home path=/tmp/fhome '
+expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome '
 # The docked bar's name "Files" (120,17) undocks on a double click; (190,17) is the Forward control now (ws127-p001 T1).
 double 120 17
 expect_log /tmp/zdesktop.log "GLASS undock surface=$surface"

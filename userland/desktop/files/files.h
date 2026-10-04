@@ -226,7 +226,7 @@ struct fm_listing {
  * The kinds of place a tab can show.
  */
 enum fm_location_kind {
-	FM_LOCATION_HOME,
+	FM_LOCATION_TODAY,
 	FM_LOCATION_FOLDER,
 	FM_LOCATION_RECENTS,
 	FM_LOCATION_TRASH,
@@ -382,7 +382,10 @@ enum fm_place_section {
 
 /*
  * One place in the sidebar: its section, icon, label and where it leads;
- * missing marks a favorite whose folder is not there.
+ * missing marks a favorite whose folder is not there, and fixed one of the
+ * two places that head the Favorites (Today and Home, ws127-p011), which
+ * the user's list of favorite folders does not hold: they cannot be taken
+ * off, dragged in the list or written to it.
  */
 struct fm_place {
 	unsigned section;
@@ -390,6 +393,7 @@ struct fm_place {
 	char label[64];
 	struct fm_location location;
 	int missing;
+	int fixed;
 };
 
 /*
@@ -1410,7 +1414,7 @@ void fm_search_start(struct fm_search *search, const char *query, const char *ba
 int fm_search_step(struct fm_search *search, struct fm_listing *listing, uint64_t budget_ms);
 void fm_search_stop(struct fm_search *search);
 
-/* The home dashboard (ui-home.c). */
+/* Today, the dashboard (ui-home.c). */
 void fm_home_gather(struct fm_app *app);
 void fm_home_folder_opened(const char *folder);
 void fm_home_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
@@ -1579,5 +1583,6 @@ int fm_places_add_favorite(struct fm_places *places, const char *path);
 int fm_places_remove_favorite(struct fm_places *places, int removed);
 int fm_places_move_favorite(struct fm_places *places, int moved, int to);
 const char *fm_location_name(const struct fm_location *location, const char *home);
+int fm_place_is_favorite_folder(const struct fm_place *place);
 
 #endif

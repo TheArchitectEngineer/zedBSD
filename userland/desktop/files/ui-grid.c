@@ -70,8 +70,8 @@ fm_grid_draw(
 	grid_panel(app, canvas, area);
 	tab = fm_ui_tab(app);
 
-	/* The home dashboard fills the panel itself. */
-	if (tab->history[tab->history_index].location.kind == FM_LOCATION_HOME) {
+	/* Today, the dashboard, fills the panel itself. */
+	if (tab->history[tab->history_index].location.kind == FM_LOCATION_TODAY) {
 		inner.x = area->x + GRID_PADDING;
 		inner.y = area->y + GRID_PADDING;
 		inner.width = area->width - 2 * GRID_PADDING;

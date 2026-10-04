@@ -8,8 +8,9 @@
 /*
  * The places of the sidebar and the names of places.
  *
- * Favorites are the home dashboard and the usual folders under the home
- * folder; Locations are the recent files, the trash and the computer's
+ * Favorites are Today (the dashboard), the home folder and the user's
+ * favorite folders (by default the usual ones under the home folder);
+ * Locations are the recent files, the trash and the computer's
  * root.  A favorite whose folder does not exist is kept (pale), so the
  * sidebar keeps its shape on a new account.
  */
@@ -59,20 +60,31 @@ static int places_file(char *path, size_t size);
 static int places_write(struct fm_places *places, int moved, int to, int removed, const char *added);
 
 /*
- * Fills the sidebar: Favorites (the home dashboard and the user's folders,
- * or the usual ones) and Locations (recent files, the trash, the computer
- * and mounted volumes).
+ * Fills the sidebar: Favorites (Today, the home folder, and the user's
+ * folders or the usual ones) and Locations (recent files, the trash, the
+ * computer and mounted volumes).
  */
 void
 fm_places_init(
 	struct fm_places *places,
 	const char *home)
 {
+	struct fm_place *place;
+
 	/* The sidebar starts empty. */
 	memset(places, 0, sizeof(*places));
 
-	/* Favorites: the home dashboard first, then the folders. */
-	(void)places_add(places, FM_SECTION_FAVORITES, FM_ICON_HOME, "Home", FM_LOCATION_HOME, home);
+	/*
+	 * Favorites: Today (the dashboard) at the top and the home folder under
+	 * it (ws127-p011, the user's decision of 2026-10-05), fixed, then the
+	 * user's folders.
+	 */
+	place = places_add(places, FM_SECTION_FAVORITES, FM_ICON_TODAY, "Today", FM_LOCATION_TODAY, home);
+	if (place != NULL)
+		place->fixed = 1;
+	place = places_add(places, FM_SECTION_FAVORITES, FM_ICON_HOME, "Home", FM_LOCATION_FOLDER, home);
+	if (place != NULL)
+		place->fixed = 1;
 	places_favorites(places, home);
 
 	/* Locations: the recent files, the trash, the computer's root and the volumes. */
@@ -126,13 +138,15 @@ fm_places_remove_favorite(
 	int removed)
 {
 	int error;
+	int favorite;
 
 	/* A missing sidebar index cannot identify a persisted favorite. */
 	if (removed < 0 || removed >= places->count)
 		return EINVAL;
 
-	/* Home and the locations do not belong to the persisted favorite-folder list. */
-	if (places->items[removed].section != FM_SECTION_FAVORITES || places->items[removed].location.kind != FM_LOCATION_FOLDER)
+	/* Today, Home and the locations do not belong to the persisted favorite-folder list. */
+	favorite = fm_place_is_favorite_folder(&places->items[removed]);
+	if (favorite == 0)
 		return EINVAL;
 
 	/* Writes the list while omitting only the selected favorite-folder position. */
@@ -156,6 +170,7 @@ fm_places_move_favorite(
 	int ends[2];
 	int end;
 	int error;
+	int favorite;
 
 	/* Both dragged endpoints must identify persisted favorite folders rather than Home or locations. */
 	ends[0] = moved;
@@ -166,7 +181,8 @@ fm_places_move_favorite(
 			return EINVAL;
 
 		/* Only favorite folders participate in persisted ordering. */
-		if (places->items[ends[end]].section != FM_SECTION_FAVORITES || places->items[ends[end]].location.kind != FM_LOCATION_FOLDER)
+		favorite = fm_place_is_favorite_folder(&places->items[ends[end]]);
+		if (favorite == 0)
 			return EINVAL;
 	}
 
@@ -180,7 +196,7 @@ fm_places_move_favorite(
 }
 
 /*
- * Reports the name a place is shown by: the dashboard is Home, the home
+ * Reports the name a place is shown by: the dashboard is Today, the home
  * folder is Home, the root is Computer, and a folder is its last part.
  */
 const char *
@@ -193,9 +209,9 @@ fm_location_name(
 
 	/* Places that are not folders have names of their own. */
 	switch (location->kind) {
-	case FM_LOCATION_HOME:
-		/* The dashboard has its own stable sidebar name. */
-		return "Home";
+	case FM_LOCATION_TODAY:
+		/* The dashboard has its own stable sidebar name (ws127-p011). */
+		return "Today";
 	case FM_LOCATION_RECENTS:
 		/* The recent-file query is a named virtual location. */
 		return "Recents";
@@ -226,6 +242,26 @@ fm_location_name(
 
 	/* Succeeded: the displayed folder name is its final path component. */
 	return slash + 1;
+}
+
+/*
+ * Tells whether a place of the sidebar is one of the user's favorite
+ * folders, which the list of favorites holds (Today and Home are fixed).
+ */
+int
+fm_place_is_favorite_folder(
+	const struct fm_place *place)
+{
+	/* Another section, a place that is no folder, or a fixed one. */
+	if (place->section != FM_SECTION_FAVORITES)
+		return 0;
+	if (place->location.kind != FM_LOCATION_FOLDER)
+		return 0;
+	if (place->fixed != 0)
+		return 0;
+
+	/* Succeeded: a favorite folder of the user's list. */
+	return 1;
 }
 
 /* Adds a place to a section of the sidebar; NULL when the sidebar is full. */
@@ -516,6 +552,7 @@ places_write(
 	int index;
 	int written;
 	int error;
+	int favorite;
 	int closed;
 
 	/* Prepares only the configured user's real sidebar-list location. */
@@ -536,7 +573,8 @@ places_write(
 			continue;
 
 		/* Only ordinary favorite folders belong to this persistence file. */
-		if (places->items[index].section != FM_SECTION_FAVORITES || places->items[index].location.kind != FM_LOCATION_FOLDER)
+		favorite = fm_place_is_favorite_folder(&places->items[index]);
+		if (favorite == 0)
 			continue;
 
 		/* A move toward an earlier index inserts the folder before its target. */

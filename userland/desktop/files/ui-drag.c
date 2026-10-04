@@ -711,16 +711,16 @@ drag_favorite(
 	int index)
 {
 	const struct fm_place *place;
+	int favorite;
 
 	/* A place that is there. */
 	if (index < 0 || index >= app->places.count)
 		return 0;
 
-	/* In the Favorites, and a folder. */
+	/* One of the user's favorite folders (Today and Home are fixed). */
 	place = &app->places.items[index];
-	if (place->section != FM_SECTION_FAVORITES)
-		return 0;
-	if (place->location.kind != FM_LOCATION_FOLDER)
+	favorite = fm_place_is_favorite_folder(place);
+	if (favorite == 0)
 		return 0;
 
 	/* A favorite folder. */

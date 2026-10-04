@@ -81,7 +81,7 @@ expect_log $session 'ZWL LOCK unlocked' 8
 
 # 4. files on its Home, then on an empty folder.
 guest 'export XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0; /bin/files --token=h --timeout-s=120 > /tmp/fh.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
-expect_log /tmp/fh.log 'ZFILES LOCATION kind=home'
+expect_log /tmp/fh.log 'ZFILES LOCATION kind=today'
 sleep 1
 shot files-home.png
 guest 'for p in $(ps -A -o pid,args | grep -E "[f]iles" | awk "{print \$1}"); do kill $p; done; mkdir -p /tmp/empty-folder; export XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0; /bin/files --token=e --timeout-s=120 /tmp/empty-folder > /tmp/fe.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null

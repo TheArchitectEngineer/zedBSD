@@ -68,21 +68,21 @@ expect trash "^row id=1047 .* label=Delete Immediately\$"
 expect trash "^row id=1048 .* label=Empty Trash\$"
 
 # 4. A place of the sidebar, and its Open in New Tab.
-run place "--start=$docs" right=100,155 context action=49 tabs
-expect place "^context request=5 where=2 place=3 "
+run place "--start=$docs" right=100,185 context action=49 tabs
+expect place "^context request=5 where=2 place=4 "
 expect place "^row id=1049 parent=0 kind=0 enabled=1 checked=0 action=49 label=Open in New Tab\$"
 expect place "^row id=1050 .* label=Remove from Sidebar\$"
 expect place "^tabs count=2 shown=1 0=$docs 1=$home/Downloads\$"
 
 # 5. Move To (ws127-p002): Budget.csv to Downloads.
-run moveto "--start=$docs" right=446,150 context action=503 wait=1500
+run moveto "--start=$docs" right=446,150 context action=504 wait=1500
 expect moveto "^row id=105 parent=0 kind=4 enabled=1 checked=0 action=0 label=Move To\$"
-expect moveto "^row id=1503 parent=105 kind=0 enabled=1 checked=0 action=503 label=Downloads\$"
+expect moveto "^row id=1504 parent=105 kind=0 enabled=1 checked=0 action=504 label=Downloads\$"
 if grep -qE "^row id=15[0-9][0-9] parent=105 .* label=Documents\$" "$out/moveto.txt"; then
 	echo "moveto: the folder shown is offered MISSING"
 	status=1
 fi
-expect moveto "CONTEXT move-to place=3 path=$home/Downloads count=1"
+expect moveto "CONTEXT move-to place=4 path=$home/Downloads count=1"
 if [ -f "$home/Downloads/Budget.csv" ] && [ ! -e "$docs/Budget.csv" ]; then
 	echo "moveto: Budget.csv is in Downloads ok"
 else

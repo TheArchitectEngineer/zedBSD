@@ -365,9 +365,7 @@ context_place(
 
 	/* In a new tab; a favorite folder can leave the sidebar. */
 	context_add(context, 0U, FM_ROW_ITEM, "Open in New Tab", FM_ACTION_PLACE_NEW_TAB, app->tab_count < FM_TABS);
-	removable = 0;
-	if (place->section == FM_SECTION_FAVORITES && place->location.kind == FM_LOCATION_FOLDER)
-		removable = 1;
+	removable = fm_place_is_favorite_folder(place);
 	if (removable != 0) {
 		context_add(context, 0U, FM_ROW_LINE, "", 0U, 1);
 		context_add(context, 0U, FM_ROW_ITEM, "Remove from Sidebar", FM_ACTION_PLACE_REMOVE, 1);
@@ -503,7 +501,7 @@ context_destination(
 
 	/* A favorite folder (Home among them), or a mounted volume of the locations. */
 	if (item->section == FM_SECTION_FAVORITES) {
-		if (item->location.kind != FM_LOCATION_FOLDER && item->location.kind != FM_LOCATION_HOME)
+		if (item->location.kind != FM_LOCATION_FOLDER)
 			return 0;
 	} else if (item->section == FM_SECTION_LOCATIONS) {
 		if (item->location.kind != FM_LOCATION_FOLDER || item->icon != FM_ICON_VOLUME)

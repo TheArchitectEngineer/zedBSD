@@ -90,7 +90,7 @@ expect_log /tmp/f.log 'ZFILES TASK done id=1 kind=trash state=done files=1 '
 expect_guest "[ -f $trash/files/Costs.csv ] && grep -q 'Path=/tmp/fhome/Documents/Costs.csv' $trash/info/Costs.csv.trashinfo" 'in the trash with its record'
 
 # 3. The Trash, and Put Back.
-click 100 343
+click 100 373
 expect_log /tmp/f.log 'ZFILES LOCATION kind=trash path= items=1 error=0'
 click 331 120
 shot trash.png
@@ -99,7 +99,7 @@ expect_log /tmp/f.log 'ZFILES TASK done id=2 kind=restore state=done files=1 '
 expect_guest '[ -f /tmp/fhome/Documents/Costs.csv ]' 'put back'
 
 # 4. Undo the put back, then the trash.
-click 100 125
+click 100 155
 keys '<ctrl-z>'
 sleep 1.5
 expect_log /tmp/f.log 'ZFILES TASK done id=3 kind=trash state=done files=1 '
@@ -114,7 +114,7 @@ click 779 120
 keys '<ctrl-c>'
 sleep 0.5
 expect_log /tmp/f.log 'ZFILES CLIPBOARD mode=1 items=1'
-click 100 155
+click 100 185
 keys '<ctrl-v>'
 sleep 1.5
 expect_log /tmp/f.log 'ZFILES TASK done id=5 kind=copy state=done files=1 '

@@ -65,19 +65,19 @@ echo "files: surface $surface at $wx,$wy"
 
 # 1. The window.
 expect_log /tmp/f.log 'ZFILES READY width=1000 height=640 token=f1'
-expect_log /tmp/f.log 'ZFILES LOCATION kind=home path=/tmp/fhome items=0 error=0'
+expect_log /tmp/f.log 'ZFILES LOCATION kind=today path=/tmp/fhome items=0 error=0'
 pointer move 1270 790 sleep 400
 check "$out/home.png" >/dev/null
 
 # 2. Documents from the sidebar.
-click 100 125
+click 100 155
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=6 error=0'
 pointer move 1270 790 sleep 400
 check "$out/documents.png" >/dev/null
 
 # 3. Back home, then Documents by its card (the first of the dashboard).
 control 1
-expect_log /tmp/f.log 'ZFILES LOCATION kind=home path=/tmp/fhome items=0'
+expect_log /tmp/f.log 'ZFILES LOCATION kind=today path=/tmp/fhome items=0'
 click 340 310
 pointer move 1270 790 sleep 400
 check "$out/folder.png" >/dev/null

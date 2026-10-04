@@ -85,7 +85,7 @@ sleep 3
 keys '<ret>' '<down>' '<ret>'
 sleep 1
 expect_log /tmp/f.log 'ZFILES OPEN path=.*/Documents/Meeting notes.txt'
-click 100 313
+click 100 343
 expect_log /tmp/f.log 'ZFILES LOCATION kind=recents path= items=1 error=0'
 
 # 5. A favorite added and taken off.
@@ -96,9 +96,9 @@ sleep 1
 keys '<ctrl-alt-t>'
 sleep 1
 expect_log /tmp/f.log 'ZFILES FAVORITE add path=/tmp/fhome/Projects'
-pointer move $((wx + 100)) $((wy + 263)) sleep 500
+pointer move $((wx + 100)) $((wy + 293)) sleep 500
 check "$out/favorite.png" >/dev/null
-click 188 263
+click 188 293
 expect_log /tmp/f.log 'ZFILES FAVORITE remove path=/tmp/fhome/Projects'
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

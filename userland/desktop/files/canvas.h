@@ -163,7 +163,8 @@ enum fm_icon {
 	FM_ICON_CLOSE,
 	FM_ICON_PLUS,
 	FM_ICON_UP,
-	FM_ICON_DOWN
+	FM_ICON_DOWN,
+	FM_ICON_TODAY
 };
 
 /* The canvas (canvas.c). */

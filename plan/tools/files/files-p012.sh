@@ -82,7 +82,7 @@ keys '<esc>'
 expect_log /tmp/f.log 'ZFILES INFO close'
 
 # 3. Sunset.ppm (the third row of Pictures) opens in Quick Look.
-click 100 185
+click 100 215
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Pictures items=4 error=0'
 double 400 170
 expect_log /tmp/f.log 'ZFILES OPEN path=/tmp/fhome/Pictures/Sunset.ppm app=Quick Look'
@@ -90,7 +90,7 @@ expect_log /tmp/f.log 'ZFILES LOOK open path=/tmp/fhome/Pictures/Sunset.ppm'
 keys '<esc>'
 
 # 4. Budget.csv (the second row of Documents) in a terminal.
-click 100 125
+click 100 155
 double 400 142 4000
 expect_log /tmp/f.log 'ZFILES LAUNCH name=Text Editor command=/bin/textedit ./tmp/fhome/Documents/Budget.csv.$'
 expect_log /tmp/zdesktop.log "ZWL MAP client=$zc2 "

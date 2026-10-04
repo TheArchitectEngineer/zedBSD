@@ -172,7 +172,7 @@ fm_ui_action(
 		fm_input_enclosing(app);
 		break;
 	case FM_ACTION_GO_HOME:
-		menu_go_kind(app, FM_LOCATION_HOME, app->home);
+		menu_go_kind(app, FM_LOCATION_FOLDER, app->home);
 		break;
 	case FM_ACTION_GO_DESKTOP:
 		menu_go_folder(app, "Desktop");
