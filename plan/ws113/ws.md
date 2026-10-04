@@ -11,6 +11,16 @@ Queue: none（q586 / A3 は p001 の契約調査で uncleared 終端）
 Resume point（2026-10-02 ベータ1の計画）: **D-ATOMIC のユーザーの回答 → p001 の新しい attempt（45 分、残りの契約の確定だけ）→ p002 → p003 → p004 → {p005 → p006, p007} → p008（5330 + 外部 display）→ p009**。下の「ベータ1 の計画」。
 過去の resume: p001/q586-i01 uncleared（90分上限、D-ATOMIC未決）。契約/能力20行/fixture/次候補保存、D-ID A2等main採択済み。
 
+## ユーザーの指示（2026-10-04 夜、UAT-3 の後、原文）
+
+「Settingsのディスプレイのタブを実装してほしいです。ただし、ドライバの動作で、すでに伝えてあるとおり、GOPの出力先を起動時に有効なスキャンアウト先にして、ほかは出力しない、というルールの導入と、Vulkan display拡張でHDMIの挿抜の通知をコンポジタが受けるのと、コンポジタが動的にスキャンアウト先を変更するのを、実装する必要があります。これはzedBSDを優先にして、KMSでのLinux・FreeBSD用互換実装は、あとまわしにしてよいです（別Phaseにする）」
+
+→ Q1 の整理:
+- この WS の p002〜p006 がこの要望の本体（i915 の HPD と複数の出力 → Vulkan の Display の拡張の通知 → compositor の出力の動的な変更 → libkeiland・compositor の拡張 → Settings の Display の頁）。**zedBSD を優先**。
+- p002 に **Guardrail の「GPU の driver の scanout の規則」**（GOP の出力先を起動時の scanout 先にし、他には自分の判断で出さない。GOP の出力先ならどの interface でも初期化を試みる。他の出力先は Keiland の明示の指示の時だけ）の i915 での実装を含める。今の i915 の外部 display の優先（`output.c` の display= の auto・hdmi）をやめる。USB-C の DP-alt の分は [WS051](../ws051/ws.md) p002 と同じ所（`takeover.c`・`output.c`）なので、先に入れた方の実装を他方が使う（重ねて書かない）。
+- **Linux・FreeBSD の KMS での互換の実装は新しい p010 に分けて後に回す**（下の表）。
+- D-ATOMIC は (a) で決定済み（Master の fg019 の表）。p001 の残りの契約の確定（45 分）から再開できる。
+
 ## Objective / scope
 
 zedBSD i915で外部ディスプレイの接続/切断をVulkan Display拡張からcompositorへ通知し、Settingsからlibkeiland経由でcompositor拡張を操作して複数ディスプレイを設定できるようにする。compositorとi915のGPU表示操作はlibvulkanのVulkan API/Display拡張を通す。
@@ -48,6 +58,7 @@ zedBSD i915で外部ディスプレイの接続/切断をVulkan Display拡張か
 | [ws113-p007](phase007/phase.md) | 窓の出力所属と画面間移動 | 拡張表示で窓全体を1出力にだけ表示 | planned | p004 cleared/論理座標・出力描画（p006とは独立） |
 | [ws113-p008](phase008/phase.md) | 実i915の全経路受け入れ | 接続からSettings・表示・窓移動まで実機で確認 | planned | p002〜p007 cleared/実driver・API・UI・窓出力 |
 | [ws113-p009](phase009/phase.md) | 最終全文規約とWS受け入れ | 全変更sourceと実証結果の最終照合 | planned | p008 cleared/最終source・実機証拠 |
+| ws113-p010 | Linux・FreeBSD の KMS での互換の実装（libkeiland-backend-linux・-freebsd の出力の列挙・hotplug・出力の変更を zedBSD と同じ compositor の契約に） | 2026-10-04 ユーザー「KMSでのLinux・FreeBSD用互換実装は、あとまわしにしてよいです（別Phaseにする）」 | planning（後回し） | p004〜p006（zedBSD の経路） |
 
 Dependency graph: WS075/WS103/WS089 context → p001 → p002 → p003 → p004 → {p005→p006, p007} → p008 → p009。
 p008はp002〜p007の実出力を要する。見込みは実装許可ではない。
