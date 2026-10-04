@@ -117,3 +117,6 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 
 2026-10-04 ラップアップ（Q1 の指示、user「サブエージェントをすべてラップアップします。」）: 流し中の試験なし、T1 の QEMU なし（pgrep で確認）。T1-045〜T1-084 は全て結果を記録済み。P2 の p013・p014 の依頼は届いていない（届いても流さない指示）。
 | T1-085 | P2（ws131-p013・p014、agent/p2 40b242a、kl_ の改名） | A zedBSD（boot-test・textinput-p013・viewers-p008・demo-s8-s9・files-regress・titlebar-p010・menu-p003）、B Linux（gcc・clang の build・install・elf-check・8 app の PNG）、C FreeBSD の backend-test | 受付・未実施（2026-10-04、ラップアップの後に届いた。Q1 の指示で流さない） |
+
+2026-10-04 17 時からの新しい generation（Q1 が集約して送る）: TQ-1 の残りと TQ-2 は test-queue.md の該当の行に記録する。
+| T1-086 | P1（q678 ws049-p007 と q677 ws049-p008 の QEMU 回帰、P1 1257ad7・aad625b、main 89915a4） | 1) `plan/tools/guest/test-image.sh plan/ws049/tests/config-acpi.mk BUILD` 2) `make -C plan/ws049/tests` 3) `sh plan/ws049/tests/guest-events.sh IMAGE`（合格: sci:/button:/gpe: の 3 行が FAILED でなく exit 0。証拠 build/ws049/events/） 4) `sh plan/ws049/tests/guest-compare.sh IMAGE`（合格: namespace: same、devices の違いは p006 と同じ 11 行だけ） 5) `plan/tools/boot-test.sh IMAGE`（login の PNG） | 未実施 |
