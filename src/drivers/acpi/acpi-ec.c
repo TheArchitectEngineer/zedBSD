@@ -56,11 +56,10 @@
 #define EC_EISA_ID		0x090cd041ULL
 
 /*
- * The resource descriptors _CRS gives the ports with.
+ * The value port_visitor() stops the walk of _CRS with once it has both
+ * ports; negative, as the walk's own errors are positive.
  */
-#define RESOURCE_IO		0x47U
-#define RESOURCE_FIXED_IO	0x4bU
-#define RESOURCE_END		0x79U
+#define PORTS_COMPLETE		(-1)
 
 /*
  * The ECDT fields (ACPI 6.5 table 5.123): the command/status and data
@@ -73,6 +72,15 @@
 #define ECDT_EC_ID		65U
 #define GAS_ADDRESS		4U
 #define GAS_SPACE_SYSTEM_IO	1U
+
+/*
+ * The ports read_ports() collects from _CRS while it walks it: the base of
+ * each I/O range, the data port first, and how many are known.
+ */
+struct ec_ports {
+	uint16_t base[2];
+	unsigned count;
+};
 
 /*
  * The embedded controller the driver found.
@@ -97,6 +105,7 @@ static uint64_t load_u64(const uint8_t *bytes);
 static int find_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static bool is_ec(struct drv_acpi_node *node);
 static int read_ports(struct drv_acpi_node *device, uint16_t *data, uint16_t *command);
+static int port_visitor(const struct drv_acpi_resource *resource, void *argument);
 static int ec_region(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static void ec_gpe(unsigned gpe, void *argument);
 static int ec_transaction(uint8_t command, uint8_t address, bool has_address, bool write, uint8_t *data);
@@ -370,62 +379,49 @@ read_ports(
 	uint16_t *data,
 	uint16_t *command)
 {
-	struct drv_acpi_object *resources;
-	uint16_t ports[2];
-	const uint8_t *bytes;
-	size_t length;
-	size_t offset;
-	unsigned count;
-	uint8_t tag;
+	struct ec_ports ports;
 	int error;
 
-	/* Evaluates _CRS. */
-	error = drv_acpi_evaluate(device, "_CRS", NULL, 0, &resources);
-	if (error != 0)
+	/* Takes the first two I/O ranges of _CRS: the data port, then the command port. */
+	kern_memset(&ports, 0, sizeof(ports));
+	error = drv_acpi_resources_walk(device, NULL, port_visitor, &ports);
+	if (error > 0)
 		return error;
-	if (resources == NULL || resources->type != DRV_ACPI_TYPE_BUFFER) {
-		drv_acpi_object_release(resources);
-		return EINVAL;
-	}
-
-	/* The resource template's bytes. */
-	bytes = resources->value.buffer.bytes;
-	length = resources->value.buffer.length;
-
-	/* Takes the first two I/O ranges: the data port, then the command port. */
-	count = 0;
-	offset = 0;
-	while (offset < length && count < 2U) {
-		/* Ends at the end tag or at a large descriptor, which holds no port. */
-		tag = bytes[offset];
-		if (tag == RESOURCE_END || (tag & 0x80U) != 0)
-			break;
-
-		/* Takes the base of an I/O or fixed I/O descriptor. */
-		if (tag == RESOURCE_IO && offset + 8U <= length) {
-			ports[count] = (uint16_t)(bytes[offset + 2U] | bytes[offset + 3U] << 8);
-			count++;
-		} else if (tag == RESOURCE_FIXED_IO && offset + 4U <= length) {
-			ports[count] = (uint16_t)((bytes[offset + 1U] | bytes[offset + 2U] << 8) & 0x3ffU);
-			count++;
-		}
-
-		/* Steps over the small descriptor: its tag and its length. */
-		offset += 1U + (tag & 0x07U);
-	}
-
-	/* The template is no longer needed. */
-	drv_acpi_object_release(resources);
 
 	/* Refuses a _CRS without both ports. */
-	if (count != 2U)
+	if (ports.count != 2U)
 		return ENOENT;
 
 	/* Hands the ports to the caller. */
-	*data = ports[0];
-	*command = ports[1];
+	*data = ports.base[0];
+	*command = ports.base[1];
 
 	/* Succeeded: the caller has the data port and the command port. */
+	return 0;
+}
+
+/* Keeps the base of each I/O range of _CRS until it has two. */
+static int
+port_visitor(
+	const struct drv_acpi_resource *resource,
+	void *argument)
+{
+	struct ec_ports *ports;
+
+	/* Only I/O ranges are ports. */
+	ports = argument;
+	if (resource->kind != DRV_ACPI_RESOURCE_IO)
+		return 0;
+
+	/* Keeps the range's base; count is how many ports are known. */
+	ports->base[ports->count] = (uint16_t)resource->base;
+	ports->count++;
+
+	/* Stops the walk once both ports are known. */
+	if (ports->count == 2U)
+		return PORTS_COMPLETE;
+
+	/* Goes on to the next resource. */
 	return 0;
 }
 

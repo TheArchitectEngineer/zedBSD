@@ -13,6 +13,7 @@ SOURCES := $(sort $(wildcard $(REPO)/src/drivers/acpi/aml-*.c)) \
 	$(REPO)/src/drivers/acpi/acpi-event.c \
 	$(REPO)/src/drivers/acpi/acpi-ec.c \
 	$(REPO)/src/drivers/acpi/acpi-text.c \
+	$(REPO)/src/drivers/acpi/acpi-resource.c \
 	$(REPO)/plan/ws049/tests/aml-host.c \
 	$(REPO)/plan/ws049/tests/aml-host-hardware.c
 HEADERS := $(wildcard $(REPO)/src/drivers/acpi/*.h) \

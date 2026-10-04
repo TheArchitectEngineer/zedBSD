@@ -61,6 +61,11 @@ static int event_wait(struct drv_acpi_object *event, uint64_t timeout, bool *tim
 
 /*
  * Installs a handler for the notifications a node receives.
+ *
+ * The list changes inside the interpreter, which Notify delivers from, so
+ * that no delivery walks the list while it changes.  The handler runs in
+ * the thread that runs the AML, with the interpreter held: it must not
+ * evaluate AML, and of the handlers it may only remove its own.
  */
 int
 drv_acpi_notify_install(
@@ -68,20 +73,153 @@ drv_acpi_notify_install(
 	drv_acpi_notify_handler_t handler,
 	void *argument)
 {
+	struct drv_acpi_thread storage;
+	struct drv_acpi_thread *thread;
 	struct drv_acpi_notify *notify;
+
+	/* Refuses a missing node or handler. */
+	if (node == NULL || handler == NULL)
+		return EINVAL;
 
 	/* Allocates the entry. */
 	notify = drv_acpi_os_alloc(sizeof(*notify));
 	if (notify == NULL)
 		return ENOMEM;
 
-	/* Puts it at the head of the node's list. */
+	/* Names the handler and its argument. */
 	notify->handler = handler;
 	notify->argument = argument;
+
+	/* Puts the entry at the head of the node's list, inside the interpreter. */
+	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
 	notify->next = node->notify;
 	node->notify = notify;
+	drv_acpi_leave(thread);
 
 	/* Succeeded: the node's notifications reach the handler. */
+	return 0;
+}
+
+/*
+ * Removes a handler drv_acpi_notify_install() installed.
+ *
+ * The handler and its argument name the entry.  The list changes inside
+ * the interpreter, so once this returns no Notify calls the handler.
+ */
+int
+drv_acpi_notify_remove(
+	struct drv_acpi_node *node,
+	drv_acpi_notify_handler_t handler,
+	void *argument)
+{
+	struct drv_acpi_thread storage;
+	struct drv_acpi_thread *thread;
+	struct drv_acpi_notify **link;
+	struct drv_acpi_notify *found;
+
+	/* Refuses a missing node or handler. */
+	if (node == NULL || handler == NULL)
+		return EINVAL;
+
+	/* Finds the entry and unlinks it, inside the interpreter. */
+	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	found = NULL;
+	for (link = &node->notify;
+	     *link != NULL;
+	     link = &(*link)->next) {
+		/* Stops at the entry of the handler and its argument. */
+		if ((*link)->handler == handler && (*link)->argument == argument) {
+			found = *link;
+			*link = found->next;
+			break;
+		}
+	}
+
+	/* Leaves the interpreter; the entry, when found, is no longer on the list. */
+	drv_acpi_leave(thread);
+
+	/* Reports a handler that was not installed. */
+	if (found == NULL)
+		return ENOENT;
+
+	/* Frees the entry. */
+	drv_acpi_os_free(found);
+
+	/* Succeeded: the handler no longer receives the node's notifications. */
+	return 0;
+}
+
+/*
+ * Runs work inside the interpreter with an AML mutex held.
+ *
+ * mutex_path names the mutex, such as "\\ECMU".  The work runs as one
+ * interpreter entry that holds the mutex as AML would, so AML that
+ * acquires the same mutex waits until the work is done.  The work may
+ * evaluate AML itself: those evaluations join the entry and may acquire
+ * the mutex again.
+ */
+int
+drv_acpi_run_locked(
+	const char *mutex_path,
+	drv_acpi_locked_work_t work,
+	void *argument)
+{
+	struct drv_acpi_thread storage;
+	struct drv_acpi_thread *thread;
+	struct drv_acpi_object *mutex;
+	struct drv_acpi_node *node;
+	bool timed_out;
+	int release_error;
+	int error;
+
+	/* Refuses a missing mutex path or work. */
+	if (mutex_path == NULL || work == NULL)
+		return EINVAL;
+
+	/* Enters the interpreter for the whole work. */
+	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+
+	/* Finds the mutex. */
+	error = drv_acpi_lookup(NULL, mutex_path, &node);
+	if (error != 0) {
+		drv_acpi_leave(thread);
+		return error;
+	}
+
+	/* Refuses a name that is not a mutex. */
+	mutex = node->object;
+	if (mutex == NULL || mutex->type != DRV_ACPI_TYPE_MUTEX) {
+		drv_acpi_leave(thread);
+		return EINVAL;
+	}
+
+	/* Acquires it as the entry's thread, waiting as long as AML holds it. */
+	error = drv_acpi_mutex_acquire(thread, mutex, TIMEOUT_FOREVER, &timed_out);
+	if (error != 0) {
+		drv_acpi_leave(thread);
+		return error;
+	}
+
+	/* Runs the work. */
+	error = work(argument);
+
+	/* Releases the mutex; a release that fails is logged, and leaving the interpreter releases it anyway. */
+	release_error = drv_acpi_mutex_release(thread, mutex);
+	if (release_error != 0)
+		drv_acpi_os_log("ACPI: %s could not be released after the work (error %d)\n", mutex_path, release_error);
+
+	/* Leaves the interpreter. */
+	drv_acpi_leave(thread);
+
+	/* Reports a failed work. */
+	if (error != 0)
+		return error;
+
+	/* Reports a mutex that could not be released. */
+	if (release_error != 0)
+		return release_error;
+
+	/* Succeeded: the work ran with the mutex held. */
 	return 0;
 }
 
@@ -97,6 +235,7 @@ drv_acpi_notify(
 	uint32_t value)
 {
 	struct drv_acpi_notify *notify;
+	struct drv_acpi_notify *next;
 	char path[128];
 	int error;
 
@@ -112,11 +251,13 @@ drv_acpi_notify(
 		return 0;
 	}
 
-	/* Calls each handler. */
+	/* Calls each handler; the next entry is read first, so that a handler may remove itself. */
 	for (notify = node->notify;
 	     notify != NULL;
-	     notify = notify->next)
+	     notify = next) {
+		next = notify->next;
 		notify->handler(node, value, notify->argument);
+	}
 
 	/* Succeeded: every handler saw the notification. */
 	return 0;

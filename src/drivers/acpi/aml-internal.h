@@ -552,10 +552,6 @@ drv_acpi_object_string_new_length(
 	size_t length);
 
 struct drv_acpi_object *
-drv_acpi_object_package_new(
-	uint32_t count);
-
-struct drv_acpi_object *
 drv_acpi_object_reference_new(
 	enum drv_acpi_reference_kind kind);
 
