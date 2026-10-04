@@ -160,3 +160,10 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 
 - 確認: `run-host-volumes.sh` PASS（ASan・UBSan、15）、`run-host-volumed.sh` PASS、`plan/ws131/tests/host-system.sh` PASS、zedBSD の `wayland`・`ls` と Linux の Keiland（`keiland-linux.mk all`、-Werror）の build、`keiland-os-boundary/check.sh` PASS、新しい file の style-check 違反 0、system.c・shell.c は新しい違反 0。
 - 未実施: QEMU（bar の icon と devices の object は p005 の Files の試験とまとめて T1）。
+
+## T1-139（2026-10-05）
+
+16 行 ok、4 行 FAIL ×2。
+- (1) `RESULT 1 25`: zedBSD の EACCES は 25（Linux の 13 ではない）。試験の誤り → 試験は `include/uapi/errno.h` から EACCES・EBUSY の数を読む。
+- (2) `ls -n` の出力は `-rwxr-xr-x 1 1000 1000 3 … hello.txt`: 持ち主は正しく 1000。FAT の短い名前は小文字で見えるので、試験の `HELLO.TXT` の照合を大文字・小文字を問わない形に。
+- (3)(4) mount したままの stick の抜去で volume と folder が残る: **kernel の制限**。`usb-storage.c` の `storage_detach` は disk が使われている（mount 中）と `disk_gone_if_idle` が EBUSY を返して detach が失敗し、USB の core は REMOVE の事象を detach の成功の後にしか出さない（`usb.c` の `post_device_event` は device の解放の後）。そのため disk は LIVE のままで、DISK・USB のどちらの事象も来ず、volumed は抜去を知る手段が無い。volumed は USB の事象も購読するようにした（kernel が直れば、走査で消えた disk を force unmount する）。kernel の直し（物理的に抜かれた mount 中の disk の media を退役させ、fs の I/O を失敗させ、事象を出す）は Q1 に報告（BUG の起票と担当の判断）。試験の step 5 はそれまで FAIL のまま。
