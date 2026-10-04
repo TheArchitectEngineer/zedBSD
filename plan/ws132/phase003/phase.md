@@ -76,3 +76,5 @@ build の warning 0（zedBSD と Linux の keiland-linux.mk）、host の試験�
 - QEMU の試験の bar の座標: plan の試験を探したが、bar の右側（network・音量・IME・desktop・docked の button）の座標は全部 log から読んでいて（menu-bug148・connecting-bug154・zdesktop-p013/p065/p072/p104・zdesktop-p010・volume-*・ime-p005・settings-p021・p032-guest）、決め打ちの x は無かった。zdesktop-p010 の「右上の角の帯が network の icon と重ならない」は、icon が x=1107..1136 になっても帯（x≥1252）の外。直した試験の file は無し。
 - zedBSD の compositor の build: 成功、warning 0。style-check: 変えた hunk の指摘 0。
 - 未実施: QEMU（T1）。電池の無い QEMU の guest で bar の icon が時計の隣に詰まる PNG と、上の log を読む試験が通ること。
+
+q722 の確認（2026-10-05 Q1）: T1-120 の PNG で電池の無い bar の icon が時計の隣に詰まることを目視。

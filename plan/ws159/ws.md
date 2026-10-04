@@ -40,7 +40,7 @@ Resume point: p001（設計）から。WS049（ACPI AML）の後（ユーザー�
 | --- | --- | --- | --- |
 | [ws159-p001](phase001/phase.md) | 設計（LPSS I2C・I2C-HID・HID の digitizer・evdev の MT・PS/2 との切替・compositor の touchpad の層・試験） | in-progress（2026-10-05 q713-i01 P1: 5330 の Linux の採取と設計を書いた、Q1 の確認待ち） | WS049 |
 | [ws159-p002](phase002/phase.md) | LPSS の DesignWare I2C の driver と ACPI の I2cSerialBus・GpioInt | in-progress（2026-10-05 q713-i01 P1: 実装・host・build、QEMU と実機の待ち） | p001 |
-| [ws159-p003](phase003/phase.md) | I2C-HID と Precision Touchpad、EVIOCGPROP、input-inject の touchpad | in-progress（2026-10-05 q713-i01 P1: 実装・host の試験（Linux と同じ byte 列）・build、QEMU と実機の待ち） | p002 |
+| [ws159-p003](phase003/phase.md) | I2C-HID と Precision Touchpad、EVIOCGPROP、input-inject の touchpad | cleared（2026-10-05 Q1、T1-100） | p002 |
 | [ws159-p004](phase004/phase.md) | compositor の touchpad の層（tap・tap-drag・押し込み・2 本指のスクロール） | in-progress（2026-10-05 q713-i01 P1: 実装・host の試験・build、QEMU と実機の待ち。LPSS の既定を y に戻した） | p003（host の試験は先に） |
 | [ws159-p005](phase005/phase.md) | 実機の UAT と全文の規約 | planned（2026-10-05 P1: UAT の手順書（touchpad・電池と事象・Windows キー・network の詳細・su/sudo/passwd と Users・About）と image の config `tests/config-amd64-uat.mk`・回収の script `tests/uat-collect.sh`。build と UAT は Q1 がユーザーと） | p004、p006 |
 | [ws159-p006](phase006/phase.md) | GPIO の割り込み（INTC1055 の pinctrl の GpioInt、level・active low）で sampling（6/25 ms の MMIO）をやめる（電池のため、Q1 の追加、2026-10-05） | in-progress（2026-10-05 q720-i01 P1: ユーザーの `hal_irq_set_mode` で割り込みを実装（amd64 の IOAPIC、kernel の wrapper、Intel GPIO の pad の割り込み、I2C-HID の割り込み駆動、失敗時は 4 ms の監視）。build・host の試験まで、5330 は未実施） | p003 |
