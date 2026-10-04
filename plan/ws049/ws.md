@@ -78,3 +78,7 @@ kernel の中に ACPI の AML interpreter を持ち、DSDT・SSDT を読み込�
   `/dev/system` への統合にするなら直す）。
 - 対象機（Latitude 5330 でよいか）と、その table の取り出し（Linux で `sudo acpidump -b`）。
 - `_OSI` でどの Windows を名乗るか（design §8、案は `Windows 2022` まで真）。
+
+## 2026-10-04 UAT の結果（Q1）
+
+素の 5330 で DSDT が読み込めない（`ACPI: DSDT Dell Inc stopped at offset 0x1c89b (error 13)`、[BUG-165](../bugs/BUG-165.md)）。電源が切れない（BUG-119）・タッチパッド（BUG-156・167）・電池の情報（BUG-159、ws134-p009）の共通の根の候補。**次の Phase（planned、番号は着手の時に Q1 が振る）**: offset 0x1c89b の AML を特定し、error 13 の原因を直す。5330 の DSDT を取り出して host の試験に入れ、実機で `\_S5` による電源の切断を確かめる。最優先（17 時以降）。

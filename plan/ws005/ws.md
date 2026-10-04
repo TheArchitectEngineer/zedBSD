@@ -487,3 +487,7 @@ Return to planning rather than broadening an implementation Phase if:
   different radio before the initial milestone can be honestly claimed.
 
 2026-10-03 / p020・p024 の clearance: user「あまりセキュリティ回避を行うとアカウントが削除される可能性があるので、いったんclearedにして先に進めましょう。あとで手作業で確認する作業としてWSを立てておいてください。」→ 鍵の要る試験（権限の判定で着手できず）と ws131-p003 の後の libkeiland の join の確認は未実施のまま [WS133](../ws133/ws.md) へ。次は q635（BUG-149、P1）。
+
+## 2026-10-04 UAT の結果（Q1）
+
+実機（AX211）: 接続・DHCP（BUG-145）・off→on の再接続（8 秒）・Settings からの接続は OK。**WiFi 未接続で約 1 分で kernel がフリーズ**（[BUG-158](../bugs/BUG-158.md)、最優先）。間違えた鍵の文言は `Network is unreachable`（[BUG-157](../bugs/BUG-157.md)）。WiFi の address に SSH できない（[BUG-174](../bugs/BUG-174.md)）。起動の直後の「Network service is not …」（[BUG-176](../bugs/BUG-176.md)）。

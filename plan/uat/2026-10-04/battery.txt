@@ -1,0 +1,4 @@
+ZMON FRAME fps=21.5 wait_ms=0.02 visible=1 build_ms=0.06 acquire_ms=0.01 record_ms=0.21 submit_ms=10.94 present_ms=0.12 callback_ms=29.74
+ZMON FRAME fps=14.4 wait_ms=0.04 visible=1 build_ms=0.79 acquire_ms=0.04 record_ms=0.26 submit_ms=17.24 present_ms=0.78 callback_ms=56.47
+ZMON FRAME fps=22.4 wait_ms=0.02 visible=1 build_ms=0.23 acquire_ms=0.03 record_ms=0.29 submit_ms=11.89 present_ms=0.28 callback_ms=31.44
+hw.gputelemetry: gpu=0 driver=i915 valid=0xd time_ns=557965629299 busy_ns=25977777312 cur_mhz=0 req_mhz=500 min_mhz=100 max_mhz=1200 objects_bytes=0 objects_limit=0

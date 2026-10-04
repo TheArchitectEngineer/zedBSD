@@ -2,7 +2,7 @@
 
 2026-10-04 Q1: user の判断で BUG-013・023 は PC-98 の対応をやめるので close、BUG-101 は解決済みで close。BUG-024 は対応不要で終了、BUG-036・041・099 は様子見で close（再発で reopen）。BUG-143・053・052・162・103・129・033・157・139 は P1・P2、BUG-135 は P9（Fable 5.1 high）に割り当て（Disposition は各 ticket）。下の「優先度」の表は 2026-10-03 以前の物で古い（BUG-095・120・124・144 は resolved または実機の確認待ち）。
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04（UAT の結果: BUG-165〜176 を追加、既存の ticket に実機の観測を追記）
 
 This ledger records observed defects and their explicit active or deferred
 owner. A listed item is not silently treated as a failure of an unrelated
@@ -15,6 +15,7 @@ remain as traceable history and are not new implementation work.
 
 | Bug | 優先度 | 依存・時期 | 担当・メモ |
 | --- | --- | --- | --- |
+| [BUG-165](bugs/BUG-165.md)・[BUG-158](bugs/BUG-158.md)・[BUG-170](bugs/BUG-170.md) | **最優先**（2026-10-04 UAT の後、Q1 の案） | 17 時以降 | DSDT（電源・タッチパッドの根の候補）、WiFi 未接続の kernel のフリーズ、音量の slider のフリーズ |
 | [BUG-135](bugs/BUG-135.md) | **優先** | [WS131](ws131/ws.md) の libkeiland の整理の後、desktop の設定が libkeiland → compositor の拡張の経路に再実装されてから（WS131 p005・p006 の後）再び取り組む | stat と関連。q624 で UFS の namespace_lock の待ちを修正済み（停止 10→2 回）、残りは commit の二段化 |
 | [BUG-143](bugs/BUG-143.md) | **優先** | — | ユーザーの観察: Text Editor では IME を通さなくても全ての文字入力に 500 ms の遅延があるように見える |
 | [BUG-052](bugs/BUG-052.md) | 優先 | **Q2 に移管（2026-10-03 user、Q1 の管轄外）** | Q1 の担当は触らない |
@@ -27,32 +28,44 @@ remain as traceable history and are not new implementation work.
 
 | ID | Area | Status / priority | Observation | Resume and acceptance condition |
 | --- | --- | --- | --- | --- |
-| [BUG-160](bugs/BUG-160.md) | WiFi の鍵の入力欄が画面の下に出る（AP の行の中で入力できない） | reproduced（実機 S1、ユーザー） / resolved（ws005-p029、QEMU。実機は S2） | S1 の後のフィードバック | P1（q642） |
-| [BUG-161](bugs/BUG-161.md) | 音量の変更のたびに desktop.conf へ書く（session の終わりに一度だけ書くべき） | reproduced（code） / resolved | T2-006 の volume-p005 とユーザーの判断 | ws100-p012、T2-009 の QEMU で PASS |
+| [BUG-160](bugs/BUG-160.md) | WiFi の鍵の入力欄が画面の下に出る（AP の行の中で入力できない） | reproduced（実機 S1、ユーザー） / resolved（ws005-p029、QEMU。実機は S2） | S1 の後のフィードバック | P1（q642）。UAT 2026-10-04: 実機で OK |
+| [BUG-161](bugs/BUG-161.md) | 音量の変更のたびに desktop.conf へ書く（session の終わりに一度だけ書くべき） | reproduced（code） / resolved | T2-006 の volume-p005 とユーザーの判断 | ws100-p012、T2-009 の QEMU で PASS。UAT 2026-10-04: 実機で OK |
 | [BUG-162](bugs/BUG-162.md) | desktop.conf を Settings と zdesktop の通信路に使っている（1 秒ごとの poll） | reproduced（code） / resolved（WS135、2026-10-04） | ユーザーの問い（BUG-161 の後） | WS135 |
 | [BUG-163](bugs/BUG-163.md) | UFS の fsync の後、line を後の transaction が pin し直すと普通の content が durable でない窓（約 1 秒） | reproduced（QEMU、volume の開始が 4 KiB に揃わない時） / resolved（ws073-p053、2026-10-04） | ws073-p051 の読み | UFS の Phase（直し方の候補は ticket） |
 | [BUG-164](bugs/BUG-164.md) | crash の後に orphan の inode（nlink 0・size 0）が allocated のまま残ることがある | reproduced / resolved（ws073-p054、2026-10-04） | ws073-p053 の試験 | UFS の Phase（unlink と free の transaction） |
-| [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132） |
-| [BUG-158](bugs/BUG-158.md) | 操作中・放置中にフリーズし、電源ボタンの長押しが要る | reproduced（実機 S1） / tracking | S1（WS133） | WS005／WS004（AX211）、原因次第 |
-| [BUG-157](bugs/BUG-157.md) | 鍵を間違えたとき「Could not join (Network is down)」と出る（5330 の AX211） | reproduced（実機 S1） / scheduled | S1（WS133） | WS005／WS004（AX211） |
-| [BUG-156](bugs/BUG-156.md) | タッチパッドでスクロールできない | reproduced（実機 S1） / resolved（ws081-p019、QEMU。実機は S2） | S1（WS133） | WS081（touch）か WS006（入力） |
+| [BUG-165](bugs/BUG-165.md) | 5330 の DSDT が読み込めない（error 13） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | WS049。電源が切れない・タッチパッド・電源の状態の共通の根の候補（[ticket](bugs/BUG-165.md)） |
+| [BUG-166](bugs/BUG-166.md) | タッチパッドで title bar を押して動かしても窓が動かない（デグレ） | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS099。仕様をユーザーと決めてから（[ticket](bugs/BUG-166.md)） |
+| [BUG-167](bugs/BUG-167.md) | タッチパッドの押し込み（物理のクリック）が認識されない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS081。BUG-165 の後に再確認（[ticket](bugs/BUG-167.md)） |
+| [BUG-168](bugs/BUG-168.md) | 起動の後に挿した USB の有線 LAN が up しない | reproduced（実機） / tracking、高 | UAT 2026-10-04 | WS033（networkd の hotplug）（[ticket](bugs/BUG-168.md)） |
+| [BUG-169](bugs/BUG-169.md) | ue0 を抜くと Ethernet のメニューに wlan0 が出る | reproduced（実機） / tracking | UAT 2026-10-04 | WS131 か WS033（[ticket](bugs/BUG-169.md)） |
+| [BUG-170](bugs/BUG-170.md) | 音量の slider のドラッグでしばらくフリーズ（system bar・Settings） | reproduced（実機） / tracking、**最優先** | UAT 2026-10-04 | WS100・WS089。確認の音は離した時に 1 回（[ticket](bugs/BUG-170.md)） |
+| [BUG-171](bugs/BUG-171.md) | 窓の透明度を opaque にしても不透明にならない | reproduced（実機） / tracking | UAT 2026-10-04 | WS089・compositor（[ticket](bugs/BUG-171.md)） |
+| [BUG-172](bugs/BUG-172.md) | key のリピートが安定しない | reproduced（実機、観察） / tracking | UAT 2026-10-04 | WS081・WS139 の P-02（[ticket](bugs/BUG-172.md)） |
+| [BUG-173](bugs/BUG-173.md) | sh の履歴の長い日本語の行で表示が崩れ prompt が消える | reproduced（実機） / tracking | UAT 2026-10-04 | sh の行の編集の全角の幅。host で再現可（[ticket](bugs/BUG-173.md)） |
+| [BUG-174](bugs/BUG-174.md) | WiFi の address に SSH で接続できない | reproduced（実機） / tracking | UAT 2026-10-04 | WS005・WS033。実機が要る（[ticket](bugs/BUG-174.md)） |
+| [BUG-175](bugs/BUG-175.md) | Terminal を多数開くと errno=8（ENOSPC）で起動しない | reproduced（実機） / tracking | UAT 2026-10-04 | BUG-120 の関連。QEMU で再現を試す（[ticket](bugs/BUG-175.md)） |
+| [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / tracking、低 | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
+| [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132）。UAT 2026-10-04: 再現せず（電源の状態は BUG-165 の後） |
+| [BUG-158](bugs/BUG-158.md) | 操作中・放置中にフリーズし、電源ボタンの長押しが要る | reproduced（実機 S1） / tracking | S1（WS133） | WS005／WS004（AX211）、原因次第。UAT 2026-10-04: 実機で再現（WiFi 未接続で約 1 分、**最優先**） |
+| [BUG-157](bugs/BUG-157.md) | 鍵を間違えたとき「Could not join (Network is down)」と出る（5330 の AX211） | reproduced（実機 S1） / scheduled | S1（WS133） | WS005／WS004（AX211）。UAT 2026-10-04: 実機で再現（Network is unreachable） |
+| [BUG-156](bugs/BUG-156.md) | タッチパッドでスクロールできない | reproduced（実機 S1） / resolved（ws081-p019、QEMU。実機は S2） | S1（WS133） | WS081（touch）か WS006（入力）。UAT 2026-10-04: 実機で再現。原因の候補 BUG-165 |
 | [BUG-155](bugs/BUG-155.md) | Terminal で IME の日本語を入力できない | reproduced（実機 S1） / resolved（ws128-p011、QEMU。実機は S2） | S1（WS133） | WS128（Terminal） |
 | [BUG-154](bugs/BUG-154.md) | WiFi の AP を切り替えるとき「Connecting...」の表示が無い | reproduced（実機 S1） / resolved（ws005-p026、QEMU。実機は S2） | S1（WS133） | WS005（system bar・Settings の WiFi、WS131 の backend の後の path） |
-| [BUG-153](bugs/BUG-153.md) | system bar の音量の slider で 50% を click しても次の瞬間に 100% になる | reproduced（実機 S1） / resolved（ws100-p010、QEMU。実機は S2） | S1（WS133） | WS100（音量） |
-| [BUG-152](bugs/BUG-152.md) | Settings の Wallpaper の頁を開くと約 10 秒止まる | reproduced（実機 S1） / resolved（ws089-p020、QEMU。実機は S2） | S1（WS133） | WS089（Settings） |
+| [BUG-153](bugs/BUG-153.md) | system bar の音量の slider で 50% を click しても次の瞬間に 100% になる | reproduced（実機 S1） / resolved（ws100-p010、QEMU。実機は S2） | S1（WS133） | WS100（音量）。UAT 2026-10-04: 実機で OK |
+| [BUG-152](bugs/BUG-152.md) | Settings の Wallpaper の頁を開くと約 10 秒止まる | reproduced（実機 S1） / resolved（ws089-p020、QEMU。実機は S2） | S1（WS133） | WS089（Settings）。UAT 2026-10-04: 実機で OK |
 | [BUG-151](bugs/BUG-151.md) | kernel の TCP: 自分側の SHUT_WR で poll が POLLHUP | reproduced（QEMU） / resolved（ws005-p027、T1-025） | ws005-p025 / q635 | S1 の後に時期を決める |
 | [BUG-150](bugs/BUG-150.md) | Terminal で Emacs の描画が 2 行目から始まる（右端の wrap の保留が無かった） | reproduced / resolved（ws128-p010、統合 02c0d6f41） | 2026-10-03 ユーザー報告 | — |
 | [BUG-149](bugs/BUG-149.md) | kernel の AF_UNIX stream: 自分側の SHUT_WR で poll が POLLERR | reproduced（QEMU、libkeiland の join の EIO） / resolved（ws005-p025、統合 cb3da62d1。実機は S1） | ws005-p020 / q631 | —。libkeiland 側の回避は ws131-p003 |
 | [BUG-148](bugs/BUG-148.md) | system bar の WiFi の menu の下端が画面の外に切れる | reproduced（QEMU） / resolved（ws005-p030、T1-031） | ws005-p020 | 標準 |
 | [BUG-147](bugs/BUG-147.md) | C9 の p128・cursor-owner が間欠的に落ちる | reproduced（1/5） / resolved | ws099-p023 の C9 ×5 | ws099-p024・p026 で修正、T2-002 の QEMU で PASS。再発で reopen |
 | [BUG-146](bugs/BUG-146.md) | Venus の guest 試験が client=1 前提、IME が先だと外れる | reproduced / resolved | ws127-p002 | ws099-p025 で共有の helper（plan/tools/guest/zwl-clients.sh）に置き換え、T1-039 の QEMU で PASS |
-| [BUG-145](bugs/BUG-145.md) | AX211: handshake の後に DHCP の lease が取れず disassoc（reason 8） | reproduced（passthrough） / tracking | ws005-p019 q611、5GHz | WS004 の新しい Phase |
+| [BUG-145](bugs/BUG-145.md) | AX211: handshake の後に DHCP の lease が取れず disassoc（reason 8） | reproduced（passthrough） / tracking | ws005-p019 q611、5GHz | WS004 の新しい Phase。UAT 2026-10-04: 実機で OK |
 | [BUG-144](bugs/BUG-144.md) | 8 番目の Model viewer が vkAllocateMemory -4 | reproduced（QEMU） / resolved（ws014-p011、窓 1 GiB、2026-10-03） | ws129-p010、Venus の hostmem の見当 | 実機で確かめる |
-| [BUG-143](bugs/BUG-143.md) | IME の確定のたびに 500 ms 超で止まり IME を迂回 | reproduced（QEMU） / resolved（ws095-p015、2026-10-04。直接入力の遅れは実機 S2） | ws095-p005、辞書の保存の fsync の見当 | T2 の結果 → resolved。直接入力の遅れは実機で測る |
+| [BUG-143](bugs/BUG-143.md) | IME の確定のたびに 500 ms 超で止まり IME を迂回 | reproduced（QEMU） / resolved（ws095-p015、2026-10-04。直接入力の遅れは実機 S2） | ws095-p005、辞書の保存の fsync の見当 | T2 の結果 → resolved。直接入力の遅れは実機で測る。UAT 2026-10-04: 実機で OK |
 | [BUG-142](bugs/BUG-142.md) | Files: 起動直後の停止中の Ctrl+C が遅れて処理 | unreproduced / resolved | ws127-p001 | ws099-p029 で時刻の順の merge に直した、T2-004 の QEMU で PASS。実機は S2 |
 | [BUG-141](bugs/BUG-141.md) | Files: hover の強調が残る | unreproduced / resolved | ws127-p001 | ws099-p029 で leave を送るよう直した、T2-008 の QEMU で PASS。実機は S2 |
 | [BUG-140](bugs/BUG-140.md) | Files: Trash の同名の 2 つ目の名前と種類 | reproduced / resolved | ws127-p001 | q616（ws127-p002）で修正、host 試験 |
-| [BUG-139](bugs/BUG-139.md) | Text Editor の IME の変換中の文字が小さい | reproduced / resolved（ws095-p013、T1-047 の QEMU で再確認。実機は S2） | ユーザー実機、UI/UX の要 | 実機の確認 → resolved |
+| [BUG-139](bugs/BUG-139.md) | Text Editor の IME の変換中の文字が小さい | reproduced / resolved（ws095-p013、T1-047 の QEMU で再確認。実機は S2） | ユーザー実機、UI/UX の要 | 実機の確認 → resolved。UAT 2026-10-04: 実機で OK |
 | [BUG-138](bugs/BUG-138.md) | system bar の WiFi の on/off・AP 接続が未実装 | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p019 |
 | [BUG-137](bugs/BUG-137.md) | Terminal の初回起動でタイトルバーが数秒遅れる | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
 | [BUG-136](bugs/BUG-136.md) | Gears（X11）にタイトルバーが出ない | reproduced / resolved（2026-10-03 整理） | ユーザー実機 | p023 |
@@ -142,7 +155,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-100](bugs/BUG-100.md) | Remacs 用 host Noct の古い CMake cache と `.nb` の出力名で `make` が失敗 | reproduced（host） / resolved（ws073-p028、q498） | 2026-09-29 ユーザー報告 | canonical host Noct を使い、`.nb` の source のみ patch。`make -j16` と通常の `make` が完走 |
 | [BUG-101](bugs/BUG-101.md) | Windows版Venusのblob scanoutが黒く、copy表示は約1〜2fps。所有者終了後にQEMUが停止 | reproduced（WINQ-EMU Alpha10） / scheduled（ws085-p001） | 2026-09-29 ユーザー指示 | vendor QEMUのmapped scanoutをCOM1付き実機で検証し、所有者終了後の停止を調べる |
 | [BUG-102](bugs/BUG-102.md) | 利用者 kei が ping できない（raw socket が superuser だけ） | reproduced（素の 5330） / resolved（2026-09-29、QEMU） | 2026-09-29 ユーザー報告。ws073-p029: ping を setuid root（mode 4755）、socket の直後に `setuid(getuid())`。QEMU で kei から 127.0.0.1・10.0.2.2 へ通る | 実機で失敗したとき |
-| [BUG-103](bugs/BUG-103.md) | /bin/sh で上下の矢印キーの履歴の呼び出しが効かない | reproduced（素の 5330） / resolved（ws073-p048、QEMU の PS/2 で PASS。実機は S2） | 2026-09-29 ユーザー報告 | p002: 履歴の file（新しい shell の履歴）。p005: PS/2 driver が E0 の key を捨てていたのを修正（QEMU で確認）。実機の確認待ち |
+| [BUG-103](bugs/BUG-103.md) | /bin/sh で上下の矢印キーの履歴の呼び出しが効かない | reproduced（素の 5330） / resolved（ws073-p048、QEMU の PS/2 で PASS。実機は S2） | 2026-09-29 ユーザー報告 | p002: 履歴の file（新しい shell の履歴）。p005: PS/2 driver が E0 の key を捨てていたのを修正（QEMU で確認）。実機の確認待ち。UAT 2026-10-04: 実機で OK |
 | [BUG-104](bugs/BUG-104.md) | less で Ctrl-F・Ctrl-B のページ送りができない | reproduced（ユーザー） / resolved（2026-09-29、host・QEMU） | 2026-09-29 ユーザー要望 | ws073-p031: 共通の pager の less に Ctrl-F・f（進む）・Ctrl-B（戻る）。more は不変。`plan/ws073/tests/pager-keys.py` PASS。実機は未実施 |
 | [BUG-105](bugs/BUG-105.md) | 素の 5330 で USB マウス（logi M650、Logi Bolt の受信機）が使えない | reproduced（素の 5330、demo-lcd3） / scheduled | 2026-09-29 ユーザー報告 | HID の parser が 3 つの interface を拒んでいた。ws073-p032 で修正（host 試験 PASS）。素の 5330 での確認待ち |
 | [BUG-106](bugs/BUG-106.md) | `ssh -tt` で最後の命令の出力が空か途中で切れることがある | reproduced（QEMU） / duplicate（BUG-051、2026-09-29） | ws086-p002 | ws073-p039: BUG-051 の修正ありで 800 回欠け 0、修正なしで 17 回欠け（全て rc 255 ＋ sshd-session の SIGSEGV）。[BUG-051](bugs/BUG-051.md) の現れ |
@@ -158,7 +171,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-116](bugs/BUG-116.md) | 起動の途中、USB の EP0 の control 転送が 1 秒で時間切れ（event が ring に届き IP も立つのに guest が取らない）で keyboard の attach が失敗 | reproduced（QEMU の TCG・KVM） / resolved（ws073-p042、2026-09-30） | ws073-p041 の試験 | 解決（ws073-p042）: 修正の後 TCG 2×20（起動のみ）と KVM 2×20（丸読み 1 回）の 80 回で `xhci: cancel` 0・attach-failed 0・`error=` 0・列挙の再試行 0、usb-hid 毎回、SSH 80/80、`dd` 40/40 が 2216689664 bytes。boot test（uefi-usb）PASS、serial の login 可 |
 | [BUG-117](bugs/BUG-117.md) | 窓の多いとき executor が「set 0 binding 0 に image view と sampler が無い」draw を拒み、compositor の描画が止まる | reproduced（passthrough、stress で 100 回に 2 件） / resolved（ws075-p025、executor の object 表の lock 無しの同時変更） | ws075-p024 | 素の 5330 での確認 |
 | [BUG-118](bugs/BUG-118.md) | X client（X terminal）が cursor を空にすると、focus が変わるまで cursor が全画面で隠れる | reproduced / resolved（ws099-p007、2026-09-30） | 修正済み: client の cursor はその client の窓の本体の上だけ、他は矢印。`plan/ws099/tests/cursor-owner.sh`（C9） | X terminal そのものと実機は未確認 |
-| [BUG-119](bugs/BUG-119.md) | greeter の Shut Down の後、QEMU が終わらない（電源が切れていない恐れ）、画面は greeter のまま | reproduced（QEMU） / tracking（reopened 2026-10-03、S1 の実機で電源が切れない） | ws099-p004 | 修正済み: ACPI の S5 の電源断（`KERN_SYSTEM_POWEROFF`、`drv_acpi_poweroff()`）。QEMU で `/sbin/poweroff` の後に QEMU が `guest-shutdown` で終わる。5330 の実機は未実施。greeter の表示は ws099-p009 |
+| [BUG-119](bugs/BUG-119.md) | greeter の Shut Down の後、QEMU が終わらない（電源が切れていない恐れ）、画面は greeter のまま | reproduced（QEMU） / tracking（reopened 2026-10-03、S1 の実機で電源が切れない） | ws099-p004 | 修正済み: ACPI の S5 の電源断（`KERN_SYSTEM_POWEROFF`、`drv_acpi_poweroff()`）。QEMU で `/sbin/poweroff` の後に QEMU が `guest-shutdown` で終わる。5330 の実機は未実施。greeter の表示は ws099-p009。UAT 2026-10-04: 実機で再現。原因の候補 BUG-165 |
 | [BUG-120](bugs/BUG-120.md) | 窓を 30 個ほど開くと GPU の object の枠（128）が尽きる | reproduced（passthrough） / tracking | ws075-p025 | pool を動的に、または上限を上げる。デモの 10 窓では出ない |
 | [BUG-121](bugs/BUG-121.md) | Model viewer の窓の角を drag すると窓が消える | reproduced（passthrough、20 回中 6 回） / resolved（ws099-p011、5330 20 回・QEMU 200 回で 0） | ws075-p025 | 原因: 上の窓の frame の帯の press を下の窓の title bar の control が取った、端の帯が frame を覆った。再び起きたら `resize-hw.sh` と session の log の `ZWL CLIENT gone` を見る |
 | [BUG-122](bugs/BUG-122.md) | compositor が落ちた後、greeter が 3 回失敗して文字の console に落ちる | reproduced（passthrough・QEMU） / resolved（ws099-p010、QEMU） | ws075-p025 | 5330 で再び起きたら sessiond の log の `SESSIOND GREETER failed reason=` を読む（WS099 の L2） |

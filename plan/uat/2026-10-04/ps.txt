@@ -1,0 +1,17 @@
+USER PID PPID TTY TIME COMMAND
+root 0 0 ? 00:00:00 kernel
+root 1 0 ? 00:00:00 /sbin/init
+root 4 1 ? 00:00:00 /sbin/syslogd
+root 5 1 ? 00:00:00 /sbin/audiod
+root 6 1 ? 00:00:00 /sbin/networkd
+root 14 1 ? 00:00:01 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+root 15 1 ? 00:00:00 /sbin/cron
+root 16 1 ? 00:00:00 /sbin/sessiond
+kei 17 16 ? 00:00:01 /bin/wayland
+kei 29 17 ? 00:00:00 /usr/libexec/keiland-ime
+kei 30 17 ? 00:00:00 /bin/files
+kei 31 17 ? 00:00:00 /bin/terminal
+kei 32 31 tty 00:00:00 /bin/sh
+root 60 14 ? 00:00:00 sshd-session: root [postauth]
+root 62 60 ? 00:00:00 sshd-session: root@notty
+root 63 62 ? 00:00:00 ps

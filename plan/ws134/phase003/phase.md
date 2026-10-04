@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p003 -->
 # ws134-p003: システムモニターの 3D と動き（M2）
 
-Status: uncleared（q645、P2、2026-10-03。T1-043 で sim の fps 4.7（条件 15 以上）。P2 はユーザーの指示でラップアップ、直しは未着手）
+Status: cleared（Q1 判定 2026-10-04: fps の条件（15 以上）は実機で判定する決定（同日）に従い、UAT の実機（素の 5330、AC と電池）で System Monitor の `ZMON FRAME fps=21.0〜22.4`（1 回だけ 14.4）。QEMU の sim の 4.7 は CPU の software 描画の値で判定に使わない。証拠 `plan/uat/2026-10-04/zmon-and-session.txt`・`battery.txt`）
 Parent: [WS134](../ws.md)
 設計: [design.md](../design.md) §2.2・§3・§4.2
 

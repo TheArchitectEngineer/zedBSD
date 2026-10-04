@@ -1,0 +1,19 @@
+<37>Oct  4 04:34:50 sessiond[19]: automatic login of kei
+<38>Oct  4 04:34:58 sshd[17]: Server listening on 0.0.0.0 port 22.
+<37>Oct  4 04:37:00 sessiond[18]: automatic login of kei
+<38>Oct  4 04:37:07 sshd[16]: Server listening on 0.0.0.0 port 22.
+<37>Oct  4 04:37:52 sessiond[18]: login kei on the graphical seat
+<37>Oct  4 04:38:24 sessiond[18]: poweroff from the graphical login
+<37>Oct  4 04:38:55 sessiond[18]: automatic login of kei
+<38>Oct  4 04:39:00 sshd[16]: Server listening on 0.0.0.0 port 22.
+<37>Oct  4 04:53:15 sessiond[18]: login kei on the graphical seat
+<37>Oct  4 04:54:52 sessiond[18]: login kei on the graphical seat
+<37>Oct  4 05:06:57 sessiond[16]: automatic login of kei
+<38>Oct  4 05:07:07 sshd[14]: Server listening on 0.0.0.0 port 22.
+<38>Oct  4 05:07:45 sshd-session[34]: Accepted publickey for root from 10.0.10.2 port 57816 ssh2: ED25519 SHA256:nJ5LPd1bFwhwgwYxX2COldDkjg/Ym1wSlTCM5avRLv8
+<38>Oct  4 05:07:45 sshd-session[36]: Received disconnect from 10.0.10.2 port 57816:11: disconnected by user
+<38>Oct  4 05:07:45 sshd-session[36]: Disconnected from user root 10.0.10.2 port 57816
+<38>Oct  4 05:07:52 sshd-session[44]: Accepted publickey for root from 10.0.10.2 port 37938 ssh2: ED25519 SHA256:nJ5LPd1bFwhwgwYxX2COldDkjg/Ym1wSlTCM5avRLv8
+<38>Oct  4 05:07:52 sshd-session[46]: Received disconnect from 10.0.10.2 port 37938:11: disconnected by user
+<38>Oct  4 05:07:52 sshd-session[46]: Disconnected from user root 10.0.10.2 port 37938
+<38>Oct  4 05:07:52 sshd-session[48]: Accepted publickey for root from 10.0.10.2 port 37950 ssh2: ED25519 SHA256:nJ5LPd1bFwhwgwYxX2COldDkjg/Ym1wSlTCM5avRLv8

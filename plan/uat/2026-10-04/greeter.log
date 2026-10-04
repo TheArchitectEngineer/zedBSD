@@ -1,0 +1,136 @@
+ZWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+ZWL STARTUP step=vulkan-device ms=8
+ZWL STARTUP step=vulkan-objects-arrow ms=1
+ZWL STARTUP step=wallpaper-picture ms=9
+ZWL STARTUP step=wallpaper ms=55
+ZWL STARTUP step=glyphs-text ms=6
+ZWL STARTUP step=glyphs-icons ms=8
+ZWL STARTUP step=glyphs-mark ms=15
+ZWL GLASS atlas cache-top=380 cells=273 faces=1
+ZWL STARTUP step=glyphs ms=32
+ZWL GLASS ready text=1
+ZWL STARTUP step=compose ms=100 at_ms=51459
+ZWL INPUT device=/dev/input/event0 kind=pointer abs=0
+ZWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+ZWL STARTUP step=input ms=0 at_ms=51459
+ZWL KEYMAP format=xkb_v1 errno=0
+ZWL STARTUP step=keymap ms=0 at_ms=51459
+ZWL GREETER open users=1 selected=kei
+ZWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=90
+ZWL STARTUP step=output-display ms=0
+ZWL STARTUP step=output-pipelines ms=7
+ZWL HANDOFF go=1 waited_ms=40 at_ms=51516
+ZWL STARTUP step=output-swapchain ms=30
+ZWL STARTUP step=output-targets ms=1
+ZWL OUTPUT open width=1920 height=1080 images=3 format=37
+ZWL MODE window switch_ms=81 at_ms=51550
+ZWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+ZWL GREETER auth user=kei
+ZWL GREETER answer=OK
+ZWL GREETER starting
+ZWL GREETER closed at_ms=54064
+ZWL OUTPUT closed
+ZWL HANDOFF released at_ms=54077
+ZWL EXIT frames=6 error=0 cleanup_failed=0 pid=90 input_events=7 seat_events=0 at_ms=54088
+ZWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+ZWL STARTUP step=vulkan-device ms=3
+ZWL STARTUP step=vulkan-objects-arrow ms=1
+ZWL STARTUP step=wallpaper-picture ms=8
+ZWL STARTUP step=wallpaper ms=54
+ZWL STARTUP step=glyphs-text ms=6
+ZWL STARTUP step=glyphs-icons ms=6
+ZWL STARTUP step=glyphs-mark ms=14
+ZWL GLASS atlas cache-top=380 cells=273 faces=1
+ZWL STARTUP step=glyphs ms=28
+ZWL GLASS ready text=1
+ZWL STARTUP step=compose ms=88 at_ms=82955
+ZWL INPUT device=/dev/input/event0 kind=pointer abs=0
+ZWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+ZWL STARTUP step=input ms=0 at_ms=82955
+ZWL KEYMAP format=xkb_v1 errno=0
+ZWL STARTUP step=keymap ms=0 at_ms=82955
+ZWL GREETER open users=1 selected=kei
+ZWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=251
+ZWL STARTUP step=output-display ms=0
+ZWL STARTUP step=output-pipelines ms=6
+ZWL HANDOFF go=1 waited_ms=26 at_ms=82997
+ZWL STARTUP step=output-swapchain ms=27
+ZWL STARTUP step=output-targets ms=0
+ZWL OUTPUT open width=1920 height=1080 images=3 format=37
+ZWL MODE window switch_ms=59 at_ms=83024
+ZWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+ZWL GREETER powering=poweroff frame=89
+ZWL GREETER power=poweroff frames=2 ms=24
+ZWL GREETER answer=OK
+ZWL PERF 5014ms: passes=345 timeouts=255 | poll 24.4% work 77.3%
+ZWL PERF compose frames=248 draw_ms=15.25 (acquire 4.97 submit+present 10.15) frame_ms=16.53
+ZWL OUTPUT closed
+ZWL EXIT frames=300 error=0 cleanup_failed=0 pid=251 input_events=287 seat_events=0 at_ms=88853
+ZWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+ZWL STARTUP step=vulkan-device ms=15
+ZWL STARTUP step=vulkan-objects-arrow ms=1
+ZWL STARTUP step=wallpaper-picture ms=11
+ZWL STARTUP step=wallpaper ms=70
+ZWL STARTUP step=glyphs-text ms=7
+ZWL STARTUP step=glyphs-icons ms=9
+ZWL STARTUP step=glyphs-mark ms=18
+ZWL GLASS atlas cache-top=380 cells=273 faces=1
+ZWL STARTUP step=glyphs ms=36
+ZWL GLASS ready text=1
+ZWL STARTUP step=compose ms=124 at_ms=860032
+ZWL INPUT device=/dev/input/event0 kind=pointer abs=0
+ZWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+ZWL STARTUP step=input ms=0 at_ms=860032
+ZWL KEYMAP format=xkb_v1 errno=0
+ZWL STARTUP step=keymap ms=0 at_ms=860032
+ZWL GREETER open users=1 selected=kei
+ZWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=385
+ZWL STARTUP step=output-display ms=0
+ZWL STARTUP step=output-pipelines ms=8
+ZWL HANDOFF go=1 waited_ms=52 at_ms=860108
+ZWL STARTUP step=output-swapchain ms=41
+ZWL STARTUP step=output-targets ms=0
+ZWL OUTPUT open width=1920 height=1080 images=3 format=37
+ZWL MODE window switch_ms=101 at_ms=860149
+ZWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+ZWL GREETER auth user=kei
+ZWL GREETER answer=OK
+ZWL GREETER starting
+ZWL GREETER closed at_ms=862900
+ZWL OUTPUT closed
+ZWL HANDOFF released at_ms=862914
+ZWL EXIT frames=26 error=0 cleanup_failed=0 pid=385 input_events=63 seat_events=0 at_ms=862921
+ZWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+ZWL STARTUP step=vulkan-device ms=4
+ZWL STARTUP step=vulkan-objects-arrow ms=0
+ZWL STARTUP step=wallpaper-picture ms=16
+ZWL STARTUP step=wallpaper ms=109
+ZWL STARTUP step=glyphs-text ms=11
+ZWL STARTUP step=glyphs-icons ms=12
+ZWL STARTUP step=glyphs-mark ms=29
+ZWL GLASS atlas cache-top=380 cells=273 faces=1
+ZWL STARTUP step=glyphs ms=54
+ZWL GLASS ready text=1
+ZWL STARTUP step=compose ms=170 at_ms=957069
+ZWL INPUT device=/dev/input/event0 kind=pointer abs=0
+ZWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+ZWL STARTUP step=input ms=0 at_ms=957069
+ZWL KEYMAP format=xkb_v1 errno=0
+ZWL STARTUP step=keymap ms=0 at_ms=957069
+ZWL GREETER open users=1 selected=kei
+ZWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=402
+ZWL STARTUP step=output-display ms=0
+ZWL STARTUP step=output-pipelines ms=7
+ZWL HANDOFF go=1 waited_ms=24 at_ms=957110
+ZWL STARTUP step=output-swapchain ms=34
+ZWL STARTUP step=output-targets ms=0
+ZWL OUTPUT open width=1920 height=1080 images=3 format=37
+ZWL MODE window switch_ms=66 at_ms=957145
+ZWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+ZWL GREETER auth user=kei
+ZWL GREETER answer=OK
+ZWL GREETER starting
+ZWL GREETER closed at_ms=959272
+ZWL OUTPUT closed
+ZWL HANDOFF released at_ms=959289
+ZWL EXIT frames=6 error=0 cleanup_failed=0 pid=402 input_events=7 seat_events=0 at_ms=959298

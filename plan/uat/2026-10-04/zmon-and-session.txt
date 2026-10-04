@@ -1,0 +1,195 @@
+rc=124
+3
+ZMON FRAME fps=21.4 wait_ms=0.01 visible=1 build_ms=0.14 acquire_ms=0.00 record_ms=0.11 submit_ms=10.80 present_ms=0.56 callback_ms=30.56
+ZMON FRAME fps=21.0 wait_ms=0.03 visible=1 build_ms=0.03 acquire_ms=0.01 record_ms=0.25 submit_ms=11.13 present_ms=0.10 callback_ms=31.18
+ZMON FRAME fps=21.1 wait_ms=0.01 visible=1 build_ms=0.01 acquire_ms=0.01 record_ms=0.34 submit_ms=11.25 present_ms=0.08 callback_ms=31.14
+ZMON TEXT plate=cpu value="24%"
+ZMON TEXT plate=gpu value="9%"
+ZMON TEXT plate=network value="1.4 Mb/s"
+ZMON TEXT plate=disk value="2.6 MB/s"
+ZMON TEXT plate=latency value="0.7 ms"
+ZWL PREFERENCES key=window.opacity applied value=86
+ZWL SETTINGS open present=1
+ZWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+ZWL STARTUP step=vulkan-device ms=75
+ZWL STARTUP step=vulkan-objects-arrow ms=51
+ZWL STARTUP step=wallpaper-picture ms=12
+ZWL STARTUP step=wallpaper ms=7172
+ZWL STARTUP step=glyphs-text ms=9
+ZWL STARTUP step=glyphs-icons ms=26
+ZWL STARTUP step=glyphs-mark ms=19
+ZWL GLASS atlas cache-top=380 cells=273 faces=1
+ZWL STARTUP step=glyphs ms=163
+ZWL GLASS ready text=1
+ZWL STARTUP step=compose ms=7467 at_ms=15005
+ZWL INPUT device=/dev/input/event0 kind=pointer abs=0
+ZWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+ZWL STARTUP step=input ms=2 at_ms=15007
+ZWL KEYMAP format=xkb_v1 errno=0
+ZWL STARTUP step=keymap ms=0 at_ms=15007
+ZWL STARTUP step=socket ms=0 at_ms=15007
+ZWL CLIENT client=1 fd=10 ime=1
+ZWL IME started pid=29 client=1
+ZWL READY socket=/run/user/1000/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=17
+ZWL CORNER zone x=1892 y=0 width=28 height=28
+ZWL OSK zone kind=flick x=1892 y=1052 size=28
+ZWL OSK zone kind=qwerty x=0 y=1052 size=28
+ZWL VOLUME reachable=1 device=1
+ZWL VOLUME preferences value=77 muted=0
+ZWL DESKTOP start pid=30 command=/bin/files --desktop at_ms=15021
+ZWL STARTUP step=output-display ms=0
+ZWL STARTUP step=output-pipelines ms=10
+ZWL HANDOFF go=1 waited_ms=0 at_ms=15031
+ZWL STARTUP step=output-swapchain ms=19
+ZWL STARTUP step=output-targets ms=0
+ZWL OUTPUT open width=1920 height=1080 images=3 format=37
+ZWL MODE window switch_ms=29 at_ms=15050
+ZWL GLASS desktops x=1453 step=46 width=40
+ZWL NETWORK icon x=1697 y=3 width=30 height=28
+ZWL VOLUME icon x=1664 y=3 width=30 height=28
+ZWL NETWORK state reachable=1 connected=1 kind=wired interface=ue0 wifi=off ssid=
+KEI-IME LANGUAGE id=direct
+ZWL IME language=direct
+ZWL IME indicator x=1631 label=A
+KEI-IME POPUP ready=1 error=0
+KEI-IME READY languages=2
+ZWL CLIENT client=2 fd=14
+ZWL DESKTOP role client=2 surface=8 x=0 y=34 width=1920 height=1046
+ZWL SEAT client=2 pointer=1 keyboard=0 touch=0
+ZWL SEAT client=2 pointer=1 keyboard=1 touch=0
+ZFILES DESKTOP configure x=0 y=34 width=1920 height=1046
+ZWL DESKTOP ack serial=2
+ZFILES LOCATION kind=folder path=/home/kei/Desktop items=1 error=0
+ZFILES DESKTOP layout saved=0 error=0
+ZFILES DESKTOP grid width=1920 height=1046 columns=19 rows=9
+ZFILES DESKTOP place name=note-20261004-045627.pdf column=0 row=0 x=1808 y=16
+ZFILES DESKTOP ready items=1 cells=1 width=1920 height=1046 at_ms=17415 newest_age_ms=621575 hidden=0
+ZWL IMPORT client=2 buffer=20 width=1920 height=1046 bytes=8036352
+ZWL IMPORT client=2 buffer=21 width=1920 height=1046 bytes=8036352
+ZWL IMPORT client=2 buffer=22 width=1920 height=1046 bytes=8036352
+ZFILES MENU context-only
+ZFILES DESKTOP startup entered_ms=15146 fonts=2117 instance=1 window=52 present=49 app=40 canvas=8 draw=2 shown=13 menus=59
+ZFILES READY width=1920 height=1046 token=-
+ZWL DESKTOP drawn at_ms=17494
+ZFILES THUMB path=/home/kei/Desktop/note-20261004-045627.pdf error=0 width=181 height=256 cached=1
+ZWL HOME open via=launcher at_ms=18811
+ZWL FIRST_FRAME what=home-open frame=50 request_ms=18811 ms=12
+ZWL HOME opened apps=13 pages=1 page=1 at_ms=19099
+ZWL HOME icon name="Files" x=600 y=326
+ZWL HOME icon name="Notes" x=744 y=326
+ZWL HOME icon name="Settings" x=888 y=326
+ZWL HOME icon name="Terminal" x=1032 y=326
+ZWL HOME icon name="PDF Viewer" x=1176 y=326
+ZWL HOME icon name="Image Viewer" x=1320 y=326
+ZWL HOME icon name="Text Editor" x=600 y=478
+ZWL HOME icon name="Browser" x=744 y=478
+ZWL HOME icon name="X terminal" x=888 y=478
+ZWL HOME icon name="System Monitor" x=1032 y=478
+ZWL HOME icon name="Emacs" x=1176 y=478
+ZWL HOME icon name="Lock Screen" x=1320 y=478
+ZWL HOME icon name="Log Out" x=600 y=630
+ZWL PERF 5019ms: passes=304 timeouts=213 | poll 40.2% work 60.9%
+ZWL PERF compose frames=94 draw_ms=31.47 (acquire 19.06 submit+present 11.98) frame_ms=31.81
+ZWL HOME launch name=Terminal pid=31
+ZWL HOME close via=launch at_ms=20862
+ZWL FIRST_FRAME what=home-close frame=120 request_ms=20862 ms=21
+ZWL CLIENT client=3 fd=16
+ZWL INSET create client=3 inset=20 toplevel=16
+ZWL EDIT create client=3 edit=24 toplevel=16
+ZWL BOUNDS client=3 surface=14 width=1896 height=970
+ZWL CONFIGURE client=3 surface=14 serial=3 width=0 height=0 fullscreen=0
+ZWL SEAT client=3 pointer=1 keyboard=0 touch=0
+ZWL SEAT client=3 pointer=1 keyboard=1 touch=0
+ZWL TITLEBAR create client=3 titlebar=31 toplevel=16
+ZWL IMPORT client=3 buffer=41 width=916 height=632 bytes=2318336
+ZWL IMPORT client=3 buffer=42 width=916 height=632 bytes=2318336
+ZWL IMPORT client=3 buffer=43 width=916 height=632 bytes=2318336
+ZWL HOME closed at_ms=21112
+ZTERM SETTINGS run=term ambiguous_wide=0 font_size=16 theme=0
+ZTERM MENU state selection=0 clipboard=0 pixels=16 fullscreen=0 ambiguous_wide=0 theme=0 find=0
+ZTERM MENU ready items=39
+ZTERM TAB active id=1
+ZTERM TAB new run=term id=1 count=1
+ZTERM START run=term columns=90 rows=28 cell=10x22 window=916x632
+ZTERM TABS count=1 active=1 mode=0
+ZTERM TITLE tab=1 title=Terminal
+ZWL MENU commit client=3 menu=47 serial=1 items=39 generation=1
+ZWL MENU set client=3 place=48 menu=47
+ZWL MENU commit client=3 menu=47 serial=2 items=39 generation=2
+ZWL EDIT state client=3 edit=24 actions=0xff flags=0xd
+ZWL TITLEBAR commit client=3 titlebar=31 serial=1 mode=0 controls=0 tabs=1 generation=1
+ZWL DECORATION applied client=3 surface=14 mode=2
+ZWL MAP client=3 surface=14 x=502 y=267
+ZWL HOME launched waited_ms=287 at_ms=21149
+ZWL GLASS launch surface=14 from=996,290 to=502,267 size=916x632
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0
+ZWL IME activate client=3
+KEI-IME ACTIVATE
+ZWL MENU bar client=3 surface=14 where=floating item=1 offset=127 top=215 width=55 height=44
+ZWL MENU bar client=3 surface=14 where=floating item=2 offset=184 top=215 width=47 height=44
+ZWL MENU bar client=3 surface=14 where=floating item=3 offset=233 top=215 width=55 height=44
+ZWL MENU bar client=3 surface=14 where=floating item=4 offset=290 top=215 width=76 height=44
+ZWL MENU bar client=3 surface=14 where=floating item=5 offset=368 top=215 width=53 height=44
+ZWL PING pong client=3 serial=26
+ZWL PERF 5005ms: passes=486 timeouts=399 | poll 77.9% work 22.1%
+ZWL PERF compose frames=64 draw_ms=16.82 (acquire 0.91 submit+present 15.36) frame_ms=17.78
+ZWL CURSOR frame edges=1
+ZWL CURSOR frame edges=0
+ZWL NETWORK open
+ZWL NETWORK menu x=1487 y=40 width=300 height=107 rows=4
+ZWL NETWORK row index=0 kind=0 x=1487 y=48 width=300 height=30 text=Wi-Fi
+ZWL NETWORK row index=1 kind=1 x=1487 y=78 width=300 height=22 text=Wi-Fi is off
+ZWL NETWORK row index=2 kind=2 x=1487 y=100 width=300 height=9 text=
+ZWL NETWORK row index=3 kind=4 x=1487 y=109 width=300 height=30 text=Wired (ue0): connected
+ZWL NETWORK saved count=2
+ZWL NETWORK close via=outside
+ZWL PERF 5003ms: passes=454 timeouts=362 | poll 71.3% work 28.7%
+ZWL PERF compose frames=90 draw_ms=15.66 (acquire 4.67 submit+present 10.80) frame_ms=15.97
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.7% work 0.3%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.6% work 0.3%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.6% work 0.4%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.6% work 0.4%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.5% work 0.4%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.7% work 0.3%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.7% work 0.3%
+ZWL IME indicator x=1630 label=A
+ZWL PERF 5001ms: passes=499 timeouts=499 | poll 99.3% work 0.6%
+ZWL PERF compose frames=1 draw_ms=19.53 (acquire 0.02 submit+present 19.30) frame_ms=21.04
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.5% work 0.4%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.8% work 0.2%
+ZWL CLIENT client=4 fd=17
+ZWL INSET create client=4 inset=20 toplevel=16
+ZWL EDIT create client=4 edit=24 toplevel=16
+ZWL BOUNDS client=4 surface=14 width=1896 height=970
+ZWL CONFIGURE client=4 surface=14 serial=89 width=0 height=0 fullscreen=0
+ZWL SEAT client=4 pointer=1 keyboard=0 touch=0
+ZWL SEAT client=4 pointer=1 keyboard=1 touch=0
+ZWL TITLEBAR create client=4 titlebar=31 toplevel=16
+ZWL TITLEBAR commit client=4 titlebar=31 serial=1 mode=1 controls=4 tabs=0 generation=1
+ZWL IMPORT client=4 buffer=35 width=1200 height=760 bytes=3649536
+ZWL IMPORT client=4 buffer=36 width=1200 height=760 bytes=3649536
+ZWL IMPORT client=4 buffer=37 width=1200 height=760 bytes=3649536
+ZWL EDIT state client=4 edit=24 actions=0xff flags=0xd
+ZWL DECORATION applied client=4 surface=14 mode=2
+ZWL MAP client=4 surface=14 x=598 y=292
+ZWL IME deactivate
+ZWL TITLEBAR control client=4 surface=14 where=floating id=1 x=1437 y=247 width=60 height=30 shown=1
+ZWL TITLEBAR control client=4 surface=14 where=floating id=2 x=1501 y=247 width=63 height=30 shown=1
+ZWL TITLEBAR control client=4 surface=14 where=floating id=3 x=1568 y=247 width=69 height=30 shown=1
+ZWL TITLEBAR control client=4 surface=14 where=floating id=4 x=1641 y=247 width=43 height=30 shown=1
+KEI-IME DEACTIVATE
+ZWL PERF 5010ms: passes=635 timeouts=347 | poll 72.9% work 27.0%
+ZWL PERF compose frames=89 draw_ms=14.74 (acquire 0.02 submit+present 14.39) frame_ms=16.71
+ZWL PERF 5004ms: passes=659 timeouts=333 | poll 67.9% work 32.0%
+ZWL PERF compose frames=105 draw_ms=14.80 (acquire 0.02 submit+present 14.40) frame_ms=16.91
+ZWL PERF 5000ms: passes=639 timeouts=331 | poll 67.9% work 32.0%
+ZWL PERF compose frames=105 draw_ms=14.81 (acquire 0.02 submit+present 14.43) frame_ms=16.78
+ZWL PERF 5001ms: passes=629 timeouts=317 | poll 68.2% work 31.8%
+ZWL PERF compose frames=105 draw_ms=14.73 (acquire 0.02 submit+present 14.37) frame_ms=16.69
+ZWL CLIENT gone client=4 reason=read
+ZWL CLEANUP client=4 objects=30 unread_fds=0
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0
+ZWL IME activate client=3
+KEI-IME ACTIVATE

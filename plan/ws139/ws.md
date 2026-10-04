@@ -48,7 +48,9 @@ E1 の数字は、同じ E1 の前後を比べることにだけ使う。目標�
 | P-07 | C6: pointer を動かしてから cursor が出る flip まで（10 app） | E3: 中央値 67.3 ms（WS075 L2、5 run）。L3 の目標 50 ms は未達。文字の draw をまとめる差分が `plan/ws075/phase031/exp/text-batch.patch` に残る（検証の前に止めた） | E3 | 50 ms（WS075 L3、WS099 の C6） | `plan/ws075/ws.md` の p024〜p031 | `plan/ws075/tests/hdmi/measure-apps.sh`・`c6.py`・`engine-gdb.sh` |
 | P-08 | pen の遅れと buffer の import | E1: pen の遅れの中央値 117 ms、frame の間隔 113 ms（ws099-p015）。App Home → Files の最初の frame 2407 ms（ws099-p016 の直した後）。注: 「buffer 1 つの import 約 210 ms（うち `vkQueueWaitIdle` 約 100 ms）」は直す前の値で、p016 がその待ちを次の合成の barrier にまとめて無くした。残りは F-064（Venus の 10 ms の刻み） | E1 | 未定 | `plan/ws099/ws.md`・`phase015`・`phase016` | `plan/ws099/tests/p015-pen-latency.sh`・`p015-lat.py`（`ZWL LAT pen/adopt/submit/shown`） |
 | P-09 | Venus と起動の固定の費用 | E1: Venus の同期の呼び出し 1 回約 10 ms（F-064）、画像 1 つの作成 約 200 ms・swapchain の作成 600〜700 ms（F-056）、壁紙の blur 約 80 ms（CPU、F-060） | E1 | 未定 | [F-021・F-056・F-060・F-064](../future-work.md) | `ZWL STARTUP step= ms=` |
-| P-10 | 電池の時の描画（BUG-159） | E4: 電池で動くと cursor の描画が約 5 fps に落ちる | E4 | 未定 | [BUG-159](../bugs/BUG-159.md)、`plan/ws133/s1-results.md` | ユーザーの観察（電源の管理の WS と関係） |
+| P-10 | 電池の時の描画（BUG-159） | E4: 電池で動くと cursor の描画が約 5 fps に落ちる。**2026-10-04 UAT の E4 では再現せず**（電池で System Monitor の fps 21.5・14.4・22.4。ただし OS は電源の状態を知らない、BUG-165） | E4 |
+| P-11 | 起動の時の壁紙（2026-10-04 UAT で追加） | E4: `ZWL STARTUP step=wallpaper ms=7172`（素の 5330、PPM の Birch-Lake）。他の step は 9〜75 ms（`plan/uat/2026-10-04/zmon-and-session.txt`）。WS138 の PNG 化と prefetch の thread で変わる | E4 |
+| P-12 | System Monitor の描画（2026-10-04 UAT で追加） | E4: `ZMON FRAME fps=21`、submit_ms 約 11、callback_ms 約 31（AC）。i915 の perf: 1 submit 約 6.5 ms | E4 | 未定 | [BUG-159](../bugs/BUG-159.md)、`plan/ws133/s1-results.md` | ユーザーの観察（電源の管理の WS と関係） |
 
 - 台帳は、この WS の Phase が測り直したら更新する。古い数字は消さずに、日付と環境を付けて残す。
 - BUG-143 は 2026-10-04 に resolved（IME の確定の遅れは直った）。P-02（直接の入力の遅れ）はその残りで、ticket の reopen か新しい ticket かは Q1 が決める。

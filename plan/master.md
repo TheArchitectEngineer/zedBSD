@@ -54,7 +54,7 @@
 - fg018 Linux 標準 GTK4（WS114 は p007・p008 まで達成、GTK4 の zedBSD 移植 WS115 は後回し）。
 - **17 時（2026-10-04、利用枠の回復）からの候補**（Q1 の案。担当の数 N はユーザーが決める。上ほど優先）:
   1. [WS132](ws132/ws.md) 全部をベータ1 に（ユーザー「全部をベータ1 に」、10/13 の締切）: p001 設計（kernel-and-driver-designer）→ 実装。間に合わない所はその時にユーザーと削る。
-  2. UAT（[uat.md](uat.md)）で出た不具合の直し。
+  2. UAT（[uat.md](uat.md)）で出た不具合の直し: **BUG-165（WS049、DSDT）・BUG-158（WS005）・BUG-170（WS100）を最優先**（WS132 と並行）、次に BUG-168・166（仕様の決めの後）・167・175・173・171・169・172・174・176。
   3. [WS129](ws129/ws.md) p003（版 1.0.0-beta1・名前）→ p004（release の構成: zedinst を外す・root の lock・SHA256SUMS と LICENSES.md）→ p005（`docs/release/` に英語の notes）。決定は release.md §9。
   4. ws131-p014 の残り（phase014 の Resume）と [test-queue](test-queue.md) の TQ-1 の残り → ws131-p026（header の整理）。
   5. [WS138](ws138/ws.md)（PNG・JPEG の背景）: 着手前に phase.md を判断に合わせて直す。
@@ -64,7 +64,7 @@
 
 <!-- master:blocked:start -->
 - 5330 の AX211 の passthrough は停止（host の hang 2 回）。iGPU は i915 の driver の改善の Phase だけで使い、iGPU と AX211 の同時は禁止。
-- 実機の要る bug（BUG-157・158・119・159・143・120・156 と QEMU で resolved にした bug の実機の確認）は安定版 S2 の実機試験で（[WS133](ws133/ws.md)）。
+- 2026-10-04 の UAT（[uat.md](uat.md)、証拠 [uat/2026-10-04/](uat/2026-10-04/)）: 実機で OK は BUG-145・152・161・143・139・103・160・153。再現は BUG-158・119・156・157。新規 BUG-165〜176。**最優先は BUG-165（DSDT が読めない: 電源が切れない・タッチパッド・電池の根の候補）・BUG-158（WiFi 未接続で kernel のフリーズ）・BUG-170（音量の slider のフリーズ）**。タッチパッドの操作の仕様（BUG-166）はユーザーと決める。
 - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
@@ -299,7 +299,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS130](ws130/ws.md) | MG005 | IPv6 の network stack（ベータ1 は計画だけ、実装はベータ2 以降。DHCPv6 は `dhcpc -6`） | planning | p001 設計 |
 | [WS131](ws131/ws.md) | MG006 | libkeiland を GUI toolkit 兼 desktop 機能の抽象化層にする（app の窓の作成を含む GUI の構築を共通化） | incomplete | p003〜p005 cleared、p006（Linux は T1-042 PASS、zedBSD の T2-007 は未実行）・p007（demo-s8-s9 未実行）・p008（試験未依頼）は uncleared。次は p008 の試験と p009。設定の部分は WS135 へ |
 | [WS132](ws132/ws.md) | MG006 | /dev/system の電源管理と PnP の通知（subscriber が事象を指定）、自動 mount、Files の eject | planning（ベータ1 に入れる、2026-10-04 ユーザー） | p001 設計（/dev/system に電源管理と PnP の通知、subscriber が事象を指定） |
-| [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | incomplete（S1 は 2026-10-03、UAT は 2026-10-04 13 時、[uat.md](uat.md)） | 安定版 S1 の内容と試験の一覧はユーザーと決める |
+| [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | completed（S1、2026-10-03。2026-10-04 の UAT は WS の外で [uat.md](uat.md)・[uat/](uat/) に記録） | 安定版 S1 の内容と試験の一覧はユーザーと決める |
 | [WS134](ws134/ws.md) | MG006 | システムモニターのアプリ（Analytic Spatial UI、中央の状態コア、層構造、2026-10-03 ユーザー） | incomplete | p001・p002 cleared、p003 uncleared（sim の fps 4.7）、p004 uncleared（`interact.c` まで） |
 | [WS135](ws135/ws.md) | MG006 | 設定の読み書きを libkeiland に一本化（libkeiland が直接か compositor の拡張で解決、監視と通知の API、desktop.conf は compositor の内部で session の開始・終了だけ読み書き。BUG-162、2026-10-03 ユーザー） | completed（2026-10-04） | — |
 | [WS136](ws136/ws.md) | MG007 | 試験の image を「WS の tests/ の config.mk ＋個別の file の複写」に揃え、過去の build/ を入力にしない（2026-10-04 ユーザー） | completed（2026-10-04） | — |

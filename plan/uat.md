@@ -9,8 +9,8 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 | 項目 | 値 |
 | --- | --- |
-| path | `/home/awe/zedBSD-claude1/build/uat-2/hdd-image.img`（2,216,689,664 byte、**sha256 `f03920c31d83aa093c17de10d28c877e24c3b52808eed7446880691b3612aa64`**、2026-10-04 12:08 に作り直し（emacs の SKK の辞書の path の直し a1d84b8 を含む）: App Home に System Monitor と Emacs の tile（`plan/ws133/uat-apps.conf`）、config-uat.mk が emacs・monitor・noto-color-emoji を足す。前の版 `4b643284…cb71f` は tile が無い） |
-| 作り方 | `plan/tools/guest/test-image.sh --no-harness plan/ws133/config-uat.mk build/uat-2` に build-demo-image.sh と同じ `--file`（apps.conf・壁紙・authorized_keys）と `I915_TEST_VBT=n`。config-uat.mk は demo の構成（その時の CI の amd64 の構成: emacs・clang 入り）に monitor と noto-color-emoji を足したもの。build/uat-1 はユーザーの新しい CI の構成で emacs が無いので使わない |
+| path | `/home/awe/zedBSD-claude1/build/uat-2/hdd-image.img`（2,216,689,664 byte、**sha256 `f03920c31d83aa093c17de10d28c877e24c3b52808eed7446880691b3612aa64`**、2026-10-04 12:08 に作り直し（emacs の SKK の辞書の path の直し a1d84b8 を含む）: App Home に System Monitor と Emacs の tile（`plan/uat/uat-apps.conf`）、config-uat.mk が emacs・monitor・noto-color-emoji を足す。前の版 `4b643284…cb71f` は tile が無い） |
+| 作り方 | `plan/tools/guest/test-image.sh --no-harness plan/uat/config-uat.mk build/uat-2` に build-demo-image.sh と同じ `--file`（apps.conf・壁紙・authorized_keys）と `I915_TEST_VBT=n`。config-uat.mk は demo の構成（その時の CI の amd64 の構成: emacs・clang 入り）に monitor と noto-color-emoji を足したもの。build/uat-1 はユーザーの新しい CI の構成で emacs が無いので使わない |
 | boot の行 | `kernel=vmunix` `rootpart=PARTLABEL=zedBSD-root` `swap0=PARTLABEL=zedBSD-swap` `logo=logo.ppm` `login=graphical` `kmsg=quiet` `display=edp`（S1 と同じ。同じ名前の行を 2 回書かない） |
 | 利用者 | root / root、kei / kei（kei は起動で自動の login） |
 | QEMU の boot-test | 11:45 の image（8c3e51d0…）: Q1 の boot-test PASS（2026-10-04 12:00 頃、複写 `build/uat-2-boot/uat.img`、`build/boot-test/login.png`）。前の image（4b643284…）: T1-084 PASS（2026-10-04 10:57、QEMU KVM・framebuffer・GPU なし。GPU が無いので greeter の後に getty の `login:`。`/home/awe/zedBSD-worktrees/t1/build/t1-084/boot/login.png`）。SSH で `/bin/emacs`・`/bin/monitor` が在る |

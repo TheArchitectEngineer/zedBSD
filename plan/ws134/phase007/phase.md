@@ -38,3 +38,7 @@ rps・GEM の動きを変えないで。QEMU で確かめられる範囲（Venus
 
 `gputelemetry-p007: PASS`。Venus で `hw.gputelemetry: gpus=0`、hw.cputimes・hw.diskstats も読める（nvme0n1 kind=2 generation=1）、
 `sysctl -a` exit 0（29 行、記録だけ）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-066/out/`。i915 の値は実機（5330）で未確認。
+
+## 2026-10-04 UAT（実機）
+
+素の 5330 で `sysctl hw.gputelemetry` が `driver=i915 valid=0xd busy_ns=… cur_mhz=0 req_mhz=100 min_mhz=100 max_mhz=1200` を返した（idle で cur 0、電池の時 req 500）。実機の確認は OK（証拠 `plan/uat/2026-10-04/sysctl.txt`・`battery.txt`）。QEMU の試験の結果と合わせて Q1 が判定する。

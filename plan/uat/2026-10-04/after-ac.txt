@@ -1,0 +1,47 @@
+USER PID PPID TTY TIME COMMAND
+root 0 0 ? 00:00:00 kernel
+root 1 0 ? 00:00:00 /sbin/init
+root 4 1 ? 00:00:00 /sbin/syslogd
+root 5 1 ? 00:00:02 /sbin/audiod
+root 6 1 ? 00:00:01 /sbin/networkd
+root 15 1 ? 00:00:00 /sbin/cron
+root 16 1 ? 00:00:00 /sbin/sessiond
+kei 17 16 ? 00:00:02 /bin/wayland
+kei 29 17 ? 00:00:00 /usr/libexec/keiland-ime
+kei 30 17 ? 00:00:01 /bin/files
+kei 31 17 ? 00:00:00 /bin/terminal
+kei 32 31 tty 00:00:00 /bin/sh
+root 125 123 ? 00:00:00 sshd-session: root@notty
+root 126 125 ? 00:00:00 sh
+root 127 126 ? 00:00:00 ps
+root 128 126 ? 00:00:00 grep
+ZWL PERF compose frames=110 draw_ms=14.91 (acquire 0.03 submit+present 14.47) frame_ms=17.17
+ZWL CLIENT gone client=5 reason=read
+ZWL CLEANUP client=5 objects=29 unread_fds=0
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0
+ZWL IME activate client=3
+KEI-IME ACTIVATE
+ZWL PERF 5004ms: passes=537 timeouts=436 | poll 88.0% work 11.9%
+ZWL PERF compose frames=38 draw_ms=14.95 (acquire 0.02 submit+present 14.57) frame_ms=17.02
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.6% work 0.3%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.6% work 0.3%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.7% work 0.3%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.7% work 0.3%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.6% work 0.4%
+ZWL PERF 5000ms: passes=500 timeouts=500 | poll 99.6% work 0.4%
+i915: perf: markers 492: wait 0.50 ms, run 0.01 ms
+i915: perf: 5015 ms: 133 presents (26.52/s), 492 submits, 490 batches | per submit ms: 6.75 (build 0.16, run 6.59, gpu 5.88) | per present ms: 0.83 (copy 0.75, publish 0.00, flip 0.00)
+i915: vk: session 1: frames 268 in 5009 ms: per submit 1 runs (0 full) 64 ops (most 128), in submit 7279 us (runs 7054, record 224), between 11412 us
+i915: vk: session 7: frames 224 in 5015 ms: per submit 1 runs (0 full) 31 ops (most 61), in submit 6094 us (runs 6009, record 84), between 16295 us
+i915: resident shim: ring rewound (idle context)
+i915: resident shim: ring rewound (idle context)
+i915: resident shim: ring rewound (idle context)
+i915: resident shim: ring rewound (idle context)
+i915: resident shim: ring rewound (idle context)
+i915: resident shim: ring rewound (idle context)
+i915: resident shim: ring rewound (idle context)
+i915: resident shim: ring rewound (idle context)
+i915: perf: markers 420: wait 0.00 ms, run 0.00 ms
+i915: perf: 5008 ms: 105 presents (20.96/s), 420 submits, 420 batches | per submit ms: 6.41 (build 0.14, run 6.27, gpu 6.26) | per present ms: 0.75 (copy 0.72, publish 0.00, flip 0.00)
+i915: vk: session 1: frames 212 in 5023 ms: per submit 1 runs (0 full) 64 ops (most 128), in submit 7103 us (runs 6920, record 182), between 16590 us

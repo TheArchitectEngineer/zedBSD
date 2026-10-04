@@ -1,0 +1,4 @@
+hw.gputelemetry: gpus=1
+hw.gputelemetry: gpu=0 driver=i915 valid=0xd time_ns=73228496648 busy_ns=3186129731 cur_mhz=0 req_mhz=100 min_mhz=100 max_mhz=1200 objects_bytes=0 objects_limit=0
+hw.gputelemetry: gpus=1
+hw.gputelemetry: gpu=0 driver=i915 valid=0xd time_ns=73229179371 busy_ns=3186129731 cur_mhz=0 req_mhz=100 min_mhz=100 max_mhz=1200 objects_bytes=0 objects_limit=0

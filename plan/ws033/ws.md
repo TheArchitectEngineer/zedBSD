@@ -54,3 +54,7 @@ Resume point: [p001](phase001/phase.md)（USB の LAN の後挿し・抜去・ca
 | [p001](phase001/phase.md) | USB の LAN の後挿し・抜去・carrier の変化と `networking.wait` を QEMU で通す（L1〜L3）。見つかった不具合を直す | planned | なし（ws005-p019 と `userland/base/networkd/`・`net/` が重なるので同時に走らせない） | 2〜3h |
 | [p003](phase003/phase.md) | WS033 で書いた source（`managed-lan.c`、`net lan`・`net startup`、init の setting の表）の全文規約の確認 | planned | p001 の修正の後（独立に先に走らせてもよいが、p001 の修正を含めて 1 回にする） | 2h |
 | [p002](phase002/phase.md) | 実機の確認 L4（ユーザーと一緒に、ws005-p023 と同じ日にまとめる） | planning | p001、ユーザーの時期 | 1h（立会い） |
+
+## 2026-10-04 UAT の結果（Q1）
+
+起動の時から挿した USB LAN（RTL8156、ue0）は up して DHCP。**起動の後に挿すと up しない**（[BUG-168](../bugs/BUG-168.md)）。抜くと Ethernet のメニューに wlan0 が出る（[BUG-169](../bugs/BUG-169.md)）。WiFi の address への SSH ができない（[BUG-174](../bugs/BUG-174.md)）。
