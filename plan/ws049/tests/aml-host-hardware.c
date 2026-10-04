@@ -38,8 +38,8 @@
 #define ACPI_ENABLE	0xf0U
 #define QEMU_ACPI_ENABLE	0x02U
 #define SCI_INTERRUPT	9U
-#define EC_DATA		0x0062U
-#define EC_COMMAND	0x0066U
+#define EC_DATA_DEFAULT		0x0062U
+#define EC_COMMAND_DEFAULT	0x0066U
 
 /*
  * The Global Lock bits, the GBL_RLS bit of PM1_CNT, and the Global Lock
@@ -87,6 +87,13 @@ static uint8_t ec_address;
 static enum ec_phase ec_phase;
 static uint8_t ec_queries[64];
 static unsigned ec_query_count;
+
+/*
+ * The ports the simulated EC answers on: QEMU's and most firmware's unless
+ * hardware_ec_ports() moved them to where a real table's _CRS puts its EC.
+ */
+static uint32_t ec_data_port = EC_DATA_DEFAULT;
+static uint32_t ec_command_port = EC_COMMAND_DEFAULT;
 
 /*
  * The Global Lock's dword, whether the simulated firmware owns it, and
@@ -184,6 +191,19 @@ hardware_ec_ram(
 {
 	/* Stores it. */
 	ec_ram[address] = value;
+}
+
+/*
+ * Moves the simulated EC to the data and command ports a table's _CRS gives.
+ */
+void
+hardware_ec_ports(
+	uint32_t data,
+	uint32_t command)
+{
+	/* The EC answers on these from now on. */
+	ec_data_port = data;
+	ec_command_port = command;
 }
 
 /*
@@ -322,9 +342,9 @@ access_byte(
 		if (!write)
 			*value = 0;
 		return 1;
-	} else if (port == EC_DATA) {
+	} else if (port == ec_data_port) {
 		return ec_data(write, value);
-	} else if (port == EC_COMMAND) {
+	} else if (port == ec_command_port) {
 		return ec_command(write, value);
 	} else {
 		return 0;
