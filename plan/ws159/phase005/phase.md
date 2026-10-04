@@ -127,3 +127,7 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 未実施にする項目（p006 の後）: sleep の間に HDMI を抜いて内蔵の panel に移る（決定 4）は、devices だけの mode では sleep が一瞬なので試せない。S0i3 に
 入れるようになってから（p006）試す。RC6 の residency の増加と SLP_S0 も p006 の後。
 
+
+## UAT の image の作り直し（2026-10-05 08:56 Q1）
+
+`build/uat-0505b/hdd-image.img`（main c1f3b509 で build、`check-amd64-native-image: OK`、2216689664 byte、sha256 80f52a1db62e87f03e87c993e02b9a69757f60b466542f85ee0dd2a38fd7aadf）。uat-0505（7debc4ba）の後の直し（kl_system の protocol の退行の直し、WS132 の volumed・Files の Devices・蓋、WS142 の gesture・bar の icon・switcher、WS160 の su・sudo・passwd と Settings の password、WS089 の Mouse・Touchpad・Ethernet・Storage・Sharing、BUG-173・175・177・191 の直し、WS052 の ACPI と device の suspend と i915 の suspend の段 (a)〜(c)、sleepctl）を含む。QEMU の boot の確認は T1-160。朝の UAT はこの image を推奨（ただし sleep の項目 9 は QEMU の round trip が未だ FAIL（T1-158）なので、実機でも USB が戻らない恐れがある。項目 9 は最後に）。
