@@ -48,3 +48,9 @@ Queue: Q1 の指示（2026-10-05、ベータ1 の RC 10/13 までに簡単な pl
 - App Home: `userland/desktop/wayland/apps.conf` に `Video Player|/bin/videoplayer|video movie player mp4 mkv webm film|7a4fd0|`（絵は無く頭文字。無い program の行は出ないので videoplayer の無い image は変わらない）。
 - Files: `userland/desktop/files/apps.c` の built-in に `video/*` → `/bin/videoplayer %f`（needs `videoplayer`、入っている時だけ出る）。Files の image（videoplayer 無し）では mp4 の扱いは変わらない。
 - 確認: `sh plan/tools/files/host-default.sh` PASS、files の zedBSD の build warning 0、style-check 違反 0。Files の guest の試験は mp4 を開かない（`make-home.sh` の `Movies/Trip.mp4` を開く試験は無い）。
+
+## T1-123（2026-10-05）
+
+- 映像は全部 ok（OPEN・FRAMES・一時停止・SEEK・END・ENDED・DONE、playing.png は試料の絵と 0:14/0:20 の slider を Q1 が目視）。音だけ FAIL ×2: `VIDEOPLAYER AUDIO error=13`、録音の peak=0。
+- 解析: zedBSD の errno 13 は **ENODEV**（EACCES ではない）。player が ENODEV を返すのは audiod の WELCOME が `device=0`（sound device が無い audiod）の時だけ。試験は audiod を kill して自分の audiod を起こしていたが、image の `rc.conf` は audiod を service（`restart=on-failure`）で起動するので、kill された boot の audiod を init が起こし直し、それが `/dev/dsp0` を開けずに（試験の audiod が持っている）device 無しのまま `/run/audiod.sock` を作り直して接続を取った、と見る（QEMU での確認はまだ）。host で audiod と player の client（`audio.c`）を host の build で動かし、HELLO・STREAM_CREATE・共有の ring・START・書き込みと読み位置の進みが通ることを確かめた（device の確かめを外した写し、scratch で）。
+- 直し: 試験は audiod を kill・起動せず、system の service の audiod を使う（`service start audiod`、`a.log` は `service status audiod` と ps）。player は変えない。

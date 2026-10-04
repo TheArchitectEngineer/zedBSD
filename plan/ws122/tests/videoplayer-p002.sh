@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws122-p002: the simple video player on the Venus guest with a sound card (videoplayer-guest.sh), image of
 # config-amd64-p002.mk with the sample (sample.mp4: 20 s, 320x240 MPEG-4 Part 2 at 25 fps, AAC 48 kHz stereo,
-# a 440 Hz tone).  zdesktop --glass at 1280x800, audiod, the player at 960x600 on the sample.
+# a 440 Hz tone).  zdesktop --glass at 1280x800, the system's audiod (the boot's service; T1-123 started a second
+# one, and init's restart of the first took the socket over without the device), the player at 960x600 on the sample.
 #  1. Opens and plays: READY, AUDIO error=0 (audiod's stream), OPEN ... width=320 height=240 duration_ms=20000
 #     video=mpeg4 audio=aac, OPENED error=0, PLAY, FRAMES shown=1 and shown=100 (playing.png).
 #  2. Space pauses (PAUSE shown= time_ms=), Space 2 s later plays (PLAY shown= time_ms=): no picture and no time
@@ -25,7 +26,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 0.7; }
-stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[v]ideoplayer|[a]udiod" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[v]ideoplayer|[a]udiod" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[v]ideoplayer" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[v]ideoplayer" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
 
 # Fails the run unless a log has a line matching a pattern (within TRIES seconds, default 5).
@@ -60,7 +61,7 @@ shot() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp
-/sbin/audiod > /tmp/a.log 2>&1 </dev/null & sleep 1
+service start audiod >/dev/null 2>&1; sleep 1
 picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
 rm -f /tmp/wayland-0; /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/videoplayer --timeout-s=300 /usr/share/videoplayer-tests/sample.mp4 > /tmp/v.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
@@ -114,7 +115,7 @@ errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest "$stop_all" >/dev/null
 guest 'cat /tmp/v.log' > "$out/v.log"
-guest 'cat /tmp/a.log' > "$out/a.log"
+guest 'service status audiod; ps -A -o pid,user,args | grep "[a]udiod"' > "$out/a.log"
 
 # 6. The sound reached the card.
 if [ -s "$GUEST_RUNTIME/sound.wav" ]; then
