@@ -246,6 +246,7 @@ poll_wait_ready(
 {
 	struct thread *thread;
 	uint64_t observed;
+	uint64_t now;
 	int error;
 
 	thread = thread_current();
@@ -266,18 +267,25 @@ poll_wait_ready(
 		error = poll_wait(observed, deadline, WAITQ_INTERRUPTIBLE);
 		if (error == EINTR)
 			return EINTR;
+
+		/*
+		 * An expired deadline scans once more: a change that came as it
+		 * passed (the system busy past it) is still reported (T1-129).
+		 */
 		if (error == ETIMEDOUT) {
-			*ready = 0;
-			return 0;
+			error = poll_scan(process, fds, count, ready);
+			return error;
 		}
 
+		/* Another failure of the sleep ends the poll. */
 		if (error != 0 && error != EAGAIN)
 			return error;
 
-		/* Reports an expired deadline as no descriptor ready. */
-		if (deadline != 0 && sched_ticks() >= deadline) {
-			*ready = 0;
-			return 0;
+		/* The same for a deadline that passed while the wake was on its way. */
+		now = sched_ticks();
+		if (deadline != 0 && now >= deadline) {
+			error = poll_scan(process, fds, count, ready);
+			return error;
 		}
 
 		observed = poll_sequence();
