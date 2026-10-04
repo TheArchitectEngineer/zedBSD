@@ -50,3 +50,7 @@ QEMU の Venus と host。 やっていない確認は「未実施」と書く�
 ## Event
 
 2026-10-02 / ws128-beta1-plan: fg019 の計画で新設。
+
+## QEMU と FreeBSD の回帰（Q1、2026-10-04、T2-025）
+
+WS128 の guest 7/7 PASS（imageview-p005・terminal-p006-guest・imageview-guest・textedit-p003・notes-p002・menu-p003・terminal-p009-guest）、FreeBSD の backend-test PASS（files・imageview・terminal・textedit・notes を含む native build の warning 0）。実機の p007 は実機待ち。
