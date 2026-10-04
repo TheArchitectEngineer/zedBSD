@@ -4,7 +4,9 @@
 # a 440 Hz tone).  zdesktop --glass at 1280x800, the system's audiod (the boot's service; T1-123 started a second
 # one, and init's restart of the first took the socket over without the device), the player at 960x600 on the sample.
 #  1. Opens and plays: READY, AUDIO error=0 (audiod's stream), OPEN ... width=320 height=240 duration_ms=20000
-#     video=mpeg4 audio=aac, OPENED error=0, PLAY, FRAMES shown=1 and shown=100 (playing.png).
+#     video=mpeg4 audio=aac, OPENED error=0, PLAY, FRAMES shown=1 (playing.png); at the pause (step 2) at least 10
+#     pictures were shown and 1 s of the clock went by (FRAMES logs only every 100th picture, and the Venus guest shows
+#     fewer than 25 a second: T1-128 logged shown=100 at time_ms=13040, after the seek).
 #  2. Space pauses (PAUSE shown= time_ms=), Space 2 s later plays (PLAY shown= time_ms=): no picture and no time
 #     went by between them.
 #  3. Right goes forward 10 s: SEEK to_ms=, SEEK done to_ms= (seek.png).
@@ -73,7 +75,6 @@ expect_log /tmp/v.log 'OPEN path=/usr/share/videoplayer-tests/sample.mp4 width=3
 expect_log /tmp/v.log 'OPENED path=.* error=0'
 expect_log /tmp/v.log 'VIDEOPLAYER PLAY shown=0 time_ms=0'
 expect_log /tmp/v.log 'FRAMES shown=1 '
-expect_log /tmp/v.log 'FRAMES shown=100 ' 8
 shot playing.png
 
 # 2. Pause and play: from the pause to the play 2 s later, the pictures shown and the clock stand still.
@@ -84,6 +85,12 @@ keys '<spc>'
 expect_log /tmp/v.log 'VIDEOPLAYER PLAY shown=[1-9]'
 set -- $(guest "grep -E 'VIDEOPLAYER (PAUSE|PLAY) shown=' /tmp/v.log | tail -2" |
     sed -n 's/.* shown=\([0-9]*\) time_ms=\([0-9]*\).*/\1 \2/p' | tr '\n' ' ')
+if [ $# = 4 ] && [ "$1" -ge 10 ] && [ "$2" -ge 1000 ]; then
+	echo "playing: $1 pictures and $2 ms before the pause ok"
+else
+	echo "playing: too few pictures before the pause ($*) FAIL"
+	status=1
+fi
 if [ $# = 4 ] && [ $(($3 - $1)) -le 1 ] && [ $(($4 - $2)) -le 100 ]; then
 	echo "pause: stood still (shown $1 -> $3, time_ms $2 -> $4) ok"
 else

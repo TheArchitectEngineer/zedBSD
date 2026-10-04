@@ -47,6 +47,9 @@
 #define GPU_RESOURCE_BLOB	2U
 #define GPU_RESOURCE_SCANOUT	3U
 
+/* The longest one GPU_DISPLAY_REFRESH call waits (the caller asks again for longer). */
+#define GPU_DISPLAY_REFRESH_TIMEOUT_NS	1000000000ULL
+
 #ifndef CONFIG_GPU_JOB_RESERVATION_MS
 #define CONFIG_GPU_JOB_RESERVATION_MS 10000U
 #endif
@@ -128,6 +131,7 @@ union gpu_display_request {
 	struct gpu_display_release release;
 	struct gpu_display_present present;
 	struct gpu_display_wait wait;
+	struct gpu_display_power power;
 };
 
 /*
@@ -282,6 +286,7 @@ static void gpu_session_leave(struct gpu_session *session);
 static int gpu_info_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_events_snapshot(struct gpu_session *session, uint64_t *sequence);
 static int gpu_events_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_refresh_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_create_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_destroy_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_handle_allocate(uint64_t *handle);
@@ -828,7 +833,7 @@ gpu_ops_validate(
 	    GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_COMMAND |
 	    GPU_CAP_PRESENT | GPU_CAP_MAPPING | GPU_CAP_DISPLAY | GPU_CAP_SHARE |
 	    GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE |
-	    GPU_CAP_DISPLAY_EVENTS | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)) != 0)
+	    GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)) != 0)
 		return EOPNOTSUPP;
 
 	/* Supervised jobs require reservation, publication, cancellation and callback drain together. */
@@ -1021,6 +1026,21 @@ gpu_ops_validate(
 	} else if (ops->display != NULL) {
 		/* Hidden callbacks must not contradict the published capability mask. */
 		if (ops->display->events != NULL)
+			return EINVAL;
+	}
+
+	/* Display power and refresh boundaries come together, over an ordinary display inventory. */
+	if ((ops->capabilities & GPU_CAP_DISPLAY_CONTROL) != 0U) {
+		/* Neither operation exists without the displays it names. */
+		if (ops->display == NULL)
+			return EINVAL;
+
+		/* VK_EXT_display_control needs both operations. */
+		if (ops->display->power == NULL || ops->display->refresh == NULL)
+			return EINVAL;
+	} else if (ops->display != NULL) {
+		/* Hidden callbacks must not contradict the published capability mask. */
+		if (ops->display->power != NULL || ops->display->refresh != NULL)
 			return EINVAL;
 	}
 
@@ -1563,6 +1583,16 @@ gpu_ioctl_body(
 		return 0;
 	}
 
+	/* A refresh wait must not hold table admission while it sleeps for the output. */
+	if (command == GPU_DISPLAY_REFRESH) {
+		error = gpu_refresh_ioctl(session, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the boundary was observed without retaining table admission. */
+		return 0;
+	}
+
 	/* Shared completion state must progress while another thread waits before hardware submission. */
 	if (command == GPU_FENCE_CREATE ||
 	    command == GPU_FENCE_QUERY ||
@@ -1661,6 +1691,7 @@ gpu_ioctl_body(
 	case GPU_DISPLAY_RELEASE:
 	case GPU_DISPLAY_PRESENT:
 	case GPU_DISPLAY_WAIT:
+	case GPU_DISPLAY_POWER:
 		/* Native display requests share validation and access admission. */
 		error = gpu_display_ioctl(session, command, argument);
 		break;
@@ -1888,6 +1919,83 @@ gpu_events_ioctl(
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
 	/* Succeeded: only the successfully returned observation and requested ACK were committed. */
+	return 0;
+}
+
+/*
+ * Waits for one refresh boundary of an output (GPU_DISPLAY_REFRESH).
+ *
+ * Runs outside the ordinary admission, like the event snapshot, because the
+ * backend sleeps up to the bounded timeout; the open retains the backend.
+ */
+static int
+gpu_refresh_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_display_refresh request;
+	struct drv_gpu_device *device;
+	unsigned long irq;
+	uint64_t cursor;
+	int error;
+
+	/* Refresh boundaries are an advertised capability, observed with read authority. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_DISPLAY_CONTROL) == 0U)
+		return EOPNOTSUPP;
+	if (session->readable == 0U)
+		return EACCES;
+
+	/* The request; its outputs are zero on input. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Versioned fixed-width framing must agree before the backend sees it. */
+	if (request.version != GPU_ABI_VERSION || request.size != sizeof(request))
+		return EINVAL;
+
+	/* A display of a generation, and no caller-supplied output. */
+	if (request.display_id == 0U ||
+	    request.generation == 0U ||
+	    request.flags != 0U ||
+	    request.sequence != 0U ||
+	    request.time_ns != 0U)
+		return EINVAL;
+
+	/* One call waits at most a second; the caller asks again for a longer wait. */
+	if (request.timeout_ns > GPU_DISPLAY_REFRESH_TIMEOUT_NS)
+		request.timeout_ns = GPU_DISPLAY_REFRESH_TIMEOUT_NS;
+
+	/* An offline or failed instance has no authoritative refresh boundary. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	error = gpu_session_error_locked(session);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Reports the offline device or the failed open. */
+	if (error != 0)
+		return error;
+
+	/* The backend waits for the boundary after the cursor. */
+	cursor = request.cursor;
+	error = device->ops->display->refresh(device->private_data, session->backend, &request);
+	if (error != 0)
+		return error;
+
+	/* A reported boundary must lie after the cursor that was waited from. */
+	if (cursor != 0U && request.sequence <= cursor)
+		return EIO;
+
+	/* The reply with the core's trusted header. */
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has the boundary. */
 	return 0;
 }
 
@@ -2994,7 +3102,8 @@ gpu_display_ioctl(
 	writing = 0;
 	if (command == GPU_DISPLAY_CLAIM ||
 	    command == GPU_DISPLAY_RELEASE ||
-	    command == GPU_DISPLAY_PRESENT)
+	    command == GPU_DISPLAY_PRESENT ||
+	    command == GPU_DISPLAY_POWER)
 		writing = 1;
 
 	/* Read-only opens can enumerate displays and observe owned completion state. */
@@ -3024,6 +3133,9 @@ gpu_display_ioctl(
 		break;
 	case GPU_DISPLAY_WAIT:
 		bytes = sizeof(request.wait);
+		break;
+	case GPU_DISPLAY_POWER:
+		bytes = sizeof(request.power);
 		break;
 	default:
 		return EOPNOTSUPP;
@@ -3232,6 +3344,27 @@ gpu_display_ioctl(
 		if (error != 0)
 			return error;
 		break;
+	case GPU_DISPLAY_POWER:
+		/* Power control is an advertised capability of its own. */
+		if ((device->ops->capabilities & GPU_CAP_DISPLAY_CONTROL) == 0U)
+			return EOPNOTSUPP;
+
+		/* A display of a generation, one of the three states, and nothing else. */
+		if (request.power.display_id == 0U ||
+		    request.power.generation == 0U ||
+		    request.power.reserved != 0U ||
+		    (request.power.state != GPU_DISPLAY_POWER_ON &&
+		     request.power.state != GPU_DISPLAY_POWER_OFF &&
+		     request.power.state != GPU_DISPLAY_POWER_SUSPEND))
+			return EINVAL;
+
+		/* The backend checks this open's lease before any side effect. */
+		error = ops->power(device->private_data, session->backend, &request.power);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request has no reply to copy out. */
+		return 0;
 	default:
 		return EOPNOTSUPP;
 	}

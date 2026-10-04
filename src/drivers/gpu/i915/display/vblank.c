@@ -48,6 +48,29 @@ static int i915_crtc_scanline_offset(const struct intel_crtc_state *crtc_state);
 static uint32_t i915_lcd_kernel_frame(void *ctx);
 
 /*
+ * Reads a pipe's hardware frame counter (PIPE_FRMCOUNT).
+ *
+ * For the refresh boundaries of the display control (ws113-p012); the
+ * caller knows the pipe runs.  The counter moves at each vblank start and
+ * restarts when the pipe is enabled again.
+ */
+uint32_t
+drv_i915_pipe_frame_read(
+	struct i915_mmio *mmio,
+	int pipe)
+{
+	uint32_t reg;
+	uint32_t frame;
+
+	/* Reads the pipe's frame counter. */
+	reg = i915_mmio_reg_offset(PIPE_FRMCOUNT_G4X(pipe));
+	frame = drv_i915_read32(mmio, reg);
+
+	/* Succeeded: the frame number. */
+	return frame;
+}
+
+/*
  * Waits until the pipe's scanline counter stands still.
  */
 void

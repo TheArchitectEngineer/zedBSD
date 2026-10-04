@@ -42,8 +42,9 @@ struct i915_session;
  * A batch runs like a request.  A presentation shows a frame on the panel
  * and a release gives the panel back; both belong to the display window,
  * which the worker enters for the first presentation and leaves for the
- * release.  A backlight item reads or sets the panel's brightness, inside
- * the window only (ws113-p013); it neither enters nor leaves it.
+ * release.  A backlight item reads or sets the panel's brightness or
+ * switches its light (I915_BACKLIGHT_*, display/backlight.h), inside the
+ * window only (ws113-p013, ws113-p012); it neither enters nor leaves it.
  */
 enum i915_worker_sync_kind {
 	I915_WORKER_SYNC_BATCH = 0,
@@ -93,7 +94,7 @@ int drv_i915_worker_run_sync(struct i915_device *device, struct i915_context *co
 
 int drv_i915_worker_sync_display(struct i915_device *device, enum i915_worker_sync_kind kind, const struct i915_worker_present *present);
 void drv_i915_worker_serve_window(struct i915_device *device);
-int drv_i915_worker_sync_backlight(struct i915_device *device, int set, uint32_t *percent);
+int drv_i915_worker_sync_backlight(struct i915_device *device, int op, uint32_t *value);
 int drv_i915_worker_run_batch(struct i915_device *device, struct i915_context *context, uint64_t batch_va);
 
 int drv_i915_worker_engine_reset(struct i915_engine *engine);

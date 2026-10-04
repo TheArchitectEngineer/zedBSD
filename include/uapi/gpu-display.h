@@ -17,6 +17,7 @@
 
 #define GPU_CAP_DISPLAY			128U
 #define GPU_CAP_DISPLAY_EVENTS		4096U
+#define GPU_CAP_DISPLAY_CONTROL		32768U
 #define GPU_DISPLAY_EVENT_CHANGE	1U
 #define GPU_DISPLAY_EVENT_ACK		1U
 #define GPU_DISPLAY_CONNECTED		1U
@@ -25,6 +26,10 @@
 #define GPU_DISPLAY_ATOMIC_MODE_PRESENT	8U
 #define GPU_DISPLAY_ACTIVE		16U
 #define GPU_DISPLAY_BLOB		32U
+#define GPU_DISPLAY_POWER_CONTROL	64U
+#define GPU_DISPLAY_POWERED_OFF		128U
+#define GPU_DISPLAY_REFRESH_COUNTER	256U
+#define GPU_DISPLAY_LIMITED		512U
 #define GPU_DISPLAY_FORMAT_BGRA8888	1U
 #define GPU_DISPLAY_FORMAT_RGBA8888	2U
 #define GPU_DISPLAY_MODE_ENUMERATE	0U
@@ -32,6 +37,9 @@
 #define GPU_DISPLAY_PRESENT_FIFO	1U
 #define GPU_DISPLAY_PRESENT_BLOB	2U
 #define GPU_DISPLAY_COUNT_ONLY		UINT32_MAX
+#define GPU_DISPLAY_POWER_ON		0U
+#define GPU_DISPLAY_POWER_OFF		1U
+#define GPU_DISPLAY_POWER_SUSPEND	2U
 
 #define GPU_DISPLAY_QUERY		_IOWR('G', 24, struct gpu_display_info)
 #define GPU_DISPLAY_MODE		_IOWR('G', 25, struct gpu_display_mode)
@@ -40,6 +48,8 @@
 #define GPU_DISPLAY_PRESENT		_IOWR('G', 28, struct gpu_display_present)
 #define GPU_DISPLAY_WAIT		_IOWR('G', 29, struct gpu_display_wait)
 #define GPU_DISPLAY_EVENTS		_IOWR('G', 32, struct gpu_display_events)
+#define GPU_DISPLAY_POWER		_IOW('G', 39, struct gpu_display_power)
+#define GPU_DISPLAY_REFRESH		_IOWR('G', 40, struct gpu_display_refresh)
 
 /*
  * One non-destructive display-change snapshot, with an optional exact acknowledgement.
@@ -64,6 +74,11 @@ struct gpu_display_events {
 /*
  * One output snapshot selected by ordinal, with a stable nonzero display ID.
  * Only version, size and index are inputs; count-only queries use UINT32_MAX.
+ * With GPU_CAP_DISPLAY_CONTROL, POWER_CONTROL says GPU_DISPLAY_POWER works on
+ * the output, POWERED_OFF that its lease holder powered it off, and
+ * REFRESH_COUNTER that GPU_DISPLAY_REFRESH reports its refresh boundaries.
+ * LIMITED marks a connected output that cannot be lit now because of the
+ * limit of outputs shown at once (its claim answers ENOSPC).
  */
 struct gpu_display_info {
 	uint32_t version;
@@ -169,6 +184,47 @@ struct gpu_display_wait {
 	uint64_t completed_sequence;
 	uint64_t present_time_ns;
 	uint64_t generation;
+};
+
+/*
+ * Powers the display this open leases on or off (VK_EXT_display_control).
+ * Every field is an input; reserved is zero.  It needs a writable open and
+ * this open's lease on the display: EBUSY otherwise (another open's lease, or
+ * none).  ESTALE for an old generation, ENXIO when disconnected, EOPNOTSUPP
+ * when the output has no power control.  SUSPEND may be the same as OFF.
+ * The lease's end powers the output on again.  A power change is not a
+ * topology change.
+ */
+struct gpu_display_power {
+	uint32_t version;
+	uint32_t size;
+	uint32_t display_id;
+	uint32_t state;
+	uint64_t generation;
+	uint64_t reserved;
+};
+
+/*
+ * Waits for the output's next refresh boundary after cursor; no lease is
+ * needed.  Cursor zero reports the current count at once.  Inputs are
+ * display_id, generation, cursor and timeout_ns (one call waits at most a
+ * second); the outputs are zero on input.  sequence is a count that never
+ * goes back and is above cursor, time_ns the boundary's time on the 1 ms
+ * monotonic scheduler clock, and flags has GPU_DISPLAY_VIRTUAL_CLOCK when the
+ * boundary is a virtual clock's rather than a scanout's.  An output that does
+ * not scan out makes no boundary: ETIMEDOUT.  ESTALE for an old generation,
+ * ENODEV when the GPU is offline.
+ */
+struct gpu_display_refresh {
+	uint32_t version;
+	uint32_t size;
+	uint32_t display_id;
+	uint32_t flags;
+	uint64_t generation;
+	uint64_t cursor;
+	uint64_t timeout_ns;
+	uint64_t sequence;
+	uint64_t time_ns;
 };
 
 #endif

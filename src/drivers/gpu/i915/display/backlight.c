@@ -102,18 +102,20 @@ drv_i915_display_backlight_unregister(
 }
 
 /*
- * Reads (set 0) or sets (set 1) the panel's brightness on the worker.
+ * Reads or sets the panel's brightness, or switches its light (op:
+ * I915_BACKLIGHT_*; *value is the percent, or 1 for on), on the worker.
  *
- * Runs on the request worker.  Returns 0 with the brightness in *percent,
- * EBUSY outside the display window or while the panel is not running, or
- * EIO for an error the panel's code reported.
+ * Runs on the request worker.  Returns 0 with the brightness in *value (the
+ * light switched: *value unchanged), EBUSY outside the display window or
+ * while the panel is not running, or EIO for an error the panel's code
+ * reported.
  */
 int
 drv_i915_display_backlight_serve(
 	struct i915_device *device,
 	int in_display,
-	int set,
-	uint32_t *percent)
+	int op,
+	uint32_t *value)
 {
 	struct i915_display *display;
 	uint32_t level;
@@ -127,9 +129,20 @@ drv_i915_display_backlight_serve(
 	if (display->output.none || display->output.hdmi)
 		return EBUSY;
 
+	/* Switches the light (the panel's power for the display control, ws113-p012): the pipe keeps running. */
+	if (op == I915_BACKLIGHT_POWER) {
+		result = drv_i915_lcd_modeset_backlight(display, *value != 0U);
+		error = i915_backlight_result(result);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the light is switched. */
+		return 0;
+	}
+
 	/* Sets the brightness first, when asked to. */
-	if (set) {
-		result = drv_i915_lcd_modeset_brightness(display, *percent, I915_BACKLIGHT_PERCENT_MAX);
+	if (op == I915_BACKLIGHT_SET) {
+		result = drv_i915_lcd_modeset_brightness(display, *value, I915_BACKLIGHT_PERCENT_MAX);
 		error = i915_backlight_result(result);
 		if (error != 0)
 			return error;
@@ -143,7 +156,7 @@ drv_i915_display_backlight_serve(
 		return error;
 
 	/* Succeeded: the brightness in percent. */
-	*percent = level;
+	*value = level;
 	return 0;
 }
 
@@ -158,7 +171,7 @@ i915_backlight_get(
 
 	/* Asks the worker. */
 	level = 0U;
-	error = drv_i915_worker_sync_backlight(context, 0, &level);
+	error = drv_i915_worker_sync_backlight(context, I915_BACKLIGHT_GET, &level);
 	if (error != 0)
 		return error;
 
@@ -178,7 +191,7 @@ i915_backlight_set(
 
 	/* Asks the worker. */
 	level = percent;
-	error = drv_i915_worker_sync_backlight(context, 1, &level);
+	error = drv_i915_worker_sync_backlight(context, I915_BACKLIGHT_SET, &level);
 	if (error != 0)
 		return error;
 

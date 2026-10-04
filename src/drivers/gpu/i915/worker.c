@@ -167,9 +167,9 @@ struct i915_worker_sync {
 	/* A presentation: the frame, read by the worker while the caller sleeps. */
 	const struct i915_worker_present *present;
 
-	/* A backlight item: whether it sets, and the brightness it sets or reads back (percent). */
-	int backlight_set;
-	uint32_t backlight_percent;
+	/* A backlight item: what it does (I915_BACKLIGHT_*), and its value (percent, or on) in and out. */
+	int backlight_op;
+	uint32_t backlight_value;
 
 	/* When the item was queued (drv_i915_perf_now()), for the context's queue and round times. */
 	uint64_t queued_at;
@@ -728,18 +728,18 @@ drv_i915_worker_sync_display(
 }
 
 /*
- * Reads (set 0) or sets (set 1) the panel's brightness in percent and
- * waits until the worker has done it.
+ * Reads or sets the panel's brightness in percent, or switches its light
+ * (op: I915_BACKLIGHT_*), and waits until the worker has done it.
  *
- * Returns 0 with the brightness in *percent, EBUSY while the panel is not
- * lit by the driver (outside the display window, or HDMI in its place),
- * ENODEV when the worker is not serving, or EIO.
+ * Returns 0 with the brightness (or the light) in *value, EBUSY while the
+ * panel is not lit by the driver (outside the display window, or HDMI in
+ * its place), ENODEV when the worker is not serving, or EIO.
  */
 int
 drv_i915_worker_sync_backlight(
 	struct i915_device *device,
-	int set,
-	uint32_t *percent)
+	int op,
+	uint32_t *value)
 {
 	struct i915_worker_sync item;
 	int error;
@@ -747,16 +747,16 @@ drv_i915_worker_sync_backlight(
 	/* Describes the item. */
 	kern_memset(&item, 0, sizeof(item));
 	item.kind = I915_WORKER_SYNC_BACKLIGHT;
-	item.backlight_set = set;
-	item.backlight_percent = *percent;
+	item.backlight_op = op;
+	item.backlight_value = *value;
 
 	/* Queues it and sleeps until the worker has done it. */
 	error = i915_worker_queue_sync(device, &item);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the brightness the panel has. */
-	*percent = item.backlight_percent;
+	/* Succeeded: the brightness (or the light) the panel has. */
+	*value = item.backlight_value;
 	return 0;
 }
 
@@ -1178,7 +1178,7 @@ i915_worker_run_sync_item(
 		break;
 	case I915_WORKER_SYNC_BACKLIGHT:
 		/* The panel's light, which only the window's lit panel has. */
-		error = drv_i915_display_backlight_serve(device, in_display, item->backlight_set, &item->backlight_percent);
+		error = drv_i915_display_backlight_serve(device, in_display, item->backlight_op, &item->backlight_value);
 		break;
 	default:
 		/* A release with the panel down (nothing to stop), or held for the next lease. */

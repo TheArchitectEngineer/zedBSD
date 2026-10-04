@@ -102,3 +102,8 @@ struct backlight_info {
 - `sh plan/ws113/tests/host-backlight.sh` PASS（ASan・UBSan、実の `cdev.c` と: 引数の拒否、番号 0〜3 と dev_t 0x000d000N、5 つ目は ENOSPC、空いた最小の番号の再利用、GETSTATUS（60、100 を超える答えは 100、nlevels 0）、UPDATESTATUS（read-only の open は EBADF、101 は EINVAL、40・0 を設定）、provider の EBUSY の伝達、GETINFO（i915・panel）、未知の request は ENOTTY、開いたままの取り下げで ENXIO・provider は呼ばれない・record は最後の参照で解放、allocation の漏れ無し。backend の stub は ENOTSUP）。
 - build（warning 0）: amd64 vmunix（kernel include check PASS、amd64 vmunix check PASS）、zedBSD の `wayland`（backend）・`sessiond`・`backlight-probe`、Linux の `libkeiland-backend.a`（`keiland-linux.mk`、-Werror）。`plan/tools/keiland-os-boundary/check.sh` PASS。新しい file の style-check 違反 0、既存の file（devfs.c・worker.c・panel-backlight.c）は新しい違反 0（devfs.c は 2 つ減った）。
 - 未実施: QEMU（T1: `config-amd64-p013.mk` の image で `backlight-p013.sh`、/dev/backlight が空の directory であること）、実機（5330: `backlight-probe`・`backlight-probe 30`・`backlight-probe 100` で panel の明るさが変わるのをユーザーが目視。compositor が一度描いた後＝driver が panel を点けた後に。その前は EBUSY が正しい）。
+
+## T1-130（2026-10-05）
+
+- `backlight-p013.sh` PASS（QEMU、Venus）。`backlight-probe` は `BACKLIGHT error=6 step=open`: zedBSD の errno 6 は ENOENT（Linux の番号ではない）で、期待どおり（panel の無い guest に backlight0 は無い）。probe は `reason=<strerror>` も出すようにした。
+- 実機（5330）は ws159-p005 の UAT の追加の項目（Q1）。

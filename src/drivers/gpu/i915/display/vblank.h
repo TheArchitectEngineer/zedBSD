@@ -27,6 +27,13 @@
 #include "internal.h"
 
 struct i915_display;
+struct i915_mmio;
+
+/*
+ * ==== A pipe's hardware frame counter ====
+ */
+
+uint32_t drv_i915_pipe_frame_read(struct i915_mmio *mmio, int pipe);
 
 /*
  * ==== The vblank evasion window of the selected screen ====

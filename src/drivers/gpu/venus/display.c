@@ -67,6 +67,14 @@ struct venus_display_output {
 	uint32_t current_width;
 	uint32_t current_height;
 	unsigned connected;
+
+	/*
+	 * Nonzero while the lease holder has the output powered off
+	 * (GPU_DISPLAY_POWER OFF or SUSPEND): the host scanout is disabled, the
+	 * images are kept, and presents change them without selecting or
+	 * flushing a scanout.  The lease's end clears it.
+	 */
+	unsigned powered_off;
 };
 
 /* One dynamically allocated output inventory owned by its controller. */
@@ -119,6 +127,10 @@ static int display_release(void *device, void *session, const struct gpu_display
 static int display_present(void *device, void *session, void *object, struct gpu_display_present *request);
 static int display_wait(void *device, void *session, struct gpu_display_wait *request);
 static int display_events(void *device, void *session, uint64_t *sequence);
+static int display_power(void *device, void *session, const struct gpu_display_power *request);
+static int display_refresh_boundary(void *device, void *session, struct gpu_display_refresh *request);
+static int display_scanout_disable(struct venus_controller *controller, struct venus_display_output *output);
+static int display_scanout_restore(struct venus_controller *controller, struct venus_display_output *output);
 static int display_refresh(struct venus_controller *controller);
 static int display_find(struct venus_controller *controller, uint32_t identifier, uint64_t generation, struct venus_display_output **result);
 static int display_find_lease(struct venus_controller *controller, struct venus_session *session, uint64_t lease, struct venus_display_output **result);
@@ -139,10 +151,15 @@ static int display_edid_timing(struct venus_display_output *output, const uint8_
 static void display_timings_free(struct venus_display_output *output);
 static int display_status(struct venus_controller *controller, const void *command, uint32_t command_bytes, void *reply, uint32_t reply_bytes, uint32_t expected);
 
-/* Hardware callbacks share the controller mutex; event snapshots use only the IRQ-safe queue lock. */
+/*
+ * Hardware callbacks share the controller mutex; event snapshots use only the IRQ-safe queue lock.
+ * Power and refresh (ws113-p012) are the guest's virtual display's: the refresh boundaries are the
+ * virtual clock's, not the host monitor's.
+ */
 const struct drv_gpu_display_ops drv_venus_display_operations = {
 	display_query, display_mode, display_claim,
-	display_release, display_present, display_wait, display_events
+	display_release, display_present, display_wait, display_events,
+	display_power, display_refresh_boundary
 };
 
 /* Native sharing is supported only within this Venus controller's resource namespace. */
@@ -774,6 +791,11 @@ display_query(
 	if (request->index == 0U && controller->primary_scanout != NULL)
 		request->flags |= GPU_DISPLAY_ACTIVE;
 
+	/* Every virtual output takes power control and counts its virtual refresh boundaries. */
+	request->flags |= GPU_DISPLAY_POWER_CONTROL | GPU_DISPLAY_REFRESH_COUNTER;
+	if (output->powered_off != 0U)
+		request->flags |= GPU_DISPLAY_POWERED_OFF;
+
 	/* One opaque full-output plane accepts either defined packed pixel format. */
 	request->plane_count = 1U;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
@@ -1136,6 +1158,279 @@ display_events(
 	return 0;
 }
 
+/*
+ * Powers a leased output off or on (GPU_DISPLAY_POWER): the host scanout is
+ * disabled with the images kept, or selected again with the current image.
+ */
+static int
+display_power(
+	void *device,
+	void *private_session,
+	const struct gpu_display_power *request)
+{
+	struct venus_controller *controller;
+	struct venus_display_output *output;
+	unsigned failed;
+	unsigned off;
+	int error;
+
+	/* The output of this generation, under the controller mutex. */
+	controller = device;
+	mutex_lock(&controller->mutex);
+	error = display_find(controller, request->display_id, request->generation, &output);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* A failed transport selects nothing. */
+	failed = atomic_raw_load_acquire(&controller->transport.failed);
+	if (failed != 0U) {
+		mutex_unlock(&controller->mutex);
+		return ENODEV;
+	}
+
+	/* Only this open's lease powers the output; another open's, or none, refuses. */
+	if (output->owner != private_session || output->lease == 0U) {
+		mutex_unlock(&controller->mutex);
+		return EBUSY;
+	}
+
+	/* SUSPEND is the same as OFF here; a state the output has already is done. */
+	off = 0U;
+	if (request->state != GPU_DISPLAY_POWER_ON)
+		off = 1U;
+	if (off == output->powered_off) {
+		mutex_unlock(&controller->mutex);
+		return 0;
+	}
+
+	/* Disables the scanout, or selects the current image again. */
+	if (off != 0U) {
+		error = display_scanout_disable(controller, output);
+	} else {
+		error = display_scanout_restore(controller, output);
+	}
+
+	/* The state changes only with an acknowledged host command. */
+	if (error == 0)
+		output->powered_off = off;
+	mutex_unlock(&controller->mutex);
+
+	/* Reports the host command that failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the output has the requested power. */
+	return 0;
+}
+
+/*
+ * Waits for an output's next virtual refresh boundary after a cursor
+ * (GPU_DISPLAY_REFRESH).
+ *
+ * The count is the guest clock's: boot ticks times the output's refresh, so
+ * it never goes back.  A boundary is reported only while the output scans
+ * out (an image is selected and it is powered on); otherwise the wait runs
+ * out.  Cursor zero reports the count at once.
+ */
+static int
+display_refresh_boundary(
+	void *device,
+	void *private_session,
+	struct gpu_display_refresh *request)
+{
+	struct venus_controller *controller;
+	struct venus_display_output *output;
+	uint64_t ticks_per_kilo;
+	uint64_t deadline;
+	uint64_t now;
+	uint64_t count;
+	uint64_t boundary;
+	uint64_t target;
+	uint32_t refresh;
+	unsigned scanning;
+	unsigned failed;
+	int error;
+
+	/* Any open may observe the clock; the deadline is in scheduler ticks, rounded up. */
+	(void)private_session;
+	controller = device;
+	ticks_per_kilo = (uint64_t)KERN_CLOCK_HZ * 1000U;
+	now = sched_ticks();
+	deadline = now + (request->timeout_ns * KERN_CLOCK_HZ + KERN_NSEC_PER_SEC - 1U) / KERN_NSEC_PER_SEC;
+
+	/* Until a boundary after the cursor, or the deadline. */
+	for (;;) {
+		/* The output of this generation, and whether it scans out now. */
+		mutex_lock(&controller->mutex);
+		error = display_find(controller, request->display_id, request->generation, &output);
+		if (error != 0) {
+			mutex_unlock(&controller->mutex);
+			return error;
+		}
+
+		/* A transport that failed, and an output that shows an image while powered on. */
+		failed = atomic_raw_load_acquire(&controller->transport.failed);
+		scanning = 0U;
+		if (output->front != NULL || output->shared_front != NULL)
+			scanning = 1U;
+		if (output->identifier == 1U && controller->primary_scanout != NULL)
+			scanning = 1U;
+		if (output->powered_off != 0U)
+			scanning = 0U;
+		refresh = output->preferred_refresh;
+		mutex_unlock(&controller->mutex);
+
+		/* A failed transport has no display clock. */
+		if (failed != 0U)
+			return ENODEV;
+
+		/* The virtual clock's rate: the output's, or the nominal one, bounded like a mode. */
+		if (refresh < 1000U || refresh > VENUS_DISPLAY_MAX_REFRESH)
+			refresh = VENUS_DISPLAY_REFRESH;
+
+		/* The count of boundaries so far, and the tick of the last one. */
+		now = sched_ticks();
+		if (now > UINT64_MAX / refresh)
+			return EOVERFLOW;
+		count = now * refresh / ticks_per_kilo;
+		boundary = (count * ticks_per_kilo + refresh - 1U) / refresh;
+
+		/* Cursor zero, or a boundary after the cursor while scanning out: reported. */
+		if (request->cursor == 0U || (scanning != 0U && count > request->cursor)) {
+			request->sequence = count;
+			request->time_ns = boundary * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
+			request->flags = GPU_DISPLAY_VIRTUAL_CLOCK;
+			break;
+		}
+
+		/* No boundary came in time. */
+		if (now >= deadline)
+			return ETIMEDOUT;
+
+		/* Sleeps to the next boundary, or a short while to look at the output again. */
+		target = now + KERN_CLOCK_HZ / 100U;
+		if (scanning != 0U)
+			target = ((count + 1U) * ticks_per_kilo + refresh - 1U) / refresh;
+		if (target > deadline)
+			target = deadline;
+		if (target <= now)
+			target = now + 1U;
+		sched_sleep(target);
+	}
+
+	/* Succeeded: the boundary after the cursor. */
+	return 0;
+}
+
+/* Disables an output's host scanout, keeping its images (the controller mutex held). */
+static int
+display_scanout_disable(
+	struct venus_controller *controller,
+	struct venus_display_output *output)
+{
+	uint8_t command[48];
+	int error;
+
+	/* Nothing is selected (no image of the lease, nor the console's on the primary output): nothing to disable. */
+	if (output->front == NULL &&
+	    output->shared_front == NULL &&
+	    (output->identifier != 1U || controller->primary_scanout == NULL))
+		return 0;
+
+	/* A scanout of resource zero disables it. */
+	kern_memset(command, 0, sizeof(command));
+	drv_venus_header(command, 0x0103U, 0U);
+	drv_venus_store32(command + 40U, output->identifier - 1U);
+	error = display_fenced(controller, command, sizeof(command));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the host shows nothing on the output. */
+	return 0;
+}
+
+/* Selects an output's current image again and flushes it (the controller mutex held). */
+static int
+display_scanout_restore(
+	struct venus_controller *controller,
+	struct venus_display_output *output)
+{
+	const struct gpu_image_descriptor *image;
+	uint8_t command[96];
+	uint32_t resource;
+	uint32_t width;
+	uint32_t height;
+	uint32_t format;
+	int error;
+
+	/* A shared image is imported again, a private one selected again; none leaves the output dark. */
+	if (output->shared_front != NULL) {
+		image = &output->shared_front->image;
+		format = 67U;
+		if (image->format == GPU_PIXEL_BGRA8888)
+			format = 1U;
+		kern_memset(command, 0, sizeof(command));
+		drv_venus_header(command, 0x010dU, 0U);
+		drv_venus_store32(command + 32U, image->width);
+		drv_venus_store32(command + 36U, image->height);
+		drv_venus_store32(command + 40U, output->identifier - 1U);
+		drv_venus_store32(command + 44U, output->shared_front->storage->identifier);
+		drv_venus_store32(command + 48U, image->width);
+		drv_venus_store32(command + 52U, image->height);
+		drv_venus_store32(command + 56U, format);
+		drv_venus_store32(command + 64U, image->stride);
+		drv_venus_store32(command + 80U, (uint32_t)image->offset);
+		error = display_fenced(controller, command, sizeof(command));
+		resource = output->shared_front->storage->identifier;
+		width = image->width;
+		height = image->height;
+	} else if (output->front != NULL) {
+		kern_memset(command, 0, 48U);
+		drv_venus_header(command, 0x0103U, 0U);
+		drv_venus_store32(command + 32U, output->current_width);
+		drv_venus_store32(command + 36U, output->current_height);
+		drv_venus_store32(command + 40U, output->identifier - 1U);
+		drv_venus_store32(command + 44U, output->front->identifier);
+		error = display_fenced(controller, command, 48U);
+		resource = output->front->identifier;
+		width = output->current_width;
+		height = output->current_height;
+	} else if (output->identifier == 1U && controller->primary_scanout != NULL) {
+		/* No frame of the lease yet: the console's last image, which the primary output showed. */
+		kern_memset(command, 0, 48U);
+		drv_venus_header(command, 0x0103U, 0U);
+		drv_venus_store32(command + 32U, controller->primary_width);
+		drv_venus_store32(command + 36U, controller->primary_height);
+		drv_venus_store32(command + 40U, 0U);
+		drv_venus_store32(command + 44U, controller->primary_scanout->identifier);
+		error = display_fenced(controller, command, 48U);
+		resource = controller->primary_scanout->identifier;
+		width = controller->primary_width;
+		height = controller->primary_height;
+	} else {
+		return 0;
+	}
+
+	/* Reports the selection that failed. */
+	if (error != 0)
+		return error;
+
+	/* Shows the whole image. */
+	kern_memset(command, 0, 48U);
+	drv_venus_header(command, 0x0104U, 0U);
+	drv_venus_store32(command + 32U, width);
+	drv_venus_store32(command + 36U, height);
+	drv_venus_store32(command + 40U, resource);
+	error = display_fenced(controller, command, 48U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the output shows its current image again. */
+	return 0;
+}
+
 /* Refreshes native topology only when first queried or explicitly invalidated. */
 static int
 display_refresh(
@@ -1346,8 +1641,14 @@ display_release_output(
 	int hold;
 	int error;
 
-	/* Decides whether the ended lease's last picture stays on the screen until the next lease's first frame. */
-	hold = display_hold_permitted(controller, output);
+	/*
+	 * Decides whether the ended lease's last picture stays on the screen until the next lease's first frame;
+	 * a powered-off output shows none, so nothing is held, and the lease's end powers it on again.
+	 */
+	hold = 0;
+	if (output->powered_off == 0U)
+		hold = display_hold_permitted(controller, output);
+	output->powered_off = 0U;
 
 	/* A picture withdrawn here ends any earlier hold of the primary output with it. */
 	if (hold == 0 && output->identifier == 1U)
@@ -1681,16 +1982,18 @@ display_frame(
 	if (error != 0)
 		return error;
 
-	/* Geometry and the fully transferred image change in the same scanout command. */
-	kern_memset(command, 0, 48U);
-	drv_venus_header(command, 0x0103U, 0U);
-	drv_venus_store32(command + 32U, request->width);
-	drv_venus_store32(command + 36U, request->height);
-	drv_venus_store32(command + 40U, output->identifier - 1U);
-	drv_venus_store32(command + 44U, output->back->identifier);
-	error = display_fenced(controller, command, 48U);
-	if (error != 0)
-		return error;
+	/* Geometry and the fully transferred image change in the same scanout command (none while powered off). */
+	if (output->powered_off == 0U) {
+		kern_memset(command, 0, 48U);
+		drv_venus_header(command, 0x0103U, 0U);
+		drv_venus_store32(command + 32U, request->width);
+		drv_venus_store32(command + 36U, request->height);
+		drv_venus_store32(command + 40U, output->identifier - 1U);
+		drv_venus_store32(command + 44U, output->back->identifier);
+		error = display_fenced(controller, command, 48U);
+		if (error != 0)
+			return error;
+	}
 
 	/* Successful selection transfers the native front reference before any flush. */
 	previous = output->front;
@@ -1715,15 +2018,17 @@ display_frame(
 	/* A picture held from an ended lease has just been replaced by this lease's first frame. */
 	display_hold_replaced(controller, output);
 
-	/* Completes the whole visible update before reporting a reusable source image. */
-	kern_memset(command, 0, 48U);
-	drv_venus_header(command, 0x0104U, 0U);
-	drv_venus_store32(command + 32U, request->width);
-	drv_venus_store32(command + 36U, request->height);
-	drv_venus_store32(command + 40U, output->front->identifier);
-	error = display_fenced(controller, command, 48U);
-	if (error != 0)
-		return error;
+	/* Completes the whole visible update before reporting a reusable source image (nothing is visible while powered off). */
+	if (output->powered_off == 0U) {
+		kern_memset(command, 0, 48U);
+		drv_venus_header(command, 0x0104U, 0U);
+		drv_venus_store32(command + 32U, request->width);
+		drv_venus_store32(command + 36U, request->height);
+		drv_venus_store32(command + 40U, output->front->identifier);
+		error = display_fenced(controller, command, 48U);
+		if (error != 0)
+			return error;
+	}
 
 	/* Sequence publication occurs only after the complete virtual frame finishes. */
 	output->sequence++;
@@ -1793,23 +2098,25 @@ display_blob_frame(
 	if (image->format == GPU_PIXEL_BGRA8888)
 		format = 1U;
 
-	/* The host imports the retained allocation directly into its GL display path. */
-	kern_memset(command, 0, sizeof(command));
-	drv_venus_header(command, 0x010dU, 0U);
-	drv_venus_store32(command + 32U, image->width);
-	drv_venus_store32(command + 36U, image->height);
-	drv_venus_store32(command + 40U, output->identifier - 1U);
-	drv_venus_store32(command + 44U, share->storage->identifier);
-	drv_venus_store32(command + 48U, image->width);
-	drv_venus_store32(command + 52U, image->height);
-	drv_venus_store32(command + 56U, format);
-	drv_venus_store32(command + 64U, image->stride);
-	drv_venus_store32(command + 80U, (uint32_t)image->offset);
-	error = display_fenced(controller, command, sizeof(command));
-	if (error != 0) {
-		drv_venus_transport_fail(&controller->transport, error);
-		drv_venus_share_put_locked(controller, share);
-		return error;
+	/* The host imports the retained allocation directly into its GL display path (not while powered off). */
+	if (output->powered_off == 0U) {
+		kern_memset(command, 0, sizeof(command));
+		drv_venus_header(command, 0x010dU, 0U);
+		drv_venus_store32(command + 32U, image->width);
+		drv_venus_store32(command + 36U, image->height);
+		drv_venus_store32(command + 40U, output->identifier - 1U);
+		drv_venus_store32(command + 44U, share->storage->identifier);
+		drv_venus_store32(command + 48U, image->width);
+		drv_venus_store32(command + 52U, image->height);
+		drv_venus_store32(command + 56U, format);
+		drv_venus_store32(command + 64U, image->stride);
+		drv_venus_store32(command + 80U, (uint32_t)image->offset);
+		error = display_fenced(controller, command, sizeof(command));
+		if (error != 0) {
+			drv_venus_transport_fail(&controller->transport, error);
+			drv_venus_share_put_locked(controller, share);
+			return error;
+		}
 	}
 
 	/* Acknowledged selection transfers the current scanout hold before the old one retires. */
@@ -1832,15 +2139,17 @@ display_blob_frame(
 	/* A picture held from an ended lease has just been replaced by this lease's first frame. */
 	display_hold_replaced(controller, output);
 
-	/* Publish damage for the GPU-resident image without a transfer-to-host command. */
-	kern_memset(command, 0, 48U);
-	drv_venus_header(command, 0x0104U, 0U);
-	drv_venus_store32(command + 32U, image->width);
-	drv_venus_store32(command + 36U, image->height);
-	drv_venus_store32(command + 40U, share->storage->identifier);
-	error = display_fenced(controller, command, 48U);
-	if (error != 0)
-		return error;
+	/* Publish damage for the GPU-resident image without a transfer-to-host command (none while powered off). */
+	if (output->powered_off == 0U) {
+		kern_memset(command, 0, 48U);
+		drv_venus_header(command, 0x0104U, 0U);
+		drv_venus_store32(command + 32U, image->width);
+		drv_venus_store32(command + 36U, image->height);
+		drv_venus_store32(command + 40U, share->storage->identifier);
+		error = display_fenced(controller, command, 48U);
+		if (error != 0)
+			return error;
+	}
 
 	/* Completed presentation advances only after the host consumed the complete visible update. */
 	output->sequence++;
