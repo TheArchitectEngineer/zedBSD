@@ -33,7 +33,11 @@
  * shortcuts): a terminal's shell needs Ctrl+W and Ctrl+T.
  *
  * A press on a control is taken here and the control acts on the release
- * over it.  The search field, and the breadcrumb when the client asks for
+ * over it.  A press on the search field waits instead (ws099-p030): its
+ * release where it was pressed gives the field the keyboard with the cursor
+ * there, and a press that goes far enough moves the window, as a press on
+ * its title does.  On the field that has the keyboard a press puts the
+ * cursor and a drag selects.  The search field, and the breadcrumb when the client asks for
  * the path to be edited, are text fields zdesktop owns: while one has the
  * keyboard, the keys edit it, and the client hears the text as it changes
  * and how the editing ended.  Hits are tested against the places the
@@ -57,6 +61,10 @@
 #define GROUP_PADDING		2
 #define SIDE_GAP		10
 #define ICON_PIXELS		16U
+
+/* Where a field's text starts in it: the search field's (after its magnifier) and the edited breadcrumb's. */
+#define SEARCH_TEXT_INSET	30
+#define CRUMB_TEXT_INSET	10
 
 /* The search field's width (and the least it shrinks to), the breadcrumb's least width. */
 #define SEARCH_WIDTH		220
@@ -145,7 +153,8 @@ enum shell_side {
 /*
  * One region of the last frame the pointer can press: the window, whether
  * in the system bar, its kind, the control and a detail (a breadcrumb's
- * part), and its rectangle on the output.
+ * part), its rectangle on the output, and for a field where its text
+ * starts.
  */
 struct shell_hit {
 	struct zwl_object *surface;
@@ -157,6 +166,7 @@ struct shell_hit {
 	int32_t y;
 	int32_t width;
 	int32_t height;
+	int32_t text_x;
 };
 
 /*
@@ -224,15 +234,22 @@ struct shell_logged {
 
 /*
  * The presentation's state: the regions of the last frame, the press in
- * progress (its window is NULL when none), the text field with the
- * keyboard, a key whose press the field took (so its release is taken
- * too), and the layouts logged.
+ * progress (pressing is 0 when none), where and by what it was pressed,
+ * whether it is a press on the search field that waits to be a click or a
+ * move, or one on the field with the keyboard that selects, the text field
+ * with the keyboard, a key whose press the field took (so its release is
+ * taken too), and the layouts logged.
  */
 struct shell_titlebar {
 	struct shell_hit hits[SHELL_HITS];
 	unsigned hit_count;
 	struct shell_hit pressed;
 	unsigned pressing;
+	int32_t press_x;
+	int32_t press_y;
+	enum zwl_contact_source press_source;
+	unsigned waiting;
+	unsigned selecting;
 	struct shell_field field;
 	uint32_t eaten_key;
 	struct shell_logged logged[SHELL_LOGGED];
@@ -266,6 +283,9 @@ static unsigned shell_icon(uint32_t role);
 static int shell_hovered(struct zwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
 static void shell_draw_drop_part(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t size, float fade);
 static void shell_add_hit(struct zwl_object *surface, unsigned docked, unsigned kind, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t height);
+static void shell_add_field(struct zwl_object *surface, unsigned docked, uint32_t id, int32_t x, int32_t y, int32_t width, int32_t height, int32_t text_x);
+static void shell_release(struct zwl_server *server);
+static size_t shell_field_at(struct zwl_server *server, int32_t text_x, int32_t x);
 static const struct shell_hit *shell_hit_at(int32_t x, int32_t y);
 static void shell_act(struct zwl_server *server, const struct shell_hit *hit);
 static void shell_focus(struct zwl_server *server, struct zwl_object *surface, const struct zwl_titlebar_control *control, unsigned edit);
@@ -385,8 +405,11 @@ zwl_titlebar_draw(
 
 /*
  * Handles a pointer button for the controls: a left press on one is taken
- * and the control acts on the release over it; a press elsewhere ends the
- * editing of a field.  Returns 1 when the button was the controls'.
+ * and the control acts on the release over it; a press on the search field
+ * waits for its release to give it the keyboard (or moves the window when it
+ * goes far enough, zwl_titlebar_motion); a press on the field with the
+ * keyboard puts its cursor; a press elsewhere ends the editing of a field.
+ * Returns 1 when the button was the controls'.
  */
 int
 zwl_titlebar_button(
@@ -395,7 +418,7 @@ zwl_titlebar_button(
 	uint32_t state)
 {
 	const struct shell_hit *hit;
-	struct shell_hit pressed;
+	struct shell_field *field;
 	struct zwl_object *top;
 
 	/* Only the left button. */
@@ -406,19 +429,7 @@ zwl_titlebar_button(
 	if (state == 0U) {
 		if (shell_titlebar.pressing == 0U)
 			return 0;
-		shell_titlebar.pressing = 0;
-		pressed = shell_titlebar.pressed;
-		server->dirty = 1;
-
-		/* The region under the release must be the one pressed. */
-		hit = shell_hit_at(server->pointer_x, server->pointer_y);
-		if (hit == NULL)
-			return 1;
-		if (hit->surface != pressed.surface || hit->id != pressed.id || hit->kind != pressed.kind || hit->detail != pressed.detail)
-			return 1;
-
-		/* The control acts. */
-		shell_act(server, hit);
+		shell_release(server);
 		return 1;
 	}
 
@@ -453,10 +464,90 @@ zwl_titlebar_button(
 		zwl_glass_raise(server, hit->surface);
 	shell_titlebar.pressed = *hit;
 	shell_titlebar.pressing = 1;
+	shell_titlebar.press_x = server->pointer_x;
+	shell_titlebar.press_y = server->pointer_y;
+	shell_titlebar.press_source = server->shell_source;
+	shell_titlebar.waiting = 0;
+	shell_titlebar.selecting = 0;
 	server->dirty = 1;
 
-	/* Succeeded: the press is the controls'. */
+	/* Any other control than a field waits for its release only. */
+	if (hit->kind != KIND_FIELD)
+		return 1;
+
+	/* The search field without the keyboard waits to be a click or a move. */
+	field = &shell_titlebar.field;
+	if (field->surface != hit->surface || field->id != hit->id) {
+		shell_titlebar.waiting = 1;
+		return 1;
+	}
+
+	/* Succeeded: on the field with the keyboard the cursor goes to the press, and a drag selects from there. */
+	field->cursor = shell_field_at(server, hit->text_x, server->pointer_x);
+	field->anchor = field->cursor;
+	shell_titlebar.selecting = 1;
 	return 1;
+}
+
+/*
+ * Follows the pointer while a press on the search field waits or selects:
+ * a waiting press that goes far enough moves the window (shell.c) from the
+ * pressed point, and a selecting one moves the field's cursor, its
+ * selection's other end staying where it was pressed.  Returns 1 when the
+ * motion is the field's.
+ */
+int
+zwl_titlebar_motion(
+	struct zwl_server *server)
+{
+	struct shell_field *field;
+	struct shell_hit pressed;
+	size_t cursor;
+	int moved;
+
+	/* Only a press on a field. */
+	if (shell_titlebar.pressing == 0U)
+		return 0;
+
+	/* A press whose release went elsewhere (a screen that opened over it) is over. */
+	if ((server->buttons_down & 1U) == 0U) {
+		shell_titlebar.pressing = 0;
+		shell_titlebar.waiting = 0;
+		shell_titlebar.selecting = 0;
+		return 0;
+	}
+
+	/* A selecting press moves the cursor under the pointer (its field must still have the keyboard). */
+	pressed = shell_titlebar.pressed;
+	field = &shell_titlebar.field;
+	if (shell_titlebar.selecting != 0U) {
+		if (field->surface != pressed.surface || field->id != pressed.id)
+			return 1;
+		cursor = shell_field_at(server, pressed.text_x, server->pointer_x);
+		if (cursor != field->cursor)
+			server->dirty = 1;
+		field->cursor = cursor;
+		return 1;
+	}
+
+	/* Any other press but a waiting one lets the motion go on. */
+	if (shell_titlebar.waiting == 0U)
+		return 0;
+
+	/* Not far enough yet: the press keeps the pointer. */
+	moved = zwl_glass_press_moved(server, shell_titlebar.press_x, shell_titlebar.press_y, shell_titlebar.press_source);
+	if (!moved)
+		return 1;
+
+	/* The press is no click any more: the window moves, and its move follows this motion. */
+	shell_titlebar.pressing = 0;
+	shell_titlebar.waiting = 0;
+	server->dirty = 1;
+	printf("ZWL TITLEBAR press moves client=%llu surface=%u id=%u docked=%u\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, pressed.docked);
+	zwl_glass_press_move(server, pressed.surface, pressed.docked, shell_titlebar.press_x, shell_titlebar.press_y);
+
+	/* Succeeded: the motion goes on to the move (shell.c). */
+	return 0;
 }
 
 /*
@@ -865,8 +956,13 @@ zwl_titlebar_forget(
 	shell_titlebar.hit_count = kept;
 
 	/* A press or a field on it. */
-	if (shell_titlebar.pressed.surface == object)
+	if (shell_titlebar.pressed.surface == object) {
 		shell_titlebar.pressing = 0;
+		shell_titlebar.waiting = 0;
+		shell_titlebar.selecting = 0;
+	}
+
+	/* The field on it stops being edited, without telling the client that goes. */
 	if (shell_titlebar.field.surface == object)
 		shell_titlebar.field.surface = NULL;
 
@@ -1414,7 +1510,7 @@ shell_draw_search(
 
 	/* The text being typed, with its cursor. */
 	if (focused != 0U) {
-		shell_draw_field_text(server, command, x + 30, baseline, width - 40, ink, fade);
+		shell_draw_field_text(server, command, x + SEARCH_TEXT_INSET, baseline, width - 40, ink, fade);
 	} else {
 		/* The client's text, or the placeholder, paler. */
 		text = control->text;
@@ -1426,12 +1522,12 @@ shell_draw_search(
 
 		/* The text, when there is one. */
 		if (text != NULL)
-			glass_draw_text(server, command, SIZE_BAR, x + 30, baseline, text, width - 40, colour);
+			glass_draw_text(server, command, SIZE_BAR, x + SEARCH_TEXT_INSET, baseline, text, width - 40, colour);
 	}
 
 	/* It can be pressed. */
 	if (recording != 0U)
-		shell_add_hit(surface, docked, KIND_FIELD, control->id, 0U, x, y, width, size);
+		shell_add_field(surface, docked, control->id, x, y, width, size, x + SEARCH_TEXT_INSET);
 }
 
 /*
@@ -1475,9 +1571,9 @@ shell_draw_crumbs(
 		ground[2] = 1.0f;
 		ground[3] = 0.95f * fade;
 		glass_draw_solid(server, command, (float)x, (float)y + 2.0f, (float)width, (float)size - 4.0f, 8.0f, ground);
-		shell_draw_field_text(server, command, x + 10, baseline, width - 20, ink, fade);
+		shell_draw_field_text(server, command, x + CRUMB_TEXT_INSET, baseline, width - 20, ink, fade);
 		if (recording != 0U)
-			shell_add_hit(surface, docked, KIND_FIELD, control->id, 0U, x, y, width, size);
+			shell_add_field(surface, docked, control->id, x, y, width, size, x + CRUMB_TEXT_INSET);
 		return;
 	}
 
@@ -2250,7 +2346,31 @@ shell_add_hit(
 	hit->y = y;
 	hit->width = width;
 	hit->height = height;
+	hit->text_x = x;
 	shell_titlebar.hit_count++;
+}
+
+/* Records a text field's region, with where its text starts. */
+static void
+shell_add_field(
+	struct zwl_object *surface,
+	unsigned docked,
+	uint32_t id,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height,
+	int32_t text_x)
+{
+	unsigned count;
+
+	/* The region, as any control's. */
+	count = shell_titlebar.hit_count;
+	shell_add_hit(surface, docked, KIND_FIELD, id, 0U, x, y, width, height);
+
+	/* Where its text starts, when the table had room for it. */
+	if (shell_titlebar.hit_count > count)
+		shell_titlebar.hits[count].text_x = text_x;
 }
 
 /* Finds the region of the last frame under a point; the latest drawn wins. */
@@ -2274,6 +2394,115 @@ shell_hit_at(
 
 	/* None. */
 	return NULL;
+}
+
+/*
+ * Ends a press on a control with its release: a selection ends; a waiting
+ * press on the search field gives it the keyboard with the cursor where it
+ * was pressed; any other control acts when the release is over it.
+ */
+static void
+shell_release(
+	struct zwl_server *server)
+{
+	const struct shell_hit *hit;
+	struct shell_field *field;
+	struct shell_hit pressed;
+	unsigned waiting;
+	int moved;
+
+	/* The press ends. */
+	pressed = shell_titlebar.pressed;
+	waiting = shell_titlebar.waiting;
+	shell_titlebar.pressing = 0;
+	shell_titlebar.waiting = 0;
+	server->dirty = 1;
+
+	/* A selection ends where the pointer let go. */
+	field = &shell_titlebar.field;
+	if (shell_titlebar.selecting != 0U) {
+		shell_titlebar.selecting = 0;
+		if (field->surface == pressed.surface && field->id == pressed.id)
+			printf("ZWL TITLEBAR select client=%llu surface=%u id=%u anchor=%zu cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->anchor, field->cursor);
+		return;
+	}
+
+	/* A waiting press released far from where it was pressed (a finger's quick stroke) is no click. */
+	if (waiting != 0U) {
+		moved = zwl_glass_press_moved(server, shell_titlebar.press_x, shell_titlebar.press_y, shell_titlebar.press_source);
+		if (moved)
+			return;
+	}
+
+	/* The region under the release must be the one pressed. */
+	hit = shell_hit_at(server->pointer_x, server->pointer_y);
+	if (hit == NULL)
+		return;
+	if (hit->surface != pressed.surface || hit->id != pressed.id || hit->kind != pressed.kind || hit->detail != pressed.detail)
+		return;
+
+	/* The control acts. */
+	shell_act(server, hit);
+
+	/* Succeeded: a search field that took the keyboard has its cursor where it was pressed. */
+	if (waiting != 0U &&
+	    field->surface == pressed.surface &&
+	    field->id == pressed.id) {
+		field->cursor = shell_field_at(server, pressed.text_x, shell_titlebar.press_x);
+		field->anchor = field->cursor;
+		printf("ZWL TITLEBAR caret client=%llu surface=%u id=%u cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->cursor);
+	}
+}
+
+/*
+ * Finds the place in the field's text nearest to a point across it: the
+ * character boundary whose text before it is as wide as the point is from
+ * where the text starts.
+ */
+static size_t
+shell_field_at(
+	struct zwl_server *server,
+	int32_t text_x,
+	int32_t x)
+{
+	char before[ZWL_TITLEBAR_TEXT_MAX + 1U];
+	struct shell_field *field;
+	int32_t target;
+	int32_t width;
+	int32_t previous;
+	size_t at;
+	size_t next;
+
+	/* Left of the text is its start. */
+	field = &shell_titlebar.field;
+	target = x - text_x;
+	if (target <= 0)
+		return 0;
+
+	/* Each character in turn, until the text before the next boundary reaches the point. */
+	at = 0;
+	previous = 0;
+	while (at < field->length) {
+		/* The width of the text up to the next boundary. */
+		next = shell_field_step(at, 1);
+		memcpy(before, field->text, next);
+		before[next] = '\0';
+		width = glass_text_width(server, SIZE_BAR, before);
+
+		/* The point is within this character: the nearer of its two ends. */
+		if (width >= target) {
+			if (target - previous <= width - target)
+				return at;
+			return next;
+		}
+
+		/* The next character. */
+		at = next;
+		previous = width;
+	}
+
+	/* Succeeded: past the text is its end. */
+	return field->length;
 }
 
 /* Carries out a released control: a field takes the keyboard, any other enabled control sends its event. */

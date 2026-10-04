@@ -166,9 +166,9 @@
    "note": "Zlib asks for no notice in binaries. The clang resource headers in its tree are not installed."
   },
   {
-   "id": "remacs",
-   "name": "Remacs editor (remacs.nap, userland/base/emacs)",
-   "when": "program:remacs",
+   "id": "emacs",
+   "name": "Emacs editor (REmacs, /bin/emacs, userland/base/emacs)",
+   "when": "program:emacs",
    "license": "Zlib",
    "upstream": "userland/base/emacs (REmacs at 1a72439, taken into the tree 2026-10-04; its author licensed it under zlib)",
    "version": "",

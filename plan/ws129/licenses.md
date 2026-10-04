@@ -52,6 +52,7 @@ header に `SPDX-License-Identifier: Zlib`、`LICENSE` を置いた。取り込�
 Makefile は `Makefile.remacs`）、`userland/packages/editors/remacs` を削除。作った remacs.nap は git から取った前の build と byte で同じ。
 CI の config（clang・libcxx 抜き）の rootfs で `license-inventory.py --rootfs` の open は 0。ime-dict-ja はまだ REmacs の archive から辞書を取る
 （tree の `userland/base/emacs/dict` に替えるのは WS095 の持ち主の判断、残り）。
+2026-10-04 追記（ws129-p012、user「remacs のコマンド名は/bin/emacsでお願いします」）: package の名前は `emacs`、install は `/bin/emacs`（同じ nap、`#!/usr/bin/noct`）と link `/usr/bin/noct -> /bin/noct`。表の id も `emacs`（生成物を再生成、open 0）。
 
 ### 確かめて問題の無い物
 

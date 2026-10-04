@@ -120,6 +120,20 @@ struct shell_popup {
 	uint32_t selected;
 };
 
+/*
+ * A press on a top-level item that waits for its release to open it, or to
+ * go far enough to move the window: the window (NULL for none), the item,
+ * whether in the system bar, and where and by what it was pressed.
+ */
+struct shell_wait {
+	struct zwl_object *surface;
+	uint32_t item;
+	unsigned docked;
+	int32_t x;
+	int32_t y;
+	enum zwl_contact_source source;
+};
+
 /* The last bar layout logged for a window (a checksum), so a layout is logged once. */
 struct shell_logged {
 	struct zwl_object *surface;
@@ -149,6 +163,11 @@ struct shell_logged {
  * the desktop surface (ws094-p005; NULL for none, and for any other menu):
  * the desktop is never the window on top, so its menu stays open while
  * that window stays on top and closes when another comes up or maps.
+ *
+ * waiting is a press on a top-level item while no menu is open (ws099-p030;
+ * its window is NULL when there is none): where it was pressed and by what,
+ * and the item.  Its release where it was pressed opens the item's popup;
+ * a press that goes far enough moves the window instead (shell.c).
  */
 struct shell_menu {
 	struct zwl_object *surface;
@@ -168,6 +187,7 @@ struct shell_menu {
 	struct zwl_menu_item open_extras[SHELL_OPEN_EXTRAS];
 	char open_extra_labels[SHELL_OPEN_EXTRAS][SHELL_EXTRA_LABEL];
 	unsigned open_extra_count;
+	struct shell_wait waiting;
 };
 
 /*
@@ -230,6 +250,8 @@ static void shell_menu_key(struct zwl_server *server, const struct zwl_menu_mode
 static unsigned shell_selectable(const struct zwl_menu_item *item);
 static unsigned shell_usable(const struct zwl_menu_model *model, const struct zwl_menu_item *item);
 static const struct shell_hit *shell_hit_at(struct zwl_server *server, int32_t x, int32_t y);
+static void shell_wait_release(struct zwl_server *server);
+static int shell_wait_motion(struct zwl_server *server);
 static const struct shell_hit *shell_first_hit(struct zwl_object *surface);
 static void shell_add_hit(struct zwl_object *surface, uint32_t item, unsigned docked, unsigned first_hidden, const struct zwl_menu_area *area, int32_t x, int32_t width);
 static void shell_log_bar(struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, uint32_t checksum);
@@ -482,8 +504,10 @@ zwl_menu_draw_popups(
 
 /*
  * Handles a pointer button for the menus.  A press on a top-level item
- * opens its popup (or chooses an item with no children); in menu mode the
- * menus take every button.  Returns 1 when the button was the menus'.
+ * waits: its release where it was pressed opens the item's popup (or
+ * chooses an item with no children), and a press that goes far enough
+ * moves the window instead (ws099-p030).  In menu mode the menus take
+ * every button.  Returns 1 when the button was the menus'.
  */
 int
 zwl_menu_button(
@@ -498,13 +522,21 @@ zwl_menu_button(
 	int32_t row_y;
 	int level;
 
-	/* With no menu open only a left press on a top-level item is the menus'. */
+	/* With no menu open only a left press on a top-level item, and its release, are the menus'. */
 	if (shell_menu.surface == NULL) {
-		/* A release, or another button, goes on. */
-		if (state == 0U || button != ZWL_BUTTON_LEFT)
+		/* Another button goes on. */
+		if (button != ZWL_BUTTON_LEFT)
 			return 0;
 
-		/* So does a press off every top-level item. */
+		/* The release of a waiting press opens its item's popup. */
+		if (state == 0U) {
+			if (shell_menu.waiting.surface == NULL)
+				return 0;
+			shell_wait_release(server);
+			return 1;
+		}
+
+		/* A press off every top-level item goes on. */
 		hit = shell_hit_at(server, server->pointer_x, server->pointer_y);
 		if (hit == NULL)
 			return 0;
@@ -513,9 +545,13 @@ zwl_menu_button(
 		if (!hit->docked)
 			zwl_glass_raise(server, hit->surface);
 
-		/* Its menu opens, and the press's release may choose a row. */
-		shell_open(server, hit, 0);
-		shell_menu.pressing = 1;
+		/* The press waits for its release, or to go far enough to move the window. */
+		shell_menu.waiting.surface = hit->surface;
+		shell_menu.waiting.item = hit->item;
+		shell_menu.waiting.docked = hit->docked;
+		shell_menu.waiting.x = server->pointer_x;
+		shell_menu.waiting.y = server->pointer_y;
+		shell_menu.waiting.source = server->shell_source;
 		return 1;
 	}
 
@@ -578,8 +614,9 @@ zwl_menu_button(
 
 /*
  * Follows the pointer in menu mode: another top-level item takes over, a
- * row is selected, and a submenu row opens its popup.  Returns 1 in menu
- * mode (the motion is the menus'), 0 otherwise.
+ * row is selected, and a submenu row opens its popup.  Out of menu mode a
+ * waiting press on a top-level item that goes far enough moves its window
+ * (ws099-p030).  Returns 1 when the motion is the menus', 0 otherwise.
  */
 int
 zwl_menu_motion(
@@ -592,10 +629,13 @@ zwl_menu_motion(
 	unsigned selectable;
 	int32_t row_y;
 	int level;
+	int taken;
 
-	/* Only menu mode takes the pointer. */
-	if (shell_menu.surface == NULL)
-		return 0;
+	/* Out of menu mode only a waiting press on a top-level item takes the pointer, until it moves its window. */
+	if (shell_menu.surface == NULL) {
+		taken = shell_wait_motion(server);
+		return taken;
+	}
 
 	/* The open menu's model; while it has gone (the tick closes the menu) the motion is only taken. */
 	model = shell_model(shell_menu.surface, &place);
@@ -902,6 +942,8 @@ zwl_menu_forget(
 
 	/* The table keeps the others, and the window's logged layout is forgotten. */
 	shell_menu.hit_count = kept;
+	if (shell_menu.waiting.surface == object)
+		shell_menu.waiting.surface = NULL;
 	for (index = 0; index < SHELL_LOGGED; index++) {
 		/* The window's entry is free again. */
 		if (shell_menu.logged[index].surface == object)
@@ -1161,8 +1203,9 @@ shell_open(
 			return;
 	}
 
-	/* Whatever was open closes. */
+	/* Whatever was open closes, and a press waiting on a top-level item is over. */
 	shell_close_from(server, 0U, 1U);
+	shell_menu.waiting.surface = NULL;
 
 	/* The rows of the hidden controls come with the popup, kept (with their labels) while it is open. */
 	shell_menu.open_extra_count = 0;
@@ -1879,6 +1922,76 @@ shell_usable(
 	}
 
 	/* A broken chain is not usable. */
+	return 0;
+}
+
+/*
+ * Ends a waiting press on a top-level item with its release: where it was
+ * pressed, its popup opens.  A press that went far enough without a motion
+ * between (a finger's quick tap) opens nothing.
+ */
+static void
+shell_wait_release(
+	struct zwl_server *server)
+{
+	const struct shell_hit *hit;
+	struct shell_wait waiting;
+	int moved;
+
+	/* The press ends. */
+	waiting = shell_menu.waiting;
+	shell_menu.waiting.surface = NULL;
+
+	/* A release far from the press is no click. */
+	moved = zwl_glass_press_moved(server, waiting.x, waiting.y, waiting.source);
+	if (moved)
+		return;
+
+	/* The item must still be where it was pressed, in the same bar. */
+	hit = shell_hit_at(server, waiting.x, waiting.y);
+	if (hit == NULL)
+		return;
+	if (hit->surface != waiting.surface || hit->item != waiting.item || hit->docked != waiting.docked)
+		return;
+
+	/* Succeeded: its menu opens (the next press chooses a row). */
+	shell_open(server, hit, 0);
+}
+
+/*
+ * Follows the pointer while a press on a top-level item waits: once it has
+ * gone far enough, the window moves from the pressed point (shell.c) and the
+ * press is no longer the menus'.  Returns 1 while the press still waits.
+ */
+static int
+shell_wait_motion(
+	struct zwl_server *server)
+{
+	struct shell_wait waiting;
+	int moved;
+
+	/* Nothing waits. */
+	if (shell_menu.waiting.surface == NULL)
+		return 0;
+
+	/* A press whose release went elsewhere (a screen that opened over it) waits no more. */
+	if ((server->buttons_down & 1U) == 0U) {
+		shell_menu.waiting.surface = NULL;
+		return 0;
+	}
+
+	/* Not far enough yet: the press keeps the pointer. */
+	waiting = shell_menu.waiting;
+	moved = zwl_glass_press_moved(server, waiting.x, waiting.y, waiting.source);
+	if (!moved)
+		return 1;
+
+	/* The window moves instead, and its move follows this motion (shell.c). */
+	shell_menu.waiting.surface = NULL;
+	printf("ZWL MENU press moves client=%llu surface=%u item=%u docked=%u\n", (unsigned long long)waiting.surface->client->number, waiting.surface->id, waiting.item, waiting.docked);
+	zwl_glass_press_move(server, waiting.surface, waiting.docked, waiting.x, waiting.y);
+
+	/* Succeeded: the motion goes on to the move. */
 	return 0;
 }
 

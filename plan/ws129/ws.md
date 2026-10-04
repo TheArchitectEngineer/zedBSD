@@ -55,5 +55,6 @@ push・GitHub release の公開はユーザーの指示で行う。
 | [p007](phase007/phase.md) | 実機の確認（5330・5320、ユーザーと一緒に、ws005-p023・ws033-p002・ws118-p004 とまとめる） | planning | p006、ユーザーの時期 | 2h（立会い） |
 | [p008](phase008/phase.md) | 公開（tag、CI の実行、配布物の確認）。ユーザーの指示でだけ | planning | p007、ユーザーの公開の指示 | 1h |
 | [p011](phase011/phase.md) | 試験の QEMU を KVM に統一（`plan/tools/guest/qemu-accel.sh`）、image の build の並列の数を 16 に（`plan/tools/guest/jobs.sh`） | cleared（q646、T1-038 PASS） | — | 2h |
+| [p012](phase012/phase.md) | REmacs のコマンド名を `/bin/emacs` に（package 名も emacs、`/usr/bin/noct` の link、CI config・license の生成物・remacs-guest.sh）。2026-10-04 user | in-progress（P2、host 済み、T1 の remacs-guest 待ち） | — | 1h |
 
 日程の案（p001 で確定）: 10/13 機能の凍結の候補 → 10/14 RC → 10/14〜15 最終回帰 → 10/15〜16 実機の確認 → 10/17 公開。

@@ -83,6 +83,9 @@ tools/compat-report.sh path/to/package.el
 This tree is REmacs as of commit 1a72439 (github.com/awemorris/remacs),
 taken into zedBSD as userland/base/emacs (2026-10-04, ws129).  Its author
 licenses it under the zlib license (SPDX-License-Identifier: Zlib).  The
-zedBSD package builds `remacs.nap` from it with the host's Noct and installs
-it with the bundled dictionary (`Makefile`; REmacs's own build is
+zedBSD package (`emacs`) builds `remacs.nap` from it with the host's Noct and
+installs it as the command `/bin/emacs` (2026-10-04, ws129-p012), with the
+bundled dictionary at `/usr/share/remacs/skkjisyo.dic`.  The application
+starts with `#!/usr/bin/noct`, so the kernel runs it with noct; the package
+links `/usr/bin/noct` to `/bin/noct` (`Makefile`; REmacs's own build is
 `Makefile.remacs`, which `make -f Makefile.remacs` runs as before).

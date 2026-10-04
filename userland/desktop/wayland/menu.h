@@ -122,4 +122,8 @@ int zwl_menu_keysym(uint32_t key, uint32_t seat_modifiers, uint32_t *keysym);
 void zwl_glass_raise(struct zwl_server *server, struct zwl_object *surface);
 struct zwl_object *zwl_glass_window_at(struct zwl_server *server, int32_t x, int32_t y);
 
+/* A press on a menu item or a search field that moves its window when it goes far enough (shell.c, ws099-p030). */
+int zwl_glass_press_moved(struct zwl_server *server, int32_t x, int32_t y, enum zwl_contact_source source);
+void zwl_glass_press_move(struct zwl_server *server, struct zwl_object *surface, unsigned docked, int32_t x, int32_t y);
+
 #endif
