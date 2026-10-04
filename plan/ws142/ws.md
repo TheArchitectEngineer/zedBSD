@@ -7,8 +7,8 @@ Status: planning
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
-Queue: q701（p001 の設計、予定）
-Resume point: p001（設計）から。既存の Wiseview・仮想デスクトップ（ws035-p062・p065）・タイトルバーのドッキング・タッチパッドの gesture（WS081・WS099）の実装を読み、下の要望を compositor の設計に落とす。
+Queue: q701 / q701-i01（p001 の設計、P1 generation17、2026-10-05）
+Resume point: p001（設計）を書いた（[phase001](phase001/phase.md)）。D1〜D11 が人間の判断待ち。p002（Super 単独 → App Home）は D に依らず先に進められる。5330 のタッチパッドは端の接触を出す（Linux の記録で X 0〜1336・Y 0〜760 の全域）ので、端の 2 本指の gesture はできる。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -50,9 +50,9 @@ Keiland の compositor（`userland/desktop/wayland/`）で、ユーザーの要�
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws142-p001 | 設計: 既存の Wiseview・App Home・仮想デスクトップ・上部のバー・gesture の認識（WS081・WS099）・入力の経路を読み、1〜5 の状態機械・描画（プレビューの縮小の描画、Vulkan）・入力の割り当て（Super・Alt+Tab・タッチパッドの端と指の本数）・設定・試験の方法を設計。端の検出の可否（5330 のタッチパッド）の調べ | planning | なし |
+| [ws142-p001](phase001/phase.md) | 設計: 既存の Wiseview・App Home・仮想デスクトップ・上部のバー・gesture の認識（WS081・WS099）・入力の経路を読み、1〜5 の状態機械・描画（プレビューの縮小の描画、Vulkan）・入力の割り当て（Super・Alt+Tab・タッチパッドの端と指の本数）・設定・試験の方法を設計。端の検出の可否（5330 のタッチパッド）の調べ | in-progress（2026-10-05 q701-i01 P1: 設計を書いた、D1〜D11 は人間の判断待ち） | なし |
 | ws142-p002 | Windows キーでアプリの一覧 | planning | p001 |
-| ws142-p003 | タッチパッドの gesture（下の端から 2 本指の上 → Wiseview、左右の端から 2 本指 → 仮想デスクトップ、代わりの 3 本指） | planning | p001、BUG-166・167・178 の直し（q689・q700）と衝突しない順 |
-| ws142-p004 | 上部のバーのアプリの一覧とプレビュー（hover・click・複数の窓） | planning | p001 |
-| ws142-p005 | 切り替えの UI（3 本指のタップ・Alt+Tab、中央のポップアップ） | planning | p004 |
+| ws142-p003 | タッチパッドの gesture（下の端から 2 本指の上 → Wiseview、左右の端から 2 本指 → 仮想デスクトップ、代わりの 3 本指） | planning | p001、D1・D3・D10、BUG-166・167・178 の直し（q689・q700）と衝突しない順 |
+| ws142-p004 | 上部のバーのアプリの一覧とプレビュー（hover・click・複数の窓） | planning | p001、D2・D4〜D8・D11 |
+| ws142-p005 | 切り替えの UI（3 本指のタップ・Alt+Tab、中央のポップアップ） | planning | p003（TAP3・2 本指）、p004、D1・D2 |
 | ws142-p006 | 全文の規約の確認と QEMU の回帰（T1）、実機の UAT | planning | p002〜p005 |
