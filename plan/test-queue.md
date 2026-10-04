@@ -25,7 +25,7 @@
 
 | # | 対象 | 前提 | 優先 | 結果 |
 | --- | --- | --- | --- | --- |
-| TQ-1 | ws131-p013・p014（libkeiui・libkeiland の名前の改名）の 3 OS の回帰 | source は **main 5277761 以降**（P2 の 40b242a を 2026-10-04 に Q1 の最短の確認（zedBSD build・boot-test・Linux gcc）の後に統合）。p014 は途中（phase014 の Resume）。元 T1-085（P2 が T1 のラップアップの後に送った同じ依頼、未実行）をこの項目にまとめた | 高 | 未実施 |
+| TQ-1 | ws131-p013・p014（libkeiui・libkeiland の名前の改名）の 3 OS の回帰。**2026-10-04 Q1 が main 006c113 で一部を流した（下の「結果」）。残り: titlebar-p010・menu-p003・Linux の 9 app の起動の PNG** | source は **main 5277761 以降**（P2 の 40b242a を 2026-10-04 に Q1 の最短の確認（zedBSD build・boot-test・Linux gcc）の後に統合）。p014 は途中（phase014 の Resume）。元 T1-085（P2 が T1 のラップアップの後に送った同じ依頼、未実行）をこの項目にまとめた | 高 | 未実施 |
 | TQ-2 | WS127 Files: `files-open.sh`（mouse・always・info）（元 T1-008） | なし | 中 | 未実施 |
 | TQ-3 | ws131-p007 の残り: demo-s8-s9（元 T1-044 の 3） | なし（TQ-1 の A に含まれるので、TQ-1 を流したら不要） | 低 | 未実施 |
 | TQ-4 | WS005 の venus-session-check の再実施（元 T1-007、image の作り方が原因の候補） | WS005 を再開するとき | 低 | 未実施 |
@@ -93,6 +93,14 @@ cat build/tq-1/freebsd/summary.txt
 ---
 
 注意: p014 は途中（`plan/ws131/phase014/phase.md` の Resume: Linux clang・install・elf-check・makefile-sync・header-check、FreeBSD make -n、xserver・menu-probe・titlebar-probe の build、残りの host 試験、style-check が未実施）。TQ-1 の FAIL がこれらの未完の所なら、FAIL として記録し、直さない。
+
+### TQ-1 の結果（2026-10-04、Q1 のバックグラウンド、main 006c113、証拠 `build/tq-1/`）
+
+- Linux clang の build: rc 0、warning 0（83 s）。FreeBSD backend-test: 9/9 PASS（73 s、guest の base は T1 の物を読み取り専用）。
+- image の rootfs に libkeiui 0。viewers-p008 PASS（82 s）、demo-s8-s9 PASS（113 s）。
+- files-regress: 13/14 PASS、p002 だけ FAIL（guest の start の直後で home が 0 件）→ guest の起動の 60 s 後に p002 だけ流し直して PASS。
+- textinput-p013: 1 回目は image の build が Q1 の UAT の image の build と同時に走って共有の `build/packages`（openssl・openssh）で失敗し無効 → image を作り直して PASS。**教訓: 2 つの image の build を同時に走らせない**（共有の `build/packages` を壊し合う）。
+- 未実施: titlebar-p010・menu-p003（guest の準備が要る、menu-p003 は約 20 分）、Linux の guest の 9 app の起動の PNG。
 
 ## TQ-2: WS127 Files の files-open
 
