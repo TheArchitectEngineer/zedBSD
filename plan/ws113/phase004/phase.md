@@ -62,3 +62,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 試験: host（上の 5）。QEMU（T1、Venus の `max_outputs=2`、zdesktop `--glass`）: 拡張で 2 つの出力の PNG（`zdesktop-check.py` を出力ごとに撮れるか確かめる、QMP の screendump は head を選べる）、mirror で同じ絵、1 出力の guest で今までの回帰（boot-test、files-regress）。guest の起動に `max_outputs=2` の選択肢を足す（`plan/tools/guest/`、Q1 の許可）。実機は p008。
 受け入れ: QEMU で拡張・mirror の 2 出力の PNG、1 出力の回帰 PASS、出力が 0 になっても落ちない（QEMU で起こせれば）、Linux・FreeBSD の単一 display の build を壊さない（KMS の複数出力は p010）、warning 0、規約。目安 4〜5h。依存: p003。衝突: WS099 の compositor の Phase（`compose.c`・`shell.c`・`display.c`）と同時に流さない。
+
+### D-LIMIT の反映（2026-10-05）
+
+anchor でない出力の swapchain の作成が `VK_ERROR_INITIALIZATION_FAILED` なら、その出力を limited にして使わずに続ける（server・他の出力は保つ、窓をその出力に置かない）。topology の変化と、他の出力の swapchain の解放の後に再び試す。QEMU の試験に「Venus の出力を上限より多くつないで、limited の出力があっても落ちない」を足すか p004 で確かめる。

@@ -64,3 +64,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 試験: host（libkeiland の protocol の encode・decode、`plan/ws131/tests/host-system.c` に displays の stub と case を足す）。QEMU（T1、Venus の 2 出力）: display-probe で snapshot に 2 出力、拡張 ⇔ mirror の apply が applied=1 saved=1、stale な serial が `stale`、明るさは has_backlight=0 で `unsupported`。実機（p008）: 明るさの set と Fn の key。
 受け入れ: 上の QEMU と host の PASS、warning 0（zedBSD・Linux の build。Linux・FreeBSD の backend は ENOTSUP の stub）、規約。目安 3〜4h。依存: p004、p013（明るさの backend）。衝突: WS089・WS131 の `kl_system` を変える Phase と直列。
+
+### D-LIMIT の反映（2026-10-05）
+
+`output` の event の flags に `limited`（同時に表示できる数の制限で今は使えない）を足す。configure・apply で limited の出力を含めても失敗にせず、applied の snapshot で limited のまま返す。

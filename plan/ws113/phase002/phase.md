@@ -80,7 +80,7 @@ C4 は Q1 が決定（GOP の引き継ぎと外部の優先の削除は WS113 p0
 - hotplug の world に topology（sequence は 1 から、connector ごとの generation、接続と EDID の preferred mode の写し、短い spinlock）。HPD の work で connector の接続・切断が変わったら写しを更新して generation と sequence を進め、lock の外で `poll_notify()`。events の操作（`drv_i915_display_events`、capture の表も）は lock の中で sequence を読むだけ（固定 1 を置き換え）。
 - 起動の時（resident の出力の選択の後）に、resident でない HDMI の connector を一度検出（EDID を読む、点けない）して写しの baseline に（`i915: display inventory: HDMI-A-1 detected at the start (status N), not lit`）。Type-C の DP は WS051 の hotplug に任せる。
 - `GPU_DISPLAY_QUERY`: index 0 は今までの resident の出力（ID 1、ACTIVE は scanout 中）。続けて hotplug の path の他の connector（固定の slot、ID は 0x100 + connector の番号、CONNECTED は接続中だけ、ACTIVE は付けない、mode と大きさは EDID の preferred）。name は全て D-ID A2 の key（`zedbsd-port-v1:pci:0000:00:02.0:edp:A` の形、PCI の位置は `drv_pci_device_address`）。
-- `GPU_DISPLAY_MODE`: 他の connector は preferred mode の列挙と検査だけ（旧 generation は ESTALE、未接続は ENOENT）。`GPU_DISPLAY_CLAIM`: 他の connector は `EOPNOTSUPP`（p011 まで、偽の成功を返さない）。
+- `GPU_DISPLAY_MODE`: 他の connector は preferred mode の列挙と検査だけ（旧 generation は ESTALE、未接続は ENOENT）。`GPU_DISPLAY_CLAIM`: 他の connector は `ENOSPC`（同時に出せる数の制限、D-LIMIT。p011 まで一度に 1 つ。偽の成功を返さない）。
 - libvulkan（`wsi.c`）は既に接続中の native の出力だけを VkDisplayKHR にし、slot ごとに handle を保つ。compositor は最初の display（index 0 = resident）を使うので、今の 1 画面の動作は変わらない。lease の POLLPRI は resident の generation が変わらない限り surface を保つ（`display_validate_surface`）。
 
 ### 道具
@@ -101,3 +101,8 @@ C4 は Q1 が決定（GOP の引き継ぎと外部の優先の削除は WS113 p0
 - 実機（5330、i915 の lock、ユーザーと。p008 にまとめてよい）: (1) eDP だけで起動 → `i915: N0: the firmware's output: DP SST on DDI A`、desktop が eDP に出る、display-inventory が eDP 1 行。(2) eDP + HDMI（GOP は eDP）で起動 → HDMI が点かない、display-inventory が 2 行（eDP active=1、HDMI connected=1 active=0 mode=EDID の値）。(3) `display-inventory --watch=60` の間に HDMI を抜き差し → sequence が進み HDMI の connected が 0・1 と変わる、desktop は eDP のまま。(4) `display=hdmi` を付けて起動 → 「ignored」の log、eDP のまま。
 - 未確認の点（Q1）: lit な pipe が無い時に内蔵の panel を点けるのは規則の外の判断（firmware の画面が無いので）。UEFI の起動では起きない見込み。GOP が HDMI で HDMI を駆動できない時は出力なし（画面が暗い）。
 - WS075 の古い試験（`plan/ws075/tests/hdmi-h2-hw.sh`、`display=hdmi` で HDMI を強制する前提）と demo の `display=edp` は、この変更で意味が無くなった（log に ignored と出るだけ）。WS075 の物なので変えていない。
+
+### ユーザーの決定の反映（2026-10-05、q702-i02 の続き）
+
+- C1〜C3 の決定と出力の数の制限の規則を [contracts-beta2.md](../phase001/contracts-beta2.md) の末尾の D-LIMIT に反映した。p002 の実装: resident でない出力の claim を `EOPNOTSUPP` から `ENOSPC`（制限）に変えた（log も「the limit of outputs shown at once (1) is reached」）。p003・p004・p005・p006・p011 の計画に D-LIMIT の段を足した。
+- 確認: vmunix の build（kernel include check まで）warning 0。

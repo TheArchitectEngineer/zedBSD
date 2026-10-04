@@ -67,3 +67,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 試験: host（settings-render の Display の頁の PNG: 1 出力・2 出力の拡張・mirror・明るさの slider あり／なし、snap の case）。QEMU（T1、Venus の 2 出力）: Settings の Display の頁で拡張 ⇔ mirror を 5 回、card の drag で左右を入れ替え（M2）、PNG。実機（p008）: 明るさの slider と Fn の key。
 受け入れ: M2 の QEMU の PASS と PNG、host の PASS、warning 0、規約。目安 3h。依存: p005。衝突: WS089 の Settings の Phase と直列（`page-*.c`・`pages.c`）。
+
+### D-LIMIT の反映（2026-10-05）
+
+limited の出力の card を薄く描き「同時に表示できる数の制限で使えません」と示す（drag はできない）。hotplug や他の出力の解放で limited が外れたら通常の card に戻る。

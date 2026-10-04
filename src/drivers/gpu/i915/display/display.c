@@ -205,7 +205,8 @@ static int i915_display_other_mode(struct i915_display *display, struct gpu_disp
  * The resident output -- the firmware's output (the GPU scanout rule) --
  * is display 0, with one full-output plane; the hotplug path's other
  * connectors follow it in the inventory, connected or not, and are
- * described but not lit (claiming one is refused until ws113-p011).  Query,
+ * described but not lit (claiming one is refused with ENOSPC, the limit
+ * of outputs shown at once, until ws113-p011).  Query,
  * mode and claim are answered here, present, wait and release by the
  * present path, and the topology sequence by the hotplug path, which
  * moves it when a connector is connected or disconnected (ws113-p002).
@@ -2717,10 +2718,14 @@ i915_display_claim(
 	owner_device = device;
 	rd = &owner_device->display->rd;
 
-	/* Another connector is not lit by this driver yet (ws113-p011): refused, not pretended. */
+	/*
+	 * Another connector: the node lights one output at a time until
+	 * ws113-p011, so this is the limit of the outputs shown at once, told
+	 * as one (ENOSPC, the 2026-10-05 user decision), not a failure.
+	 */
 	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
-		kern_logf("i915: resident display: claim of display %u refused: only the firmware's output is lit\n", request->display_id);
-		return EOPNOTSUPP;
+		kern_logf("i915: resident display: claim of display %u refused: the limit of outputs shown at once (1) is reached\n", request->display_id);
+		return ENOSPC;
 	}
 
 	/* Only plane 0 of the resident display of this generation exists. */

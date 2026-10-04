@@ -62,3 +62,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 試験: host（上の 4）。QEMU（T1、Venus の `max_outputs=2`）: `display-events` が 2 つの display を列挙し、2 つの display に別々の swapchain で present できること、抜き差しを QEMU で起こせるか確かめる（QMP・monitor で virtio-gpu の出力を無効にする方法を探す。無ければ実機だけ）。実機: HDMI の抜き差しで fence が発火し再列挙の結果が変わる（p008 にまとめてよい）。
 受け入れ: 4 entry と surface counter の依存が全部揃ってから広告、host の試験 PASS、QEMU の 2 出力の列挙と present、build warning 0（zedBSD、Linux の libvulkan は対象外）、規約。目安 3h。依存: p002（i915 の inventory）、p012（power・refresh の native。Venus の分も p012）。衝突: WS083（Vulkan Video、libvulkan）の Phase と同じ file に当たるか Q1 が確かめる。
+
+### D-LIMIT の反映（2026-10-05）
+
+native の `ENOSPC`（同時に出せる数の制限）を `display_error()` の既定の `SURFACE_LOST` と分け、display の claim を伴う swapchain の作成では `VK_ERROR_INITIALIZATION_FAILED`（致命的でない）にする。Venus の scanout の数の上限でも同じ。host の試験に ENOSPC の変換の case を足す。
