@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p001`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-04。調査を始めたところ。設計文書は未着手。P1 generation16 が引き継ぐ）
+Status: in-progress（2026-10-04。[design.md](../design.md) 第 1 版を書いた。design-reviewer のレビュー待ち、§10 の判断待ち）
 Phase disposition: normal
 Queue: q680 / q680-i01（P1）
 
@@ -31,3 +31,18 @@ Queue: q680 / q680-i01（P1）
 
 - `plan/ws031/i915-rebuild-rules.md`（移植の規則）と WS075 の display の文書を読み、design.md（範囲、移植する Linux の関数の一覧、実機の
   試験の方法（QEMU に Type-C は無い）、Phase の案、依存の訂正の提案）を書く。design-reviewer でレビューする。
+
+## 設計の第 1 版（2026-10-04、P1 generation16）
+
+- `plan/ws031/i915-rebuild-rules.md`（移植の規則）、WS031 の 5330 の参照の dump（`display-ref/`）、Linux v6.8.12 の参照の source
+  （`plan/ws031/linux-parity/linux-reference/i915-src/display/`）を読み、[design.md](../design.md) を書いた: ADL-P の DP-alt の分担（firmware・IOM・
+  i915）、5330 の事実（TC1 = VBT DP-F・AUX-F、TC2 = DP-G・AUX-G、HBR3、TC PLL 1〜4、AUX_USBC の well）、今の i915 の未移植の部分、移植する Linux の
+  関数の一覧、1 画面の出力の model、試験（bare metal の Linux で register の正解値）、Phase の案 p001〜p006。
+- 発見: `takeover.c` の VBT の DVO port の code が Linux と違い（DPG 16・HDMIG 15）、5330 の TC2 の child（DP-G = 15）を HDMI-G と読み違える
+  （XXX の注の「TC1〜TC4 は達しない」は誤り）。p002 で直す（WS031・WS075 の source なので Q1 に知らせた）。ADL-P の DP-alt の TC cold は AUX_USBC の
+  domain で防ぐので、`power.c` の未構築の TC cold off の well は TBT-alt にだけ要る。
+- 依存の訂正（ws.md）は 2026-10-04 のユーザーの決定 5 とその補足で決まり、ws.md を直した。
+
+## 再開点
+
+- design-reviewer の敵対的レビュー（次）。§10 の 1〜3（TBT-alt を範囲外、1 画面の model、hotplug の範囲）を Q1 経由でユーザーに確かめる。

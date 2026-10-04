@@ -1,6 +1,7 @@
 # WS051 設計: USB-C の DisplayPort Alternate Mode
 
-Status: 案の第 1 版（2026-10-04、ws051-p001、P1 generation16）。design-reviewer の敵対的レビューは未実施（次の手順）。人間の判断が要る点は §10。
+Status: 案の第 1 版（2026-10-04、ws051-p001、P1 generation16）。WS050 §10 のユーザーの決定（2026-10-04、[WS050 design](../ws050/design.md) の末尾）を
+反映済み。design-reviewer の敵対的レビューは未実施（次の手順）。人間の判断が要る点は §10。
 
 ## 1. 目的と範囲
 
@@ -22,8 +23,9 @@ DP MST、DSC、複数の display を同時に出すこと（mirror・拡張）�
 
 これは Linux v6.8.12 の i915 の `display/intel_tc.c`（ADL-P は `adlp_tc_phy_ops`）の分担と同じ（MIT。移植は `plan/ws031/i915-rebuild-rules.md` の
 規則で行う。参照の source は `plan/ws031/linux-parity/linux-reference/i915-src/display/`）。**UCSI（WS050）は DP-alt の画面の出力に必須でない**:
-mode に入るのは firmware で、i915 は TCSS・FIA の register で状態を読む。UCSI は補助の情報（partner の Alternate Mode の一覧、cable、診断）に
-留まる（WS050 design §8 と一致）。ただし「firmware が OS の指示（UCSI の SET_NEW_CAM）なしに DP mode に入る」ことは 5330 の実機で確かめる
+mode に入るのは firmware で、i915 は TCSS・FIA の register で状態を読む（ユーザーの決定 5: WS051 は UCSI を待たずに進める）。i915 が読んだ
+HPD・pin・lane 数・向き（取れれば）は WS050 の Type-C の層に報告し（`typec_display_report`）、UCSI 2.0 以上の値と統合する（決定 4・5 の補足、
+WS050 design §13。画面を出す判断は常に i915 の値で行う）。ただし「firmware が OS の指示（UCSI の SET_NEW_CAM）なしに DP mode に入る」ことは 5330 の実機で確かめる
 （§9 の UAT の 1 項目。入らないなら WS050 の SET_NEW_CAM が要り、WS050 §10-2 の判断と結び付く）。
 
 ## 3. 5330 の事実（[WS031 の参照の dump](../ws031/display-ref/)、Linux 6.8 の i915、VFIO の passthrough）
@@ -88,8 +90,12 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 
 ## 8. 他の WS との境界
 
-- WS050（UCSI）: 必須の依存でない（§2）。UCSI の状態（DP の mode に入った事実、partner の SVID）は診断で並べて出すだけ。§9 の UAT の (1) で
-  firmware が自分で入らないと分かったら、WS050 に SET_NEW_CAM を足す判断（WS050 §10-2）に戻る。
+- WS050（UCSI）: 画面の出力の必須の依存でない（§2、決定 5）。i915 は TC の port ごとの HPD・pin・lane 数・向き（取れれば）を
+  `typec_display_report` で WS050 の Type-C の層に渡す（WS050 p005）。WS050 の層が無い build では報告しない（weak の口か config で）。
+  §7 の UAT の (1) で firmware が自分で DP mode に入らないと分かったら、WS050 の SET_NEW_CAM（決定 2 で範囲に入った、WS050 p004）を使う。
+- **向き**（決定 4）: UCSI 1.x の機種では向きを i915 から取る。Linux の register の定義に plug の向きの bit は無いので、p002 の診断で FIA の
+  `DP_LANE_ASSIGNMENT`（pin D の 2 lane の 0x3/0xC など）と TCSS の register を両向きの差し込みで記録し、向きと対応するかを確かめる
+  （WS050 design §13）。対応しなければ取れないと Q1 に報告する。
 - WS049（ACPI）: 不要（TCSS・FIA は MMIO）。
 - WS031・WS075（i915）: 同じ display の source を触る。`takeover.c` の DVO の code の修正（§4）と、`power.c`・`clock.c`・`ddi.c`・`dp.c`・
   `hotplug.c`・`output.c` の変更は WS075 の作業と重なりうるので、Phase ごとに Q1 が衝突を調整する。
@@ -101,7 +107,7 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 | Phase | 内容 | 依存 | 受け入れ |
 | --- | --- | --- | --- |
 | p001 | 調査と設計（この文書） | — | この文書、レビュー、§10 の判断 |
-| p002 | TC の port の核（`tc.c`: live status・FIA・ready・ownership・TC cold・connect/disconnect）、VBT の DVO の code の修正、TC の HPD の割り込みから live status へ、診断の log | p001 | host の fixture の試験、compile・build warning 0、UAT の (1) の手順（register を log に出す） |
+| p002 | TC の port の核（`tc.c`: live status・FIA・ready・ownership・TC cold・connect/disconnect）、VBT の DVO の code の修正、TC の HPD の割り込みから live status へ、診断の log（向きの確かめ（決定 4）の register の記録を含む） | p001 | host の fixture の試験、compile・build warning 0、UAT の (1) と向きの記録の手順 |
 | p003 | DKL PHY と TC PLL（`dkl-phy.c`、DKL PLL、DDI の TC の clock、buffer translation） | p002、bare metal の Linux の正解値 | PLL の値の計算が Linux と同じ（host）、build |
 | p004 | 外部 DP の検出と出力（TC の AUX、DPCD・EDID、link training、modeset、`output.c` の選択） | p003 | 実機で TC1・TC2 に画面が出る（UAT の (2)・(4)・(5)） |
 | p005 | 抜き差し（HPD の長い pulse・IRQ_HPD、disconnect と再 connect） | p004 | 実機で抜いて差し直すと戻る（UAT の (3)） |
@@ -113,6 +119,5 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 2. **1 画面の model を保つ**案（HDMI と同じく外部の display を優先し panel を消す。mirror・拡張は別の WS）。ws.md の受け入れの「mirror か拡張かは
    p001 で決める」をこの案で確定するか。
 3. **hotplug の範囲**: 起動時に選んだ port の抜き差しだけを追い、別の port・panel への切り替えはしない案。
-4. **ws.md の依存と前提の訂正**: 「Alternate Mode に入る・出る、pin の割り当て、HPD は UCSI（WS050）を通して」を「mode に入るのは firmware、
-   pin（lane）は FIA、HPD は i915 の割り込み。UCSI は補助」に、範囲の「UCSI で DP Alt Mode に入り…」を「TCSS・FIA で DP-alt の状態を読み…」に直す案
-   （Resume point の「WS050 が前提」も）。
+4. （決定済み）ws.md の依存と前提: 2026-10-04 のユーザーの決定 5 とその補足で「HPD・pin は i915 の TCSS・FIA から、UCSI 2.0 以上で取れる時は
+   UCSI からも。WS051 は UCSI を待たずに進める」と決まり、ws.md を直した。

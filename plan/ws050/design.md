@@ -1,17 +1,22 @@
 # WS050 設計: USB-C の UCSI driver
 
-Status: 案の第 2 版（2026-10-04、ws050-p001、P1 generation16）。第 1 版（generation15）に [敵対的レビュー](design-review-2026-10-04.md)
-（A1〜A9・B1〜B8・C1〜C3・D・E）を反映した。人間の判断が要る点は §10、レビューの各項目の扱いは §11。
+Status: 案の第 3 版（2026-10-04、ws050-p001、P1 generation16）。第 1 版（generation15）に [敵対的レビュー](design-review-2026-10-04.md)
+（A1〜A9・B1〜B8・C1〜C3・D・E）を反映し（第 2 版）、§10 の 5 項目のユーザーの決定（末尾の記録）を反映した（第 3 版）。レビューの各項目の扱いは
+§11、HPD・pin・向きの二つの出所の扱いは §13。
 
 ## 1. 目的と範囲
 
-USB Type-C Connector System Software Interface（UCSI）で、USB-C の connector の状態（接続・電源とデータの役割・partner の種類・
-Alternate Mode・USB PD の contract）を読み、変化の通知を受け、Alternate Mode の状態を WS051（DP Alt Mode）へ、電源の状態を WS052・WS132 へ渡す。
-plug の**向き**（CC1/CC2）は UCSI 1.x の GET_CONNECTOR_STATUS に無い見込み（B1、2.0 で追加。仕様書で確かめる）。1.x の機種では読めない
-項目として「不明」で公開する（§10-4）。
+USB Type-C Connector System Software Interface（UCSI）で、USB-C の connector の状態（接続・向き・電源とデータの役割・partner の種類・
+Alternate Mode・USB PD の contract）を読み、変化の通知を受け、必要な操作（data と power の role の切り替え、connector の reset、Alternate Mode の
+選択）を行い、Alternate Mode の状態を WS051（DP Alt Mode）へ、電源の状態を WS052・WS132 へ渡す（決定 2）。UCSI は 1.x と 2.x の両方の配置と
+field を扱う（決定 3）。
+
+plug の**向き**（CC1/CC2）は UCSI 2.0 以上では GET_CONNECTOR_STATUS の field から、1.x では i915（WS051）の TCSS・FIA から取る（決定 4、§13）。
+DP の **HPD と pin の割り当て**は二つの経路を持つ: UCSI 2.0 以上の PPM が返す時は UCSI から、i915 が TCSS・FIA から取れる時は i915 からも
+（1.x では i915 だけ、決定 5 と補足、§13）。
 
 範囲外: USB PD の message を OS が直接話すこと（TCPM。UCSI では PPM（PD controller と EC の firmware）が話す）、Thunderbolt・USB4 の
-tunnel、role の切り替えとその UI（§10-2 の案）、DP の pin の割り当てと HPD（UCSI 1.x では得られない。i915 が TCSS・FIA から読む、§8）。
+tunnel、role の切り替えの UI（口は `/dev/system` の WS132 へ）。
 
 ## 2. UCSI の要点
 
@@ -30,10 +35,13 @@ UCSI は OS（OPM: OS Policy Manager）と platform（PPM: Platform Policy Manag
 | 0x10 | MESSAGE_IN（PPM → OPM の data） | 16 | PPM |
 | 0x20 | MESSAGE_OUT（OPM → PPM の data） | 16 | OPM |
 
-**配置の決め方**（B2）: VERSION は EC が実行時に書く値で、5330 での値は未知（UAT で記録する）。driver は配置を VERSION で選ばず、
-platform の AML が定義する mailbox の region（5330 では 0x38 byte、MGI・MGO が各 16 byte、§3）が 1.x の配置であることで決める。
-VERSION は field の意味（GET_CONNECTOR_STATUS の版ごとの差、B1）の判定に使う。region が 1.x の配置でない（MESSAGE_IN が 16 byte を越える
-2.x 以降の版など）なら attach しない（log を出す）。
+**配置の決め方**（B2、決定 3）: VERSION は EC が実行時に書く値で、5330 での値は未知（UAT で記録する）。driver は配置を VERSION で選ばず、
+platform の AML が定義する mailbox の region の大きさと field の並びで決める（5330 は 0x38 byte、MGI・MGO が各 16 byte で 1.x の配置、§3）。
+2.x の配置（MESSAGE_IN・MESSAGE_OUT が大きい版。offset と大きさは仕様書の 2.0・2.1 で確かめる）も最初から扱う: transport は配置の表
+（`struct ucsi_layout`: 各 field の offset と大きさ）を AML の region から選んで核に渡し、核は MESSAGE_IN の大きさに従って一覧の command
+（GET_ALTERNATE_MODES・GET_PDOS）の 1 回の件数を決める。VERSION は field の意味（GET_CONNECTOR_STATUS の版ごとの bit、向き・DP の状態の有無）の
+判定に使う。どちらの表にも合わない region なら attach しない（log を出す）。2.x の実機は無いので、2.x は host の試験（疑似の PPM の 2.x の版）
+で確かめる。
 
 ### 2.2 CCI
 
@@ -54,10 +62,18 @@ MESSAGE_IN の data の長さ、変化した connector の番号（Connector Cha
 | 0x0D | GET_CAM_SUPPORTED | connector が入れる Alternate Mode（connector の GET_ALTERNATE_MODES の一覧への index の bitmap、B4） |
 | 0x0E | GET_CURRENT_CAM | 今入っている Alternate Mode（同じ一覧への index、B4） |
 | 0x10 | GET_PDOS | source・sink の PDO（MESSAGE_IN に 4 件まで、offset を進めて全件、B4） |
-| 0x12 | GET_CONNECTOR_STATUS | 接続、電源の方向、partner の種類と flag（USB・Alternate Mode）、電源の operation mode（USB 既定・BC・1.5A・3A・PD、B8）、RDO、変化の bit。向きは 2.0 以上（B1） |
+| 0x12 | GET_CONNECTOR_STATUS | 接続、電源の方向、partner の種類と flag（USB・Alternate Mode）、電源の operation mode（USB 既定・BC・1.5A・3A・PD、B8）、RDO、変化の bit。2.0 以上は向きと、版によっては DP の状態（HPD・pin）（【仕様要確認】、§13） |
 | 0x13 | GET_ERROR_STATUS | error の詳細（log 用） |
+| 0x03 | CONNECTOR_RESET | connector の reset（hard reset か data reset。決定 2） |
+| 0x08 | SET_UOR | data の role（DFP/UFP）の切り替えと受け入れの設定（決定 2） |
+| 0x09 | SET_PDM | power direction mode（版による。要否は仕様書で） |
+| 0x0B | SET_PDR | power の role（source/sink）の切り替えと受け入れの設定（決定 2） |
+| 0x0F | SET_NEW_CAM | Alternate Mode に入る・出る（決定 2。firmware が自分で入らない platform と、利用者の明示の選択に） |
+| 0x11 | GET_CABLE_PROPERTY | cable の能力（速度、電流、active・passive。Alternate Mode の選択の判断に） |
 
-SET_NEW_CAM・SET_UOR・SET_PDR・CONNECTOR_RESET・GET_CABLE_PROPERTY は使わない（§10-2、§8）。
+command の code は記憶による（【仕様要確認】、p002 の前に仕様書で確かめる）。操作の command（CONNECTOR_RESET・SET_UOR・SET_PDR・SET_NEW_CAM）は
+GET_CONNECTOR_CAPABILITY と GET_CAPABILITY の bmOptionalFeatures で PPM が対応すると言うときだけ出し、結果（新しい role・mode）は
+GET_CONNECTOR_STATUS・GET_CURRENT_CAM の読み直しで確かめる。
 
 ### 2.4 手順と ACK の規則（B3）
 
@@ -128,8 +144,13 @@ include/drivers/typec/typec.h  kernel 内の公開の口（connector の状態�
 - 利用者への口（kernel 内）: `typec_listener_register(callback, argument)`。callback は `ucsi` thread から、変化した connector と generation を
   受ける。**callback は block せず、`ucsi` thread を待つ要求を出さない**（C2。要求は自分の queue に積んで自分の thread で処理する）。状態は
   `typec_connector_get(index, &state)` で写して読む（lock の中で callback を呼ばない）。
-- 診断の口: `/dev/typec`（text、read で全 connector の状態、`/dev/acpi` と同じ形、UAPI を足さない）。device 番号は `/dev/acpi`（`0x000B0000`）と
-  同じ帯の空きを kernel の cdev の表で確かめて取る（C3、§10-1）。
+- 操作の口（kernel 内、決定 2）: `typec_connector_set_data_role(index, role)`・`typec_connector_set_power_role(index, role)`・
+  `typec_connector_reset(index, kind)`・`typec_connector_enter_mode(index, svid, mode)`・`typec_connector_exit_mode(index)`。要求は `ucsi` thread の
+  queue に積んで順に実行し、結果は listener の変化の通知で返す（呼び手を block しない）。利用者への正式な口は WS132 の `/dev/system`（決定 1）。
+- 診断の口: `/dev/typec`（text、read で全 connector の状態、`/dev/acpi` と同じ形、UAPI を足さない、決定 1）。device 番号は `/dev/acpi`
+  （`0x000B0000`）と同じ帯の空きを kernel の cdev の表で確かめて取る（C3）。正式な通知は WS132 の `/dev/system` の事象（Keiland が受け取る）。
+- i915 からの報告の口（決定 4・5、§13）: `typec_display_report(tc_port, &report)`（i915 が TC の port ごとに HPD・pin・lane 数・向き（取れれば）を
+  渡す）。typec の層が UCSI の connector に対応付けて状態に入れる。
 
 ### 4.1 lock の順（A5・A6）
 
@@ -149,8 +170,8 @@ include/drivers/typec/typec.h  kernel 内の公開の口（connector の状態�
 
 1. ACPI の walk で `_HID USBC000` か `_CID PNP0CA0` の device を探す。無ければ何もしない。
 2. `_STA` を評価する（これが VERSION を mailbox に書く）。present でなければ何もしない。
-3. `_CRS` から Memory32Fixed の基底と長さを読み（§12 の 4）、mailbox の region（`USBC`）が 1.x の配置（0x30 byte 以上、MESSAGE_IN・MESSAGE_OUT が
-   各 16 byte）であることを確かめる（B2）。memory map の型を確かめる（A3）。写像する（A4）。
+3. `_CRS` から Memory32Fixed の基底と長さを読み（§12 の 4）、mailbox の region（`USBC`）が 1.x か 2.x の配置の表に合うことを確かめ、合う表を
+   選ぶ（B2、決定 3）。memory map の型を確かめる（A3）。写像する（A4）。
 4. VERSION を読み、log に出す（1.x / 2.x の field の意味の判定に使う。B1）。
 5. `_DSM` function 0（Buffer の bit 1・2）で function 1・2 があることを確かめる（**必須の検査**、A7。ToUUID の混合 endian を誤ると function 1・2 は
    黙って `Buffer {0}` を返すので、function 0 の bit で検出する）。
@@ -191,11 +212,11 @@ include/drivers/typec/typec.h  kernel 内の公開の口（connector の状態�
 
 - WS049: 足す公開の口を §12 にまとめた（新しい Phase として Q1 に提案）。
 - WS051: DP Alt Mode。Alder Lake では Alternate Mode に入るのは PPM（EC と PD controller の firmware）と PMC の mux で、OS は状態を読む。
-  **UCSI 1.x から得られるのは「DP の SVID 0xFF01 の mode に入った事実」と mode の能力の VDO（MID）だけ**で、pin の割り当て（C/D/E）と HPD は
-  得られない（B5）。pin と lane は i915 が TCSS の live status と FIA の register から、HPD は i915 の Type-C の hotplug の割り込みから読む
-  （Linux の i915 の `intel_tc.c` と同じ分担。code は写さない）。WS051 の画面の出力は WS050 に必須の依存を持たず、UCSI は補助の情報
-  （partner の Alternate Mode の一覧、cable、診断）を渡す。WS051 の ws.md の「pin・HPD は UCSI を通して」と WS050 の ws.md の「HPD の通知」は
-  この分担に合わせて直す（§10-5、q680 の依存の訂正の提案に含める）。
+  UCSI 1.x から得られるのは「DP の SVID 0xFF01 の mode に入った事実」と mode の能力の VDO（MID）だけで、pin の割り当て（C/D/E）と HPD は
+  得られない（B5）。i915 は TCSS の live status と FIA の register から pin と lane を、Type-C の hotplug の割り込みから HPD を読む（Linux の i915 の
+  `intel_tc.c` と同じ分担。code は写さない）。UCSI 2.0 以上で HPD・pin が取れる時は UCSI からも取る（決定 5 の補足、§13）。WS051 の画面の出力は
+  WS050 を待たずに進められる（決定 5）。firmware が自分で DP mode に入らない platform では WS051 が WS050 の SET_NEW_CAM（`typec_connector_enter_mode`）
+  を使う。
 - WS052・WS132: 電源の方向と contract、充電器の有無を `/dev/system` の電源の状態へ。WS052 の suspend・resume の hook に §6 の再列挙を載せる（C1）。
 
 ## 9. Phase の案（E を反映して分け直した）
@@ -205,12 +226,14 @@ include/drivers/typec/typec.h  kernel 内の公開の口（connector の状態�
 | p001 | 調査と設計（この文書） | WS049 の namespace | この文書、§10 の判断 |
 | p002 | UCSI の核・Type-C の層の状態と kernel 内の口（`ucsi.c`・`ucsi.h`・`typec.c` の状態と generation・`typec.h`）、疑似の PPM と記録の再生の host の試験 | p001、§10、仕様書での §2 の確認、**実機の VERSION と mailbox の記録（UAT）** | host の筋書きが全て通る、ASan/UBSan、規約、kernel の flag で warning 0 |
 | p003 | ACPI の transport と kernel への組み込み（`ucsi-acpi.c`、attach の位置、Notify、thread、`/dev/typec`） | p002、WS049 の新しい Phase（§12）、ws049-p007・p008 | AML の host の試験（`_Q79` との交互を含む）、kernel の build、QEMU の boot test（T1）、UAT の手順 |
-| p004 | 実機の確認と規約の全文の確認 | p003、実機 | 実機で抜き差し・電源・Alternate Mode が読め通知が届く（向きは版による）、規約、build、boot test |
+| p004 | 操作の command（CONNECTOR_RESET・SET_UOR・SET_PDR・SET_NEW_CAM・GET_CABLE_PROPERTY）と操作の口（決定 2） | p003 | host の試験（疑似の PPM の role の切り替え・mode の出入り・reset）、実機で data・power の role の切り替えと DP mode の出入り（PPM が対応する範囲） |
+| p005 | i915 との連携（`typec_display_report`、HPD・pin・向きの二つの出所の統合、§13）と TC の port と connector の対応付け | p003、WS051 の p002（TC の port の核） | host の試験（二つの出所の優先と食い違い）、実機で 1.x の向き・HPD・pin が i915 から入る |
+| p006 | 実機の確認と規約の全文の確認 | p003〜p005、実機 | 実機で抜き差し・向き・電源・Alternate Mode が読め通知が届く、操作ができる、規約、build、boot test |
 
 第 1 版の p004（Type-C の層）は p002（状態と口、host の試験に要る）と p003（`/dev/typec`）に分けて入れた。Alternate Mode と PDO の読み直しは核
-（p002）。
+（p002）。2.x の配置と field（決定 3）は p002 の核と疑似の PPM の 2.x の版で扱う。
 
-## 10. 人間の判断が要る点
+## 10. 人間の判断の点（2026-10-04 に決定済み。決定は末尾の「ユーザーの決定」、この節は第 2 版の案の記録）
 
 1. **公開の形**: 診断の text の `/dev/typec`（UAPI を足さない、`/dev/acpi` と同じ）で始め、利用者向けの正式な口は WS132 の `/dev/system` に
    任せる案。別の形（専用の ioctl の device）にするか。
@@ -235,11 +258,11 @@ include/drivers/typec/typec.h  kernel 内の公開の口（connector の状態�
 | A7 package・function 0 | §3・§5: function 0 は Buffer の bit を必須で検査、package の公開は §12 |
 | A8 poll の負荷 | §6: Notify の後は `_DSM` 2 を呼ばない、poll は 20→100ms、所要を実機で |
 | A9 connector の対応 | §3: 実機で確かめ、合わなければ対応付けしない |
-| B1 向き | §1・§2.3・§10-4 |
-| B2 配置 | §2.1・§5・§10-3、p002 の前に実機の VERSION |
+| B1 向き | §1・§2.3・§13（決定 4: 2.0 以上は UCSI、1.x は i915） |
+| B2 配置 | §2.1・§5（決定 3: 1.x と 2.x の両方）、p002 の前に実機の VERSION |
 | B3 ACK | §2.4 |
 | B4 index・offset | §2.3・§5 |
-| B5 DP の pin・HPD | §1・§8・§10-5 |
+| B5 DP の pin・HPD | §1・§8・§13（決定 5 と補足: 二つの経路） |
 | B6 通知の有効化の順 | §5 の 7 |
 | B7 PPM_RESET | §5・§6 |
 | B8 BC・USB の世代・revision | §2.3・§3 |
@@ -262,6 +285,28 @@ UCSI（p003）が使い、他の driver（WS051・WS052・WS132 の ACPI の利�
    配送と競合しない形に。
 4. **`_CRS` の共通の解析**: Memory32Fixed・QWord/DWord の memory・IO・FixedIO・IRQ・Interrupt を解く関数（今は EC の driver が自分で解いている）。
 5. （要否を p003 で調べる）memory map の型を問う口（A3）。kernel に既にあれば使う。無く、HAL の API が要るなら止めて Q1 に相談する。
+
+（Q1 が q696 ws049-p017 として Queue に入れた。）
+
+## 13. HPD・pin・向きの二つの出所（決定 4・5 と補足）
+
+| 項目 | UCSI | i915（WS051） |
+| --- | --- | --- |
+| 向き（CC1/CC2） | 2.0 以上の GET_CONNECTOR_STATUS の field | TCSS・FIA の register から取れるかを実機で確かめる（下） |
+| DP の HPD | 2.0 以上で PPM が返すなら（【仕様要確認】） | DE の HPD の live status（`GEN11_DE_HPD_ISR` の TC の bit、`TCSS_DDI_STATUS` の HPD_LIVE_STATUS_ALT）と割り込み |
+| DP の pin の割り当て | 2.0 以上で PPM が返すなら（【仕様要確認】）、1.x は mode の VDO（能力）だけ | FIA の `PORT_TX_DFLEXPA1` の pin、`TCSS_DDI_STATUS` の pin の field、lane の割り当て `DFLEXDPSP` |
+
+- **向きを i915 から取れるか**: Linux の i915 の register の定義（`i915_reg.h`）に plug の向きの bit は無い（`DDI_BUF_PORT_REVERSAL` は VBT の board の
+  lane の反転で、plug の向きではない）。FIA の `DP_LANE_ASSIGNMENT`（1・2 lane の時に 0x1/0x2/0x4/0x8・0x3/0xC のどれか）が向きで変わる可能性が
+  ある。WS051 p002 の診断で、DP の pin D（2 lane）の adapter を両向きに差して lane の割り当てと TCSS の register を記録し、向きと対応するかを
+  確かめる。対応しなければ 1.x の向きは「不明」と公開し、取れないことを Q1 に報告する（ユーザーの決定 4 の前提が成り立たない）。
+- **優先**: 画面を出す判断（link training、lane 数、HPD での modeset）は常に i915 の値で行う（実際に lane を割り当てているのは FIA で、DDI に届く
+  HPD は TCSS のもの）。`/dev/typec` と利用者への状態では、両方ある時は i915 の値を採り、UCSI の値も並べて出す（`hpd=1(i915) ucsi=1` の形）。
+  i915 が無い（i915 の driver が動いていない、QEMU）時は UCSI の値を採る。
+- **食い違い**: 両方ある時に値が違えば、log に 1 回（変化ごと）両方の値と generation を出し、状態に `disagree` の印を付ける。HPD は一時的に
+  ずれる（PPM の通知と HPD の割り込みの順が保証されない）ので、200 ms 待って両方を読み直してから食い違いと判定する。
+- **対応付け**: i915 の TC の port（TC1・TC2）と UCSI の connector の番号の対応は未確認（A9 と同じ問題）。`_PLD` の位置、VBT の child、実機で
+  一つずつ差して確かめ、対応表を typec の層に持つ（決まるまでは i915 の値を UCSI の connector に入れない）。
 
 ## ユーザーの決定（2026-10-04、§10 の 5 項目、クリックの回答を 1 つずつ）
 
