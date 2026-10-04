@@ -65,8 +65,10 @@ drv_acpi_object_string_new(
 
 	/* Copies the text into a new string. */
 	object = drv_acpi_object_string_new_length(text, length);
+	if (object == NULL)
+		return NULL;
 
-	/* Reports the string, or NULL when memory ran out. */
+	/* Succeeded: the caller holds the only reference. */
 	return object;
 }
 
@@ -85,23 +87,22 @@ drv_acpi_object_buffer_new(
 	if (object == NULL)
 		return NULL;
 
-	/* An empty buffer has no storage to allocate. */
-	if (length == 0)
-		return object;
+	/* A non-empty buffer has storage to allocate and fill; an empty one has none. */
+	if (length != 0) {
+		/* Allocates the storage. */
+		object->value.buffer.bytes = drv_acpi_os_alloc(length);
+		if (object->value.buffer.bytes == NULL) {
+			drv_acpi_object_release(object);
+			return NULL;
+		}
 
-	/* Allocates the storage. */
-	object->value.buffer.bytes = drv_acpi_os_alloc(length);
-	if (object->value.buffer.bytes == NULL) {
-		drv_acpi_object_release(object);
-		return NULL;
-	}
-
-	/* Fills the storage from the bytes, or with zeros when there are none. */
-	object->value.buffer.length = length;
-	if (bytes != NULL) {
-		kern_memcpy(object->value.buffer.bytes, bytes, length);
-	} else {
-		kern_memset(object->value.buffer.bytes, 0, length);
+		/* Fills the storage from the bytes, or with zeros when there are none. */
+		object->value.buffer.length = length;
+		if (bytes != NULL) {
+			kern_memcpy(object->value.buffer.bytes, bytes, length);
+		} else {
+			kern_memset(object->value.buffer.bytes, 0, length);
+		}
 	}
 
 	/* Succeeded: the caller holds the only reference. */
@@ -119,13 +120,19 @@ drv_acpi_object_release(
 	if (object == NULL)
 		return;
 
-	/* The count drops by the reference this holder gave up. */
+	/*
+	 * The count drops by the reference this holder gave up.  A count that
+	 * stays above zero means another holder still keeps the object alive;
+	 * zero means nothing holds it any more.
+	 */
 	object->references--;
 	if (object->references != 0)
 		return;
 
-	/* Frees what the object owns, then the object. */
+	/* Frees what the object owns. */
 	object_free_contents(object);
+
+	/* Frees the object itself. */
 	drv_acpi_os_free(object);
 }
 
@@ -140,7 +147,7 @@ drv_acpi_object_type(
 	if (object == NULL)
 		return DRV_ACPI_TYPE_UNINITIALIZED;
 
-	/* Reports the stored type. */
+	/* Reports the kind of value the object holds. */
 	return (enum drv_acpi_type)object->type;
 }
 
@@ -155,7 +162,7 @@ drv_acpi_object_integer(
 	if (object == NULL || object->type != DRV_ACPI_TYPE_INTEGER)
 		return 0;
 
-	/* Reports the value. */
+	/* Reports the integer the object holds. */
 	return object->value.integer;
 }
 
@@ -253,7 +260,7 @@ drv_acpi_object_reference_node(
 	if (object->value.reference.kind != DRV_ACPI_REFERENCE_NODE)
 		return NULL;
 
-	/* Reports the node. */
+	/* Reports the node the reference points at. */
 	return object->value.reference.node;
 }
 
@@ -327,21 +334,20 @@ drv_acpi_object_package_new(
 	if (object == NULL)
 		return NULL;
 
-	/* An empty package has no element array. */
-	if (count == 0)
-		return object;
+	/* A non-empty package has an element array; an empty one has none. */
+	if (count != 0) {
+		/* Allocates the element array. */
+		size = (size_t)count * sizeof(object->value.package.elements[0]);
+		object->value.package.elements = drv_acpi_os_alloc(size);
+		if (object->value.package.elements == NULL) {
+			drv_acpi_object_release(object);
+			return NULL;
+		}
 
-	/* Allocates the element array. */
-	size = (size_t)count * sizeof(object->value.package.elements[0]);
-	object->value.package.elements = drv_acpi_os_alloc(size);
-	if (object->value.package.elements == NULL) {
-		drv_acpi_object_release(object);
-		return NULL;
+		/* Every element starts uninitialized. */
+		kern_memset(object->value.package.elements, 0, size);
+		object->value.package.count = count;
 	}
-
-	/* Every element starts uninitialized. */
-	kern_memset(object->value.package.elements, 0, size);
-	object->value.package.count = count;
 
 	/* Succeeded: the caller holds the only reference. */
 	return object;
@@ -375,7 +381,10 @@ void
 drv_acpi_object_ref(
 	struct drv_acpi_object *object)
 {
-	/* The new holder keeps the object alive until it releases it. */
+	/*
+	 * The count keeps the object alive: the new holder's reference lasts
+	 * until it releases it.
+	 */
 	object->references++;
 }
 
@@ -397,33 +406,43 @@ drv_acpi_object_copy(
 	/* Chooses the copy by the kind of value. */
 	switch (source->type) {
 	case DRV_ACPI_TYPE_INTEGER:
+		/* Copies the integer. */
 		copy = drv_acpi_object_integer_new(source->value.integer);
 		break;
 	case DRV_ACPI_TYPE_STRING:
+		/* Copies the characters. */
 		copy = drv_acpi_object_string_new_length(
 			source->value.string.text,
 			source->value.string.length);
 		break;
 	case DRV_ACPI_TYPE_BUFFER:
+		/* Copies the bytes. */
 		copy = drv_acpi_object_buffer_new(
 			source->value.buffer.bytes,
 			source->value.buffer.length);
 		break;
 	case DRV_ACPI_TYPE_PACKAGE:
-		error = package_copy(source, result);
-		return error;
+		/* Copies the package and its data elements. */
+		copy = NULL;
+		error = package_copy(source, &copy);
+		if (error != 0)
+			return error;
+		break;
 	default:
+		/* Shares any other object: the target takes a reference of its own. */
 		drv_acpi_object_ref(source);
-		*result = source;
-		return 0;
+		copy = source;
+		break;
 	}
 
 	/* Reports a copy that could not be allocated. */
 	if (copy == NULL)
 		return ENOMEM;
 
-	/* Succeeded: the caller holds the copy. */
+	/* Hands over the copy. */
 	*result = copy;
+
+	/* Succeeded: the caller holds the copy. */
 	return 0;
 }
 
@@ -447,7 +466,7 @@ drv_acpi_integer_mask(void)
 unsigned
 drv_acpi_integer_bytes(void)
 {
-	/* Converts the width to bytes. */
+	/* Reports the width in bytes: 4 or 8. */
 	return integer_bits / 8U;
 }
 
@@ -476,31 +495,40 @@ object_free_contents(
 	/* Chooses what to free by the kind of object. */
 	switch (object->type) {
 	case DRV_ACPI_TYPE_STRING:
+		/* Frees the characters. */
 		drv_acpi_os_free(object->value.string.text);
 		break;
 	case DRV_ACPI_TYPE_BUFFER:
+		/* Frees the bytes. */
 		drv_acpi_os_free(object->value.buffer.bytes);
 		break;
 	case DRV_ACPI_TYPE_PACKAGE:
 		/* Releases every element the package holds. */
 		for (index = 0; index < object->value.package.count; index++)
 			drv_acpi_object_release(object->value.package.elements[index]);
+
+		/* Frees the element array. */
 		drv_acpi_os_free(object->value.package.elements);
 		break;
 	case DRV_ACPI_TYPE_REFERENCE:
+		/* Releases the object the reference holds and frees the name it waits for. */
 		drv_acpi_object_release(object->value.reference.target);
 		drv_acpi_os_free(object->value.reference.name);
 		break;
 	case DRV_ACPI_TYPE_BUFFER_FIELD:
+		/* Releases the buffer the field lies in. */
 		drv_acpi_object_release(object->value.buffer_field.buffer);
 		break;
 	case DRV_ACPI_TYPE_FIELD_UNIT:
+		/* Releases the connection the field was defined with. */
 		drv_acpi_object_release(object->value.field.connection);
 		break;
 	case DRV_ACPI_TYPE_METHOD:
+		/* Releases the mutex that serializes the method. */
 		drv_acpi_object_release(object->value.method.serialization);
 		break;
 	default:
+		/* Any other object owns nothing beyond itself. */
 		break;
 	}
 }
@@ -521,8 +549,9 @@ package_copy(
 	if (copy == NULL)
 		return ENOMEM;
 
-	/* Copies each element; an uninitialized one stays uninitialized. */
+	/* Copies each element. */
 	for (index = 0; index < source->value.package.count; index++) {
+		/* An uninitialized element stays uninitialized. */
 		element = source->value.package.elements[index];
 		if (element == NULL)
 			continue;
@@ -535,7 +564,9 @@ package_copy(
 		}
 	}
 
-	/* Succeeded: the caller holds the copy. */
+	/* Hands over the copy. */
 	*result = copy;
+
+	/* Succeeded: the caller holds the copy. */
 	return 0;
 }
