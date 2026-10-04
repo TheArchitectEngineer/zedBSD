@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p007`
 Parent: [WS049](../ws.md)
-Status: in-progress（2026-10-04。試験の道具を用意し、QEMU の試験を Q1 経由で T1 に依頼。結果待ち）
+Status: uncleared（2026-10-04、T1-086 で guest-events.sh が FAIL。button・gpe の event が kernel に届かない。切り分け中、P1 generation16 が引き継ぐ）
 Phase disposition: normal
 Queue: q678 / q678-i01（P1 generation15）。承認: q677 と同じ（2026-10-04 user の DP Alt Mode の目標と 17 時の体制の指示）
 
@@ -69,3 +69,25 @@ Notify を受けて動く driver（電源の状態、蓋、ボタンの動作）
 
 - T1 の結果。FAIL なら gdbstub と QMP で解析して直す。
 - 実機の確認。
+
+## T1-086 の結果（2026-10-04、main df57aad の image、Q1 の判定: q678 uncleared）
+
+- `guest-events.sh`: **FAIL**（2 回とも同じ）。`sci: acpi: SCI on IRQ 9` は出たが、`button:`・`gpe:` が FAILED。QMP の `system_powerdown`・`device_add`
+  の答えは `{"return": {}}`、`query-hotpluggable-cpus` は core-id 2・3 が空き。`boot.txt`・`after-button.txt`・`after-gpe.txt` は 3 つとも 3011 byte の
+  同じ中身で、dmesg の末尾は `boot: starting init /sbin/init`。証拠: `/home/awe/zedBSD-worktrees/t1/build/t1-086-events-try1/`・`try2/`。
+- `guest-compare.sh`: PASS（namespace same、device の違い 11 項目は p006 と同じ）。boot test: PASS。p016（橋の下の bus）の回帰も兼ねる。
+
+### 切り分け（generation15、code を読んで。QEMU は未実行）
+
+- dmesg の取り方は正しい: `dmesg` は `kern.msgbuf`（kernel の ring、amd64 は 512 KiB）を読み、init の後に kernel が何も log しなければ
+  boot の log だけになる。3 つが同じなのは、event の後に kernel が何も log しなかったということ（`acpi: power button` も
+  `Notify(...) has no handler` も無い）。button と GPE が両方とも届かないので、共通の道（SCI の割り込みの配送、event thread）を先に疑う。
+- `ACPI: S5 is SLP_TYP 0/0`（q35 の `_S5`）、`acpi: SCI on IRQ 9`（`kern_irq_register(9)` は成功）は出ている。
+- HAL の IOAPIC（`src/hal/amd64/bsp-pcat/ioapic.c` の `write_route`）は MADT の ISO の極性（3 = active low → bit 13）と trigger
+  （3 = level → bit 15）を正しく encode している。QEMU の q35 の MADT は IRQ 9 を level・active high と書く。
+- 残る仮説（未確認）: (a) QEMU の FADT の `PWR_BUTTON` の flag が 1 で固定の電源 button を有効にしていない（ただし GPE も届かないことは説明しない）、
+  (b) IRQ 9 の line が unmask されていない、または level の EOI の扱い、(c) SCI_EN が立っていない（ACPI mode に入っていない。`enable_acpi_mode()` は
+  失敗を log するが成功の log は無い）、(d) event thread が走らない、(e) PM1_EN・GPE_EN の書き込みが効いていない。
+- 次の一手（再依頼の前に足す診断）: QMP の `human-monitor-command` の `info irq`（IRQ ごとの割り込みの回数。IRQ 9 が 0 なら配送の前で止まっている）と
+  `info pic`、QEMU の gdbstub で `drv_acpi_sci_interrupt`・`drv_acpi_events_process`（public の symbol）に breakpoint。kernel の側に「最初の SCI」
+  「ACPI mode に入った（SCI_EN）」「PM1_EN の値」の 1 回だけの log を足すと、script だけで切り分けられる。`guest-events.sh` に `info irq` の取得を足す。

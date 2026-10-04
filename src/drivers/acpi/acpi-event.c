@@ -675,6 +675,7 @@ read_soft_off(
 	struct drv_acpi_object *package;
 	struct drv_acpi_object *element;
 	uint8_t types[2];
+	enum drv_acpi_type type;
 	unsigned index;
 	int error;
 
@@ -685,6 +686,8 @@ read_soft_off(
 			soft_off.sleep_control.port = load_u32(fadt + FADT_SLEEP_CONTROL_REG + GAS_ADDRESS);
 			soft_off.sleep_control.length = 1U;
 		}
+
+		/* Without such a register the platform cannot turn itself off. */
 		if (soft_off.sleep_control.port == 0) {
 			soft_off.sleep_control.length = 0;
 			drv_acpi_os_log("ACPI: no sleep control register in I/O space; no soft-off\n");
@@ -707,10 +710,13 @@ read_soft_off(
 		element = drv_acpi_object_package_element(package, index);
 		if (element == NULL)
 			continue;
-		if (drv_acpi_object_type(element) != DRV_ACPI_TYPE_INTEGER)
+		type = drv_acpi_object_type(element);
+		if (type != DRV_ACPI_TYPE_INTEGER)
 			continue;
 		types[index] = (uint8_t)(drv_acpi_object_integer(element) & 7U);
 	}
+
+	/* The package is no longer needed. */
 	drv_acpi_object_release(package);
 
 	/* Remembers them; from now on the soft-off needs no AML but _PTS. */

@@ -45,7 +45,9 @@
 
 /*
  * The configuration space offsets of the header type, whose low seven bits
- * say whether the function is a bridge, and of a bridge's secondary bus.
+ * say whether the function is a bridge, and of a bridge's secondary bus;
+ * the mask that keeps those seven bits, and the layouts of a PCI-to-PCI
+ * bridge and of a CardBus bridge, the two that lead to another bus.
  */
 #define PCI_HEADER_TYPE		0x0eU
 #define PCI_SECONDARY_BUS	0x19U
