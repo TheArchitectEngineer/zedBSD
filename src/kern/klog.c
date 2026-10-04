@@ -253,6 +253,68 @@ kern_log_capacity(
 	return KLOG_CAPACITY;
 }
 
+/*
+ * Keeps the text of a fatal stop in the ring, and nowhere else.
+ *
+ * The stop prints its own text on the console; this copy is what a debugger
+ * reads from klog_buffer, or what dmesg shows when the stop was survived by
+ * nothing but memory.  A stop can begin while this CPU holds the ring's lock
+ * (a fault inside a log record), and spin_trylock() traps on that recursion,
+ * so the owner is checked first and the text is then written without the
+ * lock: the machine is stopping and nothing else on this CPU runs again.
+ */
+void
+kern_log_record_fatal(
+	const char *text)
+{
+	unsigned spins;
+	unsigned cpu;
+	unsigned held;
+	size_t length;
+	int locked;
+
+	/* Ignores a missing text. */
+	if (text == NULL)
+		return;
+
+	/* Measures the text. */
+	length = 0;
+	while (text[length] != '\0')
+		length++;
+
+	/* Nothing to keep. */
+	if (length == 0)
+		return;
+
+	/* Takes the ring's lock unless this CPU holds it already or another holds it too long. */
+	cpu = (unsigned)hal_cpu_current();
+	locked = 0;
+	for (spins = 0; spins < KLOG_MIRROR_SPIN_MAX; spins++) {
+		/* This CPU stopped inside a record: writing without the lock is all that is left. */
+		held = atomic_load_acquire(&klog_lock.held);
+		if (held != 0 && klog_lock.owner_valid && klog_lock.owner_cpu == cpu)
+			break;
+
+		/* Takes the lock when it is free. */
+		locked = spin_trylock(&klog_lock);
+		if (locked)
+			break;
+
+		/* Lets the holder's release be seen on the next try. */
+		hal_compiler_barrier();
+	}
+
+	/* Appends the text to the ring. */
+	append_locked(text, length);
+
+	/* Gives the lock back when it was taken. */
+	if (locked)
+		spin_unlock(&klog_lock);
+
+	/* Succeeded: the text is in the ring. */
+	return;
+}
+
 /* Appends bytes to the ring, dropping the oldest bytes when it is full. */
 static void
 append_locked(

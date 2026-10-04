@@ -1,0 +1,39 @@
+# ws005-p032 (BUG-158): a copy of config/ci/config-amd64.mk (graphical boot, i915, AX211, the desktop) for the T1 check of the on-disk kernel log; nothing else changed.
+ZEDBSD_MENU_VERSION := 3
+ZEDBSD_PLATFORM := amd64
+ZEDBSD_ARCHITECTURE := amd64
+ZEDBSD_BOARD := pcat
+ZEDBSD_VARIANT := native
+
+CONFIG_KERNEL_TEST_CHECKPOINTS := n
+CONFIG_PCAT_SERIAL_MIRROR := n
+CONFIG_INPUT_TEST_INJECT := n
+CONFIG_BUF_CACHE_KIB := 0
+CONFIG_GPU_JOB_RESERVATION_MS := 10000
+CONFIG_GPU_JOB_EXECUTION_MS := 60000
+CONFIG_GPU_JOB_STOP_MS := 10000
+CONFIG_GPU_CONTROL_MS := 10000
+ZEDBSD_ROOTFS_DEVELOPMENT := y
+ZEDBSD_GRAPHICAL_BOOT := y
+ZEDBSD_BOOT_KERNEL_MESSAGES := n
+ZEDBSD_NOCT_ACCEL := y
+CONFIG_DRIVER_NE2000 := n
+CONFIG_DRIVER_PCI_UHCI := y
+CONFIG_DRIVER_PCI_EHCI := y
+CONFIG_DRIVER_PCI_XHCI := y
+CONFIG_DRIVER_PCI_NVME := y
+CONFIG_DRIVER_PCI_INTEL_AX211 := y
+CONFIG_DRIVER_PCI_VENUS := y
+CONFIG_DRIVER_PCI_I915 := y
+CONFIG_DRIVER_PCI_HDA := y
+CONFIG_DRIVER_USB_STORAGE := y
+CONFIG_DRIVER_USB_CDC_NCM := y
+CONFIG_DRIVER_USB_CDC_ECM := y
+CONFIG_DRIVER_USB_HID := y
+CONFIG_DRIVER_USB_HUB := y
+CONFIG_DRIVER_USB_RTL8822BU := y
+CONFIG_DRIVER_GRAPHICS := y
+CONFIG_DRIVER_ACPI := y
+CONFIG_DRIVER_LGY98 := n
+
+ZEDBSD_USER_PROGRAMS := admin ar at audiod awk base64 basename batch bc blkid cal cat cflow chgrp chmod chown cksum cmp comm compress cp crontab csplit curses cut cxref date dd delta df dhcpc diff dirname diskpart dmesg du echo ed egrep env expand expr false fetch fgrep file find fmt fold fuser gencat get getconf gettext grep halt head host hostname iconv id ifconfig infocmp install ipcrm ipcs join kill less libgif-compat libjpeg-compat libpdf libpng-compat libz-compat link ln locale localedef logger login logname lp lpr ls lspci lsusb m4 mailx make mesg mkdir mkfifo mkfs mkswap mktemp more msgfmt mv newgrp ngettext nice nl nm noct nohup nslookup ntpdate od paste patch pathchk pax ping poweroff pr printf prs ps pwd readlink realpath reboot renice rm rmdel rmdir route sact sccs sed seq service shutdown sleep sort split stat strings stty swapoff swapon sync tabs tac tail talk tee terminfo-extra terminfo test tic time timeout top touch tput tr true truncate tsort tty uname uncompress unexpand unget uniq unlink uudecode uuencode val wc what which who whoami wifi write xargs zcat browser files imageview keiland-ime ime-dict-ja libbrowser libegl libglesv2 libkeiland libtruetype libvulkan libwayland-egl libwayland-client monitor notes pdfviewer sessiond settings terminal textedit wayland xserver i915-firmware intelax211-firmware rtl8822b-firmware noto-color-emoji zlib curl openssh ca-certificates openssl libgl zgears mview

@@ -134,6 +134,7 @@ static void test_partial_failure_unwind(void);
 static void test_stop_retry_retains_dma(void);
 static void test_command_duplicate(void);
 static void test_command_timeout(void);
+static void test_command_poison_reset(void);
 static void test_repeat_generation_isolation(void);
 static void test_generation_wrap(void);
 static void test_epoch_begin_failure(void);
@@ -1315,6 +1316,72 @@ test_command_timeout(void)
 	    test_trace_find(&fixture, 'f', 0U));
 }
 
+/*
+ * BUG-158 (ws005-p032): a timed-out command poisons the transaction, so no
+ * scan command can be sent again until the device is reset; the reset of a
+ * recovery's stop (transport cleanup, then the new hardware epoch) makes the
+ * transaction usable again, which is what lets the driver restart its epoch
+ * without the interface being cycled.
+ */
+static void
+test_command_poison_reset(void)
+{
+	struct test_fixture fixture;
+	struct intel_ax211_transport transport;
+	struct intel_ax211_command_transaction transaction;
+	struct intel_ax211_command_handle handle;
+	int result;
+
+	/* A fresh command ring and transaction in hardware epoch 7. */
+	test_fixture_init(&fixture);
+	memset(&transport, 0, sizeof(transport));
+	result = drv_intel_ax211_transport_initialize_rings(&transport);
+	assert(result == INTEL_AX211_TRANSPORT_OK);
+	result = drv_intel_ax211_command_transaction_init(&transaction,
+	    &transport, 1U, 7U);
+	assert(result == INTEL_AX211_COMMAND_OK);
+
+	/* One command that is never answered times out and poisons the transaction. */
+	result = drv_intel_ax211_command_submit_nvm_get_info(&transaction, 0U,
+	    10U, &handle);
+	assert(result == INTEL_AX211_COMMAND_OK);
+	result = drv_intel_ax211_command_timeout_oldest(&transaction, 5U,
+	    &handle);
+	assert(result == INTEL_AX211_COMMAND_PENDING);
+	result = drv_intel_ax211_command_timeout_oldest(&transaction, 10U,
+	    &handle);
+	assert(result == INTEL_AX211_COMMAND_TIMEOUT);
+	assert(drv_intel_ax211_command_is_poisoned(&transaction));
+
+	/* Nothing more is sent while poisoned. */
+	result = drv_intel_ax211_command_submit_nvm_get_info(&transaction, 20U,
+	    10U, &handle);
+	assert(result == INTEL_AX211_COMMAND_POISONED);
+
+	/* The same epoch, or a new one before the transport reset, does not clear it. */
+	result = drv_intel_ax211_command_after_device_reset(&transaction, 7U);
+	assert(result == INTEL_AX211_COMMAND_INVALID);
+	result = drv_intel_ax211_command_after_device_reset(&transaction, 8U);
+	assert(result == INTEL_AX211_COMMAND_TRANSPORT_FAILED);
+	assert(drv_intel_ax211_command_is_poisoned(&transaction));
+
+	/* The stop's quiesce and reset retire the slot the device owned. */
+	result = drv_intel_ax211_transport_quiesce(&transport);
+	assert(result == INTEL_AX211_TRANSPORT_FAILED);
+	result = drv_intel_ax211_transport_command_after_device_reset(&transport);
+	assert(result == INTEL_AX211_TRANSPORT_OK);
+
+	/* The new epoch clears the poison and commands are sent again. */
+	result = drv_intel_ax211_command_after_device_reset(&transaction, 8U);
+	assert(result == INTEL_AX211_COMMAND_OK);
+	assert(!drv_intel_ax211_command_is_poisoned(&transaction));
+	assert(drv_intel_ax211_command_pending_count(&transaction) == 0U);
+	result = drv_intel_ax211_command_submit_nvm_get_info(&transaction, 30U,
+	    10U, &handle);
+	assert(result == INTEL_AX211_COMMAND_OK);
+	assert(handle.hardware_epoch == 8U);
+}
+
 /* Rejects every delayed event from the completed run during the next run. */
 static void
 test_repeat_generation_isolation(void)
@@ -1454,6 +1521,7 @@ main(void)
 	test_stop_retry_retains_dma();
 	test_command_duplicate();
 	test_command_timeout();
+	test_command_poison_reset();
 	test_repeat_generation_isolation();
 	test_generation_wrap();
 	test_epoch_begin_failure();

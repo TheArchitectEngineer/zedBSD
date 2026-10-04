@@ -17,6 +17,7 @@
  */
 
 #include <uapi/errno.h>
+#include <hal/hal.h>
 #include <kern/device-io.h>
 #include <kern/text-display.h>
 #include <kern/klog.h>
@@ -44,6 +45,9 @@
 /* Bounds the static cell array; 1920x1080 needs 240x67. */
 #define TEXT_MAX_COLUMNS	240U
 #define TEXT_MAX_ROWS		68U
+
+/* How many times a fatal stop tries text_lock before it draws without it (BUG-158). */
+#define TEXT_FATAL_LOCK_SPINS	50000000U
 
 /* The legacy aperture, and text memory's offset and geometry inside it. */
 #define TEXT_VGA_APERTURE	0x000a0000U
@@ -463,6 +467,7 @@ static const struct kern_text_ops pcat_text_ops = {
 	.resume = drv_pcat_text_resume,
 	.snapshot = drv_pcat_text_snapshot,
 	.reveal = drv_pcat_text_reveal,
+	.reveal_fatal = drv_pcat_text_reveal_fatal,
 	.progress = drv_pcat_text_progress
 };
 
@@ -909,6 +914,75 @@ drv_pcat_text_reveal(
 
 	/* Lets the other console writers draw again. */
 	spin_unlock_irqrestore(&text_lock, irq);
+}
+
+/*
+ * Shows the console for a fatal stop (BUG-158).
+ *
+ * A graphics mode suspended the text (text_ready 0) and draws over the same
+ * framebuffer, so the ordinary reveal draws nothing there and a panic looked
+ * like a freeze.  Here the retained cells are drawn back whatever owned the
+ * screen.  The stop may begin while this CPU holds text_lock, and
+ * spin_trylock() traps on that recursion, so the owner is checked first and
+ * the screen is then drawn without the lock: nothing else runs on this CPU
+ * again.  Interrupts are already disabled.
+ */
+void
+drv_pcat_text_reveal_fatal(
+	void)
+{
+	volatile uint32_t *pixels;
+	unsigned spins;
+	unsigned cpu;
+	unsigned held;
+	size_t count;
+	size_t index;
+	int locked;
+
+	/* Takes text_lock unless this CPU holds it already or another holds it too long. */
+	cpu = (unsigned)hal_cpu_current();
+	locked = 0;
+	for (spins = 0; spins < TEXT_FATAL_LOCK_SPINS; spins++) {
+		/* This CPU stopped inside a console write: drawing without the lock is all that is left. */
+		held = atomic_load_acquire(&text_lock.held);
+		if (held != 0 && text_lock.owner_valid && text_lock.owner_cpu == cpu)
+			break;
+
+		/* Takes the lock when it is free. */
+		locked = spin_trylock(&text_lock);
+		if (locked)
+			break;
+	}
+
+	/* The splash goes, and the console is shown from now on. */
+	text_hidden = 0;
+	drv_pcat_splash_stop();
+
+	/* A surface that is still attached is drawn to again, whoever suspended it. */
+	if (text_surface != TEXT_SURFACE_NONE && text_columns != 0 &&
+	    text_rows != 0)
+		text_ready = 1;
+
+	/* The whole framebuffer black, so the graphics under the text go. */
+	if (text_ready && text_surface == TEXT_SURFACE_FRAMEBUFFER &&
+	    text_pixels != NULL) {
+		pixels = text_pixels;
+		count = (size_t)text_stride * text_framebuffer_height;
+		for (index = 0; index < count; index++)
+			pixels[index] = 0U;
+	}
+
+	/* The cells, the cursor, and the hardware cursor of text memory. */
+	redraw_locked();
+	draw_cell_locked(text_cursor_row, text_cursor_column, text_cursor_visible);
+	vga_cursor_locked();
+
+	/* Gives the lock back when it was taken. */
+	if (locked)
+		spin_unlock(&text_lock);
+
+	/* Succeeded: the retained text is on the screen. */
+	return;
 }
 
 /* Starts the thread that turns the splash's spinner by itself; without it the spinner turns with the log only. */

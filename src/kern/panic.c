@@ -10,8 +10,10 @@
  */
 
 #include "hal/hal.h"
+#include "kern/klog.h"
 #include "kern/text-display.h"
 #include <stddef.h>
+#include <kern/kcrt.h>
 
 /*
  * Writes bytes from the kernel's stdio subset to the HAL console.
@@ -50,12 +52,27 @@ __attribute__((noreturn)) void
 __libc_panic(
 	const char *message)
 {
-	/* A quiet console (kmsg=quiet) is shown for the panic. */
-	kern_text_reveal();
+	char record[256];
+	const char *reason;
+
+	/* Nothing on this CPU interrupts the stop from here on. */
+	(void)hal_irq_disable();
+
+	/* Names a panic that came without a message. */
+	reason = message;
+	if (reason == NULL)
+		reason = "unknown";
+
+	/* Keeps the reason in the ring, where a debugger or a later dmesg reads it (BUG-158). */
+	(void)kern_snprintf(record, sizeof(record), "kernel panic: %s\n", reason);
+	kern_log_record_fatal(record);
+
+	/* The console is shown for the panic, over a quiet boot or a graphics mode. */
+	kern_text_reveal_fatal();
 
 	/* Prints the panic message, substituting a marker for a missing one. */
 	panic_puts("kernel panic: ");
-	panic_puts(message != NULL ? message : "unknown");
+	panic_puts(reason);
 	panic_puts("\n");
 
 	/* Halts permanently with interrupts disabled. */
@@ -73,8 +90,28 @@ kern_fatal(
 	int line,
 	const char *message)
 {
-	/* A quiet console (kmsg=quiet) is shown for the stop. */
-	kern_text_reveal();
+	char record[256];
+	const char *site;
+	const char *reason;
+
+	/* Nothing on this CPU interrupts the stop from here on. */
+	(void)hal_irq_disable();
+
+	/* Names a stop that came without a site or a message. */
+	site = file;
+	if (site == NULL)
+		site = "?";
+	reason = message;
+	if (reason == NULL)
+		reason = "unknown";
+
+	/* Keeps the site and the reason in the ring (BUG-158). */
+	(void)kern_snprintf(record, sizeof(record), "fatal: %s:%d: %s\n",
+			    site, line, reason);
+	kern_log_record_fatal(record);
+
+	/* The console is shown for the stop, over a quiet boot or a graphics mode. */
+	kern_text_reveal_fatal();
 
 	/* The HAL owns the stop; it records the site and never returns. */
 	hal_fatal(file, line, message);

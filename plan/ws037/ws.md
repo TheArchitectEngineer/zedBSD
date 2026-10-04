@@ -3,7 +3,7 @@
 # WS037: nvrtx — NVIDIA GeForce RTX 2000 以降（Turing〜Blackwell）の GPU driver
 
 <!-- awesome-plan-current:start -->
-Status: planned
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
@@ -51,7 +51,7 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 
 | Phase | 目的 | Status | 依存 | 目安 |
 | --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp）、NAK の世代の差、正本と license の監査、interface の対応表、段の印の設計、試験の道 | planned（q692） | なし（host 無しで可） | 6h |
+| [p001](phase001/phase.md) | 文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp）、NAK の世代の差、正本と license の監査、interface の対応表、段の印の設計、試験の道 | in-progress（q692、文書あり、review の反映が残り） | なし（host 無しで可） | 6h |
 | [p002](phase002/phase.md) | 試験機（RTX 2070）の調査（読むだけ）と試験の道（A: USB から素で起動、B: VFIO）、今の zedBSD が RTX 2070 の GOP に出ること | planned（**host の情報待ち**） | [host.md](host.md) | 3〜4h |
 | [p003](phase003/phase.md) | 定数の一括の改名、driver の骨格（PCI・BAR・`CONFIG_DRIVER_PCI_NVRTX`）、段の印 N0（chip の ID を読むだけ） | planned | p001・p002 | 4h |
 | p004 | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware の load（`userland/firmware/nvidia-gsp/tu106/`）、RISC-V の GSP の起動、RPC の初期化（段の印 P1〜P2） | planning | p003 | 6h〜 |

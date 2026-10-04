@@ -21,6 +21,10 @@
  *      delete its keys, so the handshake engine stays failed, and the
  *      driver's recovery then reports a second loss (EIO) for the same
  *      generation: the status still says EACCES (before the fix: EIO).
+ *   5. (ws005-p032, BUG-158) a driver's restart request runs the radio's
+ *      restart once on the retirement thread's next pass, however many
+ *      requests came before it; not while a stop is still owed (until the
+ *      stop completes), and never after a teardown cancelled retirement.
  * Prints one line a case and "host-wlan-retire: PASS" or FAIL at the end.
  *
  *   plan/ws005/tests/host-wlan-retire.sh
@@ -43,6 +47,9 @@ static int retire_failures;
 
 /* The error the radio's key deletion reports (case 4 makes the engine's cleanup fail). */
 static int retire_key_delete_error;
+
+/* How many times the retirement thread called the radio's restart (case 5). */
+static int retire_restart_calls;
 
 /* The clock the station reads: one tick a call, so deadlines are never reached in a case. */
 static uint64_t retire_ticks;
@@ -235,6 +242,14 @@ radio_quiesce(void *context)
 	return 0;
 }
 
+static int
+radio_restart(void *context)
+{
+	(void)context;
+	retire_restart_calls++;
+	return 0;
+}
+
 /* The radio's methods. */
 static const struct wlan_radio_ops retire_ops = {
 	radio_scan_start,
@@ -249,7 +264,8 @@ static const struct wlan_radio_ops retire_ops = {
 	radio_key_delete,
 	radio_keys_activate,
 	radio_quiesce,
-	NULL
+	NULL,
+	radio_restart
 };
 
 /* Prints one case's verdict. */
@@ -377,6 +393,31 @@ main(void)
 	snprintf(what, sizeof(what), "after the recovery: state=%u terminal=%d (EACCES kept)", status.state, status.terminal_error);
 	retire_check(what, error == 0 && status.state == WLAN_STATE_FAILED && status.terminal_error == EACCES);
 	retire_key_delete_error = 0;
+
+	/* 5. Restart requests run on the retirement thread's pass, once, and only when nothing else owns the station. */
+	wlan_retirement_run(clock_ticks());
+	snprintf(what, sizeof(what), "no request: restarts=%d", retire_restart_calls);
+	retire_check(what, retire_restart_calls == 0);
+	wlan_station_restart_request(station);
+	wlan_station_restart_request(station);
+	wlan_retirement_run(clock_ticks());
+	wlan_retirement_run(clock_ticks());
+	snprintf(what, sizeof(what), "two requests, two passes: restarts=%d", retire_restart_calls);
+	retire_check(what, retire_restart_calls == 1);
+	wlan_station_stop_request(station);
+	wlan_station_restart_request(station);
+	wlan_retirement_run(clock_ticks());
+	snprintf(what, sizeof(what), "a stop still owed: restarts=%d", retire_restart_calls);
+	retire_check(what, retire_restart_calls == 1);
+	wlan_station_stop_complete(station, 0);
+	wlan_retirement_run(clock_ticks());
+	snprintf(what, sizeof(what), "the stop completed: restarts=%d", retire_restart_calls);
+	retire_check(what, retire_restart_calls == 2);
+	error = wlan_station_stop_cancel(station);
+	wlan_station_restart_request(station);
+	wlan_retirement_run(clock_ticks());
+	snprintf(what, sizeof(what), "after a teardown (cancel error=%d): restarts=%d", error, retire_restart_calls);
+	retire_check(what, error == 0 && retire_restart_calls == 2);
 
 	/* The verdict. */
 	if (retire_failures != 0) {
