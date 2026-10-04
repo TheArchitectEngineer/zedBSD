@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p007`
 Parent: [WS049](../ws.md)
-Status: in-progress（2026-10-04、q678-i02。T1-086 の FAIL の原因を code で特定して直した（SCI の line を unmask していなかった）。T1 の再試験待ち）
+Status: in-progress（2026-10-04。QEMU の受け入れは T1-090 で PASS（SCI の unmask と event thread の start を直した）。実機の観点（電源ボタン・蓋・AC・EC）は次の UAT 待ち）
 Phase disposition: normal
 Queue: q678 / q678-i01（P1 generation15）。承認: q677 と同じ（2026-10-04 user の DP Alt Mode の目標と 17 時の体制の指示）
 
@@ -119,3 +119,10 @@ Notify を受けて動く driver（電源の状態、蓋、ボタンの動作）
   一度も走らないので、SCI の割り込みの部分（mask と記録）は動いても、handler・AML・`first SCI` の log は走らなかった（pin 9 が mask されずに残るのも、
   handler が呼ばれて EOI まで済んだことと合う）。
 - **修正**: `start_events()` で `kthread_create()` の直後に `thread_start(thread)`。
+
+## T1-090 の結果（2026-10-04、main 93485e9、QEMU KVM、Q1 の判定: QEMU の受け入れを満たす）
+
+- `guest-events.sh`: rc 0。`button: the kernel logged the power button`、`gpe: ACPI: Notify(\_SB_.CPUS.C003, 0x1) has no handler`、`first SCI` 1。
+- `guest-compare.sh`: namespace same、device の評価の違い 11 項目（p006 と同じ）。`boot-test.sh`: PASS。証拠: `/home/awe/zedBSD-worktrees/t1/build/t1-090-*`。
+- 受け入れ 1〜3（QEMU）は満たした。**残り: 実機の観点**（上の「実機」の表: 電源ボタン、蓋、AC、dmesg の EC の行）は次のユーザーの UAT 待ち。
+  Phase は実機の確認まで in-progress（cleared にするのは Q1）。
