@@ -17,8 +17,9 @@ Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q58
 **体制（2026-10-04 17 時 user）**: 「設計と実装を進めるサブエージェントはP1, P2です。テストはメインエージェントが集約してサブエージェントT1に送り、T1はキューにあるテストを可能な限りバッチ化して1回のqemu起動に詰めて実行します。P1,P2はテスト中に待機することなく、依存関係が満たされていて取りかかれる作業に移って、作業を進めます。よって、WSごとに取り組むと言うよりは、対象となるWS群をまんべんなく進めることになります。T1がビジーなとき、T2を立ててオーケーです。流れA,B,C,Dが対象となる処理群です。」
 - 対象は流れ A〜D の q677〜q692 だけ（共有の pool）。P1・P2 はどちらも phase-runner（high）。下の「主の順」は目安で、取りかかれない時（試験待ち・依存・判断待ち）は Q1 が pool の中の依存を満たす別の Queue を投入する（同じ Queue を二重に割り当てない）。
 - P1 の主の順: q677 → q678（流れ A の critical path）、その合間に q679 → q680 → q681（設計）→ q691（流れ C）。
-- P2 の主の順: q683 → q684 → q685 → q686 → q687 → q688 →（q677 の統合の後）q689、合間に q682（設計）→ q692（流れ D）。
+- P2 の主の順: q683 → q685 → q686 → q687 → q688 →（q677 の統合の後）q689、合間に q682（設計）→ q692（流れ D）。
 - 試験: P1・P2 は T1 に直接送らず Q1 に依頼を送る。Q1 が集めて T1 の台帳に積み、T1 は積まれた依頼をできるだけ 1 回の QEMU の起動にまとめて流す。T1 が忙しい時は Q1 が T2 を立てる（QEMU は host で同時に 2 つまで）。実機の確認（5330）はユーザーの次の UAT にまとめ、それまで該当の Phase は uncleared（実機待ち）。
+- BUG-158（q684）の分担（2026-10-04 user）: 「BUG-158はFable 5.1 Highのサブエージェントに解析を割り当ててください。実装はOpus 5.5 Mid,テストはT1です。これは別なサブエージェントを今立ててOKです。」→ 解析は P3（bug-analyzer）、実装は解析の後に P4（phase-runner-mid）、試験は T1（Q1 経由）。P2 の順から外した。
 - 決定（2026-10-04 17 時、user のクリックの回答）: (1) BUG-166 のタッチパッドの仕様は「押し込み＋タップドラッグ」: 物理の押し込みのまま動かすとドラッグ、タップの直後（約 300ms 以内）に触れて動かすとドラッグ（2 回タップ→ドラッグも同じ）。(2) q677 の担当は 10.0.30.3（5330 の Linux）に SSH し、ACPI の table を読み取り専用で取り出して（`sudo cat /sys/firmware/acpi/tables/DSDT`・`SSDT*`）`plan/ws049/tests/` に commit してよい（host の設定・GPU・VM には触らない）。
 
 **流れ A（AML → USB-C DP Alt Mode と電源管理）**: 共通の前提は WS049（AML）。
@@ -37,7 +38,7 @@ Last reconciled Queues: [q584](history/queue-q584.md)〜[q589](history/queue-q58
 | Queue / attempt | Agent | Phase / Bug | Exact scope | 依存 | State |
 | --- | --- | --- | --- | --- | --- |
 | q683 / q683-i01 | P2（generation11） | [BUG-170](bugs/BUG-170.md)（WS100・WS089） | 音量の slider のドラッグでのフリーズ。確認の音は離した時に 1 回。QEMU で再現と確認 | なし | in-progress |
-| q684 / q684-i01 | P2（予定） | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | pending |
+| q684 / q684-i01 | 解析 P3（generation7、bug-analyzer = Fable 5.1 high）→ 実装 P4（phase-runner-mid = Opus 5.5 medium）→ 試験 T1 | [BUG-158](bugs/BUG-158.md)（WS005） | WiFi 未接続で約 1 分で kernel のフリーズ。未接続の scan の経路の調べと直し（実機の確認は T と実機の日） | なし | in-progress（解析） |
 | q685 / q685-i01 | P2（予定） | [BUG-168](bugs/BUG-168.md)・[BUG-169](bugs/BUG-169.md)（[ws033-p001](ws033/phase001/phase.md) の再開） | 後から挿した USB LAN が up しない、Ethernet のメニューの wlan0。QEMU の usb-net の device_add で再現 | なし | pending |
 | q686 / q686-i01 | P2（予定） | [BUG-175](bugs/BUG-175.md) | Terminal 多数で errno=8（ENOSPC）。QEMU で再現し、どの資源かを特定（BUG-120 の関連） | なし | pending |
 | q687 / q687-i01 | P2（予定） | [BUG-173](bugs/BUG-173.md) | sh の履歴の全角の幅。host で再現 | なし | pending |
