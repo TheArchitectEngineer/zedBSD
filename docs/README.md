@@ -11,4 +11,6 @@ follows them; see the [documentation rules](style.md).
 - [Reference](reference/README.md): exact commands, configuration, file
   formats, user APIs and compatibility.
 - [How-to guides](howto/README.md): procedures for a user's goal.
+- [Releases](release/README.md): the user guide and the known issues of
+  each release.
 - [Documentation rules](style.md).
