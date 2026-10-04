@@ -138,7 +138,7 @@ P0 → N0 → N1 → N2 → P1 → P2 → P3（CPU で埋めた plane）→ P5�
 | zedBSD の口 | Raspberry Pi 4 での中身 | 段 |
 | --- | --- | --- |
 | `drv_gpu_register` | **2 つの device**（判断の項目 11）: display の device（display の役）と V3D の device（render の役）。互いに companion | P0・V0 |
-| `capabilities` | display の device は display・scanout・resource・transfer（複写の present の道に resource と transfer が要る）。V3D の device は resource・command・job・recovery と、job に必須の notification | P5・V7 |
+| `capabilities` | bit は `src/drivers/gpu/gpu.c` の登録の検査に従う（scanout と recovery は bit でなく ops の表の有無）。display の device は `GPU_CAP_DISPLAY`・`GPU_CAP_DISPLAY_EVENTS`・`GPU_CAP_RESOURCE`・`GPU_CAP_TRANSFER`（複写の present の道）と scanout の表。V3D の device は i915 の node と同じ集合（`RESOURCE`・`TRANSFER`・`COMMAND`・`NOTIFICATION`・`JOB`・`JOB_CAPACITY`・`CAPSET`・`BLOB`・`MAPPING`・`SHARE`）と recovery の表（JOB には fault が必須） | P5・V7 |
 | `open` / `close` | session。V3D の VA の割り当ての持ち主（最初は全 session で 1 つの page table、判断の項目 4・13） | V5 |
 | `get_info` / `get_capset` | V3D の識別（版・core 数・TFU・CSD の有無）、display の有無 | V3 |
 | `resource_create` / `blob_create` | buffer object。**BO ごとに物理が連続した 1 つの run**（`drv_gpu_mapping` は 1 つの範囲しか表せないため、判断の項目 12）。V3D 用は V3D の MMU の物理の幅の上限より下、scanout 用は 1 GiB より下（`kern_pmem_alloc_limited`） | V5・P2 |
@@ -146,7 +146,7 @@ P0 → N0 → N1 → N2 → P1 → P2 → P3（CPU で埋めた plane）→ P5�
 | `blob_create_placed` | 連続・1 GiB 以下の要求を実際の配置で確かめて満たす（HVS の制約） | P2 |
 | `resource_map` | CPU の mapping は coherent な RAM として cache 付きで user に map される。V3D・HVS とは一貫しないので、driver が job の前に clean、完了の後に invalidate、scanout の前に clean する（判断の項目 12 の (a)）。WC・uncached の mapping は今の口に無い（(b) は `gpu.h` の変更で、承認が要る） | V5 |
 | `resource_read` / `resource_write` | CPU の copy と cache の掃除 | V8 |
-| `commands`（`submit` / `drain`） | 自前の job の記述（CL の範囲・tile alloc・tile state・buffer の一覧・cache の flag、TFU・CSD の設定）を受けて queue に積む。完了は割り込みの後に `drv_gpu_complete`。記述の UAPI の header は `include/uapi/` に置き、version・size・reserved = 0・64 bit の整列の規則に従う（p004 で決める） | V7〜V9 |
+| `command`・`commands`（`submit` / `drain`） | zedBSD の libvulkan は Venus の client なので、i915 と同じく kernel の中の Vulkan の executor が Venus の stream を decode し、CL・TFU・CSD の job を組み立てる（executor と SPIR-V の compiler は p006 の方針で決める、Guardrail の「SPIR-V の compile は kernel 空間」）。executor の内側の job の記述（CL の範囲・tile alloc・tile state・buffer の一覧・cache の flag、TFU・CSD の設定）を queue に積む。完了は割り込みの後に `drv_gpu_complete`。記述の UAPI の header は `include/uapi/` に置き、version・size・reserved = 0・64 bit の整列の規則に従う（p004 で決める） | V7〜V9 |
 | `jobs`（`reserve` / `commit` / `cancel` / `capacity`） | 予約の領域を queue ごとに前もって確保。HW の queue の深さは 1 なので capacity は software の queue の残り | V7 |
 | `recovery`（`stop_begin` / `stop_poll` / `fault` / `reset`） | 個別の job は止められないので、stop は「HW の job が終わるまで EAGAIN」。まだ HW に出していないその session の job は捨てる。500 ms の timeout（進まない）では stop_poll が EAGAIN 以外の error を返し、device 全体の fault に上げる。全 owner の退去の後に PM block の reset と V4〜V6 のやり直し。V3D の device だけが落ち、display の device は続く | V10 |
 | `recovery.isolate` | 最初は**提供しない**（全 session が 1 つの VA を共有し、1 つの context だけを隔離できない）。判断の項目 4 | — |
