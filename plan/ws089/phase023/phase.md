@@ -45,3 +45,7 @@ WS127（Files の Trash の実装）、libkeiland の thread の扱い。
 - build（warning 0）: zedBSD の settings、Linux の Keiland（-Werror）。`keiland-os-boundary/check.sh` PASS。style-check: 新しい file は違反 0。
 - QEMU（T1 に依頼）: `plan/ws089/tests/settings-p023.sh`（/root に 3 MB と 4000 file の folder と 2 項目の Trash を作り、Analyze の合計が `du -skx /root` と一致、folder の行で降りる、Analyze と即 Stop、Trash の大きさ・Empty の確認・空に、PNG 2 枚）。
 - 未実施: 実機（UAT）。
+
+## T1-157 の後（2026-10-05、P2）
+
+- analyze・done・stopped・trash は ok。`STORAGE emptied removed=4` だけ MISSING: 実際は `removed=5`（`files/old.txt`・`files/Old/inner.txt`・`files/Old`・2 つの `.trashinfo`。folder の中身も 1 項目ずつ数える）で、試験の期待の誤り。→ 試験を `removed=5` に。

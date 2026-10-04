@@ -59,3 +59,8 @@ Queue: q728（P2、2026-10-05）
 - Settings の Use DHCP が届かない: ue1 の IPv4 の card が窓の下（ethernet-static.png で ue0 の card だけ見える）で、click が窓の外だった（試験の誤り）。→ 試験は wheel で頁を送り、Use DHCP（34N）が窓の中に入ってから click する。
 - 加えて: 2 つ目の usb-net の netdev を `net=10.0.9.0/24` にした（Use DHCP の後に ue1 が ue0 と同じ 10.0.2.0/24 を取り SSH を乱さないように）。
 - 確認: networkd の build（warning 0）、style-check の新しい違反 0。QEMU は T1 の再試験（image の作り直しが要る: config に su）。
+
+## T1-157 の後（2026-10-05、P2）
+
+- kei の `net lan set IF static ADDR MASK`（router 無し）が **net の segfault**（exit 139、networkd に届かない）: `lan_set_command` が router が無い時に `argv[argc]`（NULL）を router として書いていた（実装の誤り）。root の不正な入力 `static 10.0.9.30 255.0.255.0` の「拒否」も実はこの segfault だった。→ 直した（router は語が残っていて `--` で始まらない時だけ）。
+- 試験の強化: 不正な入力は exit=1 と networkd の syslog の理由（`reason=invalid netmask` など）で確かめる（crash を拒否と取り違えない）。非 member は image に無い `nobody` ではなく試験が足す `tester`（終わりに消す）、拒否の理由の表示も確かめる。kei の成功は syslog の `euid=1000 result=ok` でも確かめる。
