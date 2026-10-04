@@ -30,6 +30,30 @@
 #define FIELD_BYTES_MAX 4096U
 
 /*
+ * The EISA identifiers of PNP0A03 (a PCI host bridge) and PNP0A08 (a PCI
+ * Express host bridge), as _HID and _CID encode them.
+ */
+#define PCI_ROOT_EISA_ID	0x030ad041ULL
+#define PCIE_ROOT_EISA_ID	0x080ad041ULL
+
+/*
+ * How many levels below its host bridge a region's device may lie.  The
+ * bridges of a deeper device are not followed, and it keeps the host
+ * bridge's bus; no real platform nests PCI bridges that deep.
+ */
+#define PCI_PATH_MAX 16U
+
+/*
+ * The configuration space offsets of the header type, whose low seven bits
+ * say whether the function is a bridge, and of a bridge's secondary bus.
+ */
+#define PCI_HEADER_TYPE		0x0eU
+#define PCI_SECONDARY_BUS	0x19U
+#define PCI_HEADER_KIND		0x7fU
+#define PCI_HEADER_BRIDGE	0x01U
+#define PCI_HEADER_CARDBUS	0x02U
+
+/*
  * One installed address space handler.
  */
 struct region_handler {
@@ -58,6 +82,11 @@ static bool regions_connected;
 static int region_access(struct drv_acpi_eval *eval, struct drv_acpi_object *region, uint64_t offset, unsigned bytes, bool write, uint64_t *value);
 static int region_resolve_pci(struct drv_acpi_object *region);
 static int evaluate_found(struct drv_acpi_node *device, const char *name, bool own, uint64_t *value);
+static struct drv_acpi_node *pci_root_bridge(struct drv_acpi_node *device);
+static bool pci_root_named(struct drv_acpi_node *node, const char *name);
+static bool pci_root_id(const struct drv_acpi_object *id);
+static void pci_follow_bridges(struct drv_acpi_node *root, struct drv_acpi_node *device, uint16_t segment, uint64_t *bus);
+static int pci_config_read8(uint16_t segment, uint8_t bus, uint64_t address, unsigned offset, uint8_t *value);
 static unsigned field_access_bytes(const struct drv_acpi_field *field, uint64_t region_length);
 static int field_span(struct drv_acpi_eval *eval, struct drv_acpi_object *field, unsigned *access, uint64_t *first, uint64_t *last);
 static int field_read_bits(struct drv_acpi_eval *eval, struct drv_acpi_object *field, unsigned access, uint64_t first, uint64_t last, struct drv_acpi_object **result);
@@ -637,13 +666,16 @@ region_access(
  * Finds the PCI function a configuration region belongs to: the device
  * that contains the region gives the device and function (_ADR), and the
  * nearest scope above it that has them gives the bus (_BBN) and the
- * segment (_SEG).
+ * segment (_SEG).  A device behind PCI-to-PCI bridges is on the bus the
+ * last of them leads to, so the bridges between the host bridge and the
+ * device are followed, as ACPICA does (AcpiHwDerivePciId).
  */
 static int
 region_resolve_pci(
 	struct drv_acpi_object *region)
 {
 	struct drv_acpi_node *device;
+	struct drv_acpi_node *root;
 	uint64_t address;
 	uint64_t bus;
 	uint64_t segment;
@@ -675,6 +707,11 @@ region_resolve_pci(
 	error = evaluate_found(device, "_SEG", false, &segment);
 	if (error != 0)
 		return error;
+
+	/* Moves to the bus behind the bridges between the host bridge and the device. */
+	root = pci_root_bridge(device);
+	if (root != NULL)
+		pci_follow_bridges(root, device, (uint16_t)segment, &bus);
 
 	/* Succeeded: remembers the function. */
 	region->value.region.pci_segment = (uint16_t)segment;
@@ -717,6 +754,215 @@ evaluate_found(
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/* Finds the PCI host bridge (PNP0A03 or PNP0A08) above a device, or NULL. */
+static struct drv_acpi_node *
+pci_root_bridge(
+	struct drv_acpi_node *device)
+{
+	struct drv_acpi_node *node;
+	bool root;
+
+	/* Looks at each scope above the device, nearest first. */
+	for (node = device->parent; node != NULL; node = node->parent) {
+		/* Only a device can be a host bridge. */
+		if (node->object == NULL || node->object->type != DRV_ACPI_TYPE_DEVICE)
+			continue;
+
+		/* A host bridge says so in its _HID, or in its _CID. */
+		root = pci_root_named(node, "_HID");
+		if (root)
+			return node;
+		root = pci_root_named(node, "_CID");
+		if (root)
+			return node;
+	}
+
+	/* The device is not below a PCI host bridge. */
+	return NULL;
+}
+
+/* Reports whether a device's own _HID or _CID names a PCI host bridge. */
+static bool
+pci_root_named(
+	struct drv_acpi_node *node,
+	const char *name)
+{
+	struct drv_acpi_node *found;
+	struct drv_acpi_object *id;
+	bool root;
+	int error;
+
+	/* Finds the device's own object of the name. */
+	error = drv_acpi_lookup_path(node, name, false, &found);
+	if (error != 0 || found == NULL)
+		return false;
+
+	/* Evaluates it; a _HID or _CID that fails names nothing. */
+	id = NULL;
+	error = drv_acpi_evaluate(found, NULL, NULL, 0, &id);
+	if (error != 0 || id == NULL)
+		return false;
+
+	/* Compares it, then lets the value go. */
+	root = pci_root_id(id);
+	drv_acpi_object_release(id);
+
+	/* Reports the answer. */
+	return root;
+}
+
+/* Reports whether an identifier, or a package of them (_CID), is a PCI host bridge's. */
+static bool
+pci_root_id(
+	const struct drv_acpi_object *id)
+{
+	const struct drv_acpi_object *element;
+	uint32_t index;
+	bool root;
+	int compared;
+
+	/* Compares an identifier by its form. */
+	switch (id->type) {
+	case DRV_ACPI_TYPE_INTEGER:
+		/* An EISA identifier. */
+		if (id->value.integer == PCI_ROOT_EISA_ID)
+			return true;
+		if (id->value.integer == PCIE_ROOT_EISA_ID)
+			return true;
+		break;
+	case DRV_ACPI_TYPE_STRING:
+		/* A string identifier. */
+		compared = kern_strcmp(id->value.string.text, "PNP0A03");
+		if (compared == 0)
+			return true;
+		compared = kern_strcmp(id->value.string.text, "PNP0A08");
+		if (compared == 0)
+			return true;
+		break;
+	case DRV_ACPI_TYPE_PACKAGE:
+		/* A _CID package lists several; any of them will do. */
+		for (index = 0; index < id->value.package.count; index++) {
+			/* Skips an empty slot and a nested package, which names nothing. */
+			element = id->value.package.elements[index];
+			if (element == NULL || element->type == DRV_ACPI_TYPE_PACKAGE)
+				continue;
+
+			/* Compares one identifier of the list. */
+			root = pci_root_id(element);
+			if (root)
+				return true;
+		}
+
+		break;
+	default:
+		break;
+	}
+
+	/* The identifier is some other device's. */
+	return false;
+}
+
+/*
+ * Follows the PCI-to-PCI bridges from a host bridge down to a device: each
+ * device between them that has an _ADR is a function on the current bus,
+ * and when its header says it is a bridge, the devices below it are on its
+ * secondary bus.  A function that cannot be read leaves the bus as it is.
+ */
+static void
+pci_follow_bridges(
+	struct drv_acpi_node *root,
+	struct drv_acpi_node *device,
+	uint16_t segment,
+	uint64_t *bus)
+{
+	struct drv_acpi_node *path[PCI_PATH_MAX];
+	struct drv_acpi_node *node;
+	struct drv_acpi_node *found;
+	unsigned depth;
+	uint64_t address;
+	uint8_t header;
+	uint8_t secondary;
+	int error;
+
+	/* Lists the scopes between the host bridge and the device, the device's parent first. */
+	depth = 0;
+	for (node = device->parent; node != NULL && node != root; node = node->parent) {
+		/* Leaves a path too deep to follow on the host bridge's bus. */
+		if (depth == PCI_PATH_MAX)
+			return;
+		path[depth] = node;
+		depth++;
+	}
+
+	/* Walks them from the host bridge down. */
+	while (depth != 0) {
+		depth--;
+		node = path[depth];
+
+		/* A scope without its own _ADR is not a PCI function. */
+		error = drv_acpi_lookup_path(node, "_ADR", false, &found);
+		if (error != 0 || found == NULL)
+			continue;
+		error = drv_acpi_evaluate_integer(found, NULL, &address);
+		if (error != 0)
+			continue;
+
+		/* Reads whether the function is a bridge; an absent one reads all ones and is not. */
+		error = pci_config_read8(segment, (uint8_t)*bus, address, PCI_HEADER_TYPE, &header);
+		if (error != 0)
+			return;
+		header &= PCI_HEADER_KIND;
+		if (header != PCI_HEADER_BRIDGE && header != PCI_HEADER_CARDBUS)
+			continue;
+
+		/* The devices below the bridge are on its secondary bus. */
+		error = pci_config_read8(segment, (uint8_t)*bus, address, PCI_SECONDARY_BUS, &secondary);
+		if (error != 0)
+			return;
+		*bus = secondary;
+	}
+}
+
+/* Reads one byte of a function's configuration space through the PCI_Config handler. */
+static int
+pci_config_read8(
+	uint16_t segment,
+	uint8_t bus,
+	uint64_t address,
+	unsigned offset,
+	uint8_t *value)
+{
+	struct drv_acpi_region_access access;
+	struct region_handler *handler;
+	uint64_t read;
+	int error;
+
+	/* Refuses a read before the space has a handler. */
+	handler = &region_handlers[DRV_ACPI_SPACE_PCI_CONFIG];
+	if (handler->handler == NULL)
+		return ENODEV;
+
+	/* Describes the byte: the function is the _ADR's device and function. */
+	kern_memset(&access, 0, sizeof(access));
+	access.address = offset;
+	access.width = 8;
+	access.write = false;
+	access.pci_segment = segment;
+	access.pci_bus = bus;
+	access.pci_device = (uint8_t)((address >> 16) & 0x1fU);
+	access.pci_function = (uint8_t)(address & 0x07U);
+
+	/* Reads it. */
+	read = 0;
+	error = handler->handler(&access, &read, handler->argument);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	*value = (uint8_t)read;
 	return 0;
 }
 
