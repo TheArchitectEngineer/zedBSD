@@ -41,6 +41,9 @@
 #define EM_X86_64 62
 #define EM_AARCH64 183
 
+/* An e_phnum this large means the count is kept elsewhere; ld.so rejects it. */
+#define PN_XNUM 0xffff
+
 #define PT_NULL 0
 #define PT_LOAD 1
 #define PT_DYNAMIC 2

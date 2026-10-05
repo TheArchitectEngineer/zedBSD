@@ -3,13 +3,13 @@
 # WS140: ld.so の依存の数・object の数・handle の数を動的に伸ばす
 
 <!-- awesome-plan-current:start -->
-Status: planned
+Status: incomplete
 Primary Milestone: MG002
 Related Milestones: MG006（GTK4 の起動、[ws115-p010](../ws115/phase010/phase.md)）
 Objectives: O1
 Parent: [Master](../master.md)
-Queue: none（Q1 が割り当てる）
-Resume point: p001 から。U2・U3・U5 はユーザーが決めた（2026-10-04、下の「判断」）。U3 の「入れる」に合わせて p001・p002 の範囲を直してから着手する。
+Queue: q729（P2、p001 → p002 → p003）
+Resume point: p001 は実装済み（U3 を含む、T の試験待ち）。次は p002。U2・U3・U5 はユーザーが決めた（2026-10-04、下の「判断」）。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -118,7 +118,7 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
 1. `RTLD_NEEDED_MAX`・`RTLD_OBJECT_MAX`・`RTLD_HANDLE_MAX` が上限ではなくなる。名前は最初の chunk の大きさや object の中に持つ数として残ってよい。
    次の 4 つの文字列が rtld.c に無い: `"too many shared objects"`・`"too many dependencies"`・`"too many TLS modules"`・`"initialization order overflow"`。
    handle の数で `dlopen` が NULL を返す道が無い（memory が取れない時の文は `"cannot allocate dynamic-loader handle"` にする）。
-   他の `too many …`（`"too many object mappings"`・symbol の版の 2 つ・`"too many TLSDESC relocations"`）は U3 の範囲の外なので残す。
+   `"too many TLSDESC relocations"` も消す（U3、p001 で消した）。`"too many object mappings"`（program header の数から決まる容量の不変の確かめ）と symbol の版の 2 つは残す。
 2. `plan/ws140/tests/` の多数の依存の試験が、QEMU の guest で PASS する（T1/T2 が流す）。試験は次の全てを確かめる。
    - 40 個の `DT_NEEDED` を持つ library を link した program が起動し、全ての依存の関数を呼べる。
    - 起動と `dlopen` を合わせて object が 160 個を越える。
@@ -178,6 +178,6 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | object の chunk の列（D1・D2）、依存の可変長（D3）、初期化の順の list（D4）、dlsym の印（D5）と、多数の依存の試験（startup と dlopen の object・依存・dlsym） | planned | — |
+| [p001](phase001/phase.md) | object の chunk の列（D1・D2）、依存の可変長（D3）、初期化の順の list（D4）、dlsym の印（D5）、U3（TLSDESC・program header・名前の長さ）と、多数の依存の試験（startup と dlopen の object・依存・dlsym、U3 の 4 段） | in-progress（実装済み・試験待ち） | — |
 | [p002](phase002/phase.md) | handle と TLS module の chunk の列（D1・D2）、dtv を伸ばす（D6）、静的な TLS の並び（D7）、dyntest の handle の試験の書き直し、TLS と handle の多数の試験 | planned | p001（同じ file。p001 の commit の上に重ねる） |
 | p003（phase.md は p002 の後に書く） | 全文規約の見直し（変えた関数と試験）、amd64・arm64 の build、bss の記録、T への回帰の依頼（完了の条件 2・3）、F-070 と ws115-p010 への結果の反映の案 | planned | p001・p002 |

@@ -44,12 +44,41 @@
 #error unsupported runtime-linker architecture
 #endif
 
+/*
+ * A page of TLSDESC arguments an object needed beyond the ones it holds
+ * itself (WS140): each argument's address is written into a descriptor,
+ * so a page is never moved, only linked after the last.  The pages go
+ * with the object.
+ */
+#define RTLD_TLSDESC_CHUNK \
+	((RTLD_PAGE_SIZE - 2U * sizeof(void *)) / sizeof(struct __tls_index))
+struct rtld_tlsdesc_chunk {
+	struct rtld_tlsdesc_chunk *next;
+	uintptr_t used;
+	struct __tls_index index[RTLD_TLSDESC_CHUNK];
+};
+
+/*
+ * One loaded object.
+ *
+ * Its program headers, and the mappings its segments were given (two a
+ * load segment at most: the file and its zero fill), are kept in the
+ * object when there are at most RTLD_PROGRAM_INLINE headers, and in a
+ * program table otherwise (program_table).
+ * Its dependencies likewise: RTLD_NEEDED_INLINE inside, else a mapping
+ * (needed_mapping).  Its TLSDESC arguments: RTLD_TLSDESC_INLINE inside,
+ * then pages linked from tlsdesc_chunks.  init_prev and init_next place it
+ * in the list of initialized objects, and lookup_mark records the last
+ * dlsym() walk that visited it; the loader lock guards both.
+ */
 struct rtld_object {
 	char path[RTLD_PATH_MAX];
 	uintptr_t base;
 	int type;
-	Elf_Phdr phdr[64];
+	Elf_Phdr phdr_inline[RTLD_PROGRAM_INLINE];
+	Elf_Phdr *phdr;
 	unsigned phnum;
+	struct rtld_program_table *program_table;
 	Elf_Dyn *dynamic;
 	size_t dynamic_count;
 	const char *strtab;
@@ -84,8 +113,12 @@ struct rtld_object {
 	size_t fini_count;
 	uintptr_t *preinit_array;
 	size_t preinit_count;
-	uint32_t needed_offset[RTLD_NEEDED_MAX];
-	struct rtld_object *needed[RTLD_NEEDED_MAX];
+	uint32_t needed_offset_inline[RTLD_NEEDED_INLINE];
+	struct rtld_object *needed_inline[RTLD_NEEDED_INLINE];
+	uint32_t *needed_offset;
+	struct rtld_object **needed;
+	void *needed_mapping;
+	size_t needed_mapping_size;
 	unsigned needed_count;
 	const char *rpath;
 	const char *runpath;
@@ -104,8 +137,11 @@ struct rtld_object {
 
 	/* This object's place in the list a debugger reads. */
 	struct link_map map;
-	uintptr_t mapping_start[64];
-	size_t mapping_size[64];
+	uintptr_t mapping_start_inline[2U * RTLD_PROGRAM_INLINE];
+	size_t mapping_size_inline[2U * RTLD_PROGRAM_INLINE];
+	uintptr_t *mapping_start;
+	size_t *mapping_size;
+	unsigned mapping_capacity;
 	unsigned mapping_count;
 	uintptr_t tls_module_id;
 	unsigned active;
@@ -114,10 +150,48 @@ struct rtld_object {
 	unsigned direct_refs;
 	unsigned dependency_refs;
 	uint32_t generation;
-	struct {
-		struct __tls_index index;
-	} tlsdesc_argument[64];
+	struct __tls_index tlsdesc_inline[RTLD_TLSDESC_INLINE];
+	struct rtld_tlsdesc_chunk *tlsdesc_chunks;
+	struct rtld_tlsdesc_chunk *tlsdesc_last;
 	unsigned tlsdesc_count;
+	struct rtld_object *init_prev;
+	struct rtld_object *init_next;
+	uint32_t lookup_mark;
+};
+
+/*
+ * A chunk of the object table (WS140): the first is static, the others
+ * are mapped when the objects before them are all in use.  A chunk is
+ * never released before the process ends, so an object's address never
+ * changes, and the readers that take no lock (dl_iterate_phdr) may walk
+ * the chain while it grows.
+ */
+struct rtld_object_chunk {
+	struct rtld_object_chunk *next;
+	struct rtld_object slots[RTLD_OBJECT_CHUNK];
+};
+
+/*
+ * What an object holds outside itself, taken before its slot is cleared
+ * and released afterwards (unload_object_locked): its dependency table,
+ * its program table and its TLSDESC pages.
+ */
+struct rtld_object_tables {
+	void *needed_mapping;
+	size_t needed_mapping_size;
+	struct rtld_program_table *program_table;
+	struct rtld_tlsdesc_chunk *tlsdesc_chunks;
+};
+
+/*
+ * The head of an object's program table (object_set_programs), before its
+ * headers and mapping records.  dl_iterate_phdr reads the headers without
+ * the loader lock, so a table is never unmapped: once its object goes it
+ * is kept on a list for a later object to use again.
+ */
+struct rtld_program_table {
+	struct rtld_program_table *next;
+	size_t size;
 };
 
 struct rtld_tlsdesc {
@@ -148,6 +222,9 @@ struct rtld_handle {
 	unsigned main_scope;
 };
 
+/* The TLS modules a process may have (id 0 is never used); WS140 p002 lifts it. */
+#define RTLD_TLS_MODULE_MAX 33U
+
 struct rtld_tls_module {
 	uintptr_t id;
 	const void *init_image;
@@ -161,15 +238,31 @@ struct rtld_tls_module {
 	unsigned is_static;
 };
 
-static struct rtld_object objects[RTLD_OBJECT_MAX];
+/*
+ * The object table: the static first chunk and the last one linked.
+ * object_count is how many slots have ever been used.  The chain and the
+ * count grow at startup or under the loader lock; the count is published
+ * with release order after its chunk is linked, and a reader without the
+ * lock reads it with acquire order before it walks the chain.
+ */
+static struct rtld_object_chunk object_chunk_first;
+static struct rtld_object_chunk *object_chunk_last = &object_chunk_first;
 static unsigned object_count;
 /* How many objects have been added and removed over the process's life. */
 static unsigned long long rtld_object_generation;
 static unsigned long long rtld_object_removals;
 static struct rtld_object *main_object;
 static struct rtld_object *interpreter_object;
-static struct rtld_object *initialization_order[RTLD_OBJECT_MAX];
-static unsigned initialization_count;
+/*
+ * The initialized objects, oldest first: the order their finalizers run
+ * in backwards.  Changed under the loader lock only.
+ */
+static struct rtld_object *initialization_head;
+static struct rtld_object *initialization_tail;
+/* The number of the last dlsym() walk (lookup_mark); under the loader lock only. */
+static uint32_t lookup_generation;
+/* Program tables of objects gone, for reuse; under the loader lock only. */
+static struct rtld_program_table *program_tables_free;
 static unsigned startup_initialized;
 static unsigned process_finalized;
 static struct rtld_handle handles[RTLD_HANDLE_MAX];
@@ -179,7 +272,7 @@ static uintptr_t loader_lock_owner;
 static unsigned loader_lock_depth;
 static char loader_error[KERN_RTLD_DLERROR_SIZE];
 static unsigned loader_error_pending;
-static struct rtld_tls_module tls_modules[RTLD_OBJECT_MAX + 1U];
+static struct rtld_tls_module tls_modules[RTLD_TLS_MODULE_MAX];
 static uintptr_t tls_module_count;
 static uint64_t tls_generation;
 
@@ -221,6 +314,18 @@ __attribute__((visibility("default")))
 struct r_debug _r_debug = { 1, NULL, 0, RT_CONSISTENT, 0 };
 
 static struct link_map *debug_map_tail;
+
+/* The object table's helpers (WS140), used from the debugger interface on. */
+static struct rtld_object *object_at(unsigned index);
+static void object_chunk_grow(void);
+static struct rtld_program_table *program_table_take(size_t size);
+static void object_set_programs(struct rtld_object *object, const Elf_Phdr *phdr, unsigned phnum);
+static Elf_Phdr *read_program_headers(int fd, const Elf_Ehdr *header, Elf_Phdr *room, unsigned room_count, size_t *mapping_size);
+static struct __tls_index *tlsdesc_slot(struct rtld_object *object);
+static void object_tables_take(const struct rtld_object *object, struct rtld_object_tables *tables);
+static void object_tables_release(const struct rtld_object_tables *tables);
+static void object_reserve_needed(struct rtld_object *object);
+static void object_clear(struct rtld_object *object);
 
 /*
  * The function a debugger stops on.  It does nothing: being called is the
@@ -274,6 +379,7 @@ static void
 debug_map_publish(
 	void)
 {
+	struct rtld_object *object;
 	unsigned index;
 	int added;
 
@@ -281,9 +387,9 @@ debug_map_publish(
 
 	/* Process each remaining element. */
 	for (index = 0; index < object_count; index++) {
-		/* Handles the objects condition. */
-		if (!objects[index].active || objects[index].unloading ||
-		    objects[index].map.l_name != NULL)
+		/* Only an object in the process now that is not published yet. */
+		object = object_at(index);
+		if (!object->active || object->unloading || object->map.l_name != NULL)
 			continue;
 
 		/* Announces the change once, before the first addition. */
@@ -291,7 +397,7 @@ debug_map_publish(
 			debug_state_change(RT_ADD);
 			added = 1;
 		}
-		debug_map_add(&objects[index]);
+		debug_map_add(object);
 	}
 
 	/* Handles the addition condition. */
@@ -464,10 +570,11 @@ static Elf_Sym *resolve_tls_symbol(struct rtld_object *object, uint32_t index, s
 static void unload_object_locked(struct rtld_object *object);
 static void remove_initialization_record(struct rtld_object *object);
 static void finalize_object_unlocked(struct rtld_object *object);
+static void lookup_generation_next(void);
 static void *rtld_dlsym_common(void *value, const char *name, const char *version);
 static struct rtld_handle *validate_handle(void *value);
 static uintptr_t lookup_global_optional(const char *name, const char *version, int *found);
-static uintptr_t lookup_handle_graph(struct rtld_object *object, const char *name, const char *version, uint32_t *visited, int *found);
+static uintptr_t lookup_handle_graph(struct rtld_object *object, const char *name, const char *version, int *found);
 static int bootstrap_relative(uintptr_t base, const Elf_Phdr *phdr, unsigned phnum);
 static void setup_premapped_object(struct rtld_object *object, uintptr_t base, const Elf_Phdr *phdr, unsigned phnum, int type);
 #if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)
@@ -551,7 +658,7 @@ __rtld_thread_alloc(
 	if (mapping == NULL)
 		return -1;
 	tcb = (struct __rtld_tcb *)(mapping + payload);
-	dtv = tls_map((RTLD_OBJECT_MAX + 1U) * sizeof(*dtv));
+	dtv = tls_map(RTLD_TLS_MODULE_MAX * sizeof(*dtv));
 
 	/* Handles the dtv availability. */
 	if (dtv == NULL) {
@@ -575,9 +682,9 @@ __rtld_thread_alloc(
 	tcb->tls.memory_size = static_tls_distance;
 	tcb->tls.alignment = static_tls_alignment;
 	tcb->tls.distance = static_tls_distance;
-	rtld_memset(dtv, 0, (RTLD_OBJECT_MAX + 1U) * sizeof(*dtv));
+	rtld_memset(dtv, 0, RTLD_TLS_MODULE_MAX * sizeof(*dtv));
 	tcb->dtv = dtv;
-	tcb->dtv_count = RTLD_OBJECT_MAX + 1U;
+	tcb->dtv_count = RTLD_TLS_MODULE_MAX;
 	tcb->dtv_generation = tls_generation;
 	tcb->pthread_private = pthread_private;
 	loader_lock();
@@ -633,7 +740,7 @@ __rtld_thread_free(
 			}
 		}
 	}
-	tls_unmap(tcb->dtv, (RTLD_OBJECT_MAX + 1U) * sizeof(*tcb->dtv));
+	tls_unmap(tcb->dtv, RTLD_TLS_MODULE_MAX * sizeof(*tcb->dtv));
 	tcb->dtv = NULL;
 
 	/* The control block sits inside the mapping it records, not at it. */
@@ -871,29 +978,35 @@ __rtld_process_fini(
 	void)
 {
 	struct rtld_object *object;
-	size_t i;
 
 	/* Handles the process finalized condition. */
 	if (process_finalized)
 		return;
 
-	/* Process each remaining element. */
+	/*
+	 * Finalizes in the reverse order of initialization: the last object
+	 * initialized is taken off the list under the lock, then its
+	 * destructors run without it, since they may call the loader (WS140
+	 * D4).
+	 */
 	process_finalized = 1;
-	while (initialization_count != 0) {
-		/* Continue while the operation condition remains true. */
-		object = initialization_order[--initialization_count];
-		i = object->fini_count;
-		while (i != 0) {
-			i--;
+	for (;;) {
+		/* Takes the object initialized last off the list, if any is left. */
+		loader_lock();
 
-			/* Checks the current object. */
-			if (object->fini_array[i] != 0)
-				((void (*)(void))object->fini_array[i])();
+		object = initialization_tail;
+		if (object == NULL) {
+			loader_unlock();
+			return;
 		}
 
-		/* Checks the current object. */
-		if (object->fini != 0)
-			((void (*)(void))object->fini)();
+		/* Off the list, so a destructor's dlclose does not find it there. */
+		remove_initialization_record(object);
+
+		loader_unlock();
+
+		/* Runs its destructors, once. */
+		finalize_object_unlocked(object);
 	}
 }
 
@@ -945,7 +1058,7 @@ __rtld_dlopen(
 
 	/* Handles a failed rtld strlen operation. */
 	if (name == NULL || (length = rtld_strlen(name)) == 0 ||
-	    length >= RTLD_NAME_MAX) {
+	    length >= RTLD_PATH_MAX) {
 		set_loader_error("invalid shared-object path");
 		loader_unlock();
 
@@ -955,13 +1068,12 @@ __rtld_dlopen(
 
 	/* An object already loaded under the path or the name (from /lib or /usr/lib) is shared. */
 	for (i = 0; i < object_count; i++) {
-		loaded_name = object_basename(objects[i].path);
-		same_path = rtld_strcmp(objects[i].path, path) == 0;
+		object = object_at(i);
+		loaded_name = object_basename(object->path);
+		same_path = rtld_strcmp(object->path, path) == 0;
 		same_name = rtld_strcmp(loaded_name, name) == 0;
-		if (objects[i].active && !objects[i].unloading && (same_path || same_name)) {
-			object = &objects[i];
+		if (object->active && !object->unloading && (same_path || same_name))
 			goto loaded;
-		}
 	}
 
 	/* The file, found where a DT_NEEDED name is (/lib, then /usr/lib for packages; BUG-083). */
@@ -1066,26 +1178,33 @@ __rtld_dl_iterate_phdr(
 {
 	struct dl_phdr_info information;
 	struct rtld_object *object;
+	const Elf_Phdr *phdr;
 	unsigned index;
+	unsigned count;
 	int result;
 
 	/* Handles the callback availability. */
 	if (callback == NULL)
 		return 0;
 
-	/* Process each remaining element. */
-	for (index = 0; index < object_count; index++) {
-		object = &objects[index];
+	/* The objects counted now; their chunks are linked before the count is (WS140). */
+	count = __atomic_load_n(&object_count, __ATOMIC_ACQUIRE);
+	for (index = 0; index < count; index++) {
+		object = object_at(index);
 
 		/* Skips an object that is not part of the process now. */
 		if (!object->active || object->unloading)
 			continue;
 
+		/* The headers' pointer, read once; NULL only while the slot clears. */
+		phdr = __atomic_load_n(&object->phdr, __ATOMIC_RELAXED);
+		if (phdr == NULL)
+			continue;
+
 		rtld_memset(&information, 0, sizeof(information));
 		information.dlpi_addr = (ElfW_Addr)object->base;
 		information.dlpi_name = object->path;
-		information.dlpi_phdr = (const ElfW_Phdr *)(const void *)
-		    object->phdr;
+		information.dlpi_phdr = (const ElfW_Phdr *)(const void *)phdr;
 		information.dlpi_phnum = (ElfW_Half)object->phnum;
 		information.dlpi_adds = rtld_object_generation;
 		information.dlpi_subs = rtld_object_removals;
@@ -1112,6 +1231,8 @@ __rtld_dladdr(
 	uintptr_t symbol_address;
 	unsigned type;
 	struct rtld_object *object;
+	struct rtld_object *candidate;
+	int contains;
 	uintptr_t address;
 	uintptr_t best_address;
 	const char *best_name;
@@ -1129,10 +1250,15 @@ __rtld_dladdr(
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		/* Handles a failed object contains operation. */
-		if (objects[i].active && !objects[i].unloading &&
-		    object_contains(&objects[i], address, 1, 0)) {
-			object = &objects[i];
+		/* Skips an object that is not part of the process now. */
+		candidate = object_at(i);
+		if (!candidate->active || candidate->unloading)
+			continue;
+
+		/* Takes the object whose segments hold the address. */
+		contains = object_contains(candidate, address, 1, 0);
+		if (contains) {
+			object = candidate;
 			break;
 		}
 	}
@@ -1298,6 +1424,7 @@ rtld_main(
 	int main_type;
 	Elf_Ehdr *self_header;
 	Elf_Phdr *self_phdr;
+	struct rtld_object *object;
 	unsigned i;
 	struct __rtld_tcb *initial_tcb;
 	intptr_t tls_result;
@@ -1369,7 +1496,7 @@ rtld_main(
 
 	/* Checks the current index. */
 	if (i == 64 || at_base == 0 || at_phdr == 0 || at_phnum == 0 ||
-	    at_phnum > 64 || at_phent != sizeof(Elf_Phdr) || at_entry == 0)
+	    at_phnum >= PN_XNUM || at_phent != sizeof(Elf_Phdr) || at_entry == 0)
 		rtld_fatal("invalid ELF auxiliary vector");
 	self_header = (Elf_Ehdr *)at_base;
 
@@ -1458,9 +1585,10 @@ rtld_main(
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		/* Handles the objects condition. */
-		if (objects[i].active && &objects[i] != main_object)
-			debug_map_add(&objects[i]);
+		/* Every other object loaded at startup. */
+		object = object_at(i);
+		if (object->active && object != main_object)
+			debug_map_add(object);
 	}
 
 	/* Process each element required by the operation. */
@@ -1477,9 +1605,10 @@ rtld_main(
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		/* Handles the objects condition. */
-		if (objects[i].active)
-			relocate_object(&objects[i]);
+		/* Relocates each object loaded at startup. */
+		object = object_at(i);
+		if (object->active)
+			relocate_object(object);
 	}
 
 	/*
@@ -1488,9 +1617,10 @@ rtld_main(
 	 * candidates for physical unload. */
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		/* Handles the objects condition. */
-		if (objects[i].active)
-			objects[i].permanent = 1;
+		/* Keeps each object loaded at startup. */
+		object = object_at(i);
+		if (object->active)
+			object->permanent = 1;
 	}
 
 	/* Handles a failed rtld thread alloc operation. */
@@ -1726,7 +1856,7 @@ layout_static_tls(
 	void)
 {
 	struct rtld_tls_module *module;
-	struct rtld_tls_module *order[RTLD_OBJECT_MAX + 1U];
+	struct rtld_tls_module *order[RTLD_TLS_MODULE_MAX];
 	unsigned char *image;
 	uintptr_t offset;
 	uintptr_t id;
@@ -1870,10 +2000,24 @@ initialize_object(
 			((void (*)(void))object->init_array[i])();
 	}
 
-	/* Handles the initialization count condition. */
-	if (initialization_count == RTLD_OBJECT_MAX)
-		rtld_fatal("initialization order overflow");
-	initialization_order[initialization_count++] = object;
+	/* Appends the object to the initialization order (WS140 D4). */
+	loader_lock();
+
+	object->init_prev = initialization_tail;
+	object->init_next = NULL;
+
+	/* Links it after the old tail, or makes it the head of an empty list. */
+	if (initialization_tail != NULL)
+		initialization_tail->init_next = object;
+	else
+		initialization_head = object;
+
+	/* The new tail. */
+	initialization_tail = object;
+
+	loader_unlock();
+
+	/* Done: a later call finds it initialized. */
 	object->initializing = 0;
 }
 
@@ -2036,9 +2180,11 @@ preflight_dlopen_file(
 {
 	struct stat status;
 	Elf_Ehdr header;
-	Elf_Phdr phdr[64];
+	Elf_Phdr room[RTLD_PROGRAM_INLINE];
+	Elf_Phdr *phdr;
 	intptr_t result;
-	size_t phdr_size;
+	size_t phdr_mapping;
+	int valid;
 
 	result = syscall6(KERN_SYS_fstat, (uintptr_t)fd, (uintptr_t)&status,
 			  0, 0, 0, 0);
@@ -2058,15 +2204,20 @@ preflight_dlopen_file(
 
 		/* Reports operation failure. */
 		return -1;
-	phdr_size = (size_t)header.e_phnum * sizeof(Elf_Phdr);
-	result = syscall6(KERN_SYS_pread, (uintptr_t)fd, (uintptr_t)phdr,
-			  phdr_size, (uintptr_t)header.e_phoff, 0, 0);
 
-	/* Handles a failed validate file programs operation. */
-	if (result != (intptr_t)phdr_size ||
-	    validate_file_programs(&header, phdr, status.st_size) != 0)
+	/* The program headers, in a mapping of their own when they are many. */
+	phdr = read_program_headers(fd, &header, room, RTLD_PROGRAM_INLINE,
+				    &phdr_mapping);
+	if (phdr == NULL)
+		return -1;
 
-		/* Reports operation failure. */
+	/* Checks them, then lets a mapping of their own go. */
+	valid = validate_file_programs(&header, phdr, status.st_size) == 0;
+	if (phdr_mapping != 0)
+		tls_unmap(phdr, phdr_mapping);
+
+	/* Reports operation failure. */
+	if (!valid)
 		return -1;
 
 	/* Reports successful completion. */
@@ -2092,7 +2243,7 @@ valid_elf_header(
 	    header->e_version != EV_CURRENT ||
 	    header->e_ehsize != sizeof(*header) ||
 	    header->e_phentsize != sizeof(Elf_Phdr) || header->e_phnum == 0 ||
-	    header->e_phnum > 64)
+	    header->e_phnum >= PN_XNUM)
 
 		/* Reports successful completion. */
 		return 0;
@@ -2217,9 +2368,11 @@ load_object(
 	char path[RTLD_PATH_MAX];
 	struct stat status;
 	Elf_Ehdr header;
-	Elf_Phdr phdr[64];
+	Elf_Phdr room[RTLD_PROGRAM_INLINE];
+	Elf_Phdr *phdr;
 	struct rtld_object *object, *existing;
 	intptr_t fd, result;
+	size_t phdr_mapping;
 	size_t length;
 	unsigned i, first;
 	uintptr_t minimum;
@@ -2233,7 +2386,7 @@ load_object(
 	length = rtld_strlen(name);
 
 	/* Checks the current data length. */
-	if (length >= RTLD_NAME_MAX)
+	if (length >= RTLD_PATH_MAX)
 		rtld_fatal("dependency name too long");
 
 	/* Process each remaining element. */
@@ -2272,12 +2425,11 @@ load_object(
 	    header.e_phnum >
 		((Elf_Off)status.st_size - header.e_phoff) / sizeof(Elf_Phdr))
 		rtld_fatal("invalid dependency ELF header");
-	result = syscall6(KERN_SYS_pread, (uintptr_t)fd, (uintptr_t)phdr,
-			  (size_t)header.e_phnum * sizeof(Elf_Phdr),
-			  (uintptr_t)header.e_phoff, 0, 0);
 
-	/* Checks the operation result. */
-	if (result != (intptr_t)((size_t)header.e_phnum * sizeof(Elf_Phdr)))
+	/* The program headers, in a mapping of their own when they are many. */
+	phdr = read_program_headers((int)fd, &header, room,
+				    RTLD_PROGRAM_INLINE, &phdr_mapping);
+	if (phdr == NULL)
 		rtld_fatal("cannot read dependency headers");
 
 	/* Handles a failed validate file programs operation. */
@@ -2289,8 +2441,9 @@ load_object(
 	object->device = status.st_dev;
 	object->inode = status.st_ino;
 	object->has_identity = 1;
-	object->phnum = header.e_phnum;
-	rtld_memcpy(object->phdr, phdr, object->phnum * sizeof(Elf_Phdr));
+	object_set_programs(object, phdr, header.e_phnum);
+	if (phdr_mapping != 0)
+		tls_unmap(phdr, phdr_mapping);
 
 	/* Process each element required by the operation. */
 	for (i = 0; i < object->phnum; i++) {
@@ -2446,8 +2599,9 @@ open_search_list(
 			if (origin_length == 0)
 				origin_length = 1;
 
-			/* Handles the origin length condition. */
-			if (origin_length <=
+			/* Both parts fit, a long suffix too (it cannot wrap the sum). */
+			if (suffix_length < sizeof(directory) &&
+			    origin_length <=
 			    sizeof(directory) - suffix_length - 1U) {
 				rtld_memcpy(directory, owner->path,
 					    origin_length);
@@ -2492,7 +2646,7 @@ open_search_candidate(
 
 	/* Handles the directory length condition. */
 	if (directory_length == 0 || directory_length >= RTLD_PATH_MAX ||
-	    name_length == 0 ||
+	    name_length == 0 || name_length > RTLD_PATH_MAX - 2U ||
 	    directory_length > RTLD_PATH_MAX - name_length - 2U)
 
 		/* Reports operation failure. */
@@ -2517,18 +2671,20 @@ static struct rtld_object *
 find_identity(
 	const struct stat *status)
 {
+	struct rtld_object *object;
 	unsigned i;
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		/* Handles the objects condition. */
-		if (objects[i].active && !objects[i].unloading &&
-		    objects[i].has_identity &&
-		    objects[i].device == status->st_dev &&
-		    objects[i].inode == status->st_ino)
+		/* An object in the process now with the same file identity. */
+		object = object_at(i);
+		if (object->active && !object->unloading &&
+		    object->has_identity &&
+		    object->device == status->st_dev &&
+		    object->inode == status->st_ino)
 
 			/* Returns the computed result. */
-			return &objects[i];
+			return object;
 	}
 
 	/* Reports that no result is available. */
@@ -2543,22 +2699,26 @@ new_object(
 	struct rtld_object *object;
 	unsigned i;
 
-	/* Process each remaining element. */
+	/* A slot no object uses now. */
+	object = NULL;
 	for (i = 0; i < object_count; i++) {
-		/* Handles the objects condition. */
-		if (!objects[i].active)
+		/* Stops at the first slot that is free. */
+		object = object_at(i);
+		if (!object->active)
 			break;
 	}
 
-	/* Checks the current index. */
+	/* None: the next one, in a new chunk when the last is full (the first is static). */
 	if (i == object_count) {
-		/* Handles the object count condition. */
-		if (object_count == RTLD_OBJECT_MAX)
-			rtld_fatal("too many shared objects");
-		object_count++;
+		/* Links a chunk when every slot of the last is counted. */
+		if (object_count != 0 && object_count % RTLD_OBJECT_CHUNK == 0)
+			object_chunk_grow();
+
+		/* Counts the slot after its chunk is linked. */
+		object = &object_chunk_last->slots[object_count % RTLD_OBJECT_CHUNK];
+		__atomic_store_n(&object_count, object_count + 1U, __ATOMIC_RELEASE);
 	}
-	object = &objects[i];
-	rtld_memset(object, 0, sizeof(*object));
+	object_clear(object);
 	object->active = 1;
 	object->generation = next_object_generation++;
 
@@ -2572,6 +2732,323 @@ new_object(
 
 	/* Returns the computed result. */
 	return object;
+}
+
+/*
+ * Finds the slot of an object by its number (below object_count): its
+ * chunk, along the chain, and its place there.
+ */
+static struct rtld_object *
+object_at(
+	unsigned index)
+{
+	struct rtld_object_chunk *chunk;
+	unsigned step;
+
+	/* Along the chain to the slot's chunk. */
+	chunk = &object_chunk_first;
+	for (step = index / RTLD_OBJECT_CHUNK; step != 0; step--)
+		chunk = __atomic_load_n(&chunk->next, __ATOMIC_ACQUIRE);
+
+	/* The slot. */
+	return &chunk->slots[index % RTLD_OBJECT_CHUNK];
+}
+
+/*
+ * Links one more chunk to the object table: mapped zeroed and published
+ * before any of its slots is counted.
+ */
+static void
+object_chunk_grow(
+	void)
+{
+	struct rtld_object_chunk *chunk;
+
+	/* The chunk; without memory the process cannot go on (WS140 U2). */
+	chunk = tls_map(sizeof(*chunk));
+	if (chunk == NULL)
+		rtld_fatal("cannot allocate shared-object table");
+
+	/* Published after the last. */
+	__atomic_store_n(&object_chunk_last->next, chunk, __ATOMIC_RELEASE);
+	object_chunk_last = chunk;
+}
+
+/*
+ * Gives a program table of at least size bytes: one a gone object left
+ * when it is large enough, otherwise a new mapping.
+ */
+static struct rtld_program_table *
+program_table_take(
+	size_t size)
+{
+	struct rtld_program_table **link;
+	struct rtld_program_table *table;
+
+	/* One left by an object gone. */
+	for (link = &program_tables_free; *link != NULL; link = &(*link)->next) {
+		/* Takes the first that is large enough off the list. */
+		table = *link;
+		if (table->size >= size) {
+			*link = table->next;
+			table->next = NULL;
+
+			/* Succeeded: a table used before. */
+			return table;
+		}
+	}
+
+	/* A new one; without memory the process cannot go on (WS140 U2). */
+	table = tls_map(size);
+	if (table == NULL)
+		rtld_fatal("cannot allocate program-header table");
+
+	/* Records the size mapped, for reuse. */
+	table->size = page_ceil(size);
+
+	/* Succeeded: a new table. */
+	return table;
+}
+
+/*
+ * Gives an object its program headers: kept inside it when they fit,
+ * otherwise in one mapping that also holds the records of the mappings
+ * its segments get (two a header at most).
+ */
+static void
+object_set_programs(
+	struct rtld_object *object,
+	const Elf_Phdr *phdr,
+	unsigned phnum)
+{
+	struct rtld_program_table *table;
+	unsigned char *data;
+	size_t headers_size;
+	size_t starts_size;
+	size_t size;
+
+	/* Few enough: the room inside the object, which object_clear set. */
+	object->phnum = phnum;
+	if (phnum > RTLD_PROGRAM_INLINE) {
+		/* The head, the headers, then the mappings' starts and sizes. */
+		headers_size = (size_t)phnum * sizeof(Elf_Phdr);
+		starts_size = 2U * (size_t)phnum * sizeof(uintptr_t);
+		size = sizeof(*table) + headers_size + starts_size +
+		    2U * (size_t)phnum * sizeof(size_t);
+		table = program_table_take(size);
+
+		/* The object's tables are in the table from now on. */
+		data = (unsigned char *)(void *)(table + 1);
+		object->program_table = table;
+		object->phdr = (Elf_Phdr *)(void *)data;
+		object->mapping_start = (uintptr_t *)(void *)(data + headers_size);
+		object->mapping_size =
+		    (size_t *)(void *)(data + headers_size + starts_size);
+		object->mapping_capacity = 2U * phnum;
+	}
+
+	/* The headers. */
+	rtld_memcpy(object->phdr, phdr, (size_t)phnum * sizeof(Elf_Phdr));
+}
+
+/*
+ * Reads an ELF file's program headers (the header checked their place
+ * against the file): into the caller's room when they fit, otherwise into
+ * a mapping of their own, whose size is put in *mapping_size (0 for the
+ * caller's room).  Returns the headers, or NULL when the file is short.
+ */
+static Elf_Phdr *
+read_program_headers(
+	int fd,
+	const Elf_Ehdr *header,
+	Elf_Phdr *room,
+	unsigned room_count,
+	size_t *mapping_size)
+{
+	Elf_Phdr *headers;
+	size_t size;
+	intptr_t result;
+
+	/* The caller's room, or a mapping. */
+	size = (size_t)header->e_phnum * sizeof(Elf_Phdr);
+	headers = room;
+	*mapping_size = 0;
+	if (header->e_phnum > room_count) {
+		headers = tls_map(size);
+		if (headers == NULL)
+			rtld_fatal("cannot allocate program headers");
+		*mapping_size = size;
+	}
+
+	/* The headers. */
+	result = syscall6(KERN_SYS_pread, (uintptr_t)fd, (uintptr_t)headers,
+			  size, (uintptr_t)header->e_phoff, 0, 0);
+	if (result != (intptr_t)size) {
+		/* A short file: lets a mapping of their own go. */
+		if (*mapping_size != 0)
+			tls_unmap(headers, *mapping_size);
+
+		/* Nothing is left mapped for the caller to let go. */
+		*mapping_size = 0;
+
+		/* Reports the short file. */
+		return NULL;
+	}
+
+	/* Succeeded: the headers. */
+	return headers;
+}
+
+/*
+ * Gives an object room for one more TLSDESC argument: inside it, then in
+ * the last page, then in a new page linked after it.
+ */
+static struct __tls_index *
+tlsdesc_slot(
+	struct rtld_object *object)
+{
+	struct rtld_tlsdesc_chunk *chunk;
+	struct __tls_index *slot;
+
+	/* Inside the object. */
+	if (object->tlsdesc_count < RTLD_TLSDESC_INLINE) {
+		slot = &object->tlsdesc_inline[object->tlsdesc_count];
+		object->tlsdesc_count++;
+
+		/* Succeeded: room inside the object. */
+		return slot;
+	}
+
+	/* A new page when there is none or the last is full. */
+	chunk = object->tlsdesc_last;
+	if (chunk == NULL || chunk->used == RTLD_TLSDESC_CHUNK) {
+		chunk = tls_map(sizeof(*chunk));
+		if (chunk == NULL)
+			rtld_fatal("cannot allocate TLSDESC arguments");
+
+		/* Links it first, or after the last. */
+		if (object->tlsdesc_last == NULL)
+			object->tlsdesc_chunks = chunk;
+		else
+			object->tlsdesc_last->next = chunk;
+
+		/* The new last page. */
+		object->tlsdesc_last = chunk;
+	}
+
+	/* The next argument of the page. */
+	slot = &chunk->index[chunk->used];
+	chunk->used++;
+	object->tlsdesc_count++;
+
+	/* Succeeded: room in a page. */
+	return slot;
+}
+
+/*
+ * Takes what an object holds outside itself, before its slot is cleared;
+ * object_tables_release lets it go once nothing reads it.
+ */
+static void
+object_tables_take(
+	const struct rtld_object *object,
+	struct rtld_object_tables *tables)
+{
+	/* The dependency table, the program table and the TLSDESC pages. */
+	tables->needed_mapping = object->needed_mapping;
+	tables->needed_mapping_size = object->needed_mapping_size;
+	tables->program_table = object->program_table;
+	tables->tlsdesc_chunks = object->tlsdesc_chunks;
+}
+
+/*
+ * Lets go of what object_tables_take took.
+ */
+static void
+object_tables_release(
+	const struct rtld_object_tables *tables)
+{
+	struct rtld_tlsdesc_chunk *chunk;
+	struct rtld_tlsdesc_chunk *next;
+
+	/* The dependency table (nothing when the object held it inside). */
+	tls_unmap(tables->needed_mapping, tables->needed_mapping_size);
+
+	/* The program table is kept for reuse, never unmapped. */
+	if (tables->program_table != NULL) {
+		tables->program_table->next = program_tables_free;
+		program_tables_free = tables->program_table;
+	}
+
+	/* Each TLSDESC page, its link read before it goes. */
+	for (chunk = tables->tlsdesc_chunks; chunk != NULL; chunk = next) {
+		next = chunk->next;
+		tls_unmap(chunk, sizeof(*chunk));
+	}
+}
+
+/*
+ * Makes room for an object's dependencies: the inline room when they fit,
+ * otherwise one mapping holding the objects' pointers, then their names'
+ * offsets.  The entries are counted as parse_dynamic reads them, up to
+ * the first DT_NULL.
+ */
+static void
+object_reserve_needed(
+	struct rtld_object *object)
+{
+	unsigned char *table;
+	size_t count;
+	size_t size;
+	size_t i;
+
+	/* The DT_NEEDED entries. */
+	count = 0;
+	for (i = 0; i < object->dynamic_count; i++) {
+		/* The end of the section, as parse_dynamic stops there. */
+		if (object->dynamic[i].d_tag == DT_NULL)
+			break;
+
+		/* A dependency. */
+		if (object->dynamic[i].d_tag == DT_NEEDED)
+			count++;
+	}
+
+	/* Few enough for the room inside the object. */
+	if (count <= RTLD_NEEDED_INLINE)
+		return;
+
+	/* A table; without memory the process cannot go on (WS140 U2). */
+	size = count * (sizeof(struct rtld_object *) + sizeof(uint32_t));
+	table = tls_map(size);
+	if (table == NULL)
+		rtld_fatal("cannot allocate dependency table");
+
+	/* The objects' pointers first, for their alignment, then the offsets. */
+	object->needed_mapping = table;
+	object->needed_mapping_size = size;
+	object->needed = (struct rtld_object **)(void *)table;
+	object->needed_offset = (uint32_t *)(void *)
+	    (table + count * sizeof(struct rtld_object *));
+}
+
+/*
+ * Clears an object's slot and points its tables at the room inside it.
+ * The headers' pointer is never left NULL, since dl_iterate_phdr may read
+ * the slot without the loader lock.
+ */
+static void
+object_clear(
+	struct rtld_object *object)
+{
+	/* Everything, then the inline tables. */
+	rtld_memset(object, 0, sizeof(*object));
+	object->phdr = object->phdr_inline;
+	object->mapping_start = object->mapping_start_inline;
+	object->mapping_size = object->mapping_size_inline;
+	object->mapping_capacity = 2U * RTLD_PROGRAM_INLINE;
+	object->needed = object->needed_inline;
+	object->needed_offset = object->needed_offset_inline;
 }
 
 /* Supports the copy path operation. */
@@ -2759,7 +3236,7 @@ remember_mapping(
 	size_t size)
 {
 	/* Checks the current object. */
-	if (object->mapping_count == 64)
+	if (object->mapping_count == object->mapping_capacity)
 		rtld_fatal("too many object mappings");
 	object->mapping_start[object->mapping_count] = start;
 	object->mapping_size[object->mapping_count++] = size;
@@ -2831,6 +3308,9 @@ parse_dynamic(
 	if (object->dynamic == NULL)
 		rtld_fatal("missing dynamic segment");
 
+	/* Room for every dependency, counted before the entries are read. */
+	object_reserve_needed(object);
+
 	/* Process each remaining element. */
 	for (i = 0; i < object->dynamic_count; i++) {
 		dynamic = &object->dynamic[i];
@@ -2842,9 +3322,7 @@ parse_dynamic(
 		/* Dispatch the selected operation case. */
 		switch ((int)dynamic->d_tag) {
 		case DT_NEEDED:
-			/* Checks the current object. */
-			if (object->needed_count == RTLD_NEEDED_MAX)
-				rtld_fatal("too many dependencies");
+			/* object_reserve_needed made room for each. */
 			object->needed_offset[object->needed_count++] =
 			    (uint32_t)dynamic->d_un.d_val;
 			break;
@@ -3615,7 +4093,7 @@ register_tls_module(
 			/* Handles the id condition. */
 			if (id > tls_module_count) {
 				/* Handles the tls module count condition. */
-				if (tls_module_count == RTLD_OBJECT_MAX)
+				if (tls_module_count + 1U == RTLD_TLS_MODULE_MAX)
 					rtld_fatal("too many TLS modules");
 				id = ++tls_module_count;
 			}
@@ -4178,7 +4656,7 @@ lookup_symbol_version(
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		object = &objects[i];
+		object = object_at(i);
 
 		/* Checks the current object. */
 		if (!object->active || object->unloading ||
@@ -4643,7 +5121,7 @@ resolve_tls_symbol(
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		candidate = &objects[i];
+		candidate = object_at(i);
 
 		/* Handles the candidate condition. */
 		if (!candidate->active || candidate->unloading ||
@@ -4690,11 +5168,6 @@ install_tlsdesc(
 	if (!object_contains(object, address, sizeof(*descriptor), PF_W))
 		rtld_fatal("TLSDESC target is not writable");
 
-	/* Checks the current object. */
-	if (object->tlsdesc_count == sizeof(object->tlsdesc_argument) /
-					 sizeof(object->tlsdesc_argument[0]))
-		rtld_fatal("too many TLSDESC relocations");
-
 	/* Handles the symbol index condition. */
 	if (symbol_index != 0) {
 		symbol = resolve_tls_symbol(object, symbol_index, &owner);
@@ -4709,7 +5182,9 @@ install_tlsdesc(
 	if (owner == NULL || owner->tls_module_id == 0 ||
 	    offset >= tls_modules[owner->tls_module_id].memory_size)
 		rtld_fatal("invalid TLSDESC module or offset");
-	index = &object->tlsdesc_argument[object->tlsdesc_count++].index;
+
+	/* The argument, in room that grows as the object needs (WS140 U3). */
+	index = tlsdesc_slot(object);
 	index->module = owner->tls_module_id;
 	index->offset = offset;
 	descriptor = (struct rtld_tlsdesc *)address;
@@ -4758,7 +5233,9 @@ unload_object_locked(
 {
 	intptr_t result;
 	struct __rtld_tcb *tcb;
-	struct rtld_object *dependencies[RTLD_NEEDED_MAX];
+	struct rtld_object *inline_copy[RTLD_NEEDED_INLINE];
+	struct rtld_object **dependencies;
+	struct rtld_object_tables tables;
 	struct rtld_tls_module *module;
 	size_t tls_size;
 	unsigned i, dependency_count;
@@ -4784,10 +5261,21 @@ unload_object_locked(
 	debug_state_change(RT_CONSISTENT);
 	remove_initialization_record(object);
 
-	/* Process each remaining element. */
+	/*
+	 * Keeps the dependency list past the clearing of the object below:
+	 * the inline list is copied, an external table is kept as it is and
+	 * unmapped at the end (WS140 D3).
+	 */
 	dependency_count = object->needed_count;
-	for (i = 0; i < dependency_count; i++)
-		dependencies[i] = object->needed[i];
+	dependencies = object->needed;
+	if (object->needed_mapping == NULL) {
+		/* Copies the inline list, which the clearing overwrites. */
+		for (i = 0; i < dependency_count; i++)
+			inline_copy[i] = object->needed[i];
+
+		/* Uses the copy. */
+		dependencies = inline_copy;
+	}
 
 	/* Application callbacks may recursively use the loader. */
 	loader_unlock();
@@ -4811,13 +5299,13 @@ unload_object_locked(
 			}
 		}
 		module->active = 0;
-
-		/* And this as one more removal. */
-		rtld_object_removals++;
 		module->owner = NULL;
 		module->init_image = NULL;
 		tls_generation++;
 	}
+
+	/* Every removed object counts, with TLS or without (WS140 U5). */
+	rtld_object_removals++;
 
 	/* Process each remaining element. */
 	for (i = object->mapping_count; i != 0; i--) {
@@ -4839,11 +5327,17 @@ unload_object_locked(
 		}
 		dependencies[i]->dependency_refs--;
 	}
-	rtld_memset(object, 0, sizeof(*object));
+
+	/* Clears the slot, keeping its tables to release after the walk. */
+	object_tables_take(object, &tables);
+	object_clear(object);
 
 	/* Process each remaining element. */
 	for (i = 0; i < dependency_count; i++)
 		unload_object_locked(dependencies[i]);
+
+	/* Releases the tables, the dependency list among them, now unused. */
+	object_tables_release(&tables);
 }
 
 /* Supports the remove initialization record operation. */
@@ -4851,21 +5345,25 @@ static void
 remove_initialization_record(
 	struct rtld_object *object)
 {
-	unsigned i;
+	/* An object not on the list has nothing to remove. */
+	if (object != initialization_head && object->init_prev == NULL)
+		return;
 
-	/* Process each remaining element. */
-	for (i = 0; i < initialization_count; i++) {
-		/* Handles the initialization order condition. */
-		if (initialization_order[i] == object) {
-			/* Process each remaining element. */
-			for (; i + 1U < initialization_count; i++) {
-				initialization_order[i] =
-				    initialization_order[i + 1U];
-			}
-			initialization_order[--initialization_count] = NULL;
-			break;
-		}
-	}
+	/* Unlinks the object from the one before it, or from the head. */
+	if (object->init_prev != NULL)
+		object->init_prev->init_next = object->init_next;
+	else
+		initialization_head = object->init_next;
+
+	/* Unlinks it from the one after it, or from the tail. */
+	if (object->init_next != NULL)
+		object->init_next->init_prev = object->init_prev;
+	else
+		initialization_tail = object->init_prev;
+
+	/* Marks it off the list, so a second removal does nothing. */
+	object->init_prev = NULL;
+	object->init_next = NULL;
 }
 
 /* Supports the finalize object unlocked operation. */
@@ -4895,6 +5393,29 @@ finalize_object_unlocked(
 		((void (*)(void))object->fini)();
 }
 
+/*
+ * Starts a new dlsym() walk: the marks left by the walks before no longer
+ * equal the generation.  When the counter wraps, every mark is cleared so
+ * that a mark left long ago cannot pass for the new walk.  The loader lock
+ * is held.
+ */
+static void
+lookup_generation_next(
+	void)
+{
+	unsigned i;
+
+	/* The next walk's number. */
+	lookup_generation++;
+
+	/* Clears the old marks once the counter wraps to zero. */
+	if (lookup_generation == 0) {
+		for (i = 0; i < object_count; i++)
+			object_at(i)->lookup_mark = 0;
+		lookup_generation = 1;
+	}
+}
+
 /* Supports the rtld dlsym common operation. */
 static void *
 rtld_dlsym_common(
@@ -4904,11 +5425,9 @@ rtld_dlsym_common(
 {
 	struct rtld_handle *handle;
 	uintptr_t result;
-	uint32_t visited;
 	int found;
 
 	result = 0;
-	visited = 0;
 	found = 0;
 
 	clear_loader_error();
@@ -4929,8 +5448,9 @@ rtld_dlsym_common(
 	} else if (handle->main_scope) {
 		result = lookup_global_optional(name, version, &found);
 	} else {
+		lookup_generation_next();
 		result = lookup_handle_graph(handle->object, name, version,
-					     &visited, &found);
+					     &found);
 	}
 
 	/* Handles the handle availability. */
@@ -5004,7 +5524,7 @@ lookup_global_optional(
 
 	/* Process each remaining element. */
 	for (i = 0; i < object_count; i++) {
-		object = &objects[i];
+		object = object_at(i);
 
 		/* Checks the current object. */
 		if (!object->active || object->unloading ||
@@ -5033,27 +5553,23 @@ lookup_handle_graph(
 	struct rtld_object *object,
 	const char *name,
 	const char *version,
-	uint32_t *visited,
 	int *found)
 {
 	uintptr_t function_result;
 	uintptr_t value;
-	uintptr_t index;
 	Elf_Sym *symbol;
 	unsigned i;
 
 	/* Checks the current object. */
-	if (object < &objects[0] || object >= &objects[RTLD_OBJECT_MAX] ||
-	    !object->active || object->unloading)
+	if (object == NULL || !object->active || object->unloading)
 
 		/* Reports successful completion. */
 		return 0;
-	index = (uintptr_t)(object - &objects[0]);
 
-	/* Handles the visited condition. */
-	if ((*visited & ((uint32_t)1U << index)) != 0)
+	/* Visits each object once in this walk (WS140 D5). */
+	if (object->lookup_mark == lookup_generation)
 		return 0;
-	*visited |= (uint32_t)1U << index;
+	object->lookup_mark = lookup_generation;
 	symbol = lookup_in_object_version(object, name, version);
 
 	/* Handles the symbol availability. */
@@ -5069,7 +5585,7 @@ lookup_handle_graph(
 	/* Process each remaining element. */
 	for (i = 0; i < object->needed_count; i++) {
 		value = lookup_handle_graph(object->needed[i], name,
-				      version, visited, found);
+				      version, found);
 
 		/* Handles the found condition. */
 		if (*found)
@@ -5203,19 +5719,15 @@ setup_premapped_object(
 	unsigned phnum,
 	int type)
 {
-	unsigned i;
-
 	object->base = base;
 	object->type = type;
-	object->phnum = phnum;
 
 	/* Handles the phnum condition. */
-	if (phnum == 0 || phnum > 64)
+	if (phnum == 0 || phnum >= PN_XNUM)
 		rtld_fatal("invalid pre-mapped program headers");
 
-	/* Process each element required by the operation. */
-	for (i = 0; i < phnum; i++)
-		object->phdr[i] = phdr[i];
+	/* The headers, then the dynamic section they name. */
+	object_set_programs(object, phdr, phnum);
 	parse_dynamic(object);
 }
 

@@ -160,7 +160,7 @@ python3 plan/tools/style-check.py --summary src/rtld/rtld.c userland/tests/dynte
 git diff --check
 ```
 
-- `"too many object mappings"`・symbol の版の 2 つ・`"too many TLSDESC relocations"` は U3 の範囲の外なので残す。消さない。
+- `"too many object mappings"`（p001 で容量の不変の確かめになった）・symbol の版の 2 つは残す。消さない。`"too many TLSDESC relocations"` は p001 で消した（U3）。
 - style は p001 と同じ扱い（関数ごとに増えていない、新しい関数と新しい行は 0）。
 
 ## 試験の依頼（T1/T2、p001 と p002 をまとめて 1 回）
