@@ -267,10 +267,10 @@ zwl_ime_tick(
 		}
 	}
 
-	/* An input method that has gone is started again, unless it keeps dying. */
+	/* An input method that has gone is started again, unless it keeps dying (a change of method is no death). */
 	if (ime->client == NULL && !ime->given_up && ime->restart_ms != 0U && now >= ime->restart_ms) {
 		oldest = ime->starts[ime->start_index];
-		if (oldest != 0U && now - oldest < IME_START_WINDOW_MS) {
+		if (!ime->replacing && oldest != 0U && now - oldest < IME_START_WINDOW_MS) {
 			ime->given_up = 1;
 			printf("ZWL IME given-up starts=3 window_ms=%u\n", IME_START_WINDOW_MS);
 		} else {
@@ -506,6 +506,39 @@ zwl_ime_repeat_changed(
 	repeat[0] = server->repeat_rate;
 	repeat[1] = server->repeat_delay_ms;
 	ime_emit(server->ime->grab, GRAB_REPEAT_INFO, repeat, sizeof(repeat));
+}
+
+/*
+ * Starts the input method again with the method the Languages page chose
+ * (ime.method, WS154): the running program is asked to end (it saves what
+ * its languages learned on the way out) and the start that follows uses
+ * the new choice, without the wait or the count of a restart after a
+ * death.  An input method that had given up is started again too.
+ */
+void
+zwl_ime_method_changed(
+	struct zwl_server *server)
+{
+	struct zwl_ime *ime;
+
+	/* No input method, or it runs the method chosen already. */
+	ime = server->ime;
+	if (ime == NULL || (ime->client != NULL && ime->method_started == server->ime_method))
+		return;
+
+	/* The next start is the change's. */
+	printf("ZWL IME method=%d\n", server->ime_method);
+	ime->replacing = 1;
+	ime->given_up = 0;
+
+	/* The running program ends; its connection's end starts the new one (ime_lost). */
+	if (ime->pid > 0 && ime->client != NULL) {
+		(void)kill(ime->pid, SIGTERM);
+		return;
+	}
+
+	/* None runs: started at the next pass. */
+	ime->restart_ms = zwl_milliseconds();
 }
 
 /*
@@ -984,6 +1017,7 @@ ime_spawn(
 {
 	struct zwl_ime *ime;
 	struct zwl_client *client;
+	const char *method;
 	char variable[32];
 	int pair[2];
 	int descriptor;
@@ -992,6 +1026,13 @@ ime_spawn(
 
 	ime = server->ime;
 	ime->restart_ms = 0;
+
+	/* The input method chosen, as the program's argument (WS154). */
+	method = "--method=ja";
+	if (server->ime_method == 0)
+		method = "--method=none";
+	else if (server->ime_method == 2)
+		method = "--method=skk";
 
 	/* The pair: zdesktop keeps one end, the input method gets the other. */
 	error = socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, pair);
@@ -1023,7 +1064,7 @@ ime_spawn(
 		snprintf(variable, sizeof(variable), "%d", pair[1]);
 		(void)setenv("WAYLAND_SOCKET", variable, 1);
 		(void)unsetenv("WAYLAND_DISPLAY");
-		(void)execl(IME_PROGRAM, IME_PROGRAM, (char *)NULL);
+		(void)execl(IME_PROGRAM, IME_PROGRAM, method, (char *)NULL);
 		_exit(127);
 	}
 
@@ -1037,14 +1078,19 @@ ime_spawn(
 		return;
 	}
 
-	/* The start is counted in the window of the last three. */
-	ime->starts[ime->start_index] = now;
-	ime->start_index = (ime->start_index + 1U) % 3U;
+	/* The start is counted in the window of the last three, unless it follows a change of method. */
+	if (ime->replacing) {
+		ime->replacing = 0;
+	} else {
+		ime->starts[ime->start_index] = now;
+		ime->start_index = (ime->start_index + 1U) % 3U;
+	}
 
 	/* Succeeded: the input method runs on its connection. */
 	ime->pid = child;
 	ime->client = client;
-	printf("ZWL IME started pid=%ld client=%llu\n", (long)child, (unsigned long long)client->number);
+	ime->method_started = server->ime_method;
+	printf("ZWL IME started pid=%ld client=%llu %s\n", (long)child, (unsigned long long)client->number, method);
 }
 
 /*
@@ -1143,10 +1189,12 @@ ime_lost(
 	ime_set_text(&ime->preedit_shown, NULL);
 	ime->client = NULL;
 
-	/* It is started again after a moment; the indicator and the candidate window go meanwhile. */
+	/* It is started again after a moment (at once after a change of method); the indicator and the candidate window go meanwhile. */
 	ime->label[0] = '\0';
 	server->dirty = 1;
 	ime->restart_ms = zwl_milliseconds() + IME_RESTART_MS;
+	if (ime->replacing)
+		ime->restart_ms = zwl_milliseconds();
 }
 
 /*
