@@ -90,7 +90,8 @@ grep -q 'dhcp: true' "$out/nobody.txt" && fail "nothing changed for the refused"
 for bad in "$interface static 10.0.9.255 255.255.255.0:the subnet's own or broadcast address" "$interface static 10.0.9.30 255.0.255.0:invalid netmask" \
     "$interface static 10.0.9.30 255.255.255.0 10.0.8.1:router outside the subnet" "lo0 dhcp:not a wired interface name" "wlan0 dhcp:not a wired interface name"; do
 	words=${bad%%:*}
-	reason=${bad#*:}
+	# The pattern goes inside single quotes on the guest: its apostrophe becomes "." (T1-159).
+	reason=$(printf '%s' "${bad#*:}" | tr "'" .)
 	result=$(guest "net lan set $words >/dev/null 2>&1; echo exit=\$?" | tail -1)
 	[ "$result" = "exit=1" ] && pass "refuses: $words" || fail "refuses: $words ($result)"
 	expect_log /var/log/messages "LAN_CONFIGURE interface=[a-z0-9]+ euid=0 result=error errno=[0-9]+ reason=$reason" 3

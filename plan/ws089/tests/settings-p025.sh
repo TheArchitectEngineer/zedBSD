@@ -11,8 +11,11 @@
 #     says sshd is enabled; the authentication log says "service sshd off by kei" and "service sshd on by kei".
 # The refusal of a user outside wheel and of other services is sessiond's rule, tested on the host
 # (run-host-service-rules.sh).
+# The image is the graphical login image with su (plan/ws089/tests/config-amd64-sharing.mk; T1-159: the plain
+# build-login-image.sh image has no su, so Settings never started and /tmp/s.log was never written).
 # PASS: every "ok" line and the last line settings-p025: PASS.
-#   plan/tools/files/files-guest.sh start build/amd64/hdd-graphical.img
+#   SETTINGS_CONFIG=plan/ws089/tests/config-amd64-sharing.mk plan/ws089/tests/build-settings-image.sh BUILD
+#   plan/tools/files/files-guest.sh start BUILD/hdd-image.img
 #   plan/ws089/tests/settings-p025.sh [OUTDIR]            (default build/ws089-shots/p025)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -51,12 +54,20 @@ wait_guest
 expect_log "$session" 'ZWL HANDOFF go=1' 60
 guest 'service enable sshd >/dev/null 2>&1; service start sshd >/dev/null 2>&1; echo on' >/dev/null
 
-# 1. Settings as kei on the Sharing page; its window from the session's log.
+# 1. Settings as kei on the Sharing page; its window from the session's log.  Without su it cannot start.
+has_su=$(guest 'command -v su >/dev/null 2>&1 && echo yes || echo no' | tail -1)
+if [ "$has_su" != yes ]; then
+	fail "the image has su (build it with config-amd64-sharing.mk)"
+	echo "settings-p025: FAIL"
+	exit 1
+fi
 guest "su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 HOME=/home/kei /bin/settings --timeout-s=600 sharing > /tmp/s.log 2>&1 </dev/null &'; sleep 6; echo started" >/dev/null
 line=$(guest "grep 'ZWL MAP client=' $session | tail -1")
 set -- $(echo "$line" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p') 0 0 0
 wx=$2; wy=$3
 echo "settings: window at $wx,$wy"
+started=$(guest 'test -f /tmp/s.log && echo yes || echo no' | tail -1)
+[ "$started" = yes ] && pass "settings started as kei (/tmp/s.log)" || fail "settings started as kei (/tmp/s.log)"
 expect_log /tmp/s.log 'SHARING state available=1 enabled=1 running=1 port=22 allowed=1 fingerprint=SHA256:' 15
 shot sharing-on.png
 set -- $(guest "grep -a 'ZSETTINGS CONTROL index=1 ' /tmp/s.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p') 0 0 0 0
