@@ -83,6 +83,7 @@ main(
 	server.touchpad_natural = 1;
 	server.repeat_rate = 25;
 	server.repeat_delay_ms = 400;
+	server.ime_method = 1;
 	server.width = 320;
 	server.height = 240;
 	strcpy(server.socket_path, "/tmp/wayland-0");

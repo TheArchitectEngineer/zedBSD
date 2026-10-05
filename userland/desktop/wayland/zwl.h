@@ -918,6 +918,8 @@ struct zwl_server {
 	int64_t pointer_remainder_y;
 	int32_t repeat_rate;
 	int32_t repeat_delay_ms;
+	/* The input method the Languages page chose (ime.method, WS154): 0 none, 1 Japanese, 2 SKK. */
+	int32_t ime_method;
 	struct zwl_object *drag;
 	int32_t drag_dx;
 	int32_t drag_dy;

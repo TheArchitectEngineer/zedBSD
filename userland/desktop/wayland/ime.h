@@ -141,6 +141,13 @@ struct zwl_ime {
 	char desktop_language[16];
 	unsigned desktop_known;
 	char focus_key[ZWL_IME_APP_KEY];
+	/*
+	 * Nonzero from a change of the input method chosen (WS154) until the
+	 * program is started again with it: that start does not wait, nor
+	 * count among the three a minute.
+	 */
+	unsigned replacing;
+	int32_t method_started;
 };
 
 /* text-input.c */
@@ -158,6 +165,7 @@ void zwl_ime_object_gone(struct zwl_object *object);
 void zwl_ime_client_gone(struct zwl_client *client);
 int zwl_ime_global_visible(struct zwl_client *client, enum zwl_kind kind);
 void zwl_ime_repeat_changed(struct zwl_server *server);
+void zwl_ime_method_changed(struct zwl_server *server);
 int zwl_ime_key_early(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 int zwl_ime_key_grab(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state, int composing_only);
 void zwl_ime_modifiers(struct zwl_server *server);

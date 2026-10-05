@@ -131,6 +131,7 @@ se_look_open(
 	look->touchpad_acceleration = LOOK_PAD_ACCEL;
 	look->touchpad_natural = 1;
 	look->repeat_rate = LOOK_RATE_DEFAULT;
+	look->ime_method = 1;
 	look->repeat_delay = LOOK_DELAY_DEFAULT;
 	look->wallpaper[0] = '\0';
 
@@ -508,6 +509,9 @@ look_read(
 	look->touchpad_natural = kl_settings_get_int(look->settings, "touchpad.natural", 1);
 	look->repeat_rate = kl_settings_get_int(look->settings, "keyboard.repeat.rate", LOOK_RATE_DEFAULT);
 	look->repeat_delay = kl_settings_get_int(look->settings, "keyboard.repeat.delay", LOOK_DELAY_DEFAULT);
+
+	/* The input method chosen on the Languages page (WS154; Japanese unless chosen otherwise). */
+	look->ime_method = kl_settings_get_int(look->settings, "ime.method", 1);
 
 	/*
 	 * The picture: the chosen one, or none (empty) for the default.  flags

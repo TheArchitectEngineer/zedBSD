@@ -19,6 +19,7 @@
  */
 
 #include "program.h"
+#include "skk.h"
 
 #include "userland/desktop/paths.h"
 
@@ -34,6 +35,15 @@
 
 /* Where the Japanese dictionary is installed (the package ime-dict-ja): one file, the supplement and the system dictionary (ws095-p017). */
 #define MAIN_DICTIONARY			KEILAND_DATADIR "/keiland/ime/ja/SKK-JISYO.ja"
+
+/* Where the SKK engine's dictionaries are installed (the package ime-dict-skk, WS154): the fuller, then the compact. */
+#define MAIN_SKK_DICTIONARY		KEILAND_DATADIR "/keiland/ime/skk/SKK-JISYO.X"
+#define MAIN_SKK_COMPACT		KEILAND_DATADIR "/keiland/ime/skk/SKK-JISYO.remacs"
+
+/* The input methods the Languages page offers (ime.method, WS154): none, Japanese, SKK. */
+#define MAIN_METHOD_NONE		0
+#define MAIN_METHOD_JA			1
+#define MAIN_METHOD_SKK			2
 
 /*
  * Set by a SIGTERM, SIGHUP or SIGINT: the loop ends at its next turn, so
@@ -53,8 +63,9 @@ static int main_wake[2] = { -1, -1 };
 
 static void main_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void main_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static int main_engines(struct program *program);
-static void main_user_path(char *path, size_t size);
+static int main_method(int count, char **arguments);
+static int main_engines(struct program *program, int method);
+static void main_user_path(char *path, size_t size, const char *name);
 static void main_warm(struct program *program, struct ime_engine *engine);
 static int main_serve(struct program *program);
 static int main_earlier(int left, int right);
@@ -70,11 +81,13 @@ static const struct wl_registry_listener main_registry_listener = {
 
 int
 main(
-	void)
+	int count,
+	char **arguments)
 {
 	struct program program;
 	struct sigaction action;
 	int status;
+	int method;
 	unsigned i;
 
 	memset(&program, 0, sizeof(program));
@@ -140,8 +153,9 @@ main(
 		return 1;
 	}
 
-	/* The languages. */
-	status = main_engines(&program);
+	/* The languages of the input method chosen (zdesktop's --method, the Languages page's choice). */
+	method = main_method(count, arguments);
+	status = main_engines(&program, method);
 	if (status != 0) {
 		printf("KEI-IME FAILED step=engines\n");
 		return 1;
@@ -258,15 +272,53 @@ main_global_remove(
 }
 
 /*
- * Makes the languages: direct input, then Japanese with its dictionaries.
+ * Reads the input method chosen from the command line (--method=none, ja
+ * or skk, as zdesktop passes the Languages page's choice); Japanese when
+ * none is given or the word is unknown.
+ */
+static int
+main_method(
+	int count,
+	char **arguments)
+{
+	int i;
+	int differs;
+
+	/* The last --method given counts. */
+	for (i = count - 1; i >= 1; i--) {
+		/* None: direct input alone. */
+		differs = strcmp(arguments[i], "--method=none");
+		if (differs == 0)
+			return MAIN_METHOD_NONE;
+
+		/* SKK. */
+		differs = strcmp(arguments[i], "--method=skk");
+		if (differs == 0)
+			return MAIN_METHOD_SKK;
+
+		/* Japanese, said outright. */
+		differs = strcmp(arguments[i], "--method=ja");
+		if (differs == 0)
+			return MAIN_METHOD_JA;
+	}
+
+	/* Japanese, as before the choice existed. */
+	return MAIN_METHOD_JA;
+}
+
+/*
+ * Makes the languages: direct input, then the input method chosen with its
+ * dictionaries (Japanese, SKK, or nothing more for none).
  *
  * Returns 0, or -1 when an engine cannot be made.
  */
 static int
 main_engines(
-	struct program *program)
+	struct program *program,
+	int method)
 {
 	struct ja_config config;
+	struct skk_config skk;
 	char user[1024];
 	int error;
 
@@ -275,10 +327,32 @@ main_engines(
 	if (error != 0)
 		return -1;
 
+	/* One language so far, and the method chosen in the log. */
 	program->engine_count = 1;
+	printf("KEI-IME METHOD %d\n", method);
+
+	/* None: direct input alone. */
+	if (method == MAIN_METHOD_NONE)
+		return 0;
+
+	/* SKK, with REmacs's dictionaries and the user's own. */
+	if (method == MAIN_METHOD_SKK) {
+		main_user_path(user, sizeof(user), "skk-jisyo");
+		memset(&skk, 0, sizeof(skk));
+		skk.dictionaries[0] = MAIN_SKK_DICTIONARY;
+		skk.dictionaries[1] = MAIN_SKK_COMPACT;
+		skk.user_dictionary = user;
+		error = skk_engine_create(&program->engines[1], &skk);
+		if (error != 0)
+			return -1;
+
+		/* Succeeded: direct input and SKK. */
+		program->engine_count = 2;
+		return 0;
+	}
 
 	/* Japanese, with its one dictionary (the supplement and the system dictionary, ws095-p017) and the user's. */
-	main_user_path(user, sizeof(user));
+	main_user_path(user, sizeof(user), "ja-user.dict");
 	config.system_dictionary = MAIN_DICTIONARY;
 	config.supplement_dictionary = NULL;
 	config.user_dictionary = user;
@@ -286,6 +360,7 @@ main_engines(
 	if (error != 0)
 		return -1;
 
+	/* Direct input and Japanese. */
 	program->engine_count = 2;
 
 	/* A first conversion is made and dropped, so that the first key typed does not wait for the code to be read in. */
@@ -325,13 +400,14 @@ main_warm(
 }
 
 /*
- * Gives the user dictionary's path, making its directory
+ * Gives the path of a user dictionary (by its file name), making its directory
  * (~/.config/kei/ime, the user's alone).
  */
 static void
 main_user_path(
 	char *path,
-	size_t size)
+	size_t size,
+	const char *name)
 {
 	const char *home;
 	char directory[1024];
@@ -339,7 +415,7 @@ main_user_path(
 	/* Without a home the choices are not kept. */
 	home = getenv("HOME");
 	if (home == NULL || home[0] == '\0') {
-		snprintf(path, size, "/nonexistent/ja-user.dict");
+		snprintf(path, size, "/nonexistent/%s", name);
 		return;
 	}
 
@@ -352,7 +428,7 @@ main_user_path(
 	(void)mkdir(directory, 0700);
 
 	/* The file in it. */
-	snprintf(path, size, "%s/ja-user.dict", directory);
+	snprintf(path, size, "%s/%s", directory, name);
 }
 
 /*

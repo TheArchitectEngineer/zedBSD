@@ -160,6 +160,7 @@ enum se_page_id {
 	SE_PAGE_NOTIFICATIONS,
 	SE_PAGE_SOUND,
 	SE_PAGE_DISPLAY,
+	SE_PAGE_LANGUAGES,
 	SE_PAGE_STORAGE,
 	SE_PAGE_BATTERY,
 	SE_PAGE_KEYBOARD,
@@ -758,6 +759,7 @@ struct se_look {
 	int touchpad_natural;
 	int repeat_rate;
 	int repeat_delay;
+	int ime_method;
 	int dragging;
 	struct fm_rect slider;
 	struct fm_rect sliders[8];
@@ -975,6 +977,8 @@ void se_wired_edit(struct se_app *app, const struct kl_network_link *link);
 void se_storage_analyze(struct se_app *app, const char *root);
 int se_sharing_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 void se_sharing_press(struct se_app *app, int index);
+int se_languages_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+void se_languages_press(struct se_app *app, int index);
 void se_sharing_poll(struct se_app *app);
 int se_sharing_result(struct se_app *app, uint32_t request, int error);
 void se_storage_stop(struct se_app *app);

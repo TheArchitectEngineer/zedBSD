@@ -554,6 +554,19 @@ settings_apply(
 		settings_apply_repeat(server, starting);
 		return;
 	}
+
+	/* Chooses the input method, which is started again with it (WS154). */
+	differs = strcmp(name, "ime.method");
+	if (differs == 0) {
+		settings_apply_number(server, name, &server->ime_method);
+
+		/* At the start the input method has not been started yet; it starts with the choice. */
+		if (!starting)
+			zwl_ime_method_changed(server);
+
+		/* Applied. */
+		return;
+	}
 }
 
 /* Tells the keyboards bound already the repeat again (nothing is bound before the look is made). */
