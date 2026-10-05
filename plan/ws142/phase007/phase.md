@@ -24,7 +24,8 @@ Related: [BUG-217](../../bugs/BUG-217.md)・[BUG-215](../../bugs/BUG-215.md)・[
 | 新しい窓の map | 今の規則（ws099-p033: dock の中で開く窓は dock で）を `layout_mode` で言い直す |
 | 全画面（fullscreen）の出入り | `layout_mode` は変えない。全画面から出る時は `layout_mode` に戻る（BUG-208 の `fullscreen_docked` は `layout_mode` で置き換える） |
 | 窓を閉じる・最小化 | `layout_mode` は変えない |
-| dock を拒む窓（大きさの固定・dialog・popup） | 状態を変えずに、その窓だけ浮いたまま |
+| 親を持つ窓（dialog、xdg_toplevel の parent）と popup | dock の対象でない（親の上に浮く）。`layout_mode` は変えない |
+| 大きさの固定の窓（third-party、min = max） | **dock する**: dock の領域に configure を送り、client がその大きさで描かなければ、dock の領域の中央に置き周りを暗い地で埋める（letterbox） |
 
 - 切り替え元の窓は**そのままにしない**: DOCKED の時、切り替え元は dock のまま後ろに残る（1 つの面に 1 つの窓が見える tablet の形）。WINDOWED の時は浮いたまま。
 - 浮いた位置を覚える: 窓ごとの `restore_rect`（今の dock の前の位置）を、mode の切り替えでも保つ。
@@ -68,5 +69,5 @@ Related: [BUG-217](../../bugs/BUG-217.md)・[BUG-215](../../bugs/BUG-215.md)・[
 
 ## 5. 未決（ユーザー）
 
-1. DOCKED の時に切り替え先が dock を拒む窓（固定の大きさ）なら、浮いたまま中央に出す（案）でよいか。
+1. 決定（2026-10-06 ユーザー）:「Dockできないウィンドウというのは、このコンポジタにはないという仕様でどうでしょうか？タブレットOSなので。少なくともKeilandアプリにはないということにしておきます。」→ **dock できない窓は無い**。Keiland の app は全て dock できる（大きさの固定を持たない）。親を持つ dialog と popup は窓の dock の対象でなく親の上に浮く。third-party の大きさの固定の窓は dock の領域に置き、描かれない所を暗い地で埋める。
 2. BUG-209 の 4 つの仮定（端で回る、Shift で左、3 本指の tap も今の app から、短い Alt+Tab は今の app のまま）。この設計は仮定どおりで書いた。
