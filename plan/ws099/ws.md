@@ -172,3 +172,5 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 ## Phase（2026-10-06 追加: 再設計）
 
 - [ws099-p035](phase035/phase.md) 設計: App Home の stage と 2 層の animation・起動中の app の切り替え（planned、実装は p035a〜d）
+- [ws099-p037](phase037/phase.md) 設計: App Home の Power Off と暗くする確認の dialog（planned）
+- ws099-p034 第 2 版: dock の時の窓の button を右上へ、時計を左へ、animation つき（p034b）

@@ -91,3 +91,12 @@ P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴�
   文字は PIL、dock の窓の menu の語は代わり）→ [bar-montage-4.png](images/bar-montage-4.png)（Birch Lake・Lakeside × light・dark × floating・dock、2 倍の拡大）。
 - 再開の地点: ユーザーに bar-montage-4.png を見せる。T1 の QEMU で light・dark・dock・Wiseview・App Home の PNG と bar の試験の座標（`zdesktop-p065.sh`・
   `p072.sh`）。全文の規約の見直し。held の patch は当て直したので、Q1 の merge 後に消してよい。
+
+## 2026-10-06 ユーザーの bar-montage-4 への意見と第 2 版の設計（title bar の design の変更）
+
+ユーザー「ウィンドウ最大化ドック時のウィンドウボタン（最小化、最大化、閉じる）は、画面右上に置いて、時計などは左にずらすのがいいです。でもこれはアニメーションでやらないと見た目が悪いですね。アニメも実装です。」
+
+- **dock の時の配置**: 窓の button の pill（最小化・restore・閉じる）を**画面の右上の端**（今の時計の pill の位置）に置き、状態の pill と時計の pill を**その左へずらす**。中央の desktop の点は動かさない。窓の icon・題・操作の pill は左のまま。
+- **animation**: dock に入る時、button の pill が右端に fade と scale（0.9 → 1）で現れ、時計と状態の pill が左へ slide（180 ms、ease-out）。dock から出る時は逆。浮いた窓だけの時は今の配置（button の pill は無し）。
+- [ws142-p007](../../ws142/phase007/phase.md) の `layout_mode` の切り替え（app の切り替えで dock・窓が変わる）でも同じ animation。切り替え先も dock なら button の pill は動かさず中身だけ替える。
+- 実装の Phase: p034b（配置と animation、0.5 LW）。ユーザーの順の指示「Cの設計の見直しをまずやりましょう。そのあと、タイトルバーのデザイン変更」で、C の後に行う。
