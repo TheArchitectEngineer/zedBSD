@@ -215,6 +215,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | 6 | Files の Devices: mount の前に確認の popup が無いのは危ない。起動 disk の partition は出さなくてよい | 要望、[ws132-p009](ws132/ws.md) |
 | 7 | 電源ボタンを押すと、ただちに電源が切れた | [BUG-196](bugs/BUG-196.md) |
 | 8 | タッチパッドの 2 本指・3 本指が使えない（BUG-195 で native の touchpad が付かず PS/2 の互換の mouse のため）。そのため 2 本指のスクロール・右 click、3 本指の gesture（Wiseview・仮想デスクトップ・切り替え）、Alt+Tab の 3 本指は**未実施** | [BUG-195](bugs/BUG-195.md)（次の UAT で再確認） |
+| 9 | バーに電池（電源）の icon が無い。電池を認識していない（電池・AC は ACPI の `_BST`・`_BIF`・EC の AML で読むので、DSDT が読めないと分からない。電池の無い機械として icon を詰めて出さない動作になった） | [BUG-195](bugs/BUG-195.md)（同じ根） |
 
 ## 次の UAT で採る記録（2026-10-05 Q1）
 
