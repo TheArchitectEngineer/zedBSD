@@ -807,7 +807,7 @@ hold 800"
 		# Category 0, index 0 (U+1F600) to ime-probe.
 		emoji_middle 'ZWL OSK erect category=0 index=0 '
 		tool_tap "$ex" "$ey"
-		expect_log 'ZWL OSK emoji commit text=.* sent=1'
+		expect_log 'ZWL OSK emoji commit sent=1 '
 		# Category 1's tab, then its index 3 (U+1F64C).
 		emoji_middle 'ZWL OSK etab category=1 '
 		tool_tap "$ex" "$ey"
@@ -817,20 +817,20 @@ hold 800"
 		sleep 1
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe-emoji.log"
 		grep -qF "PROBE TEXT text=$(printf '\360\237\230\200\360\237\231\214')" "$out/ime-probe-emoji.log" && echo "emoji: two emoji reached ime-probe ok" || { echo "emoji: ime-probe text MISSING"; status=1; }
-		expect_count 'ZWL OSK emoji commit text=.* sent=1' 2
+		expect_count 'ZWL OSK emoji commit sent=1 ' 2
 		# wltest (no text input) on top: refused.
 		guest 'for p in $(ps -A -o pid,args | grep "[i]me-probe" | awk "{print \$1}"); do kill $p; done' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp; /bin/wltest --windowed --frames=3600 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 		emoji_middle 'ZWL OSK erect category=1 index=0 '
 		tool_tap "$ex" "$ey"
-		expect_log 'ZWL OSK emoji commit text=.* sent=0'
+		expect_log 'ZWL OSK emoji commit sent=0 '
 		expect_log 'ZWL OSK refused reason=no-text-input'
 		guest 'for p in $(ps -A -o pid,args | grep "[w]ltest" | awk "{print \$1}"); do kill $p; done' >/dev/null
 		# Text Editor (libkeiui's text input): category 1's index 0 (U+1F44D), saved; the file's bytes.
 		guest 'rm -f /root/e.txt; touch /root/e.txt' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/e.txt > /tmp/te-emoji.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
 		tool_tap "$ex" "$ey"
-		expect_count 'ZWL OSK emoji commit text=.* sent=1' 3
+		expect_count 'ZWL OSK emoji commit sent=1 ' 3
 		sleep 1
 		pointer move 400 300 sleep 300
 		shot emoji-sent.png
