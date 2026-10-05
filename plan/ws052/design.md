@@ -1,6 +1,6 @@
 # WS052 設計: 電源管理（S0i3、modern standby）
 
-Status: 案の第 1 版（2026-10-04、ws052-p001、P1 generation16）。§10 は 2026-10-05 にユーザーが決定（末尾）、§9 の Phase と §6 の HAL の差分の案（[proposed/](proposed/README.md)）は 2026-10-05 q727 に改訂。design-reviewer の敵対的レビューは未実施。
+Status: 案の第 1 版（2026-10-04、ws052-p001、P1 generation16）。§10 は 2026-10-05 にユーザーが決定（末尾）、§9 の Phase と §6 の HAL の差分の案は 2026-10-05 q727 に改訂、§6 の差分は 2026-10-05 に専門家のレビューを受けて第 2 版（[proposed/README-v2.md](proposed/README-v2.md)、P4）に。design-reviewer の敵対的レビューは未実施。
 
 ## 1. 目的と範囲
 
@@ -83,12 +83,21 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
 - **wake の割り込み**: SCI（IRQ 9、level）と、wake の要る device の MSI。S0i3 の間に他の割り込みを mask する口。
 - 上の 4 つは `include/hal/hal.h` の API の追加になるので、**差分ごとにユーザーの事前承認が要る**（AGENTS.md）。p002 で差分の案を
   `plan/ws052/proposed/` に置き、承認の前は適用しない。
-- **差分の案（2026-10-05、q727、[proposed/README.md](proposed/README.md)）**:
-  - H1 `hal_cpu_idle_deep(hint)`: 最も深い C-state の idle（hint は `_CST` の FFixedHW か 0 で HAL が CPUID から選ぶ）。
-  - H2 `hal_timer_stop()`・`hal_timer_resume()`: 今の CPU の tick の停止と再開（`hal_rtc_read_counter` は数え続け、kernel は wake の後に時刻を進める）。
-  - H3 `hal_cpu_notify()` の契約の明記: AP の停止は新しい API にせず、各 CPU の idle で H2・H1、wake は notify で起こす。notify は深い idle・tick の停止中・H4 の mask 中も必ず起こす。
-  - H4 `hal_irq_suspend(wake_irqs, count)`・`hal_irq_resume()`: wake の源以外の割り込み（HAL の内部の LVT などを含む）を止め、元に戻す。
-  - 他の architecture は H1・H2・H4 で `HAL_ERR_UNSUPPORTED`、kernel は「未対応の platform」で中止して理由を返す（§10-3）。
+- **差分の案（第 2 版、2026-10-05 P4、[proposed/README-v2.md](proposed/README-v2.md)。第 1 版 H1〜H4 は [proposed/README.md](proposed/README.md) に履歴として残す）**:
+  専門家のレビュー（[proposed/expert-review-2026-10-05.md](proposed/expert-review-2026-10-05.md)）に沿って「per-CPU の suspend-idle の mechanism」と
+  「system-wide の IRQ の policy」の 2 層に整理した。
+  - H1v2 `hal_cpu_idle_suspend_supported()`・`hal_cpu_idle_suspend()`: 今の CPU を system の suspend-to-idle に適した最も深い idle に入れ、1 つの割り込みで戻る。
+    state は HAL が選ぶ（amd64 は firmware の LPIT の FFixedHW の entry = MWAIT 0x60 と CPUID leaf 5 の確認。kernel は state の名前を渡さない）。HAL が内部で
+    今の CPU の tick を止めて戻し、CPU-local の private な源（LAPIC の LVT）を静かにして戻す（第 1 版の H2 `hal_timer_stop/resume` を吸収）。probe で kernel は
+    device に触る前に未対応を知る。
+  - H3v2 `hal_cpu_notify()`・`hal_cpu_notify_mask()` の契約の明記（API の追加なし）: HAL_OK を返した notify は online の CPU に必ず届き、`hal_cpu_idle()`・
+    `hal_cpu_idle_suspend()` の待ちを終え、`hal_irq_suspend()` の間も届く。
+  - H4v2 `hal_irq_set_wake(irq, enable)`・`hal_irq_suspend()`・`hal_irq_resume()`: wake の源を arm し、system-wide の routing（I/O APIC の pin・MSI、登録の無い pin）
+    を wake 以外全部 mask して戻す。**suspend 中に来た wake の IRQ は handler を runtime どおり呼ぶ（latch しない）**: SCI の handler（p003）が記録と mask の層で、
+    spurious な wake の判定は kernel の policy（README-v2 §4-4）。
+  - H5 `hal_rtc_read_counter()` の契約の強化（API の追加なし）: counter は HAL が入る全ての idle state をまたいで進む。約束できない state には HAL が入らない。
+  - 他の architecture は probe が `HAL_ERR_UNSUPPORTED` を返し、kernel は device に触る前に「未対応の platform」で中止して理由を返す（§10-3）。
+  - kernel の p006 の流れ（SMP の調停、各 CPU の suspend idle、wake の判定と spurious の再突入、時刻の進め方）は README-v2 §7。
 
 ## 7. `/dev/system` の口（WS132 と同じ node）
 
@@ -125,14 +134,14 @@ SLP_S0 にする」状態である。S3 と違い、OS は platform に「眠れ
 | p003 | ACPI の側: LPS0 の `_DSM`（display off/on、entry/exit）、wake の GPE だけを有効にする口、`_PS0`/`_PS3`・`_PRx`・`_DSW` の helper、host の試験（5330 の DSDT で `_DSM` の呼び出しの順） | p001、ws049-p007（実機）、ws049-p017 | host の試験、build |
 | p004 | device の suspend・resume の口（PCI と platform の driver の ops、子から親への suspend・親から子への resume、**失敗したら既に suspend した device を resume して中止し、原因の device を理由として返す**）と必須の NVMe（flush、shutdown、D3hot）・xHCI（Save/Restore State、port の U3、Restore できなければ attach し直す）、`/dev/system` の `KERN_SYSTEM_SLEEP` の「devices だけ」の mode（root だけ、device の suspend→resume の往復、試験の口）。**i915 は p009 に移した**（2026-10-05 Q1: QEMU で試せず規模が大きい） | p003 | build、host の試験、QEMU で NVMe・xHCI の往復と suspend の無い driver での中止と理由（T1） |
 | p005 | **後の device の「止めて入る」経路**: suspend・resume を持たない device（HDA・Wi-Fi・他の任意の device）は、sleep の前に止め（Wi-Fi は networkd が接続を切り interface を down・radio off、HDA は audiod が stream を閉じ controller を reset）、wake の後に初期化し直す。止められない device があれば中止して理由を返す。HDA・Wi-Fi の本当の suspend・resume は後の Phase（WS052 の範囲で別に立てる） | p004 | build、実機で Wi-Fi・HDA があっても中止せずに入る（または止められない時に理由が返る） |
-| p006 | CPU の idle と tick と割り込み（**承認された H1〜H4**）、S0i3 の入口・出口（§2 の段 2〜8: user の freeze、device、LPS0、wake の GPE、全 CPU の深い idle、wake で逆順）、`/dev/system` の ioctl（`KERN_SYSTEM_SLEEP`・`KERN_SYSTEM_SLEEP_INFO`）と事象（WS132: `power.sleep.begin`・`end reason=…`・`failed device=…`） | p002 の承認、p004、p005、p009、WS132 の事象 | 実機で SLP_S0 の residency が増え、wake で戻る。QEMU では「未対応の platform」で安全に失敗（T1） |
+| p006 | CPU の idle と tick と割り込み（**承認された H1v2・H3v2・H4v2・H5**: amd64 の実装と他の architecture の stub）、S0i3 の入口・出口（[README-v2 §7](proposed/README-v2.md) の流れ: 対応の確認（probe・FADT・LPS0）→ user の停止 → device → LPS0 → wake の GPE → `hal_irq_suspend` → 全 CPU が idle loop で `hal_cpu_idle_suspend` → 起きた CPU が coordinator を起こす → wake の理由の判定（spurious なら再突入）→ `hal_irq_resume` → 逆順）、CPU 0 の時刻の補正（counter の差を `kernel_ticks` に）、`/dev/system` の ioctl（`KERN_SYSTEM_SLEEP` の S0 idle の mode・`KERN_SYSTEM_SLEEP_INFO`）と事象（WS132: `power.sleep.begin`・`end reason=…`・`failed device=…`）。user の process の停止（freeze）の機構は kernel に無いので p006 で作るか別に立てる（Q1） | p002 の承認、p004、p005、p009、WS132 の事象 | 実機で SLP_S0 の residency が増え、wake で戻る、sleep の前後の counter と RTC の秒が合う（TSC が S0i3 で進む確認）。QEMU では probe が未対応で device に触らずに安全に失敗（T1） |
 | p007 | Keiland の契機: 蓋を閉じた時（WS132 p008 の蓋の分の「画面を消して lock」を sleep に置き換える）、電源ボタンの短押し（dialog 無し、ws132-p001 D1）、一定時間の無操作（Settings の Power で時間を決める、WS089 の頁）。中止の理由を利用者に示す（通知、WS156） | p006、WS132 p008、WS089 | 実機で 3 つの契機で入り、電源ボタン・蓋で戻る |
 | p008 | 実機の確認（繰り返し 20 回、session と network の継続）と規約の全文の確認 | p007 | 受け入れの全項目、規約、build、boot test |
 | p009 | i915 の suspend・resume（設計: [design-p009-i915.md](design-p009-i915.md)）: display の suspend（窓を出る）、DC9 と PCH の SBCLK の workaround、GT の idle と RC6、GGTT の復元、resume での display の core の再初期化（CDCLK・DBUF・DMC）と保った出力の設定の再適用（Keiland の指示の分を含む）。設計から（2026-10-05 Q1 が p004 から分けた: QEMU で試せず規模が大きい） | p004 | 設計、build、5330 の UAT（suspend→resume で画面が同じ出力先に戻る） |
 
 ## 10. 人間の判断が要る点
 
-1. **HAL の API の追加**（§6: MWAIT の idle、tick の停止と再開、AP の停止、wake の割り込みの mask）。p002 で差分の案を作り、差分ごとに承認を求める。
+1. **HAL の API の追加**（§6: MWAIT の idle、tick の停止と再開、AP の停止、wake の割り込みの mask）。p002 で差分の案を作り、差分ごとに承認を求める。→ 第 2 版 H1v2・H3v2・H4v2・H5（[proposed/README-v2.md](proposed/README-v2.md) §12 に残る判断: `hal_irq_resume` の返り値、HAL が LPIT を読む責務、freeze の機構の置き場）。
 2. **S0i3 に入る契機**: Keiland の方針（蓋を閉じた時、電源ボタン、idle の時間）で `KERN_SYSTEM_SLEEP` を呼ぶ案。kernel は自分からは入らない。
 3. **入れない device がある時**: S0i3 を中止して理由を返す案（Linux の s2idle は入れなくても浅い idle で待つ）。中止せず浅い idle（S0i1/i2 相当）で
    待つ方を選ぶか。

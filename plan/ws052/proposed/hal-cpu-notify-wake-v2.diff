@@ -1,0 +1,33 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -152,14 +152,27 @@
+ 	struct hal_cpu_mask *result);
+ 
+ /*
+- * XXX: Add explanation.
++ * Interrupt another CPU so that it looks for work: the kernel's
++ * kernel_cpu_notify_handler() runs on it.
++ *
++ * A notification that returns HAL_OK reaches an online CPU whatever it
++ * is doing: it ends the wait of hal_cpu_idle() and of
++ * hal_cpu_idle_suspend(), whichever state the latter entered, and it is
++ * delivered while hal_irq_suspend() holds the other sources masked.  It
++ * is how the kernel brings every CPU back from a system sleep, so no
++ * other HAL operation masks it.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a CPU that does not exist,
++ * HAL_ERR_STATE for one that is not online, or HAL_ERR_UNSUPPORTED on a
++ * machine without a way to interrupt another CPU.
+  */
+ int
+ hal_cpu_notify(
+ 	hal_cpu_id_t cpu);
+ 
+ /*
+- * XXX: Add explanation.
++ * Notify every CPU of a mask, as hal_cpu_notify() does one.  Every CPU
++ * is checked before any is notified: on an error none was.
+  */
+ int
+ hal_cpu_notify_mask(

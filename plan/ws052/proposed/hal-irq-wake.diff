@@ -1,0 +1,68 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -327,6 +327,64 @@
+ 	int polarity);
+ 
+ /*
++ * Arm or disarm a numbered IRQ as a wake source of a system sleep.
++ *
++ * An armed IRQ stays delivered while hal_irq_suspend() holds the others
++ * masked.  The setting is kept until it is changed and outlives any
++ * number of suspensions; it changes nothing at runtime.  The kernel arms
++ * the IRQs whose devices may wake the system (the ACPI SCI, a wake
++ * device's line) and no other.  The IRQ's own mask (hal_irq_mask) is
++ * separate: an armed IRQ that the kernel keeps masked does not wake.
++ *
++ *  irq    ... a numbered or message-signalled IRQ.
++ *  enable ... true arms it, false disarms it.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist,
++ * HAL_ERR_STATE while hal_irq_suspend() is in effect, or
++ * HAL_ERR_UNSUPPORTED when the controller cannot keep one IRQ delivered
++ * while the others are masked.
++ */
++int
++hal_irq_set_wake(
++	int irq,
++	bool enable);
++
++/*
++ * Mask every interrupt source the HAL routes system-wide, except the IRQs
++ * armed by hal_irq_set_wake(), for a system sleep, until hal_irq_resume().
++ *
++ * It covers the numbered and the message-signalled IRQs, registered or
++ * not.  It leaves alone the CPU-local sources (each CPU's periodic tick
++ * and private sources, which hal_cpu_idle_suspend() quiets on its own
++ * CPU) and the notifications between CPUs (hal_cpu_notify() and the HAL's
++ * own cross-CPU operations), which stay delivered.
++ *
++ * An armed IRQ that arrives meanwhile is dispatched to its handler as at
++ * runtime, on the CPU it is routed to; nothing is held back for later,
++ * so its handler must be one that can run while its device is suspended
++ * (the ACPI SCI's is).  A masked IRQ that arrives anyway (a message a
++ * device still sends) is acknowledged and dropped, not held.  While the
++ * suspension lasts, hal_irq_mask() and hal_irq_unmask() of a masked IRQ
++ * change only what hal_irq_resume() puts back; of an armed IRQ they act
++ * at once.  Only one suspension is held at a time.
++ *
++ * Returns HAL_OK, HAL_ERR_STATE when the sources are already suspended,
++ * or HAL_ERR_UNSUPPORTED when the platform cannot do it; on an error
++ * nothing was changed.
++ */
++int
++hal_irq_suspend(void);
++
++/*
++ * Put back the state of every source hal_irq_suspend() changed: each IRQ
++ * is delivered or masked as the kernel last asked.
++ *
++ * Returns HAL_OK, or HAL_ERR_STATE when the sources were not suspended.
++ */
++int
++hal_irq_resume(void);
++
++/*
+  * Set an IRQ mask.
+  */
+ void

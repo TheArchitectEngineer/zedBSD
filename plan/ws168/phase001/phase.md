@@ -4,184 +4,227 @@
 
 Phase ID: `ws168-p001`
 Parent: [WS168](../ws.md)
-Status: planning（2026-10-05 P1 generation17。設計の第 1 版。code は Q1 がこの設計を見てから。§8 の人間の判断が要る）
+Status: planning（2026-10-05 P1 generation17。設計の第 2 版（ユーザーの review を反映）。code はユーザーの review の後。§8 の判断が要る）
 Phase disposition: normal
-Queue: Q1 の 2026-10-05 の指示（WS138 の T1 の待ちの間に WS168 の p001 の設計、kernel の capability mode の UAPI の案を含む、HAL は不変）
+Queue: Q1 の 2026-10-05 の指示（第 1 版の設計、続けてユーザーの review に従った第 2 版）
+
+## 第 1 版からの違い（2026-10-05、ユーザーの review）
+
+ユーザー（原文）:「設計まで進めて、レビューさせてください。sandboxed vforkっぽいsystem callがいいです。サンドボクシングの権限設定は拡張可能なようにAPI設計したいです。シンプルにしたいです。」
+
+| 第 1 版 | 第 2 版 |
+| --- | --- |
+| program が自分で `sandbox_enter(root_fd, flags)` を呼んで sandbox に入る | 親が **`sandbox_spawn`** を呼び、子を **最初の命令から sandbox の中で** 始める（vfork のように、親は子が始まるまで待つ） |
+| 権限は「1 つの固定の表」と flag 1 つ | 権限は **版つきの構造体**（構造体の大きさで版を表す）と **許す操作の種類の bit の集合**。知らない bit・知らない領域が 0 でないなら断る（古い kernel は新しい要求を断る = 安全側） |
+| root を `/var/empty` に替える | 子は **name space を持たない**（root も cwd も無い）。path を取る call は表で断られ、仮に通っても解決する場所が無い。chroot より強く、`/var/empty` も要らない |
+| program は動的 link、sandbox に入る前に library と font を読む | zedBSD の子は **静的 link の image** に限る（子は最初から file を開けないので、dynamic linker が library を開けない）。PDF の代わりの font は image に埋め込む |
+| uid・rlimit・fd の準備は program の中 | 親が要求の構造体で渡す: fd の対応（親の fd → 子の fd 番号）、上限（memory・CPU の時間・書く大きさ）。子は uid も信号の扱いも何も持ち込まない |
 
 ## 範囲
 
-- ユーザーの要件（ws.md の 1〜5）を満たす、縮小表示を作る専用の command（仮の名前 `/usr/libexec/keiland-preview`）の設計。
-- kernel に足す「その process は fd 0・1 の読み書きと計算しかできない」mode（以下 **sandbox mode**）の UAPI と実装の方針。
-- 呼び出し側（Files の縮小表示、Settings の背景の tile）の変え方、時間・memory の上限、失敗の扱い。
-- Linux・FreeBSD の版（Keiland は 3 つの OS で動く）で何が当てられるか。
+- ユーザーの要件（ws.md の 1〜5）を満たす、縮小表示を作る専用の command（仮の名前 `keiland-preview`、`KEILAND_LIBEXECDIR` に置く）の設計。
+- kernel に足す、**子を sandbox の中に起こす system call**（`sandbox_spawn`）の UAPI と実装の方針。HAL は変えない。
+- 呼び出し側（Files の縮小表示・Quick Look・Today の hero、Settings の背景の tile）の変え方、時間・memory の上限、失敗の扱い。
+- Linux・FreeBSD の版で同じ形をどう作るか。
 - 試験の方針。
 - 由来: ユーザーの 2026-10-05 の追加（ws.md）。関係する記録: [Future Work](../../future-work.md) の F-035（縮小表示、「decoder の package の監査が要る」）。
-  ws.md の「設計で決めること」の権限の順序（chroot → uid を落とす → capability mode）と静的 link は、この設計で見直した（§3.1、§8 の H2・H6）。
-- 範囲外: 実装（p002 以降）。compositor の背景そのものの復号（§8 の H4 で判断）。Image Viewer・PDF Viewer・browser（WS074 の D1 で process の分離は
-  後回し）など、利用者が開いて見る app の隔離（別の WS の題）。
+- 範囲外: 実装（p002 以降）。compositor の背景の復号（§8 の H4）。Image Viewer・PDF Viewer・browser（WS074 の D1 で process の分離は後回し）など、
+  利用者が開いて見る app の隔離（別の WS の題。ただし同じ `sandbox_spawn` を使えるように API を作る）。
 
 ## 1. 要件の読み替え
 
 | ユーザーの要件 | この設計での形 |
 | --- | --- |
-| 専用の command | `keiland-preview`。入力を 1 つ読み、縮小表示を 1 つ書いて終わる。常駐しない。1 回の起動で 1 file |
-| 入力は fd 0、出力は fd 1 で開いた状態で起動、出力は規定の場所に保存 | 呼び出し側が入力の file を読み取りで開いて fd 0、cache の記録の一時 file を書き込みで開いて fd 1 にして起動する。command は名前を一切知らない。書き終わったら呼び出し側が一時 file を規定の名前に rename する（今の cache の記録の場所と形のまま、§5） |
-| 最低でも chroot で隔離 | sandbox mode に入る時に、kernel が root と cwd を空の directory（`/var/empty`、image に既にある root の 0555）に替える（§3.3） |
-| そのほか可能な限りの jail | sandbox mode（許す system call の表）、rlimit（memory・CPU の時間・書く大きさ・core）、fd 0・1 以外を閉じる、呼び出し側の時間の上限 |
-| 他の file を open できない、network を使えない、fork できない | sandbox mode の表に open・socket・fork・vfork・exec・thread_create を入れない。path を取る call は全部断る |
-| 純粋に fd 0・1 の入出力と計算のみ | 許すのは既存の fd の read・write・pread・lseek・fstat・close、匿名の memory の確保と解放、時刻、exit だけ（§3.2） |
-| RCE されても乗っ取られる権限を最小に | 乗っ取った code にできるのは、fd 0 を読む・fd 1 に書く・CPU と memory を rlimit の範囲で使う・自分を終わらせる、だけ。他の process・file・network・device に届く道が無い |
-
-原則: **信頼できない入力の byte を解釈する前に sandbox mode に入る**。入る前に行うのは、引数（呼び出し側が作った信頼できる文字列）の解釈、
-fd の確かめ、PDF の代わりの font の読み込み（§4.3）、入力の先頭の数 byte の形式の判定（固定の signature との比較だけ）に限る。
+| 専用の command | `keiland-preview`。入力を 1 つ読み、縮小表示を 1 つ書いて終わる。常駐しない |
+| 入力は fd 0、出力は fd 1 で開いた状態で起動、出力は規定の場所に保存 | 親が入力の file（読み取り）と cache の記録の一時 file（書き込み）を開き、`sandbox_spawn` の fd の対応で子の fd 0・1 にする。子の fd の表には **この 2 つしか無い**。書き終わったら親が一時 file を規定の名前に rename する |
+| 最低でも chroot で隔離 | 子は name space を持たない（root も cwd も無い）。chroot の「狭い場所」でなく「場所が無い」 |
+| そのほか可能な限りの jail | 許す操作の集合（§3.3）、上限（memory・CPU・書く大きさ）、親の時間の上限、静的 link の image、新しい実行可能な page を作らせない |
+| 他の file を open できない、network を使えない、fork できない | 許す操作の集合に open・socket・fork・vfork・exec・`sandbox_spawn` が無い。fd を増やす call（dup・pipe・fcntl・recvmsg の fd の受け渡し）も無い |
+| 純粋に fd 0・1 の入出力と計算のみ | 基本の集合（§3.3 の `BASE`）: 持っている fd の read・write・pread・lseek・fstat・close、匿名の memory、時刻、exit、自分の thread の信号 |
+| RCE されても乗っ取られる権限を最小に | 子が最初の命令から sandbox の中にいるので、sandbox の外で信頼できない byte を扱う瞬間が無い。乗っ取った code にできるのは、fd 0 を読む・fd 1 に書く・上限の中で CPU と memory を使う・自分を終わらせる、だけ |
 
 ## 2. 今の kernel（2026-10-05 の main を読んだ）
 
 | 項目 | 今 | 場所 |
 | --- | --- | --- |
-| system call の入口 | HAL が登録された dispatcher（`kernel_syscall_handler`）を呼ぶ。そこで credential を固定し、`syscall_dispatch_body` の大きな switch に入る。**全部の call が 1 か所を通る** | `src/kern/syscall.c` 9962〜（`kernel_syscall_handler`）、9377〜（`syscall_dispatch_body`） |
-| call の番号 | `enum syscall_number`（1〜169、17・18 は欠番）。最後は `KERN_SYS_vfork = 169` | `include/uapi/syscall.h` |
-| libc の stub | `call(KERN_SYS_…, …)` を呼ぶ関数（例 `chroot`） | `userland/base/libc/posix.c` 4952 |
-| chroot | `fs_chroot`: euid 0 だけ。root と cwd を一緒に替える | `src/kern/namei.c` 562、`syscall.c` 3413 |
-| process | `struct process` に `flags`（今は `PROCESS_AUTOREAP` などの 3 bit）、`limits`、`cred`、`fd`、`cwdi`。fork（`process_create` の系統）で `limits`・`cred` を親から写す | `include/kern/process.h` 68〜、`src/kern/process.c` 1148 |
-| rlimit | `RLIMIT_NOFILE`・`STACK`・`AS`・`CORE`・`CPU`・`DATA`・`FSIZE` | `include/uapi/resource.h` |
-| 新しい fd を得る道 | open・openat・socket・socketpair・accept・pipe・pipe2・dup・dup2・dup3・fcntl（F_DUPFD）・recvmsg（SCM_RIGHTS）・fexecve など | `include/uapi/syscall.h` |
-| set-ID の exec | exec が image の set-user-ID の bit を取る（traced の process は `MOUNT_NOSUID` の扱い） | `src/kern/exec.c` 299〜329・1355 |
-| rlimit の実施 | `RLIMIT_CPU` は soft で SIGXCPU、hard で SIGKILL。`RLIMIT_FSIZE` は write の系統で実施 | `src/kern/resource.c` 315、`syscall.c` 2995 ほか |
-| process の生成 | fork・vfork（libc の `posix_spawn` は vfork の上）・execve・fexecve・thread_create。user に見える spawn の call は無い | `syscall.c` 8409・8427・8896・8935・7455 |
-| `/var/empty` | image の作成で作る（sshd・greeter の home） | `tools/build/make-arch-overlay-ufs.noct` 59 |
+| system call の入口 | HAL が登録された dispatcher（`kernel_syscall_handler`）を呼び、`syscall_dispatch_body` の大きな switch に入る。**全部の call・全部の CPU の架構が 1 か所を通る**。sigreturn の後と停止の後の再 dispatch もこの switch を通る | `src/kern/syscall.c` 9962（`kernel_syscall_handler`）、9377（`syscall_dispatch_body`） |
+| call の番号 | `enum syscall_number`（1〜169、17・18 は欠番）。次の番号は 170 | `include/uapi/syscall.h` |
+| libc の stub | `call(KERN_SYS_…, …)`（例 `chroot`） | `userland/base/libc/posix.c` 4952 |
+| process の生成 | fork・vfork（libc の `posix_spawn` は vfork の上）・execve・fexecve・thread_create。kernel の中だけの spawn（`process_spawn_from`、init の起動）がある。user に見える spawn の call は無い（17・18 は昔の spawn の欠番） | `syscall.c` 8409・8427・8896・8935・7455、`src/kern/exec.c` 546 |
+| process | `struct process` の `flags`（fork で写らない）・`limits`・`cred`・`fd`・`cwdi`・`set_id`（fork で写り exec で決め直す） | `include/kern/process.h` 68〜184、`src/kern/process.c` 1108・1358・1415 |
+| name space | `cwdi`（root と cwd）。path を取る call の多くは `cwdi == NULL` を EINVAL で断る | `include/kern/namei.h` 44、`syscall.c` 2723・3397 ほか |
+| chroot | euid 0 だけ | `src/kern/namei.c` 562・590 |
+| rlimit | `NOFILE`・`STACK`・`AS`・`CORE`・`CPU`（soft で SIGXCPU、hard で SIGKILL）・`DATA`・`FSIZE`（write の系統で実施） | `include/uapi/resource.h`、`src/kern/resource.c` 175・315 |
+| 新しい fd を得る道 | open・openat・socket・socketpair・accept・pipe・pipe2・dup・dup2・dup3・fcntl（F_DUPFD）・recvmsg（SCM_RIGHTS）・GPU の ioctl の handle の export | `syscall.c` 1389・1478・1728・2393・2447・2744・8139〜8215・8388、`src/drivers/gpu/gpu.c` 3980 |
+| mmap | 匿名の private・shared、開いた fd の map（`MAP_SHARED` の書き込みを含む）、device の map。W^X は `vm_prot` | `syscall.c` 3553・3569〜3753 |
+| set-ID の exec | image の set-user-ID の bit を取る（traced の process は `MOUNT_NOSUID` の扱い） | `src/kern/exec.c` 299〜329・1355 |
+| 静的 link の program | 前例あり: `crt0.o` と `libc.o` を `-static -T platform/amd64/user.ld`（`posix-phase5-helper`・`phase85-curses-test`）。compat の library・libpdf は `.so` だけ | `platform/amd64/vmunix.mk` 616〜720・2176・2392 |
 
-capability mode に当たる物（Capsicum の `cap_enter`、Linux の seccomp、OpenBSD の pledge）は無い。
+capability mode に当たる物（Capsicum・seccomp・pledge）は無い。
 
-## 3. kernel: sandbox mode（UAPI の案、HAL は不変）
+## 3. kernel: `sandbox_spawn`（UAPI の案、HAL は不変）
 
-### 3.1 UAPI
-
-新しい system call を 1 つ足す。
+### 3.1 形
 
 ```c
 /* include/uapi/syscall.h */
-	KERN_SYS_sandbox_enter = 170,
+	KERN_SYS_sandbox_spawn = 170,
 
 /* include/uapi/sandbox.h（新） */
-#define SANDBOX_KILL_ON_DENY	0x00000001U	/* 断る call で process を SIGKILL で終わらせる（無ければ EPERM を返す） */
-#define SANDBOX_FLAGS_ALL	0x00000001U
+
+/* 基本の集合に足す操作の種類（allow の bit）。版 1 は 1 つだけ。 */
+#define SANDBOX_ALLOW_THREADS		(UINT64_C(1) << 0)	/* 子の中で thread を作る・待つ */
+#define SANDBOX_ALLOW_KNOWN		SANDBOX_ALLOW_THREADS
+
+/* 要求の flag。 */
+#define SANDBOX_SPAWN_DENY_ERRNO	(UINT32_C(1) << 0)	/* 断る call で EPERM を返す（無ければ子を SIGKILL で終わらせる）。試験用 */
+#define SANDBOX_SPAWN_KNOWN		SANDBOX_SPAWN_DENY_ERRNO
+
+#define SANDBOX_FD_MAX			16U	/* 子に渡せる fd の数、子の fd 番号は 0〜15 */
+
+/* 親の fd を、子の fd 番号に。 */
+struct sandbox_fd {
+	int32_t from;			/* 親の fd */
+	int32_t to;			/* 子の fd 番号 */
+};
+
+/* 要求。size が版を表す（構造体は末尾にだけ伸びる）。 */
+struct sandbox_spawn {
+	uint32_t size;			/* 呼び出し側が知っている sizeof(struct sandbox_spawn) */
+	uint32_t flags;			/* SANDBOX_SPAWN_* */
+	uint64_t allow;			/* SANDBOX_ALLOW_*（基本の集合に足す物） */
+	int32_t image;			/* 子の image（静的 link の ELF）の fd */
+	uint32_t fd_count;		/* fds の数（SANDBOX_FD_MAX まで） */
+	uint64_t fds;			/* struct sandbox_fd の配列の user の address */
+	uint64_t argv;			/* NULL で終わる char * の配列の user の address */
+	uint64_t memory_max;		/* address space の上限（byte、RLIMIT_AS）。0 は親と同じ */
+	uint64_t cpu_seconds;		/* CPU の時間の上限（秒、RLIMIT_CPU）。0 は親と同じ */
+	uint64_t write_max;		/* 書く file の大きさの上限（byte、RLIMIT_FSIZE）。0 は親と同じ */
+};
 
 /* libc（include/libc/sandbox.h、userland/base/libc/posix.c） */
-int sandbox_enter(int root_fd, unsigned flags);
+pid_t sandbox_spawn(const struct sandbox_spawn *request);
 ```
 
-- `root_fd`: 新しい root にする directory の fd（読み取りで開いた directory）。kernel はその directory を root と cwd にし（`fs_chroot` と同じ入れ替え）、
-  続けて同じ call の中で sandbox mode に入る。fd は閉じない（呼び出し側が後で閉じる。閉じるのは許す call）。
-- 戻り値: 0、または -1 と errno（EBADF: fd が無い、ENOTDIR: directory でない、EINVAL: 知らない flag、EPERM: 既に sandbox mode）。
-- **一方通行**: 一度入ったら出る道は無い。fork・exec は断るので子に引き継ぐ場面は無いが、念のため `process_create` で子に写し、exec でも消さない。
-- **root の権限が要らない**: 普通の chroot が root に限られるのは、chroot の中で set-user-ID の program を exec して偽の `/etc` を読ませる攻撃を防ぐため。
-  sandbox mode は exec と path の解決を全部断るので、その攻撃が成り立たない（FreeBSD 14 が `PROC_NO_NEW_PRIVS` の process に root でない chroot を許すのと同じ理由）。
-  root と mode を **同じ call で同時に** 替えるので、chroot だけが済んで exec ができる中間の状態が無い。
+- 戻り値: 子の pid、または -1 と errno。子は普通の子 process（`waitpid`・`wait4`・SIGCHLD・`kill` は今のまま）。
+- **vfork に似た所**: 呼んだ thread は、kernel が子の process を作り、image を読み込み、子が走れる状態になるまで戻らない。読み込みの失敗（image が
+  無い・静的でない・実行の権限が無い）は子が走る前にこの call の errno で返る（`posix_spawn` の「exec の失敗を pipe で親に知らせる」仕組みが要らない）。
+- **vfork と違う所: 子は親の memory を共有しない**。子は新しい空の address space に image を読み込んで始まり、親の code を 1 命令も走らせない。
+  理由: (1) memory を共有すると、乗っ取られた子が待っている親の memory を書き換え、親が戻った時に親の権限で走る code を仕込める。(2) 子が親の code
+  （動的 link の library・親の状態）の上で sandbox に入ると、sandbox の中で信頼できない byte を扱うより前に、親の側の大きな code が子の中にある。
+  (3) fork のような写しも採らない: 親の memory（file の名前・利用者の文書・認証の途中の data）が乗っ取られた子に見え、大きな GUI の process の写しは重い。
+  **image を exec する形**にすると、子の中にあるのは小さな command の code と、渡された fd だけになる。
+- 子の状態（全部 kernel が決め、呼び出し側から持ち込まない）:
 
-### 3.2 許す call の表
+  | 項目 | 子 |
+  | --- | --- |
+  | address space | 新しく空。image（静的な ELF）と stack（argv、環境は空、auxv）だけ |
+  | fd の表 | `fds` の対応で渡した物だけ（親の file object を共有、子の番号は `to`）。CLOEXEC は付けない |
+  | name space | **無し**（`cwdi` が NULL: root も cwd も無い） |
+  | credential | 呼び出し側と同じ（§8 の H2）。image の set-user-ID の bit は効かせない。`set_id` は 0 |
+  | 信号 | 全部の動作が既定、mask は空、保留は無し |
+  | process の集まり | 呼び出し側と同じ group・session。制御の端末の fd は渡さない限り無い |
+  | 上限 | 親の rlimit と要求の小さい方（memory・CPU・書く大きさ）。`RLIMIT_NOFILE` は `SANDBOX_FD_MAX`、`RLIMIT_CORE` は 0 |
+  | 許す操作 | §3.3 の基本の集合 + `allow` |
 
-`syscall_dispatch_body` の先頭（switch の前）で、`process->flags & PROCESS_SANDBOX` なら番号を表で引く。`kernel_syscall_handler` ではなく
-dispatch の側に置くのは、sigreturn の後や停止の後に **再 dispatch される call** も同じ表を通すため（sandbox に入る前に始まった call が入った後に
-再開される道を塞ぐ）。表に無い番号は、
-`SANDBOX_KILL_ON_DENY` があれば SIGKILL を自分に送って終わる（シグナルの処理を経ない）、無ければ -EPERM を返す。表は `src/kern/sandbox.c`（新）の
-static な bitmap（番号 170 までの 1 bit ずつ）にする。
+### 3.2 要求の確かめ（版と拡張）
 
-| 区分 | 許す call | 引数の制限 |
+1. `size` を先に読む。`size` が版 1 の大きさより小さければ EINVAL。kernel が知っている大きさより大きければ、知らない部分の byte が全部 0 の時だけ受ける
+   （0 でなければ E2BIG）。kernel が知らない部分は「使わない」の意味になる（Linux の `openat2`・`clone3` と同じ規則）。
+2. `flags` と `allow` に kernel の知らない bit があれば EINVAL（古い kernel は新しい権限の要求を断る。**黙って弱い sandbox にしない**）。
+3. `fd_count` が `SANDBOX_FD_MAX` を超える、`to` が範囲の外、`to` が重なる、`from` が開いていなければ EINVAL・EBADF。
+4. `image` は通常の file で、呼び出し側に実行の権限があり、ELF で **`PT_INTERP` が無い**（静的 link）こと。違えば EACCES・ENOEXEC。
+5. 呼び出し側が sandbox の中なら EPERM（`sandbox_spawn` は基本の集合に無いので、実際には §3.3 で先に断られる）。
+
+**拡張の仕方**: 新しい権限は `allow` の新しい bit で、新しい種類の資源（例: 読み取りだけの directory を name space として渡す、渡した socket の送受信）は
+構造体の末尾の新しい領域で足す。どちらも設計の改訂として扱い、bit と領域を足した kernel だけが受ける。
+
+### 3.3 許す操作の集合
+
+`syscall_dispatch_body` の先頭（switch の前）で、sandbox の process なら番号と引数を確かめる。sigreturn の後や停止の後に再 dispatch される call も同じ
+switch を通るので、全部がこの確かめを通る。集合は spawn の時に `allow` から作る process ごとの bitmap（call の番号 1 つに 1 bit）に変えて持つ。
+
+| 集合 | 許す call | 引数の制限 |
 | --- | --- | --- |
-| 終わる | `exit`、`thread_exit` | — |
-| 既存の fd の入出力 | `read`・`write`・`pread`・`pwrite`・`readv`・`writev`・`lseek`・`fstat`・`close` | 無し（fd の表に有る物だけが対象。新しい fd は作れない） |
-| memory | `mmap`・`munmap`・`mprotect`・`brk` | `mmap` は `MAP_ANONYMOUS \| MAP_PRIVATE` で fd が -1 の物だけ（file・device の map と、匿名でも `MAP_SHARED` は EPERM。今は開いた fd の `MAP_SHARED` の書き込みの map ができるので塞ぐ）。`mmap`・`mprotect` は `PROT_EXEC` を断る（新しい実行可能な page を作らせない） |
-| 時刻・待ち | `clock_gettime`・`clock_getres`・`nanosleep`・`sched_yield` | — |
-| 自分の状態 | `getpid`・`thread_self`（TLS、rtld と libc が使う）・`getrlimit`・`sigprocmask`・`sigreturn` | — |
-| 自分を止める | `thread_kill` | 自分の process の thread だけ（今の `sys_thread_kill_call` が既に他の process を断る）。libc の `raise`・`abort` が使う |
-| libc の内部 | `usync`・`atomic`（libc の lock）、`getentropy`（malloc・乱数の種） | `usync` は自分の address の範囲だけ（共有の map が無いので他の process に届かない） |
+| 基本（いつも） | `exit`・`thread_exit` | — |
+| 基本 | 持っている fd の `read`・`write`・`pread`・`pwrite`・`readv`・`writev`・`lseek`・`fstat`・`close` | 無し（fd の表に有る物だけが対象で、新しい fd は作れない。fd 0 を読み取りで開けば書けない、などは開いた時の mode のとおり） |
+| 基本 | `mmap`・`munmap`・`mprotect`・`brk` | `mmap` は `MAP_ANONYMOUS \| MAP_PRIVATE` で fd が -1 の物だけ（file・device の map、匿名の `MAP_SHARED` は断る）。`mmap`・`mprotect` は `PROT_EXEC` を断る（image の code の外に実行できる page を作らせない） |
+| 基本 | `clock_gettime`・`clock_getres`・`nanosleep`・`sched_yield` | — |
+| 基本 | `getpid`・`thread_self`・`getrlimit`・`sigprocmask`・`sigaction`・`sigreturn` | — |
+| 基本 | `thread_kill` | 自分の process の thread だけ（今の実装が既に他の process を断る）。libc の `raise`・`abort` が使う |
+| 基本 | `usync`・`atomic`・`getentropy` | — （共有の map が無いので `usync` は他の process に届かない） |
+| `SANDBOX_ALLOW_THREADS` | `thread_create`・`thread_join`・`thread_detach`・`thread_cancel` | 自分の process の中だけ |
 
-断る主な物と理由:
+それ以外は全部断る: path を取る全部の call、`socket`・`socketpair`・`accept`・`connect`・`sendmsg`・`recvmsg`（fd の受け渡し）、`fork`・`vfork`・`execve`・
+`fexecve`・`sandbox_spawn`、`dup` の系統・`fcntl`・`pipe` の系統、`ioctl`・`sysctl`、`kill`・`sigqueue`・`ptrace`、`set*id`・`setrlimit`・`setpgid`・`setsid`、
+`ftruncate`・`fsync`・`fchmod`・`fchown`・`futimens`・`flock`、timer の系統。集合は「許す物を書く」形なので、後で足した call は自動的に断られる。
 
-- path を取る全部の call（`open`・`openat`・`stat`・`chdir`・`mkdir`・`unlink`・`rename`・`chroot`・`mount`・xattr の系統…）: 他の file を開けない。
-- `socket`・`socketpair`・`accept`・`connect`・`sendmsg`・`recvmsg`（SCM_RIGHTS で fd を受け取れる）: network と fd の受け渡し。
-- `fork`・`vfork`・`execve`・`fexecve`・`thread_create`: 新しい実行の流れ。
-- `dup`・`dup2`・`dup3`・`fcntl`・`pipe`・`pipe2`: fd を増やさない（fcntl の F_DUPFD を含む。fcntl は全部断る）。
-- `ioctl`・`sysctl`: device と kernel の状態に届く。`ioctl` は fd 0・1 が端末でも断る（libc の `isatty` は ioctl の TCGETS を使うので、sandbox の中で
-  stdio を使うと KILL の mode で終わる。command は stdio を使わない）。今の通常の file の fd にも `KERN_FILE_FORMAT_RESERVE`（容量の予約）の ioctl が通る。
-- `kill`・`sigqueue`・`thread_kill`・`ptrace`・`setpgid`・`setsid`・`setpriority`: 他の process に届く、または process の集まりを変える。
-- `set*uid`・`set*gid`・`setrlimit`・`umask`・`setproctitle`・`timer_*`・`setitimer`・`sigaction`: 要らない（`setrlimit` は上限を下げることも含めて断る。上限は入る前に掛ける）。
-- `ftruncate`・`fsync`・`fchmod`・`fchown`・`futimens`・`flock`・`fstatvfs`: fd 1 の file の属性を変える・調べる必要が無い。
+断った時: 既定は子を SIGKILL で終わらせる（信号の処理を経ない、親の `waitpid` には SIGKILL で終わったと見える）。`SANDBOX_SPAWN_DENY_ERRNO` の時は
+-EPERM を返す（試験用）。どちらも klog に 1 行（`SANDBOX deny pid=… call=…`、1 process に 8 行まで）。
 
-表は「許す物を書く」形（新しく足した call は自動的に断られる）。表の変更はこの設計の改訂として扱う。
+### 3.4 kernel の中の作り
 
-### 3.3 root の入れ替え
-
-- `fs_chroot` を 2 つに分ける: path を解決して directory を得る部分と、`cwdinfo` の root と cwd を入れ替える部分（`fs_chroot_path`・`cwdinfo_set_root`）。
-  `sandbox_enter` は fd の file から directory の `struct path` を取り、検索の権限を確かめてから後者を呼ぶ。
-- 入れ替えと `PROCESS_SANDBOX` の set は、process の lock の中で続けて行う。複数の thread がある process は EBUSY で断る（他の thread が途中の
-  call で古い root を使い続けるのを避ける。command は thread を作らない）。
-
-### 3.4 そのほかの kernel の変更
-
-- `PROCESS_SANDBOX`（`include/kern/process.h` の flags の新しい bit）。今の `flags` は fork で写らない（`process_create` が写すのは `umask`・`nice_value`・
-  `limits`・`cred`）。fork は断るので実際には写る場面が無いが、kernel の中の他の経路に備えて、`fork_process` の `set_id` を写す所（`src/kern/process.c` 1415）で
-  写す。exec でも消さない（exec は断るが、同じく備えとして、traced の process と同じく set-ID を効かせない `MOUNT_NOSUID` の扱いにする、`exec.c` 1355）。
-- `sys_mmap_call`・`sys_mprotect_call` に、sandbox の時の引数の制限（§3.2）。
-- 試験の口: 断った時に `klog` へ 1 行（`SANDBOX deny pid=… call=…`）。回数を絞る（1 process に 8 行まで）。
-- HAL（`include/hal/hal.h`・`src/hal/`）は変えない。system call の入口の HAL の責務は今のまま。
+- `src/kern/sandbox.c`（新）: 要求の確かめ（§3.2）、集合の bitmap の作成、`sandbox_check(process, number, args)`（§3.3）。
+- `sys_sandbox_spawn_call`（`syscall.c`）: 子の process を `process_create` の系統で作り、kernel の中の spawn（`process_spawn_from`、`exec.c` 546。init の起動に
+  使う、新しい address space に image を読む道）で image を読み込む。fd の表を `fds` から作り、`cwdi` を作らず、rlimit を決め、`process->sandbox`（集合と flag、
+  参照数つきの小さな構造体）を付けてから走らせる。
+- `struct process` に `sandbox`（NULL なら普通の process）。fork・vfork・exec は断るので引き継ぐ場面は無いが、備えとして `fork_process` の `set_id` を写す所で
+  写し、exec は `MOUNT_NOSUID` の扱いにする。
+- `cwdi` が NULL の process: path を取る call は今も多くが EINVAL で断る。p002 で path を取る全部の call と `getcwd`・`fchdir`・`*at` の系統を調べ、
+  NULL を必ず断ることを確かめる（集合で断られるので二重の守り）。
+- HAL（`include/hal/hal.h`・`src/hal/`）は変えない。
 
 ### 3.5 足さない物（理由）
 
-- 細かい権限の組み合わせ（Capsicum の fd ごとの権利、pledge の promise の組み合わせ）: 使う program が 1 つで、要件が「fd 0・1 と計算だけ」なので、
-  表は 1 つで足りる。必要になった時に flag を足す。
-- seccomp のような program を載せる filter: kernel に interpreter が要り、攻撃面が増える。
-- 専用の uid への切り替え（§8 の H2 で判断。案は「切り替えない」）。
+- fd ごとの細かい権利（Capsicum の `cap_rights`）: 開いた時の mode（読み取り・書き込み）と「新しい fd を作れない」で足りる。必要になれば `sandbox_fd` に
+  領域を足す（構造体の末尾の拡張と同じ規則で、配列の要素の大きさを `size` に連動させる）。
+- program を載せる filter（seccomp-bpf）: kernel に interpreter が要り、攻撃面が増える。種類の bit の集合で足りる。
+- 自分を sandbox に入れる call（第 1 版の `sandbox_enter`）: 子を最初から sandbox の中で始める形にまとめ、入口を 1 つにする。
+- 専用の uid（§8 の H2）。
 
 ## 4. command（`keiland-preview`）
 
 ### 4.1 起動と引数
 
 ```
-keiland-preview --width=N --height=N [--fit=contain|cover] [--stamp=TEXT]  < 入力 > 出力
+keiland-preview --width=N --height=N [--fit=contain|cover] [--stamp=TEXT]     （fd 0 = 入力、fd 1 = 出力、他の fd は無い）
 ```
 
 - `--width`・`--height`: 縮小表示の最大の大きさ（Files は 256×256 の contain、Settings は 240×150 の cover、Quick Look は 1600×1600
   （`ui-preview.c` 52 の `LOOK_PICTURE_SIDE`）、hero は 1920×1080）。上限は一辺 4096。
-- `--stamp`: 出力の PPM の comment に書く文字列（cache の記録の「元の file の更新時刻と大きさ」、今の `CACHE_MARK` の行）。呼び出し側が作る。
-- 終了の status: 0 成功、1 形式が分からない、2 壊れている、3 大きすぎる、4 memory が足りない、5 出力に書けない、64 引数の誤り、
-  70 sandbox に入れない（kernel が古い・mode が無い、§4.4）。
+- `--stamp`: 出力の PPM の comment に書く文字列（今の cache の記録の `# keiland-thumbnail mtime=… size=…`）。呼び出し側が作る。
+- 終了の status: 0 成功、1 形式が分からない、2 壊れている、3 大きすぎる、4 memory が足りない、5 出力に書けない、64 引数の誤り、70 sandbox に入れない
+  （Linux・FreeBSD、§7）。
 
 ### 4.2 手順
 
-1. 引数を解釈する。fd 0 と fd 1 を `fstat` で確かめる（fd 0 は通常の file、fd 1 は通常の file。pipe は §8 の H5）。
-2. `closefrom(2)`: fd 2 以降を全部閉じる（stderr も閉じる。log は exit の status だけ）。
-3. rlimit を下げる: `RLIMIT_AS` 1 GiB（16M 画素の RGBA の作業に足りる量、§6 で見直す）、`RLIMIT_CPU` 10 秒、`RLIMIT_FSIZE` 48 MiB（4096×4096 の PPM と
-   comment に足りる）、`RLIMIT_CORE` 0、`RLIMIT_NOFILE` 3。
-4. 入力の先頭の 8 byte を `pread` で読み、固定の signature と比べて形式を決める（PNG・JPEG・GIF・PPM/PGM・PDF）。PDF なら §4.3 の font を読む。
-5. `open("/var/empty", O_RDONLY | O_DIRECTORY)` → `sandbox_enter(fd, SANDBOX_KILL_ON_DENY)` → `close(fd)`。ここから先は信頼できない byte を扱う。
-6. 入力を全部読む（上限は今の Files と同じ `THUMB_FILE_MAX`。超えたら status 3）。
-7. 復号して縮小し、PPM（P6、comment に `--stamp`）を fd 1 に `write` で書く（stdio を使わない）。
-8. `exit`。
+zedBSD の子は最初の命令から sandbox の中にいるので、program に「入る」手順は無い。
 
-### 4.3 復号の library と link
+1. 引数を解釈する（argv は親が作った信頼できる文字列）。fd 0・1 を `fstat` で確かめる（通常の file）。
+2. 入力を全部読む（上限は今の Files と同じ 64 MiB。超えたら status 3）。
+3. 先頭の byte で形式を決め（PNG・JPEG・GIF・PPM/PGM・PDF）、復号して縮小する。
+4. PPM（P6、comment に `--stamp`）を fd 1 に `write` で書く（stdio を使わない: libc の `isatty` は ioctl を使い、断られて子が終わるため）。
+5. `exit`。
 
-- 画像: libpng-compat・libjpeg-compat・libgif-compat・libz-compat と、Files の `picture.c`（Image Viewer と共有の復号）。縮小は Files の今の
-  code（`thumb.c` の縮小）を移す。
-- PDF: libpdf（今の Files は dlopen）。command は **直接 link** する（dlopen は sandbox の中では file を開けないので使えない）。
-  libpdf は埋め込まれていない font の代わりに `/usr/share/fonts/keiland*.ttf` を **必要になった時に開く**（`userland/base/libpdf/font.c` 1202〜）。
-  sandbox の中では開けないので、libpdf に「代わりの font を memory で渡す」口（`pdf_font_provider` の設定、userland の library の API の追加）を足し、
-  command は手順 4 で PDF の時だけ、`/usr/share/fonts` にある代わりの font（今の image では `keiland.ttf` 0.9 MB・`keiland-mono.ttf` 0.3 MB、
-  serif と bold・italic の file は無いので libpdf は family の既定に落ちる）を読んでから sandbox に入る。代わりの font が無い文字は描かない（今と同じ）。
-- link は今の動的 link のまま（`-z now` で全部の記号を起動の時に結ぶので、sandbox の中で dynamic linker が file を開く場面は無い）。静的 link は
-  前例がある（`platform/amd64/vmunix.mk` の `posix-phase5-helper`・`phase85-curses-test`: `crt0.o` と `libc.o` を `-static -T platform/amd64/user.ld`）が、
-  compat の library と libpdf は `.so` だけで `.a` が無いので、source を command 用に compile し直す規則が要る（§8 の H6）。
-- **呼び出し側は復号の library を link しなくなる**（Files の縮小表示、Settings の tile）。復号の bug が呼び出し側の process で起きる道が消える。
+### 4.3 image（静的 link）と library
 
-### 4.4 sandbox に入れない時
+- zedBSD の子の image は静的 link でなければならない（§3.2 の 4。子は最初から file を開けないので dynamic linker が library を開けない）。build の規則は
+  `platform/amd64/vmunix.mk` の前例（`crt0.o`・`libc.o`、`-static -T platform/amd64/user.ld`、`phase85-curses-test` が library の source を一緒に compile する形）に
+  倣い、libz・libpng・libjpeg・libgif-compat、libtruetype、libpdf、`picture.c` の source を command 用に compile して link する。vmunix.mk の規則は他の WS の
+  link の規則と同じく Q1 が main で掛ける。
+- 画像の復号と縮小は、Files の今の code（`thumb.c` の復号、`canvas.c` の縮小）を command に移す。
+- PDF: libpdf を link する（dlopen はしない）。libpdf は埋め込まれていない font の代わりを `/usr/share/fonts` から開く（`userland/base/libpdf/font.c` 1202〜）が、
+  子は開けないので、**代わりの font を image に埋め込む**（`keiland.ttf` = Inter 0.9 MB、build の時に C の配列にする）。libpdf に「代わりの font を memory で
+  渡す」口（userland の library の API の追加）を足す。代わりが無い文字は描かない（今と同じ）。
+- 静的 link の libc の起動（`crt0`）が集合の外の call を呼ばないことを p002 で確かめる（`SANDBOX_SPAWN_DENY_ERRNO` と klog の行で調べる）。
 
-- zedBSD では、`sandbox_enter` が ENOSYS（古い kernel）や失敗を返したら **復号せずに** status 70 で終わる（隔離無しで復号しない）。
-- Linux・FreeBSD は §7。
+### 4.4 sandbox の外で起動された時
+
+zedBSD の command は sandbox の中にいるかを自分では確かめない（守りは kernel の側にある）。利用者が shell から直接起動すれば sandbox の外で走るが、
+それは利用者が自分の権限で自分の file を復号するだけで、権限が増える道ではない。呼び出し側（§5）は必ず `sandbox_spawn` で起こす。
+終了の status の 70 は Linux・FreeBSD で sandbox に入れなかった時（§7）に使う。
 
 ## 5. 呼び出し側
-
-（Files・Settings の今の形の調べは §5.1、変え方は §5.2）
 
 ### 5.1 今の形（2026-10-05 の main を読んだ）
 
@@ -195,95 +238,106 @@ keiland-preview --width=N --height=N [--fit=contain|cover] [--stamp=TEXT]  < 入
 | Settings の背景の tile | `look_thumbnail`: loader の thread で file を読み、`kl_wallpaper_decode`（WS138）で全部を復号して 240×150 に cover で縮小 | `userland/desktop/settings/look.c`（`look_thumbnail`） |
 | compositor の背景 | prefetch・loader の thread で `kl_wallpaper_decode`（WS138） | `userland/desktop/wayland/glass.c`（§8 の H4） |
 
+
 ### 5.2 変え方
 
-- 共通の小さな helper（`libkeiland` ではなく、呼び出し側の program に compile する `userland/desktop/preview/preview-client.c`）:
-  1. cache の記録の一時 file（`<記録>.tmp.<pid>`、0600）を `O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC` で開く。入力を `O_RDONLY | O_CLOEXEC | O_NONBLOCK` で開き、
-     通常の file でなければ断る（FIFO・device を command に渡さない）。
-  2. `posix_spawn`（libc の、`vfork` の上に作った物）の file actions で入力を 0、一時 file を 1 に dup2 し、他は CLOEXEC で閉じる。環境は空。argv は
-     §4.1。command の path は `KEILAND_LIBEXECDIR "/keiland-preview"`（`userland/desktop/paths.h`。文字列の `/usr/libexec` は boundary の C4 に反する）。
-  3. 時間の上限（Files の縮小表示 5 秒、PDF 10 秒）まで `waitpid(WNOHANG)` を見て、超えたら `SIGKILL` して回収する（sessiond の `greeter_wait`・
-     `greeter_kill`、`sessiond/greeter.c` 646〜728 の形。ただし Files は main loop を止めないので、次の段落の tick で見る）。
-  4. status 0 なら一時 file を記録の名前に rename し、記録を読む（今の `fm_thumb_cache_read`）。それ以外は一時 file を消し、縮小表示を「無し」にする
-     （今の失敗と同じ扱い: icon を出す）。同じ file で続けて失敗しないよう、失敗も cache に「失敗」の印の記録（空の PPM と stamp）で残す。
-- **待ち方**: Files は今、main loop の中で同期に復号している。command にすると起動と終了で数十 ms かかるので、同期に待たない:
-  `fm_thumb_tick` は「走っている子が無ければ起動する」「走っている子を `waitpid(WNOHANG)` で見る」だけを行い、終わった回に記録を読んで slot に入れ、
-  window を描き直す。同時に走らせる子は 2 つまで（Files の main loop の 1 回で 1 つ起動）。時間の上限は tick の時刻で見る。
-  これで、今の「大きな画像・PDF の復号の間 window が止まる」も無くなる。
-- Quick Look・preview の欄: 同じ helper で `--width=1600 --height=1600`（preview の欄は今の side）、出力は cache の folder の一時 file（読んだら消す）。Today の hero も同じ
-  （`--width=1920 --height=1080 --fit=contain`）。これで **Files は復号の library を一切 link しない**（libpng・libjpeg・libgif・libz-compat と
-  `picture.c`、libpdf の dlopen が Files から消える）。
-- Settings の tile: loader の thread で同じ helper（`--width=240 --height=150 --fit=cover`）。記録は Files と同じ cache に、名前に大きさと fit を
-  混ぜた SHA-256 で置く（Files の 256 contain の記録と別の名前）。Settings も復号の library を link しなくなる（WS138 で足した link を外す）。
-- 1 つの command は 1 file。
+- 呼び出し側に compile する小さな helper（`userland/desktop/preview/client.c` と OS ごとの `zedbsd/spawn.c`・`linux/spawn.c`・`freebsd/spawn.c`）:
+
+  ```c
+  struct preview_job {
+  	int input;		/* 読み取りで開いた入力（通常の file） */
+  	int output;		/* 書き込みで開いた出力（一時 file） */
+  	int width, height, cover;
+  	const char *stamp;
+  };
+  int preview_start(const struct preview_job *job, pid_t *child);	/* 子を起こす */
+  int preview_poll(pid_t child, int *status);				/* 終わったか（待たない） */
+  void preview_kill(pid_t child);						/* 時間切れ: SIGKILL と回収 */
+  ```
+
+  zedBSD の `preview_start` は image（`KEILAND_LIBEXECDIR "/keiland-preview"` を `O_RDONLY | O_CLOEXEC` で開いた fd、`paths.h` の名前。文字列の
+  `/usr/libexec` は boundary の C4 に反する）、fd の対応 `{input→0, output→1}`、argv、上限（memory 1 GiB、CPU 10 秒、書く大きさ 48 MiB）で
+  `sandbox_spawn` を呼ぶだけ。Linux・FreeBSD は §7。
+- 手順: cache の記録の一時 file（`<記録>.tmp.<pid>`、0600、`O_EXCL | O_CLOEXEC`）と入力（`O_RDONLY | O_CLOEXEC | O_NONBLOCK`、通常の file でなければ
+  断る: FIFO・device を子に渡さない）を開く → `preview_start` → 親は開いた 2 つの fd を閉じる → `preview_poll` で終わりを見る → status 0 なら一時 file を
+  記録の名前に rename して読む（今の `fm_thumb_cache_read`）、それ以外は一時 file を消して縮小表示は「無し」（icon）。失敗も cache に「失敗」の印の記録で
+  残し、同じ file で繰り返さない。時間の上限（縮小表示 5 秒、PDF 10 秒）を超えたら `preview_kill`。
+- **待ち方**: Files は今、main loop の中で同期に復号している。`fm_thumb_tick` は「走っている子が無ければ起こす」「走っている子を `preview_poll` で見る」
+  だけを行い、終わった回に記録を読んで slot に入れ、window を描き直す。同時に走らせる子は 2 つまで。これで「大きな画像・PDF の復号の間 window が
+  止まる」も無くなる。
+- Quick Look（1600 の正方形）・Today の hero（1920×1080）: 同じ helper、出力は cache の folder の一時 file（読んだら消す）。
+- Settings の tile: loader の thread で同じ helper（240×150 cover）、記録は同じ cache に大きさと fit を混ぜた名前で置く。
+- これで **Files と Settings は復号の library を link しない**（libpng・libjpeg・libgif・libz-compat と `picture.c`、libpdf の dlopen、WS138 で Settings に
+  足した `wallpaper.c` と link が消える）。
 
 ### 5.3 残る危険
 
-- **出力の記録は信頼できない**: 乗っ取られた command は fd 1 に任意の byte を書ける。呼び出し側はその記録（P6 の PPM）を読むので、呼び出し側に残る
-  解釈の code は「P6 の header と comment と画素の数を確かめて写すだけ」の小さな reader（今の `fm_thumb_cache_read`・`cache_header`、`thumb-cache.c` 270・588、
-  一辺 1024 の上限、§4.1 の上限に合わせて 4096 に）に限る。この reader は p004 で見直し、壊れた記録・大きすぎる記録・短い記録の host 試験を足す。
-- **fd 0 の file の中身**: command は入力を読むだけで、他の file には届かない。入力の file を書き換える道も無い（fd 0 は読み取りで開く）。
-- **資源**: memory（`RLIMIT_AS`）・CPU（`RLIMIT_CPU`）・出力の大きさ（`RLIMIT_FSIZE`）・時間（呼び出し側の SIGKILL）・同時の数（呼び出し側が 2 つまで）で抑える。
-- **kernel の bug**: 許す call（read・write・mmap など）の kernel の実装の bug は sandbox の外に出る道になりうる。表を小さく保つことで面を減らす。
+- **出力の記録は信頼できない**: 乗っ取られた子は fd 1 に任意の byte を書ける。呼び出し側に残る解釈の code は「P6 の header と comment と画素の数を
+  確かめて写すだけ」の小さな reader（今の `fm_thumb_cache_read`・`cache_header`、`thumb-cache.c` 270・588。一辺の上限を 4096 に）に限る。p004 で見直し、
+  壊れた・大きすぎる・短い記録の host 試験を足す。
+- **資源**: memory・CPU・書く大きさ（kernel の上限）、時間（親の SIGKILL）、同時の数（親が 2 つまで）で抑える。
+- **kernel の bug**: 許す call（read・write・mmap など）の実装の bug は sandbox の外に出る道になりうる。集合を小さく保つ。
 
 ## 6. 試験（p002 以降で作る）
 
-- host（Linux）: command の復号と縮小の正しさ（今の Files・Settings の host 試験の画像を入れて出力の PPM を比べる）。
-- zedBSD の kernel の試験の program（`userland/tests/sandboxtest`、T1 が QEMU で流す）:
-  1. `sandbox_enter` の後、表の外の call を 1 つずつ試し、全部 EPERM（KILL 無しの mode）であること: open・openat・stat・socket・socketpair・pipe・dup・
-     fcntl(F_DUPFD)・fork・vfork・execve・thread_create・ioctl・sysctl・kill(親)・chdir・chroot・setuid・setrlimit・recvmsg・mount。
-  2. 許す call が動くこと: read・write・pread・lseek・fstat・close、mmap（匿名）、munmap、brk、clock_gettime、getentropy。
-  3. 引数の制限: `mmap` の file の map、`PROT_EXEC` の mmap・mprotect が EPERM。
-  4. KILL の mode: 表の外の call で process が SIGKILL で終わり、親の `waitpid` がそれを見ること。
-  5. root: sandbox の中の process の root が `/var/empty` であること（試験の口: 断られる前の段で `getcwd` は断るので、kernel の klog の行と、
-     試験用の build の sysctl で確かめる、詳細は p002）。
-  6. 2 回目の `sandbox_enter` が EPERM、thread が 2 つある時 EBUSY。
-- command の試験: 正常な PNG・JPEG・GIF・PPM・PDF、壊れた file、大きすぎる file、時間の上限（終わらない入力の代わりに試験用の build の「無限 loop」の
-  flag）、`RLIMIT_AS` を超える入力。
-- 「埋め込まれた攻撃」の代わり: 試験用の build で、復号の途中で open・socket・fork を呼ぶ code を通す flag を command に持たせ、process が SIGKILL で
-  終わり、出力が無く、何も開かれていないことを確かめる。
+- kernel（`userland/tests/sandboxtest`、静的 link の子と、それを起こす親の試験の driver。T1 が QEMU で流す）:
+  1. 要求の確かめ: `size` が小さい、知らない部分が 0 でない（E2BIG）、知らない `flags`・`allow` の bit、fd の数・番号の範囲・重なり、動的 link の image
+     （ENOEXEC）、実行の権限の無い image（EACCES）。
+  2. 子の状態: 渡した fd だけがある（`fstat(2)` 以降が EBADF）、上限が親と要求の小さい方、信号が既定。
+  3. `DENY_ERRNO` の子で、集合の外の call が 1 つずつ全部 EPERM: open・openat・stat・getcwd・chdir・fchdir・socket・socketpair・pipe・dup・fcntl・fork・vfork・
+     execve・`sandbox_spawn`・ioctl・sysctl・kill（親）・setuid・setrlimit・recvmsg・mount・thread_create（`THREADS` 無し）。
+  4. 許す call が動く: read・write・pread・lseek・fstat・close、匿名の mmap・munmap・brk、clock_gettime、getentropy、`THREADS` の時の thread_create。
+  5. 引数の制限: file の mmap、匿名の `MAP_SHARED`、`PROT_EXEC` の mmap・mprotect が EPERM。
+  6. 既定（KILL）の子: 集合の外の call で SIGKILL で終わり、親の `waitpid` がそれを見る。
+  7. `cwdi` が NULL の process の path の call の全数の確かめ（p002 の kernel の host 試験か klog）。
+- command: 正常な PNG・JPEG・GIF・PPM・PDF、壊れた file、大きすぎる file、上限（memory・CPU・時間）。
+- 「埋め込まれた攻撃」の代わり: 試験用の build で、復号の途中で open・socket・fork を呼ぶ code を通す flag を command に持たせ、子が SIGKILL で終わり、
+  出力が無く、何も開かれていないことを確かめる。
+- host（Linux）: command の復号と縮小の正しさ、`preview_*` の時間切れと失敗の扱い。
 
 ## 7. Linux・FreeBSD
 
-Keiland の Files・Settings は Linux・FreeBSD でも動くので、command も 3 つの OS で build する。OS ごとの隔離の部分は command の中の `zedbsd/sandbox.c`・
-`linux/sandbox.c`・`freebsd/sandbox.c` に分け、OS ごとの Makefile（`Makefile`・`Makefile.linux`・`Makefile.freebsd`）が 1 つを選ぶ。
-`keiland-os-boundary` の L1（OS の macro の block は `*/zedbsd`・`*/linux`・`*/freebsd` の directory の中だけ）に合い、Files の `freebsd/mounts-freebsd.c`・
-`mntent/mounts-mntent.c` と同じ形なので、checker の変更は要らない。libkeiland-backend の op にはしない（B3: backend は compositor だけが使う）。
+Linux・FreeBSD の kernel に `sandbox_spawn` は無いので、**同じ 2 つの口（親の `preview_start`、子の command）** を OS ごとの source で作る。OS ごとの code は
+`zedbsd/`・`linux/`・`freebsd/` の directory に置き、OS ごとの Makefile が選ぶ（boundary の L1 に合う。Files の `freebsd/mounts-freebsd.c` と同じ形。
+libkeiland-backend の op にはしない: B3 で backend は compositor だけが使う）。
 
-| OS | 当てる物 | 足りない所 |
-| --- | --- | --- |
-| zedBSD | §3 の sandbox mode（root を `/var/empty` に、表）と rlimit | — |
-| Linux | `prctl(PR_SET_NO_NEW_PRIVS)`、seccomp-bpf（§3.2 と同じ表を BPF で: `read`・`write`・`pread64`・`lseek`・`fstat`・`close`・`mmap`（匿名だけ、`PROT_EXEC` 無し）・`munmap`・`mprotect`・`brk`・`exit_group`・`rt_sigreturn`・`clock_gettime`・`getrandom`・`futex`、違反は `SECCOMP_RET_KILL_PROCESS`）、可能なら `unshare(CLONE_NEWUSER \| CLONE_NEWNS \| CLONE_NEWNET)` の後に空の directory へ chroot、rlimit | 利用者の名前空間が無効な system（Ubuntu の AppArmor の制限など）では chroot ができない。seccomp が path の call を全部断るので要件 4 は満たす。chroot ができなかったことは exit の前に status では区別しない（§8 の H5） |
-| FreeBSD | `procctl(PROC_NO_NEW_PRIVS_CTL)`、`security.bsd.unprivileged_chroot` が 1 なら `/var/empty` へ chroot、`cap_enter()`（Capsicum: path の解決・socket の作成・fork を断る）、rlimit。fd 0・1 は `cap_rights_limit` で read・seek・fstat と write・fstat に絞る | `unprivileged_chroot` の既定は 0 なので、多くの system で chroot はできない。Capsicum が全部の path を断るので要件 4 は満たす |
+| | zedBSD | Linux | FreeBSD |
+| --- | --- | --- | --- |
+| 親（`preview_start`） | `sandbox_spawn` | `fork`（可能なら `clone` に `CLONE_NEWUSER \| CLONE_NEWNS \| CLONE_NEWNET`）→ 子で fd 0・1 を置き `close_range(2, ~0)`、rlimit、`PR_SET_NO_NEW_PRIVS`、名前空間があれば空の directory へ chroot → `execve`（環境は空） | `fork` → 子で fd 0・1 を置き `closefrom(2)`、rlimit、`procctl(PROC_NO_NEW_PRIVS_CTL)`、`security.bsd.unprivileged_chroot` が 1 なら `/var/empty` へ chroot → `execve` |
+| 子（command の `main` の最初） | 何もしない（最初から中） | seccomp-bpf を入れる（§3.3 と同じ集合を BPF に: `read`・`write`・`pread64`・`lseek`・`fstat`・`close`・`mmap`（匿名・`PROT_EXEC` 無し）・`munmap`・`mprotect`・`brk`・`exit_group`・`rt_sigreturn`・`clock_gettime`・`getrandom`・`futex`、違反は `SECCOMP_RET_KILL_PROCESS`） | `cap_enter()`（Capsicum: path・socket の作成・fork を断る）、fd 0・1 を `cap_rights_limit` で読み・seek・fstat と書き・fstat に |
+| image | 静的 link（kernel が強制） | 動的 link（seccomp は `main` の後なので library は読み込み済み） | 動的 link（同じ） |
+| 違い | 子は最初の命令から中 | exec から `main` の最初までは sandbox の外（ld.so と libc の初期化だけで、信頼できない byte はまだ読まない） | 同じ |
 
-## 7.1 Linux・FreeBSD で隔離が当てられない時
-
-seccomp・Capsicum が使えない（kernel が古い、設定で無効）時は、zedBSD と同じく復号せずに status 70 で終わり、呼び出し側は縮小表示を出さない（icon）。
+seccomp・Capsicum が使えない（kernel が古い、設定で無効）時、command は復号せずに status 70 で終わり、呼び出し側は縮小表示を出さない（icon）。
+名前空間・`unprivileged_chroot` が無く chroot ができない時は、seccomp・Capsicum が path を全部断るので要件 4 は満たす（§8 の H5）。
 
 ## 8. 人間の判断が要る点
 
 | ID | 問い | 案 | 理由 |
 | --- | --- | --- | --- |
-| H1 | kernel に `sandbox_enter`（root の権限無しで root を空の directory に替え、同時に表の外の call を全部断る）を足してよいか（新しい system call 170 と `include/uapi/sandbox.h`） | 足す | 要件 3・4 を kernel で保証する道が他に無い。HAL は不変。root を要らないのは exec と path の解決を同時に断るため安全（§3.1） |
-| H2 | command を呼び出し側の uid のまま走らせるか、専用の uid（例 `_preview`）に落とすか | 呼び出し側の uid のまま | sandbox mode の中では uid で得られる物が無い（path・signal・ptrace・socket を全部断る）。専用の uid に落とすには set-user-ID の helper か root の仲介（sessiond）が要り、その helper 自身が新しい攻撃面になる |
-| H3 | 断った call の扱い: その場で SIGKILL か、EPERM を返すか | command は SIGKILL（`SANDBOX_KILL_ON_DENY`）。kernel は両方を持つ（試験は EPERM の mode を使う） | 乗っ取った code に「何が断られるか」を探らせない。command は小さく、表の外の call を呼ばないことを試験で確かめられる |
-| H4 | 対象: Files の縮小表示と Settings の背景の tile（案）。compositor の背景の復号（WS138 で compositor の中で PNG・JPEG を復号している）もこの command に任せるか | v1 は Files と Settings。compositor の背景は v2 の候補（出力が縮小でなく画面の大きさの RGB になり、起動の時間が延びる） | compositor は session の中で最も権限の大きい process なので、そこでの復号の bug は重い。ただし背景は利用者が自分で選んだ file に限られ、縮小表示（受け取った file を開いただけで復号される）より危険が小さい |
-| H5 | Linux で利用者の名前空間が無く chroot ができない、FreeBSD で `unprivileged_chroot` が 0 の時、seccomp・Capsicum だけで復号してよいか | よい（path の call が全部断られるので要件 4 は満たす） | 「最低でも chroot」を文字どおりに守ると、多くの Linux・FreeBSD の system で縮小表示が出なくなる |
-| H6 | 静的 link にするか | しない（動的 link と `-z now` で、sandbox に入る前に全部を読み込む） | ws.md の案は静的 link だったが、sandbox に入る前に library は全部読み込まれ、入った後は file を開けないので、静的 link で減る攻撃面は無い。静的 link の前例はあるが、compat の library・libpdf・libtruetype を command 用に compile し直す規則が要る |
+| H1 | kernel に `sandbox_spawn`（system call 170、`include/uapi/sandbox.h`、§3）を足してよいか | 足す | 子を最初の命令から sandbox の中で始められる。権限は版つきの構造体と種類の bit で拡張でき、知らない要求は断る。HAL は不変 |
+| H2 | 子を呼び出し側の uid のまま走らせるか、専用の uid に落とすか | 呼び出し側の uid のまま | 子は sandbox の中で uid で得られる物が無い（path・信号・ptrace・socket を全部断る）。専用の uid には root の仲介か set-user-ID の helper が要り、それ自身が新しい攻撃面になる |
+| H3 | 断った call の扱い | 既定は子を SIGKILL、試験のために EPERM の flag | 乗っ取った code に「何が断られるか」を探らせない |
+| H4 | 対象 | v1 は Files と Settings。compositor の背景の復号（WS138）は v2 の候補 | 背景は利用者が自分で選んだ file だけで、受け取った file を開いただけで復号される縮小表示より危険が小さい。出力が画面の大きさになり起動が遅くなる |
+| H5 | Linux・FreeBSD で chroot ができない system（名前空間が無い、`unprivileged_chroot` が 0）で、seccomp・Capsicum だけで復号してよいか | よい | path の call は全部断られる。chroot を必須にすると多くの system で縮小表示が出なくなる |
+| H6 | zedBSD の子の image を静的 link に限ってよいか（kernel が `PT_INTERP` のある image を断る）。PDF の代わりの font は image に埋め込む | よい | 子は最初から file を開けないので動的 link は動かない。静的 link の前例はある（compat の library・libpdf・libtruetype を command 用に compile する規則を足す）。font の埋め込みで image は約 1 MB 大きくなる |
+| H7 | 子に name space を持たせない（chroot の代わり） | 持たせない | root も cwd も無ければ path は解決できず、`/var/empty` のような場所も要らない。「最低でも chroot」より強い |
 
 ## 9. 段（案）
 
 | Phase | 内容 | 依存 |
 | --- | --- | --- |
-| p002 | kernel の sandbox mode（§3）と libc の wrapper、`userland/tests/sandboxtest`（§6 の 1〜6）。T1 で QEMU | H1・H3 |
-| p003 | `keiland-preview`（§4）と libpdf の font の口、host 試験。Linux・FreeBSD の隔離（§7） | p002、H2・H5・H6 |
-| p004 | Files・Settings を command に切り替え（§5）、復号の library の link を外す。T1 で QEMU | p003、H4 |
+| p002 | kernel の `sandbox_spawn`（§3）と libc の wrapper、`userland/tests/sandboxtest`（§6 の kernel の 1〜7）。T1 で QEMU | H1・H3・H7 |
+| p003 | `keiland-preview`（§4）: 静的 link の規則、font の埋め込み、libpdf の font の口、host 試験。Linux・FreeBSD の 2 つの口（§7） | p002、H2・H5・H6 |
+| p004 | Files・Settings を helper に切り替え（§5）、復号の library の link を外す、記録の reader の見直し。T1 で QEMU | p003、H4 |
 | p005 | 全文規約の見直し（code を作る WS の最後の段） | p004 |
 
 ## 結果
 
-（設計の第 1 版。Q1 の確認待ち）
+- 2026-10-05 第 1 版（自分を sandbox に入れる `sandbox_enter`）。
+- 2026-10-05 第 2 版（ユーザーの review を反映: 子を sandbox の中に起こす `sandbox_spawn`、版つきの構造体と種類の bit の集合、name space 無し、静的 link の子）。
+  ユーザーの review 待ち。
 
 ## ユーザーの review（2026-10-05）
 
-H1〜H6 の案を見たユーザーの回答（原文）:「設計まで進めて、レビューさせてください。sandboxed vforkっぽいsystem callがいいです。サンドボクシングの権限設定は拡張可能なようにAPI設計したいです。シンプルにしたいです。」→ 第 2 版の設計: 自分を sandbox に入れる sandbox_enter ではなく、**子を sandbox の中に起こす vfork に似た system call**（親が fd 0・1 と権限を渡して子を始める形）にする。権限の設定は将来の拡張ができる形の API（例: 版つきの構造体・権限の bit の集合）にし、全体はシンプルに保つ。実装はユーザーの review の後。
+H1〜H6（第 1 版）の案を見たユーザーの回答（原文）:「設計まで進めて、レビューさせてください。sandboxed vforkっぽいsystem callがいいです。サンドボクシングの権限設定は拡張可能なようにAPI設計したいです。シンプルにしたいです。」→ 第 2 版（この文書）。

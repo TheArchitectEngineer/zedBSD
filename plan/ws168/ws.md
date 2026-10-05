@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws168 -->
 # WS168: プレビュー（縮小表示）を作る隔離された専用の command
 
-Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 3 LW。p001 の設計の第 1 版あり、段の案は p001 の §9）
+Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 3 LW。p001 の設計の第 2 版あり、段の案は p001 の §9）
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -29,4 +29,4 @@ Primary Milestone: MG006
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws168-p001](phase001/phase.md) | 要件と設計（kernel の capability mode の UAPI の案を含む） | planning（設計の第 1 版、2026-10-05 P1。Q1 の確認と §8 の H1〜H6 の判断待ち） | — |
+| [ws168-p001](phase001/phase.md) | 要件と設計（kernel の capability mode の UAPI の案を含む） | planning（設計の第 2 版（子を sandbox の中に起こす `sandbox_spawn`）、2026-10-05 P1。ユーザーの review と §8 の H1〜H7 の判断待ち） | — |
