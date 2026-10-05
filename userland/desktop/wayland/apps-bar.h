@@ -20,9 +20,14 @@
 
 #include <stdint.h>
 
-/* An icon's place in the bar and its mark's size (pixels). */
-#define ICON_WIDTH		36
-#define ICON_MARK		28
+/*
+ * An icon's place in the bar and its mark's size, and the padding of the
+ * applications' pill at its ends (pixels; ws099-p034: 26-pixel tiles 8
+ * apart in one pill).
+ */
+#define ICON_WIDTH		34
+#define ICON_MARK		26
+#define ICON_PILL_PAD		6
 
 /* The panel of previews: its distance under the bar, its padding, the gap between previews and the room for a preview's label (pixels). */
 #define PANEL_DROP		8

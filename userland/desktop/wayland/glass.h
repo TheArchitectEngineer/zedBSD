@@ -98,6 +98,8 @@ struct glass_shape {
 	VkDescriptorSet set;
 	/* Nonzero for a shape drawn in its light colours in the dark appearance too (a window of a client that does not know the appearance, panels.c). */
 	unsigned light;
+	/* Nonzero for glass drawn as the dark appearance's dark glass in either appearance (the system bar, ws099-p034). */
+	unsigned dark_glass;
 };
 
 void glass_shape_init(struct glass_shape *shape, float x, float y, float width, float height);

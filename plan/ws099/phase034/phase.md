@@ -76,3 +76,18 @@ app の絵と Kei の mark は compositor の rasterizer（icons.c・mark.c）�
 ## 2026-10-06 保留の実装の置き場所
 
 P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴の書き換えで branch は消す）は [held/p034-bar-b095413c.patch](held/p034-bar-b095413c.patch) に patch として保つ。montage-4 の icon の実装（main acbb7e4a）の後なので、当てる時は shell.c・glass.c・icons.c で衝突する見込み。再開の時はこの patch を今の main に合わせて当て直す（bar の app の pill は zwl_icon_tile の形を使う）。
+
+## 2026-10-06 当て直し（P2、ラップアップ）
+
+- held の patch（b095413c）を main 1225dfd6＋BUG-237（dec0fd39）の上に `git apply -3` で当て直した。衝突（glass.c・home.c・shell.c）は montage-4 の側を取り、
+  patch の円の mark（`APP_MARK_PICTURE`、home.c の円の tile、atlas の app の記号 48・18 px、頭文字の円）は捨てた。残したもの: 暗い glass の bar
+  （`dark_glass`・`keep_colours`）、中央の明るい帯、app の pill、desktop の点の pill、状態の pill と時計の pill、Wi-Fi の扇（`GLASS_ICON_WIFI_1..4`）、
+  IME の丸い chip、dock の時の題と button の pill。
+- montage-4 に合わせた変更: bar の app の tile は 26 px（glass.c の保つ大きさ 28 → 26、1 対 1 で描く）、hover の光と「+N」は tile と同じ角の丸い四角
+  （半径は辺の `GLASS_ICON_TILE_RADIUS`）。bar の上の tile の記号は暗い bar が透ける（`mark_hole` が `keep_colours` の間は `GLASS_HOLE_GROUND`）。
+- 確認: zedBSD・Linux の compositor の build exit 0、warning 0。style-check: glass・home・shell・icons・apps-bar・zwl.h で 0。network.c・input-method.c は
+  main の時点からある 50 件だけ（増えていない）。QEMU・実機は未実施。
+- host の montage: `plan/ws099/tests/p034-bar-host.sh [OUT.png]`（この branch の描く code の位置・色を panel.frag の式で描く。tile は icons.c、blur は近似、
+  文字は PIL、dock の窓の menu の語は代わり）→ [bar-montage-4.png](images/bar-montage-4.png)（Birch Lake・Lakeside × light・dark × floating・dock、2 倍の拡大）。
+- 再開の地点: ユーザーに bar-montage-4.png を見せる。T1 の QEMU で light・dark・dock・Wiseview・App Home の PNG と bar の試験の座標（`zdesktop-p065.sh`・
+  `p072.sh`）。全文の規約の見直し。held の patch は当て直したので、Q1 の merge 後に消してよい。
