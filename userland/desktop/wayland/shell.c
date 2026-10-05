@@ -214,13 +214,16 @@ static uint32_t fullscreen_leave_eaten;
 #define MODIFIER_SUPER		0x40U
 
 /*
- * The key that takes a fullscreen window back to a window (BUG-194: the
- * compositor, not the application, owns the way out of fullscreen), and the
- * modifiers that keep it from being that key.  F11 until the user chooses
- * (Super+Down and a long Esc are the other proposals).
+ * The keys that take a fullscreen window back to a window (BUG-194: the
+ * compositor, not the application, owns the way out of fullscreen; the
+ * 2026-10-05 user decision: both): F11 alone, and Down with Super alone
+ * (no Fn on keyboards whose top row sends media keys).  The modifiers that
+ * keep F11 from being that key, and those that must be off with Super.
  */
 #define FULLSCREEN_LEAVE_KEY	87U
+#define FULLSCREEN_LEAVE_DOWN	108U
 #define MODIFIERS_ANY		(1U | 4U | 8U | 0x40U)
+#define MODIFIERS_NOT_SUPER	(1U | 4U | 8U)
 
 /* App Home's corner, where its gesture starts over a fullscreen window (the same as home.c's). */
 #define HOME_EDGE_CORNER	28
@@ -6547,11 +6550,11 @@ glass_motion_take(
 }
 
 /*
- * Takes the focused window out of fullscreen with F11 alone (BUG-194): the
- * compositor gives it its window's place and size back whether the
- * application answers or not.  A window that is not fullscreen leaves F11
- * to its menus and to itself (Terminal's Fullscreen item).  Returns 1 when
- * the key was taken, its release with it.
+ * Takes the focused window out of fullscreen with F11 alone or Super+Down
+ * (BUG-194): the compositor gives it its window's place and size back
+ * whether the application answers or not.  A window that is not fullscreen
+ * leaves both keys to its menus and to itself (Terminal's Fullscreen item).
+ * Returns 1 when the key was taken, its release with it.
  */
 static int
 fullscreen_leave_key(
@@ -6560,6 +6563,7 @@ fullscreen_leave_key(
 	uint32_t state)
 {
 	struct zwl_object *surface;
+	const char *via;
 	int error;
 
 	/* The release of the press taken goes no further. */
@@ -6570,9 +6574,15 @@ fullscreen_leave_key(
 		return 1;
 	}
 
-	/* F11 alone. */
-	if (key != FULLSCREEN_LEAVE_KEY || (server->modifiers & MODIFIERS_ANY) != 0U)
+	/* F11 alone, or Down with Super and nothing else. */
+	if (key == FULLSCREEN_LEAVE_KEY && (server->modifiers & MODIFIERS_ANY) == 0U) {
+		via = "f11";
+	} else if (key == FULLSCREEN_LEAVE_DOWN && (server->modifiers & MODIFIER_SUPER) != 0U &&
+		   (server->modifiers & MODIFIERS_NOT_SUPER) == 0U) {
+		via = "super-down";
+	} else {
 		return 0;
+	}
 
 	/* The focused window, when it is fullscreen. */
 	surface = server->focus;
@@ -6582,7 +6592,7 @@ fullscreen_leave_key(
 	/* A window again, told so (a refused configure leaves the window as the compositor draws it). */
 	error = zwl_window_leave_fullscreen(surface);
 	fullscreen_leave_eaten = key;
-	printf("ZWL GLASS fullscreen-leave surface=%u via=f11 error=%d client=%llu\n", surface->id, error, (unsigned long long)surface->client->number);
+	printf("ZWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", surface->id, via, error, (unsigned long long)surface->client->number);
 
 	/* Succeeded: the key was the compositor's. */
 	return 1;

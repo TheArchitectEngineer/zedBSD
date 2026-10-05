@@ -81,6 +81,17 @@ def terminal_f11(item):
 	item.step("F11 again", f"{left}; {shown}")
 	run.shot(item, "window")
 	item.check(left and shown, "Terminal did not leave full screen (BUG-194)")
+	mark = run.mark()
+	run.key("f11")
+	again = run.wait(r"ZWL GLASS bar hidden fullscreen=1", mark, 10)
+	time.sleep(0.8)
+	run.key("super+down")
+	down = run.wait(rf"ZWL GLASS fullscreen-leave surface={window.surface} via=super-down error=0", mark, 10)
+	shown = run.wait(r"ZWL GLASS bar shown", mark, 10)
+	time.sleep(1.0)
+	item.step("F11, then Super+Down", f"{again}; {down}; {shown}")
+	run.shot(item, "super-down")
+	item.check(again and down and shown, "Super+Down did not leave full screen")
 	item.passed()
 
 
