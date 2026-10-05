@@ -178,8 +178,9 @@ reached by applications such as Settings through libkeiland.
 On zedBSD the graphical login and the sessions are run by `sessiond`
 ([userland/desktop/sessiond](../../userland/desktop/sessiond/)), a small
 daemon that runs as root and is started by init in place of the console
-getty. It is the only part of the desktop that checks passwords or holds
-privilege. Linux and FreeBSD keep their own display managers and session
+getty. It is the only part of the desktop that holds privilege; it has every
+password, PIN and security key checked by `/sbin/passkey`
+([Login authentication](security.md#login-authentication)). Linux and FreeBSD keep their own display managers and session
 services; the backend talks to them instead.
 
 ### The greeter
@@ -203,12 +204,18 @@ behaves like the desktop. sessiond starts it like this:
    | `READY` | `GO` once nothing else holds the display |
    | `STYLES name` | `STYLES password[ pin][ fido2]`: the ways the account can log in now |
    | `AUTH name style`, then the secret on the next line | `TOUCH` while a security key waits to be touched, then `OK`, or `FAIL reason` after a delay |
+   | `CANCEL` | stops a security key attempt under way (its answer is `FAIL timeout`) |
    | `POWER poweroff` / `POWER reboot` | `OK`, then the machine ends |
 
-   Anything else is answered `ERROR`.
+   Anything else is answered `ERROR`, and a request that comes while another
+   is answered (but `CANCEL`) is answered `ERROR busy`. The line after `AUTH`
+   is always the secret, never a request. The reasons of `FAIL` are
+   `bad-secret`, `locked`, `pin-off`, `no-key`, `timeout`, `device` and
+   `busy`.
 
-The greeter has no privilege. It cannot read `/etc/shadow` or any user's
-home directory; it only passes what the user typed to sessiond.
+The greeter has no privilege. It cannot read `/etc/shadow`, `/etc/passkey` or
+any user's home directory, and it is not given the security keys' device
+nodes; it only passes what the user typed to sessiond.
 
 ### Checking a password, a PIN or a security key
 
@@ -244,6 +251,7 @@ The session compositor uses its control socket for a few requests:
 | Request | Meaning |
 | --- | --- |
 | `UNLOCK style`, then the secret on the next line | The lock screen: check the session user's password, PIN or security key, as at login. The user is the session's, not a name the compositor sends. |
+| `CANCEL` | Stop a security key attempt under way. |
 | `ENROLLED` | The session user's PIN and security keys, without secrets (Settings > Users). |
 | `ENROLL pin` / `ENROLL fido2 label`, then the current password and the new PIN or the key's PIN on the next lines | Set the PIN or register a security key for the session user. |
 | `REMOVE pin` / `REMOVE fido2 id`, then the current password on the next line | Remove the PIN or a security key of the session user. |
