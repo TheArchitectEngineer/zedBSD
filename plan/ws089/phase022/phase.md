@@ -2,7 +2,7 @@
 
 # ws089-p022: Settings の Ethernet の頁で設定を読み書きできるように（compositor 経由、libkeiland-backend が net の command で設定）
 
-Status: in-progress（実装済み、T1 待ち。MTU の範囲は朝のユーザーの判断待ち）
+Status: in-progress（実装済み、T1-162 待ち。ユーザーの承認 2026-10-05 朝: T1-162 の PASS で cleared にできる）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q728（P2、2026-10-05）
@@ -68,3 +68,8 @@ Queue: q728（P2、2026-10-05）
 ## T1-159 の後（2026-10-05、P2）
 
 - FAIL ×2 は `reason=the subnet's own or broadcast address` の 1 行だけ。guest の syslog には出ていた（messages.txt）。試験の `expect_log` が pattern を guest の単引用符の中に入れており、理由の文言の `'` で引用が切れていた（試験の誤り）。→ settings-p022.sh は理由の `'` を `.` にして探す。networkd・net は変えていない。
+
+## ユーザーの承認（2026-10-05 朝、Q1 経由）
+
+- (a) 有線の設定（`NETWORKD_OP_LAN_CONFIGURE`）を network の group に開くこと: 承認。
+- (b) ベータ1 の MTU は読むだけ。MTU の設定は別の WS で扱う: 承認。p022 は T1-162 の PASS で cleared にできる。

@@ -52,7 +52,8 @@ main(
 	int (*plugin_rpath_value)(void);
 	int (*version_value)(void);
 	void *plugin;
-	void *exhausted_handles[64];
+	void *many_handles[200];
+	int closed;
 	int plugin_destructor_count;
 	unsigned reload_iteration;
 	pthread_t first, second;
@@ -245,35 +246,35 @@ main(
 	}
 	puts("DL:05H:PLUGIN-RECYCLE");
 
-	/* Process each element required by the operation. */
-	for (reload_iteration = 0; reload_iteration < 64; reload_iteration++) {
-		exhausted_handles[reload_iteration] =
+	/* Opens 200 handles, past the 64 of the loader's first handle chunk (WS140). */
+	for (reload_iteration = 0; reload_iteration < 200; reload_iteration++) {
+		/* One more handle; the table grows instead of running out. */
+		many_handles[reload_iteration] =
 		    dlopen("libc.so", RTLD_NOW | RTLD_LOCAL);
-
-		/* Handles the exhausted handles condition. */
-		if (exhausted_handles[reload_iteration] == NULL)
+		if (many_handles[reload_iteration] == NULL)
 			return 35;
 	}
 
-	/* Handles an operation failure. */
-	if (dlopen("libc.so", RTLD_NOW | RTLD_LOCAL) != NULL ||
-	    dlerror() == NULL || dlerror() != NULL)
-
-		/* Returns the computed result. */
-		return 36;
-
-	/* Process each element required by the operation. */
-	for (reload_iteration = 0; reload_iteration < 64; reload_iteration++) {
-		/* Handles a failed dlclose operation. */
-		if (dlclose(exhausted_handles[reload_iteration]) != 0)
+	/* Closes them all. */
+	for (reload_iteration = 0; reload_iteration < 200; reload_iteration++) {
+		/* Closes one. */
+		closed = dlclose(many_handles[reload_iteration]);
+		if (closed != 0)
 			return 37;
 	}
-	handle = dlopen("libc.so", RTLD_NOW | RTLD_LOCAL);
 
-	/* Handles a failed dlclose operation. */
-	if (handle == NULL || dlclose(handle) != 0)
+	/* Opens one more in the slots they left, and closes it. */
+	handle = dlopen("libc.so", RTLD_NOW | RTLD_LOCAL);
+	if (handle == NULL)
 		return 38;
-	puts("DL:05I:HANDLE-OOM-RECOVERED");
+
+	/* Closes it. */
+	closed = dlclose(handle);
+	if (closed != 0)
+		return 38;
+
+	/* The handles grew and were reused. */
+	puts("DL:05I:HANDLES-200");
 	handle = dlopen("rpthtest.so", RTLD_NOW | RTLD_LOCAL);
 
 	/* Handles the handle availability. */

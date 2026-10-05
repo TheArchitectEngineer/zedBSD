@@ -6,6 +6,7 @@
 #   libtlsdesc.so                    300 TLS variables (generated), each reached through its own TLSDESC (U3)
 #   libmany-long-name-...-ws140.so   many-lib.c, long_value() returns 77; its name is longer than 64 bytes (U3)
 #   libphdr.so                       many-lib.c, phdr_value() returns 55, padded to more than 16 program headers (U3)
+#   libtls00.so .. libtls39.so       many-tls.c, a TLS variable starting at NN+1; even ones through TLSDESC (p002)
 # and puts them all in OUT/../rtld-many.tar (ustar, for the guest's pax).  rtld-many.sh runs it in the guest.
 #
 #   plan/ws140/tests/build-many.sh BUILD OUT      (BUILD has dynamic/libc.so; OUT is made afresh)
@@ -101,6 +102,22 @@ python3 $tests/phdr-pad.py "$out/libphdr.so" 24
 phnum=$(build/llvm/bin/llvm-readelf -h "$out/libphdr.so" | sed -n 's/.*Number of program headers: *//p')
 echo "build-many: libphdr.so program headers=$phnum"
 [ "$phnum" -gt 16 ] || { echo "build-many: too few program headers" >&2; exit 1; }
+
+# The TLS libraries: the even ones reach their variable through TLSDESC, the odd ones through __tls_get_addr.
+i=0
+while [ $i -lt 40 ]; do
+	name=$(printf 'libtls%02d.so' $i)
+	dialect=
+	[ $((i % 2)) -eq 0 ] && dialect=-mtls-dialect=gnu2
+	$cc $cflags $dialect -DMANY_SYMBOL="$(printf 'tls_address_%02d' $i)" -DMANY_NUMBER=$((i + 1)) \
+	    -c $tests/many-tls.c -o "$out/obj/$name.o"
+	$cc $ldshared -Wl,-soname,"$name" "$out/obj/$name.o" -o "$out/$name"
+	i=$((i + 1))
+done
+tlsdesc_even=$(build/llvm/bin/llvm-readelf -r "$out/libtls00.so" | grep -c 'R_X86_64_TLSDESC' || true)
+tlsget_odd=$(build/llvm/bin/llvm-readelf -r "$out/libtls01.so" | grep -c 'R_X86_64_DTPMOD64' || true)
+echo "build-many: libtls00.so TLSDESC=$tlsdesc_even libtls01.so DTPMOD64=$tlsget_odd"
+[ "$tlsdesc_even" -ge 1 ] && [ "$tlsget_odd" -ge 1 ] || { echo "build-many: the TLS libraries use the wrong access" >&2; exit 1; }
 
 # The program, linked like dyntest (platform/amd64/vmunix.mk) with the 40 libraries before libc.so.
 $cc $cflags -c $tests/rtld-many.c -o "$out/obj/rtld-many.o"

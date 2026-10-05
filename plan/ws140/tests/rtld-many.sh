@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws140: runs rtld-many (rtld-many.c, the dynamic loader past its old fixed limits) in the running SSH guest.  Builds
-# it and its 166 libraries with build-many.sh against BUILD's libc.so, sends them in one ustar archive, unpacks it
+# it and its 206 libraries with build-many.sh against BUILD's libc.so, sends them in one ustar archive, unpacks it
 # with pax in /root/ws140 and runs the program there with LD_LIBRARY_PATH (dlopen with no requester reads no rpath).
 # The guest runs BUILD's image (config-amd64-rtld.mk), so its /lib/ld.so is the loader under test.
 # PASS: the last line rtld-many: PASS (the program printed RTLD-MANY: PASS); its output is in OUT/rtld-many.txt.

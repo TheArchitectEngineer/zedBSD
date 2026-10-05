@@ -281,7 +281,7 @@ p001 の commit を Q1 に merge 依頼してから p002 に進む。p001 は T 
   - `sh plan/ws140/tests/build-many.sh build/ws140-p001 build/ws140-p001-many/out`: warning 0、`libtlsdesc.so TLSDESC relocations=300`、`libphdr.so program headers=31`、`rtld-many NEEDED=41`、archive に 167 file。
   - style（D9）: rtld.c の違反は 241 → 236。関数ごとに増えた所は無い（減った: `__rtld_dladdr` 6→5、`preflight_dlopen_file` 4→3、`remove_initialization_record` 1→0、`setup_premapped_object` 1→0、`unload_object_locked` 5→4）。新しい関数と試験の C（`plan/ws140/tests/*.c`）・`rtld.h`・`elf.h` の違反は 0。
 - **試験の段**（`rtld-many.c`）: 手順 5 の 8 段に、U3 の 4 段を足した。`tlsdesc`（300 個の TLSDESC を持つ library を開き、初期値の和 45,150、全部に 1 足して読み直し、閉じてもう一度、の 2 回。page の chunk を 2 つ通る）、`long-name`（75 byte の名前の library の `dlopen`）、`phdr`・`phdr-reopen`（31 個の program header の library。`dl_iterate_phdr` で 16 を越える数と PT_DYNAMIC を見る。2 回目は 1 回目の program table を使い直す）。最後に object の数が起動の時に戻ることを確かめる。
-- **未実施**: T の guest での `rtld-many`・`dyntest`（p002 の後にまとめて依頼）。arm64 の build（worktree に `build/arm64` が無く、main の sysroot を指すと `make -n` の確かめが 1 で、sysroot が作り直される。Q1 に相談）。i386・sparcv9 の build。lock を取らない `dl_iterate_phdr` と同時の `dlclose` の試験（`phnum` と `phdr` を別々に読むので、消している最中の slot では食い違いうる。読むのは slot の中か program table で、どちらも map されたまま。食い違いの結果は、外れていく object の header が誤って見えることだけ）。
+- **未実施**: T の guest での `rtld-many`・`dyntest`（p002 の後にまとめて依頼）。arm64・i386・sparcv9 の build（sysroot が要る。worktree に `build/arm64` が無く、main の sysroot を指すと `make -n` の確かめが 1 で作り直される。Q1 2026-10-05: subagent は sysroot を作らない。amd64 の build と host・guest の試験で判定する）。lock を取らない `dl_iterate_phdr` と同時の `dlclose` の試験（`phnum` と `phdr` を別々に読むので、消している最中の slot では食い違いうる。読むのは slot の中か program table で、どちらも map されたまま。食い違いの結果は、外れていく object の header が誤って見えることだけ）。
 
 ## 着手前に直す点（2026-10-04 ユーザーの判断の反映、Q1。詳細は [ws.md](../ws.md) の「判断」）
 
