@@ -2,18 +2,29 @@
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
 
-# The bundled wallpapers Settings offers (ws089-p009), drawn by generate.py as PNG (ws138-p002); they are not kept in git.
-# A config.mk that sets ZEDBSD_KEILAND_WALLPAPERS := y gets them in /usr/share/keiland/wallpapers (ws136-p001,
-# 2026-10-04: a test image is a config.mk build plus files of the tree, so the build makes them, not the test's
-# script).  The default is n: the release image is unchanged.  The Linux and FreeBSD builds install the same five
-# (keiland-linux.mk, keiland-freebsd.mk).
-ZEDBSD_KEILAND_WALLPAPERS ?= n
+# The desktop's wallpapers, in every image with the desktop (wayland among ZEDBSD_USER_PROGRAMS; ws099-p019,
+# 2026-10-05 user: "壁紙が1枚しか入っていない。前に生成した抽象的な壁紙も、とりあえず収録しましょう。"):
+#   /usr/share/keiland/wallpaper.png       the default, the tree's Birch-Lake.png (Settings' first tile, "Kei")
+#   /usr/share/keiland/wallpapers/*.png    the others Settings > Wallpaper offers: the tree's Lakeside.png (the
+#                                          compositor's own landscape) and the abstract gradients generate.py draws
+#                                          (ws089-p009, PNG since ws138-p002; they are not kept in git, the build
+#                                          makes them in $(BUILD)/wallpapers)
+# A test's extra file of the same destination wins (the destination would otherwise be named twice).
+# ZEDBSD_KEILAND_WALLPAPERS := n leaves them all out; := y puts them in an image without the desktop too.
+# The Linux and FreeBSD builds install the same pictures (keiland-linux.mk, keiland-freebsd.mk).
+ZEDBSD_KEILAND_WALLPAPERS ?= $(if $(filter wayland,$(ZEDBSD_USER_PROGRAMS)),y,n)
 ZEDBSD_KEILAND_WALLPAPER_NAMES := Aurora Dawn Lagoon Meadow Twilight
-ifeq ($(ZEDBSD_KEILAND_WALLPAPERS),y)
 ZEDBSD_KEILAND_WALLPAPER_FILES := $(addprefix $(BUILD)/wallpapers/,$(addsuffix .png,$(ZEDBSD_KEILAND_WALLPAPER_NAMES)))
 $(ZEDBSD_KEILAND_WALLPAPER_FILES) &: userland/desktop/wallpapers/generate.py
 	$(PYTHON) userland/desktop/wallpapers/generate.py $(BUILD)/wallpapers >/dev/null
-ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_KEILAND_WALLPAPER_FILES)
-ZEDBSD_PACKAGE_FILES += $(foreach name,$(ZEDBSD_KEILAND_WALLPAPER_NAMES),\
-	--file /usr/share/keiland/wallpapers/$(name).png=$(BUILD)/wallpapers/$(name).png)
-endif
+
+# The pictures as DESTINATION=SOURCE, and those the image takes: all of them, less any a test's extra files name.
+ZEDBSD_KEILAND_WALLPAPER_DATA := \
+	/usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png \
+	/usr/share/keiland/wallpapers/Lakeside.png=userland/desktop/keiland/wallpapers/Lakeside.png \
+	$(foreach name,$(ZEDBSD_KEILAND_WALLPAPER_NAMES),/usr/share/keiland/wallpapers/$(name).png=$(BUILD)/wallpapers/$(name).png)
+ZEDBSD_KEILAND_WALLPAPER_TAKEN := $(if $(filter y,$(ZEDBSD_KEILAND_WALLPAPERS)),$(foreach item,$(ZEDBSD_KEILAND_WALLPAPER_DATA),\
+	$(if $(findstring $(firstword $(subst =, ,$(item)))=,$(ZEDBSD_TEST_EXTRA_FILES)),,$(item))))
+ZEDBSD_PACKAGE_INPUTS += $(foreach item,$(ZEDBSD_KEILAND_WALLPAPER_TAKEN),$(lastword $(subst =, ,$(item))))
+ZEDBSD_PACKAGE_FILES += $(foreach item,$(ZEDBSD_KEILAND_WALLPAPER_TAKEN),\
+	--file $(item) --mode $(firstword $(subst =, ,$(item)))=0644)

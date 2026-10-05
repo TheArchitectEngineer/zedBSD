@@ -143,6 +143,8 @@ $(KEILAND_LINUX_WALLPAPERS) &: userland/desktop/wallpapers/generate.py
 	python3 $< $(KEILAND_LINUX_BUILD)/share/keiland/wallpapers
 KEILAND_LINUX_WALLPAPER ?= userland/desktop/keiland/wallpapers/Birch-Lake.png
 $(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpaper.png,$(KEILAND_LINUX_WALLPAPER)))
+# The compositor's own landscape is offered in the catalogue too (ws099-p019, 2026-10-05 user).
+$(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpapers/Lakeside.png,userland/desktop/keiland/wallpapers/Lakeside.png))
 KEILAND_LINUX_ALL += $(KEILAND_LINUX_WALLPAPERS)
 KEILAND_LINUX_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .png,$(KEILAND_LINUX_WALLPAPER_NAMES)))
 

@@ -144,6 +144,8 @@ $(KEILAND_FREEBSD_WALLPAPERS) &: userland/desktop/wallpapers/generate.py
 	$(KEILAND_FREEBSD_PYTHON) $< $(KEILAND_FREEBSD_BUILD)/share/keiland/wallpapers
 KEILAND_FREEBSD_WALLPAPER ?= userland/desktop/keiland/wallpapers/Birch-Lake.png
 $(eval $(call KEILAND_FREEBSD_DATA,share/keiland/wallpaper.png,$(KEILAND_FREEBSD_WALLPAPER)))
+# The compositor's own landscape is offered in the catalogue too (ws099-p019, 2026-10-05 user).
+$(eval $(call KEILAND_FREEBSD_DATA,share/keiland/wallpapers/Lakeside.png,userland/desktop/keiland/wallpapers/Lakeside.png))
 KEILAND_FREEBSD_ALL += $(KEILAND_FREEBSD_WALLPAPERS)
 KEILAND_FREEBSD_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .png,$(KEILAND_FREEBSD_WALLPAPER_NAMES)))
 
