@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p004`
 Parent: [WS068](../ws.md)
-Status: planning（2026-10-05 P1 generation17、q747。範囲の案。Q1 の承認の後に実装）
+Status: in-progress（2026-10-05 P1 generation17、q747。範囲を Q1 が承認、実装中）
 Phase disposition: normal
 Queue: q747（P1、ベータ2。p009 → p004 → p007）
 
@@ -43,10 +43,10 @@ Queue: q747（P1、ベータ2。p009 → p004 → p007）
 
 | 項目 | 理由 | 行き先の案 |
 | --- | --- | --- |
-| ETC2・EAC の圧縮 texture（`glCompressedTexImage2D`） | ES 2.0 では不要だが、libglesv2 が名乗る ES 3.0 では必須（`GL_NUM_COMPRESSED_TEXTURE_FORMATS` ≥ 10）。i915 の Gen12 は hardware に無く、CPU での展開が要る | 新しい Phase（p039 の案、main の判断） |
-| struct の中の sampler | ES 2.0 で許されるが、使う application は少ない | Future Work |
+| ETC2・EAC の圧縮 texture（`glCompressedTexImage2D`） | ES 2.0 では不要だが、libglesv2 が名乗る ES 3.0 では必須（`GL_NUM_COMPRESSED_TEXTURE_FORMATS` ≥ 10）。i915 の Gen12 は hardware に無く、CPU での展開が要る | ws068-p039（2026-10-05 Q1 が planned で新設） |
+| struct の中の sampler | ES 2.0 で許されるが、使う application は少ない | Future Work（Q1 が行を足す） |
 | desktop の GLSL 1.20 の uniform の初期値、`continue` を含む `switch` | ES 2.0 ではない（phase019 の制限） | p007 で残りとして記録 |
-| Khronos の dEQP | 外部 package の取り込みとライセンスの監査が要る（guide §4） | Future Work |
+| Khronos の dEQP | 外部 package の取り込みとライセンスの監査が要る（guide §4） | Future Work（Q1 が行を足す） |
 
 ## 試験
 

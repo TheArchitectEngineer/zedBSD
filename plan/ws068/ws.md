@@ -68,7 +68,7 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | ws068-p034 | tessellation（GLSL の control・evaluation の stage、patch、glPatchParameteri）: GL_ARB_tessellation_shader | planning・保留（2026-09-27、p037 と同じ） | p037 |
 | ws068-p035 | compute shader、SSBO、image load/store、atomic counter（GLSL の compute の stage、glDispatchCompute、glMemoryBarrier）: GL_ARB_compute_shader 等 | planning・保留（2026-09-27、p037 と同じ）。2026-09-30 main: GLES 3.1 の compute の部分集合（GLSL ES 3.10 の compute、glDispatchCompute・SSBO・glMemoryBarrier）は [WS101](../ws101/ws.md)（p008〜p010）へ移した。desktop GL の compute と image load/store・atomic counter はこの行に残る | p037 |
 | ws068-p036 | GL 4.x の残り（fp64、sample shading、draw indirect、cube map 配列、texture gather、separate shader objects、vertex attrib binding、KHR_debug、DSA の部分、clip control、SPIR-V の shader）と版の名乗り。着手前に更に分ける | planning・保留（2026-09-27、p037 と同じ） | p034、p035 |
-| ws068-p004 | GLES 2.0 の残りと試験の充実 | planning | p003 |
+| [ws068-p004](phase004/phase.md) | GLES 2.0 の残り: `gl_FragCoord`・`gl_PointCoord` の GL の向き、`gl_DepthRange`、sampler の配列、egltest の scene `es2` | in-progress（2026-10-05 P1 q747。範囲を Q1 が承認、実装中） | p003 |
 | ws068-p005 | GLES 3.0 | 2026-09-27 に p024〜p027 に分けた | p004 |
 | [ws068-p024](phase024/phase.md) | GLES 3.0 の API（1）: VAO、buffer の map・copy、instancing、整数の属性と uniform、uniform buffer、glGetStringi | cleared（q495-i01、2026-09-27。Venus で egl-p024、回帰 PASS） | p020、p021、p022 |
 | [ws068-p025](phase025/phase.md) | GLES 3.0 の API（2）: sized の format（float・整数・depth）の texture の保存と変換、glTexStorage2D、OpenGL ES 3 の texture の parameter（BASE/MAX_LEVEL、MIN/MAX_LOD、WRAP_R、swizzle、compare）、sampler object、depth texture と shadow sampler（2026-09-27 に 3D・配列と pixel buffer を p028 に分けた） | cleared（2026-09-27。Venus で egl-p025 PASS、回帰 egl-p008・p019・p020・p022・p023・p024・x11-p005・boot test PASS） | p024 |
@@ -80,7 +80,8 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | [ws068-p006](phase006/phase.md) | i915 実機での確認（GLX の zgears、App Home の X11、仮想デスクトップ） | cleared（q484-i01。実機で 6 検査 PASS の run あり、回転の間欠の止まりは BUG-057） | p008、p010、ws069-p005、F-023 |
 | ws068-p007 | 規約の全文との照合と回帰（最後） | planning | 全 Phase |
 | [ws068-p008](phase008/phase.md) | GLES 2.0 の描画の核（SPIR-V の shader binary、変換層。compiler の方式に依らない部分） | cleared（q475-i01。Venus で strip・texture・blend・depth・cull、display 直接と窓と resize） | p002 |
-| ws068-p009 | frame を 2〜3 枚重ねる（EGL の frame in flight。Venus で clear だけ 125 ms/frame、WSI 直接は 50 ms） | planned | p008 |
+| [ws068-p009](phase009/phase.md) | frame を 2 枚重ねる（EGL の frame in flight。Venus で clear だけ 125 ms/frame、WSI 直接は 50 ms） | in-progress（2026-10-05 P1 q747。実装は merge 済み、T1-180 の Venus の回帰と計測待ち） | p008 |
+| ws068-p039 | ETC2・EAC の圧縮 texture（ES 3.0 の必須の 10 format、`glCompressedTexImage2D`・`glCompressedTexSubImage2D`。device に無ければ CPU で展開。i915 の Gen12 は hardware に無い） | planned（2026-10-05 Q1 が p004 の範囲外から新設、今は実行しない） | p004 |
 | [ws068-p010](phase010/phase.md) | EGL の pbuffer（offscreen。GLX の描画先） | cleared（q476-i01。Venus で 600 frame と 2048x1536） | p008 |
 | ws068-p011 | framebuffer object・renderbuffer・cube map（texture への描画） | 2026-09-27 に p022（FBO・renderbuffer）と p023（cube map・mipmap の GPU 化・FBO からの copy）に分けた | p008 |
 | [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | cleared（q493-i01、2026-09-27。Venus で egl-p022） | p008 |
