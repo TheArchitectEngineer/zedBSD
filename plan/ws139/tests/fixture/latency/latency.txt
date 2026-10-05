@@ -1,0 +1,2 @@
+LATENCY name=textedit-direct trials=10 median_ms=306 max_ms=416 missed=0
+LATENCY name=terminal-direct trials=10 median_ms=300 max_ms=309 missed=0

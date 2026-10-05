@@ -2,10 +2,10 @@
 
 # ws139-p001: 計測の image と一括の script、E1 の基準値
 
-Status: planned
+Status: in-progress（2026-10-05 P1 generation17、q740。script と道具は済み。E1 の計測は T1、その 2 回の結果で受け入れ）
 Disposition: normal
 Parent: [WS139](../ws.md)
-Queue: none
+Queue: q740
 依存: なし
 時限の目安: script 3 h。T の 1 回の実行は 12 分程度の見込み
 
@@ -169,4 +169,16 @@ commit と Q1 への merge 依頼の後に依頼する。依頼の後は待た�
 
 ## 結果
 
-（未実施）
+2026-10-05 P1 generation17（q740）。手順 1〜5 は済み、T1 の E1 の計測（2 回）は未実施。
+
+| 物 | 結果 |
+| --- | --- |
+| `plan/ws139/tests/config-amd64-perf.mk` | `config-amd64-settings-ime.mk` に monitor を足す。`make --eval` の確かめで wayland・popup-probe・textedit・terminal・keiland-ime・monitor の 6 つが選ばれる |
+| `build-perf-image.sh BUILD` | `SETTINGS_CONFIG=… build-settings-image.sh BUILD`（背景と apps.conf はそちらが付ける） |
+| `type-only.sh [OUT]` | `latency-bug143.sh` の 0〜2 段を同じ command で写した（compositor は `--testing --timeout=900`、textedit-direct threshold 300・terminal-direct threshold 20 を各 10 回）。出力 `OUT/latency.txt` |
+| `perf-run.sh [--env=E1\|E2] OUT` | wait → env（commit・image と SHA-256・印・date・host の CPU・load・IO・memory・KVM（TCG なら FAIL）・背景・Mesa の cache）→ monitor（P-03、`--log-frames` と monitor の sim、20 秒、`monitor.out`・`device.txt`）→ c5（P-01、`C5_ROUNDS=5`）→ latency（P-02）→ 止める。各段の終わり方を `steps.txt` に（c5・latency は timeout の 300・240 s、monitor は guest の call ごとの 90 s の上限で抑える。shell の関数は timeout の下で動かせないため） |
+| `perf-summary.py OUT` | `summary.tsv`（id・metric・value・unit・samples・env・image_config・commit）と markdown の表。C5 は kind ごとの出現の回数で回を決め、`None` は数えない。値の無い metric は NA と理由 |
+| fixture | `plan/ws139/tests/fixture/`（T1-057 の P-03 の行、T1-006 の C5 の形の行（`windows=10`・`None` を含む）、T1-024 の latency の行）: 12 の metric が全て埋まる |
+
+確かめ: `sh -n` が 4 つの script で通る、`perf-summary.py fixture` が全ての metric を埋める、`make --eval` の確かめ。
+image の build と QEMU の計測は T1（下の依頼の 2 回）。台帳（ws.md）の P-01〜P-03 の更新は T1 の結果の後。

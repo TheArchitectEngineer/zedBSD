@@ -1,0 +1,7 @@
+ZWL PERF 5000ms: passes=420 timeouts=380 | poll 61.0% work 39.0%
+ZWL PERF compose frames=16 draw_ms=103.58 (acquire 1.58 submit+present 79.27) frame_ms=115.11
+ZWL PERF 5000ms: passes=410 timeouts=372 | poll 60.2% work 39.8%
+ZWL PERF compose frames=20 draw_ms=88.40 (acquire 1.20 submit+present 68.10) frame_ms=98.30
+ZWL PERF shm copies=40 copy_ms=0.512
+ZMON FRAME fps=4.7 wait_ms=1.20 visible=1 build_ms=3.10 acquire_ms=0.40 record_ms=2.20 submit_ms=10.10 present_ms=1.00 callback_ms=209.30
+ZMON FRAME fps=4.6 wait_ms=1.10 visible=1 build_ms=3.00 acquire_ms=0.50 record_ms=2.10 submit_ms=10.40 present_ms=1.10 callback_ms=221.70
