@@ -37,3 +37,9 @@ master-design-policy §2.1 の例外、F3: pairing の許可の模型と鍵の�
 backpressure、§5.2 の usb-hid の glue の分離と LED、§6 の security の節と特権の分離・LE の再接続・legacy の pairing、§8 の D-Bus の
 拡張と API の版、§9 に D8〜D16、§10 の Phase の順と UAT の Phase と見積もりの見直し）、もう一度 design-reviewer を通してから Q1 に
 判断の質問を送る。
+
+### 2026-10-05 q752-i01（続き）: 第 2 版・第 3 版
+
+第 2 版（43273705）に F1〜F25 を反映し、design-reviewer（agent a40b549b4e89b1245）の 2 回目の review を受けた（[review-2.md](review-2.md)、
+N1〜N17）。第 3 版で全て反映（§3 の手順と失敗の経路、§5.1 の reset の約束と queue、§5.3 の resume、§6.1・§6.2・§6.4 の BR/EDR の
+流れと鍵の長さ、§6.5 の特権の分離と seat の人、§8.1 の版、§9 の並べ直し（D15 を先に、D16〜D18 を追加、D11 を分ける））。
