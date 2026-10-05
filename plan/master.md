@@ -71,6 +71,8 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS145 印刷の判断（2026-10-05、P2 の p001 の設計の初版、plan/ws145/phase001/phase.md。design-reviewer の重大 7 件は未反映）**: D2 printer を system 全体で共有するか（共有なら root の口が要る）[案: 利用者ごと]、D3 LPD の queue 名の入力、D6 PDF Viewer の Print を含めるか、受け入れの printer の機種（PDF を受けない機種なら PWG raster が要る）、Linux で CUPS の printer を出さないこと、login 名を printer に送ること。
+- **2026-10-05 午後 UAT の後、ユーザー「ちょっと仮眠します。その方針でよいので、自走をお願いします。」**: 方針どおり自走。P1 は BUG-195・196・197（実機の ACPI）、P2 は UAT の所見（ws132-p009・ws099-p033・BUG-194（仮に F11）・BUG-181・BUG-193・bar の device の icon）。直しが揃ったら新しい UAT の image を作り T1 で boot-test。判断が要る点は記録して先へ。
 - **WS101（2026-10-05 ユーザー「GPU computeは言語側が完成しておらず、進められないんです。i915のSPIR-V lowringだけ進められますか？」）**: WS101 の p012・p018 は保留のまま（言語側の完成待ち）。i915 の SPIR-V の lowering は WS031 の compiler の Phase（p024 境界の確かめ → p020 設計 → p039 16・64 bit → p042 SWSB の依存の指定 → p043 spill）で P1 が進める（q751〜）。p017・p012 の 5330 の計測を UAT に回すかは未決。
 - **WS130 IPv6 の判断（2026-10-05、P1 の p001 の設計、plan/ws130/phase001/phase.md §9、p002 の前に全部要る）**: H1 UAPI（netinet の option、SIOCAIFADDR_IN6 など と struct in6_aliasreq、struct in6_rtentry、route socket の RTM_ROUTERADV・RTM_ADDRINFO・RTM_NEIGHBOR、AF_INET6 の socket。正確な差分は p002 の最初に出す）、H2 IPV6_V6ONLY の既定 [0、Linux と同じ]、H3 既存の net.conf で IPv6 を既定 on [on]、H4 link-local の interface ID [RFC 7217、MAC を出さない]、H5 dual-stack の DNS の順 [DHCPv4 → RDNSS → DHCPv6、最大 3]、H6 v1 は fragment の再組立て無し（IPv4 と同じ）、Packet Too Big は扱う、H7 DHCPv6 は DUID-UUID、H8 Wi-Fi の network ごとの IPv6 の設定は後。
 - **WS068 p037 以降（GL 3.3 ほか）の保留の解除**: 2026-09-27 のユーザーの保留（「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して…」）を、ベータ2 の「全部を P1・P2 に割り当て可」で解くか [Q1 の案: 明示の指示まで保留のまま。p009・p004・p007 は進める]。

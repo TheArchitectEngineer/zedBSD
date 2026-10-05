@@ -677,6 +677,7 @@ accept_client(
 	client->fd = descriptor;
 	client->server = server;
 	client->number = ++server->client_serial;
+	client->connected_ms = zwl_milliseconds();
 	client->next = server->clients;
 	server->clients = client;
 	display = zwl_create(client, 1, ZWL_DISPLAY, 1);

@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer). */
-#define KL_VERSION	31U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info). */
+#define KL_VERSION	33U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1319,6 +1319,18 @@ struct kl_device {
 };
 
 /*
+ * A removable device's file system ("fat", "ufs"; "" when the compositor
+ * did not tell) and size in bytes (0 when not told), KL_VERSION 33
+ * (ws132-p009): what a mount's confirmation shows.
+ */
+#define KL_DEVICE_FS_MAX	8U
+
+struct kl_device_info {
+	char fs[KL_DEVICE_FS_MAX];
+	uint64_t bytes;
+};
+
+/*
  * One application's view of the system: the state the compositor told,
  * and the requests not answered yet.  It lives from kl_system_open to
  * kl_system_close.
@@ -1487,6 +1499,13 @@ int kl_system_power_action(struct kl_system *system, unsigned action, uint32_t *
  * copied.
  */
 size_t kl_system_devices_get(const struct kl_system *system, struct kl_device *devices, size_t capacity);
+
+/*
+ * Copies a listed device's file system and size: 1 when the device is in
+ * the list (its info is empty from a compositor older than version 9), 0
+ * when it is not.
+ */
+int kl_system_devices_info(const struct kl_system *system, const char *id, struct kl_device_info *info);
 
 /*
  * Asks for a removable device to be ejected (unmounted; a device that is not
@@ -1713,6 +1732,75 @@ const struct kl_monitor_info *kl_system_monitor_info(const struct kl_system_moni
  * Closes a monitor.
  */
 void kl_system_monitor_close(struct kl_system_monitor *monitor);
+
+/*
+ * One copy of a program, and the activation (ws089-p016).
+ *
+ * A program that keeps one window (Settings) runs once per user: a second
+ * start hands its request -- a line of text the program gives meaning to,
+ * such as a page to open -- to the copy that runs, with an activation
+ * token, and ends.  The copy that runs takes the request, carries it out
+ * and brings its window to the front with the token (kl_activate).  The
+ * copies find each other through a socket in the user's runtime directory
+ * (XDG_RUNTIME_DIR), which must be the user's own and closed to others.
+ *
+ * An activation token is a compositor's permission to bring a window to
+ * the front (xdg_activation_v1).  A program started by the desktop has one
+ * in XDG_ACTIVATION_TOKEN; a program may ask the compositor for one to
+ * hand to a program it starts (kl_activation_token).
+ */
+
+/* The longest request (its NUL counted), and the longest activation token. */
+#define KL_INSTANCE_REQUEST_MAX		256U
+#define KL_ACTIVATION_TOKEN_MAX		256U
+
+/* The copy of a program that runs: its socket. */
+struct kl_instance;
+
+/*
+ * Makes this program the one copy of the name (lowercase letters, digits
+ * and '-'), or hands request to the copy that runs.  Returns 0 with
+ * *instance set when this is the one copy (it listens for later starts),
+ * 0 with *instance NULL when the request was handed over (the program
+ * ends), or an error (the program runs on its own, as without the call):
+ * EINVAL for a bad name or request, ENOTSUP without a private runtime
+ * directory.  The token handed over is one asked of the compositor (which
+ * grants it to a program that has just started), or XDG_ACTIVATION_TOKEN's
+ * when none can be asked for; the variable is removed either way.
+ */
+int kl_instance_open(const char *name, const char *request, struct kl_instance **instance);
+
+/*
+ * The descriptor that becomes readable when a later start hands a request
+ * over (for the program's poll), or -1 for NULL.
+ */
+int kl_instance_fd(const struct kl_instance *instance);
+
+/*
+ * Takes one request handed over: 1 with the request and the token (an
+ * empty string when there is none) copied, 0 when none waits.
+ */
+int kl_instance_take(struct kl_instance *instance, char *request, size_t request_size, char *token, size_t token_size);
+
+/*
+ * Stops being the one copy: the socket goes.
+ */
+void kl_instance_close(struct kl_instance *instance);
+
+/*
+ * Asks the compositor for an activation token for a program to be started
+ * (app_id, NULL for none), from a surface the user works in (NULL for
+ * none).  Returns 0 with the token copied, ENOTSUP when the compositor has
+ * no activation, or another error.
+ */
+int kl_activation_token(struct wl_display *display, struct wl_surface *surface, const char *app_id, char *token, size_t size);
+
+/*
+ * Brings a surface's window to the front with an activation token (the
+ * compositor decides whether the token allows it).  Returns 0 when it was
+ * asked, ENOTSUP when the compositor has no activation.
+ */
+int kl_activate(struct wl_display *display, struct wl_surface *surface, const char *token);
 
 #ifdef __cplusplus
 }

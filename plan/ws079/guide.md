@@ -49,9 +49,9 @@ L3 を Future Work に移すのは受け入れの縮小なので**人間の判�
 
 1. 5330 の実機（mouse）と Windows の QEMU（touch）で S8・S9（ユーザー。手順は demo-s8-s9-manual.md）。
 2. 5330 の passthrough での S8・S9 の自動の確かめ（エージェントができる部分、p017 提案）。
-3. Notes の Ctrl+O が「Opening from Notes is not available yet」のまま（`userland/desktop/notes/main.c:990`。p005 の残り 1）。デモには要らない（p018 提案、任意）。
+3. ~~Notes の Ctrl+O~~: ws128-p002 で済み（File > Open... と Save As... が libkeiland の file chooser、`app_choose`・`app_open_file`。2026-10-05 P2 が source で確かめた）。
 4. L3 の実機の pen（機材が無い）。
-5. 記録の不整合: [phase002](phase002/phase.md)・[phase003](phase003/phase.md) の頭の `Status:` が `in-progress` のまま（ws.md の表は main の判断で cleared）。完了の処理（p019）で表に合わせる。
+5. ~~記録の不整合~~: [phase002](phase002/phase.md)・[phase003](phase003/phase.md) の頭の `Status:` を ws.md の表（cleared）に合わせた（2026-10-05 P2）。
 
 ### 2.3 既知の bug（[known-bugs.md](../known-bugs.md)）
 

@@ -1,0 +1,23 @@
+<37>Oct  5 05:10:16 sessiond[23]: automatic login of kei
+<38>Oct  5 05:10:24 sshd[21]: Server listening on 0.0.0.0 port 22.
+<37>Oct  5 05:12:28 sessiond[21]: automatic login of kei
+<38>Oct  5 05:12:36 sshd[19]: Server listening on 0.0.0.0 port 22.
+<37>Oct  5 05:14:40 sessiond[21]: automatic login of kei
+<38>Oct  5 05:14:41 sshd[19]: Server listening on 0.0.0.0 port 22.
+<38>Oct  5 05:19:33 sshd-session[92]: Connection closed by authenticating user kei 10.0.10.2 port 34420 [preauth]
+<38>Oct  5 05:19:42 sshd-session[94]: Accepted password for kei from 10.0.10.2 port 41140 ssh2
+<38>Oct  5 05:19:42 sshd-session[96]: Received disconnect from 10.0.10.2 port 41140:11: disconnected by user
+<38>Oct  5 05:19:42 sshd-session[96]: Disconnected from user kei 10.0.10.2 port 41140
+<38>Oct  5 05:19:48 sshd-session[99]: Accepted password for kei from 10.0.10.2 port 59722 ssh2
+<38>Oct  5 05:19:48 sshd-session[101]: Received disconnect from 10.0.10.2 port 59722:11: disconnected by user
+<38>Oct  5 05:19:48 sshd-session[101]: Disconnected from user kei 10.0.10.2 port 59722
+<38>Oct  5 05:19:55 sshd-session[106]: Accepted password for kei from 10.0.10.2 port 59724 ssh2
+<38>Oct  5 05:19:55 sshd-session[108]: Received disconnect from 10.0.10.2 port 59724:11: disconnected by user
+<38>Oct  5 05:19:55 sshd-session[108]: Disconnected from user kei 10.0.10.2 port 59724
+<38>Oct  5 05:20:05 sshd-session[116]: Accepted password for kei from 10.0.10.2 port 60272 ssh2
+<38>Oct  5 05:20:05 sshd-session[118]: Received disconnect from 10.0.10.2 port 60272:11: disconnected by user
+<38>Oct  5 05:20:05 sshd-session[118]: Disconnected from user kei 10.0.10.2 port 60272
+<38>Oct  5 05:20:53 sshd-session[125]: Accepted password for kei from 10.0.10.2 port 58372 ssh2
+<38>Oct  5 05:20:53 sshd-session[127]: Received disconnect from 10.0.10.2 port 58372:11: disconnected by user
+<38>Oct  5 05:20:53 sshd-session[127]: Disconnected from user kei 10.0.10.2 port 58372
+<38>Oct  5 05:20:53 sshd-session[129]: Accepted password for kei from 10.0.10.2 port 58380 ssh2

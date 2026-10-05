@@ -399,6 +399,9 @@ struct fm_device {
 	int mounted;
 	int fresh;
 	uint64_t blink_at;
+	/* Its file system ("fat", "ufs"; "" when not told) and size in bytes (0 when not told), for the mount's question (ws132-p009). */
+	char fs[8];
+	uint64_t bytes;
 };
 
 /*
@@ -1099,6 +1102,8 @@ struct fm_app {
 	 */
 	char device_asked[64];
 	char device_open[64];
+	/* The device whose mount is being asked about (FM_DIALOG_MOUNT, ws132-p009). */
+	char device_confirm[64];
 
 	/* Whether the devices' rows and Today's cards were logged since the list changed (for the tests). */
 	int device_rows_logged;
@@ -1345,7 +1350,8 @@ enum fm_dialog {
 	FM_DIALOG_NONE,
 	FM_DIALOG_DELETE,
 	FM_DIALOG_EMPTY_TRASH,
-	FM_DIALOG_COLLISION
+	FM_DIALOG_COLLISION,
+	FM_DIALOG_MOUNT
 };
 
 /* The indexes of the buttons (FM_HIT_BUTTON) the frame records. */
@@ -1654,6 +1660,8 @@ void fm_devices_set(struct fm_app *app, const struct fm_device *list, int count,
 float fm_devices_blink(const struct fm_app *app, const struct fm_device *device);
 int fm_devices_blinking(const struct fm_app *app);
 void fm_devices_mount(struct fm_app *app, int index);
+void fm_devices_mount_answer(struct fm_app *app, int confirmed);
+const struct fm_device *fm_devices_find(const struct fm_app *app, const char *id);
 void fm_devices_eject(struct fm_app *app, int index);
 
 #endif

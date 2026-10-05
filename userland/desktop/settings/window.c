@@ -170,6 +170,7 @@ se_window_open(
 	window->repeat_delay = WINDOW_REPEAT_DELAY;
 	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
 	window->touch_id = -1;
+	window->extra_fd = -1;
 
 	/* The connection. */
 	window->display = wl_display_connect(display);
@@ -254,7 +255,8 @@ se_window_dispatch(
 	struct se_window *window,
 	int timeout)
 {
-	struct pollfd descriptor;
+	struct pollfd descriptors[2];
+	nfds_t count;
 	int status;
 
 	/* Runs what is queued until a read of new events can be reserved. */
@@ -284,14 +286,20 @@ se_window_dispatch(
 	if (window->event_count != 0U)
 		timeout = 0;
 
-	/* Waits for the compositor. */
-	descriptor.fd = wl_display_get_fd(window->display);
-	descriptor.events = POLLIN;
-	descriptor.revents = 0;
-	status = poll(&descriptor, 1, timeout);
+	/* Waits for the compositor, or for a later start of Settings. */
+	descriptors[0].fd = wl_display_get_fd(window->display);
+	descriptors[0].events = POLLIN;
+	descriptors[0].revents = 0;
+	descriptors[1].fd = window->extra_fd;
+	descriptors[1].events = POLLIN;
+	descriptors[1].revents = 0;
+	count = 1;
+	if (window->extra_fd >= 0)
+		count = 2;
+	status = poll(descriptors, count, timeout);
 
 	/* Reads the compositor's events, or gives the reservation back. */
-	if (status > 0 && (descriptor.revents & POLLIN) != 0) {
+	if (status > 0 && (descriptors[0].revents & POLLIN) != 0) {
 		status = wl_display_read_events(window->display);
 		if (status < 0)
 			return -1;
@@ -301,7 +309,7 @@ se_window_dispatch(
 			return -1;
 
 		/* A hung-up connection has no more events. */
-		if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+		if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
 			return -1;
 	}
 

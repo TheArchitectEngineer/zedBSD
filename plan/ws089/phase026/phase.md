@@ -2,7 +2,7 @@
 
 # ws089-p026: Users の頁の実装（この computer の利用者の account の管理）
 
-Status: in-progress（2026-10-05、P2。設計を書いた。管理者の操作の口はユーザーの判断待ち。一覧の部分は判断なしに進められる）
+Status: cleared（2026-10-05 Q1: T1-183b PASS（account-admin の全項目、passwd -s の短い password の拒否を含む）。Settings の Manage users の UI は kei で login した UAT で見る）。以前: in-progress（2026-10-05、P2。設計を書いた。管理者の操作の口はユーザーの判断待ち。一覧の部分は判断なしに進められる）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q741（Q1、2026-10-05、P2）
@@ -89,3 +89,9 @@ sessiond・greeter（WS035 の成果）、kl_system_*（WS131）、service・acc
 - build: zedBSD の `bin/wayland`・`bin/settings`・`bin/account-admin` が warning 0、Linux の Keiland（`make keiland-linux`）も warning 0、`makefile-sync.sh` PASS。style-check: 新しい file は 0、変えた file は関数ごとに増えていない。
 - T1 の試験（tty なし、Q1 の求めた passwd の短い password の拒否も含む）: `plan/ws089/tests/admin-p026-guest.sh`（image は `config-amd64-account-admin.mk`）。
 - 未実施: QEMU（T1）、Settings の UI の PNG（desktop を kei で動かす必要があり、UAT で見る）、FreeBSD の build。
+
+## T1-183 の FAIL の解析（2026-10-05、P2 g15）
+
+- FAIL: `remove-alice` が `error busy`、続く alice-gone・alice-gone-group・home-exists（name-taken）は連鎖。
+- 原因は試験の誤り: busy の後片付けが `ps -A -o pid,args | grep "[s]leep 40"` で sleep を探していたが、zedBSD の ps の args は kernel の command（`exec` の argv[0] だけ、`src/kern/exec.c`）なので "sleep 40" に一致せず、何も kill していなかった。sleep 40 が動いたまま alice は busy（account-admin の判定は正しい）。
+- 直し（`admin-p026-guest.sh`）: `su alice -c 'exec sleep 40'` を 1 process にして `$!` を保存し、その PID を kill して、`ps -A -o user` に alice が無くなるまで（zombie も含む。init は約 1 秒ごとに reap）最大 10 秒待つ。待った結果を `OUTDIR/busy-end.txt` に残す。製品の変更なし。

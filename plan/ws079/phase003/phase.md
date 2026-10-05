@@ -3,7 +3,7 @@
 # WS079 Phase 003: compositor の `zwp_tablet_manager_v2` と pointer の fallback
 
 <!-- awesome-plan-current:start -->
-Status: in-progress（2 回目の区切り: compositor の tablet・fallback・libwayland・試験の client まで実装し、QEMU の guest で確かめた。実機は未実施。clearance は main の判断）
+Status: cleared（2026-09-28 main の判断、QEMU の Venus。実機の pen は未実施。2026-10-05 P2: ws.md の表に合わせて頭の Status を直した）
 Disposition: normal
 Parent: [WS079](../ws.md)
 Design: [design-input-notes.md](../design-input-notes.md) §3

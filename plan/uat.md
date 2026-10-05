@@ -203,6 +203,24 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 - 追加（ユーザー）: [BUG-191](bugs/BUG-191.md) Settings の key のリピートの設定が 5330 のキーボードの挙動に効かない（BUG-172 と同じ根の見込み）。内蔵 LCD の明るさの調節の要望は [WS113](ws113/ws.md) の p006 へ。
 - 要望（ユーザー）: [ws089-p024](ws089/phase024/phase.md) Mouse の頁に加速の設定、既定 base 150%・加速 強め。
 
+## UAT 2026-10-05 午後（実機 Latitude 5330、image は 12 時の uat-0505c の見込み、ユーザーのコメント）
+
+| # | 所見 | 記録 |
+| --- | --- | --- |
+| 1 | 起動の logo の animation が最初は速く、その後に通常に戻る。実時間で進める必要 | [BUG-193](bugs/BUG-193.md) |
+| 2 | Terminal を全画面にすると戻れない、F11 で全画面にも戻すこともできない。全画面はゲーム用で scanout を占有する物、戻る key は compositor が持つ | [BUG-194](bugs/BUG-194.md) |
+| 3 | タッチパッドでスクロールなどができない。Q1 が dmesg を読み、DSDT が読めず（AML の stack の予算）native の touchpad が付いていないと分かった（image は ee2f8c7 = uat-0505c を確認） | [BUG-195](bugs/BUG-195.md) |
+| 4 | 最大化している状態で新しく起動した app は最大化で開くのがよい（タブレットを画面全体で使っている認識） | 要望、[ws099-p033](ws099/ws.md) |
+| 5 | Browser: 長い URL で文字の範囲の選択が title bar をはみ出して描かれる（前回の指摘が直り切っていない） | [BUG-181](bugs/BUG-181.md) |
+| 6 | Files の Devices: mount の前に確認の popup が無いのは危ない。起動 disk の partition は出さなくてよい | 要望、[ws132-p009](ws132/ws.md) |
+| 7 | 電源ボタンを押すと、ただちに電源が切れた | [BUG-196](bugs/BUG-196.md) |
+| 8 | タッチパッドの 2 本指・3 本指が使えない（BUG-195 で native の touchpad が付かず PS/2 の互換の mouse のため）。そのため 2 本指のスクロール・右 click、3 本指の gesture（Wiseview・仮想デスクトップ・切り替え）、Alt+Tab の 3 本指は**未実施** | [BUG-195](bugs/BUG-195.md)（次の UAT で再確認） |
+| 9 | バーに電池（電源）の icon が無い。電池を認識していない（電池・AC は ACPI の `_BST`・`_BIF`・EC の AML で読むので、DSDT が読めないと分からない。電池の無い機械として icon を詰めて出さない動作になった） | [BUG-195](bugs/BUG-195.md)（同じ根） |
+| 10 | バーのデバイス（USB 媒体）の button の icon が何か分かりにくい。改善が要る | 要望。WS156 の H7（bar の媒体の icon を通知に置き換える案、ユーザーの判断待ち）と合わせる |
+| 11 | shutdown で電源が落ちない | [BUG-197](bugs/BUG-197.md) |
+
+ユーザー「これくらいです。」（UAT の終わり、5330 の lock を外した）
+
 ## 次の UAT で採る記録（2026-10-05 Q1）
 
 - ~~[BUG-190](bugs/BUG-190.md) の evdev の記録~~（2026-10-05 ユーザーの決定で不要。WS159 の後に再評価）。

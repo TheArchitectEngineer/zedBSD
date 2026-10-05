@@ -16,6 +16,11 @@
  * outcome is one line on standard error: ZSETTINGS DONE with the reason,
  * or ZSETTINGS FAILED naming what failed; ZSETTINGS READY says the first
  * frame is shown.
+ *
+ * Settings runs once per user (ws089-p016): a second start hands PAGE (or
+ * nothing, without one) to the Settings that runs, which opens the page
+ * and brings its window to the front, and ends with ZSETTINGS DONE
+ * reason=handed-over.
  */
 
 #include "window.h"
@@ -48,6 +53,7 @@ struct main_options {
 	const char *font;
 	const char *fallback;
 	unsigned page;
+	unsigned page_given;
 	unsigned width;
 	unsigned height;
 	unsigned timeout;
@@ -61,6 +67,13 @@ static struct se_window main_window;
 static struct se_present main_present;
 static struct se_app main_app;
 static struct fm_text main_text;
+
+/*
+ * The one copy of Settings: the socket later starts hand their page to,
+ * from the start to the end of the run; NULL when Settings runs on its
+ * own (no private runtime directory).
+ */
+static struct kl_instance *main_instance;
 
 /*
  * The window's menus in zdesktop, opened with the window and closed before
@@ -101,6 +114,7 @@ static int main_timeout(uint64_t now);
 static void main_request(void);
 static void main_state_update(void);
 static void main_about_window(void);
+static void main_handed_over(void);
 
 /*
  * Runs Settings.
@@ -113,6 +127,7 @@ main(
 	struct main_options options;
 	struct se_menu_state menu_state;
 	struct se_titlebar_state titlebar_state;
+	const char *page_word;
 	VkResult result;
 	int status;
 	int error;
@@ -124,10 +139,23 @@ main(
 		return 2;
 	}
 
+	/* One Settings: a later start hands its page to the one that runs and ends; without the socket this one runs on its own. */
+	page_word = "";
+	if (options.page_given)
+		page_word = se_pages[options.page].word;
+	error = kl_instance_open("settings", page_word, &main_instance);
+	if (error != 0) {
+		se_log("INSTANCE alone errno=%d", error);
+	} else if (main_instance == NULL) {
+		se_log("DONE reason=handed-over page=%s", page_word);
+		return 0;
+	}
+
 	/* The fonts. */
 	error = fm_text_open(&main_text, options.font, options.fallback);
 	if (error != 0) {
 		fprintf(stderr, "ZSETTINGS FAILED operation=font path=%s error=%d\n", options.font, error);
+		kl_instance_close(main_instance);
 		return 1;
 	}
 
@@ -137,6 +165,7 @@ main(
 		fprintf(stderr, "ZSETTINGS FAILED operation=window error=%d\n", errno);
 		se_window_close(&main_window);
 		fm_text_close(&main_text);
+		kl_instance_close(main_instance);
 		return 1;
 	}
 
@@ -147,6 +176,7 @@ main(
 		se_present_close(&main_present);
 		se_window_close(&main_window);
 		fm_text_close(&main_text);
+		kl_instance_close(main_instance);
 		return 1;
 	}
 
@@ -184,6 +214,7 @@ main(
 		se_present_close(&main_present);
 		se_window_close(&main_window);
 		fm_text_close(&main_text);
+		kl_instance_close(main_instance);
 		return 1;
 	}
 
@@ -204,6 +235,7 @@ main(
 	se_present_close(&main_present);
 	se_window_close(&main_window);
 	fm_text_close(&main_text);
+	kl_instance_close(main_instance);
 
 	/* Reports how the run ended. */
 	if (status != 0)
@@ -292,6 +324,7 @@ main_parse(
 		if (page == NULL)
 			return -1;
 		options->page = page->id;
+		options->page_given = 1;
 	}
 
 	/* A window has some size. */
@@ -370,6 +403,9 @@ main_loop(
 	if (status != 0)
 		return -1;
 
+	/* A later start of Settings wakes the wait. */
+	main_window.extra_fd = kl_instance_fd(main_instance);
+
 	/* The log line the tests wait for. */
 	se_log("READY width=%u height=%u glass=%d page=%s", main_present.extent.width, main_present.extent.height, main_app.glass, se_pages[main_app.page].word);
 
@@ -409,6 +445,9 @@ main_loop(
 
 		/* What the window was asked to do: minimizing, zooming, closing. */
 		main_request();
+
+		/* The pages later starts handed over, and their window brought to the front. */
+		main_handed_over();
 
 		/* Time passes for the interface (the minute About shows), and the system reports (the network and the sound follow it). */
 		se_ui_tick(&main_app, now);
@@ -659,5 +698,41 @@ main_about_window(void)
 		(void)snprintf(main_app.about.display, sizeof(main_app.about.display), "%d x %d, %u Hz", (int)main_window.output_width, (int)main_window.output_height, hertz);
 	} else {
 		(void)snprintf(main_app.about.display, sizeof(main_app.about.display), "%d x %d", (int)main_window.output_width, (int)main_window.output_height);
+	}
+}
+
+/* Opens the pages later starts of Settings handed over, and brings the window to the front with their tokens. */
+static void
+main_handed_over(void)
+{
+	char request[KL_INSTANCE_REQUEST_MAX];
+	char token[KL_ACTIVATION_TOKEN_MAX];
+	const struct se_page *page;
+	int activated;
+	int known;
+	int taken;
+
+	/* Each start that handed its page over. */
+	for (;;) {
+		taken = kl_instance_take(main_instance, request, sizeof(request), token, sizeof(token));
+		if (taken == 0)
+			break;
+
+		/* Its page, when it named one (a start without a page only brings the window). */
+		page = NULL;
+		known = 0;
+		if (request[0] != '\0')
+			page = se_page_find(request);
+		if (page != NULL) {
+			se_ui_go(&main_app, page->id);
+			known = 1;
+		}
+
+		/* The window to the front, when the start had a token (the compositor decides). */
+		activated = -1;
+		if (token[0] != '\0')
+			activated = kl_activate(main_window.display, main_window.surface, token);
+		main_app.dirty = 1;
+		se_log("INSTANCE request page=%s known=%d activate=%d", request, known, activated);
 	}
 }

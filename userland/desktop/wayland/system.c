@@ -2206,7 +2206,7 @@ system_audio_state(
 	(void)zwl_emit(object->client, object->id, KL_SYSTEM_AUDIO_EVENT_STATE, words, sizeof(words));
 }
 
-/* Sends a devices object every volume: its ID, kind, state, name and where it is mounted. */
+/* Sends a devices object every volume: its ID, kind, state, name and where it is mounted, and (version 9) its file system and size. */
 static void
 system_devices_state(
 	struct zwl_object *object)
@@ -2241,6 +2241,15 @@ system_devices_state(
 		offset = system_put_string(payload, offset, name);
 		offset = system_put_string(payload, offset, volumes[index].path);
 		(void)zwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_DEVICE, payload, offset);
+
+		/* Since version 9 (ws132-p009): its file system and size, for the mount's confirmation. */
+		if (object->version < KL_SYSTEM_DEVICES_SINCE_VOLUME)
+			continue;
+		offset = system_put_string(payload, 0U, volumes[index].id);
+		offset = system_put_string(payload, offset, volumes[index].fs);
+		offset = system_put_word(payload, offset, (uint32_t)(volumes[index].bytes >> 32));
+		offset = system_put_word(payload, offset, (uint32_t)(volumes[index].bytes & 0xffffffffU));
+		(void)zwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_VOLUME, payload, offset);
 	}
 }
 

@@ -2,10 +2,10 @@
 
 # ws089-p016: 単一の instance
 
-Status: planning（設計を書いた。compositor の xdg-activation の所有を Q1 に）
+Status: cleared（2026-10-05 Q1: T1-185 PASS（2 つ目の起動で頁を渡し、既存の窓が activation で前に出る、settings は 1 process））。以前: in-progress（実装済み・T1 の試験待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
-Queue: q741（Q1、2026-10-05、P2）
+Queue: q741（Q1、2026-10-05、P2、設計）、q749（実装、P2 g15）
 依存: p010、compositor の Phase（WS099 と直列）
 目安: 2h（1 Queue）。実行者の目安: phase-runner
 所有 path: `userland/desktop/settings/main.c`、compositor・libkeiland の activation（所有は Q1 が決める）
@@ -43,3 +43,18 @@ QEMU の Venus。 やっていない確認は「未実施」と書く。
 ## Q1 の割り当て（2026-10-05）
 
 compositor の xdg-activation-v1 も P2 が持つ（P1 は WS052 p006 に専念するため）。WS170・WS169 の mock の後に、compositor の変更を WS099 の他の変更と直列に Q1 が順を決めて入れる。
+
+## 実装（2026-10-05、P2 g15、q749）
+
+- **compositor**（`userland/desktop/wayland/`）: `activation.c`・`activation.h` を新設し、xdg_activation_v1 version 1 を global 26 で出す（`protocol.c`）。token は 16 byte の乱数（getentropy）の 32 桁の 16 進、1 回限り・30 秒、表は 16 個（古いものから置き換え）。token の許可: 求めた client が keyboard の focus を持つ（reason=focus）、または接続から 5 秒以内で窓を出していない client（reason=new-program。その program は自分の窓を上に出せるので、その権利を別の program の窓に渡しても新しい権限にならない）。許可の無い token も渡す（activate は何もしない）。`activate` は token が既知・未使用・30 秒以内・許可済み、surface が map 済みの toplevel、lock・greeter でない時だけ `zwl_glass_activate`（`shell.c` に新設: App Home を閉じ、別の desktop の窓ならその desktop に移り、`zwl_glass_bring` で前に出して focus）。log は `ZWL ACTIVATION token …`・`ZWL ACTIVATION activate … result=activated|refused reason=…`・`ZWL APPS raise … via=activation`。`zwl_spawn`（`home.c`）は起動する program ごとに許可済みの token を作り `XDG_ACTIVATION_TOKEN` に入れる（作れなければ消す）。`zwl_client.connected_ms` を `main.c`・`input-method.c` で記録。
+- **libwayland**: `activation-protocol.c` と private の `xdg-activation-v1-client-protocol.h`（wayland-protocols 1.44 の XML と照合、`keiland/wayland/API-PROVENANCE.md` に行を追加）。
+- **libkeiland**（KL_VERSION 32）: `instance.c` に `kl_instance_open/fd/take/close`（`$XDG_RUNTIME_DIR/keiland-NAME.instance` の UNIX socket。runtime dir が利用者の物で 077 が 0 の時だけ。二つ目の起動は request の 1 行と token の 1 行を書いて終わる。残った socket は利用者の socket なら消して引き継ぐ。`XDG_ACTIVATION_TOKEN` は消す）と `kl_activation_token`（自前の queue で token を求める）・`kl_activate`。二つ目の起動の token は compositor に求めた物を優先し（新しい program として許可される）、求められない時だけ環境変数の物（長く動く Files が自分の未使用の古い token を子に継がせるため）。
+- **Settings**: `main.c` で起動時に `kl_instance_open("settings", 頁の語または空)`。渡したら `ZSETTINGS DONE reason=handed-over page=…` で終わる。一つ目は loop で `kl_instance_take` → `se_ui_go` で頁を開き `kl_activate`（log `ZSETTINGS INSTANCE request page=… known=… activate=…`）。`window.c` の wait は socket の fd でも起きる（`se_window.extra_fd`）。runtime dir が私的でなければ従来どおり一人で動く（`INSTANCE alone errno=…`）。
+- Calendar（WS155）の単一の instance も同じ `kl_instance_*` と、system bar の時計からの `zwl_spawn` の token で賄える。
+
+### 検証（2026-10-05）
+
+- build: zedBSD の `bin/wayland`・`bin/settings`（libkeiland.so・libwayland-client.so を含む、`ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD=build/p2-p016`）warning 0。Linux の Keiland（`make keiland-linux KEILAND_LINUX_BUILD=build/p2-keiland-linux`）warning 0、header-check 通過。`makefile-sync.sh` PASS。`exports.py` で exports.map を再生成。
+- host: `sh plan/ws089/tests/run-host-instance.sh`（Linux の libkeiland.so、私的な runtime dir）PASS 21 項目（一つ目が listen、二つ目が頁と token を渡して終わる、頁なし・token なし、不正な token は捨てる、close で socket が消える、残った socket の引き継ぎ、同じ process の二つ目、077 の開いた dir は ENOTSUP、不正な名前・2 行の request は EINVAL）。
+- style-check: 新しい file 0 件、変えた file は増えていない（home.c の 1 件は以前から）。keiland-os-boundary は C4（account-zedbsd.c、変更前から）のみ FAIL。
+- 未実施: QEMU（T1 に `settings-p016.sh` を依頼）、FreeBSD の build、App Home からの起動の経路（spawn の token）の guest での確認。

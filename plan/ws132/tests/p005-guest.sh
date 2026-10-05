@@ -6,8 +6,11 @@
 #  2. A click on the icon starts Files on its devices (ZWL MEDIA files pid=, files --devices): Files lists the stick
 #     not mounted, new and blinking (ZFILES DEVICE ... mounted=0 new=1 ... blink=1), under Devices and on Today
 #     (ZFILES DEVICE row / card; files.png).
-#  3. A double click on Today's card mounts it and opens it (DEVICE ask ... mount=1 error=0, DEVICE result ... errno=0,
-#     DEVICE open ... path=/media/USBSTICK); the bar's icon goes (icon=0); /media/USBSTICK holds HELLO.TXT (mounted.png).
+#  3. A double click on Today's card asks whether to mount it (ws132-p009: DEVICE mount confirm ... fs=fat
+#     bytes=16777216; confirm.png); Esc leaves it (DEVICE mount answer ... confirmed=0, nothing asked of the desktop);
+#     a second double click and Enter (Mount) mount it and open it (DEVICE ask ... mount=1 error=0, DEVICE result ...
+#     errno=0, DEVICE open ... path=/media/USBSTICK); the bar's icon goes (icon=0); /media/USBSTICK holds HELLO.TXT
+#     (mounted.png).
 #  4. The eject button of its row in the sidebar ejects it (DEVICE result ... mount=0 errno=0, MESSAGE The device can be
 #     taken out safely.), and /media/USBSTICK is gone.
 #  5. Pulled out (not mounted): the list empties (ZWL MEDIA volumes=0, ZFILES DEVICES count=0).
@@ -25,6 +28,7 @@ guest() { timeout 60 python3 plan/tools/guest/guest.py run "$1" 2>&1 | tr -d '\r
 send() { timeout 40 python3 plan/ws049/tests/qmp-send.py "$qmp" "$@" >> "$out/qmp.txt" 2>&1; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
+keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 1; }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[f]iles" | awk "{print \$1}"); do kill $p; done; sleep 1'
 status=0
 
@@ -98,7 +102,16 @@ shot files.png
 set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 set -- $(rect_of 'ZFILES DEVICE card id=')
-click $((wx + ${1:-0} + ${3:-0} / 2)) $((wy + ${2:-0} + ${4:-0} / 2)) double
+card_x=$((wx + ${1:-0} + ${3:-0} / 2)); card_y=$((wy + ${2:-0} + ${4:-0} / 2))
+click "$card_x" "$card_y" double
+expect_log 'ZFILES DEVICE mount confirm id=sd[a-z] fs=fat bytes=16777216'
+shot confirm.png
+keys "<esc>"
+expect_log 'ZFILES DEVICE mount answer id=sd[a-z] confirmed=0'
+if guest "grep -c 'ZFILES DEVICE ask id=' /tmp/zdesktop.log" | tail -1 | grep -qx 0; then echo "ok: Esc asked nothing of the desktop"; else echo "FAIL: a mount was asked after Esc"; status=1; fi
+click "$card_x" "$card_y" double
+keys "<ret>"
+expect_log 'ZFILES DEVICE mount answer id=sd[a-z] confirmed=1'
 expect_log 'ZFILES DEVICE ask id=sd[a-z] mount=1 error=0'
 expect_log 'ZFILES DEVICE result id=sd[a-z] mount=1 errno=0'
 expect_log 'ZFILES DEVICE open id=sd[a-z] path=/media/USBSTICK'
