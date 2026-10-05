@@ -51,7 +51,7 @@ fi
 # 2. The run to its end, its check and rate.
 guest 'i=0; while ! grep -q ZGEARS.DONE /tmp/gears.log && [ $i -lt 150 ]; do sleep 1; i=$((i+1)); done; cat /tmp/gears.log' > "$out/gears.txt"
 cat "$out/gears.txt"
-expect_log /tmp/gears.log 'ZGEARS START run=g .* version="1.4 zedBSD'
+expect_log /tmp/gears.log 'ZGEARS START run=g .* version="1.4 Kei'
 expect_log /tmp/gears.log 'ZGEARS CHECK run=g .* failures=0 glerror=0x0'
 expect_log /tmp/gears.log 'ZGEARS FPS run=g frames=300'
 expect_log /tmp/gears.log 'ZGEARS DONE run=g frames=300 failures=0'

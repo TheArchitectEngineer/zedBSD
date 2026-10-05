@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p009`
 Parent: [WS068](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17、q747。設計の第 1 版を下に書き、実装へ）
+Status: in-progress（2026-10-05 P1 generation17、q747。実装・T1-180 の回帰（x11-p005 の古い期待を除き PASS）まで。速さの目標は Venus で未達、計測の判断を下に書き Q1 の判断待ち）
 Phase disposition: normal
 Queue: q747（P1、ベータ2。p009 → p004 → p007。p037 以降は保留のまま）
 
@@ -131,5 +131,19 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 | `sh plan/ws068/tests/glsl-host/run.sh build/ws068-p009/glsl-host` | `glsl-host: PASS` |
 | `sh plan/ws101/tests/gles/run.sh build/ws068-p009/ws101-gles` | `ws101 gles host test PASS` |
 | 比べるための前の library | `build/ws068-p009-base/dynamic/libEGL.so`・`libGLESv2.so`（commit 7dd0e207 の 1 つ前の source） |
-| Venus（T1）・WS101 の venus.sh・実機・boot test | **未実施**（T1 に依頼。手順 6〜9 の中身） |
+| Venus（T1-180、main d4808731） | egl-p008〜p030・glx-p013・p031・p033 の 16 本が全部 exit 0、x11-p004 PASS、boot test PASS。x11-p005 は `ZGEARS START … version="1.4 zedBSD` の期待が古い（今の名乗りは `1.4 Kei (fixed function on OpenGL ES 2.0 on Vulkan)`）だけで FAIL。期待を直した（`plan/tools/x11/x11-p005.sh` 54 行）、再試験待ち |
+| WS101 の venus.sh | 未実施（T1-180 の (5)、後で） |
+| 計測（T1-180、display、300 frame、clear だけ） | 新しい library 41・42 秒、前の library 42 秒（約 140 ms/frame、差なし）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-180-out/egl-new.txt`・`egl-new2.txt`・`egl-old.txt` |
+| 実機 | 未実施 |
+
+### 計測の判断（2026-10-05 P1）
+
+- 速さの目標（100 ms 以下）は Venus では**達していない**。差が出ない理由は、重ねられる仕事が無いことにある: clear だけの frame は CPU の記録がほぼ 0 で、
+  1 frame の時間は submit・acquire・present の往復で決まる。Venus は 1 回の submit と完了の通知に約 95 ms かかる（[F-021](../../future-work.md) の ws068-p010 の測定:
+  pbuffer の `vkQueueSubmit`＋`vkWaitForFences` が draw の数によらず約 95 ms）。libvulkan の present は前から worker で非同期なので、p009 の前も present 自体は待っていない。
+  frame を重ねて隠せるのは「CPU の記録」と「GPU の実行」が両方ある時だけで、Venus の往復の遅れ（F-021・F-064）は隠せない。
+- p009 の機能（present で待たない、slot、libGLESv2 の frame の番号、待つ API）は実装と回帰で確かめた。速さの効果は、CPU の記録が重い scene（多数の draw）か、
+  往復の短い i915 の実機で測るのが正しい。
+- 提案（Q1・ユーザーの判断）: 完了の条件の「計測」を、Venus の clear だけの数から外し、i915 の実機（p038 の passthrough）での計測に移して、p009 は機能の受け入れ
+  （回帰の全部、ws101 の venus.sh、x11-p005 の再試験）で cleared にする。速さが実機でも出なければ別の Phase で原因（acquire の待ち・WSI の copy）を調べる。
 
