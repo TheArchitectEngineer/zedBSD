@@ -3,7 +3,7 @@
 # ws127-p005: 日本語の UI と、名前の変更の IME（F-041 の残り）
 
 Status: planning（2026-10-02 ベータ1の計画。要る判断・成果は「未決の判断」と「依存」）
-Disposition: normal
+Disposition: canceled（2026-10-05 夜 ユーザーの決定 WS158 ⑤: [WS158](../../ws158/ws.md) に吸収。日本語の UI は WS158 の口と catalog で作る）
 Parent: [WS127](../ws.md)
 Queue: なし
 依存: p001、WS095（IME の現状）、WS089 p016 と仕組みを共有（先に作った側に合わせる）

@@ -60,7 +60,7 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p012](phase012/phase.md) | Settings の中だけで済む操作性: 検索の結果の上下の key と Enter、頁の pane の touch の drag の scroll、左の pane の key の移動の見直し（q619 で C1・C4 を追加） | uncleared（2026-10-03 q619-i01。実装と試験 PASS、欄からの Down だけ compositor 待ち。今は Tab → Down） | —（p010 と並列可、source は p012 だけが変える） |
 | [ws089-p013](phase013/phase.md) | About の memory と Storage の使用量（[proposed/libkeiland-system.md](proposed/libkeiland-system.md)、libkeiland の追加） | planning（libkeiland の API の追加の main の許可、p010 でユーザーの採否） | p010 |
 | [ws089-p014](phase014/phase.md) | Network の頁を実機の Wi-Fi（5330）で: 一覧・接続・鍵・切断 | planning（WiFi の driver の WS（BUG-134 ほか）の成果が要る） | ネットワークの WS、実機 |
-| [ws089-p015](phase015/phase.md) | 日本語の UI（WS127 p005 と共通の仕組み） | planning（ユーザーの判断: 日本語の UI をベータ1 に入れるか） | p010、WS127 p005 と仕組みを共有 |
+| [ws089-p015](phase015/phase.md) | 日本語の UI（WS127 p005 と共通の仕組み） | canceled（2026-10-05 夜、WS158 に吸収） | p010、WS127 p005 と仕組みを共有 |
 | [ws089-p016](phase016/phase.md) | 単一の instance（二つ目の起動で既存の窓を前に） | planning（compositor の activation の仕組みが要る。今の zdesktop に xdg-activation は無い） | p010、compositor の Phase（WS099 と直列） |
 | [ws089-p017](phase017/phase.md) | accent の色・dark の外観（D2） | planning（ユーザーの判断: ベータ1 に入れるか。zdesktop と全 app の固定の色に及ぶ） | p010 |
 | [ws089-p018](phase018/phase.md) | 全文規約と回帰（WS の最後）、完了の処理の準備 | planning（最後） | 選んだ実装の Phase |

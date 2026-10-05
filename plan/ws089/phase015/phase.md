@@ -3,7 +3,7 @@
 # ws089-p015: 日本語の UI
 
 Status: planning（ユーザーの判断: 日本語の UI をベータ1 に入れるか）
-Disposition: normal
+Disposition: canceled（2026-10-05 夜 ユーザーの決定 WS158 ⑤: [WS158](../../ws158/ws.md) に吸収。日本語の UI は WS158 の口と catalog で作る）
 Parent: [WS089](../ws.md)
 Queue: なし
 依存: p010、WS127 p005 と共通の仕組み（先に作った側に合わせる）
