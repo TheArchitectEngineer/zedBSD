@@ -6,12 +6,15 @@
  */
 
 /*
- * /dev/input-inject: a test-only pen or touch screen for machines without
- * one (QEMU).
+ * /dev/input-inject: a test-only pen, touch screen, touch pad, mouse or
+ * keyboard for machines without one (QEMU), or driven by an agent over SSH
+ * on a real one (AAT, ws173).
  *
- * Only root may open the node, and only one open at a time.  The first
- * write declares the device (include/uapi/input-inject.h): a fixed pen
- * shape or a fixed touch screen shape, so no other device type can be made.
+ * Only root may open the node, and at most INPUT_INJECT_OPENS_MAX opens at
+ * a time, each its own device.  The first write declares the device
+ * (include/uapi/input-inject.h): one of the fixed shapes, so no other
+ * device type can be made.  A mouse and a keyboard take checked events like
+ * a pen, and reach readers like a USB mouse and keyboard.
  * For a pen, later writes pass checked events to the ordinary input layer.
  * For a touch screen, later writes are frames of fingers, which are split
  * into the reports a USB touch screen sends and run through the USB touch
@@ -43,8 +46,19 @@
 /* The tilt resolution: units per radian for units of one degree. */
 #define INJECT_TILT_RESOLUTION	57
 
-/* The number of absolute axes the pen declares. */
+/* The most absolute axes a device declares (the pen's five). */
 #define INJECT_AXIS_COUNT	5U
+
+/* The keyboard's keys: KEY_ESC to KEY_COMPOSE, KEY_F13 to KEY_F24, and the two brightness keys. */
+#define INJECT_KEY_FIRST	1U
+#define INJECT_KEY_LAST		127U
+#define INJECT_KEY_F13		183U
+#define INJECT_KEY_F24		194U
+#define INJECT_KEY_BRIGHTNESS_DOWN	224U
+#define INJECT_KEY_BRIGHTNESS_UP	225U
+
+/* Room for the capabilities a mouse or the keyboard declares (the keyboard's: SYN and 139 keys). */
+#define INJECT_CAPABILITY_MAX	160U
 
 /*
  * One open of the node: the device it declared, if any.
@@ -59,6 +73,12 @@ struct inject_open {
 	struct input_device *device;
 	uint32_t kind;
 	struct input_abs_axis axes[INJECT_AXIS_COUNT];
+	/* The axes declared (the pen's five, an absolute mouse's two, or none). */
+	unsigned axis_count;
+	/* A mouse or the keyboard: the capabilities it declared, and whether the mouse is absolute. */
+	struct input_capability capabilities[INJECT_CAPABILITY_MAX];
+	unsigned capability_count;
+	int absolute;
 	uint32_t report_contacts;
 	int32_t touch_x_max;
 	int32_t touch_y_max;
@@ -79,6 +99,12 @@ static int inject_declare(struct inject_open *state, const void *buffer, size_t 
 static int inject_setup_valid(const struct input_inject_setup *setup);
 static int inject_declare_pen(struct inject_open *state, const struct input_inject_setup *setup);
 static int inject_declare_touch(struct inject_open *state, const struct input_inject_setup *setup);
+static int inject_declare_mouse(struct inject_open *state, const struct input_inject_setup *setup);
+static int inject_declare_keyboard(struct inject_open *state, const struct input_inject_setup *setup);
+static void inject_capability(struct inject_open *state, uint16_t type, uint16_t code);
+static int inject_mouse_event_valid(const struct inject_open *state, const struct input_event *event);
+static int inject_keyboard_key(uint16_t code);
+static int inject_axis_value_valid(const struct inject_open *state, const struct input_event *event);
 static ssize_t inject_write_touch(struct inject_open *state, const void *buffer, size_t size);
 static int inject_frame_valid(const struct inject_open *state, const struct input_inject_touch_frame *frame);
 static int inject_contact_valid(const struct inject_open *state, const struct input_inject_contact *contact);
@@ -119,11 +145,11 @@ static const struct input_capability inject_capabilities[] = {
 static struct mutex inject_lock;
 
 /*
- * Whether an open holds the node: set by the open that admits itself, and
- * cleared when that open closes (or fails to finish opening).  Zero means
- * the node is free.  inject_lock protects it.
+ * How many opens hold the node: counted up by an open that admits itself
+ * (at most INPUT_INJECT_OPENS_MAX), down when it closes (or fails to finish
+ * opening).  Zero means the node is free.  inject_lock protects it.
  */
-static int inject_busy;
+static unsigned inject_busy;
 
 /*
  * Publishes /dev/input-inject.
@@ -165,14 +191,14 @@ inject_open(
 	if (!superuser)
 		return EPERM;
 
-	/* Admits one open at a time: the first to find the node free takes it. */
+	/* Admits up to INPUT_INJECT_OPENS_MAX opens, each its own device. */
 	mutex_lock(&inject_lock);
-	busy = inject_busy;
+	busy = inject_busy >= INPUT_INJECT_OPENS_MAX;
 	if (!busy)
-		inject_busy = 1;
+		inject_busy++;
 	mutex_unlock(&inject_lock);
 
-	/* Refuses an open while another holds the node. */
+	/* Refuses an open while all of them are held. */
 	if (busy)
 		return EBUSY;
 
@@ -222,13 +248,14 @@ inject_close(
 	return 0;
 }
 
-/* Marks the node free for the next open. */
+/* Gives one open's place back. */
 static void
 inject_release_node(void)
 {
-	/* inject_busy cleared: the next open may take the node. */
+	/* One open fewer: the next open may take its place. */
 	mutex_lock(&inject_lock);
-	inject_busy = 0;
+	if (inject_busy > 0U)
+		inject_busy--;
 	mutex_unlock(&inject_lock);
 }
 
@@ -256,7 +283,7 @@ inject_write(
 		return (ssize_t)size;
 	}
 
-	/* A touch screen and a touch pad take frames of fingers, a pen events. */
+	/* A touch screen and a touch pad take frames of fingers; a pen, a mouse and a keyboard events. */
 	if (state->kind == INPUT_INJECT_KIND_TOUCH || state->kind == INPUT_INJECT_KIND_TOUCHPAD) {
 		written = inject_write_touch(state, buffer, size);
 	} else {
@@ -338,6 +365,16 @@ inject_declare(
 	if (!valid)
 		return EINVAL;
 
+	/* A mouse and a keyboard (ws173-p001). */
+	if (setup.kind == INPUT_INJECT_KIND_MOUSE) {
+		error = inject_declare_mouse(state, &setup);
+		return error;
+	}
+	if (setup.kind == INPUT_INJECT_KIND_KEYBOARD) {
+		error = inject_declare_keyboard(state, &setup);
+		return error;
+	}
+
 	/* A touch screen, and a touch pad (ws159-p003), are declared apart. */
 	if (setup.kind == INPUT_INJECT_KIND_TOUCH || setup.kind == INPUT_INJECT_KIND_TOUCHPAD) {
 		error = inject_declare_touch(state, &setup);
@@ -362,18 +399,25 @@ static int
 inject_setup_valid(
 	const struct input_inject_setup *setup)
 {
+	int minimum;
+
 	/* The record names itself. */
 	if (setup->magic != INPUT_INJECT_MAGIC)
 		return 0;
 
+	/* A mouse or a keyboard may declare no area (0); every other device declares one. */
+	minimum = 1;
+	if (setup->kind == INPUT_INJECT_KIND_MOUSE || setup->kind == INPUT_INJECT_KIND_KEYBOARD)
+		minimum = 0;
+
 	/* The area's width lies in the axis range. */
-	if (setup->x_max < 1)
+	if (setup->x_max < minimum)
 		return 0;
 	if (setup->x_max > INPUT_INJECT_AXIS_MAX)
 		return 0;
 
 	/* So does its height. */
-	if (setup->y_max < 1)
+	if (setup->y_max < minimum)
 		return 0;
 	if (setup->y_max > INPUT_INJECT_AXIS_MAX)
 		return 0;
@@ -405,6 +449,7 @@ inject_declare_pen(
 	state->kind = INPUT_INJECT_KIND_PEN;
 
 	/* Describes the axes: position, 4096 pressure levels and tilt. */
+	state->axis_count = INJECT_AXIS_COUNT;
 	inject_axis(&state->axes[0], ABS_X, 0, setup->x_max, 0);
 	inject_axis(&state->axes[1], ABS_Y, 0, setup->y_max, 0);
 	inject_axis(&state->axes[2], ABS_PRESSURE, 0,
@@ -438,9 +483,14 @@ inject_event_valid(
 	const struct inject_open *state,
 	const struct input_event *event)
 {
-	const struct input_absinfo *range;
-	size_t index;
 	int button;
+	int valid;
+
+	/* A mouse's and the keyboard's events are checked against what they declared. */
+	if (state->kind == INPUT_INJECT_KIND_MOUSE || state->kind == INPUT_INJECT_KIND_KEYBOARD) {
+		valid = inject_mouse_event_valid(state, event);
+		return valid;
+	}
 
 	/* Of the synchronization events only the report boundary, with 0. */
 	if (event->type == EV_SYN) {
@@ -463,22 +513,38 @@ inject_event_valid(
 
 	/* The pen's axes, within their declared ranges. */
 	if (event->type == EV_ABS) {
-		for (index = 0; index < INJECT_AXIS_COUNT; index++) {
-			/* Only the axis the event names. */
-			if (state->axes[index].code != event->code)
-				continue;
-
-			/* Its value lies in the axis's range. */
-			range = &state->axes[index].info;
-			if (event->value < range->minimum)
-				return 0;
-			if (event->value > range->maximum)
-				return 0;
-			return 1;
-		}
+		valid = inject_axis_value_valid(state, event);
+		return valid;
 	}
 
 	/* Refuses every other event. */
+	return 0;
+}
+
+/* Tests whether an absolute event names a declared axis, with a value in its range. */
+static int
+inject_axis_value_valid(
+	const struct inject_open *state,
+	const struct input_event *event)
+{
+	const struct input_absinfo *range;
+	size_t index;
+
+	/* The axis the event names. */
+	for (index = 0; index < state->axis_count; index++) {
+		if (state->axes[index].code != event->code)
+			continue;
+
+		/* Its value lies in the axis's range. */
+		range = &state->axes[index].info;
+		if (event->value < range->minimum)
+			return 0;
+		if (event->value > range->maximum)
+			return 0;
+		return 1;
+	}
+
+	/* An axis the device does not have. */
 	return 0;
 }
 
@@ -810,4 +876,195 @@ inject_report_value(
 	entry->code = code;
 	entry->value = value;
 	report->value_count++;
+}
+
+/*
+ * Registers the mouse a setup record declares: three buttons and both
+ * wheels, with relative motion (x_max and y_max 0) or an absolute position
+ * (both above 0, like QEMU's USB tablet).
+ */
+static int
+inject_declare_mouse(
+	struct inject_open *state,
+	const struct input_inject_setup *setup)
+{
+	struct input_device_info info;
+	int error;
+
+	/* No fingers and no Scan Time; an area in both directions or in neither. */
+	if (setup->report_contacts != 0U || setup->reserved != 0U)
+		return EINVAL;
+	if ((setup->x_max == 0) != (setup->y_max == 0))
+		return EINVAL;
+	state->absolute = setup->x_max > 0;
+
+	/* The report boundary, the buttons and the wheels. */
+	state->capability_count = 0U;
+	inject_capability(state, EV_SYN, SYN_REPORT);
+	inject_capability(state, EV_KEY, BTN_LEFT);
+	inject_capability(state, EV_KEY, BTN_RIGHT);
+	inject_capability(state, EV_KEY, BTN_MIDDLE);
+	inject_capability(state, EV_REL, REL_HWHEEL);
+	inject_capability(state, EV_REL, REL_WHEEL);
+
+	/* The motion: relative, or two absolute axes over the area. */
+	state->axis_count = 0U;
+	if (state->absolute) {
+		inject_capability(state, EV_ABS, ABS_X);
+		inject_capability(state, EV_ABS, ABS_Y);
+		inject_axis(&state->axes[0], ABS_X, 0, setup->x_max, 0);
+		inject_axis(&state->axes[1], ABS_Y, 0, setup->y_max, 0);
+		state->axis_count = 2U;
+	} else {
+		inject_capability(state, EV_REL, REL_X);
+		inject_capability(state, EV_REL, REL_Y);
+	}
+
+	/* Registers it as an ordinary input device. */
+	kern_memset(&info, 0, sizeof(info));
+	info.name = "Test mouse (input-inject)";
+	if (state->absolute)
+		info.name = "Test absolute pointer (input-inject)";
+	info.physical_path = "input-inject";
+	info.id.bustype = BUS_VIRTUAL;
+	info.capabilities = state->capabilities;
+	info.capability_count = state->capability_count;
+	info.absolute_axes = state->axes;
+	info.absolute_axis_count = state->axis_count;
+	error = drv_input_device_register(&info, &state->device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: later writes are the mouse's events. */
+	state->kind = INPUT_INJECT_KIND_MOUSE;
+	return 0;
+}
+
+/* Registers the keyboard a setup record declares: KEY_ESC to KEY_COMPOSE, KEY_F13 to KEY_F24, brightness. */
+static int
+inject_declare_keyboard(
+	struct inject_open *state,
+	const struct input_inject_setup *setup)
+{
+	struct input_device_info info;
+	uint16_t code;
+	int error;
+
+	/* No area, no fingers, no Scan Time. */
+	if (setup->x_max != 0 || setup->y_max != 0 || setup->report_contacts != 0U || setup->reserved != 0U)
+		return EINVAL;
+
+	/* The report boundary and every key. */
+	state->capability_count = 0U;
+	inject_capability(state, EV_SYN, SYN_REPORT);
+	for (code = INJECT_KEY_FIRST; code <= INJECT_KEY_LAST; code++)
+		inject_capability(state, EV_KEY, code);
+	for (code = INJECT_KEY_F13; code <= INJECT_KEY_F24; code++)
+		inject_capability(state, EV_KEY, code);
+	inject_capability(state, EV_KEY, INJECT_KEY_BRIGHTNESS_DOWN);
+	inject_capability(state, EV_KEY, INJECT_KEY_BRIGHTNESS_UP);
+
+	/* Registers it as an ordinary input device (the compositor repeats a held key). */
+	kern_memset(&info, 0, sizeof(info));
+	info.name = "Test keyboard (input-inject)";
+	info.physical_path = "input-inject";
+	info.id.bustype = BUS_VIRTUAL;
+	info.capabilities = state->capabilities;
+	info.capability_count = state->capability_count;
+	error = drv_input_device_register(&info, &state->device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: later writes are the keyboard's events. */
+	state->kind = INPUT_INJECT_KIND_KEYBOARD;
+	return 0;
+}
+
+/* Adds one capability to a mouse's or the keyboard's list (the list has room for every one declared). */
+static void
+inject_capability(
+	struct inject_open *state,
+	uint16_t type,
+	uint16_t code)
+{
+	/* After the ones before it. */
+	if (state->capability_count >= INJECT_CAPABILITY_MAX)
+		return;
+	state->capabilities[state->capability_count].type = type;
+	state->capabilities[state->capability_count].code = code;
+	state->capability_count++;
+}
+
+/* Tests whether an event is one the mouse or the keyboard declared, with a value it takes. */
+static int
+inject_mouse_event_valid(
+	const struct inject_open *state,
+	const struct input_event *event)
+{
+	int valid;
+
+	/* The report boundary, with 0. */
+	if (event->type == EV_SYN) {
+		if (event->code != SYN_REPORT || event->value != 0)
+			return 0;
+		return 1;
+	}
+
+	/* A button or a key, pressed or released (never repeated). */
+	if (event->type == EV_KEY) {
+		if (event->value != 0 && event->value != 1)
+			return 0;
+		if (state->kind == INPUT_INJECT_KIND_KEYBOARD) {
+			valid = inject_keyboard_key(event->code);
+			return valid;
+		}
+		if (event->code == BTN_LEFT || event->code == BTN_RIGHT || event->code == BTN_MIDDLE)
+			return 1;
+		return 0;
+	}
+
+	/* The keyboard has nothing else. */
+	if (state->kind == INPUT_INJECT_KIND_KEYBOARD)
+		return 0;
+
+	/* A movement or a wheel's turn, within its bounds (an absolute mouse has no relative motion). */
+	if (event->type == EV_REL) {
+		if (event->value < -INPUT_INJECT_REL_MAX || event->value > INPUT_INJECT_REL_MAX)
+			return 0;
+		if (event->code == REL_WHEEL || event->code == REL_HWHEEL)
+			return 1;
+		if (!state->absolute && (event->code == REL_X || event->code == REL_Y))
+			return 1;
+		return 0;
+	}
+
+	/* An absolute mouse's position, within its area. */
+	if (event->type == EV_ABS && state->absolute) {
+		valid = inject_axis_value_valid(state, event);
+		return valid;
+	}
+
+	/* Refuses every other event. */
+	return 0;
+}
+
+/* Tests whether a key code is one of the keyboard's. */
+static int
+inject_keyboard_key(
+	uint16_t code)
+{
+	/* KEY_ESC to KEY_COMPOSE. */
+	if (code >= INJECT_KEY_FIRST && code <= INJECT_KEY_LAST)
+		return 1;
+
+	/* KEY_F13 to KEY_F24. */
+	if (code >= INJECT_KEY_F13 && code <= INJECT_KEY_F24)
+		return 1;
+
+	/* The brightness keys. */
+	if (code == INJECT_KEY_BRIGHTNESS_DOWN || code == INJECT_KEY_BRIGHTNESS_UP)
+		return 1;
+
+	/* Not one of them. */
+	return 0;
 }

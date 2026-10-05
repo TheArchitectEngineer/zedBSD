@@ -6,11 +6,13 @@
  */
 
 /*
- * /dev/input-inject: the test-only pen and touch screen injector
- * (CONFIG_INPUT_TEST_INJECT).
+ * /dev/input-inject: the test-only pen, touch screen, mouse and keyboard
+ * injector (CONFIG_INPUT_TEST_INJECT; test images only, root only).
  *
- * The first write on an open is one struct input_inject_setup.  Its kind
- * chooses the device:
+ * Every open declares one device, and up to INPUT_INJECT_OPENS_MAX opens
+ * may be held at once (a mouse and a keyboard together, ws173).  The first
+ * write on an open is one struct input_inject_setup.  Its kind chooses the
+ * device:
  *
  * INPUT_INJECT_KIND_PEN declares a virtual pen: ABS_X 0..x_max, ABS_Y
  * 0..y_max, ABS_PRESSURE 0..4095, ABS_TILT_X/Y -60..60 degrees,
@@ -47,7 +49,29 @@
  * units a millimetre (a Latitude 5330's pad's).  A frame's reserved word holds its Scan Time in
  * its low 16 bits (on a pad declared with one, else 0) and the buttons
  * held in INPUT_INJECT_PAD_BUTTONS (bit 0 the left button).
- * The device appears as /dev/input/eventN.  Closing the file removes it.
+ *
+ * INPUT_INJECT_KIND_MOUSE (ws173-p001) declares a mouse with BTN_LEFT,
+ * BTN_RIGHT, BTN_MIDDLE, REL_WHEEL and REL_HWHEEL, as a USB mouse reports
+ * them.  With x_max and y_max both 0 it is a relative mouse (REL_X, REL_Y);
+ * with both above 0 it is an absolute pointer (ABS_X 0..x_max, ABS_Y
+ * 0..y_max, like QEMU's USB tablet), which the compositor maps onto the
+ * output, so x_max and y_max one below the output's size in pixels make
+ * the axes pixels.  report_contacts and reserved are 0.
+ *
+ * INPUT_INJECT_KIND_KEYBOARD (ws173-p001) declares a keyboard with every key
+ * from KEY_ESC (1) to KEY_COMPOSE (127), KEY_F13 to KEY_F24, and the
+ * brightness keys (224, 225) (x_max, y_max,
+ * report_contacts and reserved are 0).  A key is pressed (1) or released
+ * (0); repeat (2) is refused, since the compositor repeats a held key.
+ *
+ * Later writes on a mouse or a keyboard are arrays of struct input_event,
+ * as on a pen: each event must be one the device declared (a REL_* value in
+ * -INPUT_INJECT_REL_MAX..INPUT_INJECT_REL_MAX, an ABS_* value in its
+ * range, a button or key 0 or 1, SYN_REPORT 0), or the whole write is
+ * refused.  A report ends with SYN_REPORT, as a USB device's does.
+ *
+ * The device appears as /dev/input/eventN.  Closing the file removes it,
+ * and the input layer releases what it held.
  */
 
 #ifndef KERN_UAPI_INPUT_INJECT_H
@@ -63,6 +87,12 @@ extern "C" {
 #define INPUT_INJECT_KIND_PEN		1U
 #define INPUT_INJECT_KIND_TOUCH		2U
 #define INPUT_INJECT_KIND_TOUCHPAD	3U
+#define INPUT_INJECT_KIND_MOUSE		4U
+#define INPUT_INJECT_KIND_KEYBOARD	5U
+
+/* The most opens (devices) at once, and the largest relative movement of one event. */
+#define INPUT_INJECT_OPENS_MAX		4U
+#define INPUT_INJECT_REL_MAX		32767
 #define INPUT_INJECT_PAD_RESOLUTION	12
 #define INPUT_INJECT_AXIS_MAX		65535
 #define INPUT_INJECT_PRESSURE_MAX	4095
