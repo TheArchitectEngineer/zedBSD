@@ -85,6 +85,7 @@ kl_wallpaper_decode(
 	if (size >= WALLPAPER_PNG_MAGIC_SIZE)
 		compared = memcmp(data, wallpaper_png_magic, WALLPAPER_PNG_MAGIC_SIZE);
 	if (compared == 0) {
+		/* Decodes the PNG. */
 		error = wallpaper_png(data, size, image);
 		if (error != 0)
 			return error;
@@ -257,8 +258,8 @@ wallpaper_size_allowed(
 	if (width > KL_WALLPAPER_SIDE_MAX || height > KL_WALLPAPER_SIDE_MAX)
 		return 0;
 
-	/* Too many pixels. */
-	if ((unsigned long long)width * height > KL_WALLPAPER_PIXELS_MAX)
+	/* Too many pixels (both sides are at most KL_WALLPAPER_SIDE_MAX here, so the product fits an unsigned long). */
+	if (width * height > KL_WALLPAPER_PIXELS_MAX)
 		return 0;
 
 	/* The size is allowed. */
@@ -274,6 +275,8 @@ wallpaper_jpeg_exit(
 
 	/* The manager is the first member of the error record. */
 	failure = (struct wallpaper_jpeg_error *)info->err;
+
+	/* Returns to the setjmp in wallpaper_jpeg, which frees what was made and reports EINVAL. */
 	longjmp(failure->back, 1);
 }
 
