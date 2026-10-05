@@ -65,3 +65,12 @@ design-reviewer（2026-10-05 夜、第 1 版に対して。source は変えず�
 
 - 2026-10-05 夜: 設計の担当が `bootloader/uefi/`（bootx64.c・zedbsd-config.c/.h・video.c・logo.c・transition.S・uefi.h）、`bootloader/pcat/bootzbsd.S`・`pc98/bootzbsd.S` の parser の呼び出し、`bootloader/common/logo-path.c`、`include/kern/boot.h`・`src/kern/boot.c`（未知の名前の扱い）、`src/kern/panic.c`・`src/drivers/platform/pcat/graphics/text.c`・`src/hal/amd64/bsp-pcat/cons.c`（quiet と reveal）、`platform/amd64/vmunix.mk`（cfg の生成）、`plan/tools/boot-test.sh`・`qmp.py`・`guest/`、WS013 の試験の索引を読んで design.md の第 1 版を書いた。design-reviewer のレビューを受けて第 2 版に改めた。source は変えていない。build・試験は未実施（設計だけ）。commit はしていない（Q1 が行う）。
 - 残課題: ユーザーの判断 D1〜D8。p002〜p005 の Queue 化は Q1。kernel の keyboard driver が LED を自分で設定するか（`SetState` の副作用の確認、p003 で確かめる）。
+
+## 2026-10-05 夜 ユーザーの仕様の変更（第 2 版を置き換える）
+
+ユーザー:「safe.login=console これですが、おおむねグラフィックドライバでフリーズするので、コンソールログインにしてもあまりうれしくないなあ。仕様を変えましょう。Ctrlキーが押されている→カーネルメッセージがコンソールになる。デフォルトではquietだけどconsoleになる。Shiftキーが押されている→ログインがコンソールになってグラフィカルセッションが開始しない。よってブートコンフィグファイルの仕様変更は不要です。ブートローダのみ変更します。」
+
+- **Ctrl**: loader が kernel に渡す `kmsg=` を `console` にする（config が `kmsg=quiet` でも）。
+- **Shift**: loader が `login=` を `console` にする（graphical の session を始めない）。
+- 両方を同時に押せば両方。boot の config の file の形式は変えない（`safe.*` の行は無し。第 2 版の D1・D2・D8 は不要になる）。変えるのは bootloader だけ。
+- 第 2 版の他の部分（Ex protocol の KeyShiftState の 3 点の標本、待ちなし、告知、Ctrl+Space の手順、試験の形）は流用し、第 3 版で書き直す。logo を Ctrl の時に落とすか、640x480 を希望するか（D3）、1 秒止めるか（D5）は第 3 版で改めて判断の項目にする。

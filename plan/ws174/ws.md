@@ -2,7 +2,7 @@
 # WS174: 起動時の Ctrl で safe boot options に切り替える
 
 Master: [master](../master.md)
-Status: planning（2026-10-05 夜 追加。設計だけ）
+Status: planning（2026-10-05 夜 追加。設計だけ。ユーザーが仕様を変更: Ctrl = kmsg を console、Shift = login を console、config の形式は変えず bootloader だけ）
 Primary Milestone: MG003
 Related: MG006（graphical boot）
 
