@@ -2,7 +2,7 @@
 
 # ws145-p001: 印刷の調査と設計
 
-Status: in-progress（第 2 版と 2 回目の敵対的レビューまで。2026-10-05 夕、T1 の FAIL の対応のため区切った）
+Status: in-progress（第 3.1 版まで。3 回目の敵対的レビューで重大なし。ユーザーの判断 D2〜D9 を Q1 経由で待つ）
 Disposition: normal
 Parent: [WS145](../ws.md)
 Queue: q754（Q1、2026-10-05、P2 g15）
@@ -44,3 +44,11 @@ UAT の所見の対応（q755〜q760）の後、上の指摘を design.md に反
 重大: (1) printd と backend の socket で捨てた行・部分送信の fd の取り違え（printd も fd の FIFO を持つ、捨てた JOB 行も fd を取る、MSG_CMSG_CLOEXEC・MSG_CTRUNC、送信 queue に fd 送信済みの印）。(2) cancel と ACCEPTED の競合で取り消した job が印刷される（JOB の後は常に CANCEL を送り、CANCELLED は printd の STATE で確定、終わった状態は吸収）。(3) backend の口が client の request の番号を受けるので取り違える（volumes と同じく backend が番号を振り、compositor が待ちの表を持つ）。
 中: manager の request の番号は 9（10 ではない）、fd が後から届く EAGAIN と fd を取った後の EPROTO の経路、同じ利用者の 2 つの printd の spool（printd ごとの dir と lock）、zedBSD の posix_spawn の sigdefault は SIGKILL・SIGSTOP で失敗する（必要な signal だけ、子で closefrom(4)）、printers.conf は lock の下で読み直して差分を当てる（id は最大値+1、再利用しない）、job_of は表にする、IPP の Cancel-Job・Get-Job-Attributes の job-id と request-id、printd の SIGPIPE、timeout は「進みの無い時間」、crash 後の spool の掃除と home.c の waitpid(-1)（範囲外、Q1 へ）、状態遷移の通常の行と LPD の取り消し、IPP の応答の解析（delimiter 0x05、未知の tag の読み飛ばし、textWithLanguage、1xx、EOF の本体）。
 軽: title の規則の層ごとの統一、backend の値と型の定義、add の result の時機と NAME の失敗の既定、id の再利用、LPD の細部（job 番号の種、data file を先に）、HTTP の Host、名前解決の thread、capability は printd の有無で、全ての app に job の title が届くこと（判断の点）、RAM の spool の代わりに fd から直接送る案、Phase の判断の期限・FreeBSD の確認、試験の抜け。
+
+## 第 3 版・第 3.1 版（2026-10-05 夜）
+
+- 第 3 版: 2 回目の指摘（重大 3・中 12・軽 13）を反映（printd の fd の FIFO と送信 queue の印、JOB の後は常に CANCEL・CANCELLING・終わった状態は吸収、backend が request の番号を振り compositor が待ちの表、manager の request 9、fd の EAGAIN、printd ごとの spool の dir と lock、posix_spawn の sigdefault と closefrom、printers.conf を lock の下で読み直し id は next-id、job_of の表、IPP の job-id・request-id・応答の解析、timeout は進みの無い時間、LPD は data file を先に）。
+- 3 回目の敵対的レビュー: **重大なし**。中 9（printd の fd 3 の EOF で終わる・backend は shutdown だけ、IDLE n・BYE n、送信 queue の未送の JOB の cancel、add の result は書き終えてから、終わりの状態で fd を閉じる不変条件、LPD の abort は file の後だけ、printer に届いた後の cancel は FAILED unconfirmed、伸びる file の複写の上限、lock を先に取ってから dir）と軽 14。
+- 第 3.1 版: 中 9 と主な軽（D4 の Phase の誤り、FATAL・SPOOL の行、待ちの表の項目、backend の fd の口を削る、spool の file を消す時機、Get-Job-Attributes の見張りを送信の数に入れない、捨てた行に REJECTED protocol、IPP の 0x0402・0x0403・0x0506、HTTP/1.0、LPD の文字の境界、C1、spool の置き場所の OS ごとの違い）を反映。
+- 残りの軽（p002・p003 の実装の時に決める）: saved の libkeiland への写し方の細部、mtime を tick ごとに見るか、名前解決の止まった thread の数え方、RFC 1179 の N の上限の確認。
+- ws.md の Phase の表と範囲 3（WS002 の service）は design §8・D1 に合わせて Q1 が直す（依頼済み）。
