@@ -24,6 +24,7 @@
 #include "panels.h"
 #include "tablet.h"
 #include "ime.h"
+#include "activation.h"
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
@@ -71,6 +72,7 @@ static const struct zwl_global globals[] = {
 	{ 23, "keiland_edit_manager_v1", 1, ZWL_EDIT_MANAGER },
 	{ 24, "org_kde_kwin_server_decoration_manager", 1, ZWL_KDE_DECORATION_MANAGER },
 	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, ZWL_SYSTEM_MANAGER },
+	{ 26, "xdg_activation_v1", 1, ZWL_ACTIVATION_MANAGER },
 };
 
 static void global_identity(const struct zwl_global *global, const char **interface, uint32_t *version);
@@ -329,6 +331,11 @@ zwl_dispatch(
 	case ZWL_SYSTEM_MONITOR:
 		/* Keiland's system extension: the monitor (sysmon.c, WS134 p012). */
 		error = zwl_sysmon_request(object, opcode, bytes, size);
+		break;
+	case ZWL_ACTIVATION_MANAGER:
+	case ZWL_ACTIVATION_TOKEN:
+		/* xdg_activation_v1 and its tokens (activation.c, ws089-p016). */
+		error = zwl_activation_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */

@@ -198,6 +198,9 @@ enum zwl_kind {
 	ZWL_SYSTEM_SHARING,
 	/* The system extension's monitor (sysmon.c, WS134 p012). */
 	ZWL_SYSTEM_MONITOR,
+	/* xdg_activation_v1 and its tokens (activation.c, ws089-p016). */
+	ZWL_ACTIVATION_MANAGER,
+	ZWL_ACTIVATION_TOKEN,
 };
 
 /*
@@ -628,6 +631,14 @@ struct zwl_object {
 	 */
 	unsigned network_scanning;
 	uint64_t network_scanning_until;
+	/*
+	 * An xdg_activation_token_v1 (activation.c, ws089-p016): the ID of the
+	 * surface set_surface named (0: none; the application's ID is kept in
+	 * app_id), and whether it was committed (it then takes nothing but
+	 * destroy).
+	 */
+	uint32_t activation_surface;
+	unsigned activation_committed;
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
@@ -682,6 +693,12 @@ struct zwl_client {
 	 */
 	unsigned peer_checked;
 	unsigned peer_same;
+	/*
+	 * When the client connected (zwl_milliseconds' clock): a program that
+	 * has just started may hand its right to show a window on top to
+	 * another program's window (activation.c, ws089-p016).
+	 */
+	uint64_t connected_ms;
 };
 
 /* Cycle counts of the event loop, reported every few seconds (ZWL PERF). */
@@ -1320,6 +1337,7 @@ int zwl_glass_motion(struct zwl_server *server);
 void zwl_glass_gesture(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
 int zwl_glass_apps_room(struct zwl_server *server, int32_t *left, int32_t *right);
 void zwl_glass_bring(struct zwl_server *server, struct zwl_object *surface, const char *via);
+void zwl_glass_activate(struct zwl_server *server, struct zwl_object *surface, const char *via);
 void zwl_glass_open_wiseview(struct zwl_server *server, const char *via);
 
 /* The applications' icons in the system bar and their previews (apps-bar.c, ws142-p004; the drawing is in glass.h). */

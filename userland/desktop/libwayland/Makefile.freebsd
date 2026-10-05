@@ -19,5 +19,6 @@ KEILAND_FREEBSD_WAYLAND_SOURCES := userland/desktop/libwayland/client.c \
 	userland/desktop/libwayland/virtual-keyboard-protocol.c \
 	userland/desktop/libwayland/ime-status-protocol.c \
 	userland/desktop/libwayland/keyboard-inset-protocol.c \
-	userland/desktop/libwayland/edit-protocol.c
+	userland/desktop/libwayland/edit-protocol.c \
+	userland/desktop/libwayland/activation-protocol.c
 $(eval $(call KEILAND_FREEBSD_LIBRARY,wayland,libwayland-client.so,$(KEILAND_FREEBSD_WAYLAND_SOURCES),,,userland/desktop/libwayland/exports.map))

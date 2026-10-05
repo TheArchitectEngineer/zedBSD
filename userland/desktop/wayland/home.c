@@ -43,6 +43,7 @@
  */
 
 #include "glass.h"
+#include "activation.h"
 
 #include "userland/desktop/paths.h"
 
@@ -794,11 +795,23 @@ zwl_spawn(
 	struct zwl_server *server,
 	const char *command)
 {
+	char token[ZWL_ACTIVATION_TOKEN_SIZE];
 	char directory[108];
 	const char *name;
 	char *slash;
 	pid_t child;
 	int descriptor;
+	int error;
+
+	/*
+	 * The program's activation token (activation.c, ws089-p016): with it
+	 * the program may bring a window to the front, its own or that of a
+	 * running copy of itself it hands its request to.  A program starts
+	 * without one when none can be made.
+	 */
+	error = zwl_activation_issue(server, command, "spawn", token, sizeof(token));
+	if (error != 0)
+		token[0] = '\0';
 
 	/* Forks the process that runs the command. */
 	child = fork();
@@ -828,6 +841,13 @@ zwl_spawn(
 
 		/* The socket's name within that directory. */
 		(void)setenv("WAYLAND_DISPLAY", name, 1);
+
+		/* The program's own activation token, never one the compositor was started with. */
+		if (token[0] != '\0') {
+			(void)setenv("XDG_ACTIVATION_TOKEN", token, 1);
+		} else {
+			(void)unsetenv("XDG_ACTIVATION_TOKEN");
+		}
 
 		/* Only a failed exec comes back. */
 		(void)execl("/bin/sh", "sh", "-c", command, (char *)NULL);

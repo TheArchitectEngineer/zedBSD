@@ -142,6 +142,12 @@
 		kl_system_monitor_take;
 		kl_system_monitor_info;
 		kl_system_monitor_close;
+		kl_instance_open;
+		kl_instance_fd;
+		kl_instance_take;
+		kl_instance_close;
+		kl_activation_token;
+		kl_activate;
 		kl_canvas_init;
 		kl_canvas_release;
 		kl_canvas_clip_push;

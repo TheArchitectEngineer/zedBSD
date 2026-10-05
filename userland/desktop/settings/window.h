@@ -94,6 +94,12 @@ struct se_window {
 	struct se_event events[SE_WINDOW_EVENTS];
 	unsigned event_first;
 	unsigned event_count;
+
+	/*
+	 * Another descriptor the wait wakes for, -1 for none: the one copy's
+	 * socket, which a later start of Settings makes readable (ws089-p016).
+	 */
+	int extra_fd;
 };
 
 /*
