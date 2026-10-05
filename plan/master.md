@@ -460,7 +460,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS137](ws137/ws.md) | MG006 | FreeBSD の試験の VM（QEMU+KVM）を T1・T2 で使えるようにし、libkeiland-backend の FreeBSD の build と試験を流す（2026-10-04 ユーザー） | completed（2026-10-04） | — |
 | [WS138](ws138/ws.md) | MG006 | 背景の画像を PPM から PNG に（F-071。起動の decode は prefetch の thread へ） | planned（p001 から。判断 U1〜U3・U6〜U8 待ち） | S1 の後（F-071 の契機） |
 | [WS139](ws139/ws.md) | MG006 | desktop の性能の台帳と改善（F-072。開発の host の Venus は lavapipe の CPU、E2 の 5330 の測定は未実施） | planned（p001 から。判断 U2・U3・U5 待ち） | — |
-| [WS140](ws140/ws.md) | MG002 | ld.so の依存・object・handle の上限を動的に（F-070。main は 32・16 のまま） | planned（p001 から。U2・U3 はユーザーの明示の決定が要る。arm64 の sysroot の再 build は Q1 の許可） | — |
+| [WS140](ws140/ws.md) | MG002 | ld.so の依存・object・handle の上限を動的に（F-070。main は 32・16 のまま） | completed | 2026-10-05 完了（ld.so の上限を動的に、amd64、試験は plan/tools/rtld） |
 | [WS141](ws141/ws.md) | MG006 | Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI と V3D 4.2）。Linux の vc4・v3d の初期化の順と command の順を先に文書にし、i915 の書き換えを手本に我々の interface へ。framebuffer に段の印。Linux の vc4・v3d は GPL なので code は写さない（2026-10-04 ユーザー） | planned（p001 から、q691） | 独立（他の WS と並走） |
 | [WS142](ws142/ws.md) | MG006 | デスクトップのアプリの切り替え: Windows キーでアプリの一覧、タッチパッドの端からの 2 本指（Wiseview・仮想デスクトップ）、上部のバーのアプリの一覧とプレビュー、3 本指のタップ・Alt+Tab の切り替え（2026-10-04 ユーザーの要望） | planning（p001 の設計から、q701） | — |
 | [WS143](ws143/ws.md) | MG006 | Bluetooth（Settings の stub の頁の実体、HCI・daemon・desktop の経路）。ベータ2 の実装の項目、時期は未定（2026-10-04 ユーザー） | planning（Queue なし） | — |
@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | tool | 用途 | 使い方 |
 | --- | --- | --- |
+| [rtld/](tools/rtld/README.md)（WS140） | ld.so の多数の object・依存・handle・TLS の試験 | `rtld-many.sh BUILD`（`config-amd64-rtld.mk` の SSH の image、BUILD/sysroot の symlink） |
 | [gnu-utils/](tools/gnu-utils/)（WS045） | base の text utility の GNU 拡張の差分の試験: `cases/`（awk・grep・misc・sed・sort）を GNU の実物と比べる（`plan/tools/utils/util-diff.py` が使う）、base の image の config（`config-amd64-base.mk`、他の試験の config が include する）、guest での case（`build-guest-utils.sh`・`guest-batches.sh`、full の guest image が要る） | `python3 plan/tools/utils/util-diff.py`（WS043・WS045 の手順）、`make ZEDBSD_CONFIG=plan/tools/gnu-utils/config-amd64-base.mk BUILD=… disk-image` |
 | [FreeBSD 15.1 の試験の guest と backend の試験](tools/keiland-freebsd/README.md)（WS137） | 公式の 15.1 の image（CHECKSUM を q550 の記録と照合）と NoCloud の seed から作る QEMU+KVM の guest。loopback の SSH と QMP の PNG を使い、serial の log は読まない。guest の中で keiland-freebsd.mk を native で build（warning 0）し、audit と ws131 の host 試験を流す。GPU は無い | `build-guest.sh [--force] [OUT]`、`guest.sh start\|stop\|status\|ssh\|put\|get\|copy\|shot`、`backend-test.sh [OUT]`。T1・T2 は自分の build/ に作るか GUEST_DIR で読み取り専用で使う。2 つ同時は GUEST_RUN と SSH_PORT を分ける |
 | [settings/](tools/settings/) | WS135 の設定の試験: compositor の store（`host-store.sh`）、libkeiland の `kl_settings_*`（`host-settings.sh`）、Wayland 無しの stand-in（`host-kl-settings.c`、Files・Terminal・Settings の host 試験が使う）、QEMU の `settings-p003.sh` と image の `config-amd64-settings.mk` | `sh plan/tools/settings/host-store.sh`、`sh plan/tools/settings/host-settings.sh` |
