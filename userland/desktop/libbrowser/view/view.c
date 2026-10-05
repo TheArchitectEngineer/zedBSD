@@ -20,6 +20,12 @@
  * On the caller's GPU the view keeps the renderer (paint/gpu.h) and a
  * framebuffer for each of the caller's image views it drew into.
  *
+ * An http or https page that arrived is not parsed at once when it names
+ * parser-blocking scripts (<script src>) on the web: they are fetched
+ * through the loader first, and the page is made once they all ended, so
+ * that the parser finds them instead of reading each at once and blocking
+ * the caller's window while the network works (BUG-207).
+ *
  * The caller's input (ws074-p056) goes to the page as DOM events
  * (page/input.c); the view does the default actions the page's scripts
  * leave uncanceled: scrolling, following a link clicked or activated with
@@ -132,6 +138,19 @@ struct browser_offscreen {
 };
 
 /*
+ * One parser-blocking script fetched before its document is parsed
+ * (BUG-207): the view it is for, its location, its request (NULL once it
+ * ended), how it ended (0, or an errno value) and the bytes it brought.
+ */
+struct view_prefetch_script {
+	struct browser_view *view;
+	char *location;
+	struct net_request *request;
+	int error;
+	struct wb_buffer bytes;
+};
+
+/*
  * A view: the page shown and its location, the history of locations
  * (index is the one shown), how far the page is scrolled (layout units),
  * how far the caller shifts the content past an end (overscroll_y, layout
@@ -176,6 +195,17 @@ struct browser_view {
 	int pending_step;
 	/* The history destination is published only when this pending page commits. */
 	size_t pending_index;
+	/*
+	 * The document that arrived and waits for its parser-blocking scripts
+	 * (BUG-207): its bytes and final URL (NULL when none waits), the
+	 * scripts fetched ahead (struct view_prefetch_script *) and how many
+	 * of them have not ended.  pending_path and the history's step stay
+	 * the page's until it is shown.
+	 */
+	struct wb_buffer arrived;
+	char *arrived_url;
+	struct wb_vector prefetches;
+	size_t prefetch_waiting;
 	struct wb_buffer title;
 	struct browser_callbacks callbacks;
 	struct browser_gpu device;
@@ -234,6 +264,12 @@ static int view_show_page(struct browser_view *view, struct page *page, const ch
 static int view_start_load(struct browser_view *view, const char *path, int step, size_t history_index);
 static void view_document_arrived(void *context, struct net_request *request);
 static void view_stop_load(struct browser_view *view, int report);
+static int view_prefetch_start(struct browser_view *view, const unsigned char *bytes, size_t length, const char *url);
+static void view_prefetch_arrived(void *context, struct net_request *request);
+static void view_prefetch_commit(struct browser_view *view);
+static void view_prefetch_clear(struct browser_view *view);
+static void view_prefetch_free(struct wb_vector *scripts);
+static void view_commit_document(struct browser_view *view, const unsigned char *bytes, size_t length, const char *url, struct wb_vector *scripts);
 static int view_update(struct browser_view *view);
 static void view_settle_network(struct browser_view *view);
 static void view_clamp_scroll(struct browser_view *view);
@@ -319,6 +355,8 @@ browser_view_create(
 	made->press_button = -1;
 	made->has_focus = 1;
 	wb_buffer_init(&made->title);
+	wb_buffer_init(&made->arrived);
+	wb_vector_init(&made->prefetches, sizeof(struct view_prefetch_script *));
 	if (options->callbacks != NULL)
 		made->callbacks = *options->callbacks;
 
@@ -373,6 +411,8 @@ browser_view_destroy(
 	if (view->loader != NULL)
 		page_net_destroy(view->loader);
 	wb_buffer_release(&view->title);
+	wb_buffer_release(&view->arrived);
+	view_prefetch_free(&view->prefetches);
 	free(view);
 }
 
@@ -1839,8 +1879,9 @@ view_start_load(
 
 /*
  * The loader's callback for the page being fetched: a response becomes the
- * page shown (at its final URL, after redirects); a failure is reported and
- * the page shown stays.
+ * page shown (at its final URL, after redirects), once the parser-blocking
+ * scripts it names were fetched (BUG-207); a failure is reported and the
+ * page shown stays.
  */
 static void
 view_document_arrived(
@@ -1850,31 +1891,78 @@ view_document_arrived(
 	struct browser_view *view;
 	const unsigned char *bytes;
 	const char *url;
-	struct page *page;
 	char *path;
 	size_t length;
-	size_t history_index;
-	int step;
 	int error;
 
-	/* The load is over. */
+	/* The document's request is over. */
 	view = context;
-	path = view->pending_path;
-	step = view->pending_step;
-	history_index = view->pending_index;
 	view->pending = NULL;
-	view->pending_path = NULL;
 
 	/* A request that failed leaves the page shown. */
 	error = page_net_result(request, &bytes, &length, &url);
 	if (error != 0) {
+		path = view->pending_path;
+		view->pending_path = NULL;
 		view_failed(view, path, error, page_failure_reason());
 		free(path);
 		return;
 	}
 
-	/* The document, in a new page at its final URL. */
+	/* The scripts it names are fetched first; the document waits for them without blocking. */
+	error = view_prefetch_start(view, bytes, length, url);
+	if (error == 0 && view->prefetch_waiting != 0)
+		return;
+
+	/* No script to wait for (or no memory to wait with: the parser reads them at once): the page now. */
+	view_prefetch_clear(view);
+	view_commit_document(view, bytes, length, url, NULL);
+}
+
+/*
+ * Makes the document that arrived the page shown, in a new page at its
+ * final URL, with the scripts fetched ahead for its parser (NULL for
+ * none); a page that could not be made is reported and the page shown
+ * stays.  The load's location goes.
+ */
+static void
+view_commit_document(
+	struct browser_view *view,
+	const unsigned char *bytes,
+	size_t length,
+	const char *url,
+	struct wb_vector *scripts)
+{
+	const struct view_prefetch_script *script;
+	struct page *page;
+	char *path;
+	size_t history_index;
+	size_t index;
+	int step;
+	int error;
+
+	/* The load's location and how it joins the history, taken from the view. */
+	path = view->pending_path;
+	step = view->pending_step;
+	history_index = view->pending_index;
+	view->pending_path = NULL;
+
+	/* A new page. */
 	error = view_make_page(view, &page);
+
+	/* The scripts fetched ahead, for its parser. */
+	if (error == 0 && scripts != NULL) {
+		for (index = 0; index < scripts->count; index++) {
+			script = *(const struct view_prefetch_script **)wb_vector_at(scripts, index);
+			error = page_add_prefetched(page, script->location, script->error, script->bytes.data, script->bytes.length);
+			if (error != 0)
+				break;
+		}
+		if (error != 0)
+			page_destroy(page);
+	}
+
+	/* The document, at its final URL. */
 	if (error == 0) {
 		error = page_load_bytes(page, bytes, length, url);
 		if (error != 0)
@@ -1891,19 +1979,217 @@ view_document_arrived(
 	free(path);
 }
 
+/*
+ * Starts fetching the parser-blocking web scripts a document names
+ * (BUG-207), keeping the document until they end.  prefetch_waiting says
+ * how many were started (none: the document need not wait).  Returns 0,
+ * or ENOMEM.
+ */
+static int
+view_prefetch_start(
+	struct browser_view *view,
+	const unsigned char *bytes,
+	size_t length,
+	const char *url)
+{
+	struct view_prefetch_script *script;
+	struct wb_vector locations;
+	char *location;
+	size_t index;
+	int error;
+
+	/* Nothing waits yet. */
+	view_prefetch_clear(view);
+
+	/* The scripts the document names (a failure to scan leaves the parser to read them). */
+	wb_vector_init(&locations, sizeof(char *));
+	error = page_scan_scripts(url, bytes, length, &locations);
+
+	/* None: the document need not wait. */
+	if (error != 0 || locations.count == 0) {
+		for (index = 0; index < locations.count; index++) {
+			location = *(char **)wb_vector_at(&locations, index);
+			free(location);
+		}
+		wb_vector_release(&locations);
+		return error;
+	}
+
+	/* The document and its final URL, kept while it waits. */
+	error = wb_buffer_append(&view->arrived, bytes, length);
+	if (error == 0) {
+		view->arrived_url = strdup(url);
+		if (view->arrived_url == NULL)
+			error = ENOMEM;
+	}
+
+	/* A fetch for each script; one that cannot start is left to the parser. */
+	for (index = 0; index < locations.count; index++) {
+		location = *(char **)wb_vector_at(&locations, index);
+
+		/* Without memory for the document the scripts only go. */
+		if (error != 0) {
+			free(location);
+			continue;
+		}
+
+		/* The script's entry, which owns its location from here. */
+		script = calloc(1, sizeof(*script));
+		if (script == NULL) {
+			free(location);
+			error = ENOMEM;
+			continue;
+		}
+		script->view = view;
+		script->location = location;
+		wb_buffer_init(&script->bytes);
+
+		/* The view's list keeps it. */
+		error = wb_vector_push(&view->prefetches, &script);
+		if (error != 0) {
+			free(location);
+			free(script);
+			continue;
+		}
+
+		/* Its request; one that does not start leaves the parser to read it (the entry is dropped). */
+		error = page_net_fetch(view->loader, location, view_prefetch_arrived, script, &script->request);
+		if (error != 0) {
+			script->request = NULL;
+			view->prefetches.count--;
+			free(location);
+			free(script);
+			error = 0;
+			continue;
+		}
+
+		/*
+		 * One more script the document waits for; the count reaching zero
+		 * in view_prefetch_arrived shows the page.
+		 */
+		view->prefetch_waiting++;
+	}
+	wb_vector_release(&locations);
+
+	/* Without memory the waiting ends: the scripts started are cancelled and the parser reads them. */
+	if (error != 0) {
+		view_prefetch_clear(view);
+		return error;
+	}
+
+	/* Succeeded: the document waits for its scripts (or for none). */
+	return 0;
+}
+
+/* The loader's callback for a script fetched ahead: its result is kept, and the last one shows the page. */
+static void
+view_prefetch_arrived(
+	void *context,
+	struct net_request *request)
+{
+	struct view_prefetch_script *script;
+	const unsigned char *bytes;
+	const char *url;
+	size_t length;
+	int error;
+
+	/* The script's request is over: its error, or its body (of any status, as reading it at once gives). */
+	script = context;
+	script->request = NULL;
+	error = page_net_result(request, &bytes, &length, &url);
+	if (error == 0)
+		error = wb_buffer_append(&script->bytes, bytes, length);
+	script->error = error;
+
+	/* One fewer to wait for; the last one makes the page. */
+	script->view->prefetch_waiting--;
+	if (script->view->prefetch_waiting == 0)
+		view_prefetch_commit(script->view);
+}
+
+/* Makes the document that waited for its scripts the page shown, then lets the scripts and the document go. */
+static void
+view_prefetch_commit(
+	struct browser_view *view)
+{
+	struct wb_buffer document;
+	struct wb_vector scripts;
+	char *url;
+
+	/*
+	 * The document, its URL and its scripts are taken from the view
+	 * first: the new page may start another load, which clears the view's.
+	 */
+	document = view->arrived;
+	wb_buffer_init(&view->arrived);
+	url = view->arrived_url;
+	view->arrived_url = NULL;
+	scripts = view->prefetches;
+	wb_vector_init(&view->prefetches, sizeof(struct view_prefetch_script *));
+
+	/* The page. */
+	view_commit_document(view, document.data, document.length, url, &scripts);
+
+	/* What it was made from goes (not the view's, which may hold a new load's). */
+	view_prefetch_free(&scripts);
+	wb_buffer_release(&document);
+	free(url);
+}
+
+/* Lets a waiting document and its scripts go, cancelling the scripts' requests still running. */
+static void
+view_prefetch_clear(
+	struct browser_view *view)
+{
+	/* The scripts, with their requests cancelled; the list stays for the next load. */
+	view_prefetch_free(&view->prefetches);
+	wb_vector_init(&view->prefetches, sizeof(struct view_prefetch_script *));
+
+	/* No script and no document wait. */
+	view->prefetch_waiting = 0;
+	wb_buffer_release(&view->arrived);
+	wb_buffer_init(&view->arrived);
+	free(view->arrived_url);
+	view->arrived_url = NULL;
+}
+
+/* Frees a list of scripts fetched ahead and the list's storage, cancelling their requests still running (their callbacks are not called). */
+static void
+view_prefetch_free(
+	struct wb_vector *scripts)
+{
+	struct view_prefetch_script *script;
+	size_t index;
+
+	/* Each script: its request, its location and bytes. */
+	for (index = 0; index < scripts->count; index++) {
+		script = *(struct view_prefetch_script **)wb_vector_at(scripts, index);
+		if (script->request != NULL)
+			page_net_cancel(script->request);
+		free(script->location);
+		wb_buffer_release(&script->bytes);
+		free(script);
+	}
+
+	/* The list's storage. */
+	wb_vector_release(scripts);
+}
+
 /* Stops the page being fetched, if any; report tells the load callback. */
 static void
 view_stop_load(
 	struct browser_view *view,
 	int report)
 {
-	/* Nothing loads. */
-	if (view->pending == NULL)
+	/* Nothing loads: no request runs and no document waits for its scripts. */
+	if (view->pending == NULL && view->arrived_url == NULL)
 		return;
 
-	/* The request. */
-	page_net_cancel(view->pending);
+	/* The request, or the scripts a document that arrived waits for. */
+	if (view->pending != NULL)
+		page_net_cancel(view->pending);
 	view->pending = NULL;
+	view_prefetch_clear(view);
 	if (report && view->callbacks.load != NULL)
 		view->callbacks.load(view->callbacks.context, view, BROWSER_LOAD_STOPPED, view->pending_path, 0, "");
 

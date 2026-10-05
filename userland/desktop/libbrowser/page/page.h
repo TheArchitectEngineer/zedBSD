@@ -44,6 +44,18 @@ struct net_url;
 typedef void (*page_request_done)(void *context, struct net_request *request);
 
 /*
+ * A parser-blocking script fetched before its document was parsed
+ * (BUG-207, script.c): its location (resolved against the document's
+ * URL), how the fetch ended (0, or an errno value) and the bytes it
+ * brought.  The page owns it from page_add_prefetched to page_destroy.
+ */
+struct page_prefetched {
+	char *location;
+	int error;
+	struct wb_buffer bytes;
+};
+
+/*
  * A loaded page.
  *
  * The page owns its heap; the document is a root of it for as long as the
@@ -112,6 +124,8 @@ struct page {
 	uint32_t styled_sheets;
 	struct wb_vector scripts;
 	struct wb_vector fetches;
+	/* The parser-blocking scripts the view fetched before the document was parsed (struct page_prefetched *, BUG-207). */
+	struct wb_vector prefetched;
 	/* Pending child responses own temporary native roots until task completion. */
 	struct wb_vector frame_loads;
 	/* Defer nested child-response checkpoints while the outer snapshot drains. */
@@ -180,6 +194,10 @@ int page_frames_checkpoint(struct page *page);
 /* Dynamic scripts (script.c). */
 void page_scripts_init(struct page *page);
 void page_scripts_release(struct page *page);
+
+/* The parser-blocking scripts fetched before a document is parsed (script.c, BUG-207). */
+int page_scan_scripts(const char *base, const unsigned char *bytes, size_t length, struct wb_vector *locations);
+int page_add_prefetched(struct page *page, const char *location, int error, const unsigned char *bytes, size_t length);
 
 /* Style sheets (sheets.c). */
 void page_sheets_init(struct page *page);
