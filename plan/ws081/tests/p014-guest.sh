@@ -72,7 +72,7 @@ put "$build/bin/touchinject" /bin/touchinject
 put "$build/dynamic/libkeiland.so" /lib/libkeiland.so
 guest 'chmod 755 /bin/wayland /bin/terminal /bin/touchinject' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 guest 'printf "echo dragme; sleep 600\n" > /tmp/t1.sh; export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/terminal --columns=40 --rows=10 --token=t1 "--command=sh /tmp/t1.sh" > /tmp/t1.log 2>&1 </dev/null & sleep 5; /bin/terminal --columns=40 --rows=10 --token=t2 > /tmp/t2.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 guest "grep 'ZWL MAP client=' /tmp/zdesktop.log" > "$out/maps.txt"

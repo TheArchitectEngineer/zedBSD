@@ -42,7 +42,7 @@ for picture in $pictures; do
 	name=$(basename "$picture" .png)
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --timeout=300 --width=1280 --height=800 --glass --wallpaper=$picture > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass --wallpaper=$picture > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1
 /bin/popup-probe --timeout-s=200 --token=c > /tmp/c.log 2>&1 </dev/null & sleep 3; echo started" >/dev/null
 	pointer move 5 790 sleep 600
 	check "$out/$name.png" >/dev/null

@@ -88,7 +88,7 @@ put "$build/dynamic/libz-compat.so" /lib/libz-compat.so
 put "$build/dynamic/libpng-compat.so" /lib/libpng-compat.so
 guest 'chmod 755 /bin/wayland /bin/files /bin/touchinject; rm -rf /tmp/ftest; mkdir -p /tmp/ftest/alpha /tmp/ftest/beta; i=0; while [ $i -lt 150 ]; do echo x > /tmp/ftest/file$i.txt; i=$((i+1)); done; echo made' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/files --width=900 --height=620 --token=p010 /tmp/ftest > /tmp/files.log 2>&1 </dev/null & i=0; while ! grep -q "ZFILES READY" /tmp/files.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 3; echo started' >/dev/null
 expect /tmp/files.log 'ZFILES READY' "Files started"

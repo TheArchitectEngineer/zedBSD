@@ -56,7 +56,7 @@ within() {
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 timeout 180 sh plan/ws035/tests/zdesktop-guest.sh start "$image" >/dev/null 2>&1
 sleep 20
-guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=1200 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=1200 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 
 # A. 60 Hz, 10 seconds.
 record a60 16 'size 1279 799 2 scan|wait 1500|down 1 200 400|swipe 800 0 600 16.667|up 1|wait 300'

@@ -52,7 +52,7 @@ put "$build/dynamic/libjpeg-compat.so" /lib/libjpeg-compat.so
 put "$out/touch.pdf" /tmp/touch.pdf
 guest 'chmod 755 /bin/wayland /bin/pdfviewer /bin/touchinject' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
-/bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 
 # Starts PDF Viewer on the document with extra arguments, and finds where its window is.

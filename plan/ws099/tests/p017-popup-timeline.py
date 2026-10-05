@@ -125,8 +125,8 @@ def prepare(output, mode):
     source = replace_once(source,
                           'check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }',
                           'check() { ' + helper + ' --capture "$out" -- "$@" --runtime "$GUEST_RUNTIME"; }')
-    source = replace_once(source, '/bin/wayland --timeout=400',
-                          '/bin/wayland --log-frames --timeout=400')
+    source = replace_once(source, '/bin/wayland --testing --timeout=400',
+                          '/bin/wayland --testing --log-frames --timeout=400')
     source = replace_once(source, "finish() {",
                           'finish() {\n\tguest \'cat /tmp/zdesktop.log\' > "$out/frames.log"')
 

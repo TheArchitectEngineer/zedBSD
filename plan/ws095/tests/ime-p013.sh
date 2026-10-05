@@ -48,7 +48,7 @@ guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.config/kei/ime/ja-user.dict
 printf "Hello, world\nThe second line of the file.\n" > /tmp/p013.txt
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'KEI-IME READY'
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=800 --width=900 --height=520 /tmp/p013.txt > /tmp/te.log 2>&1 </dev/null & echo started' >/dev/null
 expect_log /tmp/te.log 'TEXTEDIT READY'

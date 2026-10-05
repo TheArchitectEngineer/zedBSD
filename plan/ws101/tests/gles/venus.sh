@@ -35,7 +35,7 @@ timeout 300 python3 plan/tools/guest/guest.py start "$image" --symbols "$symbols
 timeout 400 python3 plan/tools/guest/guest.py wait --timeout 360 >> "$out/start.txt" 2>&1 || { cat "$out/start.txt"; echo "venus: FAIL (no SSH)"; exit 1; }
 
 # A compositor running through the runs (as plan/ws068/tests/egl-p030.sh starts it), which none may take the screen from.
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=3600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' > /dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=3600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' > /dev/null
 guest 'ps -A -o pid,args' > "$out/ps-before.txt"
 
 # Runs glescompute with arguments into a log, and fails the run unless it ends with no failure.

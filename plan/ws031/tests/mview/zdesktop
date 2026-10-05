@@ -1,6 +1,6 @@
 type=daemon
 command=/bin/wayland
-arguments=--socket=/tmp/wayland-0 --width=640 --height=480 --timeout=280
+arguments=--testing --socket=/tmp/wayland-0 --width=640 --height=480 --timeout=280
 after=vkwait1
 restart=no
 required=NO

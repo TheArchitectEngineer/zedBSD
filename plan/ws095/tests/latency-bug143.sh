@@ -52,7 +52,7 @@ expect_log() {
 # 0. zdesktop with the input method; a file with a long first line.
 guest 'service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[k]eiland-ime|[t]extedit|[t]erminal" | awk "{print \$1}"); do kill $p; done; sleep 1; echo stopped' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.config/kei/ime/ja-user.dict; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'KEI-IME READY'
 guest 'i=0; : > /root/lat.txt; while [ $i -lt 30 ]; do printf "the quick brown fox jumps over the lazy dog %d\n" $i >> /root/lat.txt; i=$((i+1)); done; echo made' >/dev/null
 

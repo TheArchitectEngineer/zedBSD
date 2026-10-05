@@ -95,7 +95,7 @@ guest "$stop_all" >/dev/null
 [ -n "${NOTES_BINARY:-}" ] && timeout 60 python3 plan/tools/guest/guest.py put "$NOTES_BINARY" /bin/notes >/dev/null 2>&1 </dev/null
 guest 'rm -rf /tmp/notes-test /tmp/notes.log /root/.local/share/keiland/notes; mkdir -p /tmp/notes-test' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 guest "$start_notes" >/dev/null
 expect_log /tmp/notes.log 'NOTES START width=1280 height=800 fullscreen=1'
 set -- $(guest "grep 'NOTES LAYOUT' /tmp/notes.log | tail -1" | sed -n 's/.* page=\([0-9]*\),\([0-9]*\),[0-9]*,[0-9]* scale=\([0-9.]*\).*/\1 \2 \3/p')

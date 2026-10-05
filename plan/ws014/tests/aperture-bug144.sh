@@ -54,7 +54,7 @@ fi
 
 # 2. Model viewers alone, one at a time.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --timeout=1200 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=1200 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 guest 'dmesg | grep -c "venus: aperture full"' > "$out/mview-before.txt"
 before=$(guest "$allocated" | tail -1)
 echo "zdesktop alone: allocated=${before:-?}" | tee "$out/mview-steps.txt"

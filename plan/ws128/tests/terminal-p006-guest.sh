@@ -72,7 +72,7 @@ start_terminal() {
 guest "$stop_all" >/dev/null
 guest 'rm -f $HOME/.config/keiland/terminal.conf /tmp/t.log; i=0; : > /tmp/rows.txt; while [ $i -lt 120 ]; do echo "row $i" >> /tmp/rows.txt; i=$((i+1)); done; echo made' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # 1. A fresh terminal with 120 lines.
 start_terminal t1 1

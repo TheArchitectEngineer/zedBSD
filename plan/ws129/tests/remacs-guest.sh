@@ -33,7 +33,7 @@ expect_guest '[ -x /bin/emacs ] && [ "$(head -n 1 /bin/emacs)" = "#!/usr/bin/noc
 
 # 2. The editor in a terminal.
 guest 'rm -f /tmp/remacs-test.txt; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/terminal --token=r1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 pointer move 640 400 sleep 300 down sleep 60 up sleep 500
 keys 'emacs /tmp/remacs-test.txt' '\n'

@@ -37,7 +37,7 @@ try:
    os.setgroups([video]);os.setgid(user.pw_gid);os.setuid(user.pw_uid)
   socket=Path(directory,'wayland-keiland')
   with Path('/root/ws109-passthrough-evidence/compositor.txt').open('w') as output:
-   server=subprocess.Popen([str(prefix/'bin/wayland'),'--socket='+str(socket),'--timeout=30','--log-frames','--desktop-client=none'],preexec_fn=unprivileged,env=env,cwd=directory,stdout=output,stderr=subprocess.STDOUT,text=True)
+   server=subprocess.Popen([str(prefix/'bin/wayland'),'--testing','--socket='+str(socket),'--timeout=30','--log-frames','--desktop-client=none'],preexec_fn=unprivileged,env=env,cwd=directory,stdout=output,stderr=subprocess.STDOUT,text=True)
    limit=time.monotonic()+8
    while not socket.exists() and server.poll() is None and time.monotonic()<limit:time.sleep(0.05)
    if socket.exists():

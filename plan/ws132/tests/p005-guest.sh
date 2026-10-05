@@ -75,7 +75,7 @@ mcopy -i "$stick" "$out/hello.txt" ::HELLO.TXT
 guest "$stop_all" >/dev/null
 guest 'service start volumed >/dev/null 2>&1; chown root /dev/gpu0; export XDG_RUNTIME_DIR=/tmp HOME=/root
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-rm -f /tmp/wayland-0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 
 # 1.
 send blockdev-add "{\"driver\":\"raw\",\"node-name\":\"stick0\",\"file\":{\"driver\":\"file\",\"filename\":\"$(realpath "$stick")\"}}"

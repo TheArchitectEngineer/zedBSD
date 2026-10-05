@@ -49,7 +49,7 @@ for step in $steps; do
 		# The compositor, glass look, 1280x800.
 		guest 'for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[t]ablet-probe|[t]erminal" | awk "{print \$1}"); do kill $p; done; sleep 1
 export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 		;;
 	tablet)
 		# The tablet client, then the pen script; the injector's node is found by the scan.

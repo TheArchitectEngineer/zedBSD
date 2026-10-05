@@ -156,7 +156,7 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
                 {'type': 'key', 'data': {'down': down, 'key': {'type': 'qcode', 'data': name}}}]})
             time.sleep(0.05)
 
-    command(f'/bin/wayland --socket=/tmp/wayland-0 --width={WIDTH} --height={HEIGHT} --timeout={args.timeout} &')
+    command(f'/bin/wayland --testing --socket=/tmp/wayland-0 --width={WIDTH} --height={HEIGHT} --timeout={args.timeout} &')
     ready = wait(r'ZWL READY[^\r\n]*', 'compositor startup')
     report['compositor_ready'] = ready.group(0)
     report['compositor_inputs'] = re.findall(r'ZWL INPUT [^\r\n]*', console())

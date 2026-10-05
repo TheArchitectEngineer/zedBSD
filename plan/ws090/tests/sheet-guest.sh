@@ -59,7 +59,7 @@ sheet_place() {
 # zdesktop and Text Editor afresh (the file argument, or none).
 start() {
 	guest "$stop_all" >/dev/null
-	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0; /bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while ! grep -q 'ZWL READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; /bin/textedit --timeout-s=900 $1 > /tmp/te.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while ! grep -q 'ZWL READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; /bin/textedit --timeout-s=900 $1 > /tmp/te.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 }
 
 # Text Editor's Open (its title bar's button at 487,73 while the window is where it opens).

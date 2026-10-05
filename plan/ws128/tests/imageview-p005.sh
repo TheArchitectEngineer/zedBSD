@@ -56,7 +56,7 @@ put "$out/images/01-splash.png" /tmp/ivpics/a.png
 put "$out/images/02-landscape.jpg" /tmp/ivpics/b.jpg
 put "$out/images/04-mark.png" /tmp/ivpics/c.png
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5
 HOME=/tmp/ivhome /bin/imageview --width=1180 --height=700 /tmp/ivpics/a.png > /tmp/iv.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 expect_log /tmp/iv.log 'IMAGEVIEW READY'
 expect_log /tmp/iv.log 'IMAGEVIEW SHOW path=/tmp/ivpics/a.png index=0 count=3'

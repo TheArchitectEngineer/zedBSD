@@ -27,7 +27,7 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 # zdesktop alone (the probe runs as root, as zdesktop does: the same user).
 guest "$stop_all" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --timeout=300 --width=1280 --height=800 > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; echo started" >/dev/null
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; echo started" >/dev/null
 
 # 1. Quiet.
 guest "export XDG_RUNTIME_DIR=/tmp; hostname; /bin/keiland-system --timeout-ms=4000 monitor; sleep 1" > "$out/quiet.txt"

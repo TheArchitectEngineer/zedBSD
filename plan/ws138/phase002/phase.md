@@ -154,7 +154,7 @@ compositor が PNG と PPM の両方を読めることと、起動の時の読�
    p001 の `ppm-to-png.py` に逆の関数（`read_png`）を足して使う。
 2. guest へ `guest.py put` で、`OUT/w.ppm` を `/tmp/w.ppm` に、tree の `Birch-Lake.png` を `/tmp/w.png` に置く（両方を `/tmp` に置き、disk の cache の差を揃える）。
 3. PNG と PPM を交互に、各 4 回走らせる。最初の 1 回ずつは捨てる（cache の温め）。
-   `guest.py run '/bin/wayland --timeout=8 --width=1280 --height=800 --glass --wallpaper=/tmp/w.png > /tmp/wt.log 2>&1; grep -E "ZWL STARTUP step=wallpaper|ZWL GLASS no wallpaper" /tmp/wt.log'`
+   `guest.py run '/bin/wayland --testing --timeout=8 --width=1280 --height=800 --glass --wallpaper=/tmp/w.png > /tmp/wt.log 2>&1; grep -E "ZWL STARTUP step=wallpaper|ZWL GLASS no wallpaper" /tmp/wt.log'`
    - 他の compositor が動いていれば先に止める（`plan/ws099/tests/c5-transitions.sh` の `stop_all` に倣う）。
    - `--timeout` の秒で終わることは、既存の script（`settings-p009.sh:24`）の書き方で確かめる。
 4. `step=wallpaper ms=` と `step=wallpaper-picture ms=` の中央値を、PNG と PPM で表にして出す。`ZWL GLASS no wallpaper` の行が出たら FAIL。

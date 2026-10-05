@@ -23,7 +23,7 @@ status=0
 
 guest "service stop greeter >/dev/null 2>&1; $stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0; mkdir -p /tmp/p122
-/bin/wayland --timeout=300 --width=1280 --height=800 --glass > /tmp/p122/wayland.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass > /tmp/p122/wayland.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2
 WAYLAND_DISPLAY=wayland-0 /bin/notes --fullscreen --timeout-s=200 /tmp/p122/p122.pdf > /tmp/p122/notes.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 check "$out/pen.png" >/dev/null || status=1
 keys e
