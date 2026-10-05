@@ -173,6 +173,84 @@ The system bar also holds the system's own controls (network, sound, battery,
 input method, virtual desktops). They are driven by the same compositor and
 reached by applications such as Settings through libkeiland.
 
+## Login, sessions and the lock screen on zedBSD
+
+On zedBSD the graphical login and the sessions are run by `sessiond`
+([userland/desktop/sessiond](../../userland/desktop/sessiond/)), a small
+daemon that runs as root and is started by init in place of the console
+getty. It is the only part of the desktop that checks passwords or holds
+privilege. Linux and FreeBSD keep their own display managers and session
+services; the backend talks to them instead.
+
+### The greeter
+
+The greeter is not a separate program. It is the Keiland compositor
+(`/bin/wayland`) started with `--greeter`, so the login screen looks and
+behaves like the desktop. sessiond starts it like this:
+
+1. It creates a socket pair and forks.
+2. The child starts its own session (`setsid`). It drops to the `_greeter`
+   account (`initgroups`, then `setgid`, then `setuid`; the home is
+   `/var/empty`, the shell `nologin`). It closes every descriptor of
+   sessiond's except its end of the socket pair, which becomes descriptor 3.
+   It sets a minimal environment (`USER`, `HOME`, `PATH`) and executes
+   `/bin/wayland --greeter --auth-fd=3`.
+3. The greeter draws the login screen and talks to sessiond on descriptor 3,
+   one line per request:
+
+   | Request | Answer |
+   | --- | --- |
+   | `READY` | `GO` once nothing else holds the display |
+   | `AUTH name password` | `OK`, or `FAIL` after a delay |
+   | `POWER poweroff` / `POWER reboot` | `OK`, then the machine ends |
+
+   Anything else is answered `ERROR`.
+
+The greeter has no privilege. It cannot read `/etc/shadow` or any user's
+home directory; it only passes what the user typed to sessiond.
+
+### Checking a password
+
+sessiond checks passwords with the same routine as the console `login`
+([verify.c](../../userland/base/login/verify.c)):
+
+1. Look the account up in `/etc/passwd`, then its hash in `/etc/shadow`
+   (readable only by root).
+2. A hash starting with `!` or `*` is a locked account and takes no password.
+   An empty hash takes only an empty password.
+3. Otherwise hash the password with `crypt()` and the stored salt (SHA-512
+   crypt), and compare.
+4. Erase the password, whatever the answer.
+
+After a wrong password the answer waits: 2 seconds, doubling after every three
+failures in a row, up to 16 seconds. Every success and failure is logged to
+syslog, and the password itself is never written anywhere.
+
+### Starting the session
+
+After `OK`, sessiond starts the user's session as that user: another
+compositor with a control socket pair as descriptor 3. The greeter keeps the
+screen ("Starting session") until the new compositor says `READY`; then
+sessiond has the greeter give the display back and end. The text console is
+never shown in between.
+
+The session compositor uses its control socket for a few requests:
+
+| Request | Meaning |
+| --- | --- |
+| `UNLOCK password` | The lock screen: check the session user's password, as at login. The user is the session's, not a name the compositor sends. |
+| `LOGOUT` | End the session and hand the display to a new greeter. |
+| `SERVICE name on\|off\|status` | A system service the Sharing page controls (sshd only; root or wheel). |
+
+The socket pairs are created by sessiond when it starts each process. No
+socket that another process could connect to exists.
+
+### The lock screen
+
+The lock screen is drawn by the user's own compositor, which runs as the user.
+It sends the password to sessiond with `UNLOCK`, so the compositor never sees
+the password hash.
+
 ## Related documents
 
 - [Kernel, HAL and driver boundaries](kernel-and-hal.md)
