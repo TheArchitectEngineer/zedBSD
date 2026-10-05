@@ -2,7 +2,7 @@
 # ws138-p002: the compositor reads the wallpaper as a PNG and as a JPEG, refuses a PPM, and how long the reading takes.
 #
 #   plan/ws089/tests/settings-guest.sh start BUILD/hdd-image.img     (the Settings image: /bin/wayland, keiland-settings)
-#   plan/ws138/tests/wallpaper-time.sh [OUTDIR]                      (default build/ws138-p002/time)
+#   plan/tools/wallpaper/wallpaper-time.sh [OUTDIR]                      (default build/wallpaper/time)
 #
 # The host makes the pictures from the tree's Birch-Lake.png: the PNG itself, a JPEG of it (ImageMagick, quality 92)
 # and a PPM of the same pixels (python3, ppm-to-png.py's read_png).  All three go to the guest's /tmp, so the disk
@@ -22,7 +22,7 @@ set -u
 cd "$(dirname -- "$0")/../../.."
 GUEST_RUNTIME="${GUEST_RUNTIME:-$(pwd)/build/ws089-run}"
 export GUEST_RUNTIME
-out=${1:-build/ws138-p002/time}
+out=${1:-build/wallpaper/time}
 mkdir -p "$out"
 status=0
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }

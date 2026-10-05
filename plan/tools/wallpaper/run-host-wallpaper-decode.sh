@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws138-p001/p002: the host test of the wallpaper decoding (userland/desktop/picture/wallpaper.c), under ASan/UBSan.
 #
-#   plan/ws138/tests/run-host-wallpaper-decode.sh
+#   plan/tools/wallpaper/run-host-wallpaper-decode.sh
 #
 # It builds the decoder with libpng-compat, libz-compat and libjpeg-compat from their sources, makes the pictures
 # (python3, and ImageMagick's convert for the JPEGs) and checks:
@@ -11,12 +11,12 @@
 #   3. a JPEG of Lakeside decodes to its size within a small mean difference; a grey JPEG decodes grey; a CMYK JPEG
 #      is refused (EINVAL 22);
 #   4. a PNG wider than 8192 is refused (EFBIG 27); a text file and a cut PNG are refused (EINVAL 22);
-#   5. a PPM is refused (EINVAL 22) since ws138-p002 (U4: PNG and JPEG only).
+#   5. a PPM is refused (the host's EINVAL, 22 on Linux) since ws138-p002 (U4: PNG and JPEG only).
 # Exits 0 on success.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
-out=build/ws138-host
+out=build/wallpaper-host
 mkdir -p "$out/include" "$out/obj" "$out/data"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
@@ -25,7 +25,7 @@ objects=""
 for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
     userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \
     userland/base/libjpeg-compat/idct.c userland/base/libjpeg-compat/marker.c userland/base/libjpeg-compat/memory.c \
-    userland/base/libjpeg-compat/source.c userland/desktop/picture/wallpaper.c plan/ws138/tests/host-wallpaper-decode.c; do
+    userland/base/libjpeg-compat/source.c userland/desktop/picture/wallpaper.c plan/tools/wallpaper/host-wallpaper-decode.c; do
 	object="$out/obj/$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"
 	objects="$objects $object"
