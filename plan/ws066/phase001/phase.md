@@ -100,3 +100,5 @@ Q1（2026-10-05）: clang の行は後回し（clang 入りの image は指定�
 - clang の行の測定ができるまで設計に留める（clang 入りの image が要る）。p002 の後の数で効き目を見直す。
 
 ### ws066-p004（案）: 規約（全文規約の見直し、WS の最後）
+
+Q1 の決定（2026-10-05）: 他の architecture の vmunix.mk は (a)（amd64 だけ変え、他は sysroot で build を確かめられる時に）。
