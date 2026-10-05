@@ -1,6 +1,6 @@
 # q597-i01 / terminal uncleared p172 continuation
 
-Started 2026-10-03T00:14:25.107380+00:00, deadline 2026-10-03T03:14:25.107380+00:00 (at most3h). Main only, no subagents. Exact approved39 paths and whole criteria in [selection](selection.json)/[scope](approved-scope.md). q596 terminal [archive](../../../../history/queue-q596.md). Preflight all209 source hashes matched checkpoint50, clean HEAD 9695f2a21fd3de50a9c2b719275b52a4fe5bc73c; no overlapping executor found. p172 in-progress/WS074 incomplete, p100 blocked and unselected.
+Started 2026-10-03T00:14:25.107380+00:00, deadline 2026-10-03T03:14:25.107380+00:00 (at most3h). Main only, no subagents. Exact approved39 paths and whole criteria in [selection](selection.json)/[scope](approved-scope.md). q596 terminal archive（branch の `plan/history/queue-q596.md`、main に無い）. Preflight all209 source hashes matched checkpoint50, clean HEAD 9695f2a21fd3de50a9c2b719275b52a4fe5bc73c; no overlapping executor found. p172 in-progress/WS074 incomplete, p100 blocked and unselected.
 
 Checkpoint52: [Function builtin full review](../../import/checkpoint52/README.md), reviewed172/209, remaining37 production C/header. Whole original p172 criteria pending; attempt remains active within its unchanged 3h deadline.
 
@@ -79,3 +79,5 @@ User requested host reboot and stop at the next commit before the original 3h de
 Original whole p172 manifest/semantic provenance, API/ABI/source/include/link/independent client, current broader native/page/ASan, target warning0 and boot PNG gates were not completed for final source. `bind/input.c` Keyboard/Wheel caller root gap was found outside q597 exact39 and left unchanged. p100 remains unselected and blocked; Acid3 pixel agreement was **not remeasured** (last q579 evidence: score100/100, 37.04% agreement, 302208/480000 differing).
 
 Resume after reboot: fetch `origin/browser3` and verify HEAD, clean worktree and [checkpoint87 inventory](../../import/checkpoint87/review-inventory.json) hashes; inspect [terminal data](terminal.json); select a new finite approved Queue for the five full reviews, input caller repair if included, and original p172 whole gates. q598 is the next unreserved candidate, q591–q593 remain reserved. Do not execute p100 until whole p172 clearance and real output. No subagents or owned long-running process remain. GitHub Issues/Project publication is deferred.
+
+2026-10-05 Q1 records reconciliation: この README の Queue の archive への link は branch の browser3 の `plan/history/` を指し、その file は main に無い（別セッションの記録）。main の `plan/history/queue-q59N.md` は main の同番号の別 Queue の名なので、link を文字に変えた。この Queue は WS074 の記録の中で b-q597 と読む（[対応表](../../../ws.md)）。

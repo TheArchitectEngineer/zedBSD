@@ -29,3 +29,5 @@ Prerequisites: [p172](../phase172/phase.md) whole-Phase cleared/実統合出力�
 Event ws074-dedicated-interop2025-20261002: ユーザーが専任ブラウザ担当によるInterop 2025クリアを目標に追加。p173を計画し、p172/p100を前提にした。WSのp101 CSS2全件目標は保持。GitHub publication保留。
 
 Event ws074-browser-next-goals-20261002: ユーザーがInterop 2025 100%を明示し、File System Access/OPFSを先に積むよう指定。全対象PASS 100%/未説明skip 0を数値目標とし、p174/p175を専任laneの先の候補にした。p172/p100の技術的前提と本Phaseのbaseline clearance条件は維持。GitHub publication保留。
+
+2026-10-05 Q1 records reconciliation: WS074 は Codex から Q1 に戻り、レンダリング・互換性の改善はユーザーの指示まで止める（[WS074](../ws.md) の「Q1 向けの整理」）。前提の p172 は 2026-10-03 に whole cleared。このPhaseの Status は変えず、選ばない。専任 P10 の枠の記述は履歴（今の担当は Q1）。

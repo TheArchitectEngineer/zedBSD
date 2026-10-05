@@ -35,6 +35,8 @@ Primary MG006へ独立componentの成果、Related MG002へ検証出力を提供
 | [ws107p003](../history/ws107/q543/phase.md) | cleared / q543 | API v2/component品質/独立動的client。commit0283edb0 |
 | [ws107p004](../history/ws107/q544/phase.md) | cleared / q544 | 全文規約/B1〜B5/回帰/最終boot。final WIP commitの親0283edb0 |
 
-[設計](design.md)、[移動台帳](../history/ws107/inventory.json)、[結果・判断履歴](../history/ws107/ws-at-acceptance.md)、[boot PNG](../history/ws107/q544/evidence/login.png)。再利用試験は[plan/tools/browser-component](../tools/browser-component/README.md)。
+[設計](design.md)、[移動台帳](../history/ws107/inventory.json)、[結果・判断履歴](../history/ws107/ws-at-acceptance.md)、boot PNG（`../history/ws107/q544/evidence/login.png`、2026-10-05 Q1 records reconciliation: main の木に無い。2026-10-03 のリポジトリの作り直しで失われたと見られる。evidence には acid2 の json だけが残る）。再利用試験は[plan/tools/browser-component](../tools/browser-component/README.md)。
 
 Event ws107-completed-20261002: 全Phase clearedに加えWS自身のB1〜B5を検証してcompleted。Phase directoriesを証拠archive照合後に削除、GitHubのcomment/close deliveryは未実施。ユーザーの後続WS108実行指示へ移る。
+
+2026-10-05 Q1 records reconciliation: WS107 の完了（2026-10-02）の後、WS074 p172 が origin/browser2 の browser の変更をこの配置へ取り込んだ（2026-10-03 whole cleared、[p172](../ws074/phase172/phase.md)）。そのため今の libbrowser の source は WS107 の完了の時の 165 file より多い（p172 の checkpoint96 で 167 source。`userland/desktop/libbrowser/` の `.c` は main 99e7a4b2 で 167）。WS107 の受け入れ（B1〜B5）は完了の時の証拠のまま変えない。取込み後の境界・ABI・独立 client の確認は p172 の [checkpoint96](../ws074/phase172/import/checkpoint96/README.md)。2026-10-05 ユーザー: WS107 は Q1 の担当（Codex から戻した）。完了した WS に新しい目標は足さない。
