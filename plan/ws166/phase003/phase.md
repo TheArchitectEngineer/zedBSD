@@ -30,3 +30,9 @@ WS102 の flick panel の「候補」タブ（p016 で置いた枠）に、打�
 
 - QEMU（p004、T1）: `plan/ws166/tests/osk-predict-guest.sh`（image は `config-amd64-osk-predict.mk`）。
 - 実機: 未実施。
+
+## T1-196（2026-10-05 夜）: FAIL と直し
+
+- 結果（T1、証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-196-predict2/`）: `reading=か serial=1 error=0` の直後に `KEI-IME DONE`（IME が接続を失って終わる）、次の `reading=かん serial=2 error=21`（status が無い）。IME は起動し直すが、予測を頼むたびに同じく終わる。回帰の osk-guest は PASS。
+- 原因: `keiland_ime_status_manager_v1_get_status`（libwayland）が status の proxy を **version 1** で作っていた。compositor の status は manager の version（2）なので `predict` event を送り、IME の libwayland は version 1 の proxy に version 2 の event が来たので protocol の誤りとして接続を閉じた。
+- 直し: `ime-status-protocol.c` の get_status で proxy の version を manager の version（`wl_proxy_get_version`）にする。

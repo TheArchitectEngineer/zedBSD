@@ -167,9 +167,9 @@ keiland_ime_status_manager_v1_get_status(
 	union wl_argument arguments[1];
 	struct wl_proxy *created;
 
-	/* The arguments in wire order. */
+	/* The arguments in wire order; the status has the manager's version (version 2 has the predictions, ws166-p002). */
 	arguments[0].n = 0;
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_MANAGER_V1_GET_STATUS, &keiland_ime_status_v1_interface, 1U, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_MANAGER_V1_GET_STATUS, &keiland_ime_status_v1_interface, wl_proxy_get_version((struct wl_proxy *)object), 0, arguments);
 	if (created == NULL)
 		return NULL;
 
