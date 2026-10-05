@@ -28,11 +28,10 @@
 #define SC_PAGE_TOP		0.85f
 #define SC_PAGE_BOTTOM		-0.95f
 
-/* The steps round an ellipsoid and a ring, and along the ribbon. */
+/* The steps round an ellipsoid and a ring. */
 #define SC_ELLIPSOID_STEPS	14
 #define SC_RING_MAJOR_STEPS	20
 #define SC_RING_MINOR_STEPS	8
-#define SC_RIBBON_STEPS		72
 
 /* The heart's outline points. */
 #define SC_HEART_POINTS		40
@@ -44,7 +43,6 @@
 #define SC_COLOR_BOARD		KL_RGB(0x2b3a55)
 #define SC_COLOR_STAND		KL_RGB(0x3a4c6c)
 #define SC_COLOR_RING		KL_RGB(0x3d8bff)
-#define SC_COLOR_RIBBON		KL_RGBA(0x9fcbff, 95)
 
 static void sc_add(struct sc_mesh *mesh, struct r3_vec a, struct r3_vec b, struct r3_vec c, const float *uv, kl_color color, int texture, unsigned flags);
 static struct r3_vec sc_vec(float x, float y, float z);
@@ -383,42 +381,6 @@ sc_desk_calendar(
 	sc_box(mesh, sc_vec(-0.8f, 0.86f, 0.0f), sc_vec(0.8f, 0.98f, 0.23f), SC_COLOR_BOARD);
 	sc_ring(mesh, sc_vec(-0.42f, 0.88f, 0.06f), 0.12f, 0.022f, SC_COLOR_RING);
 	sc_ring(mesh, sc_vec(0.42f, 0.88f, 0.06f), 0.12f, 0.022f, SC_COLOR_RING);
-}
-
-/*
- * Makes the ribbon that flows round the desk calendar, its wave moved by
- * a phase; it is seen through and leaves the depth (drawn last).
- */
-void
-sc_ribbon(
-	struct sc_mesh *mesh,
-	float phase)
-{
-	struct r3_vec band[4];
-	struct r3_vec centre[2];
-	struct r3_vec across[2];
-	float s;
-	float twist;
-	int i;
-	int k;
-
-	/* Each step along it: a quad between the band's edges at this step and the next. */
-	for (i = 0; i < SC_RIBBON_STEPS; i++) {
-		for (k = 0; k < 2; k++) {
-			/* The line along its middle, and the band's half width across it, a little twisted. */
-			s = 2.0f * SC_PI * (float)(i + k) / (float)SC_RIBBON_STEPS;
-			centre[k] = sc_vec(1.25f * cosf(s), -0.25f + 0.22f * sinf(2.0f * s + phase), 0.15f + 0.95f * sinf(s));
-			twist = 0.6f * sinf(s + 0.5f * phase);
-			across[k] = sc_vec(0.0f, 0.065f * cosf(twist), 0.065f * sinf(twist));
-		}
-
-		/* The quad. */
-		band[0] = sc_vec(centre[0].x - across[0].x, centre[0].y - across[0].y, centre[0].z - across[0].z);
-		band[1] = sc_vec(centre[1].x - across[1].x, centre[1].y - across[1].y, centre[1].z - across[1].z);
-		band[2] = sc_vec(centre[1].x + across[1].x, centre[1].y + across[1].y, centre[1].z + across[1].z);
-		band[3] = sc_vec(centre[0].x + across[0].x, centre[0].y + across[0].y, centre[0].z + across[0].z);
-		sc_quad(mesh, band, sc_vec(0.0f, 0.0f, -1.0f), SC_COLOR_RIBBON, SC_TEXTURE_NONE, R3_TWO_SIDED | R3_NO_DEPTH_WRITE);
-	}
 }
 
 /*

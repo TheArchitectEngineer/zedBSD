@@ -353,7 +353,7 @@ cal_loop(
 			calendar->dirty = 1;
 		}
 
-		/* Something of the view moving by itself (the breathing, a page, a cell): a frame at its pace. */
+		/* Something of the view moving by itself (a page turning, a cell sinking, a drag): a frame at its pace. */
 		pace = cal_view_wait(&calendar->view, now);
 		if (pace >= 0)
 			calendar->animating = 1;

@@ -8,22 +8,26 @@
 /*
  * Calendar's view (WS155 p000; calendar.h).
  *
- * Three cards on a quiet blue ground (on zdesktop's glass, the desktop
- * between them): at the left the sidebar -- the places (Month View,
- * Today, Search, Settings), the calendars with their colors to show or
- * hide, and a small card of encouragement; in the middle the bar of the
- * view (back and forward a month, Today, Month / Week / Day, the search)
- * over the months one under another, Sunday's column a faint red and
- * Saturday's a faint blue, today in the accent, each day's events as
- * small pills of their calendar's color; at the right the panel to add an
- * event -- a card for each kind with its icon in 3D, to drag onto a date
- * -- over the desk calendar in 3D, which shows the day chosen.
+ * Three panes in Files' style: on zdesktop's glass they are cards apart,
+ * reaching the window's edges, with no ground between (the desktop shows
+ * through); on an opaque window, white cards on a quiet blue ground.  At
+ * the left the sidebar -- the places (Month View, Today, Search,
+ * Settings), the calendars with their colors to show or hide, and a small
+ * card of encouragement; in the middle the bar of the view (back and
+ * forward a month, Today, Month / Week / Day, the search) over the months
+ * one under another, Sunday's column a faint red and Saturday's a faint
+ * blue, today in the accent, each day's events as small pills of their
+ * calendar's color and its memos as outlined pills with a note; at the
+ * right the panel to add an event -- a card for each kind with its icon in
+ * 3D, to drag onto a date -- over the application's one memo (dragged by
+ * its header onto a date, a copy is kept there as a memo) and the day
+ * chosen: a small desk calendar in 3D, the date, and its events and memos
+ * in full.
  *
- * The motion is little and calm: the desk calendar breathes (a slow, small
- * sway, and the ribbon round it flows), its page turns over when the day
- * shown changes, and the cell an event is dropped on sinks for a moment.
- * With the motion reduced, nothing moves by itself and every change is at
- * once.
+ * The motion is little and calm: the small desk calendar's page turns
+ * over when the day chosen changes, and the cell something is dropped on
+ * sinks for a moment.  Nothing moves by itself; with the motion reduced,
+ * every change is at once.
  */
 
 #include "calendar.h"
@@ -37,9 +41,14 @@
 /* Pi. */
 #define CAL_PI			3.14159265f
 
-/* The cards: the margin round them, the gap between, their corner, the sidebar's and the panel's widths. */
+/*
+ * The cards: the margin round them and the gap between (on glass, Files'
+ * own: the cards reach the window's edges and stand 8 pixels apart),
+ * their corner, the sidebar's and the panel's widths.
+ */
 #define CAL_MARGIN		12
 #define CAL_GAP			12
+#define CAL_GLASS_GAP		8
 #define CAL_CARD_RADIUS		16.0f
 #define CAL_SIDEBAR		212
 #define CAL_PANEL		300
@@ -67,14 +76,16 @@
 #define CAL_SUPERSAMPLE		2
 #define CAL_DESK_DISTANCE	6.4f
 
-/* The motion's times: a page's turn, a cell's sink, the breathing's periods, a frame while something moves. */
+/* The motion's times: a page's turn, a cell's sink, a frame while something moves. */
 #define CAL_FLIP_US		560000U
 #define CAL_SINK_US		300000U
-#define CAL_BREATH_YAW_S	7.0f
-#define CAL_BREATH_PITCH_S	9.0f
-#define CAL_RIBBON_S		14.0f
 #define CAL_MOVING_MS		16
-#define CAL_BREATH_MS		100
+
+/* The memo: its header's and its words' heights, and the small desk calendar of the day chosen. */
+#define CAL_MEMO_HEADER		30
+#define CAL_MEMO_HEIGHT		150
+#define CAL_DAY_DESK_WIDTH	76
+#define CAL_DAY_DESK_HEIGHT	88
 
 /* How far a press on a kind's card moves before it is a drag, and how long a notice shows. */
 #define CAL_DRAG_START		6.0
@@ -101,23 +112,28 @@
 #define CAL_ID_CELL		11U
 #define CAL_ID_KIND		12U
 #define CAL_ID_CUSTOM		13U
+#define CAL_ID_MEMO_GRIP	14U
+#define CAL_ID_MEMO_TEXT	15U
 
 /* The colors: the ground, the cards, Sunday's and Saturday's, the text of their numbers. */
 #define CAL_COLOR_GROUND_TOP	KL_RGB(0xeef4fd)
 #define CAL_COLOR_GROUND_BOTTOM	KL_RGB(0xdde8f8)
 #define CAL_COLOR_CARD		KL_RGBA(0xffffff, 238)
-#define CAL_COLOR_CARD_GLASS	KL_RGBA(0xffffff, 150)
+#define CAL_COLOR_KIND_GLASS	KL_RGBA(0xffffff, 110)
+#define CAL_COLOR_MEMO		KL_RGB(0xf59e0b)
+#define CAL_COLOR_MEMO_EDGE	KL_RGBA(0x64748b, 120)
 #define CAL_COLOR_SUNDAY	KL_RGBA(0xe5484d, 12)
 #define CAL_COLOR_SATURDAY	KL_RGBA(0x2f7cf6, 12)
 #define CAL_COLOR_SUNDAY_TEXT	KL_RGB(0xd2434a)
 #define CAL_COLOR_SATURDAY_TEXT	KL_RGB(0x2b6fd6)
 #define CAL_COLOR_WHITE		KL_RGB(0xffffff)
 
-/* One event of a day, from the test data or dropped. */
+/* One item of a day: an event (from the test data or dropped) or a memo kept there (its words). */
 struct view_entry {
 	const char *title;
 	const char *time;
 	enum cal_list list;
+	const char *memo;
 };
 
 /* Where the parts of a frame are. */
@@ -146,7 +162,7 @@ static const char *const view_new_titles[CAL_LISTS] = { "New Work Event", "New P
 static const char *const view_segments[] = { "Month", "Week", "Day" };
 
 static void view_layout(const struct cal_view *view, int width, int height, struct view_layout *layout);
-static void view_card(const struct cal_view *view, const struct kl_style *style, const struct kl_rect *rect);
+static void view_card(const struct cal_view *view, const struct kl_style *style, const struct kl_rect *rect, kl_color veil);
 static void view_sidebar(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_topbar(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_weekdays(const struct kl_style *style, const struct kl_rect *area);
@@ -157,6 +173,13 @@ static void view_desk(struct cal_view *view, const struct kl_style *style, const
 static void view_page(struct cal_view *view, const struct kl_style *style, int index, const struct cal_date *date);
 static void view_keep_under(struct cal_view *view, const struct kl_style *style, const struct kl_rect *area);
 static void view_let_go(struct cal_view *view, int kind, double x, double y, uint64_t now_us);
+static unsigned view_drag_source(struct cal_view *view, struct kl_ui *ui, uint32_t id, int kind, const struct kl_rect *rect, uint64_t now_us);
+static int view_memo(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, int top, uint64_t now_us);
+static void view_chosen_day(struct cal_view *view, const struct kl_style *style, const struct kl_rect *card, uint64_t now_us);
+static void view_memo_drop(struct cal_view *view, const struct cal_date *date, uint64_t now_us);
+static void view_memo_add(struct cal_view *view, char character);
+static void view_note_icon(struct kl_canvas *canvas, float x, float y, float size);
+static int view_words(const struct kl_style *style, const char *text, int x, int y, int width, unsigned pixels, kl_color color, int draw);
 static void view_ghost(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style);
 static size_t view_day(const struct cal_view *view, const struct cal_date *date, struct view_entry *entries, size_t size);
 static int view_matches(const struct cal_view *view, const char *title);
@@ -200,6 +223,8 @@ cal_view_init(
 	view->scroll_glide = 0;
 	view->dragging = -1;
 	view->started_us = now_us;
+	(void)snprintf(view->memo, sizeof(view->memo), "%s", "Ideas for the weekend:\n- walk along the river\n- call Grandma\n- film for the camera");
+	view->memo_length = strlen(view->memo);
 
 	/* The months' scroll, down only. */
 	error = kl_scroll_init(&view->scroll, KL_SCROLL_Y);
@@ -343,12 +368,48 @@ cal_view_key(
 	uint64_t now_us)
 {
 	struct cal_date date;
+	uint32_t character;
 	int days;
 	int index;
 
 	/* The keys with a modifier are the menu's. */
 	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT | KL_MOD_SUPER)) != 0U)
 		return;
+
+	/* The memo with the keyboard: Enter breaks the line, Backspace takes a character back, Esc lets it go, the rest type. */
+	if (view->memo_focus) {
+		/* A line's end. */
+		if (key == KL_KEY_ENTER || key == KL_KEY_KPENTER) {
+			view_memo_add(view, '\n');
+			return;
+		}
+
+		/* The character before the end, all its bytes. */
+		if (key == KL_KEY_BACKSPACE) {
+			while (view->memo_length > 0U) {
+				/* One byte back; a byte that does not continue a character starts it. */
+				view->memo_length--;
+				if (((unsigned char)view->memo[view->memo_length] & 0xc0U) != 0x80U)
+					break;
+			}
+
+			/* The new end. */
+			view->memo[view->memo_length] = '\0';
+			return;
+		}
+
+		/* Esc: the memo lets the keyboard go. */
+		if (key == KL_KEY_ESC) {
+			view->memo_focus = 0;
+			return;
+		}
+
+		/* A character the key types (ASCII). */
+		character = kl_key_character(key, modifiers);
+		if (character != 0U && character < 0x80U)
+			view_memo_add(view, (char)character);
+		return;
+	}
 
 	/* Each key. */
 	days = 0;
@@ -436,7 +497,7 @@ cal_view_draw(
 	/* The sidebar's card and what is on it, when there is room for it. */
 	view_layout(view, width, height, &layout);
 	if (layout.sidebar.width > 0) {
-		view_card(view, style, &layout.sidebar);
+		view_card(view, style, &layout.sidebar, style->theme->glass_sidebar);
 		view_sidebar(view, ui, style, &layout.sidebar, now_us);
 	}
 
@@ -446,12 +507,12 @@ cal_view_draw(
 	 */
 	view->desk_valid = 0;
 	if (layout.panel.width > 0) {
-		view_card(view, style, &layout.panel);
+		view_card(view, style, &layout.panel, style->theme->glass_content);
 		view_panel(view, ui, style, &layout.panel, now_us);
 	}
 
 	/* The months' card: its bar, the days of the week, the months. */
-	view_card(view, style, &layout.main);
+	view_card(view, style, &layout.main, style->theme->glass_content);
 	view_topbar(view, ui, style, &layout.topbar, now_us);
 	view_weekdays(style, &layout.weekdays);
 	view_grid(view, ui, style, &layout.grid, now_us);
@@ -522,10 +583,6 @@ cal_view_wait(
 	if (view->flipping || view->sinking || view->dragging >= 0)
 		return CAL_MOVING_MS;
 
-	/* The desk calendar breathing: a slow pace. */
-	if (!view->reduce_motion)
-		return CAL_BREATH_MS;
-
 	/* A notice, until it goes. */
 	if (view->notice[0] != '\0' && now_us < view->notice_until) {
 		left = view->notice_until - now_us;
@@ -538,8 +595,7 @@ cal_view_wait(
 
 /*
  * Reports whether the next frame may be the desk calendar's alone: only it
- * moves (it breathes or turns a page), and the last full frame kept what
- * is under it.
+ * moves (it turns a page), and the last full frame kept what is under it.
  */
 int
 cal_view_desk_only(
@@ -602,36 +658,45 @@ view_layout(
 	int height,
 	struct view_layout *layout)
 {
+	int margin;
+	int gap;
 	int left;
 	int right;
 
-	/* The sidebar, when the window is wide enough. */
-	(void)view;
+	/* The margin and the gap: Files' on glass (the cards reach the window's edges), else room round the cards. */
 	memset(layout, 0, sizeof(layout[0]));
-	left = CAL_MARGIN;
+	margin = CAL_MARGIN;
+	gap = CAL_GAP;
+	if (view->glass) {
+		margin = 0;
+		gap = CAL_GLASS_GAP;
+	}
+
+	/* The sidebar, when the window is wide enough. */
+	left = margin;
 	if (width >= CAL_NO_SIDEBAR) {
-		layout->sidebar.x = CAL_MARGIN;
-		layout->sidebar.y = CAL_MARGIN;
+		layout->sidebar.x = margin;
+		layout->sidebar.y = margin;
 		layout->sidebar.width = CAL_SIDEBAR;
-		layout->sidebar.height = height - 2 * CAL_MARGIN;
-		left = CAL_MARGIN + CAL_SIDEBAR + CAL_GAP;
+		layout->sidebar.height = height - 2 * margin;
+		left = margin + CAL_SIDEBAR + gap;
 	}
 
 	/* The panel, when the window is wider still. */
-	right = width - CAL_MARGIN;
+	right = width - margin;
 	if (width >= CAL_NO_PANEL) {
-		layout->panel.x = width - CAL_MARGIN - CAL_PANEL;
-		layout->panel.y = CAL_MARGIN;
+		layout->panel.x = width - margin - CAL_PANEL;
+		layout->panel.y = margin;
 		layout->panel.width = CAL_PANEL;
-		layout->panel.height = height - 2 * CAL_MARGIN;
-		right = layout->panel.x - CAL_GAP;
+		layout->panel.height = height - 2 * margin;
+		right = layout->panel.x - gap;
 	}
 
 	/* The months' card between them, with its bar, its days' row and the months. */
 	layout->main.x = left;
-	layout->main.y = CAL_MARGIN;
+	layout->main.y = margin;
 	layout->main.width = right - left;
-	layout->main.height = height - 2 * CAL_MARGIN;
+	layout->main.height = height - 2 * margin;
 	layout->topbar = layout->main;
 	layout->topbar.height = CAL_TOPBAR;
 	layout->weekdays = layout->main;
@@ -643,18 +708,20 @@ view_layout(
 }
 
 /*
- * Draws a card's ground: on glass see-through (zdesktop's glass is under
- * it), else nearly white with a soft shadow and an edge.
+ * Draws a card's ground: on glass a light veil (zdesktop's glass is under
+ * it, as under Files' panels), else nearly white with a soft shadow and an
+ * edge.
  */
 static void
 view_card(
 	const struct cal_view *view,
 	const struct kl_style *style,
-	const struct kl_rect *rect)
+	const struct kl_rect *rect,
+	kl_color veil)
 {
-	/* On glass, a light veil. */
+	/* On glass, the veil alone. */
 	if (view->glass) {
-		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CAL_CARD_RADIUS, CAL_COLOR_CARD_GLASS);
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CAL_CARD_RADIUS, veil);
 		return;
 	}
 
@@ -823,6 +890,7 @@ view_topbar(
 	int pressed;
 	int middle;
 	int chosen;
+	int focused;
 	int i;
 
 	/* Back and forward: a chevron in a soft circle each. */
@@ -910,6 +978,11 @@ view_topbar(
 	field.y = middle - 16;
 	if (field.x > segment.x + segment.width + 12)
 		(void)kl_field(ui, style, CAL_ID_SEARCH, &field, &view->search, "Search events...");
+
+	/* The search with the keyboard: the memo lets it go. */
+	focused = kl_ui_has_focus(ui, CAL_ID_SEARCH, 0U);
+	if (focused)
+		view->memo_focus = 0;
 }
 
 /*
@@ -1108,8 +1181,12 @@ view_cell(
 	hit = 0;
 	if (seen.height > 0)
 		hit = kl_ui_hit(ui, CAL_ID_CELL, (uint32_t)(date->year * 10000 + date->month * 100 + date->day), &seen);
-	if ((hit & KL_HIT_CLICKED) != 0U)
+	if ((hit & KL_HIT_CLICKED) != 0U) {
+		view->memo_focus = 0;
 		view_select(view, date, now_us);
+	}
+
+	/* Where a drop finds it. */
 	if (view->cell_count < CAL_CELLS_MAX && seen.height > 0) {
 		view->cells[view->cell_count].rect = seen;
 		view->cells[view->cell_count].date = *date;
@@ -1129,13 +1206,15 @@ view_cell(
 		kl_canvas_round(style->canvas, (float)ground.x, (float)ground.y, (float)ground.width, (float)ground.height, 8.0f, KL_RGBA(0x2f7cf6, (unsigned)(60.0f * depth)));
 	}
 
-	/* Today: the cell in the accent's tint, its number white in an accent circle. */
-	today = cal_same_day(date, &view->today);
+	/* The number's color: red on a Sunday, blue on a Saturday. */
 	ink = style->theme->text;
 	if (weekday == 0)
 		ink = CAL_COLOR_SUNDAY_TEXT;
 	else if (weekday == 6)
 		ink = CAL_COLOR_SATURDAY_TEXT;
+
+	/* Today: the cell in the accent's tint, its number white in an accent circle. */
+	today = cal_same_day(date, &view->today);
 	if (today) {
 		kl_canvas_round(style->canvas, (float)ground.x + 2.0f, (float)ground.y + 2.0f, (float)ground.width - 4.0f, (float)ground.height - 4.0f, 8.0f, KL_RGBA(0x2f7cf6, 30));
 		kl_canvas_circle(style->canvas, (float)cell->x + 17.0f, (float)ground.y + 16.0f, 12.0f, style->theme->accent);
@@ -1156,6 +1235,16 @@ view_cell(
 		fits--;
 	y = ground.y + 30;
 	for (i = 0; i < count && i < fits; i++) {
+		/* A memo: an outlined pill with its note, apart from the events. */
+		if (entries[i].memo != NULL) {
+			kl_canvas_round(style->canvas, (float)cell->x + 5.0f, (float)y, (float)cell->width - 10.0f, (float)CAL_PILL, 6.0f, KL_RGBA(0xffffff, 200));
+			kl_canvas_round_border(style->canvas, (float)cell->x + 5.0f, (float)y, (float)cell->width - 10.0f, (float)CAL_PILL, 6.0f, 1.0f, CAL_COLOR_MEMO_EDGE);
+			view_note_icon(style->canvas, (float)cell->x + 8.0f, (float)y + 3.0f, 12.0f);
+			(void)kl_text_draw_fit(style->text, style->canvas, cell->x + 24, y + 13, entries[i].title, 11U, 0, cell->width - 33, style->theme->text);
+			y += CAL_PILL + CAL_PILL_GAP;
+			continue;
+		}
+
 		/* Its colors: its calendar's tint and the text's, fainter when the search does not match it. */
 		color = cal_list_color(entries[i].list);
 		matched = view_matches(view, entries[i].title);
@@ -1186,8 +1275,12 @@ view_cell(
 
 	/* The target of a drag: a ring and a tint. */
 	if (view->dragging >= 0 && view->drag_moved) {
+		/* The cell under the pointer. */
 		kl_ui_pointer(ui, &px, &py);
-		if (px >= cell->x && px < cell->x + cell->width && py >= cell->y && py < cell->y + cell->height) {
+		if (px >= cell->x &&
+		    px < cell->x + cell->width &&
+		    py >= cell->y &&
+		    py < cell->y + cell->height) {
 			kl_canvas_round(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, KL_RGBA(0x2f7cf6, 24));
 			kl_canvas_round_border(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, 2.0f, KL_RGBA(0x2f7cf6, 160));
 		}
@@ -1208,11 +1301,8 @@ view_panel(
 	uint64_t now_us)
 {
 	struct kl_rect card;
-	struct kl_rect desk;
+	struct kl_rect day;
 	const char *line;
-	double px;
-	double py;
-	double distance;
 	kl_color ground;
 	unsigned hit;
 	size_t length;
@@ -1236,30 +1326,12 @@ view_panel(
 		card.y = top + (i / 2) * (CAL_KIND_HEIGHT + 8);
 		card.width = card_width;
 		card.height = CAL_KIND_HEIGHT;
-		hit = kl_ui_hit(ui, CAL_ID_KIND, (uint32_t)i, &card);
-		kl_ui_pointer(ui, &px, &py);
-		if ((hit & KL_HIT_ACTIVE) != 0U && view->dragging < 0) {
-			view->dragging = i;
-			view->drag_moved = 0;
-			view->drag_from_x = px;
-			view->drag_from_y = py;
-		}
+		hit = view_drag_source(view, ui, CAL_ID_KIND, i, &card, now_us);
 
-		/* Held and moved far enough from where it was pressed: a drag. */
-		distance = fabs(px - view->drag_from_x) + fabs(py - view->drag_from_y);
-		if (view->dragging == i && (hit & KL_HIT_ACTIVE) != 0U && distance > CAL_DRAG_START)
-			view->drag_moved = 1;
-
-		/* Let go: dropped on a day adds an event; a click without a drag says what to do. */
-		if (view->dragging == i && (hit & KL_HIT_ACTIVE) == 0U) {
-			view_let_go(view, i, px, py, now_us);
-			view->dragging = -1;
-		}
-
-		/* Drawn: white (see-through on glass), tinted under the pointer, its icon, its kind and what it holds. */
+		/* Drawn: white (a lighter veil on glass), tinted under the pointer, its icon, its kind and what it holds. */
 		ground = CAL_COLOR_WHITE;
 		if (view->glass)
-			ground = KL_RGBA(0xffffff, 170);
+			ground = CAL_COLOR_KIND_GLASS;
 		kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, ground);
 		if ((hit & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
 			kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, KL_RGBA(0x2f7cf6, 16));
@@ -1279,7 +1351,7 @@ view_panel(
 		view_notice(view, "Custom kinds are not in the mock yet.", now_us);
 	ground = CAL_COLOR_WHITE;
 	if (view->glass)
-		ground = KL_RGBA(0xffffff, 170);
+		ground = CAL_COLOR_KIND_GLASS;
 	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, ground);
 	if ((hit & KL_HIT_HOT) != 0U)
 		kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, KL_RGBA(0x2f7cf6, 16));
@@ -1289,19 +1361,19 @@ view_panel(
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 23, "Custom", strlen("Custom"), 13U, 1, style->theme->text);
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 40, "Create your own", strlen("Create your own"), 11U, 0, style->theme->text_secondary);
 
-	/* The desk calendar below, and its words at the bottom. */
-	desk.x = area->x + 10;
-	desk.y = card.y + card.height + 8;
-	desk.width = area->width - 20;
-	desk.height = area->y + area->height - 34 - desk.y;
-	if (desk.height > 80)
-		view_desk(view, style, &desk, now_us);
-	view_centred(style, area->x + area->width / 2, area->y + area->height - 16, "Small plans make big days.", 13U, 0, style->theme->text_secondary);
+	/* The memo below, and the day chosen under it while there is room. */
+	top = view_memo(view, ui, style, area, card.y + card.height + 14, now_us);
+	day.x = area->x + 14;
+	day.y = top + 12;
+	day.width = area->width - 28;
+	day.height = area->y + area->height - 14 - day.y;
+	if (day.height > CAL_DAY_DESK_HEIGHT + 16)
+		view_chosen_day(view, style, &day, now_us);
 }
 
 /*
- * Draws the desk calendar in 3D in an area: breathing, its page turning
- * while the day shown changes, the ribbon round it, a soft shadow under.
+ * Draws the small desk calendar of the day chosen in 3D in an area: still,
+ * its page turning over when the day changes, a soft shadow under.
  */
 static void
 view_desk(
@@ -1315,13 +1387,9 @@ view_desk(
 	struct r3_matrix tilt;
 	struct r3_matrix place;
 	struct cal_date next;
-	float seconds;
-	float yaw;
-	float pitch;
 	float flip;
 	float opacity;
 	float progress;
-	float phase;
 	int error;
 	int i;
 
@@ -1352,14 +1420,6 @@ view_desk(
 		textures[i].stride = view->pages[i].stride;
 	}
 
-	/* The breathing: a slow sway of the turn and the tilt, the ribbon flowing (still when the motion is reduced). */
-	seconds = 0.0f;
-	if (!view->reduce_motion)
-		seconds = (float)(now_us - view->started_us) / 1000000.0f;
-	yaw = -0.34f + 0.06f * sinf(2.0f * CAL_PI * seconds / CAL_BREATH_YAW_S);
-	pitch = 0.2f + 0.025f * sinf(2.0f * CAL_PI * seconds / CAL_BREATH_PITCH_S);
-	phase = 2.0f * CAL_PI * seconds / CAL_RIBBON_S;
-
 	/* The page turning: over the top, eased, fading out from a third of the way. */
 	flip = 0.0f;
 	opacity = 1.0f;
@@ -1370,28 +1430,25 @@ view_desk(
 			opacity = 1.0f - view_ease((progress - 0.3f) / 0.6f);
 	}
 
-	/* The camera: the desk calendar turned and tilted, before it. */
-	view->target.focal = (float)view->target.height * 1.85f;
+	/* The camera: the desk calendar a little turned and tilted, before it. */
+	view->target.focal = (float)view->target.height * 2.3f;
 	view->target.cx = (float)view->target.width * 0.5f;
-	view->target.cy = (float)view->target.height * 0.47f;
-	r3_rotate_y(&turn, yaw);
-	r3_rotate_x(&tilt, pitch);
-	r3_translate(&place, 0.0f, 0.05f, CAL_DESK_DISTANCE);
+	view->target.cy = (float)view->target.height * 0.5f;
+	r3_rotate_y(&turn, -0.3f);
+	r3_rotate_x(&tilt, 0.18f);
+	r3_translate(&place, 0.0f, 0.0f, CAL_DESK_DISTANCE);
 	r3_combine(&tilt, &turn, &turn);
 	r3_combine(&place, &turn, &turn);
 
-	/* The desk calendar, then the ribbon seen through over it. */
+	/* The desk calendar. */
 	r3_target_clear(&view->target);
 	sc_mesh_clear(view->mesh);
 	sc_desk_calendar(view->mesh, flip, opacity);
 	sc_draw(&view->target, view->mesh, &turn, textures);
-	sc_mesh_clear(view->mesh);
-	sc_ribbon(view->mesh, phase);
-	sc_draw(&view->target, view->mesh, &turn, textures);
 
 	/* What is under it, kept for the frames of the desk alone, and the shadow on the desk. */
 	view_keep_under(view, style, area);
-	kl_canvas_shadow(style->canvas, (float)area->x + (float)area->width * 0.3f, (float)area->y + (float)area->height * 0.74f, (float)area->width * 0.42f, 12.0f, 6.0f, 16.0f, KL_RGBA(0x1f3a66, 40));
+	kl_canvas_shadow(style->canvas, (float)area->x + (float)area->width * 0.2f, (float)area->y + (float)area->height * 0.8f, (float)area->width * 0.6f, 5.0f, 3.0f, 6.0f, KL_RGBA(0x1f3a66, 40));
 
 	/* The picture over it. */
 	r3_resolve(&view->target, CAL_SUPERSAMPLE, &view->picture);
@@ -1544,23 +1601,393 @@ view_let_go(
 	size_t i;
 
 	/* A click: what to do. */
-	if (!view->drag_moved) {
+	if (!view->drag_moved && kind == CAL_DRAG_MEMO) {
+		view_notice(view, "Drag the memo onto a date to keep it there.", now_us);
+		return;
+	} else if (!view->drag_moved) {
 		view_notice(view, "Drag the card onto a date to add an event.", now_us);
 		return;
 	}
 
 	/* The day under the point, among the cells of the frame. */
 	for (i = 0; i < view->cell_count; i++) {
-		/* A cell holding the point. */
+		/* A cell holding the point: the memo kept there, or an event added. */
 		rect = &view->cells[i].rect;
 		if (x >= rect->x &&
 		    x < rect->x + rect->width &&
 		    y >= rect->y &&
 		    y < rect->y + rect->height) {
-			view_drop(view, view_kind_lists[kind], &view->cells[i].date, now_us);
+			if (kind == CAL_DRAG_MEMO)
+				view_memo_drop(view, &view->cells[i].date, now_us);
+			else
+				view_drop(view, view_kind_lists[kind], &view->cells[i].date, now_us);
 			return;
 		}
 	}
+}
+
+/*
+ * Records a card that may be dragged onto a date (a kind of event, or the
+ * memo) and follows its drag: a press held and moved is a drag, its end
+ * is carried out where it is let go.  Returns what the input did to it
+ * (KL_HIT_* bits).
+ */
+static unsigned
+view_drag_source(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	uint32_t id,
+	int kind,
+	const struct kl_rect *rect,
+	uint64_t now_us)
+{
+	double px;
+	double py;
+	double distance;
+	unsigned hit;
+
+	/* The card, and a press on it starting a drag (none other under way). */
+	hit = kl_ui_hit(ui, id, (uint32_t)kind, rect);
+	kl_ui_pointer(ui, &px, &py);
+	if ((hit & KL_HIT_ACTIVE) != 0U && view->dragging < 0) {
+		view->dragging = kind;
+		view->drag_moved = 0;
+		view->drag_from_x = px;
+		view->drag_from_y = py;
+	}
+
+	/* Held and moved far enough from where it was pressed: a drag. */
+	distance = fabs(px - view->drag_from_x) + fabs(py - view->drag_from_y);
+	if (view->dragging == kind && (hit & KL_HIT_ACTIVE) != 0U && distance > CAL_DRAG_START)
+		view->drag_moved = 1;
+
+	/* Let go: carried out where it is. */
+	if (view->dragging == kind && (hit & KL_HIT_ACTIVE) == 0U) {
+		view_let_go(view, kind, px, py, now_us);
+		view->dragging = -1;
+	}
+
+	/* What the input did to it. */
+	return hit;
+}
+
+/*
+ * Draws the application's memo from a top edge in the panel: its header
+ * (a note, "Memo", and a grip to drag it by onto a date) and its words,
+ * which take the keyboard when clicked.  Returns the edge below it.
+ */
+static int
+view_memo(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area,
+	int top,
+	uint64_t now_us)
+{
+	struct kl_rect header;
+	struct kl_rect text;
+	struct kl_rect caret;
+	kl_color ground;
+	unsigned hit;
+	int height;
+	int i;
+
+	/* The header, which drags the memo: a note, the title, the grip and a word of what to do. */
+	header.x = area->x + 14;
+	header.y = top;
+	header.width = area->width - 28;
+	header.height = CAL_MEMO_HEADER;
+	hit = view_drag_source(view, ui, CAL_ID_MEMO_GRIP, CAL_DRAG_MEMO, &header, now_us);
+	if ((hit & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
+		kl_canvas_round(style->canvas, (float)header.x, (float)header.y, (float)header.width, (float)header.height, 8.0f, style->theme->hover);
+	view_note_icon(style->canvas, (float)header.x + 6.0f, (float)header.y + 6.0f, 18.0f);
+	(void)kl_text_draw(style->text, style->canvas, header.x + 32, header.y + 20, "Memo", strlen("Memo"), 15U, 1, style->theme->text);
+	(void)kl_text_draw(style->text, style->canvas, header.x + header.width - 112, header.y + 19, "Drag to a date", strlen("Drag to a date"), 11U, 0, style->theme->text_secondary);
+	for (i = 0; i < 6; i++)
+		kl_canvas_circle(style->canvas, (float)(header.x + header.width - 14 + (i % 2) * 5), (float)(header.y + 10 + (i / 2) * 5), 1.4f, style->theme->text_faint);
+
+	/* The words' ground: a click gives them the keyboard (the search loses it). */
+	text.x = area->x + 14;
+	text.y = top + CAL_MEMO_HEADER + 4;
+	text.width = area->width - 28;
+	text.height = CAL_MEMO_HEIGHT;
+	hit = kl_ui_hit(ui, CAL_ID_MEMO_TEXT, 0U, &text);
+	if ((hit & KL_HIT_CLICKED) != 0U) {
+		kl_ui_clear_focus(ui);
+		view->memo_focus = 1;
+	}
+
+	/* Drawn: white (a lighter veil on glass), its edge in the accent while it has the keyboard. */
+	ground = CAL_COLOR_WHITE;
+	if (view->glass)
+		ground = CAL_COLOR_KIND_GLASS;
+	kl_canvas_round(style->canvas, (float)text.x, (float)text.y, (float)text.width, (float)text.height, 12.0f, ground);
+	if (view->memo_focus)
+		kl_canvas_round_border(style->canvas, (float)text.x, (float)text.y, (float)text.width, (float)text.height, 12.0f, 2.0f, style->theme->accent);
+	else
+		kl_canvas_round_border(style->canvas, (float)text.x, (float)text.y, (float)text.width, (float)text.height, 12.0f, 1.0f, style->theme->panel_edge);
+
+	/* The words, or what goes there; the caret after them while they have the keyboard. */
+	kl_canvas_clip_push(style->canvas, &text);
+	if (view->memo_length == 0U && !view->memo_focus) {
+		(void)kl_text_draw(style->text, style->canvas, text.x + 12, text.y + 24, "Write a memo...", strlen("Write a memo..."), 13U, 0, style->theme->text_faint);
+	} else {
+		height = view_words(style, view->memo, text.x + 12, text.y + 8, text.width - 24, 13U, style->theme->text, 1);
+		if (view->memo_focus) {
+			caret.x = text.x + 12 + view_words(style, view->memo, text.x + 12, text.y + 8, text.width - 24, 13U, 0, -1);
+			caret.y = text.y + 8 + height - 20;
+			caret.width = 2;
+			caret.height = 16;
+			if (view->memo_length == 0U)
+				caret.y = text.y + 10;
+			kl_canvas_fill(style->canvas, &caret, style->theme->accent);
+		}
+	}
+
+	/* The clip goes. */
+	kl_canvas_clip_pop(style->canvas);
+
+	/* The edge below it. */
+	return text.y + text.height;
+}
+
+/*
+ * Draws the day chosen on a card: its small desk calendar in 3D (its page
+ * turning when the day changes), its date, and its events and memos (a
+ * memo's words in full).
+ */
+static void
+view_chosen_day(
+	struct cal_view *view,
+	const struct kl_style *style,
+	const struct kl_rect *card,
+	uint64_t now_us)
+{
+	struct view_entry entries[CAL_DAY_EVENTS];
+	struct kl_rect desk;
+	const char *plural;
+	char line[160];
+	size_t count;
+	size_t i;
+	int weekday;
+	int y;
+
+	/* The card, a faint veil. */
+	kl_canvas_round(style->canvas, (float)card->x, (float)card->y, (float)card->width, (float)card->height, 14.0f, KL_RGBA(0x2f7cf6, 14));
+
+	/* The small desk calendar at the left of its header. */
+	desk.x = card->x + 6;
+	desk.y = card->y + 4;
+	desk.width = CAL_DAY_DESK_WIDTH;
+	desk.height = CAL_DAY_DESK_HEIGHT;
+	view_desk(view, style, &desk, now_us);
+
+	/* The day's date and how many things it holds. */
+	weekday = cal_weekday(&view->selected);
+	count = view_day(view, &view->selected, entries, CAL_DAY_EVENTS);
+	(void)kl_text_draw_fit(style->text, style->canvas, card->x + 90, card->y + 34, cal_weekday_name(weekday), 15U, 1, card->width - 100, style->theme->text);
+	(void)snprintf(line, sizeof(line), "%s %d, %d", cal_month_name(view->selected.month), view->selected.day, view->selected.year);
+	(void)kl_text_draw_fit(style->text, style->canvas, card->x + 90, card->y + 54, line, 12U, 0, card->width - 100, style->theme->text_secondary);
+	plural = "s";
+	if (count == 1U)
+		plural = "";
+	(void)snprintf(line, sizeof(line), "%zu item%s", count, plural);
+	(void)kl_text_draw_fit(style->text, style->canvas, card->x + 90, card->y + 72, line, 11U, 0, card->width - 100, style->theme->text_faint);
+
+	/* Its items under the header, as far as the card goes. */
+	kl_canvas_clip_push(style->canvas, card);
+	y = card->y + CAL_DAY_DESK_HEIGHT + 14;
+	for (i = 0; i < count && y < card->y + card->height; i++) {
+		/* A memo: its note and its words in full. */
+		if (entries[i].memo != NULL) {
+			view_note_icon(style->canvas, (float)card->x + 12.0f, (float)y - 12.0f, 14.0f);
+			y += view_words(style, entries[i].memo, card->x + 32, y - 15, card->width - 44, 12U, style->theme->text, 1) + 4;
+			continue;
+		}
+
+		/* An event: its calendar's dot, its time and its title. */
+		kl_canvas_circle(style->canvas, (float)card->x + 18.0f, (float)y - 4.0f, 4.0f, cal_list_color(entries[i].list));
+		if (entries[i].time != NULL)
+			(void)snprintf(line, sizeof(line), "%s  %s", entries[i].time, entries[i].title);
+		else
+			(void)snprintf(line, sizeof(line), "All day  %s", entries[i].title);
+		(void)kl_text_draw_fit(style->text, style->canvas, card->x + 32, y, line, 12U, 0, card->width - 44, style->theme->text);
+		y += 20;
+	}
+
+	/* The clip goes; a day with nothing says so. */
+	kl_canvas_clip_pop(style->canvas);
+	if (count == 0U)
+		(void)kl_text_draw(style->text, style->canvas, card->x + 14, card->y + CAL_DAY_DESK_HEIGHT + 14, "Nothing on this day.", strlen("Nothing on this day."), 12U, 0, style->theme->text_faint);
+}
+
+/*
+ * Keeps the application's memo on a day (while the program runs): its
+ * first line its title; the cell sinks a moment and the day is chosen.
+ */
+static void
+view_memo_drop(
+	struct cal_view *view,
+	const struct cal_date *date,
+	uint64_t now_us)
+{
+	struct cal_memo *memo;
+	char message[128];
+	size_t length;
+
+	/* An empty memo keeps nothing. */
+	if (view->memo_length == 0U) {
+		view_notice(view, "Write something in the memo first.", now_us);
+		return;
+	}
+
+	/* No room for another. */
+	if (view->memo_count >= CAL_MEMOS_MAX) {
+		view_notice(view, "No room for more memos in the mock.", now_us);
+		return;
+	}
+
+	/* A copy of the memo on the day, its first line its title. */
+	memo = &view->memos[view->memo_count];
+	memo->date = *date;
+	(void)snprintf(memo->text, sizeof(memo->text), "%s", view->memo);
+	length = strcspn(memo->text, "\n");
+	if (length >= sizeof(memo->title))
+		length = sizeof(memo->title) - 1U;
+	memcpy(memo->title, memo->text, length);
+	memo->title[length] = '\0';
+	view->memo_count++;
+	cal_log("MEMO date=%04d-%02d-%02d length=%zu", date->year, date->month, date->day, view->memo_length);
+
+	/* The cell sinks (not with the motion reduced). */
+	if (!view->reduce_motion) {
+		view->sinking = 1;
+		view->sink_us = now_us;
+		view->sink_date = *date;
+	}
+
+	/* The day chosen, and a word that the mock keeps it only while it runs. */
+	view_select(view, date, now_us);
+	(void)snprintf(message, sizeof(message), "Kept the memo on %s %d (until Calendar quits).", cal_month_name(date->month), date->day);
+	view_notice(view, message, now_us);
+}
+
+/*
+ * Adds a character to the end of the memo, while there is room.
+ */
+static void
+view_memo_add(
+	struct cal_view *view,
+	char character)
+{
+	/* No room left with the NUL. */
+	if (view->memo_length + 1U >= sizeof(view->memo))
+		return;
+
+	/* The character, and the end. */
+	view->memo[view->memo_length] = character;
+	view->memo_length++;
+	view->memo[view->memo_length] = '\0';
+}
+
+/*
+ * Draws a note in a square box of a size at (x, y): an amber sheet with
+ * its corner folded and two lines.
+ */
+static void
+view_note_icon(
+	struct kl_canvas *canvas,
+	float x,
+	float y,
+	float size)
+{
+	float fold[6];
+
+	/* The sheet, its folded corner and its lines. */
+	kl_canvas_round(canvas, x, y, size, size, size * 0.18f, CAL_COLOR_MEMO);
+	fold[0] = x + size * 0.62f;
+	fold[1] = y + size;
+	fold[2] = x + size;
+	fold[3] = y + size * 0.62f;
+	fold[4] = x + size * 0.62f;
+	fold[5] = y + size * 0.62f;
+	kl_canvas_polygon(canvas, fold, 3, KL_RGB(0xfcd34d));
+	kl_canvas_line(canvas, x + size * 0.22f, y + size * 0.32f, x + size * 0.78f, y + size * 0.32f, size * 0.09f, KL_RGBA(0xffffff, 230));
+	kl_canvas_line(canvas, x + size * 0.22f, y + size * 0.52f, x + size * 0.52f, y + size * 0.52f, size * 0.09f, KL_RGBA(0xffffff, 230));
+}
+
+/*
+ * Lays out (and draws, when asked) words in a width: each line of the
+ * text broken into pieces that fit.  Returns the height they take, or
+ * with draw -1 the width of their last piece (where a caret goes).
+ */
+static int
+view_words(
+	const struct kl_style *style,
+	const char *text,
+	int x,
+	int y,
+	int width,
+	unsigned pixels,
+	kl_color color,
+	int draw)
+{
+	struct kl_text_line metrics;
+	size_t length;
+	size_t end;
+	size_t shown;
+	size_t at;
+	int line_height;
+	int height;
+	int last;
+
+	/* The line's height. */
+	kl_text_metrics(style->text, pixels, &metrics);
+	line_height = metrics.height + 4;
+	height = 0;
+	last = 0;
+	at = 0;
+	length = strlen(text);
+
+	/* Each line of the text (a line break ends one; an empty one is a gap). */
+	while (at <= length && height < 4000) {
+		/* Where the text's line ends. */
+		end = at;
+		while (end < length && text[end] != '\n')
+			end++;
+
+		/* Its pieces that fit the width (an empty line is one empty piece). */
+		do {
+			/* One piece: what fits the width, of what is left of the line. */
+			shown = end - at;
+			if (shown > 0U)
+				shown = kl_text_break(style->text, text + at, pixels, 0, width);
+
+			/* No further than the line's end, and a byte at least while some is left. */
+			if (shown > end - at)
+				shown = end - at;
+			else if (shown == 0U && end > at)
+				shown = 1;
+
+			/* Drawn on its line. */
+			if (draw == 1)
+				(void)kl_text_draw(style->text, style->canvas, x, y + height + metrics.ascent, text + at, shown, pixels, 0, color);
+			last = kl_text_width(style->text, text + at, shown, pixels, 0);
+			height += line_height;
+			at += shown;
+		} while (at < end);
+
+		/* Past the line break. */
+		at = end + 1U;
+	}
+
+	/* The width of the last piece, for a caret. */
+	if (draw == -1)
+		return last;
+
+	/* The height. */
+	return height;
 }
 
 /*
@@ -1588,13 +2015,23 @@ view_ghost(
 	y = (float)py - 20.0f;
 	kl_canvas_shadow(style->canvas, x, y + 3.0f, 132.0f, 44.0f, 12.0f, 10.0f, style->theme->shadow);
 	kl_canvas_round(style->canvas, x, y, 132.0f, 44.0f, 12.0f, KL_RGBA(0xffffff, 230));
+
+	/* The memo: its note and "Memo". */
+	if (view->dragging == CAL_DRAG_MEMO) {
+		view_note_icon(style->canvas, x + 10.0f, y + 10.0f, 24.0f);
+		(void)kl_text_draw(style->text, style->canvas, (int)x + 46, (int)y + 27, "Memo", strlen("Memo"), 13U, 1, style->theme->text);
+		return;
+	}
+
+	/* A kind: its icon and its name. */
 	kl_canvas_image(style->canvas, &view->icons[view->dragging], x + 4.0f, y + 4.0f, 36.0f, 36.0f, 0.0f, 1.0f);
 	(void)kl_text_draw(style->text, style->canvas, (int)x + 46, (int)y + 27, view_kinds[view->dragging], strlen(view_kinds[view->dragging]), 13U, 1, style->theme->text);
 }
 
 /*
- * Lists the events of a day, those of hidden calendars left out: the test
- * data's, then those dropped.  Returns how many.
+ * Lists the items of a day, the events of hidden calendars left out: the
+ * test data's events, those dropped, then the memos kept there.  Returns
+ * how many.
  */
 static size_t
 view_day(
@@ -1622,6 +2059,7 @@ view_day(
 		entries[found].title = events[i].title;
 		entries[found].time = events[i].time;
 		entries[found].list = events[i].list;
+		entries[found].memo = NULL;
 		found++;
 	}
 
@@ -1634,6 +2072,20 @@ view_day(
 		entries[found].title = view_new_titles[view->added[i].list];
 		entries[found].time = NULL;
 		entries[found].list = view->added[i].list;
+		entries[found].memo = NULL;
+		found++;
+	}
+
+	/* The memos kept on it. */
+	for (i = 0; i < view->memo_count && found < size; i++) {
+		/* One on this day. */
+		same = cal_same_day(&view->memos[i].date, date);
+		if (!same)
+			continue;
+		entries[found].title = view->memos[i].title;
+		entries[found].time = NULL;
+		entries[found].list = CAL_WORK;
+		entries[found].memo = view->memos[i].text;
 		found++;
 	}
 

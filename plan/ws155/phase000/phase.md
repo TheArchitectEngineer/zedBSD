@@ -45,3 +45,14 @@ ws.md の「デザイン案」の要素（このままでなく要素として�
   - 日めくりだけが動く frame（呼吸・頁めくり）は、前の全体の frame が残した日めくりの下の絵を戻して日めくりだけを描き直す（`cal_view_desk_only`・`cal_view_draw_desk`、widget は描かないので kl_ui の frame は始めない）。全体の frame と画素が同じことを host の試験 `desk-only` で確かめた。
   - texture の bilinear を軽くし、呼吸の frame を 10 fps に。host の -Os で、日めくりだけの frame は 26 ms（全体の frame は 49〜70 ms）。
 - host: PASS 8（`desk-only` を足した）。zedBSD の build は warning 0、style-check 0。
+
+## ユーザーの再指示（2026-10-05、q745-i02）と直し
+
+ユーザー「カレンダーのスクショ、いいですね。気に入りました。カレンダーはglass透過にして、ペインは分離して背景はなしの、Filesと同じスタイルにしましょう。右下のカレンダーの画像部分のスペースがちょっと無駄っぽく見えるので、メモ・ノートの領域にしましょう。日付ごととかでなくて、アプリの唯一のメモ領域でOKです。メモはドラッグして日付にドロップすると、メモ属性の予定として追加して、でもこれは予定追加ではなくて、予定追加の機能を応用した、メモの保存にしましょう。」
+
+- Files と同じ style: glass では card が窓の端まで届き（余白 0）、間は 8、card の地は Files と同じ薄い veil（sidebar は `glass_sidebar`、他は `glass_content`）、card の間は地なしで desktop が透ける。種類の card とメモの地も薄い veil に。不透明の窓では今までどおり。
+- 右下の大きな 3D の日めくり・リボン・呼吸の動きを外した（常時の動きは無くなり、何もしない時は再描画しない）。
+- メモ: app に 1 つの複数行のメモ（mock は memory だけ、初期の例文あり）。click で keyboard を受け、Enter で改行、Backspace、Esc で離す。見出し（メモの印・「Memo」・「Drag to a date」・grip）を drag して日付に落とすと、その日にメモの写しを保存（`CALENDAR MEMO date=… length=…`、予定の追加の drag と drop の仕組みを使う）。cell では予定の pill と分けて、白地に枠線とメモの印の pill（題は 1 行目）。
+- 選んだ日: メモの下に card。左に小さな 3D の日めくり（日が変わると頁がめくれる、静かな動きとして残した）、日付、件数、その日の予定（時刻と題）とメモ（全文）を並べる。日付を押すとその日のメモが読める。
+- 3D は Add Event の 4 つの icon と、選んだ日の小さな日めくりに残した。
+- host: PASS 9（`memo` を足した、呼吸の frame は外した）。PNG は `start`・`flip-0..5`・`drag`・`sink-0..2`・`memo-drag`・`memo`・`november`・`hidden`・`reduced`・`glass`、頁めくりの GIF は `host-calendar-desk.gif`。zedBSD の build は warning 0、style-check 0。

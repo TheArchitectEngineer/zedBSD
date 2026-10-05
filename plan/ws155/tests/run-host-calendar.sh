@@ -53,12 +53,12 @@ out.save(sys.argv[4])
 PY
 	rm -f "$p" "${p%.pam}.panels"
 done
-# The desk calendar's frames (the panel's lower part) as one animated GIF: breathing, then the page turning.
+# The small desk calendar's page turning (the day's card at the panel's bottom) as one animated GIF.
 python3 - "$out" <<'PY'
 import sys
 from PIL import Image
 out = sys.argv[1]
-names = ['breath-0', 'breath-1', 'breath-2', 'breath-3'] + ['flip-%d' % i for i in range(6)]
-frames = [Image.open('%s-%s.png' % (out, n)).crop((968, 460, 1268, 788)) for n in names]
-frames[0].save(out + '-desk.gif', save_all=True, append_images=frames[1:], duration=[600] * 4 + [110] * 6, loop=0)
+names = ['flip-%d' % i for i in range(6)]
+frames = [Image.open('%s-%s.png' % (out, n)).crop((968, 590, 1268, 788)) for n in names]
+frames[0].save(out + '-desk.gif', save_all=True, append_images=frames[1:], duration=[600] + [110] * 4 + [900], loop=0)
 PY

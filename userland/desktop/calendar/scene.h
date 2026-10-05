@@ -8,8 +8,8 @@
 /*
  * Calendar's 3D things (WS155 p000): meshes made of boxes, quads,
  * extruded outlines, ellipsoids and rings in a model's own space, drawn
- * with render3d.h through a matrix; the desk calendar with its pages, its
- * rings and the ribbon round it, and the icons of the kinds of event.
+ * with render3d.h through a matrix; the desk calendar with its pages and
+ * its rings, and the icons of the kinds of event.
  */
 
 #ifndef CALENDAR_SCENE_H
@@ -56,7 +56,6 @@ void sc_extrude(struct sc_mesh *mesh, const float *outline, size_t count, float 
 void sc_ellipsoid(struct sc_mesh *mesh, struct r3_vec centre, struct r3_vec radii, kl_color color);
 void sc_ring(struct sc_mesh *mesh, struct r3_vec centre, float major, float minor, kl_color color);
 void sc_desk_calendar(struct sc_mesh *mesh, float flip, float opacity);
-void sc_ribbon(struct sc_mesh *mesh, float phase);
 void sc_icon(struct sc_mesh *mesh, enum sc_icon icon);
 void sc_draw(struct r3_target *target, const struct sc_mesh *mesh, const struct r3_matrix *matrix, const struct r3_texture *textures);
 
