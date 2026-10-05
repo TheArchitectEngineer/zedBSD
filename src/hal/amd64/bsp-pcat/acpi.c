@@ -46,6 +46,31 @@ struct madt {
 } __attribute__((packed));
 
 /*
+ * The parts of an LPIT native C-state descriptor discovery reads (ACPI's
+ * Low Power Idle Table): its type and length, its flags (bit 0 says the
+ * state is disabled), and its entry trigger, a generic address whose
+ * address field is the MWAIT hint when its space is functional fixed
+ * hardware.
+ */
+struct lpit_native_cstate {
+	uint32_t type;
+	uint32_t length;
+	uint16_t unique_id;
+	uint16_t reserved;
+	uint32_t flags;
+	uint8_t trigger_space;
+	uint8_t trigger_bit_width;
+	uint8_t trigger_bit_offset;
+	uint8_t trigger_access_size;
+	uint64_t trigger_address;
+} __attribute__((packed));
+
+/* An LPIT descriptor's type for a native C-state, its disabled flag, and functional fixed hardware's space. */
+#define LPIT_TYPE_NATIVE_CSTATE	0U
+#define LPIT_FLAG_DISABLED	0x1U
+#define ACPI_SPACE_FFIXEDHW	0x7fU
+
+/*
  * The physical address of the RSDP that discovery accepted.
  *
  * It is written once, by the boot processor during discovery, before the
@@ -71,6 +96,7 @@ static const struct sdt *map_sdt_header(uint64_t physical);
 static const struct sdt *map_sdt(uint64_t physical);
 static const struct sdt *find_sdt(const struct rsdp *root_pointer, const char signature[4], size_t minimum, int report_root);
 static int discover_mcfg(struct amd64_acpi_info *result, const struct rsdp *root_pointer);
+static void discover_lpit(struct amd64_acpi_info *result, const struct rsdp *root_pointer);
 static int add_cpu(struct amd64_acpi_info *result, uint32_t apic_id);
 
 /*
@@ -147,6 +173,9 @@ prekern_amd64_acpi_discover(
 		return error;
 	}
 	hal_printf("A64 ACPI MCFG READY regions=%u\n", result->ecam_count);
+
+	/* Finds the low-power S0 idle state the optional LPIT names (ws052-p006). */
+	discover_lpit(result, root_pointer);
 
 	/* Parses every complete MADT record in firmware order. */
 	result->lapic_address = madt->lapic_address;
@@ -760,6 +789,65 @@ discover_mcfg(
 
 	/* Returns the parser result unchanged. */
 	return error;
+}
+
+/*
+ * Finds the optional LPIT's first enabled native C-state whose entry
+ * trigger is functional fixed hardware, and keeps its MWAIT hint.  A
+ * missing or malformed table leaves lpit_found at 0 (no suspend idle).
+ */
+static void
+discover_lpit(
+	struct amd64_acpi_info *result,
+	const struct rsdp *root_pointer)
+{
+	const struct sdt *lpit;
+	const struct lpit_native_cstate *state;
+	const uint8_t *entry;
+	size_t remaining;
+	uint32_t length;
+	uint32_t type;
+
+	/* The optional table. */
+	lpit = find_sdt(
+		root_pointer,
+		"LPIT",
+		sizeof(struct sdt),
+		0);
+	if (lpit == NULL) {
+		hal_puts("A64 ACPI LPIT NONE\n");
+		return;
+	}
+
+	/* Each descriptor, as long as a whole one remains. */
+	entry = (const uint8_t *)lpit + sizeof(struct sdt);
+	remaining = lpit->length - sizeof(struct sdt);
+	while (remaining >= 8U) {
+		/* Its length, which must hold it and stay inside the table. */
+		length = load_u32(entry + 4U);
+		if (length < 8U || length > remaining)
+			break;
+
+		/* A native C-state descriptor that is whole, enabled and triggered by functional fixed hardware. */
+		state = (const struct lpit_native_cstate *)entry;
+		type = load_u32(entry);
+		if (length >= sizeof(*state) &&
+		    type == LPIT_TYPE_NATIVE_CSTATE &&
+		    (state->flags & LPIT_FLAG_DISABLED) == 0U &&
+		    state->trigger_space == ACPI_SPACE_FFIXEDHW) {
+			result->lpit_mwait_hint = (uint32_t)state->trigger_address;
+			result->lpit_found = 1U;
+			hal_printf("A64 ACPI LPIT READY hint=%02X\n", result->lpit_mwait_hint);
+			return;
+		}
+
+		/* The next descriptor. */
+		entry += length;
+		remaining -= length;
+	}
+
+	/* No usable state. */
+	hal_puts("A64 ACPI LPIT NONE\n");
 }
 
 /* Adds one unique xAPIC-width processor identifier. */
