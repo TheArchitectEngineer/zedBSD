@@ -8,11 +8,12 @@
 /*
  * The application switcher's state (switcher.c, ws142-p005): opened by
  * Alt+Tab or a tap of three fingers on the touch pad (D1), it takes the
- * desktop's applications in the order of their latest use (D2) and selects
- * the one after the current one: the application used before it.  Tab,
- * the arrows and two fingers across the pad move the selection (around at
- * the ends); the caller then brings the selected application, or gives
- * the switcher up.
+ * desktop's applications in the order of the bar's icons, from the left,
+ * and selects the current application (BUG-209, the 2026-10-05 user
+ * decision: the order a person sees, never the compositor's order of use).
+ * Tab, the arrows and two fingers across the pad move the selection one
+ * icon to the right or the left, around at the ends; the caller then
+ * brings the selected application, or gives the switcher up.
  *
  * It knows nothing of the server: the caller hands it the applications
  * (apps.c), the steps and the pad's travel, and draws and acts on what it
@@ -37,7 +38,7 @@
 /* The fingers' travel across the pad of one step (micrometres). */
 #define ZWL_SWITCHER_STEP_UM		12000
 
-/* The switcher: whether it is on, how it was opened, where it shows, the applications' keys (latest use first), the selection, and the pad's travel not yet a step. */
+/* The switcher: whether it is on, how it was opened, where it shows, the applications' keys (the bar's order), the selection, and the pad's travel not yet a step. */
 struct zwl_switcher {
 	unsigned on;
 	unsigned via;
@@ -48,7 +49,7 @@ struct zwl_switcher {
 	int32_t travel_um;
 };
 
-int zwl_switcher_open(struct zwl_switcher *switcher, const struct zwl_apps *apps, unsigned via, unsigned placement);
+int zwl_switcher_open(struct zwl_switcher *switcher, const struct zwl_apps *apps, int current, unsigned via, unsigned placement);
 void zwl_switcher_step(struct zwl_switcher *switcher, int delta);
 int zwl_switcher_travel(struct zwl_switcher *switcher, int32_t dx_um);
 const char *zwl_switcher_selected(const struct zwl_switcher *switcher);

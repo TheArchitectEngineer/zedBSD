@@ -10,8 +10,8 @@
  * request, D1 and D2 of plan/ws142/phase001; switcher.c keeps its state).
  *
  * Alt+Tab, or a tap of three fingers on the touch pad, opens it on the
- * desktop's applications in the order of their latest use, with the one
- * used before the current one selected.  While no window is docked the
+ * desktop's applications in the order of the bar's icons, with the current
+ * one selected (BUG-209, the 2026-10-05 user decision).  While no window is docked the
  * selection shows as the bar's previews of that application under its icon
  * (apps-bar.c, as the pointer resting on the icon shows them); with a
  * docked window (D6), or for an application without room in the bar, it
@@ -21,7 +21,8 @@
  *
  * Tab and the right arrow (Shift+Tab and the left arrow back), another tap
  * of three fingers, and two fingers across the pad (ZWL_SWITCHER_STEP_UM a
- * step, the way the fingers go) move the selection, around at the ends.
+ * step, the way the fingers go) move the selection one icon to the right
+ * (or the left), around at the ends.
  * Letting Alt go, Enter, and for the pad's switcher a tap or a click bring
  * the selected application's latest window to the top (back from
  * minimized); a click on a preview brings that window, on an icon of the
@@ -109,7 +110,7 @@ zwl_switch_open(
 	collected = zwl_apps_view_collect(server, &view);
 	if (!collected)
 		return 0;
-	error = zwl_switcher_open(&server->switcher, &view.apps, via, placement);
+	error = zwl_switcher_open(&server->switcher, &view.apps, view.current, via, placement);
 	if (error != 0)
 		return 0;
 
@@ -190,7 +191,8 @@ zwl_switch_cancel(
 }
 
 /*
- * Takes a key: Alt+Tab opens or moves on (Shift back); while on, the arrows
+ * Takes a key: Alt+Tab opens on the current application, or moves one icon
+ * to the right (with Shift, to the left); while on, the arrows
  * move, Enter brings, Esc gives up, and letting Alt go brings the
  * keyboard's selection.  Returns 1 when the key is the switcher's (Alt's
  * own release goes on to the windows).
@@ -223,17 +225,15 @@ zwl_switch_key(
 		if ((server->modifiers & SWITCH_SHIFT) != 0U)
 			delta = -1;
 
-		/* Off: it opens (with Shift on the one before). */
+		/* Off: it opens on the current application, with Shift or without (BUG-209). */
 		if (!server->switcher.on) {
 			opened = zwl_switch_open(server, ZWL_SWITCHER_VIA_KEYS);
 			if (!opened)
 				return 0;
-			if (delta < 0)
-				zwl_switch_step(server, -1, "shift-tab");
 			return 1;
 		}
 
-		/* On: the next (or the one before). */
+		/* On: one icon to the right (with Shift, to the left). */
 		zwl_switch_step(server, delta, "tab");
 		return 1;
 	}
