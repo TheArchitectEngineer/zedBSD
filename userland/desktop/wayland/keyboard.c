@@ -402,7 +402,9 @@ struct keyboard_move {
  * category shown, emoji_active and emoji_slot its tab or cell held (the
  * tabs first, then the cells, keyboard_emoji_rect).  The candidates' tab
  * (ws166-p003): reading is the hiragana committed since the reading began
- * (empty for none) into reading_input's field, predict_serial the latest
+ * (empty for none) into reading_input's field, reading_commit that
+ * field's count of commits when the reading last changed (its surrounding
+ * text tells the reading only when set by a later commit), predict_serial the latest
  * request to the input method, predictions and prediction_readings its
  * answer's words and their readings (prediction_count of them), and
  * candidate_active and candidate_slot the word held.
@@ -498,6 +500,7 @@ struct keyboard_state {
 	unsigned emoji_slot;
 	char reading[KEYBOARD_READING];
 	struct zwl_text_input *reading_input;
+	uint32_t reading_commit;
 	uint32_t predict_serial;
 	char predictions[KEYBOARD_PREDICTIONS][KEYBOARD_PREDICTION_TEXT];
 	char prediction_readings[KEYBOARD_PREDICTIONS][KEYBOARD_PREDICTION_TEXT];
@@ -4436,7 +4439,13 @@ static void
 keyboard_reading_predict(
 	struct zwl_server *server)
 {
+	struct zwl_text_input *input;
 	int error;
+
+	/* The field's text known so far is older than this reading (the field read only while it is current). */
+	input = zwl_text_input_current(server);
+	if (input != NULL && input == keyboard.reading_input)
+		keyboard.reading_commit = input->commits;
 
 	/* A new request: an answer to an older one is dropped. */
 	keyboard.predict_serial++;
@@ -4560,8 +4569,12 @@ keyboard_candidate_at(
 /*
  * Replaces the reading before the cursor by the word held, and has the
  * input method learn it (ws166-p003).  The field must still be the
- * reading's, and when it tells its text, the reading must be what is
- * before the cursor; otherwise nothing is replaced and the reading ends.
+ * reading's, and when it has told its text since the reading last changed,
+ * the reading must be what is before the cursor; otherwise nothing is
+ * replaced and the reading ends.  A field that tells no text, or has not
+ * told it since (most applications never do, and ime-probe tells it once
+ * at the enable), is trusted to hold the reading the keyboard itself
+ * committed.
  */
 static void
 keyboard_candidate_release(
@@ -4589,9 +4602,9 @@ keyboard_candidate_release(
 		return;
 	}
 
-	/* When the field tells its text, the reading is what is before the cursor. */
+	/* When the field told its text after the reading changed, the reading is what is before the cursor. */
 	length = strlen(keyboard.reading);
-	if (input->text != NULL && input->cursor >= 0) {
+	if (input->text != NULL && input->cursor >= 0 && input->text_commit > keyboard.reading_commit) {
 		differs = 1;
 		text_length = strlen(input->text);
 		if ((size_t)input->cursor >= length && (size_t)input->cursor <= text_length)

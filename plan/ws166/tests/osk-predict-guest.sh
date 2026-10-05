@@ -8,7 +8,9 @@
 #     the candidates' tab came up by itself (predict-kan.png: the words in the grid under the tabs).
 #  2. Del: the reading is か again ("ZWL OSK reading=か" once more, a new answer for it).
 #  3. The first word tapped (its cell from the log's "ZWL OSK crect slot=0"): "ZWL OSK candidate commit sent=1 slot=0",
-#     ime-probe gets a deletion of the reading's 3 bytes and the word ("PROBE DELETE before=3", its text the word),
+#     ime-probe gets a deletion of the reading's 3 bytes and the word ("PROBE DELETE before=3", its text ends with the
+#     word; the probe logs a deletion but does not apply it, and tells its surrounding text only at the enable, so the
+#     keyboard does not check the reading against it),
 #     the input method learns it ("KEI-IME LEARN reading=..."), the reading ends ("reason=chosen"); chosen.png.
 #  4. か again: the word chosen comes first now ("predictions ... reading=か ... first=WORD").
 #  5. A space key: the reading ends ("reason=other"); the tab says there is no reading (space.png).
@@ -106,7 +108,8 @@ expect_text "KEI-IME LEARN reading="
 expect_text 'ZWL OSK reading end reason=chosen'
 guest 'cat /tmp/ime-probe.log' > "$out/ime-probe.log"
 grep -qF 'PROBE DELETE before=3 after=0' "$out/ime-probe.log" && echo "probe: delete 3 ok" || { echo "probe: delete MISSING"; status=1; }
-[ -n "$word" ] && grep -qF "PROBE TEXT text=$word" "$out/ime-probe.log" && echo "probe: $word ok" || { echo "probe: text MISSING"; status=1; }
+last=$(grep -a 'PROBE TEXT text=' "$out/ime-probe.log" | tail -1)
+[ -n "$word" ] && [ "${last%"$word"}" != "$last" ] && echo "probe: $word ok" || { echo "probe: text MISSING ($last)"; status=1; }
 shot chosen.png
 
 # 4. か again: the word chosen first.
