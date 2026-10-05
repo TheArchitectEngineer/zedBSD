@@ -685,12 +685,19 @@ settings_apply_wallpaper(
 	printf("ZWL PREFERENCES key=wallpaper applied\n");
 }
 
-/* Sets the windows' opacity the settings hold, or the command line's exactly while at the default. */
+/*
+ * Sets the windows' opacity the settings hold, or the command line's
+ * exactly while at the default.  An opacity of 100 chosen in the settings
+ * makes the windows' glass panels solid too (BUG-171, decision B); the
+ * default keeps them frosted, and the title bars stay glass either way.
+ */
 static void
 settings_apply_opacity(
 	struct zwl_server *server)
 {
 	struct zwl_settings_entry *entry;
+	unsigned panels_opaque;
+	const char *panels;
 	float opacity;
 	int percent;
 	int error;
@@ -699,23 +706,31 @@ settings_apply_opacity(
 	entry = zwl_settings_store_find(server->settings, "window.opacity");
 	opacity = server->window_opacity_started;
 	percent = (int)(opacity * 100.0f + 0.5f);
+	panels_opaque = 0U;
 	if (entry != NULL && entry->chosen) {
-		/* The chosen percentage, when it reads as a number. */
+		/* The chosen percentage, when it reads as a number; 100 chosen makes the panels solid. */
 		error = kl_settings_key_number(entry->key, entry->value, &percent);
-		if (error == 0)
+		if (error == 0) {
 			opacity = (float)percent / 100.0f;
+			if (percent >= 100)
+				panels_opaque = 1U;
+		}
 	}
 
-	/* The same opacity changes nothing. */
-	if (opacity == server->window_opacity)
+	/* The same opacity and panels change nothing. */
+	if (opacity == server->window_opacity && panels_opaque == server->panels_opaque)
 		return;
 
 	/* Draws every window again at the new opacity. */
 	server->window_opacity = opacity;
+	server->panels_opaque = panels_opaque;
 	server->dirty = 1;
 
 	/* Logs the opacity put into effect, for the tests. */
-	printf("ZWL PREFERENCES key=window.opacity applied value=%d\n", percent);
+	panels = "glass";
+	if (panels_opaque != 0U)
+		panels = "opaque";
+	printf("ZWL PREFERENCES key=window.opacity applied value=%d panels=%s\n", percent, panels);
 }
 
 /* Sets a number the desktop uses to the setting's value when it differs, and logs it. */

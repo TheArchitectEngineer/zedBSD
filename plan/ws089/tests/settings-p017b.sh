@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws089-p017b: the applications in the dark appearance.  On the Venus guest of config-amd64-dark-apps.mk (built from the
 # commit under test), zdesktop --glass at 1280x800 on the default wallpaper, HOME=/root.  For each application (Text
-# Editor, Notes, PDF Viewer, Image Viewer, Phone, Calendar, Mailer, Files, Settings), one at a time:
+# Editor, Notes, PDF Viewer, Image Viewer (a bundled wallpaper: the image has no /usr/share/keiland/wallpaper.png, the
+# desktop draws its built-in one), Phone, Calendar, Mailer, Files, Settings), one at a time:
 #  1. started in the light appearance: light-NAME.png (the look as before);
 #  2. "keiland-settings set appearance.dark 1" while it runs: its log says "APPEARANCE appearance=1" (the kl_app
 #     programs, Phone, Calendar and Mailer, log nothing of their own: the picture shows it), and dark-NAME.png shows it
@@ -23,8 +24,10 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null;
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 programs='textedit|notes|pdfviewer|imageview|phone|calendar|mailer|files|settings'
-stop_all="service stop greeter >/dev/null 2>&1; for p in \$(ps -A -o pid,args | grep -E '[w]ayland( |\$)|^/bin/($programs)' | awk '{print \$1}'); do kill \$p; done; sleep 1"
-ends="for p in \$(ps -A -o pid,args | grep -E '^/bin/($programs)' | awk '{print \$1}'); do kill \$p; done; sleep 1; echo ok"
+# ps prints the pid first, so the program is matched on the second field (T1-198: a pattern anchored at the line's
+# start never matched, the applications were not ended and their windows piled up).
+stop_all="service stop greeter >/dev/null 2>&1; for p in \$(ps -A -o pid,args | awk '\$2 ~ /^\/bin\/(wayland|$programs)\$/ {print \$1}'); do kill \$p; done; sleep 1"
+ends="for p in \$(ps -A -o pid,args | awk '\$2 ~ /^\/bin\/($programs)\$/ {print \$1}'); do kill \$p; done; sleep 1; echo ok"
 env_line='export XDG_RUNTIME_DIR=/tmp HOME=/root WAYLAND_DISPLAY=wayland-0'
 status=0
 . plan/ws089/tests/settings-wait.sh
@@ -50,7 +53,7 @@ for name in textedit notes pdfviewer imageview phone calendar mailer files setti
 	case $name in
 	textedit) args="/root/dark.txt" ;;
 	pdfviewer) args="$pdf" ;;
-	imageview) args="/usr/share/keiland/wallpaper.png" ;;
+	imageview) args="/usr/share/keiland/wallpapers/Lagoon.png" ;;
 	*) args="" ;;
 	esac
 	guest "$ends" >/dev/null

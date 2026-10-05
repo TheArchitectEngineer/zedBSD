@@ -6,10 +6,12 @@
 # see the windows' opacity.  desktop.conf is zdesktop's own: the test only removes it or seeds it before zdesktop starts.
 #  1. No file: ZWL SETTINGS open, the landscape (start.png).
 #  2. wallpaper set: ZWL PREFERENCES key=wallpaper applied and ZWL GLASS wallpaper path=... ms=N (wallpaper.png).
-#  3. window.opacity 85: key=window.opacity applied value=85 (opacity.png).
+#  3. window.opacity 85: key=window.opacity applied value=85 panels=glass (opacity.png); then 100 chosen: value=100
+#     panels=opaque, the windows' glass panels solid (opaque.png, BUG-171 decision B; the title bars stay glass).
 #  4. mouse.speed 200, mouse.natural 1, touchpad.acceleration 3, keyboard.repeat.rate 40, keyboard.repeat.delay 250:
 #     each applied (ws089-p024: the mouse's and the touch pads' keys).
-#  5. Each reset: the landscape again (ZWL GLASS wallpaper path=-) and the opacity back to 100 (removed.png).
+#  5. Each reset: the landscape again (ZWL GLASS wallpaper path=-) and the opacity back to the default 100 with the
+#     panels frosted again (value=100 panels=glass) (removed.png).
 #  6. zdesktop started again with a wallpaper in the file: it is applied before the look is made (key=wallpaper
 #     applied, no ZWL GLASS wallpaper line) (restart.png).  The file also holds the one pointer setting of before
 #     (pointer.speed=200, ws089-p024): it is moved to the mouse's (ZWL SETTINGS migrated ..., mouse.speed applied 200).
@@ -100,8 +102,13 @@ shot wallpaper.png
 
 # 3. The windows' opacity.
 probe set window.opacity 85
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=85'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=85 panels=glass'
 shot opacity.png
+
+# 3b. 100 chosen (BUG-171, decision B): the windows' glass panels solid too (Settings' sidebar shows no wallpaper).
+probe set window.opacity 100
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=100 panels=opaque'
+shot opaque.png
 
 # 4. The pointer and the keyboards.
 probe set mouse.speed 200 set mouse.natural 1 set touchpad.acceleration 3 set keyboard.repeat.rate 40 set keyboard.repeat.delay 250
@@ -114,7 +121,7 @@ expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.delay applied 
 # 5. Each setting reset: back to the command line's.
 probe reset wallpaper reset window.opacity reset mouse.speed
 expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=- ms='
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=100'
+expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=100 panels=glass'
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=150'
 shot removed.png
 
