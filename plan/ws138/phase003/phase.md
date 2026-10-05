@@ -4,7 +4,7 @@
 
 Phase ID: `ws138-p003`
 Parent: [WS138](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17、q731。見直しと直しは済み。Q1 の判定待ち）
+Status: cleared（2026-10-05 Q1: C の全文規約の見直しと直し 7 件、例外 1（setjmp、規格の要求）、WS135 の既存の指摘 5 は範囲外、Python・shell は全文規約が無く C だけ（制限）。build warning 0・host 試験 PASS。T1-172 後の変更は comment・段落・型だけで再試験は不要と Q1 が判断）。以前: in-progress（2026-10-05 P1 generation17、q731。見直しと直しは済み。Q1 の判定待ち）
 Phase disposition: normal
 Queue: q731
 依存: p002（cleared、T1-172）
@@ -71,3 +71,7 @@ Python の道具（`userland/desktop/wallpapers/ppm-to-png.py`・`generate.py`�
 全文規約の見直しで 7 件を直した（上の表）。残る指摘は C の規格による `setjmp` の 1 件（例外）と、WS138 で変えていない既存の 5 件。build と host 試験は通る。
 受け入れ（Q1 の判定）を待つ。WS138 の全部の Phase が cleared になったら、ws.md を完了の形に書き直し、phase の directory を消し、上の 4 の試験を
 `plan/tools/wallpaper/` に移す（Master の Tools 節は Q1）。
+
+## Q1 の判定と結果の反映（2026-10-05）
+
+cleared。F-071 に完了を記録、WS089・WS099 の ws.md に結果の注記を足した（Q1）。試験の移動（plan/tools/wallpaper/）と ws.md の完了の形は P1、Tools 節の登録は Q1。

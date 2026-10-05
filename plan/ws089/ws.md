@@ -136,3 +136,5 @@ WS113 p006（Display の頁）・WS099 p019（壁紙の一覧）と `settings/pa
 Event ws113-multidisplay-plan-20261002-ws089-followup: userは読み取り専用のDisplay stubを、外部display/全拡張・全mirror/drag配置ができる[WS113](../ws113/ws.md)で後日実装するよう指定。Settingsはlibkeilandの公開APIだけからcompositor拡張へ接続する。WS089の過去のNetwork中心/stub受け入れとp001〜p009の結果はそのまま保持。新WSはplanned、WS089の未実行Phase/Queueを自動開始しない。GitHub comment/body反映保留。
 
 2026-10-02 / ws089-beta1-plan: user「Settingsも重点的に」（2026-10-02）で 2026-09-29 の後回しを置き換え、fg019 の計画エージェントが到達目標 S-B1〜S-B6 と p010〜p018 を追加（guide の提案 p010・p011 を正式化、p012 の完了処理の案は p018 の後に Q1）。p001〜p009 の結果は不変。Queue は未投入。
+
+- 2026-10-05 WS138 の結果（Q1）: 背景の頁は PNG と JPEG を一覧（png→jpg→jpeg の規則）、生成の背景は `.png`。Settings は wallpaper.c と compat の library を link する（WS168 の後は preview の command へ移る）。ws089 の host build はそれらを compile する。
