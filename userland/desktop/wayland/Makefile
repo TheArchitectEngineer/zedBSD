@@ -16,7 +16,7 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 	userland/desktop/wayland/icons.c userland/desktop/wayland/titlebar-shell.c \
 	userland/desktop/wayland/decoration.c userland/desktop/wayland/cursor.c userland/desktop/wayland/viewport.c userland/desktop/wayland/activation.c userland/desktop/wayland/theme.c \
 	userland/desktop/wayland/panels.c userland/desktop/wayland/backdrop.c userland/desktop/wayland/damage.c userland/desktop/wayland/greeter.c userland/desktop/wayland/handoff.c userland/desktop/wayland/role.c userland/desktop/wayland/backend-host.c userland/desktop/wayland/os.c userland/desktop/wayland/primary.c \
-	userland/desktop/wayland/network.c userland/desktop/wayland/volume.c userland/desktop/wayland/media.c \
+	userland/desktop/wayland/network.c userland/desktop/wayland/volume.c userland/desktop/wayland/media.c userland/desktop/wayland/language.c \
 	userland/desktop/wayland/settings.c userland/desktop/wayland/settings-store.c userland/desktop/wayland/$(if $(filter y,$(ZEDBSD_TEST_SCREEN_CAPTURE)),shot.c,shot-none.c) userland/desktop/wayland/system.c userland/desktop/wayland/sysmon.c userland/desktop/settings-keys/settings-keys.c \
 	userland/desktop/wayland/text-input.c userland/desktop/wayland/input-method.c \
 	userland/desktop/wayland/desktop.c userland/desktop/wayland/inset.c userland/desktop/wayland/edit.c userland/desktop/wayland/clipboard.c \

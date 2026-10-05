@@ -49,6 +49,8 @@
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
+#include <keiland.h>
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -1272,6 +1274,7 @@ home_draw_icon(
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	const struct home_app *app;
+	const char *label;
 	struct glass_shape shape;
 	float color[4];
 	char letter[2];
@@ -1355,13 +1358,14 @@ home_draw_icon(
 		glass_shape_draw(server, command, &shape);
 	}
 
-	/* The name under the icon, centred on it. */
+	/* The name under the icon, centred on it, in the desktop's language (the search keeps the English, WS158). */
 	memcpy(color, ink, sizeof(color));
 	color[3] = opacity;
-	width = glass_text_width(server, SIZE_TITLE, app->name);
+	label = kl_tr(app->name);
+	width = glass_text_width(server, SIZE_TITLE, label);
 	if (width > HOME_CELL_WIDTH - 8)
 		width = HOME_CELL_WIDTH - 8;
-	glass_draw_text(server, command, SIZE_TITLE, x + (HOME_ICON - width) / 2, y + HOME_ICON + HOME_LABEL, app->name, HOME_CELL_WIDTH - 8, color);
+	glass_draw_text(server, command, SIZE_TITLE, x + (HOME_ICON - width) / 2, y + HOME_ICON + HOME_LABEL, label, HOME_CELL_WIDTH - 8, color);
 }
 
 /*

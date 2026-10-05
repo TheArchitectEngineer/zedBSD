@@ -499,12 +499,12 @@ zwl_volume_draw_popup(
 	left = volume_view.popup_x + VOLUME_PADDING;
 	width = VOLUME_POPUP_WIDTH - 2 * VOLUME_PADDING;
 	top = volume_view.popup_y + VOLUME_PADDING / 2;
-	glass_draw_text(server, command, SIZE_TITLE, left, top + 22, "Sound", width, dark);
+	glass_draw_text(server, command, SIZE_TITLE, left, top + 22, kl_tr("Sound"), width, dark);
 	sound = volume_sound();
 	if (sound) {
 		(void)snprintf(text, sizeof(text), "%u%%", volume_view.value);
 		if (volume_view.muted)
-			(void)snprintf(text, sizeof(text), "Muted");
+			(void)snprintf(text, sizeof(text), "%s", kl_tr("Muted"));
 		glass_draw_text(server, command, SIZE_BAR, left + width - glass_text_width(server, SIZE_BAR, text), top + 22, text, width, soft);
 	}
 
@@ -525,16 +525,16 @@ zwl_volume_draw_popup(
 
 	/* The mute row: its name and switch. */
 	top = volume_mute_top();
-	glass_draw_text(server, command, SIZE_BAR, left, top + 22, "Mute", width, dark);
+	glass_draw_text(server, command, SIZE_BAR, left, top + 22, kl_tr("Mute"), width, dark);
 	volume_draw_switch(server, command, left + width, top + VOLUME_ROW_HEIGHT / 2, volume_view.muted, fade);
 
 	/* Without sound, the reason under the controls. */
 	if (!sound) {
 		top += VOLUME_ROW_HEIGHT;
 		if (!volume_view.state.reachable) {
-			glass_draw_text(server, command, SIZE_BAR, left, top + 18, "Sound service is not running", width, soft);
+			glass_draw_text(server, command, SIZE_BAR, left, top + 18, kl_tr("Sound service is not running"), width, soft);
 		} else {
-			glass_draw_text(server, command, SIZE_BAR, left, top + 18, "No sound output", width, soft);
+			glass_draw_text(server, command, SIZE_BAR, left, top + 18, kl_tr("No sound output"), width, soft);
 		}
 	}
 }

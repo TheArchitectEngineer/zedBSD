@@ -9,6 +9,7 @@
  * A finite, fullscreen Wayland service using independent shared GPU resources.
  */
 
+#include "language.h"
 #include "desktop.h"
 #include "zwl.h"
 #include "role.h"
@@ -147,6 +148,10 @@ main(
 	 */
 	if (!server.greeter)
 		zwl_settings_open(&server);
+
+	/* The login screen's text is in the system's language; a session's comes with its settings (WS158). */
+	if (server.greeter)
+		zwl_language_system(&server);
 
 	/* A test image's screen capture listens (shot.c; nothing elsewhere, ws173-p002). */
 	zwl_shot_open(&server);

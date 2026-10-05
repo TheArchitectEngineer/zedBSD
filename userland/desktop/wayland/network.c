@@ -69,6 +69,8 @@
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
+#include <keiland.h>
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -141,7 +143,7 @@ enum network_row_kind {
  */
 struct network_row {
 	enum network_row_kind kind;
-	char text[80];
+	char text[160];
 	int32_t y;
 	int32_t height;
 	unsigned ap;
@@ -217,7 +219,7 @@ struct network_view {
 	int32_t icon_width;
 	int32_t icon_height;
 	unsigned icon_logged;
-	char failure[96];
+	char failure[192];
 	unsigned switch_wanted;
 	uint64_t switch_until;
 	char joining[KL_BACKEND_NETWORK_SSID_MAX];
@@ -289,6 +291,7 @@ static void network_draw_switch(struct zwl_server *server, VkCommandBuffer comma
 static void network_draw_lock(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t middle, const float *ink);
 static unsigned network_strength(int rssi);
 static const char *network_request_name(unsigned request);
+static const char *network_request_phrase(unsigned request);
 static const char *network_wifi_name(unsigned wifi);
 static void network_choose_ap(struct zwl_server *server, unsigned ap);
 static int network_key_saved(const char *ssid);
@@ -710,7 +713,7 @@ zwl_network_key_failed(
 	int error)
 {
 	/* The failure in the menu, and no network shown as being joined. */
-	(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not join %s (%s)", ssid, strerror(error));
+	(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not join {1} ({2})"), ssid, strerror(error), (const char *)NULL);
 	network_connecting(NULL);
 	server->dirty = 1;
 	printf("ZWL NETWORK key failed ssid=%s error=%d\n", ssid, error);
@@ -913,7 +916,8 @@ network_layout_rows(
 	unsigned limit)
 {
 	const struct kl_backend_network_state *state;
-	char text[96];
+	char text[160];
+	char number[16];
 	unsigned index;
 	unsigned key_shown;
 	unsigned others;
@@ -933,10 +937,10 @@ network_layout_rows(
 
 	/* The Wi-Fi's switch, with its state under it (the network being joined while the user waits for it). */
 	if (state->wifi != KL_BACKEND_WIFI_ABSENT && state->reachable) {
-		network_add_row(NETWORK_ROW_SWITCH, "Wi-Fi", NETWORK_ROW_HEIGHT, 0);
+		network_add_row(NETWORK_ROW_SWITCH, kl_tr("Wi-Fi"), NETWORK_ROW_HEIGHT, 0);
 		network_state_text(state, text, sizeof(text));
 		if (network_view.connecting[0] != '\0')
-			(void)snprintf(text, sizeof(text), "Connecting to %s...", network_view.connecting);
+			(void)kl_tr_format(text, sizeof(text), kl_tr("Connecting to {1}..."), network_view.connecting, (const char *)NULL);
 		network_add_row(NETWORK_ROW_NOTE, text, NETWORK_NOTE_HEIGHT, 0);
 	} else {
 		network_state_text(state, text, sizeof(text));
@@ -949,9 +953,9 @@ network_layout_rows(
 
 		/* No scan since the menu opened yet, or one that found nothing, says so. */
 		if (!network_view.scan_fresh && network_view.scan_count == 0) {
-			network_add_row(NETWORK_ROW_NOTE, "Looking for networks...", NETWORK_NOTE_HEIGHT, 0);
+			network_add_row(NETWORK_ROW_NOTE, kl_tr("Looking for networks..."), NETWORK_NOTE_HEIGHT, 0);
 		} else if (network_view.scan_count == 0 && state->wifi != KL_BACKEND_WIFI_CONNECTED) {
-			network_add_row(NETWORK_ROW_NOTE, "No networks found", NETWORK_NOTE_HEIGHT, 0);
+			network_add_row(NETWORK_ROW_NOTE, kl_tr("No networks found"), NETWORK_NOTE_HEIGHT, 0);
 		}
 
 		/* The network it is on comes first (its own row when the scan has not found it). */
@@ -1003,7 +1007,8 @@ network_layout_rows(
 
 		/* The networks the screen had no room for are named, and found in Settings. */
 		if (shown < others) {
-			(void)snprintf(text, sizeof(text), "%u more in Settings > Wi-Fi", others - shown);
+			(void)snprintf(number, sizeof(number), "%u", others - shown);
+			(void)kl_tr_format(text, sizeof(text), kl_tr("{1} more in Settings > Wi-Fi"), number, (const char *)NULL);
 			network_add_row(NETWORK_ROW_NOTE, text, NETWORK_NOTE_HEIGHT, 0);
 		}
 	}
@@ -1017,9 +1022,9 @@ network_layout_rows(
 	/* The wired connection's line, after a separator. */
 	network_add_row(NETWORK_ROW_SEPARATOR, "", NETWORK_SEPARATOR, 0);
 	if (state->wired[0] != '\0') {
-		(void)snprintf(text, sizeof(text), "Wired (%s): connected", state->wired);
+		(void)kl_tr_format(text, sizeof(text), kl_tr("Wired ({1}): connected"), state->wired, (const char *)NULL);
 	} else {
-		(void)snprintf(text, sizeof(text), "Wired: not connected");
+		(void)snprintf(text, sizeof(text), "%s", kl_tr("Wired: not connected"));
 	}
 
 	/* The line. */
@@ -1072,15 +1077,15 @@ static void
 network_add_key_rows(
 	void)
 {
-	char text[96];
+	char text[160];
 
 	/* What the field is for. */
-	(void)snprintf(text, sizeof(text), "Key for %s", network_view.key_ssid);
+	(void)kl_tr_format(text, sizeof(text), kl_tr("Key for {1}"), network_view.key_ssid, (const char *)NULL);
 	network_add_row(NETWORK_ROW_NOTE, text, NETWORK_NOTE_HEIGHT, 0);
 
 	/* The field, and the keys that finish it. */
 	network_add_row(NETWORK_ROW_KEY, "", NETWORK_ROW_HEIGHT, 0);
-	network_add_row(NETWORK_ROW_NOTE, "Enter: join   Esc: cancel", NETWORK_NOTE_HEIGHT, 0);
+	network_add_row(NETWORK_ROW_NOTE, kl_tr("Enter: join   Esc: cancel"), NETWORK_NOTE_HEIGHT, 0);
 
 	/* A key refused before it was sent (too short, not saved) is said under the field it is typed in. */
 	if (network_view.failure[0] != '\0')
@@ -1096,35 +1101,35 @@ network_state_text(
 {
 	/* The daemon not heard from yet just after the start: it is starting (BUG-176). */
 	if (!state->reachable && !network_view.heard && !network_view.grace_over) {
-		(void)snprintf(text, size, "Starting the network service...");
+		(void)snprintf(text, size, "%s", kl_tr("Starting the network service..."));
 		return;
 	}
 
 	/* The daemon cannot be reached. */
 	if (!state->reachable) {
-		(void)snprintf(text, size, "Network service not available");
+		(void)snprintf(text, size, "%s", kl_tr("Network service not available"));
 		return;
 	}
 
 	/* The Wi-Fi's own state. */
 	switch (state->wifi) {
 	case KL_BACKEND_WIFI_ABSENT:
-		(void)snprintf(text, size, "No Wi-Fi hardware");
+		(void)snprintf(text, size, "%s", kl_tr("No Wi-Fi hardware"));
 		break;
 	case KL_BACKEND_WIFI_OFF:
-		(void)snprintf(text, size, "Wi-Fi is off");
+		(void)snprintf(text, size, "%s", kl_tr("Wi-Fi is off"));
 		break;
 	case KL_BACKEND_WIFI_SEARCHING:
-		(void)snprintf(text, size, "Searching for a known network");
+		(void)snprintf(text, size, "%s", kl_tr("Searching for a known network"));
 		break;
 	case KL_BACKEND_WIFI_CONNECTING:
-		(void)snprintf(text, size, "Connecting to %s...", state->ssid);
+		(void)kl_tr_format(text, size, kl_tr("Connecting to {1}..."), state->ssid, (const char *)NULL);
 		break;
 	case KL_BACKEND_WIFI_CONNECTED:
-		(void)snprintf(text, size, "Connected to %s", state->ssid);
+		(void)kl_tr_format(text, size, kl_tr("Connected to {1}"), state->ssid, (const char *)NULL);
 		break;
 	default:
-		(void)snprintf(text, size, "Not connected");
+		(void)snprintf(text, size, "%s", kl_tr("Not connected"));
 		break;
 	}
 }
@@ -1225,7 +1230,7 @@ network_request(
 
 	/* A request that could not even be sent is said in the menu, and a join that was not sent is not waited for. */
 	if (error != 0 && request != KL_BACKEND_NETWORK_REQUEST_SCAN) {
-		(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not %s (%s)", network_request_name(request), strerror(error));
+		(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not {1} ({2})"), network_request_phrase(request), strerror(error), (const char *)NULL);
 		if (request == KL_BACKEND_NETWORK_REQUEST_JOIN || request == KL_BACKEND_NETWORK_REQUEST_PROFILES)
 			network_connecting(NULL);
 	}
@@ -1417,6 +1422,7 @@ network_draw_row(
 	static const float field[4] = { 1.0f, 1.0f, 1.0f, 0.95f };
 	static const float frame[4] = { 0.25f, 0.52f, 0.98f, 0.70f };
 	const struct kl_backend_network_ap *ap;
+	const char *connecting;
 	char stars[NETWORK_KEY_MAX + 2U];
 	size_t count;
 	float ink[4];
@@ -1502,12 +1508,13 @@ network_draw_row(
 		 * (soft there could hardly be read).
 		 */
 		if (joining) {
-			width = glass_text_width(server, SIZE_BAR, "Connecting...");
+			connecting = kl_tr("Connecting...");
+			width = glass_text_width(server, SIZE_BAR, connecting);
 			glass_draw_text(server, command, SIZE_BAR, left + 32, baseline, row->text, NETWORK_MENU_WIDTH - 32 - 24 - width, ink);
 			if (over) {
-				glass_draw_text(server, command, SIZE_BAR, right - width, baseline, "Connecting...", width + 2, ink);
+				glass_draw_text(server, command, SIZE_BAR, right - width, baseline, connecting, width + 2, ink);
 			} else {
-				glass_draw_text(server, command, SIZE_BAR, right - width, baseline, "Connecting...", width + 2, soft);
+				glass_draw_text(server, command, SIZE_BAR, right - width, baseline, connecting, width + 2, soft);
 			}
 			return;
 		}
@@ -1687,6 +1694,35 @@ network_request_name(
 	return "none";
 }
 
+/* Says what a request was meant to do, in the desktop's language, for the failure line ("Could not ..."). */
+static const char *
+network_request_phrase(
+	unsigned request)
+{
+	/* Each request's words. */
+	switch (request) {
+	case KL_BACKEND_NETWORK_REQUEST_SCAN:
+		return kl_trc("network request", "scan");
+	case KL_BACKEND_NETWORK_REQUEST_JOIN:
+		return kl_trc("network request", "join");
+	case KL_BACKEND_NETWORK_REQUEST_DISCONNECT:
+		return kl_trc("network request", "disconnect");
+	case KL_BACKEND_NETWORK_REQUEST_WIFI_ON:
+		return kl_trc("network request", "turn Wi-Fi on");
+	case KL_BACKEND_NETWORK_REQUEST_WIFI_OFF:
+		return kl_trc("network request", "turn Wi-Fi off");
+	case KL_BACKEND_NETWORK_REQUEST_PROFILES:
+		return kl_trc("network request", "save the key");
+	case KL_BACKEND_NETWORK_REQUEST_WIRED:
+		return kl_trc("network request", "configure wired");
+	default:
+		break;
+	}
+
+	/* No request. */
+	return kl_trc("network request", "do that");
+}
+
 /* Names a Wi-Fi state, for the log. */
 static const char *
 network_wifi_name(
@@ -1856,7 +1892,7 @@ network_key_submit(
 
 	/* A WPA key is 8 to 63 characters; a shorter one is said and kept to finish. */
 	if (network_view.key_length < NETWORK_KEY_MIN) {
-		(void)snprintf(network_view.failure, sizeof(network_view.failure), "The key must be 8 to 63 characters");
+		(void)snprintf(network_view.failure, sizeof(network_view.failure), "%s", kl_tr("The key must be 8 to 63 characters"));
 		server->dirty = 1;
 		return;
 	}
@@ -1865,7 +1901,7 @@ network_key_submit(
 	error = zwl_system_bar_save_key(server, network_view.key_ssid, network_view.key);
 	network_key_wipe();
 	if (error != 0) {
-		(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not save the key (%s)", strerror(error));
+		(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not save the key ({1})"), strerror(error), (const char *)NULL);
 		printf("ZWL NETWORK key save error=%d\n", error);
 		server->dirty = 1;
 		return;
@@ -1937,21 +1973,21 @@ network_finished(
 
 		/* A network that asks for no key, or is no longer seen, says so. */
 		if (!network_view.key_open)
-			(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not join %s: no saved key", network_view.joining);
+			(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not join {1}: no saved key"), network_view.joining, (const char *)NULL);
 	} else if (error == EPERM &&
 	    request == KL_BACKEND_NETWORK_REQUEST_JOIN &&
 	    network_view.state.wifi == KL_BACKEND_WIFI_OFF) {
 		/* networkd refuses a join while Wi-Fi is off. */
-		(void)snprintf(network_view.failure, sizeof(network_view.failure), "Wi-Fi is off; turn it on to join");
+		(void)snprintf(network_view.failure, sizeof(network_view.failure), "%s", kl_tr("Wi-Fi is off; turn it on to join"));
 	} else if (error == EPERM) {
 		/* Only root and the network group may control Wi-Fi (2026-10-02, ws005-p019). */
-		(void)snprintf(network_view.failure, sizeof(network_view.failure), "This account may not control Wi-Fi");
+		(void)snprintf(network_view.failure, sizeof(network_view.failure), "%s", kl_tr("This account may not control Wi-Fi"));
 	} else if (error == EACCES && request == KL_BACKEND_NETWORK_REQUEST_JOIN) {
 		/* The network refused the key in its handshake (BUG-157, BUG-187): said until the user acts again. */
-		(void)snprintf(network_view.failure, sizeof(network_view.failure), "%s did not accept the key", network_view.joining);
+		(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("{1} did not accept the key"), network_view.joining, (const char *)NULL);
 	} else if (error != 0 && request != KL_BACKEND_NETWORK_REQUEST_SCAN) {
 		/* Anything else that failed says the errno's text. */
-		(void)snprintf(network_view.failure, sizeof(network_view.failure), "Could not %s (%s)", network_request_name(request), strerror(error));
+		(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not {1} ({2})"), network_request_phrase(request), strerror(error), (const char *)NULL);
 	}
 
 	/* What waited in the slot is sent now. */
@@ -2187,6 +2223,7 @@ network_info_draw(
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
 	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
 	const struct zwl_network_info_row *row;
+	const char *value;
 	struct glass_shape shape;
 	unsigned index;
 	int32_t left;
@@ -2226,7 +2263,7 @@ network_info_draw(
 	right = network_view.menu_x + NETWORK_MENU_WIDTH - 14;
 	baseline = network_view.menu_y + NETWORK_MENU_PADDING + NETWORK_INFO_TITLE / 2 + 6;
 	if (network_view.info_count > 0U)
-		glass_draw_text(server, command, SIZE_TITLE, left, baseline, network_view.info_rows[0].value, NETWORK_MENU_WIDTH - 28, dark);
+		glass_draw_text(server, command, SIZE_TITLE, left, baseline, kl_tr(network_view.info_rows[0].value), NETWORK_MENU_WIDTH - 28, dark);
 	glass_draw_solid(server, command, (float)(left - 2), (float)(network_view.menu_y + NETWORK_MENU_PADDING + NETWORK_INFO_TITLE - 1),
 			 (float)(NETWORK_MENU_WIDTH - 24), 1.0f, 0.0f, line);
 
@@ -2234,12 +2271,13 @@ network_info_draw(
 	baseline = network_view.menu_y + NETWORK_MENU_PADDING + NETWORK_INFO_TITLE + NETWORK_INFO_ROW / 2 + 5;
 	for (index = 1; index < network_view.info_count; index++) {
 		row = &network_view.info_rows[index];
-		glass_draw_text(server, command, SIZE_BAR, left, baseline, row->label, 104, soft);
-		width = glass_text_width(server, SIZE_BAR, row->value);
+		glass_draw_text(server, command, SIZE_BAR, left, baseline, kl_tr(row->label), 104, soft);
+		value = kl_tr(row->value);
+		width = glass_text_width(server, SIZE_BAR, value);
 		value_x = right - width;
 		if (value_x < left + 108)
 			value_x = left + 108;
-		glass_draw_text(server, command, SIZE_BAR, value_x, baseline, row->value, right - value_x, dark);
+		glass_draw_text(server, command, SIZE_BAR, value_x, baseline, value, right - value_x, dark);
 		baseline += NETWORK_INFO_ROW;
 	}
 }

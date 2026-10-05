@@ -33,6 +33,22 @@ cc -std=c89 -Wall -Wextra -Werror -pedantic -Wno-long-long -Wno-overlength-strin
 [ -s "$tmp/cc.txt" ] && { cat "$tmp/cc.txt"; status=1; }
 "$tmp/tr-host-test" "$tmp/locale" > "$tmp/out.txt" 2>&1 || status=1
 grep -v '^ok:' "$tmp/out.txt"
+# The shipped catalogs: well formed, every text translated, every place kept, against the source that asks for them.
+for catalog in userland/desktop/locale/*/*.tr; do
+	[ -f "$catalog" ] || continue
+	domain=$(basename "$catalog" .tr)
+	case $domain in
+	wayland) sources="userland/desktop/wayland userland/desktop/locale/wayland.keys" ;;
+	*) sources="" ;;
+	esac
+	# shellcheck disable=SC2086
+	if python3 tools/i18n/tr.py check --strict "$catalog" $sources > "$tmp/catalog.txt" 2>&1; then
+		echo "catalog $catalog: ok"
+	else
+		grep -v 'without string literals' "$tmp/catalog.txt"
+		status=1
+	fi
+done
 if [ -f tools/i18n/tr.py ]; then
 	sh plan/ws158/tests/tr-tool-test.sh || status=1
 fi

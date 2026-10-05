@@ -75,6 +75,7 @@
  * Wiseview (ws099-p015).  A fullscreen window is composed like any other.
  */
 
+#include "language.h"
 #include "desktop.h"
 #include "extras.h"
 #include "menu.h"
@@ -87,6 +88,8 @@
 #include "edit.h"
 #include "ime.h"
 #include "media.h"
+
+#include <keiland.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -305,7 +308,7 @@ struct shell_rect {
 
 /* Where the system bar's parts are (they follow the clock's width). */
 struct shell_bar {
-	char clock[48];
+	char clock[64];
 	int32_t clock_x;
 	int32_t battery_x;
 	int32_t signal_x;
@@ -2394,7 +2397,7 @@ bar_layout(
 	memset(&local, 0, sizeof(local));
 	(void)localtime_r(&now, &local);
 	bar->clock[0] = '\0';
-	(void)strftime(bar->clock, sizeof(bar->clock), "%a %b %e  %H:%M", &local);
+	zwl_language_date(&local, ZWL_LANGUAGE_DATE_SHORT, bar->clock, sizeof(bar->clock));
 	bar->clock_x = (int32_t)server->width - 16 - glass_text_width(server, SIZE_BAR, bar->clock);
 
 	/*
@@ -3111,11 +3114,11 @@ shown_title(
 	/* A window without a title is called "Window". */
 	name = surface->title;
 	if (name[0] == '\0')
-		name = "Window";
+		name = kl_tr("Window");
 
 	/* A client that does not answer its pings. */
 	if (surface->client->unresponsive) {
-		(void)snprintf(title, size, "%s (not responding)", name);
+		(void)kl_tr_format(title, size, kl_tr("{1} (not responding)"), name, (const char *)NULL);
 		return;
 	}
 
@@ -3301,7 +3304,7 @@ draw_system_bar(
 		memcpy(label, dark, sizeof(label));
 		label[3] = progress;
 		glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
-		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, BAR_BASELINE + 1, "Wiseview", 200, label);
+		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, BAR_BASELINE + 1, kl_tr("Wiseview"), 200, label);
 	}
 
 	/* Without a docked title, the applications' icons in its place after a line (apps-bar.c, ws142-p004). */
@@ -5211,7 +5214,9 @@ draw_wiseview(
 	struct shell_rect body;
 	struct shell_rect rect;
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	char header[48];
+	char header[96];
+	char number[16];
+	const char *footer;
 	float ink[4];
 	float wash[4];
 	unsigned count;
@@ -5276,22 +5281,21 @@ draw_wiseview(
 	/* The header: what is shown, and how many. */
 	memcpy(ink, dark, sizeof(ink));
 	ink[3] = progress;
-	if (count == 1U)
-		(void)snprintf(header, sizeof(header), "Wiseview  -  1 window");
-	else
-		(void)snprintf(header, sizeof(header), "Wiseview  -  %u windows", count);
+	(void)snprintf(number, sizeof(number), "%u", count);
+	(void)kl_tr_format(header, sizeof(header), kl_trn("Wiseview  -  {1} window", "Wiseview  -  {1} windows", count), number, (const char *)NULL);
 	glass_draw_text(server, command, SIZE_TITLE, WISEVIEW_SIDE, ZWL_GLASS_BAR + 34, header, 400, ink);
 
 	/* One window alone: say there are no others. */
 	if (count == 1U)
-		glass_draw_text(server, command, SIZE_BAR, WISEVIEW_SIDE, ZWL_GLASS_BAR + 54, "No other windows", 400, ink);
+		glass_draw_text(server, command, SIZE_BAR, WISEVIEW_SIDE, ZWL_GLASS_BAR + 54, kl_tr("No other windows"), 400, ink);
 
 	/* The footer: a handle and how to go back. */
 	ink[3] = progress * 0.35f;
 	glass_draw_solid(server, command, (float)((int32_t)server->width / 2 - 24), (float)((int32_t)server->height - 44), 48.0f, 5.0f, 2.5f, ink);
 	ink[3] = progress * 0.7f;
-	width = glass_text_width(server, SIZE_BAR, "Swipe down to return to your window");
-	glass_draw_text(server, command, SIZE_BAR, ((int32_t)server->width - width) / 2, (int32_t)server->height - 18, "Swipe down to return to your window", 400, ink);
+	footer = kl_tr("Swipe down to return to your window");
+	width = glass_text_width(server, SIZE_BAR, footer);
+	glass_draw_text(server, command, SIZE_BAR, ((int32_t)server->width - width) / 2, (int32_t)server->height - 18, footer, 400, ink);
 
 	/* A frame of the way. */
 	if (server->log_frames)
