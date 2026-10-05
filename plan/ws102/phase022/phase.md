@@ -2,11 +2,11 @@
 
 # ws102-p022: 色付きの絵文字 その 2（keyboard の絵文字の面）
 
-Status: planned（2026-10-01 手順を追記。Queue なし。WS102 の再開はユーザーが言うとき）
+Status: in-progress（2026-10-05 P1 generation17、q736。実装・host 試験・build は済み。QEMU は T1、結果まで cleared にしない）
 Disposition: normal
 Parent: [WS102](../ws.md)
 Level: L3
-Queue: なし
+Queue: q736（2026-10-05 ベータ2 の P1 の列、ユーザー「ベータ2の実装をすべて、P1,P2にスケジューリング可能にします。」）
 依存: p019（色の絵文字の font と描画、cleared）、p016（道具の面、cleared）、p024（道具の面の face の切り替え、cleared）
 
 ## 範囲と受け入れ
@@ -51,3 +51,23 @@ design.md §2.10 の「絵文字: 種類の tab と格子、tap で送る。text
 - C9 の FAIL 0（p076 だけなら BUG-125 として単独 3 回の結果を併記）、`p010: PASS`、boot test PASS。
 - build の warning 0、style の違反 0。
 - 実機（5330・Windows の QEMU）は範囲外（「未実施」と書く）。
+
+## 結果（2026-10-05 P1 generation17、q736）
+
+2026-10-03 の試験の方針（細かい修正ごとに回帰を回さない、QEMU は T1）に従い、手順 6 の回帰の組（osk-guest の全手順・large・C9・WS079-p010）は流さない。
+QEMU は T1 に依頼する手順に絞る（下）。
+
+| 項目 | 結果 |
+| --- | --- |
+| 表（手順 1） | `keyboard-layout.c` の `layout_emoji`（4 種類 × 20、`顔`・`手と人`・`物`・`記号`）。どれも既定で絵文字として出る単独の code point（異体字の選択子・ZWJ の列は無し）。`keyboard.h` に `ZWL_EMOJI_*` と `zwl_emoji_count`・`zwl_emoji`・`zwl_emoji_category_name` |
+| host 試験（手順 2） | `host-keyboard.c` の `check_emoji`（4×20、1 文字の UTF-8、範囲の外は無し、重複無し）: `host-keyboard: PASS`。`host-emoji.c` の `emoji_missing`（80 個の全部に Noto Color Emoji 2.047 の色の glyph）: `host-emoji: PASS`（`host-emoji.sh` は `keyboard-layout.c` も compile する）。`host-emoji.c` が古い名前 `keiland_color_glyph` を呼んで compile できなかったのを `kl_color_glyph` に直した（p019 の後の改名で古くなっていた） |
+| 面（手順 3） | `KEYBOARD_FACE_EMOJI`。「絵文字」の tab を有効に（`keyboard_tool_enabled`）、tab で face と `ZWL OSK tool face=emoji category=N`。`keyboard_emoji_rect`・`_at`・`_release`・`_log`・`keyboard_draw_emoji`: 上に種類の tab の 1 行、下に 5×4 の格子（cell の高さが 52 px 以上なら 36 px、未満なら 24 px の絵文字）。tap で `keyboard_send_commit` と `ZWL OSK emoji commit text=… sent=0|1`。送った後は voice の key の置き換えの対象を無しにする（絵文字の bytes を消さないように）。場所の log `ZWL OSK etab category=N …`・`ZWL OSK erect category=N index=I x= y= width= height=` |
+| 試験の手順（手順 4） | `osk-guest.sh` の `emoji`: 絵文字の tab（1238,141）→ 種類 0 の 0 番目と種類 1 の 3 番目を ime-probe に（`PROBE TEXT text=😀🙌`）→ wltest は断る（`sent=0`・`refused reason=no-text-input`）→ Text Editor に 👍 を打って保存し、file の bytes が `f09f918d`。場所は log の rect から求める。`emoji.png`・`emoji-sent.png` |
+| style（手順 5） | `keyboard.c`・`keyboard-layout.c`・`keyboard.h`・`host-emoji.c`: 指摘 0。`host-keyboard.c` は新しい `check_emoji` に指摘 0（既存の行の指摘は p014 の全文規約で） |
+| build | zedBSD `bin/wayland` と Linux `bin/wayland`: warning 0。`keiland-os-boundary`: PASS |
+
+T1 への依頼（Q1 経由）: inset の image（`sh plan/ws102/tests/build-inset-image.sh BUILD` と ime-probe）、`pen-guest.sh start`、
+`BIN=BUILD sh plan/ws102/tests/osk-guest.sh OUT install start pointer flick tools history emoji`（`osk-guest: PASS`、`emoji.png`・`emoji-sent.png` を見る）。
+1920x1080 の `large`、C9・WS079-p010・boot test は今回は依頼しない（keyboard の面の追加だけで、開閉・配置・他の gesture を変えていない）。
+
+未実施: QEMU（T1 の依頼の後）、実機（5330・Windows の QEMU）。COLRv1 に替えるかの判断（格子の大きさでの CBDT の縮小の見え方）は T1 の `emoji.png` を見てから。
