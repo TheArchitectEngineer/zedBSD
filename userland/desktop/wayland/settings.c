@@ -77,7 +77,6 @@ struct settings_state {
  */
 static struct settings_state settings_state;
 
-static int settings_home(char *home, size_t size);
 static void settings_migrate(struct zwl_settings_store *store, const char *old_name, const char *new_name);
 static void settings_apply(struct zwl_server *server, const char *name, int starting);
 static void settings_apply_all(struct zwl_server *server, int starting);
@@ -134,7 +133,7 @@ zwl_settings_open(
 	}
 
 	/* Finds the user's home; without one the settings live for the session only. */
-	error = settings_home(home, sizeof(home));
+	error = zwl_settings_home(home, sizeof(home));
 	if (error != 0)
 		home[0] = '\0';
 
@@ -397,8 +396,8 @@ zwl_settings_request(
 }
 
 /* Finds the user's home: $HOME, else the password file's; returns 0 or ENOENT. */
-static int
-settings_home(
+int
+zwl_settings_home(
 	char *home,
 	size_t size)
 {

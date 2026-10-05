@@ -30,6 +30,13 @@
  * session's descriptor (--control-fd) as UNLOCK password; OK unlocks, FAIL
  * (after sessiond's delay) asks again.
  *
+ * A lock screen whose user set a PIN (ws163-p002, the mock of
+ * plan/ws163/phase001 section 9; pin-store.c) also takes the PIN: six
+ * digits and Enter are checked here against the user's
+ * ~/.config/keiland/pin, and sessiond is not asked.  Five wrong PINs in a
+ * row turn it off until the password unlocks.  The login screen has no
+ * PIN: _greeter cannot read the user's home (G1, section 9.6).
+ *
  * The screen is the blurred wallpaper with the time and the date at the
  * top, a frosted card in the middle with the users (the accounts with a uid
  * of 1000 or more and a login shell, or root when there are none), the
@@ -43,6 +50,7 @@
  */
 
 #include "glass.h"
+#include "pin-store.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
@@ -169,6 +177,15 @@ static unsigned greeter_power_sent;
 static uint64_t greeter_power_frame;
 static uint64_t greeter_power_ms;
 
+/*
+ * The lock screen's PIN (ws163-p002): the path of the user's PIN file
+ * (empty without a home), and whether a PIN can be typed (one is set and
+ * wrong ones have not turned it off).  Both are found when the session
+ * locks, and greeter_pin follows each try.
+ */
+static char greeter_pin_path[ZWL_PIN_PATH_MAX];
+static unsigned greeter_pin;
+
 /* The characters each key types, without and with Shift (US layout); 0 for none. */
 static const char greeter_plain[GREETER_KEYS] = {
 	0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 0,
@@ -201,6 +218,9 @@ static void greeter_power(struct zwl_server *server, const char *what);
 static void greeter_power_send(struct zwl_server *server);
 static void greeter_draw_power(struct zwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
 static void greeter_answered(struct zwl_server *server, int error);
+static void greeter_unlock(struct zwl_server *server);
+static void greeter_pin_find(void);
+static void greeter_pin_try(struct zwl_server *server);
 static void greeter_erase(void);
 
 /*
@@ -273,13 +293,16 @@ zwl_lock(
 	greeter_waiting = 0U;
 	greeter_starting = 0U;
 
+	/* Whether the user's PIN can unlock it. */
+	greeter_pin_find();
+
 	/* The clipboard's history goes (clipboard.c). */
 	zwl_clipboard_history_clear(server, "lock");
 
 	/* Succeeded: the lock screen shows. */
 	server->locked = 1U;
 	server->dirty = 1;
-	printf("ZWL LOCK locked reason=%s user=%s\n", reason, greeter_users[0].name);
+	printf("ZWL LOCK locked reason=%s user=%s pin=%u\n", reason, greeter_users[0].name, greeter_pin);
 	return 1;
 }
 
@@ -813,6 +836,7 @@ greeter_draw_field(
 	static const float rim[4] = { 0.26f, 0.48f, 0.86f, 0.90f };
 	static const float dot[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
 	static const float hint[4] = { 0.10f, 0.14f, 0.22f, 0.45f };
+	const char *hint_text;
 	float x;
 	float y;
 	unsigned index;
@@ -822,9 +846,12 @@ greeter_draw_field(
 	glass_draw_solid(server, command, (float)layout->field[0] - 2.0f, (float)layout->field[1] - 2.0f, (float)layout->field[2] + 4.0f, (float)layout->field[3] + 4.0f, 12.0f, rim);
 	glass_draw_solid(server, command, (float)layout->field[0], (float)layout->field[1], (float)layout->field[2], (float)layout->field[3], 10.0f, field);
 
-	/* The hint while it is empty. */
+	/* The hint while it is empty: the lock screen with a PIN takes either. */
+	hint_text = "Password";
+	if (server->locked && greeter_pin)
+		hint_text = "PIN or password";
 	if (greeter_password_length == 0U) {
-		glass_draw_text(server, command, SIZE_TITLE, layout->field[0] + 16, layout->field[1] + 28, "Password", layout->field[2] - 32, hint);
+		glass_draw_text(server, command, SIZE_TITLE, layout->field[0] + 16, layout->field[1] + 28, hint_text, layout->field[2] - 32, hint);
 	}
 
 	/* A dot a character, as many as fit. */
@@ -1043,11 +1070,21 @@ static void
 greeter_submit(
 	struct zwl_server *server)
 {
+	int is_pin;
 	int error;
 
 	/* One question at a time. */
 	if (greeter_waiting)
 		return;
+
+	/* Six digits on a lock screen with a PIN are the PIN's try, checked here (H5). */
+	if (server->locked && greeter_pin) {
+		is_pin = zwl_pin_is_pin(greeter_password);
+		if (is_pin) {
+			greeter_pin_try(server);
+			return;
+		}
+	}
 
 	/* The request (unlock on a session's lock screen), through the backend. */
 	greeter_waiting = 1;
@@ -1201,12 +1238,11 @@ greeter_answered(
 		answer = "ERROR";
 	printf("ZWL GREETER answer=%s\n", answer);
 
-	/* Unlocked: the desktop shows again. */
+	/* Unlocked: the desktop shows again, and the password gives back a PIN turned off by wrong ones. */
 	if (error == 0 && greeter_waiting && server->locked) {
-		greeter_waiting = 0;
-		server->locked = 0U;
-		server->lock_input_ms = zwl_milliseconds();
-		zwl_lid_unlocked(&server->lid);
+		greeter_unlock(server);
+		if (greeter_pin_path[0] != '\0')
+			(void)zwl_pin_store_forgive(greeter_pin_path);
 		printf("ZWL LOCK unlocked\n");
 		return;
 	}
@@ -1228,6 +1264,79 @@ greeter_answered(
 
 	/* The next password can be typed. */
 	greeter_waiting = 0;
+}
+
+/* Takes the lock screen away: the desktop shows, and the idle time starts again. */
+static void
+greeter_unlock(
+	struct zwl_server *server)
+{
+	/* No answer is awaited any more. */
+	greeter_waiting = 0;
+	server->locked = 0U;
+	server->lock_input_ms = zwl_milliseconds();
+	zwl_lid_unlocked(&server->lid);
+}
+
+/* Finds the user's PIN file and whether a PIN can be typed (when the session locks). */
+static void
+greeter_pin_find(
+	void)
+{
+	char home[ZWL_PIN_PATH_MAX];
+	int error;
+
+	/* No home, no PIN. */
+	greeter_pin_path[0] = '\0';
+	greeter_pin = 0U;
+	error = zwl_settings_home(home, sizeof(home));
+	if (error != 0)
+		return;
+
+	/* The file under it. */
+	error = zwl_pin_store_path(home, greeter_pin_path, sizeof(greeter_pin_path));
+	if (error != 0) {
+		greeter_pin_path[0] = '\0';
+		return;
+	}
+
+	/* A PIN set and not turned off. */
+	greeter_pin = (unsigned)zwl_pin_store_usable(greeter_pin_path);
+}
+
+/*
+ * Checks the PIN typed on the lock screen against the user's PIN file
+ * (sessiond is not asked): the right one unlocks, a wrong one is counted
+ * and said, and the fifth wrong one in a row turns the PIN off.
+ */
+static void
+greeter_pin_try(
+	struct zwl_server *server)
+{
+	int error;
+
+	/* The check; nothing typed is kept once it is checked. */
+	error = zwl_pin_store_check(greeter_pin_path, greeter_password);
+	greeter_erase();
+	server->dirty = 1;
+
+	/* The right PIN unlocks. */
+	if (error == 0) {
+		greeter_unlock(server);
+		printf("ZWL LOCK unlocked pin\n");
+		return;
+	}
+
+	/* A wrong one, or a PIN already off: it may now be off; anything else is a file that could not be used. */
+	greeter_pin = (unsigned)zwl_pin_store_usable(greeter_pin_path);
+	printf("ZWL LOCK pin fail error=%d usable=%u\n", error, greeter_pin);
+	if ((error == EACCES || error == EPERM) && !greeter_pin) {
+		snprintf(greeter_message, sizeof(greeter_message), "Too many wrong PINs. Use your password.");
+	} else if (error == EACCES) {
+		snprintf(greeter_message, sizeof(greeter_message), "Wrong PIN. Try again.");
+	} else {
+		snprintf(greeter_message, sizeof(greeter_message), "The PIN could not be checked.");
+	}
 }
 
 /* Erases what has been typed. */

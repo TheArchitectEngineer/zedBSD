@@ -159,6 +159,7 @@ zwl_handoff_answer(
 	int error)
 {
 	struct zwl_server *server;
+	int taken;
 
 	/* The compositor the backend was opened for. */
 	server = data;
@@ -167,6 +168,13 @@ zwl_handoff_answer(
 	if (request == KL_BACKEND_SESSION_SERVICE) {
 		zwl_system_sharing_answer(server, error);
 		return;
+	}
+
+	/* The check of the password for a PIN's change is the system extension's, also while the screen is locked (ws163-p003). */
+	if (request == KL_BACKEND_SESSION_UNLOCK) {
+		taken = zwl_system_pin_answer(server, error);
+		if (taken)
+			return;
 	}
 
 	/* The login screen and a locked session's lock screen act on it (greeter.c). */
