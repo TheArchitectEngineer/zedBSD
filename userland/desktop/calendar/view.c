@@ -84,6 +84,8 @@
 /* The memo: its header's and its words' heights, and the small desk calendar of the day chosen. */
 #define CAL_MEMO_HEADER		30
 #define CAL_MEMO_HEIGHT		150
+#define CAL_MEMO_LEAST		60
+#define CAL_DAY_MIN		(CAL_DAY_DESK_HEIGHT + 44)
 #define CAL_DAY_DESK_WIDTH	76
 #define CAL_DAY_DESK_HEIGHT	88
 
@@ -174,7 +176,7 @@ static void view_page(struct cal_view *view, const struct kl_style *style, int i
 static void view_keep_under(struct cal_view *view, const struct kl_style *style, const struct kl_rect *area);
 static void view_let_go(struct cal_view *view, int kind, double x, double y, uint64_t now_us);
 static unsigned view_drag_source(struct cal_view *view, struct kl_ui *ui, uint32_t id, int kind, const struct kl_rect *rect, uint64_t now_us);
-static int view_memo(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, int top, uint64_t now_us);
+static int view_memo(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, int top, int height, uint64_t now_us);
 static void view_chosen_day(struct cal_view *view, const struct kl_style *style, const struct kl_rect *card, uint64_t now_us);
 static void view_memo_drop(struct cal_view *view, const struct cal_date *date, uint64_t now_us);
 static void view_memo_add(struct cal_view *view, char character);
@@ -1304,6 +1306,7 @@ view_panel(
 	struct kl_rect day;
 	const char *line;
 	kl_color ground;
+	int memo_height;
 	unsigned hit;
 	size_t length;
 	int card_width;
@@ -1361,13 +1364,23 @@ view_panel(
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 23, "Custom", strlen("Custom"), 13U, 1, style->theme->text);
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 40, "Create your own", strlen("Create your own"), 11U, 0, style->theme->text_secondary);
 
-	/* The memo below, and the day chosen under it while there is room. */
-	top = view_memo(view, ui, style, area, card.y + card.height + 14, now_us);
+	/*
+	 * The memo below, as tall as it may be while the day chosen keeps the
+	 * room it needs under it (a short window makes the memo shorter, down
+	 * to a few lines), then the day chosen while there is room.
+	 */
+	top = card.y + card.height + 14;
+	memo_height = area->y + area->height - 14 - CAL_DAY_MIN - 12 - (top + CAL_MEMO_HEADER + 4);
+	if (memo_height > CAL_MEMO_HEIGHT)
+		memo_height = CAL_MEMO_HEIGHT;
+	else if (memo_height < CAL_MEMO_LEAST)
+		memo_height = CAL_MEMO_LEAST;
+	top = view_memo(view, ui, style, area, top, memo_height, now_us);
 	day.x = area->x + 14;
 	day.y = top + 12;
 	day.width = area->width - 28;
 	day.height = area->y + area->height - 14 - day.y;
-	if (day.height > CAL_DAY_DESK_HEIGHT + 16)
+	if (day.height >= CAL_DAY_DESK_HEIGHT + 8)
 		view_chosen_day(view, style, &day, now_us);
 }
 
@@ -1674,7 +1687,8 @@ view_drag_source(
 /*
  * Draws the application's memo from a top edge in the panel: its header
  * (a note, "Memo", and a grip to drag it by onto a date) and its words,
- * which take the keyboard when clicked.  Returns the edge below it.
+ * which take the keyboard when clicked, in a height.  Returns the edge
+ * below it.
  */
 static int
 view_memo(
@@ -1683,6 +1697,7 @@ view_memo(
 	const struct kl_style *style,
 	const struct kl_rect *area,
 	int top,
+	int height,
 	uint64_t now_us)
 {
 	struct kl_rect header;
@@ -1690,7 +1705,7 @@ view_memo(
 	struct kl_rect caret;
 	kl_color ground;
 	unsigned hit;
-	int height;
+	int words;
 	int i;
 
 	/* The header, which drags the memo: a note, the title, the grip and a word of what to do. */
@@ -1711,7 +1726,7 @@ view_memo(
 	text.x = area->x + 14;
 	text.y = top + CAL_MEMO_HEADER + 4;
 	text.width = area->width - 28;
-	text.height = CAL_MEMO_HEIGHT;
+	text.height = height;
 	hit = kl_ui_hit(ui, CAL_ID_MEMO_TEXT, 0U, &text);
 	if ((hit & KL_HIT_CLICKED) != 0U) {
 		kl_ui_clear_focus(ui);
@@ -1733,10 +1748,10 @@ view_memo(
 	if (view->memo_length == 0U && !view->memo_focus) {
 		(void)kl_text_draw(style->text, style->canvas, text.x + 12, text.y + 24, "Write a memo...", strlen("Write a memo..."), 13U, 0, style->theme->text_faint);
 	} else {
-		height = view_words(style, view->memo, text.x + 12, text.y + 8, text.width - 24, 13U, style->theme->text, 1);
+		words = view_words(style, view->memo, text.x + 12, text.y + 8, text.width - 24, 13U, style->theme->text, 1);
 		if (view->memo_focus) {
 			caret.x = text.x + 12 + view_words(style, view->memo, text.x + 12, text.y + 8, text.width - 24, 13U, 0, -1);
-			caret.y = text.y + 8 + height - 20;
+			caret.y = text.y + 8 + words - 20;
 			caret.width = 2;
 			caret.height = 16;
 			if (view->memo_length == 0U)
