@@ -24,6 +24,7 @@ touch) echo "status touch"; echo "ok uid=$UID_SELF" ;;
 otheruid) echo "ok uid=$((UID_SELF + 1))" ;;
 hang) /bin/sleep 100 ;;
 stubborn) trap '' TERM; /bin/sleep 100 ;;
+silent) exit 2 ;;
 *) echo "fail bad-secret"; exit 1 ;;
 esac
 SCRIPT

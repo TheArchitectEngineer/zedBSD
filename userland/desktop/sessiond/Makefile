@@ -4,6 +4,8 @@
 
 # The graphical login's session manager (plan/ws035/login-manager-design.md): the service "greeter", which
 # replaces the console's getty when the boot parameters ask for the graphical login (login=graphical).
+# It checks every login, unlock and PIN change with /sbin/passkey (ws172-p002), so it requires base/passkey: an image
+# with sessiond gets passkey whether or not its config names it.
 include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
 SESSIOND_SOURCES := userland/desktop/sessiond/main.c userland/desktop/sessiond/greeter.c \
@@ -15,4 +17,4 @@ SESSIOND_SOURCES := userland/desktop/sessiond/main.c userland/desktop/sessiond/g
 SESSIOND_DATA := /etc/service.d/greeter=userland/desktop/sessiond/greeter.service \
 	/etc/keiland/session=userland/desktop/sessiond/session.sh \
 	/etc/keiland/autologin=userland/desktop/sessiond/autologin
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,sessiond,graphical login session manager,amd64,y,basic,$(SESSIOND_SOURCES),y,desktop,desktop/sessiond,,0755,program,$(SESSIOND_DATA),,sbin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,sessiond,graphical login session manager,amd64,y,basic,$(SESSIOND_SOURCES),y,desktop,desktop/sessiond,base/passkey,0755,program,$(SESSIOND_DATA),,sbin))

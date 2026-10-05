@@ -48,6 +48,9 @@
 /* The descriptors a passkey child closes (all but its pipes). */
 #define AUTH_DESCRIPTORS_MAX	256
 
+/* The exit of a child that could not start passkey (passkey itself exits 0, 1 or 2). */
+#define AUTH_EXEC_FAILED	127
+
 /* The words of the requests, by enum sessiond_command. */
 static const char *const auth_commands[SESSIOND_COMMAND_COUNT] = {
 	"STYLES",
@@ -75,7 +78,7 @@ static int auth_request(struct sessiond_exchange *exchange, char *request, size_
 static int auth_start(struct sessiond_exchange *exchange, const char *request, size_t length, long long timeout_ms);
 static void auth_read(struct sessiond_exchange *exchange);
 static void auth_kill(struct sessiond_exchange *exchange, int signal_number);
-static void auth_finish(struct sessiond_exchange *exchange, int killed);
+static void auth_finish(struct sessiond_exchange *exchange, int status);
 static void auth_listing(struct sessiond_exchange *exchange, int ok, const char *extra);
 static void auth_granted(struct sessiond_exchange *exchange, unsigned answer_uid, const char *extra);
 static void auth_refused(struct sessiond_exchange *exchange, const char *reason);
@@ -237,8 +240,8 @@ sessiond_exchange_tick(
 		return;
 	auth_read(exchange);
 
-	/* Its answer, or none (it was killed or died before it answered). */
-	auth_finish(exchange, !exchange->done);
+	/* Its answer, or none (it was killed, could not start, or died before it answered). */
+	auth_finish(exchange, status);
 }
 
 /* Ends what runs (sessiond stops, or the socket went): passkey is killed and reaped. */
@@ -422,8 +425,30 @@ auth_begin(
 	uid_t uid;
 	int known;
 	int allowed;
+	int missing;
 	int length;
 	int error;
+
+	/*
+	 * Without passkey nothing can be checked: refused at once and logged,
+	 * not counted (the system's fault, not a guess).  STYLES and ENROLLED
+	 * answer as when passkey gave no answer.
+	 */
+	missing = access(SESSIOND_PASSKEY, X_OK);
+	if (missing != 0) {
+		sessiond_log("SESSIOND passkey missing path=%s errno=%d", SESSIOND_PASSKEY, errno);
+		auth_wipe(exchange->lines, sizeof(exchange->lines));
+		exchange->lines_wanted = 0U;
+		exchange->lines_have = 0U;
+		if (exchange->command == SESSIOND_COMMAND_STYLES || exchange->command == SESSIOND_COMMAND_ENROLLED) {
+			auth_listing(exchange, 0, "");
+			return;
+		}
+
+		/* The others fail. */
+		auth_reply(exchange, "FAIL internal");
+		return;
+	}
 
 	/* The account's counts (the names of no account share one). */
 	uid = (uid_t)-1;
@@ -599,12 +624,12 @@ auth_start(
 			(void)close(descriptor);
 		}
 
-		/* passkey itself, or an exit that sessiond reads as no answer. */
+		/* passkey itself, or an exit that sessiond reads as no answer (and logs). */
 		argv[0] = "passkey";
 		argv[1] = NULL;
 		environment[0] = NULL;
 		(void)execve(SESSIOND_PASSKEY, argv, environment);
-		_exit(2);
+		_exit(AUTH_EXEC_FAILED);
 	}
 
 	/* The group is passkey's whichever of the two runs first. */
@@ -687,11 +712,16 @@ auth_kill(
 		exchange->term_ms = sessiond_milliseconds();
 }
 
-/* passkey ended: its answer handled and told. */
+/*
+ * passkey ended (status is waitpid's): its answer handled and told.  No
+ * answer is a timeout when sessiond stopped it (its deadline or CANCEL),
+ * and otherwise an internal failure, which is logged with how it ended (an
+ * exit of AUTH_EXEC_FAILED: passkey is missing or could not run).
+ */
 static void
 auth_finish(
 	struct sessiond_exchange *exchange,
-	int killed)
+	int status)
 {
 	char extra[AUTH_EXTRA_MAX];
 	char said[AUTH_REASON_MAX];
@@ -699,6 +729,8 @@ auth_finish(
 	const char *reason;
 	unsigned answer_uid;
 	int scanned;
+	int signaled;
+	int exited;
 	int match;
 	int ok;
 
@@ -707,16 +739,27 @@ auth_finish(
 	(void)close(exchange->output);
 	exchange->output = -1;
 
-	/* Its answer: ok uid=N [extra], or fail REASON, or nothing (killed: a timeout). */
+	/* Its answer: ok uid=N [extra], or fail REASON; anything else is an internal failure. */
 	ok = 0;
-	reason = "timeout";
+	reason = "internal";
 	answer_uid = 0U;
 	extra[0] = '\0';
 	scanned = 0;
 	match = -1;
-	if (!killed) {
+	if (exchange->done) {
 		scanned = sscanf(exchange->answer, "ok uid=%u", &answer_uid);
 		match = strncmp(exchange->answer, "fail ", 5U);
+	}
+
+	/* No answer: stopped by sessiond (a timeout), or ended by itself, which is logged. */
+	exited = WIFEXITED(status);
+	signaled = WIFSIGNALED(status);
+	if (!exchange->done && exchange->term_ms != 0) {
+		reason = "timeout";
+	} else if (!exchange->done && exited) {
+		sessiond_log("SESSIOND passkey gave no answer exit=%d", WEXITSTATUS(status));
+	} else if (!exchange->done && signaled) {
+		sessiond_log("SESSIOND passkey gave no answer signal=%d", WTERMSIG(status));
 	}
 
 	/* What the answer says: the rest after the user ID, or the reason. */

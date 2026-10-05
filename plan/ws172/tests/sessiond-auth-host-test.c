@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -363,6 +364,30 @@ test_exchange(
 	send_line(&exchange, "stubborn");
 	got = answer(&exchange, pair[1], line, sizeof(line), 30000);
 	check(got && strcmp(line, "FAIL timeout") == 0, "deadline and kill");
+
+	/* A passkey that ends without an answer is an internal failure, not a timeout. */
+	snprintf(text, sizeof(text), "AUTH %s password", name);
+	send_line(&exchange, text);
+	send_line(&exchange, "silent");
+	got = answer(&exchange, pair[1], line, sizeof(line), 30000);
+	check(got && strcmp(line, "FAIL internal") == 0, "no answer is internal");
+
+	/* Without passkey: AUTH refused at once (not counted), STYLES only the password. */
+	error = chmod(SESSIOND_PASSKEY, 0600);
+	check(error == 0, "passkey made not executable");
+	snprintf(text, sizeof(text), "AUTH %s password", name);
+	send_line(&exchange, text);
+	started = sessiond_milliseconds();
+	send_line(&exchange, "right");
+	got = answer(&exchange, pair[1], line, sizeof(line), 5000);
+	took = sessiond_milliseconds() - started;
+	check(got && strcmp(line, "FAIL internal") == 0 && took < 1000, "missing passkey fails at once");
+	snprintf(text, sizeof(text), "STYLES %s", name);
+	send_line(&exchange, text);
+	got = answer(&exchange, pair[1], line, sizeof(line), 5000);
+	check(got && strcmp(line, "STYLES password") == 0, "missing passkey STYLES");
+	error = chmod(SESSIOND_PASSKEY, 0700);
+	check(error == 0, "passkey made executable again");
 	sessiond_exchange_stop(&exchange);
 
 	/* The session's: its own user, UNLOCK, ENROLLED, ENROLL pin, REMOVE pin. */

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172-p002 -->
 # ws172-p002: /sbin/passkey の password・PIN と sessiond の外部の認証
 
-Status: uncleared（2026-10-05 夜 P1 が原因を直した、T1 の再試験待ち。前: T1-203 FAIL: greeter の password の login が起きない（sessiond.log に `GREETER failed … ZWL EXIT frames=0 error=5` が続き CONSOLE へ）。試験の image の名前（hdd-image.img）と su の欠けも。証拠は T1 の台帳 T1-203。再開: 次の P1 が解析と修正、main には merge 済みなので graphical login の image への影響を先に確かめる）
+Status: uncleared（2026-10-05 夜 T1-210 (1) FAIL: passkey の無い image で AUTH が timeout。P1 が原因（passkey が image に入らない）を直した、T1 の再試験待ち。その前: P1 が STYLES の答えの喪失を直した。前: T1-203 FAIL: greeter の password の login が起きない（sessiond.log に `GREETER failed … ZWL EXIT frames=0 error=5` が続き CONSOLE へ）。試験の image の名前（hdd-image.img）と su の欠けも。証拠は T1 の台帳 T1-203。再開: 次の P1 が解析と修正、main には merge 済みなので graphical login の image への影響を先に確かめる）
 WS: [ws172](../ws.md)
 設計: [phase001](../phase001/phase.md) の §1〜§12（第 2 版）と判断 P1〜P10（ユーザー承認、2026-10-05）、docs/architecture/security.md の「Login authentication」、keiland.md の login の節
 
@@ -37,6 +37,14 @@ WS: [ws172](../ws.md)
 - 試験の側: `build-passkey-image.sh` が作るのは `BUILD/hdd-image.img`（試験の注記を直した）。`/bin/su: not found` は image の config に su が無いため（`config-amd64-passkey.mk` に su を足した）。
 - host: `plan/ws131/tests/host-session.sh` 51/51（GO の前の答えを tick が渡す試験を追加）、`host-system.sh` PASS（試験の server を hand-over 済みに）、`sessiond-auth-host-test.sh` ok、`passkey-host-test.sh` PASS、ws089 `host-build.sh`・`run-host-account-admin.sh`、keiland-linux `header-check.sh`・`makefile-sync.sh` PASS。zedBSD の clang（-Wall -Wextra -Werror）で greeter.c・system.c・handoff.c・session-zedbsd.c・backend.c の compile は warning 0。style-check の指摘 0。
 - QEMU の再試験は T1 に依頼（Q1 経由）。
+
+## T1-210 (1) の FAIL の解析と修正（2026-10-05 夜、P1 の新しい generation）
+
+- 症状: ws035 の素の graphical login の image（T1-209 の build、main ad9a1d7b）で AUTH が送られるようになったが、sessiond が毎回 `SESSIOND AUTH fail … reason=timeout`（GO の 2 秒後）を返し、greeter は「That took too long.」。同じ main の passkey の image（`config-amd64-passkey.mk`、T1-210 (2)）では `SESSIOND AUTH ok user=kei` で通る。
+- 原因: `/sbin/passkey` が image に無い。passkey は `userland/base/passkey` の program だが、config.mk・`config/ci`・ws035・ws159 の UAT などの config は `ZEDBSD_USER_PROGRAMS` を名前で並べ、passkey を含めていない（`config-amd64-passkey.mk` だけが足していた）。T1-209 の build の rootfs/sbin に passkey は無く、`/etc/passkey` も無い（無いのは正しい: 空として扱う）。sessiond は exec の失敗（子の `_exit(2)`）で答えの無い終わりを `timeout` と読み、試行に数えて 2 秒の遅れの後に `FAIL timeout` を返していた。期限・pipe・poll の誤りではない（期限は起動の時刻から ms、poll は passkey の出力の fd、host 試験で確認済み）。
+- 修正: (1) passkey を package `base/passkey` として登録し、sessiond の package が `base/passkey` を require する（Makefile の依存の展開で、sessiond を持つ全ての image に `/sbin/passkey` 0500 が入る。config.mk・`config/ci/config-amd64.mk`・ws035 の graphical/login・ws159 の UAT で展開を確認、修正の前は sessiond だけ）。(2) sessiond: `/sbin/passkey` が実行できなければ AUTH・UNLOCK・ENROLL・REMOVE は即座に `FAIL internal`（数えない、`SESSIOND passkey missing` を log）、STYLES・ENROLLED は passkey が答えなかった時と同じ。答えずに終わった passkey は `internal`（`SESSIOND passkey gave no answer exit=N|signal=N` を log）、`timeout` は sessiond が止めた試行（期限・CANCEL）だけ。exec の失敗は exit 127。(3) greeter: `internal` は「The login failed.」（既存の文）。docs/architecture/security.md に 1 段落。
+- host: `sessiond-auth-host-test.sh` ok（答えの無い passkey → `FAIL internal`、実行できない passkey → 1 秒以内に `FAIL internal`・`STYLES password` を追加）、`passkey-host-test.sh` PASS、ws131 `host-session.sh` 51/51、`host-system.sh` PASS。zedBSD の build（ws035 graphical の config、-Werror）で sessiond・passkey・wayland を link まで、warning 0。style-check の指摘 0。
+- 既存の不具合（範囲外、未修正）: `make menuconfig-host-test`・`make list-user-programs` は修正の前から `/bin/sh: Syntax error: "(" unexpected` で失敗する。
 
 ## 未実施
 

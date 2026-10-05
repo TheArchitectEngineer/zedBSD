@@ -1393,6 +1393,13 @@ greeter_refused(
 		return;
 	}
 
+	/* The check itself failed (passkey is missing or broke): not the user's mistake. */
+	same = strcmp(reason, "internal");
+	if (same == 0) {
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("The login failed."));
+		return;
+	}
+
 	/* The check took too long. */
 	same = strcmp(reason, "timeout");
 	if (same == 0) {
