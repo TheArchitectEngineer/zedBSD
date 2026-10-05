@@ -38,6 +38,10 @@ p100 Acid3 の pixel 完全一致 → p101 WPT CSS2 reftest 5904 件の 100% →
 - [BUG-181](../bugs/BUG-181.md) URL 欄の選択のはみ出し: resolved（compositor の title bar の欄、QEMU T1-189c、実機は UAT）。
 - [BUG-182](../bugs/BUG-182.md) タップがクリックにならず HTML の button を押せない: tracking（shell の touch の変換、WS107 の libbrowser の入力）。
 
+### 専任の担当 B1（2026-10-05 ユーザー）
+
+ユーザー「WS074を担当する専用のサブエージェントを設計します。Sonnet 5.5 Midで実行することにします。B1という名前にします。」→ 定義 `.claude/agents/browser-runner-b1.md`（Sonnet 5.5、effort medium）。最初の仕事は [ws074-p178](phase178/phase.md)（Acid3 の 1 領域の pixel 一致の試行と、このモデルで作業できるかの記録）。起動はユーザーの指示の後。
+
 ### 次の候補（ユーザーの指示が出たら）
 
 1. BUG-182（タップ）。レンダリングの改善ではないので、指示があれば先に。
