@@ -15,55 +15,58 @@
 ## 現在の状況（Q1）
 
 <!-- master:updated:start -->
-更新: 2026-10-06 未明 Q1（ユーザーの指示で全サブエージェントをラップアップ。WS174 の boot の key を merge（p003 は間欠の不検出 1/12 で uncleared）、UAT の image build/uat-0506b、5330 の freeze（BUG-202）はq779で機能修正とbuildを完了、ユーザーのマージ指示でmainへ統合、実機確認待ち）
+更新: 2026-10-06 Q1（週の利用量の終わりで別の session へ引き継ぐ。UAT 2026-10-06 の所見 BUG-211〜237 を記録、各 WS にフィードバックを追記）
 <!-- master:updated:end -->
 
 ### 担当
 
 <!-- master:agents:start -->
-- **動いている担当は無い**（2026-10-06 未明、ユーザーの指示で全員ラップアップ）。再起動は同じ名前で新しい世代（前の世代を TaskStop してから）。
-- 再開の地点:
-  - **P1**: WS174 p003 の間欠の不検出（T1-214 の run 1 の C3）の確かめ（gdbstub か実機の観察）と、変えた `zbl_uefi_boot_keys_sample()` の規約の見直し。その後 WS168 p002 の残り（libc の `sandbox_spawn()`、`<sandbox.h>` の sysroot への追加は Q1 が許可）、WS130 p003、WS172 p003、WS161 p005〜。
-  - **P2**: WS175 p001 の review の表（H1〜H6 ほか）を design.md に反映して clearance へ（ユーザーの D1〜D7 の判断も要る）。次に ws099-p034（bar のデザイン）と ws128-p012（app の icon）の mock、T1-202 の後の AAT の直し、WS158 p004。
-  - **T1**: 台帳の未実行 T1-206（IPv6）・T1-202（AAT）・T1-205（Super+↓）・T1-207（日本語の UI）。
+- **動いている担当は無い**（P2 は ws099-p034 の当て直しの途中でラップアップ中。届いた SHA を merge する）。新しい session では同じ名前で新しい世代を起動する（前の世代は TaskStop）。
+- 再開の候補（優先の順は下の next）:
+  - **P1**: UAT の不具合（network・kernel・Phone）: BUG-212・213・222（network）、BUG-218（Phone の padding と慣性の遅れ）、BUG-227（amazon の白い画面の切り分け）、BUG-211（libkeiland の慣性 scroll）。WS168 p002 の残り（libc の `sandbox_spawn()`、`<sandbox.h>` の sysroot は Q1 が許可）、WS172 p003、WS161 p005〜。
+  - **P2**: ws099-p034 の bar の当て直しと montage、BUG-236・225（App Home の stage の montage と 2 層の animation）、BUG-217・BUG-215/216/224/228（最大化の session の状態と gesture の体系）、BUG-229〜231（OSK）、BUG-219・221・226・232・235。WS158 p004 の残り。
+  - **T1**: 台帳の未実行（T1-205・206b・207・215〜220・202b の full）。**AAT の full は 1 日 1 回、毎回は直した機能のシナリオだけを束ねて流す**（[tests.md](tests.md) §5）。
   - **B1**（WS074 p178）: ユーザーの指示まで起動しない。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
-- **BUG-202（2026-10-06）**: LPSSのD0復帰10ms待ちをidle threadが実行していた。device初期化を通常boot_workerへ移す修正（e093bebe）をuser「マージしてください。」で統合。[q779](history/queue-q779.md) / ws073-p055は機能修正・amd64 buildまでcleared。実機試験はuser、Bugはtracking。
-- **未 merge の branch: 無い**（2026-10-05 夜、agent/p1 64f20ef2 まで main に入った）。
-- **graphical login の回帰は解消**: WS172 p002 の 2 つの不具合（0356c470 STYLES の答えを handoff の前に捨てていた、64f20ef2 `/sbin/passkey` が passkey の試験の config 以外の image に入らなかった）。T1-212 で graphical login と zdesktop-p102 が PASS。ws172-p002 cleared、WS163 completed。
-- **ユーザー向けの統合の image**: `build/uat-0505g/hdd-image.img`（main bf5d1a39、sha256 7ded4823…5faa2339、`/sbin/passkey` 入り、T1-212 (2) の boot-test PASS。framebuffer の QEMU では greeter が終わり getty になるのは従来どおり）。uat-0505e・uat-0505f は login が壊れているので使わない。
-- **未確認の小さな点**: T1-212 で zdesktop-p102 の script の後の screendump に起動の splash（script が autologin を戻した後の挙動か、未解析）。
-- **main に入ったが QEMU で未確認**: WS130 p002 IPv6 → T1-206。WS168 p002 の kernel（arm64・sparcv9・x68k の build は未確認）。WS173 p004・p006 → T1-202。BUG-194 Super+↓ → T1-205。WS158 p003 → T1-207。
+- main の履歴は 2026-10-06 に `e42ef860` の後を 1 つに squash した（ユーザーの指示: 著作権の参考の画像の削除）。**残り**: `codex/fix-bug202-boot-worker`・`codex/merge-bug202` の branch（別の session の物）が古い履歴を参照しているので、その session の終わりの後に新しい履歴へ移すか消し、`git reflog expire --expire=now --all && git gc --prune=now` で画像の object を消す。
+- 保留の code: 上部の bar（ws099-p034）は `plan/ws099/phase034/held/p034-bar-b095413c.patch`（P2 が当て直し中）。
+- **main に入ったが QEMU・実機で未確認**: BUG-203〜209（Phone の IME・太字・browser の 2 件・dock の F11・Alt+Tab）、ws099-p019 の壁紙、BUG-237 の icon の穴、WS130 IPv6（T1-206b）、WS174 p003 の key（間欠の不検出 1/12）、WS158 p002〜p004、AAT の runner（T1-202b は smoke 5 pass・3 fail で full は中断）。
+- 実機で確認済み（2026-10-06 UAT、`config/current-uat.mk` の image）: BUG-202（起動の fatal）・197（電源オフ）・210（I2C の touchpad）・I2C-HID の 2 本指の scroll・mp4 の再生・OSK の変換・app の icon の形。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-1. 再開したら T1 を起動し T1-206 → T1-203 の原因の切り分け用の素の graphical login の boot（main で `plan/ws035/tests/build-login-image.sh` の image）→ T1-202・T1-205・T1-207 を流す。
-2. P1 に T1-203 の解析、P2 に T1-202 の後の AAT の直し。
-3. AAT の直しの後、main の最新で 5330 の AAT の image を作り（`plan/tools/aat/build-image.sh`）、T1 で boot-test、ユーザーに USB の起動を頼んで smoke から AAT（記録は plan/ws173/runs/ と [tests.md](tests.md) §7）。UAT はその後、時刻はユーザーが知らせる。
-4. 合間の仕事: WS068・WS101 の低い優先の Phase、i915 の SPIR-V の lowering、WS171（hal.h の comment）。
+1. 新しい session の最初: `git log --oneline -3`、この block、[Bug Board](known-bugs.md) の BUG-211〜237、[uat.md](uat.md) の 2026-10-06 を読む。
+2. P2 の最後の SHA（ws099-p034 の当て直し）を merge。
+3. 担当を起こす（P1・P2・T1）。UAT の不具合（BUG-211〜237）を P1・P2 に分ける（上の agents）。設計の変わる物（BUG-217 の最大化の状態、gesture の体系、App Home の stage）は Phase を立てて montage・設計から。
+4. T1 は直しの確かめを**シナリオの集合で束ねて**流す。AAT の runner の smoke の 3 fail（Files・Settings の窓が閉じない、Text Editor の窓が出ない）を先に P2 が直す。
+5. UAT の image はユーザーが `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image` で自分で作る。safe boot は起動時に Ctrl（kernel の message）・Shift（console の login）を押したまま Space を叩く。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- **WS153 U2〜U15**（app の repository、[design.md](ws153/design.md) 第 5 版）: ユーザーが検討中（2026-10-05 夜「まだ検討中です。」）。こちらからは聞かない。WS153 の p002 以降は止める。
-- **ws049-p017 ⑤**（memory map の型を問う口、HAL の API が要る）: 2026-10-04 から未決。足すなら hal.h の差分を plan に置いて承認を得る。
-- WS164 H4 は Q1 が調整として承認済み（未決ではない）。
+- **WS153 U2〜U15**: ユーザーが検討中（聞かない）。
+- **WS175 D1〜D7**（Notes の PDF の編集、推奨は phase001/phase.md の表）: 未回答。
+- **BUG-209 Alt+Tab の 4 つの仮定**（端で回る、Shift で左、3 本指の tap も今の app から、短い Alt+Tab は今の app のまま）: 未回答。
+- **BUG-214** 透明度の slider の初期値（frosted に表示を合わせる案か、既定を不透明にするか）: 未回答。
+- **BUG-222** ue0 の chip（RTL8822BU は WiFi、有線は別の chip の見込み）: ユーザーに確かめる。
+- **ws099-p019** 「前に生成した抽象の壁紙」が生成の 5 枚で良いか（古い linear の抽象版は見つからない）: 未回答。
+- bar の参考の画像 bar-1〜4（plan/ws099/phase034/images/）はユーザーの物か: 未回答（消すかどうか）。
+- ws049-p017 ⑤（memory map の型の口、HAL の API）: 2026-10-04 から未決。
 <!-- master:open-decisions:end -->
 
 ### Focus
 
 <!-- master:focus:start -->
-- **fg019 ベータ1**（公開 2026-10-17、RC の commit 10/13 が機能の締切）。残り 35.3 LW（下の段の表、今日の進みは未反映）: WS159 native touchpad、UAT の Bug（WS073・081・005・099）、WS131・WS132・WS089・WS095・WS128、5330 の実機の確認。
-- **AAT（WS173、最優先の道具）**: UAT の確認を AAT に移し、UAT は機器と使用感だけに（[tests.md](tests.md)）。
-- **ベータ2 の着手済み**: WS172 passkey・WS130 IPv6・WS168 preview の sandbox・WS158 翻訳・WS161 YubiKey・WS166 予測・WS089 の dark。2026-10-05 にユーザーがベータ2 の実装を P1・P2 に scheduling 可能にした。
-- fg018 Linux 標準 GTK4（WS114 p007・p008 まで達成）。
+- **fg019 ベータ1**（RC の commit 10/13）。2026-10-06 の UAT で起動・touchpad・電源オフが実機で動いた。残りは UAT の所見 BUG-211〜237 と、見積もりの表の残り。
+- **AAT**（WS173）: runner は動く（smoke 5/8）、helper の直しが要る。full は 1 日 1 回。
+- **見た目の刷新**: icon（montage-4、merge 済み）、上部の bar（ws099-p034）、App Home の stage（BUG-236）。
 <!-- master:focus:end -->
 
 ### 止まっている物
