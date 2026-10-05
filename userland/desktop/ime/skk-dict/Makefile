@@ -1,0 +1,34 @@
+# zedBSD userland package: ime-dict-skk, the dictionaries of the input method's SKK engine (WS154).
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+#
+# REmacs's two SKK dictionaries, copied into the tree from userland/base/emacs/dict/ on 2026-10-05 and kept apart from
+# them and from the Japanese engine's dictionary (2026-10-04 user: "Emacsの辞書は重複して持ってください。別々に管理し
+# ます。"); they go into the image as /usr/share/keiland/ime/skk/SKK-JISYO.X (the fuller) and SKK-JISYO.remacs (the
+# compact one), which the SKK engine looks in after the user's dictionary, in that order.
+#
+# License: Awe Morris holds the copyright; REmacs and its dictionaries are under zlib (relicensed for Kei on
+# 2026-09-29, WS095 decision D1, and REmacs is in the tree under zlib since 2026-10-04), covered by the project's own
+# license file.  No entry is copied from SKK-JISYO.L (the files' headers say so).
+ZEDBSD_IME_DICT_SKK_MAKEFILE := $(lastword $(MAKEFILE_LIST))
+ZEDBSD_IME_DICT_SKK_DIR := $(patsubst %/,%,$(dir $(ZEDBSD_IME_DICT_SKK_MAKEFILE)))
+include $(ZEDBSD_IME_DICT_SKK_DIR)/../../package.mk
+
+ZEDBSD_IME_DICT_SKK := $(ZEDBSD_IME_DICT_SKK_DIR)/SKK-JISYO.X $(ZEDBSD_IME_DICT_SKK_DIR)/SKK-JISYO.remacs
+
+.PHONY: ime-dict-skk
+ime-dict-skk: $(ZEDBSD_IME_DICT_SKK)
+	@:
+
+# ---------------------------------------------------------------- packaging
+
+# Chosen by the images that offer SKK (WS154 p004).
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,ime-dict-skk,Dictionaries of the input method's SKK engine,*,n,package,,y,\
+	desktop,desktop/ime/skk-dict,))
+
+ZEDBSD_PACKAGE_INPUTS += $(if $(filter ime-dict-skk,$(ZEDBSD_USER_PROGRAMS)),\
+	$(ZEDBSD_IME_DICT_SKK))
+ZEDBSD_PACKAGE_FILES += $(if $(filter ime-dict-skk,$(ZEDBSD_USER_PROGRAMS)),\
+	--file /usr/share/keiland/ime/skk/SKK-JISYO.X=$(ZEDBSD_IME_DICT_SKK_DIR)/SKK-JISYO.X \
+	--mode /usr/share/keiland/ime/skk/SKK-JISYO.X=0644 \
+	--file /usr/share/keiland/ime/skk/SKK-JISYO.remacs=$(ZEDBSD_IME_DICT_SKK_DIR)/SKK-JISYO.remacs \
+	--mode /usr/share/keiland/ime/skk/SKK-JISYO.remacs=0644)

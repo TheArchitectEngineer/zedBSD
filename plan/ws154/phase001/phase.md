@@ -46,7 +46,7 @@ Queue: Q1（ベータ2 の割り当て、P2 の 3 番目）
 
 ### D5 辞書（ユーザー: Emacs の辞書を重複して持ち、別々に管理する）
 
-- `userland/base/emacs/dict/` の 2 つを `userland/desktop/ime/skk/dict/` に複写して置き、以後は別に更新する。
+- `userland/base/emacs/dict/` の 2 つを `userland/desktop/ime/skk-dict/` に複写して置き、以後は別に更新する。
 - package `ime-dict-skk`（`KEILAND_DATADIR/keiland/ime/skk/SKK-JISYO.X` と `SKK-JISYO.remacs`）。引く順は 利用者 → X → remacs。license は Zlib（remacs と同じ、release の license の一覧に足す）。
 - install の場所は今の日本語の辞書（`KEILAND_DATADIR/keiland/ime/ja/`）に揃える（WS154 の ws.md の「`/usr/share/kei/ime` → `/usr/share/keiland/ime` の案」は既に `keiland/ime` になっている）。
 
