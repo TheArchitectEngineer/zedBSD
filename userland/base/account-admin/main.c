@@ -790,6 +790,7 @@ admin_busy(
 {
 	struct process_info process;
 	struct utmpx *record;
+	int32_t cursor;
 	unsigned count;
 	int descriptor;
 	int error;
@@ -798,14 +799,16 @@ admin_busy(
 
 	/* The kernel's processes, one after another. */
 	busy = 0;
+	cursor = -1;
 	descriptor = open("/dev/system", O_RDONLY | O_CLOEXEC);
-	memset(&process, 0, sizeof(process));
-	process.pid = -1;
 	for (count = 0; descriptor >= 0 && count < ADMIN_PROCESSES_MAX; count++) {
-		/* The next process after the last one. */
+		/* The next process after the last one (as ps asks for it). */
+		memset(&process, 0, sizeof(process));
+		process.pid = cursor;
 		error = ioctl(descriptor, KERN_SYSTEM_GET_PROCESS, &process);
 		if (error != 0)
 			break;
+		cursor = process.pid;
 
 		/* One running as the user. */
 		if ((long)process.uid == uid) {
