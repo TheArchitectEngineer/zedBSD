@@ -149,8 +149,9 @@ endif
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
 # I915_TEST_ORACLE=y also links the draw readback the pixel oracle reads (slow: it dumps a frame).
 # I915_TEST_SET chooses the scenarios the build links (ws101-p006; the test kernel is near AMD64_KERNEL_MAX_BYTES):
-# "all" (the default) every scenario but vkcs; "compute" the runner and the compute scenario vkcs only (the runner
-# refers to every scenario weakly and says "not linked" for one the set leaves out).
+# "all" (the default) every scenario but vkcs; "compute" the runner and the compute scenario vkcs only; "boundary" the
+# runner and vke2 with the compiler's boundary steps (ws031-p024: EDGE, KILLOOP, NOINPUT, UNDEF; -DI915_VKE2_BOUNDARY)
+# (the runner refers to every scenario weakly and says "not linked" for one the set leaves out).
 I915_TEST_SET ?= all
 AMD64_I915_TEST_SET_STAMP :=
 ifeq ($(I915_TESTS),y)
@@ -159,6 +160,9 @@ AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/render/readback.c
 endif
 ifeq ($(I915_TEST_SET),compute)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/runner.c src/drivers/gpu/i915/tests/render/compute.c src/drivers/gpu/i915/tests/execution/firmware-override.c
+else ifeq ($(I915_TEST_SET),boundary)
+AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/runner.c src/drivers/gpu/i915/tests/render/generality.c src/drivers/gpu/i915/tests/execution/firmware-override.c
+AMD64_CPPFLAGS += -DI915_VKE2_BOUNDARY=1
 else
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/runner.c src/drivers/gpu/i915/tests/render/executor.c src/drivers/gpu/i915/tests/render/compiler.c src/drivers/gpu/i915/tests/render/features.c src/drivers/gpu/i915/tests/render/generality.c src/drivers/gpu/i915/tests/execution/ktest.c src/drivers/gpu/i915/tests/execution/ktest-sync.c src/drivers/gpu/i915/tests/execution/ktest-display.c src/drivers/gpu/i915/tests/execution/ktest-display-probe.c src/drivers/gpu/i915/tests/execution/ktest-gt.c src/drivers/gpu/i915/tests/execution/eu-test.c src/drivers/gpu/i915/tests/execution/ppgtt-walk.c src/drivers/gpu/i915/tests/execution/draw-test.c src/drivers/gpu/i915/tests/execution/fhd-render.c src/drivers/gpu/i915/tests/execution/firmware-override.c src/drivers/gpu/i915/tests/fixtures/draw-fixture.c
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/display/lcd-run.c src/drivers/gpu/i915/tests/display/hdmi-output.c src/drivers/gpu/i915/tests/display/lcd-flip.c src/drivers/gpu/i915/tests/display/lcd-opregion.c src/drivers/gpu/i915/tests/display/lcd-gpu.c src/drivers/gpu/i915/tests/display/hdmi-hotplug.c src/drivers/gpu/i915/tests/display/aux.c src/drivers/gpu/i915/tests/display/hpd-model.c src/drivers/gpu/i915/tests/display/display-ktest.c src/drivers/gpu/i915/tests/display/edp-ktest.c src/drivers/gpu/i915/tests/display/edp-sync-ktest.c src/drivers/gpu/i915/tests/display/lcd-modeset-ktest.c src/drivers/gpu/i915/tests/display/scanout-ktest.c src/drivers/gpu/i915/tests/display/lcd-show-ktest.c src/drivers/gpu/i915/tests/display/lcdg-ktest.c src/drivers/gpu/i915/tests/display/opregion-ktest.c src/drivers/gpu/i915/tests/display/hpd-ktest.c src/drivers/gpu/i915/tests/display/dp-fake-hw.c src/drivers/gpu/i915/tests/display/lcd-fake-hw.c

@@ -83,4 +83,22 @@ SPILLMIX（spill.frag と vio16.vert の draw を同じ command buffer で交互
 loops9 断る（loops nested too deep）・ifs31 受ける・ifs40 断る（constructs nested too deep）、noinput・divzero（実行時の 0 と INT_MIN/-1）・
 shift（32〜63）・killoop を -O0 と -O で受ける。PASS。
 
-残り（再開の点）: 増分 2・3（vke2 の step、spill の組み合わせ）、最後に T1 への passthrough の 1 回の依頼。実機は使っていない。
+増分 2（2026-10-05、合間の仕事）: vke2 に EDGE（境界の値の整数の演算、未定義の除算は marker）、KILLOOP（loop の中の discard）、
+NOINPUT（入力の無い fragment shader、varying の無い vertex shader）、UNDEF（最後: 0 除算・INT_MIN/-1・32〜63 の shift、偶数の行を判定し
+奇数の行の値を log）を足した（`generality-shaders/edge.frag`・`undef.frag`・`killoop.frag`・`noinput.vert`・`noinput.frag`、`regenerate.py`、
+`generality.c` の比較の mode GUARD）。**既定の試験の kernel（I915_TEST_SET=all）は今の main で既に AMD64_KERNEL_MAX_BYTES を超える**
+（この変更の前の tree でも `ld.lld: error: amd64 kernel exceeds AMD64_KERNEL_MAX_BYTES`、2026-10-05 に確認）ので、新しい step は試験の組
+`boundary`（runner と vke2 だけ、`-DI915_VKE2_BOUNDARY`、`platform/amd64/vmunix.mk`）にだけ入れ、生成の file の新しい data も
+`I915_VKE2_IN_KERNEL` の kernel では `I915_VKE2_BOUNDARY` の時だけにした。host の lower（IR の interpreter）と compile（EU の model）の
+試験は EDGE と UNDEF を全 pixel で照合する（UNDEF の奇数の行は model の値: 未定義の除算は 0、shift は下位 5 bit）。
+
+| command | 結果 |
+| --- | --- |
+| `python3 src/drivers/gpu/i915/tests/render/generality-shaders/regenerate.py` | 既存の data は変わらず、新しい物だけ増えた |
+| `sh plan/ws031/tests/run-vk-host-tests.sh` | PASS（generality 7 × 4096 pixel、IR と EU の model） |
+| `BRW_TOOLS=... sh plan/ws031/tests/run-vk-gentool-test.sh` | PASS |
+| `I915_TEST_SET=boundary VKLOOP_BUILD_ONLY=1 BUILD=build/p024-vke2b sh plan/ws031/tests/vkloop-hw.sh test vke2` | image の build PASS（kernel 0xfeb000 byte、上限 16 MiB の中、warning は Noct の既存の 1 件だけ） |
+| 同じく既定の組（all） | **FAIL（上限超え、変更の前から）** |
+
+残り（再開の点）: 増分 3（spill の組み合わせ）。T1 への依頼: 5330 の passthrough で `I915_TEST_SET=boundary ... vkloop-hw.sh test vke2`
+（全 step PASS、UNDEF の奇数の行の値を記録）。実機は使っていない。
