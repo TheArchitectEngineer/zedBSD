@@ -18,6 +18,8 @@
 
 #include <keiland.h>
 
+#include "userland/desktop/keiland/kl-system-protocol.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -81,6 +83,8 @@ struct system_view {
 	unsigned devices_open;
 	uint32_t busy_request;
 	char busy_program[KL_DEVICE_TEXT_MAX];
+	uint32_t refused_request;
+	char refused_reason[KL_SYSTEM_REASON_MAX + 1U];
 	struct kl_sharing_state sharing;
 	struct kl_sharing_state sharing_pending;
 	unsigned sharing_touched;

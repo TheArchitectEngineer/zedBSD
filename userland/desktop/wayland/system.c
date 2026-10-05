@@ -94,17 +94,22 @@
 #define SYSTEM_NETWORK_RETRY	6U	/* a step the system bar's request held up, sent again next pass */
 
 /*
- * The account's job (ws160-p002): the thread, its lock, the passwords
- * (wiped when the job is taken), its answer, whether it is under way and
- * done, and who asked (the client's number, the object and the request's
- * number).
+ * The account's job (ws160-p002): the thread, its lock, what it does (a
+ * password change, or an administrator's change, ws089-p026), the
+ * passwords (current is the administrator's own for an administration)
+ * and the administration's operation (wiped when the job is taken), its
+ * answer and a refusal's word, whether it is under way and done, and who
+ * asked (the client's number, the object and the request's number).
  */
 struct system_account_job {
 	pthread_t thread;
 	pthread_mutex_t lock;
 	unsigned lock_ready;
+	unsigned administer;
 	char current[KL_SYSTEM_PASSWORD_MAX + 1U];
 	char fresh[KL_SYSTEM_PASSWORD_MAX + 1U];
+	char operation[KL_SYSTEM_OPERATION_MAX + 1U];
+	char reason[KL_SYSTEM_REASON_MAX + 1U];
 	int error;
 	unsigned done;
 	unsigned started;
@@ -291,6 +296,7 @@ zwl_system_bind(
 	struct zwl_object *manager)
 {
 	uint32_t bits;
+	int administer;
 	int error;
 
 	/* Every part version 1 has. */
@@ -309,6 +315,11 @@ zwl_system_bind(
 	/* Remote Login, at version 7 (ws089-p025). */
 	if (manager->version >= KL_SYSTEM_SINCE_SHARING)
 		bits |= KL_SYSTEM_CAPABILITY_SHARING;
+
+	/* The administration of the accounts, at version 8 where the system has its tool (ws089-p026). */
+	administer = kl_backend_account_can_administer();
+	if (manager->version >= KL_SYSTEM_SINCE_ADMINISTER && administer)
+		bits |= KL_SYSTEM_CAPABILITY_ADMINISTER;
 	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
 	if (error != 0)
 		return error;
@@ -566,9 +577,10 @@ zwl_system_close(
 		system_account_job.started = 0U;
 	}
 
-	/* No password stays. */
+	/* No password or operation stays. */
 	system_wipe(system_account_job.current, sizeof(system_account_job.current));
 	system_wipe(system_account_job.fresh, sizeof(system_account_job.fresh));
+	system_wipe(system_account_job.operation, sizeof(system_account_job.operation));
 
 	/* Nothing waits any more, and no key stays in memory. */
 	system_wipe(system_state.wait.key, sizeof(system_state.wait.key));
@@ -1144,8 +1156,10 @@ system_devices_request(
 
 /*
  * Carries out a request of an account object (ws160-p002): a password
- * change starts the account's thread, or is answered busy, invalid or
- * failed at once.  The passwords are wiped from the request and the copies.
+ * change, or an administrator's change of the accounts (since version 8,
+ * ws089-p026), starts the account's thread, or is answered busy, invalid
+ * or failed at once.  The passwords and the operation are wiped from the
+ * request and the copies.
  */
 static int
 system_account_request(
@@ -1160,6 +1174,8 @@ system_account_request(
 	char *fresh;
 	size_t current_length;
 	size_t fresh_length;
+	const char *kind;
+	size_t limit;
 	size_t next;
 	size_t end;
 	int error;
@@ -1172,8 +1188,10 @@ system_account_request(
 		return 0;
 	}
 
-	/* A password change: its number and the two passwords. */
-	if (opcode != KL_SYSTEM_ACCOUNT_SET_PASSWORD || size < 4U)
+	/* A password change (its two passwords), or an administration since version 8 (the password and the operation). */
+	if (opcode == KL_SYSTEM_ACCOUNT_ADMINISTER && object->version < KL_SYSTEM_SINCE_ADMINISTER)
+		return EPROTO;
+	if ((opcode != KL_SYSTEM_ACCOUNT_SET_PASSWORD && opcode != KL_SYSTEM_ACCOUNT_ADMINISTER) || size < 4U)
 		return EPROTO;
 	number = system_word(bytes, 0U);
 	current = NULL;
@@ -1203,20 +1221,29 @@ system_account_request(
 		return EPROTO;
 	}
 
-	/* One change at a time; passwords that fit. */
+	/* One change at a time; passwords that fit, or the password and an operation that fit. */
 	job = &system_account_job;
 	current_length = strlen(current);
 	fresh_length = strlen(fresh);
+	limit = KL_SYSTEM_PASSWORD_MAX;
+	if (opcode == KL_SYSTEM_ACCOUNT_ADMINISTER)
+		limit = KL_SYSTEM_OPERATION_MAX;
 	error = 0;
 	if (job->started)
 		error = EBUSY;
-	if (error == 0 && (current_length > KL_SYSTEM_PASSWORD_MAX || fresh_length > KL_SYSTEM_PASSWORD_MAX))
+	if (error == 0 && (current_length > KL_SYSTEM_PASSWORD_MAX || fresh_length > limit))
 		error = EINVAL;
 
-	/* The job's inputs. */
+	/* The job's inputs: the second string is the new password, or the operation (while no job runs). */
 	if (error == 0) {
+		job->administer = 0U;
 		memcpy(job->current, current, current_length + 1U);
-		memcpy(job->fresh, fresh, fresh_length + 1U);
+		if (opcode == KL_SYSTEM_ACCOUNT_ADMINISTER) {
+			memcpy(job->operation, fresh, fresh_length + 1U);
+			job->administer = 1U;
+		} else {
+			memcpy(job->fresh, fresh, fresh_length + 1U);
+		}
 	}
 
 	/* The copies go. */
@@ -1235,6 +1262,7 @@ system_account_request(
 	/* The thread, with who asked. */
 	if (error == 0) {
 		job->error = 0;
+		job->reason[0] = '\0';
 		job->done = 0U;
 		job->client = object->client->number;
 		job->object = object->id;
@@ -1245,14 +1273,18 @@ system_account_request(
 	/* Started: the answer comes when the thread is done. */
 	if (error == 0) {
 		job->started = 1U;
-		printf("ZWL SYSTEM account set-password client=%llu number=%u\n", (unsigned long long)job->client, number);
+		kind = "set-password";
+		if (job->administer)
+			kind = "administer";
+		printf("ZWL SYSTEM account %s client=%llu number=%u\n", kind, (unsigned long long)job->client, number);
 		return 0;
 	}
 
-	/* Not started: the passwords go, and the answer is now. */
+	/* Not started: the passwords and the operation go, and the answer is now. */
 	if (!job->started) {
 		system_wipe(job->current, sizeof(job->current));
 		system_wipe(job->fresh, sizeof(job->fresh));
+		system_wipe(job->operation, sizeof(job->operation));
 	}
 
 	/* The answer. */
@@ -1262,22 +1294,28 @@ system_account_request(
 	return 0;
 }
 
-/* The account's thread: the password changed through libkeiland-backend, away from the event loop. */
+/* The account's thread: the password or the accounts changed through libkeiland-backend, away from the event loop. */
 static void *
 system_account_run(
 	void *argument)
 {
 	struct system_account_job *job;
+	char reason[KL_SYSTEM_REASON_MAX + 1U];
 	int error;
 
-	/* The change. */
+	/* The change: an administration (with a refusal's word), or the user's password. */
 	job = argument;
-	error = kl_backend_account_set_password(job->current, job->fresh);
+	reason[0] = '\0';
+	if (job->administer)
+		error = kl_backend_account_administer(job->current, job->operation, reason, sizeof(reason));
+	else
+		error = kl_backend_account_set_password(job->current, job->fresh);
 
 	/* How it went, for the event loop. */
 	(void)pthread_mutex_lock(&job->lock);
 
 	job->error = error;
+	memcpy(job->reason, reason, sizeof(job->reason));
 	job->done = 1U;
 
 	(void)pthread_mutex_unlock(&job->lock);
@@ -1291,10 +1329,12 @@ static void
 system_account_take(
 	struct zwl_server *server)
 {
+	unsigned char payload[SYSTEM_EVENT_MAX];
 	struct system_account_job *job;
 	struct zwl_client *client;
 	struct zwl_object *object;
 	unsigned done;
+	size_t offset;
 
 	/* Nothing under way. */
 	job = &system_account_job;
@@ -1310,12 +1350,13 @@ system_account_take(
 	if (!done)
 		return;
 
-	/* The thread's end; no password stays. */
+	/* The thread's end; no password or operation stays. */
 	(void)pthread_join(job->thread, NULL);
 	job->started = 0U;
 	system_wipe(job->current, sizeof(job->current));
 	system_wipe(job->fresh, sizeof(job->fresh));
-	printf("ZWL SYSTEM account result client=%llu number=%u error=%d\n", (unsigned long long)job->client, job->number, job->error);
+	system_wipe(job->operation, sizeof(job->operation));
+	printf("ZWL SYSTEM account result client=%llu number=%u error=%d reason=%s\n", (unsigned long long)job->client, job->number, job->error, job->reason);
 
 	/* The asking object, when its client and it are still there. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -1324,6 +1365,15 @@ system_account_take(
 		object = zwl_find(client, job->object);
 		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_ACCOUNT)
 			return;
+
+		/* A refusal's word first (an administration's), then the result. */
+		if (job->administer && job->reason[0] != '\0') {
+			offset = system_put_word(payload, 0U, job->number);
+			offset = system_put_string(payload, offset, job->reason);
+			(void)zwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_REFUSED, payload, offset);
+		}
+
+		/* The result. */
 		system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, job->number, system_result_of(job->error));
 		return;
 	}

@@ -4,3 +4,4 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 include config/ci/config-amd64.mk
 ZEDBSD_USER_PROGRAMS += $(filter-out $(ZEDBSD_USER_PROGRAMS),account-admin keiland-settings)
+ZEDBSD_USER_PROGRAMS += $(filter-out $(ZEDBSD_USER_PROGRAMS),settings)

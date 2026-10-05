@@ -7,7 +7,11 @@
 
 /*
  * The account on zedBSD (ws160-p002): the user's password changed by
- * passwd's batch mode (userland/base/passwd, ws160-p001).
+ * passwd's batch mode (userland/base/passwd, ws160-p001); and the
+ * administration of the people's accounts (ws089-p026) by account-admin
+ * (userland/base/account-admin), which reads the caller's password and the
+ * operation's lines on its standard input and answers one line ("ok" or
+ * "error WORD") on its standard output, run the same way.
  *
  * passwd -s runs as a child with its standard input a pipe and its output
  * and errors thrown away; the current and the new password go down the
@@ -37,7 +41,13 @@
 /* The lines' room: two passwords, their ends and a NUL. */
 #define ACCOUNT_LINES		(2U * (ACCOUNT_PASSWORD_MAX + 1U) + 1U)
 
+/* account-admin, the longest operation given it, and the longest answer read. */
+#define ACCOUNT_ADMIN_PATH	"/usr/libexec/account-admin"
+#define ACCOUNT_OPERATION_MAX	1024U
+#define ACCOUNT_ANSWER_MAX	64U
+
 static int account_write(int descriptor, const char *text, size_t length);
+static size_t account_read_answer(int descriptor, char *answer, size_t size);
 static void account_wipe(char *text, size_t size);
 
 /*
@@ -157,6 +167,220 @@ kl_backend_account_set_password(
 	default:
 		return EIO;
 	}
+}
+
+/*
+ * Tells whether the system can administer the accounts: account-admin is
+ * there and may run.
+ */
+int
+kl_backend_account_can_administer(void)
+{
+	int status;
+
+	/* The tool, runnable. */
+	status = access(ACCOUNT_ADMIN_PATH, X_OK);
+	if (status != 0)
+		return 0;
+
+	/* There. */
+	return 1;
+}
+
+/*
+ * Carries out an administrator's change through account-admin: the
+ * password and the operation's lines on its input, its answer read; the
+ * word of a refusal copied into reason.
+ */
+int
+kl_backend_account_administer(
+	const char *password,
+	const char *operation,
+	char *reason,
+	size_t size)
+{
+	char lines[ACCOUNT_PASSWORD_MAX + ACCOUNT_OPERATION_MAX + 3U];
+	char answer[ACCOUNT_ANSWER_MAX];
+	char *argv[2];
+	struct timespec none;
+	sigset_t pipe_signal;
+	sigset_t previous;
+	size_t password_length;
+	size_t operation_length;
+	size_t password_clean;
+	size_t length;
+	size_t got;
+	pid_t child;
+	pid_t waited;
+	int input[2];
+	int output[2];
+	int null;
+	int status;
+	int exited;
+	int code;
+	int same;
+	int error;
+
+	/* No word yet; a password of one line and an operation that fit, the operation ended by a line end. */
+	if (reason != NULL && size != 0U)
+		reason[0] = '\0';
+	password_length = strlen(password);
+	operation_length = strlen(operation);
+	password_clean = strcspn(password, "\n");
+	if (password_length == 0U || password_length > ACCOUNT_PASSWORD_MAX || password_clean != password_length)
+		return EINVAL;
+	if (operation_length == 0U || operation_length > ACCOUNT_OPERATION_MAX || operation[operation_length - 1U] != '\n')
+		return EINVAL;
+
+	/* The pipe the tool reads, closed on exec on this side. */
+	error = pipe(input);
+	if (error != 0)
+		return EIO;
+	(void)fcntl(input[1], F_SETFD, FD_CLOEXEC);
+
+	/* The pipe it answers on, closed on exec on this side. */
+	error = pipe(output);
+	if (error != 0) {
+		(void)close(input[0]);
+		(void)close(input[1]);
+		return EIO;
+	}
+
+	/* Closed on exec on this side. */
+	(void)fcntl(output[0], F_SETFD, FD_CLOEXEC);
+
+	/* SIGPIPE held for this thread while the lines go. */
+	sigemptyset(&pipe_signal);
+	sigaddset(&pipe_signal, SIGPIPE);
+	(void)pthread_sigmask(SIG_BLOCK, &pipe_signal, &previous);
+
+	/* account-admin, its input and output the pipes, its errors thrown away. */
+	argv[0] = "account-admin";
+	argv[1] = NULL;
+	null = open("/dev/null", O_WRONLY | O_CLOEXEC);
+	child = fork();
+	if (child == 0) {
+		/* Async-signal-safe calls only, then the exec. */
+		(void)dup2(input[0], STDIN_FILENO);
+		(void)dup2(output[1], STDOUT_FILENO);
+		if (null >= 0)
+			(void)dup2(null, STDERR_FILENO);
+
+		/* The tool. */
+		(void)execv(ACCOUNT_ADMIN_PATH, argv);
+
+		/* It could not run. */
+		_exit(127);
+	}
+
+	/* The child's ends are its own now. */
+	(void)close(input[0]);
+	(void)close(output[1]);
+	if (null >= 0)
+		(void)close(null);
+	if (child < 0) {
+		(void)close(input[1]);
+		(void)close(output[0]);
+		(void)pthread_sigmask(SIG_SETMASK, &previous, NULL);
+		return EIO;
+	}
+
+	/* The password and the operation, wiped once written; the input closed, which ends the request. */
+	length = (size_t)snprintf(lines, sizeof(lines), "%s\n%s", password, operation);
+	error = account_write(input[1], lines, length);
+	account_wipe(lines, sizeof(lines));
+	(void)close(input[1]);
+
+	/* Its answer, then its end. */
+	got = account_read_answer(output[0], answer, sizeof(answer));
+	(void)close(output[0]);
+	do {
+		waited = waitpid(child, &status, 0);
+	} while (waited < 0 && errno == EINTR);
+
+	/* A SIGPIPE it raised is taken, and the mask is as it was. */
+	none.tv_sec = 0;
+	none.tv_nsec = 0;
+	(void)sigtimedwait(&pipe_signal, NULL, &none);
+	(void)pthread_sigmask(SIG_SETMASK, &previous, NULL);
+
+	/* The tool did not end by itself, or could not run, or said nothing. */
+	(void)error;
+	if (waited < 0)
+		return EIO;
+	exited = WIFEXITED(status);
+	if (!exited || got == 0U)
+		return EIO;
+
+	/* "ok" with a clean exit: done. */
+	same = strcmp(answer, "ok");
+	code = WEXITSTATUS(status);
+	if (same == 0 && code == 0)
+		return 0;
+
+	/* Anything but "error WORD" is a failure. */
+	same = strncmp(answer, "error ", 6U);
+	if (same != 0)
+		return EIO;
+
+	/* The word kept for the caller. */
+	if (reason != NULL && size != 0U)
+		(void)snprintf(reason, size, "%s", answer + 6);
+
+	/* Not an administrator or a wrong password: denied. */
+	same = strcmp(answer + 6, "not-administrator");
+	if (same == 0)
+		return EACCES;
+	same = strcmp(answer + 6, "bad-password");
+	if (same == 0)
+		return EACCES;
+
+	/* A failure of the tool. */
+	same = strcmp(answer + 6, "failed");
+	if (same == 0)
+		return EIO;
+
+	/* Any other refusal. */
+	return EINVAL;
+}
+
+/*
+ * Reads the tool's answer line (its end and anything after it dropped)
+ * into a buffer; returns its length (0 for none).
+ */
+static size_t
+account_read_answer(
+	int descriptor,
+	char *answer,
+	size_t size)
+{
+	ssize_t got;
+	size_t used;
+	char *end;
+
+	/* As much as fits, to the end of the output. */
+	used = 0;
+	while (used + 1U < size) {
+		got = read(descriptor, answer + used, size - 1U - used);
+
+		/* Interrupted: again. */
+		if (got < 0 && errno == EINTR)
+			continue;
+
+		/* An error or the end. */
+		if (got <= 0)
+			break;
+		used += (size_t)got;
+	}
+
+	/* The first line alone. */
+	answer[used] = '\0';
+	end = strchr(answer, '\n');
+	if (end != NULL)
+		*end = '\0';
+
+	/* Its length. */
+	return strlen(answer);
 }
 
 /* Writes the whole text to the pipe; returns 0, or an errno value (EPIPE when passwd ended). */

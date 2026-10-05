@@ -78,3 +78,14 @@ sessiond・greeter（WS035 の成果）、kl_system_*（WS131）、service・acc
 - 試験: `plan/ws089/tests/run-host-account-admin.sh`（gcc・clang、ASan・UBSan）→ 34 checks, 0 failed。image の実 file（root と wheel の GID 0、kei 1000）で、wheel の操作が root の primary group（0）と行を変えないことを確かめた。
 - build: `config-amd64-account-admin.mk` で `bin/account-admin`・`passwd`・`su`・`sudo` が warning 0。image では `/usr/libexec/account-admin=4555`。style-check 0。
 - 次（段 2・3）: kl_system_account_v1 の version 2（administer・refused）、libkeiland（KL_VERSION 31）、backend、compositor の system.c、Settings の UI。QEMU は全部の後に T1。
+
+## 段 2・3: 経路と Settings の UI（2026-10-05、P2、q748）
+
+- protocol（`keiland/kl-system-protocol.h`）: manager を version 8 に。`kl_system_account_v1` に request 2 `administer(uint request, string password, string operation)` と event 1 `refused(uint request, string reason)`（どちらも since 8）、capability `KL_SYSTEM_CAPABILITY_ADMINISTER`（0x100、system に tool が在る時だけ）、`KL_SYSTEM_OPERATION_MAX` 1024・`KL_SYSTEM_REASON_MAX` 31。
+- libkeiland（KL_VERSION 31）: `kl_system_account_administer(system, password, operation, &request)`、`kl_system_account_refusal(system, request, word, size)`、`KL_SYSTEM_HAS_ADMINISTER`、`KL_ACCOUNT_OPERATION_MAX`・`KL_ACCOUNT_REASON_SIZE`。exports.map に足した。
+- libkeiland-backend: `kl_backend_account_can_administer`・`kl_backend_account_administer`。zedBSD は `/usr/libexec/account-admin` を子として起動し（passwd -s と同じ形、標準入力に password と操作の行、標準出力の 1 行を読む）、`not-administrator`・`bad-password` は EACCES、他の拒否は EINVAL、`failed` は EIO、語を返す。Linux・FreeBSD は ENOTSUP。
+- compositor（`wayland/system.c`）: account の job に administer を足し（同じ thread、1 度に 1 つ）、結果の前に refused で語を送る。log は `ZWL SYSTEM account administer ...`・`... result ... reason=WORD`（set-password の行は前のまま）。password と操作は job の後に消す。
+- Settings（`page-users-admin.c` 新規、`page-users.c`）: 管理者（自分の行が wheel）で desktop が administer を持つ時、一覧の下に「Manage users」の card。一覧の行を click で選ぶ（選んだ行は selection の地）。「Add User...」と、選んだ他の利用者に「Reset Password...」「Remove...」「Make/Remove Administrator」「Allow/Stop Wi-Fi Control」。form（名前・表示名・新しい password・自分の password、追加は管理者の switch、削除は home を消す switch）、Cancel と実行、結果は語ごとの文。成功で一覧を読み直す。一覧に Wi-Fi（network）も出す。field は依頼か取り消しで消す。
+- build: zedBSD の `bin/wayland`・`bin/settings`・`bin/account-admin` が warning 0、Linux の Keiland（`make keiland-linux`）も warning 0、`makefile-sync.sh` PASS。style-check: 新しい file は 0、変えた file は関数ごとに増えていない。
+- T1 の試験（tty なし、Q1 の求めた passwd の短い password の拒否も含む）: `plan/ws089/tests/admin-p026-guest.sh`（image は `config-amd64-account-admin.mk`）。
+- 未実施: QEMU（T1）、Settings の UI の PNG（desktop を kei で動かす必要があり、UAT で見る）、FreeBSD の build。

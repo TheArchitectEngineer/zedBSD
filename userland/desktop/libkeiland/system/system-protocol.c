@@ -229,20 +229,22 @@ const struct wl_interface kl_system_devices_v1_interface = {
 static const struct wl_message system_account_requests[] = {
 	{ "destroy", "", NULL },
 	{ "set_password", "uss", system_plain_types },
+	{ "administer", "8uss", system_plain_types },
 };
 
-/* The event of kl_system_account_v1. */
+/* The events of kl_system_account_v1 (refused since version 8, ws089-p026). */
 static const struct wl_message system_account_events[] = {
 	{ "result", "uuu", system_plain_types },
+	{ "refused", "8us", system_plain_types },
 };
 
-/* kl_system_account_v1: two requests and one event.  It lives for the program. */
+/* kl_system_account_v1, made at the manager's version (8): three requests and two events.  It lives for the program. */
 const struct wl_interface kl_system_account_v1_interface = {
 	KL_SYSTEM_ACCOUNT_NAME,
-	1,
-	2,
+	KL_SYSTEM_SINCE_ADMINISTER,
+	3,
 	system_account_requests,
-	1,
+	2,
 	system_account_events
 };
 

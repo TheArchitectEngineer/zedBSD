@@ -820,6 +820,22 @@ void kl_backend_backlight_close(struct kl_backend_backlight *backlight);
  */
 int kl_backend_account_set_password(const char *current, const char *fresh);
 
+/*
+ * The administration of the people's accounts (ws089-p026;
+ * docs/architecture/security.md): zedBSD runs account-admin with the
+ * caller's password and the operation's lines (kl-system-protocol.h,
+ * administer) on its standard input and reads its answer; Linux and
+ * FreeBSD answer ENOTSUP.  kl_backend_account_can_administer tells
+ * whether the system has the tool.  kl_backend_account_administer waits
+ * for it (seconds for a wrong password), so the compositor calls it on a
+ * thread; it returns 0, EACCES (not an administrator, or a wrong
+ * password), EINVAL (another refusal), ENOTSUP, or EIO, with the tool's
+ * word of a refusal in reason (empty otherwise).  The password is not kept
+ * or logged.
+ */
+int kl_backend_account_can_administer(void);
+int kl_backend_account_administer(const char *password, const char *operation, char *reason, size_t size);
+
 
 /*
  * The session (ws131-p006): the session manager that started the
