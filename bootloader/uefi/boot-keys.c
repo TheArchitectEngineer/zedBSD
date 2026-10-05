@@ -45,6 +45,7 @@ zbl_uefi_boot_keys_open(
 	EFI_BOOT_SERVICES *boot;
 	EFI_STATUS status;
 	uint8_t toggle;
+	int failed;
 
 	/* Starts with no input found and no key seen. */
 	keys->input = 0;
@@ -67,7 +68,8 @@ zbl_uefi_boot_keys_open(
 	}
 
 	/* Falls back to any instance the firmware has. */
-	if (EFI_ERROR(status) || input == 0) {
+	failed = EFI_ERROR(status);
+	if (failed || input == 0) {
 		input = 0;
 		status = boot->LocateProtocol(
 			&EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID,
@@ -76,7 +78,8 @@ zbl_uefi_boot_keys_open(
 	}
 
 	/* A firmware without the extended input boots with no keys. */
-	if (EFI_ERROR(status) || input == 0)
+	failed = EFI_ERROR(status);
+	if (failed || input == 0)
 		return;
 
 	/* The samples read this input from now on. */
@@ -85,7 +88,8 @@ zbl_uefi_boot_keys_open(
 	/* Asks for modifier keys pressed alone to be reported too. */
 	toggle = EFI_TOGGLE_STATE_VALID | EFI_KEY_STATE_EXPOSED;
 	status = input->SetState(input, &toggle);
-	if (EFI_ERROR(status))
+	failed = EFI_ERROR(status);
+	if (failed)
 		return;
 
 	/* The firmware reports modifier keys pressed alone. */
@@ -107,6 +111,7 @@ zbl_uefi_boot_keys_sample(
 	EFI_STATUS status;
 	unsigned count;
 	unsigned seen;
+	int failed;
 
 	/* Without the extended input nothing new can be seen. */
 	if (keys->input == 0)
@@ -122,7 +127,8 @@ zbl_uefi_boot_keys_sample(
 
 		/* An empty queue, or any error, ends the sample. */
 		status = keys->input->ReadKeyStrokeEx(keys->input, &data);
-		if (EFI_ERROR(status))
+		failed = EFI_ERROR(status);
+		if (failed)
 			break;
 
 		/* Gathers the boot keys this event was typed with. */

@@ -63,6 +63,8 @@ main(void)
 	test_refusals();
 	test_ends();
 
+
+	/* Prints the tally. */
 	printf("boot-override-host-test: %u checks, %u failures\n", checks, failures);
 
 	/* Reports a failed check. */
@@ -280,9 +282,13 @@ test_limit(void)
 	memset(&text[2], 'x', filler);
 	strcpy(&text[2U + filler], " kmsg=quiet");
 	check(strlen(text) == 3071U, "O8 first record is 3071 bytes");
+
+	/* Ctrl on the full record. */
 	record_set(&record, text);
 	error = zbl_boot_override_apply(&record, ZBL_BOOT_OVERRIDE_KMSG);
 	check(error == 0, "O8 full record returns 0");
+
+	/* Only the filler is left. */
 	text[2U + filler] = '\0';
 	same = record_is(&record, text);
 	check(same, "O8 full record leaves kmsg= out");
@@ -298,9 +304,13 @@ test_limit(void)
 	memset(&text[2], 'x', filler);
 	strcpy(&text[2U + filler], " kmsg=quiet");
 	check(strlen(text) == 3069U, "O8 second record is 3069 bytes");
+
+	/* Ctrl on it. */
 	record_set(&record, text);
 	error = zbl_boot_override_apply(&record, ZBL_BOOT_OVERRIDE_KMSG);
 	check(error == 0, "O8 second record returns 0");
+
+	/* The filler and kmsg=console. */
 	memset(expected, 0, sizeof(expected));
 	memcpy(expected, text, 2U + filler);
 	strcpy(&expected[2U + filler], " kmsg=console");

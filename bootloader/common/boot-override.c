@@ -73,8 +73,10 @@ zbl_boot_override_apply(
 	if ((keys & ZBL_BOOT_OVERRIDE_LOGIN) != 0U)
 		length = override_append(record->text, length, OVERRIDE_LOGIN_TOKEN);
 
-	/* Terminates the text and clears what the dropped tokens left behind. */
+	/* Terminates the rewritten text. */
 	record->text[length] = '\0';
+
+	/* Clears what the dropped tokens left behind the terminator. */
 	for (index = length + 1U; index <= old_length; index++)
 		record->text[index] = '\0';
 
@@ -92,8 +94,8 @@ override_compact(
 	size_t length,
 	unsigned keys)
 {
-	size_t read;
-	size_t write;
+	size_t read_position;
+	size_t write_position;
 	size_t end;
 	size_t index;
 	int dropped;
@@ -103,35 +105,37 @@ override_compact(
 	 * write position.  The write position never passes the read position,
 	 * so moving within the one buffer is safe.
 	 */
-	read = 0;
-	write = 0;
-	while (read < length) {
-		end = override_token_end(text, length, read);
-		dropped = override_name_dropped(&text[read], end - read, keys);
+	read_position = 0;
+	write_position = 0;
+	while (read_position < length) {
+		/* Finds the token at the read position and whether the keys replace it. */
+		end = override_token_end(text, length, read_position);
+		dropped = override_name_dropped(&text[read_position], end - read_position, keys);
 
 		/* An empty token or a replaced one is skipped with its separator. */
-		if (end == read || dropped) {
-			read = end + 1U;
+		if (end == read_position || dropped) {
+			read_position = end + 1U;
 			continue;
 		}
 
 		/* Separates a kept token from the one kept before it. */
-		if (write != 0U) {
-			text[write] = ' ';
-			write++;
+		if (write_position != 0U) {
+			text[write_position] = ' ';
+			write_position++;
 		}
 
 		/* Moves the kept token down. */
-		for (index = read; index < end; index++) {
-			text[write] = text[index];
-			write++;
+		for (index = read_position; index < end; index++) {
+			text[write_position] = text[index];
+			write_position++;
 		}
 
-		read = end + 1U;
+		/* The next token starts after the separator. */
+		read_position = end + 1U;
 	}
 
 	/* Reports the length of the kept tokens. */
-	return write;
+	return write_position;
 }
 
 /* Appends one token when it fits and reports the new length. */
@@ -218,6 +222,7 @@ override_name_dropped(
 		if (same)
 			return 1;
 
+		/* The logo is not drawn when the messages are to be read. */
 		same = override_name_is(token, name_length, "logo");
 		if (same)
 			return 1;

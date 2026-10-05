@@ -101,6 +101,8 @@ main(void)
 			test_configuration(&configurations[index], keys);
 	}
 
+
+	/* Prints the tally. */
 	printf("boot-override-kernel-host-test: %u checks, %u failures\n", checks, failures);
 
 	/* Reports a failed check. */
@@ -187,6 +189,8 @@ test_configuration(
 		TEST_VOLUME_UUID,
 		sizeof(TEST_VOLUME_UUID));
 	check(parsed == ZBL_UEFI_KERN_CONFIG_OK, configuration->name, keys, "loader parse");
+
+	/* A configuration the loader refused goes no further. */
 	if (parsed != ZBL_UEFI_KERN_CONFIG_OK)
 		return;
 
@@ -199,6 +203,8 @@ test_configuration(
 	memcpy(text, loader.parameter_record.text, loader.parameter_record.length);
 	error = kern_boot_parameters_parse(&parameters, text, sizeof(text));
 	check(error == 0, configuration->name, keys, "kernel parse accepts the record");
+
+	/* A record the kernel refused is shown and goes no further. */
 	if (error != 0) {
 		printf("  error %d on \"%s\"\n", error, text);
 		return;

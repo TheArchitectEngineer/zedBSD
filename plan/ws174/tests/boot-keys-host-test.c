@@ -57,8 +57,10 @@ static struct mock_firmware mock;
 /* The mock extended console input the boot services hand out. */
 static EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL mock_input;
 
-/* The mock boot services and system table the loader's functions see. */
+/* The mock boot services, with only HandleProtocol and LocateProtocol set. */
 static EFI_BOOT_SERVICES mock_boot;
+
+/* The mock system table: its boot services and a console input handle. */
 static EFI_SYSTEM_TABLE mock_system;
 
 /*
@@ -92,6 +94,8 @@ main(void)
 	test_lookup();
 	test_drain();
 
+
+	/* Prints the tally. */
 	printf("boot-keys-host-test: %u checks, %u failures\n", checks, failures);
 
 	/* Reports a failed check. */

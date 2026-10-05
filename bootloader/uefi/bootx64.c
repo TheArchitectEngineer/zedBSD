@@ -1492,6 +1492,7 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	zbl_uefi_boot_keys_open(&context.keys, system);
 	(void)zbl_uefi_boot_keys_sample(&context.keys);
 
+	/* The GOP whose framebuffer the kernel receives. */
 	status = boot->LocateProtocol(&EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, 0,
 				      (void **)&gop);
 	if (EFI_ERROR(status))
@@ -1522,7 +1523,7 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	 */
 	held = zbl_uefi_boot_keys_sample(&context.keys);
 	status = apply_boot_keys(&context, &configuration, held);
-	if (EFI_ERROR(status))
+	if (status != EFI_SUCCESS)
 		fail_discovered(&context, &discovered, "Override parameters", status);
 
 	/*
@@ -1534,6 +1535,8 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	 */
 	logo_named = zbl_logo_path(configuration.parameter_record.text,
 	    configuration.parameter_record.length, logo_path, sizeof(logo_path));
+
+	/* Chooses the mode to wish for when video= names none. */
 	if ((held & ZBL_BOOT_OVERRIDE_KMSG) != 0U) {
 		/* Ctrl: the kernel messages are read on screen. */
 		wish_width = TEXT_MODE_WIDTH;
@@ -1547,6 +1550,8 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 		wish_width = 0U;
 		wish_height = 0U;
 	}
+
+	/* Sets the mode video= names, or the wished one when the firmware has it. */
 	status = zbl_uefi_video_select(boot, gop,
 	    configuration.parameter_record.text,
 	    configuration.parameter_record.length,
