@@ -2,7 +2,7 @@
 
 # ws139-p001: 計測の image と一括の script、E1 の基準値
 
-Status: in-progress（2026-10-05 P1 generation17、q740。script と道具は済み。E1 の計測は T1、その 2 回の結果で受け入れ）
+Status: cleared（2026-10-05 Q1: T1-176 で計測の image・run・summary が 2 回とも完走し全指標に値。台帳への記入は次の Phase で P1）。以前: in-progress（2026-10-05 P1 generation17、q740。script と道具は済み。E1 の計測は T1、その 2 回の結果で受け入れ）
 Disposition: normal
 Parent: [WS139](../ws.md)
 Queue: q740
