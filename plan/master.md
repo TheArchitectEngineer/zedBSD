@@ -71,6 +71,18 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 夜 ユーザーの決定（まとめての質問への回答）**: 次を**担当の推奨どおり**に決定。
+  - WS156 通知: H1 popup の大きさは案、H2 log は Super+N、H3 memory で 100 件、H4 全画面・lock 中は log だけ（URGENT は全画面にも）、H5 重なりは 1.5 秒に縮める、H7 bar の媒体の icon を通知に置き換える。
+  - WS164 Welcome: H1 各 account の最初の login だけ、H2 Settings の mode で終わりに Today、H3 5 段。
+  - WS165 手書き: H1 段 1 の目標、H2 $P 型の点群の照合、H3 Hershey と自作（KanjiVG は段 2）、H4 段 2・3 は段 1 の後。
+  - WS167 GPU の命令: H1 Google の著作権の表示を外す、H2 include/uapi/gpu-op.h を足す（UAPI の追加の承認）、H3 名前は GPU_OP_CREATE_INSTANCE の形。
+  - WS158 翻訳: ① 英語の文、② 独自の UTF-8 の catalog、③ 英語と日本語、④ greeter は system の既定、⑤ ws089-p015・ws127-p005 を WS158 に吸収（元は canceled）。
+  - WS154: SKK の >・/・#・Tab・注釈を Future Work へ。
+  - WS145 印刷: D2 利用者ごと、D3 path・queue 名を詳しい設定で入力可、D5 CUPS の printer は出さない、D6 PDF Viewer の印刷を含める、D7 login 名を送る、D8 spool の上限は案、D9 同じ利用者の app に job が見える。D4（受け入れの printer の機種）は未決。
+  - BUG-194: 全画面から戻る key は **F11 と Super+↓ の両方**。
+  - WS169・WS170: **ベータ2**（WS170 は連絡先からタイムライン、WS169 は IMAP・SMTP まで。Gmail・Outlook と本物の SMS・通話は以降）。
+  - 段ごとの見積もりの表を**今作り直す**（Q1）。
+
 - **2026-10-05 夕 ユーザーの決定（続き）**:
   - WS121: 目標は「Vulkan Video の hardware decode」のまま（「hardware だけ」）。software decode の <video> の設計（P2 の第 2 版 3df53896）は記録として残し、実装は WS083 の Vulkan Video の後。WS121 は WS083 を待つ。
   - WS130 IPv6: H1〜H8 は**全部推奨どおり**（UAPI の形の承認、V6ONLY の既定 0、既定 on、RFC 7217、DNS の順、断片の再組立て無し、DUID-UUID、Wi-Fi ごとの設定は後）。P1 が p002 へ。
