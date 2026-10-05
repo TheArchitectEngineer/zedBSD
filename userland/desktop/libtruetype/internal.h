@@ -106,6 +106,9 @@ struct truetype_face {
 	unsigned cmap_format;
 
 	unsigned pixels;
+
+	/* Whether the outlines are made bold (truetype_set_bold, BUG-205): widened as vectors before they are drawn. */
+	unsigned bold;
 };
 
 uint16_t truetype_u16(const uint8_t *bytes);
@@ -124,6 +127,8 @@ int truetype_advance(const struct truetype_face *face, unsigned glyph,
 void truetype_outline_bounds(const struct truetype_outline *outline,
 			     float *minimum_x, float *minimum_y,
 			     float *maximum_x, float *maximum_y);
+int truetype_outline_embolden(struct truetype_outline *outline,
+			      float x_strength, float y_strength);
 void truetype_rasterize(const struct truetype_outline *outline,
 			const struct truetype_glyph *metrics,
 			uint8_t *bitmap, size_t stride);

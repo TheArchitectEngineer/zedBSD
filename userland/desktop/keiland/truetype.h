@@ -91,6 +91,17 @@ void truetype_close(struct truetype_face *face);
  */
 int truetype_set_pixel_size(struct truetype_face *face, unsigned pixels);
 
+/*
+ * Makes every later glyph bold (nonzero) or regular (0), for a face that
+ * comes in one weight (BUG-205).  A bold glyph's outline is widened as a
+ * vector before it is drawn -- its strokes thicker across by a
+ * twenty-second of the size and up and down by less, the way a bold
+ * face's are -- and its advance grows by the widening, rounded to whole
+ * pixels.
+ * Returns zero, or an errno value.
+ */
+int truetype_set_bold(struct truetype_face *face, int bold);
+
 int truetype_metrics(const struct truetype_face *face,
 		     struct truetype_metrics *metrics);
 

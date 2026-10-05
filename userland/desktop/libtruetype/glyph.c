@@ -23,6 +23,14 @@
 #include <math.h>
 #include <stdlib.h>
 
+/*
+ * How much a bold glyph's strokes widen (truetype_set_bold), in ems:
+ * across by more than up and down, since a bold face thickens its stems
+ * more than its bars.
+ */
+#define BOLD_ACROSS		(1.0f / 22.0f)
+#define BOLD_UPRIGHT		(1.0f / 36.0f)
+
 static int measure(struct truetype_face *face, unsigned glyph,
 		   struct truetype_outline *outline,
 		   struct truetype_glyph *metrics);
@@ -38,6 +46,8 @@ measure(
 	struct truetype_glyph *metrics)
 {
 	float minimum_x, minimum_y, maximum_x, maximum_y;
+	float across;
+	float upright;
 	int left, top, right, bottom, error;
 
 	outline->point_count = 0;
@@ -52,6 +62,20 @@ measure(
 	/* Reports the failure. */
 	if (error != 0)
 		return error;
+
+	/*
+	 * A bold glyph's outline is widened to the right and upward, and its
+	 * advance grows by the widening rounded to whole pixels (a space's
+	 * too, so that a bold line keeps its rhythm).
+	 */
+	if (face->bold != 0U) {
+		across = (float)face->pixels * BOLD_ACROSS;
+		upright = (float)face->pixels * BOLD_UPRIGHT;
+		error = truetype_outline_embolden(outline, across, upright);
+		if (error != 0)
+			return error;
+		metrics->advance += (int)(across + 0.5f);
+	}
 
 	/* Handles a glyph with no outline, which is what a space is. */
 	if (outline->point_count == 0) {

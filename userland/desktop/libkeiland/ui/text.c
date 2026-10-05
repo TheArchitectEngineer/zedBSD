@@ -12,10 +12,11 @@
  *
  * A main font draws what it can and a fallback font (optional) the
  * characters the main one lacks, such as Japanese in file names.  Every
- * glyph is drawn once per size into a cache of coverage bitmaps; a bold
- * glyph is the regular one widened by a pixel, since the fonts come in one
- * weight.  There is no kerning and no shaping: file names and labels are
- * set one character after another.
+ * glyph is drawn once per size into a cache of coverage bitmaps.  The fonts
+ * come in one weight, so a bold glyph is the regular one's outline widened
+ * as a vector by libtruetype (truetype_set_bold, BUG-205), drawn with the
+ * same anti-aliasing as a regular one.  There is no kerning and no shaping:
+ * file names and labels are set one character after another.
  *
  * A character neither font has is looked for in the colour emoji font
  * (KL_TEXT_EMOJI, opened the first time one is drawn, ws102-p019) and
@@ -648,7 +649,7 @@ text_slot(
 	return &text->cache[slot];
 }
 
-/* Draws a glyph of a face at a size into a cache slot (widened by a pixel when bold). */
+/* Draws a glyph of a face at a size into a cache slot (from a widened outline when bold). */
 static int
 text_render(
 	struct kl_text *text,
@@ -679,6 +680,11 @@ text_render(
 	if (error != 0)
 		return error;
 
+	/* The weight: a bold glyph is drawn from its outline widened. */
+	error = truetype_set_bold(face->face, bold);
+	if (error != 0)
+		return error;
+
 	/* How large the glyph is. */
 	error = truetype_glyph_metrics(face->face, glyph_index, &metrics);
 	if (error != 0)
@@ -701,17 +707,13 @@ text_render(
 			return error;
 	}
 
-	/* The slot's measurements; bold is one pixel wider and moves one further. */
+	/* The slot's measurements (a bold glyph's are its widened outline's). */
 	width = (int)metrics.width;
-	if (bold != 0 && needed != 0U)
-		width++;
 	glyph->width = width;
 	glyph->height = (int)metrics.height;
 	glyph->left = metrics.left;
 	glyph->top = metrics.top;
 	glyph->advance = metrics.advance;
-	if (bold != 0)
-		glyph->advance++;
 	glyph->bitmap = NULL;
 	glyph->pixels = NULL;
 
@@ -724,20 +726,10 @@ text_render(
 	if (glyph->bitmap == NULL)
 		return ENOMEM;
 
-	/* The coverage copied, and for bold each pixel also laid one to the right. */
+	/* The coverage copied. */
 	for (y = 0; y < (int)metrics.height; y++) {
 		for (x = 0; x < (int)metrics.width; x++) {
 			glyph->bitmap[(size_t)y * (size_t)width + (size_t)x] = text->scratch[(size_t)y * metrics.width + (size_t)x];
-		}
-
-		/* A regular glyph is done with the copy. */
-		if (bold == 0)
-			continue;
-
-		/* The widening keeps the larger of a pixel and its left neighbour. */
-		for (x = width - 1; x > 0; x--) {
-			if (glyph->bitmap[(size_t)y * (size_t)width + (size_t)x - 1U] > glyph->bitmap[(size_t)y * (size_t)width + (size_t)x])
-				glyph->bitmap[(size_t)y * (size_t)width + (size_t)x] = glyph->bitmap[(size_t)y * (size_t)width + (size_t)x - 1U];
 		}
 	}
 

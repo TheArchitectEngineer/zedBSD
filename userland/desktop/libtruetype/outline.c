@@ -24,6 +24,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdlib.h>
 
 /* The flags a simple glyph's points carry. */
 #define ON_CURVE	0x01U
@@ -40,6 +41,18 @@
 #define MORE_COMPONENTS	0x0020U
 #define HAVE_XY_SCALE	0x0040U
 #define HAVE_MATRIX	0x0080U
+
+/*
+ * One vertex of a contour being made bold (truetype_outline_embolden): the
+ * direction and length of the edge that leaves it, and how far it moves.
+ */
+struct embolden_vertex {
+	float direction_x;
+	float direction_y;
+	float length;
+	float shift_x;
+	float shift_y;
+};
 
 static int load_simple(struct truetype_face *face, const uint8_t *glyf, uint32_t length, struct truetype_outline *outline);
 static int read_flags(const uint8_t *glyf, uint32_t length, unsigned count, uint32_t *position, uint8_t *flags);
@@ -277,6 +290,216 @@ truetype_outline_bounds(
 		if (outline->points[index].y > *maximum_y)
 			*maximum_y = outline->points[index].y;
 	}
+}
+
+/*
+ * Makes an outline bold: every contour is pushed out from the ink by half
+ * a strength on each side, across (x_strength) and up and down
+ * (y_strength), in pixels, then the whole is moved right and up by the
+ * other half, so that the glyph still starts where it did and stands on
+ * the baseline and only grows to the right and upward (BUG-205).
+ *
+ * A vertex moves along the bisector of the normals of its two edges, as far
+ * as keeps both edges the strength away (FreeType's FT_Outline_EmboldenXY):
+ * a straight run moves by half the strength, a corner by more.  An inner
+ * corner moves no further than its shorter edge is long, so that short
+ * edges do not cross over each other, and a vertex that turns almost all
+ * the way back does not move.  Which side is the ink's follows the
+ * outline's turning: TrueType's outer contours run clockwise (y up), but a
+ * font whose contours run the other way is widened outward too.  The curves
+ * are already segments here, so the widening is exact for what is drawn.
+ *
+ * Returns 0, or ENOMEM when the scratch for the vertices cannot be had.
+ */
+int
+truetype_outline_embolden(
+	struct truetype_outline *outline,
+	float x_strength,
+	float y_strength)
+{
+	struct embolden_vertex *vertices;
+	const struct truetype_point *a;
+	const struct truetype_point *b;
+	float half_x;
+	float half_y;
+	float shorter;
+	float area;
+	float side;
+	float length;
+	float in_x;
+	float in_y;
+	float in_length;
+	float out_x;
+	float out_y;
+	float out_length;
+	float cosine;
+	float sine;
+	float normal_x;
+	float normal_y;
+	unsigned contour;
+	unsigned first;
+	unsigned end;
+	unsigned count;
+	unsigned index;
+	unsigned edge;
+	unsigned step;
+	unsigned point;
+
+	/* An outline with no points stays as it is. */
+	if (outline->point_count == 0U)
+		return 0;
+
+	/* The scratch for the vertices of the largest contour, which is no larger than the outline. */
+	vertices = malloc(sizeof(vertices[0]) * outline->point_count);
+	if (vertices == NULL)
+		return ENOMEM;
+
+	/* Half the strength goes to each side of a stroke. */
+	half_x = x_strength * 0.5f;
+	half_y = y_strength * 0.5f;
+
+	/* The outline's turning, twice its signed area: negative for TrueType's clockwise outer contours. */
+	area = 0.0f;
+	first = 0;
+	for (contour = 0; contour < outline->contour_count; contour++) {
+		end = outline->ends[contour];
+
+		/* Each edge of the contour adds its part of the area. */
+		for (index = first; index + 1U < end; index++) {
+			a = &outline->points[index];
+			b = &outline->points[index + 1U];
+			area += a->x * b->y - b->x * a->y;
+		}
+		first = end;
+	}
+
+	/* The ink is on the right of a clockwise contour's travel; a font that runs the other way has it on the left. */
+	side = 1.0f;
+	if (area > 0.0f)
+		side = -1.0f;
+
+	/* Each contour on its own. */
+	first = 0;
+	for (contour = 0; contour < outline->contour_count; contour++) {
+		end = outline->ends[contour];
+
+		/*
+		 * The contour's distinct vertices: it is closed by a last point
+		 * that repeats its first, which moves with the first.
+		 */
+		count = end - first;
+		if (count > 1U &&
+		    outline->points[end - 1U].x == outline->points[first].x &&
+		    outline->points[end - 1U].y == outline->points[first].y)
+			count--;
+
+		/* A contour of fewer than three vertices has no inside to widen; it only moves with the rest. */
+		if (count < 3U) {
+			for (point = first; point < end; point++) {
+				outline->points[point].x += half_x;
+				outline->points[point].y += half_y;
+			}
+			first = end;
+			continue;
+		}
+
+		/* The direction of each edge, from a vertex to the next; an edge of no length has none. */
+		for (edge = 0; edge < count; edge++) {
+			a = &outline->points[first + edge];
+			b = &outline->points[first + (edge + 1U) % count];
+			vertices[edge].direction_x = b->x - a->x;
+			vertices[edge].direction_y = b->y - a->y;
+			length = sqrtf(vertices[edge].direction_x * vertices[edge].direction_x + vertices[edge].direction_y * vertices[edge].direction_y);
+			vertices[edge].length = length;
+			if (length > 0.0f) {
+				vertices[edge].direction_x /= length;
+				vertices[edge].direction_y /= length;
+			}
+		}
+
+		/* How far each vertex moves, from the edges into and out of it. */
+		for (point = 0; point < count; point++) {
+			vertices[point].shift_x = 0.0f;
+			vertices[point].shift_y = 0.0f;
+
+			/* The edge into the vertex: the last one before it that has a length. */
+			in_x = 0.0f;
+			in_y = 0.0f;
+			in_length = 0.0f;
+			for (step = 1; step <= count; step++) {
+				edge = (point + count - step) % count;
+				if (vertices[edge].length > 0.0f) {
+					in_x = vertices[edge].direction_x;
+					in_y = vertices[edge].direction_y;
+					in_length = vertices[edge].length;
+					break;
+				}
+			}
+
+			/* The edge out of it: the first one from it that has a length. */
+			out_x = 0.0f;
+			out_y = 0.0f;
+			out_length = 0.0f;
+			for (step = 0; step < count; step++) {
+				edge = (point + step) % count;
+				if (vertices[edge].length > 0.0f) {
+					out_x = vertices[edge].direction_x;
+					out_y = vertices[edge].direction_y;
+					out_length = vertices[edge].length;
+					break;
+				}
+			}
+
+			/* A vertex that turns almost all the way back (or a contour of no length) stays. */
+			cosine = in_x * out_x + in_y * out_y;
+			if (cosine <= -0.9375f)
+				continue;
+			cosine += 1.0f;
+
+			/* The shorter of its two edges, which an inner corner moves no further than. */
+			shorter = in_length;
+			if (out_length < shorter)
+				shorter = out_length;
+
+			/*
+			 * The sum of the two edges' normals away from the ink, and
+			 * the sine of the turn, positive where the contour turns
+			 * into the ink (an inner corner).
+			 */
+			normal_x = -(in_y + out_y) * side;
+			normal_y = (in_x + out_x) * side;
+			sine = (in_x * out_y - in_y * out_x) * side;
+
+			/* Across: a straight run or an outer corner moves by its miter; an inner corner is held to its shorter edge. */
+			if (half_x * sine <= shorter * cosine) {
+				vertices[point].shift_x = normal_x * half_x / cosine;
+			} else {
+				vertices[point].shift_x = normal_x * shorter / sine;
+			}
+
+			/* Up and down, the same. */
+			if (half_y * sine <= shorter * cosine) {
+				vertices[point].shift_y = normal_y * half_y / cosine;
+			} else {
+				vertices[point].shift_y = normal_y * shorter / sine;
+			}
+		}
+
+		/* Every vertex moved, with the half that keeps the glyph's start and baseline. */
+		for (point = 0; point < count; point++) {
+			outline->points[first + point].x += vertices[point].shift_x + half_x;
+			outline->points[first + point].y += vertices[point].shift_y + half_y;
+		}
+
+		/* The closing point follows the first. */
+		if (count < end - first)
+			outline->points[end - 1U] = outline->points[first];
+		first = end;
+	}
+
+	/* Succeeded: the outline is bold. */
+	free(vertices);
+	return 0;
 }
 
 /* Reads a simple glyph (its contours, flags and coordinates) into the outline, in pixels. */

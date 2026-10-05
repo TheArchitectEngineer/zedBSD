@@ -431,6 +431,27 @@ truetype_set_pixel_size(
 }
 
 /*
+ * Makes the face's later glyphs bold or regular.
+ */
+int
+truetype_set_bold(
+	struct truetype_face *face,
+	int bold)
+{
+	/* Validates the arguments. */
+	if (face == NULL)
+		return EINVAL;
+
+	/* The weight every later glyph is measured and drawn at. */
+	face->bold = 0U;
+	if (bold != 0)
+		face->bold = 1U;
+
+	/* Succeeded: the weight is chosen. */
+	return 0;
+}
+
+/*
  * Implements the truetype metrics operation.
  */
 int
