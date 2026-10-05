@@ -8,25 +8,29 @@ boot: logo=logo.ppm login=graphical kmsg=quiet) once per cell, each time from
 a fresh copy of the image and of the OVMF variables, one QEMU at a time:
 
   C0 none        no key
-  C1 ctrl        Ctrl+Space every 0.1 s from power-on
-  C2 shift       Shift+Space likewise
-  C3 ctrl-shift  Ctrl+Shift+Space likewise
+  C1 ctrl        Ctrl held, Space tapped every 0.1 s, from power-on
+  C2 shift       Shift held, Space tapped likewise
+  C3 ctrl-shift  Ctrl and Shift held, Space tapped likewise
   C4 late        no key until the loader has set its mode, then 5 s later
                  Ctrl+Space and Shift+Space for 2 s (after the loader)
 
-Keys go by QMP send-key (the default input handler; QMP cannot name the
-usb-kbd as the target), one chord every 0.1 s held 50 ms, the modifiers
-pressed again each time.  A sending cell stops 2 s after the screen shows
-the loader has run (the splash mode 1920x1080, a switch down to 640x480
-from a larger firmware mode, or kernel text), or after 60 s.  A screendump
-is taken every second for the first 40 s; each frame whose kind (text,
-logo, other) differs from the one before, and the evidence, are kept as PNG.
+Keys go by QMP input-send-event (the default input handler; QMP cannot
+name the usb-kbd as the target), as a person does it: the modifiers stay
+down and Space is tapped (down, 50 ms, up) every 0.1 s.  Every 0.1 s the
+modifiers are pressed down again, which changes nothing while they are
+down but presses them again after the firmware's or the kernel's USB reset
+has made the emulated keyboard forget them.  The modifiers are let go when
+the cell stops sending: 2 s after the screen shows the loader has run (the
+splash mode 1920x1080, a switch down to 640x480 from a larger firmware
+mode, or kernel text), or after 60 s.  A screendump is taken every second
+for the first 40 s; each frame whose kind (text, logo, other) differs from
+the one before, and the evidence, are kept as PNG.
 
 The verdict reads only screendumps and SSH (no console or serial log):
   (a) the screen: C0, C2, C4 show the logo; C1, C3 show kernel text without
       the logo.
   (b) the login prompt (plan/tools/boot-test.py) is reached.
-  (c) over SSH, `sysctl -n kern.boot.login` is graphical (C0, C1, C4) or
+  (c) over SSH, `sysctl kern.boot.login` is graphical (C0, C1, C4) or
       console (C2, C3), and the kernel's `boot: parameters:` line in dmesg
       holds kmsg=console and no logo= (C1, C3) or kmsg=quiet and logo=
       (C0, C2, C4).  There is no kern.boot.kmsg sysctl; dmesg is the
@@ -37,7 +41,7 @@ The verdict reads only screendumps and SSH (no console or serial log):
 
 --no-usb-kbd drops the usb-kbd device (the keys then reach the PS/2
 keyboard): the retry when C1 to C3 all fail to detect the keys.
---ctrl-alone runs the reference cell R0 (Ctrl without Space) first; its
+--ctrl-alone runs the reference cell R0 (Ctrl held, no Space) first; its
 result is recorded, never part of the verdict.
 """
 from __future__ import annotations
@@ -65,9 +69,9 @@ _spec.loader.exec_module(boot_test)
 sys.path.insert(0, str(ROOT / "plan/tools/guest"))
 import guest  # noqa: E402
 
-# How often a key chord is sent, and how long its keys stay down.
+# How often Space is tapped (and the modifiers pressed again), and how long Space stays down.
 KEY_PERIOD = 0.1
-KEY_HOLD_MS = 50
+KEY_TAP = 0.05
 
 # The longest a cell sends keys, and how long it goes on after the mode changes.
 SEND_LIMIT = 60.0
@@ -149,10 +153,27 @@ class Guest:
 		with self.lock:
 			return self.monitor.command(name, **arguments)
 
-	def send_chord(self, chord: list[str]) -> None:
-		"""Presses the chord's keys together and lets them go after KEY_HOLD_MS."""
-		keys = [{"type": "qcode", "data": key} for key in chord]
-		self.command("send-key", keys=keys, **{"hold-time": KEY_HOLD_MS})
+	def send_keys(self, keys: list[str], down: bool) -> None:
+		"""Presses (or lets go of) the keys, in order, at once."""
+		events = [{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": key}}}
+			  for key in keys]
+		if events:
+			self.command("input-send-event", events=events)
+
+	def send_chord(self, chord: list[str], held: list[str]) -> list[str]:
+		"""Holds the chord's modifiers and taps its other keys.
+
+		The modifiers of the chord before (held) that this chord has not
+		are let go first.  Returns the modifiers now held.
+		"""
+		modifiers = [key for key in chord if key in ("ctrl", "shift", "alt")]
+		taps = [key for key in chord if key not in modifiers]
+		self.send_keys([key for key in held if key not in modifiers], False)
+		self.send_keys(modifiers + taps, True)
+		if taps:
+			time.sleep(KEY_TAP)
+			self.send_keys(taps, False)
+		return modifiers
 
 	def screendump(self, path: Path) -> None:
 		"""Writes the screen as PPM."""
@@ -284,7 +305,18 @@ def run_cell(name: str, image: Path, outdir: Path, usb_kbd: bool, font: dict) ->
 	state = {"mode_changed_at": None, "first_mode": None, "chords": 0}
 
 	def sender() -> None:
-		"""Sends the cell's chords on their schedule."""
+		"""Sends the cell's chords on their schedule, then lets the modifiers go."""
+		held: list[str] = []
+		try:
+			send_chords(held)
+		finally:
+			try:
+				vm.send_keys(held, False)
+			except (OSError, SystemExit):
+				pass
+
+	def send_chords(held: list[str]) -> None:
+		"""Holds the modifiers and taps Space until the cell stops sending."""
 		start = time.monotonic()
 		while not stop_sending.is_set():
 			now = time.monotonic()
@@ -303,7 +335,7 @@ def run_cell(name: str, image: Path, outdir: Path, usb_kbd: bool, font: dict) ->
 					return
 			chord = cell["keys"][state["chords"] % len(cell["keys"])]
 			try:
-				vm.send_chord(chord)
+				held[:] = vm.send_chord(chord, held)
 			except (OSError, SystemExit):
 				return
 			state["chords"] += 1
@@ -401,9 +433,16 @@ def run_cell(name: str, image: Path, outdir: Path, usb_kbd: bool, font: dict) ->
 		time.sleep(2.0)
 	record["ssh"] = answered
 	if answered:
-		login = vm.ssh("sysctl -n kern.boot.login").stdout.strip()
+		# zedBSD's sysctl has no -n: it prints "kern.boot.login: VALUE".
+		answer = vm.ssh("sysctl kern.boot.login")
+		login = None
+		for line in answer.stdout.splitlines():
+			if line.startswith("kern.boot.login:"):
+				login = line[len("kern.boot.login:"):].strip()
 		parameters = vm.ssh("dmesg | grep 'boot: parameters:'").stdout.strip()
 		record["kern_boot_login"] = login
+		record["sysctl_output"] = {"status": answer.returncode, "stdout": answer.stdout,
+					   "stderr": answer.stderr}
 		record["boot_parameters"] = parameters
 		tokens = parameters.split()
 		kmsg_ok = f"kmsg={cell['kmsg']}" in tokens

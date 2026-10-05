@@ -12,7 +12,8 @@
  * services and extended console input are host functions with the UEFI
  * calling convention, and checks the bits of one key event (K1) and the
  * protocol lookup, the exposed-modifier request and the bounded queue
- * drain (K2).  Built and run by run-boot-keys-host-test.sh.
+ * drain (K2), and the modifier keys held while the queue is empty (K3).
+ * Built and run by run-boot-keys-host-test.sh.
  */
 
 #include "bootloader/uefi/boot-keys.h"
@@ -39,6 +40,8 @@ struct mock_firmware {
 	unsigned next_event;
 	int endless;
 	UINT32 endless_state;
+	EFI_STATUS empty_status;
+	UINT32 empty_state;
 	unsigned handle_calls;
 	unsigned locate_calls;
 	unsigned set_state_calls;
@@ -82,6 +85,7 @@ static unsigned state_bits(UINT32 shift_state);
 static void test_from_state(void);
 static void test_lookup(void);
 static void test_drain(void);
+static void test_held(void);
 
 /*
  * Runs the checks and reports the tally.
@@ -93,7 +97,7 @@ main(void)
 	test_from_state();
 	test_lookup();
 	test_drain();
-
+	test_held();
 
 	/* Prints the tally. */
 	printf("boot-keys-host-test: %u checks, %u failures\n", checks, failures);
@@ -131,6 +135,7 @@ mock_reset(void)
 	mock.handle_status = EFI_SUCCESS;
 	mock.locate_status = EFI_SUCCESS;
 	mock.set_state_status = EFI_SUCCESS;
+	mock.empty_status = EFI_NOT_READY;
 
 	/* The extended input. */
 	memset(&mock_input, 0, sizeof(mock_input));
@@ -235,9 +240,11 @@ mock_read_key(
 		return EFI_SUCCESS;
 	}
 
-	/* The queue is empty after the scripted events. */
-	if (mock.next_event >= mock.event_count)
-		return EFI_NOT_READY;
+	/* The queue is empty after the scripted events; the held modifiers come with it. */
+	if (mock.next_event >= mock.event_count) {
+		data->KeyState.KeyShiftState = mock.empty_state;
+		return mock.empty_status;
+	}
 
 	/* Succeeded: the next scripted event, with Space as its key. */
 	data->Key.UnicodeChar = ' ';
@@ -390,4 +397,76 @@ test_drain(void)
 	held = zbl_uefi_boot_keys_sample(&keys);
 	check(held == ZBL_BOOT_OVERRIDE_KMSG, "K2 endless Ctrl events give Ctrl");
 	check(mock.reads == 32U, "K2 endless Ctrl events stop after 32 reads");
+}
+
+/* K3: the modifier keys held while the queue is empty. */
+static void
+test_held(void)
+{
+	struct zbl_uefi_boot_keys keys;
+	unsigned held;
+
+	/* Ctrl held with no event queued (the firmware read the events). */
+	mock_reset();
+	mock.empty_state = EFI_SHIFT_STATE_VALID | EFI_LEFT_CONTROL_PRESSED;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == ZBL_BOOT_OVERRIDE_KMSG, "K3 Ctrl held with an empty queue");
+	check(mock.reads == 1U, "K3 an empty queue is read once");
+
+	/* Ctrl and Shift held together. */
+	mock_reset();
+	mock.empty_state = EFI_SHIFT_STATE_VALID | EFI_RIGHT_CONTROL_PRESSED | EFI_LEFT_SHIFT_PRESSED;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == (ZBL_BOOT_OVERRIDE_KMSG | ZBL_BOOT_OVERRIDE_LOGIN), "K3 Ctrl and Shift held");
+
+	/* An event with Ctrl, then Shift held when the queue runs dry. */
+	mock_reset();
+	mock.events[0] = EFI_SHIFT_STATE_VALID | EFI_LEFT_CONTROL_PRESSED;
+	mock.event_count = 1U;
+	mock.empty_state = EFI_SHIFT_STATE_VALID | EFI_RIGHT_SHIFT_PRESSED;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == (ZBL_BOOT_OVERRIDE_KMSG | ZBL_BOOT_OVERRIDE_LOGIN), "K3 queued Ctrl and held Shift");
+	check(mock.reads == 2U, "K3 queued event then empty queue");
+
+	/* A held Ctrl seen once is kept after it is let go. */
+	mock_reset();
+	mock.empty_state = EFI_SHIFT_STATE_VALID | EFI_LEFT_CONTROL_PRESSED;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	mock.empty_state = EFI_SHIFT_STATE_VALID;
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == ZBL_BOOT_OVERRIDE_KMSG, "K3 Ctrl kept after release");
+
+	/* No modifier held, or a state the firmware did not mark valid. */
+	mock_reset();
+	mock.empty_state = EFI_SHIFT_STATE_VALID;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == 0U, "K3 nothing held");
+	mock_reset();
+	mock.empty_state = EFI_LEFT_CONTROL_PRESSED;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == 0U, "K3 held state without the valid bit");
+
+	/* A firmware that does not fill the state: the cleared state adds nothing. */
+	mock_reset();
+	mock.events[0] = EFI_SHIFT_STATE_VALID | EFI_LEFT_SHIFT_PRESSED;
+	mock.event_count = 1U;
+	mock.empty_state = 0U;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == ZBL_BOOT_OVERRIDE_LOGIN, "K3 unfilled empty state adds nothing");
+
+	/* Another error's state is not trusted. */
+	mock_reset();
+	mock.empty_status = EFI_DEVICE_ERROR;
+	mock.empty_state = EFI_SHIFT_STATE_VALID | EFI_LEFT_CONTROL_PRESSED;
+	zbl_uefi_boot_keys_open(&keys, &mock_system);
+	held = zbl_uefi_boot_keys_sample(&keys);
+	check(held == 0U, "K3 a device error's state is ignored");
+	check(mock.reads == 1U, "K3 a device error ends the sample");
 }

@@ -30,7 +30,7 @@ struct zbl_uefi_boot_keys {
 	/* Whether the firmware agreed to report modifier keys pressed alone. */
 	int exposed;
 
-	/* The ZBL_BOOT_OVERRIDE_* bits of every key event read so far. */
+	/* The ZBL_BOOT_OVERRIDE_* bits of every key event read and every modifier seen held so far. */
 	unsigned held;
 };
 

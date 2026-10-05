@@ -27,7 +27,9 @@ the kernel ignores `logo=` and reads `kmsg=`.  The images put
 Two keys change one boot without editing the file (ws174).  The loader reads
 the firmware's extended console input (`EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL`)
 when it starts, asking for exposed modifier keys, and again right after it
-parses the configuration; it never waits for a key.  Ctrl held removes every
+parses the configuration: each time it drains the key queue and takes the
+modifier keys held at that moment from the key state the input reports with
+an empty queue.  It never waits for a key.  Ctrl held removes every
 `kmsg=` and `logo=` token from the record and appends `kmsg=console`, and the
 loader wishes for a 640x480 GOP mode when `video=` names none, so the early
 console's 80 columns fill the screen.  Shift held removes every `login=` token
@@ -40,7 +42,7 @@ are chosen.  The loader then prints `Boot: kernel messages (Ctrl)`,
 they are best effort.  The way to press the keys is to hold the modifier and
 tap Space repeatedly after power-on: a modifier with Space is reported by
 every firmware with the extended input, a modifier alone only by firmware
-that honours exposed modifiers.  See
+that reports the held state or honours exposed modifiers.  See
 `docs/reference/kernel-boot-parameters.md` Section 7c.
 
 After validating and loading the configured restricted ELF64 kernel, the
