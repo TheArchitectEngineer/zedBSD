@@ -2,7 +2,7 @@
 
 # ws110-p003: 全文規約と回帰
 
-Status: in-progress（見直しと build は済み。cleared の判定は Q1）
+Status: cleared（2026-10-05 Q1: 全文規約の見直し（新しい file の違反 0、振る舞いは不変）、host-role 16 case PASS、zedBSD と Linux の build warning 0。QEMU は T1-168（roles-guest・files-p002・zdesktop-p095）と T1-168 以降の boot で確認済み）。以前: in-progress（見直しと build は済み。cleared の判定は Q1）
 Disposition: normal
 Parent: [WS110](../ws.md)
 Queue: Q1（2026-10-05）
@@ -34,3 +34,7 @@ Queue: Q1（2026-10-05）
 - T2（`--testing` だけが有限の試験。期限・frame・矛盾・順の契約）: host-role の 16 case と roles-guest。
 - T3（現役の compositor の試験の mode）: p002 の置き換え（233 file・246 行、dry run 0 件）と files-p002。3 OS で同じ main.c（Linux・FreeBSD の launcher は `--session` の別名のまま）。
 - T4（最後の source の全文規約・build・試験・boot）: この Phase の見直しと build。boot は T1-168 以降の T1 の boot-test（Q1 が確かめる）。FreeBSD の build は未実施。
+
+## Q1 の判定（2026-10-05）
+
+全文規約の見直し（新しい file の違反 0、振る舞いは不変）、host-role 16 case PASS、zedBSD と Linux の build warning 0。QEMU は T1-168（roles-guest・files-p002・zdesktop-p095）と T1-168 以降の boot で確認済み。**cleared**。WS110 の受け入れは満たしたので、P2 が完了の書き換え（ws.md・Phase の片付け・roles の試験を tools に移すか）を行う。
