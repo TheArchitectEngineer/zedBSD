@@ -284,12 +284,15 @@ WINDOW_LINES = (
 )
 
 
+# A line's own client field (not front_client=).
+CLIENT_FIELD = re.compile(r"(?<![\w])client=(\d+)")
+
+
 def windows_from(text: str) -> dict[tuple[int, int], dict]:
 	"""Returns the windows the compositor's lines describe, by (client, surface): the last place and size each line
 	gave, and whether the window is docked (maximized).  A surface's number is its client's protocol ID, so two
-	clients can have the same one; only MAP and UNMAP name the client, and a line that names only the surface is the
-	latest mapped window of that number's (a window of a client mapped earlier with the same number is then not
-	followed: the scenarios keep one window of a kind at a time)."""
+	clients can have the same one: a line's client= tells them apart, and a line without one (an older compositor's)
+	is the latest mapped window of that number's."""
 	windows: dict[tuple[int, int], dict] = {}
 	latest: dict[int, tuple[int, int]] = {}
 	for line in text.splitlines():
@@ -310,7 +313,10 @@ def windows_from(text: str) -> dict[tuple[int, int], dict]:
 					windows[key]["mapped"] = False
 				break
 			surface = numbers[0]
-			key = latest.get(surface, (-1, surface))
+			# The lines name their client now (client=, P1 2026-10-05); an older compositor's do not, and then the
+			# latest mapped window of that number is meant.
+			named = CLIENT_FIELD.search(line)
+			key = (int(named.group(1)), surface) if named else latest.get(surface, (-1, surface))
 			window = windows.setdefault(key, {"surface": surface, "client": key[0], "mapped": False, "docked": 0})
 			if kind == "place":
 				window["x"], window["y"], window["width"], window["height"] = numbers[1:5]

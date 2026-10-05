@@ -90,7 +90,10 @@ aat windows | grep -q '^12 4 True 200 150 800 600 0$' && ok undock || bad undock
 # Two clients with the same surface number: a line naming only the surface is the later window's.
 printf 'ZWL MAP client=7 surface=12 x=50 y=60\nZWL GLASS moved surface=12 x=70 y=80\n' >> "$AAT_LOG"
 aat where 12 --client 7 | grep -qx '70 80 - -' && aat where 12 --client 4 | grep -qx '200 150 800 600' && ok "same surface, two clients" || bad "same surface, two clients"
-aat windows --json | python3 -c 'import json,sys; w={(x["client"], x["surface"]): x for x in json.load(sys.stdin)}; sys.exit(0 if w[(4, 12)]["x"] == 200 else 1)' && ok "windows --json" || bad "windows --json"
+# With client= on the lines (the compositor since 2026-10-05), the earlier client's window is followed too.
+printf 'ZWL GLASS moved surface=12 x=90 y=95 client=4\n' >> "$AAT_LOG"
+aat where 12 --client 4 | grep -qx '90 95 800 600' && aat where 12 --client 7 | grep -qx '70 80 - -' && ok "client= on the lines" || bad "client= on the lines"
+aat windows --json | python3 -c 'import json,sys; w={(x["client"], x["surface"]): x for x in json.load(sys.stdin)}; sys.exit(0 if w[(4, 12)]["x"] == 90 else 1)' && ok "windows --json" || bad "windows --json"
 
 # A shot, a command, files both ways.
 aat shot "$tmp/screen.png" | grep -q '64x48' && ok shot || bad shot
