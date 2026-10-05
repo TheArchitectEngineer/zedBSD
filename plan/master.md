@@ -15,7 +15,7 @@
 ## 現在の状況（Q1）
 
 <!-- master:updated:start -->
-更新: 2026-10-05 夜 Q1（ユーザーの指示で P1・P2・T1 をラップアップし全員終了。成果を全部 main に merge（f8d08aac まで）、master を整理）
+更新: 2026-10-05 夜 Q1（graphical login の回帰を 2 つの直しで解消（T1-212 PASS）、ws172-p002 cleared、ユーザー向けの image build/uat-0505g）
 <!-- master:updated:end -->
 
 ### 担当
@@ -23,9 +23,9 @@
 <!-- master:agents:start -->
 - **動いている担当は無い**（2026-10-05 夜、全員ラップアップで終了）。再起動は同じ名前で新しい世代（前の世代を TaskStop してから。終わった担当へ SendMessage すると再開してしまう）。
 - 再開の地点:
-  - **P1**: (1) T1-203 の FAIL の解析（WS172 p002、greeter の password の login が起きない、`ZWL EXIT … error=5` が続く）。main に入っているので graphical login の image が壊れていないかを最初に。(2) WS168 p002 の残り（style の小直し、libc の `sandbox_spawn()` と `<sandbox.h>`（sysroot への追加は Q1 が許可する）、sandboxtest、T1 の依頼）。(3) WS130 p003（T1-206 の後）。(4) WS172 p003（p002 の PASS の後）。(5) WS161 p005〜p007。
+  - **P1**: (1) 済み（graphical login の回帰の直し、T1-212 PASS）。(2) WS168 p002 の残り（style の小直し、libc の `sandbox_spawn()` と `<sandbox.h>`（sysroot への追加は Q1 が許可する）、sandboxtest、T1 の依頼）。(3) WS130 p003（T1-206 の後）。(4) WS172 p003（p002 の PASS の後）。(5) WS161 p005〜p007。
   - **P2**: (1) T1-202 の結果から AAT の runner と補助の直し（補助 69 本は target で未実行）。(2) WS158 p003 は T1-207 の PASS で cleared、シナリオ desktop.language.compositor-japanese を active に。(3) WS158 p004（Settings の Languages の頁の Display language、system の言語、各 app の kl_tr_follow）。(4) WS154 の SKK の後回しと WS145 D2・D3・D5〜D9 を各 phase.md に記録。
-  - **T1**: 台帳の未実行 T1-206（IPv6、`/home/awe/zedBSD-worktrees/t1-ipv6` は 67801dab で用意済み、もう main に入ったので main で作ってよい）・T1-202（AAT smoke・full）・T1-205（Super+↓）・T1-207（日本語の UI）。T1-203 は P1 の直しの後に再実行。
+  - **T1**: 台帳の未実行 T1-206（IPv6、`/home/awe/zedBSD-worktrees/t1-ipv6` は 67801dab で用意済み、もう main に入ったので main で作ってよい）・T1-202（AAT smoke・full）・T1-205（Super+↓）・T1-207（日本語の UI）。T1-203 は T1-210 (2)・T1-212 で置き換え済み。
   - **B1**（WS074 p178、Sonnet 5.5 Mid）: ユーザーの指示があるまで起動しない。
   - **conformance-reviewer**: ブロッキングで他に作業が無い時だけ。
 <!-- master:agents:end -->
@@ -33,9 +33,11 @@
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
-- **未 merge の branch: 無い**（2026-10-05 夜、agent/p1 730e8f55・agent/p2 2b551cfc まで main に入った）。
-- **main に入ったが QEMU で未確認**（T1 の台帳）: WS130 p002 IPv6 の kernel（全ての image で IPv6 が既定 on、network の worker が 1 秒ごとに起きる）→ T1-206。WS168 p002 の kernel の `sandbox_spawn`（arm64・sparcv9・x68k の vmunix.mk に sandbox.c を足したが、その 3 つの kernel の build は未確認）。WS173 p004・p006 の runner と補助 → T1-202。BUG-194 Super+↓ → T1-205。WS158 p003 → T1-207。
-- **QEMU で FAIL**: WS172 p002（T1-203）。graphical login に影響するかもしれない（上の P1 (1)）。
+- **未 merge の branch: 無い**（2026-10-05 夜、agent/p1 64f20ef2 まで main に入った）。
+- **graphical login の回帰は解消**: WS172 p002 の 2 つの不具合（0356c470 STYLES の答えを handoff の前に捨てていた、64f20ef2 `/sbin/passkey` が passkey の試験の config 以外の image に入らなかった）。T1-212 で graphical login と zdesktop-p102 が PASS。ws172-p002 cleared、WS163 completed。
+- **ユーザー向けの統合の image**: `build/uat-0505g/hdd-image.img`（main bf5d1a39、sha256 7ded4823…5faa2339、`/sbin/passkey` 入り、T1-212 (2) の boot-test PASS。framebuffer の QEMU では greeter が終わり getty になるのは従来どおり）。uat-0505e・uat-0505f は login が壊れているので使わない。
+- **未確認の小さな点**: T1-212 で zdesktop-p102 の script の後の screendump に起動の splash（script が autologin を戻した後の挙動か、未解析）。
+- **main に入ったが QEMU で未確認**: WS130 p002 IPv6 → T1-206。WS168 p002 の kernel（arm64・sparcv9・x68k の build は未確認）。WS173 p004・p006 → T1-202。BUG-194 Super+↓ → T1-205。WS158 p003 → T1-207。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
@@ -473,7 +475,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |
 | [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
 | [WS162](ws162/ws.md) | MG006 | FIDO2 の login（greeter・lock の画面で security key で login）（2026-10-05 ユーザーの追加） | incomplete（WS172 に吸収、未着手の Phase は canceled で WS172 p003 へ） | — |
-| [WS163](ws163/ws.md) | MG006 | 数字 6 桁の login（PIN、greeter・lock の画面）（2026-10-05 ユーザーの追加） | incomplete（WS172 に吸収、受け入れは WS172 p002 の PASS の時。T1-203 FAIL） | — |
+| [WS163](ws163/ws.md) | MG006 | 数字 6 桁の login（PIN、greeter・lock の画面）（2026-10-05 ユーザーの追加） | completed（WS172 に吸収、WS172 p002 の PASS） | — |
 | [WS164](ws164/ws.md) | MG006 | OS の起動時の Welcome の画面（既存の Start で足りるかの検討から）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
 | [WS165](ws165/ws.md) | MG006 | 手書きの入力（goal の設定が難しいので段階化する）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
 | [WS166](ws166/ws.md) | MG006 | IME の予測変換（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
@@ -482,7 +484,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS169](ws169/ws.md) | MG006 | メーラの app と compositor のメールの API（許可された app が受信の通知を受ける、browser の認証 code の自動入力、IMAP4・SMTP から Gmail・Outlook へ）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05 ユーザー） | — |
 | [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05 ユーザー） | — |
 | [WS171](ws171/ws.md) | MG008 | hal.h の全ての関数に HAL v2 と同じ水準の契約の comment を書く（comment の差分もユーザーの review の後に当てる）（2026-10-05 ユーザー「このコメント、すべての関数につけてほしいです。今でなくていいので」） | planning（**ベータ2**、合間の仕事、2026-10-05 ユーザー） | — |
-| [WS172](ws172/ws.md) | MG006 | passkey の認証の枠組み: sessiond は外部の `/sbin/passkey`（base）で password・PIN・FIDO2（将来はセキュリティチップ）を確かめる、root だけの `/etc/passkey`、PIN の失敗の回数は sessiond の memory（2026-10-05 ユーザー） | incomplete（p002 は T1-203 FAIL） | WS161 |
+| [WS172](ws172/ws.md) | MG006 | passkey の認証の枠組み: sessiond は外部の `/sbin/passkey`（base）で password・PIN・FIDO2（将来はセキュリティチップ）を確かめる、root だけの `/etc/passkey`、PIN の失敗の回数は sessiond の memory（2026-10-05 ユーザー） | incomplete（p002 cleared、p003 FIDO2 へ） | WS161 |
 | [WS173](ws173/ws.md) | MG006 | AAT（Agent Acceptance Test）: /dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の 5330 を操作して受け入れを確かめる。UAT はデバイス系と使用感に絞り AAT の後に遅らせる（2026-10-05 ユーザー） | incomplete（p004・p006 は T1-202 待ち） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。

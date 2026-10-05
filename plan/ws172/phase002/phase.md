@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172-p002 -->
 # ws172-p002: /sbin/passkey の password・PIN と sessiond の外部の認証
 
-Status: uncleared（2026-10-05 夜 T1-210 (1) FAIL: passkey の無い image で AUTH が timeout。P1 が原因（passkey が image に入らない）を直した、T1 の再試験待ち。その前: P1 が STYLES の答えの喪失を直した。前: T1-203 FAIL: greeter の password の login が起きない（sessiond.log に `GREETER failed … ZWL EXIT frames=0 error=5` が続き CONSOLE へ）。試験の image の名前（hdd-image.img）と su の欠けも。証拠は T1 の台帳 T1-203。再開: 次の P1 が解析と修正、main には merge 済みなので graphical login の image への影響を先に確かめる）
+Status: cleared（2026-10-05 夜 Q1: T1-210 (2) で passkey-p002-guest status=0（PIN の login・lock・5 回・password で戻る・sessiond の再起動・pk2・log に secret 無し）、T1-212 (1) で passkey の config の無い graphical login の image の password の login と zdesktop-p102 が PASS。T1-203・T1-209・T1-210 (1) の FAIL は 2 つの直し（0356c470 STYLES の答えを handoff の前に捨てない、64f20ef2 passkey を sessiond の依存に）で解消。QEMU の証拠、実機は未）
 WS: [ws172](../ws.md)
 設計: [phase001](../phase001/phase.md) の §1〜§12（第 2 版）と判断 P1〜P10（ユーザー承認、2026-10-05）、docs/architecture/security.md の「Login authentication」、keiland.md の login の節
 
