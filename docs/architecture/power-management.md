@@ -47,7 +47,7 @@ The comments in that header are the contract.
    idle (FADT), and the LPS0 device exists. Otherwise the request fails
    with `EOPNOTSUPP` before any device is touched. This is the answer on
    QEMU and on other architectures.
-2. **Begin.** The event `power.sleep.begin` is sent. User processes are
+2. **Begin.** The event `sleep.begin` is sent. User processes are
    frozen, except the caller.
 3. **Devices.** Devices are suspended children first. A device without
    suspend support is stopped and restarted after wake instead; Wi-Fi and
@@ -75,11 +75,11 @@ The comments in that header are the contract.
    check.
 10. **Leave.** The kernel reverses the steps: interrupts, firmware
     ("low-power exit", "display on"), devices (parents first) and user
-    processes. Then the event `power.sleep.end` is sent with the reason,
+    processes. Then the event `sleep.end` is sent with the reason,
     and the request returns.
 
 If any step fails, the steps already done are undone in reverse order and
-`power.sleep.failed` is sent.
+`sleep.failed` is sent.
 
 ## Devices
 
@@ -157,13 +157,14 @@ header sends zero there, which remains valid.
 
 ### Events
 
-Subscribers of the `KERN_SYSTEM_EVENT_POWER` class on `/dev/system` receive:
+Subscribers of the `KERN_SYSTEM_EVENT_POWER` class on `/dev/system` receive
+records with the action `KERN_SYSTEM_EVENT_CHANGE` and these subjects:
 
-| Event | When |
-| --- | --- |
-| `power.sleep.begin` | Before user processes are frozen. |
-| `power.sleep.end reason=power-button\|lid\|keyboard\|usb\|ac\|timer\|spurious\|other` | After everything is resumed. |
-| `power.sleep.failed device=<name>` | When a sleep was abandoned. |
+| Subject | Detail | When |
+| --- | --- | --- |
+| `sleep.begin` | empty | Before user processes are frozen. |
+| `sleep.end` | `reason=power-button\|lid\|keyboard\|usb\|ac\|timer\|spurious\|other` | After everything is resumed. |
+| `sleep.failed` | `device=<name>` | When a sleep was abandoned. |
 
 ## Verification
 
