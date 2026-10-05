@@ -891,7 +891,9 @@ int kl_backend_account_administer(const char *password, const char *operation, c
  * Says the compositor is about to take the display for the first time,
  * and waits (at most 20 seconds) for the manager to let it: 0 when it did,
  * ETIMEDOUT when the wait ended without it (the display is taken anyway),
- * ENOTSUP without a session manager, or the error of saying so.
+ * ENOTSUP without a session manager, or the error of saying so.  An answer
+ * that comes before the manager's word is kept, and the next
+ * kl_backend_tick gives it.
  */
 int kl_backend_session_ready(struct kl_backend *backend);
 

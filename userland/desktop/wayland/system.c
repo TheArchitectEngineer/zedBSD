@@ -1706,8 +1706,12 @@ system_enrolled_tick(
 		}
 	}
 
-	/* Asked when wanted and not asked already; a busy session manager is asked on a later pass. */
-	if (!system_state.enrolled_wanted || system_state.enrolled_asked)
+	/*
+	 * Asked when wanted and not asked already, once the display has been
+	 * handed over (sessiond reads nothing of a session's before its READY);
+	 * a busy session manager is asked on a later pass.
+	 */
+	if (!system_state.enrolled_wanted || system_state.enrolled_asked || !server->handed_over)
 		return;
 	error = kl_backend_session_enrolled(server->backend);
 	if (error == EBUSY)

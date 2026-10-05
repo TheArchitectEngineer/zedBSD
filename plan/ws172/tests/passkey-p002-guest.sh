@@ -17,7 +17,8 @@
 #  7. account-admin: a reset of pk2's password and pk2's removal each take pk2's PIN out of /etc/passkey.
 #  8. No log has the PIN or a password.
 #
-#   plan/ws172/tests/build-passkey-image.sh BUILD; plan/tools/files/files-guest.sh start BUILD/hdd-graphical.img
+#   plan/ws172/tests/build-passkey-image.sh BUILD; plan/tools/files/files-guest.sh start BUILD/hdd-image.img
+#   plan/tools/guest/guest.py wait; sleep 30   (the boot's own sessiond settled: one sessiond only)
 #   plan/ws172/tests/passkey-p002-guest.sh [OUTDIR]       (default build/ws172-passkey)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
