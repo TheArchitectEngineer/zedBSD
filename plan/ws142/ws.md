@@ -61,3 +61,7 @@ Keiland の compositor（`userland/desktop/wayland/`）で、ユーザーの要�
 
 - BUG-215 3 本指の preview は swipe 1 回で 1 つ、BUG-216 WiseView: 題の文字を出さない・2 本指の左右で選び 2 本指の下 swipe で確定、BUG-224 上端からの 2 本指の下 swipe で窓に、BUG-228 全画面から下端の 2 本指の上 swipe で最大化 → **gesture の体系を 1 つの Phase で再設計**（BUG-217 の session の状態と一緒に）
 - BUG-209 Alt+Tab の 4 つの仮定はユーザーの確認待ち
+
+## Phase（2026-10-06 追加: 再設計）
+
+- [ws142-p007](phase007/phase.md) 設計: 最大化の session の状態と gesture の体系（planned、実装は p008〜p010）
