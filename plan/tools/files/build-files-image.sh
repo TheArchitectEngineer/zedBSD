@@ -3,7 +3,7 @@
 # files, the wallpaper and the tests' sample home maker, like plan/tools/titlebar/build-menu-image.sh.
 # ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
 # The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
-# userland/desktop/keiland/wallpapers/Birch-Lake.ppm.
+# userland/desktop/keiland/wallpapers/Birch-Lake.png.
 #
 #   plan/tools/files/build-files-image.sh [BUILD]     (default build/amd64)
 #   FILES_CONFIG=plan/tools/files/config-amd64-files-ime.mk plan/tools/files/build-files-image.sh BUILD
@@ -16,6 +16,6 @@ build=${1:-build/amd64}
 # FILES_EXTRA is a list of --file and --mode pairs, split into words.
 # shellcheck disable=SC2086
 exec plan/tools/guest/test-image.sh "${FILES_CONFIG:-plan/tools/files/config-amd64-files.mk}" "$build" \
-	--file /usr/share/keiland/wallpaper.ppm=userland/desktop/keiland/wallpapers/Birch-Lake.ppm \
+	--file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png \
 	--file /usr/share/files-tests/make-home.sh=plan/tools/files/make-home.sh \
 	${FILES_EXTRA:-}

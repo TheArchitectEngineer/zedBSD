@@ -58,7 +58,7 @@ until guest 'echo up' | grep -q '^up$' || [ $tries -ge 24 ]; do
 	sleep 5
 done
 put "$out/lat.pen" /tmp/lat.pen
-guest 'service stop greeter >/dev/null 2>&1; rm -rf /tmp/notes-lat /root/.local/share/keiland/notes; mkdir -p /tmp/notes-lat; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'service stop greeter >/dev/null 2>&1; rm -rf /tmp/notes-lat /root/.local/share/keiland/notes; mkdir -p /tmp/notes-lat; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 wait_log /tmp/zdesktop.log 'ZWL READY' 20
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/notes --fullscreen /tmp/notes-lat/lat.pdf > /tmp/notes-lat.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null

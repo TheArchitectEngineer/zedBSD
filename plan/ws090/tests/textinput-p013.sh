@@ -64,7 +64,7 @@ sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 timeout 180 sh plan/ws035/tests/zdesktop-guest.sh start "$image" >/dev/null 2>&1
 sleep 25
 guest 'service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[k]eiland-ime" | awk "{print \$1}"); do kill $p; done; sleep 1; echo stopped' >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.config/kei/ime/ja-user.dict; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.config/kei/ime/ja-user.dict; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'KEI-IME READY'
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; : > /root/ti.txt; /bin/textedit /root/ti.txt > /tmp/te.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null

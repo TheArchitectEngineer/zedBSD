@@ -30,7 +30,7 @@ guest 'chmod 755 /bin/files' >/dev/null
 
 # zdesktop, then Settings and Files over it.
 guest "$stop_all" >/dev/null
-guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=600 --width=1280 --height=800 --glass \$picture ${ZDESKTOP_EXTRA:-} > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1; echo started" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/settings --timeout-s=500 > /tmp/s.log 2>&1 </dev/null & sleep 6; echo ok" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/files --timeout-s=500 > /tmp/f.log 2>&1 </dev/null & sleep 8; echo ok" >/dev/null

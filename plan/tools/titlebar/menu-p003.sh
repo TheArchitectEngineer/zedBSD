@@ -80,7 +80,7 @@ click() {
 guest "$stop_all" >/dev/null
 # The terminal's kept settings (ws128-p006 keeps the font's size) start as none, and the zoom below is not kept after the run.
 guest 'rm -f $HOME/.config/keiland/terminal.conf' >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/terminal --token=t1 --timeout-s=800 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients

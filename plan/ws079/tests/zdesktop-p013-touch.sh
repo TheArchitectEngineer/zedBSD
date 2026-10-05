@@ -103,7 +103,7 @@ put "$build/dynamic/libwayland-client.so" /lib/libwayland-client.so
 put "$build/bin/tablet-probe" /bin/tablet-probe
 put plan/ws079/tests/notes-standin.sh /bin/notes
 guest 'chmod 755 /bin/wayland /bin/tablet-probe /bin/notes; rm -f /tmp/notes-args /tmp/notes.log /tmp/notes.pids /tmp/a.log /tmp/b.log /tmp/c.log /tmp/touchprobe.log' >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 
 # 1. wl_touch: two fingers on the probe's window.
@@ -157,7 +157,7 @@ shot wiseview >/dev/null
 touches "down 1 60 120|hold 60|up 1"
 expect_log 'WISEVIEW closed'
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop-edges.log 2>&1 </dev/null & sleep 5; ln -sf /tmp/zdesktop-edges.log /tmp/zdesktop.log; echo started' >/dev/null
 
 # 3. The edges by touch: Home from the top-left corner, closed from its bottom edge.
@@ -189,7 +189,7 @@ touches "down 1 60 120|hold 60|up 1"
 expect_log 'WISEVIEW closed'
 guest 'grep -E "ZWL (TOUCH|HOME (open|close|bottom)|CORNER|WISEVIEW)" /tmp/zdesktop-edges.log' > "$out/${prefix}edges-log.txt"
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 
 # 4. The title bars: the staircase, each window dragged with the mouse while it is on top.

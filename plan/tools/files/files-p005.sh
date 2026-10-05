@@ -62,7 +62,7 @@ make_home='sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 [ "${FILES_ON_UFS:-0}" = 1 ] && make_home='rm -rf /fhome; sh /usr/share/files-tests/make-home.sh /fhome >/dev/null; ln -s /fhome /tmp/fhome'
 guest "rm -f /tmp/wayland-0 /tmp/files.clipboard; rm -rf /tmp/fhome; $make_home"
 guest 'export XDG_RUNTIME_DIR=/tmp
-picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 zwl_app_clients

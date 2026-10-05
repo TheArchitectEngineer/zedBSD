@@ -135,7 +135,7 @@ expect_count() {
 # Starts zdesktop afresh: glass, 1280x800 (OSK_WIDTH and OSK_HEIGHT for another size), no client.
 compositor() {
 	guest "$stop_all" >/dev/null
-	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=${OSK_WIDTH:-1280} --height=${OSK_HEIGHT:-800} --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q 'ZWL OSK zone' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1; echo started" >/dev/null
 }

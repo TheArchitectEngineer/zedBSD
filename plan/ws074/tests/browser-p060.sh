@@ -43,7 +43,7 @@ echo "inline-block: the link at $link in the page"
 # zdesktop and the browser on the page; where the page is on the screen (wx, wy).
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=800 --height=640 $pages/inline-block.html > /tmp/b.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
 set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')

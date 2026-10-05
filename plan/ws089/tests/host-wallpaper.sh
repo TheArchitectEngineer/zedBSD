@@ -19,10 +19,10 @@ out=$host/wallpaper
 data=$(pwd)/$out/data
 rm -rf "$out"
 mkdir -p "$out/obj" "$data/keiland/wallpapers"
-ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.ppm" "$data/keiland/wallpaper.ppm"
-ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.ppm" "$data/keiland/wallpapers/Lakeside.ppm"
-ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Birch-Lake.ppm" "$data/keiland/wallpapers/Birch-Lake.ppm"
-printf 'not a picture\n' > "$data/keiland/wallpapers/Broken.ppm"
+ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.png" "$data/keiland/wallpaper.png"
+ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.png" "$data/keiland/wallpapers/Lakeside.png"
+ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Birch-Lake.png" "$data/keiland/wallpapers/Birch-Lake.png"
+printf 'not a picture\n' > "$data/keiland/wallpapers/Broken.png"
 
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$host/include -Iuserland/desktop/settings -I."
@@ -42,7 +42,7 @@ first=$(grep -n 'ZSETTINGS LOOK picture path=' "$out/log" | head -1 | cut -d: -f
 [ -n "$first" ] || fail "no small copy"
 [ "$started" -lt "$first" ] || fail "a small copy was read before the loader started"
 [ "$(grep -c 'ZSETTINGS LOOK picture path=.* error=0 ' "$out/log")" = 3 ] || fail "three copies were not read"
-grep -q 'ZSETTINGS LOOK picture path=.*/Broken.ppm error=22 ' "$out/log" || fail "the broken file did not report EINVAL"
+grep -q 'ZSETTINGS LOOK picture path=.*/Broken.png error=22 ' "$out/log" || fail "the broken file did not report EINVAL"
 grep -q 'ZSETTINGS LOOK pictures ready count=4$' "$out/log" || fail "the loader did not finish"
 if command -v convert >/dev/null 2>&1; then
 	convert "$out/page.ppm" "$out/page.png" && echo "picture: $out/page.png"

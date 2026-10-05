@@ -4,7 +4,7 @@
 # The base system's accounts are the demonstration's (root/root, kei/kei), so no accounts are put in.
 # ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
 # The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
-# userland/desktop/keiland/wallpapers/Birch-Lake.ppm.
+# userland/desktop/keiland/wallpapers/Birch-Lake.png.
 #
 #   sh plan/ws005/phase024/build-p024-image.sh [BUILD]        (default build/p1-wdesk24)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -13,7 +13,7 @@ cd "$(dirname -- "$0")/../../.."
 build=${1:-build/p1-wdesk24}
 exec plan/tools/guest/test-image.sh --no-harness plan/ws004/tests/config-ax211-desktop.mk "$build" \
 	--file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf \
-	--file /usr/share/keiland/wallpaper.ppm=userland/desktop/keiland/wallpapers/Birch-Lake.ppm \
+	--file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png \
 	--file /etc/keiland/autologin=plan/ws005/phase024/image/autologin-none \
 	--file /etc/rc.conf=plan/ws005/phase024/image/rc.conf \
 	--file /etc/service.d/p024watch=plan/ws005/phase024/image/p024watch.service \

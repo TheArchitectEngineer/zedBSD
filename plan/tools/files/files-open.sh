@@ -132,7 +132,7 @@ put build/ws093-images/page.html /tmp/demo/5-page.html
 put build/ws093-images/doc.pdf /tmp/demo/6-doc.pdf
 guest 'ls /bin/browser /bin/pdfviewer /bin/imageview /bin/textedit; ls /tmp/demo' > "$out/programs-$mode.txt"
 guest 'export XDG_RUNTIME_DIR=/tmp
-picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 rm -f /tmp/wayland-0; /bin/wayland --timeout=1200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=1100 --width=1000 --height=640 /tmp/demo > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients

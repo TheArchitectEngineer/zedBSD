@@ -55,7 +55,7 @@ rm -rf /tmp/dhome; mkdir -p /tmp/dhome/Desktop /tmp/dhome/.config/keiland; cd /t
 printf "n\n" > notes.txt; printf "b\n" > "Budget notes 2026.pdf"; printf "f\n" > a_forty_character_file_name_for_tests.txt
 printf "j\n" > "長い名前のファイルの例です今日の会議の記録と末尾.txt"; printf "far\n" > far.txt; echo made' >/dev/null
 	put "$3" /tmp/dhome/.config/keiland/desktop-layout
-	guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+	guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=$width --height=$height --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES DESKTOP ready' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 	expect_log "ZFILES DESKTOP grid width=$width height=$((height - 44)) columns=[0-9]+ rows=[0-9]+"

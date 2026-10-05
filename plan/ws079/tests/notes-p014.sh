@@ -109,7 +109,7 @@ for step in "$@"; do
 cp /tmp/notes-program /bin/notes && cp /tmp/libpdf.so /lib/libpdf.so && cp /tmp/pdfviewer /bin/pdfviewer && chmod 0755 /bin/notes /bin/pdfviewer &&
 chmod 0644 /lib/libpdf.so && rm -rf /tmp/p014 /root/.local/share/keiland/notes && mkdir -p /tmp/p014 &&
 cp /tmp/foreign.pdf /tmp/signed.pdf /tmp/encrypted.pdf /tmp/p014/ && echo installed' | tail -1
-		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=3000 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started' | tail -1
 		;;
 	annotate)

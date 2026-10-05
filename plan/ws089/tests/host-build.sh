@@ -19,6 +19,7 @@ rm -f "$out"/obj/*.o
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiland-ui.h" "$out/include/keiland-ui.h"
+ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src -I."
 
@@ -47,6 +48,15 @@ done
 object="$out/obj/shared-host-kl-system.o"
 "$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -c plan/ws089/tests/host-kl-system.c -o "$object"
 objects="$objects $object"
+# The wallpaper decoding look.c uses (ws138-p001): the shared decoder and libz-, libpng- and libjpeg-compat.
+for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
+    userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \
+    userland/base/libjpeg-compat/idct.c userland/base/libjpeg-compat/marker.c userland/base/libjpeg-compat/memory.c \
+    userland/base/libjpeg-compat/source.c userland/desktop/picture/wallpaper.c; do
+	object="$out/obj/shared-$(basename "$file" .c).o"
+	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -c "$file" -o "$object"
+	objects="$objects $object"
+done
 for file in $src/*.c; do
 	case $(basename "$file") in
 	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|network.c) continue ;;

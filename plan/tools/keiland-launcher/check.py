@@ -41,7 +41,7 @@ sys.exit(37)
     assert got['runtime'] == str(runtime)
     assert stat.S_IMODE(runtime.stat().st_mode) == 0o700
     assert got['display'] == 'wayland-keiland'
-    assert got['args'] == ['--session', '--glass', '--socket='+str(runtime/'wayland-keiland'), '--wallpaper='+str(prefix/'share/keiland/wallpaper.ppm'), '--wallpaper=a picture.ppm', 'literal $value']
+    assert got['args'] == ['--session', '--glass', '--socket='+str(runtime/'wayland-keiland'), '--wallpaper='+str(prefix/'share/keiland/wallpaper.png'), '--wallpaper=a picture.ppm', 'literal $value']
     print('PASS console runtime, native defaults, prefix/argv spaces and exact exit status')
 
     managed = base / 'managed-runtime'

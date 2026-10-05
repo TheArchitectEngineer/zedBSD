@@ -2,7 +2,7 @@
 # ws089-p004: the look's pages of Settings on the Venus guest (the lean image with the generated wallpapers, build-settings-image.sh).  zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share
 # root's home (/root/.config/keiland/desktop.conf, removed before and after).
 #  1. Wallpaper: six tiles (Kei (default) and the five of generate.py) (wallpaper.png); a click on Aurora writes the key
-#     (LOOK set key=wallpaper value=.../Aurora.ppm) and zdesktop shows it (ZWL PREFERENCES key=wallpaper applied)
+#     (LOOK set key=wallpaper value=.../Aurora.png) and zdesktop shows it (ZWL PREFERENCES key=wallpaper applied)
 #     (wallpaper-aurora.png); a click on the default removes the key and zdesktop goes back (wallpaper-default.png).
 #  2. Appearance: the slider dragged to the left end writes window.opacity=85 and zdesktop applies it
 #     (appearance-85.png); dragged to the right end removes the key (opacity 100 again).
@@ -23,7 +23,7 @@ check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNT
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[s]ettings" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[s]ettings" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 start_desktop='export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started'
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started'
 conf=/root/.config/keiland/desktop.conf
 status=0
 . plan/ws089/tests/settings-wait.sh
@@ -105,12 +105,12 @@ expect_log /tmp/s.log 'ZSETTINGS LOOK pictures ready count=6'
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=102 '
 shot wallpaper.png
 control 101
-expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/Aurora.ppm error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Aurora.ppm'
+expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/Aurora.png error=0'
+expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Aurora.png'
 shot wallpaper-aurora.png
 control 100
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value= error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.ppm'
+expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.png'
 shot wallpaper-default.png
 
 # 2. Appearance.

@@ -36,7 +36,7 @@
 #                                                      WS035 p066: zdesktop (zdesktop --glass at 1920x1080, two wl_shm windows and mview --windowed
 #                                                      on top; services in plan/ws031/tests/zdesktop/)
 #                                                      built with plan/ws031/tests/config-zdesktop-hw.mk into build/resident-zdesktop;
-#                                                      the font and the wallpaper come from userland/desktop/fonts/ and userland/desktop/keiland/wallpapers/Birch-Lake.ppm
+#                                                      the font and the wallpaper come from userland/desktop/fonts/ and userland/desktop/keiland/wallpapers/Birch-Lake.png
 #                                                      (not in git); the capture harness docks mview and opens Wiseview
 #        Every run takes the machine: flock /tmp/i915-hw.lock plan/ws031/tests/vkloop-hw.sh ...
 #        I915_HOST names the 5330 for ssh and scp (default: the alias solaris10-man; e.g. I915_HOST=awe@10.0.30.3)
@@ -201,7 +201,7 @@ if [ "$KEILAND_RUN" = 1 ]; then
 		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest6.sh"
 	fi
 	FILES="$FILES --file /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Inter.ttf"
-	FILES="$FILES --file /usr/share/keiland/wallpaper.ppm=userland/desktop/keiland/wallpapers/Birch-Lake.ppm"
+	FILES="$FILES --file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png"
 	RC_CONF=plan/ws031/tests/zdesktop/rc.conf
 fi
 # the image is rebuilt only when an input is newer than it: switching to an older rc.conf does not

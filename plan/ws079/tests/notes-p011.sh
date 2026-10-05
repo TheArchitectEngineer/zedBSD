@@ -134,7 +134,7 @@ for script in kei wave marker note hover; do
 	done
 done
 guest 'rm -rf /tmp/notes-p011 /tmp/notes-p011.log /root/.local/share/keiland/notes; mkdir -p /tmp/notes-p011' >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/notes --fullscreen /tmp/notes-p011/demo.pdf > /tmp/notes-p011.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/notes-p011.log 'NOTES START width=1280 height=800 fullscreen=1'

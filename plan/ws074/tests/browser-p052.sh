@@ -26,7 +26,7 @@ status=0
 # 1. The page in the window.
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=900 --height=640 $pages/backgrounds.html > /tmp/b.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 ready=$(guest "grep -c 'ZBROWSER READY width=900 height=640' /tmp/b.log" | tail -1)

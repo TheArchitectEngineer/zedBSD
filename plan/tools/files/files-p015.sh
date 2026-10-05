@@ -44,7 +44,7 @@ shot() {
 guest "$stop_all" >/dev/null
 guest 'rm -f /tmp/wayland-0 /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.ppm > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
 set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
@@ -58,7 +58,7 @@ expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=2 
 shot one.png
 
 # 2. The desktop between the sidebar and the content, as the wallpaper has it.
-wallpaper=userland/desktop/keiland/wallpapers/Birch-Lake.ppm   # the file the image installs as /usr/share/keiland/wallpaper.ppm
+wallpaper=userland/desktop/keiland/wallpapers/Birch-Lake.png   # the file the image installs as /usr/share/keiland/wallpaper.png
 python3 - "$out/one.png" "$wallpaper" $((wx + 216)) $((wy + 300)) <<'EOF' || status=1
 import sys
 from PIL import Image

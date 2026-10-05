@@ -93,7 +93,7 @@ sleep 1
 # 1. The images page over http, its pictures over kept connections.
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 reset
 guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=900 --height=640 $site/images/images.html > /tmp/b.log 2>&1 </dev/null & sleep 2; echo started" >/dev/null

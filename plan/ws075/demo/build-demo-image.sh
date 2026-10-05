@@ -8,7 +8,7 @@
 # node while the kernel reports the device still attaching (hw.gpu.attaching, BUG-092).
 # ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
 # The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
-# userland/desktop/keiland/wallpapers/Birch-Lake.ppm.
+# userland/desktop/keiland/wallpapers/Birch-Lake.png.
 #
 #   plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [MAKE ARGUMENTS...]     (default build/demo-hdmi)
 #
@@ -32,12 +32,12 @@ if [ "${1:-}" = passthrough ]; then
 fi
 key=plan/tmp/guest/id_ed25519.pub
 [ -f "$key" ] || python3 plan/tools/guest/guest.py extra-files >/dev/null
-for picture in userland/desktop/keiland/wallpapers/*.ppm; do
+for picture in userland/desktop/keiland/wallpapers/*.png; do
 	set -- "$@" --file "/usr/share/keiland/wallpapers/$(basename "$picture")=$picture"
 done
 plan/tools/guest/test-image.sh --no-harness plan/ws075/demo/config-demo-hdmi.mk "$build" \
 	--file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf \
-	--file /usr/share/keiland/wallpaper.ppm=userland/desktop/keiland/wallpapers/Birch-Lake.ppm \
+	--file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png \
 	--file /root/.ssh/authorized_keys=$key --mode /root/.ssh/authorized_keys=0600 --mode /root/.ssh=0700 \
 	I915_TEST_VBT=$vbt ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@"
 echo "demo image: $build/hdd-image.img"

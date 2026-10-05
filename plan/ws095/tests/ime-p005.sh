@@ -50,7 +50,7 @@ expect_log() {
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.config/kei/ime/ja-user.dict
 printf "Hello\n" > /tmp/p005.txt
-picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & echo started' >/dev/null
 expect_log /tmp/zdesktop.log 'KEI-IME READY'
 expect_log /tmp/zdesktop.log 'KEI-IME POPUP ready=1'

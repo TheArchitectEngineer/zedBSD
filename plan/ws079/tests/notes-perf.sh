@@ -58,7 +58,7 @@ fi
 guest 'cksum /bin/notes'
 guest 'rm -rf /tmp/notes-perf /tmp/notes-perf.log /root/.local/share/keiland/notes; mkdir -p /tmp/notes-perf' >/dev/null
 timeout 60 python3 plan/tools/guest/guest.py put "$out/many.pdf" /tmp/notes-perf/many.pdf >/dev/null 2>&1 </dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/notes --fullscreen /tmp/notes-perf/many.pdf >> /tmp/notes-perf.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 guest 'grep -E "NOTES (START|OPEN|LAYOUT)" /tmp/notes-perf.log'

@@ -29,7 +29,7 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 # zdesktop.
 guest "$stop_all" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=400 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; echo started" >/dev/null
 
 # 1. The default source, quiet for 6 s, then a busy loop and a disk read for 8 s.

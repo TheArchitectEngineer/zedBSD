@@ -10,4 +10,4 @@ DBUS_SESSION_BUS_ADDRESS=$(dbus-daemon --session --fork --print-address)
 export DBUS_SESSION_BUS_ADDRESS
 printf 'export XDG_RUNTIME_DIR=%s WAYLAND_DISPLAY=%s GDK_BACKEND=%s XDG_SESSION_TYPE=%s XDG_CURRENT_DESKTOP=%s\n' "$XDG_RUNTIME_DIR" "$WAYLAND_DISPLAY" "$GDK_BACKEND" "$XDG_SESSION_TYPE" "$XDG_CURRENT_DESKTOP" > /tmp/p008-session.env
 printf "export DBUS_SESSION_BUS_ADDRESS='%s'\n" "$DBUS_SESSION_BUS_ADDRESS" >> /tmp/p008-session.env
-openvt -f -c 10 -s -- sh -c 'exec env KEILAND_SEAT=direct /opt/keiland/bin/wayland --socket=/run/p2-p008/wayland-p008 --session --glass --wallpaper=/opt/keiland/share/keiland/wallpaper.ppm > /tmp/p008-compositor.log 2>&1'
+openvt -f -c 10 -s -- sh -c 'exec env KEILAND_SEAT=direct /opt/keiland/bin/wayland --socket=/run/p2-p008/wayland-p008 --session --glass --wallpaper=/opt/keiland/share/keiland/wallpaper.png > /tmp/p008-compositor.log 2>&1'

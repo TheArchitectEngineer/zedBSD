@@ -58,7 +58,7 @@ sum_before=$(guest "cksum $conf" | tail -1)
 
 # 2. A watcher, and the changes.
 guest "$env; /bin/keiland-settings --timeout-ms=12000 watch '' > /tmp/watch.log 2>&1 </dev/null & sleep 2; echo watching" >/dev/null
-picture=$(guest 'ls /usr/share/keiland/wallpapers/*.ppm | head -1' | tail -1)
+picture=$(guest 'ls /usr/share/keiland/wallpapers/*.png | head -1' | tail -1)
 guest "$env; /bin/keiland-settings --timeout-ms=6000 set pointer.speed 120 set pointer.speed 500 set sound.available 1 set no.key 1 set keyboard.repeat.rate 40 set wallpaper /tmp/settings-fifo set wallpaper $picture > /tmp/p2.log 2>&1; echo set" >/dev/null
 sleep 8
 guest 'cat /tmp/p2.log' > "$out/set.log"

@@ -3,7 +3,7 @@
 # the wallpaper and App Home's list of the demonstration.
 # ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
 # The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
-# userland/desktop/keiland/wallpapers/Birch-Lake.ppm.
+# userland/desktop/keiland/wallpapers/Birch-Lake.png.
 #
 #   plan/ws095/tests/build-ime-image.sh [BUILD [DISTDIR]]   (default build/ws095/img; DISTDIR: where the dictionary's
 #                                                             archive is fetched to, default the shared build/distfiles)
@@ -12,6 +12,6 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 build=${1:-build/ws095/img}
 distdir=${2:-}
-set -- --file /usr/share/keiland/wallpaper.ppm=userland/desktop/keiland/wallpapers/Birch-Lake.ppm --file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf
+set -- --file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png --file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf
 [ -n "$distdir" ] && set -- "$@" "ZEDBSD_EXTERNAL_DISTDIR=$distdir"
 exec plan/tools/guest/test-image.sh plan/ws095/tests/config-amd64-ime.mk "$build" "$@"

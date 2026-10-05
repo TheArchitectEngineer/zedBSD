@@ -75,7 +75,7 @@ for step in "$@"; do
 cp /tmp/pdfviewer /bin/pdfviewer && cp /tmp/libpdf.so /lib/libpdf.so && cp /tmp/files /bin/files && cp /tmp/wayland /bin/wayland &&
 chmod 0755 /bin/pdfviewer /bin/files /bin/wayland && chmod 0644 /lib/libpdf.so && mkdir -p /etc/keiland /tmp/pvdir && cp /tmp/apps.conf /etc/keiland/apps.conf &&
 cp /tmp/notes.pdf /tmp/pvdir/notes.pdf && { [ ! -f /tmp/notes-program ] || { cp /tmp/notes-program /bin/notes && chmod 0755 /bin/notes; }; } && echo installed'
-		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --timeout=1800 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started'
 		;;
 	home)

@@ -92,9 +92,9 @@ guest "$start_settings" >/dev/null
 shot start.png
 
 # 2. The wallpaper.
-probe set wallpaper /usr/share/keiland/wallpaper.ppm
+probe set wallpaper /usr/share/keiland/wallpaper.png
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=wallpaper applied'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.ppm ms=[0-9]+'
+expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.png ms=[0-9]+'
 guest "grep 'ZWL GLASS wallpaper' /tmp/zdesktop.log"
 shot wallpaper.png
 
@@ -120,7 +120,7 @@ shot removed.png
 
 # 6. A wallpaper in the file when zdesktop starts.
 guest "$stop_all" >/dev/null
-write_conf 'wallpaper=/usr/share/keiland/wallpaper.ppm' 'pointer.speed=200'
+write_conf 'wallpaper=/usr/share/keiland/wallpaper.png' 'pointer.speed=200'
 guest "$start_desktop" >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=wallpaper applied'
 expect_log /tmp/zdesktop.log 'ZWL SETTINGS migrated pointer.speed=200 to mouse.speed error=0'

@@ -36,10 +36,10 @@ pass=0
 fail=0
 worst=
 
-pictures=$(guest 'ls /usr/share/keiland/wallpaper.ppm /usr/share/keiland/wallpapers/*.ppm 2>/dev/null' | grep '\.ppm$')
+pictures=$(guest 'ls /usr/share/keiland/wallpaper.png /usr/share/keiland/wallpapers/*.png 2>/dev/null' | grep '\.png$')
 echo "wallpapers: $(echo $pictures | wc -w)"
 for picture in $pictures; do
-	name=$(basename "$picture" .ppm)
+	name=$(basename "$picture" .png)
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --timeout=300 --width=1280 --height=800 --glass --wallpaper=$picture > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1

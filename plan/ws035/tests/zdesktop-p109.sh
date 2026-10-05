@@ -58,7 +58,7 @@ sleep 3
 shot greeter-photo.png
 
 # 1. The drawn wallpaper: the picture aside, the greeter again.
-guest 'mv /usr/share/keiland/wallpaper.ppm /tmp/wallpaper.ppm.saved; echo moved' >/dev/null
+guest 'mv /usr/share/keiland/wallpaper.png /tmp/wallpaper.ppm.saved; echo moved' >/dev/null
 sleep 21
 guest 'kill $(sed -n "s/.*SESSIOND GREETER start pid=\([0-9]*\).*/\1/p" /var/log/sessiond.log | tail -1); echo killed' >/dev/null
 expect_log /var/log/greeter.log 'ZWL GREETER open' 30 2
@@ -94,6 +94,6 @@ errors=$(guest "grep -c ERROR $session" | tail -1)
 guest "cat $session" > "$out/session.log"
 
 # The picture wallpaper back.
-guest 'for p in $(ps -A -o pid,args | grep -E "[f]iles" | awk "{print \$1}"); do kill $p; done; mv /tmp/wallpaper.ppm.saved /usr/share/keiland/wallpaper.ppm; echo back' >/dev/null
+guest 'for p in $(ps -A -o pid,args | grep -E "[f]iles" | awk "{print \$1}"); do kill $p; done; mv /tmp/wallpaper.ppm.saved /usr/share/keiland/wallpaper.png; echo back' >/dev/null
 [ $status = 0 ] && echo "zdesktop-p109: PASS" || echo "zdesktop-p109: FAIL"
 exit $status
