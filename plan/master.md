@@ -71,6 +71,9 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
+- **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
+- **WS169・WS170 の段（2026-10-05 ユーザーの追加）**: ベータ2 に入れるか、それ以降か [Q1 の案: WS170 の最初の範囲（連絡先からタイムライン）はベータ2、WS169 はベータ2 で IMAP・SMTP まで、Gmail・Outlook は以降]。
 - **WS166 の判断（2026-10-05、P2 の p001 の設計、plan/ws166/phase001/phase.md）**: ① 選び方 [Windows の IME と同じ: Tab か ↓ で予測に入り、Tab・↓・↑ で動き、Enter で確定、Esc で抜け、1〜9 で直接]、② 既定 on [on]、③ 確定の後の「次の語」の予測（bigram）[今回は入れない]、④ SKK にも予測 [今回は日本語の engine だけ、WS154 の補完の判断と合わせる]。
 - **WS162 の判断（2026-10-05、P1 の p001 の設計、plan/ws162/phase001/phase.md §6。H2 は root の daemon の口なので p002 は判断まで止める）**: H1 要素は security key と key 自身の CTAP2 の PIN（UV 必須）[可]、H2 sessiond に `KEY?`・`AUTHKEY`・`UNLOCKKEY`・`KEY ADD password label`・`KEY REMOVE password id` を足す [足す、WS163 の PIN と同じ形]、H3 sessiond は libfido2 を link せず package 側の helper keiland-fido-auth（root、fd 0・1）を使う [helper、WS161 の H3 の答え]、H4 保存 [/etc/keiland/fido-keys、0600 root、1 account 5 key まで、sign_count の増加を要求]、H5 greeter と lock だけ（sudo・SSH は別）[可]。
 - **WS161 の判断（2026-10-05、P1 の p001 の設計、plan/ws161/phase001/phase.md §7）**: H1 新しい UAPI include/uapi/fido.h（FIDO だけの raw の node /dev/fidoN）[足す]、H2 外部 package libfido2（BSD-2）＋ libcbor（MIT）を OpenSSL の上に [案 A]、H3 root の sessiond が package の libfido2 を link してよいか [WS162 の設計で]、H4 試験用の kernel だけの loopback の FIDO device [足す]、H5 NFC の reader [5330 を先に調べる]、H6 /dev/fidoN を seat の user に渡す [可]。
@@ -86,7 +89,7 @@
 - **2026-10-05 ユーザーの指示（段の整理）**: 要検討・ブロック WS098・150・039・037・038・141・080・044・048・118。最初にアイディアの Phase を実行してユーザーと議論 WS144・119・147・082・146・ニューラル IME（WS098、ブロックの一覧にも有るのでアイディアの Phase の後にブロックのままとする扱いを確認中）。WS061 は completed。残りのベータ3・ベータ4 以降の WS（WS001・026・031・046・068・074・101・115・116・117・120・121・130・145・153・157・143・152・126・124・125・112）をベータ2 に移動。
 - **2026-10-05 ユーザーの指示**: キャンセル WS034・WS096（Qt6 の互換）・WS097（GTK4 の互換）・WS007。優先 WS138。追加 WS161〜WS167（YubiKey・FIDO2 の login・6 桁の PIN の login・Welcome の画面・手書きの入力・予測変換・GPU の command の protocol の独自化）。新しい WS の段（ベータ2 か以降か）と見積もりは未定。
 - **2026-10-05 朝 ユーザー「HALの変更以外は承認します。」**→ 次を案のとおり決定: ws089-p025（sessiond の wheel だけの SERVICE sshd）、ws089-p022（(a) 有線の設定を network の group に開く、(b) ベータ1 の MTU は読むだけ、設定は別の WS）、タッチパッドの既定（100%・中のまま）、BUG-190 の規則（tap は離した時の click、押し込みは押した瞬間、UAT の後に resolved）、ws132-p004（通知の代わりに bar の媒体の icon）、WS160 D1〜D4（最短 8 文字・sudoers 無し・毎回認証・wheel は gid 0）、WS052 p007（外部の monitor の時は蓋で sleep しない（AC に依らず）・無操作 AC 30 分/電池 15 分で画面はその半分・greeter の電源ボタンは sleep・sessiond が session から suspend を受ける（ws131 D12 の改訂、poweroff・reboot は greeter のまま））。HAL の H1〜H4 は専門家のレビュー待ち。BUG-171 は選択肢に案が無いので別に確かめる。
-- **HAL の API の承認（差分ごと、第 2 版、2026-10-05 P4 の再レビュー、plan/ws052/proposed/README-v2.md）**: H1v2 `hal_cpu_idle_suspend_supported(void)`・`hal_cpu_idle_suspend(void)`（hal-cpu-idle-suspend.diff、SHA256 10329d04…ec68）、H3v2 `hal_cpu_notify` の契約の明記（hal-cpu-notify-wake-v2.diff、526539eb…12df）、H4v2 `hal_irq_set_wake(int, bool)`・`hal_irq_suspend(void)`・`hal_irq_resume(void)`（hal-irq-wake.diff、005e5e68…f4a8）、H5 `hal_rtc_read_counter` の契約の強化（hal-rtc-counter-idle.diff、dea1aaef…a58453）。旧 H2 は削除。付随: (a) amd64 の HAL が LPIT を読む、(b) hal_irq_resume を int に、(c) user process の freeze の機構が kernel に無い、(d) TSC の進みは UAT で RTC と照合。
+- **HAL v2 は 2026-10-05 ユーザーが承認、hal.h に適用（29f954f5）、実装（WS052 p006）も承認**。記録は Guardrail の承認済みの表。
 - **BUG-171「Opaque」の意味（2026-10-05 未明、P1）**: 窓の透明度を 100% にしても、Keiland の app の glass の panel（Settings・Files の sidebar）と title bar は frosted glass のままなので壁紙が見える（UAT の log には変更後の applied 100 も無く、PS/2 の touchpad の drag の release が届かなかった可能性もある）。(a) 100% では glass の panel と title bar も不透明に（既定が 100 なので既定の見た目から frosted glass が消える）、(b) 100% は窓の中身だけ、Settings の表示を「Window contents opaque」などに、(c) Appearance に「Glass effect」の on/off を別に足す。
 - 2026-10-05 未明 user「では、私は寝ます。自律駆動で自走をお願いします。」→ 10 時ごろまで自律。新規の実装を優先（P1 = WS160 → q722、P2 = T1-102 の IME の FAIL → WS122）、尽きるか止まったら Bug の一覧から。判断が要る点は uncleared にして記録し次へ。
 - 2026-10-05 未明 決定: WS122 の libavcodec をベータ1 の image に入れ、簡単な player もベータ1（RC 10/13）に（段をベータ1 へ。見積もりの表の段の改訂は Q1）。
@@ -300,6 +303,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS166](ws166/ws.md) | ベータ2 | MG006 | 3 | 予測変換（2026-10-05 追加） |
 | [WS167](ws167/ws.md) | ベータ2 | MG006 | 2 | GPU の command の protocol の独自化（2026-10-05 追加） |
 | [WS168](ws168/ws.md) | ベータ2 | MG006 | 3 | プレビューの隔離された command（2026-10-05 追加） |
+| [WS169](ws169/ws.md) | 未定 | MG006 | 6 | メーラの app と compositor のメールの API（2026-10-05 追加） |
+| [WS170](ws170/ws.md) | 未定 | MG006 | 4（最初の範囲） | Phone の app、連絡先からタイムラインまで（2026-10-05 追加） |
+| [WS171](ws171/ws.md) | 未定 | MG008 | 2 | hal.h の全ての関数に契約の comment（2026-10-05 追加、急がない） |
 | [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、**ベータ1**） | WS049 |
 | [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |
 | [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
@@ -310,6 +316,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS166](ws166/ws.md) | MG006 | IME の予測変換（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
 | [WS167](ws167/ws.md) | MG006 | GPU の command の protocol を Venus の番号の流用から独自の名前と番号に（Venus と一致する内容から始め、Venus の番号を再利用したことを header に書き、Google の著作権の表示を外せるようにする）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
 | [WS168](ws168/ws.md) | MG006 | プレビュー（縮小表示）を作る隔離された専用の command（chroot・他の file の open・network・fork の禁止、fd 0・1 だけ）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
+| [WS169](ws169/ws.md) | MG006 | メーラの app と compositor のメールの API（許可された app が受信の通知を受ける、browser の認証 code の自動入力、IMAP4・SMTP から Gmail・Outlook へ）（2026-10-05 ユーザーの追加） | planning（段は未定、2026-10-05） | — |
+| [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | planning（段は未定、2026-10-05） | — |
+| [WS171](ws171/ws.md) | MG008 | hal.h の全ての関数に HAL v2 と同じ水準の契約の comment を書く（comment の差分もユーザーの review の後に当てる）（2026-10-05 ユーザー「このコメント、すべての関数につけてほしいです。今でなくていいので」） | planning（急がない、2026-10-05） | — |
 
 ### リリースの段ごとの見積もり（2026-10-05）
 

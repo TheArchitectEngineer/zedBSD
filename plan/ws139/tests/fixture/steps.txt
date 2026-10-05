@@ -1,0 +1,3 @@
+monitor compose_lines=2
+c5 exit=1
+latency exit=0

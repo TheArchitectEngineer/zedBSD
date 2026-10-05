@@ -9,7 +9,7 @@ Related Milestones: MG004, MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: HAL の差分 H1v2・H3v2・H4v2・H5 の承認（差分ごと、[proposed/README-v2.md](proposed/README-v2.md) §1 の file 名と SHA256）。承認の後に p006（README-v2 §6 の実装の方針と §7 の流れ）。p006 の前に user の process の停止（freeze）の置き場を Q1 が決める
+Resume point: p006（2026-10-05 ユーザーが HAL v2 を承認し hal.h に適用（29f954f5）、実装の開始も承認。user の process の停止は kernel の側（README-v2 の結論））
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -50,7 +50,7 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | [ws052-p003](phase003/phase.md) | ACPI の側（LPS0 の `_DSM`、wake の GPE、`_PSx`・`_PRx`・`_DSW`）、`_OSI` と電源ボタンの経路（HIDD は不要） | cleared（2026-10-05 Q1、T1-153） | p001、ws049-p007 | `src/drivers/acpi/acpi-sleep.c`、`acpi-event.c` |
 | [ws052-p004](phase004/phase.md) | device の suspend・resume の口、必須の NVMe・xHCI（失敗で中止と理由）、`KERN_SYSTEM_SLEEP` の devices だけの mode。i915 は p009 へ | cleared（2026-10-05 Q1） | p003 | `src/drivers/pci/pci-power.c`、`pci-nvme.c`、`pci-xhci.c` |
 | [ws052-p005](phase005/phase.md) | HDA・Wi-Fi・LPSS-I2C の「止めて入る」経路 | in-progress（2026-10-05: 3 つの driver に suspend・resume、T1 の QEMU 待ち） | p004 | `pci-hda.c`、`intel-ax211.c`、`lpss-i2c.c` |
-| ws052-p006 | CPU の idle・tick・割り込み（承認された H1v2・H3v2・H4v2・H5 の amd64 の実装と他 arch の stub）、S0i3 の入口・出口（[README-v2 §7](proposed/README-v2.md) の流れ、spurious wake の再突入、CPU 0 の時刻の補正）、user の停止、`/dev/system` の ioctl と事象 | planned（2026-10-05: 流れを README-v2 §7 に書き直した） | p002 の承認、p004、p005、p009、WS132 | |
+| ws052-p006 | CPU の idle・tick・割り込み（承認された H1v2・H3v2・H4v2・H5 の amd64 の実装と他 arch の stub）、S0i3 の入口・出口（[README-v2 §7](proposed/README-v2.md) の流れ、spurious wake の再突入、CPU 0 の時刻の補正）、user の停止、`/dev/system` の ioctl と事象 | planned（2026-10-05: HAL v2 承認・適用済み、P1 q742 で実装へ） | p002 の承認（済）、p004、p005、p009、WS132 | |
 | [ws052-p007](phase007/phase.md) | Keiland の契機（蓋・電源ボタンの短押し・無操作の時間）と中止の理由の表示、networkd が sleep の前に radio を切る流れ | planning（2026-10-05: 設計の第 1 版、Q1 のレビュー待ち。code は p006 の口の後） | p006、WS132 p008、WS089 | |
 | ws052-p008 | 実機の確認と規約の全文 | planned | p007 | |
 | [ws052-p009](phase009/phase.md) | i915 の suspend・resume（display・DC9・GT の RC6・GGTT・display の core の再初期化・出力の設定の再適用）。設計から、検証は 5330 の UAT | in-progress（2026-10-05: 段 (a)(b)(c) を実装、5330 の UAT 待ち） | p004 | `src/drivers/gpu/i915/park.c`、`worker.c` |
