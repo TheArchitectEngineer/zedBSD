@@ -2,7 +2,7 @@
 
 # ws138-p002: 1 回の commit で PNG に切り替え、QEMU の試験を依頼する
 
-Status: in-progress（2026-10-05 P1 generation17。切り替えを commit。他の WS の file は Q1 が `apply-q1.sh` で掛ける。T1 の結果まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-169（settings-p009・p004・p007・boot PASS）、T1-171（FreeBSD の backend-test 9 step PASS）、T1-172（c7-contrast pass=72 fail=0 最小 4.68、greeter-wallpaper PASS、wallpaper-time PASS）で受け入れを満たす）。以前: in-progress（2026-10-05 P1 generation17。切り替えを commit。他の WS の file は Q1 が `apply-q1.sh` で掛ける。T1 の結果まで cleared にしない）
 Disposition: normal
 Parent: [WS138](../ws.md)
 Queue: Q1 の 2026-10-05 の割り当て（ベータ2、p001 → p002）
@@ -263,4 +263,35 @@ image は 2 つ。同じ T が 1 つずつ順に QEMU で流す。合わせて 3
 上の「試験の依頼」の 3 つ（Settings の image で settings-p009・p004・p007・`plan/ws138/tests/wallpaper-time.sh`、criteria の image で c7 と greeter の背景と boot-test、FreeBSD の backend-test）。
 `apply-q1.sh` を掛けた main の上で流す（掛けないと試験の script が `.ppm` を探す）。
 
-残り: T1 の結果の判定、画面の確認（Settings の tile、greeter、Files の hero）、背景の読み込みの時間の表、p003（全文規約の見直し）。
+### T1-169 の結果と直し（2026-10-05）
+
+T1-169（QEMU、証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-169-out/`）: settings-p009・p004・p007・boot-test は PASS。残りの 3 つ:
+
+1. **wallpaper-time.sh の PPM の拒否が errno=3**（期待 22）: decoder が正しい。zedBSD の EINVAL は 3（`include/uapi/errno.h` 24）で、22 は host（Linux）の値。
+   試験の期待を `errno=3` に直した（`plan/ws138/tests/wallpaper-time.sh`）。同じ run の数字（記録だけ、判定しない）:
+
+   | 項目 | PNG | JPEG |
+   | --- | --- | --- |
+   | 起動の `step=wallpaper`（中央値、ms） | 260 | 263 |
+   | 起動の `step=wallpaper-picture`（中央値、ms） | 25 | 27 |
+   | session 中に thread の道で選ぶ（`ZWL GLASS wallpaper path=… ms=`） | 89 | 92 |
+
+   既定に戻す（風景、`path=-`）は 1791 ms。風景は画素ごとに計算して描く（`landscape_row`）ので、file を読む背景より遅い。同期の道（U7 で残した唯一の
+   同期の道）で event loop を 1.8 秒止める。前からの性質で WS138 の範囲外だが、風景を一度描いた結果を保つ・thread で描く、を Future Work の候補として
+   Q1 に伝えた。
+2. **c7-contrast の FAIL（pass 54・fail 18）**: PNG 化とは関係が無い。測る箱（`C7_SETTINGS`・`C7_FILES`・`C7_INFO` の座標）が古い:
+   Files の sidebar に Today と Home が足され（ws127-p011）、Locations と Recents が下に動いた。Settings の section の見出しも少し下に動いた。
+   失敗した箱は文字の無い所を測っていた（f-side-recents は contrast 1.00 = 文字が無い）。T1-169 の画面で文字の位置を測り直した箱で、同じ画面を
+   `c7-contrast.py` で測ると、6 枚の背景の全部で数える 3 項目が 4.5 以上（最小 4.68: f-group、Twilight と既定）。info の f-hint は 1.8 前後（前から info で
+   数えない）。f-inactive の箱は今 Today（選ばれた行）に当たっていたので、使えない行の Desktop に移した（1.7〜2.0、info）。
+   c7 は WS099 の file なので、直しは `plan/ws138/phase002/c7-boxes.diff` を Q1 が main で掛ける（`git apply`）。
+3. **greeter の背景**: criteria の image は起動の時に kei を自動で login させるので greeter が出ない（T1-169 の `greeter.png` は session の画面で、
+   既定の `wallpaper.png` の Birch-Lake が見える。session の既定の path が効いていることの証拠にはなる）。greeter を出して確かめる試験
+   `plan/ws138/tests/greeter-wallpaper.sh` を足した（autologin を空にして `sessiond --graphical`、zdesktop-p095 と同じ手順、greeter の log の
+   `step=wallpaper` と画面、終わったら autologin を戻す）。
+
+残り: T1 に再依頼（c7 の diff を掛けた main で c7-contrast、wallpaper-time、greeter-wallpaper）、その結果の判定、p003（全文規約の見直し）。
+
+## Q1 の判定（2026-10-05）
+
+T1-172 PASS: c7-contrast（pass=72 fail=0、最小 4.68 ≥ 4.5）、greeter-wallpaper（greeter.png は Birch-Lake をぼかした login の画面）、wallpaper-time（PPM は errno 3 で拒否）。T1-169 の残り（settings-p009・p004・p007・boot）と T1-171 の FreeBSD の backend-test と合わせて **cleared**。既定に戻す時の 1.8 秒の同期の描画は範囲外（Future Work の候補）。
