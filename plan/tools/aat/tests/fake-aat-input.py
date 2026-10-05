@@ -53,6 +53,8 @@ def valid(words, width, height):
 		return numbers(rest, 1)
 	if verb == "key":
 		return len(rest) == 1 and all(name in KEYS for name in rest[0].split("+"))
+	if verb in ("key-down", "key-up"):
+		return len(rest) == 1 and rest[0] in KEYS
 	if verb == "type":
 		return bool(rest)
 	return False

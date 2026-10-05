@@ -25,7 +25,7 @@ default "/bin/keiland-shot {path}").
     aat get /tmp/x.log x.log        a file from there / put x.txt /tmp/x.txt
     aat start [--size WxH]          start aat-input (the screen's size from a shot)
     aat stop
-    aat move X Y | rel DX DY | click X Y [--button B] [--count N]
+    aat move X Y | rel DX DY | click X Y [--button B] [--count N] [--with alt]
     aat down [--button B] | up [--button B]
     aat drag X1 Y1 X2 Y2 [--steps N]   the left button
     aat wheel X Y N [H]             notches: N > 0 up, H > 0 right
@@ -284,10 +284,14 @@ WINDOW_LINES = (
 )
 
 
-def windows_from(text: str) -> dict[int, dict]:
-	"""Returns the windows the compositor's lines describe, by surface: the last place and size each line gave, and
-	whether the window is docked (maximized)."""
-	windows: dict[int, dict] = {}
+def windows_from(text: str) -> dict[tuple[int, int], dict]:
+	"""Returns the windows the compositor's lines describe, by (client, surface): the last place and size each line
+	gave, and whether the window is docked (maximized).  A surface's number is its client's protocol ID, so two
+	clients can have the same one; only MAP and UNMAP name the client, and a line that names only the surface is the
+	latest mapped window of that number's (a window of a client mapped earlier with the same number is then not
+	followed: the scenarios keep one window of a kind at a time)."""
+	windows: dict[tuple[int, int], dict] = {}
+	latest: dict[int, tuple[int, int]] = {}
 	for line in text.splitlines():
 		for pattern, kind in WINDOW_LINES:
 			match = pattern.search(line)
@@ -296,14 +300,18 @@ def windows_from(text: str) -> dict[int, dict]:
 			numbers = [int(value) for value in match.groups()]
 			if kind in ("map", "unmap"):
 				client, surface = numbers[0], numbers[1]
-				window = windows.setdefault(surface, {"surface": surface, "docked": 0})
-				window["client"] = client
-				window["mapped"] = kind == "map"
+				key = (client, surface)
 				if kind == "map":
-					window["x"], window["y"] = numbers[2], numbers[3]
+					# A new mapping of the pair starts afresh (a client can map a surface again).
+					windows[key] = {"surface": surface, "client": client, "mapped": True, "docked": 0,
+						"x": numbers[2], "y": numbers[3]}
+					latest[surface] = key
+				elif key in windows:
+					windows[key]["mapped"] = False
 				break
 			surface = numbers[0]
-			window = windows.setdefault(surface, {"surface": surface, "docked": 0})
+			key = latest.get(surface, (-1, surface))
+			window = windows.setdefault(key, {"surface": surface, "client": key[0], "mapped": False, "docked": 0})
 			if kind == "place":
 				window["x"], window["y"], window["width"], window["height"] = numbers[1:5]
 			elif kind == "dock":
@@ -455,11 +463,19 @@ def command_click(target: Target, arguments: argparse.Namespace) -> int:
 	"""Clicks at a point: once, twice (a double click), or more."""
 	button = button_name(arguments.button)
 	where = point(target, arguments.x, arguments.y)
-	if arguments.count == 2:
-		aat_input(target, ["double-click", button, *where])
-		return 0
-	for _ in range(arguments.count):
-		aat_input(target, ["click", button, *where])
+	held = [name.lower() for name in arguments.with_.split("+")] if arguments.with_ else []
+	for name in held:
+		aat_input(target, ["key-down", name])
+	try:
+		if arguments.count == 2:
+			aat_input(target, ["double-click", button, *where])
+		else:
+			for _ in range(arguments.count):
+				aat_input(target, ["click", button, *where])
+	finally:
+		# The keys held go up even when the click failed, the last first.
+		for name in reversed(held):
+			aat_input(target, ["key-up", name])
 	return 0
 
 
@@ -562,19 +578,24 @@ def command_windows(target: Target, arguments: argparse.Namespace) -> int:
 	data, _ = read_log(target, arguments.log, since_offset(target, arguments.log, arguments.since))
 	windows = windows_from(data.decode("utf-8", "replace"))
 	if arguments.json:
-		print(json.dumps([windows[surface] for surface in sorted(windows)]))
+		print(json.dumps([windows[key] for key in sorted(windows)]))
 		return 0
 	print("surface client mapped x y width height docked")
-	for surface in sorted(windows):
-		window = windows[surface]
+	for key in sorted(windows):
+		window = windows[key]
 		print(" ".join(str(window.get(field, "-")) for field in ("surface", "client", "mapped", "x", "y", "width", "height", "docked")))
 	return 0
 
 
 def command_where(target: Target, arguments: argparse.Namespace) -> int:
-	"""Prints one window's place and size ("x y width height"); 1 when not known."""
+	"""Prints one window's place and size ("x y width height"); 1 when not known.  Without --client, the latest
+	mapped window with that surface number."""
 	data, _ = read_log(target, arguments.log, since_offset(target, arguments.log, arguments.since))
-	window = windows_from(data.decode("utf-8", "replace")).get(arguments.surface)
+	windows = windows_from(data.decode("utf-8", "replace"))
+	found = [window for window in windows.values() if window["surface"] == arguments.surface and
+		(arguments.client is None or window["client"] == arguments.client)]
+	mapped = [window for window in found if window.get("mapped")]
+	window = (mapped or found or [None])[-1]
 	if window is None or "x" not in window:
 		print(f"aat: no place known for surface {arguments.surface}", file=sys.stderr)
 		return 1
@@ -623,6 +644,7 @@ def parser() -> argparse.ArgumentParser:
 	command.add_argument("y", type=float)
 	command.add_argument("--button", default="left")
 	command.add_argument("--count", type=int, default=1)
+	command.add_argument("--with", dest="with_", help="keys held through the click: alt, ctrl+shift, ...")
 	for name in ("down", "up"):
 		command = commands.add_parser(name)
 		command.add_argument("--button", default="left")
@@ -657,6 +679,7 @@ def parser() -> argparse.ArgumentParser:
 	log_options(command)
 	command = commands.add_parser("where")
 	command.add_argument("surface", type=int)
+	command.add_argument("--client", type=int, help="the client's number (ZWL MAP client=)")
 	log_options(command)
 	return top
 
