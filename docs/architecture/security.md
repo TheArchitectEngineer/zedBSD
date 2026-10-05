@@ -276,7 +276,11 @@ account it asked about. The reasons are fixed words: `bad-secret`,
 `no-such-user`, `not-enrolled`, `locked-account`, `pin-off`, `no-key`,
 `many-keys`, `key-locked`, `timeout`, `device`, `cloned`, `bad-request`,
 `busy` and `internal`. The exit status is 0 for `ok`, 1 for `fail` and 2 for
-an internal error.
+an internal error. sessiond tells a passkey that ends without an answer as
+`internal` (it logs how it ended), and refuses at once with `internal`,
+without counting an attempt, when `/sbin/passkey` is not there; `timeout` is
+only an attempt sessiond stopped. Every image with sessiond has passkey,
+because the sessiond package requires it.
 
 passkey keeps its own deadline: 5 seconds for a password or a PIN, 30
 seconds for the user to touch a key. sessiond allows 5 seconds more, then
