@@ -2,7 +2,7 @@
 
 # ws102-p022: 色付きの絵文字 その 2（keyboard の絵文字の面）
 
-Status: in-progress（2026-10-05 P1 generation17、q736。実装・host 試験・build は済み。QEMU は T1、結果まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-175 の FAIL（2 つ目以降の絵文字が空、glass_cache_glyph の欠陥と試験の grep）を e2e76062 で直し、T1-175b で osk-guest PASS、20 個が全部描かれることを目視）。以前: in-progress（2026-10-05 P1 generation17、q736。実装・host 試験・build は済み。QEMU は T1、結果まで cleared にしない）
 Disposition: normal
 Parent: [WS102](../ws.md)
 Level: L3
