@@ -30,6 +30,7 @@ static int qwerty_has(const char *text);
 static int qwerty_keys(void);
 static int qwerty_widths(void);
 static void check_hand(void);
+static void check_emoji(void);
 
 /* The 46 plain kana (UTF-8, three bytes each). */
 static const char host_kana[] = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
@@ -192,6 +193,9 @@ main(void)
 
 	/* The handwriting's ink and the stub recognizer (ws102-p008). */
 	check_hand();
+
+	/* The emoji face's table (ws102-p022). */
+	check_emoji();
 
 	/* The outcome. */
 	if (failures != 0) {
@@ -464,4 +468,80 @@ check_hand(void)
 	for (index = 1; index < ZWL_HAND_STROKES + 5U; index++)
 		(void)zwl_hand_begin(&ink, 0, (int32_t)index);
 	check(ink.count == ZWL_HAND_STROKES, "the ink keeps 64 strokes");
+}
+
+/*
+ * Checks the emoji face's table: every category holds its emoji, each one
+ * well-formed UTF-8 of a single character of four or fewer bytes, and no
+ * emoji appears twice anywhere.
+ */
+static void
+check_emoji(void)
+{
+	const unsigned char *byte;
+	const char *text;
+	const char *other;
+	unsigned category;
+	unsigned index;
+	unsigned other_category;
+	unsigned other_index;
+	unsigned bad;
+	unsigned count;
+	unsigned repeats;
+	unsigned length;
+	int same;
+
+	/* Each category's count and names, and each emoji's bytes. */
+	bad = 0U;
+	for (category = 0U; category < ZWL_EMOJI_CATEGORIES; category++) {
+		/* The category is full. */
+		count = zwl_emoji_count(category);
+		if (count != ZWL_EMOJI_PER_CATEGORY)
+			bad++;
+
+		/* Its emoji. */
+		for (index = 0U; index < ZWL_EMOJI_PER_CATEGORY; index++) {
+			/* An emoji of one character: a lead byte above ASCII and its continuation bytes. */
+			text = zwl_emoji(category, index);
+			if (text == NULL) {
+				bad++;
+				continue;
+			}
+
+			/* Two to four bytes, the first above ASCII. */
+			byte = (const unsigned char *)text;
+			length = (unsigned)strlen(text);
+			if (length < 2U || length > 4U || byte[0] < 0xc2U) {
+				printf("emoji bad: category %u index %u\n", category, index);
+				bad++;
+			}
+		}
+	}
+
+	/* The table's shape, the edges, and a name. */
+	check(bad == 0U, "emoji: 4 categories of 20, each a single UTF-8 character");
+	check(zwl_emoji_count(ZWL_EMOJI_CATEGORIES) == 0U && zwl_emoji(0U, ZWL_EMOJI_PER_CATEGORY) == NULL, "emoji: out of range is none");
+	check(strcmp(zwl_emoji_category_name(ZWL_EMOJI_FACES), "顔") == 0, "emoji: the first category is 顔");
+
+	/* No emoji twice. */
+	repeats = 0U;
+	for (category = 0U; category < ZWL_EMOJI_CATEGORIES; category++) {
+		for (index = 0U; index < ZWL_EMOJI_PER_CATEGORY; index++) {
+			text = zwl_emoji(category, index);
+			for (other_category = 0U; other_category < ZWL_EMOJI_CATEGORIES; other_category++) {
+				for (other_index = 0U; other_index < ZWL_EMOJI_PER_CATEGORY; other_index++) {
+					/* The same place is not a repeat. */
+					if (other_category == category && other_index == index)
+						continue;
+					other = zwl_emoji(other_category, other_index);
+					same = strcmp(text, other);
+					if (same == 0)
+						repeats++;
+				}
+			}
+		}
+	}
+
+	/* The outcome of the comparison. */
+	check(repeats == 0U, "emoji: no emoji twice");
 }

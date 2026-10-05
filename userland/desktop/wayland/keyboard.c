@@ -223,9 +223,18 @@ enum keyboard_tool_kind {
 	TOOL_PASTE
 };
 
-/* The tools' faces under the tabs: the edit tools, the clipboard's history. */
+/* The tools' faces under the tabs: the edit tools, the clipboard's history, the emoji (ws102-p022). */
 #define KEYBOARD_FACE_EDIT	0U
 #define KEYBOARD_FACE_HISTORY	1U
+#define KEYBOARD_FACE_EMOJI	2U
+
+/*
+ * The emoji face's grid: its columns and rows (a category's emoji fill
+ * it), and the smallest cell that takes the large emoji size.
+ */
+#define KEYBOARD_EMOJI_COLUMNS	5U
+#define KEYBOARD_EMOJI_ROWS	4U
+#define KEYBOARD_EMOJI_LARGE	52
 
 /* The history's rows: how many, and the longest text shown of an item (bytes). */
 #define KEYBOARD_HISTORY_ROWS	10U
@@ -358,7 +367,9 @@ struct keyboard_move {
  * panel's tool held (its index in keyboard_tools), selecting the edit
  * tools' selection toggle (the movements go with Shift).  tools_face is
  * the face under the tabs (KEYBOARD_FACE_*), history_active and
- * history_row the history's row held.
+ * history_row the history's row held.  emoji_category is the emoji face's
+ * category shown, emoji_active and emoji_slot its tab or cell held (the
+ * tabs first, then the cells, keyboard_emoji_rect).
  */
 
 /*
@@ -446,6 +457,9 @@ struct keyboard_state {
 	unsigned tools_face;
 	unsigned history_active;
 	unsigned history_row;
+	unsigned emoji_category;
+	unsigned emoji_active;
+	unsigned emoji_slot;
 };
 
 /*
@@ -527,6 +541,11 @@ static void keyboard_history_rect(struct zwl_server *server, unsigned row, int32
 static int keyboard_history_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row);
 static void keyboard_history_release(struct zwl_server *server);
 static void keyboard_draw_history(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_emoji_rect(struct zwl_server *server, unsigned slot, int32_t *rect);
+static int keyboard_emoji_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *slot);
+static void keyboard_emoji_release(struct zwl_server *server);
+static void keyboard_emoji_log(struct zwl_server *server);
+static void keyboard_draw_emoji(struct zwl_server *server, VkCommandBuffer command);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum zwl_contact_source source);
 static int keyboard_touch_button(struct zwl_server *server, int32_t x, int32_t y, uint32_t state);
@@ -925,6 +944,7 @@ zwl_keyboard_close(
 	keyboard.open = PANEL_NONE;
 	keyboard.tool_active = 0;
 	keyboard.history_active = 0;
+	keyboard.emoji_active = 0;
 	keyboard.selecting = 0;
 	keyboard_work_area(server);
 	keyboard.held = 0;
@@ -1477,6 +1497,12 @@ keyboard_panel_button(
 			return 1;
 		}
 
+		/* An emoji is sent, or another category is shown. */
+		if (keyboard.emoji_active) {
+			keyboard_emoji_release(server);
+			return 1;
+		}
+
 		/* A key of the handwriting face acts. */
 		if (keyboard.hand_key_active) {
 			keyboard_hand_key_release(server);
@@ -1545,6 +1571,17 @@ keyboard_panel_button(
 		if (found) {
 			keyboard.history_active = 1;
 			keyboard.history_row = row;
+			server->dirty = 1;
+			return 1;
+		}
+
+		/* A tab or an emoji of the emoji face, when it shows. */
+		found = 0;
+		if (keyboard.tools_face == KEYBOARD_FACE_EMOJI)
+			found = keyboard_emoji_at(server, server->pointer_x, server->pointer_y, &row);
+		if (found) {
+			keyboard.emoji_active = 1;
+			keyboard.emoji_slot = row;
 			server->dirty = 1;
 			return 1;
 		}
@@ -1698,6 +1735,8 @@ keyboard_draw_panel(
 		keyboard_draw_tools(server, command);
 		if (keyboard.tools_face == KEYBOARD_FACE_HISTORY)
 			keyboard_draw_history(server, command);
+		if (keyboard.tools_face == KEYBOARD_FACE_EMOJI)
+			keyboard_draw_emoji(server, command);
 		keyboard_draw_keys(server, command);
 		keyboard_draw_petals(server, command);
 	}
@@ -3438,9 +3477,10 @@ keyboard_tool_at(
 }
 
 /*
- * Tells whether a tool can do something now: the tabs to come cannot; an
- * edit operation only when the focused window can do it (enabled, the bits
- * zwl_edit_state gave; state is its answer, -1 without a focused window).
+ * Tells whether a tool can do something now: the candidates' tab (to come)
+ * cannot; an edit operation only when the focused window can do it
+ * (enabled, the bits zwl_edit_state gave; state is its answer, -1 without
+ * a focused window).
  */
 static int
 keyboard_tool_enabled(
@@ -3451,13 +3491,13 @@ keyboard_tool_enabled(
 {
 	unsigned action;
 
-	/* The tabs of later phases cannot yet. */
+	/* The candidates' tab (a later phase) cannot yet; the history's and the emoji's can. */
 	(void)server;
 	switch (keyboard_tools[index].kind) {
 	case TOOL_TAB_CANDIDATES:
-	case TOOL_TAB_EMOJI:
 		return 0;
 	case TOOL_TAB_HISTORY:
+	case TOOL_TAB_EMOJI:
 		return 1;
 	case TOOL_UNDO:
 		action = ZWL_EDIT_UNDO;
@@ -3576,8 +3616,14 @@ keyboard_tool_release(
 		keyboard.tools_face = KEYBOARD_FACE_HISTORY;
 		printf("ZWL OSK tool face=history items=%u\n", zwl_clipboard_history_count(server));
 		break;
+	case TOOL_TAB_EMOJI:
+		/* The emoji face, at the category shown last; the log gives the tests its places. */
+		keyboard.tools_face = KEYBOARD_FACE_EMOJI;
+		printf("ZWL OSK tool face=emoji category=%u\n", keyboard.emoji_category);
+		keyboard_emoji_log(server);
+		break;
 	default:
-		/* The tabs of later phases do nothing yet. */
+		/* The candidates' tab (a later phase) does nothing yet. */
 		break;
 	}
 }
@@ -3656,6 +3702,8 @@ keyboard_draw_tools(
 		if (tool->kind == TOOL_TAB_EDIT && keyboard.tools_face == KEYBOARD_FACE_EDIT)
 			ground = pale;
 		if (tool->kind == TOOL_TAB_HISTORY && keyboard.tools_face == KEYBOARD_FACE_HISTORY)
+			ground = pale;
+		if (tool->kind == TOOL_TAB_EMOJI && keyboard.tools_face == KEYBOARD_FACE_EMOJI)
 			ground = pale;
 		if (tool->kind == TOOL_SELECT && keyboard.selecting)
 			ground = pale;
@@ -3808,6 +3856,207 @@ keyboard_draw_history(
 		/* Its ground and its text, cut in the middle to the row. */
 		glass_draw_solid(server, command, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3], 6.0f, ground);
 		glass_draw_text_middle(server, command, SIZE_TITLE, rect[0] + 8, rect[1] + rect[3] / 2 + 5, line, rect[2] - 16, ink);
+	}
+}
+
+/*
+ * Works out a place of the emoji face, which shares the flick panel's
+ * column between the tabs and the keys with the history: the category
+ * tabs on a row at the top (slots 0 to ZWL_EMOJI_CATEGORIES - 1), the
+ * emoji's grid under them (the following slots, row by row).
+ */
+static void
+keyboard_emoji_rect(
+	struct zwl_server *server,
+	unsigned slot,
+	int32_t *rect)
+{
+	int32_t top;
+	int32_t bottom;
+	int32_t width;
+	int32_t tab_width;
+	int32_t grid_top;
+	int32_t cell_width;
+	int32_t cell_height;
+	unsigned cell;
+	int key;
+
+	/* From under the tools' tabs to over the keys, as the history's rows. */
+	key = keyboard_key_size(server);
+	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
+	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)ZWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	width = keyboard.panel[2] - 2 * KEYBOARD_KEY_GAP;
+
+	/* A category's tab: an equal share of the top row. */
+	if (slot < ZWL_EMOJI_CATEGORIES) {
+		tab_width = (width - (int32_t)(ZWL_EMOJI_CATEGORIES - 1U) * KEYBOARD_KEY_GAP) / (int32_t)ZWL_EMOJI_CATEGORIES;
+		rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)slot * (tab_width + KEYBOARD_KEY_GAP);
+		rect[1] = top;
+		rect[2] = tab_width;
+		rect[3] = KEYBOARD_TOOL_TABS;
+		return;
+	}
+
+	/* An emoji's cell: its column and row in the grid under the tabs. */
+	cell = slot - ZWL_EMOJI_CATEGORIES;
+	grid_top = top + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
+	cell_width = (width - (int32_t)(KEYBOARD_EMOJI_COLUMNS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_EMOJI_COLUMNS;
+	cell_height = (bottom - grid_top - (int32_t)(KEYBOARD_EMOJI_ROWS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_EMOJI_ROWS;
+	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)(cell % KEYBOARD_EMOJI_COLUMNS) * (cell_width + KEYBOARD_KEY_GAP);
+	rect[1] = grid_top + (int32_t)(cell / KEYBOARD_EMOJI_COLUMNS) * (cell_height + KEYBOARD_KEY_GAP);
+	rect[2] = cell_width;
+	rect[3] = cell_height;
+}
+
+/* Finds the emoji face's tab or emoji at a point (only cells with an emoji).  Returns 1 with its slot, or 0. */
+static int
+keyboard_emoji_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	unsigned *slot)
+{
+	int32_t rect[4];
+	unsigned count;
+	unsigned index;
+	int inside;
+
+	/* The tabs, then the cells of the category shown. */
+	count = ZWL_EMOJI_CATEGORIES + zwl_emoji_count(keyboard.emoji_category);
+	for (index = 0; index < count; index++) {
+		/* The point on this place. */
+		keyboard_emoji_rect(server, index, rect);
+		inside = keyboard_contains(rect, x, y);
+		if (!inside)
+			continue;
+
+		/* Succeeded: the place. */
+		*slot = index;
+		return 1;
+	}
+
+	/* Nothing there. */
+	return 0;
+}
+
+/*
+ * Acts on the release of the held place of the emoji face: a tab shows
+ * its category, an emoji is committed to the focused field's text input
+ * (a window without one takes nothing, keyboard_send_commit says why).
+ */
+static void
+keyboard_emoji_release(
+	struct zwl_server *server)
+{
+	const char *text;
+	int sent;
+
+	/* The place is let go. */
+	keyboard.emoji_active = 0;
+	server->dirty = 1;
+
+	/* A tab: its category, and its places for the tests. */
+	if (keyboard.emoji_slot < ZWL_EMOJI_CATEGORIES) {
+		keyboard.emoji_category = keyboard.emoji_slot;
+		printf("ZWL OSK emoji category=%u\n", keyboard.emoji_category);
+		keyboard_emoji_log(server);
+		return;
+	}
+
+	/* The emoji of the cell. */
+	text = zwl_emoji(keyboard.emoji_category, keyboard.emoji_slot - ZWL_EMOJI_CATEGORIES);
+	if (text == NULL)
+		return;
+
+	/* Committed whole (no deletion before it), and the log line the tests read. */
+	sent = keyboard_send_commit(server, text, 0U);
+	printf("ZWL OSK emoji commit text=%s sent=%d\n", text, sent);
+
+	/*
+	 * The voice key replaces the last kana sent by deleting its bytes; after
+	 * an emoji there is no kana before the cursor to replace.
+	 */
+	if (sent)
+		keyboard.last_sent = KEYBOARD_SENT_NONE;
+}
+
+/* Logs the emoji face's places (its tabs and the cells of the category shown) for the tests. */
+static void
+keyboard_emoji_log(
+	struct zwl_server *server)
+{
+	int32_t rect[4];
+	unsigned count;
+	unsigned slot;
+
+	/* The tabs. */
+	for (slot = 0; slot < ZWL_EMOJI_CATEGORIES; slot++) {
+		keyboard_emoji_rect(server, slot, rect);
+		printf("ZWL OSK etab category=%u x=%d y=%d width=%d height=%d\n", slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+	}
+
+	/* The cells of the category shown. */
+	count = zwl_emoji_count(keyboard.emoji_category);
+	for (slot = 0; slot < count; slot++) {
+		keyboard_emoji_rect(server, ZWL_EMOJI_CATEGORIES + slot, rect);
+		printf("ZWL OSK erect category=%u index=%u x=%d y=%d width=%d height=%d\n", keyboard.emoji_category, slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+	}
+}
+
+/*
+ * Draws the emoji face under the tools' tabs: the category tabs (the one
+ * shown pale), and the category's emoji in colour on white cells; the held
+ * place blue.
+ */
+static void
+keyboard_draw_emoji(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	const float *ground;
+	const float *ink;
+	const char *text;
+	enum glass_size size;
+	int32_t rect[4];
+	unsigned count;
+	unsigned slot;
+
+	/* The tabs: the category shown pale, the held one blue. */
+	for (slot = 0; slot < ZWL_EMOJI_CATEGORIES; slot++) {
+		keyboard_emoji_rect(server, slot, rect);
+		ground = white;
+		ink = dark;
+		if (slot == keyboard.emoji_category)
+			ground = pale;
+		if (keyboard.emoji_active && keyboard.emoji_slot == slot) {
+			ground = blue;
+			ink = light;
+		}
+
+		/* The tab with its category's name. */
+		keyboard_draw_key(server, command, rect, zwl_emoji_category_name(slot), ground, ink, SIZE_TITLE);
+	}
+
+	/* The emoji large when the cells have the room, a size smaller otherwise. */
+	keyboard_emoji_rect(server, ZWL_EMOJI_CATEGORIES, rect);
+	size = SIZE_SEARCH;
+	if (rect[3] >= KEYBOARD_EMOJI_LARGE)
+		size = SIZE_ICON;
+
+	/* Each emoji of the category on its cell, the held one blue. */
+	count = zwl_emoji_count(keyboard.emoji_category);
+	for (slot = 0; slot < count; slot++) {
+		text = zwl_emoji(keyboard.emoji_category, slot);
+		keyboard_emoji_rect(server, ZWL_EMOJI_CATEGORIES + slot, rect);
+		ground = white;
+		if (keyboard.emoji_active && keyboard.emoji_slot == ZWL_EMOJI_CATEGORIES + slot)
+			ground = blue;
+		keyboard_draw_key(server, command, rect, text, ground, dark, size);
 	}
 }
 
