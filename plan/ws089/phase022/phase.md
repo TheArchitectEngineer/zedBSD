@@ -2,7 +2,7 @@
 
 # ws089-p022: Settings の Ethernet の頁で設定を読み書きできるように（compositor 経由、libkeiland-backend が net の command で設定）
 
-Status: in-progress（実装済み、T1-162 待ち。ユーザーの承認 2026-10-05 朝: T1-162 の PASS で cleared にできる）
+Status: cleared（2026-10-05 Q1: T1-162 の settings-p022 PASS（root・kei の net lan set、不正な入力の拒否、Settings の Use DHCP）。MTU はユーザーの決定でベータ1 は読むだけ（設定は別の WS））。以前: in-progress（実装済み、T1-162 待ち。ユーザーの承認 2026-10-05 朝: T1-162 の PASS で cleared にできる）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q728（P2、2026-10-05）
@@ -73,3 +73,7 @@ Queue: q728（P2、2026-10-05）
 
 - (a) 有線の設定（`NETWORKD_OP_LAN_CONFIGURE`）を network の group に開くこと: 承認。
 - (b) ベータ1 の MTU は読むだけ。MTU の設定は別の WS で扱う: 承認。p022 は T1-162 の PASS で cleared にできる。
+
+## Q1 の判定（2026-10-05）
+
+T1-162 の settings-p022 PASS（root・kei の net lan set、不正な入力の拒否、Settings の Use DHCP）。MTU はユーザーの決定でベータ1 は読むだけ（設定は別の WS）。**cleared**。

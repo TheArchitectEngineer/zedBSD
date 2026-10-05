@@ -4,7 +4,7 @@
 
 Phase ID: `ws052-p004`
 Parent: [WS052](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17。PCI の口・NVMe・xHCI・`KERN_SYSTEM_SLEEP` の devices だけの mode を実装（vmunix の link、host の試験）。T1 の QEMU の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-161 の roundtrip PASS（NVMe の往復・xHCI は reset と再列挙で戻る・SSH・keyboard・file の checksum）と abort PASS（UHCI で result=21）。i915 は p009 に分けた。実機は UAT）。以前: in-progress（2026-10-05 P1 generation17。PCI の口・NVMe・xHCI・`KERN_SYSTEM_SLEEP` の devices だけの mode を実装（vmunix の link、host の試験）。T1 の QEMU の試験待ち）
 Phase disposition: normal
 Queue: Q1 の 2026-10-05 の指示（p003 の次。HAL に依らない範囲、1 つでも失敗したら中止し原因の device を返す）
 
@@ -84,3 +84,7 @@ Queue: Q1 の 2026-10-05 の指示（p003 の次。HAL に依らない範囲、1
   （scratchpad を残す）・command ring・event ring を空にして同じ memory で再び走らせ、全 root port に「接続の変化」を報告させる
   （`forced_port_change`、hub の ClearPortFeature(C_PORT_CONNECTION) で消える）。gate を開け port の worker を再開すると、USB の core が古い device を
   消し、port を列挙し直して usb-net と keyboard を付け直す。reset もできなければ quarantine。dmesg は `xhci: resumed after a reset`。
+
+## Q1 の判定（2026-10-05）
+
+T1-161 の roundtrip PASS（NVMe の往復・xHCI は reset と再列挙で戻る・SSH・keyboard・file の checksum）と abort PASS（UHCI で result=21）。i915 は p009 に分けた。実機は UAT。**cleared**。

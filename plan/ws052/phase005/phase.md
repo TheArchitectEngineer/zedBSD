@@ -48,3 +48,5 @@ host の試験: HDA・LPSS・AX211 の suspend は register と driver の状態
 - networkd が sleep の前に radio を切り、後で戻す（p006 の `power.sleep.begin`・`end` の事象を受ける）。それまで 5330 では Wi-Fi が on の時は
   中止の理由が `intel-ax211` になる。
 - HDA の codec の電源を D3 に落とす本当の suspend、Wi-Fi の WoWLAN は後。
+
+Q1（2026-10-05）: HDA の止めて入る経路は T1-161 の hda の試験で PASS（QEMU）。AX211 と LPSS-I2C は 5330 の UAT（ws159-p005 の項目 9）の後に判定。

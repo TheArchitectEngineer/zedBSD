@@ -2,7 +2,7 @@
 
 # ws089-p025: Sharing の頁に SSHD の ON/OFF
 
-Status: in-progress（実装済み、T1 待ち）
+Status: cleared（2026-10-05 Q1: T1-162 の settings-p025 PASS（kei の session で Remote Login を off・on、rc.conf と auth の syslog）、sharing-on.png を Q1 が目視（Running・port 22・host key の SHA256・ssh kei@10.0.2.15）。wheel でない利用者の拒否は host の試験）。以前: in-progress（実装済み、T1 待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q728（P2、2026-10-05）
@@ -49,3 +49,7 @@ Queue: q728（P2、2026-10-05）
 ## ユーザーの承認（2026-10-05 朝、Q1 経由）
 
 - sessiond の wheel の利用者だけが使える `SERVICE sshd on|off|status`（sshd だけに限る）: 承認。
+
+## Q1 の判定（2026-10-05）
+
+T1-162 の settings-p025 PASS（kei の session で Remote Login を off・on、rc.conf と auth の syslog）、sharing-on.png を Q1 が目視（Running・port 22・host key の SHA256・ssh kei@10.0.2.15）。wheel でない利用者の拒否は host の試験。**cleared**。
