@@ -22,6 +22,13 @@
  * within half its width, which gives smooth edges without an outline
  * rasterizer.  glass.c places the results in the glyph atlas when the look
  * opens.
+ *
+ * An application's picture is shown on a tile of its own (ws128-p012, the
+ * user's montage 4): a square with rounded corners in three diagonal bands
+ * of two pastel-leaning colours with a light stripe across the middle one,
+ * the picture cut out of it so that whatever is behind the tile shows
+ * through.  zwl_icon_tile draws the whole tile in colour; glass.c keeps the
+ * tiles at the sizes the compositor draws them.
  */
 
 #include "icons.h"
@@ -37,7 +44,28 @@
 #define ICON_APP_MIN_STROKE	1.6f
 
 /* The most parts one icon has. */
-#define ICON_PARTS		12
+#define ICON_PARTS		16
+
+/*
+ * A part whose kind carries this bit is cut out of what the parts before it
+ * cover, instead of covering (ws128-p012: the applications' white shapes
+ * with their details knocked out to the coloured ground).
+ */
+#define ICON_CUT		0x100U
+
+/*
+ * An application's tile: its corner radius and its picture's side as parts
+ * of its side, the subsamples a side of a pixel its colour is averaged over,
+ * and the light stripe across its middle band (where along the diagonal, half
+ * its width, and how far towards white).
+ */
+#define ICON_TILE_RADIUS	0.24f
+#define ICON_TILE_PICTURE	0.66f
+#define ICON_TILE_SAMPLES	4U
+#define ICON_TILE_BANDS		3U
+#define ICON_TILE_STRIPE	0.58f
+#define ICON_TILE_STRIPE_HALF	0.035f
+#define ICON_TILE_STRIPE_LIGHT	0.2f
 
 /* Degrees in a turn, and radians in a degree. */
 #define ICON_TURN		360.0f
@@ -48,7 +76,8 @@
  * ring (a stroked circle), a dot (a filled circle), a filled box with
  * rounded corners, the outline of such a box (a frame), a stroked arc of
  * a circle, a hole: a filled circle cut out of everything else the
- * icon covers, and a filled triangle pointing right (a play sign).
+ * icon covers, and a filled triangle.  Any kind with ICON_CUT is cut out
+ * of what the parts before it cover; the parts are applied in order.
  */
 enum icon_kind {
 	ICON_END,
@@ -68,9 +97,8 @@ enum icon_kind {
  * a hole's centre and radius (a, b, c); a box's or a frame's corners and
  * corner radius (a, b, c, d, e); an arc's centre and radius (a, b, c), the
  * angle it starts at and the angle it sweeps through (d, e), in degrees
- * clockwise from the right (y grows downwards); a triangle's box, its
- * left side the box's left edge and its point the middle of the right
- * edge (a, b, c, d), grown all round by e with rounded corners.
+ * clockwise from the right (y grows downwards); a triangle's three
+ * corners (a, b), (c, d) and (e, f).
  */
 struct icon_part {
 	unsigned kind;
@@ -79,192 +107,202 @@ struct icon_part {
 	float c;
 	float d;
 	float e;
+	float f;
 };
 
 /*
  * The application IDs of the windows whose mark is a picture (ws035-p124):
- * the ID each program gives its windows (an X11 window's is its class),
- * the picture, and the colour of its square, the same as App Home's.
+ * the ID each program gives its windows (an X11 window's is its class) and
+ * the picture.
  */
 struct icon_app_id {
 	const char *app_id;
 	unsigned icon;
-	uint32_t rgb;
+};
+
+/*
+ * The two colours (0xRRGGBB) of an application's tile: the light one of the
+ * upper right band and the deep one of the lower left; the middle band is
+ * half way between them.
+ */
+struct icon_bands {
+	uint32_t light;
+	uint32_t deep;
 };
 
 /* The parts of each icon, in the order of enum glass_icon, each list ended by ICON_END. */
 static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 	/* Back: a chevron pointing left. */
 	{
-		{ ICON_SEGMENT, 15.0f, 5.0f, 8.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 8.0f, 12.0f, 15.0f, 19.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 15.0f, 5.0f, 8.0f, 12.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 8.0f, 12.0f, 15.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Forward: a chevron pointing right. */
 	{
-		{ ICON_SEGMENT, 9.0f, 5.0f, 16.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 16.0f, 12.0f, 9.0f, 19.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 9.0f, 5.0f, 16.0f, 12.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 16.0f, 12.0f, 9.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Up: a chevron pointing up. */
 	{
-		{ ICON_SEGMENT, 5.0f, 15.0f, 12.0f, 8.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 8.0f, 19.0f, 15.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 5.0f, 15.0f, 12.0f, 8.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 8.0f, 19.0f, 15.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Home: a roof over a house. */
 	{
-		{ ICON_SEGMENT, 3.5f, 11.5f, 12.0f, 4.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 4.0f, 20.5f, 11.5f, 0.0f },
-		{ ICON_SEGMENT, 6.0f, 9.5f, 6.0f, 20.0f, 0.0f },
-		{ ICON_SEGMENT, 6.0f, 20.0f, 18.0f, 20.0f, 0.0f },
-		{ ICON_SEGMENT, 18.0f, 20.0f, 18.0f, 9.5f, 0.0f },
-		{ ICON_SEGMENT, 10.5f, 20.0f, 10.5f, 15.0f, 0.0f },
-		{ ICON_SEGMENT, 10.5f, 15.0f, 13.5f, 15.0f, 0.0f },
-		{ ICON_SEGMENT, 13.5f, 15.0f, 13.5f, 20.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 11.5f, 12.0f, 4.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 4.0f, 20.5f, 11.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 6.0f, 9.5f, 6.0f, 20.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 6.0f, 20.0f, 18.0f, 20.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 18.0f, 20.0f, 18.0f, 9.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 10.5f, 20.0f, 10.5f, 15.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 10.5f, 15.0f, 13.5f, 15.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 13.5f, 15.0f, 13.5f, 20.0f, 0.0f, 0.0f }
 	},
 	/* Search: a magnifier. */
 	{
-		{ ICON_RING, 10.0f, 10.0f, 6.0f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 14.5f, 14.5f, 20.0f, 20.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_RING, 10.0f, 10.0f, 6.0f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 14.5f, 14.5f, 20.0f, 20.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Icons (grid): four rounded squares. */
 	{
-		{ ICON_BOX, 4.0f, 4.0f, 10.8f, 10.8f, 1.6f },
-		{ ICON_BOX, 13.2f, 4.0f, 20.0f, 10.8f, 1.6f },
-		{ ICON_BOX, 4.0f, 13.2f, 10.8f, 20.0f, 1.6f },
-		{ ICON_BOX, 13.2f, 13.2f, 20.0f, 20.0f, 1.6f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 4.0f, 4.0f, 10.8f, 10.8f, 1.6f, 0.0f },
+		{ ICON_BOX, 13.2f, 4.0f, 20.0f, 10.8f, 1.6f, 0.0f },
+		{ ICON_BOX, 4.0f, 13.2f, 10.8f, 20.0f, 1.6f, 0.0f },
+		{ ICON_BOX, 13.2f, 13.2f, 20.0f, 20.0f, 1.6f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* List: three dots and three lines. */
 	{
-		{ ICON_DOT, 5.0f, 6.0f, 1.4f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 9.0f, 6.0f, 20.0f, 6.0f, 0.0f },
-		{ ICON_DOT, 5.0f, 12.0f, 1.4f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 9.0f, 12.0f, 20.0f, 12.0f, 0.0f },
-		{ ICON_DOT, 5.0f, 18.0f, 1.4f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 9.0f, 18.0f, 20.0f, 18.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_DOT, 5.0f, 6.0f, 1.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 9.0f, 6.0f, 20.0f, 6.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 5.0f, 12.0f, 1.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 9.0f, 12.0f, 20.0f, 12.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 5.0f, 18.0f, 1.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 9.0f, 18.0f, 20.0f, 18.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Columns: a frame cut in three. */
 	{
-		{ ICON_SEGMENT, 3.5f, 5.0f, 20.5f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 20.5f, 5.0f, 20.5f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 20.5f, 19.0f, 3.5f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 19.0f, 3.5f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 9.2f, 5.0f, 9.2f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 14.8f, 5.0f, 14.8f, 19.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 5.0f, 20.5f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 20.5f, 5.0f, 20.5f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 20.5f, 19.0f, 3.5f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 19.0f, 3.5f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 9.2f, 5.0f, 9.2f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 14.8f, 5.0f, 14.8f, 19.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Sort: three lines, shorter and shorter. */
 	{
-		{ ICON_SEGMENT, 4.0f, 6.0f, 20.0f, 6.0f, 0.0f },
-		{ ICON_SEGMENT, 4.0f, 12.0f, 15.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 4.0f, 18.0f, 10.0f, 18.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 4.0f, 6.0f, 20.0f, 6.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 4.0f, 12.0f, 15.0f, 12.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 4.0f, 18.0f, 10.0f, 18.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Filter: three centred lines, narrower and narrower. */
 	{
-		{ ICON_SEGMENT, 4.0f, 6.0f, 20.0f, 6.0f, 0.0f },
-		{ ICON_SEGMENT, 7.5f, 12.0f, 16.5f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 10.5f, 18.0f, 13.5f, 18.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 4.0f, 6.0f, 20.0f, 6.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.5f, 12.0f, 16.5f, 12.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 10.5f, 18.0f, 13.5f, 18.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Sidebar: a frame with a panel on the left. */
 	{
-		{ ICON_SEGMENT, 3.5f, 5.0f, 20.5f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 20.5f, 5.0f, 20.5f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 20.5f, 19.0f, 3.5f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 19.0f, 3.5f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 9.0f, 5.0f, 9.0f, 19.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 5.0f, 20.5f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 20.5f, 5.0f, 20.5f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 20.5f, 19.0f, 3.5f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 19.0f, 3.5f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 9.0f, 5.0f, 9.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Preview: a frame with a panel on the right. */
 	{
-		{ ICON_SEGMENT, 3.5f, 5.0f, 20.5f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 20.5f, 5.0f, 20.5f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 20.5f, 19.0f, 3.5f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 19.0f, 3.5f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 15.0f, 5.0f, 15.0f, 19.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 5.0f, 20.5f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 20.5f, 5.0f, 20.5f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 20.5f, 19.0f, 3.5f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 19.0f, 3.5f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 15.0f, 5.0f, 15.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Plus. */
 	{
-		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 5.0f, 12.0f, 19.0f, 12.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 5.0f, 12.0f, 19.0f, 12.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Close: a cross. */
 	{
-		{ ICON_SEGMENT, 7.0f, 7.0f, 17.0f, 17.0f, 0.0f },
-		{ ICON_SEGMENT, 17.0f, 7.0f, 7.0f, 17.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 7.0f, 7.0f, 17.0f, 17.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 17.0f, 7.0f, 7.0f, 17.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Overflow: three dots. */
 	{
-		{ ICON_DOT, 6.0f, 12.0f, 1.9f, 0.0f, 0.0f },
-		{ ICON_DOT, 12.0f, 12.0f, 1.9f, 0.0f, 0.0f },
-		{ ICON_DOT, 18.0f, 12.0f, 1.9f, 0.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_DOT, 6.0f, 12.0f, 1.9f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 12.0f, 12.0f, 1.9f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 18.0f, 12.0f, 1.9f, 0.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Volume 0: a speaker (ws100-p004). */
 	{
-		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Volume 1: a speaker and one wave. */
 	{
-		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
-		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Volume 2: a speaker and two waves. */
 	{
-		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
-		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f },
-		{ ICON_ARC, 12.0f, 12.0f, 6.5f, 315.0f, 90.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 6.5f, 315.0f, 90.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Volume 3: a speaker and three waves. */
 	{
-		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
-		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f },
-		{ ICON_ARC, 12.0f, 12.0f, 6.5f, 315.0f, 90.0f },
-		{ ICON_ARC, 12.0f, 12.0f, 9.5f, 315.0f, 90.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 3.5f, 315.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 6.5f, 315.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 12.0f, 9.5f, 315.0f, 90.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Volume muted: a speaker and a cross. */
 	{
-		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f },
-		{ ICON_SEGMENT, 15.0f, 9.0f, 21.0f, 15.0f, 0.0f },
-		{ ICON_SEGMENT, 21.0f, 9.0f, 15.0f, 15.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 3.5f, 9.5f, 3.5f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 9.5f, 7.0f, 9.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 3.5f, 14.5f, 7.0f, 14.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 9.5f, 12.0f, 5.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 7.0f, 14.5f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 5.0f, 12.0f, 19.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 15.0f, 9.0f, 21.0f, 15.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 21.0f, 9.0f, 15.0f, 15.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/*
 	 * USB (the removable media in the system bar, 2026-10-05 user
@@ -272,211 +310,195 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 	 * a branch to a circle on the left and one to a square on the right.
 	 */
 	{
-		{ ICON_SEGMENT, 12.0f, 4.5f, 12.0f, 18.5f, 0.0f },
-		{ ICON_SEGMENT, 9.2f, 7.6f, 12.0f, 4.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 4.0f, 14.8f, 7.6f, 0.0f },
-		{ ICON_DOT, 12.0f, 19.8f, 2.4f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 16.0f, 6.8f, 12.4f, 0.0f },
-		{ ICON_SEGMENT, 6.8f, 12.4f, 6.8f, 10.6f, 0.0f },
-		{ ICON_DOT, 6.8f, 9.4f, 1.9f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 13.6f, 17.2f, 10.0f, 0.0f },
-		{ ICON_SEGMENT, 17.2f, 10.0f, 17.2f, 8.6f, 0.0f },
-		{ ICON_BOX, 15.4f, 5.6f, 19.0f, 9.2f, 0.4f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 12.0f, 4.5f, 12.0f, 18.5f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 9.2f, 7.6f, 12.0f, 4.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 4.0f, 14.8f, 7.6f, 0.0f, 0.0f },
+		{ ICON_DOT, 12.0f, 19.8f, 2.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 16.0f, 6.8f, 12.4f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 6.8f, 12.4f, 6.8f, 10.6f, 0.0f, 0.0f },
+		{ ICON_DOT, 6.8f, 9.4f, 1.9f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 13.6f, 17.2f, 10.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 17.2f, 10.0f, 17.2f, 8.6f, 0.0f, 0.0f },
+		{ ICON_BOX, 15.4f, 5.6f, 19.0f, 9.2f, 0.4f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Files: a folder, its tab on the upper left. */
+	/* Files: a folder, its tab on the upper left, a line knocked out under the tab. */
 	{
-		{ ICON_FRAME, 3.0f, 8.5f, 21.0f, 19.5f, 2.2f },
-		{ ICON_SEGMENT, 3.0f, 10.0f, 3.0f, 6.0f, 0.0f },
-		{ ICON_SEGMENT, 3.0f, 6.0f, 9.0f, 6.0f, 0.0f },
-		{ ICON_SEGMENT, 9.0f, 6.0f, 11.0f, 8.5f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 3.0f, 5.0f, 11.0f, 9.0f, 1.6f, 0.0f },
+		{ ICON_BOX, 3.0f, 7.0f, 21.0f, 19.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 3.0f, 10.2f, 21.0f, 10.2f, 1.4f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Notes: a page with a written line and a pen writing across it. */
+	/* Notes: a notepad with two written lines, a pencil writing across it. */
 	{
-		{ ICON_FRAME, 4.0f, 3.5f, 16.0f, 20.5f, 2.2f },
-		{ ICON_SEGMENT, 7.0f, 8.0f, 12.5f, 8.0f, 0.0f },
-		{ ICON_SEGMENT, 7.0f, 11.5f, 10.5f, 11.5f, 0.0f },
-		{ ICON_SEGMENT, 20.5f, 6.0f, 12.5f, 14.0f, 3.4f },
-		{ ICON_SEGMENT, 12.0f, 14.5f, 10.5f, 17.0f, 1.6f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 5.0f, 3.5f, 16.5f, 20.5f, 2.2f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 8.0f, 8.0f, 13.0f, 8.0f, 1.6f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 8.0f, 11.5f, 11.5f, 11.5f, 1.6f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 21.0f, 5.5f, 12.2f, 14.3f, 6.0f, 0.0f },
+		{ ICON_SEGMENT, 20.4f, 6.1f, 13.4f, 13.1f, 3.0f, 0.0f },
+		{ ICON_TRIANGLE, 12.4f, 12.1f, 14.4f, 14.1f, 11.2f, 15.3f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Terminal: a screen with a prompt and a cursor. */
+	/* Terminal: a screen with a prompt and a cursor knocked out. */
 	{
-		{ ICON_FRAME, 3.0f, 4.5f, 21.0f, 19.5f, 2.5f },
-		{ ICON_SEGMENT, 7.0f, 9.0f, 10.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 10.0f, 12.0f, 7.0f, 15.0f, 0.0f },
-		{ ICON_SEGMENT, 12.5f, 15.0f, 17.0f, 15.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 3.0f, 4.5f, 21.0f, 19.5f, 2.8f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 7.0f, 9.0f, 10.0f, 12.0f, 1.9f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 10.0f, 12.0f, 7.0f, 15.0f, 1.9f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 12.5f, 15.0f, 17.0f, 15.0f, 1.9f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* PDF Viewer: a document with a folded corner and two lines of text. */
+	/* PDF Viewer: a page with its corner folded and three lines of text knocked out. */
 	{
-		{ ICON_SEGMENT, 5.5f, 3.5f, 13.5f, 3.5f, 0.0f },
-		{ ICON_SEGMENT, 13.5f, 3.5f, 18.5f, 8.5f, 0.0f },
-		{ ICON_SEGMENT, 18.5f, 8.5f, 18.5f, 20.5f, 0.0f },
-		{ ICON_SEGMENT, 18.5f, 20.5f, 5.5f, 20.5f, 0.0f },
-		{ ICON_SEGMENT, 5.5f, 20.5f, 5.5f, 3.5f, 0.0f },
-		{ ICON_SEGMENT, 13.5f, 3.5f, 13.5f, 8.5f, 0.0f },
-		{ ICON_SEGMENT, 13.5f, 8.5f, 18.5f, 8.5f, 0.0f },
-		{ ICON_SEGMENT, 8.5f, 13.0f, 15.5f, 13.0f, 0.0f },
-		{ ICON_SEGMENT, 8.5f, 16.5f, 15.5f, 16.5f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 5.0f, 3.0f, 19.0f, 21.0f, 2.0f, 0.0f },
+		{ ICON_TRIANGLE | ICON_CUT, 14.0f, 1.5f, 22.0f, 1.5f, 22.0f, 9.5f },
+		{ ICON_TRIANGLE, 14.3f, 3.0f, 14.3f, 8.2f, 19.5f, 8.2f },
+		{ ICON_SEGMENT | ICON_CUT, 8.3f, 12.0f, 15.7f, 12.0f, 1.7f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 8.3f, 15.2f, 15.7f, 15.2f, 1.7f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 8.3f, 18.4f, 12.5f, 18.4f, 1.7f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Image Viewer (ws091): a picture in a frame, a sun over two hills. */
+	/* Image Viewer: a picture, two hills and a sun knocked out. */
 	{
-		{ ICON_FRAME, 3.0f, 4.5f, 21.0f, 19.5f, 2.5f },
-		{ ICON_DOT, 16.5f, 9.0f, 1.8f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 5.5f, 17.0f, 10.0f, 11.5f, 0.0f },
-		{ ICON_SEGMENT, 10.0f, 11.5f, 14.5f, 17.0f, 0.0f },
-		{ ICON_SEGMENT, 12.8f, 15.0f, 15.5f, 12.5f, 0.0f },
-		{ ICON_SEGMENT, 15.5f, 12.5f, 18.5f, 17.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 3.0f, 4.5f, 21.0f, 19.5f, 2.8f, 0.0f },
+		{ ICON_TRIANGLE | ICON_CUT, 5.2f, 17.3f, 10.2f, 9.8f, 15.2f, 17.3f },
+		{ ICON_TRIANGLE | ICON_CUT, 11.6f, 17.3f, 15.0f, 12.6f, 18.8f, 17.3f },
+		{ ICON_DOT | ICON_CUT, 16.0f, 8.6f, 1.8f, 0.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Browser: a globe, its equator and one meridian seen from the side. */
+	/* Browser: a globe, its equator and meridians knocked out. */
 	{
-		{ ICON_RING, 12.0f, 12.0f, 8.5f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 3.5f, 12.0f, 20.5f, 12.0f, 0.0f },
-		{ ICON_ARC, 4.97f, 12.0f, 11.03f, -50.4f, 100.8f },
-		{ ICON_ARC, 19.03f, 12.0f, 11.03f, 129.6f, 100.8f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_DOT, 12.0f, 12.0f, 8.8f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 3.0f, 12.0f, 21.0f, 12.0f, 1.5f, 0.0f },
+		{ ICON_ARC | ICON_CUT, 4.97f, 12.0f, 11.03f, -50.4f, 100.8f, 0.0f },
+		{ ICON_ARC | ICON_CUT, 19.03f, 12.0f, 11.03f, 129.6f, 100.8f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 12.0f, 3.0f, 12.0f, 21.0f, 1.5f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Model viewer: a cube seen from above a corner. */
+	/* Model viewer: a cube seen from above a corner, its edges knocked out. */
 	{
-		{ ICON_SEGMENT, 12.0f, 3.0f, 19.8f, 7.5f, 0.0f },
-		{ ICON_SEGMENT, 19.8f, 7.5f, 19.8f, 16.5f, 0.0f },
-		{ ICON_SEGMENT, 19.8f, 16.5f, 12.0f, 21.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 21.0f, 4.2f, 16.5f, 0.0f },
-		{ ICON_SEGMENT, 4.2f, 16.5f, 4.2f, 7.5f, 0.0f },
-		{ ICON_SEGMENT, 4.2f, 7.5f, 12.0f, 3.0f, 0.0f },
-		{ ICON_SEGMENT, 4.2f, 7.5f, 12.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 19.8f, 7.5f, 12.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 12.0f, 12.0f, 21.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_TRIANGLE, 12.0f, 3.0f, 19.8f, 7.5f, 19.8f, 16.5f },
+		{ ICON_TRIANGLE, 12.0f, 3.0f, 19.8f, 16.5f, 12.0f, 21.0f },
+		{ ICON_TRIANGLE, 12.0f, 3.0f, 12.0f, 21.0f, 4.2f, 16.5f },
+		{ ICON_TRIANGLE, 12.0f, 3.0f, 4.2f, 16.5f, 4.2f, 7.5f },
+		{ ICON_SEGMENT | ICON_CUT, 4.2f, 7.5f, 12.0f, 12.0f, 1.5f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 19.8f, 7.5f, 12.0f, 12.0f, 1.5f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 12.0f, 12.0f, 12.0f, 21.0f, 1.5f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Gears: a gear wheel, eight teeth round a disc with a hole in its middle. */
 	{
-		{ ICON_DOT, 12.0f, 12.0f, 6.4f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 17.5f, 12.0f, 19.8f, 12.0f, 3.6f },
-		{ ICON_SEGMENT, 15.89f, 15.89f, 17.52f, 17.52f, 3.6f },
-		{ ICON_SEGMENT, 12.0f, 17.5f, 12.0f, 19.8f, 3.6f },
-		{ ICON_SEGMENT, 8.11f, 15.89f, 6.48f, 17.52f, 3.6f },
-		{ ICON_SEGMENT, 6.5f, 12.0f, 4.2f, 12.0f, 3.6f },
-		{ ICON_SEGMENT, 8.11f, 8.11f, 6.48f, 6.48f, 3.6f },
-		{ ICON_SEGMENT, 12.0f, 6.5f, 12.0f, 4.2f, 3.6f },
-		{ ICON_SEGMENT, 15.89f, 8.11f, 17.52f, 6.48f, 3.6f },
-		{ ICON_HOLE, 12.0f, 12.0f, 2.7f, 0.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_DOT, 12.0f, 12.0f, 6.2f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 17.8f, 12.0f, 20.4f, 12.0f, 3.6f, 0.0f },
+		{ ICON_SEGMENT, 16.1f, 16.1f, 17.94f, 17.94f, 3.6f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 17.8f, 12.0f, 20.4f, 3.6f, 0.0f },
+		{ ICON_SEGMENT, 7.9f, 16.1f, 6.06f, 17.94f, 3.6f, 0.0f },
+		{ ICON_SEGMENT, 6.2f, 12.0f, 3.6f, 12.0f, 3.6f, 0.0f },
+		{ ICON_SEGMENT, 7.9f, 7.9f, 6.06f, 6.06f, 3.6f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 6.2f, 12.0f, 3.6f, 3.6f, 0.0f },
+		{ ICON_SEGMENT, 16.1f, 7.9f, 17.94f, 6.06f, 3.6f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 12.0f, 12.0f, 2.6f, 0.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* X terminal: a screen with an X and a cursor. */
+	/* X terminal: a screen with an X and a cursor knocked out. */
 	{
-		{ ICON_FRAME, 3.0f, 4.5f, 21.0f, 19.5f, 2.5f },
-		{ ICON_SEGMENT, 7.0f, 9.0f, 11.0f, 15.0f, 0.0f },
-		{ ICON_SEGMENT, 11.0f, 9.0f, 7.0f, 15.0f, 0.0f },
-		{ ICON_SEGMENT, 13.5f, 15.0f, 17.0f, 15.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 3.0f, 4.5f, 21.0f, 19.5f, 2.8f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 7.0f, 9.0f, 11.0f, 15.0f, 1.9f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 11.0f, 9.0f, 7.0f, 15.0f, 1.9f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 13.5f, 15.0f, 17.0f, 15.0f, 1.9f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Lock Screen: a padlock with its keyhole. */
+	/* Lock Screen: a padlock with its keyhole knocked out. */
 	{
-		{ ICON_FRAME, 5.0f, 10.5f, 19.0f, 20.5f, 2.5f },
-		{ ICON_ARC, 12.0f, 8.0f, 4.0f, 180.0f, 180.0f },
-		{ ICON_SEGMENT, 8.0f, 8.0f, 8.0f, 10.5f, 0.0f },
-		{ ICON_SEGMENT, 16.0f, 8.0f, 16.0f, 10.5f, 0.0f },
-		{ ICON_DOT, 12.0f, 14.7f, 1.5f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 14.7f, 12.0f, 17.2f, 1.6f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_ARC, 12.0f, 8.6f, 4.1f, 180.0f, 180.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 8.6f, 3.4f, 180.0f, 180.0f, 0.0f },
+		{ ICON_SEGMENT, 7.9f, 8.6f, 7.9f, 11.0f, 1.8f, 0.0f },
+		{ ICON_SEGMENT, 16.1f, 8.6f, 16.1f, 11.0f, 1.8f, 0.0f },
+		{ ICON_BOX, 5.0f, 10.5f, 19.0f, 20.5f, 2.5f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 12.0f, 14.6f, 1.6f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 12.0f, 14.6f, 12.0f, 17.6f, 1.4f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Log Out: an arrow leaving an open door. */
 	{
-		{ ICON_SEGMENT, 11.0f, 4.0f, 5.0f, 4.0f, 0.0f },
-		{ ICON_SEGMENT, 5.0f, 4.0f, 5.0f, 20.0f, 0.0f },
-		{ ICON_SEGMENT, 5.0f, 20.0f, 11.0f, 20.0f, 0.0f },
-		{ ICON_SEGMENT, 10.0f, 12.0f, 20.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 16.5f, 8.5f, 20.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 20.0f, 12.0f, 16.5f, 15.5f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 11.0f, 4.0f, 5.0f, 4.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT, 5.0f, 4.0f, 5.0f, 20.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT, 5.0f, 20.0f, 11.0f, 20.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT, 10.0f, 12.0f, 20.0f, 12.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT, 16.2f, 8.2f, 20.0f, 12.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT, 20.0f, 12.0f, 16.2f, 15.8f, 2.2f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Text Editor (WS092): a page with three lines of text, the cursor after the last. */
+	/* Text Editor (WS092): a capital T and a text cursor beside it. */
 	{
-		{ ICON_FRAME, 4.5f, 3.5f, 19.5f, 20.5f, 2.2f },
-		{ ICON_SEGMENT, 8.0f, 8.0f, 16.0f, 8.0f, 0.0f },
-		{ ICON_SEGMENT, 8.0f, 12.0f, 16.0f, 12.0f, 0.0f },
-		{ ICON_SEGMENT, 8.0f, 16.0f, 11.5f, 16.0f, 0.0f },
-		{ ICON_SEGMENT, 14.0f, 14.0f, 14.0f, 18.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 6.0f, 5.5f, 17.0f, 5.5f, 3.2f, 0.0f },
+		{ ICON_SEGMENT, 11.5f, 5.5f, 11.5f, 18.5f, 3.2f, 0.0f },
+		{ ICON_SEGMENT, 17.8f, 13.0f, 17.8f, 19.5f, 1.7f, 0.0f },
+		{ ICON_SEGMENT, 16.3f, 13.0f, 19.3f, 13.0f, 1.4f, 0.0f },
+		{ ICON_SEGMENT, 16.3f, 19.5f, 19.3f, 19.5f, 1.4f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/*
-	 * Settings (WS089): the outline of a cog, eight teeth round a ring and a
-	 * small ring at its hub, drawn in lines so that it is not taken for
-	 * Gears' filled wheel.
-	 */
+	/* Settings (WS089): three sliders, each knob ringed by the ground. */
 	{
-		{ ICON_RING, 12.0f, 12.0f, 6.0f, 0.0f, 0.0f },
-		{ ICON_SEGMENT, 19.30f, 12.00f, 20.70f, 12.00f, 3.0f },
-		{ ICON_SEGMENT, 17.16f, 17.16f, 18.15f, 18.15f, 3.0f },
-		{ ICON_SEGMENT, 12.00f, 19.30f, 12.00f, 20.70f, 3.0f },
-		{ ICON_SEGMENT, 6.84f, 17.16f, 5.85f, 18.15f, 3.0f },
-		{ ICON_SEGMENT, 4.70f, 12.00f, 3.30f, 12.00f, 3.0f },
-		{ ICON_SEGMENT, 6.84f, 6.84f, 5.85f, 5.85f, 3.0f },
-		{ ICON_SEGMENT, 12.00f, 4.70f, 12.00f, 3.30f, 3.0f },
-		{ ICON_SEGMENT, 17.16f, 6.84f, 18.15f, 5.85f, 3.0f },
-		{ ICON_RING, 12.0f, 12.0f, 2.3f, 0.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_SEGMENT, 5.0f, 7.0f, 19.0f, 7.0f, 2.0f, 0.0f },
+		{ ICON_SEGMENT, 5.0f, 12.0f, 19.0f, 12.0f, 2.0f, 0.0f },
+		{ ICON_SEGMENT, 5.0f, 17.0f, 19.0f, 17.0f, 2.0f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 9.0f, 7.0f, 3.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 9.0f, 7.0f, 2.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 15.0f, 12.0f, 3.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 15.0f, 12.0f, 2.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 11.0f, 17.0f, 3.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 11.0f, 17.0f, 2.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Video Player (ws128-p012): a screen with a play sign in its middle. */
+	/* Video Player: a screen with a play sign knocked out. */
 	{
-		{ ICON_FRAME, 3.0f, 5.0f, 21.0f, 19.0f, 3.0f },
-		{ ICON_TRIANGLE, 10.2f, 9.3f, 15.4f, 14.7f, 0.6f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 3.0f, 5.5f, 21.0f, 18.5f, 3.2f, 0.0f },
+		{ ICON_TRIANGLE | ICON_CUT, 10.0f, 8.8f, 10.0f, 15.2f, 15.6f, 12.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/*
-	 * Phone (ws128-p012): a handset, its handle a wide band (four arcs side
-	 * by side) curving round the lower left between the earpiece at the
-	 * upper left and the mouthpiece at the lower right.
-	 */
+	/* Phone: a handset, its handle a wide band (arcs side by side) curving round the lower left, the earpiece and the mouthpiece turned in at its ends. */
 	{
-		{ ICON_ARC, 19.80f, 4.30f, 13.10f, 92.0f, 86.0f },
-		{ ICON_ARC, 19.80f, 4.30f, 13.70f, 92.0f, 86.0f },
-		{ ICON_ARC, 19.80f, 4.30f, 14.30f, 92.0f, 86.0f },
-		{ ICON_ARC, 19.80f, 4.30f, 14.90f, 92.0f, 86.0f },
-		{ ICON_SEGMENT, 10.07f, 5.49f, 5.51f, 6.05f, 5.0f },
-		{ ICON_SEGMENT, 18.61f, 14.03f, 18.05f, 18.59f, 5.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_ARC, 19.4f, 4.4f, 11.8f, 98.0f, 74.0f, 0.0f },
+		{ ICON_ARC, 19.4f, 4.4f, 12.73f, 98.0f, 74.0f, 0.0f },
+		{ ICON_ARC, 19.4f, 4.4f, 13.67f, 98.0f, 74.0f, 0.0f },
+		{ ICON_ARC, 19.4f, 4.4f, 14.6f, 98.0f, 74.0f, 0.0f },
+		{ ICON_SEGMENT, 17.66f, 16.78f, 18.18f, 13.11f, 6.4f, 0.0f },
+		{ ICON_SEGMENT, 7.02f, 6.14f, 10.69f, 5.62f, 6.4f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/*
-	 * Calendar (ws128-p012): a page of a calendar, its binding rings on
-	 * top, a filled band for the month, and days below.
-	 */
+	/* Calendar: a page of a calendar, its binding rings on top, a line under the month and the days knocked out. */
 	{
-		{ ICON_FRAME, 3.5f, 5.5f, 20.5f, 20.5f, 2.5f },
-		{ ICON_BOX, 3.5f, 5.5f, 20.5f, 10.5f, 2.5f },
-		{ ICON_BOX, 3.5f, 8.0f, 20.5f, 10.5f, 0.0f },
-		{ ICON_SEGMENT, 8.0f, 3.2f, 8.0f, 6.8f, 0.0f },
-		{ ICON_SEGMENT, 16.0f, 3.2f, 16.0f, 6.8f, 0.0f },
-		{ ICON_DOT, 8.0f, 14.0f, 1.25f, 0.0f, 0.0f },
-		{ ICON_DOT, 12.0f, 14.0f, 1.25f, 0.0f, 0.0f },
-		{ ICON_DOT, 16.0f, 14.0f, 1.25f, 0.0f, 0.0f },
-		{ ICON_DOT, 8.0f, 17.5f, 1.25f, 0.0f, 0.0f },
-		{ ICON_DOT, 12.0f, 17.5f, 1.25f, 0.0f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 4.0f, 6.0f, 20.0f, 20.5f, 2.6f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 4.0f, 10.3f, 20.0f, 10.3f, 1.3f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 8.5f, 13.8f, 1.15f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 12.0f, 13.8f, 1.15f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 15.5f, 13.8f, 1.15f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 8.5f, 17.2f, 1.15f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 12.0f, 17.2f, 1.15f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 8.5f, 3.0f, 8.5f, 7.6f, 3.4f, 0.0f },
+		{ ICON_SEGMENT, 8.5f, 3.4f, 8.5f, 7.6f, 1.8f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 15.5f, 3.0f, 15.5f, 7.6f, 3.4f, 0.0f },
+		{ ICON_SEGMENT, 15.5f, 3.4f, 15.5f, 7.6f, 1.8f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Mail (ws128-p012): an envelope, its flap folded down to the middle. */
+	/* Mail: an envelope, its flap knocked out. */
 	{
-		{ ICON_FRAME, 3.0f, 5.5f, 21.0f, 18.5f, 2.5f },
-		{ ICON_SEGMENT, 4.5f, 7.5f, 12.0f, 13.0f, 0.0f },
-		{ ICON_SEGMENT, 12.0f, 13.0f, 19.5f, 7.5f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 3.0f, 5.5f, 21.0f, 18.5f, 2.2f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 4.2f, 7.2f, 12.0f, 12.8f, 1.7f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 12.0f, 12.8f, 19.8f, 7.2f, 1.7f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* System Monitor (ws128-p012): a display on its stand, a pulse of activity across it. */
+	/* System Monitor: a display on its stand, a pulse of activity knocked out across it. */
 	{
-		{ ICON_FRAME, 3.0f, 4.0f, 21.0f, 16.5f, 2.5f },
-		{ ICON_SEGMENT, 12.0f, 16.5f, 12.0f, 20.0f, 0.0f },
-		{ ICON_SEGMENT, 8.0f, 20.0f, 16.0f, 20.0f, 0.0f },
-		{ ICON_SEGMENT, 6.0f, 10.5f, 8.8f, 10.5f, 0.0f },
-		{ ICON_SEGMENT, 8.8f, 10.5f, 10.4f, 7.5f, 0.0f },
-		{ ICON_SEGMENT, 10.4f, 7.5f, 13.2f, 13.2f, 0.0f },
-		{ ICON_SEGMENT, 13.2f, 13.2f, 14.8f, 10.5f, 0.0f },
-		{ ICON_SEGMENT, 14.8f, 10.5f, 18.0f, 10.5f, 0.0f },
-		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+		{ ICON_BOX, 3.0f, 4.0f, 21.0f, 16.0f, 2.4f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 16.0f, 12.0f, 19.5f, 2.2f, 0.0f },
+		{ ICON_SEGMENT, 8.0f, 19.8f, 16.0f, 19.8f, 2.2f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 6.0f, 10.5f, 8.8f, 10.5f, 1.6f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 8.8f, 10.5f, 10.4f, 7.2f, 1.6f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 10.4f, 7.2f, 13.2f, 13.6f, 1.6f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 13.2f, 13.6f, 14.8f, 10.5f, 1.6f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 14.8f, 10.5f, 18.0f, 10.5f, 1.6f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	}
 };
 
@@ -505,24 +527,50 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"monitor"
 };
 
+/*
+ * The colours of each application's tile (the user's montage 4, ws128-p012:
+ * Files the off-yellow of a folder, Calendar blue), in the order of
+ * icon_app_names.
+ */
+static const struct icon_bands icon_app_bands[GLASS_ICON_APPS] = {
+	{ 0xffd86bU, 0xf2b53aU },
+	{ 0xffb38aU, 0xff8a65U },
+	{ 0x5b6b8cU, 0x3b4660U },
+	{ 0xff8a80U, 0xf0605aU },
+	{ 0x7ee0b5U, 0x3cc48dU },
+	{ 0x7fd8f0U, 0x3ab3d8U },
+	{ 0xffc09fU, 0xf59a73U },
+	{ 0xe6b48aU, 0xc98a55U },
+	{ 0x8a93b8U, 0x626c96U },
+	{ 0xc7cdd8U, 0xa0a8b8U },
+	{ 0xc7cdd8U, 0xa0a8b8U },
+	{ 0x9be3e0U, 0x4cc4c0U },
+	{ 0xb8c4d6U, 0x8e9bb3U },
+	{ 0xb39dffU, 0x8c6cf2U },
+	{ 0x7ee89aU, 0x3fcb6bU },
+	{ 0x7fb3ffU, 0x4a8bf5U },
+	{ 0xc49bffU, 0x9c6cf0U },
+	{ 0xff9ec4U, 0xf06a9bU }
+};
+
 /* The known programs' windows, found by their exact application ID. */
 static const struct icon_app_id icon_app_ids[] = {
-	{ "files", GLASS_ICON_APP_FILES, 0x2f7cf6U },
-	{ "notes", GLASS_ICON_APP_NOTES, 0xe0a526U },
-	{ "terminal", GLASS_ICON_APP_TERMINAL, 0x323a4eU },
-	{ "pdfviewer", GLASS_ICON_APP_PDF, 0xd9534fU },
-	{ "imageview", GLASS_ICON_APP_IMAGE, 0x3fa36bU },
-	{ "browser", GLASS_ICON_APP_BROWSER, 0x3a8fd8U },
-	{ "mview", GLASS_ICON_APP_MODEL, 0xe07a5aU },
-	{ "Gears", GLASS_ICON_APP_GEARS, 0xd05a3aU },
-	{ "XTerminal", GLASS_ICON_APP_XTERM, 0x4a4a78U },
-	{ "textedit", GLASS_ICON_APP_TEXT, 0x1f9e9aU },
-	{ "settings", GLASS_ICON_APP_SETTINGS, 0x6b7a8fU },
-	{ "videoplayer", GLASS_ICON_APP_VIDEO, 0x7a4fd0U },
-	{ "phone", GLASS_ICON_APP_PHONE, 0x34c759U },
-	{ "calendar", GLASS_ICON_APP_CALENDAR, 0xe8483fU },
-	{ "mailer", GLASS_ICON_APP_MAIL, 0x2f6fd6U },
-	{ "monitor", GLASS_ICON_APP_MONITOR, 0x4a6a8fU }
+	{ "files", GLASS_ICON_APP_FILES },
+	{ "notes", GLASS_ICON_APP_NOTES },
+	{ "terminal", GLASS_ICON_APP_TERMINAL },
+	{ "pdfviewer", GLASS_ICON_APP_PDF },
+	{ "imageview", GLASS_ICON_APP_IMAGE },
+	{ "browser", GLASS_ICON_APP_BROWSER },
+	{ "mview", GLASS_ICON_APP_MODEL },
+	{ "Gears", GLASS_ICON_APP_GEARS },
+	{ "XTerminal", GLASS_ICON_APP_XTERM },
+	{ "textedit", GLASS_ICON_APP_TEXT },
+	{ "settings", GLASS_ICON_APP_SETTINGS },
+	{ "videoplayer", GLASS_ICON_APP_VIDEO },
+	{ "phone", GLASS_ICON_APP_PHONE },
+	{ "calendar", GLASS_ICON_APP_CALENDAR },
+	{ "mailer", GLASS_ICON_APP_MAIL },
+	{ "monitor", GLASS_ICON_APP_MONITOR }
 };
 
 static float icon_distance(const struct icon_part *part, float x, float y);
@@ -531,6 +579,8 @@ static float icon_arc_distance(const struct icon_part *part, float x, float y);
 static float icon_box_distance(float x, float y, float x0, float y0, float x1, float y1, float radius);
 static float icon_triangle_distance(const struct icon_part *part, float x, float y);
 static float icon_clamp(float value);
+static void icon_tile_colour(const struct icon_bands *bands, unsigned pixels, unsigned column, unsigned row, float *colour);
+static void icon_channels(uint32_t rgb, float *channels);
 
 /*
  * Draws an icon (GLASS_ICON_*) into a square of coverage of a size in
@@ -550,12 +600,12 @@ zwl_icon_raster(
 	float distance;
 	float amount;
 	float best;
-	float hole;
 	float x;
 	float y;
 	unsigned column;
 	unsigned row;
 	unsigned index;
+	unsigned kind;
 
 	/* An icon the table does not have is left empty. */
 	for (row = 0; row < pixels; row++)
@@ -581,46 +631,124 @@ zwl_icon_raster(
 			x = ((float)column + 0.5f) / scale;
 			y = ((float)row + 0.5f) / scale;
 			best = 0.0f;
-			hole = 0.0f;
 
-			/* Each part of the icon. */
+			/* Each part of the icon, in order: a covering part adds, a cut part takes away. */
 			for (index = 0; index < ICON_PARTS; index++) {
 				part = &icon_parts[icon][index];
 				if (part->kind == ICON_END)
 					break;
+				kind = part->kind & ~ICON_CUT;
 				distance = icon_distance(part, x, y) * scale;
 
 				/* A segment may be wider or narrower than the icons' stroke. */
 				part_half = half;
-				if (part->kind == ICON_SEGMENT && part->e > 0.0f)
+				if (kind == ICON_SEGMENT && part->e > 0.0f)
 					part_half = part->e * scale * 0.5f;
 
-				/* A hole is cut out of the rest; it covers nothing itself. */
-				if (part->kind == ICON_HOLE) {
-					amount = icon_clamp(0.5f - distance);
-					if (amount > hole)
-						hole = amount;
-					continue;
-				}
-
-				/* A stroke, a ring, a frame or an arc covers within half its width, a dot or a box inside it. */
-				if (part->kind == ICON_SEGMENT ||
-				    part->kind == ICON_RING ||
-				    part->kind == ICON_FRAME ||
-				    part->kind == ICON_ARC) {
+				/* A stroke, a ring, a frame or an arc covers within half its width, a dot, a hole, a box or a triangle inside it. */
+				if (kind == ICON_SEGMENT ||
+				    kind == ICON_RING ||
+				    kind == ICON_FRAME ||
+				    kind == ICON_ARC) {
 					amount = icon_clamp(part_half - distance + 0.5f);
 				} else {
 					amount = icon_clamp(0.5f - distance);
 				}
 
-				/* The part that covers most wins. */
+				/* A hole, or a part marked to be cut, takes its cover out of what is there so far. */
+				if (kind == ICON_HOLE || (part->kind & ICON_CUT) != 0U) {
+					best = best * (1.0f - amount);
+					continue;
+				}
+
+				/* Otherwise the part that covers most wins. */
 				if (amount > best)
 					best = amount;
 			}
 
-			/* The pixel's coverage, less what a hole takes away. */
-			best = best * (1.0f - hole);
+			/* The pixel's coverage. */
 			coverage[(size_t)row * stride + column] = (uint8_t)(best * 255.0f + 0.5f);
+		}
+	}
+}
+
+/*
+ * Draws an application's tile (an icon from GLASS_ICON_FIRST_APP) into a
+ * square of a size in pixels, premultiplied 0xAARRGGBB, rows stride
+ * pixels apart: the rounded square in its diagonal bands, its picture
+ * cut out (transparent).  Any other icon, or a size above
+ * GLASS_ICON_TILE_MOST, leaves the square transparent.
+ */
+void
+zwl_icon_tile(
+	unsigned icon,
+	unsigned pixels,
+	uint32_t *argb,
+	size_t stride)
+{
+	static uint8_t picture[GLASS_ICON_TILE_MOST * GLASS_ICON_TILE_MOST];
+	const struct icon_bands *bands;
+	float colour[3];
+	float distance;
+	float radius;
+	float shape;
+	float cut;
+	float alpha;
+	uint32_t red;
+	uint32_t green;
+	uint32_t blue;
+	uint32_t opacity;
+	unsigned picture_pixels;
+	unsigned offset;
+	unsigned column;
+	unsigned row;
+
+	/* The square starts transparent; only an application's picture at a size the buffer holds has a tile. */
+	for (row = 0; row < pixels; row++)
+		memset(argb + (size_t)row * stride, 0, (size_t)pixels * sizeof(*argb));
+	if (icon < GLASS_ICON_FIRST_APP || icon >= GLASS_ICON_COUNT)
+		return;
+	if (pixels == 0U || pixels > GLASS_ICON_TILE_MOST)
+		return;
+
+	/*
+	 * The picture, about two thirds of the side and one pixel larger when
+	 * that leaves an odd margin, so that it sits in the middle on whole
+	 * pixels.
+	 */
+	picture_pixels = (unsigned)((float)pixels * ICON_TILE_PICTURE + 0.5f);
+	if (((pixels - picture_pixels) & 1U) != 0U)
+		picture_pixels++;
+	offset = (pixels - picture_pixels) / 2U;
+	zwl_icon_raster(icon, picture_pixels, picture, picture_pixels);
+
+	/* Each pixel of the tile: its band colour, as much of it as the rounded square covers less the picture's cover. */
+	bands = &icon_app_bands[icon - GLASS_ICON_FIRST_APP];
+	radius = (float)pixels * ICON_TILE_RADIUS;
+	for (row = 0; row < pixels; row++) {
+		for (column = 0; column < pixels; column++) {
+			/* How much of the pixel the rounded square covers; outside it the pixel stays transparent. */
+			distance = icon_box_distance((float)column + 0.5f, (float)row + 0.5f, 0.0f, 0.0f, (float)pixels, (float)pixels, radius);
+			shape = icon_clamp(0.5f - distance);
+			if (shape <= 0.0f)
+				continue;
+
+			/* The picture's cover there, cut out of the tile. */
+			cut = 0.0f;
+			if (column >= offset &&
+			    column < offset + picture_pixels &&
+			    row >= offset &&
+			    row < offset + picture_pixels)
+				cut = (float)picture[(row - offset) * picture_pixels + column - offset] / 255.0f;
+			alpha = shape * (1.0f - cut);
+
+			/* The bands' colour, premultiplied by what is left. */
+			icon_tile_colour(bands, pixels, column, row, colour);
+			opacity = (uint32_t)(alpha * 255.0f + 0.5f);
+			red = (uint32_t)(colour[0] * alpha * 255.0f + 0.5f);
+			green = (uint32_t)(colour[1] * alpha * 255.0f + 0.5f);
+			blue = (uint32_t)(colour[2] * alpha * 255.0f + 0.5f);
+			argb[(size_t)row * stride + column] = (opacity << 24) | (red << 16) | (green << 8) | blue;
 		}
 	}
 }
@@ -650,16 +778,14 @@ zwl_icon_named(
 }
 
 /*
- * Finds the picture of a window's mark from its application ID, and the
- * colour (0xRRGGBB) of the square it is drawn on.
+ * Finds the picture of a window's mark from its application ID.
  *
- * Returns the icon (GLASS_ICON_APP_*), or -1 (and leaves rgb alone) for
- * an ID no picture belongs to.
+ * Returns the icon (GLASS_ICON_APP_*), or -1 for an ID no picture belongs
+ * to.
  */
 int
 zwl_icon_for_app_id(
-	const char *app_id,
-	uint32_t *rgb)
+	const char *app_id)
 {
 	unsigned index;
 	int differs;
@@ -670,8 +796,7 @@ zwl_icon_for_app_id(
 		if (differs != 0)
 			continue;
 
-		/* Succeeded: the picture, and its square's colour. */
-		*rgb = icon_app_ids[index].rgb;
+		/* Succeeded: the window's picture. */
 		return (int)icon_app_ids[index].icon;
 	}
 
@@ -679,7 +804,7 @@ zwl_icon_for_app_id(
 	return -1;
 }
 
-/* Measures how far a point (in units) is from a part: from a stroke's line, a ring's circle, a frame's outline or an arc, or outside a dot, a hole or a box (negative inside). */
+/* Measures how far a point (in units) is from a part: from a stroke's line, a ring's circle, a frame's outline or an arc, or outside a dot, a hole, a box or a triangle (negative inside). */
 static float
 icon_distance(
 	const struct icon_part *part,
@@ -697,8 +822,8 @@ icon_distance(
 	dy = y - part->b;
 	from_centre = sqrtf(dx * dx + dy * dy);
 
-	/* Each kind of part. */
-	switch (part->kind) {
+	/* Each kind of part (a cut part is measured as its kind). */
+	switch (part->kind & ~ICON_CUT) {
 	case ICON_SEGMENT:
 		distance = icon_segment_distance(x, y, part->a, part->b, part->c, part->d);
 		break;
@@ -719,7 +844,7 @@ icon_distance(
 		distance = icon_arc_distance(part, x, y);
 		break;
 	case ICON_TRIANGLE:
-		distance = icon_triangle_distance(part, x, y) - part->e;
+		distance = icon_triangle_distance(part, x, y);
 		break;
 	default:
 		break;
@@ -850,10 +975,9 @@ icon_box_distance(
 }
 
 /*
- * Measures the signed distance from a point to a triangle pointing right
- * (negative inside): its corners are the box's upper left and lower left
- * and the middle of its right edge.  Outside, the nearest of its three
- * sides; inside, the same distance made negative.
+ * Measures the signed distance from a point to a triangle (negative
+ * inside): outside, the nearest of its three sides; inside, the same
+ * distance made negative.  The corners may go round either way.
  */
 static float
 icon_triangle_distance(
@@ -861,29 +985,30 @@ icon_triangle_distance(
 	float x,
 	float y)
 {
-	float point_y;
 	float nearest;
 	float side;
-	float upper;
-	float lower;
+	float first;
+	float second;
+	float third;
 
-	/* The point of the triangle, and the nearest of its sides. */
-	point_y = (part->b + part->d) * 0.5f;
-	nearest = icon_segment_distance(x, y, part->a, part->b, part->a, part->d);
-	side = icon_segment_distance(x, y, part->a, part->b, part->c, point_y);
+	/* The nearest of the three sides. */
+	nearest = icon_segment_distance(x, y, part->a, part->b, part->c, part->d);
+	side = icon_segment_distance(x, y, part->c, part->d, part->e, part->f);
 	if (side < nearest)
 		nearest = side;
-	side = icon_segment_distance(x, y, part->a, part->d, part->c, point_y);
+	side = icon_segment_distance(x, y, part->e, part->f, part->a, part->b);
 	if (side < nearest)
 		nearest = side;
 
-	/*
-	 * Inside: right of the left side, below the upper side and above the
-	 * lower side (each side's line, its cross product with the point).
-	 */
-	upper = (part->c - part->a) * (y - part->b) - (point_y - part->b) * (x - part->a);
-	lower = (part->c - part->a) * (y - part->d) - (point_y - part->d) * (x - part->a);
-	if (x > part->a && upper > 0.0f && lower < 0.0f)
+	/* Which side of each side's line the point is on (the cross product). */
+	first = (part->c - part->a) * (y - part->b) - (part->d - part->b) * (x - part->a);
+	second = (part->e - part->c) * (y - part->d) - (part->f - part->d) * (x - part->c);
+	third = (part->a - part->e) * (y - part->f) - (part->b - part->f) * (x - part->e);
+
+	/* Inside: on the same side of all three. */
+	if (first >= 0.0f && second >= 0.0f && third >= 0.0f)
+		return -nearest;
+	if (first <= 0.0f && second <= 0.0f && third <= 0.0f)
 		return -nearest;
 
 	/* Outside. */
@@ -903,4 +1028,82 @@ icon_clamp(
 
 	/* Inside it. */
 	return value;
+}
+
+/*
+ * Gives the colour of a tile's pixel, averaged over a grid of subsamples:
+ * the band each falls in along the "/" diagonal (0 at the lower left, 1 at
+ * the upper right), the deep colour first, and the light stripe across the
+ * middle band.
+ */
+static void
+icon_tile_colour(
+	const struct icon_bands *bands,
+	unsigned pixels,
+	unsigned column,
+	unsigned row,
+	float *colour)
+{
+	float steps[ICON_TILE_BANDS][3];
+	float light[3];
+	float deep[3];
+	float sample[3];
+	float along;
+	float stripe;
+	float x;
+	float y;
+	unsigned across;
+	unsigned down;
+	unsigned band;
+	unsigned channel;
+
+	/* The three bands' colours: deep, half way, light. */
+	icon_channels(bands->light, light);
+	icon_channels(bands->deep, deep);
+	for (channel = 0; channel < 3U; channel++) {
+		steps[0][channel] = deep[channel];
+		steps[1][channel] = (deep[channel] + light[channel]) * 0.5f;
+		steps[2][channel] = light[channel];
+		colour[channel] = 0.0f;
+	}
+
+	/* Each subsample's band (along lies between 0 and 1 inside the square), the stripe lightening it, summed. */
+	for (down = 0; down < ICON_TILE_SAMPLES; down++) {
+		for (across = 0; across < ICON_TILE_SAMPLES; across++) {
+			x = (float)column + ((float)across + 0.5f) / (float)ICON_TILE_SAMPLES;
+			y = (float)row + ((float)down + 0.5f) / (float)ICON_TILE_SAMPLES;
+			along = (x + ((float)pixels - y)) / (2.0f * (float)pixels);
+			band = (unsigned)(along * (float)ICON_TILE_BANDS);
+			if (band >= ICON_TILE_BANDS)
+				band = ICON_TILE_BANDS - 1U;
+			memcpy(sample, steps[band], sizeof(sample));
+
+			/* The light stripe across the middle band. */
+			stripe = fabsf(along - ICON_TILE_STRIPE);
+			if (stripe < ICON_TILE_STRIPE_HALF) {
+				for (channel = 0; channel < 3U; channel++)
+					sample[channel] = sample[channel] * (1.0f - ICON_TILE_STRIPE_LIGHT) + ICON_TILE_STRIPE_LIGHT;
+			}
+
+			/* The subsample into the sum. */
+			for (channel = 0; channel < 3U; channel++)
+				colour[channel] += sample[channel];
+		}
+	}
+
+	/* The average. */
+	for (channel = 0; channel < 3U; channel++)
+		colour[channel] /= (float)(ICON_TILE_SAMPLES * ICON_TILE_SAMPLES);
+}
+
+/* Splits a colour (0xRRGGBB) into its red, green and blue, 0 to 1. */
+static void
+icon_channels(
+	uint32_t rgb,
+	float *channels)
+{
+	/* Each channel's byte. */
+	channels[0] = (float)((rgb >> 16) & 0xffU) / 255.0f;
+	channels[1] = (float)((rgb >> 8) & 0xffU) / 255.0f;
+	channels[2] = (float)(rgb & 0xffU) / 255.0f;
 }

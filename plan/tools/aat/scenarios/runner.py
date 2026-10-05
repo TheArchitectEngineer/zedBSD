@@ -116,9 +116,9 @@ def preflight(target: list[str], outdir: Path, samples: bool) -> list[str]:
 	if check.returncode != 0:
 		problems.append(f"aat check: {(check.stdout + check.stderr).strip().splitlines()[-1:]}")
 		return problems
-	ready = aat(target, "wait-log", r"ZWL READY socket=\S+ .* role=desktop", "--timeout", "180", timeout=400)
+	ready = aat(target, "wait-log", r"ZWL READY socket=\S+ .* role=normal", "--timeout", "180", timeout=400)
 	if ready.returncode != 0:
-		problems.append("no session (no ZWL READY ... role=desktop)")
+		problems.append("no session (no ZWL READY ... role=normal)")
 		return problems
 	size = re.search(r"width=(\d+) height=(\d+)", ready.stdout)
 	start = aat(target, "start", "--size", f"{size.group(1)}x{size.group(2)}", timeout=120)

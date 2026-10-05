@@ -96,6 +96,7 @@ static const char *const look_places[] = { "/", "/home", "/usr", "/var", "/tmp",
 
 static void look_read(struct se_app *app);
 static void look_changed(void *data, const char *key, const char *value, unsigned flags);
+static void look_language(void *data, const char *language);
 static int look_write(struct se_app *app, const char *key, const char *value);
 static void look_add_picture(struct se_app *app, const char *path, const char *name);
 static void look_load_start(struct se_app *app);
@@ -154,6 +155,11 @@ se_look_open(
 
 	/* Watches the changes made elsewhere from now on. */
 	(void)kl_settings_watch(look->settings, "", look_changed, app, NULL);
+
+	/* Settings' own words follow the display language while it runs (ws158-p004). */
+	error = kl_tr_follow(look->settings, "settings", look_language, app);
+	if (error != 0)
+		se_log("LOOK language errno=%d", error);
 
 	/* The log line the tests read. */
 	se_log("LOOK open opacity=%d wallpaper=%s writable=%d", look->opacity, look->wallpaper, look->writable);
@@ -513,6 +519,9 @@ look_read(
 	/* The input method chosen on the Languages page (WS154; Japanese unless chosen otherwise). */
 	look->ime_method = kl_settings_get_int(look->settings, "ime.method", 1);
 
+	/* The display language chosen there (ws158-p004; English unless chosen otherwise). */
+	look->ui_language = kl_settings_get_int(look->settings, "ui.language", 0);
+
 	/* The appearance, light unless dark is chosen (ws089-p017). */
 	look->dark = kl_settings_get_int(look->settings, "appearance.dark", 0);
 
@@ -552,6 +561,20 @@ look_changed(
 
 	/* The log line the tests read. */
 	se_log("LOOK changed key=%s opacity=%d wallpaper=%s", key, app->look.opacity, app->look.wallpaper);
+}
+
+/* Draws the window again in the display language its catalogs were read in (kl_tr_follow, ws158-p004). */
+static void
+look_language(
+	void *data,
+	const char *language)
+{
+	struct se_app *app;
+
+	/* Every word is drawn again; the log line the tests read. */
+	app = data;
+	app->dirty = 1;
+	se_log("LOOK language=%s", language);
 }
 
 /* Sets a key (or puts it back at its default when value is NULL); a failure is shown on the page. Returns 0 or an errno value. */

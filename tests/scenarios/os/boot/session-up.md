@@ -17,12 +17,12 @@ AAT の image（`plan/tools/aat/config-amd64-aat.mk`）で起動した。エー�
 
 ## 操作と確認
 1. 操作: desktop が出るのを待つ（最大 120 秒）。
-   確認事項: compositor の準備。正解: session の log に `ZWL READY socket=… width=W height=H … role=desktop`。確認方法: `aat wait-log 'ZWL READY .* role=desktop'`（log は `/run/user/1000/session.log`）。
+   確認事項: compositor の準備。正解: session の log に `ZWL READY socket=… width=W height=H … role=normal`。確認方法: `aat wait-log 'ZWL READY .* role=normal'`（log は `/run/user/1000/session.log`）。
 2. 操作: 画面を撮る。
    確認事項: desktop の見え。正解: 壁紙、上の system bar、下の apps bar。error の dialog が無い。確認方法: 撮影。
 
 ## 合格
-`ZWL READY … role=desktop` があり（W×H は 5330 で 1920x1200、QEMU で 1280x800）、撮影に desktop が写る。
+`ZWL READY … role=normal` があり（W×H は 5330 で 1920x1200、QEMU で 1280x800）、撮影に desktop が写る。
 
 ## 注記
 W×H はほかのシナリオが使う画面の大きさ。

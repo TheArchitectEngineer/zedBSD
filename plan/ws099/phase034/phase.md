@@ -2,7 +2,7 @@
 # ws099-p034: 上部の system bar のデザインの調整（グループの pill と黒い地）
 
 Parent: [WS099](../ws.md)
-Status: planning（2026-10-06 ユーザーの追加と決定。参考の画像 4 枚。まず mock を見せる）
+Status: planned（2026-10-06 mock-1 にユーザーが回答、実装してよい）
 Disposition: normal
 
 ## 由来
@@ -51,3 +51,28 @@ app の絵と Kei の mark は compositor の rasterizer（icons.c・mark.c）�
 確かめたいこと（ユーザー）: (1) light の外観でも暗い bar（A）か、明るい bar（D）か、(2) 参考の bar-3 にある検索の虫眼鏡は今の bar に
 機能が無いので mock では省いた（足すなら App Home の検索を開く）、(3) 今の app の印（icon の下の線）、(4) dock の時の配置（C）、
 (5) Wi-Fi を今の棒から扇形に、(6) 中央の点の pill の大きさ。高さは ws099-p031 の 44 px のまま。
+
+## 2026-10-06 ユーザーの回答（mock-1 への）
+
+- light の外観でも**暗い bar**（案 A）。
+- 「サーチボタンはバーにはいらないです。」→ 検索の button は bar に置かない。
+- 今の app の下線: OK。
+- dock の時の配置（案 C）: OK。
+- Wi-Fi の扇形: OK。ただ「下部のマルが1pxほど左にズレているように見えます。気のせいかもしれないですが。」→ 扇の下の点の中心の位置を確かめ、ずれていれば直す。
+- 点と pill の大きさ: OK。bar の高さは 44 のまま。
+→ 実装してよい（app の icon は ws128-p012 の円・単色・白抜きの新しい形に合わせる）。
+
+## 実装の途中（2026-10-06 P2、ラップアップ、b095413c）
+
+- 実装済み（agent/p2 b095413c、build warning 0、QEMU 未実施、merge は保留）: 暗い glass の bar（light・dark の両方、`glass_shape.dark_glass`・
+  `server->keep_colours`）と中央の明るい帯、app の pill（26 px の icon、間 8、今の app の下線）、中央の desktop の点の pill（窓の有無で変えない、
+  log `ZWL GLASS desktops x= step=34 width=30`）、状態の pill（IME の丸い chip・USB・Wi-Fi の扇（`GLASS_ICON_WIFI_1..4`、点と弧は同じ中心で
+  ユーザーの「点が 1 px 左」を直す）・音量・電池）と時計の pill、dock の時の題の pill と button の pill（間 34）。検索の button は無し。
+- **待ち**: app の icon の形。ユーザーは ws128-p012 の montage-4（3B の帯の地に 3W の中抜きの記号）を選んだ。b095413c の mark は円（montage-2 の時の案）
+  のままなので、ws128-p012 の統合の後に bar の pill もその形にする。それまで merge しない。
+- 残り: 形の統合、bar の試験の座標の確かめ（`zdesktop-p065.sh`・`p072.sh` は log から読むので期待どおりのはず）、T1 の QEMU で light・dark・
+  dock・Wiseview・App Home の PNG、全文の規約。
+
+## 2026-10-06 保留の実装の置き場所
+
+P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴の書き換えで branch は消す）は [held/p034-bar-b095413c.patch](held/p034-bar-b095413c.patch) に patch として保つ。montage-4 の icon の実装（main acbb7e4a）の後なので、当てる時は shell.c・glass.c・icons.c で衝突する見込み。再開の時はこの patch を今の main に合わせて当て直す（bar の app の pill は zwl_icon_tile の形を使う）。

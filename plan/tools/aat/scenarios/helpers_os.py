@@ -21,9 +21,9 @@ run = aatlib.Run.from_command_line("helpers_os")
 
 @run.define("os.boot.session-up")
 def session_up(item):
-	line = run.wait(r"ZWL READY socket=\S+ width=\d+ height=\d+ .* role=desktop", None, 120)
+	line = run.wait(r"ZWL READY socket=\S+ width=\d+ height=\d+ .* role=normal", None, 120)
 	item.step("waited for the desktop", line)
-	item.check(line, "no ZWL READY ... role=desktop in the session's log")
+	item.check(line, "no ZWL READY ... role=normal in the session's log")
 	run.shot(item, "desktop")
 	item.passed(f"{aatlib.field(line, 'width')}x{aatlib.field(line, 'height')}")
 

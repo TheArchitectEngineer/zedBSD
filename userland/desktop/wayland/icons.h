@@ -7,9 +7,10 @@
 
 /*
  * The icons of the titlebar's controls (icons.c, WS070 p009) and of App
- * Home's applications (ws035-p123): which there are, and the call that
- * draws one into a square of coverage.  The header needs nothing of the
- * compositor, so the host's tests build icons.c alone.
+ * Home's applications (ws035-p123): which there are, the call that draws
+ * one into a square of coverage, and the call that draws an application's
+ * whole tile in colour with its picture cut out (ws128-p012).  The header
+ * needs nothing of the compositor, so the host's tests build icons.c alone.
  */
 
 #ifndef ZWL_ICONS_H
@@ -73,8 +74,12 @@ enum glass_icon {
 #define GLASS_ICON_FIRST_APP	GLASS_ICON_APP_FILES
 #define GLASS_ICON_APPS		(GLASS_ICON_COUNT - GLASS_ICON_FIRST_APP)
 
+/* The largest application tile zwl_icon_tile draws, in pixels a side. */
+#define GLASS_ICON_TILE_MOST	256U
+
 void zwl_icon_raster(unsigned icon, unsigned pixels, uint8_t *coverage, size_t stride);
+void zwl_icon_tile(unsigned icon, unsigned pixels, uint32_t *argb, size_t stride);
 int zwl_icon_named(const char *name);
-int zwl_icon_for_app_id(const char *app_id, uint32_t *rgb);
+int zwl_icon_for_app_id(const char *app_id);
 
 #endif

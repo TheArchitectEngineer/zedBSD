@@ -73,3 +73,10 @@ Queue: Q1（ベータ2 の割り当て、P2 の 3 番目）
 1. D2 の「設定を変えたら IME を起動し直す」で良いか（辞書の保存の後、数百 ms の間 IME が無い）。代わりに status の protocol に「method を変えよ」の request を足す案もある（protocol の変更が要る）。
 2. D3 の「SKK の mode を言語の ID にする」で良いか（compositor の app ごとの記憶を変えずに済む）。
 3. D4 の範囲（接頭・接尾辞、abbrev、数値の変換、補完は後）で良いか。
+
+## ユーザーと Q1 の判断（2026-10-05、master の decisions-log から記録 2026-10-06 P2）
+
+- **D4 の範囲（ユーザー、2026-10-05 夜のまとめての回答）**: SKK の 接頭・接尾辞（`>`）・abbrev（`/`）・数値の変換（`#`）・補完（Tab）・注釈は
+  **後回し（Future Work）**。v1 の SKK は上の D4 のそれ以外（変換・送り仮名・候補・登録・学習の保存）。Future Work の行は Q1 が `plan/future-work.md` に足す。
+- **Q1 が技術の裁量で決めた物**: 「Q1 に確かめる点」の 1（設定の変更で IME を起動し直す。数百 ms IME が無い。protocol は変えない）と
+  2（SKK の mode を言語の ID `skk`・`skk-katakana`・`skk-latin`・`skk-wide` にする）は**案のとおり**。

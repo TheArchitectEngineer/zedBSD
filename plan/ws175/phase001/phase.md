@@ -2,7 +2,7 @@
 # ws175-p001: 設計 — Notes の PDF の編集
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 P2 が設計を書き design-reviewer が review した。**review の反映は未了**（Q1 のラップアップの指示で中断）。下の「review」の表が design.md への未反映の修正の正本。clearance は反映・Q1 の判定・ユーザーの判断 D1〜D7 の後）
+Status: in-progress（2026-10-06 P2 が設計を書き design-reviewer が review し、2026-10-06 P2（新しい世代）が review の 33 項目を design.md に反映した。clearance は Q1 の判定・ユーザーの判断 D1〜D7 の後）
 Disposition: normal
 
 由来・目標は [WS175](../ws.md)。設計の正本は [design.md](design.md)。product の code は書かない。
@@ -28,20 +28,20 @@ Disposition: normal
 
 ## Phase の分け方（案）
 
-p002 走査と抽出 2.5 LW → p003 editor と書き戻し 2.5 → p004 font の埋め込み 2.5 → p005 deflate と画像の取り込み 1 →
-p006 Notes の model 2 → p007 Notes の UI 3 → p008（D1）Clean Copy 1.5 → p009 T1 の QEMU と AAT 1 → p010 規約 0.5。
-合計 15 LW（p008 込み 16.5 LW）。WS の概算 6 LW より大きい（design.md §10）。**review の後の見直し（未反映）**: p003 を画像（2）と文字の書き換え（1.5）に分け、p007 の UI に入力の配管（+0.5）、p008 Clean Copy を 2.5 に → 約 17.5 LW（Clean Copy 込み 20 LW）。画像を先に出す場合（D6）は約 10 LW。
+（review の M16 を反映、design.md §10）p002 走査と抽出 2.5 LW → p003 画像の editor と書き戻し 2 → p004 文字の書き換え 1.5 → p005 font 2.5 →
+p006 deflate と画像の取り込み 1.5 → p007 Notes の model 2.5 → p008 Notes の UI 3.5 → p009（D1）Clean Copy 2.5 → p010 T1 の QEMU と AAT 1 → p011 規約 0.5。
+合計 17.5 LW（Clean Copy 込み 20 LW）。WS の概算 6 LW より大きい。画像を先に出す場合（D6）の先の段は約 10 LW。
 
 ## ユーザーの判断（推奨）
 
 | # | 判断 | 推奨 |
 | --- | --- | --- |
-| D1 | 消した物の bytes が file に残る | 増分の更新＋「Save Clean Copy」（p008） |
-| D2 | font の種類 | Inter・JetBrains Mono・Droid Sans Fallback の 3 つ（serif は Future Work） |
+| D1 | 消した物の bytes が file に残る | 増分の更新＋「Save Clean Copy」（p009、2.5 LW。元の埋め込みの font の使われない glyph は残る） |
+| D2 | font の種類 | Inter・JetBrains Mono・Droid Sans Fallback の 3 つ（serif は Future Work）。Droid の subset の license と改変の notice の入れ方も確認 |
 | D3 | 太字・斜体 | 出さない |
-| D4 | deflate | libz-compat に足す（WS175 の p005、path の許可） |
+| D4 | deflate | libz-compat に足す（WS175 の p006、path の許可） |
 | D5 | 文字の抽出の持ち主 | WS175 の p002。ws128-p004 は p002 に依存を付け替える |
-| D6 | 出し方 | 画像の編集を先に（約 8 LW）、文字を後 |
+| D6 | 出し方 | 画像の編集を先に（約 10 LW）、文字を後（後の段にも T1・規約で約 1.5 LW） |
 | D7 | 既存の文字の編集の単位 | 行ごと（段落の再配置なし） |
 
 ## 実行の記録
@@ -53,7 +53,7 @@ p006 Notes の model 2 → p007 Notes の UI 3 → p008（D1）Clean Copy 1.5 �
 
 ## review
 
-2026-10-06 design-reviewer（read-only、source の行を引いて照合）: high 6・medium 16・low 11。**design.md へは未反映**（Q1 のラップアップ）。次の世代が下の修正を design.md に入れてから clearance に出す。
+2026-10-06 design-reviewer（read-only、source の行を引いて照合）: high 6・medium 16・low 11。**2026-10-06 P2 が全 33 項目を design.md に反映した**（各所に `[H1]` などの印）。
 
 | # | 重さ | 指摘 | design.md への修正（次の世代） |
 | --- | --- | --- | --- |
@@ -90,3 +90,47 @@ p006 Notes の model 2 → p007 Notes の UI 3 → p008（D1）Clean Copy 1.5 �
 | L9 | low | 今の `NOTES TOOL %u` は数字（main.c:963）。`NOTES OPENED … path=%s` は path で終わる（main.c:2339） | log は `NOTES TOOL N name=select` の形。新しい項目は `path=` の前に。シナリオの文言を合わせる |
 | L10 | low | §11.3 の表は開き直しの後に undo できると書くが、undo の履歴は file に残らない | 表と multipage のシナリオを「開き直しの後は Reset で戻す」に合わせる |
 | L11 | low | license は確認済み（fsType、RFN 無し、name ID 0/13/14、Inter の variable の table）。Droid の composite が多く remap は必須。Droid の subset は Apache-2.0 の改変物（§4(a)(b) の license と改変の notice） | name ID 13/14＋改変の注記で足りるかを D2 に添えてユーザーに示す。pdf.h の公開の struct は size の field か getter にする（ABI） |
+
+## review の反映（2026-10-06 P2、新しい世代）
+
+- worktree `/home/awe/zedBSD-worktrees/p2`（main 6de7df3d へ fast-forward）。上の表の H1〜H6・M1〜M16・L1〜L11 を design.md に反映し、冒頭の「表を先に読む」の
+  注意を消した。D1〜D7 は推奨のまま（D1・D2・D6 の文言を review に合わせた: Clean Copy 2.5 LW と残る glyph、Droid の subset の license の notice、
+  画像を先に約 10 LW）。
+- 反映で決めたこと（review の案から一歩進めた所）: H3 の照合は開く時に編集の在る page を全て走査する（M13 の「遅らせる」と両立しないので、照合を
+  優先し 500 ms 未満を目安に）。M10 で block を割れない行は device の色の時だけ内容を変えられる。開き直した後、消した物は選べないので戻せない（§9）。
+  design.md の 2 か所の「§5.4」（無い節）を「§7.4」に直した。
+- AAT の draft 5 本を合わせた（Phase の番号、`NOTES TOOL N name=select`、`NOTES OPENED … rebased=0 … path=`、multipage の 5 を Reset に）。
+  `python3 plan/tools/aat/check-scenarios.py` → PASS（scenarios 81）。
+
+## 再 review（2026-10-06 design-reviewer、変えた節だけ、43bfaa92）— 2026-10-06 P2 が N1〜N19 を design.md に反映した
+
+H1〜H6 の直しは正しい（H1: `'`・`"` の Tm は暗黙の T* の後の物を記録する、の注意つき）。M1 の行列の式も確認済み。新しい指摘（次に反映）:
+
+| # | 重さ | 節 | 指摘 | 直し |
+| --- | --- | --- | --- | --- |
+| N1 | medium | §6.3 | `open_as_base` は CHANGED の時、content hash の合う非 OVER の page を REPLACE で残す（save.c:772-786）。その page の edits の画像 id が読み戻せないと宙に浮く | 編集の在る page は画像が全て読み戻せた時だけ残す。rebase では全 page を焼き込む |
+| N2 | medium | §6.4・§2.1 | REPLACE の page（CHANGED の文書の Notes の page）を PLACE_EDIT にすると古い stroke が下に再び描かれる | REPLACE・NEW の page は空の editor（挿入した物だけ）＋REPLACE。PLACE_EDIT は OVER の page だけ |
+| N3 | medium | §6.3 H4 | journal の snapshot は保存の後の最初の変更で UI の loop で全体を書き fsync（journal.c:603-611・640-650）。RGBA の生の画像で重く 512 MB に早く届く | notes_image は圧縮した形（元の PNG/JPEG か deflate した RGBA）で持つ、または journal の横の content-addressed の file に id ごとに 1 回。M13 の予算に入れる |
+| N4 | medium | §3.5 H5 | preview の画像の bytes の持ち主が未定。文書の arena は解放しない・256 MB 上限（internal.h:23、object.c:82-113） | dictionary は文書の arena、bytes は libpdf が持ち release の口で解放（font の cache の key は不変）、または preview の bytes の上限 |
+| N5 | low-med | §3.5 | merge した /Resources が直接の font dictionary を深く複写すると cache の key が複写の address になる | merge は浅く（値は base の object を指す） |
+| N6 | low-med | §11.1 | ASan の quarantine で address が再利用されず UAF の回帰を捕まえない。1000 回 × 3 = 3000 < FONT_COUNT_MAX 4096 | font の cache の数が開閉で増えないことを assert、1400 回以上 |
+| N7 | medium | §3.4 | `/KeiFn size Tf` の size は shown space の pt。`1 Tf` と Tm で大きさを出す生成器では 12 倍 | Tfs' = 元の Tfs、大きさの変更は Tm（S）で |
+| N8 | medium | §6.3 | journal の回復に H3 の規則が無い。key が合わないと rebase できず状態を捨てると編集を失う | 回復の key の不一致は回復を失敗にし journal を残す（status と log）。host 試験 |
+| N9 | low | §5.2・§6.3 | filter の stroke は FOREIGN ではなく ESTALE → open_as_base(decoded=1) で CHANGED（save.c:233-258）。save.c:224-231 は開く時の close | 文言と引用を直す |
+| N10 | low | §6.3 | IMAG＋bytes の record の位置（snapshot の中か後か、replay は適用できない record で止まる journal.c:458-462）、JOURNAL_VERSION（journal.c:41） | snapshot の本体に入れる、journal の版を上げる |
+| N11 | low | §5.2 | NEW・REPLACE・空の editor の page の content は無圧縮（hash を記録、save.c:546-555）。PLACE_EDIT の page は content hash が ENOENT | 1 行で明記 |
+| N12 | low | §6.3 | rebase は CHANGED になり status の文言が違う（main.c:629-630） | `NOTES_OPENED_REBASED` を足す |
+| N13 | low | §6.4 vs §7.5 | 走査の表を全編集頁で cache と、表示の前後だけ | 照合の後、窓の外の editor は捨てる |
+| N14 | low | §3.1 | q の入れ子 63 超で LIMITED、state を push しない（content.c:1286-1290）ので C_rec がずれる | q の溢れの後の物は編集しない（M5 と同じ扱い） |
+| N15 | low | §3.1 M10 | 名前の BDC を BMC にすると名前の /Properties の MCID が落ちる | 名前の dictionary を inline に複写し /ActualText だけ除く |
+| N16 | low | §3.1 M9 | block のまとめに色・gs・q/Q の条件が無い | 「間に色・gs・q・Q が無い」を条件に、§9 に色の制限 |
+| N17 | medium | §10 | p009 Clean Copy は p003 だけでなく p005〜p008 に依る | p009 は p008 に依存 |
+| N18 | low | §10 | p005 と p006 が writer.c で重なる、picture.c の Makefile の持ち主、D6 の後の段の T1・規約の Phase | p005 は p006 の後、picture.c は p007、後の段にも T1・規約 |
+| N19 | low | phase.md | 上の「ユーザーの判断」の表が古い（D1 p008、D4 p005、D6 約 8 LW） | design.md（p009・p006・約 10 LW）に合わせる |
+
+## 再 review の反映（2026-10-06 P2）
+
+N1〜N19 を design.md に反映した（印 `[N1]` など）。決めたこと: N3 は journal の横の file に画像を id ごとに 1 回（snapshot は id と hash だけ）、
+N4 は preview の画像の bytes を libpdf が持ち `pdf_document_release_image()` で解放、N8 は回復の key の不一致で回復を失敗にし journal を残す、
+N17 は Clean Copy（p009）を p008 の後に、N18 は p005 を p006 の後・picture.c を p007・D6 の後の段にも T1 と規約（全体約 19 LW）。上の「ユーザーの判断」の
+表を design.md に合わせた（N19）。high の新しい指摘は無かったので、3 回目の design-reviewer は流していない。

@@ -2,7 +2,7 @@
 
 # ws145-p001: 印刷の調査と設計
 
-Status: in-progress（第 3.1 版まで。3 回目の敵対的レビューで重大なし。ユーザーの判断 D2〜D9 を Q1 経由で待つ）
+Status: in-progress（第 3.1 版まで。3 回目の敵対的レビューで重大なし。ユーザーの判断 D2〜D9 は 2026-10-05 夜に決定（下）、Q1 の clearance の判定待ち）
 Disposition: normal
 Parent: [WS145](../ws.md)
 Queue: q754（Q1、2026-10-05、P2 g15）
@@ -52,3 +52,20 @@ UAT の所見の対応（q755〜q760）の後、上の指摘を design.md に反
 - 第 3.1 版: 中 9 と主な軽（D4 の Phase の誤り、FATAL・SPOOL の行、待ちの表の項目、backend の fd の口を削る、spool の file を消す時機、Get-Job-Attributes の見張りを送信の数に入れない、捨てた行に REJECTED protocol、IPP の 0x0402・0x0403・0x0506、HTTP/1.0、LPD の文字の境界、C1、spool の置き場所の OS ごとの違い）を反映。
 - 残りの軽（p002・p003 の実装の時に決める）: saved の libkeiland への写し方の細部、mtime を tick ごとに見るか、名前解決の止まった thread の数え方、RFC 1179 の N の上限の確認。
 - ws.md の Phase の表と範囲 3（WS002 の service）は design §8・D1 に合わせて Q1 が直す（依頼済み）。
+
+## ユーザーの判断（2026-10-05 夜のまとめての回答、master の decisions-log から記録 2026-10-06 P2）
+
+design.md §0 の D2〜D9 は**担当の推奨どおり**に決まった。
+
+| # | 判断 | 決定 |
+| --- | --- | --- |
+| D2 | printer の設定を利用者ごとか system 全体で共有か | **利用者ごと**（root の口は要らない） |
+| D3 | IPP の path・LPD の queue 名の入力 | **詳しい設定で入力できる**（既定は IPP `/ipp/print` → `/ipp` → `/`、LPD `lp`） |
+| D4 | 受け入れの printer の機種 | **Brother MFC-L3770CDW**（IPP Everywhere・AirPrint 対応。PDF を直接受けるかは p002 で確かめ、受けなければ PWG raster の変換を足す） |
+| D5 | Linux・FreeBSD で CUPS の既存の printer を一覧に出すか | **出さない** |
+| D6 | PDF Viewer の File > Print | **含める** |
+| D7 | printer に login 名を送る | **送ってよい** |
+| D8 | spool の上限（1 文書 256 MiB・合計 512 MiB・16 job）と、複写せず app の file から直接送る案 | **案のとおり** |
+| D9 | 同じ利用者の全ての app に他の app の job の題名が見え、取り消せる | **よい** |
+
+これで p001 の設計の判断は全て決まった。clearance は Q1 の判定。

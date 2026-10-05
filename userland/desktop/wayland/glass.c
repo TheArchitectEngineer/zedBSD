@@ -26,10 +26,13 @@
  * (GLASS_EMOJI_FONT, opened on the first such character, ws102-p019),
  * whose colour glyph goes into the cell as it is and is drawn as an image.
  * The titlebar's icons (icons.c) are rendered into the atlas once, at two
- * sizes, App Home's pictures (icons.c, ws035-p123) at the size its tiles
- * draw them and small for the windows' marks (ws035-p124), and so are the
- * seven layers of the Kei mark (artwork/mark.c,
- * ws035-p108), which the login and lock screens draw.
+ * sizes, and so are the seven layers of the Kei mark (artwork/mark.c,
+ * ws035-p108), which the login and lock screens draw.  The applications'
+ * tiles (icons.c, ws128-p012: the banded rounded square with the picture
+ * cut out) are rendered in colour into an image of their own at each size
+ * the compositor draws them (App Home, Alt+Tab, the system bar, the title
+ * bars' marks) and drawn as images, so that what is behind a tile shows
+ * through its picture.
  */
 
 #include "glass.h"
@@ -71,11 +74,15 @@
 #define GLASS_ICON_SIZES	2U
 
 /*
- * App Home's pictures, in pixels a side (on its 72-pixel tiles), and again
- * small for a window's mark by its title (a 20-pixel square, ws035-p124).
+ * The applications' tiles (ws128-p012): the sizes kept, in pixels a side
+ * (a window's mark by its title and on Wiseview's tiles, the system bar's
+ * applications, Alt+Tab, App Home), how many, the image they are kept in
+ * and the empty pixels between them.
  */
-#define GLASS_APP_ICON_PIXELS	40U
-#define GLASS_APP_ICON_SMALL	14U
+#define GLASS_TILE_SIZES	4U
+#define GLASS_TILE_WIDTH	1024U
+#define GLASS_TILE_HEIGHT	256U
+#define GLASS_TILE_GAP		2U
 
 /* A cached glyph's cell in the atlas, in pixels a side, and the most cells there are. */
 #define GLASS_CELL		48U
@@ -171,8 +178,9 @@ struct glass_cached {
 
 /*
  * The look's images and glyphs: the wallpaper and its blur, the atlas with
- * the ASCII glyphs at each size, the icons at their sizes (App Home's
- * pictures at a size of their own and small), the Kei mark's
+ * the ASCII glyphs at each size, the icons at their sizes, the
+ * applications' tiles in their own image (tiles_ready once they are drawn
+ * there), the Kei mark's
  * layers large and at the launcher's size (ws035-p117), and the cache of
  * other characters; the fonts stay open (with their files' bytes) to
  * render the cache's glyphs.  cache_top is the atlas row the cache starts
@@ -185,8 +193,9 @@ struct zwl_glass {
 	struct zwl_import atlas;
 	struct glass_glyph glyphs[GLASS_SIZES][GLASS_GLYPHS];
 	struct glass_glyph icons[GLASS_ICON_SIZES][GLASS_ICON_COUNT];
-	struct glass_glyph app_icons[GLASS_ICON_APPS];
-	struct glass_glyph app_icons_small[GLASS_ICON_APPS];
+	struct zwl_import tiles;
+	struct glass_glyph app_tiles[GLASS_TILE_SIZES][GLASS_ICON_APPS];
+	unsigned tiles_ready;
 	struct glass_glyph mark[KEILAND_MARK_LAYERS];
 	struct glass_glyph mark_small[KEILAND_MARK_LAYERS];
 	unsigned text;
@@ -208,6 +217,9 @@ static const unsigned glass_pixels[GLASS_SIZES] = { 14U, 15U, 20U, 36U, 24U };
 /* The icons' sizes in pixels. */
 static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 
+/* The applications' tiles' sizes in pixels, smallest first. */
+static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 28U, 48U, 72U };
+
 static int wallpaper_create(struct zwl_server *server, struct zwl_glass *glass);
 static int wallpaper_fill(struct zwl_server *server, struct zwl_glass *glass, const char *path);
 static int wallpaper_draw(struct zwl_server *server, struct zwl_glass *glass, struct wallpaper_picture *given);
@@ -225,6 +237,7 @@ static int atlas_create(struct zwl_server *server, struct zwl_glass *glass);
 static int atlas_fill(struct zwl_glass *glass, struct truetype_face *face);
 static int atlas_icons(struct zwl_glass *glass, uint32_t *pen_y);
 static int atlas_mark(struct zwl_glass *glass, uint32_t *pen_y);
+static int tiles_create(struct zwl_server *server, struct zwl_glass *glass);
 static void atlas_put(struct zwl_glass *glass, const uint8_t *bitmap, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 static int glass_open_face(struct zwl_glass *glass, const char *path);
 static const struct glass_glyph *glass_glyph_of(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
@@ -313,6 +326,13 @@ zwl_glass_open(
 		printf("ZWL GLASS no text: font=%s errno=%d\n", server->font_path, error);
 	printf("ZWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 
+	/* The applications' tiles; without them the marks are drawn without pictures. */
+	started = zwl_milliseconds();
+	error = tiles_create(server, glass);
+	if (error != 0)
+		printf("ZWL GLASS no tiles: errno=%d\n", error);
+	printf("ZWL STARTUP step=tiles ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+
 	/* Succeeded. */
 	printf("ZWL GLASS ready text=%u\n", glass->text);
 	return 0;
@@ -351,6 +371,7 @@ zwl_glass_close(
 	zwl_host_image_release(server->compose, &glass->wallpaper);
 	zwl_host_image_release(server->compose, &glass->blurred);
 	zwl_host_image_release(server->compose, &glass->atlas);
+	zwl_host_image_release(server->compose, &glass->tiles);
 	free(glass);
 	server->compose->glass = NULL;
 }
@@ -415,6 +436,7 @@ zwl_glass_wallpaper_begin(
 	struct stat status;
 	size_t length;
 	int descriptor;
+	int regular;
 	int error;
 
 	/* Without the look there is no wallpaper. */
@@ -437,14 +459,13 @@ zwl_glass_wallpaper_begin(
 
 	/* Looks at what the path names, then lets the descriptor go. */
 	error = fstat(descriptor, &status);
-	if (error != 0) {
-		(void)close(descriptor);
-		return EINVAL;
-	}
 	(void)close(descriptor);
+	if (error != 0)
+		return EINVAL;
 
 	/* Refuses anything but an ordinary file. */
-	if (!S_ISREG(status.st_mode))
+	regular = S_ISREG(status.st_mode);
+	if (!regular)
 		return EINVAL;
 
 	/* Makes the lock with the first picture. */
@@ -1258,6 +1279,7 @@ file_read(
 	size_t capacity;
 	size_t length;
 	int descriptor;
+	int regular;
 	int error;
 
 	/* The file; opening a FIFO or a device does not wait for a writer. */
@@ -1273,7 +1295,8 @@ file_read(
 	}
 
 	/* Only an ordinary file is a picture: a FIFO or a device would hold the reader (WS135). */
-	if (!S_ISREG(status.st_mode)) {
+	regular = S_ISREG(status.st_mode);
+	if (!regular) {
 		close(descriptor);
 		errno = EINVAL;
 		return NULL;
@@ -1392,6 +1415,7 @@ loader_run(
 	struct wallpaper_picture picture;
 	int error;
 
+	/* The thread needs nothing passed: glass_loader names the file. */
 	(void)argument;
 
 	/* Reads the file and decodes the picture. */
@@ -1887,9 +1911,10 @@ glass_glyph_advance(
 }
 
 /*
- * Draws an icon (GLASS_ICON_*) in a square of a size in pixels at (x, y):
- * a titlebar icon from the atlas's icon of that size, or of the nearest
- * one scaled; one of App Home's pictures from its one size, scaled.
+ * Draws a titlebar icon (GLASS_ICON_* before GLASS_ICON_FIRST_APP) in a
+ * square of a size in pixels at (x, y), from the atlas's icon of that size
+ * or of the nearest one scaled.  The applications' pictures are drawn on
+ * their tiles by glass_draw_app_tile.
  */
 void
 glass_draw_icon(
@@ -1906,20 +1931,16 @@ glass_draw_icon(
 	struct zwl_glass *glass;
 	unsigned size;
 
-	/* Nothing without the atlas, or for an icon there is not. */
+	/* Nothing without the atlas, or for an icon the atlas does not have. */
 	glass = server->compose->glass;
-	if (!glass->text || icon >= GLASS_ICON_COUNT)
+	if (!glass->text || icon >= GLASS_ICON_FIRST_APP)
 		return;
 
-	/* The larger size for anything above the smaller; App Home's pictures have their own. */
+	/* The larger size for anything above the smaller. */
 	size = 0;
 	if (pixels > glass_icon_pixels[0])
 		size = 1;
 	glyph = &glass->icons[size][icon];
-	if (icon >= GLASS_ICON_FIRST_APP)
-		glyph = &glass->app_icons[icon - GLASS_ICON_FIRST_APP];
-	if (icon >= GLASS_ICON_FIRST_APP && pixels <= GLASS_APP_ICON_SMALL * 3U / 2U)
-		glyph = &glass->app_icons_small[icon - GLASS_ICON_FIRST_APP];
 
 	/* The icon's cell of the atlas, over the square. */
 	glass_shape_init(&shape, (float)x, (float)y, (float)pixels, (float)pixels);
@@ -1930,6 +1951,75 @@ glass_draw_icon(
 	shape.uv[3] = (float)(glyph->y + glyph->height) / (float)GLASS_ATLAS_HEIGHT;
 	memcpy(shape.color, color, sizeof(shape.color));
 	shape.set = glass->atlas.set;
+	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * Draws an application's tile (an icon from GLASS_ICON_FIRST_APP) in a
+ * square of a size in pixels at (x, y): the tile kept at that size, or the
+ * smallest kept larger (the largest when none is) scaled, as opaque as
+ * asked (0..1).  Its picture is cut out, so what was drawn under the tile
+ * shows through it.  lighten (0..1) whitens the tile itself, as a lit
+ * button.
+ */
+void
+glass_draw_app_tile(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	unsigned icon,
+	float x,
+	float y,
+	float pixels,
+	float opacity,
+	float lighten)
+{
+	struct glass_shape shape;
+	const struct glass_glyph *glyph;
+	struct zwl_glass *glass;
+	unsigned size;
+
+	/* Nothing without the tiles, or for an icon without one. */
+	glass = server->compose->glass;
+	if (!glass->tiles_ready)
+		return;
+	if (icon < GLASS_ICON_FIRST_APP || icon >= GLASS_ICON_COUNT)
+		return;
+
+	/* The smallest size kept that is not smaller than the square, else the largest. */
+	for (size = 0; size + 1U < GLASS_TILE_SIZES; size++) {
+		if ((float)glass_tile_pixels[size] >= pixels)
+			break;
+	}
+
+	/* That size's tile of the icon. */
+	glyph = &glass->app_tiles[size][icon - GLASS_ICON_FIRST_APP];
+
+	/* The tile's pixels over the square, premultiplied, as an image. */
+	glass_shape_init(&shape, x, y, pixels, pixels);
+	shape.mode = MODE_IMAGE;
+	shape.uv[0] = (float)glyph->x / (float)GLASS_TILE_WIDTH;
+	shape.uv[1] = (float)glyph->y / (float)GLASS_TILE_HEIGHT;
+	shape.uv[2] = (float)(glyph->x + glyph->width) / (float)GLASS_TILE_WIDTH;
+	shape.uv[3] = (float)(glyph->y + glyph->height) / (float)GLASS_TILE_HEIGHT;
+	shape.opacity = opacity;
+	shape.set = glass->tiles.set;
+	glass_shape_draw(server, command, &shape);
+
+	/* Unlit, that is all. */
+	if (lighten <= 0.0f)
+		return;
+
+	/*
+	 * Lit: white over the tile, as much as the tile covers (its alpha read
+	 * as a glyph's coverage), so the picture's hole stays clear; white in
+	 * the dark appearance too.
+	 */
+	shape.mode = MODE_TEXT;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = lighten;
+	shape.light = 1U;
 	glass_shape_draw(server, command, &shape);
 }
 
@@ -2029,8 +2119,8 @@ glass_wallpaper_set(
 
 /*
  * Renders every titlebar icon at each of its sizes into the atlas from a
- * row on, then App Home's pictures in a row of their own, and moves the
- * row past them; returns 0, or ENOSPC when the atlas is full.
+ * row on, and moves the row past them; returns 0, or ENOSPC when the atlas
+ * is full.
  */
 static int
 atlas_icons(
@@ -2080,56 +2170,76 @@ atlas_icons(
 		}
 	}
 
-	/* App Home's pictures in the row after the icons. */
+	/* The row after the icons. */
 	*pen_y += tallest + 1U;
-	if (*pen_y + GLASS_APP_ICON_PIXELS > GLASS_ATLAS_HEIGHT)
-		return ENOSPC;
-	if (GLASS_ICON_APPS * (GLASS_APP_ICON_PIXELS + 1U) > GLASS_ATLAS_WIDTH)
-		return ENOSPC;
-
-	/* Each picture's coverage, into the atlas, and its place. */
-	pen_x = 0;
-	for (icon = 0; icon < GLASS_ICON_APPS; icon++) {
-		zwl_icon_raster(GLASS_ICON_FIRST_APP + icon, GLASS_APP_ICON_PIXELS, bitmap, GLASS_APP_ICON_PIXELS);
-		atlas_put(glass, bitmap, pen_x, *pen_y, GLASS_APP_ICON_PIXELS, GLASS_APP_ICON_PIXELS);
-		glyph = &glass->app_icons[icon];
-		glyph->x = pen_x;
-		glyph->y = *pen_y;
-		glyph->width = GLASS_APP_ICON_PIXELS;
-		glyph->height = GLASS_APP_ICON_PIXELS;
-		glyph->left = 0;
-		glyph->top = 0;
-		glyph->advance = (int32_t)GLASS_APP_ICON_PIXELS;
-
-		/* The pen moves past it. */
-		pen_x += GLASS_APP_ICON_PIXELS + 1U;
-	}
-
-	/* The small pictures after them in the same row, when they fit. */
-	if (pen_x + GLASS_ICON_APPS * (GLASS_APP_ICON_SMALL + 1U) > GLASS_ATLAS_WIDTH)
-		return ENOSPC;
-
-	/* Each small picture's coverage, into the atlas, and its place. */
-	for (icon = 0; icon < GLASS_ICON_APPS; icon++) {
-		zwl_icon_raster(GLASS_ICON_FIRST_APP + icon, GLASS_APP_ICON_SMALL, bitmap, GLASS_APP_ICON_SMALL);
-		atlas_put(glass, bitmap, pen_x, *pen_y, GLASS_APP_ICON_SMALL, GLASS_APP_ICON_SMALL);
-		glyph = &glass->app_icons_small[icon];
-		glyph->x = pen_x;
-		glyph->y = *pen_y;
-		glyph->width = GLASS_APP_ICON_SMALL;
-		glyph->height = GLASS_APP_ICON_SMALL;
-		glyph->left = 0;
-		glyph->top = 0;
-		glyph->advance = (int32_t)GLASS_APP_ICON_SMALL;
-
-		/* The pen moves past it. */
-		pen_x += GLASS_APP_ICON_SMALL + 1U;
-	}
-
-	/* The row after the pictures. */
-	*pen_y += GLASS_APP_ICON_PIXELS + 1U;
 
 	/* Succeeded: the icons are in the atlas. */
+	return 0;
+}
+
+/*
+ * Makes the image of the applications' tiles and draws every tile at each
+ * size into it, a row or more a size; returns 0 with the tiles ready, EIO
+ * when the image cannot be made, or ENOSPC when they do not fit.
+ */
+static int
+tiles_create(
+	struct zwl_server *server,
+	struct zwl_glass *glass)
+{
+	struct glass_glyph *glyph;
+	VkResult result;
+	uint32_t *place;
+	uint32_t pen_x;
+	uint32_t pen_y;
+	unsigned pixels;
+	unsigned size;
+	unsigned icon;
+
+	/* The image, transparent where no tile is, sampled smoothly for the sizes between those kept. */
+	result = zwl_host_image_create(server->compose, GLASS_TILE_WIDTH, GLASS_TILE_HEIGHT, server->compose->linear_sampler, &glass->tiles);
+	if (result != VK_SUCCESS)
+		return EIO;
+	memset(glass->tiles.map, 0, glass->tiles.row_pitch * GLASS_TILE_HEIGHT);
+
+	/* Each size's tiles side by side from a row of their own, gaps between them so that smooth sampling keeps to one tile. */
+	pen_y = 0;
+	for (size = 0; size < GLASS_TILE_SIZES; size++) {
+		pixels = glass_tile_pixels[size];
+		pen_x = 0;
+		for (icon = 0; icon < GLASS_ICON_APPS; icon++) {
+			/* A full row moves the pen down. */
+			if (pen_x + pixels + GLASS_TILE_GAP > GLASS_TILE_WIDTH) {
+				pen_x = 0;
+				pen_y += pixels + GLASS_TILE_GAP;
+			}
+
+			/* The image must hold it. */
+			if (pen_y + pixels + GLASS_TILE_GAP > GLASS_TILE_HEIGHT)
+				return ENOSPC;
+
+			/* The tile, drawn straight into the image. */
+			place = (uint32_t *)((unsigned char *)glass->tiles.map + (size_t)pen_y * glass->tiles.row_pitch) + pen_x;
+			zwl_icon_tile(GLASS_ICON_FIRST_APP + icon, pixels, place, glass->tiles.row_pitch / sizeof(uint32_t));
+
+			/* Its place, square. */
+			glyph = &glass->app_tiles[size][icon];
+			glyph->x = pen_x;
+			glyph->y = pen_y;
+			glyph->width = pixels;
+			glyph->height = pixels;
+			glyph->advance = (int32_t)pixels;
+
+			/* The pen moves past it. */
+			pen_x += pixels + GLASS_TILE_GAP;
+		}
+
+		/* The next size from the row after. */
+		pen_y += pixels + GLASS_TILE_GAP;
+	}
+
+	/* Succeeded: the tiles are drawn. */
+	glass->tiles_ready = 1U;
 	return 0;
 }
 

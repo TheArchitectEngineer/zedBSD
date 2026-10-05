@@ -35,7 +35,8 @@ enum admin_operation {
 	ADMIN_REMOVE,
 	ADMIN_RESET_PASSWORD,
 	ADMIN_GROUP_ADD,
-	ADMIN_GROUP_REMOVE
+	ADMIN_GROUP_REMOVE,
+	ADMIN_SYSTEM_LANGUAGE
 };
 
 /*
@@ -63,7 +64,9 @@ enum admin_reason {
  * A request: the caller's password, the operation, and its arguments (the
  * name; the display name or keep-home/remove-home, the new password, or
  * the group; the new password of an addition; admin or user), each a line
- * of the request's text with its end replaced by a NUL.
+ * of the request's text with its end replaced by a NUL.  The system
+ * language's one argument (ws158-p004: "en" or "ja", the language of the
+ * login screen) is held as the name.
  */
 struct admin_request {
 	char *password;
@@ -81,6 +84,7 @@ const char *admin_reason_word(int reason);
 const char *admin_operation_word(enum admin_operation operation);
 int admin_name_valid(const char *name);
 int admin_display_valid(const char *display);
+int admin_language_valid(const char *language);
 int admin_field(const char *text, size_t length, const char *name, unsigned index, const char **field, size_t *field_length);
 long admin_number_field(const char *text, size_t length, const char *name, unsigned index);
 long admin_free_id(const char *passwd, size_t passwd_length, const char *group, size_t group_length);

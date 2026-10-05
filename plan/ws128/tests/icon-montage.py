@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # ws128-p012: the montage of the applications' icons as the compositor draws them: each picture's coverage from
-# icon-dump (userland/desktop/wayland/icons.c's own rasterizer), white on a square of the application's colour with
-# rounded corners (the radius 0.3 of the side and the picture 0.7 of it, as shell.c's zwl_glass_draw_app_mark), on a
+# icon-dump (userland/desktop/wayland/icons.c's own rasterizer), white on a circle of the application's colour (the
+# picture's 24-unit grid PICTURE of the diameter, as shell.c's zwl_glass_draw_app_mark; the 2026-10-06 user decision:
+# a circle, one colour, a white knocked-out symbol), on a
 # light and a dark ground, at the sizes of the bar (26), Wiseview's labels (32) and App Home (64), and one large.
 #   icon-montage.py DUMP_DIR OUT.png
 # DUMP_DIR holds NN.pgm from "icon-dump 448 DUMP_DIR".
@@ -16,13 +17,16 @@ FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
 # The standard applications of App Home (userland/desktop/wayland/apps.conf): name, picture (icons.h's order from
 # GLASS_ICON_FIRST_APP, the names of icon_app_names), colour.
 APPS = [
-    ('Files', 'files', 0x2f7cf6), ('Notes', 'notes', 0xe0a526), ('Settings', 'settings', 0x6b7a8f),
-    ('Terminal', 'terminal', 0x323a4e), ('PDF Viewer', 'pdf', 0xd9534f), ('Image Viewer', 'image', 0x3fa36b),
-    ('Video Player', 'video', 0x7a4fd0), ('Phone', 'phone', 0x34c759), ('Calendar', 'calendar', 0xe8483f),
-    ('Mail', 'mail', 0x2f6fd6), ('Text Editor', 'text', 0x1f9e9a), ('System Monitor', 'monitor', 0x4a6a8f),
-    ('Browser', 'browser', 0x3a8fd8), ('X terminal', 'xterm', 0x4a4a78), ('Model Viewer', 'model', 0xe07a5a),
-    ('Gears', 'gears', 0xd05a3a), ('Lock Screen', 'lock', 0x5b6475), ('Log Out', 'logout', 0x5b6475),
+    ('Files', 'files', 0xe8b53e), ('Notes', 'notes', 0xff8a3d), ('Settings', 'settings', 0x6b7a8f),
+    ('Terminal', 'terminal', 0x2e3440), ('PDF Viewer', 'pdf', 0xe5483f), ('Image Viewer', 'image', 0xec5f9a),
+    ('Video Player', 'video', 0x7a4fd0), ('Phone', 'phone', 0x34c759), ('Calendar', 'calendar', 0x2f7cf6),
+    ('Mail', 'mail', 0x19a1e6), ('Text Editor', 'text', 0x5c6bc0), ('System Monitor', 'monitor', 0x13a89e),
+    ('Browser', 'browser', 0x0e7490), ('X terminal', 'xterm', 0x4a4a78), ('Model Viewer', 'model', 0xe07a5a),
+    ('Gears', 'gears', 0xa0522d), ('Lock Screen', 'lock', 0x5b6475), ('Log Out', 'logout', 0x5b6475),
 ]
+
+# The picture's grid as a part of the circle's diameter (shell.c's APP_MARK_PICTURE).
+PICTURE = 0.68
 
 
 def names():
@@ -42,14 +46,14 @@ def first_app():
 
 
 def tile(coverage, colour, side):
-    """One icon: the coloured rounded square and the white picture, side pixels, drawn 4 times larger and reduced."""
+    """One icon: the coloured circle and the white picture, side pixels, drawn 4 times larger and reduced."""
     big = side * 4
     image = Image.new('RGBA', (big, big), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     rgb = ((colour >> 16) & 255, (colour >> 8) & 255, colour & 255)
-    draw.rounded_rectangle((0, 0, big - 1, big - 1), radius=int(big * 0.3), fill=rgb + (255,))
+    draw.ellipse((0, 0, big - 1, big - 1), fill=rgb + (255,))
     if coverage is not None:
-        picture = int(big * 0.7)
+        picture = int(big * PICTURE)
         mask = coverage.resize((picture, picture), Image.LANCZOS)
         white = Image.new('RGBA', (picture, picture), (255, 255, 255, 255))
         offset = (big - picture) // 2

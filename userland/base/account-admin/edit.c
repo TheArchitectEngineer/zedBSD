@@ -23,7 +23,10 @@
 #include <string.h>
 
 /* The words of the operations, in their order. */
-static const char *const edit_operations[] = { "add", "remove", "reset-password", "group-add", "group-remove" };
+static const char *const edit_operations[] = { "add", "remove", "reset-password", "group-add", "group-remove", "system-language" };
+
+/* The languages the login screen may be in (ws158-p004; the compositor's language.c knows them). */
+static const char *const edit_languages[] = { "en", "ja" };
 
 /* The words of the reasons, in their order (ADMIN_OK's is "ok"). */
 static const char *const edit_reasons[] = {
@@ -79,6 +82,7 @@ admin_parse(
 	size_t at;
 	size_t i;
 	size_t arguments;
+	int known;
 	int same;
 
 	/* Nothing yet; a text too long, or holding a NUL, is not a request. */
@@ -126,10 +130,12 @@ admin_parse(
 		return ADMIN_BAD_REQUEST;
 	request->operation = (enum admin_operation)i;
 
-	/* Its arguments: four for an addition, two for the rest. */
+	/* Its arguments: four for an addition, one for the system language, two for the rest. */
 	arguments = 2U;
 	if (request->operation == ADMIN_ADD)
 		arguments = 4U;
+	if (request->operation == ADMIN_SYSTEM_LANGUAGE)
+		arguments = 1U;
 	if (count != 2U + arguments)
 		return ADMIN_BAD_REQUEST;
 	request->name = lines[2];
@@ -166,6 +172,12 @@ admin_parse(
 		break;
 	case ADMIN_RESET_PASSWORD:
 		request->fresh = lines[3];
+		break;
+	case ADMIN_SYSTEM_LANGUAGE:
+		/* A language the login screen knows. */
+		known = admin_language_valid(lines[2]);
+		if (!known)
+			return ADMIN_BAD_REQUEST;
 		break;
 	case ADMIN_GROUP_ADD:
 	case ADMIN_GROUP_REMOVE:
@@ -214,6 +226,28 @@ admin_operation_word(
 
 	/* Its word. */
 	return edit_operations[operation];
+}
+
+/*
+ * Reports whether a language is one the login screen may be in ("en",
+ * "ja"): 1 when it is, 0 otherwise.
+ */
+int
+admin_language_valid(
+	const char *language)
+{
+	size_t i;
+	int same;
+
+	/* Each language known. */
+	for (i = 0; i < sizeof(edit_languages) / sizeof(edit_languages[0]); i++) {
+		same = strcmp(language, edit_languages[i]);
+		if (same == 0)
+			return 1;
+	}
+
+	/* Succeeded: not one of them. */
+	return 0;
 }
 
 /*

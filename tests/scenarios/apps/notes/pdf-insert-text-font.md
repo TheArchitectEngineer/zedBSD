@@ -10,7 +10,7 @@ since: ws175-p001
 ---
 
 ## 目的
-Text の道具で新しい文字を挿入し、font を Sans・Mono・Japanese に変えられること、IME で日本語を打てること、保存した PDF の文字が他の reader で読めること（埋め込みの subset と ToUnicode）を確かめる（WS175、ws175-p004・p007）。
+Text の道具で新しい文字を挿入し、font を Sans・Mono・Japanese に変えられること、IME で日本語を打てること、保存した PDF の文字が他の reader で読めること（埋め込みの subset と ToUnicode）を確かめる（WS175、ws175-p005・p008）。
 
 ## 準備
 - `/tmp/aat-samples/notes-edit.pdf`。Notes で開き、1 頁の下の余白が見えている。

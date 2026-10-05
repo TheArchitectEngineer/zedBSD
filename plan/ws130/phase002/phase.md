@@ -61,3 +61,20 @@ RS の送出・RA の検査と route socket の事象、loopback の `::1`。tra
 ## 結果
 
 （実装と host 試験まで。T1 待ち）
+
+## T1-206 の FAIL の原因と直し（2026-10-06 P1）
+
+T1-206（main 553f0625）: boot-test は PASS、`ipv6-p002.sh` は 2 回とも FAIL。root で `IPV6 interface ue0 index=2` の後 `IPV6 FAIL step=list-lo0 error=23`（EFAULT）、
+kei（runas）で `IPV6 FAIL step=route-socket error=47`（EPERM。試験は step=add-link-local を待つ）。IPv4 は ok。log は T1 の `/tmp/t1logs/t1-206-ipv6{,-retry}.log`。
+
+- **原因 1（product、libc）**: libc の `ioctl()`（`userland/base/libc/posix.c` の `ioctl_has_argument()`）は、大きさの bit の無い request 番号では知っている物
+  （SIOCGIFNAME〜SIOCGIFINDEX、SIOCGIFSTATS、SIOCADDRT・SIOCDELRT・SIOCGRTENTRY）にだけ第 3 引数を渡す。IPv6 の `0x89a0`〜`0x89a6` が無く、kernel には
+  引数 0 が届き `ipv6_ioctl()` が EFAULT を返していた。直し: `SIOCAIFADDR_IN6`〜`SIOCGRTENTRY_IN6` の範囲も引数を渡す。kernel は変えない。
+- **原因 2（試験）**: raw socket は route socket を含め superuser だけ（`src/kern/syscall.c` の既存の規則、p002 の前から）。probe が最初に route socket を開くので、
+  root でない user は変更の ioctl の前に route socket で EPERM になる。kernel の規則は変えず、probe を直した: route socket が EPERM でも続けて一覧（誰でも読める）
+  と最初の変更まで進み、変更が EPERM（step=add-link-local）で断られることを示す。変更が通った時だけ route socket の失敗を報告する。root の手順は同じ。
+- 確認: zedBSD の build（libc・ipv6-probe、`plan/ws130/tests/config-amd64-ipv6.mk`）warning 0。QEMU は未実施（T1）。
+
+T1 への依頼（T1-206 の再実行、未実行）: agent/p1 の commit（merge 後の main）で `plan/tools/guest/test-image.sh plan/ws130/tests/config-amd64-ipv6.mk BUILD`、
+`plan/tools/files/files-guest.sh start BUILD/hdd-image.img`、`plan/ws130/tests/ipv6-p002.sh`。合格: `ok: ipv6-probe`（`IPV6 PASS`）、`ok: kei is refused`
+（`FAIL step=add-link-local error=47`）、`ok: IPv4 still works`、`ipv6-p002: PASS`。log を返す。root の probe が list-lo0 より先で FAIL した時はその行と log。

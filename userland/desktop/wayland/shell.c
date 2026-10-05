@@ -2908,8 +2908,8 @@ draw_title_bar(
 
 /*
  * Draws the application's mark at x and the title after it, centred on
- * middle: a known application's App Home picture on its colour
- * (ws035-p124), else a blue rounded square with a letter.
+ * middle: a known application's tile (ws035-p124, ws128-p012), else a blue
+ * rounded square with a letter.
  */
 static void
 draw_title(
@@ -2937,9 +2937,10 @@ draw_title(
 }
 
 /*
- * Draws a known application's mark: its App Home picture, white, on a
- * rounded square of its App Home colour, as faded as the title's ink.
- * Returns 1, or 0 (drawing nothing) for an application ID without one.
+ * Draws a known application's mark: its tile (the banded square with its
+ * picture cut out, ws128-p012), 20 pixels a side, as faded as the title's
+ * ink.  Returns 1, or 0 (drawing nothing) for an application ID without a
+ * picture.
  */
 static int
 draw_picture_mark(
@@ -2950,30 +2951,15 @@ draw_picture_mark(
 	int32_t middle,
 	const float *ink)
 {
-	float square[4];
-	float white[4];
-	uint32_t rgb;
 	int picture;
 
-	/* The picture and the colour that belong to the window's application ID. */
-	rgb = 0U;
-	picture = zwl_icon_for_app_id(surface->app_id, &rgb);
+	/* The picture that belongs to the window's application ID. */
+	picture = zwl_icon_for_app_id(surface->app_id);
 	if (picture < 0)
 		return 0;
 
-	/* The square in the application's colour. */
-	square[0] = (float)((rgb >> 16) & 0xffU) / 255.0f;
-	square[1] = (float)((rgb >> 8) & 0xffU) / 255.0f;
-	square[2] = (float)(rgb & 0xffU) / 255.0f;
-	square[3] = ink[3];
-	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 20.0f, 20.0f, 6.0f, square);
-
-	/* The picture in its middle, white. */
-	white[0] = 1.0f;
-	white[1] = 1.0f;
-	white[2] = 1.0f;
-	white[3] = ink[3];
-	glass_draw_icon(server, command, (unsigned)picture, x + 3, middle - 7, 14U, white);
+	/* Its tile. */
+	glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - 10), 20.0f, ink[3], 0.0f);
 
 	/* Succeeded: the mark is drawn. */
 	return 1;
@@ -5868,8 +5854,9 @@ zwl_glass_switch_place(
 }
 
 /*
- * Draws an application's mark at a size (the bar's icons): the picture in
- * the application's colour, or a blue square with a letter.
+ * Draws an application's mark at a size (the bar's icons, Alt+Tab): its
+ * tile with the picture cut out (ws128-p012), or a blue square with a
+ * letter.
  */
 void
 zwl_glass_draw_app_mark(
@@ -5886,8 +5873,6 @@ zwl_glass_draw_app_mark(
 	char title[128];
 	char letter[5];
 	const char *source;
-	uint32_t rgb;
-	int32_t pixels;
 	int32_t width;
 	size_t length;
 	size_t index;
@@ -5899,17 +5884,10 @@ zwl_glass_draw_app_mark(
 	white[2] = 1.0f;
 	white[3] = alpha;
 
-	/* The picture and the colour that belong to the window's application ID. */
-	rgb = 0U;
-	picture = zwl_icon_for_app_id(surface->app_id, &rgb);
+	/* The tile of the picture that belongs to the window's application ID. */
+	picture = zwl_icon_for_app_id(surface->app_id);
 	if (picture >= 0) {
-		square[0] = (float)((rgb >> 16) & 0xffU) / 255.0f;
-		square[1] = (float)((rgb >> 8) & 0xffU) / 255.0f;
-		square[2] = (float)(rgb & 0xffU) / 255.0f;
-		square[3] = alpha;
-		glass_draw_solid(server, command, (float)x, (float)(middle - size / 2), (float)size, (float)size, (float)size * 0.3f, square);
-		pixels = size * 7 / 10;
-		glass_draw_icon(server, command, (unsigned)picture, x + (size - pixels) / 2, middle - pixels / 2, (unsigned)pixels, white);
+		glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - size / 2), (float)size, alpha, 0.0f);
 		return;
 	}
 

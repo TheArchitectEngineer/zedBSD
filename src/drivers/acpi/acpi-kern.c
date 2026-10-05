@@ -344,20 +344,44 @@ drv_acpi_os_sleep(
 
 /*
  * Waits for a number of microseconds without sleeping.
+ *
+ * ACPI's Stall keeps the processor: firmware stalls are short and are
+ * taken with the interpreter lock (and the EC's Global Lock) held, a few
+ * microseconds for each byte the embedded controller moves.  It spins on
+ * the monotonic counter; kern_usleep_range() would sleep to the next tick
+ * each time (BUG-202).
  */
 void
 drv_acpi_os_stall(
 	uint64_t microseconds)
 {
-	unsigned wait;
+	uint64_t start;
+	uint64_t now;
+	uint64_t frequency;
+	uint64_t rate;
+	uint64_t span;
+	bool available;
 
-	/* A stall longer than the counter's range is cut, as firmware stalls are short. */
-	wait = (unsigned)microseconds;
-	if (microseconds > 0xffffffffULL)
-		wait = 0xffffffffU;
+	/* A stall is 100 microseconds at most by the specification; a longer request is held to a second. */
+	if (microseconds > 1000000ULL)
+		microseconds = 1000000ULL;
 
-	/* Spins on the monotonic counter. */
-	kern_usleep_range(wait, wait);
+	/* The counter and its rate; without them there is nothing to wait by. */
+	available = kern_rtc_read_counter(&start, &frequency);
+	if (!available || frequency == 0)
+		return;
+
+	/* The counts the stall lasts, rounded up. */
+	span = (microseconds * frequency + 999999ULL) / 1000000ULL;
+
+	/* Spins until they have passed; a counter that fails or changes rate ends the stall. */
+	for (;;) {
+		available = kern_rtc_read_counter(&now, &rate);
+		if (!available || rate != frequency)
+			return;
+		if (now - start >= span)
+			return;
+	}
 }
 
 /*

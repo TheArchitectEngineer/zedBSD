@@ -14,7 +14,10 @@
  * Set-user-ID root, run by the compositor's backend for Settings (never by
  * hand: it is outside PATH).  The request is text on standard input, one
  * field a line: the caller's password, the operation (add, remove,
- * reset-password, group-add, group-remove) and its arguments (edit.h).
+ * reset-password, group-add, group-remove, system-language) and its
+ * arguments (edit.h).  system-language (ws158-p004) sets the login
+ * screen's language, /etc/keiland/language, after the same checks of the
+ * caller and the password; it has no target account.
  * Nothing comes from the command line or the environment.  The answer is
  * one line on standard output, "ok" or "error REASON", and the exit status
  * is 0 or 1.
@@ -69,6 +72,17 @@
 #endif
 #define ADMIN_SHELL		"/bin/sh"
 
+/*
+ * The system's language, the login screen's (ws158-p004; the compositor's
+ * language.c reads it), and its directory.
+ */
+#ifndef ADMIN_LANGUAGE_FILE
+#define ADMIN_LANGUAGE_FILE	"/etc/keiland/language"
+#endif
+#ifndef ADMIN_LANGUAGE_DIRECTORY
+#define ADMIN_LANGUAGE_DIRECTORY	"/etc/keiland"
+#endif
+
 /* The largest account file read, and the room of an edited one. */
 #define ADMIN_FILE_MAX		(256U * 1024U)
 #define ADMIN_OUTPUT_MAX	(ADMIN_FILE_MAX + 1024U)
@@ -118,6 +132,7 @@ static int admin_reset(struct admin_files *files, const struct admin_request *re
 static int admin_group(struct admin_files *files, const struct admin_request *request, const char *caller);
 static int admin_write(const char *path, mode_t mode, const char *text, size_t length);
 static int admin_passkey_forget(const char *name);
+static int admin_system_language(const struct admin_request *request);
 static int admin_passkey_edit(const char *name, char *text, char *output);
 static int admin_busy(const char *name, long uid);
 static int admin_make_home(const char *name, long id);
@@ -312,6 +327,12 @@ admin_apply(
 	struct admin_files files;
 	int reason;
 	int error;
+
+	/* The system's language touches no account file, so it takes no lock. */
+	if (request->operation == ADMIN_SYSTEM_LANGUAGE) {
+		reason = admin_system_language(request);
+		return reason;
+	}
 
 	/* The lock. */
 	error = account_files_lock();
@@ -1236,4 +1257,40 @@ admin_wipe(
 	byte = buffer;
 	for (index = 0; index < size; index++)
 		byte[index] = '\0';
+}
+
+/*
+ * Sets the system's language, the login screen's (ws158-p004): the one
+ * line of ADMIN_LANGUAGE_FILE, replaced atomically, readable by everyone.
+ * The language was checked when the request was read.  Returns ADMIN_OK
+ * or ADMIN_FAILED (said in the log).
+ */
+static int
+admin_system_language(
+	const struct admin_request *request)
+{
+	char line[16];
+	int written;
+	int made;
+	int error;
+
+	/* The line. */
+	written = snprintf(line, sizeof(line), "%s\n", request->name);
+	if (written < 0 || (size_t)written >= sizeof(line))
+		return ADMIN_FAILED;
+
+	/* The directory, when the system has none yet (an existing one is kept as it is). */
+	made = mkdir(ADMIN_LANGUAGE_DIRECTORY, 0755);
+	if (made != 0 && errno != EEXIST) {
+		syslog(LOG_ERR, "%s could not be made: %s", ADMIN_LANGUAGE_DIRECTORY, strerror(errno));
+		return ADMIN_FAILED;
+	}
+
+	/* The file, replaced. */
+	error = admin_write(ADMIN_LANGUAGE_FILE, 0644, line, (size_t)written);
+	if (error != 0)
+		return ADMIN_FAILED;
+
+	/* Succeeded: the login screen shows the language from its next start. */
+	return ADMIN_OK;
 }

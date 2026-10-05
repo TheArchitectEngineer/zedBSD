@@ -10,7 +10,7 @@ since: ws175-p001
 ---
 
 ## 目的
-Notes の Select の道具で、他の program が作った PDF の画像を移動・拡大縮小・差し替え・削除でき、undo で戻り、保存した PDF に反映されることを確かめる（WS175、ws175-p003・p006・p007）。
+Notes の Select の道具で、他の program が作った PDF の画像を移動・拡大縮小・差し替え・削除でき、undo で戻り、保存した PDF に反映されることを確かめる（WS175、ws175-p003・p007・p008）。
 
 ## 準備
 - `plan/ws175/tests/make-edit-samples.py` が作った `edit-basic.pdf`（3 頁、1 頁に段落と JPEG 1 つ）を `/tmp/aat-samples/notes-edit.pdf` に置き、`sample.png`（`plan/tools/aat/scenarios/samples.py`）も同じ所に置く。
@@ -18,7 +18,7 @@ Notes の Select の道具で、他の program が作った PDF の画像を移�
 
 ## 操作と確認
 1. 操作: toolbar の Select の道具を押す。
-   確認事項: 道具。正解: Select が選ばれた状態。確認方法: log `NOTES TOOL select`、撮影。
+   確認事項: 道具。正解: Select が選ばれた状態。確認方法: log `NOTES TOOL N name=select`、撮影。
 2. 操作: 1 頁の JPEG の画像の中央を click。
    確認事項: 選択。正解: 画像に青い枠と四隅の handle、操作の帯に Replace と Delete。確認方法: log `NOTES EDIT select page=0 object=I kind=image`、撮影。
 3. 操作: 画像の中央から右下へ 100 px drag。

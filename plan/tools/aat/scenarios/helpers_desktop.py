@@ -639,7 +639,7 @@ def lock_unlock(item):
 
 @run.define("desktop.session.logout-login")
 def logout_login(item):
-	before = run.lines(r"ZWL READY socket=\S+ .* role=desktop", None)
+	before = run.lines(r"ZWL READY socket=\S+ .* role=normal", None)
 	old_pid = aatlib.field(before[-1], "pid") if before else None
 	since = run.home_open(item)
 	run.type("logout")
@@ -658,7 +658,7 @@ def logout_login(item):
 	ready = None
 	deadline = time.monotonic() + 60
 	while time.monotonic() < deadline and ready is None:
-		found = [line for line in run.lines(r"ZWL READY socket=\S+ .* role=desktop", None) if aatlib.field(line, "pid") != old_pid]
+		found = [line for line in run.lines(r"ZWL READY socket=\S+ .* role=normal", None) if aatlib.field(line, "pid") != old_pid]
 		ready = found[-1] if found else None
 		time.sleep(2)
 	run._ready = None

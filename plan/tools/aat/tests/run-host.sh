@@ -122,7 +122,7 @@ aat click 1 1 2>"$tmp/stopped" && bad "stopped input" || { grep -q 'no-server' "
 # The scenarios: the documents and suites are well formed, and the runner runs a helper, marks a scenario that needs
 # hands, and writes the record (the fake input and capture again; the host's own programs are never stopped).
 python3 plan/tools/aat/check-scenarios.py | tail -1 | grep -q 'check-scenarios: PASS' && ok "scenarios and suites" || bad "scenarios and suites"
-printf 'ZWL READY socket=%s/wayland-0 width=64 height=48 timeout_ms=0 pid=7 role=desktop\n' "$tmp" > "$AAT_LOG"
+printf 'ZWL READY socket=%s/wayland-0 width=64 height=48 timeout_ms=0 pid=7 role=normal\n' "$tmp" > "$AAT_LOG"
 timeout 300 sh plan/tools/aat/run-aat.sh local "$tmp/runs" os.boot.session-up os.power.lid --no-samples > "$tmp/runner.txt" 2>&1
 grep -q '| `os.boot.session-up` | \*\*pass\*\* | 64x48 |' "$tmp/runs/summary.md" && ok "runner: a helper's pass" || bad "runner: a helper's pass"
 grep -q '| `os.power.lid` | \*\*needs-person\*\* |' "$tmp/runs/summary.md" && ok "runner: hands are a person's" || bad "runner: hands"

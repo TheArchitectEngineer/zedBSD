@@ -405,6 +405,23 @@ se_users_close(
 	se_users_pin_wipe(&app->users);
 }
 
+/*
+ * Reads the user's account and the list of users once, for a page that
+ * needs to know whether the user is an administrator before the Users page
+ * was shown (the Languages page's system language, ws158-p004).
+ */
+void
+se_users_load(
+	struct se_users *users)
+{
+	/* Read already. */
+	if (users->read)
+		return;
+
+	/* The account and the list. */
+	users_read(users);
+}
+
 /* Reads the account of the user Settings runs as. */
 static void
 users_read(

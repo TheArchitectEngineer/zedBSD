@@ -10,7 +10,7 @@ since: ws175-p001
 ---
 
 ## 目的
-既存の文字の行を、元の埋め込みの font のまま書き換えられること、元の font に無い文字では置き換えの font になり利用者に知らされること、行を消せることを確かめる（WS175、ws175-p002・p003・p004・p007）。
+既存の文字の行を、元の埋め込みの font のまま書き換えられること、元の font に無い文字では置き換えの font になり利用者に知らされること、行を消せることを確かめる（WS175、ws175-p002・p004・p005・p008）。
 
 ## 準備
 - `/tmp/aat-samples/notes-edit.pdf`（`edit-basic.pdf`。1 頁の段落の 1 行目は「The quick brown fox jumps over the lazy dog」、subset の TrueType）。

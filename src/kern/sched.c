@@ -26,6 +26,7 @@
 #include "kern/signal.h"
 #include "kern/lock.h"
 #include "kern/kmem.h"
+#include "kern/klog.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
@@ -166,7 +167,9 @@ static struct hal_cpu_mask scheduler_idle_mask;
 static void send_itimer_signal(struct process *process, int signo);
 static struct sched_cpu *sched_cpu_state(hal_cpu_id_t cpu);
 static void queue_append(struct sched_queue *queue, struct thread *thread, unsigned kind);
-static void queue_remove(struct sched_queue *queue, struct thread *thread);
+static void queue_remove(struct sched_queue *queue, struct thread *thread) __attribute__((noinline));
+static void queue_report_underflow(const struct sched_queue *queue, const struct thread *thread, void *caller);
+static void refuse_idle_sleep(const struct thread *thread, const char *entry, void *caller);
 static void queue_remove_thread(struct sched_cpu *cpu, struct thread *thread);
 static struct thread *pick_next_locked(struct sched_cpu *cpu);
 static void complete_retired(struct sched_cpu *cpu);
@@ -1156,6 +1159,9 @@ sched_sleep(
 	if (thread == NULL || thread->sched.cpu != hal_cpu_current())
 		HAL_FATAL("invalid scheduler sleep");
 
+	/* Not the idle thread, which has nothing to switch to and would stay on the sleep queue (BUG-202). */
+	refuse_idle_sleep(thread, "sched_sleep", __builtin_return_address(0));
+
 	/* Publishes the sleep, with the deadline on the sleep queue. */
 	cpu = sched_cpu_state(thread->sched.cpu);
 	ignored = spin_lock_irqsave(&cpu->lock);
@@ -1199,6 +1205,9 @@ sched_sleep_locked(
 	    thread->sched.cpu != hal_cpu_current())
 		HAL_FATAL("invalid locked sleep");
 
+	/* Not the idle thread, which has nothing to switch to and would stay on the sleep queue (BUG-202). */
+	refuse_idle_sleep(thread, "sched_sleep_locked", __builtin_return_address(0));
+
 	/* Publishes the sleep before dropping the condition lock. */
 	cpu = sched_cpu_state(thread->sched.cpu);
 	spin_lock(&cpu->lock);
@@ -1239,6 +1248,9 @@ sched_sleep_locked_interruptible(
 	    condition_lock == NULL ||
 	    thread->sched.cpu != hal_cpu_current())
 		HAL_FATAL("invalid interruptible locked sleep");
+
+	/* Not the idle thread, which has nothing to switch to and would stay on the sleep queue (BUG-202). */
+	refuse_idle_sleep(thread, "sched_sleep_locked_interruptible", __builtin_return_address(0));
 	cpu = sched_cpu_state(thread->sched.cpu);
 	spin_lock(&cpu->lock);
 
@@ -1296,6 +1308,9 @@ sched_sleep_locked_notify(
 	    notify == NULL ||
 	    thread->sched.cpu != hal_cpu_current())
 		HAL_FATAL("invalid notifying locked sleep");
+
+	/* Not the idle thread, which has nothing to switch to and would stay on the sleep queue (BUG-202). */
+	refuse_idle_sleep(thread, "sched_sleep_locked_notify", __builtin_return_address(0));
 
 	/* Publishes the sleep before dropping the condition lock. */
 	cpu = sched_cpu_state(thread->sched.cpu);
@@ -1835,12 +1850,86 @@ queue_remove(
 		thread->sched.next->sched.prev = thread->sched.prev;
 	else
 		queue->tail = thread->sched.prev;
-	if (queue->count == 0)
+	if (queue->count == 0) {
+		/* The queue and the thread, and where the removal came from, for the screen before the fatal (BUG-202). */
+		queue_report_underflow(queue, thread, __builtin_return_address(0));
 		HAL_FATAL("scheduler queue underflow");
+	}
 	queue->count--;
 	thread->sched.next = NULL;
 	thread->sched.prev = NULL;
 	thread->sched.queue_kind = SCHED_QUEUE_NONE;
+}
+
+/*
+ * Writes what a removal from an empty queue found, before the fatal
+ * (BUG-202): which queue of which CPU it is (run or woken at a priority,
+ * the sleep queue, or none of the thread's CPU), its count and ends, the
+ * thread's id, state, flags, queue kind and priority, the CPU running, and
+ * the address the removal was called from (the kernel is not stripped, so
+ * the address names the function).
+ */
+static void
+queue_report_underflow(
+	const struct sched_queue *queue,
+	const struct thread *thread,
+	void *caller)
+{
+	const struct sched_cpu *cpu;
+	const char *kind;
+	int level;
+	int priority;
+
+	/* The queue among those of the thread's CPU. */
+	kind = "foreign";
+	level = -1;
+	cpu = NULL;
+	if (thread->sched.cpu < scheduler_cpu_count)
+		cpu = &scheduler_cpus[thread->sched.cpu];
+	if (cpu != NULL && queue == &cpu->sleep)
+		kind = "sleep";
+
+	/* A run or woken queue, by its priority. */
+	for (priority = 0; cpu != NULL && priority < SCHED_PRIOR_LEVELS; priority++) {
+		if (queue == &cpu->run[priority]) {
+			kind = "run";
+			level = priority;
+		} else if (queue == &cpu->woken[priority]) {
+			kind = "woken";
+			level = priority;
+		}
+	}
+
+	/* The line on the screen. */
+	kern_logf("sched: underflow queue=%s[%d] cpu=%u count=%u head=%p tail=%p thread=%p tid=%d state=%d flags=0x%x kind=%d priority=%d on=%u caller=%p\n",
+	    kind, level, (unsigned)thread->sched.cpu, queue->count, (void *)queue->head, (void *)queue->tail,
+	    (const void *)thread, (int)thread->tid, (int)thread->state, (unsigned)thread->flags,
+	    (int)thread->sched.queue_kind, thread->sched.priority, (unsigned)hal_cpu_current(), caller);
+}
+
+/*
+ * Stops the kernel when the idle thread enters a sleep (BUG-202).
+ *
+ * switch_without_enqueue() returns at once to an idle thread that finds
+ * nothing to run, so a sleep with a deadline would leave it linked on the
+ * sleep queue, and its next sleep would link it twice and break the queue
+ * (the "scheduler queue underflow" later).  The idle loop never sleeps; an
+ * interrupt handler that sleeps while the idle thread is current does.  The
+ * line names the entry and the address it was called from.
+ */
+static void
+refuse_idle_sleep(
+	const struct thread *thread,
+	const char *entry,
+	void *caller)
+{
+	/* Any other thread may sleep. */
+	if ((thread->flags & THREAD_FLAG_IDLE) == 0)
+		return;
+
+	/* The line on the screen, then the fatal. */
+	kern_logf("sched: the idle thread of CPU %u entered %s from %p\n", (unsigned)thread->sched.cpu, entry, caller);
+	HAL_FATAL("idle thread sleeps");
 }
 
 /* Unlinks a thread from whichever queue of a CPU it is on. */

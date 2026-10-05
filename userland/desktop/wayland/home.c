@@ -36,8 +36,10 @@
  * The applications come from /etc/keiland/apps.conf, one a line:
  * name|command|keywords|RRGGBB|picture; without the file, a built-in list.
  * The picture is one of the names icons.c draws a picture for ("files",
- * "notes", "terminal", ...; ws035-p123); an application without one shows
- * its name's first letter on its tile.  An application whose command names
+ * "notes", "terminal", ...; ws035-p123); an application with a picture
+ * shows its tile in the picture's own colours with the picture cut out
+ * (icons.c, ws128-p012), one without shows its name's first letter on a
+ * tile in its colour.  An application whose command names
  * an absolute path that is not there is not shown.  An application is
  * started with /bin/sh -c and the compositor's socket in its environment.
  */
@@ -126,8 +128,8 @@
 #define HOME_ICON_RADIUS	18.0f
 #define HOME_LABEL		26
 
-/* The picture on a tile, in pixels a side (glass.c renders App Home's pictures at this size). */
-#define HOME_PICTURE		40
+/* How much a tile is whitened under the pointer. */
+#define HOME_LIT		0.15f
 
 /*
  * The tile's shading (ws035-p123): the tile is drawn in this many bands,
@@ -162,7 +164,7 @@ struct home_app {
 	char command[160];
 	char keywords[80];
 
-	/* The icon's colour, and its picture (GLASS_ICON_APP_*, or -1 for the name's first letter). */
+	/* The colour of the letter's tile, and the picture (GLASS_ICON_APP_*, whose tile has colours of its own, or -1 for the name's first letter). */
 	float color[4];
 	int picture;
 };
@@ -201,6 +203,7 @@ static const char home_characters[HOME_KEYS] = {
 static void home_read_apps(struct zwl_server *server);
 static int home_present(const char *name, const char *command);
 static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
+static void home_draw_letter(struct zwl_server *server, VkCommandBuffer command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
 static void home_draw_tile(struct zwl_server *server, VkCommandBuffer command, float left, float top, float size, const float *color);
 static void home_parse_line(char *line);
 static uint32_t home_hex(const char *text);
@@ -922,6 +925,7 @@ home_read_apps(
 	FILE *file;
 	char *end;
 	char *got;
+	int managed;
 
 	/* Read once. */
 	if (home_apps_read)
@@ -965,7 +969,10 @@ home_read_apps(
 	}
 
 	/* A login's session locks (ws035-p102) and ends with Log Out (ws035-p095), the last icons. */
-	if (server->session && kl_backend_session_managed(server->backend))
+	managed = 0;
+	if (server->session)
+		managed = kl_backend_session_managed(server->backend);
+	if (managed)
 		home_add_app("Lock Screen", HOME_LOCK, "lock screen away", 0x5a6aa0U, "lock");
 	if (server->session)
 		home_add_app("Log Out", HOME_LOGOUT, "logout log out sign out exit session end", 0x6a7488U, "logout");
@@ -1263,7 +1270,7 @@ home_icon_at(
 	return -1;
 }
 
-/* Draws one icon: its rounded square with its picture (or the name's first letter), the selection's ring, and the name under it. */
+/* Draws one icon: its tile with its picture (or the name's first letter), the selection's ring, and the name under it. */
 static void
 home_draw_icon(
 	struct zwl_server *server,
@@ -1271,17 +1278,15 @@ home_draw_icon(
 	unsigned slot,
 	float opacity)
 {
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	const struct home_app *app;
 	const char *label;
 	struct glass_shape shape;
 	float color[4];
-	char letter[2];
 	float size;
 	float left;
 	float top;
-	float picture_size;
+	float lighten;
 	int32_t x;
 	int32_t y;
 	int32_t width;
@@ -1302,47 +1307,18 @@ home_draw_icon(
 	left = (float)x - (size - (float)HOME_ICON) * 0.5f;
 	top = (float)y - (size - (float)HOME_ICON) * 0.5f;
 
-	/* A soft shadow under the icon. */
-	glass_shape_init(&shape, left, top + 6.0f, size, size);
-	shape.quad[0] -= 24.0f;
-	shape.quad[1] -= 24.0f;
-	shape.quad[2] += 48.0f;
-	shape.quad[3] += 48.0f;
-	shape.mode = MODE_SHADOW;
-	shape.radius = HOME_ICON_RADIUS;
-	shape.soft = 14.0f;
-	shape.color[0] = 0.10f;
-	shape.color[1] = 0.18f;
-	shape.color[2] = 0.35f;
-	shape.color[3] = 0.22f;
-	shape.opacity = opacity;
-	glass_shape_draw(server, command, &shape);
-
-	/* The icon's square in its colour, lighter under the pointer. */
-	memcpy(color, app->color, sizeof(color));
-	if (over) {
-		color[0] = color[0] + (1.0f - color[0]) * 0.15f;
-		color[1] = color[1] + (1.0f - color[1]) * 0.15f;
-		color[2] = color[2] + (1.0f - color[2]) * 0.15f;
-	}
-
-	/* The square, shaded like lit glass and faded in with Home. */
-	color[3] = opacity;
-	home_draw_tile(server, command, left, top, size, color);
-
-	/* Its picture, white, in the middle, growing with the square (ws035-p123). */
-	memcpy(color, white, sizeof(color));
-	color[3] = opacity;
+	/*
+	 * An application with a picture is its banded tile with the picture cut
+	 * out (ws128-p012), lighter under the pointer and without a shadow,
+	 * which would show through the picture; any other is its letter's tile.
+	 */
 	if (app->picture >= 0) {
-		picture_size = (float)HOME_PICTURE * size / (float)HOME_ICON;
-		glass_draw_icon(server, command, (unsigned)app->picture, (int32_t)(left + (size - picture_size) * 0.5f),
-				(int32_t)(top + (size - picture_size) * 0.5f), (unsigned)picture_size, color);
+		lighten = 0.0f;
+		if (over)
+			lighten = HOME_LIT;
+		glass_draw_app_tile(server, command, (unsigned)app->picture, left, top, size, opacity, lighten);
 	} else {
-		/* Without a picture, the name's first letter, large. */
-		letter[0] = app->name[0];
-		letter[1] = '\0';
-		width = glass_text_width(server, SIZE_ICON, letter);
-		glass_draw_text(server, command, SIZE_ICON, x + (HOME_ICON - width) / 2, y + HOME_ICON / 2 + 13, letter, HOME_ICON, color);
+		home_draw_letter(server, command, app, x, y, left, top, size, over, opacity);
 	}
 
 	/* The selection (with the keyboard, or the first search result) has a blue ring. */
@@ -1366,6 +1342,68 @@ home_draw_icon(
 	if (width > HOME_CELL_WIDTH - 8)
 		width = HOME_CELL_WIDTH - 8;
 	glass_draw_text(server, command, SIZE_TITLE, x + (HOME_ICON - width) / 2, y + HOME_ICON + HOME_LABEL, label, HOME_CELL_WIDTH - 8, color);
+}
+
+/*
+ * Draws the tile of an application without a picture at (left, top), size
+ * pixels a side (its place x, y when it is not growing): a soft shadow, its
+ * rounded square in its colour shaded like lit glass (lighter under the
+ * pointer), and the name's first letter.
+ */
+static void
+home_draw_letter(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const struct home_app *app,
+	int32_t x,
+	int32_t y,
+	float left,
+	float top,
+	float size,
+	int over,
+	float opacity)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	struct glass_shape shape;
+	float color[4];
+	char letter[2];
+	int32_t width;
+
+	/* A soft shadow under the icon. */
+	glass_shape_init(&shape, left, top + 6.0f, size, size);
+	shape.quad[0] -= 24.0f;
+	shape.quad[1] -= 24.0f;
+	shape.quad[2] += 48.0f;
+	shape.quad[3] += 48.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = HOME_ICON_RADIUS;
+	shape.soft = 14.0f;
+	shape.color[0] = 0.10f;
+	shape.color[1] = 0.18f;
+	shape.color[2] = 0.35f;
+	shape.color[3] = 0.22f;
+	shape.opacity = opacity;
+	glass_shape_draw(server, command, &shape);
+
+	/* The icon's square in its colour, lighter under the pointer. */
+	memcpy(color, app->color, sizeof(color));
+	if (over) {
+		color[0] = color[0] + (1.0f - color[0]) * HOME_LIT;
+		color[1] = color[1] + (1.0f - color[1]) * HOME_LIT;
+		color[2] = color[2] + (1.0f - color[2]) * HOME_LIT;
+	}
+
+	/* The square, shaded like lit glass and faded in with Home. */
+	color[3] = opacity;
+	home_draw_tile(server, command, left, top, size, color);
+
+	/* The name's first letter, white and large, in the middle. */
+	memcpy(color, white, sizeof(color));
+	color[3] = opacity;
+	letter[0] = app->name[0];
+	letter[1] = '\0';
+	width = glass_text_width(server, SIZE_ICON, letter);
+	glass_draw_text(server, command, SIZE_ICON, x + (HOME_ICON - width) / 2, y + HOME_ICON / 2 + 13, letter, HOME_ICON, color);
 }
 
 /*

@@ -549,6 +549,24 @@ struct se_sharing {
 	int message_bad;
 };
 
+/*
+ * The Languages page's system language (ws158-p004): the language of the
+ * login screen as /etc/keiland/language holds it (-1 not read or not set,
+ * else 0 English, 1 Japanese), the one an administrator chose to set,
+ * their password, whether the field has the keyboard, the change asked
+ * (its request, 0 for none), and the last message (red for a failure).
+ */
+struct se_languages {
+	int system;
+	int chosen;
+	struct se_field password;
+	int focused;
+	int asked;
+	uint32_t request;
+	char message[SE_MESSAGE];
+	int message_bad;
+};
+
 /* The Users page's password fields: the current password, the new one, the new one again. */
 #define SE_USERS_FIELDS		3
 
@@ -906,6 +924,7 @@ struct se_look {
 	int repeat_rate;
 	int repeat_delay;
 	int ime_method;
+	int ui_language;
 	int dark;
 	int dragging;
 	struct fm_rect slider;
@@ -1058,6 +1077,9 @@ struct se_app {
 
 	/* The Sharing page's Remote Login (ws089-p025). */
 	struct se_sharing sharing;
+
+	/* The Languages page's system language (ws158-p004). */
+	struct se_languages languages;
 };
 
 /* The table of pages (pages.c). */
@@ -1126,6 +1148,8 @@ int se_sharing_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top
 void se_sharing_press(struct se_app *app, int index);
 int se_languages_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 void se_languages_press(struct se_app *app, int index);
+int se_languages_key(struct se_app *app, const struct se_event *event);
+int se_languages_result(struct se_app *app, uint32_t request, int error);
 void se_sharing_poll(struct se_app *app);
 int se_sharing_result(struct se_app *app, uint32_t request, int error);
 void se_storage_stop(struct se_app *app);
@@ -1210,6 +1234,7 @@ int se_soon_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, i
 int se_users_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 void se_users_press(struct se_app *app, int index);
 int se_users_key(struct se_app *app, const struct se_event *event);
+void se_users_load(struct se_users *users);
 int se_users_result(struct se_app *app, uint32_t request, int error);
 void se_users_close(struct se_app *app);
 int se_users_admin_available(const struct se_app *app);

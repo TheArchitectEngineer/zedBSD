@@ -8502,6 +8502,14 @@ ioctl_has_argument(
 		/* Reports operation failure. */
 		return 1;
 
+	/*
+	 * IPv6's address, interface and route requests (ws130-p002,
+	 * SIOCAIFADDR_IN6 to SIOCGRTENTRY_IN6) carry a structure too; without
+	 * it the kernel is handed no argument and answers EFAULT.
+	 */
+	if (request >= SIOCAIFADDR_IN6 && request <= SIOCGRTENTRY_IN6)
+		return 1;
+
 	/* Returns the computed result. */
 	return request == SIOCADDRT || request == SIOCDELRT ||
 	       request == SIOCGRTENTRY;

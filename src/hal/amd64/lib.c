@@ -20,9 +20,17 @@
 #include "bsp.h"
 #include "smp.h"
 
+/* The most return addresses a fatal's line names (BUG-202). */
+#define FATAL_TRACE_MAX		12U
+
+/* The kernel's text (vmunix.ld): a word on the stack inside it may be a return address. */
+extern char __kernel_text_virt_start[];
+extern char __kernel_text_virt_end[];
+
 static volatile unsigned panic_in_progress;
 
 static void put_unsigned(uint64_t value, unsigned base, int upper, int width, int zero);
+static void fatal_trace(uintptr_t caller) __attribute__((noinline));
 
 /*
  * Measures a terminated byte string.
@@ -379,6 +387,9 @@ hal_fatal(
 	/* Reports the fatal condition through the serialized console path. */
 	hal_printf("\nfatal: %s:%d: %s\n", file, line, message);
 
+	/* The caller and the words on the stack that point into the kernel's text, on one line (BUG-202). */
+	fatal_trace((uintptr_t)__builtin_return_address(0));
+
 	/* Stops other CPUs only after SMP panic broadcast becomes safe. */
 	if (amd64_smp_panic_available())
 		hal_cpu_panic_all();
@@ -446,6 +457,53 @@ hal_entropy_fill(
 
 	/* Reports a completely filled buffer. */
 	return true;
+}
+
+/*
+ * Writes the line that names where a fatal came from: the address
+ * hal_fatal() was called from, then the words of the stack from here to
+ * the end of its page that fall in the kernel's text, at most
+ * FATAL_TRACE_MAX (most of them return addresses of the callers, some
+ * stale).  The kernel is built without frame pointers, so the stack is not
+ * walked by frames; the page holding the stack pointer is the only memory
+ * known to be mapped.  The addresses name functions with the unstripped
+ * vmunix (addr2line -f -e vmunix).
+ */
+static void
+fatal_trace(
+	uintptr_t caller)
+{
+	const uintptr_t *word;
+	const uintptr_t *end;
+	uintptr_t value;
+	uintptr_t stack;
+	unsigned count;
+
+	/* The caller first. */
+	hal_printf("fatal: caller %lx stack", (unsigned long)caller);
+
+	/* From the stack pointer to the end of its page. */
+	__asm__ volatile("movq %%rsp, %0" : "=r"(stack));
+	word = (const uintptr_t *)(stack & ~(uintptr_t)(sizeof(uintptr_t) - 1U));
+	end = (const uintptr_t *)((stack | 0xfffU) + 1U);
+	count = 0U;
+	while (word < end && count < FATAL_TRACE_MAX) {
+		value = *word;
+		word++;
+
+		/* A word outside the text is data. */
+		if (value < (uintptr_t)__kernel_text_virt_start)
+			continue;
+		if (value >= (uintptr_t)__kernel_text_virt_end)
+			continue;
+
+		/* One more address on the line. */
+		hal_printf(" %lx", (unsigned long)value);
+		count++;
+	}
+
+	/* The line's end. */
+	hal_printf("\n");
 }
 
 /* Emits an unsigned value with the requested base and padding. */

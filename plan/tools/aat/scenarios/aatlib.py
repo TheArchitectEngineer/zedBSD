@@ -18,7 +18,7 @@ run-aat.sh sums up.
 
     @run.define("os.boot.session-up")
     def session_up(item):
-        line = run.wait(r"ZWL READY .* role=desktop", None, 120)
+        line = run.wait(r"ZWL READY .* role=normal", None, 120)
         item.step("wait for the desktop", line)
         item.check(line, "no ZWL READY")
         run.shot(item, "desktop")

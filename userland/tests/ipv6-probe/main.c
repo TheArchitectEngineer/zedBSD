@@ -20,7 +20,9 @@
  * and reads its prefix; adds an address in that prefix with lifetimes and
  * sees them counted; adds a default route through the router and reads
  * the routes back (the connected ones too); removes them; turns IPv6 off
- * and on again.  As a user who is not root, a change is refused.  Each
+ * and on again.  As a user who is not root (who gets no raw socket, so no
+ * routing socket either), the listing still works and the first change is
+ * refused (step=add-link-local, EPERM).  Each
  * line is "IPV6 ..." on standard output; the last is "IPV6 PASS" (status
  * 0) or "IPV6 FAIL step=<what> error=<errno>" (status 1).
  */
@@ -76,17 +78,27 @@ main(
 	unsigned routes;
 	int inet;
 	int events;
+	int events_error;
 	int found;
 	int same;
 	int error;
 
-	/* The interface: named, or the first that is up and not the loopback. */
+	/*
+	 * The sockets.  A raw socket (the route socket too) is the
+	 * superuser's, so another user goes on without the events to show
+	 * that the change itself is refused (step=add-link-local).
+	 */
 	inet = socket(AF_INET, SOCK_DGRAM, 0);
-	events = socket(AF_ROUTE, SOCK_RAW, AF_INET6);
 	if (inet < 0)
 		return probe_fail("socket", errno);
+	events_error = 0;
+	events = socket(AF_ROUTE, SOCK_RAW, AF_INET6);
 	if (events < 0)
-		return probe_fail("route-socket", errno);
+		events_error = errno;
+	if (events < 0 && events_error != EPERM)
+		return probe_fail("route-socket", events_error);
+
+	/* The interface: named, or the first that is up and not the loopback. */
 	name[0] = '\0';
 	if (argc == 3) {
 		same = strcmp(argv[1], "-i");
@@ -120,6 +132,10 @@ main(
 	error = probe_add(inet, name, &address, 64U, 0U, IN6_LIFETIME_INFINITE, IN6_LIFETIME_INFINITE);
 	if (error != 0)
 		return probe_fail("add-link-local", error);
+
+	/* A user the address was not refused to still needs the events. */
+	if (events < 0)
+		return probe_fail("route-socket", events_error);
 	error = probe_wait(events, RTM_ADDRINFO, ifindex, &address, record, PROBE_DAD_MS);
 	if (error != 0)
 		return probe_fail("dad", error);
