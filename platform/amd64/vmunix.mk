@@ -631,7 +631,7 @@ AMD64_APP_INPUTS := $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(BUILD)/dynamic/libc.so $(BUILD)/dynamic/ld.so \
 	tools/build/check-dynamic-elf.py
 AMD64_APP_LINK = $(CC) -m64 -nostdlib -pie -Wl,--no-relax -Wl,--gc-sections \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o
 AMD64_APP_LIBS = -L$(BUILD)/dynamic -Wl,-rpath-link,$(BUILD)/dynamic -l:libc.so
@@ -849,9 +849,14 @@ $(DYNAMIC_DIR)/ld.so: $(DYNAMIC_RTLD_OBJS)
 	$(LD) -m elf_x86_64 -shared -Bsymbolic -e _rtld_start \
  --hash-style=sysv -z now -z relro -z separate-code $^ -o $@
 
-$(DYNAMIC_DIR)/libc.so: $(DYNAMIC_LIBC_OBJS)
+# ws066-p002: -Bsymbolic-functions binds the library's calls to its own
+# functions at link time, which leaves the loader 19 symbol relocations of
+# libc.so instead of 515; the allocator and the functions that return its
+# memory stay replaceable (userland/base/libc/interpose.list).
+$(DYNAMIC_DIR)/libc.so: $(DYNAMIC_LIBC_OBJS) userland/base/libc/interpose.list
 	$(LD) -m elf_x86_64 -shared -soname libc.so --hash-style=both \
- -z now -z relro -z separate-code -z stack-size=0x100000 $^ -o $@
+ -Bsymbolic-functions --export-dynamic-symbol-list=userland/base/libc/interpose.list \
+ -z now -z relro -z separate-code -z stack-size=0x100000 $(DYNAMIC_LIBC_OBJS) -o $@
 
 # The utility library.  It holds what is not part of the C library and not
 # wanted by every program, and is built from the same tree so that the two
@@ -860,7 +865,7 @@ DYNAMIC_LIBUTIL_OBJS := $(DYNAMIC_DIR)/obj/src/libc/libutil.o
 
 $(DYNAMIC_DIR)/libutil.so: $(DYNAMIC_LIBUTIL_OBJS) $(DYNAMIC_DIR)/libc.so \
 	tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libutil.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libutil.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  $(DYNAMIC_LIBUTIL_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 \
@@ -871,7 +876,7 @@ DYNAMIC_WAYLAND_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libway
 
 $(DYNAMIC_DIR)/libwayland-client.so: $(DYNAMIC_WAYLAND_OBJS) $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libwayland/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libwayland-client.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libwayland-client.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libwayland/exports.map \
  $(DYNAMIC_WAYLAND_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
@@ -884,7 +889,7 @@ DYNAMIC_TRUETYPE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libtr
 
 $(DYNAMIC_DIR)/libtruetype.so: $(DYNAMIC_TRUETYPE_OBJS) $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libtruetype/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libtruetype.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libtruetype.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libtruetype/exports.map \
  $(DYNAMIC_TRUETYPE_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
@@ -896,7 +901,7 @@ DYNAMIC_Z_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libz-
 
 $(DYNAMIC_DIR)/libz-compat.so: $(DYNAMIC_Z_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
 	userland/base/libz-compat/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libz-compat.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libz-compat.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libz-compat/exports.map \
  $(DYNAMIC_Z_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
@@ -908,7 +913,7 @@ DYNAMIC_PNG_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,lib
 
 $(DYNAMIC_DIR)/libpng-compat.so: $(DYNAMIC_PNG_COMPAT_OBJS) $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libc.so \
 	userland/base/libpng-compat/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libpng-compat.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libpng-compat.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libpng-compat/exports.map \
  $(DYNAMIC_PNG_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libz-compat.so -l:libc.so -o $@
@@ -921,7 +926,7 @@ DYNAMIC_JPEG_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,li
 
 $(DYNAMIC_DIR)/libjpeg-compat.so: $(DYNAMIC_JPEG_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
 	userland/base/libjpeg-compat/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libjpeg-compat.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libjpeg-compat.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libjpeg-compat/exports.map \
  $(DYNAMIC_JPEG_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
@@ -936,7 +941,7 @@ DYNAMIC_PDF_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libpdf)
 $(DYNAMIC_DIR)/libpdf.so: $(DYNAMIC_PDF_OBJS) $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libjpeg-compat.so \
 	$(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so \
 	userland/base/libpdf/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libpdf.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libpdf.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libpdf/exports.map \
  $(DYNAMIC_PDF_OBJS) -L$(DYNAMIC_DIR) -l:libz-compat.so -l:libjpeg-compat.so -l:libtruetype.so -l:libc.so -o $@
@@ -949,7 +954,7 @@ DYNAMIC_GIF_COMPAT_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,lib
 
 $(DYNAMIC_DIR)/libgif-compat.so: $(DYNAMIC_GIF_COMPAT_OBJS) $(DYNAMIC_DIR)/libc.so \
 	userland/base/libgif-compat/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libgif-compat.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libgif-compat.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/base/libgif-compat/exports.map \
  $(DYNAMIC_GIF_COMPAT_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
@@ -961,7 +966,7 @@ DYNAMIC_WAYLAND_EGL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,li
 
 $(DYNAMIC_DIR)/libwayland-egl.so: $(DYNAMIC_WAYLAND_EGL_OBJS) $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libwayland-egl/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libwayland-egl.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libwayland-egl.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libwayland-egl/exports.map \
  $(DYNAMIC_WAYLAND_EGL_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
@@ -973,7 +978,7 @@ DYNAMIC_EGL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libegl)
 
 $(DYNAMIC_DIR)/libEGL.so: $(DYNAMIC_EGL_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
 	$(DYNAMIC_DIR)/libc.so userland/desktop/libegl/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libEGL.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libEGL.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libegl/exports.map \
  $(DYNAMIC_EGL_OBJS) -L$(DYNAMIC_DIR) -l:libvulkan.so -l:libwayland-client.so -l:libc.so -o $@
@@ -985,7 +990,7 @@ DYNAMIC_GLESV2_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgles
 
 $(DYNAMIC_DIR)/libGLESv2.so: $(DYNAMIC_GLESV2_OBJS) $(DYNAMIC_DIR)/libEGL.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libglesv2/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libGLESv2.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libGLESv2.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libglesv2/exports.map \
  $(DYNAMIC_GLESV2_OBJS) -L$(DYNAMIC_DIR) -l:libEGL.so -l:libvulkan.so -l:libc.so -o $@
@@ -1001,7 +1006,7 @@ $(DYNAMIC_DIR)/libkeiland.so: $(DYNAMIC_ZDESKTOP_OBJS) $(DYNAMIC_DIR)/libwayland
 	$(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
 	$(DYNAMIC_DIR)/libc.so userland/desktop/libkeiland/exports.map tools/build/check-dynamic-elf.py
 	$(PYTHON) userland/desktop/libkeiland/exports.py --check
-	$(LD) -m elf_x86_64 -shared -soname libkeiland.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libkeiland.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libkeiland/exports.map \
  $(DYNAMIC_ZDESKTOP_OBJS) -L$(DYNAMIC_DIR) -l:libwayland-client.so -l:libtruetype.so -l:libvulkan.so \
@@ -1018,7 +1023,7 @@ DYNAMIC_VULKAN_CHECK := tools/build/check-dynamic-elf.py
 $(DYNAMIC_DIR)/libvulkan.so: $(DYNAMIC_VULKAN_OBJS) $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/libwayland-client.so \
 	userland/desktop/libvulkan/exports.map userland/desktop/libvulkan/api-commands.tsv \
 	$(DYNAMIC_VULKAN_CHECK)
-	$(LD) -m elf_x86_64 -shared -soname libvulkan.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libvulkan.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libvulkan/exports.map \
  $(DYNAMIC_VULKAN_OBJS) -L$(DYNAMIC_DIR) -l:libwayland-client.so -l:libc.so -o $@
@@ -1031,7 +1036,7 @@ $(BUILD)/bin/vkdemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_VKDEMO_OBJS) \
@@ -1050,7 +1055,7 @@ $(BUILD)/bin/wayland: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_PROGRAM_OBJS) \
@@ -1068,7 +1073,7 @@ $(BUILD)/bin/wltest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_WLTEST_OBJS) \
@@ -1085,7 +1090,7 @@ $(BUILD)/bin/acquire-fence-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ACQUIRE_FENCE_TEST_OBJS) \
@@ -1102,7 +1107,7 @@ $(BUILD)/bin/gpu-forge-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_GPU_FORGE_TEST_OBJS) \
@@ -1119,7 +1124,7 @@ $(BUILD)/bin/menu-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_MENU_PROBE_OBJS) \
@@ -1136,7 +1141,7 @@ $(BUILD)/bin/keiland-settings: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_KEILAND_SETTINGS_OBJS) \
@@ -1153,7 +1158,7 @@ $(BUILD)/bin/keiland-system: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_KEILAND_SYSTEM_OBJS) \
@@ -1170,7 +1175,7 @@ $(BUILD)/bin/titlebar-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TITLEBAR_PROBE_OBJS) \
@@ -1187,7 +1192,7 @@ $(BUILD)/bin/popup-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_POPUP_PROBE_OBJS) \
@@ -1204,7 +1209,7 @@ $(BUILD)/bin/subsurface-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_SUBSURFACE_PROBE_OBJS) \
@@ -1221,7 +1226,7 @@ $(BUILD)/bin/seat-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_SEAT_PROBE_OBJS) \
@@ -1238,7 +1243,7 @@ $(BUILD)/bin/tablet-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TABLET_PROBE_OBJS) \
@@ -1255,7 +1260,7 @@ $(BUILD)/bin/data-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_DATA_PROBE_OBJS) \
@@ -1272,7 +1277,7 @@ $(BUILD)/bin/extras-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_EXTRAS_PROBE_OBJS) \
@@ -1289,7 +1294,7 @@ $(BUILD)/bin/wlshm: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_WLSHM_OBJS) \
@@ -1310,7 +1315,7 @@ $(BUILD)/bin/keiland-ime: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_KEILAND_IME_OBJS) \
@@ -1327,7 +1332,7 @@ $(BUILD)/bin/ime-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_IME_PROBE_OBJS) \
@@ -1344,7 +1349,7 @@ $(BUILD)/bin/mview: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_MVIEW_OBJS) \
@@ -1362,7 +1367,7 @@ $(BUILD)/bin/terminal: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_TERMINAL_OBJS) \
@@ -1382,7 +1387,7 @@ $(BUILD)/bin/files: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_FILES_OBJS) \
@@ -1404,7 +1409,7 @@ $(BUILD)/bin/settings: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_SETTINGS_OBJS) \
@@ -1425,7 +1430,7 @@ $(BUILD)/bin/monitor: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_MONITOR_OBJS) \
@@ -1445,7 +1450,7 @@ $(BUILD)/bin/notes: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_NOTES_OBJS) \
@@ -1466,7 +1471,7 @@ $(BUILD)/bin/pdfviewer: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_PDFVIEWER_OBJS) \
@@ -1488,7 +1493,7 @@ $(BUILD)/bin/imageview: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_IMAGEVIEW_OBJS) \
@@ -1514,7 +1519,7 @@ $(BUILD)/bin/videoplayer: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_VIDEOPLAYER_OBJS) \
@@ -1537,7 +1542,7 @@ $(BUILD)/bin/textedit: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_TEXTEDIT_OBJS) \
@@ -1557,7 +1562,7 @@ $(BUILD)/bin/kuidemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_KUIDEMO_OBJS) \
@@ -1578,7 +1583,7 @@ $(DYNAMIC_DIR)/libbrowser.so: $(DYNAMIC_BROWSER_LIBRARY_OBJS) $(DYNAMIC_DIR)/lib
 	$(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
 	$(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libbrowser/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libbrowser.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libbrowser.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libbrowser/exports.map \
  $(DYNAMIC_BROWSER_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libvulkan.so -l:libtruetype.so \
@@ -1599,7 +1604,7 @@ $(BUILD)/bin/browser: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_BROWSER_OBJS) \
@@ -1617,7 +1622,7 @@ $(BUILD)/bin/browser-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_BROWSER_PROBE_OBJS) \
@@ -1631,7 +1636,7 @@ DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)
 
 $(DYNAMIC_DIR)/libGL.so: $(DYNAMIC_GL_OBJS) $(DYNAMIC_DIR)/libEGL.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
 	userland/retro/libGL/exports.map tools/build/check-dynamic-elf.py
-	$(LD) -m elf_x86_64 -shared -soname libGL.so --hash-style=both \
+	$(LD) -m elf_x86_64 -shared -soname libGL.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/retro/libGL/exports.map \
  $(DYNAMIC_GL_OBJS) -L$(DYNAMIC_DIR) -l:libEGL.so -l:libvulkan.so -l:libc.so -o $@
@@ -1645,7 +1650,7 @@ $(BUILD)/bin/glxtest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_GLXTEST_OBJS) $(DYNAMIC_DIR)/libGL.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_GLXTEST_OBJS) \
@@ -1659,7 +1664,7 @@ $(BUILD)/bin/zgears: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZGEARS_OBJS) $(DYNAMIC_DIR)/libGL.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZGEARS_OBJS) \
@@ -1674,7 +1679,7 @@ $(BUILD)/bin/egltest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_EGLTEST_OBJS) \
@@ -1688,7 +1693,7 @@ $(BUILD)/bin/glescompute: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_GLESCOMPUTE_OBJS) $(DYNAMIC_DIR)/libEGL.so $(DYNAMIC_DIR)/libGLESv2.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_GLESCOMPUTE_OBJS) \
@@ -1703,7 +1708,7 @@ $(BUILD)/bin/xserver: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_X11SERVER_OBJS) \
@@ -1718,7 +1723,7 @@ $(BUILD)/bin/gpu-fence-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
@@ -1736,7 +1741,7 @@ $(BUILD)/bin/gpu-share-test: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libwayland-client.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
- -Wl,--hash-style=sysv,-z,now,-z,relro,-z,separate-code \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \

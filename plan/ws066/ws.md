@@ -9,7 +9,7 @@ Related Milestones: MG004
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: Q1（2026-10-05、P2）
-Resume point: p001 は host の分析と設計の案が済み、guest の起動の時間の測定（T1）を待つ。優先度は低い（2026-09-26 ユーザー「ld.soの最適化をあとでやるリストとしてwsにしておこう」）
+Resume point: p001 の受け入れ確定（true ≤ 700 µs、sh -c ≤ 950 µs）。p002（amd64 の -Bsymbolic-functions と GNU hash）実装済み、T1 の測定と回帰待ち。
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -40,6 +40,7 @@ base の program は動的 link のまま（静的 link にしない）。起動
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws066-p001](phase001/phase.md) | 起動の費用の内訳（`ld.so` の各段階、再配置の数、探索の回数）と、候補の選択・設計 | in-progress（T1 の測定待ち） | — |
+| [ws066-p001](phase001/phase.md) | 起動の費用の内訳（`ld.so` の各段階、再配置の数、探索の回数）と、候補の選択・設計 | cleared の判定待ち（測定済み T1-165、受け入れ確定） | — |
+| [ws066-p002](phase002/phase.md) | libc.so などの -Bsymbolic-functions と、base の program の GNU hash（amd64） | in-progress（T1 待ち） | p001 |
 
-p002 以降（実装）と規約の Phase は p001 の結果で定める。
+p003（ld.so の cache、clang の測定ができた時）と規約の Phase は後で定める。
