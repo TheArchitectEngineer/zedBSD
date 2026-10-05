@@ -299,6 +299,47 @@ static const char layout_us_shifted[] =
 #define LAYOUT_KANA_BYTES	3U
 
 /*
+ * The emoji face's emoji (ws102-p022), category by category: each a single
+ * code point that is shown as an emoji by default (no variation selector,
+ * no joined sequence), and each has a colour glyph in Noto Color Emoji
+ * 2.047 (the host's test checks both).
+ */
+static const char *const layout_emoji[ZWL_EMOJI_CATEGORIES][ZWL_EMOJI_PER_CATEGORY] = {
+	{
+		"\xf0\x9f\x98\x80", "\xf0\x9f\x98\x83", "\xf0\x9f\x98\x84", "\xf0\x9f\x98\x81", "\xf0\x9f\x98\x86",
+		"\xf0\x9f\x98\x85", "\xf0\x9f\x98\x82", "\xf0\x9f\x99\x82", "\xf0\x9f\x98\x89", "\xf0\x9f\x98\x8a",
+		"\xf0\x9f\x98\x87", "\xf0\x9f\x98\x8d", "\xf0\x9f\x98\x98", "\xf0\x9f\x98\x8b", "\xf0\x9f\x98\x8e",
+		"\xf0\x9f\xa4\x94", "\xf0\x9f\x98\x90", "\xf0\x9f\x98\xb4", "\xf0\x9f\x98\xa2", "\xf0\x9f\x98\xad"
+	},
+	{
+		"\xf0\x9f\x91\x8d", "\xf0\x9f\x91\x8e", "\xf0\x9f\x91\x8f", "\xf0\x9f\x99\x8c", "\xf0\x9f\x91\x8b",
+		"\xf0\x9f\x99\x8f", "\xf0\x9f\x92\xaa", "\xf0\x9f\x91\x8c", "\xf0\x9f\xa4\x9d", "\xe2\x9c\x8b",
+		"\xf0\x9f\x91\x89", "\xf0\x9f\x91\x86", "\xf0\x9f\x91\x80", "\xf0\x9f\x91\xb6", "\xf0\x9f\x91\xa6",
+		"\xf0\x9f\x91\xa7", "\xf0\x9f\x91\xa8", "\xf0\x9f\x91\xa9", "\xf0\x9f\x91\xb4", "\xf0\x9f\x91\xb5"
+	},
+	{
+		"\xf0\x9f\x93\xb1", "\xf0\x9f\x92\xbb", "\xf0\x9f\x93\xb7", "\xf0\x9f\x93\x9a", "\xf0\x9f\x93\x9d",
+		"\xf0\x9f\x93\x8e", "\xf0\x9f\x94\x91", "\xf0\x9f\x8e\x81", "\xe2\x98\x95", "\xf0\x9f\x8d\xa3",
+		"\xf0\x9f\x8d\x99", "\xf0\x9f\x8d\x9c", "\xf0\x9f\x8d\xb0", "\xf0\x9f\x8d\xba", "\xf0\x9f\x9a\x97",
+		"\xf0\x9f\x9a\x83", "\xf0\x9f\x8f\xa0", "\xf0\x9f\x8c\xb8", "\xf0\x9f\x8d\x81", "\xe2\x9a\xbd"
+	},
+	{
+		"\xf0\x9f\x92\xaf", "\xe2\x9c\xa8", "\xe2\xad\x90", "\xf0\x9f\x94\xa5", "\xf0\x9f\x92\xa1",
+		"\xe2\x9a\xa1", "\xe2\x9c\x85", "\xe2\x9d\x8c", "\xe2\x9d\x93", "\xe2\x9d\x97",
+		"\xe2\xad\x95", "\xf0\x9f\x92\xa4", "\xf0\x9f\x92\xa2", "\xf0\x9f\x92\xac", "\xf0\x9f\x8e\x89",
+		"\xf0\x9f\x94\x94", "\xf0\x9f\x86\x97", "\xf0\x9f\x86\x95", "\xe2\x8c\x9b", "\xf0\x9f\x8c\x88"
+	}
+};
+
+/* The emoji face's categories' names, shown on their tabs. */
+static const char *const layout_emoji_names[ZWL_EMOJI_CATEGORIES] = {
+	"顔",
+	"手と人",
+	"物",
+	"記号"
+};
+
+/*
  * Returns a key of a face by its row and column; NULL outside the grid.
  */
 const struct zwl_flick_key *
@@ -587,4 +628,52 @@ zwl_qwerty_face_name(
 
 	/* The name. */
 	return layout_qwerty_names[face];
+}
+
+/*
+ * Returns how many emoji a category of the emoji face holds (0 for no
+ * such category).
+ */
+unsigned
+zwl_emoji_count(
+	unsigned category)
+{
+	/* Only the categories. */
+	if (category >= ZWL_EMOJI_CATEGORIES)
+		return 0U;
+
+	/* Every category is full. */
+	return ZWL_EMOJI_PER_CATEGORY;
+}
+
+/*
+ * Returns an emoji of a category (UTF-8), or NULL for a place that holds
+ * none.
+ */
+const char *
+zwl_emoji(
+	unsigned category,
+	unsigned index)
+{
+	/* Only the categories and their places. */
+	if (category >= ZWL_EMOJI_CATEGORIES || index >= ZWL_EMOJI_PER_CATEGORY)
+		return NULL;
+
+	/* The emoji. */
+	return layout_emoji[category][index];
+}
+
+/*
+ * Returns a category's name for its tab; "?" for none.
+ */
+const char *
+zwl_emoji_category_name(
+	unsigned category)
+{
+	/* Only the categories. */
+	if (category >= ZWL_EMOJI_CATEGORIES)
+		return "?";
+
+	/* The name. */
+	return layout_emoji_names[category];
 }

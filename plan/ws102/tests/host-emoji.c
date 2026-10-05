@@ -14,6 +14,7 @@
  */
 
 #include "userland/desktop/picture/color-glyph.h"
+#include "userland/desktop/wayland/keyboard.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -26,6 +27,8 @@ static int failures;
 static void check(int condition, const char *text);
 static unsigned char *load(const char *path, size_t *size);
 static void channels(uint32_t pixel, unsigned *red, unsigned *green, unsigned *blue, unsigned *alpha);
+static int emoji_point(const char *text, uint32_t *point);
+static unsigned emoji_missing(struct truetype_face *face);
 
 /* Runs the checks. */
 int
@@ -48,6 +51,7 @@ main(
 	unsigned blue;
 	unsigned alpha;
 	uint32_t offset;
+	unsigned missing;
 	unsigned index;
 	int differs;
 	int error;
@@ -83,7 +87,7 @@ main(
 	printf("  left=%d top=%d advance=%d png=%lu\n", found.left, found.top, found.advance, (unsigned long)found.png_size);
 
 	/* Decoded and scaled to 32 pixels: about 40 by 38, a yellow face, clear corners. */
-	error = keiland_color_glyph(face, glyph, 32U, &image);
+	error = kl_color_glyph(face, glyph, 32U, &image);
 	check(error == 0 && image.width == 40 && image.height == 38, "at 32 px it is 40x38");
 	if (error == 0) {
 		channels(image.pixels[(size_t)(image.height / 2) * (size_t)image.width + (size_t)(image.width / 4)], &red, &green, &blue, &alpha);
@@ -97,7 +101,7 @@ main(
 
 	/* The red heart at 20 pixels: red over green and blue. */
 	glyph = truetype_glyph_index(face, 0x2764U);
-	error = keiland_color_glyph(face, glyph, 20U, &image);
+	error = kl_color_glyph(face, glyph, 20U, &image);
 	check(glyph != 0U && error == 0, "U+2764 at 20 px");
 	if (error == 0) {
 		channels(image.pixels[(size_t)(image.height / 2) * (size_t)image.width + (size_t)(image.width / 2)], &red, &green, &blue, &alpha);
@@ -109,6 +113,10 @@ main(
 	/* Glyph 0 (no image in the index) is refused. */
 	error = truetype_color_glyph(face, 0U, &found);
 	check(error == ENOENT || error == 0, "glyph 0: ENOENT or an image");
+
+	/* Every emoji of the keyboard's emoji face (ws102-p022) has a colour image. */
+	missing = emoji_missing(face);
+	check(missing == 0U, "every emoji of the keyboard's emoji face has a colour glyph");
 	truetype_close(face);
 
 	/* A text font has no colour glyphs: ENOENT, and it opens and draws as before. */
@@ -225,4 +233,96 @@ channels(
 	*red = (pixel >> 16) & 0xffU;
 	*green = (pixel >> 8) & 0xffU;
 	*blue = pixel & 0xffU;
+}
+
+/* Decodes the one code point of an emoji (UTF-8, two to four bytes).  Returns 1 with it, or 0 for anything else. */
+static int
+emoji_point(
+	const char *text,
+	uint32_t *point)
+{
+	const unsigned char *byte;
+	unsigned length;
+	unsigned index;
+	uint32_t value;
+
+	/* The lead byte gives the length and the first bits. */
+	byte = (const unsigned char *)text;
+	length = 0U;
+	value = 0U;
+	if ((byte[0] & 0xe0U) == 0xc0U) {
+		length = 2U;
+		value = byte[0] & 0x1fU;
+	} else if ((byte[0] & 0xf0U) == 0xe0U) {
+		length = 3U;
+		value = byte[0] & 0x0fU;
+	} else if ((byte[0] & 0xf8U) == 0xf0U) {
+		length = 4U;
+		value = byte[0] & 0x07U;
+	}
+
+	/* Not a lead byte of a character above ASCII. */
+	if (length == 0U)
+		return 0;
+
+	/* The continuation bytes. */
+	for (index = 1U; index < length; index++) {
+		if ((byte[index] & 0xc0U) != 0x80U)
+			return 0;
+		value = value << 6 | (byte[index] & 0x3fU);
+	}
+
+	/* Exactly one character. */
+	if (byte[length] != '\0')
+		return 0;
+
+	/* Succeeded: the code point. */
+	*point = value;
+	return 1;
+}
+
+/* Counts the emoji of the keyboard's emoji face that have no colour image in the font (printing each). */
+static unsigned
+emoji_missing(
+	struct truetype_face *face)
+{
+	struct truetype_color_glyph found;
+	const char *text;
+	unsigned category;
+	unsigned count;
+	unsigned index;
+	unsigned missing;
+	unsigned glyph;
+	uint32_t point;
+	int decoded;
+	int error;
+
+	/* Each emoji of each category. */
+	missing = 0U;
+	for (category = 0U; category < ZWL_EMOJI_CATEGORIES; category++) {
+		count = zwl_emoji_count(category);
+		for (index = 0U; index < count; index++) {
+			/* Its code point and glyph. */
+			text = zwl_emoji(category, index);
+			point = 0U;
+			decoded = 0;
+			if (text != NULL)
+				decoded = emoji_point(text, &point);
+			glyph = 0U;
+			if (decoded)
+				glyph = truetype_glyph_index(face, point);
+
+			/* Its colour image. */
+			error = ENOENT;
+			if (glyph != 0U)
+				error = truetype_color_glyph(face, glyph, &found);
+			if (error != 0) {
+				printf("  emoji without a colour glyph: category %u index %u U+%04X\n", category, index, (unsigned)point);
+				missing++;
+			}
+		}
+	}
+
+	/* The count. */
+	return missing;
 }

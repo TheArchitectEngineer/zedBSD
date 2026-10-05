@@ -159,6 +159,17 @@ struct zwl_hand_result {
 	char note[ZWL_HAND_TEXT];
 };
 
+/*
+ * The emoji face's categories (ws102-p022): faces, hands and people,
+ * things, symbols; and how many emoji a category holds at most.
+ */
+#define ZWL_EMOJI_FACES		0U
+#define ZWL_EMOJI_PEOPLE	1U
+#define ZWL_EMOJI_THINGS	2U
+#define ZWL_EMOJI_SYMBOLS	3U
+#define ZWL_EMOJI_CATEGORIES	4U
+#define ZWL_EMOJI_PER_CATEGORY	20U
+
 const struct zwl_flick_key *zwl_flick_key(unsigned face, unsigned row, unsigned column);
 const char *zwl_flick_face_name(unsigned face);
 unsigned zwl_flick_face_next(unsigned face);
@@ -176,6 +187,9 @@ int zwl_hand_add(struct zwl_hand_ink *ink, int32_t x, int32_t y);
 unsigned zwl_hand_points(const struct zwl_hand_ink *ink);
 void zwl_hand_bounds(const struct zwl_hand_ink *ink, int32_t *rect);
 void zwl_hand_recognize(const struct zwl_hand_ink *ink, struct zwl_hand_result *result);
+unsigned zwl_emoji_count(unsigned category);
+const char *zwl_emoji(unsigned category, unsigned index);
+const char *zwl_emoji_category_name(unsigned category);
 
 
 #endif

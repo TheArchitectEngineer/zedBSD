@@ -43,6 +43,9 @@
 #   tools     (p016) the flick panel's tools: select, right x5, copy, the application before, paste, three times, from
 #             one Text Editor into another: "hellohellohello"
 #   history   (p024) the history tab: three copies ("alpha", "bravo", "charlie"), the second row pasted: "bravo"
+#   emoji     (p022) the emoji tab (1238,141): category 0's first emoji and category 1's fourth reach ime-probe as
+#             commits (PROBE TEXT); wltest (no text input) refuses one (sent=0); one tapped into Text Editor and saved
+#             is its UTF-8 (od); emoji.png, emoji-sent.png.  The cells' places are read from the log (ZWL OSK erect)
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -781,6 +784,63 @@ hold 800"
 		sleep 2
 		saved=$(read_file /root/receive.txt)
 		[ "$saved" = "bravo" ] && echo "history: the second row (bravo) pasted ok" || { echo "history: ($saved) MISSING"; status=1; }
+		;;
+	emoji)
+		# (p022) The emoji face: the places come from the log (ZWL OSK etab / erect: x y width height), each tapped in
+		# its middle.
+		compositor
+		guest 'rm -f /tmp/ime-probe.log' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/ime-probe --log=/tmp/ime-probe.log --seconds=300 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+		swipe 1272 792 1130 650
+		expect_log 'ZWL OSK open kind=flick'
+		tool_tap 1238 141
+		expect_log 'ZWL OSK tool face=emoji category=0'
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot emoji.png
+		# The middle of a logged place: emoji_middle PATTERN sets ex ey.
+		emoji_middle() {
+			set -- $(guest "grep -a '$1' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+			ex=$(( ${1:-0} + ${3:-0} / 2 ))
+			ey=$(( ${2:-0} + ${4:-0} / 2 ))
+		}
+		# Category 0, index 0 (U+1F600) to ime-probe.
+		emoji_middle 'ZWL OSK erect category=0 index=0 '
+		tool_tap "$ex" "$ey"
+		expect_log 'ZWL OSK emoji commit text=.* sent=1'
+		# Category 1's tab, then its index 3 (U+1F64C).
+		emoji_middle 'ZWL OSK etab category=1 '
+		tool_tap "$ex" "$ey"
+		expect_log 'ZWL OSK emoji category=1'
+		emoji_middle 'ZWL OSK erect category=1 index=3 '
+		tool_tap "$ex" "$ey"
+		sleep 1
+		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe-emoji.log"
+		grep -qF "PROBE TEXT text=$(printf '\360\237\230\200\360\237\231\214')" "$out/ime-probe-emoji.log" && echo "emoji: two emoji reached ime-probe ok" || { echo "emoji: ime-probe text MISSING"; status=1; }
+		expect_count 'ZWL OSK emoji commit text=.* sent=1' 2
+		# wltest (no text input) on top: refused.
+		guest 'for p in $(ps -A -o pid,args | grep "[i]me-probe" | awk "{print \$1}"); do kill $p; done' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp; /bin/wltest --windowed --frames=3600 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+		emoji_middle 'ZWL OSK erect category=1 index=0 '
+		tool_tap "$ex" "$ey"
+		expect_log 'ZWL OSK emoji commit text=.* sent=0'
+		expect_log 'ZWL OSK refused reason=no-text-input'
+		guest 'for p in $(ps -A -o pid,args | grep "[w]ltest" | awk "{print \$1}"); do kill $p; done' >/dev/null
+		# Text Editor (libkeiui's text input): category 1's index 0 (U+1F44D), saved; the file's bytes.
+		guest 'rm -f /root/e.txt; touch /root/e.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/e.txt > /tmp/te-emoji.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		tool_tap "$ex" "$ey"
+		expect_count 'ZWL OSK emoji commit text=.* sent=1' 3
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot emoji-sent.png
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<ctrl-s>' >/dev/null
+		sleep 2
+		bytes=$(guest 'od -An -tx1 /root/e.txt' | tr -d ' \n')
+		case "$bytes" in
+		f09f918d*) echo "emoji: Text Editor saved U+1F44D ok" ;;
+		*) echo "emoji: Text Editor bytes ($bytes) MISSING"; status=1 ;;
+		esac
 		;;
 	edges)
 		compositor
