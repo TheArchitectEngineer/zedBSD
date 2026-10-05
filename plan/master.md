@@ -90,6 +90,7 @@
   - WS162・WS163 は **WS172 に吸収**（WS163 は WS172 p002 で達成として完了の形、WS162 の未着手の Phase は canceled で WS172 p003 へ）。
   - WS101 p017・p012 の 5330 の測定は **T1 が 5330 の passthrough で**（合間、lock の下）。UAT・AAT には入れない。
   - WS171 は**ベータ2**（合間の仕事）。
+  - 5330 の最初の AAT: **T1-202（QEMU の smoke・full）の後に、runner と補助を直してから main の最新で image を作り直す**（build/aat-0505a は使わない）。作れたらユーザーに USB の起動を頼む。
 
 - **2026-10-05 夕 ユーザーの決定（続き）**:
   - WS121: 目標は「Vulkan Video の hardware decode」のまま（「hardware だけ」）。software decode の <video> の設計（P2 の第 2 版 3df53896）は記録として残し、実装は WS083 の Vulkan Video の後。WS121 は WS083 を待つ。
