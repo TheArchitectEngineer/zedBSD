@@ -522,6 +522,8 @@ parse_options(
 	server->role = role.role;
 	server->timeout_ms = role.timeout_ms;
 	server->session = 0;
+
+	/* Only the normal role is a login session (the test run and the login screen are not). */
 	if (role.role == ZWL_ROLE_NORMAL)
 		server->session = 1;
 

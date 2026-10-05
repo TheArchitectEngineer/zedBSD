@@ -43,6 +43,8 @@ zwl_role_resolve(
 	if (request->testing) {
 		role->role = ZWL_ROLE_TESTING;
 		role->timeout_ms = ZWL_ROLE_TESTING_TIMEOUT_MS;
+
+		/* The deadline --timeout gave replaces the default. */
 		if (request->timeout)
 			role->timeout_ms = request->timeout_ms;
 
@@ -53,6 +55,8 @@ zwl_role_resolve(
 	/* The login screen and a user's desktop have no deadline. */
 	role->timeout_ms = UINT64_MAX;
 	role->role = ZWL_ROLE_NORMAL;
+
+	/* --greeter asks for the login screen; anything else is a desktop. */
 	if (request->greeter)
 		role->role = ZWL_ROLE_GREETER;
 
