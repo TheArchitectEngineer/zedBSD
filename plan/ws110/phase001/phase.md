@@ -2,7 +2,7 @@
 
 # ws110-p001: 通常と試験の role、引数の契約、変える範囲
 
-Status: in-progress（実装済み。zedBSD の compositor の build と guest の確かめは p002 の T1 とまとめる）
+Status: cleared（2026-10-05 Q1: host の試験 16 case と T1-168 の roles-guest PASS（引数なし・--session が role=normal で期限なし、--testing が 150 秒、拒む組み合わせが exit 2））。以前: in-progress（実装済み。zedBSD の compositor の build と guest の確かめは p002 の T1 とまとめる）
 Disposition: normal
 Parent: [WS110](../ws.md)
 Queue: Q1（2026-10-05、P2。設計から）
@@ -81,3 +81,7 @@ Queue: Q1（2026-10-05、P2。設計から）
   - Linux の Keiland（`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p2-keiland-linux all`）: warning 0（-Werror）。その compositor に拒む引数 6 通りを渡し、全て理由の 1 行と exit 2（backend を開く前に止まる）。
   - style: role.c・role.h・host-role.c は違反 0。
 - 未実施: zedBSD の compositor の build。main を取り込んだ後、`userland/desktop/keiland/wallpapers/` の file が sysroot の stamp より新しく、`make -n` の確かめが 1 になる（sysroot が作り直される）。subagent は sysroot を作らないので、Q1 に相談した。FreeBSD の build も未実施（native の FreeBSD が要る）。
+
+## Q1 の判定（2026-10-05）
+
+host の試験 16 case と T1-168 の roles-guest PASS（引数なし・--session が role=normal で期限なし、--testing が 150 秒、拒む組み合わせが exit 2）。**cleared**。

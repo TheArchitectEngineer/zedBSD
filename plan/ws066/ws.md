@@ -41,6 +41,6 @@ base の program は動的 link のまま（静的 link にしない）。起動
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws066-p001](phase001/phase.md) | 起動の費用の内訳（`ld.so` の各段階、再配置の数、探索の回数）と、候補の選択・設計 | cleared の判定待ち（測定済み T1-165、受け入れ確定） | — |
-| [ws066-p002](phase002/phase.md) | libc.so などの -Bsymbolic-functions と、base の program の GNU hash（amd64） | in-progress（T1 待ち） | p001 |
+| [ws066-p002](phase002/phase.md) | libc.so などの -Bsymbolic-functions と、base の program の GNU hash（amd64） | cleared（2026-10-05 Q1） | p001 |
 
 p003（ld.so の cache、clang の測定ができた時）と規約の Phase は後で定める。

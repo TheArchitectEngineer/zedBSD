@@ -2,7 +2,7 @@
 
 # ws066-p002: libc.so などの -Bsymbolic-functions と、base の program の GNU hash（amd64）
 
-Status: in-progress（実装済み、T1 の測定と回帰待ち）
+Status: cleared（2026-10-05 Q1: T1-170: bin-true の平均 618 µs（≤700）・sh-c 903 µs（≤950）、rtld-many・tls-check・boot PASS、libc の symbol の再配置 515 → 25（QEMU、amd64））。以前: in-progress（実装済み、T1 の測定と回帰待ち）
 Disposition: normal
 Parent: [WS066](../ws.md)
 Queue: Q1（2026-10-05）
@@ -48,3 +48,7 @@ image は、この commit の後の main で作る。
 ## 結果
 
 （T1 の後に書く）
+
+## Q1 の判定（2026-10-05）
+
+T1-170: bin-true の平均 618 µs（≤700）・sh-c 903 µs（≤950）、rtld-many・tls-check・boot PASS、libc の symbol の再配置 515 → 25（QEMU、amd64）。**cleared**。

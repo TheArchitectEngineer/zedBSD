@@ -21,8 +21,8 @@ T1 引数なし通常sessionが期限なしで動きLog Out/desktop表示が成�
 
 | ID | Purpose | Goal | Status | Dependencies |
 | --- | --- | --- | --- | --- |
-| [ws110p001](phase001/phase.md) | 通常/testing roleと引数契約 | T1/T2仕様を確定し共通mainのmodeを変更 | in-progress（実装済み、T1 待ち） | user implementation instruction + contract |
-| [ws110p002](phase002/phase.md) | test/launcher/docs整合 | T3関連現役testのtesting指定とnormal統合試験 | in-progress（置き換え済み、T1 待ち） | p001 API/mode output |
+| [ws110p001](phase001/phase.md) | 通常/testing roleと引数契約 | cleared（2026-10-05 Q1） | in-progress（実装済み、T1 待ち） | user implementation instruction + contract |
+| [ws110p002](phase002/phase.md) | test/launcher/docs整合 | cleared（2026-10-05 Q1） | in-progress（置き換え済み、T1 待ち） | p001 API/mode output |
 | ws110p003 | 近final全文規約/回帰 | T4/T1〜T3独立受け入れ | planning | p001/p002 actual final outputs |
 
 Phase詳細は実装指示・仕様決定後、有限scopeに分けて作成。Queue membership無し。現存codeのstyleをpolicyとしない。

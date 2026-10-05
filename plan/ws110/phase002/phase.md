@@ -2,7 +2,7 @@
 
 # ws110-p002: 試験の起動に --testing を付ける、代表の試験
 
-Status: in-progress（置き換えは済み、T1 の代表の試験待ち）
+Status: cleared（2026-10-05 Q1: 試験の script 233 file の置き換え（before 246・after 0）と、T1-168 の files-p002・zdesktop-p095 PASS（置き換えた試験の代表））。以前: in-progress（置き換えは済み、T1 の代表の試験待ち）
 Disposition: normal
 Parent: [WS110](../ws.md)
 Queue: Q1（2026-10-05）
@@ -42,3 +42,7 @@ image は WS110 の後の main で `plan/tools/files/build-files-image.sh BUILD`
 ## 結果
 
 （T1 の後に書く）
+
+## Q1 の判定（2026-10-05）
+
+試験の script 233 file の置き換え（before 246・after 0）と、T1-168 の files-p002・zdesktop-p095 PASS（置き換えた試験の代表）。**cleared**。
