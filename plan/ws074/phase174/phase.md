@@ -23,3 +23,5 @@ WSの到達目標は、固定仕様に対する選定WPTと、開く・保存す
 [Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。p172取込とp100 clearance前には実行しない。現時点でsource変更/試験/Queue実行なし。
 
 Event ws074-browser-next-goals-20261002: ユーザーがFile System Access APIをブラウザ専任枠の目標へ追加。WS074とp175/p173の順へ投影。GitHub publication保留。
+
+2026-10-05 Q1 records reconciliation: WS074 は Codex から Q1 に戻り、レンダリング・互換性の改善はユーザーの指示まで止める（[WS074](../ws.md) の「Q1 向けの整理」）。前提の p172 は 2026-10-03 に whole cleared。このPhaseの Status は変えず、選ばない。専任 P10 の枠の記述は履歴（今の担当は Q1）。

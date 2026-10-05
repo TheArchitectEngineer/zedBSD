@@ -2,7 +2,7 @@
 
 # ws074-p100: Acid3 100/100・pixel完全一致
 
-Status: planned（2026-10-02 目標強化、Queueなし）
+Status: planned（2026-10-02 目標強化、Queueなし。2026-10-05 ユーザーの指示まで停止。しかかり: Acid3 の得点 100/100 は branch 側の p100 の成果を p172 で取り込んだ物、固定の参照との pixel の一致は 37.04%）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -30,4 +30,9 @@ Event ws074-dedicated-interop2025-20261002: ユーザーがAcid3のpixel単位10
 
 2026-10-03 JST / next-queue-proposal: [90分のread-only Acid3 baseline案](browser3/next-queue-proposal.md)を準備。WPT固定commit/必要font/host browserの存在をread-onlyで確認。Queue IDはAgent Aの衝突解消・承認待ちで、実行なし。
 
-2026-10-03 04:45 UTC / p100-baseline-approval: userが[90分scope](browser3/next-queue-proposal.md)を「承認し、A に ID 割当を依頼する」と回答。[承認記録](browser3/approval-20261003.md)、[AへのID依頼](../../agents/browser3/next-id-request.md)。ID/Queue activation待ち、p100 planned・未着手、Acid3未実行。
+2026-10-03 04:45 UTC / p100-baseline-approval: userが[90分scope](browser3/next-queue-proposal.md)を「承認し、A に ID 割当を依頼する」と回答。[承認記録](browser3/approval-20261003.md)、AへのID依頼（branch の `plan/agents/browser3/next-id-request.md`、main に無い）。ID/Queue activation待ち、p100 planned・未着手、Acid3未実行。
+
+2026-10-05 Q1 records reconciliation: ユーザーが WS074 を Codex から Q1 に戻し、レンダリングの改善（Acid3 の pixel を含む）をユーザーの指示まで止めた。このPhaseは planned のまま（main の p100 を実行した Queue は無い）。
+- 2026-10-03 の [90 分の baseline の承認](browser3/approval-20261003.md)は Queue ID が付かず（Agent A への ID の依頼は main に記録が無い）、実行されなかった。2026-10-05 の停止の指示の下ではこの承認を使わない。再開はユーザーの指示の後、新しい main の Queue ID と承認で行う。
+- [案](browser3/next-queue-proposal.md)の `build/browser3-p172/plain/browser` は 2026-10-03 のリポジトリの作り直しで消えた build を指す。再開の時は今の main の source から host の build を作り直し、2026-10-04 の試験の image の方針（AGENTS.md の「試験の image の作り方」）に合わせる。
+- Acid3 の得点 100/100・pixel 37.04%（302208/480000 の画素が違う）は取込みの途中の [checkpoint02](../phase172/import/checkpoint02/README.md)（q579、host の plain）の計測で、p172 の最終の source では再計測していない。branch 側の p100 は「得点だけ」の旧い条件で cleared と報告され、[semantic-index](../phase172/import/semantic-index.json) で historical evidence として保存した。今の p100 の条件（pixel の完全一致・fail 0）は未達。

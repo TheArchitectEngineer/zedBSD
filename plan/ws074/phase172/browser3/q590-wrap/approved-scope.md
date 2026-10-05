@@ -14,7 +14,7 @@ preserved and no global ID is cosmetically renumbered.
 ## Exact implementation boundary and acceptance
 
 The remaining112 C/header paths are exactly
-[checkpoint14/remaining.json](../import/checkpoint14/remaining.json), SHA256
+[checkpoint14/remaining.json](../../import/checkpoint14/remaining.json), SHA256
 `06a3d626b5b6a71135652d7505e86845f0c3626778f5d7dddbaaf6702d244d53`.
 Review their complete current files against full C and browser component rules,
 repair in-scope conformance defects while preserving normal behavior, public
@@ -43,3 +43,5 @@ attempt policy. If the review or a required gate is incomplete at the bound,
 record uncleared with exact remaining paths and resume inputs. Prior q579/q584
 outcomes stay unchanged. No whole-Phase clearance or downstream execution is
 implied by a checkpoint commit/push.
+
+2026-10-05 Q1 records reconciliation: checkpoint14 の remaining.json への相対 link の階層の誤りを直した（中身は変えない）。この Queue は WS074 の記録の中で b-q590 と読む（main の q590 は ws004-p051 の別 Queue）。

@@ -23,3 +23,5 @@ WSの到達目標は固定仕様/選定WPTに沿ったOPFSの実動作。p175の
 [Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。p174の共有契約が実際に統合・確認されてから実行する。現時点でsource変更/試験/Queue実行なし。
 
 Event ws074-browser-next-goals-20261002: ユーザーがOPFSをブラウザ専任枠の目標へ追加。p174との共有基盤と違いを明示。GitHub publication保留。
+
+2026-10-05 Q1 records reconciliation: WS074 は Codex から Q1 に戻り、レンダリング・互換性の改善はユーザーの指示まで止める（[WS074](../ws.md) の「Q1 向けの整理」）。前提の p172 は 2026-10-03 に whole cleared。このPhaseの Status は変えず、選ばない。専任 P10 の枠の記述は履歴（今の担当は Q1）。

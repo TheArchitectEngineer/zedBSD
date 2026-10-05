@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（P1・P2 に割り当てる。Codex は難しい driver の bug に温存、2026-10-05 ユーザー）
-Queue: なし（Codex の q590〜q598 の記録は phase172/browser3/ に履歴として残る）
+Queue: なし（Codex の browser3 の局所の Queue b-q590・b-q594〜b-q598 の記録は phase172/browser3/ に履歴として残る。main の q590〜q598 とは別物、下の「記録の照合」）
 Resume point: 待機。次に動かすのはユーザーの指示が出た時。その時は下の「Q1 向けの整理」の「次の候補」から。
 <!-- awesome-plan-current:end -->
 
@@ -21,13 +21,13 @@ Resume point: 待機。次に動かすのはユーザーの指示が出た時。
 
 | 項目 | 状態 | 根拠 |
 | --- | --- | --- |
-| 構成 | engine は `userland/desktop/libbrowser/`（WS107 で移した、165 file）、shell は `userland/desktop/browser/`（main・shell・app の data）。browser と独立の client は公開の `browser.h` で `libbrowser.so` を動的に link | [WS107](../ws107/ws.md) completed |
+| 構成 | engine は `userland/desktop/libbrowser/`（WS107 で移した、165 file。2026-10-05 Q1 照合: p172 の取込みの後は `.c` が 167）、shell は `userland/desktop/browser/`（main・shell・app の data）。browser と独立の client は公開の `browser.h` で `libbrowser.so` を動的に link | [WS107](../ws107/ws.md) completed |
 | JS | 自前の engine（ES2024 の構文、ES2015 の class・async・generator・Symbol・Map 等、RegExp、Date）。test262 は p025〜p087 の時点の数（全体の最新の計測は未） | 下の Phase の表 |
 | デモの目標 | amazon.co.jp のトップと検索（2026-09-28 ユーザー、Google から変更） | [amazon-goal.md](amazon-goal.md) |
-| Acid3 | **得点 100/100 を達成。固定の参照との pixel の一致は 37.04%（302208/480000 の画素が違う）**（q579 の計測、Codex） | [phase172/browser3/q596/README.md](phase172/browser3/q596/README.md) |
-| Acid2 | exact pixel は不合格（p097 の時点で 90.56%） | [p097](phase097/phase.md) |
+| Acid3 | **得点 100/100 を達成。固定の参照との pixel の一致は 37.04%（302208/480000 の画素が違う）**（q579 の計測、Codex。2026-10-05 Q1 照合: 計測は取込みの途中の [checkpoint02](phase172/import/checkpoint02/README.md) の host の plain の build。p172 の最終の source では再計測していない） | [phase172/browser3/q596/README.md](phase172/browser3/q596/README.md) |
+| Acid2 | ~~exact pixel は不合格（p097 の時点で 90.56%）~~ → 2026-10-05 Q1 照合で訂正: **exact pixel 合格**。p099（q507）で 90.56% → 100.00%、p172 の取込み後も plain・ASan で 120000 画素一致（[checkpoint96](phase172/import/checkpoint96/README.md)）。90.56% は p099 の前の値 | [p099](phase099/phase.md)、[p097](phase097/phase.md) |
 | p172（Codex の branch の取り込み） | whole cleared（2026-10-03、209/209 の review・hash、host・ASan・ABI・Acid2、target の boot と Venus） | [phase172/import/checkpoint98](phase172/import/checkpoint98/README.md) |
-| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**（得点は 100/100、pixel 一致が残る）。ユーザーの指示まで止める | [p100](phase100/phase.md) |
+| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**（得点は 100/100、pixel 一致が残る）。ユーザーの指示まで止める。2026-10-05 Q1 照合: Phase の Status は planned（実行した Queue は無い。main の p100 は未着手で、得点 100/100 は branch 側の p100 の成果を p172 で取り込んだ物）。2026-10-03 に承認された 90 分の baseline の案は Queue ID が付かず未実行で、今回の停止の指示の下では使わない | [p100](phase100/phase.md) |
 
 ### 止めている目標（2026-10-02 ユーザーの追加、指示があるまで行わない）
 
@@ -49,6 +49,28 @@ p100 Acid3 の pixel 完全一致 → p101 WPT CSS2 reftest 5904 件の 100% →
 - [WS107](../ws107/ws.md): completed（libbrowser の分離）。
 - [WS121](../ws121/ws.md): browser の動画の再生（Q1 の担当、2026-10-05）。
 - [WS081](../ws081/ws.md): touch の慣性の scroll。
+
+### 記録の照合（2026-10-05 Q1 records reconciliation）
+
+2026-10-05 Q1 records reconciliation: ユーザーの「ブラウザ関連の進捗の記録が整合していない」への対応。git と証拠で確かめられた事だけを書く。
+
+- **Queue ID の衝突と対応表**: Codex の browser3 の branch（2026-10-02〜03）は main の Queue と同じ番号を使った。main の q590（ws004-p051）・q591（ws099-p020）・q592（ws114-p007）・q593（ws095-p012）・q594（ws129-p009）・q595（ws127-p001）・q596（ws005-p018）・q597（ws115-p001）・q598（ws033-p001）は [Queue](../queue.md) の別の作業である。WS074 の記録の中だけ、browser3 の物を次の名で読む（過去の記録の本文は書き換えない）。
+
+  | browser3 の記録の ID | 読み替え | 中身 | 結果 |
+  | --- | --- | --- | --- |
+  | q590 / q590-i01 | b-q590 | p172 の残り 112 件の全文 review | finished / uncleared（[q590-wrap](phase172/browser3/q590-wrap/README.md)） |
+  | q591〜q593（予約のみ） | b-q591〜b-q593 | 使われていない | — |
+  | q594 / q594-i01 | b-q594 | p172 の 5 file の review | finished / cleared（部分、whole は uncleared、[README](phase172/browser3/q594/README.md)） |
+  | q595 / q595-i01 | b-q595 | p172 の 10 file の review | finished / cleared（部分、whole は uncleared、[README](phase172/browser3/q595/README.md)） |
+  | q596 / q596-i01 | b-q596 | p172 の残り 59 件の review（3h） | finished / uncleared（170/209 で期限、[README](phase172/browser3/q596/README.md)） |
+  | q597 / q597-i01 | b-q597 | p172 の 39 件の review（3h） | finished / uncleared（204/209、ユーザーの再起動で停止、[README](phase172/browser3/q597/README.md)） |
+  | q598 / q598-i01 | b-q598 | p172 の残り 5 件と whole の最終の gate | finished / cleared（p172 whole cleared、[README](phase172/browser3/q598/README.md)） |
+
+  q579（P10）と q584（A1）は main の Queue（[history/queue-q579.md](../history/queue-q579.md)、[queue-q584.md](../history/queue-q584.md)）で、衝突しない。その前の origin/browser2 の branch の q508〜q591 は [main-reconciliation](phase172/import/main-reconciliation.md) で `browser2:qNNN` として既に分けてある。
+- **main に入っているか**: main の木（99e7a4b2）で、p172 の最終の review の 209 件（[checkpoint95 の inventory](phase172/import/checkpoint95/review-inventory.json)、source 92・build 1・試験 116）の sha256 を照合し、207 件が一致した。違う 2 件（`plan/ws074/tests/run-acid-tests.py`・`run-dom-tests.py`）は、作り直した main の最初の commit 846464d1 では一致し、2026-10-04 の main の 4628f83e（`build/ws035-fonts` を font の探し先から外した、試験の image の方針）で変わった物で、取込みの後退ではない。追加で直した `libbrowser/bind/input.c` も checkpoint98 の hash と一致した。2026-10-03 のリポジトリの作り直しで git の履歴は 846464d1 に始まるので、いつ・どの merge で入ったかは git では示せない（`git log -- userland/desktop/libbrowser userland/desktop/browser` は 846464d1 と a3b12775（2026-10-05、shell/window.c の 12 行）だけ）。build・試験は今回は流していない（hash の照合だけ）。
+- **main に無い記録**: browser3 の記録が指す `plan/agents/browser3/`（ID の依頼・main の merge の衝突の両版）と branch の Queue の archive（`history/queue-q594.md`・`queue-q595.md`・`queue-q596.md`・`queue-q598-browser3.md`）は main に無い（別セッションの記録、main には入れない）。main の `plan/history/` に同じ名の file を作ると main の別の Queue と取り違えるので、phase172/browser3 の README の link を文字に変え、注記した。
+- **済んだ gate**: p172 は 2026-10-03 に whole cleared（b-q598）。下の「Blocking gate」は満たされた。後続の Phase は前提では止まっていないが、2026-10-05 のユーザーの指示でレンダリングの改善を止めているので選ばない。
+- **古くなった記述**: 下の「2026-09-30 ラップアップと次の作業」の次の作業の順、専任 P10 の枠、「Agent A の ID の照合待ち」はどれも履歴。今の担当・次の候補は上の表。
 
 以下は 2026-10-05 までの記録（Codex の作業を含む履歴）。
 
@@ -128,6 +150,8 @@ libpng-compat の `from_memory`、libtruetype の拡張、libjpeg-compat の API
 
 ## 2026-09-30 ラップアップと次の作業
 
+（2026-10-05 Q1 records reconciliation: この節は履歴。p100 以下の順は 2026-10-05 のユーザーの指示で止めている。今の次の候補は上の「Q1 向けの整理」。）
+
 - [p097](phase097/phase.md) と q506 は cleared。固定WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`で、
   CSS2 reftestの固定sampleは44/100、Acid2はexact pixel不合格・90.56%、Acid3は9/100・pixel agreement 40.35%。
   数値は [results/acid.txt](results/acid.txt) と [results/wpt-reftest.txt](results/wpt-reftest.txt) に残した。
@@ -159,6 +183,8 @@ p036はその後のflexbox・backgrounds・values・selectorsの拡張suiteに�
 ## Phase 一覧
 
 **Blocking gate（2026-10-02）**: [p172](phase172/phase.md)のwhole-Phase clearanceと実際の統合出力を、全ての未実行WS074 source/runner/互換性Phaseの共通の前提にする。下表のplanned行の依存欄に明示した。旧cleared成果に遡及しない。branch側phase100・phase102〜171の同じ論理IDは取込時に証拠を照合し、勝手にrenumber/clearしない。
+
+2026-10-05 Q1 records reconciliation: p172 は 2026-10-03 に whole cleared（b-q598）なので、この gate は満たされた。下の表の依存欄の「p172」は満たされた前提として読む。branch 側の 71 Phase（p100・p102〜p171）は [semantic-index](phase172/import/semantic-index.json) で全て「historical evidence only」とし、この表には写していない（同じ ID の二重の行は無い）。後続の Phase はユーザーの指示まで選ばない。
 
 p001 で分け直した（2026-09-27。p002〜p013 の案は実行前の案だったので、同じ番号を新しい分割に使う）。各 Phase は 1〜3 時間を目標にし、
 着手の時に大きすぎれば分ける。
@@ -268,9 +294,9 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、WPT reftestとAcid、一般化できる差を最大4件修正 | **cleared**（2026-09-30。WPT 44/100、Acid2 90.56%、Acid3 9/100。`postMessage`、table rowspan、presentational hint、intrinsic auto margin） | p094、p096 |
 | ws074-p098 | ES module scriptのgraph取得・link・評価、`import`・`export`、GitHubのhydration比較 | planned（2026-09-30ユーザー指定によりp101後へ延期） | p087、p088、p097、p172 |
 | [ws074-p099](phase099/phase.md) | Acid2 100%: 固定harnessでexact pixel一致、crash・timeout 0 | **cleared**（2026-09-30、q507。90.56% → 100.00%、plain/ASan） | p097 |
-| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（p172後、p099 cleared） | p099、p172 |
+| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（しかかり: 得点 100/100 は branch の取込みで達成、pixel 一致 37.04%。Queue なし、2026-10-05 ユーザーの指示まで停止） | p099、p172（両方 cleared） |
 | ws074-p101 | WPT CSS2 reftest 100%: 固定commitのscriptなし全5904件でpass 100%、error 0 | planned（p100後、p172も必須） | p100、p172 |
-| [ws074-p172](phase172/phase.md) | origin/browser2のbrowser変更をWS107後のlibbrowser/browser配置へ取込み、関連計画/試験/bugを意味的に照合するblocking gate | cleared / browser3 q598（209/209 review、whole final gates） | WS107の実成果、p099、branch snapshot |
+| [ws074-p172](phase172/phase.md) | origin/browser2のbrowser変更をWS107後のlibbrowser/browser配置へ取込み、関連計画/試験/bugを意味的に照合するblocking gate | cleared / b-q598（browser3 の q598、main の q598 とは別。209/209 review、whole final gates） | WS107の実成果、p099、branch snapshot |
 | [ws074-p173](phase173/phase.md) | Interop 2025の公式focus area対象WPTを固定・baseline化し、全件PASSへ向けた失敗群と後続Phaseを設計 | planned / Queueなし | p172、p100 |
 | [ws074-p174](phase174/phase.md) | File System Access APIの仕様/WPT・権限・picker/handle契約を確定し、機能群ごとの実装Phaseへ分割 | planning / Queueなし | p172、p100 |
 | [ws074-p175](phase175/phase.md) | OPFSのorigin分離・永続保存・handle契約を確定し、機能群ごとの実装Phaseへ分割 | planning / Queueなし | p172、p174の共有契約の実出力 |
@@ -286,8 +312,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 
 | 項目 | 決定 | 記録先 |
 | --- | --- | --- |
-| 部品としての browser（2026-09-28） | ユーザー:「…libbrowser.soというファイルに将来的に分割できるようにして、コンポーネントにしましょう。ブラウザの構造体へのポインタをハンドルにして、Vulkanレンダリングターゲットを指定してイベントも送ってやるとと描画してくれて、Wayland依存はない、みたいなのがいいと思います！これはいきなり実現しなくても、徐々にそういう設計に変えていきましょう。」→ [WS074 design §19](ws074/design.md)（engine と shell の分離、不透明な handle、Vulkan の描画の先、将来の libbrowser.so） |
-| ブラウザのデモの目標と touch（2026-09-28） | ユーザー:「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。インタラクションはそれでいいです。」→ WS074 のデモの目標。「タッチについては…スクロールの操作みたいに余韻のあるやつとかも実装が必要で…HIDドライバ、Waylandコンポジタ、ブラウザの3つに渡る…計画は1カ所で…タッチのfpsが低い廉価な機種でも、ある程度数式で補間して利用できるようにすることを目標に」→ [WS081](ws081/ws.md) |
+| 部品としての browser（2026-09-28） | ユーザー:「…libbrowser.soというファイルに将来的に分割できるようにして、コンポーネントにしましょう。ブラウザの構造体へのポインタをハンドルにして、Vulkanレンダリングターゲットを指定してイベントも送ってやるとと描画してくれて、Wayland依存はない、みたいなのがいいと思います！これはいきなり実現しなくても、徐々にそういう設計に変えていきましょう。」→ [WS074 design §19](design.md)（engine と shell の分離、不透明な handle、Vulkan の描画の先、将来の libbrowser.so） |
+| ブラウザのデモの目標と touch（2026-09-28） | ユーザー:「Googleの検索トップページと検索が、レイアウトを崩さずに表示できたら、ゴールにしましょう！限定的なCSSと、基本的なJS、WebGLなし、ビデオなしです。インタラクションはそれでいいです。」→ WS074 のデモの目標。「タッチについては…スクロールの操作みたいに余韻のあるやつとかも実装が必要で…HIDドライバ、Waylandコンポジタ、ブラウザの3つに渡る…計画は1カ所で…タッチのfpsが低い廉価な機種でも、ある程度数式で補間して利用できるようにすることを目標に」→ [WS081](../ws081/ws.md) |
 | ブラウザのデモの目標の変更（2026-09-28） | Google の検索の結果の page のボットの判定（/sorry）の件でユーザー:「それはuser agentを正直に回答したせいであって、Chromeのものを使えばまず問題ないと思うのですが、amazon.co.jpに変更しましょう。」→ WS074 のデモの目標を **amazon.co.jp** に変更（Google は目標から外す）。p059 の Google の調査と form 等の Phase は流用 |
 
 
@@ -512,3 +538,5 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 2026-10-03 JST / q598-checkpoint96: [evidence](phase172/import/checkpoint96/README.md), 209/209最終hash・追加input.c全文確認。browser2 manifest569件はapplied209/archive356/excluded4/unresolved0、原Phase71件は履歴として保持。host plain/ASan各98回帰+81golden・Acid2 120000画素一致、独立client CPU/GPU描画、39exports/167source/377include・禁則依存0。target初回image/boot PNG合格、browser source警告0・外部package警告233行。最終warm buildのimage書込/最終boot/guest shellを残し、q598/p172 in-progress、WS incomplete、p100未選定。
 
 2026-10-03 JST / q598-p172-clearance: [p172](phase172/phase.md)を[最終証拠](phase172/import/checkpoint98/README.md)でwhole cleared。209/209対象の全文review、branch manifest/ABI、host+ASanとAcid2、最終target bootとVenus shellを確認。初回cold p014の5秒待ち失敗・再試行PASSを保持。WS074固有のacceptance（Acid3ほか）は未達なのでincompleteのまま。p100は前提解消のみで実行Queue未選定。Agent A側とのQueue ID/共有投影・GitHub投稿は保留。
+
+2026-10-05 Q1 records reconciliation: ユーザーが WS074 を Codex から Q1 に戻し、レンダリングの改善をユーザーの指示まで止めた。記録の矛盾を照合した: Queue ID の衝突（browser3 の q590・q594〜q598 → b-q590・b-q594〜b-q598、WS074 の記録の中だけ）、p172 の取込みの main への実在（209 件中 207 件の hash 一致、2 件は main の 4628f83e の試験の方針の変更）、Acid2 の行の訂正（p099 で exact 合格）、Acid3 の値は checkpoint02 の計測で最終の source では再計測していないこと、p100 は planned（Queue なし、2026-10-03 の baseline の承認は未使用）、main に無い browser3 の記録への link の無効化、壊れた link 2 件（design.md・WS081）。Master・Queue・Past Log・Bug Board の直しは Q1 に提案した。source・build・試験は変えていない。
