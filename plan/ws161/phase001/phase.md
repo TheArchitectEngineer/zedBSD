@@ -174,6 +174,19 @@ usb-ccid ─ /dev/smartcardN（APDU の交換）──── libpasskey: transpo
 - **UAPI**: `include/uapi/ccid.h`（新）。**ユーザーの承認が要る（U2）**。
 - **権限**: `/dev/smartcard*` も seat の一覧に足す（U3）。
 
+#### 9.3.1 U2 の形の詰め（2026-10-05、見直しの M7〜M10・m9・m10 から。Q1: 承認の範囲の中、ユーザーには要約で示す）
+
+- 外の仕様は `docs/reference/security-keys.md`、header は `include/uapi/ccid.h`。
+- slot の node は**共有の open**（状態と card の出し入れの事象は誰でも読める）。`CCID_POWER_ON` がその open に slot の claim を取り、`CCID_POWER_OFF` か
+  最後の close まで、他の open の POWER_ON・TRANSMIT は `EBUSY`。claim した file の最後の close で card の電源を切る（PIN の確かめ・選んだ applet が
+  次の program に渡らない）。
+- `struct ccid_transmit` は 64 bit の pointer と大きさ（32 bit と 64 bit の program で同じ形）。待ちの既定 30 秒、最大 120 秒。card が時間の延長を求めても
+  期限で止め、reader に ABORT（control の ABORT と `PC_to_RDR_Abort`）を送る（`EINTR`・`ETIMEDOUT`）。答えが buffer より長ければ `EMSGSIZE`、card が
+  抜けたら `ENXIO`。
+- reader ごとに command は 1 つずつ（`bSeq` を合わせ、古い答えは捨てる）。answer の chaining（`bChainParameter`）は kernel が集める。command は
+  `dwMaxCCIDMessageLength - 10` まで（越える物は userland が ISO 7816-4 の chaining で分ける）。
+- 事象は `read()` の `struct ccid_event`（open ごとに 16 個）と `/dev/system` の `KERN_SYSTEM_EVENT_USB`（subject `smartcardN`）。ioctl の group は 'S'。
+
 ### 9.4 userland: libpasskey（Keiland の側）
 
 - 置き場所: `userland/desktop/libpasskey/`（Keiland の library と同じ並び。Linux・FreeBSD の Keiland でも build する）。依存は OpenSSL の libcrypto だけ

@@ -49,6 +49,7 @@
 #endif
 #ifdef SECURITY_KEY_TEST_LOOPBACK
 #include <drivers/generic/hidraw.h>
+#include <drivers/generic/smartcard.h>
 #endif
 
 #include <uapi/errno.h>
@@ -386,6 +387,13 @@ kern_vfs_init(
 	error = drv_hidraw_loopback_register();
 	if (error != 0) {
 		error = vfs_fail("register hidraw-loopback", error);
+		return error;
+	}
+
+	/* And the test-only loopback smart card (ws161-p003). */
+	error = drv_smartcard_loopback_register();
+	if (error != 0) {
+		error = vfs_fail("register smartcard-loopback", error);
 		return error;
 	}
 #endif
