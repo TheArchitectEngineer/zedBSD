@@ -508,6 +508,7 @@ input_commit(
 		input->pending_text_set = 0;
 		input->cursor = input->pending_cursor;
 		input->anchor = input->pending_anchor;
+		input->text_commit = input->commits;
 	}
 
 	input->cause = input->pending_cause;
@@ -533,6 +534,7 @@ input_clear(
 	input->text = NULL;
 	input->cursor = 0;
 	input->anchor = 0;
+	input->text_commit = 0;
 	input->cause = 0;
 	input->hint = 0;
 	input->purpose = 0;
