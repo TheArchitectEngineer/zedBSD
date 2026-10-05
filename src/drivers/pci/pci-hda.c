@@ -515,7 +515,7 @@ hda_suspend(
 	hda_write32(controller, HDA_GCTL, control & ~HDA_GCTL_CRST);
 
 	/* Succeeded: the controller may go to D3hot. */
-	kern_logf("hda: suspended (playback %s)\n", controller->streams[HDA_PLAYBACK].saved_running ? "was running" : "idle");
+	kern_logf("hda: suspended (playback running %u)\n", controller->streams[HDA_PLAYBACK].saved_running);
 	return 0;
 }
 
@@ -595,12 +595,13 @@ hda_stream_save(
 	stream->saved_last = hda_read16(controller, base + HDA_SD_LVI);
 	stream->saved_format = hda_read16(controller, base + HDA_SD_FMT);
 
-	/* A descriptor with a ring was prepared; one with RUN set was running. */
+	/* A descriptor with a ring was prepared. */
 	stream->saved_control = control & ~HDA_SD_CTL_RUN;
 	stream->saved_prepared = 0U;
 	if (stream->saved_length != 0U)
 		stream->saved_prepared = 1U;
 
+	/* RUN said the stream was running. */
 	stream->saved_running = 0U;
 	if ((control & HDA_SD_CTL_RUN) != 0U)
 		stream->saved_running = 1U;
@@ -638,6 +639,7 @@ hda_stream_restore(
 	if (error != 0)
 		return error;
 
+	/* Gives the converter its format. */
 	error = hda_verb4(controller, stream->converter, HDA_VERB4_SET_FORMAT, stream->saved_format);
 	if (error != 0)
 		return error;
@@ -2374,6 +2376,8 @@ hda_interrupt_enable(
 	enable = HDA_INTCTL_GIE;
 	if (controller->streams[HDA_PLAYBACK].present != 0U)
 		enable |= 1U << controller->streams[HDA_PLAYBACK].index;
+
+	/* The capture stream's bit. */
 	if (controller->streams[HDA_CAPTURE].present != 0U)
 		enable |= 1U << controller->streams[HDA_CAPTURE].index;
 
