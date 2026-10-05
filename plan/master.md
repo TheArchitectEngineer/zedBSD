@@ -82,6 +82,10 @@
   - BUG-194: 全画面から戻る key は **F11 と Super+↓ の両方**。
   - WS169・WS170: **ベータ2**（WS170 は連絡先からタイムライン、WS169 は IMAP・SMTP まで。Gmail・Outlook と本物の SMS・通話は以降）。
   - 段ごとの見積もりの表を**今作り直す**（Q1）。
+  - WS168 sandbox の縮小表示: H1〜H7 は**全部推奨どおり**（`sandbox_spawn` の system call と include/uapi/sandbox.h の UAPI の追加を承認、子は呼び出し側の uid、断った call は SIGKILL、対象は Files と Settings、Linux・FreeBSD は seccomp・Capsicum だけでよい、子は静的 link、name space を持たせない）。p002 から実装してよい。
+  - WS066: 受け入れの文を案 ①〜③ に改める（同じ回の中の静的との差を半分以下に、cc t.c は p003 へ、以後の速さは同じ回の中の比べで書く）。
+  - WS145 D4: 受け入れのプリンタは **Brother MFC-L3770CDW**（IPP Everywhere・AirPrint 対応の機種。PDF を直接受けるかは p002 で確かめ、受けなければ PWG raster の変換を足す）。
+  - WS153 U2〜U15: **ユーザーが検討中**（質問しない、決まるまで WS153 の p002 以降は止める）。
 
 - **2026-10-05 夕 ユーザーの決定（続き）**:
   - WS121: 目標は「Vulkan Video の hardware decode」のまま（「hardware だけ」）。software decode の <video> の設計（P2 の第 2 版 3df53896）は記録として残し、実装は WS083 の Vulkan Video の後。WS121 は WS083 を待つ。
