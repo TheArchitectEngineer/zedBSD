@@ -1,6 +1,10 @@
 # WS052 の HAL の API の差分の案（S0i3）
 
-状態: **提案（未適用、承認待ち）**。2026-10-05 P1 generation17（q727、ws052-p002 の準備）。`include/hal/hal.h` は変えていない。
+**第 1 版（履歴）。専門家のレビュー（[expert-review-2026-10-05.md](expert-review-2026-10-05.md)）を受けた第 2 版が [README-v2.md](README-v2.md) にあり、
+承認を求める差分はそちら（`hal-cpu-idle-suspend.diff`・`hal-cpu-notify-wake-v2.diff`・`hal-irq-wake.diff`・`hal-rtc-counter-idle.diff`）。この file と H1〜H4 の
+`*.diff` は比較のために残す（2026-10-05 P4）。**
+
+状態: 第 1 版（第 2 版に置き換えた）。2026-10-05 P1 generation17（q727、ws052-p002 の準備）。`include/hal/hal.h` は変えていない。
 承認は差分ごと（AGENTS.md、Guardrail の「HAL」）。どれも宣言と契約だけで、`src/hal` の実装は承認の後に書く（今は準備のコードも無い）。
 
 設計の背景は [design.md](../design.md) の §2（S0i3 の段）と §6（CPU の idle と timer）。S0i3（modern standby）では OS は platform に「眠れ」と
