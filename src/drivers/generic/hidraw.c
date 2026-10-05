@@ -757,7 +757,9 @@ hidraw_copy_text(
 
 /*
  * Takes the device for one open (grab nonzero) or gives it back (0).
- * Returns 0, or EBUSY when another open holds it.
+ * Taking it also drops the reports the other opens have not read yet, so
+ * that from the grab on they read nothing of the device's.  Returns 0, or
+ * EBUSY when another open holds it.
  */
 static int
 hidraw_grab(
@@ -765,19 +767,27 @@ hidraw_grab(
 	struct hidraw_reader *reader,
 	int grab)
 {
+	struct hidraw_reader *other;
 	unsigned long irq;
 	int error;
 
-	/* The grab changes only for its holder, or a free device. */
+	/* The grab changes only for its holder, or a free device; a new grab empties the others' rings. */
 	error = 0;
 	irq = spin_lock_irqsave(&hidraw->lock);
 
-	if (hidraw->grabber != NULL && hidraw->grabber != reader)
+	if (hidraw->grabber != NULL && hidraw->grabber != reader) {
 		error = EBUSY;
-	else if (grab)
+	} else if (grab) {
 		hidraw->grabber = reader;
-	else
+		for (other = hidraw->readers; other != NULL; other = other->next) {
+			if (other == reader)
+				continue;
+			other->head = 0U;
+			other->count = 0U;
+		}
+	} else {
 		hidraw->grabber = NULL;
+	}
 
 	spin_unlock_irqrestore(&hidraw->lock, irq);
 
