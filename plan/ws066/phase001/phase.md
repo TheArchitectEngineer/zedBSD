@@ -64,3 +64,39 @@ QEMU の console log は使わない。数は host で ELF を読み、時間は
 
 - image: `plan/tools/guest/build-full-image.sh BUILD`（clang を含む、`config-amd64-full.mk`）。
 - `GUEST_RUNTIME=… sh plan/ws066/tests/startup-measure.sh BUILD` → 出力の `STARTBENCH … median=N us` の 12 行（clang が無ければ 8 行）と `startup-measure: done`。見込みは 2 分以内（推測）。
+
+## 実装の Phase の設計（案 1・2、2026-10-05、P2。実装は T1-165 の数字を見てから）
+
+Q1（2026-10-05）: clang の行は後回し（clang 入りの image は指定できない）。案 1・2 は `vmunix.mk` の link の規則で、toolchain ではない。
+
+### ws066-p002（案）: libc.so の -Bsymbolic-functions と、base の program の GNU hash
+
+**変える所**
+
+1. `platform/amd64/vmunix.mk` の `$(DYNAMIC_DIR)/libc.so` の規則（852-854）に、`-Bsymbolic-functions --dynamic-list=<list>` を足す。
+   - list は新しい file `userland/base/libc/interpose.list` に置く。中身は、program が置き換えてよい関数で、libc の中の呼び出しも置き換えに従うべき物。今の libc.so が export する malloc の族の `malloc`・`free`・`calloc`・`realloc`・`reallocarray`・`aligned_alloc`・`posix_memalign` と、それを使う `strdup`・`strndup`（`llvm-readelf --dyn-syms` で確かめた 9 個）。
+   - lld では、`--dynamic-list` に書いた symbol は置き換え可能のまま残り、他の関数は `-Bsymbolic-functions` で libc の中に結ばれる。実装の時に、`llvm-readelf -r` で malloc の族の JUMP_SLOT が残ることを確かめる。
+   - 今の build-measure.sh の実測（list 無し）では、symbol の再配置が 515 → 19 になった。残るのは data の 18 個（`environ`・`stdin` など、copy の再配置のため置き換え可能のまま）と `__tls_get_addr`。list の 9 個を足すと 28 前後の見込み。
+2. 同じ規則の形の base の他の共有 library（`libutil.so`・`libwayland-client.so`・`libtruetype.so`・`libz-compat.so`・`libpng-compat.so`・`libjpeg-compat.so`・`libpdf.so`・`libgif-compat.so`・`libwayland-egl.so`・`libEGL.so`・`libGLESv2.so`・`libkeiland.so`・`libvulkan.so`、873-1021 行付近）にも `-Bsymbolic-functions` を足す（list 無し）。terminal・files・wayland の探索の残り（841〜980）の大半は、これらの library の自分の関数への再配置と見込まれる（model の symbolic の列。実装の時に library ごとに数を確かめる）。
+3. base の program の link（`AMD64_APP_LINK`（634）と、各 program の規則の `-Wl,--hash-style=sysv`、1034〜1739 の約 40 か所）を `--hash-style=gnu` にする。
+   - **`dyntest` の規則（1791 付近）は sysv のまま残す**。clang の driver で link される package の program（clang・ld.lld ほか）は sysv のままなので、loader の SysV の道を試験に残す。
+   - ld.so（850）の `--hash-style=sysv` は変えない（`-Bsymbolic` で、探索の最後にしか引かれない）。
+4. `tools/build/check-dynamic-elf.py`: `application`・`program` の role は `.hash` か `.gnu.hash` のどちらかを求めるだけで、変えなくてよい（130-160 行を読んで確かめた）。GNU だけの program を ld.so が受け付けることは、parse_dynamic の GNU の数え方（3850-3905）と、T1-165 の `true-gnu` の起動で確かめる。
+
+**他の architecture**: `platform/arm64`・`pcat`・`pc98`・`sparcv9` の `vmunix.mk` にも同じ形の規則がある（app の link と ld.so に sysv が 2〜3 か所、共有 library に both が 1〜7 か所）。subagent は sysroot を作れないので、amd64 以外は build できない（Q1 2026-10-05）。**決めが要る点**: (a) amd64 だけ変えて他は次の機会、(b) 全部変えて amd64 以外の build は「未実施」と書く。推奨は (a)（build で確かめられない変更を入れない）。
+
+**危険**
+
+- interposition: `-Bsymbolic-functions` の後、program が libc と同じ名前の関数を定義しても、libc の中の呼び出しは libc の物へ行く。今の image では openssh の `strvis`・`strnvis`・`vis`（openbsd-compat、意味は同じ）だけ（`interpose-check.py`）。malloc の族は list で今のまま置き換えられる。package の program（GTK など、WS115）は p002 の確かめの範囲の外なので、結果に書く。
+- `src/libc/heap.c` などの `__attribute__((weak))` の関数は、libc.so の dynsym では WEAK になっていない（0 個）。今も置き換えの対象になっていないので、変わらない。
+
+**確かめ**
+
+- host: amd64 の libc.so・ld.so・base の program・desktop の app の build（warning 0）。`dynamic-userland-check` が PASS。`llvm-readelf -r` で libc.so の symbol の再配置の数（malloc の族が残ること）。`reloc-model.py` を新しい rootfs に当てて、探索の数の前後（true・sh・ls・terminal・files・wayland）。
+- T1: `startup-measure.sh`（true・sh の中央値の前後）、dyntest・rtld-many・run-tls-check、boot-test、sh の差分試験・make の差分試験（`plan/tools/sh`・`plan/tools/make` の既存の試験。clang が要る物は image の都合で後回し）、desktop の起動（Terminal・Files）。
+
+### ws066-p003（案）: ld.so の symbol の値の cache（案 3）
+
+- clang の行の測定ができるまで設計に留める（clang 入りの image が要る）。p002 の後の数で効き目を見直す。
+
+### ws066-p004（案）: 規約（全文規約の見直し、WS の最後）
