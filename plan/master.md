@@ -15,19 +15,18 @@
 ## 現在の状況（Q1）
 
 <!-- master:updated:start -->
-更新: 2026-10-05 夜 Q1（graphical login の回帰を 2 つの直しで解消（T1-212 PASS）、ws172-p002 cleared、ユーザー向けの image build/uat-0505g）
+更新: 2026-10-06 未明 Q1（ユーザーの指示で全サブエージェントをラップアップ。WS174 の boot の key を merge（p003 は間欠の不検出 1/12 で uncleared）、UAT の image build/uat-0506b、5330 の freeze（BUG-202）の診断をユーザーと）
 <!-- master:updated:end -->
 
 ### 担当
 
 <!-- master:agents:start -->
-- **動いている担当は無い**（2026-10-05 夜、全員ラップアップで終了）。再起動は同じ名前で新しい世代（前の世代を TaskStop してから。終わった担当へ SendMessage すると再開してしまう）。
+- **動いている担当は無い**（2026-10-06 未明、ユーザーの指示で全員ラップアップ）。再起動は同じ名前で新しい世代（前の世代を TaskStop してから）。
 - 再開の地点:
-  - **P1**: (1) 済み（graphical login の回帰の直し、T1-212 PASS）。(2) WS168 p002 の残り（style の小直し、libc の `sandbox_spawn()` と `<sandbox.h>`（sysroot への追加は Q1 が許可する）、sandboxtest、T1 の依頼）。(3) WS130 p003（T1-206 の後）。(4) WS172 p003（p002 の PASS の後）。(5) WS161 p005〜p007。
-  - **P2**: (1) T1-202 の結果から AAT の runner と補助の直し（補助 69 本は target で未実行）。(2) WS158 p003 は T1-207 の PASS で cleared、シナリオ desktop.language.compositor-japanese を active に。(3) WS158 p004（Settings の Languages の頁の Display language、system の言語、各 app の kl_tr_follow）。(4) WS154 の SKK の後回しと WS145 D2・D3・D5〜D9 を各 phase.md に記録。
-  - **T1**: 台帳の未実行 T1-206（IPv6、`/home/awe/zedBSD-worktrees/t1-ipv6` は 67801dab で用意済み、もう main に入ったので main で作ってよい）・T1-202（AAT smoke・full）・T1-205（Super+↓）・T1-207（日本語の UI）。T1-203 は T1-210 (2)・T1-212 で置き換え済み。
-  - **B1**（WS074 p178、Sonnet 5.5 Mid）: ユーザーの指示があるまで起動しない。
-  - **conformance-reviewer**: ブロッキングで他に作業が無い時だけ。
+  - **P1**: WS174 p003 の間欠の不検出（T1-214 の run 1 の C3）の確かめ（gdbstub か実機の観察）と、変えた `zbl_uefi_boot_keys_sample()` の規約の見直し。その後 WS168 p002 の残り（libc の `sandbox_spawn()`、`<sandbox.h>` の sysroot への追加は Q1 が許可）、WS130 p003、WS172 p003、WS161 p005〜。
+  - **P2**: WS175 p001 の review の表（H1〜H6 ほか）を design.md に反映して clearance へ（ユーザーの D1〜D7 の判断も要る）。次に ws099-p034（bar のデザイン）と ws128-p012（app の icon）の mock、T1-202 の後の AAT の直し、WS158 p004。
+  - **T1**: 台帳の未実行 T1-206（IPv6）・T1-202（AAT）・T1-205（Super+↓）・T1-207（日本語の UI）。
+  - **B1**（WS074 p178）: ユーザーの指示まで起動しない。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -290,7 +289,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS172](ws172/ws.md) | ベータ2 | MG006 | 4 | passkey の認証の枠組み（/sbin/passkey・/etc/passkey、2026-10-05 追加） |
 | [WS173](ws173/ws.md) | ベータ2 | MG006 | 3 | AAT（エージェントが素の実機を操作する受け入れの枠組み、2026-10-05 追加、最優先） |
 | [WS174](ws174/ws.md) | ベータ1 | MG003 | 1 | 起動時の Ctrl・Shift（UEFI、BIOS は後日）（2026-10-05 追加） |
-| [WS175](ws175/ws.md) | ベータ2（Q1 の案） | MG006 | 6 | Notes の PDF の画像と文字の編集（2026-10-06 追加） |
+| [WS175](ws175/ws.md) | ベータ2（Q1 の案） | MG006 | 17.5 | Notes の PDF の画像と文字の編集（2026-10-06 追加） |
 | [WS176](ws176/ws.md) | ベータ3 | MG006 | 30 | Canvas（pen のイラストと画像の編集、2026-10-06 追加） |
 
 ### リリースの段ごとの見積もり（2026-10-05 夜に作り直し）
