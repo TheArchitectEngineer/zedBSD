@@ -53,3 +53,8 @@ Queue: q728（P2、2026-10-05）
 ## Q1 の判定（2026-10-05）
 
 T1-162 の settings-p025 PASS（kei の session で Remote Login を off・on、rc.conf と auth の syslog）、sharing-on.png を Q1 が目視（Running・port 22・host key の SHA256・ssh kei@10.0.2.15）。wheel でない利用者の拒否は host の試験。**cleared**。
+
+## T1-169 の後（2026-10-05、P2）
+
+- FreeBSD の backend-test の host-session と host-power が link の誤り（`undefined symbol: kl_backend_sharing_take`）。p025 で session-zedbsd.c が sessiond の SERVICE の答えを sharing-zedbsd.c に渡すようにしたが、ws131 の host の試験の link の一覧に sharing-zedbsd.c と sha256.c が無かった（試験の側の漏れ。製品の build には入っている）。
+- 直し: `plan/ws131/tests/host-session.sh` と `host-power.sh`（zedBSD の側）の link に 2 つを足した。host（Linux、gcc と clang）で host-session 31/31・host-power 6/6。session-zedbsd.c を link する試験で、他に sharing の抜けている物は無い（grep）。FreeBSD での再試験は T1。
