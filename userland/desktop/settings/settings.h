@@ -493,15 +493,38 @@ struct se_sharing {
 
 /*
  * One user of the list (ws089-p026): the name, the full name, whether the
- * user is an administrator (a member of wheel), and whether it is the user
- * Settings runs as.
+ * user is an administrator (a member of wheel), may control Wi-Fi (a
+ * member of network), and whether it is the user Settings runs as.
  */
 struct se_user_row {
 	char name[64];
 	char full_name[128];
 	int admin;
+	int network;
 	int self;
 };
+
+/*
+ * The administrator's changes of the Users page (ws089-p026,
+ * page-users-admin.c): none chosen, adding a user, resetting the chosen
+ * user's password, removing the chosen user, and turning the chosen user's
+ * administrator or Wi-Fi membership on or off.
+ */
+enum se_admin_mode {
+	SE_ADMIN_NONE,
+	SE_ADMIN_ADD,
+	SE_ADMIN_RESET,
+	SE_ADMIN_REMOVE,
+	SE_ADMIN_WHEEL,
+	SE_ADMIN_NETWORK
+};
+
+/* The administration's fields: the new user's name and full name, a new password, and the administrator's own. */
+#define SE_ADMIN_FIELDS		4
+#define SE_ADMIN_NAME		0
+#define SE_ADMIN_FULL_NAME	1
+#define SE_ADMIN_PASSWORD	2
+#define SE_ADMIN_YOURS		3
 
 /*
  * The Users page (page-users.c, ws160-p002): the account as the passwd
@@ -510,6 +533,13 @@ struct se_user_row {
  * the field with the keyboard, whether the passwords are shown, the change
  * asked and its request's number, and the last answer (bad when it
  * failed).
+ *
+ * The administration (ws089-p026): the user chosen in the list (its row
+ * plus one, 0 for none), whether the keyboard is the administration's fields' (1) or the
+ * password card's (0), the change being made, its fields (wiped when it is
+ * asked or cancelled) and the one with the keyboard, its switch (the new
+ * user an administrator; the home removed with the user), the change asked
+ * and its request's number, and the last answer (bad when it failed).
  */
 struct se_users {
 	int read;
@@ -525,6 +555,17 @@ struct se_users {
 	uint32_t request;
 	char message[SE_MESSAGE];
 	int message_bad;
+
+	int selected;
+	int keyboard;
+	enum se_admin_mode admin_mode;
+	struct se_field admin_fields[SE_ADMIN_FIELDS];
+	int admin_focus;
+	int admin_flag;
+	int admin_asked;
+	uint32_t admin_request;
+	char admin_message[SE_MESSAGE];
+	int admin_bad;
 };
 
 /*
@@ -1082,6 +1123,13 @@ void se_users_press(struct se_app *app, int index);
 int se_users_key(struct se_app *app, const struct se_event *event);
 int se_users_result(struct se_app *app, uint32_t request, int error);
 void se_users_close(struct se_app *app);
+int se_users_admin_available(const struct se_app *app);
+int se_users_admin_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_users_admin_press(struct se_app *app, int index);
+int se_users_admin_key(struct se_app *app, const struct se_event *event);
+int se_users_admin_result(struct se_app *app, uint32_t request, int error);
+void se_users_admin_wipe(struct se_users *users);
+void se_users_reload(struct se_users *users);
 
 /* What About shows of the machine (about.c). */
 void se_about_read(struct se_about *about);

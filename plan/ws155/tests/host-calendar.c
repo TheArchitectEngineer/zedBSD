@@ -33,6 +33,7 @@
 /* The window's size, and where its months' cells are (the months' card at 236, its band at 102, cells 99 by 105). */
 #define TEST_WIDTH		1280
 #define TEST_HEIGHT		800
+#define TEST_SHORT_HEIGHT	680
 #define TEST_GRID_X		248
 #define TEST_GRID_Y		102
 #define TEST_COLUMN		99
@@ -67,7 +68,9 @@ main(
 	static const uint32_t memo_keys[] = { KL_KEY_SPACE, 24U, 37U };
 	struct cal_date today;
 	struct kl_canvas canvas;
+	struct kl_canvas short_canvas;
 	struct kl_style style;
+	struct kl_style short_style;
 	struct kl_text text;
 	struct cal_view view;
 	struct kl_ui *ui;
@@ -104,6 +107,11 @@ main(
 	if (error != 0)
 		return 2;
 
+	/* The shorter window's canvas, on the same pixels. */
+	error = kl_canvas_init(&short_canvas, pixels, TEST_WIDTH, TEST_WIDTH, TEST_SHORT_HEIGHT);
+	if (error != 0)
+		return 2;
+
 	/* The input and the style. */
 	ui = kl_ui_create();
 	if (ui == NULL)
@@ -112,6 +120,8 @@ main(
 	style.text = &text;
 	style.theme = kl_theme_default();
 	style.glass = 0;
+	short_style = style;
+	short_style.canvas = &short_canvas;
 
 	/* The view at the start: October 2026 in view, the 5th chosen. */
 	today.year = 2026;
@@ -232,6 +242,12 @@ main(
 	test_check("reduced", "reduced=1");
 	(void)test_save(&view, &canvas, argv[3], "reduced", 0);
 
+	/* A shorter window (the desktop's 800 less the title bar): the memo shortens so that the day chosen still shows. */
+	kl_ui_begin(ui, test_now);
+	cal_view_draw(&view, ui, &short_style, TEST_WIDTH, TEST_SHORT_HEIGHT, test_now);
+	(void)kl_ui_end(ui, test_now);
+	(void)test_save(&view, &short_canvas, argv[3], "short", 0);
+
 	/* On glass: the cards with the desktop between. */
 	cal_view_action(&view, CAL_ACTION_MOTION, test_now);
 	view.glass = 1;
@@ -243,6 +259,7 @@ main(
 	cal_view_release(&view);
 	kl_ui_destroy(ui);
 	kl_canvas_release(&canvas);
+	kl_canvas_release(&short_canvas);
 	free(pixels);
 	free(copy);
 	kl_text_close(&text);

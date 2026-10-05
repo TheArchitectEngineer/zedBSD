@@ -56,3 +56,4 @@ ws.md の「デザイン案」の要素（このままでなく要素として�
 - 選んだ日: メモの下に card。左に小さな 3D の日めくり（日が変わると頁がめくれる、静かな動きとして残した）、日付、件数、その日の予定（時刻と題）とメモ（全文）を並べる。日付を押すとその日のメモが読める。
 - 3D は Add Event の 4 つの icon と、選んだ日の小さな日めくりに残した。
 - host: PASS 9（`memo` を足した、呼吸の frame は外した）。PNG は `start`・`flip-0..5`・`drag`・`sink-0..2`・`memo-drag`・`memo`・`november`・`hidden`・`reduced`・`glass`、頁めくりの GIF は `host-calendar-desk.gif`。zedBSD の build は warning 0、style-check 0。
+- T1-179c の指摘（窓の高さ 800 では選んだ日の card が見えない）: メモの欄の高さを、選んだ日の card（小さな日めくり＋数行）が残るように縮める（最大 150、最小 60）。host の `host-calendar-short.png`（1280×680、desktop の 800 から title bar を引いた高さ）で card が見えることを確かめた。PASS 9、warning 0、style-check 0。

@@ -94,9 +94,10 @@ struct system_power_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
-/* The listener of kl_system_account_v1's event. */
+/* The listener of kl_system_account_v1's events (refused since version 8, ws089-p026). */
 struct system_account_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+	void (*refused)(void *data, struct wl_proxy *proxy, uint32_t request, const char *reason);
 };
 
 /* The listener of kl_system_sharing_v1's events (ws089-p025), in their order. */
@@ -133,6 +134,7 @@ static void system_power_done(void *data, struct wl_proxy *proxy, uint32_t seria
 static void system_device(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
 static void system_devices_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static void system_devices_busy(void *data, struct wl_proxy *proxy, uint32_t request, const char *program);
+static void system_account_refused(void *data, struct wl_proxy *proxy, uint32_t request, const char *reason);
 static void system_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 static void system_sharing_state(void *data, struct wl_proxy *proxy, uint32_t available, uint32_t enabled, uint32_t running, uint32_t port, uint32_t allowed, const char *fingerprint);
 static void system_sharing_done(void *data, struct wl_proxy *proxy, uint32_t serial);
@@ -180,9 +182,10 @@ static const struct system_power_listener system_power_listener = {
 	system_result
 };
 
-/* The account object's callback (ws160-p002). */
+/* The account object's callbacks (ws160-p002, ws089-p026). */
 static const struct system_account_listener system_account_listener = {
-	system_result
+	system_result,
+	system_account_refused
 };
 
 /* The sharing object's callbacks (ws089-p025). */
@@ -329,6 +332,10 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_ACCOUNT;
 	if (system->sharing != NULL)
 		bits |= KL_SYSTEM_HAS_SHARING;
+
+	/* The administration of the accounts, offered with the account to a manager bound at version 8 (ws089-p026). */
+	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) != 0U && system->manager_version >= KL_SYSTEM_SINCE_ADMINISTER)
+		bits |= KL_SYSTEM_HAS_ADMINISTER;
 
 	/* The monitor, offered to a manager bound at version 2 (WS134 p012). */
 	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_MONITOR) != 0U && system->manager_version >= 2U)
@@ -959,6 +966,74 @@ kl_system_account_set_password(
 	return 0;
 }
 
+/*
+ * Asks for an administrator's change of the people's accounts (ws089-p026):
+ * the caller's password and the operation's lines.  Neither is kept here:
+ * they go out with the application's next flush.
+ */
+int
+kl_system_account_administer(
+	struct kl_system *system,
+	const char *password,
+	const char *operation,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t password_length;
+	size_t operation_length;
+	size_t password_clean;
+
+	/* The administration offered. */
+	if (system->account == NULL || system->lost || system->manager_version < KL_SYSTEM_SINCE_ADMINISTER)
+		return ENOTSUP;
+	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) == 0U)
+		return ENOTSUP;
+
+	/* A password of one line that fits, and an operation that fits. */
+	if (password == NULL || operation == NULL)
+		return EINVAL;
+	password_length = strlen(password);
+	operation_length = strlen(operation);
+	password_clean = strcspn(password, "\n");
+	if (password_length == 0U || password_length > KL_SYSTEM_PASSWORD_MAX || password_clean != password_length)
+		return EINVAL;
+	if (operation_length == 0U || operation_length > KL_SYSTEM_OPERATION_MAX)
+		return EINVAL;
+
+	/* A refusal of an earlier request is not this one's. */
+	system->view.refused_request = 0U;
+	system->view.refused_reason[0] = '\0';
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->account, KL_SYSTEM_ACCOUNT_ADMINISTER, number, password, operation);
+
+	/* Succeeded: the answer comes as a result (and a refusal's word before it). */
+	return 0;
+}
+
+/*
+ * Copies the word of a refused administration's request (ws089-p026).
+ * Returns 1 with it, 0 when the compositor sent none for that request.
+ */
+int
+kl_system_account_refusal(
+	const struct kl_system *system,
+	uint32_t request,
+	char *reason,
+	size_t size)
+{
+	/* The word sent for that request, if any. */
+	if (system == NULL || reason == NULL || size == 0U)
+		return 0;
+	if (system->view.refused_request != request || system->view.refused_reason[0] == '\0')
+		return 0;
+
+	/* Succeeded: the word. */
+	system_view_copy(reason, size, system->view.refused_reason);
+	return 1;
+}
+
 /* Notes the system manager's global. */
 static void
 system_global(
@@ -1411,6 +1486,24 @@ system_devices_busy(
 	system = data;
 	system->view.busy_request = request;
 	system_view_copy(system->view.busy_program, sizeof(system->view.busy_program), program);
+}
+
+/* Keeps the word of a refused administration's request. */
+static void
+system_account_refused(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t request,
+	const char *reason)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The request and its word. */
+	system = data;
+	system->view.refused_request = request;
+	system_view_copy(system->view.refused_reason, sizeof(system->view.refused_reason), reason);
 }
 
 /* Keeps an answered request of any object. */

@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*). */
-#define KL_VERSION	30U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer). */
+#define KL_VERSION	31U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1195,6 +1195,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_MONITOR	0x20U	/* kl_system_monitor_open (WS134 p012) */
 #define KL_SYSTEM_HAS_ACCOUNT	0x40U	/* kl_system_account_set_password (KL_VERSION 27, ws160-p002) */
 #define KL_SYSTEM_HAS_SHARING	0x80U	/* kl_system_sharing_* (KL_VERSION 30, ws089-p025) */
+#define KL_SYSTEM_HAS_ADMINISTER	0x100U	/* kl_system_account_administer (KL_VERSION 31, ws089-p026) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
@@ -1521,6 +1522,34 @@ int kl_system_devices_busy_program(const struct kl_system *system, uint32_t requ
  * its copies; the library keeps none.
  */
 int kl_system_account_set_password(struct kl_system *system, const char *current, const char *fresh, uint32_t *request);
+
+/* The longest operation kl_system_account_administer takes (without its NUL), and the room of a refusal's word (with it). */
+#define KL_ACCOUNT_OPERATION_MAX	1024U
+#define KL_ACCOUNT_REASON_SIZE		32U
+
+/*
+ * Asks for an administrator's change of the people's accounts (KL_VERSION
+ * 31, ws089-p026; docs/architecture/security.md): password is the
+ * caller's own, operation the request's lines after it, each ended by a
+ * line end ("add\nNAME\nDISPLAY\nPASSWORD\nadmin|user\n", "remove\nNAME\n
+ * keep-home|remove-home\n", "reset-password\nNAME\nPASSWORD\n",
+ * "group-add\nNAME\nwheel|network\n", "group-remove\n..."), answered by
+ * a result (kl_system_take_result): 0, EPERM when the caller is not an
+ * administrator or the password is wrong, EINVAL for another refusal,
+ * ENOTSUP, EBUSY while another change is under way, EIO when it failed.
+ * A refusal's word comes first (kl_system_account_refusal).  Returns 0
+ * when asked, ENOTSUP without KL_SYSTEM_HAS_ADMINISTER, or EINVAL.  The
+ * caller wipes its copies; the library keeps none.
+ */
+int kl_system_account_administer(struct kl_system *system, const char *password, const char *operation, uint32_t *request);
+
+/*
+ * Copies the word of a refused kl_system_account_administer request
+ * (not-administrator, bad-password, no-such-user, name-taken, bad-name,
+ * weak-password, last-administrator, self, root, busy, home-exists,
+ * bad-request, failed).  Returns 1 with it, 0 without one.
+ */
+int kl_system_account_refusal(const struct kl_system *system, uint32_t request, char *reason, size_t size);
 
 /*
  * The machine's monitor (WS134 p012, plan/ws134/design.md section 1.3):

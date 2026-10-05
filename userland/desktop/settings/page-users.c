@@ -26,6 +26,10 @@
  * wrong, the new one refused (at least 8 characters, not the old one), or
  * the desktop cannot change it.  A desktop without the account
  * (KL_SYSTEM_HAS_ACCOUNT) says so and offers no change.
+ *
+ * For an administrator, the administration's card (ws089-p026,
+ * page-users-admin.c) stands under the list, whose rows are then chosen
+ * with a click.
  */
 
 #include "settings.h"
@@ -44,6 +48,9 @@
 #define USERS_SHOW		10
 #define USERS_CHANGE		11
 
+/* The list's rows as controls (the administration chooses them, page-users-admin.c). */
+#define USERS_ROW_FIRST		100
+
 /* A field's row, the field's left edge in the row, and the line under the buttons. */
 #define USERS_ROW		52
 #define USERS_FIELD_X		210
@@ -60,15 +67,23 @@
 #define USERS_FIRST_UID		1000U
 #define USERS_NOBODY_UID	65534U
 
+/* A group copied with its members: getpwent may reuse the storage getgrnam returned. */
+struct users_group {
+	int found;
+	struct group group;
+	char *members[64];
+	char names[64][64];
+};
+
 /* The fields' labels and placeholders. */
 static const char *const users_labels[SE_USERS_FIELDS] = { "Current password", "New password", "New password again" };
 static const char *const users_placeholders[SE_USERS_FIELDS] = { "Your password now", "At least 8 characters", "The same again" };
 
 static int users_available(const struct se_app *app);
 static void users_read(struct se_users *users);
-static void users_list(struct se_users *users);
+static void users_group_copy(const char *name, struct users_group *copy);
 static int users_person(const struct passwd *account);
-static int users_admin(const struct passwd *account, const struct group *wheel);
+static int users_member(const struct passwd *account, const struct users_group *group);
 static int users_list_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 static int users_ready(const struct se_app *app);
 static void users_change(struct se_app *app);
@@ -90,6 +105,7 @@ se_users_draw(
 	struct se_users *users;
 	const char *reveal;
 	fm_color ink;
+	int administer;
 	int available;
 	int enabled;
 	int differs;
@@ -113,8 +129,11 @@ se_users_draw(
 	(void)se_row_value(app, canvas, x, y, width, "Home", users->home, 1);
 	top += height + USERS_GAP;
 
-	/* The list of the computer's users (ws089-p026). */
+	/* The list of the computer's users, and the administration's card for an administrator (ws089-p026). */
 	top = users_list_draw(app, canvas, x, top, width) + USERS_GAP;
+	administer = se_users_admin_available(app);
+	if (administer)
+		top = se_users_admin_draw(app, canvas, x, top, width) + USERS_GAP;
 
 	/* The password card: the three fields, the buttons and the message. */
 	available = users_available(app);
@@ -175,11 +194,18 @@ se_users_press(
 {
 	struct se_users *users;
 	int ready;
+	int taken;
 
-	/* A field takes the keyboard. */
+	/* The administration's controls. */
 	users = &app->users;
+	taken = se_users_admin_press(app, index);
+	if (taken)
+		return;
+
+	/* A field takes the keyboard (from the administration's fields). */
 	if (index >= USERS_FIELD_FIRST && index < USERS_FIELD_FIRST + SE_USERS_FIELDS) {
 		users->focus = index - USERS_FIELD_FIRST;
+		users->keyboard = 0;
 		return;
 	}
 
@@ -213,8 +239,13 @@ se_users_key(
 	int ready;
 	int used;
 
-	/* Without the account there is nothing to type. */
+	/* The administration's fields, when they have the keyboard. */
 	users = &app->users;
+	used = se_users_admin_key(app, event);
+	if (used)
+		return 1;
+
+	/* Without the account there is nothing to type. */
 	available = users_available(app);
 	if (!available)
 		return 0;
@@ -279,6 +310,12 @@ se_users_result(
 	struct se_users *users;
 	const char *message;
 	int bad;
+	int taken;
+
+	/* The administration's change. */
+	taken = se_users_admin_result(app, request, error);
+	if (taken)
+		return 1;
 
 	/* Only the change the page asked. */
 	users = &app->users;
@@ -347,8 +384,9 @@ void
 se_users_close(
 	struct se_app *app)
 {
-	/* The three fields. */
+	/* The three fields, and the administration's. */
 	users_wipe(&app->users);
+	se_users_admin_wipe(&app->users);
 }
 
 /* Reads the account of the user Settings runs as. */
@@ -374,44 +412,29 @@ users_read(
 	se_log("USERS account name=%s", users->name);
 
 	/* The list, with the name known. */
-	users_list(users);
+	se_users_reload(users);
 }
 
 /*
  * Reads the list of the computer's users from the passwd database: the
- * people's accounts, the administrators among them (wheel), and the one
- * Settings runs as.
+ * people's accounts, the administrators among them (wheel), those who may
+ * control Wi-Fi (network), and the one Settings runs as.
  */
-static void
-users_list(
+void
+se_users_reload(
 	struct se_users *users)
 {
+	static struct users_group wheel;
+	static struct users_group network;
 	struct se_user_row *row;
 	struct passwd *account;
-	struct group *wheel;
-	struct group copy;
-	char *members[64];
-	char names[64][64];
 	size_t length;
-	size_t i;
 	int person;
 	int differs;
 
-	/* The wheel group, copied: getpwent may reuse the storage getgrnam returned. */
-	memset(&copy, 0, sizeof(copy));
-	wheel = getgrnam("wheel");
-	if (wheel != NULL) {
-		copy.gr_gid = wheel->gr_gid;
-		for (i = 0; wheel->gr_mem != NULL && wheel->gr_mem[i] != NULL && i + 1U < sizeof(members) / sizeof(members[0]); i++) {
-			(void)snprintf(names[i], sizeof(names[i]), "%s", wheel->gr_mem[i]);
-			members[i] = names[i];
-		}
-
-		/* The list of members, ended by NULL. */
-		members[i] = NULL;
-		copy.gr_mem = members;
-		wheel = &copy;
-	}
+	/* The two groups, copied before the accounts are read. */
+	users_group_copy("wheel", &wheel);
+	users_group_copy("network", &network);
 
 	/* Each person's account, as far as there is room. */
 	users->row_count = 0;
@@ -433,7 +456,8 @@ users_list(
 		(void)snprintf(row->full_name, sizeof(row->full_name), "%s", account->pw_gecos);
 		length = strcspn(row->full_name, ",");
 		row->full_name[length] = '\0';
-		row->admin = users_admin(account, wheel);
+		row->admin = users_member(account, &wheel);
+		row->network = users_member(account, &network);
 		differs = strcmp(row->name, users->name);
 		row->self = 0;
 		if (differs == 0)
@@ -446,6 +470,36 @@ users_list(
 	/* The database closed, and the count in the log. */
 	endpwent();
 	se_log("USERS list count=%d", users->row_count);
+}
+
+/*
+ * Copies a group and its members (none found: found is 0).
+ */
+static void
+users_group_copy(
+	const char *name,
+	struct users_group *copy)
+{
+	struct group *group;
+	size_t i;
+
+	/* The group. */
+	memset(copy, 0, sizeof(copy[0]));
+	group = getgrnam(name);
+	if (group == NULL)
+		return;
+
+	/* Its ID and its members, as far as there is room, ended by NULL. */
+	copy->found = 1;
+	copy->group.gr_gid = group->gr_gid;
+	for (i = 0; group->gr_mem != NULL && group->gr_mem[i] != NULL && i + 1U < sizeof(copy->members) / sizeof(copy->members[0]); i++) {
+		(void)snprintf(copy->names[i], sizeof(copy->names[i]), "%s", group->gr_mem[i]);
+		copy->members[i] = copy->names[i];
+	}
+
+	/* The list ended. */
+	copy->members[i] = NULL;
+	copy->group.gr_mem = copy->members;
 }
 
 /*
@@ -483,34 +537,34 @@ users_person(
 }
 
 /*
- * Says whether an account is an administrator's: wheel is its group, or it
- * is among wheel's members.
+ * Says whether an account is in a group: it is its group, or it is among
+ * its members (wheel: an administrator; network: may control Wi-Fi).
  */
 static int
-users_admin(
+users_member(
 	const struct passwd *account,
-	const struct group *wheel)
+	const struct users_group *group)
 {
 	size_t i;
 	int differs;
 
-	/* No wheel group: no administrator. */
-	if (wheel == NULL)
+	/* No such group: not in it. */
+	if (!group->found)
 		return 0;
 
-	/* Wheel as its own group. */
-	if (account->pw_gid == wheel->gr_gid)
+	/* The group as its own. */
+	if (account->pw_gid == group->group.gr_gid)
 		return 1;
 
 	/* Among the members. */
-	for (i = 0; wheel->gr_mem != NULL && wheel->gr_mem[i] != NULL; i++) {
+	for (i = 0; group->group.gr_mem != NULL && group->group.gr_mem[i] != NULL; i++) {
 		/* The same name. */
-		differs = strcmp(wheel->gr_mem[i], account->pw_name);
+		differs = strcmp(group->group.gr_mem[i], account->pw_name);
 		if (differs == 0)
 			return 1;
 	}
 
-	/* Not one. */
+	/* Not in it. */
 	return 0;
 }
 
@@ -528,18 +582,22 @@ users_list_draw(
 {
 	const struct se_users *users;
 	const struct se_user_row *row;
+	struct fm_rect box;
 	char line[256];
 	const char *role;
+	const char *wifi;
 	const char *own;
 	const char *shown;
+	int administer;
 	int last;
 	int rows;
 	int height;
 	int y;
 	int i;
 
-	/* One row a user, one at least (saying there is none). */
+	/* One row a user, one at least (saying there is none); chosen with a click by an administrator. */
 	users = &app->users;
+	administer = se_users_admin_available(app);
 	rows = users->row_count;
 	if (rows == 0)
 		rows = 1;
@@ -560,7 +618,10 @@ users_list_draw(
 		if (row->admin)
 			role = "Administrator";
 
-		/* Whether it is the user's own. */
+		/* Whether it may control Wi-Fi, and whether it is the user's own. */
+		wifi = "";
+		if (row->network)
+			wifi = " \xc2\xb7 Wi-Fi";
 		own = "";
 		if (row->self)
 			own = " \xc2\xb7 You";
@@ -575,9 +636,17 @@ users_list_draw(
 		if (i + 1 == users->row_count)
 			last = 1;
 
-		/* Drawn. */
-		(void)snprintf(line, sizeof(line), "%s \xc2\xb7 %s%s", shown, role, own);
-		y = se_row_value(app, canvas, x, y, width, row->name, line, last);
+		/* Drawn; for an administrator a click chooses it, and the chosen one has the selection's ground. */
+		(void)snprintf(line, sizeof(line), "%s \xc2\xb7 %s%s%s", shown, role, wifi, own);
+		box.x = x + 8;
+		box.y = y;
+		box.width = width - 16;
+		box.height = se_row_value(app, canvas, x, y, width, row->name, line, last) - y;
+		if (administer)
+			se_ui_hit(app, &box, SE_HIT_CONTROL, USERS_ROW_FIRST + i);
+		if (administer && users->selected == i + 1)
+			fm_canvas_round(canvas, (float)box.x, (float)box.y + 2.0f, (float)box.width, (float)box.height - 4.0f, 8.0f, SE_COLOR_SELECTION);
+		y += box.height;
 	}
 
 	/* The edge below the card. */

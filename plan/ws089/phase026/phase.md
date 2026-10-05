@@ -68,3 +68,24 @@ sessiond・greeter（WS035 の成果）、kl_system_*（WS131）、service・acc
 ## ユーザーの決定（2026-10-05）
 
 ユーザー「WS089 p026は案Aにします。あとでレビューできるように、docs/にセキュリティ設計の文書を作成して、この設計について記述しておいてください。」→ **案 A**（setuid root の `account-admin`）。設計は Q1 が `docs/architecture/security.md` に書いた（ユーザーの review 待ち）。実装はその文書に従う。文書で Q1 が決めた細部（請求の形・理由の語・2 秒の遅延・4 KiB・home の既定は残す・login 中の利用者は消せない・uid 1000 以上だけ）は review で変わりうる。
+
+## account-admin の実装（2026-10-05、P2、q748。段 1: 権限のある program と account の核）
+
+- `userland/base/common/account.c/.h`（2d7eff0e）: lock を passwd・group・shadow の共通の lock に（`account_files_lock`・`account_files_unlock`）、任意の account file の全体の読み（`account_file_read`）と原子的な置き換え（`account_file_write`、同じ directory の新しい file に書いて sync・rename・directory の sync）。passwd・su・sudo の動きは同じ（`run-host-account.sh` 32 checks passed）。
+- `userland/base/account-admin/`（新規、package `account-admin`、`/usr/libexec/account-admin`、mode 4555）:
+  - `edit.c/.h`（file に触れない部分）: 請求の読み（パスワード・操作・引数、4 KiB まで、NUL を含む物・行の数の違う物・他の group は bad-request）、理由の語、名前と表示名の規則、空いている番号（uid と gid の両方で 1000 から）、行の追加・削除、group の member の付け外しと全 group からの削除（primary group は変えない）、人の account（uid 1000 以上）の管理者の数。
+  - `main.c`: `security.md` の順に確かめる（実 uid、root は拒否、wheel でなければ password を確かめずに not-administrator、password は `login_verify`・誤りは 2 秒、対象は uid 1000 以上だけ・自分の削除と wheel からの自分の除外は self・人の account の最後の管理者は last-administrator、削除は process（`/dev/system`）か utmpx の login があれば busy、追加は名前・表示名・password の規則・name-taken・`/home/<name>` が在れば home-exists）。変更は lock の下で、追加は group→passwd→shadow、削除は shadow→passwd→group、各 file を原子的に置き換え、止める signal は保留。home は 0700・所有者は新しい利用者・`/etc/skel` の直下の通常 file だけを写す。remove-home は `/home/<name>`（passwd の home と一致する時だけ）を openat/unlinkat で link を辿らずに消す。環境は消し、argv は使わない。結果は syslog（auth）に操作・呼んだ人・対象・理由の語だけ（password と hash は出さない）、password の buffer は消す。
+- 試験: `plan/ws089/tests/run-host-account-admin.sh`（gcc・clang、ASan・UBSan）→ 34 checks, 0 failed。image の実 file（root と wheel の GID 0、kei 1000）で、wheel の操作が root の primary group（0）と行を変えないことを確かめた。
+- build: `config-amd64-account-admin.mk` で `bin/account-admin`・`passwd`・`su`・`sudo` が warning 0。image では `/usr/libexec/account-admin=4555`。style-check 0。
+- 次（段 2・3）: kl_system_account_v1 の version 2（administer・refused）、libkeiland（KL_VERSION 31）、backend、compositor の system.c、Settings の UI。QEMU は全部の後に T1。
+
+## 段 2・3: 経路と Settings の UI（2026-10-05、P2、q748）
+
+- protocol（`keiland/kl-system-protocol.h`）: manager を version 8 に。`kl_system_account_v1` に request 2 `administer(uint request, string password, string operation)` と event 1 `refused(uint request, string reason)`（どちらも since 8）、capability `KL_SYSTEM_CAPABILITY_ADMINISTER`（0x100、system に tool が在る時だけ）、`KL_SYSTEM_OPERATION_MAX` 1024・`KL_SYSTEM_REASON_MAX` 31。
+- libkeiland（KL_VERSION 31）: `kl_system_account_administer(system, password, operation, &request)`、`kl_system_account_refusal(system, request, word, size)`、`KL_SYSTEM_HAS_ADMINISTER`、`KL_ACCOUNT_OPERATION_MAX`・`KL_ACCOUNT_REASON_SIZE`。exports.map に足した。
+- libkeiland-backend: `kl_backend_account_can_administer`・`kl_backend_account_administer`。zedBSD は `/usr/libexec/account-admin` を子として起動し（passwd -s と同じ形、標準入力に password と操作の行、標準出力の 1 行を読む）、`not-administrator`・`bad-password` は EACCES、他の拒否は EINVAL、`failed` は EIO、語を返す。Linux・FreeBSD は ENOTSUP。
+- compositor（`wayland/system.c`）: account の job に administer を足し（同じ thread、1 度に 1 つ）、結果の前に refused で語を送る。log は `ZWL SYSTEM account administer ...`・`... result ... reason=WORD`（set-password の行は前のまま）。password と操作は job の後に消す。
+- Settings（`page-users-admin.c` 新規、`page-users.c`）: 管理者（自分の行が wheel）で desktop が administer を持つ時、一覧の下に「Manage users」の card。一覧の行を click で選ぶ（選んだ行は selection の地）。「Add User...」と、選んだ他の利用者に「Reset Password...」「Remove...」「Make/Remove Administrator」「Allow/Stop Wi-Fi Control」。form（名前・表示名・新しい password・自分の password、追加は管理者の switch、削除は home を消す switch）、Cancel と実行、結果は語ごとの文。成功で一覧を読み直す。一覧に Wi-Fi（network）も出す。field は依頼か取り消しで消す。
+- build: zedBSD の `bin/wayland`・`bin/settings`・`bin/account-admin` が warning 0、Linux の Keiland（`make keiland-linux`）も warning 0、`makefile-sync.sh` PASS。style-check: 新しい file は 0、変えた file は関数ごとに増えていない。
+- T1 の試験（tty なし、Q1 の求めた passwd の短い password の拒否も含む）: `plan/ws089/tests/admin-p026-guest.sh`（image は `config-amd64-account-admin.mk`）。
+- 未実施: QEMU（T1）、Settings の UI の PNG（desktop を kei で動かす必要があり、UAT で見る）、FreeBSD の build。

@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 7; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 8; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -125,6 +125,8 @@
  *   request 0 destroy
  *   request 1 set_password(uint request, string current, string new)
  *   event   0 result(uint request, uint applied, uint saved)
+ *   request 2 administer(uint request, string password, string operation)   since version 8 (ws089-p026)
+ *   event   1 refused(uint request, string reason)                         since version 8 (ws089-p026)
  *   The compositor changes the password of the user it runs as, through
  *   the system (zedBSD: passwd; elsewhere unsupported), on a thread of its
  *   own, and answers ok, denied (the current password is wrong), invalid
@@ -132,6 +134,17 @@
  *   longer than KL_SYSTEM_PASSWORD_MAX), unsupported, busy (one change is
  *   under way) or failed.  Neither password is logged or kept.  The object
  *   has no state, and so no done.
+ *   administer carries an administrator's change of the people's accounts
+ *   (docs/architecture/security.md): the caller's password and the
+ *   operation's lines (the operation, then its arguments, each ended by a
+ *   line end, at most KL_SYSTEM_OPERATION_MAX bytes), which the compositor
+ *   gives the system's tool (zedBSD: /usr/libexec/account-admin) on the
+ *   same thread, one change at a time.  A refusal comes as refused with
+ *   the tool's word (not-administrator, bad-password, ...) before the
+ *   result; the result is ok, or denied for not-administrator and
+ *   bad-password, invalid for the other refusals, unsupported, busy or
+ *   failed.  The manager's capabilities have KL_SYSTEM_CAPABILITY_ADMINISTER
+ *   where the system has the tool.
  *
  * kl_system_monitor_v1 (WS134 p012, plan/ws134/design.md section 1.3)
  *   request 0 destroy
@@ -173,7 +186,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		7U
+#define KL_SYSTEM_MANAGER_VERSION		8U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -197,9 +210,11 @@
 #define KL_SYSTEM_CAPABILITY_MONITOR		0x20U
 #define KL_SYSTEM_CAPABILITY_ACCOUNT		0x40U
 #define KL_SYSTEM_CAPABILITY_SHARING		0x80U
+#define KL_SYSTEM_CAPABILITY_ADMINISTER		0x100U
 
-/* Since when the manager has get_sharing (ws089-p025). */
+/* Since when the manager has get_sharing (ws089-p025), and the account administer and refused (ws089-p026). */
 #define KL_SYSTEM_SINCE_SHARING			7U
+#define KL_SYSTEM_SINCE_ADMINISTER		8U
 
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
@@ -221,8 +236,14 @@
 /* kl_system_account_v1's requests and event, and the longest password it carries (without its NUL). */
 #define KL_SYSTEM_ACCOUNT_DESTROY		0U
 #define KL_SYSTEM_ACCOUNT_SET_PASSWORD		1U
+#define KL_SYSTEM_ACCOUNT_ADMINISTER		2U
 #define KL_SYSTEM_ACCOUNT_EVENT_RESULT		0U
+#define KL_SYSTEM_ACCOUNT_EVENT_REFUSED		1U
 #define KL_SYSTEM_PASSWORD_MAX			256U
+
+/* The longest operation administer carries, and the longest refusal's word (without their NULs). */
+#define KL_SYSTEM_OPERATION_MAX			1024U
+#define KL_SYSTEM_REASON_MAX			31U
 
 /* kl_system_network_v1's requests and events. */
 #define KL_SYSTEM_NETWORK_DESTROY		0U
