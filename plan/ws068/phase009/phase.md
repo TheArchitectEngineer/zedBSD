@@ -4,9 +4,9 @@
 
 Phase ID: `ws068-p009`
 Parent: [WS068](../ws.md)
-Status: planned（2026-10-01 に phase.md を作った。範囲は ws.md の表の行のまま）
+Status: in-progress（2026-10-05 P1 generation17、q747。設計の第 1 版を下に書き、実装へ）
 Phase disposition: normal
-Queue: なし
+Queue: q747（P1、ベータ2。p009 → p004 → p007。p037 以降は保留のまま）
 
 ## 範囲（ws.md の表から）
 
@@ -54,6 +54,51 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 7. WS101 の回帰（compute の pbuffer の道）: WS101 の guide 5.3 の `plan/ws101/tests/gles/build-image.sh` と `venus.sh`（`ws101 venus: PASS`）。
 8. 実機（passthrough）: `BUILD=build/ws068-p009-gles plan/ws101/tests/hw/gles-hw.sh build/ws068-p009/gles-hw`（`gles-hw: PASS`）。p038 が出来ていれば `es-hw.sh` も。
 9. boot test: `OUTPUT=build/ws068-p009/boot plan/tools/boot-test.sh build/ws068-p009-glsl/hdd-image.img`。PNG をユーザーに見せる。
+
+## 設計（2026-10-05 P1 generation17 の第 1 版。code を読んだ結果）
+
+### 今の形（読んだ所）
+
+- libegl（`userland/desktop/libegl/vulkan.c`）: surface に command buffer・fence・`acquired`・`rendered` が 1 組。`vulkan_submit` は submit・present の後すぐ
+  `vkWaitForFences`。`zegl_surface_present` の後に `frame_done`（libGLESv2 の `gles_frame_done`: `state->frame++` と `gles_collect`）。pbuffer も同じ道（present しない）。
+- libGLESv2 の「frame」の考え: `state->frame` は記録中の frame の番号で、**番号が進めばそれより前の submit は全て GPU で終わった**、が全体の前提。
+  - `gles_collect`（`buffer.c`）: garbage を全部壊す、stream の chunk を先頭の 1 つに戻す、descriptor pool を全部 reset、`set_cache` を消す、古い spare を捨てる。
+  - `buffer->used != state->frame` なら device の copy を in place で書き換える（`buffer.c` 370 行、map の 1937 行）。
+  - `query_finish`（`query.c` 994 行）・`glClientWaitSync`（1105 行）: `frame < state->frame` なら終わったとみなす。
+  - readback（`draw.c` 260 行）・FBO（`framebuffer.c` 720 行）・query は `zegl_frame_flush`（submit して待つ）の後に `state->frame++` と `gles_collect`。
+  - `glFinish` は何もしない（「Nothing is running」）。
+- GLX（libGL）の描画先は pbuffer（p010）、WS101 の compute も pbuffer。swapchain は `minImageCount` 3。
+
+### 変える形
+
+1. **libegl に slot を 2 つ**（`ZEGL_SLOTS 2`）: slot ごとに command buffer・fence・`acquired`・`rendered`。`surface->command` は今の slot の command buffer を指す
+   （libGLESv2 の記録の code はそのまま）。frame N は slot `N % 2`。
+2. **present では待たない**: frame N を submit・present した後、**もう一方の slot（frame N−1）の fence** を待ってから返す。CPU は frame N+1 の記録を GPU の frame N の実行と重ねられ、
+   重なりは最大 1 frame（2 枚）。`zegl_frame_begin` が使う slot は前の present の終わりで待った物なので、command buffer を reset してよい。
+3. **flush は今と同じく待つ**（`zegl_frame_flush`: その submit の fence を待つ。`vkQueueSubmit` の fence の signal は同じ queue で先に submit した物を全て含むので、待った後は全部終わり）。
+4. **新しい `zegl_surface_retire(surface)`**: submit 済みの物を全部待つ（両方の slot の fence）。`glFinish`・前の frame を待つ query・sync・map、swapchain の作り直し（今の `vkDeviceWaitIdle` の前）、surface を閉じる時に使う。
+5. **pbuffer は 1 枚のまま**（今と同じく submit してすぐ待つ）: GLX と WS101 の compute の振る舞いを変えない。速さの効果は窓と display 直接だけで要る。
+6. **libGLESv2 に「GPU で終わった frame」を明示**: `state->done`（終わったと分かっている最後の frame の番号）を足す。`frame_done` に「今の frame も終わったか」の引数を足し、
+   present の後（窓・display 直接）は `done = 今の frame − 1`、flush・retire・pbuffer の後は `done = 今の frame` とする。番号の進め方は今と同じ（submit ごとに `state->frame++`）。
+   - in place の書き換え（`buffer.c` 370 行）は `buffer->used <= state->done` の時だけ、それ以外は別の device buffer。map（1937 行）は `used > done` なら retire してから。
+   - `query_finish`・`glClientWaitSync`: `frame <= done` なら終わり、`done < frame < state->frame` なら retire、`frame == state->frame` なら今の通り flush。
+   - `glFinish`: retire。
+7. **`gles_collect` を frame の番号つきに**: garbage・stream の chunk・descriptor pool に「使った frame」を付け、`done` 以下の物だけを壊す・戻す・reset する。
+   stream と descriptor pool は frame ごとの列（最大 2 列）にし、終わった列を次の frame が使う。`set_cache` は frame が変わるたびに消す（今と同じ）。spare の年は今の通り。
+8. depth の image は slot で共有する（同じ queue の上で、render pass の外部の依存（late fragment test の書き込み → 次の early fragment test）で順序を保つ。足りなければ slot ごとに持つ）。
+9. libegl と libGLESv2 の間の callback（`struct zegl_gles`）は内部の口で、公開の API・UAPI・HAL は変えない。
+
+### 効果の目標
+
+- Venus で `egltest --platform=display --frames=300 --delay-ms=0` の 1 frame が今（clear だけで約 125 ms）より短い。WSI 直接の 50 ms に近づくのが目標で、
+  100 ms 以下を合格の目安にする（Venus の 10 ms 刻み（F-064）に注意）。
+
+### 危険と確かめ
+
+- libGLESv2 の「番号が進めば全部終わった」の前提を使う所を全部直す必要がある（grep の結果: `state->frame` との比較が 4 か所、`gles_collect`、`frame++` が 3 か所、`glFinish`）。
+  見落とすと GPU が読んでいる buffer を書き換える（描画の乱れ）。回帰の egl-p008〜p030 と ws101 の venus.sh で確かめる。
+- WS101 と libegl・libglesv2 を共有するので、WS101 の host 試験（`plan/ws101/tests/gles/run.sh`）も build の後に流す。
+- 運用の変更（2026-10-03）により、Venus・実機の試験は実装の担当が流さず T1 に依頼する（上の手順 6〜9 は T1 への依頼の中身として使う）。
 
 ## 完了の条件
 
