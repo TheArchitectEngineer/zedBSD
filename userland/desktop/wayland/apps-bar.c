@@ -16,7 +16,8 @@
  * line to before the desktops' line, in the desktop's own order: the order
  * the applications were opened in, which dragging an icon changes (the
  * 2026-10-05 request; each desktop keeps its order).  The application of
- * the window on top has a dot under its icon; one whose windows are all
+ * the window on top has a short line under its icon (all the icons sit in
+ * one pill, ws099-p034); one whose windows are all
  * minimized is drawn faint (D11).  When there are more applications than
  * room, the last place is "+N", which opens Wiseview.
  *
@@ -71,14 +72,19 @@ zwl_apps_bar_draw(
 	struct zwl_server *server,
 	VkCommandBuffer command)
 {
-	static const float dot[4] = { 0.12f, 0.16f, 0.24f, 0.75f };
+	static const float underline[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
+	static const float fill[4] = { 0.0f, 0.0f, 0.0f, 0.25f };
+	struct glass_shape shape;
 	struct zwl_apps_bar *state;
 	struct apps_view view;
 	struct apps_rect rect;
 	struct zwl_object *surface;
 	const struct zwl_app *app;
 	unsigned slot;
+	unsigned slots;
 	int32_t x;
+	int32_t pill_x;
+	int32_t pill_width;
 	float alpha;
 	float light;
 	int same;
@@ -92,6 +98,23 @@ zwl_apps_bar_draw(
 
 	/* The bar as it is now, in the log when it changed. */
 	log_bar(server, &view);
+
+	/* One pill behind all the icons shown and the "+N" place (ws099-p034). */
+	slots = view.shown;
+	if (view.hidden > 0U)
+		slots++;
+	pill_x = view.left + (ICON_WIDTH - ICON_MARK) / 2 - ICON_PILL_PAD;
+	pill_width = (int32_t)slots * ICON_WIDTH - (ICON_WIDTH - ICON_MARK) + 2 * ICON_PILL_PAD;
+	glass_draw_solid(server, command, (float)pill_x, (float)(ZWL_GLASS_BAR / 2 - 17), (float)pill_width, 34.0f, 17.0f, fill);
+	glass_shape_init(&shape, (float)pill_x, (float)(ZWL_GLASS_BAR / 2 - 17), (float)pill_width, 34.0f);
+	shape.mode = MODE_RING;
+	shape.radius = 17.0f;
+	shape.soft = 1.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.12f;
+	glass_shape_draw(server, command, &shape);
 
 	/* Each application's icon. */
 	for (slot = 0; slot < view.shown; slot++) {
@@ -126,9 +149,9 @@ zwl_apps_bar_draw(
 			alpha = 0.45f;
 		zwl_glass_draw_app_mark(server, command, surface, x + (ICON_WIDTH - ICON_MARK) / 2, ZWL_GLASS_BAR / 2, ICON_MARK, alpha);
 
-		/* A dot under the application of the window on top. */
+		/* A short line under the application of the window on top (ws099-p034). */
 		if ((int)slot == view.current)
-			glass_draw_solid(server, command, (float)(x + ICON_WIDTH / 2 - 2), (float)(ZWL_GLASS_BAR - 6), 4.0f, 4.0f, 2.0f, dot);
+			glass_draw_solid(server, command, (float)(x + ICON_WIDTH / 2 - 4), (float)(ZWL_GLASS_BAR / 2 + 14), 8.0f, 2.5f, 1.25f, underline);
 	}
 
 	/* The "+N" place for the applications without room. */
@@ -1052,15 +1075,15 @@ draw_more(
 	unsigned hidden,
 	float light)
 {
-	static const float pill[4] = { 1.0f, 1.0f, 1.0f, 0.55f };
-	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float pill[4] = { 1.0f, 1.0f, 1.0f, 0.18f };
+	static const float ink[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
 	char text[16];
 	int32_t width;
 
-	/* A light square, lit while pressed. */
+	/* A light rounded square the shape of the tiles, lit while pressed. */
 	if (light > 0.0f)
 		draw_light(server, command, rect, light);
-	glass_draw_solid(server, command, (float)(rect->x + (ICON_WIDTH - ICON_MARK) / 2), (float)(ZWL_GLASS_BAR / 2 - ICON_MARK / 2), (float)ICON_MARK, (float)ICON_MARK, 8.0f, pill);
+	glass_draw_solid(server, command, (float)(rect->x + (ICON_WIDTH - ICON_MARK) / 2), (float)(ZWL_GLASS_BAR / 2 - ICON_MARK / 2), (float)ICON_MARK, (float)ICON_MARK, (float)ICON_MARK * GLASS_ICON_TILE_RADIUS, pill);
 
 	/* The count in its middle. */
 	(void)snprintf(text, sizeof(text), "+%u", hidden);
@@ -1078,10 +1101,10 @@ draw_light(
 {
 	float colour[4];
 
-	/* A soft blue square behind the mark. */
-	colour[0] = 0.25f;
-	colour[1] = 0.52f;
-	colour[2] = 0.98f;
-	colour[3] = 0.22f * strength;
-	glass_draw_solid(server, command, (float)(rect->x + 1), (float)(ZWL_GLASS_BAR / 2 - ICON_WIDTH / 2 + 1), (float)(ICON_WIDTH - 2), (float)(ICON_WIDTH - 2), 10.0f, colour);
+	/* A soft light rounded square behind the mark, the shape of the tiles, inside the pill. */
+	colour[0] = 1.0f;
+	colour[1] = 1.0f;
+	colour[2] = 1.0f;
+	colour[3] = 0.20f * strength;
+	glass_draw_solid(server, command, (float)(rect->x + 2), (float)(ZWL_GLASS_BAR / 2 - ICON_WIDTH / 2 + 2), (float)(ICON_WIDTH - 4), (float)(ICON_WIDTH - 4), (float)(ICON_WIDTH - 4) * GLASS_ICON_TILE_RADIUS, colour);
 }

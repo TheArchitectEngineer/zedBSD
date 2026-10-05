@@ -142,7 +142,7 @@
 /* The indicator in the system bar: its width, the gap after it, its height, top and text's baseline, and how far past it a click still counts. */
 #define IME_INDICATOR_WIDTH		26
 #define IME_INDICATOR_GAP		12
-#define IME_INDICATOR_HEIGHT		20
+#define IME_INDICATOR_HEIGHT		26
 #define IME_INDICATOR_TOP		(ZWL_GLASS_BAR_MIDDLE - IME_INDICATOR_HEIGHT / 2)
 #define IME_INDICATOR_BASELINE		(ZWL_GLASS_BAR_MIDDLE + 5)
 #define IME_INDICATOR_SLOP		4
@@ -957,10 +957,10 @@ zwl_ime_indicator_draw(
 	if (!ime->activated)
 		color[3] *= 0.45f;
 
-	/* A chip behind the label. */
+	/* A round chip behind the label (ws099-p034). */
 	memcpy(back, ink, sizeof(back));
-	back[3] = 0.10f;
-	glass_draw_solid(server, command, (float)x, (float)IME_INDICATOR_TOP, (float)IME_INDICATOR_WIDTH, (float)IME_INDICATOR_HEIGHT, 6.0f, back);
+	back[3] = 0.16f;
+	glass_draw_solid(server, command, (float)x, (float)IME_INDICATOR_TOP, (float)IME_INDICATOR_WIDTH, (float)IME_INDICATOR_HEIGHT, (float)IME_INDICATOR_HEIGHT * 0.5f, back);
 
 	/* The label, centred. */
 	width = glass_text_width(server, SIZE_BAR, ime->label);

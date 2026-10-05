@@ -226,7 +226,7 @@ static const unsigned glass_pixels[GLASS_SIZES] = { 14U, 15U, 20U, 36U, 24U };
 static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 
 /* The applications' tiles' sizes in pixels, smallest first. */
-static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 28U, 48U, 72U };
+static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U };
 
 static int wallpaper_create(struct zwl_server *server, struct zwl_glass *glass);
 static int wallpaper_fill(struct zwl_server *server, struct zwl_glass *glass, const char *path);
@@ -1624,7 +1624,9 @@ glass_shape_draw(
 	 * shader's dark glass (mode -1); shadows, images and the blur's steps
 	 * are left as they are, and so is a shape drawn light.
 	 */
-	if (server->dark != 0 && shape->light == 0U) {
+	if (server->dark != 0 &&
+	    shape->light == 0U &&
+	    server->keep_colours == 0U) {
 		/* The colour of a shape that has one. */
 		if (shape->mode == MODE_GLASS || shape->mode == MODE_SOLID || shape->mode == MODE_RING || shape->mode == MODE_TEXT)
 			glass_dark_color(shape->color, &constants[12]);
@@ -1633,6 +1635,10 @@ glass_shape_draw(
 		if (shape->mode == MODE_GLASS)
 			constants[17] = -1.0f;
 	}
+
+	/* Glass asked to be dark is the dark glass in either appearance, its colour as given (the system bar). */
+	if (shape->dark_glass != 0U && shape->mode == MODE_GLASS)
+		constants[17] = -1.0f;
 
 	/*
 	 * A shape without an image of its own is given the blurred scene under

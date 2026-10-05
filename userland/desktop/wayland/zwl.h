@@ -962,6 +962,14 @@ struct zwl_server {
 	 * keiland_theme_v1 tells the clients (theme.c).
 	 */
 	int32_t dark;
+	/*
+	 * Nonzero while the system bar is drawn (shell.c, ws099-p034): the bar
+	 * is dark glass with light ink in both appearances, so the glass's
+	 * drawing keeps the colours it is given instead of mapping them for the
+	 * dark appearance.  Set and cleared around the bar by the event loop's
+	 * thread only.
+	 */
+	unsigned keep_colours;
 	/* The input method the Languages page chose (ime.method, WS154): 0 none, 1 Japanese, 2 SKK. */
 	int32_t ime_method;
 	/* Whether the language of the compositor's text was read once (language.c, WS158); its catalogs are libkeiland's. */

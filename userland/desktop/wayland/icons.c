@@ -321,6 +321,38 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_BOX, 15.4f, 5.6f, 19.0f, 9.2f, 0.4f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
+	/* Wi-Fi: the dot alone, the arcs about the dot's centre (each arc two side by side, for a wider line). */
+	{
+		{ ICON_DOT, 12.0f, 19.0f, 2.0f, 0.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Wi-Fi: the dot and the nearest arc, the arcs about the dot's centre (each arc two side by side, for a wider line). */
+	{
+		{ ICON_DOT, 12.0f, 19.0f, 2.0f, 0.0f, 0.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 5.6f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 6.3f, 225.0f, 90.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Wi-Fi: the dot and two arcs, the arcs about the dot's centre (each arc two side by side, for a wider line). */
+	{
+		{ ICON_DOT, 12.0f, 19.0f, 2.0f, 0.0f, 0.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 5.6f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 6.3f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 9.6f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 10.3f, 225.0f, 90.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Wi-Fi: the dot and all three arcs, the arcs about the dot's centre (each arc two side by side, for a wider line). */
+	{
+		{ ICON_DOT, 12.0f, 19.0f, 2.0f, 0.0f, 0.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 5.6f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 6.3f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 9.6f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 10.3f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 13.6f, 225.0f, 90.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 19.0f, 14.3f, 225.0f, 90.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
 	/* Files: a folder, its tab on the upper left, a line knocked out under the tab. */
 	{
 		{ ICON_BOX, 3.0f, 5.0f, 11.0f, 9.0f, 1.6f, 0.0f },

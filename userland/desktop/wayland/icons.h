@@ -48,6 +48,14 @@ enum glass_icon {
 	GLASS_ICON_VOLUME_MUTED,
 	/* The system bar's removable media (ws132-p005; the USB trident, the 2026-10-05 user decision). */
 	GLASS_ICON_USB,
+	/*
+	 * The system bar's Wi-Fi (ws099-p034, the 2026-10-06 user decision: the
+	 * fan): the dot alone, then with one, two and three arcs over it.
+	 */
+	GLASS_ICON_WIFI_1,
+	GLASS_ICON_WIFI_2,
+	GLASS_ICON_WIFI_3,
+	GLASS_ICON_WIFI_4,
 	GLASS_ICON_APP_FILES,
 	GLASS_ICON_APP_NOTES,
 	GLASS_ICON_APP_TERMINAL,

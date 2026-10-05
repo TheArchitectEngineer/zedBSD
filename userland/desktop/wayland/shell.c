@@ -144,8 +144,8 @@ static uint32_t fullscreen_leave_eaten;
 #define GLASS_TITLE_START	72
 #define GLASS_TITLE_LOW		8
 
-/* The docked title's buttons in the system bar are further apart. */
-#define BAR_BUTTON_SPACING	46
+/* The docked title's buttons in the system bar, in a pill of their own left of the desktops (ws099-p034). */
+#define BAR_BUTTON_SPACING	34
 
 /*
  * The launcher at the bar's left end: the Kei mark's square, its place and
@@ -166,6 +166,20 @@ static uint32_t fullscreen_leave_eaten;
 #define BAR_PILL_TOP		(ZWL_GLASS_BAR_MIDDLE - 13)
 #define BAR_PILL_HEIGHT		26
 #define BAR_BASELINE		(ZWL_GLASS_BAR_MIDDLE + 5)
+
+/*
+ * The system bar's groups (ws099-p034, the 2026-10-06 user decisions): each
+ * group is a pill this tall, darker than the bar; the status pill's icons
+ * have a slot each, the pill a padding at both ends; the clock's pill pads
+ * its text; the pills keep a gap between them and the output's edge.
+ */
+#define BAR_GROUP_HEIGHT	34
+#define BAR_BUTTONS_HEIGHT	30
+#define BAR_SLOT		34
+#define BAR_STATUS_PAD		8
+#define BAR_CLOCK_PAD		16
+#define BAR_PILL_GAP		10
+#define BAR_EDGE		8
 
 /*
  * The dock animation, a launched window's growing, a double click, and how
@@ -196,11 +210,19 @@ static uint32_t fullscreen_leave_eaten;
 /* A docked body starts this far under the top of the output. */
 #define DOCK_TOP		ZWL_GLASS_DOCK_TOP
 
-/* The virtual desktops: how many, and the size of each picture. */
+/*
+ * The virtual desktops in the middle of the bar (ws099-p034): how many, each
+ * one's slot (its width and the gap after it), the pill's padding, a dot's
+ * size, and the size of the shown desktop's outlined pill.  A dot's
+ * brightness does not change with the windows (the 2026-10-06 user decision).
+ */
 #define DESKTOPS		4
-#define DESKTOP_WIDTH		40
-#define DESKTOP_HEIGHT		20
-#define DESKTOP_GAP		6
+#define DESKTOP_WIDTH		30
+#define DESKTOP_GAP		4
+#define DESKTOPS_PAD		10
+#define DESKTOP_DOT_WIDTH	18
+#define DESKTOP_DOT_HEIGHT	7
+#define DESKTOP_SHOWN_HEIGHT	12
 
 /* The desktops' swipe: how near the edge it starts, how far it moves before it is one, and how long a slide takes. */
 #define DESKTOP_EDGE		16
@@ -306,16 +328,25 @@ struct shell_rect {
 	int32_t height;
 };
 
-/* Where the system bar's parts are (they follow the clock's width). */
+/*
+ * Where the system bar's parts are (ws099-p034): the clock's pill and text at
+ * the right, the status pill left of it with each icon's left edge, the
+ * desktops' pill in the middle (desktops_line: where the room left of it
+ * ends), the docked window's buttons left of that, and on the left the
+ * launcher's line and the docked title (or the applications' pill).
+ */
 struct shell_bar {
 	char clock[64];
 	int32_t clock_x;
+	int32_t clock_pill_x;
+	int32_t clock_pill_width;
+	int32_t status_x;
+	int32_t status_width;
 	int32_t battery_x;
 	int32_t signal_x;
 	int32_t volume_x;
 	int32_t media_x;
 	int32_t ime_x;
-	int32_t status_line;
 	int32_t desktops_x;
 	int32_t desktops_width;
 	int32_t desktops_line;
@@ -346,7 +377,9 @@ static int glass_placed(struct zwl_server *server, struct zwl_object *surface, s
 static void shown_title(const struct zwl_object *surface, char *title, size_t size);
 static void draw_sign(struct zwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
 static void draw_system_bar(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
-static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *line);
+static void draw_bar_strip(struct zwl_server *server, VkCommandBuffer command);
+static void draw_bar_group(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height);
+static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
 static void draw_status(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *ink);
 static void draw_battery(struct zwl_server *server, VkCommandBuffer command, int32_t x, int percent, unsigned charging, const float *ink);
 static void draw_dock_hint(struct zwl_server *server, VkCommandBuffer command);
@@ -2380,8 +2413,10 @@ zwl_glass_tick(
 }
 
 /*
- * Lays out the system bar from the right: the clock, the battery, the
- * signal, a line, the desktops, a line, the docked window's buttons; and
+ * Lays out the system bar (ws099-p034): from the right the clock's pill and
+ * the status pill (the input method's language, the removable media, the
+ * network, the volume and the battery, each in a slot); the desktops' pill
+ * in the middle of the output and the docked window's buttons left of it;
  * from the left the launcher, a line and the docked title.
  */
 static void
@@ -2391,50 +2426,74 @@ bar_layout(
 {
 	struct tm local;
 	time_t now;
+	int32_t slot;
+	int32_t battery_slot;
+	int32_t slots;
+	int ime_width;
+	int media_width;
 	int button;
 
-	/* The date and time at the right edge. */
+	/* The date and time in a pill at the right edge. */
 	now = time(NULL);
 	memset(&local, 0, sizeof(local));
 	(void)localtime_r(&now, &local);
 	bar->clock[0] = '\0';
 	zwl_language_date(&local, ZWL_LANGUAGE_DATE_SHORT, bar->clock, sizeof(bar->clock));
-	bar->clock_x = (int32_t)server->width - 16 - glass_text_width(server, SIZE_BAR, bar->clock);
+	bar->clock_pill_width = glass_text_width(server, SIZE_BAR, bar->clock) + 2 * BAR_CLOCK_PAD;
+	bar->clock_pill_x = (int32_t)server->width - BAR_EDGE - bar->clock_pill_width;
+	bar->clock_x = bar->clock_pill_x + BAR_CLOCK_PAD;
 
 	/*
-	 * The battery and the signal left of it, and a line.  A machine
-	 * without a battery leaves no room for it (the 2026-10-05 user
-	 * decision): the signal comes next to the clock.
+	 * The status pill's slots: the network and the volume always, the input
+	 * method's language and the removable media while they show, and the
+	 * battery on a machine that has one (the 2026-10-05 user decision), a
+	 * little wider while it charges for the "+".
 	 */
-	bar->battery_x = bar->clock_x - 44;
-	bar->signal_x = bar->battery_x - 36;
-	if (server->power.percent < 0) {
-		bar->battery_x = bar->clock_x;
-		bar->signal_x = bar->clock_x - 36;
+	ime_width = zwl_ime_indicator_width(server);
+	media_width = zwl_media_width();
+	slots = 2 * BAR_SLOT;
+	if (ime_width > 0)
+		slots += BAR_SLOT;
+	if (media_width > 0)
+		slots += BAR_SLOT;
+	battery_slot = 0;
+	if (server->power.percent >= 0) {
+		battery_slot = BAR_SLOT;
+		if (server->power.charging != 0U)
+			battery_slot += 10;
 	}
 
-	/* The volume left of the signal. */
-	bar->volume_x = bar->signal_x - 34;
+	/* The pill: the slots and a padding at both ends, left of the clock's pill. */
+	slots += battery_slot;
+	bar->status_width = slots + 2 * BAR_STATUS_PAD;
+	bar->status_x = bar->clock_pill_x - BAR_PILL_GAP - bar->status_width;
 
-	/* The removable media's icon left of the volume, while a new volume is there (media.c, ws132-p004). */
-	bar->media_x = bar->volume_x - zwl_media_width();
+	/* Each icon centred in its slot, from the left: the language, the media, the network, the volume, the battery. */
+	slot = bar->status_x + BAR_STATUS_PAD;
+	bar->ime_x = slot + (BAR_SLOT - 26) / 2;
+	if (ime_width > 0)
+		slot += BAR_SLOT;
+	bar->media_x = slot + (BAR_SLOT - 20) / 2;
+	if (media_width > 0)
+		slot += BAR_SLOT;
+	bar->signal_x = slot + (BAR_SLOT - 20) / 2;
+	slot += BAR_SLOT;
+	bar->volume_x = slot + (BAR_SLOT - 20) / 2;
+	slot += BAR_SLOT;
+	bar->battery_x = slot + (BAR_SLOT - 26) / 2;
 
-	/* The input method's language left of that, when there is an input method (input-method.c). */
-	bar->ime_x = bar->media_x - zwl_ime_indicator_width(server);
-	bar->status_line = bar->ime_x - 16;
+	/* The desktops' pill in the middle of the output; the room left of it ends a gap before it. */
+	bar->desktops_width = 2 * DESKTOPS_PAD + DESKTOPS * DESKTOP_WIDTH + (DESKTOPS - 1) * DESKTOP_GAP;
+	bar->desktops_x = ((int32_t)server->width - bar->desktops_width) / 2;
+	bar->desktops_line = bar->desktops_x - 12;
 
-	/* The desktops, and a line. */
-	bar->desktops_width = DESKTOPS * DESKTOP_WIDTH + (DESKTOPS - 1) * DESKTOP_GAP + 12;
-	bar->desktops_x = bar->status_line - 16 - bar->desktops_width;
-	bar->desktops_line = bar->desktops_x - 16;
-
-	/* The docked window's buttons, close nearest the line. */
+	/* The docked window's buttons, close nearest the desktops. */
 	for (button = 0; button < BUTTON_COUNT; button++)
 		bar->buttons[button] = bar->desktops_line - 30 - button * BAR_BUTTON_SPACING;
 
 	/* On the left, after the launcher, a line and the docked title (ws035-p117: no word after the mark). */
-	bar->menu_line = BAR_LAUNCHER_X + BAR_LAUNCHER_SIZE + 12;
-	bar->title_x = bar->menu_line + 17;
+	bar->menu_line = BAR_LAUNCHER_X + BAR_LAUNCHER_SIZE + 10;
+	bar->title_x = bar->menu_line + 14;
 }
 
 /*
@@ -2970,9 +3029,11 @@ draw_picture_mark(
 
 /*
  * Finds what an application's cut-out picture shows on the glass of the
- * bar, the title bars, Wiseview and Alt+Tab (BUG-237): in the light
- * appearance that glass is near white, so the picture shows the blurred
- * scene the glass frosts; in the dark one the dark glass shows through.
+ * title bars, Wiseview and Alt+Tab (BUG-237): in the light appearance that
+ * glass is near white, so the picture shows the blurred scene the glass
+ * frosts; the dark appearance's glass and the system bar's dark glass in
+ * either appearance (ws099-p034, drawn while keep_colours is set) show
+ * through themselves.
  */
 static enum glass_hole
 mark_hole(
@@ -2980,6 +3041,10 @@ mark_hole(
 {
 	/* Dark glass reads as a hole by itself. */
 	if (server->dark != 0)
+		return GLASS_HOLE_GROUND;
+
+	/* So does the system bar's. */
+	if (server->keep_colours != 0U)
 		return GLASS_HOLE_GROUND;
 
 	/* Light glass: a window onto the scene. */
@@ -3219,9 +3284,12 @@ draw_sign(
 }
 
 /*
- * Draws the system bar: a glass strip along the top (a little whiter while a
- * window is docked), the launcher, the docked window's title and
- * buttons, the desktops, and the status at the right.
+ * Draws the system bar (ws099-p034, the 2026-10-06 user decisions): dark
+ * glass along the top in both appearances, a little lighter in its middle;
+ * the launcher and a line; the applications' pill, or the docked window's
+ * title and its buttons' pill; the desktops' pill in the middle; the status
+ * pill and the clock's pill at the right.  Its ink is light; the glass's
+ * colours are kept from the dark appearance's mapping while it is drawn.
  */
 static void
 draw_system_bar(
@@ -3229,21 +3297,20 @@ draw_system_bar(
 	VkCommandBuffer command,
 	const struct shell_bar *bar)
 {
-	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float edge[4] = { 1.0f, 1.0f, 1.0f, 0.55f };
-	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.18f };
+	static const float ink[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
+	static const float line[4] = { 1.0f, 1.0f, 1.0f, 0.18f };
 	struct zwl_menu_area area;
 	struct glass_shape shape;
 	struct zwl_object *docked;
 	int32_t available;
 	int32_t limit;
 	int32_t end;
+	int32_t left;
 	float label[4];
 	float progress;
 	float home;
 	int button;
 	int over;
-	int icons;
 
 	/* The docked window, if one is on top and not moving (not while App Home shows). */
 	docked = docked_window(server);
@@ -3251,19 +3318,11 @@ draw_system_bar(
 	if (home > 0.0f)
 		docked = NULL;
 
-	/* The strip, with a light line under it; whiter while a window is docked, or would dock. */
-	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)ZWL_GLASS_BAR);
-	shape.mode = MODE_GLASS;
-	shape.color[0] = 1.0f;
-	shape.color[1] = 1.0f;
-	shape.color[2] = 1.0f;
-	shape.color[3] = 0.55f;
-	if (docked != NULL)
-		shape.color[3] = 0.63f;
-	if (server->drag != NULL && server->pointer_y < ZWL_GLASS_BAR)
-		shape.color[3] = 0.75f;
-	glass_shape_draw(server, command, &shape);
-	glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), (float)server->width, 1.0f, 0.0f, edge);
+	/* The bar keeps its own colours in the dark appearance (light ink on dark glass in both). */
+	server->keep_colours = 1U;
+
+	/* The strip. */
+	draw_bar_strip(server, command);
 
 	/* The launcher: the Kei mark (ws035-p117) in the bar's deeper colours (ws035-p118). */
 	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, GLASS_MARK_BAR, 1.0f);
@@ -3281,75 +3340,158 @@ draw_system_bar(
 		glass_shape_draw(server, command, &shape);
 	}
 
-	/* The docked window: a line, its mark, title and menu, and its buttons with restore for maximize. */
-	if (docked != NULL) {
-		glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
+	/* The line after the launcher. */
+	glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
 
-		/* The title shares the room before the buttons with the window's menu. */
-		available = bar->buttons[BUTTON_MINIMIZE] - 24 - bar->title_x - 30;
+	/*
+	 * The docked window: its mark and title in a pill, its menu or controls
+	 * after it, and its buttons (restore for maximize) in a pill of their
+	 * own left of the desktops.
+	 */
+	if (docked != NULL) {
+		/* The title shares the room before the buttons' pill with the window's menu. */
+		left = bar->buttons[BUTTON_MINIMIZE] - BAR_SLOT / 2 - 3;
+		available = left - 12 - bar->title_x - 30;
 		limit = zwl_titlebar_title_limit(server, docked, available);
-		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, dark);
+		end = title_end(server, docked, limit);
+		draw_bar_group(server, command, bar->title_x - 7, 30 + end + 7 + 12, BAR_GROUP_HEIGHT);
+		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, ink);
 
 		/* The presentation after the title: its menu or its controls (titlebar-shell.c). */
-		end = title_end(server, docked, limit);
-		area.x = bar->title_x + 30 + end + 18;
+		area.x = bar->title_x + 30 + end + 24;
 		area.top = 0;
 		area.right = bar->title_x + 30 + available;
 		area.height = ZWL_GLASS_BAR;
 		area.origin = 0;
-		zwl_titlebar_draw(server, command, docked, 1, &area, dark, 1.0f);
+		zwl_titlebar_draw(server, command, docked, 1, &area, ink, 1.0f);
 
-		/* The buttons, the one under the pointer lit. */
+		/* The buttons' pill, and the buttons, the one under the pointer lit. */
+		draw_bar_group(server, command, left, bar->buttons[BUTTON_CLOSE] + BAR_SLOT / 2 + 3 - left, BAR_BUTTONS_HEIGHT);
 		over = bar_button_at(bar, server->pointer_x, server->pointer_y);
 		for (button = 0; button < BUTTON_COUNT; button++)
-			draw_sign(server, command, button, bar->buttons[button], ZWL_GLASS_BAR / 2, 1, over == button, 1.0f, dark);
+			draw_sign(server, command, button, bar->buttons[button], ZWL_GLASS_BAR / 2, 1, over == button, 1.0f, ink);
 	}
 
 	/* Wiseview's name where a docked title would be. */
 	progress = wiseview_progress(server);
 	if (progress > 0.0f) {
-		memcpy(label, dark, sizeof(label));
+		memcpy(label, ink, sizeof(label));
 		label[3] = progress;
-		glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
 		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, BAR_BASELINE + 1, kl_tr("Wiseview"), 200, label);
 	}
 
-	/* Without a docked title, the applications' icons in its place after a line (apps-bar.c, ws142-p004). */
-	if (docked == NULL && progress <= 0.0f) {
-		icons = zwl_apps_bar_draw(server, command);
-		if (icons)
-			glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
-	}
+	/* Without a docked title, the applications' pill in its place (apps-bar.c, ws142-p004). */
+	if (docked == NULL && progress <= 0.0f)
+		(void)zwl_apps_bar_draw(server, command);
 
 	/* The desktops, then the status. */
-	draw_desktops(server, command, bar, line);
-	draw_status(server, command, bar, dark);
+	draw_desktops(server, command, bar);
+	draw_status(server, command, bar, ink);
+
+	/* The rest of the frame is drawn in the appearance's colours again. */
+	server->keep_colours = 0U;
 }
 
 /*
- * Draws the virtual desktops: a light pill with a small picture of the
- * wallpaper for each (the others paler, a dot under those with windows),
- * the one shown outlined, and lines on both sides.
+ * Draws the bar's strip: dark glass over the blurred scene (the dark
+ * appearance's dark glass, which darkens a bright wallpaper further so the
+ * light ink keeps its contrast), lighter in a broad band about the middle,
+ * a hairline along its bottom; lighter still while a dragged window is over
+ * it (it would dock).
+ */
+static void
+draw_bar_strip(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float hairline[4] = { 1.0f, 1.0f, 1.0f, 0.09f };
+	struct glass_shape shape;
+	float width;
+
+	/* The dark glass, a little bluish. */
+	width = (float)server->width;
+	glass_shape_init(&shape, 0.0f, 0.0f, width, (float)ZWL_GLASS_BAR);
+	shape.mode = MODE_GLASS;
+	shape.dark_glass = 1U;
+	shape.soft = 1.0f;
+	shape.color[0] = 0.07f;
+	shape.color[1] = 0.094f;
+	shape.color[2] = 0.14f;
+	shape.color[3] = 0.64f;
+	glass_shape_draw(server, command, &shape);
+
+	/*
+	 * The lighter middle: a soft white band, whole over the middle third and
+	 * fading out over a third of the width on each side, clipped to the bar.
+	 */
+	glass_shape_init(&shape, width / 3.0f, -200.0f, width / 3.0f, (float)ZWL_GLASS_BAR + 400.0f);
+	shape.quad[0] = 0.0f;
+	shape.quad[1] = 0.0f;
+	shape.quad[2] = width;
+	shape.quad[3] = (float)ZWL_GLASS_BAR;
+	shape.mode = MODE_SHADOW;
+	shape.soft = width / 3.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.07f;
+	if (server->drag != NULL && server->pointer_y < ZWL_GLASS_BAR)
+		shape.color[3] = 0.16f;
+	glass_shape_draw(server, command, &shape);
+
+	/* The hairline. */
+	glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), width, 1.0f, 0.0f, hairline);
+}
+
+/* Draws one of the bar's group pills: darker than the bar, with a faint light edge, centred on the bar's middle. */
+static void
+draw_bar_group(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	int32_t x,
+	int32_t width,
+	int32_t height)
+{
+	static const float fill[4] = { 0.0f, 0.0f, 0.0f, 0.25f };
+	struct glass_shape shape;
+	float top;
+
+	/* The pill. */
+	top = (float)(ZWL_GLASS_BAR_MIDDLE - height / 2);
+	glass_draw_solid(server, command, (float)x, top, (float)width, (float)height, (float)height * 0.5f, fill);
+
+	/* Its edge. */
+	glass_shape_init(&shape, (float)x, top, (float)width, (float)height);
+	shape.mode = MODE_RING;
+	shape.radius = (float)height * 0.5f;
+	shape.soft = 1.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.12f;
+	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * Draws the virtual desktops in the middle of the bar: a pill with a dot
+ * for each desktop, the shown one a larger outlined pill; Wiseview brings
+ * the pill forward with a blue edge.
  */
 static void
 draw_desktops(
 	struct zwl_server *server,
 	VkCommandBuffer command,
-	const struct shell_bar *bar,
-	const float *line)
+	const struct shell_bar *bar)
 {
-	static const float pill[4] = { 1.0f, 1.0f, 1.0f, 0.45f };
+	static const float dot[4] = { 1.0f, 1.0f, 1.0f, 0.42f };
 	static const float current[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	struct glass_shape shape;
 	float progress;
-	unsigned windows;
 	int32_t x;
 	int desktop;
 
-	/* The lines, and the pill. */
-	glass_draw_solid(server, command, (float)bar->desktops_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
-	glass_draw_solid(server, command, (float)bar->status_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
-	glass_draw_solid(server, command, (float)bar->desktops_x, (float)BAR_PILL_TOP, (float)bar->desktops_width, (float)BAR_PILL_HEIGHT, 10.0f, pill);
+	/* The pill. */
+	draw_bar_group(server, command, bar->desktops_x, bar->desktops_width, BAR_PILL_HEIGHT);
 
 	/* Wiseview brings the desktops forward with a blue edge. */
 	progress = wiseview_progress(server);
@@ -3360,55 +3502,43 @@ draw_desktops(
 		shape.quad[2] += 2.0f;
 		shape.quad[3] += 2.0f;
 		shape.mode = MODE_RING;
-		shape.radius = 10.0f;
+		shape.radius = (float)BAR_PILL_HEIGHT * 0.5f;
 		shape.soft = 1.5f;
 		memcpy(shape.color, current, sizeof(shape.color));
-		shape.opacity = progress * 0.6f;
+		shape.opacity = progress * 0.8f;
 		glass_shape_draw(server, command, &shape);
 	}
 
-	/* Where the pictures are, once. */
+	/* Where the slots are, once (the tests click a desktop's slot). */
 	if (!shell_desktops_logged) {
 		shell_desktops_logged = 1U;
-		printf("ZWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + 6, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
+		printf("ZWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + DESKTOPS_PAD, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
 	}
 
-	/* Each desktop's picture; the others are paler. */
+	/* Each desktop's slot: a dot, or for the one shown an outlined pill as wide as the slot. */
 	for (desktop = 0; desktop < DESKTOPS; desktop++) {
-		x = bar->desktops_x + 6 + desktop * (DESKTOP_WIDTH + DESKTOP_GAP);
-		glass_shape_init(&shape, (float)x, (float)((ZWL_GLASS_BAR - DESKTOP_HEIGHT) / 2), (float)DESKTOP_WIDTH, (float)DESKTOP_HEIGHT);
-		shape.mode = MODE_IMAGE;
-		shape.opaque = 1.0f;
-		shape.radius = 4.0f;
-		shape.set = glass_wallpaper_set(server);
-		if (desktop != (int)server->desktop)
-			shape.opacity = 0.45f;
-		glass_shape_draw(server, command, &shape);
-
-		/* A desktop with windows has a small dot under its picture. */
-		windows = desktop_windows(server, (unsigned)desktop);
-		if (windows != 0U)
-			glass_draw_solid(server, command, (float)(x + DESKTOP_WIDTH / 2 - 2), (float)(ZWL_GLASS_BAR_MIDDLE + DESKTOP_HEIGHT / 2 + 2), 4.0f, 3.0f, 1.5f, current);
-
-		/* The current one is outlined in blue. */
+		x = bar->desktops_x + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP);
 		if (desktop == (int)server->desktop) {
-			glass_shape_init(&shape, (float)(x - 2), (float)((ZWL_GLASS_BAR - DESKTOP_HEIGHT) / 2 - 2), (float)(DESKTOP_WIDTH + 4), (float)(DESKTOP_HEIGHT + 4));
-			shape.quad[0] -= 1.0f;
-			shape.quad[1] -= 1.0f;
-			shape.quad[2] += 2.0f;
-			shape.quad[3] += 2.0f;
+			glass_shape_init(&shape, (float)x, (float)(ZWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
 			shape.mode = MODE_RING;
-			shape.radius = 6.0f;
+			shape.radius = (float)DESKTOP_SHOWN_HEIGHT * 0.5f;
 			shape.soft = 1.6f;
-			memcpy(shape.color, current, sizeof(shape.color));
+			shape.color[0] = 1.0f;
+			shape.color[1] = 1.0f;
+			shape.color[2] = 1.0f;
+			shape.color[3] = 0.95f;
 			glass_shape_draw(server, command, &shape);
+		} else {
+			glass_draw_solid(server, command, (float)(x + (DESKTOP_WIDTH - DESKTOP_DOT_WIDTH) / 2), (float)ZWL_GLASS_BAR_MIDDLE - (float)DESKTOP_DOT_HEIGHT * 0.5f,
+					 (float)DESKTOP_DOT_WIDTH, (float)DESKTOP_DOT_HEIGHT, (float)DESKTOP_DOT_HEIGHT * 0.5f, dot);
 		}
 	}
 }
 
 /*
- * Draws the status at the right edge: the network (network.c), the battery
- * (when the machine has one) and the date and time.
+ * Draws the status at the right: the status pill (the input method's
+ * language, the removable media, the network, the volume and the battery
+ * when the machine has one) and the clock's pill.
  */
 static void
 draw_status(
@@ -3417,6 +3547,10 @@ draw_status(
 	const struct shell_bar *bar,
 	const float *ink)
 {
+	/* The two pills. */
+	draw_bar_group(server, command, bar->status_x, bar->status_width, BAR_GROUP_HEIGHT);
+	draw_bar_group(server, command, bar->clock_pill_x, bar->clock_pill_width, BAR_GROUP_HEIGHT);
+
 	/* The date and time. */
 	glass_draw_text(server, command, SIZE_BAR, bar->clock_x, BAR_BASELINE, bar->clock, 400, ink);
 
@@ -3424,7 +3558,7 @@ draw_status(
 	if (server->power.percent >= 0)
 		draw_battery(server, command, bar->battery_x, server->power.percent, server->power.charging, ink);
 
-	/* The network: Wi-Fi's bars or the wired tree, which opens its menu (network.c). */
+	/* The network: Wi-Fi's fan or the wired tree, which opens its menu (network.c). */
 	zwl_network_draw_icon(server, command, bar->signal_x, ink);
 
 	/* The volume's speaker, which opens its popup (volume.c, ws100-p004). */
@@ -4676,7 +4810,7 @@ bar_press(
 
 	/* A desktop's picture switches to it. */
 	bar_layout(server, &bar);
-	picture = server->pointer_x - (bar.desktops_x + 6);
+	picture = server->pointer_x - (bar.desktops_x + DESKTOPS_PAD);
 	if (picture >= 0 && picture < DESKTOPS * (DESKTOP_WIDTH + DESKTOP_GAP)) {
 		desktop_turn(server, picture / (DESKTOP_WIDTH + DESKTOP_GAP), "bar");
 		return 1;
@@ -5692,9 +5826,9 @@ zwl_glass_apps_room(
 	    server->wiseview_moving)
 		return 0;
 
-	/* The span. */
+	/* The span: the applications' pill starts just after the launcher's line, and ends a gap before the desktops. */
 	bar_layout(server, &bar);
-	*left = bar.title_x - 4;
+	*left = bar.title_x - 2;
 	*right = bar.desktops_line - 16;
 
 	/* Succeeded: there is room. */
@@ -6395,7 +6529,7 @@ desktop_picture_at(
 	if (y < 0 || y >= ZWL_GLASS_BAR)
 		return -1;
 	bar_layout(server, &bar);
-	offset = x - (bar.desktops_x + 6);
+	offset = x - (bar.desktops_x + DESKTOPS_PAD);
 	if (offset < 0 || offset >= DESKTOPS * (DESKTOP_WIDTH + DESKTOP_GAP))
 		return -1;
 

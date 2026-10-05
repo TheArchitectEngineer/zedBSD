@@ -283,6 +283,7 @@ static unsigned network_switch_on(void);
 static void network_switch_settle(struct zwl_server *server);
 static void network_log_layout(void);
 static void network_draw_bars(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t bottom, unsigned lit, const float *ink, float faint);
+static void network_draw_fan(struct zwl_server *server, VkCommandBuffer command, int32_t x, unsigned lit, const float *ink, float faint);
 static void network_draw_wired(struct zwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
 static void network_draw_row(struct zwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, unsigned over);
 static void network_draw_check(struct zwl_server *server, VkCommandBuffer command, int32_t left, int32_t middle, int32_t baseline, const float *ink);
@@ -422,7 +423,7 @@ zwl_network_draw_icon(
 	int differs;
 
 	/* Where a click opens the menu (a little larger than the drawing). */
-	network_view.icon_x = x - 6;
+	network_view.icon_x = x - 5;
 	network_view.icon_y = 3;
 	network_view.icon_width = 30;
 	network_view.icon_height = ZWL_GLASS_BAR - 6;
@@ -442,7 +443,7 @@ zwl_network_draw_icon(
 		return;
 	}
 
-	/* A connected Wi-Fi is as many dark bars as its signal is strong (all without a scan of it). */
+	/* A connected Wi-Fi's fan is lit as far as its signal is strong (all without a scan of it). */
 	if (state->connected && state->kind == KL_BACKEND_NETWORK_WIFI) {
 		lit = 4;
 		for (index = 0; index < network_view.scan_count; index++) {
@@ -451,15 +452,15 @@ zwl_network_draw_icon(
 				lit = network_strength(network_view.scan[index].rssi);
 		}
 
-		/* The bars. */
-		network_draw_bars(server, command, x, ZWL_GLASS_BAR_MIDDLE + 6, lit, ink, 0.25f);
+		/* The fan. */
+		network_draw_fan(server, command, x, lit, ink, 0.30f);
 		return;
 	}
 
-	/* Anything else is pale bars; Wi-Fi that is off is struck through. */
-	network_draw_bars(server, command, x, ZWL_GLASS_BAR_MIDDLE + 6, 0, ink, 0.30f);
+	/* Anything else is a pale fan; Wi-Fi that is off is struck through. */
+	network_draw_fan(server, command, x, 0, ink, 0.30f);
 	if (state->reachable && state->wifi == KL_BACKEND_WIFI_OFF)
-		glass_draw_solid(server, command, (float)(x - 2), (float)(ZWL_GLASS_BAR_MIDDLE - 2), 22.0f, 2.0f, 1.0f, ink);
+		glass_draw_solid(server, command, (float)(x - 1), (float)(ZWL_GLASS_BAR_MIDDLE - 1), 22.0f, 2.0f, 1.0f, ink);
 }
 
 /*
@@ -1356,6 +1357,38 @@ network_log_layout(
 			    row->height - 2 * NETWORK_DISCONNECT_INSET, row->text);
 		}
 	}
+}
+
+/*
+ * Draws the bar's Wi-Fi fan (ws099-p034) in a 20-pixel square from x: the
+ * whole fan faint, then its first lit parts (1: the dot, up to 4: the dot
+ * and its three arcs) in the ink over it.  The dot and the arcs share one
+ * centre in icons.c, so the dot is under the middle of the arcs.
+ */
+static void
+network_draw_fan(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	int32_t x,
+	unsigned lit,
+	const float *ink,
+	float faint)
+{
+	float color[4];
+
+	/* The whole fan, faint. */
+	memcpy(color, ink, sizeof(color));
+	color[3] = ink[3] * faint;
+	glass_draw_icon(server, command, GLASS_ICON_WIFI_4, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, color);
+
+	/* Nothing lit. */
+	if (lit == 0U)
+		return;
+
+	/* The lit parts over it. */
+	if (lit > 4U)
+		lit = 4U;
+	glass_draw_icon(server, command, GLASS_ICON_WIFI_1 + lit - 1U, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, ink);
 }
 
 /* Draws four rising bars from x, the first lit ones in the ink and the rest faint. */
