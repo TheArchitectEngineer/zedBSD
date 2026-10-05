@@ -126,6 +126,13 @@
 /* Set while window_lower sends a sheet under the other windows, before its parent (ws090-p014). */
 static unsigned sheet_lowering;
 
+/*
+ * The key whose press took a window out of fullscreen (BUG-194), so that
+ * its release is not sent to the window either; 0 when none waits for its
+ * release.  Only the event loop's thread touches it.
+ */
+static uint32_t fullscreen_leave_eaten;
+
 /* How much narrower than its parent's body a sheet is at least asked to be on each side, and the narrowest it is asked to be. */
 #define SHEET_MARGIN		24
 #define SHEET_NARROWEST		320
@@ -205,6 +212,15 @@ static unsigned sheet_lowering;
 
 /* The Super (Windows) key's bit, for Super+Tab (Wiseview). */
 #define MODIFIER_SUPER		0x40U
+
+/*
+ * The key that takes a fullscreen window back to a window (BUG-194: the
+ * compositor, not the application, owns the way out of fullscreen), and the
+ * modifiers that keep it from being that key.  F11 until the user chooses
+ * (Super+Down and a long Esc are the other proposals).
+ */
+#define FULLSCREEN_LEAVE_KEY	87U
+#define MODIFIERS_ANY		(1U | 4U | 8U | 0x40U)
 
 /* App Home's corner, where its gesture starts over a fullscreen window (the same as home.c's). */
 #define HOME_EDGE_CORNER	28
@@ -375,6 +391,7 @@ static int gesture_may_start(struct zwl_server *server);
 static const char *gesture_name(uint32_t gesture);
 static const char *gesture_phase_name(uint32_t phase);
 static int wiseview_showing(struct zwl_server *server);
+static int fullscreen_leave_key(struct zwl_server *server, uint32_t key, uint32_t state);
 static void wiseview_open_key(struct zwl_server *server);
 static void wiseview_key(struct zwl_server *server, uint32_t key, uint32_t state);
 static void wiseview_close_key(struct zwl_server *server);
@@ -2220,6 +2237,11 @@ zwl_glass_key(
 
 	/* Super+Alt with a letter: the editing operations and the previous application (edit.c, ws102-p017). */
 	taken = zwl_edit_key(server, key, state);
+	if (taken)
+		return 1;
+
+	/* The way out of fullscreen, the compositor's own (BUG-194). */
+	taken = fullscreen_leave_key(server, key, state);
 	if (taken)
 		return 1;
 
@@ -6519,5 +6541,47 @@ glass_motion_take(
 		surface->y = lowest;
 
 	/* Succeeded: the motion was zdesktop's. */
+	return 1;
+}
+
+/*
+ * Takes the focused window out of fullscreen with F11 alone (BUG-194): the
+ * compositor gives it its window's place and size back whether the
+ * application answers or not.  A window that is not fullscreen leaves F11
+ * to its menus and to itself (Terminal's Fullscreen item).  Returns 1 when
+ * the key was taken, its release with it.
+ */
+static int
+fullscreen_leave_key(
+	struct zwl_server *server,
+	uint32_t key,
+	uint32_t state)
+{
+	struct zwl_object *surface;
+	int error;
+
+	/* The release of the press taken goes no further. */
+	if (state == 0U) {
+		if (fullscreen_leave_eaten == 0U || key != fullscreen_leave_eaten)
+			return 0;
+		fullscreen_leave_eaten = 0U;
+		return 1;
+	}
+
+	/* F11 alone. */
+	if (key != FULLSCREEN_LEAVE_KEY || (server->modifiers & MODIFIERS_ANY) != 0U)
+		return 0;
+
+	/* The focused window, when it is fullscreen. */
+	surface = server->focus;
+	if (surface == NULL || surface->dead || !surface->fullscreen)
+		return 0;
+
+	/* A window again, told so (a refused configure leaves the window as the compositor draws it). */
+	error = zwl_window_leave_fullscreen(surface);
+	fullscreen_leave_eaten = key;
+	printf("ZWL GLASS fullscreen-leave surface=%u via=f11 error=%d\n", surface->id, error);
+
+	/* Succeeded: the key was the compositor's. */
 	return 1;
 }
