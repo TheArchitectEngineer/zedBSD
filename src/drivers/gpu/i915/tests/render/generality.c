@@ -53,7 +53,21 @@
  *  - POINT: a point list of several sizes written by gl_PointSize, each
  *    pixel its gl_PointCoord;
  *  - VFORMAT: vertex attributes of 8-, 16- and 10-bit formats, and a flat
- *    output array copied into a local one and indexed.
+ *    output array copied into a local one and indexed;
+ *
+ * and, when the build defines I915_VKE2_BOUNDARY (the test set "vke2" does,
+ * platform/amd64/vmunix.mk), the compiler's boundaries (ws031-p024):
+ *
+ *  - EDGE: integer operations over boundary values (0, 1, -1, the limits of
+ *    8, 16 and 32 bits, INT_MIN), a marker where SPIR-V leaves a division
+ *    undefined;
+ *  - KILLOOP: a discard inside a loop with per-pixel trip counts, whole
+ *    dispatches discarded early;
+ *  - NOINPUT: a fragment shader that reads no input behind a vertex
+ *    shader that writes no varying (no setup attribute);
+ *  - UNDEF (last): divisions by zero, INT_MIN / -1 and shifts by 32 or more,
+ *    which may give any value but must not stop the GPU; the even rows are
+ *    judged, the odd rows' values are logged.
  *
  * Each step logs "VKE2-<name> PASS" or "FAIL", then the thread logs the
  * verdict and closes the session.
@@ -196,6 +210,9 @@
 #define I915_VKE2_COMPARE_FLOAT		1U
 #define I915_VKE2_COMPARE_LOOSE		2U
 
+/* Even rows bit for bit, odd rows only logged (a value SPIR-V leaves undefined, ws031-p024). */
+#define I915_VKE2_COMPARE_GUARD		3U
+
 /* The pipelines, in the order of their identities. */
 #define I915_VKE2_PIPE_MATRIX		0U
 #define I915_VKE2_PIPE_INT		1U
@@ -214,7 +231,15 @@
 #define I915_VKE2_PIPE_PERSP		14U
 #define I915_VKE2_PIPE_POINT		15U
 #define I915_VKE2_PIPE_VFORMAT		16U
+#if defined(I915_VKE2_BOUNDARY)
+#define I915_VKE2_PIPE_EDGE		17U
+#define I915_VKE2_PIPE_UNDEF		18U
+#define I915_VKE2_PIPE_KILLOOP		19U
+#define I915_VKE2_PIPE_NOINPUT		20U
+#define I915_VKE2_PIPELINES		21U
+#else
 #define I915_VKE2_PIPELINES		17U
+#endif
 
 /* The shader modules. */
 #define I915_VKE2_SHADER_QUAD_VERT	0U
@@ -241,8 +266,19 @@
 #define I915_VKE2_SHADER_POINT_FRAG	21U
 #define I915_VKE2_SHADER_VFORMAT_VERT	22U
 #define I915_VKE2_SHADER_VFORMAT_FRAG	23U
+#if defined(I915_VKE2_BOUNDARY)
+#define I915_VKE2_SHADER_EDGE_FRAG	24U
+#define I915_VKE2_SHADER_UNDEF_FRAG	25U
+#define I915_VKE2_SHADER_KILLOOP_FRAG	26U
+#define I915_VKE2_SHADER_NOINPUT_VERT	27U
+#define I915_VKE2_SHADER_NOINPUT_FRAG	28U
+#define I915_VKE2_SHADERS		29U
+#else
 #define I915_VKE2_SHADERS		24U
+#endif
 
+/* The boundary steps' data is in the generated file only when I915_VKE2_BOUNDARY is defined (the test set "vke2"). */
+#define I915_VKE2_IN_KERNEL 1
 #include "../fixtures/generality-shaders-gen.inc"
 
 /*
@@ -428,6 +464,15 @@ i915_vke2_thread(
 	i915_vke2_step_draw(x, "PERSP", I915_VKE2_PIPE_PERSP, I915_VKE2_ID_QUADS, I915_VKE2_PERSP_VERTEX, I915_VKE2_COMPARE_LOOSE);
 	i915_vke2_step_points(x);
 	i915_vke2_step_draw(x, "VFORMAT", I915_VKE2_PIPE_VFORMAT, I915_VKE2_ID_FORMATS, 0U, I915_VKE2_COMPARE_EXACT);
+#if defined(I915_VKE2_BOUNDARY)
+	/* The compiler's boundaries (ws031-p024). */
+	i915_vke2_step_draw(x, "EDGE", I915_VKE2_PIPE_EDGE, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
+	i915_vke2_step_draw(x, "KILLOOP", I915_VKE2_PIPE_KILLOOP, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
+	i915_vke2_step_draw(x, "NOINPUT", I915_VKE2_PIPE_NOINPUT, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
+
+	/* Last, so that a GPU an undefined division stopped stops no other step. */
+	i915_vke2_step_draw(x, "UNDEF", I915_VKE2_PIPE_UNDEF, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_GUARD);
+#endif
 
 	/* Gives everything back and says how the steps went. */
 	i915_vke2_teardown(x);
@@ -627,6 +672,13 @@ i915_vke2_objects_init(
 		{ i915_vke2_point_frag, sizeof(i915_vke2_point_frag) },
 		{ i915_vke2_vformat_vert, sizeof(i915_vke2_vformat_vert) },
 		{ i915_vke2_vformat_frag, sizeof(i915_vke2_vformat_frag) },
+#if defined(I915_VKE2_BOUNDARY)
+		{ i915_vke2_edge_frag, sizeof(i915_vke2_edge_frag) },
+		{ i915_vke2_undef_frag, sizeof(i915_vke2_undef_frag) },
+		{ i915_vke2_killoop_frag, sizeof(i915_vke2_killoop_frag) },
+		{ i915_vke2_noinput_vert, sizeof(i915_vke2_noinput_vert) },
+		{ i915_vke2_noinput_frag, sizeof(i915_vke2_noinput_frag) },
+#endif
 	};
 	static const struct {
 		uint32_t pipeline;
@@ -640,6 +692,12 @@ i915_vke2_objects_init(
 		{ I915_VKE2_PIPE_NOPERSP, I915_VKE2_SHADER_NOPERSP_VERT, I915_VKE2_SHADER_NOPERSP_FRAG },
 		{ I915_VKE2_PIPE_PERSP, I915_VKE2_SHADER_NOPERSP_VERT, I915_VKE2_SHADER_PERSP_FRAG },
 		{ I915_VKE2_PIPE_POINT, I915_VKE2_SHADER_POINT_VERT, I915_VKE2_SHADER_POINT_FRAG },
+#if defined(I915_VKE2_BOUNDARY)
+		{ I915_VKE2_PIPE_EDGE, I915_VKE2_SHADER_QUAD_VERT, I915_VKE2_SHADER_EDGE_FRAG },
+		{ I915_VKE2_PIPE_UNDEF, I915_VKE2_SHADER_QUAD_VERT, I915_VKE2_SHADER_UNDEF_FRAG },
+		{ I915_VKE2_PIPE_KILLOOP, I915_VKE2_SHADER_QUAD_VERT, I915_VKE2_SHADER_KILLOOP_FRAG },
+		{ I915_VKE2_PIPE_NOINPUT, I915_VKE2_SHADER_NOINPUT_VERT, I915_VKE2_SHADER_NOINPUT_FRAG },
+#endif
 	};
 	struct i915_gfx_shader *shaders;
 	uint32_t index;
@@ -736,7 +794,7 @@ i915_vke2_objects_init(
 				I915_VKE2_WIDE_STRIDE,
 				I915_VKE2_WIDE_ATTRIBUTES);
 
-	/* The ws075-p004 steps over the quad layout; the point step draws a point list. */
+	/* The ws075-p004 and ws031-p024 steps over the quad layout; the point step draws a point list. */
 	for (index = 0U; index < sizeof(p004) / sizeof(p004[0]); index++) {
 		i915_vke2_pipeline_init(&x->pipelines[p004[index].pipeline],
 					&shaders[p004[index].vertex],
@@ -747,6 +805,15 @@ i915_vke2_objects_init(
 
 	/* The point step draws a point list. */
 	x->pipelines[I915_VKE2_PIPE_POINT].topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+
+#if defined(I915_VKE2_BOUNDARY)
+	/* The no-input step's vertex shader reads the position only. */
+	i915_vke2_pipeline_init(&x->pipelines[I915_VKE2_PIPE_NOINPUT],
+				&shaders[I915_VKE2_SHADER_NOINPUT_VERT],
+				&shaders[I915_VKE2_SHADER_NOINPUT_FRAG],
+				I915_VKE2_QUAD_STRIDE,
+				1U);
+#endif
 
 	/* The format step: the position, then attributes of their own formats. */
 	i915_vke2_pipeline_init(&x->pipelines[I915_VKE2_PIPE_VFORMAT],
@@ -1521,10 +1588,10 @@ i915_vke2_near(
 	uint32_t wanted;
 	uint32_t ulps;
 
-	/* An exact step, or an equal word. */
+	/* An exact step (a guarded step's judged rows too), or an equal word. */
 	if (word == expected)
 		return 1;
-	if (mode == I915_VKE2_COMPARE_EXACT)
+	if (mode == I915_VKE2_COMPARE_EXACT || mode == I915_VKE2_COMPARE_GUARD)
 		return 0;
 
 	/* Two zeros of different signs are the same float. */
@@ -1562,6 +1629,7 @@ i915_vke2_compare(
 	const uint32_t *pixels;
 	unsigned differ;
 	unsigned index;
+	unsigned row;
 	int near;
 
 	/* Reads the target through the CPU view, past any line the CPU still caches. */
@@ -1571,6 +1639,15 @@ i915_vke2_compare(
 	/* Counts the words that are not near and names the first few. */
 	differ = 0U;
 	for (index = 0U; index < I915_VKE2_SIZE * I915_VKE2_SIZE; index++) {
+		/* A guarded step logs its odd rows' undefined values, one a row from column 5, and does not judge them. */
+		row = index / I915_VKE2_SIZE;
+		if (mode == I915_VKE2_COMPARE_GUARD && (row & 1U) != 0U) {
+			if (index % I915_VKE2_SIZE == 5U)
+				kern_logf("i915: vke2: %s: row %u (operation %u): 0x%08x\n", what, row, (row >> 1) & 7U, pixels[index]);
+			continue;
+		}
+
+		/* Compares the word. */
 		near = i915_vke2_near(pixels[index], x->expected[index], mode);
 		if (near != 0)
 			continue;
@@ -1673,6 +1750,20 @@ i915_vke2_step_draw(
 	case I915_VKE2_PIPE_PERSP:
 		generated = i915_vke2_persp_expected;
 		break;
+#if defined(I915_VKE2_BOUNDARY)
+	case I915_VKE2_PIPE_EDGE:
+		generated = i915_vke2_edge_expected;
+		break;
+	case I915_VKE2_PIPE_UNDEF:
+		generated = i915_vke2_undef_expected;
+		break;
+	case I915_VKE2_PIPE_KILLOOP:
+		generated = i915_vke2_killoop_expected;
+		break;
+	case I915_VKE2_PIPE_NOINPUT:
+		generated = i915_vke2_noinput_expected;
+		break;
+#endif
 	case I915_VKE2_PIPE_COORD:
 	case I915_VKE2_PIPE_DERIV:
 	case I915_VKE2_PIPE_NOPERSP:

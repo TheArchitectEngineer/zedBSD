@@ -222,7 +222,7 @@ OUT=build/<W>-hw plan/ws101/tests/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc
 ```
 
 - 各場面の image を lock の外で `OUT/SCENARIO` に build（`VKLOOP_BUILD_ONLY=1`、上限 3000 s）してから、`plan/ws075/tests/test-hw.sh` で lock の下で走らせる（上限 3600 s、lock の待ちを含む）。
-- vkcs は `I915_TEST_SET=compute`、他は `all`（run-hw.sh:28〜31）。走っている間は tree を編集しない（lock の中の make が拾う、run-hw.sh:6）。
+- 試験の組（`I915_TEST_SET`）は場面ごとに `vkloop-hw.sh` が選ぶ（vkcs は `compute`、vkx・vkc・vke1・vke2 はそれぞれ自分の組、q762 で既定の `all` は廃止: 全ての場面を入れた kernel は上限を超える）。走っている間は tree を編集しない（lock の中の make が拾う、run-hw.sh:6）。
 - PASS: 終了 code 0。結果は `OUT/hw-SCENARIO-r1/`（vkcs 21/21、vkx 9/9、vke1 6/6、vke2 17/17、vkc 9/9 が前回）。
 
 GLES 3.1 の compute（G2）と egltest feedback・queries:

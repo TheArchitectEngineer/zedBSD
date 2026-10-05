@@ -1770,21 +1770,24 @@ test_eu_generality_fragment(void)
 		const uint32_t *words;
 		size_t bytes;
 		const uint32_t *expected;
-	} steps[5] = {
+	} steps[7] = {
 		{ "matrix.frag", i915_vke2_matrix_frag, sizeof(i915_vke2_matrix_frag), i915_vke2_matrix_expected },
 		{ "int.frag", i915_vke2_int_frag, sizeof(i915_vke2_int_frag), i915_vke2_int_expected },
 		{ "float.frag", i915_vke2_float_frag, sizeof(i915_vke2_float_frag), i915_vke2_float_expected },
 		{ "loop.frag", i915_vke2_loop_frag, sizeof(i915_vke2_loop_frag), i915_vke2_loop_expected },
 		{ "spill.frag", i915_vke2_spill_frag, sizeof(i915_vke2_spill_frag), i915_vke2_spill_expected },
+		/* ws031-p024: the integer boundaries, and the undefined results (the models' words: 0, low-5-bit shifts) */
+		{ "edge.frag", i915_vke2_edge_frag, sizeof(i915_vke2_edge_frag), i915_vke2_edge_expected },
+		{ "undef.frag", i915_vke2_undef_frag, sizeof(i915_vke2_undef_frag), i915_vke2_undef_expected },
 	};
 	struct eu_model *m;
-	unsigned step, x0, y, c, divergent[5], spill_bytes = 0U;
+	unsigned step, x0, y, c, divergent[7], spill_bytes = 0U;
 
 	m = malloc(sizeof(*m));
 	eu_model_scratch_writes = 0U;
 	eu_model_scratch_reads = 0U;
 	eu_model_scratch_partial = 0U;
-	for (step = 0U; step < 5U; step++) {
+	for (step = 0U; step < 7U; step++) {
 		struct i915_shader_binary *binary;
 
 		binary = compile_words(steps[step].name, steps[step].words, steps[step].bytes, I915_STAGE_FRAGMENT, NULL);
@@ -1831,7 +1834,7 @@ test_eu_generality_fragment(void)
 	assert(divergent[4] > 0U && eu_model_scratch_writes > 0U && eu_model_scratch_reads > 0U);
 	assert(eu_model_scratch_partial > 0U);          /* a spilled loop variable written while a loop had stopped channels */
 	free(m);
-	printf("  EU model: generality matrix / int / float / loop / spill shaders match regenerate.py at 5 x 4096 pixels; loop.frag: %u divergent WHILE passes; "
+	printf("  EU model: generality matrix / int / float / loop / spill / edge / undef shaders match regenerate.py at 7 x 4096 pixels; loop.frag: %u divergent WHILE passes; "
 		"spill.frag: %u bytes of scratch a thread, %u scratch writes (%u on some channels only) and %u reads, %u divergent WHILE passes\n",
 		divergent[3], spill_bytes, eu_model_scratch_writes, eu_model_scratch_partial, eu_model_scratch_reads, divergent[4]);
 }

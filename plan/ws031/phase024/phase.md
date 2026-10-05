@@ -83,4 +83,36 @@ SPILLMIX（spill.frag と vio16.vert の draw を同じ command buffer で交互
 loops9 断る（loops nested too deep）・ifs31 受ける・ifs40 断る（constructs nested too deep）、noinput・divzero（実行時の 0 と INT_MIN/-1）・
 shift（32〜63）・killoop を -O0 と -O で受ける。PASS。
 
-残り（再開の点）: 増分 2・3（vke2 の step、spill の組み合わせ）、最後に T1 への passthrough の 1 回の依頼。実機は使っていない。
+増分 2（2026-10-05、合間の仕事）: vke2 に EDGE（境界の値の整数の演算、未定義の除算は marker）、KILLOOP（loop の中の discard）、
+NOINPUT（入力の無い fragment shader、varying の無い vertex shader）、UNDEF（最後: 0 除算・INT_MIN/-1・32〜63 の shift、偶数の行を判定し
+奇数の行の値を log）を足した（`generality-shaders/edge.frag`・`undef.frag`・`killoop.frag`・`noinput.vert`・`noinput.frag`、`regenerate.py`、
+`generality.c` の比較の mode GUARD）。**既定の試験の kernel（I915_TEST_SET=all）は今の main で既に AMD64_KERNEL_MAX_BYTES を超える**
+（この変更の前の tree でも `ld.lld: error: amd64 kernel exceeds AMD64_KERNEL_MAX_BYTES`、2026-10-05 に確認）ので、新しい step は試験の組
+`boundary`（runner と vke2 だけ、`-DI915_VKE2_BOUNDARY`、`platform/amd64/vmunix.mk`）にだけ入れ、生成の file の新しい data も
+`I915_VKE2_IN_KERNEL` の kernel では `I915_VKE2_BOUNDARY` の時だけにした。host の lower（IR の interpreter）と compile（EU の model）の
+試験は EDGE と UNDEF を全 pixel で照合する（UNDEF の奇数の行は model の値: 未定義の除算は 0、shift は下位 5 bit）。
+
+| command | 結果 |
+| --- | --- |
+| `python3 src/drivers/gpu/i915/tests/render/generality-shaders/regenerate.py` | 既存の data は変わらず、新しい物だけ増えた |
+| `sh plan/ws031/tests/run-vk-host-tests.sh` | PASS（generality 7 × 4096 pixel、IR と EU の model） |
+| `BRW_TOOLS=... sh plan/ws031/tests/run-vk-gentool-test.sh` | PASS |
+| `I915_TEST_SET=boundary VKLOOP_BUILD_ONLY=1 BUILD=build/p024-vke2b sh plan/ws031/tests/vkloop-hw.sh test vke2` | image の build PASS（kernel 0xfeb000 byte、上限 16 MiB の中、warning は Noct の既存の 1 件だけ） |
+| 同じく既定の組（all） | **FAIL（上限超え、変更の前から）** |
+
+q762（2026-10-05）で試験の組を場面ごとに分けた後は、vke2 の組（`I915_TEST_SET=vke2`、vkloop-hw.sh が選ぶ）が boundary の step を持つ。
+T1-190 は serial の mirror の無い構成で build されて行が出なかった（q762 で vkloop-hw.sh の既定の構成を直した）。再依頼:
+`flock /tmp/i915-hw.lock env BUILD=... plan/ws031/tests/vkloop-hw.sh test vke2`。
+
+増分 3（読みの確認、2026-10-05）: scratch の作成の失敗（`render/draw.c` の `i915_draw_scratch_grow()`）は、古い buffer を消して
+`work->scratch` を NULL にしてから作り、失敗は error を返して draw を止める。次の draw は `roomy` が `work->scratch != NULL` を
+要るので作り直しに入り、NULL の buffer を使わない（748〜772 行）。一般の状態の大きさを超える scratch は ENOTSUP（`XXX` の log）。
+draw.c は host の試験に入っていない（GPU に出すため）ので、失敗の注入の試験は作っていない。spill の組み合わせ（SPILL と VIO16 を
+同じ command buffer で、discard と spill、4 KiB 超、VS と PS の同時の spill、sample の応答の spill）の vke2 の step は、vke2 の組の kernel
+が 16300 KiB（上限 16384）で余裕が無いので、別の組を作るか上限の問題（q762 の報告）の後にする。
+
+残り（再開の点）: 増分 3 の step（組の余裕の後）、T1 の vke2 の結果（UNDEF の値の記録）。実機は使っていない。
+
+## T1-190b の結果（2026-10-05 Q1）
+
+5330 の passthrough（main fc2f8d9a）: `vke2: verdict PASS (21 of 21 steps passed)`（EDGE・KILLOOP・NOINPUT・UNDEF を含む）、GPU の hang 無し。UNDEF の実機の値（4 回の繰り返しで同じ）: operation 0 → 0x80000000、1 → 0x80000000、2 → 0xffffffff、3 → 0xffffffff、4 → 0x7fffffff、5 → 0x00000000、6 → 0xa99b44c0、7 → 0x02d53368（各 operation の意味は vke2 の UNDEF の表）。証拠 /tmp/claude-1000/t1-190b/。注: step と UNDEF の行は vkloop-hw.sh が 5330 から持ってくる serial を写した log にだけ出る（AGENTS.md の「serial の log で判定しない」との関係は Q1 がユーザーに確かめる）。
