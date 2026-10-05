@@ -46,8 +46,10 @@ Wayland client expects: core Wayland (`wl_compositor`, `wl_shm`, `wl_seat`,
 `wl_data_device_manager`, subsurfaces), `xdg-shell` with popups and
 positioners, server-side decoration (`zxdg_decoration_manager_v1`), cursor
 shapes, primary selection, the tablet protocol (`zwp_tablet_manager_v2`),
-`zwp_text_input_v3`, and the input method and virtual keyboard protocols for
-the system's input method. An unmodified GTK, Qt or SDL client runs as a
+`zwp_text_input_v3`, the input method and virtual keyboard protocols for
+the system's input method, and `xdg_activation_v1` (a program brings its
+window, or a running copy's window, to the front with a token the desktop
+gave it when it started it). An unmodified GTK, Qt or SDL client runs as a
 normal Wayland window.
 
 The parts of the UI/UX that only Keiland has are carried by its own
@@ -62,6 +64,7 @@ extensions, for example:
 | `keiland_edit_manager_v1` | Editing operations (copy, paste, select all) that the system UI can ask a window to perform |
 | `keiland_keyboard_inset_manager_v1` | How much of a window the on-screen keyboard covers, so the window can keep the caret in view |
 | `keiland_ime_status_manager_v1` | The input method's state (language, mode) for the system bar's indicator |
+| `keiland_theme_v1` | The desktop's appearance, light or dark: told when a client binds it and again whenever the user changes it, so that applications draw in it and redraw when it changes |
 
 **These extensions are not an application interface.** An application never
 binds them itself. libkeiland wraps every one of them, and the protocols are
@@ -84,6 +87,7 @@ include:
 | Family | Examples |
 | --- | --- |
 | Window UI | System Menu (`keiland_menu_*`), titlebar presentation (`keiland_titlebar_*`, including sheets), context menus, glass panels, the desktop surface, window operations |
+| Appearance | The desktop's appearance, light or dark (`kl_theme_*`): the colours of the current theme, and a notice to redraw when the user changes it, carried by `keiland_theme_v1` |
 | Touch | The touch motion, the scroller and the gestures (`keiland_motion_*`, `keiland_scroller_*`, `keiland_gesture_*`), so that a finger feels the same in every program |
 | Input | The keyboard inset of the on-screen keyboard, editing operations |
 | System | The network, including Wi-Fi control, saved keys, links and DNS (`keiland_network_*`); the sound output's volume and mute (`keiland_audio_*`); the desktop's preferences; recent files |
