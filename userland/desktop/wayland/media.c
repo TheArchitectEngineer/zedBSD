@@ -28,6 +28,9 @@
 
 /* The bar's room for the icon, the blinks and their period. */
 #define MEDIA_ICON_ROOM		34
+
+/* The icon's size in pixels, as the volume's. */
+#define MEDIA_ICON_PIXELS	20U
 #define MEDIA_BLINKS		3U
 #define MEDIA_BLINK_MS		600U
 
@@ -215,8 +218,9 @@ zwl_media_width(
 }
 
 /*
- * Draws the icon at x: a USB stick (its body and its plug), fading out and
- * back in for each of its three blinks.
+ * Draws the icon at x: the USB trident (the 2026-10-05 user decision; it
+ * was a stick whose plug's holes were drawn in the body's own colour and
+ * did not show), fading out and back in for each of its three blinks.
  */
 void
 zwl_media_draw_icon(
@@ -257,11 +261,8 @@ zwl_media_draw_icon(
 		}
 	}
 
-	/* The stick: its body, its plug and the plug's two holes. */
-	glass_draw_solid(server, command, (float)x, (float)(ZWL_GLASS_BAR_MIDDLE - 5), 14.0f, 10.0f, 2.5f, color);
-	glass_draw_solid(server, command, (float)(x + 14), (float)(ZWL_GLASS_BAR_MIDDLE - 3.5f), 7.0f, 7.0f, 1.0f, color);
-	glass_draw_solid(server, command, (float)(x + 16), (float)(ZWL_GLASS_BAR_MIDDLE - 2), 1.5f, 1.5f, 0.5f, ink);
-	glass_draw_solid(server, command, (float)(x + 16), (float)(ZWL_GLASS_BAR_MIDDLE + 0.5f), 1.5f, 1.5f, 0.5f, ink);
+	/* The trident, at the size of the bar's other icons (the volume's). */
+	glass_draw_icon(server, command, GLASS_ICON_USB, x, ZWL_GLASS_BAR_MIDDLE - 10, MEDIA_ICON_PIXELS, color);
 }
 
 /*
