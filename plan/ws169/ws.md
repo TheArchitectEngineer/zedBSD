@@ -1,13 +1,17 @@
 <!-- awesome-plan project=zedbsd record=ws169 -->
 # WS169: メーラの app と compositor のメールの API
 
-Status: planning（2026-10-05 追加、段は未定（ユーザーに確認）、見積もり 6 LW（Q1 の概算: 設計 1・API 1・IMAP/SMTP 2・app 2。Gmail・Outlook は別に））
+Status: planning（2026-10-05 追加。まず UI の mock（p000）を優先、q744。段は未定（ユーザーに確認）、見積もり 6 LW（Q1 の概算: 設計 1・API 1・IMAP/SMTP 2・app 2。Gmail・Outlook は別に））
 Master: [master](../master.md)
 Primary Milestone: MG006
 
 ## 由来
 
 ユーザー（2026-10-05）「[メール] - メーラappを追加する - コンポジタにメールAPIを追加する - メーラappはコンポジタに受信を連絡する - 許可されたアプリはコンポジタからメール受信の通知を受け取れる - たとえばブラウザは認証メールの通知を受け取って自動入力できる - バックエンドはIMAP4とSMTPをまずは対応 - GmailとOutlookのバックエンド対応が目標」
+
+## 優先（2026-10-05）
+
+ユーザー（2026-10-05）「WS169も、夕方のUATにあるとうれしいですが、必須ではないです。」
 
 ## 目標（ユーザーの要件）
 
@@ -29,6 +33,7 @@ Primary Milestone: MG006
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
+| p000 | **UI の mock（夕方の UAT にあると嬉しい・必須でない）**: メーラの app の外側だけ。account・folder の一覧、メールの一覧、読む画面、書く画面（送信は「backend が無い」）。data は固定の試験 data。API・backend は作らない | planning（q744、P2、WS170 の mock の後） | — |
 | p001 | 要件と設計（API・許可・backend・app、Gmail・Outlook への道） | planning | — |
 | p002 | compositor のメールの API と許可（host の試験） | planning | p001 |
 | p003 | IMAP4・SMTP の backend | planning | p001 |
