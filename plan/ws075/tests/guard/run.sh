@@ -7,7 +7,7 @@
 # (no texture, branches only) must still pass the disassembler.  loop.frag has a guarded send inside a loop: its
 # ENDIF's JIP must point at the loop's WHILE (checked in the disassembly).  ws075-p022: every kernel's scoreboard
 # is checked by scoreboard-check.h (shader-dump.c), which must also find a fault with the sync.nops taken out.
-#   plan/ws075/tests/guard/run.sh           (BRW_TOOLS: a Mesa build's src/intel/compiler, default below)
+#   plan/ws075/tests/guard/run.sh           (BRW_TOOLS: a Mesa 25.0.7 build's src/intel/compiler, default below)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
@@ -20,7 +20,7 @@ python3 - "$repo" "$work" <<'PY'
 import re, struct, sys
 repo, work = sys.argv[1], sys.argv[2]
 for header, names in (('userland/desktop/wayland/shaders.h', ('zwl_panel_frag', 'zwl_quad_frag')),
-                      ('userland/desktop/browser/paint/shaders.h', ('paint_display_frag',))):
+                      ('userland/desktop/libbrowser/paint/shaders.h', ('paint_display_frag',))):
     text = open(f'{repo}/{header}').read()
     for name in names:
         body = re.search(name + r'\[\]\s*=\s*\{(.*?)\};', text, re.S).group(1)
@@ -30,6 +30,15 @@ PY
 cp "$repo/plan/ws075/tests/switch/switch.frag.spv" "$repo/plan/ws075/tests/switch/switch-O.frag.spv" \
 	"$repo/plan/ws075/tests/guard/loop.frag.spv" "$work/"
 status=0
+# Mesa's tools must be there for the disassembly checks (the round trip, the IF and ENDIF pairs, the guarded sends):
+# without them those checks are reported as not run (the scoreboard checks still run, and the result says so),
+# instead of failing every module as a mismatch.
+roundtrip=1
+if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
+	roundtrip=0
+	echo "NOTE: no brw_disasm/brw_asm under $tools (set BRW_TOOLS to a Mesa 25.0.7 build's src/intel/compiler);" \
+		"the disassembly checks are NOT RUN"
+fi
 for module in zwl_panel_frag zwl_quad_frag paint_display_frag switch.frag switch-O.frag loop.frag; do
 	"$work/dump" fragment "$work/$module.spv" "$work/$module.bin" > "$work/$module.dump" || { echo "$module: FAIL"; cat "$work/$module.dump"; status=1; continue; }
 	# ws075-p022: the scoreboard is sound, and the checker finds a fault once the waits are taken out.
@@ -38,6 +47,10 @@ for module in zwl_panel_frag zwl_quad_frag paint_display_frag switch.frag switch
 		echo "$module: FAIL the scoreboard check does not see the missing waits"; status=1
 	fi
 	sed 's/^[^:]*: /'"$module"': /' "$work/$module.dump"
+	if [ $roundtrip -eq 0 ]; then
+		echo "$module: disassembly checks not run"
+		continue
+	fi
 	"$tools/brw_disasm" --gen=adl --input-path="$work/$module.bin" > "$work/$module.asm" 2>&1
 	if grep -q 'ERROR\|illegal' "$work/$module.asm"; then
 		echo "$module: FAIL the disassembler rejects an instruction"; status=1; continue
@@ -81,5 +94,11 @@ PY
 	*) [ "$3" = 0 ] && [ "$2" != 0 ] || { echo "$module: FAIL a sampler send in a branch is not guarded"; status=1; } ;;
 	esac
 done
-[ $status = 0 ] && echo "ws075-p021 guard host test PASS"
+if [ $status -ne 0 ]; then
+	echo "ws075-p021 guard host test FAIL"
+elif [ $roundtrip -eq 0 ]; then
+	echo "ws075-p021 guard host test PASS (without the disassembly checks: no Mesa tools)"
+else
+	echo "ws075-p021 guard host test PASS"
+fi
 exit $status

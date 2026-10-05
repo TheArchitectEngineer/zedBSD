@@ -156,7 +156,7 @@ sh plan/ws068/tests/spirv-host/run.sh build/<W>/spirv-host       # "spirv-host: 
 ```
 
 - `host/run.sh` は作業の dir を `mktemp -d "${TMPDIR:-/tmp}/ws101-host.XXXXXX"`（run.sh:26）に作り、終わりに消す。
-- 要る host の道具: `glslc`、`spirv-val`、`cc`、Mesa の `brw_disasm`・`brw_asm`・genxml（上の既定 path にある。2026-10-01 確認）、lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）。
+- 要る host の道具: `glslc`、`spirv-val`、`cc`、Mesa の `brw_disasm`・`brw_asm`・genxml（2026-10-05: 既定 path の `/home/awe/p014-c` は host から無くなった。無ければ `host/run.sh`・`glsl/run.sh`・`plan/ws075/tests/guard/run.sh` は往復と genxml の decode を「NOT RUN」と出し、それ以外の検査だけで PASS（制限付き）と言う。`BRW_TOOLS`・`GENXML` で作り直した build を指す）、lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）。
 
 ### 5.2 library と program だけの build（image は作らない）
 

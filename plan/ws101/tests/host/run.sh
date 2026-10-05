@@ -27,6 +27,21 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/ws101-host.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
 status=0
 
+# Mesa's tools must be there for the round trip and the genxml decode: without them those checks are reported as not
+# run (the other checks still run, and the result says so), instead of failing every kernel as a mismatch.
+roundtrip=1
+if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
+	roundtrip=0
+	echo "NOTE: no brw_disasm/brw_asm under $tools (set BRW_TOOLS to a Mesa 25.0.7 build's src/intel/compiler);" \
+		"the disassembly round trip is NOT RUN"
+fi
+decode=1
+if [ ! -f "$genxml/gen120.xml" ]; then
+	decode=0
+	echo "NOTE: no gen120.xml under $genxml (set GENXML to a Mesa 25.0.7 tree's src/intel/genxml);" \
+		"the genxml decode of the commands is NOT RUN"
+fi
+
 # The tools: the dumper and the interpreter, built from the compiler's sources.
 cc -std=gnu99 -O0 -Wall -Wextra -Wno-unused-function -I"$repo" -I"$repo/include" -DHAL_ARCH_AMD64 \
 	-o "$work/dump" "$here/compute-dump.c" -lm || exit 1
@@ -57,6 +72,11 @@ for spv in "$work"/*.spv; do
 	"$work/dump" "$spv" "$work/$name.bin" > "$work/$name.dump" 2>&1 || {
 		cat "$work/$name.dump"; echo "$name: FAIL"; status=1; continue; }
 	grep -q 'descriptors agree' "$work/$name.dump" || { echo "$name: FAIL descriptors"; status=1; continue; }
+	if [ $roundtrip -eq 0 ]; then
+		echo "$name: compiled (round trip not run)"
+		grep 'scoreboard\|sends,' "$work/$name.dump" | sed "s|^[^:]*:|$name:|"
+		continue
+	fi
 	"$tools/brw_disasm" --gen=adl --input-path="$work/$name.bin" > "$work/$name.asm" 2>&1
 	if grep -q 'ERROR\|illegal' "$work/$name.asm"; then
 		echo "$name: FAIL the disassembler rejects an instruction"; grep -B1 'ERROR\|illegal' "$work/$name.asm" | head
@@ -99,9 +119,20 @@ cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_AB
 	-I"$repo/include" -I"$repo" -idirafter "$repo/include/libc" -o "$work/batch" "$here/compute-batch-test.c" \
 	$executor "$driver/render/command.c" -lm || exit 1
 "$work/batch" "$work" "$work/dispatch" || status=1
-for name in add ids indirect reduce; do
-	python3 "$here/genxml-check.py" "$genxml" "$work/dispatch-$name" || status=1
-done
+if [ $decode -eq 1 ]; then
+	for name in add ids indirect reduce; do
+		python3 "$here/genxml-check.py" "$genxml" "$work/dispatch-$name" || status=1
+	done
+fi
 
-[ $status = 0 ] && echo "ws101 host test PASS"
+missing=""
+[ $roundtrip -eq 0 ] && missing="the brw_disasm/brw_asm round trip"
+[ $decode -eq 0 ] && missing="${missing:+$missing and }the genxml decode"
+if [ $status -ne 0 ]; then
+	echo "ws101 host test FAIL"
+elif [ -n "$missing" ]; then
+	echo "ws101 host test PASS (without $missing: no Mesa tools)"
+else
+	echo "ws101 host test PASS"
+fi
 exit $status
