@@ -6,12 +6,12 @@
  */
 
 /*
- * Kernel entry after the HAL and platform are up.
+ * Kernel entry after the HAL and scheduler are up.
  *
- * kernel_main() retains the boot handoff, parses the boot parameters,
- * brings up the VFS and VM commit accounting, and starts init.  Every
- * failure is reported on the console and the log before the boot CPU
- * settles into the idle loop.
+ * kernel_main() retains the boot handoff and starts a worker for device
+ * discovery, boot parameters, VFS and VM commit accounting, and init.
+ * The boot CPU becomes idle while the worker can sleep during device
+ * power transitions, firmware methods, and storage operations.
  */
 
 #include "hal/hal.h"
@@ -20,6 +20,7 @@
 #include "kern/vfs.h"
 #include "kern/init.h"
 #include "kern/boot.h"
+#include "kern/platform.h"
 #include "kern/klog.h"
 #include "kern/sched.h"
 #include "kern/thread.h"
@@ -27,13 +28,17 @@
 #include "kern/vm-reclaim.h"
 #include <kern/kcrt.h>
 
-
 #ifndef KERN_INIT_PATH
 #define KERN_INIT_PATH "/sbin/init"
 #endif
 
+/* Retains the loader's handoff in kernel memory before the worker starts. */
 static struct kern_boot_handoff handoff_snapshot;
-static const struct kern_boot_device *boot_devices;
+
+/* Owns the boot devices beyond the discovery worker's lifetime. */
+static struct kern_boot_device boot_devices[KERN_PLATFORM_MAX_DEVICES];
+
+/* Publishes the worker's device count before VFS and init can query it. */
 static unsigned boot_device_count;
 
 static void boot_worker(void *argument);
@@ -83,9 +88,7 @@ kern_boot_device_at(
  */
 void
 kernel_main(
-	const struct kern_boot_handoff *h,
-	const struct kern_boot_device *platform_devices,
-	unsigned platform_device_count)
+	const struct kern_boot_handoff *h)
 {
 	struct thread *worker;
 	int error;
@@ -96,24 +99,27 @@ kernel_main(
 	 * refer to a kernel-owned copy after init has started.
 	 */
 	kern_memcpy(&handoff_snapshot, h, sizeof(handoff_snapshot));
-	boot_devices = platform_devices;
-	boot_device_count = platform_device_count;
 
 	/* Starts the reclaim machinery before any subsystem can need memory. */
 	vm_reclaim_init();
 
 	/*
-	 * Mounting may wait for a storage worker that owns a mutex or URB.
-	 * The bootstrap thread is CPU0's idle task and cannot serve as that
-	 * sleeping waiter. Give initialization its own schedulable lifetime.
+	 * PCI power recovery, ACPI methods, and mounting may all sleep.
+	 * The bootstrap thread is CPU0's idle task and cannot serve as their
+	 * waiter. Start the worker before discovering any platform device.
+	 * Pass the original handoff for the platform-specific extension, which
+	 * stays mapped until this worker starts userspace after discovery.
 	 */
-	error = kthread_create(boot_worker, NULL, SCHED_PRIORITY_DEFAULT,
+	error = kthread_create(
+	    boot_worker,
+	    (void *)h,
+	    SCHED_PRIORITY_DEFAULT,
 	    &worker);
 	if (error != 0) {
 		kern_logf("boot: initialization thread failed (%d); entering idle.\n",
-		    error);
+			  error);
 		kern_logf("boot: initialization thread failed (%d); entering idle.\n",
-		    error);
+			  error);
 	} else {
 		/* No joiner is needed; retirement releases this one-shot task. */
 		worker->detached = 1;
@@ -122,12 +128,28 @@ kernel_main(
 	sched_idle();
 }
 
-/* Runs blocking initialization using the retained, kernel-owned handoff. */
+/* Discovers devices before using the retained handoff to start userspace. */
 static void
 boot_worker(
 	void *argument)
 {
-	(void)argument;
+	const struct kern_boot_handoff *platform_handoff;
+	size_t device_count;
+
+	/* Discovers PCI and ACPI devices in a thread that can wait for them. */
+	platform_handoff = argument;
+	kern_logf("boot: platform device discovery\n");
+	device_count = kern_platform_init(
+	    platform_handoff,
+	    boot_devices,
+	    KERN_PLATFORM_MAX_DEVICES);
+
+	/* Retains the discovered table before refreshing boot storage. */
+	boot_device_count = (unsigned)device_count;
+	kern_logf("boot: platform devices detected: %u\n", boot_device_count);
+	kern_platform_refresh_devices(boot_devices, device_count);
+
+	/* Mounts the discovered storage and starts userspace in the same thread. */
 	boot_start(&handoff_snapshot, boot_devices, boot_device_count);
 }
 

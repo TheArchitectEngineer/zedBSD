@@ -9,8 +9,8 @@
  * The kernel entry points and the kernel heap.
  *
  * kernel_entry() validates the boot handoff, brings up the core subsystems
- * in dependency order, starts the secondary CPUs, discovers the platform
- * devices, and hands over to kernel_main().  Small allocations come from a
+ * in dependency order, starts the secondary CPUs, and hands device discovery
+ * over to kernel_main()'s worker. Small allocations come from a
  * fixed heap in the kernel image and large ones from page-backed physical
  * memory, both under the one kernel heap lock.
  */
@@ -280,16 +280,14 @@ kern_memory_get_stats(
  * Enters the kernel from the boot loader on the boot CPU.
  *
  * The subsystems come up in dependency order, the secondary CPUs are
- * started and joined to the scheduler, and platform device discovery runs
- * before kernel_main() takes over.  Any failure is fatal.
+ * started and joined to the scheduler, and kernel_main() starts a worker
+ * for platform device discovery. Any core initialization failure is fatal.
  */
 void
 kernel_entry(
 	const void *handoff)
 {
-	static struct kern_boot_device devices[KERN_PLATFORM_MAX_DEVICES];
 	const struct kern_boot_handoff *h;
-	size_t device_count;
 	int quiet;
 
 	/* Refuses a handoff that is missing, foreign, or truncated. */
@@ -367,19 +365,11 @@ kernel_entry(
 		hal_fatal(__FILE__, __LINE__,
 			  "network subsystem initialization failed");
 
-	/* Discovers the platform devices. */
-	kern_logf("boot: platform device discovery\n");
-	device_count =
-	    kern_platform_init(h, devices, KERN_PLATFORM_MAX_DEVICES);
-	kern_logf("boot: platform devices detected: %u\n",
-		  (unsigned)device_count);
-
-	/* Enables interrupts before deferred device work that needs them. */
+	/* Enables timer and device interrupts before the boot worker can wait. */
 	hal_irq_enable();
-	kern_platform_refresh_devices(devices, device_count);
 
-	/* Hands over to the kernel proper. */
-	kernel_main(h, devices, (unsigned)device_count);
+	/* Leaves blocking device discovery to the kernel's boot worker. */
+	kernel_main(h);
 }
 
 /*
