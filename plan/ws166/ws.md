@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws166 -->
 # WS166: IME の予測変換
 
-Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 3 LW）
+Status: incomplete（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 3 LW）。q737（P2）で p001 の設計中
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -17,4 +17,4 @@ Primary Milestone: MG006
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws166-p001 | 要件と設計 | planning | — |
+| [ws166-p001](phase001/phase.md) | 要件と設計 | in-progress（設計済み、ユーザーの判断の 4 点待ち） | — |
