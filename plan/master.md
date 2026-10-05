@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 夕 ユーザーの決定（YubiKey の USB）**: 「OTPはとりあえず非対応でいいです。USB HIDでFIDOが使えるように、raw reportのインタフェースを足しましょう。推奨の方法でOKです。ただ、/dev/input/hidrawXがいいです。/dev/fidoNはなくなった認識でいいですよね？」→ 案 A: 標準の usb-hid に生の report の口（入力の装置にしない HID の interface、まず FIDO の用途 page 0xF1D0、interrupt OUT と出力の report）を足し、node は **`/dev/input/hidrawX`**。**`/dev/fidoN` は無くす**（WS161 の H1 の `include/uapi/fido.h` も不要、hidraw の UAPI に替える）。OTP（YubiKey の keyboard の interface）は当面非対応。CCID（PIV・OpenPGP）は NFC の reader と共通の CCID の driver。libpasskey は hidraw と NFC の APDU の上に共通の FIDO2。
 - **WS153 U15（2026-10-05、P2 の設計 第 5 版、U1 = system 全体の反映）**: system 全体の導入（`/apps/<abi>/`）は特権の helper `app-admin`（setuid root、account-admin と同じ形、管理者の password を毎回、署名・hash・展開を自分で検め直す）が書く。root の口なので承認が要る（p005a の前）[案: account-admin と同じ形で可]。U2〜U14 は未決。
 - **2026-10-05 夕 ユーザーの決定（WS153・libpasskey）**:
   - WS153 U1: 「アプリはシステム全体で入れましょう。単独ユーザが使うタブレットを想定しているからです。また、ユーザ単位のアプリ管理は、ユーザがホームディレクトリで自由にやればいいと思います。」→ app はシステム全体に導入。利用者ごとの app の管理は repository の仕組みでは扱わない（利用者が home で自由に）。U2〜U14 は未決（P2 の設計 第 4.1 版 §0）。
