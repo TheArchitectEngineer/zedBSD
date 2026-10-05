@@ -180,3 +180,7 @@ struct mount_args {		/* version 2 adds the owner FAT presents (version 1 stays a
 ## Q1 の判定（2026-10-05）
 
 T1-150 の p004-guest PASS（step 5 の mount 中の抜去を含む、BUG-192 の kernel の直しと FAT の force unmount の後）。**cleared**。実機は UAT。
+
+## ユーザーの承認（2026-10-05 朝、Q1 経由）
+
+- Q-3 の案 A（system bar の媒体の icon。3 回点滅し、click で `files --devices`）: 承認。

@@ -72,3 +72,7 @@ compositor の入力（WS099・WS081）、kl_settings_*（WS135）。
 ## Q1 の判定（2026-10-05）
 
 T1-152 の settings-p005 PASS（touchpad.png）と T1-154 の settings-p007 PASS、touchpad の頁の古い注記を Gestures の card に直した（P2 38972c47、settings-render で目視）。加速の効きは host の試験、体感は 5330 の UAT。タッチパッドの既定（100%・中）はユーザーの判断待ち（master）。**cleared**。
+
+## ユーザーの決定（2026-10-05 朝、Q1 経由）
+
+- タッチパッドの既定は 100%・中のままにする。

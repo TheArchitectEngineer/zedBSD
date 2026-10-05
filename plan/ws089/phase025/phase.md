@@ -45,3 +45,7 @@ Queue: q728（P2、2026-10-05）
 
 - FAIL: Settings が起動せず `/tmp/s.log` が無かった（SHARING state・service sshd・compositor の sharing の行は全てこの連鎖）。T1 が使った graphical の login の image（`build-login-image.sh BUILD graphical`、`config-amd64-graphical.mk`）に `su` が無く、試験の `su kei -c '… /bin/settings …'` が失敗していた（試験の前提の誤り。kei の session は HANDOFF で確かめ済み）。
 - 直し: `plan/ws089/tests/config-amd64-sharing.mk`（graphical の login の image ＋ su）を足し、作り方を script の注記に書いた: `SETTINGS_CONFIG=plan/ws089/tests/config-amd64-sharing.mk plan/ws089/tests/build-settings-image.sh BUILD` → `files-guest.sh start BUILD/hdd-image.img`。試験は始めに su の有無を確かめ（無ければ理由を出して止まる）、Settings の起動（`/tmp/s.log`）も ok/FAILED で出す。sessiond・compositor・Settings は変えていない。
+
+## ユーザーの承認（2026-10-05 朝、Q1 経由）
+
+- sessiond の wheel の利用者だけが使える `SERVICE sshd on|off|status`（sshd だけに限る）: 承認。
