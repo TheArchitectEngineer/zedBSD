@@ -2,7 +2,7 @@
 
 # ws154-p003: SKK の engine と辞書
 
-Status: in-progress（実装と host の試験は済み。選択への組み込みは p004、判定は Q1）
+Status: cleared（2026-10-05 Q1: host の試験に加え、T1-173b・T1-174b の QEMU で engine が動く（変換・確定・mode）。cleared）。以前: in-progress（実装と host の試験は済み。選択への組み込みは p004、判定は Q1）
 Disposition: normal
 Parent: [WS154](../ws.md)
 Queue: Q1（2026-10-05、P2）

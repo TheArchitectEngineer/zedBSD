@@ -2,7 +2,7 @@
 
 # ws154-p001: 設計（IME の選択、Languages の頁、SKK の IME）
 
-Status: in-progress（2026-10-05、P2。設計を書いた。Q1 の確認待ち）
+Status: cleared（2026-10-05 Q1: 設計は Q1 が確認（1・2 は技術の裁量で承認、3 の範囲はユーザーの判断待ちで Future の候補）。cleared）。以前: in-progress（2026-10-05、P2。設計を書いた。Q1 の確認待ち）
 Disposition: normal
 Parent: [WS154](../ws.md)
 Queue: Q1（ベータ2 の割り当て、P2 の 3 番目）

@@ -2,7 +2,7 @@
 
 # ws154-p004: SKK の mode を言語に、辞書を image に、試験
 
-Status: in-progress（実装と host の試験は済み、QEMU は T1 待ち。全文の規約は WS の最後に）
+Status: cleared（2026-10-05 Q1: T1-174b で languages-p004 PASS（skk-katakana・app ごとの記憶・skk-latin）。実機の操作感は UAT、全文規約は WS の最後の Phase。cleared）。以前: in-progress（実装と host の試験は済み、QEMU は T1 待ち。全文の規約は WS の最後に）
 Disposition: normal
 Parent: [WS154](../ws.md)
 Queue: Q1（2026-10-05、P2）
