@@ -1989,7 +1989,7 @@ tls_module_at(
 	for (step = id / RTLD_TLS_CHUNK; step != 0; step--)
 		chunk = __atomic_load_n(&chunk->next, __ATOMIC_ACQUIRE);
 
-	/* The slot. */
+	/* Reports the module's slot within its chunk. */
 	return &chunk->slots[id % RTLD_TLS_CHUNK];
 }
 
@@ -2077,14 +2077,14 @@ layout_static_tls(
 		offset = static_tls_place(main_module, offset);
 	}
 
-	/* The others. */
+	/* Places every other module loaded at startup, by id. */
 	for (id = 1; id <= tls_module_count; id++) {
 		/* Skips a slot that holds no module, and the main one. */
 		module = tls_module_at(id);
 		if (!module->active || module == main_module)
 			continue;
 
-		/* Places it. */
+		/* Places it below the modules placed so far. */
 		offset = static_tls_place(module, offset);
 	}
 
@@ -2109,7 +2109,7 @@ layout_static_tls(
 		if (!module->active || !module->is_static || module->file_size == 0)
 			continue;
 
-		/* Copies it. */
+		/* Copies its initialized data to its place in the template. */
 		rtld_memcpy(image + (offset - module->static_offset),
 			    module->init_image, module->file_size);
 	}
@@ -2233,7 +2233,7 @@ initialize_object(
 	else
 		initialization_head = object;
 
-	/* The new tail. */
+	/* Makes it the tail, which process_fini finalizes first. */
 	initialization_tail = object;
 
 	loader_unlock();
@@ -2360,16 +2360,16 @@ handle_free_slot(
 	struct rtld_handle_chunk *chunk;
 	unsigned i;
 
-	/* Each chunk, each slot. */
+	/* Searches every chunk in order for an unused slot. */
 	for (chunk = &handle_chunk_first; chunk != NULL; chunk = chunk->next) {
 		for (i = 0; i < RTLD_HANDLE_CHUNK; i++) {
-			/* The first that is free. */
+			/* Reports the first slot no handle holds. */
 			if (!chunk->slots[i].active)
 				return &chunk->slots[i];
 		}
 	}
 
-	/* Every slot is in use. */
+	/* Reports that every slot is in use. */
 	return NULL;
 }
 
@@ -2468,7 +2468,7 @@ preflight_dlopen_file(
 	if (phdr_mapping != 0)
 		tls_unmap(phdr, phdr_mapping);
 
-	/* Reports operation failure. */
+	/* Refuses a file whose program headers do not check. */
 	if (!valid)
 		return -1;
 
@@ -3002,7 +3002,7 @@ object_at(
 	for (step = index / RTLD_OBJECT_CHUNK; step != 0; step--)
 		chunk = __atomic_load_n(&chunk->next, __ATOMIC_ACQUIRE);
 
-	/* The slot. */
+	/* Reports the slot of the index within its chunk. */
 	return &chunk->slots[index % RTLD_OBJECT_CHUNK];
 }
 
@@ -3021,7 +3021,7 @@ object_chunk_grow(
 	if (chunk == NULL)
 		rtld_fatal("cannot allocate shared-object table");
 
-	/* Published after the last. */
+	/* Links it after the last chunk before any of its slots is counted. */
 	__atomic_store_n(&object_chunk_last->next, chunk, __ATOMIC_RELEASE);
 	object_chunk_last = chunk;
 }
@@ -3037,7 +3037,7 @@ program_table_take(
 	struct rtld_program_table **link;
 	struct rtld_program_table *table;
 
-	/* One left by an object gone. */
+	/* Reuses a table an unloaded object left, when it is large enough. */
 	for (link = &program_tables_free; *link != NULL; link = &(*link)->next) {
 		/* Takes the first that is large enough off the list. */
 		table = *link;
@@ -3099,7 +3099,7 @@ object_set_programs(
 		object->mapping_capacity = 2U * phnum;
 	}
 
-	/* The headers. */
+	/* Copies the headers into the object's room or its table. */
 	rtld_memcpy(object->phdr, phdr, (size_t)phnum * sizeof(Elf_Phdr));
 }
 
@@ -3132,7 +3132,7 @@ read_program_headers(
 		*mapping_size = size;
 	}
 
-	/* The headers. */
+	/* Reads the headers from the file. */
 	result = syscall6(KERN_SYS_pread, (uintptr_t)fd, (uintptr_t)headers,
 			  size, (uintptr_t)header->e_phoff, 0, 0);
 	if (result != (intptr_t)size) {
@@ -3162,7 +3162,7 @@ tlsdesc_slot(
 	struct rtld_tlsdesc_chunk *chunk;
 	struct __tls_index *slot;
 
-	/* Inside the object. */
+	/* Uses the room inside the object while it lasts. */
 	if (object->tlsdesc_count < RTLD_TLSDESC_INLINE) {
 		slot = &object->tlsdesc_inline[object->tlsdesc_count];
 		object->tlsdesc_count++;
@@ -3184,7 +3184,7 @@ tlsdesc_slot(
 		else
 			object->tlsdesc_last->next = chunk;
 
-		/* The new last page. */
+		/* Makes it the page the next argument goes in. */
 		object->tlsdesc_last = chunk;
 	}
 
@@ -3254,14 +3254,14 @@ object_reserve_needed(
 	size_t size;
 	size_t i;
 
-	/* The DT_NEEDED entries. */
+	/* Counts the DT_NEEDED entries. */
 	count = 0;
 	for (i = 0; i < object->dynamic_count; i++) {
 		/* The end of the section, as parse_dynamic stops there. */
 		if (object->dynamic[i].d_tag == DT_NULL)
 			break;
 
-		/* A dependency. */
+		/* Counts a dependency. */
 		if (object->dynamic[i].d_tag == DT_NEEDED)
 			count++;
 	}
@@ -5528,7 +5528,7 @@ unload_object_locked(
 		for (i = 0; i < dependency_count; i++)
 			inline_copy[i] = object->needed[i];
 
-		/* Uses the copy. */
+		/* Walks the copy instead of the object's list. */
 		dependencies = inline_copy;
 	}
 
@@ -5660,7 +5660,7 @@ lookup_generation_next(
 {
 	unsigned i;
 
-	/* The next walk's number. */
+	/* Advances to the next walk's number. */
 	lookup_generation++;
 
 	/* Clears the old marks once the counter wraps to zero. */
