@@ -105,6 +105,8 @@ struct pk_info {
 	uint8_t aaguid[16];
 	uint32_t max_message;
 	uint32_t min_pin_length;
+	uint32_t max_credential_count;
+	uint32_t max_credential_id_length;
 };
 
 /* What a new credential is to be: the relying party, the user's ID and name, whether to verify the user, the IDs to exclude. */
@@ -122,8 +124,13 @@ struct pk_make_request {
 	size_t exclude_count;
 };
 
-/* The new credential: its ID, its COSE public key, and its signature count. */
+/*
+ * The new credential, read from the key's authenticator data by the
+ * library itself: its ID, its COSE public key (ES256 on P-256, checked to
+ * be on the curve), its signature count, and the flags.
+ */
 struct pk_made_credential {
+	uint8_t flags;
 	uint8_t id[PK_CREDENTIAL_ID_MAX];
 	size_t id_size;
 	uint8_t cose_key[PK_COSE_KEY_MAX];
@@ -131,9 +138,15 @@ struct pk_made_credential {
 	uint32_t sign_count;
 };
 
-/* An assertion to ask for: the relying party, the client data hash, the credentials allowed, and the PIN token for UV. */
+/*
+ * An assertion to ask for: the relying party, the client data hash, the
+ * credentials allowed, whether the user must be present (0: the silent
+ * question of which key holds a credential), and the PIN token for UV
+ * (none: no user verification asked).
+ */
 struct pk_assertion_request {
 	const char *rp_id;
+	int presence;
 	uint8_t client_data_hash[PK_SHA256_SIZE];
 	const uint8_t *const *allow_ids;
 	const size_t *allow_sizes;
@@ -173,5 +186,6 @@ int pk_ctap2_make_credential(struct pk_device *device, const struct pk_make_requ
     struct pk_made_credential *credential);
 int pk_ctap2_get_assertion(struct pk_device *device, const struct pk_assertion_request *request,
     struct pk_assertion_reply *reply);
+int pk_ctap2_selection(struct pk_device *device);
 
 #endif

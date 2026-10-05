@@ -35,6 +35,7 @@ struct pk_crypto_part {
 int pk_crypto_sha256(const struct pk_crypto_part *parts, size_t count, uint8_t *hash);
 int pk_crypto_hmac_sha256(const uint8_t *key, size_t key_size, const uint8_t *data, size_t size, uint8_t *mac);
 int pk_crypto_random(uint8_t *bytes, size_t size);
+int pk_crypto_p256_valid(const uint8_t *x, const uint8_t *y);
 int pk_crypto_p256_verify(const uint8_t *x, const uint8_t *y, const uint8_t *hash, const uint8_t *signature, size_t signature_size);
 int pk_crypto_p256_ecdh(const uint8_t *peer_x, const uint8_t *peer_y, uint8_t *own_x, uint8_t *own_y, uint8_t *shared);
 int pk_crypto_aes256_cbc(int encrypt, const uint8_t *key, const uint8_t *iv, const uint8_t *in, size_t size, uint8_t *out);

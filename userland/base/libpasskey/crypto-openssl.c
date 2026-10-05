@@ -107,6 +107,24 @@ pk_crypto_random(
 	return 0;
 }
 
+/* Tells whether (x, y) is a point of P-256 (1), or not (0). */
+int
+pk_crypto_p256_valid(
+	const uint8_t *x,
+	const uint8_t *y)
+{
+	EVP_PKEY *key;
+
+	/* The key, made only from a point on the curve. */
+	key = crypto_p256_key(x, y);
+	if (key == NULL)
+		return 0;
+	EVP_PKEY_free(key);
+
+	/* On the curve. */
+	return 1;
+}
+
 /*
  * Verifies an ECDSA signature (DER, as CTAP2 gives it) of a SHA-256 hash
  * under a P-256 public key (x, y).  Returns 0, EACCES when it does not
