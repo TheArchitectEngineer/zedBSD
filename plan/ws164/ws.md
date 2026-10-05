@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws164 -->
 # WS164: OS の起動時の Welcome の画面
 
-Status: planning（2026-10-05 追加、段と見積もりは未定）
+Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 1 LW）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

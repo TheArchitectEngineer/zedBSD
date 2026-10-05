@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws163 -->
 # WS163: 数字 6 桁の login
 
-Status: planning（2026-10-05 追加、段と見積もりは未定）
+Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 1 LW）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

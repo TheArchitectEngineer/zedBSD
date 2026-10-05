@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws165 -->
 # WS165: 手書きの入力
 
-Status: planning（2026-10-05 追加、段と見積もりは未定）
+Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 4 LW）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

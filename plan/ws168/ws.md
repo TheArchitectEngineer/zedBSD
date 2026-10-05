@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws168 -->
 # WS168: プレビュー（縮小表示）を作る隔離された専用の command
 
-Status: planning（2026-10-05 追加、段と見積もりは未定）
+Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 3 LW）
 Master: [master](../master.md)
 Primary Milestone: MG006
 
