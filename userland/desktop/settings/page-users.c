@@ -11,7 +11,10 @@
  * runs as, and the change of its password.
  *
  * The account card shows the user's name, full name and home (the
- * passwd database, read once).  The password card has three fields, the
+ * passwd database, read once).  The list card (ws089-p026) shows the
+ * people's accounts of the computer: those with a user ID from 1000 and a
+ * shell to log in with, each with its full name, whether it is an
+ * administrator (a member of wheel) and whether it is the user's own.  The password card has three fields, the
  * current password, the new one and the new one again, shown as dots
  * unless Show is on; the field with the keyboard has the accent's edge,
  * Tab and a click move between them.  Change Password (and Enter) asks the
@@ -30,6 +33,7 @@
 #include <keiland.h>
 
 #include <errno.h>
+#include <grp.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <string.h>
@@ -52,12 +56,20 @@
 /* The space between two cards. */
 #define USERS_GAP		16
 
+/* The first user ID of a person's account, and the one of nobody, which is not one. */
+#define USERS_FIRST_UID		1000U
+#define USERS_NOBODY_UID	65534U
+
 /* The fields' labels and placeholders. */
 static const char *const users_labels[SE_USERS_FIELDS] = { "Current password", "New password", "New password again" };
 static const char *const users_placeholders[SE_USERS_FIELDS] = { "Your password now", "At least 8 characters", "The same again" };
 
 static int users_available(const struct se_app *app);
 static void users_read(struct se_users *users);
+static void users_list(struct se_users *users);
+static int users_person(const struct passwd *account);
+static int users_admin(const struct passwd *account, const struct group *wheel);
+static int users_list_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 static int users_ready(const struct se_app *app);
 static void users_change(struct se_app *app);
 static void users_wipe(struct se_users *users);
@@ -100,6 +112,9 @@ se_users_draw(
 	y = se_row_value(app, canvas, x, y, width, "Full name", users->full_name, 0);
 	(void)se_row_value(app, canvas, x, y, width, "Home", users->home, 1);
 	top += height + USERS_GAP;
+
+	/* The list of the computer's users (ws089-p026). */
+	top = users_list_draw(app, canvas, x, top, width) + USERS_GAP;
 
 	/* The password card: the three fields, the buttons and the message. */
 	available = users_available(app);
@@ -357,6 +372,216 @@ users_read(
 	users->full_name[length] = '\0';
 	(void)snprintf(users->home, sizeof(users->home), "%s", account->pw_dir);
 	se_log("USERS account name=%s", users->name);
+
+	/* The list, with the name known. */
+	users_list(users);
+}
+
+/*
+ * Reads the list of the computer's users from the passwd database: the
+ * people's accounts, the administrators among them (wheel), and the one
+ * Settings runs as.
+ */
+static void
+users_list(
+	struct se_users *users)
+{
+	struct se_user_row *row;
+	struct passwd *account;
+	struct group *wheel;
+	struct group copy;
+	char *members[64];
+	char names[64][64];
+	size_t length;
+	size_t i;
+	int person;
+	int differs;
+
+	/* The wheel group, copied: getpwent may reuse the storage getgrnam returned. */
+	memset(&copy, 0, sizeof(copy));
+	wheel = getgrnam("wheel");
+	if (wheel != NULL) {
+		copy.gr_gid = wheel->gr_gid;
+		for (i = 0; wheel->gr_mem != NULL && wheel->gr_mem[i] != NULL && i + 1U < sizeof(members) / sizeof(members[0]); i++) {
+			(void)snprintf(names[i], sizeof(names[i]), "%s", wheel->gr_mem[i]);
+			members[i] = names[i];
+		}
+
+		/* The list of members, ended by NULL. */
+		members[i] = NULL;
+		copy.gr_mem = members;
+		wheel = &copy;
+	}
+
+	/* Each person's account, as far as there is room. */
+	users->row_count = 0;
+	setpwent();
+	for (;;) {
+		/* The next account, or the end. */
+		account = getpwent();
+		if (account == NULL || users->row_count == SE_USERS_LIST_MAX)
+			break;
+
+		/* Only the people's accounts. */
+		person = users_person(account);
+		if (!person)
+			continue;
+
+		/* Its name, its full name (the comment's first field), and what it is. */
+		row = &users->rows[users->row_count];
+		(void)snprintf(row->name, sizeof(row->name), "%s", account->pw_name);
+		(void)snprintf(row->full_name, sizeof(row->full_name), "%s", account->pw_gecos);
+		length = strcspn(row->full_name, ",");
+		row->full_name[length] = '\0';
+		row->admin = users_admin(account, wheel);
+		differs = strcmp(row->name, users->name);
+		row->self = 0;
+		if (differs == 0)
+			row->self = 1;
+
+		/* Counted. */
+		users->row_count++;
+	}
+
+	/* The database closed, and the count in the log. */
+	endpwent();
+	se_log("USERS list count=%d", users->row_count);
+}
+
+/*
+ * Says whether an account is a person's: a user ID from 1000 (not
+ * nobody's) and a shell that lets it log in.
+ */
+static int
+users_person(
+	const struct passwd *account)
+{
+	const char *shell;
+	const char *refusing;
+
+	/* The system's accounts and nobody. */
+	if (account->pw_uid < USERS_FIRST_UID || account->pw_uid == USERS_NOBODY_UID)
+		return 0;
+
+	/* A shell that refuses the login (nologin, false). */
+	shell = account->pw_shell;
+	if (shell == NULL)
+		return 1;
+
+	/* Nologin. */
+	refusing = strstr(shell, "nologin");
+	if (refusing != NULL)
+		return 0;
+
+	/* False, at the end of the path. */
+	refusing = strstr(shell, "/false");
+	if (refusing != NULL)
+		return 0;
+
+	/* A person's. */
+	return 1;
+}
+
+/*
+ * Says whether an account is an administrator's: wheel is its group, or it
+ * is among wheel's members.
+ */
+static int
+users_admin(
+	const struct passwd *account,
+	const struct group *wheel)
+{
+	size_t i;
+	int differs;
+
+	/* No wheel group: no administrator. */
+	if (wheel == NULL)
+		return 0;
+
+	/* Wheel as its own group. */
+	if (account->pw_gid == wheel->gr_gid)
+		return 1;
+
+	/* Among the members. */
+	for (i = 0; wheel->gr_mem != NULL && wheel->gr_mem[i] != NULL; i++) {
+		/* The same name. */
+		differs = strcmp(wheel->gr_mem[i], account->pw_name);
+		if (differs == 0)
+			return 1;
+	}
+
+	/* Not one. */
+	return 0;
+}
+
+/*
+ * Draws the list card: one row a user, its name and what it is.  Returns
+ * the edge below the card.
+ */
+static int
+users_list_draw(
+	struct se_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int top,
+	int width)
+{
+	const struct se_users *users;
+	const struct se_user_row *row;
+	char line[256];
+	const char *role;
+	const char *own;
+	const char *shown;
+	int last;
+	int rows;
+	int height;
+	int y;
+	int i;
+
+	/* One row a user, one at least (saying there is none). */
+	users = &app->users;
+	rows = users->row_count;
+	if (rows == 0)
+		rows = 1;
+
+	/* The card. */
+	height = se_card_height(rows, 1);
+	y = se_card_begin(app, canvas, x, top, width, height, "Users on this computer", NULL);
+	if (users->row_count == 0) {
+		(void)se_row_value(app, canvas, x, y, width, "None", "No other accounts to show.", 1);
+		return top + height;
+	}
+
+	/* Each user: the full name, whether an administrator, and whether it is you. */
+	for (i = 0; i < users->row_count; i++) {
+		/* The words of the row. */
+		row = &users->rows[i];
+		role = "Standard";
+		if (row->admin)
+			role = "Administrator";
+
+		/* Whether it is the user's own. */
+		own = "";
+		if (row->self)
+			own = " \xc2\xb7 You";
+
+		/* The full name, or the name when there is none. */
+		shown = row->full_name;
+		if (row->full_name[0] == '\0')
+			shown = row->name;
+
+		/* The row, the last without the line under it. */
+		last = 0;
+		if (i + 1 == users->row_count)
+			last = 1;
+
+		/* Drawn. */
+		(void)snprintf(line, sizeof(line), "%s \xc2\xb7 %s%s", shown, role, own);
+		y = se_row_value(app, canvas, x, y, width, row->name, line, last);
+	}
+
+	/* The edge below the card. */
+	return top + height;
 }
 
 /* Tells whether the fields are ready for the change: all typed, the new one twice the same, and none asked yet. */

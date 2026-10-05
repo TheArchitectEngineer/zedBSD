@@ -488,6 +488,21 @@ struct se_sharing {
 /* The Users page's password fields: the current password, the new one, the new one again. */
 #define SE_USERS_FIELDS		3
 
+/* The most users the Users page lists (ws089-p026). */
+#define SE_USERS_LIST_MAX	32
+
+/*
+ * One user of the list (ws089-p026): the name, the full name, whether the
+ * user is an administrator (a member of wheel), and whether it is the user
+ * Settings runs as.
+ */
+struct se_user_row {
+	char name[64];
+	char full_name[128];
+	int admin;
+	int self;
+};
+
 /*
  * The Users page (page-users.c, ws160-p002): the account as the passwd
  * database has it (read once: read), the three password fields (wiped when
@@ -501,6 +516,8 @@ struct se_users {
 	char name[64];
 	char full_name[128];
 	char home[160];
+	struct se_user_row rows[SE_USERS_LIST_MAX];
+	int row_count;
 	struct se_field fields[SE_USERS_FIELDS];
 	int focus;
 	int shown;
