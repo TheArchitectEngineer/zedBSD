@@ -4,7 +4,7 @@
 
 Phase ID: `ws161-p002`
 Parent: [WS161](../ws.md)
-Status: in-progress（2026-10-05 P1 generation19。実装と build・host 試験まで、T1 の QEMU の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-197・T1-199 で hidraw-p002 PASS（QEMU の loopback の key）。実機の xHCI の interrupt OUT は UAT（p006））。以前: in-progress（2026-10-05 P1 generation19。実装と build・host 試験まで、T1 の QEMU の試験待ち）
 Phase disposition: normal
 Queue: q770 の後（Q1 の指示「WS161 の kernel を先に」、2026-10-05）
 

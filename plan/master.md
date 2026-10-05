@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS172 の判断（2026-10-05、P1 の設計 第 2 版 84bc1335、design-reviewer の重大 3・中 8 を反映、docs の security.md「Login authentication」を書き直し、§12.2。前の P1〜P6 を置き換える）**: P1 libpasskey を base（userland/base/libpasskey）に、OpenSSL の例外を passkey-fido2 と libpasskey に広げる（/sbin/passkey は libc の crypt だけ、Guardrail の行を変える）[可]、P2 sessiond の起動後は password か key で一度 login するまでその account に PIN を出さない（60 秒の規則はやめる、再起動の後の phone と同じ）[可]、P3 key の PIN（UV）無しの login・登録はしない [可]、P4 `_passkey` の system の account [可]、P5 試験の loopback を署名する CTAP2 に広げる（製品の passkey-fido2 は仮想の bus を断る）[可]、P6 WS163 の mock を外し set_pin は sessiond の `ENROLL pin`（空の PIN は REMOVE）[可]、P7 account-admin の reset-password で PIN と key も消す [可]、P8 WS161 V1(a) の HIDRAW_GRAB（UAPI）を WS172 p003 の必須の前提に [可]、P9 登録は key がちょうど 1 つの時だけ [可]、P10 autologin は「login した」に数えない [可]。
 - **WS161 V1・V2（2026-10-05、P1 の p002 と design-reviewer、§9.11）**: V1 touch の横取り: hidraw は複数の open を許し revoke が無いので、seat の利用者の別の process が CTAPHID の要求を保留しておくと、login の時の touch がその要求に署名してしまう。(a) 排他の HIDRAW_GRAB の ioctl を足す（他の open は report を受けず write は EBUSY、WS172 の passkey が認証の間 grab する。UAPI の追加）[P1 の推奨]、(b) hidraw を seat の利用者に渡さない（U3 を取り消す、passkey（root）だけが使う）、(c) そのまま。V2 YubiKey の OTP の keyboard の interface は evdev の keyboard として付くので、FIDO の要求が無い時に key に触れると OTP の文字列が入る: 当面そのまま [推奨] か usb-hid がその interface を無視するか。
 - **2026-10-05 夕 ユーザーの決定（passkey）**: /sbin/passkey と /etc/passkey の形（[WS172](ws172/ws.md)）。passkey は base、暗号は当面 OpenSSL でリリースまでに独自の実装へ（Guardrail の例外）。PIN の失敗の回数は sessiond の memory。WS162・WS163 の ~/.config の mock はこれで置き換える（WS162 の K1〜K3、WS163 の G1 は不要に）。
 - **WS162 の判断（2026-10-05、P1 の mock の設計 第 2 版 1845e3fc、§9.7。ユーザーが /etc/passkey と /sbin/passkey の形を考え中で、その形になれば置き換わる）**: K1 greeter で key の login: (a) mock は lock だけ、(b) 登録の時に利用者の password を key の CTAP2 hmac-secret で AES-256-GCM に包み greeter が読める file（~ を 0711 に）[P1 の推奨]、(c) sessiond の request（BSD Auth・passkey の形の後）。K2 key と key の PIN（UV）[可]、K3 kl_system_account_v1 に add_passkey・remove_passkey（manager version 11）。
@@ -352,6 +353,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS170](ws170/ws.md) | 未定 | MG006 | 4（最初の範囲） | Phone の app、連絡先からタイムラインまで（2026-10-05 追加） |
 | [WS171](ws171/ws.md) | 未定 | MG008 | 2 | hal.h の全ての関数に契約の comment（2026-10-05 追加、急がない） |
 | [WS172](ws172/ws.md) | ベータ2 | MG006 | 4 | passkey の認証の枠組み（/sbin/passkey・/etc/passkey、2026-10-05 追加） |
+| [WS173](ws173/ws.md) | ベータ2 | MG006 | 3 | AAT（エージェントが素の実機を操作する受け入れの枠組み、2026-10-05 追加、最優先） |
 | [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、**ベータ1**） | WS049 |
 | [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |
 | [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
@@ -366,6 +368,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | planning（段は未定、2026-10-05） | — |
 | [WS171](ws171/ws.md) | MG008 | hal.h の全ての関数に HAL v2 と同じ水準の契約の comment を書く（comment の差分もユーザーの review の後に当てる）（2026-10-05 ユーザー「このコメント、すべての関数につけてほしいです。今でなくていいので」） | planning（急がない、2026-10-05） | — |
 | [WS172](ws172/ws.md) | MG006 | passkey の認証の枠組み: sessiond は外部の `/sbin/passkey`（base）で password・PIN・FIDO2（将来はセキュリティチップ）を確かめる、root だけの `/etc/passkey`、PIN の失敗の回数は sessiond の memory（2026-10-05 ユーザー） | planning（ベータ2、WS162・WS163 の mock を置き換える） | WS161 |
+| [WS173](ws173/ws.md) | MG006 | AAT（Agent Acceptance Test）: /dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の 5330 を操作して受け入れを確かめる。UAT はデバイス系と使用感に絞り AAT の後に遅らせる（2026-10-05 ユーザー） | planning（最優先） | — |
 
 ### リリースの段ごとの見積もり（2026-10-05）
 

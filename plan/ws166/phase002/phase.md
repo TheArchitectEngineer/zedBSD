@@ -2,7 +2,7 @@
 
 # ws166-p002: 予測の候補の生成（engine の側）
 
-Status: in-progress（2026-10-05 夕 q768: 実装と host の試験は済み、QEMU は p004）
+Status: cleared（2026-10-05 Q1: T1-196c PASS（QEMU、画面キーボードの予測の候補・確定・学習）、osk-guest の回帰も T1-196 で PASS）。以前: in-progress（2026-10-05 夕 q768: 実装と host の試験は済み、QEMU は p004）
 Disposition: normal
 Parent: [WS166](../ws.md)
 Queue: q737（Q1、2026-10-05）、q768（後半）
