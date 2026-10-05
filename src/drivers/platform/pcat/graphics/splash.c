@@ -11,10 +11,14 @@
  * On a quiet boot (kmsg=quiet) the loaders draw the Kei splash in the
  * middle of the screen over black bars (tools/build/make-boot-splash.py:
  * the picture 1920x1080, "fit=contain", without its spinner; ws035-p112).  The spinner is drawn here instead, eight blue dots
- * in a ring whose brightness turns one step each time the boot writes a line
- * of its log that nobody sees: the HAL's early console (cons.c) until the
- * kernel's console is up, then the kernel's quiet text console (text.c).
- * So the spinner moves as the boot goes on and stands still while it waits.
+ * in a ring whose brightness turns one step every SPLASH_STEP_MS of the HAL's
+ * monotonic counter (BUG-193: stepping once per log line turned it fast while
+ * the boot wrote many lines and slowly later).  It is drawn when the boot
+ * writes a line of its log that nobody sees -- the HAL's early console
+ * (cons.c) until the kernel's console is up, then the kernel's quiet text
+ * console (text.c) -- and only when the time has moved it on, so it stands
+ * still while the boot writes nothing.  Before the counter can be read (early
+ * in the HAL, or on a HAL without one) each line turns it one step, as before.
  *
  * Where the spinner is comes from the splash's layout, which the build
  * script and this file share: the picture is at its own size, or shrunk
@@ -32,6 +36,9 @@
 
 #include "splash.h"
 
+#include <hal/hal.h>
+
+#include <stdbool.h>
 #include <stddef.h>
 
 /* The splash's layout, in ten-thousandths of the picture's height (see make-boot-splash.py). */
@@ -49,6 +56,9 @@
 /* The largest square the spinner is drawn in, in pixels a side. */
 #define SPLASH_PATCH_MAX	96U
 
+/* How long the spinner shows each step, in milliseconds: one turn of the ring a second. */
+#define SPLASH_STEP_MS		125U
+
 /* How many dots, and the fixed point of positions (sixteenths of a pixel). */
 #define SPLASH_DOTS		8U
 #define SPLASH_SUBPIXEL		16
@@ -58,6 +68,10 @@
  * on it, the spinner's centre, ring and dot radii (in sixteenths of a
  * pixel, from the square's corner), and the frame shown.  active is zero
  * before the spinner starts and after it stops, and then nothing is drawn.
+ * timed is nonzero once the monotonic counter was read: the frame is then
+ * the time since time_start in steps of step_counts, and frame_base is the
+ * frame shown at that moment, so the turn goes on from where the per-line
+ * steps left it.
  */
 struct splash_spinner {
 	volatile uint32_t *pixels;
@@ -72,6 +86,10 @@ struct splash_spinner {
 	int ring;
 	int dot;
 	unsigned frame;
+	int timed;
+	uint64_t time_start;
+	uint64_t step_counts;
+	unsigned frame_base;
 };
 
 /*
@@ -112,6 +130,7 @@ static const uint8_t splash_colour[SPLASH_DOTS][3] = {
 };
 
 static void splash_draw(void);
+static int splash_timed_frame(unsigned *frame);
 static void splash_draw_dot(unsigned index, const uint8_t *colour);
 static uint32_t splash_blend(uint32_t under, const uint8_t *colour, unsigned coverage);
 
@@ -185,6 +204,7 @@ drv_pcat_splash_start(
 	splash.centre_x = (int)reach * SPLASH_SUBPIXEL;
 	splash.centre_y = (int)reach * SPLASH_SUBPIXEL;
 	splash.frame = 0U;
+	splash.timed = 0;
 
 	/* The picture under it, kept. */
 	for (y = 0; y < side; y++) {
@@ -214,18 +234,29 @@ drv_pcat_splash_retarget(
 }
 
 /*
- * Turns the spinner one step: the boot has written another line.
+ * Shows the spinner's frame for the time now: the boot has written another
+ * line.
  */
 void
 drv_pcat_splash_step(
 	void)
 {
+	unsigned frame;
+	int timed;
+
 	/* Nothing when the spinner is not shown. */
 	if (!splash.active)
 		return;
 
-	/* The next frame. */
-	splash.frame++;
+	/* The frame the time gives; without the counter, the next frame. */
+	timed = splash_timed_frame(&frame);
+	if (!timed)
+		frame = splash.frame + 1U;
+
+	/* Draws only a frame that differs from the one shown. */
+	if (frame == splash.frame)
+		return;
+	splash.frame = frame;
 	splash_draw();
 }
 
@@ -238,6 +269,41 @@ drv_pcat_splash_stop(
 {
 	/* Nothing is drawn any more. */
 	splash.active = 0;
+}
+
+/*
+ * Finds the frame for the time now from the HAL's monotonic counter.
+ * Reports 0 when the counter cannot be read yet, and the caller steps once
+ * per line instead.
+ */
+static int
+splash_timed_frame(
+	unsigned *frame)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t steps;
+	bool available;
+
+	/* Reads the counter, which an early HAL may not have yet. */
+	available = hal_rtc_read_counter(&counter, &frequency);
+	if (!available)
+		return 0;
+
+	/* The first reading starts the clock at the frame shown; the frequency stays for the boot. */
+	if (!splash.timed) {
+		splash.step_counts = frequency * SPLASH_STEP_MS / 1000U;
+		if (splash.step_counts == 0U)
+			splash.step_counts = 1U;
+		splash.time_start = counter;
+		splash.frame_base = splash.frame;
+		splash.timed = 1;
+	}
+
+	/* Reports the frame shown when the clock started plus the whole steps since. */
+	steps = (counter - splash.time_start) / splash.step_counts;
+	*frame = splash.frame_base + (unsigned)steps;
+	return 1;
 }
 
 /* Draws the frame: the kept picture, then each dot in its colour for the frame. */

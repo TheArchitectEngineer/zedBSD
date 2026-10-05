@@ -38,9 +38,14 @@
 #define TEXT_GLYPH_WIDTH	8U
 #define TEXT_GLYPH_HEIGHT	16U
 
-/* How often the splash's spinner turns by itself, and for how long at most (milliseconds, ws035-p107). */
-#define TEXT_SPLASH_TICK_MS	125U
-#define TEXT_SPLASH_TICKS_MAX	960U
+/*
+ * How often the splash's spinner is looked at while no line comes, and how
+ * many times at most (two minutes; milliseconds, ws035-p107).  The spinner
+ * keeps its own time and draws only when a step has passed (BUG-193), so a
+ * look much shorter than its step only keeps the turns even.
+ */
+#define TEXT_SPLASH_TICK_MS	25U
+#define TEXT_SPLASH_TICKS_MAX	4800U
 
 /* Bounds the static cell array; 1920x1080 needs 240x67. */
 #define TEXT_MAX_COLUMNS	240U
@@ -1003,9 +1008,10 @@ text_splash_ticker_start(
 }
 
 /*
- * Turns the splash's spinner every TEXT_SPLASH_TICK_MS while the console is
- * kept off the screen, until it is shown, a display is taken for graphics,
- * or TEXT_SPLASH_TICKS_MAX turns have passed (two minutes).
+ * Looks at the splash's spinner every TEXT_SPLASH_TICK_MS while the console
+ * is kept off the screen, so that it turns while no line comes, until the
+ * console is shown, a display is taken for graphics, or
+ * TEXT_SPLASH_TICKS_MAX looks have passed (two minutes).
  */
 static void
 text_splash_ticker(
