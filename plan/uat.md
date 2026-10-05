@@ -229,4 +229,6 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 
 - 確認済み: I2C の touchpad（BUG-210 resolved）、2 本指の scroll、Phone の慣性 scroll、mp4 の再生（frame の落ち無し）、app 6 個で memory 757 MB（ユーザー「問題ないと思います。」）。
 - 確認済み（続き）: 画面 keyboard の変換。
-- 所見: BUG-211〜BUG-233（[Bug Board](known-bugs.md)）。
+- 確認済み（続き）: app の icon の形（montage-4）はよい（ユーザー「アプリアイコンはよいです！」）。
+- 所見: BUG-211〜BUG-237（[Bug Board](known-bugs.md)）。上部の bar の新しいデザイン（ws099-p034）を早く確かめたい（montage だけでも）。
+- ユーザー「UATコメントは以上です。」
