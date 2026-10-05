@@ -25,7 +25,7 @@
 #define SESSIOND_GREETER_USER	"_greeter"
 
 /* The wallpaper the greeter shows when the image has one. */
-#define SESSIOND_WALLPAPER	"/usr/share/keiland/wallpaper.ppm"
+#define SESSIOND_WALLPAPER	"/usr/share/keiland/wallpaper.png"
 
 /* The descriptor the greeter talks to sessiond on, and the one the session does (ws035-p101). */
 #define SESSIOND_AUTH_FD	3

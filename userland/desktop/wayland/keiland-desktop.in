@@ -38,4 +38,4 @@ export XDG_RUNTIME_DIR WAYLAND_DISPLAY
 
 # Exec keeps termination signals and exit status attached to the actual desktop.
 exec "$prefix/bin/wayland" --session --glass \
-	--socket="$socket" --wallpaper="$prefix/share/keiland/wallpaper.ppm" "$@"
+	--socket="$socket" --wallpaper="$prefix/share/keiland/wallpaper.png" "$@"

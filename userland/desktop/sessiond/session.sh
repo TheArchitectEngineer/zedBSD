@@ -13,5 +13,5 @@ done
 
 # zdesktop, with the wallpaper when the image has one; its socket in the runtime directory.
 picture=
-[ -f /usr/share/keiland/wallpaper.ppm ] && picture=--wallpaper=/usr/share/keiland/wallpaper.ppm
+[ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 exec /bin/wayland --session --glass --socket="$XDG_RUNTIME_DIR/wayland-0" $picture "$@"

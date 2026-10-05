@@ -6,13 +6,17 @@
  */
 
 /*
- * The host test of the wallpaper decoding (ws138-p001,
+ * The host test of the wallpaper decoding (ws138-p001, ws138-p002,
  * userland/desktop/picture/wallpaper.c).
  *
  *   host-wallpaper-decode FILE          prints "ok WIDTHxHEIGHT r,g,b r,g,b" (the first two pixels) or "error E"
  *   host-wallpaper-decode same A B      prints "same" when both decode to the same pixels, else "differ"
  *   host-wallpaper-decode near A B N    prints "near" when the mean absolute difference is at most N, else "far M"
  *   host-wallpaper-decode grey FILE     prints "grey" when every pixel has equal red, green and blue
+ *
+ * A file whose name ends in ".rgb" is a reference, not decoded: a line
+ * "WIDTH HEIGHT" and then the RGB pixels (the script writes them from
+ * Python's own PNG reading, ppm-to-png.py's read_png).
  *
  * run-host-wallpaper-decode.sh makes the files and checks the lines.
  */
@@ -24,6 +28,7 @@
 #include "wallpaper.h"
 
 static int decode_file(const char *path, struct kl_wallpaper_image *image);
+static int reference_take(unsigned char *data, size_t size, struct kl_wallpaper_image *image);
 static int show(const char *path);
 static int same(const char *left, const char *right);
 static int near(const char *left, const char *right, double limit);
@@ -78,7 +83,9 @@ decode_file(
 	unsigned char *data;
 	FILE *stream;
 	size_t count;
+	size_t length;
 	long size;
+	int reference;
 	int error;
 
 	/* Reads the whole file. */
@@ -105,10 +112,52 @@ decode_file(
 		return 5;
 	}
 
+	/* A reference keeps its bytes as the pixels. */
+	length = strlen(path);
+	reference = 1;
+	if (length > 4U)
+		reference = strcmp(path + length - 4U, ".rgb");
+	if (reference == 0)
+		return reference_take(data, (size_t)size, image);
+
 	/* Decodes it; the bytes stay ours. */
 	error = kl_wallpaper_decode(data, (size_t)size, image);
 	free(data);
 	return error;
+}
+
+/* Takes a reference's pixels after its "WIDTH HEIGHT" line; frees the bytes on a failure. */
+static int
+reference_take(
+	unsigned char *data,
+	size_t size,
+	struct kl_wallpaper_image *image)
+{
+	unsigned width;
+	unsigned height;
+	size_t at;
+	int fields;
+
+	/* The line with the size. */
+	data[size] = '\0';
+	fields = sscanf((const char *)data, "%u %u", &width, &height);
+	at = 0;
+	while (at < size && data[at] != '\n')
+		at++;
+	at++;
+
+	/* The pixels must be all there. */
+	if (fields != 2 || at > size || size - at != (size_t)width * height * 3U) {
+		free(data);
+		return 22;
+	}
+
+	/* Moves the pixels to the start of the buffer, which becomes the image's. */
+	memmove(data, data + at, size - at);
+	image->rgb = data;
+	image->width = width;
+	image->height = height;
+	return 0;
 }
 
 /* Prints a file's size and first two pixels, or its error. */

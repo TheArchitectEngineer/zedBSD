@@ -90,7 +90,7 @@ The shared Linux/FreeBSD launcher supplies `--session`, the glass appearance,
 installed wallpaper and matching server/client socket. It preserves a supplied
 `XDG_RUNTIME_DIR`; otherwise it creates `$HOME/.cache/keiland-runtime` with mode
 0700. Additional compositor options are passed through, for example
-`keiland-desktop --wallpaper=/path/picture.ppm`. Seat/device selections remain
+`keiland-desktop --wallpaper=/path/picture.png` (a PNG or a JPEG). Seat/device selections remain
 under the native backend and caller's environment. Linux GDM continues to run
 `wayland` directly, without this launcher.
 

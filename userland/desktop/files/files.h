@@ -52,8 +52,8 @@
 #define FM_LIST_HEADER		30
 #define FM_LIST_ROW		28
 
-/* The desktop's wallpaper, which the dashboard's hero card shows (a binary PPM). */
-#define FM_WALLPAPER		KEILAND_DATADIR "/keiland/wallpaper.ppm"
+/* The desktop's wallpaper, which the dashboard's hero card shows (a PNG, ws138-p002). */
+#define FM_WALLPAPER		KEILAND_DATADIR "/keiland/wallpaper.png"
 
 /* The window's size when the compositor leaves it to the program. */
 #define FM_WIDTH		1120

@@ -136,15 +136,15 @@ $(KEILAND_LINUX_BUILD)/bin/keiland-desktop: userland/desktop/wayland/keiland-des
 KEILAND_LINUX_ALL += $(KEILAND_LINUX_BUILD)/bin/keiland-desktop
 KEILAND_LINUX_INSTALL += bin/keiland-desktop
 
-# Bundled gradients are generated outside git; a user's default picture stays outside git too.
+# Bundled gradients are generated outside git (PNG, ws138-p002); the default picture is the tree's Birch-Lake.png (U3).
 KEILAND_LINUX_WALLPAPER_NAMES := Aurora Dawn Lagoon Meadow Twilight
-KEILAND_LINUX_WALLPAPERS := $(addprefix $(KEILAND_LINUX_BUILD)/share/keiland/wallpapers/,$(addsuffix .ppm,$(KEILAND_LINUX_WALLPAPER_NAMES)))
+KEILAND_LINUX_WALLPAPERS := $(addprefix $(KEILAND_LINUX_BUILD)/share/keiland/wallpapers/,$(addsuffix .png,$(KEILAND_LINUX_WALLPAPER_NAMES)))
 $(KEILAND_LINUX_WALLPAPERS) &: userland/desktop/wallpapers/generate.py
 	python3 $< $(KEILAND_LINUX_BUILD)/share/keiland/wallpapers
-KEILAND_LINUX_WALLPAPER ?= $(if $(wildcard build/ws035-wallpaper/wallpaper.ppm),build/ws035-wallpaper/wallpaper.ppm,$(KEILAND_LINUX_BUILD)/share/keiland/wallpapers/Aurora.ppm)
-$(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpaper.ppm,$(KEILAND_LINUX_WALLPAPER)))
+KEILAND_LINUX_WALLPAPER ?= userland/desktop/keiland/wallpapers/Birch-Lake.png
+$(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpaper.png,$(KEILAND_LINUX_WALLPAPER)))
 KEILAND_LINUX_ALL += $(KEILAND_LINUX_WALLPAPERS)
-KEILAND_LINUX_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .ppm,$(KEILAND_LINUX_WALLPAPER_NAMES)))
+KEILAND_LINUX_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .png,$(KEILAND_LINUX_WALLPAPER_NAMES)))
 
 # The Japanese dictionary is in the tree (userland/desktop/ime/dict/SKK-JISYO.ja, one file of the supplement and
 # REmacs's dictionary since ws095-p017); the copyright holder's WS095 D1 relicensing places it under the project license.
