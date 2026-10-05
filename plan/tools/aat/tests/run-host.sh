@@ -25,8 +25,11 @@ expect_record() {
 	if [ "$got" = "$2" ]; then ok "$1"; else bad "$1: got [$got] want [$2]"; fi
 }
 
-# The input, with the screen's size from a shot.
+# The input, with the screen's size from a shot.  The fake server stays in the background on the descriptors it was
+# started with, as the real one does: start returns at once all the same (T1-200).
+began=$(date +%s)
 aat start | grep -q 'screen 64x48' && ok start || bad start
+[ $(( $(date +%s) - began )) -lt 20 ] && ok "start returns with the server in the background" || bad "start waited for the server"
 : > "$record"
 
 aat click 10 20 && expect_record click "click left 10 20"
@@ -66,9 +69,22 @@ aat lines 'old line' --since before >/dev/null && bad "lines before the mark" ||
 aat lines 'old line' >/dev/null && ok "lines from the start" || bad "lines from the start"
 aat wait-log 'never' --timeout 1 2>/dev/null && bad "wait-log timeout" || ok "wait-log timeout"
 aat where 9 | grep -qx '120 60 640 480' && ok where || bad where
-aat windows | grep -q '^9 3 True 120 60 640 480$' && ok windows || bad windows
+aat windows | grep -q "^9 3 True 120 60 640 480 0$" && ok windows || bad windows
 printf 'ZWL UNMAP client=3 surface=9\n' >> "$AAT_LOG"
 aat windows | grep -q '^9 3 False ' && ok unmap || bad unmap
+# Where a window goes: launched, moved, docked, undocked; the press's point is not the window's place.
+cat >> "$AAT_LOG" <<'EOF2'
+ZWL MAP client=4 surface=12 x=0 y=0
+ZWL GLASS launch surface=12 from=10,10 to=300,200 size=800x600
+ZWL GLASS press move surface=12 x=700 y=170
+ZWL GLASS moved surface=12 x=340 y=260
+EOF2
+aat where 12 | grep -qx '340 260 800 600' && ok "launch and move" || bad "launch and move: $(aat where 12)"
+printf 'ZWL GLASS dock surface=12 via=double-click buttons=1,2,3 title=60 x=0 y=48 w=1280 h=752\n' >> "$AAT_LOG"
+aat windows | grep -q '^12 4 True 0 48 1280 752 1$' && ok dock || bad dock
+printf 'ZWL GLASS undock surface=12 via=drag x=200 y=150\nZWL GLASS resized surface=12 docked=0 width=800 height=600 after_ms=1 acked_ms=1 committed_ms=1 sent_at_ms=1\n' >> "$AAT_LOG"
+aat windows | grep -q '^12 4 True 200 150 800 600 0$' && ok undock || bad undock
+aat windows --json | python3 -c 'import json,sys; w={x["surface"]: x for x in json.load(sys.stdin)}; sys.exit(0 if w[12]["x"] == 200 else 1)' && ok "windows --json" || bad "windows --json"
 
 # A shot, a command, files both ways.
 aat shot "$tmp/screen.png" | grep -q '64x48' && ok shot || bad shot

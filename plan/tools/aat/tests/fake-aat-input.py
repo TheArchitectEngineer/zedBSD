@@ -4,12 +4,15 @@
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 "start --width W --height H" makes the server (a state file in
-FAKE_AAT_DIR) and prints "AAT-INPUT ready ..."; "stop" ends it; every
+FAKE_AAT_DIR, and a child in the background that keeps the descriptors
+it was started with, as the real server does) and prints
+"AAT-INPUT ready ..."; "stop" ends it; every
 other command is checked as aat-input checks it, written to
 FAKE_AAT_DIR/record, and answered "ok" or "error WHY" (status 1).
 """
 import os
 import sys
+import time
 
 DIRECTORY = os.environ["FAKE_AAT_DIR"]
 STATE = os.path.join(DIRECTORY, "server")
@@ -64,7 +67,18 @@ def main():
 		width, height = int(words[words.index("--width") + 1]), int(words[words.index("--height") + 1])
 		with open(STATE, "w", encoding="utf-8") as state:
 			state.write(f"{width} {height}\n")
-		print(f"AAT-INPUT ready width={width} height={height} pid=1")
+		# Like the real server, a child stays in the background holding the descriptors it was started with,
+		# until stop (or two minutes): a caller that waits for the end of its output waits for that (T1-200).
+		sys.stdout.flush()
+		child = os.fork()
+		if child == 0:
+			os.setsid()
+			for _ in range(600):
+				if not os.path.exists(STATE):
+					break
+				time.sleep(0.2)
+			os._exit(0)
+		print(f"AAT-INPUT ready width={width} height={height} pid={child}")
 		return 0
 	if not os.path.exists(STATE):
 		print("error no-server (aat-input start first)")
