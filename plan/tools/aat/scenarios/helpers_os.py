@@ -177,7 +177,8 @@ def admin(request: list[str]) -> str:
 
 @run.define("os.accounts.account-admin")
 def account_admin(item):
-	run.sh("grep -q '^aatuser:' /etc/passwd && { printf 'kei\\nremove\\naatuser\\nremove-home\\n' | su kei -c /usr/libexec/account-admin; }; true")
+	run.sh("grep -q '^aatuser:' /etc/passwd && { printf 'kei\\nremove\\naatuser\\nremove-home\\n' | su kei -c /usr/libexec/account-admin; }; "
+		"grep -q '^aatuser:' /etc/passwd || rm -rf /home/aatuser; true")
 	cases = [
 		("a wrong caller's password", ["wrong-pass", "add", "aatuser", "AAT User", "aat-pass-1", "user"], "error bad-password"),
 		("a bad name", [aatlib.PASSWORD, "add", "Bad Name", "AAT User", "aat-pass-1", "user"], "error bad-name"),

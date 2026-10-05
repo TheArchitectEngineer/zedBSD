@@ -259,8 +259,10 @@ def settings_password(item):
 
 
 def remove_aatuser() -> None:
-	"""Removes aatuser when a run left it (as kei, through account-admin)."""
-	run.sh("grep -q '^aatuser:' /etc/passwd && { printf 'kei\\nremove\\naatuser\\nremove-home\\n' | su kei -c /usr/libexec/account-admin; }; true")
+	"""Removes aatuser when a run left it (as kei, through account-admin), and its home (a removal from Settings keeps
+	it unless its switch says otherwise, and a home left makes the next addition fail with home-exists)."""
+	run.sh("grep -q '^aatuser:' /etc/passwd && { printf 'kei\\nremove\\naatuser\\nremove-home\\n' | su kei -c /usr/libexec/account-admin; }; "
+		"grep -q '^aatuser:' /etc/passwd || rm -rf /home/aatuser; true")
 
 
 @run.define("apps.settings.manage-users")
