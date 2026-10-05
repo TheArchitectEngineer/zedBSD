@@ -9,10 +9,11 @@
  * Calendar (WS155 p000): the mock of Keiland's calendar.  Only its face
  * exists: the months one under another with the events of four
  * calendars (test data in the program, data.c), a sidebar, a panel to add
- * an event by dragging its kind onto a date, and a desk calendar drawn in
- * 3D (render3d.h, scene.h) that breathes slowly and turns its page when
- * the date shown changes.  Nothing is stored; an event dropped on a date
- * lasts while the program runs.
+ * an event by dragging its kind (an icon drawn in 3D, render3d.h and
+ * scene.h) onto a date, the application's one memo (dragged onto a date,
+ * it is kept there as a memo), and the day chosen with a small desk
+ * calendar in 3D that turns its page when the day changes.  Nothing is
+ * stored; what is dropped on a date lasts while the program runs.
  *
  * The view (view.c) draws a frame with libkeiland's canvas and widgets and
  * knows nothing of the window, so that the host tests draw it into
@@ -64,12 +65,30 @@ struct cal_added {
 	enum cal_list list;
 };
 
+/* The longest memo, with its NUL; the most memos kept on dates; the longest title of one. */
+#define CAL_MEMO_MAX		1024U
+#define CAL_MEMOS_MAX		16U
+#define CAL_MEMO_TITLE		64U
+
+/*
+ * The memo kept on a date (the application's memo dropped there, while
+ * the program runs): its day, its first line as its title, and its words.
+ */
+struct cal_memo {
+	struct cal_date date;
+	char title[CAL_MEMO_TITLE];
+	char text[CAL_MEMO_MAX];
+};
+
 /* The actions of the menu, the keys and the buttons. */
 #define CAL_ACTION_TODAY	1U
 #define CAL_ACTION_PREVIOUS	2U
 #define CAL_ACTION_NEXT		3U
 #define CAL_ACTION_MOTION	4U
 #define CAL_ACTION_QUIT		5U
+
+/* What a drag of the memo is (a kind of event's is its index). */
+#define CAL_DRAG_MEMO		4
 
 /* The most events dropped, cells remembered from a frame, and months shown. */
 #define CAL_ADDED_MAX		32U
@@ -90,11 +109,15 @@ struct cal_cell {
  * months, the month it is to go to at the next frame (0 for none), the
  * search field, and the calendars hidden (a bit each).
  *
- * The motion: whether it is reduced (no breathing, pages and cells change
- * at once), when the view began (the breathing's clock), a page turning
+ * The motion: whether it is reduced (pages and cells change at once),
+ * when the view began, a page turning
  * (when it began, from which day to which), a cell sinking after a drop
- * (when and which), and a drag of a kind of event (its kind, -1 for
- * none, and whether it has moved off its card).
+ * (when and which), and a drag of a kind of event or of the memo (its
+ * kind, CAL_DRAG_MEMO for the memo, -1 for none, and whether it has moved
+ * off its card).
+ *
+ * The memo of the application (its words and whether it has the
+ * keyboard) and the memos kept on dates.
  *
  * The events dropped, the cells of the last frame, the notice shown at the
  * bottom until a time (empty for none), whether the window stands on glass, and whether
@@ -127,6 +150,12 @@ struct cal_view {
 	int drag_moved;
 	double drag_from_x;
 	double drag_from_y;
+
+	char memo[CAL_MEMO_MAX];
+	size_t memo_length;
+	int memo_focus;
+	struct cal_memo memos[CAL_MEMOS_MAX];
+	size_t memo_count;
 
 	struct cal_added added[CAL_ADDED_MAX];
 	size_t added_count;

@@ -10,10 +10,10 @@
 /*
  * ws155-p000: draws Calendar's view (userland/desktop/calendar/view.c) on
  * the host into pictures at chosen times, and drives it as the window
- * would: the start, the desk calendar breathing over seven seconds, a
- * date clicked and its page turning, a kind of event dragged onto a date
- * and the cell sinking, the next month, a calendar hidden, the search,
- * the motion reduced, and the cards on glass.  The "CALENDAR" lines the
+ * would: the start, a date clicked and the small desk calendar's page
+ * turning, a kind of event dragged onto a date and the cell sinking, the
+ * memo typed in and dragged onto a date, the next month, a calendar
+ * hidden, the motion reduced, and the cards on glass.  The "CALENDAR" lines the
  * view logs are checked.
  *
  *     host-calendar FONT FALLBACK PREFIX
@@ -62,9 +62,9 @@ main(
 	int argc,
 	char **argv)
 {
-	static const char *const breaths[] = { "breath-0", "breath-1", "breath-2", "breath-3" };
 	static const char *const flips[] = { "flip-0", "flip-1", "flip-2", "flip-3", "flip-4", "flip-5" };
 	static const char *const sinks[] = { "sink-0", "sink-1", "sink-2" };
+	static const uint32_t memo_keys[] = { KL_KEY_SPACE, 24U, 37U };
 	struct cal_date today;
 	struct kl_canvas canvas;
 	struct kl_style style;
@@ -129,14 +129,6 @@ main(
 	(void)test_save(&view, &canvas, argv[3], "start", 0);
 	test_check("start", "READY today=2026-10-05");
 
-	/* The breathing: four frames over seven seconds. */
-	for (i = 0; i < 4; i++) {
-		/* One frame, 1.75 s after the last. */
-		test_now += 1750000U;
-		test_frame(&view, ui, &style);
-		(void)test_save(&view, &canvas, argv[3], breaths[i], 0);
-	}
-
 	/* A frame of the desk calendar alone (as the window draws while only it moves) is the whole frame's. */
 	test_now += 400000U;
 	desk_only = cal_view_desk_only(&view);
@@ -182,10 +174,36 @@ main(
 		test_frame(&view, ui, &style);
 	}
 
+	/* The memo: a click gives it the keyboard, " ok" is typed, then it is dragged by its header onto the 26th. */
+	test_now += 1000000U;
+	test_click(&view, ui, &style, 1100, 500);
+	for (i = 0; i < 3; i++) {
+		/* One key: Space, O, K. */
+		(void)kl_ui_key(ui, memo_keys[i], 1, 0U);
+		test_frame(&view, ui, &style);
+	}
+
+	/* The memo's header pressed, moved over the 26th and let go. */
+	(void)kl_ui_pointer_motion(ui, 1050.0, 417.0);
+	(void)kl_ui_pointer_button(ui, 1, test_now);
+	test_frame(&view, ui, &style);
+	(void)kl_ui_pointer_motion(ui, 700.0, 500.0);
+	test_frame(&view, ui, &style);
+	(void)kl_ui_pointer_motion(ui, TEST_GRID_X + TEST_COLUMN + 49, TEST_GRID_Y + 52 + 4 * TEST_ROW + 52);
+	test_frame(&view, ui, &style);
+	(void)test_save(&view, &canvas, argv[3], "memo-drag", 0);
+	(void)kl_ui_pointer_button(ui, 0, test_now + 20000U);
+	test_frame(&view, ui, &style);
+	test_frame(&view, ui, &style);
+	test_check("memo", "MEMO date=2026-10-26 length=85");
+	test_now += 700000U;
+	test_frame(&view, ui, &style);
+	(void)test_save(&view, &canvas, argv[3], "memo", 0);
+
 	/* The next month: November chosen, the months glide to it. */
 	test_now += 1000000U;
 	test_click(&view, ui, &style, 306, 42);
-	test_check("next", "SELECT date=2026-11-22");
+	test_check("next", "SELECT date=2026-11-26");
 	for (i = 0; i < 40; i++) {
 		/* The glide and the turn. */
 		test_now += 16000U;

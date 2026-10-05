@@ -62,15 +62,10 @@
 #define ACCOUNT_SHADOW_MAX	(256U * 1024U)
 
 /* The new shadow's name pattern, in /etc so that the rename stays in one file system. */
-#define ACCOUNT_SHADOW_TEMPLATE	"/etc/.shadow.XXXXXX"
 
 /* The caller's variables that come along. */
 static const char *const account_kept[] = { "TERM=", "COLORTERM=", "LANG=", "LC_", "TZ=" };
 
-static int account_lock(void);
-static void account_unlock(void);
-static int account_read(char *buffer, size_t capacity, size_t *length);
-static int account_write(const char *text, size_t length);
 static int account_append(char *storage, size_t storage_size, size_t *used, char **variables, size_t capacity, size_t *count, const char *name, const char *value);
 static int account_kept_variable(const char *variable);
 
@@ -322,17 +317,17 @@ account_shadow_set(
 	output = malloc(ACCOUNT_SHADOW_MAX + ACCOUNT_HASH_MAX + 64U);
 	error = ENOMEM;
 	if (text != NULL && output != NULL)
-		error = account_lock();
+		error = account_files_lock();
 
 	/* Under the lock: the file, its user's line replaced, written anew. */
 	if (error == 0) {
 		day = (long)(time(NULL) / 86400);
-		error = account_read(text, ACCOUNT_SHADOW_MAX, &length);
+		error = account_file_read(ACCOUNT_SHADOW_PATH, text, ACCOUNT_SHADOW_MAX, &length);
 		if (error == 0)
 			error = account_shadow_replace(text, length, name, hash, day, output, ACCOUNT_SHADOW_MAX + ACCOUNT_HASH_MAX + 64U, &written);
 		if (error == 0)
-			error = account_write(output, written);
-		account_unlock();
+			error = account_file_write(ACCOUNT_SHADOW_PATH, 0400, output, written);
+		account_files_unlock();
 	}
 
 	/* The copies of the file are wiped (they hold every hash), and the signals come again. */
@@ -462,9 +457,13 @@ account_environment(
 	return count;
 }
 
-/* Takes the shadow's lock, waiting a little for another holder and taking over a stale one. */
-static int
-account_lock(void)
+/*
+ * Takes the lock of the account files (passwd, group and shadow change
+ * only under it), waiting a little for another holder and taking over a
+ * stale one.  Returns 0, EBUSY when it stays taken, or an errno value.
+ */
+int
+account_files_lock(void)
 {
 	struct stat status;
 	unsigned tries;
@@ -501,17 +500,21 @@ account_lock(void)
 	return EBUSY;
 }
 
-/* Gives the shadow's lock back. */
-static void
-account_unlock(void)
+/* Gives the lock of the account files back. */
+void
+account_files_unlock(void)
 {
 	/* The lock file goes. */
 	(void)unlink(ACCOUNT_SHADOW_LOCK);
 }
 
-/* Reads the whole shadow file. */
-static int
-account_read(
+/*
+ * Reads a whole account file into a buffer.  Returns 0, EFBIG when it
+ * does not fit, or an errno value.
+ */
+int
+account_file_read(
+	const char *path,
 	char *buffer,
 	size_t capacity,
 	size_t *length)
@@ -522,7 +525,7 @@ account_read(
 	int error;
 
 	/* The file. */
-	descriptor = open(ACCOUNT_SHADOW_PATH, O_RDONLY | O_CLOEXEC);
+	descriptor = open(path, O_RDONLY | O_CLOEXEC);
 	if (descriptor < 0)
 		return errno;
 
@@ -556,25 +559,43 @@ account_read(
 	return error;
 }
 
-/* Writes the new shadow file next to the old one, syncs it and renames it over the old one. */
-static int
-account_write(
+/*
+ * Replaces an account file with a text: written to a new file in its
+ * directory with a mode, synced, renamed over it, and the directory
+ * synced; a reader sees the old file or the new one.  Returns 0 or an
+ * errno value (the old file is kept).
+ */
+int
+account_file_write(
+	const char *target,
+	mode_t mode,
 	const char *text,
 	size_t length)
 {
-	char path[sizeof(ACCOUNT_SHADOW_TEMPLATE)];
+	char path[ACCOUNT_PATH_MAX];
+	char directory_path[ACCOUNT_PATH_MAX];
+	const char *slash;
 	ssize_t put;
 	size_t done;
 	int descriptor;
 	int directory;
+	int written;
 	int error;
 
-	/* The new file, the shadow's mode. */
-	memcpy(path, ACCOUNT_SHADOW_TEMPLATE, sizeof(path));
+	/* The new file's name, in the target's directory. */
+	slash = strrchr(target, '/');
+	if (slash == NULL || (size_t)(slash - target) + sizeof("/.account.XXXXXX") > sizeof(path))
+		return ENAMETOOLONG;
+	(void)snprintf(directory_path, sizeof(directory_path), "%.*s", (int)(slash - target), target);
+	written = snprintf(path, sizeof(path), "%s/.account.XXXXXX", directory_path);
+	if (written < 0 || (size_t)written >= sizeof(path))
+		return ENAMETOOLONG;
+
+	/* The new file, with its mode. */
 	descriptor = mkstemp(path);
 	if (descriptor < 0)
 		return errno;
-	error = fchmod(descriptor, 0400);
+	error = fchmod(descriptor, mode);
 
 	/* Its text. */
 	done = 0;
@@ -603,7 +624,7 @@ account_write(
 
 	/* Over the old file; a failure leaves the old one and removes the new. */
 	if (error == 0) {
-		error = rename(path, ACCOUNT_SHADOW_PATH);
+		error = rename(path, target);
 		if (error != 0)
 			error = errno;
 	}
@@ -615,13 +636,13 @@ account_write(
 	}
 
 	/* The directory's entry on the disk too. */
-	directory = open("/etc", O_RDONLY | O_CLOEXEC);
+	directory = open(directory_path, O_RDONLY | O_CLOEXEC);
 	if (directory >= 0) {
 		(void)fsync(directory);
 		(void)close(directory);
 	}
 
-	/* Succeeded: the shadow is the new one. */
+	/* Succeeded: the file is the new one. */
 	return 0;
 }
 
