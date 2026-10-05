@@ -368,6 +368,24 @@ drv_acpi_resources_walk(
 	drv_acpi_resource_visitor_t visitor,
 	void *argument);
 
+/*
+ * The resources of a PCI host bridge (the _CRS of the PNP0A03 or PNP0A08
+ * device whose _SEG and _BBN name the segment and bus), and those of the
+ * motherboard resource devices (PNP0C01, PNP0C02), for the placement of a
+ * BAR the firmware left unassigned (acpi-pci-root.c, BUG-210).
+ */
+int
+drv_acpi_pci_root_resources_walk(
+	uint16_t segment,
+	uint8_t bus,
+	drv_acpi_resource_visitor_t visitor,
+	void *argument);
+
+int
+drv_acpi_system_resources_walk(
+	drv_acpi_resource_visitor_t visitor,
+	void *argument);
+
 int
 drv_acpi_events_init(
 	const uint8_t *fadt,

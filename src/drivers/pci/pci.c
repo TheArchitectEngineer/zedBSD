@@ -54,6 +54,12 @@ struct drv_pci_bus {
 	struct drv_dma_device *dma;
 	struct drv_pci_bus *parent, *next;
 	struct drv_pci_device *bridge, *devices;
+	/*
+	 * Nonzero on a root bus whose host asked for defer_unassigned, until
+	 * drv_pci_probe_deferred() ends the wait: while it is set, a function
+	 * with an unassigned memory BAR is not attached (BUG-210).
+	 */
+	unsigned deferring;
 };
 
 /*
@@ -83,6 +89,12 @@ struct drv_pci_device {
 	struct drv_pci_bar bars[6];
 	uint8_t bar_claimed[6];
 	uint32_t irq_claimed;
+	/*
+	 * Nonzero while a matching driver waits for the host to assign the
+	 * function's unassigned memory BAR; drv_pci_probe_deferred() clears
+	 * it and probes the function.
+	 */
+	unsigned probe_deferred;
 };
 
 struct pci_driver_entry {
@@ -163,6 +175,7 @@ static void pci_intx_unmask_after_message(struct pci_irq_cookie *cookie);
 static void pci_irq_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static void pci_intx_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static int describe_visit(struct drv_pci_device *device, void *argument);
+static bool pci_probe_waits(const struct drv_pci_device *device);
 
 /*
  * Brings the PCI subsystem into service.
@@ -238,6 +251,12 @@ drv_pci_bus_create_root(
 	bus->ops = ops;
 	bus->host = host;
 	bus->dma = dma;
+
+	/* A host that assigns unassigned BARs itself holds their functions back until it has. */
+	if (ops->defer_unassigned != 0)
+		bus->deferring = 1;
+
+	/* Publishes the root bus to the scan and the driver registry. */
 	bus->next = root_buses;
 	root_buses = bus;
 	*result = bus;
@@ -2000,6 +2019,7 @@ drv_pci_device_probe(
 	int best_score;
 	int error;
 	int cleanup_error;
+	bool waits;
 
 	/* Requires a device whose lifecycle can be claimed. */
 	if (device == NULL)
@@ -2035,6 +2055,18 @@ drv_pci_device_probe(
 	error = ENODEV;
 	if (best == NULL)
 		goto release_binding;
+
+	/*
+	 * Holds the attach back while the host has yet to give the function's
+	 * memory BAR an address (BUG-210); drv_pci_probe_deferred() probes it
+	 * again once the host has.
+	 */
+	waits = pci_probe_waits(device);
+	if (waits) {
+		device->probe_deferred = 1;
+		error = EAGAIN;
+		goto release_binding;
+	}
 
 	/* Admits service staging only while the hardware attach is executing. */
 	device->attaching_driver = best->driver;
@@ -2151,6 +2183,59 @@ drv_pci_device_reprobe(
 
 	/* Returns the computed result. */
 	return error;
+}
+
+/*
+ * Tells whether a function waits for its host to assign a memory BAR.
+ */
+bool
+drv_pci_device_probe_deferred(
+	const struct drv_pci_device *device)
+{
+	/* A missing function waits for nothing. */
+	if (device == NULL)
+		return false;
+
+	/* Reports the wait the probe recorded. */
+	if (device->probe_deferred != 0)
+		return true;
+
+	/* Succeeded: the function does not wait. */
+	return false;
+}
+
+/*
+ * Ends the wait for BAR assignment and probes the functions that waited.
+ *
+ * The host calls it once it has given the waiting functions' BARs what
+ * addresses it could; a function whose BAR stayed unassigned is probed as
+ * well, and its driver reports the BAR it cannot map.
+ */
+int
+drv_pci_probe_deferred(void)
+{
+	struct drv_pci_bus *bus;
+	struct drv_pci_device *device;
+
+	/* Ends the wait on every root bus, then probes the functions that waited there. */
+	for (bus = root_buses; bus != NULL; bus = bus->next) {
+		/* A probe from now on attaches the bus's functions as they are. */
+		bus->deferring = 0;
+
+		/* Probes each function that waited. */
+		for (device = bus->devices; device != NULL; device = device->next) {
+			/* Passes over a function that did not wait. */
+			if (device->probe_deferred == 0)
+				continue;
+
+			/* Offers the function to the drivers again; a failed attach was logged by its driver. */
+			device->probe_deferred = 0;
+			(void)drv_pci_device_probe(device);
+		}
+	}
+
+	/* Succeeded: no function waits any more. */
+	return 0;
 }
 
 /*
@@ -3504,4 +3589,34 @@ pci_intx_unmask_after_message(
 	if (error != 0)
 		return;
 	cookie->intx_disable_set = 0;
+}
+
+/* Tells whether a function on a deferring root bus has a memory BAR at address 0. */
+static bool
+pci_probe_waits(
+	const struct drv_pci_device *device)
+{
+	const struct drv_pci_bar *bar;
+	unsigned index;
+
+	/* Only a root bus whose host has yet to assign BARs holds a function back. */
+	if (device->bus->deferring == 0)
+		return false;
+
+	/* Looks for a memory BAR with a size and no address. */
+	for (index = 0; index < device->bar_count; index++) {
+		/* An I/O BAR, an absent one or an empty one is not waited for. */
+		bar = &device->bars[index];
+		if (bar->type != DRV_PCI_BAR_MEMORY32 && bar->type != DRV_PCI_BAR_MEMORY64)
+			continue;
+		if (bar->size == 0)
+			continue;
+
+		/* A BAR at address 0 is the firmware's "unassigned". */
+		if (bar->bus_address == 0)
+			return true;
+	}
+
+	/* Succeeded: every memory BAR has an address. */
+	return false;
 }

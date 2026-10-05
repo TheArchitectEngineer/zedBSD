@@ -65,7 +65,13 @@ static const struct drv_pci_bus_ops pcat_bus_ops = {
 	.map_bar = pcat_map_bar,
 	.unmap_bar = pcat_unmap_bar,
 	.allocate_irqs = pcat_allocate_irqs,
-	.free_irqs = pcat_free_irqs
+	.free_irqs = pcat_free_irqs,
+#if CONFIG_DRIVER_ACPI
+	/* The BARs the firmware left unassigned are placed once ACPI gives the windows (BUG-210). */
+	.defer_unassigned = 1
+#else
+	.defer_unassigned = 0
+#endif
 };
 
 /*

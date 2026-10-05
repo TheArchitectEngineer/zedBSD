@@ -262,6 +262,19 @@ kern_platform_init(
 	acpi_error = drv_acpi_attach();
 	if (acpi_error != 0 && acpi_error != ENODEV)
 		kern_logf("acpi: attachment failed (error %d)\n", acpi_error);
+
+	/*
+	 * Gives the memory BARs the firmware left unassigned an address in the
+	 * host bridge's _CRS windows, and attaches the functions that waited
+	 * for it (BUG-210: the 5330's LPSS I2C controllers, whose buses the
+	 * touch pad's I2C-HID probe below needs).  Without a namespace there
+	 * are no windows, and the functions are attached as they are.
+	 */
+	if (acpi_error == 0) {
+		drv_pci_pcat_assign_deferred();
+	} else {
+		(void)drv_pci_probe_deferred();
+	}
 #endif
 
 	/* Lists every BIOS IDE unit as a boot device. */

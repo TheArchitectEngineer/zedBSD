@@ -162,6 +162,14 @@ struct drv_pci_bus_ops {
 		struct drv_pci_device *,
 		struct drv_pci_irq *,
 		unsigned);
+
+	/*
+	 * Nonzero asks the core to hold back the probe of a function on a
+	 * root bus whose memory BAR the firmware left unassigned (address 0,
+	 * size not 0), so the host can give the BAR an address once it knows
+	 * its windows; drv_pci_probe_deferred() ends the wait (BUG-210).
+	 */
+	unsigned defer_unassigned;
 };
 
 /*
@@ -530,6 +538,18 @@ drv_pci_device_detach(
 int
 drv_pci_device_reprobe(
 	struct drv_pci_device *d);
+
+/*
+ * Probes held back for an unassigned memory BAR (struct drv_pci_bus_ops's
+ * defer_unassigned).  drv_pci_device_probe_deferred() tells whether a
+ * function waits; drv_pci_probe_deferred() ends the wait on every root bus
+ * and probes the functions that waited, assigned or not.
+ */
+bool
+drv_pci_device_probe_deferred(
+	const struct drv_pci_device *device);
+int
+drv_pci_probe_deferred(void);
 
 /*
  * Built-in driver registry and matching.
