@@ -60,3 +60,7 @@ Queue: Q1（2026-10-05、P2。設計から）
 - **p001**（この Phase）: 契約の確定と `main.c`・`zwl.h` の変更、引数の契約の host の試験（compositor を `--testing --max-frames=1` などで起動せずに済む形を探す。無理なら parse の関数の単体の試験）。
 - **p002**: 試験の script の置き換え（機械の 232 行＋手の 14 行）と製品の起動の点検、T1 の代表の試験。
 - **p003**: 全文規約と回帰（ws.md の T4）。
+
+## ユーザーの決定（2026-10-05 朝）
+
+「今実装する」: (A) --testing を必須（--timeout・--max-frames は --testing が要る）、他の WS の試験の script 約 220 file の機械の置き換えと手の 14 行を WS110 の範囲として 1 回の commit で（置き換えの script と前後の grep の数を付ける）。
