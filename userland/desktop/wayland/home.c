@@ -1310,13 +1310,15 @@ home_draw_icon(
 	/*
 	 * An application with a picture is its banded tile with the picture cut
 	 * out (ws128-p012), lighter under the pointer and without a shadow,
-	 * which would show through the picture; any other is its letter's tile.
+	 * which would show through the picture; the picture shows the
+	 * wallpaper Home's white glass frosts (BUG-237).  Any other is its
+	 * letter's tile.
 	 */
 	if (app->picture >= 0) {
 		lighten = 0.0f;
 		if (over)
 			lighten = HOME_LIT;
-		glass_draw_app_tile(server, command, (unsigned)app->picture, left, top, size, opacity, lighten);
+		glass_draw_app_tile(server, command, (unsigned)app->picture, left, top, size, opacity, lighten, GLASS_HOLE_SCENE);
 	} else {
 		home_draw_letter(server, command, app, x, y, left, top, size, over, opacity);
 	}

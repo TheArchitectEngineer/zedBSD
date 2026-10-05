@@ -84,6 +84,14 @@
 #define GLASS_TILE_HEIGHT	256U
 #define GLASS_TILE_GAP		2U
 
+/*
+ * How far inside an application's tile, a part of its side, the blurred
+ * scene its picture shows is drawn (BUG-237): past the tile's smoothed
+ * edge, so that none of it shows round the tile, and short of its picture
+ * (about a sixth of the side in).
+ */
+#define GLASS_TILE_SCENE_INSET	0.08f
+
 /* A cached glyph's cell in the atlas, in pixels a side, and the most cells there are. */
 #define GLASS_CELL		48U
 #define GLASS_CELLS		512U
@@ -1958,9 +1966,10 @@ glass_draw_icon(
  * Draws an application's tile (an icon from GLASS_ICON_FIRST_APP) in a
  * square of a size in pixels at (x, y): the tile kept at that size, or the
  * smallest kept larger (the largest when none is) scaled, as opaque as
- * asked (0..1).  Its picture is cut out, so what was drawn under the tile
- * shows through it.  lighten (0..1) whitens the tile itself, as a lit
- * button.
+ * asked (0..1).  Its picture is cut out: with GLASS_HOLE_GROUND what was
+ * drawn under the tile shows through it, with GLASS_HOLE_SCENE the blurred
+ * scene under the glass the tile is on, unwhitened (BUG-237).  lighten
+ * (0..1) whitens the tile itself, as a lit button.
  */
 void
 glass_draw_app_tile(
@@ -1971,12 +1980,14 @@ glass_draw_app_tile(
 	float y,
 	float pixels,
 	float opacity,
-	float lighten)
+	float lighten,
+	enum glass_hole hole)
 {
 	struct glass_shape shape;
 	const struct glass_glyph *glyph;
 	struct zwl_glass *glass;
 	unsigned size;
+	float inset;
 
 	/* Nothing without the tiles, or for an icon without one. */
 	glass = server->compose->glass;
@@ -1993,6 +2004,23 @@ glass_draw_app_tile(
 
 	/* That size's tile of the icon. */
 	glyph = &glass->app_tiles[size][icon - GLASS_ICON_FIRST_APP];
+
+	/*
+	 * On light glass the picture is a window onto the scene the glass
+	 * frosts: the blurred scene under the tile as it is (glass of no
+	 * colour, flat, without an edge, light in the dark appearance too),
+	 * drawn inside the tile, where only the cut-out picture leaves it seen.
+	 */
+	if (hole == GLASS_HOLE_SCENE) {
+		inset = pixels * GLASS_TILE_SCENE_INSET;
+		glass_shape_init(&shape, x + inset, y + inset, pixels - 2.0f * inset, pixels - 2.0f * inset);
+		shape.mode = MODE_GLASS;
+		shape.radius = pixels * GLASS_ICON_TILE_RADIUS - inset;
+		shape.soft = 1.0f;
+		shape.opacity = opacity;
+		shape.light = 1U;
+		glass_shape_draw(server, command, &shape);
+	}
 
 	/* The tile's pixels over the square, premultiplied, as an image. */
 	glass_shape_init(&shape, x, y, pixels, pixels);

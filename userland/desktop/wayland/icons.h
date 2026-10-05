@@ -77,6 +77,9 @@ enum glass_icon {
 /* The largest application tile zwl_icon_tile draws, in pixels a side. */
 #define GLASS_ICON_TILE_MOST	256U
 
+/* The corner radius of an application's tile, a part of its side (glass.c fits the see-through window under it). */
+#define GLASS_ICON_TILE_RADIUS	0.24f
+
 void zwl_icon_raster(unsigned icon, unsigned pixels, uint8_t *coverage, size_t stride);
 void zwl_icon_tile(unsigned icon, unsigned pixels, uint32_t *argb, size_t stride);
 int zwl_icon_named(const char *name);
