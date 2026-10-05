@@ -767,6 +767,12 @@ struct zwl_server {
 	 * and what it can take (compose.c fills it once the device is made).
 	 */
 	struct kl_backend_gpu_device gpu_device;
+	/*
+	 * The role (role.h: ZWL_ROLE_NORMAL, _TESTING or _GREETER, WS110), and
+	 * the deadline it gives: none for a desktop and the login screen,
+	 * --timeout or 150 s for a test run, which --max-frames can end sooner.
+	 */
+	unsigned role;
 	uint64_t timeout_ms;
 	uint64_t max_frames;
 	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
@@ -774,8 +780,9 @@ struct zwl_server {
 	/*
 	 * The graphical login (ws035-p095): with --greeter zdesktop draws the
 	 * login screen (greeter.c), opens no socket and asks sessiond on
-	 * auth_fd; with --session it is a login session, which has no deadline
-	 * and ends with App Home's Log Out.  size_given: --width or --height
+	 * auth_fd; session: it is a login session (the default role, or
+	 * --session, which says the same), which has no deadline and ends with
+	 * App Home's Log Out.  size_given: --width or --height
 	 * was given, so the display's preferred size is not used.  control_fd:
 	 * the session's descriptor to sessiond (--control-fd, -1 for none);
 	 * auth_fd and control_fd are handed to libkeiland-backend, which speaks

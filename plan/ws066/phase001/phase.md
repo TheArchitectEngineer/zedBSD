@@ -102,3 +102,30 @@ Q1（2026-10-05）: clang の行は後回し（clang 入りの image は指定�
 ### ws066-p004（案）: 規約（全文規約の見直し、WS の最後）
 
 Q1 の決定（2026-10-05）: 他の architecture の vmunix.mk は (a)（amd64 だけ変え、他は sysroot で build を確かめられる時に）。
+
+## guest の時間（T1-165、2026-10-05、QEMU、SSH の image、clang 無し）
+
+guest の `CLOCK_MONOTONIC` は 1 ms 刻みで、中央値は 0 か 1000 に丸まった（min=0）。各 2,000 回の **平均** で比べる。刻みに対して起動の位相がばらつくので、平均は使えるが、±20 µs 程度の差は誤差の内とみなす（推測）。
+
+| 測った物 | 平均 µs | 静的との差 |
+| --- | ---: | ---: |
+| `true-static` | 517 | 0 |
+| `true-sysv`（今の base の program と同じ link） | 779 | 262 |
+| `true-gnu` | 712 | 195 |
+| `true-sysv` + `-Bsymbolic-functions` の libc.so | 687 | 170 |
+| `true-gnu` + 同 | 681 | 164 |
+| image の `/bin/true` | 783 | — |
+| `sh -c :` | 1,074 | — |
+| `sh -c :` + 同 | 936 | — |
+
+- 案 1（libc の `-Bsymbolic-functions`）だけで true は 92 µs、sh は 138 µs 縮んだ。案 2（GNU hash）だけで true は 67 µs。両方で 98 µs（静的との差 262 → 164、**37%**）。
+- 案 1・2 だけでは、仮の目標「静的との差の半分以上」（true で 131 µs 以上）に届かない。残りの 164 µs は、libc.so の map と RELATIVE の再配置（348）、TLS と exec の固定の費用と見込む（推測、未測定）。
+- 案 3（ld.so の cache）は小さな program の探索をほとんど減らさない（true 517 → 497、host の数）。clang の行は測れなかった（clang 入りの image が無い）。
+
+## 受け入れ（確定、2026-10-05、P2。Q1 の承認で WS の受け入れとする）
+
+- p002（案 1・2、amd64）の後、同じ条件の T1 の `startup-measure.sh` で、平均が次の通り:
+  - `/bin/true`: 783 → **700 µs 以下**（今の測定の `true-gnu+bsymf` 681 に誤差を足した値）。
+  - `sh -c :`: 1,074 → **950 µs 以下**（`sh-c+bsymf` 936 に誤差。GNU hash の分はまだ測っていない）。
+- 回帰が変わらない: dyntest・rtld-many・run-tls-check、boot-test、Terminal と Files の起動。
+- 「静的との差の半分」は p002 では届かない見込み（37%）。残りを追うかは、p002 の結果の後に別の Phase の案として出す（map の数と RELATIVE の費用の測定から）。WS の目標の文を変えるには Q1・ユーザーの判断が要る。

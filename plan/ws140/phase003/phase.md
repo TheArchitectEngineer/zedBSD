@@ -2,7 +2,7 @@
 
 # ws140-p003: 規約の見直し、build、回帰、結果の反映の案
 
-Status: in-progress（規約の見直しと build は済み、desktop の回帰は T1 待ち）
+Status: in-progress（T1-166: PDF の縮小表示は PASS。Move To の段の試験の期待を直し、T1 の再試験待ち）
 Disposition: normal
 Parent: [WS140](../ws.md)
 Queue: q729（Q1、2026-10-05）
@@ -42,4 +42,7 @@ Queue: q729（Q1、2026-10-05）
 
 ## 結果
 
-（T1 の desktop の回帰の後に書く）
+- **T1-166**（2026-10-05）: 4 の PDF の縮小表示は PASS（`THUMB error=0 cached=0`、2 回目の窓で `cached=1`）。新しい ld.so で `dlopen("libpdf.so")` が動いた。
+- 同じ script の 1（Move To）は FAIL ×2: `ZWL MENU row item=1503 depth=2`・`CONTEXT move-to place=3`・`TASK done kind=move`・`Budget.csv moved to Downloads` が MISSING。moveto.png では、Move To の submenu が開き、Home・Desktop・Downloads… が並んでいた。
+- 原因は試験の期待（ld.so の退行ではない）: 同じ日の ws127-p011（d9378216）が Favorites の先頭に Today を足し、place の番号が 1 つずれた。Downloads は place 3 → 4 になり、menu の項目は 1503 → 1504（`CONTEXT_ACTION_ID` 1000 + `FM_ACTION_MOVE_TO_FIRST` 500 + place）。`plan/ws127/tests/files-p002.sh` の期待を 1504 と place=4 に直した。
+- T1 に files-p002 の再試験を依頼する（1 の Move To と 4 の PDF）。
