@@ -133,7 +133,11 @@ struct ime_output {
  * purpose of text-input-v3); save writes what the engine has learned to
  * its file, away from the keys (the Wayland side calls it once no key has
  * come for a while); destroy writes what is still unsaved and frees the
- * engine.
+ * engine.  An engine with modes that are languages of their own to the
+ * desktop (SKK's kana, katakana, Latin and wide Latin, WS154) gives the ID
+ * and label of the mode it is in (mode), and takes a mode by its ID
+ * (select: true when the ID is one of its modes); the others leave both
+ * NULL and are one language, id and label.
  */
 struct ime_engine_ops {
 	const char *id;
@@ -144,6 +148,8 @@ struct ime_engine_ops {
 	void (*content_type)(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
 	void (*save)(struct ime_engine *engine);
 	void (*destroy)(struct ime_engine *engine);
+	const char *(*mode)(struct ime_engine *engine, const char **label);
+	bool (*select)(struct ime_engine *engine, const char *id);
 };
 
 /*

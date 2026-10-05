@@ -21,7 +21,7 @@ ime-dict-skk: $(ZEDBSD_IME_DICT_SKK)
 
 # ---------------------------------------------------------------- packaging
 
-# Chosen by the images that offer SKK (WS154 p004).
+# The input method (keiland-ime) requires it since WS154 p004, so every image with the input method has it.
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,ime-dict-skk,Dictionaries of the input method's SKK engine,*,n,package,,y,\
 	desktop,desktop/ime/skk-dict,))
 

@@ -35,7 +35,9 @@ static const struct ime_engine_ops direct_ops = {
 	direct_surrounding,
 	direct_content_type,
 	direct_save,
-	direct_destroy
+	direct_destroy,
+	NULL,
+	NULL
 };
 
 /*
