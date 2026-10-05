@@ -1334,10 +1334,14 @@ i915_spirv_lower_array_length(
 	constant = i915_spirv_integer_constant(parser, block->member_offset[member]);
 	beyond = i915_spirv_emit_value(parser, I915_IR_ISUB, range, constant);
 
-	/* The smallest shift whose power of two reaches the stride. */
+	/*
+	 * The smallest shift whose power of two reaches the stride.  The search
+	 * stops at 31: a stride past 2^31 is no power of two that a 32-bit shift
+	 * makes, and a shift of 32 would wrap and never end the search.
+	 */
 	stride = array->stride;
 	shift = 0U;
-	while (((uint32_t)1U << shift) < stride)
+	while (shift < 31U && ((uint32_t)1U << shift) < stride)
 		shift++;
 
 	/* Whole elements of the array: a shift for a power-of-two stride, a division otherwise. */

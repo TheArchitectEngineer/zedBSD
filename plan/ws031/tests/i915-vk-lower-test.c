@@ -310,15 +310,21 @@ run_ir_mode(const struct i915_shader_ir *ir, struct machine *m, const uint32_t *
 		case I915_IR_ISUB: value[inst->dst] = a - b; break;
 		case I915_IR_IMUL: value[inst->dst] = a * b; break;
 		case I915_IR_INEG: value[inst->dst] = 0U - a; break;
-		case I915_IR_UDIV: value[inst->dst] = b != 0U ? a / b : 0xFFFFFFFFU; break;
-		case I915_IR_UMOD: value[inst->dst] = b != 0U ? a % b : a; break;
+		/*
+		 * A zero divisor, and INT_MIN / -1, have no defined result (SPIR-V; ws031-p024): the interpreter gives 0
+		 * where the hardware gives some value, and the tests compare only defined words.
+		 */
+		case I915_IR_UDIV: value[inst->dst] = b != 0U ? a / b : 0U; break;
+		case I915_IR_UMOD: value[inst->dst] = b != 0U ? a % b : 0U; break;
 		case I915_IR_IDIV:
-			assert(b != 0U && !(a == 0x80000000U && b == 0xFFFFFFFFU));
-			value[inst->dst] = (uint32_t)((int32_t)a / (int32_t)b);
+			value[inst->dst] = 0U;
+			if (b != 0U && !(a == 0x80000000U && b == 0xFFFFFFFFU))
+				value[inst->dst] = (uint32_t)((int32_t)a / (int32_t)b);
 			break;
 		case I915_IR_IREM:
-			assert(b != 0U && !(a == 0x80000000U && b == 0xFFFFFFFFU));
-			value[inst->dst] = (uint32_t)((int32_t)a % (int32_t)b);
+			value[inst->dst] = 0U;
+			if (b != 0U && !(a == 0x80000000U && b == 0xFFFFFFFFU))
+				value[inst->dst] = (uint32_t)((int32_t)a % (int32_t)b);
 			break;
 		case I915_IR_FROUND_EVEN: value[inst->dst] = float_to_bits(nearbyintf(fa)); break;
 		case I915_IR_IAND: value[inst->dst] = a & b; break;
