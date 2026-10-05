@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p009`
 Parent: [WS068](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17、q747。実装・T1-180 の回帰（x11-p005 の古い期待を除き PASS）まで。速さの目標は Venus で未達、計測の判断を下に書き Q1 の判断待ち）
+Status: cleared（2026-10-05 Q1: T1-180・T1-182（16 本・x11-p004・p005・ws101 venus・boot PASS）。速さの目標は Q1 の判断で i915 の実機へ移した。cleared）。以前: in-progress（2026-10-05 P1 generation17、q747。実装・T1-180 の回帰（x11-p005 の古い期待を除き PASS）まで。速さの目標は Venus で未達、計測の判断を下に書き Q1 の判断待ち）
 Phase disposition: normal
 Queue: q747（P1、ベータ2。p009 → p004 → p007。p037 以降は保留のまま）
 
