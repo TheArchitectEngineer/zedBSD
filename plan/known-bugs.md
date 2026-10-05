@@ -65,7 +65,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-195](bugs/BUG-195.md) | 実機 5330 で DSDT が読めない（AML の stack の予算を超える、E2BIG）。ACPI の namespace が無く、native の touchpad・I2C・蓋・電池・LPS0 が実機で働かない | reproduced（実機） / tracking（高） | UAT 2026-10-05 午後 | WS049・WS159（P1） |
 | [BUG-196](bugs/BUG-196.md) | 実機 5330 で電源ボタンを押すと直ちに電源が切れる（ACPI の attach の失敗で ACPI の mode に入っていない見込み） | reproduced（実機） / tracking（高） | UAT 2026-10-05 午後 | WS049・WS132（P1、BUG-195 と同じ根） |
 | [BUG-197](bugs/BUG-197.md) | 実機 5330 で shutdown しても電源が落ちない（DSDT の `\_S5` が引けない見込み） | reproduced（実機） / tracking（高） | UAT 2026-10-05 午後 | WS049（P1、BUG-195 と同じ根） |
-| [BUG-198](bugs/BUG-198.md) | amd64 の kernel が上限 16 MiB の手前（余り約 440 KiB、.bss が 13.7 MiB） | reproduced（link） / scheduled | P1 2026-10-05 | overlay の inode の表を起動時の確保へ（P1 q764、余り 3.2 MiB 以上）、T1 の UEFI・BIOS の boot 待ち |
+| [BUG-198](bugs/BUG-198.md) | amd64 の kernel が上限 16 MiB の手前（余り約 440 KiB、.bss が 13.7 MiB） | reproduced（link） / resolved（2026-10-05、T1-192） | P1 2026-10-05 | overlay の inode の表を起動時の確保へ（P1 q764、余り 3.2 MiB 以上）、T1 の UEFI・BIOS の boot 待ち |
 | [BUG-199](bugs/BUG-199.md) | ws001 の overlay の host 試験が link できない（古い試験） | reproduced（host） / tracking | P1 2026-10-05 | WS001 の試験 |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / scheduled、低（q726: bar の起動の直後の表示を「Starting the network service...」に、UAT 待ち） | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
 | [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132）。UAT 2026-10-04: 再現せず（電源の状態は BUG-165 の後） |
