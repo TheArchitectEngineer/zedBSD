@@ -2,7 +2,7 @@
 
 # ws110-p001: 通常と試験の role、引数の契約、変える範囲
 
-Status: planning（設計と影響の調べは済み。範囲の決めを Q1 に出した。実装はしていない）
+Status: in-progress（実装済み。zedBSD の compositor の build と guest の確かめは p002 の T1 とまとめる）
 Disposition: normal
 Parent: [WS110](../ws.md)
 Queue: Q1（2026-10-05、P2。設計から）
@@ -64,3 +64,20 @@ Queue: Q1（2026-10-05、P2。設計から）
 ## ユーザーの決定（2026-10-05 朝）
 
 「今実装する」: (A) --testing を必須（--timeout・--max-frames は --testing が要る）、他の WS の試験の script 約 220 file の機械の置き換えと手の 14 行を WS110 の範囲として 1 回の commit で（置き換えの script と前後の grep の数を付ける）。
+
+## ユーザーの決定（2026-10-05、Q1 経由）
+
+- (1) A: `--testing` を必須にする。`--timeout`・`--max-frames` は `--testing` が要る。組み合わせは拒む。role は引数の順に依らない。READY の行に `role=` を足す。
+- (2) 実装の指示あり。
+- (3) 他の WS の試験の約 220 file の機械の置き換えと、手の 14 行を WS110 の範囲として許す。置き換えの script と前後の grep の数を付けて 1 回で commit する。main の最新に合わせてから一気に行う。
+
+## 実装（2026-10-05、P2）
+
+- 新しい `userland/desktop/wayland/role.c`・`role.h`: `zwl_role_resolve`（options の要求から role と期限を 1 度決める。拒む時は理由の文）と `zwl_role_name`。server を知らないので、host の試験で単独で走る（`pointer-accel.c` と同じ形）。3 つの Makefile（zedBSD・Linux・FreeBSD）に足した。
+- `main.c`: `--testing` を足した。`--timeout`・`--max-frames`・`--greeter`・`--session`・`--control-fd`・`--lock-idle` は要求に印を付けるだけにして、読み終えた後に `zwl_role_resolve` で決める（`server->role`・`timeout_ms`・`session`）。拒む時は `wayland: <理由>` と usage を出して exit 2。既定の `timeout_ms = 150000` は消した（試験の既定は role.h の `ZWL_ROLE_TESTING_TIMEOUT_MS`）。READY の行の末尾に ` role=normal|testing|greeter`（`pid=(\d+)` を読む既存の試験はそのまま読める）。usage を直した。
+- `zwl.h`: `role` の項目と、session の説明の直し。
+- 確かめ（host）:
+  - `sh plan/ws110/tests/run-host-role.sh`: 16 case、`host-role: PASS`（引数なし・`--session`・sessiond の組み合わせが normal で期限なし、`--testing` 150 秒、`--testing --timeout` 900 秒、`--greeter`、拒む物 9 つ）。
+  - Linux の Keiland（`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p2-keiland-linux all`）: warning 0（-Werror）。その compositor に拒む引数 6 通りを渡し、全て理由の 1 行と exit 2（backend を開く前に止まる）。
+  - style: role.c・role.h・host-role.c は違反 0。
+- 未実施: zedBSD の compositor の build。main を取り込んだ後、`userland/desktop/keiland/wallpapers/` の file が sysroot の stamp より新しく、`make -n` の確かめが 1 になる（sysroot が作り直される）。subagent は sysroot を作らないので、Q1 に相談した。FreeBSD の build も未実施（native の FreeBSD が要る）。

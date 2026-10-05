@@ -11,6 +11,7 @@
 
 #include "desktop.h"
 #include "zwl.h"
+#include "role.h"
 #include "toplevel.h"
 #include "keymap.h"
 #include "ime.h"
@@ -84,7 +85,6 @@ main(
 	server.repeat_delay_ms = 400;
 	server.width = 320;
 	server.height = 240;
-	server.timeout_ms = 150000;
 	strcpy(server.socket_path, "/tmp/wayland-0");
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
@@ -113,7 +113,7 @@ main(
 	/* Reads the command line; a mistake ends the run with the usage. */
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--timeout=seconds] [--max-frames=N] [--log-frames] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--testing [--timeout=seconds] [--max-frames=N]] [--log-frames] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.ppm] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -248,7 +248,7 @@ main(
 
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
 	if (error == 0) {
-		printf("ZWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid());
+		printf("ZWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld role=%s\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid(), zwl_role_name(server.role));
 		error = event_loop(&server);
 	}
 
@@ -295,6 +295,8 @@ parse_options(
 	int count,
 	char **arguments)
 {
+	struct zwl_role_request request;
+	struct zwl_role role;
 	const char *argument;
 	const char *text;
 	uint64_t number;
@@ -303,7 +305,8 @@ parse_options(
 	int match;
 	int error;
 
-	/* Each option is independent and leaves an explicit configured service value. */
+	/* Each option is independent; the ones that bear on the role are only noted (role.c). */
+	memset(&request, 0, sizeof(request));
 	for (index = 1; index < count; index++) {
 		/* Endpoint selection is validated before copying it into bounded service storage. */
 		argument = arguments[index];
@@ -356,16 +359,24 @@ parse_options(
 		if (match != 0)
 			return EINVAL;
 
-		/* Service timeout always remains finite, including unattended test invocations. */
+		/* A test run (WS110): finite, without a login session's features. */
+		match = strcmp(argument, "--testing");
+		if (match == 0) {
+			request.testing = 1U;
+			continue;
+		}
+
+		/* A test run's deadline (it needs --testing, role.c). */
 		match = strncmp(argument, "--timeout=", 10);
 		if (match == 0) {
-			/* A positive finite timeout is mandatory; a day is the longest (an interactive session). */
+			/* A positive finite timeout; a day is the longest. */
 			error = unsigned_option(argument + 10, 86400, &number);
 			if (error != 0)
 				return error;
 
-			/* Store the configured deadline interval in the monotonic clock's units. */
-			server->timeout_ms = number * 1000U;
+			/* Noted in the monotonic clock's units. */
+			request.timeout = 1U;
+			request.timeout_ms = number * 1000U;
 			continue;
 		}
 
@@ -377,8 +388,9 @@ parse_options(
 			if (error != 0)
 				return error;
 
-			/* Only completed GPU presentations count toward this bound. */
+			/* Only completed GPU presentations count toward this bound; it needs --testing (role.c). */
 			server->max_frames = number;
+			request.max_frames = 1U;
 			continue;
 		}
 
@@ -400,7 +412,7 @@ parse_options(
 		match = strcmp(argument, "--greeter");
 		if (match == 0) {
 			server->greeter = 1;
-			server->timeout_ms = UINT64_MAX;
+			request.greeter = 1U;
 			continue;
 		}
 
@@ -421,6 +433,7 @@ parse_options(
 			if (error != 0)
 				return error;
 			server->control_fd = (int)number;
+			request.control_fd = 1U;
 			continue;
 		}
 
@@ -432,14 +445,14 @@ parse_options(
 				return error;
 			server->lock_idle_ms = (uint64_t)number * 1000U;
 			server->lock_idle_given = 1U;
+			request.lock_idle = 1U;
 			continue;
 		}
 
-		/* A login session (ws035-p095): no deadline, App Home's Log Out ends it. */
+		/* A login session (ws035-p095), which is now the default: kept as a name for it (WS110). */
 		match = strcmp(argument, "--session");
 		if (match == 0) {
-			server->session = 1;
-			server->timeout_ms = UINT64_MAX;
+			request.session = 1U;
 			continue;
 		}
 
@@ -493,6 +506,24 @@ parse_options(
 		/* Unknown arguments cannot silently alter the test or service contract. */
 		return EINVAL;
 	}
+
+	/* The role, decided once whatever the options' order (WS110). */
+	error = zwl_role_resolve(&request, &role);
+	if (error != 0) {
+		fprintf(stderr, "wayland: %s\n", role.refusal);
+		return error;
+	}
+
+	/*
+	 * A user's desktop is a login session: no deadline, App Home's Log
+	 * Out, the desktop's files, the lock after idle time (home.c,
+	 * desktop.c, main).
+	 */
+	server->role = role.role;
+	server->timeout_ms = role.timeout_ms;
+	server->session = 0;
+	if (role.role == ZWL_ROLE_NORMAL)
+		server->session = 1;
 
 	/* Succeeded: every option is explicit, bounded and understood. */
 	return 0;
