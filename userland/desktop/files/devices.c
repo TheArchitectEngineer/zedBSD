@@ -12,8 +12,9 @@
  * libkeiland's kl_system_devices_*); they are shown in the sidebar's
  * Devices section and on the Today page.  A volume inserted and never
  * mounted since blinks three times when it comes (and again when Files is
- * started from the bar's media icon); a double click mounts it under
- * /media and opens it, and an eject unmounts it.  This file knows nothing
+ * started from the bar's media icon); a double click asks whether to mount
+ * it (its name, size and file system, ws132-p009), and Mount mounts it
+ * under /media and opens it; an eject unmounts it.  This file knows nothing
  * of libkeiland: it keeps the list, asks main.c through a request, and
  * says how bright a blinking device is.
  */
@@ -152,7 +153,9 @@ fm_devices_blinking(
 }
 
 /*
- * Asks for a device to be mounted, and opened once it is (a mounted one opens at once).
+ * Opens a device: a mounted one's folder at once; for one not mounted, the
+ * question whether to mount it (ws132-p009: a medium is not mounted on a
+ * double click alone).
  */
 void
 fm_devices_mount(
@@ -176,11 +179,67 @@ fm_devices_mount(
 		return;
 	}
 
+	/* The question over the window, answered with Mount or Cancel (fm_devices_mount_answer). */
+	(void)snprintf(app->device_confirm, sizeof(app->device_confirm), "%s", device->id);
+	app->dialog = FM_DIALOG_MOUNT;
+	app->dirty = 1;
+	fm_log("DEVICE mount confirm id=%s fs=%s bytes=%llu", device->id, device->fs, (unsigned long long)device->bytes);
+}
+
+/*
+ * Answers the question whether to mount a device: Mount asks for it through
+ * the main loop (the device opens when the desktop says it is mounted),
+ * Cancel leaves it as it is.  A device gone meanwhile is passed over, and
+ * one mounted meanwhile opens.
+ */
+void
+fm_devices_mount_answer(
+	struct fm_app *app,
+	int confirmed)
+{
+	struct fm_location location;
+	const struct fm_device *device;
+
+	/* The question is over. */
+	app->dialog = FM_DIALOG_NONE;
+	app->dirty = 1;
+	fm_log("DEVICE mount answer id=%s confirmed=%d", app->device_confirm, confirmed);
+
+	/* Cancelled, or the device has gone. */
+	device = fm_devices_find(app, app->device_confirm);
+	app->device_confirm[0] = '\0';
+	if (confirmed == 0 || device == NULL)
+		return;
+
+	/* Mounted meanwhile: its folder. */
+	if (device->mounted) {
+		memset(&location, 0, sizeof(location));
+		location.kind = FM_LOCATION_FOLDER;
+		(void)snprintf(location.path, sizeof(location.path), "%s", device->path);
+		fm_ui_go(app, &location);
+		return;
+	}
+
 	/* Asked through the main loop, and opened when the desktop says it is mounted. */
 	(void)snprintf(app->device_asked, sizeof(app->device_asked), "%s", device->id);
 	(void)snprintf(app->device_open, sizeof(app->device_open), "%s", device->id);
 	app->request = FM_REQUEST_DEVICE_MOUNT;
 	fm_log("DEVICE mount asked id=%s", device->id);
+}
+
+/*
+ * Finds a device of the list by its ID; NULL when it is not there.
+ */
+const struct fm_device *
+fm_devices_find(
+	const struct fm_app *app,
+	const char *id)
+{
+	const struct fm_device *device;
+
+	/* The list's device of that ID. */
+	device = devices_find(app->places.devices, app->places.device_count, id);
+	return device;
 }
 
 /*

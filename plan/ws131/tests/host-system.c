@@ -243,6 +243,23 @@ kl_backend_account_set_password(const char *current, const char *fresh)
 	return 0;
 }
 
+/* The administration of the accounts (ws089-p026): this fake system has no tool. */
+int
+kl_backend_account_can_administer(void)
+{
+	return 0;
+}
+
+int
+kl_backend_account_administer(const char *password, const char *operation, char *reason, size_t size)
+{
+	(void)password;
+	(void)operation;
+	if (size != 0U)
+		reason[0] = '\0';
+	return ENOTSUP;
+}
+
 void
 zwl_network_scan_hold(unsigned on)
 {
@@ -395,9 +412,16 @@ zwl_media_tick(struct zwl_server *server)
 size_t
 zwl_media_volumes(struct kl_backend_volume *list, size_t capacity)
 {
-	(void)list;
-	(void)capacity;
-	return 0U;
+	/* One FAT stick, not mounted (ws132-p009: its file system and size reach the client). */
+	if (capacity == 0U)
+		return 0U;
+	memset(&list[0], 0, sizeof(list[0]));
+	snprintf(list[0].id, sizeof(list[0].id), "sdb");
+	snprintf(list[0].fs, sizeof(list[0].fs), "fat");
+	snprintf(list[0].label, sizeof(list[0].label), "USBSTICK");
+	list[0].bytes = 0x123456789ULL;
+	list[0].fresh = 1U;
+	return 1U;
 }
 
 int
@@ -1047,6 +1071,7 @@ test_both_ends(void)
 	struct kl_audio_state audio;
 	struct kl_power_state power;
 	struct kl_device devices[2];
+	struct kl_device_info device_info;
 	pthread_t thread;
 	uint32_t first;
 	uint32_t second;
@@ -1085,7 +1110,10 @@ test_both_ends(void)
 	CHECK(kl_system_network_get_scan(system, aps, 8U) == 2U && strcmp(aps[1].ssid, "Cafe") == 0 && aps[1].rssi == -70 && aps[1].secured == 1U, "first scan");
 	kl_system_audio_get_state(system, &audio);
 	CHECK(audio.reachable == 1U && audio.left == 70U && audio.right == 60U && audio.channels == 2U && audio.rate == 48000U, "first sound");
-	CHECK(kl_system_devices_get(system, devices, 2U) == 0U, "no device");
+	CHECK(kl_system_devices_get(system, devices, 2U) == 1U && strcmp(devices[0].id, "sdb") == 0 && strcmp(devices[0].name, "USBSTICK") == 0, "one device");
+	CHECK(kl_system_devices_info(system, "sdb", &device_info) == 1 && strcmp(device_info.fs, "fat") == 0 && device_info.bytes == 0x123456789ULL,
+	      "its file system and size (version 9, ws132-p009)");
+	CHECK(kl_system_devices_info(system, "sdz", &device_info) == 0 && device_info.fs[0] == '\0', "no info for a device not listed");
 
 	/* The power comes from its thread, after the first state. */
 	kl_system_power_get_state(system, &power);

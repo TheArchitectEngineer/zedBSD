@@ -11,7 +11,10 @@
  * It subscribes to the disks' events of /dev/system, and 300 ms after the
  * last one looks at every block device again: a removable leaf (a
  * partition, or a disk without partitions) whose filesystem is FAT or UFS
- * is a volume.  It never mounts one by itself (the user's decision D3):
+ * is a volume, unless it is on the disk the system started from (the disk
+ * of the root filesystem, ws132-p009: a USB stick the machine boots from
+ * is removable too, and its partitions are not the user's media).  It
+ * never mounts one by itself (the user's decision D3):
  * the seat's user asks on /run/volumed.sock, and it is mounted under
  * /media with nosuid and noexec, FAT showing that user as the owner of its
  * files.  An eject unmounts it (a busy one is answered with the program
@@ -42,6 +45,7 @@
 #include <unistd.h>
 #include <uapi/blkid.h>
 #include <uapi/block.h>
+#include <uapi/mountinfo.h>
 #include <uapi/system.h>
 
 /* The quiet time after a disk's event before the disks are looked at again. */
@@ -77,7 +81,9 @@ static int volumed_subscribe(void);
 static void volumed_events(int descriptor, uint64_t *due);
 static void volumed_scan(void);
 static unsigned volumed_devices(struct volumed_device *devices, unsigned capacity);
-static int volumed_candidate(const struct volumed_device *devices, unsigned count, unsigned index, struct volumed_volume *volume);
+static int volumed_candidate(const struct volumed_device *devices, unsigned count, unsigned index, uint32_t boot_disk, struct volumed_volume *volume);
+static uint32_t volumed_boot_disk(const struct volumed_device *devices, unsigned count);
+static uint32_t volumed_disk_of(const struct volumed_device *devices, unsigned count, unsigned index);
 static void volumed_merge(const struct volumed_volume *found, unsigned count);
 static void volumed_accept(int listener);
 static void volumed_read(struct volumed_client *client);
@@ -308,16 +314,20 @@ volumed_scan(
 {
 	struct volumed_device devices[VOLUMED_DEVICES_MAX];
 	struct volumed_volume found[VOLUMED_VOLUMES_MAX];
+	uint32_t boot_disk;
 	unsigned count;
 	unsigned index;
 	unsigned volumes;
 	int candidate;
 
-	/* The devices, then the volumes among them. */
+	/* The devices, and the disk the system started from, whose partitions are not media. */
 	count = volumed_devices(devices, VOLUMED_DEVICES_MAX);
+	boot_disk = volumed_boot_disk(devices, count);
+
+	/* The volumes among the devices. */
 	volumes = 0U;
 	for (index = 0U; index < count && volumes < VOLUMED_VOLUMES_MAX; index++) {
-		candidate = volumed_candidate(devices, count, index, &found[volumes]);
+		candidate = volumed_candidate(devices, count, index, boot_disk, &found[volumes]);
 		if (candidate)
 			volumes++;
 	}
@@ -393,7 +403,8 @@ volumed_devices(
 
 /*
  * Tells whether a device is a volume and describes it: a leaf (no other
- * device's parent), removable itself or by its parent, not file-backed, and
+ * device's parent), removable itself or by its parent, not file-backed,
+ * not on the disk the system started from (boot_disk, 0 when unknown), and
  * FAT or UFS.  Returns 1 with the volume filled, or 0.
  */
 static int
@@ -401,11 +412,13 @@ volumed_candidate(
 	const struct volumed_device *devices,
 	unsigned count,
 	unsigned index,
+	uint32_t boot_disk,
 	struct volumed_volume *volume)
 {
 	struct block_identity identity;
 	const struct volumed_device *device;
 	char path[VOLUMED_NAME_MAX + 8U];
+	uint32_t disk;
 	unsigned other;
 	unsigned removable;
 	int descriptor;
@@ -426,6 +439,11 @@ volumed_candidate(
 
 	/* Removable media only. */
 	if (removable == 0U)
+		return 0;
+
+	/* Not a partition of the disk the system started from. */
+	disk = volumed_disk_of(devices, count, index);
+	if (boot_disk != 0U && disk == boot_disk)
 		return 0;
 
 	/* Its filesystem and label. */
@@ -458,6 +476,112 @@ volumed_candidate(
 
 	/* Succeeded: a volume. */
 	return 1;
+}
+
+/*
+ * Finds the disk the system started from: the disk (the topmost device)
+ * under the root filesystem, as the kernel's mount table names its device.
+ * Returns its device number, or 0 when the root is not on a block device
+ * of the list (a RAM disk) or the table cannot be read.
+ */
+static uint32_t
+volumed_boot_disk(
+	const struct volumed_device *devices,
+	unsigned count)
+{
+	struct kern_mount_query *query;
+	const struct kern_mount_info *entry;
+	char source[KERN_MOUNT_INFO_PATH_MAX + 1U];
+	uint32_t disk;
+	unsigned index;
+	unsigned device;
+	int descriptor;
+	int status;
+	int same;
+
+	/* Room for the whole table. */
+	query = calloc(1, sizeof(*query) + KERN_MOUNT_INFO_MAX * sizeof(query->entries[0]));
+	if (query == NULL)
+		return 0U;
+	query->version = KERN_MOUNT_INFO_VERSION;
+	query->struct_size = sizeof(*query);
+	query->capacity = KERN_MOUNT_INFO_MAX;
+
+	/* The kernel's mount table. */
+	descriptor = open("/dev/system", O_RDONLY | O_CLOEXEC);
+	if (descriptor < 0) {
+		free(query);
+		return 0U;
+	}
+
+	/* Read once; the descriptor goes at once. */
+	status = ioctl(descriptor, KERN_SYSTEM_GET_MOUNTS, query);
+	(void)close(descriptor);
+	if (status < 0) {
+		free(query);
+		return 0U;
+	}
+
+	/* The root's entry, mounted from a block device (its source is the device's name under /dev). */
+	disk = 0U;
+	for (index = 0U; index < query->count; index++) {
+		entry = &query->entries[index];
+		same = strcmp(entry->target, "/");
+		if (same != 0 ||
+		    entry->device == 0U ||
+		    (entry->kind & KERN_MOUNT_INFO_BIND) != 0U)
+			continue;
+		(void)snprintf(source, sizeof(source), "%.*s", (int)sizeof(entry->source), entry->source);
+
+		/* That device among the scan's, and the disk it is on. */
+		for (device = 0U; device < count; device++) {
+			same = strcmp(devices[device].name, source);
+			if (same == 0) {
+				disk = volumed_disk_of(devices, count, device);
+				break;
+			}
+		}
+
+		/* The root has one entry. */
+		break;
+	}
+
+	/* The table is no longer needed. */
+	free(query);
+	return disk;
+}
+
+/*
+ * Finds the disk a device is on: its topmost parent among the devices
+ * (a partition's slice's disk), or the device itself when it has none.
+ */
+static uint32_t
+volumed_disk_of(
+	const struct volumed_device *devices,
+	unsigned count,
+	unsigned index)
+{
+	uint32_t current;
+	uint32_t parent;
+	unsigned steps;
+	unsigned other;
+
+	/* Up the parents, at most as many steps as there are devices (a loop cannot hold it). */
+	current = devices[index].device;
+	parent = devices[index].parent;
+	for (steps = 0U; parent != 0U && steps < count; steps++) {
+		current = parent;
+		parent = 0U;
+		for (other = 0U; other < count; other++) {
+			if (devices[other].device == current) {
+				parent = devices[other].parent;
+				break;
+			}
+		}
+	}
+
+	/* The topmost device reached. */
+	return current;
 }
 
 /* Brings the volumes up to date with a scan's, telling the clients what changed. */

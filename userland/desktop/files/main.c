@@ -1403,6 +1403,7 @@ main_devices_take(
 {
 	struct kl_device list[KL_DEVICES_MAX];
 	struct fm_device devices[FM_DEVICES_MAX];
+	struct kl_device_info info;
 	size_t count;
 	size_t index;
 
@@ -1419,6 +1420,11 @@ main_devices_take(
 			devices[index].mounted = 1;
 		if ((list[index].state & KL_DEVICE_NEW) != 0U)
 			devices[index].fresh = 1;
+
+		/* Its file system and size, for the mount's question (empty from an older desktop). */
+		(void)kl_system_devices_info(main_system, list[index].id, &info);
+		(void)snprintf(devices[index].fs, sizeof(devices[index].fs), "%s", info.fs);
+		devices[index].bytes = info.bytes;
 	}
 
 	/* Taken, at the time now. */

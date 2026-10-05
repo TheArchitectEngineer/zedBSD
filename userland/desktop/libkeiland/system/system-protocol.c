@@ -213,15 +213,16 @@ static const struct wl_message system_devices_events[] = {
 	{ "done", "u", system_plain_types },
 	{ "result", "uuu", system_plain_types },
 	{ "busy", "5us", system_plain_types },
+	{ "volume", "9ssuu", system_plain_types },
 };
 
-/* kl_system_devices_v1: three requests and four events (ws132-p004: mount and busy since version 5).  It lives for the program. */
+/* kl_system_devices_v1: three requests and five events (ws132-p004: mount and busy since version 5; ws132-p009: volume since version 9).  It lives for the program. */
 const struct wl_interface kl_system_devices_v1_interface = {
 	KL_SYSTEM_DEVICES_NAME,
-	5,
+	KL_SYSTEM_DEVICES_SINCE_VOLUME,
 	3,
 	system_devices_requests,
-	4,
+	5,
 	system_devices_events
 };
 

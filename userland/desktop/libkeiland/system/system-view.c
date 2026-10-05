@@ -355,11 +355,39 @@ system_view_device(
 		view->devices_pending_count = 0U;
 	}
 
-	/* The device, while there is room. */
+	/* The device, while there is room, with no file system or size until its volume event. */
 	if (view->devices_pending_count >= KL_DEVICES_MAX)
 		return;
 	view->devices_pending[view->devices_pending_count] = *device;
+	memset(&view->device_infos_pending[view->devices_pending_count], 0, sizeof(view->device_infos_pending[0]));
 	view->devices_pending_count++;
+}
+
+/*
+ * Keeps a pending device's file system and size (the volume event after its
+ * device, version 9); a device not in the pending list is passed over.
+ */
+void
+system_view_device_info(
+	struct system_view *view,
+	const char *id,
+	const char *fs,
+	uint64_t bytes)
+{
+	size_t index;
+	int same;
+
+	/* The pending device of that ID. */
+	if (!view->devices_open)
+		return;
+	for (index = 0U; index < view->devices_pending_count; index++) {
+		same = strcmp(view->devices_pending[index].id, id);
+		if (same == 0) {
+			system_view_copy(view->device_infos_pending[index].fs, sizeof(view->device_infos_pending[index].fs), fs);
+			view->device_infos_pending[index].bytes = bytes;
+			return;
+		}
+	}
 }
 
 /*
@@ -378,6 +406,7 @@ system_view_devices_done(
 	/* The list, as one state. */
 	view->devices_open = 0U;
 	memcpy(view->devices, view->devices_pending, view->devices_pending_count * sizeof(view->devices[0]));
+	memcpy(view->device_infos, view->device_infos_pending, view->devices_pending_count * sizeof(view->device_infos[0]));
 	view->device_count = view->devices_pending_count;
 	view->changed |= KL_SYSTEM_CHANGED_DEVICES;
 }
