@@ -48,6 +48,9 @@
 #define LOCK_PENDING	0x1U
 #define LOCK_OWNED	0x2U
 #define PM1_GBL_RLS	0x04U
+
+/* SLP_EN in the second byte of PM1_CNT (bit 13 of the register). */
+#define PM1_SLP_EN	0x20U
 #define PM1_GBL_STS	5U
 
 /*
@@ -425,6 +428,12 @@ control_write(
 	uint32_t port,
 	uint8_t *value)
 {
+	/* The second byte of PM1_CNT has SLP_TYP (bits 2 to 4) and SLP_EN (bit 5): the platform would sleep now (BUG-197). */
+	if (port == PM1A_CONTROL + 1U && (*value & PM1_SLP_EN) != 0) {
+		printf("FIRMWARE SLP_EN SLP_TYP %u\n", (unsigned)((*value >> 2) & 7U));
+		return;
+	}
+
 	/* Only the first byte of PM1_CNT has GBL_RLS. */
 	if (port != PM1A_CONTROL)
 		return;

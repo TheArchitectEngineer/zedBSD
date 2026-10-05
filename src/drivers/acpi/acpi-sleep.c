@@ -252,7 +252,7 @@ drv_acpi_lps0_attach(void)
 	int error;
 
 	/* Finds the device and asks each family which functions it has, with the interpreter held. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Walks the namespace for the first present LPS0 device. */
 	device = NULL;
@@ -382,7 +382,7 @@ drv_acpi_device_power_set(
 		return EINVAL;
 
 	/* Changes the state with the interpreter held, so that the tables stay consistent. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Finds the device's record, which takes the resources of D0 at the first change. */
 	record = device_record(device, &error);
@@ -487,7 +487,7 @@ drv_acpi_device_wake_enable(
 		return EINVAL;
 
 	/* Enables the wake with the interpreter held, so that the tables stay consistent. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Finds the device's record. */
 	record = device_record(device, &error);
@@ -572,7 +572,7 @@ drv_acpi_device_wake_disable(
 		return EINVAL;
 
 	/* Disables the wake with the interpreter held, so that the tables stay consistent. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Refuses a device whose wake the helpers did not enable. */
 	record = device_find(device);
@@ -901,7 +901,7 @@ lps0_run(
 		return ENODEV;
 
 	/* Makes the notifications with the interpreter held, so that no AML runs between them. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Calls each function of the sequence the family has. */
 	first_error = 0;

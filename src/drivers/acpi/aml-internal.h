@@ -795,7 +795,7 @@ drv_acpi_convert_string(
 int
 drv_acpi_define(
 	struct drv_acpi_eval *eval,
-	unsigned opcode);
+	unsigned opcode) __attribute__((noinline));
 
 bool
 drv_acpi_is_definition(
@@ -871,13 +871,12 @@ int
 drv_acpi_table_operator(
 	struct drv_acpi_eval *eval,
 	unsigned opcode,
-	struct drv_acpi_object **result);
+	struct drv_acpi_object **result) __attribute__((noinline));
 
 /* aml-thread.c */
 struct drv_acpi_thread *
 drv_acpi_enter(
-	struct drv_acpi_thread *storage,
-	const void *frame);
+	struct drv_acpi_thread *storage) __attribute__((noinline));
 
 void
 drv_acpi_leave(
@@ -904,7 +903,7 @@ int
 drv_acpi_sync_operator(
 	struct drv_acpi_eval *eval,
 	unsigned opcode,
-	struct drv_acpi_object **result);
+	struct drv_acpi_object **result) __attribute__((noinline));
 
 int
 drv_acpi_mutex_acquire(
