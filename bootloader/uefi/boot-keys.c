@@ -12,7 +12,8 @@
  * console, and Shift selects the console login.  Only the extended console
  * input reports the modifier keys' state reliably, so a firmware without it
  * boots as if no key were held.  Nothing here waits: the loader samples the
- * key queue at fixed points and the boot is never slowed down.
+ * key queue and the modifier keys held at that moment at fixed points, and
+ * the boot is never slowed down.
  */
 
 #include "boot-keys.h"
@@ -97,11 +98,13 @@ zbl_uefi_boot_keys_open(
 }
 
 /*
- * Reads the queued key events and reports every boot key seen so far.
+ * Reads the queued key events and the modifier keys held now, and reports
+ * every boot key seen so far.
  *
  * The events read are consumed; the kernel's keyboard driver starts from
  * its own state, so the keys typed while the loader runs never reached the
- * kernel anyway.
+ * kernel anyway.  The held modifiers come with the answer that the queue
+ * is empty, which the extended input fills with the current key state.
  */
 unsigned
 zbl_uefi_boot_keys_sample(
@@ -125,8 +128,23 @@ zbl_uefi_boot_keys_sample(
 		data.KeyState.KeyShiftState = 0U;
 		data.KeyState.KeyToggleState = 0U;
 
-		/* An empty queue, or any error, ends the sample. */
+		/* Reads the next event, or learns that the queue is empty. */
 		status = keys->input->ReadKeyStrokeEx(keys->input, &data);
+
+		/*
+		 * An empty queue still reports the modifier keys held now, so a
+		 * key held down is seen even when its events never reached the
+		 * loader: the firmware may have read them before starting it.
+		 * A firmware that leaves the state alone adds nothing, as the
+		 * cleared state is not marked valid.
+		 */
+		if (status == EFI_NOT_READY) {
+			seen = zbl_uefi_boot_keys_from_state(&data);
+			keys->held |= seen;
+			break;
+		}
+
+		/* Any other error ends the sample; its data is not trusted. */
 		failed = EFI_ERROR(status);
 		if (failed)
 			break;

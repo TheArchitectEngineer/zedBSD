@@ -360,12 +360,16 @@ readable boot from a machine whose configuration is graphical and quiet.
 
 - **How to press them.** Turn the machine on, then hold Ctrl (or Shift, or
   both) and tap Space repeatedly until the logo appears or kernel messages
-  start to scroll.  The loader never waits for a key; it reads the firmware's
-  key queue when it starts and again right after reading `zedbsd.cfg`.  A
-  modifier held together with Space is always reported by the firmware; a
-  modifier held alone is reported only by firmware that supports exposed
-  modifier keys, and holding it from power-on is not reliable.  Shift with a
-  letter or digit may not be reported as Shift, which is why Space is used.
+  start to scroll.  The loader never waits for a key; when it starts and
+  again right after reading `zedbsd.cfg` it reads the firmware's key queue
+  and the modifier keys held at that moment (the key state the extended
+  input reports with an empty queue).  The held state does not depend on
+  the firmware passing earlier key events on to the loader, and the queue
+  still gives a modifier that was let go after being typed with Space.  A
+  modifier held alone is seen only by firmware that reports the held state
+  or supports exposed modifier keys, so holding it from power-on without
+  Space is not reliable.  Shift with a letter or digit may not be reported as
+  Shift, which is why Space is used.
 - **What it means.** Ctrl shows the kernel's messages on the console from the
   start, so the last message before a stop stays on the screen.  Shift makes
   `sessiond` end at once and init start the console's getty, so no graphical

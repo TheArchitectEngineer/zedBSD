@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws174-p003: builds and runs the host test of the UEFI loader's boot key detection
-# (boot-keys-host-test.c, K1 and K2): bootloader/uefi/boot-keys.c against a mock
+# (boot-keys-host-test.c, K1 to K3): bootloader/uefi/boot-keys.c against a mock
 # system table, with the host compiler, once plain and once with ASan and UBSan.
 # The mock's callbacks use the UEFI calling convention (ms_abi), as the loader calls them.
 #
