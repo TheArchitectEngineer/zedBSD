@@ -71,6 +71,8 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS130 IPv6 の判断（2026-10-05、P1 の p001 の設計、plan/ws130/phase001/phase.md §9、p002 の前に全部要る）**: H1 UAPI（netinet の option、SIOCAIFADDR_IN6 など と struct in6_aliasreq、struct in6_rtentry、route socket の RTM_ROUTERADV・RTM_ADDRINFO・RTM_NEIGHBOR、AF_INET6 の socket。正確な差分は p002 の最初に出す）、H2 IPV6_V6ONLY の既定 [0、Linux と同じ]、H3 既存の net.conf で IPv6 を既定 on [on]、H4 link-local の interface ID [RFC 7217、MAC を出さない]、H5 dual-stack の DNS の順 [DHCPv4 → RDNSS → DHCPv6、最大 3]、H6 v1 は fragment の再組立て無し（IPv4 と同じ）、Packet Too Big は扱う、H7 DHCPv6 は DUID-UUID、H8 Wi-Fi の network ごとの IPv6 の設定は後。
+- **WS068 p037 以降（GL 3.3 ほか）の保留の解除**: 2026-09-27 のユーザーの保留（「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して…」）を、ベータ2 の「全部を P1・P2 に割り当て可」で解くか [Q1 の案: 明示の指示まで保留のまま。p009・p004・p007 は進める]。
 - **ws089-p017 の判断（P2 の設計、前からの保留）**: ① ベータ2 に入れるか [計画の案: 入れない]、② 入れるなら accent だけか dark もか。
 - **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
 - **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
