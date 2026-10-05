@@ -26,7 +26,7 @@ libpasskey（CTAPHID・NFC の APDU・CTAP2・CBOR・PIN/UV、暗号は OpenSSL�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws161-p001](phase001/phase.md) | 要件と設計 | planning（第 1 版 q734、第 2 版 §9 q770。U1〜U5 承認済み） | — |
-| ws161-p002 | kernel: `usb-hid` の hidraw、`include/uapi/hidraw.h`、seat の一覧、試験の loopback。T1 | planned | p001、U1・U3・U4 |
+| ws161-p002 | kernel: `usb-hid` の hidraw、`include/uapi/hidraw.h`、seat の一覧、試験の loopback。T1 | in-progress（実装 7a1d339c、build と host 試験済み、T1 待ち。V1 は判断待ち） | p001、U1・U3・U4 |
 | ws161-p003 | kernel: `usb-ccid`、`include/uapi/ccid.h`、seat の一覧。T1 | planned | p001、U2・U3 |
 | ws161-p004 | libpasskey: cbor・transport-hid・ctap2・pin・verify・os 層、道具 `passkey`、host 試験 | planned | p002（os 層だけ） |
 | ws161-p005 | libpasskey: transport-nfc と `/dev/smartcard*`、host 試験 | planned | p003・p004 |

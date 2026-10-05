@@ -250,6 +250,40 @@ usb-ccid ─ /dev/smartcardN（APDU の交換）──── libpasskey: transpo
 U1〜U3 の承認まで、kernel と UAPI の code は書かない。p004（libpasskey の cbor・ctap2・pin・verify と host 試験）は U1 の形に依る所が os 層だけなので、
 os 層を除いて先に進められる（Q1 が Queue に入れれば）。
 
+### 9.10 敵対的な設計の見直し（2026-10-05、design-reviewer）と扱い
+
+見直しの指摘（B = 止める、M = 大きい、m = 小さい）と、この版での扱い。p002 の実装（7a1d339c）に入れた物と、後の段・判断に回す物を分ける。
+
+| 指摘 | 中身（要点） | 扱い |
+| --- | --- | --- |
+| B1 | devfs の既定は 0666 で、`hidraw*` は `/dev/input` に入らない | **p002 で直した**: `devfs.c` が `hidraw*` を `/dev/input` に置き、`hidraw*`・`smartcard*` を 0600 root。rdev の major は hidraw 0x000f、smartcard は p003 で別に取る |
+| M1 | 今の HID の parser は Output を記録せず、top の usage を出さない | **p002 で別の道**: 純粋な `hidraw-describe.c`（usage・番号付き・入力と出力の大きさ）を足し、parser は変えない。host 試験（YubiKey の FIDO の記述・keyboard・番号付き・拡張 usage・切れた記述） |
+| M2 | 送りの門・writer の順・lifetime・待ちの上限 | **p002 で直した**: OUT は IN の URB の門を使わず `drv_usb_interrupt`（OUT の endpoint、無ければ SET_REPORT）、class の output の mutex で 1 つずつ（`mutex_lock_interruptible`）、上限 5 秒。node の record は cdev の finalizer で消える（usb-hid の detach は unregister の後に free） |
+| M3 | 複数の open と revoke 無し: 別の process が CTAPHID を占め、触れた指で他人の要求に署名させられる（touch hijack） | **判断 V1 へ**（下）。UAPI の追加（排他の grab）と、WS172 で認証が root の passkey になることとの関係 |
+| M4 | 検証の関数は challenge・rpId・許す credential・signCount を検証側が持ち、credential ID で鍵を引くこと。base に置くなら OpenSSL に依らない形 | WS172（passkey を base に、OpenSSL は Guardrail の例外、release 前に自前の暗号へ）の設計に渡す。libpasskey の `verify.c` は小さな crypto の口（SHA-256・P-256 の ECDSA の検証）の後ろに置く |
+| M5 | NFC の SELECT の答え "U2F_V2" でも CTAP2 は在り得る（GetInfo で決める）。NFCCTAP_MSG は P1 = 0x80 | p005 の設計に入れる |
+| M6 | CTAP 2.0 の鍵は getPinToken（0x05）と protocol 1 | p004 に入れる（GetInfo の `options`・`pinUvAuthProtocols` で選ぶ） |
+| M7・M8・M9 | CCID: 一度に 1 つの command と bSeq、時間の延長にも上限、abort の手順、出し入れの見張りと排他の分離、close で電源を切る、NFC は短い APDU と chaining | p003・p005 の設計に入れる（slot の node の open は共有、`CCID_POWER_ON` から close までが排他、close で power off） |
+| M10 | QEMU の `usb-ccid` は TPDU の水準のはずで役に立たない。loopback は xHCI の interrupt OUT を通らない | p003 の T1 は loopback か QEMU の `canokey`（host に libcanokey-qemu が要る）を調べる。interrupt OUT の実物の確かめは UAT（YubiKey）か `u2f-passthru`。pure な部分（describe・queue・CCID の枠）は host 試験 |
+| M11 | node の名前が古い | 直した（`/dev/smartcardN`、U1〜U5 承認済み） |
+| M12 | hmac-secret が無い（WS162 K1 (b)） | WS162・WS163 の mock は WS172 に置き換わる（2026-10-05 ユーザー）。要るなら WS172 の設計で |
+| m1〜m5 | CTAPHID の CID・nonce の照合、channel busy、`maxMsgSize`、CBOR の正規の key の順（長さが先）・重複の key、PIN の長さは code point・64 byte の詰め、protocol 1・2 の IV と HMAC の長さ、低い S を強いない、鍵の型は -7 だけ | p004 の実装の注意として記録 |
+| m2 | 64 個の queue と 7609 byte の message（129 packet） | 記録（v1 は queue 64。溢れは古い物から捨てる。libpasskey は読む側を急ぐ。足りなければ queue を大きくする） |
+| m6 | `seat_input` は `event` だけを見る | **p002 で直した**（prefix を引数に、hidraw の戻しは 0600 root） |
+| m7 | devfs の事象は無い | **p002 で直した**（hidraw が自分で `KERN_SYSTEM_EVENT_INPUT` を出す、subject `hidrawN`。compositor は input の事象で一覧を読み直すだけ） |
+| m8 | `os-freebsd.c` の段が無い | p006 に入れる |
+| m9 | `CCID_TRANSMIT` は固定幅の pointer、ioctl の大きさは 13 bit、group の文字 | p003（hidraw は 'H'、smartcard は 'S'） |
+| m10 | 拡張の CCID の message の最長と 64 KiB の予約 | p003（APDU を `dwMaxCCIDMessageLength - 10` に絞る） |
+| m11 | Wycheproof は Apache-2.0 | p004 で写すなら license を記録 |
+| m12 | OTP の keyboard の interface は evdev のまま、触れると OTP の文字列が打たれる | 記録（判断 V2） |
+
+### 9.11 人間の判断が要る点（見直しの後）
+
+| ID | 問い | 案 |
+| --- | --- | --- |
+| V1 | **touch hijack**: hidraw は複数の open で、revoke が無い。seat の利用者の別の process が鍵に要求を出し続けると、login の時の指で他の要求に署名させられ得る。(a) UAPI に排他の `HIDRAW_GRAB`（grab した open だけが report を受け、他の write は EBUSY）を足し、認証の道（WS172 の passkey）は grab して使う。(b) seat の利用者に hidraw を渡さない（U3 を取り消す。認証は root の passkey だけが鍵を開く。browser の WebAuthn は後の題）。(c) 今のまま | (a)。UAPI の追加なので承認が要る |
+| V2 | YubiKey の OTP の keyboard の interface: 今は evdev の keyboard として使われ、鍵に触れると OTP の文字列が focus の欄に打たれる | 当面そのまま（OTP の非対応は「OTP の機能を使わない」こと）。困るなら usb-hid がその interface（YubiKey の vendor・usage が keyboard の interface）を捨てる |
+
 ## 結果
 
 （設計の第 1 版。判断 H1〜H6 待ち）
