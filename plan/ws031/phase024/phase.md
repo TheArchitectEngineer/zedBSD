@@ -112,3 +112,7 @@ draw.c は host の試験に入っていない（GPU に出すため）ので、
 が 16300 KiB（上限 16384）で余裕が無いので、別の組を作るか上限の問題（q762 の報告）の後にする。
 
 残り（再開の点）: 増分 3 の step（組の余裕の後）、T1 の vke2 の結果（UNDEF の値の記録）。実機は使っていない。
+
+## T1-190b の結果（2026-10-05 Q1）
+
+5330 の passthrough（main fc2f8d9a）: `vke2: verdict PASS (21 of 21 steps passed)`（EDGE・KILLOOP・NOINPUT・UNDEF を含む）、GPU の hang 無し。UNDEF の実機の値（4 回の繰り返しで同じ）: operation 0 → 0x80000000、1 → 0x80000000、2 → 0xffffffff、3 → 0xffffffff、4 → 0x7fffffff、5 → 0x00000000、6 → 0xa99b44c0、7 → 0x02d53368（各 operation の意味は vke2 の UNDEF の表）。証拠 /tmp/claude-1000/t1-190b/。注: step と UNDEF の行は vkloop-hw.sh が 5330 から持ってくる serial を写した log にだけ出る（AGENTS.md の「serial の log で判定しない」との関係は Q1 がユーザーに確かめる）。
