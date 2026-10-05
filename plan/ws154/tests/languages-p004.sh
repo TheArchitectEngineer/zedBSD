@@ -3,7 +3,7 @@
 # remembered for each application by zdesktop (ws095-p016), on the Venus guest (config-amd64-languages.mk).  Judged by
 # zdesktop's log (ZWL IME language=, ZWL IME app ...) and the probes' logs:
 #  1. ime.method 2: SKK.  Probe A (app probe-a): Alt+Space chooses skk; q goes to katakana (language=skk-katakana);
-#     "ai" puts アイ in; the system bar shows ア (skk-katakana.png).
+#     "ai" puts ア and イ in (one commit each); the system bar shows ア (skk-katakana.png).
 #  2. Probe B (app probe-b) starts with the desktop's language (direct), not A's.
 #  3. B goes: A's katakana comes back (language=skk-katakana from=remembered); "ka" puts カ in.
 #  4. In A: l goes to Latin (skk-latin; the key x goes to the probe, PROBE KEY key=45), C-j back to kana (skk); "a" puts あ in.
@@ -62,7 +62,9 @@ expect_log /tmp/zdesktop.log 'ZWL IME language=skk$'
 keys 'q'
 expect_log /tmp/zdesktop.log 'ZWL IME language=skk-katakana'
 keys 'ai'
-expect_log /tmp/a.log 'commit=アイ'
+# In SKK's katakana (as in its kana) a letter's kana goes in at once: ア and イ are two commits.
+expect_log /tmp/a.log 'commit=ア$'
+expect_log /tmp/a.log 'commit=イ$'
 check "$out/skk-katakana.png" >/dev/null
 echo "shot: $out/skk-katakana.png"
 
