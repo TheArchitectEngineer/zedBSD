@@ -686,6 +686,7 @@ KERN_NET_SOURCES := \
 	src/kern/net/in6-route.c \
 	src/kern/net/in6-neighbor.c \
 	src/kern/net/ipv6.c \
+	src/kern/net/ipv6-ioctl.c \
 	src/kern/net/icmp6.c \
 	src/kern/net/nd6.c \
 	src/kern/net/mld6.c

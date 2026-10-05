@@ -23,6 +23,7 @@
 #include "kern/cred.h"
 #include "kern/uaccess.h"
 #include "internal.h"
+#include "ipv6.h"
 #include <kern/kcrt.h>
 
 #include <uapi/netif.h>
@@ -503,6 +504,9 @@ inet_socket_ioctl(
 	uint32_t old_address;
 	uint32_t old_netmask;
 	uint32_t value;
+	bool superuser;
+	int ipv6_command;
+	int query;
 	int error;
 
 	(void)socket;
@@ -510,6 +514,21 @@ inet_socket_ioctl(
 	/* The WLAN group has its own dispatcher and privilege check. */
 	if (inet_ioctl_is_wlan_group(command)) {
 		error = inet_ioctl_wlan(command, argument);
+		return error;
+	}
+
+	/* IPv6's ioctls (ws130-p002): reading is open to everyone, a change needs the superuser. */
+	ipv6_command = ipv6_ioctl_handles(command);
+	if (ipv6_command) {
+		query = ipv6_ioctl_is_query(command);
+		if (!query) {
+			superuser = inet_ioctl_caller_is_superuser();
+			if (!superuser)
+				return EPERM;
+		}
+
+		/* Carried out. */
+		error = ipv6_ioctl(command, argument);
 		return error;
 	}
 

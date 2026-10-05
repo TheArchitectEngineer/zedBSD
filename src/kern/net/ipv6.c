@@ -38,6 +38,7 @@
 #include "kern/net/ethernet.h"
 #include "kern/net/net-device.h"
 #include "kern/net/packet-buf.h"
+#include "kern/net/socket.h"
 #include "kern/clock.h"
 #include "kern/lock.h"
 #include "internal.h"
@@ -61,6 +62,10 @@
 #define IPV6_WORK_DAD		1U	/* a duplicate address detection solicitation */
 #define IPV6_WORK_RS		2U	/* a router solicitation */
 #define IPV6_WORK_MLD		3U	/* a multicast listener report */
+#define IPV6_WORK_TELL		4U	/* an address's change, told on the routing sockets */
+
+/* The metric of a connected route (the prefix of an address of the interface). */
+#define IPV6_CONNECTED_METRIC	256U
 
 /*
  * One device's IPv6: the device (the record holds a reference), its
@@ -86,11 +91,15 @@ struct ipv6_protocol {
 	ipv6_input_fn input;
 };
 
-/* One piece of the timer's work, done after the lock is let go. */
+/* One piece of the timer's work, done after the lock is let go (a change told: its event, prefix length, flags and interface). */
 struct ipv6_work {
 	unsigned kind;
 	struct net_device *device;
 	struct in6_addr address;
+	unsigned event;
+	unsigned prefixlen;
+	unsigned flags;
+	unsigned ifindex;
 };
 
 /* Guards the records and the routes. */
@@ -122,6 +131,8 @@ static struct ipv6_interface *ipv6_interface_locked(const struct net_device *dev
 static unsigned ipv6_interface_tick_locked(struct ipv6_interface *interface, uint64_t now_ms, struct ipv6_work *work, unsigned count);
 static void ipv6_work_do(const struct ipv6_work *work, unsigned count);
 static unsigned ipv6_groups_locked(const struct ipv6_interface *interface, struct in6_addr *groups, unsigned capacity);
+static void ipv6_connected_locked(struct ipv6_interface *interface, const struct in6_addr *address, unsigned prefixlen, int add);
+static void ipv6_tell(unsigned ifindex, unsigned event, const struct in6_addr *address, unsigned prefixlen, unsigned flags);
 
 /*
  * Initializes IPv6 and registers it with Ethernet.
@@ -543,9 +554,11 @@ ipv6_duplicate(
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
 
-	/* Said in the log (networkd hears it on the routing socket). */
-	if (duplicate)
+	/* Said in the log and on the routing sockets (networkd makes another address). */
+	if (duplicate) {
 		kern_logf("ipv6: %s: duplicate address detected\n", device->name);
+		ipv6_tell(device->ifindex, event.kind, &event.address, event.prefixlen, event.flags);
+	}
 }
 
 /* A router answered: no more router solicitations on the device. */
@@ -564,6 +577,247 @@ ipv6_router_advertised(
 		interface->solicitations = 0U;
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
+}
+
+/*
+ * Adds an address to a device, or renews one it has (its lifetimes and
+ * the caller's flags): a new one is detected (unless NODAD), its group
+ * reported, and its prefix (shorter than 128) made a connected route.
+ * Returns 0, ENODEV (no IPv6 there), EINVAL or ENOSPC.
+ */
+int
+ipv6_address_add(
+	struct net_device *device,
+	const struct in6_addr *address,
+	unsigned prefixlen,
+	unsigned flags,
+	uint32_t valid_s,
+	uint32_t preferred_s)
+{
+	struct ipv6_interface *interface;
+	unsigned long irq;
+	uint64_t now;
+	int added;
+	int error;
+
+	/* The address in the device's table. */
+	now = ipv6_now_ms();
+	added = 0;
+	irq = spin_lock_irqsave(&ipv6_lock);
+
+	interface = ipv6_interface_locked(device);
+	error = ENODEV;
+	if (interface != NULL && interface->enabled)
+		error = in6_address_add(&interface->addresses, address, prefixlen, flags, valid_s, preferred_s, now, &added);
+
+	/* A new one: its group reported, its prefix connected. */
+	if (error == 0 && added) {
+		interface->report_ms = now;
+		ipv6_connected_locked(interface, address, prefixlen, 1);
+	}
+
+	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/* Not added. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the timer runs the detection. */
+	net_worker_wakeup();
+	return 0;
+}
+
+/* Removes an address of a device, with its connected route.  Returns 0, ENODEV or ENOENT. */
+int
+ipv6_address_remove(
+	struct net_device *device,
+	const struct in6_addr *address)
+{
+	struct ipv6_interface *interface;
+	struct in6_address *entry;
+	struct in6_addr removed;
+	unsigned long irq;
+	unsigned prefixlen;
+	int error;
+
+	/* The address, and its connected route once no other address has its prefix. */
+	irq = spin_lock_irqsave(&ipv6_lock);
+
+	interface = ipv6_interface_locked(device);
+	error = ENODEV;
+	if (interface != NULL) {
+		error = ENOENT;
+		entry = in6_address_find(&interface->addresses, address);
+		if (entry != NULL) {
+			removed = entry->address;
+			prefixlen = entry->prefixlen;
+			error = in6_address_remove(&interface->addresses, address);
+			ipv6_connected_locked(interface, &removed, prefixlen, 0);
+		}
+	}
+
+	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/* Not removed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Copies a device's addresses (at most capacity) and says whether IPv6 is
+ * on there.  Returns 0 or ENODEV.
+ */
+int
+ipv6_address_list(
+	struct net_device *device,
+	struct in6_address *entries,
+	unsigned capacity,
+	unsigned *count,
+	int *enabled)
+{
+	struct ipv6_interface *interface;
+	unsigned long irq;
+	unsigned index;
+	int error;
+
+	/* The record's used entries. */
+	*count = 0U;
+	*enabled = 0;
+	irq = spin_lock_irqsave(&ipv6_lock);
+
+	interface = ipv6_interface_locked(device);
+	error = ENODEV;
+	if (interface != NULL) {
+		error = 0;
+		*enabled = interface->enabled;
+		for (index = 0U; index < IN6_ADDRESSES_MAX && *count < capacity; index++) {
+			if (!interface->addresses.entries[index].used)
+				continue;
+			entries[*count] = interface->addresses.entries[index];
+			(*count)++;
+		}
+	}
+
+	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/* No IPv6 record. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the addresses. */
+	return 0;
+}
+
+/*
+ * Turns IPv6 on or off on a device; off, its addresses, routes and
+ * neighbors go.  Returns 0 or ENODEV.
+ */
+int
+ipv6_enable(
+	struct net_device *device,
+	int enabled)
+{
+	struct ipv6_interface *interface;
+	void *removed[IN6_ROUTES_MAX];
+	unsigned long irq;
+	int found;
+
+	/* The record's switch; off empties it. */
+	found = 0;
+	irq = spin_lock_irqsave(&ipv6_lock);
+
+	interface = ipv6_interface_locked(device);
+	if (interface != NULL) {
+		found = 1;
+		interface->enabled = enabled;
+		if (!enabled) {
+			kern_memset(&interface->addresses, 0, sizeof(interface->addresses));
+			interface->solicitations = 0U;
+			interface->report_ms = 0U;
+			(void)in6_route_purge(&ipv6_routes, interface->ifindex, removed, IN6_ROUTES_MAX);
+		}
+	}
+
+	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/* No record. */
+	if (!found)
+		return ENODEV;
+
+	/* Off: no neighbor stays. */
+	if (!enabled)
+		nd6_purge_device(device);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Deletes a route.  Returns 0 or ENOENT. */
+int
+ipv6_route_delete(
+	const struct in6_addr *destination,
+	unsigned prefixlen,
+	unsigned ifindex)
+{
+	void *removed;
+	unsigned long irq;
+	int error;
+
+	/* The route. */
+	irq = spin_lock_irqsave(&ipv6_lock);
+
+	error = in6_route_delete(&ipv6_routes, destination, prefixlen, ifindex, &removed);
+
+	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/* Not there. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Copies the route at an ordinal (among the used entries).  Returns 0 or ENOENT. */
+int
+ipv6_route_get(
+	unsigned ordinal,
+	struct in6_route *route)
+{
+	unsigned long irq;
+	unsigned index;
+	unsigned seen;
+	int found;
+
+	/* The ordinal-th used entry. */
+	found = 0;
+	seen = 0U;
+	irq = spin_lock_irqsave(&ipv6_lock);
+
+	for (index = 0U; index < IN6_ROUTES_MAX && !found; index++) {
+		if (!ipv6_routes.entries[index].used)
+			continue;
+		if (seen == ordinal) {
+			*route = ipv6_routes.entries[index];
+			route->device = NULL;
+			found = 1;
+		}
+
+		/* One more route passed. */
+		seen++;
+	}
+
+	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/* Past the last. */
+	if (!found)
+		return ENOENT;
+
+	/* Succeeded: the route. */
+	return 0;
 }
 
 /* Writes the groups a device reports (MLD), at most capacity.  Returns how many. */
@@ -1377,6 +1631,23 @@ ipv6_interface_tick_locked(
 	/* The addresses' events: a solicitation to send, a link-local address made the interface's. */
 	events_count = in6_address_tick(&interface->addresses, now_ms, events, 8U);
 	for (index = 0U; index < events_count; index++) {
+		/* A change is told. */
+		if (events[index].kind != IN6_EVENT_DAD_PROBE && count < IPV6_WORK_MAX) {
+			work[count].kind = IPV6_WORK_TELL;
+			work[count].device = interface->device;
+			work[count].address = events[index].address;
+			work[count].event = events[index].kind;
+			work[count].prefixlen = events[index].prefixlen;
+			work[count].flags = events[index].flags;
+			work[count].ifindex = interface->ifindex;
+			count++;
+		}
+
+		/* An address gone takes its connected route. */
+		if (events[index].kind == IN6_EVENT_EXPIRED)
+			ipv6_connected_locked(interface, &events[index].address, events[index].prefixlen, 0);
+
+		/* A solicitation for a tentative address. */
 		if (events[index].kind == IN6_EVENT_DAD_PROBE && count < IPV6_WORK_MAX) {
 			work[count].kind = IPV6_WORK_DAD;
 			work[count].device = interface->device;
@@ -1449,6 +1720,9 @@ ipv6_work_do(
 			groups_count = ipv6_groups(work[index].device, groups, IN6_ADDRESSES_MAX);
 			(void)mld6_report(work[index].device, groups, groups_count);
 			break;
+		case IPV6_WORK_TELL:
+			ipv6_tell(work[index].ifindex, work[index].event, &work[index].address, work[index].prefixlen, work[index].flags);
+			break;
 		default:
 			break;
 		}
@@ -1492,4 +1766,86 @@ ipv6_groups_locked(
 
 	/* Succeeded: the groups. */
 	return count;
+}
+
+/*
+ * Adds (add nonzero) or removes the connected route of an address's
+ * prefix on its interface (the lock held): none for a /128; removed only
+ * once no other address of the interface has the prefix.
+ */
+static void
+ipv6_connected_locked(
+	struct ipv6_interface *interface,
+	const struct in6_addr *address,
+	unsigned prefixlen,
+	int add)
+{
+	struct in6_route route;
+	struct in6_address *entry;
+	void *changed;
+	unsigned index;
+	int same;
+
+	/* A host address has no prefix to reach. */
+	if (prefixlen >= 128U)
+		return;
+
+	/* Added: the prefix on the link. */
+	if (add) {
+		kern_memset(&route, 0, sizeof(route));
+		route.destination = *address;
+		route.prefixlen = prefixlen;
+		route.ifindex = interface->ifindex;
+		route.device = interface->device;
+		route.flags = RTF_UP | RTF_CONNECTED;
+		route.metric = IPV6_CONNECTED_METRIC;
+		(void)in6_route_add(&ipv6_routes, &route, &changed);
+		return;
+	}
+
+	/* Removed, unless another address keeps the prefix. */
+	for (index = 0U; index < IN6_ADDRESSES_MAX; index++) {
+		entry = &interface->addresses.entries[index];
+		if (!entry->used || entry->prefixlen != prefixlen)
+			continue;
+		same = in6_prefix_match(&entry->address, address, prefixlen);
+		if (same)
+			return;
+	}
+
+	/* No other address has it. */
+	(void)in6_route_delete(&ipv6_routes, address, prefixlen, interface->ifindex, &changed);
+}
+
+/* Tells an address's change on the routing sockets (RTM_ADDRINFO). */
+static void
+ipv6_tell(
+	unsigned ifindex,
+	unsigned event,
+	const struct in6_addr *address,
+	unsigned prefixlen,
+	unsigned flags)
+{
+	unsigned transition;
+
+	/* The event's transition. */
+	switch (event) {
+	case IN6_EVENT_PREFERRED:
+		transition = RTM_ADDRINFO_PREFERRED;
+		break;
+	case IN6_EVENT_DUPLICATE:
+		transition = RTM_ADDRINFO_DUPLICATE;
+		break;
+	case IN6_EVENT_DEPRECATED:
+		transition = RTM_ADDRINFO_DEPRECATED;
+		break;
+	case IN6_EVENT_EXPIRED:
+		transition = RTM_ADDRINFO_EXPIRED;
+		break;
+	default:
+		return;
+	}
+
+	/* Told. */
+	route_socket_notify_address(ifindex, address, prefixlen, transition, flags);
 }

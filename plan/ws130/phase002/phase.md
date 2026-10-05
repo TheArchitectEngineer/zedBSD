@@ -13,7 +13,8 @@ RS の送出・RA の検査と route socket の事象、loopback の `::1`。tra
 
 ## 1. UAPI の差分（H1: 適用の前にもう一度確かめる）
 
-正確な差分: [uapi.diff](uapi.diff)（`git apply -p1` で当たる。host の compiler で構文と大きさの `_Static_assert` を確かめた）。**承認まで適用しない。**
+正確な差分: [uapi.diff](uapi.diff)（`git apply -p1` で当たる。host の compiler で構文と大きさの `_Static_assert` を確かめた）。
+**承認（2026-10-05 夜、ユーザー、Q1 の問いへの答え）: 送った差分（493fb758）のとおり、§3.6 からの 3 つの変更を含めて承認。変えずに適用した。**
 
 | file | 追加 |
 | --- | --- |

@@ -24,12 +24,14 @@
 #include "kern/net/ethernet.h"
 #include "kern/net/net-device.h"
 #include "kern/net/packet-buf.h"
+#include "kern/net/socket.h"
 #include "kern/lock.h"
 #include "internal.h"
 #include "wire.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
+#include <uapi/route.h>
 
 /* The work the timer gathers under the lock, at most. */
 #define ND6_WORK_MAX		16U
@@ -45,6 +47,7 @@ struct nd6_options {
 struct nd6_work {
 	unsigned actions;
 	struct net_device *device;
+	unsigned ifindex;
 	struct in6_addr address;
 	uint8_t link[6];
 	struct packet_buf *held;
@@ -380,6 +383,7 @@ nd6_timer_run(
 		if (neighbor->state == ND6_NONE || neighbor->deadline_ms == 0U || now_ms < neighbor->deadline_ms)
 			continue;
 		work[count].device = neighbor->device;
+		work[count].ifindex = neighbor->ifindex;
 		work[count].address = neighbor->address;
 		kern_memcpy(work[count].link, neighbor->link, 6U);
 		actions = in6_neighbor_timer(neighbor, now_ms, IN6_RETRANS_MS);
@@ -396,10 +400,12 @@ nd6_timer_run(
 
 	spin_unlock_irqrestore(&nd6_lock, irq);
 
-	/* The sends and drops, each device held while it sends. */
+	/* The drops, the routers lost, and the sends, each device held while it sends. */
 	for (index = 0U; index < count; index++) {
 		if (work[index].held != NULL)
 			packet_buf_free(work[index].held);
+		if ((work[index].actions & ND6_ACTION_UNREACHABLE) != 0U)
+			route_socket_notify_neighbor(work[index].ifindex, &work[index].address, RTM_NEIGHBOR_UNREACHABLE, 1);
 		referenced = net_device_ref_live(work[index].device);
 		if (!referenced)
 			continue;
@@ -554,6 +560,9 @@ nd6_router_advert(
 	if (options->source_link != NULL)
 		nd6_learn(device, source, options->source_link, 1);
 	ipv6_router_advertised(device);
+
+	/* The message for networkd: its prefixes, routes and DNS servers. */
+	route_socket_notify_routeradv(device->ifindex, source, packet->data, packet->length);
 	packet_buf_free(packet);
 }
 
@@ -691,7 +700,9 @@ nd6_neighbor_advert(
 
 	spin_unlock_irqrestore(&nd6_lock, irq);
 
-	/* The held packet goes to the address now known. */
+	/* A router that said it no longer is one is told; the held packet goes to the address now known. */
+	if ((actions & ND6_ACTION_UNREACHABLE) != 0U)
+		route_socket_notify_neighbor(device->ifindex, target, RTM_NEIGHBOR_UNREACHABLE, 1);
 	net_device_ref(device);
 	packet_buf_free(packet);
 	if (held != NULL)
