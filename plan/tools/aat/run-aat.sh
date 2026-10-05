@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws173-p004: runs scenario tests (tests/scenarios, plan/tests.md) against a target with the AAT's automatic helpers
 # (plan/tools/aat/scenarios/helpers_*.py, by the scenarios' ids) and writes the run's record.
-#   plan/tools/aat/run-aat.sh TARGET OUTDIR [SUITE|ID|PATTERN|area:NAME ...] [--record PATH] [--no-samples]
+#   plan/tools/aat/run-aat.sh TARGET OUTDIR [SUITE|ID|PATTERN|area:NAME|changed:RANGE ...] [--record PATH] [--no-samples]
+#   changed:RANGE: the scenarios a git range needs (select-scenarios.py: their paths cover a changed file, and smoke).
 #   TARGET: 5330 (root@10.0.30.3), qemu (the guest of GUEST_RUNTIME/session.json) or user@host[:port].
 #   The default is the smoke suite.  OUTDIR/summary.md is the record (every verdict, its note, the screenshots and
 #   each scenario's steps in OUTDIR/records/); --record PATH copies it (plan/ws173/runs/DATE-SUITE.md).

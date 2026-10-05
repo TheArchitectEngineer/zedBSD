@@ -129,5 +129,20 @@ grep -q '| `os.power.lid` | \*\*needs-person\*\* |' "$tmp/runs/summary.md" && ok
 grep -q 'seen: `ZWL READY' "$tmp/runs/records/os.boot.session-up.md" && [ -s "$tmp/runs/png/os.boot.session-up-desktop.png" ] && ok "runner: the step's record and screenshot" || bad "runner: record"
 aat stop >/dev/null 2>&1
 
+# The choice from a change (select-scenarios.py, ws173-p006): its git diff stood in for by a fixed list.
+python3 - <<'PY' && ok "select: paths, documents, smoke, gaps" || bad "select"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("s", "plan/tools/aat/select-scenarios.py")
+s = importlib.util.module_from_spec(spec); spec.loader.exec_module(s)
+s.changed_files = lambda r: ["userland/desktop/phone/view.c", "tests/scenarios/apps/calendar/navigate.md", "include/uapi/hidraw.h", "plan/master.md"]
+chosen, why, gaps = s.select("x")
+assert "apps.phone.browse" in chosen and "apps.phone.open-from-home" in chosen, chosen
+assert "apps.calendar.navigate" in chosen and "apps.calendar.open-from-home" not in chosen, chosen
+assert "os.boot.session-up" in chosen and gaps == ["include/uapi/hidraw.h"], (chosen, gaps)
+chosen, _, _ = s.select("x", smoke=False)
+assert "os.boot.session-up" not in chosen and chosen.index("apps.phone.open-from-home") < chosen.index("apps.phone.browse"), chosen
+assert s.covers("userland/desktop/wayland/keyboard", "userland/desktop/wayland/keyboard-layout.c") and not s.covers("src/a/", "src/ab.c")
+PY
+
 [ $status -eq 0 ] && echo "aat-host: PASS" || echo "aat-host: FAIL"
 exit $status

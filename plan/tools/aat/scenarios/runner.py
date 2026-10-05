@@ -3,7 +3,7 @@
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
-    plan/tools/aat/run-aat.sh TARGET OUTDIR [SUITE|ID|PATTERN ...] [--record PATH] [--no-samples]
+    plan/tools/aat/run-aat.sh TARGET OUTDIR [SUITE|ID|PATTERN|area:NAME|changed:RANGE ...] [--record PATH] [--no-samples]
 
 TARGET is 5330, qemu (the guest of GUEST_RUNTIME/session.json) or
 user@host[:port].  The default is the smoke suite.  For each scenario in
@@ -49,6 +49,15 @@ def load_checker():
 	return module
 
 
+def selector():
+	"""select-scenarios.py as a module."""
+	import importlib.util
+	spec = importlib.util.spec_from_file_location("select_scenarios", HERE.parent / "select-scenarios.py")
+	module = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(module)
+	return module
+
+
 def helper_ids() -> dict[str, Path]:
 	"""Each helper's ids: the scenario's id -> its helper's file."""
 	found = {}
@@ -69,7 +78,10 @@ def chosen(checker, words: list[str], found: dict[str, dict]) -> tuple[list[str]
 	members: list[str] = []
 	names = []
 	for word in words or ["smoke"]:
-		if (checker.SUITES / f"{word}.suite").exists():
+		if word.startswith("changed:"):
+			# The scenarios a git range needs (select-scenarios.py: paths, and smoke).
+			hits, _, _ = selector().select(word[8:] or "main...HEAD")
+		elif (checker.SUITES / f"{word}.suite").exists():
 			hits, _ = checker.suite_members(word, found)
 		elif word.startswith("area:"):
 			hits = [ident for ident, fields in found.items() if word[5:] in checker.listed(fields.get("areas", ""))]
@@ -78,7 +90,7 @@ def chosen(checker, words: list[str], found: dict[str, dict]) -> tuple[list[str]
 			hits = [ident for ident in found if fnmatch.fnmatchcase(ident, word)]
 		if not hits:
 			sys.exit(f"run-aat: {word!r} names no scenario")
-		names.append(word.replace("*", "x").replace(":", "-"))
+		names.append(word.replace("*", "x").replace(":", "-").replace(".", "_").replace("/", "-"))
 		for ident in hits:
 			if ident not in members and found[ident].get("status") == "active":
 				members.append(ident)
