@@ -2,6 +2,7 @@
 # ws131-p005: builds libkeiland-backend's power on the host twice -- with zedBSD's power-zedbsd.c (a socket pair for
 # sessiond) and with the unsupported implementation of Linux and FreeBSD -- and runs host-power.c on each.
 #   sh plan/ws131/tests/host-power.sh
+# ws089-p025: session-zedbsd.c hands sessiond's SERVICE answers to sharing-zedbsd.c (with sha256.c), linked here too (T1-169).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
@@ -10,7 +11,8 @@ mkdir -p "$out"
 flags="-std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I. -Iinclude -fsanitize=address,undefined -g"
 ${CC:-cc} $flags -DHOST_POWER_ZEDBSD userland/desktop/libkeiland-backend/backend.c \
     userland/desktop/libkeiland-backend-zedbsd/session-zedbsd.c userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c \
-    userland/desktop/libkeiland-backend/unsupported/events-unsupported.c userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c plan/ws131/tests/host-power.c -o "$out/host-power-zedbsd"
+    userland/desktop/libkeiland-backend/unsupported/events-unsupported.c userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c \
+    userland/desktop/libkeiland-backend-zedbsd/sharing-zedbsd.c userland/base/common/sha256.c plan/ws131/tests/host-power.c -o "$out/host-power-zedbsd"
 ${CC:-cc} $flags userland/desktop/libkeiland-backend/backend.c userland/desktop/libkeiland-backend/session/session-none.c \
     userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c userland/desktop/libkeiland-backend/unsupported/power-unsupported.c \
     userland/desktop/libkeiland-backend/unsupported/events-unsupported.c plan/ws131/tests/host-power.c -o "$out/host-power-unsupported"
