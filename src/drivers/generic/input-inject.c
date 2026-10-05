@@ -370,6 +370,8 @@ inject_declare(
 		error = inject_declare_mouse(state, &setup);
 		return error;
 	}
+
+	/* The keyboard. */
 	if (setup.kind == INPUT_INJECT_KIND_KEYBOARD) {
 		error = inject_declare_keyboard(state, &setup);
 		return error;
@@ -1018,6 +1020,8 @@ inject_mouse_event_valid(
 			valid = inject_keyboard_key(event->code);
 			return valid;
 		}
+
+		/* The mouse's three buttons. */
 		if (event->code == BTN_LEFT || event->code == BTN_RIGHT || event->code == BTN_MIDDLE)
 			return 1;
 		return 0;
