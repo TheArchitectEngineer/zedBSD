@@ -258,6 +258,10 @@ AMD64_HID_SOURCES :=
 ifneq ($(filter y,$(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_PCI_LPSS_I2C) $(CONFIG_INPUT_TEST_INJECT)),)
 AMD64_HID_SOURCES += src/drivers/generic/hid-report.c src/drivers/generic/hid-digitizer.c src/drivers/generic/hid-touch.c
 endif
+# The USB CCID readers and the smart card slots' class (ws161-p003).
+ifeq ($(CONFIG_DRIVER_USB_CCID),y)
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-ccid.c src/drivers/usb/usb-ccid-proto.c src/drivers/generic/smartcard.c
+endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
 endif
@@ -319,11 +323,15 @@ AMD64_KERNEL_SOURCES := \
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 AMD64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
 endif
-# The test kernel's loopback security key (ws161-p002), on the raw HID class (built with usb-hid, or here without it).
+# The test kernel's loopback security key and card (ws161-p002, p003), on the raw HID and the smart card classes
+# (built with usb-hid and usb-ccid, or here without them).
 ifeq ($(CONFIG_SECURITY_KEY_TEST_LOOPBACK),y)
-AMD64_KERNEL_SOURCES += src/drivers/generic/hidraw-loopback.c
+AMD64_KERNEL_SOURCES += src/drivers/generic/hidraw-loopback.c src/drivers/generic/smartcard-loopback.c
 ifneq ($(CONFIG_DRIVER_USB_HID),y)
 AMD64_KERNEL_SOURCES += src/drivers/generic/hidraw.c src/drivers/generic/hidraw-describe.c
+endif
+ifneq ($(CONFIG_DRIVER_USB_CCID),y)
+AMD64_KERNEL_SOURCES += src/drivers/generic/smartcard.c
 endif
 endif
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
