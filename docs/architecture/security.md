@@ -101,7 +101,8 @@ Nothing comes from the command line or the environment. The tool ignores
 The answer is one line on standard output, `ok` or `error <reason>`, and the
 exit status is 0 or 1. The reasons are fixed words, such as
 `not-administrator`, `bad-password`, `no-such-user`, `name-taken`,
-`bad-name`, `weak-password`, `last-administrator`, `self`, `root` and `busy`,
+`bad-name`, `weak-password`, `last-administrator`, `self`, `root`, `busy` and
+`home-exists`,
 so that Settings can show a message in the user's language.
 
 ### Checks, in order
@@ -119,9 +120,10 @@ so that Settings can show a message in the user's language.
    - root and system accounts (user ID below 1000) are refused (`root`).
    - An administrator cannot remove themselves or take themselves out of
      `wheel` (`self`).
-   - The last remaining member of `wheel` cannot be removed or taken out of
-     `wheel` (`last-administrator`), so the machine always keeps an
-     administrator.
+   - The last administrator among the people's accounts (user ID 1000 and
+     up) cannot be removed or taken out of `wheel` (`last-administrator`).
+     root does not count: it is always in `wheel` but is locked in a release
+     build, so the machine always keeps an administrator who can log in.
 5. **The values.**
    - A new name is a lower-case letter followed by up to 31 lower-case
      letters, digits, `-` or `_`, and must not be taken (`bad-name`,
@@ -141,7 +143,12 @@ Only after every check passes does the tool change anything.
   and number. Writes the `/etc/passwd`, `/etc/group` and
   `/etc/shadow` lines (SHA-512 crypt), and adds the user to `wheel` when
   asked. Creates `/home/<name>` with mode 0700, owned by the new user, and
-  copies the skeleton files from `/etc/skel` into it, when there are any.
+  copies the skeleton files from `/etc/skel` into it, when there are any:
+  only the regular files directly in it, owned by the new user, without
+  group and other permissions. If `/home/<name>` already exists (for
+  example kept from an earlier removal), the request is refused
+  (`home-exists`) and the directory is left alone, so an old home's files
+  never pass silently to a new account.
 - **remove:** removes the user's lines from the three files and from every
   group's member list. The home directory is kept unless `remove-home` was
   given. It is removed only after Settings has asked the administrator to
