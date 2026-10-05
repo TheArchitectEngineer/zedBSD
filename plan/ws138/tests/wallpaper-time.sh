@@ -10,7 +10,8 @@
 #  1. The start: zdesktop --testing --glass at 1280x800 with --wallpaper=, PNG and JPEG in turn, four times each; the first of
 #     each is dropped (the cache warms).  The medians of "ZWL STARTUP step=wallpaper ms=" and
 #     "step=wallpaper-picture ms=" are printed.  A "ZWL GLASS no wallpaper" line fails the run.
-#  2. The PPM is refused: "ZWL GLASS no wallpaper: path=/tmp/w.ppm errno=22", and the landscape is drawn instead.
+#  2. The PPM is refused: "ZWL GLASS no wallpaper: path=/tmp/w.ppm errno=3" (EINVAL is 3 on zedBSD, include/uapi/errno.h;
+#     T1-169 expected the host's 22), and the landscape is drawn instead.
 #  3. A wallpaper chosen during the session (glass.c's thread, ws138 U7): zdesktop without a picture, keiland-settings
 #     sets /tmp/w.png, then /tmp/w.jpg, then resets: "ZWL GLASS wallpaper path=... ms=" for each (the reset is the
 #     landscape, path=-).
@@ -76,8 +77,8 @@ done
 # 2. The PPM is refused.
 lines=$(run_start "--wallpaper=/tmp/w.ppm")
 echo "$lines" > "$out/ppm.txt"
-if echo "$lines" | grep -q 'ZWL GLASS no wallpaper: path=/tmp/w.ppm errno=22'; then
-	echo "ppm: refused (errno 22) ok"
+if echo "$lines" | grep -qE 'ZWL GLASS no wallpaper: path=/tmp/w.ppm errno=3([^0-9]|$)'; then
+	echo "ppm: refused (EINVAL, errno 3 on zedBSD) ok"
 else
 	echo "ppm: NOT refused"
 	status=1
