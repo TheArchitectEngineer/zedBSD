@@ -164,6 +164,8 @@ int zwl_ime_request(struct zwl_object *object, uint32_t opcode, const unsigned c
 void zwl_ime_object_gone(struct zwl_object *object);
 void zwl_ime_client_gone(struct zwl_client *client);
 int zwl_ime_global_visible(struct zwl_client *client, enum zwl_kind kind);
+int zwl_ime_predict(struct zwl_server *server, uint32_t serial, const char *reading);
+void zwl_ime_learn(struct zwl_server *server, const char *reading, const char *word);
 void zwl_ime_repeat_changed(struct zwl_server *server);
 void zwl_ime_method_changed(struct zwl_server *server);
 int zwl_ime_key_early(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);

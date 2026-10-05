@@ -119,8 +119,17 @@
 #define STATUS_DESTROY			0U
 #define STATUS_LANGUAGE			1U
 #define STATUS_COMPOSING		2U
+#define STATUS_PREDICTIONS		3U
 #define STATUS_NEXT			0U
 #define STATUS_SELECT			1U
+#define STATUS_PREDICT			2U
+#define STATUS_LEARN			3U
+
+/* The version of keiland_ime_status_v1 with the on-screen keyboard's predictions (ws166-p002). */
+#define STATUS_VERSION_PREDICT		2U
+
+/* The longest reading or word sent with predict and learn, with its NUL (a candidate is at most 160 bytes in the input method). */
+#define IME_PREDICT_TEXT_MAX		256U
 
 /* zwp_input_method_v2's error for a popup surface that has another role. */
 #define METHOD_ERROR_ROLE		0U
@@ -1495,6 +1504,19 @@ ime_status_request(
 		if (ime != NULL && ime->status == status)
 			ime->composing = ime_word(bytes, 0) != 0U;
 		return 0;
+	case STATUS_PREDICTIONS:
+		/* The answer to a predict: its serial and the words (version 2, ws166-p002). */
+		if (status->version < STATUS_VERSION_PREDICT || size < 8U)
+			return EPROTO;
+		error = ime_read_string(bytes, size, 4U, &id, &end);
+		if (error != 0 || end != size)
+			return EPROTO;
+
+		/* The on-screen keyboard shows them when they answer its latest reading. */
+		if (ime != NULL && ime->status == status)
+			zwl_keyboard_predictions(status->client->server, ime_word(bytes, 0), id);
+		free(id);
+		return 0;
 	default:
 		break;
 	}
@@ -1974,6 +1996,70 @@ ime_select(
 	/* select carries the language's ID. */
 	size = ime_put_string(payload, 0, id);
 	ime_emit(server->ime->status, STATUS_SELECT, payload, size);
+}
+
+/*
+ * Asks the input method for the words a reading of the on-screen keyboard
+ * starts (keiland_ime_status_v1.predict, version 2; ws166-p002); the
+ * answer comes as a predictions request with the same serial.  Returns 0
+ * when asked, ENOTSUP without an input method that predicts.
+ */
+int
+zwl_ime_predict(
+	struct zwl_server *server,
+	uint32_t serial,
+	const char *reading)
+{
+	unsigned char payload[4U + 4U + IME_PREDICT_TEXT_MAX + 4U];
+	size_t length;
+	size_t size;
+
+	/* An input method of version 2. */
+	if (server->ime == NULL || server->ime->status == NULL || server->ime->status->version < STATUS_VERSION_PREDICT)
+		return ENOTSUP;
+
+	/* A reading too long is not predicted. */
+	length = strlen(reading);
+	if (length >= IME_PREDICT_TEXT_MAX)
+		return EINVAL;
+
+	/* predict carries the serial and the reading. */
+	memcpy(payload, &serial, 4U);
+	size = ime_put_string(payload, 4U, reading);
+	ime_emit(server->ime->status, STATUS_PREDICT, payload, size);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Tells the input method the word chosen for a reading of the on-screen
+ * keyboard, which it learns as if it had converted it (keiland_ime_status_v1.learn,
+ * version 2; ws166-p002).
+ */
+void
+zwl_ime_learn(
+	struct zwl_server *server,
+	const char *reading,
+	const char *word)
+{
+	unsigned char payload[2U * (4U + IME_PREDICT_TEXT_MAX + 4U)];
+	size_t reading_length;
+	size_t word_length;
+	size_t size;
+
+	/* An input method of version 2, and texts that fit. */
+	if (server->ime == NULL || server->ime->status == NULL || server->ime->status->version < STATUS_VERSION_PREDICT)
+		return;
+	reading_length = strlen(reading);
+	word_length = strlen(word);
+	if (reading_length >= IME_PREDICT_TEXT_MAX || word_length >= IME_PREDICT_TEXT_MAX)
+		return;
+
+	/* learn carries the reading and the word. */
+	size = ime_put_string(payload, 0, reading);
+	size = ime_put_string(payload, size, word);
+	ime_emit(server->ime->status, STATUS_LEARN, payload, size);
 }
 
 /*

@@ -42,6 +42,13 @@
 #define METHOD_KEY_LEFTMETA	125U
 #define METHOD_KEY_RIGHTMETA	126U
 
+/*
+ * The room of the on-screen keyboard's words for one reading (ws166-p002):
+ * a Wayland message carries at most 4096 bytes with its header and the
+ * serial.
+ */
+#define METHOD_PREDICT_LIST	3800U
+
 static void method_activate(void *data, struct zwp_input_method_v2 *method);
 static void method_deactivate(void *data, struct zwp_input_method_v2 *method);
 static void method_surrounding_text(void *data, struct zwp_input_method_v2 *method, const char *text, uint32_t cursor, uint32_t anchor);
@@ -55,6 +62,8 @@ static void grab_modifiers(void *data, struct zwp_input_method_keyboard_grab_v2 
 static void grab_repeat_info(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, int32_t rate, int32_t delay);
 static void status_next(void *data, struct keiland_ime_status_v1 *status);
 static void status_select(void *data, struct keiland_ime_status_v1 *status, const char *id);
+static void status_predict(void *data, struct keiland_ime_status_v1 *status, uint32_t serial, const char *reading);
+static void status_learn(void *data, struct keiland_ime_status_v1 *status, const char *reading, const char *word);
 static void method_send(struct program *program);
 static void method_press(struct program *program, uint32_t time, uint32_t key, int repeated);
 static int method_repeats(uint32_t key);
@@ -89,7 +98,9 @@ static const struct zwp_input_method_keyboard_grab_v2_listener grab_listener = {
  */
 static const struct keiland_ime_status_v1_listener status_listener = {
 	status_next,
-	status_select
+	status_select,
+	status_predict,
+	status_learn
 };
 
 /*
@@ -782,4 +793,74 @@ method_repeats(
 
 	/* Any other key repeats. */
 	return 1;
+}
+
+/*
+ * Answers zdesktop's request for the on-screen keyboard's words for a
+ * reading (ws166-p002): the first engine that predicts gives them, or none
+ * when no engine does (SKK, or no input method chosen).
+ */
+static void
+status_predict(
+	void *data,
+	struct keiland_ime_status_v1 *status,
+	uint32_t serial,
+	const char *reading)
+{
+	struct program *program;
+	struct ime_engine *engine;
+	char list[METHOD_PREDICT_LIST];
+	size_t length;
+	unsigned i;
+
+	/* No words yet. */
+	program = data;
+	list[0] = '\0';
+	length = 0;
+
+	/* The first engine that predicts. */
+	for (i = 0; i < program->engine_count; i++) {
+		engine = &program->engines[i];
+		if (engine->ops->predict == NULL)
+			continue;
+		length = engine->ops->predict(engine, reading, list, sizeof(list));
+		break;
+	}
+
+	/* The answer, with the request's serial. */
+	keiland_ime_status_v1_predictions(status, serial, list);
+	printf("KEI-IME PREDICT serial=%u reading=%s bytes=%zu\n", serial, reading, length);
+}
+
+/*
+ * Learns the word chosen on the on-screen keyboard for a reading
+ * (ws166-p002), in the first engine that predicts; it is saved with the
+ * engine's other choices once no key has come for a while.
+ */
+static void
+status_learn(
+	void *data,
+	struct keiland_ime_status_v1 *status,
+	const char *reading,
+	const char *word)
+{
+	struct program *program;
+	struct ime_engine *engine;
+	unsigned i;
+
+	UNUSED_PARAMETER(status);
+
+	/* The first engine that predicts. */
+	program = data;
+	for (i = 0; i < program->engine_count; i++) {
+		engine = &program->engines[i];
+		if (engine->ops->learn == NULL)
+			continue;
+		engine->ops->learn(engine, reading, word);
+		program->save_ms = program_clock_ms() + PROGRAM_SAVE_IDLE_MS;
+		break;
+	}
+
+	/* The log line the tests read. */
+	printf("KEI-IME LEARN reading=%s word=%s\n", reading, word);
 }

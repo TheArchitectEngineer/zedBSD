@@ -14,8 +14,10 @@
  * most recent first) and the dictionaries after (shorter readings first,
  * the first candidate of each reading before its others).  A word whose
  * reading is exactly what is typed comes last, after the longer ones, since
- * the ordinary conversion offers it anyway.  Each word is offered once.
- * Only readings without okurigana are predicted.
+ * the ordinary conversion offers it anyway.  For the on-screen keyboard
+ * (ja_predict_keyboard, ws166-p002), which has no conversion of its own,
+ * the words of the reading itself come first instead.  Each word is
+ * offered once.  Only readings without okurigana are predicted.
  *
  * A dictionary's headwords are found by a binary search in an index of
  * them sorted by their bytes (UTF-8 keeps the order of the kana), made once
@@ -151,6 +153,45 @@ ja_predict(
 	/* The reading itself last, the user's first again. */
 	predict_user(user, reading, length, true, &list);
 	predict_dicts(indexes, index_count, reading, length, true, &list);
+
+	/* The count. */
+	return list.count;
+}
+
+/*
+ * Gives the on-screen keyboard's words for a reading (ws166-p002): the
+ * words of the reading itself first (the user's, then the dictionaries'),
+ * then up to max in all whose readings are longer, in ja_predict's order.
+ * Returns how many there are.
+ */
+size_t
+ja_predict_keyboard(
+	const struct ja_user *user,
+	const struct ja_predict_index *const *indexes,
+	size_t index_count,
+	const char *reading,
+	size_t length,
+	struct ja_prediction *out,
+	size_t max)
+{
+	struct predict_list list;
+
+	/* Nothing to predict from nothing. */
+	if (length == 0 || max == 0)
+		return 0;
+
+	/* The list, empty. */
+	list.items = out;
+	list.count = 0;
+	list.max = max;
+
+	/* The reading itself: the user's words, then the dictionaries'. */
+	predict_user(user, reading, length, true, &list);
+	predict_dicts(indexes, index_count, reading, length, true, &list);
+
+	/* Then the longer readings, the user's first again. */
+	predict_user(user, reading, length, false, &list);
+	predict_dicts(indexes, index_count, reading, length, false, &list);
 
 	/* The count. */
 	return list.count;
