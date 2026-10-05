@@ -27,6 +27,10 @@ Queue: q727（Q1 の投入、ベータ2 の準備）
 | H3 | `hal-cpu-notify-wake.diff` | `hal_cpu_notify()` の契約の明記（API の追加なし）: H1 の深い idle・tick の停止中・H4 の mask 中も必ず起こす。AP の停止は新しい API にせず、kernel が各 CPU の idle で H2・H1 を使い notify で起こす |
 | H4 | `hal-irq-suspend.diff` | `int hal_irq_suspend(const int *wake_irqs, unsigned count)`・`int hal_irq_resume(void)`: wake の源以外（HAL の内部の LAPIC の LVT、登録の無い I/O APIC の pin を含む）を止め、元の mask を HAL の中に保って戻す |
 
+- **第 2 版（2026-10-05 P4、専門家のレビューの後）**: [proposed/README-v2.md](../proposed/README-v2.md)。H1 → `hal_cpu_idle_suspend_supported()`・`hal_cpu_idle_suspend()`
+  （raw の hint を消し、tick の停止と per-CPU の LVT を HAL の内側に。`hal-cpu-idle-suspend.diff`）、H2 は H1v2 に吸収（削除）、H3 → H3v2（契約の文を確定、
+  `hal-cpu-notify-wake-v2.diff`）、H4 → `hal_irq_set_wake()`・`hal_irq_suspend()`・`hal_irq_resume()`（wake の IRQ は handler を呼ぶ、latch しない。`hal-irq-wake.diff`）、
+  新規 H5 `hal_rtc_read_counter()` の契約の強化（`hal-rtc-counter-idle.diff`）。承認を求めるのはこの 4 つ。第 1 版の file は履歴として残す。
 - 当初の案（design §6）の「AP の停止」は、新しい API の代わりに H3 の契約の明記にした（Linux の suspend-to-idle も CPU を offline にせず、各 CPU を
   深い idle に置く）。HAL の API の追加が 3 つ（H1・H2・H4）と契約の明記が 1 つ（H3）になる。
 - [design.md](../design.md) の §6 に差分の案、§9 の Phase を §10 の決定に合わせて p002〜p008 に改訂（p004 は必須の 3 device と中止の規則、
@@ -51,7 +55,7 @@ Queue: q727（Q1 の投入、ベータ2 の準備）
 
 ## 人間の判断が要る点
 
-- H1〜H4 の承認（差分ごと）。
+- ~~H1〜H4 の承認（差分ごと）~~ → 第 2 版 H1v2・H3v2・H4v2・H5 の承認（差分ごと、README-v2 §1 の SHA256）。README-v2 §12 の残る判断（`hal_irq_resume` の返り値、HAL が LPIT を読む責務、freeze の置き場）。
 - ~~design §10-4: 5330 の FACP・LPIT の取り出しの許可~~ → 2026-10-04 の許可の範囲で取り出した（上）。
 
 ## 残り（p002 の中）

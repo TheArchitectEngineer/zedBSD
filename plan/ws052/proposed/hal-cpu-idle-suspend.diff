@@ -1,0 +1,45 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -184,6 +184,41 @@
+ hal_cpu_idle(void);
+ 
+ /*
++ * Report whether hal_cpu_idle_suspend() works on this machine.
++ *
++ * Returns HAL_OK when every CPU has a suspend-safe idle state and the
++ * counter of hal_rtc_read_counter() runs through it, or
++ * HAL_ERR_UNSUPPORTED when it has not, in which case
++ * hal_cpu_idle_suspend() does nothing but return the same.  The answer
++ * is fixed once hal_cpu_start_others() has returned.  The kernel asks
++ * before it prepares a system sleep, so that an unsupported machine is
++ * refused before any device is touched.
++ */
++int
++hal_cpu_idle_suspend_supported(void);
++
++/*
++ * Idle the current CPU in its deepest suspend-safe state until one
++ * interrupt arrives, for a system suspend-to-idle (S0ix).  As with
++ * hal_cpu_idle(), interrupts are enabled for the wait and disabled again
++ * on return, and the interrupt that ends the wait has been dispatched
++ * when the call returns.
++ *
++ * The HAL chooses the state from what the CPU and the firmware report;
++ * the kernel names no state.  Around the wait the HAL stops this CPU's
++ * periodic tick and quiets the CPU-local interrupt sources it owns that
++ * are not wake sources, and puts both back before returning.  No
++ * kernel_timer_handler() runs on this CPU meanwhile; the kernel brings
++ * its time forward from hal_rtc_read_counter(), which keeps counting.
++ * hal_cpu_notify() always ends the wait.
++ *
++ * Returns HAL_OK after the wait, or HAL_ERR_UNSUPPORTED without waiting
++ * when hal_cpu_idle_suspend_supported() says so.
++ */
++int
++hal_cpu_idle_suspend(void);
++
++/*
+  * XXX: Rename to hal_cpu_halt().
+  * XXX: Is this same to hal_cpu_idle()??
+  *

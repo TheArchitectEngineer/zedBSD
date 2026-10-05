@@ -1,0 +1,17 @@
+diff --git a/include/hal/hal.h b/include/hal/hal.h
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -468,7 +468,12 @@
+  * frequency is nonzero and stable for the boot, and successful
+  * operations are linearizable: a later operation never returns a
+  * counter below an earlier successful operation, including across
+- * CPUs.
++ * CPUs.  The counter runs at that frequency through every idle state
++ * the HAL enters on any CPU, hal_cpu_idle() and hal_cpu_idle_suspend()
++ * included: a HAL that cannot promise this for a state does not enter
++ * it (hal_cpu_idle_suspend_supported() then says HAL_ERR_UNSUPPORTED).
++ * The kernel brings its tick count forward from this counter after a
++ * system sleep.
+  */
+ bool
+ hal_rtc_read_counter(
