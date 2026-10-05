@@ -54,12 +54,11 @@
 #define ICON_CUT		0x100U
 
 /*
- * An application's tile: its corner radius and its picture's side as parts
- * of its side, the subsamples a side of a pixel its colour is averaged over,
- * and the light stripe across its middle band (where along the diagonal, half
- * its width, and how far towards white).
+ * An application's tile (its corner radius is GLASS_ICON_TILE_RADIUS): its
+ * picture's side as a part of its side, the subsamples a side of a pixel its
+ * colour is averaged over, and the light stripe across its middle band
+ * (where along the diagonal, half its width, and how far towards white).
  */
-#define ICON_TILE_RADIUS	0.24f
 #define ICON_TILE_PICTURE	0.66f
 #define ICON_TILE_SAMPLES	4U
 #define ICON_TILE_BANDS		3U
@@ -724,7 +723,7 @@ zwl_icon_tile(
 
 	/* Each pixel of the tile: its band colour, as much of it as the rounded square covers less the picture's cover. */
 	bands = &icon_app_bands[icon - GLASS_ICON_FIRST_APP];
-	radius = (float)pixels * ICON_TILE_RADIUS;
+	radius = (float)pixels * GLASS_ICON_TILE_RADIUS;
 	for (row = 0; row < pixels; row++) {
 		for (column = 0; column < pixels; column++) {
 			/* How much of the pixel the rounded square covers; outside it the pixel stays transparent. */

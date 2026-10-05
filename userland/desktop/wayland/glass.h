@@ -46,6 +46,18 @@
 /* The corner radius of title bars and bodies. */
 #define GLASS_RADIUS		14.0f
 
+/*
+ * What an application's cut-out picture shows (glass_draw_app_tile,
+ * BUG-237): what was drawn under the tile (a dark ground, where the hole
+ * reads as a hole), or the blurred scene the light glass under the tile
+ * frosts (a near-white ground, where the plain hole would read as a white
+ * picture).
+ */
+enum glass_hole {
+	GLASS_HOLE_GROUND,
+	GLASS_HOLE_SCENE
+};
+
 /* The text sizes: the system bar, the titles, the close sign, App Home's icon letters and its search text. */
 enum glass_size {
 	SIZE_BAR,
@@ -97,7 +109,7 @@ void glass_draw_text_middle(struct zwl_server *server, VkCommandBuffer command, 
 void glass_draw_glyph(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, unsigned index, int32_t x, int32_t baseline, const float *color);
 int32_t glass_glyph_advance(struct zwl_server *server, enum glass_size size, unsigned index);
 void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
-void glass_draw_app_tile(struct zwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float opacity, float lighten);
+void glass_draw_app_tile(struct zwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float opacity, float lighten, enum glass_hole hole);
 void glass_draw_mark(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
 VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 

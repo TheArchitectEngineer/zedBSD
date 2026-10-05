@@ -162,3 +162,29 @@ montage-2（円・単色・白抜き）は不採用。2 案の montage を作っ
 
 未実施・残り: QEMU・実機での表示（Q1 が UAT の image を作り直して確かめる）、dark の外観の実画面、Wiseview の実画面、FreeBSD の build。
 
+
+## BUG-237: 記号の中抜きが透けて見えない（2026-10-06 P2）
+
+原因: compositor の中抜きそのものは正しい（tile の記号の所は alpha 0・色 0、`MODE_IMAGE` は premultiplied の over、image は `B8G8R8A8_UNORM` の
+identity swizzle、`opaque` 0、1 対 1 の linear sampler は texel の中心）。記号の所には**下に描いた地がそのまま出る**。ただ light の外観で tile の下の地は
+どこも白に近い glass だった: App Home は白 0.48 の glass を shader が luma 0.85 以上に持ち上げ、淡い青 0.22 を重ねた地（ほぼ白）、bar は白 0.55 の glass、
+Alt+Tab は白 0.66 の glass、title bar も白い glass。そのため抜いた記号が「白い記号」に見えた（montage-4 の App Home の行は地を実物より白くしていなかった）。
+
+直し方（`glass_draw_app_tile` の引数 `enum glass_hole`）:
+- `GLASS_HOLE_SCENE`: tile の前に、tile の角の丸い四角の内側（辺の 0.08 内へ、記号より外）に glass が曇らせている blur の景色をそのまま描く
+  （`MODE_GLASS` の色 0・flat・edge 0・`light`）。記号の所だけそれが見え、帯の所は tile が覆う。縁は内へ寄せたので tile の外へ出ない。
+- `GLASS_HOLE_GROUND`: 今まで通り（暗い地。抜いた所が暗く見える）。
+- App Home は常に `GLASS_HOLE_SCENE`（Home は暗くならない）。bar・title bar・Wiseview の label・Alt+Tab は light の外観で SCENE、dark の外観で
+  GROUND（shell.c の `mark_hole`）。ws099-p034 の暗い bar では bar は GROUND にする。
+- `GLASS_ICON_TILE_RADIUS`（0.24）を icons.h に出し、icons.c と glass.c で共有。
+
+確認（host、QEMU は使っていない）:
+- zedBSD の compositor `make -j16 ZEDBSD_CONFIG=/home/awe/zedBSD-claude1/config.mk BUILD=build/p2-icons build/p2-icons/bin/wayland`: exit 0、warning 0。
+  Linux の compositor `make -j16 keiland-linux KEILAND_LINUX_BUILD=build/p2-keiland-linux`: exit 0、warning 0。
+- style-check: glass.c・glass.h・home.c・shell.c・icons.c・icons.h で指摘 0。icons-host PASS、tile-dump 20・28・48・72 PASS。
+- `plan/ws128/tests/hole-host.sh [OUT_DIR]`（新規）: tile は icons.c の画素、地は panel.frag の式（glass の luma の持ち上げ・sheen、solid、image）と
+  premultiplied の over を compositor の順で描く（blur の壁紙は近似）。App Home（72 px × 18）、light の bar（28 px）、Alt+Tab（48 px）を
+  Birch Lake・Lakeside で。記号の中（tile の alpha 0）の全画素で、直した後は blur の景色と、前は地と、差 0.000/255。tile の縁（inset の外）は前後で差 0.000。
+  [bug237-hole.png](images/bug237-hole.png)（左が前、右が後）。
+
+未実施: 実機・QEMU の画面（Q1 が UAT の image で確かめる）、dark の外観の実画面。

@@ -334,6 +334,7 @@ static void draw_body(struct zwl_server *server, VkCommandBuffer command, struct
 static void draw_title_bar(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
 static int draw_picture_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, const float *ink);
+static enum glass_hole mark_hole(struct zwl_server *server);
 static void draw_letter_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const char *title, int32_t x, int32_t middle);
 static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
 static const char *mark_name(const char *app_id);
@@ -2951,6 +2952,7 @@ draw_picture_mark(
 	int32_t middle,
 	const float *ink)
 {
+	enum glass_hole hole;
 	int picture;
 
 	/* The picture that belongs to the window's application ID. */
@@ -2958,11 +2960,30 @@ draw_picture_mark(
 	if (picture < 0)
 		return 0;
 
-	/* Its tile. */
-	glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - 10), 20.0f, ink[3], 0.0f);
+	/* Its tile, its picture showing through the glass it is on. */
+	hole = mark_hole(server);
+	glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - 10), 20.0f, ink[3], 0.0f, hole);
 
 	/* Succeeded: the mark is drawn. */
 	return 1;
+}
+
+/*
+ * Finds what an application's cut-out picture shows on the glass of the
+ * bar, the title bars, Wiseview and Alt+Tab (BUG-237): in the light
+ * appearance that glass is near white, so the picture shows the blurred
+ * scene the glass frosts; in the dark one the dark glass shows through.
+ */
+static enum glass_hole
+mark_hole(
+	struct zwl_server *server)
+{
+	/* Dark glass reads as a hole by itself. */
+	if (server->dark != 0)
+		return GLASS_HOLE_GROUND;
+
+	/* Light glass: a window onto the scene. */
+	return GLASS_HOLE_SCENE;
 }
 
 /*
@@ -5876,6 +5897,7 @@ zwl_glass_draw_app_mark(
 	int32_t width;
 	size_t length;
 	size_t index;
+	enum glass_hole hole;
 	int picture;
 
 	/* White, at the mark's opacity. */
@@ -5884,10 +5906,11 @@ zwl_glass_draw_app_mark(
 	white[2] = 1.0f;
 	white[3] = alpha;
 
-	/* The tile of the picture that belongs to the window's application ID. */
+	/* The tile of the picture that belongs to the window's application ID, its picture showing through the glass it is on. */
 	picture = zwl_icon_for_app_id(surface->app_id);
 	if (picture >= 0) {
-		glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - size / 2), (float)size, alpha, 0.0f);
+		hole = mark_hole(server);
+		glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - size / 2), (float)size, alpha, 0.0f, hole);
 		return;
 	}
 
