@@ -35,10 +35,11 @@ expect_log() {
 }
 
 # The gradient's red on the screen for a window at X,Y of W x H (screen rows from the top): row r is GL's row H-1-r,
-# red (H - r - 0.5) / H.
+# red (H - r - 0.5) / H.  The top row read is 16, not nearer the edge: in zdesktop the title bar's shadow falls on
+# the window's first rows (about 10, darker and bluish: T1-182 read f40203 at row 4 where the gradient is fc0000).
 es2_expect() {
 	x=$1; y=$2; w=$3; h=$4
-	for r in 4 $((h / 2)) $((h - 5)); do
+	for r in 16 $((h / 2)) $((h - 5)); do
 		red=$(( ((h - r) * 2 - 1) * 255 / (h * 2) ))
 		printf ' --expect %d,%d,%02x0000' $((x + w / 4)) $((y + r)) $red
 	done
