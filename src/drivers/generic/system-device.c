@@ -20,6 +20,7 @@
 
 #include "kern/vm-object.h"
 #include "kern/system-device.h"
+#include "kern/sleep.h"
 #include "kern/system-swap-device.h"
 #include "kern/cdev.h"
 #include "kern/kernel.h"
@@ -75,6 +76,8 @@ static int system_get_process(uintptr_t argument);
 static int system_get_file_usage(uintptr_t argument);
 static int system_swap_ioctl(unsigned long request, uintptr_t argument);
 static int system_sleep(uintptr_t argument);
+static int sleep_request_empty(const struct system_sleep_request *request);
+static void sleep_devices(struct kern_sleep_outcome *outcome);
 static unsigned system_process_file_usage(struct process *process, const struct path *target, unsigned query_flags);
 static int system_file_matches(struct file *candidate, const struct path *target, unsigned query_flags, unsigned *socket_match);
 static int system_path_matches(const struct path *candidate, const struct path *target, unsigned query_flags);
@@ -299,18 +302,21 @@ system_get_power(
 }
 
 /*
- * Suspends every device and resumes it again (KERN_SYSTEM_SLEEP_DEVICES),
- * and reports the outcome.  Only root may ask.
+ * Sleeps to idle (KERN_SYSTEM_SLEEP_S0IDLE) or suspends every device and
+ * resumes it again (KERN_SYSTEM_SLEEP_DEVICES), and reports the outcome.
+ * Only root may ask; the ioctl fails only when no attempt was made.
  */
 static int
 system_sleep(
 	uintptr_t argument)
 {
 	struct system_sleep_request request;
-	struct drv_pci_device *failed;
+	struct kern_sleep_outcome outcome;
 	struct ucred *credential;
 	unsigned busy;
 	int superuser;
+	int empty;
+	int supported;
 	int error;
 
 	/* Refuses a caller that is not root. */
@@ -325,12 +331,22 @@ system_sleep(
 	if (error != 0)
 		return error;
 
-	/* Refuses another mode than the devices', and a reserved word that is not zero. */
-	if (request.mode != KERN_SYSTEM_SLEEP_DEVICES || request.reserved != 0)
+	/* Refuses an unknown mode. */
+	if (request.mode != KERN_SYSTEM_SLEEP_DEVICES && request.mode != KERN_SYSTEM_SLEEP_S0IDLE)
 		return EINVAL;
 
-	/* Refuses a platform without the devices' suspend. */
-	if (drv_pci_suspend_all == NULL || drv_pci_resume_all == NULL)
+	/* Refuses an output field that is not zero on input. */
+	empty = sleep_request_empty(&request);
+	if (!empty)
+		return EINVAL;
+
+	/* Refuses a platform that cannot sleep in the mode, before anything is touched. */
+	supported = 0;
+	if (request.mode == KERN_SYSTEM_SLEEP_DEVICES && drv_pci_suspend_all != NULL && drv_pci_resume_all != NULL)
+		supported = 1;
+	if (request.mode == KERN_SYSTEM_SLEEP_S0IDLE)
+		supported = kern_sleep_supported();
+	if (!supported)
 		return EOPNOTSUPP;
 
 	/* Refuses a sleep while another is under way. */
@@ -338,26 +354,21 @@ system_sleep(
 	if (busy != 0)
 		return EBUSY;
 
-	/* Suspends the devices; a refusal names the device. */
-	kern_memset(request.device, 0, sizeof(request.device));
-	request.resume_result = 0;
-	kern_logf("system: sleep (devices): suspending\n");
-	failed = NULL;
-	request.result = drv_pci_suspend_all(&failed);
-	if (request.result != 0 &&
-	    failed != NULL &&
-	    drv_pci_device_name != NULL)
-		drv_pci_device_name(failed, request.device, sizeof(request.device));
-
-	/* Resumes them again when the suspend went through. */
-	if (request.result == 0)
-		request.resume_result = drv_pci_resume_all();
-
-	/* Logs the outcome, which the caller also gets. */
-	kern_logf("system: sleep (devices): result %d device \"%s\" resume %d\n", (int)request.result, request.device, (int)request.resume_result);
+	/* The attempt in the mode asked for. */
+	if (request.mode == KERN_SYSTEM_SLEEP_S0IDLE) {
+		kern_sleep_s0idle(&outcome);
+	} else {
+		sleep_devices(&outcome);
+	}
 
 	/* Another sleep may run from now on. */
 	__atomic_store_n(&system_sleeping, 0U, __ATOMIC_RELEASE);
+
+	/* The outcome (the reasons have the same numbers as KERN_SYSTEM_WAKE_*). */
+	request.result = outcome.result;
+	request.resume_result = outcome.resume_result;
+	request.wake = outcome.wake;
+	kern_memcpy(request.device, outcome.device, sizeof(request.device));
 
 	/* Copies the outcome out. */
 	error = copyout(&request, argument, sizeof(request));
@@ -366,6 +377,59 @@ system_sleep(
 
 	/* Succeeded: the caller has the outcome. */
 	return 0;
+}
+
+/* Tells whether every field of a sleep request but the mode is zero, as it must be on input. */
+static int
+sleep_request_empty(
+	const struct system_sleep_request *request)
+{
+	unsigned index;
+
+	/* The numbers. */
+	if (request->result != 0 || request->resume_result != 0 || request->wake != 0U)
+		return 0;
+
+	/* The device's name. */
+	for (index = 0; index < sizeof(request->device); index++) {
+		if (request->device[index] != '\0')
+			return 0;
+	}
+
+	/* Succeeded: only the mode is set. */
+	return 1;
+}
+
+/*
+ * Suspends every device and resumes it again at once
+ * (KERN_SYSTEM_SLEEP_DEVICES), the test of the devices' suspend and
+ * resume; the wake is always none.
+ */
+static void
+sleep_devices(
+	struct kern_sleep_outcome *outcome)
+{
+	struct drv_pci_device *failed;
+
+	/* Nothing yet. */
+	kern_memset(outcome, 0, sizeof(*outcome));
+	outcome->wake = KERN_SLEEP_WAKE_NONE;
+
+	/* Suspends the devices; a refusal names the device. */
+	kern_logf("system: sleep (devices): suspending\n");
+	failed = NULL;
+	outcome->result = drv_pci_suspend_all(&failed);
+	if (outcome->result != 0 &&
+	    failed != NULL &&
+	    drv_pci_device_name != NULL)
+		drv_pci_device_name(failed, outcome->device, sizeof(outcome->device));
+
+	/* Resumes them again when the suspend went through. */
+	if (outcome->result == 0)
+		outcome->resume_result = drv_pci_resume_all();
+
+	/* Logs the outcome, which the caller also gets. */
+	kern_logf("system: sleep (devices): result %d device \"%s\" resume %d\n", outcome->result, outcome->device, outcome->resume_result);
 }
 
 /*

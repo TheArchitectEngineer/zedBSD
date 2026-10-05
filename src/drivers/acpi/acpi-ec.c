@@ -202,6 +202,25 @@ drv_acpi_ec_ecdt(
 }
 
 /*
+ * Reports the GPE of the Embedded Controller (ws052-p006): its queries
+ * (a battery's level, a key) wake the system through it, and the sleep's
+ * coordinator tells such a wake from a real one.  It reports ENODEV
+ * without an EC that has a GPE.
+ */
+int
+drv_acpi_ec_gpe(
+	unsigned *gpe)
+{
+	/* An EC without a GPE (or none at all). */
+	if (!ec.has_gpe)
+		return ENODEV;
+
+	/* Succeeded: the GPE. */
+	*gpe = ec.gpe;
+	return 0;
+}
+
+/*
  * Finds the embedded controller in the namespace, installs the handler of
  * its address space (which runs its _REG) and the handler of its GPE.
  *

@@ -17,6 +17,7 @@
  * interval timers, and preempts an exhausted quantum.
  */
 
+#include "kern/sleep.h"
 #include "kern/sched.h"
 #include "kern/atomic.h"
 #include "kern/thread.h"
@@ -1434,9 +1435,9 @@ sched_idle(
 			continue;
 		}
 
-		/* Halts as a CPU that others may hand work to. */
+		/* Halts as a CPU that others may hand work to (suspended to idle during a system sleep, ws052-p006). */
 		idle_mask_set(cpu);
-		hal_cpu_idle();
+		kern_sleep_idle(cpu);
 		idle_mask_clear(cpu);
 		sched_switch();
 	}

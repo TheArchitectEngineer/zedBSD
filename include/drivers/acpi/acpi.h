@@ -423,6 +423,17 @@ int
 drv_acpi_events_sleep_end(
 	unsigned *woken);
 
+int
+drv_acpi_events_sleep_woken(
+	unsigned *woken);
+
+int
+drv_acpi_ec_gpe(
+	unsigned *gpe);
+
+int
+drv_acpi_s0_idle_capable(void);
+
 /* The LPS0 notifications and the device power of S0 idle (acpi-sleep.c, ws052-p003). */
 int
 drv_acpi_lps0_attach(void);
@@ -432,6 +443,9 @@ drv_acpi_lps0_enter(void);
 
 int
 drv_acpi_lps0_exit(void);
+
+int
+drv_acpi_lps0_present(void);
 
 int
 drv_acpi_device_power_set(

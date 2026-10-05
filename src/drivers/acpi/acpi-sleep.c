@@ -294,6 +294,21 @@ drv_acpi_lps0_attach(void)
 }
 
 /*
+ * Reports whether an LPS0 device with _DSM functions attached (ws052-p006):
+ * a platform without one has no S0 idle to enter.  Returns 1 or 0.
+ */
+int
+drv_acpi_lps0_present(void)
+{
+	/* The device drv_acpi_lps0_attach() kept. */
+	if (lps0.device == NULL)
+		return 0;
+
+	/* Succeeded: S0 idle can be told to the platform. */
+	return 1;
+}
+
+/*
  * Tells the platform that the displays are off and that it enters its
  * low-power idle.
  *

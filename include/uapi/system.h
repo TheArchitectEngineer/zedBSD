@@ -371,29 +371,47 @@ struct system_power_info {
 	_IOR(KERN_SYSTEM_IOC_GROUP, 18, struct system_power_info)
 
 /*
- * Sleep (S0 idle, ws052).  KERN_SYSTEM_SLEEP with the mode
- * KERN_SYSTEM_SLEEP_DEVICES suspends every device and resumes it again at
- * once, without the processors' low-power idle: the test of the devices'
- * suspend and resume.  Only root may ask (EPERM); a platform without the
- * devices' suspend answers EOPNOTSUPP, and a sleep already under way
- * EBUSY.  When the attempt was made the request succeeds and reports
- * result, zero when every device was suspended, or the error that stopped
- * the suspend (the devices suspended before it are resumed again: EBUSY a
- * device that was busy, EOPNOTSUPP a driver that cannot suspend), with
- * device naming the device that refused ("pci 0000:00:1b.0 hda");
- * resume_result is zero when every device came back, or the first error
- * of their resume.  The reserved words are zero both ways.
+ * Sleep (S0 idle, ws052, docs/architecture/power-management.md).
+ * KERN_SYSTEM_SLEEP with the mode KERN_SYSTEM_SLEEP_S0IDLE sleeps to idle
+ * until a wake event; KERN_SYSTEM_SLEEP_DEVICES suspends every device and
+ * resumes it again at once, without the processors' low-power idle (the
+ * test of the devices' suspend and resume).  On input the mode is set and
+ * every other field is zero.
+ *
+ * The ioctl fails only when no attempt was made: EPERM for a caller that
+ * is not root, EBUSY while a sleep is under way, EINVAL for an unknown mode
+ * or a field that should be zero, EOPNOTSUPP when the platform cannot
+ * sleep in that mode (nothing was touched).  Otherwise it succeeds, and
+ * result is zero when the machine slept (S0IDLE) or every device was
+ * suspended (DEVICES), else the error that stopped it (EBUSY a busy
+ * device, EOPNOTSUPP a driver that cannot suspend), with device naming the
+ * device that refused ("pci 0000:00:1b.0 hda"); resume_result is zero when
+ * every device came back, else the first error of their resume; wake says
+ * why the machine woke (S0IDLE only; KERN_SYSTEM_WAKE_NONE in the DEVICES
+ * mode and when the machine did not sleep).
  */
-#define KERN_SYSTEM_SLEEP_DEVICES	1U
+#define KERN_SYSTEM_SLEEP_DEVICES	1U	/* suspend and resume the devices only */
+#define KERN_SYSTEM_SLEEP_S0IDLE	2U	/* suspend to idle until a wake event */
 #define KERN_SYSTEM_SLEEP_DEVICE_MAX	48U
 
 struct system_sleep_request {
 	uint32_t mode;
 	int32_t result;
 	int32_t resume_result;
-	uint32_t reserved;
+	uint32_t wake;
 	char device[KERN_SYSTEM_SLEEP_DEVICE_MAX];
 };
+
+/* Why the machine woke (struct system_sleep_request's wake). */
+#define KERN_SYSTEM_WAKE_NONE		0U
+#define KERN_SYSTEM_WAKE_POWER_BUTTON	1U
+#define KERN_SYSTEM_WAKE_LID		2U
+#define KERN_SYSTEM_WAKE_KEYBOARD	3U	/* the embedded controller's keyboard GPE */
+#define KERN_SYSTEM_WAKE_USB		4U	/* xHCI or PCIe PME */
+#define KERN_SYSTEM_WAKE_AC		5U
+#define KERN_SYSTEM_WAKE_TIMER		6U	/* RTC alarm */
+#define KERN_SYSTEM_WAKE_SPURIOUS	7U	/* the limit of spurious wakes was reached */
+#define KERN_SYSTEM_WAKE_OTHER		8U
 
 _Static_assert(sizeof(struct system_sleep_request) == 64U,
     "sleep request ABI must be identical on ILP32 and LP64");

@@ -716,6 +716,49 @@ drv_acpi_events_sleep_end(
 }
 
 /*
+ * Takes the first GPE that fired since the sleep began or since the last
+ * call, without ending the sleep (ws052-p006): the coordinator asks after
+ * each wake whether a GPE woke the system, and a spurious wake is slept
+ * through again.  woken receives the GPE or DRV_ACPI_GPE_NONE.  It
+ * reports EINVAL when no sleep began.
+ */
+int
+drv_acpi_events_sleep_woken(
+	unsigned *woken)
+{
+	unsigned long state;
+	unsigned first;
+
+	/* Refuses before the event hardware is known. */
+	if (!events.ready)
+		return EINVAL;
+
+	/* Takes the GPE and makes room for the next wake's, with the interrupt kept out. */
+	state = drv_acpi_os_event_lock();
+
+	/* Refuses outside a sleep. */
+	if (!events.sleeping) {
+		drv_acpi_os_event_unlock(state);
+		return EINVAL;
+	}
+
+	/* The first GPE since the last call, or none. */
+	first = DRV_ACPI_GPE_NONE;
+	if (events.woken_gpe != GPE_WOKEN_NONE)
+		first = events.woken_gpe;
+	events.woken_gpe = GPE_WOKEN_NONE;
+
+	drv_acpi_os_event_unlock(state);
+
+	/* Reports the GPE. */
+	if (woken != NULL)
+		*woken = first;
+
+	/* Succeeded: the sleep goes on. */
+	return 0;
+}
+
+/*
  * Records and masks every event that fired, in the SCI's interrupt.
  *
  * It touches only hardware registers, and reports whether anything is

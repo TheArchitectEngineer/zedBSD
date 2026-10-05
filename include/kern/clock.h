@@ -179,6 +179,12 @@ kern_clock_realtime_synchronized(void);
 int
 kern_cpu_notify_probe(void);
 
+void
+kern_clock_idle_suspend_begin(void);
+
+void
+kern_clock_idle_suspend_end(void);
+
 /*
  * Read the monotonic counter and its frequency.
  *

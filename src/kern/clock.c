@@ -33,6 +33,16 @@
 #define KERN_REALTIME_EPOCH_2026 1767225600LL
 
 static volatile uint64_t kernel_ticks;
+
+/*
+ * The counter's value when CPU 0 last entered suspend-to-idle, and the
+ * counts left over from the ticks it brought forward (ws052-p006).  Only
+ * CPU 0's idle loop touches them, around hal_cpu_idle_suspend(); begun is
+ * 1 between the two halves.
+ */
+static uint64_t suspend_counter;
+static uint64_t suspend_remainder;
+static unsigned suspend_begun;
 static volatile uint32_t cpu_notify_count[HAL_CPU_MAX];
 static struct kern_timespec realtime_offset = {
 	KERN_REALTIME_EPOCH_2026, 0
@@ -100,6 +110,70 @@ kernel_timer_handler(
 
 	/* The tick's timing against the counter feeds the random pool. */
 	kern_random_tick(cpu);
+}
+
+/*
+ * Notes the counter as CPU 0 enters suspend-to-idle, whose tick stops
+ * until it returns (ws052-p006).  Only CPU 0 calls it, from its idle loop.
+ */
+void
+kern_clock_idle_suspend_begin(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	bool counted;
+
+	/* The counter now; without one no time can be brought forward. */
+	suspend_begun = 0U;
+	counted = hal_rtc_read_counter(&counter, &frequency);
+	if (!counted)
+		return;
+
+	/* Kept for the end. */
+	suspend_counter = counter;
+	suspend_begun = 1U;
+}
+
+/*
+ * Brings kernel_ticks forward by the time CPU 0 spent in suspend-to-idle,
+ * from the counter that kept running, carrying the counts short of a tick
+ * to the next time (ws052-p006).  Only CPU 0 calls it, from its idle loop.
+ */
+void
+kern_clock_idle_suspend_end(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t elapsed;
+	uint64_t per_tick;
+	uint64_t ticks;
+	bool counted;
+
+	/* Nothing began. */
+	if (!suspend_begun)
+		return;
+	suspend_begun = 0U;
+
+	/* The counter now. */
+	counted = hal_rtc_read_counter(&counter, &frequency);
+	if (!counted)
+		return;
+
+	/* The counts of one tick; a counter slower than the tick cannot measure it. */
+	per_tick = frequency / HAL_TIMER_FREQUENCY;
+	if (per_tick == 0U)
+		return;
+
+	/* The whole ticks the CPU slept, the rest kept for next time. */
+	elapsed = counter - suspend_counter + suspend_remainder;
+	ticks = elapsed / per_tick;
+	suspend_remainder = elapsed % per_tick;
+
+	/* The shared tick count forward; the deadlines compare with <= and take the jump. */
+	if (ticks != 0U)
+		(void)atomic_u64_fetch_add_relaxed(&kernel_ticks, ticks);
 }
 
 /*

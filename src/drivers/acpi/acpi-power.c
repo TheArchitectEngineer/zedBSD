@@ -26,6 +26,7 @@
 #include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
+#include <kern/sleep.h>
 #include <kern/system-event.h>
 #include <kern/thread.h>
 #include <kern/waitq.h>
@@ -57,6 +58,13 @@
  * would otherwise stand still.
  */
 #define BATTERY_PERIOD_MS	60000U
+
+/*
+ * The note of what woke the system from S0 idle (kern/sleep.c, ws052-p006).
+ * It is weak so that the host test, which builds this file alone, links
+ * without the kernel; power_note_wake() tests it first.
+ */
+extern void kern_sleep_note_wake(unsigned reason) __attribute__((weak));
 
 /* _BST: charging, and a value the battery does not know. */
 #define BATTERY_CHARGING	0x02U
@@ -102,6 +110,7 @@ static bool power_ready;
 static int find_visitor(struct drv_acpi_node *node, unsigned depth, void *argument);
 static enum power_kind kind_of(struct drv_acpi_node *node);
 static void notify_handler(struct drv_acpi_node *node, uint32_t value, void *argument);
+static void power_note_wake(unsigned reason);
 static void power_thread(void *argument);
 static void refresh(struct power_device *device, bool post);
 static int32_t read_lid(struct power_device *device);
@@ -342,16 +351,28 @@ notify_handler(
 	(void)node;
 	device = argument;
 
-	/* A button pressed. */
+	/* A button pressed (which also wakes the system from S0 idle). */
 	if (device->kind == POWER_BUTTON_POWER || device->kind == POWER_BUTTON_SLEEP) {
-		if (value == NOTIFY_STATUS)
+		if (value == NOTIFY_STATUS) {
+			power_note_wake(KERN_SLEEP_WAKE_POWER_BUTTON);
 			kern_system_event_post(KERN_SYSTEM_EVENT_POWER, KERN_SYSTEM_EVENT_PRESS, 1, device->subject, "");
+		}
+
+		/* Nothing to read for a button. */
 		return;
 	}
 
 	/* Only a change of state or information needs reading. */
 	if (value != NOTIFY_STATUS && value != NOTIFY_INFORMATION)
 		return;
+
+	/* A lid or an AC adapter that changed wakes the system from S0 idle; a battery's news does not. */
+	if (device->kind == POWER_LID)
+		power_note_wake(KERN_SLEEP_WAKE_LID);
+	if (device->kind == POWER_AC)
+		power_note_wake(KERN_SLEEP_WAKE_AC);
+	if (device->kind == POWER_BATTERY)
+		power_note_wake(KERN_SLEEP_NOTE_BATTERY);
 
 	/* The thread reads the device. */
 	irq = spin_lock_irqsave(&power_lock);
@@ -360,6 +381,19 @@ notify_handler(
 	waitq_wake_all(&power_waitq);
 
 	spin_unlock_irqrestore(&power_lock, irq);
+}
+
+/* Notes for a sleep under way what woke the system, when the kernel has the sleep's coordinator. */
+static void
+power_note_wake(
+	unsigned reason)
+{
+	/* The host test has no coordinator. */
+	if (kern_sleep_note_wake == NULL)
+		return;
+
+	/* The note. */
+	kern_sleep_note_wake(reason);
 }
 
 /*
