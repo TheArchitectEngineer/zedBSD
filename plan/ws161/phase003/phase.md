@@ -4,7 +4,7 @@
 
 Phase ID: `ws161-p003`
 Parent: [WS161](../ws.md)
-Status: in-progress（2026-10-05 P1 generation19。実装と build・host 試験まで、T1 の QEMU の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-199 で smartcard-p003 PASS（QEMU の loopback の card）。本物の USB CCID（ACR1252U・YubiKey）は UAT（p006））。以前: in-progress（2026-10-05 P1 generation19。実装と build・host 試験まで、T1 の QEMU の試験待ち）
 Phase disposition: normal
 Queue: q770 の後（Q1 の指示「WS161 の kernel を先に」、2026-10-05）
 
