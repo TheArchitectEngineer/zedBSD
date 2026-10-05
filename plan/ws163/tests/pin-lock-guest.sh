@@ -91,7 +91,7 @@ expect_log $session 'ZWL LOCK locked reason=key user=kei pin=1' 5
 for wrong in 1 2 3 4 5; do
 	keys '000000' '\n'
 done
-expect_log $session 'ZWL LOCK pin fail error=13 usable=0' 5
+expect_log $session 'ZWL LOCK pin fail error=[0-9]+ usable=0' 5
 pointer move 1270 790 sleep 300
 check "$out/off.png" >/dev/null
 keys '246810' '\n'

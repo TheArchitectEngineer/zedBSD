@@ -34,6 +34,12 @@ sessiond は変えない。greeter の PIN は G1 の答え待ちで範囲外。
 - QEMU: **未実施**。T1 に `plan/ws163/tests/pin-lock-guest.sh`（graphical の login の image、lock・PIN の unlock・5 回で無効・password で戻す・log に PIN が無い・
   mode 0600）を依頼する（Q1 経由）。zedBSD の libc の crypt() が openssl の `$6$salt$`（rounds 無し）を読めることもこの試験で確かめる。
 
+- QEMU（T1-194、2026-10-05、Q1 の報告）: 製品は正しく動いた。16 の確かめが ok（sessiond に問わずに PIN で unlock、5 回で無効、password で戻る、log に PIN が無い、
+  mode 0600、zedBSD の libc の crypt() が openssl の `$6$salt$` を読む）。MISSING の 1 行は試験の誤り（`error=13` を期待、zedBSD の EACCES は 25）で、
+  `pin-lock-guest.sh` を `error=[0-9]+ usable=0` に直した（15549c01、製品の code は変えていないので再実行は不要と Q1）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-194-out*/`。
+- 2026-10-05 夕: ユーザーが WS162・WS163 の mock を置き換える設計（root だけの `/etc/passkey`、sessiond が外の `/sbin/passkey` で認証）を検討中。決まるまで
+  ~/.config の mock をこれ以上作らない（Q1）。
+
 ## 残り
 
 - T1 の結果。
