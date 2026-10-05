@@ -167,4 +167,4 @@ Resume point: p001 から。F-071 の再考の契機は「S1 の実機試験の�
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 読めるようにする: compositor（thread で復号）・Settings・Files の PNG の読み込み、画素の上限、Settings の link、tree に PNG の 2 枚を足す（PPM は残す）、変換の道具、host 試験。既定の path は変えない | cleared（2026-10-05 T1-169・T1-172） | — |
 | [p002](phase002/phase.md) | 1 回の commit で切り替える: 既定の path、generate.py、make の data、PPM の削除、移行（U6）、194 file の置き換え、T への QEMU の試験の依頼（Settings、criteria と greeter、背景の読み込みの時間、FreeBSD の build） | cleared（2026-10-05 T1-169・T1-171・T1-172） | p001 の commit が main に統合済み |
-| p003（phase.md は p002 の後に書く） | 全文規約の見直し（変えた C）、T の結果の反映、F-071 と WS089・WS099 への結果の案 | planned | p002 |
+| [p003](phase003/phase.md) | 全文規約の見直し（変えた C）、T の結果の反映、F-071 と WS089・WS099 への結果の案 | in-progress（2026-10-05 P1 q731、見直しと直しは済み、Q1 の判定待ち） | p002 |

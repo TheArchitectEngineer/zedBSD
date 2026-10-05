@@ -147,7 +147,9 @@ reference_take(
 	at++;
 
 	/* The pixels must be all there. */
-	if (fields != 2 || at > size || size - at != (size_t)width * height * 3U) {
+	if (fields != 2 ||
+	    at > size ||
+	    size - at != (size_t)width * height * 3U) {
 		free(data);
 		return 22;
 	}
@@ -228,7 +230,7 @@ near(
 {
 	struct kl_wallpaper_image a;
 	struct kl_wallpaper_image b;
-	unsigned long long total;
+	double total;
 	size_t count;
 	size_t index;
 	double mean;
@@ -251,10 +253,10 @@ near(
 
 	/* The mean absolute difference of every sample. */
 	count = (size_t)a.width * a.height * 3U;
-	total = 0;
+	total = 0.0;
 	for (index = 0; index < count; index++)
-		total += (unsigned long long)abs((int)a.rgb[index] - (int)b.rgb[index]);
-	mean = (double)total / (double)count;
+		total += (double)abs((int)a.rgb[index] - (int)b.rgb[index]);
+	mean = total / (double)count;
 	if (mean <= limit)
 		printf("near\n");
 	else

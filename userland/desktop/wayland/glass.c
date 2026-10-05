@@ -380,8 +380,10 @@ zwl_glass_landscape(
 	started = zwl_milliseconds();
 	(void)vkDeviceWaitIdle(server->compose->device);
 
-	/* The landscape: a picture without pixels. */
+	/* The landscape is a picture without pixels. */
 	memset(&picture, 0, sizeof(picture));
+
+	/* Draws it into the wallpaper's image and its blurred copy. */
 	error = wallpaper_draw(server, server->compose->glass, &picture);
 	if (error != 0)
 		return error;
@@ -1457,7 +1459,10 @@ prefetch_take(
 	if (!glass_prefetch.started)
 		return 0;
 
-	/* The thread's end makes its result visible here. */
+	/*
+	 * The thread's end makes its result visible here; clearing started
+	 * tells prefetch_drop that nothing is left to wait for.
+	 */
 	(void)pthread_join(glass_prefetch.thread, NULL);
 	glass_prefetch.started = 0;
 	decoded = glass_prefetch.picture;
