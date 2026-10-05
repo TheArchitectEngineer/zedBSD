@@ -2,7 +2,7 @@
 
 # ws121-p001: browser の `<video>` の再生の要件・設計
 
-Status: in-progress（2026-10-05 夜、P2 g16、q775。設計の第 2 版（review 1 回目の高 6・中 14 を反映）、design-reviewer の 2 回目へ）
+Status: in-progress（2026-10-05 夜、P2 g16、q775。設計の第 3 版（review 2 回目の条件 a・b・c・e を反映）。ユーザーの判断 U0〜U7 待ち）
 Disposition: normal
 Parent: [WS121](../ws.md)
 Queue: q775（Q1、2026-10-05）
@@ -80,25 +80,25 @@ int mf_open_source(const struct mf_source *source, struct mf_file **file);
 - **open は media の thread で**: main は `media_engine_open(engine, source)` で要求を積んで直ちに返す。mf_open・decoder の open・音の stream の作成は media の thread。結果（metadata か error）は wake で返る。`canPlayType` の codec の load（`pthread_once` の dlopen）は main でよい。
 - **wake**: view ごとの pipe 1 本。write の端は `O_NONBLOCK`、engine は「wake 済み」の flag で 1 回にまとめる（pipe が溢れても engine は止まらない）。main は読んで flag を下ろし、各 engine の知らせ（metadata・最初の絵・waiting と playing・終わり・error・seek の完了・寸法の変化）を読む。
 - **media の thread の待ち**は全部（ring の空き、BGRA の受け渡し、`read_at`）condition で、quit と世代を見る。p002 の試験: 待ちの各点で close・seek を入れて join が終わる。
-- **絵**: AVFrame の参照の ring は 4 枚。BGRA の buffer は 2 枚で、状態（free・writing・ready・shown）と seek の世代を持ち、lock の中で替える。media の thread は次の絵を**表示の寸法**（main が layout の後に知らせる箱の device pixel の大きさ、上限 1920×1080）で BGRA に変換する（sws、bilinear）。描画は 1:1 で写すだけ（review L3: 縮めて aliasing を出さない、変換の無駄も無い）。箱の大きさが変わった直後の 1 枚は古い大きさを最近傍で伸ばす。
+- **絵**: AVFrame の参照の ring は 4 枚。BGRA の buffer は 2 枚で、状態（free・writing・ready・shown）と seek の世代を持ち、lock の中で替える。media の thread は次の絵を**表示の寸法**（main が layout の後に知らせる箱の device pixel の大きさ、上限 1920×1080）で BGRA に変換する（sws、bilinear）。描画は 1:1 で写すだけ（review L3: 縮めて aliasing を出さない、変換の無駄も無い）。engine は**表示中の絵の AVFrame の参照を持ち続け**、箱の大きさが変わったら（一時停止中・終わった後・seek の後でも）同じ絵を新しい大きさで変換し直す（review 2 b）。変換し直すまでの間は古い buffer を最近傍で伸ばす。上限を超える箱（4K の窓など）は上限で変換して最近傍で拡大する（制限）。contain の矩形は CPU と GPU で同じ規則で整数の pixel に丸める（左上は floor、大きさは round）。
 - **seek**: 世代を進め、ring・buffer・音を捨て、key frame へ戻って目標の時刻まで decode して捨てる。完了は「目標以降の最初の絵が ready」（一時停止中でもその絵を出す）。
-- **時計**: 音があれば audiod の位置（`played_position` と `played_time_ns` が埋まっていればそれで device の遅延を除く。無ければ `read_position`）、無ければ monotonic。音が絵より先に尽きたら、尽きた時点で monotonic へ移る（review M10: 音の時計が止まって絵が止まるのを防ぐ）。
-- **headless**（`browser_view_settle` の仮想の時計）: engine に外部の時計（`media_engine_set_clock(engine, seconds)`）を与え、settle は「仮想の時刻 T の絵が ready になるまで（上限 5 秒の実時間）」待ってから T へ進む。音は出さない。`BROWSER_DUMP_PAINT` には絵の世代を出さない（dump を決定的に）。
+- **時計**（review 2 a）: 時計の元は「audiod の stream が動いている（再生中・muted でない・音が尽きていない・audiod が答える）間だけ audiod の位置（`played_position` と `played_time_ns` が埋まっていればそれで device の遅延を除く、無ければ `read_position`）、それ以外は monotonic」。元を替える瞬間（mute・unmute・音が尽きた・audiod を諦めた・stream を作った）に anchor（clock_time と frames・us）を今の時刻で取り直し、時計が跳ばない・止まらないようにする。mediafile は 1 本の cursor で全 track を読むので音だけの seek はできない: **muted の間も音を decode して捨て**、unmute の時は今の時計の位置の標本から stream に書き始める。
+- **headless**（`browser_view_settle` の仮想の時計、review 2 c）: engine に外部の時計（`media_engine_set_clock(engine, seconds)`）を与え、settle は仮想の時刻 T へ進む前に「T の絵が ready」（再生していない要素は HAVE_CURRENT_DATA）まで待つ。待ちの上限は **settle の呼び出し全体で 1 つ**（settle の budget、尽きたら `ETIMEDOUT`）。settle の中では engine の知らせを仮想の時刻 T に結びつけた task にし、timer と同じ順（時刻、同じ時刻は timer が先）で送る。settle の最後は layout の後に「表示中の絵が今の箱の大きさで変換し直された」まで待つ段を通る。音は出さない。`BROWSER_DUMP_PAINT` には絵の世代を出さない（dump を決定的に）。
 - **再描画**: 期限で絵を替えたら `page->media_generation` を進め、`page_needs_paint` がそれを見る。`browser_view_process` に「layout は要らないが paint が要る」時の redraw を足す。`browser_view_timeout` は次の絵の期限と timeupdate（250 ms）を含め、ms へは**切り上げ**。描かれない video（箱が無い・viewport の外・`display:none`）では世代を進めない（絵は取って時計は進める）。
 - 上限: view ごとに再生する要素は 4。5 つ目の `play()` は `NotAllowedError`（制限として記録、review L2 の代案は後）。
 
 ### D5. 音（engine が直接 audiod へ）
 
-- libmedia の audiod の client を view ごとに 1 本の接続で使い、要素ごとに stream（16-bit stereo 48 kHz）。stream は「音の track があり、muted でなく、再生中」になった時に作る（muted の preview が並ぶ page で接続も stream も使わない）。
-- audiod とのやりとりは全部 media の thread（main は flag を立てるだけ）。`send` は `MSG_NOSIGNAL`、要求の答えは 500 ms で諦める（audiod が落ちても詰まっても browser は止まらない。音無しで続け、時計は monotonic へ）。
-- `volume`・`muted` は `AUDIOD_STREAM_VOLUME`（muted は stream を止める）。pause で stop、再生で start、seek で flush、要素の破棄・page を離れる・view の破棄で destroy。
+- libmedia の audiod の client は **engine ごとに 1 本の接続と 1 つの stream**（16-bit stereo 48 kHz）で、「音の track があり、muted でなく、再生中」の間だけ持つ（view あたり最大 4、muted の preview が並ぶ page では接続も stream も使わない）。1 本の接続を要素で共有すると、ある要素の 500 ms の待ちが他の要素の書き込みを止めるので共有しない（review 2 e）。stream の番号は接続ごとに 1。
+- audiod とのやりとりは全部 media の thread（main は flag を立てるだけ）。`send` は `MSG_NOSIGNAL`、要求の答えは 500 ms で諦め、**諦めたら接続ごと閉じる**（stream も共有 memory も捨て、遅れて届く答えを受けない）。受け取る予定の無い SCM_RIGHTS の fd は受けたら閉じる（今の `audio.c` の受信は閉じずに漏らす）。audiod が落ちても詰まっても browser は止まらず、音無しで続ける（時計は monotonic へ、anchor を取り直す）。
+- `volume` は `AUDIOD_STREAM_VOLUME`。`muted` は接続と stream を閉じる（時計は上のとおり monotonic へ、音の decode は続けて捨てる）。pause で stop、再生で start、seek で flush、要素の破棄・page を離れる・view の破棄で destroy。
 - **ABI は変えない**（v2 のまま、struct・export・SONAME 同じ）。ただし `<browser.h>` の説明を更新する（browser-component の規則 §7、review M11）: library が media の thread を作り audiod へ音を出すこと、`browser_view_poll_fds` の先頭の fd は view の wake で loader の物ではないこと（revents をそのまま `browser_view_process` に渡す）、`browser_view_settle` が絵を待つこと。header の説明の変更は実装の Phase（p005）で、docs/ の変更は無い（公開の API の文書は header）。
 - 埋め込み側が media を止める口（Settings の窓など）: 要判断 U4。案は export を 1 つ足す `browser_view_set_media(view, flags)`（`BROWSER_MEDIA_NO_AUDIO`・`BROWSER_MEDIA_NO_AUTOPLAY`。v2 のまま追加の export）。
 
 ### D6. DOM・layout・描画（review H5・M4・M8）
 
 - `dom_element` に `struct media_element *media`（malloc。review L4 の側の表は後の最適化）。
-- **GC で止まらないように**: 要素が「再生中（potentially playing）・取得中・送る event が残る」間は、page の media の一覧が wrapper を root する。止まったら外す。finalize は engine を page の「片付け」の列に移すだけで、join は次の `browser_view_process`（または page の破棄）で行う（GC の中で join しない）。
+- **GC で止まらないように**: 要素が「再生中（potentially playing）・取得中・送る event が残る」間は、page の media の一覧が wrapper を root する。止まったら外す。finalize は engine の要素への参照を切り、engine を page の「片付け」の列に移すだけで、join は次の `browser_view_process`・`browser_view_settle`（または page の破棄）で行う（GC の中で join しない）。「送る event が残る」は engine の知らせの queue が空でないこと。
 - 文書から外れた時: microtask の checkpoint の後もまだ外れていれば pause（同じ task の中の付け替えは止めない）。
 - UA の規則: `video` は object-fit が無いので描画で contain を固定。`audio:not([controls]) { display: none }`、`audio[controls]` は D9 の U5 まで 300×54 の空の箱。
 - layout: VIDEO を replaced。固有の寸法は videoWidth×videoHeight（metadata の後）、無ければ poster、無ければ 300×150。寸法が変わるたび（H.264 の SPS の変化も）`resize` と layout の世代。回転・pasp・BT.709・10 bit・HDR は未対応（review L1: 制限として記録。sws の既定は BT.601、縦の動画の回転は無視）。
@@ -157,7 +157,7 @@ int mf_open_source(const struct mf_source *source, struct mf_file **file);
 
 | Phase | 内容 | 依存 | 確かめ |
 | --- | --- | --- | --- |
-| p002 | libmedia（D1・D2・D4 の engine: source、error の伝え方、async の open、audio だけの再生、世代と待ち、BGRA の 2 枚と表示の寸法、外部の時計、wake、decoder の ops、log の hook、音の改善 D5）、videoplayer をそれに移す | p001、WS122 p003 cleared | host（WS122 の mediafile・codec の試験を libmedia で、reader の source、error の種類、待ちの各点での close・seek と join、外部の時計）。T1: videoplayer の回帰（WS122 p004 の試験） |
+| p002 | libmedia（D1・D2・D4 の engine: source、error の伝え方、async の open、audio だけの再生、世代と待ち、BGRA の 2 枚と表示の寸法、外部の時計、wake、decoder の ops、log の hook、音の改善 D5）、videoplayer をそれに移す | p001、WS122 p003・p004 cleared | host（WS122 の mediafile・codec の試験を libmedia で、reader の source、error の種類、待ちの各点での close・seek と join、外部の時計）。T1: videoplayer の回帰（WS122 p004 の試験） |
 | p003 | loader の Range（D3: range・no_cache・206・Content-Range・416・If-Range・header の callback・Range の無い 200）と `page/media-fetch.c`（block の cache、file・data の source、遅れて作る loader、wake の fd を先頭に） | p002 | host（python の server: Range、Range を無視、短い 206、redirect、keep-alive の切断と再試行、途中の資源の差し替え、中断） |
 | p004 | DOM・layout・描画（replaced、poster、`PAINT_VIDEO`、CPU と GPU の 1:1、paint だけの世代、GC の root、片付け）と最小の再生の glue（`autoplay muted` だけ、settle が絵を待つ） | p002・p003 | host の headless（`file:` の試験の素材、仮想の時刻ごとの絵を許容つきで比べる）、`plan/tools/browser-component`（lavapipe）で GPU と CPU の一致 |
 | p005 | JS の API と状態の表（D7）、event loop（wake・timeout・timeupdate）、自動再生（D8）、`<audio>`（U3）、`<browser.h>` の説明の更新（U4 なら export） | p004 | host の JS の試験（event の順、play の Promise、seek、`load()` の中断、`<source>` の fallback、文書から外す） |
@@ -180,7 +180,13 @@ int mf_open_source(const struct mf_source *source, struct mf_file **file);
 ## 確かめ
 
 - 設計だけ。code の変更・build・試験は無い。
-- design-reviewer の review: 1 回目（2026-10-05 夜）は高 6・中 14・低 8、第 2 版で下の表のとおり反映。2 回目: 未（下に結果を足す）。
+- design-reviewer の review: 1 回目（2026-10-05 夜）は高 6・中 14・低 8、第 2 版で下の表のとおり反映。
+- 2 回目（2026-10-05 夜、第 2 版 3df53896）: **条件付きで p002 へ進める**。p002 の前の条件は a（時計の元と mute・unmute の anchor）・b（表示中の AVFrame を持って変換し直す、settle の最後の段）・c（settle 全体の待ちの上限と event の順）・e（接続を engine ごとに、timeout の後の扱い、fd の漏れ）で、**第 3 版で反映した**（D4・D5・D6）。p003・p005 の設計の中で直す残り:
+  - p003: header の callback が自分を cancel した時は直後に `cancelled` を見て `EAGAIN` で戻る、3xx の header では呼ばない、body を移す API（`net_request_take_body`）、raw の buffer の realloc で一時に約 192 MiB になりうる（D11 の 128 MiB は下限）。遅れて作る loader を page の media-fetch に渡す道、`browser.h` の AT_ONCE の説明、settle の loop の終わりの条件（media の要求と engine の知らせが空）と wake の fd の poll。wake の fd の契約の説明は p005 でなく p003 に同梱。If-Range は弱い ETag（W/）なら Last-Modified。
+  - p004: descriptor の pool が足りない時の作り直し（または描く video の数の上限）。
+  - p005: 状態と event の表の抜け（自動再生の行、再生中に data が尽きた行、`volumechange`・`ratechange`・後からの `durationchange`、HAVE_ENOUGH_DATA の基準、`play()` の `NotSupportedError` は source を使えなかった時だけか、metadata の行の `resize` の条件を仕様の原文で確かめる）。
+  - p002: `mediafile.c` の先頭の pread も source を通すこと。
+  - p006: audiod の stream の状態を SSH で問う guest の道具が無ければ範囲に含める。
 
 ## 未実施
 
