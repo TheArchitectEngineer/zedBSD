@@ -4,9 +4,9 @@
 
 Phase ID: `ws163-p001`
 Parent: [WS163](../ws.md)
-Status: planning（2026-10-05 P1 generation17、q733。設計の第 1 版。code は §7 の判断（root の daemon の口を含む）の後）
+Status: planning（2026-10-05 P1 generation17 q733 で第 1 版。2026-10-05 ユーザーの決定で mock の設計（§9）に改めた、P1 generation19 q769。§9.6 の G1 の判断待ち）
 Phase disposition: normal
-Queue: q733（ベータ2 の P1 の列の 5 番目）
+Queue: q733（第 1 版）、q769（mock の設計と実装）
 
 ## 範囲
 
@@ -88,6 +88,69 @@ Queue: q733（ベータ2 の P1 の列の 5 番目）
 | p003 | greeter と lock の画面の PIN の欄、Settings の Users の頁の設定（WS089 の領域、Q1 の調整）、system の拡張の要求、T1 | p002 |
 | p004 | 全文規約の見直し | p003 |
 
+## 9. mock の設計（2026-10-05 ユーザーの決定、P1 generation19 q769）
+
+ユーザー（2026-10-05、原文）:「~/.configの中にPINを保存してOKです。sessiondに難しい制御をさせたくないです。移植ができなくなるからです。これはまずモックアップとしての実装で、
+あとで鍵管理やPAMのような仕組みをきちんと考えます。」→ §3〜§5 の案（`/etc/keiland/pins`、sessiond の `PIN?`・`PIN SET`・`PIN REMOVE`）をやめる。
+H3（root の daemon の口）は「足さない」、H4（保存）は「利用者の ~/.config」に決まった。H1（greeter と lock の画面だけ、sudo・SSH・console は password）、
+H2（5 回で無効、password で戻る）、H5（6 桁の数字の入力は PIN の試み）は §2〜§4 の案のまま mock に入れる。
+
+### 9.1 保存
+
+- file: `$HOME/.config/keiland/pin`（compositor の設定と同じ folder、`settings-store.c` の `.config/keiland`）。mode 0600、利用者の持ち物。書き換えは
+  同じ folder の一時 file から rename。
+- 中身（行の形、1 行 1 項目）: `hash <crypt の文字列>`（SHA-512 crypt、`$6$rounds=50000$<16 文字の salt>$...`、salt は `/dev/urandom`）と
+  `failures <数>`（続けて間違えた数）。PIN を平文で残さない。
+- 守り: file は利用者だけが読める（home は 0700）。6 桁は 100 万通りなので、file が読めれば短時間で戻せる。mock の限り（§9.5）。
+- 道具の場所: compositor（`userland/desktop/wayland/pin-store.c`）。crypt() は POSIX（zedBSD の libc、Linux・FreeBSD は libcrypt）なので、
+  Linux・FreeBSD の compositor でも同じ code が動く。
+
+### 9.2 lock の画面（compositor だけで確かめる）
+
+- lock の画面は session の利用者の compositor（その利用者の uid）が描くので、自分の `~/.config/keiland/pin` を読める。sessiond は lock の状態を持たず、
+  今も `UNLOCK password` の確かめだけをしている（`sessiond/session.c` 340〜384）。PIN の unlock は compositor の中で終わり、sessiond に何も送らない。
+- 入力の欄は今のまま（文字を打つ、Enter で送る）。PIN が有効な時は欄の上の案内を「PIN or password」にする。
+- Enter で: PIN が有効で、打った文字がちょうど 6 桁の数字なら PIN と比べる（H5）。合えば unlock（今の OK の答えと同じ道）、`failures` を 0 に。違えば
+  `failures` を 1 足して書き、「Wrong PIN. Try again.」。5 に達したら PIN を無効と見なし「Too many wrong PINs. Use your password.」、以後の 6 桁は
+  password として sessiond に送る。それ以外の入力は今のとおり `UNLOCK password`。password で unlock できたら `failures` を 0 に戻す（PIN が再び使える）。
+- 自動で送らない（6 桁目で送ると、6 桁の数字で始まる password が打てない）。
+- 遅れ: PIN の失敗には遅れを掛けない（5 回で無効になるので、総当たりは 5 回まで）。password の遅れは sessiond の今のまま。
+
+### 9.3 設定・変更・削除（Settings の Users）
+
+- Settings の Users の頁（自分の account）に「PIN」の行: PIN が無ければ「Set Up PIN」、有れば「Change PIN」「Remove PIN」。設定と変更は今の password と
+  新しい PIN（2 回、6 桁の数字）、削除は今の password。PIN の有無は Settings が自分で `~/.config/keiland/pin` を見て決める（Settings も利用者の uid）。
+- 道: Settings → compositor の `kl_system_account_v1` に要求を 1 つ足す: `request 3 set_pin(uint request, string current, string pin)`（version 9、
+  pin が空なら削除）。答えは今の `result`（ok・denied・invalid・unsupported・busy・failed）。
+- compositor は今の password を、**sessiond の今の `UNLOCK password`** で確かめる（session の control の descriptor、`kl_backend_session_unlock`。
+  sessiond は変えない）。OK なら PIN を hash して file を書く（削除なら file を消す）。FAIL なら denied（sessiond の遅れが掛かる）。session manager が
+  無い（Linux・FreeBSD の手での起動など）なら unsupported。PIN と password は確かめた後に消す。
+- 断る: PIN がちょうど 6 桁の数字でない（invalid）、今の password がちょうど 6 桁の数字（H5 で PIN と区別できない、invalid）。root の account は Users の
+  頁に PIN を出さない。
+
+### 9.4 試験
+
+- host: `pin-store.c` を host で compile する試験（書く・読む・6 桁の判定・合う/違う・失敗の数・5 回で無効・password で戻す・削除・壊れた file・
+  mode 0600）。`plan/ws163/tests/`。
+- QEMU（T1、WS の最後にまとめて）: login の image で、Settings の Users から PIN を設定（今の password が違えば断られる）、lock して PIN で unlock、
+  間違えて 5 回で PIN が無効、password で unlock して戻る、Remove。`ZWL LOCK unlocked`・`ZWL SYSTEM account` の log と screenshot。
+
+### 9.5 mock の限り（後の鍵管理・PAM の設計で直すこと）
+
+- PIN の hash と失敗の数は利用者の file で、利用者は自分で消せる・数を戻せる（自分の account なので害は小さい）。file が漏れれば PIN は戻せる。
+- PIN の設定の時の password の確かめに `UNLOCK` を使うので、sessiond の log と syslog に「unlock」の行が出る。
+- lock の画面の PIN の unlock は sessiond・syslog に記録されない（compositor の log の `ZWL LOCK unlocked pin` だけ）。
+
+### 9.6 人間の判断が要る点（G1）
+
+| ID | 問い | 事実 | 案 |
+| --- | --- | --- | --- |
+| G1 | **greeter の PIN の login をどうするか** | greeter は `_greeter` の uid で動き、利用者の home（0700）の `~/.config` を読めない。また login は sessiond の `AUTH name password` で、sessiond は password を確かめて session を始める（PIN だけで session を始める口が無い）。sessiond に口を足さない決定の下で greeter で PIN の login をするには、利用者の password を PIN で暗号化して `_greeter` が読める所に置くしかない。その file は local の誰でも読めるので、100 万通りを手元で試せば **password そのもの**が漏れる | (a) **mock は lock の画面だけ**。greeter は password のまま、後の鍵管理・PAM の設計で入れる（推す）。(b) password を PIN で包んで `_greeter` が読める所に置き、greeter で PIN の login（上の漏れを受け入れる）。(c) sessiond に口を足す（今回の決定に反する） |
+
+G1 の答えまで、lock の画面・Settings・保存（§9.1〜§9.3）を実装する（G1 に依らない）。
+
 ## 結果
 
 （設計の第 1 版。判断 H1〜H5 待ち）
+
+2026-10-05 generation19: ユーザーの決定で mock の設計（§9）に改めた。H3・H4 は決まり、H1・H2・H5 は案のまま mock に入れる。G1（greeter）の判断待ち。
