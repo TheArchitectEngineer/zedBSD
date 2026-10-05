@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG007
 Parent: [Master](../master.md)
 Queue: q738（P2、2026-10-05）、p002（P2 g17、Q1 2026-10-05 夜）
-Resume point: p001 cleared（判断 ①〜⑤ は推奨どおり）。p002（libkeiland の kl_tr_*・catalog・`ui.language`・`tools/i18n/tr.py`）を実装、host の試験まで。次は p003（compositor・greeter・lock）。F-068 をこの WS へ昇格。
+Resume point: p001 cleared（判断 ①〜⑤ は推奨どおり）。p002（libkeiland の kl_tr_*・catalog・`ui.language`・`tools/i18n/tr.py`）、p003（compositor・greeter・lock の文、`ja/wayland.tr`、install）を実装、host の試験まで。p003 は T1 の QEMU 待ち。次は p004（各 app）。F-068 をこの WS へ昇格。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -43,7 +43,7 @@ Keiland 本体（compositor・system bar・greeter・lock の画面）と Keilan
 | --- | --- | --- | --- |
 | [ws158-p001](phase001/phase.md) | 翻訳の仕組みの設計（catalog の形式・libkeiland の口・言語の選択と切り替え・locale の書式・抽出の道具・試験） | cleared（2026-10-05 夜、判断 ①〜⑤ 推奨どおり） | WS154 の Languages の頁と設計を合わせる |
 | [ws158-p002](phase002/phase.md) | libkeiland の i18n の口と catalog の読み込み、抽出の道具 | in-progress（実装・host の試験まで） | p001 |
-| ws158-p003 | compositor・greeter・lock の文を口に通す | planning | p002 |
+| [ws158-p003](phase003/phase.md) | compositor・greeter・lock の文を口に通す | in-progress（実装・host の試験まで、T1 待ち） | p002 |
 | ws158-p004 | 各 app の文を口に通す（app ごとに分けてよい） | planning | p002 |
 | ws158-p005 | 日本語の翻訳と用語集、review（ベータ2 の目標） | planning | p003・p004 |
 | ws158-p006 | 全文の規約と回帰（英語・日本語の両方の PNG、T1）、実機の UAT | planning | p005 |

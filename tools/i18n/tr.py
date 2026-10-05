@@ -24,8 +24,11 @@ leaves it out, so the English shows).
                                                ({1}...); with SOURCE, the texts not translated and those not used
                                                (--strict: an untranslated text fails too)
 
-A SOURCE is a C file or a directory (its .c and .h files, recursively).
-A call whose text is not a string literal is reported and left out.
+A SOURCE is a C file, a directory (its .c and .h files, recursively), or a
+.keys file: the texts asked for through a variable (a data table's names,
+a module that does not link the library), in a catalog's form without the
+translation.  A call whose text is not a string literal is reported and
+left out.
 """
 from __future__ import annotations
 
@@ -185,10 +188,19 @@ def source_files(paths: list[str]) -> list[Path]:
 
 
 def extract(paths: list[str], problems: list[str]) -> list[Entry]:
-	"""The texts the source asks for, in the order met, each once with every place it is asked."""
+	"""The texts the source asks for, in the order met, each once with every place it is asked.  A .keys file
+	among the paths lists texts the source asks for through a variable (a data table's names, a pure module's
+	labels): lines in a catalog's form without the translation."""
 	found: dict[tuple, Entry] = {}
 	call = re.compile(r"\b(kl_trc|kl_trn|kl_tr)\s*\(")
-	for path in source_files(paths):
+	for name in paths:
+		if not name.endswith(".keys"):
+			continue
+		for entry in read_catalog(Path(name), problems):
+			entry.where = [f"{name}:{entry.line}"]
+			entry.forms = []
+			found.setdefault(entry.key.ident(), entry)
+	for path in source_files([name for name in paths if not name.endswith(".keys")]):
 		text = without_comments(path.read_text(encoding="utf-8", errors="replace"))
 		for match in call.finditer(text):
 			name = match.group(1)

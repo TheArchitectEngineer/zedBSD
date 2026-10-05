@@ -51,9 +51,12 @@
  * choose the user.
  */
 
+#include "language.h"
 #include "glass.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
+
+#include <keiland.h>
 
 #include <errno.h>
 #include <math.h>
@@ -160,8 +163,8 @@ struct greeter_layout {
 
 /*
  * The users read once at the start, the one selected, what has been typed
- * (erased as soon as it is sent), the line under the field, whether an
- * answer is awaited.  zdesktop runs one
+ * (erased as soon as it is sent), the line under the field (in the
+ * language of when it was set, WS158), whether an answer is awaited.  zdesktop runs one
  * greeter, so these live for the process.
  */
 static struct greeter_user greeter_users[GREETER_USERS];
@@ -169,7 +172,7 @@ static unsigned greeter_user_count;
 static unsigned greeter_selected;
 static char greeter_password[GREETER_PASSWORD];
 static unsigned greeter_password_length;
-static char greeter_message[64];
+static char greeter_message[128];
 static unsigned greeter_waiting;
 static unsigned greeter_starting;
 
@@ -429,8 +432,8 @@ zwl_greeter_draw(
 
 	/* The power buttons (not on a session's lock screen). */
 	if (!server->locked) {
-		greeter_draw_button(server, command, layout.restart, "Restart", 0);
-		greeter_draw_button(server, command, layout.poweroff, "Shut Down", 0);
+		greeter_draw_button(server, command, layout.restart, kl_tr("Restart"), 0);
+		greeter_draw_button(server, command, layout.poweroff, kl_tr("Shut Down"), 0);
 	}
 }
 
@@ -872,9 +875,9 @@ greeter_draw_card(
 	/* The line under the field: a wrong password, or the wait for the answer. */
 	baseline = layout->field[1] + GREETER_FIELD + 28;
 	if (greeter_starting) {
-		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, "Starting session...", GREETER_CARD_WIDTH - 32, faint);
+		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, kl_tr("Starting session..."), GREETER_CARD_WIDTH - 32, faint);
 	} else if (greeter_waiting) {
-		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, "Checking...", GREETER_CARD_WIDTH - 32, faint);
+		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, kl_tr("Checking..."), GREETER_CARD_WIDTH - 32, faint);
 	} else if (greeter_message[0] != '\0') {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, greeter_message, GREETER_CARD_WIDTH - 32, warning);
 	}
@@ -882,9 +885,9 @@ greeter_draw_card(
 	/* The link to the other style, while the PIN is one. */
 	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U || greeter_starting)
 		return;
-	link = "Use your password";
+	link = kl_tr("Use your password");
 	if (greeter_style == KL_BACKEND_STYLE_PASSWORD)
-		link = "Use your PIN";
+		link = kl_tr("Use your PIN");
 	inside = greeter_inside(layout->link, server->pointer_x, server->pointer_y);
 	color = faint;
 	if (inside)
@@ -914,9 +917,9 @@ greeter_draw_field(
 	glass_draw_solid(server, command, (float)layout->field[0], (float)layout->field[1], (float)layout->field[2], (float)layout->field[3], 10.0f, field);
 
 	/* The hint while it is empty: the style the field takes. */
-	hint_text = "Password";
+	hint_text = kl_tr("Password");
 	if (greeter_style == KL_BACKEND_STYLE_PIN)
-		hint_text = "PIN";
+		hint_text = kl_tr("PIN");
 	if (greeter_password_length == 0U) {
 		glass_draw_text(server, command, SIZE_TITLE, layout->field[0] + 16, layout->field[1] + 28, hint_text, layout->field[2] - 32, hint);
 	}
@@ -1051,7 +1054,7 @@ greeter_draw_clock(
 	greeter_draw_centered(server, command, SIZE_ICON, middle, top + 36, text, (int32_t)server->width, slate);
 
 	/* The date. */
-	(void)strftime(text, sizeof(text), "%A, %B %e", &local);
+	zwl_language_date(&local, ZWL_LANGUAGE_DATE_LONG, text, sizeof(text));
 	greeter_draw_centered(server, command, SIZE_SEARCH, middle, top + 76, text, (int32_t)server->width, soft);
 }
 
@@ -1159,7 +1162,7 @@ greeter_submit(
 
 	/* A PIN is six digits; a shorter one is not sent (it would count as a wrong one). */
 	if (greeter_style == KL_BACKEND_STYLE_PIN && greeter_password_length != GREETER_PIN_DIGITS) {
-		snprintf(greeter_message, sizeof(greeter_message), "A PIN has six digits.");
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("A PIN has six digits."));
 		server->dirty = 1;
 		return;
 	}
@@ -1280,10 +1283,10 @@ greeter_draw_power(
 	glass_shape_draw(server, command, &shape);
 
 	/* The words, in the card's upper half. */
-	words = "Shutting down...";
+	words = kl_tr("Shutting down...");
 	reboot = strcmp(greeter_powering, "reboot");
 	if (reboot == 0)
-		words = "Restarting...";
+		words = kl_tr("Restarting...");
 	middle = layout->card[0] + layout->card[2] / 2;
 	greeter_draw_centered(server, command, SIZE_SEARCH, middle, layout->card[1] + layout->card[3] * 2 / 5, words, GREETER_CARD_WIDTH - 32, ink);
 
@@ -1348,9 +1351,9 @@ greeter_answered(
 	if (error == EACCES) {
 		greeter_refused(server);
 	} else if (error == EBUSY) {
-		snprintf(greeter_message, sizeof(greeter_message), "Busy. Try again.");
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("Busy. Try again."));
 	} else if (error == EIO) {
-		snprintf(greeter_message, sizeof(greeter_message), "The login failed.");
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("The login failed."));
 	}
 
 	/* The next secret can be typed. */
@@ -1372,7 +1375,7 @@ greeter_refused(
 	reason = kl_backend_session_reason(server->backend);
 	same = strcmp(reason, "pin-off");
 	if (same == 0) {
-		snprintf(greeter_message, sizeof(greeter_message), "Use your password.");
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("Use your password."));
 		greeter_styles &= ~KL_BACKEND_STYLE_PIN;
 		greeter_style = KL_BACKEND_STYLE_PASSWORD;
 		return;
@@ -1381,26 +1384,26 @@ greeter_refused(
 	/* The account cannot log in. */
 	same = strcmp(reason, "locked");
 	if (same == 0) {
-		snprintf(greeter_message, sizeof(greeter_message), "This account is locked.");
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("This account is locked."));
 		return;
 	}
 
 	/* The check took too long. */
 	same = strcmp(reason, "timeout");
 	if (same == 0) {
-		snprintf(greeter_message, sizeof(greeter_message), "That took too long. Try again.");
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("That took too long. Try again."));
 		return;
 	}
 
 	/* A wrong PIN: said, and whether the PIN is still offered is asked. */
 	if (greeter_style == KL_BACKEND_STYLE_PIN) {
-		snprintf(greeter_message, sizeof(greeter_message), "Wrong PIN. Try again.");
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("Wrong PIN. Try again."));
 		greeter_styles_wanted = 1U;
 		return;
 	}
 
 	/* A wrong password. */
-	snprintf(greeter_message, sizeof(greeter_message), "Wrong password. Try again.");
+	snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("Wrong password. Try again."));
 }
 
 /* Takes the lock screen away: the desktop shows, and the idle time starts again. */

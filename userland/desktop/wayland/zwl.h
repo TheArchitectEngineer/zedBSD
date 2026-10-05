@@ -958,6 +958,8 @@ struct zwl_server {
 	int32_t dark;
 	/* The input method the Languages page chose (ime.method, WS154): 0 none, 1 Japanese, 2 SKK. */
 	int32_t ime_method;
+	/* Whether the language of the compositor's text was read once (language.c, WS158); its catalogs are libkeiland's. */
+	unsigned language_set;
 	struct zwl_object *drag;
 	int32_t drag_dx;
 	int32_t drag_dy;

@@ -26,6 +26,7 @@
  * the session.
  */
 
+#include "language.h"
 #include "zwl.h"
 #include "settings-store.h"
 #include "ime.h"
@@ -479,6 +480,7 @@ settings_apply(
 	const char *name,
 	int starting)
 {
+	int32_t language;
 	int differs;
 
 	/* Shows the wallpaper. */
@@ -559,6 +561,15 @@ settings_apply(
 	differs = strcmp(name, "appearance.dark");
 	if (differs == 0) {
 		settings_apply_appearance(server, starting);
+		return;
+	}
+
+	/* Chooses the language of the desktop's text, the compositor's at once (WS158). */
+	differs = strcmp(name, "ui.language");
+	if (differs == 0) {
+		language = 0;
+		settings_apply_number(server, name, &language);
+		zwl_language_set(server, (int)language);
 		return;
 	}
 
