@@ -83,3 +83,7 @@ QEMU の Venus。 やっていない確認は「未実施」と書く。
 - QEMU（T1）: `settings-p017.sh` と、既定の見た目が変わらないことの回帰（C7 の `plan/ws099/tests/c7-contrast.sh`）。compositor の chrome（system bar・title bar・App Home・menu）の dark の見た目はこの試験の PNG で判断する。
 - 実機: 未実施。
 - p017b（残りの app の dark と `KL_APP_THEME` での描き直し）。
+
+## Q1 の判定（2026-10-05）
+
+p017a: T1-195 PASS（QEMU）。dark で bar・title bar・glass・card が暗く文字が明るい（7.8〜14.3）、light は今の見た目（c7 pass=72 fail=0 min 4.68）。p017a は済み、p017b（残りの app の dark と KL_APP_THEME の描き直し）が残る。
