@@ -147,3 +147,7 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 - 提案（Q1・ユーザーの判断）: 完了の条件の「計測」を、Venus の clear だけの数から外し、i915 の実機（p038 の passthrough）での計測に移して、p009 は機能の受け入れ
   （回帰の全部、ws101 の venus.sh、x11-p005 の再試験）で cleared にする。速さが実機でも出なければ別の Phase で原因（acquire の待ち・WSI の copy）を調べる。
 
+
+## Q1 の判断（2026-10-05）
+
+P1 の提案を採る: p009 は機能の受け入れ（code、T1-180 の回帰、ws101 venus、x11-p005 の再試験）で clear できる。1 frame 100 ms 未満の目標は Venus では submit・完了の往復（約 95 ms、F-021・ws068-p010 の計測）が支配し frame in flight では縮まないため、速さの計測は i915 の実機（p038 の passthrough）か描画の重い場面へ移す。実機でも差が無ければ acquire と WSI の copy を新しい Phase で調べる。
