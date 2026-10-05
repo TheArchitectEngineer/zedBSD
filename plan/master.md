@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS153 U15（2026-10-05、P2 の設計 第 5 版、U1 = system 全体の反映）**: system 全体の導入（`/apps/<abi>/`）は特権の helper `app-admin`（setuid root、account-admin と同じ形、管理者の password を毎回、署名・hash・展開を自分で検め直す）が書く。root の口なので承認が要る（p005a の前）[案: account-admin と同じ形で可]。U2〜U14 は未決。
 - **2026-10-05 夕 ユーザーの決定（WS153・libpasskey）**:
   - WS153 U1: 「アプリはシステム全体で入れましょう。単独ユーザが使うタブレットを想定しているからです。また、ユーザ単位のアプリ管理は、ユーザがホームディレクトリで自由にやればいいと思います。」→ app はシステム全体に導入。利用者ごとの app の管理は repository の仕組みでは扱わない（利用者が home で自由に）。U2〜U14 は未決（P2 の設計 第 4.1 版 §0）。
   - libpasskey: 「NFC汎用のデバイスドライバを作るとして、USBと共通のFIDO2層もlibpasskeyで問題ないですか？また、暗号はOpenSSLの呼び出しでいったん作れますか？」→ Q1 の答え: 可。kernel は NFC の汎用の driver（USB CCID の reader から ISO-DEP の APDU の交換を出す）と USB の FIDO の HID の node だけ、libpasskey が transport（CTAPHID・NFC の APDU）の下の層と共通の FIDO2（CTAP2・CBOR・PIN）を持つ。暗号はまず OpenSSL（package の libcrypto、3.5.8）を呼ぶ形で作る。libpasskey は Keiland の側（package の境界）に置くので base の全自前の方針（master-design-policy §2.1）とは衝突しない。自前の暗号は後の候補。
