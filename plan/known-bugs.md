@@ -69,7 +69,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-199](bugs/BUG-199.md) | ws001 の overlay の host 試験が link できない（古い試験） | reproduced（host） / tracking | P1 2026-10-05 | WS001 の試験 |
 | [BUG-200](bugs/BUG-200.md) | plan/ws081/tests/run-pdftouch.sh が壊れている（古い試験） | reproduced（host） / tracking | P2 2026-10-05 | WS081 の試験 |
 | [BUG-201](bugs/BUG-201.md) | Windows の QEMU（Venus）で desktop がフリーズする | reproduced（ユーザー、1 回） / tracking | ユーザー 2026-10-05 夜 | WS085 |
-| [BUG-202](bugs/BUG-202.md) | 5330 の実機で起動の途中に fatal「scheduler queue underflow」（最初の SCI の直後） | reproduced（実機） / tracking | ユーザー 2026-10-05 夜 | 未定（WS174） |
+| [BUG-202](bugs/BUG-202.md) | 5330 の起動中の scheduler queue underflow / idle thread sleeps | reproduced（実機） / tracking（修正build PASS、userの実機確認待ち） | ユーザー 2026-10-05〜06 | ws073-p055 / q779: LPSSのD0復帰10ms待ちをidleが実行。device discoveryを通常boot_workerへ移動（801393ad）、amd64 warning/error 0。統合・UAT待ち |
 | [BUG-203](bugs/BUG-203.md) | Phone の app で日本語を入力できない（IME に対応していない見込み） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS170（Phone）・WS095（IME）。2026-10-06 P1 修正済み（libkeiland の kl_field に text-input）、T1 の確認待ち |
 | [BUG-204](bugs/BUG-204.md) | Phone の app で画面 keyboard の日本語のフリック入力が無視される | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS170・WS102（画面 keyboard）。BUG-203 と同じ修正、T1 の確認待ち |
 | [BUG-205](bugs/BUG-205.md) | app 全般で太字の font が美しくない（anti-alias が regular と違って見える） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS090（widget の library）・libtruetype。2026-10-06 P1 修正済み（libtruetype の vector の太字）、T1 の確認待ち |
