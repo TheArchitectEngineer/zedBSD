@@ -35,6 +35,8 @@ static uint32_t emit_layout_type(struct emit_state *state, const struct glsl_typ
 static void emit_layout_members(struct emit_state *state, uint32_t structure, unsigned member, const struct glsl_type *type, uint32_t offset, const char *name, unsigned row_major);
 static uint32_t emit_layout_row_major_array(struct emit_state *state, const struct glsl_type *type);
 static void emit_uniform_block(struct emit_state *state, struct glsl_symbol *symbol);
+static void emit_directions(struct emit_state *state);
+static uint32_t emit_turned(struct emit_state *state, struct glsl_symbol *symbol, uint32_t zed, unsigned component, unsigned scale);
 static uint32_t emit_constant(struct emit_state *state, const struct glsl_constant *constant);
 static uint32_t emit_constant_part(struct emit_state *state, const struct glsl_type *type, const union glsl_scalar *values, unsigned *at);
 static uint32_t emit_zero(struct emit_state *state, const struct glsl_type *type);
@@ -1041,7 +1043,7 @@ emit_globals(
 		/* Where it lives. */
 		switch (symbol->where) {
 		case GLSL_VAR_UNIFORM:
-			if (symbol->type->kind == GLSL_KIND_SAMPLER)
+			if (state->uniforms[symbol->uniform].sampler != 0U)
 				emit_sampler(state, symbol);
 			break;
 		case GLSL_VAR_INPUT:
@@ -1076,6 +1078,107 @@ emit_globals(
 			break;
 		}
 	}
+
+	/* gl_FragCoord and gl_PointCoord in GL's directions (ws068-p004). */
+	emit_directions(state);
+}
+
+/*
+ * Turns a fragment shader's gl_FragCoord.y and gl_PointCoord.t into GL's
+ * directions (ws068-p004): main starts by reading each from its input and
+ * keeping a + b * y and c + d * t, with (a, b, c, d) the hidden uniform
+ * gl_ZedFragment that libGLESv2 fills at each draw, in a variable of its
+ * own, which the code then reads in place of the input.
+ */
+static void
+emit_directions(
+	struct emit_state *state)
+{
+	const struct glsl_type *vec4;
+	struct glsl_symbol *zed;
+	struct glsl_symbol *symbol;
+	uint32_t operands[2];
+	uint32_t target;
+	uint32_t pointer;
+	uint32_t value;
+
+	/* Only a fragment shader that reads either. */
+	zed = state->shader->zed_fragment;
+	if (zed == NULL || !zed->used || state->members[zed->uniform] < 0)
+		return;
+
+	/* The hidden uniform's value, from the default block. */
+	vec4 = glsl_type_vector(GLSL_BASE_FLOAT, 4U);
+	target = emit_layout_type(state, vec4);
+	operands[0] = state->block;
+	operands[1] = glsl_emit_int(state, state->members[zed->uniform]);
+	pointer = glsl_emit_op(state, SPV_OP_ACCESS_CHAIN, glsl_emit_pointer(state, SPV_STORAGE_UNIFORM, target), operands, 2U);
+	value = glsl_emit_op(state, SPV_OP_LOAD, target, &pointer, 1U);
+
+	/* Each of the two the code reads, turned. */
+	for (symbol = state->shader->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_INPUT)
+			continue;
+
+		/* gl_FragCoord.y: a + b * y. */
+		if (symbol->builtin == GLSL_BUILTIN_FRAG_COORD) {
+			symbol->id = emit_turned(state, symbol, value, 1U, 0U);
+			symbol->id_storage = SPV_STORAGE_FUNCTION;
+		}
+
+		/* gl_PointCoord.t: c + d * t. */
+		if (symbol->builtin == GLSL_BUILTIN_POINT_COORD) {
+			symbol->id = emit_turned(state, symbol, value, 1U, 2U);
+			symbol->id_storage = SPV_STORAGE_FUNCTION;
+		}
+	}
+}
+
+/*
+ * Reads a built-in input vector, replaces one component v with
+ * zed[scale] + zed[scale + 1] * v, and returns the Function variable of
+ * main the result is stored in.
+ */
+static uint32_t
+emit_turned(
+	struct emit_state *state,
+	struct glsl_symbol *symbol,
+	uint32_t zed,
+	unsigned component,
+	unsigned scale)
+{
+	struct emit_value input;
+	struct emit_value factors;
+	uint32_t parts[4];
+	uint32_t operands[2];
+	uint32_t scalar;
+	uint32_t variable;
+	unsigned count;
+	unsigned index;
+
+	/* The input as it is. */
+	input.type = symbol->type;
+	input.id = glsl_emit_op(state, SPV_OP_LOAD, glsl_emit_type(state, symbol->type), &symbol->id, 1U);
+	factors.type = glsl_type_vector(GLSL_BASE_FLOAT, 4U);
+	factors.id = zed;
+
+	/* Its components, the one turned: zed[scale] + zed[scale + 1] * v. */
+	count = symbol->type->components;
+	scalar = glsl_emit_type(state, glsl_type_scalar(GLSL_BASE_FLOAT));
+	for (index = 0U; index < count; index++)
+		parts[index] = glsl_emit_extract(state, input, index);
+	operands[0] = glsl_emit_extract(state, factors, scale + 1U);
+	operands[1] = parts[component];
+	operands[1] = glsl_emit_op(state, SPV_OP_F_MUL, scalar, operands, 2U);
+	operands[0] = glsl_emit_extract(state, factors, scale);
+	parts[component] = glsl_emit_op(state, SPV_OP_F_ADD, scalar, operands, 2U);
+
+	/* The vector again, kept in a variable of main. */
+	variable = emit_variable(state, symbol->type);
+	operands[0] = variable;
+	operands[1] = glsl_emit_op(state, SPV_OP_COMPOSITE_CONSTRUCT, glsl_emit_type(state, symbol->type), parts, count);
+	glsl_words_add(state->module, &state->module->body, SPV_OP_STORE, operands, 2U);
+	return variable;
 }
 
 /* Declares the default uniform block with the uniforms this stage uses, at the link's offsets. */
@@ -1096,7 +1199,7 @@ emit_block(
 		for (symbol = state->shader->globals; symbol != NULL; symbol = symbol->next_global) {
 			if (!symbol->used || symbol->where != GLSL_VAR_UNIFORM || symbol->uniform != index)
 				continue;
-			if (symbol->type->kind == GLSL_KIND_SAMPLER || count + 1U >= GLSL_MAX_OPERANDS)
+			if (state->uniforms[index].sampler != 0U || count + 1U >= GLSL_MAX_OPERANDS)
 				continue;
 			state->members[index] = (int)count;
 			operands[count + 1U] = emit_layout_type(state, symbol->type);
@@ -2190,8 +2293,8 @@ emit_path(
 			return 0;
 		}
 
-		/* A uniform other than a sampler is a member of the default block. */
-		if (symbol->where == GLSL_VAR_UNIFORM && symbol->type->kind != GLSL_KIND_SAMPLER) {
+		/* A uniform other than a sampler (or an array of them) is a member of the default block. */
+		if (symbol->where == GLSL_VAR_UNIFORM && state->uniforms[symbol->uniform].sampler == 0U) {
 			path->base = state->block;
 			path->storage = SPV_STORAGE_UNIFORM;
 			path->block = EMIT_LAYOUT_STD140;

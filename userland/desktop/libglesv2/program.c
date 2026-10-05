@@ -83,6 +83,7 @@ static int program_flat_inputs(const uint32_t *code, size_t words);
 static int program_glsl_blocks(struct gles_program *program, const struct glsl_program *linked, char *log);
 static int program_spirv_blocks(struct gles_program *program, const struct gles_spirv *spirv, unsigned stage, char *log);
 static int program_merge(struct gles_program *program, struct gles_spirv *spirv, char *log);
+static int program_builtin_uniform(struct gles_program *program, const struct gles_uniform *uniform);
 static int program_layout(struct gles_state *state, struct gles_program *program);
 static int program_module(struct gles_state *state, const uint32_t *code, size_t words, VkShaderModule *module);
 static void program_unlink(struct gles_state *state, struct gles_program *program);
@@ -1540,10 +1541,10 @@ glGetUniformLocation(
 	memcpy(base, uniform, length);
 	base[length] = '\0';
 
-	/* The uniform of that name (a named block's members have no location), and an element it has. */
+	/* The uniform of that name (a named block's members and the built-ins have no location), and an element it has. */
 	for (index = 0U; index < program->uniform_count; index++) {
 		entry = &program->uniforms[index];
-		if (entry->block >= 0)
+		if (entry->block >= 0 || entry->location < 0)
 			continue;
 		differs = strcmp(entry->name, base);
 		if (differs != 0)
@@ -3229,6 +3230,7 @@ program_merge(
 	unsigned index;
 	unsigned other;
 	GLint element;
+	int builtin;
 	int differs;
 
 	/* Each uniform of the stage. */
@@ -3252,7 +3254,10 @@ program_merge(
 			continue;
 		}
 
-		/* A new one, with locations for its elements. */
+		/* A built-in uniform libGLESv2 fills (ws068-p004): no location, and gl_ZedFragment not listed at all. */
+		builtin = program_builtin_uniform(program, uniform);
+
+		/* A new one, with locations for its elements (none for a built-in). */
 		uniforms = realloc(program->uniforms, (program->uniform_count + 1U) * sizeof(*uniforms));
 		if (uniforms == NULL)
 			return -1;
@@ -3262,17 +3267,22 @@ program_merge(
 			return -1;
 		program->locations = locations;
 		uniform->location = (GLint)program->location_count;
-		for (element = 0; element < uniform->size; element++) {
+		if (builtin)
+			uniform->location = -1;
+		for (element = 0; !builtin && element < uniform->size; element++) {
 			locations[program->location_count].uniform = program->uniform_count;
 			locations[program->location_count].element = (unsigned)element;
 			program->location_count++;
 		}
 
-		/* The uniform, a leaf of the default block or a sampler. */
-		program->uniforms[program->uniform_count] = *uniform;
-		program->uniforms[program->uniform_count].block = -1;
-		program->uniforms[program->uniform_count].row_major = 0;
-		program->uniform_count++;
+		/* The uniform, a leaf of the default block or a sampler (each element on unit 0 until glUniform1i). */
+		if (builtin != 2) {
+			program->uniforms[program->uniform_count] = *uniform;
+			program->uniforms[program->uniform_count].block = -1;
+			program->uniforms[program->uniform_count].row_major = 0;
+			memset(program->uniforms[program->uniform_count].units, 0, sizeof(uniform->units));
+			program->uniform_count++;
+		}
 
 		/* A leaf of the block makes the block at least that large. */
 		if (uniform->sampler)
@@ -3298,6 +3308,41 @@ program_merge(
 	}
 
 	/* Succeeded: the stage's uniforms are in. */
+	return 0;
+}
+
+/*
+ * Notes a built-in uniform of the default block that libGLESv2 fills at
+ * each draw (ws068-p004): returns 2 for gl_ZedFragment (hidden: not one of
+ * the program's uniforms), 1 for a member of gl_DepthRange (listed, but
+ * with no location), 0 for an application's uniform.
+ */
+static int
+program_builtin_uniform(
+	struct gles_program *program,
+	const struct gles_uniform *uniform)
+{
+	static const char *const ranges[3] = { "gl_DepthRange.near", "gl_DepthRange.far", "gl_DepthRange.diff" };
+	unsigned index;
+	int differs;
+
+	/* The hidden vec4. */
+	differs = strcmp(uniform->name, "gl_ZedFragment");
+	if (differs == 0) {
+		program->zed_fragment = (int32_t)uniform->offset;
+		return 2;
+	}
+
+	/* The depth range's members. */
+	for (index = 0U; index < 3U; index++) {
+		differs = strcmp(uniform->name, ranges[index]);
+		if (differs == 0) {
+			program->depth_range[index] = (int32_t)uniform->offset;
+			return 1;
+		}
+	}
+
+	/* An application's uniform. */
 	return 0;
 }
 
@@ -3337,7 +3382,7 @@ program_layout(
 		buffer = program_buffer_sampler(program->uniforms[index].type);
 		if (buffer)
 			bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-		bindings[count].descriptorCount = 1U;
+		bindings[count].descriptorCount = (uint32_t)program->uniforms[index].size;
 		bindings[count].stageFlags = program->stages;
 		count++;
 	}
@@ -3460,6 +3505,10 @@ program_unlink(
 	program->location_count = 0U;
 	program->uniform_data = NULL;
 	program->uniform_size = 0U;
+	program->zed_fragment = -1;
+	program->depth_range[0] = -1;
+	program->depth_range[1] = -1;
+	program->depth_range[2] = -1;
 	program->attribute_count = 0U;
 	program->serial = 0U;
 	program->linked = 0;
@@ -3510,15 +3559,16 @@ program_uniform(
 		return;
 	}
 
-	/* A sampler takes one texture unit, as an int. */
+	/* A sampler takes one texture unit an element, as ints (an array's from the element named on, ws068-p004). */
 	if (uniform->sampler) {
-		if (integers != 1 || components != 1U) {
+		if (integers != 1 || components != 1U || (count > 1 && uniform->size == 1)) {
 			gles_error(context, GL_INVALID_OPERATION);
 			return;
 		}
 
-		/* The unit. */
-		uniform->unit = ((const GLint *)values)[0];
+		/* The units. */
+		for (index = 0; index < count && element + (unsigned)index < (unsigned)uniform->size; index++)
+			uniform->units[element + (unsigned)index] = ((const GLint *)values)[index];
 		return;
 	}
 
@@ -3700,12 +3750,12 @@ program_get_uniform(
 	place = &program->locations[location];
 	uniform = &program->uniforms[place->uniform];
 
-	/* A sampler's value is its unit. */
+	/* A sampler's value is its element's unit. */
 	if (uniform->sampler) {
 		if (kind == 0)
-			((GLfloat *)params)[0] = (GLfloat)uniform->unit;
+			((GLfloat *)params)[0] = (GLfloat)uniform->units[place->element];
 		else
-			((GLint *)params)[0] = uniform->unit;
+			((GLint *)params)[0] = uniform->units[place->element];
 		return;
 	}
 

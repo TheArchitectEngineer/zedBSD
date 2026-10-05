@@ -533,6 +533,27 @@ glsl_type_contains_sampler(
 }
 
 /*
+ * Returns how many texture units a uniform of a type takes: 1 for a
+ * sampler, the length for an array of samplers (ws068-p004), 0 for any
+ * other type (a struct with a sampler member is not supported).
+ */
+unsigned
+glsl_type_sampler_units(
+	const struct glsl_type *type)
+{
+	/* A sampler. */
+	if (type->kind == GLSL_KIND_SAMPLER)
+		return 1U;
+
+	/* An array of samplers: one unit an element. */
+	if (type->kind == GLSL_KIND_ARRAY && type->element->kind == GLSL_KIND_SAMPLER)
+		return type->length;
+
+	/* Anything else takes none. */
+	return 0U;
+}
+
+/*
  * Returns how many scalars a value of a type has (the length of its
  * flattened constant).
  */

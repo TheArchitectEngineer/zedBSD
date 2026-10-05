@@ -52,6 +52,7 @@ static float draw_component(const unsigned char *element, GLenum type, GLboolean
 static uint32_t draw_integer(const unsigned char *element, GLenum type, GLint component);
 static unsigned draw_sampler_shape(GLenum type);
 static unsigned draw_sampler_kind(GLenum type);
+static void draw_builtin_uniforms(struct gles_state *state, struct gles_program *program, const struct gles_target *target);
 static int draw_texture_matches(const struct gles_texture *texture, unsigned kind);
 static void draw_raster(struct gles_state *state, const struct gles_target *target, uint32_t topology, struct gles_raster *raster);
 static uint32_t draw_channels(const struct gles_state *state, unsigned index);
@@ -1577,7 +1578,7 @@ draw_program(
 	}
 
 	/* The descriptors. */
-	set = gles_draw_descriptors(state, blocks, capture_buffer, NULL, &dynamic_offset);
+	set = gles_draw_descriptors(state, &target, blocks, capture_buffer, NULL, &dynamic_offset);
 	if (set == VK_NULL_HANDLE) {
 		gles_report("the descriptors", -1);
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -3077,6 +3078,54 @@ gles_draw_blocks(
 }
 
 /*
+ * Writes the built-in uniforms a program's stages read into its uniform
+ * block (ws068-p004): gl_ZedFragment, which turns gl_FragCoord.y into
+ * height - y on framebuffer 0 (drawn upside down, in Vulkan's rows) and
+ * gl_PointCoord.t into 1 - t on a framebuffer object (drawn in GL's rows),
+ * and gl_DepthRange from glDepthRangef.  A dispatch has no target.
+ */
+static void
+draw_builtin_uniforms(
+	struct gles_state *state,
+	struct gles_program *program,
+	const struct gles_target *target)
+{
+	float turn[4];
+	float range[3];
+	unsigned index;
+
+	/* No block, nothing to write. */
+	if (program->uniform_data == NULL)
+		return;
+
+	/* The directions: (a, b) for y, (c, d) for t. */
+	if (program->zed_fragment >= 0 && target != NULL) {
+		turn[0] = 0.0f;
+		turn[1] = 1.0f;
+		turn[2] = 1.0f;
+		turn[3] = -1.0f;
+		if (target->flip) {
+			turn[0] = (float)target->extent.height;
+			turn[1] = -1.0f;
+			turn[2] = 0.0f;
+			turn[3] = 1.0f;
+		}
+
+		/* Into the block. */
+		memcpy(program->uniform_data + program->zed_fragment, turn, sizeof(turn));
+	}
+
+	/* The depth range's near, far and diff. */
+	range[0] = state->depth_near;
+	range[1] = state->depth_far;
+	range[2] = state->depth_far - state->depth_near;
+	for (index = 0U; index < 3U; index++) {
+		if (program->depth_range[index] >= 0)
+			memcpy(program->uniform_data + program->depth_range[index], &range[index], sizeof(range[index]));
+	}
+}
+
+/*
  * Returns a descriptor set for the current program: its uniform block
  * (dynamic: the offset of this draw's copy in the stream is returned in
  * *offset), each sampler's texture (black when the unit has none that
@@ -3089,6 +3138,7 @@ gles_draw_blocks(
 VkDescriptorSet
 gles_draw_descriptors(
 	struct gles_state *state,
+	const struct gles_target *target,
 	const VkDescriptorBufferInfo *blocks,
 	const VkDescriptorBufferInfo *capture,
 	const VkDescriptorBufferInfo *storages,
@@ -3102,6 +3152,8 @@ gles_draw_descriptors(
 	VkDescriptorImageInfo images[GLES_UNITS];
 	VkBufferView texel_views[GLES_UNITS];
 	uint32_t bindings[GLES_UNITS];
+	uint32_t elements[GLES_UNITS];
+	uint32_t element;
 	struct gles_set_cache *cache;
 	struct gles_program *program;
 	struct gles_texture *texture;
@@ -3121,11 +3173,12 @@ gles_draw_descriptors(
 	int differs;
 	VkResult result;
 
-	/* This draw's copy of the uniform block. */
+	/* This draw's copy of the uniform block, with the built-in uniforms of its target and depth range (ws068-p004). */
 	program = state->program;
 	cache = &state->set_cache;
 	*offset = 0U;
 	memset(&block, 0, sizeof(block));
+	draw_builtin_uniforms(state, program, target);
 	if (program->uniform_data != NULL) {
 		data = gles_stream(state, program->uniform_size, (size_t)state->limits.minUniformBufferOffsetAlignment,
 				   &block.buffer, &place);
@@ -3143,76 +3196,82 @@ gles_draw_descriptors(
 	for (index = 0U; index < program->uniform_count && samplers < GLES_UNITS; index++) {
 		if (!program->uniforms[index].sampler)
 			continue;
-		shape = draw_sampler_shape(program->uniforms[index].type);
 		kind = draw_sampler_kind(program->uniforms[index].type);
-		unit = program->uniforms[index].unit;
 
-		/* A buffer texture: the view of its buffer's texels (zeros without one). */
-		if (shape == GLES_SHAPE_BUFFER) {
+		/* Each element of an array of samplers on its own unit (ws068-p004). */
+		for (element = 0U; element < (uint32_t)program->uniforms[index].size && samplers < GLES_UNITS; element++) {
+			unit = program->uniforms[index].units[element];
+			shape = draw_sampler_shape(program->uniforms[index].type);
+
+			/* A buffer texture: the view of its buffer's texels (zeros without one). */
+			if (shape == GLES_SHAPE_BUFFER) {
+				texture = NULL;
+				if (unit >= 0 && (unsigned)unit < GLES_UNITS)
+					texture = state->buffer_units[unit];
+				texel_views[samplers] = gles_texture_buffer_view(state, texture, kind);
+				if (texel_views[samplers] == VK_NULL_HANDLE)
+					return VK_NULL_HANDLE;
+				bindings[samplers] = program->uniforms[index].binding;
+				elements[samplers] = element;
+				samplers++;
+				continue;
+			}
+
+			/* The unit's texture of the sampler's target, and the unit's sampler object's sampling (NULL: the texture's own). */
 			texture = NULL;
-			if (unit >= 0 && (unsigned)unit < GLES_UNITS)
-				texture = state->buffer_units[unit];
-			texel_views[samplers] = gles_texture_buffer_view(state, texture, kind);
-			if (texel_views[samplers] == VK_NULL_HANDLE)
+			sampling = NULL;
+			if (unit >= 0 && (unsigned)unit < GLES_UNITS) {
+				texture = state->units[unit];
+				if (shape == GLES_SHAPE_CUBE)
+					texture = state->cube_units[unit];
+				if (shape == GLES_SHAPE_3D)
+					texture = state->volume_units[unit];
+				if (shape == GLES_SHAPE_ARRAY)
+					texture = state->array_units[unit];
+				if (shape == GLES_SHAPE_RECT)
+					texture = state->rect_units[unit];
+				if (shape == GLES_SHAPE_MS)
+					texture = state->ms_units[unit];
+				if (state->unit_samplers[unit] != NULL)
+					sampling = &state->unit_samplers[unit]->sampling;
+			}
+
+			/* One that cannot be sampled so, or holds texels of another kind than the sampler reads, reads as black (a rectangle's as a 2D texture's). */
+			status = gles_texture_complete(texture, sampling);
+			if (status)
+				status = draw_texture_matches(texture, kind);
+			if (!status && shape == GLES_SHAPE_RECT)
+				shape = GLES_SHAPE_2D;
+			if (!status && shape == GLES_SHAPE_MS) {
+				texture = gles_texture_black_ms(state, kind);
+				sampling = NULL;
+			} else if (!status) {
+				texture = gles_texture_black(state, shape, kind);
+				sampling = NULL;
+			}
+
+			/* A multisample sampler reads a multisample texture only. */
+			if (shape == GLES_SHAPE_MS && texture != NULL && texture->samples <= 1U)
+				texture = gles_texture_black_ms(state, kind);
+
+			/* The texture's image, up to date. */
+			if (texture == NULL)
 				return VK_NULL_HANDLE;
+			status = gles_texture_sync(state, texture);
+			if (status != 0)
+				return VK_NULL_HANDLE;
+			texture->used = state->frame;
+
+			/* The image and its sampler. */
+			images[samplers].sampler = gles_sampler_get(state, texture, sampling);
+			images[samplers].imageView = texture->view;
+			images[samplers].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			bindings[samplers] = program->uniforms[index].binding;
+			elements[samplers] = element;
+			if (images[samplers].sampler == VK_NULL_HANDLE)
+				return VK_NULL_HANDLE;
 			samplers++;
-			continue;
 		}
-
-		/* The unit's texture of the sampler's target, and the unit's sampler object's sampling (NULL: the texture's own). */
-		texture = NULL;
-		sampling = NULL;
-		if (unit >= 0 && (unsigned)unit < GLES_UNITS) {
-			texture = state->units[unit];
-			if (shape == GLES_SHAPE_CUBE)
-				texture = state->cube_units[unit];
-			if (shape == GLES_SHAPE_3D)
-				texture = state->volume_units[unit];
-			if (shape == GLES_SHAPE_ARRAY)
-				texture = state->array_units[unit];
-			if (shape == GLES_SHAPE_RECT)
-				texture = state->rect_units[unit];
-			if (shape == GLES_SHAPE_MS)
-				texture = state->ms_units[unit];
-			if (state->unit_samplers[unit] != NULL)
-				sampling = &state->unit_samplers[unit]->sampling;
-		}
-
-		/* One that cannot be sampled so, or holds texels of another kind than the sampler reads, reads as black (a rectangle's as a 2D texture's). */
-		status = gles_texture_complete(texture, sampling);
-		if (status)
-			status = draw_texture_matches(texture, kind);
-		if (!status && shape == GLES_SHAPE_RECT)
-			shape = GLES_SHAPE_2D;
-		if (!status && shape == GLES_SHAPE_MS) {
-			texture = gles_texture_black_ms(state, kind);
-			sampling = NULL;
-		} else if (!status) {
-			texture = gles_texture_black(state, shape, kind);
-			sampling = NULL;
-		}
-
-		/* A multisample sampler reads a multisample texture only. */
-		if (shape == GLES_SHAPE_MS && texture != NULL && texture->samples <= 1U)
-			texture = gles_texture_black_ms(state, kind);
-
-		/* The texture's image, up to date. */
-		if (texture == NULL)
-			return VK_NULL_HANDLE;
-		status = gles_texture_sync(state, texture);
-		if (status != 0)
-			return VK_NULL_HANDLE;
-		texture->used = state->frame;
-
-		/* The image and its sampler. */
-		images[samplers].sampler = gles_sampler_get(state, texture, sampling);
-		images[samplers].imageView = texture->view;
-		images[samplers].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		bindings[samplers] = program->uniforms[index].binding;
-		if (images[samplers].sampler == VK_NULL_HANDLE)
-			return VK_NULL_HANDLE;
-		samplers++;
 	}
 
 	/* The set of the draw before, when it describes the same things. */
@@ -3314,6 +3373,7 @@ gles_draw_descriptors(
 		writes[count].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writes[count].dstSet = set;
 		writes[count].dstBinding = bindings[index];
+		writes[count].dstArrayElement = elements[index];
 		writes[count].descriptorCount = 1U;
 		if (texel_views[index] != VK_NULL_HANDLE) {
 			writes[count].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;

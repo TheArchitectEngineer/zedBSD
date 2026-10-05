@@ -3364,6 +3364,11 @@ check_use(
 			node->symbol->used = 1U;
 			if (node->symbol->block != NULL)
 				node->symbol->block->used = 1U;
+
+			/* gl_FragCoord and gl_PointCoord read the hidden uniform that gives GL's directions (ws068-p004). */
+			if ((node->symbol->builtin == GLSL_BUILTIN_FRAG_COORD || node->symbol->builtin == GLSL_BUILTIN_POINT_COORD) &&
+			    shader->zed_fragment != NULL)
+				shader->zed_fragment->used = 1U;
 		}
 
 		/* A user function called. */
