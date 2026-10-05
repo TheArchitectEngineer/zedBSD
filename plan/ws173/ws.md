@@ -26,3 +26,9 @@ Q1 の問い「実機をベアメタル起動したときに、SSH越しにマ�
 | p005 | 素の 5330 で AAT を行い、結果を記録 | T1 か専任 | planning | p001〜p004、素の起動の方法（ユーザーの判断） |
 
 - 2026-10-05 Q1: p001・p002（P1）は T1-200 で aat-p002 PASS、p003（P2 の host の道具）は T1-200c で PASS（QEMU、注入・撮影・転送・log の待ち）。AAT の土台は QEMU で動く。残り: p004 の項目と scenarios、素の 5330 での最初の実行（ユーザーが USB で起動）。
+
+## シナリオの設計（2026-10-05 ユーザー）
+
+ユーザー「AATはテストシナリオのドキュメントを元にエージェントが操作できるように設計してください。特殊な設計というわけではないですが。シナリオテスティングのシナリオは、ソースコードと同じように、我々の大きな財産です。tests/以下に整理して管理しましょう。AATにおいて、どのシナリオを実行するかは、考えてやっていきたいですね。OSの機能性ごととか、アプリごとの回帰試験のシナリオとか。新規実装した場合は、シナリオテストの合格を目指す、テスト駆動を取り入れるとか。リグレッションの範囲を考えてシナリオを選んだり、あるシナリオ集合に名前をつけてたまにフル回帰テストをしたり。」
+
+→ Q1 が docs を先に書いた: [docs/reference/scenario-tests.md](../../docs/reference/scenario-tests.md)（形式・suite・選び方・実行）と [tests/README.md](../../tests/README.md)。シナリオは top の `tests/scenarios/{os,desktop,apps}/` の Markdown（header に id・status（draft・active・retired）・areas・paths・machine・human、本文は Setup・Steps（Expect つき、pixel の座標を書かない）・Pass・Notes）、suite は `tests/suites/<name>.suite`（smoke・full・area・app・hardware）。新しい機能は draft のシナリオを先に書いて合格で active（テスト駆動）、変更は paths で選ぶ、bug は再現のシナリオを足す、定期とリリースの前に full。p004 は plan/tools/aat/scenarios/ でなくこの形で tests/ に作る。p006 として「シナリオの選択の helper（git の範囲 → paths）と suite の実行の runner」。

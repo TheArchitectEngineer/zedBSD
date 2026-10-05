@@ -39,3 +39,7 @@ structures, constants, errors and permissions that programs and people use
 - [Structured block and file command output](block-command-output.md): diskpart machine records, blkid export and stat formats.
 
 - [Regular-file image formatters](image-formatters.md): UFS/ZEDSWAP2 initialization and read-only pristine verification.
+
+## Testing
+
+- [Scenario tests](scenario-tests.md): the scenario format under tests/, suites, choosing what to run, and the Agent Acceptance Test.
