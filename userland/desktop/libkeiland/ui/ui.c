@@ -86,10 +86,21 @@ struct ui_key {
 	unsigned flags;
 };
 
-/* A key pressed for the widget that had the focus then (a Tab after it moves the focus on), and whether that widget took it. */
+/*
+ * A key pressed for the widget that had the focus then (a Tab after it
+ * moves the focus on), and whether that widget took it.  Since KL_VERSION
+ * 38 (BUG-203) it may instead be a text an input method or the on-screen
+ * keyboard sent for that widget (kind): text to put in place of the
+ * selection, or bytes to delete around it.  Keys and texts wait in one
+ * queue so that a text field carries them out in the order they came.
+ */
 struct ui_press {
+	unsigned kind;
 	uint32_t code;
 	unsigned modifiers;
+	char text[KL_WINDOW_TEXT_MAX];
+	uint32_t before;
+	uint32_t after;
 	struct ui_key target;
 	int taken;
 };
@@ -149,6 +160,27 @@ struct kl_ui {
 
 	/* The keyboard inset last acted on (ui_inset's serial, ws102-p015). */
 	unsigned inset_serial;
+
+	/*
+	 * The text an input method is composing (BUG-203): the text, its
+	 * cursor's byte offsets (-1 when hidden), and the widget that had the
+	 * focus when it came, which shows it at its caret.  An empty text is
+	 * none; the widget drawn without the focus drops it.
+	 */
+	char preedit[KL_WINDOW_TEXT_MAX];
+	int32_t preedit_begin;
+	int32_t preedit_end;
+	struct ui_key preedit_target;
+
+	/*
+	 * Whether the focused widget of the frame being drawn, and of the frame
+	 * shown, takes text from an input method, and its caret's rectangle
+	 * (keiui_ui_text_caret); kl_ui_end moves the drawing's to the shown.
+	 */
+	int text_drawing;
+	struct kl_rect text_drawing_caret;
+	int text_shown;
+	struct kl_rect text_shown_caret;
 };
 
 /*
@@ -524,8 +556,9 @@ kl_ui_begin(
 			(void)kl_scroll_step(ui->shown[index].scroll, now_us);
 	}
 
-	/* The frame being drawn records its parts from none. */
+	/* The frame being drawn records its parts from none, and no widget of it takes text yet. */
 	ui->drawing_count = 0;
+	ui->text_drawing = 0;
 }
 
 /*
@@ -643,6 +676,10 @@ kl_ui_end(
 	ui->clicked_double = 0;
 	ui->clicked_touch = 0;
 
+	/* Whether the frame now shown has a focused widget that takes text, and where its caret is. */
+	ui->text_shown = ui->text_drawing;
+	ui->text_shown_caret = ui->text_drawing_caret;
+
 	/*
 	 * The oldest key no widget took is the application's; the keys after
 	 * it wait for the next frame, so that they are carried out after it
@@ -658,6 +695,10 @@ kl_ui_end(
 			kept++;
 			continue;
 		}
+
+		/* A text no widget took has nowhere else to go (the focused widget takes no text): it is dropped. */
+		if (ui->keys[index].kind != KEIUI_INPUT_KEY)
+			continue;
 
 		/* The first is the application's. */
 		delivered = 1;
@@ -798,6 +839,7 @@ kl_ui_key(
 	}
 
 	/* The key waits for the focused widget. */
+	ui->keys[ui->key_count].kind = KEIUI_INPUT_KEY;
 	ui->keys[ui->key_count].code = key;
 	ui->keys[ui->key_count].modifiers = modifiers;
 	ui->keys[ui->key_count].target = ui->focus;
@@ -872,6 +914,93 @@ kl_ui_pointer(
 }
 
 /*
+ * Gives the widget with the focus a text an input method or the on-screen
+ * keyboard sent (a KL_WINDOW_TEXT_* input of the window, KL_VERSION 38).
+ *
+ * A text to commit and bytes to delete wait with the keys, in the order
+ * they came, for the next frame's focused widget; a widget that takes no
+ * text lets them go.  The text being composed replaces the one before and
+ * shows at the focused widget's caret.  Returns 1 when the window must
+ * draw again.
+ */
+int
+kl_ui_text(
+	struct kl_ui *ui,
+	const struct kl_window_event *event)
+{
+	struct ui_press *press;
+
+	/* The text being composed replaces the one before, for the widget with the focus now. */
+	if (event->kind == KL_WINDOW_TEXT_PREEDIT) {
+		memcpy(ui->preedit, event->text, sizeof(ui->preedit));
+		ui->preedit[sizeof(ui->preedit) - 1U] = '\0';
+		ui->preedit_begin = event->begin;
+		ui->preedit_end = event->end;
+		ui->preedit_target = ui->focus;
+		return 1;
+	}
+
+	/* Only a text to commit and bytes to delete wait for the widget; another input is not a text. */
+	if (event->kind != KL_WINDOW_TEXT_COMMIT && event->kind != KL_WINDOW_TEXT_DELETE)
+		return 0;
+
+	/* Without a focused widget, or with the queue full, the text has nowhere to go. */
+	if (!ui->focus.valid || ui->key_count == UI_KEYS)
+		return 0;
+
+	/* The text, or the bytes to delete, after the keys before it. */
+	press = &ui->keys[ui->key_count];
+	memset(press, 0, sizeof(*press));
+	press->kind = KEIUI_INPUT_COMMIT;
+	if (event->kind == KL_WINDOW_TEXT_DELETE)
+		press->kind = KEIUI_INPUT_DELETE;
+	memcpy(press->text, event->text, sizeof(press->text));
+	press->text[sizeof(press->text) - 1U] = '\0';
+	press->before = event->before;
+	press->after = event->after;
+
+	/*
+	 * It is for the widget that has the focus now; the count makes it wait
+	 * for the next frame, like a key, and keeps the window drawing.
+	 */
+	press->target = ui->focus;
+	ui->key_count++;
+
+	/* Succeeded: the next frame carries it out. */
+	return 1;
+}
+
+/*
+ * Tells whether the focused widget of the frame shown takes text from an
+ * input method (a text field), with its caret's rectangle in the window.
+ *
+ * The application asks for the window's text input while it does
+ * (kl_window_text_input) and tells where the caret is
+ * (kl_window_text_cursor), so that an input method's candidates and the
+ * on-screen keyboard stay out of its way.  caret may be NULL.
+ */
+int
+kl_ui_text_wanted(
+	const struct kl_ui *ui,
+	struct kl_rect *caret)
+{
+	/* No widget has the focus any more. */
+	if (!ui->focus.valid)
+		return 0;
+
+	/* The focused widget of the frame shown takes no text. */
+	if (!ui->text_shown)
+		return 0;
+
+	/* The caret, when the caller wants it. */
+	if (caret != NULL)
+		*caret = ui->text_shown_caret;
+
+	/* Succeeded: the focused widget takes text. */
+	return 1;
+}
+
+/*
  * Records a widget with its flags (KEIUI_*) and reports what the input did
  * to it (KL_HIT_* bits, with KL_HIT_FOCUSED).
  */
@@ -929,6 +1058,12 @@ keiui_ui_take_key(
 		same = ui_target(&ui->keys[slot].target, id, index);
 		if (!same)
 			continue;
+
+		/* A text sent for it is not a key: only a widget that edits text takes it (keiui_ui_take_input). */
+		if (ui->keys[slot].kind != KEIUI_INPUT_KEY)
+			return 0;
+
+		/* The key, when the widget wants it. */
 		wanted = wants(ui->keys[slot].code, ui->keys[slot].modifiers);
 		if (!wanted)
 			return 0;
@@ -966,6 +1101,8 @@ keiui_ui_take_activate(
 		same = ui_target(&ui->keys[slot].target, id, index);
 		if (!same)
 			continue;
+		if (ui->keys[slot].kind != KEIUI_INPUT_KEY)
+			break;
 		if (code != KL_KEY_ENTER && code != KL_KEY_KPENTER && code != KL_KEY_SPACE)
 			break;
 		ui->keys[slot].taken = 1;
@@ -1008,6 +1145,114 @@ keiui_ui_focus_ring(
 	if (!ui->focus.valid)
 		return 0;
 	return ui->focus_ring;
+}
+
+/*
+ * Takes the next input a widget that edits text wants, in the order they
+ * came while it had the focus: a key it wants, a text to commit, or bytes
+ * to delete.  Returns 1 with it, 0 when none is left for it (a key it does
+ * not want stops it: the application has it first, in order).
+ */
+int
+keiui_ui_take_input(
+	struct kl_ui *ui,
+	uint32_t id,
+	uint32_t index,
+	keiui_wants_key wants,
+	struct keiui_input *input)
+{
+	struct ui_press *press;
+	unsigned slot;
+	int wanted;
+	int same;
+
+	/* Nothing taken yet. */
+	input->kind = KEIUI_INPUT_NONE;
+
+	/* The oldest input not taken, sent while the widget had the focus. */
+	for (slot = 0; slot < ui->key_count; slot++) {
+		press = &ui->keys[slot];
+		if (press->taken)
+			continue;
+		same = ui_target(&press->target, id, index);
+		if (!same)
+			continue;
+
+		/* A key it does not want stops it. */
+		if (press->kind == KEIUI_INPUT_KEY) {
+			wanted = wants(press->code, press->modifiers);
+			if (!wanted)
+				return 0;
+		}
+
+		/* The input, taken. */
+		press->taken = 1;
+		input->kind = press->kind;
+		input->code = press->code;
+		input->modifiers = press->modifiers;
+		memcpy(input->text, press->text, sizeof(input->text));
+		input->before = press->before;
+		input->after = press->after;
+
+		/* Succeeded: one input for the widget. */
+		return 1;
+	}
+
+	/* None left. */
+	return 0;
+}
+
+/*
+ * Reports the text an input method is composing for a widget, with its
+ * cursor's byte offsets (-1 when hidden), or NULL when none is composed
+ * for it.  A widget drawn without the focus drops what was being composed
+ * for it, so that it does not come back with the focus.
+ */
+const char *
+keiui_ui_preedit(
+	struct kl_ui *ui,
+	uint32_t id,
+	uint32_t index,
+	int focused,
+	int32_t *begin,
+	int32_t *end)
+{
+	int same;
+
+	/* Nothing is being composed. */
+	if (ui->preedit[0] == '\0')
+		return NULL;
+
+	/* It is composed for another widget, or for none. */
+	same = ui_target(&ui->preedit_target, id, index);
+	if (!same)
+		return NULL;
+
+	/* The widget has lost the focus: the composition goes. */
+	if (!focused) {
+		ui->preedit[0] = '\0';
+		return NULL;
+	}
+
+	/* Succeeded: the text and its cursor. */
+	*begin = ui->preedit_begin;
+	*end = ui->preedit_end;
+	return ui->preedit;
+}
+
+/*
+ * Notes that the focused widget being drawn takes text from an input
+ * method, with its caret's rectangle in the window (kl_ui_text_wanted
+ * reports it once the frame is shown).
+ */
+void
+keiui_ui_text_caret(
+	struct kl_ui *ui,
+	const struct kl_rect *caret)
+{
+	/* The frame being drawn has a widget that takes text, with its caret here. */
+	ui->text_drawing = 1;
+	ui->text_drawing_caret = *caret;
 }
 
 /*

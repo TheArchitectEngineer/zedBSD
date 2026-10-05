@@ -382,6 +382,12 @@ ph_input(
 		else
 			(void)kl_ui_key(phone->ui, event->code, event->pressed, event->modifiers);
 		break;
+	case KL_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_DELETE:
+		/* Text from an input method or the on-screen keyboard, for the field with the keyboard (BUG-203, BUG-204). */
+		(void)kl_ui_text(phone->ui, event);
+		break;
 	case KL_WINDOW_RESIZE:
 		phone->resized = 1;
 		break;
@@ -458,10 +464,12 @@ ph_draw(
 {
 	struct kl_glass_panel panels[PH_PANELS_MAX];
 	struct kl_event event;
+	struct kl_rect caret;
 	size_t count;
 	int status;
 	int error;
 	int taken;
+	int wanted;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!phone->dirty && !phone->moving)
@@ -472,6 +480,16 @@ ph_draw(
 	kl_ui_begin(phone->ui, now_us);
 	ph_view_draw(&phone->view, phone->ui, &phone->style, (int)phone->width, (int)phone->height, now_us);
 	phone->moving = kl_ui_end(phone->ui, now_us);
+
+	/*
+	 * The text input is asked for while a field has the keyboard, and told
+	 * where its caret is, so that an input method's candidates and the
+	 * on-screen keyboard stay out of its way.
+	 */
+	wanted = kl_ui_text_wanted(phone->ui, &caret);
+	kl_window_text_input(phone->window, wanted);
+	if (wanted)
+		kl_window_text_cursor(phone->window, caret.x, caret.y, caret.width, caret.height);
 
 	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
 	if (phone->view.glass) {

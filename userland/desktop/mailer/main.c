@@ -397,6 +397,12 @@ ml_input(
 		else
 			(void)kl_ui_key(mailer->ui, event->code, event->pressed, event->modifiers);
 		break;
+	case KL_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_DELETE:
+		/* Text from an input method or the on-screen keyboard, for the field with the keyboard (BUG-203, BUG-204). */
+		(void)kl_ui_text(mailer->ui, event);
+		break;
 	case KL_WINDOW_RESIZE:
 		mailer->resized = 1;
 		break;
@@ -473,10 +479,12 @@ ml_draw(
 {
 	struct kl_glass_panel panels[ML_PANELS_MAX];
 	struct kl_event event;
+	struct kl_rect caret;
 	size_t count;
 	int status;
 	int error;
 	int taken;
+	int wanted;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!mailer->dirty && !mailer->moving)
@@ -487,6 +495,16 @@ ml_draw(
 	kl_ui_begin(mailer->ui, now_us);
 	ml_view_draw(&mailer->view, mailer->ui, &mailer->style, (int)mailer->width, (int)mailer->height, now_us);
 	mailer->moving = kl_ui_end(mailer->ui, now_us);
+
+	/*
+	 * The text input is asked for while a field has the keyboard, and told
+	 * where its caret is, so that an input method's candidates and the
+	 * on-screen keyboard stay out of its way.
+	 */
+	wanted = kl_ui_text_wanted(mailer->ui, &caret);
+	kl_window_text_input(mailer->window, wanted);
+	if (wanted)
+		kl_window_text_cursor(mailer->window, caret.x, caret.y, caret.width, caret.height);
 
 	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
 	if (mailer->view.glass) {

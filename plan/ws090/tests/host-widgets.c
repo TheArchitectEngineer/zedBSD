@@ -99,6 +99,7 @@ static uint32_t page_pixels[PAGE_WIDTH * PAGE_HEIGHT];
 /* The dialog's buttons. */
 static const char *const dialog_labels[] = { "Delete", "Cancel" };
 
+unsigned kl_appearance_get(const struct kl_appearance *appearance);
 static void check(int condition, const char *what);
 static void frame(struct page *page, struct page_report *report);
 static void click(struct page *page, double x, double y, struct page_report *report);
@@ -113,6 +114,20 @@ static void test_touch(struct page *page);
 static void test_dialog(struct page *page);
 static void test_look(struct page *page);
 static void write_ppm(const char *path);
+
+/*
+ * Reports the light appearance: the host has no desktop to ask (the
+ * library's own, appearance.c, needs Wayland).
+ */
+unsigned
+kl_appearance_get(
+	const struct kl_appearance *appearance)
+{
+	(void)appearance;
+
+	/* The light appearance. */
+	return KL_APPEARANCE_LIGHT;
+}
 
 /*
  * Runs the tests.

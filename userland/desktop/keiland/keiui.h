@@ -154,7 +154,9 @@
 #define kui_ui_scroll_region kl_ui_scroll_region
 #define kui_ui_set_focus kl_ui_set_focus
 #define kui_ui_take kl_ui_take
+#define kui_ui_text kl_ui_text
 #define kui_ui_text_region kl_ui_text_region
+#define kui_ui_text_wanted kl_ui_text_wanted
 #define kui_ui_touch_cancel kl_ui_touch_cancel
 #define kui_ui_touch_down kl_ui_touch_down
 #define kui_ui_touch_motion kl_ui_touch_motion

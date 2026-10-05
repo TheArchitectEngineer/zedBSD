@@ -307,6 +307,8 @@
 		kl_ui_clear_focus;
 		kl_ui_has_focus;
 		kl_ui_pointer;
+		kl_ui_text;
+		kl_ui_text_wanted;
 		kl_button;
 		kl_button_width;
 		kl_switch;

@@ -11,9 +11,11 @@
  * ws170-p000: draws Phone's view (userland/desktop/phone/view.c) on the
  * host into pictures, and drives it with the pointer and the keys as the
  * window would: the first contact's timeline, another contact chosen by a
- * click, a message written and sent, a call, the search, and a narrow
- * window's list and timeline.  The "PHONE" lines the view logs are
- * checked: sending and calling report that there is no backend.
+ * click, a message written and sent, a call, Japanese from an input method
+ * and the flick keyboard in the message field (BUG-203, BUG-204), the
+ * search, and a narrow window's list and timeline.  The "PHONE" lines the
+ * view logs are checked: sending and calling report that there is no
+ * backend.
  *
  *     host-phone FONT FALLBACK PREFIX
  *
@@ -52,9 +54,12 @@ static int test_failures;
 static uint64_t test_now = 1000000U;
 
 int main(int argc, char **argv);
+unsigned kl_appearance_get(const struct kl_appearance *appearance);
 static void test_frame(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height);
 static void test_click(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, int x, int y);
 static void test_type(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, const uint32_t *keys, size_t count);
+static void test_text(struct kl_ui *ui, unsigned kind, const char *text, uint32_t before);
+static void test_field(const char *name, const struct kl_field *field, const char *expected);
 static void test_check(const char *name, const char *expected);
 static int test_save(const struct kl_canvas *canvas, const char *prefix, const char *name);
 static int test_save_glass(struct ph_view *view, const struct kl_canvas *canvas, const char *prefix, const char *name);
@@ -74,8 +79,10 @@ main(
 	struct kl_style style;
 	struct kl_text text;
 	struct ph_view view;
+	struct kl_rect caret;
 	struct kl_ui *ui;
 	uint32_t *pixels;
+	int wanted;
 	uint32_t *narrow_pixels;
 	int error;
 
@@ -151,6 +158,51 @@ main(
 	(void)test_save(&canvas, argv[3], "call");
 	test_check("call", "NOBACKEND action=call contact=1");
 
+	/* The message field with the keyboard asks for an input method's text, with its caret (BUG-203). */
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 600, 630);
+	kl_field_set(&view.message, "");
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	wanted = kl_ui_text_wanted(ui, &caret);
+	if (wanted && caret.y > 600 && caret.height > 0) {
+		printf("PASS ime-wanted\n");
+	} else {
+		printf("FAIL ime-wanted wanted=%d y=%d height=%d\n", wanted, caret.y, caret.height);
+		test_failures++;
+	}
+
+	/* A word being composed shows underlined at the caret, and is not yet the field's text. */
+	test_text(ui, KL_WINDOW_TEXT_PREEDIT, "\xe3\x81\xab\xe3\x81\xbb\xe3\x82\x93", 0U);
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	(void)test_save(&canvas, argv[3], "preedit");
+	test_field("ime-preedit", &view.message, "");
+
+	/* The conversion committed: the composition goes and the kanji are written. */
+	test_text(ui, KL_WINDOW_TEXT_COMMIT, "\xe6\x97\xa5\xe6\x9c\xac", 0U);
+	test_text(ui, KL_WINDOW_TEXT_PREEDIT, "", 0U);
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	(void)test_save(&canvas, argv[3], "commit");
+	test_field("ime-commit", &view.message, "\xe6\x97\xa5\xe6\x9c\xac");
+
+	/* The flick keyboard's kana, then its voiced form in place of it (the kana before deleted, BUG-204). */
+	test_text(ui, KL_WINDOW_TEXT_COMMIT, "\xe3\x81\x8b", 0U);
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	test_text(ui, KL_WINDOW_TEXT_DELETE, "", 3U);
+	test_text(ui, KL_WINDOW_TEXT_COMMIT, "\xe3\x81\x8c", 0U);
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	test_field("flick-voiced", &view.message, "\xe6\x97\xa5\xe6\x9c\xac\xe3\x81\x8c");
+
+	/* Without a field with the keyboard the text input is not asked for. */
+	kl_ui_clear_focus(ui);
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	wanted = kl_ui_text_wanted(ui, NULL);
+	if (!wanted) {
+		printf("PASS ime-unwanted\n");
+	} else {
+		printf("FAIL ime-unwanted wanted=%d\n", wanted);
+		test_failures++;
+	}
+	kl_field_set(&view.message, "");
+
 	/* The search: "len" leaves Lena alone, and her row shows her. */
 	test_now += 5000000U;
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 160, 68);
@@ -218,6 +270,21 @@ main(
 
 	/* Succeeded: every check passed. */
 	return 0;
+}
+
+/*
+ * Reports the light appearance: the host has no desktop to ask (the
+ * library's own, appearance.c, needs Wayland), and the pictures are the
+ * light theme's.
+ */
+unsigned
+kl_appearance_get(
+	const struct kl_appearance *appearance)
+{
+	(void)appearance;
+
+	/* The light appearance. */
+	return KL_APPEARANCE_LIGHT;
 }
 
 /*
@@ -323,6 +390,52 @@ test_type(
 		(void)kl_ui_key(ui, keys[i], 0, 0U);
 		test_frame(view, ui, style, width, height);
 	}
+}
+
+/*
+ * Gives the input a text of the window's text input, as the window does
+ * with what an input method or the on-screen keyboard sent.
+ */
+static void
+test_text(
+	struct kl_ui *ui,
+	unsigned kind,
+	const char *text,
+	uint32_t before)
+{
+	struct kl_window_event event;
+
+	/* The input, with the composed text's cursor at its end. */
+	memset(&event, 0, sizeof(event));
+	event.kind = kind;
+	snprintf(event.text, sizeof(event.text), "%s", text);
+	event.begin = (int32_t)strlen(text);
+	event.end = event.begin;
+	event.before = before;
+	(void)kl_ui_text(ui, &event);
+}
+
+/*
+ * Checks that a field holds a text.
+ */
+static void
+test_field(
+	const char *name,
+	const struct kl_field *field,
+	const char *expected)
+{
+	int same;
+
+	/* The field's text against the one expected. */
+	same = strcmp(field->text, expected);
+	if (same == 0) {
+		printf("PASS %s\n", name);
+		return;
+	}
+
+	/* Another text. */
+	printf("FAIL %s text=%s expected=%s\n", name, field->text, expected);
+	test_failures++;
 }
 
 /*
