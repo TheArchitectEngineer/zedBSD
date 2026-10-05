@@ -36,6 +36,9 @@
 #define WINDOW_KEY_PAGEUP	104U
 #define WINDOW_KEY_PAGEDOWN	109U
 
+/* F11, which makes the window fullscreen or ends it when the compositor's menu did not take it (BUG-194). */
+#define WINDOW_KEY_F11		87U
+
 /* The keys the search bar answers itself (ws128-p006): Escape, Backspace, Enter and the keypad's Enter. */
 #define WINDOW_KEY_ESCAPE	1U
 #define WINDOW_KEY_BACKSPACE	14U
@@ -437,6 +440,7 @@ window_press(
 {
 	size_t length;
 	int shift;
+	int on;
 
 	/* While the search bar is open the keys edit what it looks for (ws128-p006). */
 	if (window->search_open) {
@@ -456,6 +460,21 @@ window_press(
 	/* Shift with Page Down scrolls a page toward the live screen. */
 	if (shift && key == WINDOW_KEY_PAGEDOWN) {
 		window->scroll_pages--;
+		return;
+	}
+
+	/*
+	 * F11 alone is the Fullscreen item's key (BUG-194): it reaches the
+	 * window only when the compositor's menus did not choose the item (a
+	 * desktop without them), and does the same here instead of reaching
+	 * the shell.
+	 */
+	if (key == WINDOW_KEY_F11 && window->modifiers == 0U) {
+		on = 1;
+		if (window->fullscreen)
+			on = 0;
+		printf("ZTERM FULLSCREEN key on=%d\n", on);
+		terminal_window_set_fullscreen(window, on);
 		return;
 	}
 
