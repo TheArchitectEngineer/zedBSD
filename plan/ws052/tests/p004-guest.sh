@@ -19,13 +19,22 @@
 #        synced and read back, lsusb lists the adapter and the keyboard again, and the kernel's log (dmesg, read over
 #        SSH) has "nvme: suspended", "nvme: resumed", "xhci: suspended" and "xhci: resumed".
 #
-#   abort       plan/tools/guest/guest.py start --qemu-extra '-device intel-hda -device hda-duplex' IMAGE
+#   hda         plan/tools/guest/guest.py start --qemu-extra '-device intel-hda -device hda-duplex' IMAGE
+#               plan/tools/guest/guest.py wait; plan/ws052/tests/p004-guest.sh hda [OUTDIR]
+#     The HD Audio controller now suspends (ws052-p005): audiod keeps its stream running, and the driver stops the
+#     stream, holds the controller in reset, and starts it all again at the resume.
+#     1. sleepctl devices (in the background, as above) prints "sleep result=0 resume=0 device=-".
+#     2. The guest answers on SSH again, a new file of 16 MiB on the NVMe root is written, synced and read back.
+#     3. dmesg has "hda: suspended" and "hda: resumed".
+#
+#   abort       plan/tools/guest/guest.py start --qemu-extra '-device piix3-usb-uhci' IMAGE
 #               plan/tools/guest/guest.py wait; plan/ws052/tests/p004-guest.sh abort [OUTDIR]
-#     The HD Audio controller's driver has no suspend: the suspend must stop at it and resume what it suspended before
+#     The UHCI controller's driver has no suspend: the suspend must stop at it and resume what it suspended before
 #     (the functions at lower slots, which may include the xHCI controller and so the SSH adapter).
-#     1. sleepctl devices (in the background, as above) prints "sleep result=21 resume=0 device=pci 0000:00:XX.0 hda" (21 is EOPNOTSUPP), and exits 1.
+#     1. sleepctl devices (in the background, as above) prints "sleep result=21 resume=0 device=pci 0000:00:XX.X uhci"
+#        (21 is EOPNOTSUPP), and exits 1.
 #     2. The guest still answers on SSH, and a new file of 16 MiB on the NVMe root is written, synced and read back.
-#     3. dmesg has "pci: suspend of 0000:00:XX.0 failed (error 21)".
+#     3. dmesg has "pci: suspend of 0000:00:XX.X failed (error 21)".
 #
 # The serial and console logs are not read; the kernel's log is read with dmesg over SSH.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -86,15 +95,34 @@ sleep 1; echo started' > "$out/start.txt"
 		if grep -q "$line" "$out/dmesg.txt"; then pass "dmesg '$line'"; else fail "dmesg '$line'"; fi
 	done
 	;;
-abort)
-	# 1. The suspend stops at the HD Audio controller; the xHCI controller, at a lower slot, may have been suspended
-	#    and resumed (attached again) before, so the SSH session may go and the command runs in the background.
+hda)
+	# 1. The round trip with the HD Audio controller.
 	guest '(/bin/sleepctl devices > /tmp/sleep.txt 2>&1; echo "exit=$?" >> /tmp/sleep.txt) > /dev/null 2>&1 &
 sleep 1; echo started' > "$out/start.txt"
 	sleep 20
 	if reconnect; then pass reconnect; else fail reconnect; fi
 	guest 'cat /tmp/sleep.txt' > "$out/sleep.txt"
-	if grep -q '^sleep result=21 resume=0 device=pci 0000:00:[0-9a-f][0-9a-f]\.0 hda' "$out/sleep.txt" &&
+	if grep -q '^sleep result=0 resume=0 device=-' "$out/sleep.txt"; then pass round-trip; else fail round-trip; fi
+
+	# 2. The guest still works.
+	io_check > "$out/io.txt"
+	if grep -q '^io ok' "$out/io.txt"; then pass io; else fail io; fi
+
+	# 3. The kernel's log.
+	guest '/bin/dmesg' > "$out/dmesg.txt"
+	for line in 'hda: suspended' 'hda: resumed'; do
+		if grep -q "$line" "$out/dmesg.txt"; then pass "dmesg '$line'"; else fail "dmesg '$line'"; fi
+	done
+	;;
+abort)
+	# 1. The suspend stops at the UHCI controller; the xHCI controller, at a lower slot, may have been suspended
+	#    and resumed before, so the SSH session may go and the command runs in the background.
+	guest '(/bin/sleepctl devices > /tmp/sleep.txt 2>&1; echo "exit=$?" >> /tmp/sleep.txt) > /dev/null 2>&1 &
+sleep 1; echo started' > "$out/start.txt"
+	sleep 20
+	if reconnect; then pass reconnect; else fail reconnect; fi
+	guest 'cat /tmp/sleep.txt' > "$out/sleep.txt"
+	if grep -q '^sleep result=21 resume=0 device=pci 0000:00:[0-9a-f][0-9a-f]\.[0-7] uhci' "$out/sleep.txt" &&
 	    grep -q '^exit=1' "$out/sleep.txt"; then
 		pass abort-reason
 	else
@@ -107,10 +135,10 @@ sleep 1; echo started' > "$out/start.txt"
 
 	# 3. The kernel's log names the function.
 	guest '/bin/dmesg' > "$out/dmesg.txt"
-	if grep -q 'pci: suspend of 0000:00:[0-9a-f][0-9a-f]\.0 failed (error 21)' "$out/dmesg.txt"; then pass dmesg; else fail dmesg; fi
+	if grep -q 'pci: suspend of 0000:00:[0-9a-f][0-9a-f]\.[0-7] failed (error 21)' "$out/dmesg.txt"; then pass dmesg; else fail dmesg; fi
 	;;
 *)
-	echo "usage: p004-guest.sh roundtrip|abort [OUTDIR]" >&2
+	echo "usage: p004-guest.sh roundtrip|hda|abort [OUTDIR]" >&2
 	exit 2
 	;;
 esac
