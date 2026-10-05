@@ -24,3 +24,5 @@ Q1 の問い「実機をベアメタル起動したときに、SSH越しにマ�
 | [p003](phase003/phase.md) | host の道具 `plan/tools/aat/`（SSH で click・drag・wheel・key・type・shot の取得・log の行の待ち）と AAT の image の config | P2 | in-progress（2026-10-05 夜、CLI・SSH・host の自己試験まで。P1 の aat-input に合わせた） | p001・p002 |
 | p004 | AAT の項目の一覧（今の実装済みの機能、UAT の項目から機器と使用感を除いた物）と判定の基準 | Q1 | planning | — |
 | p005 | 素の 5330 で AAT を行い、結果を記録 | T1 か専任 | planning | p001〜p004、素の起動の方法（ユーザーの判断） |
+
+- 2026-10-05 Q1: p001・p002（P1）は T1-200 で aat-p002 PASS、p003（P2 の host の道具）は T1-200c で PASS（QEMU、注入・撮影・転送・log の待ち）。AAT の土台は QEMU で動く。残り: p004 の項目と scenarios、素の 5330 での最初の実行（ユーザーが USB で起動）。
