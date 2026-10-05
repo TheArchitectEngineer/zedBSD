@@ -58,7 +58,7 @@ load の手順（bluetoothd の firmware の部品。全て HCI の vendor comma
    1（ECDSA）でなければ対応しない。
 3. .sfi の header を確かめる（main.c 318〜362 行）: hardware の variant（TLV の cnvi_bt の bit 16〜21）が 0x17 以上なら、file は RSA の
    header 644 byte と ECDSA の header 320 byte を両方持ち、offset 644 の byte が 0x06、そこの CSS の版が 0x00020000。それより前の variant は
-   RSA だけで CSS の版が 0x00010000。
+   RSA だけで CSS の版が 0x00010000。variant 0x15・0x16 は FreeBSD でも定まっていないので対応しない（5330 は 0x17 以上の見込み、p002 で確かめる）。
 4. bt-usb を bootloader の経路にする（§5.1）。header を Secure Send で送る: sbe_type 0 は CSS 128・公開鍵 256（2 断片）・4 byte を飛ばして
    署名 256（2 断片）、1 は offset 644 から CSS 128・公開鍵 96・署名 96（iwmbt_hw.c 321〜351 行）。
 5. 本体（command buffer）は header の後から（variant 0x17 以上は sbe_type に関わらず 644+320 = 964 byte から）。file の HCI command を順に
@@ -97,7 +97,7 @@ HID の report が daemon を通る分は数十 µs で、Bluetooth の遅れは
   うち opcode 0xFC09 は bulk OUT へ、bulk IN の受けは型 0x04 の event として渡す。他の command は普通の経路 [F1]。
 - packet の形: 1 回の write は H4 の形の 1 packet（先頭 1 byte が型: 0x01 command、0x02 ACL）。1 回の read は 1 packet（0x04 event、0x02 ACL）。
   0x03（SCO）・0x05（ISO）は予約（今は EINVAL）。kernel だけの通知は型 0x80 以上（0xFF は HCI の vendor event の code なので使わない）:
-  0x80「controller が reset された」（`BT_IOC_RESET` が終わった時と、resume の後に bt-usb が URB を出し直した時、§5.3）[F20, N11]。
+  0x80「controller が reset された」（`BT_IOC_RESET` が終わった時。resume は `/dev/system` の class で知る、§5.3）[F20, N11]。
 - 境界: command は header 3 byte と parameter 255 byte まで、event は 2+255 byte まで、ACL は controller の ACL の大きさ
   （HCI_Read_Buffer_Size を daemon が ioctl で教える、教わる前は 1021 byte）まで。組み直しは header の長さで行い、長さが合わない USB の
   受けは捨てて数える（悪い device が kernel の buffer を越えさせない）。read の buffer が 1 packet より短いと EMSGSIZE（切らない）[F5, F20]。
@@ -150,9 +150,11 @@ re-enumerate で device が detach・attach し直すか（6087〜6125 行）。
   （`include/uapi/system.h:307`）は USB の device（例 "usb1.3"）を言い node は言わず、node の作成と競うので、bluetoothd はその event と
   OVERFLOW（queue は 64）の時に `/dev/bt*` を少し待って数回 scan し直す。新しい controller として firmware を load し直し、bond 済みの
   device の再接続を始める [N11]。
-- resume の印: `system.h` に resume の event は無い。bt-usb は resume の後に URB を出し直す時に 0x80 を出し（§5.1）、bluetoothd はそれで
-  Read Version をやり直し（S0ix で CNVi の Bluetooth の電源が落ちて bootloader に戻っていれば load し直す。未確認）、resume の前に溜まった
-  HID の report は捨てる [N11]。
+- resume の印: 状態が戻る時、bt-usb は何もしない（USB の core は driver の resume を呼ばず、xhci_resume が ring を戻して残りの URB が
+  そのまま続く）ので、bt-usb からは resume を知らせられない。`/dev/system` に resume の class（`KERN_SYSTEM_EVENT_RESUME`、
+  `include/uapi/system.h` の 300〜309 行の class に 1 bit を足す小さな UAPI の追加、system の sleep の終わりで出す）を足し（p002、D2 の中で
+  承認を求める）、bluetoothd はそれで Read Version をやり直し（S0ix で CNVi の Bluetooth の電源が落ちて bootloader に戻っていれば load し直す。
+  未確認）、resume の前に受けて渡していない HID の report を捨てる [N11]。
 - 架空の suspend の hook（第 1 版の「URB を止めて reset の event を返す」）は作らない。USB の core に suspend の通知を足すのは別の仕事。
 
 ## 6. userland の `bluetoothd`（D4・D16）
@@ -272,12 +274,12 @@ D1 で尋ねる。LE Audio、OBEX、PAN は範囲の外。
 | --- | --- | --- | --- |
 | D15 | 構成（ws.md 25 行の「firmware の load と HCI core を kernel に」から変える） | 案 A: kernel は USB の transport と HID の口だけ、host stack は userland の daemon（D2・D3・D4 へ）。案 B: HCI・L2CAP を kernel に、AF_BLUETOOTH の socket（電波の相手の解析と暗号が kernel に入る。D2〜D4 は別の形で尋ね直す） | 案 A |
 | D1 | 最初の profile | A: キーボード・マウス（BR/EDR HID と LE HOGP）だけ、A2DP は別の WS。B: A と A2DP をこの WS で（§7 の方針の例外や xHCI の仕事を含む） | A |
-| D2 | UAPI `/dev/btN`（§5.1: HCI の packet の char device、bootloader の経路と reset の ioctl、`include/uapi/bluetooth.h`）。案 A の時 | 形を承認し struct は p002 で review / 別の形を示す | 形を承認 |
+| D2 | UAPI `/dev/btN`（§5.1: HCI の packet の char device、bootloader の経路と reset の ioctl、`include/uapi/bluetooth.h`）と、`/dev/system` の resume の class（§5.3、1 bit の追加）。案 A の時 | 形を承認し struct は p002 で review / 別の形を示す | 形を承認 |
 | D3 | UAPI `/dev/hid-host`（§5.2）と usb-hid の glue の共有の module への refactor。案 A の時 | 形を承認し struct は p005 で review / 別の形を示す | 形を承認 |
 | D4 | root の daemon `bluetoothd`・socket の口・CLI `bt` | §6.5 の形（networkd の形の group と SO_PEERCRED）/ group を使わず root と seat の人だけ / 口を開けず CLI だけ（desktop の頁が作れない） | §6.5 の形 |
 | D16 | 特権の分離と残る危険（§6.5、§5.2 の「口を持つ process が乗っ取られれば key を打てる」） | (a) 特権の親と fd の受け渡し / (b) devfs が node を専用の account に / (c) root で起こし直す / 分離しない | (a) |
 | D17 | 専用の account `_bluetooth` と group `bluetooth` を base の `etc/passwd`・`etc/group` に足す（既存の install の更新を含む） | 足す / 足さない（D16 の分離ができない） | 足す |
-| D5 | 暗号（§6.6） | b1、AX211 に command が無い時は b2 / b1、無い時は LE を作らない（BR/EDR だけ） / a（OpenSSL、方針の例外） | b1、無い時 b2 |
+| D5 | 暗号（§6.6） | b1、AX211 に command が無い時は b2 / b1、無い時は LE を作らない（BR/EDR だけ。受け入れ 3 の LE の HOGP の device が使えなくなる） / a（OpenSSL、方針の例外） | b1、無い時 b2 |
 | D10 | pairing の安全の方針 | Secure Connections だけ（BR/EDR も SC Only、古い device は使えない）/ legacy（LE の c1・s1、BR/EDR の PIN）も受け Settings に「古い方式」と警告 / 受けて警告しない。**legacy は傍受で鍵が割れ、キーボードの打鍵が盗み読まれ得る** | legacy も受け警告、鍵の長さ 16 は全てで必須 |
 | D8 | 誰が pairing・接続・確認できるか | seat の人（確認は compositor）、console・SSH は wheel / `bluetooth` group の人 / wheel だけ。login の画面（greeter）での pairing: 許す（誰でもキーボードを足せる）/ 許さない | seat の人と console・SSH の wheel、greeter では許さない |
 | D9 | bond は system 共有か人ごとか | system 共有（greeter・console でもキーボードが使える）/ 人ごと（Wi-Fi の鍵と同じ、guardrail.md:36） | system 共有 |
@@ -289,9 +291,10 @@ D1 で尋ねる。LE Audio、OBEX、PAN は範囲の外。
 | D14 | `intelbt` を 5330 の既定の image に | 入れる / 入れない（既定 off の firmware の扱いのまま） | 入れる |
 | D7 | FreeBSD の Keiland | 未対応の表示 / hccontrol・bthidd を包む | 未対応の表示 |
 | D13 | 5330 の試験の host の変更（§10.3） | host の btusb・btintel を blacklist して電源を入れ直す（bootloader の経路を試せる。試験の host の設定の変更）/ 変えない（guest からの Intel Reset で bootloader に戻す方法は licence の通る出典が無く未確認、§10.3） | blacklist |
-| D18 | UAT の環境 | 5330 の素の機械で zedBSD（Wi-Fi との共存（F23）も意味がある）/ QEMU の passthrough（共存は host の iwlwifi が決めるので確かめられない） | 素の機械 |
+| D18 | UAT の環境 | 5330 の素の機械で zedBSD（Wi-Fi との共存（F23）も意味がある。その間 5330 は Linux の試験の host として使えず、T1 の他の試験が止まる）/ QEMU の passthrough（共存は host の iwlwifi が決めるので確かめられない） | 素の機械（UAT の枠の中で） |
 
-情報のお願い（判断ではない）: UAT に使う BR/EDR と LE のキーボード・マウスの機種（受け入れ 3 に両方が要る）。
+情報のお願い（判断ではない）: UAT に使う BR/EDR と LE のキーボード・マウスの機種（受け入れ 3 に両方が要る）と、§10.2 の相互の接続の
+試験に使う firmware の要らない USB の Bluetooth の dongle（CSR8510 など）が手元にあるか（無ければ買うか）。
 
 ## 10. Phase と試験
 
