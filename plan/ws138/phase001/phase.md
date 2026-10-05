@@ -2,7 +2,7 @@
 
 # ws138-p001: PNG と JPEG の背景を読めるようにする（既定の path は変えない）
 
-Status: in-progress（2026-10-05 P1 generation17。実装・host 試験・build は済み。QEMU は p002 とまとめて T1、その結果まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-169（settings-p009・p004・p007・boot PASS）、T1-171（FreeBSD の backend-test 9 step PASS）、T1-172（c7-contrast pass=72 fail=0 最小 4.68、greeter-wallpaper PASS、wallpaper-time PASS）で受け入れを満たす）。以前: in-progress（2026-10-05 P1 generation17。実装・host 試験・build は済み。QEMU は p002 とまとめて T1、その結果まで cleared にしない）
 Disposition: normal
 Parent: [WS138](../ws.md)
 Queue: Q1 の 2026-10-05 の割り当て（ベータ2）

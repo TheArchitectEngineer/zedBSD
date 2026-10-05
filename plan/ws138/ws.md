@@ -3,7 +3,7 @@
 # WS138: 背景の画像を PPM から PNG に
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-05 P1: p001 は main に統合済み、p002 の切り替えを commit、QEMU は T1 に依頼する。再開点: T1 の結果）
+Status: incomplete（2026-10-05 Q1: p001・p002 cleared（T1-169・T1-171・T1-172）。再開点: p003（全文規約の見直し、F-071 への結果））
 Primary Milestone: MG006
 Related Milestones: MG007（Linux・FreeBSD の package の data）
 Objectives: O2
@@ -165,6 +165,6 @@ Resume point: p001 から。F-071 の再考の契機は「S1 の実機試験の�
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 読めるようにする: compositor（thread で復号）・Settings・Files の PNG の読み込み、画素の上限、Settings の link、tree に PNG の 2 枚を足す（PPM は残す）、変換の道具、host 試験。既定の path は変えない | in-progress（実装は main に統合済み。T1 の結果まで cleared にしない） | — |
-| [p002](phase002/phase.md) | 1 回の commit で切り替える: 既定の path、generate.py、make の data、PPM の削除、移行（U6）、194 file の置き換え、T への QEMU の試験の依頼（Settings、criteria と greeter、背景の読み込みの時間、FreeBSD の build） | in-progress（切り替えを commit、他の WS の file は Q1 の apply-q1.sh、T1 の結果待ち） | p001 の commit が main に統合済み |
+| [p001](phase001/phase.md) | 読めるようにする: compositor（thread で復号）・Settings・Files の PNG の読み込み、画素の上限、Settings の link、tree に PNG の 2 枚を足す（PPM は残す）、変換の道具、host 試験。既定の path は変えない | cleared（2026-10-05 T1-169・T1-172） | — |
+| [p002](phase002/phase.md) | 1 回の commit で切り替える: 既定の path、generate.py、make の data、PPM の削除、移行（U6）、194 file の置き換え、T への QEMU の試験の依頼（Settings、criteria と greeter、背景の読み込みの時間、FreeBSD の build） | cleared（2026-10-05 T1-169・T1-171・T1-172） | p001 の commit が main に統合済み |
 | p003（phase.md は p002 の後に書く） | 全文規約の見直し（変えた C）、T の結果の反映、F-071 と WS089・WS099 への結果の案 | planned | p002 |

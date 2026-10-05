@@ -2,7 +2,7 @@
 
 # ws138-p002: 1 回の commit で PNG に切り替え、QEMU の試験を依頼する
 
-Status: in-progress（2026-10-05 P1 generation17。切り替えを commit。他の WS の file は Q1 が `apply-q1.sh` で掛ける。T1 の結果まで cleared にしない）
+Status: cleared（2026-10-05 Q1: T1-169（settings-p009・p004・p007・boot PASS）、T1-171（FreeBSD の backend-test 9 step PASS）、T1-172（c7-contrast pass=72 fail=0 最小 4.68、greeter-wallpaper PASS、wallpaper-time PASS）で受け入れを満たす）。以前: in-progress（2026-10-05 P1 generation17。切り替えを commit。他の WS の file は Q1 が `apply-q1.sh` で掛ける。T1 の結果まで cleared にしない）
 Disposition: normal
 Parent: [WS138](../ws.md)
 Queue: Q1 の 2026-10-05 の割り当て（ベータ2、p001 → p002）
@@ -291,3 +291,7 @@ T1-169（QEMU、証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-169-out/`）: set
    `step=wallpaper` と画面、終わったら autologin を戻す）。
 
 残り: T1 に再依頼（c7 の diff を掛けた main で c7-contrast、wallpaper-time、greeter-wallpaper）、その結果の判定、p003（全文規約の見直し）。
+
+## Q1 の判定（2026-10-05）
+
+T1-172 PASS: c7-contrast（pass=72 fail=0、最小 4.68 ≥ 4.5）、greeter-wallpaper（greeter.png は Birch-Lake をぼかした login の画面）、wallpaper-time（PPM は errno 3 で拒否）。T1-169 の残り（settings-p009・p004・p007・boot）と T1-171 の FreeBSD の backend-test と合わせて **cleared**。既定に戻す時の 1.8 秒の同期の描画は範囲外（Future Work の候補）。
