@@ -72,7 +72,10 @@ main(
 	struct cal_view view;
 	struct kl_ui *ui;
 	uint32_t *pixels;
+	uint32_t *copy;
+	int desk_only;
 	int error;
+	int same;
 	int i;
 
 	/* The fonts and the prefix of the pictures. */
@@ -91,6 +94,11 @@ main(
 	/* The frame. */
 	pixels = calloc((size_t)TEST_WIDTH * TEST_HEIGHT, sizeof(pixels[0]));
 	if (pixels == NULL)
+		return 2;
+
+	/* A copy of a frame, to compare. */
+	copy = calloc((size_t)TEST_WIDTH * TEST_HEIGHT, sizeof(copy[0]));
+	if (copy == NULL)
 		return 2;
 	error = kl_canvas_init(&canvas, pixels, TEST_WIDTH, TEST_WIDTH, TEST_HEIGHT);
 	if (error != 0)
@@ -127,6 +135,20 @@ main(
 		test_now += 1750000U;
 		test_frame(&view, ui, &style);
 		(void)test_save(&view, &canvas, argv[3], breaths[i], 0);
+	}
+
+	/* A frame of the desk calendar alone (as the window draws while only it moves) is the whole frame's. */
+	test_now += 400000U;
+	desk_only = cal_view_desk_only(&view);
+	cal_view_draw_desk(&view, &style, test_now);
+	memcpy(copy, pixels, (size_t)TEST_WIDTH * TEST_HEIGHT * sizeof(pixels[0]));
+	test_frame(&view, ui, &style);
+	same = memcmp(copy, pixels, (size_t)TEST_WIDTH * TEST_HEIGHT * sizeof(pixels[0]));
+	if (!desk_only || same != 0) {
+		printf("FAIL desk-only desk_only=%d same=%d\n", desk_only, same);
+		test_failures++;
+	} else {
+		printf("PASS desk-only\n");
 	}
 
 	/* A date clicked (the 14th, Wednesday of the third week): its page turns, six frames over the turn. */
@@ -204,6 +226,7 @@ main(
 	kl_ui_destroy(ui);
 	kl_canvas_release(&canvas);
 	free(pixels);
+	free(copy);
 	kl_text_close(&text);
 
 	/* Reports whether every check passed. */

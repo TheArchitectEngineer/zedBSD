@@ -43,8 +43,8 @@
 /*
  * The window's state: the application, the window and its input, the
  * frame (its pixels, size and canvas), the text and the style, the view,
- * whether a frame is due, the window changed size, or something moves, and
- * whether the glass was decided.
+ * whether a frame is due, the window changed size, a widget moves, or the
+ * view moves by itself, and whether the glass was decided.
  */
 struct cal_window {
 	struct kl_app *app;
@@ -61,6 +61,7 @@ struct cal_window {
 	int dirty;
 	int resized;
 	int moving;
+	int animating;
 	int glass_decided;
 };
 
@@ -355,7 +356,7 @@ cal_loop(
 		/* Something of the view moving by itself (the breathing, a page, a cell): a frame at its pace. */
 		pace = cal_view_wait(&calendar->view, now);
 		if (pace >= 0)
-			calendar->dirty = 1;
+			calendar->animating = 1;
 
 		/* A frame. */
 		cal_draw(calendar, now);
@@ -489,13 +490,27 @@ cal_draw(
 	struct kl_glass_panel panels[CAL_PANELS_MAX];
 	struct kl_event event;
 	size_t count;
+	int desk_only;
 	int status;
 	int error;
 	int taken;
 
 	/* Nothing changed and nothing moves: no frame. */
-	if (!calendar->dirty && !calendar->moving)
+	if (!calendar->dirty && !calendar->moving && !calendar->animating)
 		return;
+
+	/* Only the desk calendar moving (no input, no widget moving): its frame alone, cheaper than the whole view. */
+	desk_only = 0;
+	if (!calendar->dirty && !calendar->moving)
+		desk_only = cal_view_desk_only(&calendar->view);
+	calendar->animating = 0;
+	if (desk_only) {
+		cal_view_draw_desk(&calendar->view, &calendar->style, now_us);
+		status = kl_window_present(calendar->window, calendar->pixels, (size_t)calendar->width);
+		if (status == EAGAIN)
+			calendar->resized = 1;
+		return;
+	}
 
 	/* The view. */
 	calendar->dirty = 0;
