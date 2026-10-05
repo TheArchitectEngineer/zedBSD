@@ -89,8 +89,8 @@ def prepare(output):
     source = replace_once(source,
                           'pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }',
                           POINTER)
-    source = replace_once(source, '/bin/wayland --timeout=400',
-                          '/bin/wayland --log-frames --timeout=400')
+    source = replace_once(source, '/bin/wayland --testing --timeout=400',
+                          '/bin/wayland --testing --log-frames --timeout=400')
     source = replace_once(source, "finish() {",
                           'finish() {\n\tguest \'cat /tmp/zdesktop.log\' > "$out/frames.log"')
     source += "# Retains the original first-capture verdict and complete final logs.\nfinish\n"

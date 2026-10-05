@@ -2,12 +2,12 @@
 
 # WS110: コンポジタの通常起動を既定にし試験modeを明示
 
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG001
 Parent: [Master](../master.md)
 Queue: none /実装未承認
-Resume point: [p001 の設計](phase001/phase.md)（2026-10-05、P2）。引数の契約・変える範囲（試験の起動 246 行）・決めの 3 点を Q1 に出した。実装の指示待ち。
+Resume point: p001 実装済み、p002 の置き換え（233 file・246 行）済み。T1 の代表の試験（roles-guest・files-p002・zdesktop-p095）待ち。
 
 ## Objective / scope / acceptance
 
@@ -21,8 +21,8 @@ T1 引数なし通常sessionが期限なしで動きLog Out/desktop表示が成�
 
 | ID | Purpose | Goal | Status | Dependencies |
 | --- | --- | --- | --- | --- |
-| [ws110p001](phase001/phase.md) | 通常/testing roleと引数契約 | T1/T2仕様を確定し共通mainのmodeを変更 | planning（設計済み、範囲の決めを Q1 に） | user implementation instruction + contract |
-| ws110p002 | test/launcher/docs整合 | T3関連現役testのtesting指定とnormal統合試験 | planning | p001 API/mode output |
+| [ws110p001](phase001/phase.md) | 通常/testing roleと引数契約 | T1/T2仕様を確定し共通mainのmodeを変更 | in-progress（実装済み、T1 待ち） | user implementation instruction + contract |
+| [ws110p002](phase002/phase.md) | test/launcher/docs整合 | T3関連現役testのtesting指定とnormal統合試験 | in-progress（置き換え済み、T1 待ち） | p001 API/mode output |
 | ws110p003 | 近final全文規約/回帰 | T4/T1〜T3独立受け入れ | planning | p001/p002 actual final outputs |
 
 Phase詳細は実装指示・仕様決定後、有限scopeに分けて作成。Queue membership無し。現存codeのstyleをpolicyとしない。

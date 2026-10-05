@@ -56,7 +56,7 @@ for f in userland/desktop/keiland/wallpapers/*.png; do put "$f" "/root/Pictures/
 printf 'zedBSD / Kei 1.0.0 Beta 1\n\nA UNIX-like OS under a permissive license,\nwith its own kernel, desktop and GPU drivers.\n\n- Keiland desktop (Wayland)\n- Vulkan on the i915 driver and Venus\n- Files, Notes, Terminal, PDF Viewer, Image Viewer\n' > "$out/hello.txt"
 put "$out/hello.txt" /root/Documents/hello.txt
 guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=3000 --width='$W' --height='$H' --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 8; echo started' >/dev/null
+/bin/wayland --testing --timeout=3000 --width='$W' --height='$H' --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 8; echo started' >/dev/null
 sleep 10
 shot 01-desktop.png 3
 

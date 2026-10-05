@@ -130,7 +130,7 @@ for step in "$@"; do
 cp /tmp/pdfviewer /bin/pdfviewer && cp /tmp/notes-program /bin/notes && cp /tmp/libpdf.so /lib/libpdf.so && cp /tmp/libtruetype.so /lib/libtruetype.so &&
 chmod 0755 /bin/pdfviewer /bin/notes && chmod 0644 /lib/libpdf.so /lib/libtruetype.so && cksum /lib/libpdf.so && echo installed' | tail -2
 		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=3600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started' | tail -1
+/bin/wayland --testing --timeout=3600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started' | tail -1
 		;;
 	quilt)
 		viewer /tmp/demo/quilt.pdf --mode=page

@@ -48,7 +48,7 @@ put "$build/bin/wayland" /bin/wayland
 put "$build/dynamic/libkeiland.so" /lib/libkeiland.so
 guest 'chmod 755 /bin/wayland' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
-/bin/wayland --timeout=300 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 
 # 1. The window, where the compositor places it.

@@ -25,7 +25,7 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 
 guest "$stop_all" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/soak-*.pid; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=$((C10_SECONDS + 1200)) --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & echo \$! > /tmp/soak-wayland.pid; i=0; while [ ! -S /tmp/wayland-0 ] && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1; echo started" >/dev/null
+/bin/wayland --testing --timeout=$((C10_SECONDS + 1200)) --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & echo \$! > /tmp/soak-wayland.pid; i=0; while [ ! -S /tmp/wayland-0 ] && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 1; echo started" >/dev/null
 start=$(date +%s)
 rounds=0
 alive=1

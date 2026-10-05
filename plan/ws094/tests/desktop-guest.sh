@@ -70,7 +70,7 @@ expect_count() {
 compositor() {
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; mkdir -p /tmp/dhome/Desktop; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture $1 > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture $1 > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q 'ZWL MODE' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 }
 

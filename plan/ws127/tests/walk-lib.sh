@@ -33,7 +33,7 @@ walk_start() {
 	walk_run 'rm -f /tmp/wayland-0 /tmp/files.clipboard; [ -d /tmp/fhome ] || sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null' >/dev/null
 	walk_run "export XDG_RUNTIME_DIR=/tmp
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=1800 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+/bin/wayland --testing --timeout=1800 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=1700 --width=$width --height=$height '$folder' > /tmp/f.log 2>&1 </dev/null & echo started" >/dev/null
 	i=0
 	while [ $i -lt 30 ]; do

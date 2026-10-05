@@ -117,7 +117,7 @@ put "$build/dynamic/libjpeg-compat.so" /lib/libjpeg-compat.so
 put plan/ws081/tests/pages/touch.html /tmp/touch.html
 guest 'chmod 755 /bin/wayland /bin/browser /bin/touchinject; echo made' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/browser --width=900 --height=640 --fallback-font=/usr/share/fonts/keiland.ttf /tmp/touch.html > /tmp/b.log 2>&1 </dev/null & i=0; while ! grep -q "ZBROWSER READY" /tmp/b.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 3; echo started' >/dev/null
 expect 'ZBROWSER READY width=900 height=640 document=3960' "the browser shows the page"

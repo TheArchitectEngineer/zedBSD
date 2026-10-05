@@ -34,7 +34,7 @@ expect_log() {
 
 # 1. zdesktop, xserver, zgears; the picture after a few seconds.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; /bin/wayland --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 DISPLAY=:0 /bin/xserver > /tmp/x11server.log 2>&1 </dev/null & sleep 6
 DISPLAY=:0 /bin/zgears --frames=300 --token=g > /tmp/gears.log 2>&1 </dev/null & sleep 12; echo started' >/dev/null
 pointer move 1250 780 sleep 400

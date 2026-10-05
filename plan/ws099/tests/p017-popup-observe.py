@@ -54,7 +54,7 @@ def main():
     replacements = {
         'cd "$(dirname -- "$0")/../../.."': 'cd ' + shlex.quote(str(ROOT)),
         'check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }': OBSERVER,
-        '/bin/wayland --timeout=400': '/bin/wayland --log-frames --timeout=400',
+        '/bin/wayland --testing --timeout=400': '/bin/wayland --log-frames --timeout=400',
         "finish() {": "finish() {\n\tguest 'cat /tmp/zdesktop.log' > \"$out/frames.log\"",
     }
     for before, after in replacements.items():

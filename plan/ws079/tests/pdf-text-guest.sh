@@ -87,7 +87,7 @@ for step in "$@"; do
 cp /tmp/pdfviewer /bin/pdfviewer && cp /tmp/libpdf.so /lib/libpdf.so && cp /tmp/libtruetype.so /lib/libtruetype.so &&
 chmod 0755 /bin/pdfviewer && chmod 0644 /lib/libpdf.so /lib/libtruetype.so && ls -l /usr/share/fonts && echo installed'
 		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=1800 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started'
+/bin/wayland --testing --timeout=1800 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started'
 		;;
 	simple)
 		viewer /tmp/text-simple.pdf --mode=page

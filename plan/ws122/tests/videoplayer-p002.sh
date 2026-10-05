@@ -65,7 +65,7 @@ guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp
 service start audiod >/dev/null 2>&1; sleep 1
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-rm -f /tmp/wayland-0; /bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
+rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/videoplayer --timeout-s=300 /usr/share/videoplayer-tests/sample.mp4 > /tmp/v.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 
 # 1. Opened and playing.

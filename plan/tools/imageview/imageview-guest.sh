@@ -81,7 +81,7 @@ cp /tmp/imageview /bin/imageview && cp /tmp/wayland /bin/wayland && chmod 0755 /
 for l in libkeiland libvulkan libwayland-client libtruetype libpng-compat libjpeg-compat libgif-compat libz-compat; do cp /tmp/$l.so /lib/$l.so && chmod 0644 /lib/$l.so; done &&
 mkdir -p /etc/keiland /tmp/pics && cp /tmp/apps.conf /etc/keiland/apps.conf && mv /tmp/0*-* /tmp/pics/ && ls /tmp/pics && echo installed'
 		guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=3600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started'
+/bin/wayland --testing --timeout=3600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 7; echo started'
 		;;
 	home)
 		pointer move 23 17 sleep 300 down sleep 60 up sleep 1500 move 700 780 sleep 300

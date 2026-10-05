@@ -121,7 +121,7 @@ timeout 60 python3 plan/tools/guest/guest.py put "$out/pen.pen" /tmp/pen.pen >/d
 timeout 60 python3 plan/tools/guest/guest.py put "$out/rubber.pen" /tmp/rubber.pen >/dev/null 2>&1 </dev/null
 guest 'rm -rf /tmp/notes-pen /tmp/notes-pen.log /root/.local/share/keiland/notes; mkdir -p /tmp/notes-pen' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/notes --fullscreen /tmp/notes-pen/pen.pdf > /tmp/notes-pen.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/notes-pen.log 'NOTES TABLET seat'
 

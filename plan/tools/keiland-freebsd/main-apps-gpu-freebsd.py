@@ -32,7 +32,7 @@ try:
   os.close(w);w=-1;assert select.select([r],[],[],5)[0] and os.read(r,1)==b'\n';identity=endpoint.stat().st_ino
   socket=runtime/'wayland-keiland';serverlog=evidence/'main-apps-compositor.txt'
   with serverlog.open('w') as output:
-   server=subprocess.Popen([str(prefix/'bin/wayland'),'--socket='+str(socket),'--timeout=90','--log-frames','--desktop-client=none','--desktop-token=ws109-native'],preexec_fn=unprivileged,env=env,cwd=directory,stdout=output,stderr=subprocess.STDOUT,text=True)
+   server=subprocess.Popen([str(prefix/'bin/wayland'),'--testing','--socket='+str(socket),'--timeout=90','--log-frames','--desktop-client=none','--desktop-token=ws109-native'],preexec_fn=unprivileged,env=env,cwd=directory,stdout=output,stderr=subprocess.STDOUT,text=True)
    deadline=time.monotonic()+10
    while not socket.exists() and server.poll() is None and time.monotonic()<deadline:time.sleep(.05)
    assert socket.exists()

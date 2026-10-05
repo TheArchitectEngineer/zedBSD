@@ -57,7 +57,7 @@ icon() {
 guest "$stop_all; rm -f /etc/keiland/apps.conf; rm -rf /root/Documents/Notes /root/.local/share/keiland/notes" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # 1. Home.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500

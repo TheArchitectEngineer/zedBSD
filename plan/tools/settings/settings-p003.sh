@@ -29,7 +29,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null;
 env='export XDG_RUNTIME_DIR=/tmp HOME=/root'
 conf=/root/.config/keiland/desktop.conf
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[k]eiland-settings" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
-start_desktop="$env; rm -f /tmp/wayland-0; /bin/wayland --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started"
+start_desktop="$env; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started"
 status=0
 
 # Checks that a guest file has a line matching a pattern.

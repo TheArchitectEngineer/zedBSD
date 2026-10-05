@@ -97,7 +97,7 @@ put "$build/bin/wltest" /bin/wltest
 put plan/ws079/tests/notes-standin.sh /bin/notes
 guest 'chmod 755 /bin/wayland /bin/wltest /bin/notes; rm -f /tmp/notes-args /tmp/notes.log /tmp/notes.pids' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5
 /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=250 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 pointer move 640 500 sleep 800
 

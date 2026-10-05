@@ -70,7 +70,7 @@ for library in libpng-compat libjpeg-compat libgif-compat libz-compat; do
 done
 guest 'chmod 755 /bin/imageview' >/dev/null
 guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=1200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=1200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -q "ZWL READY" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 expect_more /tmp/zdesktop.log 'ZWL READY' 0
 

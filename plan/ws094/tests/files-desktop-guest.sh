@@ -129,7 +129,7 @@ for step in "$@"; do
 	show)
 		guest "$stop_all" >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP start pid=[0-9]+ command=/bin/files --desktop'
 		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=44 width=1280 height=756'
@@ -199,7 +199,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		fresh_desktop
 		guest 'mkdir -p /tmp/dhome/.config/keiland; printf "notes.txt\t2\t3\n" > /tmp/dhome/.config/keiland/desktop-layout' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=notes.txt column=2 row=3 '
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=Projects column=0 row=0 '
@@ -215,7 +215,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		fresh_desktop
 		guest 'mkdir -p /tmp/dhome/.config/keiland; printf "notes.txt\t2\t3\nghost.txt\t4\t4\n" > /tmp/dhome/.config/keiland/desktop-layout' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP prune removed=1 kept=1'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=notes.txt column=2 row=3 '
@@ -362,7 +362,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		fresh_desktop
 		guest 'rm -f /tmp/dhome/.config/keiland/desktop-layout' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=notes.txt column=0 row=1 '
 		# A cell's column counts from the right edge: the surface point (x, y - 44) is in column
@@ -487,7 +487,7 @@ ls /tmp/dhome100/Desktop | wc -l' | tail -1 | sed 's/^/items made: /'
 		for round in 1 2 3; do
 			guest "$stop_all" >/dev/null
 			guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome100; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log && [ \$i -lt 120 ]; do sleep 0.25; i=\$((i+1)); done; sleep 3; echo started" >/dev/null
 			began=$(guest "grep -a 'ZWL DESKTOP start ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
 			ready=$(guest "grep -a 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log | head -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')

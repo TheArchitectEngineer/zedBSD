@@ -22,7 +22,7 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 
 # 1. zdesktop, the log truncated under it, then its end.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/lognul.log; /bin/wayland --timeout=300 --width=1280 --height=800 --glass > /tmp/lognul.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -aq ZWL.READY /tmp/lognul.log && break; sleep 0.5; done; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/lognul.log; /bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass > /tmp/lognul.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -aq ZWL.READY /tmp/lognul.log && break; sleep 0.5; done; echo started' >/dev/null
 guest ': > /tmp/lognul.log; echo truncated' >/dev/null
 guest "$stop_all" >/dev/null
 sleep 1
