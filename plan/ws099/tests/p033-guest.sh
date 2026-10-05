@@ -3,11 +3,11 @@
 # plan/ws035/tests/config-amd64-zdesktop.mk built from the commit under test (plan/ws035/tests/zdesktop-guest.sh start
 # IMAGE), zdesktop --glass at 1280x800 with wltest windows (420x300).
 #  1. Window a floating; a double click on its title bar docks it ("GLASS dock surface=A via=double-click").
-#  2. Window b started: it opens docked ("GLASS open-docked surface=B front=A"), its first configure is the docked
+#  2. Window b started: it opens docked ("GLASS open-docked client=BC surface=B front_client=AC front=A"), its first configure is the docked
 #     space (width=1280), and it maps without the floating placement; docked-b.png.
 #  3. The bar's restore button brings b back (GLASS undock surface=B via=button) at seven tenths of the docked space
 #     (its configure's width=896); floating-b.png.
-#  4. Window c started while b (floating) is in front: it does not open docked (no "open-docked surface=C").
+#  4. Window c started while b (floating) is in front: it does not open docked (no "open-docked client=CC").
 #  5. No ERROR in zdesktop's log.
 # PASS: the last line "p033: status 0".
 #   plan/ws099/tests/p033-guest.sh [OUTDIR]          (default build/ws099-p033)
@@ -34,9 +34,10 @@ expect_log() {
 	fi
 }
 
-# The surface, x and y of the latest window mapped.
+# The surface, x, y and client of the latest window mapped (a surface's number is its client's own: every wltest's is
+# the same, so a window is named by its client and its surface).
 last_map() {
-	guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p'
+	guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*ZWL MAP client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4 \1/p'
 }
 
 guest "$stop_all" >/dev/null
@@ -44,20 +45,20 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
 
 # 1. a, floating, then docked by a double click on its title bar.
-guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=6000 --delay-ms=100 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=100 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 set -- $(last_map)
-a=${1:-0}; ax=${2:-0}; ay=${3:-0}
+a=${1:-0}; ax=${2:-0}; ay=${3:-0}; ac=${4:-0}
 echo "a: surface $a at $ax,$ay"
 pointer move $((ax + 150)) $((ay - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 2000 >/dev/null
 expect_log "GLASS dock surface=$a via=double-click"
 
 # 2. b opens docked.
-guest "$env /bin/wltest --windowed --size=420x300 --color=e8f0e0 --frames=6000 --delay-ms=100 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "$env /bin/wltest --windowed --size=420x300 --color=e8f0e0 --frames=3600 --delay-ms=100 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 set -- $(last_map)
-b=${1:-0}
-echo "b: surface $b"
-expect_log "GLASS open-docked surface=$b front=$a x=0 "
-expect_log "CONFIGURE client=[0-9]+ surface=$b serial=[0-9]+ width=1280 "
+b=${1:-0}; bc=${4:-0}
+echo "b: client $bc surface $b"
+expect_log "GLASS open-docked client=$bc surface=$b front_client=$ac front=$a x=0 "
+expect_log "CONFIGURE client=$bc surface=$b serial=[0-9]+ width=1280 "
 pointer move 1200 780 sleep 500 >/dev/null
 check "$out/docked-b.png" >/dev/null
 
@@ -66,16 +67,16 @@ set -- $(guest "grep 'GLASS dock surface=$a via=double-click' /tmp/zdesktop.log 
 restore=${2:-0}
 pointer move "$restore" 17 sleep 400 down sleep 60 up sleep 2000 >/dev/null
 expect_log "GLASS undock surface=$b via=button"
-expect_log "CONFIGURE client=[0-9]+ surface=$b serial=[0-9]+ width=896 "
+expect_log "CONFIGURE client=$bc surface=$b serial=[0-9]+ width=896 "
 pointer move 1200 780 sleep 500 >/dev/null
 check "$out/floating-b.png" >/dev/null
 
 # 4. c, with b floating in front, opens as it would.
-guest "$env /bin/wltest --windowed --size=420x300 --color=f0e0e8 --frames=6000 --delay-ms=100 --token=c > /tmp/c.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "$env /bin/wltest --windowed --size=420x300 --color=f0e0e8 --frames=3600 --delay-ms=100 --token=c > /tmp/c.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 set -- $(last_map)
-c=${1:-0}
-echo "c: surface $c"
-if guest "grep -c 'GLASS open-docked surface=$c ' /tmp/zdesktop.log" | tail -1 | grep -qx 0; then echo "c-floating: ok"; else echo "c-floating: FAILED"; status=1; fi
+c=${1:-0}; cc=${4:-0}
+echo "c: client $cc surface $c"
+if guest "grep -c 'GLASS open-docked client=$cc surface=$c ' /tmp/zdesktop.log" | tail -1 | grep -qx 0; then echo "c-floating: ok"; else echo "c-floating: FAILED"; status=1; fi
 check "$out/floating-c.png" >/dev/null
 
 # 5. No ERROR.

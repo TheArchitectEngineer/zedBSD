@@ -2,7 +2,7 @@
 
 # ws132-p009: Files の Devices の直し（mount の確認、起動 disk を出さない）
 
-Status: in-progress（実装済み・T1 の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-186 PASS（QEMU、mount の前の確認の card、Esc・Enter）。起動 disk の除外は UAT）。以前: in-progress（実装済み・T1 の試験待ち）
 Disposition: normal
 Parent: [WS132](../ws.md)
 Queue: q755（Q1、2026-10-05、P2 g15）

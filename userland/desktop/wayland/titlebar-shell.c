@@ -2043,8 +2043,16 @@ shell_draw_field_text(
 	before[field->cursor] = '\0';
 	cursor_x = glass_text_width(server, SIZE_BAR, before);
 
-	/* The selection's tint. */
-	if (end > start) {
+	/*
+	 * The selection's tint, within the field's width as the text is
+	 * (BUG-181: the selection of a long URL was drawn past the field, out of
+	 * the title bar).
+	 */
+	if (start_x > width)
+		start_x = width;
+	if (end_x > width)
+		end_x = width;
+	if (end > start && end_x > start_x) {
 		memcpy(colour, selection, sizeof(colour));
 		colour[3] *= fade;
 		glass_draw_solid(server, command, (float)(x + start_x), (float)(baseline - 14), (float)(end_x - start_x), 18.0f, 2.0f, colour);

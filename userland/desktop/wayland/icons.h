@@ -45,6 +45,8 @@ enum glass_icon {
 	GLASS_ICON_VOLUME_2,
 	GLASS_ICON_VOLUME_3,
 	GLASS_ICON_VOLUME_MUTED,
+	/* The system bar's removable media (ws132-p005; the USB trident, the 2026-10-05 user decision). */
+	GLASS_ICON_USB,
 	GLASS_ICON_APP_FILES,
 	GLASS_ICON_APP_NOTES,
 	GLASS_ICON_APP_TERMINAL,
