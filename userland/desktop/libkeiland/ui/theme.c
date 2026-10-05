@@ -15,11 +15,11 @@
 
 #include <keiland.h>
 
+#include "internal.h"
+
 /*
- * The light theme, the only one so far.
- *
- * It is constant for the life of the program; kl_theme_default hands out
- * a pointer to it and nobody writes it.
+ * The light theme, the program's until the compositor tells the dark
+ * appearance (ws089-p017).
  */
 static const struct kl_theme theme_light = {
 	KL_RGB(0xeef2f7),		/* ground_top */
@@ -61,11 +61,107 @@ static const struct kl_theme theme_light = {
 };
 
 /*
- * Reports the theme applications draw with (the light one).
+ * The dark theme (ws089-p017): the light one's greys turned over -- a dark
+ * ground and cards, light text -- with the accent, the selection, the
+ * folder and the news kept; the sizes are the light theme's.  Its text on
+ * its panel, its cards and its controls keeps a contrast of 4.5 or more
+ * (plan/ws089/tests/host-dark.c).
+ */
+static const struct kl_theme theme_dark = {
+	KL_RGB(0x1b1f26),		/* ground_top */
+	KL_RGB(0x16191f),		/* ground_bottom */
+	KL_RGB(0x23272f),		/* panel */
+	KL_RGB(0x343a45),		/* panel_edge */
+	KL_RGBA(0x000000, 70),		/* shadow */
+	KL_RGBA(0x000000, 40),		/* glass_sidebar */
+	KL_RGBA(0x000000, 60),		/* glass_content */
+	KL_RGBA(0x1b1f26, 120),	/* sidebar */
+	KL_RGB(0xe9edf3),		/* text */
+	KL_RGB(0xa9b2bf),		/* text_secondary */
+	KL_RGB(0x646d7a),		/* text_faint */
+	KL_RGB(0xc1c9d6),		/* icon */
+	KL_RGB(0x2f7cf6),		/* accent */
+	KL_RGBA(0x2f7cf6, 70),		/* selection */
+	KL_RGBA(0x8a96aa, 50),		/* selection_inactive */
+	KL_RGBA(0xffffff, 18),		/* hover */
+	KL_RGB(0x2e333c),		/* separator */
+	KL_RGB(0x5aa2f5),		/* folder */
+	KL_RGB(0xe5484d),		/* danger */
+	16.0f,				/* card_radius */
+	8.0f,				/* control_radius */
+	28,				/* row_height */
+	13U,				/* text_body */
+	12U,				/* text_small */
+	15U,				/* text_title */
+	KL_RGBA(0x2a2f38, 150),	/* card */
+	KL_RGBA(0x3a404b, 190),	/* card_edge */
+	KL_RGBA(0x8a96aa, 50),		/* row_separator */
+	KL_RGBA(0x2c313b, 225),	/* control */
+	KL_RGBA(0x8a96aa, 80),		/* control_edge */
+	KL_RGB(0x4a515d),		/* track */
+	KL_RGB(0x2fb45a),		/* good */
+	KL_RGB(0xe0533d),		/* bad */
+	32,				/* control_height */
+	44,				/* switch_width */
+	24				/* switch_height */
+};
+
+/*
+ * The theme handed out: a copy of the light or the dark one, made when
+ * first asked for and again when the appearance changes, so that the
+ * pointer applications keep shows the appearance of now.
+ */
+static struct kl_theme theme_now;
+static int theme_made;
+
+/*
+ * Reports the theme applications draw with: the light one, or the dark
+ * one once the compositor told the dark appearance (appearance.c).
  */
 const struct kl_theme *
 kl_theme_default(void)
 {
-	/* Succeeded: the light theme. */
-	return &theme_light;
+	/* The light theme until an appearance is told. */
+	if (!theme_made) {
+		theme_now = theme_light;
+		theme_made = 1;
+	}
+
+	/* Succeeded. */
+	return &theme_now;
+}
+
+/*
+ * Makes the theme handed out the appearance's (KL_APPEARANCE_*; any other
+ * value is light).
+ */
+void
+keiui_theme_set(
+	unsigned appearance)
+{
+	/* The appearance's theme. */
+	theme_now = theme_light;
+	if (appearance == KL_APPEARANCE_DARK)
+		theme_now = theme_dark;
+	theme_made = 1;
+}
+
+/*
+ * The light theme or the dark one, for the library's tests of the
+ * contrast (NULL for an unknown appearance).
+ */
+const struct kl_theme *
+keiui_theme_of(
+	unsigned appearance)
+{
+	/* The light theme. */
+	if (appearance == KL_APPEARANCE_LIGHT)
+		return &theme_light;
+
+	/* The dark theme. */
+	if (appearance == KL_APPEARANCE_DARK)
+		return &theme_dark;
+
+	/* None. */
+	return NULL;
 }

@@ -150,6 +150,9 @@
 		kl_instance_close;
 		kl_activation_token;
 		kl_activate;
+		kl_appearance_open;
+		kl_appearance_get;
+		kl_appearance_close;
 		kl_canvas_init;
 		kl_canvas_release;
 		kl_canvas_clip_push;

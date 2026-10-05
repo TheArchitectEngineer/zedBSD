@@ -1,0 +1,51 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Declares zdesktop's appearance protocol (keiland_theme_v1, version 1;
+ * ws089-p017): the desktop's appearance, light or dark, told when the
+ * global is bound and whenever it changes.
+ *
+ * The header is private: it is not installed, and applications reach the
+ * protocol through libkeiland (<keiland.h>) only.  libkeiland includes it
+ * by its path in the tree.
+ */
+
+#ifndef KERN_KEILAND_THEME_V1_CLIENT_PROTOCOL_H
+#define KERN_KEILAND_THEME_V1_CLIENT_PROTOCOL_H
+
+#include <wayland/wayland-client-core.h>
+#include <wayland/wayland-client-protocol.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The object the protocol names; only libwayland knows what is in it. */
+struct keiland_theme_v1;
+
+/* The interface's description (theme-protocol.c). */
+extern const struct wl_interface keiland_theme_v1_interface;
+
+/*
+ * keiland_theme_v1: the global.  appearance is 0 for light and 1 for dark
+ * (a value a client does not know is taken as light).
+ */
+#define KEILAND_THEME_V1_APPEARANCE_LIGHT 0U
+#define KEILAND_THEME_V1_APPEARANCE_DARK 1U
+struct keiland_theme_v1_listener {
+	void (*appearance)(void *data, struct keiland_theme_v1 *object, uint32_t appearance);
+};
+int keiland_theme_v1_add_listener(struct keiland_theme_v1 *object, const struct keiland_theme_v1_listener *listener, void *data);
+#define KEILAND_THEME_V1_DESTROY 0U
+void keiland_theme_v1_destroy(struct keiland_theme_v1 *object);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

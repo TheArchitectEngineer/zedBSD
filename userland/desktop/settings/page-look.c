@@ -9,7 +9,8 @@
  * The pages of the desktop's look and of the machine's screen and disks
  * (ws089-p004):
  *
- *   Appearance  the windows' transparency, a slider saved when let go;
+ *   Appearance  light or dark (ws089-p017), a switch; the windows'
+ *               transparency, a slider saved when let go;
  *   Wallpaper   the pictures, the default first, one click to choose;
  *   Display     the screen's mode, read only (changing it comes later);
  *   Storage     each file system's use.
@@ -25,6 +26,7 @@
 
 /* The controls of the look's pages (hit indices); a picture is its index past LOOK_PICTURE_FIRST. */
 #define LOOK_OPACITY		1
+#define LOOK_DARK		2
 #define LOOK_PICTURE_FIRST	100
 
 /* The space between two cards, a card's inner margin, and the text sizes. */
@@ -45,14 +47,19 @@
 /* A file system's bar. */
 #define LOOK_BAR_HEIGHT		10
 
+/* The card of the appearance: its height, and the switch's width and height. */
+#define LOOK_DARK_HEIGHT	76
+#define LOOK_SWITCH_WIDTH	44
+#define LOOK_SWITCH_HEIGHT	24
+
 static int look_note(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, const char *text);
 static int look_message(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 static void look_tile(struct se_app *app, struct fm_canvas *canvas, unsigned index, int x, int y, int width, int height);
 static int look_volume(struct se_app *app, struct fm_canvas *canvas, const struct se_volume *volume, int x, int top, int width);
 
 /*
- * Draws the Appearance page: the windows' transparency, and what comes
- * later.  Returns the edge below it.
+ * Draws the Appearance page: light or dark, and the windows'
+ * transparency.  Returns the edge below it.
  */
 int
 se_appearance_draw(
@@ -74,6 +81,18 @@ se_appearance_draw(
 	/* A message about saving first, when there is one. */
 	card = look_message(app, canvas, x, top, width);
 
+	/* The card of the appearance: dark or not, a switch that works only when the settings can be changed (ws089-p017). */
+	enabled = 0;
+	if (app->look.writable)
+		enabled = 1;
+	y = se_card_begin(app, canvas, x, card, width, LOOK_DARK_HEIGHT, NULL, NULL);
+	fm_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
+	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Dark appearance", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	fm_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
+	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 24 + line.ascent, "Dark windows and desktop, easier on the eyes at night.", LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD - LOOK_SWITCH_WIDTH - 16, SE_COLOR_TEXT_SECONDARY);
+	se_toggle_draw(app, canvas, x + width - LOOK_PAD - LOOK_SWITCH_WIDTH, card + (LOOK_DARK_HEIGHT - LOOK_SWITCH_HEIGHT) / 2, app->look.dark, enabled, LOOK_DARK);
+	card += LOOK_DARK_HEIGHT + LOOK_GAP;
+
 	/* The card of the windows: a title, a line, and the slider with its value. */
 	height = 150;
 	y = se_card_begin(app, canvas, x, card, width, height, "Windows", "How much of the desktop shows through the windows.");
@@ -93,9 +112,6 @@ se_appearance_draw(
 
 	/* The slider: see-through at the left, opaque at the right; it works only when the settings can be changed. */
 	fraction = (float)(app->look.opacity - LOOK_OPACITY_MIN) / (float)(LOOK_OPACITY_MAX - LOOK_OPACITY_MIN);
-	enabled = 0;
-	if (app->look.writable)
-		enabled = 1;
 	se_slider_draw(app, canvas, x + LOOK_PAD + 14, y + 26, width - 2 * LOOK_PAD - 28, fraction, enabled, LOOK_OPACITY, &app->look.slider);
 
 	/* The ends' words under the slider. */
@@ -104,11 +120,8 @@ se_appearance_draw(
 	value_width = fm_text_width(app->text, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0);
 	(void)fm_text_draw(app->text, canvas, x + width - LOOK_PAD - value_width, y + 66 + line.ascent, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
 
-	/* What comes later, under the card. */
-	y = look_note(app, canvas, x, card + height + LOOK_GAP, width, "Accent colours and a dark look are coming in a later version of Kei.");
-
 	/* The edge below the cards. */
-	return y;
+	return card + height;
 }
 
 /*
@@ -234,14 +247,22 @@ se_storage_draw(
 }
 
 /*
- * Carries out a click on a control of the look's pages: a picture is
- * chosen.
+ * Carries out a click on a control of the look's pages: the appearance's
+ * switch turns, or a picture is chosen.
  */
 void
 se_look_press(
 	struct se_app *app,
 	int index)
 {
+	/* The switch turns, and is saved; the compositor tells every program, this one too (window.c). */
+	if (index == LOOK_DARK) {
+		app->look.dark = !app->look.dark;
+		se_look_set_number(app, "appearance.dark", app->look.dark, 0);
+		app->dirty = 1;
+		return;
+	}
+
 	/* A picture's tile. */
 	if (index >= LOOK_PICTURE_FIRST)
 		se_look_set_wallpaper(app, index - LOOK_PICTURE_FIRST);
@@ -432,7 +453,7 @@ look_volume(
 	if (volume->total != 0U)
 		share = (float)((double)volume->used / (double)volume->total);
 	bar = width - 2 * LOOK_PAD;
-	fm_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar, (float)LOOK_BAR_HEIGHT, 5.0f, FM_RGB(0xd3d9e2));
+	fm_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_RAIL);
 	if (share > 0.9f) {
 		fm_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar * share, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_BAD);
 	} else {

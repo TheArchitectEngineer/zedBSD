@@ -233,7 +233,7 @@ storage_use_card(
 			ink = SE_COLOR_TEXT_SECONDARY;
 		(void)fm_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 16, group->name, STORAGE_TEXT_ROW, 0, bar - 120, ink);
 		(void)fm_text_draw_fit(app->text, canvas, right - 110, y + 16, size, STORAGE_TEXT_ROW, 0, 110, SE_COLOR_TEXT_SECONDARY);
-		fm_canvas_round(canvas, (float)(x + STORAGE_PAD), (float)(y + 24), (float)bar, (float)STORAGE_BAR, 3.0f, FM_RGB(0xd3d9e2));
+		fm_canvas_round(canvas, (float)(x + STORAGE_PAD), (float)(y + 24), (float)bar, (float)STORAGE_BAR, 3.0f, SE_COLOR_RAIL);
 		fm_canvas_round(canvas, (float)(x + STORAGE_PAD), (float)(y + 24), (float)bar * share, (float)STORAGE_BAR, 3.0f, SE_COLOR_ACCENT);
 		if (group->folder) {
 			hit.x = x + STORAGE_PAD;

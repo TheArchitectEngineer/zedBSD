@@ -84,6 +84,7 @@ static void settings_apply_wallpaper(struct zwl_server *server, int starting);
 static void settings_apply_opacity(struct zwl_server *server);
 static void settings_apply_number(struct zwl_server *server, const char *name, int32_t *target);
 static void settings_apply_repeat(struct zwl_server *server, int starting);
+static void settings_apply_appearance(struct zwl_server *server, int starting);
 static void settings_mark(struct zwl_server *server, const char *name);
 static void settings_flush(struct zwl_server *server);
 static int settings_emit_value(struct zwl_client *client, uint32_t id, const struct zwl_settings_entry *entry);
@@ -554,6 +555,13 @@ settings_apply(
 		return;
 	}
 
+	/* Sets the desktop's appearance, light or dark, and tells the clients (ws089-p017). */
+	differs = strcmp(name, "appearance.dark");
+	if (differs == 0) {
+		settings_apply_appearance(server, starting);
+		return;
+	}
+
 	/* Chooses the input method, which is started again with it (WS154). */
 	differs = strcmp(name, "ime.method");
 	if (differs == 0) {
@@ -566,6 +574,37 @@ settings_apply(
 		/* Applied. */
 		return;
 	}
+}
+
+/*
+ * Sets the desktop's appearance the settings hold (0 light, 1 dark): the
+ * glass is drawn again in it and the clients that bound keiland_theme_v1
+ * are told (theme.c).  Nothing is bound at the start.
+ */
+static void
+settings_apply_appearance(
+	struct zwl_server *server,
+	int starting)
+{
+	int32_t dark;
+
+	/* The setting's value; anything but 1 is light. */
+	dark = server->dark;
+	settings_apply_number(server, "appearance.dark", &dark);
+	if (dark != 1)
+		dark = 0;
+
+	/* The same appearance changes nothing. */
+	if (dark == server->dark)
+		return;
+
+	/* Draws everything again in the new appearance. */
+	server->dark = dark;
+	server->dirty = 1;
+
+	/* Tells the clients, once anything can be bound. */
+	if (!starting)
+		zwl_theme_changed(server);
 }
 
 /* Tells the keyboards bound already the repeat again (nothing is bound before the look is made). */

@@ -570,7 +570,7 @@ info_header(
 	close.y = card->y + 16;
 	close.width = 28;
 	close.height = 28;
-	fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_RGB(0xeef1f6));
+	fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
 	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_INFO_CLOSE)
 		fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
 	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
@@ -704,7 +704,7 @@ info_pill(
 		return width;
 
 	/* Its colors: the accent for the primary one, darker under the pointer. */
-	ground = FM_RGB(0xeef1f6);
+	ground = FM_COLOR_BUTTON;
 	ink = FM_COLOR_TEXT;
 	if (primary != 0) {
 		ground = FM_COLOR_ACCENT;

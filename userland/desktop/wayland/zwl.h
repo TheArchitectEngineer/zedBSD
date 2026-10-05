@@ -201,6 +201,8 @@ enum zwl_kind {
 	/* xdg_activation_v1 and its tokens (activation.c, ws089-p016). */
 	ZWL_ACTIVATION_MANAGER,
 	ZWL_ACTIVATION_TOKEN,
+	/* keiland_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
+	ZWL_THEME,
 };
 
 /*
@@ -694,6 +696,13 @@ struct zwl_client {
 	unsigned peer_checked;
 	unsigned peer_same;
 	/*
+	 * Nonzero once the client bound keiland_theme_v1 (theme.c,
+	 * ws089-p017): it draws in the desktop's appearance, so its windows'
+	 * glass takes the dark appearance's colour too; a client that does
+	 * not know the appearance keeps light glass under its light drawing.
+	 */
+	unsigned theme_bound;
+	/*
 	 * When the client connected (zwl_milliseconds' clock): a program that
 	 * has just started may hand its right to show a window on top to
 	 * another program's window (activation.c, ws089-p016).
@@ -935,6 +944,12 @@ struct zwl_server {
 	int64_t pointer_remainder_y;
 	int32_t repeat_rate;
 	int32_t repeat_delay_ms;
+	/*
+	 * The desktop's appearance (appearance.dark, ws089-p017): 0 light, 1
+	 * dark.  The glass's drawing maps its colours by it (glass.c) and
+	 * keiland_theme_v1 tells the clients (theme.c).
+	 */
+	int32_t dark;
 	/* The input method the Languages page chose (ime.method, WS154): 0 none, 1 Japanese, 2 SKK. */
 	int32_t ime_method;
 	struct zwl_object *drag;
@@ -1338,6 +1353,11 @@ void zwl_glass_gesture(struct zwl_server *server, uint32_t gesture, uint32_t pha
 int zwl_glass_apps_room(struct zwl_server *server, int32_t *left, int32_t *right);
 void zwl_glass_bring(struct zwl_server *server, struct zwl_object *surface, const char *via);
 void zwl_glass_activate(struct zwl_server *server, struct zwl_object *surface, const char *via);
+
+/* The desktop's appearance (theme.c, ws089-p017). */
+int zwl_theme_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int zwl_theme_bind(struct zwl_object *theme);
+void zwl_theme_changed(struct zwl_server *server);
 int zwl_glass_open_docked(struct zwl_server *server, struct zwl_object *surface);
 void zwl_glass_open_wiseview(struct zwl_server *server, const char *via);
 

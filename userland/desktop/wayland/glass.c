@@ -240,6 +240,7 @@ static void loader_join(void);
 static void *prefetch_run(void *argument);
 static int prefetch_take(const char *path, struct wallpaper_picture *picture);
 static void prefetch_drop(void);
+static void glass_dark_color(const float *color, float *dark);
 
 /* The wallpaper read ahead, when zwl_glass_prefetch started it (only the main thread starts and takes it). */
 static struct glass_prefetch glass_prefetch;
@@ -1586,6 +1587,22 @@ glass_shape_draw(
 	constants[23] = shape->opacity;
 
 	/*
+	 * In the dark appearance (ws089-p017) the glass, the solid colours, the
+	 * outlines and the text take their dark colours, and the glass is the
+	 * shader's dark glass (mode -1); shadows, images and the blur's steps
+	 * are left as they are, and so is a shape drawn light.
+	 */
+	if (server->dark != 0 && shape->light == 0U) {
+		/* The colour of a shape that has one. */
+		if (shape->mode == MODE_GLASS || shape->mode == MODE_SOLID || shape->mode == MODE_RING || shape->mode == MODE_TEXT)
+			glass_dark_color(shape->color, &constants[12]);
+
+		/* The glass is dark glass. */
+		if (shape->mode == MODE_GLASS)
+			constants[17] = -1.0f;
+	}
+
+	/*
 	 * A shape without an image of its own is given the blurred scene under
 	 * the window being drawn when there is one (backdrop.c), else the
 	 * blurred wallpaper (only the glass samples it).
@@ -2544,4 +2561,52 @@ glass_draw_glyph_at(
 	memcpy(shape.color, color, sizeof(shape.color));
 	shape.set = glass->atlas.set;
 	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * Gives a colour of the light appearance its colour in the dark one
+ * (ws089-p017): a colour of little saturation (white, the greys, black and
+ * the faintly tinted ones) has its lightness turned over with its tint
+ * kept, so that white glass becomes dark glass and dark text light text;
+ * a saturated colour (the accent, the warnings) stays as it is.  The
+ * opacity is kept.
+ */
+static void
+glass_dark_color(
+	const float *color,
+	float *dark)
+{
+	float most;
+	float least;
+	float shift;
+	unsigned index;
+
+	/* The colour's greatest and least channel. */
+	most = color[0];
+	least = color[0];
+	for (index = 1U; index < 3U; index++) {
+		if (color[index] > most)
+			most = color[index];
+		if (color[index] < least)
+			least = color[index];
+	}
+
+	/* A saturated colour stays as it is. */
+	dark[3] = color[3];
+	if (most - least >= GLASS_DARK_SATURATION) {
+		dark[0] = color[0];
+		dark[1] = color[1];
+		dark[2] = color[2];
+		return;
+	}
+
+	/* The lightness (the middle of the greatest and the least) turned over, each channel moved by the same. */
+	shift = 1.0f - (most + least);
+	for (index = 0U; index < 3U; index++) {
+		dark[index] = color[index] + shift;
+		if (dark[index] < 0.0f)
+			dark[index] = 0.0f;
+		if (dark[index] > 1.0f)
+			dark[index] = 1.0f;
+	}
 }

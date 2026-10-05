@@ -117,6 +117,39 @@ kl_system_account_set_password(struct kl_system *system, const char *current, co
 	return 0;
 }
 
+/* The administration of the accounts (ws089-p026): not offered by the stand-in. */
+int
+kl_system_account_administer(struct kl_system *system, const char *password, const char *operation, uint32_t *request)
+{
+	(void)system;
+	(void)password;
+	(void)operation;
+	(void)request;
+	return ENOTSUP;
+}
+
+/* The lock screen's PIN (ws163-p003): not offered by the stand-in. */
+int
+kl_system_account_set_pin(struct kl_system *system, const char *current, const char *pin, uint32_t *request)
+{
+	(void)system;
+	(void)current;
+	(void)pin;
+	(void)request;
+	return ENOTSUP;
+}
+
+/* No refusal's word without the administration. */
+int
+kl_system_account_refusal(const struct kl_system *system, uint32_t request, char *reason, size_t size)
+{
+	(void)system;
+	(void)request;
+	(void)reason;
+	(void)size;
+	return 0;
+}
+
 /* Remote Login (ws089-p025): not offered by the stand-in. */
 void
 kl_system_sharing_get_state(const struct kl_system *system, struct kl_sharing_state *state)

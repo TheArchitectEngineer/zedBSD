@@ -6,7 +6,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 KEILAND_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/window.c userland/desktop/files/dnd.c userland/desktop/files/present.c \
 	userland/desktop/files/canvas.c userland/desktop/files/text.c \
-	userland/desktop/files/icons.c userland/desktop/files/ui.c \
+	userland/desktop/files/icons.c userland/desktop/files/ui.c userland/desktop/files/palette.c \
 	userland/desktop/files/ui-tabs.c \
 	userland/desktop/files/ui-grid.c userland/desktop/files/dir.c \
 	userland/desktop/files/mime.c userland/desktop/files/places.c userland/desktop/files/devices.c userland/desktop/files/mntent/mounts-mntent.c \

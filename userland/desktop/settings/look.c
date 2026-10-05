@@ -513,6 +513,9 @@ look_read(
 	/* The input method chosen on the Languages page (WS154; Japanese unless chosen otherwise). */
 	look->ime_method = kl_settings_get_int(look->settings, "ime.method", 1);
 
+	/* The appearance, light unless dark is chosen (ws089-p017). */
+	look->dark = kl_settings_get_int(look->settings, "appearance.dark", 0);
+
 	/*
 	 * The picture: the chosen one, or none (empty) for the default.  flags
 	 * starts at the default, so that a value never read counts as one.

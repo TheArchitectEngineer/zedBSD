@@ -210,15 +210,15 @@ test_set(void)
 	put_file("");
 	(void)zwl_settings_store_open(&store, test_home);
 	(void)zwl_settings_store_load(&store);
-	check(zwl_settings_store_choose(&store, "pointer.speed", "26") == 0, "set: pointer.speed 26");
-	check(zwl_settings_store_choose(&store, "pointer.speed", "301") == EINVAL, "set: 301 is refused");
+	check(zwl_settings_store_choose(&store, "mouse.speed", "26") == 0, "set: mouse.speed 26");
+	check(zwl_settings_store_choose(&store, "mouse.speed", "301") == EINVAL, "set: 301 is refused");
 	check(zwl_settings_store_choose(&store, "no.key", "1") == ENOENT, "set: an unknown key is ENOENT");
 	check(zwl_settings_store_choose(&store, "sound.available", "1") == EPERM, "set: sound.available is read only");
 	check(zwl_settings_store_reset(&store, "sound.available") == EPERM, "set: sound.available cannot be reset");
-	entry = zwl_settings_store_find(&store, "pointer.speed");
+	entry = zwl_settings_store_find(&store, "mouse.speed");
 	check(entry != NULL && strcmp(entry->value, "26") == 0 && entry->chosen, "set: 26 is in effect");
-	error = zwl_settings_store_reset(&store, "pointer.speed");
-	check(error == 0 && entry != NULL && strcmp(entry->value, "100") == 0 && !entry->chosen, "set: reset gives the default 100");
+	error = zwl_settings_store_reset(&store, "mouse.speed");
+	check(error == 0 && entry != NULL && strcmp(entry->value, "150") == 0 && !entry->chosen, "set: reset gives the default 150");
 	zwl_settings_store_close(&store);
 }
 
@@ -230,7 +230,7 @@ test_merge(void)
 	struct stat after;
 	int error;
 
-	put_file("# keep me\nfoo.bar=keep\npointer.speed=50\nwindow.opacity=90\n");
+	put_file("# keep me\nfoo.bar=keep\nmouse.speed=50\nwindow.opacity=90\n");
 	(void)zwl_settings_store_open(&store, test_home);
 	(void)zwl_settings_store_load(&store);
 
@@ -242,7 +242,7 @@ test_merge(void)
 	check(error == 0 && before.st_mtime == after.st_mtime && before.st_ino == after.st_ino, "merge: nothing changed, the file is not written");
 
 	/* A set, a reset and a set back to the start value. */
-	(void)zwl_settings_store_choose(&store, "pointer.speed", "60");
+	(void)zwl_settings_store_choose(&store, "mouse.speed", "60");
 	(void)zwl_settings_store_reset(&store, "window.opacity");
 	(void)zwl_settings_store_choose(&store, "keyboard.repeat.rate", "33");
 	(void)zwl_settings_store_choose(&store, "keyboard.repeat.rate", "25");
@@ -250,7 +250,7 @@ test_merge(void)
 	error = zwl_settings_store_finish(&store);
 	check(error == 0, "merge: written");
 	check(file_has("# keep me") && file_has("foo.bar=keep"), "merge: the comment and the unknown key stay");
-	check(file_has("pointer.speed=60"), "merge: pointer.speed=60 is written");
+	check(file_has("mouse.speed=60"), "merge: mouse.speed=60 is written");
 	check(strstr(get_file(), "window.opacity") == NULL, "merge: the reset opacity leaves the file");
 	check(strstr(get_file(), "keyboard.repeat.rate") == NULL, "merge: a key set and reset to its absent start is not written");
 	zwl_settings_store_close(&store);
@@ -262,15 +262,15 @@ test_hand_edit(void)
 	struct zwl_settings_store store;
 	int error;
 
-	put_file("pointer.speed=50\n");
+	put_file("mouse.speed=50\n");
 	(void)zwl_settings_store_open(&store, test_home);
 	(void)zwl_settings_store_load(&store);
-	(void)zwl_settings_store_choose(&store, "pointer.natural", "1");
+	(void)zwl_settings_store_choose(&store, "mouse.natural", "1");
 
 	/* A hand edit during the session, of another key and of an unknown one. */
-	put_file("pointer.speed=70\nmy.note=hello\n");
+	put_file("mouse.speed=70\nmy.note=hello\n");
 	error = zwl_settings_store_finish(&store);
-	check(error == 0 && file_has("pointer.speed=70") && file_has("my.note=hello") && file_has("pointer.natural=1"),
+	check(error == 0 && file_has("mouse.speed=70") && file_has("my.note=hello") && file_has("mouse.natural=1"),
 	      "hand edit: the edit of a key the session did not change stays, and the session's change is merged");
 	zwl_settings_store_close(&store);
 }
@@ -287,11 +287,11 @@ test_two_stores(void)
 	(void)zwl_settings_store_load(&first);
 	(void)zwl_settings_store_open(&second, test_home);
 	(void)zwl_settings_store_load(&second);
-	(void)zwl_settings_store_choose(&first, "pointer.speed", "111");
+	(void)zwl_settings_store_choose(&first, "mouse.speed", "111");
 	(void)zwl_settings_store_choose(&second, "keyboard.repeat.delay", "500");
 	error = zwl_settings_store_finish(&first);
 	error |= zwl_settings_store_finish(&second);
-	check(error == 0 && file_has("pointer.speed=111") && file_has("keyboard.repeat.delay=500"), "two stores: both sessions' changes are kept");
+	check(error == 0 && file_has("mouse.speed=111") && file_has("keyboard.repeat.delay=500"), "two stores: both sessions' changes are kept");
 	zwl_settings_store_close(&first);
 	zwl_settings_store_close(&second);
 }
@@ -318,7 +318,7 @@ test_unread(void)
 	(void)zwl_settings_store_open(&store, test_home);
 	error = zwl_settings_store_load(&store);
 	check(error == E2BIG && store.read_error == E2BIG, "unread: a file too large is E2BIG");
-	(void)zwl_settings_store_choose(&store, "pointer.speed", "60");
+	(void)zwl_settings_store_choose(&store, "mouse.speed", "60");
 	error = zwl_settings_store_finish(&store);
 	check(error == E2BIG && strlen(get_file()) == 69999U, "unread: the merge does not break the file it cannot read");
 	zwl_settings_store_close(&store);
@@ -326,7 +326,7 @@ test_unread(void)
 
 	/* No home: nothing at all. */
 	(void)zwl_settings_store_open(&store, NULL);
-	(void)zwl_settings_store_choose(&store, "pointer.speed", "60");
+	(void)zwl_settings_store_choose(&store, "mouse.speed", "60");
 	check(zwl_settings_store_load(&store) == 0 && zwl_settings_store_finish(&store) == 0, "unread: without a home nothing is read or written");
 	zwl_settings_store_close(&store);
 }
@@ -340,15 +340,15 @@ test_writer(void)
 	put_file("");
 	(void)zwl_settings_store_open(&store, test_home);
 	(void)zwl_settings_store_load(&store);
-	(void)zwl_settings_store_choose(&store, "pointer.speed", "80");
+	(void)zwl_settings_store_choose(&store, "mouse.speed", "80");
 	error = zwl_settings_store_save_later(&store);
 	check(error == 0, "writer: started");
 	check(zwl_settings_store_save_later(&store) == EBUSY, "writer: one a session");
 
 	/* A change after the writer took its copy is written at the end. */
-	(void)zwl_settings_store_choose(&store, "pointer.natural", "1");
+	(void)zwl_settings_store_choose(&store, "mouse.natural", "1");
 	error = zwl_settings_store_finish(&store);
-	check(error == 0 && file_has("pointer.speed=80") && file_has("pointer.natural=1"), "writer: the writer's and the later change are both written");
+	check(error == 0 && file_has("mouse.speed=80") && file_has("mouse.natural=1"), "writer: the writer's and the later change are both written");
 	zwl_settings_store_close(&store);
 }
 

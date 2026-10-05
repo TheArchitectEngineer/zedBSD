@@ -336,7 +336,7 @@ list_row(
 	baseline = fm_text_center(LIST_TEXT, row->y, row->height);
 	fm_grid_entry_icon(app, canvas, entry, (float)columns[0].x, (float)row->y + 3.0f, 22.0f);
 	if (entry->cut != 0)
-		fm_canvas_round(canvas, (float)columns[0].x, (float)row->y + 3.0f, 22.0f, 22.0f, 4.0f, FM_RGBA(0xffffff, 150));
+		fm_canvas_round(canvas, (float)columns[0].x, (float)row->y + 3.0f, 22.0f, 22.0f, 4.0f, FM_COLOR_TILE);
 	width = columns[0].width - 34;
 	renaming = 0;
 	if (app->focus == FM_FOCUS_RENAME) {

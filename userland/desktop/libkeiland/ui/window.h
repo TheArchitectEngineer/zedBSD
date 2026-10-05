@@ -93,6 +93,9 @@ struct kl_app {
 	struct kl_menu_service *menu_service;
 	int menu_tried;
 
+	/* The desktop's appearance watched (ws089-p017; NULL under a compositor without it). */
+	struct kl_appearance *appearance;
+
 	struct kl_app *next;
 };
 

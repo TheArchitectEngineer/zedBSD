@@ -37,6 +37,10 @@ struct keiui_global_search {
 	const char *interface;
 };
 
+/* The theme handed out made the appearance's, and the light or the dark theme itself (theme.c, ws089-p017). */
+void keiui_theme_set(unsigned appearance);
+const struct kl_theme *keiui_theme_of(unsigned appearance);
+
 /* Finds a global (0 or ENOMEM), binds it on the default queue (NULL when it cannot), and ends the search. */
 int keiui_global_find(struct keiui_global_search *search, struct wl_display *display, const char *interface);
 void *keiui_global_bind(struct keiui_global_search *search, const struct wl_interface *type, uint32_t version);

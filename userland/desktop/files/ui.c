@@ -936,7 +936,7 @@ ui_draw_sidebar(
 		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_GLASS_SIDEBAR);
 	} else {
 		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_SIDEBAR);
-		fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_RGBA(0xffffff, 170));
+		fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_COLOR_PANEL_RIM);
 	}
 
 	/* The rows stay inside the panel. */

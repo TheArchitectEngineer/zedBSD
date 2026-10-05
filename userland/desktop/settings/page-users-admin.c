@@ -751,7 +751,7 @@ admin_field_draw(
 	focused = 0;
 	if (users->keyboard == SE_USERS_KEYBOARD_ADMIN && users->admin_focus == index)
 		focused = 1;
-	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, FM_RGB(0xffffff));
+	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
 	if (focused) {
 		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
 	} else {

@@ -73,6 +73,7 @@ static const struct zwl_global globals[] = {
 	{ 24, "org_kde_kwin_server_decoration_manager", 1, ZWL_KDE_DECORATION_MANAGER },
 	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, ZWL_SYSTEM_MANAGER },
 	{ 26, "xdg_activation_v1", 1, ZWL_ACTIVATION_MANAGER },
+	{ 27, "keiland_theme_v1", 1, ZWL_THEME },
 };
 
 static void global_identity(const struct zwl_global *global, const char **interface, uint32_t *version);
@@ -336,6 +337,10 @@ zwl_dispatch(
 	case ZWL_ACTIVATION_TOKEN:
 		/* xdg_activation_v1 and its tokens (activation.c, ws089-p016). */
 		error = zwl_activation_request(object, opcode, bytes, size);
+		break;
+	case ZWL_THEME:
+		/* keiland_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
+		error = zwl_theme_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -688,6 +693,13 @@ bind_global(
 		/* KDE's server decoration manager tells the default mode at once: the compositor's. */
 		if (object->kind == ZWL_KDE_DECORATION_MANAGER) {
 			error = zwl_decoration_kde_bind(object);
+			if (error != 0)
+				return error;
+		}
+
+		/* The appearance's binding learns the appearance now (theme.c). */
+		if (object->kind == ZWL_THEME) {
+			error = zwl_theme_bind(object);
 			if (error != 0)
 				return error;
 		}
