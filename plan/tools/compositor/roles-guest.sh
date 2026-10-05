@@ -10,7 +10,7 @@
 #     --testing --session, --testing --control-fd=3.
 # PASS: every "ok" line and the last line roles-guest: PASS.
 #   plan/tools/files/files-guest.sh start BUILD/hdd-image.img
-#   plan/ws110/tests/roles-guest.sh [OUTDIR]          (default build/ws110-roles)
+#   plan/tools/compositor/roles-guest.sh [OUTDIR]          (default build/ws110-roles)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

@@ -34,4 +34,5 @@ Resume point: p001（要件・設計）。
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 要件・設計（2026-10-05 の計画の段 1〜4、libavcodec の package の license の構成と dlopen の add-in の扱いを含む） | cleared（2026-10-05 Q1） | — |
 | [p002](phase002/phase.md) | 簡単な player（開く・再生・一時停止・停止・シーク、audiod の音）、ベータ1 | cleared（2026-10-05 Q1） | p001 |
+| [p003](phase003/phase.md) | 独自の container の読み込み（MP4・Matroska/WebM の demux）、ベータ2 の段 2 の前半 | in-progress（2026-10-05、P2） | p002 |
 | 最後 | 全文規約と回帰 | planning | 実装 Phase |
