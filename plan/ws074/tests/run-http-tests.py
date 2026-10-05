@@ -70,9 +70,11 @@ IMAGE_CASES = [
     ("async-sheets", "/pages/sheets.html", ["background=#ffccccff", "background=#ffffddbb", "color=#ff660000"], "style"),
 ]
 
-# Fetch API requests started by a loaded page, through the same asynchronous loader.
+# Fetch API requests started by a loaded page, through the same asynchronous loader; and a page's parser-blocking
+# scripts fetched together before it is parsed, run in their order (BUG-207: the window is not blocked meanwhile).
 FETCH_CASES = [
     ("async-fetch", "/pages/fetch.html", ["success=true:200:true", "http=false:404", "network=true"], "dom"),
+    ("async-scripts-ahead", "/scripts-ahead", ["slow then second overlapped"], "dom"),
 ]
 
 

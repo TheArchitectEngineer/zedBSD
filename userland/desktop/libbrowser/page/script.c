@@ -36,6 +36,9 @@
 /* The deepest inserted subtree searched for scripts. */
 #define SCRIPT_INSERT_DEPTH	512
 
+/* The most parser-blocking scripts a document's scan names for fetching ahead (BUG-207). */
+#define SCRIPT_PREFETCH_MAX	64U
+
 /* An external script prepared by insertion and waiting for its task or fetch. */
 struct page_script {
 	struct page *page;
@@ -110,6 +113,14 @@ static int script_attribute(struct page *page, const struct dom_element *element
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
 static int script_fetch(void *context, const char *href, bind_fetch_done done, void *done_context);
+static int script_fetch_file(struct page *page, const char *href, struct wb_buffer *bytes);
+static const struct page_prefetched *script_prefetched(const struct page *page, const char *location);
+static int script_scan_starts(const unsigned char *bytes, size_t length, size_t at, const char *lower);
+static size_t script_scan_find(const unsigned char *bytes, size_t length, size_t at, const char *lower);
+static int script_scan_tag(const unsigned char *bytes, size_t length, size_t *at, struct wb_buffer *src, int *has_src, int *runs);
+static int script_scan_value(const unsigned char *bytes, size_t start, size_t end, struct wb_buffer *out);
+static int script_scan_type_runs(const struct wb_buffer *type);
+static int script_scan_add(const char *base, const struct wb_buffer *src, struct wb_vector *locations);
 static int script_fetch_sync(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 static void script_fetch_arrived(void *context, struct net_request *request);
 static void script_fetch_remove(struct page_fetch_request *entry);
@@ -132,6 +143,7 @@ page_scripts_init(
 {
 	wb_vector_init(&page->scripts, sizeof(struct page_script *));
 	wb_vector_init(&page->fetches, sizeof(struct page_fetch_request *));
+	wb_vector_init(&page->prefetched, sizeof(struct page_prefetched *));
 }
 
 /* Cancels and frees the page's dynamic external scripts. */
@@ -141,6 +153,7 @@ page_scripts_release(
 {
 	struct page_script *entry;
 	struct page_fetch_request *fetch;
+	struct page_prefetched *prefetched;
 	size_t index;
 
 	/* Each entry owns a request, a root while pending, its source and location. */
@@ -156,9 +169,168 @@ page_scripts_release(
 		free(fetch);
 	}
 
-	/* The table itself. */
+	/* The scripts fetched ahead own their location and bytes. */
+	for (index = 0; index < page->prefetched.count; index++) {
+		prefetched = *(struct page_prefetched **)wb_vector_at(&page->prefetched, index);
+		free(prefetched->location);
+		wb_buffer_release(&prefetched->bytes);
+		free(prefetched);
+	}
+
+	/* The tables themselves. */
 	wb_vector_release(&page->scripts);
 	wb_vector_release(&page->fetches);
+	wb_vector_release(&page->prefetched);
+}
+
+/*
+ * Finds the parser-blocking scripts a document names, so that the view
+ * fetches them before the document is parsed (BUG-207): the parser runs a
+ * <script src> as it reaches it and would otherwise read it at once, which
+ * blocks the window while the network works.
+ *
+ * The scan is a light reading of the markup, not the parser: the src of
+ * each <script> outside comments whose type runs, resolved against base,
+ * when it is an http or https URL, each once and at most
+ * SCRIPT_PREFETCH_MAX.  A script it misses (one a script writes) is read
+ * at once as before; one it finds that does not run is only fetched.
+ * locations receives a copy (char *) of each, which the caller frees.
+ */
+int
+page_scan_scripts(
+	const char *base,
+	const unsigned char *bytes,
+	size_t length,
+	struct wb_vector *locations)
+{
+	struct wb_buffer src;
+	size_t at;
+	size_t end;
+	int has_src;
+	int runs;
+	int found;
+	int error;
+
+	/* The markup from its start, with no src read yet. */
+	wb_buffer_init(&src);
+	at = 0;
+	error = 0;
+
+	/* Each tag or comment, up to the end of the document or the most scripts. */
+	while (at < length && locations->count < SCRIPT_PREFETCH_MAX) {
+		/* A comment's text is not markup: on past its end (an unclosed one ends the document). */
+		found = script_scan_starts(bytes, length, at, "<!--");
+		if (found) {
+			end = script_scan_find(bytes, length, at + 4U, "-->");
+			if (end == length)
+				break;
+			at = end + 3U;
+			continue;
+		}
+
+		/* Anything but a script's start tag is passed over a byte at a time. */
+		found = script_scan_starts(bytes, length, at, "<script");
+		if (!found || at + 7U >= length) {
+			at++;
+			continue;
+		}
+
+		/* "<scripts" or "<script-x" is another element. */
+		if (bytes[at + 7U] != ' ' &&
+		    bytes[at + 7U] != '\t' &&
+		    bytes[at + 7U] != '\n' &&
+		    bytes[at + 7U] != '\r' &&
+		    bytes[at + 7U] != '\f' &&
+		    bytes[at + 7U] != '/' &&
+		    bytes[at + 7U] != '>') {
+			at++;
+			continue;
+		}
+
+		/* The tag's attributes: its src and whether its type runs (an unclosed tag ends the document). */
+		at += 7U;
+		wb_buffer_clear(&src);
+		error = script_scan_tag(bytes, length, &at, &src, &has_src, &runs);
+		if (error == EINVAL) {
+			error = 0;
+			break;
+		}
+		if (error != 0)
+			break;
+
+		/* A script that runs from a web URL is one to fetch ahead (an empty src loads nothing). */
+		if (has_src && runs && src.length != 0) {
+			error = script_scan_add(base, &src, locations);
+			if (error != 0)
+				break;
+		}
+
+		/* The script's text is not markup: on past its end tag. */
+		end = script_scan_find(bytes, length, at, "</script");
+		at = end;
+	}
+
+	/* The scratch goes. */
+	wb_buffer_release(&src);
+
+	/* Reports a failure (memory) to keep what was found. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: locations holds the scripts to fetch ahead. */
+	return 0;
+}
+
+/*
+ * Keeps a parser-blocking script the view fetched before the document was
+ * parsed (BUG-207): how its fetch ended and its bytes, under the location
+ * it was fetched from; the parser takes it from here instead of reading it
+ * at once.
+ */
+int
+page_add_prefetched(
+	struct page *page,
+	const char *location,
+	int error,
+	const unsigned char *bytes,
+	size_t length)
+{
+	struct page_prefetched *entry;
+	int status;
+
+	/* The entry. */
+	entry = calloc(1, sizeof(*entry));
+	if (entry == NULL)
+		return ENOMEM;
+	wb_buffer_init(&entry->bytes);
+
+	/* Its location. */
+	entry->location = strdup(location);
+	if (entry->location == NULL) {
+		free(entry);
+		return ENOMEM;
+	}
+
+	/* How the fetch ended, and the bytes it brought. */
+	entry->error = error;
+	status = wb_buffer_append(&entry->bytes, bytes, length);
+	if (status != 0) {
+		free(entry->location);
+		free(entry);
+		return status;
+	}
+
+	/* The page's table keeps it until the page goes. */
+	status = wb_vector_push(&page->prefetched, &entry);
+	if (status != 0) {
+		wb_buffer_release(&entry->bytes);
+		free(entry->location);
+		free(entry);
+		return status;
+	}
+
+	/* Succeeded: the parser finds the script here. */
+	return 0;
 }
 
 /*
@@ -1279,7 +1451,7 @@ script_run_file(
 	if (error == 0 && page->base == NULL)
 		error = EINVAL;
 	if (error == 0)
-		error = page_fetch(page->base, wb_buffer_string(&href), &bytes, NULL);
+		error = script_fetch_file(page, wb_buffer_string(&href), &bytes);
 	name_length = href.length;
 	if (name_length > SCRIPT_NAME_MAX)
 		name_length = SCRIPT_NAME_MAX;
@@ -1346,4 +1518,460 @@ script_ascii_equal_folded(
 
 	/* The same text. */
 	return 1;
+}
+
+/* Reads a parser-blocking script's bytes: the ones fetched before the document was parsed, or else at once (BUG-207). */
+static int
+script_fetch_file(
+	struct page *page,
+	const char *href,
+	struct wb_buffer *bytes)
+{
+	const struct page_prefetched *entry;
+	struct wb_buffer location;
+	int error;
+
+	/* The script's location, resolved as the view resolved it when it fetched the scripts ahead. */
+	entry = NULL;
+	wb_buffer_init(&location);
+	error = page_resolve_location(page->base, href, &location);
+	if (error == 0)
+		entry = script_prefetched(page, wb_buffer_string(&location));
+	wb_buffer_release(&location);
+
+	/* A script fetched ahead ends as its fetch ended, without the network. */
+	if (entry != NULL) {
+		if (entry->error != 0)
+			return entry->error;
+
+		/* Its bytes, copied for the caller. */
+		error = wb_buffer_append(bytes, entry->bytes.data, entry->bytes.length);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the bytes fetched ahead. */
+		return 0;
+	}
+
+	/* Any other (a local file, or one the scan did not find) is read at once. */
+	error = page_fetch(page->base, href, bytes, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bytes are read. */
+	return 0;
+}
+
+/* Finds the script fetched ahead from a location; NULL when there is none. */
+static const struct page_prefetched *
+script_prefetched(
+	const struct page *page,
+	const char *location)
+{
+	const struct page_prefetched *entry;
+	size_t index;
+	int same;
+
+	/* Each script fetched ahead, by its location. */
+	for (index = 0; index < page->prefetched.count; index++) {
+		entry = *(const struct page_prefetched **)wb_vector_at(&page->prefetched, index);
+		same = strcmp(entry->location, location);
+		if (same == 0)
+			return entry;
+	}
+
+	/* None was fetched from there. */
+	return NULL;
+}
+
+/* Tells whether the markup at an offset starts with lower-case ASCII text, ignoring the case of its letters. */
+static int
+script_scan_starts(
+	const unsigned char *bytes,
+	size_t length,
+	size_t at,
+	const char *lower)
+{
+	size_t index;
+	unsigned char c;
+
+	/* Each character of the text against the markup's, in lower case. */
+	for (index = 0; lower[index] != '\0'; index++) {
+		if (at + index >= length)
+			return 0;
+		c = bytes[at + index];
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c - 'A' + 'a');
+		if (c != (unsigned char)lower[index])
+			return 0;
+	}
+
+	/* Every character matched. */
+	return 1;
+}
+
+/* Reports the offset of the first place from an offset where lower-case ASCII text starts (ignoring case); length when it does not. */
+static size_t
+script_scan_find(
+	const unsigned char *bytes,
+	size_t length,
+	size_t at,
+	const char *lower)
+{
+	int found;
+
+	/* Each place in turn. */
+	for (; at < length; at++) {
+		found = script_scan_starts(bytes, length, at, lower);
+		if (found)
+			return at;
+	}
+
+	/* The text is not there. */
+	return length;
+}
+
+/*
+ * Reads a script start tag's attributes from after its name to past its
+ * ">": the value of its first src (with the character references
+ * decoded) and whether its type runs.  Returns EINVAL for a tag the
+ * document does not close, or ENOMEM.
+ */
+static int
+script_scan_tag(
+	const unsigned char *bytes,
+	size_t length,
+	size_t *at,
+	struct wb_buffer *src,
+	int *has_src,
+	int *runs)
+{
+	struct wb_buffer type;
+	size_t place;
+	size_t name;
+	size_t name_end;
+	size_t value;
+	size_t value_end;
+	unsigned char quote;
+	int has_value;
+	int is_src;
+	int is_type;
+	int has_type;
+	int error;
+
+	/* No src or type seen yet. */
+	*has_src = 0;
+	*runs = 1;
+	has_type = 0;
+	wb_buffer_init(&type);
+	place = *at;
+	error = 0;
+
+	/* Each attribute up to the ">" that ends the tag. */
+	for (;;) {
+		/* The spaces and slashes between attributes. */
+		while (place < length &&
+		       (bytes[place] == ' ' ||
+			bytes[place] == '\t' ||
+			bytes[place] == '\n' ||
+			bytes[place] == '\r' ||
+			bytes[place] == '\f' ||
+			bytes[place] == '/'))
+			place++;
+
+		/* A tag the document does not close. */
+		if (place >= length) {
+			error = EINVAL;
+			break;
+		}
+
+		/* The end of the tag. */
+		if (bytes[place] == '>') {
+			place++;
+			break;
+		}
+
+		/* The attribute's name, up to a space, "=", "/" or ">". */
+		name = place;
+		while (place < length &&
+		       bytes[place] != ' ' &&
+		       bytes[place] != '\t' &&
+		       bytes[place] != '\n' &&
+		       bytes[place] != '\r' &&
+		       bytes[place] != '\f' &&
+		       bytes[place] != '=' &&
+		       bytes[place] != '/' &&
+		       bytes[place] != '>')
+			place++;
+		name_end = place;
+
+		/* The spaces before a value. */
+		while (place < length &&
+		       (bytes[place] == ' ' ||
+			bytes[place] == '\t' ||
+			bytes[place] == '\n' ||
+			bytes[place] == '\r' ||
+			bytes[place] == '\f'))
+			place++;
+
+		/* A value after "=": quoted, or up to a space or ">". */
+		has_value = 0;
+		value = place;
+		value_end = place;
+		if (place < length && bytes[place] == '=') {
+			place++;
+
+			/* The spaces after the "=". */
+			while (place < length &&
+			       (bytes[place] == ' ' ||
+				bytes[place] == '\t' ||
+				bytes[place] == '\n' ||
+				bytes[place] == '\r' ||
+				bytes[place] == '\f'))
+				place++;
+
+			/* A quoted value ends at its quote; another at a space or ">". */
+			has_value = 1;
+			if (place < length && (bytes[place] == '"' || bytes[place] == '\'')) {
+				quote = bytes[place];
+				place++;
+				value = place;
+				while (place < length && bytes[place] != quote)
+					place++;
+				value_end = place;
+				if (place < length)
+					place++;
+			} else {
+				value = place;
+				while (place < length &&
+				       bytes[place] != ' ' &&
+				       bytes[place] != '\t' &&
+				       bytes[place] != '\n' &&
+				       bytes[place] != '\r' &&
+				       bytes[place] != '\f' &&
+				       bytes[place] != '>')
+					place++;
+				value_end = place;
+			}
+		}
+
+		/* Which attribute it is: the first src and the first type count, as in the parser. */
+		is_src = 0;
+		if (name_end - name == 3U)
+			is_src = script_scan_starts(bytes, name_end, name, "src");
+		is_type = 0;
+		if (name_end - name == 4U)
+			is_type = script_scan_starts(bytes, name_end, name, "type");
+
+		/* The src's value, its references decoded. */
+		if (is_src && !*has_src) {
+			*has_src = 1;
+			if (has_value)
+				error = script_scan_value(bytes, value, value_end, src);
+			if (error != 0)
+				break;
+		}
+
+		/* The type's value, likewise. */
+		if (is_type && !has_type) {
+			has_type = 1;
+			if (has_value)
+				error = script_scan_value(bytes, value, value_end, &type);
+			if (error != 0)
+				break;
+		}
+	}
+
+	/* Whether the type runs (no type runs). */
+	if (error == 0 && has_type)
+		*runs = script_scan_type_runs(&type);
+	wb_buffer_release(&type);
+
+	/* Reports a tag that could not be read. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the tag is read up to past its ">". */
+	*at = place;
+	return 0;
+}
+
+/* Appends an attribute's value with its common character references (&amp; and the like, and numeric ones) decoded. */
+static int
+script_scan_value(
+	const unsigned char *bytes,
+	size_t start,
+	size_t end,
+	struct wb_buffer *out)
+{
+	unsigned long code;
+	unsigned long radix;
+	size_t place;
+	size_t digits;
+	int hexadecimal;
+	int error;
+	unsigned char c;
+
+	/* Each byte, or each reference. */
+	place = start;
+	while (place < end) {
+		c = bytes[place];
+
+		/* A byte that starts no reference is itself. */
+		if (c != '&') {
+			error = wb_buffer_append_byte(out, c);
+			if (error != 0)
+				return error;
+			place++;
+			continue;
+		}
+
+		/* The named references a URL is likely to hold. */
+		if (script_scan_starts(bytes, end, place, "&amp;")) {
+			error = wb_buffer_append_byte(out, '&');
+			place += 5U;
+		} else if (script_scan_starts(bytes, end, place, "&quot;")) {
+			error = wb_buffer_append_byte(out, '"');
+			place += 6U;
+		} else if (script_scan_starts(bytes, end, place, "&apos;")) {
+			error = wb_buffer_append_byte(out, '\'');
+			place += 6U;
+		} else if (script_scan_starts(bytes, end, place, "&lt;")) {
+			error = wb_buffer_append_byte(out, '<');
+			place += 4U;
+		} else if (script_scan_starts(bytes, end, place, "&gt;")) {
+			error = wb_buffer_append_byte(out, '>');
+			place += 4U;
+		} else if (script_scan_starts(bytes, end, place, "&#")) {
+			/* A numeric reference: decimal, or hexadecimal after "x". */
+			place += 2U;
+			hexadecimal = 0;
+			radix = 10UL;
+			if (place < end && (bytes[place] == 'x' || bytes[place] == 'X')) {
+				hexadecimal = 1;
+				radix = 16UL;
+				place++;
+			}
+
+			/* Its digits, up to a value no character has. */
+			code = 0;
+			digits = 0;
+			while (place < end && code <= 0x10ffffUL) {
+				c = bytes[place];
+				if (c >= '0' && c <= '9') {
+					code = code * radix + (unsigned long)(c - '0');
+				} else if (hexadecimal && c >= 'a' && c <= 'f') {
+					code = code * 16UL + (unsigned long)(c - 'a' + 10);
+				} else if (hexadecimal && c >= 'A' && c <= 'F') {
+					code = code * 16UL + (unsigned long)(c - 'A' + 10);
+				} else {
+					break;
+				}
+				place++;
+				digits++;
+			}
+
+			/* Its ";", and the character (a reference without digits or out of range is a replacement character). */
+			if (place < end && bytes[place] == ';')
+				place++;
+			if (digits == 0 || code == 0 || code > 0x10ffffUL)
+				code = 0xfffdUL;
+			error = wb_buffer_append_utf8(out, (uint32_t)code);
+		} else {
+			/* Any other "&" is itself. */
+			error = wb_buffer_append_byte(out, '&');
+			place++;
+		}
+
+		/* Memory ran out. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the value is appended. */
+	return 0;
+}
+
+/* Tells whether a script tag's type (its value as read) runs as a classic script. */
+static int
+script_scan_type_runs(
+	const struct wb_buffer *type)
+{
+	size_t index;
+	int same;
+
+	/* An empty type is JavaScript. */
+	if (type->length == 0)
+		return 1;
+
+	/* Otherwise one of the JavaScript MIME types, in any case. */
+	for (index = 0; script_types[index] != NULL; index++) {
+		if (strlen(script_types[index]) != type->length)
+			continue;
+		same = script_scan_starts(type->data, type->length, 0, script_types[index]);
+		if (same)
+			return 1;
+	}
+
+	/* Another type (a module, a template, data) does not run. */
+	return 0;
+}
+
+/* Adds a src's web location, resolved against base, to the scripts to fetch ahead, once. */
+static int
+script_scan_add(
+	const char *base,
+	const struct wb_buffer *src,
+	struct wb_vector *locations)
+{
+	struct wb_buffer location;
+	const char *known;
+	char *copy;
+	size_t index;
+	int remote;
+	int same;
+	int error;
+
+	/* The location the parser would fetch (a src that is no URL is the parser's to report). */
+	wb_buffer_init(&location);
+	error = page_resolve_location(base, wb_buffer_string(src), &location);
+	if (error != 0) {
+		wb_buffer_release(&location);
+		if (error == ENOMEM)
+			return error;
+		return 0;
+	}
+
+	/* Only an http or https script is fetched ahead; a local one is read at once anyway. */
+	remote = net_loader_takes(wb_buffer_string(&location));
+	if (!remote) {
+		wb_buffer_release(&location);
+		return 0;
+	}
+
+	/* A location already named is fetched once. */
+	for (index = 0; index < locations->count; index++) {
+		known = *(const char **)wb_vector_at(locations, index);
+		same = strcmp(known, wb_buffer_string(&location));
+		if (same == 0) {
+			wb_buffer_release(&location);
+			return 0;
+		}
+	}
+
+	/* Its copy, for the caller. */
+	copy = strdup(wb_buffer_string(&location));
+	wb_buffer_release(&location);
+	if (copy == NULL)
+		return ENOMEM;
+
+	/* The list keeps it. */
+	error = wb_vector_push(locations, &copy);
+	if (error != 0) {
+		free(copy);
+		return error;
+	}
+
+	/* Succeeded: the script is one to fetch ahead. */
+	return 0;
 }

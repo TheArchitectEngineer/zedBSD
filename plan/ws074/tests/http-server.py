@@ -20,6 +20,10 @@ With --tls-dir (made by make-test-ca.sh) the same paths are also served over HTT
   /cookie/echo           a page showing the Cookie header it was sent
   /user-agent           a page showing the User-Agent header it was sent
   /script                a page whose script (/script.js, relative) writes into it
+  /scripts-ahead         a page with two parser-blocking scripts (BUG-207): /slow.js?a=1&amp;b=2 (answered after 0.6 s)
+                         and second.js, which writes whether its request came while /slow.js was still being
+                         answered ("overlapped": fetched ahead together) or not ("sequential": read one at a time),
+                         and a third script inside a comment, which is not one
   /status/N              a page with status N
   /to-https              a redirect to the same host's https port, /pages/first.html
   /cookie/secure-set     sets s=1 (Secure) and p=2, then redirects to the http port's /cookie/echo
@@ -83,6 +87,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         for name, value in headers:
             self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def send_script(self, data):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/javascript")
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
@@ -196,6 +207,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if path == "/scripts-ahead":
+            return self.send_page("<!DOCTYPE html><title>scripts ahead</title><p id=out>not run</p>"
+                                  "<!-- <script src=\"/never.js\"></script> -->"
+                                  "<script src=\"/slow.js?a=1&amp;b=2\"></script>"
+                                  "<SCRIPT type=text/javascript src=second.js></SCRIPT>")
+        if path == "/slow.js":
+            with Handler.ahead_lock:
+                Handler.slow_running += 1
+            time.sleep(0.6)
+            with Handler.ahead_lock:
+                Handler.slow_running -= 1
+            query = self.path.partition("?")[2]
+            data = ("window.order = '%s';" % ("slow" if query == "a=1&b=2" else "wrong query " + query)).encode()
+            return self.send_script(data)
+        if path == "/second.js":
+            with Handler.ahead_lock:
+                overlap = "overlapped" if Handler.slow_running > 0 else "sequential"
+            data = ("document.getElementById('out').textContent = window.order + ' then second %s';" % overlap).encode()
+            return self.send_script(data)
         if path == "/to-https":
             return self.redirect(302, "https://%s:%d/pages/first.html" % (self.host_name(), Handler.tls_port))
         if path == "/cookie/secure-set":
@@ -205,6 +235,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             code = int(path.split("/")[2])
             return self.send_page("<!DOCTYPE html><title>status %d</title><p>status %d" % (code, code), code)
         return self.send_page("<!DOCTYPE html><title>not found</title><p>no such path", 404)
+
+
+# The /slow.js requests being answered, for /second.js to tell whether the two were fetched together (BUG-207).
+Handler.slow_running = 0
+Handler.ahead_lock = threading.Lock()
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
