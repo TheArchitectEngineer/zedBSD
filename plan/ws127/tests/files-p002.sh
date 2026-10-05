@@ -94,10 +94,11 @@ expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents ite
 rclick 446 140
 expect_log /tmp/zdesktop.log 'ZWL MENU row item=105 depth=1 '
 click $(( $(popup_x 1) + 60 )) "$(row_y 105)" 900
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=1503 depth=2 '
-shot moveto.png $(( $(popup_x 2) + 60 )) "$(row_y 1503)"
-click $(( $(popup_x 2) + 60 )) "$(row_y 1503)" 1500
-expect_log /tmp/f.log 'ZFILES CONTEXT move-to place=3 path=/tmp/fhome/Downloads count=1'
+# Downloads is place 4 (Today, Home, Desktop, Documents before it since ws127-p011 put Today first; T1-166).
+expect_log /tmp/zdesktop.log 'ZWL MENU row item=1504 depth=2 '
+shot moveto.png $(( $(popup_x 2) + 60 )) "$(row_y 1504)"
+click $(( $(popup_x 2) + 60 )) "$(row_y 1504)" 1500
+expect_log /tmp/f.log 'ZFILES CONTEXT move-to place=4 path=/tmp/fhome/Downloads count=1'
 expect_log /tmp/f.log 'ZFILES TASK done id=[0-9]+ kind=move state=done files=1 '
 expect_guest '[ -f /tmp/fhome/Downloads/Budget.csv ] && [ ! -e /tmp/fhome/Documents/Budget.csv ]' 'Budget.csv moved to Downloads'
 
