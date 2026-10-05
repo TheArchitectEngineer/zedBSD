@@ -48,3 +48,9 @@ compositor（system bar の時計・音量の popup・network の menu と詳細
 ## T1 への依頼（Q1 経由）
 
 image: main（この Phase の merge の後）で `plan/tools/guest/test-image.sh plan/ws158/tests/config-amd64-tr.mk BUILD --file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png`。起動 `plan/tools/files/files-guest.sh start BUILD/hdd-image.img`。試験 `plan/ws158/tests/tr-p003-guest.sh OUTDIR`。合格: 最後の行 `tr-p003: status=0`、PNG（ja-bar・ja-volume・ja-network・ja-network-details・ja-wiseview・ja-lock）に日本語が描かれている（Q1 が見る）。
+
+## 再開の地点（2026-10-05 夜、P2 g17 のラップアップ）
+
+- 実装と host の試験は b4b99294 で済み、main に入った。残りは T1 の QEMU（上の依頼、`tr-p003-guest.sh`）の結果を Q1 が判定すること。PASS ならシナリオ `desktop.language.compositor-japanese` を active にして、この Phase を cleared に。FAIL なら PNG と log を見て直す。
+- 次は p004: 各 app に `kl_tr_follow` と文を入れる。最初に Settings の Languages の頁に「Display language」の選択（`ui.language`）を置き、管理者が使う system の言語（`/etc/keiland/language`、login の画面用）の口も Settings に足す。
+- AAT（WS173 p004）: T1-202 の結果が来たら runner・補助の直しを先にする（Q1 の指示）。
