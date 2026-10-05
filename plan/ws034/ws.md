@@ -3,7 +3,7 @@
 # WS034: アプリケーション拡充とカーネル・libcの是正
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: canceled（2026-10-05 ユーザー「WSをキャンセル：WS034、互換GTK4の実装、互換Qt6の実装、WS007」）。以前: incomplete
 Primary Milestone: MG002
 Related Milestones: MG001, MG007
 Objectives: O1, O2
@@ -362,3 +362,7 @@ VLCの署名は鍵が得られず未検証（公開SHA-256とは一致）。
 ## 2026-10-02 / GTK4・Qt6移植枠の移管
 
 Event ws114-gtk-qt-port-projections-20261002: ユーザーの新しい順序（Linux標準GTK4調査/レビュー→compositor改善→zedBSD upstream GTK4→Qt6範囲判断→後の独自実装）により、未実行のp029/p030をcanceled扱いとしてWS115/WS116へ移管。旧ID/依存/目標は上表に保持。WS034の全アプリ到達点は新WSの成果を参照して判断し、p028/p034/p038とGTK3/Qt5の目的を維持する。p029/p030は元々Phase file未作成の計画行だけで、実行attemptは無い。GitHub Issue/Project publication pending。
+
+## キャンセル（2026-10-05）
+
+ユーザー「WSをキャンセル：WS034、互換GTK4の実装、互換Qt6の実装、WS007」。Phase の履歴と証拠は残す。未完の Phase はこれ以上進めない。

@@ -3,7 +3,7 @@
 # WS007: graphics and desktop
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: canceled（2026-10-05 ユーザー「WSをキャンセル：WS034、互換GTK4の実装、互換Qt6の実装、WS007」）。以前: incomplete
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
@@ -119,3 +119,7 @@ Wayland work starts only after the input ABI and a scanout/rendering path are
 stable. A software-rendered framebuffer backend may be retained for debugging
 and unsupported GPUs, but accelerated completion requires the declared GPU
 stack. The compositor must not depend on Linux DRM-specific UAPIs.
+
+## キャンセル（2026-10-05）
+
+ユーザー「WSをキャンセル：WS034、互換GTK4の実装、互換Qt6の実装、WS007」。Phase の履歴と証拠は残す。未完の Phase はこれ以上進めない。

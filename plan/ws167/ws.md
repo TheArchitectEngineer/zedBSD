@@ -1,0 +1,22 @@
+<!-- awesome-plan project=zedbsd record=ws167 -->
+# WS167: GPU の command の protocol の独自化
+
+Status: planning（2026-10-05 追加、段と見積もりは未定）
+Master: [master](../master.md)
+Primary Milestone: MG006
+
+## 由来
+
+ユーザー（2026-10-05）「GPUのコマンドが、Venusプロトコル番号を流用しているので、独自の名前と番号にする。ただしVenusと一致している内容からスタートする。Venusの番号を再利用したことをヘッダに書いて、Googleの著作権表示を外せるようにする。」
+
+## 範囲（案、p001 の設計で確定する）
+
+1. 今 Venus の protocol の番号を流用している GPU の command を、独自の名前と番号の header にする。最初の内容は Venus と一致させる（互換）。
+2. header に「Venus の番号を再利用した」ことを書き、Google の著作権の表示を外せる形にする（license の確かめ）。
+3. 影響する kernel・libvulkan・試験の範囲を調べる。
+
+## Phase
+
+| Phase | 内容 | Status | 依存 |
+| --- | --- | --- | --- |
+| ws167-p001 | 要件と設計 | planning | — |

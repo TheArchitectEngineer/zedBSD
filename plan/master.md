@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 ユーザーの指示**: キャンセル WS034・WS096（Qt6 の互換）・WS097（GTK4 の互換）・WS007。優先 WS138。追加 WS161〜WS167（YubiKey・FIDO2 の login・6 桁の PIN の login・Welcome の画面・手書きの入力・予測変換・GPU の command の protocol の独自化）。新しい WS の段（ベータ2 か以降か）と見積もりは未定。
 - **2026-10-05 朝 ユーザー「HALの変更以外は承認します。」**→ 次を案のとおり決定: ws089-p025（sessiond の wheel だけの SERVICE sshd）、ws089-p022（(a) 有線の設定を network の group に開く、(b) ベータ1 の MTU は読むだけ、設定は別の WS）、タッチパッドの既定（100%・中のまま）、BUG-190 の規則（tap は離した時の click、押し込みは押した瞬間、UAT の後に resolved）、ws132-p004（通知の代わりに bar の媒体の icon）、WS160 D1〜D4（最短 8 文字・sudoers 無し・毎回認証・wheel は gid 0）、WS052 p007（外部の monitor の時は蓋で sleep しない（AC に依らず）・無操作 AC 30 分/電池 15 分で画面はその半分・greeter の電源ボタンは sleep・sessiond が session から suspend を受ける（ws131 D12 の改訂、poweroff・reboot は greeter のまま））。HAL の H1〜H4 は専門家のレビュー待ち。BUG-171 は選択肢に案が無いので別に確かめる。
 - **HAL の API の承認（差分ごと、2026-10-05 未明、P1 の ws052-p002、plan/ws052/proposed/README.md）**: S0i3 のための hal.h の差分 4 つ（どれも未適用、今の main に patch --dry-run で当たる）。H1 `hal_cpu_idle_deep(uint32_t hint)`（MWAIT で C10、今の hal_cpu_idle は hlt で C1 まで）、H2 `hal_timer_stop`・`hal_timer_resume`（tick の停止と再開、RTC の counter は数え続ける）、H3 `hal_cpu_notify` の契約の明記だけ（深い idle・tick の停止・mask の中でも必ず CPU を起こす、AP の停止の API は作らない）、H4 `hal_irq_suspend(const int *wake_irqs, unsigned count)`・`hal_irq_resume`（wake の源以外の割り込みを止め mask を HAL が保って戻す）。他の architecture は UNSUPPORTED で sleep を中止して理由を返す。
 - **BUG-171「Opaque」の意味（2026-10-05 未明、P1）**: 窓の透明度を 100% にしても、Keiland の app の glass の panel（Settings・Files の sidebar）と title bar は frosted glass のままなので壁紙が見える（UAT の log には変更後の applied 100 も無く、PS/2 の touchpad の drag の release が届かなかった可能性もある）。(a) 100% では glass の panel と title bar も不透明に（既定が 100 なので既定の見た目から frosted glass が消える）、(b) 100% は窓の中身だけ、Settings の表示を「Window contents opaque」などに、(c) Appearance に「Glass effect」の on/off を別に足す。
@@ -181,7 +182,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS001](ws001/ws.md) | ベータ3 | MG002 | 3 | POSIX 台帳の残り（p040 以降の utility） |
 | [WS004](ws004/ws.md) | ベータ2 | MG003 | 2 | NVMe の実機・転送・driver の共通化 |
 | [WS005](ws005/ws.md) | ベータ1 | MG005 | 2 | WiFi の UI の Bug（BUG-183〜189）・p031・後挿し |
-| [WS007](ws007/ws.md) | ベータ2 | MG006 | 0.5 | p004 の再現条件と amd64 の残件 |
+| [WS007](ws007/ws.md) | キャンセル | MG006 | 0.5 | p004 の再現条件と amd64 の残件 |
 | [WS009](ws009/ws.md) | ベータ2 | MG001 | 2 | GPU の文書ほか |
 | [WS013](ws013/ws.md) | 保留（Future Work） | MG007 | 4 | CPAR（Future Work に保留中） |
 | [WS014](ws014/ws.md) | ベータ2 | MG006 | 0.5 | p004 の最終 API と規約 |
@@ -193,7 +194,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS029](ws029/ws.md) | ベータ2 | MG006 | 3 | cold VFIO attach の停止ほか |
 | [WS031](ws031/ws.md) | ベータ3 | MG006 | 8 | p015〜p048 の native Vulkan 実行器 |
 | [WS033](ws033/ws.md) | ベータ1 | MG005 | 1 | USB LAN の後挿し（BUG-168・169）・抜き差しの実機 |
-| [WS034](ws034/ws.md) | ベータ2 | MG002 | 4 | package の導入と kernel・libc の是正 |
+| [WS034](ws034/ws.md) | キャンセル | MG002 | 4 | package の導入と kernel・libc の是正 |
 | [WS037](ws037/ws.md) | ベータ4 以降 | MG006 | 16 | nvrtx（文書の後、GSP の起動・channel・display・executor） |
 | [WS038](ws038/ws.md) | ベータ4 以降 | MG006 | 16 | Intel Arc dGPU |
 | [WS039](ws039/ws.md) | ベータ4 以降 | MG006 | 20 | AMD RDNA |
@@ -226,8 +227,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS090](ws090/ws.md) | ベータ1 | MG006 | 1.5 | widget の library（p016 の chooser を含む） |
 | [WS094](ws094/ws.md) | ベータ1 | MG006 | 0.5 | desktop の file の icon |
 | [WS095](ws095/ws.md) | ベータ1 | MG006 | 1.5 | IME（p005、p016 app ごとの状態） |
-| [WS096](ws096/ws.md) | ベータ4 以降 | MG002 | 30 | Qt6 の互換の書き下ろし |
-| [WS097](ws097/ws.md) | ベータ4 以降 | MG002 | 30 | GTK4 の互換の書き下ろし |
+| [WS096](ws096/ws.md) | キャンセル | MG002 | 30 | Qt6 の互換の書き下ろし |
+| [WS097](ws097/ws.md) | キャンセル | MG002 | 30 | GTK4 の互換の書き下ろし |
 | [WS098](ws098/ws.md) | ベータ3 | MG006 | 6 | IME のニューラル化 |
 | [WS099](ws099/ws.md) | ベータ1 | MG006 | 3 | compositor（q700 の窓の Bug、p031 bar の高さ、p032） |
 | [WS100](ws100/ws.md) | ベータ1 | MG006 | 0.5 | 音量（BUG-170 の実機の確認） |
@@ -280,6 +281,13 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS158](ws158/ws.md) | ベータ2 | MG006 | 3 | 翻訳（日本語はベータ2） |
 | [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、**ベータ1**） | WS049 |
 | [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |
+| [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | planning（段は未定） | — |
+| [WS162](ws162/ws.md) | MG006 | FIDO2 の login（greeter・lock の画面で security key で login）（2026-10-05 ユーザーの追加） | planning（段は未定） | — |
+| [WS163](ws163/ws.md) | MG006 | 数字 6 桁の login（PIN、greeter・lock の画面）（2026-10-05 ユーザーの追加） | planning（段は未定） | — |
+| [WS164](ws164/ws.md) | MG006 | OS の起動時の Welcome の画面（既存の Start で足りるかの検討から）（2026-10-05 ユーザーの追加） | planning（段は未定） | — |
+| [WS165](ws165/ws.md) | MG006 | 手書きの入力（goal の設定が難しいので段階化する）（2026-10-05 ユーザーの追加） | planning（段は未定） | — |
+| [WS166](ws166/ws.md) | MG006 | IME の予測変換（2026-10-05 ユーザーの追加） | planning（段は未定） | — |
+| [WS167](ws167/ws.md) | MG006 | GPU の command の protocol を Venus の番号の流用から独自の名前と番号に（Venus と一致する内容から始め、Venus の番号を再利用したことを header に書き、Google の著作権の表示を外せるようにする）（2026-10-05 ユーザーの追加） | planning（段は未定） | — |
 
 ### リリースの段ごとの見積もり（2026-10-05）
 
@@ -308,7 +316,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS004](ws004/ws.md) | MG003 | ハードウェア拡張 | incomplete | NVMe 実機・転送・driver 共通化 |
 | [WS005](ws005/ws.md) | MG005 | ネットワーク・WLAN | incomplete | p019（network group の WiFi の制御・system bar の鍵の入力・有線優先）と p024（起動時・login・logout の自動再接続）は実装済み。p020（RTL8822BU の USB passthrough）で DHCP の EIO の原因（ブロードキャストが有線の gateway へ）を直し、2.4GHz で lease を確認、残りを P1 が確認中（q627） |
 | [WS006](ws006/ws.md) | MG006 | 入力と evdev | completed | — |
-| [WS007](ws007/ws.md) | MG006 | グラフィックス・デスクトップ（旧） | incomplete | p004 の再現条件、amd64 の残件 |
+| [WS007](ws007/ws.md) | MG006 | グラフィックス・デスクトップ（旧） | canceled（2026-10-05） | p004 の再現条件、amd64 の残件 |
 | [WS008](ws008/ws.md) | MG006 | Noct と BeUI | completed | — |
 | [WS009](ws009/ws.md) | MG001 | 文書 | incomplete | DOC-54（GPU の文書） |
 | [WS010](ws010/ws.md) | MG001 | Noct の script と build tool | completed | — |
@@ -335,7 +343,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS031](ws031/ws.md) | MG006 | i915 native Vulkan 実行器 | incomplete | p015〜p048 planning |
 | [WS032](ws032/ws.md) | MG002 | 外部 package のクロスビルド（clang・OpenSSL・OpenSSH） | completed | — |
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
-| [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | incomplete | package の導入 |
+| [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | canceled（2026-10-05） | package の導入 |
 | [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | completed | 2026-09-30 ユーザーの判断で閉じた（目標が 2026-09-23 のまま古く、ゴールが不明確）。p001〜p138: compositor・sessiond・greeter・lock・Keiland の app・audiod・起動の短縮ほか。Chromium は取り消し（ユーザー「独自にBrowserを書いているから」）。デモまでの仕上げは WS099。`plan/ws035/tests/` は共有の道具として残す（plan/tools への移動は後の整理） |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | **nvrtx**: NVIDIA RTX 2000 以降（Turing〜Blackwell、GTX 16xx を含む）の GPU driver。WS141 の vc4 と同じ進め方（文書が先、GPL の作業の文書は commit しない、定数の一括の改名、最後に類似の監査、GSP の firmware は userland/firmware）。Pascal 以前は範囲の外（2026-10-04 ユーザー） | planned（p001 から、q692） | 独立。試験は centris に挿す NVIDIA の GPU の VFIO |
@@ -397,8 +405,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS093](ws093/ws.md) | MG006 | Files から app の起動（画像・text の double click、file の種類と app の対応）（2026-09-29 ユーザー） | completed | 2026-09-29 完了（QEMU）: Files の double click・Enter・double tap で png・jpeg・gif → Image Viewer、text 系 → Text Editor、html → Browser、pdf → PDF Viewer。Always Open With と Use System Default（`~/.config/keiland/open-with`）。実機は未実施 |
 | [WS094](ws094/ws.md) | MG006 | desktop の file の icon（`~/Desktop`）（2026-09-29 ユーザー） | incomplete | p014（規約の指摘）cleared。残り p012（5330 の実機）・p007（全回帰） |
 | [WS095](ws095/ws.md) | MG006 | IME（Wayland の input-method-v2・text-input-v3、単一の IME・複数言語、まず日本語、REmacs の辞書）（2026-09-29 ユーザー） | incomplete | p012（辞書 1,478 見出し）・p013（変換中の文字を本文と同じ大きさで inline）・p005（候補の窓・右上の IME の status・key repeat）cleared（QEMU）。実機の目視はユーザー |
-| [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
-| [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | planning | デモの後 |
+| [WS096](ws096/ws.md) | MG002 | Qt6（core・gui・widgets）の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | canceled（2026-10-05） | デモの後 |
+| [WS097](ws097/ws.md) | MG002 | GTK4 の互換の書き下ろし（API の interface だけ、zlib）（2026-09-29 ユーザー、デモの後） | canceled（2026-10-05） | デモの後 |
 | [WS098](ws098/ws.md) | MG006 | IME の変換のニューラル化: 辞書で候補を作り、小型のモデル（15 MB 未満）で同音異義語の選択（語の番号の並び）とひらがな列の形態素解析（語の境界と品詞、BiLSTM か小型の Attention）を評価する（2026-09-29 夜 ユーザー、IME の最後の仕上げ） | planning | WS095 の基本の辞書の後。学習の corpus と license はユーザーの判断 |
 | [WS099](ws099/ws.md) | MG006 | Keiland の compositor（zdesktop）のデモの基準: 窓の操作・App Home・Wiseview・全画面と最大化の解除・greeter から Log Out と Shut Down・すりガラスの上の文字の contrast・回帰の試験の全通過（2026-09-30 ユーザー、WS035 の後継。基準は ws.md） | incomplete | p023（BUG-136/137、直す前からの C 基準の失敗）cleared。p020（BUG-125）と p021 は BUG-147 の試験の頑健化（p024、P2 が作業中）の後に判断 |
 | [WS100](ws100/ws.md) | MG006 | system bar の音量: 右上の通知領域の音量の icon、音量の slider と mute、変えたときの確かめの音（2026-09-30 ユーザー。動画の再生はデモの後） | incomplete | 2026-09-30: L1 がそろった（A1〜A6、Settings の Sound の頁）。L2 は 5330 の実機（A7、ユーザー）。L3 の p008 cleared: 確かめの音の遅れは QEMU の guest の中で中央値 31〜37 ms（≤ 50 ms、合否は実機で）。kernel の fragment を小さくする直しは実機で 50 ms を超えたとき |
