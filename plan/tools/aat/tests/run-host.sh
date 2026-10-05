@@ -93,6 +93,20 @@ aat shot "$tmp/screen.png" | grep -q '64x48' && ok shot || bad shot
 echo payload > "$tmp/a.txt"
 aat put "$tmp/a.txt" "$tmp/b.txt" >/dev/null && aat get "$tmp/b.txt" "$tmp/c.txt" >/dev/null && cmp -s "$tmp/a.txt" "$tmp/c.txt" && ok files || bad files
 
+# A target other than --local: every command goes through ssh (a fake ssh that runs the command here and counts),
+# get, put and shot too, whose LOCAL argument once overwrote --local (T1-200b).
+mkdir -p "$tmp/fakebin" "$tmp/guest"
+printf '#!/bin/sh\necho ssh >> "%s"\nfor last; do :; done\nexec sh -c "$last"\n' "$tmp/ssh-calls" > "$tmp/fakebin/ssh"
+chmod +x "$tmp/fakebin/ssh"
+echo '{"ssh_port": 2222}' > "$tmp/guest/session.json"
+viassh() { PATH="$tmp/fakebin:$PATH" GUEST_RUNTIME="$tmp/guest" timeout 60 python3 plan/tools/aat/aat --qemu "$@" >/dev/null 2>&1; }
+for words in "get $tmp/a.txt $tmp/d.txt" "put $tmp/a.txt $tmp/e.txt" "shot $tmp/f.png" "run true"; do
+	: > "$tmp/ssh-calls"
+	# shellcheck disable=SC2086
+	viassh $words
+	[ -s "$tmp/ssh-calls" ] && ok "over ssh: ${words%% *}" || bad "not over ssh: ${words%% *}"
+done
+
 # Stopped: the next command says there is no server.
 aat stop >/dev/null
 aat click 1 1 2>"$tmp/stopped" && bad "stopped input" || { grep -q 'no-server' "$tmp/stopped" && ok "stopped input refused" || bad "stopped input message"; }

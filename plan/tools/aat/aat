@@ -97,7 +97,7 @@ class Target:
 	marks in its logs and the screen's size."""
 
 	def __init__(self, arguments: argparse.Namespace):
-		self.local = arguments.local
+		self.local = arguments.on_host
 		self.host = None
 		self.user = None
 		self.port = None
@@ -388,14 +388,14 @@ def command_run(target: Target, arguments: argparse.Namespace) -> int:
 def command_get(target: Target, arguments: argparse.Namespace) -> int:
 	"""Copies a file from the target."""
 	data = target.run(target.root(f"cat {shlex.quote(arguments.remote)}")).stdout
-	Path(arguments.local).write_bytes(data)
+	Path(arguments.local_path).write_bytes(data)
 	print(f"aat: got {arguments.remote} ({len(data)} bytes)")
 	return 0
 
 
 def command_put(target: Target, arguments: argparse.Namespace) -> int:
 	"""Copies a file to the target (as the user connected, not root)."""
-	data = Path(arguments.local).read_bytes()
+	data = Path(arguments.local_path).read_bytes()
 	target.run(f"cat > {shlex.quote(arguments.remote)}", data=data)
 	print(f"aat: put {arguments.remote} ({len(data)} bytes)")
 	return 0
@@ -504,9 +504,9 @@ def command_type(target: Target, arguments: argparse.Namespace) -> int:
 def command_shot(target: Target, arguments: argparse.Namespace) -> int:
 	"""Takes the screen back as a PNG."""
 	data = take_shot(target, arguments.remote)
-	Path(arguments.local).write_bytes(data)
+	Path(arguments.local_path).write_bytes(data)
 	width, height = png_size(data)
-	print(f"aat: shot {arguments.local} {width}x{height}")
+	print(f"aat: shot {arguments.local_path} {width}x{height}")
 	return 0
 
 
@@ -587,7 +587,8 @@ def parser() -> argparse.ArgumentParser:
 	top = argparse.ArgumentParser(prog="aat", description="Drives a zedBSD machine over SSH (WS173 AAT).")
 	top.add_argument("--target", help="user@host[:port], or 5330")
 	top.add_argument("--qemu", action="store_true", help="the guest of GUEST_RUNTIME/session.json")
-	top.add_argument("--local", action="store_true", help="run on this host (the self-test)")
+	# Its own name: a positional "local" (get, put, shot) once overwrote it and ran those on this host (T1-200b).
+	top.add_argument("--local", dest="on_host", action="store_true", help="run on this host (the self-test)")
 	top.add_argument("--identity", help="the SSH key (default the guest harness's)")
 	commands = top.add_subparsers(dest="command", required=True)
 
@@ -604,9 +605,9 @@ def parser() -> argparse.ArgumentParser:
 	command.add_argument("words", nargs="+")
 	command = commands.add_parser("get")
 	command.add_argument("remote")
-	command.add_argument("local")
+	command.add_argument("local_path", metavar="LOCAL")
 	command = commands.add_parser("put")
-	command.add_argument("local")
+	command.add_argument("local_path", metavar="LOCAL")
 	command.add_argument("remote")
 	command = commands.add_parser("start")
 	command.add_argument("--size", help="WxH (default: a shot's size)")
@@ -639,7 +640,7 @@ def parser() -> argparse.ArgumentParser:
 	command = commands.add_parser("type")
 	command.add_argument("text")
 	command = commands.add_parser("shot")
-	command.add_argument("local")
+	command.add_argument("local_path", metavar="LOCAL")
 	command.add_argument("--remote", help="where the target writes it first")
 	command = commands.add_parser("mark")
 	command.add_argument("name")
