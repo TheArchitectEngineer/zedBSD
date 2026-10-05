@@ -57,7 +57,7 @@
 
 /* The warning's colours (a refusal's message). */
 #define VIEW_WARNING_TEXT	KL_RGB(0xc8313a)
-#define VIEW_WARNING_GROUND	KL_RGB(0xfff1f1)
+#define VIEW_WARNING_GROUND	kl_theme_choose(KL_RGB(0xfff1f1), KL_RGB(0x3a2326))
 #define VIEW_WARNING_EDGE	KL_RGB(0xf6c9cb)
 
 /* The item icons' colours: a folder's body and tab, a page's edge and lines. */
@@ -628,7 +628,7 @@ view_item_icon(
 	lines = VIEW_PAGE_LINES;
 	if (lit)
 		lines = style->theme->accent;
-	kl_canvas_round(style->canvas, (float)(x + 4), (float)(y + 1), 15.0f, 20.0f, 3.0f, KL_RGB(0xffffff));
+	kl_canvas_round(style->canvas, (float)(x + 4), (float)(y + 1), 15.0f, 20.0f, 3.0f, kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x2c313b)));
 	kl_canvas_round_border(style->canvas, (float)(x + 4), (float)(y + 1), 15.0f, 20.0f, 3.0f, 1.0f, VIEW_PAGE_EDGE);
 	view_set(&line, x + 7, y + 7, 9, 1);
 	kl_canvas_fill(style->canvas, &line, lines);

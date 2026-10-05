@@ -165,3 +165,22 @@ keiui_theme_of(
 	/* None. */
 	return NULL;
 }
+
+/*
+ * Chooses a program's colour by the appearance told last (keiland-ui.h).
+ */
+kl_color
+kl_theme_choose(
+	kl_color light,
+	kl_color dark)
+{
+	unsigned appearance;
+
+	/* The dark colour in the dark appearance. */
+	appearance = kl_appearance_get(NULL);
+	if (appearance == KL_APPEARANCE_DARK)
+		return dark;
+
+	/* The light one otherwise. */
+	return light;
+}

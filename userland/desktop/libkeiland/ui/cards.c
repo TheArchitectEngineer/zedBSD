@@ -90,7 +90,7 @@ kl_panel(
 	/* Without glass: the sidebar's veil with a bright edge, the content's white card with its shadow. */
 	if (sidebar) {
 		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, theme->sidebar);
-		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 1.0f, KL_RGBA(0xffffff, 170));
+		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CARDS_PANEL_RADIUS, 1.0f, kl_theme_choose(KL_RGBA(0xffffff, 170), KL_RGBA(0x3a404b, 170)));
 		return;
 	}
 
@@ -349,7 +349,7 @@ kl_chip(
 
 	/* A white chip with an edge and a soft shadow, the words in the middle. */
 	kl_canvas_shadow(style->canvas, (float)chip.x, (float)chip.y + 2.0f, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, 8.0f, style->theme->shadow);
-	kl_canvas_round(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, KL_RGBA(0xffffff, 240));
+	kl_canvas_round(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, kl_theme_choose(KL_RGBA(0xffffff, 240), KL_RGBA(0x2c313b, 240)));
 	kl_canvas_round_border(style->canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, CARDS_CHIP_RADIUS, 1.0f, style->theme->panel_edge);
 	(void)kl_text_draw(style->text, style->canvas, chip.x + 14, kl_text_center(CARDS_TEXT_CHIP, chip.y, chip.height), message, strlen(message), CARDS_TEXT_CHIP, 0, style->theme->text);
 }

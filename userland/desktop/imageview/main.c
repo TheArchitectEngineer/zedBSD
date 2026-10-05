@@ -46,7 +46,7 @@
 /* The ground: clear over the glass, black when fullscreen, a light slate when the window is opaque (0xAARRGGBB). */
 #define MAIN_GROUND_GLASS	0x00000000U
 #define MAIN_GROUND_FULLSCREEN	0xff000000U
-#define MAIN_GROUND_OPAQUE	0xffe8ecf1U
+#define MAIN_GROUND_OPAQUE	kl_theme_choose(0xffe8ecf1U, 0xff16191fU)
 
 /*
  * What the command line asked for.
@@ -122,6 +122,9 @@ static uint32_t *main_pixels;
 /* The canvas over main_pixels, which the viewer draws its words and cards into. */
 static struct iv_canvas main_canvas;
 
+/* The desktop's appearance watched (ws089-p017): the viewer draws in its colours (draw.c); NULL without it. */
+static struct kl_appearance *main_appearance;
+
 /* The frame of an animated image last written to the presenter (it writes a new one when the viewer's serial moves on). */
 static unsigned main_frame_serial;
 
@@ -141,6 +144,7 @@ static void main_opened(void);
 static void main_share(void);
 static void main_openers(void);
 static void main_fullscreen(void);
+static void main_appearance_changed(void *data, unsigned appearance);
 static int main_image(void);
 
 /*
@@ -207,6 +211,11 @@ main(
 	if (options.file != NULL)
 		(void)iv_app_open(&main_app, options.file);
 
+	/* The desktop's appearance: the viewer's colours follow it, the picture stays as it is (light under a compositor without it). */
+	error = kl_appearance_open(kui_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
+	if (error != 0)
+		iv_log("APPEARANCE none errno=%d", error);
+
 	/* The touch screen; without memory for it the fingers do nothing. */
 	error = iv_touch_open(&main_touch);
 	if (error != 0)
@@ -241,6 +250,7 @@ main(
 	iv_menu_close(&main_menu);
 	iv_glass_close(&main_glass);
 	iv_touch_close(&main_touch);
+	kl_appearance_close(main_appearance);
 	iv_app_release(&main_app);
 	free(main_pixels);
 	iv_present_close(&main_present);
@@ -1012,4 +1022,16 @@ main_fullscreen(void)
 		iv_app_layout(&main_app);
 		iv_log("FULLSCREEN state=%d", main_app.fullscreen);
 	}
+}
+
+/* Takes the desktop's new appearance: the viewer is drawn again in its colours. */
+static void
+main_appearance_changed(
+	void *data,
+	unsigned appearance)
+{
+	/* A new frame. */
+	(void)data;
+	main_app.dirty = 1;
+	iv_log("APPEARANCE appearance=%u", appearance);
 }

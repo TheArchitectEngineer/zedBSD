@@ -384,6 +384,7 @@ void pv_password_layout(const struct pv_app *app, int *x, int *y, int *width, in
 
 /* The frame (draw.c). */
 void pv_draw(struct pv_app *app, struct pv_canvas *canvas);
+void pv_draw_set_dark(int dark);
 
 /* The canvas (canvas.c). */
 void pv_canvas_fill(struct pv_canvas *canvas, int x, int y, int width, int height, uint32_t color);

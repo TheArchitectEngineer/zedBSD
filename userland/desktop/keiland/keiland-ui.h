@@ -331,6 +331,13 @@ struct kl_theme {
 /* The theme (theme.c). */
 const struct kl_theme *kl_theme_default(void);
 
+/*
+ * One of two colours by the desktop's appearance the program was told last
+ * (KL_VERSION 35, ws089-p017): light in the light appearance, dark in the
+ * dark one -- for a program's colours of its own beside the theme's.
+ */
+kl_color kl_theme_choose(kl_color light, kl_color dark);
+
 /* The icons (icons.c and icons-line.c). */
 void kl_icon_draw(struct kl_canvas *canvas, enum kl_icon icon, float x, float y, float size, kl_color color);
 void kl_icon_folder(struct kl_canvas *canvas, float x, float y, float size, kl_color tint);

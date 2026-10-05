@@ -32,7 +32,7 @@
 #define WIDGETS_DISABLED_FADE	0.6f
 
 /* The faded ground a disabled control mixes into. */
-#define WIDGETS_FADED		KL_RGB(0xeef1f5)
+#define WIDGETS_FADED		kl_theme_choose(KL_RGB(0xeef1f5), KL_RGB(0x2a2e36))
 
 /* The switch's knob: its radius and its distance from the track's ends. */
 #define WIDGETS_KNOB_RADIUS	9.5f

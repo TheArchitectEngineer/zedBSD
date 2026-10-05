@@ -70,8 +70,9 @@
 #define ML_ID_CANCEL		15U
 
 /* The colors: the folders' ground on an opaque window, white, and a code's tint. */
-#define ML_COLOR_SIDEBAR	KL_RGB(0xf4f6f9)
+#define ML_COLOR_SIDEBAR	kl_theme_choose(KL_RGB(0xf4f6f9), KL_RGB(0x1f232a))
 #define ML_COLOR_WHITE		KL_RGB(0xffffff)
+#define ML_COLOR_SURFACE	kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x23272f))
 #define ML_COLOR_CODE		KL_RGBA(0x2f7cf6, 26)
 
 /* Where the panes of a frame are (a pane left out is zero wide). */
@@ -321,7 +322,7 @@ ml_view_draw(
 	if (view->glass) {
 		kl_canvas_clear(style->canvas);
 	} else {
-		kl_canvas_fill(style->canvas, &whole, ML_COLOR_WHITE);
+		kl_canvas_fill(style->canvas, &whole, ML_COLOR_SURFACE);
 	}
 
 	/* Where the panes go. */
