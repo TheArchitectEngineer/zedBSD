@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS101 の保留（2026-10-05、P1）**: 2026-09-30 ユーザー「今のまま」で止めた p012（素の 5330 の受け入れ: vkcs 21 段・G3 の時間・GPU の hang の回復）と p018（10 倍）をベータ2 で再開するか、保留のままか [Q1 の案: 保留のまま。p013 の全文規約の見直しは進める]。p017 の 5330 の計測と p012 の素の機械の vkcs を UAT に回すか。
 - **WS130 IPv6 の判断（2026-10-05、P1 の p001 の設計、plan/ws130/phase001/phase.md §9、p002 の前に全部要る）**: H1 UAPI（netinet の option、SIOCAIFADDR_IN6 など と struct in6_aliasreq、struct in6_rtentry、route socket の RTM_ROUTERADV・RTM_ADDRINFO・RTM_NEIGHBOR、AF_INET6 の socket。正確な差分は p002 の最初に出す）、H2 IPV6_V6ONLY の既定 [0、Linux と同じ]、H3 既存の net.conf で IPv6 を既定 on [on]、H4 link-local の interface ID [RFC 7217、MAC を出さない]、H5 dual-stack の DNS の順 [DHCPv4 → RDNSS → DHCPv6、最大 3]、H6 v1 は fragment の再組立て無し（IPv4 と同じ）、Packet Too Big は扱う、H7 DHCPv6 は DUID-UUID、H8 Wi-Fi の network ごとの IPv6 の設定は後。
 - **WS068 p037 以降（GL 3.3 ほか）の保留の解除**: 2026-09-27 のユーザーの保留（「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して…」）を、ベータ2 の「全部を P1・P2 に割り当て可」で解くか [Q1 の案: 明示の指示まで保留のまま。p009・p004・p007 は進める]。
 - **ws089-p017 の判断（P2 の設計、前からの保留）**: ① ベータ2 に入れるか [計画の案: 入れない]、② 入れるなら accent だけか dark もか。
