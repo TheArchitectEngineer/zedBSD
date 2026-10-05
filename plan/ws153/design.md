@@ -1,16 +1,16 @@
 <!-- awesome-plan project=zedbsd record=ws153-design -->
 
-# WS153 の設計: third-party の app の repository と Settings の Apps の頁（ws153-p001、第 4.1 版 2026-10-05 P2 g15、q761）
+# WS153 の設計: third-party の app の repository と Settings の Apps の頁（ws153-p001、第 5 版 2026-10-05 P2 g15、q761）
 
-[WS153](ws.md) の単一目標「Settings に Apps の頁を足し、third-party の app の repository から app を探す・入れる・更新する・消すことができるようにする」の方式の検討。ユーザーの指示（2026-10-04 夜）: 「パッケージシステムは userland/packages ではなくて、サードパーティーアプリのリポジトリのことです。」。code は書かない。方式の案と判断の項目を出す。第 2 版は第 1 版への敵対的レビュー（重大 6・中 13・軽 8、[phase001](phase001/phase.md) に要旨）を、第 3 版は第 2 版への 2 回目のレビュー（重大 2・中 12・軽 11）を、第 4 版は第 3 版への 3 回目のレビュー（重大 1・中 11・軽 16）を、第 4.1 版は第 4 版への 4 回目のレビュー（重大なし、中 7・軽 16）を反映した。
+[WS153](ws.md) の単一目標「Settings に Apps の頁を足し、third-party の app の repository から app を探す・入れる・更新する・消すことができるようにする」の方式の検討。ユーザーの指示（2026-10-04 夜）: 「パッケージシステムは userland/packages ではなくて、サードパーティーアプリのリポジトリのことです。」。code は書かない。方式の案と判断の項目を出す。第 2 版は第 1 版への敵対的レビュー（重大 6・中 13・軽 8、[phase001](phase001/phase.md) に要旨）を、第 3 版は第 2 版への 2 回目のレビュー（重大 2・中 12・軽 11）を、第 4 版は第 3 版への 3 回目のレビュー（重大 1・中 11・軽 16）を、第 4.1 版は第 4 版への 4 回目のレビュー（重大なし、中 7・軽 16）を反映した。第 5 版は U1 のユーザーの決定（system 全体）を反映した。
 
 ## 0. 結論（推奨）と判断の項目
 
-推奨: **案 A（自己完結の app の bundle、利用者ごとの導入、repository の鍵で署名した静的な index）**。段 1 は root の口・setuid・sandbox を足さずに作れ、後の段で system 全体の導入（特権の helper）・HTTPS・sandbox を足せる。
+推奨: **案 A（自己完結の app の bundle、system 全体への導入、repository の鍵で署名した静的な index）**。U1 はユーザーが決めた（2026-10-05 夕: 「アプリはシステム全体で入れましょう。単独ユーザが使うタブレットを想定しているからです。また、ユーザ単位のアプリ管理は、ユーザがホームディレクトリで自由にやればいいと思います。」）。system 全体への導入には特権の helper が要る（§5.1、その口は U15 でユーザーの承認が要る）。後の段で HTTPS・sandbox を足せる。
 
 | 番号 | 判断の項目 | 推奨 | 理由 |
 | --- | --- | --- | --- |
-| U1 | 導入の範囲: 利用者ごと（`$XDG_DATA_HOME/keiland/apps/`）か、system 全体（管理者） | 段 1 は利用者ごと。system 全体は後の段（account-admin と同じ形の小さな特権の helper、別に設計して承認） | 利用者ごとなら root の口が要らない（security.md「The desktop holds no privilege」） |
+| U1 | 導入の範囲 | **決定（2026-10-05 夕、ユーザー）: system 全体**（`/apps/`）。利用者ごとの導入は repository では扱わない（利用者が home で自由に行う） | 単独の利用者が使う tablet を想定 |
 | U2 | package の形: 自己完結の bundle（案 A）か、共有の依存の package（案 B） | 案 A | 依存の解決・衝突が無く、消すのが dir を消すだけ |
 | U3 | 転送（hosting と組） | 3 案の比較: (i) HTTP と署名（外部に依らない。盗み見は防げない。HTTPS へ redirect する hosting（一般の静的な hosting の多く、推測）では使えない）、(ii) HTTPS を libbrowser（`libbrowser/net/tls.c`）と同じく OpenSSL を dlopen して使い、`/etc/ssl/cert.pem` で証明書の鎖を検める（既定の image に openssl と ca-certificates の package を入れる。今は既定で off）、(iii) libcurl。推奨は公式の hosting が HTTP で出せれば (i)、出せなければ (ii)（既存の方式の再利用）。desktop の package は今 amd64 だけなので、arm64・i386 の考慮は要らない | zedBSD の `fetch` は HTTPS を持たない |
 | U4 | 署名の検証の実装（U3 と組） | 案 a: Ed25519（RFC 8032、pure）の検証・SHA-512・SHA-256 を appd に自前で書く（U3 が HTTP の時。外部の package に依らない）。案 b: libcrypto の EVP で検証する（U3 が HTTPS で appd がどのみち OpenSSL を使う時）。推奨は U3 に合わせて a か b。署名を作る側は host の Python の `cryptography`（または OpenSSL の `pkeyutl -rawin`）で、署名の対象は index の byte 列そのもの（pure Ed25519。OpenSSH の SSHSIG の形式は使わない） | 自前は検証の誤りの危険があるが外部に依らない。OpenSSL を使うなら自前は重複。tree の既存の code（libc の crypt.c の SHA-512、cksum・libpdf の SHA-256、openssh の Ed25519 は外部の package（tarball）なので写すなら取り込みと license の監査が要る）は再利用の候補にする |
@@ -23,9 +23,10 @@
 | U11 | 更新の確認の自動の問い合わせ（1 日 1 回）を既定で on にするか | 既定 on、Apps の頁で off にできる。問い合わせるのは index だけ（入っている app の一覧は送らない） | privacy |
 | U12 | 展開の上限と inflate | package 256 MiB、展開 1 GiB、file 1 万、archive の中の path 255 byte（ustar の上限、pax の拡張 header は使わない）・深さ 32。**inflate**: tree の `libz-compat` は stream でなく（入力を全て持ち、一度に展開し直す）、出力の上限も無い（realloc で倍々）ので、展開の上限と「展開しながら検める」が成り立たず、圧縮の爆弾で memory を使い切れる。案: (a) appd に出力の上限を持つ stream の inflate を自前で書く（推奨、p004、fuzz と爆弾の試験つき）、(b) libz-compat を本当の stream に直す（base の library、他の WS への依頼）、(c) 形式を file ごとの圧縮にして大きさを先に宣言させる（libz-compat のままでは宣言した大きさで止まらないので、(a) か (b) と組む時だけ）、(d) 外部の zlib の package（`userland/packages/libs/zlib`、既定 n。本当の stream で `avail_out` で出力を制限できる。appd が libpng-compat も link すると libz-compat と symbol の名前が重なるので、icon は下の自前の decoder にする）。icon は libpng-compat を使わず（`uncompress` に上限が無い）、8-bit の RGBA・RGB で interlace の無い PNG に限り、appd の小さな decoder（unfilter だけ）と上限つきの inflate で decode し、decode の前に IHDR の幅・高さ（256 まで）と IDAT の合計（1 MiB まで）を検める | 利用者の disk と memory を守る |
 | U13 | 導入・削除・repository の追加の確認を誰が描くか | compositor が描く確認の dialog（Settings 以外の client が `kl_system_apps` で依頼しても、利用者が compositor の dialog で承認しない限り進まない。同じ client からの dialog は 1 つずつ、断られたら 10 秒は出さない） | 同じ uid の client なら誰でも拡張を使える（`wayland/settings.c` の peer の検め）ので、Settings の card だけでは確認にならない。ただし同じ uid の process は `repositories.d/`・`apps/` を直に書けるので、dialog が防ぐのは利用者を経る流れ（`.krepo` を開く、Settings 以外からの依頼）だけ（§8 の脅威の模型）。後で sandbox を足す時も同じ口のまま使える |
+| U15 | **system 全体への導入の特権の helper**（`/usr/libexec/app-admin`、§5.1）の口: setuid root の小さな program（account-admin と同じ形）、導入・更新・削除のたびに管理者（wheel）の password を求めるか（security.md「The administrator proves presence」）、helper が自分で署名・hash・展開を検め直すこと | 推奨: account-admin と同じ形（setuid root、標準入力の固定の request、管理者の password を毎回、helper が index の署名と package の hash と展開を自分で検める（呼び手を信じない）、syslog の auth）。root の口なのでユーザーの承認が要る | security.md の原則 |
 | U14 | Default apps（MIME ごとの既定の app）の UI を段 1 に入れるか | 段 2（段 1 は Files の Always Open With で third-party の app を既定にできない、§5） | 観点 7 の一部を後へ送る判断 |
 
-判断の期限: U1・U2・U3・U4・U5（hosting を含む）・U6・U7・U8・U9・U12 は p002 の前（docs が全てを要る）、U10 は p005 の前、U13・U14 は p006 の前、U11 は p007 の前（§10 の表の依存の列と同じ）。
+判断の期限: U2・U3・U4・U5（hosting を含む）・U6・U7・U8・U9・U12・U15 は p002 の前（docs が全てを要る）、U10 は p005 の前、U13・U14 は p006 の前、U11 は p007 の前（§10 の表の依存の列と同じ）。U1 は決定済み。
 
 WS152（system の更新）とは、取得・検めの code と index の形を共通にできる見込みがあるが、WS152 は WS153 と同じベータ2 の段（master）なので、共通化は早めに Q1 と調整する。段 1 は app の更新を Apps の頁だけで出す（Updates の頁には出さない）。段 1 の制限: 別の session の App Home が古い `<n>` の path を持ったまま更新が 2 回あると、その session からの起動は失敗する（次の LIST で直る）。session A で入れた app は session B の App Home に、B の次の LIST（Apps の頁を開く、1 日 1 回の確認）まで出ない。WS145（printd）はまだ実装されていないので、backend の子の process の起動と行の約束の基盤は WS153 と WS145 のどちらか先の方が作る（Q1 と調整）。
 
@@ -77,8 +78,8 @@ WS152（system の更新）とは、取得・検めの code と index の形を�
   data=config cache            （「data も消す」の対象: config・data・cache の語だけで、`$XDG_CONFIG_HOME/<id>`・`$XDG_DATA_HOME/<id>`・`$XDG_CACHE_HOME/<id>` を指す。任意の path は書けない）
   ```
   表示の文字列（name・summary・keywords）は UTF-8 として正しく、C0・C1・DEL・bidi の制御（U+202A〜U+202E・U+2066〜U+2069）を含まない。
-- **導入の場所**（U1）: `$XDG_DATA_HOME/keiland/apps/<abi>/<id>/<n>/`（既定 `~/.local/share`。zedBSD と Linux の Keiland で home を共有しても ABI ごとに分かれる。`<n>` は版ごとの短い通し番号で、版の文字列は `<n>/.version` に書く）。`<id>/current` の symlink が今の `<n>` を指す。
-- **path の長さ**（zedBSD の rtld は path を 256 byte までしか扱わず、`AT_EXECFN` が 256 以上なら `$ORIGIN` を展開しない、`src/rtld/rtld.h`・`rtld.c`）: appd は導入の時に、実際の導入の path で `<n>/bin/<exec>` と、`lib/` の全ての file の `<n>/bin/../lib/<name>` が 255 byte 以下か（`<n>` と `current` の長い方で数える）を検め、超えれば理由（home の path が長い）を出して断る。home の名前や `XDG_DATA_HOME` が後で変わった時のため、compositor は起動の前に長さを検め直して理由を出す。terminal から相対の path で起動すると `$ORIGIN` が効かないので、起動は compositor の絶対 path に限ると docs に書く（rtld で cwd を基準に解く修正は rtld の WS への依頼の候補）。
+- **導入の場所**（U1、system 全体）: `/apps/<abi>/<id>/<n>/`（root の物、0755・file は 0644/0755、`<n>` は版ごとの短い通し番号で、版の文字列は `<n>/.version`）。`<id>/current` の symlink が今の `<n>` を指す。書くのは特権の helper（app-admin）だけ。
+- **path の長さ**（zedBSD の rtld は path を 256 byte までしか扱わず、`AT_EXECFN` が 256 以上なら `$ORIGIN` を展開しない、`src/rtld/rtld.h`・`rtld.c`）: `/apps/<abi>/` の下なので home の長さに依らない（最悪でも約 130 byte）。それでも app-admin は導入の時に、実際の導入の path で `<n>/bin/<exec>` と、`lib/` の全ての file の `<n>/bin/../lib/<name>` が 255 byte 以下か（`<n>` と `current` の長い方で数える）を検め、超えれば理由（home の path が長い）を出して断る。terminal から相対の path で起動すると `$ORIGIN` が効かないので、起動は compositor の絶対 path に限ると docs に書く（rtld で cwd を基準に解く修正は rtld の WS への依頼の候補）。
 - **私的な library**: zedBSD の rtld は `DT_RUNPATH` の `$ORIGIN`・`$ORIGIN/...` を展開する（`src/rtld/rtld.c` の `open_search_list`）。形式の約束: `bin/` の program は `DT_RUNPATH=$ORIGIN/../lib`、`lib/` の library どうしの依存は各 library に `DT_RUNPATH=$ORIGIN`（RUNPATH は推移しない）。`LD_LIBRARY_PATH` は使わない（app が起動する子の process に引き継がれ、system の program に私的な library を読ませるため）。導入の時、`lib/` の file 名が platform の library の soname（`/etc/keiland/abi` に一覧）と重なれば断る（platform の library を覆わせない）。p004 の道具と appd は ELF を検める: DT_RPATH が無い（rtld は RUNPATH の無い requester で親の RPATH を辿るので、platform の library の探索に app の `lib/` が入りうる）、DT_RUNPATH は `$ORIGIN` から始まる物だけ、DT_NEEDED は約束した platform の library と `lib/` の file の和に含まれる（platform の外の `/usr/lib` の library に黙って依らない）、e_machine と class が `abi` と一致、ET_DYN（PIE）、PT_INTERP が `/lib/ld.so`、DT_TEXTREL が無い、`lib/` の物に依る library は RUNPATH=`$ORIGIN` を持つ。
 
 ## 3. 依存と ABI（U9）
@@ -120,8 +121,15 @@ WS152（system の更新）とは、取得・検めの code と index の形を�
 
 ## 5. 導入・更新・削除と登録
 
-- **流れ**（利用者ごと、特権なし）: index を取る → 署名・期限・単調性 → package を取る → size・SHA-256 → 一時の dir（`apps/<abi>/.tmp-<pid>-<rand>/`、同じ file system）に、appd の上限つきの stream の inflate（U12）で展開しながら検める（§2）→ manifest を検める（index と一致、abi・requires-keiland・exec が在る、soname の重なりが無い）→ `<n>/.version` と `<n>/.origin` を書く → `<id>/<n>/` に rename（同じ版の入れ直しも新しい `<n>` に置く）→ `current` は `symlink(tmp)` の後 `rename(tmp, current)`（原子的）→ 登録 → 古い版の扱い（下の起動の規則）。
-- **書き手と競合と回復**: `apps/<abi>/` の下は appd だけが書き、backend は repository の conf だけを書く。appd は `apps/<abi>/.lock`（flock、非 blocking で取り、取れなければ「他の session が導入中」と返す）を持つ間だけ書く（同じ利用者の 2 つの session）。rename の前に file と dir を fsync する（停電に耐える）。lock を取った後に `.tmp-*`・`.trash-*` を全て消す（lock を持つのは自分だけなので、残っている物は全て前の crash の残り）。`current` が無い・壊れた `<id>/` は、`.version` の在る最も新しい完全な `<n>` に戻す。削除は `<id>/` を `.trash-…` に rename してから消す。ENOSPC は失敗として前の状態のまま。
+- **流れ**: 利用者の権限の keiland-appd が index を取り（署名・期限・単調性）、package を取って（size・SHA-256）一時の file に置き、特権の helper app-admin に「repository の ID、index と署名、package の file の fd、導入する id と版」を渡す（§5.1）。app-admin は呼び手を信じず、index の署名（system の conf の鍵と、利用者の state の鍵は使わない）・期限・package の size と SHA-256 を自分で検め、`/apps/<abi>/.tmp-*` に上限つきの stream の inflate（U12）で展開しながら検める（§2）→ manifest を検める（index と一致、abi・requires-keiland・exec が在る、soname と export の重なりが無い、ELF の検め）→ `<n>/.version` と `<n>/.origin` を書く → fsync → `<id>/<n>/` に rename → `current` は `symlink(tmp)` の後 `rename(tmp, current)` → 古い版の扱い（下）→ appd に結果を返す。登録は appd の次の LIST で。
+
+### 5.1 特権の helper app-admin（U15、ユーザーの承認が要る）
+
+- `/usr/libexec/app-admin`（setuid root、account-admin と同じ形: 標準入力の固定の形の request、`install`・`remove` の 2 つだけ、管理者（wheel）の password を毎回、失敗の 2 秒の遅延、syslog の auth に呼び手・操作・id・結果）。
+- 呼び手（appd、利用者の権限）から受けるのは index の bytes と署名と package の fd だけで、検めは全て helper が自分で行う（system の conf の鍵だけを使い、利用者が足した repository は段 1 では system 全体に入れられない、U5 の次の判断）。
+- 書くのは `/apps/` の下だけ。setuid・setgid の bit・device・hard link・外向きの symlink は展開で断り、file は root の 0644/0755。
+- 段 1 の制限: 利用者が足した repository（`.krepo`）は system 全体の導入に使えない（system の conf だけが信頼の起点）。利用者の repository を system 全体に使うかは、追加の時に管理者の password で system の conf に書く口が要る（後の段の判断）。
+- **書き手と競合と回復**: `/apps/<abi>/` の下は app-admin だけが書き、backend は利用者の repository の conf だけを書く。app-admin は `/apps/<abi>/.lock`（flock、非 blocking で取り、取れなければ「他の導入が進行中」と返す）を持つ間だけ書く。rename の前に file と dir を fsync する（停電に耐える）。lock を取った後に `.tmp-*`・`.trash-*` を全て消す（lock を持つのは自分だけなので、残っている物は全て前の crash の残り）。`current` が無い・壊れた `<id>/` は、`.version` の在る最も新しい完全な `<n>` に戻す。削除は `<id>/` を `.trash-…` に rename してから消す。ENOSPC は失敗として前の状態のまま。
 - **取り消し**: 取得・展開の間は取り消せ（一時の dir を消す）、`<id>/<n>/` への rename の後は取り消さない（完了まで進めて結果を返す）。
 - **起動**: appd が `current` を解いた実の path（`<id>/<n>/bin/<exec>`）を一覧に入れて渡し、compositor はそれを argv の形（shell を通らない `posix_spawn`）で起動する（compositor は disk を読まない。`zwl_spawn` は `/bin/sh -c` で 160 byte の command なので使わない。p006 で compositor に argv の spawn を足す）。動いている process は自分の版の dir を使い続ける。古い版は pid では数えられない（孫の process、別の session、terminal からの起動）ので、**3 版目を入れる時に最も古い版を消す**（最大 2 版。別の session で古い版が動いていれば、その process が `share/` を開く時に失敗しうる、段 1 の制限）。`<n>` は `<id>` の外の通し番号（`apps/<abi>/.serial`）から振り、app を消して入れ直しても使い直さない。
 - **登録**: 一覧と icon は appd が検めて（icon は decode して 256×256 の RGBA に切って）backend に渡す。compositor は disk も PNG も読まない（WS135 の「session の間 disk を待たない」）。App Home の一覧は今「最初に開いた時に一度読む」・48 個まで・絵は `icons.c` の名前だけなので、実行中の追加と削除、上限、RGBA の icon の描画を足す。bar（`apps-bar.c`）は manifest の `app-id` で窓をまとめ、その icon を使う。p006 でこれらを足す。
@@ -133,7 +141,7 @@ WS152（system の更新）とは、取得・検めの code と index の形を�
 
 - Settings は libkeiland の `kl_system_apps_*`（拡張 `kl_system_manager_v1` の新しい object `kl_system_apps_v1`）だけを使う。
 - **compositor**: 入っている app の一覧（App Home・bar に要る、appd が解いた実の path つき）、`kl_system_apps_launch(id, path)`（Files・App Home の起動）、catalog の検索と頁送り（compositor の側で検索して頁ごとに送る。Wayland の message の大きさの上限のため catalog を丸ごと送らない）、icon は shm の fd で渡す、導入・更新・削除・repository の追加の確認の dialog（U13）、進みと結果。
-- **libkeiland-backend の共通の code**（`libkeiland-backend/apps/`、OS に依らない）: appd の起動（WS145 の printd と同じ `posix_spawn`・socketpair・行の約束・寿命の形）、利用者の repository の conf の書き込み（writer の thread、flock）、appd の `LIST` の受け取り。`apps/<abi>/` の下（導入の記録を含む）は appd だけが書く。
+- **libkeiland-backend の共通の code**（`libkeiland-backend/apps/`、OS に依らない）: appd の起動（WS145 の printd と同じ `posix_spawn`・socketpair・行の約束・寿命の形）、利用者の repository の conf の書き込み（writer の thread、flock）、appd の `LIST` の受け取り。`/apps/<abi>/` の下（導入の記録を含む）は特権の helper app-admin だけが書く（§5.1）。
 - **keiland-appd**（`userland/desktop/appd/`、`/usr/libexec/keiland-appd`、Makefile を持つ（段 1 は zedBSD だけ。Makefile.linux・freebsd は後の段）。WS145 の printd と同じ置き方）: HTTP の client（自前、接続と読みの timeout（進みの無い 60 秒）・取り消し・header 16 KiB・index 4 MiB・package は index の size まで・redirect は同じ scheme で 3 回まで。U3 で HTTPS なら OpenSSL か libcurl を比べて選ぶ）、署名の検証（U4 の案 a なら Ed25519・SHA-512・SHA-256 を appd の私的な file に自前で、案 b なら libcrypto）、上限つきの stream の inflate（U12 の案 a なら自前、d なら zlib の package）、ustar の展開器（新しく書く）、icon の小さな PNG の decoder（U12、自前）。
 - **backend と appd の約束**（p002 の docs と p005 で WS145 §5.1 の形の表にする）: `CATALOG`・`INSTALL <request> <repo-id> <id> <version>`・`REMOVE`・`CANCEL`・`PROGRESS`・`RESULT`・`LIST`（入っている app と実の path と icon の fd）・`IDLE n`/`BYE n`・`FATAL`。行は 1024 byte まで（manifest の表示の文字列の上限はこれに収まる）。appd は待ち受けの socket を持たず setuid でない。log は syslog（URL・id・結果、利用者の file の名前は残さない）。
 - KL_VERSION と protocol version は、WS145 の予約（version 10・KL 34）の後になる（順は Q1 と調整）。
@@ -164,7 +172,7 @@ WS152（system の更新）とは、取得・検めの code と index の形を�
 | 形式 | host: manifest・index の解析（id・version・exec・MIME・表示の文字列の境界）、ELF の検め（DT_RPATH、RUNPATH、NEEDED、静的な link、export の重なり、soname の基の名前、e_machine・PIE・PT_INTERP・TEXTREL）、上限つきの stream の inflate（fuzz、圧縮の爆弾で memory の上限を超えない）、PNG の icon の爆弾、展開の検めの fuzz の archive（`..`・絶対 path・hard link・symlink の外向き・device・FIFO・setuid・重複の entry・dir と file の入れ替わり・pax の拡張 header・path の長さと深さ・上限の超え）、soname の重なり |
 | keiland-appd | host: Python の静的な HTTP の server の repository（署名の正しい・誤った・期限切れ・巻き戻し・鍵の交換の index、SHA-256 の合わない・size を超える package、https への redirect、止まる server（timeout）、途中で切れる転送、別の repository の同じ id）、導入・更新（失敗で前の版のまま）・削除、2 つの session の同時の導入、各段（rename と symlink の間、削除の途中）での kill の後の回復、時計の狂い、state の無い初回（新しい image）、`next-key` での鍵の交換、ABI の合わない app |
 | compositor・libkeiland | host: `plan/ws131/tests/host-system.sh` の形で kl_system_apps_*、catalog の頁送り、確認の dialog を経ない依頼が進まない、command の長さと shell の特殊文字が起動に影響しない |
-| QEMU | T1: 試験の repository（host の HTTP、user-net の 10.0.2.2）から試験の app（`lib/` の私的な library と library から library への依存を持つ）を Settings で入れ、App Home に出て起動（実行中の追加、私的な library が読まれる）、長い id と長い `XDG_DATA_HOME`（path の長さの検めで断る、境界の内なら起動する）、ABI の名前が合わない app を起動しない、`.krepo` の名前の衝突を断る、更新、削除（実行中の削除）、Files の既定が変わらないこと。PNG |
+| QEMU | T1: 試験の repository（host の HTTP、user-net の 10.0.2.2）から試験の app（`lib/` の私的な library と library から library への依存を持つ）を Settings で入れ、App Home に出て起動（実行中の追加、私的な library が読まれる）、長い id（path の長さの検め）、導入・削除で管理者の password を求められ、誤った password では何も変わらない（app-admin）、ABI の名前が合わない app を起動しない、`.krepo` の名前の衝突を断る、更新、削除（実行中の削除）、Files の既定が変わらないこと。PNG |
 | Linux・FreeBSD | 段 1 の範囲の外（後の段で約束を作ってから） |
 
 ## 10. Phase の分け方（案）
@@ -175,13 +183,14 @@ WS152（system の更新）とは、取得・検めの code と index の形を�
 | p002a | ABI の checker（`tools/`）と `/etc/keiland/abi`・閉包の export の一覧の生成（Guardrail への登録と Q1 の承認） | p002（U9） |
 | p003 | 暗号（U4 が案 a の時だけ）: Ed25519 の検証・SHA-512・SHA-256（appd の私的な code）と host 試験、独立の review | p002（U4） |
 | p004 | 道具と形式: host の道具 `tools/kapp/`（package を作る・index を作る・Python の `cryptography` で pure Ed25519 の署名）、manifest・index・展開器・上限つきの stream の inflate と icon の小さな PNG の decoder（U12）・ELF の検め、host 試験 | p002（U12）。p003 と並行できる |
-| p005 | keiland-appd: HTTP（U3）・検め・展開・導入・更新・削除・回復、backend との約束、host 試験 | p003（U4=a の時）・p004（U3・U10） |
+| p005 | keiland-appd（利用者の権限）: HTTP（U3）・index と package の取得と検め・app-admin への受け渡し・LIST、backend との約束、host 試験 | p003（U4=a の時）・p004（U3・U10） |
+| p005a | 特権の helper app-admin（U15 の承認の後）: request の形・管理者の password・検め直し・展開・導入・削除・回復、security.md の節、host 試験 | p004・p005（U15） |
 | p006 | backend の apps・compositor の拡張 `kl_system_apps_v1`（`kl_system_apps_launch` を含む）・確認の dialog（U13、compositor に新しく作る UI。後の sandbox では input method の経路から dialog に入力を注入させない）・argv の spawn（`zwl_spawn` と同じく fork と execve で、子は setsid・`closefrom(3)`（zedBSD の posix_spawn には closefrom の file action が無く、third-party の app に compositor の fd を継がせない）・signal の mask と disposition を既定に（SIGKILL・SIGSTOP は除く）・stdin を /dev/null・XDG_RUNTIME_DIR と WAYLAND_DISPLAY・app-id で activation の token）・App Home と bar の動的な一覧と RGBA の icon・Files の候補と起動・libkeiland の口 | p005（U13・U14。約束の表が決まれば compositor の部分は p005 と並行できる） |
 | p007 | Settings の Apps の頁（Installed・Browse・Repositories・更新の確認） | p006（U11） |
 | p008 | 公式の repository の運用: 鍵の生成と保管、署名・再署名の手順、hosting（ユーザーの関与） | p004（U5） |
 | p009 | 試験の repository と試験の app、QEMU（T1）の確認 | p007 |
 | p010 | 全文の規約の確認と回帰 | p002〜p009 |
-| 後の段 | system 全体の導入（U1）、HTTPS（U3 で段 1 にしない時）、sandbox（U6）、SDK（U8）、開発者の鍵、Default apps、自動の更新、`abi=noct-1`、ABI を上げた時の移行と鍵の交換の経路（WS152 との接続） | — |
+| 後の段 | 利用者が足した repository を system 全体の導入に使う口、HTTPS（U3 で段 1 にしない時）、sandbox（U6）、SDK（U8）、開発者の鍵、Default apps、自動の更新、`abi=noct-1`、ABI を上げた時の移行と鍵の交換の経路（WS152 との接続） | — |
 
 ## 11. 既存の仕組みの調べ（方式だけ、code は写さない）
 
