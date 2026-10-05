@@ -24,6 +24,6 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [ws175-p001](phase001/phase.md) | 設計: libpdf の書き出し（増分の更新か作り直しか）、content stream の text・image の object の取り出しと書き換え、font（埋め込みの subset の扱い、置き換えの font）、複数頁、Notes の UI、試験。design-reviewer | planning | — |
+| [ws175-p001](phase001/phase.md) | 設計: libpdf の書き出し（増分の更新か作り直しか）、content stream の text・image の object の取り出しと書き換え、font（埋め込みの subset の扱い、置き換えの font）、複数頁、Notes の UI、試験。design-reviewer | in-progress（設計 [design.md](phase001/design.md) と review 済み、review の反映は未了。判断 D1〜D7 待ち） | — |
 
 見積もり（Q1 の概算）: 6 LW。
