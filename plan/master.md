@@ -15,7 +15,7 @@
 ## 現在の状況（Q1）
 
 <!-- master:updated:start -->
-更新: 2026-10-06 Q1（C の再設計の 4 つの Phase の設計を書き、計画の順を priority に。次の session は実装から）
+更新: 2026-10-06 Q1 ハンドオーバー（C の再設計と UAT の設計の 7 Phase を planned に、計画の順を priority に、dock の規則をユーザーが決定。次の session は実装から）
 <!-- master:updated:end -->
 
 ### 担当
@@ -53,6 +53,7 @@
 <!-- master:open-decisions:start -->
 - **WS153 U2〜U15**: ユーザーが検討中（聞かない）。
 - **WS175 D1〜D7**（Notes の PDF の編集、推奨は phase001/phase.md の表）: 未回答。
+- ws142-p007 の dock の規則は決定済み（dock できない窓は無い、固定の大きさ・File Chooser・親を持つ dialog は中央に、下をぼかす、他の app は見せない）。
 - **BUG-209 Alt+Tab の 4 つの仮定**（端で回る、Shift で左、3 本指の tap も今の app から、短い Alt+Tab は今の app のまま）: 未回答。
 - **BUG-214** 透明度の slider の初期値（frosted に表示を合わせる案か、既定を不透明にするか）: 未回答。
 - **BUG-222** ue0 の chip（RTL8822BU は WiFi、有線は別の chip の見込み）: ユーザーに確かめる。
