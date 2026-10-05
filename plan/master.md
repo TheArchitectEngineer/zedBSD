@@ -289,6 +289,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS171](ws171/ws.md) | ベータ2（2026-10-05 決定） | MG008 | 2 | hal.h の全ての関数に契約の comment（2026-10-05 追加、急がない） |
 | [WS172](ws172/ws.md) | ベータ2 | MG006 | 4 | passkey の認証の枠組み（/sbin/passkey・/etc/passkey、2026-10-05 追加） |
 | [WS173](ws173/ws.md) | ベータ2 | MG006 | 3 | AAT（エージェントが素の実機を操作する受け入れの枠組み、2026-10-05 追加、最優先） |
+| [WS174](ws174/ws.md) | ベータ1 | MG003 | 1 | 起動時の Ctrl・Shift（UEFI、BIOS は後日）（2026-10-05 追加） |
+| [WS175](ws175/ws.md) | ベータ2（Q1 の案） | MG006 | 6 | Notes の PDF の画像と文字の編集（2026-10-06 追加） |
+| [WS176](ws176/ws.md) | ベータ3 | MG006 | 30 | Canvas（pen のイラストと画像の編集、2026-10-06 追加） |
 
 ### リリースの段ごとの見積もり（2026-10-05 夜に作り直し）
 
@@ -486,6 +489,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS171](ws171/ws.md) | MG008 | hal.h の全ての関数に HAL v2 と同じ水準の契約の comment を書く（comment の差分もユーザーの review の後に当てる）（2026-10-05 ユーザー「このコメント、すべての関数につけてほしいです。今でなくていいので」） | planning（**ベータ2**、合間の仕事、2026-10-05 ユーザー） | — |
 | [WS172](ws172/ws.md) | MG006 | passkey の認証の枠組み: sessiond は外部の `/sbin/passkey`（base）で password・PIN・FIDO2（将来はセキュリティチップ）を確かめる、root だけの `/etc/passkey`、PIN の失敗の回数は sessiond の memory（2026-10-05 ユーザー） | incomplete（p002 cleared、p003 FIDO2 へ） | WS161 |
 | [WS173](ws173/ws.md) | MG006 | AAT（Agent Acceptance Test）: /dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の 5330 を操作して受け入れを確かめる。UAT はデバイス系と使用感に絞り AAT の後に遅らせる（2026-10-05 ユーザー） | incomplete（p004・p006 は T1-202 待ち） | — |
+| [WS174](ws174/ws.md) | MG003 | 起動時に Ctrl で kernel の message を console に、Shift で console の login に（UEFI の bootloader だけ、BIOS は後日）（2026-10-05 ユーザー） | incomplete（p001・p002・p005 cleared、p003 は T1-213 待ち） | — |
+| [WS175](ws175/ws.md) | MG006 | Notes で PDF の画像と文字を編集（移動・大きさ・差し替え・挿入、文字の編集・削除・挿入・font、複数頁）（2026-10-06 ユーザー） | planning（ベータ2 の案） | — |
+| [WS176](ws176/ws.md) | MG006 | Canvas: pen と touch のイラスト制作・画像編集（layer・brush・素材集・CLIP STUDIO と PSD の互換）（2026-10-06 ユーザー、ベータ3） | planning（ベータ3） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
