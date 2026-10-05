@@ -43,7 +43,7 @@ Queue: Q1 の dispatch（2026-10-05 夜、P1 へ p002・p003・p005）。承認:
 
 ## T1 への依頼（Q1 経由）
 
-- image: commit（下の SHA）の worktree で `plan/tools/guest/test-image.sh plan/ws174/tests/config-amd64-keys.mk build/ws174-keys`（graphical boot、`kmsg=quiet`）。
+- image: branch `agent/p1` の commit `b6af5b35`（source の最終。これより後の commit は plan の記録だけ）か、それを merge した main で `plan/tools/guest/test-image.sh plan/ws174/tests/config-amd64-keys.mk build/ws174-keys`（graphical boot、`kmsg=quiet`）。
 - 実行: `timeout 1800 plan/ws174/tests/run-boot-keys-qemu.sh build/ws174-keys/hdd-image.img <OUTDIR>`。cell ごとに image の複写と OVMF の変数の複写から QEMU を起動し直す（同時に 1 つ、`-no-reboot`、NVMe の boot disk、usb-net port 2、usb-kbd port 3、QMP）。key は QMP `send-key`（0.1 s ごと、hold 50 ms、修飾 key も毎回押し直す）。
 - 5 cell と判定（screendump の PNG と SSH だけ。console・serial の log は読まない）:
 
