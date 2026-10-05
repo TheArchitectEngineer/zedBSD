@@ -89,7 +89,7 @@
   - D13 firmware の読み込みの試験のため 5330 の Linux の host で btusb・btintel を blacklist し電源を入れ直す [する]
   - D18 UAT の環境 [素の 5330（Wi-Fi との共存も見られる、その間 5330 の T1 は止まる）]
   - 情報の依頼: 試験に使う classic と LE の keyboard・mouse の機種、firmware の要らない USB の BT dongle（例 CSR8510）が有るか・買うか。
-- **bar のデバイス（USB 媒体）の icon（2026-10-05 午後 UAT の所見、P2 の案 plan/ws132/proposals/media-icon-proposals.png）**: 今の icon は camera に見え plug の穴も見えていない。A 横の stick と輪郭の plug、B 縦の stick（一般の USB メモリの絵）、C USB の三叉の記号、D 箱と取り出しの記号 [P2 の案: B]。WS156 の H7（通知への置き換え）とは独立に入れられる。
+- **bar のデバイス（USB 媒体）の icon は C（USB の三叉の記号）に決定**（2026-10-05 夕 ユーザー「アイコンはUSB の三叉の記号がいいです。」）。P2 が media.c に実装（q763）。
 - **BUG-194 全画面から戻す compositor の key（2026-10-05、P2 の案、今は仮に F11）**: A F11、B Super+↓（Fn が要らない）、C Esc の 1 秒の長押し、D 画面の上端からの swipe [P2 の案: A+B か B+C]。実機で F11 が効かなかったのは 5330 の上の列が既定で Home/End（Fn+F11 か Fn Lock）の見込み、次の UAT で Fn+F11 を試す。
 - **WS145 印刷の判断（2026-10-05、P2 の設計 第 3.1 版、3 回目の敵対的レビューで重大なし、plan/ws145/design.md）**: D2 printer の設定を利用者ごとか system 全体で共有か [利用者ごと。共有なら root の口が要り別の設計、p003 の前に要る]、D3 IPP の path と LPD の queue 名を詳しい設定で入力できるか（既定は /ipp/print → /ipp → /、LPD は lp）、D4 受け入れの printer の機種（PDF を受けない機種なら PDF → PWG raster の filter の WS が先に要る）、D5 Linux・FreeBSD で CUPS の既存の printer を一覧に出すか、D6 PDF Viewer の File > Print を含めるか、D7 printer に login 名を送ってよいか、D8 spool の上限（1 文書 256 MiB・合計 512 MiB・16 job）と複写せず app の file から直接送る案、D9 同じ利用者の全ての app に他の app の job の題名が見え取り消せること。
 - **2026-10-05 午後 UAT の後、ユーザー「ちょっと仮眠します。その方針でよいので、自走をお願いします。」**: 方針どおり自走。P1 は BUG-195・196・197（実機の ACPI）、P2 は UAT の所見（ws132-p009・ws099-p033・BUG-194（仮に F11）・BUG-181・BUG-193・bar の device の icon）。直しが揃ったら新しい UAT の image を作り T1 で boot-test。判断が要る点は記録して先へ。
