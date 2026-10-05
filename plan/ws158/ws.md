@@ -3,12 +3,12 @@
 # WS158: Keiland 本体と Keiland の app の翻訳（英語が基準、日本語はベータ2）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG007
 Parent: [Master](../master.md)
-Queue: なし（目標はベータ2）
-Resume point: p001（翻訳の仕組みの設計）から。F-068（ローカライズの仕組みと複数言語の UI）をこの WS へ昇格。
+Queue: Q1（ベータ2 の割り当て、P2、2026-10-05）
+Resume point: p001 の設計を書いた（判断の 5 点待ち）。F-068（ローカライズの仕組みと複数言語の UI）をこの WS へ昇格。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -41,7 +41,7 @@ Keiland 本体（compositor・system bar・greeter・lock の画面）と Keilan
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws158-p001 | 翻訳の仕組みの設計（catalog の形式・libkeiland の口・言語の選択と切り替え・locale の書式・抽出の道具・試験） | planning | WS154 の Languages の頁と設計を合わせる |
+| [ws158-p001](phase001/phase.md) | 翻訳の仕組みの設計（catalog の形式・libkeiland の口・言語の選択と切り替え・locale の書式・抽出の道具・試験） | in-progress（設計済み、判断の 5 点待ち） | WS154 の Languages の頁と設計を合わせる |
 | ws158-p002 | libkeiland の i18n の口と catalog の読み込み、抽出の道具 | planning | p001 |
 | ws158-p003 | compositor・greeter・lock の文を口に通す | planning | p002 |
 | ws158-p004 | 各 app の文を口に通す（app ごとに分けてよい） | planning | p002 |
