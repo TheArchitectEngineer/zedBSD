@@ -488,6 +488,7 @@ enum i915_shader_ir_op {
 	 */
 	I915_IR_FENCE,
 
+	/* The number of operations above; it is not an operation of its own. */
 	I915_IR_OP_COUNT
 };
 
