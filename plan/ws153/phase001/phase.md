@@ -2,10 +2,10 @@
 
 # ws153-p001: third-party の app の repository（package の仕組み）の検討
 
-Status: planning
+Status: in-progress（設計の第 1 版、[design.md](../design.md)。敵対的レビュー中）
 Disposition: normal
 Parent: [WS153](../ws.md)
-Queue: なし
+Queue: q761（Q1、2026-10-05、P2 g15）
 
 ## 目的
 
