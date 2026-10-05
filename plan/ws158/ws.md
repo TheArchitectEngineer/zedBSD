@@ -7,7 +7,7 @@ Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG007
 Parent: [Master](../master.md)
-Queue: Q1（ベータ2 の割り当て、P2、2026-10-05）
+Queue: q738（P2、2026-10-05）
 Resume point: p001 の設計を書いた（判断の 5 点待ち）。F-068（ローカライズの仕組みと複数言語の UI）をこの WS へ昇格。
 <!-- awesome-plan-current:end -->
 

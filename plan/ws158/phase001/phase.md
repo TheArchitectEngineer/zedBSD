@@ -5,7 +5,7 @@
 Status: in-progress（2026-10-05、P2。設計を書いた。判断の 5 点待ち）
 Disposition: normal
 Parent: [WS158](../ws.md)
-Queue: Q1（ベータ2 の割り当て、P2）
+Queue: q738（Q1、2026-10-05）
 
 ## 今の構成（2026-10-05 に source を読んだ）
 
