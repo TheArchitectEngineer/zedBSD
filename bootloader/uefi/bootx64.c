@@ -8,6 +8,8 @@
 #include "memory-map.h"
 #include "volume-discovery.h"
 #include "zedbsd-config.h"
+#include "boot-keys.h"
+#include "bootloader/common/boot-override.h"
 #include "bootloader/include/amd64-handoff.h"
 #include "bootloader/include/amd64-kernel-image.h"
 #include "bootloader/include/boot-parameter-handoff.h"
@@ -23,6 +25,9 @@
 /* The GOP mode a boot with a logo asks for: the Kei splash's size (ws035-p112). */
 #define SPLASH_MODE_WIDTH 1920U
 #define SPLASH_MODE_HEIGHT 1080U
+/* The GOP mode a boot with Ctrl held asks for: the early console's 80x30 fills it (ws174). */
+#define TEXT_MODE_WIDTH 640U
+#define TEXT_MODE_HEIGHT 480U
 #define KERNEL_PATH_CHAR16_STORAGE \
 	(ZBL_KERN_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U)
 
@@ -83,6 +88,8 @@ struct loader_context {
 	EFI_BOOT_SERVICES *boot;
 	/* The boot logo is on the screen: progress text stays off it (errors still show). */
 	int quiet_console;
+	/* The boot keys (Ctrl, Shift) read from the firmware while the loader runs (ws174). */
+	struct zbl_uefi_boot_keys keys;
 };
 
 struct discovered_volume {
@@ -462,6 +469,8 @@ read_bounded_file(EFI_FILE_PROTOCOL *file, void *buffer, UINTN capacity,
 }
 
 static int show_logo(struct loader_context *context, struct discovered_volume *discovered, const struct zbl_uefi_kern_config *configuration, const struct zbl6_framebuffer *framebuffer);
+static EFI_STATUS apply_boot_keys(struct loader_context *context, struct zbl_uefi_kern_config *configuration, unsigned held);
+static void notice_boot_keys(struct loader_context *context, const struct zbl_uefi_kern_config *configuration, unsigned held);
 
 static int
 kernel_path_utf16(const char *source,
@@ -1074,6 +1083,58 @@ show_logo(
 	return drawn;
 }
 
+/* Rewrites the boot parameters for the boot keys held so far. */
+static EFI_STATUS
+apply_boot_keys(
+	struct loader_context *context,
+	struct zbl_uefi_kern_config *configuration,
+	unsigned held)
+{
+	int rewritten;
+
+	/* No boot key: the parameters stay exactly as zedbsd.cfg made them. */
+	if (held == 0U)
+		return EFI_SUCCESS;
+
+	/*
+	 * Ctrl replaces kmsg= with kmsg=console and drops logo=; Shift
+	 * replaces login= with login=console.
+	 */
+	rewritten = zbl_boot_override_apply(&configuration->parameter_record, held);
+	if (rewritten != 0) {
+		console_ascii(context, "A64 PARAMS OVERRIDE rejected\n");
+		return EFI_INVALID_PARAMETER;
+	}
+
+	/* Succeeded: the record the kernel will receive carries the keys' choices. */
+	return EFI_SUCCESS;
+}
+
+/* Tells which boot keys changed the boot, and the parameters the kernel gets. */
+static void
+notice_boot_keys(
+	struct loader_context *context,
+	const struct zbl_uefi_kern_config *configuration,
+	unsigned held)
+{
+	/* Nothing to tell when no boot key was held. */
+	if (held == 0U)
+		return;
+
+	/* Ctrl: the kernel messages are shown on the console. */
+	if ((held & ZBL_BOOT_OVERRIDE_KMSG) != 0U)
+		console_ascii(context, "Boot: kernel messages (Ctrl)\n");
+
+	/* Shift: the login is on the console. */
+	if ((held & ZBL_BOOT_OVERRIDE_LOGIN) != 0U)
+		console_ascii(context, "Boot: console login (Shift)\n");
+
+	/* The rewritten parameters, beside the A64 PARAMS line of zedbsd.cfg's. */
+	console_ascii(context, "A64 PARAMS OVERRIDE ");
+	console_ascii(context, configuration->parameter_record.text);
+	console_ascii(context, "\n");
+}
+
 static void
 console_map_entry(struct loader_context *context,
     const EFI_MEMORY_DESCRIPTOR *descriptor)
@@ -1411,6 +1472,9 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	int logo_named;
 	int logo_shown;
 	unsigned index, attempt;
+	unsigned held;
+	UINT32 wish_width;
+	UINT32 wish_height;
 
 	if (system == 0 || system->BootServices == 0)
 		return EFI_INVALID_PARAMETER;
@@ -1420,6 +1484,15 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	context.quiet_console = 0;
 	boot = context.boot;
 	console_ascii(&context, "A64 UEFI ENTRY\n");
+
+	/*
+	 * Asks the firmware for the boot keys as early as possible and reads
+	 * what is queued already (ws174).  Nothing waits for a key.
+	 */
+	zbl_uefi_boot_keys_open(&context.keys, system);
+	(void)zbl_uefi_boot_keys_sample(&context.keys);
+
+	/* The GOP whose framebuffer the kernel receives. */
 	status = boot->LocateProtocol(&EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, 0,
 				      (void **)&gop);
 	if (EFI_ERROR(status))
@@ -1444,23 +1517,55 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 		fail_discovered(&context, &discovered, "Load zedbsd.cfg", status);
 
 	/*
+	 * The boot keys held so far choose the console's kernel messages
+	 * (Ctrl) and the console login (Shift), before anything reads the
+	 * parameters for the logo and the video mode (ws174).
+	 */
+	held = zbl_uefi_boot_keys_sample(&context.keys);
+	status = apply_boot_keys(&context, &configuration, held);
+	if (status != EFI_SUCCESS)
+		fail_discovered(&context, &discovered, "Override parameters", status);
+
+	/*
 	 * Applies the optional display request before retaining framebuffer
-	 * addresses.  A boot with a logo (logo=) asks for the GOP's 1920x1080,
-	 * the Kei splash's size, when there is no video= (ws035-p112).
+	 * addresses.  When there is no video=, a boot with Ctrl held wishes for
+	 * 640x480, where the early console's 80 columns fill the screen, and a
+	 * boot with a logo (logo=) for the GOP's 1920x1080, the Kei splash's
+	 * size (ws035-p112).
 	 */
 	logo_named = zbl_logo_path(configuration.parameter_record.text,
 	    configuration.parameter_record.length, logo_path, sizeof(logo_path));
+
+	/* Chooses the mode to wish for when video= names none. */
+	if ((held & ZBL_BOOT_OVERRIDE_KMSG) != 0U) {
+		/* Ctrl: the kernel messages are read on screen. */
+		wish_width = TEXT_MODE_WIDTH;
+		wish_height = TEXT_MODE_HEIGHT;
+	} else if (logo_named > 0) {
+		/* The splash fills the screen at its own size. */
+		wish_width = SPLASH_MODE_WIDTH;
+		wish_height = SPLASH_MODE_HEIGHT;
+	} else {
+		/* The current mode stays. */
+		wish_width = 0U;
+		wish_height = 0U;
+	}
+
+	/* Sets the mode video= names, or the wished one when the firmware has it. */
 	status = zbl_uefi_video_select(boot, gop,
 	    configuration.parameter_record.text,
 	    configuration.parameter_record.length,
-	    logo_named > 0 ? SPLASH_MODE_WIDTH : 0U,
-	    logo_named > 0 ? SPLASH_MODE_HEIGHT : 0U);
+	    wish_width,
+	    wish_height);
 	if (EFI_ERROR(status))
 		fail_discovered(&context, &discovered, "Select configured video mode", status);
 
 	/* SetMode can replace the framebuffer base, size, stride, and pixel format. */
 	if (!framebuffer_from_gop(gop, &framebuffer, &framebuffer_mapping))
 		fail_discovered(&context, &discovered, "Validate selected GOP", EFI_UNSUPPORTED);
+
+	/* Tells which boot keys were seen, after SetMode has cleared the screen. */
+	notice_boot_keys(&context, &configuration, held);
 
 	/* The boot logo (logo=), and a quiet boot (kmsg=quiet) that draws no progress blocks (ws035-p096). */
 	logo_shown = show_logo(&context, &discovered, &configuration, &framebuffer);
