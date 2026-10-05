@@ -236,7 +236,7 @@ drv_acpi_ec_attach(void)
 	int error;
 
 	/* Finds the device and installs the space, holding the interpreter so that no AML reaches the EC while it changes. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 	error = attach_device();
 	drv_acpi_leave(thread);
 	if (error != 0)
@@ -540,7 +540,7 @@ ec_gpe(
 	UNUSED_PARAMETER(argument);
 
 	/* Enters the interpreter, so that the queries do not mix with AML's accesses. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Drains the queries, as a bounded number of rounds. */
 	for (count = 0; count < EC_QUERIES_MAX; count++) {

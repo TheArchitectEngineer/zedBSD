@@ -43,6 +43,9 @@
  *                     where a real table's _CRS puts them (default 62,66)
  *     --gpe N         raise GPE N and handle the SCI (repeatable, in order)
  *     --power-button  press the fixed power button and handle the SCI
+ *     --poweroff      at the end, turn the power off as KERN_SYSTEM_POWEROFF
+ *                     does (with --events: \_S5 and the PM1 control writes;
+ *                     the simulated hardware prints the SLP_EN write, BUG-197)
  *     --ec-query Q@G  queue EC query Q, raise the EC's GPE G, handle the SCI
  *     --global-lock   share a simulated FACS Global Lock with a simulated
  *                     firmware (with --events); after MAIN, print the lock
@@ -147,7 +150,8 @@ enum option_kind {
 	OPTION_RESOURCES,
 	OPTION_RUN_LOCKED,
 	OPTION_NOTIFY_ONCE,
-	OPTION_PACKAGE_ARG
+	OPTION_PACKAGE_ARG,
+	OPTION_POWEROFF
 };
 
 /*
@@ -191,6 +195,7 @@ struct harness_options {
 	int events;
 	int ec;
 	int global_lock;
+	int poweroff;
 	const char *actions[OPTION_LIST_MAX];
 	enum option_kind action_kinds[OPTION_LIST_MAX];
 	unsigned action_count;
@@ -277,6 +282,7 @@ static const struct option_name option_names[] = {
 	{ "--run-locked", OPTION_RUN_LOCKED, 1 },
 	{ "--notify-once", OPTION_NOTIFY_ONCE, 1 },
 	{ "--package-arg", OPTION_PACKAGE_ARG, 1 },
+	{ "--poweroff", OPTION_POWEROFF, 0 },
 };
 
 /*
@@ -529,6 +535,12 @@ main(
 	/* Reports how deep the interpreter went. */
 	if (options.stack)
 		printf("stack deepest %zu bytes\n", drv_acpi_stack_deepest());
+
+	/* Turns the simulated power off last; the hardware stays on, so the driver reports ETIMEDOUT. */
+	if (options.poweroff) {
+		error = drv_acpi_poweroff();
+		printf("POWEROFF error %d\n", error);
+	}
 
 	/* Frees everything so that the leak checker sees a clean exit. */
 	release_all();
@@ -954,6 +966,9 @@ record_option(
 		break;
 	case OPTION_GLOBAL_LOCK:
 		options->global_lock = 1;
+		break;
+	case OPTION_POWEROFF:
+		options->poweroff = 1;
 		break;
 	case OPTION_EC_RAM:
 	case OPTION_GPE:

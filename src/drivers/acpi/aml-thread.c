@@ -36,13 +36,17 @@ static struct drv_acpi_thread *active_thread;
  *
  * It takes the lock, or joins the entry of this thread that already holds
  * it.  storage is the caller's thread record, used when this is the
- * outermost entry; frame is the caller's frame address, from which the
- * stack budget is measured.  The thread returned is the one to leave with.
+ * outermost entry.  The stack budget is measured from this function's own
+ * frame, which sits right below the caller's: it is never inlined
+ * (aml-internal.h), because the frame address of an inlined function is
+ * that of the function it was inlined into, and a link-time-optimized
+ * kernel then counted its caller's whole frame -- and every frame between
+ * -- against the budget (BUG-195).  The thread returned is the one to
+ * leave with.
  */
 struct drv_acpi_thread *
 drv_acpi_enter(
-	struct drv_acpi_thread *storage,
-	const void *frame)
+	struct drv_acpi_thread *storage)
 {
 	bool owned;
 
@@ -58,10 +62,10 @@ drv_acpi_enter(
 
 	/*
 	 * The record becomes the active thread: it holds no mutexes, it is
-	 * entered once, and its stack is measured from the caller's frame.
+	 * entered once, and its stack is measured from this entry's frame.
 	 */
 	kern_memset(storage, 0, sizeof(*storage));
-	storage->stack_base = (uintptr_t)frame;
+	storage->stack_base = (uintptr_t)__builtin_frame_address(0);
 	storage->nesting = 1;
 	active_thread = storage;
 
