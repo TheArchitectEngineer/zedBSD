@@ -11,7 +11,8 @@
  * (userland/base/login/verify.c): the new password's rules, its SHA-512
  * crypt hash, the safe replacement of a user's hash in /etc/shadow,
  * membership of the wheel group, and the cleaned environment of a command
- * run as another user.
+ * run as another user; and for account-admin (ws089-p026), the lock of the
+ * account files and their whole-file read and atomic replacement.
  *
  * The pure parts (account_password_check, account_shadow_replace,
  * account_environment) touch no file, so the host tests run them alone.
@@ -37,9 +38,22 @@
 #define ACCOUNT_PASSWD_REFUSED		4
 #define ACCOUNT_PASSWD_MISMATCH		5
 
-/* The shadow file, and its lock. */
+/* The account files, and the lock all three change under (a host test names its own). */
+#ifndef ACCOUNT_SHADOW_PATH
 #define ACCOUNT_SHADOW_PATH		"/etc/shadow"
+#endif
+#ifndef ACCOUNT_PASSWD_FILE
+#define ACCOUNT_PASSWD_FILE		"/etc/passwd"
+#endif
+#ifndef ACCOUNT_GROUP_FILE
+#define ACCOUNT_GROUP_FILE		"/etc/group"
+#endif
+#ifndef ACCOUNT_SHADOW_LOCK
 #define ACCOUNT_SHADOW_LOCK		"/etc/shadow.lock"
+#endif
+
+/* The longest path of an account file. */
+#define ACCOUNT_PATH_MAX		256U
 
 /* The shortest password a user may choose, the longest password taken, and the longest hash written. */
 #define ACCOUNT_PASSWORD_MIN		8U
@@ -68,6 +82,10 @@ int account_password_hash(const char *password, char *hash, size_t size);
 int account_shadow_replace(const char *text, size_t length, const char *name, const char *hash, long day, char *output, size_t capacity, size_t *written);
 int account_shadow_set(const char *name, const char *hash);
 int account_in_wheel(const char *name, gid_t primary);
+int account_files_lock(void);
+void account_files_unlock(void);
+int account_file_read(const char *path, char *buffer, size_t capacity, size_t *length);
+int account_file_write(const char *target, mode_t mode, const char *text, size_t length);
 
 /*
  * What account_environment builds from: the caller's environment (kept
