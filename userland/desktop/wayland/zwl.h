@@ -372,6 +372,12 @@ struct zwl_object {
 	int32_t x;
 	int32_t y;
 	unsigned fullscreen;
+	/*
+	 * A window that was docked when it went fullscreen (BUG-208): while it
+	 * is fullscreen it is not docked (maximized is 0, so it is placed and
+	 * drawn as any fullscreen window), and leaving fullscreen docks it again.
+	 */
+	unsigned fullscreen_docked;
 	uint32_t window_width;
 	uint32_t window_height;
 	int32_t window_x;

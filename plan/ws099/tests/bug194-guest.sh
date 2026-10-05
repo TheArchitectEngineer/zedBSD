@@ -11,7 +11,11 @@
 #     same ("GLASS fullscreen-leave ... via=f11", "WINDOW unfullscreen"); wltest-back.png.
 #  4. Terminal fullscreen again by F11, then Super+Down: the compositor takes it ("GLASS fullscreen-leave surface=T
 #     via=super-down"); terminal-super-down.png.
-#  5. No ERROR in zdesktop's log.
+#  5. BUG-208: Terminal docked (a double click on its title bar, "GLASS dock surface=T via=double-click"), then F11:
+#     a full-screen configure ("width=1280 height=800 fullscreen=1", one more than before); docked-full.png shows no
+#     desktop where the bar was.  F11 again: docked again ("WINDOW unfullscreen surface=T x=0 y=48 placed=N docked=1",
+#     a configure "width=1280 height=752 fullscreen=0"); docked-back.png.
+#  6. No ERROR in zdesktop's log.
 # PASS: the last line "bug194: status 0".
 #   plan/ws099/tests/bug194-guest.sh [OUTDIR]          (default build/ws099-bug194)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -34,6 +38,22 @@ expect_log() {
 		echo "log: $1 ok"
 	else
 		echo "log: $1 MISSING"
+		status=1
+	fi
+}
+
+# How many lines of the compositor's log match a pattern.
+count() {
+	guest "grep -cE '$1' /tmp/zdesktop.log" | tail -1
+}
+
+# Fails the run unless the compositor's log has more lines matching a pattern than before.
+expect_more() {
+	n=$(count "$1")
+	if [ "${n:-0}" -gt "$2" ] 2>/dev/null; then
+		echo "log: $1 (more than $2) ok"
+	else
+		echo "log: $1 (more than $2) MISSING"
 		status=1
 	fi
 }
@@ -82,7 +102,22 @@ keys "<super-down>"
 expect_log "GLASS fullscreen-leave surface=$t via=super-down error=0"
 check "$out/terminal-super-down.png" >/dev/null
 
-# 5. No ERROR.
+# 5. BUG-208: Terminal docked by a double click on its title bar, then F11 into fullscreen and out of it again.
+full="CONFIGURE client=[0-9]+ surface=$t serial=[0-9]+ width=1280 height=800 fullscreen=1"
+docked="CONFIGURE client=[0-9]+ surface=$t serial=[0-9]+ width=1280 height=752 fullscreen=0"
+pointer move $((tx + 150)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500 >/dev/null
+expect_log "GLASS dock surface=$t via=double-click"
+fulls=$(count "$full")
+keys "<f11>"
+expect_more "$full" "${fulls:-0}"
+check "$out/docked-full.png" >/dev/null
+dockeds=$(count "$docked")
+keys "<f11>"
+expect_log "WINDOW unfullscreen surface=$t x=0 y=48 placed=[01] docked=1"
+expect_more "$docked" "${dockeds:-0}"
+check "$out/docked-back.png" >/dev/null
+
+# 6. No ERROR.
 if guest 'grep -c ERROR /tmp/zdesktop.log' | tail -1 | grep -qx 0; then echo "no-error: ok"; else echo "no-error: FAILED"; status=1; fi
 guest "grep -E 'fullscreen-leave|unfullscreen|fullscreen=1' /tmp/zdesktop.log; grep FULLSCREEN /tmp/t.log" | tail -12
 
