@@ -11,6 +11,7 @@
 		truetype_open;
 		truetype_close;
 		truetype_set_pixel_size;
+		truetype_set_bold;
 		truetype_metrics;
 		truetype_glyph_index;
 		truetype_glyph_metrics;
