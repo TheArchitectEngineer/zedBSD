@@ -54,5 +54,5 @@ Keiland の標準 app として、カレンダー・予定の管理（スケジ�
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws155-p000 | **UI の mock**（デザイン案の要素と上の方針で。月の表示を中心に、sidebar・Add Event の panel・3D の日めくりの animation。data は固定の試験 data、保存は作らない）。ユーザーが見て再指示する | planning（q745） | — |
+| ws155-p000 | **UI の mock**（デザイン案の要素と上の方針で。月の表示を中心に、sidebar・Add Event の panel・3D の日めくりの animation。data は固定の試験 data、保存は作らない）。ユーザーが見て再指示する | in-progress（q745、P2。実装・host の PNG・build 済み、QEMU は T1 待ち。[phase](phase000/phase.md)） | — |
 | ws155-p001 | 外観の画像に基づく設計（画面・操作・保存・通知・試験） | planning | p000 の mock へのユーザーの再指示 |
