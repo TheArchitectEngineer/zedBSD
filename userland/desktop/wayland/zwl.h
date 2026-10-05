@@ -1338,6 +1338,7 @@ void zwl_glass_gesture(struct zwl_server *server, uint32_t gesture, uint32_t pha
 int zwl_glass_apps_room(struct zwl_server *server, int32_t *left, int32_t *right);
 void zwl_glass_bring(struct zwl_server *server, struct zwl_object *surface, const char *via);
 void zwl_glass_activate(struct zwl_server *server, struct zwl_object *surface, const char *via);
+int zwl_glass_open_docked(struct zwl_server *server, struct zwl_object *surface);
 void zwl_glass_open_wiseview(struct zwl_server *server, const char *via);
 
 /* The applications' icons in the system bar and their previews (apps-bar.c, ws142-p004; the drawing is in glass.h). */
