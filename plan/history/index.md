@@ -2,6 +2,12 @@
 
 # Past Log
 
+## 最新: q779 / BUG-202 の起動停止（2026-10-06）
+
+[q779履歴](queue-q779.md): 写真と既存ELFで、LPSSのD0復帰10ms待ちをidle threadが実行していたと確定。device初期化を通常boot_workerへ移す修正（e093bebe）と記録（c313e3ef）を、user「マージしてください。」でmainへ統合。main上のamd64 kernel buildはwarning/error 0、include/vmunix check PASS。q779-i01・ws073-p055はuser指定の機能修正・buildまでcleared。
+
+実行試験はuserの実機UATへ。BUG-202はtracking、WS073はincomplete。共有計画へ反映済み、GitHub公開は保留、push未実施。次Queueは開始しない。以下は以前の履歴。
+
 2026-10-03 夜 / repo-reset: main を親の無い 1 commit に作り直した（古い履歴は GitHub の branch `old` と tag に残る、ローカルには無い）。user「証拠PNGもclearedなWSについては消してOK」で、完了した WS（ws035・ws104・ws105・ws107・ws108・ws109）の証拠の PNG 479 枚（約 204 MB）を tree から外した。これらの WS の記録が指す PNG は `old` branch で見る。plan の中の古い commit の SHA も `git fetch origin old` で引く。
 
 2026-10-03 / master-rewrite: user の指示で plan/master.md を Awesome Plan の原則に沿って書き直した（先頭に marker つきの「現在の状況」の block、目的・Milestone・Focus・優先順位・WS の registry・Outlook、末尾に付録として Tools とプロジェクト固有の情報）。旧版は [master-2026-10-03-before-rewrite.md](master-2026-10-03-before-rewrite.md)。

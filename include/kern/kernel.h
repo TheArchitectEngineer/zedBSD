@@ -16,14 +16,12 @@
 
 void
 kernel_main(
-	const struct kern_boot_handoff *handoff,
-	const struct kern_boot_device *devices,
-	unsigned device_count);
+	const struct kern_boot_handoff *handoff);
 
 /*
- * kernel_main() installs this read-only boot metadata once.  Device entries
- * are borrowed from kernel-lifetime storage; an out-of-range lookup returns
- * NULL.
+ * kernel_main() retains the handoff; its worker discovers the boot devices
+ * before mounting filesystems. Device entries are borrowed from kernel-lifetime
+ * storage; an out-of-range lookup returns NULL.
  */
 uint8_t
 kern_boot_bios_id(void);

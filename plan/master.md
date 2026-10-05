@@ -15,7 +15,7 @@
 ## 現在の状況（Q1）
 
 <!-- master:updated:start -->
-更新: 2026-10-06 未明 Q1（ユーザーの指示で全サブエージェントをラップアップ。WS174 の boot の key を merge（p003 は間欠の不検出 1/12 で uncleared）、UAT の image build/uat-0506b、5330 の freeze（BUG-202）の診断をユーザーと）
+更新: 2026-10-06 未明 Q1（ユーザーの指示で全サブエージェントをラップアップ。WS174 の boot の key を merge（p003 は間欠の不検出 1/12 で uncleared）、UAT の image build/uat-0506b、5330 の freeze（BUG-202）はq779で機能修正とbuildを完了、ユーザーのマージ指示でmainへ統合、実機確認待ち）
 <!-- master:updated:end -->
 
 ### 担当
@@ -32,6 +32,7 @@
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
+- **BUG-202（2026-10-06）**: LPSSのD0復帰10ms待ちをidle threadが実行していた。device初期化を通常boot_workerへ移す修正（e093bebe）をuser「マージしてください。」で統合。[q779](history/queue-q779.md) / ws073-p055は機能修正・amd64 buildまでcleared。実機試験はuser、Bugはtracking。
 - **未 merge の branch: 無い**（2026-10-05 夜、agent/p1 64f20ef2 まで main に入った）。
 - **graphical login の回帰は解消**: WS172 p002 の 2 つの不具合（0356c470 STYLES の答えを handoff の前に捨てていた、64f20ef2 `/sbin/passkey` が passkey の試験の config 以外の image に入らなかった）。T1-212 で graphical login と zdesktop-p102 が PASS。ws172-p002 cleared、WS163 completed。
 - **ユーザー向けの統合の image**: `build/uat-0505g/hdd-image.img`（main bf5d1a39、sha256 7ded4823…5faa2339、`/sbin/passkey` 入り、T1-212 (2) の boot-test PASS。framebuffer の QEMU では greeter が終わり getty になるのは従来どおり）。uat-0505e・uat-0505f は login が壊れているので使わない。
