@@ -3,14 +3,54 @@
 # WS074: zedBSD の Web ブラウザ（`userland/desktop/browser`）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete（2026-10-05 ユーザーの指示で Codex の担当を外し、**Q1 の担当に戻した**。レンダリングの改善（Acid3 の pixel・WPT・Interop・Test262 など）は**ユーザーの指示があるまで行わない**）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Queue: browser3 q598-i01 finished/cleared (shared ID collision with Agent A pending mapping); q597-i01 finished/uncleared at user reboot stop; prior attempts/history retained.
-Resume point: p172 whole cleared with [final evidence](phase172/import/checkpoint98/README.md): 209/209 reviews/hashes, host/ASan/ABI/Acid2, final target boot and Venus native p014. WS remains incomplete; p100 now has verified prerequisite, but is planned/unselected until a new finite Queue fixes test assets/bounds. Shared planning projections and GitHub publication pending Agent A ID-collision reconciliation.
+Owner: Q1（P1・P2 に割り当てる。Codex は難しい driver の bug に温存、2026-10-05 ユーザー）
+Queue: なし（Codex の q590〜q598 の記録は phase172/browser3/ に履歴として残る）
+Resume point: 待機。次に動かすのはユーザーの指示が出た時。その時は下の「Q1 向けの整理」の「次の候補」から。
 <!-- awesome-plan-current:end -->
+
+## Q1 向けの整理（2026-10-05、Q1）
+
+ユーザー（2026-10-05）「Codexのリミットが足りないので、Codexは非常に難しいドライバのバグを最先端モデルで解決するために温存します。WS074の制御をあなたに戻します。ブラウザのレンダリングを改善するのはきりがない作業なので、それは指示があるまでやらなくていいです。WS107, WS121はあなたが作業します。…WS074のws.mdをあなた向けに整理してほしいです。Acid3は100%クリアになったものの、ピクセル単位の比較ではfailしているので、ピクセル単位でも100%合格を目指す、みたいなステータスでしかかり中だったと記憶しています。」
+
+### 今の状態
+
+| 項目 | 状態 | 根拠 |
+| --- | --- | --- |
+| 構成 | engine は `userland/desktop/libbrowser/`（WS107 で移した、165 file）、shell は `userland/desktop/browser/`（main・shell・app の data）。browser と独立の client は公開の `browser.h` で `libbrowser.so` を動的に link | [WS107](../ws107/ws.md) completed |
+| JS | 自前の engine（ES2024 の構文、ES2015 の class・async・generator・Symbol・Map 等、RegExp、Date）。test262 は p025〜p087 の時点の数（全体の最新の計測は未） | 下の Phase の表 |
+| デモの目標 | amazon.co.jp のトップと検索（2026-09-28 ユーザー、Google から変更） | [amazon-goal.md](amazon-goal.md) |
+| Acid3 | **得点 100/100 を達成。固定の参照との pixel の一致は 37.04%（302208/480000 の画素が違う）**（q579 の計測、Codex） | [phase172/browser3/q596/README.md](phase172/browser3/q596/README.md) |
+| Acid2 | exact pixel は不合格（p097 の時点で 90.56%） | [p097](phase097/phase.md) |
+| p172（Codex の branch の取り込み） | whole cleared（2026-10-03、209/209 の review・hash、host・ASan・ABI・Acid2、target の boot と Venus） | [phase172/import/checkpoint98](phase172/import/checkpoint98/README.md) |
+| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**（得点は 100/100、pixel 一致が残る）。ユーザーの指示まで止める | [p100](phase100/phase.md) |
+
+### 止めている目標（2026-10-02 ユーザーの追加、指示があるまで行わない）
+
+p100 Acid3 の pixel 完全一致 → p101 WPT CSS2 reftest 5904 件の 100% → p174 File System Access API → p175 OPFS → p173 Interop 2025 の 100% → p176 Test262。p098（ES module）と p036 も同じく待機。
+
+### 既知の bug（Bug Board）
+
+- [BUG-181](../bugs/BUG-181.md) URL 欄の選択のはみ出し: resolved（compositor の title bar の欄、QEMU T1-189c、実機は UAT）。
+- [BUG-182](../bugs/BUG-182.md) タップがクリックにならず HTML の button を押せない: tracking（shell の touch の変換、WS107 の libbrowser の入力）。
+
+### 次の候補（ユーザーの指示が出たら）
+
+1. BUG-182（タップ）。レンダリングの改善ではないので、指示があれば先に。
+2. p100 の残り（Acid3 の pixel 一致）。
+3. WS121（browser の動画）は別の WS（下）。
+
+### 関係する WS
+
+- [WS107](../ws107/ws.md): completed（libbrowser の分離）。
+- [WS121](../ws121/ws.md): browser の動画の再生（Q1 の担当、2026-10-05）。
+- [WS081](../ws081/ws.md): touch の慣性の scroll。
+
+以下は 2026-10-05 までの記録（Codex の作業を含む履歴）。
 
 2026-10-02 ユーザー更新: ブラウザ専任のP10枠を固定。p172の取込が実際に統合・検証された後は、p100でAcid3の100/100とpixel完全一致・fail 0を目指す。追加指示によりFile System Access API・OPFS・Interop 2025の100%・JavaScript Test262をこの専任枠に積む。p101のCSS2全件目標は保持する。最新のN=3実行指示でp172/q579をP10に投入。後続目標はp172のwhole-Phase clearance後に有限Queueへ選定する。
 

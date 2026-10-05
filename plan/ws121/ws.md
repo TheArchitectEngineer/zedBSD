@@ -11,6 +11,7 @@ Focused goal: fg019（ベータ1）
 Queue: none
 Resume point: p001（要件・設計）。
 2026-10-02 user: 動画関連（WS083・WS121・WS122）は**別セッション**でユーザーがノウハウを提供しステップバイステップで進める。このセッション（Q1/P1〜P8）は割り当てない。ベータ1 では最悪 drop してもリリース可能とする（努力目標）。VA-API（WS123）は canceled、アプリが Vulkan Video を直接使う。ブラウザへの組み込み（WS121）は Codex 側と調整。
+2026-10-05 ユーザー: Codex の担当を外し、WS107・WS121 は Q1 が作業する（「WS107, WS121はあなたが作業します。」）。p001 の設計から。WS122 と同じく、まず dlopen の libavcodec の software decode で、GPU の decode（WS083 の Vulkan Video）は後で使う形を検討する。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-02 ユーザー（ベータ1、リリース目標 10/17））
