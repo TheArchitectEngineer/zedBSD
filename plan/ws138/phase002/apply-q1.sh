@@ -25,7 +25,7 @@ trap 'rm -f "$list"' EXIT INT TERM
 git grep -lE "$pattern" -- '*.sh' '*.py' '*.mk' '*.c' '*.h' '*.in' '*.desktop' '*Makefile*' \
 	':!plan/history' ':!*/evidence/*' ':!plan/ws138/*' ':!.internal' ':!userland/*' ':!tools/*' > "$list" || true
 echo "files matched: $(wc -l < "$list")"
-xargs sed -i \
+xargs -r sed -i \
 	-e 's#/usr/share/keiland/wallpaper\.ppm#/usr/share/keiland/wallpaper.png#g' \
 	-e 's#share/keiland/wallpaper\.ppm#share/keiland/wallpaper.png#g' \
 	-e 's#keiland/wallpapers/Birch-Lake\.ppm#keiland/wallpapers/Birch-Lake.png#g' \
@@ -43,7 +43,7 @@ text = open(path).read()
 for old, new in (("/usr/share/keiland/wallpapers/*.ppm 2>/dev/null' | grep '\\.ppm$'",
                   "/usr/share/keiland/wallpapers/*.png 2>/dev/null' | grep '\\.png$'"),
                  ('name=$(basename "$picture" .ppm)', 'name=$(basename "$picture" .png)')):
-    assert text.count(old) == 1, old
+    assert text.count(old) == 1 or text.count(new) == 1, old
     text = text.replace(old, new)
 open(path, 'w').write(text)
 EOF
