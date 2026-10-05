@@ -583,6 +583,11 @@ $(BUILD)/uefi/common-logo-path.o: bootloader/common/logo-path.c bootloader/commo
 	@mkdir -p $(dir $@)
 	$(EFI_CC) $(EFI_CFLAGS) -I. -c $< -o $@
 
+$(BUILD)/uefi/common-boot-override.o: bootloader/common/boot-override.c bootloader/common/boot-override.h \
+	bootloader/include/boot-parameter-handoff.h include/kern/boot.h
+	@mkdir -p $(dir $@)
+	$(EFI_CC) $(EFI_CFLAGS) -I. -c $< -o $@
+
 $(BUILD)/uefi/video.o: $(UEFI_LOADER)/video.c $(UEFI_LOADER)/video.h \
 	$(UEFI_LOADER)/include/uefi.h bootloader/include/boot-parameter-handoff.h \
 	include/kern/boot.h
@@ -617,6 +622,7 @@ $(BUILD)/uefi/transition.o: $(UEFI_LOADER)/transition.S bootloader/include/amd64
 
 $(BUILD)/uefi/BOOTX64.EFI: $(BUILD)/uefi/bootx64.o \
 	$(BUILD)/uefi/elf64.o $(BUILD)/uefi/framebuffer.o $(BUILD)/uefi/video.o $(BUILD)/uefi/logo.o $(BUILD)/uefi/common-logo-path.o \
+	$(BUILD)/uefi/common-boot-override.o \
 	$(BUILD)/uefi/memory-map.o $(BUILD)/uefi/memory-map-v6.o $(BUILD)/uefi/common-memory-map.o \
 	$(BUILD)/uefi/volume-discovery.o $(BUILD)/uefi/zedbsd-config.o \
 	$(BUILD)/uefi/transition.o \
