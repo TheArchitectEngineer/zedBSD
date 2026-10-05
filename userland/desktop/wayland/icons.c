@@ -263,6 +263,24 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_SEGMENT, 21.0f, 9.0f, 15.0f, 15.0f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
+	/*
+	 * USB (the removable media in the system bar, 2026-10-05 user
+	 * decision): the trident, a stem with an arrow on top and a dot below,
+	 * a branch to a circle on the left and one to a square on the right.
+	 */
+	{
+		{ ICON_SEGMENT, 12.0f, 4.5f, 12.0f, 18.5f, 0.0f },
+		{ ICON_SEGMENT, 9.2f, 7.6f, 12.0f, 4.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 4.0f, 14.8f, 7.6f, 0.0f },
+		{ ICON_DOT, 12.0f, 19.8f, 2.4f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 16.0f, 6.8f, 12.4f, 0.0f },
+		{ ICON_SEGMENT, 6.8f, 12.4f, 6.8f, 10.6f, 0.0f },
+		{ ICON_DOT, 6.8f, 9.4f, 1.9f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 13.6f, 17.2f, 10.0f, 0.0f },
+		{ ICON_SEGMENT, 17.2f, 10.0f, 17.2f, 8.6f, 0.0f },
+		{ ICON_BOX, 15.4f, 5.6f, 19.0f, 9.2f, 0.4f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
 	/* Files: a folder, its tab on the upper left. */
 	{
 		{ ICON_FRAME, 3.0f, 8.5f, 21.0f, 19.5f, 2.2f },
