@@ -40,7 +40,7 @@ Queue: Q1（2026-10-05）
 
 image は、この commit の後の main で作る。
 
-1. `plan/tools/guest/test-image.sh plan/ws140/tests/config-amd64-rtld.mk BUILD`（SSH の image）と guest の起動。BUILD/sysroot の symlink（run-tls-check のため）。
+1. `plan/tools/guest/test-image.sh plan/tools/rtld/config-amd64-rtld.mk BUILD`（SSH の image）と guest の起動。BUILD/sysroot の symlink（run-tls-check のため）。
 2. `GUEST_RUNTIME=… sh plan/ws066/tests/startup-measure.sh BUILD` → `bin-true` と `sh-c` の平均（受け入れ: 700・950 µs 以下）。
 3. `rtld-many.sh BUILD`、`run-tls-check.sh BUILD`（dyntest の HANDLES-200・PLUGIN-TLS も）、guest を止めて `boot-test.sh BUILD/hdd-image.img`。
 4. Terminal と Files の起動は、T1-168 と同じ files の image を新しい main で作り直して `files-p002.sh` を流せば足りる（まとめてよい）。
