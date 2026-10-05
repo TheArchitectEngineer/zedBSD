@@ -53,11 +53,13 @@ int
 kl_backend_session_authenticate(
 	struct kl_backend *backend,
 	const char *user,
-	const char *password)
+	unsigned style,
+	const char *secret)
 {
 	/* Nothing is sent, and nothing is kept. */
 	(void)user;
-	(void)password;
+	(void)style;
+	(void)secret;
 	if (backend == NULL)
 		return EINVAL;
 	return ENOTSUP;
@@ -69,13 +71,99 @@ kl_backend_session_authenticate(
 int
 kl_backend_session_unlock(
 	struct kl_backend *backend,
-	const char *password)
+	unsigned style,
+	const char *secret)
 {
 	/* Nothing is sent, and nothing is kept. */
-	(void)password;
+	(void)style;
+	(void)secret;
 	if (backend == NULL)
 		return EINVAL;
 	return ENOTSUP;
+}
+
+/*
+ * Has no manager to ask for the styles.
+ */
+int
+kl_backend_session_styles(
+	struct kl_backend *backend,
+	const char *user)
+{
+	/* Nothing is asked. */
+	(void)user;
+	if (backend == NULL)
+		return EINVAL;
+	return ENOTSUP;
+}
+
+/*
+ * Gives the password alone.
+ */
+unsigned
+kl_backend_session_styles_get(
+	const struct kl_backend *backend)
+{
+	/* No other style without a manager. */
+	(void)backend;
+	return KL_BACKEND_STYLE_PASSWORD;
+}
+
+/*
+ * Has no manager to set a PIN through.
+ */
+int
+kl_backend_session_set_pin(
+	struct kl_backend *backend,
+	const char *password,
+	const char *pin)
+{
+	/* Nothing is sent, and nothing is kept. */
+	(void)password;
+	(void)pin;
+	if (backend == NULL)
+		return EINVAL;
+	return ENOTSUP;
+}
+
+/*
+ * Has no manager to ask what is enrolled.
+ */
+int
+kl_backend_session_enrolled(
+	struct kl_backend *backend)
+{
+	/* Nothing is asked. */
+	if (backend == NULL)
+		return EINVAL;
+	return ENOTSUP;
+}
+
+/*
+ * Gives no PIN and no key.
+ */
+void
+kl_backend_session_enrolled_get(
+	const struct kl_backend *backend,
+	unsigned *pin,
+	unsigned *keys)
+{
+	/* Nothing is enrolled without a manager. */
+	(void)backend;
+	*pin = 0U;
+	*keys = 0U;
+}
+
+/*
+ * Has no refusal to tell.
+ */
+const char *
+kl_backend_session_reason(
+	const struct kl_backend *backend)
+{
+	/* No manager refused anything. */
+	(void)backend;
+	return "";
 }
 
 /*

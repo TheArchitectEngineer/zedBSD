@@ -14,8 +14,15 @@
  * options.session_descriptor).  Every message is a line:
  *
  *   READY                   GO: the display may be taken
- *   AUTH name password      OK: the user is in; FAIL; ERROR (login screen)
- *   UNLOCK password         OK; FAIL (a session's lock screen)
+ *   STYLES name             STYLES password[ pin][ fido2] (login screen; a
+ *                           session's STYLES has no name)
+ *   AUTH name style         then the secret's line: OK, the user is in;
+ *                           FAIL reason; ERROR (login screen)
+ *   UNLOCK style            then the secret's line: OK; FAIL reason (a
+ *                           session's lock screen)
+ *   ENROLLED                ENROLLED pin=0|1 fido2=N (a session)
+ *   ENROLL pin / REMOVE pin then the password's line (and the PIN's for
+ *                           ENROLL): OK; FAIL reason (a session)
  *   POWER poweroff|reboot   OK (login screen, power-zedbsd.c)
  *   SERVICE sshd on|off|status  SERVICE available= ...; DENIED; ERROR (a session, sharing-zedbsd.c)
  *   LOGOUT                  QUIT: the greeter is up, the session ends
@@ -35,7 +42,9 @@
  * session's descriptor, the session carries on without it.
  *
  * The descriptors do not block: the tick reads what has come, cuts it into
- * lines and answers the request awaited (one at a time).
+ * lines and answers the request awaited (one at a time).  A secret goes on
+ * a line of its own after its request (ws172-p002), and TOUCH lines (a
+ * security key waits to be touched, ws172-p003) answer nothing yet.
  */
 
 #include "userland/desktop/libkeiland-backend/backend-private.h"
@@ -51,10 +60,46 @@
 #define SESSION_WAIT_MS 20000U
 #define SESSION_LOGOUT_MS 30000U
 
-/* The longest line the compositor sends (AUTH with a name and a password). */
-#define SESSION_REQUEST_MAX 192U
+/* The longest request the compositor sends (ENROLL with its password's and PIN's lines), and the longest secret. */
+#define SESSION_REQUEST_MAX 1024U
+#define SESSION_SECRET_MAX 256U
+
+/* What a line of sessiond's answers (but QUIT and TOUCH). */
+enum session_answer {
+	SESSION_ANSWER_UNKNOWN,
+	SESSION_ANSWER_SERVICE,
+	SESSION_ANSWER_STYLES,
+	SESSION_ANSWER_ENROLLED,
+	SESSION_ANSWER_OK,
+	SESSION_ANSWER_FAIL,
+	SESSION_ANSWER_BUSY,
+	SESSION_ANSWER_ERROR
+};
+
+/* The answers' words: a line is the answer when it is the word, or starts with the word and a space. */
+struct session_word {
+	const char *word;
+	enum session_answer kind;
+};
+
+/* The words, the longer before the shorter they start with. */
+static const struct session_word session_words[] = {
+	{ "STYLES", SESSION_ANSWER_STYLES },
+	{ "ENROLLED", SESSION_ANSWER_ENROLLED },
+	{ "OK", SESSION_ANSWER_OK },
+	{ "FAIL", SESSION_ANSWER_FAIL },
+	{ "ERROR busy", SESSION_ANSWER_BUSY },
+	{ "ERROR", SESSION_ANSWER_ERROR },
+};
 
 static int session_descriptor(const struct kl_backend *backend);
+static enum session_answer session_kind(const char *line);
+static const char *session_style_word(unsigned style);
+static int session_secret_valid(const char *secret);
+static int session_name_valid(const char *name);
+static int session_ask(struct kl_backend *backend, unsigned request, char *line, int length);
+static void session_take_styles(struct kl_backend *backend, const char *list);
+static void session_take_enrolled(struct kl_backend *backend, const char *list);
 static int session_send(struct kl_backend *backend, unsigned request, const char *line);
 static void session_answered(struct kl_backend *backend, const char *line);
 static void session_end(struct kl_backend *backend, unsigned reason);
@@ -175,34 +220,39 @@ kl_backend_session_logout(
 }
 
 /*
- * Asks sessiond to log a user in (AUTH).
+ * Asks sessiond to log a user in (AUTH name style, then the secret).
  */
 int
 kl_backend_session_authenticate(
 	struct kl_backend *backend,
 	const char *user,
-	const char *password)
+	unsigned style,
+	const char *secret)
 {
 	char line[SESSION_REQUEST_MAX];
+	const char *word;
+	int valid;
 	int length;
 	int error;
 
-	/* Only the login screen asks, with a name and a password that fit one line. */
-	if (backend == NULL || user == NULL || password == NULL)
+	/* Only the login screen asks, with a name of one word and a secret of one line. */
+	if (backend == NULL || user == NULL || secret == NULL)
 		return EINVAL;
 	if (backend->options.greeter_descriptor < 0)
 		return ENOTSUP;
-	if (strchr(user, ' ') != NULL || strchr(user, '\n') != NULL || strchr(password, '\n') != NULL)
+	valid = session_name_valid(user);
+	if (!valid)
 		return EINVAL;
-	length = snprintf(line, sizeof(line), "AUTH %s %s\n", user, password);
-	if (length < 0 || (size_t)length >= sizeof(line)) {
-		memset(line, 0, sizeof(line));
+	word = session_style_word(style);
+	if (word == NULL)
 		return EINVAL;
-	}
+	valid = session_secret_valid(secret);
+	if (!valid)
+		return EINVAL;
 
-	/* The request; nothing of the password is kept once it is sent. */
-	error = session_send(backend, KL_BACKEND_SESSION_AUTH, line);
-	memset(line, 0, sizeof(line));
+	/* The request and its secret; nothing of the secret is kept once it is sent. */
+	length = snprintf(line, sizeof(line), "AUTH %s %s\n%s\n", user, word, secret);
+	error = session_ask(backend, KL_BACKEND_SESSION_AUTH, line, length);
 	if (error != 0)
 		return error;
 
@@ -211,38 +261,197 @@ kl_backend_session_authenticate(
 }
 
 /*
- * Asks sessiond to unlock the session's lock screen (UNLOCK).
+ * Asks sessiond to unlock the session's lock screen (UNLOCK style, then the secret).
  */
 int
 kl_backend_session_unlock(
 	struct kl_backend *backend,
-	const char *password)
+	unsigned style,
+	const char *secret)
+{
+	char line[SESSION_REQUEST_MAX];
+	const char *word;
+	int valid;
+	int length;
+	int error;
+
+	/* Only a session sessiond started and still listens to, with a secret of one line. */
+	if (backend == NULL || secret == NULL)
+		return EINVAL;
+	if (backend->options.session_descriptor < 0 || backend->session_gone)
+		return ENOTSUP;
+	word = session_style_word(style);
+	if (word == NULL)
+		return EINVAL;
+	valid = session_secret_valid(secret);
+	if (!valid)
+		return EINVAL;
+
+	/* The request and its secret; nothing of the secret is kept once it is sent. */
+	length = snprintf(line, sizeof(line), "UNLOCK %s\n%s\n", word, secret);
+	error = session_ask(backend, KL_BACKEND_SESSION_UNLOCK, line, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the answer comes through session_answer. */
+	return 0;
+}
+
+/*
+ * Asks sessiond which styles a user may use now (STYLES).
+ */
+int
+kl_backend_session_styles(
+	struct kl_backend *backend,
+	const char *user)
+{
+	char line[SESSION_REQUEST_MAX];
+	int valid;
+	int length;
+	int error;
+
+	/* The login screen names the user; a session asks for its own. */
+	if (backend == NULL)
+		return EINVAL;
+	if (backend->options.greeter_descriptor >= 0) {
+		valid = 0;
+		if (user != NULL)
+			valid = session_name_valid(user);
+		if (!valid)
+			return EINVAL;
+		length = snprintf(line, sizeof(line), "STYLES %s\n", user);
+	} else if (backend->options.session_descriptor >= 0 && !backend->session_gone) {
+		length = snprintf(line, sizeof(line), "STYLES\n");
+	} else {
+		return ENOTSUP;
+	}
+
+	/* The request; the answer comes through session_answer. */
+	error = session_ask(backend, KL_BACKEND_SESSION_STYLES, line, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: asked. */
+	return 0;
+}
+
+/*
+ * Gives the styles sessiond last answered (the password alone before any answer).
+ */
+unsigned
+kl_backend_session_styles_get(
+	const struct kl_backend *backend)
+{
+	/* No answer yet: the password, which every account has. */
+	if (backend == NULL || backend->session_styles == 0U)
+		return KL_BACKEND_STYLE_PASSWORD;
+
+	/* Succeeded: the styles of the last answer. */
+	return backend->session_styles;
+}
+
+/*
+ * Asks sessiond to set the session user's PIN (ENROLL pin), or to remove it (REMOVE pin).
+ */
+int
+kl_backend_session_set_pin(
+	struct kl_backend *backend,
+	const char *password,
+	const char *pin)
+{
+	char line[SESSION_REQUEST_MAX];
+	int valid;
+	int length;
+	int error;
+
+	/* Only a session sessiond started and still listens to, with secrets of one line each. */
+	if (backend == NULL || password == NULL || pin == NULL)
+		return EINVAL;
+	if (backend->options.session_descriptor < 0 || backend->session_gone)
+		return ENOTSUP;
+	valid = session_secret_valid(password);
+	if (!valid || password[0] == '\0')
+		return EINVAL;
+	valid = session_secret_valid(pin);
+	if (!valid)
+		return EINVAL;
+
+	/* A new PIN with the password, or the removal with the password alone. */
+	if (pin[0] != '\0') {
+		length = snprintf(line, sizeof(line), "ENROLL pin\n%s\n%s\n", password, pin);
+	} else {
+		length = snprintf(line, sizeof(line), "REMOVE pin\n%s\n", password);
+	}
+
+	/* The request; nothing of the secrets is kept once it is sent. */
+	error = session_ask(backend, KL_BACKEND_SESSION_ENROLL, line, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the answer comes through session_answer. */
+	return 0;
+}
+
+/*
+ * Asks sessiond what the session user has enrolled (ENROLLED).
+ */
+int
+kl_backend_session_enrolled(
+	struct kl_backend *backend)
 {
 	char line[SESSION_REQUEST_MAX];
 	int length;
 	int error;
 
 	/* Only a session sessiond started and still listens to. */
-	if (backend == NULL || password == NULL)
+	if (backend == NULL)
 		return EINVAL;
 	if (backend->options.session_descriptor < 0 || backend->session_gone)
 		return ENOTSUP;
-	if (strchr(password, '\n') != NULL)
-		return EINVAL;
-	length = snprintf(line, sizeof(line), "UNLOCK %s\n", password);
-	if (length < 0 || (size_t)length >= sizeof(line)) {
-		memset(line, 0, sizeof(line));
-		return EINVAL;
-	}
 
-	/* The request; nothing of the password is kept once it is sent. */
-	error = session_send(backend, KL_BACKEND_SESSION_UNLOCK, line);
-	memset(line, 0, sizeof(line));
+	/* The request; the answer comes through session_answer. */
+	length = snprintf(line, sizeof(line), "ENROLLED\n");
+	error = session_ask(backend, KL_BACKEND_SESSION_ENROLLED, line, length);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the answer comes through session_answer. */
+	/* Succeeded: asked. */
 	return 0;
+}
+
+/*
+ * Gives what sessiond last answered to ENROLLED.
+ */
+void
+kl_backend_session_enrolled_get(
+	const struct kl_backend *backend,
+	unsigned *pin,
+	unsigned *keys)
+{
+	/* Nothing before an answer. */
+	*pin = 0U;
+	*keys = 0U;
+	if (backend == NULL)
+		return;
+
+	/* The last answer. */
+	*pin = backend->session_pin;
+	*keys = backend->session_keys;
+}
+
+/*
+ * Gives the word of the last refusal.
+ */
+const char *
+kl_backend_session_reason(
+	const struct kl_backend *backend)
+{
+	/* None without a backend. */
+	if (backend == NULL)
+		return "";
+
+	/* Succeeded: the word, empty when the refusal had none. */
+	return backend->session_reason;
 }
 
 /*
@@ -392,6 +601,7 @@ session_answered(
 	struct kl_backend *backend,
 	const char *line)
 {
+	enum session_answer kind;
 	unsigned request;
 	int same;
 	int error;
@@ -404,22 +614,235 @@ session_answered(
 		return;
 	}
 
-	/* A SERVICE request's answer is the state, or why not (ws089-p025); another: granted, refused, failed, or not understood. */
+	/* TOUCH: a security key waits to be touched; the request is still under way (ws172-p003 shows it). */
+	same = strcmp(line, "TOUCH");
+	if (same == 0)
+		return;
+
+	/* What the answer says: a SERVICE request's is the state, or why not (ws089-p025). */
+	backend->session_reason[0] = '\0';
+	kind = SESSION_ANSWER_SERVICE;
+	if (backend->session_request != KL_BACKEND_SESSION_SERVICE)
+		kind = session_kind(line);
 	error = EPROTO;
-	if (backend->session_request == KL_BACKEND_SESSION_SERVICE)
+	switch (kind) {
+	case SESSION_ANSWER_SERVICE:
 		error = kl_backend_sharing_take(backend, line);
-	else if (strcmp(line, "OK") == 0)
+		break;
+	case SESSION_ANSWER_STYLES:
+		/* The styles a user may use now. */
+		session_take_styles(backend, line + strlen("STYLES "));
 		error = 0;
-	else if (strcmp(line, "FAIL") == 0)
+		break;
+	case SESSION_ANSWER_ENROLLED:
+		/* What the session user has enrolled. */
+		session_take_enrolled(backend, line + strlen("ENROLLED "));
+		error = 0;
+		break;
+	case SESSION_ANSWER_OK:
+		/* Granted. */
+		error = 0;
+		break;
+	case SESSION_ANSWER_FAIL:
+		/* Refused, with its word when it has one. */
+		if (line[4] == ' ')
+			snprintf(backend->session_reason, sizeof(backend->session_reason), "%.*s", (int)sizeof(backend->session_reason) - 1, line + 5);
 		error = EACCES;
-	else if (strcmp(line, "ERROR") == 0)
+		break;
+	case SESSION_ANSWER_BUSY:
+		/* Another request was under way. */
+		error = EBUSY;
+		break;
+	case SESSION_ANSWER_ERROR:
+		/* Not done. */
 		error = EIO;
+		break;
+	case SESSION_ANSWER_UNKNOWN:
+		break;
+	}
 
 	/* The request it answers is no longer awaited. */
 	request = backend->session_request;
 	backend->session_request = KL_BACKEND_SESSION_NONE;
 	if (backend->host.session_answer != NULL)
 		backend->host.session_answer(backend->host.data, request, error);
+}
+
+/* Says what a line answers, by its first words. */
+static enum session_answer
+session_kind(
+	const char *line)
+{
+	size_t index;
+	size_t length;
+	int same;
+
+	/* The first word that the line is, or starts with before a space. */
+	for (index = 0U; index < sizeof(session_words) / sizeof(session_words[0]); index++) {
+		length = strlen(session_words[index].word);
+		same = strncmp(line, session_words[index].word, length);
+		if (same != 0)
+			continue;
+		if (line[length] == '\0' || line[length] == ' ')
+			return session_words[index].kind;
+	}
+
+	/* A line not understood. */
+	return SESSION_ANSWER_UNKNOWN;
+}
+
+/* Takes STYLES' list ("password pin fido2"): the KL_BACKEND_STYLE_* bits. */
+static void
+session_take_styles(
+	struct kl_backend *backend,
+	const char *list)
+{
+	char copy[KL_BACKEND_SESSION_LINE];
+	char *word;
+	char *rest;
+	unsigned styles;
+	int same;
+
+	/* Each word of the list. */
+	snprintf(copy, sizeof(copy), "%s", list);
+	styles = KL_BACKEND_STYLE_PASSWORD;
+	word = copy;
+	while (word != NULL && *word != '\0') {
+		rest = strchr(word, ' ');
+		if (rest != NULL) {
+			*rest = '\0';
+			rest++;
+		}
+
+		/* The PIN, or a security key. */
+		same = strcmp(word, "pin");
+		if (same == 0)
+			styles |= KL_BACKEND_STYLE_PIN;
+		same = strcmp(word, "fido2");
+		if (same == 0)
+			styles |= KL_BACKEND_STYLE_KEY;
+
+		/* The next word. */
+		word = rest;
+	}
+
+	/* Succeeded: the styles kept. */
+	backend->session_styles = styles;
+}
+
+/* Takes ENROLLED's list ("pin=1 fido2=2"): whether a PIN is set and the number of keys. */
+static void
+session_take_enrolled(
+	struct kl_backend *backend,
+	const char *list)
+{
+	unsigned pin;
+	unsigned keys;
+	int scanned;
+
+	/* Both counts, or nothing. */
+	pin = 0U;
+	keys = 0U;
+	scanned = sscanf(list, "pin=%u fido2=%u", &pin, &keys);
+	if (scanned != 2) {
+		pin = 0U;
+		keys = 0U;
+	}
+
+	/* Succeeded: what is enrolled, kept. */
+	backend->session_pin = 0U;
+	if (pin != 0U)
+		backend->session_pin = 1U;
+	backend->session_keys = keys;
+}
+
+/* Gives a style's word in sessiond's requests, or NULL for none. */
+static const char *
+session_style_word(
+	unsigned style)
+{
+	/* The password. */
+	if (style == KL_BACKEND_STYLE_PASSWORD)
+		return "password";
+
+	/* The PIN. */
+	if (style == KL_BACKEND_STYLE_PIN)
+		return "pin";
+
+	/* A security key. */
+	if (style == KL_BACKEND_STYLE_KEY)
+		return "fido2";
+
+	/* Not a style. */
+	return NULL;
+}
+
+/* Tells whether a secret may go on a line of its own: not too long, no control character. */
+static int
+session_secret_valid(
+	const char *secret)
+{
+	size_t index;
+
+	/* Each byte. */
+	for (index = 0U; secret[index] != '\0'; index++) {
+		if (index >= SESSION_SECRET_MAX)
+			return 0;
+		if ((unsigned char)secret[index] < 0x20U || secret[index] == 0x7f)
+			return 0;
+	}
+
+	/* Succeeded: the secret fits a line. */
+	return 1;
+}
+
+/* Tells whether an account's name may go in a request: one word, not empty, no control character. */
+static int
+session_name_valid(
+	const char *name)
+{
+	size_t index;
+
+	/* An empty name is none. */
+	if (name[0] == '\0')
+		return 0;
+
+	/* Each byte. */
+	for (index = 0U; name[index] != '\0'; index++) {
+		if (index >= SESSION_SECRET_MAX)
+			return 0;
+		if ((unsigned char)name[index] <= 0x20U || name[index] == 0x7f)
+			return 0;
+	}
+
+	/* Succeeded: the name is one word. */
+	return 1;
+}
+
+/* Sends a request whose lines were written to line (length as snprintf said), and erases them. */
+static int
+session_ask(
+	struct kl_backend *backend,
+	unsigned request,
+	char *line,
+	int length)
+{
+	int error;
+
+	/* A request that did not fit is not sent. */
+	if (length < 0 || (size_t)length >= SESSION_REQUEST_MAX) {
+		memset(line, 0, SESSION_REQUEST_MAX);
+		return EINVAL;
+	}
+
+	/* The lines, then nothing of them is kept. */
+	error = session_send(backend, request, line);
+	memset(line, 0, SESSION_REQUEST_MAX);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the answer is awaited. */
+	return 0;
 }
 
 /* Ends the compositor: it gives the display back in the callback, then sessiond hears RELEASED. */

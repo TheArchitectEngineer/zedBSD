@@ -274,7 +274,7 @@ zwl_popup_send_configure(
 		return error;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL POPUP configure surface=%u serial=%u x=%d y=%d width=%d height=%d\n", surface->id, surface->configure_serial, popup->popup_x, popup->popup_y, popup->popup_width, popup->popup_height);
+	printf("ZWL POPUP configure surface=%u serial=%u x=%d y=%d width=%d height=%d client=%llu\n", surface->id, surface->configure_serial, popup->popup_x, popup->popup_y, popup->popup_width, popup->popup_height, (unsigned long long)surface->client->number);
 	return 0;
 }
 
@@ -306,7 +306,7 @@ zwl_popup_mapped(
 	grab = 0U;
 	if (popup != NULL)
 		grab = popup->popup_grab;
-	printf("ZWL POPUP map surface=%u x=%d y=%d grab=%u\n", surface->id, surface->x, surface->y, grab);
+	printf("ZWL POPUP map surface=%u x=%d y=%d grab=%u client=%llu\n", surface->id, surface->x, surface->y, grab, (unsigned long long)surface->client->number);
 
 	/* Only the grabbing popup on top takes the focus. */
 	if (popup == NULL || server->popup_grab != popup)

@@ -170,11 +170,17 @@ zwl_handoff_answer(
 		return;
 	}
 
-	/* The check of the password for a PIN's change is the system extension's, also while the screen is locked (ws163-p003). */
-	if (request == KL_BACKEND_SESSION_UNLOCK) {
+	/* A PIN's change and what the user has enrolled are the system extension's, also while the screen is locked (ws172-p002). */
+	if (request == KL_BACKEND_SESSION_ENROLL) {
 		taken = zwl_system_pin_answer(server, error);
 		if (taken)
 			return;
+	}
+
+	/* What the user has enrolled. */
+	if (request == KL_BACKEND_SESSION_ENROLLED) {
+		zwl_system_enrolled_answer(server, error);
+		return;
 	}
 
 	/* The login screen and a locked session's lock screen act on it (greeter.c). */

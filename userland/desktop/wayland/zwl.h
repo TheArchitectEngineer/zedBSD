@@ -1415,6 +1415,7 @@ void zwl_system_tick(struct zwl_server *server);
 void zwl_system_power_changed(struct zwl_server *server);
 void zwl_system_sharing_answer(struct zwl_server *server, int error);
 int zwl_system_pin_answer(struct zwl_server *server, int error);
+void zwl_system_enrolled_answer(struct zwl_server *server, int error);
 void zwl_system_network_changed(struct zwl_server *server, unsigned changed);
 int zwl_system_network_done(struct zwl_server *server, unsigned request, int error);
 int zwl_system_bar_save_key(struct zwl_server *server, const char *ssid, const char *key);

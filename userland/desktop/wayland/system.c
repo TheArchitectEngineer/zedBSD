@@ -53,7 +53,6 @@
 
 #include "zwl.h"
 #include "media.h"
-#include "pin-store.h"
 
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -63,6 +62,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* A parameter a function does not use. */
 #define UNUSED_PARAMETER(name)	((void)(name))
@@ -175,6 +175,10 @@ struct system_network_wait {
 /* The most mounts and ejects waiting for volumed's answer at once; one more is answered busy. */
 #define SYSTEM_DEVICES_WAITING	8U
 
+/* A PIN's digits, and the longest home directory the old PIN file is looked for in (ws172-p002). */
+#define SYSTEM_PIN_DIGITS	6U
+#define SYSTEM_HOME_MAX		512U
+
 /* A mount or an eject waiting for volumed: the backend's number, and who asked (client, object, request). */
 struct system_devices_wait {
 	uint32_t request;
@@ -206,8 +210,11 @@ struct system_details_wait {
  *     changed (ws132-p003) and is to be read again once no read is under
  *     way;
  *   - Remote Login's request waiting for sessiond (sharing), and the PIN's
- *     change waiting for sessiond's check of the password (pin, ws163-p003:
- *     the new PIN, empty for a removal, and the file; wiped once answered);
+ *     change waiting for sessiond's answer (pin, ws163-p003, ws172-p002);
+ *   - what the user has enrolled as sessiond last answered (enrolled_known,
+ *     enrolled_pin, enrolled_keys), whether it is to be asked
+ *     (enrolled_wanted) or is asked (enrolled_asked), and whether the WS163
+ *     mock's ~/.config/keiland/pin has been removed (pin_file_gone);
  *   - the serial of the last done.
  *
  * One per process; only the event loop's thread touches it, but the jobs'
@@ -236,8 +243,12 @@ struct system_state {
 	unsigned sharing_waiting;
 	struct system_devices_wait pin;
 	unsigned pin_waiting;
-	char pin_value[ZWL_PIN_DIGITS + 1U];
-	char pin_path[ZWL_PIN_PATH_MAX];
+	unsigned enrolled_known;
+	unsigned enrolled_pin;
+	unsigned enrolled_keys;
+	unsigned enrolled_wanted;
+	unsigned enrolled_asked;
+	unsigned pin_file_gone;
 	uint32_t serial;
 };
 
@@ -254,6 +265,9 @@ static int system_devices_request(struct zwl_object *object, uint32_t opcode, co
 static int system_account_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_account_pin(struct zwl_object *object, const unsigned char *bytes, size_t size);
 static int system_pin_begin(struct zwl_object *object, uint32_t number, const char *current, const char *pin);
+static int system_pin_valid(const char *pin);
+static void system_account_enrolled(struct zwl_object *object);
+static void system_enrolled_tick(struct zwl_server *server);
 static void system_account_take(struct zwl_server *server);
 static void *system_account_run(void *argument);
 static uint32_t system_network_send(struct zwl_object *object, uint32_t number, uint32_t what, const char *ssid);
@@ -430,6 +444,9 @@ zwl_system_tick(
 
 	/* An asking for scans not asked again for a minute ends (ws089-p021). */
 	system_scanning_expire(server);
+
+	/* What the user has enrolled, asked of sessiond when it is wanted (ws172-p002). */
+	system_enrolled_tick(server);
 
 	/* The monitor's samples, to the monitor objects (sysmon.c, WS134 p012). */
 	zwl_sysmon_tick(server);
@@ -700,7 +717,9 @@ system_manager_request(
 		system_done(created, KL_SYSTEM_POWER_EVENT_DONE);
 		break;
 	case ZWL_SYSTEM_ACCOUNT:
-		/* No state, and no done. */
+		/* What the user has enrolled, when known (no done), and asked again for it. */
+		system_account_enrolled(created);
+		system_state.enrolled_wanted = 1U;
 		break;
 	case ZWL_SYSTEM_SHARING:
 		/* The state last known, then read again (its answer comes to every object). */
@@ -757,11 +776,9 @@ zwl_system_sharing_answer(
 }
 
 /*
- * Takes sessiond's check of the password for a PIN's change (ws163-p003;
- * handoff.c passes the lock screen's answers here first): the PIN is set
- * or removed when the password was right, and the asking object hears the
- * result.  Returns 1 when the answer was the PIN's, 0 when no change
- * waited (the answer is the lock screen's).
+ * Takes sessiond's answer to a PIN's change (handoff.c, ws172-p002): the
+ * asking object hears a refusal's word and the result, and what is
+ * enrolled is asked again.  Returns 1 when a change waited, 0 when not.
  */
 int
 zwl_system_pin_answer(
@@ -771,24 +788,20 @@ zwl_system_pin_answer(
 	struct zwl_client *client;
 	struct zwl_object *object;
 	struct system_devices_wait *wait;
-	int written;
+	unsigned char payload[64];
+	const char *reason;
+	size_t offset;
 
 	/* Only a change that waits takes it. */
 	if (!system_state.pin_waiting)
 		return 0;
 	wait = &system_state.pin;
 	system_state.pin_waiting = 0U;
+	reason = kl_backend_session_reason(server->backend);
+	printf("ZWL SYSTEM account pin answer=%d reason=%s\n", error, reason);
 
-	/* The right password: the PIN is written, or the file removed for an empty one. */
-	written = error;
-	if (error == 0 && system_state.pin_value[0] == '\0')
-		written = zwl_pin_store_remove(system_state.pin_path);
-	else if (error == 0)
-		written = zwl_pin_store_set(system_state.pin_path, system_state.pin_value);
-
-	/* Nothing of the PIN stays. */
-	system_wipe(system_state.pin_value, sizeof(system_state.pin_value));
-	printf("ZWL SYSTEM account pin answer=%d error=%d\n", error, written);
+	/* What is enrolled may have changed. */
+	system_state.enrolled_wanted = 1U;
 
 	/* The result of the request that waited, when its client and object are still there. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -797,12 +810,65 @@ zwl_system_pin_answer(
 		object = zwl_find(client, wait->object);
 		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_ACCOUNT)
 			return 1;
-		system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, wait->number, system_result_of(written));
+
+		/* A refusal's word first, then the result. */
+		if (error != 0 && reason[0] != '\0' && object->version >= KL_SYSTEM_SINCE_ADMINISTER) {
+			offset = system_put_word(payload, 0U, wait->number);
+			offset = system_put_string(payload, offset, reason);
+			(void)zwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_REFUSED, payload, offset);
+		}
+
+		/* The result. */
+		system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, wait->number, system_result_of(error));
 		return 1;
 	}
 
 	/* The client went: the answer was the PIN's all the same. */
 	return 1;
+}
+
+/*
+ * Takes sessiond's answer to ENROLLED (handoff.c, ws172-p002): every
+ * account object hears what the user has enrolled.
+ */
+void
+zwl_system_enrolled_answer(
+	struct zwl_server *server,
+	int error)
+{
+	struct zwl_client *client;
+	struct zwl_object *object;
+	unsigned pin;
+	unsigned keys;
+
+	/* The answer came; a failed one is asked again later. */
+	system_state.enrolled_asked = 0U;
+	if (error != 0) {
+		printf("ZWL SYSTEM enrolled error=%d\n", error);
+		return;
+	}
+
+	/* Known now. */
+	kl_backend_session_enrolled_get(server->backend, &pin, &keys);
+	system_state.enrolled_known = 1U;
+	system_state.enrolled_pin = pin;
+	system_state.enrolled_keys = keys;
+	printf("ZWL SYSTEM enrolled pin=%u keys=%u\n", pin, keys);
+
+	/* Each account object of every client that is not ending. */
+	for (client = server->clients;
+	     client != NULL;
+	     client = client->next) {
+		if (client->fatal)
+			continue;
+		for (object = client->objects;
+		     object != NULL;
+		     object = object->next) {
+			if (object->kind != ZWL_SYSTEM_ACCOUNT || object->dead)
+				continue;
+			system_account_enrolled(object);
+		}
+	}
 }
 
 /* Carries out a request of a sharing object (ws089-p025). */
@@ -1514,9 +1580,10 @@ system_account_pin(
 }
 
 /*
- * Starts a PIN's change: checks what it can here and asks sessiond to
- * check the password (the lock screen's check, so sessiond is unchanged).
- * Returns 0 when asked, or the errno value to answer with.
+ * Starts a PIN's change: checks what it can here and asks the session
+ * manager to set or remove the PIN (zedBSD: sessiond's ENROLL pin or
+ * REMOVE pin, ws172-p002).  Returns 0 when asked, or the errno value to
+ * answer with.
  */
 static int
 system_pin_begin(
@@ -1526,9 +1593,8 @@ system_pin_begin(
 	const char *pin)
 {
 	struct kl_backend *backend;
-	char home[ZWL_PIN_PATH_MAX];
 	size_t current_length;
-	int is_pin;
+	int valid;
 	int managed;
 	int error;
 
@@ -1536,48 +1602,119 @@ system_pin_begin(
 	if (system_state.pin_waiting)
 		return EBUSY;
 
-	/* A password that fits and is not six digits (the lock screen would take it for a PIN). */
+	/* A password that fits. */
 	current_length = strlen(current);
 	if (current_length == 0U || current_length > KL_SYSTEM_PASSWORD_MAX)
 		return EINVAL;
-	is_pin = zwl_pin_is_pin(current);
-	if (is_pin)
-		return EINVAL;
 
 	/* Six digits, or nothing for a removal. */
-	is_pin = zwl_pin_is_pin(pin);
-	if (pin[0] != '\0' && !is_pin)
+	valid = system_pin_valid(pin);
+	if (pin[0] != '\0' && !valid)
 		return EINVAL;
 
-	/* Only a session manager checks the password. */
+	/* Only a session manager keeps the PIN. */
 	backend = object->client->server->backend;
 	managed = kl_backend_session_managed(backend);
 	if (!managed)
 		return ENOTSUP;
 
-	/* The user's PIN file. */
-	error = zwl_settings_home(home, sizeof(home));
-	if (error != 0)
-		return error;
-	error = zwl_pin_store_path(home, system_state.pin_path, sizeof(system_state.pin_path));
-	if (error != 0)
-		return error;
-
-	/* sessiond checks the password; the answer comes through zwl_system_pin_answer. */
-	error = kl_backend_session_unlock(backend, current);
+	/* The change; the answer comes through zwl_system_pin_answer. */
+	error = kl_backend_session_set_pin(backend, current, pin);
 	printf("ZWL SYSTEM account pin client=%llu number=%u remove=%d error=%d\n", (unsigned long long)object->client->number, number, pin[0] == '\0', error);
 	if (error != 0)
 		return error;
 
-	/* The change waits for the answer, with the PIN it sets. */
-	memcpy(system_state.pin_value, pin, strlen(pin) + 1U);
+	/* The change waits for the answer. */
 	system_state.pin.client = object->client->number;
 	system_state.pin.object = object->id;
 	system_state.pin.number = number;
 	system_state.pin_waiting = 1U;
 
-	/* Succeeded: the check is asked. */
+	/* Succeeded: the change is asked. */
 	return 0;
+}
+
+/* Tells whether a PIN is exactly six decimal digits. */
+static int
+system_pin_valid(
+	const char *pin)
+{
+	size_t index;
+
+	/* Each of the six. */
+	for (index = 0U; index < SYSTEM_PIN_DIGITS; index++) {
+		if (pin[index] < '0' || pin[index] > '9')
+			return 0;
+	}
+
+	/* Nothing after them. */
+	if (pin[SYSTEM_PIN_DIGITS] != '\0')
+		return 0;
+
+	/* Succeeded: six digits. */
+	return 1;
+}
+
+/* Tells an account object what the user has enrolled, when it is known and the object is new enough to hear it. */
+static void
+system_account_enrolled(
+	struct zwl_object *object)
+{
+	uint32_t words[2];
+
+	/* Only known state, to an object of version 11 or later. */
+	if (!system_state.enrolled_known)
+		return;
+	if (object->version < KL_SYSTEM_SINCE_ENROLLED)
+		return;
+
+	/* Whether a PIN is set, and the security keys. */
+	words[0] = system_state.enrolled_pin;
+	words[1] = system_state.enrolled_keys;
+	(void)zwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_ENROLLED, words, sizeof(words));
+}
+
+/*
+ * Asks sessiond what the user has enrolled when that is wanted (an account
+ * object was made, or a PIN changed) and no other request is under way;
+ * and once, removes the WS163 mock's ~/.config/keiland/pin, which nothing
+ * reads any more.
+ */
+static void
+system_enrolled_tick(
+	struct zwl_server *server)
+{
+	char home[SYSTEM_HOME_MAX];
+	char path[SYSTEM_HOME_MAX + 32U];
+	int managed;
+	int error;
+
+	/* Only a session sessiond started. */
+	managed = kl_backend_session_managed(server->backend);
+	if (!managed)
+		return;
+
+	/* The mock's PIN file goes once (ws172-p002: it is not carried over). */
+	if (!system_state.pin_file_gone) {
+		system_state.pin_file_gone = 1U;
+		error = zwl_settings_home(home, sizeof(home));
+		if (error == 0) {
+			snprintf(path, sizeof(path), "%s/.config/keiland/pin", home);
+			error = unlink(path);
+			if (error == 0)
+				printf("ZWL SYSTEM removed the old PIN file\n");
+		}
+	}
+
+	/* Asked when wanted and not asked already; a busy session manager is asked on a later pass. */
+	if (!system_state.enrolled_wanted || system_state.enrolled_asked)
+		return;
+	error = kl_backend_session_enrolled(server->backend);
+	if (error == EBUSY)
+		return;
+	system_state.enrolled_wanted = 0U;
+	if (error == 0)
+		system_state.enrolled_asked = 1U;
 }
 
 /* Sends a client's request to the network daemon; the result comes with the daemon's answer. */

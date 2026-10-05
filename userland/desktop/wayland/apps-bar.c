@@ -469,7 +469,7 @@ zwl_apps_bar_button(
 			/* The close button at the preview's top right. */
 			if (server->pointer_x >= panel.tiles[tile].x + panel.tiles[tile].width - 26 && server->pointer_y < panel.tiles[tile].y + 26) {
 				(void)zwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-				printf("ZWL APPS close-window surface=%u\n", surface->id);
+				printf("ZWL APPS close-window surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 				return 1;
 			}
 
