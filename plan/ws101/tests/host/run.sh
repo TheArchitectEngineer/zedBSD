@@ -21,8 +21,8 @@
 set -u
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
 here=$repo/plan/ws101/tests/host
-tools=${BRW_TOOLS:-/home/awe/p014-c/mesa/build-asm/src/intel/compiler}
-genxml=${GENXML:-/home/awe/p014-c/mesa/src/intel/genxml}
+tools=${BRW_TOOLS:-$repo/build/mesa-tools/build-asm/src/intel/compiler}
+genxml=${GENXML:-$repo/build/mesa-tools/mesa-25.0.7/src/intel/genxml}
 work=$(mktemp -d "${TMPDIR:-/tmp}/ws101-host.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
 status=0
@@ -32,13 +32,13 @@ status=0
 roundtrip=1
 if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
 	roundtrip=0
-	echo "NOTE: no brw_disasm/brw_asm under $tools (set BRW_TOOLS to a Mesa 25.0.7 build's src/intel/compiler);" \
+	echo "NOTE: no brw_disasm/brw_asm under $tools (plan/ws101/tests/host/mesa-tools.sh builds them, or set BRW_TOOLS);" \
 		"the disassembly round trip is NOT RUN"
 fi
 decode=1
 if [ ! -f "$genxml/gen120.xml" ]; then
 	decode=0
-	echo "NOTE: no gen120.xml under $genxml (set GENXML to a Mesa 25.0.7 tree's src/intel/genxml);" \
+	echo "NOTE: no gen120.xml under $genxml (plan/ws101/tests/host/mesa-tools.sh unpacks it, or set GENXML);" \
 		"the genxml decode of the commands is NOT RUN"
 fi
 
