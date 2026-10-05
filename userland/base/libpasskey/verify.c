@@ -148,6 +148,31 @@ pk_cose_p256(
 	uint8_t *x,
 	uint8_t *y)
 {
+	int error;
+
+	/* An EC2 key of ES256. */
+	error = pk_cose_ec2(cose_key, size, COSE_ALG_ES256, x, y);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the coordinates. */
+	return 0;
+}
+
+/*
+ * Reads a COSE EC2 key on P-256 of one algorithm (kty 2, alg, crv 1, x and
+ * y of 32 bytes, nothing else, in canonical order): ES256 (-7) for a
+ * credential, ECDH-ES+HKDF-256 (-25) for the PIN/UV key agreement.
+ * Returns 0 with the coordinates, or EBADMSG.
+ */
+int
+pk_cose_ec2(
+	const uint8_t *cose_key,
+	size_t size,
+	int64_t algorithm,
+	uint8_t *x,
+	uint8_t *y)
+{
 	static const int64_t labels[5] = { COSE_KTY, COSE_ALG, COSE_CRV, COSE_X, COSE_Y };
 	struct pk_cbor_reader reader;
 	struct pk_cbor_item item;
@@ -197,7 +222,7 @@ pk_cose_p256(
 		if (error != 0)
 			return EBADMSG;
 		if ((index == 0U && value != COSE_KTY_EC2) ||
-		    (index == 1U && value != COSE_ALG_ES256) ||
+		    (index == 1U && value != algorithm) ||
 		    (index == 2U && value != COSE_CRV_P256))
 			return EBADMSG;
 	}

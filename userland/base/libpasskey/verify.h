@@ -79,5 +79,6 @@ struct pk_assertion {
 
 int pk_verify_assertion(const struct pk_expectation *expectation, const struct pk_assertion *assertion, size_t *matched, uint32_t *sign_count);
 int pk_cose_p256(const uint8_t *cose_key, size_t size, uint8_t *x, uint8_t *y);
+int pk_cose_ec2(const uint8_t *cose_key, size_t size, int64_t algorithm, uint8_t *x, uint8_t *y);
 
 #endif
