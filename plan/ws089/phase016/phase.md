@@ -2,7 +2,7 @@
 
 # ws089-p016: 単一の instance
 
-Status: in-progress（実装済み・T1 の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-185 PASS（2 つ目の起動で頁を渡し、既存の窓が activation で前に出る、settings は 1 process））。以前: in-progress（実装済み・T1 の試験待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q741（Q1、2026-10-05、P2、設計）、q749（実装、P2 g15）

@@ -2,7 +2,7 @@
 
 # ws139-p001: 計測の image と一括の script、E1 の基準値
 
-Status: in-progress（2026-10-05 P1 generation17、q740。script と道具は済み。E1 の計測は T1、その 2 回の結果で受け入れ）
+Status: cleared（2026-10-05 Q1: T1-176 で計測の image・run・summary が 2 回とも完走し全指標に値。台帳への記入は次の Phase で P1）。以前: in-progress（2026-10-05 P1 generation17、q740。script と道具は済み。E1 の計測は T1、その 2 回の結果で受け入れ）
 Disposition: normal
 Parent: [WS139](../ws.md)
 Queue: q740
@@ -182,3 +182,7 @@ commit と Q1 への merge 依頼の後に依頼する。依頼の後は待た�
 
 確かめ: `sh -n` が 4 つの script で通る、`perf-summary.py fixture` が全ての metric を埋める、`make --eval` の確かめ。
 image の build と QEMU の計測は T1（下の依頼の 2 回）。台帳（ws.md）の P-01〜P-03 の更新は T1 の結果の後。
+
+## T1-176 の結果（2026-10-05 Q1）
+
+PASS（QEMU Venus、2 回、TIMEOUT 無し、P-01・P-02・P-03 に NA 無し）。E1 の値（e1/e1b）: P-03 compose_frame 100.6/100.1 ms・compose_draw 90.6/89.9 ms・monitor_fps 4.6/4.5、P-01 c5 first_frame 203（初回）→95 ms、P-02 textedit_direct 307/339 ms・terminal_direct 302/306 ms。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-176-out/`。台帳への記入は P1（WS139 の次の Phase）。

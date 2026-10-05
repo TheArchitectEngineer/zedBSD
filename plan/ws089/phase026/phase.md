@@ -2,7 +2,7 @@
 
 # ws089-p026: Users の頁の実装（この computer の利用者の account の管理）
 
-Status: in-progress（2026-10-05、P2。設計を書いた。管理者の操作の口はユーザーの判断待ち。一覧の部分は判断なしに進められる）
+Status: cleared（2026-10-05 Q1: T1-183b PASS（account-admin の全項目、passwd -s の短い password の拒否を含む）。Settings の Manage users の UI は kei で login した UAT で見る）。以前: in-progress（2026-10-05、P2。設計を書いた。管理者の操作の口はユーザーの判断待ち。一覧の部分は判断なしに進められる）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q741（Q1、2026-10-05、P2）
