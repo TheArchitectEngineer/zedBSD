@@ -156,8 +156,28 @@ struct overlay_materialization_transaction {
 	unsigned count;
 };
 
-static struct overlay_inode_slot overlay_inodes[OVERLAY_INODE_MAX]
+#if defined(HAL_ARCH_AMD64)
+/*
+ * The driver's inode slots, OVERLAY_INODE_MAX of them (about 3 MiB).
+ *
+ * On amd64, drv_overlayfs_init() allocates the table with kern_calloc()
+ * (a run of physical pages) when the filesystem type is registered, before
+ * any overlay can be mounted, and it lives until shutdown: as a static
+ * array in .vfs_bss it counted against the kernel image's size limit
+ * (BUG-198).  The type is registered only with the table, so every overlay
+ * inode has it.
+ */
+static struct overlay_inode_slot *overlay_inodes;
+#else
+/*
+ * The driver's inode slots.  The other machines keep them in .vfs_bss,
+ * where their linker scripts place it: a run of physical memory this large
+ * may not be found at run time on the smaller ones.
+ */
+static struct overlay_inode_slot overlay_inodes_storage[OVERLAY_INODE_MAX]
 	__attribute__((section(".vfs_bss")));
+static struct overlay_inode_slot *const overlay_inodes = overlay_inodes_storage;
+#endif
 
 #ifndef KERN_OVERLAY_CONTENT_HOST_TEST
 typedef char overlay_record_path_must_fit[
@@ -421,10 +441,25 @@ drv_overlayfs_init(
 {
 	int error;
 
+#if defined(HAL_ARCH_AMD64)
+	/* Allocates the inode slots, all free, before anything can be mounted. */
+	overlay_inodes = kern_calloc(OVERLAY_INODE_MAX, sizeof(*overlay_inodes));
+	if (overlay_inodes == NULL)
+		return ENOMEM;
+
+	/* Reports why the registration failed, and gives the slots back. */
+	error = filesystem_register(&overlay_filesystem_type);
+	if (error != 0) {
+		kern_free(overlay_inodes);
+		overlay_inodes = NULL;
+		return error;
+	}
+#else
 	/* Reports why the registration failed. */
 	error = filesystem_register(&overlay_filesystem_type);
 	if (error != 0)
 		return error;
+#endif
 
 	/* Succeeded. */
 	return 0;
@@ -1875,7 +1910,7 @@ overlay_alloc_inode(
 {
 	unsigned i;
 
-	/* Takes the first free slot of the static table. */
+	/* Takes the first free slot of the table. */
 	(void)mountp;
 	for (i = 0; i < OVERLAY_INODE_MAX; i++) {
 		if (!overlay_inodes[i].used) {
