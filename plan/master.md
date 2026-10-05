@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS052 p007 の判断（2026-10-05 朝、P1、plan/ws052/phase007/phase.md §7）**: (1) 外部の monitor を使っている時に蓋を閉じたら sleep しない（clamshell、案）。AC の時だけにするか。(2) 無操作の既定の時間（案: AC 30 分・電池 15 分、画面はその半分で消す。Settings の Power の頁が要る）。(3) greeter での電源ボタン（案: sleep。代わりは Shut Down の確認）。(4) sessiond が session から suspend を受ける（ws131 D12 の改訂、poweroff・reboot は greeter のまま）。
 - **ws089-p025 Sharing の SSHD（2026-10-05 未明、P2、Q1 が進めさせた）**: root の sessiond に、wheel（sudo と同じ規則）の利用者だけが使える「SERVICE sshd on|off|status」の要求を足す（sshd だけ、syslog の auth に記録）。Settings の Sharing の頁から SSHD を ON/OFF するため。root の daemon に新しい口を開く点の確認をお願いしたい。
 - **ws089-p022 Ethernet の頁（2026-10-05 未明、P2）**: (a) networkd に有線の設定の op（DHCP・static・router・DNS、/etc/net.conf を net の netconf.c で書く）を足し、network の group の利用者に開く（2026-10-02 の Wi-Fi と同じ規則）。Q1 は Wi-Fi の前例に合うとして進めさせた（root の daemon の攻撃面が広がる点の確認をお願いしたい）。(b) MTU の設定: 今の stack には SIOCSIFMTU が無く、設定には kernel と driver の作業（別の WS）が要る。ユーザーの要望は MTU も設定できること。ベータ1 は読むだけで、設定は別の WS にしてよいか。
 - **タッチパッドの既定の速さ（2026-10-05 未明、P2 の ws089-p024）**: マウスの既定はユーザーの要望どおり速度 150%・加速 強め。タッチパッドは WS159 で 5330 に合わせた感触を保つため 100%・加速 中にした。タッチパッドも 150%・強めにするか。
