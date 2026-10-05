@@ -2,10 +2,10 @@
 
 # ws140-p001: object の数・依存の数・初期化の順・dlsym の印の上限を無くす
 
-Status: planned
+Status: in-progress（実装済み・T の試験待ち。p002 とまとめて依頼）
 Disposition: normal
 Parent: [WS140](../ws.md)
-Queue: none
+Queue: q729（Q1、2026-10-05）
 設計: [ws.md](../ws.md) の D1〜D5・D8・D9
 依存: なし（ws.md の U2・U3 のユーザーの決めは要る）
 時限の目安: 実装 4 h、試験の program 2 h
@@ -16,7 +16,8 @@ Queue: none
   - object の chunk の列（D1・D2）、依存の可変長（D3）、初期化の順の list（D4）、dlsym の訪問の印（D5）。
   - U5 が「直す」なら、`rtld_object_removals++` を TLS の分岐の外へ出す 1 行。
   - 多数の依存の試験 program と、その build・実行の script。
-- **入らない**: handle・TLS module・dtv・静的な TLS の並び（p002）。dyntest の書き換え（p002）。他の固定の上限（ws.md の U3）。
+  - U3（2026-10-04 ユーザー「入れる」）: object ごとの TLSDESC の引数（`tlsdesc_argument[64]`）・program header（`phdr[64]`）・`RTLD_NAME_MAX` 64 を動的にする（下の「U3 の設計」）。
+- **入らない**: handle・TLS module・dtv・静的な TLS の並び（p002）。dyntest の書き換え（p002）。
 - **所有する path**: `src/rtld/rtld.c`、`src/rtld/rtld.h`、`plan/ws140/`。
 
 ## 始める前に読む物
@@ -256,9 +257,31 @@ p001 の commit を Q1 に merge 依頼してから p002 に進む。p001 は T 
 3. T の guest で、p002 で書き直した `dyntest` が最後まで走る（p002 とまとめた依頼）。
 4. bss の値、変えた関数の一覧、style の前後の数を「結果」に書く。
 
+## U3 の設計（2026-10-05、P2。実装の前に決めた）
+
+- **program header**: object の中に `RTLD_PROGRAM_INLINE`（16）個と、map の記録 32 個（1 header に 2 つまで: file と 0 埋め）を持つ。越えたら 1 つの table（`struct rtld_program_table` の頭・header・map の開始・大きさ）を `tls_map` で取る（`object_set_programs`）。`remember_mapping` の上限は `mapping_capacity`（2 × phnum）で、`"too many object mappings"` は不変の確かめとして残す。
+  - file から読む時（`load_object`・`preflight_dlopen_file`）は、16 個までは stack の room、越えたら一時の mapping（`read_program_headers`）。
+  - `e_phnum` と `AT_PHNUM` の上限は `PN_XNUM`（0xffff、数が別に書かれる印。`src/rtld/elf.h` に足した）を拒否するだけにした。読む量は file の大きさで抑えられる（`e_phoff` と `e_phnum` を file の大きさと比べる既存の確かめ）。
+  - `dl_iterate_phdr` は lock を取らずに header を読むので、program table は unmap しない。object が外れたら list に戻し、大きさが足りる次の object が使う（`program_table_take`）。slot を消す時も `phdr` を NULL のままにしない（`object_clear` が中の room を指し直す。`dl_iterate_phdr` は NULL を読んだら飛ばす）。
+- **TLSDESC の引数**: object の中に `RTLD_TLSDESC_INLINE`（16）個、越えたら 1 page の chunk（`(PAGE − 2 pointer) / sizeof(__tls_index)` 個、amd64 で 255）を list につなぐ（`tlsdesc_slot`）。引数の address が descriptor に書かれるので、動かさない。chunk は object の unload の終わりに unmap する（`object_tables_release`）。`"too many TLSDESC relocations"` は消した。
+- **名前の長さ**: `RTLD_NAME_MAX` を消し、`dlopen` と `DT_NEEDED` の名前は `RTLD_PATH_MAX`（256）未満にした（path の buffer の大きさ）。`open_search_candidate` に `name_length > RTLD_PATH_MAX - 2` の拒否を足した（名前が 254 byte 以上の時に、引き算が回り込んで buffer を越えるのを防ぐ）。
+- 合わせて直した既存の欠陥: `open_search_list` の `$ORIGIN` の suffix が 256 byte 以上の時に、`sizeof(directory) - suffix_length - 1` が回り込んで `directory` を越えて書けた（DT_RUNPATH・LD_LIBRARY_PATH の長い要素）。suffix の長さを先に確かめる。
+
 ## 結果
 
-（未実施）
+実装（2026-10-05、P2、worktree p2、commit 0484201b）。
+
+- **変えた関数**: `debug_map_publish`、`__rtld_process_fini`、`__rtld_dlopen`、`__rtld_dl_iterate_phdr`、`__rtld_dladdr`、`rtld_main`、`initialize_object`、`preflight_dlopen_file`、`valid_elf_header`、`load_object`、`open_search_list`、`open_search_candidate`、`find_identity`、`new_object`、`remember_mapping`、`parse_dynamic`、`lookup_symbol_version`（大域の探索）、`resolve_tls_symbol`、`install_tlsdesc`、`unload_object_locked`、`remove_initialization_record`、`rtld_dlsym_common`、`lookup_global_optional`、`lookup_handle_graph`、`setup_premapped_object`、`register_tls_module`（仮の `RTLD_TLS_MODULE_MAX`）、`__rtld_thread_alloc`・`__rtld_thread_free`・`layout_static_tls`（同）。
+- **新しい関数**: `object_at`、`object_chunk_grow`、`program_table_take`、`object_set_programs`、`read_program_headers`、`tlsdesc_slot`、`object_tables_take`、`object_tables_release`、`object_reserve_needed`、`object_clear`、`lookup_generation_next`。
+- `__rtld_process_fini` は既存の `finalize_object_unlocked`（`initialized` を 0 にしてから呼ぶ）を使う。fini を 2 回呼ばない。
+- **bss**: ld.so（amd64）217,944 → **94,076**（object の struct が小さくなった: header 64 → 16、map の記録 64 → 32、TLSDESC 64 → 16。最初の chunk は 32 object のまま）。text 31,688、data 412。
+- **確かめ（host、QEMU は起動していない）**:
+  - `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws140-p001 …/ld.so …/libc.so …/dyntest`: warning 0（-Werror）。`dynamic-userland-check`: `zedBSD amd64 dynamic userland artifacts: PASS`。手順 0 の `make -n` の sysroot の確かめは 0。
+  - grep（`RTLD_OBJECT_MAX`・`RTLD_NEEDED_MAX`・`RTLD_NAME_MAX`・`objects[`・`initialization_order`・`initialization_count`・`tlsdesc_argument`、文字列の `too many shared objects`・`too many dependencies`・`initialization order overflow`・`too many TLSDESC relocations`）: 全て 0 行。`git diff --check`: 問題無し。
+  - `sh plan/ws140/tests/build-many.sh build/ws140-p001 build/ws140-p001-many/out`: warning 0、`libtlsdesc.so TLSDESC relocations=300`、`libphdr.so program headers=31`、`rtld-many NEEDED=41`、archive に 167 file。
+  - style（D9）: rtld.c の違反は 241 → 236。関数ごとに増えた所は無い（減った: `__rtld_dladdr` 6→5、`preflight_dlopen_file` 4→3、`remove_initialization_record` 1→0、`setup_premapped_object` 1→0、`unload_object_locked` 5→4）。新しい関数と試験の C（`plan/ws140/tests/*.c`）・`rtld.h`・`elf.h` の違反は 0。
+- **試験の段**（`rtld-many.c`）: 手順 5 の 8 段に、U3 の 4 段を足した。`tlsdesc`（300 個の TLSDESC を持つ library を開き、初期値の和 45,150、全部に 1 足して読み直し、閉じてもう一度、の 2 回。page の chunk を 2 つ通る）、`long-name`（75 byte の名前の library の `dlopen`）、`phdr`・`phdr-reopen`（31 個の program header の library。`dl_iterate_phdr` で 16 を越える数と PT_DYNAMIC を見る。2 回目は 1 回目の program table を使い直す）。最後に object の数が起動の時に戻ることを確かめる。
+- **未実施**: T の guest での `rtld-many`・`dyntest`（p002 の後にまとめて依頼）。arm64 の build（worktree に `build/arm64` が無く、main の sysroot を指すと `make -n` の確かめが 1 で、sysroot が作り直される。Q1 に相談）。i386・sparcv9 の build。lock を取らない `dl_iterate_phdr` と同時の `dlclose` の試験（`phnum` と `phdr` を別々に読むので、消している最中の slot では食い違いうる。読むのは slot の中か program table で、どちらも map されたまま。食い違いの結果は、外れていく object の header が誤って見えることだけ）。
 
 ## 着手前に直す点（2026-10-04 ユーザーの判断の反映、Q1。詳細は [ws.md](../ws.md) の「判断」）
 

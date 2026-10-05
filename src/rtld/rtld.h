@@ -23,9 +23,16 @@
 #endif
 #define RTLD_PAGE_SIZE KERN_USER_PAGE_SIZE
 #define RTLD_PATH_MAX 256U
-#define RTLD_NAME_MAX 64U
-#define RTLD_OBJECT_MAX 32U
-#define RTLD_NEEDED_MAX 16U
+/*
+ * The tables of the loaded objects grow as far as memory allows (WS140):
+ * these are only the sizes kept without a mapping of their own, the
+ * objects in one chunk of the object table, and the dependencies, program
+ * headers and TLSDESC arguments one object holds inside itself.
+ */
+#define RTLD_OBJECT_CHUNK 32U
+#define RTLD_NEEDED_INLINE 16U
+#define RTLD_PROGRAM_INLINE 16U
+#define RTLD_TLSDESC_INLINE 16U
 #define RTLD_INTERP_PATH "/lib/ld.so"
 
 intptr_t rtld_syscall6(uint32_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
