@@ -130,7 +130,7 @@ drv_acpi_load_table(
 		return error;
 
 	/* Loads the table at the root as one entry into the interpreter. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 	kern_memset(&entry, 0, sizeof(entry));
 	entry.thread = thread;
 	error = table_install(&entry, table, length, drv_acpi_root(), &loaded);
@@ -184,7 +184,7 @@ drv_acpi_initialize_objects(void)
 	int error;
 
 	/* Walks the whole namespace inside one entry. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 	error = drv_acpi_walk(NULL, prepare_visitor, NULL);
 	drv_acpi_leave(thread);
 	if (error != 0)
@@ -213,7 +213,7 @@ drv_acpi_initialize_devices(void)
 	int error;
 
 	/* Runs the whole initialization as one entry. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Runs the global \_INI when firmware has one. */
 	result = NULL;

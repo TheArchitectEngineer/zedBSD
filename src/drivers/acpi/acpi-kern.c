@@ -68,11 +68,16 @@
 /*
  * The stack the interpreter may use below its entry, in bytes.
  *
- * A kernel thread has 16 KiB; the deepest real firmware measured on the
- * host needs about 4 KiB (ws049-p005), and AML that nests deeper fails
- * with E2BIG instead of overflowing.
+ * A kernel thread has 16 KiB (AMD64_SYS_STACK_SIZE, no guard page), and
+ * what calls the interpreter and what the interpreter calls at its deepest
+ * (region handlers, the log) need their share of it, so AML that nests
+ * deeper fails with E2BIG instead of overflowing.  The Dell Latitude 5330's
+ * tables, in the interpreter built as the kernel builds it (clang -Os with
+ * link-time optimization), take 5.1 KiB to load and 7.1 KiB when every
+ * method runs (BUG-195, plan/ws049/tests/check-latitude5330.sh); 10 KiB
+ * leaves room for the branches the machine's own values take.
  */
-#define STACK_BUDGET (8U * 1024U)
+#define STACK_BUDGET (10U * 1024U)
 
 /*
  * How long a log line may be.
@@ -142,6 +147,7 @@ static int memory_handler(const struct drv_acpi_region_access *access, uint64_t 
 static int memory_bytes(const struct drv_acpi_region_access *access, uint64_t *value);
 static void memory_move(uint8_t *virtual_address, unsigned width, bool write, uint64_t *value);
 static int memory_page(uint64_t page, uint8_t **virtual_address);
+static void start_fixed_hardware(void);
 static int io_handler(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static int pci_handler(const struct drv_acpi_region_access *access, uint64_t *value, void *argument);
 static void pci_absent(const struct drv_acpi_region_access *access, uint64_t *value);
@@ -196,6 +202,7 @@ drv_acpi_attach(void)
 	error = drv_acpi_firmware_load(&firmware);
 	if (error != 0) {
 		kern_logf("acpi: the DSDT did not load (error %d)\n", error);
+		start_fixed_hardware();
 		return error;
 	}
 
@@ -527,6 +534,30 @@ drv_acpi_os_table(
 
 	/* Succeeded: data and length name the table's bytes. */
 	return 0;
+}
+
+/*
+ * Puts the machine in ACPI mode when the namespace did not load, so that
+ * its fixed hardware still works (BUG-196): without ACPI_ENABLE written to
+ * SMI_CMD, SCI_EN stays clear, and a press of the power button turns an
+ * Intel PCH off at once instead of reaching the operating system as the
+ * power button's fixed event.  The events need no AML; the GPEs whose
+ * methods did load run as usual.
+ */
+static void
+start_fixed_hardware(void)
+{
+	int error;
+
+	/* Enables ACPI mode, takes the SCI and posts the buttons as the system's events. */
+	error = start_events();
+	if (error != 0) {
+		kern_logf("acpi: no ACPI events either (error %d)\n", error);
+		return;
+	}
+
+	/* Succeeded: the buttons reach the system although the namespace did not load. */
+	kern_logf("acpi: fixed hardware events on, without the namespace\n");
 }
 
 /* Reads the event hardware and starts the event thread and the SCI. */

@@ -2,7 +2,7 @@
 
 # ws099-p033: 最大化の中で新しく開く窓を最大化で開く
 
-Status: in-progress（実装済み・T1 の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-187b で dock・open-docked（width 1280）・undock（896）・ERROR 0、c は floating-c.png で浮いた窓で開くことを目視。script の c-floating の判定は MAP の行の surface の番号（3 つとも 6）の読み違いで、試験の直しは P2 の残件）。以前: in-progress（実装済み・T1 の試験待ち）
 Disposition: normal
 Parent: [WS099](../ws.md)
 Queue: q756（Q1、2026-10-05、P2 g15）

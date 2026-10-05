@@ -50,8 +50,9 @@ static int exec_opcode_term(struct drv_acpi_eval *eval);
 static int exec_expression(struct drv_acpi_eval *eval, const uint8_t *start);
 static int exec_block(struct drv_acpi_eval *eval, const uint8_t *block_end);
 static int exec_if(struct drv_acpi_eval *eval);
-static int exec_while(struct drv_acpi_eval *eval);
-static int exec_return(struct drv_acpi_eval *eval);
+static bool else_holds_if_alone(struct drv_acpi_eval *eval, const uint8_t *else_end);
+static int __attribute__((noinline)) exec_while(struct drv_acpi_eval *eval);
+static int __attribute__((noinline)) exec_return(struct drv_acpi_eval *eval);
 static int eval_name(struct drv_acpi_eval *eval, struct drv_acpi_object **result);
 static int eval_method_call(struct drv_acpi_eval *eval, struct drv_acpi_node *node, struct drv_acpi_object **result);
 static int eval_constant(struct drv_acpi_eval *eval, unsigned opcode, struct drv_acpi_object **result);
@@ -95,7 +96,7 @@ drv_acpi_evaluate(
 	*result = NULL;
 
 	/* Enters the interpreter, measuring the stack from here. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Finds the object: the scope itself, or the path from it. */
 	node = scope;
@@ -1187,7 +1188,15 @@ exec_block(
 	return 0;
 }
 
-/* Runs an If and the Else that may follow it. */
+/*
+ * Runs an If and the Else that may follow it.
+ *
+ * An Else that holds only another If (and that If's Else) -- an ElseIf, and
+ * each Case of the chain ASL compiles a Switch to -- runs that If in this
+ * frame, one turn of the loop, instead of one frame deeper.  A chain of any
+ * length then takes the stack of one If: a Switch of 25 Cases in the Dell
+ * Latitude 5330's DSDT nested past the stack budget (BUG-195).
+ */
 static int
 exec_if(
 	struct drv_acpi_eval *eval)
@@ -1195,65 +1204,144 @@ exec_if(
 	const uint8_t *if_end;
 	const uint8_t *else_end;
 	const uint8_t *outer_end;
+	const uint8_t *predicate_end;
+	const uint8_t *chain_end;
 	uint64_t predicate;
 	uint8_t byte;
+	bool chained;
 	int error;
 
-	/* Reads the extent of the If. */
-	error = drv_acpi_stream_package_length(eval, &if_end);
-	if (error != 0)
-		return error;
-
-	/* Evaluates the predicate inside the If's extent. */
+	/* The stream's end outside the If, which a chain bounds by its Else while it runs. */
 	outer_end = eval->end;
-	eval->end = if_end;
-	error = drv_acpi_eval_integer(eval, &predicate);
-	eval->end = outer_end;
-	if (error != 0)
-		return error;
+	chain_end = NULL;
+	error = 0;
 
-	/* Runs the If's body when the predicate holds, and steps over it otherwise. */
-	if (predicate != 0) {
-		error = exec_block(eval, if_end);
+	/* Runs the If, then each If an Else holds alone. */
+	for (;;) {
+		/* Reads the extent of the If. */
+		error = drv_acpi_stream_package_length(eval, &if_end);
 		if (error != 0)
-			return error;
+			break;
 
-		/* A Return, Break or Continue leaves before any Else. */
-		if (eval->control != DRV_ACPI_CONTROL_NEXT)
-			return 0;
-	} else {
-		eval->position = if_end;
+		/* Evaluates the predicate inside the If's extent. */
+		predicate_end = eval->end;
+		eval->end = if_end;
+		error = drv_acpi_eval_integer(eval, &predicate);
+		eval->end = predicate_end;
+		if (error != 0)
+			break;
+
+		/* Runs the If's body when the predicate holds, and steps over it otherwise. */
+		if (predicate != 0) {
+			error = exec_block(eval, if_end);
+			if (error != 0)
+				break;
+
+			/* A Return, Break or Continue leaves before any Else. */
+			if (eval->control != DRV_ACPI_CONTROL_NEXT)
+				break;
+		} else {
+			eval->position = if_end;
+		}
+
+		/* Nothing more to do at the end of the term list. */
+		if (eval->position >= eval->end)
+			break;
+
+		/* Nothing more to do when no Else follows. */
+		byte = *eval->position;
+		if (byte != DRV_ACPI_OP_ELSE)
+			break;
+
+		/* Reads the extent of the Else. */
+		eval->position++;
+		error = drv_acpi_stream_package_length(eval, &else_end);
+		if (error != 0)
+			break;
+
+		/* Skips the Else when the If ran. */
+		if (predicate != 0) {
+			eval->position = else_end;
+			break;
+		}
+
+		/* Runs an Else that holds more than one If as a block of its own. */
+		chained = else_holds_if_alone(eval, else_end);
+		if (!chained) {
+			error = exec_block(eval, else_end);
+			break;
+		}
+
+		/*
+		 * Bounds the stream by the Else and steps onto its If, the next
+		 * turn.  The Else's If and that If's Else end where the Else ends,
+		 * so the outermost Else's end is where the whole chain ends.
+		 */
+		if (chain_end == NULL)
+			chain_end = else_end;
+		eval->end = else_end;
+		eval->position++;
 	}
 
-	/* Nothing more to do at the end of the term list. */
-	if (eval->position >= eval->end)
-		return 0;
+	/* The stream's end is the If's own again. */
+	eval->end = outer_end;
 
-	/* Nothing more to do when no Else follows. */
-	byte = *eval->position;
-	if (byte != DRV_ACPI_OP_ELSE)
-		return 0;
-
-	/* Reads the extent of the Else. */
-	eval->position++;
-	error = drv_acpi_stream_package_length(eval, &else_end);
+	/* Reports an If or an Else whose body failed. */
 	if (error != 0)
 		return error;
 
-	/* Skips the Else when the If ran, and runs its body otherwise. */
-	if (predicate != 0) {
-		eval->position = else_end;
-		error = 0;
-	} else {
-		error = exec_block(eval, else_end);
-	}
-
-	/* Reports an Else whose body failed. */
-	if (error != 0)
-		return error;
+	/* A chain that ran to its end continues after its outermost Else. */
+	if (chain_end != NULL && eval->control == DRV_ACPI_CONTROL_NEXT)
+		eval->position = chain_end;
 
 	/* Succeeded: the If or the Else ran. */
 	return 0;
+}
+
+/*
+ * Reports whether an Else, whose body starts at the stream's position and
+ * ends at else_end, holds only an If and that If's Else.  The position is
+ * left where it was; a body the stream cannot read is not a chain, so its
+ * block reports the error as before.
+ */
+static bool
+else_holds_if_alone(
+	struct drv_acpi_eval *eval,
+	const uint8_t *else_end)
+{
+	const uint8_t *body;
+	const uint8_t *if_end;
+	const uint8_t *inner_else_end;
+	bool alone;
+	int error;
+
+	/* An empty Else, or one that does not start with an If, holds no chain. */
+	body = eval->position;
+	if (body >= else_end || *body != DRV_ACPI_OP_IF)
+		return false;
+
+	/* Reads the extent of the If in the Else. */
+	eval->position = body + 1;
+	error = drv_acpi_stream_package_length(eval, &if_end);
+
+	/* An If that ends where the Else ends is the Else's only term. */
+	alone = false;
+	if (error == 0 && if_end == else_end)
+		alone = true;
+
+	/* So is an If whose own Else ends where the outer Else ends. */
+	if (error == 0 && if_end < else_end && *if_end == DRV_ACPI_OP_ELSE) {
+		eval->position = if_end + 1;
+		error = drv_acpi_stream_package_length(eval, &inner_else_end);
+		if (error == 0 && inner_else_end == else_end)
+			alone = true;
+	}
+
+	/* Puts the position back at the Else's body. */
+	eval->position = body;
+
+	/* Reports whether the Else's If is all it holds. */
+	return alone;
 }
 
 /* Runs a While loop. */

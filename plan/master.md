@@ -71,6 +71,25 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS143 Bluetooth の判断（2026-10-05、P1 の設計 第 3.1 版、plan/ws143/design.md §9、design-reviewer が通した。範囲 A の見積もり 25〜35 日）**: [ ] は P1 の推奨。
+  - D15 構成 [kernel は USB の転送（/dev/btN の生の HCI）と HID の入力だけ、firmware の読み込み・HCI・L2CAP・pairing・SDP/GATT・HID host は userland の bluetoothd]（ws.md の当初の案は HCI を kernel に）
+  - D1 最初の profile [A: keyboard と mouse（classic の HID と LE の HOGP）だけ。A2DP の headphone は別の WS]
+  - D2 UAPI: /dev/btN（include/uapi/bluetooth.h、Intel の bootloader の ioctl、reset の ioctl）と /dev/system の resume の事象の class [形を承認、layout は p002]
+  - D3 UAPI: /dev/hid-host（bluetoothd が HID の report を kernel の HID の parser に渡す。USB の HID の入力の code を共有の module に分ける、USB の keyboard・mouse の退行の危険）[形を承認、layout は p005]
+  - D4 root で起こす bluetoothd、socket /run/bluetoothd.sock（networkd と同じ権限の確かめ）と CLI `bt` [networkd と同じ]
+  - D16 権限の分離 [(a) 小さな root の親が device を開き権限の無い子に fd を渡す]。どの案でも /dev/hid-host を持つ物が乗っ取られると key を打てる危険は残る
+  - D17 base の passwd・group に `_bluetooth` の account と `bluetooth` の group を足す（既存の install にも）[可]
+  - D5 暗号（LE の pairing だけ host に要る）[b1: 自前の AES/AES-CMAC と controller の P-256 の命令、無ければ自前の P-256]。OpenSSL は base の方針の例外
+  - D10 pairing の安全 [legacy も受け Settings で警告、暗号の鍵は 16 byte 必須]。Secure Connections だけにすると古い機器は pair できない
+  - D8 誰が pair・接続・確認できるか [seat の利用者（確認の dialog は compositor）、console・SSH は wheel だけ、login の画面では pair しない]
+  - D9 pairing を system 全体で共有か利用者ごとか [system 全体（login の画面・console でも BT の keyboard が使える）]
+  - D11a 起動時の radio [前回の状態、初回は on]、D11b 発見可能 [「追加」を開いている間だけ]、D11c LE の private address [使う]、D11d 機内 mode [Wi-Fi と一緒に切る、別に戻せる]
+  - D6 linux-firmware から任意の firmware の package `intelbt`（Intel の license は無改変の再配布を許す）[作る]、D14 5330 の既定の image に入れる [入れる]
+  - D7 FreeBSD の Keiland [当面は unsupported]
+  - D13 firmware の読み込みの試験のため 5330 の Linux の host で btusb・btintel を blacklist し電源を入れ直す [する]
+  - D18 UAT の環境 [素の 5330（Wi-Fi との共存も見られる、その間 5330 の T1 は止まる）]
+  - 情報の依頼: 試験に使う classic と LE の keyboard・mouse の機種、firmware の要らない USB の BT dongle（例 CSR8510）が有るか・買うか。
+- **bar のデバイス（USB 媒体）の icon（2026-10-05 午後 UAT の所見、P2 の案 plan/ws132/proposals/media-icon-proposals.png）**: 今の icon は camera に見え plug の穴も見えていない。A 横の stick と輪郭の plug、B 縦の stick（一般の USB メモリの絵）、C USB の三叉の記号、D 箱と取り出しの記号 [P2 の案: B]。WS156 の H7（通知への置き換え）とは独立に入れられる。
 - **BUG-194 全画面から戻す compositor の key（2026-10-05、P2 の案、今は仮に F11）**: A F11、B Super+↓（Fn が要らない）、C Esc の 1 秒の長押し、D 画面の上端からの swipe [P2 の案: A+B か B+C]。実機で F11 が効かなかったのは 5330 の上の列が既定で Home/End（Fn+F11 か Fn Lock）の見込み、次の UAT で Fn+F11 を試す。
 - **WS145 印刷の判断（2026-10-05、P2 の p001 の設計の初版、plan/ws145/phase001/phase.md。design-reviewer の重大 7 件は未反映）**: D2 printer を system 全体で共有するか（共有なら root の口が要る）[案: 利用者ごと]、D3 LPD の queue 名の入力、D6 PDF Viewer の Print を含めるか、受け入れの printer の機種（PDF を受けない機種なら PWG raster が要る）、Linux で CUPS の printer を出さないこと、login 名を printer に送ること。
 - **2026-10-05 午後 UAT の後、ユーザー「ちょっと仮眠します。その方針でよいので、自走をお願いします。」**: 方針どおり自走。P1 は BUG-195・196・197（実機の ACPI）、P2 は UAT の所見（ws132-p009・ws099-p033・BUG-194（仮に F11）・BUG-181・BUG-193・bar の device の icon）。直しが揃ったら新しい UAT の image を作り T1 で boot-test。判断が要る点は記録して先へ。

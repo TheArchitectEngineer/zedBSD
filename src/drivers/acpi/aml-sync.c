@@ -91,7 +91,7 @@ drv_acpi_notify_install(
 	notify->argument = argument;
 
 	/* Puts the entry at the head of the node's list, inside the interpreter. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 	notify->next = node->notify;
 	node->notify = notify;
 	drv_acpi_leave(thread);
@@ -122,7 +122,7 @@ drv_acpi_notify_remove(
 		return EINVAL;
 
 	/* Finds the entry and unlinks it, inside the interpreter. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 	found = NULL;
 	for (link = &node->notify;
 	     *link != NULL;
@@ -177,7 +177,7 @@ drv_acpi_run_locked(
 		return EINVAL;
 
 	/* Enters the interpreter for the whole work. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Finds the mutex. */
 	error = drv_acpi_lookup(NULL, mutex_path, &node);

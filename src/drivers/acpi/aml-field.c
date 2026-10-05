@@ -126,7 +126,7 @@ drv_acpi_region_install(
 		return EINVAL;
 
 	/* Enters the interpreter, so that no AML uses the space while its handler changes. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Refuses a second handler for the same space. */
 	if (region_handlers[space].handler != NULL) {
@@ -171,7 +171,7 @@ drv_acpi_region_connect_all(void)
 	int error;
 
 	/* Enters the interpreter for the whole connection. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* regions_connected makes the handlers installed from now on connect at once. */
 	regions_connected = true;

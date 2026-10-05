@@ -165,7 +165,7 @@ node_of(
 	bool same;
 
 	/* Looks with the interpreter held, so that the cache and the namespace stay as they are. */
-	thread = drv_acpi_enter(&storage, __builtin_frame_address(0));
+	thread = drv_acpi_enter(&storage);
 
 	/* Takes a cached answer. */
 	kern_memset(&search, 0, sizeof(search));

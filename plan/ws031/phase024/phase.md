@@ -79,5 +79,8 @@ SPILLMIX（spill.frag と vio16.vert の draw を同じ command buffer で交互
 | `sh plan/ws031/tests/run-vk-host-tests.sh` | PASS |
 | `sh plan/ws101/tests/host/run.sh` | PASS |
 
-残り（再開の点）: 増分 1 の 3（入れ子の上限の拒否の host 試験。`plan/ws068/tests/i915-shader-check` の道具に GLSL を glslc で通して
-REFUSED を確かめる形が手早い）、増分 2・3、最後に T1 への passthrough の 1 回の依頼。実機は使っていない。
+増分 1 の 3（2026-10-05、合間の仕事）: `plan/ws031/tests/p024/run.sh` と GLSL 8 本（ASan・UBSan の下の i915-shader-check）: loops8 受ける・
+loops9 断る（loops nested too deep）・ifs31 受ける・ifs40 断る（constructs nested too deep）、noinput・divzero（実行時の 0 と INT_MIN/-1）・
+shift（32〜63）・killoop を -O0 と -O で受ける。PASS。
+
+残り（再開の点）: 増分 2・3（vke2 の step、spill の組み合わせ）、最後に T1 への passthrough の 1 回の依頼。実機は使っていない。

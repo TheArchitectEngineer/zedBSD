@@ -340,6 +340,7 @@ static int
 lpss_power_on(
 	struct lpss_i2c *controller)
 {
+	struct drv_pci_address address;
 	struct drv_pci_bar bar;
 	unsigned capability;
 	uint16_t control;
@@ -371,10 +372,20 @@ lpss_power_on(
 		}
 	}
 
+	/* Names the function in what the log says about its BAR. */
+	drv_pci_device_address(controller->pci, &address);
+
 	/* Checks that BAR0 is a memory window holding the core and the private registers. */
 	error = drv_pci_device_bar(controller->pci, 0U, &bar);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("lpss-i2c: %04x:%02x:%02x.%x has no BAR0 (%d)\n",
+			  address.segment,
+			  address.bus,
+			  address.device,
+			  address.function,
+			  error);
 		return error;
+	}
 	if (bar.type != DRV_PCI_BAR_MEMORY32 && bar.type != DRV_PCI_BAR_MEMORY64)
 		return ENODEV;
 	if (bar.size < LPSS_BAR_SIZE)
@@ -388,8 +399,19 @@ lpss_power_on(
 				       0U,
 				       DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
 				       &controller->registers);
-	if (error != 0)
+	if (error != 0) {
+		/* Says which window would not map (BUG-195: two controllers failed with EINVAL on the 5330). */
+		kern_logf("lpss-i2c: %04x:%02x:%02x.%x BAR0 type %d at 0x%llx size 0x%llx did not map (%d)\n",
+			  address.segment,
+			  address.bus,
+			  address.device,
+			  address.function,
+			  (int)bar.type,
+			  (unsigned long long)bar.bus_address,
+			  (unsigned long long)bar.size,
+			  error);
 		return error;
+	}
 
 	/* Succeeded: the registers can be read. */
 	return 0;
