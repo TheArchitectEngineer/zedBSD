@@ -16,8 +16,10 @@ nodes, ask what each one is, and choose by that.
 ## Permissions
 
 Both kinds of node are owned by root with mode 0600. While a graphical session
-or its login screen runs, sessiond gives every `hidraw` and `smartcard` node
-to the seat's user with mode 0600, and gives them back to root when it stops.
+runs, sessiond gives every `hidraw` and `smartcard` node to the session's user
+with mode 0600, and gives them back to root when it stops. The login screen is
+never given them: a security key login is done by `/sbin/passkey`, which opens
+the nodes as root.
 Whoever can open a security key's node can ask the key to sign; the key's own
 user presence (a touch) and user verification (its PIN) are what protect the
 user.

@@ -13,7 +13,8 @@
  * ws161-p002, the user's approval U3) belong to the seat's user, 0600,
  * while sessiond runs a greeter or a session, and go back to root when it
  * stops (the keys and the cards to root alone: whoever opens one can ask
- * the key to sign).
+ * the key to sign).  The login screen is not given the keys and the cards
+ * (ws172: its security key login is passkey's, which opens them as root).
  *
  * devfs keeps an owner and a mode given to a name, also for a node made
  * again under that name (a keyboard plugged in again).  A node that appears
@@ -58,12 +59,15 @@ static void seat_set(const char *path, uid_t uid, gid_t gid, mode_t mode);
 static void seat_input(const char *prefix, uid_t uid, gid_t gid, mode_t mode);
 
 /*
- * Gives the display and the input devices to a user, for that user only.
+ * Gives the display and the input devices to a user, for that user only,
+ * and the security keys and the smart card slots too when keys is set (a
+ * session's user; not the login screen's account).
  */
 void
 sessiond_seat_give(
 	uid_t uid,
-	gid_t gid)
+	gid_t gid,
+	int keys)
 {
 	char path[32];
 	unsigned index;
@@ -74,9 +78,8 @@ sessiond_seat_give(
 		seat_set(path, uid, gid, 0600);
 	}
 
-	/* Every input device, and every security key's raw node. */
+	/* Every input device. */
 	seat_input("event", uid, gid, 0600);
-	seat_input("hidraw", uid, gid, 0600);
 
 	/* Every backlight, which the session's compositor sets. */
 	for (index = 0U; index < SEAT_BACKLIGHT_COUNT; index++) {
@@ -84,7 +87,18 @@ sessiond_seat_give(
 		seat_set(path, uid, gid, 0600);
 	}
 
-	/* Every smart card slot (the NFC reader's and a key's). */
+	/* The login screen's account gets no security key nor smart card slot: they stay root's. */
+	if (!keys) {
+		seat_input("hidraw", 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
+		for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
+			snprintf(path, sizeof(path), "/dev/smartcard%u", index);
+			seat_set(path, 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
+		}
+		return;
+	}
+
+	/* A session's user gets every security key's raw node and every smart card slot. */
+	seat_input("hidraw", uid, gid, 0600);
 	for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
 		snprintf(path, sizeof(path), "/dev/smartcard%u", index);
 		seat_set(path, uid, gid, 0600);

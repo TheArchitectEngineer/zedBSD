@@ -4,7 +4,7 @@
 
 Phase ID: `ws172-p001`
 Parent: [WS172](../ws.md)
-Status: planning（2026-10-05 P1 generation19 q774。設計の第 1 版と docs。design-reviewer の後に判断 P1〜P6）
+Status: planning（2026-10-05 P1 generation19 q774。設計の第 1 版と docs、design-reviewer の指摘で第 2 版（§12）。判断 P1〜P10 待ち）
 Phase disposition: normal
 Queue: q774
 
@@ -142,6 +142,50 @@ login の節（この Phase で書いた）。ここは内部の決めごとと�
 | P5 | QEMU の FIDO2 の試験: 試験の kernel の loopback の鍵を、試験だけの秘密鍵で署名する CTAP2 の応答器に広げる（U4 の範囲を広げる） | 広げる（実機の前に QEMU で流れを確かめる） |
 | P6 | WS163 の mock（~/.config の pin・compositor の確かめ・`kl_system_account_v1` の set_pin）を p002 で外す（protocol の version 10 の set_pin は残して `unsupported` を返すか、request ごと消すか） | set_pin を sessiond の `ENROLL pin` に繋ぎ替える（Settings の口はそのまま、compositor が sessiond に中継） |
 
+## 12. 第 2 版: 敵対的な見直し（2026-10-05、design-reviewer）の扱い
+
+docs（`docs/architecture/security.md` の「Login authentication」、`keiland.md`、`docs/reference/security-keys.md`）を先に直した（aae0188a・6dadd5ac）。
+§1〜§11 と食い違う所は、この節と docs が正しい。
+
+| 指摘 | 中身（要点） | 扱い |
+| --- | --- | --- |
+| B1 | 鍵の PIN を挿さっている全部の鍵に送ると、他の鍵の PIN の試行を減らし、悪い機器は PIN の hash を得て手元で総当たりできる | **直した**: 先に PIN 無しで鍵を選ぶ（allowList で `up:false` の GetAssertion を全部に、該当が 1 本ならそれ、複数なら触れて選ぶ = selection 0x0B か 2.0 では UP だけの GetAssertion）。PIN は選んだ 1 本にだけ。該当しない鍵は PIN を見ない（`no-key`） |
+| B2 | 登録の時に悪い機器が先に答えると、その鍵で後から入れる | **直した**: 登録は鍵がちょうど 1 本の時だけ（2 本以上は `many-keys`）、Settings に鍵の名前と場所を出す、root が答えの authData を自分で読む（rpIdHash・UP・UV・AT・credential ID・P-256 の ES256 鍵）。attestation を見ないことが何を守らないかを docs に書いた |
+| B3 | 再起動（greeter の `POWER reboot` は認証が要らない）で PIN の 5 回が戻る。60 秒の待ちでは足りない | **直した（P2 を改める）**: sessiond の起動の後、その account が password か鍵で一度入るまで PIN を出さない（端末の再起動の後の passcode と同じ）。試行は passkey を起こす前に数え、成功でだけ戻す（落ちても戻らない）。時間切れ・kill は失敗に数える |
+| M1 | account の削除の途中で落ちると、同じ名前の新しい account が古い PIN と鍵を受け継ぐ | **直した**: 行に uid を持ち名前と uid の両方が合う時だけ数える、削除は `/etc/passkey` を最初に、追加は名前の残りを消す（docs の Robustness の順） |
+| M2 | password が locked・期限切れでも PIN と鍵で入れる | **直した**: PIN と鍵は毎回 shadow の lock と期限を見る（`locked-account`）、uid 1000 未満と root には出さない。account-admin の reset-password は PIN と鍵を消す（判断 P7） |
+| M3 | 「0 か大きい」は 0 で上書きして複製の検出を消す | **直した**: WebAuthn §7.2 の規則（どちらかが 0 でなければ新しい方が大きいこと）、下げない、理由の語は `cloned`。libpasskey の `verify.c` は既にこの規則（host 試験あり） |
+| M4 | CANCEL が無く、sessiond が最大 35 秒止まる | **直した**: `CANCEL`、passkey の答えは sessiond の loop が poll する fd、別の要求には `ERROR busy` |
+| M5 | kill で helper と account の lock が残る | **直した**: passkey は自分の process group、sessiond は SIGTERM の 2 秒後に SIGKILL、passkey は自分の期限を守り書き換え中は signal を止める、helper は親の pipe の EOF で CANCEL して終わり alarm も持つ |
+| M6 | password の login が OpenSSL の package に依る | **直した**: `/sbin/passkey` は libc の `crypt()` だけ（password と PIN）、鍵は別の exec `/usr/libexec/passkey-fido2`（libpasskey と libcrypto を link）。Guardrail の例外の行を passkey-fido2 と libpasskey に広げる依頼（判断 P1） |
+| M7 | greeter（`_greeter`）にも鍵の node が渡っている。touch hijack は未解決 | **直した**: seat は login の画面の account に hidraw・smartcard を渡さない（6dadd5ac、sessiond の seat.c）。passkey-fido2 は開いた node を claim する（WS161 V1 の (a) の GRAB を p003 の必須の前提に = 判断 P8）。NFC は contactless の slot だけ、他が持つ slot は触らない |
+| M8 | ENROLL・REMOVE が遅れの無い password の当て物になる | **直した**: その password の失敗も同じ数と遅れ |
+| m1〜m13 | 返事の buffer（greeter.c の 16 byte）、要求の枠（行の数を固定、制御文字を拒む、AUTH の次の行は必ず秘密）、fd 2 を /dev/null に、signal・RLIMIT_CORE・OpenSSL の設定を読まない、helper の rlimit（NOFILE・NPROC 0）と chdir、NFC の「tap」・途中で外れた鍵・途中で挿した鍵、CTAP の細部（maxCredentialCountInList・PIN_BLOCKED の語・内蔵 UV・protocol の選び）、file の細部（持ち主と mode の確かめ・新しい版は読むだけ・label の文字）、数の表は uid ごと（不明の名前は 1 つにまとめる）、`ok uid=N` で sessiond が uid を照らす、docs と phase の食い違い、WS163 の mock の移行（`~/.config/keiland/pin` は取り込まず消す、H5 の 6 桁の判定・pin-store・forgive を外す）、WS161 の道具の名前の衝突、規約の Phase と依存 | docs に入れた物は直した。実装の注意として p002・p003 の phase に持ち越す。WS161 の道具は `passkey` から **`fidoctl`** に改める（WS161 p001 §9.4 を直す） |
+
+### 12.1 段（第 2 版）
+
+| Phase | 内容 | 依存 |
+| --- | --- | --- |
+| p002 | `/sbin/passkey`（password・PIN・styles・enrolled・enroll-pin・remove-pin）と `/etc/passkey`（uid つきの行）、sessiond（passkey の非同期の起動・CANCEL・busy・uid ごとの数・起動の後の PIN の規則・`ok uid` の照らし）、greeter・lock の PIN、Settings の PIN（set_pin を `ENROLL pin` に）、account-admin（削除・追加・reset の順）、WS163 の mock を外す。host 試験と T1 | P2・P6・P7 |
+| p003 | `/usr/libexec/passkey-fido2` と機器の helper（`_passkey`）、鍵の選び（PIN の前）、登録は 1 本だけ、Settings の鍵、greeter・lock の「Use security key」と CANCEL | p002、WS161 p004・p005・V1 の GRAB（P8）、P3・P4・P5 |
+| p004・p004b・p005 | ws.md のとおり | |
+| p006 | 全文規約の見直し（WS の終わり） | p005 まで |
+
+### 12.2 人間の判断が要る点（第 2 版）
+
+| ID | 問い | 案 |
+| --- | --- | --- |
+| P1 | libpasskey を base（`userland/base/libpasskey/`）に置く。password・PIN の `/sbin/passkey` は libc だけ、鍵の `/usr/libexec/passkey-fido2` と libpasskey が OpenSSL の例外（release まで）。Guardrail の例外の行をこの 2 つに広げる | この形 |
+| P2 | （改めた）sessiond の起動の後、account が password か鍵で一度入るまで PIN を出さない（再起動で試行が戻らない）。60 秒の待ちはやめる | この形 |
+| P3 | 鍵に PIN（UV）が無い時の鍵の login と登録 | 許さない |
+| P4 | system account `_passkey` を足す（uid 1000 未満、nologin、`/var/empty`、shadow `*`） | 足す |
+| P5 | QEMU の鍵の試験: 試験の kernel の loopback の鍵を、試験だけの秘密鍵で署名する CTAP2 の応答器に広げる（試験の build だけ。release の passkey-fido2 は `HIDRAW_BUS_VIRTUAL` を拒む） | 広げる |
+| P6 | WS163 の mock を p002 で外し、Settings の set_pin を sessiond の `ENROLL pin` に繋ぎ替える（空の PIN は `REMOVE pin`） | この形 |
+| P7 | account-admin の reset-password で、その利用者の PIN と鍵を消す | 消す |
+| P8 | WS161 V1 の (a)（hidraw の排他の GRAB の UAPI）を WS172 p003 の必須の前提にする（passkey-fido2 は開いた鍵を claim する） | 必須にする |
+| P9 | 登録は鍵がちょうど 1 本挿さっている時だけ（2 本以上は断る） | この形 |
+| P10 | 再起動の後、password か鍵で一度入るまで PIN を出さない規則は、autologin（`/etc/keiland/autologin`）の起動にも同じく効く（autologin は「入った」に数えない） | 数えない |
+
 ## 結果
 
-（設計の第 1 版、2026-10-05。docs を先に書いた。design-reviewer の後に P1〜P6 をユーザーに）
+（設計の第 1 版、2026-10-05。docs を先に書いた。design-reviewer の指摘で第 2 版（§12）、判断 P1〜P10 待ち）

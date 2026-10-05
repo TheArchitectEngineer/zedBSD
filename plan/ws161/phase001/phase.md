@@ -189,7 +189,7 @@ usb-ccid ─ /dev/smartcardN（APDU の交換）──── libpasskey: transpo
 
 ### 9.4 userland: libpasskey（Keiland の側）
 
-- 置き場所: `userland/desktop/libpasskey/`（Keiland の library と同じ並び。Linux・FreeBSD の Keiland でも build する）。依存は OpenSSL の libcrypto だけ
+- 置き場所: `userland/desktop/libpasskey/`（Keiland の library と同じ並び。Linux・FreeBSD の Keiland でも build する）。**2026-10-05 改: WS172 の設計（判断 P1）で base の `userland/base/libpasskey/`。暗号は `crypto.h` の口の後ろ（`crypto-openssl.c` だけが OpenSSL を呼ぶ）。**依存は OpenSSL の libcrypto だけ
   （zedBSD は package の `openssl`、Linux・FreeBSD は OS の物）。ライセンスは Zlib。
 - **層**:
 
@@ -204,7 +204,7 @@ usb-ccid ─ /dev/smartcardN（APDU の交換）──── libpasskey: transpo
 | `verify.c` | **検証だけの純粋な関数**: authData の分解（rpIdHash・flags の UP・UV・AT・ED・signCount・attestedCredentialData の COSE の鍵）、rpId の hash の一致、flags の要求、signCount、ES256（COSE alg -7、P-256）の署名（authData ‖ clientDataHash）の検証。入力は byte 列と保存してある公開鍵（COSE の bytes）だけで、device にも file にも触れない。どの process（compositor の mock、BSD Auth の検証器、Linux の helper）からも呼べる |
 | `passkey.h` | 公開の口: device の列挙・open・close、GetInfo、credential の作成、assertion の取得、PIN の設定・変更・残りの回数、`passkey_verify_assertion`（上の純粋な関数）、wink・cancel |
 
-- **道具**: `passkey`（`userland/desktop/passkey/`）: `list`・`info`・`set-pin`・`change-pin`・`register`（rpId・user を与えて credential を作り、credential ID と公開鍵を
+- **道具**: `fidoctl`（2026-10-05 改名: `/sbin/passkey` は WS172 の認証の program。WS172 の見直しの m12）: `list`・`info`・`set-pin`・`change-pin`・`register`（rpId・user を与えて credential を作り、credential ID と公開鍵を
   出す）・`assert`（challenge を与えて assertion を取る）・`verify`（`assert` の出力と公開鍵で検証）。WS162 の mock の下ごしらえと UAT の道具。
 - 検証の場所に依らない: WS162 の mock（compositor の greeter が直接）でも、BSD Auth の形（sandbox の CTAP の helper が `passkey_get_assertion` だけ、
   小さな検証器が `passkey_verify_assertion` だけ）でも、同じ library を分けて link できる（検証器は `verify.c`・`cbor.c` と libcrypto だけで足りるように file を分ける）。
