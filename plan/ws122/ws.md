@@ -41,3 +41,7 @@ Resume point: p001（要件・設計）。
 ## 2026-10-06 UAT のフィードバック
 
 - mp4 の再生と frame の落ち無しを実機で確認（ユーザー）。BUG-223 F11・Alt+Enter の全画面（direct scanout）
+
+## Phase（2026-10-06 追加: 再設計）
+
+- [ws122-p005](phase005/phase.md) 設計: 動画の全画面と直接の scanout（planned、実装は p005a〜c、compositor の部分は WS099）
