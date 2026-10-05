@@ -11,6 +11,9 @@ the target design; the implementation follows ([rules](../style.md)).
 - [Keiland desktop environment](keiland.md) (target design): purpose, layers,
   the stable libkeiland API, internal Wayland extensions, the
   operating-system backend, touch input and the titlebar.
+- [Power management](power-management.md) (target design): S0 low-power
+  idle, who decides what, the entry and exit sequence, devices, and the
+  `/dev/system` sleep interface.
 - [Security design](security.md) (target design): privilege boundaries,
   account administration through the set-user-ID `account-admin`, and the
   shared account core.

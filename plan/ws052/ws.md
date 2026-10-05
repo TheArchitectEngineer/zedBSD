@@ -62,3 +62,5 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 ## 2026-10-04 予定（Q1）
 
 ユーザー「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。」→ [queue.md](../queue.md) の q679（WS050 p001）・q680（WS051 p001）・q681（WS052 p001）。設計は WS049 の q677（BUG-165、DSDT）と並走、実装は q677・q678（ws049-p007）の後。
+
+- 2026-10-05 ユーザー「/dev/system から S0 idle に入るための UAPIの変更を承認します。docs/に電源管理のドキュメントを作成して、記録しておいてください。あとでレビュー対象にできるようにです。」→ P1 の案（`KERN_SYSTEM_SLEEP_S0IDLE`、`wake` の欄、`KERN_SYSTEM_WAKE_*`）を承認。Q1 が `docs/architecture/power-management.md` に設計と UAPI を書いた（ユーザーの review 待ち）。p006 の実装はこの文書に従う。
