@@ -23,7 +23,9 @@
  * a mouse and for the touch pads apart (ws089-p024): the speed in percent,
  * the acceleration's level (0 none, 1 mild, 2 medium, 3 strong) and the
  * natural scrolling; a mouse 150% and strong without natural scrolling, a
- * touch pad 100% and medium (the curve of ws159-p004) with it.  The one
+ * touch pad 100% and medium (the curve of ws159-p004) with it.  The
+ * language of the interface (WS158) is 0 English or 1 Japanese
+ * (kl_tr_language_code).  The one
  * pointer setting of before (pointer.*) is only read, to be moved to the
  * mouse's (settings.c).
  */
@@ -42,6 +44,7 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "keyboard.repeat.rate", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 5, 60, 25, KL_SETTINGS_KEY_KEPT },
 	{ "keyboard.repeat.delay", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 150, 1000, 400, KL_SETTINGS_KEY_KEPT },
 	{ "ime.method", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 2, 1, KL_SETTINGS_KEY_KEPT },
+	{ "ui.language", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
 	{ "sound.volume", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 100, 100, KL_SETTINGS_KEY_KEPT },
 	{ "sound.muted", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
 	{ "sound.available", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_READ_ONLY },

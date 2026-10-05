@@ -7,8 +7,8 @@ Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG007
 Parent: [Master](../master.md)
-Queue: q738（P2、2026-10-05）
-Resume point: p001 の設計を書いた（判断の 5 点待ち）。F-068（ローカライズの仕組みと複数言語の UI）をこの WS へ昇格。
+Queue: q738（P2、2026-10-05）、p002（P2 g17、Q1 2026-10-05 夜）
+Resume point: p001 cleared（判断 ①〜⑤ は推奨どおり）。p002（libkeiland の kl_tr_*・catalog・`ui.language`・`tools/i18n/tr.py`）を実装、host の試験まで。次は p003（compositor・greeter・lock）。F-068 をこの WS へ昇格。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -22,7 +22,7 @@ Keiland 本体（compositor・system bar・greeter・lock の画面）と Keilan
 ## 関係する既存の項目
 
 - [F-068](../future-work.md)（2026-10-02 user「日本語UIはベータ1に入れません。ローカライズの仕組みをあとで実装して、複数の言語…」）→ この WS へ昇格（Future Work の行を promoted に）。
-- [ws089-p015](../ws089/phase015/phase.md)（Settings の日本語の UI）・[ws127-p005](../ws127/phase005/phase.md)（Files の日本語の UI）→ この WS の仕組みの上で行う（それぞれの Phase は app ごとの文の翻訳の作業として残すか、この WS に吸収するかを p001 で決める）。
+- [ws089-p015](../ws089/phase015/phase.md)（Settings の日本語の UI）・[ws127-p005](../ws127/phase005/phase.md)（Files の日本語の UI）→ この WS の p004・p005 に吸収（2026-10-05 夜のユーザーの判断 ⑤）。元の Phase は canceled（吸収）で、その記録は Q1 が書く。
 - [WS154](../ws154/ws.md)（Settings の Languages の頁）→ 言語の選択はここに置く（IME の選択と同じ頁）。
 
 ## 範囲（p001 で設計して確定）
@@ -41,8 +41,8 @@ Keiland 本体（compositor・system bar・greeter・lock の画面）と Keilan
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws158-p001](phase001/phase.md) | 翻訳の仕組みの設計（catalog の形式・libkeiland の口・言語の選択と切り替え・locale の書式・抽出の道具・試験） | in-progress（設計済み、判断の 5 点待ち） | WS154 の Languages の頁と設計を合わせる |
-| ws158-p002 | libkeiland の i18n の口と catalog の読み込み、抽出の道具 | planning | p001 |
+| [ws158-p001](phase001/phase.md) | 翻訳の仕組みの設計（catalog の形式・libkeiland の口・言語の選択と切り替え・locale の書式・抽出の道具・試験） | cleared（2026-10-05 夜、判断 ①〜⑤ 推奨どおり） | WS154 の Languages の頁と設計を合わせる |
+| [ws158-p002](phase002/phase.md) | libkeiland の i18n の口と catalog の読み込み、抽出の道具 | in-progress（実装・host の試験まで） | p001 |
 | ws158-p003 | compositor・greeter・lock の文を口に通す | planning | p002 |
 | ws158-p004 | 各 app の文を口に通す（app ごとに分けてよい） | planning | p002 |
 | ws158-p005 | 日本語の翻訳と用語集、review（ベータ2 の目標） | planning | p003・p004 |

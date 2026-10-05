@@ -17,6 +17,7 @@ LIBKEILAND_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/lib
 	userland/desktop/libkeiland/keyboard-inset.c userland/desktop/libkeiland/edit.c \
 	userland/desktop/libkeiland/settings.c userland/desktop/libkeiland/settings-cache.c \
 	userland/desktop/libkeiland/settings-app.c userland/desktop/settings-keys/settings-keys.c \
+	userland/desktop/libkeiland/translate.c userland/desktop/libkeiland/translate-follow.c \
 	userland/desktop/libkeiland/system/system.c userland/desktop/libkeiland/system/system-view.c \
 	userland/desktop/libkeiland/system/system-protocol.c userland/desktop/libkeiland/system/system-monitor.c \
 	userland/desktop/libkeiland/system/system-monitor-rate.c
