@@ -183,6 +183,9 @@ struct ja_user {
 
 /* The most predictions offered for a reading (one page of the candidate window), and the longest reading kept with one. */
 #define JA_PREDICT_MAX		9U
+
+/* The most words offered to the on-screen keyboard for a reading (its candidates' tab, ws166-p002). */
+#define JA_PREDICT_KEYBOARD_MAX	12U
 #define JA_PREDICT_READING_MAX	(JA_HEADWORD_MAX * 4U + 1U)
 
 /*
@@ -258,6 +261,9 @@ struct ja_core {
 	bool has_supplement;
 	struct ja_user user;
 	struct ja_lexicon lexicon;
+	struct ja_predict_index indexes[2];
+	size_t index_count;
+	bool indexed;
 	bool learning;
 	bool user_unsaved;
 	int system_error;
@@ -347,5 +353,6 @@ void ja_keys_handle(struct ja_core *core, const struct ime_key *key, struct ime_
 int ja_predict_index(const struct ja_dict *dict, struct ja_predict_index *index);
 void ja_predict_index_free(struct ja_predict_index *index);
 size_t ja_predict(const struct ja_user *user, const struct ja_predict_index *const *indexes, size_t index_count, const char *reading, size_t length, struct ja_prediction *out, size_t max);
+size_t ja_predict_keyboard(const struct ja_user *user, const struct ja_predict_index *const *indexes, size_t index_count, const char *reading, size_t length, struct ja_prediction *out, size_t max);
 
 #endif

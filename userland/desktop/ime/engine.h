@@ -137,7 +137,11 @@ struct ime_output {
  * desktop (SKK's kana, katakana, Latin and wide Latin, WS154) gives the ID
  * and label of the mode it is in (mode), and takes a mode by its ID
  * (select: true when the ID is one of its modes); the others leave both
- * NULL and are one language, id and label.
+ * NULL and are one language, id and label.  An engine that predicts words
+ * for the on-screen keyboard (the Japanese one, ws166-p002) gives the
+ * words a reading of kana starts as "WORD\tREADING" lines in list
+ * (predict: the list's length, 0 for none) and learns the word chosen for
+ * a reading (learn); the others leave both NULL.
  */
 struct ime_engine_ops {
 	const char *id;
@@ -150,6 +154,8 @@ struct ime_engine_ops {
 	void (*destroy)(struct ime_engine *engine);
 	const char *(*mode)(struct ime_engine *engine, const char **label);
 	bool (*select)(struct ime_engine *engine, const char *id);
+	size_t (*predict)(struct ime_engine *engine, const char *reading, char *list, size_t size);
+	void (*learn)(struct ime_engine *engine, const char *reading, const char *word);
 };
 
 /*

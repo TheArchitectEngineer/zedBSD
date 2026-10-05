@@ -1457,6 +1457,7 @@ int zwl_keyboard_touch_motion(struct zwl_server *server, uint32_t id, int32_t x,
 int zwl_keyboard_touch_up(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
 void zwl_keyboard_touch_cancel(struct zwl_server *server, uint32_t id);
 void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
+void zwl_keyboard_predictions(struct zwl_server *server, uint32_t serial, const char *list);
 
 /* The editing operations and the previous application, for the keyboard's tool face (edit.c, ws102-p017). */
 int zwl_edit_action(struct zwl_server *server, unsigned action);

@@ -23,6 +23,7 @@
 #include "ja.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -46,6 +47,8 @@ static void engine_surrounding(struct ime_engine *engine, const char *text, uint
 static void engine_content_type(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
 static void engine_save(struct ime_engine *engine);
 static void engine_destroy(struct ime_engine *engine);
+static size_t engine_predict(struct ime_engine *engine, const char *reading, char *list, size_t size);
+static void engine_learn(struct ime_engine *engine, const char *reading, const char *word);
 
 /*
  * The Japanese engine's functions, as the Wayland side calls them.
@@ -60,7 +63,9 @@ static const struct ime_engine_ops engine_ops = {
 	engine_save,
 	engine_destroy,
 	NULL,
-	NULL
+	NULL,
+	engine_predict,
+	engine_learn
 };
 
 /*
@@ -190,7 +195,9 @@ ja_core_close(
 	if (core->user_unsaved)
 		(void)ja_user_save_later(&core->user);
 
-	/* The dictionaries, then the segments. */
+	/* The predictions' indexes, the dictionaries, then the segments. */
+	ja_predict_index_free(&core->indexes[0]);
+	ja_predict_index_free(&core->indexes[1]);
 	ja_user_free(&core->user);
 	ja_dict_free(&core->supplement);
 	ja_dict_free(&core->system);
@@ -1125,4 +1132,90 @@ engine_destroy(
 	free(core);
 	engine->state = NULL;
 	engine->ops = NULL;
+}
+
+/*
+ * Gives the on-screen keyboard's words for a reading (ws166-p002): the
+ * dictionaries' indexes are made the first time, and the words, the
+ * reading's own first, go into the list as "WORD\tREADING" lines.
+ * Returns the list's length (0 for none; a word that does not fit ends
+ * the list).
+ */
+static size_t
+engine_predict(
+	struct ime_engine *engine,
+	const char *reading,
+	char *list,
+	size_t size)
+{
+	struct ja_prediction predictions[JA_PREDICT_KEYBOARD_MAX];
+	const struct ja_predict_index *indexes[2];
+	struct ja_core *core;
+	size_t count;
+	size_t used;
+	size_t i;
+	int written;
+	int error;
+
+	/* Nothing yet. */
+	core = engine->state;
+	if (size == 0U)
+		return 0;
+	list[0] = '\0';
+
+	/* The dictionaries' indexes, made once (a dictionary whose index cannot be made is left out). */
+	if (!core->indexed) {
+		core->indexed = true;
+		for (i = 0; i < core->lexicon.dict_count && core->index_count < 2U; i++) {
+			error = ja_predict_index(core->lexicon.dicts[i], &core->indexes[core->index_count]);
+			if (error == 0)
+				core->index_count++;
+		}
+	}
+
+	/* The words. */
+	for (i = 0; i < core->index_count; i++)
+		indexes[i] = &core->indexes[i];
+	count = ja_predict_keyboard(core->lexicon.user, indexes, core->index_count, reading, strlen(reading), predictions, JA_PREDICT_KEYBOARD_MAX);
+
+	/* One line each, while they fit. */
+	used = 0;
+	for (i = 0; i < count; i++) {
+		written = snprintf(list + used, size - used, "%s\t%s\n", predictions[i].text, predictions[i].reading);
+		if (written < 0 || (size_t)written >= size - used) {
+			list[used] = '\0';
+			break;
+		}
+
+		/* The line is in. */
+		used += (size_t)written;
+	}
+
+	/* The length. */
+	return used;
+}
+
+/*
+ * Learns the word the on-screen keyboard's user chose for a reading, as a
+ * choice of the conversion is learned (ws166-p002); the file is written
+ * with the others' later.
+ */
+static void
+engine_learn(
+	struct ime_engine *engine,
+	const char *reading,
+	const char *word)
+{
+	struct ja_core *core;
+	int error;
+
+	/* Without a user dictionary nothing is learned. */
+	core = engine->state;
+	if (core->lexicon.user == NULL)
+		return;
+
+	/* The choice first for its reading. */
+	error = ja_user_learn(&core->user, reading, strlen(reading), word);
+	if (error == 0)
+		core->user_unsaved = true;
 }

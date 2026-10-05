@@ -45,6 +45,9 @@
 #define MAIN_METHOD_JA			1
 #define MAIN_METHOD_SKK			2
 
+/* The version of zdesktop's status with the on-screen keyboard's predictions (ws166-p002). */
+#define MAIN_STATUS_VERSION		2U
+
 /*
  * Set by a SIGTERM, SIGHUP or SIGINT: the loop ends at its next turn, so
  * that the languages save what they learned before the program goes.  It
@@ -210,9 +213,8 @@ main_global(
 	uint32_t version)
 {
 	struct program *program;
+	uint32_t wanted;
 	int order;
-
-	UNUSED_PARAMETER(version);
 
 	program = data;
 
@@ -237,10 +239,13 @@ main_global(
 		return;
 	}
 
-	/* zdesktop's status. */
+	/* zdesktop's status: version 2 for the on-screen keyboard's predictions (ws166-p002) when zdesktop has it. */
 	order = strcmp(interface, "keiland_ime_status_manager_v1");
 	if (order == 0) {
-		program->status_manager = wl_registry_bind(registry, name, &keiland_ime_status_manager_v1_interface, 1);
+		wanted = 1U;
+		if (version >= MAIN_STATUS_VERSION)
+			wanted = MAIN_STATUS_VERSION;
+		program->status_manager = wl_registry_bind(registry, name, &keiland_ime_status_manager_v1_interface, wanted);
 		return;
 	}
 

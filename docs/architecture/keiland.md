@@ -63,7 +63,7 @@ extensions, for example:
 | `keiland_desktop_manager_v1` | The desktop surface (the icons of `~/Desktop`) between the wallpaper and the windows |
 | `keiland_edit_manager_v1` | Editing operations (copy, paste, select all) that the system UI can ask a window to perform |
 | `keiland_keyboard_inset_manager_v1` | How much of a window the on-screen keyboard covers, so the window can keep the caret in view |
-| `keiland_ime_status_manager_v1` | The input method's state (language, mode) for the system bar's indicator |
+| `keiland_ime_status_manager_v1` | The input method's state (language, mode) for the system bar's indicator, and the on-screen keyboard's predictions: the compositor asks for the words a reading starts and has the word chosen learned (version 2) |
 | `keiland_theme_v1` | The desktop's appearance, light or dark: told when a client binds it and again whenever the user changes it, so that applications draw in it and redraw when it changes |
 
 **These extensions are not an application interface.** An application never

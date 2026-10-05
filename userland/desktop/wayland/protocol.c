@@ -66,7 +66,7 @@ static const struct zwl_global globals[] = {
 	{ 17, "keiland_glass_manager_v1", 2, ZWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
 	{ 19, "zwp_tablet_manager_v2", 1, ZWL_TABLET_MANAGER },
-	{ 20, "keiland_ime_status_manager_v1", 1, ZWL_IME_STATUS_MANAGER },
+	{ 20, "keiland_ime_status_manager_v1", 2, ZWL_IME_STATUS_MANAGER },
 	{ 21, "keiland_desktop_manager_v1", 1, ZWL_DESKTOP_MANAGER },
 	{ 22, "keiland_keyboard_inset_manager_v1", 1, ZWL_KEYBOARD_INSET_MANAGER },
 	{ 23, "keiland_edit_manager_v1", 1, ZWL_EDIT_MANAGER },

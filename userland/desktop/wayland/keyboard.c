@@ -52,6 +52,20 @@
  * clipboard's history (clipboard.c, the newest first, each on one line); a
  * tap pastes an item into the focused window.
  *
+ * The candidates' tab (ws166-p003) predicts words: the hiragana the flick
+ * panel commits one after another are a reading (keyboard.reading); each
+ * time it changes the input method is asked for the words it starts
+ * (zwl_ime_predict, keiland_ime_status_v1 version 2: the reading's own
+ * words first, then longer ones, the user's choices before the
+ * dictionary's), and the answer fills the tab, which comes up by itself
+ * when a reading begins.  A word tapped replaces the reading before the
+ * cursor (the text input deletes the reading's bytes and commits the
+ * word, as the voice key does) and is learned (zwl_ime_learn).  When the
+ * field tells its text, the reading must be what is before the cursor, or
+ * nothing is replaced.  Any other key or tool, another field, a secret
+ * field (a password, a PIN, hidden or sensitive text) or the panel's
+ * closing ends the reading.
+ *
  * The same swipe again closes the panel it opened; the other corner's
  * swipe changes panels; the panel's close key closes it, and so does a
  * drag of its title band KEYBOARD_SWIPE_CLOSE pixels towards its edge (the
@@ -227,6 +241,23 @@ enum keyboard_tool_kind {
 #define KEYBOARD_FACE_EDIT	0U
 #define KEYBOARD_FACE_HISTORY	1U
 #define KEYBOARD_FACE_EMOJI	2U
+#define KEYBOARD_FACE_CANDIDATES	3U
+
+/*
+ * The candidates' tab (ws166-p003): the longest reading kept (bytes, with
+ * its NUL), the most words shown and the longest word and reading of one,
+ * and the grid the words are laid out in.
+ */
+#define KEYBOARD_READING		96U
+#define KEYBOARD_PREDICTIONS		12U
+#define KEYBOARD_PREDICTION_TEXT	161U
+#define KEYBOARD_CANDIDATE_COLUMNS	3U
+#define KEYBOARD_CANDIDATE_ROWS		4U
+
+/* The text-input-v3 purposes and hints of a secret field, whose readings are not kept. */
+#define KEYBOARD_PURPOSE_PASSWORD	8U
+#define KEYBOARD_PURPOSE_PIN		9U
+#define KEYBOARD_HINT_SECRET		0xc0U
 
 /*
  * The emoji face's grid: its columns and rows (a category's emoji fill
@@ -369,7 +400,12 @@ struct keyboard_move {
  * the face under the tabs (KEYBOARD_FACE_*), history_active and
  * history_row the history's row held.  emoji_category is the emoji face's
  * category shown, emoji_active and emoji_slot its tab or cell held (the
- * tabs first, then the cells, keyboard_emoji_rect).
+ * tabs first, then the cells, keyboard_emoji_rect).  The candidates' tab
+ * (ws166-p003): reading is the hiragana committed since the reading began
+ * (empty for none) into reading_input's field, predict_serial the latest
+ * request to the input method, predictions and prediction_readings its
+ * answer's words and their readings (prediction_count of them), and
+ * candidate_active and candidate_slot the word held.
  */
 
 /*
@@ -460,6 +496,14 @@ struct keyboard_state {
 	unsigned emoji_category;
 	unsigned emoji_active;
 	unsigned emoji_slot;
+	char reading[KEYBOARD_READING];
+	struct zwl_text_input *reading_input;
+	uint32_t predict_serial;
+	char predictions[KEYBOARD_PREDICTIONS][KEYBOARD_PREDICTION_TEXT];
+	char prediction_readings[KEYBOARD_PREDICTIONS][KEYBOARD_PREDICTION_TEXT];
+	unsigned prediction_count;
+	unsigned candidate_active;
+	unsigned candidate_slot;
 };
 
 /*
@@ -518,6 +562,17 @@ static int keyboard_send_commit(struct zwl_server *server, const char *text, uin
 static void keyboard_voice(struct zwl_server *server);
 static void keyboard_case(struct zwl_server *server);
 static void keyboard_remember(const char *text, unsigned sent);
+static void keyboard_reading_sent(struct zwl_server *server, const char *text, unsigned sent);
+static void keyboard_reading_back(struct zwl_server *server);
+static void keyboard_reading_replace(struct zwl_server *server, const char *before, const char *after);
+static void keyboard_reading_end(struct zwl_server *server, const char *why);
+static void keyboard_reading_predict(struct zwl_server *server);
+static int keyboard_hiragana(const char *text);
+static int keyboard_secret(const struct zwl_text_input *input);
+static void keyboard_candidate_rect(struct zwl_server *server, unsigned slot, int32_t *rect);
+static int keyboard_candidate_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *slot);
+static void keyboard_candidate_release(struct zwl_server *server);
+static void keyboard_draw_candidates(struct zwl_server *server, VkCommandBuffer command);
 static void keyboard_close_rect(int32_t *rect);
 static void keyboard_draw_panel(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
 static void keyboard_draw_hint(struct zwl_server *server, VkCommandBuffer command);
@@ -945,7 +1000,9 @@ zwl_keyboard_close(
 	keyboard.tool_active = 0;
 	keyboard.history_active = 0;
 	keyboard.emoji_active = 0;
+	keyboard.candidate_active = 0;
 	keyboard.selecting = 0;
+	keyboard_reading_end(server, "close");
 	keyboard_work_area(server);
 	keyboard.held = 0;
 	keyboard.pressing = 0;
@@ -1503,6 +1560,12 @@ keyboard_panel_button(
 			return 1;
 		}
 
+		/* A word of the candidates' tab replaces the reading. */
+		if (keyboard.candidate_active) {
+			keyboard_candidate_release(server);
+			return 1;
+		}
+
 		/* A key of the handwriting face acts. */
 		if (keyboard.hand_key_active) {
 			keyboard_hand_key_release(server);
@@ -1582,6 +1645,17 @@ keyboard_panel_button(
 		if (found) {
 			keyboard.emoji_active = 1;
 			keyboard.emoji_slot = row;
+			server->dirty = 1;
+			return 1;
+		}
+
+		/* A word of the candidates' tab, when it shows. */
+		found = 0;
+		if (keyboard.tools_face == KEYBOARD_FACE_CANDIDATES)
+			found = keyboard_candidate_at(server, server->pointer_x, server->pointer_y, &row);
+		if (found) {
+			keyboard.candidate_active = 1;
+			keyboard.candidate_slot = row;
 			server->dirty = 1;
 			return 1;
 		}
@@ -1737,6 +1811,8 @@ keyboard_draw_panel(
 			keyboard_draw_history(server, command);
 		if (keyboard.tools_face == KEYBOARD_FACE_EMOJI)
 			keyboard_draw_emoji(server, command);
+		if (keyboard.tools_face == KEYBOARD_FACE_CANDIDATES)
+			keyboard_draw_candidates(server, command);
 		keyboard_draw_keys(server, command);
 		keyboard_draw_petals(server, command);
 	}
@@ -1957,10 +2033,12 @@ keyboard_key_release(
 		printf("ZWL OSK face name=%s\n", zwl_flick_face_name(keyboard.face));
 		break;
 	case ZWL_FLICK_BACKSPACE:
-		/* The delete key; the last character is gone. */
+		/* The delete key; the last character is gone, from the reading too. */
 		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
-		if (sent)
-			keyboard_remember("", KEYBOARD_SENT_NONE);
+		if (!sent)
+			break;
+		keyboard_remember("", KEYBOARD_SENT_NONE);
+		keyboard_reading_back(server);
 		break;
 	case ZWL_FLICK_VOICE:
 		keyboard_voice(server);
@@ -2147,6 +2225,7 @@ keyboard_send(
 		sent = keyboard_send_key(server, code, shift);
 		if (sent)
 			keyboard_remember(text, KEYBOARD_SENT_KEY);
+		keyboard_reading_sent(server, text, KEYBOARD_SENT_KEY);
 		return;
 	}
 
@@ -2154,6 +2233,15 @@ keyboard_send(
 	sent = keyboard_send_commit(server, text, 0);
 	if (sent)
 		keyboard_remember(text, KEYBOARD_SENT_COMMIT);
+
+	/* The reading grows by a hiragana committed, and ends at anything else. */
+	if (sent) {
+		keyboard_reading_sent(server, text, KEYBOARD_SENT_COMMIT);
+		return;
+	}
+
+	/* A character the field did not take ends it too. */
+	keyboard_reading_end(server, "refused");
 }
 
 /*
@@ -2263,10 +2351,12 @@ keyboard_voice(
 		return;
 	}
 
-	/* The kana before the cursor replaced by it. */
+	/* The kana before the cursor replaced by it, in the reading too. */
 	sent = keyboard_send_commit(server, next, (uint32_t)strlen(keyboard.last));
-	if (sent)
+	if (sent) {
+		keyboard_reading_replace(server, keyboard.last, next);
 		keyboard_remember(next, KEYBOARD_SENT_COMMIT);
+	}
 }
 
 /* Replaces the last letter sent (as a key) by its other case: the delete key, then the letter's key. */
@@ -3477,8 +3567,8 @@ keyboard_tool_at(
 }
 
 /*
- * Tells whether a tool can do something now: the candidates' tab (to come)
- * cannot; an edit operation only when the focused window can do it
+ * Tells whether a tool can do something now: a tab always; an edit
+ * operation only when the focused window can do it
  * (enabled, the bits zwl_edit_state gave; state is its answer, -1 without
  * a focused window).
  */
@@ -3491,11 +3581,10 @@ keyboard_tool_enabled(
 {
 	unsigned action;
 
-	/* The candidates' tab (a later phase) cannot yet; the history's and the emoji's can. */
+	/* The tabs can always be chosen. */
 	(void)server;
 	switch (keyboard_tools[index].kind) {
 	case TOOL_TAB_CANDIDATES:
-		return 0;
 	case TOOL_TAB_HISTORY:
 	case TOOL_TAB_EMOJI:
 		return 1;
@@ -3543,12 +3632,17 @@ keyboard_tool_release(
 {
 	const struct keyboard_tool *tool;
 	int error;
+	int sent;
 
 	/* The tool. */
 	keyboard.tool_active = 0;
 	server->dirty = 1;
 	tool = &keyboard_tools[keyboard.tool];
 	printf("ZWL OSK tool label=%s\n", tool->label);
+
+	/* A tool that is not a tab or delete ends the reading (the cursor or the text may move). */
+	if (tool->row != 1U && tool->kind != TOOL_DELETE)
+		keyboard_reading_end(server, "tool");
 
 	/* What it does. */
 	switch (tool->kind) {
@@ -3557,7 +3651,9 @@ keyboard_tool_release(
 		printf("ZWL OSK tool previous error=%d\n", error);
 		break;
 	case TOOL_DELETE:
-		(void)keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		if (sent)
+			keyboard_reading_back(server);
 		break;
 	case TOOL_LEFT:
 		keyboard_tool_move(server, ZWL_KEY_LEFT);
@@ -3622,8 +3718,12 @@ keyboard_tool_release(
 		printf("ZWL OSK tool face=emoji category=%u\n", keyboard.emoji_category);
 		keyboard_emoji_log(server);
 		break;
+	case TOOL_TAB_CANDIDATES:
+		/* The candidates' face (ws166-p003). */
+		keyboard.tools_face = KEYBOARD_FACE_CANDIDATES;
+		printf("ZWL OSK tool face=candidates count=%u\n", keyboard.prediction_count);
+		break;
 	default:
-		/* The candidates' tab (a later phase) does nothing yet. */
 		break;
 	}
 }
@@ -3704,6 +3804,8 @@ keyboard_draw_tools(
 		if (tool->kind == TOOL_TAB_HISTORY && keyboard.tools_face == KEYBOARD_FACE_HISTORY)
 			ground = pale;
 		if (tool->kind == TOOL_TAB_EMOJI && keyboard.tools_face == KEYBOARD_FACE_EMOJI)
+			ground = pale;
+		if (tool->kind == TOOL_TAB_CANDIDATES && keyboard.tools_face == KEYBOARD_FACE_CANDIDATES)
 			ground = pale;
 		if (tool->kind == TOOL_SELECT && keyboard.selecting)
 			ground = pale;
@@ -3788,9 +3890,10 @@ keyboard_history_release(
 {
 	int error;
 
-	/* The item, pasted, and the log line the tests read. */
+	/* The item, pasted, and the log line the tests read; a reading ends. */
 	keyboard.history_active = 0;
 	server->dirty = 1;
+	keyboard_reading_end(server, "paste");
 	error = zwl_clipboard_history_paste(server, keyboard.history_row);
 	printf("ZWL OSK history paste index=%u error=%d\n", keyboard.history_row, error);
 }
@@ -3968,9 +4071,10 @@ keyboard_emoji_release(
 	if (text == NULL)
 		return;
 
-	/* Committed whole (no deletion before it), and the log line the tests read. */
+	/* Committed whole (no deletion before it), and the log line the tests read; a reading ends. */
 	sent = keyboard_send_commit(server, text, 0U);
 	printf("ZWL OSK emoji commit sent=%d text=%s\n", sent, text);
+	keyboard_reading_end(server, "emoji");
 
 	/*
 	 * The voice key replaces the last kana sent by deleting its bytes; after
@@ -4118,3 +4222,447 @@ keyboard_source_name(
 	/* The pointer. */
 	return "pointer";
 }
+
+/*
+ * Takes the predictions the input method gave for a reading
+ * (keiland_ime_status_v1.predictions, ws166-p003): the words of the
+ * latest request fill the candidates' tab, "WORD\tREADING" a line; an
+ * answer to an older request is dropped.
+ */
+void
+zwl_keyboard_predictions(
+	struct zwl_server *server,
+	uint32_t serial,
+	const char *list)
+{
+	const char *line;
+	const char *tab;
+	const char *end;
+	const char *first;
+	int32_t rect[4];
+	unsigned index;
+	size_t word;
+	size_t reading;
+
+	/* Only the answer to the latest reading. */
+	if (serial != keyboard.predict_serial || keyboard.reading[0] == '\0') {
+		printf("ZWL OSK predictions stale serial=%u\n", serial);
+		return;
+	}
+
+	/* Each line that fits, while there is room. */
+	keyboard.prediction_count = 0;
+	line = list;
+	while (*line != '\0' && keyboard.prediction_count < KEYBOARD_PREDICTIONS) {
+		/* The line's end and its tab. */
+		end = strchr(line, '\n');
+		if (end == NULL)
+			end = line + strlen(line);
+		tab = memchr(line, '\t', (size_t)(end - line));
+
+		/* A line with a word, a tab and a reading that fit is kept. */
+		if (tab != NULL) {
+			word = (size_t)(tab - line);
+			reading = (size_t)(end - tab - 1);
+			if (word > 0U && word < KEYBOARD_PREDICTION_TEXT && reading < KEYBOARD_PREDICTION_TEXT) {
+				memcpy(keyboard.predictions[keyboard.prediction_count], line, word);
+				keyboard.predictions[keyboard.prediction_count][word] = '\0';
+				memcpy(keyboard.prediction_readings[keyboard.prediction_count], tab + 1, reading);
+				keyboard.prediction_readings[keyboard.prediction_count][reading] = '\0';
+				keyboard.prediction_count++;
+			}
+		}
+
+		/* The next line. */
+		if (*end == '\0')
+			break;
+		line = end + 1;
+	}
+
+	/* Shown, and the log line the tests read. */
+	keyboard.candidate_active = 0;
+	server->dirty = 1;
+	first = "-";
+	if (keyboard.prediction_count != 0U)
+		first = keyboard.predictions[0];
+	printf("ZWL OSK predictions serial=%u reading=%s count=%u first=%s\n", serial, keyboard.reading, keyboard.prediction_count, first);
+
+	/* The words' places, for the tests to tap them. */
+	for (index = 0; index < keyboard.prediction_count && index < KEYBOARD_CANDIDATE_COLUMNS * KEYBOARD_CANDIDATE_ROWS; index++) {
+		keyboard_candidate_rect(server, index, rect);
+		printf("ZWL OSK crect slot=%u x=%d y=%d width=%d height=%d\n", index, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+	}
+}
+
+/*
+ * Follows the reading after a character was sent (ws166-p003): a hiragana
+ * committed into the field the reading is in, or begins one in, grows it;
+ * anything else ends it.
+ */
+static void
+keyboard_reading_sent(
+	struct zwl_server *server,
+	const char *text,
+	unsigned sent)
+{
+	struct zwl_text_input *input;
+	size_t length;
+	size_t added;
+	int kana;
+	int secret;
+
+	/* A key, or a character that is not hiragana, ends the reading. */
+	kana = keyboard_hiragana(text);
+	if (sent != KEYBOARD_SENT_COMMIT || !kana) {
+		keyboard_reading_end(server, "other");
+		return;
+	}
+
+	/* A secret field keeps no reading. */
+	input = zwl_text_input_current(server);
+	secret = keyboard_secret(input);
+	if (input == NULL || secret) {
+		keyboard_reading_end(server, "secret");
+		return;
+	}
+
+	/* Another field begins a new reading. */
+	if (input != keyboard.reading_input) {
+		keyboard_reading_end(server, "field");
+		keyboard.reading_input = input;
+	}
+
+	/* The hiragana added, when it fits (a reading too long ends). */
+	length = strlen(keyboard.reading);
+	added = strlen(text);
+	if (length + added >= sizeof(keyboard.reading)) {
+		keyboard_reading_end(server, "long");
+		return;
+	}
+
+	/* Added. */
+	memcpy(keyboard.reading + length, text, added + 1U);
+
+	/* A reading that begins brings the candidates' tab up; the words are asked for. */
+	if (length == 0U)
+		keyboard.tools_face = KEYBOARD_FACE_CANDIDATES;
+	keyboard_reading_predict(server);
+}
+
+/* Takes the last character off the reading (the delete key), asking again for what is left. */
+static void
+keyboard_reading_back(
+	struct zwl_server *server)
+{
+	size_t length;
+
+	/* No reading. */
+	length = strlen(keyboard.reading);
+	if (length == 0U)
+		return;
+
+	/* Back over the last character's continuation bytes, then its first. */
+	while (length > 0U && ((unsigned char)keyboard.reading[length - 1U] & 0xc0U) == 0x80U)
+		length--;
+	if (length > 0U)
+		length--;
+	keyboard.reading[length] = '\0';
+
+	/* The words for what is left (none for nothing). */
+	if (length == 0U) {
+		keyboard_reading_end(server, "empty");
+		return;
+	}
+
+	/* What is left is asked for. */
+	keyboard_reading_predict(server);
+}
+
+/* Replaces the reading's last character (the voice key's change), asking again. */
+static void
+keyboard_reading_replace(
+	struct zwl_server *server,
+	const char *before,
+	const char *after)
+{
+	size_t length;
+	size_t old;
+	size_t added;
+	int differs;
+
+	/* Only a reading that ends with the character changed. */
+	length = strlen(keyboard.reading);
+	old = strlen(before);
+	added = strlen(after);
+	if (length < old) {
+		keyboard_reading_end(server, "voice");
+		return;
+	}
+
+	/* The end is the character changed, and the new one fits. */
+	differs = memcmp(keyboard.reading + length - old, before, old);
+	if (differs != 0 || length - old + added >= sizeof(keyboard.reading)) {
+		keyboard_reading_end(server, "voice");
+		return;
+	}
+
+	/* The character replaced, and the words asked for again. */
+	memcpy(keyboard.reading + length - old, after, added + 1U);
+	keyboard_reading_predict(server);
+}
+
+/* Ends the reading: no reading, no words (the request in flight is dropped when it answers). */
+static void
+keyboard_reading_end(
+	struct zwl_server *server,
+	const char *why)
+{
+	/* Nothing to end. */
+	if (keyboard.reading[0] == '\0' && keyboard.prediction_count == 0U)
+		return;
+
+	/* The reading and its words go. */
+	printf("ZWL OSK reading end reason=%s reading=%s\n", why, keyboard.reading);
+	keyboard.reading[0] = '\0';
+	keyboard.reading_input = NULL;
+	keyboard.prediction_count = 0;
+	keyboard.candidate_active = 0;
+	keyboard.predict_serial++;
+	server->dirty = 1;
+}
+
+/* Asks the input method for the reading's words; the old words stay until they come. */
+static void
+keyboard_reading_predict(
+	struct zwl_server *server)
+{
+	int error;
+
+	/* A new request: an answer to an older one is dropped. */
+	keyboard.predict_serial++;
+	error = zwl_ime_predict(server, keyboard.predict_serial, keyboard.reading);
+	printf("ZWL OSK reading=%s serial=%u error=%d\n", keyboard.reading, keyboard.predict_serial, error);
+
+	/* Without an input method that predicts there are no words. */
+	if (error != 0)
+		keyboard.prediction_count = 0;
+	server->dirty = 1;
+}
+
+/* Tells whether a text is hiragana alone (with the long vowel mark), the characters a reading has. */
+static int
+keyboard_hiragana(
+	const char *text)
+{
+	const unsigned char *byte;
+	uint32_t code;
+
+	/* Nothing is not a reading. */
+	byte = (const unsigned char *)text;
+	if (*byte == 0U)
+		return 0;
+
+	/* Each character: three bytes of UTF-8 in U+3041 to U+3096, or U+30FC. */
+	while (*byte != 0U) {
+		if ((byte[0] & 0xf0U) != 0xe0U || (byte[1] & 0xc0U) != 0x80U || (byte[2] & 0xc0U) != 0x80U)
+			return 0;
+		code = ((uint32_t)(byte[0] & 0x0fU) << 12) | ((uint32_t)(byte[1] & 0x3fU) << 6) | (uint32_t)(byte[2] & 0x3fU);
+		if ((code < 0x3041U || code > 0x3096U) && code != 0x30fcU)
+			return 0;
+		byte += 3;
+	}
+
+	/* Succeeded: hiragana. */
+	return 1;
+}
+
+/* Tells whether a field holds a secret: a password, a PIN, hidden or sensitive text. */
+static int
+keyboard_secret(
+	const struct zwl_text_input *input)
+{
+	/* No field, no secret. */
+	if (input == NULL)
+		return 0;
+
+	/* The purpose or the hints say so. */
+	if (input->purpose == KEYBOARD_PURPOSE_PASSWORD || input->purpose == KEYBOARD_PURPOSE_PIN)
+		return 1;
+	if ((input->hint & KEYBOARD_HINT_SECRET) != 0U)
+		return 1;
+
+	/* Not a secret. */
+	return 0;
+}
+
+/*
+ * Works out a cell of the candidates' face, which shares the flick
+ * panel's column between the tabs and the keys with the history: the
+ * words in a grid, row by row.
+ */
+static void
+keyboard_candidate_rect(
+	struct zwl_server *server,
+	unsigned slot,
+	int32_t *rect)
+{
+	int32_t top;
+	int32_t bottom;
+	int32_t width;
+	int32_t cell_width;
+	int32_t cell_height;
+	int key;
+
+	/* From under the tools' tabs to over the keys, as the history's rows. */
+	key = keyboard_key_size(server);
+	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
+	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)ZWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	width = keyboard.panel[2] - 2 * KEYBOARD_KEY_GAP;
+
+	/* The cell's column and row. */
+	cell_width = (width - (int32_t)(KEYBOARD_CANDIDATE_COLUMNS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_CANDIDATE_COLUMNS;
+	cell_height = (bottom - top - (int32_t)(KEYBOARD_CANDIDATE_ROWS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_CANDIDATE_ROWS;
+	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)(slot % KEYBOARD_CANDIDATE_COLUMNS) * (cell_width + KEYBOARD_KEY_GAP);
+	rect[1] = top + (int32_t)(slot / KEYBOARD_CANDIDATE_COLUMNS) * (cell_height + KEYBOARD_KEY_GAP);
+	rect[2] = cell_width;
+	rect[3] = cell_height;
+}
+
+/* Finds the word of the candidates' face at a point.  Returns 1 with its slot, or 0. */
+static int
+keyboard_candidate_at(
+	struct zwl_server *server,
+	int32_t x,
+	int32_t y,
+	unsigned *slot)
+{
+	int32_t rect[4];
+	unsigned index;
+	int inside;
+
+	/* Each word shown. */
+	for (index = 0; index < keyboard.prediction_count && index < KEYBOARD_CANDIDATE_COLUMNS * KEYBOARD_CANDIDATE_ROWS; index++) {
+		/* The point on this word. */
+		keyboard_candidate_rect(server, index, rect);
+		inside = keyboard_contains(rect, x, y);
+		if (!inside)
+			continue;
+
+		/* Succeeded: the word. */
+		*slot = index;
+		return 1;
+	}
+
+	/* No word there. */
+	return 0;
+}
+
+/*
+ * Replaces the reading before the cursor by the word held, and has the
+ * input method learn it (ws166-p003).  The field must still be the
+ * reading's, and when it tells its text, the reading must be what is
+ * before the cursor; otherwise nothing is replaced and the reading ends.
+ */
+static void
+keyboard_candidate_release(
+	struct zwl_server *server)
+{
+	struct zwl_text_input *input;
+	char word[KEYBOARD_PREDICTION_TEXT];
+	char reading[KEYBOARD_PREDICTION_TEXT];
+	size_t length;
+	size_t text_length;
+	int differs;
+	int sent;
+
+	/* The word is let go. */
+	keyboard.candidate_active = 0;
+	server->dirty = 1;
+	if (keyboard.candidate_slot >= keyboard.prediction_count || keyboard.reading[0] == '\0')
+		return;
+
+	/* The field the reading was typed into. */
+	input = zwl_text_input_current(server);
+	if (input == NULL || input != keyboard.reading_input) {
+		printf("ZWL OSK candidate refused reason=field\n");
+		keyboard_reading_end(server, "field");
+		return;
+	}
+
+	/* When the field tells its text, the reading is what is before the cursor. */
+	length = strlen(keyboard.reading);
+	if (input->text != NULL && input->cursor >= 0) {
+		differs = 1;
+		text_length = strlen(input->text);
+		if ((size_t)input->cursor >= length && (size_t)input->cursor <= text_length)
+			differs = memcmp(input->text + (size_t)input->cursor - length, keyboard.reading, length);
+		if (differs != 0) {
+			printf("ZWL OSK candidate refused reason=surrounding\n");
+			keyboard_reading_end(server, "surrounding");
+			return;
+		}
+	}
+
+	/* The word and its reading, kept before the reading ends. */
+	(void)snprintf(word, sizeof(word), "%s", keyboard.predictions[keyboard.candidate_slot]);
+	(void)snprintf(reading, sizeof(reading), "%s", keyboard.prediction_readings[keyboard.candidate_slot]);
+
+	/* The reading's bytes deleted and the word committed together. */
+	sent = keyboard_send_commit(server, word, (uint32_t)length);
+	printf("ZWL OSK candidate commit sent=%d slot=%u word=%s reading=%s\n", sent, keyboard.candidate_slot, word, reading);
+	keyboard_reading_end(server, "chosen");
+	if (!sent)
+		return;
+
+	/* Learned, and nothing for the voice key to change. */
+	zwl_ime_learn(server, reading, word);
+	keyboard_remember("", KEYBOARD_SENT_NONE);
+}
+
+/*
+ * Draws the candidates' face under the tabs: the words in a grid, the
+ * held one blue; a note when there is no reading or no word.
+ */
+static void
+keyboard_draw_candidates(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
+	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	const float *ground;
+	const float *ink;
+	const char *note;
+	int32_t rect[4];
+	unsigned index;
+
+	/* No word: a note in the first cell's row. */
+	if (keyboard.prediction_count == 0U) {
+		keyboard_candidate_rect(server, 0U, rect);
+		note = "かなを入力すると候補が出ます";
+		if (keyboard.reading[0] != '\0')
+			note = "候補はありません";
+		glass_draw_text(server, command, SIZE_BAR, rect[0] + 8, rect[1] + rect[3] / 2 + 5, note, keyboard.panel[2] - 4 * KEYBOARD_KEY_GAP, soft);
+		return;
+	}
+
+	/* Each word, the held one blue. */
+	for (index = 0; index < keyboard.prediction_count && index < KEYBOARD_CANDIDATE_COLUMNS * KEYBOARD_CANDIDATE_ROWS; index++) {
+		/* The cell's colours. */
+		keyboard_candidate_rect(server, index, rect);
+		ground = white;
+		ink = dark;
+		if (keyboard.candidate_active && keyboard.candidate_slot == index) {
+			ground = blue;
+			ink = light;
+		}
+
+		/* Its ground and its word, cut in the middle to the cell. */
+		glass_draw_solid(server, command, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3], 6.0f, ground);
+		glass_draw_text_middle(server, command, SIZE_TITLE, rect[0] + 6, rect[1] + rect[3] / 2 + 5, keyboard.predictions[index], rect[2] - 12, ink);
+	}
+}
+

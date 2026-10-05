@@ -2,7 +2,7 @@
 
 # ws166-p001: 予測変換の要件と設計
 
-Status: in-progress（2026-10-05、P2。設計を書いた。ユーザーの判断の 4 点待ち）
+Status: cleared（2026-10-05、改訂の設計を Q1 が承認。q768）
 Disposition: normal
 Parent: [WS166](../ws.md)
 Queue: q737（Q1、2026-10-05）
@@ -48,3 +48,12 @@ Queue: q737（Q1、2026-10-05）
 2. 既定は on で良いか（Languages の頁で切れる）。
 3. 確定の後に「次の語」を出す予測（前の語から次を出す、bigram の履歴）を入れるか。案は今回は入れない（前方一致だけ）。
 4. SKK の engine にも予測（ddskk の補完に近い）を入れるか。案は今回は日本語の engine だけ（SKK は WS154 の補完の判断と合わせる）。
+
+## 改訂（2026-10-05 夕、q768、P2）
+
+ユーザー（Q1 経由）「予測変換はインラインの通常IMEではなく、オンスクリーンキーボードのことでした。」→ 上の要件・D4・D6・D7 と判断の 1〜4 は画面キーボードの設計に置き換える。インラインの予測は Future Work の F-078（既定 off の `ime.predict`、Q1）。
+
+- **経路**: 辞書と利用者の辞書は IME の process（keiland-ime）が持つ。compositor には辞書を載せない。内部の protocol `keiland_ime_status_v1` を version 2 にする: event `predict(serial, reading)`（compositor → IME）、request `predictions(serial, list)`（「語 TAB 読み」の行、最大 12）、event `learn(reading, word)`。両端とも tree の中の private な protocol。
+- **IME**: engine の ops に `predict`・`learn`。日本語の engine だけが実装（索引は最初の予測の時に作る）。SKK・「なし」の method では空。並べ方は画面キーボード用に、読みと同じ語を先に（`ja_predict_keyboard`: 利用者 → 辞書、次に長い読み）。
+- **画面キーボード**: flick で commit したひらがなを読みとして持つ（濁点キー・削除も反映）。仮名以外の key、tab 以外の tool・履歴・絵文字、別の欄、秘密の欄（password・PIN・hidden・sensitive）、panel を閉じると読みを捨てる。読みが変わるたびに予測を頼み、「候補」タブに 3×4 で出す（読みが始まると自動でそのタブ）。tap で読みの bytes を消して語を commit（voice key と同じ delete_surrounding）し、学習させる。欄が surrounding text を送っていれば cursor の前が読みで終わることを確かめ、違えば置き換えず読みを捨てる。
+- Phase の組み直し（Q1 承認）: p002 IME 側、p003 画面キーボード、p004 T1 と規約。
