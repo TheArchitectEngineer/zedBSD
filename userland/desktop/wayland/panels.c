@@ -439,6 +439,8 @@ panels_shadow(
 /*
  * Draws one panel's glass.  The glass is flat: no sheen from the top, which
  * would make a tall card's lower part look darker than the title bars'.
+ * With the panels opaque (window.opacity chosen at 100, BUG-171) the glass
+ * is fully its colour, so nothing of the desktop shows through it.
  */
 static void
 panels_glass(
@@ -472,6 +474,8 @@ panels_glass(
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
 	shape.color[3] = GLASS_WHITE;
+	if (server->panels_opaque != 0U)
+		shape.color[3] = 1.0f;
 	shape.edge = GLASS_RIM;
 	shape.opacity = opacity;
 	shape.light = light;

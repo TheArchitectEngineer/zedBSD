@@ -1,95 +1,66 @@
 #!/bin/sh
 # ws173-p003: the host self-test of plan/tools/aat/aat.  --local runs every command on this host, with
-# fake-inject.py for the target's injector (the same FIFO and done-file protocol, README.md) and fake-shot.py for
-# keiland-shot, so the command line, the protocol's lines, the logs' marks and waits, the windows from ZWL lines and
-# the transfers are checked without a target.  The SSH transport is the same code with ssh in front (checked against
-# QEMU by T1, README.md).  Last line: "aat-host: PASS" or "aat-host: FAIL".
+# fake-aat-input.py for P1's aat-input (the same command line and answers) and fake-shot.py for keiland-shot, so the
+# command line, the commands sent, the logs' marks and waits, the windows from ZWL lines and the transfers are checked
+# without a target.  The SSH transport is the same code with ssh in front (checked against QEMU by T1, README.md).
+# Last line: "aat-host: PASS" or "aat-host: FAIL".
 #   sh plan/tools/aat/tests/run-host.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../../.."
 here=plan/tools/aat/tests
 tmp=$(mktemp -d)
-trap 'python3 plan/tools/aat/aat --local stop >/dev/null 2>&1; rm -rf "$tmp"' EXIT
-export AAT_RUN_DIR="$tmp/run" AAT_STATE="$tmp/state" AAT_LOG="$tmp/session.log"
-export AAT_INJECT="python3 $PWD/$here/fake-inject.py" AAT_SHOT="python3 $PWD/$here/fake-shot.py {path}"
+trap 'rm -rf "$tmp"' EXIT
+export AAT_RUN_DIR="$tmp/run" AAT_STATE="$tmp/state" AAT_LOG="$tmp/session.log" FAKE_AAT_DIR="$tmp"
+export AAT_INPUT="python3 $PWD/$here/fake-aat-input.py" AAT_SHOT="python3 $PWD/$here/fake-shot.py {path}"
 aat() { timeout 60 python3 plan/tools/aat/aat --local "$@"; }
 status=0
 ok() { echo "ok: $1"; }
 bad() { echo "FAIL: $1"; status=1; }
-record="$tmp/run/inject.done.record"
+record="$tmp/record"
 expect_record() {
-	# The lines the injector took since the last check, against what was expected.
+	# The commands aat-input took since the last check, against what was expected.
 	got=$(cat "$record" 2>/dev/null)
-	: > "$record" 2>/dev/null
+	: > "$record"
 	if [ "$got" = "$2" ]; then ok "$1"; else bad "$1: got [$got] want [$2]"; fi
 }
 
-# The injector, with the screen's size from a shot.
+# The input, with the screen's size from a shot.  The fake server stays in the background on the descriptors it was
+# started with, as the real one does: start returns at once all the same (T1-200).
+began=$(date +%s)
 aat start | grep -q 'screen 64x48' && ok start || bad start
+[ $(( $(date +%s) - began )) -lt 20 ] && ok "start returns with the server in the background" || bad "start waited for the server"
 : > "$record"
 
-# A click: the point, the press and the release.
-aat click 10 20 && expect_record click "abs 10 20
-wait 30
-button 272 1
-wait 60
-button 272 0"
+aat click 10 20 && expect_record click "click left 10 20"
+aat click 1 2 --button right --count 2 && expect_record double "double-click right 1 2"
+aat click 1 2 --count 3 && expect_record triple "click left 1 2
+click left 1 2
+click left 1 2"
+aat drag 0 0 10 20 --steps 2 && expect_record drag "drag 0 0 10 20 2"
+aat wheel 3 4 -2 1 && expect_record wheel "move-to 3 4
+wheel -2
+hwheel 1"
+aat move 5 6 && expect_record move "move-to 5 6"
+aat rel -5 7 && expect_record rel "move -5 7"
+aat down --button middle && aat up --button middle && expect_record buttons "down middle
+up middle"
+aat click 7 8 --with alt && expect_record "click with alt" "key-down alt
+click left 7 8
+key-up alt"
+aat key ctrl+alt+t Enter && expect_record chord "key ctrl+alt+t
+key enter"
+aat type 'Hi there!
+ok' && expect_record type "type Hi there!
+key enter
+type ok"
 
-# A double right click.
-aat click 1 2 --button right --count 2 && expect_record double "abs 1 2
-wait 30
-button 273 1
-wait 60
-button 273 0
-wait 120
-button 273 1
-wait 60
-button 273 0"
-
-# A drag in two steps.
-aat drag 0 0 10 20 --steps 2 --ms 5 && expect_record drag "abs 0 0
-wait 50
-button 272 1
-wait 80
-abs 5 10
-wait 5
-abs 10 20
-wait 5
-wait 80
-button 272 0"
-
-# The wheel, a relative move, a chord, typing.
-aat wheel 3 4 2 && expect_record wheel "abs 3 4
-wait 30
-wheel 2 0"
-aat rel -5 7 && expect_record rel "rel -5 7"
-aat key ctrl+alt+t && expect_record chord "key 29 1
-key 56 1
-key 20 1
-key 20 0
-key 56 0
-key 29 0
-wait 40"
-aat type 'Hi!' && expect_record type "key 42 1
-key 35 1
-key 35 0
-key 42 0
-key 23 1
-key 23 0
-key 42 1
-key 2 1
-key 2 0
-key 42 0"
-
-# Refusals here: off the screen, an unknown key, a character a US layout lacks.
+# Refusals here: off the screen, a button not known, a character a US layout lacks.
 aat click 64 10 2>/dev/null && bad "off-screen accepted" || ok "off-screen refused"
-aat key ctrl+nosuchkey 2>/dev/null && bad "unknown key accepted" || ok "unknown key refused"
+aat down --button fourth 2>/dev/null && bad "unknown button accepted" || ok "unknown button refused"
 aat type 'é' 2>/dev/null && bad "non-ASCII accepted" || ok "non-ASCII refused"
-: > "$record"
-
-# The injector's own refusal comes back as a failure (the fake, like the real one, refuses a wait over 10 s).
-aat drag 0 0 1 1 --steps 1 --ms 20000 2>"$tmp/refused" && bad "injector refusal" || { grep -q 'refused a command' "$tmp/refused" && ok "injector refusal reported" || bad "injector refusal message"; }
+# aat-input's own refusal (a key it does not know) comes back as a failure with its answer.
+aat key ctrl+nosuchkey 2>"$tmp/refused" && bad "aat-input refusal" || { grep -q 'error bad key' "$tmp/refused" && ok "aat-input refusal reported" || bad "aat-input refusal message"; }
 : > "$record"
 
 # The log: a mark, a line written after it is waited for and found; one before it is not.
@@ -101,9 +72,25 @@ aat lines 'old line' --since before >/dev/null && bad "lines before the mark" ||
 aat lines 'old line' >/dev/null && ok "lines from the start" || bad "lines from the start"
 aat wait-log 'never' --timeout 1 2>/dev/null && bad "wait-log timeout" || ok "wait-log timeout"
 aat where 9 | grep -qx '120 60 640 480' && ok where || bad where
-aat windows | grep -q '^9 3 True 120 60 640 480$' && ok windows || bad windows
+aat windows | grep -q "^9 3 True 120 60 640 480 0$" && ok windows || bad windows
 printf 'ZWL UNMAP client=3 surface=9\n' >> "$AAT_LOG"
 aat windows | grep -q '^9 3 False ' && ok unmap || bad unmap
+# Where a window goes: launched, moved, docked, undocked; the press's point is not the window's place.
+cat >> "$AAT_LOG" <<'EOF2'
+ZWL MAP client=4 surface=12 x=0 y=0
+ZWL GLASS launch surface=12 from=10,10 to=300,200 size=800x600
+ZWL GLASS press move surface=12 x=700 y=170
+ZWL GLASS moved surface=12 x=340 y=260
+EOF2
+aat where 12 | grep -qx '340 260 800 600' && ok "launch and move" || bad "launch and move: $(aat where 12)"
+printf 'ZWL GLASS dock surface=12 via=double-click buttons=1,2,3 title=60 x=0 y=48 w=1280 h=752\n' >> "$AAT_LOG"
+aat windows | grep -q '^12 4 True 0 48 1280 752 1$' && ok dock || bad dock
+printf 'ZWL GLASS undock surface=12 via=drag x=200 y=150\nZWL GLASS resized surface=12 docked=0 width=800 height=600 after_ms=1 acked_ms=1 committed_ms=1 sent_at_ms=1\n' >> "$AAT_LOG"
+aat windows | grep -q '^12 4 True 200 150 800 600 0$' && ok undock || bad undock
+# Two clients with the same surface number: a line naming only the surface is the later window's.
+printf 'ZWL MAP client=7 surface=12 x=50 y=60\nZWL GLASS moved surface=12 x=70 y=80\n' >> "$AAT_LOG"
+aat where 12 --client 7 | grep -qx '70 80 - -' && aat where 12 --client 4 | grep -qx '200 150 800 600' && ok "same surface, two clients" || bad "same surface, two clients"
+aat windows --json | python3 -c 'import json,sys; w={(x["client"], x["surface"]): x for x in json.load(sys.stdin)}; sys.exit(0 if w[(4, 12)]["x"] == 200 else 1)' && ok "windows --json" || bad "windows --json"
 
 # A shot, a command, files both ways.
 aat shot "$tmp/screen.png" | grep -q '64x48' && ok shot || bad shot
@@ -112,8 +99,22 @@ aat shot "$tmp/screen.png" | grep -q '64x48' && ok shot || bad shot
 echo payload > "$tmp/a.txt"
 aat put "$tmp/a.txt" "$tmp/b.txt" >/dev/null && aat get "$tmp/b.txt" "$tmp/c.txt" >/dev/null && cmp -s "$tmp/a.txt" "$tmp/c.txt" && ok files || bad files
 
-# Stopped: the next command says the injector is not running.
+# A target other than --local: every command goes through ssh (a fake ssh that runs the command here and counts),
+# get, put and shot too, whose LOCAL argument once overwrote --local (T1-200b).
+mkdir -p "$tmp/fakebin" "$tmp/guest"
+printf '#!/bin/sh\necho ssh >> "%s"\nfor last; do :; done\nexec sh -c "$last"\n' "$tmp/ssh-calls" > "$tmp/fakebin/ssh"
+chmod +x "$tmp/fakebin/ssh"
+echo '{"ssh_port": 2222}' > "$tmp/guest/session.json"
+viassh() { PATH="$tmp/fakebin:$PATH" GUEST_RUNTIME="$tmp/guest" timeout 60 python3 plan/tools/aat/aat --qemu "$@" >/dev/null 2>&1; }
+for words in "get $tmp/a.txt $tmp/d.txt" "put $tmp/a.txt $tmp/e.txt" "shot $tmp/f.png" "run true"; do
+	: > "$tmp/ssh-calls"
+	# shellcheck disable=SC2086
+	viassh $words
+	[ -s "$tmp/ssh-calls" ] && ok "over ssh: ${words%% *}" || bad "not over ssh: ${words%% *}"
+done
+
+# Stopped: the next command says there is no server.
 aat stop >/dev/null
-aat click 1 1 2>/dev/null && bad "stopped injector" || ok "stopped injector refused"
+aat click 1 1 2>"$tmp/stopped" && bad "stopped input" || { grep -q 'no-server' "$tmp/stopped" && ok "stopped input refused" || bad "stopped input message"; }
 [ $status -eq 0 ] && echo "aat-host: PASS" || echo "aat-host: FAIL"
 exit $status

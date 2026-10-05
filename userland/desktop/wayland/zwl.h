@@ -912,6 +912,12 @@ struct zwl_server {
 	const char *wallpaper_path;
 	float window_opacity;
 	/*
+	 * The glass panels of the windows solid (BUG-171, decision B): only
+	 * while window.opacity is chosen at 100, not at the default; the title
+	 * bars stay glass.
+	 */
+	unsigned panels_opaque;
+	/*
 	 * The settings the session holds (settings.c and settings-store.c,
 	 * WS135): NULL for the login screen.  Made before the look, freed at
 	 * the compositor's end after the session's settings are written.

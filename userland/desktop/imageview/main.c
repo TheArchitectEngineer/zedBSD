@@ -1030,8 +1030,9 @@ main_appearance_changed(
 	void *data,
 	unsigned appearance)
 {
-	/* A new frame. */
+	/* A new frame, with the canvas's cards and words drawn again in the new colours. */
 	(void)data;
 	main_app.dirty = 1;
+	main_app.ui_dirty = 1;
 	iv_log("APPEARANCE appearance=%u", appearance);
 }

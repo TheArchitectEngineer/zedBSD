@@ -5,10 +5,9 @@
 # network):
 #   plan/tools/aat/build-image.sh build/aat
 include plan/ws159/tests/config-amd64-uat.mk
-# /dev/input-inject (ws173-p001 adds a mouse and a keyboard to it).
+# /dev/input-inject, and aat-input (ws173-p001, P1): its server holds a mouse, an absolute pointer and a keyboard.
 CONFIG_INPUT_TEST_INJECT := y
-# The injector's daemon and the capture command (ws173-p001, p002, P1): their package names go here when they land,
-# for example
-#   ZEDBSD_USER_PROGRAMS += aatinject keiland-shot
-# with whatever setting the compositor's test-only capture needs.  Until then the image boots and aat check names
-# what is missing.
+ZEDBSD_USER_PROGRAMS += aat-input
+# The compositor's test-only capture (ws173-p002, P1: userland/desktop/wayland/shot.c) and its client keiland-shot.
+ZEDBSD_TEST_SCREEN_CAPTURE := y
+ZEDBSD_USER_PROGRAMS += keiland-shot

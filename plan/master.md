@@ -71,6 +71,13 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 夕 ユーザーの決定（続き）**:
+  - WS121: 目標は「Vulkan Video の hardware decode」のまま（「hardware だけ」）。software decode の <video> の設計（P2 の第 2 版 3df53896）は記録として残し、実装は WS083 の Vulkan Video の後。WS121 は WS083 を待つ。
+  - WS130 IPv6: H1〜H8 は**全部推奨どおり**（UAPI の形の承認、V6ONLY の既定 0、既定 on、RFC 7217、DNS の順、断片の再組立て無し、DUID-UUID、Wi-Fi ごとの設定は後）。P1 が p002 へ。
+  - WS143 Bluetooth: §9 の D1〜D18 は**全部推奨どおり**（音と PAN は後回し、HID が先）。
+  - ws074-p178: 手順に「自前の browser で描いた Acid3 の参照を Chrome の描画と比べ、参照の側と test の側の誤りを分ける」段を足す。
+  - INPUT_INJECT_KIND_MOUSE の絶対の pointer の形は、承認したマウスの注入（試験だけ・root だけ）の範囲として Q1 が扱う（ユーザーに報告）。
+
 - **2026-10-05 夕 ユーザーの決定（AAT の後の質問への回答）**:
   - AAT の素の起動: **毎回ユーザーが起動**（USB を差して起動、エージェントは起動の後に SSH で入る）。BootNext・内蔵 disk の案は採らない。
   - BUG-171: **B**（利用者が明示に 100 を選んだ時だけ app の panel を不透明に、既定は今の frosted のまま、title bar は対象外）。
@@ -103,29 +110,10 @@
   - WS068 OpenGL 3.3 以降・WS101 GPU compute: 「保留を解除します。ただし優先順位が低く、やることがないときに作業します。」→ 保留を解除、合間の仕事（i915 の lowering・規約の見直しと同じ扱い）。
   - bar の USB の icon は三叉（実装済み 662d4778）。
 
-- **WS143 Bluetooth の判断（2026-10-05、P1 の設計 第 3.1 版、plan/ws143/design.md §9、design-reviewer が通した。範囲 A の見積もり 25〜35 日）**: [ ] は P1 の推奨。
-  - D15 構成 [kernel は USB の転送（/dev/btN の生の HCI）と HID の入力だけ、firmware の読み込み・HCI・L2CAP・pairing・SDP/GATT・HID host は userland の bluetoothd]（ws.md の当初の案は HCI を kernel に）
-  - D1 最初の profile [A: keyboard と mouse（classic の HID と LE の HOGP）だけ。A2DP の headphone は別の WS]
-  - D2 UAPI: /dev/btN（include/uapi/bluetooth.h、Intel の bootloader の ioctl、reset の ioctl）と /dev/system の resume の事象の class [形を承認、layout は p002]
-  - D3 UAPI: /dev/hid-host（bluetoothd が HID の report を kernel の HID の parser に渡す。USB の HID の入力の code を共有の module に分ける、USB の keyboard・mouse の退行の危険）[形を承認、layout は p005]
-  - D4 root で起こす bluetoothd、socket /run/bluetoothd.sock（networkd と同じ権限の確かめ）と CLI `bt` [networkd と同じ]
-  - D16 権限の分離 [(a) 小さな root の親が device を開き権限の無い子に fd を渡す]。どの案でも /dev/hid-host を持つ物が乗っ取られると key を打てる危険は残る
-  - D17 base の passwd・group に `_bluetooth` の account と `bluetooth` の group を足す（既存の install にも）[可]
-  - D5 暗号（LE の pairing だけ host に要る）[b1: 自前の AES/AES-CMAC と controller の P-256 の命令、無ければ自前の P-256]。OpenSSL は base の方針の例外
-  - D10 pairing の安全 [legacy も受け Settings で警告、暗号の鍵は 16 byte 必須]。Secure Connections だけにすると古い機器は pair できない
-  - D8 誰が pair・接続・確認できるか [seat の利用者（確認の dialog は compositor）、console・SSH は wheel だけ、login の画面では pair しない]
-  - D9 pairing を system 全体で共有か利用者ごとか [system 全体（login の画面・console でも BT の keyboard が使える）]
-  - D11a 起動時の radio [前回の状態、初回は on]、D11b 発見可能 [「追加」を開いている間だけ]、D11c LE の private address [使う]、D11d 機内 mode [Wi-Fi と一緒に切る、別に戻せる]
-  - D6 linux-firmware から任意の firmware の package `intelbt`（Intel の license は無改変の再配布を許す）[作る]、D14 5330 の既定の image に入れる [入れる]
-  - D7 FreeBSD の Keiland [当面は unsupported]
-  - D13 firmware の読み込みの試験のため 5330 の Linux の host で btusb・btintel を blacklist し電源を入れ直す [する]
-  - D18 UAT の環境 [素の 5330（Wi-Fi との共存も見られる、その間 5330 の T1 は止まる）]
-  - 情報の依頼: 試験に使う classic と LE の keyboard・mouse の機種、firmware の要らない USB の BT dongle（例 CSR8510）が有るか・買うか。
 - **bar のデバイス（USB 媒体）の icon は C（USB の三叉の記号）に決定**（2026-10-05 夕 ユーザー「アイコンはUSB の三叉の記号がいいです。」）。P2 が media.c に実装（q763）。
 - **BUG-194 全画面から戻す compositor の key（2026-10-05、P2 の案、今は仮に F11）**: A F11、B Super+↓（Fn が要らない）、C Esc の 1 秒の長押し、D 画面の上端からの swipe [P2 の案: A+B か B+C]。実機で F11 が効かなかったのは 5330 の上の列が既定で Home/End（Fn+F11 か Fn Lock）の見込み、次の UAT で Fn+F11 を試す。
 - **WS145 印刷の判断（2026-10-05、P2 の設計 第 3.1 版、3 回目の敵対的レビューで重大なし、plan/ws145/design.md）**: D2 printer の設定を利用者ごとか system 全体で共有か [利用者ごと。共有なら root の口が要り別の設計、p003 の前に要る]、D3 IPP の path と LPD の queue 名を詳しい設定で入力できるか（既定は /ipp/print → /ipp → /、LPD は lp）、D4 受け入れの printer の機種（PDF を受けない機種なら PDF → PWG raster の filter の WS が先に要る）、D5 Linux・FreeBSD で CUPS の既存の printer を一覧に出すか、D6 PDF Viewer の File > Print を含めるか、D7 printer に login 名を送ってよいか、D8 spool の上限（1 文書 256 MiB・合計 512 MiB・16 job）と複写せず app の file から直接送る案、D9 同じ利用者の全ての app に他の app の job の題名が見え取り消せること。
 - **2026-10-05 午後 UAT の後、ユーザー「ちょっと仮眠します。その方針でよいので、自走をお願いします。」**: 方針どおり自走。P1 は BUG-195・196・197（実機の ACPI）、P2 は UAT の所見（ws132-p009・ws099-p033・BUG-194（仮に F11）・BUG-181・BUG-193・bar の device の icon）。直しが揃ったら新しい UAT の image を作り T1 で boot-test。判断が要る点は記録して先へ。
-- **WS130 IPv6 の判断（2026-10-05、P1 の p001 の設計、plan/ws130/phase001/phase.md §9、p002 の前に全部要る）**: H1 UAPI（netinet の option、SIOCAIFADDR_IN6 など と struct in6_aliasreq、struct in6_rtentry、route socket の RTM_ROUTERADV・RTM_ADDRINFO・RTM_NEIGHBOR、AF_INET6 の socket。正確な差分は p002 の最初に出す）、H2 IPV6_V6ONLY の既定 [0、Linux と同じ]、H3 既存の net.conf で IPv6 を既定 on [on]、H4 link-local の interface ID [RFC 7217、MAC を出さない]、H5 dual-stack の DNS の順 [DHCPv4 → RDNSS → DHCPv6、最大 3]、H6 v1 は fragment の再組立て無し（IPv4 と同じ）、Packet Too Big は扱う、H7 DHCPv6 は DUID-UUID、H8 Wi-Fi の network ごとの IPv6 の設定は後。
 - **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
 - **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
 - **WS169・WS170 の段（2026-10-05 ユーザーの追加）**: ベータ2 に入れるか、それ以降か [Q1 の案: WS170 の最初の範囲（連絡先からタイムライン）はベータ2、WS169 はベータ2 で IMAP・SMTP まで、Gmail・Outlook は以降]。
