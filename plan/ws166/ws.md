@@ -18,3 +18,4 @@ Primary Milestone: MG006
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws166-p001](phase001/phase.md) | 要件と設計 | in-progress（設計済み、ユーザーの判断の 4 点待ち） | — |
+| [ws166-p002](phase002/phase.md) | 予測の候補の生成（engine の側） | in-progress（前半済み、後半は判断の後） | p001 |
