@@ -27,8 +27,6 @@
 #include <keiland.h>
 #include <keiui.h>
 
-#include <libavutil/frame.h>
-#include <libswscale/swscale.h>
 
 #include "userland/desktop/paths.h"
 
@@ -98,9 +96,12 @@ struct vp_player {
 	struct vp_media media;
 
 	/* The picture shown, its time, the converter that fits it, and how many were shown. */
-	struct AVFrame *picture;
+	struct vp_frame *picture;
 	double picture_time;
-	struct SwsContext *scaler;
+	void *scaler;
+
+	/* What the window says instead of a picture when a file could not be played ("" for nothing). */
+	char notice[160];
 	unsigned shown;
 	int need_picture;
 
@@ -149,6 +150,7 @@ static void vp_chosen(void *data, struct kl_file_chooser *chooser, unsigned resu
 static int vp_resize(struct vp_player *player);
 static void vp_draw(struct vp_player *player, uint64_t now_us);
 static void vp_draw_picture(struct vp_player *player);
+static void vp_notice(struct vp_player *player, int error, int problem);
 static void vp_draw_bar(struct vp_player *player, uint64_t now_us);
 static void vp_time_text(double seconds, char *text, size_t size);
 static int vp_wait(struct vp_player *player, uint64_t now_us);
@@ -229,8 +231,8 @@ main(
 	/* Everything goes. */
 	vp_media_close(&player.media);
 	vp_audio_close(&player.audio);
-	av_frame_free(&player.picture);
-	sws_freeContext(player.scaler);
+	vp_frame_free(&player.picture);
+	vp_scaler_free(player.scaler);
 	kl_file_chooser_destroy(player.chooser);
 	kl_ui_destroy(player.ui);
 	if (player.canvas_made)
@@ -478,7 +480,8 @@ vp_action(
 		break;
 	case VP_ACTION_CLOSE:
 		vp_media_close(&player->media);
-		av_frame_free(&player->picture);
+		vp_frame_free(&player->picture);
+		player->notice[0] = '\0';
 		vp_log("CLOSE");
 		break;
 	case VP_ACTION_QUIT:
@@ -527,11 +530,14 @@ vp_open(
 	int error;
 
 	/* The media; the picture shown before goes. */
-	av_frame_free(&player->picture);
+	vp_frame_free(&player->picture);
+	player->notice[0] = '\0';
 	error = vp_media_open(&player->media, path);
-	vp_log("OPENED path=%s error=%d", path, error);
-	if (error != 0)
+	vp_log("OPENED path=%s error=%d codec=%d", path, error, player->media.codec_problem);
+	if (error != 0) {
+		vp_notice(player, error, player->media.codec_problem);
 		return;
+	}
 
 	/* The first picture as soon as it is decoded, and playing. */
 	player->need_picture = 1;
@@ -674,7 +680,7 @@ vp_draw(
 	struct vp_player *player,
 	uint64_t now_us)
 {
-	struct AVFrame *picture;
+	struct vp_frame *picture;
 	double clock;
 	double time;
 	double next;
@@ -686,7 +692,7 @@ vp_draw(
 	if (picture == NULL && player->need_picture && next >= 0.0)
 		picture = vp_media_take(&player->media, next, &time, &next);
 	if (picture != NULL) {
-		av_frame_free(&player->picture);
+		vp_frame_free(&player->picture);
 		player->picture = picture;
 		player->picture_time = time;
 		player->need_picture = 0;
@@ -728,14 +734,17 @@ vp_draw_picture(
 	struct vp_player *player)
 {
 	struct kl_rect whole;
-	struct AVFrame *picture;
-	uint8_t *planes[4];
-	int strides[4];
+	struct kl_text_line line;
+	struct vp_frame *picture;
 	double aspect;
+	int picture_width;
+	int picture_height;
+	int text_width;
 	int width;
 	int height;
 	int x;
 	int y;
+	int status;
 
 	/* Black. */
 	whole.x = 0;
@@ -744,13 +753,23 @@ vp_draw_picture(
 	whole.height = (int)player->height;
 	kl_canvas_fill(&player->canvas, &whole, KL_RGB(0x000000));
 	picture = player->picture;
-	if (picture == NULL || picture->width <= 0 || picture->height <= 0)
-		return;
 
-	/* The picture's shape (its sample aspect ratio counted), fitted to the window. */
-	aspect = (double)picture->width / (double)picture->height;
-	if (picture->sample_aspect_ratio.num > 0 && picture->sample_aspect_ratio.den > 0)
-		aspect = aspect * (double)picture->sample_aspect_ratio.num / (double)picture->sample_aspect_ratio.den;
+	/* Without a picture, what the window has to say, in the middle. */
+	if (picture == NULL) {
+		if (player->notice[0] == '\0')
+			return;
+		kl_text_metrics(&player->text, 16U, &line);
+		text_width = kl_text_width(&player->text, player->notice, strlen(player->notice), 16U, 0);
+		(void)kl_text_draw(&player->text, &player->canvas, ((int)player->width - text_width) / 2, (int)player->height / 2 + line.ascent / 2,
+		    player->notice, strlen(player->notice), 16U, 0, KL_RGB(0xe0e0e0));
+		return;
+	}
+
+	/* The picture's shape (square samples: the add-in reads no aspect field), fitted to the window. */
+	vp_frame_size(picture, &picture_width, &picture_height);
+	if (picture_width <= 0 || picture_height <= 0)
+		return;
+	aspect = (double)picture_width / (double)picture_height;
 	width = (int)player->width;
 	height = (int)((double)width / aspect);
 	if (height > (int)player->height) {
@@ -764,18 +783,39 @@ vp_draw_picture(
 	x = ((int)player->width - width) / 2;
 	y = ((int)player->height - height) / 2;
 
-	/* The converter for this size (made again when the picture or the window changed). */
-	player->scaler = sws_getCachedContext(player->scaler, picture->width, picture->height, (enum AVPixelFormat)picture->format,
-	    width, height, AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
-	if (player->scaler == NULL)
-		return;
+	/* Scaled straight into the frame (BGRA is the canvas's 0xAARRGGBB, opaque); the scaler is remade when the sizes change. */
+	status = vp_frame_scale(picture, &player->scaler, player->pixels + (size_t)y * player->width + (size_t)x,
+	    player->width * sizeof(uint32_t), width, height);
+	if (status != 0)
+		vp_log("SCALE failed width=%d height=%d", picture_width, picture_height);
+}
 
-	/* Straight into the frame (BGRA is the canvas's 0xAARRGGBB, opaque). */
-	memset(planes, 0, sizeof(planes));
-	memset(strides, 0, sizeof(strides));
-	planes[0] = (uint8_t *)(player->pixels + (size_t)y * player->width + (size_t)x);
-	strides[0] = (int)(player->width * sizeof(uint32_t));
-	(void)sws_scale(player->scaler, (const uint8_t *const *)picture->data, picture->linesize, 0, picture->height, planes, strides);
+/* Says in the window why a file could not be played. */
+static void
+vp_notice(
+	struct vp_player *player,
+	int error,
+	int problem)
+{
+	/* The add-in's problem, or the file's. */
+	switch (problem) {
+	case VP_CODEC_MISSING:
+		(void)snprintf(player->notice, sizeof(player->notice), "Playing video needs FFmpeg's libavcodec, which is not installed.");
+		break;
+	case VP_CODEC_VERSION:
+		(void)snprintf(player->notice, sizeof(player->notice), "This version of libavcodec is not supported.");
+		break;
+	case VP_CODEC_FORMAT:
+		(void)snprintf(player->notice, sizeof(player->notice), "The video's format is not supported.");
+		break;
+	default:
+		(void)snprintf(player->notice, sizeof(player->notice), "The file could not be opened (error %d).", error);
+		break;
+	}
+
+	/* The notice is drawn with the next frame. */
+	vp_log("NOTICE problem=%d text=%s", problem, player->notice);
+	player->dirty = 1;
 }
 
 /* Draws the bar of controls while it shows: play or pause, the times, the position. */
