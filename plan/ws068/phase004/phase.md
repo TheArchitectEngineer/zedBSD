@@ -76,3 +76,7 @@ Queue: q747（P1、ベータ2。p009 → p004 → p007）
 ## 結果
 
 （範囲の案。Q1 の承認待ち）
+
+## Q1 の承認（2026-10-05）
+
+範囲を案のとおり承認（技術の裁量）: (1)〜(3) は shader が読む時だけの隠れた uniform（gl_ZedFragment・gl_ZedDepthRange、glGetActiveUniform から隠す）、(4) は反映した配列の大きさを descriptorCount に。ETC2/EAC は新しい Phase p039（planned、ES 3.0 の主張に要る、i915 Gen12 は CPU の復号）として WS068 に足す（実行は別の Queue）。struct の中の sampler・dEQP は Future Work、desktop だけの GLSL の残りは p007。
