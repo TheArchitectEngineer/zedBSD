@@ -115,13 +115,14 @@ kl_backend_session_ready(
 	struct pollfd entry;
 	uint64_t started;
 	uint64_t waited;
-	char line[16];
+	char line[KL_BACKEND_SESSION_LINE];
 	size_t used;
 	ssize_t count;
 	char byte;
 	int descriptor;
 	int status;
 	int same;
+	int whole;
 
 	/* The login screen's descriptor, or the session's; none when sessiond did not start the compositor. */
 	if (backend == NULL)
@@ -137,9 +138,14 @@ kl_backend_session_ready(
 	if (count != 6)
 		return EIO;
 
-	/* GO, a line of its own, read a byte at a time (nothing after it is taken). */
+	/*
+	 * GO, a line of its own, read a byte at a time (nothing after it is
+	 * taken).  A line before it answers a request asked before READY (the
+	 * login screen's STYLES, ws172-p002): it is kept for the tick.
+	 */
 	started = session_milliseconds();
 	used = 0;
+	whole = 1;
 	for (;;) {
 		/* The time left. */
 		waited = session_milliseconds() - started;
@@ -174,15 +180,28 @@ kl_backend_session_ready(
 			/* Keeps a bounded line while passing over excess bytes. */
 			if (used + 1U < sizeof(line))
 				line[used++] = byte;
+			else
+				whole = 0;
 			continue;
 		}
 
 		/* The line ends here. */
 		line[used] = '\0';
-		used = 0;
 		same = strcmp(line, "GO");
 		if (same == 0)
 			return 0;
+
+		/* Another line is the tick's, as if it came after GO (one too long, or that does not fit, is thrown away). */
+		if (whole && backend->session_used + used + 1U < sizeof(backend->session_line)) {
+			memcpy(backend->session_line + backend->session_used, line, used);
+			backend->session_used += used;
+			backend->session_line[backend->session_used++] = '\n';
+			backend->session_line[backend->session_used] = '\0';
+		}
+
+		/* The next line starts empty. */
+		used = 0;
+		whole = 1;
 	}
 
 	/* The display is taken without GO. */
@@ -498,9 +517,9 @@ kl_backend_session_tick(
 		}
 	}
 
-	/* What has come. */
+	/* What has come (nothing new still leaves the lines kept during the wait for GO). */
 	count = read(descriptor, backend->session_line + backend->session_used, sizeof(backend->session_line) - 1U - backend->session_used);
-	if (count < 0)
+	if (count < 0 && backend->session_used == 0U)
 		return;
 
 	/* sessiond done with the login screen ends it (RELEASED is still said on the open side). */
@@ -519,7 +538,8 @@ kl_backend_session_tick(
 	}
 
 	/* Each whole line. */
-	backend->session_used += (size_t)count;
+	if (count > 0)
+		backend->session_used += (size_t)count;
 	backend->session_line[backend->session_used] = '\0';
 	for (;;) {
 		end = strchr(backend->session_line, '\n');

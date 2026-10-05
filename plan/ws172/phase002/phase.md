@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172-p002 -->
 # ws172-p002: /sbin/passkey の password・PIN と sessiond の外部の認証
 
-Status: uncleared（2026-10-05 夜 T1-203 FAIL: greeter の password の login が起きない（sessiond.log に `GREETER failed … ZWL EXIT frames=0 error=5` が続き CONSOLE へ）。試験の image の名前（hdd-image.img）と su の欠けも。証拠は T1 の台帳 T1-203。再開: 次の P1 が解析と修正、main には merge 済みなので graphical login の image への影響を先に確かめる）
+Status: uncleared（2026-10-05 夜 P1 が原因を直した、T1 の再試験待ち。前: T1-203 FAIL: greeter の password の login が起きない（sessiond.log に `GREETER failed … ZWL EXIT frames=0 error=5` が続き CONSOLE へ）。試験の image の名前（hdd-image.img）と su の欠けも。証拠は T1 の台帳 T1-203。再開: 次の P1 が解析と修正、main には merge 済みなので graphical login の image への影響を先に確かめる）
 WS: [ws172](../ws.md)
 設計: [phase001](../phase001/phase.md) の §1〜§12（第 2 版）と判断 P1〜P10（ユーザー承認、2026-10-05）、docs/architecture/security.md の「Login authentication」、keiland.md の login の節
 
@@ -27,6 +27,16 @@ WS: [ws172](../ws.md)
 - `plan/ws131/tests/host-power.sh`・`host-seat-linux.sh`・`host-seat-freebsd.sh`・`plan/ws132/tests/run-host-events.sh`・`plan/ws089/tests/host-build.sh`・`run-host-account-admin.sh`: 通過
 - `plan/tools/keiland-linux/makefile-sync.sh`: PASS（WS173 の shot-none.c の sync の規則を足した）、`header-check.sh`: PASS
 - zedBSD の build（-Werror）: sessiond・wayland・settings・account-admin・libkeiland、warning 0。style-check: 新しい・変えた file で新しい指摘 0
+
+## T1-203・T1-209 の FAIL の解析と修正（2026-10-05 夜、P1）
+
+- 症状: greeter に password を打っても AUTH が送られない（`ZWL GREETER styles=`・`ZWL GREETER auth`・`SESSIOND AUTH` が無い）。WS172 の image（T1-203）と ws035 の素の graphical login の image（T1-209、main 9006fc3a）の両方。
+- 原因（dd30409a の後退）: greeter は最初の `zwl_schedule` の pass で `zwl_glass_tick` → `zwl_greeter_tick` から `STYLES kei` を送る。同じ pass の後の `enter_window_mode` で output の準備（約 160 ms）の後に `zwl_handoff_wait` が READY を言い GO を待つ。sessiond はその間に passkey の答え `STYLES password` を返し、`kl_backend_session_ready` は GO 以外の行を捨てていたので答えが失われ、`session_request` は STYLES のまま、`greeter_styles_asked` は 1 のまま、Enter は `greeter_submit_pending` で永久に保留された。session の側も sessiond は READY の前の行を読み捨てる（session.c）ので、READY の前に ENROLLED を送ると同じく答えが来ない。
+- 修正: (1) `kl_backend_session_ready`（session-zedbsd.c）は GO の前の行を `session_line` に残し、`kl_backend_session_tick` は新しく読めなくても残った行を処理する。(2) greeter の STYLES と system.c の ENROLLED は `server->handed_over` の後にだけ尋ねる。
+- `ZWL EXIT … error=5` が続いた 2 回（t1-203、t1-203-run1）は、boot の sessiond・respawn・試験の sessiond が同時に 2〜3 個動き greeter が display を取り合ったもので、試験が boot の落ち着く前に始まったため（試験の側）。待った回（p002-waited）は sessiond が 1 つで、上の原因だけが出た。
+- 試験の側: `build-passkey-image.sh` が作るのは `BUILD/hdd-image.img`（試験の注記を直した）。`/bin/su: not found` は image の config に su が無いため（`config-amd64-passkey.mk` に su を足した）。
+- host: `plan/ws131/tests/host-session.sh` 51/51（GO の前の答えを tick が渡す試験を追加）、`host-system.sh` PASS（試験の server を hand-over 済みに）、`sessiond-auth-host-test.sh` ok、`passkey-host-test.sh` PASS、ws089 `host-build.sh`・`run-host-account-admin.sh`、keiland-linux `header-check.sh`・`makefile-sync.sh` PASS。zedBSD の clang（-Wall -Wextra -Werror）で greeter.c・system.c・handoff.c・session-zedbsd.c・backend.c の compile は warning 0。style-check の指摘 0。
+- QEMU の再試験は T1 に依頼（Q1 経由）。
 
 ## 未実施
 

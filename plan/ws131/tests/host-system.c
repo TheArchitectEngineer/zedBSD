@@ -1204,6 +1204,8 @@ test_both_ends(void)
 	socket_client.server = &server;
 	socket_client.number = 2U;
 	server.clients = &socket_client;
+	/* A session whose display sessiond has handed over (ENROLLED is asked only then, T1-203). */
+	server.handed_over = 1U;
 	pthread_mutex_lock(&world.lock);
 	world.auto_answer = 1U;
 	pthread_mutex_unlock(&world.lock);

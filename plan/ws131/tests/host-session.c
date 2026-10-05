@@ -187,12 +187,22 @@ test_login_screen(
 	check(kl_backend_session_managed(backend) == 0, "the login screen is not a managed session");
 
 	/* GO already waiting: READY is written and the wait ends at once. */
+	check(kl_backend_session_styles_get(backend) == KL_BACKEND_STYLE_PASSWORD, "the password alone before STYLES");
 	(void)write(ends[0], "GO\n", 3U);
 	error = kl_backend_session_ready(backend);
 	check(error == 0 && read_line(ends[0], "READY\n"), "READY written, GO taken");
 
-	/* STYLES (ws172-p002): the password alone before the answer, then what sessiond said. */
-	check(kl_backend_session_styles_get(backend) == KL_BACKEND_STYLE_PASSWORD, "the password alone before STYLES");
+	/* An answer that came before GO (STYLES asked before READY, T1-203) is kept for the tick. */
+	error = kl_backend_session_styles(backend, "kei");
+	check(error == 0 && read_line(ends[0], "STYLES kei\n"), "STYLES kei written before READY");
+	(void)write(ends[0], "STYLES password\nGO\n", 19U);
+	error = kl_backend_session_ready(backend);
+	check(error == 0 && read_line(ends[0], "READY\n") && answer_count == 0U, "GO taken after the answer, which waits");
+	kl_backend_tick(backend, 998U);
+	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_STYLES && answer_error == 0, "the answer before GO is given by the tick");
+	answer_count = 0U;
+
+	/* STYLES (ws172-p002): what sessiond said. */
 	error = kl_backend_session_styles(backend, "kei");
 	check(error == 0 && read_line(ends[0], "STYLES kei\n"), "STYLES kei written");
 	(void)write(ends[0], "STYLES password pin\n", 20U);

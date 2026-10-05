@@ -557,8 +557,13 @@ zwl_greeter_tick(
 		server->dirty = 1;
 	}
 
-	/* The styles of the selected user, asked once no other answer is awaited. */
-	if (greeter_styles_wanted && !greeter_waiting && !greeter_styles_asked)
+	/*
+	 * The styles of the selected user, asked once no other answer is
+	 * awaited and the display has been handed over (sessiond reads a
+	 * session's lines before its READY as nothing, and an answer to the
+	 * login screen's would come during the wait for GO).
+	 */
+	if (greeter_styles_wanted && !greeter_waiting && !greeter_styles_asked && server->handed_over)
 		greeter_styles_ask(server);
 
 	/* A secret held back while another request was answered goes now. */
