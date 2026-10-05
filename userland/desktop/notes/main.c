@@ -2412,4 +2412,5 @@ app_appearance_changed(
 	app->redraw = 1;
 	app->toolbar_dirty = 1;
 	printf("NOTES APPEARANCE appearance=%u\n", appearance);
+	fflush(stdout);
 }

@@ -111,3 +111,14 @@ Q1（2026-10-05）「BUG-171 の判断待ちの間は、WS089 p017b（残りの 
 
 - QEMU（T1）: `settings-p017b.sh`（PNG を目で判断）。
 - 実機: 未実施。
+
+### T1-198（2026-10-05 夜）: FAIL ×2 と直し（P2 g16）
+
+- 結果（T1、証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-198-p017b2/`、Q1 が 9 app の montage を目視し全体はよい）: `notes: APPEARANCE appearance=1 MISSING`。Image Viewer の「Can't show this image」の card が dark でも白い。その Image Viewer が wallpaper.png を「The file cannot be read」。
+- 原因と直し:
+  1. Notes: `NOTES APPEARANCE` を `printf` で出し flush していなかった（stdout が file で全 buffer）。`userland/desktop/notes/main.c` の `app_appearance_changed` に `fflush(stdout)`（他の NOTES の行と同じ）。
+  2. Image Viewer の白い card: appearance の変化で `dirty`（frame）だけを立て、canvas（文字・card・chip・message）を描き直す `ui_dirty` を立てていなかった。`userland/desktop/imageview/main.c` の `main_appearance_changed` で `ui_dirty` も立てる。
+  3. 「The file cannot be read」: 試験の path の誤り。zedBSD の image に `/usr/share/keiland/wallpaper.png` は無い（desktop は内蔵の壁紙を描く。`--wallpaper` の file が無くても目に見えない）。試験の image に入る `/usr/share/keiland/wallpapers/Lagoon.png`（`ZEDBSD_KEILAND_WALLPAPERS := y`）を開く。
+  4. 試験の app の終了: `ps -A -o pid,args | grep -E '^/bin/(...)'` は行頭が pid なので一致せず、app が閉じられないまま次の app が重なっていた（PNG の後ろの Notes・PDF Viewer の窓）。2 番目の field を awk で照合する。同じ誤りの `settings-p017.sh` の `ends` も直した。
+- 確かめ（host）: `make ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-dark-apps.mk BUILD=build/ws140-p002 build/ws140-p002/bin/notes build/ws140-p002/bin/imageview` warning 0、style-check 0。試験の kill の式は偽の `ps` の出力で確かめた（`/bin/settingsd` は外れ、`/bin/settings`・`/bin/notes`・`/bin/imageview X` は当たる）。
+- 再試験（T1）: T1-198 と同じ（`plan/tools/guest/test-image.sh plan/ws089/tests/config-amd64-dark-apps.mk BUILD`、`plan/ws089/tests/settings-guest.sh start IMAGE`、`plan/ws089/tests/settings-p017b.sh OUTDIR`）。合格: `settings-p017b: status 0`、dark-imageview.png に Lagoon の絵（card 無し）、どの PNG にも前の app の窓が残らない。
