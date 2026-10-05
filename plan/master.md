@@ -15,7 +15,7 @@
 ## 現在の状況（Q1）
 
 <!-- master:updated:start -->
-更新: 2026-10-06 Q1（週の利用量の終わりで別の session へ引き継ぐ。UAT 2026-10-06 の所見 BUG-211〜237 を記録、各 WS にフィードバックを追記）
+更新: 2026-10-06 Q1（C の再設計の 4 つの Phase の設計を書き、計画の順を priority に。次の session は実装から）
 <!-- master:updated:end -->
 
 ### 担当
@@ -41,11 +41,11 @@
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-1. 新しい session の最初: `git log --oneline -3`、この block、[Bug Board](known-bugs.md) の BUG-211〜237、[uat.md](uat.md) の 2026-10-06 を読む。
-2. （済み）P2 の ws099-p034 の当て直しは merge 済み。
-3. 担当を起こす（P1・P2・T1）。UAT の不具合（BUG-211〜237）を P1・P2 に分ける（上の agents）。設計の変わる物（BUG-217 の最大化の状態、gesture の体系、App Home の stage）は Phase を立てて montage・設計から。
-4. T1 は直しの確かめを**シナリオの集合で束ねて**流す。AAT の runner の smoke の 3 fail（Files・Settings の窓が閉じない、Text Editor の窓が出ない）を先に P2 が直す。
-5. UAT の image はユーザーが `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image` で自分で作る。safe boot は起動時に Ctrl（kernel の message）・Shift（console の login）を押したまま Space を叩く。
+1. 新しい session の最初: `git log --oneline -3`、この block、priority の block、[Bug Board](known-bugs.md) の BUG-211〜237、[uat.md](uat.md) の 2026-10-06 を読む。
+2. 2026-10-06 ユーザー「メインエージェントを使って、サブエージェントを使わず、再設計部分のPhaseを1つずつ進めていき、ベータ1と2の範囲は実装に取りかかれるようにします。その段階で次のセッションにハンドオーバーします。」→ C の再設計の Phase は設計を書いた（priority の 1）。次の session は**実装**から: P1・P2・T1 を起こし、priority の順に Queue に入れる。
+3. T1 は直しの確かめを**シナリオの集合で束ねて**流す。AAT の runner の smoke の 3 fail を先に直す。
+4. UAT の image はユーザーが `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image` で作る。safe boot は起動時に Ctrl・Shift を押したまま Space を叩く。
+5. image の履歴の片付けの残り（merge の block）。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
@@ -157,14 +157,17 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 依存による実行の順とは別のもの。Queue の権限は変えない。古い順位（2026-10-03〜04）は付録の history-log。
 
 <!-- master:priority:start -->
-2026-10-05 夜 Q1（ユーザーの 2026-10-05 の指示: ベータ2 の実装を P1・P2 に scheduling 可能、AAT は最優先、UAT の後の実機の Bug、レンダリングの改善は停止、GPU compute・GL 3.3・規約の見直しは合間）。
+2026-10-06 ユーザーの計画の順:「計画としては、Cの設計の見直しをまずやりましょう。そのあと、タイトルバーのデザイン変更、ベータ1の残りとベータ2の残り（再設計含む）を完了させ、デバッグに集中できる期間に入りましょう。」「GL 3.3、GPU compute、hal.h の commentはいったんベータ3に先送りします。」
 
-1. **壊れた物と試験の待ち**: T1-203（WS172 p002 の login）の解析と修正、T1-206・T1-202・T1-205・T1-207。
-2. **AAT**（[WS173](ws173/ws.md)）: runner と補助を target で動かし、5330 の AAT を回す。
-3. **ベータ1 の残り**（RC 10/13）: [WS159](ws159/ws.md) native touchpad → 実機の Bug（BUG-195〜197 の 5330 の確認、BUG-156・166・167・172・173・176・178〜180・183〜189）→ [WS132](ws132/ws.md)・[WS131](ws131/ws.md)・[WS089](ws089/ws.md)・[WS095](ws095/ws.md)・[WS127](ws127/ws.md)・[WS128](ws128/ws.md) の残り → [WS129](ws129/ws.md) release。
-4. **ベータ2 の着手済みを進める**: P1 = [WS172](ws172/ws.md) p003 → [WS130](ws130/ws.md) p003〜 → [WS168](ws168/ws.md) → [WS161](ws161/ws.md) p005〜 → [WS156](ws156/ws.md)・[WS164](ws164/ws.md)・[WS165](ws165/ws.md)・[WS167](ws167/ws.md)。P2 = [WS158](ws158/ws.md) p004〜 → [WS154](ws154/ws.md) → [WS145](ws145/ws.md) → [WS169](ws169/ws.md)・[WS170](ws170/ws.md)（IMAP・SMTP、連絡先〜タイムライン）→ [WS155](ws155/ws.md)。
-5. **合間**（他に作業が無い時）: [WS068](ws068/ws.md) GL 3.3・[WS101](ws101/ws.md) GPU compute（i915 の SPIR-V の lowering、p017・p012 の 5330 の測定は T1）・[WS171](ws171/ws.md)・規約の見直し（conformance-reviewer）・[WS066](ws066/ws.md)・[WS061](ws061/ws.md)。
-6. **止める**: WS074 のレンダリング（B1 はユーザーの指示）、WS153（U2〜U15）、要検討・ブロックの WS（段の表）。
+1. **C 設計の見直し**（2026-10-06 Q1 が設計を書いた、全て planned で実装に取りかかれる）:
+   - [ws142-p007](ws142/phase007/phase.md) 最大化の session の状態（BUG-217）と gesture の体系（BUG-215・216・224・228）→ 実装 p008〜p010。
+   - [ws099-p035](ws099/phase035/phase.md) App Home の stage と 2 層の animation（BUG-236・225）、起動中の app の切り替え（BUG-232）→ p035a（montage）〜d。
+   - [ws122-p005](ws122/phase005/phase.md) 動画の全画面と直接の scanout（BUG-223）→ p005a〜c。
+   - [ws099-p037](ws099/phase037/phase.md) Power Off と暗くする確認の dialog（BUG-235）。
+2. **title bar（上部の bar）のデザインの変更**: ws099-p034 は main に入った（e7a56460）。第 2 版（dock の時の窓の button を右上、時計を左へ、animation）を p034b で。
+3. **ベータ1 の残りとベータ2 の残り**（再設計を含む）。UAT のバグを先に（順は 2026-10-06 の表: BUG-212・222（NCM と ECM の選択の見込み）・213 → 233・234 → 227 → 231・229 → 211・218 → 226・221 → 232 → 214 → 219・220・230）。次にベータ1 の WS159・131・132・089・095・127・128・129、ベータ2 の WS172 p003・158 p004・130 p003・168 p002・161・175（D1〜D7 の判断の後）・156・164・165・167・145・169・170・155・166・154。
+4. **debug に集中する期間**。
+- ベータ3 へ: WS068（GL 3.3）・WS101（GPU compute）・WS171（hal.h の comment）・WS176（Canvas）。止める: WS074 の rendering（B1 はユーザーの指示）・WS153（U2〜U15）。
 <!-- master:priority:end -->
 
 ## 工数の見積もり（残り、LW）
