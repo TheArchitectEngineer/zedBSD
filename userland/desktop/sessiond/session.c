@@ -42,9 +42,14 @@
  *                    QUIT comes once the greeter is ready; the session
  *                    answers RELEASED when it has given the display back,
  *                    and ends
- *   UNLOCK password  the lock screen (ws035-p102): checks the session
- *                    user's password as a login does; OK, or FAIL after a
- *                    delay that grows with the failures in a row
+ *   UNLOCK style     then the secret on the next line: the lock screen
+ *                    (ws035-p102); /sbin/passkey checks the session user's
+ *                    password, PIN or key as a login does (auth.c,
+ *                    ws172-p002); OK, or FAIL reason after a delay
+ *   STYLES, ENROLLED, ENROLL pin|fido2 label, REMOVE pin|fido2 id, CANCEL
+ *                    the session user's ways to unlock, and their changes
+ *                    (Settings > Users); the current password and the new
+ *                    secret follow on their own lines
  *   SERVICE name on|off|status
  *                    a system service the Sharing page turns on or off
  *                    (ws089-p025, service.c: sshd only, root or wheel);
@@ -52,8 +57,7 @@
  *                    or ERROR
  */
 
-#include "sessiond.h"
-#include "../../base/login/verify.h"
+#include "auth.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -88,12 +92,6 @@
 /* How long the greeter stays on the screen for a session that does not say READY (seconds). */
 #define SESSION_READY_SECONDS	30
 
-/* The delay after a wrong password on the lock screen, and the longest it grows to (seconds). */
-#define SESSION_DELAY_SECONDS	2U
-#define SESSION_DELAY_MAX	16U
-
-/* The lock screen's wrong passwords in a row this session. */
-static unsigned session_wrong;
 
 static int session_runtime(struct sessiond_account *account, char *directory, size_t size);
 static void session_home(struct sessiond_account *account);
@@ -102,9 +100,8 @@ static void session_child(struct sessiond *daemon, struct sessiond_account *acco
 static void session_network_group(void);
 static void session_network_notify(const struct sessiond_account *account, const char *change);
 static void session_handoff(struct sessiond *daemon, int control);
-static int session_request(struct sessiond *daemon, struct sessiond_account *account, int control);
+static int session_request(struct sessiond *daemon, struct sessiond_account *account, int control, struct sessiond_exchange *exchange);
 static void session_logout(struct sessiond *daemon, int control);
-static void session_unlock(struct sessiond_account *account, int control, char *password);
 static void session_record(int type, pid_t pid, const char *user);
 static void session_sweep(struct sessiond_account *account, pid_t leader);
 static void session_signal_user(uid_t uid, int signal_number);
@@ -117,19 +114,20 @@ sessiond_session_run(
 	struct sessiond *daemon,
 	struct sessiond_account *account)
 {
-	struct pollfd entry;
+	struct sessiond_exchange exchange;
+	struct pollfd entry[2];
 	char directory[64];
 	pid_t child;
 	pid_t waited;
 	int pair[2];
 	int control;
 	int leaving;
+	nfds_t entries;
+	int timeout;
+	int busy;
 	int ready;
 	int status;
 	int error;
-
-	/* No wrong password yet. */
-	session_wrong = 0U;
 
 	/* The seat is the user's now (the greeter keeps what it has open until it ends). */
 	sessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid, 1);
@@ -183,6 +181,7 @@ sessiond_session_run(
 
 	/* The display goes from the greeter to the session. */
 	session_handoff(daemon, control);
+	sessiond_exchange_init(&exchange, control, account, NULL);
 
 	/* Waits for it to end, answering it, and giving a new input device to the user every second. */
 	status = 0;
@@ -200,24 +199,39 @@ sessiond_session_run(
 			(void)kill(child, SIGTERM);
 		}
 
-		/* A request of the session, or a second. */
-		entry.fd = control;
-		entry.events = POLLIN;
-		entry.revents = 0;
+		/* A request of the session, passkey's answer, or a second (less while an attempt is under way). */
+		entry[0].fd = control;
+		entry[0].events = POLLIN;
+		entry[0].revents = 0;
+		entries = 1;
+		entry[1].fd = sessiond_exchange_fd(&exchange);
+		entry[1].events = POLLIN;
+		entry[1].revents = 0;
+		if (entry[1].fd >= 0)
+			entries = 2;
+		busy = sessiond_exchange_busy(&exchange);
+		timeout = 1000;
+		if (busy)
+			timeout = SESSIOND_EXCHANGE_TICK_MS;
 		ready = 0;
 		if (control >= 0)
-			ready = poll(&entry, 1, 1000);
+			ready = poll(entry, entries, timeout);
 		else
 			sleep(1);
-		if (ready > 0) {
-			leaving |= session_request(daemon, account, control);
+		if (ready > 0 && entry[0].revents != 0) {
+			leaving |= session_request(daemon, account, control, &exchange);
 
-			/* A session that closed its end says nothing more. */
-			if ((entry.revents & (POLLHUP | POLLERR)) != 0 && (entry.revents & POLLIN) == 0) {
+			/* A session that closed its end says nothing more, and its attempt ends. */
+			if ((entry[0].revents & (POLLHUP | POLLERR)) != 0 && (entry[0].revents & POLLIN) == 0) {
+				sessiond_exchange_stop(&exchange);
 				(void)close(control);
 				control = -1;
 			}
 		}
+
+		/* An attempt under way moves on. */
+		if (control >= 0)
+			sessiond_exchange_tick(&exchange);
 
 		/* Any new input device is the user's too, until the session hands the seat to the greeter. */
 		if (!leaving)
@@ -225,6 +239,7 @@ sessiond_session_run(
 	}
 
 	/* The session has ended: what is left of it goes, and the record says so. */
+	sessiond_exchange_stop(&exchange);
 	if (control >= 0)
 		(void)close(control);
 	sessiond_log("SESSIOND SESSION end user=%s pid=%ld status=%d", account->passwd.pw_name, (long)child, status);
@@ -299,7 +314,8 @@ static int
 session_request(
 	struct sessiond *daemon,
 	struct sessiond_account *account,
-	int control)
+	int control,
+	struct sessiond_exchange *exchange)
 {
 	char line[SESSIOND_LINE_MAX];
 	int got;
@@ -310,10 +326,9 @@ session_request(
 	if (got <= 0)
 		return 0;
 
-	/* The lock screen's password (erased once checked, with the line). */
-	match = strncmp(line, "UNLOCK ", 7);
-	if (match == 0) {
-		session_unlock(account, control, line + 7);
+	/* The lock screen's and Settings' requests, or a secret's line after one (erased with the line). */
+	match = sessiond_exchange_line(exchange, line);
+	if (match) {
 		memset(line, 0, sizeof(line));
 		return 0;
 	}
@@ -335,54 +350,6 @@ session_request(
 	/* Anything else. */
 	(void)write(control, "ERROR\n", 6U);
 	return 0;
-}
-
-/*
- * Checks the session user's password for the lock screen (ws035-p102): OK,
- * or FAIL after a delay, 2 seconds, twice as long after every three in a
- * row, at most 16.  The password is erased by the check.
- */
-static void
-session_unlock(
-	struct sessiond_account *account,
-	int control,
-	char *password)
-{
-	struct sessiond_account checked;
-	unsigned doublings;
-	unsigned delay;
-	int verified;
-
-	/* The check a login makes, for the session's own user only. */
-	memset(&checked, 0, sizeof(checked));
-	verified = login_verify(account->passwd.pw_name, password, &checked.passwd, checked.buffer, sizeof(checked.buffer));
-	if (verified == 0 && checked.passwd.pw_uid != account->passwd.pw_uid)
-		verified = -1;
-	memset(&checked, 0, sizeof(checked));
-
-	/* The right password unlocks. */
-	if (verified == 0) {
-		session_wrong = 0U;
-		syslog(LOG_NOTICE, "unlock %s on the graphical seat", account->passwd.pw_name);
-		sessiond_log("SESSIOND UNLOCK ok user=%s", account->passwd.pw_name);
-		(void)write(control, "OK\n", 3U);
-		return;
-	}
-
-	/* A wrong one: the delay grows with the failures in a row. */
-	session_wrong++;
-	doublings = (session_wrong - 1U) / 3U;
-	delay = SESSION_DELAY_SECONDS;
-	while (doublings > 0U && delay < SESSION_DELAY_MAX) {
-		delay *= 2U;
-		doublings--;
-	}
-
-	/* The failure goes on record, and the answer waits out the delay. */
-	syslog(LOG_WARNING, "failed unlock %s on the graphical seat (%u in a row)", account->passwd.pw_name, session_wrong);
-	sessiond_log("SESSIOND UNLOCK fail user=%s wrong=%u delay=%u", account->passwd.pw_name, session_wrong, delay);
-	sleep(delay);
-	(void)write(control, "FAIL\n", 5U);
 }
 
 /*

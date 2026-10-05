@@ -11,12 +11,17 @@
  *
  *   READY                  the greeter is about to take the display; GO
  *                          (ws035-p101: nothing else holds it then)
- *   AUTH name password     checks the password; OK or FAIL, after a delay
- *                          that grows with the failures in a row
+ *   STYLES name            the ways the account can log in now
+ *   AUTH name style        then the secret on the next line: /sbin/passkey
+ *                          checks it (auth.c, ws172-p002); TOUCH while a
+ *                          security key waits, then OK, or FAIL reason
+ *                          after a delay that grows with the failures
+ *   CANCEL                 stops a security key attempt
  *   POWER poweroff|reboot  ends the machine; OK
  *
- * Anything else is answered ERROR.  The password is erased as soon as it is
- * checked, and never written anywhere.
+ * Anything else is answered ERROR.  The secret is erased as soon as it is
+ * written to passkey, and never written anywhere else.  sessiond's loop
+ * keeps serving the greeter while passkey works.
  *
  * After OK the greeter stays on the screen ("Starting session") while the
  * session starts; once the session is ready to take the display sessiond
@@ -27,8 +32,7 @@
  * display back (session.c).
  */
 
-#include "sessiond.h"
-#include "../../base/login/verify.h"
+#include "auth.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -60,13 +64,12 @@
 #define GREETER_READY_MS	30000
 #define GREETER_RELEASE_MS	5000
 
-/* The delay after a wrong password, and the longest it grows to. */
-#define GREETER_DELAY_SECONDS	2U
-#define GREETER_DELAY_MAX	16U
+/* How often a new input device is given to the greeter (milliseconds). */
+#define GREETER_SEAT_MS		1000LL
 
 /*
- * One running greeter: its process, sessiond's end of the socket, and the
- * request that has come in so far.
+ * One running greeter: its process, sessiond's end of the socket, the
+ * request that has come in so far, and the login attempt under way.
  */
 struct greeter {
 	pid_t pid;
@@ -74,16 +77,15 @@ struct greeter {
 	time_t started;
 	char line[SESSIOND_LINE_MAX];
 	size_t used;
-	unsigned wrong;
 	int logged_in;
+	struct sessiond_exchange exchange;
 };
 
 static int greeter_account_find(struct sessiond_account *greeter_account);
 static int greeter_start(struct sessiond *daemon, struct greeter *greeter, struct sessiond_account *greeter_account);
 static void greeter_child(struct sessiond *daemon, int socket, struct sessiond_account *greeter_account);
-static int greeter_read(struct greeter *greeter, struct sessiond_account *account);
-static void greeter_request(struct greeter *greeter, char *line, struct sessiond_account *account);
-static void greeter_auth(struct greeter *greeter, char *arguments, struct sessiond_account *account);
+static int greeter_read(struct greeter *greeter);
+static void greeter_request(struct greeter *greeter, char *line);
 static void greeter_power(struct greeter *greeter, const char *what);
 static void greeter_reply(struct greeter *greeter, const char *reply);
 static enum sessiond_greeter_end greeter_wait(struct greeter *greeter);
@@ -102,8 +104,13 @@ sessiond_greeter_run(
 {
 	struct sessiond_account greeter_account;
 	struct greeter greeter;
-	struct pollfd poll_entry;
+	struct pollfd poll_entry[2];
 	enum sessiond_greeter_end end;
+	long long seat_ms;
+	long long now_ms;
+	nfds_t entries;
+	int timeout;
+	int busy;
 	int ready;
 	int error;
 	int closed;
@@ -126,35 +133,56 @@ sessiond_greeter_run(
 	/* Without its account the greeter cannot be looked after. */
 	if (error != 0)
 		return SESSIOND_GREETER_FAILED;
+	sessiond_exchange_init(&greeter.exchange, greeter.socket, NULL, account);
 
 	/* Its requests, until it logs a user in or goes. */
 	closed = 0;
+	seat_ms = sessiond_milliseconds();
 	while (!closed) {
-		/* sessiond is being stopped: the greeter goes first. */
+		/* sessiond is being stopped: the greeter (and an attempt under way) goes first. */
 		if (sessiond_stopping) {
+			sessiond_exchange_stop(&greeter.exchange);
 			greeter_kill(&greeter);
 			return SESSIOND_GREETER_STOP;
 		}
 
-		/* A request, or a second to give a new input device to the greeter. */
-		poll_entry.fd = greeter.socket;
-		poll_entry.events = POLLIN;
-		poll_entry.revents = 0;
-		ready = poll(&poll_entry, 1, 1000);
-		if (ready == 0) {
-			sessiond_seat_give(greeter_account.passwd.pw_uid, greeter_account.passwd.pw_gid, 0);
-			continue;
-		}
-
-		/* An interrupted wait is waited again. */
-		if (ready < 0)
-			continue;
+		/* A request, passkey's answer, or the time to look at the attempt or the seat again. */
+		poll_entry[0].fd = greeter.socket;
+		poll_entry[0].events = POLLIN;
+		poll_entry[0].revents = 0;
+		entries = 1;
+		poll_entry[1].fd = sessiond_exchange_fd(&greeter.exchange);
+		poll_entry[1].events = POLLIN;
+		poll_entry[1].revents = 0;
+		if (poll_entry[1].fd >= 0)
+			entries = 2;
+		busy = sessiond_exchange_busy(&greeter.exchange);
+		timeout = 1000;
+		if (busy)
+			timeout = SESSIOND_EXCHANGE_TICK_MS;
+		ready = poll(poll_entry, entries, timeout);
 
 		/* Reads what came; the greeter closing its end is its end. */
-		closed = greeter_read(&greeter, account);
-		if (greeter.logged_in)
+		if (ready > 0 && poll_entry[0].revents != 0)
+			closed = greeter_read(&greeter);
+
+		/* The attempt moves on; a login passkey granted takes the account. */
+		sessiond_exchange_tick(&greeter.exchange);
+		if (greeter.exchange.logged_in) {
+			greeter.logged_in = 1;
 			break;
+		}
+
+		/* A new input device is the greeter's (never a security key, seat.c). */
+		now_ms = sessiond_milliseconds();
+		if (now_ms - seat_ms >= GREETER_SEAT_MS) {
+			sessiond_seat_give(greeter_account.passwd.pw_uid, greeter_account.passwd.pw_gid, 0);
+			seat_ms = now_ms;
+		}
 	}
+
+	/* An attempt still under way ends with the greeter. */
+	sessiond_exchange_stop(&greeter.exchange);
 
 	/* After a login the greeter stays on the screen until the session is ready for the display. */
 	if (greeter.logged_in && !sessiond_stopping) {
@@ -445,8 +473,7 @@ greeter_child(
 /* Reads what the greeter sent and answers each whole line; reports 1 when the greeter has closed its end. */
 static int
 greeter_read(
-	struct greeter *greeter,
-	struct sessiond_account *account)
+	struct greeter *greeter)
 {
 	char *end;
 	ssize_t count;
@@ -468,7 +495,7 @@ greeter_read(
 			break;
 		*end = '\0';
 		length = (size_t)(end - greeter->line) + 1U;
-		greeter_request(greeter, greeter->line, account);
+		greeter_request(greeter, greeter->line);
 
 		/* The rest moves to the front, and what was read is erased (a password may be in it). */
 		memmove(greeter->line, greeter->line + length, greeter->used - length);
@@ -493,8 +520,7 @@ greeter_read(
 static void
 greeter_request(
 	struct greeter *greeter,
-	char *line,
-	struct sessiond_account *account)
+	char *line)
 {
 	int match;
 
@@ -506,12 +532,10 @@ greeter_request(
 		return;
 	}
 
-	/* A login. */
-	match = strncmp(line, "AUTH ", 5);
-	if (match == 0) {
-		greeter_auth(greeter, line + 5, account);
+	/* A login's request (STYLES, AUTH, CANCEL), or the secret's line after AUTH. */
+	match = sessiond_exchange_line(&greeter->exchange, line);
+	if (match)
 		return;
-	}
 
 	/* The power button. */
 	match = strncmp(line, "POWER ", 6);
@@ -522,69 +546,6 @@ greeter_request(
 
 	/* Anything else. */
 	greeter_reply(greeter, "ERROR");
-}
-
-/* Checks a user's password; a right one logs the user in, a wrong one is answered after a delay. */
-static void
-greeter_auth(
-	struct greeter *greeter,
-	char *arguments,
-	struct sessiond_account *account)
-{
-	char name[SESSIOND_NAME_MAX];
-	char *password;
-	unsigned delay;
-	unsigned doublings;
-	size_t length;
-	int verified;
-
-	/* The name, up to the first space, and the password after it (which may have spaces). */
-	password = strchr(arguments, ' ');
-	if (password == NULL) {
-		greeter_reply(greeter, "ERROR");
-		return;
-	}
-
-	/* A name that is empty or too long is refused. */
-	length = (size_t)(password - arguments);
-	password++;
-	if (length == 0 || length >= sizeof(name)) {
-		memset(password, 0, strlen(password));
-		greeter_reply(greeter, "ERROR");
-		return;
-	}
-
-	/* The name on its own. */
-	memcpy(name, arguments, length);
-	name[length] = '\0';
-
-	/* The check, which erases the password (login's own, verify.c). */
-	memset(account, 0, sizeof(*account));
-	verified = login_verify(name, password, &account->passwd, account->buffer, sizeof(account->buffer));
-	if (verified == 0) {
-		syslog(LOG_NOTICE, "login %s on the graphical seat", name);
-		sessiond_log("SESSIOND AUTH ok user=%s uid=%u", name, (unsigned)account->passwd.pw_uid);
-		greeter->logged_in = 1;
-		greeter->wrong = 0;
-		greeter_reply(greeter, "OK");
-		return;
-	}
-
-	/* A wrong password: 2 seconds, twice as long after every three in a row, at most 16. */
-	greeter->wrong++;
-	doublings = (greeter->wrong - 1U) / 3U;
-	delay = GREETER_DELAY_SECONDS;
-	while (doublings > 0U && delay < GREETER_DELAY_MAX) {
-		delay *= 2U;
-		doublings--;
-	}
-
-	/* The failure goes on record, and the answer waits out the delay. */
-	syslog(LOG_WARNING, "failed login %s on the graphical seat (%u in a row)", name, greeter->wrong);
-	sessiond_log("SESSIOND AUTH fail user=%s wrong=%u delay=%u", name, greeter->wrong, delay);
-	memset(account, 0, sizeof(*account));
-	sleep(delay);
-	greeter_reply(greeter, "FAIL");
 }
 
 /* Ends the machine the way the greeter's power button asks. */
