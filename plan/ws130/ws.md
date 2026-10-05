@@ -3,7 +3,7 @@
 # WS130: IPv6 の network stack
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete（2026-10-05: p001 設計 cleared、p002 kernel の核は merge 済みで T1-206 待ち）
 Primary Milestone: MG005
 Related Milestones: MG002（POSIX の socket API）
 Objectives: O1, O3

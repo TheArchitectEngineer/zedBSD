@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172 -->
 # WS172: passkey の認証の枠組み（/sbin/passkey と /etc/passkey、sessiond は外部の program で認証）
 
-Status: planning（2026-10-05 追加、ベータ2。WS162・WS163 の ~/.config の mock を置き換える。担当 P1、WS161 の kernel の作業の後）
+Status: incomplete（2026-10-05 追加、ベータ2。p001 設計 cleared、p002 PIN の login は実装・merge 済みで T1-203 FAIL（uncleared）、p003 FIDO2 は未着手。WS162・WS163 を吸収）
 Master: [master](../master.md)
 Primary Milestone: MG006
 Related: [WS161](../ws161/ws.md)（hidraw・smartcard・libpasskey）、[WS162](../ws162/ws.md)（FIDO2 の login）、[WS163](../ws163/ws.md)（PIN の login）

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws173 -->
 # WS173: AAT（Agent Acceptance Test）— エージェントが素の実機を SSH で操作して受け入れを確かめる枠組み
 
-Status: planning（2026-10-05 追加、最優先。UAT はこの後に遅らせる）
+Status: incomplete（2026-10-05 追加、最優先。p001〜p003 は QEMU で PASS、p004 のシナリオ 75 本・runner・補助と p006 の選択は merge 済みで T1-202 待ち。5330 の AAT はその後）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

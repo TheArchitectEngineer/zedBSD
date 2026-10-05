@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws163 -->
 # WS163: 数字 6 桁の login
 
-Status: completed（2026-10-05 夜のユーザーの決定で **WS172 に吸収**。目標は WS172 p002 が達した物とする。WS172 p002 の QEMU の試験（T1）は Q1 が依頼済みで、その結果がこの WS の受け入れの証拠になる）
+Status: incomplete（2026-10-05 夜のユーザーの決定で **WS172 に吸収**。目標は WS172 p002 が達した物とする。WS172 p002 の QEMU の試験 T1-203 は FAIL（greeter の password の login が起きない）なので、受け入れはまだ。WS172 p002 が cleared になった時に Q1 が completed にする。2026-10-05 Q1 が P1 の completed を直した）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

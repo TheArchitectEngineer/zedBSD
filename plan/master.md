@@ -5,158 +5,74 @@
 [Queue](queue.md) · [Guardrail](guardrail.md) · [Future Work](future-work.md) · [Bug Board](known-bugs.md) · [Past Log](history/index.md) · [設定](config.md) · [Agent の運用](agents/protocol.md) · [Agent の台帳](agents/registry.md) · [GitHub Project](https://github.com/users/awemorris/projects/2)
 
 <!--
-  現在の状況の領域。各 block は「master:<名前>:start」から「master:<名前>:end」までで、sed/awk で丸ごと置き換えてよい。
-  例: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に新しい行を差し込む。
+  Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
+  block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
+  置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
+  追記（log）: sed -i '/master:decisions-log:start/r entry.md' plan/master.md（start の直後 = 新しい順の先頭に入る）。
+  決まった判断は open-decisions から消し、decisions-log に日付つきで移す。古くなった体制・予定は history-log へ。
 -->
 <!-- awesome-plan-current:start -->
-## 現在の状況
+## 現在の状況（Q1）
 
 <!-- master:updated:start -->
-更新: 2026-10-04 19時40分 Q1（利用枠で全サブエージェントをラップアップ。BUG-158 の原因確定と修正の統合、WS049 p009・p017 cleared）
+更新: 2026-10-05 夜 Q1（ユーザーの指示で P1・P2・T1 をラップアップし全員終了。成果を全部 main に merge（f8d08aac まで）、master を整理）
 <!-- master:updated:end -->
 
+### 担当
+
 <!-- master:agents:start -->
-- **2026-10-05 未明〜10 時ごろ: 夜の自律**（user）。P1 = WS159（native の touchpad）、P2 = Files の新規（p011・p010）と p021 の 1 分の有効期限、T1 = 試験の依頼がある時。新規の実装が尽きるか止まった時だけ実機の要らない Bug を投入してよい。判断が要る点は uncleared にして記録し、次へ。
-- **2026-10-04 19時40分 全サブエージェント終了**（セッションの利用枠 94%）。動いている担当は無い。再開の候補: T1 で T1-094（ws141-p003 の N0 の QEMU）と T1-095（BUG-158 の修正の 5330 passthrough の確認）、P3 で q685〜q690、P1 で WS050 p002 の前提・WS051・WS052・q682、P2 で ws141-p003 と WS037。ユーザーの判断待ち: WS037 の 5〜18、WS051 §13、WS052 §10、ws049-p017 ⑤（hal.h）。
-- **2026-10-04 17 時からの体制（user）**: 設計と実装は P1・P2（phase-runner、high）。試験は Q1 が集めて T1 に送り、T1 は積まれた依頼をできるだけ 1 回の QEMU の起動にまとめて流す。T1 が忙しい時は T2 を立ててよい。P1・P2 は試験を待たず、依存を満たす別の Queue へ移る（WS ごとでなく流れ A〜D の WS 群をまんべんなく進める）。対象は流れ A〜D（q677〜q692）。週間の使用量は 17 時にリセット（0%）。最初の割り当て: P1 = q677（BUG-165）、P2 = q683（BUG-170）。**優先（user 最新）**: P1 = WS049（p007〜p009、BUG-165）・WS050・WS051・WS052、全て塞がった時だけ WS132。P2 = BUG-170 の後は WS141・WS037。Bug の修正は P3（Fable の BUG-158 の解析の後に phase-runner-mid で立て直し）: BUG-158 の実装・流れ B・BUG-165 の残り（P1 の区切りの後）。詳細は [queue.md](queue.md) の「2026-10-04 17 時以降の予定」。
-- 体制: 単一 session の Q1 ＋固定名サブエージェント（実装 P1〜P8、試験 T1・T2）。2026-10-03 夜 user「これによりすべての作業をソフトに停止します。」で P1・P2・T1・T2 はラップアップして終了、全ての成果は main に統合済み（P4 の WS118 の source と記録も Q1 が取り込んだ）。動いている担当は無い。
-- 再開の時の割り当ての候補（user が決める）: P1 = WS131 の p008 の試験と p009 以降、P2 = WS134 の p003 の直しと p004、T1・T2 = 台帳の未実行の予約（`plan/agents/T1/requests.md`・`T2/requests.md`）。WS135（設定の一本化、BUG-162）の担当と時期は未定。
-- **2026-10-04 夜の自律の指示**: user「私は寝ます。昼までには起きると思います。テストが全部終わったら、P2は優先度の高いものから、実装タスクを進めてください。WSが完了できないときは他のWSに移ることで、どんどん先に進めてください。」→ 体制は P2・T1・T2（P3 は WS137 の後に終了）。P2 は WS135 の後、優先度の順に実装の Phase を進め、判断・実機・依存で止まる WS は記録して次の WS へ。Q1 の解釈: WS131 の p009 以降（設計はユーザーのレビュー済み）もこの指示で始めてよい。新しい製品の判断・HAL の API・toolchain・push は従来どおりユーザーの承認まで止める。
-- **2026-10-04 夜〜朝の成果**（全て main に統合、QEMU と FreeBSD・Linux の guest の確認、実機は未実施）: WS135 completed（設定の一本化、BUG-162 resolved）、WS136 completed（試験の image の作り方）、WS137 completed（FreeBSD の試験の VM）。WS131 p004〜p011 cleared（p012 はユーザーの判断待ち）。WS134 p001・p002・p004〜p006・p008・p011〜p013 cleared（p003 の fps・p007 の i915・p009 の ACPI・p010 の残りは実機待ち）。Bug resolved: 033・052・053・103・129・135・139・143・162・163・164（163・164 は今夜の発見）。T1-076 で main 039b00f の boot-test・C1・settings-p007・files-p004 PASS。体制は P2（待機）・T1（待機）、T2 は終了。
-- 2026-10-04 user「任せます」→ Q1 の決定: 標準 app のベータ1 の作業（WS127 p003・p006、WS128 p005・p006）を先にし、WS131 の app の移行（p012 以降）はベータ1 の後。WS134 p003 の fps は実機の値で判定。
-- **2026-10-04 昼 ユーザーの指示**:
-  - 「WS13,WS128は進めてOKです。PE/COFFローダも進めてオーケーです。記録してください。」→ Q1 の読み: 直前の切れた「WS131,」と合わせて **WS131（app の移行 p012 以降。ベータ1 の後に回す Q1 の決めを取り消し、進めてよい）・WS128（標準 app の残り、p004 の PDF の文字の検索を含む）・WS080（PE/COFF の動的ローダ `ld.coff`）** を進めてよい。
-  - 「F-071、F-072、F-070、はWSを立てて計画を作り、他の能力が低いセッションで処理できるようにしてください。」→ WS138（F-071 PNG の背景）・WS139（F-072 性能）・WS140（F-070 ld.so の上限を動的に）の計画を P1 が作成中。
-  - **トークンが余った時にいつでも進めてよい WS**（ユーザー「WS066、WS061、WS061はトークンが余ったときにいつでも進められる内容としてmaster.mdに書いておいてください。」、3 つ目は重複の書き間違いと読んだ）: [WS066](ws066/ws.md)（動的 link の program の起動を速く）、[WS061](ws061/ws.md)（expat の configure と compile を Linux と同等に）。
-  - 実機の UAT: 2026-10-04 13 時（観点と手順は [uat.md](uat.md)）。
-- 2026-10-04 11時 user「サブエージェントについて、実装は現在の内容を完成させたらラップアップして終了し、計画と設計のみに移行してください。P2は終了、P1,T1のみにします。P1は設計と計画のみに専念。残りの使用量が少ないので、設計より計画が優先。」（週間の使用量 96%、水曜 6:00 にリセット）→ P2 は p014 を仕上げて終了、T2 は終了、P1 は ws080-p004 を仕上げた後は計画だけ、T1 は残す。
-- **次に流す試験の一覧と手順は [plan/test-queue.md](test-queue.md)**（2026-10-04、試験の担当のラップアップの後。能力の低いセッションでも流せる手順。最初は TQ-1: ws131-p013・p014 の 3 OS の回帰、source は agent/p2 40b242a）。
-- 2026-10-04 全サブエージェントをラップアップ（P1・P2・T1・T2 終了）。未 merge: agent/p2 40b242a（p013・p014、TQ-1 の PASS の後に merge）。
+- **動いている担当は無い**（2026-10-05 夜、全員ラップアップで終了）。再起動は同じ名前で新しい世代（前の世代を TaskStop してから。終わった担当へ SendMessage すると再開してしまう）。
+- 再開の地点:
+  - **P1**: (1) T1-203 の FAIL の解析（WS172 p002、greeter の password の login が起きない、`ZWL EXIT … error=5` が続く）。main に入っているので graphical login の image が壊れていないかを最初に。(2) WS168 p002 の残り（style の小直し、libc の `sandbox_spawn()` と `<sandbox.h>`（sysroot への追加は Q1 が許可する）、sandboxtest、T1 の依頼）。(3) WS130 p003（T1-206 の後）。(4) WS172 p003（p002 の PASS の後）。(5) WS161 p005〜p007。
+  - **P2**: (1) T1-202 の結果から AAT の runner と補助の直し（補助 69 本は target で未実行）。(2) WS158 p003 は T1-207 の PASS で cleared、シナリオ desktop.language.compositor-japanese を active に。(3) WS158 p004（Settings の Languages の頁の Display language、system の言語、各 app の kl_tr_follow）。(4) WS154 の SKK の後回しと WS145 D2・D3・D5〜D9 を各 phase.md に記録。
+  - **T1**: 台帳の未実行 T1-206（IPv6、`/home/awe/zedBSD-worktrees/t1-ipv6` は 67801dab で用意済み、もう main に入ったので main で作ってよい）・T1-202（AAT smoke・full）・T1-205（Super+↓）・T1-207（日本語の UI）。T1-203 は P1 の直しの後に再実行。
+  - **B1**（WS074 p178、Sonnet 5.5 Mid）: ユーザーの指示があるまで起動しない。
+  - **conformance-reviewer**: ブロッキングで他に作業が無い時だけ。
 <!-- master:agents:end -->
 
-## リポジトリの作り直し（2026-10-03 夜、持ち越し）
+### 統合と試験の待ち
 
-2026-10-03 user「リポジトリを作り直します。build/以下は削除されます。.git/も削除されます。持ち越したい情報があれば、plan/以下のドキュメントに記載が必要です。」
+<!-- master:merge:start -->
+- **未 merge の branch: 無い**（2026-10-05 夜、agent/p1 730e8f55・agent/p2 2b551cfc まで main に入った）。
+- **main に入ったが QEMU で未確認**（T1 の台帳）: WS130 p002 IPv6 の kernel（全ての image で IPv6 が既定 on、network の worker が 1 秒ごとに起きる）→ T1-206。WS168 p002 の kernel の `sandbox_spawn`（arm64・sparcv9・x68k の vmunix.mk に sandbox.c を足したが、その 3 つの kernel の build は未確認）。WS173 p004・p006 の runner と補助 → T1-202。BUG-194 Super+↓ → T1-205。WS158 p003 → T1-207。
+- **QEMU で FAIL**: WS172 p002（T1-203）。graphical login に影響するかもしれない（上の P1 (1)）。
+<!-- master:merge:end -->
 
-- **git の履歴**: plan の中の commit の SHA（`6ecf801cc`・`f94b1b633` など、2026-10-03 以前の全て）は古いリポジトリの物で、作り直した後は引けない。記録の意味（どの変更か）は文で残っている。
-- **build/ の証拠**: plan が指す `build/…` と `/home/awe/zedBSD-worktrees/*/build/…` の PNG・log・image（S1 の image `build/s1-pre/hdd-image.img` を含む）は消える。結果と判定は各 phase.md・Bug の ticket・`plan/agents/T1|T2/requests.md` に文で残っている。消えた証拠を指す行を「証拠の file が残っている」と読まない。
-- **作り直した後の手順**（Q1）:
-  1. commit の hook: `cp plan/tools/git-hooks/commit-msg .git/hooks/ && chmod +x .git/hooks/commit-msg`（メッセージが `WIP` ちょうどでない commit を拒否。AGENTS.md「git」）。`.claude/settings.json` の `attribution`（Co-Authored-By などの付記を無効）は tree にあるので残る。
-  2. remote は `git@github.com:awemorris/zedBSD.git`、author は `Awe Morris`。push はユーザーが指示した時だけ（AGENTS.md の確かめの手順）。
-  3. サブエージェントの worktree: 古い `/home/awe/zedBSD-worktrees/*`（agent/p1〜p4・t1・t2、codex/a1〜a3・p8〜p10）と `/home/awe/zedBSD-rpi4/.claude/worktrees/*` は古い `.git` に結び付くので使えない。担当を起こす時に main が `git worktree add /home/awe/zedBSD-worktrees/<名前> -b agent/<名前>` で作り直す（[protocol](agents/protocol.md) の 1）。古い worktree の directory の削除はユーザーが行う。
-  4. toolchain: `make toolchain` などで `build/llvm`・`llvm-source`・`llvm-build`・`NoctLang` を作り直した後に `plan/tools/toolchain-lock.sh lock`。
-  5. Linux の試験の guest（WS105・WS131、QEMU+KVM）: `plan/tools/keiland-linux/build-guest.sh`（base と gdm）で `build/keiland-linux/guest`・`guest-gdm` を作り直す。guest の SSH の鍵 `plan/tmp/guest/` は tree にある。
-  6. 試験の image の入力（2026-10-04 Q1 が作り直した）: `build/ws035-fonts/`（`userland/desktop/fonts/` の Inter.ttf・Inter-OFL.txt → OFL.txt・JetBrainsMono-Regular.ttf・JetBrainsMono-OFL.txt・DroidSansFallbackFull.ttf・DroidSansFallback-LICENSE.txt の複写）、`build/ws035-wallpaper/`（wallpaper.ppm・wallpaper-1080.ppm = `userland/desktop/keiland/wallpapers/Birch-Lake.ppm`）、`build/ws071-fonts/`（DroidSansFallbackFull.ttf・LICENSE・Apache-2.0.txt）。Venus の renderer `build/ws035-sq-venus/install` は Latitude 5330（10.0.30.3）から scp（`plan/ws035/tests/zdesktop-guest.sh` の注記、sha256 も）。host の `sudo modprobe vgem && sudo chmod 0666 /dev/dri/renderD128` は host の起動ごとに。
-  7. FreeBSD の試験の guest: `plan/tools/keiland-freebsd/build-guest.sh` で `build/keiland-freebsd/guest` を作る（鍵は OUT の中に作る）。
-  8. 統合の前の残り: 無い（全ての agent の branch は main に入っている。`worktree-agent-aefedcaf…` の 2 commit は BUG-066 の決定で merge しない物）。P1 の `build/p1-q640/p007-wip.patch` は p007 が commit 済みなので不要。
-- **tree に残るが git に入らない物**（削除の対象外の前提）: `.wifi`（WiFi の認証情報、ユーザーが作成）、`.claude/settings.local.json`、`config.mk`、`plan/*/temp/`。
-- **host の状態**（repo の外）: sysctl の一時の設定（`vm.dirty_background_bytes=512M`・`vm.dirty_bytes=2G`・`vm.swappiness=10`、2026-10-03 user「sysctl の調整はやってみてください」）は再起動で戻る。残すかは user の判断待ち。fstrim は 2026-10-03 に実行済み（35 分、204.6 GiB）。
+### Q1 の次の手順
+
+<!-- master:next:start -->
+1. 再開したら T1 を起動し T1-206 → T1-203 の原因の切り分け用の素の graphical login の boot（main で `plan/ws035/tests/build-login-image.sh` の image）→ T1-202・T1-205・T1-207 を流す。
+2. P1 に T1-203 の解析、P2 に T1-202 の後の AAT の直し。
+3. AAT の直しの後、main の最新で 5330 の AAT の image を作り（`plan/tools/aat/build-image.sh`）、T1 で boot-test、ユーザーに USB の起動を頼んで smoke から AAT（記録は plan/ws173/runs/ と [tests.md](tests.md) §7）。UAT はその後、時刻はユーザーが知らせる。
+4. 合間の仕事: WS068・WS101 の低い優先の Phase、i915 の SPIR-V の lowering、WS171（hal.h の comment）。
+<!-- master:next:end -->
+
+### ユーザーの未決の判断
+
+<!-- master:open-decisions:start -->
+- **WS153 U2〜U15**（app の repository、[design.md](ws153/design.md) 第 5 版）: ユーザーが検討中（2026-10-05 夜「まだ検討中です。」）。こちらからは聞かない。WS153 の p002 以降は止める。
+- **ws049-p017 ⑤**（memory map の型を問う口、HAL の API が要る）: 2026-10-04 から未決。足すなら hal.h の差分を plan に置いて承認を得る。
+- WS164 H4 は Q1 が調整として承認済み（未決ではない）。
+<!-- master:open-decisions:end -->
+
+### Focus
 
 <!-- master:focus:start -->
-- **fg019 ベータ1 のリリース（公開 2026-10-17、RC の commit 10/13 が事実上の機能の締切、名前「Kei/zedBSD 1.0.0 Beta 1」、版 1.0.0-beta1）**。決定は [ws129/release.md](ws129/release.md) の §9。内容は下の「Current Focused Goals」。
-- fg018 Linux 標準 GTK4（WS114 は p007・p008 まで達成、GTK4 の zedBSD 移植 WS115 は後回し）。
-- **17 時（2026-10-04）からの予定**（2026-10-04 user「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。そうすると、AMLと併走できる開発項目は、UATで見つかったバグだと思います。スケジューリングだけしてmasterやqueueに記録してください。実行は17時以降に行います。」）。詳細と依存は [queue.md](queue.md) の「2026-10-04 17 時以降の予定」（q677〜q690）。
-  - **新規実装の目標: USB-C の DisplayPort Alternate Mode（WS051、WS050 の UCSI の上）**、次に**電源管理（WS052）**。両者は並走し、共通の前提は **WS049（AML）**: q677 ws049-p008（BUG-165 の DSDT）→ q678 ws049-p007（電源ボタン・GPE・EC）。WS132（ベータ1、全部）も同じ前提（q682）。
-  - **AML と並走: UAT の Bug**（q683 BUG-170 → q684 BUG-158 → q685 BUG-168・169 → q686 BUG-175 → q687 BUG-173 → q688 BUG-171・176・157 → q689 BUG-166・167（仕様の決めと DSDT の後）→ q690 BUG-172・174（実機））。
-  - **流れ C（完全に独立）: [WS141](ws141/ws.md) Raspberry Pi 4 のグラフィックス**（q691 p001 の文書から）。
-  - **流れ D（完全に独立）: [WS037](ws037/ws.md) nvrtx（NVIDIA RTX 2000 以降）**（q692 p001 の文書から）。
-  - その次（担当に余裕があれば）: WS129 p003〜p005（release）、ws131-p014 の残り・TQ-1 の残り → p026、WS138・WS139・WS140、WS080 p004。
+- **fg019 ベータ1**（公開 2026-10-17、RC の commit 10/13 が機能の締切）。残り 35.3 LW（下の段の表、今日の進みは未反映）: WS159 native touchpad、UAT の Bug（WS073・081・005・099）、WS131・WS132・WS089・WS095・WS128、5330 の実機の確認。
+- **AAT（WS173、最優先の道具）**: UAT の確認を AAT に移し、UAT は機器と使用感だけに（[tests.md](tests.md)）。
+- **ベータ2 の着手済み**: WS172 passkey・WS130 IPv6・WS168 preview の sandbox・WS158 翻訳・WS161 YubiKey・WS166 予測・WS089 の dark。2026-10-05 にユーザーがベータ2 の実装を P1・P2 に scheduling 可能にした。
+- fg018 Linux 標準 GTK4（WS114 p007・p008 まで達成）。
 <!-- master:focus:end -->
 
+### 止まっている物
+
 <!-- master:blocked:start -->
-- [WS155](ws155/ws.md)（カレンダー・スケジューラ・オーガナイザ）: 2026-10-05 ユーザーがデザイン案を提出、blocked を解除。まず UI の mock（3D の animation つき）を見せて再指示を受ける。
-- 5330 の AX211 の passthrough は 2026-10-04 に再開を許可（iwlwifi を blacklist して再起動が要る、Guardrail）。iGPU は i915 の driver の改善の Phase だけで使い、iGPU と AX211 の同時は禁止。
-- 2026-10-04 の UAT（[uat.md](uat.md)、証拠 [uat/2026-10-04/](uat/2026-10-04/)）: 実機で OK は BUG-145・152・161・143・139・103・160・153。再現は BUG-158・119・156・157。新規 BUG-165〜176。**最優先は BUG-165（DSDT が読めない: 電源が切れない・タッチパッド・電池の根の候補）・BUG-158（WiFi 未接続で kernel のフリーズ）・BUG-170（音量の slider のフリーズ）**。タッチパッドの操作の仕様（BUG-166）はユーザーと決める。
+- WS074 のレンダリングの改善: ユーザーの指示まで止める（Acid3 100/100、pixel の一致 37.04%）。B1 の p178 はユーザーの指示で起動。
+- WS153: U2〜U15 のユーザーの判断まで p002 以降を止める。
+- 5330: AX211 の passthrough は再開を許可（iwlwifi を blacklist して再起動）。iGPU と AX211 の同時は禁止。i915 は `/tmp/i915-hw.lock` の下で。素の起動はユーザーが USB で（AAT・UAT）。
 - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
-<!-- master:pending-decisions:start -->
-- **2026-10-05 夜 ラップアップ（ユーザーの指示で P1・P2・T1 を終了）**: 全部の担当が終了。main 0041dbfd 以降。T1-203（WS172 p002 の PIN の login）が **FAIL**: greeter の password の login が起きない。WS172 p002 は main に merge 済みなので、**次の作業の最初に graphical login の image が壊れていないかを確かめる**（P1 の解析）。未 merge: agent/p1 の WS130 p002（67801dab、T1-206 待ち）と WS168 p002 の kernel（730e8f55、arm64・sparcv9・x68k の build の確認も）。未実施の T1: T1-206・T1-202・T1-205・T1-207。5330 の AAT の image は T1-202 と直しの後に作り直す。WS168 の libc の `<sandbox.h>` の sysroot への追加は Q1 が許可する（toolchain の lock）。
-
-- **2026-10-05 夜 ユーザーの決定（まとめての質問への回答）**: 次を**担当の推奨どおり**に決定。
-  - WS156 通知: H1 popup の大きさは案、H2 log は Super+N、H3 memory で 100 件、H4 全画面・lock 中は log だけ（URGENT は全画面にも）、H5 重なりは 1.5 秒に縮める、H7 bar の媒体の icon を通知に置き換える。
-  - WS164 Welcome: H1 各 account の最初の login だけ、H2 Settings の mode で終わりに Today、H3 5 段。
-  - WS165 手書き: H1 段 1 の目標、H2 $P 型の点群の照合、H3 Hershey と自作（KanjiVG は段 2）、H4 段 2・3 は段 1 の後。
-  - WS167 GPU の命令: H1 Google の著作権の表示を外す、H2 include/uapi/gpu-op.h を足す（UAPI の追加の承認）、H3 名前は GPU_OP_CREATE_INSTANCE の形。
-  - WS158 翻訳: ① 英語の文、② 独自の UTF-8 の catalog、③ 英語と日本語、④ greeter は system の既定、⑤ ws089-p015・ws127-p005 を WS158 に吸収（元は canceled）。
-  - WS154: SKK の >・/・#・Tab・注釈を Future Work へ。
-  - WS145 印刷: D2 利用者ごと、D3 path・queue 名を詳しい設定で入力可、D5 CUPS の printer は出さない、D6 PDF Viewer の印刷を含める、D7 login 名を送る、D8 spool の上限は案、D9 同じ利用者の app に job が見える。D4（受け入れの printer の機種）は未決。
-  - BUG-194: 全画面から戻る key は **F11 と Super+↓ の両方**。
-  - WS169・WS170: **ベータ2**（WS170 は連絡先からタイムライン、WS169 は IMAP・SMTP まで。Gmail・Outlook と本物の SMS・通話は以降）。
-  - 段ごとの見積もりの表を**今作り直す**（Q1）。
-  - WS168 sandbox の縮小表示: H1〜H7 は**全部推奨どおり**（`sandbox_spawn` の system call と include/uapi/sandbox.h の UAPI の追加を承認、子は呼び出し側の uid、断った call は SIGKILL、対象は Files と Settings、Linux・FreeBSD は seccomp・Capsicum だけでよい、子は静的 link、name space を持たせない）。p002 から実装してよい。
-  - WS066: 受け入れの文を案 ①〜③ に改める（同じ回の中の静的との差を半分以下に、cc t.c は p003 へ、以後の速さは同じ回の中の比べで書く）。
-  - WS145 D4: 受け入れのプリンタは **Brother MFC-L3770CDW**（IPP Everywhere・AirPrint 対応の機種。PDF を直接受けるかは p002 で確かめ、受けなければ PWG raster の変換を足す）。
-  - WS153 U2〜U15: **ユーザーが検討中**（質問しない、決まるまで WS153 の p002 以降は止める）。
-  - WS130 p002 の UAPI の差分（plan/ws130/phase002/uapi.diff、493fb758、p001 の表からの 3 点の変更を含む）を**承認**。P1 が適用する。
-  - WS162・WS163 は **WS172 に吸収**（WS163 は WS172 p002 で達成として完了の形、WS162 の未着手の Phase は canceled で WS172 p003 へ）。
-  - WS101 p017・p012 の 5330 の測定は **T1 が 5330 の passthrough で**（合間、lock の下）。UAT・AAT には入れない。
-  - WS171 は**ベータ2**（合間の仕事）。
-  - 5330 の最初の AAT: **T1-202（QEMU の smoke・full）の後に、runner と補助を直してから main の最新で image を作り直す**（build/aat-0505a は使わない）。作れたらユーザーに USB の起動を頼む。
-
-- **2026-10-05 夕 ユーザーの決定（続き）**:
-  - WS121: 目標は「Vulkan Video の hardware decode」のまま（「hardware だけ」）。software decode の <video> の設計（P2 の第 2 版 3df53896）は記録として残し、実装は WS083 の Vulkan Video の後。WS121 は WS083 を待つ。
-  - WS130 IPv6: H1〜H8 は**全部推奨どおり**（UAPI の形の承認、V6ONLY の既定 0、既定 on、RFC 7217、DNS の順、断片の再組立て無し、DUID-UUID、Wi-Fi ごとの設定は後）。P1 が p002 へ。
-  - WS143 Bluetooth: §9 の D1〜D18 は**全部推奨どおり**（音と PAN は後回し、HID が先）。
-  - ws074-p178: 手順に「自前の browser で描いた Acid3 の参照を Chrome の描画と比べ、参照の側と test の側の誤りを分ける」段を足す。
-  - INPUT_INJECT_KIND_MOUSE の絶対の pointer の形は、承認したマウスの注入（試験だけ・root だけ）の範囲として Q1 が扱う（ユーザーに報告）。
-
-- **2026-10-05 夕 ユーザーの決定（AAT の後の質問への回答）**:
-  - AAT の素の起動: **毎回ユーザーが起動**（USB を差して起動、エージェントは起動の後に SSH で入る）。BootNext・内蔵 disk の案は採らない。
-  - BUG-171: **B**（利用者が明示に 100 を選んだ時だけ app の panel を不透明に、既定は今の frosted のまま、title bar は対象外）。
-  - WS172 の P1〜P10: **全部推奨どおり**（libpasskey を base・OpenSSL の例外を passkey-fido2 と libpasskey に広げる（Guardrail の行を直す）、再起動の後は一度 login するまで PIN を出さない、key の PIN 必須、`_passkey`、署名する loopback、WS163 の mock を外す、reset で PIN と key も消す、HIDRAW_GRAB を前提に、登録は key 1 つの時、autologin は数えない）。
-  - WS161: **V1 は HIDRAW_GRAB（UAPI の追加）、V2（YubiKey の OTP）はそのまま**。
-
-- **2026-10-05 夕 ユーザーの決定（passkey）**: /sbin/passkey と /etc/passkey の形（[WS172](ws172/ws.md)）。passkey は base、暗号は当面 OpenSSL でリリースまでに独自の実装へ（Guardrail の例外）。PIN の失敗の回数は sessiond の memory。WS162・WS163 の ~/.config の mock はこれで置き換える（WS162 の K1〜K3、WS163 の G1 は不要に）。
-- **WS162 の判断（2026-10-05、P1 の mock の設計 第 2 版 1845e3fc、§9.7。ユーザーが /etc/passkey と /sbin/passkey の形を考え中で、その形になれば置き換わる）**: K1 greeter で key の login: (a) mock は lock だけ、(b) 登録の時に利用者の password を key の CTAP2 hmac-secret で AES-256-GCM に包み greeter が読める file（~ を 0711 に）[P1 の推奨]、(c) sessiond の request（BSD Auth・passkey の形の後）。K2 key と key の PIN（UV）[可]、K3 kl_system_account_v1 に add_passkey・remove_passkey（manager version 11）。
-- **WS161 の決定（2026-10-05 夕 ユーザー）**: U1「UAPI の include/uapi/hidraw.h を承認します。」U2「UAPI の include/uapi/ccid.h と、ノードの名前を承認します。名前は `/dev/smartcardN` がいいです。」U3「sessiond の座席のデバイスの一覧に `/dev/input/hidraw*` と `/dev/ccid*` を足し、ログイン中の利用者に渡してよいです。」（node の名前は U2 の `/dev/smartcard*` に合わせる）U4「試験用の kernel だけに、模擬の装置を入れてよいです。」U5「…それでもベータ2 に入れます。」→ P1 が p002 以降（hidraw・usb-ccid の /dev/smartcardN・seat の一覧・loopback）を実装してよい。
-- **WS163 G1（2026-10-05、P1 の設計の改訂 4cd87d18、§9）**: greeter は `_greeter` で動き利用者の ~/.config（home は 0700）を読めず、login は sessiond の AUTH（password）でしか始まらない。sessiond を変えずに greeter で PIN の login をするには、PIN で暗号化した password を `_greeter` が読める所に置くしかなく、どの利用者でも 10^6 通りを試して本当の password を取り出せる。(a) mock は lock の解除だけ、greeter は後の鍵管理・PAM の設計まで password [推奨]、(b) PIN で包んだ password を置きその危険を受け入れる、(c) sessiond に request を足す（ユーザーの方針に反する）。
-- **2026-10-05 夕 ユーザーの変更（WS089 p017）**: 「ライトモードとダークモードだけでいいです。アクセントカラーの変更は不要です。」→ accent の選択はやめ、light と dark の切り替えだけ（既定 light、今の見た目）。P2 の段は p017a（key `appearance.dark` と theme の口、Settings の switch、libkeiland・compositor・Settings・Files の dark）→ p017b（残りの app の dark）に組み直す。 追加（ユーザー）「アプリにテーマ変更による再描画を通知するためのWayland拡張がほしいですね。libkeilandを通じて利用します。」→ compositor が theme（light・dark）の変化を app に知らせる Wayland の拡張（Keiland の内部の拡張）を足し、libkeiland の口（変化の callback と今の theme の取得）から使う。app は直接 settings を見張らない。
-- **2026-10-05 夕 ユーザーの決定（YubiKey の USB）**: 「OTPはとりあえず非対応でいいです。USB HIDでFIDOが使えるように、raw reportのインタフェースを足しましょう。推奨の方法でOKです。ただ、/dev/input/hidrawXがいいです。/dev/fidoNはなくなった認識でいいですよね？」→ 案 A: 標準の usb-hid に生の report の口（入力の装置にしない HID の interface、まず FIDO の用途 page 0xF1D0、interrupt OUT と出力の report）を足し、node は **`/dev/input/hidrawX`**。**`/dev/fidoN` は無くす**（WS161 の H1 の `include/uapi/fido.h` も不要、hidraw の UAPI に替える）。OTP（YubiKey の keyboard の interface）は当面非対応。CCID（PIV・OpenPGP）は NFC の reader と共通の CCID の driver。libpasskey は hidraw と NFC の APDU の上に共通の FIDO2。
-- **WS153 U15（2026-10-05、P2 の設計 第 5 版、U1 = system 全体の反映）**: system 全体の導入（`/apps/<abi>/`）は特権の helper `app-admin`（setuid root、account-admin と同じ形、管理者の password を毎回、署名・hash・展開を自分で検め直す）が書く。root の口なので承認が要る（p005a の前）[案: account-admin と同じ形で可]。U2〜U14 は未決。
-- **2026-10-05 夕 ユーザーの決定（WS153・libpasskey）**:
-  - WS153 U1: 「アプリはシステム全体で入れましょう。単独ユーザが使うタブレットを想定しているからです。また、ユーザ単位のアプリ管理は、ユーザがホームディレクトリで自由にやればいいと思います。」→ app はシステム全体に導入。利用者ごとの app の管理は repository の仕組みでは扱わない（利用者が home で自由に）。U2〜U14 は未決（P2 の設計 第 4.1 版 §0）。
-  - libpasskey: 「NFC汎用のデバイスドライバを作るとして、USBと共通のFIDO2層もlibpasskeyで問題ないですか？また、暗号はOpenSSLの呼び出しでいったん作れますか？」→ Q1 の答え: 可。kernel は NFC の汎用の driver（USB CCID の reader から ISO-DEP の APDU の交換を出す）と USB の FIDO の HID の node だけ、libpasskey が transport（CTAPHID・NFC の APDU）の下の層と共通の FIDO2（CTAP2・CBOR・PIN）を持つ。暗号はまず OpenSSL（package の libcrypto、3.5.8）を呼ぶ形で作る。libpasskey は Keiland の側（package の境界）に置くので base の全自前の方針（master-design-policy §2.1）とは衝突しない。自前の暗号は後の候補。
-- **2026-10-05 夕 ユーザーの決定（FIDO2 と kernel の大きさ）**:
-  - 「FIDO2周りは、libfido2, libcborも含めて、独自のライブラリ libpasskey にまとめて、独自に作ります。NFCはドライバを作ります。」→ 外部の libfido2・libcbor は使わない。userland の独自の library **libpasskey** に CTAP（CTAPHID）・CTAP2・CBOR・PIN の protocol・暗号を置く。NFC は kernel の driver（ACR1252U の USB CCID）。WS161・WS162 の設計を libpasskey を前提に直す（P1）。
-  - 「カーネルの16MBの制限は、15-16MBホールを意識したもので、でもabove 16MBにロードして回避して、もう制限にしておく必要はないはずですね。いつでも制限を外してよいことを記録してください。」→ AMD64_KERNEL_MAX_BYTES（16 MiB）は**いつでも外して（広げて）よい**。外す時は `bootloader/include/amd64-kernel-image.h`・`platform/amd64/vmunix.ld` の ASSERT・`src/hal/amd64/space.c` の `system_kernel_pt`（W^X の leaf の表、1 枚 2 MiB）の数・`image.c`・`handoff-validation.c` を揃え、UEFI と BIOS の boot を確かめる（[BUG-198](bugs/BUG-198.md)）。
-- **2026-10-05 夕 ユーザーの決定（仮眠の後）**:
-  - WS163 PIN: 「~/.configの中にPINを保存してOKです。sessiondに難しい制御をさせたくないです。移植ができなくなるからです。これはまずモックアップとしての実装で、あとで鍵管理やPAMのような仕組みをきちんと考えます。」→ sessiond に PIN の口を足さない。PIN は利用者の ~/.config に、mock として実装（P1）。
-  - WS162 FIDO2 の login: 「sessiondに制御を入れず、libfido2をコンポジタのgreeterが直接叩くモックアップを作ってください。設定は~/.configの中でOKです。あとで鍵管理やPAMのような仕組みをきちんと考えます。」→ greeter が libfido2 を直接使う mock、設定は ~/.config（P1、WS161 の device の後）。
-  - WS161: 「Windowsで標準ドライバで使えるACR1252Uをターゲットにします。」→ 対象を ACR1252U（USB の CCID の NFC の reader、Windows の標準の CCID の driver で動く）に。libfido2・libcbor を自前にした時の工数はユーザーの問い（Q1 が答えた、下）。
-  - WS143: 「HIDが先で、オーディオとPANもほしいですが、ほかの開発項目より後回しでいいです。」→ 最初は HID。audio（A2DP）と PAN も要るが他の開発より後。D2・D3 の UAPI など §9 の残りは未決。
-  - WS156: 「Linuxではlibkeiland-backendにD-bus機能を入れて通知を取ればいいですね。実装はあと回しでいいです。設計だけ記録してください。」→ Linux は libkeiland-backend に D-Bus の org.freedesktop.Notifications の受け口を入れる設計を記録、実装は後。
-  - WS166: 「予測変換はインラインの通常IMEではなく、オンスクリーンキーボードのことでした。…もし作ってくれてしまったなら、通常IMEでは、オプションで有効にできるようにしましょう。」→ 予測は screen keyboard の候補の列が本題。IME の予測（ja-predict.c）は option（既定 off）。
-  - WS089 p017: 「p017はベータ2に入れます。ただし、従来の調整を壊さないようなデフォルト値で開始できるようにします。」→ ベータ2。既定値は今の見た目（blue、dark off）。
-  - WS122: 「GPUデコードはあとで、libavcodecをdlopenしてソフトウェアデコードにする仕様で、まず完成させます。GPUデコードが別WSで完成したら、それをVulkan Video Extensionで利用します。」→ p004 は dlopen の libavcodec の software decode で完成させる。
-  - BUG-171: 「保留を解除します。」→ 窓の不透明度 100% で app の glass の panel も不透明に（P2）。
-  - WS068 OpenGL 3.3 以降・WS101 GPU compute: 「保留を解除します。ただし優先順位が低く、やることがないときに作業します。」→ 保留を解除、合間の仕事（i915 の lowering・規約の見直しと同じ扱い）。
-  - bar の USB の icon は三叉（実装済み 662d4778）。
-
-- **bar のデバイス（USB 媒体）の icon は C（USB の三叉の記号）に決定**（2026-10-05 夕 ユーザー「アイコンはUSB の三叉の記号がいいです。」）。P2 が media.c に実装（q763）。
-- **BUG-194 全画面から戻す compositor の key（2026-10-05、P2 の案、今は仮に F11）**: A F11、B Super+↓（Fn が要らない）、C Esc の 1 秒の長押し、D 画面の上端からの swipe [P2 の案: A+B か B+C]。実機で F11 が効かなかったのは 5330 の上の列が既定で Home/End（Fn+F11 か Fn Lock）の見込み、次の UAT で Fn+F11 を試す。
-- **WS145 印刷の判断（2026-10-05、P2 の設計 第 3.1 版、3 回目の敵対的レビューで重大なし、plan/ws145/design.md）**: D2 printer の設定を利用者ごとか system 全体で共有か [利用者ごと。共有なら root の口が要り別の設計、p003 の前に要る]、D3 IPP の path と LPD の queue 名を詳しい設定で入力できるか（既定は /ipp/print → /ipp → /、LPD は lp）、D4 受け入れの printer の機種（PDF を受けない機種なら PDF → PWG raster の filter の WS が先に要る）、D5 Linux・FreeBSD で CUPS の既存の printer を一覧に出すか、D6 PDF Viewer の File > Print を含めるか、D7 printer に login 名を送ってよいか、D8 spool の上限（1 文書 256 MiB・合計 512 MiB・16 job）と複写せず app の file から直接送る案、D9 同じ利用者の全ての app に他の app の job の題名が見え取り消せること。
-- **2026-10-05 午後 UAT の後、ユーザー「ちょっと仮眠します。その方針でよいので、自走をお願いします。」**: 方針どおり自走。P1 は BUG-195・196・197（実機の ACPI）、P2 は UAT の所見（ws132-p009・ws099-p033・BUG-194（仮に F11）・BUG-181・BUG-193・bar の device の icon）。直しが揃ったら新しい UAT の image を作り T1 で boot-test。判断が要る点は記録して先へ。
-- **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
-- **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
-- **WS169・WS170 の段（2026-10-05 ユーザーの追加）**: ベータ2 に入れるか、それ以降か [Q1 の案: WS170 の最初の範囲（連絡先からタイムライン）はベータ2、WS169 はベータ2 で IMAP・SMTP まで、Gmail・Outlook は以降]。
-- **WS164 の判断（2026-10-05、P1 の p001 の設計、plan/ws164/phase001/phase.md §6）**: H1 各 account の最初の login だけ（`welcome.done`、Settings の About から再表示）[可]、H2 新しい app でなく Settings の mode で、終わりに Files の Today を開く [可]、H3 5 段（Welcome・Network・Look・Keys・Done、Back・Next・Skip、Languages は WS154 の後に入れる）[可]。H4（Settings の hook を WS164 が書く）は Q1 が調整として承認（P2 の WS089 の file に触れる時は Q1 が順を決める）。
-- **WS154 の判断（2026-10-05、P2 の p001 の設計、plan/ws154/phase001/phase.md）**: SKK の範囲から 接頭・接尾辞（>）・abbrev（/）・数値の変換（#）・補完（Tab）・注釈 を後回し（Future Work）にしてよいか [後回し]。Q1 が技術の裁量で決めた物: 設定の変更で IME を起動し直す（数百 ms IME が無い、protocol は変えない）、SKK の mode を言語の ID（skk・skk-katakana・skk-latin・skk-wide）にする。
-- **WS156 の判断（2026-10-05、P1 の p001 の設計、plan/ws156/phase001/phase.md §9）**: H1 popup の大きさ（幅 20%・320〜640 px、高さ 76 px、下中央の 48 px 上）[可]、H2 log の hotkey [Super+N]、H3 log の保存 [memory だけ、100 件]、H4 全画面・lock 中 [log だけ、URGENT は全画面の上にも出す]、H5 重なった時 [待ちがあれば保持を 1.5 秒に縮める]、H6 Linux・FreeBSD の D-Bus の通知 [v1 では無し]、H7 bar の USB media の icon を通知に置き換え [外す]。
-- **WS167 の判断（2026-10-05、P1 の p001、plan/ws167/phase001/phase.md §6）**: H1 license: 番号の表を独自の名前で書き直し、番号の再利用を明記し、Google の著作権の表示と LICENSE-PROTOCOL を外す（番号は interface の事実で、Venus の文・名前・構造は写していない）[外す]。H2 新しい UAPI include/uapi/gpu-op.h（kernel の i915 の実行器・libvulkan・venus-frame で共有、第 1 版は Venus の番号のまま）[足す]。H3 名前 GPU_OP_CREATE_INSTANCE か GPU_OP_vkCreateInstance か [前者]。
-- **WS066 の目標の文（2026-10-05、P2 の案、plan/ws066/phase002/phase.md）**: 測定の回の間のばらつきが大きい（変えていない true-static が 517 → 608 µs）。同じ回の中では静的との差が 266 → 10 µs で /bin/true は「差の半分」を満たした。案: ① 受け入れを「/bin/true と sh -c : の静的 link との差を同じ回の中で半分以下に」に改め、sh は静的な sh を足して T1 で確かめる、② cc t.c -o t は完了の条件から外し p003（ld.so の cache、clang 入りの image が作れる時）へ、③ 以後の速さの受け入れは同じ回の中の比べで書く。
-- 2026-10-05 ユーザー「本日12時にUATを行います。11時半にマージできている内容で、テストUSBイメージの作成をお願いします。」→ 11:30 に main で build/uat-0505c を作る（Q1、send_later を設定）。「ベータ2の実装をすべて、P1,P2にスケジューリング可能にします。作業を継続してください。」→ ベータ2 の WS（ブロック・アイディアの Phase の物を除く）を P1・P2 の Queue に入れてよい。
-- 2026-10-05 ユーザー「今朝追加したWSはベータ2に入れてください。」→ WS161〜WS168 をベータ2 に（見積もり計 20 LW、Q1 の概算）。
-- **2026-10-05 ユーザーの指示（段の整理）**: 要検討・ブロック WS098・150・039・037・038・141・080・044・048・118。最初にアイディアの Phase を実行してユーザーと議論 WS144・119・147・082・146・ニューラル IME（WS098、ブロックの一覧にも有るのでアイディアの Phase の後にブロックのままとする扱いを確認中）。WS061 は completed。残りのベータ3・ベータ4 以降の WS（WS001・026・031・046・068・074・101・115・116・117・120・121・130・145・153・157・143・152・126・124・125・112）をベータ2 に移動。
-- **2026-10-05 ユーザーの指示**: キャンセル WS034・WS096（Qt6 の互換）・WS097（GTK4 の互換）・WS007。優先 WS138。追加 WS161〜WS167（YubiKey・FIDO2 の login・6 桁の PIN の login・Welcome の画面・手書きの入力・予測変換・GPU の command の protocol の独自化）。新しい WS の段（ベータ2 か以降か）と見積もりは未定。
-- **2026-10-05 朝 ユーザー「HALの変更以外は承認します。」**→ 次を案のとおり決定: ws089-p025（sessiond の wheel だけの SERVICE sshd）、ws089-p022（(a) 有線の設定を network の group に開く、(b) ベータ1 の MTU は読むだけ、設定は別の WS）、タッチパッドの既定（100%・中のまま）、BUG-190 の規則（tap は離した時の click、押し込みは押した瞬間、UAT の後に resolved）、ws132-p004（通知の代わりに bar の媒体の icon）、WS160 D1〜D4（最短 8 文字・sudoers 無し・毎回認証・wheel は gid 0）、WS052 p007（外部の monitor の時は蓋で sleep しない（AC に依らず）・無操作 AC 30 分/電池 15 分で画面はその半分・greeter の電源ボタンは sleep・sessiond が session から suspend を受ける（ws131 D12 の改訂、poweroff・reboot は greeter のまま））。HAL の H1〜H4 は専門家のレビュー待ち。BUG-171 は選択肢に案が無いので別に確かめる。
-- **HAL v2 は 2026-10-05 ユーザーが承認、hal.h に適用（29f954f5）、実装（WS052 p006）も承認**。記録は Guardrail の承認済みの表。
-- 2026-10-05 未明 user「では、私は寝ます。自律駆動で自走をお願いします。」→ 10 時ごろまで自律。新規の実装を優先（P1 = WS160 → q722、P2 = T1-102 の IME の FAIL → WS122）、尽きるか止まったら Bug の一覧から。判断が要る点は uncleared にして記録し次へ。
-- 2026-10-05 未明 決定: WS122 の libavcodec をベータ1 の image に入れ、簡単な player もベータ1（RC 10/13）に（段をベータ1 へ。見積もりの表の段の改訂は Q1）。
-- 2026-10-04 17 時に決定: BUG-166 のタッチパッドは「押し込み＋タップドラッグ」、5330 の ACPI の table の読み取り専用の取り出しと commit を許可（queue.md の決定 (1)(2)）。
-- WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
-- 5330 の host の設定: 2026-10-04 user が iwlwifi の blacklist と再起動・設定の変更を許可（P4 が実施）。
-<!-- master:pending-decisions:end -->
 <!-- awesome-plan-current:end -->
 
 ## 目的・利用者・最終成果
@@ -233,17 +149,18 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 ## WS の優先順位
 
-依存による実行の順とは別のもの。Queue の権限は変えない。最新の指示は上の「現在の状況」の master:next。
+依存による実行の順とは別のもの。Queue の権限は変えない。古い順位（2026-10-03〜04）は付録の history-log。
 
-1. **debug**（P1・P2）: WiFi（BUG-145・BUG-138、ws005-p020）→ BUG-147（ws099-p024）→ 優先の bug（BUG-052 → BUG-120 → BUG-143。BUG-135 は WS131 p005・p006 の後）。
-2. **[WS131](ws131/ws.md)**（P3）: libkeiland-backend の分離と libkeiui の吸収。移行計画のユーザーのレビューの後に実装。
-3. **標準 app**（WS131 の後に組み直す）: WS127 Files → WS089 Settings → WS128 他の app → WS120 音楽、WS113 複数 display。
-4. **platform と導入**: WS005・WS033 の残り → WS118 5320 → WS119 インストーラ（BUG-041 はこの後）→ WS132 PnP。
-5. **GTK/Qt**: WS115（p010 から）→ WS097 独自 GTK4 → WS117 Linux Qt6 → WS116 Qt6 移植 → WS096。
-6. **packages**: WS125（image に多数の file を入れる共通の仕組み）→ WS124 → WS126。
-7. **リリース**: WS129、最後に WS112。
-8. 動画（WS083）は別セッション。WS122・WS121・WS074 は Q1（2026-10-05、WS074 のレンダリングの改善はユーザーの指示まで止める）。WS130（IPv6）は計画だけ、実装はベータ2 以降。
-9. 上に無い未完了の WS（WS001・004・007・009・014・017・026〜029・031・034・036〜039・044〜052・061・066・068・075・077〜088・090・096〜098・100〜102・106・110 ほか）は順位を定めていない。WS095 以外のデモの頃の WS（WS079・WS090・WS100・WS102 など）は標準 app の組み直しで扱う。
+<!-- master:priority:start -->
+2026-10-05 夜 Q1（ユーザーの 2026-10-05 の指示: ベータ2 の実装を P1・P2 に scheduling 可能、AAT は最優先、UAT の後の実機の Bug、レンダリングの改善は停止、GPU compute・GL 3.3・規約の見直しは合間）。
+
+1. **壊れた物と試験の待ち**: T1-203（WS172 p002 の login）の解析と修正、T1-206・T1-202・T1-205・T1-207。
+2. **AAT**（[WS173](ws173/ws.md)）: runner と補助を target で動かし、5330 の AAT を回す。
+3. **ベータ1 の残り**（RC 10/13）: [WS159](ws159/ws.md) native touchpad → 実機の Bug（BUG-195〜197 の 5330 の確認、BUG-156・166・167・172・173・176・178〜180・183〜189）→ [WS132](ws132/ws.md)・[WS131](ws131/ws.md)・[WS089](ws089/ws.md)・[WS095](ws095/ws.md)・[WS127](ws127/ws.md)・[WS128](ws128/ws.md) の残り → [WS129](ws129/ws.md) release。
+4. **ベータ2 の着手済みを進める**: P1 = [WS172](ws172/ws.md) p003 → [WS130](ws130/ws.md) p003〜 → [WS168](ws168/ws.md) → [WS161](ws161/ws.md) p005〜 → [WS156](ws156/ws.md)・[WS164](ws164/ws.md)・[WS165](ws165/ws.md)・[WS167](ws167/ws.md)。P2 = [WS158](ws158/ws.md) p004〜 → [WS154](ws154/ws.md) → [WS145](ws145/ws.md) → [WS169](ws169/ws.md)・[WS170](ws170/ws.md)（IMAP・SMTP、連絡先〜タイムライン）→ [WS155](ws155/ws.md)。
+5. **合間**（他に作業が無い時）: [WS068](ws068/ws.md) GL 3.3・[WS101](ws101/ws.md) GPU compute（i915 の SPIR-V の lowering、p017・p012 の 5330 の測定は T1）・[WS171](ws171/ws.md)・規約の見直し（conformance-reviewer）・[WS066](ws066/ws.md)・[WS061](ws061/ws.md)。
+6. **止める**: WS074 のレンダリング（B1 はユーザーの指示）、WS153（U2〜U15）、要検討・ブロックの WS（段の表）。
+<!-- master:priority:end -->
 
 ## 工数の見積もり（残り、LW）
 
@@ -370,21 +287,6 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS171](ws171/ws.md) | ベータ2（2026-10-05 決定） | MG008 | 2 | hal.h の全ての関数に契約の comment（2026-10-05 追加、急がない） |
 | [WS172](ws172/ws.md) | ベータ2 | MG006 | 4 | passkey の認証の枠組み（/sbin/passkey・/etc/passkey、2026-10-05 追加） |
 | [WS173](ws173/ws.md) | ベータ2 | MG006 | 3 | AAT（エージェントが素の実機を操作する受け入れの枠組み、2026-10-05 追加、最優先） |
-| [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、**ベータ1**） | WS049 |
-| [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |
-| [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
-| [WS162](ws162/ws.md) | MG006 | FIDO2 の login（greeter・lock の画面で security key で login）（2026-10-05 ユーザーの追加） | planning（**WS172 に吸収**、2026-10-05 ユーザー） | — |
-| [WS163](ws163/ws.md) | MG006 | 数字 6 桁の login（PIN、greeter・lock の画面）（2026-10-05 ユーザーの追加） | planning（**WS172 に吸収**、2026-10-05 ユーザー） | — |
-| [WS164](ws164/ws.md) | MG006 | OS の起動時の Welcome の画面（既存の Start で足りるかの検討から）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
-| [WS165](ws165/ws.md) | MG006 | 手書きの入力（goal の設定が難しいので段階化する）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
-| [WS166](ws166/ws.md) | MG006 | IME の予測変換（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
-| [WS167](ws167/ws.md) | MG006 | GPU の command の protocol を Venus の番号の流用から独自の名前と番号に（Venus と一致する内容から始め、Venus の番号を再利用したことを header に書き、Google の著作権の表示を外せるようにする）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
-| [WS168](ws168/ws.md) | MG006 | プレビュー（縮小表示）を作る隔離された専用の command（chroot・他の file の open・network・fork の禁止、fd 0・1 だけ）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
-| [WS169](ws169/ws.md) | MG006 | メーラの app と compositor のメールの API（許可された app が受信の通知を受ける、browser の認証 code の自動入力、IMAP4・SMTP から Gmail・Outlook へ）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05 ユーザー） | — |
-| [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05 ユーザー） | — |
-| [WS171](ws171/ws.md) | MG008 | hal.h の全ての関数に HAL v2 と同じ水準の契約の comment を書く（comment の差分もユーザーの review の後に当てる）（2026-10-05 ユーザー「このコメント、すべての関数につけてほしいです。今でなくていいので」） | planning（**ベータ2**、合間の仕事、2026-10-05 ユーザー） | — |
-| [WS172](ws172/ws.md) | MG006 | passkey の認証の枠組み: sessiond は外部の `/sbin/passkey`（base）で password・PIN・FIDO2（将来はセキュリティチップ）を確かめる、root だけの `/etc/passkey`、PIN の失敗の回数は sessiond の memory（2026-10-05 ユーザー） | planning（ベータ2、WS162・WS163 の mock を置き換える） | WS161 |
-| [WS173](ws173/ws.md) | MG006 | AAT（Agent Acceptance Test）: /dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の 5330 を操作して受け入れを確かめる。UAT はデバイス系と使用感に絞り AAT の後に遅らせる（2026-10-05 ユーザー） | planning（最優先） | — |
 
 ### リリースの段ごとの見積もり（2026-10-05 夜に作り直し）
 
@@ -567,24 +469,192 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS157](ws157/ws.md) | MG006 | Keiland の app: 写真の管理（p001 は要件の検討）（2026-10-05 ユーザー） | planning（p001 から、Queue なし） | — |
 | [WS158](ws158/ws.md) | MG006 | Keiland 本体と Keiland の app の翻訳（英語が基準、日本語はベータ2、Settings の Languages の頁で選ぶ。F-068 を昇格）（2026-10-05 ユーザー） | planning（p001 から、Queue なし） | WS154 |
 | [WS116](ws116/ws.md) | MG002 | upstream Qt6の範囲をGTK4移植後に検討し `packages/desktop/qt6`へ移植 | planning | WS115の知見後。旧WS034 p030移管、Queue none |
+| [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、**ベータ1**） | WS049 |
+| [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |
+| [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
+| [WS162](ws162/ws.md) | MG006 | FIDO2 の login（greeter・lock の画面で security key で login）（2026-10-05 ユーザーの追加） | incomplete（WS172 に吸収、未着手の Phase は canceled で WS172 p003 へ） | — |
+| [WS163](ws163/ws.md) | MG006 | 数字 6 桁の login（PIN、greeter・lock の画面）（2026-10-05 ユーザーの追加） | incomplete（WS172 に吸収、受け入れは WS172 p002 の PASS の時。T1-203 FAIL） | — |
+| [WS164](ws164/ws.md) | MG006 | OS の起動時の Welcome の画面（既存の Start で足りるかの検討から）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
+| [WS165](ws165/ws.md) | MG006 | 手書きの入力（goal の設定が難しいので段階化する）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
+| [WS166](ws166/ws.md) | MG006 | IME の予測変換（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
+| [WS167](ws167/ws.md) | MG006 | GPU の command の protocol を Venus の番号の流用から独自の名前と番号に（Venus と一致する内容から始め、Venus の番号を再利用したことを header に書き、Google の著作権の表示を外せるようにする）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
+| [WS168](ws168/ws.md) | MG006 | プレビュー（縮小表示）を作る隔離された専用の command（chroot・他の file の open・network・fork の禁止、fd 0・1 だけ）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
+| [WS169](ws169/ws.md) | MG006 | メーラの app と compositor のメールの API（許可された app が受信の通知を受ける、browser の認証 code の自動入力、IMAP4・SMTP から Gmail・Outlook へ）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05 ユーザー） | — |
+| [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05 ユーザー） | — |
+| [WS171](ws171/ws.md) | MG008 | hal.h の全ての関数に HAL v2 と同じ水準の契約の comment を書く（comment の差分もユーザーの review の後に当てる）（2026-10-05 ユーザー「このコメント、すべての関数につけてほしいです。今でなくていいので」） | planning（**ベータ2**、合間の仕事、2026-10-05 ユーザー） | — |
+| [WS172](ws172/ws.md) | MG006 | passkey の認証の枠組み: sessiond は外部の `/sbin/passkey`（base）で password・PIN・FIDO2（将来はセキュリティチップ）を確かめる、root だけの `/etc/passkey`、PIN の失敗の回数は sessiond の memory（2026-10-05 ユーザー） | incomplete（p002 は T1-203 FAIL） | WS161 |
+| [WS173](ws173/ws.md) | MG006 | AAT（Agent Acceptance Test）: /dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の 5330 を操作して受け入れを確かめる。UAT はデバイス系と使用感に絞り AAT の後に遅らせる（2026-10-05 ユーザー） | incomplete（p004・p006 は T1-202 待ち） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
 ## Upcoming Work Outlook
 
-見込みであって、約束や実行許可ではない。2026-10-04 17 時の改訂（流れ A〜D、詳細は [queue.md](queue.md)）:
+見込みであって、約束や実行許可ではない。
+
+<!-- master:outlook:start -->
+2026-10-05 夜 Q1:
 
 | 線 | 順 |
 | --- | --- |
-| P1（流れ A・C） | q677 ws049-p008（BUG-165）→ q678 ws049-p007、合間に q679 UCSI・q680 DP Alt Mode・q681 電源管理の設計 → q691 WS141 |
-| P2（流れ B・D） | q683 BUG-170 → q684 BUG-158 → q685 → q686 → q687 → q688 → q689（q677 の後）、合間に q682 WS132 の設計 → q692 WS037 |
-| T1（T2） | Q1 が集めた依頼をまとめて流す。最初は TQ-1 の残り（[test-queue.md](test-queue.md)） |
-| 次の候補 | WS129 p003〜p005、ws131-p014 の残り、WS138・WS139・WS140、WS080 p004 |
-| 別セッション（ユーザー） | WS083 |
+| T1 | T1-206 IPv6 → T1-203 の再実行（P1 の直しの後）→ T1-202 AAT → T1-205・T1-207 → 5330 の AAT の image の boot-test → WS101 の 5330 の測定（合間、lock の下） |
+| P1 | T1-203 の解析と修正 → WS168 p002 の残り → WS130 p003 → WS172 p003 → WS161 p005〜p007 |
+| P2 | AAT の直し（T1-202 の後）→ WS158 p004 → WS154 → WS145 → WS169・WS170 |
+| ユーザー | 5330 の AAT の USB の起動 → UAT（時刻は追って）。WS153 の U2〜U15 |
+| 後 | WS074 の B1（ユーザーの指示）、ベータ1 の release（WS129） |
+<!-- master:outlook:end -->
 
 ---
 
 # 付録
+
+## 判断の記録（新しい順）
+
+ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
+
+<!-- master:decisions-log:start -->
+- **2026-10-05 夜 ラップアップ（ユーザーの指示で P1・P2・T1 を終了）**: 全部の担当が終了。main 0041dbfd 以降。T1-203（WS172 p002 の PIN の login）が **FAIL**: greeter の password の login が起きない。WS172 p002 は main に merge 済みなので、**次の作業の最初に graphical login の image が壊れていないかを確かめる**（P1 の解析）。未 merge: agent/p1 の WS130 p002（67801dab、T1-206 待ち）と WS168 p002 の kernel（730e8f55、arm64・sparcv9・x68k の build の確認も）。未実施の T1: T1-206・T1-202・T1-205・T1-207。5330 の AAT の image は T1-202 と直しの後に作り直す。WS168 の libc の `<sandbox.h>` の sysroot への追加は Q1 が許可する（toolchain の lock）。
+
+- **2026-10-05 夜 ユーザーの決定（まとめての質問への回答）**: 次を**担当の推奨どおり**に決定。
+  - WS156 通知: H1 popup の大きさは案、H2 log は Super+N、H3 memory で 100 件、H4 全画面・lock 中は log だけ（URGENT は全画面にも）、H5 重なりは 1.5 秒に縮める、H7 bar の媒体の icon を通知に置き換える。
+  - WS164 Welcome: H1 各 account の最初の login だけ、H2 Settings の mode で終わりに Today、H3 5 段。
+  - WS165 手書き: H1 段 1 の目標、H2 $P 型の点群の照合、H3 Hershey と自作（KanjiVG は段 2）、H4 段 2・3 は段 1 の後。
+  - WS167 GPU の命令: H1 Google の著作権の表示を外す、H2 include/uapi/gpu-op.h を足す（UAPI の追加の承認）、H3 名前は GPU_OP_CREATE_INSTANCE の形。
+  - WS158 翻訳: ① 英語の文、② 独自の UTF-8 の catalog、③ 英語と日本語、④ greeter は system の既定、⑤ ws089-p015・ws127-p005 を WS158 に吸収（元は canceled）。
+  - WS154: SKK の >・/・#・Tab・注釈を Future Work へ。
+  - WS145 印刷: D2 利用者ごと、D3 path・queue 名を詳しい設定で入力可、D5 CUPS の printer は出さない、D6 PDF Viewer の印刷を含める、D7 login 名を送る、D8 spool の上限は案、D9 同じ利用者の app に job が見える。D4（受け入れの printer の機種）は未決。
+  - BUG-194: 全画面から戻る key は **F11 と Super+↓ の両方**。
+  - WS169・WS170: **ベータ2**（WS170 は連絡先からタイムライン、WS169 は IMAP・SMTP まで。Gmail・Outlook と本物の SMS・通話は以降）。
+  - 段ごとの見積もりの表を**今作り直す**（Q1）。
+  - WS168 sandbox の縮小表示: H1〜H7 は**全部推奨どおり**（`sandbox_spawn` の system call と include/uapi/sandbox.h の UAPI の追加を承認、子は呼び出し側の uid、断った call は SIGKILL、対象は Files と Settings、Linux・FreeBSD は seccomp・Capsicum だけでよい、子は静的 link、name space を持たせない）。p002 から実装してよい。
+  - WS066: 受け入れの文を案 ①〜③ に改める（同じ回の中の静的との差を半分以下に、cc t.c は p003 へ、以後の速さは同じ回の中の比べで書く）。
+  - WS145 D4: 受け入れのプリンタは **Brother MFC-L3770CDW**（IPP Everywhere・AirPrint 対応の機種。PDF を直接受けるかは p002 で確かめ、受けなければ PWG raster の変換を足す）。
+  - WS153 U2〜U15: **ユーザーが検討中**（質問しない、決まるまで WS153 の p002 以降は止める）。
+  - WS130 p002 の UAPI の差分（plan/ws130/phase002/uapi.diff、493fb758、p001 の表からの 3 点の変更を含む）を**承認**。P1 が適用する。
+  - WS162・WS163 は **WS172 に吸収**（WS163 は WS172 p002 で達成として完了の形、WS162 の未着手の Phase は canceled で WS172 p003 へ）。
+  - WS101 p017・p012 の 5330 の測定は **T1 が 5330 の passthrough で**（合間、lock の下）。UAT・AAT には入れない。
+  - WS171 は**ベータ2**（合間の仕事）。
+  - 5330 の最初の AAT: **T1-202（QEMU の smoke・full）の後に、runner と補助を直してから main の最新で image を作り直す**（build/aat-0505a は使わない）。作れたらユーザーに USB の起動を頼む。
+
+- **2026-10-05 夕 ユーザーの決定（続き）**:
+  - WS121: 目標は「Vulkan Video の hardware decode」のまま（「hardware だけ」）。software decode の <video> の設計（P2 の第 2 版 3df53896）は記録として残し、実装は WS083 の Vulkan Video の後。WS121 は WS083 を待つ。
+  - WS130 IPv6: H1〜H8 は**全部推奨どおり**（UAPI の形の承認、V6ONLY の既定 0、既定 on、RFC 7217、DNS の順、断片の再組立て無し、DUID-UUID、Wi-Fi ごとの設定は後）。P1 が p002 へ。
+  - WS143 Bluetooth: §9 の D1〜D18 は**全部推奨どおり**（音と PAN は後回し、HID が先）。
+  - ws074-p178: 手順に「自前の browser で描いた Acid3 の参照を Chrome の描画と比べ、参照の側と test の側の誤りを分ける」段を足す。
+  - INPUT_INJECT_KIND_MOUSE の絶対の pointer の形は、承認したマウスの注入（試験だけ・root だけ）の範囲として Q1 が扱う（ユーザーに報告）。
+
+- **2026-10-05 夕 ユーザーの決定（AAT の後の質問への回答）**:
+  - AAT の素の起動: **毎回ユーザーが起動**（USB を差して起動、エージェントは起動の後に SSH で入る）。BootNext・内蔵 disk の案は採らない。
+  - BUG-171: **B**（利用者が明示に 100 を選んだ時だけ app の panel を不透明に、既定は今の frosted のまま、title bar は対象外）。
+  - WS172 の P1〜P10: **全部推奨どおり**（libpasskey を base・OpenSSL の例外を passkey-fido2 と libpasskey に広げる（Guardrail の行を直す）、再起動の後は一度 login するまで PIN を出さない、key の PIN 必須、`_passkey`、署名する loopback、WS163 の mock を外す、reset で PIN と key も消す、HIDRAW_GRAB を前提に、登録は key 1 つの時、autologin は数えない）。
+  - WS161: **V1 は HIDRAW_GRAB（UAPI の追加）、V2（YubiKey の OTP）はそのまま**。
+
+- **2026-10-05 夕 ユーザーの決定（passkey）**: /sbin/passkey と /etc/passkey の形（[WS172](ws172/ws.md)）。passkey は base、暗号は当面 OpenSSL でリリースまでに独自の実装へ（Guardrail の例外）。PIN の失敗の回数は sessiond の memory。WS162・WS163 の ~/.config の mock はこれで置き換える（WS162 の K1〜K3、WS163 の G1 は不要に）。
+- **WS162 の判断（2026-10-05、P1 の mock の設計 第 2 版 1845e3fc、§9.7。ユーザーが /etc/passkey と /sbin/passkey の形を考え中で、その形になれば置き換わる）**: K1 greeter で key の login: (a) mock は lock だけ、(b) 登録の時に利用者の password を key の CTAP2 hmac-secret で AES-256-GCM に包み greeter が読める file（~ を 0711 に）[P1 の推奨]、(c) sessiond の request（BSD Auth・passkey の形の後）。K2 key と key の PIN（UV）[可]、K3 kl_system_account_v1 に add_passkey・remove_passkey（manager version 11）。
+- **WS161 の決定（2026-10-05 夕 ユーザー）**: U1「UAPI の include/uapi/hidraw.h を承認します。」U2「UAPI の include/uapi/ccid.h と、ノードの名前を承認します。名前は `/dev/smartcardN` がいいです。」U3「sessiond の座席のデバイスの一覧に `/dev/input/hidraw*` と `/dev/ccid*` を足し、ログイン中の利用者に渡してよいです。」（node の名前は U2 の `/dev/smartcard*` に合わせる）U4「試験用の kernel だけに、模擬の装置を入れてよいです。」U5「…それでもベータ2 に入れます。」→ P1 が p002 以降（hidraw・usb-ccid の /dev/smartcardN・seat の一覧・loopback）を実装してよい。
+- **WS163 G1（2026-10-05、P1 の設計の改訂 4cd87d18、§9）**: greeter は `_greeter` で動き利用者の ~/.config（home は 0700）を読めず、login は sessiond の AUTH（password）でしか始まらない。sessiond を変えずに greeter で PIN の login をするには、PIN で暗号化した password を `_greeter` が読める所に置くしかなく、どの利用者でも 10^6 通りを試して本当の password を取り出せる。(a) mock は lock の解除だけ、greeter は後の鍵管理・PAM の設計まで password [推奨]、(b) PIN で包んだ password を置きその危険を受け入れる、(c) sessiond に request を足す（ユーザーの方針に反する）。
+- **2026-10-05 夕 ユーザーの変更（WS089 p017）**: 「ライトモードとダークモードだけでいいです。アクセントカラーの変更は不要です。」→ accent の選択はやめ、light と dark の切り替えだけ（既定 light、今の見た目）。P2 の段は p017a（key `appearance.dark` と theme の口、Settings の switch、libkeiland・compositor・Settings・Files の dark）→ p017b（残りの app の dark）に組み直す。 追加（ユーザー）「アプリにテーマ変更による再描画を通知するためのWayland拡張がほしいですね。libkeilandを通じて利用します。」→ compositor が theme（light・dark）の変化を app に知らせる Wayland の拡張（Keiland の内部の拡張）を足し、libkeiland の口（変化の callback と今の theme の取得）から使う。app は直接 settings を見張らない。
+- **2026-10-05 夕 ユーザーの決定（YubiKey の USB）**: 「OTPはとりあえず非対応でいいです。USB HIDでFIDOが使えるように、raw reportのインタフェースを足しましょう。推奨の方法でOKです。ただ、/dev/input/hidrawXがいいです。/dev/fidoNはなくなった認識でいいですよね？」→ 案 A: 標準の usb-hid に生の report の口（入力の装置にしない HID の interface、まず FIDO の用途 page 0xF1D0、interrupt OUT と出力の report）を足し、node は **`/dev/input/hidrawX`**。**`/dev/fidoN` は無くす**（WS161 の H1 の `include/uapi/fido.h` も不要、hidraw の UAPI に替える）。OTP（YubiKey の keyboard の interface）は当面非対応。CCID（PIV・OpenPGP）は NFC の reader と共通の CCID の driver。libpasskey は hidraw と NFC の APDU の上に共通の FIDO2。
+- **WS153 U15（2026-10-05、P2 の設計 第 5 版、U1 = system 全体の反映）**: system 全体の導入（`/apps/<abi>/`）は特権の helper `app-admin`（setuid root、account-admin と同じ形、管理者の password を毎回、署名・hash・展開を自分で検め直す）が書く。root の口なので承認が要る（p005a の前）[案: account-admin と同じ形で可]。U2〜U14 は未決。
+- **2026-10-05 夕 ユーザーの決定（WS153・libpasskey）**:
+  - WS153 U1: 「アプリはシステム全体で入れましょう。単独ユーザが使うタブレットを想定しているからです。また、ユーザ単位のアプリ管理は、ユーザがホームディレクトリで自由にやればいいと思います。」→ app はシステム全体に導入。利用者ごとの app の管理は repository の仕組みでは扱わない（利用者が home で自由に）。U2〜U14 は未決（P2 の設計 第 4.1 版 §0）。
+  - libpasskey: 「NFC汎用のデバイスドライバを作るとして、USBと共通のFIDO2層もlibpasskeyで問題ないですか？また、暗号はOpenSSLの呼び出しでいったん作れますか？」→ Q1 の答え: 可。kernel は NFC の汎用の driver（USB CCID の reader から ISO-DEP の APDU の交換を出す）と USB の FIDO の HID の node だけ、libpasskey が transport（CTAPHID・NFC の APDU）の下の層と共通の FIDO2（CTAP2・CBOR・PIN）を持つ。暗号はまず OpenSSL（package の libcrypto、3.5.8）を呼ぶ形で作る。libpasskey は Keiland の側（package の境界）に置くので base の全自前の方針（master-design-policy §2.1）とは衝突しない。自前の暗号は後の候補。
+- **2026-10-05 夕 ユーザーの決定（FIDO2 と kernel の大きさ）**:
+  - 「FIDO2周りは、libfido2, libcborも含めて、独自のライブラリ libpasskey にまとめて、独自に作ります。NFCはドライバを作ります。」→ 外部の libfido2・libcbor は使わない。userland の独自の library **libpasskey** に CTAP（CTAPHID）・CTAP2・CBOR・PIN の protocol・暗号を置く。NFC は kernel の driver（ACR1252U の USB CCID）。WS161・WS162 の設計を libpasskey を前提に直す（P1）。
+  - 「カーネルの16MBの制限は、15-16MBホールを意識したもので、でもabove 16MBにロードして回避して、もう制限にしておく必要はないはずですね。いつでも制限を外してよいことを記録してください。」→ AMD64_KERNEL_MAX_BYTES（16 MiB）は**いつでも外して（広げて）よい**。外す時は `bootloader/include/amd64-kernel-image.h`・`platform/amd64/vmunix.ld` の ASSERT・`src/hal/amd64/space.c` の `system_kernel_pt`（W^X の leaf の表、1 枚 2 MiB）の数・`image.c`・`handoff-validation.c` を揃え、UEFI と BIOS の boot を確かめる（[BUG-198](bugs/BUG-198.md)）。
+- **2026-10-05 夕 ユーザーの決定（仮眠の後）**:
+  - WS163 PIN: 「~/.configの中にPINを保存してOKです。sessiondに難しい制御をさせたくないです。移植ができなくなるからです。これはまずモックアップとしての実装で、あとで鍵管理やPAMのような仕組みをきちんと考えます。」→ sessiond に PIN の口を足さない。PIN は利用者の ~/.config に、mock として実装（P1）。
+  - WS162 FIDO2 の login: 「sessiondに制御を入れず、libfido2をコンポジタのgreeterが直接叩くモックアップを作ってください。設定は~/.configの中でOKです。あとで鍵管理やPAMのような仕組みをきちんと考えます。」→ greeter が libfido2 を直接使う mock、設定は ~/.config（P1、WS161 の device の後）。
+  - WS161: 「Windowsで標準ドライバで使えるACR1252Uをターゲットにします。」→ 対象を ACR1252U（USB の CCID の NFC の reader、Windows の標準の CCID の driver で動く）に。libfido2・libcbor を自前にした時の工数はユーザーの問い（Q1 が答えた、下）。
+  - WS143: 「HIDが先で、オーディオとPANもほしいですが、ほかの開発項目より後回しでいいです。」→ 最初は HID。audio（A2DP）と PAN も要るが他の開発より後。D2・D3 の UAPI など §9 の残りは未決。
+  - WS156: 「Linuxではlibkeiland-backendにD-bus機能を入れて通知を取ればいいですね。実装はあと回しでいいです。設計だけ記録してください。」→ Linux は libkeiland-backend に D-Bus の org.freedesktop.Notifications の受け口を入れる設計を記録、実装は後。
+  - WS166: 「予測変換はインラインの通常IMEではなく、オンスクリーンキーボードのことでした。…もし作ってくれてしまったなら、通常IMEでは、オプションで有効にできるようにしましょう。」→ 予測は screen keyboard の候補の列が本題。IME の予測（ja-predict.c）は option（既定 off）。
+  - WS089 p017: 「p017はベータ2に入れます。ただし、従来の調整を壊さないようなデフォルト値で開始できるようにします。」→ ベータ2。既定値は今の見た目（blue、dark off）。
+  - WS122: 「GPUデコードはあとで、libavcodecをdlopenしてソフトウェアデコードにする仕様で、まず完成させます。GPUデコードが別WSで完成したら、それをVulkan Video Extensionで利用します。」→ p004 は dlopen の libavcodec の software decode で完成させる。
+  - BUG-171: 「保留を解除します。」→ 窓の不透明度 100% で app の glass の panel も不透明に（P2）。
+  - WS068 OpenGL 3.3 以降・WS101 GPU compute: 「保留を解除します。ただし優先順位が低く、やることがないときに作業します。」→ 保留を解除、合間の仕事（i915 の lowering・規約の見直しと同じ扱い）。
+  - bar の USB の icon は三叉（実装済み 662d4778）。
+
+- **bar のデバイス（USB 媒体）の icon は C（USB の三叉の記号）に決定**（2026-10-05 夕 ユーザー「アイコンはUSB の三叉の記号がいいです。」）。P2 が media.c に実装（q763）。
+- **BUG-194 全画面から戻す compositor の key（2026-10-05、P2 の案、今は仮に F11）**: A F11、B Super+↓（Fn が要らない）、C Esc の 1 秒の長押し、D 画面の上端からの swipe [P2 の案: A+B か B+C]。実機で F11 が効かなかったのは 5330 の上の列が既定で Home/End（Fn+F11 か Fn Lock）の見込み、次の UAT で Fn+F11 を試す。
+- **WS145 印刷の判断（2026-10-05、P2 の設計 第 3.1 版、3 回目の敵対的レビューで重大なし、plan/ws145/design.md）**: D2 printer の設定を利用者ごとか system 全体で共有か [利用者ごと。共有なら root の口が要り別の設計、p003 の前に要る]、D3 IPP の path と LPD の queue 名を詳しい設定で入力できるか（既定は /ipp/print → /ipp → /、LPD は lp）、D4 受け入れの printer の機種（PDF を受けない機種なら PDF → PWG raster の filter の WS が先に要る）、D5 Linux・FreeBSD で CUPS の既存の printer を一覧に出すか、D6 PDF Viewer の File > Print を含めるか、D7 printer に login 名を送ってよいか、D8 spool の上限（1 文書 256 MiB・合計 512 MiB・16 job）と複写せず app の file から直接送る案、D9 同じ利用者の全ての app に他の app の job の題名が見え取り消せること。
+- **2026-10-05 午後 UAT の後、ユーザー「ちょっと仮眠します。その方針でよいので、自走をお願いします。」**: 方針どおり自走。P1 は BUG-195・196・197（実機の ACPI）、P2 は UAT の所見（ws132-p009・ws099-p033・BUG-194（仮に F11）・BUG-181・BUG-193・bar の device の icon）。直しが揃ったら新しい UAT の image を作り T1 で boot-test。判断が要る点は記録して先へ。
+- **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
+- **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
+- **WS169・WS170 の段（2026-10-05 ユーザーの追加）**: ベータ2 に入れるか、それ以降か [Q1 の案: WS170 の最初の範囲（連絡先からタイムライン）はベータ2、WS169 はベータ2 で IMAP・SMTP まで、Gmail・Outlook は以降]。
+- **WS164 の判断（2026-10-05、P1 の p001 の設計、plan/ws164/phase001/phase.md §6）**: H1 各 account の最初の login だけ（`welcome.done`、Settings の About から再表示）[可]、H2 新しい app でなく Settings の mode で、終わりに Files の Today を開く [可]、H3 5 段（Welcome・Network・Look・Keys・Done、Back・Next・Skip、Languages は WS154 の後に入れる）[可]。H4（Settings の hook を WS164 が書く）は Q1 が調整として承認（P2 の WS089 の file に触れる時は Q1 が順を決める）。
+- **WS154 の判断（2026-10-05、P2 の p001 の設計、plan/ws154/phase001/phase.md）**: SKK の範囲から 接頭・接尾辞（>）・abbrev（/）・数値の変換（#）・補完（Tab）・注釈 を後回し（Future Work）にしてよいか [後回し]。Q1 が技術の裁量で決めた物: 設定の変更で IME を起動し直す（数百 ms IME が無い、protocol は変えない）、SKK の mode を言語の ID（skk・skk-katakana・skk-latin・skk-wide）にする。
+- **WS156 の判断（2026-10-05、P1 の p001 の設計、plan/ws156/phase001/phase.md §9）**: H1 popup の大きさ（幅 20%・320〜640 px、高さ 76 px、下中央の 48 px 上）[可]、H2 log の hotkey [Super+N]、H3 log の保存 [memory だけ、100 件]、H4 全画面・lock 中 [log だけ、URGENT は全画面の上にも出す]、H5 重なった時 [待ちがあれば保持を 1.5 秒に縮める]、H6 Linux・FreeBSD の D-Bus の通知 [v1 では無し]、H7 bar の USB media の icon を通知に置き換え [外す]。
+- **WS167 の判断（2026-10-05、P1 の p001、plan/ws167/phase001/phase.md §6）**: H1 license: 番号の表を独自の名前で書き直し、番号の再利用を明記し、Google の著作権の表示と LICENSE-PROTOCOL を外す（番号は interface の事実で、Venus の文・名前・構造は写していない）[外す]。H2 新しい UAPI include/uapi/gpu-op.h（kernel の i915 の実行器・libvulkan・venus-frame で共有、第 1 版は Venus の番号のまま）[足す]。H3 名前 GPU_OP_CREATE_INSTANCE か GPU_OP_vkCreateInstance か [前者]。
+- **WS066 の目標の文（2026-10-05、P2 の案、plan/ws066/phase002/phase.md）**: 測定の回の間のばらつきが大きい（変えていない true-static が 517 → 608 µs）。同じ回の中では静的との差が 266 → 10 µs で /bin/true は「差の半分」を満たした。案: ① 受け入れを「/bin/true と sh -c : の静的 link との差を同じ回の中で半分以下に」に改め、sh は静的な sh を足して T1 で確かめる、② cc t.c -o t は完了の条件から外し p003（ld.so の cache、clang 入りの image が作れる時）へ、③ 以後の速さの受け入れは同じ回の中の比べで書く。
+- 2026-10-05 ユーザー「本日12時にUATを行います。11時半にマージできている内容で、テストUSBイメージの作成をお願いします。」→ 11:30 に main で build/uat-0505c を作る（Q1、send_later を設定）。「ベータ2の実装をすべて、P1,P2にスケジューリング可能にします。作業を継続してください。」→ ベータ2 の WS（ブロック・アイディアの Phase の物を除く）を P1・P2 の Queue に入れてよい。
+- 2026-10-05 ユーザー「今朝追加したWSはベータ2に入れてください。」→ WS161〜WS168 をベータ2 に（見積もり計 20 LW、Q1 の概算）。
+- **2026-10-05 ユーザーの指示（段の整理）**: 要検討・ブロック WS098・150・039・037・038・141・080・044・048・118。最初にアイディアの Phase を実行してユーザーと議論 WS144・119・147・082・146・ニューラル IME（WS098、ブロックの一覧にも有るのでアイディアの Phase の後にブロックのままとする扱いを確認中）。WS061 は completed。残りのベータ3・ベータ4 以降の WS（WS001・026・031・046・068・074・101・115・116・117・120・121・130・145・153・157・143・152・126・124・125・112）をベータ2 に移動。
+- **2026-10-05 ユーザーの指示**: キャンセル WS034・WS096（Qt6 の互換）・WS097（GTK4 の互換）・WS007。優先 WS138。追加 WS161〜WS167（YubiKey・FIDO2 の login・6 桁の PIN の login・Welcome の画面・手書きの入力・予測変換・GPU の command の protocol の独自化）。新しい WS の段（ベータ2 か以降か）と見積もりは未定。
+- **2026-10-05 朝 ユーザー「HALの変更以外は承認します。」**→ 次を案のとおり決定: ws089-p025（sessiond の wheel だけの SERVICE sshd）、ws089-p022（(a) 有線の設定を network の group に開く、(b) ベータ1 の MTU は読むだけ、設定は別の WS）、タッチパッドの既定（100%・中のまま）、BUG-190 の規則（tap は離した時の click、押し込みは押した瞬間、UAT の後に resolved）、ws132-p004（通知の代わりに bar の媒体の icon）、WS160 D1〜D4（最短 8 文字・sudoers 無し・毎回認証・wheel は gid 0）、WS052 p007（外部の monitor の時は蓋で sleep しない（AC に依らず）・無操作 AC 30 分/電池 15 分で画面はその半分・greeter の電源ボタンは sleep・sessiond が session から suspend を受ける（ws131 D12 の改訂、poweroff・reboot は greeter のまま））。HAL の H1〜H4 は専門家のレビュー待ち。BUG-171 は選択肢に案が無いので別に確かめる。
+- **HAL v2 は 2026-10-05 ユーザーが承認、hal.h に適用（29f954f5）、実装（WS052 p006）も承認**。記録は Guardrail の承認済みの表。
+- 2026-10-05 未明 user「では、私は寝ます。自律駆動で自走をお願いします。」→ 10 時ごろまで自律。新規の実装を優先（P1 = WS160 → q722、P2 = T1-102 の IME の FAIL → WS122）、尽きるか止まったら Bug の一覧から。判断が要る点は uncleared にして記録し次へ。
+- 2026-10-05 未明 決定: WS122 の libavcodec をベータ1 の image に入れ、簡単な player もベータ1（RC 10/13）に（段をベータ1 へ。見積もりの表の段の改訂は Q1）。
+- 2026-10-04 17 時に決定: BUG-166 のタッチパッドは「押し込み＋タップドラッグ」、5330 の ACPI の table の読み取り専用の取り出しと commit を許可（queue.md の決定 (1)(2)）。
+- WS138 の U4（PNG と JPEG だけ）・U7（reset は thread の道）・U8（黒で合成）に合わせて p001・p002 を直す（17 時以降の担当の最初の作業）。WS140 は U3（他の固定の上限も入れる）に合わせて p001・p002 を直す。
+- 5330 の host の設定: 2026-10-04 user が iwlwifi の blacklist と再起動・設定の変更を許可（P4 が実施）。
+<!-- master:decisions-log:end -->
+
+## 体制・予定の経緯（新しい順）
+
+先頭の「現在の状況」から外した古い体制・予定・指示。指示としては読まず、経緯として読む。
+
+<!-- master:history-log:start -->
+- 2026-10-05 夜まで先頭にあった「担当」の記録（2026-10-03〜10-04 の体制）:
+  - **2026-10-05 未明〜10 時ごろ: 夜の自律**（user）。P1 = WS159（native の touchpad）、P2 = Files の新規（p011・p010）と p021 の 1 分の有効期限、T1 = 試験の依頼がある時。新規の実装が尽きるか止まった時だけ実機の要らない Bug を投入してよい。判断が要る点は uncleared にして記録し、次へ。
+  - **2026-10-04 19時40分 全サブエージェント終了**（セッションの利用枠 94%）。動いている担当は無い。再開の候補: T1 で T1-094（ws141-p003 の N0 の QEMU）と T1-095（BUG-158 の修正の 5330 passthrough の確認）、P3 で q685〜q690、P1 で WS050 p002 の前提・WS051・WS052・q682、P2 で ws141-p003 と WS037。ユーザーの判断待ち: WS037 の 5〜18、WS051 §13、WS052 §10、ws049-p017 ⑤（hal.h）。
+  - **2026-10-04 17 時からの体制（user）**: 設計と実装は P1・P2（phase-runner、high）。試験は Q1 が集めて T1 に送り、T1 は積まれた依頼をできるだけ 1 回の QEMU の起動にまとめて流す。T1 が忙しい時は T2 を立ててよい。P1・P2 は試験を待たず、依存を満たす別の Queue へ移る（WS ごとでなく流れ A〜D の WS 群をまんべんなく進める）。対象は流れ A〜D（q677〜q692）。週間の使用量は 17 時にリセット（0%）。最初の割り当て: P1 = q677（BUG-165）、P2 = q683（BUG-170）。**優先（user 最新）**: P1 = WS049（p007〜p009、BUG-165）・WS050・WS051・WS052、全て塞がった時だけ WS132。P2 = BUG-170 の後は WS141・WS037。Bug の修正は P3（Fable の BUG-158 の解析の後に phase-runner-mid で立て直し）: BUG-158 の実装・流れ B・BUG-165 の残り（P1 の区切りの後）。詳細は [queue.md](queue.md) の「2026-10-04 17 時以降の予定」。
+  - 体制: 単一 session の Q1 ＋固定名サブエージェント（実装 P1〜P8、試験 T1・T2）。2026-10-03 夜 user「これによりすべての作業をソフトに停止します。」で P1・P2・T1・T2 はラップアップして終了、全ての成果は main に統合済み（P4 の WS118 の source と記録も Q1 が取り込んだ）。動いている担当は無い。
+  - 再開の時の割り当ての候補（user が決める）: P1 = WS131 の p008 の試験と p009 以降、P2 = WS134 の p003 の直しと p004、T1・T2 = 台帳の未実行の予約（`plan/agents/T1/requests.md`・`T2/requests.md`）。WS135（設定の一本化、BUG-162）の担当と時期は未定。
+  - **2026-10-04 夜の自律の指示**: user「私は寝ます。昼までには起きると思います。テストが全部終わったら、P2は優先度の高いものから、実装タスクを進めてください。WSが完了できないときは他のWSに移ることで、どんどん先に進めてください。」→ 体制は P2・T1・T2（P3 は WS137 の後に終了）。P2 は WS135 の後、優先度の順に実装の Phase を進め、判断・実機・依存で止まる WS は記録して次の WS へ。Q1 の解釈: WS131 の p009 以降（設計はユーザーのレビュー済み）もこの指示で始めてよい。新しい製品の判断・HAL の API・toolchain・push は従来どおりユーザーの承認まで止める。
+  - **2026-10-04 夜〜朝の成果**（全て main に統合、QEMU と FreeBSD・Linux の guest の確認、実機は未実施）: WS135 completed（設定の一本化、BUG-162 resolved）、WS136 completed（試験の image の作り方）、WS137 completed（FreeBSD の試験の VM）。WS131 p004〜p011 cleared（p012 はユーザーの判断待ち）。WS134 p001・p002・p004〜p006・p008・p011〜p013 cleared（p003 の fps・p007 の i915・p009 の ACPI・p010 の残りは実機待ち）。Bug resolved: 033・052・053・103・129・135・139・143・162・163・164（163・164 は今夜の発見）。T1-076 で main 039b00f の boot-test・C1・settings-p007・files-p004 PASS。体制は P2（待機）・T1（待機）、T2 は終了。
+  - 2026-10-04 user「任せます」→ Q1 の決定: 標準 app のベータ1 の作業（WS127 p003・p006、WS128 p005・p006）を先にし、WS131 の app の移行（p012 以降）はベータ1 の後。WS134 p003 の fps は実機の値で判定。
+  - **2026-10-04 昼 ユーザーの指示**:
+    - 「WS13,WS128は進めてOKです。PE/COFFローダも進めてオーケーです。記録してください。」→ Q1 の読み: 直前の切れた「WS131,」と合わせて **WS131（app の移行 p012 以降。ベータ1 の後に回す Q1 の決めを取り消し、進めてよい）・WS128（標準 app の残り、p004 の PDF の文字の検索を含む）・WS080（PE/COFF の動的ローダ `ld.coff`）** を進めてよい。
+    - 「F-071、F-072、F-070、はWSを立てて計画を作り、他の能力が低いセッションで処理できるようにしてください。」→ WS138（F-071 PNG の背景）・WS139（F-072 性能）・WS140（F-070 ld.so の上限を動的に）の計画を P1 が作成中。
+    - **トークンが余った時にいつでも進めてよい WS**（ユーザー「WS066、WS061、WS061はトークンが余ったときにいつでも進められる内容としてmaster.mdに書いておいてください。」、3 つ目は重複の書き間違いと読んだ）: [WS066](ws066/ws.md)（動的 link の program の起動を速く）、[WS061](ws061/ws.md)（expat の configure と compile を Linux と同等に）。
+    - 実機の UAT: 2026-10-04 13 時（観点と手順は [uat.md](uat.md)）。
+  - 2026-10-04 11時 user「サブエージェントについて、実装は現在の内容を完成させたらラップアップして終了し、計画と設計のみに移行してください。P2は終了、P1,T1のみにします。P1は設計と計画のみに専念。残りの使用量が少ないので、設計より計画が優先。」（週間の使用量 96%、水曜 6:00 にリセット）→ P2 は p014 を仕上げて終了、T2 は終了、P1 は ws080-p004 を仕上げた後は計画だけ、T1 は残す。
+  - **次に流す試験の一覧と手順は [plan/test-queue.md](test-queue.md)**（2026-10-04、試験の担当のラップアップの後。能力の低いセッションでも流せる手順。最初は TQ-1: ws131-p013・p014 の 3 OS の回帰、source は agent/p2 40b242a）。
+  - 2026-10-04 全サブエージェントをラップアップ（P1・P2・T1・T2 終了）。未 merge: agent/p2 40b242a（p013・p014、TQ-1 の PASS の後に merge）。
+- 2026-10-05 夜まで先頭にあった「Focus」（2026-10-04 17 時からの予定、流れ A〜D）:
+  - **fg019 ベータ1 のリリース（公開 2026-10-17、RC の commit 10/13 が事実上の機能の締切、名前「Kei/zedBSD 1.0.0 Beta 1」、版 1.0.0-beta1）**。決定は [ws129/release.md](ws129/release.md) の §9。内容は下の「Current Focused Goals」。
+  - fg018 Linux 標準 GTK4（WS114 は p007・p008 まで達成、GTK4 の zedBSD 移植 WS115 は後回し）。
+  - **17 時（2026-10-04）からの予定**（2026-10-04 user「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。そうすると、AMLと併走できる開発項目は、UATで見つかったバグだと思います。スケジューリングだけしてmasterやqueueに記録してください。実行は17時以降に行います。」）。詳細と依存は [queue.md](queue.md) の「2026-10-04 17 時以降の予定」（q677〜q690）。
+    - **新規実装の目標: USB-C の DisplayPort Alternate Mode（WS051、WS050 の UCSI の上）**、次に**電源管理（WS052）**。両者は並走し、共通の前提は **WS049（AML）**: q677 ws049-p008（BUG-165 の DSDT）→ q678 ws049-p007（電源ボタン・GPE・EC）。WS132（ベータ1、全部）も同じ前提（q682）。
+    - **AML と並走: UAT の Bug**（q683 BUG-170 → q684 BUG-158 → q685 BUG-168・169 → q686 BUG-175 → q687 BUG-173 → q688 BUG-171・176・157 → q689 BUG-166・167（仕様の決めと DSDT の後）→ q690 BUG-172・174（実機））。
+    - **流れ C（完全に独立）: [WS141](ws141/ws.md) Raspberry Pi 4 のグラフィックス**（q691 p001 の文書から）。
+    - **流れ D（完全に独立）: [WS037](ws037/ws.md) nvrtx（NVIDIA RTX 2000 以降）**（q692 p001 の文書から）。
+    - その次（担当に余裕があれば）: WS129 p003〜p005（release）、ws131-p014 の残り・TQ-1 の残り → p026、WS138・WS139・WS140、WS080 p004。
+- 2026-10-05 夜まで先頭にあった「止まっている物」:
+  - [WS155](ws155/ws.md)（カレンダー・スケジューラ・オーガナイザ）: 2026-10-05 ユーザーがデザイン案を提出、blocked を解除。まず UI の mock（3D の animation つき）を見せて再指示を受ける。
+  - 5330 の AX211 の passthrough は 2026-10-04 に再開を許可（iwlwifi を blacklist して再起動が要る、Guardrail）。iGPU は i915 の driver の改善の Phase だけで使い、iGPU と AX211 の同時は禁止。
+  - 2026-10-04 の UAT（[uat.md](uat.md)、証拠 [uat/2026-10-04/](uat/2026-10-04/)）: 実機で OK は BUG-145・152・161・143・139・103・160・153。再現は BUG-158・119・156・157。新規 BUG-165〜176。**最優先は BUG-165（DSDT が読めない: 電源が切れない・タッチパッド・電池の根の候補）・BUG-158（WiFi 未接続で kernel のフリーズ）・BUG-170（音量の slider のフリーズ）**。タッチパッドの操作の仕様（BUG-166）はユーザーと決める。
+  - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
+<!-- master:history-log:end -->
+
+## リポジトリの作り直し（2026-10-03 夜、持ち越し）
+
+2026-10-03 user「リポジトリを作り直します。build/以下は削除されます。.git/も削除されます。持ち越したい情報があれば、plan/以下のドキュメントに記載が必要です。」
+
+- **git の履歴**: plan の中の commit の SHA（`6ecf801cc`・`f94b1b633` など、2026-10-03 以前の全て）は古いリポジトリの物で、作り直した後は引けない。記録の意味（どの変更か）は文で残っている。
+- **build/ の証拠**: plan が指す `build/…` と `/home/awe/zedBSD-worktrees/*/build/…` の PNG・log・image（S1 の image `build/s1-pre/hdd-image.img` を含む）は消える。結果と判定は各 phase.md・Bug の ticket・`plan/agents/T1|T2/requests.md` に文で残っている。消えた証拠を指す行を「証拠の file が残っている」と読まない。
+- **作り直した後の手順**（Q1）:
+  1. commit の hook: `cp plan/tools/git-hooks/commit-msg .git/hooks/ && chmod +x .git/hooks/commit-msg`（メッセージが `WIP` ちょうどでない commit を拒否。AGENTS.md「git」）。`.claude/settings.json` の `attribution`（Co-Authored-By などの付記を無効）は tree にあるので残る。
+  2. remote は `git@github.com:awemorris/zedBSD.git`、author は `Awe Morris`。push はユーザーが指示した時だけ（AGENTS.md の確かめの手順）。
+  3. サブエージェントの worktree: 古い `/home/awe/zedBSD-worktrees/*`（agent/p1〜p4・t1・t2、codex/a1〜a3・p8〜p10）と `/home/awe/zedBSD-rpi4/.claude/worktrees/*` は古い `.git` に結び付くので使えない。担当を起こす時に main が `git worktree add /home/awe/zedBSD-worktrees/<名前> -b agent/<名前>` で作り直す（[protocol](agents/protocol.md) の 1）。古い worktree の directory の削除はユーザーが行う。
+  4. toolchain: `make toolchain` などで `build/llvm`・`llvm-source`・`llvm-build`・`NoctLang` を作り直した後に `plan/tools/toolchain-lock.sh lock`。
+  5. Linux の試験の guest（WS105・WS131、QEMU+KVM）: `plan/tools/keiland-linux/build-guest.sh`（base と gdm）で `build/keiland-linux/guest`・`guest-gdm` を作り直す。guest の SSH の鍵 `plan/tmp/guest/` は tree にある。
+  6. 試験の image の入力（2026-10-04 Q1 が作り直した）: `build/ws035-fonts/`（`userland/desktop/fonts/` の Inter.ttf・Inter-OFL.txt → OFL.txt・JetBrainsMono-Regular.ttf・JetBrainsMono-OFL.txt・DroidSansFallbackFull.ttf・DroidSansFallback-LICENSE.txt の複写）、`build/ws035-wallpaper/`（wallpaper.ppm・wallpaper-1080.ppm = `userland/desktop/keiland/wallpapers/Birch-Lake.ppm`）、`build/ws071-fonts/`（DroidSansFallbackFull.ttf・LICENSE・Apache-2.0.txt）。Venus の renderer `build/ws035-sq-venus/install` は Latitude 5330（10.0.30.3）から scp（`plan/ws035/tests/zdesktop-guest.sh` の注記、sha256 も）。host の `sudo modprobe vgem && sudo chmod 0666 /dev/dri/renderD128` は host の起動ごとに。
+  7. FreeBSD の試験の guest: `plan/tools/keiland-freebsd/build-guest.sh` で `build/keiland-freebsd/guest` を作る（鍵は OUT の中に作る）。
+  8. 統合の前の残り: 無い（全ての agent の branch は main に入っている。`worktree-agent-aefedcaf…` の 2 commit は BUG-066 の決定で merge しない物）。P1 の `build/p1-q640/p007-wip.patch` は p007 が commit 済みなので不要。
+- **tree に残るが git に入らない物**（削除の対象外の前提）: `.wifi`（WiFi の認証情報、ユーザーが作成）、`.claude/settings.local.json`、`config.mk`、`plan/*/temp/`。
+- **host の状態**（repo の外）: sysctl の一時の設定（`vm.dirty_background_bytes=512M`・`vm.dirty_bytes=2G`・`vm.swappiness=10`、2026-10-03 user「sysctl の調整はやってみてください」）は再起動で戻る。残すかは user の判断待ち。fstrim は 2026-10-03 に実行済み（35 分、204.6 GiB）。
+
 
 ## Tools
 
