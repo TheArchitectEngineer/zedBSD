@@ -110,3 +110,8 @@ T1-213（main 357fed03、run 1・再試行・`--no-usb-kbd --cells C1`）は FAI
 - 実行: `timeout 1800 plan/ws174/tests/run-boot-keys-qemu.sh BUILD/hdd-image.img OUTDIR --ctrl-alone`（R0 は参考、判定に入れない）。cell と判定は上の表のまま。ただし key は「修飾 key を押したまま Space を叩く」（`input-send-event`）、(c) は `sysctl kern.boot.login`（`-n` なし）の値。
 - C1〜C3 の全部で検出されなければ `--no-usb-kbd --cells C1` を 1 回。
 - 記録（判定ではない）: R0 の結果（Space なしの Ctrl の押しっぱなしが効くか）、C1・C3 の `loader_modes`、C1 の最初の frame の告知。
+
+
+## 2026-10-06 Q1 の判定（T1-214）
+
+run 1 で C3（Ctrl+Shift+Space）だけ不検出、再試行は全 cell PASS。C1・C2・R0 は 2 回とも検出。sysctl の試験の直しは有効。**間欠の不検出（1/12 の key の cell）が残るので p003 は uncleared のまま**。機能は実機の UAT（BUG-202 の診断）で使ってよい。再開の条件: 不検出の原因（firmware の ConIn の flush の時と S0・S1 の時の重なり、または QEMU の usb-kbd の reset）の gdbstub での確かめ、または実機で数回の起動の観察。手順は「押したまま Space を叩く」を続けること。
