@@ -93,6 +93,8 @@ main(
 		if (same == 0)
 			snprintf(name, sizeof(name), "%s", argv[2]);
 	}
+
+	/* Its index. */
 	error = probe_interface(inet, name, sizeof(name), &ifindex);
 	if (error != 0)
 		return probe_fail("interface", error);
