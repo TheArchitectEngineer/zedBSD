@@ -10,7 +10,7 @@ include $(LIBKEILAND_MAKEFILE_DIR)../package.mk
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 LIBKEILAND_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/libkeiland/menu.c \
 	userland/desktop/libkeiland/recent.c userland/desktop/libkeiland/titlebar.c \
-	userland/desktop/libkeiland/glass.c \
+	userland/desktop/libkeiland/glass.c userland/desktop/libkeiland/instance.c \
 	userland/desktop/libkeiland/motion.c userland/desktop/libkeiland/scroll.c \
 	userland/desktop/libkeiland/gesture.c \
 	userland/desktop/libkeiland/desktop.c \

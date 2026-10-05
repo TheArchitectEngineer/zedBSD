@@ -5680,6 +5680,29 @@ zwl_glass_bring(
 }
 
 /*
+ * Brings a window to the front for an activation (xdg_activation_v1,
+ * activation.c): App Home gives way, the window's desktop is shown when it
+ * is another, and the window comes back from minimized, on top, with the
+ * focus.
+ */
+void
+zwl_glass_activate(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const char *via)
+{
+	/* App Home, when it shows, closes the way its launcher closes it. */
+	zwl_home_dismiss(server, via);
+
+	/* A window on another desktop: that desktop slides in. */
+	if (surface->desktop != server->desktop)
+		desktop_turn(server, (int)surface->desktop, via);
+
+	/* Back, on top, with the focus. */
+	zwl_glass_bring(server, surface, via);
+}
+
+/*
  * Opens Wiseview for the bar's "+N" place, as Super+Tab does.
  */
 void

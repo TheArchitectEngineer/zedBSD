@@ -1127,6 +1127,7 @@ ime_connect(
 	client->fd = descriptor;
 	client->server = server;
 	client->number = ++server->client_serial;
+	client->connected_ms = zwl_milliseconds();
 	client->ime = 1;
 	client->next = server->clients;
 	server->clients = client;
