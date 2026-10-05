@@ -107,13 +107,14 @@
 /*
  * The desk around the page: a soft wash like Kei's blurred landscape --
  * pale sky at the top, a light haze a little below the middle, pale leaf
- * green at the bottom -- and the page's slate shadow: its
+ * green at the bottom; in the dark appearance the same wash at night,
+ * ws089-p017; the page stays white paper) -- and the page's slate shadow: its
  * colour, its darkest alpha, how many pixels it fades over and how far it
  * drops below the page.
  */
-#define MAIN_DESK_TOP		0xd9e6f5ffU
-#define MAIN_DESK_HAZE		0xeef3f6ffU
-#define MAIN_DESK_BOTTOM	0xdfecd6ffU
+#define MAIN_DESK_TOP		kl_theme_choose(0xd9e6f5ffU, 0x1b2230ffU)
+#define MAIN_DESK_HAZE		kl_theme_choose(0xeef3f6ffU, 0x20252dffU)
+#define MAIN_DESK_BOTTOM	kl_theme_choose(0xdfecd6ffU, 0x1a2219ffU)
 #define MAIN_DESK_HAZE_SHARE	0.58f
 #define MAIN_SHADOW_COLOR	0x1f3a6600U
 #define MAIN_SHADOW_ALPHA	44
@@ -234,6 +235,9 @@ struct notes_app {
 	uint32_t buttons_logged;
 	int drawn;
 
+	/* The desktop's appearance watched (ws089-p017): the desk and the toolbar follow it; NULL without it. */
+	struct kl_appearance *appearance;
+
 	/* When Notes ends by itself (0: never), and whether it is ending. */
 	uint64_t deadline;
 	int quit;
@@ -297,6 +301,7 @@ static void app_chosen(struct notes_app *app);
 static void app_open_file(struct notes_app *app, const char *path);
 static void app_save_as(struct notes_app *app, const char *path);
 static void app_place_page(struct notes_app *app);
+static void app_appearance_changed(void *data, unsigned appearance);
 
 /*
  * Runs Notes.
@@ -376,6 +381,11 @@ main(
 
 	/* Its title names the file. */
 	app_set_title(&app);
+
+	/* The desktop's appearance: the desk and the toolbar follow it (light under a compositor without it). */
+	error = kl_appearance_open(app.window.display, app_appearance_changed, &app, &app.appearance);
+	if (error != 0)
+		printf("NOTES APPEARANCE none error=%d\n", error);
 
 	/* The menus; without the System Menu the keys still work. */
 	error = notes_menu_open(&app.window);
@@ -509,6 +519,7 @@ main(
 	notes_frame_free(&app.page_frame);
 	pdf_display_list_destroy(app.background_list);
 	notes_renderer_close(&app.renderer);
+	kl_appearance_close(app.appearance);
 	notes_window_close(&app.window);
 	notes_journal_destroy(app.document.journal);
 	app.document.journal = NULL;
@@ -2386,4 +2397,19 @@ app_place_page(
 			  app->document.pages[0]->width, app->document.pages[0]->height);
 	notes_touch_layout(&app->touch, app->renderer.extent.width, app->renderer.extent.height, (float)NOTES_TOOLBAR_HEIGHT, NOTES_PAGE_MARGIN,
 			   app->document.pages[0]->width, app->document.pages[0]->height, app->view.scale);
+}
+
+/* Takes the desktop's new appearance: the desk and the toolbar are drawn again in it. */
+static void
+app_appearance_changed(
+	void *data,
+	unsigned appearance)
+{
+	struct notes_app *app;
+
+	/* A new frame and toolbar. */
+	app = data;
+	app->redraw = 1;
+	app->toolbar_dirty = 1;
+	printf("NOTES APPEARANCE appearance=%u\n", appearance);
 }

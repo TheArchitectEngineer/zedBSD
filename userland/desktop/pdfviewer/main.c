@@ -105,6 +105,9 @@ static struct pv_touch main_touch;
  */
 static struct kui_file_chooser *main_chooser;
 
+/* The desktop's appearance watched (ws089-p017): the viewer draws in its colours (draw.c); NULL without it. */
+static struct kl_appearance *main_appearance;
+
 /* The font the chooser draws with: the viewer's own. */
 static const char *main_font;
 
@@ -142,6 +145,7 @@ static int main_canvas_make(void);
 static void main_state(struct pv_state *state);
 static void main_opened(void);
 static void main_annotate(void);
+static void main_appearance_changed(void *data, unsigned appearance);
 
 /*
  * Runs PDF Viewer.
@@ -201,6 +205,12 @@ main(
 	if (options.file != NULL)
 		(void)pv_app_open(&main_app, options.file);
 
+	/* The desktop's appearance: the viewer's colours follow it, the pages stay white (light under a compositor without it). */
+	error = kl_appearance_open(kui_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
+	if (error != 0)
+		pv_log("APPEARANCE none errno=%d", error);
+	pv_draw_set_dark(kl_appearance_get(main_appearance) == KL_APPEARANCE_DARK);
+
 	/* The on-screen keyboard's inset keeps the password card in the part it leaves. */
 	kui_window_on_keyboard_inset(main_window.kui, main_keyboard_inset, &main_app);
 
@@ -233,6 +243,7 @@ main(
 	pv_titlebar_close(&main_titlebar);
 	pv_menu_close(&main_menu);
 	pv_touch_close(&main_touch);
+	kl_appearance_close(main_appearance);
 	pv_app_release(&main_app);
 	free(main_pixels);
 	kui_window_close(main_window.kui);
@@ -913,4 +924,17 @@ main_annotate(void)
 
 	/* Succeeded: Notes opens the document. */
 	pv_log("ANNOTATE program=%s path=%s pid=%ld", MAIN_NOTES, resolved, (long)child);
+}
+
+/* Takes the desktop's new appearance: the viewer is drawn again in its colours. */
+static void
+main_appearance_changed(
+	void *data,
+	unsigned appearance)
+{
+	/* The colours, and a new frame. */
+	(void)data;
+	pv_draw_set_dark(appearance == KL_APPEARANCE_DARK);
+	main_app.dirty = 1;
+	pv_log("APPEARANCE appearance=%u", appearance);
 }

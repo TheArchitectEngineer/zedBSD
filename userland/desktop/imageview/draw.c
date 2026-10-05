@@ -19,6 +19,8 @@
 
 #include "imageview.h"
 
+#include <keiland.h>
+
 #include "../artwork/mark.h"
 
 #include <math.h>
@@ -26,18 +28,18 @@
 #include <string.h>
 
 /* The colours (0xAARRGGBB, not premultiplied). */
-#define DRAW_TITLE		0xff334155U
-#define DRAW_HINT		0xff64748bU
-#define DRAW_CARD		0xf2ffffffU
+#define DRAW_TITLE		kl_theme_choose(0xff334155U, 0xffe2e8f0U)
+#define DRAW_HINT		kl_theme_choose(0xff64748bU, 0xffa9b2bfU)
+#define DRAW_CARD		kl_theme_choose(0xf2ffffffU, 0xf2262b34U)
 #define DRAW_SHADOW		0x22000000U
-#define DRAW_CHIP		0xd9ffffffU
+#define DRAW_CHIP		kl_theme_choose(0xd9ffffffU, 0xd92c313bU)
 #define DRAW_CHIP_DARK		0xb3202530U
-#define DRAW_CHIP_TEXT		0xff334155U
+#define DRAW_CHIP_TEXT		kl_theme_choose(0xff334155U, 0xffe2e8f0U)
 #define DRAW_CHIP_TEXT_DARK	0xffffffffU
 #define DRAW_BUTTON		0xff2f7cf6U
 #define DRAW_BUTTON_TEXT	0xffffffffU
-#define DRAW_MESSAGE		0xf0ffffffU
-#define DRAW_MESSAGE_TEXT	0xff334155U
+#define DRAW_MESSAGE		kl_theme_choose(0xf0ffffffU, 0xf0262b34U)
+#define DRAW_MESSAGE_TEXT	kl_theme_choose(0xff334155U, 0xffe2e8f0U)
 #define DRAW_WARNING		0xffe0a526U
 
 /* The text sizes, in pixels. */

@@ -118,10 +118,10 @@
 #define CAL_ID_MEMO_TEXT	15U
 
 /* The colors: the ground, the cards, Sunday's and Saturday's, the text of their numbers. */
-#define CAL_COLOR_GROUND_TOP	KL_RGB(0xeef4fd)
-#define CAL_COLOR_GROUND_BOTTOM	KL_RGB(0xdde8f8)
-#define CAL_COLOR_CARD		KL_RGBA(0xffffff, 238)
-#define CAL_COLOR_KIND_GLASS	KL_RGBA(0xffffff, 110)
+#define CAL_COLOR_GROUND_TOP	kl_theme_choose(KL_RGB(0xeef4fd), KL_RGB(0x1b1f26))
+#define CAL_COLOR_GROUND_BOTTOM	kl_theme_choose(KL_RGB(0xdde8f8), KL_RGB(0x16191f))
+#define CAL_COLOR_CARD		kl_theme_choose(KL_RGBA(0xffffff, 238), KL_RGBA(0x262b34, 238))
+#define CAL_COLOR_KIND_GLASS	kl_theme_choose(KL_RGBA(0xffffff, 110), KL_RGBA(0x2a2f38, 110))
 #define CAL_COLOR_MEMO		KL_RGB(0xf59e0b)
 #define CAL_COLOR_MEMO_EDGE	KL_RGBA(0x64748b, 120)
 #define CAL_COLOR_SUNDAY	KL_RGBA(0xe5484d, 12)
@@ -129,6 +129,7 @@
 #define CAL_COLOR_SUNDAY_TEXT	KL_RGB(0xd2434a)
 #define CAL_COLOR_SATURDAY_TEXT	KL_RGB(0x2b6fd6)
 #define CAL_COLOR_WHITE		KL_RGB(0xffffff)
+#define CAL_COLOR_SURFACE	kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x23272f))
 
 /* One item of a day: an event (from the test data or dropped) or a memo kept there (its words). */
 struct view_entry {
@@ -1239,7 +1240,7 @@ view_cell(
 	for (i = 0; i < count && i < fits; i++) {
 		/* A memo: an outlined pill with its note, apart from the events. */
 		if (entries[i].memo != NULL) {
-			kl_canvas_round(style->canvas, (float)cell->x + 5.0f, (float)y, (float)cell->width - 10.0f, (float)CAL_PILL, 6.0f, KL_RGBA(0xffffff, 200));
+			kl_canvas_round(style->canvas, (float)cell->x + 5.0f, (float)y, (float)cell->width - 10.0f, (float)CAL_PILL, 6.0f, kl_theme_choose(KL_RGBA(0xffffff, 200), KL_RGBA(0x2a2f38, 200)));
 			kl_canvas_round_border(style->canvas, (float)cell->x + 5.0f, (float)y, (float)cell->width - 10.0f, (float)CAL_PILL, 6.0f, 1.0f, CAL_COLOR_MEMO_EDGE);
 			view_note_icon(style->canvas, (float)cell->x + 8.0f, (float)y + 3.0f, 12.0f);
 			(void)kl_text_draw_fit(style->text, style->canvas, cell->x + 24, y + 13, entries[i].title, 11U, 0, cell->width - 33, style->theme->text);
@@ -1332,7 +1333,7 @@ view_panel(
 		hit = view_drag_source(view, ui, CAL_ID_KIND, i, &card, now_us);
 
 		/* Drawn: white (a lighter veil on glass), tinted under the pointer, its icon, its kind and what it holds. */
-		ground = CAL_COLOR_WHITE;
+		ground = CAL_COLOR_SURFACE;
 		if (view->glass)
 			ground = CAL_COLOR_KIND_GLASS;
 		kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, ground);
@@ -1352,7 +1353,7 @@ view_panel(
 	hit = kl_ui_hit(ui, CAL_ID_CUSTOM, 0U, &card);
 	if ((hit & KL_HIT_CLICKED) != 0U)
 		view_notice(view, "Custom kinds are not in the mock yet.", now_us);
-	ground = CAL_COLOR_WHITE;
+	ground = CAL_COLOR_SURFACE;
 	if (view->glass)
 		ground = CAL_COLOR_KIND_GLASS;
 	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, ground);
@@ -1734,7 +1735,7 @@ view_memo(
 	}
 
 	/* Drawn: white (a lighter veil on glass), its edge in the accent while it has the keyboard. */
-	ground = CAL_COLOR_WHITE;
+	ground = CAL_COLOR_SURFACE;
 	if (view->glass)
 		ground = CAL_COLOR_KIND_GLASS;
 	kl_canvas_round(style->canvas, (float)text.x, (float)text.y, (float)text.width, (float)text.height, 12.0f, ground);
@@ -2029,7 +2030,7 @@ view_ghost(
 	x = (float)px - 20.0f;
 	y = (float)py - 20.0f;
 	kl_canvas_shadow(style->canvas, x, y + 3.0f, 132.0f, 44.0f, 12.0f, 10.0f, style->theme->shadow);
-	kl_canvas_round(style->canvas, x, y, 132.0f, 44.0f, 12.0f, KL_RGBA(0xffffff, 230));
+	kl_canvas_round(style->canvas, x, y, 132.0f, 44.0f, 12.0f, kl_theme_choose(KL_RGBA(0xffffff, 230), KL_RGBA(0x2a2f38, 230)));
 
 	/* The memo: its note and "Memo". */
 	if (view->dragging == CAL_DRAG_MEMO) {

@@ -296,6 +296,12 @@ ml_loop(
 			if (!taken)
 				break;
 
+			/* The desktop's appearance changed: the theme's colours are new, the window is drawn again (ws089-p017). */
+			if (event.kind == KL_APP_THEME) {
+				mailer->dirty = 1;
+				continue;
+			}
+
 			/* Another window's event is not this one's. */
 			if (event.kind != KL_APP_WINDOW || event.window != mailer->window)
 				continue;

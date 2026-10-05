@@ -493,6 +493,14 @@ demo_loop(
 			taken = kl_app_take(demo->app, &event);
 			if (!taken)
 				break;
+
+			/* The desktop's appearance changed: the theme's colours are new, the window is drawn again (ws089-p017). */
+			if (event.kind == KL_APP_THEME) {
+				demo->dirty = 1;
+				continue;
+			}
+
+			/* Another window's event is not this one's. */
 			if (event.kind != KL_APP_WINDOW || event.window != demo->window)
 				continue;
 			if (event.input.kind == KL_WINDOW_ACTION)

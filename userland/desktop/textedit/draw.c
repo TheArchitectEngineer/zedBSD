@@ -21,27 +21,27 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The colours (0xAARRGGBB, not premultiplied). */
-#define DRAW_GROUND		0xffe6ecf2U
-#define DRAW_CARD		0xf4fbfcfdU
-#define DRAW_CARD_OPAQUE	0xfffbfcfdU
-#define DRAW_TEXT		0xff1e293bU
-#define DRAW_FAINT		0xff94a3b8U
-#define DRAW_NUMBER_NOW		0xff334155U
-#define DRAW_CONTROL		0xff94a3b8U
-#define DRAW_ROW_NOW		0xfff1f5f9U
-#define DRAW_SELECTION		0xffcfe3ffU
-#define DRAW_SELECTION_IDLE	0xffe2e8f0U
-#define DRAW_MATCH		0xfffde68aU
-#define DRAW_MATCH_NOW		0xfffbbf24U
-#define DRAW_CURSOR		0xff2563ebU
-#define DRAW_PREEDIT_LINE	0xff64748bU
-#define DRAW_PREEDIT_FOCUS	0xffcfe3ffU
-#define DRAW_PREEDIT_FOCUS_LINE	0xff2563ebU
-#define DRAW_SCROLL		0x50334155U
-#define DRAW_CHIP		0xecffffffU
-#define DRAW_CHIP_EDGE		0x1f334155U
-#define DRAW_CHIP_TEXT		0xff475569U
+/* The colours (0xAARRGGBB, not premultiplied), the light appearance's and the dark one's (ws089-p017). */
+#define DRAW_GROUND		kl_theme_choose(0xffe6ecf2U, 0xff16191fU)
+#define DRAW_CARD		kl_theme_choose(0xf4fbfcfdU, 0xf4262b34U)
+#define DRAW_CARD_OPAQUE	kl_theme_choose(0xfffbfcfdU, 0xff262b34U)
+#define DRAW_TEXT		kl_theme_choose(0xff1e293bU, 0xffe2e8f0U)
+#define DRAW_FAINT		kl_theme_choose(0xff94a3b8U, 0xff7d8794U)
+#define DRAW_NUMBER_NOW		kl_theme_choose(0xff334155U, 0xffcbd5e1U)
+#define DRAW_CONTROL		kl_theme_choose(0xff94a3b8U, 0xff7d8794U)
+#define DRAW_ROW_NOW		kl_theme_choose(0xfff1f5f9U, 0xff2c313bU)
+#define DRAW_SELECTION		kl_theme_choose(0xffcfe3ffU, 0xff28466eU)
+#define DRAW_SELECTION_IDLE	kl_theme_choose(0xffe2e8f0U, 0xff3a414dU)
+#define DRAW_MATCH		kl_theme_choose(0xfffde68aU, 0xff6b5a1eU)
+#define DRAW_MATCH_NOW		kl_theme_choose(0xfffbbf24U, 0xffa77b0fU)
+#define DRAW_CURSOR		kl_theme_choose(0xff2563ebU, 0xff60a5faU)
+#define DRAW_PREEDIT_LINE	kl_theme_choose(0xff64748bU, 0xff94a3b8U)
+#define DRAW_PREEDIT_FOCUS	kl_theme_choose(0xffcfe3ffU, 0xff28466eU)
+#define DRAW_PREEDIT_FOCUS_LINE	kl_theme_choose(0xff2563ebU, 0xff60a5faU)
+#define DRAW_SCROLL		kl_theme_choose(0x50334155U, 0x50cbd5e1U)
+#define DRAW_CHIP		kl_theme_choose(0xecffffffU, 0xec2c313bU)
+#define DRAW_CHIP_EDGE		kl_theme_choose(0x1f334155U, 0x1fcbd5e1U)
+#define DRAW_CHIP_TEXT		kl_theme_choose(0xff475569U, 0xffcbd5e1U)
 
 /* How long the cursor shows and hides, in milliseconds (as the editor's). */
 #define DRAW_BLINK_MS		530U

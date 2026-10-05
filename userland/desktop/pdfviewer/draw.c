@@ -26,31 +26,38 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The colours of the frame (0xAARRGGBB, not premultiplied). */
-#define DRAW_BACKGROUND		0xffdfe2e7U
+/*
+ * Whether the frame is drawn in the dark appearance's colours
+ * (ws089-p017): set by pv_draw_set_dark when the desktop tells it (main.c),
+ * light until then.  Only the viewer's thread reads or changes it.
+ */
+static int draw_dark;
+
+/* The colours of the frame (0xAARRGGBB, not premultiplied), the light appearance's and the dark one's (ws089-p017; the pages stay white). */
+#define DRAW_BACKGROUND		draw_choose(0xffdfe2e7U, 0xff16191fU)
 #define DRAW_SHADOW		0x22000000U
 #define DRAW_EDGE		0x33000000U
 #define DRAW_PILL		0xcc1f2430U
 #define DRAW_PILL_TEXT		0xffffffffU
-#define DRAW_HINT		0xff5a6070U
-#define DRAW_TITLE		0xff2a2f3aU
+#define DRAW_HINT		draw_choose(0xff5a6070U, 0xffa9b2bfU)
+#define DRAW_TITLE		draw_choose(0xff2a2f3aU, 0xffe2e8f0U)
 #define DRAW_DIM		0x66000000U
-#define DRAW_CARD		0xfff7f8faU
-#define DRAW_MESSAGE		0xf0ffffffU
-#define DRAW_MESSAGE_TEXT	0xff8a1f1fU
-#define DRAW_NOTICE		0xf2f7f8faU
-#define DRAW_NOTICE_TEXT	0xff3a4150U
+#define DRAW_CARD		draw_choose(0xfff7f8faU, 0xff262b34U)
+#define DRAW_MESSAGE		draw_choose(0xf0ffffffU, 0xf0262b34U)
+#define DRAW_MESSAGE_TEXT	draw_choose(0xff8a1f1fU, 0xfff08a8aU)
+#define DRAW_NOTICE		draw_choose(0xf2f7f8faU, 0xf22c313bU)
+#define DRAW_NOTICE_TEXT	draw_choose(0xff3a4150U, 0xffcbd5e1U)
 #define DRAW_NOTICE_MARK	0xffe0a526U
-#define DRAW_SIDEBAR		0xffeceef2U
-#define DRAW_SIDEBAR_EDGE	0xffcfd3daU
+#define DRAW_SIDEBAR		draw_choose(0xffeceef2U, 0xff1f232aU)
+#define DRAW_SIDEBAR_EDGE	draw_choose(0xffcfd3daU, 0xff343a45U)
 #define DRAW_CURRENT		0x402f7cf6U
 #define DRAW_CURRENT_EDGE	0xff2f7cf6U
-#define DRAW_FIELD		0xffffffffU
-#define DRAW_FIELD_EDGE		0xffb9bfc9U
+#define DRAW_FIELD		draw_choose(0xffffffffU, 0xff1f232aU)
+#define DRAW_FIELD_EDGE		draw_choose(0xffb9bfc9U, 0xff4a515dU)
 #define DRAW_WRONG		0xffc0392bU
-#define DRAW_BUTTON		0xffe3e6ebU
+#define DRAW_BUTTON		draw_choose(0xffe3e6ebU, 0xff2f3540U)
 #define DRAW_BUTTON_DEFAULT	0xff2f7cf6U
-#define DRAW_LOCK		0xff5a6070U
+#define DRAW_LOCK		draw_choose(0xff5a6070U, 0xffa9b2bfU)
 
 /* What the notice says, and the display-list flags that call for it. */
 #define DRAW_NOTICE_WORDS	"Some content could not be shown"
@@ -60,6 +67,7 @@
 #define DRAW_TEXT		15U
 #define DRAW_TEXT_LARGE		20U
 
+static uint32_t draw_choose(uint32_t light, uint32_t dark);
 static void draw_page(struct pv_app *app, struct pv_canvas *canvas, size_t index, int x, int y);
 static void draw_scroll(struct pv_app *app, struct pv_canvas *canvas);
 static void draw_single(struct pv_app *app, struct pv_canvas *canvas);
@@ -625,4 +633,30 @@ draw_centred(
 	/* Its width decides where it starts. */
 	width = pv_text_width(app->text, text, pixels);
 	pv_text_draw(app->text, canvas, (canvas->width - width) / 2, baseline, text, pixels, color);
+}
+
+/*
+ * Draws the frame in the dark appearance's colours (dark not 0) or the
+ * light one's (ws089-p017).
+ */
+void
+pv_draw_set_dark(
+	int dark)
+{
+	/* The appearance. */
+	draw_dark = dark;
+}
+
+/* Chooses a colour of the frame by the appearance. */
+static uint32_t
+draw_choose(
+	uint32_t light,
+	uint32_t dark)
+{
+	/* The dark colour in the dark appearance. */
+	if (draw_dark)
+		return dark;
+
+	/* The light one otherwise. */
+	return light;
 }
