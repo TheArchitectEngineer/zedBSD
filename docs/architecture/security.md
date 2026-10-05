@@ -5,8 +5,8 @@ first and the implementation follows it, so some of what it describes is not
 built yet.
 
 This document records where zedBSD and Keiland draw their privilege
-boundaries and why. It begins with account administration. Later sections
-will cover the other privileged paths.
+boundaries and why. It covers account administration and the authentication
+of the graphical login. Later sections will cover the other privileged paths.
 
 ## Principles
 
@@ -179,6 +179,149 @@ On Linux and FreeBSD the Keiland ports show the list of users, but the
 administrative operations answer "not supported here". Those systems have
 their own account tools (AccountsService, `pw`), and wrapping them is a
 separate design.
+
+## Login authentication
+
+### What it covers
+
+The graphical login screen and the lock screen accept three kinds of
+credential, called styles:
+
+- **password**: the account's password, as everywhere else;
+- **pin**: a six-digit PIN the user sets in Settings > Users;
+- **fido2**: a FIDO2 security key the user registers in Settings > Users,
+  touched and unlocked with the key's own PIN, over USB or NFC.
+
+The PIN and the security key are conveniences for the person at the machine.
+They are never accepted by `login` on the console, `su`, `sudo`, `passwd` or
+SSH, which take the password only.
+
+### The parts
+
+```text
+greeter / lock screen (no privilege)
+        |  one request per line on its socket pair
+        v
+sessiond (root, resident)  -- chooses the style, counts failures, delays
+        |  request on stdin, answer on stdout
+        v
+/sbin/passkey (root, short-lived)  -- checks one request, or changes /etc/passkey
+        |  the device descriptors only
+        v
+device helper (_passkey, chroot /var/empty)  -- talks CTAP to the security key
+```
+
+- **sessiond** never checks a credential itself. For each attempt it starts
+  `/sbin/passkey`, writes the request to its standard input and reads the
+  answer from its standard output. It keeps the failure counts and applies
+  the delays. The account it names is the one the greeter chose for a login,
+  and always the session's own user for an unlock or a change.
+- **`/sbin/passkey`** is a base program, mode 0500, owned by root and not
+  set-user-ID. It refuses to run unless its real user ID is 0. It reads one
+  bounded request (4 KiB), does that one thing and exits. Nothing comes from
+  its command line or its environment.
+- **The device helper** is a child of passkey for the security key style. It
+  runs as the `_passkey` account inside an empty root directory and holds
+  only the descriptors of the key's device nodes, which passkey opened. It
+  sends the key its request and returns the key's answer as bytes. It does
+  not read `/etc/passkey`, does not choose the challenge and does not decide
+  whether the answer is good.
+- **The check** is done by passkey as root on the bytes the helper returns,
+  against the public key stored for the credential the answer names.
+
+### The request
+
+The request is text, one field per line, ending at end of file:
+
+```text
+<operation>
+<account name>
+<style>             (auth only)
+<secret>            (auth: the password, the PIN, or the key's PIN;
+                     the other operations: the user's current password)
+<arguments>
+```
+
+| Operation | Arguments |
+| --- | --- |
+| `auth` | none |
+| `styles` | none (and no secret): the styles the account has enrolled |
+| `enrolled` | none (and no secret): the account's PIN and keys, without secrets |
+| `enroll-pin` | the new PIN |
+| `remove-pin` | none |
+| `enroll-fido2` | a label, the key's PIN |
+| `remove-fido2` | the credential's ID |
+
+The answer is zero or more `status touch` lines (the user should touch the
+key), then `ok` (with the credential's ID after `enroll-fido2`) or
+`fail <reason>`. The reasons are fixed words: `bad-secret`, `no-such-user`,
+`not-enrolled`, `locked-account`, `no-key`, `timeout`, `device`, `replay`,
+`bad-request`, `busy` and `internal`. The exit status is 0 for `ok`, 1 for
+`fail` and 2 for an internal error. sessiond kills a passkey that runs longer
+than 5 seconds for a password or a PIN, or 35 seconds for a security key.
+
+### Failure counts and delays
+
+sessiond counts the failures in a row for each account and style in memory.
+They are never written to a file, so that an attempt leaves no trace an
+attacker could time or watch. After a failure the answer waits: 2 seconds,
+doubling after every three failures in a row, up to 16 seconds, for every
+style of the account together.
+
+After five wrong PINs in a row, the PIN is turned off for that account: the
+login screen no longer offers it and a PIN attempt fails at once. A
+successful password or security key login turns it on again. The counts are
+lost when sessiond restarts; to slow down an attacker who could make it
+restart, sessiond accepts no PIN during its first 60 seconds. A security key
+counts its own wrong PINs and locks itself after eight.
+
+### /etc/passkey
+
+The enrolled credentials live in `/etc/passkey`, owned by root with mode
+0600, beside `/etc/passwd` and `/etc/shadow`, which do not change. It is
+replaced atomically under the shared account lock, like `/etc/shadow`.
+
+```text
+# zedBSD passkey 1
+<name>:pin:<SHA-512 crypt hash>
+<name>:fido2:<credential ID>:<COSE public key>:<signature count>:<relying party>:<label>:<date>
+```
+
+The credential ID and the key are base64url. An account has at most one PIN
+and five security keys; a label has at most 32 characters and no `:`. A line
+of a kind passkey does not know is kept as it is when the file is rewritten.
+Removing an account removes its lines.
+
+### The PIN
+
+A PIN is exactly six decimal digits, hashed like a password (SHA-512 crypt).
+Setting, changing or removing it requires the account's current password. An
+account whose password is locked cannot have a PIN. Six digits give a
+million combinations; the protection is the file's permissions and the
+limit of five attempts, not the hash.
+
+### The security key
+
+The relying party is `zedbsd.login`, a name that cannot collide with a web
+site's. Registration asks the key for a new non-resident ES256 credential
+(COSE algorithm -7) with user verification, and stores its ID and public
+key; the key's attestation is not checked, so the make of the key is not
+part of the trust. A key without a PIN of its own cannot be registered.
+
+To log in, passkey makes a random 32-byte challenge and the client data hash
+`SHA-256("zedbsd.login" NUL name NUL challenge)`, and the helper asks every
+security key present for an assertion over the account's registered
+credentials, using the first key the user touches. passkey then:
+
+1. finds the public key by the credential ID in the answer, among the
+   account's own registrations;
+2. checks that the authenticator data's relying party hash is the hash of
+   `zedbsd.login`, and that its flags say the user was present and verified;
+3. checks the signature over the authenticator data and its own client data
+   hash;
+4. checks that the signature count is 0 or larger than the one stored, and
+   stores the new one (a count that goes back is answered `replay`: the key
+   may have been copied).
 
 ## Shared account core
 

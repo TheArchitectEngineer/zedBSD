@@ -201,7 +201,8 @@ behaves like the desktop. sessiond starts it like this:
    | Request | Answer |
    | --- | --- |
    | `READY` | `GO` once nothing else holds the display |
-   | `AUTH name password` | `OK`, or `FAIL` after a delay |
+   | `STYLES name` | `STYLES password[ pin][ fido2]`: the ways the account can log in now |
+   | `AUTH name style`, then the secret on the next line | `TOUCH` while a security key waits to be touched, then `OK`, or `FAIL reason` after a delay |
    | `POWER poweroff` / `POWER reboot` | `OK`, then the machine ends |
 
    Anything else is answered `ERROR`.
@@ -209,9 +210,12 @@ behaves like the desktop. sessiond starts it like this:
 The greeter has no privilege. It cannot read `/etc/shadow` or any user's
 home directory; it only passes what the user typed to sessiond.
 
-### Checking a password
+### Checking a password, a PIN or a security key
 
-sessiond checks passwords with the same routine as the console `login`
+sessiond does not check credentials itself. It runs `/sbin/passkey` for every
+attempt and keeps the failure counts in memory
+([Login authentication](security.md#login-authentication)). For a password,
+passkey uses the same routine as the console `login`
 ([verify.c](../../userland/base/login/verify.c)):
 
 1. Look the account up in `/etc/passwd`, then its hash in `/etc/shadow`
@@ -222,9 +226,10 @@ sessiond checks passwords with the same routine as the console `login`
    crypt), and compare.
 4. Erase the password, whatever the answer.
 
-After a wrong password the answer waits: 2 seconds, doubling after every three
-failures in a row, up to 16 seconds. Every success and failure is logged to
-syslog, and the password itself is never written anywhere.
+After a wrong password, PIN or key the answer waits: 2 seconds, doubling after
+every three failures in a row, up to 16 seconds. Five wrong PINs in a row turn
+the PIN off until the next password or security key login. Every success and
+failure is logged to syslog, and no secret is ever written anywhere.
 
 ### Starting the session
 
@@ -238,7 +243,10 @@ The session compositor uses its control socket for a few requests:
 
 | Request | Meaning |
 | --- | --- |
-| `UNLOCK password` | The lock screen: check the session user's password, as at login. The user is the session's, not a name the compositor sends. |
+| `UNLOCK style`, then the secret on the next line | The lock screen: check the session user's password, PIN or security key, as at login. The user is the session's, not a name the compositor sends. |
+| `ENROLLED` | The session user's PIN and security keys, without secrets (Settings > Users). |
+| `ENROLL pin` / `ENROLL fido2 label`, then the current password and the new PIN or the key's PIN on the next lines | Set the PIN or register a security key for the session user. |
+| `REMOVE pin` / `REMOVE fido2 id`, then the current password on the next line | Remove the PIN or a security key of the session user. |
 | `LOGOUT` | End the session and hand the display to a new greeter. |
 | `SERVICE name on\|off\|status` | A system service the Sharing page controls (sshd only; root or wheel). |
 
@@ -248,8 +256,11 @@ socket that another process could connect to exists.
 ### The lock screen
 
 The lock screen is drawn by the user's own compositor, which runs as the user.
-It sends the password to sessiond with `UNLOCK`, so the compositor never sees
-the password hash.
+It sends what the user typed to sessiond with `UNLOCK`, so the compositor
+never sees a password hash, a PIN hash or a key's stored public key. Settings
+> Users sets the PIN and registers security keys through the compositor's
+system extension, which passes the request to sessiond on the same control
+socket.
 
 ## Related documents
 
