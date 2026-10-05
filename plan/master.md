@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **bar のデバイス（USB 媒体）の icon（2026-10-05 午後 UAT の所見、P2 の案 plan/ws132/proposals/media-icon-proposals.png）**: 今の icon は camera に見え plug の穴も見えていない。A 横の stick と輪郭の plug、B 縦の stick（一般の USB メモリの絵）、C USB の三叉の記号、D 箱と取り出しの記号 [P2 の案: B]。WS156 の H7（通知への置き換え）とは独立に入れられる。
 - **BUG-194 全画面から戻す compositor の key（2026-10-05、P2 の案、今は仮に F11）**: A F11、B Super+↓（Fn が要らない）、C Esc の 1 秒の長押し、D 画面の上端からの swipe [P2 の案: A+B か B+C]。実機で F11 が効かなかったのは 5330 の上の列が既定で Home/End（Fn+F11 か Fn Lock）の見込み、次の UAT で Fn+F11 を試す。
 - **WS145 印刷の判断（2026-10-05、P2 の p001 の設計の初版、plan/ws145/phase001/phase.md。design-reviewer の重大 7 件は未反映）**: D2 printer を system 全体で共有するか（共有なら root の口が要る）[案: 利用者ごと]、D3 LPD の queue 名の入力、D6 PDF Viewer の Print を含めるか、受け入れの printer の機種（PDF を受けない機種なら PWG raster が要る）、Linux で CUPS の printer を出さないこと、login 名を printer に送ること。
 - **2026-10-05 午後 UAT の後、ユーザー「ちょっと仮眠します。その方針でよいので、自走をお願いします。」**: 方針どおり自走。P1 は BUG-195・196・197（実機の ACPI）、P2 は UAT の所見（ws132-p009・ws099-p033・BUG-194（仮に F11）・BUG-181・BUG-193・bar の device の icon）。直しが揃ったら新しい UAT の image を作り T1 で boot-test。判断が要る点は記録して先へ。
