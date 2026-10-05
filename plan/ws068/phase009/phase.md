@@ -107,7 +107,7 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 - 回帰: build の warning 0、style-check の新しい違反 0、glsl-host・ws101 gles host が PASS、Venus の egl-p008〜p030・glx-p013・p031・p033・x11-p004・p005 が全て exit 0、
   ws101 の venus.sh が PASS、gles-hw.sh が PASS（lock が取れなければ「未実施」で uncleared）、boot test が PASS。
 
-## 実装（2026-10-05、P1 generation17、commit 69492884）
+## 実装（2026-10-05、P1 generation17、commit 7dd0e207）
 
 | 部分 | 内容 | 場所 |
 | --- | --- | --- |
@@ -130,6 +130,6 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 | `git diff --check` | 問題なし |
 | `sh plan/ws068/tests/glsl-host/run.sh build/ws068-p009/glsl-host` | `glsl-host: PASS` |
 | `sh plan/ws101/tests/gles/run.sh build/ws068-p009/ws101-gles` | `ws101 gles host test PASS` |
-| 比べるための前の library | `build/ws068-p009-base/dynamic/libEGL.so`・`libGLESv2.so`（commit 69492884 の 1 つ前の source） |
+| 比べるための前の library | `build/ws068-p009-base/dynamic/libEGL.so`・`libGLESv2.so`（commit 7dd0e207 の 1 つ前の source） |
 | Venus（T1）・WS101 の venus.sh・実機・boot test | **未実施**（T1 に依頼。手順 6〜9 の中身） |
 
