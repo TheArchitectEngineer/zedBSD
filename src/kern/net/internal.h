@@ -48,6 +48,14 @@ net_checksum_pseudo(
 	const void *,
 	size_t);
 
+uint16_t
+net_checksum_pseudo6(
+	const uint8_t source[16],
+	const uint8_t destination[16],
+	uint8_t next_header,
+	const void *,
+	size_t);
+
 int
 arp_init(void);
 

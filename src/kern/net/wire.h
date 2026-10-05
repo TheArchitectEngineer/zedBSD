@@ -68,6 +68,96 @@ struct tcp_wire {
 	uint8_t urgent[2];
 } __attribute__((packed));
 
+/* The IPv6 header (RFC 8200 section 3). */
+struct ipv6_wire {
+	uint8_t version_class_flow[4];
+	uint8_t payload_length[2];
+	uint8_t next_header;
+	uint8_t hop_limit;
+	uint8_t source[16];
+	uint8_t destination[16];
+} __attribute__((packed));
+
+/* An extension header's start: the next header and the length in 8-byte units after the first eight. */
+struct ipv6_extension_wire {
+	uint8_t next_header;
+	uint8_t length;
+} __attribute__((packed));
+
+/* The fragment header (only recognised, to be dropped). */
+struct ipv6_fragment_wire {
+	uint8_t next_header;
+	uint8_t reserved;
+	uint8_t offset_flags[2];
+	uint8_t identification[4];
+} __attribute__((packed));
+
+/* An ICMPv6 message's start, and the four bytes after it (an echo's identifier and sequence, an error's pointer or MTU). */
+struct icmp6_wire {
+	uint8_t type;
+	uint8_t code;
+	uint8_t checksum[2];
+	uint8_t data[4];
+} __attribute__((packed));
+
+/* A Router Solicitation (RFC 4861 section 4.1). */
+struct nd6_rs_wire {
+	struct icmp6_wire header;
+} __attribute__((packed));
+
+/* A Router Advertisement (section 4.2): the ICMPv6 header's data is the hop limit, the flags and the router lifetime. */
+struct nd6_ra_wire {
+	struct icmp6_wire header;
+	uint8_t reachable_time[4];
+	uint8_t retrans_timer[4];
+} __attribute__((packed));
+
+/* A Neighbor Solicitation or Advertisement (sections 4.3 and 4.4): the data is reserved, or the R, S and O flags. */
+struct nd6_neighbor_wire {
+	struct icmp6_wire header;
+	uint8_t target[16];
+} __attribute__((packed));
+
+/* A Redirect (section 4.5). */
+struct nd6_redirect_wire {
+	struct icmp6_wire header;
+	uint8_t target[16];
+	uint8_t destination[16];
+} __attribute__((packed));
+
+/* A neighbor discovery option's start: its type and length in 8-byte units. */
+struct nd6_option_wire {
+	uint8_t type;
+	uint8_t length;
+} __attribute__((packed));
+
+/* The MTU option (type 5). */
+struct nd6_option_mtu_wire {
+	uint8_t type;
+	uint8_t length;
+	uint8_t reserved[2];
+	uint8_t mtu[4];
+} __attribute__((packed));
+
+/* An MLDv2 report (RFC 3810 section 5.2): the ICMPv6 header's data is reserved and the record count. */
+struct mld6_report_wire {
+	struct icmp6_wire header;
+} __attribute__((packed));
+
+/* One record of an MLDv2 report, without sources. */
+struct mld6_record_wire {
+	uint8_t type;
+	uint8_t auxiliary;
+	uint8_t sources[2];
+	uint8_t group[16];
+} __attribute__((packed));
+
+/* An MLD query (RFC 3810 section 5.1, and MLDv1's): the data is the maximum response code and reserved. */
+struct mld6_query_wire {
+	struct icmp6_wire header;
+	uint8_t group[16];
+} __attribute__((packed));
+
 static inline uint16_t wire_get16(const uint8_t value[2])
 {
 	return (uint16_t)((uint16_t)value[0] << 8) | value[1];

@@ -42,6 +42,7 @@ extern void route_purge_device(struct net_device *) __attribute__((weak));
 extern void inet_interface_purge_device(struct net_device *)
     __attribute__((weak));
 extern void arp_purge_device(struct net_device *) __attribute__((weak));
+extern void ipv6_purge_device(struct net_device *) __attribute__((weak));
 extern void route_socket_notify(unsigned, uint64_t, unsigned, unsigned)
     __attribute__((weak));
 
@@ -353,6 +354,8 @@ net_device_gone(
 		inet_interface_purge_device(device);
 	if (arp_purge_device != NULL)
 		arp_purge_device(device);
+	if (ipv6_purge_device != NULL)
+		ipv6_purge_device(device);
 
 	/*
 	 * Retires every open-derived reference before publishing completion.
