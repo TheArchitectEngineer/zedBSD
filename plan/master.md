@@ -64,14 +64,13 @@
 <!-- master:focus:end -->
 
 <!-- master:blocked:start -->
-- [WS155](ws155/ws.md)（カレンダー・スケジューラ・オーガナイザ）: ユーザーの宿題（app の外観の画像の提出）まで止める（2026-10-04 ユーザー）。
+- [WS155](ws155/ws.md)（カレンダー・スケジューラ・オーガナイザ）: 2026-10-05 ユーザーがデザイン案を提出、blocked を解除。まず UI の mock（3D の animation つき）を見せて再指示を受ける。
 - 5330 の AX211 の passthrough は 2026-10-04 に再開を許可（iwlwifi を blacklist して再起動が要る、Guardrail）。iGPU は i915 の driver の改善の Phase だけで使い、iGPU と AX211 の同時は禁止。
 - 2026-10-04 の UAT（[uat.md](uat.md)、証拠 [uat/2026-10-04/](uat/2026-10-04/)）: 実機で OK は BUG-145・152・161・143・139・103・160・153。再現は BUG-158・119・156・157。新規 BUG-165〜176。**最優先は BUG-165（DSDT が読めない: 電源が切れない・タッチパッド・電池の根の候補）・BUG-158（WiFi 未接続で kernel のフリーズ）・BUG-170（音量の slider のフリーズ）**。タッチパッドの操作の仕様（BUG-166）はユーザーと決める。
 - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
-- **WS052 p006 の UAPI（2026-10-05、P1、include/uapi/system.h、HAL ではない）**: 既存の `KERN_SYSTEM_SLEEP` に mode `KERN_SYSTEM_SLEEP_S0IDLE`（2、root だけ）を足し、`struct system_sleep_request`（64 byte のまま）の reserved を `wake`（出力: 起こした理由 `KERN_SYSTEM_WAKE_*` = NONE・POWER_BUTTON・LID・KEYBOARD・USB・AC・TIMER・SPURIOUS・OTHER）にする。入れない時の result は EOPNOTSUPP（何も触らない）・EBUSY・device の error [この形]。P1 はこの形で kernel を作り、UAPI は別の小さな commit にする。
 - **ws089-p017 の判断（P2 の設計、前からの保留）**: ① ベータ2 に入れるか [計画の案: 入れない]、② 入れるなら accent だけか dark もか。
 - **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
 - **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
@@ -496,7 +495,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS152](ws152/ws.md) | MG007 | system の更新（Settings の Updates の頁の実体）。ベータ3 の実装の項目、p001 は方式の検討（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | WS129 |
 | [WS153](ws153/ws.md) | MG007 | Settings の Apps の頁と third-party の app の repository（userland/packages とは別）。p001 は package の仕組みの検討（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | — |
 | [WS154](ws154/ws.md) | MG006 | Settings の Languages の頁で IME を選ぶ（日本語・SKK・なし=英語）と、SKK の IME の新しい実装（辞書は Emacs の物）（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | WS095 |
-| [WS155](ws155/ws.md) | MG006 | Keiland の app: カレンダー・スケジューラ・オーガナイザ（まず簡単な物）（2026-10-04 ユーザー） | planning、**blocked: ユーザーの宿題（app の外観の画像の提出）** | — |
+| [WS155](ws155/ws.md) | MG006 | Keiland の app: カレンダー・スケジューラ・オーガナイザ（まず簡単な物）（2026-10-04 ユーザー） | planning（2026-10-05 デザイン案を受領、mock から） | — |
 | [WS156](ws156/ws.md) | MG006 | app の通知: 画面の下の中央を流れる headline の popup（右から中央、3 秒、左へ fade-out、× で消す）と hotkey の ring の log（すべて消去、個別に消した物は残さない）（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | — |
 | [WS157](ws157/ws.md) | MG006 | Keiland の app: 写真の管理（p001 は要件の検討）（2026-10-05 ユーザー） | planning（p001 から、Queue なし） | — |
 | [WS158](ws158/ws.md) | MG006 | Keiland 本体と Keiland の app の翻訳（英語が基準、日本語はベータ2、Settings の Languages の頁で選ぶ。F-068 を昇格）（2026-10-05 ユーザー） | planning（p001 から、Queue なし） | WS154 |

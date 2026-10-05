@@ -3,12 +3,12 @@
 # WS155: Keiland の app: カレンダー・スケジューラ・オーガナイザ（まず簡単な物）
 
 <!-- awesome-plan-current:start -->
-Status: planning（**blocked: ユーザーの宿題**）
+Status: planning（2026-10-05 ユーザーがデザイン案の画像を提出、blocked を解除。まず UI の mock（p000、q745）を見せ、ユーザーが再指示する）
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: **ユーザーが app の外観の画像を提出するまで止める**（2026-10-04 ユーザーの指示）。画像が届いたら p001（設計）から。
+Resume point: p000（UI の mock）。ユーザーが mock を見て再指示し、その後に p001（設計）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -19,7 +19,25 @@ Keiland の標準 app として、カレンダー・予定の管理（スケジ�
 
 「Keilandアプリとしてカレンダー・スケジューラ・オーガナイザを実装します。まずはシンプルなものでいいです。ユーザの宿題として、アプリの外観の画像を提出するまでブロックします。」
 
-## 止めている理由（blocked）
+## デザイン案（2026-10-05 ユーザーの提出）
+
+ユーザー「カレンダーのデザイン案をお渡しします。このままにする必要はなく、要素で利用してほしいです。3Dを利用します。Linuxデスクトップのような格好つけだけのクールさはいらないです。Windows 11のように、実用性があるミニマルな中に、知性を感じさせるデザインがいいです。それでも、少しの動的なデザインがほしいです。そこに3Dのアニメーションを入れて、落ち着いた知性を表現したいです。モックを見て再指示するので、具体的デザインをお任せします。」
+
+画像は会話の添付で file は無い。Q1 が要素を書き取った物（このままにする必要は無い、要素として使う）:
+
+- 窓: 淡い青の glass の背景。左上に信号機の 3 つの button、上の帯に ‹ › の移動・「Today」・中央の segmented の「Month / Week / Day」（選ばれた物は青の塗り）・右に「Search events…」の検索の欄と「…」の menu。
+- 左の sidebar: app の icon と「Calendar」の題、「Month View」（選ばれた行は淡い青の塗り）・「Today」・「Search」・「Settings」の行（線の icon）。区切りの後に「My Calendars」: Work（青）・Personal（赤）・Family（緑）・Study（黄）の色つきの checkbox、「+ Add Calendar」。下に小さな card（icon、「A more organized you」「Plan today for a brighter tomorrow.」）。
+- 中央: 月の表を縦に続けて scroll（「April 2025」「May 2025」「June 2025」の大きな見出し）。曜日の行、日曜の列は淡い赤・土曜の列は淡い青の地で数字も赤・青、前後の月の日は灰色、今日（15）は青の塗りの cell。予定は cell の中の小さな pill（色の点＋題、地は calendar の色の淡い色: Team Meeting・Doctor Appointment・Study Session・Kids' Event・Project Review など）。
+- 右の panel 「Add Event」: 「Drag an icon to a date on the calendar to create a new event.」。種類の card（大きな立体の icon: Work 青の鞄・Personal 赤のハート・Study 緑の本・Family 黄の人々、副題「Meeting, Task, Deadline」など）と「Custom / Create your own」（+）。下に **3D の日めくりの絵**（青い綴じ輪の付いた「Apr 15」の卓上カレンダーが斜めに立ち、後ろに重なる頁、周りを淡い青のリボンが流れる）と「Small plans make big days.」。
+- 全体: 角の丸い card、柔らかい影、淡い青の諧調、立体感のある icon。
+
+### 方針（Q1、mock の前提。ユーザーが mock を見て変える）
+
+- 目指す物: Windows 11 のような実用的でミニマルな中に知性。格好だけの効果は入れない。
+- 動き: 少しだけ。3D のアニメーションで「落ち着いた知性」を表す。例: 今日の日めくりの 3D の絵がゆっくり呼吸するように傾く、日付が変わる・月を移る時に頁がめくれる、予定を drag で落とした時に cell が軽く沈む。動きは短く（数百 ms）、常時の動きは遅く小さく、「動きを減らす」の設定で止める。
+- 3D の描き方: compositor の GPU（Venus）を app から直接使う口は今無いので、mock では app の中の小さな software の 3D（三角形の rasterizer、照明は 1 つ）で日めくりの絵を描く。本実装の描き方は p001 で決める。
+
+## 止めていた理由（解除済み）
 
 - **ユーザーの宿題**: app の外観の画像の提出。届くまで設計・実装を始めない。
 
@@ -36,4 +54,5 @@ Keiland の標準 app として、カレンダー・予定の管理（スケジ�
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws155-p001 | 外観の画像に基づく設計（画面・操作・保存・通知・試験） | planning（blocked） | **ユーザーの外観の画像** |
+| ws155-p000 | **UI の mock**（デザイン案の要素と上の方針で。月の表示を中心に、sidebar・Add Event の panel・3D の日めくりの animation。data は固定の試験 data、保存は作らない）。ユーザーが見て再指示する | planning（q745） | — |
+| ws155-p001 | 外観の画像に基づく設計（画面・操作・保存・通知・試験） | planning | p000 の mock へのユーザーの再指示 |
