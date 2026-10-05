@@ -3,13 +3,13 @@
 # WS066: 動的 link の program の起動を速くする（`ld.so` の最適化）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG002
 Related Milestones: MG004
 Objectives: O1
 Parent: [Master](../master.md)
-Queue: none
-Resume point: p001（調査と設計）から。優先度は低い（2026-09-26 ユーザー「ld.soの最適化をあとでやるリストとしてwsにしておこう」）
+Queue: Q1（2026-10-05、P2）
+Resume point: p001 は host の分析と設計の案が済み、guest の起動の時間の測定（T1）を待つ。優先度は低い（2026-09-26 ユーザー「ld.soの最適化をあとでやるリストとしてwsにしておこう」）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -40,6 +40,6 @@ base の program は動的 link のまま（静的 link にしない）。起動
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws066-p001](phase001/phase.md) | 起動の費用の内訳（`ld.so` の各段階、再配置の数、探索の回数）と、候補の選択・設計 | planning | — |
+| [ws066-p001](phase001/phase.md) | 起動の費用の内訳（`ld.so` の各段階、再配置の数、探索の回数）と、候補の選択・設計 | in-progress（T1 の測定待ち） | — |
 
 p002 以降（実装）と規約の Phase は p001 の結果で定める。
