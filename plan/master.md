@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS122 の判断（2026-10-05、P2 の p003 の開始の報告）**: ① libavcodec 無しの動画の decode は WS083（Vulkan Video、実機）が要り、それまで libavcodec 無しでは絵が出ない。② 音: libavcodec 無しで音を出すには AAC の decoder の自作（大きい）か BSD の libopus の外部 package。それまでは libavcodec 無しの時は音無しで再生、でよいか。③ add-in の dlopen の宣言: header を使わずに AVFrame などの使う field の位置を自分で書く（事実の記述で header の写しではないという見立て）の license の判断。
 - **WS066 の目標の文（2026-10-05、P2 の案、plan/ws066/phase002/phase.md）**: 測定の回の間のばらつきが大きい（変えていない true-static が 517 → 608 µs）。同じ回の中では静的との差が 266 → 10 µs で /bin/true は「差の半分」を満たした。案: ① 受け入れを「/bin/true と sh -c : の静的 link との差を同じ回の中で半分以下に」に改め、sh は静的な sh を足して T1 で確かめる、② cc t.c -o t は完了の条件から外し p003（ld.so の cache、clang 入りの image が作れる時）へ、③ 以後の速さの受け入れは同じ回の中の比べで書く。
 - 2026-10-05 ユーザー「本日12時にUATを行います。11時半にマージできている内容で、テストUSBイメージの作成をお願いします。」→ 11:30 に main で build/uat-0505c を作る（Q1、send_later を設定）。「ベータ2の実装をすべて、P1,P2にスケジューリング可能にします。作業を継続してください。」→ ベータ2 の WS（ブロック・アイディアの Phase の物を除く）を P1・P2 の Queue に入れてよい。
 - 2026-10-05 ユーザー「今朝追加したWSはベータ2に入れてください。」→ WS161〜WS168 をベータ2 に（見積もり計 20 LW、Q1 の概算）。
@@ -432,7 +433,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS107](ws107/ws.md) | MG006 | engine の source を libbrowser に所属させ、Wayland無し・標準Vulkan/抽象入力の component と browser shell を整備 | completed | B1〜B5 verified / q544、API v2/public Vulkan client/最終boot。GitHub deferred |
 | [WS108](ws108/ws.md) | MG007 | CI で Debian13/Ubuntu26.04 の Linux Keiland .deb を別々に作成/検証/artifact保存 | completed | P1〜P5 / q549、2OS native deb＋QEMU runtime、CI/release定義。remote未実施 |
 | [WS109](ws109/ws.md) | MG006 | Linux版の共通描画を利用した native FreeBSD15 Keiland、audio/network/WiFi backend | completed | q574 native実機build/install+全文規約、p008 user「完璧に動作しました」でF6受け入れ合格 |
-| [WS110](ws110/ws.md) | MG006 | 通常compositor起動を既定にし--testingで試験用有限modeを明示 | planning | ユーザー指定で検討のみ、alias/opt契約案とlaunch候補を保存、実装未承認 |
+| [WS110](ws110/ws.md) | MG006 | 通常compositor起動を既定にし--testingで試験用有限modeを明示 | completed | 2026-10-05 完了（引数なしで通常の session、試験は --testing、試験の script 233 file を置き換え、試験は plan/tools/compositor） |
 | [WS111](ws111/ws.md) | MG006 | Linux/FreeBSD共通console keiland-desktop、GDMはdirect維持 | completed | q575/q576: 共通console launcher/両native install/全source確認、GDMdirect不変。--login検討のみ |
 | [WS112](ws112/ws.md) | MG007 | Linux5種類のbinary packageを指定make/CIで作成しreleaseへ添付 | incomplete | p001/q585契約調査uncleared、D1 Fedora/Arch boot回答待ち。RPi arm64、CI runtime不要、FreeBSD source-only。q591は候補のみ |
 | [WS113](ws113/ws.md) | MG006 | zedBSD i915 hotplug/Vulkan Displayから複数画面・Settings/libkeiland・窓の全体移動 | incomplete | p001/q586設計調査uncleared、D-ATOMIC未決、A3成果回収/終了。全拡張/全mirror、pointer越境で窓一括移動。実装未投入 |
@@ -506,6 +507,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | tool | 用途 | 使い方 |
 | --- | --- | --- |
+| [compositor/](tools/compositor/README.md)（WS110） | compositor の起動の role（--testing・--session・--greeter）の試験 | `run-host-role.sh`、`roles-guest.sh` |
 | [rtld/](tools/rtld/README.md)（WS140） | ld.so の多数の object・依存・handle・TLS の試験 | `rtld-many.sh BUILD`（`config-amd64-rtld.mk` の SSH の image、BUILD/sysroot の symlink） |
 | [gnu-utils/](tools/gnu-utils/)（WS045） | base の text utility の GNU 拡張の差分の試験: `cases/`（awk・grep・misc・sed・sort）を GNU の実物と比べる（`plan/tools/utils/util-diff.py` が使う）、base の image の config（`config-amd64-base.mk`、他の試験の config が include する）、guest での case（`build-guest-utils.sh`・`guest-batches.sh`、full の guest image が要る） | `python3 plan/tools/utils/util-diff.py`（WS043・WS045 の手順）、`make ZEDBSD_CONFIG=plan/tools/gnu-utils/config-amd64-base.mk BUILD=… disk-image` |
 | [FreeBSD 15.1 の試験の guest と backend の試験](tools/keiland-freebsd/README.md)（WS137） | 公式の 15.1 の image（CHECKSUM を q550 の記録と照合）と NoCloud の seed から作る QEMU+KVM の guest。loopback の SSH と QMP の PNG を使い、serial の log は読まない。guest の中で keiland-freebsd.mk を native で build（warning 0）し、audit と ws131 の host 試験を流す。GPU は無い | `build-guest.sh [--force] [OUT]`、`guest.sh start\|stop\|status\|ssh\|put\|get\|copy\|shot`、`backend-test.sh [OUT]`。T1・T2 は自分の build/ に作るか GUEST_DIR で読み取り専用で使う。2 つ同時は GUEST_RUN と SSH_PORT を分ける |
