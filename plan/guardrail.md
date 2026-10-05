@@ -219,4 +219,4 @@ user「AX211のpassthruは、きちんとLinuxドライバをblacklistして再�
 
 | 例外 | 範囲 | 理由・決定 | 期限 |
 | --- | --- | --- | --- |
-| base の `/sbin/passkey`（WS172）が package の OpenSSL の libcrypto を使う | passkey の暗号（SHA-256・HMAC・AES・P-256）だけ | ユーザー 2026-10-05「passkeyはbaseに起きます。OpenSSLはリリースまでに独自実装に置き換える予定なので、問題ないです。」（master-design-policy §2.1 の例外） | リリースの前（WS172 p005） |
+| base の `/usr/libexec/passkey-fido2` と `userland/base/libpasskey`（WS172）が package の OpenSSL の libcrypto を使う（`/sbin/passkey` は libc の crypt だけ、2026-10-05 ユーザーの P1 の決定で範囲を変更） | FIDO2 の暗号（SHA-256・HMAC・AES・P-256）だけ | ユーザー 2026-10-05「passkeyはbaseに起きます。OpenSSLはリリースまでに独自実装に置き換える予定なので、問題ないです。」（master-design-policy §2.1 の例外） | リリースの前（WS172 p005） |
