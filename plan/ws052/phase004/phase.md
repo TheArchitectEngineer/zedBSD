@@ -72,3 +72,15 @@ Queue: Q1 の 2026-10-05 の指示（p003 の次。HAL に依らない範囲、1
 - 5330 の LPSS-I2C（touchpad）は p004 の必須に入っていないが driver が付くので、p005 までは中止の原因になる。**p005（止めて入る）で扱う**（2026-10-05 Q1）。
 - USB の wake（remote wakeup、port の wake の bit）は有効にしていない（p006 の wake の源の時に）。
 - NVMe の D3cold（`_PR3`・StorageD3Enable）は未対応（D3hot まで）。
+
+## T1 の結果と直し（2026-10-05）
+
+- T1-156: roundtrip FAIL（xHCI の resume が ESTALE で pci-power の reprobe に回り、USB の core が device を持つので detach が拒まれ attach が EEXIST）、
+  abort の io FAIL（guest に /var/tmp が無い）→ 575dd99d: reprobe をやめ、SRE を消して保った状態で動かす、`mkdir -p /var/tmp`。
+- T1-158: abort PASS。roundtrip FAIL ×2（SRE を消して走らせても usb-net が戻らない／No Op が時間切れ）→ QEMU の xHCI は状態を保たない。
+- 直し（この commit）: xHCI の resume で状態が戻らない時（SRE、走らない、No Op が答えない）は、controller の中で完全に reset して USB を
+  列挙し直す: interrupt を無視させ interrupter を止め、RS を下げて HCRST、interrupt の handler を待ち、新しい submission を拒んで進行中のものを待ち、
+  全 device の転送を DISCONNECTED で終え、endpoint を無効・slot を無効と記録（USB の core の teardown が command を出さずに解放する）、DCBAA
+  （scratchpad を残す）・command ring・event ring を空にして同じ memory で再び走らせ、全 root port に「接続の変化」を報告させる
+  （`forced_port_change`、hub の ClearPortFeature(C_PORT_CONNECTION) で消える）。gate を開け port の worker を再開すると、USB の core が古い device を
+  消し、port を列挙し直して usb-net と keyboard を付け直す。reset もできなければ quarantine。dmesg は `xhci: resumed after a reset`。

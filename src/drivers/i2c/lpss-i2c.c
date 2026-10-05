@@ -146,10 +146,15 @@ struct lpss_i2c {
 	unsigned tx_depth;
 	unsigned rx_depth;
 	struct drv_i2c_bus *bus;
+
+	/* Nonzero from a suspend, which holds the bus, to its resume (ws052-p005). */
+	unsigned suspended;
 };
 
 static int lpss_attach(struct drv_pci_device *device, const struct drv_pci_id *id);
 static int lpss_detach(struct drv_pci_device *device, unsigned flags);
+static int lpss_suspend(struct drv_pci_device *device);
+static int lpss_resume(struct drv_pci_device *device);
 static int lpss_power_on(struct lpss_i2c *controller);
 static int lpss_core_start(struct lpss_i2c *controller);
 static int lpss_transfer(void *argument, uint16_t address, uint32_t speed, const uint8_t *write, size_t write_length, uint8_t *read, size_t read_length);
@@ -176,7 +181,7 @@ drv_pci_lpss_i2c_driver_register(void)
 	};
 	static struct drv_pci_driver driver = {
 		"lpss-i2c", identifiers, sizeof(identifiers) / sizeof(identifiers[0]), NULL, lpss_attach, lpss_detach,
-		NULL, NULL, NULL, { 0U, 0U, 0U, 0U }
+		NULL, lpss_suspend, lpss_resume, { 0U, 0U, 0U, 0U }
 	};
 	int error;
 
@@ -266,6 +271,66 @@ lpss_detach(
 	(void)device;
 	(void)flags;
 	return EBUSY;
+}
+
+/*
+ * Suspends the controller for S0 idle (ws052-p005): the bus is held, so the
+ * transfer under way ends and the clients' later transfers (the touch
+ * pad's reads) wait, and the core is turned off.  The PCI power code then
+ * saves the function's configuration and puts it in D3hot, which resets
+ * the core.
+ */
+static int
+lpss_suspend(
+	struct drv_pci_device *device)
+{
+	struct lpss_i2c *controller;
+
+	/* A controller without a bus has nothing to suspend. */
+	controller = drv_pci_device_driver_data(device);
+	if (controller == NULL || controller->bus == NULL)
+		return 0;
+
+	/* Holds the bus, then turns the core off. */
+	drv_i2c_bus_hold(controller->bus);
+	(void)lpss_set_enabled(controller, false);
+
+	/* suspended tells the resume to start the core and release the bus. */
+	controller->suspended = 1U;
+
+	/* Succeeded: the controller may go to D3hot. */
+	return 0;
+}
+
+/*
+ * Resumes the controller after S0 idle: the core, reset by D3hot, is let
+ * out of reset and set up again, and the bus is released.  A core that
+ * does not start is reported; the bus is released anyway, and its
+ * transfers fail.
+ */
+static int
+lpss_resume(
+	struct drv_pci_device *device)
+{
+	struct lpss_i2c *controller;
+	int error;
+
+	/* A controller that was not suspended has nothing to resume. */
+	controller = drv_pci_device_driver_data(device);
+	if (controller == NULL || controller->suspended == 0U)
+		return 0;
+
+	/* Starts the core again, then lets the waiting transfers run. */
+	error = lpss_core_start(controller);
+	controller->suspended = 0U;
+	drv_i2c_bus_release(controller->bus);
+	if (error != 0) {
+		kern_logf("lpss-i2c: the core did not start after the resume (%d)\n", error);
+		return error;
+	}
+
+	/* Succeeded: the bus carries transfers again. */
+	return 0;
 }
 
 /*
