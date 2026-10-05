@@ -32,6 +32,7 @@ struct irq_service_info {
 	hal_irq_ack_t acknowledge;
 	unsigned pending, in_flight, in_handler, removing, masked;
 	unsigned msi, allocated;
+	unsigned wake, suspended;
 	hal_cpu_id_t handler_cpu;
 	volatile unsigned lock;
 	struct hal_cpu_mask requested;

@@ -23,6 +23,7 @@
 #include "smp.h"
 #include "bsp-pcat/acpi.h"
 #include "bsp-pcat/lapic.h"
+#include "bsp-pcat/idle-suspend.h"
 
 /* The version, from VERSION (ws129-p003): the Makefile defines it on the command line. */
 #ifndef ZEDBSD_VERSION
@@ -78,6 +79,9 @@ prekern_amd64_cmain(
 	error = prekern_amd64_acpi_discover(&acpi, rsdp_address);
 	if (error != HAL_OK)
 		HAL_FATAL("amd64 ACPI MADT discovery failed");
+
+	/* Keeps the firmware's low-power S0 idle state for suspend-to-idle (ws052-p006). */
+	prekern_amd64_idle_suspend_init(&acpi);
 
 	/* Enables the BSP local APIC before bringing up secondary CPUs. */
 	error = prekern_amd64_lapic_init(&acpi);

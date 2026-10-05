@@ -44,8 +44,16 @@ struct amd64_acpi_ecam {
 	uint8_t end_bus;
 };
 
+/*
+ * What discovery found.  lpit_mwait_hint is the MWAIT hint of the first
+ * enabled native C-state the LPIT names with a functional-fixed-hardware
+ * trigger (the state the firmware gives for low-power S0 idle, ws052-p006),
+ * valid when lpit_found is 1.
+ */
 struct amd64_acpi_info {
 	uint32_t lapic_address;
+	uint32_t lpit_mwait_hint;
+	unsigned lpit_found;
 	unsigned cpu_count;
 	unsigned ioapic_count;
 	unsigned ecam_count;
