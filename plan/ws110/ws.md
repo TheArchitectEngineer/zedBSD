@@ -2,31 +2,41 @@
 
 # WS110: コンポジタの通常起動を既定にし試験modeを明示
 
-Status: incomplete
+Status: completed（2026-10-05、Q1 の判定: p001・p002 は T1-168、p003 は見直しと build で cleared）
 Primary Milestone: MG006
 Related Milestones: MG001
 Parent: [Master](../master.md)
-Queue: none /実装未承認
-Resume point: p001・p002 は cleared（T1-168）。p003 は全文規約の見直しと build が済み、Q1 の判定待ち。その後 WS の完了の判定。
+Queue: Q1（P2、2026-10-05）
+Resume point: なし（完了）。
 
-## Objective / scope / acceptance
+## 目標
 
-通常利用に--sessionが必要な既定の有限起動を廃止し、試験用有限起動を--testingで明示。3OS共通compositorと関連test scripts/docs/CI callersを整合させる。FreeBSDのgraphicallogin/sessiond/認証backend移植、renderer/OSauthority/toolchain変更は含めない。
+2026-10-02 ユーザー:「--sessionがないと開発モードになるのを廃止。--testingをつけると開発モードにするように変更。関連するテストスクリプトも修正する。」2026-10-05 ユーザーの決定（Q1 経由）: `--testing` を必須にする（案 A）、実装する、他の WS の試験の機械の置き換えを WS110 の範囲として許す。
 
-T1 引数なし通常sessionが期限なしで動きLog Out/desktop表示が成立。T2 --testingのみ明示的有限試験、期限/frame/矛盾/option順序契約を検証。T3 全現役compositor testsのmode/cleanup/外部watchdogと3OS同じ動作。T4 final source全文規約・該当build/tests/最後のboot/doc検証。これらは将来の実装acceptanceであり今回は未実施。
+## 結果
 
-## Standards / dependencies / decisions
+- **引数の契約**（`userland/desktop/wayland/role.c`・`role.h`、`main.c`）:
+  - 引数なしと `--session`（互換の別名）: 通常の session。期限なし、lock の idle 10 分、Files の desktop、Log Out。
+  - `--testing`: 有限の試験（既定 150 秒）。`--timeout=N`・`--max-frames=M` は `--testing` が要る。
+  - `--greeter --auth-fd=N`: login 画面（変わらない）。
+  - `--testing` と `--session`・`--greeter`・`--control-fd`・`--lock-idle`、`--greeter` と `--session` の組み合わせは理由の 1 行と exit 2。
+  - 引数を全部読んでから role を 1 度決めるので、順に依らない。READY の行の末尾に `role=normal|testing|greeter`。
+- **試験の起動**: tree が追う試験の 233 file・246 行に `--testing` を足した（置き換えの script は git の履歴にある、main の 8aa4174d）。製品の起動（sessiond の session.sh・greeter.c、Linux・FreeBSD の keiland.desktop・keiland-desktop.in、deb の run.py）は `--session` のまま動く。展示用の `plan/ws035/demo/run-zdesktop.sh` は今までの動きを保って `--testing`。
+- **証拠**: host の role の試験 16 case、Linux の Keiland の build（warning 0）と拒む 6 通りの実起動、zedBSD の compositor の build（warning 0）。QEMU（T1-168）: roles-guest、files-p002（置き換えた試験の代表）、zdesktop-p095（greeter → session → Log Out）。実機は未実施。
+- **規約**: role.c・role.h と試験は違反 0、main.c は関数ごとに増えていない（p003）。
 
-[Guardrail](../guardrail.md)、[全文C規約](../coding-style.md)、[automation](../standards/automation.md)。移動style例外なし。WS109 completed/実機acceptanceは前提evidence、WS105/WS108の現行callersを読む。--session alias/timeout opt gating/auth test組合せはdesignの推奨案、まだ実装仕様の承認ではない。
+## 制限・移管
 
-| ID | Purpose | Goal | Status | Dependencies |
-| --- | --- | --- | --- | --- |
-| [ws110p001](phase001/phase.md) | 通常/testing roleと引数契約 | cleared（2026-10-05 Q1） | in-progress（実装済み、T1 待ち） | user implementation instruction + contract |
-| [ws110p002](phase002/phase.md) | test/launcher/docs整合 | cleared（2026-10-05 Q1） | in-progress（置き換え済み、T1 待ち） | p001 API/mode output |
-| [ws110p003](phase003/phase.md) | 近final全文規約/回帰 | cleared（2026-10-05 Q1） | in-progress（見直し・build 済み、判定は Q1） | p001/p002 actual final outputs |
+- FreeBSD の build と FreeBSD での起動は未実施（native の FreeBSD が要る）。同じ main.c なので契約は同じ。
+- 試験を新しく書く時は、有限に終わらせるなら `--testing --timeout=N` を付ける（付けないと期限なしの session になる）。
+- 試験は [plan/tools/compositor/](../tools/compositor/README.md) に移した（`run-host-role.sh`・`roles-guest.sh`）。Master の Tools 節への登録は Q1。
 
-Phase詳細は実装指示・仕様決定後、有限scopeに分けて作成。Queue membership無し。現存codeのstyleをpolicyとしない。
+## Phase
 
-## Event history
+| Phase | 内容 | 状態 |
+| --- | --- | --- |
+| p001 | role と引数の契約、`role.c`、host の試験 | cleared（T1-168） |
+| p002 | 試験の起動の置き換え（233 file・246 行）、代表の試験 | cleared（T1-168） |
+| p003 | 全文規約と回帰 | cleared（2026-10-05 Q1） |
 
-2026-10-02 current user「検討だけまずは」: WS109完了後の別の起動仕様目標として新規計画。source/test changesは無し、未順位/未実行。推奨案と影響inventoryを保存、chatの説明にリンクする。Issue/Project同期は保留。
+設計の検討（`design.md`・`launch-candidates.txt`）と Phase の記録は git の履歴にある（最後の版は main の `plan/ws110/`、8aa4174d 以降）。
