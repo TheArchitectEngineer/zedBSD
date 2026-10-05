@@ -131,6 +131,8 @@ static struct spinlock devfs_attributes_lock = {
 static DEVFS_HIGH int component_equal(const struct componentname *component, const char *text);
 static DEVFS_HIGH int component_copy(const struct componentname *component, char *name, size_t capacity);
 static DEVFS_HIGH int event_name(const char *name);
+static DEVFS_HIGH int hidraw_name(const char *name);
+static DEVFS_HIGH int smartcard_name(const char *name);
 static DEVFS_HIGH int backlight_name(const char *name);
 static DEVFS_HIGH ino_t cdev_directory(const char *name);
 static DEVFS_HIGH int devfs_cdev_inode(struct inode *directory, struct cdev *device, struct inode **result);
@@ -385,6 +387,38 @@ event_name(
 	return 1;
 }
 
+/* Identifies the raw HID devices, which live in /dev/input beside the event devices (ws161-p002). */
+static DEVFS_HIGH int
+hidraw_name(
+	const char *name)
+{
+	int comparison;
+
+	/* Raw HID nodes are named hidraw<n>, as on Linux. */
+	comparison = kern_strncmp(name, "hidraw", 6);
+	if (comparison != 0)
+		return 0;
+
+	/* Succeeded: the name is a raw HID device's. */
+	return 1;
+}
+
+/* Identifies the smart card readers' slots, /dev/smartcard<n> (ws161-p003). */
+static DEVFS_HIGH int
+smartcard_name(
+	const char *name)
+{
+	int comparison;
+
+	/* Smart card nodes are named smartcard<n>. */
+	comparison = kern_strncmp(name, "smartcard", 9);
+	if (comparison != 0)
+		return 0;
+
+	/* Succeeded: the name is a smart card slot's. */
+	return 1;
+}
+
 /* Identifies names owned by the /dev/backlight namespace (ws113-p013). */
 static DEVFS_HIGH int
 backlight_name(
@@ -407,11 +441,15 @@ cdev_directory(
 	const char *name)
 {
 	int input;
+	int raw;
 	int backlight;
 
-	/* The event devices live in /dev/input. */
+	/* The event devices and the raw HID devices live in /dev/input. */
 	input = event_name(name);
 	if (input)
+		return DEVFS_INPUT_INO;
+	raw = hidraw_name(name);
+	if (raw)
 		return DEVFS_INPUT_INO;
 
 	/* The backlight devices live in /dev/backlight. */
@@ -434,6 +472,8 @@ devfs_cdev_inode(
 	uint64_t number;
 	mode_t mode;
 	int backlight;
+	int raw;
+	int smartcard;
 
 	/* Creates a generation-unique inode and gives it one cdev reference. */
 	number = cdev_generation(device);
@@ -446,12 +486,19 @@ devfs_cdev_inode(
 	/*
 	 * Input event nodes are group-readable only; a backlight is read by
 	 * anyone and changed by its owner (the seat's user, given by sessiond).
+	 * A security key's raw HID node and a smart card slot are root's alone
+	 * until sessiond gives them to the seat's user (ws161: whoever opens
+	 * them can ask the key to sign).
 	 */
 	backlight = backlight_name(device->name);
+	raw = hidraw_name(device->name);
+	smartcard = smartcard_name(device->name);
 	if (event_name(device->name))
 		mode = 0640U;
 	else if (backlight)
 		mode = 0644U;
+	else if (raw || smartcard)
+		mode = 0600U;
 	else if (kern_strcmp(device->name, "input-inject") == 0)
 		mode = 0600U;
 	else

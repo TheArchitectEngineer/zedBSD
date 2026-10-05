@@ -250,7 +250,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hid.c src/drivers/generic/hidraw.c src/drivers/generic/hidraw-describe.c
 endif
 # The HID report parser and the pen and touch state machines serve every HID
 # transport (USB, I2C-HID) and the test injector (ws159-p003).
@@ -318,6 +318,13 @@ AMD64_KERNEL_SOURCES := \
 	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 AMD64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
+endif
+# The test kernel's loopback security key (ws161-p002), on the raw HID class (built with usb-hid, or here without it).
+ifeq ($(CONFIG_SECURITY_KEY_TEST_LOOPBACK),y)
+AMD64_KERNEL_SOURCES += src/drivers/generic/hidraw-loopback.c
+ifneq ($(CONFIG_DRIVER_USB_HID),y)
+AMD64_KERNEL_SOURCES += src/drivers/generic/hidraw.c src/drivers/generic/hidraw-describe.c
+endif
 endif
 ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
 AMD64_KERNEL_SOURCES += \

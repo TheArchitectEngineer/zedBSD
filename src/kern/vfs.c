@@ -47,6 +47,9 @@
 #ifdef INPUT_TEST_INJECT
 #include <drivers/generic/input-inject.h>
 #endif
+#ifdef SECURITY_KEY_TEST_LOOPBACK
+#include <drivers/generic/hidraw.h>
+#endif
 
 #include <uapi/errno.h>
 #include <uapi/fcntl.h>
@@ -374,6 +377,15 @@ kern_vfs_init(
 	error = drv_input_inject_register();
 	if (error != 0) {
 		error = vfs_fail("register input-inject", error);
+		return error;
+	}
+#endif
+
+#ifdef SECURITY_KEY_TEST_LOOPBACK
+	/* Publishes the test-only loopback security key of test builds (ws161-p002). */
+	error = drv_hidraw_loopback_register();
+	if (error != 0) {
+		error = vfs_fail("register hidraw-loopback", error);
 		return error;
 	}
 #endif

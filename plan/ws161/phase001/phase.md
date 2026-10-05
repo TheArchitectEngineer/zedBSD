@@ -4,7 +4,7 @@
 
 Phase ID: `ws161-p001`
 Parent: [WS161](../ws.md)
-Status: planning（2026-10-05 P1 generation17 q734 で第 1 版。2026-10-05 夕のユーザーの決定で第 2 版（§9）に改めた、P1 generation19 q770。§9.9 の判断待ち）
+Status: planning（2026-10-05 P1 generation17 q734 で第 1 版。2026-10-05 夕のユーザーの決定で第 2 版（§9）に改めた、P1 generation19 q770。U1〜U5 は 2026-10-05 承認、node は `/dev/smartcardN`）
 Phase disposition: normal
 Queue: q734（第 1 版）、q770（第 2 版）
 
@@ -86,7 +86,7 @@ Queue: q734（第 1 版）、q770（第 2 版）
 ## 6. NFC（目標、v2）
 
 - NFC の CTAP2 は ISO 7816-4 の APDU を NFC（ISO 14443-4）で運ぶ。必要な物: NFC の reader の driver と、APDU を送る口。
-- 道筋の候補: (1) USB の CCID の class の reader（例 ACR122U、ACR1252U）: CCID の class の driver と PC/SC に当たる口（`/dev/ccidN` か pcsc-lite の package）、
+- 道筋の候補: (1) USB の CCID の class の reader（例 ACR122U、ACR1252U）: CCID の class の driver と PC/SC に当たる口（`/dev/smartcardN` か pcsc-lite の package）、
   libfido2 の PC/SC の backend（libfido2 は pcsc に対応している）。(2) 機種に内蔵の NFC の controller（5330 にあれば、I2C の NXP の controller）: 専用の driver。
 - reader の機種と 5330 の内蔵の有無を確かめてから、v2 の WS（か段）を立てる（§7 の H5）。
 
@@ -123,7 +123,7 @@ kernel                                   userland（Keiland の側）
 ---------------------------------------  ------------------------------------------------------------
 usb-hid ─ hidraw ─ /dev/input/hidrawN ── libpasskey: transport-hid（CTAPHID の枠）──┐
                                                                                  ├─ ctap2（CTAP2 の command）── 道具 passkey
-usb-ccid ─ /dev/ccidN（APDU の交換）──── libpasskey: transport-nfc（ISO 7816 の APDU）┘   cbor・pin（PIN/UV protocol）・verify
+usb-ccid ─ /dev/smartcardN（APDU の交換）──── libpasskey: transport-nfc（ISO 7816 の APDU）┘   cbor・pin（PIN/UV protocol）・verify
   ├ ACR1252U の非接触の slot（ISO 14443-4 の card = YubiKey の NFC）                      └ OpenSSL の libcrypto
   └ YubiKey の USB の CCID の interface（PIV・OpenPGP、この WS では node まで）
 ```
@@ -163,7 +163,7 @@ usb-ccid ─ /dev/ccidN（APDU の交換）──── libpasskey: transport-nf
 - **ISO-DEP**: ACR1252U は非接触の card（ISO 14443-4 = ISO-DEP、YubiKey の NFC）を PC/SC の第 3 部の形で「ATR を合成した ICC」として見せ、APDU を ISO-DEP の
   frame に包むのは reader がする。kernel は APDU を `XfrBlock` で運ぶだけで、ISO 14443 の低い層（anticollision・RATS・I-block）は扱わない。
   拡張の APDU を持たない reader には、kernel は分けない（分割は ISO 7816-4 の command chaining として userland の libpasskey がする）。
-- **node**: `/dev/ccidN`（**reader の slot ごとに 1 つ**。ACR1252U は非接触の slot と SAM の slot の 2 つを見せるはずで、2 つの node になる。名前は U2 で確かめる）。
+- **node**: `/dev/smartcardN`（**reader の slot ごとに 1 つ**。ACR1252U は非接触の slot と SAM の slot の 2 つを見せるはずで、2 つの node になる。名前は U2 で確かめる）。
   **一度に 1 つの open だけ**（2 つ目は `EBUSY`。PC/SC の排他の接続に当たり、APDU の列が他の process と混ざらない）。
   - `ioctl`（U2 で形を承認してもらう）: `CCID_GET_INFO`（vendor・product・slot の番号と数・製品の文字列・`dwFeatures`・最長の message・拡張の APDU の可否）、
     `CCID_GET_STATUS`（card が有るか・電源が入っているか・ATR（最大 33 byte））、`CCID_POWER_ON`（電源を入れて ATR を返す）、`CCID_POWER_OFF`、
@@ -172,7 +172,7 @@ usb-ccid ─ /dev/ccidN（APDU の交換）──── libpasskey: transport-nf
   - `read`・`poll`: card の出し入れの事象（`struct ccid_event`: 入った・抜けた・番号の通し）。`poll` は事象がある時に POLLIN。
   - 抜いた時（reader ごと）: `ioctl`・`read` は `ENODEV`、node は消える。card だけ抜けた時は事象を出し、次の `CCID_TRANSMIT` は `ENXIO`（電源から入れ直す）。
 - **UAPI**: `include/uapi/ccid.h`（新）。**ユーザーの承認が要る（U2）**。
-- **権限**: `/dev/ccid*` も seat の一覧に足す（U3）。
+- **権限**: `/dev/smartcard*` も seat の一覧に足す（U3）。
 
 ### 9.4 userland: libpasskey（Keiland の側）
 
@@ -184,7 +184,7 @@ usb-ccid ─ /dev/ccidN（APDU の交換）──── libpasskey: transport-nf
 | --- | --- |
 | `transport-hid.c` | CTAPHID: INIT（8 byte の nonce、channel の割り当て）、CBOR（0x10）・MSG・PING・CANCEL・WINK・KEEPALIVE（0x3B、待つ）・ERROR、64 byte の report への分割（初めの packet と続きの packet の通し番号）、時間の上限 |
 | `transport-nfc.c` | NFC の CTAP: SELECT（AID `A0000006472F0001`、答えの "FIDO_2_0"・"U2F_V2" で版を知る）、NFCCTAP_MSG（CLA 0x80・INS 0x10）、短い APDU の reader では ISO 7816-4 の command chaining（CLA の 0x10）、応答の 61xx の GET RESPONSE、keepalive の 0x9100 の時の NFCCTAP_GETRESPONSE（INS 0x11） |
-| `os-zedbsd.c`・`os-linux.c`・`os-freebsd.c` | device の列挙と開閉: zedBSD は `/dev/input/hidraw*`（`HIDRAW_GET_INFO` の用途 page 0xF1D0）と `/dev/ccid*`。Linux は `/dev/hidraw*`（report の記述を読んで 0xF1D0）、NFC は v1 では無し（pcsc-lite を使うかは後）。FreeBSD は `/dev/hidraw*`（14 以降）か `uhid`、NFC は v1 では無し |
+| `os-zedbsd.c`・`os-linux.c`・`os-freebsd.c` | device の列挙と開閉: zedBSD は `/dev/input/hidraw*`（`HIDRAW_GET_INFO` の用途 page 0xF1D0）と `/dev/smartcard*`。Linux は `/dev/hidraw*`（report の記述を読んで 0xF1D0）、NFC は v1 では無し（pcsc-lite を使うかは後）。FreeBSD は `/dev/hidraw*`（14 以降）か `uhid`、NFC は v1 では無し |
 | `cbor.c` | CTAP2 の CBOR の部分集合: 符号なし・負の整数、byte 列、text 列、配列、map、true・false・null。CTAP2 の正規の符号化（最短の長さ、map の key の並び）で書き、読む時は深さ・長さ・残りの byte を必ず確かめる（不定長・浮動小数・tag は拒む） |
 | `ctap2.c` | authenticatorGetInfo（0x04）・MakeCredential（0x01）・GetAssertion（0x02）・GetNextAssertion（0x08）・ClientPIN（0x06: getPinRetries・getKeyAgreement・setPIN・changePIN・getPinUvAuthTokenUsingPinWithPermissions）・Selection（0x0B）・Reset（0x07、道具だけ） |
 | `pin.c` | PIN/UV の protocol 1 と 2: P-256 の ECDH、protocol 2 は HKDF-SHA-256 で HMAC と AES の鍵を分ける、AES-256-CBC、HMAC-SHA-256。PIN は UTF-8 で 4〜63 byte、使った後に消す。OpenSSL の EVP |
@@ -219,7 +219,7 @@ usb-ccid ─ /dev/ccidN（APDU の交換）──── libpasskey: transport-nf
 | p002 | kernel: `usb-hid` の hidraw（FIDO の interface）、`include/uapi/hidraw.h`、seat の一覧、試験だけの loopback の device。T1 | U1・U3 |
 | p003 | kernel: `usb-ccid`（APDU の水準、slot の node、card の出し入れ）、`include/uapi/ccid.h`、seat の一覧。T1（QEMU の usb-ccid か loopback） | U2・U3 |
 | p004 | libpasskey: cbor・transport-hid・ctap2・pin・verify と zedBSD・Linux の os 層、道具 `passkey`。host 試験（ソフトウェアの authenticator、RFC 8949、Wycheproof の一部） | p002 |
-| p005 | libpasskey: transport-nfc（SELECT・NFCCTAP_MSG・chaining・GET RESPONSE・keepalive）と zedBSD の `/dev/ccid*`。host 試験 | p003・p004 |
+| p005 | libpasskey: transport-nfc（SELECT・NFCCTAP_MSG・chaining・GET RESPONSE・keepalive）と zedBSD の `/dev/smartcard*`。host 試験 | p003・p004 |
 | p006 | 実機の UAT（YubiKey 5 の USB、ACR1252U と YubiKey 5 NFC）、Linux・FreeBSD の build | p005 |
 | p007 | 全文規約の見直し | p006 |
 
@@ -241,11 +241,11 @@ usb-ccid ─ /dev/ccidN（APDU の交換）──── libpasskey: transport-nf
 
 | ID | 問い | 案 |
 | --- | --- | --- |
-| U1 | **UAPI `include/uapi/hidraw.h`** の形: node `/dev/input/hidrawN`、open ごとの queue、`read` = 入力の report 1 つ（ID がある device は先頭の 1 byte が ID）、`write` = 先頭の 1 byte が report ID（無ければ 0）、ioctl `HIDRAW_GET_INFO`・`HIDRAW_GET_DESCRIPTOR`・`HIDRAW_GET_NAME`・`HIDRAW_GET_PHYS`。出す interface は用途 page 0xF1D0 だけから始める | この形で足す（Linux の hidraw の read・write の意味に合わせ、libpasskey の zedBSD と Linux の os 層をほぼ同じにする。ioctl は zedBSD の形） |
-| U2 | **UAPI `include/uapi/ccid.h`** と node の名前: `/dev/ccidN`（slot ごと、排他の open）、ioctl `CCID_GET_INFO`・`CCID_GET_STATUS`・`CCID_POWER_ON`・`CCID_POWER_OFF`・`CCID_TRANSMIT`、`read` で card の出し入れ。名前は `/dev/ccidN` か `/dev/smartcardN` か | `/dev/ccidN`、この形 |
-| U3 | sessiond の seat の一覧に `/dev/input/hidraw*` と `/dev/ccid*` を足す（前に座っている人が鍵と reader を使える。検証の制御は sessiond に入れない） | 足す |
-| U4 | QEMU の試験: 試験の kernel の build だけの loopback の device（CTAPHID の応答器、要るなら CCID の応答器も）を足してよいか | 足す（第 1 版の H4 と同じ） |
-| U5 | 見積もりの増加（4 LW → 6〜7 LW）とベータ2 の範囲 | ユーザーの判断 |
+| U1（**承認 2026-10-05**） | **UAPI `include/uapi/hidraw.h`** の形: node `/dev/input/hidrawN`、open ごとの queue、`read` = 入力の report 1 つ（ID がある device は先頭の 1 byte が ID）、`write` = 先頭の 1 byte が report ID（無ければ 0）、ioctl `HIDRAW_GET_INFO`・`HIDRAW_GET_DESCRIPTOR`・`HIDRAW_GET_NAME`・`HIDRAW_GET_PHYS`。出す interface は用途 page 0xF1D0 だけから始める | この形で足す（Linux の hidraw の read・write の意味に合わせ、libpasskey の zedBSD と Linux の os 層をほぼ同じにする。ioctl は zedBSD の形） |
+| U2（**承認 2026-10-05**） | **UAPI `include/uapi/ccid.h`** と node の名前: `/dev/smartcardN`（slot ごと、排他の open）、ioctl `CCID_GET_INFO`・`CCID_GET_STATUS`・`CCID_POWER_ON`・`CCID_POWER_OFF`・`CCID_TRANSMIT`、`read` で card の出し入れ。名前は `/dev/ccidN` か `/dev/smartcardN` か | **承認（2026-10-05 ユーザー）: `/dev/smartcardN`**、この形 |
+| U3（**承認 2026-10-05**、smartcard の node で） | sessiond の seat の一覧に `/dev/input/hidraw*` と `/dev/smartcard*` を足す（前に座っている人が鍵と reader を使える。検証の制御は sessiond に入れない） | 足す |
+| U4（**承認 2026-10-05**） | QEMU の試験: 試験の kernel の build だけの loopback の device（CTAPHID の応答器、要るなら CCID の応答器も）を足してよいか | 足す（第 1 版の H4 と同じ） |
+| U5（**承認 2026-10-05**: ベータ2 に 6〜7 LW） | 見積もりの増加（4 LW → 6〜7 LW）とベータ2 の範囲 | ユーザーの判断 |
 
 U1〜U3 の承認まで、kernel と UAPI の code は書かない。p004（libpasskey の cbor・ctap2・pin・verify と host 試験）は U1 の形に依る所が os 層だけなので、
 os 層を除いて先に進められる（Q1 が Queue に入れれば）。
