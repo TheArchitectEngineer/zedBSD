@@ -64,3 +64,7 @@ sessiond・greeter（WS035 の成果）、kl_system_*（WS131）、service・acc
 - `settings/page-users.c`: card「Users on this computer」。`getpwent` で uid 1000 以上（nobody を除く）、shell が nologin・false でない account を最大 32 個並べる。各行は名前と「表示名 · Administrator（wheel の group か member）· You」。`getgrnam("wheel")` の結果は `getpwent` が storage を使い直しうるので写してから使う。log `USERS list count=N`。`settings.h` に `struct se_user_row`・`SE_USERS_LIST_MAX`。
 - build: zedBSD の `bin/settings`、Linux の Keiland は warning 0。style-check は違反 0（変える前も 0）。
 - QEMU は未実施（管理者の操作の判断の後にまとめて T1 に依頼する）。
+
+## ユーザーの決定（2026-10-05）
+
+ユーザー「WS089 p026は案Aにします。あとでレビューできるように、docs/にセキュリティ設計の文書を作成して、この設計について記述しておいてください。」→ **案 A**（setuid root の `account-admin`）。設計は Q1 が `docs/architecture/security.md` に書いた（ユーザーの review 待ち）。実装はその文書に従う。文書で Q1 が決めた細部（請求の形・理由の語・2 秒の遅延・4 KiB・home の既定は残す・login 中の利用者は消せない・uid 1000 以上だけ）は review で変わりうる。
