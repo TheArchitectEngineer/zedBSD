@@ -2,7 +2,7 @@
 
 # ws153-p001: third-party の app の repository（package の仕組み）の検討
 
-Status: in-progress（設計の第 1 版、[design.md](../design.md)。敵対的レビュー中）
+Status: in-progress（設計の第 3 版、[design.md](../design.md)。3 回目のレビューの指摘を第 4 版で直す。2026-10-05 夜、q763 のため区切った）
 Disposition: normal
 Parent: [WS153](../ws.md)
 Queue: q761（Q1、2026-10-05、P2 g15）
@@ -37,3 +37,4 @@ third-party の app を配布・導入する package の仕組みの方式を決
 - 第 2 版: 全てを反映（`$ORIGIN` の RUNPATH を約束にし soname の重なりを断る、U9 ABI の方針と `/etc/keiland/abi`、出所の固定、展開器を新しく書き hard link を断る、argv の spawn と exec・id の文字集合、`.nap` は `abi=noct-1` の予約、repository の鍵と開発者の鍵の比較、鍵 2 つと期限と単調性、U3 は hosting と組、appd は `userland/desktop/appd/`、確認は compositor の dialog（U13）、Files の関連付けは別の list、catalog は頁送りと shm の icon、docs と暗号と公式の repository の運用の Phase）。判断の項目 U1〜U13。
 - 2 回目の敵対的レビュー（第 2 版）: 重大 2（U9 が構造体・listener の layout の変更を数えない、rtld の path の上限 256 byte と形式の上限・導入の場所が両立せず `$ORIGIN` が黙って効かない）、中 12（Phase の番号と判断の期限の食い違い、U4 の代わりの案（libcrypto）と U3 の arm64、出所の固定の穴（名前の衝突・ID・index の repository 行・書く順）、古い版を消す主体、書き手が 2 つと crash の窓、Files の Always Open With、鍵と期限の運用、platform の library の閉包と ELF の検め、Linux・FreeBSD の配置、試験、「data も消す」の範囲、SSHSIG）、軽 11。受け入れ条件は形の上では満たすが、R1・R2・M1 を直すまでは受け入れられないとの判定。
 - 第 3 版: 全てを反映（U9 を案 a・b にして layout の変更・libc・静的な link を数える、id 48・exec 32・版は短い通し番号の dir・導入の時に実際の path の長さを検める、U4 を自前と libcrypto の案に、repository の ID と index の検め・`.origin` を版の dir に、古い版は次の login か更新まで、`apps/` は appd だけが書く、Files は kl_system_apps に問い合わせ `kl_system_apps_launch` で起動し段 1 は既定にできない（U14）、次の鍵の記録・再署名 1〜2 週・image の built、platform の閉包と ELF の検め、段 1 は zedBSD だけで Linux・FreeBSD の約束は別、`data=` は語だけ、pure Ed25519 と Python の `cryptography`、Phase の番号と期限）。判断の項目 U1〜U14。
+- 3 回目の敵対的レビュー（第 3 版、未反映）: 重大 1（libz-compat の inflate は stream でなく出力の上限も無いので、展開の上限と「展開しながら検める」が成り立たない。icon の PNG も同じ。案: appd に上限つきの stream の inflate を自前で、libz-compat を直す依頼、形式を変える）。中 11（§3 の ABI の上げ方が U9 と不一致、私的な library の symbol の割り込み（export の重なりの検め）、bundle の library を dlopen できない、repository の ID は運営者が決めて `.krepo`・conf・index に、鍵の交換の記録を利用者の state に、`built=` の下限で新しい image が index を断る、判断の期限と Phase の依存の食い違い、`apps/` の書き手の本文の矛盾、「段 1 は zedBSD だけ」と本文の矛盾、U3 の前提（desktop は amd64 だけ・OpenSSL は既定 off・libbrowser の dlopen の方式）、ABI の名前の上げ忘れを止める checker）、軽 16。R2 は解消、R1 は本文に残り。
