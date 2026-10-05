@@ -29,7 +29,11 @@
  * rules).  Only then are the files changed: all three under the lock of
  * the account files, each replaced atomically (group, passwd, shadow for
  * an addition, the reverse for a removal), the signals that would stop
- * the tool held meanwhile.  Every request's result goes to the system log
+ * the tool held meanwhile.  /etc/passkey's lines of the name (its PIN and
+ * security keys, ws172-p002) go first: before a removal's other files, so
+ * that a new account of the same name never finds them; at an addition,
+ * so that none left over is taken; and at a password's reset, since a
+ * reset often follows a lost or misused account.  Every request's result goes to the system log
  * (auth), never a password or a hash.
  */
 
@@ -37,6 +41,7 @@
 
 #include "userland/base/common/account.h"
 #include "userland/base/login/verify.h"
+#include "userland/base/passkey/passkey.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -112,6 +117,8 @@ static int admin_remove(struct admin_files *files, const struct admin_request *r
 static int admin_reset(struct admin_files *files, const struct admin_request *request);
 static int admin_group(struct admin_files *files, const struct admin_request *request, const char *caller);
 static int admin_write(const char *path, mode_t mode, const char *text, size_t length);
+static int admin_passkey_forget(const char *name);
+static int admin_passkey_edit(const char *name, char *text, char *output);
 static int admin_busy(const char *name, long uid);
 static int admin_make_home(const char *name, long id);
 static void admin_copy_skeleton(int home, long id);
@@ -505,6 +512,11 @@ admin_add(
 	if (id < 0)
 		return ADMIN_FAILED;
 
+	/* No PIN or security key left for the name is taken (ws172-p002). */
+	error = admin_passkey_forget(request->name);
+	if (error != 0)
+		return ADMIN_FAILED;
+
 	/* The group: the private one, and wheel when asked. */
 	(void)snprintf(line, sizeof(line), "%s:x:%ld:", request->name, id);
 	error = admin_line_append(files->group, files->group_length, line, files->first, ADMIN_OUTPUT_MAX, &written);
@@ -596,6 +608,11 @@ admin_remove(
 	if (busy)
 		return ADMIN_BUSY;
 
+	/* Its PIN and security keys first (ws172-p002). */
+	error = admin_passkey_forget(request->name);
+	if (error != 0)
+		return ADMIN_FAILED;
+
 	/* shadow (an account without a line there is removed all the same). */
 	error = admin_line_remove(files->shadow, files->shadow_length, request->name, files->first, ADMIN_OUTPUT_MAX, &written);
 	if (error == 0)
@@ -676,6 +693,11 @@ admin_reset(
 	rule = account_password_check(request->fresh, NULL, 0);
 	if (rule != ACCOUNT_PASSWORD_OK)
 		return ADMIN_WEAK_PASSWORD;
+
+	/* The user's PIN and security keys go with the old password (ws172-p002). */
+	error = admin_passkey_forget(request->name);
+	if (error != 0)
+		return ADMIN_FAILED;
 
 	/* The hash in the user's line, or a new line. */
 	error = account_password_hash(request->fresh, hash, sizeof(hash));
@@ -776,6 +798,97 @@ admin_write(
 	}
 
 	/* Succeeded: the file is the new one. */
+	return 0;
+}
+
+/*
+ * Takes every line of a name out of /etc/passkey (its PIN and security
+ * keys, whatever their user ID; ws172-p002), under the lock of the account
+ * files the caller holds.  Returns 0 (a missing file has none), or an
+ * errno value, said in the log.
+ */
+static int
+admin_passkey_forget(
+	const char *name)
+{
+	char *text;
+	char *output;
+	int error;
+
+	/* The file's text and its edited copy. */
+	text = malloc(ADMIN_FILE_MAX);
+	output = malloc(ADMIN_OUTPUT_MAX);
+	error = ENOMEM;
+	if (text != NULL && output != NULL)
+		error = admin_passkey_edit(name, text, output);
+
+	/* Both wiped (they hold the PINs' hashes) and freed. */
+	if (text != NULL) {
+		admin_wipe(text, ADMIN_FILE_MAX);
+		free(text);
+	}
+
+	/* The edited copy, the same way. */
+	if (output != NULL) {
+		admin_wipe(output, ADMIN_OUTPUT_MAX);
+		free(output);
+	}
+
+	/* A failure is said. */
+	if (error != 0) {
+		syslog(LOG_ERR, "the passkey lines of %s could not be removed: %s", name, strerror(error));
+		return error;
+	}
+
+	/* Succeeded: the name has no line left. */
+	return 0;
+}
+
+/*
+ * Rewrites /etc/passkey without the name's lines, through the two buffers
+ * (ADMIN_FILE_MAX and ADMIN_OUTPUT_MAX bytes).  An unchanged file is not
+ * written, and a file a later passkey wrote is not changed (EROFS).
+ */
+static int
+admin_passkey_edit(
+	const char *name,
+	char *text,
+	char *output)
+{
+	size_t length;
+	size_t written;
+	int version;
+	int differs;
+	int error;
+
+	/* The file; none has no line. */
+	error = account_file_read(PASSKEY_FILE, text, ADMIN_FILE_MAX, &length);
+	if (error == ENOENT)
+		return 0;
+	if (error != 0)
+		return error;
+
+	/* Only a version this tool knows is rewritten. */
+	version = passkey_record_version(text, length);
+	if (version > PASSKEY_VERSION)
+		return EROFS;
+
+	/* The text without the name's lines. */
+	error = passkey_record_replace(text, length, name, NULL, NULL, output, ADMIN_OUTPUT_MAX, &written);
+	if (error != 0)
+		return error;
+
+	/* Written only when it changed. */
+	differs = 1;
+	if (written == length)
+		differs = memcmp(text, output, length);
+	if (differs == 0)
+		return 0;
+	error = admin_write(PASSKEY_FILE, 0600, output, written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the name's lines are gone. */
 	return 0;
 }
 
