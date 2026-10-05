@@ -3,7 +3,7 @@
 # WS139: desktop の速さの改善（まとめたチケット）
 
 <!-- awesome-plan-current:start -->
-Status: planned
+Status: incomplete（2026-10-05 P1: p001 の script は済み、E1 の計測は T1）
 Primary Milestone: MG006
 Related Milestones: MG003（実機の 5330）
 Objectives: O2
@@ -127,7 +127,7 @@ E1 の数字は、同じ E1 の前後を比べることにだけ使う。目標�
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 計測の image と一括の script（P-01・P-02・P-03 を 1 つの guest で 10 分程度）、台帳の表を作る道具、E1 の基準値（T に依頼） | planned | — |
+| [p001](phase001/phase.md) | 計測の image と一括の script（P-01・P-02・P-03 を 1 つの guest で 10 分程度）、台帳の表を作る道具、E1 の基準値（T に依頼） | in-progress（2026-10-05 P1 q740: script と道具は済み、T1 の E1 待ち） | — |
 | [p002](phase002/phase.md) | E2（5330 の host の i915 の Venus）で同じ script を流す手順と、E2 の基準値 | planned | p001、U2 |
 | p003 | 台帳のレビュー: E1・E2 の表をユーザーに示し、直す項目・目標・順を決める（U1・U3・U4）。p004 以降の Phase を定める | planned | p001・p002 |
 | p004〜 | 改善の Phase（p003 で定める。1 Phase は 1 つの原因の直しと、その前後の E1・E2 の計測） | — | p003 |

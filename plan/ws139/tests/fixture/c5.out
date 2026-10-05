@@ -1,0 +1,9 @@
+C5 wiseview-open windows=10: first_frame_ms=202 settle_ms=410 frames=4 max_gap_ms=243 FAIL
+C5 wiseview-close windows=10: first_frame_ms=93 settle_ms=300 frames=3 max_gap_ms=110 ok
+C5 home-open: first_frame_ms=201 settle_ms=402 frames=4 max_gap_ms=180 FAIL
+C5 home-close: first_frame_ms=None settle_ms=200 frames=0 max_gap_ms=None FAIL
+C5 wiseview-open windows=10: first_frame_ms=95 settle_ms=301 frames=3 max_gap_ms=104 ok
+C5 wiseview-close windows=10: first_frame_ms=90 settle_ms=298 frames=3 max_gap_ms=101 ok
+C5 home-open: first_frame_ms=92 settle_ms=300 frames=3 max_gap_ms=99 ok
+C5 home-close: first_frame_ms=91 settle_ms=290 frames=3 max_gap_ms=98 ok
+C5 RESULT pass=5 fail=3 first_max=202 gap_max=243
