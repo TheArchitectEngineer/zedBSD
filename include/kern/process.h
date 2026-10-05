@@ -181,6 +181,13 @@ struct process {
 	 * superuser (its memory may hold what its other identity read).
 	 */
 	unsigned set_id;
+
+	/*
+	 * The process's sandbox (ws168-p002): the calls it may make, set by
+	 * sandbox_spawn before the process runs and freed with it; NULL for
+	 * an ordinary process.
+	 */
+	struct sandbox *sandbox;
 };
 
 extern struct process process0;

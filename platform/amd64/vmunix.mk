@@ -309,7 +309,7 @@ AMD64_KERNEL_SOURCES := \
 	src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
 	src/kern/record-lock.c \
 	src/kern/pipe.c src/kern/cred.c src/kern/signal.c \
-	src/kern/cwdinfo.c src/kern/elf.c src/kern/exec.c \
+	src/kern/cwdinfo.c src/kern/elf.c src/kern/exec.c src/kern/sandbox.c \
 	src/kern/user-probe.c src/kern/syscall.c src/kern/uaccess.c \
 	src/kern/cdev.c src/kern/devfs.c src/kern/text-display.c \
 	src/drivers/generic/console.c \

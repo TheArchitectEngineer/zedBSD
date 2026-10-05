@@ -73,7 +73,7 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/pipe.c src/kern/cred.c \
 	src/kern/signal.c \
 	src/kern/cwdinfo.c \
-	src/kern/elf.c src/kern/exec.c src/kern/user-probe.c src/kern/syscall.c \
+	src/kern/elf.c src/kern/exec.c src/kern/sandbox.c src/kern/user-probe.c src/kern/syscall.c \
 	src/kern/uaccess.c src/kern/cdev.c src/kern/devfs.c \
 	src/drivers/generic/console.c src/drivers/generic/input.c \
 	$(KERN_GPU_SOURCES) \
