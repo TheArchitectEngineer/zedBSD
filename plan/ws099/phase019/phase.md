@@ -40,3 +40,7 @@ mainが旧v2-soft-b.pngを目視確認。既存wallpaper.ppm（1280x800、SHA256
 2026-10-02 / b2-wallpaper-resume-saved: B2最終提出111b864aをB main9323725bへ統合。[再開資料](../../ws094/phase007/q593-resume.md)に既存PNG/PPMの同一bytes/hash/provenance、native/zedBSDの最小recipe候補、保存設定優先/既存選択肢維持、抽象版の未発見と探索限界を保存。source画像収録・default変更は未実施。q593は予約のみで未着手を維持する。
 
 2026-10-02 / ws099-beta1-plan-p019: fg019 の計画で planned に。所有 path の見込み: `userland/desktop/wallpapers/`（湖の PPM・provenance）、`userland/desktop/keiland-linux.mk`・`keiland-freebsd.mk` の `*_WALLPAPER ?=`、root Makefile の `ZEDBSD_USERLAND_DATA_*` の行、compositor の未設定時の既定の参照（`userland/desktop/wayland/backdrop.c`/`preferences.c` の該当行だけ）。WS099 p020 とは file が別で並列可。root Makefile は WS112・WS129 と重なりうる（Q1 が順を決める）。受け入れ・user の決定は不変。
+
+## 2026-10-05 夜 ユーザーの追加
+
+「壁紙が1枚しか入っていない。前に生成した抽象的な壁紙も、とりあえず収録しましょう。」→ 範囲に、前に生成した抽象の壁紙（v2-soft-b ほか、この phase の「Current evidence」）を release の image に入れることを足す。今の image は Birch-Lake だけが入っている（Lakeside は tree にあるが image に入っていない見込み、確かめる）。

@@ -44,6 +44,7 @@ Resume point（2026-10-02 計画）: **p001（棚卸し・回帰の取り直し�
 | [ws128-p009](phase009/phase.md) | Terminal: 「CJK Ambiguous Width を全角で扱う」を menu で即座に切り替える（2026-10-03 user の指示） | cleared（2026-10-03 Q1、T1 の terminal-p009-guest・menu-p003） | —（p006・WS131 p018 と同時に流さない） | 2〜3h |
 | [ws128-p010](phase010/phase.md) | Terminal の右端の wrap を xterm と同じ保留にする（BUG-150、Emacs の画面が 1 行ずれる） | cleared（2026-10-03 q636-i01、FreeBSD 実機と host、Q1 の照合待ち） | — | 1〜3h |
 | [ws128-p011](phase011/phase.md) | BUG-155: Terminal で IME の日本語を入力する（text-input-v3、組み立て中の文字を cursor に描く） | cleared（2026-10-03 Q1、T1-012） | — | 2h |
+| [ws128-p012](phase012/phase.md) | App Home の app の icon をデザインした物に差し替える（2026-10-05 夜 ユーザー） | planning（デザインの方向はユーザーに確かめる） | | |
 | [ws128-p008](phase008/phase.md) | 全文規約と回帰（WS の最後） | in-progress（q667、P2。規約・build・host 済み、QEMU 回帰・FreeBSD は T1 待ち、実機 p007 待ち） | 実装の Phase | 2h |
 
 ## 既存の WS の残りとの照合（2026-10-02、その WS で実行し WS128 では重ねない）
