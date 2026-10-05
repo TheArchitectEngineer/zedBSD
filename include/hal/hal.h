@@ -152,14 +152,27 @@ hal_cpu_ready_mask(
 	struct hal_cpu_mask *result);
 
 /*
- * XXX: Add explanation.
+ * Interrupt another CPU so that it looks for work: the kernel's
+ * kernel_cpu_notify_handler() runs on it.
+ *
+ * A notification that returns HAL_OK reaches an online CPU whatever it
+ * is doing: it ends the wait of hal_cpu_idle() and of
+ * hal_cpu_idle_suspend(), whichever state the latter entered, and it is
+ * delivered while hal_irq_suspend() holds the other sources masked.  It
+ * is how the kernel brings every CPU back from a system sleep, so no
+ * other HAL operation masks it.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for a CPU that does not exist,
+ * HAL_ERR_STATE for one that is not online, or HAL_ERR_UNSUPPORTED on a
+ * machine without a way to interrupt another CPU.
  */
 int
 hal_cpu_notify(
 	hal_cpu_id_t cpu);
 
 /*
- * XXX: Add explanation.
+ * Notify every CPU of a mask, as hal_cpu_notify() does one.  Every CPU
+ * is checked before any is notified: on an error none was.
  */
 int
 hal_cpu_notify_mask(
@@ -182,6 +195,41 @@ hal_cpu_panic_all(void);
  */
 void
 hal_cpu_idle(void);
+
+/*
+ * Report whether hal_cpu_idle_suspend() works on this machine.
+ *
+ * Returns HAL_OK when every CPU has a suspend-safe idle state and the
+ * counter of hal_rtc_read_counter() runs through it, or
+ * HAL_ERR_UNSUPPORTED when it has not, in which case
+ * hal_cpu_idle_suspend() does nothing but return the same.  The answer
+ * is fixed once hal_cpu_start_others() has returned.  The kernel asks
+ * before it prepares a system sleep, so that an unsupported machine is
+ * refused before any device is touched.
+ */
+int
+hal_cpu_idle_suspend_supported(void);
+
+/*
+ * Idle the current CPU in its deepest suspend-safe state until one
+ * interrupt arrives, for a system suspend-to-idle (S0ix).  As with
+ * hal_cpu_idle(), interrupts are enabled for the wait and disabled again
+ * on return, and the interrupt that ends the wait has been dispatched
+ * when the call returns.
+ *
+ * The HAL chooses the state from what the CPU and the firmware report;
+ * the kernel names no state.  Around the wait the HAL stops this CPU's
+ * periodic tick and quiets the CPU-local interrupt sources it owns that
+ * are not wake sources, and puts both back before returning.  No
+ * kernel_timer_handler() runs on this CPU meanwhile; the kernel brings
+ * its time forward from hal_rtc_read_counter(), which keeps counting.
+ * hal_cpu_notify() always ends the wait.
+ *
+ * Returns HAL_OK after the wait, or HAL_ERR_UNSUPPORTED without waiting
+ * when hal_cpu_idle_suspend_supported() says so.
+ */
+int
+hal_cpu_idle_suspend(void);
 
 /*
  * XXX: Rename to hal_cpu_halt().
@@ -327,6 +375,64 @@ hal_irq_set_mode(
 	int polarity);
 
 /*
+ * Arm or disarm a numbered IRQ as a wake source of a system sleep.
+ *
+ * An armed IRQ stays delivered while hal_irq_suspend() holds the others
+ * masked.  The setting is kept until it is changed and outlives any
+ * number of suspensions; it changes nothing at runtime.  The kernel arms
+ * the IRQs whose devices may wake the system (the ACPI SCI, a wake
+ * device's line) and no other.  The IRQ's own mask (hal_irq_mask) is
+ * separate: an armed IRQ that the kernel keeps masked does not wake.
+ *
+ *  irq    ... a numbered or message-signalled IRQ.
+ *  enable ... true arms it, false disarms it.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist,
+ * HAL_ERR_STATE while hal_irq_suspend() is in effect, or
+ * HAL_ERR_UNSUPPORTED when the controller cannot keep one IRQ delivered
+ * while the others are masked.
+ */
+int
+hal_irq_set_wake(
+	int irq,
+	bool enable);
+
+/*
+ * Mask every interrupt source the HAL routes system-wide, except the IRQs
+ * armed by hal_irq_set_wake(), for a system sleep, until hal_irq_resume().
+ *
+ * It covers the numbered and the message-signalled IRQs, registered or
+ * not.  It leaves alone the CPU-local sources (each CPU's periodic tick
+ * and private sources, which hal_cpu_idle_suspend() quiets on its own
+ * CPU) and the notifications between CPUs (hal_cpu_notify() and the HAL's
+ * own cross-CPU operations), which stay delivered.
+ *
+ * An armed IRQ that arrives meanwhile is dispatched to its handler as at
+ * runtime, on the CPU it is routed to; nothing is held back for later,
+ * so its handler must be one that can run while its device is suspended
+ * (the ACPI SCI's is).  A masked IRQ that arrives anyway (a message a
+ * device still sends) is acknowledged and dropped, not held.  While the
+ * suspension lasts, hal_irq_mask() and hal_irq_unmask() of a masked IRQ
+ * change only what hal_irq_resume() puts back; of an armed IRQ they act
+ * at once.  Only one suspension is held at a time.
+ *
+ * Returns HAL_OK, HAL_ERR_STATE when the sources are already suspended,
+ * or HAL_ERR_UNSUPPORTED when the platform cannot do it; on an error
+ * nothing was changed.
+ */
+int
+hal_irq_suspend(void);
+
+/*
+ * Put back the state of every source hal_irq_suspend() changed: each IRQ
+ * is delivered or masked as the kernel last asked.
+ *
+ * Returns HAL_OK, or HAL_ERR_STATE when the sources were not suspended.
+ */
+int
+hal_irq_resume(void);
+
+/*
  * Set an IRQ mask.
  */
 void
@@ -468,7 +574,12 @@ hal_rtc_read_epoch_time(
  * frequency is nonzero and stable for the boot, and successful
  * operations are linearizable: a later operation never returns a
  * counter below an earlier successful operation, including across
- * CPUs.
+ * CPUs.  The counter runs at that frequency through every idle state
+ * the HAL enters on any CPU, hal_cpu_idle() and hal_cpu_idle_suspend()
+ * included: a HAL that cannot promise this for a state does not enter
+ * it (hal_cpu_idle_suspend_supported() then says HAL_ERR_UNSUPPORTED).
+ * The kernel brings its tick count forward from this counter after a
+ * system sleep.
  */
 bool
 hal_rtc_read_counter(
