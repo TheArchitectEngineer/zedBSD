@@ -65,8 +65,9 @@ Settings (user)  ->  compositor (user)  ->  libkeiland-backend (user)
   standard output and waits for it to exit. This is the same pattern as the
   user's own password change through `passwd -s`.
 - `account-admin` is the only privileged part. It is a set-user-ID root
-  program in the base system (`userland/base/account-admin/`), mode 4555,
-  owned by root.
+  program in the base system (source `userland/base/account-admin/`),
+  installed as `/usr/libexec/account-admin`, mode 4555, owned by root. It is
+  not on any user's `PATH`, because no one runs it by hand.
 
 The tool was chosen over a new request on `sessiond`, the root session
 daemon. `sessiond` could identify the caller from its socket and skip the
@@ -135,16 +136,20 @@ Only after every check passes does the tool change anything.
 
 ### What each operation changes
 
-- **add:** takes the lowest free user ID from 1000 up, with a private group
-  of the same name and ID. Writes the `/etc/passwd`, `/etc/group` and
+- **add:** takes the lowest number from 1000 up that is free both as a user
+  ID and as a group ID, and gives the user a private group of the same name
+  and number. Writes the `/etc/passwd`, `/etc/group` and
   `/etc/shadow` lines (SHA-512 crypt), and adds the user to `wheel` when
   asked. Creates `/home/<name>` with mode 0700, owned by the new user, and
-  copies the skeleton files into it.
+  copies the skeleton files from `/etc/skel` into it, when there are any.
 - **remove:** removes the user's lines from the three files and from every
   group's member list. The home directory is kept unless `remove-home` was
   given. It is removed only after Settings has asked the administrator to
   confirm, and the tool never follows a symbolic link while removing it.
-  A user who is logged in cannot be removed (`busy`).
+  A user who has a running process (logged in, or a program left running)
+  cannot be removed (`busy`). The tool looks for any process with that
+  user's ID in the kernel's process list, and for a login record naming
+  them.
 - **reset-password:** replaces the user's hash. The user is not told the old
   one, and no one can read it.
 - **group-add / group-remove:** edits the member list of `wheel` or
