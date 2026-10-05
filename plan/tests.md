@@ -94,7 +94,7 @@ JSON なら同じ項目を `{"id":…, "purpose":…, "status":…, "areas":[…
 ## 5. どれを流すか
 
 - **新しい機能**: Phase の設計で、まず `draft` のシナリオを書く。実装はそれの合格を目指し、合格したら `active` にする（テスト駆動）。Phase の受け入れに「シナリオ X が pass」を入れる。
-- **変更**: 変えた file に `paths` が重なるシナリオ＋ `smoke`。git の範囲から選ぶ helper を作る（ws173-p006）。
+- **変更**: 変えた file に `paths` が重なるシナリオ＋ `smoke`。選ぶのは `plan/tools/aat/select-scenarios.py RANGE --explain`（`--gaps` はどのシナリオにも当たらない変更、シナリオを足す候補）、流すのは `run-aat.sh TARGET OUTDIR changed:RANGE`（ws173-p006）。
 - **bug の修正**: 再現のシナリオを足すか広げ、直ったままを保つ。
 - **分野・app の作業**: その suite。
 - **定期・リリースの前**: `full`。
