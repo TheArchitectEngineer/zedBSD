@@ -1,0 +1,292 @@
+diff -ru a/include/uapi/netif.h b/include/uapi/netif.h
+--- a/include/uapi/netif.h	2026-10-05 19:28:37.916180529 +0900
++++ b/include/uapi/netif.h	2026-10-05 19:29:15.864079124 +0900
+@@ -13,6 +13,7 @@
+ #define KERN_UAPI_NETIF_H
+ 
+ #include <uapi/socket.h>
++#include <uapi/netinet.h>
+ #include <stdint.h>
+ 
+ #define IFNAMSIZ 16
+@@ -76,4 +77,61 @@
+ #define SIOCGIFMTU 0x00008921UL
+ #define SIOCGIFSTATS 0x000089f0UL
+ 
++/*
++ * The IPv6 addresses of an interface (ws130).  networkd and net add and
++ * remove them; the kernel runs duplicate address detection on a new one
++ * (unless IN6_IFF_NODAD), counts its lifetimes down, makes it deprecated
++ * when the preferred lifetime runs out and removes it when the valid one
++ * does, and says so on AF_ROUTE sockets (route.h, RTM_ADDRINFO).  The
++ * ioctls are taken on AF_INET and AF_INET6 sockets; the changes need the
++ * superuser.
++ */
++#define IN6_IFF_TENTATIVE	0x0001U	/* duplicate address detection under way (kernel) */
++#define IN6_IFF_DUPLICATED	0x0002U	/* another node has it: not used (kernel) */
++#define IN6_IFF_DEPRECATED	0x0004U	/* preferred lifetime over: not chosen as a source (kernel) */
++#define IN6_IFF_TEMPORARY	0x0008U	/* RFC 8981 */
++#define IN6_IFF_AUTOCONF	0x0010U	/* made from a Router Advertisement's prefix */
++#define IN6_IFF_DHCP		0x0020U	/* leased by DHCPv6 */
++#define IN6_IFF_NODAD		0x0040U	/* no duplicate address detection */
++
++/* The most IPv6 addresses an interface has. */
++#define IN6_IFADDRS_MAX		16U
++
++/*
++ * An address to add (or whose lifetimes and flags to renew, when the
++ * interface has it already) or to remove: the interface, the address, its
++ * prefix length, the caller's IN6_IFF_TEMPORARY, _AUTOCONF, _DHCP and
++ * _NODAD, and the lifetimes in seconds (IN6_LIFETIME_INFINITE for none).
++ */
++struct in6_aliasreq {
++	char ifra_name[IFNAMSIZ];
++	struct sockaddr_in6 ifra_addr;
++	uint32_t ifra_prefixlen;
++	uint32_t ifra_flags;
++	uint32_t ifra_valid;
++	uint32_t ifra_preferred;
++};
++
++/* One address of an interface as SIOCGIFADDRS_IN6 lists it: the seconds left of each lifetime. */
++struct in6_ifaddr_entry {
++	struct in6_addr ife_addr;
++	uint32_t ife_prefixlen;
++	uint32_t ife_flags;
++	uint32_t ife_valid;
++	uint32_t ife_preferred;
++};
++
++/* An interface's IPv6 addresses (ifa_name in, the rest out), and whether IPv6 is on there. */
++struct in6_ifaddrs {
++	char ifa_name[IFNAMSIZ];
++	uint32_t ifa_count;
++	uint32_t ifa_enabled;
++	struct in6_ifaddr_entry ifa_list[IN6_IFADDRS_MAX];
++};
++
++#define SIOCAIFADDR_IN6 0x000089a0UL	/* struct in6_aliasreq */
++#define SIOCDIFADDR_IN6 0x000089a1UL	/* struct in6_aliasreq (name, address) */
++#define SIOCGIFADDRS_IN6 0x000089a2UL	/* struct in6_ifaddrs */
++#define SIOCSIFINET6 0x000089a3UL	/* struct ifreq: ifr_flags 1 turns IPv6 on, 0 off (its addresses go) */
++
+ #endif
+diff -ru a/include/uapi/netinet.h b/include/uapi/netinet.h
+--- a/include/uapi/netinet.h	2026-10-05 19:28:37.916180529 +0900
++++ b/include/uapi/netinet.h	2026-10-05 19:29:15.864079124 +0900
+@@ -26,6 +26,17 @@
+ #define IPPROTO_IPV6		41
+ 
+ /*
++ * The second family's own numbers (ws130): its extension headers and its
++ * control messages.  Hop-by-hop options share number 0 with IPPROTO_IP.
++ */
++#define IPPROTO_HOPOPTS		0
++#define IPPROTO_ROUTING		43
++#define IPPROTO_FRAGMENT	44
++#define IPPROTO_ICMPV6		58
++#define IPPROTO_NONE		59
++#define IPPROTO_DSTOPTS		60
++
++/*
+  * Options at IPPROTO_TCP.  TCP_NODELAY is the one POSIX names.
+  */
+ #define TCP_NODELAY		1
+@@ -63,12 +74,7 @@
+ 
+ /*
+  * The second family's address, and the socket address that carries it.
+- *
+- * Nothing routes this protocol yet; these are here so that software which
+- * knows both families can be compiled, and can then be told at run time
+- * which one this system carries.  The flow and scope words are part of the
+- * address as it is written down, and are kept even though nothing reads
+- * them.
++ * The scope word names the interface of a link-local address.
+  */
+ struct in6_addr {
+ 	union {
+@@ -106,6 +112,34 @@
+ 				      0, 0, 0, 0, 0, 0, 0, 1 } } }
+ 
+ /*
++ * Options at IPPROTO_IPV6 (ws130; the numbers are FreeBSD's, as the
++ * SOL_SOCKET options are).  IPV6_V6ONLY is 0 by default: a socket bound
++ * to the unspecified address also takes the first family's peers, as
++ * v4-mapped addresses.
++ */
++#define IPV6_UNICAST_HOPS	4
++#define IPV6_MULTICAST_IF	9
++#define IPV6_MULTICAST_HOPS	10
++#define IPV6_MULTICAST_LOOP	11
++#define IPV6_JOIN_GROUP		12
++#define IPV6_LEAVE_GROUP	13
++#define IPV6_V6ONLY		27
++#define IPV6_RECVPKTINFO	36
++#define IPV6_PKTINFO		46
++
++/*
++ * The destination address and the interface a datagram came in on: the
++ * control message IPV6_PKTINFO that IPV6_RECVPKTINFO asks recvmsg for.
++ */
++struct in6_pktinfo {
++	struct in6_addr ipi6_addr;
++	unsigned ipi6_ifindex;
++};
++
++/* A lifetime (seconds) that does not run out: an address's, or a route's. */
++#define IN6_LIFETIME_INFINITE	0xffffffffU
++
++/*
+  * Room for the longest written form of an address of the second family.
+  * The first family keeps its own in <arpa/inet.h>, where it already was.
+  */
+diff -ru a/include/uapi/route.h b/include/uapi/route.h
+--- a/include/uapi/route.h	2026-10-05 19:28:37.916180529 +0900
++++ b/include/uapi/route.h	2026-10-05 19:29:15.864079124 +0900
+@@ -6,7 +6,8 @@
+  */
+ 
+ /*
+- * IPv4 routing interface
++ * The routing interface: the routes of both families, and the AF_ROUTE
++ * sockets' events.
+  */
+ 
+ #ifndef KERN_UAPI_ROUTE_H
+@@ -17,6 +18,7 @@
+ #endif
+ 
+ #include <uapi/socket.h>
++#include <uapi/netinet.h>
+ #include <stdint.h>
+ 
+ #define RTF_UP	0x0001U
+@@ -46,6 +48,85 @@
+ 
+ #define RTM_IFINFO_F_OVERFLOW	0x00000001U
+ 
++/*
++ * IPv6's events (ws130), only on a socket made with protocol AF_INET6
++ * (socket(AF_ROUTE, SOCK_RAW, AF_INET6)), which has the RTM_IFINFO events
++ * too; a socket made with protocol 0 has RTM_IFINFO alone, as before.
++ * Every record starts like struct rtm_header and is rtm_length bytes; a
++ * reader skips a type it does not know.  RTM_F_OVERFLOW on a record says
++ * records were lost before it.
++ */
++#define RTM_ROUTERADV	0x0020U
++#define RTM_ADDRINFO	0x0021U
++#define RTM_NEIGHBOR	0x0022U
++#define RTM_F_OVERFLOW	RTM_IFINFO_F_OVERFLOW
++
++/* What every record starts with. */
++struct rtm_header {
++	uint16_t rtm_version;
++	uint16_t rtm_type;
++	uint32_t rtm_length;
++	uint64_t rtm_sequence;
++};
++
++/*
++ * A Router Advertisement the kernel took (its hop limit 255, its source
++ * link-local, its checksum right) on an interface where IPv6 is on: the
++ * router's address and the ICMPv6 message from its type byte, which
++ * follows the record (rtm_message_length bytes, at most
++ * RTM_ROUTERADV_MESSAGE_MAX).  The kernel has applied the link's values
++ * (hop limit, reachable time, retransmission timer, MTU); the prefixes,
++ * the routes and the DNS servers are the reader's to act on.
++ */
++#define RTM_ROUTERADV_MESSAGE_MAX	1460U
++
++struct rtm_routeradv {
++	uint16_t rtm_version;
++	uint16_t rtm_type;
++	uint32_t rtm_length;
++	uint64_t rtm_sequence;
++	uint32_t rtm_ifindex;
++	uint32_t rtm_flags;
++	struct in6_addr rtm_source;
++	uint32_t rtm_message_length;
++	uint32_t rtm_reserved;
++};
++
++/* What happened to an IPv6 address: DAD passed, DAD failed, its preferred or its valid lifetime ran out. */
++#define RTM_ADDRINFO_PREFERRED	1U
++#define RTM_ADDRINFO_DUPLICATE	2U
++#define RTM_ADDRINFO_DEPRECATED	3U
++#define RTM_ADDRINFO_EXPIRED	4U
++
++struct rtm_addrinfo {
++	uint16_t rtm_version;
++	uint16_t rtm_type;
++	uint32_t rtm_length;
++	uint64_t rtm_sequence;
++	uint32_t rtm_ifindex;
++	uint32_t rtm_flags;
++	struct in6_addr rtm_address;
++	uint32_t rtm_prefixlen;
++	uint32_t rtm_transition;
++	uint32_t rtm_addr_flags;
++	uint32_t rtm_reserved;
++};
++
++/* A neighbor that stopped answering (neighbor unreachability detection): a router, for networkd to choose another. */
++#define RTM_NEIGHBOR_UNREACHABLE	1U
++
++struct rtm_neighbor {
++	uint16_t rtm_version;
++	uint16_t rtm_type;
++	uint32_t rtm_length;
++	uint64_t rtm_sequence;
++	uint32_t rtm_ifindex;
++	uint32_t rtm_flags;
++	struct in6_addr rtm_address;
++	uint32_t rtm_transition;
++	uint32_t rtm_router;
++};
++
+ #define SIOCADDRT	0x0000890bUL
+ #define SIOCDELRT	0x0000890cUL
+ #define SIOCGRTENTRY	0x000089f1UL
+@@ -63,6 +144,29 @@
+ 	uint64_t rtm_reserved[2];
+ };
+ 
++/*
++ * An IPv6 route (ws130): the destination and its prefix length, the
++ * gateway (a link-local one is the interface's), the RTF_* flags, the
++ * interface, the metric (the lower is chosen between equal prefixes) and
++ * the seconds left (IN6_LIFETIME_INFINITE for none; the kernel removes the
++ * route when they run out).  SIOCGRTENTRY_IN6 takes rt6_index, the
++ * ordinal of the route to read, and answers ENOENT past the last.
++ */
++struct in6_rtentry {
++	struct in6_addr rt6_dst;
++	struct in6_addr rt6_gateway;
++	uint32_t rt6_prefixlen;
++	uint32_t rt6_flags;
++	uint32_t rt6_ifindex;
++	uint32_t rt6_metric;
++	uint32_t rt6_lifetime;
++	uint32_t rt6_index;
++};
++
++#define SIOCADDRT_IN6	0x000089a4UL	/* struct in6_rtentry */
++#define SIOCDELRT_IN6	0x000089a5UL	/* struct in6_rtentry (destination, prefix length, interface) */
++#define SIOCGRTENTRY_IN6	0x000089a6UL	/* struct in6_rtentry */
++
+ struct rtentry {
+ 	uint32_t rt_index;
+ 	uint32_t rt_flags;
+@@ -75,6 +179,11 @@
+ 
+ _Static_assert(sizeof(struct rtm_ifinfo) == 56U,
+     "RTM_IFINFO ABI must remain fixed width");
++_Static_assert(sizeof(struct rtm_header) == 16U, "the records' header is fixed");
++_Static_assert(sizeof(struct rtm_routeradv) == 48U, "RTM_ROUTERADV's record is fixed before its message");
++_Static_assert(sizeof(struct rtm_addrinfo) == 56U, "RTM_ADDRINFO's record is fixed");
++_Static_assert(sizeof(struct rtm_neighbor) == 48U, "RTM_NEIGHBOR's record is fixed");
++_Static_assert(sizeof(struct in6_rtentry) == 56U, "the IPv6 route entry is fixed");
+ 
+ #ifdef __cplusplus
+ }
