@@ -60,6 +60,12 @@ enum glass_icon {
 	GLASS_ICON_APP_LOGOUT,
 	GLASS_ICON_APP_TEXT,
 	GLASS_ICON_APP_SETTINGS,
+	/* ws128-p012: the standard applications that had only their first letter. */
+	GLASS_ICON_APP_VIDEO,
+	GLASS_ICON_APP_PHONE,
+	GLASS_ICON_APP_CALENDAR,
+	GLASS_ICON_APP_MAIL,
+	GLASS_ICON_APP_MONITOR,
 	GLASS_ICON_COUNT
 };
 
