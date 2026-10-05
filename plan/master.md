@@ -71,6 +71,8 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **ws089-p026 の判断（2026-10-05、P2 の設計）**: 管理者の操作（利用者の追加・削除など）の口 — 案 A setuid の account-admin（呼んだ利用者の password と wheel で確かめる）か、案 B sessiond（root）の request か。
+- **ws089-p017 の判断（P2 の設計、前からの保留）**: ① ベータ2 に入れるか [計画の案: 入れない]、② 入れるなら accent だけか dark もか。
 - **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
 - **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
 - **WS169・WS170 の段（2026-10-05 ユーザーの追加）**: ベータ2 に入れるか、それ以降か [Q1 の案: WS170 の最初の範囲（連絡先からタイムライン）はベータ2、WS169 はベータ2 で IMAP・SMTP まで、Gmail・Outlook は以降]。
