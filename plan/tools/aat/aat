@@ -1,0 +1,738 @@
+#!/usr/bin/env python3
+"""aat: drives a zedBSD machine over SSH for the Agent Acceptance Test (WS173).
+
+Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
+An agent runs this on the host to use a zedBSD desktop as a person would:
+it moves and clicks the pointer, drags, turns the wheel, presses keys and
+types, takes the screen back as a PNG, and waits for lines in the logs.
+The same commands reach a bare Latitude 5330 booted from the AAT image and
+a QEMU guest of plan/tools/guest/guest.py (--qemu), so the tool tests
+itself on QEMU (README.md).
+
+The input goes through the kernel's test injector (/dev/input-inject,
+CONFIG_INPUT_TEST_INJECT, test images only): a root daemon on the target
+(AAT_INJECT, default /bin/aatinject) keeps a virtual pointer and keyboard
+open and takes one command a line from a FIFO; after each line it appends
+"done SEQ STATUS" to a file, which this tool waits for.  The screen comes
+from the compositor's test-only capture (AAT_SHOT, default
+"/bin/keiland-shot {path}").  The daemon's protocol is in README.md.
+
+    aat [TARGET OPTIONS] COMMAND ...
+
+    aat check                       reach the target, name what is missing
+    aat run 'ls /tmp'               a shell command there (its status is ours)
+    aat get /tmp/x.log x.log        a file from there / put x.txt /tmp/x.txt
+    aat start [--size WxH]          start the injector (the screen's size from a shot)
+    aat stop
+    aat move X Y | rel DX DY | click X Y [--button B] [--count N]
+    aat down [--button B] | up [--button B]
+    aat drag X1 Y1 X2 Y2 [--steps N] [--ms T] [--button B]
+    aat wheel X Y DY [DX]           detents: DY > 0 scrolls down
+    aat key ctrl+alt+t [enter ...]  chords, each pressed and released
+    aat type 'hello, world'         ASCII on a US layout
+    aat shot screen.png             the screen, taken back
+    aat mark NAME [--log PATH]      remember how long a log is now
+    aat wait-log REGEX [--log PATH] [--since NAME] [--timeout S]
+    aat lines REGEX [--log PATH] [--since NAME]
+    aat windows [--log PATH]        windows from the compositor's ZWL lines
+    aat where SURFACE [--log PATH]  one window's x y width height
+
+Target options (or AAT_TARGET): --target root@10.0.30.3[:22], --target 5330
+(the Latitude 5330, root@10.0.30.3), or --qemu (the guest of
+GUEST_RUNTIME/session.json).  The key is the guest harness's
+(plan/tmp/guest/id_ed25519, which the AAT image trusts for root) unless
+--identity names another; a user other than root reaches root through
+sudo -S with AAT_PASSWORD (default "kei").  The default log is AAT_LOG or
+/run/user/1000/session.log.  --local runs every command on this host
+instead (the self-test, tests/run-host.sh).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shlex
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+HARNESS_KEY = ROOT / "plan/tmp/guest/id_ed25519"
+
+# The machines named by a word.
+ALIASES = {
+	"5330": "root@10.0.30.3",
+}
+
+# Where things are on the target, each changeable from the environment.
+DEFAULT_LOG = os.environ.get("AAT_LOG", "/run/user/1000/session.log")
+INJECT = os.environ.get("AAT_INJECT", "/bin/aatinject")
+SHOT = os.environ.get("AAT_SHOT", "/bin/keiland-shot {path}")
+RUN_DIR = os.environ.get("AAT_RUN_DIR", "/run/aat")
+
+# How long one command may take on the target (seconds), and how often a log is read while waiting.
+COMMAND_TIMEOUT = 60
+POLL_SECONDS = 0.3
+
+# The pointer's buttons by name, as the injector numbers them (evdev BTN_LEFT, BTN_RIGHT, BTN_MIDDLE).
+BUTTONS = {"left": 0x110, "right": 0x111, "middle": 0x112}
+
+# evdev key codes (linux/input-event-codes.h numbers) by the names keys and chords use.
+KEYS = {
+	"esc": 1, "escape": 1, "1": 2, "2": 3, "3": 4, "4": 5, "5": 6, "6": 7, "7": 8, "8": 9, "9": 10,
+	"0": 11, "minus": 12, "equal": 13, "backspace": 14, "tab": 15, "q": 16, "w": 17, "e": 18,
+	"r": 19, "t": 20, "y": 21, "u": 22, "i": 23, "o": 24, "p": 25, "leftbrace": 26, "rightbrace": 27,
+	"enter": 28, "return": 28, "ctrl": 29, "leftctrl": 29, "a": 30, "s": 31, "d": 32, "f": 33, "g": 34,
+	"h": 35, "j": 36, "k": 37, "l": 38, "semicolon": 39, "apostrophe": 40, "grave": 41,
+	"shift": 42, "leftshift": 42, "backslash": 43, "z": 44, "x": 45, "c": 46, "v": 47, "b": 48,
+	"n": 49, "m": 50, "comma": 51, "dot": 52, "period": 52, "slash": 53, "rightshift": 54,
+	"alt": 56, "leftalt": 56, "space": 57, "capslock": 58, "f1": 59, "f2": 60, "f3": 61, "f4": 62,
+	"f5": 63, "f6": 64, "f7": 65, "f8": 66, "f9": 67, "f10": 68, "f11": 87, "f12": 88,
+	"rightctrl": 97, "rightalt": 100, "home": 102, "up": 103, "pageup": 104, "left": 105,
+	"right": 106, "end": 107, "down": 108, "pagedown": 109, "insert": 110, "delete": 111,
+	"super": 125, "meta": 125, "leftmeta": 125, "rightmeta": 126, "menu": 139,
+}
+
+# The US layout's characters: the key, and whether Shift is held.
+US_SHIFTED = {
+	"!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8", "(": "9",
+	")": "0", "_": "minus", "+": "equal", "{": "leftbrace", "}": "rightbrace", ":": "semicolon",
+	"\"": "apostrophe", "~": "grave", "|": "backslash", "<": "comma", ">": "dot", "?": "slash",
+}
+US_PLAIN = {
+	"-": "minus", "=": "equal", "[": "leftbrace", "]": "rightbrace", ";": "semicolon",
+	"'": "apostrophe", "`": "grave", "\\": "backslash", ",": "comma", ".": "dot", "/": "slash",
+	" ": "space", "\n": "enter", "\t": "tab",
+}
+
+# How long a click's button stays down, and between a double click's clicks (ms).
+CLICK_HOLD_MS = 60
+CLICK_GAP_MS = 120
+
+
+def fail(message: str) -> "NoReturn":
+	"""Stops with one line on the standard error."""
+	print(f"aat: {message}", file=sys.stderr)
+	raise SystemExit(1)
+
+
+class Target:
+	"""A machine reached over SSH (or this host, for the self-test), with the
+	local state of this tool for it: the connection's control socket, the
+	marks in its logs, the injector's next sequence number and the screen's
+	size."""
+
+	def __init__(self, arguments: argparse.Namespace):
+		self.local = arguments.local
+		self.host = None
+		self.user = None
+		self.port = None
+		self.identity = arguments.identity
+		if self.local:
+			key = "local"
+		elif arguments.qemu:
+			runtime = Path(os.environ.get("GUEST_RUNTIME", str(ROOT / "build/guest"))).resolve()
+			session_path = runtime / "session.json"
+			if not session_path.is_file():
+				fail(f"no QEMU guest: {session_path} is missing (plan/tools/guest/guest.sh start IMAGE)")
+			session = json.loads(session_path.read_text())
+			self.user, self.host, self.port = "root", "127.0.0.1", int(session["ssh_port"])
+			key = f"qemu-{self.port}"
+		else:
+			name = arguments.target or os.environ.get("AAT_TARGET")
+			if not name:
+				fail("no target: --target user@host[:port], --target 5330, --qemu, or AAT_TARGET")
+			name = ALIASES.get(name, name)
+			match = re.fullmatch(r"(?:([^@]+)@)?([^:@]+)(?::(\d+))?", name)
+			if match is None:
+				fail(f"cannot read the target {name!r}")
+			self.user = match.group(1) or "root"
+			self.host = match.group(2)
+			self.port = int(match.group(3) or 22)
+			key = f"{self.user}-{self.host}-{self.port}"
+		if self.identity is None and HARNESS_KEY.is_file():
+			self.identity = str(HARNESS_KEY)
+		state_root = Path(os.environ.get("AAT_STATE", str(ROOT / "build/aat")))
+		self.state_dir = state_root / key
+		self.state_dir.mkdir(parents=True, exist_ok=True)
+		self.state_path = self.state_dir / "state.json"
+
+	# The local state: marks, the injector's sequence and the screen's size.
+
+	def load_state(self) -> dict:
+		"""Returns what was kept for this target (empty at first)."""
+		try:
+			return json.loads(self.state_path.read_text())
+		except (OSError, ValueError):
+			return {}
+
+	def save_state(self, state: dict) -> None:
+		"""Keeps the state for the next run of this tool."""
+		temporary = self.state_path.with_suffix(".tmp")
+		temporary.write_text(json.dumps(state, indent=1, sort_keys=True))
+		temporary.replace(self.state_path)
+
+	# Running commands there.
+
+	def command(self, script: str) -> list[str]:
+		"""Returns the argument list that runs a shell script on the target."""
+		if self.local:
+			return ["sh", "-c", script]
+		options = [
+			"-p", str(self.port),
+			"-o", "StrictHostKeyChecking=no",
+			"-o", "UserKnownHostsFile=/dev/null",
+			"-o", "LogLevel=ERROR",
+			"-o", "ConnectTimeout=5",
+			"-o", "BatchMode=yes",
+			"-o", "ServerAliveInterval=5",
+			# One connection carries every command of a run of commands: each later ssh starts in milliseconds.
+			"-o", "ControlMaster=auto",
+			"-o", f"ControlPath={self.state_dir}/ssh-%C",
+			"-o", "ControlPersist=120",
+		]
+		if self.identity:
+			options += ["-i", self.identity]
+		return ["ssh", *options, f"{self.user}@{self.host}", script]
+
+	def run(self, script: str, data: bytes | None = None, timeout: float = COMMAND_TIMEOUT,
+		check: bool = True) -> subprocess.CompletedProcess:
+		"""Runs a shell script there; its output is returned as bytes."""
+		try:
+			result = subprocess.run(self.command(script), input=data, capture_output=True, timeout=timeout)
+		except subprocess.TimeoutExpired:
+			fail(f"the target did not answer within {timeout:g} s: {script[:80]}")
+		if check and result.returncode != 0:
+			error = result.stderr.decode("utf-8", "replace").strip()
+			fail(f"failed on the target (status {result.returncode}): {script[:80]}{': ' + error if error else ''}")
+		return result
+
+	def root(self, script: str) -> str:
+		"""Returns a script that runs as root: as it is for root, through sudo -S for another user (the
+		password AAT_PASSWORD, default the test images' "kei"; the script gets no standard input then)."""
+		if self.local or self.user == "root":
+			return script
+		password = os.environ.get("AAT_PASSWORD", "kei")
+		return f"printf '%s\\n' {shlex.quote(password)} | sudo -S sh -c {shlex.quote(script)}"
+
+
+def png_size(data: bytes) -> tuple[int, int]:
+	"""Returns a PNG's width and height from its header."""
+	if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+		fail("the shot is not a PNG")
+	return struct.unpack(">II", data[16:24])
+
+
+def take_shot(target: Target, remote: str | None = None) -> bytes:
+	"""Has the target capture its screen and returns the PNG's bytes."""
+	path = remote or f"{RUN_DIR}/shot.png"
+	directory = os.path.dirname(path) or "."
+	script = target.root(f"mkdir -p {shlex.quote(directory)} && {SHOT.format(path=shlex.quote(path))} >/dev/null && cat {shlex.quote(path)}")
+	data = target.run(script).stdout
+	png_size(data)
+	return data
+
+
+# The injector: one line a command, "SEQ VERB ARGS", into its FIFO; "done SEQ STATUS" back in its file.
+
+def inject(target: Target, commands: list[str], timeout: float = 30.0) -> None:
+	"""Sends commands to the injector and waits until it has done the last."""
+	state = target.load_state()
+	if not state.get("inject_started"):
+		fail("the injector is not started (aat start)")
+	sequence = int(state.get("inject_sequence", 0))
+	first = sequence + 1
+	lines = []
+	for command in commands:
+		sequence += 1
+		lines.append(f"{sequence} {command}")
+	state["inject_sequence"] = sequence
+	target.save_state(state)
+
+	# The lines go in one write; then the done file is read until it names the last one (or says why it failed).
+	fifo = f"{RUN_DIR}/inject.in"
+	done = f"{RUN_DIR}/inject.done"
+	wait_steps = int(timeout / 0.05)
+	script = (
+		f"[ -p {fifo} ] && kill -0 $(cat {RUN_DIR}/inject.pid 2>/dev/null) 2>/dev/null || "
+		f"{{ echo 'aat: the injector is not running' >&2; exit 3; }}; "
+		f"printf '%s\\n' {' '.join(shlex.quote(line) for line in lines)} > {fifo} || exit 4; "
+		f"i=0; while [ $i -lt {wait_steps} ]; do "
+		f"l=$(grep '^done {sequence} ' {done} 2>/dev/null | tail -n 1); "
+		f"[ -n \"$l\" ] && {{ awk -v a={first} -v b={sequence} '$1 == \"done\" && $2 >= a && $2 <= b' {done}; exit 0; }}; "
+		f"sleep 0.05; i=$((i+1)); done; "
+		f"echo 'aat: the injector did not finish' >&2; exit 5"
+	)
+	result = target.run(target.root(script), timeout=timeout + 10, check=False)
+	answer = result.stdout.decode("utf-8", "replace")
+	if result.returncode != 0:
+		fail(result.stderr.decode("utf-8", "replace").strip() or f"injection failed (status {result.returncode})")
+
+	# Every line's answer: each must be there and 0.
+	statuses = {}
+	for line in answer.splitlines():
+		fields = line.split()
+		if len(fields) >= 3 and fields[1].isdigit():
+			statuses[int(fields[1])] = fields[2]
+	for index, line in enumerate(lines):
+		status = statuses.get(first + index)
+		if status != "0":
+			fail(f"the injector refused a command: {line!r} (status {status})")
+
+
+def button_code(name: str) -> int:
+	"""Returns a button's evdev code by its name."""
+	if name not in BUTTONS:
+		fail(f"no button {name!r} (left, right, middle)")
+	return BUTTONS[name]
+
+
+def key_code(name: str) -> int:
+	"""Returns a key's evdev code by its name (a letter, a digit or a key's name)."""
+	lowered = name.lower()
+	if lowered in KEYS:
+		return KEYS[lowered]
+	if lowered.startswith("code") and lowered[4:].isdigit():
+		return int(lowered[4:])
+	fail(f"no key {name!r}")
+
+
+def chord_commands(chord: str) -> list[str]:
+	"""Returns the commands of a chord such as ctrl+alt+t: the keys pressed in order and released backwards."""
+	codes = [key_code(part) for part in chord.split("+") if part]
+	if not codes:
+		fail(f"an empty chord {chord!r}")
+	return [f"key {code} 1" for code in codes] + [f"key {code} 0" for code in reversed(codes)]
+
+
+def text_commands(text: str) -> list[str]:
+	"""Returns the commands that type ASCII text on a US layout."""
+	commands = []
+	for character in text:
+		if character.isascii() and character.isalpha():
+			chord = ("shift+" if character.isupper() else "") + character.lower()
+		elif character.isdigit():
+			chord = character
+		elif character in US_PLAIN:
+			chord = US_PLAIN[character]
+		elif character in US_SHIFTED:
+			chord = "shift+" + US_SHIFTED[character]
+		else:
+			fail(f"cannot type {character!r} (ASCII on a US layout only)")
+		commands += chord_commands(chord)
+	return commands
+
+
+def pointer_to(target: Target, x: float, y: float) -> str:
+	"""Returns the command that puts the pointer at a point of the screen (pixels)."""
+	state = target.load_state()
+	width, height = state.get("screen", [0, 0])
+	if width <= 0 or height <= 0:
+		fail("the screen's size is not known (aat start)")
+	if not (0 <= x < width and 0 <= y < height):
+		fail(f"{x:g},{y:g} is off the screen ({width}x{height})")
+	return f"abs {int(round(x))} {int(round(y))}"
+
+
+# The compositor's lines about windows.
+
+WINDOW_LINES = (
+	(re.compile(r"ZWL MAP client=(\d+) surface=(\d+) x=(-?\d+) y=(-?\d+)"), "map"),
+	(re.compile(r"ZWL UNMAP client=(\d+) surface=(\d+)"), "unmap"),
+	(re.compile(r"ZWL WINDOW centred surface=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+)"), "centred"),
+	(re.compile(r"ZWL RESIZE settled surface=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+)"), "settled"),
+	(re.compile(r"ZWL RESIZE end surface=(\d+) width=(\d+) height=(\d+)"), "end"),
+	(re.compile(r"ZWL GLASS press move surface=(\d+) x=(-?\d+) y=(-?\d+)"), "moved"),
+)
+
+
+def windows_from(text: str) -> dict[int, dict]:
+	"""Returns the windows the compositor's lines describe, by surface: the last place and size each line gave."""
+	windows: dict[int, dict] = {}
+	for line in text.splitlines():
+		for pattern, kind in WINDOW_LINES:
+			match = pattern.search(line)
+			if match is None:
+				continue
+			numbers = [int(value) for value in match.groups()]
+			if kind in ("map", "unmap"):
+				client, surface = numbers[0], numbers[1]
+				window = windows.setdefault(surface, {"surface": surface})
+				window["client"] = client
+				window["mapped"] = kind == "map"
+				if kind == "map":
+					window["x"], window["y"] = numbers[2], numbers[3]
+			else:
+				surface = numbers[0]
+				window = windows.setdefault(surface, {"surface": surface})
+				if kind in ("centred", "settled"):
+					window["x"], window["y"], window["width"], window["height"] = numbers[1:5]
+				elif kind == "end":
+					window["width"], window["height"] = numbers[1:3]
+				else:
+					window["x"], window["y"] = numbers[1:3]
+			break
+	return windows
+
+
+def read_log(target: Target, path: str, offset: int = 0) -> tuple[bytes, int]:
+	"""Returns a log's bytes after an offset and its length now (a log that shrank is read from its start)."""
+	quoted = shlex.quote(path)
+	script = (
+		f"[ -f {quoted} ] || {{ echo 0; exit 0; }}; n=$(wc -c < {quoted}); echo $n; "
+		f"if [ $n -ge {offset} ]; then tail -c +{offset + 1} {quoted}; else cat {quoted}; fi"
+	)
+	data = target.run(target.root(script)).stdout
+	head, _, body = data.partition(b"\n")
+	length = int(head.strip() or b"0")
+	if length < offset:
+		return body, length
+	return body[:max(0, length - offset)], length
+
+
+def log_length(target: Target, path: str) -> int:
+	"""Returns how many bytes a log has now (0 when it is not there)."""
+	quoted = shlex.quote(path)
+	data = target.run(target.root(f"if [ -f {quoted} ]; then wc -c < {quoted}; else echo 0; fi")).stdout
+	return int(data.strip() or b"0")
+
+
+def since_offset(target: Target, path: str, mark: str | None) -> int:
+	"""Returns where a mark left a log (0 without one)."""
+	if mark is None:
+		return 0
+	marks = target.load_state().get("marks", {})
+	key = f"{path}#{mark}"
+	if key not in marks:
+		fail(f"no mark {mark!r} on {path} (aat mark {mark})")
+	return int(marks[key])
+
+
+# The commands.
+
+def command_check(target: Target, arguments: argparse.Namespace) -> int:
+	"""Reaches the target and says what it has and lacks."""
+	inject_path = INJECT.split()[0]
+	shot_path = SHOT.split()[0]
+	script = (
+		"uname -a; id -un; "
+		f"for f in /dev/input-inject {shlex.quote(inject_path)} {shlex.quote(shot_path)} {shlex.quote(arguments.log)}; do "
+		"if [ -e \"$f\" ]; then echo \"have $f\"; else echo \"missing $f\"; fi; done"
+	)
+	result = target.run(target.root(script))
+	sys.stdout.write(result.stdout.decode("utf-8", "replace"))
+	return 1 if b"missing " in result.stdout else 0
+
+
+def command_run(target: Target, arguments: argparse.Namespace) -> int:
+	"""Runs a shell command there and passes its output and status on."""
+	script = " ".join(arguments.words)
+	if arguments.root:
+		script = target.root(script)
+	result = target.run(script, timeout=arguments.timeout, check=False)
+	sys.stdout.buffer.write(result.stdout)
+	sys.stderr.buffer.write(result.stderr)
+	return result.returncode
+
+
+def command_get(target: Target, arguments: argparse.Namespace) -> int:
+	"""Copies a file from the target."""
+	data = target.run(target.root(f"cat {shlex.quote(arguments.remote)}")).stdout
+	Path(arguments.local).write_bytes(data)
+	print(f"aat: got {arguments.remote} ({len(data)} bytes)")
+	return 0
+
+
+def command_put(target: Target, arguments: argparse.Namespace) -> int:
+	"""Copies a file to the target (as the user connected, not root)."""
+	data = Path(arguments.local).read_bytes()
+	target.run(f"cat > {shlex.quote(arguments.remote)}", data=data)
+	print(f"aat: put {arguments.remote} ({len(data)} bytes)")
+	return 0
+
+
+def command_start(target: Target, arguments: argparse.Namespace) -> int:
+	"""Starts the injector on the target (a fresh one) and learns the screen's size."""
+	if arguments.size:
+		match = re.fullmatch(r"(\d+)x(\d+)", arguments.size)
+		if match is None:
+			fail(f"--size is WxH, not {arguments.size!r}")
+		width, height = int(match.group(1)), int(match.group(2))
+	else:
+		width, height = png_size(take_shot(target))
+
+	# A fresh FIFO and done file; the daemon reads the FIFO until it is told to stop.
+	fifo = f"{RUN_DIR}/inject.in"
+	done = f"{RUN_DIR}/inject.done"
+	pid = f"{RUN_DIR}/inject.pid"
+	log = f"{RUN_DIR}/inject.log"
+	script = (
+		f"mkdir -p {RUN_DIR} && chmod 700 {RUN_DIR}; "
+		f"[ -f {pid} ] && kill $(cat {pid}) 2>/dev/null; sleep 0.2; "
+		f"rm -f {fifo} {done}; mkfifo -m 600 {fifo} && : > {done} || exit 3; "
+		f"nohup {INJECT} --fifo={fifo} --done={done} --width={width} --height={height} > {log} 2>&1 < /dev/null & "
+		f"echo $! > {pid}; sleep 0.5; kill -0 $(cat {pid}) 2>/dev/null || {{ cat {log} >&2; exit 4; }}"
+	)
+	target.run(target.root(script))
+	state = target.load_state()
+	state.update({"inject_started": True, "inject_sequence": 0, "screen": [width, height]})
+	target.save_state(state)
+	print(f"aat: injector started, screen {width}x{height}")
+	return 0
+
+
+def command_stop(target: Target, arguments: argparse.Namespace) -> int:
+	"""Stops the injector (its devices go away with it)."""
+	pid = f"{RUN_DIR}/inject.pid"
+	target.run(target.root(f"[ -f {pid} ] && kill $(cat {pid}) 2>/dev/null; rm -f {pid} {RUN_DIR}/inject.in; true"))
+	state = target.load_state()
+	state["inject_started"] = False
+	target.save_state(state)
+	print("aat: injector stopped")
+	return 0
+
+
+def command_move(target: Target, arguments: argparse.Namespace) -> int:
+	"""Puts the pointer at a point."""
+	inject(target, [pointer_to(target, arguments.x, arguments.y)])
+	return 0
+
+
+def command_rel(target: Target, arguments: argparse.Namespace) -> int:
+	"""Moves the pointer by a mouse's counts (the compositor's acceleration applies)."""
+	inject(target, [f"rel {arguments.dx} {arguments.dy}"])
+	return 0
+
+
+def command_click(target: Target, arguments: argparse.Namespace) -> int:
+	"""Clicks at a point, once or more."""
+	code = button_code(arguments.button)
+	commands = [pointer_to(target, arguments.x, arguments.y), "wait 30"]
+	for index in range(arguments.count):
+		if index:
+			commands.append(f"wait {CLICK_GAP_MS}")
+		commands += [f"button {code} 1", f"wait {CLICK_HOLD_MS}", f"button {code} 0"]
+	inject(target, commands)
+	return 0
+
+
+def command_button(target: Target, arguments: argparse.Namespace, pressed: int) -> int:
+	"""Presses or lets go of a button where the pointer is."""
+	inject(target, [f"button {button_code(arguments.button)} {pressed}"])
+	return 0
+
+
+def command_drag(target: Target, arguments: argparse.Namespace) -> int:
+	"""Drags from one point to another in steps."""
+	code = button_code(arguments.button)
+	steps = max(1, arguments.steps)
+	commands = [pointer_to(target, arguments.x1, arguments.y1), "wait 50", f"button {code} 1", "wait 80"]
+	for step in range(1, steps + 1):
+		x = arguments.x1 + (arguments.x2 - arguments.x1) * step / steps
+		y = arguments.y1 + (arguments.y2 - arguments.y1) * step / steps
+		commands += [pointer_to(target, x, y), f"wait {arguments.ms}"]
+	commands += ["wait 80", f"button {code} 0"]
+	inject(target, commands, timeout=30.0 + steps * arguments.ms / 1000.0)
+	return 0
+
+
+def command_wheel(target: Target, arguments: argparse.Namespace) -> int:
+	"""Turns the wheel at a point (detents; a positive DY scrolls down)."""
+	inject(target, [pointer_to(target, arguments.x, arguments.y), "wait 30", f"wheel {arguments.dy} {arguments.dx}"])
+	return 0
+
+
+def command_key(target: Target, arguments: argparse.Namespace) -> int:
+	"""Presses chords one after another."""
+	commands = []
+	for chord in arguments.chords:
+		commands += chord_commands(chord) + ["wait 40"]
+	inject(target, commands)
+	return 0
+
+
+def command_type(target: Target, arguments: argparse.Namespace) -> int:
+	"""Types ASCII text."""
+	commands = text_commands(arguments.text)
+	inject(target, commands, timeout=30.0 + len(commands) * 0.02)
+	return 0
+
+
+def command_shot(target: Target, arguments: argparse.Namespace) -> int:
+	"""Takes the screen back as a PNG."""
+	data = take_shot(target, arguments.remote)
+	Path(arguments.local).write_bytes(data)
+	width, height = png_size(data)
+	print(f"aat: shot {arguments.local} {width}x{height}")
+	return 0
+
+
+def command_mark(target: Target, arguments: argparse.Namespace) -> int:
+	"""Remembers how long a log is now, for --since."""
+	length = log_length(target, arguments.log)
+	state = target.load_state()
+	state.setdefault("marks", {})[f"{arguments.log}#{arguments.name}"] = length
+	target.save_state(state)
+	print(f"aat: mark {arguments.name} {arguments.log} at {length}")
+	return 0
+
+
+def command_wait_log(target: Target, arguments: argparse.Namespace) -> int:
+	"""Waits until a line of a log (after a mark) matches; prints it."""
+	pattern = re.compile(arguments.regex)
+	offset = since_offset(target, arguments.log, arguments.since)
+	pending = b""
+	deadline = time.monotonic() + arguments.timeout
+	while True:
+		data, length = read_log(target, arguments.log, offset)
+		if length < offset:
+			pending = b""
+		offset = length
+		pending += data
+		lines = pending.split(b"\n")
+		pending = lines.pop()
+		for line in lines:
+			text = line.decode("utf-8", "replace")
+			if pattern.search(text):
+				print(text)
+				return 0
+		if time.monotonic() >= deadline:
+			print(f"aat: no line matched {arguments.regex!r} in {arguments.log} within {arguments.timeout:g} s", file=sys.stderr)
+			return 1
+		time.sleep(POLL_SECONDS)
+
+
+def command_lines(target: Target, arguments: argparse.Namespace) -> int:
+	"""Prints the lines of a log (after a mark) that match; 1 when none does."""
+	pattern = re.compile(arguments.regex)
+	data, _ = read_log(target, arguments.log, since_offset(target, arguments.log, arguments.since))
+	found = 0
+	for line in data.decode("utf-8", "replace").splitlines():
+		if pattern.search(line):
+			print(line)
+			found += 1
+	return 0 if found else 1
+
+
+def command_windows(target: Target, arguments: argparse.Namespace) -> int:
+	"""Lists the windows the compositor's lines describe."""
+	data, _ = read_log(target, arguments.log, since_offset(target, arguments.log, arguments.since))
+	windows = windows_from(data.decode("utf-8", "replace"))
+	print("surface client mapped x y width height")
+	for surface in sorted(windows):
+		window = windows[surface]
+		print(" ".join(str(window.get(field, "-")) for field in ("surface", "client", "mapped", "x", "y", "width", "height")))
+	return 0
+
+
+def command_where(target: Target, arguments: argparse.Namespace) -> int:
+	"""Prints one window's place and size ("x y width height"); 1 when not known."""
+	data, _ = read_log(target, arguments.log, since_offset(target, arguments.log, arguments.since))
+	window = windows_from(data.decode("utf-8", "replace")).get(arguments.surface)
+	if window is None or "x" not in window:
+		print(f"aat: no place known for surface {arguments.surface}", file=sys.stderr)
+		return 1
+	print(" ".join(str(window.get(field, "-")) for field in ("x", "y", "width", "height")))
+	return 0
+
+
+def parser() -> argparse.ArgumentParser:
+	"""Returns the command line's parser."""
+	top = argparse.ArgumentParser(prog="aat", description="Drives a zedBSD machine over SSH (WS173 AAT).")
+	top.add_argument("--target", help="user@host[:port], or 5330")
+	top.add_argument("--qemu", action="store_true", help="the guest of GUEST_RUNTIME/session.json")
+	top.add_argument("--local", action="store_true", help="run on this host (the self-test)")
+	top.add_argument("--identity", help="the SSH key (default the guest harness's)")
+	commands = top.add_subparsers(dest="command", required=True)
+
+	def log_options(command: argparse.ArgumentParser, since: bool = True) -> None:
+		command.add_argument("--log", default=DEFAULT_LOG)
+		if since:
+			command.add_argument("--since", help="a mark's name")
+
+	command = commands.add_parser("check")
+	command.add_argument("--log", default=DEFAULT_LOG)
+	command = commands.add_parser("run")
+	command.add_argument("--root", action="store_true", help="as root (sudo for another user)")
+	command.add_argument("--timeout", type=float, default=COMMAND_TIMEOUT)
+	command.add_argument("words", nargs="+")
+	command = commands.add_parser("get")
+	command.add_argument("remote")
+	command.add_argument("local")
+	command = commands.add_parser("put")
+	command.add_argument("local")
+	command.add_argument("remote")
+	command = commands.add_parser("start")
+	command.add_argument("--size", help="WxH (default: a shot's size)")
+	commands.add_parser("stop")
+	command = commands.add_parser("move")
+	command.add_argument("x", type=float)
+	command.add_argument("y", type=float)
+	command = commands.add_parser("rel")
+	command.add_argument("dx", type=int)
+	command.add_argument("dy", type=int)
+	command = commands.add_parser("click")
+	command.add_argument("x", type=float)
+	command.add_argument("y", type=float)
+	command.add_argument("--button", default="left")
+	command.add_argument("--count", type=int, default=1)
+	for name in ("down", "up"):
+		command = commands.add_parser(name)
+		command.add_argument("--button", default="left")
+	command = commands.add_parser("drag")
+	for name in ("x1", "y1", "x2", "y2"):
+		command.add_argument(name, type=float)
+	command.add_argument("--steps", type=int, default=12)
+	command.add_argument("--ms", type=int, default=16)
+	command.add_argument("--button", default="left")
+	command = commands.add_parser("wheel")
+	command.add_argument("x", type=float)
+	command.add_argument("y", type=float)
+	command.add_argument("dy", type=int)
+	command.add_argument("dx", type=int, nargs="?", default=0)
+	command = commands.add_parser("key")
+	command.add_argument("chords", nargs="+")
+	command = commands.add_parser("type")
+	command.add_argument("text")
+	command = commands.add_parser("shot")
+	command.add_argument("local")
+	command.add_argument("--remote", help="where the target writes it first")
+	command = commands.add_parser("mark")
+	command.add_argument("name")
+	log_options(command, since=False)
+	command = commands.add_parser("wait-log")
+	command.add_argument("regex")
+	log_options(command)
+	command.add_argument("--timeout", type=float, default=30.0)
+	command = commands.add_parser("lines")
+	command.add_argument("regex")
+	log_options(command)
+	command = commands.add_parser("windows")
+	log_options(command)
+	command = commands.add_parser("where")
+	command.add_argument("surface", type=int)
+	log_options(command)
+	return top
+
+
+def main() -> int:
+	"""Runs one command."""
+	arguments = parser().parse_args()
+	target = Target(arguments)
+	handlers = {
+		"check": command_check, "run": command_run, "get": command_get, "put": command_put,
+		"start": command_start, "stop": command_stop, "move": command_move, "rel": command_rel,
+		"click": command_click, "drag": command_drag, "wheel": command_wheel, "key": command_key,
+		"type": command_type, "shot": command_shot, "mark": command_mark, "wait-log": command_wait_log,
+		"lines": command_lines, "windows": command_windows, "where": command_where,
+		"down": lambda t, a: command_button(t, a, 1), "up": lambda t, a: command_button(t, a, 0),
+	}
+	return handlers[arguments.command](target, arguments)
+
+
+if __name__ == "__main__":
+	sys.exit(main())
