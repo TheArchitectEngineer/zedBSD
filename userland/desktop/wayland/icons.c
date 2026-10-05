@@ -47,8 +47,8 @@
  * The kinds of part an icon is made of: a stroke between two points, a
  * ring (a stroked circle), a dot (a filled circle), a filled box with
  * rounded corners, the outline of such a box (a frame), a stroked arc of
- * a circle, and a hole: a filled circle cut out of everything else the
- * icon covers.
+ * a circle, a hole: a filled circle cut out of everything else the
+ * icon covers, and a filled triangle pointing right (a play sign).
  */
 enum icon_kind {
 	ICON_END,
@@ -58,7 +58,8 @@ enum icon_kind {
 	ICON_BOX,
 	ICON_FRAME,
 	ICON_ARC,
-	ICON_HOLE
+	ICON_HOLE,
+	ICON_TRIANGLE
 };
 
 /*
@@ -67,7 +68,9 @@ enum icon_kind {
  * a hole's centre and radius (a, b, c); a box's or a frame's corners and
  * corner radius (a, b, c, d, e); an arc's centre and radius (a, b, c), the
  * angle it starts at and the angle it sweeps through (d, e), in degrees
- * clockwise from the right (y grows downwards).
+ * clockwise from the right (y grows downwards); a triangle's box, its
+ * left side the box's left edge and its point the middle of the right
+ * edge (a, b, c, d), grown all round by e with rounded corners.
  */
 struct icon_part {
 	unsigned kind;
@@ -418,6 +421,62 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_SEGMENT, 17.16f, 6.84f, 18.15f, 5.85f, 3.0f },
 		{ ICON_RING, 12.0f, 12.0f, 2.3f, 0.0f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Video Player (ws128-p012): a screen with a play sign in its middle. */
+	{
+		{ ICON_FRAME, 3.0f, 5.0f, 21.0f, 19.0f, 3.0f },
+		{ ICON_TRIANGLE, 10.2f, 9.3f, 15.4f, 14.7f, 0.6f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/*
+	 * Phone (ws128-p012): a handset, its handle a wide band (four arcs side
+	 * by side) curving round the lower left between the earpiece at the
+	 * upper left and the mouthpiece at the lower right.
+	 */
+	{
+		{ ICON_ARC, 19.80f, 4.30f, 13.10f, 92.0f, 86.0f },
+		{ ICON_ARC, 19.80f, 4.30f, 13.70f, 92.0f, 86.0f },
+		{ ICON_ARC, 19.80f, 4.30f, 14.30f, 92.0f, 86.0f },
+		{ ICON_ARC, 19.80f, 4.30f, 14.90f, 92.0f, 86.0f },
+		{ ICON_SEGMENT, 10.07f, 5.49f, 5.51f, 6.05f, 5.0f },
+		{ ICON_SEGMENT, 18.61f, 14.03f, 18.05f, 18.59f, 5.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/*
+	 * Calendar (ws128-p012): a page of a calendar, its binding rings on
+	 * top, a filled band for the month, and days below.
+	 */
+	{
+		{ ICON_FRAME, 3.5f, 5.5f, 20.5f, 20.5f, 2.5f },
+		{ ICON_BOX, 3.5f, 5.5f, 20.5f, 10.5f, 2.5f },
+		{ ICON_BOX, 3.5f, 8.0f, 20.5f, 10.5f, 0.0f },
+		{ ICON_SEGMENT, 8.0f, 3.2f, 8.0f, 6.8f, 0.0f },
+		{ ICON_SEGMENT, 16.0f, 3.2f, 16.0f, 6.8f, 0.0f },
+		{ ICON_DOT, 8.0f, 14.0f, 1.25f, 0.0f, 0.0f },
+		{ ICON_DOT, 12.0f, 14.0f, 1.25f, 0.0f, 0.0f },
+		{ ICON_DOT, 16.0f, 14.0f, 1.25f, 0.0f, 0.0f },
+		{ ICON_DOT, 8.0f, 17.5f, 1.25f, 0.0f, 0.0f },
+		{ ICON_DOT, 12.0f, 17.5f, 1.25f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Mail (ws128-p012): an envelope, its flap folded down to the middle. */
+	{
+		{ ICON_FRAME, 3.0f, 5.5f, 21.0f, 18.5f, 2.5f },
+		{ ICON_SEGMENT, 4.5f, 7.5f, 12.0f, 13.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 13.0f, 19.5f, 7.5f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* System Monitor (ws128-p012): a display on its stand, a pulse of activity across it. */
+	{
+		{ ICON_FRAME, 3.0f, 4.0f, 21.0f, 16.5f, 2.5f },
+		{ ICON_SEGMENT, 12.0f, 16.5f, 12.0f, 20.0f, 0.0f },
+		{ ICON_SEGMENT, 8.0f, 20.0f, 16.0f, 20.0f, 0.0f },
+		{ ICON_SEGMENT, 6.0f, 10.5f, 8.8f, 10.5f, 0.0f },
+		{ ICON_SEGMENT, 8.8f, 10.5f, 10.4f, 7.5f, 0.0f },
+		{ ICON_SEGMENT, 10.4f, 7.5f, 13.2f, 13.2f, 0.0f },
+		{ ICON_SEGMENT, 13.2f, 13.2f, 14.8f, 10.5f, 0.0f },
+		{ ICON_SEGMENT, 14.8f, 10.5f, 18.0f, 10.5f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	}
 };
 
@@ -438,7 +497,12 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"lock",
 	"logout",
 	"text",
-	"settings"
+	"settings",
+	"video",
+	"phone",
+	"calendar",
+	"mail",
+	"monitor"
 };
 
 /* The known programs' windows, found by their exact application ID. */
@@ -453,13 +517,19 @@ static const struct icon_app_id icon_app_ids[] = {
 	{ "Gears", GLASS_ICON_APP_GEARS, 0xd05a3aU },
 	{ "XTerminal", GLASS_ICON_APP_XTERM, 0x4a4a78U },
 	{ "textedit", GLASS_ICON_APP_TEXT, 0x1f9e9aU },
-	{ "settings", GLASS_ICON_APP_SETTINGS, 0x6b7a8fU }
+	{ "settings", GLASS_ICON_APP_SETTINGS, 0x6b7a8fU },
+	{ "videoplayer", GLASS_ICON_APP_VIDEO, 0x7a4fd0U },
+	{ "phone", GLASS_ICON_APP_PHONE, 0x34c759U },
+	{ "calendar", GLASS_ICON_APP_CALENDAR, 0xe8483fU },
+	{ "mailer", GLASS_ICON_APP_MAIL, 0x2f6fd6U },
+	{ "monitor", GLASS_ICON_APP_MONITOR, 0x4a6a8fU }
 };
 
 static float icon_distance(const struct icon_part *part, float x, float y);
 static float icon_segment_distance(float x, float y, float x0, float y0, float x1, float y1);
 static float icon_arc_distance(const struct icon_part *part, float x, float y);
 static float icon_box_distance(float x, float y, float x0, float y0, float x1, float y1, float radius);
+static float icon_triangle_distance(const struct icon_part *part, float x, float y);
 static float icon_clamp(float value);
 
 /*
@@ -648,6 +718,9 @@ icon_distance(
 	case ICON_ARC:
 		distance = icon_arc_distance(part, x, y);
 		break;
+	case ICON_TRIANGLE:
+		distance = icon_triangle_distance(part, x, y) - part->e;
+		break;
 	default:
 		break;
 	}
@@ -774,6 +847,47 @@ icon_box_distance(
 
 	/* Reports the distance, less the corners' radius. */
 	return outside + inside - radius;
+}
+
+/*
+ * Measures the signed distance from a point to a triangle pointing right
+ * (negative inside): its corners are the box's upper left and lower left
+ * and the middle of its right edge.  Outside, the nearest of its three
+ * sides; inside, the same distance made negative.
+ */
+static float
+icon_triangle_distance(
+	const struct icon_part *part,
+	float x,
+	float y)
+{
+	float point_y;
+	float nearest;
+	float side;
+	float upper;
+	float lower;
+
+	/* The point of the triangle, and the nearest of its sides. */
+	point_y = (part->b + part->d) * 0.5f;
+	nearest = icon_segment_distance(x, y, part->a, part->b, part->a, part->d);
+	side = icon_segment_distance(x, y, part->a, part->b, part->c, point_y);
+	if (side < nearest)
+		nearest = side;
+	side = icon_segment_distance(x, y, part->a, part->d, part->c, point_y);
+	if (side < nearest)
+		nearest = side;
+
+	/*
+	 * Inside: right of the left side, below the upper side and above the
+	 * lower side (each side's line, its cross product with the point).
+	 */
+	upper = (part->c - part->a) * (y - part->b) - (point_y - part->b) * (x - part->a);
+	lower = (part->c - part->a) * (y - part->d) - (point_y - part->d) * (x - part->a);
+	if (x > part->a && upper > 0.0f && lower < 0.0f)
+		return -nearest;
+
+	/* Outside. */
+	return nearest;
 }
 
 /* Keeps a coverage between 0 and 1. */
