@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info). */
-#define KL_VERSION	33U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the desktop's appearance, light or dark, kl_appearance_*). */
+#define KL_VERSION	34U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1801,6 +1801,44 @@ int kl_activation_token(struct wl_display *display, struct wl_surface *surface, 
  * asked, ENOTSUP when the compositor has no activation.
  */
 int kl_activate(struct wl_display *display, struct wl_surface *surface, const char *token);
+
+/*
+ * The desktop's appearance (KL_VERSION 34, ws089-p017): light or dark, as
+ * the user chose in Settings.  The compositor tells it when the program
+ * asks and again whenever it changes (keiland_theme_v1); a program draws
+ * in it and draws again when it changes.  kl_theme_default gives the
+ * theme of the appearance the program was told last (the same pointer,
+ * its contents changed), and an application of kl_app_open is told with
+ * a KL_APP_THEME event.  A compositor without the appearance is light.
+ */
+#define KL_APPEARANCE_LIGHT	0U
+#define KL_APPEARANCE_DARK	1U
+
+/* The appearance watched on one connection. */
+struct kl_appearance;
+
+/* Called with the new appearance (KL_APPEARANCE_*) when it changes, within the dispatch of the display's default queue. */
+typedef void (*kl_appearance_fn)(void *data, unsigned appearance);
+
+/*
+ * Watches the appearance on a display: learns it now (with a roundtrip
+ * of the library's own queue, which runs none of the program's events)
+ * and calls changed (NULL for none) whenever it changes.  Returns 0 with
+ * *appearance set, ENOTSUP when the compositor has no appearance (the
+ * program is light), ENOMEM or EPROTO.
+ */
+int kl_appearance_open(struct wl_display *display, kl_appearance_fn changed, void *data, struct kl_appearance **appearance);
+
+/*
+ * The appearance (KL_APPEARANCE_*) a watch was told last; for NULL, the
+ * one the program was told last on any watch (light before any).
+ */
+unsigned kl_appearance_get(const struct kl_appearance *appearance);
+
+/*
+ * Stops watching (NULL does nothing).
+ */
+void kl_appearance_close(struct kl_appearance *appearance);
 
 #ifdef __cplusplus
 }

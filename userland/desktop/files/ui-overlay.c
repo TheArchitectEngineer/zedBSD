@@ -159,7 +159,7 @@ fm_tasks_draw(
 			fraction = (float)(task->bytes_done + task->files_done * 4096U) / (float)(task->bytes_total + task->files_total * 4096U);
 		if (fraction > 1.0f)
 			fraction = 1.0f;
-		fm_canvas_round(canvas, (float)left + 16.0f, (float)row + 34.0f, OVERLAY_TASKS_WIDTH - 64.0f, 6.0f, 3.0f, FM_RGB(0xe6ebf2));
+		fm_canvas_round(canvas, (float)left + 16.0f, (float)row + 34.0f, OVERLAY_TASKS_WIDTH - 64.0f, 6.0f, 3.0f, FM_COLOR_RAIL);
 		fm_canvas_round(canvas, (float)left + 16.0f, (float)row + 34.0f, (OVERLAY_TASKS_WIDTH - 64.0f) * fraction, 6.0f, 3.0f, FM_COLOR_ACCENT);
 
 		/* The cancel button at the row's right. */
@@ -204,7 +204,7 @@ overlay_button(
 	int width;
 
 	/* The button's colors (1: red, the action that loses something; 2: blue, the default), lit under the pointer. */
-	ground = FM_RGB(0xeef1f6);
+	ground = FM_COLOR_BUTTON;
 	ink = FM_COLOR_TEXT;
 	if (primary == 1) {
 		ground = FM_RGB(0xe5484d);

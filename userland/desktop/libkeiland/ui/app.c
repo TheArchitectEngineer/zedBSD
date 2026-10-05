@@ -44,6 +44,7 @@ static void app_fd_events(struct kl_app *app, const struct pollfd *descriptors, 
 static int app_wait(const struct kl_app *app, int timeout_ms, uint64_t now_us);
 static void app_repeat(struct kl_app *app);
 static struct kl_app_event *app_slot(struct kl_app *app);
+static void app_appearance(void *data, unsigned appearance);
 
 /* The registry's callbacks, for as long as the application lives. */
 static const struct wl_registry_listener app_registry_listener = {
@@ -122,9 +123,14 @@ kl_app_open(
 		return NULL;
 	}
 
-	/* Succeeded: one of the applications open. */
+	/* One of the applications open. */
 	app->next = app_list;
 	app_list = app;
+
+	/* The desktop's appearance, watched (a compositor without it leaves the application light). */
+	(void)kl_appearance_open(app->display, app_appearance, app, &app->appearance);
+
+	/* Succeeded. */
 	return app;
 }
 
@@ -146,7 +152,8 @@ kl_app_close(
 	while (app->windows != NULL)
 		kl_window_close(app->windows);
 
-	/* The system and the menu service. */
+	/* The appearance, the system and the menu service. */
+	kl_appearance_close(app->appearance);
 	if (app->system != NULL)
 		kl_system_close(app->system);
 	if (app->menu_service != NULL)
@@ -665,4 +672,22 @@ app_slot(
 
 	/* Succeeded. */
 	return event;
+}
+
+/* Queues a KL_APP_THEME event when the desktop's appearance changed (the theme handed out changed already). */
+static void
+app_appearance(
+	void *data,
+	unsigned appearance)
+{
+	struct kl_app *app;
+	struct kl_app_event *event;
+
+	/* The event, when the queue has room. */
+	(void)appearance;
+	app = data;
+	event = app_slot(app);
+	if (event == NULL)
+		return;
+	event->kind = KL_APP_THEME;
 }

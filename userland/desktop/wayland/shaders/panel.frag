@@ -24,12 +24,18 @@ layout(location = 0) out vec4 result;
 // The modes are whole numbers in a float, compared in ranges (an integer
 // chain of comparisons becomes an OpSwitch, which i915's native compiler
 // does not take): 0 glass, 1 shadow, 2 image, 3 solid, 4 ring, 5 text, 6 blur.
+// Glass in the dark appearance is mode -1 (ws089-p017, glass.c).
 
 // The least brightness (Rec. 709 luma of the stored colour) of white glass
 // (ws099-p005, the criterion C7): over a dark wallpaper the glass is
 // whitened further, up to this, so that the dark text on it keeps its
 // contrast; over a bright one it is left as it is.
 const float GLASS_LEAST_LUMA = 0.85;
+
+// The most brightness of dark glass (ws089-p017, the dark appearance): over a
+// bright wallpaper the glass is darkened further, down to this, so that the
+// light text on it keeps its contrast; over a dark one it is left as it is.
+const float GLASS_MOST_LUMA = 0.15;
 
 // Signed distance from a pixel to the rounded rectangle (negative inside).
 float rounded(vec2 point, vec4 box, float radius)
@@ -59,6 +65,9 @@ void main()
 		float white = step(0.9, min(panel.color.r, min(panel.color.g, panel.color.b)));
 		float lift = white * clamp((GLASS_LEAST_LUMA - luma) / max(1.0 - luma, 0.001), 0.0, 1.0);
 		glass = mix(glass, vec3(1.0), lift);
+		float dark = step(mode, -0.5);
+		float shade = dark * clamp((luma - GLASS_MOST_LUMA) / max(luma, 0.001), 0.0, 1.0);
+		glass = mix(glass, vec3(0.0), shade);
 		float depth = clamp((point.y - panel.box.y) / max(panel.box.w, 1.0), 0.0, 1.0);
 		float edge = clamp(1.0 - abs(distance + 1.0), 0.0, 1.0);
 

@@ -885,7 +885,7 @@ network_key_draw(
 	field.y = y + 8;
 	field.width = right - cancel - 8 - join - 8 - show - 12 - field.x;
 	field.height = 36;
-	fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, FM_RGB(0xffffff));
+	fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, SE_COLOR_FIELD);
 	fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
 	se_ui_hit(app, &field, SE_HIT_CONTROL, NETWORK_KEY_FIELD);
 

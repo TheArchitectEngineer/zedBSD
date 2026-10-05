@@ -910,6 +910,7 @@ struct kl_glass_panel;
 /* The kinds of an application's event. */
 #define KL_APP_WINDOW		1U
 #define KL_APP_FD		2U
+#define KL_APP_THEME		3U
 
 /*
  * What an application is opened with.  Either pointer may be NULL:
@@ -924,7 +925,10 @@ struct kl_app_options {
 /*
  * One event of an application: its kind; for KL_APP_WINDOW the window and
  * its input (as kl_window_take gave it; KL_WINDOW_ACTION for an action
- * chosen), for KL_APP_FD the descriptor and what it became (KL_APP_FD_*).
+ * chosen), for KL_APP_FD the descriptor and what it became (KL_APP_FD_*);
+ * KL_APP_THEME (KL_VERSION 34) says the desktop's appearance changed and
+ * kl_theme_default's colours with it, for the application to draw its
+ * windows again (kl_appearance_get(NULL) tells which).
  */
 struct kl_app_event {
 	unsigned kind;

@@ -19,6 +19,7 @@
  *   --size=WxH         the window's size (default 1180x800)
  *   --page=WORD        the page shown first (default Home)
  *   --network=SCENARIO a made-up network (host-network.c: wifi, wired, absent, down; default wifi)
+ *   --dark             the dark appearance's colours (ws089-p017, palette.c)
  * With HOST_ACCOUNT_RESULT=ERRNO in the environment the desktop offers the account (host-kl-system.c, ws160-p002):
  * the system is a stand-in, polled after each action, and a password change is answered with that errno.
  *
@@ -99,6 +100,8 @@ main(
 			(void)sscanf(argv[index] + 7, "%dx%d", &width, &height);
 		if (strncmp(argv[index], "--network=", 10) == 0)
 			scenario = argv[index] + 10;
+		if (strcmp(argv[index], "--dark") == 0)
+			se_palette_set(KL_APPEARANCE_DARK);
 		if (strncmp(argv[index], "--page=", 7) == 0) {
 			page = se_page_find(argv[index] + 7);
 			if (page != NULL)

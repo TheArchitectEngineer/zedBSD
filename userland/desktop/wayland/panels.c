@@ -59,7 +59,7 @@ static int panels_create(struct zwl_object *manager, const unsigned char *bytes,
 static int panels_set(struct zwl_object *glass, struct zwl_object *surface, const unsigned char *bytes, size_t size);
 static int panels_check(const struct zwl_panel *panel);
 static void panels_shadow(struct zwl_server *server, VkCommandBuffer command, const struct zwl_panel *panel, const float *place, float opacity);
-static void panels_glass(struct zwl_server *server, VkCommandBuffer command, const struct zwl_panel *panel, const float *place, float opacity);
+static void panels_glass(struct zwl_server *server, VkCommandBuffer command, const struct zwl_panel *panel, const float *place, float opacity, unsigned light);
 static uint32_t panels_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -255,6 +255,7 @@ zwl_panels_draw(
 {
 	const struct zwl_panels *panels;
 	unsigned index;
+	unsigned light;
 
 	/* A surface without panels has no glass. */
 	panels = surface->panels;
@@ -267,9 +268,15 @@ zwl_panels_draw(
 			panels_shadow(server, command, &panels->current[index], place, opacity);
 	}
 
-	/* The glass of each panel. */
+	/*
+	 * The glass of each panel: in the dark appearance dark, unless the
+	 * client does not know the appearance and draws light (ws089-p017).
+	 */
+	light = 0U;
+	if (surface->client->theme_bound == 0U)
+		light = 1U;
 	for (index = 0; index < panels->count; index++)
-		panels_glass(server, command, &panels->current[index], place, opacity);
+		panels_glass(server, command, &panels->current[index], place, opacity, light);
 }
 
 /* Gives a surface its keiland_glass_v1 (one per surface) and the record of its panels. */
@@ -439,7 +446,8 @@ panels_glass(
 	VkCommandBuffer command,
 	const struct zwl_panel *panel,
 	const float *place,
-	float opacity)
+	float opacity,
+	unsigned light)
 {
 	struct glass_shape shape;
 	float x;
@@ -466,6 +474,7 @@ panels_glass(
 	shape.color[3] = GLASS_WHITE;
 	shape.edge = GLASS_RIM;
 	shape.opacity = opacity;
+	shape.light = light;
 	glass_shape_draw(server, command, &shape);
 }
 

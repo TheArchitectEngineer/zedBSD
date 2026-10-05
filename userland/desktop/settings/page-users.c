@@ -751,7 +751,7 @@ users_field_draw(
 	box.y = y + 8;
 	box.width = width - USERS_FIELD_X - 20;
 	box.height = 36;
-	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, FM_RGB(0xffffff));
+	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
 	if (users->focus == index) {
 		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
 	} else {

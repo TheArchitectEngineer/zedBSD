@@ -120,6 +120,9 @@ static int main_touch_due = -1;
  * NULL without Keiland's system extension.
  */
 static struct kl_system *main_system;
+
+/* The desktop's appearance watched for the window (ws089-p017): Files draws in its colours (palette.c); NULL without it. */
+static struct kl_appearance *main_appearance;
 static uint32_t main_device_request;
 static unsigned main_device_kind;
 static char main_device_id[64];
@@ -180,6 +183,7 @@ static int main_open_decorations(void);
 static void main_open_context_menus(void);
 static void main_dispatch(const struct fm_event *event);
 static void main_devices_open(const struct main_options *options);
+static void main_appearance_changed(void *data, unsigned appearance);
 static void main_devices_poll(void);
 static void main_devices_take(int blink_all);
 static void main_devices_ask(unsigned request);
@@ -311,13 +315,28 @@ main(
 	if (!options.desktop)
 		main_devices_open(&options);
 
+	/*
+	 * The desktop's appearance, for the window: the colours of the one told
+	 * now, and a frame again when it changes (light under a compositor
+	 * without it; the desktop's icons stay as they are, ws089-p017).
+	 */
+	if (!options.desktop) {
+		error = kl_appearance_open(main_window.display, main_appearance_changed, NULL, &main_appearance);
+		if (error != 0)
+			fm_log("APPEARANCE none errno=%d", error);
+		fm_palette_set(kl_appearance_get(main_appearance));
+		fm_log("APPEARANCE appearance=%u", kl_appearance_get(main_appearance));
+	}
+
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* The system goes before the window's display. */
+	/* The system and the appearance go before the window's display. */
 	if (main_system != NULL)
 		kl_system_close(main_system);
 	main_system = NULL;
+	kl_appearance_close(main_appearance);
+	main_appearance = NULL;
 
 	/* Everything goes, the titlebar, the menus, the glass and the app before the window they belong to. */
 	fm_titlebar_close(&main_titlebar);
@@ -1532,4 +1551,17 @@ main_devices_result(
 
 	/* Refused, or failed. */
 	fm_ui_message(&main_app, "The device could not be ejected.");
+}
+
+/* Takes the desktop's new appearance: the window's colours become its, and the frame is drawn again. */
+static void
+main_appearance_changed(
+	void *data,
+	unsigned appearance)
+{
+	/* The colours, and a new frame. */
+	(void)data;
+	fm_palette_set(appearance);
+	main_app.dirty = 1;
+	fm_log("APPEARANCE appearance=%u", appearance);
 }

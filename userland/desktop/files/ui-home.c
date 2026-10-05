@@ -477,7 +477,7 @@ home_hero_brand(
 
 	/* The mark, then the word in slate beside its lower part. */
 	fm_mark_draw(canvas, left, y + 18, (unsigned)HOME_HERO_MARK, 1.0f);
-	(void)fm_text_draw(app->text, canvas, left + HOME_HERO_MARK + 6, y + 18 + HOME_HERO_MARK - 10, "Kei", 3U, 30U, 0, FM_RGB(0x2e3a4c));
+	(void)fm_text_draw(app->text, canvas, left + HOME_HERO_MARK + 6, y + 18 + HOME_HERO_MARK - 10, "Kei", 3U, 30U, 0, FM_COLOR_TITLE);
 }
 
 /*
