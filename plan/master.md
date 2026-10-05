@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS156 の判断（2026-10-05、P1 の p001 の設計、plan/ws156/phase001/phase.md §9）**: H1 popup の大きさ（幅 20%・320〜640 px、高さ 76 px、下中央の 48 px 上）[可]、H2 log の hotkey [Super+N]、H3 log の保存 [memory だけ、100 件]、H4 全画面・lock 中 [log だけ、URGENT は全画面の上にも出す]、H5 重なった時 [待ちがあれば保持を 1.5 秒に縮める]、H6 Linux・FreeBSD の D-Bus の通知 [v1 では無し]、H7 bar の USB media の icon を通知に置き換え [外す]。
 - **WS167 の判断（2026-10-05、P1 の p001、plan/ws167/phase001/phase.md §6）**: H1 license: 番号の表を独自の名前で書き直し、番号の再利用を明記し、Google の著作権の表示と LICENSE-PROTOCOL を外す（番号は interface の事実で、Venus の文・名前・構造は写していない）[外す]。H2 新しい UAPI include/uapi/gpu-op.h（kernel の i915 の実行器・libvulkan・venus-frame で共有、第 1 版は Venus の番号のまま）[足す]。H3 名前 GPU_OP_CREATE_INSTANCE か GPU_OP_vkCreateInstance か [前者]。
 - **WS122 の判断（2026-10-05、P2 の p003 の開始の報告）**: ① libavcodec 無しの動画の decode は WS083（Vulkan Video、実機）が要り、それまで libavcodec 無しでは絵が出ない。② 音: libavcodec 無しで音を出すには AAC の decoder の自作（大きい）か BSD の libopus の外部 package。それまでは libavcodec 無しの時は音無しで再生、でよいか。③ add-in の dlopen の宣言: header を使わずに AVFrame などの使う field の位置を自分で書く（事実の記述で header の写しではないという見立て）の license の判断。
 - **WS066 の目標の文（2026-10-05、P2 の案、plan/ws066/phase002/phase.md）**: 測定の回の間のばらつきが大きい（変えていない true-static が 517 → 608 µs）。同じ回の中では静的との差が 266 → 10 µs で /bin/true は「差の半分」を満たした。案: ① 受け入れを「/bin/true と sh -c : の静的 link との差を同じ回の中で半分以下に」に改め、sh は静的な sh を足して T1 で確かめる、② cc t.c -o t は完了の条件から外し p003（ld.so の cache、clang 入りの image が作れる時）へ、③ 以後の速さの受け入れは同じ回の中の比べで書く。
