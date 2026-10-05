@@ -25,12 +25,25 @@ cc -std=c11 -g -O1 -Wall -Wextra -Werror -Wdeclaration-after-statement -fsanitiz
 cc -std=gnu99 -O0 -Wall -Wextra -Wno-unused-function -I"$root" -I"$root/include" -DHAL_ARCH_AMD64 \
 	-o "$out/dump" "$root/plan/ws101/tests/host/compute-dump.c" -lm || exit 1
 
+# Mesa's tools must be there for the round trip: without them the round trip is reported as not run (the other
+# checks still run, and the result says so), instead of failing every shader as a mismatch.
+roundtrip=1
+if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
+	roundtrip=0
+	echo "NOTE: no brw_disasm/brw_asm under $tools (set BRW_TOOLS to a Mesa 25.0.7 build's src/intel/compiler);" \
+		"the disassembly round trip is NOT RUN"
+fi
+
 # 1. Every pass shader links; spirv-val, i915 and Mesa's disassembler take it.
 for f in "$here"/pass/*.comp; do
 	name=$(basename "$f" .comp)
 	"$out/glsl-compute" link "$f" "$out/$name.spv" > "$out/$name.link.txt" 2>&1 || { cat "$out/$name.link.txt"; fail "link $name"; continue; }
 	spirv-val --target-env vulkan1.0 "$out/$name.spv" || { fail "spirv-val $name"; continue; }
 	"$out/dump" "$out/$name.spv" "$out/$name.bin" > "$out/$name.dump" 2>&1 || { cat "$out/$name.dump"; fail "i915 $name"; continue; }
+	if [ $roundtrip -eq 0 ]; then
+		echo "$name: linked, valid, i915 $(grep -o '[0-9]* instructions' "$out/$name.dump") (round trip not run)"
+		continue
+	fi
 	"$tools/brw_disasm" --gen=adl --input-path="$out/$name.bin" > "$out/$name.asm" 2>&1
 	if grep -q 'ERROR\|illegal' "$out/$name.asm"; then fail "disasm $name"; continue; fi
 	"$tools/brw_asm" --gen=adl -o "$out/$name.re" "$out/$name.asm" > /dev/null 2>&1
@@ -48,5 +61,11 @@ echo "expect: $(ls "$here"/fail/*.comp | wc -l) shaders fail as expected"
 ASAN_OPTIONS=detect_leaks=0 VK_DRIVER_FILES=${VK_DRIVER_FILES:-/usr/share/vulkan/icd.d/lvp_icd.json} \
 	"$out/vk-compute" "$here/pass" || fail "run"
 
-[ $status -eq 0 ] && echo "ws101 glsl compute host test PASS" || echo "ws101 glsl compute host test FAIL"
+if [ $status -ne 0 ]; then
+	echo "ws101 glsl compute host test FAIL"
+elif [ $roundtrip -eq 0 ]; then
+	echo "ws101 glsl compute host test PASS (without the brw_disasm/brw_asm round trip: no Mesa tools)"
+else
+	echo "ws101 glsl compute host test PASS"
+fi
 exit $status
