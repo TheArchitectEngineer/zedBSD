@@ -624,7 +624,7 @@ zwl_glass_draw(
 
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
-		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f\n", server->anim->id, server->anim_docking, (double)animation_progress(server));
+		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f client=%llu\n", server->anim->id, server->anim_docking, (double)animation_progress(server), (unsigned long long)server->anim->client->number);
 }
 
 /*
@@ -826,7 +826,7 @@ zwl_glass_button(
 		sheet = zwl_sheet_of(surface);
 	if (sheet != NULL) {
 		window_raise(server, surface);
-		printf("ZWL GLASS sheet holds surface=%u\n", surface->id);
+		printf("ZWL GLASS sheet holds surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -858,7 +858,7 @@ zwl_glass_button(
 	pressed = button_at(surface, server->pointer_x, server->pointer_y);
 	if (pressed == BUTTON_CLOSE) {
 		(void)zwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-		printf("ZWL GLASS close surface=%u\n", surface->id);
+		printf("ZWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -1226,7 +1226,7 @@ unfullscreen_motion(
 
 	/* It becomes a window again. */
 	error = zwl_window_leave_fullscreen(top);
-	printf("ZWL GLASS unfullscreen surface=%u via=swipe errno=%d at_ms=%llu\n", top->id, error, (unsigned long long)zwl_milliseconds());
+	printf("ZWL GLASS unfullscreen surface=%u via=swipe errno=%d at_ms=%llu client=%llu\n", top->id, error, (unsigned long long)zwl_milliseconds(), (unsigned long long)top->client->number);
 
 	/* Succeeded: the contact stays the swipe's until its release. */
 	return 1;
@@ -1779,7 +1779,7 @@ zwl_glass_toplevel_move_end(
 	}
 
 	/* A move ending elsewhere retains the last position reached by its motion. */
-	printf("ZWL GLASS moved surface=%u x=%d y=%d\n", surface->id, surface->x, surface->y);
+	printf("ZWL GLASS moved surface=%u x=%d y=%d client=%llu\n", surface->id, surface->x, surface->y, (unsigned long long)surface->client->number);
 
 	/* Succeeded: no button, regardless of its physical code, remains a move owner. */
 	return;
@@ -2103,7 +2103,7 @@ zwl_glass_mapped(
 	/* A window that came late is named as the launch's (the tests find it so) but does not grow. */
 	if (launched == 2) {
 		body_rect(server, surface, &to);
-		printf("ZWL GLASS launch-late surface=%u from=%d,%d to=%d,%d size=%dx%d\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height);
+		printf("ZWL GLASS launch-late surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
 		return;
 	}
 
@@ -2115,7 +2115,7 @@ zwl_glass_mapped(
 	server->anim_docking = ANIM_LAUNCH;
 	server->anim_start_ms = zwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height);
+	printf("ZWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
 }
 
 /*
@@ -2178,8 +2178,8 @@ zwl_glass_committed(
 	committed = 0U;
 	if (surface->resized_commit_ms >= surface->resized_ms)
 		committed = surface->resized_commit_ms - surface->resized_ms;
-	printf("ZWL GLASS resized surface=%u docked=%u width=%u height=%u after_ms=%llu acked_ms=%llu committed_ms=%llu sent_at_ms=%llu\n", surface->id, surface->maximized, width, height,
-	       (unsigned long long)(now - surface->resized_ms), (unsigned long long)acked, (unsigned long long)committed, (unsigned long long)surface->resized_ms);
+	printf("ZWL GLASS resized surface=%u docked=%u width=%u height=%u after_ms=%llu acked_ms=%llu committed_ms=%llu sent_at_ms=%llu client=%llu\n", surface->id, surface->maximized, width, height,
+	       (unsigned long long)(now - surface->resized_ms), (unsigned long long)acked, (unsigned long long)committed, (unsigned long long)surface->resized_ms, (unsigned long long)surface->client->number);
 
 	/* The wait is over: the image is drawn at its own size. */
 	surface->resized_ms = 0U;
@@ -4110,7 +4110,7 @@ sheet_place(
 			if (surface->sheet_ms == 0U) {
 				surface->sheet_ms = now;
 				sheet_narrow(server, surface, parent, width, height);
-				printf("ZWL GLASS sheet surface=%u parent=%u width=%d height=%d\n", surface->id, parent->id, width, height);
+				printf("ZWL GLASS sheet surface=%u parent=%u width=%d height=%d client=%llu\n", surface->id, parent->id, width, height, (unsigned long long)surface->client->number);
 			}
 
 			/* How far it has slid out, eased out, and frames asked for until it has. */
@@ -4181,7 +4181,7 @@ sheet_narrow(
 	surface->window_width = (uint32_t)wanted;
 	surface->window_height = (uint32_t)height;
 	window_configure(surface);
-	printf("ZWL GLASS sheet narrower surface=%u width=%d\n", surface->id, wanted);
+	printf("ZWL GLASS sheet narrower surface=%u width=%d client=%llu\n", surface->id, wanted, (unsigned long long)surface->client->number);
 }
 
 /*
@@ -4304,9 +4304,9 @@ window_dock(
 
 	/* The client draws the new size; the log gives where the bar's buttons are (close, restore, minimize) and the docked body. */
 	bar_layout(server, &bar);
-	printf("ZWL GLASS dock surface=%u via=%s buttons=%d,%d,%d title=%d x=%d y=%d w=%d h=%d\n", surface->id, via,
+	printf("ZWL GLASS dock surface=%u via=%s buttons=%d,%d,%d title=%d x=%d y=%d w=%d h=%d client=%llu\n", surface->id, via,
 	       bar.buttons[BUTTON_CLOSE], bar.buttons[BUTTON_MAXIMIZE], bar.buttons[BUTTON_MINIMIZE], bar.title_x,
-	       (int)to.x, (int)to.y, (int)to.width, (int)to.height);
+	       (int)to.x, (int)to.y, (int)to.width, (int)to.height, (unsigned long long)surface->client->number);
 	window_configure(surface);
 
 	/* Until the client draws the docked size, the log waits for its image (BUG-179). */
@@ -4361,7 +4361,7 @@ window_undock(
 	server->dirty = 1;
 
 	/* The client draws the size it had. */
-	printf("ZWL GLASS undock surface=%u via=%s x=%d y=%d\n", surface->id, via, x, y);
+	printf("ZWL GLASS undock surface=%u via=%s x=%d y=%d client=%llu\n", surface->id, via, x, y, (unsigned long long)surface->client->number);
 	window_configure(surface);
 
 	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180). */
@@ -4674,7 +4674,7 @@ bar_press(
 	pressed = bar_button_at(&bar, server->pointer_x, server->pointer_y);
 	if (pressed == BUTTON_CLOSE) {
 		(void)zwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-		printf("ZWL GLASS close surface=%u\n", surface->id);
+		printf("ZWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -4984,7 +4984,7 @@ wiseview_key(
 		/* A minimized window comes back; it comes to the top and Wiseview closes. */
 		surface->minimized = 0;
 		window_raise(server, surface);
-		printf("ZWL WISEVIEW select surface=%u via=key\n", surface->id);
+		printf("ZWL WISEVIEW select surface=%u via=key client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		wiseview_settle(server, wiseview_progress(server), 0.0f);
 		return;
 	}
@@ -5507,7 +5507,7 @@ wiseview_button(
 			return 1;
 		surface->minimized = 0;
 		window_raise(server, surface);
-		printf("ZWL WISEVIEW select surface=%u\n", surface->id);
+		printf("ZWL WISEVIEW select surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		wiseview_settle(server, 1.0f, 0.0f);
 		return 1;
 	}
@@ -5545,7 +5545,7 @@ wiseview_button(
 	/* Its close button closes the window. */
 	if (server->pointer_x >= tiles[index].x + tiles[index].width - 26 && server->pointer_y < tiles[index].y + 26) {
 		(void)zwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-		printf("ZWL WISEVIEW close-window surface=%u\n", surface->id);
+		printf("ZWL WISEVIEW close-window surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -6346,7 +6346,7 @@ window_minimize(
 	server->front_surface = zwl_top_window(server);
 	zwl_seat_focus(server);
 	server->dirty = 1;
-	printf("ZWL GLASS minimize surface=%u\n", surface->id);
+	printf("ZWL GLASS minimize surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 }
 
 /* Moves a window to another desktop (shown when that desktop is), and gives the focus to the top window of the desktop shown. */
@@ -6366,7 +6366,7 @@ window_to_desktop(
 	server->front_surface = zwl_top_window(server);
 	zwl_seat_focus(server);
 	server->dirty = 1;
-	printf("ZWL GLASS move-desktop surface=%u desktop=%u via=%s\n", surface->id, desktop + 1U, via);
+	printf("ZWL GLASS move-desktop surface=%u desktop=%u via=%s client=%llu\n", surface->id, desktop + 1U, via, (unsigned long long)surface->client->number);
 }
 
 /* Returns the desktop whose picture in the system bar is under a point, or -1. */
@@ -6422,7 +6422,7 @@ glass_motion_take(
 			y = server->pointer_y - server->wiseview_press_y;
 			if (x * x + y * y >= TILE_DRAG_START * TILE_DRAG_START) {
 				server->wiseview_dragging = 1;
-				printf("ZWL WISEVIEW drag surface=%u\n", server->wiseview_press->id);
+				printf("ZWL WISEVIEW drag surface=%u client=%llu\n", server->wiseview_press->id, (unsigned long long)server->wiseview_press->client->number);
 			}
 		}
 
@@ -6582,7 +6582,7 @@ fullscreen_leave_key(
 	/* A window again, told so (a refused configure leaves the window as the compositor draws it). */
 	error = zwl_window_leave_fullscreen(surface);
 	fullscreen_leave_eaten = key;
-	printf("ZWL GLASS fullscreen-leave surface=%u via=f11 error=%d\n", surface->id, error);
+	printf("ZWL GLASS fullscreen-leave surface=%u via=f11 error=%d client=%llu\n", surface->id, error, (unsigned long long)surface->client->number);
 
 	/* Succeeded: the key was the compositor's. */
 	return 1;

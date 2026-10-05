@@ -762,7 +762,7 @@ corner_act(
 		/* Already on top and fullscreen here: nothing to do. */
 		top = zwl_top_window(server);
 		if (surface == top && surface->fullscreen) {
-			printf("ZWL CORNER notes surface=%u already\n", surface->id);
+			printf("ZWL CORNER notes surface=%u already client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 			return;
 		}
 
@@ -776,13 +776,13 @@ corner_act(
 		/* The compositor makes it fullscreen, and tells it (a fullscreen window is only raised). */
 		error = zwl_window_enter_fullscreen(surface);
 		if (error != 0) {
-			printf("ZWL CORNER notes surface=%u fullscreen error=%d\n", surface->id, error);
+			printf("ZWL CORNER notes surface=%u fullscreen error=%d client=%llu\n", surface->id, error, (unsigned long long)surface->client->number);
 			return;
 		}
 
 		/* Succeeded: Notes is on top, fullscreen. */
 		server->dirty = 1;
-		printf("ZWL CORNER notes surface=%u raise fullscreen\n", surface->id);
+		printf("ZWL CORNER notes surface=%u raise fullscreen client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return;
 	}
 

@@ -1422,7 +1422,7 @@ zwl_window_leave_fullscreen(
 
 	/* The output is drawn again; the log names where the window went. */
 	server->dirty = 1;
-	printf("ZWL WINDOW unfullscreen surface=%u x=%d y=%d placed=%u\n", surface->id, surface->x, surface->y, surface->placed);
+	printf("ZWL WINDOW unfullscreen surface=%u x=%d y=%d placed=%u client=%llu\n", surface->id, surface->x, surface->y, surface->placed, (unsigned long long)surface->client->number);
 
 	/* A window not configured yet learns it from its first configure. */
 	if (!surface->configured)

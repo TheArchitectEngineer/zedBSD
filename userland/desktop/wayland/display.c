@@ -369,7 +369,7 @@ adopt_commit(
 			surface->place_pending = 0;
 			zwl_window_centre(server, surface);
 			surface->placed = 1;
-			printf("ZWL WINDOW centred surface=%u x=%d y=%d width=%u height=%u\n", surface->id, surface->x, surface->y, new_width, new_height);
+			printf("ZWL WINDOW centred surface=%u x=%d y=%d width=%u height=%u client=%llu\n", surface->id, surface->x, surface->y, new_width, new_height, (unsigned long long)surface->client->number);
 		}
 	}
 
