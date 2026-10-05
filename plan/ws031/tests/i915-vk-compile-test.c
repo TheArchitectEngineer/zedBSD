@@ -950,11 +950,17 @@ eu_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
 						result[channel] = 0U;
 						break;
 					}
-					assert(ib != 0);
+					/*
+					 * A zero divisor, and INT_MIN / -1, have no defined result (SPIR-V; ws031-p024): the model
+					 * gives 0 where the hardware gives some value, and the tests compare only defined words.
+					 */
+					if (b == 0U || (types[0] == EU_TYPE_D && a == 0x80000000U && b == 0xFFFFFFFFU)) {
+						result[channel] = 0U;
+						break;
+					}
 					if (types[0] == EU_TYPE_D) {
 						int32_t sa = (int32_t)a, sb = (int32_t)b;
 
-						assert(!(sa == INT32_MIN && sb == -1));
 						result[channel] = function == EU_MATH_INT_DIV_QUOTIENT ? (uint32_t)(sa / sb) : (uint32_t)(sa % sb);
 					} else {
 						result[channel] = function == EU_MATH_INT_DIV_QUOTIENT ? a / b : a % b;
