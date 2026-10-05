@@ -58,3 +58,9 @@ sessiond・greeter（WS035 の成果）、kl_system_*（WS131）、service・acc
 1. 管理者の操作の口: 案 A（setuid の `account-admin`、呼んだ利用者の password で確かめる）か、案 B（sessiond の request）。
 2. 利用者の削除で home を消すかの既定（案: 残す。消すのは確認の上で選んだ時だけ）。
 3. 一覧に出す利用者の範囲（案: uid 1000 以上と、shell が nologin でない利用者）。
+
+## 一覧の実装（2026-10-05、P2、q741。判断の要らない部分）
+
+- `settings/page-users.c`: card「Users on this computer」。`getpwent` で uid 1000 以上（nobody を除く）、shell が nologin・false でない account を最大 32 個並べる。各行は名前と「表示名 · Administrator（wheel の group か member）· You」。`getgrnam("wheel")` の結果は `getpwent` が storage を使い直しうるので写してから使う。log `USERS list count=N`。`settings.h` に `struct se_user_row`・`SE_USERS_LIST_MAX`。
+- build: zedBSD の `bin/settings`、Linux の Keiland は warning 0。style-check は違反 0（変える前も 0）。
+- QEMU は未実施（管理者の操作の判断の後にまとめて T1 に依頼する）。
