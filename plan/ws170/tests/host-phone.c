@@ -57,6 +57,7 @@ static void test_click(struct ph_view *view, struct kl_ui *ui, const struct kl_s
 static void test_type(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, const uint32_t *keys, size_t count);
 static void test_check(const char *name, const char *expected);
 static int test_save(const struct kl_canvas *canvas, const char *prefix, const char *name);
+static int test_save_glass(struct ph_view *view, const struct kl_canvas *canvas, const char *prefix, const char *name);
 
 /*
  * Draws and drives the view and checks what it logged.
@@ -186,6 +187,21 @@ main(
 	(void)kl_ui_key(ui, KL_KEY_DOWN, 1, 0U);
 	test_frame(&view, ui, &style, TEST_NARROW_WIDTH, TEST_NARROW_HEIGHT);
 	test_check("key-down", "SELECT contact=4");
+
+	/* On glass: the cards with the desktop between, written with their alpha and their panels for the script to lay on a wallpaper. */
+	ph_view_release(&view);
+	error = ph_view_init(&view);
+	if (error != 0)
+		return 2;
+	view.glass = 1;
+	style.glass = 1;
+	style.canvas = &canvas;
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	(void)test_save_glass(&view, &canvas, argv[3], "glass");
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 160, 108 + 1 * 68 + 32);
+	(void)test_save_glass(&view, &canvas, argv[3], "glass-ben");
+	test_check("glass-ben", "SELECT contact=1");
 
 	/* Everything goes. */
 	ph_view_release(&view);
@@ -367,6 +383,64 @@ test_save(
 	}
 
 	/* Succeeded: the picture is written. */
+	fclose(file);
+	return 0;
+}
+
+/*
+ * Writes a frame on glass: PREFIX-NAME.pam with its alpha (premultiplied
+ * RGBA) and PREFIX-NAME.panels with a line "x y width height radius" for
+ * each glass panel; nonzero when it cannot.
+ */
+static int
+test_save_glass(
+	struct ph_view *view,
+	const struct kl_canvas *canvas,
+	const char *prefix,
+	const char *name)
+{
+	struct kl_glass_panel panels[4];
+	char path[512];
+	FILE *file;
+	uint32_t pixel;
+	size_t count;
+	size_t i;
+	int x;
+	int y;
+
+	/* The picture's file. */
+	(void)snprintf(path, sizeof(path), "%s-%s.pam", prefix, name);
+	file = fopen(path, "wb");
+	if (file == NULL)
+		return -1;
+
+	/* The header and each pixel's red, green, blue and alpha. */
+	fprintf(file, "P7\nWIDTH %d\nHEIGHT %d\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n", canvas->width, canvas->height);
+	for (y = 0; y < canvas->height; y++) {
+		for (x = 0; x < canvas->width; x++) {
+			pixel = canvas->pixels[(size_t)y * canvas->stride + (size_t)x];
+			fputc((int)((pixel >> 16) & 0xffU), file);
+			fputc((int)((pixel >> 8) & 0xffU), file);
+			fputc((int)(pixel & 0xffU), file);
+			fputc((int)((pixel >> 24) & 0xffU), file);
+		}
+	}
+
+	/* The picture is written. */
+	fclose(file);
+
+	/* The panels' file. */
+	(void)snprintf(path, sizeof(path), "%s-%s.panels", prefix, name);
+	file = fopen(path, "w");
+	if (file == NULL)
+		return -1;
+
+	/* A line each. */
+	count = ph_view_panels(view, canvas->width, canvas->height, panels, 4U);
+	for (i = 0; i < count; i++)
+		fprintf(file, "%d %d %d %d %d\n", (int)panels[i].x, (int)panels[i].y, (int)panels[i].width, (int)panels[i].height, (int)panels[i].radius);
+
+	/* Succeeded: both are written. */
 	fclose(file);
 	return 0;
 }

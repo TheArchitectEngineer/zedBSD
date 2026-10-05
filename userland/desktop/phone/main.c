@@ -32,13 +32,17 @@
 #define PH_IDLE_MS		1000
 #define PH_MOVING_MS		10
 
+/* The most glass panels of a frame. */
+#define PH_PANELS_MAX		4U
+
 /* The key Q, which quits with Ctrl. */
 #define PH_KEY_Q		16U
 
 /*
  * The window's state: the application, the window and its input, the
  * frame (its pixels, size and canvas), the text and the style, the view,
- * and whether a frame is due, the window changed size, or something moves.
+ * whether a frame is due, the window changed size, or something moves, and
+ * whether the glass was decided.
  */
 struct ph_window {
 	struct kl_app *app;
@@ -55,6 +59,7 @@ struct ph_window {
 	int dirty;
 	int resized;
 	int moving;
+	int glass_decided;
 };
 
 /* The window's menu. */
@@ -137,11 +142,12 @@ main(
 		return 1;
 	}
 
-	/* The menu and the style. */
+	/* The menu and the style (opaque until the first frame finds whether the window can stand on glass). */
 	(void)kl_window_set_menu(phone.window, ph_menu, sizeof(ph_menu) / sizeof(ph_menu[0]));
 	phone.style.text = &phone.text;
 	phone.style.theme = kl_theme_default();
 	phone.style.glass = 0;
+	phone.view.glass = 0;
 
 	/* The loop until the window closes. */
 	status = ph_loop(&phone, timeout);
@@ -390,6 +396,7 @@ ph_resize(
 	struct ph_window *phone)
 {
 	uint32_t *pixels;
+	int see_through;
 	int status;
 
 	/* The presenter at the window's size. */
@@ -397,6 +404,19 @@ ph_resize(
 	if (status != 0) {
 		ph_log("FAILED operation=present error=%d", status);
 		return -1;
+	}
+
+	/* zdesktop's glass, when the frames are blended by their alpha (decided at the first size). */
+	if (!phone->glass_decided) {
+		phone->glass_decided = 1;
+		see_through = kl_window_see_through(phone->window);
+		if (see_through) {
+			phone->style.glass = 1;
+			phone->view.glass = 1;
+		}
+
+		/* The log line the tests read. */
+		ph_log("GLASS see_through=%d", see_through);
 	}
 
 	/* A frame's pixels of its size. */
@@ -430,19 +450,36 @@ ph_draw(
 	struct ph_window *phone,
 	uint64_t now_us)
 {
+	struct kl_glass_panel panels[PH_PANELS_MAX];
 	struct kl_event event;
+	size_t count;
 	int status;
+	int error;
 	int taken;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!phone->dirty && !phone->moving)
 		return;
 
-	/* The view, and the frame shown. */
+	/* The view. */
 	phone->dirty = 0;
 	kl_ui_begin(phone->ui, now_us);
 	ph_view_draw(&phone->view, phone->ui, &phone->style, (int)phone->width, (int)phone->height, now_us);
 	phone->moving = kl_ui_end(phone->ui, now_us);
+
+	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
+	if (phone->view.glass) {
+		count = ph_view_panels(&phone->view, (int)phone->width, (int)phone->height, panels, PH_PANELS_MAX);
+		error = kl_window_set_glass(phone->window, panels, count);
+		if (error != 0) {
+			ph_log("GLASS failed error=%d", error);
+			phone->view.glass = 0;
+			phone->style.glass = 0;
+			phone->dirty = 1;
+		}
+	}
+
+	/* The frame shown. */
 	status = kl_window_present(phone->window, phone->pixels, (size_t)phone->width);
 	if (status == EAGAIN)
 		phone->resized = 1;

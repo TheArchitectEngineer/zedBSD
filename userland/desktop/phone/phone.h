@@ -88,6 +88,7 @@ struct ph_contact {
  * written, the scrolls of the contacts and of the timeline, the contact
  * shown (-1 for none), whether a narrow window shows the timeline instead
  * of the contacts (and whether the last frame was narrow), whether the
+ * view stands on zdesktop's glass (cards with the desktop between), whether the
  * timeline goes to its end at the next frame, the contacts whose messages
  * were read (a bit each of the first 32), the notice shown at the bottom
  * until a time, and whether the program is to end.
@@ -100,6 +101,7 @@ struct ph_view {
 	long selected;
 	int opened;
 	int narrow;
+	int glass;
 	int to_end;
 	unsigned long seen;
 	const char *notice;
@@ -117,6 +119,7 @@ void ph_view_select(struct ph_view *view, long index);
 void ph_view_action(struct ph_view *view, unsigned action, uint64_t now_us);
 void ph_view_key(struct ph_view *view, uint32_t key, unsigned modifiers, uint64_t now_us);
 void ph_view_draw(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
+size_t ph_view_panels(struct ph_view *view, int width, int height, struct kl_glass_panel *panels, size_t capacity);
 int ph_view_wait(const struct ph_view *view, uint64_t now_us);
 
 /* The log for the tests (main.c, and the host tests' own). */

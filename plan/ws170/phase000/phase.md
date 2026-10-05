@@ -24,9 +24,16 @@ Phone の app の外側だけ。連絡先の一覧 → 連絡先ごとの iOS �
 - `userland/desktop/wayland/apps.conf`: App Home に「Phone」（`/bin/phone`、無い image では出ない）。
 - 試験の image の config: `plan/ws170/tests/config-amd64-phone.mk`（CI の image ＋ phone）。release・CI の config に足すかは Q1。
 
+## glass（2026-10-05、ユーザーの再指示「ちょっとAppleそのままという感じもするので、デスクトップ透過を有効にして、スクリーン全体のスクショが見てみたいです。」、Q1 経由）
+
+- `main.c`: 最初の frame で `kl_window_see_through` を見て、透ける swapchain なら glass にする（`PHONE GLASS see_through=1`）。毎 frame `ph_view_panels` の panel を `kl_window_set_glass` で送る（glass の無い compositor では不透明に戻す）。
+- `view.c`: glass では地を透明にし、連絡先と timeline を Settings と同じ浮いた card（余白 12・間 10・角 16、`glass_sidebar`・`glass_content`）にする。header と入力欄の地は無し（区切りは内側の細い線）。
+- Apple そのままに見えないように: 選んだ行は Files と同じ selection の色（青の塗り＋白の字をやめた）、相手の吹き出しは glass では半透明の白、SMS の自分の吹き出しは緑をやめて teal（`0x0f9d8a`）、吹き出しの角を 14 にして送り手の側の下の角をほぼ直角（4）に、通話の card も glass では半透明。
+- host: `run-host-phone.sh` に glass の 2 枚（`host-phone-glass.png`・`host-phone-glass-ben.png`。壁紙をぼかして明るくした地に、frame を alpha で重ねた近似）を足した。PASS 10。
+
 ## 確かめ
 
-- host: `sh plan/ws170/tests/run-host-phone.sh` → PASS 9（start・select-kenji・select-ben・send（`NOBACKEND action=send contact=1 length=5`）・call・search・narrow-open・narrow-back・key-down）。PNG は `build/ws170/host-phone-{start,kenji,ben,send,call,search,narrow-list,narrow-timeline,narrow-back}.png`（目で見て確かめた）。
+- host: `sh plan/ws170/tests/run-host-phone.sh` → PASS 10（glass-ben を含む。start・select-kenji・select-ben・send（`NOBACKEND action=send contact=1 length=5`）・call・search・narrow-open・narrow-back・key-down）。PNG は `build/ws170/host-phone-{start,kenji,ben,send,call,search,narrow-list,narrow-timeline,narrow-back}.png`（目で見て確かめた）。
 - build: `make ZEDBSD_CONFIG=plan/ws170/tests/config-amd64-phone.mk BUILD=build/ws170-zed build/ws170-zed/bin/phone` が warning 0（`-Os -Wall -Wextra -Werror`）。host の gcc も `-Wall -Wextra -Werror` で 0。
 - style-check: 新しい file は違反 0。
 - QEMU（T1 に依頼する）: App Home から Phone を起動し、一覧とタイムラインの PNG、送信と電話の chip の PNG。
