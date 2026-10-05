@@ -7,9 +7,13 @@
 
 /*
  * The seat's devices: the display (/dev/gpu*), the input devices
- * (/dev/input/event*) and the panel's light (/dev/backlight/backlight*,
- * ws113-p013) belong to the seat's user, 0600, while sessiond runs a
- * greeter or a session, and go back to root when it stops.
+ * (/dev/input/event*), the panel's light (/dev/backlight/backlight*,
+ * ws113-p013), and the security keys' raw HID nodes
+ * (/dev/input/hidraw*) and the smart card slots (/dev/smartcard*,
+ * ws161-p002, the user's approval U3) belong to the seat's user, 0600,
+ * while sessiond runs a greeter or a session, and go back to root when it
+ * stops (the keys and the cards to root alone: whoever opens one can ask
+ * the key to sign).
  *
  * devfs keeps an owner and a mode given to a name, also for a node made
  * again under that name (a keyboard plugged in again).  A node that appears
@@ -38,16 +42,20 @@
 /* The backlight devices sessiond looks for: /dev/backlight/backlight0 to backlight3. */
 #define SEAT_BACKLIGHT_COUNT	4U
 
+/* The smart card slots sessiond looks for: /dev/smartcard0 to smartcard7. */
+#define SEAT_SMARTCARD_COUNT	8U
+
 /* devfs's own modes, which the devices go back to. */
 #define SEAT_GPU_MODE		0666
 #define SEAT_INPUT_MODE		0640
 #define SEAT_BACKLIGHT_MODE	0644
+#define SEAT_KEY_MODE		0600
 
 /* The wheel group, which owns the input devices when no one has the seat. */
 #define SEAT_WHEEL_GID		0
 
 static void seat_set(const char *path, uid_t uid, gid_t gid, mode_t mode);
-static void seat_input(uid_t uid, gid_t gid, mode_t mode);
+static void seat_input(const char *prefix, uid_t uid, gid_t gid, mode_t mode);
 
 /*
  * Gives the display and the input devices to a user, for that user only.
@@ -66,12 +74,19 @@ sessiond_seat_give(
 		seat_set(path, uid, gid, 0600);
 	}
 
-	/* Every input device. */
-	seat_input(uid, gid, 0600);
+	/* Every input device, and every security key's raw node. */
+	seat_input("event", uid, gid, 0600);
+	seat_input("hidraw", uid, gid, 0600);
 
 	/* Every backlight, which the session's compositor sets. */
 	for (index = 0U; index < SEAT_BACKLIGHT_COUNT; index++) {
 		snprintf(path, sizeof(path), "/dev/backlight/backlight%u", index);
+		seat_set(path, uid, gid, 0600);
+	}
+
+	/* Every smart card slot (the NFC reader's and a key's). */
+	for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
+		snprintf(path, sizeof(path), "/dev/smartcard%u", index);
 		seat_set(path, uid, gid, 0600);
 	}
 }
@@ -92,13 +107,20 @@ sessiond_seat_restore(
 		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_GPU_MODE);
 	}
 
-	/* Every input device, which root and wheel read. */
-	seat_input(0, SEAT_WHEEL_GID, SEAT_INPUT_MODE);
+	/* Every input device, which root and wheel read; every security key's raw node, root's alone. */
+	seat_input("event", 0, SEAT_WHEEL_GID, SEAT_INPUT_MODE);
+	seat_input("hidraw", 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
 
 	/* Every backlight, which anyone reads and root sets. */
 	for (index = 0U; index < SEAT_BACKLIGHT_COUNT; index++) {
 		snprintf(path, sizeof(path), "/dev/backlight/backlight%u", index);
 		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_BACKLIGHT_MODE);
+	}
+
+	/* Every smart card slot, root's alone. */
+	for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
+		snprintf(path, sizeof(path), "/dev/smartcard%u", index);
+		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
 	}
 }
 
@@ -140,9 +162,10 @@ seat_set(
 	sessiond_log("SESSIOND SEAT path=%s uid=%u mode=%04o", path, (unsigned)uid, (unsigned)mode);
 }
 
-/* Gives every input device an owner and a mode. */
+/* Gives every node of /dev/input whose name starts with prefix an owner and a mode. */
 static void
 seat_input(
+	const char *prefix,
 	uid_t uid,
 	gid_t gid,
 	mode_t mode)
@@ -150,6 +173,7 @@ seat_input(
 	char path[300];
 	struct dirent *entry;
 	DIR *directory;
+	size_t prefix_length;
 	int match;
 
 	/* The input devices there are now. */
@@ -157,12 +181,13 @@ seat_input(
 	if (directory == NULL)
 		return;
 
-	/* Each event device. */
+	/* Each node of the kind. */
+	prefix_length = strlen(prefix);
 	for (;;) {
 		entry = readdir(directory);
 		if (entry == NULL)
 			break;
-		match = strncmp(entry->d_name, "event", 5);
+		match = strncmp(entry->d_name, prefix, prefix_length);
 		if (match != 0)
 			continue;
 		snprintf(path, sizeof(path), "%s/%s", SEAT_INPUT_DIRECTORY, entry->d_name);

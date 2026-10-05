@@ -111,7 +111,7 @@ ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-cdc-ecm.o
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-hid.o $(BUILD)/drivers/generic/hid-report.o $(BUILD)/drivers/generic/hid-digitizer.o $(BUILD)/drivers/generic/hid-touch.o
+PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-hid.o $(BUILD)/drivers/generic/hidraw.o $(BUILD)/drivers/generic/hidraw-describe.o $(BUILD)/drivers/generic/hid-report.o $(BUILD)/drivers/generic/hid-digitizer.o $(BUILD)/drivers/generic/hid-touch.o
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-hub.o

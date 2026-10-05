@@ -12,6 +12,7 @@
  */
 
 #include <drivers/generic/hid-digitizer.h>
+#include <drivers/generic/hidraw.h>
 #include <drivers/generic/hid-touch.h>
 #include <drivers/generic/hid-report.h>
 #include <drivers/usb/usb-hid.h>
@@ -33,6 +34,11 @@
 #define USB_HID_REPORT_DESCRIPTOR	0x22U
 #define USB_REQUEST_GET_DESCRIPTOR	0x06U
 #define USB_HID_REQUEST_SET_PROTOCOL	0x0bU
+#define USB_HID_REQUEST_SET_REPORT	0x09U
+#define USB_HID_REPORT_TYPE_OUTPUT	2U
+
+/* How long a raw device's output report may take (ws161-p002). */
+#define USB_HID_OUTPUT_TIMEOUT_MS	5000U
 #define USB_HID_PROTOCOL_REPORT		1U
 #define USB_HID_CONTROL_TIMEOUT_MS	1000U
 #define USB_HID_DRAIN_TIMEOUT_MS	5000U
@@ -100,6 +106,23 @@ struct usb_hid {
 	char name[USB_HID_TEXT_MAX];
 	char physical_path[USB_HID_TEXT_MAX];
 	char unique_id[USB_HID_TEXT_MAX];
+	/*
+	 * A raw interface (ws161-p002: the FIDO authenticators, usage page
+	 * 0xF1D0) is published as /dev/input/hidrawN instead of an event
+	 * device: raw is set when the report descriptor is read, which is then
+	 * kept (raw_descriptor, raw_layout) and not parsed for input.  The
+	 * input reports go to hidraw as they come; the output reports go out
+	 * on the interrupt OUT endpoint (out_endpoint, NULL for a device
+	 * without one: SET_REPORT on the control pipe) through out_buffer,
+	 * one at a time under hidraw's output lock.
+	 */
+	unsigned raw;
+	uint8_t *raw_descriptor;
+	size_t raw_descriptor_size;
+	struct drv_hidraw_layout raw_layout;
+	struct drv_hidraw *hidraw;
+	struct drv_usb_endpoint *out_endpoint;
+	uint8_t *out_buffer;
 };
 
 static struct spinlock usb_hid_pending_lock;
@@ -137,6 +160,15 @@ static int usb_hid_activate(struct usb_hid *hid, int activation_claimed);
 static void usb_hid_pending_remove(struct usb_hid *hid);
 static void usb_hid_publish_pen_report(struct usb_hid *hid, const struct hid_report_input *decoded);
 static void usb_hid_publish_touch_report(struct usb_hid *hid, const struct hid_report_input *decoded);
+static int usb_hid_raw_prepare(struct usb_hid *hid);
+static int usb_hid_raw_publish(struct usb_hid *hid);
+static int usb_hid_raw_output(void *context, const uint8_t *report, size_t length);
+static void usb_hid_free(struct usb_hid *hid);
+
+/* What a raw interface's transport does: its output reports (ws161-p002). */
+static const struct drv_hidraw_ops usb_hid_raw_ops = {
+	.output = usb_hid_raw_output
+};
 
 /*
  * USB HID
@@ -325,6 +357,13 @@ usb_hid_attach(
 	if (error != 0)
 		goto fail;
 
+	/* A raw interface's output endpoint and buffer. */
+	if (hid->raw) {
+		error = usb_hid_raw_prepare(hid);
+		if (error != 0)
+			goto fail;
+	}
+
 	/*
 	 * Report Protocol is a checked publication prerequisite.  There is no
 	 * Boot-Protocol fallback for malformed or unsupported devices.
@@ -383,18 +422,8 @@ usb_hid_attach(
 
 fail:
 
-	/* Handles the urb availability. */
-	if (hid->urb != NULL)
-		drv_usb_urb_free(hid->urb);
-
-	/* Handles the buffer availability. */
-	if (hid->buffer != NULL)
-		kern_free(hid->buffer);
-
-	/* Handles the layout availability. */
-	if (hid->layout != NULL)
-		drv_hid_report_layout_destroy(hid->layout);
-	kern_free(hid);
+	/* Everything allocated for the interface goes. */
+	usb_hid_free(hid);
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -444,18 +473,8 @@ usb_hid_detach(
 	usb_hid_unpublish(hid);
 	(void)drv_usb_interface_set_driver_data(interface, NULL);
 
-	/* Handles the urb availability. */
-	if (hid->urb != NULL)
-		drv_usb_urb_free(hid->urb);
-
-	/* Handles the buffer availability. */
-	if (hid->buffer != NULL)
-		kern_free(hid->buffer);
-
-	/* Handles the layout availability. */
-	if (hid->layout != NULL)
-		drv_hid_report_layout_destroy(hid->layout);
-	kern_free(hid);
+	/* Everything allocated for the interface goes. */
+	usb_hid_free(hid);
 
 	/* Succeeded. */
 	return 0;
@@ -640,6 +659,7 @@ usb_hid_fetch_layout(
 	uint8_t *descriptor;
 	size_t descriptor_length, actual = 0, index, capacity;
 	size_t maximum_report = 0;
+	int raw;
 	int error;
 
 	/* Checks the operation status. */
@@ -664,6 +684,25 @@ usb_hid_fetch_layout(
 		descriptor_length, USB_HID_CONTROL_TIMEOUT_MS, &actual);
 	if (error == 0 && actual != descriptor_length)
 		error = EIO;
+
+	/* A FIDO authenticator's interface is raw: the descriptor is kept and not parsed for input (ws161-p002). */
+	if (error == 0) {
+		raw = drv_hidraw_describe(descriptor, descriptor_length, &hid->raw_layout);
+		if (raw == 0 &&
+		    hid->raw_layout.usage_page == HIDRAW_USAGE_PAGE_FIDO &&
+		    hid->raw_layout.usage == HIDRAW_USAGE_CTAPHID) {
+			hid->raw = 1U;
+			hid->raw_descriptor = descriptor;
+			hid->raw_descriptor_size = descriptor_length;
+			error = usb_hid_endpoint_capacity(hid->interface, hid->endpoint, &capacity);
+			if (error != 0)
+				return error;
+			hid->buffer_size = capacity;
+			return 0;
+		}
+	}
+
+	/* Any other interface's descriptor is parsed for its input. */
 	if (error == 0) {
 		error = drv_hid_report_layout_parse(
 			descriptor, descriptor_length, &hid->layout);
@@ -858,8 +897,10 @@ usb_hid_identity(
 	(void)kern_snprintf(hid->touch_name, sizeof(hid->touch_name),
 			    "USB HID touchscreen");
 
-	/* Names a device with a pen collection after its pen. */
-	if (hid->pen != HID_REPORT_PEN_NONE)
+	/* Names a device with a pen collection after its pen, and a raw one after what it is. */
+	if (hid->raw)
+		(void)kern_snprintf(hid->name, sizeof(hid->name), "USB FIDO authenticator");
+	else if (hid->pen != HID_REPORT_PEN_NONE)
 		(void)kern_snprintf(hid->name, sizeof(hid->name), "USB HID pen");
 	else if (usb_hid_has_capability(hid, EV_ABS, ABS_X))
 		(void)kern_snprintf(hid->name, sizeof(hid->name), "USB HID tablet");
@@ -1009,6 +1050,12 @@ usb_hid_publish_report(
 	int error, emitted = 0;
 	unsigned long irq;
 
+	/* A raw interface's report goes to its readers as it came. */
+	if (hid->raw) {
+		drv_hidraw_input(hid->hidraw, buffer, length);
+		return;
+	}
+
 	/* Every event of the report is stamped with the time its transfer finished. */
 	irq = spin_lock_irqsave(&hid->lock);
 
@@ -1142,17 +1189,24 @@ usb_hid_unpublish(
 {
 	struct input_device *input;
 	struct input_device *touch_input;
+	struct drv_hidraw *hidraw;
 	unsigned long irq;
 
 	irq = spin_lock_irqsave(&hid->lock);
 
 	input = hid->input;
 	touch_input = hid->touch_input;
+	hidraw = hid->hidraw;
+	hid->hidraw = NULL;
 	hid->input = NULL;
 	hid->touch_input = NULL;
 	hid->active = 0U;
 
 	spin_unlock_irqrestore(&hid->lock, irq);
+
+	/* A raw interface's node goes; no output runs after this. */
+	if (hidraw != NULL)
+		drv_hidraw_unregister(hidraw);
 
 	/* Handles the input availability. */
 	if (input != NULL)
@@ -1417,10 +1471,13 @@ usb_hid_activate(
 
 	/*
 	 * The interface's own device, unless the interface is a touch screen
-	 * and nothing else (its own capabilities are then EV_SYN alone).
+	 * and nothing else (its own capabilities are then EV_SYN alone); a
+	 * raw interface's node in place of both.
 	 */
 	error = 0;
-	if (hid->capability_count > 1U)
+	if (hid->raw)
+		error = usb_hid_raw_publish(hid);
+	else if (hid->capability_count > 1U)
 		error = drv_input_device_register(&info, &hid->input);
 
 	/* The touch screen's device beside it, under the same identity. */
@@ -1435,8 +1492,8 @@ usb_hid_activate(
 		error = drv_input_device_register(&info, &hid->touch_input);
 	}
 
-	/* An interface with neither device has nothing to publish. */
-	if (error == 0 && hid->input == NULL && hid->touch_input == NULL)
+	/* An interface with no device has nothing to publish. */
+	if (error == 0 && hid->input == NULL && hid->touch_input == NULL && hid->hidraw == NULL)
 		error = ENODEV;
 
 	/* A failed publication takes back what was published and stops the worker. */
@@ -1588,6 +1645,158 @@ usb_hid_publish_touch_report(
 		drv_input_device_emit_at(hid->touch_input, event->type, event->code,
 					 event->value, hid->report_milliseconds);
 	}
+}
+
+/*
+ * Prepares a raw interface's output: its interrupt OUT endpoint (none: the
+ * reports go by SET_REPORT) and a buffer for one report with its ID.
+ */
+static int
+usb_hid_raw_prepare(
+	struct usb_hid *hid)
+{
+	size_t size;
+
+	/* The interrupt OUT endpoint, when the interface has one. */
+	hid->out_endpoint = drv_usb_interface_find_endpoint(
+		hid->interface, DRV_USB_TRANSFER_INTERRUPT, DRV_USB_DIR_OUT, NULL);
+
+	/* A device that takes no output report has nothing to write to. */
+	if (hid->raw_layout.output_size == 0U)
+		return ENODEV;
+
+	/* One report and its ID's byte. */
+	size = (size_t)hid->raw_layout.output_size + 1U;
+	hid->out_buffer = kern_malloc(size);
+	if (hid->out_buffer == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the output is ready. */
+	return 0;
+}
+
+/* Publishes a raw interface's node: what it is, its report descriptor and its transport. */
+static int
+usb_hid_raw_publish(
+	struct usb_hid *hid)
+{
+	const struct drv_usb_device_descriptor *usb_descriptor;
+	struct drv_hidraw_description description;
+	int error;
+
+	/* What the device is. */
+	usb_descriptor = drv_usb_device_descriptor(hid->device);
+	kern_memset(&description, 0, sizeof(description));
+	description.info.bus = HIDRAW_BUS_USB;
+	description.info.vendor = usb_descriptor->vendor;
+	description.info.product = usb_descriptor->product;
+	description.info.version = usb_descriptor->device_release;
+	description.info.interface_number = (uint16_t)drv_usb_interface_number(hid->interface);
+	description.info.usage_page = hid->raw_layout.usage_page;
+	description.info.usage = hid->raw_layout.usage;
+	description.info.input_size = hid->raw_layout.input_size;
+	description.info.output_size = hid->raw_layout.output_size;
+	if (hid->raw_layout.numbered)
+		description.info.flags |= HIDRAW_INFO_NUMBERED;
+	description.name = hid->name;
+	description.physical_path = hid->physical_path;
+	description.descriptor = hid->raw_descriptor;
+	description.descriptor_size = hid->raw_descriptor_size;
+
+	/* The node. */
+	error = drv_hidraw_register(&description, &usb_hid_raw_ops, hid, &hid->hidraw);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the node is published. */
+	return 0;
+}
+
+/*
+ * Sends one output report of a raw interface (hidraw's output, under its
+ * output lock): the ID's byte is sent only by a device that numbers its
+ * reports.  The interrupt OUT endpoint carries it, or SET_REPORT on the
+ * control pipe for a device without one.
+ */
+static int
+usb_hid_raw_output(
+	void *context,
+	const uint8_t *report,
+	size_t length)
+{
+	struct usb_hid *hid;
+	uint8_t *data;
+	size_t size;
+	size_t actual;
+	uint8_t report_id;
+	int error;
+
+	/* The report, with or without its ID's byte. */
+	hid = context;
+	if (length < 2U || length > (size_t)hid->raw_layout.output_size + 1U)
+		return EINVAL;
+	report_id = report[0];
+	kern_memcpy(hid->out_buffer, report, length);
+	data = hid->out_buffer;
+	size = length;
+	if (!hid->raw_layout.numbered) {
+		data = hid->out_buffer + 1U;
+		size = length - 1U;
+	}
+
+	/* The interrupt OUT endpoint. */
+	actual = 0U;
+	if (hid->out_endpoint != NULL) {
+		error = drv_usb_interrupt(hid->device, hid->out_endpoint, data, size,
+					  USB_HID_OUTPUT_TIMEOUT_MS, &actual);
+		if (error == 0 && actual != size)
+			error = EIO;
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* SET_REPORT (Output) on the control pipe. */
+	error = drv_usb_control(
+		hid->device,
+		DRV_USB_DIR_OUT | DRV_USB_REQUEST_CLASS | DRV_USB_RECIP_INTERFACE,
+		USB_HID_REQUEST_SET_REPORT,
+		(uint16_t)((USB_HID_REPORT_TYPE_OUTPUT << 8U) | report_id),
+		(uint16_t)drv_usb_interface_number(hid->interface),
+		data,
+		size,
+		USB_HID_OUTPUT_TIMEOUT_MS,
+		&actual);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device took the report. */
+	return 0;
+}
+
+/* Frees what was allocated for an interface, and its record. */
+static void
+usb_hid_free(
+	struct usb_hid *hid)
+{
+	/* The transfer. */
+	if (hid->urb != NULL)
+		drv_usb_urb_free(hid->urb);
+
+	/* The input and the output buffers. */
+	if (hid->buffer != NULL)
+		kern_free(hid->buffer);
+	if (hid->out_buffer != NULL)
+		kern_free(hid->out_buffer);
+
+	/* The parsed layout, or a raw interface's descriptor. */
+	if (hid->layout != NULL)
+		drv_hid_report_layout_destroy(hid->layout);
+	if (hid->raw_descriptor != NULL)
+		kern_free(hid->raw_descriptor);
+
+	/* The record. */
+	kern_free(hid);
 }
 
 /* Reads a 16-bit descriptor field, least significant byte first. */
