@@ -45,6 +45,9 @@ aat move 5 6 && expect_record move "move-to 5 6"
 aat rel -5 7 && expect_record rel "move -5 7"
 aat down --button middle && aat up --button middle && expect_record buttons "down middle
 up middle"
+aat click 7 8 --with alt && expect_record "click with alt" "key-down alt
+click left 7 8
+key-up alt"
 aat key ctrl+alt+t Enter && expect_record chord "key ctrl+alt+t
 key enter"
 aat type 'Hi there!
@@ -84,7 +87,10 @@ printf 'ZWL GLASS dock surface=12 via=double-click buttons=1,2,3 title=60 x=0 y=
 aat windows | grep -q '^12 4 True 0 48 1280 752 1$' && ok dock || bad dock
 printf 'ZWL GLASS undock surface=12 via=drag x=200 y=150\nZWL GLASS resized surface=12 docked=0 width=800 height=600 after_ms=1 acked_ms=1 committed_ms=1 sent_at_ms=1\n' >> "$AAT_LOG"
 aat windows | grep -q '^12 4 True 200 150 800 600 0$' && ok undock || bad undock
-aat windows --json | python3 -c 'import json,sys; w={x["surface"]: x for x in json.load(sys.stdin)}; sys.exit(0 if w[12]["x"] == 200 else 1)' && ok "windows --json" || bad "windows --json"
+# Two clients with the same surface number: a line naming only the surface is the later window's.
+printf 'ZWL MAP client=7 surface=12 x=50 y=60\nZWL GLASS moved surface=12 x=70 y=80\n' >> "$AAT_LOG"
+aat where 12 --client 7 | grep -qx '70 80 - -' && aat where 12 --client 4 | grep -qx '200 150 800 600' && ok "same surface, two clients" || bad "same surface, two clients"
+aat windows --json | python3 -c 'import json,sys; w={(x["client"], x["surface"]): x for x in json.load(sys.stdin)}; sys.exit(0 if w[(4, 12)]["x"] == 200 else 1)' && ok "windows --json" || bad "windows --json"
 
 # A shot, a command, files both ways.
 aat shot "$tmp/screen.png" | grep -q '64x48' && ok shot || bad shot
