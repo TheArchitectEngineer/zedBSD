@@ -3,13 +3,13 @@
 # WS143: Bluetooth（Settings の Bluetooth の頁の実体、ベータ2）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete（2026-10-05 P1 が p001 に着手、q752）
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)
-Queue: なし（ベータ2 の実装の項目、時期は未定）
-Resume point: 未着手。ベータ2 の計画の時に p001（調査と設計）を Queue に入れる。
-Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
+Queue: q752（P1、2026-10-05、p001）
+Resume point: p001（調査と設計）を実行中。
+Target: **ベータ2**（2026-10-05 の朝の user の「ベータ4以降」の後、同日の再編「ベータ3とベータ3の内容を、ベータ2に移動します」で WS143 を含むベータ3・ベータ4 以降の項目をベータ2 に移した（master の記録、Q1 の確認）。前の指示: user「WS037, WS044,WS048,WS141, ... WS143, ... は、ベータ4以降としてください。」）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -32,4 +32,4 @@ Settings で stub になっている Bluetooth の頁を実体にし、zedBSD �
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws143-p001 | 調査と設計（device・firmware・HCI・profile の範囲・desktop の経路・試験の方法） | planning | ベータ2 の計画 |
+| [ws143-p001](phase001/phase.md) | 調査と設計（device・firmware・HCI・profile の範囲・desktop の経路・試験の方法） | in-progress（q752） | — |
