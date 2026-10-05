@@ -100,7 +100,8 @@ struct cal_cell {
  * bottom until a time (empty for none), whether the window stands on glass, and whether
  * the program is to end.
  *
- * The 3D: the desk calendar's target and picture, its mesh, the icons of
+ * The 3D: the desk calendar's target and picture, what the last full frame
+ * had under it (its area, and whether it is kept), its mesh, the icons of
  * the kinds of event, and the pictures of the two pages with their days.
  */
 struct cal_view {
@@ -138,6 +139,9 @@ struct cal_view {
 
 	struct r3_target target;
 	struct kl_image picture;
+	struct kl_image under;
+	struct kl_rect desk_area;
+	int desk_valid;
 	struct sc_mesh *mesh;
 	struct kl_image icons[SC_ICONS];
 	struct kl_image pages[SC_TEXTURES];
@@ -168,6 +172,8 @@ void cal_view_key(struct cal_view *view, uint32_t key, unsigned modifiers, uint6
 void cal_view_draw(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
 size_t cal_view_panels(const struct cal_view *view, int width, int height, struct kl_glass_panel *panels, size_t capacity);
 int cal_view_wait(const struct cal_view *view, uint64_t now_us);
+int cal_view_desk_only(const struct cal_view *view);
+void cal_view_draw_desk(struct cal_view *view, const struct kl_style *style, uint64_t now_us);
 
 /* The log for the tests (main.c, and the host tests' own). */
 void cal_log(const char *format, ...);

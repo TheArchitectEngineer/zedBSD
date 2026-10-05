@@ -74,7 +74,7 @@
 #define CAL_BREATH_PITCH_S	9.0f
 #define CAL_RIBBON_S		14.0f
 #define CAL_MOVING_MS		16
-#define CAL_BREATH_MS		50
+#define CAL_BREATH_MS		100
 
 /* How far a press on a kind's card moves before it is a drag, and how long a notice shows. */
 #define CAL_DRAG_START		6.0
@@ -155,6 +155,7 @@ static void view_cell(struct cal_view *view, struct kl_ui *ui, const struct kl_s
 static void view_panel(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_desk(struct cal_view *view, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_page(struct cal_view *view, const struct kl_style *style, int index, const struct cal_date *date);
+static void view_keep_under(struct cal_view *view, const struct kl_style *style, const struct kl_rect *area);
 static void view_let_go(struct cal_view *view, int kind, double x, double y, uint64_t now_us);
 static void view_ghost(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style);
 static size_t view_day(const struct cal_view *view, const struct cal_date *date, struct view_entry *entries, size_t size);
@@ -267,6 +268,7 @@ cal_view_release(
 	for (i = 0; i < SC_TEXTURES; i++)
 		kl_image_release(&view->pages[i]);
 	kl_image_release(&view->picture);
+	kl_image_release(&view->under);
 
 	/* The 3D target, the mesh and the scroll. */
 	r3_target_release(&view->target);
@@ -433,10 +435,19 @@ cal_view_draw(
 
 	/* The sidebar's card and what is on it, when there is room for it. */
 	view_layout(view, width, height, &layout);
-	view->cell_count = 0;
 	if (layout.sidebar.width > 0) {
 		view_card(view, style, &layout.sidebar);
 		view_sidebar(view, ui, style, &layout.sidebar, now_us);
+	}
+
+	/*
+	 * The panel, when there is room for it, before the months: a drop it
+	 * takes (on the cells of the frame shown) is in the months drawn next.
+	 */
+	view->desk_valid = 0;
+	if (layout.panel.width > 0) {
+		view_card(view, style, &layout.panel);
+		view_panel(view, ui, style, &layout.panel, now_us);
 	}
 
 	/* The months' card: its bar, the days of the week, the months. */
@@ -444,12 +455,6 @@ cal_view_draw(
 	view_topbar(view, ui, style, &layout.topbar, now_us);
 	view_weekdays(style, &layout.weekdays);
 	view_grid(view, ui, style, &layout.grid, now_us);
-
-	/* The panel, when there is room for it. */
-	if (layout.panel.width > 0) {
-		view_card(view, style, &layout.panel);
-		view_panel(view, ui, style, &layout.panel, now_us);
-	}
 
 	/* A kind of event being dragged, over everything. */
 	view_ghost(view, ui, style);
@@ -529,6 +534,59 @@ cal_view_wait(
 
 	/* Nothing moves. */
 	return -1;
+}
+
+/*
+ * Reports whether the next frame may be the desk calendar's alone: only it
+ * moves (it breathes or turns a page), and the last full frame kept what
+ * is under it.
+ */
+int
+cal_view_desk_only(
+	const struct cal_view *view)
+{
+	/* A cell sinking or a drag needs the whole frame. */
+	if (view->sinking || view->dragging >= 0)
+		return 0;
+
+	/* The last frame kept what is under the desk calendar. */
+	if (!view->desk_valid)
+		return 0;
+
+	/* Only the desk calendar moves. */
+	return 1;
+}
+
+/*
+ * Draws a frame of the desk calendar alone over what the last full frame
+ * kept under it (the rest of the canvas is as that frame left it); no
+ * widget is drawn, so the caller does not begin or end a frame of input.
+ */
+void
+cal_view_draw_desk(
+	struct cal_view *view,
+	const struct kl_style *style,
+	uint64_t now_us)
+{
+	size_t row;
+	size_t width;
+	uint32_t *line;
+
+	/* A page that has turned shows its new day. */
+	if (view->flipping && now_us - view->flip_us >= CAL_FLIP_US) {
+		view->flipping = 0;
+		view->shown = view->flip_to;
+	}
+
+	/* What was under it, back on the canvas. */
+	width = (size_t)view->desk_area.width;
+	for (row = 0; row < (size_t)view->desk_area.height; row++) {
+		line = style->canvas->pixels + ((size_t)view->desk_area.y + row) * style->canvas->stride + (size_t)view->desk_area.x;
+		memcpy(line, view->under.pixels + row * view->under.stride, width * sizeof(line[0]));
+	}
+
+	/* The desk calendar over it (which keeps it again). */
+	view_desk(view, style, &view->desk_area, now_us);
 }
 
 /*
@@ -923,9 +981,10 @@ view_grid(
 		view->scroll_to = 0;
 	}
 
-	/* The viewport takes the wheel and a finger's drag. */
+	/* The viewport takes the wheel and a finger's drag; its cells are found again. */
 	kl_ui_scroll_region(ui, CAL_ID_GRID, area, &view->scroll);
 	kl_canvas_clip_push(style->canvas, area);
+	view->cell_count = 0;
 
 	/* Each month whose block shows. */
 	for (month = 0; month < CAL_MONTHS; month++) {
@@ -1330,10 +1389,53 @@ view_desk(
 	sc_ribbon(view->mesh, phase);
 	sc_draw(&view->target, view->mesh, &turn, textures);
 
-	/* The shadow on the desk, and the picture over it. */
+	/* What is under it, kept for the frames of the desk alone, and the shadow on the desk. */
+	view_keep_under(view, style, area);
 	kl_canvas_shadow(style->canvas, (float)area->x + (float)area->width * 0.3f, (float)area->y + (float)area->height * 0.74f, (float)area->width * 0.42f, 12.0f, 6.0f, 16.0f, KL_RGBA(0x1f3a66, 40));
+
+	/* The picture over it. */
 	r3_resolve(&view->target, CAL_SUPERSAMPLE, &view->picture);
 	kl_canvas_image(style->canvas, &view->picture, (float)area->x, (float)area->y, (float)area->width, (float)area->height, 0.0f, 1.0f);
+}
+
+/*
+ * Keeps what is on the canvas under the desk calendar's area, for the
+ * frames of the desk alone; the area must lie within the canvas.
+ */
+static void
+view_keep_under(
+	struct cal_view *view,
+	const struct kl_style *style,
+	const struct kl_rect *area)
+{
+	const uint32_t *line;
+	size_t row;
+	int error;
+
+	/* Within the canvas, or not kept. */
+	if (area->x < 0 ||
+	    area->y < 0 ||
+	    area->x + area->width > style->canvas->width ||
+	    area->y + area->height > style->canvas->height)
+		return;
+
+	/* A picture of the area's size (made again when it changes). */
+	if (view->under.width != area->width || view->under.height != area->height) {
+		kl_image_release(&view->under);
+		error = kl_image_create(&view->under, area->width, area->height);
+		if (error != 0)
+			return;
+	}
+
+	/* The canvas's rows under it. */
+	for (row = 0; row < (size_t)area->height; row++) {
+		line = style->canvas->pixels + ((size_t)area->y + row) * style->canvas->stride + (size_t)area->x;
+		memcpy(view->under.pixels + row * view->under.stride, line, (size_t)area->width * sizeof(line[0]));
+	}
+
+	/* Kept: a frame of the desk alone may follow. */
+	view->desk_area = *area;
+	view->desk_valid = 1;
 }
 
 /*

@@ -33,3 +33,15 @@ ws.md の「デザイン案」の要素（このままでなく要素として�
 - style-check: 新しい file は違反 0。
 - QEMU（T1 に依頼する）: App Home から Calendar を起動、全画面の PNG、日付の click と drag の PNG。
 - 未実施: QEMU、実機、Week・Day の表示、保存、3D の CPU の負荷の測定（呼吸の間は約 20 fps で 3D の部分を描き直す）。
+
+## T1-179 の指摘（2026-10-05、Q1 が QEMU の PNG で気づいた 3 点）と直し
+
+- 指摘: Work を 20 日に drop した直後の PNG（C-drop.png）で、chip は出ているのに 20 日に pill が無く、14 日と 20 日に枠が 2 つ、日めくりは 14 のまま。
+- 原因（2 つが重なった）:
+  1. drop は panel で受けていたが、panel を月の表の後に描いていた。drop の frame の月の表は drop の前の状態（14 の枠、pill なし、20 は drag の的の枠）で、chip だけが新しかった。次の frame で直るはずだが、
+  2. 1 frame が重い（host の -Os で全体 56〜75 ms、QEMU ではもっと）ので、撮影が drop の frame と次の frame の間に入った。session.log には DROP・SELECT 20・FLIP 14→20 が出ており、data は正しく変わっていた。
+- 直し:
+  - panel を月の表の前に描く（drop は表示中の frame の cell で探す）。drop の frame で pill・選んだ枠・頁めくりの始まりが揃う（host の `sink-0` で確かめた）。
+  - 日めくりだけが動く frame（呼吸・頁めくり）は、前の全体の frame が残した日めくりの下の絵を戻して日めくりだけを描き直す（`cal_view_desk_only`・`cal_view_draw_desk`、widget は描かないので kl_ui の frame は始めない）。全体の frame と画素が同じことを host の試験 `desk-only` で確かめた。
+  - texture の bilinear を軽くし、呼吸の frame を 10 fps に。host の -Os で、日めくりだけの frame は 26 ms（全体の frame は 49〜70 ms）。
+- host: PASS 8（`desk-only` を足した）。zedBSD の build は warning 0、style-check 0。

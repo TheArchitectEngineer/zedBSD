@@ -36,7 +36,7 @@ struct r3_sample {
 };
 
 static void r3_texture_sample(const struct r3_texture *texture, float u, float v, struct r3_sample *sample);
-static void r3_texel(const struct r3_texture *texture, int x, int y, float weight, struct r3_sample *sample);
+static int r3_clamp(int value, int last);
 static float r3_edge(float ax, float ay, float bx, float by, float px, float py);
 static uint32_t r3_pack(const struct r3_sample *sample);
 
@@ -133,6 +133,7 @@ r3_triangle(
 	float sy[3];
 	float w[3];
 	float area;
+	float inverse;
 	float shade;
 	float specular;
 	float facing;
@@ -227,6 +228,7 @@ r3_triangle(
 	area = r3_edge(sx[0], sy[0], sx[1], sy[1], sx[2], sy[2]);
 	if (area > -1e-6f && area < 1e-6f)
 		return;
+	inverse = 1.0f / area;
 
 	/* The pixels it may cover, within the target. */
 	min_x = fminf(sx[0], fminf(sx[1], sx[2]));
@@ -251,8 +253,8 @@ r3_triangle(
 			/* Its weights; outside when one is below 0. */
 			px = (float)x + 0.5f;
 			py = (float)y + 0.5f;
-			b0 = r3_edge(sx[1], sy[1], sx[2], sy[2], px, py) / area;
-			b1 = r3_edge(sx[2], sy[2], sx[0], sy[0], px, py) / area;
+			b0 = r3_edge(sx[1], sy[1], sx[2], sy[2], px, py) * inverse;
+			b1 = r3_edge(sx[2], sy[2], sx[0], sy[0], px, py) * inverse;
 			b2 = 1.0f - b0 - b1;
 			if (b0 < 0.0f || b1 < 0.0f || b2 < 0.0f)
 				continue;
@@ -515,7 +517,8 @@ r3_normalize(
 }
 
 /*
- * Samples a texture at (u, v) between its four nearest pixels.
+ * Samples a texture at (u, v) between its four nearest pixels (the edge's
+ * pixels outside it).
  */
 static void
 r3_texture_sample(
@@ -524,61 +527,76 @@ r3_texture_sample(
 	float v,
 	struct r3_sample *sample)
 {
+	const uint32_t *row0;
+	const uint32_t *row1;
+	uint32_t pixels[4];
+	float weights[4];
 	float fx;
 	float fy;
 	float ax;
 	float ay;
-	int x;
-	int y;
+	int x0;
+	int x1;
+	int y0;
+	int y1;
+	int i;
 
 	/* The pixel to the upper left of the point and how far past it the point is. */
 	fx = u * (float)texture->width - 0.5f;
 	fy = v * (float)texture->height - 0.5f;
-	x = (int)floorf(fx);
-	y = (int)floorf(fy);
-	ax = fx - (float)x;
-	ay = fy - (float)y;
+	x0 = (int)floorf(fx);
+	y0 = (int)floorf(fy);
+	ax = fx - (float)x0;
+	ay = fy - (float)y0;
 
-	/* The four, weighted. */
+	/* The four pixels' columns and rows, within the texture. */
+	x1 = x0 + 1;
+	y1 = y0 + 1;
+	x0 = r3_clamp(x0, texture->width - 1);
+	x1 = r3_clamp(x1, texture->width - 1);
+	y0 = r3_clamp(y0, texture->height - 1);
+	y1 = r3_clamp(y1, texture->height - 1);
+
+	/* The four and their weights. */
+	row0 = texture->pixels + (size_t)y0 * texture->stride;
+	row1 = texture->pixels + (size_t)y1 * texture->stride;
+	pixels[0] = row0[x0];
+	pixels[1] = row0[x1];
+	pixels[2] = row1[x0];
+	pixels[3] = row1[x1];
+	weights[0] = (1.0f - ax) * (1.0f - ay) / 255.0f;
+	weights[1] = ax * (1.0f - ay) / 255.0f;
+	weights[2] = (1.0f - ax) * ay / 255.0f;
+	weights[3] = ax * ay / 255.0f;
+
+	/* Their weighted sum. */
 	memset(sample, 0, sizeof(sample[0]));
-	r3_texel(texture, x, y, (1.0f - ax) * (1.0f - ay), sample);
-	r3_texel(texture, x + 1, y, ax * (1.0f - ay), sample);
-	r3_texel(texture, x, y + 1, (1.0f - ax) * ay, sample);
-	r3_texel(texture, x + 1, y + 1, ax * ay, sample);
+	for (i = 0; i < 4; i++) {
+		sample->alpha += (float)((pixels[i] >> 24) & 0xffU) * weights[i];
+		sample->red += (float)((pixels[i] >> 16) & 0xffU) * weights[i];
+		sample->green += (float)((pixels[i] >> 8) & 0xffU) * weights[i];
+		sample->blue += (float)(pixels[i] & 0xffU) * weights[i];
+	}
 }
 
 /*
- * Adds a texture's pixel (the nearest edge one outside it) with a weight
- * to a sample.
+ * Reports a coordinate within 0 and a last one.
  */
-static void
-r3_texel(
-	const struct r3_texture *texture,
-	int x,
-	int y,
-	float weight,
-	struct r3_sample *sample)
+static int
+r3_clamp(
+	int value,
+	int last)
 {
-	uint32_t pixel;
+	/* Below the first. */
+	if (value < 0)
+		return 0;
 
-	/* Across, within the texture. */
-	if (x < 0)
-		x = 0;
-	else if (x >= texture->width)
-		x = texture->width - 1;
+	/* Past the last. */
+	if (value > last)
+		return last;
 
-	/* Down, within the texture. */
-	if (y < 0)
-		y = 0;
-	else if (y >= texture->height)
-		y = texture->height - 1;
-
-	/* Its components, weighted. */
-	pixel = texture->pixels[(size_t)y * texture->stride + (size_t)x];
-	sample->alpha += (float)((pixel >> 24) & 0xffU) / 255.0f * weight;
-	sample->red += (float)((pixel >> 16) & 0xffU) / 255.0f * weight;
-	sample->green += (float)((pixel >> 8) & 0xffU) / 255.0f * weight;
-	sample->blue += (float)(pixel & 0xffU) / 255.0f * weight;
+	/* Within. */
+	return value;
 }
 
 /*
