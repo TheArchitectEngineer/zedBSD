@@ -211,6 +211,8 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | 2 | Terminal を全画面にすると戻れない、F11 で全画面にも戻すこともできない。全画面はゲーム用で scanout を占有する物、戻る key は compositor が持つ | [BUG-194](bugs/BUG-194.md) |
 | 3 | タッチパッドでスクロールなどができない。Q1 が dmesg を読み、DSDT が読めず（AML の stack の予算）native の touchpad が付いていないと分かった（image は ee2f8c7 = uat-0505c を確認） | [BUG-195](bugs/BUG-195.md) |
 | 4 | 最大化している状態で新しく起動した app は最大化で開くのがよい（タブレットを画面全体で使っている認識） | 要望、[ws099-p033](ws099/ws.md) |
+| 5 | Browser: 長い URL で文字の範囲の選択が title bar をはみ出して描かれる（前回の指摘が直り切っていない） | [BUG-181](bugs/BUG-181.md) |
+| 6 | Files の Devices: mount の前に確認の popup が無いのは危ない。起動 disk の partition は出さなくてよい | 要望、[ws132-p009](ws132/ws.md) |
 
 ## 次の UAT で採る記録（2026-10-05 Q1）
 
