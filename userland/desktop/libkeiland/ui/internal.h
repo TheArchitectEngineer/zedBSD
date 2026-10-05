@@ -72,6 +72,35 @@ typedef int (*keiui_wants_key)(uint32_t code, unsigned modifiers);
 /* Takes the next key a widget wants among those pressed while it had the focus (ui.c); 1 with it, 0 when none is left for it (the others stay for the application). */
 int keiui_ui_take_key(struct kl_ui *ui, uint32_t id, uint32_t index, keiui_wants_key wants, uint32_t *code, unsigned *modifiers);
 
+/* What one input taken by a widget that edits text is (keiui_ui_take_input): none, a key, a text to commit, or bytes to delete around the caret. */
+#define KEIUI_INPUT_NONE	0U
+#define KEIUI_INPUT_KEY		1U
+#define KEIUI_INPUT_COMMIT	2U
+#define KEIUI_INPUT_DELETE	3U
+
+/*
+ * One input a widget that edits text takes (BUG-203): its kind, a key's
+ * code and modifiers, the text an input method or the on-screen keyboard
+ * commits, and the bytes to delete before and after the caret.
+ */
+struct keiui_input {
+	unsigned kind;
+	uint32_t code;
+	unsigned modifiers;
+	char text[KL_WINDOW_TEXT_MAX];
+	uint32_t before;
+	uint32_t after;
+};
+
+/* Takes the next key a widget wants, or text sent for it, in the order they came while it had the focus (ui.c); 1 with it, 0 when none is left for it. */
+int keiui_ui_take_input(struct kl_ui *ui, uint32_t id, uint32_t index, keiui_wants_key wants, struct keiui_input *input);
+
+/* Reports the text being composed for a widget, or NULL; a widget drawn without the focus drops it (ui.c). */
+const char *keiui_ui_preedit(struct kl_ui *ui, uint32_t id, uint32_t index, int focused, int32_t *begin, int32_t *end);
+
+/* Notes that the focused widget being drawn takes text from an input method, with its caret's rectangle in the window (ui.c). */
+void keiui_ui_text_caret(struct kl_ui *ui, const struct kl_rect *caret);
+
 /* Takes Enter and Space pressed while a widget had the focus (ui.c): 1 when one was pressed (the other keys stay for the application). */
 int keiui_ui_take_activate(struct kl_ui *ui, uint32_t id, uint32_t index);
 

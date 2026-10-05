@@ -1143,6 +1143,19 @@ void kl_ui_clear_focus(struct kl_ui *ui);
 int kl_ui_has_focus(const struct kl_ui *ui, uint32_t id, uint32_t index);
 void kl_ui_pointer(const struct kl_ui *ui, double *x, double *y);
 
+/*
+ * KL_VERSION 38 (BUG-203): the text an input method or the on-screen
+ * keyboard sends, for the widget with the focus.  The application gives
+ * each KL_WINDOW_TEXT_* input of its window to kl_ui_text: a text field
+ * puts a commit in place of its selection, deletes the bytes around its
+ * caret, and shows the text being composed at its caret.  After each frame
+ * kl_ui_text_wanted tells whether the focused widget takes text, with its
+ * caret's rectangle in the window, for kl_window_text_input and
+ * kl_window_text_cursor.
+ */
+int kl_ui_text(struct kl_ui *ui, const struct kl_window_event *event);
+int kl_ui_text_wanted(const struct kl_ui *ui, struct kl_rect *caret);
+
 /* The widgets, each drawn and asked by one call during a frame. */
 int kl_button(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, const char *label, unsigned flags);
 int kl_button_width(const struct kl_style *style, const char *label);

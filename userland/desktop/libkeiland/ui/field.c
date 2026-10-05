@@ -9,12 +9,16 @@
  * The one-line text field of the library (ws090-p005), in Settings' look
  * (settings/page-network.c: white with 8-pixel corners, the accent's edge
  * while it has the keyboard, a thin caret) and with the editing of the
- * file chooser's and Files' fields: characters of the US layout (an input
- * method arrives with WS095), Left and Right (with Shift, the selection),
- * Home and End, Backspace and Delete, Ctrl+A; Enter submits and Esc
- * cancels.  A click or a tap takes the keyboard and puts the caret at the
- * character nearest the point.  A secret field shows its characters as
- * dots.
+ * file chooser's and Files' fields: characters of the US layout, Left and
+ * Right (with Shift, the selection), Home and End, Backspace and Delete,
+ * Ctrl+A; Enter submits and Esc cancels.  A click or a tap takes the
+ * keyboard and puts the caret at the character nearest the point.  A
+ * secret field shows its characters as dots.
+ *
+ * Since BUG-203 a field that is not secret also takes the text an input
+ * method or the on-screen keyboard sends (kl_ui_text): a commit goes in
+ * place of the selection, the bytes around the caret are deleted, and the
+ * text being composed shows underlined at the caret until it is committed.
  */
 
 #include "internal.h"
@@ -35,6 +39,9 @@ static size_t field_prev(const struct kl_field *field, size_t at);
 static size_t field_next(const struct kl_field *field, size_t at);
 static size_t field_shown(const struct kl_field *field, char *out, size_t size, size_t through);
 static size_t field_at(const struct kl_style *style, const struct kl_field *field, int x);
+static unsigned field_input(struct kl_field *field, const struct keiui_input *input);
+static void field_insert(struct kl_field *field, const char *text);
+static void field_delete_around(struct kl_field *field, size_t before, size_t after);
 
 /*
  * Sets a field's text, with the caret at its end and nothing selected.
@@ -70,18 +77,26 @@ kl_field(
 	const char *placeholder)
 {
 	const struct kl_theme *theme;
+	const char *preedit;
+	struct keiui_input input;
 	struct kl_rect inside;
+	struct kl_rect caret;
 	char shown[KL_FIELD_MAX * 3U];
-	uint32_t code;
-	unsigned modifiers;
 	unsigned changes;
 	unsigned state;
 	size_t length;
+	size_t preedit_length;
+	size_t caret_offset;
 	size_t start;
 	size_t end;
+	int32_t preedit_begin;
+	int32_t preedit_end;
 	int caret_x;
+	int caret_shown;
 	int left_x;
 	int right_x;
+	int preedit_x;
+	int preedit_right;
 	int baseline;
 	int width;
 	int taken;
@@ -108,13 +123,20 @@ kl_field(
 		}
 	}
 
-	/* The keys while it has the keyboard. */
+	/* The keys while it has the keyboard, and the text an input method sent for it, in the order they came. */
 	for (;;) {
-		taken = keiui_ui_take_key(ui, id, 0U, field_wants, &code, &modifiers);
+		taken = keiui_ui_take_input(ui, id, 0U, field_wants, &input);
 		if (!taken)
 			break;
-		changes |= field_key(field, code, modifiers);
+		changes |= field_input(field, &input);
 	}
+
+	/* The text an input method is composing for it (a secret field's characters do not show, so neither does it). */
+	preedit_begin = -1;
+	preedit_end = -1;
+	preedit = keiui_ui_preedit(ui, id, 0U, focused, &preedit_begin, &preedit_end);
+	if (field->secret)
+		preedit = NULL;
 
 	/* The ground: white, with the accent's edge while it has the keyboard. */
 	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, theme->panel);
@@ -132,8 +154,40 @@ kl_field(
 		end = field->anchor;
 	}
 
+	/*
+	 * The text being composed shows at the caret, inside the text as shown
+	 * (a field that is not secret shows its own bytes, so the caret's
+	 * offset is the same in both); no selection shows meanwhile, since the
+	 * commit replaces it.
+	 */
+	preedit_length = 0;
+	if (preedit != NULL) {
+		preedit_length = strlen(preedit);
+		memmove(shown + field->caret + preedit_length, shown + field->caret, length - field->caret + 1U);
+		memcpy(shown + field->caret, preedit, preedit_length);
+		length += preedit_length;
+		start = field->caret;
+		end = field->caret;
+	}
+
+	/*
+	 * The caret's offset in the text as shown: at the composed text's
+	 * cursor while one is composed, and hidden when the input method hides
+	 * that cursor (the end of the composed text is kept in sight then).
+	 */
+	caret_offset = field_shown(field, NULL, 0U, field->caret);
+	caret_shown = focused;
+	if (preedit != NULL) {
+		if (preedit_begin < 0 || (size_t)preedit_begin > preedit_length) {
+			caret_offset += preedit_length;
+			caret_shown = 0;
+		} else {
+			caret_offset += (size_t)preedit_begin;
+		}
+	}
+
 	/* Where the caret and the selection's ends stand across. */
-	caret_x = kl_text_width(style->text, shown, field_shown(field, NULL, 0U, field->caret), FIELD_TEXT, 0);
+	caret_x = kl_text_width(style->text, shown, caret_offset, FIELD_TEXT, 0);
 	left_x = kl_text_width(style->text, shown, field_shown(field, NULL, 0U, start), FIELD_TEXT, 0);
 	right_x = kl_text_width(style->text, shown, field_shown(field, NULL, 0U, end), FIELD_TEXT, 0);
 
@@ -153,13 +207,31 @@ kl_field(
 	baseline = kl_text_center(FIELD_TEXT, rect->y, rect->height);
 	if (start != end && focused)
 		kl_canvas_round(style->canvas, (float)(rect->x + FIELD_SIDE + left_x - field->scroll), (float)rect->y + 7.0f, (float)(right_x - left_x), (float)rect->height - 14.0f, 2.0f, theme->selection);
-	if (field->length == 0 && placeholder != NULL)
+	if (field->length == 0 && preedit == NULL && placeholder != NULL)
 		(void)kl_text_draw(style->text, style->canvas, rect->x + FIELD_SIDE, baseline, placeholder, strlen(placeholder), FIELD_TEXT, 0, theme->text_faint);
 	else
 		(void)kl_text_draw(style->text, style->canvas, rect->x + FIELD_SIDE - field->scroll, baseline, shown, length, FIELD_TEXT, 0, theme->text);
-	if (focused)
+
+	/* The text being composed is underlined, so that it reads as not yet written. */
+	if (preedit != NULL) {
+		preedit_x = kl_text_width(style->text, shown, field->caret, FIELD_TEXT, 0);
+		preedit_right = kl_text_width(style->text, shown, field->caret + preedit_length, FIELD_TEXT, 0);
+		kl_canvas_line(style->canvas, (float)(rect->x + FIELD_SIDE + preedit_x - field->scroll), (float)baseline + 3.5f, (float)(rect->x + FIELD_SIDE + preedit_right - field->scroll), (float)baseline + 3.5f, 1.0f, theme->text);
+	}
+
+	/* The caret, while it has the keyboard and the input method does not hide it. */
+	if (caret_shown)
 		kl_canvas_line(style->canvas, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)rect->y + 8.0f, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)(rect->y + rect->height) - 8.0f, 1.5f, theme->accent);
 	kl_canvas_clip_pop(style->canvas);
+
+	/* With the keyboard, a field that is not secret takes an input method's text at its caret (kl_ui_text_wanted). */
+	if (focused && !field->secret) {
+		caret.x = rect->x + FIELD_SIDE + caret_x - field->scroll;
+		caret.y = rect->y + 8;
+		caret.width = 2;
+		caret.height = rect->height - 16;
+		keiui_ui_text_caret(ui, &caret);
+	}
 
 	/* Reports what happened. */
 	return changes;
@@ -430,4 +502,121 @@ field_at(
 
 	/* Reports the nearest boundary. */
 	return best;
+}
+
+/* Carries out one input in a field: a key, a text to commit, or bytes to delete; reports what happened (KL_FIELD_* bits). */
+static unsigned
+field_input(
+	struct kl_field *field,
+	const struct keiui_input *input)
+{
+	unsigned changes;
+
+	/* Each kind of input. */
+	switch (input->kind) {
+	case KEIUI_INPUT_KEY:
+		changes = field_key(field, input->code, input->modifiers);
+		break;
+	case KEIUI_INPUT_COMMIT:
+		field_insert(field, input->text);
+		changes = KL_FIELD_CHANGED;
+		break;
+	case KEIUI_INPUT_DELETE:
+		field_delete_around(field, (size_t)input->before, (size_t)input->after);
+		changes = KL_FIELD_CHANGED;
+		break;
+	default:
+		changes = 0;
+		break;
+	}
+
+	/* Reports what the input did. */
+	return changes;
+}
+
+/* Puts a text an input method committed in place of the selection, as much of it as the field has room for. */
+static void
+field_insert(
+	struct kl_field *field,
+	const char *text)
+{
+	char clean[KL_WINDOW_TEXT_MAX];
+	size_t length;
+	size_t room;
+	size_t at;
+	unsigned char byte;
+
+	/* The text without control characters, which a one-line field does not hold. */
+	length = 0;
+	for (at = 0; text[at] != '\0' && length + 1U < sizeof(clean); at++) {
+		byte = (unsigned char)text[at];
+		if (byte < 0x20U || byte == 0x7fU)
+			continue;
+		clean[length] = (char)byte;
+		length++;
+	}
+	clean[length] = '\0';
+
+	/* The selection goes first. */
+	field_erase(field);
+
+	/* As much of the text as there is room for, cut at a character's start. */
+	room = sizeof(field->text) - 1U - field->length;
+	if (length > room) {
+		length = room;
+		while (length > 0U && ((unsigned char)clean[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+
+	/* The bytes after the caret move on, and the text goes in before them; the caret follows it. */
+	memmove(field->text + field->caret + length, field->text + field->caret, field->length - field->caret + 1U);
+	memcpy(field->text + field->caret, clean, length);
+	field->length += length;
+	field->caret += length;
+	field->anchor = field->caret;
+}
+
+/* Deletes bytes before and after the selection (whole characters), as an input method asks; the selection stays. */
+static void
+field_delete_around(
+	struct kl_field *field,
+	size_t before,
+	size_t after)
+{
+	size_t start;
+	size_t end;
+	size_t low;
+	size_t high;
+
+	/* The selection's ends in order: the bytes are counted out from them. */
+	start = field->anchor;
+	end = field->caret;
+	if (start > end) {
+		start = field->caret;
+		end = field->anchor;
+	}
+
+	/* The first byte deleted before it, back to a character's start. */
+	low = 0;
+	if (before < start)
+		low = start - before;
+	while (low > 0U && ((unsigned char)field->text[low] & 0xc0U) == 0x80U)
+		low--;
+
+	/* The first byte kept after it, on to a character's start. */
+	high = field->length;
+	if (after < field->length - end)
+		high = end + after;
+	while (high < field->length && ((unsigned char)field->text[high] & 0xc0U) == 0x80U)
+		high++;
+
+	/* The bytes after the selection close up first, then those before it. */
+	memmove(field->text + end, field->text + high, field->length - high + 1U);
+	field->length -= high - end;
+	memmove(field->text + low, field->text + start, field->length - start + 1U);
+	field->length -= start - low;
+
+	/* The selection moves back by what went before it. */
+	field->caret -= start - low;
+	field->anchor -= start - low;
 }
