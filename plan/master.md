@@ -33,7 +33,7 @@
 
 <!-- master:merge:start -->
 - main の履歴は 2026-10-06 に `e42ef860` の後を 1 つに squash した（ユーザーの指示: 著作権の参考の画像の削除）。**残り**: `codex/fix-bug202-boot-worker`・`codex/merge-bug202` の branch（別の session の物）が古い履歴を参照しているので、その session の終わりの後に新しい履歴へ移すか消し、`git reflog expire --expire=now --all && git gc --prune=now` で画像の object を消す。
-- 保留の code: 上部の bar（ws099-p034）は `plan/ws099/phase034/held/p034-bar-b095413c.patch`（P2 が当て直し中）。
+- 上部の bar（ws099-p034）は当て直して main に merge 済み（e7a56460、montage-4 の icon・暗い bar の穴、build の warning 0、QEMU・実機は未）。montage は `plan/ws099/phase034/images/bar-montage-4.png`（P2 の worktree）。BUG-236 の App Home の stage の montage は未着手。
 - **main に入ったが QEMU・実機で未確認**: BUG-203〜209（Phone の IME・太字・browser の 2 件・dock の F11・Alt+Tab）、ws099-p019 の壁紙、BUG-237 の icon の穴、WS130 IPv6（T1-206b）、WS174 p003 の key（間欠の不検出 1/12）、WS158 p002〜p004、AAT の runner（T1-202b は smoke 5 pass・3 fail で full は中断）。
 - 実機で確認済み（2026-10-06 UAT、`config/current-uat.mk` の image）: BUG-202（起動の fatal）・197（電源オフ）・210（I2C の touchpad）・I2C-HID の 2 本指の scroll・mp4 の再生・OSK の変換・app の icon の形。
 <!-- master:merge:end -->
@@ -42,7 +42,7 @@
 
 <!-- master:next:start -->
 1. 新しい session の最初: `git log --oneline -3`、この block、[Bug Board](known-bugs.md) の BUG-211〜237、[uat.md](uat.md) の 2026-10-06 を読む。
-2. P2 の最後の SHA（ws099-p034 の当て直し）を merge。
+2. （済み）P2 の ws099-p034 の当て直しは merge 済み。
 3. 担当を起こす（P1・P2・T1）。UAT の不具合（BUG-211〜237）を P1・P2 に分ける（上の agents）。設計の変わる物（BUG-217 の最大化の状態、gesture の体系、App Home の stage）は Phase を立てて montage・設計から。
 4. T1 は直しの確かめを**シナリオの集合で束ねて**流す。AAT の runner の smoke の 3 fail（Files・Settings の窓が閉じない、Text Editor の窓が出ない）を先に P2 が直す。
 5. UAT の image はユーザーが `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image` で自分で作る。safe boot は起動時に Ctrl（kernel の message）・Shift（console の login）を押したまま Space を叩く。
