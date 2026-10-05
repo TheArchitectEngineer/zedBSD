@@ -269,7 +269,7 @@ p001 の commit を Q1 に merge 依頼してから p002 に進む。p001 は T 
 
 ## 結果
 
-実装（2026-10-05、P2、worktree p2。commit は下の「commit」）。
+実装（2026-10-05、P2、worktree p2、commit 0484201b）。
 
 - **変えた関数**: `debug_map_publish`、`__rtld_process_fini`、`__rtld_dlopen`、`__rtld_dl_iterate_phdr`、`__rtld_dladdr`、`rtld_main`、`initialize_object`、`preflight_dlopen_file`、`valid_elf_header`、`load_object`、`open_search_list`、`open_search_candidate`、`find_identity`、`new_object`、`remember_mapping`、`parse_dynamic`、`lookup_symbol_version`（大域の探索）、`resolve_tls_symbol`、`install_tlsdesc`、`unload_object_locked`、`remove_initialization_record`、`rtld_dlsym_common`、`lookup_global_optional`、`lookup_handle_graph`、`setup_premapped_object`、`register_tls_module`（仮の `RTLD_TLS_MODULE_MAX`）、`__rtld_thread_alloc`・`__rtld_thread_free`・`layout_static_tls`（同）。
 - **新しい関数**: `object_at`、`object_chunk_grow`、`program_table_take`、`object_set_programs`、`read_program_headers`、`tlsdesc_slot`、`object_tables_take`、`object_tables_release`、`object_reserve_needed`、`object_clear`、`lookup_generation_next`。
