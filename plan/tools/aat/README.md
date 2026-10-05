@@ -10,6 +10,20 @@
 | `build-image.sh` | AAT の image を作る（root の鍵と host 鍵は guest の harness の物、harness の `net.conf` は入れない） |
 | `tests/run-host.sh` | host の自己試験（`--local`、偽の `aat-input`（`fake-aat-input.py`）と偽の撮影 `fake-shot.py`） |
 
+## シナリオと runner（ws173-p004）
+
+シナリオの本体は `tests/scenarios/` の文書（[plan/tests.md](../../tests.md)）。エージェントは文書を読み、下の `aat` の命令で操作して確かめる。自動の補助（任意）は同じ id で `scenarios/` に置く。
+
+| file | 役目 |
+| --- | --- |
+| `run-aat.sh TARGET OUTDIR [SUITE\|ID\|PATTERN\|area:NAME ...] [--record PATH] [--no-samples]` | suite（既定 `smoke`）か id を順に流す。TARGET は `5330`・`qemu`・`user@host[:port]`。前に `aat check`・session の `ZWL READY`・`aat start`・試験の file。各シナリオは補助があれば補助が流し、無ければ `by-agent`（エージェントが文書で行う）、`human: hands` は `needs-person`、QEMU の `machine: hardware` は `not-run`。`OUTDIR/summary.md` が実行の記録（`--record plan/ws173/runs/<日付>-<suite>.md` で写す） |
+| `check-scenarios.py [--list]` | 文書と suite の形（header・節・各操作の 4 項目・path の実在・suite の各行）を確かめる |
+| `scenarios/helpers_os.py`・`helpers_desktop.py`・`helpers_apps.py` | 補助（`--list` で持つ id）。各 step の action・見た物・撮影を `OUTDIR/records/ID.md`、判定を `OUTDIR/verdicts.tsv` |
+| `scenarios/aatlib.py`・`common.py` | 補助の共通: App Home からの起動（`ZWL HOME icon` の位置を click）、窓（`aat windows`）、Settings の頁と control（`ZSETTINGS CONTROL`）、入力方式、前後の片付け（app を閉じる、`/etc/shadow` を戻す） |
+| `scenarios/samples.py` | 試験の file（PNG・JPEG・2 頁の PDF・4 秒の MP4）を host で作り target の `/tmp/aat-samples` に置く（image に入れない） |
+
+判定: `pass`・`fail`（どの操作で何が違ったか）・`needs-person`（撮影を人が見る `look`、人の手 `hands`）・`by-agent`・`not-run`。
+
 ## 使い方
 
 ```sh
@@ -53,7 +67,7 @@ plan/tools/aat/aat stop
 
 ## 自己試験
 
-- host（実装の担当）: `sh plan/tools/aat/tests/run-host.sh` → `aat-host: PASS`。CLI・`aat-input` に送る命令・拒否・mark と wait-log・`windows`・転送を、偽の `aat-input` と撮影で確かめる。
+- host（実装の担当）: `sh plan/tools/aat/tests/run-host.sh` → `aat-host: PASS`。CLI・`aat-input` に送る命令・拒否・mark と wait-log・`windows`（client ごと）・転送（ssh を通ること）・シナリオの文書と suite の形・runner（補助の pass、hands の needs-person、記録と撮影）を、偽の `aat-input` と撮影で確かめる。
 - QEMU（T1）: 撮影の口のある image（`plan/ws173/tests/config-amd64-aat.mk`、T1-200 の物でよい）を `plan/tools/titlebar/menu-guest.sh start IMAGE`（`GUEST_RUNTIME=build/ws070-run`）。この image に session は無いので log は `--log /tmp/zdesktop.log`。
   1. `aat --qemu check`（rc 0: `have /dev/input-inject`・`have /bin/aat-input`・`have /bin/keiland-shot`、log は有無だけ）、`aat --qemu run 'uname -a'`、`put`・`get` の往復、`mark`・`run 'echo hello >> /tmp/x.log'`・`wait-log hello --since m --log /tmp/x.log`。
   2. compositor と窓（`plan/ws173/tests/aat-p002.sh` の 1. と同じ: `aat --qemu run` で `/bin/wayland --testing --width=1280 --height=800 --glass > /tmp/zdesktop.log` と `seat-probe`）。

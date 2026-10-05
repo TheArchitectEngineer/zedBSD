@@ -1,0 +1,677 @@
+#!/usr/bin/env python3
+"""The automatic helpers of tests/scenarios/desktop/ (WS173 p004): each does its scenario's steps by the same id.
+
+Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
+    helpers_desktop.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
+
+desktop.touchpad.gestures needs a person's fingers and has no helper.
+"""
+import re
+import sys
+import time
+
+import aatlib
+import common
+
+run = aatlib.Run.from_command_line("helpers_desktop")
+
+# The system bar's launcher: 10 pixels from the left, 26 square, in the middle of the 44-pixel bar (shell.c
+# BAR_LAUNCHER_*); the log does not name it.
+LAUNCHER = (10 + 13, 22)
+
+# The on-screen keyboard (keyboard.c): the flick panel's keys (a side of the screen's height / 11, 64 to 96, 6 apart,
+# 4 x 4 at the bottom of the panel), its title band (36) and the tools' rows (44, the tabs' row 30).
+KEY_GAP = 6
+FLICK_ROWS = 4
+BAND = 36
+TOOL_ROW = 44
+TOOL_TABS = 30
+
+
+@run.define("desktop.home.super-key")
+def home_super_key(item):
+	since = run.mark()
+	run.key("super")
+	opened = run.wait(r"ZWL HOME open via=super", since, 10)
+	item.step("Windows key pressed and let go", opened)
+	run.shot(item, "open")
+	item.check(opened and run.lines(r"ZWL SUPER home", since), "App Home did not open by the Windows key")
+	since = run.mark()
+	run.key("super")
+	closed = run.wait(r"ZWL HOME close", since, 10)
+	item.step("Windows key again", closed)
+	item.check(closed, "App Home did not close")
+	item.passed()
+
+
+@run.define("desktop.home.launcher-button")
+def home_launcher(item):
+	since = run.mark()
+	run.click(*LAUNCHER)
+	opened = run.wait(r"ZWL HOME open via=launcher", since, 10)
+	item.step(f"clicked the launcher at {LAUNCHER[0]},{LAUNCHER[1]}", opened)
+	run.shot(item, "open")
+	item.check(opened, "App Home did not open from the launcher")
+	since = run.mark()
+	run.key("esc")
+	closed = run.wait(r"ZWL HOME close", since, 10)
+	item.step("Esc", closed)
+	item.check(closed, "App Home did not close")
+	item.passed()
+
+
+@run.define("desktop.wiseview.super-tab")
+def wiseview(item):
+	run.launch(item, "Files")
+	since = run.mark()
+	run.key("super+tab")
+	opening = run.wait(r"ZWL WISEVIEW opening", since, 10)
+	time.sleep(0.6)
+	home = run.lines(r"ZWL HOME open", since)
+	item.step("Windows+Tab", opening)
+	run.shot(item, "wiseview")
+	item.check(opening, "Wiseview did not open")
+	item.check(not home, "App Home opened as well")
+	since = run.mark()
+	run.key("esc")
+	closed = run.wait(r"ZWL WISEVIEW close", since, 10)
+	item.step("Esc", closed)
+	item.check(closed, "Wiseview did not close")
+	item.passed()
+
+
+@run.define("desktop.keyboard.super-not-to-client")
+def super_not_to_client(item):
+	window = run.launch(item, "Terminal")
+	run.click(*window.middle())
+	run.type(f"cat > {aatlib.WORK}/super.txt")
+	run.key("enter")
+	time.sleep(0.8)
+	since = run.mark()
+	run.key("super")
+	opened = run.wait(r"ZWL HOME open", since, 10)
+	time.sleep(0.5)
+	run.key("super")
+	closed = run.wait(r"ZWL HOME close", since, 10)
+	item.step("Windows key twice while cat waits", f"{opened}; {closed}")
+	item.check(opened and closed, "App Home did not open and close")
+	time.sleep(0.8)
+	run.type("x")
+	run.key("enter", "ctrl+d")
+	time.sleep(1.0)
+	_, text = run.sh(f"cat {aatlib.WORK}/super.txt")
+	item.step("x, Enter, Ctrl+D", repr(text))
+	run.shot(item, "terminal")
+	item.check(text == "x\n", f"the file is {text!r}, not 'x'")
+	item.passed()
+
+
+@run.define("desktop.windows.move-by-title")
+def move_by_title(item):
+	window = run.launch(item, "Files")
+	x, y = window.title_point()
+	since = run.mark()
+	run.drag(x, y, x + 120, y + 80)
+	moved = run.wait(rf"ZWL GLASS moved surface={window.surface} ", since, 10)
+	now = run.window(window.client, window.surface)
+	item.step(f"dragged the title bar from {x},{y} by 120,80", moved)
+	run.shot(item, "moved")
+	item.check(moved and now, "no ZWL GLASS moved")
+	dx, dy = now.x - window.x, now.y - window.y
+	item.check(abs(dx - 120) <= 8 and abs(dy - 80) <= 8, f"moved by {dx},{dy}, not 120,80")
+	item.passed(f"moved by {dx},{dy}")
+
+
+def maximize(item, window):
+	"""Double-clicks a window's title bar; returns the dock line and the resize line."""
+	since = run.mark()
+	run.click(*window.title_point(), "--count", "2")
+	dock = run.wait(rf"ZWL GLASS dock surface={window.surface} via=double-click", since, 10)
+	resized = run.wait(rf"ZWL GLASS resized surface={window.surface} docked=1 ", since, 10)
+	item.step("double-clicked the title bar", f"{dock}; {resized}")
+	return dock, resized
+
+
+@run.define("desktop.windows.maximize-double-click")
+def maximize_double_click(item):
+	window = run.launch(item, "Files")
+	dock, resized = maximize(item, window)
+	run.shot(item, "maximized")
+	item.check(dock, "no ZWL GLASS dock ... via=double-click")
+	item.check(resized, "no ZWL GLASS resized ... docked=1")
+	after = aatlib.number(resized, "after_ms")
+	if after is not None and after <= 200:
+		item.passed(f"after_ms={after}")
+	item.person(f"after_ms={after} (the goal is 200 or less, BUG-179)")
+
+
+@run.define("desktop.windows.unmaximize-drag")
+def unmaximize_drag(item):
+	window = run.launch(item, "Files")
+	dock, _ = maximize(item, window)
+	item.check(dock, "the window did not dock")
+	time.sleep(0.8)
+	match = re.search(r"title=(-?\d+)", dock)
+	start = (int(match.group(1)) + 40 if match else 160, 22)
+	since = run.mark()
+	run.aat("move", str(start[0]), str(start[1]))
+	run.aat("down")
+	for step in range(1, 7):
+		run.aat("move", str(start[0] + step * 10), str(start[1] + step * 50))
+		if step == 3:
+			run.shot(item, "during")
+	run.aat("up")
+	undock = run.wait(rf"ZWL GLASS undock surface={window.surface} ", since, 10)
+	item.step(f"dragged the docked title at {start[0]},{start[1]} down by 300", undock)
+	run.shot(item, "after")
+	item.check(undock, "no ZWL GLASS undock")
+	item.person("the window keeps its own size under the pointer, without going back to maximized first (BUG-180)")
+
+
+@run.define("desktop.windows.open-maximized")
+def open_maximized(item):
+	window = run.launch(item, "Files")
+	dock, _ = maximize(item, window)
+	item.check(dock, "Files did not dock")
+	time.sleep(0.8)
+	since = run.mark()
+	run.launch(item, "Text Editor")
+	docked = run.lines(r"ZWL GLASS open-docked ", since)
+	item.step("opened Text Editor over the maximized Files", docked[0] if docked else "no open-docked")
+	run.shot(item, "opened")
+	item.check(docked, "Text Editor did not open maximized (no ZWL GLASS open-docked)")
+	item.passed()
+
+
+@run.define("desktop.windows.close-minimize")
+def close_minimize(item):
+	window = run.launch(item, "Files")
+	since = run.mark()
+	run.click(*window.button_point(2))
+	minimized = run.wait(rf"ZWL GLASS minimize surface={window.surface}", since, 10)
+	item.step("clicked the minimize button", minimized)
+	run.shot(item, "minimized")
+	item.check(minimized, "no ZWL GLASS minimize")
+	icons = [line for line in run.lines(r"ZWL APPS icon app=", None) if re.search(r"app=\S*files", line, re.I)]
+	item.check(icons, "no apps bar icon for Files (ZWL APPS icon)")
+	x, y, width, height = (aatlib.number(icons[-1], name) for name in ("x", "y", "width", "height"))
+	run.click(x + width // 2, y + height // 2)
+	time.sleep(1.0)
+	item.step(f"clicked Files' icon in the apps bar at {x + width // 2},{y + height // 2}", icons[-1])
+	run.shot(item, "restored")
+	run.close(item, window)
+	item.person("the restored window shows again in the second screenshot")
+
+
+@run.define("desktop.bar.status-icons")
+def status_icons(item):
+	network = run.lines(r"ZWL NETWORK icon x=", None)
+	volume = run.lines(r"ZWL VOLUME icon x=", None)
+	item.step("read the bar's icons in the log", f"{network[-1] if network else 'no network'}; {volume[-1] if volume else 'no volume'}")
+	run.shot(item, "bar")
+	item.check(network and volume, "the bar's icons are not in the log")
+	item.person("the clock, the battery (with a battery), the network and the volume side by side")
+
+
+def icon_middle(line: str) -> tuple[int, int]:
+	"""The middle of an icon's x y width height."""
+	x, y, width, height = (aatlib.number(line, name) for name in ("x", "y", "width", "height"))
+	return x + width // 2, y + height // 2
+
+
+@run.define("desktop.bar.network-details")
+def network_details(item):
+	icons = run.lines(r"ZWL NETWORK icon x=", None)
+	item.check(icons, "no ZWL NETWORK icon line")
+	point = icon_middle(icons[-1])
+	since = run.mark()
+	run.click(*point, "--with", "alt")
+	opened = run.wait(r"ZWL NETWORK info open", since, 10)
+	time.sleep(1.5)
+	rows = run.lines(r"ZWL NETWORK info row label=", since)
+	item.step(f"Alt+click on the network icon at {point[0]},{point[1]}", f"{opened}; {len(rows)} rows")
+	run.shot(item, "details")
+	item.check(opened, "the details did not open")
+	values = {}
+	for row in rows:
+		match = re.search(r"label=(.*?) value=(.*)$", row)
+		if match:
+			values[match.group(1).strip()] = match.group(2).strip()
+	for label in ("Interface", "IPv4 address", "MAC address"):
+		item.check(label in values, f"no {label} row (rows: {', '.join(values)})")
+	_, ifconfig = run.sh("ifconfig -a")
+	item.step("ifconfig -a", f"address {values['IPv4 address']}, MAC {values['MAC address']}")
+	item.check(values["IPv4 address"] in ifconfig, f"{values['IPv4 address']} is not in ifconfig")
+	item.check(values["MAC address"].lower() in ifconfig.lower(), f"{values['MAC address']} is not in ifconfig")
+	since = run.mark()
+	run.key("esc")
+	closed = run.wait(r"ZWL NETWORK info close", since, 10)
+	item.step("Esc", closed)
+	item.check(closed, "the details did not close")
+	since = run.mark()
+	run.click(*point)
+	menu = run.wait(r"ZWL NETWORK open", since, 10)
+	run.shot(item, "menu")
+	run.key("esc")
+	item.step("a plain click, then Esc", menu)
+	item.check(menu, "a plain click did not open the menu")
+	item.passed(f"{values['Interface']} {values['IPv4 address']}")
+
+
+@run.define("desktop.bar.volume-slider")
+def volume_slider(item):
+	icons = run.lines(r"ZWL VOLUME icon x=", None)
+	item.check(icons, "no ZWL VOLUME icon line")
+	before = run.lines(r"ZWL VOLUME (restored|set) value=", None)
+	old = aatlib.number(before[-1], "value") if before else None
+	since = run.mark()
+	run.click(*icon_middle(icons[-1]))
+	popup = run.wait(r"ZWL VOLUME popup open x=", since, 10)
+	item.step("clicked the volume icon", popup)
+	item.check(popup, "the popup did not open")
+	left = aatlib.number(popup, "x") + 14 + 9
+	width = 260 - 28 - 18
+	y = aatlib.number(popup, "slider") + 17
+	since = run.mark()
+	points = [(left + width * (20 + 60 * step / 10) / 100, y) for step in range(11)]
+	run.press_path(points, pause=0.08)
+	set_line = run.wait(r"ZWL VOLUME set value=\d+ .*final=1", since, 10)
+	feedback = run.lines(r"ZWL VOLUME feedback", since)
+	began = time.monotonic()
+	run.shot(item, "after-drag")
+	answered = time.monotonic() - began
+	item.step("dragged the slider from 20% to 80%", f"{set_line}; {len(feedback)} feedback sounds; shot in {answered:.1f} s")
+	item.check(set_line, "no final ZWL VOLUME set")
+	value = aatlib.number(set_line, "value")
+	item.check(value is not None and 70 <= value <= 90, f"the volume is {value}, not about 80")
+	item.check(len(feedback) <= 1, f"{len(feedback)} feedback sounds (BUG-170)")
+	item.check(answered < 5.0, f"the screen took {answered:.1f} s after the drag")
+	if old is not None:
+		run.press_path([(left + width * value / 100, y), (left + width * old / 100, y)], pause=0.1)
+		item.step(f"put the volume back to {old}")
+	run.key("esc")
+	item.passed(f"value {value}, {len(feedback)} feedback sound(s)")
+
+
+@run.define("desktop.startup.wallpaper-time")
+def wallpaper_time(item):
+	line = run.lines(r"ZWL STARTUP step=wallpaper ms=", None)
+	item.step("read ZWL STARTUP step=wallpaper", line[0] if line else "none")
+	item.check(line, "no ZWL STARTUP step=wallpaper line")
+	ms = aatlib.number(line[0], "ms")
+	if ms is not None and ms <= 2000:
+		item.passed(f"{ms} ms")
+	item.person(f"the wallpaper took {ms} ms (over 2000)")
+
+
+# Appearance (Settings).
+
+@run.define("desktop.appearance.dark-mode")
+def dark_mode(item):
+	files = run.launch(item, "Files")
+	window, since = run.settings(item, "appearance")
+	controls = run.controls(since, "appearance")
+	for value in (1, 0):
+		mark = run.mark()
+		run.click_control(item, window, controls, 2, "the Dark appearance switch")
+		theme = run.wait(rf"ZWL THEME appearance={value}", mark, 10)
+		settings = run.wait(rf"ZSETTINGS APPEARANCE appearance={value}", mark, 10)
+		time.sleep(1.0)
+		item.step(f"clicked the Dark appearance switch ({'dark' if value else 'light'})", f"{theme}; {settings}")
+		run.shot(item, "dark" if value else "light")
+		item.check(theme and settings, f"appearance {value} did not reach the compositor and Settings")
+	item.person("the desktop, Settings and Files are dark in the first screenshot, light in the second")
+
+
+@run.define("desktop.appearance.window-opacity")
+def window_opacity(item):
+	window, since = run.settings(item, "appearance")
+	opened = run.lines(r"ZSETTINGS LOOK open opacity=", None)
+	old = aatlib.number(opened[-1], "opacity") if opened else None
+	controls = run.controls(since, "appearance")
+	item.check(1 in controls, "no opacity slider (control 1)")
+	x, y, width, height = controls[1]
+	left, right, middle = window.x + x + 2, window.x + x + width - 2, window.y + y + height // 2
+	mark = run.mark()
+	run.drag((left + right) // 2, middle, right + 40, middle, steps=10)
+	saved = run.wait(r"ZSETTINGS LOOK set key=window.opacity value=100 error=0", mark, 10)
+	applied = run.wait(r"ZWL PREFERENCES key=window.opacity applied value=100", mark, 10)
+	item.step("dragged the opacity slider to its right end", f"{saved}; {applied}")
+	time.sleep(1.0)
+	run.shot(item, "opaque")
+	item.check(saved and applied, "Opaque was not saved and applied")
+	if old is not None and old != 100:
+		target = left + (right - left) * (old - 85) / 15
+		run.drag(right - 2, middle, target, middle, steps=10)
+		item.step(f"put the opacity back to {old}")
+	item.person("no wallpaper shows through the windows in the screenshot (BUG-171)")
+
+
+@run.define("desktop.appearance.wallpaper")
+def wallpaper(item):
+	window, since = run.settings(item, "wallpaper")
+	ready = run.wait(r"ZSETTINGS LOOK pictures ready count=\d+", since, 20)
+	opened = run.lines(r"ZSETTINGS LOOK open opacity=", None)
+	old = aatlib.field(opened[-1], "wallpaper") if opened else None
+	time.sleep(1.0)
+	controls = run.controls(since, "wallpaper")
+	tiles = sorted(index for index in controls if index >= 100)
+	item.step("waited for the pictures", f"{ready}; tiles {tiles}")
+	run.shot(item, "page")
+	item.check(len(tiles) >= 2, "fewer than two pictures")
+	chosen = None
+	for index in tiles:
+		mark = run.mark()
+		began = time.monotonic()
+		run.click_control(item, window, controls, index, f"picture {index - 100}")
+		saved = run.wait(r"ZSETTINGS LOOK set key=wallpaper value=\S+ error=0", mark, 10)
+		if saved and aatlib.field(saved, "value") != old:
+			applied = run.wait(r"ZWL PREFERENCES key=wallpaper applied", mark, 10)
+			took = time.monotonic() - began
+			chosen = (index, saved, applied, took)
+			break
+	item.check(chosen, "no picture other than the current one was taken")
+	index, saved, applied, took = chosen
+	item.step(f"clicked picture {index - 100}", f"{saved}; {applied}; {took:.1f} s")
+	time.sleep(0.5)
+	run.shot(item, "changed")
+	item.check(applied and took <= 3.0, f"the wallpaper was not applied within 2 s ({took:.1f} s with the tools' delay)")
+	for back in tiles:
+		mark = run.mark()
+		run.click_control(item, window, controls, back, "a picture")
+		again = run.wait(r"ZSETTINGS LOOK set key=wallpaper value=\S+ error=0", mark, 10)
+		if again and aatlib.field(again, "value") == old:
+			item.step("put the wallpaper back", again)
+			break
+	item.person("the new wallpaper shows in the second screenshot")
+
+
+# The input method.
+
+@run.define("desktop.input-method.choose-method")
+def choose_method(item):
+	old = common.current_method(run)
+	window, since = run.settings(item, "languages")
+	controls = run.controls(since, "languages")
+	order = [method for method in (2, 1, 0) if method != old] + [old]
+	for method in order:
+		index = common.METHOD_SWITCHES[method]
+		mark = run.mark()
+		run.click_control(item, window, controls, index, f"method {method}")
+		chosen = run.wait(rf"ZSETTINGS LANGUAGES ime method={method}", mark, 10)
+		desktop = run.wait(rf"ZWL IME method={method}", mark, 10)
+		item.step(f"clicked the switch of method {method}", f"{chosen}; {desktop}")
+		run.shot(item, f"method-{method}")
+		item.check(chosen and desktop, f"method {method}: not taken")
+	item.passed(f"went through 2, 1, 0 and back to {old}")
+
+
+def editor(item, name: str):
+	"""Opens Text Editor on a new file of /tmp/aat-work as the session's user, the pointer in its text."""
+	run.sh(f"rm -f {aatlib.WORK}/{name}")
+	window = run.open_as_user(item, f"/bin/textedit {aatlib.WORK}/{name}")
+	run.click(*window.middle())
+	time.sleep(0.5)
+	return window
+
+
+def save(item, name: str) -> str:
+	"""Ctrl+S, and the file's text once TEXTEDIT SAVE says so."""
+	mark = run.mark()
+	run.key("ctrl+s")
+	line = run.wait(rf"TEXTEDIT SAVE path={aatlib.WORK}/{re.escape(name)}", mark, 10)
+	item.step("Ctrl+S", line)
+	item.check(line, "no TEXTEDIT SAVE")
+	_, text = run.sh(f"cat {aatlib.WORK}/{name}")
+	return text
+
+
+def japanese_in_editor(item, method: int, name: str, keys: str) -> None:
+	"""The steps of japanese-textedit and skk-textedit."""
+	old = common.current_method(run)
+	common.set_method(run, item, method)
+	try:
+		editor(item, name)
+		common.to_language(run, item, "ja")
+		run.type(keys)
+		run.key("space")
+		time.sleep(0.8)
+		run.shot(item, "converting")
+		run.key("enter")
+		time.sleep(0.5)
+		item.step(f"typed {keys!r}, Space, Enter")
+		run.shot(item, "committed")
+		data = save(item, name)
+		text = data
+		item.step("read the file", repr(text))
+		item.check(any(ord(character) > 0x7f for character in text), f"no Japanese in the file: {text!r}")
+		# Back to direct input for the scenarios after this one.
+		run.key("alt+space")
+	finally:
+		if common.current_method(run) != old:
+			common.set_method(run, item, old)
+	item.person(f"saved {text.strip()!r}; the conversion's look in the screenshots (BUG-139)")
+
+
+@run.define("desktop.input-method.japanese-textedit")
+def japanese_textedit(item):
+	japanese_in_editor(item, 1, "ja.txt", "nihongo")
+
+
+@run.define("desktop.input-method.skk-textedit")
+def skk_textedit(item):
+	japanese_in_editor(item, 2, "skk.txt", "Nihongo")
+
+
+# The on-screen keyboard.
+
+def corner_swipe(item, corner: str) -> None:
+	"""The diagonal drag from a bottom corner (right: the flick panel, left: QWERTY)."""
+	width, height = run.screen()
+	if corner == "right":
+		run.drag(width - 3, height - 3, width - 203, height - 203, steps=12)
+	else:
+		run.drag(2, height - 3, 202, height - 203, steps=12)
+
+
+def open_panel(item, kind: str) -> tuple[int, int, int, int]:
+	"""Opens a panel; returns its x, y, width and height."""
+	mark = run.mark()
+	corner_swipe(item, "right" if kind == "flick" else "left")
+	line = run.wait(rf"ZWL OSK open kind={kind} ", mark, 10)
+	item.step(f"swiped from the bottom {'right' if kind == 'flick' else 'left'} corner", line)
+	item.check(line, f"the {kind} panel did not open")
+	time.sleep(0.6)
+	return tuple(aatlib.number(line, name) for name in ("x", "y", "width", "height"))
+
+
+def close_panel(item, kind: str) -> None:
+	"""Closes a panel with the same swipe."""
+	mark = run.mark()
+	corner_swipe(item, "right" if kind == "flick" else "left")
+	line = run.wait(rf"ZWL OSK close kind={kind}", mark, 10)
+	item.step(f"the same swipe again", line)
+	item.check(line, f"the {kind} panel did not close")
+
+
+def flick_key(panel, row: int, column: int) -> tuple[int, int]:
+	"""The middle of a flick key."""
+	px, py, pw, ph = panel
+	key = min(96, max(64, run.screen()[1] // 11))
+	x = px + KEY_GAP + column * (key + KEY_GAP)
+	y = py + ph - (FLICK_ROWS - row) * (key + KEY_GAP)
+	return x + key // 2, y + key // 2
+
+
+def tap(point) -> None:
+	"""A short press and release at a point."""
+	run.press_path([point, point], pause=0.06)
+	time.sleep(0.4)
+
+
+def kana_face(item, panel) -> None:
+	"""Turns the flick panel to its kana face (the face key, row 4 column 4), from the faces the log said."""
+	for _ in range(3):
+		faces = run.lines(r"ZWL OSK face name=\S+", None)
+		face = aatlib.field(faces[-1], "name") if faces else "kana"
+		if face == "kana":
+			return
+		tap(flick_key(panel, 3, 3))
+	item.failed("the flick panel did not turn to kana")
+
+
+@run.define("desktop.osk.open-close")
+def osk_open_close(item):
+	for kind in ("flick", "qwerty"):
+		open_panel(item, kind)
+		run.shot(item, kind)
+		if kind == "qwerty":
+			item.check(run.lines(r"ZWL OSK qrect ", None), "no ZWL OSK qrect lines")
+		close_panel(item, kind)
+	item.passed()
+
+
+@run.define("desktop.osk.qwerty-type")
+def osk_qwerty(item):
+	editor(item, "qwerty.txt")
+	mark = run.mark()
+	open_panel(item, "qwerty")
+	rects = {}
+	for line in run.lines(r"ZWL OSK qrect ", mark):
+		label = aatlib.field(line, "label")
+		rects[label] = tuple(aatlib.number(line, name) for name in ("x", "y", "width", "height"))
+	for letter in "abc":
+		item.check(letter in rects, f"no key {letter} in ZWL OSK qrect")
+		x, y, width, height = rects[letter]
+		tap((x + width // 2, y + height // 2))
+	sent = run.lines(r"ZWL OSK send ", mark)
+	item.step("tapped a, b and c", f"{len(sent)} sends")
+	run.shot(item, "typed")
+	close_panel(item, "qwerty")
+	text = save(item, "qwerty.txt")
+	item.step("read the file", repr(text))
+	item.check(text.strip() == "abc", f"the file is {text!r}")
+	item.passed()
+
+
+@run.define("desktop.osk.prediction")
+def osk_prediction(item):
+	old = common.current_method(run)
+	common.set_method(run, item, 1)
+	editor(item, "predict.txt")
+	panel = open_panel(item, "flick")
+	kana_face(item, panel)
+	mark = run.mark()
+	tap(flick_key(panel, 0, 1))
+	wa = flick_key(panel, 3, 1)
+	run.press_path([wa, (wa[0], wa[1] - 15), (wa[0], wa[1] - 30)], pause=0.05)
+	predictions = run.wait(r"ZWL OSK predictions .*reading=かん count=[1-9]", mark, 10)
+	item.step("tapped か, flicked わ up (ん)", predictions)
+	run.shot(item, "predictions")
+	item.check(predictions, "no predictions for かん")
+	slots = run.lines(r"ZWL OSK crect slot=0 ", mark)
+	item.check(slots, "no ZWL OSK crect slot=0")
+	x, y, width, height = (aatlib.number(slots[-1], name) for name in ("x", "y", "width", "height"))
+	mark = run.mark()
+	tap((x + width // 2, y + height // 2))
+	commit = run.wait(r"ZWL OSK candidate commit sent=1 slot=0 word=\S+", mark, 10)
+	item.step("tapped the first candidate", commit)
+	run.shot(item, "chosen")
+	item.check(commit, "no candidate commit")
+	word = aatlib.field(commit, "word")
+	close_panel(item, "flick")
+	text = save(item, "predict.txt")
+	item.step("read the file", repr(text))
+	if common.current_method(run) != old:
+		common.set_method(run, item, old)
+	item.check(word and word in text, f"{word!r} is not in the file {text!r}")
+	item.person(f"chose {word}; the candidates' tab in the screenshot")
+
+
+@run.define("desktop.osk.emoji")
+def osk_emoji(item):
+	editor(item, "emoji.txt")
+	panel = open_panel(item, "flick")
+	px, py, pw, _ = panel
+	column = (pw - 5 * KEY_GAP) // 4 + KEY_GAP
+	tab = (px + KEY_GAP + 3 * column + (column - KEY_GAP) // 2, py + BAND + KEY_GAP + TOOL_ROW + KEY_GAP + TOOL_TABS // 2)
+	mark = run.mark()
+	tap(tab)
+	face = run.wait(r"ZWL OSK tool face=emoji", mark, 10)
+	item.step(f"tapped the emoji tab at {tab[0]},{tab[1]}", face)
+	run.shot(item, "emoji")
+	item.check(face, "the emoji face did not open")
+	cells = run.lines(r"ZWL OSK erect category=\d+ index=0 ", mark)
+	item.check(cells, "no ZWL OSK erect index=0")
+	x, y, width, height = (aatlib.number(cells[-1], name) for name in ("x", "y", "width", "height"))
+	mark = run.mark()
+	tap((x + width // 2, y + height // 2))
+	commit = run.wait(r"ZWL OSK emoji commit sent=1 text=\S+", mark, 10)
+	item.step("tapped the first emoji", commit)
+	item.check(commit, "no emoji commit")
+	emoji = aatlib.field(commit, "text")
+	close_panel(item, "flick")
+	text = save(item, "emoji.txt")
+	item.step("read the file", repr(text))
+	item.check(emoji and emoji in text, f"{emoji!r} is not in the file {text!r}")
+	item.person(f"typed {emoji}; its colour in the screenshot")
+
+
+@run.define("desktop.lock.lock-unlock")
+def lock_unlock(item):
+	mark = run.mark()
+	run.key("super+l")
+	locked = run.wait(r"ZWL LOCK locked ", mark, 10)
+	time.sleep(1.0)
+	item.step("Super+L", locked)
+	run.shot(item, "locked")
+	item.check(locked, "the screen did not lock")
+	run.type(aatlib.PASSWORD)
+	run.key("enter")
+	unlocked = run.wait(r"ZWL LOCK unlocked", mark, 15)
+	time.sleep(1.0)
+	item.step("typed the password and Enter", unlocked)
+	run.shot(item, "unlocked")
+	item.check(unlocked, "the screen did not unlock")
+	item.passed()
+
+
+@run.define("desktop.session.logout-login")
+def logout_login(item):
+	before = run.lines(r"ZWL READY socket=\S+ .* role=desktop", None)
+	old_pid = aatlib.field(before[-1], "pid") if before else None
+	since = run.home_open(item)
+	run.type("logout")
+	icons = run.lines(r'ZWL HOME icon name="Log Out" x=', since)
+	item.check(icons, "no Log Out icon in App Home")
+	greeter_mark = run.mark("/var/log/greeter.log")
+	run.click(*icon_middle_xy(icons[-1]))
+	opened = run.wait(r"ZWL GREETER open users=", greeter_mark, 30, log="/var/log/greeter.log")
+	time.sleep(1.5)
+	item.step("clicked Log Out in App Home", opened)
+	run.shot(item, "greeter")
+	item.check(opened, "the login screen did not come (greeter.log)")
+	run.type(aatlib.PASSWORD)
+	run.key("enter")
+	auth = run.wait(r"ZWL GREETER auth user=", greeter_mark, 20, log="/var/log/greeter.log")
+	ready = None
+	deadline = time.monotonic() + 60
+	while time.monotonic() < deadline and ready is None:
+		found = [line for line in run.lines(r"ZWL READY socket=\S+ .* role=desktop", None) if aatlib.field(line, "pid") != old_pid]
+		ready = found[-1] if found else None
+		time.sleep(2)
+	run._ready = None
+	item.step("typed the password and Enter", f"{auth}; {ready}")
+	time.sleep(2.0)
+	run.shot(item, "desktop")
+	item.check(auth and ready, "no new session after the login")
+	item.passed()
+
+
+def icon_middle_xy(line: str) -> tuple[int, int]:
+	"""App Home's icon line gives its middle already."""
+	return aatlib.number(line, "x"), aatlib.number(line, "y")
+
+
+sys.exit(run.go(before=common.before(run), after=common.after(run)))
