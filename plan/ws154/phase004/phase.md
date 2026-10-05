@@ -23,3 +23,9 @@ Queue: Q1（2026-10-05、P2）
 - build: zedBSD の `bin/keiland-ime`・`bin/ime-probe`、Linux の Keiland は warning 0。style-check は SKK の file が違反 0、`method.c` は関数ごとに増えていない。
 - QEMU（T1 に依頼）: `plan/ws154/tests/languages-p004.sh`（image は p002 と同じ `config-amd64-languages.mk`）。probe A で skk → q で skk-katakana（アイ、system bar の ア の PNG）、probe B は desktop の言語、B が終わると A の skk-katakana が戻る（from=remembered、カ）、l で skk-latin（x は app へ）、C-j で skk（あ）。
 - 未実施: 実機の UAT（SKK の操作感）、FreeBSD の build、WS の最後の全文の規約の見直し。
+
+## T1-173・T1-174 の FAIL（2026-10-05、main 555e105e、P2 の解析）
+
+- p002 の `preedit=▼漢字`・`commit=漢字` の MISSING は試験の期待の誤り。image の SKK-JISYO.X は `かんじ /感じ/漢字/幹事/完治/` で、最初の候補は 感じ（host で同じ辞書と engine を動かして Kanji＋Space → 感じ を確かめた）。engine と辞書は正しく動いている（`▽かんじ` まで ok、辞書は image の `/usr/share/keiland/ime/skk/` にある）。直し: `languages-p002.sh` を Space 1 回で `▼感じ`、2 回目で `▼漢字`、Enter で `commit=漢字` に。
+- p004 の SKK の段がまとめて MISSING は試験の手順の誤り。`keiland-settings` は zdesktop の Wayland の client なので、desktop を起動する前の `keiland-settings set ime.method 2` は失敗し（出力は捨てていた）、IME は既定の ja で起動した。直し: desktop の起動の後に `set ime.method 2` を流し、`--method=skk` での起動し直しを待つ。製品側は、保存済みの ime.method が起動時に適用される（settings.c の starting の経路）ので直さない。
+- UAT の image（`plan/ws159/tests/config-amd64-uat.mk`）: keiland-ime の requires で ime-dict-skk が解決され、`make -n` で SKK-JISYO.X が image に入ることを確かめた。SKK の動作は T1-173 と同じ（Kanji＋Space は 感じ が先）。
