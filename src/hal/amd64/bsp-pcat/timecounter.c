@@ -1053,3 +1053,20 @@ sample_for_read(
 	/* Returns the sample to the guarded reader. */
 	return sample;
 }
+
+/*
+ * Reports whether the boot CPU's TSC is invariant (CPUID 0x80000007 EDX
+ * bit 8): it runs at one rate through every ACPI P-, C- and T-state.  The
+ * APs were admitted only with the same metadata.
+ */
+bool
+amd64_timecounter_invariant(
+	void)
+{
+	/* The boot CPU's architectural report, collected before the timer's calibration. */
+	if (bsp_metadata.frequency.invariant_tsc_supported)
+		return true;
+
+	/* Not invariant (or not collected). */
+	return false;
+}

@@ -21,6 +21,12 @@
 #include "../space.h"
 
 #define LAPIC_ID            0x020U
+#define LAPIC_VERSION       0x030U
+#define LAPIC_LVT_CMCI      0x2f0U
+#define LAPIC_LVT_THERMAL   0x330U
+#define LAPIC_LVT_PERF      0x340U
+#define LAPIC_LVT_LINT0     0x350U
+#define LAPIC_LVT_LINT1     0x360U
 #define LAPIC_EOI           0x0b0U
 #define LAPIC_SVR           0x0f0U
 #define LAPIC_ESR           0x280U
@@ -34,6 +40,17 @@
 
 #define LAPIC_ENABLE        0x100U
 #define LAPIC_MASKED        0x10000U
+
+/* An LVT entry's delivery mode (bits 8 to 10): fixed is the only one quieted. */
+#define LAPIC_DELIVERY_MASK  0x700U
+#define LAPIC_DELIVERY_FIXED 0x000U
+
+/* The highest LVT entry the version register reports, and the counts that add the optional entries. */
+#define LAPIC_MAX_LVT_SHIFT  16U
+#define LAPIC_MAX_LVT_MASK   0xffU
+#define LAPIC_LVT_WITH_PERF  4U
+#define LAPIC_LVT_WITH_THERMAL 5U
+#define LAPIC_LVT_WITH_CMCI  6U
 #define LAPIC_PERIODIC      0x20000U
 #define ICR_PENDING         0x1000U
 #define PIT_POLL_LIMIT      1000000U
@@ -69,6 +86,8 @@ static void init_registers(void);
 static int pit_wait_level(struct amd64_pit_poll *poll, int expected_high, uint8_t *last_port61);
 static int pit_wait_10ms(uint8_t *last_port61, unsigned *polls, const char **stage, int measure_tsc, uint64_t *tsc_start, uint64_t *tsc_end, uint32_t *lapic_start, uint32_t *lapic_end);
 static int send_icr(uint32_t apic_id, uint32_t low);
+static uint32_t quiet_entry(unsigned offset);
+static uint32_t quiet_line(unsigned offset);
 
 /*
  * Initializes the BSP local APIC from ACPI topology.
@@ -356,6 +375,72 @@ amd64_lapic_timer_stop(
 	/* Masks the timer vector before clearing its initial count. */
 	write_reg(LAPIC_LVT_TIMER, LAPIC_MASKED | INT_IRQ_BASE);
 	write_reg(LAPIC_TIMER_INITIAL, 0);
+}
+
+/*
+ * Quiets the current CPU's local interrupt sources for a system sleep
+ * (ws052-p006): the corrected machine-check, thermal, performance-counter
+ * and error entries, and the two local lines when they deliver a fixed
+ * vector (an NMI or ExtINT line is left alone), each masked with its value
+ * kept in saved for amd64_lapic_restore_sources().
+ */
+void
+amd64_lapic_quiet_sources(
+	struct amd64_lapic_quiet *saved)
+{
+	uint32_t version;
+	uint32_t highest;
+
+	/* The optional entries this local APIC has, from the highest LVT entry it reports. */
+	version = read_reg(LAPIC_VERSION);
+	highest = (version >> LAPIC_MAX_LVT_SHIFT) & LAPIC_MAX_LVT_MASK;
+	saved->has_performance = 0U;
+	if (highest >= LAPIC_LVT_WITH_PERF)
+		saved->has_performance = 1U;
+	saved->has_thermal = 0U;
+	if (highest >= LAPIC_LVT_WITH_THERMAL)
+		saved->has_thermal = 1U;
+	saved->has_cmci = 0U;
+	if (highest >= LAPIC_LVT_WITH_CMCI)
+		saved->has_cmci = 1U;
+
+	/* The optional entries, masked. */
+	saved->performance = 0U;
+	if (saved->has_performance)
+		saved->performance = quiet_entry(LAPIC_LVT_PERF);
+	saved->thermal = 0U;
+	if (saved->has_thermal)
+		saved->thermal = quiet_entry(LAPIC_LVT_THERMAL);
+	saved->cmci = 0U;
+	if (saved->has_cmci)
+		saved->cmci = quiet_entry(LAPIC_LVT_CMCI);
+
+	/* The local lines, only when they deliver a fixed vector, and the error entry. */
+	saved->lint0 = quiet_line(LAPIC_LVT_LINT0);
+	saved->lint1 = quiet_line(LAPIC_LVT_LINT1);
+	saved->error = quiet_entry(LAPIC_LVT_ERROR);
+}
+
+/*
+ * Puts back the local interrupt sources amd64_lapic_quiet_sources() masked,
+ * each to the value it had.
+ */
+void
+amd64_lapic_restore_sources(
+	const struct amd64_lapic_quiet *saved)
+{
+	/* The error entry and the local lines. */
+	write_reg(LAPIC_LVT_ERROR, saved->error);
+	write_reg(LAPIC_LVT_LINT1, saved->lint1);
+	write_reg(LAPIC_LVT_LINT0, saved->lint0);
+
+	/* The optional entries this local APIC has. */
+	if (saved->has_cmci)
+		write_reg(LAPIC_LVT_CMCI, saved->cmci);
+	if (saved->has_thermal)
+		write_reg(LAPIC_LVT_THERMAL, saved->thermal);
+	if (saved->has_performance)
+		write_reg(LAPIC_LVT_PERF, saved->performance);
 }
 
 /*
@@ -777,4 +862,38 @@ send_icr(
 
 	/* Returns the delivery-completion result. */
 	return error;
+}
+
+/* Masks one LVT entry and returns the value it had. */
+static uint32_t
+quiet_entry(
+	unsigned offset)
+{
+	uint32_t value;
+
+	/* The entry as it was, then masked. */
+	value = read_reg(offset);
+	write_reg(offset, value | LAPIC_MASKED);
+
+	/* Succeeded: the value to put back. */
+	return value;
+}
+
+/* Masks a local line's LVT entry when it delivers a fixed vector, and returns the value it had. */
+static uint32_t
+quiet_line(
+	unsigned offset)
+{
+	uint32_t value;
+
+	/* The entry as it was; an NMI or ExtINT line keeps delivering. */
+	value = read_reg(offset);
+	if ((value & LAPIC_DELIVERY_MASK) != LAPIC_DELIVERY_FIXED)
+		return value;
+
+	/* A fixed vector's line, masked. */
+	write_reg(offset, value | LAPIC_MASKED);
+
+	/* Succeeded: the value to put back. */
+	return value;
 }

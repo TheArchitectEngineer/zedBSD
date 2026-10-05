@@ -71,6 +71,8 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS052 p006 の UAPI（2026-10-05、P1、include/uapi/system.h、HAL ではない）**: 既存の `KERN_SYSTEM_SLEEP` に mode `KERN_SYSTEM_SLEEP_S0IDLE`（2、root だけ）を足し、`struct system_sleep_request`（64 byte のまま）の reserved を `wake`（出力: 起こした理由 `KERN_SYSTEM_WAKE_*` = NONE・POWER_BUTTON・LID・KEYBOARD・USB・AC・TIMER・SPURIOUS・OTHER）にする。入れない時の result は EOPNOTSUPP（何も触らない）・EBUSY・device の error [この形]。P1 はこの形で kernel を作り、UAPI は別の小さな commit にする。
+- **ws089-p017 の判断（P2 の設計、前からの保留）**: ① ベータ2 に入れるか [計画の案: 入れない]、② 入れるなら accent だけか dark もか。
 - **WS158 の判断（2026-10-05、P2 の p001 の設計、plan/ws158/phase001/phase.md）**: ① key は英語の文（gettext と同じ）か ID か [英語の文]、② catalog は独自の UTF-8 の text（Zlib）か gettext の .po 互換か [独自]、③ ベータ2 の言語は英語と日本語 [可]、④ greeter の言語は system の既定、wheel が Settings で変える [可]、⑤ ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）を WS158 に吸収し元の Phase を canceled（吸収）[可]。
 - **WS165 の判断（2026-10-05、P1 の p001 の設計、plan/ws165/phase001/phase.md §7）**: H1 段 1 の目標（1 文字ずつ約 250 字: 数字・英字・ひらがな・カタカナ・記号、筆順・画数を問わない、候補 4、変形した sample で top-1 ≥ 90%・top-4 ≥ 98%・20 ms 以下、利用者の 100 字はユーザーが判定）[可]、H2 方式 [$P 型の点群の照合、学習なし]、H3 template [Hershey の font（license は p002 で監査）＋自前、KanjiVG（CC BY-SA）は段 2 で]、H4 段 2（漢字）・段 3（続け書き・変換）は段 1 の結果の後に計画 [可]。
 - **WS169・WS170 の段（2026-10-05 ユーザーの追加）**: ベータ2 に入れるか、それ以降か [Q1 の案: WS170 の最初の範囲（連絡先からタイムライン）はベータ2、WS169 はベータ2 で IMAP・SMTP まで、Gmail・Outlook は以降]。

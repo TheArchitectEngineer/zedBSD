@@ -30,5 +30,6 @@ void amd64_timecounter_ap_runtime_validate(struct amd64_percpu *cpu);
 void amd64_timecounter_complete_boot_validation(bool complete_set_valid, unsigned cpu_count);
 void amd64_timecounter_release_boot_validation(void);
 bool amd64_timecounter_read(uint64_t *counter, uint64_t *frequency_hz);
+bool amd64_timecounter_invariant(void);
 
 #endif

@@ -30,6 +30,14 @@ enum irq_mode {
 
 static struct irq_service_info irq_service[IRQ_LOGICAL_MAX + 1];
 
+/*
+ * Whether hal_irq_suspend() holds the system-wide sources (ws052-p006).
+ * Set and cleared only by hal_irq_suspend() and hal_irq_resume(), with an
+ * atomic exchange so that only one suspension is held; each IRQ's own
+ * suspended flag (under its service lock) says whether it is held.
+ */
+static volatile unsigned irq_suspension;
+
 static int valid_irq(int irq);
 static int is_msi_irq(int irq);
 static void hardware_mask(int irq);
@@ -133,12 +141,125 @@ hal_irq_unmask(
 	if (irq <= IRQ_TIMER || !valid_irq(irq))
 		return;
 
-	/* Serializes the software state and matching hardware unmask. */
+	/* Serializes the software state and matching hardware unmask; a suspended IRQ is unmasked only when resumed. */
 	service = &irq_service[irq];
 	enabled = service_lock(service);
 	service->masked = 0;
-	hardware_unmask(irq);
+	if (!service->suspended)
+		hardware_unmask(irq);
 	service_unlock(service, enabled);
+}
+
+/*
+ * Arms or disarms a numbered or message-signalled IRQ as a wake source of
+ * a system sleep.
+ */
+int
+hal_irq_set_wake(
+	int irq,
+	bool enable)
+{
+	struct irq_service_info *service;
+	bool enabled;
+	unsigned held;
+	int valid;
+
+	/* An external IRQ; the timer is the CPU's own, never a wake source. */
+	valid = valid_irq(irq);
+	if (irq <= IRQ_TIMER || !valid)
+		return HAL_ERR_INVALID;
+
+	/* The set of wake sources is fixed while a suspension holds the others. */
+	held = __atomic_load_n(&irq_suspension, __ATOMIC_ACQUIRE);
+	if (held != 0U)
+		return HAL_ERR_STATE;
+
+	/* The flag, under the IRQ's lock. */
+	service = &irq_service[irq];
+	enabled = service_lock(service);
+	service->wake = 0U;
+	if (enable)
+		service->wake = 1U;
+	service_unlock(service, enabled);
+
+	/* Succeeded: kept until it is changed. */
+	return HAL_OK;
+}
+
+/*
+ * Masks every system-wide source but the wake IRQs for a system sleep:
+ * each held IRQ's I/O APIC line is masked (an MSI has no line to mask; one
+ * that arrives is dropped by irq_handler()), and what the kernel asked of
+ * it is kept in its own masked flag for hal_irq_resume().
+ */
+int
+hal_irq_suspend(
+	void)
+{
+	struct irq_service_info *service;
+	bool enabled;
+	unsigned held;
+	int irq;
+
+	/* Only one suspension at a time. */
+	held = __atomic_exchange_n(&irq_suspension, 1U, __ATOMIC_ACQ_REL);
+	if (held != 0U)
+		return HAL_ERR_STATE;
+
+	/* Every external IRQ that is not a wake source, held (the timer and the IPI vectors are not IRQs here). */
+	for (irq = IRQ_TIMER + 1; irq <= IRQ_LOGICAL_MAX; irq++) {
+		service = &irq_service[irq];
+		enabled = service_lock(service);
+		if (!service->wake) {
+			service->suspended = 1U;
+			hardware_mask(irq);
+		}
+
+		/* The next IRQ. */
+		service_unlock(service, enabled);
+	}
+
+	/* Succeeded: only the wake IRQs, the CPU-local sources and the notifications deliver. */
+	return HAL_OK;
+}
+
+/*
+ * Puts back every source hal_irq_suspend() held, each delivered or masked
+ * as the kernel last asked.
+ */
+int
+hal_irq_resume(
+	void)
+{
+	struct irq_service_info *service;
+	bool enabled;
+	unsigned held;
+	int irq;
+
+	/* Only a held suspension can be put back. */
+	held = __atomic_load_n(&irq_suspension, __ATOMIC_ACQUIRE);
+	if (held == 0U)
+		return HAL_ERR_STATE;
+
+	/* Every held IRQ: delivered again unless the kernel masked it meanwhile or before. */
+	for (irq = IRQ_TIMER + 1; irq <= IRQ_LOGICAL_MAX; irq++) {
+		service = &irq_service[irq];
+		enabled = service_lock(service);
+		if (service->suspended) {
+			service->suspended = 0U;
+			if (!service->masked)
+				hardware_unmask(irq);
+		}
+
+		/* The next IRQ. */
+		service_unlock(service, enabled);
+	}
+
+	/* The suspension ends; wake sources may change again. */
+	__atomic_store_n(&irq_suspension, 0U, __ATOMIC_RELEASE);
+
+	/* Succeeded: every source is as the kernel asked. */
+	return HAL_OK;
 }
 
 /*
@@ -601,6 +722,19 @@ irq_handler(
 	service = &irq_service[irq];
 	(void)service_lock(service);
 	__atomic_store_n(&service->in_flight, 1U, __ATOMIC_RELEASE);
+
+	/*
+	 * An IRQ that hal_irq_suspend() holds is acknowledged and dropped, not
+	 * kept: its line is masked again (another path may have opened it),
+	 * and the kernel's own masked flag is left as it asked.
+	 */
+	if (service->suspended) {
+		hardware_mask(irq);
+		__atomic_store_n(&service->in_flight, 0U, __ATOMIC_RELEASE);
+		service_unlock(service, false);
+		hal_irq_send_eoi(acknowledge);
+		return;
+	}
 
 	/* Dispatches an installed and unmasked real-time callback. */
 	if (!service->removing &&

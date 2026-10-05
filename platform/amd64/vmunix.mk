@@ -102,6 +102,7 @@ AMD64_HAL_SOURCES := src/hal/x86/rtc.c src/hal/x86/boot-parameters.c \
 	src/hal/amd64/bsp-pcat/cons.c \
 	src/hal/amd64/bsp-pcat/pic.c src/hal/amd64/bsp-pcat/clock.c \
 	src/hal/amd64/bsp-pcat/acpi.c src/hal/amd64/bsp-pcat/lapic.c \
+	src/hal/amd64/bsp-pcat/idle-suspend.c \
 	src/hal/amd64/bsp-pcat/early-init-policy.c \
 	src/hal/amd64/bsp-pcat/timecounter-policy.c \
 	src/hal/amd64/bsp-pcat/timecounter.c \

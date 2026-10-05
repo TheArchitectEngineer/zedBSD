@@ -39,3 +39,7 @@ QEMU の Venus。 やっていない確認は「未実施」と書く。
   3. 他の app（Files・Text Editor など）も同じ形を後で使える（libkeiland に「単一の instance」の小さな口を置く案）。
 - **所有の判断が要る**: 1 は compositor（`userland/desktop/wayland/`、WS099 と直列）。Q1 が P1 か P2 のどちらに割り当てるかを決める。2 は Settings（P2）。
 - 試験: 一つ目の Settings を開き、二つ目を `settings sharing` で起動して、窓が 1 つのまま前に出て Sharing の頁になること（zdesktop の log の activate と Settings の log、PNG）。
+
+## Q1 の割り当て（2026-10-05）
+
+compositor の xdg-activation-v1 も P2 が持つ（P1 は WS052 p006 に専念するため）。WS170・WS169 の mock の後に、compositor の変更を WS099 の他の変更と直列に Q1 が順を決めて入れる。

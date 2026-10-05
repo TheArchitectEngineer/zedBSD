@@ -73,6 +73,7 @@ X68K_STAGE2_OBJS := $(BUILD)/bootloader/x68k/stage2-start.o \
 	$(BUILD)/bootloader/x68k/mb89352.o
 X68K_EARLY_C_SOURCES := \
 	src/hal/cpu-up.c \
+	src/hal/idle-suspend-unsupported.c \
 	src/hal/m68k/atomic.c \
 	src/hal/m68k/runtime.c \
 	src/hal/m68k/cache.c \
@@ -178,6 +179,11 @@ vmunix: $(BUILD)/vmunix
 x68k-contract: $(BUILD)/vmunix $(BUILD)/contract-user.elf
 
 $(BUILD)/src/hal/cpu-up.o: src/hal/cpu-up.c
+	@mkdir -p $(dir $@)
+	$(M68K_CC) $(M68K_CPPFLAGS) $(M68K_KERNEL_CFLAGS) -fno-builtin \
+ -fno-strict-aliasing -MMD -MP -c $< -o $@
+
+$(BUILD)/src/hal/idle-suspend-unsupported.o: src/hal/idle-suspend-unsupported.c
 	@mkdir -p $(dir $@)
 	$(M68K_CC) $(M68K_CPPFLAGS) $(M68K_KERNEL_CFLAGS) -fno-builtin \
  -fno-strict-aliasing -MMD -MP -c $< -o $@
