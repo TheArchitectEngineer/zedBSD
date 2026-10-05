@@ -1,13 +1,17 @@
 #!/bin/sh
 # ws142-p005: the application switcher on the pen test guest (plan/ws079/tests/config-amd64-pen.mk;
 # plan/ws079/tests/pen-guest.sh start IMAGE).  The compositor under test (BUILD/bin/wayland) is copied in, 1280x800.
-# Three applications by wltest --app-id: apps.a, apps.b (two windows), apps.c, opened in that order (apps.c on top:
-# the latest use is c, b, a).  Keys through QMP, the touch pad through touchinject's "pad" (the injector's pad).
-#  1. Alt held, Tab: "ZWL SWITCH open via=keys index=1 app=apps.b placement=bar count=3" and apps.b's previews under
-#     its icon ("ZWL APPS preview app=apps.b windows=2 via=switch"; switch-bar.png); Tab: apps.a; Shift+Tab: apps.b;
-#     Alt let go: "ZWL SWITCH commit app=apps.b ... via=alt" and its window raised ("ZWL APPS raise ... via=switch").
+# Three applications by wltest --app-id: apps.a, apps.b (two windows), apps.c, opened in that order, so the bar's
+# icons are a, b, c from the left and apps.c (on top) is the current one.  BUG-209 (the 2026-10-05 user decision): the
+# switcher opens on the current application and each Tab moves one icon to the right in the bar's order, around at
+# the right end; Shift+Tab one to the left.  Keys through QMP, the touch pad through touchinject's "pad".
+#  1. Alt held, Tab: "ZWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3" and apps.c's preview under
+#     its icon ("ZWL APPS preview app=apps.c windows=1 via=switch"); Tab: around to apps.a (index=0); Tab: apps.b
+#     with its two previews (switch-bar.png); Shift+Tab: apps.a again; Alt let go: "ZWL SWITCH commit app=apps.a
+#     ... via=alt" and its window raised ("ZWL APPS raise ... via=switch").
 #  2. Alt+Tab then Esc: "ZWL SWITCH cancel via=escape", nothing brought.
-#  3. A quick Alt+Tab goes back to the application used before: apps.c ("commit app=apps.c").
+#  3. A quick Alt+Tab keeps the current application (apps.a); Alt+Tab+Tab brings the one to its right (apps.b);
+#     Shift+Alt+Tab opens on the current one too ("open via=keys index=1 app=apps.b"), Shift+Tab then apps.a, Esc.
 #  4. The pad: a tap of three fingers opens it ("open via=pad"), two fingers 15 mm to the right step on ("step ...
 #     via=pad"), a tap brings the selection ("commit ... via=pad").
 #  5. A docked window (double click on the top window's title): Alt+Tab shows in the middle ("placement=center",
@@ -55,21 +59,24 @@ open_app apps.b c0e4c0 360x240
 open_app apps.c d0d0f4 420x300
 pointer move 640 760 sleep 300
 
-# 1. Alt+Tab, Tab, Shift+Tab, Alt let go.
+# 1. Alt+Tab (the current one), Tab (around), Tab, Shift+Tab, Alt let go.
 key alt true
 tap tab
-expect_count keys-open 'ZWL SWITCH open via=keys index=1 app=apps.b placement=bar count=3' 1
+expect_count keys-open 'ZWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3' 1
+expect_count keys-bar-preview-current 'ZWL APPS preview app=apps.c windows=1 via=switch' 1
+tap tab
+expect_count keys-tab-around 'ZWL SWITCH step index=0 app=apps.a via=tab' 1
+tap tab
+expect_count keys-tab-right 'ZWL SWITCH step index=1 app=apps.b via=tab' 1
 expect_count keys-bar-preview 'ZWL APPS preview app=apps.b windows=2 via=switch' 1
 shot switch-bar
-tap tab
-expect_count keys-tab 'ZWL SWITCH step index=2 app=apps.a via=tab' 1
 key shift true
 tap tab
 key shift false
-expect_count keys-shift-tab 'ZWL SWITCH step index=1 app=apps.b via=tab' 1
+expect_count keys-shift-tab 'ZWL SWITCH step index=0 app=apps.a via=tab' 2
 key alt false
 sleep 0.8
-expect_count keys-commit 'ZWL SWITCH commit app=apps.b surface=[0-9]* via=alt' 1
+expect_count keys-commit 'ZWL SWITCH commit app=apps.a surface=[0-9]* via=alt' 1
 expect_count keys-raise 'ZWL APPS raise surface=[0-9]* via=switch' 1
 
 # 2. Alt+Tab, Esc.
@@ -81,12 +88,29 @@ sleep 0.8
 expect_count escape-cancels 'ZWL SWITCH cancel via=escape' 1
 expect_count escape-brings-nothing 'ZWL APPS raise surface=[0-9]* via=switch' 1
 
-# 3. A quick Alt+Tab: back to apps.c.
+# 3. A quick Alt+Tab keeps apps.a; Alt+Tab+Tab brings apps.b; Shift+Alt+Tab opens on apps.b.
 key alt true
 tap tab
 key alt false
 sleep 0.8
-expect_count quick-back 'ZWL SWITCH commit app=apps.c surface=[0-9]* via=alt' 1
+expect_count quick-keeps-current 'ZWL SWITCH commit app=apps.a surface=[0-9]* via=alt' 2
+key alt true
+tap tab
+tap tab
+key alt false
+sleep 0.8
+expect_count tab-tab-right 'ZWL SWITCH commit app=apps.b surface=[0-9]* via=alt' 1
+key shift true
+key alt true
+tap tab
+expect_count shift-opens-current 'ZWL SWITCH open via=keys index=1 app=apps.b placement=bar count=3' 1
+tap tab
+expect_count shift-tab-left 'ZWL SWITCH step index=0 app=apps.a via=tab' 3
+key shift false
+tap esc
+key alt false
+sleep 0.8
+expect_count shift-escape 'ZWL SWITCH cancel via=escape' 2
 
 # 4. The pad: a tap of three fingers, two fingers 15 mm right, a tap.
 pad switch-pad "down 0 400 500; down 1 550 480; down 2 700 500" "wait 40" "up 0; up 1; up 2" "wait 500" \
@@ -107,12 +131,12 @@ n=$(count "ZWL GLASS dock surface=${top:-0} "); [ "${n:-0}" -ge 1 ] 2>/dev/null 
 pointer move 640 760 sleep 300
 key alt true
 tap tab
-expect_count center-open 'ZWL SWITCH open via=keys index=1 app=[^ ]* placement=center' 1
+expect_count center-open 'ZWL SWITCH open via=keys index=[0-9]* app=[^ ]* placement=center' 1
 n=$(count 'ZWL SWITCH center app='); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass center-shown || fail center-shown
 shot switch-center
 key alt false
 sleep 0.8
-n=$(count 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt'); [ "${n:-0}" -ge 3 ] 2>/dev/null && pass center-commit || fail "center-commit (${n:-?})"
+n=$(count 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt'); [ "${n:-0}" -ge 4 ] 2>/dev/null && pass center-commit || fail "center-commit (${n:-?})"
 
 # 6. A fullscreen window: no switcher.
 guest "$env /bin/wltest --color=203040 --frames=3600 --delay-ms=250 > /tmp/f.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null

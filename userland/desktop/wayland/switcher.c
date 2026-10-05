@@ -18,14 +18,16 @@
 #include <string.h>
 
 /*
- * Opens the switcher on the applications, latest use first, with the one
- * after the current one selected (the only one when there is one).
- * Returns 0, or -1 when there is no application (it stays off).
+ * Opens the switcher on the applications in the bar's order, with the
+ * current one selected (its index in that order; the leftmost when there
+ * is none, -1, or it is not there).  Returns 0, or -1 when there is no
+ * application (it stays off).
  */
 int
 zwl_switcher_open(
 	struct zwl_switcher *switcher,
 	const struct zwl_apps *apps,
+	int current,
 	unsigned via,
 	unsigned placement)
 {
@@ -36,18 +38,18 @@ zwl_switcher_open(
 	if (apps->count == 0U)
 		return -1;
 
-	/* The keys in the order of their latest use. */
+	/* The keys in the order of the bar's icons, from the left. */
 	for (index = 0; index < apps->count; index++)
-		(void)snprintf(switcher->keys[index], sizeof(switcher->keys[index]), "%s", apps->apps[apps->recent[index]].key);
+		(void)snprintf(switcher->keys[index], sizeof(switcher->keys[index]), "%s", apps->apps[index].key);
 	switcher->count = apps->count;
 
-	/* On, with the application used before the current one. */
+	/* On, with the current application selected (the leftmost when no application is current). */
 	switcher->on = 1;
 	switcher->via = via;
 	switcher->placement = placement;
 	switcher->index = 0;
-	if (switcher->count > 1U)
-		switcher->index = 1;
+	if (current >= 0 && (unsigned)current < switcher->count)
+		switcher->index = (unsigned)current;
 
 	/* Succeeded: open. */
 	return 0;
