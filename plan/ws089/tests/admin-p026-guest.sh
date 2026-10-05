@@ -82,9 +82,12 @@ expect self '^error self' "$(as kei 'kei\ngroup-remove\nkei\nwheel\n')"
 expect root-target '^error root' "$(as kei 'kei\nreset-password\nroot\nrootpass12\n')"
 
 # 7. busy, then removed keeping the home, then home-exists.
-guest "/bin/su alice -c 'sleep 40' >/dev/null 2>&1 </dev/null & sleep 1; echo started" >/dev/null
+# The process is one (exec), and its PID is kept: ps shows a process's argv[0] alone (the kernel's command), so
+# "sleep 40" cannot be found by its arguments.  After the kill the test waits until no process of alice's is listed,
+# a zombie included (init reaps orphans about once a second).
+guest "/bin/su alice -c 'exec sleep 40' >/dev/null 2>&1 </dev/null & echo \$! > /tmp/p026-busy.pid; sleep 1; echo started" >/dev/null
 expect busy '^error busy' "$(as kei 'kei\nremove\nalice\nkeep-home\n')"
-guest 'for p in $(ps -A -o pid,args | grep "[s]leep 40" | awk "{print \$1}"); do kill $p; done; sleep 1' >/dev/null
+guest 'kill $(cat /tmp/p026-busy.pid); i=0; while ps -A -o user | grep -qw alice && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done; ps -A -o user,state,pid,comm | grep -w alice; echo waited=$i' > "$out/busy-end.txt"
 expect remove-alice '^ok' "$(as kei 'kei\nremove\nalice\nkeep-home\n')"
 after=$(guest 'grep -c "alice" /etc/passwd /etc/group /etc/shadow; ls -ld /home/alice')
 printf '%s\n' "$after" > "$out/alice-removed.txt"
