@@ -8,5 +8,6 @@ include plan/ws159/tests/config-amd64-uat.mk
 # /dev/input-inject, and aat-input (ws173-p001, P1): its server holds a mouse, an absolute pointer and a keyboard.
 CONFIG_INPUT_TEST_INJECT := y
 ZEDBSD_USER_PROGRAMS += aat-input
-# The compositor's test-only capture, keiland-shot (ws173-p002, P1): its package and setting go here when it lands.
-# Until then aat check names it as missing and aat shot fails.
+# The compositor's test-only capture (ws173-p002, P1: userland/desktop/wayland/shot.c) and its client keiland-shot.
+ZEDBSD_TEST_SCREEN_CAPTURE := y
+ZEDBSD_USER_PROGRAMS += keiland-shot

@@ -6,7 +6,7 @@
 | file | 役目 |
 | --- | --- |
 | `aat` | CLI（python3）。下の命令 |
-| `config-amd64-aat.mk` | AAT の image の config: UAT の config（`plan/ws159/tests/config-amd64-uat.mk`）＋試験の注入（`CONFIG_INPUT_TEST_INJECT`、`aat-input`）＋撮影の口（`keiland-shot`、P1 の package が入ったら足す）。製品の config には入れない |
+| `config-amd64-aat.mk` | AAT の image の config: UAT の config（`plan/ws159/tests/config-amd64-uat.mk`）＋試験の注入（`CONFIG_INPUT_TEST_INJECT`、`aat-input`）＋撮影の口（`ZEDBSD_TEST_SCREEN_CAPTURE`、`keiland-shot`）。製品の config には入れない |
 | `build-image.sh` | AAT の image を作る（root の鍵と host 鍵は guest の harness の物、harness の `net.conf` は入れない） |
 | `tests/run-host.sh` | host の自己試験（`--local`、偽の `aat-input`（`fake-aat-input.py`）と偽の撮影 `fake-shot.py`） |
 
@@ -28,19 +28,21 @@ plan/tools/aat/aat stop
 ```
 
 - 鍵: `aat` は自分の checkout の `plan/tmp/guest/id_ed25519`（guest の harness の鍵、`guest.py keys` が作る、git に入らない）を使う。image は**同じ checkout** で作る（`build-image.sh` がその公開鍵を `/root/.ssh/authorized_keys` に入れる）。別の鍵は `--identity`。
-- 接続は 1 本を使い回す（ssh の ControlMaster、`build/aat/<target>/`）。2 回目からの命令は速い。
+- 接続は 1 本を使い回す（ssh の ControlMaster）。2 回目からの命令は速い。control の socket は短い `/tmp/aat-<uid>/ssh-%C`（Unix の socket の path の上限、T1-200）、mark と画面の大きさは `build/aat/<target>/`（`AAT_STATE`）。
 - 座標は画面の pixel（左上が 0,0）。`move`・`click`・`drag`・`wheel` は `aat-input` の絶対の pointer（`move-to`）。`rel` は相対の mouse の量（compositor の加速がかかる）。`drag` は左 button だけ（`aat-input` の drag）。他の button で引くなら `move`・`down`・`move`・`up`。
 - `key` の名前は evdev の名前の小文字（`enter`・`leftctrl`・`f5`、`ctrl`・`alt`・`shift`・`super` は左）。`type` は ASCII を US の配列で打つ（改行は `key enter`）。日本語は IME（`key` で切り替えて仮名を打つ）か貼り付けで。
 - log の既定は `/run/user/1000/session.log`（`AAT_LOG`、`--log`）。`mark NAME` で今の長さを覚え、`--since NAME` でその後だけを見る。UTF-8 は host で解く（guest の shell を通さない）。
 - `windows`・`where` は `ZWL MAP`・`ZWL UNMAP`・`ZWL WINDOW centred`・`ZWL RESIZE settled`・`ZWL RESIZE end`・`ZWL GLASS press move` の行から、surface ごとの最後の位置と大きさ。app の名前・題名・titlebar の部品の位置は今の log に無い（下の「P1 への依頼」）。
 - QEMU と実機の証拠は分けて書く。QEMU の guest の判定に console・serial の log を使わない（AGENTS.md）。この道具は SSH と撮影だけを使う。
 
-環境変数: `AAT_TARGET`、`AAT_LOG`、`AAT_INPUT`（既定 `/bin/aat-input`）、`AAT_SHOT`（撮影、既定 `/bin/keiland-shot {path}`）、`AAT_RUN_DIR`（撮影の一時の置き場、既定 `/run/aat`）、`AAT_STATE`（host の状態、既定 `build/aat`）、`AAT_PASSWORD`（root 以外で入った時の sudo、既定 kei）。
+環境変数: `AAT_TARGET`、`AAT_LOG`、`AAT_INPUT`（既定 `/bin/aat-input`）、`AAT_SHOT`（撮影、既定 `/bin/keiland-shot {path}`）、`AAT_RUN_DIR`（target の撮影と `aat-input start` の出力の一時の置き場、既定 `/tmp/aat`）、`AAT_STATE`（host の状態、既定 `build/aat`）、`AAT_PASSWORD`（root 以外で入った時の sudo、既定 kei）。
 
 ## target の側の口（P1、ws173-p001・p002）
 
 - 入力: `aat-input`（`userland/tests/aat-input`、root）。`aat-input start --width W --height H` が `/dev/input-inject` に相対の mouse・絶対の pointer（W×H の画素、既定 1920×1200）・keyboard を宣言して背景の server になり（`/run/aat-input.sock`）、`AAT-INPUT ready` を出す。`aat-input COMMAND ...` は 1 つの命令を送り `ok` か `error WHY`。命令は `move-to X Y`・`move DX DY`・`click [BUTTON] [X Y]`・`double-click`・`down`・`up`・`drag X1 Y1 X2 Y2 [STEPS]`・`wheel N`・`hwheel N`・`key NAME[+NAME...]`・`key-down`・`key-up`・`type TEXT`・`sleep MS`・`stop`。`aat` の各命令は 1 つか少数の `aat-input` の命令に対応する（SSH の 1 回ずつ、ControlMaster で速い）。
-- 撮影: `keiland-shot OUT.png`（compositor が合成した画面、root）。aat は書かれた PNG の大きさを画面の大きさとして `aat-input start` に渡す。
+- 撮影: `keiland-shot OUT.png`（compositor が合成した画面、root）。aat は書かれた PNG の大きさを画面の大きさとして `aat-input start` に渡す。撮影に失敗した時は、その出力・終了の状態・user・`ls -l` を言う（T1-200 の「not found」の手がかり）。
+- `aat-input start` の server は起こされた時の descriptor を持ったまま背景に残るので、aat は出力を file（`AAT_RUN_DIR/input-start.txt`）に向けて起こし、起こした側が返った後にその file を読む（SSH の出力に向けると session が終わらない、T1-200）。
+- `check` の status は注入・`aat-input`・撮影の 3 つで決まる。session の log は有無を言うだけ（session がまだ無い image でも 0）。
 
 ## P1 への依頼（log）
 
@@ -52,7 +54,8 @@ plan/tools/aat/aat stop
 ## 自己試験
 
 - host（実装の担当）: `sh plan/tools/aat/tests/run-host.sh` → `aat-host: PASS`。CLI・`aat-input` に送る命令・拒否・mark と wait-log・`windows`・転送を、偽の `aat-input` と撮影で確かめる。
-- QEMU（T1）: AAT の config を harness つきで作る（QEMU の network には harness の `net.conf` が要る）:
-  1. `plan/tools/guest/test-image.sh plan/tools/aat/config-amd64-aat.mk BUILD`、`plan/tools/guest/guest.sh start BUILD/hdd-image.img`。
-  2. `plan/tools/aat/aat --qemu check`（`have /dev/input-inject`・`have /bin/aat-input`。`keiland-shot` は P1 の物が入るまで missing）、`aat --qemu run 'uname -a'`、`aat --qemu put`・`get` の往復、`aat --qemu mark m --log /tmp/x.log` の後に `aat --qemu run 'echo hello >> /tmp/x.log'` と `aat --qemu wait-log hello --since m --log /tmp/x.log`。
-  3. 撮影が入った後（無ければ `aat --qemu start --size 1280x800` で入力だけ）: `aat --qemu start`、greeter で `aat --qemu type kei`・`key enter`、`wait-log 'ZWL MAP'`、`windows`、`click`・`drag`・`wheel`・`key`、各段で `shot` の PNG。合格: 各命令が 0 で終わり、PNG に操作の結果が見える。
+- QEMU（T1）: 撮影の口のある image（`plan/ws173/tests/config-amd64-aat.mk`、T1-200 の物でよい）を `plan/tools/titlebar/menu-guest.sh start IMAGE`（`GUEST_RUNTIME=build/ws070-run`）。この image に session は無いので log は `--log /tmp/zdesktop.log`。
+  1. `aat --qemu check`（rc 0: `have /dev/input-inject`・`have /bin/aat-input`・`have /bin/keiland-shot`、log は有無だけ）、`aat --qemu run 'uname -a'`、`put`・`get` の往復、`mark`・`run 'echo hello >> /tmp/x.log'`・`wait-log hello --since m --log /tmp/x.log`。
+  2. compositor と窓（`plan/ws173/tests/aat-p002.sh` の 1. と同じ: `aat --qemu run` で `/bin/wayland --testing --width=1280 --height=800 --glass > /tmp/zdesktop.log` と `seat-probe`）。
+  3. `aat --qemu start`（数秒で返り `screen 1280x800`）、`aat --qemu shot a.png`（PNG 1280x800）、`click`・`drag`・`wheel`・`key`・`type`、`windows --log /tmp/zdesktop.log`、各段で `shot`、`stop`。合格: 各命令が 0 で終わり、PNG に操作の結果が見える。撮影が失敗したら、aat の出す行（状態・user・`ls -l`）をそのまま返す。
+  4. 全部の項目（`run-aat.sh`、ws173-p004）は session のある AAT の image（`config-amd64-aat.mk`）で。
