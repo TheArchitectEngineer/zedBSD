@@ -2,7 +2,7 @@
 
 # ws158-p001: 翻訳の仕組みの設計
 
-Status: in-progress（2026-10-05、P2。設計を書いた。判断の 5 点待ち）
+Status: cleared（2026-10-05 夜、ユーザーの判断 ①〜⑤ が全部推奨どおり（Q1 の伝達）。設計の確定）
 Disposition: normal
 Parent: [WS158](../ws.md)
 Queue: q738（Q1、2026-10-05）
@@ -44,3 +44,13 @@ p002 口と catalog の読み込み・抽出の道具（host の試験）／p003
 3. ベータ2 の言語は英語と日本語の 2 つで良いか。
 4. login の前（greeter）の言語を system の既定として持ち、管理者（wheel）だけが Settings で変える、で良いか。
 5. ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）は、この WS の p004・p005 に吸収して、元の Phase は canceled（吸収）にする、で良いか。
+
+## ユーザーの判断（2026-10-05 夜、Q1 の伝達「WS158 ①〜⑤…全部推奨どおり」）
+
+1. key は英語の文そのもの（gettext と同じ）。
+2. catalog は独自の UTF-8 の text の形式（Zlib）。gettext の `.po` 互換にしない。
+3. ベータ2 の言語は英語と日本語。
+4. login の前（greeter）の言語は system の既定として持ち、変えるのは管理者（wheel）だけ（Settings）。
+5. ws089-p015（Settings の日本語の UI）と ws127-p005（Files の日本語の UI）はこの WS の p004・p005 に吸収し、元の Phase は canceled（吸収）。元の phase.md の書き換えは Q1（他の WS の記録）。
+
+設計の D1〜D7 はこの判断で確定。実装は [p002](../phase002/phase.md) から。

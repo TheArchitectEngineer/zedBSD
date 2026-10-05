@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled). */
-#define KL_VERSION	36U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*). */
+#define KL_VERSION	37U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1863,6 +1863,98 @@ unsigned kl_appearance_get(const struct kl_appearance *appearance);
  * Stops watching (NULL does nothing).
  */
 void kl_appearance_close(struct kl_appearance *appearance);
+
+/*
+ * The translations of the user interface's text (WS158).  The English
+ * text in the source is the key: kl_tr("Open") gives the text of the
+ * language chosen, or "Open" itself when the catalog has none.  The
+ * catalogs are UTF-8 text files, KEILAND_DATADIR/keiland/locale/LANGUAGE/
+ * DOMAIN.tr, one for each program (its domain) and one the desktop's
+ * programs share ("keiland").  The language is the desktop's setting
+ * ui.language (0 English, 1 Japanese), which kl_tr_follow watches, so
+ * that a program changes its language while it runs.  One thread uses
+ * them; a text they give lives until the language or the domain changes.
+ */
+
+/* The domain the desktop's programs share, looked in after a program's own. */
+#define KL_TR_SHARED_DOMAIN	"keiland"
+
+/* The longest name of a language or a domain. */
+#define KL_TR_NAME_MAX		31U
+
+/*
+ * Called by kl_tr_follow after the language changed and its catalogs were
+ * read: the program draws its text again.  language is "en", "ja", ...
+ */
+typedef void (*kl_tr_changed_fn)(void *data, const char *language);
+
+/*
+ * Reads a program's catalogs (domain and KL_TR_SHARED_DOMAIN) in a
+ * language from the installed directory.  English needs none.  A catalog
+ * that is not there leaves its texts in English.  Returns 0, EINVAL for a
+ * name that is not lower-case letters, digits, '-' and '_', or ENOMEM; the
+ * texts are English after a failure.
+ */
+int kl_tr_open(const char *domain, const char *language);
+
+/*
+ * Reads them from another directory, which holds LANGUAGE/DOMAIN.tr (a
+ * program installed elsewhere, or a test).  Returns as kl_tr_open.
+ */
+int kl_tr_open_directory(const char *directory, const char *domain, const char *language);
+
+/*
+ * Forgets the catalogs: every text is English again.
+ */
+void kl_tr_close(void);
+
+/*
+ * Reports the language read ("en" before any).
+ */
+const char *kl_tr_language(void);
+
+/*
+ * Reports the language a value of ui.language names ("en" for 0, "ja"
+ * for 1), or NULL for a value no language has.
+ */
+const char *kl_tr_language_code(int setting);
+
+/*
+ * Gives the text of the language for an English text.
+ */
+const char *kl_tr(const char *english);
+
+/*
+ * Gives the text for an English text in a context, for an English word
+ * that is translated in more than one way ("Open" a verb or an adjective).
+ */
+const char *kl_trc(const char *context, const char *english);
+
+/*
+ * Gives the text for a number of things: the singular or the plural in
+ * English, and the form the language takes for count.  The number itself
+ * goes in with kl_tr_format.
+ */
+const char *kl_trn(const char *singular, const char *plural, unsigned long count);
+
+/*
+ * Writes a text of the language with its places filled: {1} to {9} are
+ * the strings after pattern, in order, which a NULL ends; {{ is a brace.
+ * The places can come in any order, so that a language puts the words
+ * where its grammar wants them.  out always ends with a NUL.  Returns 0,
+ * ERANGE when the text was cut to fit, or EINVAL for a place without its
+ * string.
+ */
+int kl_tr_format(char *out, size_t size, const char *pattern, ...);
+
+/*
+ * Follows the desktop's language: reads the program's catalogs in the
+ * language of ui.language now, and again whenever it changes, calling
+ * changed (may be NULL) after each change.  The watch runs from
+ * kl_settings_dispatch, and ends with the settings.  Returns 0, EINVAL or
+ * ENOMEM.
+ */
+int kl_tr_follow(struct kl_settings *settings, const char *domain, kl_tr_changed_fn changed, void *data);
 
 #ifdef __cplusplus
 }

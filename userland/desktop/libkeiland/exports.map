@@ -154,6 +154,16 @@
 		kl_appearance_open;
 		kl_appearance_get;
 		kl_appearance_close;
+		kl_tr_open;
+		kl_tr_open_directory;
+		kl_tr_close;
+		kl_tr_language;
+		kl_tr_language_code;
+		kl_tr;
+		kl_trc;
+		kl_trn;
+		kl_tr_format;
+		kl_tr_follow;
 		kl_canvas_init;
 		kl_canvas_release;
 		kl_canvas_clip_push;
