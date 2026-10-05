@@ -4,7 +4,7 @@
 
 Phase ID: `ws156-p001`
 Parent: [WS156](../ws.md)
-Status: planning（2026-10-05 P1 generation17。設計の第 1 版。code は §9 の判断の後）
+Status: planning（2026-10-05 P1 generation17。設計の第 1 版。code は §9 の判断の後。2026-10-05 夜: H1〜H7 決定済み）
 Phase disposition: normal
 Queue: ベータ2 の P1 の列の 3 番目（q は Q1 が振る）
 
@@ -156,6 +156,10 @@ source の名前は「System」、icon は Kei の mark。
 | H5 | 続けて来た時 | 1 つずつ流し、待ちがある時はとどまる段を 1.5 秒に早送り |
 | H6 | Linux・FreeBSD の D-Bus の通知（他の toolkit の app） | **決定（2026-10-05 ユーザー）**: Linux は libkeiland-backend で受ける（§11）。実装は後回し（p006）。FreeBSD は後 |
 | H7 | bar の媒体の icon を消して通知に置き換える（媒体が残っている間の icon は無くなる） | 消す |
+
+### 決定（2026-10-05 夜、ユーザー、Q1 経由）
+
+H1〜H5 と H7 を案のとおり承認（H6 は既に決定済み）。
 
 ## 10. 段（ws.md の案の確定）
 

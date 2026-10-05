@@ -4,7 +4,7 @@
 
 Phase ID: `ws168-p001`
 Parent: [WS168](../ws.md)
-Status: planning（2026-10-05 P1 generation17。設計の第 2 版（ユーザーの review を反映）。code はユーザーの review の後。§8 の判断が要る）
+Status: planning（2026-10-05 P1 generation17。設計の第 2 版（ユーザーの review を反映）。code はユーザーの review の後。§8 の判断が要る。2026-10-05 夜: H1〜H7 決定）
 Phase disposition: normal
 Queue: Q1 の 2026-10-05 の指示（第 1 版の設計、続けてユーザーの review に従った第 2 版）
 
@@ -322,6 +322,10 @@ seccomp・Capsicum が使えない（kernel が古い、設定で無効）時、
 | H5 | Linux・FreeBSD で chroot ができない system（名前空間が無い、`unprivileged_chroot` が 0）で、seccomp・Capsicum だけで復号してよいか | よい | path の call は全部断られる。chroot を必須にすると多くの system で縮小表示が出なくなる |
 | H6 | zedBSD の子の image を静的 link に限ってよいか（kernel が `PT_INTERP` のある image を断る）。PDF の代わりの font は image に埋め込む | よい | 子は最初から file を開けないので動的 link は動かない。静的 link の前例はある（compat の library・libpdf・libtruetype を command 用に compile する規則を足す）。font の埋め込みで image は約 1 MB 大きくなる |
 | H7 | 子に name space を持たせない（chroot の代わり） | 持たせない | root も cwd も無ければ path は解決できず、`/var/empty` のような場所も要らない。「最低でも chroot」より強い |
+
+### 決定（2026-10-05 夜、ユーザー、Q1 経由）
+
+H1〜H7 を案のとおり承認（`sandbox_spawn` の system call と `include/uapi/sandbox.h` の追加を含む）。p002 は WS130 の後に Queue に入る。
 
 ## 9. 段（案）
 

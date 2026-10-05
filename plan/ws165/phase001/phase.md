@@ -4,7 +4,7 @@
 
 Phase ID: `ws165-p001`
 Parent: [WS165](../ws.md)
-Status: planning（2026-10-05 P1 generation17。設計の第 1 版。code は §7 の判断（字形の data の license を含む）の後）
+Status: planning（2026-10-05 P1 generation17。設計の第 1 版。code は §7 の判断（字形の data の license を含む）の後。2026-10-05 夜: H1〜H4 決定）
 Phase disposition: normal
 Queue: q739（ベータ2 の P1 の列の 7 番目、段 1）
 
@@ -75,6 +75,10 @@ Queue: q739（ベータ2 の P1 の列の 7 番目、段 1）
 | H2 | 認識の方式 | 点群の照合（$P の系統、学習なし） |
 | H3 | 手本の data | 段 1 は Hershey fonts と自作。段 2 で KanjiVG（CC BY-SA 3.0）を使うかは段 2 で決める |
 | H4 | 段 2・3 | 段 1 の結果を見てから別に計画する |
+
+### 決定（2026-10-05 夜、ユーザー、Q1 経由）
+
+H1〜H4 を案のとおり承認（手本の data は段 1 で Hershey fonts と自作、KanjiVG は段 2 で決める）。
 
 ## 8. 段（案、段 1）
 
