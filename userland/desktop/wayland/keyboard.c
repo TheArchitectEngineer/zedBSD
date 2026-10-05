@@ -3970,7 +3970,7 @@ keyboard_emoji_release(
 
 	/* Committed whole (no deletion before it), and the log line the tests read. */
 	sent = keyboard_send_commit(server, text, 0U);
-	printf("ZWL OSK emoji commit text=%s sent=%d\n", text, sent);
+	printf("ZWL OSK emoji commit sent=%d text=%s\n", sent, text);
 
 	/*
 	 * The voice key replaces the last kana sent by deleting its bytes; after
