@@ -11,7 +11,7 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
-tools=${BRW_TOOLS:-/home/awe/p014-c/mesa/build-asm/src/intel/compiler}
+tools=${BRW_TOOLS:-$repo/build/mesa-tools/build-asm/src/intel/compiler}
 work=$(mktemp -d "${TMPDIR:-/tmp}/ws075-guard.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
 cc -std=gnu99 -O0 -w -I"$repo" -I"$repo/include" -DHAL_ARCH_AMD64 -o "$work/dump" "$repo/plan/ws075/tests/guard/shader-dump.c" -lm
@@ -36,7 +36,7 @@ status=0
 roundtrip=1
 if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
 	roundtrip=0
-	echo "NOTE: no brw_disasm/brw_asm under $tools (set BRW_TOOLS to a Mesa 25.0.7 build's src/intel/compiler);" \
+	echo "NOTE: no brw_disasm/brw_asm under $tools (plan/ws101/tests/host/mesa-tools.sh builds them, or set BRW_TOOLS);" \
 		"the disassembly checks are NOT RUN"
 fi
 for module in zwl_panel_frag zwl_quad_frag paint_display_frag switch.frag switch-O.frag loop.frag; do

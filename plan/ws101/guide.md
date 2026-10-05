@@ -136,7 +136,7 @@ p019 を採るなら、[phase012](phase012/phase.md) の手順の A を p019 へ
 | `--gpu` が黙って CPU に戻る条件 | Noct は書き換えを断ると黙って CPU で走る（phase011「Noct の書き方で分かったこと」）。offload の証拠は `KEI_GLES_COMPUTE_TRACE=1` の `gles: compute dispatch` の行の数（`userland/desktop/libglesv2/compute.c:494〜510`）。s13.sh は「(N kernels ran on the GPU)」で数を出す（N=6 が正しい） |
 | Noct の accel の中身 | `userland/base/noct/noct/src/accel/accel_opengles.c`（2069 行。call ごとの buffer の作成・`glBufferData`・dispatch・`glFinish`・`glMapBufferRange`・`glDeleteBuffers` は 1588〜2040 行）。**読むだけ。変更は toolchain（main の許可）** |
 | libglesv2 の compute の時間の内訳 | `KEI_GLES_COMPUTE_TRACE=2`（`userland/desktop/libglesv2/gles.c:226〜250`）で `gles: time step=NAME us=N bytes=B` を stderr へ。集計は `python3 plan/ws101/tests/time-split.py GPU.log CPU.log`。spare の定数は `userland/desktop/libglesv2/gles.h:151〜159`（`GLES_SPARES` 8、`GLES_SPARE_BYTES` 64 MiB、`GLES_SPARE_FRAMES` 8、`GLES_ON_DEVICE_MIN` 64 KiB） |
-| compiler・実行器の誤り（再発時） | host の試験 `plan/ws101/tests/host/run.sh`: Mesa 25.0.7 の `brw_disasm`・`brw_asm`（`BRW_TOOLS`、既定 `/home/awe/p014-c/mesa/build-asm/src/intel/compiler`、run.sh:24）で byte の往復、Mesa の genxml（`GENXML`、既定 `/home/awe/p014-c/mesa/src/intel/genxml`、run.sh:25）で batch と IDD を decode（`tests/host/genxml-check.py`）。実行器の source は `src/drivers/gpu/i915/render/compute.c`・`command.c`、compiler は `src/drivers/gpu/i915/compiler/spirv.c`・`eu.c` |
+| compiler・実行器の誤り（再発時） | host の試験 `plan/ws101/tests/host/run.sh`: Mesa 25.0.7 の `brw_disasm`・`brw_asm`（`BRW_TOOLS`、既定 `build/mesa-tools/build-asm/src/intel/compiler`、run.sh:24）で byte の往復、Mesa の genxml（`GENXML`、既定 `build/mesa-tools/mesa-25.0.7/src/intel/genxml`、run.sh:25）で batch と IDD を decode（`tests/host/genxml-check.py`）。実行器の source は `src/drivers/gpu/i915/render/compute.c`・`command.c`、compiler は `src/drivers/gpu/i915/compiler/spirv.c`・`eu.c` |
 | GLSL ES 3.10 の compute の誤り（再発時） | `plan/ws101/tests/glsl/run.sh`: 自前の compiler（`userland/desktop/libglesv2/glsl/*.c`）→ `spirv-val --target-env vulkan1.0` → i915 の host の compile（`tests/host/compute-dump.c`）→ brw の往復 → host の lavapipe（`VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json`、run.sh:155）で実行し C と照合。新しい shader は `tests/glsl/pass/*.comp`、断るべき物は `tests/glsl/fail/*.comp`（`// expect:` の行） |
 | GPU が固まる（試験中） | serial・console の log で判定しない（AGENTS.md）。QEMU の `-S -gdb` で止め、i915 の error の register（EIR・IPEHR・ACTHD・INSTDONE）を monitor・gdb で読む（design.md §5.3）。同じ条件の変更無しの再試行は 3 回まで |
 
@@ -156,7 +156,7 @@ sh plan/ws068/tests/spirv-host/run.sh build/<W>/spirv-host       # "spirv-host: 
 ```
 
 - `host/run.sh` は作業の dir を `mktemp -d "${TMPDIR:-/tmp}/ws101-host.XXXXXX"`（run.sh:26）に作り、終わりに消す。
-- 要る host の道具: `glslc`、`spirv-val`、`cc`、Mesa の `brw_disasm`・`brw_asm`・genxml（2026-10-05: 既定 path の `/home/awe/p014-c` は host から無くなった。無ければ `host/run.sh`・`glsl/run.sh`・`plan/ws075/tests/guard/run.sh` は往復と genxml の decode を「NOT RUN」と出し、それ以外の検査だけで PASS（制限付き）と言う。`BRW_TOOLS`・`GENXML` で作り直した build を指す）、lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）。
+- 要る host の道具: `glslc`、`spirv-val`、`cc`、Mesa の `brw_disasm`・`brw_asm`・genxml（2026-10-05: 旧 `/home/awe/p014-c` は無くなったので、checkout の `build/mesa-tools` に `sh plan/ws101/tests/host/mesa-tools.sh` で作る。tarball を取って release notes の SHA-256 と照合し、intel の tools だけを meson で build、約 2 分。無ければ `host/run.sh`・`glsl/run.sh`・`plan/ws075/tests/guard/run.sh` は往復と genxml の decode を「NOT RUN」と出し、それ以外の検査だけで PASS（制限付き）と言う。`BRW_TOOLS`・`GENXML` で別の build を指せる）、lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）。
 
 ### 5.2 library と program だけの build（image は作らない）
 

@@ -6,13 +6,13 @@
 #  2. fail/: every shader fails with each "// expect:" text in its log.
 #  3. run: the pass/ shaders run on the host's Vulkan (lavapipe) and leave what C computes (vk-compute.c).
 #
-#   plan/ws101/tests/glsl/run.sh [OUTDIR]     (BRW_TOOLS: a Mesa 25.0.7 build's src/intel/compiler)
+#   plan/ws101/tests/glsl/run.sh [OUTDIR]     (BRW_TOOLS: a Mesa 25.0.7 build's src/intel/compiler; default build/mesa-tools from tests/host/mesa-tools.sh)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 here=$(cd "$(dirname -- "$0")" && pwd)
 root=$here/../../../..
 out=${1:-$root/build/ws101-glsl}
-tools=${BRW_TOOLS:-/home/awe/p014-c/mesa/build-asm/src/intel/compiler}
+tools=${BRW_TOOLS:-$root/build/mesa-tools/build-asm/src/intel/compiler}
 mkdir -p "$out"
 status=0
 fail() { echo "FAIL: $*"; status=1; }
@@ -30,7 +30,7 @@ cc -std=gnu99 -O0 -Wall -Wextra -Wno-unused-function -I"$root" -I"$root/include"
 roundtrip=1
 if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
 	roundtrip=0
-	echo "NOTE: no brw_disasm/brw_asm under $tools (set BRW_TOOLS to a Mesa 25.0.7 build's src/intel/compiler);" \
+	echo "NOTE: no brw_disasm/brw_asm under $tools (plan/ws101/tests/host/mesa-tools.sh builds them, or set BRW_TOOLS);" \
 		"the disassembly round trip is NOT RUN"
 fi
 
