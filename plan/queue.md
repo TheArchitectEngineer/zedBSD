@@ -266,3 +266,26 @@ user「P4のみを実行するqueue.mdを書いてください。22時の5時間
 継続の dispatch（2026-10-02 user「N=4で週次利用制限に達するまで作業してください」「作業を開始しましょう。」）: Q1 は Master の Outlook の fg019 の planned Phase を各担当の線に順に投入する。ユーザーの判断が要る Phase（planning）は投入しない。
 
 担当の線は Master の [Upcoming Work Outlook](master.md#upcoming-work-outlook)。予約（承認は投入時に確認）: P1 → デモの image を CI 設定の土台へ → ws005-p018 → ws033-p001 → ws118-p001。P2 → ws099-p021 → ws094-p014。P3 → ws115-p001（素の GTK4 移植の契約）→ ws115-p004〜。P4 → ws127-p001 → ws089-p010 → ws095-p005。
+
+## 2026-10-05 ベータ2 の割り当て（ユーザー「ベータ2の実装をすべて、P1,P2にスケジューリング可能にします。作業を継続してください。」）
+
+ブロック（要検討）とアイディアの Phase の WS を除くベータ2 の WS を、担当ごとの順で並べる。各担当は今の仕事の後に上から取り、WS ごとに Q1 に開始を伝える（q の番号は開始の時に Q1 が振る）。HAL・UAPI・toolchain・root の daemon の口などユーザーの判断が要る点は、その場で止めて Q1 へ。実機が要る確かめは UAT に回す。
+
+| 順 | P1（kernel・driver・compositor・system） | P2（app・Settings・userland・package） |
+| --- | --- | --- |
+| 1 | WS168 の設計の第 2 版（ユーザーの review 待ち） | WS110 p003・WS066 の目標の文・WS140 の完了 |
+| 2 | WS167 GPU の command の protocol の独自化 | WS122 動画の独自の container の段と add-in |
+| 3 | WS156 app の通知（USB 媒体の icon の置き換えを含む） | WS154 Languages の頁と SKK |
+| 4 | WS164 起動時の Welcome の画面 | WS166 予測変換 |
+| 5 | WS163 6 桁の PIN の login | WS158 翻訳（日本語） |
+| 6 | WS161 YubiKey（USB の FIDO2） → WS162 FIDO2 の login | WS089 の残り（p015 日本語の UI・p016・p017・p026） |
+| 7 | WS102 スクリーンキーボード → WS165 手書き（段 1） | WS079 Notes・PDF Viewer の残り |
+| 8 | WS139 desktop の速さ | WS145 印刷 |
+| 9 | WS130 IPv6 | WS153 app の repository と Apps の頁 → WS152 system の更新 |
+| 10 | WS068 EGL・OpenGL ES → WS101 GPU の compute | WS120 音楽 → WS157 写真 |
+| 11 | WS143 Bluetooth | WS114 → WS117 → WS115 → WS116（GTK4・Qt6） |
+| 12 | WS031 i915 の native の Vulkan の実行器 → WS083 Vulkan Video（実機） | WS001 POSIX → WS046 GNU make → WS026・WS106 |
+| 13 | WS113 の残り（p003〜、実機の p002 の後）・WS052 p006（HAL の承認の後）・WS051・WS050・WS075・WS084・WS029・WS004（実機） | WS121 browser の動画・WS112 Linux の package・WS124〜126 package・WS085・WS088 |
+| 14 | WS078 名前の移行・WS009 文書・WS014 | WS148・WS149・WS151 の頁の検討 |
+
+保留: WS155 カレンダー（外観の画像待ち）、WS074 Web ブラウザ（Codex の担当）。
