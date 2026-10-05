@@ -26,6 +26,17 @@ extern "C" {
 #define IPPROTO_IPV6		41
 
 /*
+ * The second family's own numbers (ws130): its extension headers and its
+ * control messages.  Hop-by-hop options share number 0 with IPPROTO_IP.
+ */
+#define IPPROTO_HOPOPTS		0
+#define IPPROTO_ROUTING		43
+#define IPPROTO_FRAGMENT	44
+#define IPPROTO_ICMPV6		58
+#define IPPROTO_NONE		59
+#define IPPROTO_DSTOPTS		60
+
+/*
  * Options at IPPROTO_TCP.  TCP_NODELAY is the one POSIX names.
  */
 #define TCP_NODELAY		1
@@ -63,12 +74,7 @@ struct sockaddr_in {
 
 /*
  * The second family's address, and the socket address that carries it.
- *
- * Nothing routes this protocol yet; these are here so that software which
- * knows both families can be compiled, and can then be told at run time
- * which one this system carries.  The flow and scope words are part of the
- * address as it is written down, and are kept even though nothing reads
- * them.
+ * The scope word names the interface of a link-local address.
  */
 struct in6_addr {
 	union {
@@ -104,6 +110,34 @@ extern const struct in6_addr in6addr_loopback;
 				      0, 0, 0, 0, 0, 0, 0, 0 } } }
 #define IN6ADDR_LOOPBACK_INIT	{ { { 0, 0, 0, 0, 0, 0, 0, 0, \
 				      0, 0, 0, 0, 0, 0, 0, 1 } } }
+
+/*
+ * Options at IPPROTO_IPV6 (ws130; the numbers are FreeBSD's, as the
+ * SOL_SOCKET options are).  IPV6_V6ONLY is 0 by default: a socket bound
+ * to the unspecified address also takes the first family's peers, as
+ * v4-mapped addresses.
+ */
+#define IPV6_UNICAST_HOPS	4
+#define IPV6_MULTICAST_IF	9
+#define IPV6_MULTICAST_HOPS	10
+#define IPV6_MULTICAST_LOOP	11
+#define IPV6_JOIN_GROUP		12
+#define IPV6_LEAVE_GROUP	13
+#define IPV6_V6ONLY		27
+#define IPV6_RECVPKTINFO	36
+#define IPV6_PKTINFO		46
+
+/*
+ * The destination address and the interface a datagram came in on: the
+ * control message IPV6_PKTINFO that IPV6_RECVPKTINFO asks recvmsg for.
+ */
+struct in6_pktinfo {
+	struct in6_addr ipi6_addr;
+	unsigned ipi6_ifindex;
+};
+
+/* A lifetime (seconds) that does not run out: an address's, or a route's. */
+#define IN6_LIFETIME_INFINITE	0xffffffffU
 
 /*
  * Room for the longest written form of an address of the second family.

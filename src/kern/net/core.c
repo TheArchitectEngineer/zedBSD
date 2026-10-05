@@ -25,6 +25,7 @@
 #include "kern/net/route.h"
 #include "kern/net/wlan.h"
 #include "internal.h"
+#include "ipv6.h"
 #include "kern/clock.h"
 #include "kern/lock.h"
 #include "kern/sched.h"
@@ -203,6 +204,9 @@ net_init(
 	if (error != 0)
 		return error;
 	error = icmp_init();
+	if (error != 0)
+		return error;
+	error = ipv6_init();
 	if (error != 0)
 		return error;
 	error = udp_init();
@@ -553,6 +557,7 @@ network_worker(
 	unsigned long sleep_irq;
 	uint64_t deadline;
 	uint64_t wlan_deadline;
+	uint64_t ipv6_deadline;
 	uint64_t observed;
 	int error;
 
@@ -562,6 +567,7 @@ network_worker(
 	for (;;) {
 		/* Runs the timers and polls the devices. */
 		tcp_timer_run();
+		ipv6_timer_run();
 		wlan_timer_run(clock_ticks());
 		work = poll_devices();
 
@@ -598,6 +604,10 @@ network_worker(
 		observed = worker_generation;
 		spin_unlock_irqrestore(&input_lock, sleep_irq);
 		deadline = tcp_timer_next_deadline();
+		ipv6_deadline = ipv6_timer_next_deadline();
+		if (ipv6_deadline != 0 &&
+		    (deadline == 0 || ipv6_deadline < deadline))
+			deadline = ipv6_deadline;
 		wlan_deadline = wlan_timer_next_deadline();
 		if (wlan_deadline != 0 &&
 		    (deadline == 0 || wlan_deadline < deadline))

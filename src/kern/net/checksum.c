@@ -75,6 +75,45 @@ net_checksum_pseudo(
 	return checksum;
 }
 
+/*
+ * Computes the Internet checksum of an upper-layer message with its IPv6
+ * pseudo-header (RFC 8200 section 8.1): the addresses, the length and
+ * the next header.
+ */
+uint16_t
+net_checksum_pseudo6(
+	const uint8_t source[16],
+	const uint8_t destination[16],
+	uint8_t next_header,
+	const void *data,
+	size_t length)
+{
+	uint8_t pseudo[8];
+	uint32_t sum;
+	uint16_t checksum;
+
+	/* The length and the next header, in network byte order. */
+	pseudo[0] = (uint8_t)(length >> 24);
+	pseudo[1] = (uint8_t)(length >> 16);
+	pseudo[2] = (uint8_t)(length >> 8);
+	pseudo[3] = (uint8_t)length;
+	pseudo[4] = 0;
+	pseudo[5] = 0;
+	pseudo[6] = 0;
+	pseudo[7] = next_header;
+
+	/* Sums the addresses, the rest of the pseudo-header and the message, then folds the carries. */
+	sum = 0;
+	sum = checksum_add(sum, source, 16U);
+	sum = checksum_add(sum, destination, 16U);
+	sum = checksum_add(sum, pseudo, sizeof(pseudo));
+	sum = checksum_add(sum, data, length);
+	checksum = checksum_finish(sum);
+
+	/* Reports the checksum. */
+	return checksum;
+}
+
 /* Adds the big-endian 16-bit words of a buffer to a running sum. */
 static uint32_t
 checksum_add(

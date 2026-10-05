@@ -41,6 +41,8 @@
 #include <stdint.h>
 #include <uapi/unistd.h>
 #include "kern/klog.h"
+#include "kern/namei.h"
+#include <uapi/resource.h>
 
 #define EXEC_ARG_MAX KERN_SPAWN_ARG_MAX
 #define EXEC_ENV_MAX KERN_SPAWN_ENV_MAX
@@ -84,6 +86,9 @@ static void fill_auxv_info(struct exec_auxv_info *aux, const EXEC_IMAGE_INFO *im
 static int setup_standard_files(struct process *parent, struct process *process, const struct ucred *credential);
 static int process_exec_file(struct process *process, const char *path, struct file *provided_file, int reopenable_path, char *const argv[], char *const envp[]);
 static int exec_thread_retired(const struct thread *thread);
+struct exec_sandbox_build;
+static int exec_sandbox_start(struct process *parent, struct sandbox_spawn_plan *plan, struct exec_sandbox_build *build);
+static void exec_sandbox_limit(struct rlimit_record *record, uint64_t requested);
 
 /*
  * Parses a #! line at the start of a file.
@@ -719,6 +724,200 @@ out:
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * What a sandboxed spawn holds while it builds the child, released by
+ * process_spawn_sandbox whatever the outcome: the resolved image, the
+ * parent's credential, the child's prospective credential and its
+ * reservation, the unpublished child, and the stage reached (for the
+ * log).
+ */
+struct exec_sandbox_build {
+	struct exec_target target;
+	struct ucred *access_cred;
+	struct ucred *prospective_cred;
+	struct process_cred_reservation *cred_reservation;
+	struct process *process;
+	const char *stage;
+};
+
+/*
+ * Spawns a sandboxed child of a parent (ws168-p002, sandbox_spawn; uapi/
+ * sandbox.h): a new address space with the static image only (an image
+ * that names an interpreter is ENOEXEC: the child could not open it), the
+ * parent's credential without the image's set-ID bits, no name space,
+ * only the files of the plan at their numbers, the smaller of the
+ * parent's limits and the plan's (and no more files than the sandbox
+ * hands over, no core file), and the plan's sandbox from its first
+ * instruction.  Every failure comes before the child runs.  On success
+ * the plan's sandbox is the child's.
+ */
+int
+process_spawn_sandbox(
+	struct process *parent,
+	struct sandbox_spawn_plan *plan,
+	struct process **result)
+{
+	struct exec_sandbox_build build;
+	int error;
+
+	/* A parent with a name space (the image is checked with it), an image, an argument vector. */
+	if (parent == NULL || parent->cwdi == NULL || plan == NULL || plan->image == NULL)
+		return EINVAL;
+	if (plan->argv == NULL || plan->argv[0] == NULL || plan->sandbox == NULL)
+		return EINVAL;
+
+	/* The child built and started. */
+	kern_memset(&build, 0, sizeof(build));
+	build.stage = "resolve image";
+	error = exec_sandbox_start(parent, plan, &build);
+	if (error == 0) {
+		*result = build.process;
+		build.process = NULL;
+	}
+
+	/* What the build holds, released. */
+	if (error != 0)
+		kern_logf("exec: sandbox %s failed (%d)\n", build.stage, error);
+	exec_target_release(&build.target);
+	process_cred_reservation_abort(build.cred_reservation);
+	cred_release(build.prospective_cred);
+	cred_release(build.access_cred);
+	if (build.process != NULL)
+		process_free_mem(build.process);
+
+	/* Not started. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the child runs. */
+	return 0;
+}
+
+/*
+ * Builds and starts a sandboxed child (process_spawn_sandbox's steps);
+ * what it holds stays in build for the caller to release.  Returns 0
+ * with build->process started, or an errno value.
+ */
+static int
+exec_sandbox_start(
+	struct process *parent,
+	struct sandbox_spawn_plan *plan,
+	struct exec_sandbox_build *build)
+{
+	static char *const no_environment[] = { NULL };
+	struct process *process;
+	struct thread *thread;
+	EXEC_IMAGE_INFO image;
+	struct exec_auxv_info aux;
+	uintptr_t sp;
+	unsigned index;
+	int error;
+
+	/* The image: an executable regular file of the parent's, no script. */
+	build->access_cred = cred_process_ref(parent);
+	if (build->access_cred == NULL)
+		return EINVAL;
+	error = exec_target_resolve(parent->cwdi, build->access_cred, plan->argv[0], plan->image, 0, plan->argv, &build->target);
+	if (error != 0)
+		return error;
+
+	/* The child's credential: the parent's, whatever the image's set-ID bits. */
+	build->prospective_cred = cred_copy(build->access_cred);
+	if (build->prospective_cred == NULL)
+		return ENOMEM;
+
+	/* The process, without the name space it was given. */
+	build->stage = "create process";
+	error = process_create(parent, 0, &build->process);
+	if (error != 0)
+		return error;
+	process = build->process;
+	cwdinfo_release(process->cwdi);
+	process->cwdi = NULL;
+	error = process_cred_reserve(process, &build->cred_reservation);
+	if (error != 0)
+		return error;
+
+	/* Its limits: the smaller of the parent's and the plan's, the sandbox's files, no core file. */
+	exec_sandbox_limit(&process->limits.values[RLIMIT_AS], plan->memory_max);
+	exec_sandbox_limit(&process->limits.values[RLIMIT_CPU], plan->cpu_seconds);
+	exec_sandbox_limit(&process->limits.values[RLIMIT_FSIZE], plan->write_max);
+	exec_sandbox_limit(&process->limits.values[RLIMIT_NOFILE], 16U);
+	process->limits.values[RLIMIT_CORE].current = 0U;
+	process->limits.values[RLIMIT_CORE].maximum = 0U;
+	(void)filedesc_set_limit(process->fd, 16U);
+
+	/* Its address space. */
+	process->vmspace = vmspace_create();
+	if (process->vmspace == NULL)
+		return ENOMEM;
+	error = resource_limit_apply_vm(process, process->vmspace);
+	if (error != 0)
+		return error;
+
+	/* The image, static, after checking that it is unchanged. */
+	build->stage = "load ELF";
+	error = exec_target_revalidate(&build->target, build->access_cred);
+	if (error != 0)
+		return error;
+	error = exec_elf_load_content(&build->target.lease, process->vmspace, &image);
+	if (error != 0)
+		return error;
+	if (image.has_interpreter)
+		return ENOEXEC;
+	error = vmspace_set_brk_start(process->vmspace, image.brk_start, image.static_data_size);
+	if (error != 0)
+		return error;
+
+	/* The stack: the arguments, no environment. */
+	build->stage = "build initial stack";
+	fill_auxv_info(&aux, &image, 0, build->prospective_cred, 0, plan->argv[0]);
+	error = exec_build_initial_stack(process->vmspace, image.stack_size, build->target.argv, no_environment, &aux, &sp,
+	    &process->auxv_address, &process->auxv_size);
+	if (error != 0)
+		return error;
+
+	/* The files handed over, each at its number (the table owns a new reference). */
+	build->stage = "hand over files";
+	for (index = 0U; index < plan->count; index++) {
+		file_ref(plan->files[index]);
+		error = filedesc_install_at(process->fd, plan->files[index], plan->numbers[index]);
+		if (error != 0) {
+			(void)file_close(plan->files[index]);
+			return error;
+		}
+	}
+
+	/* The initial thread, and the image checked once more. */
+	build->stage = "create initial thread";
+	kern_strncpy(process->command, plan->argv[0], sizeof(process->command) - 1U);
+	process->command[sizeof(process->command) - 1U] = '\0';
+	kern_memcpy(process->command_initial, process->command, sizeof(process->command_initial));
+	error = thread_create(process, image.entry, sp, &thread);
+	if (error != 0)
+		return error;
+	hal_task_set_tls(thread->task, image.thread_pointer);
+	error = exec_target_revalidate(&build->target, build->access_cred);
+	if (error != 0) {
+		if (thread_abort_new(thread) != 0)
+			HAL_FATAL("cannot abort unpublished sandbox thread");
+		return error;
+	}
+
+	/* The credential and the sandbox, before the thread can run. */
+	process_cred_commit_reserved(process, build->prospective_cred, build->cred_reservation);
+	process->set_id = 0U;
+	process->sandbox = plan->sandbox;
+	plan->sandbox = NULL;
+	build->prospective_cred = NULL;
+	build->cred_reservation = NULL;
+
+	/* Succeeded: published and started. */
+	process_publish(process);
+	thread_start(thread);
 	return 0;
 }
 
@@ -1572,4 +1771,21 @@ exec_thread_retired(
 
 	/* Succeeded: the thread has not ended yet. */
 	return 0;
+}
+
+/* Lowers a limit to a requested value (0: kept), never raising it. */
+static void
+exec_sandbox_limit(
+	struct rlimit_record *record,
+	uint64_t requested)
+{
+	/* Nothing asked. */
+	if (requested == 0U)
+		return;
+
+	/* The smaller of each. */
+	if (requested < record->current)
+		record->current = requested;
+	if (requested < record->maximum)
+		record->maximum = requested;
 }

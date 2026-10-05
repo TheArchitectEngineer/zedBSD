@@ -680,7 +680,16 @@ KERN_NET_SOURCES := \
 	src/kern/net/ipv4.c \
 	src/kern/net/icmp.c \
 	src/kern/net/udp.c \
-	src/kern/net/tcp.c
+	src/kern/net/tcp.c \
+	src/kern/net/in6.c \
+	src/kern/net/in6-address.c \
+	src/kern/net/in6-route.c \
+	src/kern/net/in6-neighbor.c \
+	src/kern/net/ipv6.c \
+	src/kern/net/ipv6-ioctl.c \
+	src/kern/net/icmp6.c \
+	src/kern/net/nd6.c \
+	src/kern/net/mld6.c
 KERN_NET_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_NET_SOURCES))
 
 KERN_BLOCK_IDENTITY_SOURCES := src/kern/block-identity.c

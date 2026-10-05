@@ -230,5 +230,9 @@ void packet_socket_deliver(const struct packet_buf *packet,
 			   const uint8_t source[6], uint8_t packet_type);
 void route_socket_notify(unsigned ifindex, uint64_t device_generation,
 			 unsigned device_flags, unsigned transition);
+struct in6_addr;
+void route_socket_notify_routeradv(unsigned ifindex, const struct in6_addr *source, const void *message, size_t length);
+void route_socket_notify_address(unsigned ifindex, const struct in6_addr *address, unsigned prefixlen, unsigned transition, unsigned flags);
+void route_socket_notify_neighbor(unsigned ifindex, const struct in6_addr *address, unsigned transition, int router);
 
 #endif

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws163 -->
 # WS163: 数字 6 桁の login
 
-Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 1 LW。2026-10-05 ユーザーの決定で mock に改めた（p001 §9）、q769）
+Status: completed（2026-10-05 夜のユーザーの決定で **WS172 に吸収**。目標は WS172 p002 が達した物とする。WS172 p002 の QEMU の試験（T1）は Q1 が依頼済みで、その結果がこの WS の受け入れの証拠になる）
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -9,29 +9,24 @@ Primary Milestone: MG006
 
 ユーザー（2026-10-05）「数字6桁のログイン」
 
-## 範囲（案、p001 の設計で確定する）
+## 結果
 
-greeter と lock の画面で数字 6 桁の PIN で login・unlock する。PIN の保存（hash）、試行の制限、password との関係、sudo・SSH では使わないかを設計で決める。
+- greeter と lock の画面で 6 桁の PIN で login・unlock できる: WS172 p002（[phase](../ws172/phase002/phase.md)）。PIN の hash は `/sbin/passkey` が root だけの
+  `/etc/passkey` に置き、sessiond が失敗の数を memory に持つ（5 回で止め、sessiond の起動の後は password で一度入るまで出さない）。sudo・su・SSH・console の
+  login は password だけ。Settings の Users の頁で設定・削除（今の password が要る）。
+- 途中の mock（2026-10-05、ユーザー「~/.configの中にPINを保存してOKです」）: ws163-p002・p003 で compositor の `pin-store.c` と lock の画面の自前の確かめ、
+  Settings の `set_pin`（manager v10）を作り（d9ab018d、T1-194 で lock の画面の PIN を確かめた）、WS172 の決定（判断 P6）で p002 が mock を外した
+  （`pin-store.c` と WS163 の試験を削除、`set_pin` は sessiond の `ENROLL pin` へ、`~/.config/keiland/pin` は取り込まず消す）。
 
-## mock への変更（2026-10-05 ユーザー）
+## Phase（記録。directory は削除した。git の履歴に残る）
 
-ユーザー「~/.configの中にPINを保存してOKです。sessiondに難しい制御をさせたくないです。移植ができなくなるからです。これはまずモックアップとしての実装で、あとで鍵管理やPAMのような仕組みをきちんと考えます。」
-→ PIN の hash は利用者の `~/.config/keiland/pin`、確かめは compositor（lock の画面）、sessiond に口を足さない。p002〜p003 の中身を改めた（実行前）。
-greeter の PIN の login は sessiond の口無しでは安全に作れないので、判断 G1（p001 §9.6）待ち。
+| Phase | 内容 | 結果 |
+| --- | --- | --- |
+| ws163-p001 | 要件と設計（第 1 版 q733、mock の設計 §9 q769） | 設計は WS172 p001 に置き換わった（G1 は問わない） |
+| ws163-p002 | mock: `~/.config/keiland/pin` と lock の画面の PIN | 実装・host 試験・T1-194 済み。WS172 p002 が外した |
+| ws163-p003 | mock: Settings の `set_pin` | 実装・host 試験済み。protocol の口は残り、WS172 p002 が sessiond に繋ぎ替えた |
+| ws163-p004 | 全文規約の見直し | canceled（WS172 p006 が持つ） |
 
-## WS172 p002 による置き換え（2026-10-05、P1）
+## 制限・移管
 
-WS172 の判断 P6（ユーザー承認）で mock を外した: compositor の `pin-store.c`・6 桁の判定・forgive・lock の画面の自前の確かめを削除し、
-PIN は `/sbin/passkey` が `/etc/passkey` に置き、greeter と lock の画面は sessiond の `STYLES`・`AUTH name pin`・`UNLOCK pin` で確かめる。
-Settings の `set_pin` は sessiond の `ENROLL pin`・`REMOVE pin` に繋ぎ替え、PIN の有無は `kl_system_account_v1` の新しい `enrolled` event（manager v11、KL_VERSION 36）で知る。
-`~/.config/keiland/pin` は取り込まず、compositor が session の始めに消す。この WS の試験（`pin-store-host-test`・`pin-lock-guest.sh`）は対象の code が無くなったので削除した。
-残りの Phase の扱い（cancel か WS172 への移管か）は Q1 が決める。
-
-## Phase
-
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws163-p001](phase001/phase.md) | 要件と設計 | planning（第 1 版 q733、mock の設計 §9 q769。G1 待ち） | — |
-| [ws163-p002](phase002/phase.md) | PIN の保存（`~/.config/keiland/pin`、compositor の pin-store）と lock の画面の PIN の unlock、host 試験 | in-progress（実装・host 試験済み d9ab018d、T1 待ち） | p001 §9 |
-| [ws163-p003](phase003/phase.md) | Settings の Users の PIN（`kl_system_account_v1` の set_pin、password は sessiond の今の UNLOCK で確かめる）、greeter（G1 の答えによる）、T1 | in-progress（Settings は実装・host 試験済み d9ab018d。greeter は G1 待ち） | p002、G1 |
-| ws163-p004 | 全文規約の見直し | planned | p003 |
+- 受け入れの証拠は WS172 p002 の T1（未了の間は QEMU の証拠が無い）。実機の UAT は WS172 の範囲。

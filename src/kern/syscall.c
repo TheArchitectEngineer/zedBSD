@@ -33,6 +33,7 @@
 #include "kern/net/socket.h"
 #include "kern/process.h"
 #include "kern/process-timer.h"
+#include "kern/sandbox.h"
 #include "kern/record-lock.h"
 #include "kern/resource-limit.h"
 #include "kern/pipe.h"
@@ -78,6 +79,7 @@
 #include <uapi/stat.h>
 #include <uapi/statvfs.h>
 #include <uapi/wait.h>
+#include <uapi/sandbox.h>
 #include <uapi/unistd.h>
 
 #define SYSCALL_IO_CHUNK 512U
@@ -292,6 +294,9 @@ static intptr_t sys_fcntl_call(const uintptr_t args[6]);
 static intptr_t sys_pipe2_call(const uintptr_t args[6], int plain);
 static intptr_t sys_fork_call(const uintptr_t args[6]);
 static intptr_t sys_vfork_call(const uintptr_t args[6]);
+static intptr_t sys_sandbox_spawn_call(const uintptr_t args[6]);
+static int sandbox_request_read(uintptr_t address, struct sandbox_spawn *request);
+static int sandbox_files_take(struct process *process, const struct sandbox_spawn *request, struct sandbox_spawn_plan *plan);
 static intptr_t sys_sched_yield_call(const uintptr_t args[6]);
 static intptr_t sys_times_call(const uintptr_t args[6]);
 static int priority_matches(struct process *target, struct process *caller, int which, id_t who);
@@ -8978,6 +8983,188 @@ sys_fexecve_call(
 	return 0;
 }
 
+/*
+ * Handles sandbox_spawn (ws168-p002; uapi/sandbox.h): reads and checks
+ * the versioned request, takes the image, the files and the argument
+ * vector, makes the sandbox's set, and starts the child.  Returns its
+ * PID.
+ */
+static intptr_t
+sys_sandbox_spawn_call(
+	const uintptr_t args[6])
+{
+	struct sandbox_spawn request;
+	struct sandbox_spawn_plan plan;
+	struct syscall_exec_args *copy;
+	struct process *process;
+	struct process *child;
+	unsigned index;
+	pid_t pid;
+	int error;
+
+	/* One argument: the request. */
+	process = current_process();
+	if (process == NULL || process->fd == NULL || args[1] != 0 || args[2] != 0 || args[3] != 0 || args[4] != 0 || args[5] != 0)
+		return -EINVAL;
+	error = sandbox_request_read(args[0], &request);
+	if (error != 0)
+		return -error;
+
+	/* The image and the files, each held. */
+	kern_memset(&plan, 0, sizeof(plan));
+	plan.image = filedesc_get_ref(process->fd, request.image);
+	if (plan.image == NULL)
+		return -EBADF;
+	error = sandbox_files_take(process, &request, &plan);
+
+	/* The argument vector, the limits and the set. */
+	copy = NULL;
+	if (error == 0) {
+		copy = kern_calloc(1, sizeof(*copy));
+		if (copy == NULL)
+			error = ENOMEM;
+	}
+	if (error == 0)
+		error = copy_exec_vector((uintptr_t)request.argv, copy->argv, KERN_SPAWN_ARG_MAX, copy, 0);
+	if (error == 0) {
+		plan.argv = copy->argv;
+		plan.memory_max = request.memory_max;
+		plan.cpu_seconds = request.cpu_seconds;
+		plan.write_max = request.write_max;
+		plan.sandbox = sandbox_create(request.flags, request.allow);
+		if (plan.sandbox == NULL)
+			error = ENOMEM;
+	}
+
+	/* The child. */
+	pid = 0;
+	if (error == 0) {
+		error = process_spawn_sandbox(process, &plan, &child);
+		if (error == 0)
+			pid = child->pid;
+	}
+
+	/* What was held, let go. */
+	if (plan.sandbox != NULL)
+		sandbox_free(plan.sandbox);
+	kern_free(copy);
+	for (index = 0U; index < plan.count; index++)
+		(void)file_close(plan.files[index]);
+	(void)file_close(plan.image);
+
+	/* Not started. */
+	if (error != 0)
+		return -error;
+
+	/* Succeeded: the child's PID. */
+	return pid;
+}
+
+/*
+ * Reads a sandbox_spawn request (versioned by its size): at least the
+ * first version; bytes beyond what this kernel knows must be zero
+ * (E2BIG otherwise, and for more than SANDBOX_SPAWN_SIZE_MAX); no flag or
+ * allow bit this kernel does not know (EINVAL).
+ */
+static int
+sandbox_request_read(
+	uintptr_t address,
+	struct sandbox_spawn *request)
+{
+	uint8_t extra[64];
+	uint32_t size;
+	size_t offset;
+	size_t chunk;
+	size_t index;
+	int error;
+
+	/* The size first. */
+	if (address == 0U)
+		return EFAULT;
+	error = copyin(address, &size, sizeof(size));
+	if (error != 0)
+		return error;
+	if (size < SANDBOX_SPAWN_SIZE_V1)
+		return EINVAL;
+	if (size > SANDBOX_SPAWN_SIZE_MAX)
+		return E2BIG;
+
+	/* The part this kernel knows. */
+	kern_memset(request, 0, sizeof(*request));
+	error = copyin(address, request, sizeof(*request));
+	if (error != 0)
+		return error;
+
+	/* The rest, which must be zero. */
+	for (offset = sizeof(*request); offset < size; offset += chunk) {
+		chunk = size - offset;
+		if (chunk > sizeof(extra))
+			chunk = sizeof(extra);
+		error = copyin(address + offset, extra, chunk);
+		if (error != 0)
+			return error;
+		for (index = 0U; index < chunk; index++) {
+			if (extra[index] != 0U)
+				return E2BIG;
+		}
+	}
+
+	/* Only flags and allow bits this kernel knows, and a sane count of files. */
+	if ((request->flags & ~SANDBOX_SPAWN_KNOWN) != 0U)
+		return EINVAL;
+	if ((request->allow & ~SANDBOX_ALLOW_KNOWN) != 0U)
+		return EINVAL;
+	if (request->fd_count > SANDBOX_FD_MAX)
+		return EINVAL;
+
+	/* Succeeded: the request. */
+	return 0;
+}
+
+/*
+ * Takes the files a request hands over: each number in range and used
+ * once (EINVAL), each descriptor an open file of the caller's (EBADF).
+ * The references are in the plan, for the caller to let go.
+ */
+static int
+sandbox_files_take(
+	struct process *process,
+	const struct sandbox_spawn *request,
+	struct sandbox_spawn_plan *plan)
+{
+	struct sandbox_fd mapping[SANDBOX_FD_MAX];
+	unsigned used;
+	unsigned index;
+	int error;
+
+	/* The mapping. */
+	if (request->fd_count == 0U)
+		return 0;
+	if (request->fds == 0U)
+		return EFAULT;
+	error = copyin((uintptr_t)request->fds, mapping, request->fd_count * sizeof(mapping[0]));
+	if (error != 0)
+		return error;
+
+	/* Each entry: a number used once, an open file. */
+	used = 0U;
+	for (index = 0U; index < request->fd_count; index++) {
+		if (mapping[index].to < 0 || mapping[index].to >= (int32_t)SANDBOX_FD_MAX)
+			return EINVAL;
+		if ((used & (1U << mapping[index].to)) != 0U)
+			return EINVAL;
+		used |= 1U << mapping[index].to;
+		plan->files[plan->count] = filedesc_get_ref(process->fd, mapping[index].from);
+		if (plan->files[plan->count] == NULL)
+			return EBADF;
+		plan->numbers[plan->count] = mapping[index].to;
+		plan->count++;
+	}
+
+	/* Succeeded: the files held. */
+	return 0;
+}
+
 /* Handles waitpid(2). */
 static SYSCALL_EXT intptr_t
 sys_waitpid_call(
@@ -9378,8 +9565,22 @@ syscall_dispatch_body(
 	uint32_t number,
 	const uintptr_t args[6])
 {
+	struct process *process;
 	intptr_t result;
+	int permitted;
 	int error;
+
+	/* A sandboxed process makes only the calls of its set (ws168-p002), redispatched ones too. */
+	process = NULL;
+	if (curthread != NULL)
+		process = curthread->proc;
+	if (process != NULL && process->sandbox != NULL) {
+		permitted = sandbox_permits(process->sandbox, number, args);
+		if (!permitted) {
+			result = sandbox_deny(process, number);
+			return result;
+		}
+	}
 
 	/* Runs the handler the call number names. */
 	switch (number) {
@@ -9646,6 +9847,9 @@ syscall_dispatch_body(
 		break;
 	case KERN_SYS_vfork:
 		result = sys_vfork_call(args);
+		break;
+	case KERN_SYS_sandbox_spawn:
+		result = sys_sandbox_spawn_call(args);
 		break;
 	case KERN_SYS_sched_yield:
 		result = sys_sched_yield_call(args);

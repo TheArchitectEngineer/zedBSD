@@ -197,6 +197,15 @@ enum syscall_number {
 	 * posix_spawn on it, running the child on a stack of its own.
 	 */
 	KERN_SYS_vfork = 169,
+
+	/*
+	 * Creates a child that starts, from its first instruction, in a
+	 * sandbox: a new address space with a static image, only the files
+	 * handed to it, no name space, and only the calls of its set
+	 * (sandbox.h; ws168-p002).  The calling thread returns once the
+	 * child is ready to run.
+	 */
+	KERN_SYS_sandbox_spawn = 170,
 };
 
 #endif

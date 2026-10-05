@@ -7,6 +7,13 @@
 
 /*
  * Implements read-only routing interface event sockets.
+ *
+ * A socket made with protocol 0 hears the interfaces' events
+ * (RTM_IFINFO); one made with protocol AF_INET6 hears them and IPv6's:
+ * the Router Advertisements, the addresses' changes and the routers that
+ * stopped answering (ws130-p002, route.h).  Every record is copied into a
+ * packet of the endpoint's own pool, reserved when it was made, so a
+ * notification never allocates.
  */
 
 #include "kern/net/socket.h"
@@ -18,12 +25,17 @@
 
 #include <uapi/errno.h>
 #include <uapi/netif.h>
+#include <uapi/netinet.h>
 #include <uapi/route.h>
+
+/* The largest record: a Router Advertisement's with its message. */
+#define ROUTE_RECORD_MAX	(sizeof(struct rtm_routeradv) + RTM_ROUTERADV_MESSAGE_MAX)
 
 struct route_endpoint {
 	struct socket socket;
 	struct packet_buf *free_packets;
 	unsigned overflow_pending;
+	int inet6;
 	struct route_endpoint *next;
 };
 
@@ -39,7 +51,9 @@ static ssize_t route_recvfrom(struct socket *socket, void *buffer, size_t length
 static int route_poll(struct socket *socket, short events, short *revents);
 static void route_close(struct socket *socket);
 static int route_create(int type, int protocol, struct socket **result);
-static void route_enqueue(struct route_endpoint *endpoint, const struct rtm_ifinfo *message);
+static void route_enqueue(struct route_endpoint *endpoint, const void *record, size_t length);
+static void route_broadcast(void *record, size_t length, int inet6_only);
+static uint64_t route_sequence_next_locked(void);
 
 /*
  * Initializes the routing socket family.
@@ -82,13 +96,7 @@ route_socket_notify(
 	unsigned device_flags,
 	unsigned transition)
 {
-	struct route_endpoint *endpoint;
-	struct route_endpoint *snapshot[SOCKET_BROADCAST_MAX];
 	struct rtm_ifinfo message;
-	unsigned count;
-	unsigned index;
-	unsigned long irq;
-	int referenced;
 
 	/* Rejects an incomplete identity or an unsupported transition. */
 	if (ifindex == 0U ||
@@ -109,19 +117,123 @@ route_socket_notify(
 	message.rtm_if_flags = route_uapi_flags(device_flags);
 	message.rtm_transition = transition;
 
-	/* Assigns the next nonzero global event sequence. */
+	/* Delivered to every listener. */
+	route_broadcast(&message, sizeof(message), 0);
+}
+
+/*
+ * Publishes a Router Advertisement the kernel took (RTM_ROUTERADV) to the
+ * IPv6 listeners: the router's address and the message from its type
+ * byte, at most RTM_ROUTERADV_MESSAGE_MAX bytes of it.
+ */
+void
+route_socket_notify_routeradv(
+	unsigned ifindex,
+	const struct in6_addr *source,
+	const void *message,
+	size_t length)
+{
+	static uint8_t record[ROUTE_RECORD_MAX];
+	struct rtm_routeradv *header;
+
+	/* A message that fits. */
+	if (length > RTM_ROUTERADV_MESSAGE_MAX)
+		return;
+
+	/* The record, built in one buffer: the network worker is the only caller. */
+	header = (struct rtm_routeradv *)record;
+	kern_memset(header, 0, sizeof(*header));
+	header->rtm_version = RTM_VERSION;
+	header->rtm_type = RTM_ROUTERADV;
+	header->rtm_length = (uint32_t)(sizeof(*header) + length);
+	header->rtm_ifindex = ifindex;
+	header->rtm_source = *source;
+	header->rtm_message_length = (uint32_t)length;
+	kern_memcpy(record + sizeof(*header), message, length);
+
+	/* Delivered to the IPv6 listeners. */
+	route_broadcast(record, sizeof(*header) + length, 1);
+}
+
+/* Publishes an IPv6 address's change (RTM_ADDRINFO) to the IPv6 listeners. */
+void
+route_socket_notify_address(
+	unsigned ifindex,
+	const struct in6_addr *address,
+	unsigned prefixlen,
+	unsigned transition,
+	unsigned flags)
+{
+	struct rtm_addrinfo record;
+
+	/* The record. */
+	kern_memset(&record, 0, sizeof(record));
+	record.rtm_version = RTM_VERSION;
+	record.rtm_type = RTM_ADDRINFO;
+	record.rtm_length = sizeof(record);
+	record.rtm_ifindex = ifindex;
+	record.rtm_address = *address;
+	record.rtm_prefixlen = prefixlen;
+	record.rtm_transition = transition;
+	record.rtm_addr_flags = flags;
+
+	/* Delivered to the IPv6 listeners. */
+	route_broadcast(&record, sizeof(record), 1);
+}
+
+/* Publishes a neighbor that stopped answering (RTM_NEIGHBOR) to the IPv6 listeners. */
+void
+route_socket_notify_neighbor(
+	unsigned ifindex,
+	const struct in6_addr *address,
+	unsigned transition,
+	int router)
+{
+	struct rtm_neighbor record;
+
+	/* The record. */
+	kern_memset(&record, 0, sizeof(record));
+	record.rtm_version = RTM_VERSION;
+	record.rtm_type = RTM_NEIGHBOR;
+	record.rtm_length = sizeof(record);
+	record.rtm_ifindex = ifindex;
+	record.rtm_address = *address;
+	record.rtm_transition = transition;
+	record.rtm_router = 0U;
+	if (router)
+		record.rtm_router = 1U;
+
+	/* Delivered to the IPv6 listeners. */
+	route_broadcast(&record, sizeof(record), 1);
+}
+
+/*
+ * Gives a record (in place) the next sequence and delivers it to every
+ * listener (or only those made for IPv6), each a copy in its own packet.
+ */
+static void
+route_broadcast(
+	void *record,
+	size_t length,
+	int inet6_only)
+{
+	struct route_endpoint *endpoint;
+	struct route_endpoint *snapshot[SOCKET_BROADCAST_MAX];
+	struct rtm_header *header;
+	unsigned count;
+	unsigned index;
+	unsigned long irq;
+	int referenced;
+
+	/* A record that fits. */
+	if (length > ROUTE_RECORD_MAX || length < sizeof(*header))
+		return;
+	header = record;
+
+	/* The sequence, and the listeners it goes to. */
 	irq = spin_lock_irqsave(&route_registry_lock);
 
-	route_event_sequence++;
-
-	/* Skips zero when the sequence counter wraps. */
-	if (route_event_sequence == 0U)
-		route_event_sequence++;
-
-	/* Stores the assigned sequence in the immutable event record. */
-	message.rtm_sequence = route_event_sequence;
-
-	/* Retains every live listener that fits in the bounded snapshot. */
+	header->rtm_sequence = route_sequence_next_locked();
 	count = 0U;
 	for (endpoint = route_sockets;
 	     endpoint != NULL;
@@ -130,25 +242,37 @@ route_socket_notify(
 		if (count >= SOCKET_BROADCAST_MAX)
 			continue;
 
+		/* An IPv6 record goes only to a listener made for it. */
+		if (inet6_only && !endpoint->inet6)
+			continue;
+
 		/* Retains this listener or skips it when closing has begun. */
 		referenced = socket_tryref(&endpoint->socket);
 		if (!referenced)
 			continue;
-
-		/* Appends the retained listener to the delivery snapshot. */
 		snapshot[count] = endpoint;
 		count++;
 	}
-
-	/* Releases the registry after completing the stable snapshot. */
 
 	spin_unlock_irqrestore(&route_registry_lock, irq);
 
 	/* Delivers the record independently to every retained listener. */
 	for (index = 0U; index < count; index++) {
-		route_enqueue(snapshot[index], &message);
+		route_enqueue(snapshot[index], record, length);
 		socket_release(&snapshot[index]->socket);
 	}
+}
+
+/* Gives the next nonzero global event sequence; the caller holds the registry lock. */
+static uint64_t
+route_sequence_next_locked(
+	void)
+{
+	/* The next, skipping zero when the counter wraps. */
+	route_event_sequence++;
+	if (route_event_sequence == 0U)
+		route_event_sequence++;
+	return route_event_sequence;
 }
 
 /* Converts internal network-device flags to public interface flags. */
@@ -383,8 +507,8 @@ route_create(
 	unsigned long irq;
 	int error;
 
-	/* Accepts only the raw default routing protocol. */
-	if (type != SOCK_RAW || protocol != 0)
+	/* Accepts the raw default routing protocol, or IPv6's (its events too). */
+	if (type != SOCK_RAW || (protocol != 0 && protocol != AF_INET6))
 		return EPROTONOSUPPORT;
 
 	/* Allocates an empty endpoint or reports exhausted storage. */
@@ -399,6 +523,10 @@ route_create(
 		type,
 		protocol,
 		&route_ops);
+
+	/* A listener made for IPv6 hears its events. */
+	if (protocol == AF_INET6)
+		endpoint->inet6 = 1;
 
 	/* Reserves the bounded queue or releases an incomplete endpoint. */
 	error = route_endpoint_reserve_packets(endpoint);
@@ -440,15 +568,18 @@ route_create(
 	return 0;
 }
 
-/* Enqueues one interface event on a routing endpoint. */
+/* Enqueues one event record on a routing endpoint. */
 static void
 route_enqueue(
 	struct route_endpoint *endpoint,
-	const struct rtm_ifinfo *message)
+	const void *record,
+	size_t length)
 {
 	struct packet_buf *packet;
-	struct rtm_ifinfo *output;
+	struct rtm_header *output;
 	unsigned long irq;
+	void *room;
+	int error;
 
 	/* Locks the endpoint across queue selection and publication. */
 
@@ -467,9 +598,9 @@ route_enqueue(
 	    (endpoint->socket.receive_packet_limit != 0U &&
 	     endpoint->socket.receive_packets >=
 	     endpoint->socket.receive_packet_limit) ||
-	    sizeof(*output) > endpoint->socket.receive_hiwat_bytes ||
+	    length > endpoint->socket.receive_hiwat_bytes ||
 	    endpoint->socket.receive_bytes >
-	    endpoint->socket.receive_hiwat_bytes - sizeof(*output)) {
+	    endpoint->socket.receive_hiwat_bytes - length) {
 		/* Removes the oldest queued packet when one is available. */
 		packet = endpoint->socket.receive_head;
 		if (packet != NULL) {
@@ -503,13 +634,32 @@ route_enqueue(
 		return;
 	}
 
-	/* Copies the immutable event into the selected packet. */
-	output = (struct rtm_ifinfo *)packet->data;
-	kern_memcpy(output, message, sizeof(*output));
+	/* The packet made the record's length (its storage holds the largest record). */
+	error = packet_buf_trim(packet, 0U);
+	room = NULL;
+	if (error == 0)
+		room = packet_buf_append(packet, length);
+	if (room == NULL) {
+		packet->next = endpoint->free_packets;
+		endpoint->free_packets = packet;
+		endpoint->overflow_pending = 1U;
+		spin_unlock_irqrestore(&endpoint->socket.lock, irq);
+		return;
+	}
 
-	/* Reports any event loss on the next retained record. */
+	/* Copies the immutable event into the selected packet. */
+	kern_memcpy(room, record, length);
+	output = room;
+
+	/* Reports any event loss on the next retained record (its flags' place depends on its type). */
 	if (endpoint->overflow_pending != 0U) {
-		output->rtm_flags |= RTM_IFINFO_F_OVERFLOW;
+		if (output->rtm_type == RTM_IFINFO) {
+			((struct rtm_ifinfo *)room)->rtm_flags |= RTM_IFINFO_F_OVERFLOW;
+		} else {
+			((struct rtm_addrinfo *)room)->rtm_flags |= RTM_F_OVERFLOW;
+		}
+
+		/* Said once. */
 		endpoint->overflow_pending = 0U;
 	}
 
@@ -523,6 +673,7 @@ route_enqueue(
 		endpoint->socket.receive_head = packet;
 	}
 
+	/* The queue's tail and counts. */
 	endpoint->socket.receive_tail = packet;
 	endpoint->socket.receive_packets++;
 	endpoint->socket.receive_bytes += packet->length;

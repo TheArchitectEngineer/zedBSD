@@ -38,6 +38,7 @@ void process_timer_cleanup(struct process *);
 #include "kern/signal.h"
 #include "kern/sched.h"
 #include "kern/namei.h"
+#include "kern/sandbox.h"
 #include "kern/test-checkpoint.h"
 
 #include <uapi/errno.h>
@@ -250,6 +251,8 @@ process_release(
 	/* A live process must never lose its last reference. */
 	if (process == &process0 || process->state != PROCESS_DEAD)
 		HAL_FATAL("releasing live process");
+	if (process->sandbox != NULL)
+		sandbox_free(process->sandbox);
 	kern_free(process);
 }
 

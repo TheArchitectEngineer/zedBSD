@@ -42,7 +42,7 @@ Resume point: p001（2026-10-05 P1 が設計の第 1 版を書いた。UAPI（H1
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（kernel と userland の境界、UAPI の案、`net.conf`、段、試験の方法） | planning（2026-10-05 第 1 版、H1〜H8 待ち） | ユーザーとの議論 |
-| p002 | kernel の核（UAPI、`ipv6.c`・ICMPv6・NDP・DAD・MLDv2・address と route の表、RS・RA と route socket） | planning | p001（H1〜H4・H6） |
+| [p002](phase002/phase.md) | kernel の核（UAPI、`ipv6.c`・ICMPv6・NDP・DAD・MLDv2・address と route の表、RS・RA と route socket） | in-progress（2026-10-05 P1。UAPI の正確な差分 `phase002/uapi.diff` の確かめ待ち、kernel の内部から） | p001（H1〜H4・H6、ユーザー承認 2026-10-05） |
 | p003 | transport（address を 16 byte に、`AF_INET6` の UDP・TCP・ICMPv6、`IPV6_V6ONLY`、PMTU、source の選択） | planning | p002、H2 |
 | p004 | libc（`inet_pton`・`inet_ntop`・`getaddrinfo`・`getnameinfo`・resolver） | planning | p003 |
 | p005 | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | planning | p003、p004、H3 |

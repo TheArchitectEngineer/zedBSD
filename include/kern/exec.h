@@ -181,6 +181,33 @@ process_spawn_from(
 	char *const envp[],
 	struct process **result);
 
+/*
+ * A sandboxed child to start (ws168-p002, sandbox_spawn): the static
+ * image's file, the argument vector, the files handed over (each a
+ * reference the call keeps on success) and their numbers in the child,
+ * the limits (0: the parent's), and the sandbox (owned by the child on
+ * success, still the caller's on failure).
+ */
+struct sandbox;
+struct file;
+struct sandbox_spawn_plan {
+	struct file *image;
+	char *const *argv;
+	struct file *files[16];
+	int numbers[16];
+	unsigned count;
+	uint64_t memory_max;
+	uint64_t cpu_seconds;
+	uint64_t write_max;
+	struct sandbox *sandbox;
+};
+
+int
+process_spawn_sandbox(
+	struct process *parent,
+	struct sandbox_spawn_plan *plan,
+	struct process **result);
+
 int
 process_spawn_init(
 	const char *path,
