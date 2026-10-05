@@ -7,7 +7,7 @@ Primary Milestone: MG006
 Related Milestones: MG001
 Parent: [Master](../master.md)
 Queue: none /実装未承認
-Resume point: p001 実装済み、p002 の置き換え（233 file・246 行）済み。T1 の代表の試験（roles-guest・files-p002・zdesktop-p095）待ち。
+Resume point: p001・p002 は cleared（T1-168）。p003 は全文規約の見直しと build が済み、Q1 の判定待ち。その後 WS の完了の判定。
 
 ## Objective / scope / acceptance
 
@@ -23,7 +23,7 @@ T1 引数なし通常sessionが期限なしで動きLog Out/desktop表示が成�
 | --- | --- | --- | --- | --- |
 | [ws110p001](phase001/phase.md) | 通常/testing roleと引数契約 | cleared（2026-10-05 Q1） | in-progress（実装済み、T1 待ち） | user implementation instruction + contract |
 | [ws110p002](phase002/phase.md) | test/launcher/docs整合 | cleared（2026-10-05 Q1） | in-progress（置き換え済み、T1 待ち） | p001 API/mode output |
-| ws110p003 | 近final全文規約/回帰 | T4/T1〜T3独立受け入れ | planning | p001/p002 actual final outputs |
+| [ws110p003](phase003/phase.md) | 近final全文規約/回帰 | T4/T1〜T3独立受け入れ | in-progress（見直し・build 済み、判定は Q1） | p001/p002 actual final outputs |
 
 Phase詳細は実装指示・仕様決定後、有限scopeに分けて作成。Queue membership無し。現存codeのstyleをpolicyとしない。
 

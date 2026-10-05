@@ -40,6 +40,7 @@ struct role_case {
 
 int main(void);
 static int run_case(const struct role_case *item);
+static unsigned option_given(unsigned options, unsigned option);
 
 /* The cases; a --timeout in them is 900 s. */
 static const struct role_case cases[] = {
@@ -106,13 +107,13 @@ run_case(
 
 	/* The request the options make. */
 	memset(&request, 0, sizeof(request));
-	request.testing = (item->options & OPTION_TESTING) != 0U;
-	request.session = (item->options & OPTION_SESSION) != 0U;
-	request.greeter = (item->options & OPTION_GREETER) != 0U;
-	request.control_fd = (item->options & OPTION_CONTROL_FD) != 0U;
-	request.lock_idle = (item->options & OPTION_LOCK_IDLE) != 0U;
-	request.timeout = (item->options & OPTION_TIMEOUT) != 0U;
-	request.max_frames = (item->options & OPTION_MAX_FRAMES) != 0U;
+	request.testing = option_given(item->options, OPTION_TESTING);
+	request.session = option_given(item->options, OPTION_SESSION);
+	request.greeter = option_given(item->options, OPTION_GREETER);
+	request.control_fd = option_given(item->options, OPTION_CONTROL_FD);
+	request.lock_idle = option_given(item->options, OPTION_LOCK_IDLE);
+	request.timeout = option_given(item->options, OPTION_TIMEOUT);
+	request.max_frames = option_given(item->options, OPTION_MAX_FRAMES);
 	request.timeout_ms = 900000U;
 
 	/* The decision. */
@@ -145,4 +146,20 @@ run_case(
 
 	/* Succeeded: as expected. */
 	return 1;
+}
+
+/*
+ * Says whether a case gives an option: 1 or 0, as the request holds it.
+ */
+static unsigned
+option_given(
+	unsigned options,
+	unsigned option)
+{
+	/* The option is among the case's. */
+	if ((options & option) != 0U)
+		return 1U;
+
+	/* It is not. */
+	return 0U;
 }
