@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p004`
 Parent: [WS068](../ws.md)
-Status: in-progress（2026-10-05 P1 generation17、q747。範囲を Q1 が承認、実装中）
+Status: in-progress（2026-10-05 P1 generation17、q747。実装と host の試験まで、T1 待ち）
 Phase disposition: normal
 Queue: q747（P1、ベータ2。p009 → p004 → p007）
 
@@ -75,7 +75,31 @@ Queue: q747（P1、ベータ2。p009 → p004 → p007）
 
 ## 結果
 
-（範囲の案。Q1 の承認待ち）
+### 実装（2026-10-05、P1 generation17、commit b3797e23）
+
+| 部分 | 内容 | 場所 |
+| --- | --- | --- |
+| `gl_DepthRange` | struct `gl_DepthRangeParameters { near; far; diff; }` の built-in の uniform（compute 以外の stage）。libGLESv2 が draw ごとに `glDepthRangef` の値を書く。`glGetUniformLocation` は -1（`glGetActiveUniform` には出る） | `glsl/builtins.c`（`builtins_uniform`・`builtins_depth_range`）、`program.c`（`program_builtin_uniform`）、`draw.c`（`draw_builtin_uniforms`） |
+| GL の向き | fragment shader の隠れた uniform `gl_ZedFragment`（vec4 a, b, c, d）。`gl_FragCoord`・`gl_PointCoord` を読む shader だけ使い（`check_use`）、main の始めに input を読んで `y' = a + b·y`・`t' = c + d·t` にした変数を作り、code はその変数を読む（`emit_directions`・`emit_turned`）。値は framebuffer 0（`target->flip`）で `(H, −1, 0, 1)`、FBO で `(0, 1, 1, −1)`。`glGetActiveUniform` に出さず location も無い | `glsl/internal.h`・`builtins.c`・`check.c`・`emit.c`、`program.c`、`draw.c` |
+| sampler の配列 | 型の要素の数（`glsl_type_sampler_units`）を link の `sampler` に持ち、1 つの binding（16 unit の上限は要素で数える）。反射は大きさを `size` に、layout の `descriptorCount` に。uniform は要素ごとの unit（`units[GLES_UNITS]`、`glUniform1i(loc("tex[1]"))`・`glUniform1iv`・`glGetUniformiv`）。draw は要素ごとに texture を決め `dstArrayElement` で書く | `glsl/types.c`・`link.c`・`emit.c`、`spirv.c`、`gles.h`、`program.c`、`draw.c`、`compute.c`（`gles_draw_descriptors` に target を渡す、dispatch は NULL） |
+| 試験 | egltest の scene `es2`（`userland/tests/egltest/es2.c`・`es2.h`、`--scene=es2`）、`plan/ws068/tests/egl-p004.sh`（display・zdesktop の窓・pbuffer）、glsl-host の `exec/10〜12-es2-*.frag`・`pass/es2-builtins.*` と反射の検査（run.sh 3c）、vk-run の sampler の配列 | |
+
+### 確認
+
+| 確認 | 結果 |
+| --- | --- |
+| `make -j16 ZEDBSD_CONFIG=plan/ws068/tests/config-amd64-glsl.mk BUILD=build/ws068-p009-lib …/libEGL.so …/libGLESv2.so …/libGL.so …/bin/egltest` | rc=0、warning 0 |
+| `sh plan/ws068/tests/glsl-host/run.sh build/ws068-p004/glsl-host` | `glsl-host: PASS`（vk-run 24 試験、新しい 3 つを含む。`es2: done`） |
+| `sh plan/ws068/tests/spirv-host/run.sh build/ws068-p004/spirv-host` | `spirv-host: PASS` |
+| `sh plan/ws101/tests/gles/run.sh build/ws068-p004/ws101-gles` | PASS |
+| `sh plan/ws101/tests/glsl/run.sh …` | FAIL（`re-assembled` の 10 件）。変更の前の source でも同じ 10 件で FAIL（`build/ws068-p004-ws101s-base.log`）: host の `brw_asm` の再アセンブルの不一致で、この Phase の変更によらない（既存。Q1 に報告） |
+| style-check | 新しい file（`es2.c`・`es2.h`）は 0、変えた file は base との比較で新しい指摘 0 |
+| `sh -n plan/ws068/tests/egl-p004.sh` | OK |
+| Venus（T1）・実機 | **未実施**（T1 に依頼） |
+
+### 残り
+
+- T1: `egl-p004.sh` と p009 と同じ回帰（特に glx-p033: glxtest gl32 の `gl_FragCoord`）、ws101 の venus.sh、boot test。
 
 ## Q1 の承認（2026-10-05）
 
