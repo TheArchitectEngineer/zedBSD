@@ -75,3 +75,7 @@ Queue: q742（P1、ベータ2）
 ## 結果
 
 （T1・UAT 待ち）
+
+## T1-178 の結果（2026-10-05 Q1）
+
+QEMU（main caf2f817）: boot PASS、`sleepctl -x` → `refusals ok`、devices の往復 PASS（`sleep result=0 resume=0 device=-`）、`sleepctl s0idle` は `EOPNOTSUPP`（zedBSD の値 21、`include/uapi/errno.h`）で拒否、device に触らない。QEMU の受け入れは満たす。残り: 5330 の UAT（SLP_S0 の residency の増加、電源ボタン wake=1・蓋 wake=2、counter と RTC の秒の一致）。cleared にするのは UAT の後。

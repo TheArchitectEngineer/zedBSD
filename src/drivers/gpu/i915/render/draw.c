@@ -812,6 +812,7 @@ i915_draw_scratch_grow(
 		if (error != 0)
 			return error;
 
+		/* Then the old buffer goes, and the session holds none until the new one is made. */
 		i915_draw_object_destroy(session, work->scratch);
 		work->scratch = NULL;
 	}

@@ -4,9 +4,9 @@
 
 Phase ID: `ws101-p013`
 Parent: [WS101](../ws.md)
-Status: planned（2026-10-01 に phase.md を作った。範囲は ws.md の表の行のまま）
+Status: in-progress（2026-10-05 P1 generation18、q750。Q1 の承認「Do WS101 p013 under q750」。p012・p018 はユーザーの判断まで保留のまま（Q1 が質問を記録）。p017 の 5330 の値は実機の UAT の項目）
 Phase disposition: normal
-Queue: なし
+Queue: q750（P1、2026-10-05）
 
 ## 範囲（ws.md の表から）
 
@@ -63,4 +63,40 @@ p002〜p017 の code（p017 の扱いが決まった後の最終の source）。
 
 ## 確認
 
-未実施。
+### 2026-10-05 q750-i01（P1 generation18）: 途中で区切った（安全な地点）
+
+Q1 の指示（ユーザー「GPU computeは言語側が完成しておらず、進められないんです。i915のSPIR-V lowringだけ進められますか？」の後）で、
+compiler の 2 file と共有の file の WS101 の行までで区切り、残りを下に残した。Phase は in-progress のまま。
+
+**直した物**（意味は変えない。§5 段落・§6 条件・§11 return・§8 入れ子の call）:
+
+| file | 直し |
+| --- | --- |
+| `src/drivers/gpu/i915/compiler/compile-compute.inc` | 1 段落に複数の判断を分けた（operand・predicate・temporaries・fence）、`}` の後の空行と comment、条件の中の call（`i915_compile_group_threads`）を変数に、`i915_compile_storage_block` の最後を成功の return に、`i915_compile_define` の入れ子の call を分けた |
+| `src/drivers/gpu/i915/compiler/spirv-compute.inc` | `return i915_spirv_refuse(...)`（25 か所）を `error = ...; return error;` に、関数の最後を成功の return に（execution mode）、guard の列を段落ごとに comment、`i915_spirv_fence` の後の `return parser->error` を失敗と成功に分けた、入れ子の `i915_spirv_integer_constant` を変数に、atomic の comment の古い記述（fence は未対応）を直した |
+| `compiler/spirv.c`（lower_storage の compute の load の `continue`）、`compiler/ir.h`（`I915_IR_OP_COUNT` の comment）、`render/pipeline.c`（compute pipeline の失敗の解放）、`render/draw.c`（scratch の作り直し） | WS101 の行の空行と comment |
+
+style-check: `compile-compute.inc`・`spirv-compute.inc` は forward-declaration（`.inc` の関数の宣言は compile.c・spirv.c の先頭にあり、全て在ることを確かめた。道具の限界）以外 0。
+
+**確認**（host、2026-10-05）:
+
+| command | 結果 |
+| --- | --- |
+| `make BUILD=build/p013-k -j16 vmunix`（既定の config.mk） | exit 0、warning 0 |
+| `sh plan/ws101/tests/host/run.sh`（Mesa の道具あり） | PASS |
+| `sh plan/ws101/tests/glsl/run.sh build/ws101-glsl-p013` | PASS（10 shader の往復を含む） |
+| `sh plan/ws075/tests/guard/run.sh` | PASS |
+| `sh plan/ws031/tests/run-vk-host-tests.sh` | PASS（cmd spirv lower res resdispatch sync eu compile pipe cmdbuf） |
+| `sh plan/ws068/tests/i915-shader-check/run.sh` | exit 0 |
+| `BRW_TOOLS=build/mesa-tools/... sh plan/ws031/tests/run-vk-gentool-test.sh` | PASS |
+
+未実施: QEMU・実機の回帰（vkcs・vkx・vke1・vke2・vkc・GLES・boot test。T1 に依頼する。p013 の残りが済んでからまとめて）。
+
+**残り**（再開の点）:
+
+1. 全文の review と直し: `src/drivers/gpu/i915/render/compute.c`・`compute.h`、`src/drivers/gpu/i915/tests/render/compute.c`（style-check 49 件と段落）、
+   `userland/desktop/libglesv2/compute.c`・`es31.c`・WS101 の印の行（buffer.c・gles.c・gles.h・program.c ほか）、`userland/desktop/libglesv2/glsl/` の WS101 の行（WS068 p007 と同時に）、
+   `userland/desktop/libegl/egl.c` の WS101 の行、`userland/tests/glescompute/main.c`、compile.c の WS101 の行（operands・skip_region の atomic・predicated load）の段落の見直し。
+2. 他の WS の既存の違反（記録だけ。直さない）: compile.c（liveness・keep_outputs・load_block・store_output・integer・terminate の vertex・describe）、spirv.c（convert・transpose・geometric・integer_compare・switch・pass の `offset += count`）、state.c（vertex input・viewport・blend の call-in-condition 4）、command.c:2130、draw.c:281・610・622、gfx.h:576、pipeline-prepare.c:278、runner.c:181〜198。
+3. toolchain の file（`userland/base/noct/Makefile`・`version.mk`・`zedbsd.cmake`）は照合だけ（直しは main）。
+4. 回帰を T1 へ（上の手順 4）。

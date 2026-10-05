@@ -131,17 +131,21 @@ i915_compile_storage_block(
 {
 	uint32_t index;
 
-	/* Looks among the blocks for the buffer's address. */
+	/* Looks among the blocks for the one that carries the buffer's address. */
 	for (index = 0U; index < state->block_count; index++) {
-		if (state->block_uniform[index] == uniform && state->block_address[index] != 0U) {
-			*block = index;
-			return 1;
-		}
+		if (state->block_uniform[index] == uniform && state->block_address[index] != 0U)
+			break;
 	}
 
 	/* A storage buffer the interface did not lay out is inconsistent IR. */
-	state->error = 1;
-	return 0;
+	if (index == state->block_count) {
+		state->error = 1;
+		return 0;
+	}
+
+	/* Succeeded: the block holds the buffer's address. */
+	*block = index;
+	return 1;
 }
 
 /*
@@ -230,13 +234,17 @@ i915_compile_atomic(
 	high = drv_i915_eu_grf_scalar(push_grf, 4U);
 	high.type = COMPILE_TYPE_UD;
 
-	/* Reads the offset, the value, a compare and exchange's comparator and a predicated atomic's predicate. */
+	/* Reads the operands' registers: the offset and the value. */
 	operands = i915_compile_operands(inst);
 	offset_grf = i915_compile_grf(state, inst->src[0]);
 	value_grf = i915_compile_grf(state, inst->src[1]);
+
+	/* A compare and exchange also reads its comparator. */
 	compare_grf = 0U;
 	if (inst->immediate == I915_IR_ATOMIC_CMPXCHG)
 		compare_grf = i915_compile_grf(state, inst->src[2]);
+
+	/* A predicated atomic reads its predicate, the last operand. */
 	predicate_grf = 0U;
 	if (inst->component != 0U)
 		predicate_grf = i915_compile_grf(state, inst->src[operands - 1U]);
@@ -245,18 +253,24 @@ i915_compile_atomic(
 	returns = 0;
 	if (state->last_use[inst->dst] > state->index)
 		returns = 1;
+
+	/* The result gets its register, which the reply fills when the old value is asked for. */
 	dst = i915_compile_define(state, inst->dst, 1U);
 
-	/* Takes the address payload, the sum and carry registers and, for two data values, their run. */
+	/* Takes the address payload and the sum and carry registers. */
 	payload = i915_compile_temporaries(state, 2U);
 	sum = i915_compile_temporary(state);
 	carry = i915_compile_temporary(state);
+
+	/* Two data values -- a compare and exchange's -- take a run of their own; one is sent from its register. */
 	data_grf = value_grf;
 	data_regs = 1U;
 	if (inst->immediate == I915_IR_ATOMIC_CMPXCHG) {
 		data_grf = i915_compile_temporaries(state, 2U);
 		data_regs = 2U;
 	}
+
+	/* Gives up when the registers ran out; the compile reports it. */
 	if (state->out_of_registers != 0)
 		return;
 
@@ -295,6 +309,8 @@ i915_compile_atomic(
 		descriptor |= 1U << EU_DESC_RLEN_SHIFT;
 		reply = drv_i915_eu_grf(dst);
 	}
+
+	/* The message control -- the operation and the reply bit -- goes into the descriptor. */
 	descriptor |= control << EU_DP_CONTROL_SHIFT;
 
 	/* A predicated atomic changes the word only for the channels whose predicate is not zero. */
@@ -331,11 +347,13 @@ i915_compile_atomic(
 				 0);
 	}
 
-	/* The temporaries are free again. */
+	/* The address payload and the sum and carry registers are free again. */
 	state->grf_busy[payload] = 0U;
 	state->grf_busy[payload + 1U] = 0U;
 	state->grf_busy[sum] = 0U;
 	state->grf_busy[carry] = 0U;
+
+	/* So is a compare and exchange's run of two data values. */
 	if (inst->immediate == I915_IR_ATOMIC_CMPXCHG) {
 		state->grf_busy[data_grf] = 0U;
 		state->grf_busy[data_grf + 1U] = 0U;
@@ -368,6 +386,8 @@ i915_compile_describe_compute(
 	const struct i915_compile_state *state,
 	struct i915_shader_binary *binary)
 {
+	int threads;
+
 	/* The push data starts right after the header. */
 	binary->dispatch_grf_start = COMPILE_CS_PUSH_GRF;
 
@@ -380,10 +400,15 @@ i915_compile_describe_compute(
 	binary->cross_thread_regs = state->push_regs;
 	binary->per_thread_regs = I915_SHADER_PER_THREAD_REGS;
 
-	/* The group's shared memory, and the barrier when the kernel sends its message (ws101-p006). */
+	/* The group's shared memory (ws101-p006). */
 	binary->shared_bytes = state->ir->shared_bytes;
+
+	/* How many threads a group takes, which decides whether a barrier sends its message. */
+	threads = i915_compile_group_threads(state);
+
+	/* The barrier, when the kernel has one and a group has more than one thread to wait for. */
 	binary->uses_barrier = 0U;
-	if (state->ir->uses_barrier != 0U && i915_compile_group_threads(state) > 1)
+	if (state->ir->uses_barrier != 0U && threads > 1)
 		binary->uses_barrier = 1U;
 }
 
@@ -397,8 +422,10 @@ i915_compile_group_threads(
 {
 	uint32_t invocations;
 
-	/* The invocations of one group, rounded up to whole threads. */
+	/* The invocations of one group. */
 	invocations = state->ir->local_size[0] * state->ir->local_size[1] * state->ir->local_size[2];
+
+	/* Reports the invocations rounded up to whole threads of eight. */
 	return (int)((invocations + 7U) / 8U);
 }
 
@@ -419,22 +446,30 @@ i915_compile_shared(
 	struct i915_eu_reg dst;
 	struct i915_eu_reg data;
 	uint32_t offset_grf;
+	uint32_t data_grf;
 	uint32_t predicate_grf;
+	uint32_t predicate_operand;
+	uint32_t dst_grf;
 	uint32_t descriptor;
 	uint32_t ex_descriptor;
 	uint32_t control;
 
-	/* Reads the offset, a store's word, and the predicate after them. */
+	/* Reads the register of each channel's byte offset. */
 	offset_grf = i915_compile_grf(state, inst->src[0]);
-	predicate_grf = 0U;
+
+	/* A store sends its word, the second operand; a load sends none, and its predicate is the second operand. */
 	data = drv_i915_eu_null();
+	predicate_operand = 1U;
 	if (inst->op == I915_IR_STORE_SHARED) {
-		data = drv_i915_eu_grf(i915_compile_grf(state, inst->src[1]));
-		if (inst->component != 0U)
-			predicate_grf = i915_compile_grf(state, inst->src[2]);
-	} else if (inst->component != 0U) {
-		predicate_grf = i915_compile_grf(state, inst->src[1]);
+		data_grf = i915_compile_grf(state, inst->src[1]);
+		data = drv_i915_eu_grf(data_grf);
+		predicate_operand = 2U;
 	}
+
+	/* A predicated access reads its predicate after the other operands. */
+	predicate_grf = 0U;
+	if (inst->component != 0U)
+		predicate_grf = i915_compile_grf(state, inst->src[predicate_operand]);
 
 	/* The message: one address register, and for a load one reply register, for a store one data register. */
 	control = EU_DP_UNTYPED_ONE_CHANNEL | EU_DP_UNTYPED_SIMD8;
@@ -443,7 +478,8 @@ i915_compile_shared(
 	dst = drv_i915_eu_null();
 	if (inst->op == I915_IR_LOAD_SHARED) {
 		descriptor |= (1U << EU_DESC_RLEN_SHIFT) | (EU_DP_UNTYPED_READ << EU_DP_TYPE_SHIFT);
-		dst = drv_i915_eu_grf(i915_compile_define(state, inst->dst, 1U));
+		dst_grf = i915_compile_define(state, inst->dst, 1U);
+		dst = drv_i915_eu_grf(dst_grf);
 	} else {
 		descriptor |= EU_DP_UNTYPED_WRITE << EU_DP_TYPE_SHIFT;
 		ex_descriptor = COMPILE_EX_MLEN(1U);
@@ -511,13 +547,17 @@ i915_compile_atomic_shared(
 	uint32_t dst;
 	int returns;
 
-	/* Reads the offset, the value, a compare and exchange's comparator and a predicated atomic's predicate. */
+	/* Reads the operands' registers: the offset and the value. */
 	operands = i915_compile_operands(inst);
 	offset_grf = i915_compile_grf(state, inst->src[0]);
 	value_grf = i915_compile_grf(state, inst->src[1]);
+
+	/* A compare and exchange also reads its comparator. */
 	compare_grf = 0U;
 	if (inst->immediate == I915_IR_ATOMIC_CMPXCHG)
 		compare_grf = i915_compile_grf(state, inst->src[2]);
+
+	/* A predicated atomic reads its predicate, the last operand. */
 	predicate_grf = 0U;
 	if (inst->component != 0U)
 		predicate_grf = i915_compile_grf(state, inst->src[operands - 1U]);
@@ -526,6 +566,8 @@ i915_compile_atomic_shared(
 	returns = 0;
 	if (state->last_use[inst->dst] > state->index)
 		returns = 1;
+
+	/* The result gets its register, which the reply fills when the old value is asked for. */
 	dst = i915_compile_define(state, inst->dst, 1U);
 
 	/* A compare and exchange sends the comparator, then the new value, in a run of two. */
@@ -533,9 +575,11 @@ i915_compile_atomic_shared(
 	data_regs = 1U;
 	if (inst->immediate == I915_IR_ATOMIC_CMPXCHG) {
 		data_grf = i915_compile_temporaries(state, 2U);
-		data_regs = 2U;
 		if (state->out_of_registers != 0)
 			return;
+		data_regs = 2U;
+
+		/* Copies the comparator and the new value into the run. */
 		drv_i915_eu_mov(&state->code, drv_i915_eu_grf_ud(data_grf), drv_i915_eu_grf_ud(compare_grf));
 		drv_i915_eu_mov(&state->code, drv_i915_eu_grf_ud(data_grf + 1U), drv_i915_eu_grf_ud(value_grf));
 	}
@@ -551,6 +595,8 @@ i915_compile_atomic_shared(
 		descriptor |= 1U << EU_DESC_RLEN_SHIFT;
 		reply = drv_i915_eu_grf(dst);
 	}
+
+	/* The message control -- the operation, SIMD8 and the reply bit -- goes into the descriptor. */
 	descriptor |= control << EU_DP_CONTROL_SHIFT;
 
 	/* A predicated atomic changes the word only for the channels whose predicate is not zero. */
@@ -626,9 +672,11 @@ i915_compile_fence(
 		     (EU_DP_MEMORY_FENCE << EU_DP_TYPE_SHIFT) |
 		     (EU_DP_FENCE_COMMIT << EU_DP_CONTROL_SHIFT);
 
-	/* The buffers' fence, then shared memory's. */
+	/* The buffers' fence, at the data cache's entry. */
 	if ((fences & I915_IR_FENCE_GLOBAL) != 0U)
 		drv_i915_eu_send_scalar(&state->code, drv_i915_eu_grf(reply), drv_i915_eu_grf(0U), EU_SFID_DATA_CACHE, descriptor | EU_BTI_DATA_CACHE);
+
+	/* Then shared memory's, at the shared memory's entry. */
 	if ((fences & I915_IR_FENCE_SHARED) != 0U)
 		drv_i915_eu_send_scalar(&state->code, drv_i915_eu_grf(reply), drv_i915_eu_grf(0U), EU_SFID_DATA_CACHE, descriptor | EU_BTI_SLM);
 

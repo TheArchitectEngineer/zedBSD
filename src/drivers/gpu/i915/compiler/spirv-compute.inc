@@ -83,6 +83,8 @@ i915_spirv_declare_execution_mode(
 	uint32_t opcode,
 	uint32_t offset)
 {
+	int error;
+
 	/* The instruction must name an entry point and a mode. */
 	if (count < 3U)
 		return EINVAL;
@@ -91,6 +93,8 @@ i915_spirv_declare_execution_mode(
 	if (opcode == OP_EXECUTION_MODE && word[2] == EXECUTION_MODE_LOCAL_SIZE) {
 		if (count < 6U)
 			return EINVAL;
+
+		/* Records the workgroup's size along x, y and z. */
 		parser->ir->local_size[0] = word[3];
 		parser->ir->local_size[1] = word[4];
 		parser->ir->local_size[2] = word[5];
@@ -101,19 +105,24 @@ i915_spirv_declare_execution_mode(
 	if (opcode == OP_EXECUTION_MODE)
 		return 0;
 
-	/* LocalSizeId: the three sizes are constants, resolved after the declarations. */
-	if (word[2] == EXECUTION_MODE_LOCAL_SIZE_ID) {
-		if (count < 6U)
-			return EINVAL;
-		parser->local_size_id[0] = word[3];
-		parser->local_size_id[1] = word[4];
-		parser->local_size_id[2] = word[5];
-		parser->local_size_by_id = 1;
-		return 0;
+	/* Refuses an execution mode whose operands this parser does not interpret. */
+	if (word[2] != EXECUTION_MODE_LOCAL_SIZE_ID) {
+		error = i915_spirv_refuse(parser, opcode, offset, "OpExecutionModeId with a mode other than LocalSizeId");
+		return error;
 	}
 
-	/* Refuses an execution mode whose operands this parser does not interpret. */
-	return i915_spirv_refuse(parser, opcode, offset, "OpExecutionModeId with a mode other than LocalSizeId");
+	/* LocalSizeId names three constants, resolved after the declarations. */
+	if (count < 6U)
+		return EINVAL;
+
+	/* Records the constants' ids until i915_spirv_compute_declared() reads them. */
+	parser->local_size_id[0] = word[3];
+	parser->local_size_id[1] = word[4];
+	parser->local_size_id[2] = word[5];
+	parser->local_size_by_id = 1;
+
+	/* Succeeded: the mode is recorded. */
+	return 0;
 }
 
 /*
@@ -129,6 +138,7 @@ i915_spirv_compute_declared(
 	uint32_t *size;
 	uint32_t invocations;
 	uint32_t axis;
+	int error;
 
 	/* Only a compute shader has a workgroup. */
 	if (parser->ir->stage != I915_STAGE_COMPUTE)
@@ -136,29 +146,42 @@ i915_spirv_compute_declared(
 
 	/* Reads each size a LocalSizeId names from its constant; a specialization constant is refused. */
 	size = parser->ir->local_size;
-	if (parser->local_size_by_id != 0) {
-		for (axis = 0U; axis < 3U; axis++) {
-			constant = i915_spirv_id(parser, parser->local_size_id[axis]);
-			if (constant == NULL)
-				return EINVAL;
-			if (constant->kind != ID_CONSTANT)
-				return i915_spirv_refuse(parser, OP_EXECUTION_MODE_ID, 0U, "LocalSizeId of something that is not a constant");
-			size[axis] = constant->constant;
+	for (axis = 0U; parser->local_size_by_id != 0 && axis < 3U; axis++) {
+		/* Resolves the id the mode names along the axis. */
+		constant = i915_spirv_id(parser, parser->local_size_id[axis]);
+		if (constant == NULL)
+			return EINVAL;
+
+		/* Refuses a size that is not a plain constant. */
+		if (constant->kind != ID_CONSTANT) {
+			error = i915_spirv_refuse(parser, OP_EXECUTION_MODE_ID, 0U, "LocalSizeId of something that is not a constant");
+			return error;
 		}
+
+		/* The constant is the size along the axis. */
+		size[axis] = constant->constant;
 	}
 
 	/* A compute shader must say how large its workgroup is. */
-	if (size[0] == 0U || size[1] == 0U || size[2] == 0U)
-		return i915_spirv_refuse(parser, OP_ENTRY_POINT, 0U, "compute shader without a LocalSize");
+	if (size[0] == 0U || size[1] == 0U || size[2] == 0U) {
+		error = i915_spirv_refuse(parser, OP_ENTRY_POINT, 0U, "compute shader without a LocalSize");
+		return error;
+	}
 
 	/* Refuses a workgroup larger than the device along any axis. */
-	if (size[0] > COMPUTE_MAX_SIZE_X || size[1] > COMPUTE_MAX_SIZE_Y || size[2] > COMPUTE_MAX_SIZE_Z)
-		return i915_spirv_refuse(parser, OP_ENTRY_POINT, 0U, "workgroup larger than the device along an axis");
+	if (size[0] > COMPUTE_MAX_SIZE_X ||
+	    size[1] > COMPUTE_MAX_SIZE_Y ||
+	    size[2] > COMPUTE_MAX_SIZE_Z) {
+		error = i915_spirv_refuse(parser, OP_ENTRY_POINT, 0U, "workgroup larger than the device along an axis");
+		return error;
+	}
 
 	/* Refuses a workgroup of more invocations than the device runs at once. */
 	invocations = size[0] * size[1] * size[2];
-	if (invocations > I915_SHADER_MAX_GROUP_INVOCATIONS)
-		return i915_spirv_refuse(parser, OP_ENTRY_POINT, 0U, "workgroup of more invocations than the device supports");
+	if (invocations > I915_SHADER_MAX_GROUP_INVOCATIONS) {
+		error = i915_spirv_refuse(parser, OP_ENTRY_POINT, 0U, "workgroup of more invocations than the device supports");
+		return error;
+	}
 
 	/* Succeeded: the workgroup size is known and within the device's limits. */
 	return 0;
@@ -175,7 +198,9 @@ i915_spirv_declare_system(
 	uint32_t opcode,
 	uint32_t offset)
 {
-	/* The built-ins a compute invocation has. */
+	int error;
+
+	/* The built-ins a compute invocation has; any other is refused. */
 	switch (record->builtin) {
 	case BUILTIN_NUM_WORKGROUPS:
 	case BUILTIN_WORKGROUP_ID:
@@ -184,7 +209,8 @@ i915_spirv_declare_system(
 	case BUILTIN_LOCAL_INVOCATION_INDEX:
 		break;
 	default:
-		return i915_spirv_refuse(parser, opcode, offset, "compute built-in input that is not lowered");
+		error = i915_spirv_refuse(parser, opcode, offset, "compute built-in input that is not lowered");
+		return error;
 	}
 
 	/* A load of it reads the dispatch's values, not an interface location. */
@@ -207,9 +233,15 @@ i915_spirv_chain_system(
 	uint32_t opcode,
 	uint32_t offset)
 {
+	int error;
+
 	/* Only a component of a vector, chosen by a constant, is selected. */
-	if (pointee->kind != ID_TYPE_VECTOR || index_record->kind != ID_CONSTANT)
-		return i915_spirv_refuse(parser, opcode, offset, "access chain into a compute built-in other than a constant component");
+	if (pointee->kind != ID_TYPE_VECTOR || index_record->kind != ID_CONSTANT) {
+		error = i915_spirv_refuse(parser, opcode, offset, "access chain into a compute built-in other than a constant component");
+		return error;
+	}
+
+	/* A component past the vector's end is invalid SPIR-V. */
 	if (index_record->constant >= pointee->count)
 		return EINVAL;
 
@@ -238,10 +270,13 @@ i915_spirv_lower_load_system(
 	struct i915_spirv_id *record;
 	uint32_t first;
 	uint32_t index;
+	int error;
 
 	/* The built-ins are integer scalars and vectors of at most three. */
-	if (components > 3U)
-		return i915_spirv_refuse(parser, opcode, offset, "load of a compute built-in wider than three components");
+	if (components > 3U) {
+		error = i915_spirv_refuse(parser, opcode, offset, "load of a compute built-in wider than three components");
+		return error;
+	}
 
 	/* The first component the pointer addresses. */
 	first = 0U;
@@ -283,12 +318,13 @@ i915_spirv_system_component(
 	uint32_t local;
 	uint32_t group;
 	uint32_t size;
+	uint32_t size_value;
 	uint32_t first;
 	uint32_t place;
 	uint32_t value;
 	uint32_t uniform;
 
-	/* Reads by the built-in. */
+	/* Reads by the built-in; the group counts come after the switch. */
 	switch (builtin) {
 	case BUILTIN_LOCAL_INVOCATION_ID:
 		/* The channel's place in its group along the axis. */
@@ -306,17 +342,17 @@ i915_spirv_system_component(
 		return value;
 
 	case BUILTIN_GLOBAL_INVOCATION_ID:
-		/* The group's first invocation along the axis, then the channel's place after it. */
+		/* The group's place along the axis, and the group's size along it. */
 		group = i915_spirv_load_system(parser, I915_IR_SYSTEM_GROUP_ID_X + component);
 		size = parser->ir->local_size[component];
-		first = group;
-		if (size != 1U) {
-			first = i915_spirv_emit_value(parser, I915_IR_IMUL, group, i915_spirv_integer_constant(parser, size));
-		}
 
-		/* A group one invocation wide along the axis has every channel at its first. */
+		/* A group one invocation wide along the axis has every channel at its first, the group's place. */
 		if (size == 1U)
-			return first;
+			return group;
+
+		/* The group's first invocation: its place times its size. */
+		size_value = i915_spirv_integer_constant(parser, size);
+		first = i915_spirv_emit_value(parser, I915_IR_IMUL, group, size_value);
 
 		/* Adds the channel's place in the group. */
 		local = i915_spirv_load_system(parser, I915_IR_SYSTEM_LOCAL_ID_X + component);
@@ -332,6 +368,8 @@ i915_spirv_system_component(
 	place = i915_spirv_integer_constant(parser, component * SYSTEM_GROUP_COUNT_BYTES);
 	value = i915_spirv_new_value(parser);
 	inst = i915_spirv_emit(parser, I915_IR_LOAD_STORAGE, value, place, 0U);
+
+	/* The load reads the system buffer; a failed emit has latched the error. */
 	if (inst != NULL)
 		inst->location = uniform;
 
@@ -351,6 +389,8 @@ i915_spirv_load_system(
 	/* Reads the value from the thread's payload into a fresh value. */
 	value = i915_spirv_new_value(parser);
 	inst = i915_spirv_emit(parser, I915_IR_LOAD_SYSTEM, value, 0U, 0U);
+
+	/* The load names which built-in it reads; a failed emit has latched the error. */
 	if (inst != NULL)
 		inst->component = which;
 
@@ -394,8 +434,8 @@ i915_spirv_system_uniform(
  *
  * The operation runs for the channels of the block it is in (its
  * predicate), in one message of the data port.  An atomic that orders other
- * accesses around it (Acquire, Release and their kind) needs a memory fence,
- * which this parser does not lower yet, and is refused.
+ * accesses around it (Acquire, Release and their kind) is fenced on both
+ * sides (ws101-p006).
  */
 static int
 i915_spirv_lower_atomic(
@@ -482,40 +522,56 @@ i915_spirv_lower_atomic(
 	if (count < operands)
 		return EINVAL;
 
-	/* The fences the semantics ask for around the atomic (ws101-p006); both of a compare and exchange's. */
+	/* The fences the semantics ask for around the atomic (ws101-p006). */
 	error = i915_spirv_semantics(parser, word[5], &fences, opcode, offset);
 	if (error != 0)
 		return error;
+
+	/* A compare and exchange has the semantics of the unequal case too, and is fenced for both. */
 	if (opcode == OP_ATOMIC_COMPARE_EXCHANGE) {
 		error = i915_spirv_semantics(parser, word[6], &unequal, opcode, offset);
 		if (error != 0)
 			return error;
+
+		/* Either case's fences order the accesses around the atomic. */
 		fences |= unequal;
 	}
 
-	/* Resolves the word the atomic works on: a 32-bit integer of a storage buffer or of shared memory. */
+	/* Resolves the word the atomic works on, of a storage buffer or of shared memory. */
 	error = i915_spirv_atomic_pointer(parser, word[3], &pointer, &variable, opcode, offset);
 	if (error != 0)
 		return error;
-	type = i915_spirv_id(parser, pointer->pointee);
-	if (type == NULL || type->kind != ID_TYPE_INT || type->width != 32U)
-		return i915_spirv_refuse(parser, opcode, offset, "atomic on something that is not a 32-bit integer");
 
-	/* The value the operation combines with the word: one, or the operand. */
+	/* Refuses a word that is not a 32-bit integer. */
+	type = i915_spirv_id(parser, pointer->pointee);
+	if (type == NULL || type->kind != ID_TYPE_INT || type->width != 32U) {
+		error = i915_spirv_refuse(parser, opcode, offset, "atomic on something that is not a 32-bit integer");
+		return error;
+	}
+
+	/* The value the operation combines with the word: one for an increment or a decrement, or the operand. */
 	if (operands == 6U) {
 		value = i915_spirv_integer_constant(parser, 1U);
 	} else {
 		components = i915_spirv_operand(parser, word[value_word], value_comp);
-		if (components != 1U)
-			return i915_spirv_refuse(parser, opcode, offset, "atomic whose value is not an integer scalar");
+		if (components != 1U) {
+			error = i915_spirv_refuse(parser, opcode, offset, "atomic whose value is not an integer scalar");
+			return error;
+		}
+
+		/* The operand's one scalar is the value. */
 		value = value_comp[0];
 	}
 
 	/* A compare and exchange also takes the value the word is compared with. */
 	if (opcode == OP_ATOMIC_COMPARE_EXCHANGE) {
 		components = i915_spirv_operand(parser, word[8], compare_comp);
-		if (components != 1U)
-			return i915_spirv_refuse(parser, opcode, offset, "atomic whose comparator is not an integer scalar");
+		if (components != 1U) {
+			error = i915_spirv_refuse(parser, opcode, offset, "atomic whose comparator is not an integer scalar");
+			return error;
+		}
+
+		/* The operand's one scalar is the comparator. */
 		compare = compare_comp[0];
 	}
 
@@ -528,7 +584,7 @@ i915_spirv_lower_atomic(
 		return EINVAL;
 	dst = record->comp[0];
 
-	/* An ordering atomic is fenced on both sides (ws101-p006): before for a release, after for an acquire. */
+	/* An ordering atomic is fenced on both sides (ws101-p006): this fence orders the accesses before it, for a release. */
 	i915_spirv_fence(parser, fences);
 
 	/* Emits the operation on the word. */
@@ -536,15 +592,21 @@ i915_spirv_lower_atomic(
 	if (inst == NULL)
 		return parser->error;
 	inst->immediate = operation;
+
+	/* The memory the word is in: the buffer's uniform, or the group's shared memory. */
 	inst->location = variable->uniform;
 	if (pointer->ptr_kind == PTR_SHARED)
 		inst->location = I915_IR_LOCATION_SHARED;
+
+	/* A compare and exchange's comparator is the third source. */
 	if (compare != NO_VALUE)
 		inst->src[2] = compare;
 
 	/* Under a predicate only the block's channels change the word; the predicate follows the values. */
 	if (parser->predicate != PREDICATE_ALWAYS) {
 		inst->component = I915_IR_ATOMIC_PREDICATED;
+
+		/* The predicate is the source after the comparator, or after the value. */
 		if (compare != NO_VALUE) {
 			inst->src[3] = parser->predicate;
 		} else {
@@ -552,6 +614,7 @@ i915_spirv_lower_atomic(
 		}
 	}
 
+	/* The fence after the atomic orders the accesses after it, for an acquire. */
 	i915_spirv_fence(parser, fences);
 
 	/* A value the parser could not make fails the atomic. */
@@ -588,11 +651,15 @@ i915_spirv_lower_atomic_access(
 	if (opcode == OP_ATOMIC_LOAD) {
 		if (count < 6U)
 			return EINVAL;
+
+		/* The load's pointer and semantics. */
 		pointer_id = word[3];
 		semantics_id = word[5];
 	} else {
 		if (count < 5U)
 			return EINVAL;
+
+		/* The store's pointer and semantics. */
 		pointer_id = word[1];
 		semantics_id = word[3];
 	}
@@ -609,27 +676,44 @@ i915_spirv_lower_atomic_access(
 
 	/* A load reads the word as any load of its memory does, fenced after for an acquire. */
 	if (opcode == OP_ATOMIC_LOAD) {
+		/* Reads the word from shared memory or from the buffer. */
 		if (pointer->ptr_kind == PTR_SHARED) {
 			error = i915_spirv_lower_shared(parser, word, pointer, NULL, 1U, opcode, offset);
 		} else {
 			error = i915_spirv_lower_storage(parser, word, pointer, variable, NULL, 1U, opcode, offset);
 		}
+
+		/* Reports a load that could not be lowered. */
 		if (error != 0)
 			return error;
+
+		/* The fence after the load orders the accesses after it, for an acquire. */
 		i915_spirv_fence(parser, fences);
-		return parser->error;
+		if (parser->error != 0)
+			return parser->error;
+
+		/* Succeeded: the load is lowered. */
+		return 0;
 	}
 
-	/* A store writes the one scalar value it names, fenced before for a release. */
+	/* A store writes the one scalar value it names. */
 	components = i915_spirv_operand(parser, word[4], scalars);
-	if (components != 1U)
-		return i915_spirv_refuse(parser, opcode, offset, "atomic store of something that is not a scalar");
+	if (components != 1U) {
+		error = i915_spirv_refuse(parser, opcode, offset, "atomic store of something that is not a scalar");
+		return error;
+	}
+
+	/* The fence before the store orders the accesses before it, for a release. */
 	i915_spirv_fence(parser, fences);
+
+	/* Writes the word as any store of its memory does. */
 	if (pointer->ptr_kind == PTR_SHARED) {
 		error = i915_spirv_lower_shared(parser, word, pointer, scalars, 1U, opcode, offset);
 	} else {
 		error = i915_spirv_lower_storage(parser, word, pointer, variable, scalars, 1U, opcode, offset);
 	}
+
+	/* Reports a store that could not be lowered. */
 	if (error != 0)
 		return error;
 
@@ -653,22 +737,29 @@ i915_spirv_atomic_pointer(
 {
 	struct i915_spirv_id *base;
 	struct i915_spirv_id *owner;
+	int error;
 
-	/* Resolves the pointer and the variable it leads to. */
+	/* Resolves the pointer. */
 	base = i915_spirv_id(parser, pointer_id);
 	if (base == NULL)
 		return EINVAL;
+
+	/* An atomic's pointer is a variable or an access chain into one. */
 	if (base->kind != ID_VARIABLE && base->kind != ID_POINTER)
 		return EINVAL;
+
+	/* Resolves the variable the pointer leads into. */
 	owner = i915_spirv_id(parser, base->var);
 	if (owner == NULL)
 		return EINVAL;
 
 	/* Only the words of a storage buffer or of shared memory are changed atomically. */
-	if (base->ptr_kind != PTR_SSBO && base->ptr_kind != PTR_SHARED)
-		return i915_spirv_refuse(parser, opcode, offset, "atomic on something that is not a storage buffer or shared memory");
+	if (base->ptr_kind != PTR_SSBO && base->ptr_kind != PTR_SHARED) {
+		error = i915_spirv_refuse(parser, opcode, offset, "atomic on something that is not a storage buffer or shared memory");
+		return error;
+	}
 
-	/* Succeeded: the atomic works on a storage buffer word. */
+	/* Succeeded: the atomic works on a word of a buffer or of shared memory. */
 	*pointer = base;
 	*variable = owner;
 	return 0;
@@ -692,13 +783,18 @@ i915_spirv_semantics(
 {
 	struct i915_spirv_id *semantics;
 	uint32_t bits;
+	int error;
 
-	/* The semantics must be a constant. */
+	/* Resolves the semantics' id. */
 	semantics = i915_spirv_id(parser, semantics_id);
 	if (semantics == NULL)
 		return EINVAL;
-	if (semantics->kind != ID_CONSTANT)
-		return i915_spirv_refuse(parser, opcode, offset, "memory semantics that are not a constant");
+
+	/* The semantics must be a constant. */
+	if (semantics->kind != ID_CONSTANT) {
+		error = i915_spirv_refuse(parser, opcode, offset, "memory semantics that are not a constant");
+		return error;
+	}
 
 	/* Relaxed semantics order nothing. */
 	bits = semantics->constant;
@@ -706,11 +802,15 @@ i915_spirv_semantics(
 	if ((bits & MEMORY_SEMANTICS_ORDERING) == 0U)
 		return 0;
 
-	/* The memory the ordering is about: what the storage-class bits name, or all of it. */
+	/* An ordering of buffers (UniformMemory) fences the buffers. */
 	if ((bits & MEMORY_SEMANTICS_UNIFORM) != 0U)
 		*fences |= I915_IR_FENCE_GLOBAL;
+
+	/* One of shared memory (WorkgroupMemory) fences shared memory. */
 	if ((bits & MEMORY_SEMANTICS_WORKGROUP) != 0U)
 		*fences |= I915_IR_FENCE_SHARED;
+
+	/* An ordering that names no memory is about all of it. */
 	if (*fences == 0U)
 		*fences = I915_IR_FENCE_GLOBAL | I915_IR_FENCE_SHARED;
 
@@ -734,7 +834,7 @@ i915_spirv_fence(
 	if ((fences & (I915_IR_FENCE_GLOBAL | I915_IR_FENCE_SHARED)) == 0U)
 		return;
 
-	/* The fence orders the memory it names. */
+	/* The fence orders the memory it names; a failed emit has latched the error. */
 	inst = i915_spirv_emit(parser, I915_IR_FENCE, 0U, 0U, 0U);
 	if (inst != NULL)
 		inst->immediate = fences;
@@ -768,21 +868,37 @@ i915_spirv_lower_barrier(
 	if (opcode == OP_MEMORY_BARRIER) {
 		if (count < 3U)
 			return EINVAL;
+
+		/* Reads the fences the semantics ask for. */
 		error = i915_spirv_semantics(parser, word[2], &fences, opcode, offset);
 		if (error != 0)
 			return error;
+
+		/* The barrier is its fences. */
 		i915_spirv_fence(parser, fences);
-		return parser->error;
+		if (parser->error != 0)
+			return parser->error;
+
+		/* Succeeded: the memory barrier is lowered. */
+		return 0;
 	}
 
-	/* A control barrier: the execution scope, the memory scope and the semantics. */
+	/* A control barrier names the execution scope, the memory scope and the semantics. */
 	if (count < 4U)
 		return EINVAL;
+
+	/* Resolves the execution scope. */
 	scope = i915_spirv_id(parser, word[1]);
 	if (scope == NULL)
 		return EINVAL;
-	if (scope->kind != ID_CONSTANT)
-		return i915_spirv_refuse(parser, opcode, offset, "barrier whose execution scope is not a constant");
+
+	/* The execution scope must be a constant. */
+	if (scope->kind != ID_CONSTANT) {
+		error = i915_spirv_refuse(parser, opcode, offset, "barrier whose execution scope is not a constant");
+		return error;
+	}
+
+	/* Reads the fences the semantics ask for. */
 	error = i915_spirv_semantics(parser, word[3], &fences, opcode, offset);
 	if (error != 0)
 		return error;
@@ -790,21 +906,33 @@ i915_spirv_lower_barrier(
 	/* A barrier of a narrower scope than the workgroup is its fences: the channels of a thread run together. */
 	if (scope->constant != SCOPE_WORKGROUP) {
 		i915_spirv_fence(parser, fences);
-		return parser->error;
+		if (parser->error != 0)
+			return parser->error;
+
+		/* Succeeded: the narrow barrier is lowered as its fences. */
+		return 0;
 	}
 
-	/* Refuses a barrier some thread might not reach as often as the others. */
-	if (parser->returned != 0)
-		return i915_spirv_refuse(parser, opcode, offset, "workgroup barrier after a return");
+	/* Refuses a barrier after a return, which a thread whose channels all returned never reaches. */
+	if (parser->returned != 0) {
+		error = i915_spirv_refuse(parser, opcode, offset, "workgroup barrier after a return");
+		return error;
+	}
+
+	/* Refuses a barrier in a loop some invocation does not enter, which threads reach unequally often. */
 	for (level = 0U; level < parser->loop_depth; level++) {
-		if (parser->loops[level].entry_predicate != PREDICATE_ALWAYS)
-			return i915_spirv_refuse(parser, opcode, offset, "workgroup barrier in a loop not every invocation enters");
+		if (parser->loops[level].entry_predicate != PREDICATE_ALWAYS) {
+			error = i915_spirv_refuse(parser, opcode, offset, "workgroup barrier in a loop not every invocation enters");
+			return error;
+		}
 	}
 
-	/* The barrier, after its fences. */
+	/* The barrier, after its fences; a failed emit has latched the error. */
 	inst = i915_spirv_emit(parser, I915_IR_BARRIER, 0U, 0U, 0U);
 	if (inst != NULL)
 		inst->immediate = fences & (I915_IR_FENCE_GLOBAL | I915_IR_FENCE_SHARED);
+
+	/* The kernel's dispatch must give the group a barrier. */
 	parser->ir->uses_barrier = 1U;
 
 	/* A value the parser could not make fails the barrier. */
@@ -829,15 +957,20 @@ i915_spirv_declare_shared(
 	uint32_t offset)
 {
 	uint32_t bytes;
+	int error;
 
-	/* The bytes the variable takes. */
+	/* The bytes the variable takes; none for a type the layout does not cover. */
 	bytes = i915_spirv_shared_bytes(parser, record->pointee);
-	if (bytes == 0U)
-		return i915_spirv_refuse(parser, opcode, offset, "Workgroup variable of a type shared memory does not lay out");
+	if (bytes == 0U) {
+		error = i915_spirv_refuse(parser, opcode, offset, "Workgroup variable of a type shared memory does not lay out");
+		return error;
+	}
 
 	/* Refuses more shared memory than the device has. */
-	if (bytes > I915_IR_MAX_SHARED_BYTES || parser->ir->shared_bytes > I915_IR_MAX_SHARED_BYTES - bytes)
-		return i915_spirv_refuse(parser, opcode, offset, "Workgroup variables larger than the shared memory");
+	if (bytes > I915_IR_MAX_SHARED_BYTES || parser->ir->shared_bytes > I915_IR_MAX_SHARED_BYTES - bytes) {
+		error = i915_spirv_refuse(parser, opcode, offset, "Workgroup variables larger than the shared memory");
+		return error;
+	}
 
 	/* The variable starts where the ones before it end. */
 	record->ptr_kind = PTR_SHARED;
@@ -867,22 +1000,28 @@ i915_spirv_shared_bytes(
 	uint32_t part;
 	uint32_t member;
 
-	/* Measures by the kind of type. */
+	/* Resolves the type; an unknown id is not laid out. */
 	type = i915_spirv_id(parser, type_id);
 	if (type == NULL)
 		return 0U;
+
+	/* Measures by the kind of type. */
 	switch (type->kind) {
 	case ID_TYPE_INT:
 	case ID_TYPE_FLOAT:
-		/* A 32-bit scalar. */
+		/* Only a 32-bit scalar is laid out. */
 		if (type->width != 32U)
 			return 0U;
+
+		/* Reports the scalar's 4 bytes. */
 		return 4U;
 
 	case ID_TYPE_VECTOR:
 	case ID_TYPE_MATRIX:
 		/* Its components or columns one after the other. */
 		part = i915_spirv_shared_bytes(parser, type->type);
+
+		/* Reports the part's bytes times the parts (0 when the part is not laid out). */
 		return part * type->count;
 
 	case ID_TYPE_ARRAY:
@@ -890,10 +1029,12 @@ i915_spirv_shared_bytes(
 		part = i915_spirv_shared_bytes(parser, type->type);
 		if (type->length == 0U || part == 0U || type->length > SHARED_MEASURE_LIMIT / part)
 			return 0U;
+
+		/* Reports the element's bytes times the length. */
 		return part * type->length;
 
 	case ID_TYPE_STRUCT:
-		/* Its members in order. */
+		/* Its members in order, none of them unlaid and the sum within the measure. */
 		total = 0U;
 		for (member = 0U; member < type->count; member++) {
 			part = i915_spirv_shared_bytes(parser, type->member_type[member]);
@@ -901,6 +1042,8 @@ i915_spirv_shared_bytes(
 				return 0U;
 			total += part;
 		}
+
+		/* Reports the members' bytes together. */
 		return total;
 
 	default:
@@ -935,7 +1078,10 @@ i915_spirv_chain_shared(
 	uint32_t before;
 	uint32_t after;
 	uint32_t member;
+	uint32_t member_bytes;
+	uint32_t stride_value;
 	int constant;
+	int error;
 
 	/* A constant index names its part now; any other is an IR integer. */
 	constant = 0;
@@ -945,49 +1091,77 @@ i915_spirv_chain_shared(
 		selected = index_record->constant;
 	}
 
-	/* A structure's member: after the members before it; only a constant selects one. */
+	/* Only a constant selects a structure's member. */
+	if (pointee->kind == ID_TYPE_STRUCT && constant == 0) {
+		error = i915_spirv_refuse(parser, opcode, offset, "access chain with a dynamic index into a structure");
+		return error;
+	}
+
+	/* A structure's member: after the members before it. */
 	if (pointee->kind == ID_TYPE_STRUCT) {
-		if (constant == 0)
-			return i915_spirv_refuse(parser, opcode, offset, "access chain with a dynamic index into a structure");
 		if (selected >= pointee->count)
 			return EINVAL;
-		for (member = 0U; member < selected; member++)
-			record->byte_offset += i915_spirv_shared_bytes(parser, pointee->member_type[member]);
+
+		/* Moves the byte offset past the members before it. */
+		for (member = 0U; member < selected; member++) {
+			member_bytes = i915_spirv_shared_bytes(parser, pointee->member_type[member]);
+			record->byte_offset += member_bytes;
+		}
+
+		/* The pointer now addresses the member's type. */
 		record->pointee = pointee->member_type[selected];
+
+		/* Succeeded: the pointer addresses the member. */
 		return 0;
 	}
 
+	/* Refuses an index into a scalar: only an array, a matrix or a vector has parts. */
+	if (pointee->kind != ID_TYPE_ARRAY && pointee->kind != ID_TYPE_MATRIX && pointee->kind != ID_TYPE_VECTOR) {
+		error = i915_spirv_refuse(parser, opcode, offset, "access chain into a scalar");
+		return error;
+	}
+
 	/* An array's element, a matrix's column or a vector's component: the part's bytes apart. */
-	if (pointee->kind != ID_TYPE_ARRAY && pointee->kind != ID_TYPE_MATRIX && pointee->kind != ID_TYPE_VECTOR)
-		return i915_spirv_refuse(parser, opcode, offset, "access chain into a scalar");
 	stride = i915_spirv_shared_bytes(parser, pointee->type);
 	if (stride == 0U)
 		return EINVAL;
 	record->pointee = pointee->type;
 
-	/* A constant index moves the byte offset. */
+	/* A constant index past an array's length is invalid SPIR-V. */
+	if (constant != 0 && pointee->kind == ID_TYPE_ARRAY && selected >= pointee->length)
+		return EINVAL;
+
+	/* So is one past a matrix's columns or a vector's components. */
+	if (constant != 0 && pointee->kind != ID_TYPE_ARRAY && selected >= pointee->count)
+		return EINVAL;
+
+	/* A constant index moves the byte offset, and the step is done. */
 	if (constant != 0) {
-		if (pointee->kind == ID_TYPE_ARRAY && selected >= pointee->length)
-			return EINVAL;
-		if (pointee->kind != ID_TYPE_ARRAY && selected >= pointee->count)
-			return EINVAL;
 		record->byte_offset += selected * stride;
 		return 0;
 	}
 
-	/* A dynamic index: an integer scalar, folded with any earlier one into bytes. */
+	/* A dynamic index must be an integer scalar. */
 	scalar_count = i915_spirv_operand(parser, index_id, scalars);
-	if (scalar_count != 1U)
-		return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
+	if (scalar_count != 1U) {
+		error = i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
+		return error;
+	}
+
+	/* Folds it with an earlier dynamic index into one in bytes, or keeps it with its stride when it is the first. */
 	if (record->dynamic_index != NO_VALUE) {
-		before = i915_spirv_emit_value(parser, I915_IR_IMUL, record->dynamic_index, i915_spirv_integer_constant(parser, record->dynamic_stride));
-		after = i915_spirv_emit_value(parser, I915_IR_IMUL, scalars[0], i915_spirv_integer_constant(parser, stride));
+		stride_value = i915_spirv_integer_constant(parser, record->dynamic_stride);
+		before = i915_spirv_emit_value(parser, I915_IR_IMUL, record->dynamic_index, stride_value);
+		stride_value = i915_spirv_integer_constant(parser, stride);
+		after = i915_spirv_emit_value(parser, I915_IR_IMUL, scalars[0], stride_value);
 		record->dynamic_index = i915_spirv_emit_value(parser, I915_IR_IADD, before, after);
 		record->dynamic_stride = 1U;
 	} else {
 		record->dynamic_index = scalars[0];
 		record->dynamic_stride = stride;
 	}
+
+	/* Shared memory has no run-time array, so no length goes with the index. */
 	record->dynamic_length = 0U;
 
 	/* A value the parser could not make fails the step. */
@@ -1021,13 +1195,18 @@ i915_spirv_lower_shared(
 	uint32_t index;
 	uint32_t place;
 	uint32_t value;
+	int error;
 
-	/* Only a scalar or a vector is moved at once. */
+	/* Resolves the type the pointer addresses. */
 	type = i915_spirv_id(parser, pointer->pointee);
 	if (type == NULL)
 		return EINVAL;
-	if (type->kind != ID_TYPE_INT && type->kind != ID_TYPE_FLOAT && type->kind != ID_TYPE_VECTOR)
-		return i915_spirv_refuse(parser, opcode, offset, "load or store of something that is not a scalar or a vector in shared memory");
+
+	/* Only a scalar or a vector is moved at once. */
+	if (type->kind != ID_TYPE_INT && type->kind != ID_TYPE_FLOAT && type->kind != ID_TYPE_VECTOR) {
+		error = i915_spirv_refuse(parser, opcode, offset, "load or store of something that is not a scalar or a vector in shared memory");
+		return error;
+	}
 
 	/* A load's result names fresh scalars. */
 	record = NULL;
@@ -1039,20 +1218,29 @@ i915_spirv_lower_shared(
 
 	/* Each scalar at its byte, under the block's predicate. */
 	for (index = 0U; index < components; index++) {
+		/* The scalar's byte offset in shared memory. */
 		place = i915_spirv_storage_offset(parser, pointer, pointer->byte_offset + index * 4U);
+
+		/* A load reads the word into a fresh value of the result. */
 		if (scalars == NULL) {
 			value = i915_spirv_new_value(parser);
 			inst = i915_spirv_emit(parser, I915_IR_LOAD_SHARED, value, place, 0U);
 			record->comp[index] = value;
+
+			/* Under a predicate only the block's channels read; the predicate is the second source. */
 			if (inst != NULL && parser->predicate != PREDICATE_ALWAYS) {
 				inst->src[1] = parser->predicate;
 				inst->component = 1U;
 			}
+
+			/* The load is recorded; the next scalar. */
 			continue;
 		}
 
-		/* A store. */
+		/* A store writes the scalar to the word. */
 		inst = i915_spirv_emit(parser, I915_IR_STORE_SHARED, 0U, place, scalars[index]);
+
+		/* Under a predicate only the block's channels write; the predicate is the third source. */
 		if (inst != NULL && parser->predicate != PREDICATE_ALWAYS) {
 			inst->src[2] = parser->predicate;
 			inst->component = 1U;
@@ -1092,50 +1280,77 @@ i915_spirv_lower_array_length(
 	uint32_t length;
 	uint32_t stride;
 	uint32_t shift;
+	uint32_t constant;
+	int error;
 
 	/* The instruction names a result type, a result, the structure pointer and the member. */
 	if (count < 5U)
 		return EINVAL;
 
-	/* Resolves the pointer to the whole block of a storage buffer. */
+	/* Resolves the pointer to the whole block. */
 	base = i915_spirv_id(parser, word[3]);
 	if (base == NULL)
 		return EINVAL;
+
+	/* The pointer is a variable or an access chain into one. */
 	if (base->kind != ID_VARIABLE && base->kind != ID_POINTER)
 		return EINVAL;
-	if (base->ptr_kind != PTR_SSBO)
-		return i915_spirv_refuse(parser, opcode, offset, "OpArrayLength of something that is not a storage buffer");
+
+	/* Only a storage buffer has a run-time array whose length the dispatch knows. */
+	if (base->ptr_kind != PTR_SSBO) {
+		error = i915_spirv_refuse(parser, opcode, offset, "OpArrayLength of something that is not a storage buffer");
+		return error;
+	}
+
+	/* Resolves the buffer's variable and its block's structure. */
 	variable = i915_spirv_id(parser, base->var);
 	block = i915_spirv_id(parser, base->pointee);
 	if (variable == NULL || block == NULL || block->kind != ID_TYPE_STRUCT)
 		return EINVAL;
 
-	/* The member must be a run-time array with a stride and an offset. */
+	/* The member must exist. */
 	member = word[4];
 	if (member >= block->count)
 		return EINVAL;
+
+	/* The member must be a run-time array. */
 	array = i915_spirv_id(parser, block->member_type[member]);
 	if (array == NULL || array->kind != ID_TYPE_ARRAY || array->length != 0U)
 		return EINVAL;
-	if (array->stride == 0U || block->member_has_offset[member] == 0U)
-		return i915_spirv_refuse(parser, opcode, offset, "OpArrayLength of an array without a stride or an offset");
 
-	/* The bytes of the buffer from the array's start on. */
+	/* The array must have a stride and an offset to measure it by. */
+	if (array->stride == 0U || block->member_has_offset[member] == 0U) {
+		error = i915_spirv_refuse(parser, opcode, offset, "OpArrayLength of an array without a stride or an offset");
+		return error;
+	}
+
+	/* The buffer's range; a failed emit has latched the error. */
 	range = i915_spirv_new_value(parser);
 	inst = i915_spirv_emit(parser, I915_IR_STORAGE_SIZE, range, 0U, 0U);
 	if (inst != NULL)
 		inst->location = variable->uniform;
-	beyond = i915_spirv_emit_value(parser, I915_IR_ISUB, range, i915_spirv_integer_constant(parser, block->member_offset[member]));
 
-	/* Whole elements of the array: a shift for a power-of-two stride, a division otherwise. */
+	/* The bytes of the buffer from the array's start on. */
+	constant = i915_spirv_integer_constant(parser, block->member_offset[member]);
+	beyond = i915_spirv_emit_value(parser, I915_IR_ISUB, range, constant);
+
+	/*
+	 * The smallest shift whose power of two reaches the stride.  The search
+	 * stops at 31: a stride past 2^31 is no power of two that a 32-bit shift
+	 * makes, and a shift of 32 would wrap and never end the search.
+	 */
 	stride = array->stride;
 	shift = 0U;
-	while (((uint32_t)1U << shift) < stride)
+	while (shift < 31U && ((uint32_t)1U << shift) < stride)
 		shift++;
+
+	/* Whole elements of the array: a shift for a power-of-two stride, a division otherwise. */
 	if (((uint32_t)1U << shift) == stride) {
-		length = i915_spirv_emit_value(parser, I915_IR_SHR, beyond, i915_spirv_integer_constant(parser, shift));
+		constant = i915_spirv_integer_constant(parser, shift);
+		length = i915_spirv_emit_value(parser, I915_IR_SHR, beyond, constant);
 	} else {
-		length = i915_spirv_emit_value(parser, I915_IR_UDIV, beyond, i915_spirv_integer_constant(parser, stride));
+		constant = i915_spirv_integer_constant(parser, stride);
+		length = i915_spirv_emit_value(parser, I915_IR_UDIV, beyond, constant);
 	}
 
 	/* Names the result. */
