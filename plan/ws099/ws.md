@@ -168,3 +168,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 - BUG-232 App Home で起動中の app は切り替え、BUG-235 Log Out の確認（暗くする演出）、BUG-219 title bar の menu に薄い下線、BUG-221 drag の範囲選択の frame rate の丸め（15〜30 fps）
 - BUG-223 全画面の direct scanout（game mode）、BUG-208 の後の全画面と dock の整合
 - ws099-p034 上部の bar: 保留の patch（held/）を main に当て直し中、icon は montage-4 と BUG-237 の穴（ad568302）
+
+## Phase（2026-10-06 追加: 再設計）
+
+- [ws099-p035](phase035/phase.md) 設計: App Home の stage と 2 層の animation・起動中の app の切り替え（planned、実装は p035a〜d）
