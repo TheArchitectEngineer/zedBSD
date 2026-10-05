@@ -24,6 +24,6 @@ greeter の PIN の login は sessiond の口無しでは安全に作れない�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws163-p001](phase001/phase.md) | 要件と設計 | planning（第 1 版 q733、mock の設計 §9 q769。G1 待ち） | — |
-| ws163-p002 | PIN の保存（`~/.config/keiland/pin`、compositor の pin-store）と lock の画面の PIN の unlock、host 試験 | planned（q769 で実施） | p001 §9 |
-| ws163-p003 | Settings の Users の PIN（`kl_system_account_v1` の set_pin、password は sessiond の今の UNLOCK で確かめる）、greeter（G1 の答えによる）、T1 | planned（Settings は q769 で実施） | p002、G1 |
+| [ws163-p002](phase002/phase.md) | PIN の保存（`~/.config/keiland/pin`、compositor の pin-store）と lock の画面の PIN の unlock、host 試験 | in-progress（実装・host 試験済み d9ab018d、T1 待ち） | p001 §9 |
+| [ws163-p003](phase003/phase.md) | Settings の Users の PIN（`kl_system_account_v1` の set_pin、password は sessiond の今の UNLOCK で確かめる）、greeter（G1 の答えによる）、T1 | in-progress（Settings は実装・host 試験済み d9ab018d。greeter は G1 待ち） | p002、G1 |
 | ws163-p004 | 全文規約の見直し | planned | p003 |

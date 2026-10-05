@@ -99,7 +99,7 @@ H2（5 回で無効、password で戻る）、H5（6 桁の数字の入力は PI
 
 - file: `$HOME/.config/keiland/pin`（compositor の設定と同じ folder、`settings-store.c` の `.config/keiland`）。mode 0600、利用者の持ち物。書き換えは
   同じ folder の一時 file から rename。
-- 中身（行の形、1 行 1 項目）: `hash <crypt の文字列>`（SHA-512 crypt、`$6$rounds=50000$<16 文字の salt>$...`、salt は `/dev/urandom`）と
+- 中身（行の形、1 行 1 項目）: `hash <crypt の文字列>`（SHA-512 crypt、`$6$rounds=20000$<16 文字の salt>$...`。lock の画面の event loop で確かめるので rounds を抑えた、salt は `/dev/urandom`）と
   `failures <数>`（続けて間違えた数）。PIN を平文で残さない。
 - 守り: file は利用者だけが読める（home は 0700）。6 桁は 100 万通りなので、file が読めれば短時間で戻せる。mock の限り（§9.5）。
 - 道具の場所: compositor（`userland/desktop/wayland/pin-store.c`）。crypt() は POSIX（zedBSD の libc、Linux・FreeBSD は libcrypt）なので、

@@ -340,6 +340,10 @@ kl_system_capabilities(
 	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) != 0U && system->manager_version >= KL_SYSTEM_SINCE_ADMINISTER)
 		bits |= KL_SYSTEM_HAS_ADMINISTER;
 
+	/* The PIN, offered with the account to a manager bound at version 10 where a session manager runs (ws163-p003). */
+	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_PIN) != 0U && system->manager_version >= KL_SYSTEM_SINCE_PIN)
+		bits |= KL_SYSTEM_HAS_PIN;
+
 	/* The monitor, offered to a manager bound at version 2 (WS134 p012). */
 	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_MONITOR) != 0U && system->manager_version >= 2U)
 		bits |= KL_SYSTEM_HAS_MONITOR;
@@ -994,6 +998,48 @@ kl_system_account_set_password(
 	/* Sent with the application's next flush. */
 	number = system_number(system, request);
 	wl_proxy_marshal(system->account, KL_SYSTEM_ACCOUNT_SET_PASSWORD, number, current, fresh);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Asks for the user's PIN to be set, or removed with an empty pin
+ * (ws163-p003).  Neither the password nor the PIN is kept here: they go
+ * out with the application's next flush.
+ */
+int
+kl_system_account_set_pin(
+	struct kl_system *system,
+	const char *current,
+	const char *pin,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t current_length;
+	size_t pin_length;
+	size_t current_clean;
+
+	/* The PIN offered. */
+	if (system->account == NULL || system->lost || system->manager_version < KL_SYSTEM_SINCE_PIN)
+		return ENOTSUP;
+	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_PIN) == 0U)
+		return ENOTSUP;
+
+	/* A password of one line that fits, and a PIN that fits (the compositor checks its digits). */
+	if (current == NULL || pin == NULL)
+		return EINVAL;
+	current_length = strlen(current);
+	pin_length = strlen(pin);
+	current_clean = strcspn(current, "\n");
+	if (current_length == 0U || current_length > KL_SYSTEM_PASSWORD_MAX || current_clean != current_length)
+		return EINVAL;
+	if (pin_length > KL_SYSTEM_PASSWORD_MAX)
+		return EINVAL;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->account, KL_SYSTEM_ACCOUNT_SET_PIN, number, current, pin);
 
 	/* Succeeded: the answer comes as a result. */
 	return 0;

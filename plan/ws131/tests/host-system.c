@@ -25,6 +25,7 @@
  */
 
 #include "userland/desktop/wayland/zwl.h"
+#include "userland/desktop/wayland/pin-store.h"
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "userland/desktop/libkeiland/system/system-private.h"
@@ -97,6 +98,10 @@ static struct {
 	unsigned command_hold_bar;
 	unsigned command_release_bar;
 	unsigned command_state;
+	/* The PIN (ws163-p003): the stand-in's sessiond checks "kei"; the check asked waits for the next pass. */
+	unsigned unlock_asked;
+	char unlock_password[64];
+	char home[64];
 	unsigned stop;
 } world;
 
@@ -240,6 +245,40 @@ kl_backend_account_set_password(const char *current, const char *fresh)
 		return EACCES;
 	if (strlen(fresh) < 8U)
 		return EINVAL;
+	return 0;
+}
+
+/* The session manager (ws163-p003): there is one, and the lock screen's check waits for the server's next pass. */
+int
+kl_backend_session_managed(const struct kl_backend *backend)
+{
+	(void)backend;
+	return 1;
+}
+
+int
+kl_backend_session_unlock(struct kl_backend *backend, const char *password)
+{
+	int error;
+
+	(void)backend;
+	pthread_mutex_lock(&world.lock);
+	error = 0;
+	if (world.unlock_asked) {
+		error = EBUSY;
+	} else {
+		world.unlock_asked = 1U;
+		snprintf(world.unlock_password, sizeof(world.unlock_password), "%s", password);
+	}
+	pthread_mutex_unlock(&world.lock);
+	return error;
+}
+
+/* The user's home: the test's scratch folder. */
+int
+zwl_settings_home(char *home, size_t size)
+{
+	snprintf(home, size, "%s", world.home);
 	return 0;
 }
 
@@ -682,6 +721,8 @@ serve_pass(void)
 	unsigned answer;
 	unsigned release;
 	unsigned changed;
+	unsigned unlock;
+	int unlock_error;
 	int error;
 	int owned;
 
@@ -749,6 +790,18 @@ serve_pass(void)
 			pthread_mutex_unlock(&world.lock);
 		}
 	}
+
+	/* sessiond's answer to the check of the password for a PIN (ws163-p003). */
+	pthread_mutex_lock(&world.lock);
+	unlock = world.unlock_asked;
+	world.unlock_asked = 0U;
+	unlock_error = EACCES;
+	if (strcmp(world.unlock_password, "kei") == 0)
+		unlock_error = 0;
+	memset(world.unlock_password, 0, sizeof(world.unlock_password));
+	pthread_mutex_unlock(&world.lock);
+	if (unlock)
+		(void)zwl_system_pin_answer(&server, unlock_error);
 
 	/* The extension's own pass. */
 	zwl_system_tick(&server);
@@ -1078,6 +1131,7 @@ test_both_ends(void)
 	struct kl_network_wired_config wired;
 	struct kl_sharing_state sharing;
 	uint32_t request;
+	char pin_path[128];
 	unsigned seen;
 	int taken_error;
 	int sockets[2];
@@ -1103,7 +1157,7 @@ test_both_ends(void)
 		return;
 	/* The library's table describes the version it binds (zedBSD's libwayland refuses more than the table; T1-144). */
 	CHECK(kl_system_manager_v1_interface.version == (int)KL_SYSTEM_MANAGER_VERSION, "manager table version %d", kl_system_manager_v1_interface.version);
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
@@ -1330,6 +1384,23 @@ test_both_ends(void)
 	expect_result(display, system, first, EINVAL, "the new password refused");
 	CHECK(kl_system_account_set_password(system, "", "newpass123", &first) == EINVAL, "an empty password is refused by the library");
 
+	/* The PIN (ws163-p003): set, a wrong password, a bad PIN, a six-digit password, and removed. */
+	snprintf(pin_path, sizeof(pin_path), "%s/.config/keiland/pin", world.home);
+	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_PIN) != 0U, "PIN offered");
+	CHECK(kl_system_account_set_pin(system, "kei", "123456", &first) == 0, "PIN asked");
+	expect_result(display, system, first, 0, "PIN set");
+	CHECK(zwl_pin_store_check(pin_path, "123456") == 0, "the PIN file takes the PIN");
+	CHECK(kl_system_account_set_pin(system, "wrong", "654321", &first) == 0, "PIN with a wrong password asked");
+	expect_result(display, system, first, EPERM, "PIN: the password wrong");
+	CHECK(zwl_pin_store_check(pin_path, "123456") == 0, "the PIN unchanged");
+	CHECK(kl_system_account_set_pin(system, "kei", "12345", &first) == 0, "five digits asked");
+	expect_result(display, system, first, EINVAL, "PIN: five digits refused");
+	CHECK(kl_system_account_set_pin(system, "123456", "654321", &first) == 0, "six-digit password asked");
+	expect_result(display, system, first, EINVAL, "PIN: a six-digit password refused");
+	CHECK(kl_system_account_set_pin(system, "kei", "", &first) == 0, "PIN removal asked");
+	expect_result(display, system, first, 0, "PIN removed");
+	CHECK(access(pin_path, F_OK) != 0, "the PIN file gone");
+
 	/* Close, and no protocol error on the way; the closed system's asking for scans went with it. */
 	kl_system_close(system);
 	(void)wl_display_roundtrip(display);
@@ -1348,7 +1419,14 @@ test_both_ends(void)
 int
 main(void)
 {
+	char scratch[128];
+
 	pthread_mutex_init(&world.lock, NULL);
+	snprintf(world.home, sizeof(world.home), "%s", "/tmp/ws131-host-system.XXXXXX");
+	if (mkdtemp(world.home) == NULL) {
+		printf("host-system: no scratch home\n");
+		return 1;
+	}
 	world.network.reachable = 1U;
 	world.network.connected = 1U;
 	world.network.kind = KL_BACKEND_NETWORK_WIFI;
@@ -1375,6 +1453,11 @@ main(void)
 	test_view();
 	test_server_alone();
 	test_both_ends();
+	snprintf(scratch, sizeof(scratch), "%s/.config/keiland", world.home);
+	(void)rmdir(scratch);
+	snprintf(scratch, sizeof(scratch), "%s/.config", world.home);
+	(void)rmdir(scratch);
+	(void)rmdir(world.home);
 
 	if (failures != 0) {
 		printf("host-system: %d FAILED\n", failures);

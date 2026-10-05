@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 9; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 10; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -131,6 +131,7 @@
  *   event   0 result(uint request, uint applied, uint saved)
  *   request 2 administer(uint request, string password, string operation)   since version 8 (ws089-p026)
  *   event   1 refused(uint request, string reason)                         since version 8 (ws089-p026)
+ *   request 3 set_pin(uint request, string current, string pin)            since version 10 (ws163-p003)
  *   The compositor changes the password of the user it runs as, through
  *   the system (zedBSD: passwd; elsewhere unsupported), on a thread of its
  *   own, and answers ok, denied (the current password is wrong), invalid
@@ -149,6 +150,16 @@
  *   bad-password, invalid for the other refusals, unsupported, busy or
  *   failed.  The manager's capabilities have KL_SYSTEM_CAPABILITY_ADMINISTER
  *   where the system has the tool.
+ *   set_pin sets the six-digit PIN of the user the compositor runs as, or
+ *   removes it when pin is empty (ws163, the mock of plan/ws163/phase001
+ *   section 9): the compositor checks current with the session manager
+ *   (the lock screen's check) and writes the user's ~/.config/keiland/pin
+ *   (or removes it).  The result is ok, denied (current is wrong), invalid
+ *   (pin is not six digits, or current is six digits, which the lock
+ *   screen would take for a PIN), unsupported (no session manager), busy
+ *   (a check is under way) or failed.  Neither is logged or kept.  The
+ *   manager's capabilities have KL_SYSTEM_CAPABILITY_PIN where a session
+ *   manager runs.
  *
  * kl_system_monitor_v1 (WS134 p012, plan/ws134/design.md section 1.3)
  *   request 0 destroy
@@ -190,7 +201,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		9U
+#define KL_SYSTEM_MANAGER_VERSION		10U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -215,10 +226,14 @@
 #define KL_SYSTEM_CAPABILITY_ACCOUNT		0x40U
 #define KL_SYSTEM_CAPABILITY_SHARING		0x80U
 #define KL_SYSTEM_CAPABILITY_ADMINISTER		0x100U
+#define KL_SYSTEM_CAPABILITY_PIN		0x200U
 
 /* Since when the manager has get_sharing (ws089-p025), and the account administer and refused (ws089-p026). */
 #define KL_SYSTEM_SINCE_SHARING			7U
 #define KL_SYSTEM_SINCE_ADMINISTER		8U
+
+/* Since when the account has set_pin (ws163-p003). */
+#define KL_SYSTEM_SINCE_PIN			10U
 
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
@@ -241,6 +256,7 @@
 #define KL_SYSTEM_ACCOUNT_DESTROY		0U
 #define KL_SYSTEM_ACCOUNT_SET_PASSWORD		1U
 #define KL_SYSTEM_ACCOUNT_ADMINISTER		2U
+#define KL_SYSTEM_ACCOUNT_SET_PIN		3U
 #define KL_SYSTEM_ACCOUNT_EVENT_RESULT		0U
 #define KL_SYSTEM_ACCOUNT_EVENT_REFUSED		1U
 #define KL_SYSTEM_PASSWORD_MAX			256U
