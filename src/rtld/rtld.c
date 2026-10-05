@@ -210,7 +210,7 @@ struct rtld_symbol_name {
 	unsigned hashed;
 };
 
-#define RTLD_HANDLE_MAX 64U
+#define RTLD_HANDLE_CHUNK 64U
 #define RTLD_HANDLE_MAGIC 0x5a444c48U
 
 struct rtld_handle {
@@ -222,8 +222,22 @@ struct rtld_handle {
 	unsigned main_scope;
 };
 
-/* The TLS modules a process may have (id 0 is never used); WS140 p002 lifts it. */
-#define RTLD_TLS_MODULE_MAX 33U
+/*
+ * A chunk of the handle table (WS140): the first is static, the others are
+ * mapped when every handle before them is in use.  A chunk is never
+ * released, so a closed handle stays readable for validate_handle to
+ * refuse.  Handles are used under the loader lock only.
+ */
+struct rtld_handle_chunk {
+	struct rtld_handle_chunk *next;
+	struct rtld_handle slots[RTLD_HANDLE_CHUNK];
+};
+
+/* The TLS modules of a chunk; the first chunk's slot 0 is never used (id 0). */
+#define RTLD_TLS_CHUNK 33U
+
+/* The entries a thread's first TLS vector has room for. */
+#define RTLD_DTV_INITIAL RTLD_TLS_CHUNK
 
 struct rtld_tls_module {
 	uintptr_t id;
@@ -236,6 +250,17 @@ struct rtld_tls_module {
 	/* Distance below the thread pointer, zero for a dynamic module. */
 	size_t static_offset;
 	unsigned is_static;
+};
+
+/*
+ * A chunk of the TLS module table (WS140): module id N is slot N % 33 of
+ * chunk N / 33.  The first is static, the others are mapped as ids grow,
+ * and none is released, so __tls_get_addr, which takes no lock, may walk
+ * the chain while it grows.
+ */
+struct rtld_tls_chunk {
+	struct rtld_tls_chunk *next;
+	struct rtld_tls_module slots[RTLD_TLS_CHUNK];
 };
 
 /*
@@ -265,14 +290,23 @@ static uint32_t lookup_generation;
 static struct rtld_program_table *program_tables_free;
 static unsigned startup_initialized;
 static unsigned process_finalized;
-static struct rtld_handle handles[RTLD_HANDLE_MAX];
+/* The handle table: the static first chunk and the last one linked. */
+static struct rtld_handle_chunk handle_chunk_first;
+static struct rtld_handle_chunk *handle_chunk_last = &handle_chunk_first;
 static uint32_t next_handle_generation = 1;
 static volatile uint32_t loader_lock_word;
 static uintptr_t loader_lock_owner;
 static unsigned loader_lock_depth;
 static char loader_error[KERN_RTLD_DLERROR_SIZE];
 static unsigned loader_error_pending;
-static struct rtld_tls_module tls_modules[RTLD_TLS_MODULE_MAX];
+/*
+ * The TLS module table: the static first chunk and the last one linked.
+ * tls_module_count is the highest id ever given; it grows under the loader
+ * lock, with release order after the module is written, and
+ * __tls_get_addr reads it with acquire order.
+ */
+static struct rtld_tls_chunk tls_chunk_first;
+static struct rtld_tls_chunk *tls_chunk_last = &tls_chunk_first;
 static uintptr_t tls_module_count;
 static uint64_t tls_generation;
 
@@ -464,6 +498,12 @@ static void loader_unlock(void);
 static void *allocate_tls_block(const struct rtld_tls_module *module);
 static uintptr_t thread_pointer(void);
 static void layout_static_tls(void);
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386)
+static uintptr_t static_tls_place(struct rtld_tls_module *module, uintptr_t offset);
+#endif
+static struct rtld_tls_module *tls_module_at(uintptr_t id);
+static uintptr_t tls_module_new_id(void);
+static void dtv_grow(struct __rtld_tcb *tcb, uintptr_t module);
 #if defined(HAL_ARCH_AMD64)
 static uintptr_t static_tls_displacement(const struct rtld_object *owner);
 #endif
@@ -471,6 +511,7 @@ static void initialize_object(struct rtld_object *object);
 static void clear_loader_error(void);
 static void set_loader_error(const char *message);
 static struct rtld_handle *allocate_handle(struct rtld_object *object, int main_scope);
+static struct rtld_handle *handle_free_slot(void);
 static const char *dlopen_bare_name(const char *path);
 static const char *object_basename(const char *path);
 static int preflight_dlopen_file(int fd);
@@ -637,6 +678,7 @@ __rtld_thread_alloc(
 	struct __rtld_tcb *tcb;
 	unsigned char *mapping;
 	void **dtv;
+	size_t dtv_count;
 	size_t payload;
 	size_t size;
 
@@ -658,7 +700,19 @@ __rtld_thread_alloc(
 	if (mapping == NULL)
 		return -1;
 	tcb = (struct __rtld_tcb *)(mapping + payload);
-	dtv = tls_map(RTLD_TLS_MODULE_MAX * sizeof(*dtv));
+
+	/*
+	 * The TLS vector: room for every module there is now, at least
+	 * RTLD_DTV_INITIAL, and two entries past the end for the chain of the
+	 * vectors it replaces (WS140 D6), which starts empty.  A module
+	 * registered after this is read makes __tls_get_addr grow it.
+	 */
+	dtv_count = __atomic_load_n(&tls_module_count, __ATOMIC_ACQUIRE) + 1U;
+	if (dtv_count < RTLD_DTV_INITIAL)
+		dtv_count = RTLD_DTV_INITIAL;
+
+	/* Maps it (zeroed, so the chain's two entries start empty). */
+	dtv = tls_map((dtv_count + 2U) * sizeof(*dtv));
 
 	/* Handles the dtv availability. */
 	if (dtv == NULL) {
@@ -673,6 +727,8 @@ __rtld_thread_alloc(
 		rtld_memcpy((unsigned char *)tcb - static_tls_distance,
 			    static_tls_template, static_tls_template_size);
 	}
+
+	/* The control block: the static area, the TLS vector and the thread's record. */
 	rtld_memset(tcb, 0, sizeof(*tcb));
 	tcb->tls.self = (uintptr_t)tcb;
 	tcb->tls.mapping_base = (uintptr_t)mapping;
@@ -682,9 +738,9 @@ __rtld_thread_alloc(
 	tcb->tls.memory_size = static_tls_distance;
 	tcb->tls.alignment = static_tls_alignment;
 	tcb->tls.distance = static_tls_distance;
-	rtld_memset(dtv, 0, RTLD_TLS_MODULE_MAX * sizeof(*dtv));
+	rtld_memset(dtv, 0, (dtv_count + 2U) * sizeof(*dtv));
 	tcb->dtv = dtv;
-	tcb->dtv_count = RTLD_TLS_MODULE_MAX;
+	tcb->dtv_count = dtv_count;
 	tcb->dtv_generation = tls_generation;
 	tcb->pthread_private = pthread_private;
 	loader_lock();
@@ -705,7 +761,13 @@ __rtld_thread_free(
 {
 	intptr_t current;
 	uintptr_t id;
+	uintptr_t count;
 	struct __rtld_tcb **link;
+	struct rtld_tls_module *module;
+	void **dtv;
+	void **retired;
+	size_t dtv_count;
+	size_t retired_count;
 
 	/* Handles the tcb availability. */
 	if (tcb == NULL)
@@ -728,19 +790,29 @@ __rtld_thread_free(
 	}
 	loader_unlock();
 
-	/* Handles the dtv availability. */
+	/* Frees the thread's dynamic blocks, which its current vector holds. */
+	count = __atomic_load_n(&tls_module_count, __ATOMIC_ACQUIRE);
 	if (tcb->dtv != NULL) {
-		/* Process each remaining element. */
-		for (id = 1; id < tcb->dtv_count && id <= tls_module_count;
-		     id++) {
-			/* Handles the tcb condition. */
+		for (id = 1; id < tcb->dtv_count && id <= count; id++) {
+			/* A block this thread allocated. */
 			if (tcb->dtv[id] != NULL) {
-				tls_unmap(tcb->dtv[id],
-					  tls_modules[id].memory_size);
+				module = tls_module_at(id);
+				tls_unmap(tcb->dtv[id], module->memory_size);
 			}
 		}
 	}
-	tls_unmap(tcb->dtv, RTLD_TLS_MODULE_MAX * sizeof(*tcb->dtv));
+
+	/* Frees the vector, then each one it replaced, along their chain. */
+	dtv = tcb->dtv;
+	dtv_count = tcb->dtv_count;
+	while (dtv != NULL) {
+		/* The link to the one before, read before this one goes. */
+		retired = (void **)dtv[dtv_count];
+		retired_count = (size_t)(uintptr_t)dtv[dtv_count + 1U];
+		tls_unmap(dtv, (dtv_count + 2U) * sizeof(*dtv));
+		dtv = retired;
+		dtv_count = retired_count;
+	}
 	tcb->dtv = NULL;
 
 	/* The control block sits inside the mapping it records, not at it. */
@@ -823,11 +895,13 @@ __tls_get_addr(
 	intptr_t value;
 	struct __rtld_tcb *tcb;
 	struct rtld_tls_module *module;
+	uintptr_t count;
+	unsigned active;
 	void *block;
 
-	/* Handles the index availability. */
-	if (index == NULL || index->module == 0 ||
-	    index->module > tls_module_count)
+	/* Refuses an id no module was given; the count is read before the chain. */
+	count = __atomic_load_n(&tls_module_count, __ATOMIC_ACQUIRE);
+	if (index == NULL || index->module == 0 || index->module > count)
 		rtld_fatal("invalid TLS index");
 
 	/* The calling thread's control block, read without a system call where the processor holds it (BUG-110). */
@@ -835,10 +909,11 @@ __tls_get_addr(
 	if (value == 0)
 		rtld_fatal("thread has no TLS control block");
 	tcb = (struct __rtld_tcb *)(uintptr_t)value;
-	module = &tls_modules[index->module];
 
-	/* Handles the module availability. */
-	if (!module->active || index->offset >= module->memory_size)
+	/* The module, written before it was marked active. */
+	module = tls_module_at(index->module);
+	active = __atomic_load_n(&module->active, __ATOMIC_ACQUIRE);
+	if (!active || index->offset >= module->memory_size)
 		rtld_fatal("invalid TLS module access");
 
 	/* A module in the static area is already present in every thread. */
@@ -848,9 +923,15 @@ __tls_get_addr(
 		       index->offset;
 	}
 
-	/* Handles the dtv availability. */
-	if (tcb->dtv == NULL || index->module >= tcb->dtv_count)
+	/* A thread without a vector cannot reach a dynamic module. */
+	if (tcb->dtv == NULL)
 		rtld_fatal("invalid TLS module access");
+
+	/* A module registered after the vector was sized: it grows (WS140 D6). */
+	if (index->module >= tcb->dtv_count)
+		dtv_grow(tcb, index->module);
+
+	/* The thread's block of the module. */
 	block = tcb->dtv[index->module];
 
 	/* Handles the block availability. */
@@ -866,6 +947,63 @@ __tls_get_addr(
 
 	/* Returns the computed result. */
 	return (unsigned char *)block + index->offset;
+}
+
+/*
+ * Replaces the calling thread's TLS vector with one large enough for
+ * module, at least twice the old size.  The old vector is not freed and
+ * not changed: an access that a signal interrupted after reading it still
+ * reads right values from it.  It is linked from the two entries past the
+ * new one's end (its address, then its size) and freed with the thread
+ * (__rtld_thread_free).  Only the thread itself grows its vector; the
+ * loader lock orders it against unload_object_locked, which clears
+ * entries of every thread's vector.
+ */
+static void
+dtv_grow(
+	struct __rtld_tcb *tcb,
+	uintptr_t module)
+{
+	void **dtv;
+	size_t count;
+	size_t i;
+
+	/* Copies the vector into a larger one and publishes it. */
+	loader_lock();
+
+	/* Grown already on another path: nothing to do. */
+	if (module < tcb->dtv_count) {
+		loader_unlock();
+		return;
+	}
+
+	/* Twice as large, or large enough for the module. */
+	count = tcb->dtv_count * 2U;
+	if (count < module + 1U)
+		count = module + 1U;
+
+	/* A size whose bytes, with the chain's two entries, fit a size_t. */
+	if (count > SIZE_MAX / sizeof(*dtv) - 2U)
+		rtld_fatal("TLS vector is too large");
+
+	/* The new vector; without memory the process cannot go on (WS140 U2). */
+	dtv = tls_map((count + 2U) * sizeof(*dtv));
+	if (dtv == NULL)
+		rtld_fatal("cannot allocate TLS vector");
+
+	/* The thread's blocks, then the link to the old vector. */
+	for (i = 1; i < tcb->dtv_count; i++)
+		dtv[i] = tcb->dtv[i];
+
+	/* The link to the old vector, past the new one's entries. */
+	dtv[count] = (void *)tcb->dtv;
+	dtv[count + 1U] = (void *)(uintptr_t)tcb->dtv_count;
+
+	/* The vector first, then its size, so the size never outgrows it. */
+	__atomic_store_n(&tcb->dtv, dtv, __ATOMIC_RELEASE);
+	__atomic_store_n(&tcb->dtv_count, count, __ATOMIC_RELEASE);
+
+	loader_unlock();
 }
 
 #if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)
@@ -1048,7 +1186,7 @@ __rtld_dlopen(
 
 		/* Handles the handle availability. */
 		if (handle == NULL)
-			set_loader_error("too many dynamic-loader handles");
+			set_loader_error("cannot allocate dynamic-loader handle");
 		loader_unlock();
 
 		/* Returns the computed result. */
@@ -1111,7 +1249,7 @@ loaded:
 
 	/* Handles the handle availability. */
 	if (handle == NULL) {
-		set_loader_error("too many dynamic-loader handles");
+		set_loader_error("cannot allocate dynamic-loader handle");
 		unload_object_locked(object);
 	}
 	loader_unlock();
@@ -1831,6 +1969,68 @@ allocate_tls_block(
 }
 
 /*
+ * Finds the module of an id (below or at tls_module_count): in the first
+ * chunk directly, which is the fast path of __tls_get_addr, else along the
+ * chain.
+ */
+static struct rtld_tls_module *
+tls_module_at(
+	uintptr_t id)
+{
+	struct rtld_tls_chunk *chunk;
+	uintptr_t step;
+
+	/* Most processes have no more modules than the first chunk holds. */
+	if (id < RTLD_TLS_CHUNK)
+		return &tls_chunk_first.slots[id];
+
+	/* Along the chain to the id's chunk. */
+	chunk = &tls_chunk_first;
+	for (step = id / RTLD_TLS_CHUNK; step != 0; step--)
+		chunk = __atomic_load_n(&chunk->next, __ATOMIC_ACQUIRE);
+
+	/* The slot. */
+	return &chunk->slots[id % RTLD_TLS_CHUNK];
+}
+
+/*
+ * Gives a TLS module id: one a module gone left free, else the next one,
+ * linking a chunk first when that id starts one.  The loader lock is held;
+ * the caller writes the module and counts the id (register_tls_module).
+ */
+static uintptr_t
+tls_module_new_id(
+	void)
+{
+	struct rtld_tls_module *module;
+	struct rtld_tls_chunk *chunk;
+	uintptr_t id;
+
+	/* A free id among those given before. */
+	for (id = 1; id <= tls_module_count; id++) {
+		/* The first whose module is gone. */
+		module = tls_module_at(id);
+		if (!module->active)
+			return id;
+	}
+
+	/* The next id, in a new chunk when it starts one. */
+	id = tls_module_count + 1U;
+	if (id % RTLD_TLS_CHUNK == 0) {
+		chunk = tls_map(sizeof(*chunk));
+		if (chunk == NULL)
+			rtld_fatal("cannot allocate TLS module table");
+
+		/* Published after the last, before the id is counted. */
+		__atomic_store_n(&tls_chunk_last->next, chunk, __ATOMIC_RELEASE);
+		tls_chunk_last = chunk;
+	}
+
+	/* Succeeded: a new id. */
+	return id;
+}
+
+/*
  * Supports the layout static tls operation.
  *
  * Places the main executable first, because its displacement below the
@@ -1856,56 +2056,39 @@ layout_static_tls(
 	void)
 {
 	struct rtld_tls_module *module;
-	struct rtld_tls_module *order[RTLD_TLS_MODULE_MAX];
+	struct rtld_tls_module *main_module;
 	unsigned char *image;
 	uintptr_t offset;
 	uintptr_t id;
-	unsigned count;
-	unsigned i;
 
 	/* Handles a second pass, which would move blocks already in use. */
 	if (static_tls_sealed)
 		return;
-	count = 0;
 
-	/* Handles the main object condition. */
-	if (main_object != NULL && main_object->tls_module_id != 0)
-		order[count++] = &tls_modules[main_object->tls_module_id];
-
-	/* Process each remaining element. */
-	for (id = 1; id <= tls_module_count; id++) {
-		module = &tls_modules[id];
-
-		/* Skips a slot that holds no module, and the main one. */
-		if (!module->active || (count != 0 && module == order[0]))
-			continue;
-		order[count++] = module;
-	}
-
-	/* Process each remaining element. */
+	/*
+	 * The main program's module first, where the displacements its linker
+	 * fixed expect it; then every other module loaded at startup, by id
+	 * (WS140 D7: two passes instead of a list of the modules).
+	 */
 	offset = 0;
-	for (i = 0; i < count; i++) {
-		module = order[i];
-
-		/* Handles a total the thread pointer cannot reach. */
-		if (module->memory_size > KERN_TLS_MEMORY_MAX - offset)
-			rtld_fatal("static TLS area is too large");
-
-		/*
-		 * Variant II counts downwards from the thread pointer, so a
-		 * block ends at its own offset and the rounding that aligns
-		 * it belongs below, not above.
-		 */
-		offset += module->memory_size;
-		offset = (offset + module->alignment - 1U) &
-			 ~(uintptr_t)(module->alignment - 1U);
-		module->static_offset = (size_t)offset;
-		module->is_static = 1;
-
-		/* Handles the alignment condition. */
-		if (module->alignment > static_tls_alignment)
-			static_tls_alignment = module->alignment;
+	main_module = NULL;
+	if (main_object != NULL && main_object->tls_module_id != 0) {
+		main_module = tls_module_at(main_object->tls_module_id);
+		offset = static_tls_place(main_module, offset);
 	}
+
+	/* The others. */
+	for (id = 1; id <= tls_module_count; id++) {
+		/* Skips a slot that holds no module, and the main one. */
+		module = tls_module_at(id);
+		if (!module->active || module == main_module)
+			continue;
+
+		/* Places it. */
+		offset = static_tls_place(module, offset);
+	}
+
+	/* No module is placed after this pass. */
 	static_tls_sealed = 1;
 
 	/* Handles the offset condition. */
@@ -1919,19 +2102,57 @@ layout_static_tls(
 	if (image == NULL)
 		rtld_fatal("cannot allocate static TLS template");
 
-	/* Process each remaining element. */
-	for (i = 0; i < count; i++) {
-		module = order[i];
-
+	/* Copies each placed module's image to its place; the order does not matter. */
+	for (id = 1; id <= tls_module_count; id++) {
 		/* Anonymous memory leaves .tbss and the padding zeroed. */
-		if (module->file_size != 0) {
-			rtld_memcpy(image + (offset - module->static_offset),
-				    module->init_image, module->file_size);
-		}
+		module = tls_module_at(id);
+		if (!module->active || !module->is_static || module->file_size == 0)
+			continue;
+
+		/* Copies it. */
+		rtld_memcpy(image + (offset - module->static_offset),
+			    module->init_image, module->file_size);
 	}
+
+	/* Publishes the area every new thread gets. */
 	static_tls_distance = offset;
 	static_tls_template = image;
 	static_tls_template_size = (size_t)offset;
+}
+#endif
+
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386)
+/*
+ * Places one module in the static TLS area below the modules placed
+ * before it, whose blocks end offset bytes below the thread pointer, and
+ * returns where the next one starts.
+ */
+static uintptr_t
+static_tls_place(
+	struct rtld_tls_module *module,
+	uintptr_t offset)
+{
+	/* Refuses a total the thread pointer cannot reach. */
+	if (module->memory_size > KERN_TLS_MEMORY_MAX - offset)
+		rtld_fatal("static TLS area is too large");
+
+	/*
+	 * Variant II counts downwards from the thread pointer, so a
+	 * block ends at its own offset and the rounding that aligns
+	 * it belongs below, not above.
+	 */
+	offset += module->memory_size;
+	offset = (offset + module->alignment - 1U) &
+		 ~(uintptr_t)(module->alignment - 1U);
+	module->static_offset = (size_t)offset;
+	module->is_static = 1;
+
+	/* The area is aligned for its most demanding module. */
+	if (module->alignment > static_tls_alignment)
+		static_tls_alignment = module->alignment;
+
+	/* Where the next module is placed from. */
+	return offset;
 }
 #endif
 
@@ -1953,7 +2174,7 @@ static_tls_displacement(
 	/* Handles the owner availability. */
 	if (owner == NULL || owner->tls_module_id == 0)
 		rtld_fatal("TLS module is unavailable");
-	module = &tls_modules[owner->tls_module_id];
+	module = tls_module_at(owner->tls_module_id);
 
 	/* Handles a module that is not part of the static area. */
 	if (!module->is_static)
@@ -2091,33 +2312,64 @@ allocate_handle(
 	struct rtld_object *object,
 	int main_scope)
 {
+	struct rtld_handle_chunk *chunk;
+	struct rtld_handle *handle;
+
+	/* A slot no handle uses, in the chunks there are. */
+	handle = handle_free_slot();
+
+	/* None: one more chunk; without memory dlopen fails (WS140 D8). */
+	if (handle == NULL) {
+		chunk = tls_map(sizeof(*chunk));
+		if (chunk == NULL)
+			return NULL;
+
+		/* Linked after the last; its first slot is the handle. */
+		handle_chunk_last->next = chunk;
+		handle_chunk_last = chunk;
+		handle = &chunk->slots[0];
+	}
+
+	/* A generation that is never 0, which validate_handle refuses. */
+	handle->magic = RTLD_HANDLE_MAGIC;
+	handle->generation = next_handle_generation++;
+	if (next_handle_generation == 0)
+		next_handle_generation = 1;
+
+	/* The handle's object and scope. */
+	handle->object = object;
+	handle->references = 1;
+	handle->active = 1;
+	handle->main_scope = (unsigned)main_scope;
+
+	/* A handle of its own keeps the object loaded. */
+	if (!main_scope)
+		object->direct_refs++;
+
+	/* Succeeded: the new handle. */
+	return handle;
+}
+
+/*
+ * Finds a handle slot no handle uses, or NULL when every chunk is full.
+ */
+static struct rtld_handle *
+handle_free_slot(
+	void)
+{
+	struct rtld_handle_chunk *chunk;
 	unsigned i;
 
-	/* Process each element required by the operation. */
-	for (i = 0; i < RTLD_HANDLE_MAX; i++) {
-		/* Handles the handles condition. */
-		if (!handles[i].active) {
-			handles[i].magic = RTLD_HANDLE_MAGIC;
-			handles[i].generation = next_handle_generation++;
-
-			/* Handles the next handle generation condition. */
-			if (next_handle_generation == 0)
-				next_handle_generation = 1;
-			handles[i].object = object;
-			handles[i].references = 1;
-			handles[i].active = 1;
-			handles[i].main_scope = (unsigned)main_scope;
-
-			/* Handles the main scope condition. */
-			if (!main_scope)
-				object->direct_refs++;
-
-			/* Returns the computed result. */
-			return &handles[i];
+	/* Each chunk, each slot. */
+	for (chunk = &handle_chunk_first; chunk != NULL; chunk = chunk->next) {
+		for (i = 0; i < RTLD_HANDLE_CHUNK; i++) {
+			/* The first that is free. */
+			if (!chunk->slots[i].active)
+				return &chunk->slots[i];
 		}
 	}
 
-	/* Reports that no result is available. */
+	/* Every slot is in use. */
 	return NULL;
 }
 
@@ -4058,7 +4310,8 @@ register_tls_module(
 {
 	struct rtld_tls_module *module;
 	size_t alignment;
-	unsigned i, id;
+	uintptr_t id;
+	unsigned i;
 
 	/* Process each element required by the operation. */
 	for (i = 0; i < object->phnum; i++) {
@@ -4083,22 +4336,10 @@ register_tls_module(
 			    object->phdr[i].p_memsz > KERN_TLS_MEMORY_MAX)
 				rtld_fatal("unsupported TLS alignment or size");
 
-			/* Process each remaining element. */
-			for (id = 1; id <= tls_module_count; id++) {
-				/* Handles the tls modules condition. */
-				if (!tls_modules[id].active)
-					break;
-			}
-
-			/* Handles the id condition. */
-			if (id > tls_module_count) {
-				/* Handles the tls module count condition. */
-				if (tls_module_count + 1U == RTLD_TLS_MODULE_MAX)
-					rtld_fatal("too many TLS modules");
-				id = ++tls_module_count;
-			}
+			/* A free id, or the next one (WS140). */
+			id = tls_module_new_id();
 			object->tls_module_id = id;
-			module = &tls_modules[object->tls_module_id];
+			module = tls_module_at(id);
 			rtld_memset(module, 0, sizeof(*module));
 			module->id = object->tls_module_id;
 			module->file_size = (size_t)object->phdr[i].p_filesz;
@@ -4113,7 +4354,16 @@ register_tls_module(
 					object, object->phdr[i].p_vaddr,
 					module->file_size, PF_R);
 			}
-			module->active = 1;
+
+			/*
+			 * Marks it active after it is written, then counts a
+			 * new id, so that __tls_get_addr, which reads the
+			 * count and then the flag, never sees half a module.
+			 */
+			__atomic_store_n(&module->active, 1U, __ATOMIC_RELEASE);
+			if (id > tls_module_count)
+				__atomic_store_n(&tls_module_count, id, __ATOMIC_RELEASE);
+
 			tls_generation++;
 		}
 	}
@@ -5156,6 +5406,7 @@ install_tlsdesc(
 {
 	struct rtld_object *owner;
 	struct rtld_tlsdesc *descriptor;
+	struct rtld_tls_module *module;
 	struct __tls_index *index;
 	Elf_Sym *symbol;
 	uintptr_t offset;
@@ -5178,9 +5429,13 @@ install_tlsdesc(
 		offset += (uintptr_t)symbol->st_value;
 	}
 
-	/* Handles the owner availability. */
-	if (owner == NULL || owner->tls_module_id == 0 ||
-	    offset >= tls_modules[owner->tls_module_id].memory_size)
+	/* The owner must have a TLS module that holds the offset. */
+	if (owner == NULL || owner->tls_module_id == 0)
+		rtld_fatal("invalid TLSDESC module or offset");
+
+	/* Refuses an offset past the module's block. */
+	module = tls_module_at(owner->tls_module_id);
+	if (offset >= module->memory_size)
 		rtld_fatal("invalid TLSDESC module or offset");
 
 	/* The argument, in room that grows as the object needs (WS140 U3). */
@@ -5285,7 +5540,7 @@ unload_object_locked(
 	/* Checks the current object. */
 	if (object->tls_module_id != 0) {
 		/* Process each element required by the operation. */
-		module = &tls_modules[object->tls_module_id];
+		module = tls_module_at(object->tls_module_id);
 		tls_size = module->memory_size;
 		for (tcb = rtld_threads; tcb != NULL; tcb = tcb->rtld_next) {
 			/* Handles the dtv availability. */
@@ -5467,22 +5722,30 @@ static struct rtld_handle *
 validate_handle(
 	void *value)
 {
+	struct rtld_handle_chunk *chunk;
 	uintptr_t address;
 	uintptr_t first;
 	uintptr_t end;
 	struct rtld_handle *handle;
 
+	/* The chunk whose slots the address falls on, at a slot's start. */
 	address = (uintptr_t)value;
-	first = (uintptr_t)&handles[0];
-	end = (uintptr_t)&handles[RTLD_HANDLE_MAX];
+	handle = NULL;
+	for (chunk = &handle_chunk_first; chunk != NULL; chunk = chunk->next) {
+		/* Takes the address when it is one of this chunk's slots. */
+		first = (uintptr_t)&chunk->slots[0];
+		end = (uintptr_t)&chunk->slots[RTLD_HANDLE_CHUNK];
+		if (address >= first && address < end &&
+		    (address - first) % sizeof(chunk->slots[0]) == 0) {
+			handle = (struct rtld_handle *)value;
+			break;
+		}
+	}
 
-	/* Handles the address condition. */
-	if (address < first || address >= end ||
-	    (address - first) % sizeof(handles[0]) != 0)
-
-		/* Reports that no result is available. */
+	/* Not a handle this loader gave. */
+	if (handle == NULL)
 		return NULL;
-	handle = (struct rtld_handle *)value;
+
 
 	/* Handles the object availability. */
 	if (handle->magic != RTLD_HANDLE_MAGIC || !handle->active ||

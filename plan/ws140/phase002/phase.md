@@ -2,10 +2,10 @@
 
 # ws140-p002: handle・TLS module・dtv の上限を無くす
 
-Status: planned
+Status: in-progress（実装済み・T の試験待ち。p001 とまとめて依頼）
 Disposition: normal
 Parent: [WS140](../ws.md)
-Queue: none
+Queue: q729（Q1、2026-10-05）
 設計: [ws.md](../ws.md) の D1・D2・D6・D7・D8・D9
 依存: p001 の commit が main に統合済みであること（同じ `rtld.c` に重ねるため。p001 の clearance は要らない。試験は p001 と p002 をまとめてこの Phase の後に依頼する）
 時限の目安: 実装 4 h、試験 2 h
@@ -17,7 +17,7 @@ Queue: none
   - `userland/tests/dyntest.c` の handle の上限の試験の書き直し。
   - `rtld-many` に handle と TLS の段を足す。
   - p001 と合わせた試験の T への依頼。
-- **入らない**: 他の固定の上限（ws.md の U3）。失敗を dlerror にする変更（U2）。全文規約の通しの見直し（p003）。
+- **入らない**: 失敗を dlerror にする変更（U2）。U3 の上限は p001 で済んだ。全文規約の通しの見直し（p003）。
 - **所有する path**: `src/rtld/rtld.c`、`src/rtld/rtld.h`、`userland/tests/dyntest.c`、`plan/ws140/`。
 
 ## 始める前に読む物
@@ -190,7 +190,21 @@ desktop の回帰（Files の PDF の縮小表示 `dlopen("libpdf.so")`、`plan/
 
 ## 結果
 
-（未実施）
+実装（2026-10-05、P2、worktree p2、p001 の main 統合 9dba1f95 の上）。
+
+- **handle**: `RTLD_HANDLE_CHUNK` 64 の chunk の列（`handle_chunk_first`・`handle_chunk_last`）。`allocate_handle` は空きを `handle_free_slot` で探し、無ければ chunk を足す（取れなければ NULL → `dlopen` は `"cannot allocate dynamic-loader handle"`）。`validate_handle` は chunk ごとに範囲と slot の境を見る。
+- **TLS module**: `RTLD_TLS_CHUNK` 33 の chunk の列と `tls_module_at`（id < 33 は最初の chunk を直に）。`register_tls_module` は `tls_module_new_id`（空いた id か次の id、新しい chunk が要れば release でつなぐ。取れなければ `rtld_fatal("cannot allocate TLS module table")`）を使う。中身を書く → `active` を release → 新しい id なら `tls_module_count` を release、の順。`__tls_get_addr` は数と `active` を acquire で読む。
+- **dtv（D6）**: 最初の大きさは max(`RTLD_DTV_INITIAL` = 33, `tls_module_count + 1`) で、常に `+ 2` 項目を取る（後ろの 2 つが退いた dtv の鎖）。`tls_module_count` は lock の外で acquire で読む（phase の案の「lock の中で読む」から変えた。後から足された module は `__tls_get_addr` が伸ばすので、古い数でも正しい）。`dtv_grow` は loader の lock の下で、2 倍か module + 1 の大きい方に写し、新しい dtv の `[数]`・`[数 + 1]` に古い dtv の address と数を書き、dtv → 数の順に release で差し替える。古い dtv は書き換えず unmap もしない。`__rtld_thread_free` は今の dtv の block を外し、鎖をたどって全ての dtv を unmap する。dtv を伸ばすのはその thread 自身だけで、他の thread の項目を消す `unload_object_locked` とは loader の lock で順が付く。
+- **静的な TLS（D7）**: `layout_static_tls` の `order[]` をやめ、main の module → 他の active な module（id の順）の 2 回で `static_tls_place` を呼ぶ。template への写しは id の順の 1 回の loop（`is_static` で active な物）。
+- **dyntest**: `many_handles[200]`。200 個を開いて全て閉じ、もう 1 つ開いて閉じる。表示は `DL:05I:HANDLES-200`。return 35・37・38 は同じ意味で、36 は消した。
+- **rtld-many**: `many-tls.c`（static の `__thread int`、偶数は `-mtls-dialect=gnu2` の TLSDESC、奇数は `__tls_get_addr`）で `libtls00.so`〜`libtls39.so`。段は `handles`（`libmany00.so` を 200 回）、`tls`（40 個を開き、初期値を読み、番号 × 10 を書いて読み戻す）、`tls-thread`（もう 1 つの thread でも初期値から。終わった後に主の thread の値が変わっていないこと）、`tls-close`（40 個を閉じ、`libtls39.so` を開き直して初期値 40）。全 16 段。
+- **bss**: 94,076（p001 と同じ。handle と TLS の最初の chunk は前と同じ大きさ）。text 31,688 → 33,049、data 412 → 428。
+- **確かめ（host、QEMU は起動していない）**: 手順 0 の sysroot の確かめは 0。`make … ld.so libc.so dyntest tlstest.so` は warning 0。`dynamic-userland-check` は PASS。grep（`RTLD_HANDLE_MAX`・`RTLD_TLS_MODULE_MAX`・`handles[`・`tls_modules[`・`too many TLS modules`・`too many dynamic-loader handles` ほか）は 0 行。`build-many.sh build/ws140-p001 build/ws140-p002-many/out` は通った（TLSDESC=300、phnum=31、libtls00 の TLSDESC と libtls01 の DTPMOD64 を確かめた、NEEDED=41）。試験の C の style は違反 0。rtld.c の違反は 236 → 231（増えた関数は無い。減ったのは `__rtld_thread_alloc`・`layout_static_tls`・`register_tls_module`・`validate_handle`）。dyntest は 44 → 40。`git diff --check` も問題無し。
+- **残る危険（ws.md の「残る危険」に加えて記録）**:
+  - 信号の handler の中で `__tls_get_addr` が dtv を伸ばすと、loader の lock の取り途中の自分を待ちうる（今もある、直していない）。
+  - 割り込まれた速い道が古い dtv を読んだ後、handler が dtv を伸ばした場合: 割り込まれた側がその後に新しい block を古い dtv に書くと、新しい dtv にはその block が無い。次の access は別の block を取り、値が分かれる（handler の中で、まだ dtv に入っていない dynamic の module に初めて触った時だけ）。
+- **試験の穴**: 起動の時に 33 個を越える静的な TLS の module（2 つ目の chunk を通る `layout_static_tls`）は試験に無い（未実施）。
+- **未実施**: T の guest の試験（下の依頼）。arm64・i386・sparcv9 の build（sysroot が要る。Q1 2026-10-05: subagent は sysroot を作らず、amd64 の build と host・guest の試験で判定する）。
 
 ## 着手前に直す点（2026-10-04 ユーザーの判断の反映、Q1。詳細は [ws.md](../ws.md) の「判断」）
 

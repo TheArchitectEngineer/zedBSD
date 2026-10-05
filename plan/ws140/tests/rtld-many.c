@@ -18,7 +18,10 @@
  * graph of 41 objects, closes and reopens, and then loads the three
  * objects U3 is about: a library with 300 TLSDESC relocations, one whose
  * name is longer than 64 bytes, and one with more than sixteen program
- * headers.  build-many.sh builds the libraries and this program, and
+ * headers.  Then (p002) it opens 200 handles, past the 64 of the
+ * loader's first handle chunk, and forty TLS libraries, which grow each
+ * thread's TLS vector past its 33 entries, in two threads.  build-many.sh
+ * builds the libraries and this program, and
  * rtld-many.sh runs it in the guest with LD_LIBRARY_PATH set to where the
  * libraries are.
  *
@@ -28,6 +31,7 @@
 
 #include <dlfcn.h>
 #include <link.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +52,10 @@
 /* The library with extra program headers, and its function's value. */
 #define MANY_PHDR_NAME "libphdr.so"
 #define MANY_PHDR_VALUE 55
+
+/* The handles opened at once, and the TLS libraries (libtls00.so to libtls39.so). */
+#define MANY_HANDLES 200U
+#define MANY_TLS 40U
 
 /* What count_callback is asked to count or find. */
 struct many_count {
@@ -71,6 +79,16 @@ static void check_graph(void **hubs);
 static void check_tlsdesc(void);
 static void check_long_name(void);
 static void check_phdr(const char *step);
+static void check_handles(void);
+static void open_tls(void);
+static void check_tls(const char *step);
+static void check_tls_written(const char *step);
+static void *tls_thread(void *argument);
+static void close_tls(void);
+
+/* The TLS libraries' handles and their functions, which return a variable's address. */
+static void *tls_libraries[MANY_TLS];
+static int *(*tls_functions[MANY_TLS])(void);
 
 /*
  * Runs every step of the test in order.
@@ -83,9 +101,11 @@ main(
 	char hub_name[sizeof("libhub0.so")];
 	void *hubs[MANY_HUBS];
 	unsigned startup_objects;
+	pthread_t thread;
 	unsigned i;
 	int value;
 	int found;
+	int created;
 
 	/* Reached main: every dependency was loaded and relocated. */
 	step_ok("startup");
@@ -182,6 +202,31 @@ main(
 	step_ok("phdr");
 	check_phdr("phdr-reopen");
 	step_ok("phdr-reopen");
+
+	/* The handles and the TLS modules past their first chunks (p002). */
+	check_handles();
+	step_ok("handles");
+	open_tls();
+	check_tls("tls");
+	step_ok("tls");
+
+	/* Another thread starts from the initial values and leaves the main thread's alone. */
+	created = pthread_create(&thread, NULL, tls_thread, NULL);
+	if (created != 0)
+		step_fail("tls-thread", "pthread_create failed");
+
+	/* Waits for it. */
+	created = pthread_join(thread, NULL);
+	if (created != 0)
+		step_fail("tls-thread", "pthread_join failed");
+
+	/* The main thread's values are as it wrote them. */
+	check_tls_written("tls-thread");
+	step_ok("tls-thread");
+
+	/* Closes the forty and opens one again, under an id given before. */
+	close_tls();
+	step_ok("tls-close");
 
 	/* Back to the objects loaded at startup once more. */
 	count_objects(&count);
@@ -485,4 +530,171 @@ check_phdr(
 	closed = dlclose(library);
 	if (closed != 0)
 		step_fail(step, dlerror());
+}
+
+/*
+ * Opens 200 handles of one library at once and closes them all.
+ */
+static void
+check_handles(
+	void)
+{
+	void *handles[MANY_HANDLES];
+	unsigned i;
+	int closed;
+
+	/* Opens them; the table grows instead of running out. */
+	for (i = 0; i < MANY_HANDLES; i++) {
+		/* One more handle. */
+		handles[i] = dlopen("libmany00.so", RTLD_NOW);
+		if (handles[i] == NULL)
+			step_fail("handles", dlerror());
+	}
+
+	/* Closes them. */
+	for (i = 0; i < MANY_HANDLES; i++) {
+		/* Closes one. */
+		closed = dlclose(handles[i]);
+		if (closed != 0)
+			step_fail("handles", dlerror());
+	}
+}
+
+/*
+ * Opens the forty TLS libraries and finds their functions.
+ */
+static void
+open_tls(
+	void)
+{
+	char library[sizeof("libtls00.so")];
+	char function[sizeof("tls_address_00")];
+	void *symbol;
+	unsigned i;
+
+	/* Each library, and its function. */
+	for (i = 0; i < MANY_TLS; i++) {
+		/* Opens the library, a TLS module of its own. */
+		snprintf(library, sizeof(library), "libtls%02u.so", i);
+		tls_libraries[i] = dlopen(library, RTLD_NOW);
+		if (tls_libraries[i] == NULL)
+			step_fail("tls", dlerror());
+
+		/* Its function. */
+		snprintf(function, sizeof(function), "tls_address_%02u", i);
+		symbol = dlsym(tls_libraries[i], function);
+		if (symbol == NULL)
+			step_fail("tls", dlerror());
+
+		/* Kept for the steps. */
+		tls_functions[i] = (int *(*)(void))symbol;
+	}
+}
+
+/*
+ * Reads each TLS variable in the calling thread, expecting its initial
+ * value (its number plus one), then writes ten times its number and reads
+ * it back.
+ */
+static void
+check_tls(
+	const char *step)
+{
+	int *address;
+	int *again;
+	unsigned i;
+
+	/* Each library's variable. */
+	for (i = 0; i < MANY_TLS; i++) {
+		/* The thread's copy starts at the initial value. */
+		address = tls_functions[i]();
+		if (*address != (int)i + 1)
+			step_fail(step, "a variable does not start at its initial value");
+
+		/* Written and read back through a second access. */
+		*address = (int)i * 10;
+		again = tls_functions[i]();
+		if (again != address || *again != (int)i * 10)
+			step_fail(step, "a variable does not keep what was written");
+	}
+}
+
+/*
+ * Checks that the calling thread's TLS variables still hold what
+ * check_tls wrote.
+ */
+static void
+check_tls_written(
+	const char *step)
+{
+	int *address;
+	unsigned i;
+
+	/* Each library's variable. */
+	for (i = 0; i < MANY_TLS; i++) {
+		/* Ten times its number, as written. */
+		address = tls_functions[i]();
+		if (*address != (int)i * 10)
+			step_fail(step, "another thread changed a variable");
+	}
+}
+
+/*
+ * Runs check_tls in a second thread, whose TLS vector grows on its own.
+ */
+static void *
+tls_thread(
+	void *argument)
+{
+	/* The thread's own copies. */
+	(void)argument;
+	check_tls("tls-thread");
+
+	/* Nothing to give back. */
+	return NULL;
+}
+
+/*
+ * Closes the forty TLS libraries, then opens the last again and reads its
+ * variable from its initial value.
+ */
+static void
+close_tls(
+	void)
+{
+	void *library;
+	void *symbol;
+	int *(*function)(void);
+	int *address;
+	unsigned i;
+	int closed;
+
+	/* Closes them, which frees their ids and blocks. */
+	for (i = 0; i < MANY_TLS; i++) {
+		/* Closes one. */
+		closed = dlclose(tls_libraries[i]);
+		if (closed != 0)
+			step_fail("tls-close", dlerror());
+	}
+
+	/* Opens the last again. */
+	library = dlopen("libtls39.so", RTLD_NOW);
+	if (library == NULL)
+		step_fail("tls-close", dlerror());
+
+	/* Its function. */
+	symbol = dlsym(library, "tls_address_39");
+	if (symbol == NULL)
+		step_fail("tls-close", dlerror());
+
+	/* A fresh block: the initial value again. */
+	function = (int *(*)(void))symbol;
+	address = function();
+	if (*address != 40)
+		step_fail("tls-close", "the reopened variable is not at its initial value");
+
+	/* Closes it. */
+	closed = dlclose(library);
+	if (closed != 0)
+		step_fail("tls-close", dlerror());
 }
