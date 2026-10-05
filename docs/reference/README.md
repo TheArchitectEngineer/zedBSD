@@ -19,6 +19,8 @@ structures, constants, errors and permissions that programs and people use
 - [evdev compatibility profile](evdev.md) — experimental UAPI with current
   input-core and USB HID producers; legacy console event/key-state UAPI has
   been removed while ordinary TTY and display operations remain.
+- [Agent Acceptance Test interfaces](agent-acceptance-test.md): the test
+  images' mouse and keyboard injection and screen capture.
 - [Security keys and smart card readers](security-keys.md): the raw HID nodes
   of FIDO keys and the slots of USB CCID readers, their requests and
   permissions.

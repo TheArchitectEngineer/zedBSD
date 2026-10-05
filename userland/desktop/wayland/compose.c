@@ -202,6 +202,7 @@ zwl_compose_output_open(
 	struct zwl_compose *compose;
 	uint64_t started;
 	VkResult result;
+	int readback;
 	int error;
 
 	/* An open output needs nothing. */
@@ -225,7 +226,15 @@ zwl_compose_output_open(
 
 	/* Its FIFO swapchain, in the format the pipelines were made for. */
 	started = zwl_milliseconds();
-	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
+	readback = zwl_shot_enabled();
+	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, readback);
+	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED && readback) {
+		/* A display whose images cannot be read back still shows the desktop, without the capture (ws173-p002). */
+		printf("ZWL SHOT unsupported: the swapchain images cannot be a copy's source\n");
+		readback = 0;
+		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
+	}
+	compose->readback = (unsigned)readback;
 	if (result != VK_SUCCESS ||
 	    compose->output.image_count > ZWL_SWAPCHAIN_MAX ||
 	    compose->output.format != compose->format) {
@@ -449,6 +458,9 @@ zwl_compose_complete(
 	compose->held_count = 0;
 	zwl_callbacks_done(&compose->callbacks);
 	compose->in_flight = 0;
+
+	/* A test image's capture sends the frame it copied (shot.c, ws173-p002). */
+	zwl_shot_complete(server);
 	if (server->log_frames)
 		printf("ZWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)zwl_microseconds());
 
@@ -1870,6 +1882,9 @@ compose_record(
 	/* The cursor over everything. */
 	compose_cursor(server, compose->command);
 	vkCmdEndRenderPass(compose->command);
+
+	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
+	zwl_shot_record(server, compose->command, compose->output.images[image]);
 
 	/* The recording is complete. */
 	return vkEndCommandBuffer(compose->command);

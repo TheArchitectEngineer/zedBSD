@@ -148,6 +148,9 @@ main(
 	if (!server.greeter)
 		zwl_settings_open(&server);
 
+	/* A test image's screen capture listens (shot.c; nothing elsewhere, ws173-p002). */
+	zwl_shot_open(&server);
+
 	/* Catch normal termination without performing allocation or I/O inside a signal handler. */
 	previous_handler = signal(SIGINT, stop_service);
 	if (previous_handler == SIG_ERR)
@@ -993,6 +996,9 @@ event_loop(
 		/* The clipboard's history reads what a source has written so far (clipboard.c; the pass is at most 10 ms). */
 		zwl_clipboard_poll(server);
 
+		/* A test image's screen capture takes its requests (shot.c, ws173-p002). */
+		zwl_shot_tick(server);
+
 		/* The snapshot contains no ownership references beyond this iteration. */
 		free(clients);
 		free(descriptors);
@@ -1043,8 +1049,9 @@ service_cleanup(
 		server->listener = -1;
 	}
 
-	/* Window mode's frame in flight finishes before the clients it holds go. */
+	/* Window mode's frame in flight finishes before the clients it holds go; the capture answers what waits. */
 	zwl_compose_quiesce(server);
+	zwl_shot_close(server);
 
 	/* Each client cleanup closes both user-received and still-kernel-queued rights. */
 	while (server->clients != NULL)
