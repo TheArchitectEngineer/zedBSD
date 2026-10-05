@@ -2,7 +2,7 @@
 
 # ws154-p002: IME の選択の仕組みと Languages の頁
 
-Status: in-progress（実装と build は済み、QEMU は T1 待ち）
+Status: cleared（2026-10-05 Q1: T1-173b で languages-p002 PASS（ja・none・SKK の変換と確定・頁の switch）。cleared）。以前: in-progress（実装と build は済み、QEMU は T1 待ち）
 Disposition: normal
 Parent: [WS154](../ws.md)
 Queue: Q1（2026-10-05、P2）

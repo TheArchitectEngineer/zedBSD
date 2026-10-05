@@ -47,6 +47,7 @@ static void vulkan_pbuffer_layouts(struct zegl_surface *surface);
 static EGLint vulkan_frame_objects(struct zegl_surface *surface);
 static EGLint vulkan_pass(struct zegl_surface *surface, VkFormat format, VkAttachmentLoadOp load, VkRenderPass *pass);
 static EGLint vulkan_submit(struct zegl_surface *surface, int present);
+static void vulkan_slot_use(struct zegl_surface *surface, unsigned slot);
 static uint32_t vulkan_memory_type(struct zegl_display *display, uint32_t bits, VkMemoryPropertyFlags flags);
 static VkResult vulkan_report(const char *what, VkResult result);
 
@@ -317,6 +318,7 @@ zegl_surface_close(
 	struct zegl_surface *surface)
 {
 	VkDevice device;
+	unsigned slot;
 
 	/* Nothing may still run on them. */
 	device = surface->display->device;
@@ -330,13 +332,17 @@ zegl_surface_close(
 	if (surface->pbuffer_memory != VK_NULL_HANDLE)
 		vkFreeMemory(device, surface->pbuffer_memory, NULL);
 
-	/* The frame's objects and the pass. */
-	if (surface->rendered != VK_NULL_HANDLE)
-		vkDestroySemaphore(device, surface->rendered, NULL);
-	if (surface->acquired != VK_NULL_HANDLE)
-		vkDestroySemaphore(device, surface->acquired, NULL);
-	if (surface->fence != VK_NULL_HANDLE)
-		vkDestroyFence(device, surface->fence, NULL);
+	/* Each slot's objects (its command buffer goes with the pool). */
+	for (slot = 0U; slot < ZEGL_SLOTS; slot++) {
+		if (surface->renders[slot] != VK_NULL_HANDLE)
+			vkDestroySemaphore(device, surface->renders[slot], NULL);
+		if (surface->acquires[slot] != VK_NULL_HANDLE)
+			vkDestroySemaphore(device, surface->acquires[slot], NULL);
+		if (surface->fences[slot] != VK_NULL_HANDLE)
+			vkDestroyFence(device, surface->fences[slot], NULL);
+	}
+
+	/* The pool with the command buffers, and the passes. */
 	if (surface->pool != VK_NULL_HANDLE)
 		vkDestroyCommandPool(device, surface->pool, NULL);
 	if (surface->pass_load != VK_NULL_HANDLE)
@@ -350,8 +356,9 @@ zegl_surface_close(
 }
 
 /*
- * Presents a window surface's frame with a context's state, and waits for
- * it: a frame nothing was drawn into is cleared to the context's clear
+ * Presents a window surface's frame with a context's state, leaving it to
+ * run while the next is recorded (the frame before it is waited for): a
+ * frame nothing was drawn into is cleared to the context's clear
  * colour.  Returns EGL_SUCCESS, or EGL_BAD_SURFACE (or EGL_CONTEXT_LOST)
  * when the frame could not be shown.
  */
@@ -388,9 +395,9 @@ zegl_surface_present(
 		/* Closed. */
 		surface->frame_open = 0;
 
-		/* The frame's resources. */
+		/* The frame's resources, all done. */
 		if (context->gles.frame_done != NULL)
-			context->gles.frame_done(context);
+			context->gles.frame_done(context, 1);
 		surface->frames++;
 		return EGL_SUCCESS;
 	}
@@ -408,7 +415,7 @@ zegl_surface_present(
 		zegl_frame_pass(surface, clear);
 	}
 
-	/* Submitted, presented and waited for. */
+	/* Submitted and presented; the frame before it is waited for. */
 	error = vulkan_submit(surface, 1);
 	if (error != EGL_SUCCESS)
 		return error;
@@ -419,9 +426,9 @@ zegl_surface_present(
 		surface->window->attached_height = (int)surface->extent.height;
 	}
 
-	/* GLES's per-frame resources are free again. */
+	/* GLES's resources of the frames before this one are free again (this one may still run). */
 	if (context->gles.frame_done != NULL)
-		context->gles.frame_done(context);
+		context->gles.frame_done(context, 0);
 
 	/* Succeeded: the frame is on the window. */
 	surface->frames++;
@@ -913,6 +920,7 @@ vulkan_frame_objects(
 	VkFormat format;
 	uint32_t count;
 	uint32_t index;
+	unsigned slot;
 	VkResult result;
 	EGLint error;
 
@@ -965,36 +973,36 @@ vulkan_frame_objects(
 	if (result != VK_SUCCESS)
 		return EGL_BAD_ALLOC;
 
-	/* The command buffer. */
+	/* A command buffer for each slot. */
 	memset(&command, 0, sizeof(command));
 	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	command.commandPool = surface->pool;
 	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	command.commandBufferCount = 1U;
-	result = vkAllocateCommandBuffers(display->device, &command, &surface->command);
+	command.commandBufferCount = ZEGL_SLOTS;
+	result = vkAllocateCommandBuffers(display->device, &command, surface->commands);
 	if (result != VK_SUCCESS)
 		return EGL_BAD_ALLOC;
 
-	/* The fence of a frame and the two semaphores. */
+	/* Each slot's fence, the semaphore the acquire signals and the one the present waits for. */
 	memset(&fence, 0, sizeof(fence));
 	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	result = vkCreateFence(display->device, &fence, NULL, &surface->fence);
-	if (result != VK_SUCCESS)
-		return EGL_BAD_ALLOC;
-
-	/* The semaphore the acquire signals, and the one the present waits for. */
 	memset(&semaphore, 0, sizeof(semaphore));
 	semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	result = vkCreateSemaphore(display->device, &semaphore, NULL, &surface->acquired);
-	if (result != VK_SUCCESS)
-		return EGL_BAD_ALLOC;
+	for (slot = 0U; slot < ZEGL_SLOTS; slot++) {
+		result = vkCreateFence(display->device, &fence, NULL, &surface->fences[slot]);
+		if (result != VK_SUCCESS)
+			return EGL_BAD_ALLOC;
+		result = vkCreateSemaphore(display->device, &semaphore, NULL, &surface->acquires[slot]);
+		if (result != VK_SUCCESS)
+			return EGL_BAD_ALLOC;
+		result = vkCreateSemaphore(display->device, &semaphore, NULL, &surface->renders[slot]);
+		if (result != VK_SUCCESS)
+			return EGL_BAD_ALLOC;
+		surface->pending[slot] = 0;
+	}
 
-	/* The second of the two. */
-	result = vkCreateSemaphore(display->device, &semaphore, NULL, &surface->rendered);
-	if (result != VK_SUCCESS)
-		return EGL_BAD_ALLOC;
-
-	/* Succeeded: frames can be recorded. */
+	/* Succeeded: frames can be recorded, the first in the first slot. */
+	vulkan_slot_use(surface, 0U);
 	return EGL_SUCCESS;
 }
 
@@ -1154,10 +1162,10 @@ vulkan_pass(
 }
 
 /*
- * Ends and submits the frame's recording and waits for it: the first
- * submission of a frame waits for the acquire; the present's also signals
- * the semaphore the present waits for, and then presents and closes the
- * frame.
+ * Ends and submits the frame's recording: the first submission of a frame
+ * waits for the acquire.  A flush is waited for.  The present's also
+ * signals the semaphore the present waits for, presents, and is left to
+ * run: the frame moves to the other slot, whose last frame is waited for.
  */
 static EGLint
 vulkan_submit(
@@ -1168,6 +1176,8 @@ vulkan_submit(
 	VkPresentInfoKHR presenting;
 	VkPipelineStageFlags stage;
 	struct zegl_display *display;
+	VkResult presented;
+	unsigned slot;
 	VkResult result;
 
 	/* The recording ends outside any pass; nothing is recorded after it yet. */
@@ -1208,29 +1218,106 @@ vulkan_submit(
 	if (result != VK_SUCCESS)
 		return EGL_CONTEXT_LOST;
 
-	/* Presented; a swapchain that no longer matches is made again at the next frame. */
-	if (present) {
-		memset(&presenting, 0, sizeof(presenting));
-		presenting.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		presenting.waitSemaphoreCount = 1U;
-		presenting.pWaitSemaphores = &surface->rendered;
-		presenting.swapchainCount = 1U;
-		presenting.pSwapchains = &surface->swapchain;
-		presenting.pImageIndices = &surface->image;
-		result = vkQueuePresentKHR(display->queue, &presenting);
-		if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR)
-			surface->stale = 1;
-		else if (result != VK_SUCCESS)
-			return EGL_BAD_SURFACE;
+	/* A flush is waited for; the fence signals after every earlier submission too, so nothing is in flight. */
+	if (!present) {
+		result = vulkan_report("vkWaitForFences", vkWaitForFences(display->device, 1U, &surface->fence, VK_TRUE, ZEGL_TIMEOUT));
+		if (result != VK_SUCCESS)
+			return EGL_CONTEXT_LOST;
+		for (slot = 0U; slot < ZEGL_SLOTS; slot++)
+			surface->pending[slot] = 0;
+		return EGL_SUCCESS;
 	}
 
-	/* The recording is done before the command buffer is recorded again. */
-	result = vulkan_report("vkWaitForFences", vkWaitForFences(display->device, 1U, &surface->fence, VK_TRUE, ZEGL_TIMEOUT));
+	/* Presented; a swapchain that no longer matches is made again at the next frame. */
+	memset(&presenting, 0, sizeof(presenting));
+	presenting.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presenting.waitSemaphoreCount = 1U;
+	presenting.pWaitSemaphores = &surface->rendered;
+	presenting.swapchainCount = 1U;
+	presenting.pSwapchains = &surface->swapchain;
+	presenting.pImageIndices = &surface->image;
+	presented = vkQueuePresentKHR(display->queue, &presenting);
+	if (presented == VK_SUBOPTIMAL_KHR || presented == VK_ERROR_OUT_OF_DATE_KHR)
+		surface->stale = 1;
+
+	/* The submitted frame runs on (shown or not); the next frame records in the other slot once the frame there is done. */
+	surface->pending[surface->slot] = 1;
+	slot = (surface->slot + 1U) % ZEGL_SLOTS;
+	vulkan_slot_use(surface, slot);
+	if (surface->pending[slot]) {
+		result = vulkan_report("vkWaitForFences", vkWaitForFences(display->device, 1U, &surface->fence, VK_TRUE, ZEGL_TIMEOUT));
+		if (result != VK_SUCCESS)
+			return EGL_CONTEXT_LOST;
+		surface->pending[slot] = 0;
+	}
+
+	/* A present that failed otherwise leaves the frame unshown. */
+	if (presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR && presented != VK_ERROR_OUT_OF_DATE_KHR)
+		return EGL_BAD_SURFACE;
+
+	/* Succeeded: the frames before the presented one are done. */
+	return EGL_SUCCESS;
+}
+
+/*
+ * Makes a slot the one the frame records in: its command buffer, fence
+ * and semaphores become the surface's.
+ */
+static void
+vulkan_slot_use(
+	struct zegl_surface *surface,
+	unsigned slot)
+{
+	/* The slot's objects. */
+	surface->slot = slot;
+	surface->command = surface->commands[slot];
+	surface->fence = surface->fences[slot];
+	surface->acquired = surface->acquires[slot];
+	surface->rendered = surface->renders[slot];
+}
+
+/*
+ * Waits until everything submitted to the display's queue is done, the
+ * frames in flight too.  Returns EGL_SUCCESS, or EGL_CONTEXT_LOST.
+ */
+EGLint
+zegl_retire(
+	struct zegl_display *display)
+{
+	VkResult result;
+
+	/* The queue idle. */
+	result = vulkan_report("vkQueueWaitIdle", vkQueueWaitIdle(display->queue));
 	if (result != VK_SUCCESS)
 		return EGL_CONTEXT_LOST;
 
-	/* Succeeded: the GPU finished the recording. */
+	/* Succeeded: nothing runs. */
 	return EGL_SUCCESS;
+}
+
+/*
+ * Reports, without waiting, whether none of a surface's presented frames
+ * still runs.  Returns 1 or 0.
+ */
+int
+zegl_surface_settled(
+	struct zegl_surface *surface)
+{
+	VkResult status;
+	unsigned slot;
+
+	/* Each slot whose frame was not waited for, asked. */
+	for (slot = 0U; slot < ZEGL_SLOTS; slot++) {
+		if (!surface->pending[slot])
+			continue;
+		status = vkGetFenceStatus(surface->display->device, surface->fences[slot]);
+		if (status != VK_SUCCESS)
+			return 0;
+		surface->pending[slot] = 0;
+	}
+
+	/* Every frame is done. */
+	return 1;
 }
 
 /* Returns the first memory type of a set that has the properties asked for (else the set's first). */

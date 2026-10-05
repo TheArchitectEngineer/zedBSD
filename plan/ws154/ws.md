@@ -44,3 +44,5 @@ Settings に Languages の頁を足して、使う IME を「日本語」「SKK�
 | [ws154-p002](phase002/phase.md) | IME の選択の仕組みと Languages の頁（日本語・なし） | in-progress（実装済み、T1 待ち） | p001 |
 | [ws154-p003](phase003/phase.md) | SKK の IME の実装（host の試験で状態機械と変換） | in-progress（実装・host の試験済み） | p001 |
 | [ws154-p004](phase004/phase.md) | SKK を選択に加え、QEMU（T1）と実機の UAT、全文の規約 | in-progress（実装済み、T1 待ち） | p002、p003 |
+
+- 2026-10-05 Q1: p001〜p004 を cleared（T1-173b・T1-174b PASS、T1-173・174 の FAIL は試験の期待の誤りだった）。残り: 5330 の UAT の操作感、範囲の判断（`>`・`/`・`#`・Tab・注釈）、全文規約の見直し。

@@ -50,7 +50,7 @@ const struct gles_fixed_hooks *gles_fixed;
 /* The failures already reported (by the text naming them), so each is said once. */
 static const char *gles_reported[16];
 
-static void gles_frame_done(struct zegl_context *context);
+static void gles_frame_done(struct zegl_context *context, int finished);
 static void gles_frame_closing(struct zegl_context *context);
 static void gles_release(struct zegl_context *context);
 static int gles_capability(struct gles_state *state, GLenum cap, int **flag);
@@ -1555,25 +1555,50 @@ glFlush(void)
 GL_APICALL void GL_APIENTRY
 glFinish(void)
 {
-	/* Nothing is running. */
-	return;
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* Without a context or its state nothing was submitted. */
+	context = zegl_current_context();
+	if (context == NULL || context->gles.state == NULL)
+		return;
+
+	/* The frames a window presented may still run (ws068-p009): they are waited for. */
+	state = context->gles.state;
+	(void)gles_frame_retire(context, state);
 }
 
-/* Frees what the frame that eglSwapBuffers just finished held, and counts the next frame. */
+/*
+ * Counts the next frame once eglSwapBuffers ended one (finished: that
+ * frame is done too) and frees what the frames done held.  A window's
+ * presented frame may still run (ws068-p009); a surface's slots cover
+ * only its own frames (and a pbuffer's empty frame submits nothing), so a
+ * frame another surface left in flight is waited for first.
+ */
 static void
 gles_frame_done(
-	struct zegl_context *context)
+	struct zegl_context *context,
+	int finished)
 {
 	struct gles_state *state;
+	EGLint error;
 
 	/* The state, when there is one. */
 	state = context->gles.state;
 	if (state == NULL)
 		return;
 
-	/* The next frame; the finished one's memory is free. */
-	state->frame++;
-	gles_collect(state);
+	/* Another surface's frame in flight: everything submitted is waited for. */
+	if (state->flight != NULL && state->flight != context->draw) {
+		error = zegl_retire(state->display);
+		if (error == EGL_SUCCESS)
+			finished = 1;
+	}
+
+	/* The next frame; the memory of the frames done is free. */
+	gles_frame_finished(state, finished);
+	if (!finished)
+		state->flight = context->draw;
 }
 
 /* Ends a framebuffer object's render pass left open in the frame, before libEGL submits the frame or the context stops being current. */
@@ -1677,7 +1702,8 @@ gles_release(
 	gles_framebuffers_release(state);
 	gles_vertex_arrays_release(state);
 
-	/* The garbage, which the frees above added to, and the spare device copies it left (ws101-p017). */
+	/* The garbage, which the frees above added to, and the spare device copies it left (ws101-p017); nothing runs. */
+	state->done = state->frame;
 	gles_collect(state);
 	gles_spares_release(state);
 

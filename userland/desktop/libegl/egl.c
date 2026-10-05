@@ -1166,12 +1166,26 @@ eglSwapInterval(
 }
 
 /*
- * Waits for the client API's rendering: every frame is waited for already.
+ * Waits for the client API's rendering: the frames a window surface
+ * presented may still run (ws068-p009), and are waited for.
  */
 EGLBoolean EGLAPIENTRY
 eglWaitClient(void)
 {
-	/* Nothing is left running. */
+	struct zegl_context *context;
+	EGLint error;
+
+	/* Without a current context there is nothing to wait for. */
+	context = egl_thread()->current;
+	if (context == NULL)
+		return egl_succeed();
+
+	/* Everything submitted, done. */
+	error = zegl_retire(context->display);
+	if (error != EGL_SUCCESS)
+		return egl_fail(error);
+
+	/* Succeeded: nothing is left running. */
 	return egl_succeed();
 }
 
@@ -1181,8 +1195,8 @@ eglWaitClient(void)
 EGLBoolean EGLAPIENTRY
 eglWaitGL(void)
 {
-	/* Nothing is left running. */
-	return egl_succeed();
+	/* The same wait. */
+	return eglWaitClient();
 }
 
 /*

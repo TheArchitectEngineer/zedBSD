@@ -2308,10 +2308,17 @@ glass_cache_glyph(
 			oldest = index;
 	}
 
-	/* The first font that has the character, else the first font's missing-glyph box. */
+	/*
+	 * The first font that has the character, else the first font's
+	 * missing-glyph box.  The colour emoji font, once open, is among the
+	 * faces but is asked below instead: its glyphs are colour images with
+	 * no outlines (T1-175: every emoji after the first came out empty).
+	 */
 	face = glass->faces[0];
 	id = 0;
 	for (which = 0; which < glass->face_count; which++) {
+		if (glass->emoji_tried != 0U && (int)which == glass->emoji_face)
+			continue;
 		id = truetype_glyph_index(glass->faces[which], codepoint);
 		if (id != 0U) {
 			face = glass->faces[which];

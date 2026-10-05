@@ -157,10 +157,12 @@ gles_stream(
 	struct gles_chunk *chunk;
 	size_t start;
 
-	/* The first chunk with room at the alignment. */
+	/* The first chunk with room at the alignment that no frame in flight reads (ws068-p009). */
 	if (alignment == 0U)
 		alignment = 4U;
 	for (chunk = state->chunks; chunk != NULL; chunk = chunk->next) {
+		if (chunk->frame != state->frame && chunk->frame > state->done)
+			continue;
 		start = (chunk->used + alignment - 1U) / alignment * alignment;
 		if (start + size <= chunk->size)
 			break;
@@ -174,8 +176,9 @@ gles_stream(
 		start = 0U;
 	}
 
-	/* Succeeded: the place, taken. */
+	/* Succeeded: the place, taken for the frame being recorded. */
 	chunk->used = start + size;
+	chunk->frame = state->frame;
 	*buffer = chunk->buffer;
 	*offset = start;
 	return chunk->mapped + start;
@@ -229,8 +232,9 @@ gles_garbage_keep(
 		return;
 	}
 
-	/* Succeeded: waiting for the frame. */
+	/* Succeeded: waiting for the frame being recorded (and those before it) to be done. */
 	*garbage = *objects;
+	garbage->frame = state->frame;
 	garbage->next = state->garbage;
 	state->garbage = garbage;
 }
@@ -283,44 +287,120 @@ gles_garbage_destroy(
 }
 
 /*
- * Frees what the frame that just finished held: the garbage, the stream
- * (all but its first chunk) and the descriptor sets.
+ * Moves on to the next frame once the one being recorded was submitted:
+ * finished nonzero when it is done too (a flush, a pbuffer), zero when it
+ * may still run on the GPU and only the frames before it are done (a
+ * window's present, ws068-p009).  What the frames done held is freed.
+ */
+void
+gles_frame_finished(
+	struct gles_state *state,
+	int finished)
+{
+	/* The next frame, and the last one done. */
+	state->frame++;
+	state->done = state->frame - 2U;
+	if (finished) {
+		state->done = state->frame - 1U;
+		state->flight = NULL;
+	}
+
+	/* What the frames done held. */
+	gles_collect(state);
+}
+
+/*
+ * Waits for every frame submitted, the ones in flight too (glFinish, and
+ * a wait for a frame in flight), and frees what they held.  Returns 0, or
+ * -1 with the error recorded.
+ */
+int
+gles_frame_retire(
+	struct zegl_context *context,
+	struct gles_state *state)
+{
+	EGLint error;
+
+	/* The queue idle. */
+	error = zegl_retire(state->display);
+	if (error != EGL_SUCCESS) {
+		gles_error(context, GL_OUT_OF_MEMORY);
+		return -1;
+	}
+
+	/* Every frame before the one being recorded is done. */
+	state->done = state->frame - 1U;
+	state->flight = NULL;
+	gles_collect(state);
+	return 0;
+}
+
+/*
+ * Frees what the frames that are done held (state->done): their garbage,
+ * their stream (one empty chunk is kept) and their descriptor sets.  What
+ * a frame in flight or the frame being recorded holds stays.
  */
 void
 gles_collect(
 	struct gles_state *state)
 {
+	struct gles_garbage **link;
 	struct gles_garbage *garbage;
+	struct gles_chunk **place;
 	struct gles_chunk *chunk;
 	struct gles_pool *pool;
 	uint64_t started;
 	unsigned index;
+	int kept;
 
-	/* The garbage (the step is timed, ws101-p016). */
+	/* The garbage of the frames done (the step is timed, ws101-p016). */
 	started = gles_time_begin();
-	while (state->garbage != NULL) {
-		garbage = state->garbage;
-		state->garbage = garbage->next;
+	link = &state->garbage;
+	while (*link != NULL) {
+		garbage = *link;
+		if (garbage->frame > state->done) {
+			link = &garbage->next;
+			continue;
+		}
+
+		/* A frame done held it: it goes. */
+		*link = garbage->next;
 		gles_garbage_destroy(state, garbage);
 		free(garbage);
 	}
 
-	/* The stream: the chunks after the first go, the first starts empty. */
-	while (state->chunks != NULL && state->chunks->next != NULL) {
-		chunk = state->chunks->next;
-		state->chunks->next = chunk->next;
+	/* The stream of the frames done: the first such chunk is kept empty, the others go. */
+	kept = 0;
+	place = &state->chunks;
+	while (*place != NULL) {
+		chunk = *place;
+		if (chunk->frame > state->done) {
+			place = &chunk->next;
+			continue;
+		}
+
+		/* The first chunk a frame done held is kept, empty. */
+		if (!kept) {
+			chunk->used = 0U;
+			kept = 1;
+			place = &chunk->next;
+			continue;
+		}
+
+		/* The others go. */
+		*place = chunk->next;
 		vkDestroyBuffer(state->device, chunk->buffer, NULL);
 		vkFreeMemory(state->device, chunk->memory, NULL);
 		free(chunk);
 	}
 
-	/* The first chunk is empty again. */
-	if (state->chunks != NULL)
-		state->chunks->used = 0U;
+	/* The descriptor pools of the frames done give their sets back. */
+	for (pool = state->pools; pool != NULL; pool = pool->next) {
+		if (pool->frame <= state->done)
+			(void)vkResetDescriptorPool(state->device, pool->pool, 0U);
+	}
 
-	/* The descriptor pools give their sets back; the last draw's set is gone with them. */
-	for (pool = state->pools; pool != NULL; pool = pool->next)
-		(void)vkResetDescriptorPool(state->device, pool->pool, 0U);
+	/* The cached set belonged to the frame that ended. */
 	memset(&state->set_cache, 0, sizeof(state->set_cache));
 
 	/* The spares not reused for GLES_SPARE_FRAMES frames go (ws101-p017). */
@@ -365,9 +445,9 @@ gles_buffer_sync(
 	if (!buffer->dirty && buffer->buffer != VK_NULL_HANDLE)
 		return 0;
 
-	/* In place: the copy is large enough and this frame has not drawn from it. */
+	/* In place: the copy is large enough and no frame that drew from it may still run (ws068-p009). */
 	started = gles_time_begin();
-	if (buffer->buffer != VK_NULL_HANDLE && buffer->device_size >= buffer->size && buffer->used != state->frame) {
+	if (buffer->buffer != VK_NULL_HANDLE && buffer->device_size >= buffer->size && buffer->used <= state->done) {
 		memcpy(buffer->mapped, buffer->data, buffer->size);
 		buffer->dirty = 0;
 		gles_time_end("upload-in-place", started, buffer->size);
@@ -1921,7 +2001,7 @@ buffer_chunk(
 
 /*
  * Makes sure the bytes of a buffer object may be written now: bytes that
- * live in its device copy while the frame being recorded reads that copy
+ * live in its device copy while a frame not yet done reads that copy
  * move to the CPU (the copy is left to the frame, and a new one is made
  * when the frame next uses the buffer).  Returns 0, or -1 when there is no
  * memory.
@@ -1933,8 +2013,8 @@ gles_buffer_writable(
 {
 	unsigned char *bytes;
 
-	/* Bytes on the CPU, or a copy the frame does not read, are written in place. */
-	if (!buffer->on_device || state == NULL || buffer->used != state->frame)
+	/* Bytes on the CPU, or a copy no frame still to finish reads, are written in place. */
+	if (!buffer->on_device || state == NULL || buffer->used <= state->done)
 		return 0;
 
 	/* The bytes on the CPU; the copy keeps them for the frame. */
