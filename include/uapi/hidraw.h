@@ -93,4 +93,13 @@ struct hidraw_text {
 #define HIDRAW_GET_NAME		_IOR(KERN_HIDRAW_IOC_GROUP, 2, struct hidraw_text)
 #define HIDRAW_GET_PHYS		_IOR(KERN_HIDRAW_IOC_GROUP, 3, struct hidraw_text)
 
+/*
+ * Takes the device for this open alone (nonzero) or gives it back (0)
+ * (ws161 V1, the user's approval of 2026-10-05): while an open holds it,
+ * the other opens get no input report and their writes fail with EBUSY; a
+ * second grab fails with EBUSY.  The holding file's last close gives it
+ * back.
+ */
+#define HIDRAW_GRAB		_IOW(KERN_HIDRAW_IOC_GROUP, 4, int)
+
 #endif
