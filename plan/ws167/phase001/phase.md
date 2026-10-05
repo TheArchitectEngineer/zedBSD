@@ -4,7 +4,7 @@
 
 Phase ID: `ws167-p001`
 Parent: [WS167](../ws.md)
-Status: planning（2026-10-05 P1 generation17、q730。設計の第 1 版。code は §6 のユーザーの判断（license と UAPI の置き場所）の後）
+Status: planning（2026-10-05 P1 generation17、q730。設計の第 1 版。code は §6 のユーザーの判断（license と UAPI の置き場所）の後。2026-10-05 夜: H1〜H3 決定）
 Phase disposition: normal
 Queue: q730（ベータ2 の P1 の列の 2 番目）
 
@@ -131,6 +131,10 @@ enum gpu_op {
 | H1 | license: 番号の表を zedBSD の名前で書き直し、「Venus の番号を再利用した」と書いて、Google の著作権の表示と `LICENSE-PROTOCOL` を外してよいか（§3） | 外す（番号は interface の事実で、Venus の文・名前・構造を写さない） |
 | H2 | UAPI に `include/uapi/gpu-op.h` を足してよいか（kernel の i915 の実行器と libvulkan が共有する。今は libvulkan の中と kernel の数字の写し） | 足す。名前は `GPU_OP_*`、protocol の名前は「Kei GPU command protocol」 |
 | H3 | 名前の付け方: `GPU_OP_CREATE_INSTANCE`（Vulkan の名前から `vk` を除いた大文字、`GPU_COMMAND_*` は既存の ioctl と重なるので使わない）か、`GPU_OP_vkCreateInstance`（Vulkan の名前のまま） | `GPU_OP_CREATE_INSTANCE`（独自の名前、coding style の大文字の定数） |
+
+### 決定（2026-10-05 夜、ユーザー、Q1 経由）
+
+H1: 番号の表を zedBSD の名前で書き直し、Google の著作権の表示と `LICENSE-PROTOCOL` を外す。H2: `include/uapi/gpu-op.h` を足す（UAPI の追加の承認）。H3: `GPU_OP_CREATE_INSTANCE` の形の名前。いずれも案のとおり。
 
 ## 7. 段（案）
 

@@ -4,7 +4,7 @@
 
 Phase ID: `ws164-p001`
 Parent: [WS164](../ws.md)
-Status: planning（2026-10-05 P1 generation17、q732。設計の第 1 版。code は §6 の判断の後）
+Status: planning（2026-10-05 P1 generation17、q732。設計の第 1 版。code は §6 の判断の後。2026-10-05 夜: H1〜H3 決定、H4 未決）
 Phase disposition: normal
 Queue: q732（ベータ2 の P1 の列の 4 番目）
 
@@ -90,6 +90,10 @@ window は Settings と同じ glass の window、左の sidebar の代わりに�
 | H2 | 形 | 新しい app ではなく Settings の welcome の mode（Network・Look の既存の頁を使う）。最後に Files の Today を開く |
 | H3 | 段 | Welcome・Network・Look・Keys・Done の 5 段。言語と入力は WS154 の頁ができたら足す |
 | H4 | Settings の file（WS089、P2 の領域）への hook | WS164 の新しい `settings/welcome.c` と、`main.c`・`pages.c`・`settings-keys.c` の小さな変更を、Q1 の調整で WS164 の担当が書く |
+
+### 決定（2026-10-05 夜、ユーザー、Q1 経由）
+
+H1〜H3 を案のとおり承認。H4（Settings の file への hook）は判断の記録が無く、未決として残す。
 
 ## 7. 段（案）
 
