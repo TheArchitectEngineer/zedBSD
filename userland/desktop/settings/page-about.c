@@ -116,7 +116,7 @@ about_hero(
 	fm_text_metrics(app->text, ABOUT_TEXT_TAGLINE, &tagline);
 	left = x + 28 + (int)ABOUT_MARK + 24;
 	baseline = top + (ABOUT_HERO_HEIGHT - name.height - 6 - tagline.height) / 2 + name.ascent;
-	(void)fm_text_draw(app->text, canvas, left, baseline, "Kei", 3U, ABOUT_TEXT_NAME, 0, FM_RGB(0x2e3a4c));
+	(void)fm_text_draw(app->text, canvas, left, baseline, "Kei", 3U, ABOUT_TEXT_NAME, 0, SE_COLOR_TITLE);
 
 	/* The tagline under it: the kernel's name as it is written. */
 	baseline += name.descent + 6 + tagline.ascent;

@@ -145,7 +145,7 @@ home_tile(
 	lit = se_ui_lit(app, SE_HIT_TILE, (int)page->id);
 	ground = SE_COLOR_TILE;
 	if (lit != 0)
-		ground = fm_color_mix(SE_COLOR_TILE, FM_RGBA(0xdfe7f3, 230), 0.8f);
+		ground = fm_color_mix(SE_COLOR_TILE, SE_COLOR_TILE_HOVER, 0.8f);
 	fm_canvas_round(canvas, (float)x, (float)y, (float)tile.width, (float)tile.height, 14.0f, ground);
 	fm_canvas_round_border(canvas, (float)x, (float)y, (float)tile.width, (float)tile.height, 14.0f, 1.0f, SE_COLOR_CARD_EDGE);
 

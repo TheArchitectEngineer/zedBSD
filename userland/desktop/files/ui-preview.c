@@ -585,7 +585,7 @@ preview_text(
 	/* The box behind them. */
 	x = area->x + PREVIEW_PADDING;
 	height = room * PREVIEW_TEXT_LINE + 12;
-	fm_canvas_round(canvas, (float)x, (float)y, (float)(area->width - 2 * PREVIEW_PADDING), (float)height, 8.0f, FM_RGB(0xf4f6fa));
+	fm_canvas_round(canvas, (float)x, (float)y, (float)(area->width - 2 * PREVIEW_PADDING), (float)height, 8.0f, FM_COLOR_INNER);
 
 	/* Each line, cut at the box's width. */
 	line = app->peek.text;
@@ -731,7 +731,7 @@ look_header(
 	close.y = card->y + 14;
 	close.width = 28;
 	close.height = 28;
-	fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_RGB(0xeef1f6));
+	fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
 	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_LOOK_CLOSE)
 		fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
 	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
@@ -821,7 +821,7 @@ look_text(
 	look_header(app, canvas, &card, entry);
 
 	/* The page's ground under the header. */
-	fm_canvas_round(canvas, (float)card.x + 12.0f, (float)(card.y + LOOK_HEADER), (float)card.width - 24.0f, (float)(card.height - LOOK_HEADER - 12), 10.0f, FM_RGB(0xf7f8fb));
+	fm_canvas_round(canvas, (float)card.x + 12.0f, (float)(card.y + LOOK_HEADER), (float)card.width - 24.0f, (float)(card.height - LOOK_HEADER - 12), 10.0f, FM_COLOR_INNER);
 
 	/* Each line that fits, cut at the page's width. */
 	bottom = card.y + card.height - 20;

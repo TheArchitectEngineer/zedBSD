@@ -20,7 +20,8 @@ LIBWAYLAND_SOURCES := userland/desktop/libwayland/client.c \
 	userland/desktop/libwayland/ime-status-protocol.c \
 	userland/desktop/libwayland/keyboard-inset-protocol.c \
 	userland/desktop/libwayland/edit-protocol.c \
-	userland/desktop/libwayland/activation-protocol.c
+	userland/desktop/libwayland/activation-protocol.c \
+	userland/desktop/libwayland/theme-protocol.c
 
 # The public SONAME follows the standard client library spelling.
 LIBWAYLAND_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libwayland-client.so=$(BUILD)/dynamic/libwayland-client.so)

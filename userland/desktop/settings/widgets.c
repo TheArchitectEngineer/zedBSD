@@ -275,7 +275,7 @@ se_toggle_draw(
 	float knob_x;
 
 	/* The track's colour and the knob's place. */
-	track = FM_RGB(0xc9d1dc);
+	track = SE_COLOR_TRACK;
 	knob_x = (float)x + 12.0f;
 	if (on != 0) {
 		track = SE_COLOR_ACCENT;
@@ -287,7 +287,7 @@ se_toggle_draw(
 
 	/* A switch that does nothing is faded. */
 	if (enabled == 0) {
-		track = fm_color_mix(track, FM_RGB(0xeef1f5), 0.6f);
+		track = fm_color_mix(track, SE_COLOR_FADED, 0.6f);
 		knob = FM_RGB(0xf6f7f9);
 	}
 
@@ -340,8 +340,8 @@ se_slider_draw(
 	knob_x = (float)x + fraction * (float)width;
 	fill = SE_COLOR_ACCENT;
 	if (enabled == 0)
-		fill = fm_color_mix(SE_COLOR_ACCENT, FM_RGB(0xeef1f5), 0.6f);
-	fm_canvas_round(canvas, (float)x, middle - 3.0f, (float)width, 6.0f, 3.0f, FM_RGB(0xd3d9e2));
+		fill = fm_color_mix(SE_COLOR_ACCENT, SE_COLOR_FADED, 0.6f);
+	fm_canvas_round(canvas, (float)x, middle - 3.0f, (float)width, 6.0f, 3.0f, SE_COLOR_RAIL);
 	fm_canvas_round(canvas, (float)x, middle - 3.0f, knob_x - (float)x, 6.0f, 3.0f, fill);
 
 	/* The knob, with a quiet ring round it; greyed when the slider does nothing (ws089-p012 C4), so it does not look as if it could be dragged. */
@@ -439,9 +439,9 @@ se_button_draw(
 	rect.width = width;
 	rect.height = WIDGETS_BUTTON_HEIGHT;
 
-	/* Its colours: the accent for the primary one, white for the others. */
-	ground = FM_RGBA(0xffffff, 225);
-	edge = FM_RGBA(0x8a96aa, 70);
+	/* Its colours: the accent for the primary one, the control's ground for the others. */
+	ground = SE_COLOR_CONTROL;
+	edge = SE_COLOR_CONTROL_EDGE;
 	ink = SE_COLOR_TEXT;
 	if (primary != 0) {
 		ground = SE_COLOR_ACCENT;
@@ -452,9 +452,9 @@ se_button_draw(
 	/* Darker under the pointer, faded when it does nothing. */
 	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
 	if (enabled != 0 && lit != 0)
-		ground = fm_color_mix(ground, FM_RGB(0x1e2632), 0.08f);
+		ground = fm_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
 	if (enabled == 0) {
-		ground = fm_color_mix(ground, FM_RGB(0xeef1f5), 0.6f);
+		ground = fm_color_mix(ground, SE_COLOR_FADED, 0.6f);
 		ink = SE_COLOR_TEXT_FAINT;
 	}
 
@@ -495,15 +495,15 @@ se_icon_button_draw(
 	rect.width = WIDGETS_BUTTON_HEIGHT;
 	rect.height = WIDGETS_BUTTON_HEIGHT;
 
-	/* White, darker under the pointer or while pressed. */
-	ground = FM_RGBA(0xffffff, 225);
+	/* The control's ground, darker (lighter in the dark appearance) under the pointer or while pressed. */
+	ground = SE_COLOR_CONTROL;
 	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
 	if (lit != 0)
-		ground = fm_color_mix(ground, FM_RGB(0x1e2632), 0.08f);
+		ground = fm_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
 
 	/* The square, its edge and the picture in the middle. */
 	fm_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
-	fm_canvas_round_border(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, FM_RGBA(0x8a96aa, 70));
+	fm_canvas_round_border(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, SE_COLOR_CONTROL_EDGE);
 	se_glyph_draw(canvas, glyph, (float)x + 6.0f, (float)y + 6.0f, (float)(WIDGETS_BUTTON_HEIGHT - 12), SE_COLOR_TEXT);
 
 	/* It is clickable. */

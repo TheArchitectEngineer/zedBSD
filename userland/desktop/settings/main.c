@@ -75,6 +75,9 @@ static struct fm_text main_text;
  */
 static struct kl_instance *main_instance;
 
+/* The desktop's appearance watched (ws089-p017): Settings draws in its colours (palette.c). */
+static struct kl_appearance *main_appearance;
+
 /*
  * The window's menus in zdesktop, opened with the window and closed before
  * it; its service is NULL when the compositor has no System Menu.
@@ -115,6 +118,7 @@ static void main_request(void);
 static void main_state_update(void);
 static void main_about_window(void);
 static void main_handed_over(void);
+static void main_appearance_changed(void *data, unsigned appearance);
 
 /*
  * Runs Settings.
@@ -192,6 +196,13 @@ main(
 	se_look_open(&main_app, main_window.display);
 	se_sound_open(&main_app);
 
+	/* The desktop's appearance: the colours of the one told now, and a frame again when it changes (light under a compositor without it). */
+	error = kl_appearance_open(main_window.display, main_appearance_changed, NULL, &main_appearance);
+	if (error != 0)
+		se_log("APPEARANCE none errno=%d", error);
+	se_palette_set(kl_appearance_get(main_appearance));
+	se_log("APPEARANCE appearance=%u", kl_appearance_get(main_appearance));
+
 	/* Glass when zdesktop can show the window see-through (the frame's ground is then left clear). */
 	main_app.glass = se_glass_open(&main_glass, &main_window, &main_present);
 
@@ -227,6 +238,7 @@ main(
 	se_sound_close(&main_app);
 	se_system_close(&main_app);
 	se_look_close(&main_app);
+	kl_appearance_close(main_appearance);
 	se_titlebar_close(&main_titlebar);
 	se_menu_close(&main_menu);
 	se_glass_close(&main_glass);
@@ -735,4 +747,17 @@ main_handed_over(void)
 		main_app.dirty = 1;
 		se_log("INSTANCE request page=%s known=%d activate=%d", request, known, activated);
 	}
+}
+
+/* Takes the desktop's new appearance: Settings' colours become its, and the frame is drawn again. */
+static void
+main_appearance_changed(
+	void *data,
+	unsigned appearance)
+{
+	/* The colours, and a new frame. */
+	(void)data;
+	se_palette_set(appearance);
+	main_app.dirty = 1;
+	se_log("APPEARANCE appearance=%u", appearance);
 }

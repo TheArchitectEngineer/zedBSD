@@ -350,7 +350,7 @@ grid_cell(
 	/* The icon, faded when the item is cut. */
 	fm_grid_entry_icon(app, canvas, entry, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON);
 	if (entry->cut != 0)
-		fm_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_RGBA(0xffffff, 150));
+		fm_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_COLOR_TILE);
 
 	/* The name being changed is a field; otherwise the name, on the accent when selected. */
 	renaming = 0;
@@ -608,12 +608,12 @@ grid_button(
 	rect.height = 28;
 
 	/* Its colors: pale when disabled, darker under the pointer. */
-	ground = FM_RGB(0xeef1f6);
+	ground = FM_COLOR_BUTTON;
 	ink = FM_COLOR_TEXT;
 	if (enabled == 0)
 		ink = FM_COLOR_TEXT_FAINT;
 	else if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == index)
-		ground = FM_RGB(0xe2e7ef);
+		ground = FM_COLOR_BUTTON_LIT;
 	fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, ground);
 	(void)fm_text_draw(app->text, canvas, rect.x + 14, fm_text_center(12U, rect.y, rect.height), label, strlen(label), 12U, 1, ink);
 
@@ -650,13 +650,13 @@ grid_scope_chips(
 	chip.height = 26;
 	for (index = 0; index < 3; index++) {
 		chip.width = widths[index];
-		ground = FM_RGB(0xeef1f6);
+		ground = FM_COLOR_BUTTON;
 		ink = FM_COLOR_TEXT_SECONDARY;
 		if ((unsigned)index == app->search_scope) {
 			ground = FM_COLOR_SELECTION;
 			ink = FM_COLOR_ACCENT;
 		} else if (app->hover_kind == FM_HIT_SCOPE && app->hover_index == index) {
-			ground = FM_RGB(0xe2e7ef);
+			ground = FM_COLOR_BUTTON_LIT;
 		}
 
 		/* The chip and its label. */

@@ -54,8 +54,32 @@ QEMU の Venus。 やっていない確認は「未実施」と書く。
 - **拡張 `keiland_theme_v1`**（別の global、version 1。system 拡張に入れない理由: system 拡張は compositor の利用者の client にだけ見せる口で、theme は全ての client が知ってよく、軽い一つの値なので独立の global が単純）:
   - request 0 `destroy`
   - event 0 `appearance(uint mode)`: 0 light、1 dark。bind の時と、変わるたびに全ての object へ。未知の値は light として扱う（後の版で値を足せる）。
-- **libkeiland**（KL_VERSION 34）: `kl_appearance_open(display, changed, data)`・`kl_appearance_get`・`kl_appearance_close`（`KL_APPEARANCE_LIGHT`・`_DARK`）。callback は display の default queue の dispatch の中で呼ばれる。process の今の appearance を libkeiland が覚え、`kl_theme_default()` は light か dark の theme を返す（app が持つ pointer は同じ物で、中身が替わる）。`kl_app` は開く時に自分で appearance を見張り、変わったら `KL_APP_THEME` の event を積む（app はそれで描き直す）。
+- **libkeiland**（KL_VERSION 35。34 は WS163 の PIN と重なったので 35 にした）: `kl_appearance_open(display, changed, data)`・`kl_appearance_get`・`kl_appearance_close`（`KL_APPEARANCE_LIGHT`・`_DARK`）。callback は display の default queue の dispatch の中で呼ばれる。process の今の appearance を libkeiland が覚え、`kl_theme_default()` は light か dark の theme を返す（app が持つ pointer は同じ物で、中身が替わる）。`kl_app` は開く時に自分で appearance を見張り、変わったら `KL_APP_THEME` の event を積む（app はそれで描き直す）。
 - **compositor**: `server->dark`（`appearance.dark` から）。変わったら全ての `keiland_theme_v1` に event。描画は `glass_shape_draw` の一か所で、dark の時に色を写す: 灰色に近い（彩度の低い）色は明るさを反転（白い glass の地は暗い glass に、暗い文字は明るい文字に）、色の付いた色（accent・app の印の色）はそのまま、影と画像（窓の中身・壁紙・app の絵）は変えない。白い glass を持ち上げる shader の処理（`GLASS_LEAST_LUMA`）は白の地にだけ効くので、暗い glass には効かない。
 - **Settings**: Appearance の頁に「Light・Dark」の切り替え（`appearance.dark` を set）。自分の色（`SE_COLOR_*`）は light と dark の 2 組の表を持ち、`kl_appearance` の callback で替えて描き直す。
 - **Files**: `FM_COLOR_*` を同じく 2 組の表に、`kl_appearance` の callback で替える。
 - **既定で見た目は変わらない**: 既定 off、light の表は今の値そのまま。
+
+## 実施（p017a、2026-10-05 夕、P2 g15、q766）
+
+- **compositor**（`userland/desktop/wayland/`）: `theme.c`（新規、`keiland_theme_v1` の request・bind の event・`zwl_theme_changed` の broadcast、log `ZWL THEME appearance=N`）、`protocol.c`（global 27・dispatch・bind）、`zwl.h`（`ZWL_THEME`、`server->dark`、`client->theme_bound`）、`settings.c`（`appearance.dark` → `settings_apply_appearance`: dirty と broadcast）、`glass.c`（`glass_shape_draw` で dark の色の写し: glass・solid・ring・text の彩度 0.25 未満の色の明るさを反転、glass は shader の mode -1）、`glass.h`（`shape.light`、`GLASS_DARK_SATURATION`）、`panels.c`（`keiland_theme_v1` を bind していない client の窓の glass は light のまま: dark を知らない app の暗い文字が暗い glass に載らない）、`shaders/panel.frag`・`shaders.h`（dark glass: 明るい壁紙の上で luma 0.15 まで暗くする。light の `GLASS_LEAST_LUMA` と対称。`regenerate.py` で再生成、変更前の再生成は差分 0 を確認）。
+- **libwayland**: `theme-protocol.c`・`zed-theme-v1-client-protocol.h`（新規）、Makefile 3 つ、`exports.map`。
+- **libkeiland**（KL_VERSION 35。34 は WS163 の PIN と重なったので 35 にした）: `appearance.c`（新規、`kl_appearance_open/get/close`。bind は library の queue で、最初の値は roundtrip で取り、default queue へ移す）、`ui/theme.c`（`theme_dark` の表、`kl_theme_default` は同じ pointer で中身を替える、`keiui_theme_set`・`keiui_theme_of`）、`ui/app.c`・`ui/window.h`（`kl_app` が自分で見張り `KL_APP_THEME` を積む）、`keiland.h`・`keiland-ui.h`、`exports.map`（`exports.py` で再生成、`--check` ok）、Makefile 3 つ。
+- **settings-keys**: `appearance.dark`（compositor、bool、既定 0、KEPT）。
+- **Settings**: `palette.c`（新規、light は今の値そのまま・dark の 2 組、`SE_COLOR_*` は `se_palette->` を読む）、固定の色 18 か所を palette へ（track・rail・control・field・faded・pressed・title・tile_hover）、Appearance の頁に「Dark appearance」の switch（`appearance.dark` を set、「Accent colours and a dark look are coming…」の note は削除）、`main.c` で `kl_appearance_open` と callback（log `ZSETTINGS APPEARANCE appearance=N`）。
+- **Files**: `palette.c`（新規、同じ形、`FM_COLOR_*` は `fm_palette->`）、固定の色 16 か所を palette へ（button・button_lit・inner・tile・rail・panel_rim・title）、`main.c` で窓のとき（desktop の icon は除く）`kl_appearance_open`。
+- **試験**: `plan/ws089/tests/host-dark.c`・`run-host-dark.sh`（新規、light・dark の theme・Settings・Files の文字と地の 72 組の対比が 4.5 以上。glass は light の最暗 0.85・dark の最明 0.15 で最悪を取る）、`c7-either.py`（新規、暗い文字も明るい文字も測る C7）、`settings-p017.sh`（新規、QEMU: light の C7 → `keiland-settings set appearance.dark 1` → compositor・Settings の log と dark の C7（時計・Settings の 6 箇所）→ Files の dark の C7 → zdesktop の再起動で dark が保たれる → reset で light）、`config-amd64-settings.mk` に `keiland-settings`、`host-render.c` に `--dark`、`host-kl-system.c` に p026 の stand-in 2 つ（host-build が link できなかった既存の不足）。
+
+### 確認（host）
+
+- build: zedBSD の `config-amd64-settings.mk` で `bin/wayland`・`bin/settings`・`bin/files`・`bin/keiland-settings`（warning 0、-Werror）、`make keiland-linux`（gcc、warning 0）。
+- `sh plan/ws089/tests/run-host-dark.sh`: `HOST-DARK pairs=72 failures=0`、`PASS`。最小は light の sidebar の text_secondary 4.77（今の値）、dark の最小は Settings の tile の text_secondary 6.68。
+- `plan/tools/style-check.py`: 新しい file は findings 0、変えた file は増減なし（glass.c の既存 4 件のまま）。
+- host の Settings（`plan/ws089/tests/host-build.sh` → `settings-render --dark --page=appearance`）: dark の Appearance の頁を目視（暗い地・明るい文字・switch）、`control=2` で `LOOK set key=appearance.dark value=1 error=0`。light の頁は switch の card が増えただけ。
+- 既存の観察（範囲外、Q1 へ報告）: `plan/tools/settings/host-store.sh` は本変更の前から 10 件 FAIL（`pointer.speed` の試験が p024 の `mouse.speed` への移行に追従していない）。
+
+### 未実施
+
+- QEMU（T1）: `settings-p017.sh` と、既定の見た目が変わらないことの回帰（C7 の `plan/ws099/tests/c7-contrast.sh`）。compositor の chrome（system bar・title bar・App Home・menu）の dark の見た目はこの試験の PNG で判断する。
+- 実機: 未実施。
+- p017b（残りの app の dark と `KL_APP_THEME` での描き直し）。

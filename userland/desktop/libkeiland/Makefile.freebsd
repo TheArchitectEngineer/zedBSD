@@ -6,6 +6,7 @@ KEILAND_FREEBSD_KEILAND_SOURCES := userland/desktop/libkeiland/version.c \
 	userland/desktop/libkeiland/titlebar.c \
 	userland/desktop/libkeiland/glass.c \
 	userland/desktop/libkeiland/instance.c \
+	userland/desktop/libkeiland/appearance.c \
 	userland/desktop/libkeiland/motion.c \
 	userland/desktop/libkeiland/scroll.c \
 	userland/desktop/libkeiland/gesture.c \

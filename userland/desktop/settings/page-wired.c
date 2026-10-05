@@ -322,7 +322,7 @@ wired_field_draw(
 	box.width = width - WIRED_FIELD_X - WIRED_PAD;
 	box.height = 36;
 	if (counts) {
-		fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, FM_RGB(0xffffff));
+		fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
 	} else {
 		fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_SEPARATOR);
 	}

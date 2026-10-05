@@ -57,27 +57,91 @@
 /*
  * The colours of the interface, the file manager's (ws071) so that the two
  * windows look alike: quiet slate text, the accent for what is chosen.
+ * There are two sets, the light appearance's and the dark one's
+ * (ws089-p017, palette.c); se_palette is the set of the appearance the
+ * compositor told last, and every colour is read through it.
  */
-#define SE_COLOR_BACKGROUND_TOP		FM_RGB(0xeef2f7)
-#define SE_COLOR_BACKGROUND_BOTTOM	FM_RGB(0xe6ebf3)
-#define SE_COLOR_PANEL			FM_RGBA(0xffffff, 150)
-#define SE_COLOR_PANEL_EDGE		FM_RGBA(0xffffff, 170)
-#define SE_COLOR_GLASS_SIDEBAR		FM_RGBA(0xffffff, 40)
-#define SE_COLOR_GLASS_PAGE		FM_RGBA(0xffffff, 60)
-#define SE_COLOR_CARD			FM_RGBA(0xffffff, 150)
-#define SE_COLOR_CARD_EDGE		FM_RGBA(0xffffff, 190)
-#define SE_COLOR_TILE			FM_RGBA(0xf4f7fb, 190)
-#define SE_COLOR_TEXT			FM_RGB(0x1e2632)
-#define SE_COLOR_TEXT_SECONDARY		FM_RGB(0x56606f)
-#define SE_COLOR_TEXT_FAINT		FM_RGB(0xa3abb8)
-#define SE_COLOR_ICON			FM_RGB(0x46526a)
-#define SE_COLOR_ACCENT			FM_RGB(0x2f7cf6)
-#define SE_COLOR_SELECTION		FM_RGBA(0x2f7cf6, 40)
-#define SE_COLOR_SELECTION_INACTIVE	FM_RGBA(0x7a8699, 38)
-#define SE_COLOR_HOVER			FM_RGBA(0x5a6b85, 18)
-#define SE_COLOR_SEPARATOR		FM_RGBA(0x8a96aa, 60)
-#define SE_COLOR_GOOD			FM_RGB(0x2fb45a)
-#define SE_COLOR_BAD			FM_RGB(0xe0533d)
+struct se_palette {
+	/* The window's ground, at the top and at the bottom (a gradient). */
+	fm_color background_top;
+	fm_color background_bottom;
+
+	/* A panel and its edge. */
+	fm_color panel;
+	fm_color panel_edge;
+
+	/* The veils over the compositor's glass: the list's and the page's. */
+	fm_color glass_sidebar;
+	fm_color glass_page;
+
+	/* A card, its edge, a tile and a tile under the pointer. */
+	fm_color card;
+	fm_color card_edge;
+	fm_color tile;
+	fm_color tile_hover;
+
+	/* The text: the main ink, the secondary, the faint, a heading's and an icon's. */
+	fm_color text;
+	fm_color text_secondary;
+	fm_color text_faint;
+	fm_color title;
+	fm_color icon;
+
+	/* The accent, a selection with and without the keyboard, the pointer's hover and a separator. */
+	fm_color accent;
+	fm_color selection;
+	fm_color selection_inactive;
+	fm_color hover;
+	fm_color separator;
+
+	/* Good and bad news. */
+	fm_color good;
+	fm_color bad;
+
+	/* A control's ground and edge, a field's ground, a switch's track when off, a slider's rail, what a control is faded towards when it does nothing, and the ink a pressed control is darkened (or lightened) with. */
+	fm_color control;
+	fm_color control_edge;
+	fm_color field;
+	fm_color track;
+	fm_color rail;
+	fm_color faded;
+	fm_color pressed;
+};
+
+/* The set in use, and the choice of the appearance's (KL_APPEARANCE_*; palette.c). */
+extern const struct se_palette *se_palette;
+void se_palette_set(unsigned appearance);
+const struct se_palette *se_palette_of(unsigned appearance);
+
+#define SE_COLOR_BACKGROUND_TOP	(se_palette->background_top)
+#define SE_COLOR_BACKGROUND_BOTTOM	(se_palette->background_bottom)
+#define SE_COLOR_PANEL		(se_palette->panel)
+#define SE_COLOR_PANEL_EDGE	(se_palette->panel_edge)
+#define SE_COLOR_GLASS_SIDEBAR	(se_palette->glass_sidebar)
+#define SE_COLOR_GLASS_PAGE	(se_palette->glass_page)
+#define SE_COLOR_CARD		(se_palette->card)
+#define SE_COLOR_CARD_EDGE	(se_palette->card_edge)
+#define SE_COLOR_TILE		(se_palette->tile)
+#define SE_COLOR_TILE_HOVER	(se_palette->tile_hover)
+#define SE_COLOR_TEXT		(se_palette->text)
+#define SE_COLOR_TEXT_SECONDARY	(se_palette->text_secondary)
+#define SE_COLOR_TEXT_FAINT	(se_palette->text_faint)
+#define SE_COLOR_TITLE		(se_palette->title)
+#define SE_COLOR_ICON		(se_palette->icon)
+#define SE_COLOR_ACCENT		(se_palette->accent)
+#define SE_COLOR_SELECTION	(se_palette->selection)
+#define SE_COLOR_SELECTION_INACTIVE	(se_palette->selection_inactive)
+#define SE_COLOR_HOVER		(se_palette->hover)
+#define SE_COLOR_SEPARATOR	(se_palette->separator)
+#define SE_COLOR_GOOD		(se_palette->good)
+#define SE_COLOR_BAD		(se_palette->bad)
+#define SE_COLOR_CONTROL		(se_palette->control)
+#define SE_COLOR_CONTROL_EDGE	(se_palette->control_edge)
+#define SE_COLOR_FIELD		(se_palette->field)
+#define SE_COLOR_TRACK		(se_palette->track)
+#define SE_COLOR_RAIL		(se_palette->rail)
+#define SE_COLOR_FADED		(se_palette->faded)
+#define SE_COLOR_PRESSED		(se_palette->pressed)
 
 /* The modifier keys held with an input, the program's own bits. */
 #define SE_MOD_SHIFT		0x01U
@@ -842,6 +906,7 @@ struct se_look {
 	int repeat_rate;
 	int repeat_delay;
 	int ime_method;
+	int dark;
 	int dragging;
 	struct fm_rect slider;
 	struct fm_rect sliders[8];

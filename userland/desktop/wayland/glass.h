@@ -36,6 +36,13 @@
 #define MODE_TEXT		5.0f
 #define MODE_BLUR		6.0f
 
+/*
+ * The saturation (the greatest channel less the least) from which a colour
+ * keeps its hue in the dark appearance (glass.c, ws089-p017); below it the
+ * colour's lightness is turned over.
+ */
+#define GLASS_DARK_SATURATION	0.25f
+
 /* The corner radius of title bars and bodies. */
 #define GLASS_RADIUS		14.0f
 
@@ -77,6 +84,8 @@ struct glass_shape {
 	float edge;
 	float opacity;
 	VkDescriptorSet set;
+	/* Nonzero for a shape drawn in its light colours in the dark appearance too (a window of a client that does not know the appearance, panels.c). */
+	unsigned light;
 };
 
 void glass_shape_init(struct glass_shape *shape, float x, float y, float width, float height);

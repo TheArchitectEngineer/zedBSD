@@ -19,6 +19,7 @@
 		keiland_keyboard_inset_v1_*;
 		keiland_edit_manager_v1_*;
 		keiland_edit_v1_*;
+		keiland_theme_v1_*;
 	local:
 		*;
 };

@@ -61,32 +61,81 @@
 
 /*
  * The colors of the interface (spec §38: quiet, color only for the
- * selection).
+ * selection), in two sets: the light appearance's and the dark one's
+ * (ws089-p017, palette.c).  fm_palette is the set of the appearance the
+ * compositor told last, and every colour is read through it.
  */
-#define FM_COLOR_BACKGROUND_TOP		FM_RGB(0xeef2f7)
-#define FM_COLOR_BACKGROUND_BOTTOM	FM_RGB(0xe6ebf3)
-#define FM_COLOR_PANEL			FM_RGB(0xffffff)
-#define FM_COLOR_PANEL_EDGE		FM_RGB(0xe2e7ef)
-#define FM_COLOR_SIDEBAR		FM_RGBA(0xffffff, 120)
+struct fm_palette {
+	/* The window's ground, at the top and at the bottom (a gradient). */
+	fm_color background_top;
+	fm_color background_bottom;
 
-/*
- * The tints a glass window lays over zdesktop's frosted glass: the
- * sidebar's light veil, and the content's and the preview's a little
- * whiter one (the glass shows through; the items stay easy to read).
- */
-#define FM_COLOR_GLASS_SIDEBAR		FM_RGBA(0xffffff, 40)
-#define FM_COLOR_GLASS_CONTENT		FM_RGBA(0xffffff, 60)
-#define FM_COLOR_SHADOW			FM_RGBA(0x1f3a66, 34)
-#define FM_COLOR_TEXT			FM_RGB(0x1e2632)
-#define FM_COLOR_TEXT_SECONDARY		FM_RGB(0x56606f)
-#define FM_COLOR_TEXT_FAINT		FM_RGB(0xa3abb8)
-#define FM_COLOR_ICON			FM_RGB(0x46526a)
-#define FM_COLOR_ACCENT			FM_RGB(0x2f7cf6)
-#define FM_COLOR_SELECTION		FM_RGBA(0x2f7cf6, 40)
-#define FM_COLOR_SELECTION_INACTIVE	FM_RGBA(0x7a8699, 38)
-#define FM_COLOR_HOVER			FM_RGBA(0x5a6b85, 18)
-#define FM_COLOR_FOLDER			FM_RGB(0x5aa2f5)
-#define FM_COLOR_SEPARATOR		FM_RGB(0xe8ecf2)
+	/* A panel, its edge and its rim on glass, and the sidebar on the plain ground. */
+	fm_color panel;
+	fm_color panel_edge;
+	fm_color panel_rim;
+	fm_color sidebar;
+
+	/* The tints a glass window lays over the compositor's frosted glass: the sidebar's veil, and the content's and the preview's a little stronger one (the glass shows through; the items stay easy to read). */
+	fm_color glass_sidebar;
+	fm_color glass_content;
+
+	/* A card's shadow. */
+	fm_color shadow;
+
+	/* The text: the main ink, the secondary, the faint, a heading's, and an icon's. */
+	fm_color text;
+	fm_color text_secondary;
+	fm_color text_faint;
+	fm_color title;
+	fm_color icon;
+
+	/* The accent, a selection with and without the keyboard, the pointer's hover, a folder and a separator. */
+	fm_color accent;
+	fm_color selection;
+	fm_color selection_inactive;
+	fm_color hover;
+	fm_color folder;
+	fm_color separator;
+
+	/* A button's ground and under the pointer, a card's inner ground, a tile behind an icon, and a progress bar's rail. */
+	fm_color button;
+	fm_color button_lit;
+	fm_color inner;
+	fm_color tile;
+	fm_color rail;
+};
+
+/* The set in use, and the choice of the appearance's (KL_APPEARANCE_*; palette.c). */
+extern const struct fm_palette *fm_palette;
+void fm_palette_set(unsigned appearance);
+const struct fm_palette *fm_palette_of(unsigned appearance);
+
+#define FM_COLOR_BACKGROUND_TOP	(fm_palette->background_top)
+#define FM_COLOR_BACKGROUND_BOTTOM	(fm_palette->background_bottom)
+#define FM_COLOR_PANEL		(fm_palette->panel)
+#define FM_COLOR_PANEL_EDGE	(fm_palette->panel_edge)
+#define FM_COLOR_PANEL_RIM	(fm_palette->panel_rim)
+#define FM_COLOR_SIDEBAR		(fm_palette->sidebar)
+#define FM_COLOR_GLASS_SIDEBAR	(fm_palette->glass_sidebar)
+#define FM_COLOR_GLASS_CONTENT	(fm_palette->glass_content)
+#define FM_COLOR_SHADOW		(fm_palette->shadow)
+#define FM_COLOR_TEXT		(fm_palette->text)
+#define FM_COLOR_TEXT_SECONDARY	(fm_palette->text_secondary)
+#define FM_COLOR_TEXT_FAINT	(fm_palette->text_faint)
+#define FM_COLOR_TITLE		(fm_palette->title)
+#define FM_COLOR_ICON		(fm_palette->icon)
+#define FM_COLOR_ACCENT		(fm_palette->accent)
+#define FM_COLOR_SELECTION	(fm_palette->selection)
+#define FM_COLOR_SELECTION_INACTIVE	(fm_palette->selection_inactive)
+#define FM_COLOR_HOVER		(fm_palette->hover)
+#define FM_COLOR_FOLDER		(fm_palette->folder)
+#define FM_COLOR_SEPARATOR	(fm_palette->separator)
+#define FM_COLOR_BUTTON		(fm_palette->button)
+#define FM_COLOR_BUTTON_LIT	(fm_palette->button_lit)
+#define FM_COLOR_INNER		(fm_palette->inner)
+#define FM_COLOR_TILE		(fm_palette->tile)
+#define FM_COLOR_RAIL		(fm_palette->rail)
 
 /* The modifier keys held with an input, the file manager's own bits. */
 #define FM_MOD_SHIFT		0x01U
