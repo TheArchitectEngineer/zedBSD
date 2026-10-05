@@ -787,6 +787,13 @@ struct glsl_shader {
 	struct glsl_symbol *globals;
 	struct glsl_symbol *last_global;
 	struct glsl_function *main;
+
+	/*
+	 * A fragment shader's hidden uniform gl_ZedFragment (ws068-p004): what
+	 * turns gl_FragCoord.y and gl_PointCoord.t into GL's directions; used
+	 * when either is.
+	 */
+	struct glsl_symbol *zed_fragment;
 };
 
 /*
@@ -841,6 +848,7 @@ const struct glsl_type *glsl_type_with_base(const struct glsl_type *type, unsign
 int glsl_type_equal(const struct glsl_type *left, const struct glsl_type *right);
 int glsl_type_numeric(const struct glsl_type *type);
 int glsl_type_contains_sampler(const struct glsl_type *type);
+unsigned glsl_type_sampler_units(const struct glsl_type *type);
 unsigned glsl_type_scalars(const struct glsl_type *type);
 unsigned glsl_type_locations(const struct glsl_type *type);
 void glsl_type_name(const struct glsl_type *type, char *out, size_t size);

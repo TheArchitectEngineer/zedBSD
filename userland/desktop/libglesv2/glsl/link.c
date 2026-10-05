@@ -414,13 +414,17 @@ link_uniforms(
 		/* The uniform, with its index. */
 		state->uniforms[state->uniform_count].name = symbol->name;
 		state->uniforms[state->uniform_count].type = symbol->type;
-		state->uniforms[state->uniform_count].sampler = (symbol->type->kind == GLSL_KIND_SAMPLER);
+		state->uniforms[state->uniform_count].sampler = glsl_type_sampler_units(symbol->type);
 		symbol->uniform = state->uniform_count;
 		state->uniform_count++;
 	}
 }
 
-/* Lays the uniforms out: std140 offsets in the block, bindings from 1 for samplers. */
+/*
+ * Lays the uniforms out: std140 offsets in the block, bindings from 1 for
+ * samplers (an array of samplers is one binding with a descriptor an
+ * element, ws068-p004).
+ */
 static void
 link_layout(
 	struct link_state *state)
@@ -429,18 +433,21 @@ link_layout(
 	uint32_t offset;
 	uint32_t binding;
 	unsigned alignment;
+	unsigned units;
 	unsigned index;
 
 	/* Each uniform in order. */
 	offset = 0U;
 	binding = 1U;
+	units = 0U;
 	for (index = 0U; index < state->uniform_count; index++) {
 		uniform = &state->uniforms[index];
 
-		/* A sampler takes the next binding. */
-		if (uniform->sampler) {
+		/* A sampler (or an array of them) takes the next binding, and a unit an element. */
+		if (uniform->sampler != 0U) {
 			uniform->binding = binding;
 			binding++;
+			units += uniform->sampler;
 			continue;
 		}
 
@@ -452,7 +459,7 @@ link_layout(
 	}
 
 	/* libGLESv2 binds sixteen texture units. */
-	if (binding > 17U)
+	if (units > 16U)
 		link_error(state, "more than 16 samplers");
 }
 

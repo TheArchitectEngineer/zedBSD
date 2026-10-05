@@ -230,7 +230,7 @@ compute_dispatch(
 	}
 
 	/* The descriptors. */
-	set = gles_draw_descriptors(state, blocks, NULL, storages, &dynamic_offset);
+	set = gles_draw_descriptors(state, NULL, blocks, NULL, storages, &dynamic_offset);
 	if (set == VK_NULL_HANDLE) {
 		gles_report("the dispatch's descriptors", -1);
 		gles_error(context, GL_OUT_OF_MEMORY);

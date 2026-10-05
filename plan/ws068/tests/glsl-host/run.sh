@@ -84,6 +84,14 @@ for want in "block 0 Scene binding=32 size=320 stages=3 members=11" \
 done
 echo "blocks: done"
 
+# 3c. ws068-p004: an array of samplers is one binding of its length; the built-in uniforms are in the default block.
+for want in "uniform u_textures type=0x8b5e size=3 offset=0 stride=0 mstride=0 sampler=1 binding=1" \
+	"uniform gl_ZedFragment type=0x8b52 size=1 " "uniform gl_DepthRange.diff type=0x1406 size=1 "; do
+	grep -q "^$want" "$out/es2-builtins.frag.reflect.txt" || fail "es2-builtins reflection lacks: $want"
+done
+grep -q "^uniform gl_DepthRange.near " "$out/es2-builtins.vert.reflect.txt" || fail "es2-builtins.vert reflection lacks gl_DepthRange.near"
+echo "es2: done"
+
 # 4. The i915 compiler takes the shaders that stay inside what it supports.
 I915_PAIRS=${I915_PAIRS:-scene fixed scene300}
 for name in $I915_PAIRS; do

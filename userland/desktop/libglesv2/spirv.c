@@ -1167,8 +1167,17 @@ spirv_variable(
 		return status;
 	}
 
-	/* A sampler: set 0, its binding. */
+	/* A sampler, or an array of them (ws068-p004: one binding, a descriptor an element): set 0, its binding. */
 	if (storage == STORAGE_UNIFORM_CONSTANT) {
+		length = 1U;
+		if ((code[module->defs[pointee]] & 0xffffU) == OP_TYPE_ARRAY) {
+			length = spirv_constant(module, code[module->defs[pointee] + 3U]);
+			pointee = code[module->defs[pointee] + 2U];
+		}
+
+		/* One to sixteen samplers of a kind GL names. */
+		if (length == 0U || length > GLES_UNITS || pointee >= module->bound || module->defs[pointee] == 0U)
+			return -1;
 		memset(&leaf, 0, sizeof(leaf));
 		status = spirv_leaf(module, pointee, &leaf);
 		if (status != 0 || !leaf.sampler)
@@ -1180,7 +1189,7 @@ spirv_variable(
 			return -1;
 		*uniform = leaf;
 		(void)snprintf(uniform->name, sizeof(uniform->name), "%s", name);
-		uniform->size = 1;
+		uniform->size = (GLint)length;
 		uniform->binding = module->bindings[id];
 		if (uniform->binding == SPIRV_NONE)
 			uniform->binding = 1U;

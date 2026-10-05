@@ -860,7 +860,7 @@ run_program(
 	VkWriteDescriptorSet writes[17];
 	VkDescriptorBufferInfo buffer_info;
 	VkDescriptorBufferInfo pattern_info;
-	VkDescriptorImageInfo image_info;
+	VkDescriptorImageInfo image_info[16];
 	VkPipelineShaderStageCreateInfo stages[3];
 	VkVertexInputBindingDescription vertex_binding;
 	VkVertexInputAttributeDescription vertex_attribute;
@@ -973,7 +973,7 @@ run_program(
 				continue;
 			bindings[count].binding = spirv[stage].uniforms[index].binding;
 			bindings[count].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			bindings[count].descriptorCount = 1U;
+			bindings[count].descriptorCount = (uint32_t)spirv[stage].uniforms[index].size;
 			bindings[count].stageFlags = stage_flags;
 			count++;
 		}
@@ -1040,20 +1040,24 @@ run_program(
 	pattern_info.buffer = context->pattern;
 	pattern_info.offset = 0U;
 	pattern_info.range = RUN_UNIFORM_BYTES;
-	image_info.sampler = context->sampler;
-	image_info.imageView = context->texture_view;
-	image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	for (index = 0U; index < 16U; index++) {
+		image_info[index].sampler = context->sampler;
+		image_info[index].imageView = context->texture_view;
+		image_info[index].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	}
+
+	/* A write a binding (an array's elements all at once). */
 	memset(writes, 0, sizeof(writes));
 	for (index = 0U; index < count; index++) {
 		writes[index].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writes[index].dstSet = set;
 		writes[index].dstBinding = bindings[index].binding;
-		writes[index].descriptorCount = 1U;
+		writes[index].descriptorCount = bindings[index].descriptorCount;
 		writes[index].descriptorType = bindings[index].descriptorType;
 		writes[index].pBufferInfo = &buffer_info;
 		if (bindings[index].binding != 0U)
 			writes[index].pBufferInfo = &pattern_info;
-		writes[index].pImageInfo = &image_info;
+		writes[index].pImageInfo = image_info;
 	}
 
 	/* The set written. */

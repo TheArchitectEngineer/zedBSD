@@ -730,10 +730,10 @@ struct gles_uniform {
 	uint32_t array_stride;
 	uint32_t matrix_stride;
 
-	/* For a sampler: nonzero, its binding, and the texture unit glUniform1i gave. */
+	/* For a sampler (or an array of them, ws068-p004): nonzero, its binding, and each element's texture unit glUniform1i gave. */
 	int sampler;
 	uint32_t binding;
-	GLint unit;
+	GLint units[GLES_UNITS];
 
 	/* The location of its first element (-1 for a named block's member). */
 	GLint location;
@@ -899,6 +899,15 @@ struct gles_program {
 	unsigned char *uniform_data;
 	uint32_t uniform_size;
 	uint32_t uniform_binding;
+
+	/*
+	 * The built-in uniforms libGLESv2 fills at each draw (ws068-p004):
+	 * gl_ZedFragment's offset in the block (the hidden vec4 that turns
+	 * gl_FragCoord.y and gl_PointCoord.t into GL's directions) and
+	 * gl_DepthRange's near, far and diff, -1 for one no stage reads.
+	 */
+	int32_t zed_fragment;
+	int32_t depth_range[3];
 
 	/* The named uniform blocks, by their bindings less 32. */
 	struct gles_block blocks[GLES_NAMED_BLOCKS];
@@ -1579,7 +1588,7 @@ int gles_read_rgba(struct zegl_context *context, GLint x, GLint y, GLsizei width
 int gles_read_pixels(struct zegl_context *context, GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, int clamped, unsigned char *rows);
 uint32_t *gles_expand(GLenum mode, const uint32_t *indices, uint32_t first, GLsizei count, int rotate, uint32_t *expanded);
 int gles_draw_blocks(struct zegl_context *context, struct gles_state *state, VkDescriptorBufferInfo *blocks);
-VkDescriptorSet gles_draw_descriptors(struct gles_state *state, const VkDescriptorBufferInfo *blocks, const VkDescriptorBufferInfo *capture, const VkDescriptorBufferInfo *storages, uint32_t *offset);
+VkDescriptorSet gles_draw_descriptors(struct gles_state *state, const struct gles_target *target, const VkDescriptorBufferInfo *blocks, const VkDescriptorBufferInfo *capture, const VkDescriptorBufferInfo *storages, uint32_t *offset);
 
 /*
  * What the SPIR-V of a shader says about its interface.

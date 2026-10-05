@@ -370,6 +370,8 @@ static int builtins_accepts(const struct glsl_type *parameter, const struct glsl
 static int builtins_sampler_code(char code, const struct glsl_type *argument);
 static void builtins_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned builtin);
 static void builtins_geometry(struct glsl_shader *shader);
+static struct glsl_symbol *builtins_uniform(struct glsl_shader *shader, const char *name, const struct glsl_type *type);
+static void builtins_depth_range(struct glsl_shader *shader);
 static void builtins_compute(struct glsl_shader *shader);
 
 /*
@@ -503,6 +505,10 @@ glsl_builtin_variables(
 		symbol->constant = value;
 	}
 
+	/* The depth range, a uniform of every stage that draws (ws068-p004). */
+	if (shader->stage != GLSL_STAGE_COMPUTE)
+		builtins_depth_range(shader);
+
 	/* The vertex stage: the position and point size it writes, and the vertex's index (1.30). */
 	if (shader->stage == GLSL_STAGE_VERTEX) {
 		builtins_variable(shader, "gl_Position", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_OUTPUT, GLSL_BUILTIN_POSITION);
@@ -533,6 +539,9 @@ glsl_builtin_variables(
 	builtins_variable(shader, "gl_FrontFacing", glsl_type_scalar(GLSL_BASE_BOOL), GLSL_VAR_INPUT, GLSL_BUILTIN_FRONT_FACING);
 	if ((mask & (GLSL_IN_ES100 | GLSL_IN_120_UP)) != 0U)
 		builtins_variable(shader, "gl_PointCoord", glsl_type_vector(GLSL_BASE_FLOAT, 2U), GLSL_VAR_INPUT, GLSL_BUILTIN_POINT_COORD);
+
+	/* The hidden uniform that turns the two into GL's directions (ws068-p004). */
+	shader->zed_fragment = builtins_uniform(shader, "gl_ZedFragment", glsl_type_vector(GLSL_BASE_FLOAT, 4U));
 
 	/* Its outputs: the colour and the draw buffers (one; not in OpenGL ES 3.00), and the depth (not in OpenGL ES 1.00). */
 	if ((mask & GLSL_IN_LEGACY) != 0U) {
@@ -848,6 +857,60 @@ builtins_variable(
 
 	/* Among the globals, so the emitter finds it when it is used. */
 	glsl_add_global(shader, symbol);
+}
+
+/*
+ * Declares a built-in uniform (ws068-p004): a member of the default block
+ * that libGLESv2 fills at each draw, never the application.
+ */
+static struct glsl_symbol *
+builtins_uniform(
+	struct glsl_shader *shader,
+	const char *name,
+	const struct glsl_type *type)
+{
+	struct glsl_symbol *symbol;
+
+	/* The symbol. */
+	symbol = glsl_declare(shader, name, GLSL_SYMBOL_VARIABLE, 0U);
+	symbol->type = type;
+	symbol->storage = GLSL_STORAGE_UNIFORM;
+	symbol->where = GLSL_VAR_UNIFORM;
+	symbol->precision = GLSL_PRECISION_HIGH;
+
+	/* Among the globals, so the link finds it when it is used. */
+	glsl_add_global(shader, symbol);
+	return symbol;
+}
+
+/*
+ * Declares gl_DepthRange (ws068-p004), the uniform of the struct
+ * gl_DepthRangeParameters: the near and far values glDepthRangef set, and
+ * far minus near.
+ */
+static void
+builtins_depth_range(
+	struct glsl_shader *shader)
+{
+	static const char *names[3] = { "near", "far", "diff" };
+	struct glsl_type *parameters;
+	unsigned index;
+
+	/* The struct of three highp floats. */
+	parameters = glsl_alloc(&shader->arena, sizeof(*parameters));
+	parameters->kind = GLSL_KIND_STRUCT;
+	parameters->name = "gl_DepthRangeParameters";
+	parameters->fields = glsl_alloc(&shader->arena, 3U * sizeof(*parameters->fields));
+	for (index = 0U; index < 3U; index++) {
+		parameters->fields[index].name = names[index];
+		parameters->fields[index].type = glsl_type_scalar(GLSL_BASE_FLOAT);
+	}
+
+	/* The three members. */
+	parameters->field_count = 3U;
+
+	/* The uniform. */
+	(void)builtins_uniform(shader, "gl_DepthRange", parameters);
 }
 
 /*
