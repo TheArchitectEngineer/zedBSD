@@ -71,6 +71,9 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 夕 ユーザーの決定（FIDO2 と kernel の大きさ）**:
+  - 「FIDO2周りは、libfido2, libcborも含めて、独自のライブラリ libpasskey にまとめて、独自に作ります。NFCはドライバを作ります。」→ 外部の libfido2・libcbor は使わない。userland の独自の library **libpasskey** に CTAP（CTAPHID）・CTAP2・CBOR・PIN の protocol・暗号を置く。NFC は kernel の driver（ACR1252U の USB CCID）。WS161・WS162 の設計を libpasskey を前提に直す（P1）。
+  - 「カーネルの16MBの制限は、15-16MBホールを意識したもので、でもabove 16MBにロードして回避して、もう制限にしておく必要はないはずですね。いつでも制限を外してよいことを記録してください。」→ AMD64_KERNEL_MAX_BYTES（16 MiB）は**いつでも外して（広げて）よい**。外す時は `bootloader/include/amd64-kernel-image.h`・`platform/amd64/vmunix.ld` の ASSERT・`src/hal/amd64/space.c` の `system_kernel_pt`（W^X の leaf の表、1 枚 2 MiB）の数・`image.c`・`handoff-validation.c` を揃え、UEFI と BIOS の boot を確かめる（[BUG-198](bugs/BUG-198.md)）。
 - **2026-10-05 夕 ユーザーの決定（仮眠の後）**:
   - WS163 PIN: 「~/.configの中にPINを保存してOKです。sessiondに難しい制御をさせたくないです。移植ができなくなるからです。これはまずモックアップとしての実装で、あとで鍵管理やPAMのような仕組みをきちんと考えます。」→ sessiond に PIN の口を足さない。PIN は利用者の ~/.config に、mock として実装（P1）。
   - WS162 FIDO2 の login: 「sessiondに制御を入れず、libfido2をコンポジタのgreeterが直接叩くモックアップを作ってください。設定は~/.configの中でOKです。あとで鍵管理やPAMのような仕組みをきちんと考えます。」→ greeter が libfido2 を直接使う mock、設定は ~/.config（P1、WS161 の device の後）。
