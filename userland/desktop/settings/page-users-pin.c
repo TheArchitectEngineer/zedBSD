@@ -6,20 +6,20 @@
  */
 
 /*
- * The Users page's PIN card (ws163-p003; the mock of plan/ws163/phase001
- * section 9): the six-digit PIN that unlocks the locked screen.
+ * The Users page's PIN card (ws163-p003, ws172-p002): the six-digit PIN
+ * that logs in and unlocks on this machine's screen.
  *
- * The card says whether a PIN is set (the user's ~/.config/keiland/pin is
- * there; Settings runs as the user and looks itself), and has three
+ * The card says whether a PIN is set, as the desktop tells it
+ * (kl_system_account_enrolled: the session manager keeps the PIN, in
+ * /etc/passkey on zedBSD, which Settings cannot read), and has three
  * fields: the current password, the new PIN and the new PIN again (digits
  * only, at most six, shown as dots).  Set Up PIN (Change PIN when one is
  * set) asks the desktop with the password and the PIN; Remove PIN asks
  * with the password alone (libkeiland's kl_system_account_set_pin, an
- * empty PIN).  The compositor checks the password with the session
- * manager and writes or removes the file; Settings never writes it.  The
- * fields are wiped as soon as the change is asked, and the answer comes as
- * a line under the buttons.  A desktop without the PIN
- * (KL_SYSTEM_HAS_PIN) says so and offers no change.
+ * empty PIN).  The session manager checks the password and sets or
+ * removes the PIN.  The fields are wiped as soon as the change is asked,
+ * and the answer comes as a line under the buttons.  A desktop without the
+ * PIN (KL_SYSTEM_HAS_PIN) says so and offers no change.
  */
 
 #include "settings.h"
@@ -29,7 +29,6 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
 
 /* The card's controls: its three fields, Set Up PIN (or Change PIN), and Remove PIN. */
 #define PIN_FIELD_FIRST		200
@@ -53,15 +52,15 @@
 #define PIN_TEXT_ROW		15U
 #define PIN_TEXT_SUB		13U
 
-/* The PIN file under the home (the compositor's pin-store.c writes it). */
-#define PIN_FILE		".config/keiland/pin"
+/* The room of a refusal's word. */
+#define PIN_REASON		32U
 
 /* The fields' labels and placeholders. */
 static const char *const pin_labels[SE_PIN_FIELDS] = { "Current password", "New PIN", "New PIN again" };
 static const char *const pin_placeholders[SE_PIN_FIELDS] = { "Your password now", "Six digits", "The same again" };
 
 static int pin_available(const struct se_app *app);
-static int pin_is_set(const struct se_app *app);
+static int pin_is_set(const struct se_app *app, int *set);
 static int pin_ready(const struct se_app *app);
 static int pin_remove_ready(const struct se_app *app);
 static void pin_ask(struct se_app *app, int removing);
@@ -85,6 +84,7 @@ se_users_pin_draw(
 	int available;
 	int enabled;
 	int removable;
+	int known;
 	int differs;
 	int apply_width;
 	int remove_width;
@@ -105,11 +105,13 @@ se_users_pin_draw(
 		return top + height;
 	}
 
-	/* Whether a PIN is set now. */
-	users->pin_set = pin_is_set(app);
-	state = "No PIN is set. The locked screen takes your password.";
-	if (users->pin_set)
-		state = "A PIN is set. The locked screen takes it or your password.";
+	/* Whether a PIN is set now, once the desktop has told it. */
+	known = pin_is_set(app, &users->pin_set);
+	state = "Looking for your PIN...";
+	if (known && !users->pin_set)
+		state = "No PIN is set. The login and locked screens take your password.";
+	if (known && users->pin_set)
+		state = "A PIN is set. After a restart, log in once with your password.";
 	(void)fm_text_draw_fit(app->text, canvas, x + 20, y + 22, state, PIN_TEXT_SUB, 0, width - 40, SE_COLOR_TEXT_SECONDARY);
 	y += 36;
 
@@ -284,6 +286,9 @@ se_users_pin_result(
 {
 	struct se_users *users;
 	const char *message;
+	char reason[PIN_REASON];
+	int refused;
+	int locked;
 	int bad;
 
 	/* Only the change the card asked. */
@@ -296,17 +301,24 @@ se_users_pin_result(
 	bad = 1;
 	switch (error) {
 	case 0:
-		message = "The PIN is set. The locked screen takes it from now on.";
+		message = "The PIN is set. The login and locked screens take it from now on.";
 		if (users->pin_removing)
 			message = "The PIN is removed.";
 		bad = 0;
 		break;
 	case EPERM:
+		/* The refusal's word, when the desktop gave one: a locked account, or a wrong password. */
+		refused = kl_system_account_refusal(app->system, request, reason, sizeof(reason));
+		locked = 1;
+		if (refused)
+			locked = strcmp(reason, "locked");
 		message = "The current password is wrong.";
+		if (locked == 0)
+			message = "Your account is locked: it cannot have a PIN.";
 		users->pin_focus = PIN_PASSWORD;
 		break;
 	case EINVAL:
-		message = "The PIN is not accepted: use six digits (and a password of at least 8 characters).";
+		message = "The PIN is not accepted: use six digits.";
 		break;
 	case ENOTSUP:
 		message = "This desktop cannot set a PIN.";
@@ -363,33 +375,25 @@ pin_available(
 	return 1;
 }
 
-/* Tells whether a PIN is set: the user's PIN file is there. */
+/* Tells whether the desktop has told whether a PIN is set (1), and sets *set to whether one is. */
 static int
 pin_is_set(
-	const struct se_app *app)
+	const struct se_app *app,
+	int *set)
 {
-	struct stat status;
-	char path[256];
-	int written;
-	int found;
-	int regular;
+	unsigned pin;
+	unsigned keys;
+	int known;
 
-	/* The file under the home the passwd database gives. */
-	if (app->users.home[0] != '/')
-		return 0;
-	written = snprintf(path, sizeof(path), "%s/%s", app->users.home, PIN_FILE);
-	if (written < 0 || (size_t)written >= sizeof(path))
+	/* Not known before the desktop told it. */
+	*set = 0;
+	known = kl_system_account_enrolled(app->system, &pin, &keys);
+	if (!known)
 		return 0;
 
-	/* There, as a file. */
-	found = stat(path, &status);
-	if (found != 0)
-		return 0;
-	regular = S_ISREG(status.st_mode);
-	if (!regular)
-		return 0;
-
-	/* A PIN is set. */
+	/* Succeeded: known, and whether a PIN is set. */
+	if (pin != 0U)
+		*set = 1;
 	return 1;
 }
 

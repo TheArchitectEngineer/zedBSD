@@ -590,11 +590,11 @@ greeter_reply(
 	struct greeter *greeter,
 	const char *reply)
 {
-	char line[16];
+	char line[SESSIOND_LINE_MAX];
 	size_t length;
 	ssize_t written;
 
-	/* The reply and its line end, in one write. */
+	/* The reply and its line end, in one write (room for any reply, ws172 m1). */
 	snprintf(line, sizeof(line), "%s\n", reply);
 	length = strlen(line);
 	written = write(greeter->socket, line, length);

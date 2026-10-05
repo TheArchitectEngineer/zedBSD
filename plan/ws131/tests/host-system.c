@@ -25,7 +25,6 @@
  */
 
 #include "userland/desktop/wayland/zwl.h"
-#include "userland/desktop/wayland/pin-store.h"
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "userland/desktop/libkeiland/system/system-private.h"
@@ -35,6 +34,7 @@
 #include <wayland-client.h>
 
 #include <errno.h>
+#include <sys/stat.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -98,9 +98,17 @@ static struct {
 	unsigned command_hold_bar;
 	unsigned command_release_bar;
 	unsigned command_state;
-	/* The PIN (ws163-p003): the stand-in's sessiond checks "kei"; the check asked waits for the next pass. */
-	unsigned unlock_asked;
-	char unlock_password[64];
+	/*
+	 * The PIN (ws172-p002): the stand-in's sessiond takes the password
+	 * "kei" and keeps whether a PIN is set; a change and ENROLLED asked
+	 * wait for the server's next pass.
+	 */
+	unsigned pin_asked;
+	char pin_password[64];
+	char pin_value[16];
+	unsigned pin_set;
+	unsigned enrolled_asked;
+	char reason[24];
 	char home[64];
 	unsigned stop;
 } world;
@@ -257,21 +265,55 @@ kl_backend_session_managed(const struct kl_backend *backend)
 }
 
 int
-kl_backend_session_unlock(struct kl_backend *backend, const char *password)
+kl_backend_session_set_pin(struct kl_backend *backend, const char *password, const char *pin)
 {
 	int error;
 
 	(void)backend;
 	pthread_mutex_lock(&world.lock);
 	error = 0;
-	if (world.unlock_asked) {
+	if (world.pin_asked || world.enrolled_asked) {
 		error = EBUSY;
 	} else {
-		world.unlock_asked = 1U;
-		snprintf(world.unlock_password, sizeof(world.unlock_password), "%s", password);
+		world.pin_asked = 1U;
+		snprintf(world.pin_password, sizeof(world.pin_password), "%s", password);
+		snprintf(world.pin_value, sizeof(world.pin_value), "%s", pin);
 	}
 	pthread_mutex_unlock(&world.lock);
 	return error;
+}
+
+int
+kl_backend_session_enrolled(struct kl_backend *backend)
+{
+	int error;
+
+	(void)backend;
+	pthread_mutex_lock(&world.lock);
+	error = 0;
+	if (world.pin_asked || world.enrolled_asked)
+		error = EBUSY;
+	else
+		world.enrolled_asked = 1U;
+	pthread_mutex_unlock(&world.lock);
+	return error;
+}
+
+void
+kl_backend_session_enrolled_get(const struct kl_backend *backend, unsigned *pin, unsigned *keys)
+{
+	(void)backend;
+	pthread_mutex_lock(&world.lock);
+	*pin = world.pin_set;
+	*keys = 0U;
+	pthread_mutex_unlock(&world.lock);
+}
+
+const char *
+kl_backend_session_reason(const struct kl_backend *backend)
+{
+	(void)backend;
+	return world.reason;
 }
 
 /* The user's home: the test's scratch folder. */
@@ -723,6 +765,7 @@ serve_pass(void)
 	unsigned changed;
 	unsigned unlock;
 	int unlock_error;
+	unsigned enrolled;
 	int error;
 	int owned;
 
@@ -791,17 +834,27 @@ serve_pass(void)
 		}
 	}
 
-	/* sessiond's answer to the check of the password for a PIN (ws163-p003). */
+	/* sessiond's answer to a PIN's change, and to ENROLLED (ws172-p002). */
 	pthread_mutex_lock(&world.lock);
-	unlock = world.unlock_asked;
-	world.unlock_asked = 0U;
-	unlock_error = EACCES;
-	if (strcmp(world.unlock_password, "kei") == 0)
-		unlock_error = 0;
-	memset(world.unlock_password, 0, sizeof(world.unlock_password));
+	unlock = world.pin_asked;
+	world.pin_asked = 0U;
+	enrolled = world.enrolled_asked;
+	world.enrolled_asked = 0U;
+	unlock_error = 0;
+	world.reason[0] = '\0';
+	if (unlock && strcmp(world.pin_password, "kei") != 0) {
+		unlock_error = EACCES;
+		snprintf(world.reason, sizeof(world.reason), "bad-secret");
+	} else if (unlock) {
+		world.pin_set = world.pin_value[0] != '\0';
+	}
+	memset(world.pin_password, 0, sizeof(world.pin_password));
+	memset(world.pin_value, 0, sizeof(world.pin_value));
 	pthread_mutex_unlock(&world.lock);
 	if (unlock)
 		(void)zwl_system_pin_answer(&server, unlock_error);
+	if (enrolled)
+		zwl_system_enrolled_answer(&server, 0);
 
 	/* The extension's own pass. */
 	zwl_system_tick(&server);
@@ -883,6 +936,13 @@ until_result(struct kl_system *system, unsigned seen)
 {
 	(void)system;
 	return (seen & KL_SYSTEM_CHANGED_RESULT) != 0U;
+}
+
+static int
+until_enrolled(struct kl_system *system, unsigned seen)
+{
+	(void)system;
+	return (seen & KL_SYSTEM_CHANGED_ENROLLED) != 0U;
 }
 
 static int
@@ -1132,6 +1192,9 @@ test_both_ends(void)
 	struct kl_sharing_state sharing;
 	uint32_t request;
 	char pin_path[128];
+	char reason[32];
+	unsigned pin;
+	unsigned keys;
 	unsigned seen;
 	int taken_error;
 	int sockets[2];
@@ -1384,22 +1447,29 @@ test_both_ends(void)
 	expect_result(display, system, first, EINVAL, "the new password refused");
 	CHECK(kl_system_account_set_password(system, "", "newpass123", &first) == EINVAL, "an empty password is refused by the library");
 
-	/* The PIN (ws163-p003): set, a wrong password, a bad PIN, a six-digit password, and removed. */
+	/*
+	 * The PIN (ws172-p002): what is enrolled is told, the WS163 mock's file
+	 * is gone, the PIN set, a wrong password with its word, a bad PIN, and
+	 * removed.
+	 */
 	snprintf(pin_path, sizeof(pin_path), "%s/.config/keiland/pin", world.home);
+	CHECK(access(pin_path, F_OK) != 0, "the old PIN file removed");
 	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_PIN) != 0U, "PIN offered");
+	(void)pump(display, system, until_enrolled, 400);
+	CHECK(kl_system_account_enrolled(system, &pin, &keys) == 1 && pin == 0U && keys == 0U, "no PIN enrolled at first");
 	CHECK(kl_system_account_set_pin(system, "kei", "123456", &first) == 0, "PIN asked");
 	expect_result(display, system, first, 0, "PIN set");
-	CHECK(zwl_pin_store_check(pin_path, "123456") == 0, "the PIN file takes the PIN");
+	(void)pump(display, system, until_enrolled, 400);
+	CHECK(kl_system_account_enrolled(system, &pin, &keys) == 1 && pin == 1U, "the PIN enrolled");
 	CHECK(kl_system_account_set_pin(system, "wrong", "654321", &first) == 0, "PIN with a wrong password asked");
 	expect_result(display, system, first, EPERM, "PIN: the password wrong");
-	CHECK(zwl_pin_store_check(pin_path, "123456") == 0, "the PIN unchanged");
+	CHECK(kl_system_account_refusal(system, first, reason, sizeof(reason)) == 1 && strcmp(reason, "bad-secret") == 0, "PIN: the refusal's word");
 	CHECK(kl_system_account_set_pin(system, "kei", "12345", &first) == 0, "five digits asked");
 	expect_result(display, system, first, EINVAL, "PIN: five digits refused");
-	CHECK(kl_system_account_set_pin(system, "123456", "654321", &first) == 0, "six-digit password asked");
-	expect_result(display, system, first, EINVAL, "PIN: a six-digit password refused");
 	CHECK(kl_system_account_set_pin(system, "kei", "", &first) == 0, "PIN removal asked");
 	expect_result(display, system, first, 0, "PIN removed");
-	CHECK(access(pin_path, F_OK) != 0, "the PIN file gone");
+	(void)pump(display, system, until_enrolled, 400);
+	CHECK(kl_system_account_enrolled(system, &pin, &keys) == 1 && pin == 0U, "the PIN gone");
 
 	/* Close, and no protocol error on the way; the closed system's asking for scans went with it. */
 	kl_system_close(system);
@@ -1420,6 +1490,7 @@ int
 main(void)
 {
 	char scratch[128];
+	FILE *old_pin;
 
 	pthread_mutex_init(&world.lock, NULL);
 	snprintf(world.home, sizeof(world.home), "%s", "/tmp/ws131-host-system.XXXXXX");
@@ -1427,6 +1498,16 @@ main(void)
 		printf("host-system: no scratch home\n");
 		return 1;
 	}
+
+	/* The WS163 mock's PIN file, which the compositor removes (ws172-p002). */
+	snprintf(scratch, sizeof(scratch), "%s/.config", world.home);
+	(void)mkdir(scratch, 0700);
+	snprintf(scratch, sizeof(scratch), "%s/.config/keiland", world.home);
+	(void)mkdir(scratch, 0700);
+	snprintf(scratch, sizeof(scratch), "%s/.config/keiland/pin", world.home);
+	old_pin = fopen(scratch, "w");
+	if (old_pin != NULL)
+		(void)fclose(old_pin);
 	world.network.reachable = 1U;
 	world.network.connected = 1U;
 	world.network.kind = KL_BACKEND_NETWORK_WIFI;

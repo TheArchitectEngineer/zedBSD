@@ -87,6 +87,9 @@ struct system_view {
 	char busy_program[KL_DEVICE_TEXT_MAX];
 	uint32_t refused_request;
 	char refused_reason[KL_SYSTEM_REASON_MAX + 1U];
+	unsigned enrolled_known;
+	unsigned enrolled_pin;
+	unsigned enrolled_keys;
 	struct kl_sharing_state sharing;
 	struct kl_sharing_state sharing_pending;
 	unsigned sharing_touched;

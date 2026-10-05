@@ -191,24 +191,49 @@ test_login_screen(
 	error = kl_backend_session_ready(backend);
 	check(error == 0 && read_line(ends[0], "READY\n"), "READY written, GO taken");
 
-	/* AUTH, and a second request while it waits: EBUSY. */
-	error = kl_backend_session_authenticate(backend, "kei", "secret");
-	check(error == 0 && read_line(ends[0], "AUTH kei secret\n"), "AUTH kei secret written");
-	error = kl_backend_session_authenticate(backend, "kei", "again");
-	check(error == EBUSY, "a second request while one waits is EBUSY");
-	error = kl_backend_session_authenticate(backend, "two words", "x");
-	check(error == EINVAL, "a name with a space is EINVAL");
-	error = kl_backend_session_unlock(backend, "x");
-	check(error == ENOTSUP, "the login screen has no unlock");
+	/* STYLES (ws172-p002): the password alone before the answer, then what sessiond said. */
+	check(kl_backend_session_styles_get(backend) == KL_BACKEND_STYLE_PASSWORD, "the password alone before STYLES");
+	error = kl_backend_session_styles(backend, "kei");
+	check(error == 0 && read_line(ends[0], "STYLES kei\n"), "STYLES kei written");
+	(void)write(ends[0], "STYLES password pin\n", 20U);
+	kl_backend_tick(backend, 999U);
+	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_STYLES && answer_error == 0, "STYLES answered");
+	check(kl_backend_session_styles_get(backend) == (KL_BACKEND_STYLE_PASSWORD | KL_BACKEND_STYLE_PIN), "the PIN among the styles");
+	answer_count = 0U;
 
-	/* FAIL answers AUTH with EACCES. */
-	(void)write(ends[0], "FAIL\n", 5U);
+	/* AUTH with its secret on a line of its own, and a second request while it waits: EBUSY. */
+	error = kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PASSWORD, "secret");
+	check(error == 0 && read_line(ends[0], "AUTH kei password\nsecret\n"), "AUTH kei password and the secret written");
+	error = kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PIN, "123456");
+	check(error == EBUSY, "a second request while one waits is EBUSY");
+	error = kl_backend_session_authenticate(backend, "two words", KL_BACKEND_STYLE_PASSWORD, "x");
+	check(error == EINVAL, "a name with a space is EINVAL");
+	error = kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PASSWORD, "two\nlines");
+	check(error == EINVAL, "a secret with a line end is EINVAL");
+	error = kl_backend_session_authenticate(backend, "kei", 0x80U, "x");
+	check(error == EINVAL, "an unknown style is EINVAL");
+	error = kl_backend_session_unlock(backend, KL_BACKEND_STYLE_PASSWORD, "x");
+	check(error == ENOTSUP, "the login screen has no unlock");
+	error = kl_backend_session_set_pin(backend, "x", "123456");
+	check(error == ENOTSUP, "the login screen sets no PIN");
+
+	/* TOUCH answers nothing; FAIL with its word answers AUTH with EACCES. */
+	(void)write(ends[0], "TOUCH\nFAIL bad-secret\n", 22U);
 	kl_backend_tick(backend, 1000U);
 	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_AUTH && answer_error == EACCES, "FAIL answers AUTH with EACCES");
+	check(strcmp(kl_backend_session_reason(backend), "bad-secret") == 0, "the refusal's word is kept");
+
+	/* ERROR busy is EBUSY. */
+	(void)kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PIN, "123456");
+	(void)read_line(ends[0], "AUTH kei pin\n123456\n");
+	(void)write(ends[0], "ERROR busy\n", 11U);
+	kl_backend_tick(backend, 1000U);
+	check(answer_count == 2U && answer_error == EBUSY && kl_backend_session_reason(backend)[0] == '\0', "ERROR busy is EBUSY");
+	answer_count = 1U;
 
 	/* ERROR and OK, split over two reads. */
-	(void)kl_backend_session_authenticate(backend, "kei", "secret");
-	(void)read_line(ends[0], "AUTH kei secret\n");
+	(void)kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PASSWORD, "secret");
+	(void)read_line(ends[0], "AUTH kei password\nsecret\n");
 	(void)write(ends[0], "ERR", 3U);
 	kl_backend_tick(backend, 1001U);
 	check(answer_count == 1U, "half a line answers nothing");
@@ -245,12 +270,14 @@ test_login_screen(
 	(void)close(ends[1]);
 }
 
-/* A session: LOGOUT and QUIT with RELEASED after the stop, UNLOCK, and sessiond leaving. */
+/* A session: LOGOUT and QUIT with RELEASED after the stop, UNLOCK, STYLES, ENROLLED, the PIN, and sessiond leaving. */
 static void
 test_session(
 	void)
 {
 	struct kl_backend *backend;
+	unsigned pin;
+	unsigned keys;
 	int ends[2];
 	int error;
 
@@ -263,17 +290,45 @@ test_session(
 	if (backend == NULL)
 		return;
 	check(kl_backend_session_managed(backend) == 1, "a session sessiond started is managed");
-	error = kl_backend_session_authenticate(backend, "kei", "x");
+	error = kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PASSWORD, "x");
 	check(error == ENOTSUP, "a session has no log in");
 	error = kl_backend_power_action(backend, KL_BACKEND_POWER_POWEROFF);
 	check(error == ENOTSUP, "a session has no power action");
 
 	/* UNLOCK and OK. */
-	error = kl_backend_session_unlock(backend, "secret");
-	check(error == 0 && read_line(ends[0], "UNLOCK secret\n"), "UNLOCK secret written");
+	error = kl_backend_session_unlock(backend, KL_BACKEND_STYLE_PIN, "123456");
+	check(error == 0 && read_line(ends[0], "UNLOCK pin\n123456\n"), "UNLOCK pin and the PIN written");
 	(void)write(ends[0], "OK\n", 3U);
 	kl_backend_tick(backend, 2000U);
 	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_UNLOCK && answer_error == 0, "OK answers UNLOCK");
+
+	/* A session's STYLES names nobody. */
+	error = kl_backend_session_styles(backend, NULL);
+	check(error == 0 && read_line(ends[0], "STYLES\n"), "a session's STYLES written");
+	(void)write(ends[0], "STYLES password\n", 16U);
+	kl_backend_tick(backend, 2000U);
+	check(answer_count == 2U && kl_backend_session_styles_get(backend) == KL_BACKEND_STYLE_PASSWORD, "STYLES password answered");
+
+	/* ENROLLED: what is enrolled. */
+	error = kl_backend_session_enrolled(backend);
+	check(error == 0 && read_line(ends[0], "ENROLLED\n"), "ENROLLED written");
+	(void)write(ends[0], "ENROLLED pin=1 fido2=2\n", 23U);
+	kl_backend_tick(backend, 2000U);
+	kl_backend_session_enrolled_get(backend, &pin, &keys);
+	check(answer_count == 3U && answer_request == KL_BACKEND_SESSION_ENROLLED && pin == 1U && keys == 2U, "ENROLLED answered");
+
+	/* ENROLL pin with the password and the PIN; REMOVE pin with the password. */
+	error = kl_backend_session_set_pin(backend, "secret", "123456");
+	check(error == 0 && read_line(ends[0], "ENROLL pin\nsecret\n123456\n"), "ENROLL pin and its lines written");
+	(void)write(ends[0], "OK\n", 3U);
+	kl_backend_tick(backend, 2000U);
+	check(answer_count == 4U && answer_request == KL_BACKEND_SESSION_ENROLL && answer_error == 0, "OK answers ENROLL");
+	error = kl_backend_session_set_pin(backend, "secret", "");
+	check(error == 0 && read_line(ends[0], "REMOVE pin\nsecret\n"), "REMOVE pin and the password written");
+	(void)write(ends[0], "FAIL locked\n", 12U);
+	kl_backend_tick(backend, 2000U);
+	check(answer_count == 5U && answer_error == EACCES && strcmp(kl_backend_session_reason(backend), "locked") == 0, "FAIL locked answers REMOVE");
+	answer_count = 1U;
 
 	/* LOGOUT once, QUIT, then RELEASED after the stop. */
 	error = kl_backend_session_logout(backend);

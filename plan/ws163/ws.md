@@ -19,6 +19,14 @@ greeter と lock の画面で数字 6 桁の PIN で login・unlock する。PIN
 → PIN の hash は利用者の `~/.config/keiland/pin`、確かめは compositor（lock の画面）、sessiond に口を足さない。p002〜p003 の中身を改めた（実行前）。
 greeter の PIN の login は sessiond の口無しでは安全に作れないので、判断 G1（p001 §9.6）待ち。
 
+## WS172 p002 による置き換え（2026-10-05、P1）
+
+WS172 の判断 P6（ユーザー承認）で mock を外した: compositor の `pin-store.c`・6 桁の判定・forgive・lock の画面の自前の確かめを削除し、
+PIN は `/sbin/passkey` が `/etc/passkey` に置き、greeter と lock の画面は sessiond の `STYLES`・`AUTH name pin`・`UNLOCK pin` で確かめる。
+Settings の `set_pin` は sessiond の `ENROLL pin`・`REMOVE pin` に繋ぎ替え、PIN の有無は `kl_system_account_v1` の新しい `enrolled` event（manager v11、KL_VERSION 36）で知る。
+`~/.config/keiland/pin` は取り込まず、compositor が session の始めに消す。この WS の試験（`pin-store-host-test`・`pin-lock-guest.sh`）は対象の code が無くなったので削除した。
+残りの Phase の扱い（cancel か WS172 への移管か）は Q1 が決める。
+
 ## Phase
 
 | Phase | 内容 | Status | 依存 |

@@ -866,6 +866,20 @@ int kl_backend_account_administer(const char *password, const char *operation, c
 #define KL_BACKEND_SESSION_UNLOCK	2U	/* a session's lock screen */
 #define KL_BACKEND_SESSION_POWER	3U	/* kl_backend_power_action */
 #define KL_BACKEND_SESSION_SERVICE	4U	/* kl_backend_sharing_request (ws089-p025) */
+#define KL_BACKEND_SESSION_STYLES	5U	/* kl_backend_session_styles (ws172-p002) */
+#define KL_BACKEND_SESSION_ENROLL	6U	/* kl_backend_session_set_pin (ws172-p002) */
+#define KL_BACKEND_SESSION_ENROLLED	7U	/* kl_backend_session_enrolled (ws172-p002) */
+
+/*
+ * The ways to log in or unlock (ws172-p002, docs/architecture/security.md
+ * "Login authentication"): the password, the PIN, a security key.
+ */
+#define KL_BACKEND_STYLE_PASSWORD	0x1U
+#define KL_BACKEND_STYLE_PIN		0x2U
+#define KL_BACKEND_STYLE_KEY		0x4U
+
+/* The longest reason word of a refusal, with its end. */
+#define KL_BACKEND_SESSION_REASON	24U
 
 /* Why session_stop is called. */
 #define KL_BACKEND_SESSION_QUIT		1U	/* the session's Log Out was answered: end */
@@ -891,18 +905,54 @@ int kl_backend_session_ready(struct kl_backend *backend);
 int kl_backend_session_logout(struct kl_backend *backend);
 
 /*
- * Asks the manager to log user in with password (the login screen).
+ * Asks the manager to log user in with secret in style (a
+ * KL_BACKEND_STYLE_*: the password, or the PIN) on the login screen.
  * Returns 0 when asked, EBUSY while another request waits for its answer,
- * ENOTSUP, EINVAL, or the error of asking.  Nothing of the password is
- * kept.
+ * ENOTSUP, EINVAL, or the error of asking.  Nothing of the secret is kept.
+ * A refusal answers EACCES, and kl_backend_session_reason gives its word
+ * (bad-secret, locked, pin-off, timeout, ...).
  */
-int kl_backend_session_authenticate(struct kl_backend *backend, const char *user, const char *password);
+int kl_backend_session_authenticate(struct kl_backend *backend, const char *user, unsigned style, const char *secret);
 
 /*
- * Asks the manager to unlock the session's lock screen with password.
- * Returns as kl_backend_session_authenticate.
+ * Asks the manager to unlock the session's lock screen with secret in
+ * style.  Returns as kl_backend_session_authenticate.
  */
-int kl_backend_session_unlock(struct kl_backend *backend, const char *password);
+int kl_backend_session_unlock(struct kl_backend *backend, unsigned style, const char *secret);
+
+/*
+ * Asks the manager which styles user (the login screen), or the session's
+ * own user (user NULL, a session), may use now; the answer is
+ * session_answer(KL_BACKEND_SESSION_STYLES, 0), and
+ * kl_backend_session_styles_get then gives the KL_BACKEND_STYLE_* bits
+ * (the password alone until an answer came).  Returns as
+ * kl_backend_session_authenticate.
+ */
+int kl_backend_session_styles(struct kl_backend *backend, const char *user);
+unsigned kl_backend_session_styles_get(const struct kl_backend *backend);
+
+/*
+ * Sets the session user's PIN (six digits), or removes it when pin is
+ * empty, checked by the user's password (a session).  The answer is
+ * session_answer(KL_BACKEND_SESSION_ENROLL, error): 0, EACCES (a wrong
+ * password, or another refusal: kl_backend_session_reason), EIO.  Returns
+ * as kl_backend_session_authenticate.
+ */
+int kl_backend_session_set_pin(struct kl_backend *backend, const char *password, const char *pin);
+
+/*
+ * Asks the manager what the session user has enrolled; the answer is
+ * session_answer(KL_BACKEND_SESSION_ENROLLED, 0), and
+ * kl_backend_session_enrolled_get then gives whether a PIN is set and how
+ * many security keys are registered (0 and 0 until an answer came).
+ */
+int kl_backend_session_enrolled(struct kl_backend *backend);
+void kl_backend_session_enrolled_get(const struct kl_backend *backend, unsigned *pin, unsigned *keys);
+
+/*
+ * The word of the last refusal (FAIL reason), empty when it had none.
+ */
+const char *kl_backend_session_reason(const struct kl_backend *backend);
 
 /*
  * Tells whether a session manager started this session and still listens

@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*). */
-#define KL_VERSION	35U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled). */
+#define KL_VERSION	36U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1207,6 +1207,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_CHANGED_DEVICES	0x20U
 #define KL_SYSTEM_CHANGED_RESULT	0x40U	/* a request was answered */
 #define KL_SYSTEM_CHANGED_SHARING	0x80U	/* Remote Login's state (KL_VERSION 30) */
+#define KL_SYSTEM_CHANGED_ENROLLED	0x100U	/* the user's PIN and security keys (KL_VERSION 36) */
 
 /*
  * The network: whether the daemon is reached, whether the machine is
@@ -1565,16 +1566,25 @@ int kl_system_account_administer(struct kl_system *system, const char *password,
 
 /*
  * Asks for the six-digit PIN of the user the desktop runs as to be set to
- * pin, or removed when pin is empty (KL_VERSION 34, ws163-p003; a mock: the
- * lock screen takes the PIN, from the user's ~/.config/keiland/pin),
+ * pin, or removed when pin is empty (KL_VERSION 34, ws163-p003; since
+ * ws172-p002 the session manager keeps it, in /etc/passkey on zedBSD),
  * answered by a result (kl_system_take_result): 0, EPERM when current (the
- * user's password) is wrong, EINVAL when pin is not six digits or the
- * password is six digits, ENOTSUP without a session manager, EBUSY while
- * another change is under way, EIO when it failed.  Returns 0 when asked,
- * ENOTSUP without KL_SYSTEM_HAS_PIN, or EINVAL.  The caller wipes its
- * copies; the library keeps none.
+ * user's password) is wrong (the refusal's word, as
+ * kl_system_account_refusal gives it, says why: bad-secret, locked, ...),
+ * EINVAL when pin is not six digits, ENOTSUP without a session manager,
+ * EBUSY while another change is under way, EIO when it failed.  Returns 0
+ * when asked, ENOTSUP without KL_SYSTEM_HAS_PIN, or EINVAL.  The caller
+ * wipes its copies; the library keeps none.
  */
 int kl_system_account_set_pin(struct kl_system *system, const char *current, const char *pin, uint32_t *request);
+
+/*
+ * Gives whether the user has a PIN (pin 1) and how many security keys are
+ * registered (KL_VERSION 36, ws172-p002), as the compositor last told
+ * (KL_SYSTEM_CHANGED_ENROLLED says it changed).  Returns 1 when known, 0
+ * before the compositor told it (or one that cannot: both 0).
+ */
+int kl_system_account_enrolled(const struct kl_system *system, unsigned *pin, unsigned *keys);
 
 /*
  * Copies the word of a refused kl_system_account_administer request

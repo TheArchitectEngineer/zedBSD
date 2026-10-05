@@ -18,7 +18,7 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 /* The bytes kept of the session manager's lines not read whole yet. */
-#define KL_BACKEND_SESSION_LINE	256U
+#define KL_BACKEND_SESSION_LINE	512U
 
 /*
  * The compositor's backend.
@@ -33,7 +33,9 @@
  * session_used bytes of a line not read whole; session_gone is set once
  * the manager closed a session's descriptor (it no longer listens);
  * logout_asked and logout_ms say a Log Out was asked and when the first
- * tick after it saw it (0 until then).
+ * tick after it saw it (0 until then).  session_styles, session_pin,
+ * session_keys and session_reason are what the manager last answered to
+ * STYLES, ENROLLED and a refusal (ws172-p002).
  *
  * events_descriptor is where the system's events are read (ws132-p003),
  * or -1 when the system has none.
@@ -48,6 +50,10 @@ struct kl_backend {
 	unsigned session_gone;
 	unsigned logout_asked;
 	uint64_t logout_ms;
+	unsigned session_styles;
+	unsigned session_pin;
+	unsigned session_keys;
+	char session_reason[KL_BACKEND_SESSION_REASON];
 	int events_descriptor;
 	/* Remote Login's state as sessiond last answered it (ws089-p025). */
 	struct kl_backend_sharing sharing;
