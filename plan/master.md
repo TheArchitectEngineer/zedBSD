@@ -71,6 +71,8 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 夜 ラップアップ（ユーザーの指示で P1・P2・T1 を終了）**: 全部の担当が終了。main 0041dbfd 以降。T1-203（WS172 p002 の PIN の login）が **FAIL**: greeter の password の login が起きない。WS172 p002 は main に merge 済みなので、**次の作業の最初に graphical login の image が壊れていないかを確かめる**（P1 の解析）。未 merge: agent/p1 の WS130 p002（67801dab、T1-206 待ち）と WS168 p002 の kernel（730e8f55、arm64・sparcv9・x68k の build の確認も）。未実施の T1: T1-206・T1-202・T1-205・T1-207。5330 の AAT の image は T1-202 と直しの後に作り直す。WS168 の libc の `<sandbox.h>` の sysroot への追加は Q1 が許可する（toolchain の lock）。
+
 - **2026-10-05 夜 ユーザーの決定（まとめての質問への回答）**: 次を**担当の推奨どおり**に決定。
   - WS156 通知: H1 popup の大きさは案、H2 log は Super+N、H3 memory で 100 件、H4 全画面・lock 中は log だけ（URGENT は全画面にも）、H5 重なりは 1.5 秒に縮める、H7 bar の媒体の icon を通知に置き換える。
   - WS164 Welcome: H1 各 account の最初の login だけ、H2 Settings の mode で終わりに Today、H3 5 段。

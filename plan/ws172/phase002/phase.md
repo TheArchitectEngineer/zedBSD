@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172-p002 -->
 # ws172-p002: /sbin/passkey の password・PIN と sessiond の外部の認証
 
-Status: in-progress（実装・host 試験済み、T1 待ち。2026-10-05 P1）
+Status: uncleared（2026-10-05 夜 T1-203 FAIL: greeter の password の login が起きない（sessiond.log に `GREETER failed … ZWL EXIT frames=0 error=5` が続き CONSOLE へ）。試験の image の名前（hdd-image.img）と su の欠けも。証拠は T1 の台帳 T1-203。再開: 次の P1 が解析と修正、main には merge 済みなので graphical login の image への影響を先に確かめる）
 WS: [ws172](../ws.md)
 設計: [phase001](../phase001/phase.md) の §1〜§12（第 2 版）と判断 P1〜P10（ユーザー承認、2026-10-05）、docs/architecture/security.md の「Login authentication」、keiland.md の login の節
 
