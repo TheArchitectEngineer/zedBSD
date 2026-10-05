@@ -6,8 +6,8 @@
 #  1. The default: --method=ja, two languages; Alt+Space in the probe: Japanese, "kanji" composes (preedit かんじ).
 #  2. ime.method 0 (keiland-settings set): zdesktop starts it again with --method=none, one language; Alt+Space does not
 #     leave direct input.
-#  3. ime.method 2: --method=skk; Alt+Space: skk; "Kanji" then Space in the probe: the preedit ▼漢字 (SKK's dictionary),
-#     Enter puts 漢字 in.
+#  3. ime.method 2: --method=skk; Alt+Space: skk; "Kanji" then Space in the probe: the preedit ▼感じ (the first
+#     candidate of SKK-JISYO.X's かんじ /感じ/漢字/幹事/完治/), Space again ▼漢字, Enter puts 漢字 in.
 #  4. ime.method 1: --method=ja again.
 #  5. Settings' Languages page (settings languages): the three choices drawn (LANGUAGES ... in its log on a click on
 #     the SKK switch through QMP), the setting is 2 and zdesktop starts SKK (languages.png).
@@ -97,6 +97,8 @@ keys '<alt-spc>'
 expect_log /tmp/zdesktop.log 'ZWL IME language=skk'
 keys 'Kanji'
 expect_log /tmp/p3.log 'preedit=▽かんじ '
+keys ' '
+expect_log /tmp/p3.log 'preedit=▼感じ '
 keys ' '
 expect_log /tmp/p3.log 'preedit=▼漢字 '
 keys '\n'

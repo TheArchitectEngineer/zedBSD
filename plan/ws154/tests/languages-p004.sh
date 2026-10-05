@@ -22,7 +22,7 @@ check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNT
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 0.7; }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[i]me-probe|[k]eiland-ime" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[i]me-probe|[k]eiland-ime" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 env='export XDG_RUNTIME_DIR=/tmp HOME=/root WAYLAND_DISPLAY=wayland-0'
-start_desktop="$env; rm -f /tmp/wayland-0 /root/.config/kei/ime/skk-jisyo; /bin/keiland-settings set ime.method 2 >/dev/null 2>&1; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
+start_desktop="$env; rm -f /tmp/wayland-0 /root/.config/kei/ime/skk-jisyo; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started"
 status=0
 
@@ -53,6 +53,8 @@ start_probe() {
 # 1. SKK, probe A in katakana.
 guest "$stop_all" >/dev/null
 guest "$start_desktop" >/dev/null
+# keiland-settings is a Wayland client of zdesktop: the method is set once the desktop runs, and it starts SKK at once.
+guest "$env; /bin/keiland-settings set ime.method 2 > /tmp/set.log 2>&1; echo set" >/dev/null
 expect_log /tmp/zdesktop.log 'ZWL IME started pid=[0-9]+ client=[0-9]+ --method=skk'
 start_probe /tmp/a.log probe-a
 keys '<alt-spc>'
