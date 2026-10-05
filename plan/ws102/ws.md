@@ -115,3 +115,7 @@ Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p01
 ## 2026-10-06 UAT のフィードバック
 
 - BUG-229 App Home の開閉で OSK が消える、BUG-230 引き出しを Notes と同じ扇形＋文字に、BUG-231 full keyboard を IME に通す（a → あ、漢字の変換）→ **新しい Phase**
+
+## Phase（2026-10-06 追加: 再設計）
+
+- [ws102-p025](phase025/phase.md) 設計: OSK の残り（App Home で消える・引き出し・full keyboard の IME）（planned、実装 p026）
