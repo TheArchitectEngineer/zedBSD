@@ -60,11 +60,11 @@ remain as traceable history and are not new implementation work.
 | [BUG-190](bugs/BUG-190.md) | タップダウン（触れて押した瞬間）が全ての UI の要素で押下として効かない（右上の音量の slider はダブルタップでのスライドだけ動く） | reproduced（実機） / tracking | UAT-3 2026-10-04 | WS099（compositor の入力の変換（[ticket](bugs/BUG-190.md)） |
 | [BUG-191](bugs/BUG-191.md) | Settings の key のリピートの設定が実際の device の挙動に効かない（5330 の内蔵キーボード） | reproduced（実機） / scheduled（q726: PS/2 の typematic が press で出ていた、kernel で repeat に。QEMU・UAT 待ち） | UAT-3 2026-10-04 | WS089（Settings の Keyboard の頁）・BUG-172 と同じ根（[ticket](bugs/BUG-191.md)） |
 | [BUG-192](bugs/BUG-192.md) | mount 中の USB の記憶装置を抜いても disk が残り事象が出ない（volumed が抜去を知れない） | reproduced（QEMU） / resolved（2026-10-05、T1-150） | T1-139 2026-10-05 | WS132・kernel の USB storage（P1、q712 の後） |
-| [BUG-193](bugs/BUG-193.md) | 起動の logo の animation が最初は速く、その後に通常に戻る（実時間で進んでいない） | reproduced（実機） / tracking | UAT 2026-10-05 午後 | 起動の splash |
+| [BUG-193](bugs/BUG-193.md) | 起動の logo の animation が最初は速く、その後に通常に戻る（実時間で進んでいない） | reproduced（実機） / scheduled（P1 7d973933 で直し、実機は UAT） | UAT 2026-10-05 午後 | 起動の splash |
 | [BUG-194](bugs/BUG-194.md) | Terminal を全画面にすると戻れない。F11 で全画面にも戻すこともできない（全画面から戻る key を compositor が持っていない） | reproduced（実機） / resolved（2026-10-05、QEMU T1-188、実機は UAT） | UAT 2026-10-05 午後 | Terminal・compositor（WS099） |
-| [BUG-195](bugs/BUG-195.md) | 実機 5330 で DSDT が読めない（AML の stack の予算を超える、E2BIG）。ACPI の namespace が無く、native の touchpad・I2C・蓋・電池・LPS0 が実機で働かない | reproduced（実機） / tracking（高） | UAT 2026-10-05 午後 | WS049・WS159（P1） |
-| [BUG-196](bugs/BUG-196.md) | 実機 5330 で電源ボタンを押すと直ちに電源が切れる（ACPI の attach の失敗で ACPI の mode に入っていない見込み） | reproduced（実機） / tracking（高） | UAT 2026-10-05 午後 | WS049・WS132（P1、BUG-195 と同じ根） |
-| [BUG-197](bugs/BUG-197.md) | 実機 5330 で shutdown しても電源が落ちない（DSDT の `\_S5` が引けない見込み） | reproduced（実機） / tracking（高） | UAT 2026-10-05 午後 | WS049（P1、BUG-195 と同じ根） |
+| [BUG-195](bugs/BUG-195.md) | 実機 5330 で DSDT が読めない（AML の stack の予算を超える、E2BIG）。ACPI の namespace が無く、native の touchpad・I2C・蓋・電池・LPS0 が実機で働かない | reproduced（実機） / scheduled（P1 1eff1521 で直し、host・QEMU の回帰 PASS、実機は UAT） | UAT 2026-10-05 午後 | WS049・WS159（P1） |
+| [BUG-196](bugs/BUG-196.md) | 実機 5330 で電源ボタンを押すと直ちに電源が切れる（ACPI の attach の失敗で ACPI の mode に入っていない見込み） | reproduced（実機） / scheduled（P1 1eff1521 で直し、実機は UAT） | UAT 2026-10-05 午後 | WS049・WS132（P1、BUG-195 と同じ根） |
+| [BUG-197](bugs/BUG-197.md) | 実機 5330 で shutdown しても電源が落ちない（DSDT の `\_S5` が引けない見込み） | reproduced（実機） / scheduled（P1 1eff1521 で直し、実機は UAT） | UAT 2026-10-05 午後 | WS049（P1、BUG-195 と同じ根） |
 | [BUG-198](bugs/BUG-198.md) | amd64 の kernel が上限 16 MiB の手前（余り約 440 KiB、.bss が 13.7 MiB） | reproduced（link） / resolved（2026-10-05、T1-192） | P1 2026-10-05 | overlay の inode の表を起動時の確保へ（P1 q764、余り 3.2 MiB 以上）、T1 の UEFI・BIOS の boot 待ち |
 | [BUG-199](bugs/BUG-199.md) | ws001 の overlay の host 試験が link できない（古い試験） | reproduced（host） / tracking | P1 2026-10-05 | WS001 の試験 |
 | [BUG-200](bugs/BUG-200.md) | plan/ws081/tests/run-pdftouch.sh が壊れている（古い試験） | reproduced（host） / tracking | P2 2026-10-05 | WS081 の試験 |
