@@ -52,6 +52,20 @@ cat build/ws074-acid-base/report.json | python3 -m json.tool | head -60
 記録すること: Acid3 の score、`different_pixels`、`agreement`、`exceptions` の数。`build/ws074-acid-base/acid3-side.png`（左 test・中 reference・右 差を 4 倍に明るくした物）の path。
 q579 の値（score 100/100、37.04%）と大きく違えば、その旨を記録する（今の main の状態が基準）。
 
+### 2b. 参照の描画を Chrome と比べる（2026-10-05 ユーザーの指示で追加、約 15 分）
+
+自前の browser で描いた参照（`acid3-reference.png`）が正しいかを、Chrome（headless）の描画と比べる。違いを「参照の側（単純な CSS の誤り）」と「test の側（難しい機能の誤り）」に分けるため。
+
+```sh
+ls plan/ws074/tests/chrome-shot.sh plan/ws074/tests/chrome-fonts.sh   # 既存の道具、使い方は各 script の先頭の注記
+# Chrome で reference を 800x600・同じ字形（userland/desktop/fonts/）で撮る（runner が作る reference の一時の写しと同じ HTML。`{{host}}` は invalid.test）
+python3 plan/ws074/tests/acid3-regions.py build/ws074-acid-base/acid3-reference.png build/ws074-acid-base/chrome-reference.png > build/ws074-acid-base/ref-vs-chrome.txt
+```
+
+- Chrome が無い・撮れない時は、その旨を記録して手順 3 に進む（止めない）。
+- 字形の anti-alias の違いだけの小さな差は、参照の誤りに数えない（差の塊の大きさと形で判断し、記録する）。
+- 手順 3 の領域の選び方に次を加える: **参照が Chrome と一致していて、test だけが違う領域**を選ぶ。参照の側に大きな差があれば、それは別の候補（単純な CSS の不具合）として記録する。
+
 ### 3. 差を領域に分けて、1 つを選ぶ（約 15 分）
 
 差の画素を、画面の要素ごとに分ける。Acid3 の画面は、上の 6 つの色の箱（bucket）、得点の文字、その他の背景から成る。
