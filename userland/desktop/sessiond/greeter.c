@@ -142,7 +142,7 @@ sessiond_greeter_run(
 		poll_entry.revents = 0;
 		ready = poll(&poll_entry, 1, 1000);
 		if (ready == 0) {
-			sessiond_seat_give(greeter_account.passwd.pw_uid, greeter_account.passwd.pw_gid);
+			sessiond_seat_give(greeter_account.passwd.pw_uid, greeter_account.passwd.pw_gid, 0);
 			continue;
 		}
 
@@ -340,7 +340,7 @@ greeter_start(
 		return error;
 
 	/* The seat is the greeter's while it runs. */
-	sessiond_seat_give(greeter_account->passwd.pw_uid, greeter_account->passwd.pw_gid);
+	sessiond_seat_give(greeter_account->passwd.pw_uid, greeter_account->passwd.pw_gid, 0);
 
 	/* The socket the greeter asks on. */
 	error = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);

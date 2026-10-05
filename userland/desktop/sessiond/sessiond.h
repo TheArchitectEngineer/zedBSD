@@ -84,7 +84,7 @@ void sessiond_greeter_go(struct sessiond *daemon);
 int sessiond_read_line(int descriptor, char *line, size_t size, int timeout_ms);
 long long sessiond_milliseconds(void);
 int sessiond_session_run(struct sessiond *daemon, struct sessiond_account *account);
-void sessiond_seat_give(uid_t uid, gid_t gid);
+void sessiond_seat_give(uid_t uid, gid_t gid, int keys);
 void sessiond_seat_restore(void);
 void sessiond_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 

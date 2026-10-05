@@ -132,7 +132,7 @@ sessiond_session_run(
 	session_wrong = 0U;
 
 	/* The seat is the user's now (the greeter keeps what it has open until it ends). */
-	sessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid);
+	sessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid, 1);
 
 	/* The user's runtime directory (without it, the greeter left on the screen goes). */
 	error = session_runtime(account, directory, sizeof(directory));
@@ -221,7 +221,7 @@ sessiond_session_run(
 
 		/* Any new input device is the user's too, until the session hands the seat to the greeter. */
 		if (!leaving)
-			sessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid);
+			sessiond_seat_give(account->passwd.pw_uid, account->passwd.pw_gid, 1);
 	}
 
 	/* The session has ended: what is left of it goes, and the record says so. */
