@@ -38,13 +38,19 @@
 #define PH_VIEW_TITLE		96
 #define PH_VIEW_ROW		68
 
+/* The cards on glass: the margin round them, the gap between, their corner. */
+#define PH_VIEW_MARGIN		12
+#define PH_VIEW_GAP		10
+#define PH_VIEW_CARD_RADIUS	16.0f
+
 /* The timeline's header, the field's band, a bubble's margins and corner, and its widest share. */
 #define PH_VIEW_HEADER		64
 #define PH_VIEW_COMPOSER	60
 #define PH_VIEW_PAD_X		12
 #define PH_VIEW_PAD_Y		8
 #define PH_VIEW_SIDE		16
-#define PH_VIEW_RADIUS		18.0f
+#define PH_VIEW_RADIUS		14.0f
+#define PH_VIEW_TAIL		4.0f
 #define PH_VIEW_BUBBLE_SHARE	0.64
 #define PH_VIEW_BUBBLE_MAX	520
 #define PH_VIEW_BUBBLE_MIN	160
@@ -74,10 +80,17 @@
 #define PH_ID_ATTACH		8U
 #define PH_ID_BACK		9U
 
-/* The colours of the bubbles: the person's, one's own over RCS and over the carrier. */
-#define PH_COLOR_INCOMING	KL_RGB(0xe9e9eb)
+/*
+ * The colors: the person's bubbles and cards (on glass, see-through
+ * white), one's own over RCS (the accent) and over the carrier (teal), a
+ * call's card, and the contacts' ground on an opaque window.
+ */
+#define PH_COLOR_INCOMING	KL_RGB(0xedf1f6)
+#define PH_COLOR_INCOMING_GLASS	KL_RGBA(0xffffff, 205)
 #define PH_COLOR_RCS		KL_RGB(0x2f7cf6)
-#define PH_COLOR_SMS		KL_RGB(0x34c759)
+#define PH_COLOR_SMS		KL_RGB(0x0f9d8a)
+#define PH_COLOR_CARD		KL_RGB(0xf7f8fa)
+#define PH_COLOR_CARD_GLASS	KL_RGBA(0xffffff, 170)
 #define PH_COLOR_SIDEBAR	KL_RGB(0xf4f6f9)
 #define PH_COLOR_WHITE		KL_RGB(0xffffff)
 
@@ -95,6 +108,7 @@ static const float ph_view_handset[] = {
 	17.96f, 13.11f, 17.86f, 12.87f, 17.71f, 12.67f, 17.51f, 12.52f, 17.27f, 12.42f
 };
 
+static void view_layout(const struct ph_view *view, int width, int height, struct kl_rect *sidebar, struct kl_rect *conversation);
 static size_t view_filtered(const struct ph_view *view, size_t *indices, size_t size);
 static int view_contains(const char *text, const char *part);
 static int view_lower(int c);
@@ -293,56 +307,85 @@ ph_view_draw(
 	struct kl_rect whole;
 	struct kl_rect sidebar;
 	struct kl_rect conversation;
-	int share;
 
-	/* The ground. */
-	share = 0;
+	/* The ground: clear on glass (the desktop shows between the cards), else white. */
 	whole.x = 0;
 	whole.y = 0;
 	whole.width = width;
 	whole.height = height;
-	kl_canvas_fill(style->canvas, &whole, PH_COLOR_WHITE);
+	if (view->glass) {
+		kl_canvas_clear(style->canvas);
+	} else {
+		kl_canvas_fill(style->canvas, &whole, PH_COLOR_WHITE);
+	}
 
-	/* A narrow window shows the contacts or the timeline across the whole of it. */
+	/* Where the contacts and the timeline go (a narrow window shows one of them). */
 	view->narrow = 0;
 	if (width < PH_VIEW_NARROW)
 		view->narrow = 1;
+	view_layout(view, width, height, &sidebar, &conversation);
 
-	/* The contacts or the timeline alone, or the two side by side. */
-	if (view->narrow) {
-		/* The one shown. */
-		if (view->opened)
-			view_conversation(view, ui, style, &whole, now_us);
-		else
-			view_sidebar(view, ui, style, &whole, now_us);
-	} else {
-		/* The contacts at the left, a third of the window within limits. */
-		share = (int)((double)width * PH_VIEW_SIDEBAR_SHARE);
-		if (share < PH_VIEW_SIDEBAR_MIN)
-			share = PH_VIEW_SIDEBAR_MIN;
-		else if (share > PH_VIEW_SIDEBAR_MAX)
-			share = PH_VIEW_SIDEBAR_MAX;
-		sidebar = whole;
-		sidebar.width = share;
-		conversation = whole;
-		conversation.x = share;
-		conversation.width = width - share;
+	/* On glass, each stands on a card of its own. */
+	if (view->glass && sidebar.width > 0)
+		kl_canvas_round(style->canvas, (float)sidebar.x, (float)sidebar.y, (float)sidebar.width, (float)sidebar.height, PH_VIEW_CARD_RADIUS, style->theme->glass_sidebar);
+	if (view->glass && conversation.width > 0)
+		kl_canvas_round(style->canvas, (float)conversation.x, (float)conversation.y, (float)conversation.width, (float)conversation.height, PH_VIEW_CARD_RADIUS, style->theme->glass_content);
+
+	/* The contacts and the timeline, those shown. */
+	if (sidebar.width > 0)
 		view_sidebar(view, ui, style, &sidebar, now_us);
+	if (conversation.width > 0)
 		view_conversation(view, ui, style, &conversation, now_us);
-	}
 
-	/* The notice over the bottom while it shows. */
+	/* The notice over the bottom of the timeline (or of the window) while it shows. */
 	if (view->notice != NULL && now_us < view->notice_until) {
-		/* Over the timeline, above the field. */
-		conversation = whole;
-		if (!view->narrow) {
-			conversation.x = share;
-			conversation.width = width - share;
-		}
+		/* The timeline's card, or the window when it is not shown. */
+		if (conversation.width <= 0)
+			conversation = whole;
 
-		/* The chip in the middle of it. */
-		kl_chip(style, conversation.x + conversation.width / 2, height - PH_VIEW_COMPOSER - 14, view->notice);
+		/* The chip in the middle of it, above the field. */
+		kl_chip(style, conversation.x + conversation.width / 2, conversation.y + conversation.height - PH_VIEW_COMPOSER - 14, view->notice);
 	}
+}
+
+/*
+ * Lists the parts of the view that stand on zdesktop's glass (the cards
+ * of the contacts and of the timeline) for a window of a size, into up to
+ * capacity panels; returns how many there are.
+ */
+size_t
+ph_view_panels(
+	struct ph_view *view,
+	int width,
+	int height,
+	struct kl_glass_panel *panels,
+	size_t capacity)
+{
+	struct kl_rect cards[2];
+	size_t count;
+	size_t i;
+
+	/* The two cards, as the frame draws them. */
+	view_layout(view, width, height, &cards[0], &cards[1]);
+	count = 0;
+	for (i = 0; i < 2U && count < capacity; i++) {
+		/* A card not shown has no panel. */
+		if (cards[i].width <= 0 || cards[i].height <= 0)
+			continue;
+
+		/* The card's panel. */
+		memset(&panels[count], 0, sizeof(panels[count]));
+		panels[count].x = cards[i].x;
+		panels[count].y = cards[i].y;
+		panels[count].width = cards[i].width;
+		panels[count].height = cards[i].height;
+		panels[count].radius = (int32_t)PH_VIEW_CARD_RADIUS;
+		panels[count].kind = KL_GLASS_CARD;
+		count++;
+	}
+
+	/* The panels listed. */
+	return count;
 }
 
 /*
@@ -363,6 +406,59 @@ ph_view_wait(
 	/* The notice's time left, rounded up. */
 	left = view->notice_until - now_us;
 	return (int)(left / 1000U) + 1;
+}
+
+/*
+ * Lays out the contacts and the timeline in a window of a size: side by
+ * side, the contacts a third of the width within limits, or in a narrow
+ * window the one shown across it (the other zero wide); on glass, as
+ * cards with a margin round them and a gap between.
+ */
+static void
+view_layout(
+	const struct ph_view *view,
+	int width,
+	int height,
+	struct kl_rect *sidebar,
+	struct kl_rect *conversation)
+{
+	int margin;
+	int gap;
+	int share;
+
+	/* The margin and the gap: only cards on glass have them. */
+	margin = 0;
+	gap = 0;
+	if (view->glass) {
+		margin = PH_VIEW_MARGIN;
+		gap = PH_VIEW_GAP;
+	}
+
+	/* Both across the window within the margin, to begin with. */
+	sidebar->x = margin;
+	sidebar->y = margin;
+	sidebar->width = width - 2 * margin;
+	sidebar->height = height - 2 * margin;
+	*conversation = *sidebar;
+
+	/* A narrow window: the one shown alone. */
+	if (view->narrow) {
+		if (view->opened)
+			sidebar->width = 0;
+		else
+			conversation->width = 0;
+		return;
+	}
+
+	/* The contacts at the left, a third of the window within limits; the timeline the rest. */
+	share = (int)((double)width * PH_VIEW_SIDEBAR_SHARE);
+	if (share < PH_VIEW_SIDEBAR_MIN)
+		share = PH_VIEW_SIDEBAR_MIN;
+	else if (share > PH_VIEW_SIDEBAR_MAX)
+		share = PH_VIEW_SIDEBAR_MAX;
+	sidebar->width = share - margin;
+	conversation->x = share + gap;
+	conversation->width = width - share - gap - margin;
 }
 
 /*
@@ -489,12 +585,14 @@ view_sidebar(
 	int selected;
 	int unread;
 
-	/* The column's ground, and its edge against the timeline. */
-	kl_canvas_fill(style->canvas, area, PH_COLOR_SIDEBAR);
-	edge = *area;
-	edge.x = area->x + area->width - 1;
-	edge.width = 1;
-	kl_canvas_fill(style->canvas, &edge, style->theme->separator);
+	/* The column's ground and its edge against the timeline (on glass, its card is drawn already). */
+	if (!view->glass) {
+		kl_canvas_fill(style->canvas, area, PH_COLOR_SIDEBAR);
+		edge = *area;
+		edge.x = area->x + area->width - 1;
+		edge.width = 1;
+		kl_canvas_fill(style->canvas, &edge, style->theme->separator);
+	}
 
 	/* The title. */
 	(void)kl_text_draw(style->text, style->canvas, area->x + 20, area->y + 38, "Phone", strlen("Phone"), PH_VIEW_TEXT_TITLE, 1, style->theme->text);
@@ -589,16 +687,13 @@ view_row(
 	int left;
 	int today;
 
-	/* The colours: white on the accent when chosen. */
+	/* The colors of the words. */
 	ink = style->theme->text;
 	soft = style->theme->text_secondary;
 
-	/* The accent under a chosen row. */
-	if (selected) {
-		kl_canvas_round(style->canvas, (float)row->x, (float)row->y, (float)row->width, (float)row->height, 10.0f, style->theme->accent);
-		ink = PH_COLOR_WHITE;
-		soft = KL_RGBA(0xffffff, 210);
-	}
+	/* The selection under a chosen row, as Files shows it. */
+	if (selected)
+		kl_canvas_round(style->canvas, (float)row->x, (float)row->y, (float)row->width, (float)row->height, 10.0f, style->theme->selection);
 
 	/* The dot of messages not read. */
 	if (unread)
@@ -720,12 +815,18 @@ view_header(
 	unsigned hit;
 	int left;
 
-	/* The band, white, its edge against the items. */
-	kl_canvas_fill(style->canvas, area, PH_COLOR_WHITE);
+	/* The band (white on an opaque window), its edge against the items (inset on glass). */
 	edge = *area;
 	edge.y = area->y + area->height - 1;
 	edge.height = 1;
-	kl_canvas_fill(style->canvas, &edge, style->theme->separator);
+	if (view->glass) {
+		edge.x += PH_VIEW_SIDE;
+		edge.width -= 2 * PH_VIEW_SIDE;
+		kl_canvas_fill(style->canvas, &edge, style->theme->row_separator);
+	} else {
+		kl_canvas_fill(style->canvas, area, PH_COLOR_WHITE);
+		kl_canvas_fill(style->canvas, &edge, style->theme->separator);
+	}
 
 	/* Back to the list, in a narrow window. */
 	left = area->x + 16;
@@ -914,6 +1015,7 @@ view_text(
 	const char *text;
 	kl_color ground;
 	kl_color ink;
+	float tail;
 	size_t count;
 	size_t at;
 	size_t length;
@@ -986,8 +1088,10 @@ view_text(
 	if (!draw)
 		return height;
 
-	/* The colours: the person's grey, one's own blue over RCS and green over the carrier. */
+	/* The colors: the person's light (see-through on glass), one's own the accent over RCS and teal over the carrier. */
 	ground = PH_COLOR_INCOMING;
+	if (style->glass)
+		ground = PH_COLOR_INCOMING_GLASS;
 	ink = style->theme->text;
 	if (item->outgoing) {
 		ground = PH_COLOR_SMS;
@@ -996,8 +1100,12 @@ view_text(
 		ink = PH_COLOR_WHITE;
 	}
 
-	/* The bubble and its lines. */
+	/* The bubble, its lower corner on the sender's side nearly square, and its lines. */
 	kl_canvas_round(style->canvas, (float)left, (float)y, (float)bubble_width, (float)bubble_height, PH_VIEW_RADIUS, ground);
+	tail = (float)left;
+	if (item->outgoing)
+		tail = (float)(left + bubble_width) - PH_VIEW_RADIUS;
+	kl_canvas_round(style->canvas, tail, (float)(y + bubble_height) - PH_VIEW_RADIUS, PH_VIEW_RADIUS, PH_VIEW_RADIUS, PH_VIEW_TAIL, ground);
 	for (i = 0; i < count; i++) {
 		/* One line. */
 		(void)kl_text_draw(style->text, style->canvas, left + PH_VIEW_PAD_X,
@@ -1035,6 +1143,7 @@ view_call(
 {
 	const char *title;
 	char line[64];
+	kl_color ground;
 	kl_color tone;
 	int card_width;
 	int left;
@@ -1064,7 +1173,10 @@ view_call(
 	}
 
 	/* The card, the handset in its circle, and the words. */
-	kl_canvas_round(style->canvas, (float)left, (float)y, (float)card_width, 56.0f, 16.0f, KL_RGB(0xf7f8fa));
+	ground = PH_COLOR_CARD;
+	if (style->glass)
+		ground = PH_COLOR_CARD_GLASS;
+	kl_canvas_round(style->canvas, (float)left, (float)y, (float)card_width, 56.0f, 16.0f, ground);
 	kl_canvas_round_border(style->canvas, (float)left, (float)y, (float)card_width, 56.0f, 16.0f, 1.0f, style->theme->panel_edge);
 	kl_canvas_circle(style->canvas, (float)left + 30.0f, (float)y + 28.0f, 18.0f, tone);
 	view_handset(style->canvas, (float)left + 22.0f, (float)y + 20.0f, 16.0f, PH_COLOR_WHITE);
@@ -1186,6 +1298,7 @@ view_file(
 {
 	char label[8];
 	const char *dot;
+	kl_color ground;
 	size_t i;
 	int card_width;
 	int left;
@@ -1213,7 +1326,10 @@ view_file(
 	}
 
 	/* The card, the file's picture, the name and the detail. */
-	kl_canvas_round(style->canvas, (float)left, (float)y, (float)card_width, 60.0f, 16.0f, PH_COLOR_INCOMING);
+	ground = PH_COLOR_INCOMING;
+	if (style->glass)
+		ground = PH_COLOR_INCOMING_GLASS;
+	kl_canvas_round(style->canvas, (float)left, (float)y, (float)card_width, 60.0f, 16.0f, ground);
 	kl_icon_file(style->canvas, style->text, (float)left + 10.0f, (float)y + 8.0f, 44.0f, style->theme->danger, label);
 	(void)kl_text_draw_fit(style->text, style->canvas, left + 60, y + 26, item->text, PH_VIEW_TEXT_BODY, 1, card_width - 72, style->theme->text);
 	if (item->detail != NULL)
@@ -1245,11 +1361,17 @@ view_composer(
 	unsigned changes;
 	unsigned hit;
 
-	/* The band, white, its edge against the items. */
-	kl_canvas_fill(style->canvas, area, PH_COLOR_WHITE);
+	/* The band (white on an opaque window), its edge against the items (inset on glass). */
 	edge = *area;
 	edge.height = 1;
-	kl_canvas_fill(style->canvas, &edge, style->theme->separator);
+	if (view->glass) {
+		edge.x += PH_VIEW_SIDE;
+		edge.width -= 2 * PH_VIEW_SIDE;
+		kl_canvas_fill(style->canvas, &edge, style->theme->row_separator);
+	} else {
+		kl_canvas_fill(style->canvas, area, PH_COLOR_WHITE);
+		kl_canvas_fill(style->canvas, &edge, style->theme->separator);
+	}
 
 	/* Attach: a plus in a grey circle. */
 	button.x = area->x + 12;
