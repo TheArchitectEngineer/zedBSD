@@ -40,3 +40,8 @@ Queue: q728（P2、2026-10-05）
 - build（warning 0）: zedBSD の wayland・settings・sessiond・files、Linux の Keiland（-Werror）。`keiland-os-boundary/check.sh` PASS。style-check: 新しい file は違反 0、変えた既存の file に新しい違反 0。
 - QEMU（T1 に依頼）: `plan/ws089/tests/settings-p025.sh`（graphical の login の image、boot の kei の session で Settings を kei として、状態・switch で off（SSH が切れる間は QMP で PNG）・on・SSH の復帰・log と rc.conf、PNG 2 枚）。
 - 未実施: wheel でない利用者の session での guest の確認（規則は host の試験）、実機（UAT）。
+
+## T1-159 の後（2026-10-05、P2）
+
+- FAIL: Settings が起動せず `/tmp/s.log` が無かった（SHARING state・service sshd・compositor の sharing の行は全てこの連鎖）。T1 が使った graphical の login の image（`build-login-image.sh BUILD graphical`、`config-amd64-graphical.mk`）に `su` が無く、試験の `su kei -c '… /bin/settings …'` が失敗していた（試験の前提の誤り。kei の session は HANDOFF で確かめ済み）。
+- 直し: `plan/ws089/tests/config-amd64-sharing.mk`（graphical の login の image ＋ su）を足し、作り方を script の注記に書いた: `SETTINGS_CONFIG=plan/ws089/tests/config-amd64-sharing.mk plan/ws089/tests/build-settings-image.sh BUILD` → `files-guest.sh start BUILD/hdd-image.img`。試験は始めに su の有無を確かめ（無ければ理由を出して止まる）、Settings の起動（`/tmp/s.log`）も ok/FAILED で出す。sessiond・compositor・Settings は変えていない。

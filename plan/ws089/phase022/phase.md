@@ -64,3 +64,7 @@ Queue: q728（P2、2026-10-05）
 
 - kei の `net lan set IF static ADDR MASK`（router 無し）が **net の segfault**（exit 139、networkd に届かない）: `lan_set_command` が router が無い時に `argv[argc]`（NULL）を router として書いていた（実装の誤り）。root の不正な入力 `static 10.0.9.30 255.0.255.0` の「拒否」も実はこの segfault だった。→ 直した（router は語が残っていて `--` で始まらない時だけ）。
 - 試験の強化: 不正な入力は exit=1 と networkd の syslog の理由（`reason=invalid netmask` など）で確かめる（crash を拒否と取り違えない）。非 member は image に無い `nobody` ではなく試験が足す `tester`（終わりに消す）、拒否の理由の表示も確かめる。kei の成功は syslog の `euid=1000 result=ok` でも確かめる。
+
+## T1-159 の後（2026-10-05、P2）
+
+- FAIL ×2 は `reason=the subnet's own or broadcast address` の 1 行だけ。guest の syslog には出ていた（messages.txt）。試験の `expect_log` が pattern を guest の単引用符の中に入れており、理由の文言の `'` で引用が切れていた（試験の誤り）。→ settings-p022.sh は理由の `'` を `.` にして探す。networkd・net は変えていない。
