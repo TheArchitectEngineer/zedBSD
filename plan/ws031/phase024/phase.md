@@ -100,5 +100,15 @@ NOINPUT（入力の無い fragment shader、varying の無い vertex shader）�
 | `I915_TEST_SET=boundary VKLOOP_BUILD_ONLY=1 BUILD=build/p024-vke2b sh plan/ws031/tests/vkloop-hw.sh test vke2` | image の build PASS（kernel 0xfeb000 byte、上限 16 MiB の中、warning は Noct の既存の 1 件だけ） |
 | 同じく既定の組（all） | **FAIL（上限超え、変更の前から）** |
 
-残り（再開の点）: 増分 3（spill の組み合わせ）。T1 への依頼: 5330 の passthrough で `I915_TEST_SET=boundary ... vkloop-hw.sh test vke2`
-（全 step PASS、UNDEF の奇数の行の値を記録）。実機は使っていない。
+q762（2026-10-05）で試験の組を場面ごとに分けた後は、vke2 の組（`I915_TEST_SET=vke2`、vkloop-hw.sh が選ぶ）が boundary の step を持つ。
+T1-190 は serial の mirror の無い構成で build されて行が出なかった（q762 で vkloop-hw.sh の既定の構成を直した）。再依頼:
+`flock /tmp/i915-hw.lock env BUILD=... plan/ws031/tests/vkloop-hw.sh test vke2`。
+
+増分 3（読みの確認、2026-10-05）: scratch の作成の失敗（`render/draw.c` の `i915_draw_scratch_grow()`）は、古い buffer を消して
+`work->scratch` を NULL にしてから作り、失敗は error を返して draw を止める。次の draw は `roomy` が `work->scratch != NULL` を
+要るので作り直しに入り、NULL の buffer を使わない（748〜772 行）。一般の状態の大きさを超える scratch は ENOTSUP（`XXX` の log）。
+draw.c は host の試験に入っていない（GPU に出すため）ので、失敗の注入の試験は作っていない。spill の組み合わせ（SPILL と VIO16 を
+同じ command buffer で、discard と spill、4 KiB 超、VS と PS の同時の spill、sample の応答の spill）の vke2 の step は、vke2 の組の kernel
+が 16300 KiB（上限 16384）で余裕が無いので、別の組を作るか上限の問題（q762 の報告）の後にする。
+
+残り（再開の点）: 増分 3 の step（組の余裕の後）、T1 の vke2 の結果（UNDEF の値の記録）。実機は使っていない。
