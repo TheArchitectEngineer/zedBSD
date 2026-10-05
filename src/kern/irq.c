@@ -141,6 +141,31 @@ kern_irq_set_mode(
 }
 
 /*
+ * Arms or disarms an interrupt as a wake source of a system sleep.
+ */
+int
+kern_irq_set_wake(
+	int irq,
+	int enable)
+{
+	bool armed;
+	int status;
+
+	/* The kernel's flag as the HAL's. */
+	armed = false;
+	if (enable)
+		armed = true;
+
+	/* Succeeded or not, as the HAL says. */
+	status = hal_irq_set_wake(irq, armed);
+	if (status != HAL_OK)
+		return irq_error(status);
+
+	/* Succeeded: kept until it is changed. */
+	return 0;
+}
+
+/*
  * Stops delivery of one numbered interrupt.
  */
 void

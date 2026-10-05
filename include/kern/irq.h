@@ -72,6 +72,15 @@ int kern_irq_unregister_msi(int mapped_irq);
  */
 int kern_irq_set_mode(int irq, unsigned trigger, unsigned polarity);
 
+/*
+ * Arms or disarms an interrupt as a wake source of a system sleep
+ * (ws052-p006, kern_irq_set_wake): an armed interrupt keeps being
+ * delivered while the others are held, and its handler then runs while
+ * its device may be suspended, so it must only record what happened (as
+ * the ACPI SCI's handler does), not touch a device in D3.
+ */
+int kern_irq_set_wake(int irq, int enable);
+
 /* Stop and resume delivery of one numbered interrupt. */
 void kern_irq_mask(int irq);
 void kern_irq_unmask(int irq);

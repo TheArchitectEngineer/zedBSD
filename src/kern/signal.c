@@ -16,6 +16,7 @@
  * their completion back to the process timers.
  */
 
+#include "kern/freeze.h"
 #include "kern/signal.h"
 #include "kern/klog.h"
 #include "kern/cred.h"
@@ -408,6 +409,7 @@ kernel_user_return_handler(
 	/* A retired thread exits; a stopped process waits; signals deliver. */
 	if (curthread != NULL && curthread->terminate_requested)
 		thread_exit(0);
+	kern_freeze_user_return();
 	if (process_stop_requested(curthread))
 		process_stop_current(0);
 	signal_deliver_on_user_return();

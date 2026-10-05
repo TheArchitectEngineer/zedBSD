@@ -35,6 +35,7 @@
 #include "kern/lock.h"
 #include "kern/platform.h"
 #include "kern/sched.h"
+#include "kern/sleep.h"
 #include "kern/thread.h"
 #include "kern/waitq.h"
 
@@ -54,6 +55,10 @@
  */
 #define FACS_GLOBAL_LOCK	16U
 #define FACS_LOCK_END		20U
+
+/* The FADT's flags, and their bit for a platform that idles in S0 at low power (ws052-p006). */
+#define FADT_FLAGS_OFFSET	112U
+#define FADT_LOW_POWER_S0_IDLE	(1U << 21)
 
 /*
  * How many pages of system memory the handler keeps mapped.
@@ -564,6 +569,15 @@ start_events(void)
 		return error;
 
 	/*
+	 * The SCI wakes the system from S0 idle (ws052-p006): every wake source
+	 * of the platform comes through it, and its handler only records and
+	 * masks, so it may run while the devices are suspended.
+	 */
+	error = kern_irq_set_wake((int)irq, 1);
+	if (error != 0)
+		kern_logf("acpi: the SCI cannot wake the system (error %d)\n", error);
+
+	/*
 	 * Lets the SCI line through.  A registered line stays masked until its
 	 * owner unmasks it, so without this no SCI is ever delivered.
 	 */
@@ -745,9 +759,40 @@ power_button(
 		return;
 	}
 
-	/* The power button. */
+	/* The power button, which also wakes the system from S0 idle. */
 	kern_logf("acpi: power button\n");
+	kern_sleep_note_wake(KERN_SLEEP_WAKE_POWER_BUTTON);
 	kern_system_event_post(KERN_SYSTEM_EVENT_POWER, KERN_SYSTEM_EVENT_PRESS, 1, "power-button", "");
+}
+
+/*
+ * Reports whether the firmware says the platform idles in S0 at low
+ * power (the FADT's LOW_POWER_S0_IDLE_CAPABLE, ws052-p006).  Returns 1 or
+ * 0.
+ */
+int
+drv_acpi_s0_idle_capable(void)
+{
+	const uint8_t *fadt;
+	uint32_t flags;
+
+	/* A FADT long enough to have the flags. */
+	fadt = firmware.fadt;
+	if (fadt == NULL || firmware.fadt_length < FADT_FLAGS_OFFSET + 4U)
+		return 0;
+
+	/* The flags, little-endian. */
+	flags = (uint32_t)fadt[FADT_FLAGS_OFFSET];
+	flags |= (uint32_t)fadt[FADT_FLAGS_OFFSET + 1U] << 8;
+	flags |= (uint32_t)fadt[FADT_FLAGS_OFFSET + 2U] << 16;
+	flags |= (uint32_t)fadt[FADT_FLAGS_OFFSET + 3U] << 24;
+
+	/* The low-power S0 idle bit. */
+	if ((flags & FADT_LOW_POWER_S0_IDLE) == 0U)
+		return 0;
+
+	/* Succeeded: the platform declares S0 idle. */
+	return 1;
 }
 
 /* Reads physical memory for the table finder, one page at a time. */
