@@ -154,7 +154,7 @@ source の名前は「System」、icon は Kei の mark。
 | H3 | log の保存 | session の中の memory だけ（logout で消える）、100 個まで |
 | H4 | 全画面・lock の時 | popup を出さず log に入れる（`URGENT` は全画面でも出す、lock では出さない） |
 | H5 | 続けて来た時 | 1 つずつ流し、待ちがある時はとどまる段を 1.5 秒に早送り |
-| H6 | Linux・FreeBSD の D-Bus の通知（他の toolkit の app） | v1 は受けない。要るなら別の段で session bus の小さな service |
+| H6 | Linux・FreeBSD の D-Bus の通知（他の toolkit の app） | **決定（2026-10-05 ユーザー）**: Linux は libkeiland-backend で受ける（§11）。実装は後回し（p006）。FreeBSD は後 |
 | H7 | bar の媒体の icon を消して通知に置き換える（媒体が残っている間の icon は無くなる） | 消す |
 
 ## 10. 段（ws.md の案の確定）
@@ -165,6 +165,78 @@ source の名前は「System」、icon は Kei の mark。
 | p003 | popup の描画と動き、× と click、全画面・lock、system の通知（媒体の icon の置き換え、Wi-Fi、sleep、電池） | p002、H7 |
 | p004 | log（Super+N、ring、すべて消去、log の ×） | p003 |
 | p005 | 全文規約、T1 の QEMU、実機の UAT | p002〜p004 |
+
+## 11. Linux の D-Bus の通知（設計の記録、2026-10-05 夕のユーザーの決定、P1 generation19 q772）
+
+ユーザー（2026-10-05、原文）:「Linuxではlibkeiland-backendにD-bus機能を入れて通知を取ればいいですね。実装はあと回しでいいです。設計だけ記録してください。」
+→ §9 の H6 は「Linux は受ける。場所は libkeiland-backend（別の daemon の `keiland-notify-dbus` ではない）」に決まった。実装は後（段 p006、下）。
+
+### 11.1 形
+
+- Linux の backend（`userland/desktop/libkeiland-backend-linux/`）に `notify-linux.c`（新）を足す。compositor が session の始めに開き、session bus の
+  `org.freedesktop.Notifications` の名前を持って、GTK・Qt・libnotify などの app の通知を受け、compositor の通知の表（§2 の `kl_system_notify_v1` と同じ表、
+  §6 の `zwl_notify_post` の道）に入れる。Keiland の app は今の設計どおり `kl_system_notify`（Wayland）を使い、D-Bus は通らない。
+- zedBSD には D-Bus が無いので zedBSD の backend は `ENOTSUP`。FreeBSD の backend も v1 は `ENOTSUP`（FreeBSD の desktop にも D-Bus の session bus はあるので、
+  後で同じ file を共有できる。OS に依る所は bus の address と認証の uid だけ）。
+
+### 11.2 D-Bus の口（Desktop Notifications Specification 1.2）
+
+| 種類 | 名前（signature） | Keiland での扱い |
+| --- | --- | --- |
+| method | `GetCapabilities() → as` | `["body", "actions", "persistence"]`（`persistence` = log に残る。`body-markup`・`icon-static`・`sound` は言わない） |
+| method | `Notify(s app_name, u replaces_id, s app_icon, s summary, s body, as actions, a{sv} hints, i expire_timeout) → u id` | `app_name` → app、`summary` → title、`body` → body（markup を言わないので平文。来た `<b>` などの簡単な tag は外す）。`replaces_id` が自分の出した番号なら置き換え。`actions` に `"default"` があれば `ACTION`（本文の click で `ActionInvoked(id, "default")`）、他の action は v1 では無視。`hints` の `urgency`（byte、2 = critical）→ `URGENT`。`app_icon`・`image-data` などの画像と `expire_timeout` は v1 では無視（popup の動きは §3.2 で決まっている） |
+| method | `CloseNotification(u id)` | §2 の `withdraw`。無い番号は空の答え（spec どおり） |
+| method | `GetServerInformation() → (s name, s vendor, s version, s spec_version)` | `("Keiland", "zedBSD", <Keiland の版>, "1.2")` |
+| signal | `NotificationClosed(u id, u reason)` | §2 の `closed` から: 1 = 期限（log からも消えた）、2 = 利用者が消した（× と「すべて消去」）、3 = `CloseNotification` |
+| signal | `ActionInvoked(u id, s action_key)` | §2 の `activated` から、`"default"` |
+
+- 番号: D-Bus の通知の番号は backend が 1 から振り（0 は使わない、2^32 で回る）、compositor の通知の番号との対応の表を backend が持つ。
+- 文字列の上限は §2 と同じ（app 64・title 128・body 512 byte）。D-Bus の app は断られることを想定していないので、超えた分は**切って受ける**（UTF-8 の
+  文字の境で）。1 つの送り手（D-Bus の unique name）の数の上限 32 も §2 と同じで、超えたら一番古い物を log から落とす（`NotificationClosed` reason 1）。
+- 名前の取り合い: `RequestName("org.freedesktop.Notifications", DO_NOT_QUEUE)` が `EXISTS`（他の通知の daemon が持っている、例: GNOME の session の中）なら、
+  奪わずに何もしない（compositor の log に 1 行）。Keiland の session（`keiland-linux-install-session`）では他が居ないはず。
+
+### 11.3 backend の API（案）
+
+```c
+struct kl_backend_notify_callbacks {
+	/* 受けた通知。compositor の通知の番号を返す（0 は断った） */
+	uint32_t (*posted)(void *data, const char *app, const char *title, const char *body, uint32_t replaces, unsigned flags);
+	void (*withdrawn)(void *data, uint32_t id);
+};
+int kl_backend_notify_open(struct kl_backend *backend, const struct kl_backend_notify_callbacks *callbacks, void *data); /* ENOTSUP: zedBSD・FreeBSD */
+int kl_backend_notify_fd(const struct kl_backend *backend);            /* poll する bus の fd、無ければ -1 */
+void kl_backend_notify_dispatch(struct kl_backend *backend);           /* 読めた時に呼ぶ */
+void kl_backend_notify_closed(struct kl_backend *backend, uint32_t id, unsigned reason);   /* compositor → NotificationClosed */
+void kl_backend_notify_activated(struct kl_backend *backend, uint32_t id);                 /* compositor → ActionInvoked */
+void kl_backend_notify_close(struct kl_backend *backend);
+```
+
+`keiland-backend.h` に足す（Keiland の内部の API、kernel の UAPI ではない）。compositor は §2 の表の送り手の種類に「D-Bus」を足し、`closed`・`activated` を
+Wayland の client の代わりに backend へ返す。
+
+### 11.4 今の D-Bus の client に足す物
+
+`dbus-linux.c` は今 system bus の client（logind、method の呼び出しと signal の受け取り）だけ。足す物:
+- session bus への接続（`DBUS_SESSION_BUS_ADDRESS` の `unix:path=`・`unix:abstract=`、無ければ `$XDG_RUNTIME_DIR/bus`）、EXTERNAL の認証（自分の uid）、`Hello`。
+- `RequestName`・`ReleaseName`。
+- METHOD_CALL を受けて METHOD_RETURN・ERROR を返す（今は返事を受けるだけ）。`org.freedesktop.DBus.Introspectable.Introspect` と `Peer.Ping` にも答える。
+- signal を出す。
+- 型: `as` の読み書き、`a{sv}` の読み（`urgency` の byte だけを拾い、他の variant は型を見て読み飛ばす）、`(ssss)` の書き。今の bound（frame 64 KiB、fd 16）の中で、
+  長さ・深さ・残りの byte を必ず確かめる（相手は同じ uid の任意の app）。
+
+### 11.5 試験（実装の段で）
+
+- host: `notify-linux.c` を、socketpair の向こうの小さな fake の bus（frame を手で組む）に対して: Notify・置き換え・CloseNotification・GetCapabilities・
+  GetServerInformation・切って受ける・数の上限・`NotificationClosed`・`ActionInvoked`、壊れた frame（長さ・型の誤り）で落ちないこと。
+- Linux の QEMU+KVM の guest（WS131 の Debian、AGENTS.md の例外）: Keiland の session で `notify-send "title" "body"`（libnotify）と `gdbus call` で通知が popup に
+  流れ、log に入ること。SSH と QMP の PNG で確かめる（T1）。
+
+### 11.6 段
+
+| Phase | 内容 | 依存 |
+| --- | --- | --- |
+| p006（新、後回し） | Linux: libkeiland-backend の D-Bus の通知（`notify-linux.c`、session bus、§11.2〜§11.4）、compositor の送り手の種類、host 試験、Linux の guest の T1 | p002（通知の表と口）、時期はユーザーの「実装はあと回し」に従い Q1 が決める |
 
 ## 結果
 

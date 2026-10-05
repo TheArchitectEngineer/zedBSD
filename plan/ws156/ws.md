@@ -43,3 +43,4 @@ app から通知を出せる仕組みを作り、画面の下の中央を headli
 | ws156-p003 | popup の描画と動き（右から中央、3 秒、左へ fade-out）、× で消す | planning | p002 |
 | ws156-p004 | log（hotkey、ring の左右、すべて消去、個別に消した物は残さない） | planning | p003 |
 | ws156-p005 | 全文の規約と QEMU の回帰（T1）、実機の UAT | planning | p002〜p004 |
+| ws156-p006 | Linux: libkeiland-backend の D-Bus の `org.freedesktop.Notifications`（設計 p001 §11、2026-10-05 ユーザー「実装はあと回し」） | planning（後回し） | p002 |
