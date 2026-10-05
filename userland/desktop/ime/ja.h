@@ -181,6 +181,30 @@ struct ja_user {
 	size_t malformed_count;
 };
 
+/* The most predictions offered for a reading (one page of the candidate window), and the longest reading kept with one. */
+#define JA_PREDICT_MAX		9U
+#define JA_PREDICT_READING_MAX	(JA_HEADWORD_MAX * 4U + 1U)
+
+/*
+ * One prediction (ws166-p002): a word whose reading starts with what is
+ * typed, and that reading (so that the choice can be learned).
+ */
+struct ja_prediction {
+	char text[IME_CANDIDATE_MAX];
+	char reading[JA_PREDICT_READING_MAX];
+};
+
+/*
+ * A dictionary's headwords without okurigana, in the byte order of their
+ * readings, for finding every reading that starts with a prefix by a binary
+ * search (ws166-p002).  The entries are the dictionary's own and live as
+ * long as it does.
+ */
+struct ja_predict_index {
+	const struct ja_dict_entry **entries;
+	size_t count;
+};
+
 /*
  * Everything a reading is looked up in, in the order it is looked up.
  */
@@ -318,5 +342,10 @@ void ja_core_save(struct ja_core *core);
 
 /* ja-keys.c */
 void ja_keys_handle(struct ja_core *core, const struct ime_key *key, struct ime_output *out);
+
+/* ja-predict.c */
+int ja_predict_index(const struct ja_dict *dict, struct ja_predict_index *index);
+void ja_predict_index_free(struct ja_predict_index *index);
+size_t ja_predict(const struct ja_user *user, const struct ja_predict_index *const *indexes, size_t index_count, const char *reading, size_t length, struct ja_prediction *out, size_t max);
 
 #endif
