@@ -5703,6 +5703,75 @@ zwl_glass_activate(
 }
 
 /*
+ * Opens a new window docked (ws099-p033, the 2026-10-05 UAT: a tablet used
+ * over the whole screen) when the window in front of the desktop shown is
+ * docked: its first configure is the docked space.  A window with a parent
+ * (a dialog or a sheet), one of a fixed size (its smallest and largest
+ * sizes the same), and a fullscreen one open as they would; so does every
+ * window once the window in front is brought back to floating.  The place
+ * to come back to is the middle of the space at seven tenths of it.
+ * Returns 1 when the window opens docked.
+ */
+int
+zwl_glass_open_docked(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	struct zwl_object *front;
+	struct zwl_object *parent;
+	struct shell_rect docked;
+	int32_t restore_x;
+	int32_t restore_y;
+
+	/* Only the glass look's windows, not over the login or lock screen. */
+	if (!server->glass ||
+	    !server->windowed ||
+	    server->greeter ||
+	    server->locked)
+		return 0;
+
+	/* Not a dialog, a sheet, a window of one size, a fullscreen one, or one docked already. */
+	if (surface->parent_window != NULL ||
+	    surface->fullscreen ||
+	    surface->maximized)
+		return 0;
+	if (surface->min_width > 0 &&
+	    surface->min_width == surface->max_width &&
+	    surface->min_height == surface->max_height)
+		return 0;
+
+	/* The window in front of the desktop shown (a sheet's parent for a sheet), docked and not fullscreen. */
+	front = zwl_top_window(server);
+	parent = zwl_sheet_parent(front);
+	if (parent != NULL)
+		front = parent;
+	if (front == NULL || !front->maximized || front->fullscreen)
+		return 0;
+
+	/* The place to come back to: seven tenths of the docked space, in its middle. */
+	docked_rect(server, &docked);
+	surface->restore_width = (uint32_t)(docked.width * 7 / 10);
+	surface->restore_height = (uint32_t)(docked.height * 7 / 10);
+	restore_x = docked.x + (docked.width - (int32_t)surface->restore_width) / 2;
+	restore_y = docked.y + (docked.height - (int32_t)surface->restore_height) / 2;
+	zwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
+	surface->restore_x = restore_x;
+	surface->restore_y = restore_y;
+
+	/* Docked: the first configure gives the docked space and the maximized state. */
+	surface->maximized = 1;
+	surface->x = docked.x;
+	surface->y = docked.y;
+	surface->window_width = (uint32_t)docked.width;
+	surface->window_height = (uint32_t)docked.height;
+	printf("ZWL GLASS open-docked surface=%u front=%u x=%d y=%d w=%d h=%d\n", surface->id, front->id,
+	       (int)docked.x, (int)docked.y, (int)docked.width, (int)docked.height);
+
+	/* Succeeded: the window opens docked. */
+	return 1;
+}
+
+/*
  * Opens Wiseview for the bar's "+N" place, as Super+Tab does.
  */
 void

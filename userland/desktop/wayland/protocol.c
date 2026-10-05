@@ -917,6 +917,9 @@ surface_commit(
 		if (role->top->kind == ZWL_POPUP) {
 			error = zwl_popup_send_configure(surface);
 		} else {
+			/* Docked from the start when the window in front is docked (shell.c, ws099-p033). */
+			if (server->glass)
+				(void)zwl_glass_open_docked(server, surface);
 			error = zwl_window_send_configure(surface);
 		}
 

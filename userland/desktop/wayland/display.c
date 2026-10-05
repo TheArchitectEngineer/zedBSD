@@ -406,6 +406,12 @@ place_window(
 		return;
 	}
 
+	/* A window that opened docked (ws099-p033) keeps the docked space; its floating place is its restore place. */
+	if (surface->maximized) {
+		surface->placed = 1;
+		return;
+	}
+
 	/* Centred at its size (a viewport's, viewport.c), then moved down and right by the number of windows placed so far (in a cycle of eight). */
 	width = (int32_t)server->width;
 	height = (int32_t)server->height;
