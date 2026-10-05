@@ -178,6 +178,6 @@ ld.so（`src/rtld/`）の次の数の上限を無くす。上限を無くした�
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | object の chunk の列（D1・D2）、依存の可変長（D3）、初期化の順の list（D4）、dlsym の印（D5）、U3（TLSDESC・program header・名前の長さ）と、多数の依存の試験（startup と dlopen の object・依存・dlsym、U3 の 4 段） | in-progress（実装済み・試験待ち） | — |
-| [p002](phase002/phase.md) | handle と TLS module の chunk の列（D1・D2）、dtv を伸ばす（D6）、静的な TLS の並び（D7）、dyntest の handle の試験の書き直し、TLS と handle の多数の試験 | in-progress（実装済み・試験待ち） | p001（同じ file。p001 の commit の上に重ねる） |
+| [p001](phase001/phase.md) | object の chunk の列（D1・D2）、依存の可変長（D3）、初期化の順の list（D4）、dlsym の印（D5）、U3（TLSDESC・program header・名前の長さ）と、多数の依存の試験（startup と dlopen の object・依存・dlsym、U3 の 4 段） | cleared（2026-10-05 Q1） | — |
+| [p002](phase002/phase.md) | handle と TLS module の chunk の列（D1・D2）、dtv を伸ばす（D6）、静的な TLS の並び（D7）、dyntest の handle の試験の書き直し、TLS と handle の多数の試験 | cleared（2026-10-05 Q1） | p001（同じ file。p001 の commit の上に重ねる） |
 | p003（phase.md は p002 の後に書く） | 全文規約の見直し（変えた関数と試験）、amd64・arm64 の build、bss の記録、T への回帰の依頼（完了の条件 2・3）、F-070 と ws115-p010 への結果の反映の案 | planned | p001・p002 |

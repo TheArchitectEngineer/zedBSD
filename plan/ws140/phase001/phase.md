@@ -2,7 +2,7 @@
 
 # ws140-p001: object の数・依存の数・初期化の順・dlsym の印の上限を無くす
 
-Status: in-progress（実装済み・T の試験待ち。p002 とまとめて依頼）
+Status: cleared（2026-10-05 Q1: T1-163 の tls-check・dyntest・boot PASS と、T1-164 で rtld-many（ld.so の segment の予約の直しの後）も PASS（amd64）。arm64・i386・sparcv9 の build は sysroot が要り未実施）。以前: in-progress（実装済み・T の試験待ち。p002 とまとめて依頼）
 Disposition: normal
 Parent: [WS140](../ws.md)
 Queue: q729（Q1、2026-10-05）
@@ -288,3 +288,7 @@ p001 の commit を Q1 に merge 依頼してから p002 に進む。p001 は T 
 - U3: **他の固定の上限も入れる**。`tlsdesc_argument[64]`（object ごとの TLSDESC の再配置の数）・`phdr[64]`・`RTLD_NAME_MAX` 64 もこの WS で動的にする（または上限を十分に大きくし、越えたら dlerror で返す。決めは担当の設計で、phase.md に書いてから実装）。範囲・受け入れ・試験（rtld-many に TLSDESC 65 個以上・長い名前の dlopen を足す）へ反映してから着手する。
 - U2: memory が取れない時の `dlopen` は今と同じ fatal のまま。
 - U5: `dlpi_subs`（`rtld_object_removals`）を TLS を持たない object の unload でも増やす直しを、この WS で入れる。
+
+## Q1 の判定（2026-10-05）
+
+T1-163 の tls-check・dyntest・boot PASS と、T1-164 で rtld-many（ld.so の segment の予約の直しの後）も PASS（amd64）。arm64・i386・sparcv9 の build は sysroot が要り未実施。**cleared**。
