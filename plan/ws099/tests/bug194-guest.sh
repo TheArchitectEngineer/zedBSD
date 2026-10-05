@@ -1,5 +1,6 @@
 #!/bin/sh
-# BUG-194: the way out of fullscreen is the compositor's (F11 for now), and Terminal's F11 makes it fullscreen.  On the
+# BUG-194: the way out of fullscreen is the compositor's (F11 and Super+Down, the 2026-10-05 user decision), and
+# Terminal's F11 makes it fullscreen.  On the
 # Venus guest of plan/ws035/tests/config-amd64-zdesktop.mk built from the commit under test
 # (plan/ws035/tests/zdesktop-guest.sh start IMAGE), zdesktop --glass at 1280x800.
 #  1. Terminal: F11 makes it fullscreen (its Fullscreen item's shortcut: "MENU ... activated" or "ZTERM FULLSCREEN key
@@ -8,7 +9,9 @@
 #     and the window is a window again (a configure with fullscreen=0); terminal-back.png.
 #  3. A window that goes fullscreen by itself and never leaves (wltest --fullscreen-at=10): F11 brings it back all the
 #     same ("GLASS fullscreen-leave ... via=f11", "WINDOW unfullscreen"); wltest-back.png.
-#  4. No ERROR in zdesktop's log.
+#  4. Terminal fullscreen again by F11, then Super+Down: the compositor takes it ("GLASS fullscreen-leave surface=T
+#     via=super-down"); terminal-super-down.png.
+#  5. No ERROR in zdesktop's log.
 # PASS: the last line "bug194: status 0".
 #   plan/ws099/tests/bug194-guest.sh [OUTDIR]          (default build/ws099-bug194)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -72,7 +75,14 @@ expect_log "GLASS fullscreen-leave surface=$w via=f11 error=0"
 expect_log "WINDOW unfullscreen surface=$w "
 check "$out/wltest-back.png" >/dev/null
 
-# 4. No ERROR.
+# 4. Terminal again: F11 into fullscreen, Super+Down out of it.
+pointer move $((tx + 100)) $((ty + 100)) sleep 300 down sleep 60 up sleep 500 >/dev/null
+keys "<f11>"
+keys "<super-down>"
+expect_log "GLASS fullscreen-leave surface=$t via=super-down error=0"
+check "$out/terminal-super-down.png" >/dev/null
+
+# 5. No ERROR.
 if guest 'grep -c ERROR /tmp/zdesktop.log' | tail -1 | grep -qx 0; then echo "no-error: ok"; else echo "no-error: FAILED"; status=1; fi
 guest "grep -E 'fullscreen-leave|unfullscreen|fullscreen=1' /tmp/zdesktop.log; grep FULLSCREEN /tmp/t.log" | tail -12
 
