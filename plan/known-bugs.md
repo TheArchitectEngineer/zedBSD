@@ -75,7 +75,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-205](bugs/BUG-205.md) | app 全般で太字の font が美しくない（anti-alias が regular と違って見える） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS090（widget の library）・libtruetype |
 | [BUG-206](bugs/BUG-206.md) | Browser で URL を編集すると https:// の前に file:// が付く | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS074（browser） |
 | [BUG-207](bugs/BUG-207.md) | Browser が通信中に UI に応答しない | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS074（browser） |
-| [BUG-208](bugs/BUG-208.md) | 最大化（dock）中の Terminal で F11 を押すと bar が消えるだけで content の領域が変わらない | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS099・BUG-194 |
+| [BUG-208](bugs/BUG-208.md) | 最大化（dock）中の Terminal で F11 を押すと bar が消えるだけで content の領域が変わらない | reproduced（ユーザー、QEMU） / scheduled（2026-10-06 P2 修正: dock 中の fullscreen は dock を外し、出る時に dock に戻す。T1 待ち） | UAT 2026-10-05 夜 | WS099・BUG-194 |
 | [BUG-209](bugs/BUG-209.md) | Alt+Tab の順が bar の icon の並びと合わない（今の app から始め、押す度に 1 つ右へ） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS142 |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / scheduled、低（q726: bar の起動の直後の表示を「Starting the network service...」に、UAT 待ち） | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
 | [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132）。UAT 2026-10-04: 再現せず（電源の状態は BUG-165 の後） |
