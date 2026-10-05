@@ -56,3 +56,8 @@ Keiland の compositor（`userland/desktop/wayland/`）で、ユーザーの要�
 | [ws142-p004](phase004/phase.md) | 上部のバーのアプリの一覧とプレビュー（hover・click・複数の窓、drag の並べ替え） | cleared（2026-10-05 Q1、T1-131） | p001、D2・D4〜D8・D11 |
 | [ws142-p005](phase005/phase.md) | 切り替えの UI（3 本指のタップ・Alt+Tab、中央のポップアップ） | cleared（2026-10-05 Q1、T1-136） | p003（TAP3・2 本指）、p004、D1・D2 |
 | [ws142-p006](phase006/phase.md) | 全文の規約の確認と QEMU の回帰（T1）、実機の UAT | cleared（2026-10-05 Q1、T1-136） | p002〜p005 |
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-215 3 本指の preview は swipe 1 回で 1 つ、BUG-216 WiseView: 題の文字を出さない・2 本指の左右で選び 2 本指の下 swipe で確定、BUG-224 上端からの 2 本指の下 swipe で窓に、BUG-228 全画面から下端の 2 本指の上 swipe で最大化 → **gesture の体系を 1 つの Phase で再設計**（BUG-217 の session の状態と一緒に）
+- BUG-209 Alt+Tab の 4 つの仮定はユーザーの確認待ち

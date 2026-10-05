@@ -58,3 +58,9 @@ Resume point: [p001](phase001/phase.md)（USB の LAN の後挿し・抜去・ca
 ## 2026-10-04 UAT の結果（Q1）
 
 起動の時から挿した USB LAN（RTL8156、ue0）は up して DHCP。**起動の後に挿すと up しない**（[BUG-168](../bugs/BUG-168.md)）。抜くと Ethernet のメニューに wlan0 が出る（[BUG-169](../bugs/BUG-169.md)）。WiFi の address への SSH ができない（[BUG-174](../bugs/BUG-174.md)）。
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-222 ue0 の SCP が約 950 KB/s（link の速度を Settings に出し 10 Mbps の mode か確かめる。ue0 の chip はユーザーに確かめる）
+- BUG-212 有線の link down で WiFi が切れ再接続できない（WS005 と）
+- BUG-213 link down の後の Settings の「No address」と IP の表示の矛盾（WS089 と）

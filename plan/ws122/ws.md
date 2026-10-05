@@ -37,3 +37,7 @@ Resume point: p001（要件・設計）。
 | [p003](phase003/phase.md) | 独自の container の読み込み（MP4・Matroska/WebM の demux）、ベータ2 の段 2 の前半 | in-progress（2026-10-05、P2） | p002 |
 | [p004](phase004/phase.md) | player を mediafile と libavcodec の dlopen の add-in（software decode、header 無し）で完成（2026-10-05 夕のユーザーの決定。GPU の decode は別の WS） | in-progress（実装・host 済み、T1 待ち） | p003 |
 | 最後 | 全文規約と回帰 | planning | 実装 Phase |
+
+## 2026-10-06 UAT のフィードバック
+
+- mp4 の再生と frame の落ち無しを実機で確認（ユーザー）。BUG-223 F11・Alt+Enter の全画面（direct scanout）

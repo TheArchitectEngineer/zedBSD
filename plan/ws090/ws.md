@@ -63,3 +63,8 @@ p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 まで
   sheet が開いている間は、親の本体への入力を止める（親の title bar の drag だけは効く）。
 - 同日の追加（ユーザー）:「File Chooserは透過ウィンドウをやめましょう。」→ p014 の中で、file chooser の窓（sheet・独立の両方）を不透明の地にする。
 
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-211 慣性 scroll を libkeiland の UI の scroll に（scroll bar を使う全ての窓）→ **新しい Phase**。BUG-218 Phone の慣性の開始の遅れ（約 300 ms → 50 ms 以内、最大 80 ms）を共通の実装で
+- BUG-226 左の pane の hover の再描画の遅れ（Files・Mail・Calendar・Settings）: CPU の合成を調べ、無ければ frame rate の安定化 → **新しい Phase**（BUG-221 と共通の仕組み）

@@ -544,3 +544,7 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 2026-10-03 JST / q598-p172-clearance: [p172](phase172/phase.md)を[最終証拠](phase172/import/checkpoint98/README.md)でwhole cleared。209/209対象の全文review、branch manifest/ABI、host+ASanとAcid2、最終target bootとVenus shellを確認。初回cold p014の5秒待ち失敗・再試行PASSを保持。WS074固有のacceptance（Acid3ほか）は未達なのでincompleteのまま。p100は前提解消のみで実行Queue未選定。Agent A側とのQueue ID/共有投影・GitHub投稿は保留。
 
 2026-10-05 Q1 records reconciliation: ユーザーが WS074 を Codex から Q1 に戻し、レンダリングの改善をユーザーの指示まで止めた。記録の矛盾を照合した: Queue ID の衝突（browser3 の q590・q594〜q598 → b-q590・b-q594〜b-q598、WS074 の記録の中だけ）、p172 の取込みの main への実在（209 件中 207 件の hash 一致、2 件は main の 4628f83e の試験の方針の変更）、Acid2 の行の訂正（p099 で exact 合格）、Acid3 の値は checkpoint02 の計測で最終の source では再計測していないこと、p100 は planned（Queue なし、2026-10-03 の baseline の承認は未使用）、main に無い browser3 の記録への link の無効化、壊れた link 2 件（design.md・WS081）。Master・Queue・Past Log・Bug Board の直しは Q1 に提案した。source・build・試験は変えていない。
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-227 amazon.co.jp が白い画面（libbrowser か shell かの切り分けから）。BUG-206・207 は直し済み・T1-219 待ち

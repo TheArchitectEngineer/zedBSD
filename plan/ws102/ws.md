@@ -111,3 +111,7 @@ Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p01
   「どの点も入力の後の最初の frame で描かれる」（p008: 9 frame 中 9）で満たしたとし、17 ms の数値は L3 の p010 で 5330 の実機か Windows の QEMU で
   同じ log（`hand frame lag_ms`）を使って測る。WS094 の判断（QEMU の値は参考、合否は実機）と同じ扱い。
 
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-229 App Home の開閉で OSK が消える、BUG-230 引き出しを Notes と同じ扇形＋文字に、BUG-231 full keyboard を IME に通す（a → あ、漢字の変換）→ **新しい Phase**

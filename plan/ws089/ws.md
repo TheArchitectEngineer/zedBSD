@@ -138,3 +138,8 @@ Event ws113-multidisplay-plan-20261002-ws089-followup: userは読み取り専用
 2026-10-02 / ws089-beta1-plan: user「Settingsも重点的に」（2026-10-02）で 2026-09-29 の後回しを置き換え、fg019 の計画エージェントが到達目標 S-B1〜S-B6 と p010〜p018 を追加（guide の提案 p010・p011 を正式化、p012 の完了処理の案は p018 の後に Q1）。p001〜p009 の結果は不変。Queue は未投入。
 
 - 2026-10-05 WS138 の結果（Q1）: 背景の頁は PNG と JPEG を一覧（png→jpg→jpeg の規則）、生成の背景は `.png`。Settings は wallpaper.c と compat の library を link する（WS168 の後は preview の command へ移る）。ws089 の host build はそれらを compile する。
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-214 透明度の slider の初期値（100% と表示、実際は frosted。BUG-171 の決定 B との食い違い、ユーザーに確かめ中）、BUG-213 Network の表示
+- WS158 p004 の Settings の Languages の頁は途中（account-admin の system-language は merge 済み）

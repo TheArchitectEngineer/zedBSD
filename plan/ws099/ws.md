@@ -160,3 +160,11 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 タッチパッドで title bar（検索欄・メニューの項目）を押して動かしても窓が動かない（p030 の後のデグレ、[BUG-166](../bugs/BUG-166.md)）。タップ→別の指で移動・2 回タップ→移動はできた。押し込みで掴むかは仕様の検討漏れ（ユーザー）。**仕様をユーザーと決めてから**直す Phase を立てる。押し込みのクリックが効かない [BUG-167](../bugs/BUG-167.md) と関係する。
 
 - 2026-10-05 WS138 の結果（Q1）: p019 の背景は PNG。c7 の測る箱は 2026-10-05 の配置に合わせた（plan/ws138/phase002/c7-boxes.diff、git の履歴の 7ce969dd）。Files・Settings の配置を変える WS は c7 の箱を確かめ直すこと。
+
+## 2026-10-06 UAT のフィードバック（再設計の Phase の候補）
+
+- BUG-217 最大化を desktop の session の状態にする（切り替え先も最大化、窓の app へは窓に）→ **新しい Phase で仕様と実装**（WS142 と共同）
+- BUG-225・BUG-236 App Home の再設計（暗い stage・spotlight・光沢の床の反射、即座の覆いと icon の後追いの 2 層の animation）→ **新しい Phase: montage → 設計 → 実装**（P2 が montage の途中で中断）
+- BUG-232 App Home で起動中の app は切り替え、BUG-235 Log Out の確認（暗くする演出）、BUG-219 title bar の menu に薄い下線、BUG-221 drag の範囲選択の frame rate の丸め（15〜30 fps）
+- BUG-223 全画面の direct scanout（game mode）、BUG-208 の後の全画面と dock の整合
+- ws099-p034 上部の bar: 保留の patch（held/）を main に当て直し中、icon は montage-4 と BUG-237 の穴（ad568302）

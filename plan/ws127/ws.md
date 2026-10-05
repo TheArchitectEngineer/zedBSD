@@ -84,3 +84,7 @@ F-032・F-034・F-040（ベータ1 の外の見込み）。
 2026-10-04 Q1（user「任せます」で判断を委ねられた）: ベータ1 に向け、標準 app の作業を WS131 の app の移行より先にする。p001 の候補から Q1 が採る: p003（名前の衝突と Trash の残り: Replace で消さずに Trash、cut の Esc で clipboard を戻す、folder の merge）、p006（DnD の自動の scroll と spring-loaded）。p004（PDF の thumbnail）は p003・p006 の後に時間があれば。p005（日本語の UI の文言）は翻訳の方針の判断が要るのでユーザーに残す。p007 は実機。
 
 2026-10-04 P2（q666）: p003・p006 の範囲を source と記録で照合。F-050 の 3 つは ws035-p110・p115、F-039 の端の scroll と folder の spring は ws127-p002 で実装・QEMU 試験済み。残り（p003 は volume の trash、p006 は tab の spring）だけを実装する（Q1 了承）。
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-220 詳細の list の列の幅の drag、BUG-221 範囲選択の追従、BUG-233 動画の file が Terminal で開く・BUG-234 /bin の file の開き方（GUI は Terminal なし、CLI は Terminal に残す）→ **関連付けと開き方の Phase**

@@ -66,3 +66,7 @@ Primary Milestone: MG006
 | p004 | compositor のメッセージの API の骨格と偽の backend | planning | p001 |
 | 後（別の Phase、範囲の外） | 本物の SMS・MMS・RCS の送受信、モデム、スマホの bridge、VoIP、chat の API の統合 | — | — |
 | p005 | 全文規約の見直し（最初の範囲） | planning | p002〜p004 |
+
+## 2026-10-06 UAT のフィードバック
+
+- BUG-218 本体の padding を Settings と同じに、慣性の開始の遅れ。BUG-203・204 の IME と OSK は直し済み・T1-217 待ち
