@@ -49,6 +49,11 @@ SHADERS = (
     ('point.frag', 'fragment', 'i915_vke2_point_frag'),
     ('vformat.vert', 'vertex', 'i915_vke2_vformat_vert'),
     ('vformat.frag', 'fragment', 'i915_vke2_vformat_frag'),
+    ('edge.frag', 'fragment', 'i915_vke2_edge_frag'),
+    ('undef.frag', 'fragment', 'i915_vke2_undef_frag'),
+    ('killoop.frag', 'fragment', 'i915_vke2_killoop_frag'),
+    ('noinput.vert', 'vertex', 'i915_vke2_noinput_vert'),
+    ('noinput.frag', 'fragment', 'i915_vke2_noinput_frag'),
 )
 
 SIZE = 64
@@ -653,6 +658,94 @@ def vformat_pixel(x, y):
     return vformat_words()[x % 12]
 
 
+# ------------------------------------------------------------------ boundaries (ws031-p024)
+
+INT_MIN = -2 ** 31
+BOUNDARY = (0, 1, -1, 2, -2, 3, -7, 255, 256, 32767, -32768, 2 ** 31 - 1, INT_MIN, INT_MIN + 1,
+            1000000007, -1000000007)
+EDGE_MARKER = 0x5a5a5a5a
+
+# The boundary steps' data is in the kernel only in the test set "boundary" (I915_TEST_SET=boundary, which defines
+# I915_VKE2_BOUNDARY): the default test kernel is at its size limit.  The host fixtures always have it.
+BOUNDARY_ONLY = '#if !defined(I915_VKE2_IN_KERNEL) || defined(I915_VKE2_BOUNDARY)'
+
+
+def smod(a, b):
+    """OpSMod: the remainder with the divisor's sign."""
+    r = a - b * sdiv(a, b)
+    if r != 0 and (r < 0) != (b < 0):
+        r += b
+    return r
+
+
+def edge_pixel(x, y):
+    op = y & 15
+    a = BOUNDARY[x & 15]
+    b = BOUNDARY[(y >> 4) * 4 + ((x >> 4) & 3)]
+    ua, ub = u32(a), u32(b)
+    undefined_signed = b == 0 or (a == INT_MIN and b == -1)
+    if op == 0:
+        r = EDGE_MARKER if undefined_signed else sdiv(a, b)
+    elif op == 1:
+        r = EDGE_MARKER if undefined_signed else smod(a, b)
+    elif op == 2:
+        r = EDGE_MARKER if b == 0 else ua // ub
+    elif op == 3:
+        r = EDGE_MARKER if b == 0 else ua % ub
+    elif op == 4:
+        r = a << (b & 31)
+    elif op == 5:
+        r = a >> (b & 31)
+    elif op == 6:
+        r = ua >> (b & 31)
+    elif op == 7:
+        r = a * b
+    elif op == 8:
+        r = a + b
+    elif op == 9:
+        r = a - b
+    elif op == 10:
+        r = -a
+    elif op == 11:
+        r = s32(min(a, b)) ^ s32(max(a, b) * 3)
+    elif op == 12:
+        r = min(ua, ub) ^ (max(ua, ub) >> 1)
+    elif op == 13:
+        r = int(a == b) | int(a < b) << 1 | int(a > b) << 2 | int(ua < ub) << 3 | int(ua > ub) << 4
+    elif op == 14:
+        r = bits(f32(float(a))) ^ bits(f32(float(ub)))
+    else:
+        r = u32(int(f32(float(ua >> 1))))
+    return u32(r)
+
+
+def undef_pixel(x, y):
+    """The guard rows' words, and on the odd rows what the host models give (0 for a division SPIR-V leaves
+    undefined, a shift by its count's low five bits, as the EU does): the kernel test does not judge those."""
+    op = (y >> 1) & 7
+    a = s32(u32(x + 1) * 2654435761)
+    if (y & 1) == 0:
+        return u32(x * 977 + y)
+    if op in (0, 1, 2, 3, 4, 5):
+        return 0
+    if op == 6:
+        return u32(a << ((32 + (x & 31)) & 31))
+    return u32(a) >> ((33 + (x & 15)) & 31)
+
+
+def killoop_pixel(x, y):
+    acc = 1
+    for i in range(x & 15):
+        if i == (y & 15):
+            return 0
+        acc = u32(acc * 3 + i)
+    return (acc & 0x00ffffff) | 0x81000000
+
+
+def noinput_pixel(x, y):
+    return x | (y << 8) | 0xa5000000
+
+
 def c_words(lines, symbol, words, kind='uint32_t', per_line=6, fmt='0x{:08x}U'):
     lines.append(f'static const {kind} {symbol}[{len(words)}] = {{')
     for offset in range(0, len(words), per_line):
@@ -686,6 +779,8 @@ def main():
         ' * A pixel is RGBA8 with red in the low byte; a float is its IEEE-754 bits.',
         ' */',
     ]
+    boundary = ('i915_vke2_edge_frag', 'i915_vke2_undef_frag', 'i915_vke2_killoop_frag', 'i915_vke2_noinput_vert',
+                'i915_vke2_noinput_frag')
     for source, stage, symbol in SHADERS:
         path = directory / source
         output = directory / (source + '.spv')
@@ -695,7 +790,11 @@ def main():
         binary = output.read_bytes()
         words = struct.unpack(f'<{len(binary) // 4}I', binary)
         lines.extend(['', f'/* {source} (sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}), {len(words)} words. */'])
+        if symbol in boundary:
+            lines.append(BOUNDARY_ONLY)
         c_words(lines, symbol, words)
+        if symbol in boundary:
+            lines.append('#endif')
 
     lines.extend(['', '/* The matrix step\'s uniform block (binding 0, std140): m, r (row-major), m3 (MatrixStride 16), extra. */'])
     matrices = column_major_words(MAT_M) + row_major_words(MAT_R) + column_major_words(MAT_M3) + EXTRA
@@ -773,9 +872,17 @@ def main():
     assert all(point_pixel(x, y) == point_word(x, y) for y in range(SIZE) for x in range(SIZE))
     for name, function, what in (('agg', agg_pixel, 'its 32-bit result'),
                                  ('matfn', matfn_pixel, 'the bits of its determinant, inverse element or halves'),
-                                 ('persp', persp_pixel, 'the bits of x + 3 with perspective')):
+                                 ('persp', persp_pixel, 'the bits of x + 3 with perspective'),
+                                 ('edge', edge_pixel, 'its 32-bit result, or the marker of an undefined division'),
+                                 ('undef', undef_pixel, 'the guard word on even rows, the host models\' word on odd rows'),
+                                 ('killoop', killoop_pixel, 'its accumulator with the top byte 0x81, or zero when discarded'),
+                                 ('noinput', noinput_pixel, 'x, y and the mark 0xa5')):
         lines.extend(['', f'/* Every pixel of the {name} step: {what}. */'])
+        if name in ('edge', 'undef', 'killoop', 'noinput'):
+            lines.append(BOUNDARY_ONLY)
         c_words(lines, f'i915_vke2_{name}_expected', image(function), per_line=8)
+        if name in ('edge', 'undef', 'killoop', 'noinput'):
+            lines.append('#endif')
     lines.append('')
     (fixtures / 'generality-shaders-gen.inc').write_text('\n'.join(lines))
 

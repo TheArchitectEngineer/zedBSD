@@ -1581,18 +1581,21 @@ test_generality_fragment_shaders(void)
 		const uint32_t *words;
 		size_t bytes;
 		const uint32_t *expected;
-	} steps[5] = {
+	} steps[7] = {
 		{ "matrix.frag", i915_vke2_matrix_frag, sizeof(i915_vke2_matrix_frag), i915_vke2_matrix_expected },
 		{ "int.frag", i915_vke2_int_frag, sizeof(i915_vke2_int_frag), i915_vke2_int_expected },
 		{ "float.frag", i915_vke2_float_frag, sizeof(i915_vke2_float_frag), i915_vke2_float_expected },
 		{ "loop.frag", i915_vke2_loop_frag, sizeof(i915_vke2_loop_frag), i915_vke2_loop_expected },
 		{ "spill.frag", i915_vke2_spill_frag, sizeof(i915_vke2_spill_frag), i915_vke2_spill_expected },
+		/* ws031-p024: the integer boundaries, and the undefined results (the models' words: 0, low-5-bit shifts) */
+		{ "edge.frag", i915_vke2_edge_frag, sizeof(i915_vke2_edge_frag), i915_vke2_edge_expected },
+		{ "undef.frag", i915_vke2_undef_frag, sizeof(i915_vke2_undef_frag), i915_vke2_undef_expected },
 	};
 	struct i915_shader_ir *ir;
 	struct machine m;
 	unsigned step, x, y, loops, k;
 
-	for (step = 0U; step < 5U; step++) {
+	for (step = 0U; step < 7U; step++) {
 		ir = parse_words(steps[step].name, steps[step].words, steps[step].bytes, I915_STAGE_FRAGMENT);
 		loops = 0U;
 		for (k = 0U; k < ir->instruction_count; k++)
@@ -1620,7 +1623,7 @@ test_generality_fragment_shaders(void)
 		}
 		drv_i915_shader_ir_free(ir);
 	}
-	printf("  generality: matrix / int / float / loop / spill fragment shaders match regenerate.py at 5 x 4096 pixels (5 loops in loop.frag)\n");
+	printf("  generality: matrix / int / float / loop / spill / edge / undef fragment shaders match regenerate.py at 7 x 4096 pixels (5 loops in loop.frag)\n");
 }
 
 /*
