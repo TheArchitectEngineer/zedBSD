@@ -5786,7 +5786,9 @@ zwl_glass_open_docked(
 	surface->y = docked.y;
 	surface->window_width = (uint32_t)docked.width;
 	surface->window_height = (uint32_t)docked.height;
-	printf("ZWL GLASS open-docked surface=%u front=%u x=%d y=%d w=%d h=%d\n", surface->id, front->id,
+	printf("ZWL GLASS open-docked client=%llu surface=%u front_client=%llu front=%u x=%d y=%d w=%d h=%d\n",
+	       (unsigned long long)surface->client->number, surface->id,
+	       (unsigned long long)front->client->number, front->id,
 	       (int)docked.x, (int)docked.y, (int)docked.width, (int)docked.height);
 
 	/* Succeeded: the window opens docked. */
