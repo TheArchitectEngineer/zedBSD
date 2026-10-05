@@ -526,7 +526,8 @@ static intptr_t open_search_candidate(const char *directory, size_t directory_le
 static struct rtld_object *find_identity(const struct stat *status);
 static struct rtld_object *new_object(const char *path);
 static void copy_path(char destination[RTLD_PATH_MAX], const char *source);
-static void map_one_segment(struct rtld_object *object, int fd, const Elf_Phdr *program, int choose_base);
+static void map_one_segment(struct rtld_object *object, int fd, const Elf_Phdr *program);
+static void object_reserve_span(struct rtld_object *object, uintptr_t low);
 static int segment_prot(uint32_t flags);
 static void remember_mapping(struct rtld_object *object, uintptr_t start, size_t size);
 static void parse_dynamic(struct rtld_object *object);
@@ -1989,7 +1990,7 @@ tls_module_at(
 	for (step = id / RTLD_TLS_CHUNK; step != 0; step--)
 		chunk = __atomic_load_n(&chunk->next, __ATOMIC_ACQUIRE);
 
-	/* The slot. */
+	/* Reports the module's slot within its chunk. */
 	return &chunk->slots[id % RTLD_TLS_CHUNK];
 }
 
@@ -2077,14 +2078,14 @@ layout_static_tls(
 		offset = static_tls_place(main_module, offset);
 	}
 
-	/* The others. */
+	/* Places every other module loaded at startup, by id. */
 	for (id = 1; id <= tls_module_count; id++) {
 		/* Skips a slot that holds no module, and the main one. */
 		module = tls_module_at(id);
 		if (!module->active || module == main_module)
 			continue;
 
-		/* Places it. */
+		/* Places it below the modules placed so far. */
 		offset = static_tls_place(module, offset);
 	}
 
@@ -2109,7 +2110,7 @@ layout_static_tls(
 		if (!module->active || !module->is_static || module->file_size == 0)
 			continue;
 
-		/* Copies it. */
+		/* Copies its initialized data to its place in the template. */
 		rtld_memcpy(image + (offset - module->static_offset),
 			    module->init_image, module->file_size);
 	}
@@ -2233,7 +2234,7 @@ initialize_object(
 	else
 		initialization_head = object;
 
-	/* The new tail. */
+	/* Makes it the tail, which process_fini finalizes first. */
 	initialization_tail = object;
 
 	loader_unlock();
@@ -2360,16 +2361,16 @@ handle_free_slot(
 	struct rtld_handle_chunk *chunk;
 	unsigned i;
 
-	/* Each chunk, each slot. */
+	/* Searches every chunk in order for an unused slot. */
 	for (chunk = &handle_chunk_first; chunk != NULL; chunk = chunk->next) {
 		for (i = 0; i < RTLD_HANDLE_CHUNK; i++) {
-			/* The first that is free. */
+			/* Reports the first slot no handle holds. */
 			if (!chunk->slots[i].active)
 				return &chunk->slots[i];
 		}
 	}
 
-	/* Every slot is in use. */
+	/* Reports that every slot is in use. */
 	return NULL;
 }
 
@@ -2468,7 +2469,7 @@ preflight_dlopen_file(
 	if (phdr_mapping != 0)
 		tls_unmap(phdr, phdr_mapping);
 
-	/* Reports operation failure. */
+	/* Refuses a file whose program headers do not check. */
 	if (!valid)
 		return -1;
 
@@ -2626,10 +2627,9 @@ load_object(
 	intptr_t fd, result;
 	size_t phdr_mapping;
 	size_t length;
-	unsigned i, first;
+	unsigned i;
 	uintptr_t minimum;
 
-	first = 0;
 	minimum = UINTPTR_MAX;
 
 	/* Handles the name availability. */
@@ -2705,17 +2705,22 @@ load_object(
 		    page_floor((uintptr_t)object->phdr[i].p_vaddr) < minimum) {
 			minimum =
 			    page_floor((uintptr_t)object->phdr[i].p_vaddr);
-			first = i;
 		}
 	}
-	map_one_segment(object, (int)fd, &object->phdr[first], 1);
+	/*
+	 * The whole span of the load segments, reserved at once (WS140,
+	 * T1-163): mapping the first segment alone let the kernel place it in
+	 * a hole too small for the segments after it, which then could not be
+	 * mapped.
+	 */
+	object_reserve_span(object, minimum);
 
-	/* Process each element required by the operation. */
+	/* Each load segment, into its place in the span. */
 	for (i = 0; i < object->phnum; i++) {
-		/* Checks the current index. */
-		if (i != first && object->phdr[i].p_type == PT_LOAD &&
+		/* A load segment with memory. */
+		if (object->phdr[i].p_type == PT_LOAD &&
 		    object->phdr[i].p_memsz != 0)
-			map_one_segment(object, (int)fd, &object->phdr[i], 0);
+			map_one_segment(object, (int)fd, &object->phdr[i]);
 	}
 	(void)syscall6(KERN_SYS_close, (uintptr_t)fd, 0, 0, 0, 0, 0);
 	parse_dynamic(object);
@@ -3002,7 +3007,7 @@ object_at(
 	for (step = index / RTLD_OBJECT_CHUNK; step != 0; step--)
 		chunk = __atomic_load_n(&chunk->next, __ATOMIC_ACQUIRE);
 
-	/* The slot. */
+	/* Reports the slot of the index within its chunk. */
 	return &chunk->slots[index % RTLD_OBJECT_CHUNK];
 }
 
@@ -3021,7 +3026,7 @@ object_chunk_grow(
 	if (chunk == NULL)
 		rtld_fatal("cannot allocate shared-object table");
 
-	/* Published after the last. */
+	/* Links it after the last chunk before any of its slots is counted. */
 	__atomic_store_n(&object_chunk_last->next, chunk, __ATOMIC_RELEASE);
 	object_chunk_last = chunk;
 }
@@ -3037,7 +3042,7 @@ program_table_take(
 	struct rtld_program_table **link;
 	struct rtld_program_table *table;
 
-	/* One left by an object gone. */
+	/* Reuses a table an unloaded object left, when it is large enough. */
 	for (link = &program_tables_free; *link != NULL; link = &(*link)->next) {
 		/* Takes the first that is large enough off the list. */
 		table = *link;
@@ -3099,7 +3104,7 @@ object_set_programs(
 		object->mapping_capacity = 2U * phnum;
 	}
 
-	/* The headers. */
+	/* Copies the headers into the object's room or its table. */
 	rtld_memcpy(object->phdr, phdr, (size_t)phnum * sizeof(Elf_Phdr));
 }
 
@@ -3132,7 +3137,7 @@ read_program_headers(
 		*mapping_size = size;
 	}
 
-	/* The headers. */
+	/* Reads the headers from the file. */
 	result = syscall6(KERN_SYS_pread, (uintptr_t)fd, (uintptr_t)headers,
 			  size, (uintptr_t)header->e_phoff, 0, 0);
 	if (result != (intptr_t)size) {
@@ -3162,7 +3167,7 @@ tlsdesc_slot(
 	struct rtld_tlsdesc_chunk *chunk;
 	struct __tls_index *slot;
 
-	/* Inside the object. */
+	/* Uses the room inside the object while it lasts. */
 	if (object->tlsdesc_count < RTLD_TLSDESC_INLINE) {
 		slot = &object->tlsdesc_inline[object->tlsdesc_count];
 		object->tlsdesc_count++;
@@ -3184,7 +3189,7 @@ tlsdesc_slot(
 		else
 			object->tlsdesc_last->next = chunk;
 
-		/* The new last page. */
+		/* Makes it the page the next argument goes in. */
 		object->tlsdesc_last = chunk;
 	}
 
@@ -3254,14 +3259,14 @@ object_reserve_needed(
 	size_t size;
 	size_t i;
 
-	/* The DT_NEEDED entries. */
+	/* Counts the DT_NEEDED entries. */
 	count = 0;
 	for (i = 0; i < object->dynamic_count; i++) {
 		/* The end of the section, as parse_dynamic stops there. */
 		if (object->dynamic[i].d_tag == DT_NULL)
 			break;
 
-		/* A dependency. */
+		/* Counts a dependency. */
 		if (object->dynamic[i].d_tag == DT_NEEDED)
 			count++;
 	}
@@ -3319,13 +3324,59 @@ copy_path(
 	rtld_memcpy(destination, source, length + 1U);
 }
 
+/*
+ * Reserves the address range of an object's load segments, from the page
+ * of the lowest (low) to the end of the highest, as one inaccessible
+ * mapping, which costs no commit, and sets the object's base from where it
+ * landed.  The segments are then mapped over it; the reservation is the
+ * one mapping the object records, so unloading it unmaps them all.
+ */
+static void
+object_reserve_span(
+	struct rtld_object *object,
+	uintptr_t low)
+{
+	uintptr_t high;
+	uintptr_t end;
+	intptr_t mapped;
+	unsigned i;
+	int failed;
+
+	/* The end of the highest load segment (validate_file_programs checked the sums). */
+	high = low;
+	for (i = 0; i < object->phnum; i++) {
+		/* A load segment with memory. */
+		if (object->phdr[i].p_type != PT_LOAD || object->phdr[i].p_memsz == 0)
+			continue;
+
+		/* Its end, rounded to a page. */
+		end = page_ceil((uintptr_t)(object->phdr[i].p_vaddr + object->phdr[i].p_memsz));
+		if (end > high)
+			high = end;
+	}
+
+	/* The range, anywhere the kernel finds room. */
+	mapped = map_call(0, (size_t)(high - low), PROT_NONE,
+			  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	failed = raw_error(mapped);
+	if (failed)
+		rtld_fatal("cannot reserve shared object address range");
+
+	/* Refuses a place below the lowest segment's address, which no base reaches. */
+	if ((uintptr_t)mapped < low)
+		rtld_fatal("invalid shared object load bias");
+
+	/* The base, and the reservation as the object's one mapping. */
+	object->base = (uintptr_t)mapped - low;
+	remember_mapping(object, (uintptr_t)mapped, (size_t)(high - low));
+}
+
 /* Supports the map one segment operation. */
 static void
 map_one_segment(
 	struct rtld_object *object,
 	int fd,
-	const Elf_Phdr *program,
-	int choose_base)
+	const Elf_Phdr *program)
 {
 	uintptr_t anonymous;
 	size_t anonymous_size;
@@ -3355,8 +3406,8 @@ map_one_segment(
 		program->p_filesz != 0 ? (size_t)page_ceil(file_bytes) : 0;
 	memory_map_size = (size_t)page_ceil(memory_bytes);
 	file_offset = page_floor((uintptr_t)program->p_offset);
-	requested = choose_base ? 0 : object->base + virtual_page;
-	flags = MAP_PRIVATE | (choose_base ? 0 : MAP_FIXED_NOREPLACE);
+	requested = object->base + virtual_page;
+	flags = MAP_PRIVATE | MAP_FIXED;
 	final_prot = segment_prot(program->p_flags);
 	map_prot = final_prot;
 	need_zero = program->p_memsz > program->p_filesz;
@@ -3392,15 +3443,9 @@ map_one_segment(
 			rtld_fatal("cannot map shared object BSS");
 	}
 
-	/* Handles the choose base condition. */
-	if (choose_base) {
-		/* Handles the uintptr t condition. */
-		if ((uintptr_t)mapped < virtual_page)
-			rtld_fatal("invalid shared object load bias");
-		object->base = (uintptr_t)mapped - virtual_page;
-	}
-	remember_mapping(object, (uintptr_t)mapped,
-			 file_map_size != 0 ? file_map_size : memory_map_size);
+	/* The segment lands where the span has room for it (MAP_FIXED within the reservation). */
+	if ((uintptr_t)mapped != requested)
+		rtld_fatal("cannot map shared object segment");
 
 	/* File-backed segments may need additional anonymous BSS pages.
 	 * A pure BSS segment was already mapped in full above. */
@@ -3409,12 +3454,11 @@ map_one_segment(
 		anonymous_size = memory_map_size - file_map_size;
 		mapped = map_call(
 		    anonymous, anonymous_size, map_prot,
-		    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+		    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 
 		/* Handles an operation failure. */
 		if (raw_error(mapped) || (uintptr_t)mapped != anonymous)
 			rtld_fatal("cannot map shared object zero fill");
-		remember_mapping(object, anonymous, anonymous_size);
 	}
 
 	/* Handles the zero condition. */
@@ -5528,7 +5572,7 @@ unload_object_locked(
 		for (i = 0; i < dependency_count; i++)
 			inline_copy[i] = object->needed[i];
 
-		/* Uses the copy. */
+		/* Walks the copy instead of the object's list. */
 		dependencies = inline_copy;
 	}
 
@@ -5660,7 +5704,7 @@ lookup_generation_next(
 {
 	unsigned i;
 
-	/* The next walk's number. */
+	/* Advances to the next walk's number. */
 	lookup_generation++;
 
 	/* Clears the old marks once the counter wraps to zero. */
