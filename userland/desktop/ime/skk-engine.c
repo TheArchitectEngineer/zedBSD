@@ -96,7 +96,9 @@ static const struct ime_engine_ops engine_ops = {
 	engine_save,
 	engine_destroy,
 	engine_mode,
-	engine_select
+	engine_select,
+	NULL,
+	NULL
 };
 
 /*

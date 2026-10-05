@@ -85,14 +85,15 @@
  * white), one's own over RCS (the accent) and over the carrier (teal), a
  * call's card, and the contacts' ground on an opaque window.
  */
-#define PH_COLOR_INCOMING	KL_RGB(0xedf1f6)
-#define PH_COLOR_INCOMING_GLASS	KL_RGBA(0xffffff, 205)
+#define PH_COLOR_INCOMING	kl_theme_choose(KL_RGB(0xedf1f6), KL_RGB(0x2f3540))
+#define PH_COLOR_INCOMING_GLASS	kl_theme_choose(KL_RGBA(0xffffff, 205), KL_RGBA(0x2f3540, 205))
 #define PH_COLOR_RCS		KL_RGB(0x2f7cf6)
 #define PH_COLOR_SMS		KL_RGB(0x0f9d8a)
-#define PH_COLOR_CARD		KL_RGB(0xf7f8fa)
-#define PH_COLOR_CARD_GLASS	KL_RGBA(0xffffff, 170)
-#define PH_COLOR_SIDEBAR	KL_RGB(0xf4f6f9)
+#define PH_COLOR_CARD		kl_theme_choose(KL_RGB(0xf7f8fa), KL_RGB(0x2a2f38))
+#define PH_COLOR_CARD_GLASS	kl_theme_choose(KL_RGBA(0xffffff, 170), KL_RGBA(0x2a2f38, 170))
+#define PH_COLOR_SIDEBAR	kl_theme_choose(KL_RGB(0xf4f6f9), KL_RGB(0x1f232a))
 #define PH_COLOR_WHITE		KL_RGB(0xffffff)
+#define PH_COLOR_SURFACE	kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x23272f))
 
 /* The handset's outline in an 18-pixel box (Material's "call"). */
 static const float ph_view_handset[] = {
@@ -316,7 +317,7 @@ ph_view_draw(
 	if (view->glass) {
 		kl_canvas_clear(style->canvas);
 	} else {
-		kl_canvas_fill(style->canvas, &whole, PH_COLOR_WHITE);
+		kl_canvas_fill(style->canvas, &whole, PH_COLOR_SURFACE);
 	}
 
 	/* Where the contacts and the timeline go (a narrow window shows one of them). */
@@ -824,7 +825,7 @@ view_header(
 		edge.width -= 2 * PH_VIEW_SIDE;
 		kl_canvas_fill(style->canvas, &edge, style->theme->row_separator);
 	} else {
-		kl_canvas_fill(style->canvas, area, PH_COLOR_WHITE);
+		kl_canvas_fill(style->canvas, area, PH_COLOR_SURFACE);
 		kl_canvas_fill(style->canvas, &edge, style->theme->separator);
 	}
 
@@ -1369,7 +1370,7 @@ view_composer(
 		edge.width -= 2 * PH_VIEW_SIDE;
 		kl_canvas_fill(style->canvas, &edge, style->theme->row_separator);
 	} else {
-		kl_canvas_fill(style->canvas, area, PH_COLOR_WHITE);
+		kl_canvas_fill(style->canvas, area, PH_COLOR_SURFACE);
 		kl_canvas_fill(style->canvas, &edge, style->theme->separator);
 	}
 
@@ -1381,9 +1382,9 @@ view_composer(
 	hit = kl_ui_hit(ui, PH_ID_ATTACH, 0U, &button);
 	if ((hit & KL_HIT_CLICKED) != 0U)
 		ph_view_action(view, PH_ACTION_ATTACH, now_us);
-	ground = KL_RGB(0xeef1f5);
+	ground = kl_theme_choose(KL_RGB(0xeef1f5), KL_RGB(0x2f3540));
 	if ((hit & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
-		ground = KL_RGB(0xe1e6ee);
+		ground = kl_theme_choose(KL_RGB(0xe1e6ee), KL_RGB(0x3a414d));
 	kl_canvas_circle(style->canvas, (float)button.x + 16.0f, (float)button.y + 16.0f, 16.0f, ground);
 	kl_icon_draw(style->canvas, KL_ICON_PLUS, (float)button.x + 6.0f, (float)button.y + 6.0f, 20.0f, style->theme->icon);
 

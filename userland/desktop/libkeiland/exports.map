@@ -185,6 +185,7 @@
 		kl_text_break;
 		kl_utf8_next;
 		kl_theme_default;
+		kl_theme_choose;
 		kl_icon_draw;
 		kl_icon_folder;
 		kl_icon_file;

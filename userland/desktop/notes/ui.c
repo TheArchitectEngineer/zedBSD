@@ -78,16 +78,18 @@
  * Kei's colours, as 0xRRGGBB, with the alphas they are laid on with:
  * the glass's white veil, its rim and its slate edge, the slate text in
  * three strengths, Kei's blue and its pale tint, and the shadow's slate
- * (the same values as the File Manager's).
+ * (the same values as the File Manager's).  The veil, its rim and the
+ * text have the dark appearance's colours too (ws089-p017).
  */
-#define UI_WHITE		0xffffffU
+#define UI_WHITE		kl_theme_choose(0xffffffU, 0x23272fU)
+#define UI_RIM			kl_theme_choose(0xffffffU, 0x3a404bU)
 #define UI_GLASS_ALPHA		210U
 #define UI_RIM_ALPHA		235U
 #define UI_SLATE_EDGE		0x1f3a66U
 #define UI_EDGE_ALPHA		34U
-#define UI_TEXT			0x1e2632U
-#define UI_TEXT_SECONDARY	0x6b7585U
-#define UI_TEXT_DISABLED	0xa3abb8U
+#define UI_TEXT			kl_theme_choose(0x1e2632U, 0xe9edf3U)
+#define UI_TEXT_SECONDARY	kl_theme_choose(0x6b7585U, 0xa9b2bfU)
+#define UI_TEXT_DISABLED	kl_theme_choose(0xa3abb8U, 0x646d7aU)
 #define UI_ACCENT		0x2f7cf6U
 #define UI_ACCENT_TINT_ALPHA	52U
 #define UI_SEPARATOR_ALPHA	40U
@@ -710,7 +712,7 @@ ui_glass(
 
 	/* The faint edge all round, and the rim's light along the inside of the top. */
 	ui_rounded_edge(ui, x, y, width, height, radius, UI_SLATE_EDGE, UI_EDGE_ALPHA);
-	ui_rounded_edge(ui, x + 1.0f, y + 1.0f, width - 2.0f, height - 2.0f, radius - 1.0f, UI_WHITE, UI_RIM_ALPHA / 2U);
+	ui_rounded_edge(ui, x + 1.0f, y + 1.0f, width - 2.0f, height - 2.0f, radius - 1.0f, UI_RIM, UI_RIM_ALPHA / 2U);
 }
 
 /* Draws an anti-aliased disc in a colour at an alpha. */

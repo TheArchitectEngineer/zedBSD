@@ -214,3 +214,9 @@ user「AX211のpassthruは、きちんとLinuxドライバをblacklistして再�
 
 ユーザー「GPUドライバはGOPの出力先以外に、scanoutを開始しない.というルールを覚えておいてください。」（WS051 の決定「ドライバは出力先を変更しない。…GOPから引き継ぐときに、GOPの出力先を、ドライバの出力先とする。…GOPがUSB-Cに出力されていない限り、ドライバはUSB-Cに出力しない。」と、hotplug は Keiland が Vulkan の Display の拡張で受けて mirror・拡張・出力 off を決める、の一般化）→ 全ての GPU の driver（i915・WS037 nvrtx・WS141 bcm2711（GOP に当たるのは firmware の framebuffer の出力先）・今後の物）は、boot の時に firmware（GOP など）が出していた出力先（port・pipe）以外に、自分の判断で scanout を始めない。それ以外の出力先は、graphical session の Keiland の明示の指示（libvulkan の Display の拡張の経路）があった時だけ。今の i915 の外部 display の優先の挙動はこの規則に反するので WS051 で直す。
 補い（2026-10-04 ユーザー）:「GPUドライバは、GOPの出力先であれば、scanoutできるようにどのインタフェースでも初期化を試みる、もまた真です。HDMIにせよDPにせよeDPにせよ。」→ 逆も規則: GOP の出力先がどの interface（HDMI・DP・eDP・USB-C の DP-alt など）でも、driver はその出力先で scanout できるように初期化を試みる（対応していない interface なら、その旨を log に出して firmware の画面を保つ）。
+
+## 例外（2026-10-05 追加）
+
+| 例外 | 範囲 | 理由・決定 | 期限 |
+| --- | --- | --- | --- |
+| base の `/sbin/passkey`（WS172）が package の OpenSSL の libcrypto を使う | passkey の暗号（SHA-256・HMAC・AES・P-256）だけ | ユーザー 2026-10-05「passkeyはbaseに起きます。OpenSSLはリリースまでに独自実装に置き換える予定なので、問題ないです。」（master-design-policy §2.1 の例外） | リリースの前（WS172 p005） |

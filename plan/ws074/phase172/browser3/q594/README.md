@@ -31,4 +31,6 @@ Final boundary/API/public-client/target/boot/ASan gates remain required; earlier
 results are historical, not final whole acceptance after later source changes.
 No automatic next Queue; no downstream p100/p174/p175/p173/p176/p101 work.
 Issues/Project publication remains deferred; branch push is a separate result.
-[Queue archive](../../../../history/queue-q594.md).
+Queue archive（branch の `plan/history/queue-q594.md`、main に無い）.
+
+2026-10-05 Q1 records reconciliation: この README の Queue の archive への link は branch の browser3 の `plan/history/` を指し、その file は main に無い（別セッションの記録）。main の `plan/history/queue-q59N.md` は main の同番号の別 Queue の名なので、link を文字に変えた。この Queue は WS074 の記録の中で b-q594 と読む（[対応表](../../../ws.md)）。

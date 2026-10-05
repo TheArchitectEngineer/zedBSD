@@ -175,6 +175,9 @@ static char main_title[MAIN_TITLE_MAX];
  */
 static struct kui_file_chooser *main_chooser;
 
+/* The desktop's appearance watched (ws089-p017): the editor draws in its colours (draw.c); NULL without it. */
+static struct kl_appearance *main_appearance;
+
 /* The interface's font, which the chooser draws its words with too. */
 static const char *main_ui_font;
 
@@ -213,6 +216,7 @@ static void main_fingers(uint64_t now_us);
 static int main_dialog_event(const struct kui_window_event *event);
 static int main_resize(void);
 static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void main_appearance_changed(void *data, unsigned appearance);
 
 /*
  * Runs Text Editor.
@@ -281,6 +285,11 @@ main(
 	te_app_init(&main_app, &main_body, &main_ui, (int)main_width, (int)main_height);
 	main_host(&main_app);
 	main_app.glass = te_glass_open(&main_glass, &main_window, kui_window_see_through(main_window.kui));
+
+	/* The desktop's appearance: the editor's colours follow it (light under a compositor without it). */
+	error = kl_appearance_open(kui_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
+	if (error != 0)
+		te_log("APPEARANCE none errno=%d", error);
 	if (options.file != NULL)
 		(void)te_app_open(&main_app, options.file);
 
@@ -317,6 +326,7 @@ main(
 	te_menu_close(&main_menu);
 	kui_ui_destroy(main_input);
 	te_glass_close(&main_glass);
+	kl_appearance_close(main_appearance);
 	te_app_release(&main_app);
 	if (main_handles_made)
 		kui_canvas_release(&main_handles);
@@ -1485,4 +1495,16 @@ main_fingers(
 
 	/* The view where its scroll has it (a new place is drawn, the handles with it). */
 	(void)te_app_sync_scroll(&main_app, now_us);
+}
+
+/* Takes the desktop's new appearance: the editor is drawn again in its colours. */
+static void
+main_appearance_changed(
+	void *data,
+	unsigned appearance)
+{
+	/* A new frame. */
+	(void)data;
+	main_app.dirty = 1;
+	te_log("APPEARANCE appearance=%u", appearance);
 }

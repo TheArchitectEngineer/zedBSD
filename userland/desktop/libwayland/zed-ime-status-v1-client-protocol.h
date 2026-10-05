@@ -7,9 +7,12 @@
 
 /*
  * Declares zdesktop's input method status protocol (keiland_ime_status_v1,
- * version 1; ws095-p004, plan/ws095/design.md section 8): the input method
+ * version 2; ws095-p004, plan/ws095/design.md section 8): the input method
  * tells zdesktop its language and whether text is being composed, and
- * zdesktop tells it to change language.  The protocol is zdesktop's own and
+ * zdesktop tells it to change language.  Version 2 (ws166-p002): zdesktop
+ * asks for the words a reading of the on-screen keyboard starts (predict),
+ * the input method answers (predictions: "WORD\tREADING" lines), and the
+ * word chosen is learned (learn).  The protocol is zdesktop's own and
  * this header is private to the tree.
  */
 
@@ -35,14 +38,18 @@ extern const struct wl_interface keiland_ime_status_manager_v1_interface;
 struct keiland_ime_status_v1_listener {
 	void (*next)(void *data, struct keiland_ime_status_v1 *keiland_ime_status_v1);
 	void (*select)(void *data, struct keiland_ime_status_v1 *keiland_ime_status_v1, const char *id);
+	void (*predict)(void *data, struct keiland_ime_status_v1 *keiland_ime_status_v1, uint32_t serial, const char *reading);
+	void (*learn)(void *data, struct keiland_ime_status_v1 *keiland_ime_status_v1, const char *reading, const char *word);
 };
 int keiland_ime_status_v1_add_listener(struct keiland_ime_status_v1 *keiland_ime_status_v1, const struct keiland_ime_status_v1_listener *listener, void *data);
 #define KEILAND_IME_STATUS_V1_DESTROY 0U
 #define KEILAND_IME_STATUS_V1_LANGUAGE 1U
 #define KEILAND_IME_STATUS_V1_COMPOSING 2U
+#define KEILAND_IME_STATUS_V1_PREDICTIONS 3U
 void keiland_ime_status_v1_destroy(struct keiland_ime_status_v1 *keiland_ime_status_v1);
 void keiland_ime_status_v1_language(struct keiland_ime_status_v1 *keiland_ime_status_v1, const char *id, const char *label);
 void keiland_ime_status_v1_composing(struct keiland_ime_status_v1 *keiland_ime_status_v1, uint32_t composing);
+void keiland_ime_status_v1_predictions(struct keiland_ime_status_v1 *keiland_ime_status_v1, uint32_t serial, const char *list);
 
 /* keiland_ime_status_manager_v1: the global that gives the input method its status. */
 #define KEILAND_IME_STATUS_MANAGER_V1_DESTROY 0U

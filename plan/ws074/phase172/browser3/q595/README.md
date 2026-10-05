@@ -32,4 +32,6 @@ No automatic new Queue or downstream work. Resume with current branch/hashes,
 select exact remaining59 full C/header reviews and necessary whole final
 conformance. Final boundary/API/public-client/target/boot/ASan gates still required;
 this partial result supplies no whole-Phase clearance. Issue/Project publication
-remains deferred, separate from Git push. [Verified archive](../../../../history/queue-q595.md).
+remains deferred, separate from Git push. Verified archive（branch の `plan/history/queue-q595.md`、main に無い）.
+
+2026-10-05 Q1 records reconciliation: この README の Queue の archive への link は branch の browser3 の `plan/history/` を指し、その file は main に無い（別セッションの記録）。main の `plan/history/queue-q59N.md` は main の同番号の別 Queue の名なので、link を文字に変えた。この Queue は WS074 の記録の中で b-q595 と読む（[対応表](../../../ws.md)）。

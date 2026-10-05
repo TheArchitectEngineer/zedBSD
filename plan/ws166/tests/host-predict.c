@@ -31,6 +31,10 @@
 
 int main(int argc, char **argv);
 static int expect(const char *name, const struct ja_user *user, const struct ja_predict_index *index, const char *reading, size_t max, const char *expected);
+static int expect_keyboard(const char *name, const struct ja_user *user, const struct ja_predict_index *index, const char *reading, const char *expected);
+
+/* Whether expect asks for the on-screen keyboard's order (ja_predict_keyboard, ws166-p002). */
+static int test_keyboard;
 static void timing(const char *path);
 
 /*
@@ -79,6 +83,9 @@ main(
 	failed += !expect("the limit", NULL, &index, "\xe3\x81\x8b\xe3\x82\x93", 3,
 			  "\xe6\xbc\xa2\xe5\xad\x97 \xe9\x96\xa2\xe4\xbf\x82 \xe6\x82\xa3\xe8\x80\x85");
 	failed += !expect("no reading starts with it", NULL, &index, "\xe3\x81\xac", 9, "");
+	/* The on-screen keyboard's order: the reading's own words first. */
+	failed += !expect_keyboard("keyboard: the reading itself first", NULL, &index, "\xe3\x81\x8b\xe3\x82\x93\xe3\x81\x98",
+				   "\xe6\xbc\xa2\xe5\xad\x97 \xe5\xb9\xb9\xe4\xba\x8b \xe6\x84\x9f\xe3\x81\x98 \xe6\x82\xa3\xe8\x80\x85 \xe6\x84\x9f\xe6\x83\x85 \xe5\x8b\x98\xe5\xae\x9a");
 
 	/* A user dictionary taught 勘定 for かんじょう, 感 for かん, and 書 for かk. */
 	snprintf(path, sizeof(path), "%s/user-predict", argv[2]);
@@ -97,6 +104,8 @@ main(
 			  "\xe5\x8b\x98\xe5\xae\x9a \xe6\xbc\xa2\xe5\xad\x97 \xe9\x96\xa2\xe4\xbf\x82 \xe6\x82\xa3\xe8\x80\x85 \xe6\x84\x9f\xe6\x83\x85 \xe5\xb9\xb9\xe4\xba\x8b \xe6\x84\x9f\xe3\x81\x98 \xe6\x84\x9f \xe7\xbc\xb6");
 	failed += !expect("the user's okurigana are not predicted, the latest choice first", &user, &index, "\xe3\x81\x8b", 2,
 			  "\xe6\x84\x9f \xe5\x8b\x98\xe5\xae\x9a");
+	failed += !expect_keyboard("keyboard: the user's word of the reading first, then the dictionary's, then the longer", &user, &index, "\xe3\x81\x8b\xe3\x82\x93",
+				   "\xe6\x84\x9f \xe7\xbc\xb6 \xe5\x8b\x98\xe5\xae\x9a \xe6\xbc\xa2\xe5\xad\x97 \xe9\x96\xa2\xe4\xbf\x82 \xe6\x82\xa3\xe8\x80\x85 \xe6\x84\x9f\xe6\x83\x85 \xe5\xb9\xb9\xe4\xba\x8b \xe6\x84\x9f\xe3\x81\x98");
 	ja_user_free(&user);
 
 	/* The image's dictionary, when named: the time. */
@@ -131,7 +140,7 @@ expect(
 	size_t max,
 	const char *expected)
 {
-	struct ja_prediction predictions[JA_PREDICT_MAX];
+	struct ja_prediction predictions[JA_PREDICT_KEYBOARD_MAX];
 	const struct ja_predict_index *indexes[1];
 	char joined[TEST_LIST_MAX];
 	size_t count;
@@ -139,9 +148,13 @@ expect(
 	size_t length;
 	int same;
 
-	/* The words. */
+	/* The words, in the order asked for. */
 	indexes[0] = index;
-	count = ja_predict(user, indexes, 1, reading, strlen(reading), predictions, max);
+	if (test_keyboard) {
+		count = ja_predict_keyboard(user, indexes, 1, reading, strlen(reading), predictions, max);
+	} else {
+		count = ja_predict(user, indexes, 1, reading, strlen(reading), predictions, max);
+	}
 
 	/* Joined by spaces. */
 	joined[0] = '\0';
@@ -165,6 +178,28 @@ expect(
 	/* Succeeded: as expected. */
 	printf("%s: ok\n", name);
 	return 1;
+}
+
+/*
+ * Predicts in the on-screen keyboard's order (the reading's own words
+ * first, JA_PREDICT_KEYBOARD_MAX at most) and compares as expect does.
+ * Returns 1 when they agree.
+ */
+static int
+expect_keyboard(
+	const char *name,
+	const struct ja_user *user,
+	const struct ja_predict_index *index,
+	const char *reading,
+	const char *expected)
+{
+	int agreed;
+
+	/* The keyboard's order, for this case alone. */
+	test_keyboard = 1;
+	agreed = expect(name, user, index, reading, JA_PREDICT_KEYBOARD_MAX, expected);
+	test_keyboard = 0;
+	return agreed;
 }
 
 /*

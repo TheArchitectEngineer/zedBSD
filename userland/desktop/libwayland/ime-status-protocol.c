@@ -7,9 +7,12 @@
 
 /*
  * Describes and marshals zdesktop's input method status protocol
- * (keiland_ime_status_manager_v1 and keiland_ime_status_v1, version 1;
+ * (keiland_ime_status_manager_v1 and keiland_ime_status_v1, version 2;
  * ws095-p004, plan/ws095/design.md section 8).  Only the input method
- * zdesktop starts may bind the manager.
+ * zdesktop starts may bind the manager.  Version 2 (ws166-p002) adds the
+ * on-screen keyboard's predictions: zdesktop asks for the words a reading
+ * starts (predict), the input method answers them (predictions), and the
+ * word chosen is learned (learn).
  */
 
 #include "internal.h"
@@ -27,18 +30,21 @@ static const struct wl_message ime_status_requests[] = {
 	{ "destroy", "", NULL },
 	{ "language", "ss", ime_status_plain_types },
 	{ "composing", "u", ime_status_plain_types },
+	{ "predictions", "2us", ime_status_plain_types },
 };
 
 /* The events of keiland_ime_status_v1, in wire opcode order. */
 static const struct wl_message ime_status_events[] = {
 	{ "next", "", NULL },
 	{ "select", "s", ime_status_plain_types },
+	{ "predict", "2us", ime_status_plain_types },
+	{ "learn", "2ss", ime_status_plain_types },
 };
 
 /* The immutable keiland_ime_status_v1 description. */
 const struct wl_interface keiland_ime_status_v1_interface = {
-	"keiland_ime_status_v1", 1, 3, ime_status_requests,
-	2, ime_status_events
+	"keiland_ime_status_v1", 2, 4, ime_status_requests,
+	4, ime_status_events
 };
 
 /* The arguments of keiland_ime_status_manager_v1.get_status. */
@@ -54,7 +60,7 @@ static const struct wl_message ime_status_manager_requests[] = {
 
 /* The immutable keiland_ime_status_manager_v1 description. */
 const struct wl_interface keiland_ime_status_manager_v1_interface = {
-	"keiland_ime_status_manager_v1", 1, 2, ime_status_manager_requests,
+	"keiland_ime_status_manager_v1", 2, 2, ime_status_manager_requests,
 	0, NULL
 };
 
@@ -122,6 +128,25 @@ keiland_ime_status_v1_composing(
 }
 
 /*
+ * Sends keiland_ime_status_v1.predictions (version 2): the answer to the
+ * predict event of the serial, the words one a line, each "WORD\tREADING"
+ * (an empty list for none).
+ */
+void
+keiland_ime_status_v1_predictions(
+	struct keiland_ime_status_v1 *object,
+	uint32_t serial,
+	const char *list)
+{
+	union wl_argument arguments[2];
+
+	/* The arguments in wire order. */
+	arguments[0].u = serial;
+	arguments[1].s = list;
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_V1_PREDICTIONS, NULL, 0, 0, arguments);
+}
+
+/*
  * Sends keiland_ime_status_manager_v1.destroy: the status it gave stays.
  */
 void
@@ -142,9 +167,9 @@ keiland_ime_status_manager_v1_get_status(
 	union wl_argument arguments[1];
 	struct wl_proxy *created;
 
-	/* The arguments in wire order. */
+	/* The arguments in wire order; the status has the manager's version (version 2 has the predictions, ws166-p002). */
 	arguments[0].n = 0;
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_MANAGER_V1_GET_STATUS, &keiland_ime_status_v1_interface, 1U, 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_MANAGER_V1_GET_STATUS, &keiland_ime_status_v1_interface, wl_proxy_get_version((struct wl_proxy *)object), 0, arguments);
 	if (created == NULL)
 		return NULL;
 

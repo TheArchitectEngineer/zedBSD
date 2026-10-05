@@ -117,7 +117,7 @@ kl_field(
 	}
 
 	/* The ground: white, with the accent's edge while it has the keyboard. */
-	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, KL_RGB(0xffffff));
+	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, theme->panel);
 	if (focused)
 		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, 1.5f, theme->accent);
 	else

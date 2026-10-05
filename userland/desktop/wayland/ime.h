@@ -41,8 +41,12 @@ enum zwl_ime_route {
  * One application's zwp_text_input_v3.
  *
  * The state a request sets waits in the pending fields until the client's
- * commit; the current fields are what the input method is told.  The
- * record lives as long as the object and is freed with it.
+ * commit; the current fields are what the input method is told.  commits
+ * counts the client's commits, and text_commit is the number of the commit
+ * that last set the surrounding text (0 for none since the enable), so
+ * that the on-screen keyboard can tell whether the text is newer than what
+ * it sent (ws166-p003).  The record lives as long as the object and is
+ * freed with it.
  */
 struct zwl_text_input {
 	struct zwl_text_input *next;
@@ -67,6 +71,7 @@ struct zwl_text_input {
 	uint32_t purpose;
 	int32_t rectangle[4];
 	uint32_t commits;
+	uint32_t text_commit;
 };
 
 /* The most applications whose language is remembered (ws095-p016), and an application key's longest text. */
@@ -164,6 +169,8 @@ int zwl_ime_request(struct zwl_object *object, uint32_t opcode, const unsigned c
 void zwl_ime_object_gone(struct zwl_object *object);
 void zwl_ime_client_gone(struct zwl_client *client);
 int zwl_ime_global_visible(struct zwl_client *client, enum zwl_kind kind);
+int zwl_ime_predict(struct zwl_server *server, uint32_t serial, const char *reading);
+void zwl_ime_learn(struct zwl_server *server, const char *reading, const char *word);
 void zwl_ime_repeat_changed(struct zwl_server *server);
 void zwl_ime_method_changed(struct zwl_server *server);
 int zwl_ime_key_early(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);

@@ -83,3 +83,31 @@ QEMU の Venus。 やっていない確認は「未実施」と書く。
 - QEMU（T1）: `settings-p017.sh` と、既定の見た目が変わらないことの回帰（C7 の `plan/ws099/tests/c7-contrast.sh`）。compositor の chrome（system bar・title bar・App Home・menu）の dark の見た目はこの試験の PNG で判断する。
 - 実機: 未実施。
 - p017b（残りの app の dark と `KL_APP_THEME` での描き直し）。
+
+## Q1 の判定（2026-10-05）
+
+p017a: T1-195 PASS（QEMU）。dark で bar・title bar・glass・card が暗く文字が明るい（7.8〜14.3）、light は今の見た目（c7 pass=72 fail=0 min 4.68）。p017a は済み、p017b（残りの app の dark と KL_APP_THEME の描き直し）が残る。
+## 実施（p017b、2026-10-05 夜、P2 g15、q766）
+
+Q1（2026-10-05）「BUG-171 の判断待ちの間は、WS089 p017b（残りの app の dark と KL_APP_THEME の描き直し）を先に進めてください（ユーザーが UAT で見たい見込みの物を優先）。」
+
+- **libkeiland**: `kl_theme_choose(light, dark)`（keiland-ui.h、KL_VERSION 35 に含める: 35 はまだ release 前）。program 自身の色を appearance で選ぶ。widgets の固定の色を dark でも合うように: field の地（`theme->panel`）、card の rim と chip（cards.c）、faded（widgets.c）、chooser の warning の地と file の紙。exports 再生成。
+- **kl_app の app**（Phone・Mailer・Calendar・Video Player・kuidemo）: `KL_APP_THEME` で `dirty`（theme の pointer は同じで中身が替わる）。Phone・Mailer・Calendar の固定の地・card・sidebar・glass の veil を `kl_theme_choose` に（白い文字・accent・avatar・絵は変えない。全面の白い地は `*_COLOR_SURFACE` に分けた）。
+- **Text Editor**: `DRAW_*` 20 色を light・dark の組に。`kl_appearance_open`、変わったら描き直し（log `APPEARANCE appearance=N`）。
+- **Notes**: toolbar の veil・rim・文字、机の wash（夜の色）。紙（page）は白のまま。`kl_appearance_open`（log `NOTES APPEARANCE appearance=N`）。
+- **PDF Viewer**: 枠の 14 色を light・dark の組に（page は白のまま）。draw.c は host 試験で libkeiland なしに build されるので、`pv_draw_set_dark` の局所の flag で選ぶ（main.c が appearance から設定）。
+- **Image Viewer**: 文字・card・chip・message と不透明の地。絵はそのまま。
+- Terminal と Monitor は元から暗い配色なので変えない（appearance を bind しないので、compositor の glass も light のまま = 今と同じ）。
+- 試験: `plan/ws089/tests/config-amd64-dark-apps.mk`（Settings の image に textedit・notes・imageview・phone・calendar・mailer）、`settings-p017b.sh`（各 app を light で起動 → `keiland-settings set appearance.dark 1` → dark の PNG と log → reset）。
+
+### 確認（host）
+
+- build: zedBSD の phone・mailer・calendar・videoplayer・kuidemo・textedit・notes・pdfviewer・imageview・settings（warning 0）、`make keiland-linux`（warning 0）、exports `--check` ok。
+- host: `plan/ws079/tests/run-notes-host.sh` ok、`plan/ws081/tests/run-notestouch.sh` ok（52）、`plan/ws079/tests/run-pdfviewer-host.sh` ok。
+- style-check: 変えた file の件数は増やしていない。
+- 範囲外の観察（Q1 へ）: `plan/ws081/tests/run-pdftouch.sh` は今回の前から壊れている（`chooser.c` が無い、`keiland-ui.h`・`keiui.h` の link が無い、host-pdftouch.c が今の touch の API と合わない）。小さくないので直していない。
+
+### 未実施
+
+- QEMU（T1）: `settings-p017b.sh`（PNG を目で判断）。
+- 実機: 未実施。
