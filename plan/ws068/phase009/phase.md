@@ -107,6 +107,29 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 - 回帰: build の warning 0、style-check の新しい違反 0、glsl-host・ws101 gles host が PASS、Venus の egl-p008〜p030・glx-p013・p031・p033・x11-p004・p005 が全て exit 0、
   ws101 の venus.sh が PASS、gles-hw.sh が PASS（lock が取れなければ「未実施」で uncleared）、boot test が PASS。
 
+## 実装（2026-10-05、P1 generation17、commit 69492884）
+
+| 部分 | 内容 | 場所 |
+| --- | --- | --- |
+| slot | `ZEGL_SLOTS` 2。slot ごとに command buffer・fence・acquire と render の semaphore・未待ちの印（`pending`）。`surface->command`・`fence`・`acquired`・`rendered` は今の slot の写し（`vulkan_slot_use`）で、libGLESv2 の記録の code は変えない | `userland/desktop/libegl/zegl.h`、`vulkan.c`（`vulkan_frame_objects`・`zegl_surface_close`） |
+| present | `vulkan_submit` の present は fence を待たず、slot に印を付けて次の slot へ移り、その slot の前の frame の fence だけを待つ。present が失敗しても slot は移る（submit 済みなので）。flush は今の通りその submit を待ち、全部の印を消す | `vulkan.c`（`vulkan_submit`） |
+| 待ち | `zegl_retire`（queue を idle まで待つ）、`zegl_surface_settled`（待たずに fence の状態を聞く）。`eglWaitClient`・`eglWaitGL` は `zegl_retire`。`exports.map` に 2 つを足した | `vulkan.c`、`egl.c`、`exports.map` |
+| frame の番号 | `state->done`（GPU で終わった最後の frame）と `state->flight`（frame を走らせたままの window、比べるだけ）。`frame_done(context, finished)`。`gles_frame_finished(state, finished)` が番号を進めて `done` を決め、`gles_collect`。別の surface の frame が走っている時は先に `zegl_retire` | `libglesv2/gles.h`・`gles.c`（`gles_frame_done`）・`buffer.c` |
+| 片付け | garbage・stream の chunk・descriptor pool に frame の番号。`gles_collect` は `done` 以下だけを壊す・空にする（空の chunk は 1 つ残す）・reset。`gles_stream` と pool の割り当ては走っている frame の物を使わない | `buffer.c`（`gles_collect`・`gles_stream`・`gles_garbage_keep`）、`draw.c`（`gles_draw_descriptors`） |
+| in place の書き換え | `buffer->used <= state->done` の時だけ（`gles_buffer_sync`・`gles_buffer_writable`） | `buffer.c` |
+| 待つ API | `query_finish`: `done` 以下は済み、走っている frame は `gles_frame_retire`、記録中は今の通り flush。fence sync の状態は `flight` の surface の `zegl_surface_settled`。`glFinish` は `gles_frame_retire` | `query.c`、`gles.c` |
+| query の slot | 返した slot は、それを書いた frame が終わるまで使わない（`written[]`）。前は同じ frame の中で返した slot を upload の queue で reset して使い直していた（記録済みで未 submit の segment と衝突しうる、潜在の不具合） | `query.c` |
+| pbuffer | 1 枚のまま（submit してすぐ待つ、`frame_done(context, 1)`） | `vulkan.c` |
+
 ## 確認
 
-未実施。
+| 確認 | 結果 |
+| --- | --- |
+| `make -j16 ZEDBSD_CONFIG=plan/ws068/tests/config-amd64-glsl.mk BUILD=build/ws068-p009-lib …/libEGL.so …/libGLESv2.so …/libGL.so …/bin/egltest` | rc=0、warning 0 |
+| `python3 plan/tools/style-check.py userland/desktop/libegl/*.c userland/desktop/libegl/zegl.h userland/desktop/libglesv2/*.c userland/desktop/libglesv2/gles.h` | 指摘 0 |
+| `git diff --check` | 問題なし |
+| `sh plan/ws068/tests/glsl-host/run.sh build/ws068-p009/glsl-host` | `glsl-host: PASS` |
+| `sh plan/ws101/tests/gles/run.sh build/ws068-p009/ws101-gles` | `ws101 gles host test PASS` |
+| 比べるための前の library | `build/ws068-p009-base/dynamic/libEGL.so`・`libGLESv2.so`（commit 69492884 の 1 つ前の source） |
+| Venus（T1）・WS101 の venus.sh・実機・boot test | **未実施**（T1 に依頼。手順 6〜9 の中身） |
+
