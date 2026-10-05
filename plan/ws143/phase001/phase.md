@@ -43,3 +43,7 @@ backpressure、§5.2 の usb-hid の glue の分離と LED、§6 の security �
 第 2 版（43273705）に F1〜F25 を反映し、design-reviewer（agent a40b549b4e89b1245）の 2 回目の review を受けた（[review-2.md](review-2.md)、
 N1〜N17）。第 3 版で全て反映（§3 の手順と失敗の経路、§5.1 の reset の約束と queue、§5.3 の resume、§6.1・§6.2・§6.4 の BR/EDR の
 流れと鍵の長さ、§6.5 の特権の分離と seat の人、§8.1 の版、§9 の並べ直し（D15 を先に、D16〜D18 を追加、D11 を分ける））。
+
+第 3 版の部分の再確認（同じ agent）: N1〜N17 のうち 16 が解決、N11（resume の印）が残り、`/dev/system` に resume の class を足す案（a）で
+直した（D2 の中で承認を求める）。D5・D18・情報のお願いの文の小さな直しも反映。reviewer の判断「§5.3 を直せば §9 をユーザーに送ってよい、
+次の review は要らない」。
