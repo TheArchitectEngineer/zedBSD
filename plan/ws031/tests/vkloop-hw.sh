@@ -32,6 +32,11 @@
 #                                                      vkdemo starts TEST_WAIT_S (default 90) seconds later than
 #                                                      usual, so a long scenario ends before the application runs
 #        plan/ws031/tests/vkloop-hw.sh "test <scenario> -DFOO=1"             (flags after the scenario)
+#                                                      a scenario builds with plan/ws075/tests/config-test-hw.mk (the
+#                                                      console mirrored to the serial log) and the test set of
+#                                                      platform/amd64/vmunix.mk that holds it (q762), unless
+#                                                      ZEDBSD_CONFIG or I915_TEST_SET says otherwise; display_ktest's
+#                                                      second half is I915_TEST_SET=display_ktest2
 #        CAPTURE=zdesktop plan/ws031/tests/vkloop-hw.sh zdesktop
 #                                                      WS035 p066: zdesktop (zdesktop --glass at 1920x1080, two wl_shm windows and mview --windowed
 #                                                      on top; services in plan/ws031/tests/zdesktop/)
@@ -55,7 +60,21 @@ case "$EXTRA" in test*)
 	shift
 	I915_TESTS=y
 	EXTRA="-DI915_TEST_SCENARIO=$SCENARIO $*"
-	TIME_MS= ;;
+	TIME_MS=
+	# The scenario's test set (platform/amd64/vmunix.mk, q762: no test kernel holds every scenario), unless given.
+	if [ -z "${I915_TEST_SET:-}" ]; then
+		case "$SCENARIO" in
+		vkx|vkc|vke1|vke2) I915_TEST_SET=$SCENARIO ;;
+		vkcs) I915_TEST_SET=compute ;;
+		ktest|eu|draw|r1|tex|t3|bl) I915_TEST_SET=execution ;;
+		display_ktest) I915_TEST_SET=display_ktest ;;
+		*) I915_TEST_SET=display ;;
+		esac
+	fi
+	export I915_TEST_SET
+	# A scenario's verdict lines are read from the serial log: the kernel's console must be mirrored there
+	# (plan/ws075/tests/config-test-hw.mk; T1-190 ran the default image without it and saw no line).
+	ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws075/tests/config-test-hw.mk} ;;
 esac
 WAYLAND_RUN=0
 case "$EXTRA" in wayland*)
