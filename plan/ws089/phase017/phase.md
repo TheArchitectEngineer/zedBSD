@@ -2,7 +2,7 @@
 
 # ws089-p017: accent の色・dark の外観（D2）
 
-Status: in-progress（p017a、2026-10-05 夕 P2 g15、q766）
+Status: cleared（2026-10-05 Q1: p017a T1-195、p017b T1-198b PASS）。以前: in-progress（p017a、2026-10-05 夕 P2 g15、q766）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q741（Q1、2026-10-05、P2）
@@ -122,3 +122,7 @@ Q1（2026-10-05）「BUG-171 の判断待ちの間は、WS089 p017b（残りの 
   4. 試験の app の終了: `ps -A -o pid,args | grep -E '^/bin/(...)'` は行頭が pid なので一致せず、app が閉じられないまま次の app が重なっていた（PNG の後ろの Notes・PDF Viewer の窓）。2 番目の field を awk で照合する。同じ誤りの `settings-p017.sh` の `ends` も直した。
 - 確かめ（host）: `make ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-dark-apps.mk BUILD=build/ws140-p002 build/ws140-p002/bin/notes build/ws140-p002/bin/imageview` warning 0、style-check 0。試験の kill の式は偽の `ps` の出力で確かめた（`/bin/settingsd` は外れ、`/bin/settings`・`/bin/notes`・`/bin/imageview X` は当たる）。
 - 再試験（T1）: T1-198 と同じ（`plan/tools/guest/test-image.sh plan/ws089/tests/config-amd64-dark-apps.mk BUILD`、`plan/ws089/tests/settings-guest.sh start IMAGE`、`plan/ws089/tests/settings-p017b.sh OUTDIR`）。合格: `settings-p017b: status 0`、dark-imageview.png に Lagoon の絵（card 無し）、どの PNG にも前の app の窓が残らない。
+
+## Q1 の判定（2026-10-05、p017b）
+
+T1-198b PASS（QEMU、9 app の light・dark、Image Viewer の card・Notes の log の直しの後）。p017（a・b）は cleared。
