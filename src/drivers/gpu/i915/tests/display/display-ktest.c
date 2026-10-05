@@ -23,6 +23,26 @@
 #include <stddef.h>
 
 /*
+ * The parts.
+ *
+ * They are weak because no test kernel holds them all (q762: the kernel
+ * with every scenario is past AMD64_KERNEL_MAX_BYTES): the test set
+ * "display_ktest" links the first four, "display_ktest2" the last four
+ * (platform/amd64/vmunix.mk), and a part the set leaves out is a null this
+ * scenario reports as not linked.
+ */
+extern void drv_i915_display_ktest_edp(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_display_ktest_edp_sync(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_display_ktest_lcd_modeset(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_display_ktest_scanout(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_display_ktest_lcd_show(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_display_ktest_lcdg(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_display_ktest_opregion(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_display_ktest_hpd(struct i915_ktest *ktest) __attribute__((weak));
+
+static void display_ktest_part(struct i915_ktest *ktest, void (*part)(struct i915_ktest *), const char *name);
+
+/*
  * Runs the display's in-kernel unit tests on the started device.
  *
  * The parts run in the order the old suite ran them: the eDP first stage
@@ -44,22 +64,22 @@ drv_i915_test_display_ktest(
 	kern_logf("i915: display ktest begin\n");
 
 	/* The eDP first stage on the register model, then on real threads, locks and ticks. */
-	drv_i915_display_ktest_edp(&ktest);
-	drv_i915_display_ktest_edp_sync(&ktest);
+	display_ktest_part(&ktest, drv_i915_display_ktest_edp, "edp");
+	display_ktest_part(&ktest, drv_i915_display_ktest_edp_sync, "edp_sync");
 
 	/* The one-screen modeset on the register and sink models. */
-	drv_i915_display_ktest_lcd_modeset(&ktest);
+	display_ktest_part(&ktest, drv_i915_display_ktest_lcd_modeset, "lcd_modeset");
 
 	/* The scanout buffer, the show body and the release contract on the GT memory. */
-	drv_i915_display_ktest_scanout(&ktest);
-	drv_i915_display_ktest_lcd_show(&ktest);
-	drv_i915_display_ktest_lcdg(&ktest);
+	display_ktest_part(&ktest, drv_i915_display_ktest_scanout, "scanout");
+	display_ktest_part(&ktest, drv_i915_display_ktest_lcd_show, "lcd_show");
+	display_ktest_part(&ktest, drv_i915_display_ktest_lcdg, "lcdg");
 
 	/* The OpRegion receive side on a shadow mailbox. */
-	drv_i915_display_ktest_opregion(&ktest);
+	display_ktest_part(&ktest, drv_i915_display_ktest_opregion, "opregion");
 
 	/* The HDMI hotplug receive path on fake status registers. */
-	drv_i915_display_ktest_hpd(&ktest);
+	display_ktest_part(&ktest, drv_i915_display_ktest_hpd, "hpd");
 
 	kern_logf("i915: display ktest: %u checks, %u failures, %u skipped\n",
 	    ktest.checks,
@@ -67,4 +87,21 @@ drv_i915_test_display_ktest(
 	    ktest.skipped);
 	kern_logf("i915: display ktest verdict: %s\n",
 	    ktest.failures == 0U ? "PASS" : "FAIL");
+}
+
+/* Runs one part of the display ktest, or says that the test set left it out. */
+static void
+display_ktest_part(
+	struct i915_ktest *ktest,
+	void (*part)(struct i915_ktest *),
+	const char *name)
+{
+	/* A part this test set does not link is reported, not counted as a failure. */
+	if (part == NULL) {
+		kern_logf("i915: display ktest: %s not linked in this test set\n", name);
+		return;
+	}
+
+	/* Runs the part on the shared tally. */
+	part(ktest);
 }

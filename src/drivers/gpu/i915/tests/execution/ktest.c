@@ -21,7 +21,24 @@
 #include <kern/sched.h>
 
 #include <uapi/errno.h>
+#include <stddef.h>
 #include <stdint.h>
+
+/*
+ * The parts of the suite.
+ *
+ * They are weak because the display test sets link this file for its
+ * tally (drv_i915_ktest_check(), drv_i915_ktest_skip()) without the parts
+ * (q762: no test kernel holds every scenario); a part the set leaves out is
+ * a null drv_i915_ktest_run() reports as not linked.  The "execution" set
+ * links them all (platform/amd64/vmunix.mk).
+ */
+extern void drv_i915_ktest_sync(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_ktest_display(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_ktest_display_probe(struct i915_ktest *ktest) __attribute__((weak));
+extern void drv_i915_ktest_gt(struct i915_ktest *ktest) __attribute__((weak));
+
+static void ktest_part(struct i915_ktest *ktest, void (*part)(struct i915_ktest *), const char *name);
 
 /*
  * Records the outcome of one check.
@@ -100,16 +117,16 @@ drv_i915_ktest_run(
 	kern_logf("i915: ktest begin\n");
 
 	/* The kernel services: completions, work queues, interrupts, timing, reset and PCODE. */
-	drv_i915_ktest_sync(ktest);
+	ktest_part(ktest, drv_i915_ktest_sync, "sync");
 
 	/* The display's data sources, power wells, clocks and firmware. */
-	drv_i915_ktest_display(ktest);
+	ktest_part(ktest, drv_i915_ktest_display, "display");
 
 	/* The display probe: the PCH, the interrupt masks, the outputs and the readout. */
-	drv_i915_ktest_display_probe(ktest);
+	ktest_part(ktest, drv_i915_ktest_display_probe, "display_probe");
 
 	/* The GT: fuses, workarounds, memory, contexts, requests and the test fixtures. */
-	drv_i915_ktest_gt(ktest);
+	ktest_part(ktest, drv_i915_ktest_gt, "gt");
 
 	kern_logf("i915: ktest: %u checks, %u failures, %u skipped\n",
 	    ktest->checks,
@@ -122,4 +139,21 @@ drv_i915_ktest_run(
 
 	/* Succeeded: every check that ran passed. */
 	return 0;
+}
+
+/* Runs one part of the suite, or says that the test set left it out. */
+static void
+ktest_part(
+	struct i915_ktest *ktest,
+	void (*part)(struct i915_ktest *),
+	const char *name)
+{
+	/* A part this test set does not link is reported, not counted as a failure. */
+	if (part == NULL) {
+		kern_logf("i915: ktest: %s not linked in this test set\n", name);
+		return;
+	}
+
+	/* Runs the part on the shared tally. */
+	part(ktest);
 }

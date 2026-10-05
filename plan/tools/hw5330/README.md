@@ -294,6 +294,12 @@ sort BUILD/zedbsd-native-uefi-*.cfg | cut -d= -f1 | uniq -d      # 何か出た�
 
 - kernel の message を COM1 にも写す option。既定 n（`Makefile:217`）、y で `-DPCAT_SERIAL_MIRROR`（`Makefile:514-515`）。
   `plan/ws075/tests/config-test-hw.mk:5` は y（`vkloop-hw.sh test` の場面の verdict を serial から読むため）。デモの構成は n。
+  2026-10-05（q762）から `vkloop-hw.sh test <場面>` は `ZEDBSD_CONFIG` を与えなければこの構成を使う（T1-190 は既定の
+  `config-vkprobe-hw.mk` で build され mirror が無く、場面の行が 1 つも出なかった）。
+- i915 の試験の kernel の組（`I915_TEST_SET`、`platform/amd64/vmunix.mk`）: 全ての場面を入れた kernel は
+  `AMD64_KERNEL_MAX_BYTES`（16 MiB）を超えるので、場面ごとの組に分けた（q762）: `vkx`・`vkc`・`vke1`・`vke2`（それぞれ 1 つ）、
+  `compute`（vkcs）、`execution`（ktest eu draw r1 tex t3 bl）、`display`（LCD・HDMI の場面）、`display_ktest`・`display_ktest2`
+  （display_ktest の前半・後半）。`vkloop-hw.sh` が場面から選ぶ。旧名 `boundary` は `vke2`、`render` は `vkx`。`all` は無い。
 - passthrough では COM1 は 5330 の `~/bigbang/h4/serial.log` になり、`fetch` が `OUTDIR/serial.log` に写す（`h4-qemu.sh:29`、`hdmi-h4-hw.sh:71`）。
 - AGENTS.md は serial の log を判定にも解析にも使うことを禁じる。2026-09-30 にユーザーが「シリアルCOM1にdmesgをコピー出力するコンフィグがあります。
   それを使えば、エラーをつかめると思います。」と言い、その切り分けに限り解析に使った（判定には使っていない）。前例の image は

@@ -12,16 +12,16 @@ own, runs its steps, logs `<SUITE>-<STEP> PASS` or `FAIL` per step and a
     flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vke1
     flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vke2
     flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vkx
-    flock /tmp/i915-hw.lock env BUILD=build/<dir> I915_TEST_SET=compute plan/ws031/tests/vkloop-hw.sh test vkcs
+    flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vkcs
 
-The compiler's boundary steps of `vke2` (ws031-p024: EDGE, KILLOOP, NOINPUT and, last, UNDEF) are linked only into
-the boundary set (`I915_TEST_SET=boundary`, which defines `I915_VKE2_BOUNDARY`; the runner and `vke2` only), for the
-same reason as `vkcs`:
-
-    flock /tmp/i915-hw.lock env BUILD=build/<dir> I915_TEST_SET=boundary plan/ws031/tests/vkloop-hw.sh test vke2
-
-`vkcs` is linked only into the compute set of the test build (`I915_TEST_SET=compute`, ws101-p006: the test kernel
-with every scenario is at the kernel's size limit); the default set (`all`) links every other scenario.
+No test kernel holds every scenario (q762, 2026-10-05: the kernel without tests is within about 450 KiB of
+`AMD64_KERNEL_MAX_BYTES`), so each scenario's image links the runner and the scenarios of one test set
+(`I915_TEST_SET`, `platform/amd64/vmunix.mk`): `vkx`, `vkc`, `vke1` and `vke2` one each, `compute` for `vkcs`,
+`execution` for ktest eu draw r1 tex t3 bl, `display` for the LCD/HDMI scenarios, `display_ktest` and
+`display_ktest2` for the two halves of display_ktest.  `vkloop-hw.sh` picks the set from the scenario (and the
+image's config, `plan/ws075/tests/config-test-hw.mk`, whose kernel console reaches the serial log the verdict lines
+are read from) unless `I915_TEST_SET` or `ZEDBSD_CONFIG` is given.  `vke2`'s set has the compiler's boundary steps
+(ws031-p024: EDGE, KILLOOP, NOINPUT and, last, UNDEF; `-DI915_VKE2_BOUNDARY`).
 `plan/ws101/tests/hw/run-hw.sh` builds each scenario's image in its set outside the lock and runs it.
 
 ## Suites
@@ -60,10 +60,10 @@ dumps the first draws' target for the vkdemo oracle.
 | 16 vertex attributes | `vke2` VIN16 |
 | register spilling to scratch memory (a loop's variables spilled while its channels diverge) | `vke2` SPILL |
 | 16 vertex attributes and 16 varyings together (gathered VUE and spilling in the vertex stage) | `vke2` VIO16 |
-| integer boundaries (INT_MIN, -1, 0, the 8/16/32-bit limits) in division, modulus, shifts by 0..31, wrapping arithmetic, min/max, comparisons and conversions; undefined divisions write a marker | `vke2` EDGE (boundary set) |
-| `OpKill` inside a loop with per-pixel trip counts, whole dispatches discarded | `vke2` KILLOOP (boundary set) |
-| a fragment shader with no input behind a vertex shader with no varying (3DSTATE_SBE with no attribute) | `vke2` NOINPUT (boundary set) |
-| division by zero, INT_MIN / -1, shifts by 32..63 (undefined values: the draw must finish and the guard rows be right; the values are logged) | `vke2` UNDEF (boundary set) |
+| integer boundaries (INT_MIN, -1, 0, the 8/16/32-bit limits) in division, modulus, shifts by 0..31, wrapping arithmetic, min/max, comparisons and conversions; undefined divisions write a marker | `vke2` EDGE |
+| `OpKill` inside a loop with per-pixel trip counts, whole dispatches discarded | `vke2` KILLOOP |
+| a fragment shader with no input behind a vertex shader with no varying (3DSTATE_SBE with no attribute) | `vke2` NOINPUT |
+| division by zero, INT_MIN / -1, shifts by 32..63 (undefined values: the draw must finish and the guard rows be right; the values are logged) | `vke2` UNDEF |
 | mview's own shaders (per-vertex and, with `--shading=pixel`, per-pixel lighting with a uniform buffer, a loop over three lights and discard) | the capture run `CAPTURE=mview plan/ws031/tests/vkloop-hw.sh mview` (six viewer checks), not a suite of this directory |
 
 ## How the expectations are produced

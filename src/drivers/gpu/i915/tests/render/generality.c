@@ -55,9 +55,8 @@
  *  - VFORMAT: vertex attributes of 8-, 16- and 10-bit formats, and a flat
  *    output array copied into a local one and indexed;
  *
- * and, in the test set "boundary" only (I915_TEST_SET=boundary, which defines
- * I915_VKE2_BOUNDARY: the default test kernel is at its size limit), the
- * compiler's boundaries (ws031-p024):
+ * and, when the build defines I915_VKE2_BOUNDARY (the test set "vke2" does,
+ * platform/amd64/vmunix.mk), the compiler's boundaries (ws031-p024):
  *
  *  - EDGE: integer operations over boundary values (0, 1, -1, the limits of
  *    8, 16 and 32 bits, INT_MIN), a marker where SPIR-V leaves a division
@@ -278,7 +277,7 @@
 #define I915_VKE2_SHADERS		24U
 #endif
 
-/* The boundary steps' data is in the generated file only in the test set "boundary" (I915_VKE2_BOUNDARY). */
+/* The boundary steps' data is in the generated file only when I915_VKE2_BOUNDARY is defined (the test set "vke2"). */
 #define I915_VKE2_IN_KERNEL 1
 #include "../fixtures/generality-shaders-gen.inc"
 

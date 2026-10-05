@@ -665,8 +665,8 @@ BOUNDARY = (0, 1, -1, 2, -2, 3, -7, 255, 256, 32767, -32768, 2 ** 31 - 1, INT_MI
             1000000007, -1000000007)
 EDGE_MARKER = 0x5a5a5a5a
 
-# The boundary steps' data is in the kernel only in the test set "boundary" (I915_TEST_SET=boundary, which defines
-# I915_VKE2_BOUNDARY): the default test kernel is at its size limit.  The host fixtures always have it.
+# The boundary steps' data is in the kernel only when the build defines I915_VKE2_BOUNDARY (the test set "vke2",
+# platform/amd64/vmunix.mk; no test kernel holds every scenario).  The host fixtures always have it.
 BOUNDARY_ONLY = '#if !defined(I915_VKE2_IN_KERNEL) || defined(I915_VKE2_BOUNDARY)'
 
 
