@@ -214,6 +214,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | 5 | Browser: 長い URL で文字の範囲の選択が title bar をはみ出して描かれる（前回の指摘が直り切っていない） | [BUG-181](bugs/BUG-181.md) |
 | 6 | Files の Devices: mount の前に確認の popup が無いのは危ない。起動 disk の partition は出さなくてよい | 要望、[ws132-p009](ws132/ws.md) |
 | 7 | 電源ボタンを押すと、ただちに電源が切れた | [BUG-196](bugs/BUG-196.md) |
+| 8 | タッチパッドの 2 本指・3 本指が使えない（BUG-195 で native の touchpad が付かず PS/2 の互換の mouse のため）。そのため 2 本指のスクロール・右 click、3 本指の gesture（Wiseview・仮想デスクトップ・切り替え）、Alt+Tab の 3 本指は**未実施** | [BUG-195](bugs/BUG-195.md)（次の UAT で再確認） |
 
 ## 次の UAT で採る記録（2026-10-05 Q1）
 
