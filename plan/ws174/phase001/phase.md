@@ -74,3 +74,10 @@ design-reviewer（2026-10-05 夜、第 1 版に対して。source は変えず�
 - **Shift**: loader が `login=` を `console` にする（graphical の session を始めない）。
 - 両方を同時に押せば両方。boot の config の file の形式は変えない（`safe.*` の行は無し。第 2 版の D1・D2・D8 は不要になる）。変えるのは bootloader だけ。
 - 第 2 版の他の部分（Ex protocol の KeyShiftState の 3 点の標本、待ちなし、告知、Ctrl+Space の手順、試験の形）は流用し、第 3 版で書き直す。logo を Ctrl の時に落とすか、640x480 を希望するか（D3）、1 秒止めるか（D5）は第 3 版で改めて判断の項目にする。
+
+## 2026-10-05 夜 ユーザーの決定（第 3 版の判断）
+
+- Ctrl の時に logo を落とす: **Yes**
+- Ctrl の時に 640x480 を希望する: **Yes**
+- 1 秒止める: **No**（告知は出すが待たない）
+- BIOS（PC/AT）は第 2 版の D4 のとおり後回し、検出は Ex protocol だけ（D6）、3 点の標本・待ちなし（D7）は流用（Q1、ユーザーの変更と矛盾しない範囲）。
