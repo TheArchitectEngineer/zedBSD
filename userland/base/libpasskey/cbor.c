@@ -156,6 +156,17 @@ pk_cbor_put_null(
 	cbor_put_head(writer, CBOR_MAJOR_SIMPLE, CBOR_NULL);
 }
 
+/* Writes an item already encoded (a COSE key made elsewhere), as it is. */
+void
+pk_cbor_put_encoded(
+	struct pk_cbor_writer *writer,
+	const uint8_t *item,
+	size_t length)
+{
+	/* The bytes. */
+	cbor_put_raw(writer, item, length);
+}
+
 /* Starts a reader at the beginning of a buffer. */
 void
 pk_cbor_reader_init(

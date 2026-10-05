@@ -87,6 +87,7 @@ void pk_cbor_put_array(struct pk_cbor_writer *writer, size_t count);
 void pk_cbor_put_map(struct pk_cbor_writer *writer, size_t count);
 void pk_cbor_put_bool(struct pk_cbor_writer *writer, int value);
 void pk_cbor_put_null(struct pk_cbor_writer *writer);
+void pk_cbor_put_encoded(struct pk_cbor_writer *writer, const uint8_t *item, size_t length);
 
 void pk_cbor_reader_init(struct pk_cbor_reader *reader, const uint8_t *data, size_t size);
 int pk_cbor_read(struct pk_cbor_reader *reader, struct pk_cbor_item *item);
