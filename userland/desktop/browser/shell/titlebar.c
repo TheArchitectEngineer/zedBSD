@@ -26,7 +26,7 @@
 /* The most parts of a path the location shows. */
 #define TITLEBAR_PARTS		32U
 
-/* The scheme the location's text starts with. */
+/* The scheme put before the location's text when it is a file's path (a URL keeps its own). */
 #define TITLEBAR_FILE_SCHEME	"file://"
 
 /*
@@ -52,6 +52,7 @@ static void titlebar_done(void *data, struct keiland_titlebar *object, uint32_t 
 static void titlebar_queue(struct shell_titlebar *titlebar, int kind, uint32_t id, uint32_t detail, const char *text);
 static int titlebar_build(struct shell_titlebar *titlebar);
 static int titlebar_state(struct shell_titlebar *titlebar, int can_back, int can_forward, const char *path);
+static size_t titlebar_scheme_length(const char *location);
 
 /* What the titlebar tells the window: the controls chosen and the end of the location's editing. */
 static const struct keiland_titlebar_listener titlebar_listener = {
@@ -284,13 +285,26 @@ titlebar_state(
 	const char *parts[TITLEBAR_PARTS];
 	char copy[SHELL_TITLEBAR_TEXT];
 	char url[SHELL_TITLEBAR_TEXT + 8U];
+	size_t scheme_length;
 	size_t count;
 	char *part;
 	char *next;
 	int error;
 
-	/* The path's parts, between its slashes (the first ones give way when there are too many). */
-	snprintf(copy, sizeof(copy), "%s", path);
+	/*
+	 * A location with a scheme (https:, about:, file:) is a URL, edited as
+	 * it is; any other is a file's path, edited as a file: URL (BUG-206: an
+	 * https: page's URL got file:// before it).
+	 */
+	scheme_length = titlebar_scheme_length(path);
+	if (scheme_length != 0U) {
+		snprintf(url, sizeof(url), "%s", path);
+	} else {
+		snprintf(url, sizeof(url), "%s%s", TITLEBAR_FILE_SCHEME, path);
+	}
+
+	/* The parts after the scheme, between the slashes (the first ones give way when there are too many): a URL's host, then its path's. */
+	snprintf(copy, sizeof(copy), "%s", path + scheme_length);
 	count = 0;
 	part = copy;
 	while (part != NULL && *part != '\0') {
@@ -316,9 +330,6 @@ titlebar_state(
 		part = next;
 	}
 
-	/* The URL the field edits. */
-	snprintf(url, sizeof(url), "%s%s", TITLEBAR_FILE_SCHEME, path);
-
 	/* The transaction. */
 	error = keiland_titlebar_begin(titlebar->titlebar);
 	if (error != 0)
@@ -331,7 +342,7 @@ titlebar_state(
 	if (error == 0)
 		error = keiland_titlebar_set_breadcrumb(titlebar->titlebar, SHELL_CONTROL_LOCATION, parts, count);
 	if (error == 0)
-		error = keiland_titlebar_set_control_text(titlebar->titlebar, SHELL_CONTROL_LOCATION, url, "File path or file: URL");
+		error = keiland_titlebar_set_control_text(titlebar->titlebar, SHELL_CONTROL_LOCATION, url, "URL or file path");
 
 	/* A refused change still ends the transaction, which is reported. */
 	if (error != 0) {
@@ -345,5 +356,52 @@ titlebar_state(
 		return error;
 
 	/* Succeeded: the titlebar shows the state. */
+	return 0;
+}
+
+/*
+ * Reports the length of the scheme a location starts with, with its colon
+ * ("https:" is 6), or 0 when it has none (a file's path): a letter, then
+ * letters, digits, "+", "-" and ".", then a colon (RFC 3986).
+ */
+static size_t
+titlebar_scheme_length(
+	const char *location)
+{
+	size_t length;
+	int letter;
+	char c;
+
+	/* A scheme starts with a letter. */
+	c = location[0];
+	letter = 0;
+	if (c >= 'a' && c <= 'z')
+		letter = 1;
+	else if (c >= 'A' && c <= 'Z')
+		letter = 1;
+	if (!letter)
+		return 0;
+
+	/* The scheme's characters, up to the colon that ends it. */
+	for (length = 1; location[length] != '\0'; length++) {
+		c = location[length];
+
+		/* The colon ends the scheme. */
+		if (c == ':')
+			return length + 1U;
+
+		/* A letter, a digit, "+", "-" and "." go on with it; anything else means there is no scheme. */
+		if (c >= 'a' && c <= 'z')
+			continue;
+		if (c >= 'A' && c <= 'Z')
+			continue;
+		if (c >= '0' && c <= '9')
+			continue;
+		if (c == '+' || c == '-' || c == '.')
+			continue;
+		return 0;
+	}
+
+	/* No colon: a file's path. */
 	return 0;
 }

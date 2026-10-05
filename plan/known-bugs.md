@@ -73,7 +73,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-203](bugs/BUG-203.md) | Phone の app で日本語を入力できない（IME に対応していない見込み） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS170（Phone）・WS095（IME）。2026-10-06 P1 修正済み（libkeiland の kl_field に text-input）、T1 の確認待ち |
 | [BUG-204](bugs/BUG-204.md) | Phone の app で画面 keyboard の日本語のフリック入力が無視される | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS170・WS102（画面 keyboard）。BUG-203 と同じ修正、T1 の確認待ち |
 | [BUG-205](bugs/BUG-205.md) | app 全般で太字の font が美しくない（anti-alias が regular と違って見える） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS090（widget の library）・libtruetype。2026-10-06 P1 修正済み（libtruetype の vector の太字）、T1 の確認待ち |
-| [BUG-206](bugs/BUG-206.md) | Browser で URL を編集すると https:// の前に file:// が付く | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS074（browser） |
+| [BUG-206](bugs/BUG-206.md) | Browser で URL を編集すると https:// の前に file:// が付く | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS074（browser）。2026-10-06 P1 修正済み（titlebar の location）、T1 の確認待ち |
 | [BUG-207](bugs/BUG-207.md) | Browser が通信中に UI に応答しない | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS074（browser） |
 | [BUG-208](bugs/BUG-208.md) | 最大化（dock）中の Terminal で F11 を押すと bar が消えるだけで content の領域が変わらない | reproduced（ユーザー、QEMU） / scheduled（2026-10-06 P2 修正: dock 中の fullscreen は dock を外し、出る時に dock に戻す。T1 待ち） | UAT 2026-10-05 夜 | WS099・BUG-194 |
 | [BUG-209](bugs/BUG-209.md) | Alt+Tab の順が bar の icon の並びと合わない（今の app から始め、押す度に 1 つ右へ） | reproduced（ユーザー、QEMU） / scheduled（2026-10-06 P2 実装: bar の並び・今の app から。wrap と Shift は仮定、T1 待ち） | UAT 2026-10-05 夜 | WS142 |
