@@ -42,6 +42,9 @@
 struct gles_queries {
 	VkQueryPool pool;
 	unsigned char used[QUERY_SLOTS];
+
+	/* The last frame that wrote each slot: a slot given back is taken again once that frame is done (ws068-p009). */
+	uint64_t written[QUERY_SLOTS];
 	struct gles_query *occlusion;
 	struct gles_query *feedback;
 
@@ -937,9 +940,9 @@ query_slot_take(
 	uint32_t index;
 	int status;
 
-	/* The first free slot. */
+	/* The first free slot no frame still to finish writes. */
 	for (index = 0U; index < QUERY_SLOTS; index++) {
-		if (!queries->used[index])
+		if (!queries->used[index] && queries->written[index] <= state->done)
 			break;
 	}
 
@@ -970,16 +973,21 @@ query_slots_free(
 {
 	unsigned index;
 
-	/* Each slot. */
-	for (index = 0U; index < query->slot_count; index++)
+	/* Each slot, with the frame that wrote it. */
+	for (index = 0U; index < query->slot_count; index++) {
 		queries->used[query->slots[index]] = 0U;
+		queries->written[query->slots[index]] = query->frames[index];
+	}
+
+	/* The query has none. */
 	query->slot_count = 0U;
 }
 
 /*
  * Makes sure a frame is done: the frame being recorded is submitted and
- * waited for when it is that frame and has commands; an earlier frame is
- * done already.  Returns 0, or -1 with the error recorded.
+ * waited for when it is that frame and has commands; a frame in flight
+ * (ws068-p009) is waited for; an earlier frame is done already.  Returns
+ * 0, or -1 with the error recorded.
  */
 static int
 query_finish(
@@ -989,10 +997,17 @@ query_finish(
 {
 	struct zegl_surface *surface;
 	EGLint error;
+	int status;
 
-	/* An earlier frame is done. */
-	if (frame < state->frame)
+	/* A frame known to be done. */
+	if (frame <= state->done)
 		return 0;
+
+	/* A frame in flight: everything submitted is waited for. */
+	if (frame < state->frame) {
+		status = gles_frame_retire(context, state);
+		return status;
+	}
 
 	/* Nothing recorded to submit. */
 	surface = context->draw;
@@ -1011,8 +1026,7 @@ query_finish(
 	}
 
 	/* Everything recorded before is done: the frame's resources are free again. */
-	state->frame++;
-	gles_collect(state);
+	gles_frame_finished(state, 1);
 
 	/* Succeeded: the frame is done. */
 	return 0;
@@ -1100,13 +1114,24 @@ query_signalled(
 	const struct gles_sync *fence)
 {
 	struct zegl_surface *surface;
+	int settled;
 
-	/* An earlier frame is done. */
-	if (fence->frame < state->frame)
+	/* A frame known to be done. */
+	if (fence->frame <= state->done)
 		return 1;
 
-	/* The frame being recorded with nothing recorded is done too. */
+	/* A frame in flight (ws068-p009) is done once the surface that presented it has none left; the done frame moves on then. */
 	surface = context->draw;
+	if (fence->frame < state->frame) {
+		settled = 0;
+		if (surface != NULL && surface == state->flight)
+			settled = zegl_surface_settled(surface);
+		if (settled)
+			state->done = state->frame - 1U;
+		return settled;
+	}
+
+	/* The frame being recorded with nothing recorded is done too. */
 	if (surface == NULL || !surface->frame_open)
 		return 1;
 

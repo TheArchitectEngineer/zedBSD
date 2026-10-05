@@ -964,7 +964,8 @@ struct gles_vertex_array {
 
 /*
  * One piece of the stream memory: vertices, indices and uniforms written
- * for the frame being recorded.
+ * for a frame, the last of which it carries (its bytes are written again
+ * only once that frame is done).
  */
 struct gles_chunk {
 	VkBuffer buffer;
@@ -972,6 +973,7 @@ struct gles_chunk {
 	unsigned char *mapped;
 	size_t size;
 	size_t used;
+	uint64_t frame;
 	struct gles_chunk *next;
 };
 
@@ -1004,7 +1006,8 @@ struct gles_garbage {
 	void *mapped;
 	size_t size;
 
-	/* The next object waiting. */
+	/* The frame being recorded when it was put aside, and the next object waiting. */
+	uint64_t frame;
 	struct gles_garbage *next;
 };
 
@@ -1022,10 +1025,12 @@ struct gles_spare {
 };
 
 /*
- * A pool of descriptor sets for the frame being recorded.
+ * A pool of descriptor sets, and the last frame that took one from it
+ * (it is reset once that frame is done).
  */
 struct gles_pool {
 	VkDescriptorPool pool;
+	uint64_t frame;
 	struct gles_pool *next;
 };
 
@@ -1354,15 +1359,24 @@ struct gles_state {
 	uint32_t image_features[GLES_FORMATS];
 	unsigned char image_asked[GLES_FORMATS];
 
-	/* The frame being recorded, counted from 1; objects a draw of it used carry its number. */
+	/*
+	 * The frame being recorded, counted from 1; objects a draw of it used
+	 * carry its number.  The last frame known to be done on the GPU: a
+	 * window's presented frame may still run while the next is recorded
+	 * (ws068-p009), so frames after done are in flight or recording.
+	 */
 	uint64_t frame;
+	uint64_t done;
+
+	/* The window surface whose presented frame may still run (only compared, never followed: a closed surface waited for its frames). */
+	const struct zegl_surface *flight;
 
 	/* The upload command buffer, its pool and fence. */
 	VkCommandPool upload_pool;
 	VkCommandBuffer upload;
 	VkFence upload_fence;
 
-	/* The stream memory, the descriptor pools and the garbage of the frame. */
+	/* The stream memory, the descriptor pools and the garbage of the frames not yet done. */
 	struct gles_chunk *chunks;
 	struct gles_pool *pools;
 	struct gles_garbage *garbage;
@@ -1478,6 +1492,8 @@ void gles_throw_away(struct gles_state *state, VkBuffer buffer, VkImage image, V
 void gles_garbage_keep(struct gles_state *state, const struct gles_garbage *objects);
 void gles_garbage_destroy(struct gles_state *state, const struct gles_garbage *objects);
 void gles_collect(struct gles_state *state);
+void gles_frame_finished(struct gles_state *state, int finished);
+int gles_frame_retire(struct zegl_context *context, struct gles_state *state);
 int gles_buffer_sync(struct gles_state *state, struct gles_buffer *buffer);
 void gles_buffer_free(struct gles_state *state, struct gles_buffer *buffer);
 int gles_buffer_writable(struct gles_state *state, struct gles_buffer *buffer);

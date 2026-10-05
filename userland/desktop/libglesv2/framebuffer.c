@@ -751,8 +751,7 @@ gles_texture_fetch(
 	memset(texture->gpu_levels, 0, sizeof(texture->gpu_levels));
 
 	/* Everything recorded before is done: the frame's resources are free again. */
-	state->frame++;
-	gles_collect(state);
+	gles_frame_finished(state, 1);
 
 	/* Succeeded: each level drawn into is what the device drew. */
 	return 0;

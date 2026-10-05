@@ -47,6 +47,8 @@
 		zegl_frame_flush;
 		zegl_frame_leave_pass;
 		zegl_frame_pass;
+		zegl_retire;
+		zegl_surface_settled;
 	local:
 		*;
 };
