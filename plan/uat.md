@@ -224,3 +224,8 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 ## 次の UAT で採る記録（2026-10-05 Q1）
 
 - ~~[BUG-190](bugs/BUG-190.md) の evdev の記録~~（2026-10-05 ユーザーの決定で不要。WS159 の後に再評価）。
+
+## UAT 2026-10-06（実機 Latitude 5330、config/current-uat.mk の image、ユーザーのコメント）
+
+- 確認済み: I2C の touchpad（BUG-210 resolved）、2 本指の scroll、Phone の慣性 scroll、mp4 の再生（frame の落ち無し）、app 6 個で memory 757 MB（ユーザー「問題ないと思います。」）。
+- 所見: BUG-211〜BUG-226（[Bug Board](known-bugs.md)）。
