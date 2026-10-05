@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS167 の判断（2026-10-05、P1 の p001、plan/ws167/phase001/phase.md §6）**: H1 license: 番号の表を独自の名前で書き直し、番号の再利用を明記し、Google の著作権の表示と LICENSE-PROTOCOL を外す（番号は interface の事実で、Venus の文・名前・構造は写していない）[外す]。H2 新しい UAPI include/uapi/gpu-op.h（kernel の i915 の実行器・libvulkan・venus-frame で共有、第 1 版は Venus の番号のまま）[足す]。H3 名前 GPU_OP_CREATE_INSTANCE か GPU_OP_vkCreateInstance か [前者]。
 - **WS122 の判断（2026-10-05、P2 の p003 の開始の報告）**: ① libavcodec 無しの動画の decode は WS083（Vulkan Video、実機）が要り、それまで libavcodec 無しでは絵が出ない。② 音: libavcodec 無しで音を出すには AAC の decoder の自作（大きい）か BSD の libopus の外部 package。それまでは libavcodec 無しの時は音無しで再生、でよいか。③ add-in の dlopen の宣言: header を使わずに AVFrame などの使う field の位置を自分で書く（事実の記述で header の写しではないという見立て）の license の判断。
 - **WS066 の目標の文（2026-10-05、P2 の案、plan/ws066/phase002/phase.md）**: 測定の回の間のばらつきが大きい（変えていない true-static が 517 → 608 µs）。同じ回の中では静的との差が 266 → 10 µs で /bin/true は「差の半分」を満たした。案: ① 受け入れを「/bin/true と sh -c : の静的 link との差を同じ回の中で半分以下に」に改め、sh は静的な sh を足して T1 で確かめる、② cc t.c -o t は完了の条件から外し p003（ld.so の cache、clang 入りの image が作れる時）へ、③ 以後の速さの受け入れは同じ回の中の比べで書く。
 - 2026-10-05 ユーザー「本日12時にUATを行います。11時半にマージできている内容で、テストUSBイメージの作成をお願いします。」→ 11:30 に main で build/uat-0505c を作る（Q1、send_later を設定）。「ベータ2の実装をすべて、P1,P2にスケジューリング可能にします。作業を継続してください。」→ ベータ2 の WS（ブロック・アイディアの Phase の物を除く）を P1・P2 の Queue に入れてよい。
