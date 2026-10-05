@@ -369,6 +369,8 @@ drv_i915_gfx_create_compute_pipelines(
 				if (pipelines[index] != NULL)
 					drv_i915_gfx_pipeline_release(pipelines[index]);
 			}
+
+			/* Frees the array of the pipelines just released. */
 			i915_gfx_free_pipelines(pipelines, count);
 		}
 	}

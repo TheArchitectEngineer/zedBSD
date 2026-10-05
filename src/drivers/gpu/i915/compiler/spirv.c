@@ -3361,6 +3361,8 @@ i915_spirv_lower_storage(
 				inst->src[1] = parser->predicate;
 				inst->component = 1U;
 			}
+
+			/* The load is recorded; the next component. */
 			continue;
 		}
 
