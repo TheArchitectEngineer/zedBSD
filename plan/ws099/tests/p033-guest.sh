@@ -44,7 +44,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
 
 # 1. a, floating, then docked by a double click on its title bar.
-guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=6000 --delay-ms=100 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=100 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 set -- $(last_map)
 a=${1:-0}; ax=${2:-0}; ay=${3:-0}
 echo "a: surface $a at $ax,$ay"
@@ -52,7 +52,7 @@ pointer move $((ax + 150)) $((ay - 30)) sleep 400 down sleep 60 up sleep 60 down
 expect_log "GLASS dock surface=$a via=double-click"
 
 # 2. b opens docked.
-guest "$env /bin/wltest --windowed --size=420x300 --color=e8f0e0 --frames=6000 --delay-ms=100 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "$env /bin/wltest --windowed --size=420x300 --color=e8f0e0 --frames=3600 --delay-ms=100 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 set -- $(last_map)
 b=${1:-0}
 echo "b: surface $b"
@@ -71,7 +71,7 @@ pointer move 1200 780 sleep 500 >/dev/null
 check "$out/floating-b.png" >/dev/null
 
 # 4. c, with b floating in front, opens as it would.
-guest "$env /bin/wltest --windowed --size=420x300 --color=f0e0e8 --frames=6000 --delay-ms=100 --token=c > /tmp/c.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+guest "$env /bin/wltest --windowed --size=420x300 --color=f0e0e8 --frames=3600 --delay-ms=100 --token=c > /tmp/c.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 set -- $(last_map)
 c=${1:-0}
 echo "c: surface $c"
