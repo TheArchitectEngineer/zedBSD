@@ -3,7 +3,7 @@
 # WS079 Phase 002: kernel のペンの入力（USB HID の digitizer）と試験用の合成の入力
 
 <!-- awesome-plan-current:start -->
-Status: in-progress（2 回目の区切り。注入の device と peninject は書けて amd64 の build が通った。guest での確認は未実施）
+Status: cleared（2026-09-28 main の判断、QEMU と host。実機の pen は未実施。2026-10-05 P2: ws.md の表に合わせて頭の Status を直した）
 Disposition: normal
 Parent: [WS079](../ws.md)
 Design: [design-input-notes.md](../design-input-notes.md) §2
