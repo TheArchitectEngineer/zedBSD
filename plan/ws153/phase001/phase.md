@@ -2,7 +2,7 @@
 
 # ws153-p001: third-party の app の repository（package の仕組み）の検討
 
-Status: in-progress（設計の第 3 版、[design.md](../design.md)。3 回目のレビューの指摘を第 4 版で直す。2026-10-05 夜、q763 のため区切った）
+Status: in-progress（設計の第 4 版、[design.md](../design.md)。4 回目の敵対的レビュー）
 Disposition: normal
 Parent: [WS153](../ws.md)
 Queue: q761（Q1、2026-10-05、P2 g15）
@@ -38,3 +38,4 @@ third-party の app を配布・導入する package の仕組みの方式を決
 - 2 回目の敵対的レビュー（第 2 版）: 重大 2（U9 が構造体・listener の layout の変更を数えない、rtld の path の上限 256 byte と形式の上限・導入の場所が両立せず `$ORIGIN` が黙って効かない）、中 12（Phase の番号と判断の期限の食い違い、U4 の代わりの案（libcrypto）と U3 の arm64、出所の固定の穴（名前の衝突・ID・index の repository 行・書く順）、古い版を消す主体、書き手が 2 つと crash の窓、Files の Always Open With、鍵と期限の運用、platform の library の閉包と ELF の検め、Linux・FreeBSD の配置、試験、「data も消す」の範囲、SSHSIG）、軽 11。受け入れ条件は形の上では満たすが、R1・R2・M1 を直すまでは受け入れられないとの判定。
 - 第 3 版: 全てを反映（U9 を案 a・b にして layout の変更・libc・静的な link を数える、id 48・exec 32・版は短い通し番号の dir・導入の時に実際の path の長さを検める、U4 を自前と libcrypto の案に、repository の ID と index の検め・`.origin` を版の dir に、古い版は次の login か更新まで、`apps/` は appd だけが書く、Files は kl_system_apps に問い合わせ `kl_system_apps_launch` で起動し段 1 は既定にできない（U14）、次の鍵の記録・再署名 1〜2 週・image の built、platform の閉包と ELF の検め、段 1 は zedBSD だけで Linux・FreeBSD の約束は別、`data=` は語だけ、pure Ed25519 と Python の `cryptography`、Phase の番号と期限）。判断の項目 U1〜U14。
 - 3 回目の敵対的レビュー（第 3 版、未反映）: 重大 1（libz-compat の inflate は stream でなく出力の上限も無いので、展開の上限と「展開しながら検める」が成り立たない。icon の PNG も同じ。案: appd に上限つきの stream の inflate を自前で、libz-compat を直す依頼、形式を変える）。中 11（§3 の ABI の上げ方が U9 と不一致、私的な library の symbol の割り込み（export の重なりの検め）、bundle の library を dlopen できない、repository の ID は運営者が決めて `.krepo`・conf・index に、鍵の交換の記録を利用者の state に、`built=` の下限で新しい image が index を断る、判断の期限と Phase の依存の食い違い、`apps/` の書き手の本文の矛盾、「段 1 は zedBSD だけ」と本文の矛盾、U3 の前提（desktop は amd64 だけ・OpenSSL は既定 off・libbrowser の dlopen の方式）、ABI の名前の上げ忘れを止める checker）、軽 16。R2 は解消、R1 は本文に残り。
+- 第 4 版: 3 回目の指摘を反映（U12 に inflate の上限の案（appd に上限つきの stream の inflate を自前で、推奨）と PNG の爆弾、§3 の ABI の上げ方を U9 と一致させ checker と `/etc/keiland/abi` の生成を p002 に、symbol の割り込みの検め、dlopen の制限と share/ の見つけ方、repository の ID は運営者が決め 3 か所に、`next-key` と利用者の state の鍵、`built=` から 30 日を引いた下限と image の前の再署名、判断の期限を p002 の前に揃える、`apps/` の書き手の本文、段 1 は zedBSD だけを本文に揃える、U3 を HTTP・libbrowser と同じ dlopen の OpenSSL・libcurl の 3 案に、ELF の検めの追加、id の規則、path の長さの `current`、古い版と `<n>` の通し番号、展開器の 1 段ずつの open、argv の spawn と dialog の作業を p006 に、WS152・WS145 との調整と session 間の制限）。
