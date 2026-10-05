@@ -132,6 +132,7 @@
 		kl_system_power_get_state;
 		kl_system_power_action;
 		kl_system_devices_get;
+		kl_system_devices_info;
 		kl_system_devices_eject;
 		kl_system_devices_mount;
 		kl_system_devices_busy_program;

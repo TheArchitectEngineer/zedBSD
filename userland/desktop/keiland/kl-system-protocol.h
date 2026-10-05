@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 8; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 9; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -114,6 +114,10 @@
  *   event   2 result(uint request, uint applied, uint saved)
  *   event   3 busy(uint request, string program)              since version 5: before a busy result, the program
  *                                                             that keeps the volume from being ejected
+ *   event   4 volume(string id, string fs, uint bytes_high, uint bytes_low)
+ *                                                             since version 9 (ws132-p009): after each device, its
+ *                                                             file system ("fat", "ufs") and size in bytes, which
+ *                                                             a mount's confirmation shows
  *   The devices are the volumes volumed lists (zedBSD): kind 1 (removable storage), state the
  *   KL_SYSTEM_DEVICE_* bits (mounted; new: inserted and never mounted since), name the label (the
  *   disk's name without one), location where it is mounted ("" when it is not).  Each object hears
@@ -186,7 +190,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		8U
+#define KL_SYSTEM_MANAGER_VERSION		9U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -309,7 +313,9 @@
 #define KL_SYSTEM_DEVICES_EVENT_DONE		1U
 #define KL_SYSTEM_DEVICES_EVENT_RESULT		2U
 #define KL_SYSTEM_DEVICES_EVENT_BUSY		3U
+#define KL_SYSTEM_DEVICES_EVENT_VOLUME		4U
 #define KL_SYSTEM_DEVICES_SINCE_MOUNT		5U
+#define KL_SYSTEM_DEVICES_SINCE_VOLUME		9U
 
 /* A device's kind and its state's bits (ws132-p004). */
 #define KL_SYSTEM_DEVICE_KIND_STORAGE		1U

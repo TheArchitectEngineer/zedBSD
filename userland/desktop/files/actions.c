@@ -302,6 +302,12 @@ fm_action_confirm(
 		return;
 	}
 
+	/* A question whether to mount a device: Enter mounts, Esc does not (ws132-p009). */
+	if (app->dialog == FM_DIALOG_MOUNT) {
+		fm_devices_mount_answer(app, confirmed);
+		return;
+	}
+
 	/* The question is over. */
 	dialog = app->dialog;
 	app->dialog = FM_DIALOG_NONE;

@@ -8,7 +8,7 @@
 /*
  * What files draws over its window: the question asked before
  * an action that cannot be undone (spec §23: delete for good, empty the
- * trash), and the list of running operations opened from the titlebar's
+ * trash) or before a removable medium is mounted (ws132-p009), and the list of running operations opened from the titlebar's
  * progress ring (spec §33).
  */
 
@@ -38,6 +38,7 @@
 
 static void overlay_button(struct fm_app *app, struct fm_canvas *canvas, int x, int y, const char *label, int index, int primary);
 static void overlay_collision(struct fm_app *app, struct fm_canvas *canvas);
+static void overlay_mount(struct fm_app *app, struct fm_canvas *canvas);
 static void overlay_check(struct fm_app *app, struct fm_canvas *canvas, int x, int y, const char *label, int checked);
 static void overlay_task_text(const struct fm_task *task, char *text, size_t size);
 
@@ -73,6 +74,12 @@ fm_overlay_draw(
 	/* A taken name has a question of its own. */
 	if (app->dialog == FM_DIALOG_COLLISION) {
 		overlay_collision(app, canvas);
+		return;
+	}
+
+	/* So has a medium to be mounted. */
+	if (app->dialog == FM_DIALOG_MOUNT) {
+		overlay_mount(app, canvas);
 		return;
 	}
 
@@ -423,4 +430,64 @@ overlay_task_text(
 	/* Otherwise its items. */
 	fm_dir_items_text((long)task->files_total, total, sizeof(total));
 	snprintf(text, size, "%s %llu of %s", verb, (unsigned long long)task->files_done, total);
+}
+
+/*
+ * Draws the question whether to mount a removable medium: its name, size
+ * and file system, that its programs cannot be run, Cancel and Mount.
+ */
+static void
+overlay_mount(
+	struct fm_app *app,
+	struct fm_canvas *canvas)
+{
+	const struct fm_device *device;
+	char title[128];
+	char detail[192];
+	char size[32];
+	const char *system;
+	int same;
+	int x;
+	int y;
+
+	/* The medium asked about (the question stays empty if it went; Cancel or Esc closes it). */
+	device = fm_devices_find(app, app->device_confirm);
+	title[0] = '\0';
+	detail[0] = '\0';
+	if (device != NULL) {
+		snprintf(title, sizeof(title), "Mount \"%s\"?", device->name);
+
+		/* Its size and file system, as far as the desktop told them. */
+		size[0] = '\0';
+		if (device->bytes != 0U)
+			fm_dir_size_text(device->bytes, size, sizeof(size));
+		system = "";
+		same = strcmp(device->fs, "fat");
+		if (same == 0)
+			system = "FAT";
+		same = strcmp(device->fs, "ufs");
+		if (same == 0)
+			system = "UFS";
+		if (size[0] != '\0' && system[0] != '\0') {
+			snprintf(detail, sizeof(detail), "%s, %s. Programs on it can't be run.", size, system);
+		} else if (size[0] != '\0') {
+			snprintf(detail, sizeof(detail), "%s. Programs on it can't be run.", size);
+		} else {
+			snprintf(detail, sizeof(detail), "Programs on it can't be run.");
+		}
+	}
+
+	/* The card in the middle of the window. */
+	x = (app->width - OVERLAY_DIALOG_WIDTH) / 2;
+	y = (app->height - OVERLAY_DIALOG_HEIGHT) / 2;
+	fm_canvas_shadow(canvas, (float)x, (float)y + 8.0f, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT, 18.0f, 24.0f, FM_RGBA(0x1f3a66, 70));
+	fm_canvas_round(canvas, (float)x, (float)y, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT, 18.0f, FM_COLOR_PANEL);
+
+	/* The title and the detail. */
+	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 40, title, 16U, 1, OVERLAY_DIALOG_WIDTH - 48, FM_COLOR_TEXT);
+	(void)fm_text_draw_fit(app->text, canvas, x + 24, y + 70, detail, 13U, 0, OVERLAY_DIALOG_WIDTH - 48, FM_COLOR_TEXT_SECONDARY);
+
+	/* Cancel, and Mount in blue, the default (not red: mounting loses nothing). */
+	overlay_button(app, canvas, x + OVERLAY_DIALOG_WIDTH - 24 - 2 * OVERLAY_BUTTON_WIDTH - 10, y + OVERLAY_DIALOG_HEIGHT - 24 - OVERLAY_BUTTON_HEIGHT, "Cancel", FM_BUTTON_CANCEL, 0);
+	overlay_button(app, canvas, x + OVERLAY_DIALOG_WIDTH - 24 - OVERLAY_BUTTON_WIDTH, y + OVERLAY_DIALOG_HEIGHT - 24 - OVERLAY_BUTTON_HEIGHT, "Mount", FM_BUTTON_CONFIRM, 2);
 }

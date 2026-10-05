@@ -80,6 +80,8 @@ struct system_view {
 	size_t device_count;
 	struct kl_device devices_pending[KL_DEVICES_MAX];
 	size_t devices_pending_count;
+	struct kl_device_info device_infos[KL_DEVICES_MAX];
+	struct kl_device_info device_infos_pending[KL_DEVICES_MAX];
 	unsigned devices_open;
 	uint32_t busy_request;
 	char busy_program[KL_DEVICE_TEXT_MAX];
@@ -188,6 +190,7 @@ void system_view_sharing_done(struct system_view *view);
 void system_view_power_done(struct system_view *view);
 void system_view_device(struct system_view *view, const struct kl_device *device);
 void system_view_devices_done(struct system_view *view);
+void system_view_device_info(struct system_view *view, const char *id, const char *fs, uint64_t bytes);
 void system_view_result(struct system_view *view, uint32_t request, uint32_t applied);
 int system_view_take_result(struct system_view *view, uint32_t *request, int *error);
 unsigned system_view_take_changed(struct system_view *view);

@@ -113,6 +113,7 @@ struct system_devices_listener {
 	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 	void (*busy)(void *data, struct wl_proxy *proxy, uint32_t request, const char *program);
+	void (*volume)(void *data, struct wl_proxy *proxy, const char *id, const char *fs, uint32_t bytes_high, uint32_t bytes_low);
 };
 
 static void system_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
@@ -134,6 +135,7 @@ static void system_power_done(void *data, struct wl_proxy *proxy, uint32_t seria
 static void system_device(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
 static void system_devices_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static void system_devices_busy(void *data, struct wl_proxy *proxy, uint32_t request, const char *program);
+static void system_devices_volume(void *data, struct wl_proxy *proxy, const char *id, const char *fs, uint32_t bytes_high, uint32_t bytes_low);
 static void system_account_refused(void *data, struct wl_proxy *proxy, uint32_t request, const char *reason);
 static void system_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 static void system_sharing_state(void *data, struct wl_proxy *proxy, uint32_t available, uint32_t enabled, uint32_t running, uint32_t port, uint32_t allowed, const char *fingerprint);
@@ -200,7 +202,8 @@ static const struct system_devices_listener system_devices_listener = {
 	system_device,
 	system_devices_done,
 	system_result,
-	system_devices_busy
+	system_devices_busy,
+	system_devices_volume
 };
 
 /*
@@ -841,6 +844,36 @@ kl_system_devices_get(
 
 	/* Succeeded: the devices are copied. */
 	return count;
+}
+
+/*
+ * Copies a listed device's file system and size.
+ */
+int
+kl_system_devices_info(
+	const struct kl_system *system,
+	const char *id,
+	struct kl_device_info *info)
+{
+	size_t index;
+	int same;
+
+	/* Nothing found yet. */
+	memset(info, 0, sizeof(*info));
+	if (system == NULL || id == NULL)
+		return 0;
+
+	/* The device of that ID. */
+	for (index = 0U; index < system->view.device_count; index++) {
+		same = strcmp(system->view.devices[index].id, id);
+		if (same == 0) {
+			*info = system->view.device_infos[index];
+			return 1;
+		}
+	}
+
+	/* Not in the list. */
+	return 0;
 }
 
 /*
@@ -1486,6 +1519,27 @@ system_devices_busy(
 	system = data;
 	system->view.busy_request = request;
 	system_view_copy(system->view.busy_program, sizeof(system->view.busy_program), program);
+}
+
+/* Keeps a device's file system and size (version 9), for the device just told. */
+static void
+system_devices_volume(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *id,
+	const char *fs,
+	uint32_t bytes_high,
+	uint32_t bytes_low)
+{
+	struct kl_system *system;
+	uint64_t bytes;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The size from its halves, kept with the pending device. */
+	system = data;
+	bytes = ((uint64_t)bytes_high << 32) | (uint64_t)bytes_low;
+	system_view_device_info(&system->view, id, fs, bytes);
 }
 
 /* Keeps the word of a refused administration's request. */
