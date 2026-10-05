@@ -1335,7 +1335,7 @@ void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height)
 void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
 void zwl_glass_tick(struct zwl_server *server);
 void zwl_glass_prefetch(struct zwl_server *server);
-int zwl_glass_wallpaper(struct zwl_server *server, const char *path);
+int zwl_glass_landscape(struct zwl_server *server);
 const struct kl_backend_protocol_host *zwl_gpu_host(void);
 struct kl_backend_resource *zwl_gpu_resource(struct zwl_object *object);
 int zwl_glass_wallpaper_begin(struct zwl_server *server, const char *path);

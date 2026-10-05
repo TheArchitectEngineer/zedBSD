@@ -35,6 +35,7 @@
 #include "glass.h"
 #include "../artwork/mark.h"
 #include "../picture/color-glyph.h"
+#include "../picture/wallpaper.h"
 
 #include <truetype.h>
 
@@ -101,29 +102,29 @@
 #define GLASS_BLUR_PASSES	3U
 
 /*
- * A binary PPM read for the wallpaper (ws035-p133): the file's bytes, where
- * its pixels (three bytes each) start in them, and its size in pixels.
+ * A picture decoded for the wallpaper (ws035-p133, ws138-p001): its pixels
+ * (three bytes each, red, green and blue, the rows packed) and its size in
+ * pixels.  data is NULL for the landscape drawn here.
  */
 struct wallpaper_picture {
 	unsigned char *data;
-	size_t pixels;
 	uint32_t width;
 	uint32_t height;
 };
 
 /*
- * The wallpaper's file read ahead on a thread of its own (ws035-p133), so
- * that the disk works while the Vulkan device is made: the path, the bytes
- * and their size (NULL when the read failed), and whether the thread runs or
- * has not been joined yet.  Only the main thread starts and joins it; the
- * thread writes data and size before it ends, and pthread_join makes them
- * visible to the main thread.
+ * The wallpaper's file read and decoded ahead on a thread of its own
+ * (ws035-p133, ws138-p001), so that the disk and the decoding work while the
+ * Vulkan device is made: the path, the picture (data NULL when it could not
+ * be read or decoded), and whether the thread runs or has not been joined
+ * yet.  Only the main thread starts and joins it; the thread writes the
+ * picture before it ends, and pthread_join makes it visible to the main
+ * thread.
  */
 struct glass_prefetch {
 	pthread_t thread;
 	const char *path;
-	unsigned char *data;
-	size_t size;
+	struct wallpaper_picture picture;
 	int started;
 };
 
@@ -233,12 +234,12 @@ static uint32_t glass_utf8_next(const char **text);
 static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
 static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
-static int wallpaper_decode(unsigned char *data, size_t size, struct wallpaper_picture *picture);
+static int wallpaper_read(const char *path, struct wallpaper_picture *picture);
 static void *loader_run(void *argument);
 static void loader_join(void);
-static int ppm_number(const unsigned char *data, size_t size, size_t *at, uint32_t *number);
 static void *prefetch_run(void *argument);
-static unsigned char *prefetch_take(const char *path, size_t *size);
+static int prefetch_take(const char *path, struct wallpaper_picture *picture);
+static void prefetch_drop(void);
 
 /* The wallpaper read ahead, when zwl_glass_prefetch started it (only the main thread starts and takes it). */
 static struct glass_prefetch glass_prefetch;
@@ -253,9 +254,10 @@ static struct glass_loader glass_loader;
 static int glass_loader_ready;
 
 /*
- * Starts reading the wallpaper's file on a thread (ws035-p133), before the
- * Vulkan device is made; the look takes the bytes when it draws the
- * wallpaper.  Without a thread the look reads the file itself.
+ * Starts reading and decoding the wallpaper's file on a thread (ws035-p133,
+ * ws138-p001), before the Vulkan device is made; the look takes the picture
+ * when it draws the wallpaper.  Without a thread the look reads the file
+ * itself.
  */
 void
 zwl_glass_prefetch(
@@ -275,7 +277,7 @@ zwl_glass_prefetch(
 		return;
 	}
 
-	/* The thread runs until the look takes its bytes. */
+	/* The thread runs until the look takes its picture. */
 	glass_prefetch.started = 1;
 }
 
@@ -330,6 +332,9 @@ zwl_glass_close(
 	free(glass_loader.picture.data);
 	glass_loader.picture.data = NULL;
 
+	/* A picture read ahead that the look never took is let go too. */
+	prefetch_drop();
+
 	/* Nothing was made. */
 	if (server->compose == NULL || server->compose->glass == NULL)
 		return;
@@ -350,20 +355,20 @@ zwl_glass_close(
 }
 
 /*
- * Draws another wallpaper into the look (ws089-p007, the desktop's
- * preferences): a binary PPM, or with path NULL the landscape drawn
- * here.
+ * Draws the landscape into the look again (ws089-p007, the desktop's
+ * preferences going back to no picture).  No file is read, so the event
+ * loop does it at once; a picture is read on a thread instead
+ * (zwl_glass_wallpaper_begin, ws138-p001 U7).
  *
  * The images keep their size and their descriptors, so only their pixels
  * change; the device finishes what it is drawing from them first.  The
  * whole output is drawn again.  Returns 0 or an errno value.
  */
 int
-zwl_glass_wallpaper(
-	struct zwl_server *server,
-	const char *path)
+zwl_glass_landscape(
+	struct zwl_server *server)
 {
-	const char *shown;
+	struct wallpaper_picture picture;
 	uint64_t started;
 	int error;
 
@@ -375,21 +380,19 @@ zwl_glass_wallpaper(
 	started = zwl_milliseconds();
 	(void)vkDeviceWaitIdle(server->compose->device);
 
-	/* The picture asked for. */
-	error = wallpaper_fill(server, server->compose->glass, path);
+	/* The landscape: a picture without pixels. */
+	memset(&picture, 0, sizeof(picture));
+	error = wallpaper_draw(server, server->compose->glass, &picture);
 	if (error != 0)
 		return error;
 
 	/* Everything on the output stands on it. */
 	server->dirty = 1;
 
-	/* The log names the picture ("-" for the landscape) and how long it took. */
-	shown = "-";
-	if (path != NULL)
-		shown = path;
-	printf("ZWL GLASS wallpaper path=%s ms=%llu\n", shown, (unsigned long long)(zwl_milliseconds() - started));
+	/* The log names the landscape ("-") and how long it took. */
+	printf("ZWL GLASS wallpaper path=- ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
 
-	/* Succeeded: the new wallpaper is shown from the next frame. */
+	/* Succeeded: the landscape is shown from the next frame. */
 	return 0;
 }
 
@@ -571,15 +574,16 @@ wallpaper_create(
 }
 
 /*
- * Draws a picture (a binary PPM, or the landscape drawn here when path is
- * NULL or cannot be read) into the wallpaper's image and its blurred
- * copy, which are mapped, the output's size, and kept for the look's life.
+ * Draws the start's picture (a PNG or a JPEG, ws138-p001; or the landscape
+ * drawn here when path is NULL or cannot be read) into the wallpaper's image
+ * and its blurred copy, which are mapped, the output's size, and kept for
+ * the look's life.
  *
  * The picture is made one output row at a time (ws035-p133): each row is
  * packed, copied into the image (which is only written, never read), and
  * added to the frosted glass's block averages, so no output-sized copy of
- * the picture is kept.  Both the start and a wallpaper chosen later
- * (zwl_glass_wallpaper) come here.
+ * the picture is kept.  A wallpaper chosen later is read on a thread
+ * (zwl_glass_wallpaper_begin) and drawn by wallpaper_draw.
  */
 static int
 wallpaper_fill(
@@ -698,7 +702,7 @@ wallpaper_draw(
 			blur_average(sums, &small[(size_t)(y / GLASS_BLUR_SCALE) * small_width * 3U], small_width);
 	}
 
-	/* The rows are made; the file and the working rows are no longer needed. */
+	/* The rows are made; the picture and the working rows are no longer needed. */
 	free(line);
 	free(columns);
 	free(sums);
@@ -729,7 +733,7 @@ wallpaper_row(
 	uint32_t x;
 
 	/* The source row's first byte. */
-	source = picture->data + picture->pixels + (size_t)source_y * picture->width * 3U;
+	source = picture->data + (size_t)source_y * picture->width * 3U;
 
 	/* Each pixel as opaque BGRA (A, R, G, B from the top byte), as pack_pixel would make it. */
 	for (x = 0; x < width; x++) {
@@ -1317,28 +1321,25 @@ file_read(
 }
 
 /*
- * Reads a binary PPM (P6, maximum 255) for the wallpaper: its file's bytes
- * and header, kept in a picture that wallpaper_row scales from.  Returns 0,
- * or an errno value with nothing kept.
+ * Takes the wallpaper's picture for the start: the one the prefetch decoded
+ * when it read this path, otherwise read and decoded now.  Returns 0, or an
+ * errno value with nothing kept.
  */
 static int
 wallpaper_load(
 	const char *path,
 	struct wallpaper_picture *picture)
 {
-	unsigned char *data;
-	size_t size;
+	int taken;
 	int error;
 
-	/* The file, read ahead when the prefetch read this path, otherwise now. */
-	data = prefetch_take(path, &size);
-	if (data == NULL)
-		data = file_read(path, &size);
-	if (data == NULL)
-		return errno;
+	/* The picture decoded ahead, when the prefetch decoded this path. */
+	taken = prefetch_take(path, picture);
+	if (taken)
+		return 0;
 
-	/* Decodes the picture from the file's bytes. */
-	error = wallpaper_decode(data, size, picture);
+	/* Otherwise the file now (and the reason when it cannot be shown). */
+	error = wallpaper_read(path, picture);
 	if (error != 0)
 		return error;
 
@@ -1347,95 +1348,36 @@ wallpaper_load(
 }
 
 /*
- * Takes a binary PPM's header from its file's bytes (which the picture
- * keeps, or which are freed on a failure).  Returns 0, or EINVAL for bytes
- * that are not such a picture.  Safe on any thread.
+ * Reads a picture's file and decodes it (a PNG or a JPEG, ws138-p001;
+ * transparency over black) into three bytes a pixel.  Returns 0, or an errno
+ * value with nothing kept: the file's, EINVAL for bytes that are not such a
+ * picture, EFBIG for one too large.  Safe on any thread.
  */
 static int
-wallpaper_decode(
-	unsigned char *data,
-	size_t size,
+wallpaper_read(
+	const char *path,
 	struct wallpaper_picture *picture)
 {
-	uint32_t source_width;
-	uint32_t source_height;
-	uint32_t maximum;
-	size_t at;
+	struct kl_wallpaper_image image;
+	unsigned char *data;
+	size_t size;
 	int error;
 
-	/* The P6 magic. */
-	if (size < 2U || data[0] != 'P' || data[1] != '6') {
-		free(data);
-		return EINVAL;
-	}
+	/* The file's bytes. */
+	data = file_read(path, &size);
+	if (data == NULL)
+		return errno;
 
-	/* The width, the height and the maximum value. */
-	at = 2U;
-	error = ppm_number(data, size, &at, &source_width);
-	if (error == 0)
-		error = ppm_number(data, size, &at, &source_height);
-	if (error == 0)
-		error = ppm_number(data, size, &at, &maximum);
-	if (error != 0 || maximum != 255U || source_width == 0U || source_height == 0U) {
-		free(data);
-		return EINVAL;
-	}
-
-	/* One whitespace byte, then three bytes a pixel. */
-	at++;
-	if (at > size || (size - at) / 3U / source_width < source_height) {
-		free(data);
-		return EINVAL;
-	}
+	/* The pixels; the file's bytes are no longer needed either way. */
+	error = kl_wallpaper_decode(data, size, &image);
+	free(data);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the picture is kept for its rows. */
-	picture->data = data;
-	picture->pixels = at;
-	picture->width = source_width;
-	picture->height = source_height;
-	return 0;
-}
-
-/* Reads one decimal number of a PPM header, after whitespace and comments. */
-static int
-ppm_number(
-	const unsigned char *data,
-	size_t size,
-	size_t *at,
-	uint32_t *number)
-{
-	uint32_t value;
-	unsigned digits;
-
-	/* Whitespace, and comments to the end of their line. */
-	while (*at < size) {
-		if (data[*at] == '#') {
-			while (*at < size && data[*at] != '\n')
-				(*at)++;
-			continue;
-		}
-
-		/* The first byte that is not whitespace starts the number. */
-		if (data[*at] != ' ' && data[*at] != '\t' && data[*at] != '\r' && data[*at] != '\n')
-			break;
-		(*at)++;
-	}
-
-	/* The digits, within a bound. */
-	value = 0;
-	digits = 0;
-	while (*at < size && data[*at] >= '0' && data[*at] <= '9' && digits < 6U) {
-		value = value * 10U + (uint32_t)(data[*at] - '0');
-		(*at)++;
-		digits++;
-	}
-
-	/* A number has at least one digit. */
-	if (digits == 0U)
-		return EINVAL;
-
-	/* Succeeded. */
-	*number = value;
+	picture->data = image.rgb;
+	picture->width = image.width;
+	picture->height = image.height;
 	return 0;
 }
 
@@ -1445,20 +1387,13 @@ loader_run(
 	void *argument)
 {
 	struct wallpaper_picture picture;
-	unsigned char *data;
-	size_t size;
 	int error;
 
 	(void)argument;
 
-	/* Reads the file's bytes, and decodes the picture from them when they could be read. */
+	/* Reads the file and decodes the picture. */
 	memset(&picture, 0, sizeof(picture));
-	data = file_read(glass_loader.path, &size);
-	if (data == NULL) {
-		error = errno;
-	} else {
-		error = wallpaper_decode(data, size, &picture);
-	}
+	error = wallpaper_read(glass_loader.path, &picture);
 
 	/* Publishes the result; done tells poll that the thread can be joined. */
 	(void)pthread_mutex_lock(&glass_loader.lock);
@@ -1490,53 +1425,74 @@ loader_join(
 	glass_loader.started = 0;
 }
 
-/* Reads the wallpaper's file on the prefetch's thread; the result is taken after the join. */
+/* Reads and decodes the wallpaper's file on the prefetch's thread; the result is taken after the join. */
 static void *
 prefetch_run(
 	void *argument)
 {
 	(void)argument;
 
-	/* The bytes, or NULL (the look then reads the file again and reports why). */
-	glass_prefetch.data = file_read(glass_prefetch.path, &glass_prefetch.size);
+	/* The picture, or none (the look then reads the file again and reports why). */
+	memset(&glass_prefetch.picture, 0, sizeof(glass_prefetch.picture));
+	(void)wallpaper_read(glass_prefetch.path, &glass_prefetch.picture);
 
 	/* Succeeded: the thread ends; its result waits for the join. */
 	return NULL;
 }
 
 /*
- * Takes the bytes the prefetch read, when it read this path: waits for its
- * thread first.  Returns NULL (and frees what it read for another path) when
- * the caller must read the file itself.
+ * Takes the picture the prefetch decoded, when it read this path: waits for
+ * its thread first.  Returns 1 with the picture, or 0 (and frees what it
+ * decoded for another path) when the caller must read the file itself.
  */
-static unsigned char *
+static int
 prefetch_take(
 	const char *path,
-	size_t *size)
+	struct wallpaper_picture *picture)
 {
-	unsigned char *data;
+	struct wallpaper_picture decoded;
 	int same;
 
 	/* No thread was started, or it was taken already. */
 	if (!glass_prefetch.started)
-		return NULL;
+		return 0;
 
 	/* The thread's end makes its result visible here. */
 	(void)pthread_join(glass_prefetch.thread, NULL);
 	glass_prefetch.started = 0;
-	data = glass_prefetch.data;
-	glass_prefetch.data = NULL;
+	decoded = glass_prefetch.picture;
+	memset(&glass_prefetch.picture, 0, sizeof(glass_prefetch.picture));
 
-	/* Bytes of another picture (the preferences chose one since) are not this one. */
+	/* A picture of another path (the preferences chose one since) is not this one. */
 	same = strcmp(path, glass_prefetch.path);
 	if (same != 0) {
-		free(data);
-		return NULL;
+		free(decoded.data);
+		return 0;
 	}
 
-	/* Succeeded: the caller owns the bytes (NULL when the read failed). */
-	*size = glass_prefetch.size;
-	return data;
+	/* A picture that could not be read is read again by the caller, which reports why. */
+	if (decoded.data == NULL)
+		return 0;
+
+	/* Succeeded: the caller owns the picture. */
+	*picture = decoded;
+	return 1;
+}
+
+/* Waits for the prefetch's thread when it was never taken, and lets its picture go. */
+static void
+prefetch_drop(
+	void)
+{
+	/* No thread was started, or it was taken already. */
+	if (!glass_prefetch.started)
+		return;
+
+	/* The thread's end makes its picture visible here; nobody takes it. */
+	(void)pthread_join(glass_prefetch.thread, NULL);
+	glass_prefetch.started = 0;
+	free(glass_prefetch.picture.data);
+	memset(&glass_prefetch.picture, 0, sizeof(glass_prefetch.picture));
 }
 
 /* Starts a shape over a box: the quad is the box, with no image and no color. */

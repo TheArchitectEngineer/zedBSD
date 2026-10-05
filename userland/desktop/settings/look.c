@@ -23,6 +23,7 @@
 #include "settings.h"
 
 #include "userland/desktop/paths.h"
+#include "../picture/wallpaper.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -67,9 +68,28 @@
 #define LOOK_THUMB_WIDTH	240
 #define LOOK_THUMB_HEIGHT	150
 
-/* The bytes of a PPM's header read at most, and the widest picture read. */
-#define LOOK_HEADER_MAX		64U
-#define LOOK_WIDTH_MAX		8192U
+/* The largest picture file read for a small copy, as the compositor reads at most. */
+#define LOOK_FILE_MAX		(16U * 1024U * 1024U)
+
+/* A file name the page lists at most (with its ending). */
+#define LOOK_NAME_MAX		64U
+
+/*
+ * A picture file found in the folder: its name, the length of the name
+ * without the ending, and the ending's rank (1 for .png, the first kept
+ * when two files have the same name otherwise).
+ */
+struct look_found {
+	char name[LOOK_NAME_MAX];
+	size_t stem;
+	unsigned rank;
+};
+
+/*
+ * The endings of the pictures the page lists, in the order kept when two
+ * files differ only in it (ws138-p001: PNG and JPEG; PPM until ws138-p002).
+ */
+static const char *const look_endings[] = { ".png", ".jpg", ".jpeg", ".ppm" };
 
 /* The places the Storage page looks at (a place on the same file system as one before it is not shown again). */
 static const char *const look_places[] = { "/", "/home", "/usr", "/var", "/tmp", "/boot" };
@@ -82,8 +102,9 @@ static void look_load_start(struct se_app *app);
 static void *look_load_run(void *argument);
 static void look_load_take(struct se_app *app);
 static void look_load_stop(struct se_app *app);
+static unsigned look_found_add(struct look_found *found, unsigned count, const char *name);
 static int look_thumbnail(const char *path, struct fm_image *image);
-static int look_ppm_number(const unsigned char *data, size_t size, size_t *at, unsigned *number);
+static unsigned char *look_file_read(const char *path, size_t *size, int *error);
 static int look_compare_names(const void *left, const void *right);
 
 /*
@@ -324,15 +345,14 @@ void
 se_look_scan(
 	struct se_app *app)
 {
+	struct look_found found[SE_WALLPAPERS];
 	struct se_look *look;
 	struct dirent *entry;
-	char names[SE_WALLPAPERS][64];
 	char path[SE_PATH];
+	char name[LOOK_NAME_MAX];
 	DIR *folder;
 	unsigned count;
 	unsigned index;
-	size_t length;
-	int differs;
 
 	/* Once. */
 	look = &app->look;
@@ -344,37 +364,32 @@ se_look_scan(
 	look_add_picture(app, LOOK_DEFAULT_PICTURE, "Kei");
 	look->has_default = 1;
 
-	/* The folder's pictures (PPM files), at most as many as fit after the default. */
+	/*
+	 * The folder's pictures (PNG and JPEG files, ws138-p001; PPM until
+	 * ws138-p002), at most as many as fit after the default; of two files
+	 * with the same name but the ending, one is listed.
+	 */
 	count = 0;
 	folder = opendir(LOOK_PICTURES);
-	while (folder != NULL && count < SE_WALLPAPERS - 1U) {
+	while (folder != NULL) {
 		entry = readdir(folder);
 		if (entry == NULL)
 			break;
 
-		/* Only a name ending in .ppm, short enough. */
-		length = strlen(entry->d_name);
-		if (length <= 4U || length >= sizeof(names[0]))
-			continue;
-		differs = strcmp(entry->d_name + length - 4U, ".ppm");
-		if (differs != 0)
-			continue;
-
-		/* The name is kept for sorting. */
-		(void)snprintf(names[count], sizeof(names[count]), "%s", entry->d_name);
-		count++;
+		/* A picture's name is kept (or replaces a file of the same name) while the list has room. */
+		count = look_found_add(found, count, entry->d_name);
 	}
 
 	/* The folder is not needed any more. */
 	if (folder != NULL)
 		(void)closedir(folder);
 
-	/* By name, each with its small copy. */
-	qsort(names, count, sizeof(names[0]), look_compare_names);
+	/* By name, each with its small copy; the tile shows the name without its ending. */
+	qsort(found, count, sizeof(found[0]), look_compare_names);
 	for (index = 0; index < count; index++) {
-		(void)snprintf(path, sizeof(path), "%s/%.63s", LOOK_PICTURES, names[index]);
-		names[index][strlen(names[index]) - 4U] = '\0';
-		look_add_picture(app, path, names[index]);
+		(void)snprintf(path, sizeof(path), "%s/%s", LOOK_PICTURES, found[index].name);
+		(void)snprintf(name, sizeof(name), "%.*s", (int)found[index].stem, found[index].name);
+		look_add_picture(app, path, name);
 	}
 
 	/* The log line the tests read. */
@@ -802,28 +817,94 @@ look_load_stop(
 }
 
 /*
- * Reads a binary PPM into a small copy (LOOK_THUMB_WIDTH by
- * LOOK_THUMB_HEIGHT, the middle of the picture in the tile's proportions,
- * each small pixel the average of 3 by 3 samples).  Only the rows the
- * samples fall on are read, one at a time into a buffer a row long: a
- * large picture is not held whole.  Returns 0 or an errno value.
+ * Keeps a file name the folder holds when it is a picture's (one of
+ * look_endings, a name before it, short enough): added while the list has
+ * room for it after the default, or in place of a file with the same name
+ * and a later ending.  Returns how many names the list holds now.
+ */
+static unsigned
+look_found_add(
+	struct look_found *found,
+	unsigned count,
+	const char *name)
+{
+	size_t length;
+	size_t ending;
+	size_t stem;
+	unsigned rank;
+	unsigned index;
+	int differs;
+
+	/* A name short enough to keep. */
+	length = strlen(name);
+	if (length >= LOOK_NAME_MAX)
+		return count;
+
+	/* Its ending, by rank; a name that is only an ending is not a picture's. */
+	rank = 0;
+	stem = 0;
+	for (index = 0; rank == 0U && index < sizeof(look_endings) / sizeof(look_endings[0]); index++) {
+		ending = strlen(look_endings[index]);
+		if (length <= ending)
+			continue;
+		differs = strcmp(name + length - ending, look_endings[index]);
+		if (differs == 0) {
+			rank = index + 1U;
+			stem = length - ending;
+		}
+	}
+
+	/* Another file is not a picture's. */
+	if (rank == 0U)
+		return count;
+
+	/* A file of the same name: the earlier ending stays. */
+	for (index = 0; index < count; index++) {
+		if (found[index].stem != stem)
+			continue;
+		differs = strncmp(found[index].name, name, stem);
+		if (differs != 0)
+			continue;
+		if (rank < found[index].rank) {
+			(void)snprintf(found[index].name, sizeof(found[index].name), "%s", name);
+			found[index].rank = rank;
+		}
+
+		/* Either way the list holds as many as before. */
+		return count;
+	}
+
+	/* A new picture, while the list has room after the default. */
+	if (count >= SE_WALLPAPERS - 1U)
+		return count;
+	(void)snprintf(found[count].name, sizeof(found[count].name), "%s", name);
+	found[count].stem = stem;
+	found[count].rank = rank;
+
+	/* Succeeded: one more picture. */
+	return count + 1U;
+}
+
+/*
+ * Reads a picture (a PNG or a JPEG, ws138-p001; transparency over black)
+ * into a small copy (LOOK_THUMB_WIDTH by LOOK_THUMB_HEIGHT, the middle of
+ * the picture in the tile's proportions, each small pixel the average of 3
+ * by 3 samples).  The picture is decoded whole (kl_wallpaper_decode bounds
+ * its size), then let go.  Returns 0 or an errno value.
  */
 static int
 look_thumbnail(
 	const char *path,
 	struct fm_image *image)
 {
-	unsigned char header[LOOK_HEADER_MAX];
-	unsigned char *row;
+	struct kl_wallpaper_image picture;
+	const unsigned char *row;
 	const unsigned char *pixel;
-	struct stat status;
-	ssize_t count;
-	size_t at;
+	unsigned char *data;
+	size_t size;
 	size_t row_bytes;
-	off_t offset;
 	unsigned width;
 	unsigned height;
-	unsigned maximum;
 	unsigned x;
 	unsigned y;
 	unsigned source_x;
@@ -836,57 +917,21 @@ look_thumbnail(
 	unsigned crop_height;
 	unsigned crop_left;
 	unsigned crop_top;
-	int descriptor;
-	int result;
 	int error;
 
-	/* The file, and its header's bytes. */
-	descriptor = open(path, O_RDONLY);
-	if (descriptor < 0)
-		return errno;
-	count = read(descriptor, header, sizeof(header));
-	if (count < 0) {
-		error = errno;
-		(void)close(descriptor);
+	/* The file's bytes. */
+	data = look_file_read(path, &size, &error);
+	if (data == NULL)
 		return error;
-	}
 
-	/* The header: P6, the width, the height and the largest value (255), one space before the pixels. */
-	at = 2;
-	width = 0;
-	height = 0;
-	maximum = 0;
-	error = EINVAL;
-	if (count > 2 &&
-	    header[0] == 'P' &&
-	    header[1] == '6')
-		error = 0;
-	if (error == 0)
-		error = look_ppm_number(header, (size_t)count, &at, &width);
-	if (error == 0)
-		error = look_ppm_number(header, (size_t)count, &at, &height);
-	if (error == 0)
-		error = look_ppm_number(header, (size_t)count, &at, &maximum);
-	if (error == 0 &&
-	    (maximum != 255U ||
-	     width == 0U ||
-	     height == 0U ||
-	     width > LOOK_WIDTH_MAX))
-		error = EINVAL;
-	at++;
-
-	/* The file must hold every row the header promises. */
+	/* The picture's pixels; the file's bytes are not needed after. */
+	error = kl_wallpaper_decode(data, size, &picture);
+	free(data);
+	if (error != 0)
+		return error;
+	width = picture.width;
+	height = picture.height;
 	row_bytes = (size_t)width * 3U;
-	result = fstat(descriptor, &status);
-	if (error == 0 && result != 0)
-		error = errno;
-	if (error == 0 &&
-	    (uint64_t)status.st_size < (uint64_t)at + (uint64_t)row_bytes * height)
-		error = EINVAL;
-	if (error != 0) {
-		(void)close(descriptor);
-		return error;
-	}
 
 	/*
 	 * The middle of the picture in the tile's proportions (16:10): a wider
@@ -904,33 +949,20 @@ look_thumbnail(
 	crop_left = (width - crop_width) / 2U;
 	crop_top = (height - crop_height) / 2U;
 
-	/* A buffer one row long. */
-	row = malloc(row_bytes);
-	if (row == NULL) {
-		(void)close(descriptor);
-		return ENOMEM;
-	}
-
 	/* The small image. */
 	error = fm_image_create(image, LOOK_THUMB_WIDTH, LOOK_THUMB_HEIGHT);
 	if (error != 0) {
-		free(row);
-		(void)close(descriptor);
+		free(picture.rgb);
 		return error;
 	}
 
-	/* Each small row averages the samples of three source rows, each row read once. */
-	for (y = 0; error == 0 && y < (unsigned)LOOK_THUMB_HEIGHT; y++) {
+	/* Each small row averages the samples of three source rows. */
+	for (y = 0; y < (unsigned)LOOK_THUMB_HEIGHT; y++) {
 		memset(sums, 0, sizeof(sums));
 		for (dy = 0; dy < 3U; dy++) {
 			/* The source row this sample row falls on. */
 			source_y = crop_top + (unsigned)(((uint64_t)y * 3U + dy) * crop_height / (LOOK_THUMB_HEIGHT * 3U));
-			offset = (off_t)at + (off_t)source_y * (off_t)row_bytes;
-			count = pread(descriptor, row, row_bytes, offset);
-			if (count != (ssize_t)row_bytes) {
-				error = EIO;
-				break;
-			}
+			row = picture.rgb + (size_t)source_y * row_bytes;
 
 			/* Three samples across for each small pixel. */
 			for (x = 0; x < (unsigned)LOOK_THUMB_WIDTH; x++) {
@@ -944,7 +976,7 @@ look_thumbnail(
 		}
 
 		/* The row's pixels, opaque, in the canvas's order (0xAARRGGBB). */
-		for (x = 0; error == 0 && x < (unsigned)LOOK_THUMB_WIDTH; x++) {
+		for (x = 0; x < (unsigned)LOOK_THUMB_WIDTH; x++) {
 			image->pixels[(size_t)y * image->stride + x] = 0xff000000U |
 			    ((sums[x][0] / 9U) << 16) |
 			    ((sums[x][1] / 9U) << 8) |
@@ -952,75 +984,116 @@ look_thumbnail(
 		}
 	}
 
-	/* The buffer and the file are not needed any more. */
-	free(row);
-	(void)close(descriptor);
-
-	/* A row that could not be read spoils the copy. */
-	if (error != 0) {
-		fm_image_release(image);
-		return error;
-	}
+	/* The picture is not needed any more. */
+	free(picture.rgb);
 
 	/* Succeeded: the small copy is made. */
 	return 0;
 }
 
-/* Reads a PPM header's number after white space and comments; returns 0 or EINVAL. */
-static int
-look_ppm_number(
-	const unsigned char *data,
-	size_t size,
-	size_t *at,
-	unsigned *number)
+/*
+ * Reads a whole ordinary file of at most LOOK_FILE_MAX bytes.  Returns its
+ * bytes (the caller frees them), or NULL with *error the errno value
+ * (EINVAL for an empty file, EFBIG for a larger one).
+ */
+static unsigned char *
+look_file_read(
+	const char *path,
+	size_t *size,
+	int *error)
 {
-	unsigned digits;
+	struct stat status;
+	unsigned char *data;
+	ssize_t count;
+	size_t length;
+	size_t capacity;
+	int descriptor;
+	int ordinary;
+	int result;
 
-	/* White space and comments first. */
-	while (*at < size) {
-		if (data[*at] == '#') {
-			while (*at < size && data[*at] != '\n')
-				(*at)++;
-		} else if (data[*at] == ' ' ||
-			   data[*at] == '\t' ||
-			   data[*at] == '\n' ||
-			   data[*at] == '\r') {
-			(*at)++;
-		} else {
+	/* The file; a FIFO or a device does not hold the reader. */
+	descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+	if (descriptor < 0) {
+		*error = errno;
+		return NULL;
+	}
+
+	/* Only an ordinary file of a size within the bound. */
+	result = fstat(descriptor, &status);
+	*error = 0;
+	if (result != 0)
+		*error = errno;
+	ordinary = 0;
+	if (*error == 0)
+		ordinary = S_ISREG(status.st_mode);
+	if (*error == 0 && !ordinary)
+		*error = EINVAL;
+	if (*error == 0 && status.st_size <= 0)
+		*error = EINVAL;
+	if (*error == 0 && (uint64_t)status.st_size > LOOK_FILE_MAX)
+		*error = EFBIG;
+	if (*error != 0) {
+		(void)close(descriptor);
+		return NULL;
+	}
+
+	/* A buffer as large as the file. */
+	capacity = (size_t)status.st_size;
+	data = malloc(capacity);
+	if (data == NULL) {
+		(void)close(descriptor);
+		*error = ENOMEM;
+		return NULL;
+	}
+
+	/* Read to the end: normally one read. */
+	length = 0;
+	while (length < capacity) {
+		count = read(descriptor, data + length, capacity - length);
+		if (count <= 0)
 			break;
-		}
+		length += (size_t)count;
 	}
 
-	/* The digits, at most seven. */
-	*number = 0;
-	digits = 0;
-	while (*at < size &&
-	       data[*at] >= '0' &&
-	       data[*at] <= '9' &&
-	       digits < 7U) {
-		*number = *number * 10U + (unsigned)(data[*at] - '0');
-		(*at)++;
-		digits++;
+	/* The file is not needed any more. */
+	(void)close(descriptor);
+
+	/* A file that shrank meanwhile is read as far as it goes; nothing read is nothing. */
+	if (length == 0U) {
+		free(data);
+		*error = EIO;
+		return NULL;
 	}
 
-	/* No digit is no number. */
-	if (digits == 0U)
-		return EINVAL;
-
-	/* Succeeded: the number is read. */
-	return 0;
+	/* Succeeded: the caller owns the bytes. */
+	*size = length;
+	return data;
 }
 
-/* Orders two names as strcmp does (for qsort). */
+/* Orders two pictures found by their names without the ending, as strcmp does (for qsort). */
 static int
 look_compare_names(
 	const void *left,
 	const void *right)
 {
+	const struct look_found *a;
+	const struct look_found *b;
+	size_t shorter;
 	int order;
 
-	/* The names' order. */
-	order = strcmp((const char *)left, (const char *)right);
+	/* The common part of the names first. */
+	a = left;
+	b = right;
+	shorter = a->stem;
+	if (b->stem < shorter)
+		shorter = b->stem;
+	order = strncmp(a->name, b->name, shorter);
+
+	/* Then the shorter name before the longer. */
+	if (order == 0 && a->stem < b->stem)
+		order = -1;
+	if (order == 0 && a->stem > b->stem)
+		order = 1;
 
 	/* Succeeded: the order. */
 	return order;

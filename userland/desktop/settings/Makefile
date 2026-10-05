@@ -15,5 +15,5 @@ KEILAND_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/network.c userland/desktop/settings/search.c \
 	userland/desktop/settings/look.c userland/desktop/settings/page-look.c userland/desktop/settings/page-input.c userland/desktop/settings/sound.c userland/desktop/settings/system.c \
 	userland/desktop/files/canvas.c userland/desktop/files/text.c \
-	userland/desktop/files/icons.c userland/desktop/artwork/mark.c
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,settings,Settings,amd64,y,basic,$(KEILAND_SETTINGS_SOURCES),y,desktop,desktop/settings,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype,0755,program,,,bin))
+	userland/desktop/files/icons.c userland/desktop/artwork/mark.c userland/desktop/picture/wallpaper.c
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,settings,Settings,amd64,y,basic,$(KEILAND_SETTINGS_SOURCES),y,desktop,desktop/settings,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype base/libpng-compat base/libz-compat base/libjpeg-compat,0755,program,,,bin))
