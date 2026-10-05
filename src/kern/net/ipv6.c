@@ -1351,11 +1351,15 @@ ipv6_interface_tick_locked(
 	struct in6_address_event events[8];
 	unsigned events_count;
 	unsigned index;
+	unsigned flags;
 	int carrier;
 	int linklocal;
 
-	/* Nothing while IPv6 is off. */
+	/* Nothing while IPv6 is off, and nothing to detect, solicit or report on the loopback device. */
 	if (!interface->enabled)
+		return count;
+	flags = net_device_flags_get(interface->device);
+	if ((flags & NET_DEVICE_LOOPBACK) != 0U)
 		return count;
 
 	/* The carrier came back: the addresses are checked again, and the groups reported. */
