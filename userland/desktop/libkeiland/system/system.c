@@ -94,10 +94,11 @@ struct system_power_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
-/* The listener of kl_system_account_v1's events (refused since version 8, ws089-p026). */
+/* The listener of kl_system_account_v1's events (refused since version 8, ws089-p026; enrolled since 11, ws172-p002). */
 struct system_account_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 	void (*refused)(void *data, struct wl_proxy *proxy, uint32_t request, const char *reason);
+	void (*enrolled)(void *data, struct wl_proxy *proxy, uint32_t pin, uint32_t keys);
 };
 
 /* The listener of kl_system_sharing_v1's events (ws089-p025), in their order. */
@@ -137,6 +138,7 @@ static void system_devices_done(void *data, struct wl_proxy *proxy, uint32_t ser
 static void system_devices_busy(void *data, struct wl_proxy *proxy, uint32_t request, const char *program);
 static void system_devices_volume(void *data, struct wl_proxy *proxy, const char *id, const char *fs, uint32_t bytes_high, uint32_t bytes_low);
 static void system_account_refused(void *data, struct wl_proxy *proxy, uint32_t request, const char *reason);
+static void system_account_enrolled(void *data, struct wl_proxy *proxy, uint32_t pin, uint32_t keys);
 static void system_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 static void system_sharing_state(void *data, struct wl_proxy *proxy, uint32_t available, uint32_t enabled, uint32_t running, uint32_t port, uint32_t allowed, const char *fingerprint);
 static void system_sharing_done(void *data, struct wl_proxy *proxy, uint32_t serial);
@@ -184,10 +186,11 @@ static const struct system_power_listener system_power_listener = {
 	system_result
 };
 
-/* The account object's callbacks (ws160-p002, ws089-p026). */
+/* The account object's callbacks (ws160-p002, ws089-p026, ws172-p002). */
 static const struct system_account_listener system_account_listener = {
 	system_result,
-	system_account_refused
+	system_account_refused,
+	system_account_enrolled
 };
 
 /* The sharing object's callbacks (ws089-p025). */
@@ -1037,12 +1040,37 @@ kl_system_account_set_pin(
 	if (pin_length > KL_SYSTEM_PASSWORD_MAX)
 		return EINVAL;
 
+	/* A refusal of an earlier request is not this one's. */
+	system->view.refused_request = 0U;
+	system->view.refused_reason[0] = '\0';
+
 	/* Sent with the application's next flush. */
 	number = system_number(system, request);
 	wl_proxy_marshal(system->account, KL_SYSTEM_ACCOUNT_SET_PIN, number, current, pin);
 
 	/* Succeeded: the answer comes as a result. */
 	return 0;
+}
+
+/*
+ * Gives what the user has enrolled (ws172-p002), once the compositor told it.
+ */
+int
+kl_system_account_enrolled(
+	const struct kl_system *system,
+	unsigned *pin,
+	unsigned *keys)
+{
+	/* Nothing before the compositor told it. */
+	*pin = 0U;
+	*keys = 0U;
+	if (system == NULL || !system->view.enrolled_known)
+		return 0;
+
+	/* Succeeded: whether a PIN is set, and the keys. */
+	*pin = system->view.enrolled_pin;
+	*keys = system->view.enrolled_keys;
+	return 1;
 }
 
 /*
@@ -1604,6 +1632,28 @@ system_account_refused(
 	system = data;
 	system->view.refused_request = request;
 	system_view_copy(system->view.refused_reason, sizeof(system->view.refused_reason), reason);
+}
+
+/* Keeps what the user has enrolled (ws172-p002): whether a PIN is set, and how many security keys. */
+static void
+system_account_enrolled(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t pin,
+	uint32_t keys)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* Known now, and changed. */
+	system = data;
+	system->view.enrolled_known = 1U;
+	system->view.enrolled_pin = 0U;
+	if (pin != 0U)
+		system->view.enrolled_pin = 1U;
+	system->view.enrolled_keys = keys;
+	system->view.changed |= KL_SYSTEM_CHANGED_ENROLLED;
 }
 
 /* Keeps an answered request of any object. */

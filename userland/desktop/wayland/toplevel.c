@@ -353,7 +353,7 @@ zwl_toplevel_button(
 		printf("ZWL RESIZE configure errno=%d\n", error);
 	surface->resize_final_serial = surface->configure_serial;
 	surface->resize_end_ms = zwl_milliseconds();
-	printf("ZWL RESIZE end surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
+	printf("ZWL RESIZE end surface=%u width=%u height=%u client=%llu\n", surface->id, surface->window_width, surface->window_height, (unsigned long long)surface->client->number);
 
 	/* A client that has drawn the last size already needs the anchor no more. */
 	window_extent(surface, &geometry_x, &geometry_y, &width, &height);
@@ -410,7 +410,7 @@ zwl_toplevel_resize_start(
 	surface->window_height = (uint32_t)height;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL RESIZE start surface=%u edges=%u width=%d height=%d\n", surface->id, edges, width, height);
+	printf("ZWL RESIZE start surface=%u edges=%u width=%d height=%d client=%llu\n", surface->id, edges, width, height, (unsigned long long)surface->client->number);
 	return 0;
 }
 
@@ -665,14 +665,14 @@ toplevel_resize(
 	if (held < 0)
 		return EPROTO;
 	if (held == 0) {
-		printf("ZWL RESIZE refused surface=%u reason=no-press\n", surface->id);
+		printf("ZWL RESIZE refused surface=%u reason=no-press client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 0;
 	}
 
 	/* A window that cannot be resized now leaves the request without effect. */
 	error = zwl_toplevel_resize_start(server, surface, edges);
 	if (error != 0) {
-		printf("ZWL RESIZE refused surface=%u reason=state\n", surface->id);
+		printf("ZWL RESIZE refused surface=%u reason=state client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 
 		/* An inert request has no client release ownership to retain. */
 		return 0;
@@ -866,7 +866,7 @@ resize_settle(
 	surface->resize_edges = 0;
 
 	/* The log line the tests read. */
-	printf("ZWL RESIZE settled surface=%u x=%d y=%d width=%d height=%d\n", surface->id, surface->x, surface->y, width, height);
+	printf("ZWL RESIZE settled surface=%u x=%d y=%d width=%d height=%d client=%llu\n", surface->id, surface->x, surface->y, width, height, (unsigned long long)surface->client->number);
 }
 
 /* Starts an accepted move from its press: the window takes the place the pointer's motion since then gives it. */

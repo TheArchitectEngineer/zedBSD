@@ -347,7 +347,7 @@ zwl_focus_previous(
 
 	/* It comes forward and has the focus (the keyboard, if open, stays). */
 	zwl_glass_raise(server, second);
-	printf("ZWL FOCUS previous surface=%u app=%s from=%u\n", second->id, second->app_id, top->id);
+	printf("ZWL FOCUS previous surface=%u app=%s from=%u client=%llu\n", second->id, second->app_id, top->id, (unsigned long long)second->client->number);
 
 	/* Succeeded. */
 	return 0;

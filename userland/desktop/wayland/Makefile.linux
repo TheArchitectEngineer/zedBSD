@@ -1,5 +1,6 @@
 # zedBSD; Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 # The independent Linux compositor list; target-only device modules and X11 helper are excluded.
+# keiland-linux-sync: only userland/desktop/wayland/shot-none.c (the zedBSD Makefile picks shot.c or shot-none.c by ZEDBSD_TEST_SCREEN_CAPTURE)
 WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/wire.c \
 	userland/desktop/wayland/objects.c \
@@ -49,7 +50,6 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/media.c \
 	userland/desktop/wayland/settings.c \
 	userland/desktop/wayland/settings-store.c \
-	userland/desktop/wayland/pin-store.c \
 	userland/desktop/wayland/shot-none.c \
 	userland/desktop/wayland/system.c \
 	userland/desktop/wayland/sysmon.c \
@@ -69,7 +69,7 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/backend-host.c \
 	userland/desktop/wayland/os.c \
 	userland/desktop/wayland/gpu-host.c
-$(eval $(call KEILAND_LINUX_PROGRAM,wayland,bin,$(WAYLAND_LINUX_SOURCES),libkeiland.so libkeiland-backend.a libtruetype.so libpng-compat.so libjpeg-compat.so libz-compat.so libvulkan.so.1,-lm -lcrypt))
+$(eval $(call KEILAND_LINUX_PROGRAM,wayland,bin,$(WAYLAND_LINUX_SOURCES),libkeiland.so libkeiland-backend.a libtruetype.so libpng-compat.so libjpeg-compat.so libz-compat.so libvulkan.so.1,-lm))
 
 $(eval $(call KEILAND_LINUX_DATA,share/fonts/keiland.ttf,userland/desktop/fonts/Inter.ttf))
 $(eval $(call KEILAND_LINUX_DATA,share/fonts/keiland-mono.ttf,userland/desktop/fonts/JetBrainsMono-Regular.ttf))

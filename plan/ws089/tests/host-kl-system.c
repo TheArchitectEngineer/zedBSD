@@ -139,6 +139,16 @@ kl_system_account_set_pin(struct kl_system *system, const char *current, const c
 	return ENOTSUP;
 }
 
+/* What the user has enrolled (ws172-p002): never told by the stand-in. */
+int
+kl_system_account_enrolled(const struct kl_system *system, unsigned *pin, unsigned *keys)
+{
+	(void)system;
+	*pin = 0U;
+	*keys = 0U;
+	return 0;
+}
+
 /* No refusal's word without the administration. */
 int
 kl_system_account_refusal(const struct kl_system *system, uint32_t request, char *reason, size_t size)

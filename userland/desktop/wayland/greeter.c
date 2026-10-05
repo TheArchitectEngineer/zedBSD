@@ -14,7 +14,8 @@
  * the descriptor --auth-fd names:
  *
  *   READY                   GO: the display may be taken (handoff.c)
- *   AUTH name password      OK: the user is in; FAIL
+ *   STYLES name             STYLES password[ pin]: how the user may log in now
+ *   AUTH name style         then the secret's line: OK, the user is in; FAIL reason
  *   POWER poweroff|reboot   OK (sent by libkeiland-backend's power, ws131-p005)
  *
  * After OK the screen says "Starting session..." and takes no input until
@@ -26,16 +27,17 @@
  * zwl_greeter_answer.
  *
  * The same screen is a session's lock (ws035-p102, zwl_lock): the session's
- * user only, no power buttons, and the password goes to sessiond on the
- * session's descriptor (--control-fd) as UNLOCK password; OK unlocks, FAIL
+ * user only, no power buttons, and the secret goes to sessiond on the
+ * session's descriptor (--control-fd) as UNLOCK style; OK unlocks, FAIL
  * (after sessiond's delay) asks again.
  *
- * A lock screen whose user set a PIN (ws163-p002, the mock of
- * plan/ws163/phase001 section 9; pin-store.c) also takes the PIN: six
- * digits and Enter are checked here against the user's
- * ~/.config/keiland/pin, and sessiond is not asked.  Five wrong PINs in a
- * row turn it off until the password unlocks.  The login screen has no
- * PIN: _greeter cannot read the user's home (G1, section 9.6).
+ * The PIN (ws172-p002, docs/architecture/security.md "Login
+ * authentication"): sessiond says which styles the user may use now
+ * (STYLES); when the PIN is one the field takes the PIN first, and a link
+ * under it switches between the PIN and the password.  Nothing is checked
+ * here: /sbin/passkey checks both, and sessiond offers the PIN only after
+ * the user's password since it started and turns it off after five wrong
+ * ones.
  *
  * The screen is the blurred wallpaper with the time and the date at the
  * top, a frosted card in the middle with the users (the accounts with a uid
@@ -50,7 +52,6 @@
  */
 
 #include "glass.h"
-#include "pin-store.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
@@ -79,6 +80,12 @@
 #define GREETER_ROW		44
 #define GREETER_FIELD		44
 #define GREETER_AVATAR		72
+
+/* The line under the message that switches between the PIN and the password: its height. */
+#define GREETER_LINK		28
+
+/* A PIN's digits. */
+#define GREETER_PIN_DIGITS	6U
 
 /* The power buttons' size, and their gap to the output's edge. */
 #define GREETER_BUTTON_WIDTH	112
@@ -116,13 +123,14 @@
 
 /*
  * What a press on the screen hit: nothing, a user's row, the password
- * field, the Log In button, Restart or Shut Down.
+ * field, the Log In button, the PIN-or-password link, Restart or Shut Down.
  */
 enum greeter_hit {
 	GREETER_HIT_NONE,
 	GREETER_HIT_USER,
 	GREETER_HIT_FIELD,
 	GREETER_HIT_LOGIN,
+	GREETER_HIT_SWITCH,
 	GREETER_HIT_RESTART,
 	GREETER_HIT_POWEROFF
 };
@@ -145,6 +153,7 @@ struct greeter_layout {
 	int32_t rows[GREETER_USERS][4];
 	int32_t field[4];
 	int32_t login[4];
+	int32_t link[4];
 	int32_t restart[4];
 	int32_t poweroff[4];
 };
@@ -178,13 +187,19 @@ static uint64_t greeter_power_frame;
 static uint64_t greeter_power_ms;
 
 /*
- * The lock screen's PIN (ws163-p002): the path of the user's PIN file
- * (empty without a home), and whether a PIN can be typed (one is set and
- * wrong ones have not turned it off).  Both are found when the session
- * locks, and greeter_pin follows each try.
+ * The styles (ws172-p002): those sessiond last said the selected user may
+ * use now (KL_BACKEND_STYLE_* bits), the one the field takes, whether the
+ * user chose it with the link, and whether STYLES is to be asked (wanted:
+ * it waits for the answer under way) or is asked.
  */
-static char greeter_pin_path[ZWL_PIN_PATH_MAX];
-static unsigned greeter_pin;
+static unsigned greeter_styles;
+static unsigned greeter_style;
+static unsigned greeter_style_chosen;
+static unsigned greeter_styles_wanted;
+static unsigned greeter_styles_asked;
+
+/* Enter pressed while the session manager answered something else: the secret goes once it is free. */
+static unsigned greeter_submit_pending;
 
 /* The characters each key types, without and with Shift (US layout); 0 for none. */
 static const char greeter_plain[GREETER_KEYS] = {
@@ -219,8 +234,11 @@ static void greeter_power_send(struct zwl_server *server);
 static void greeter_draw_power(struct zwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
 static void greeter_answered(struct zwl_server *server, int error);
 static void greeter_unlock(struct zwl_server *server);
-static void greeter_pin_find(void);
-static void greeter_pin_try(struct zwl_server *server);
+static void greeter_refused(struct zwl_server *server);
+static void greeter_styles_reset(void);
+static void greeter_styles_ask(struct zwl_server *server);
+static void greeter_styles_take(struct zwl_server *server);
+static void greeter_style_switch(struct zwl_server *server);
 static void greeter_erase(void);
 
 /*
@@ -233,11 +251,12 @@ zwl_greeter_open(
 	int flags;
 	int error;
 
-	/* The users shown. */
+	/* The users shown; the first one's styles are asked once the screen runs. */
 	greeter_read_users();
 	greeter_selected = 0U;
 	greeter_erase();
 	greeter_message[0] = '\0';
+	greeter_styles_reset();
 
 	/* sessiond's answers are read without waiting for them. */
 	flags = fcntl(server->auth_fd, F_GETFL);
@@ -293,8 +312,8 @@ zwl_lock(
 	greeter_waiting = 0U;
 	greeter_starting = 0U;
 
-	/* Whether the user's PIN can unlock it. */
-	greeter_pin_find();
+	/* Whether the user's PIN can unlock it: sessiond is asked. */
+	greeter_styles_reset();
 
 	/* The clipboard's history goes (clipboard.c). */
 	zwl_clipboard_history_clear(server, "lock");
@@ -302,7 +321,7 @@ zwl_lock(
 	/* Succeeded: the lock screen shows. */
 	server->locked = 1U;
 	server->dirty = 1;
-	printf("ZWL LOCK locked reason=%s user=%s pin=%u\n", reason, greeter_users[0].name, greeter_pin);
+	printf("ZWL LOCK locked reason=%s user=%s\n", reason, greeter_users[0].name);
 	return 1;
 }
 
@@ -323,6 +342,7 @@ zwl_lock_release(
 	greeter_erase();
 	greeter_message[0] = '\0';
 	greeter_waiting = 0U;
+	greeter_submit_pending = 0U;
 
 	/* Succeeded: the desktop shows; the idle time starts again. */
 	server->locked = 0U;
@@ -342,8 +362,21 @@ zwl_greeter_answer(
 	unsigned request,
 	int error)
 {
+	/*
+	 * The styles the user may use now: no longer asked, whatever shows;
+	 * taken while the screen shows and no newer asking waits (another user
+	 * was selected meanwhile).
+	 */
+	if (request == KL_BACKEND_SESSION_STYLES) {
+		greeter_styles_asked = 0U;
+		if (error != 0 || greeter_styles_wanted)
+			return;
+		if (server->greeter || server->locked)
+			greeter_styles_take(server);
+		return;
+	}
+
 	/* Only while the login screen or the lock screen shows. */
-	(void)request;
 	if (!server->greeter && !server->locked)
 		return;
 
@@ -430,6 +463,9 @@ zwl_greeter_button(
 		break;
 	case GREETER_HIT_LOGIN:
 		greeter_submit(server);
+		break;
+	case GREETER_HIT_SWITCH:
+		greeter_style_switch(server);
 		break;
 	case GREETER_HIT_RESTART:
 		if (!server->locked)
@@ -518,7 +554,15 @@ zwl_greeter_tick(
 		server->dirty = 1;
 	}
 
-	/* The lock screen has only its clock. */
+	/* The styles of the selected user, asked once no other answer is awaited. */
+	if (greeter_styles_wanted && !greeter_waiting && !greeter_styles_asked)
+		greeter_styles_ask(server);
+
+	/* A secret held back while another request was answered goes now. */
+	if (greeter_submit_pending && !greeter_styles_asked && !greeter_styles_wanted)
+		greeter_submit(server);
+
+	/* The lock screen has only its clock and its styles. */
 	if (!server->greeter)
 		return;
 
@@ -631,7 +675,7 @@ greeter_layout(
 	rows = 0U;
 	if (greeter_user_count > 1U)
 		rows = greeter_user_count;
-	card_height = 28 + GREETER_AVATAR + 48 + (int32_t)rows * GREETER_ROW + 12 + GREETER_FIELD + 44;
+	card_height = 28 + GREETER_AVATAR + 48 + (int32_t)rows * GREETER_ROW + 12 + GREETER_FIELD + 44 + GREETER_LINK;
 	layout->card[2] = GREETER_CARD_WIDTH;
 	layout->card[3] = card_height;
 	layout->card[0] = (width - GREETER_CARD_WIDTH) / 2;
@@ -666,6 +710,12 @@ greeter_layout(
 	layout->login[1] = y;
 	layout->login[2] = GREETER_FIELD;
 	layout->login[3] = GREETER_FIELD;
+
+	/* The link that switches between the PIN and the password, under the message's line. */
+	layout->link[0] = x + 24;
+	layout->link[1] = y + GREETER_FIELD + 40;
+	layout->link[2] = GREETER_CARD_WIDTH - 48;
+	layout->link[3] = GREETER_LINK;
 
 	/* Restart and Shut Down at the bottom right. */
 	layout->poweroff[0] = width - GREETER_MARGIN - GREETER_BUTTON_WIDTH;
@@ -704,6 +754,9 @@ greeter_hit(
 	inside = greeter_inside(layout->login, server->pointer_x, server->pointer_y);
 	if (inside)
 		return GREETER_HIT_LOGIN;
+	inside = greeter_inside(layout->link, server->pointer_x, server->pointer_y);
+	if (inside && (greeter_styles & KL_BACKEND_STYLE_PIN) != 0U)
+		return GREETER_HIT_SWITCH;
 	inside = greeter_inside(layout->restart, server->pointer_x, server->pointer_y);
 	if (inside)
 		return GREETER_HIT_RESTART;
@@ -750,6 +803,8 @@ greeter_draw_card(
 	static const float warning[4] = { 0.72f, 0.12f, 0.10f, 1.0f };
 	struct glass_shape shape;
 	const struct greeter_user *user;
+	const float *color;
+	const char *link;
 	char letter[2];
 	int32_t middle;
 	int32_t baseline;
@@ -823,6 +878,18 @@ greeter_draw_card(
 	} else if (greeter_message[0] != '\0') {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, greeter_message, GREETER_CARD_WIDTH - 32, warning);
 	}
+
+	/* The link to the other style, while the PIN is one. */
+	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U || greeter_starting)
+		return;
+	link = "Use your password";
+	if (greeter_style == KL_BACKEND_STYLE_PASSWORD)
+		link = "Use your PIN";
+	inside = greeter_inside(layout->link, server->pointer_x, server->pointer_y);
+	color = faint;
+	if (inside)
+		color = ink;
+	greeter_draw_centered(server, command, SIZE_BAR, middle, layout->link[1] + 20, link, GREETER_CARD_WIDTH - 32, color);
 }
 
 /* Draws the password field (dots for the characters, or its hint) and the Log In button. */
@@ -846,10 +913,10 @@ greeter_draw_field(
 	glass_draw_solid(server, command, (float)layout->field[0] - 2.0f, (float)layout->field[1] - 2.0f, (float)layout->field[2] + 4.0f, (float)layout->field[3] + 4.0f, 12.0f, rim);
 	glass_draw_solid(server, command, (float)layout->field[0], (float)layout->field[1], (float)layout->field[2], (float)layout->field[3], 10.0f, field);
 
-	/* The hint while it is empty: the lock screen with a PIN takes either. */
+	/* The hint while it is empty: the style the field takes. */
 	hint_text = "Password";
-	if (server->locked && greeter_pin)
-		hint_text = "PIN or password";
+	if (greeter_style == KL_BACKEND_STYLE_PIN)
+		hint_text = "PIN";
 	if (greeter_password_length == 0U) {
 		glass_draw_text(server, command, SIZE_TITLE, layout->field[0] + 16, layout->field[1] + 28, hint_text, layout->field[2] - 32, hint);
 	}
@@ -1021,10 +1088,11 @@ greeter_select(
 	if (user >= greeter_user_count)
 		return;
 
-	/* The new user starts with an empty password. */
+	/* The new user starts with an empty password, and its styles are asked. */
 	greeter_selected = user;
 	greeter_erase();
 	greeter_message[0] = '\0';
+	greeter_styles_reset();
 	server->dirty = 1;
 	printf("ZWL GREETER select user=%s\n", greeter_users[user].name);
 }
@@ -1058,6 +1126,14 @@ greeter_type(
 	if (greeter_waiting || greeter_password_length + 1U >= sizeof(greeter_password))
 		return;
 
+	/* The PIN takes six digits only. */
+	if (greeter_style == KL_BACKEND_STYLE_PIN) {
+		if (character < '0' || character > '9')
+			return;
+		if (greeter_password_length >= GREETER_PIN_DIGITS)
+			return;
+	}
+
 	/* The character. */
 	greeter_password[greeter_password_length] = character;
 	greeter_password_length++;
@@ -1070,29 +1146,39 @@ static void
 greeter_submit(
 	struct zwl_server *server)
 {
-	int is_pin;
 	int error;
 
-	/* One question at a time. */
+	/* One question at a time; while the styles are asked the secret waits for their answer. */
+	greeter_submit_pending = 0U;
 	if (greeter_waiting)
 		return;
+	if (greeter_styles_asked || greeter_styles_wanted) {
+		greeter_submit_pending = 1U;
+		return;
+	}
 
-	/* Six digits on a lock screen with a PIN are the PIN's try, checked here (H5). */
-	if (server->locked && greeter_pin) {
-		is_pin = zwl_pin_is_pin(greeter_password);
-		if (is_pin) {
-			greeter_pin_try(server);
-			return;
-		}
+	/* A PIN is six digits; a shorter one is not sent (it would count as a wrong one). */
+	if (greeter_style == KL_BACKEND_STYLE_PIN && greeter_password_length != GREETER_PIN_DIGITS) {
+		snprintf(greeter_message, sizeof(greeter_message), "A PIN has six digits.");
+		server->dirty = 1;
+		return;
 	}
 
 	/* The request (unlock on a session's lock screen), through the backend. */
 	greeter_waiting = 1;
 	greeter_message[0] = '\0';
-	if (server->locked)
-		error = kl_backend_session_unlock(server->backend, greeter_password);
-	else
-		error = kl_backend_session_authenticate(server->backend, greeter_users[greeter_selected].name, greeter_password);
+	if (server->locked) {
+		error = kl_backend_session_unlock(server->backend, greeter_style, greeter_password);
+	} else {
+		error = kl_backend_session_authenticate(server->backend, greeter_users[greeter_selected].name, greeter_style, greeter_password);
+	}
+
+	/* A session manager busy with another request: the secret stays typed and goes on a later tick. */
+	if (error == EBUSY) {
+		greeter_waiting = 0;
+		greeter_submit_pending = 1U;
+		return;
+	}
 
 	/* Nothing typed is kept once it is asked. */
 	greeter_erase();
@@ -1103,7 +1189,7 @@ greeter_submit(
 
 	/* The screen shows the wait. */
 	server->dirty = 1;
-	printf("ZWL GREETER auth user=%s\n", greeter_users[greeter_selected].name);
+	printf("ZWL GREETER auth user=%s style=%u\n", greeter_users[greeter_selected].name, greeter_style);
 }
 
 /*
@@ -1216,9 +1302,9 @@ greeter_draw_power(
 }
 
 /*
- * Acts on one answer of the session manager's: 0 granted (OK), EACCES a
- * wrong password (FAIL), EIO refused (ERROR), another a line not
- * understood.
+ * Acts on one answer of the session manager's: 0 granted (OK), EACCES
+ * refused (FAIL, with its word: kl_backend_session_reason), EBUSY another
+ * request under way, EIO not done (ERROR), another a line not understood.
  */
 static void
 greeter_answered(
@@ -1227,22 +1313,25 @@ greeter_answered(
 {
 	const char *answer;
 
-	/* The screen is redrawn with the result, and the log names the answer as the manager said it. */
+	/* The screen is redrawn with the result; the answer as the manager said it. */
 	server->dirty = 1;
 	answer = "?";
-	if (error == 0)
+	if (error == 0) {
 		answer = "OK";
-	else if (error == EACCES)
+	} else if (error == EACCES) {
 		answer = "FAIL";
-	else if (error == EIO)
+	} else if (error == EBUSY) {
+		answer = "BUSY";
+	} else if (error == EIO) {
 		answer = "ERROR";
-	printf("ZWL GREETER answer=%s\n", answer);
+	}
 
-	/* Unlocked: the desktop shows again, and the password gives back a PIN turned off by wrong ones. */
+	/* The log names the answer and its word. */
+	printf("ZWL GREETER answer=%s reason=%s\n", answer, kl_backend_session_reason(server->backend));
+
+	/* Unlocked: the desktop shows again. */
 	if (error == 0 && greeter_waiting && server->locked) {
 		greeter_unlock(server);
-		if (greeter_pin_path[0] != '\0')
-			(void)zwl_pin_store_forgive(greeter_pin_path);
 		printf("ZWL LOCK unlocked\n");
 		return;
 	}
@@ -1255,15 +1344,63 @@ greeter_answered(
 		return;
 	}
 
-	/* A wrong password, or a refused request. */
+	/* A refusal says why; another failure says it failed. */
 	if (error == EACCES) {
-		snprintf(greeter_message, sizeof(greeter_message), "Wrong password. Try again.");
+		greeter_refused(server);
+	} else if (error == EBUSY) {
+		snprintf(greeter_message, sizeof(greeter_message), "Busy. Try again.");
 	} else if (error == EIO) {
 		snprintf(greeter_message, sizeof(greeter_message), "The login failed.");
 	}
 
-	/* The next password can be typed. */
+	/* The next secret can be typed. */
 	greeter_waiting = 0;
+}
+
+/*
+ * Says why sessiond refused the secret, and asks the styles again after a
+ * wrong PIN (the fifth turns the PIN off).
+ */
+static void
+greeter_refused(
+	struct zwl_server *server)
+{
+	const char *reason;
+	int same;
+
+	/* The PIN is off now (five wrong ones, or not offered since the start): the password. */
+	reason = kl_backend_session_reason(server->backend);
+	same = strcmp(reason, "pin-off");
+	if (same == 0) {
+		snprintf(greeter_message, sizeof(greeter_message), "Use your password.");
+		greeter_styles &= ~KL_BACKEND_STYLE_PIN;
+		greeter_style = KL_BACKEND_STYLE_PASSWORD;
+		return;
+	}
+
+	/* The account cannot log in. */
+	same = strcmp(reason, "locked");
+	if (same == 0) {
+		snprintf(greeter_message, sizeof(greeter_message), "This account is locked.");
+		return;
+	}
+
+	/* The check took too long. */
+	same = strcmp(reason, "timeout");
+	if (same == 0) {
+		snprintf(greeter_message, sizeof(greeter_message), "That took too long. Try again.");
+		return;
+	}
+
+	/* A wrong PIN: said, and whether the PIN is still offered is asked. */
+	if (greeter_style == KL_BACKEND_STYLE_PIN) {
+		snprintf(greeter_message, sizeof(greeter_message), "Wrong PIN. Try again.");
+		greeter_styles_wanted = 1U;
+		return;
+	}
+
+	/* A wrong password. */
+	snprintf(greeter_message, sizeof(greeter_message), "Wrong password. Try again.");
 }
 
 /* Takes the lock screen away: the desktop shows, and the idle time starts again. */
@@ -1278,65 +1415,91 @@ greeter_unlock(
 	zwl_lid_unlocked(&server->lid);
 }
 
-/* Finds the user's PIN file and whether a PIN can be typed (when the session locks). */
+/* Starts the styles again for a new user or screen: the password until sessiond says more. */
 static void
-greeter_pin_find(
+greeter_styles_reset(
 	void)
 {
-	char home[ZWL_PIN_PATH_MAX];
+	greeter_styles = KL_BACKEND_STYLE_PASSWORD;
+	greeter_style = KL_BACKEND_STYLE_PASSWORD;
+	greeter_style_chosen = 0U;
+	greeter_styles_wanted = 1U;
+	greeter_submit_pending = 0U;
+}
+
+/* Asks sessiond the selected user's styles (the session's own on the lock screen). */
+static void
+greeter_styles_ask(
+	struct zwl_server *server)
+{
+	const char *user;
 	int error;
 
-	/* No home, no PIN. */
-	greeter_pin_path[0] = '\0';
-	greeter_pin = 0U;
-	error = zwl_settings_home(home, sizeof(home));
-	if (error != 0)
-		return;
+	/* The login screen names the user; the lock screen's is the session's. */
+	user = NULL;
+	if (!server->locked)
+		user = greeter_users[greeter_selected].name;
+	error = kl_backend_session_styles(server->backend, user);
 
-	/* The file under it. */
-	error = zwl_pin_store_path(home, greeter_pin_path, sizeof(greeter_pin_path));
-	if (error != 0) {
-		greeter_pin_path[0] = '\0';
+	/* A busy manager is asked again on a later tick; any other failure leaves the password alone. */
+	if (error == EBUSY)
 		return;
-	}
-
-	/* A PIN set and not turned off. */
-	greeter_pin = (unsigned)zwl_pin_store_usable(greeter_pin_path);
+	greeter_styles_wanted = 0U;
+	if (error == 0)
+		greeter_styles_asked = 1U;
 }
 
 /*
- * Checks the PIN typed on the lock screen against the user's PIN file
- * (sessiond is not asked): the right one unlocks, a wrong one is counted
- * and said, and the fifth wrong one in a row turns the PIN off.
+ * Takes sessiond's styles: the PIN is offered (and taken first unless the
+ * user chose the password) or not (the password then).
  */
 static void
-greeter_pin_try(
+greeter_styles_take(
 	struct zwl_server *server)
 {
-	int error;
+	unsigned styles;
 
-	/* The check; nothing typed is kept once it is checked. */
-	error = zwl_pin_store_check(greeter_pin_path, greeter_password);
-	greeter_erase();
+	/* The styles, the password always among them. */
+	styles = kl_backend_session_styles_get(server->backend);
+	greeter_styles = styles | KL_BACKEND_STYLE_PASSWORD;
 	server->dirty = 1;
+	printf("ZWL GREETER styles=%u\n", greeter_styles);
 
-	/* The right PIN unlocks. */
-	if (error == 0) {
-		greeter_unlock(server);
-		printf("ZWL LOCK unlocked pin\n");
+	/* No PIN: the password, and what was typed for a PIN goes. */
+	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U) {
+		if (greeter_style == KL_BACKEND_STYLE_PIN)
+			greeter_erase();
+		greeter_style = KL_BACKEND_STYLE_PASSWORD;
 		return;
 	}
 
-	/* A wrong one, or a PIN already off: it may now be off; anything else is a file that could not be used. */
-	greeter_pin = (unsigned)zwl_pin_store_usable(greeter_pin_path);
-	printf("ZWL LOCK pin fail error=%d usable=%u\n", error, greeter_pin);
-	if ((error == EACCES || error == EPERM) && !greeter_pin) {
-		snprintf(greeter_message, sizeof(greeter_message), "Too many wrong PINs. Use your password.");
-	} else if (error == EACCES) {
-		snprintf(greeter_message, sizeof(greeter_message), "Wrong PIN. Try again.");
+	/* The PIN first, while nothing is typed and the user did not choose the password. */
+	if (!greeter_style_chosen && greeter_password_length == 0U)
+		greeter_style = KL_BACKEND_STYLE_PIN;
+}
+
+/* Switches the field between the PIN and the password (the link under it). */
+static void
+greeter_style_switch(
+	struct zwl_server *server)
+{
+	/* Only while the PIN is offered and no answer is awaited. */
+	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U || greeter_waiting)
+		return;
+
+	/* The other style, with nothing typed. */
+	if (greeter_style == KL_BACKEND_STYLE_PIN) {
+		greeter_style = KL_BACKEND_STYLE_PASSWORD;
 	} else {
-		snprintf(greeter_message, sizeof(greeter_message), "The PIN could not be checked.");
+		greeter_style = KL_BACKEND_STYLE_PIN;
 	}
+
+	/* The user chose it; nothing typed for the other stays. */
+	greeter_style_chosen = 1U;
+	greeter_erase();
+	greeter_message[0] = '\0';
+	server->dirty = 1;
+	printf("ZWL GREETER style=%u\n", greeter_style);
 }
 
 /* Erases what has been typed. */
@@ -1344,7 +1507,8 @@ static void
 greeter_erase(
 	void)
 {
-	/* Every byte, not only the characters typed. */
+	/* Every byte, not only the characters typed; nothing waits to be sent. */
 	memset(greeter_password, 0, sizeof(greeter_password));
 	greeter_password_length = 0U;
+	greeter_submit_pending = 0U;
 }

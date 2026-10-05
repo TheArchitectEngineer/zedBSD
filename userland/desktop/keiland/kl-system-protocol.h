@@ -132,6 +132,7 @@
  *   request 2 administer(uint request, string password, string operation)   since version 8 (ws089-p026)
  *   event   1 refused(uint request, string reason)                         since version 8 (ws089-p026)
  *   request 3 set_pin(uint request, string current, string pin)            since version 10 (ws163-p003)
+ *   event   2 enrolled(uint pin, uint keys)                                since version 11 (ws172-p002)
  *   The compositor changes the password of the user it runs as, through
  *   the system (zedBSD: passwd; elsewhere unsupported), on a thread of its
  *   own, and answers ok, denied (the current password is wrong), invalid
@@ -151,15 +152,18 @@
  *   failed.  The manager's capabilities have KL_SYSTEM_CAPABILITY_ADMINISTER
  *   where the system has the tool.
  *   set_pin sets the six-digit PIN of the user the compositor runs as, or
- *   removes it when pin is empty (ws163, the mock of plan/ws163/phase001
- *   section 9): the compositor checks current with the session manager
- *   (the lock screen's check) and writes the user's ~/.config/keiland/pin
- *   (or removes it).  The result is ok, denied (current is wrong), invalid
- *   (pin is not six digits, or current is six digits, which the lock
- *   screen would take for a PIN), unsupported (no session manager), busy
- *   (a check is under way) or failed.  Neither is logged or kept.  The
- *   manager's capabilities have KL_SYSTEM_CAPABILITY_PIN where a session
- *   manager runs.
+ *   removes it when pin is empty: the compositor passes both to the
+ *   session manager (zedBSD: sessiond's ENROLL pin or REMOVE pin, which
+ *   /sbin/passkey carries out in /etc/passkey; ws172-p002).  The result is
+ *   ok, denied (current is wrong; a refusal's word comes first as refused:
+ *   bad-secret, locked, ...), invalid (pin is not six digits), unsupported
+ *   (no session manager), busy (another request is under way) or failed.
+ *   Neither is logged or kept.  The manager's capabilities have
+ *   KL_SYSTEM_CAPABILITY_PIN where a session manager runs.
+ *   enrolled tells whether the user has a PIN and how many security keys
+ *   (version 11): sent when the object is made, as soon as the session
+ *   manager has answered, and again after each change.  Until it comes
+ *   neither is known.
  *
  * kl_system_monitor_v1 (WS134 p012, plan/ws134/design.md section 1.3)
  *   request 0 destroy
@@ -201,7 +205,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		10U
+#define KL_SYSTEM_MANAGER_VERSION		11U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -232,8 +236,9 @@
 #define KL_SYSTEM_SINCE_SHARING			7U
 #define KL_SYSTEM_SINCE_ADMINISTER		8U
 
-/* Since when the account has set_pin (ws163-p003). */
+/* Since when the account has set_pin (ws163-p003), and enrolled (ws172-p002). */
 #define KL_SYSTEM_SINCE_PIN			10U
+#define KL_SYSTEM_SINCE_ENROLLED		11U
 
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
@@ -259,6 +264,7 @@
 #define KL_SYSTEM_ACCOUNT_SET_PIN		3U
 #define KL_SYSTEM_ACCOUNT_EVENT_RESULT		0U
 #define KL_SYSTEM_ACCOUNT_EVENT_REFUSED		1U
+#define KL_SYSTEM_ACCOUNT_EVENT_ENROLLED	2U
 #define KL_SYSTEM_PASSWORD_MAX			256U
 
 /* The longest operation administer carries, and the longest refusal's word (without their NULs). */

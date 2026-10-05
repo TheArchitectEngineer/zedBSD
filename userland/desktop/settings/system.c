@@ -70,6 +70,12 @@ se_system_poll(
 	if (status != 0)
 		se_log("SYSTEM dispatch errno=%d", status);
 
+	/* What the user has enrolled shows on the Users page (ws172-p002). */
+	if ((app->system_changed & KL_SYSTEM_CHANGED_ENROLLED) != 0U) {
+		app->dirty = 1;
+		se_log("USERS enrolled changed");
+	}
+
 	/* Each answer: the network's own, or one of the sound's, logged. */
 	for (;;) {
 		taken = kl_system_take_result(app->system, &request, &error);
