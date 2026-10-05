@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS164 の判断（2026-10-05、P1 の p001 の設計、plan/ws164/phase001/phase.md §6）**: H1 各 account の最初の login だけ（`welcome.done`、Settings の About から再表示）[可]、H2 新しい app でなく Settings の mode で、終わりに Files の Today を開く [可]、H3 5 段（Welcome・Network・Look・Keys・Done、Back・Next・Skip、Languages は WS154 の後に入れる）[可]。H4（Settings の hook を WS164 が書く）は Q1 が調整として承認（P2 の WS089 の file に触れる時は Q1 が順を決める）。
 - **WS154 の判断（2026-10-05、P2 の p001 の設計、plan/ws154/phase001/phase.md）**: SKK の範囲から 接頭・接尾辞（>）・abbrev（/）・数値の変換（#）・補完（Tab）・注釈 を後回し（Future Work）にしてよいか [後回し]。Q1 が技術の裁量で決めた物: 設定の変更で IME を起動し直す（数百 ms IME が無い、protocol は変えない）、SKK の mode を言語の ID（skk・skk-katakana・skk-latin・skk-wide）にする。
 - **WS156 の判断（2026-10-05、P1 の p001 の設計、plan/ws156/phase001/phase.md §9）**: H1 popup の大きさ（幅 20%・320〜640 px、高さ 76 px、下中央の 48 px 上）[可]、H2 log の hotkey [Super+N]、H3 log の保存 [memory だけ、100 件]、H4 全画面・lock 中 [log だけ、URGENT は全画面の上にも出す]、H5 重なった時 [待ちがあれば保持を 1.5 秒に縮める]、H6 Linux・FreeBSD の D-Bus の通知 [v1 では無し]、H7 bar の USB media の icon を通知に置き換え [外す]。
 - **WS167 の判断（2026-10-05、P1 の p001、plan/ws167/phase001/phase.md §6）**: H1 license: 番号の表を独自の名前で書き直し、番号の再利用を明記し、Google の著作権の表示と LICENSE-PROTOCOL を外す（番号は interface の事実で、Venus の文・名前・構造は写していない）[外す]。H2 新しい UAPI include/uapi/gpu-op.h（kernel の i915 の実行器・libvulkan・venus-frame で共有、第 1 版は Venus の番号のまま）[足す]。H3 名前 GPU_OP_CREATE_INSTANCE か GPU_OP_vkCreateInstance か [前者]。
