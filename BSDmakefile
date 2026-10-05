@@ -1,4 +1,4 @@
-# Native FreeBSD entry for the base system's BSD make.
+# Native FreeBSD entry for the base system's BSD make, which reads BSDmakefile before Makefile.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 # GNU make selects GNUmakefile and keeps the full project build interface.
 GMAKE?= gmake

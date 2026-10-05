@@ -138,6 +138,7 @@
 		kl_system_devices_busy_program;
 		kl_system_account_set_password;
 		kl_system_account_administer;
+		kl_system_account_set_pin;
 		kl_system_account_refusal;
 		kl_system_monitor_open;
 		kl_system_monitor_take;

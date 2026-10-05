@@ -27,7 +27,11 @@
 # BOOT_MODE=bios-ide boots the image the way i386 machines are booted: the
 # firmware is the PC BIOS and the disk is on IDE.  Those kernels put their
 # console in the VGA text buffer rather than a linear framebuffer, which the
-# screen reader handles; the picture is still what the screen shows.
+# screen reader handles; the picture is still what the screen shows.  The
+# emulator follows the kernel beside the image (vmunix, or KERNEL): a 64-bit
+# ELF kernel (an amd64 image's bios variant) runs on qemu-system-x86_64, which
+# qemu-system-i386 cannot (it stops at "Booting from Hard Disk..."), and a
+# 32-bit one, or an image without a kernel beside it, on qemu-system-i386.
 #
 # BOOT_MODE=raspi4b boots a Raspberry Pi 4 image (arm64) in QEMU's raspi4b.
 # QEMU does not run the Pi's GPU firmware, so the kernel (vmunix beside the
@@ -54,7 +58,16 @@ uefi-usb|uefi-nvme)
 	required=("$image" "$code" "$vars")
 	;;
 bios-ide)
-	qemu=${QEMU:-qemu-system-i386}
+	# The ELF class of the kernel beside the image (byte 5: 1 is 32-bit, 2 is 64-bit) chooses the emulator.
+	kernel=${KERNEL:-$(dirname -- "$image")/vmunix}
+	bios_qemu=qemu-system-i386
+	if [[ -f $kernel ]]; then
+		elf_class=$(od -An -tu1 -j4 -N1 -- "$kernel" | tr -d ' ')
+		if [[ $elf_class == 2 ]]; then
+			bios_qemu=qemu-system-x86_64
+		fi
+	fi
+	qemu=${QEMU:-$bios_qemu}
 	required=("$image")
 	;;
 raspi4b)

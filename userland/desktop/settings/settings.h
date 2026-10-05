@@ -552,6 +552,14 @@ struct se_sharing {
 /* The Users page's password fields: the current password, the new one, the new one again. */
 #define SE_USERS_FIELDS		3
 
+/* The PIN card's fields (ws163-p003): the current password, the new PIN, the new PIN again. */
+#define SE_PIN_FIELDS		3
+
+/* Whose fields have the Users page's keyboard: the password card's, the administration's, or the PIN card's. */
+#define SE_USERS_KEYBOARD_PASSWORD	0
+#define SE_USERS_KEYBOARD_ADMIN		1
+#define SE_USERS_KEYBOARD_PIN		2
+
 /* The most users the Users page lists (ws089-p026). */
 #define SE_USERS_LIST_MAX	32
 
@@ -599,11 +607,18 @@ enum se_admin_mode {
  * failed).
  *
  * The administration (ws089-p026): the user chosen in the list (its row
- * plus one, 0 for none), whether the keyboard is the administration's fields' (1) or the
- * password card's (0), the change being made, its fields (wiped when it is
- * asked or cancelled) and the one with the keyboard, its switch (the new
- * user an administrator; the home removed with the user), the change asked
- * and its request's number, and the last answer (bad when it failed).
+ * plus one, 0 for none), whose fields have the keyboard
+ * (SE_USERS_KEYBOARD_*), the change being made, its fields (wiped when it
+ * is asked or cancelled) and the one with the keyboard, its switch (the
+ * new user an administrator; the home removed with the user), the change
+ * asked and its request's number, and the last answer (bad when it
+ * failed).
+ *
+ * The PIN card (ws163-p003, page-users-pin.c): its three fields (wiped
+ * when the change is asked, when Esc empties them and when the window
+ * closes) and the one with the keyboard, whether a PIN is set (looked up
+ * when the card draws), the change asked (a removal or not) and its
+ * request's number, and the last answer (bad when it failed).
  */
 struct se_users {
 	int read;
@@ -630,6 +645,15 @@ struct se_users {
 	uint32_t admin_request;
 	char admin_message[SE_MESSAGE];
 	int admin_bad;
+
+	struct se_field pin_fields[SE_PIN_FIELDS];
+	int pin_focus;
+	int pin_set;
+	int pin_asked;
+	int pin_removing;
+	uint32_t pin_request;
+	char pin_message[SE_MESSAGE];
+	int pin_bad;
 };
 
 /*
@@ -1194,6 +1218,11 @@ int se_users_admin_press(struct se_app *app, int index);
 int se_users_admin_key(struct se_app *app, const struct se_event *event);
 int se_users_admin_result(struct se_app *app, uint32_t request, int error);
 void se_users_admin_wipe(struct se_users *users);
+int se_users_pin_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_users_pin_press(struct se_app *app, int index);
+int se_users_pin_key(struct se_app *app, const struct se_event *event);
+int se_users_pin_result(struct se_app *app, uint32_t request, int error);
+void se_users_pin_wipe(struct se_users *users);
 void se_users_reload(struct se_users *users);
 
 /* What About shows of the machine (about.c). */

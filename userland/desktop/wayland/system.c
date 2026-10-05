@@ -53,6 +53,7 @@
 
 #include "zwl.h"
 #include "media.h"
+#include "pin-store.h"
 
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -204,6 +205,9 @@ struct system_details_wait {
  *     then hears its first state at that end), power_again when the power
  *     changed (ws132-p003) and is to be read again once no read is under
  *     way;
+ *   - Remote Login's request waiting for sessiond (sharing), and the PIN's
+ *     change waiting for sessiond's check of the password (pin, ws163-p003:
+ *     the new PIN, empty for a removal, and the file; wiped once answered);
  *   - the serial of the last done.
  *
  * One per process; only the event loop's thread touches it, but the jobs'
@@ -230,6 +234,10 @@ struct system_state {
 	unsigned devices_count;
 	struct system_devices_wait sharing;
 	unsigned sharing_waiting;
+	struct system_devices_wait pin;
+	unsigned pin_waiting;
+	char pin_value[ZWL_PIN_DIGITS + 1U];
+	char pin_path[ZWL_PIN_PATH_MAX];
 	uint32_t serial;
 };
 
@@ -244,6 +252,8 @@ static int system_audio_request(struct zwl_object *object, uint32_t opcode, cons
 static int system_power_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_devices_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_account_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_account_pin(struct zwl_object *object, const unsigned char *bytes, size_t size);
+static int system_pin_begin(struct zwl_object *object, uint32_t number, const char *current, const char *pin);
 static void system_account_take(struct zwl_server *server);
 static void *system_account_run(void *argument);
 static uint32_t system_network_send(struct zwl_object *object, uint32_t number, uint32_t what, const char *ssid);
@@ -297,6 +307,7 @@ zwl_system_bind(
 {
 	uint32_t bits;
 	int administer;
+	int managed;
 	int error;
 
 	/* Every part version 1 has. */
@@ -320,6 +331,11 @@ zwl_system_bind(
 	administer = kl_backend_account_can_administer();
 	if (manager->version >= KL_SYSTEM_SINCE_ADMINISTER && administer)
 		bits |= KL_SYSTEM_CAPABILITY_ADMINISTER;
+
+	/* The PIN, at version 10 where a session manager checks the password (ws163-p003). */
+	managed = kl_backend_session_managed(manager->client->server->backend);
+	if (manager->version >= KL_SYSTEM_SINCE_PIN && managed)
+		bits |= KL_SYSTEM_CAPABILITY_PIN;
 	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
 	if (error != 0)
 		return error;
@@ -738,6 +754,55 @@ zwl_system_sharing_answer(
 		system_result(object, KL_SYSTEM_SHARING_EVENT_RESULT, wait->number, system_result_of(error));
 		return;
 	}
+}
+
+/*
+ * Takes sessiond's check of the password for a PIN's change (ws163-p003;
+ * handoff.c passes the lock screen's answers here first): the PIN is set
+ * or removed when the password was right, and the asking object hears the
+ * result.  Returns 1 when the answer was the PIN's, 0 when no change
+ * waited (the answer is the lock screen's).
+ */
+int
+zwl_system_pin_answer(
+	struct zwl_server *server,
+	int error)
+{
+	struct zwl_client *client;
+	struct zwl_object *object;
+	struct system_devices_wait *wait;
+	int written;
+
+	/* Only a change that waits takes it. */
+	if (!system_state.pin_waiting)
+		return 0;
+	wait = &system_state.pin;
+	system_state.pin_waiting = 0U;
+
+	/* The right password: the PIN is written, or the file removed for an empty one. */
+	written = error;
+	if (error == 0 && system_state.pin_value[0] == '\0')
+		written = zwl_pin_store_remove(system_state.pin_path);
+	else if (error == 0)
+		written = zwl_pin_store_set(system_state.pin_path, system_state.pin_value);
+
+	/* Nothing of the PIN stays. */
+	system_wipe(system_state.pin_value, sizeof(system_state.pin_value));
+	printf("ZWL SYSTEM account pin answer=%d error=%d\n", error, written);
+
+	/* The result of the request that waited, when its client and object are still there. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->number != wait->client || client->fatal)
+			continue;
+		object = zwl_find(client, wait->object);
+		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_ACCOUNT)
+			return 1;
+		system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, wait->number, system_result_of(written));
+		return 1;
+	}
+
+	/* The client went: the answer was the PIN's all the same. */
+	return 1;
 }
 
 /* Carries out a request of a sharing object (ws089-p025). */
@@ -1188,6 +1253,14 @@ system_account_request(
 		return 0;
 	}
 
+	/* The PIN's change since version 10 (ws163-p003). */
+	if (opcode == KL_SYSTEM_ACCOUNT_SET_PIN) {
+		if (object->version < KL_SYSTEM_SINCE_PIN)
+			return EPROTO;
+		error = system_account_pin(object, bytes, size);
+		return error;
+	}
+
 	/* A password change (its two passwords), or an administration since version 8 (the password and the operation). */
 	if (opcode == KL_SYSTEM_ACCOUNT_ADMINISTER && object->version < KL_SYSTEM_SINCE_ADMINISTER)
 		return EPROTO;
@@ -1377,6 +1450,134 @@ system_account_take(
 		system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, job->number, system_result_of(job->error));
 		return;
 	}
+}
+
+/*
+ * Carries out an account's set_pin (ws163-p003): the password and the PIN
+ * are copied out of the request and wiped from it, and the change starts
+ * (its result comes with sessiond's check) or is answered at once.
+ */
+static int
+system_account_pin(
+	struct zwl_object *object,
+	const unsigned char *bytes,
+	size_t size)
+{
+	uint32_t number;
+	char *current;
+	char *pin;
+	size_t next;
+	size_t end;
+	int error;
+
+	/* The request's number, the password and the PIN. */
+	if (size < 4U)
+		return EPROTO;
+	number = system_word(bytes, 0U);
+	current = NULL;
+	pin = NULL;
+	error = system_read_string(bytes, size, 4U, &current, &next);
+	if (error == 0)
+		error = system_read_string(bytes, size, next, &pin, &end);
+	if (error == 0 && end != size)
+		error = EPROTO;
+
+	/* The request's own bytes held them: wiped now that they are copied. */
+	system_wipe((char *)(uintptr_t)bytes, size);
+
+	/* The change starts, unless the request was malformed. */
+	if (error == 0)
+		error = system_pin_begin(object, number, current, pin);
+
+	/* The copies go. */
+	if (current != NULL) {
+		system_wipe(current, strlen(current));
+		free(current);
+	}
+
+	/* Both of them. */
+	if (pin != NULL) {
+		system_wipe(pin, strlen(pin));
+		free(pin);
+	}
+
+	/* A malformed request ends the client. */
+	if (error == EPROTO)
+		return EPROTO;
+
+	/* A change that could not start is answered now. */
+	if (error != 0)
+		system_result(object, KL_SYSTEM_ACCOUNT_EVENT_RESULT, number, system_result_of(error));
+
+	/* Succeeded: the request is answered, or its answer comes with the check. */
+	return 0;
+}
+
+/*
+ * Starts a PIN's change: checks what it can here and asks sessiond to
+ * check the password (the lock screen's check, so sessiond is unchanged).
+ * Returns 0 when asked, or the errno value to answer with.
+ */
+static int
+system_pin_begin(
+	struct zwl_object *object,
+	uint32_t number,
+	const char *current,
+	const char *pin)
+{
+	struct kl_backend *backend;
+	char home[ZWL_PIN_PATH_MAX];
+	size_t current_length;
+	int is_pin;
+	int managed;
+	int error;
+
+	/* One change at a time. */
+	if (system_state.pin_waiting)
+		return EBUSY;
+
+	/* A password that fits and is not six digits (the lock screen would take it for a PIN). */
+	current_length = strlen(current);
+	if (current_length == 0U || current_length > KL_SYSTEM_PASSWORD_MAX)
+		return EINVAL;
+	is_pin = zwl_pin_is_pin(current);
+	if (is_pin)
+		return EINVAL;
+
+	/* Six digits, or nothing for a removal. */
+	is_pin = zwl_pin_is_pin(pin);
+	if (pin[0] != '\0' && !is_pin)
+		return EINVAL;
+
+	/* Only a session manager checks the password. */
+	backend = object->client->server->backend;
+	managed = kl_backend_session_managed(backend);
+	if (!managed)
+		return ENOTSUP;
+
+	/* The user's PIN file. */
+	error = zwl_settings_home(home, sizeof(home));
+	if (error != 0)
+		return error;
+	error = zwl_pin_store_path(home, system_state.pin_path, sizeof(system_state.pin_path));
+	if (error != 0)
+		return error;
+
+	/* sessiond checks the password; the answer comes through zwl_system_pin_answer. */
+	error = kl_backend_session_unlock(backend, current);
+	printf("ZWL SYSTEM account pin client=%llu number=%u remove=%d error=%d\n", (unsigned long long)object->client->number, number, pin[0] == '\0', error);
+	if (error != 0)
+		return error;
+
+	/* The change waits for the answer, with the PIN it sets. */
+	memcpy(system_state.pin_value, pin, strlen(pin) + 1U);
+	system_state.pin.client = object->client->number;
+	system_state.pin.object = object->id;
+	system_state.pin.number = number;
+	system_state.pin_waiting = 1U;
+
+	/* Succeeded: the check is asked. */
+	return 0;
 }
 
 /* Sends a client's request to the network daemon; the result comes with the daemon's answer. */

@@ -242,7 +242,7 @@ se_users_admin_press(
 	/* A field takes the keyboard. */
 	if (index >= ADMIN_FIELD_FIRST && index < ADMIN_FIELD_FIRST + SE_ADMIN_FIELDS) {
 		users->admin_focus = index - ADMIN_FIELD_FIRST;
-		users->keyboard = 1;
+		users->keyboard = SE_USERS_KEYBOARD_ADMIN;
 		return 1;
 	}
 
@@ -256,7 +256,7 @@ se_users_admin_press(
 	if (index == ADMIN_CANCEL) {
 		se_users_admin_wipe(users);
 		users->admin_mode = SE_ADMIN_NONE;
-		users->keyboard = 0;
+		users->keyboard = SE_USERS_KEYBOARD_PASSWORD;
 		return 1;
 	}
 
@@ -289,7 +289,7 @@ se_users_admin_key(
 
 	/* Not the administration's keyboard. */
 	users = &app->users;
-	if (!users->keyboard || users->admin_mode == SE_ADMIN_NONE)
+	if (users->keyboard != SE_USERS_KEYBOARD_ADMIN || users->admin_mode == SE_ADMIN_NONE)
 		return 0;
 
 	/* Tab and Shift+Tab, through the fields the change uses. */
@@ -358,7 +358,7 @@ se_users_admin_result(
 		(void)snprintf(users->admin_message, sizeof(users->admin_message), "Done.");
 		users->admin_bad = 0;
 		users->admin_mode = SE_ADMIN_NONE;
-		users->keyboard = 0;
+		users->keyboard = SE_USERS_KEYBOARD_PASSWORD;
 		users->selected = 0;
 		se_users_reload(users);
 		app->dirty = 1;
@@ -525,7 +525,7 @@ admin_start(
 	users->admin_mode = mode;
 	users->admin_flag = 0;
 	users->admin_message[0] = '\0';
-	users->keyboard = 1;
+	users->keyboard = SE_USERS_KEYBOARD_ADMIN;
 	users->admin_focus = admin_next_field(mode, -1, 1);
 	se_log("USERS admin start mode=%d", (int)mode);
 }
@@ -749,7 +749,7 @@ admin_field_draw(
 	box.width = width - ADMIN_FIELD_X - 20;
 	box.height = 36;
 	focused = 0;
-	if (users->keyboard && users->admin_focus == index)
+	if (users->keyboard == SE_USERS_KEYBOARD_ADMIN && users->admin_focus == index)
 		focused = 1;
 	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
 	if (focused) {

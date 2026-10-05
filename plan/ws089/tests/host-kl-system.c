@@ -128,6 +128,17 @@ kl_system_account_administer(struct kl_system *system, const char *password, con
 	return ENOTSUP;
 }
 
+/* The lock screen's PIN (ws163-p003): not offered by the stand-in. */
+int
+kl_system_account_set_pin(struct kl_system *system, const char *current, const char *pin, uint32_t *request)
+{
+	(void)system;
+	(void)current;
+	(void)pin;
+	(void)request;
+	return ENOTSUP;
+}
+
 /* No refusal's word without the administration. */
 int
 kl_system_account_refusal(const struct kl_system *system, uint32_t request, char *reason, size_t size)

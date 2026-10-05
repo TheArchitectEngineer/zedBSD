@@ -29,7 +29,8 @@
  *
  * For an administrator, the administration's card (ws089-p026,
  * page-users-admin.c) stands under the list, whose rows are then chosen
- * with a click.
+ * with a click.  The PIN card (ws163-p003, page-users-pin.c) stands under
+ * the password card.
  */
 
 #include "settings.h"
@@ -113,6 +114,7 @@ se_users_draw(
 	int show;
 	int right;
 	int height;
+	int bottom;
 	int index;
 	int y;
 
@@ -143,7 +145,8 @@ se_users_draw(
 	y = se_card_begin(app, canvas, x, top, width, height, "Password", "Change the password you log in with.");
 	if (!available) {
 		(void)fm_text_draw_fit(app->text, canvas, x + 20, y + 24, "This desktop cannot change the password here.", USERS_TEXT_ROW, 0, width - 40, SE_COLOR_TEXT_SECONDARY);
-		return top + height;
+		bottom = se_users_pin_draw(app, canvas, x, top + height + USERS_GAP, width);
+		return bottom;
 	}
 
 	/* Each field. */
@@ -180,8 +183,11 @@ se_users_draw(
 	if (differs != 0)
 		(void)fm_text_draw_fit(app->text, canvas, x + 20, y + 18, "The new password and its repeat differ.", USERS_TEXT_SUB, 0, width - 40, SE_COLOR_TEXT_SECONDARY);
 
-	/* The edge below the card. */
-	return top + height;
+	/* The PIN card under it (ws163-p003). */
+	bottom = se_users_pin_draw(app, canvas, x, top + height + USERS_GAP, width);
+
+	/* The edge below the cards. */
+	return bottom;
 }
 
 /*
@@ -196,16 +202,19 @@ se_users_press(
 	int ready;
 	int taken;
 
-	/* The administration's controls. */
+	/* The administration's controls, and the PIN card's. */
 	users = &app->users;
 	taken = se_users_admin_press(app, index);
 	if (taken)
 		return;
+	taken = se_users_pin_press(app, index);
+	if (taken)
+		return;
 
-	/* A field takes the keyboard (from the administration's fields). */
+	/* A field takes the keyboard (from the administration's or the PIN card's fields). */
 	if (index >= USERS_FIELD_FIRST && index < USERS_FIELD_FIRST + SE_USERS_FIELDS) {
 		users->focus = index - USERS_FIELD_FIRST;
-		users->keyboard = 0;
+		users->keyboard = SE_USERS_KEYBOARD_PASSWORD;
 		return;
 	}
 
@@ -239,9 +248,12 @@ se_users_key(
 	int ready;
 	int used;
 
-	/* The administration's fields, when they have the keyboard. */
+	/* The administration's fields, or the PIN card's, when they have the keyboard. */
 	users = &app->users;
 	used = se_users_admin_key(app, event);
+	if (used)
+		return 1;
+	used = se_users_pin_key(app, event);
 	if (used)
 		return 1;
 
@@ -312,8 +324,11 @@ se_users_result(
 	int bad;
 	int taken;
 
-	/* The administration's change. */
+	/* The administration's change, and the PIN's. */
 	taken = se_users_admin_result(app, request, error);
+	if (taken)
+		return 1;
+	taken = se_users_pin_result(app, request, error);
 	if (taken)
 		return 1;
 
@@ -384,9 +399,10 @@ void
 se_users_close(
 	struct se_app *app)
 {
-	/* The three fields, and the administration's. */
+	/* The three fields, the administration's and the PIN card's. */
 	users_wipe(&app->users);
 	se_users_admin_wipe(&app->users);
+	se_users_pin_wipe(&app->users);
 }
 
 /* Reads the account of the user Settings runs as. */
@@ -739,6 +755,7 @@ users_field_draw(
 	const char *text;
 	fm_color ink;
 	size_t count;
+	int focused;
 	int right;
 
 	/* The label. */
@@ -752,7 +769,10 @@ users_field_draw(
 	box.width = width - USERS_FIELD_X - 20;
 	box.height = 36;
 	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
-	if (users->focus == index) {
+	focused = 0;
+	if (users->keyboard == SE_USERS_KEYBOARD_PASSWORD && users->focus == index)
+		focused = 1;
+	if (focused) {
 		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
 	} else {
 		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
@@ -782,7 +802,7 @@ users_field_draw(
 	right = box.x + 12 + fm_text_draw(app->text, canvas, box.x + 12, fm_text_center(USERS_TEXT_ROW, box.y, box.height), text, strlen(text), USERS_TEXT_ROW, 0, ink);
 	if (field->length == 0)
 		right = box.x + 12;
-	if (users->focus == index)
+	if (focused)
 		fm_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
 	fm_canvas_clip_pop(canvas);
 	memset(dots, 0, sizeof(dots));
