@@ -1354,6 +1354,7 @@ int
 zwl_window_enter_fullscreen(
 	struct zwl_object *surface)
 {
+	struct zwl_server *server;
 	int error;
 
 	/* Already fullscreen: nothing changes. */
@@ -1361,6 +1362,7 @@ zwl_window_enter_fullscreen(
 		return 0;
 
 	/* Its place and size before fullscreen, to come back to. */
+	server = surface->client->server;
 	surface->fullscreen = 1;
 	surface->window_x = surface->x;
 	surface->window_y = surface->y;
@@ -1369,10 +1371,22 @@ zwl_window_enter_fullscreen(
 	if (surface->current != NULL)
 		zwl_decoration_geometry(surface, &surface->window_width, &surface->window_height);
 
+	/*
+	 * A docked window is not docked while it is fullscreen: it covers the
+	 * output, not the space under the system bar, and leaving fullscreen
+	 * docks it again (BUG-208).  A dock still being animated ends here.
+	 */
+	if (surface->maximized) {
+		surface->fullscreen_docked = 1;
+		surface->maximized = 0;
+		if (server->anim == surface)
+			server->anim = NULL;
+	}
+
 	/* It covers the output from the origin. */
 	surface->x = 0;
 	surface->y = 0;
-	surface->client->server->dirty = 1;
+	server->dirty = 1;
 
 	/* A window not configured yet learns it from its first configure. */
 	if (!surface->configured)
@@ -1401,16 +1415,30 @@ zwl_window_leave_fullscreen(
 	struct zwl_object *surface)
 {
 	struct zwl_server *server;
+	int32_t right;
+	int32_t bottom;
 	int error;
 
 	/* Not fullscreen: nothing changes. */
 	if (!surface->fullscreen)
 		return 0;
 
-	/* Back to its place, or the space's centre when it never had one. */
+	/*
+	 * Docked again when it was docked (BUG-208): the space under the system
+	 * bar, less what the on-screen keyboard's panel takes.  Otherwise back to
+	 * its place, or the space's centre when it never had one.
+	 */
 	server = surface->client->server;
 	surface->fullscreen = 0;
-	if (surface->placed) {
+	if (surface->fullscreen_docked) {
+		zwl_keyboard_reserved_now(&right, &bottom);
+		surface->fullscreen_docked = 0;
+		surface->maximized = 1;
+		surface->x = 0;
+		surface->y = ZWL_GLASS_DOCK_TOP;
+		surface->window_width = server->width - (uint32_t)right;
+		surface->window_height = server->height - ZWL_GLASS_DOCK_TOP - (uint32_t)bottom;
+	} else if (surface->placed) {
 		surface->x = surface->window_x;
 		surface->y = surface->window_y;
 		if (server->glass && surface->window_width != 0U)
@@ -1422,7 +1450,7 @@ zwl_window_leave_fullscreen(
 
 	/* The output is drawn again; the log names where the window went. */
 	server->dirty = 1;
-	printf("ZWL WINDOW unfullscreen surface=%u x=%d y=%d placed=%u client=%llu\n", surface->id, surface->x, surface->y, surface->placed, (unsigned long long)surface->client->number);
+	printf("ZWL WINDOW unfullscreen surface=%u x=%d y=%d placed=%u docked=%u client=%llu\n", surface->id, surface->x, surface->y, surface->placed, surface->maximized, (unsigned long long)surface->client->number);
 
 	/* A window not configured yet learns it from its first configure. */
 	if (!surface->configured)

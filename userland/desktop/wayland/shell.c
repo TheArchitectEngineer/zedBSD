@@ -4284,6 +4284,10 @@ window_dock(
 	if (surface->maximized)
 		return;
 
+	/* A fullscreen window is not docked; it is docked on leaving only when it was docked before (BUG-208). */
+	if (surface->fullscreen)
+		return;
+
 	/* The place and size to come back to, and where the body is now. */
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
