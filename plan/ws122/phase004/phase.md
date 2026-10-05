@@ -2,7 +2,7 @@
 
 # ws122-p004: 独自の container と libavcodec の dlopen の add-in で player を完成させる
 
-Status: in-progress（実装と host の試験は済み・T1 の試験待ち）
+Status: cleared（2026-10-05 Q1: T1-191 PASS（QEMU、dlopen の libavcodec（major 63）で再生・seek、libavcodec が無い時の文）。実機は UAT）。以前: in-progress（実装と host の試験は済み・T1 の試験待ち）
 Disposition: normal
 Parent: [WS122](../ws.md)
 Queue: q765（Q1、2026-10-05 夕、P2 g15）
