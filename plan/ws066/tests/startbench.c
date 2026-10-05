@@ -96,7 +96,11 @@ main(
 	/* The middle of the sorted times. */
 	qsort(times, (size_t)count, sizeof(*times), compare_times);
 	printf("STARTBENCH label=%s runs=%ld min=%ld median=%ld mean=%ld us\n",
-	       argv[2], count, times[0], times[count / 2L], total / count);
+	       argv[2],
+	       count,
+	       times[0],
+	       times[count / 2L],
+	       total / count);
 
 	/* Succeeded: the line is printed. */
 	free(times);
@@ -161,19 +165,19 @@ compare_times(
 	const void *left,
 	const void *right)
 {
-	long a;
-	long b;
+	long left_time;
+	long right_time;
 
 	/* The two times. */
-	a = *(const long *)left;
-	b = *(const long *)right;
+	left_time = *(const long *)left;
+	right_time = *(const long *)right;
 
-	/* Earlier first. */
-	if (a < b)
+	/* The shorter first. */
+	if (left_time < right_time)
 		return -1;
 
-	/* Later after. */
-	if (a > b)
+	/* The longer after. */
+	if (left_time > right_time)
 		return 1;
 
 	/* The same. */

@@ -2112,7 +2112,8 @@ layout_static_tls(
 
 		/* Copies its initialized data to its place in the template. */
 		rtld_memcpy(image + (offset - module->static_offset),
-			    module->init_image, module->file_size);
+			    module->init_image,
+			    module->file_size);
 	}
 
 	/* Publishes the area every new thread gets. */
@@ -2459,7 +2460,10 @@ preflight_dlopen_file(
 		return -1;
 
 	/* The program headers, in a mapping of their own when they are many. */
-	phdr = read_program_headers(fd, &header, room, RTLD_PROGRAM_INLINE,
+	phdr = read_program_headers(fd,
+				    &header,
+				    room,
+				    RTLD_PROGRAM_INLINE,
 				    &phdr_mapping);
 	if (phdr == NULL)
 		return -1;
@@ -2679,8 +2683,11 @@ load_object(
 		rtld_fatal("invalid dependency ELF header");
 
 	/* The program headers, in a mapping of their own when they are many. */
-	phdr = read_program_headers((int)fd, &header, room,
-				    RTLD_PROGRAM_INLINE, &phdr_mapping);
+	phdr = read_program_headers((int)fd,
+				    &header,
+				    room,
+				    RTLD_PROGRAM_INLINE,
+				    &phdr_mapping);
 	if (phdr == NULL)
 		rtld_fatal("cannot read dependency headers");
 
@@ -3138,8 +3145,13 @@ read_program_headers(
 	}
 
 	/* Reads the headers from the file. */
-	result = syscall6(KERN_SYS_pread, (uintptr_t)fd, (uintptr_t)headers,
-			  size, (uintptr_t)header->e_phoff, 0, 0);
+	result = syscall6(KERN_SYS_pread,
+			  (uintptr_t)fd,
+			  (uintptr_t)headers,
+			  size,
+			  (uintptr_t)header->e_phoff,
+			  0,
+			  0);
 	if (result != (intptr_t)size) {
 		/* A short file: lets a mapping of their own go. */
 		if (*mapping_size != 0)
@@ -3356,8 +3368,12 @@ object_reserve_span(
 	}
 
 	/* The range, anywhere the kernel finds room. */
-	mapped = map_call(0, (size_t)(high - low), PROT_NONE,
-			  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	mapped = map_call(0,
+			  (size_t)(high - low),
+			  PROT_NONE,
+			  MAP_PRIVATE | MAP_ANONYMOUS,
+			  -1,
+			  0);
 	failed = raw_error(mapped);
 	if (failed)
 		rtld_fatal("cannot reserve shared object address range");
