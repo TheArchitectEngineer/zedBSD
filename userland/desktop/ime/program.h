@@ -109,6 +109,7 @@ struct program {
 	struct ime_engine engines[PROGRAM_ENGINES_MAX];
 	unsigned engine_count;
 	unsigned current;
+	char announced[32];
 	unsigned active;
 	unsigned pending_active;
 	unsigned pending_active_set;

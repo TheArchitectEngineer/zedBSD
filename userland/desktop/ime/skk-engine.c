@@ -50,6 +50,8 @@ static void engine_surrounding(struct ime_engine *engine, const char *text, uint
 static void engine_content_type(struct ime_engine *engine, uint32_t hint, uint32_t purpose);
 static void engine_save(struct ime_engine *engine);
 static void engine_destroy(struct ime_engine *engine);
+static const char *engine_mode(struct ime_engine *engine, const char **label);
+static bool engine_select(struct ime_engine *engine, const char *id);
 static bool key_control(struct skk_state *state, const struct ime_key *key, struct ime_output *out);
 static void key_wide(struct skk_state *state, const struct ime_key *key, struct ime_output *out);
 static void key_enter(struct skk_state *state, struct ime_output *out);
@@ -92,7 +94,28 @@ static const struct ime_engine_ops engine_ops = {
 	engine_surrounding,
 	engine_content_type,
 	engine_save,
-	engine_destroy
+	engine_destroy,
+	engine_mode,
+	engine_select
+};
+
+/*
+ * The modes as languages of their own to the desktop (WS154 D3): each one's
+ * ID, its label on the system bar, and the mode.  The desktop remembers a
+ * language for each application, so it remembers the mode too.
+ */
+struct skk_mode_name {
+	const char *id;
+	const char *label;
+	enum skk_mode mode;
+};
+
+/* The modes' names, in the order of enum skk_mode. */
+static const struct skk_mode_name mode_names[] = {
+	{ "skk", "\xe3\x81\x82", SKK_MODE_KANA },
+	{ "skk-katakana", "\xe3\x82\xa2", SKK_MODE_KATAKANA },
+	{ "skk-latin", "A", SKK_MODE_LATIN },
+	{ "skk-wide", "\xef\xbc\xa1", SKK_MODE_WIDE },
 };
 
 /*
@@ -333,6 +356,61 @@ engine_destroy(
 	/* The state. */
 	free(state);
 	engine->state = NULL;
+}
+
+/*
+ * Gives the ID and label of the mode the engine is in.
+ */
+static const char *
+engine_mode(
+	struct ime_engine *engine,
+	const char **label)
+{
+	struct skk_state *state;
+	size_t i;
+
+	/* The mode's name. */
+	state = engine->state;
+	for (i = 0; i < sizeof(mode_names) / sizeof(mode_names[0]); i++) {
+		/* The entry of the mode. */
+		if (mode_names[i].mode == state->mode) {
+			*label = mode_names[i].label;
+			return mode_names[i].id;
+		}
+	}
+
+	/* Kana (not reached: every mode has its name). */
+	*label = mode_names[0].label;
+	return mode_names[0].id;
+}
+
+/*
+ * Takes a mode by its ID.  Returns false for an ID that is not one of the
+ * modes.  What is composed is kept (the input method commits it when the
+ * language changes).
+ */
+static bool
+engine_select(
+	struct ime_engine *engine,
+	const char *id)
+{
+	struct skk_state *state;
+	size_t i;
+	int differs;
+
+	/* The mode of the ID. */
+	state = engine->state;
+	for (i = 0; i < sizeof(mode_names) / sizeof(mode_names[0]); i++) {
+		/* The entry of the ID. */
+		differs = strcmp(mode_names[i].id, id);
+		if (differs == 0) {
+			state->mode = mode_names[i].mode;
+			return true;
+		}
+	}
+
+	/* Not one of the modes. */
+	return false;
 }
 
 /*

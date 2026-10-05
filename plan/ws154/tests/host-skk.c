@@ -56,6 +56,7 @@ static void take_output(const struct ime_output *out, const struct ime_key *key,
 static int check_listing(const char *dictionary, const char *user);
 static int check_saved(const char *dictionary, const char *user);
 static int check_system(const char *first, const char *second, const char *user);
+static int check_modes(const char *dictionary, const char *user);
 
 /* The cases. */
 static const struct skk_case cases[] = {
@@ -129,6 +130,13 @@ main(
 	snprintf(user, sizeof(user), "%s/user-saved", argv[2]);
 	(void)remove(user);
 	passed = check_saved(argv[1], user);
+	if (!passed)
+		failed++;
+
+	/* The modes as languages of their own. */
+	snprintf(user, sizeof(user), "%s/user-modes", argv[2]);
+	(void)remove(user);
+	passed = check_modes(argv[1], user);
 	if (!passed)
 		failed++;
 
@@ -473,5 +481,69 @@ check_system(
 
 	/* Succeeded: converted. */
 	printf("system dictionaries: ok\n");
+	return 1;
+}
+
+/*
+ * Checks the modes as the desktop sees them: the ID after q, a mode taken
+ * by its ID (the desktop's memory of an application), and an ID that is
+ * not a mode refused.
+ */
+static int
+check_modes(
+	const char *dictionary,
+	const char *user)
+{
+	struct skk_config config;
+	struct ime_engine engine;
+	char text[TEST_TEXT_MAX];
+	char preedit[IME_TEXT_MAX];
+	const char *id;
+	const char *label;
+	bool taken;
+	int katakana;
+	int latin;
+	int passed;
+	int error;
+
+	/* The engine. */
+	memset(&config, 0, sizeof(config));
+	config.dictionaries[0] = dictionary;
+	config.user_dictionary = user;
+	error = skk_engine_create(&engine, &config);
+	if (error != 0) {
+		printf("modes: FAIL (create %d)\n", error);
+		return 0;
+	}
+
+	/* q: katakana. */
+	(void)run_script(&engine, "q", text, sizeof(text), preedit, sizeof(preedit));
+	id = engine.ops->mode(&engine, &label);
+	katakana = strcmp(id, "skk-katakana");
+
+	/* Latin taken by its ID; a key then goes to the application. */
+	taken = engine.ops->select(&engine, "skk-latin");
+	id = engine.ops->mode(&engine, &label);
+	latin = strcmp(id, "skk-latin");
+	(void)run_script(&engine, "a", text, sizeof(text), preedit, sizeof(preedit));
+	passed = strcmp(text, "a");
+
+	/* Each as expected. */
+	if (katakana != 0 || latin != 0 || !taken || passed != 0) {
+		printf("modes: FAIL (katakana %d latin %d taken %d text \"%s\")\n", katakana, latin, taken, text);
+		engine.ops->destroy(&engine);
+		return 0;
+	}
+
+	/* Refuses another engine's ID. */
+	taken = engine.ops->select(&engine, "ja");
+	engine.ops->destroy(&engine);
+	if (taken) {
+		printf("modes: FAIL (ja taken)\n");
+		return 0;
+	}
+
+	/* Succeeded: the modes are languages. */
+	printf("modes: ok\n");
 	return 1;
 }

@@ -59,6 +59,7 @@ static void method_send(struct program *program);
 static void method_press(struct program *program, uint32_t time, uint32_t key, int repeated);
 static int method_repeats(uint32_t key);
 static void method_choose(struct program *program, unsigned index);
+static void method_follow_mode(struct program *program);
 
 /*
  * The input method's events.
@@ -148,11 +149,22 @@ program_announce_language(
 	struct program *program)
 {
 	const struct ime_engine_ops *ops;
+	struct ime_engine *engine;
+	const char *id;
+	const char *label;
 
-	/* The language's ID and its short label. */
-	ops = program->engines[program->current].ops;
-	keiland_ime_status_v1_language(program->status, ops->id, ops->label);
-	printf("KEI-IME LANGUAGE id=%s\n", ops->id);
+	/* The language's ID and its short label: the engine's mode's when it has modes (WS154). */
+	engine = &program->engines[program->current];
+	ops = engine->ops;
+	id = ops->id;
+	label = ops->label;
+	if (ops->mode != NULL)
+		id = ops->mode(engine, &label);
+
+	/* Told to zdesktop, and kept so that a change of mode is told too. */
+	keiland_ime_status_v1_language(program->status, id, label);
+	snprintf(program->announced, sizeof(program->announced), "%s", id);
+	printf("KEI-IME LANGUAGE id=%s\n", id);
 }
 
 /*
@@ -559,15 +571,29 @@ status_select(
 	struct program *program;
 	unsigned i;
 	int order;
+	bool taken;
 
 	UNUSED_PARAMETER(status);
 
-	/* Looks for the language. */
+	/* Looks for the language, or an engine that has it as one of its modes (WS154). */
 	program = data;
 	for (i = 0; i < program->engine_count; i++) {
+		/* The engine's own ID. */
 		order = strcmp(program->engines[i].ops->id, id);
 		if (order == 0) {
 			method_choose(program, i);
+			return;
+		}
+
+		/* Asks an engine with modes whether the ID is one of them. */
+		taken = false;
+		if (program->engines[i].ops->select != NULL)
+			taken = program->engines[i].ops->select(&program->engines[i], id);
+
+		/* One of its modes: chosen, then the mode told (method_choose tells only a change of engine). */
+		if (taken) {
+			method_choose(program, i);
+			program_announce_language(program);
 			return;
 		}
 	}
@@ -609,6 +635,31 @@ method_send(
 
 	/* The candidate window shows the engine's candidates, or goes (popup.c). */
 	program_popup_update(program, out);
+}
+
+/*
+ * Tells zdesktop the language again when the engine chosen has changed its
+ * mode since it was last told (WS154).
+ */
+static void
+method_follow_mode(
+	struct program *program)
+{
+	struct ime_engine *engine;
+	const char *id;
+	const char *label;
+	int same;
+
+	/* Only an engine with modes. */
+	engine = &program->engines[program->current];
+	if (engine->ops->mode == NULL)
+		return;
+
+	/* The mode it is in, told when it is not the one told last. */
+	id = engine->ops->mode(engine, &label);
+	same = strcmp(id, program->announced);
+	if (same != 0)
+		program_announce_language(program);
 }
 
 /*
@@ -671,6 +722,9 @@ method_press(
 
 	/* What it made (always sent, so that zdesktop hears an answer). */
 	method_send(program);
+
+	/* A key that changed the engine's mode (SKK's q, l, C-j) tells zdesktop the new language. */
+	method_follow_mode(program);
 
 	/* A key the language does not use goes back to the application, which repeats it itself. */
 	if (program->out->pass_key) {

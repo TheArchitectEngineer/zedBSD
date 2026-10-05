@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
 Queue: Q1（ベータ2 の割り当て、P2、2026-10-05）
-Resume point: p002・p003 は実装済み（p002 は T1 待ち）。p001 の 3（範囲）はユーザーに確認中。次は p004（SKK の mode の言語の ID、image への辞書、T1・UAT）。
+Resume point: p002〜p004 は実装済み（T1-173 と languages-p004 の T1 待ち）。p001 の 3（範囲）はユーザーに確認中。残りは T1 の結果、実機の UAT、全文の規約の見直し。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -43,4 +43,4 @@ Settings に Languages の頁を足して、使う IME を「日本語」「SKK�
 | [ws154-p001](phase001/phase.md) | 設計（IME の切り替えの仕組み、Languages の頁、SKK の状態機械と操作の範囲、辞書の共有と path、試験の方法） | in-progress（設計済み、Q1 の確認待ち） | WS095 の今の構成 |
 | [ws154-p002](phase002/phase.md) | IME の選択の仕組みと Languages の頁（日本語・なし） | in-progress（実装済み、T1 待ち） | p001 |
 | [ws154-p003](phase003/phase.md) | SKK の IME の実装（host の試験で状態機械と変換） | in-progress（実装・host の試験済み） | p001 |
-| ws154-p004 | SKK を選択に加え、QEMU（T1）と実機の UAT、全文の規約 | planning | p002、p003 |
+| [ws154-p004](phase004/phase.md) | SKK を選択に加え、QEMU（T1）と実機の UAT、全文の規約 | in-progress（実装済み、T1 待ち） | p002、p003 |
