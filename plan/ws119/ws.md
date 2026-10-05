@@ -3,7 +3,7 @@
 # WS119: インストーラの作り直し
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: planning
 Primary Milestone: MG003
 Related Milestones: MG006
 Objectives: O2
@@ -52,3 +52,7 @@ Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS11
 
 日程の注意: 10/17 までに p001〜p005 を通すには、p001 の判断を早く得る必要がある。間に合わない場合の扱い（ベータ1 から外す、旧 zedinst の text 版で代える等）もユーザーの判断。
 
+
+## アイディアの Phase（2026-10-05 ユーザーの指示）
+
+最初にアイディアだけを描く Phase（ws119-p000、code も詳細な設計も書かない、選択肢と論点を並べる）を実行し、ユーザーと議論してから先へ進む。

@@ -3,7 +3,7 @@
 # WS048: Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete
 Primary Milestone: MG008
 Related Milestones: MG003, MG006
 Objectives: O2, O4
@@ -71,3 +71,7 @@ Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS11
 | arm64 の `hal_space_unmap_device()` | 今も `hal_space_unmap(HAL_SPACE_SYS, ...)` で失敗を返す。PCIe は対応を外さないので影響は無い |
 | HAL の mailbox の FULL の確認の register | `src/hal/arm64/bsp-rpi4/mailbox.c` が mailbox 0 の status（`+0x18`）を読む。正しくは mailbox 1（`+0x38`）。実害は出ていない（design.md §7） |
 | 有線 LAN（GENET） | きっかけの報告（2026-09-24）で、有線 LAN の driver も無いと分かった。別の WS |
+
+## 要検討・ブロック（2026-10-05）
+
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。

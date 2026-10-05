@@ -3,7 +3,7 @@
 # WS147: Microsoft OneDrive の client（Settings の Sharing の頁から設定）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: planning
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)
@@ -33,3 +33,7 @@ Settings の Sharing の頁で Microsoft のアカウントを登録し、OneDri
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws147-p001 | 調査と設計（認証・Graph の API・同期と cache・on-the-fly の口（WS146 と共有）・Settings と Files・試験の方法） | planning | 時期の決定、WS150 |
+
+## アイディアの Phase（2026-10-05 ユーザーの指示）
+
+最初にアイディアだけを描く Phase（ws147-p000、code も詳細な設計も書かない、選択肢と論点を並べる）を実行し、ユーザーと議論してから先へ進む。

@@ -3,7 +3,7 @@
 # WS144: VPN（ブリッジ・トンネルなどの汎用の network の基盤と、選んだ VPN の protocol、Settings の VPN の頁の実体、ベータ2）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: planning
 Primary Milestone: MG005
 Related Milestones: MG006
 Parent: [Master](../master.md)
@@ -32,3 +32,7 @@ Settings で stub になっている VPN の頁を実体にする。そのため
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws144-p001 | 調査と設計（汎用の基盤の範囲、VPN の protocol の選定、kernel・userland の分担、desktop の経路、試験の方法） | planning | ベータ2 の計画 |
+
+## アイディアの Phase（2026-10-05 ユーザーの指示）
+
+最初にアイディアだけを描く Phase（ws144-p000、code も詳細な設計も書かない、選択肢と論点を並べる）を実行し、ユーザーと議論してから先へ進む。

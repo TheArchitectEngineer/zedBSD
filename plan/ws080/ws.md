@@ -3,7 +3,7 @@
 # WS080: `ld.coff` — Win64 PE/COFF の動的ローダ
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete
 Primary Milestone: MG002
 Related Milestones: MG006
 Objectives: O1
@@ -95,3 +95,7 @@ forward）、DLL の依存の解決、IAT の書き換え、Microsoft x64 ABI �
 
 実行の順（案）: p001 → （承認を待つ間に）p003・p004・p005 → p006 → p007 → p002（承認の後）→ p008 → p009 → p010 → p011 → p012。
 p002 は全ての kernel の入口を変えるので、単独の Phase にして広い回帰（boot test・desktop の Venus・i915 の実機）を行う。
+
+## 要検討・ブロック（2026-10-05）
+
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。

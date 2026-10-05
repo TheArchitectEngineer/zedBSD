@@ -3,7 +3,7 @@
 # WS098: IME の変換のニューラル化（同音異義語の選択と、ひらがな列の形態素解析）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2
@@ -56,3 +56,7 @@ RNNで前後の文脈を見ながら語の境界と品詞を推定する研究�
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws098-p001 | 設計（上の決めること、corpus と license の判断） | planning | WS095 の基本の辞書 |
+
+## 要検討・ブロック（2026-10-05）
+
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。

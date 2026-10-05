@@ -3,7 +3,7 @@
 # WS044: rpi4 を開発に使える形にする（console の font、FAT32 の boot、lldb）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete
 Primary Milestone: MG008
 Related Milestones: MG001, MG003
 Objectives: O2, O4
@@ -52,3 +52,7 @@ user program の debugger を持つ開発機として使えるようにする。
 | [ws044-p007](phase007/phase.md) | 実機の表示を 1920x1080 に固定（config.txt と HAL の framebuffer の大きさ、承認済み） | cleared（QEMU まで。実機はユーザーの確認待ち） | p006 | `platform/arm64/config.txt`、`src/hal/arm64/bsp-rpi4/framebuffer.c` |
 | [ws044-p008](phase008/phase.md) | 実機の起動の診断（ACT LED の段階、テスト模様、SCTLR_EL1 の初期化）と boot 設定の洗い直し（HAL、承認済み） | cleared（原因は config.txt の hdmi_force_hotplug が空の HDMI0 を display 0 にしていたこと。HDMI0 で表示を確認。HDMI1 と UART は実機の結果待ち） | p007 | `src/hal/arm64`、`platform/arm64/config.txt` |
 | [ws044-p009](phase009/phase.md) | 実機で init が SIGILL: 命令 cache の同期（実行可能にする page に `hal_sync_instruction_stream`）と EL0 の SCTLR の権限（HAL、承認済み） | cleared（QEMU まで。実機はユーザーの確認待ち） | p008 | `src/hal/arm64/space.c`・`locore.S` |
+
+## 要検討・ブロック（2026-10-05）
+
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。

@@ -3,7 +3,7 @@
 # WS061: expat の configure と compile を Linux と同等の水準にする（fg011）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-05 ユーザー「clearedにする：WS061」。受け入れの計測は達成済み（configure・cc・make が host の 2 倍以内）。uncleared の Phase は記録のまま残す。Phase の directory の片付けは guardrail などからの参照を直してから）。以前: incomplete
 Primary Milestone: MG002
 Related Milestones: MG004
 Objectives: O1, O2
@@ -35,3 +35,7 @@ BUG-033 の系譜（ws046-p007・p009・p012）の続き。fg010（Wayland）は
 | [ws061-p010](phase010/phase.md) | system call の入口を `syscall`/`sysret` に、libc の lock の adaptive spin（2026-09-26 ユーザー指示「優先」） | cleared（q446-i01。入口の費用 4.65 → 1.54%、`cc` 99 → 87 ms、configure 9.8〜10.2 秒・host 11.0 秒） | p008 |
 | [ws061-p011](phase011/phase.md) | WS061 の変更の規約の適合（ユーザーの指示で最後） | planned | p009・p010 |
 | [ws061-p007](phase007/phase.md) | UFS の journal を既定に（journal の無い image でも mount の時に作る）、`nojournal` の mount option、journal と write cached の両立（2026-09-26 ユーザー指示） | in-progress（q440-i01） | p006 |
+
+## 完了（2026-10-05）
+
+ユーザーの指示で WS を完了とする。

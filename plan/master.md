@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 ユーザーの指示（段の整理）**: 要検討・ブロック WS098・150・039・037・038・141・080・044・048・118。最初にアイディアの Phase を実行してユーザーと議論 WS144・119・147・082・146・ニューラル IME（WS098、ブロックの一覧にも有るのでアイディアの Phase の後にブロックのままとする扱いを確認中）。WS061 は completed。残りのベータ3・ベータ4 以降の WS（WS001・026・031・046・068・074・101・115・116・117・120・121・130・145・153・157・143・152・126・124・125・112）をベータ2 に移動。
 - **2026-10-05 ユーザーの指示**: キャンセル WS034・WS096（Qt6 の互換）・WS097（GTK4 の互換）・WS007。優先 WS138。追加 WS161〜WS167（YubiKey・FIDO2 の login・6 桁の PIN の login・Welcome の画面・手書きの入力・予測変換・GPU の command の protocol の独自化）。新しい WS の段（ベータ2 か以降か）と見積もりは未定。
 - **2026-10-05 朝 ユーザー「HALの変更以外は承認します。」**→ 次を案のとおり決定: ws089-p025（sessiond の wheel だけの SERVICE sshd）、ws089-p022（(a) 有線の設定を network の group に開く、(b) ベータ1 の MTU は読むだけ、設定は別の WS）、タッチパッドの既定（100%・中のまま）、BUG-190 の規則（tap は離した時の click、押し込みは押した瞬間、UAT の後に resolved）、ws132-p004（通知の代わりに bar の媒体の icon）、WS160 D1〜D4（最短 8 文字・sudoers 無し・毎回認証・wheel は gid 0）、WS052 p007（外部の monitor の時は蓋で sleep しない（AC に依らず）・無操作 AC 30 分/電池 15 分で画面はその半分・greeter の電源ボタンは sleep・sessiond が session から suspend を受ける（ws131 D12 の改訂、poweroff・reboot は greeter のまま））。HAL の H1〜H4 は専門家のレビュー待ち。BUG-171 は選択肢に案が無いので別に確かめる。
 - **HAL の API の承認（差分ごと、2026-10-05 未明、P1 の ws052-p002、plan/ws052/proposed/README.md）**: S0i3 のための hal.h の差分 4 つ（どれも未適用、今の main に patch --dry-run で当たる）。H1 `hal_cpu_idle_deep(uint32_t hint)`（MWAIT で C10、今の hal_cpu_idle は hlt で C1 まで）、H2 `hal_timer_stop`・`hal_timer_resume`（tick の停止と再開、RTC の counter は数え続ける）、H3 `hal_cpu_notify` の契約の明記だけ（深い idle・tick の停止・mask の中でも必ず CPU を起こす、AP の停止の API は作らない）、H4 `hal_irq_suspend(const int *wake_irqs, unsigned count)`・`hal_irq_resume`（wake の源以外の割り込みを止め mask を HAL が保って戻す）。他の architecture は UNSUPPORTED で sleep を中止して理由を返す。
@@ -179,7 +180,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | WS | 段 | Milestone | 残り（LW） | 見積もりの中身 |
 | --- | --- | --- | --- | --- |
-| [WS001](ws001/ws.md) | ベータ3 | MG002 | 3 | POSIX 台帳の残り（p040 以降の utility） |
+| [WS001](ws001/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 3 | POSIX 台帳の残り（p040 以降の utility） |
 | [WS004](ws004/ws.md) | ベータ2 | MG003 | 2 | NVMe の実機・転送・driver の共通化 |
 | [WS005](ws005/ws.md) | ベータ1 | MG005 | 2 | WiFi の UI の Bug（BUG-183〜189）・p031・後挿し |
 | [WS007](ws007/ws.md) | キャンセル | MG006 | 0.5 | p004 の再現条件と amd64 の残件 |
@@ -188,37 +189,37 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS014](ws014/ws.md) | ベータ2 | MG006 | 0.5 | p004 の最終 API と規約 |
 | [WS015](ws015/ws.md) | キャンセル | MG007 | 10 | μITRON（Future Work に保留中） |
 | [WS017](ws017/ws.md) | キャンセル | MG006 | 1 | LFB の高速化 |
-| [WS026](ws026/ws.md) | ベータ3 | MG001 | 1.5 | 試験資産の整理 |
+| [WS026](ws026/ws.md) | ベータ2（2026-10-05 移動） | MG001 | 1.5 | 試験資産の整理 |
 | [WS027](ws027/ws.md) | キャンセル | MG008 | 8 | PowerPC 移植 |
 | [WS028](ws028/ws.md) | キャンセル | MG003 | 1.5 | インストーラの実機（4 機種） |
 | [WS029](ws029/ws.md) | ベータ2 | MG006 | 3 | cold VFIO attach の停止ほか |
-| [WS031](ws031/ws.md) | ベータ3 | MG006 | 8 | p015〜p048 の native Vulkan 実行器 |
+| [WS031](ws031/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 8 | p015〜p048 の native Vulkan 実行器 |
 | [WS033](ws033/ws.md) | ベータ1 | MG005 | 1 | USB LAN の後挿し（BUG-168・169）・抜き差しの実機 |
 | [WS034](ws034/ws.md) | キャンセル | MG002 | 4 | package の導入と kernel・libc の是正 |
-| [WS037](ws037/ws.md) | ベータ4 以降 | MG006 | 16 | nvrtx（文書の後、GSP の起動・channel・display・executor） |
-| [WS038](ws038/ws.md) | ベータ4 以降 | MG006 | 16 | Intel Arc dGPU |
-| [WS039](ws039/ws.md) | ベータ4 以降 | MG006 | 20 | AMD RDNA |
-| [WS044](ws044/ws.md) | ベータ4 以降 | MG008 | 1.5 | rpi4 の font・FAT32・lldb |
+| [WS037](ws037/ws.md) | 要検討（ブロック） | MG006 | 16 | nvrtx（文書の後、GSP の起動・channel・display・executor） |
+| [WS038](ws038/ws.md) | 要検討（ブロック） | MG006 | 16 | Intel Arc dGPU |
+| [WS039](ws039/ws.md) | 要検討（ブロック） | MG006 | 20 | AMD RDNA |
+| [WS044](ws044/ws.md) | 要検討（ブロック） | MG008 | 1.5 | rpi4 の font・FAT32・lldb |
 | [WS045](ws045/ws.md) | ベータ1 | MG002 | 0 | 完了（2026-10-05） |
-| [WS046](ws046/ws.md) | ベータ3 | MG002 | 1.5 | GNU 互換の make |
+| [WS046](ws046/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 1.5 | GNU 互換の make |
 | [WS047](ws047/ws.md) | キャンセル | MG001 | 3 | build.sh と Noct の build system |
-| [WS048](ws048/ws.md) | ベータ4 以降 | MG008 | 1.5 | rpi4 の USB |
+| [WS048](ws048/ws.md) | 要検討（ブロック） | MG008 | 1.5 | rpi4 の USB |
 | [WS049](ws049/ws.md) | ベータ1 | MG003 | 0.3 | 実機の UAT（p007・p008・p016） |
 | [WS050](ws050/ws.md) | ベータ2 | MG003 | 3 | UCSI（1.x・2.x、role の切替・Alt Mode の選択を含む） |
 | [WS051](ws051/ws.md) | ベータ2 | MG006 | 4 | USB-C の DP Alt Mode（i915 の Type-C） |
 | [WS052](ws052/ws.md) | ベータ2 | MG003 | 6 | 電源管理（S0i3） |
-| [WS061](ws061/ws.md) | ベータ3 | MG002 | 1 | expat の configure・compile |
+| [WS061](ws061/ws.md) | 完了 | MG002 | 1 | expat の configure・compile |
 | [WS066](ws066/ws.md) | ベータ2 | MG002 | 1 | 動的 link の起動の高速化 |
-| [WS068](ws068/ws.md) | ベータ3 | MG006 | 4 | EGL・OpenGL ES |
+| [WS068](ws068/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 4 | EGL・OpenGL ES |
 | [WS073](ws073/ws.md) | ベータ1 | MG002 | 3 | Bug Board の掃討（UAT の Bug を含む） |
-| [WS074](ws074/ws.md) | ベータ3 | MG006 | 12 | Web ブラウザ（Codex の担当） |
+| [WS074](ws074/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 12 | Web ブラウザ（Codex の担当） |
 | [WS075](ws075/ws.md) | ベータ2 | MG006 | 4 | i915 の高度化 |
 | [WS077](ws077/ws.md) | キャンセル | MG001 | 1 | PC-98 の PCI |
 | [WS078](ws078/ws.md) | ベータ2 | MG006 | 1 | Kei の名前の移行 |
 | [WS079](ws079/ws.md) | ベータ2 | MG006 | 1 | Notes・PDF Viewer の残り |
-| [WS080](ws080/ws.md) | ベータ4 以降 | MG002 | 4 | ld.coff（PE/COFF の動的ローダ） |
+| [WS080](ws080/ws.md) | 要検討（ブロック） | MG002 | 4 | ld.coff（PE/COFF の動的ローダ） |
 | [WS081](ws081/ws.md) | ベータ1 | MG006 | 1.5 | touch の質（BUG-156・166・167・190 を含む） |
-| [WS082](ws082/ws.md) | ベータ3 | MG002 | 1 | /dev/kvm の移植の検討（移植の本体は別） |
+| [WS082](ws082/ws.md) | アイディアの Phase（議論の後） | MG002 | 1 | /dev/kvm の移植の検討（移植の本体は別） |
 | [WS083](ws083/ws.md) | ベータ2 | MG006 | 8 | Vulkan Video（H.264） |
 | [WS084](ws084/ws.md) | ベータ2 | MG006 | 1.5 | i915 の firmware の画面の引き継ぎ |
 | [WS085](ws085/ws.md) | ベータ2 | MG006 | 1 | Windows 版 QEMU の Venus |
@@ -229,55 +230,55 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS095](ws095/ws.md) | ベータ1 | MG006 | 1.5 | IME（p005、p016 app ごとの状態） |
 | [WS096](ws096/ws.md) | キャンセル | MG002 | 30 | Qt6 の互換の書き下ろし |
 | [WS097](ws097/ws.md) | キャンセル | MG002 | 30 | GTK4 の互換の書き下ろし |
-| [WS098](ws098/ws.md) | ベータ3 | MG006 | 6 | IME のニューラル化 |
+| [WS098](ws098/ws.md) | 要検討（ブロック） | MG006 | 6 | IME のニューラル化 |
 | [WS099](ws099/ws.md) | ベータ1 | MG006 | 3 | compositor（q700 の窓の Bug、p031 bar の高さ、p032） |
 | [WS100](ws100/ws.md) | ベータ1 | MG006 | 0.5 | 音量（BUG-170 の実機の確認） |
-| [WS101](ws101/ws.md) | ベータ3 | MG006 | 6 | GPU の compute |
+| [WS101](ws101/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 6 | GPU の compute |
 | [WS102](ws102/ws.md) | ベータ2 | MG006 | 2 | スクリーンキーボード |
 | [WS106](ws106/ws.md) | ベータ2 | MG001 | 1 | test app の集約 |
 | [WS110](ws110/ws.md) | ベータ2 | MG006 | 0.5 | compositor の通常起動を既定に |
-| [WS112](ws112/ws.md) | ベータ4 以降 | MG007 | 1.5 | Linux 5 種類の package と CI |
+| [WS112](ws112/ws.md) | ベータ2（2026-10-05 移動） | MG007 | 1.5 | Linux 5 種類の package と CI |
 | [WS113](ws113/ws.md) | ベータ2 | MG006 | 5 | 複数 display・Settings の Display の頁・明るさ・p010 |
 | [WS114](ws114/ws.md) | ベータ2 | MG006 | 1.5 | Linux の GTK4 の互換 |
-| [WS115](ws115/ws.md) | ベータ3 | MG002 | 3 | upstream GTK4 の移植（p010 から） |
-| [WS116](ws116/ws.md) | ベータ3 | MG002 | 4 | upstream Qt6 の移植 |
-| [WS117](ws117/ws.md) | ベータ3 | MG006 | 1.5 | Linux の Qt6 の互換 |
-| [WS118](ws118/ws.md) | ベータ4 以降 | MG003 | 1.5 | Latitude 5320 |
-| [WS119](ws119/ws.md) | ベータ4 以降 | MG003 | 3 | インストーラの作り直し |
-| [WS120](ws120/ws.md) | ベータ3 | MG006 | 5 | 音楽（service との連携と local の collection） |
-| [WS121](ws121/ws.md) | ベータ3 | MG006 | 4 | browser の動画の再生の支援 |
+| [WS115](ws115/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 3 | upstream GTK4 の移植（p010 から） |
+| [WS116](ws116/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 4 | upstream Qt6 の移植 |
+| [WS117](ws117/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 1.5 | Linux の Qt6 の互換 |
+| [WS118](ws118/ws.md) | 要検討（ブロック） | MG003 | 1.5 | Latitude 5320 |
+| [WS119](ws119/ws.md) | アイディアの Phase（議論の後） | MG003 | 3 | インストーラの作り直し |
+| [WS120](ws120/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 5 | 音楽（service との連携と local の collection） |
+| [WS121](ws121/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 4 | browser の動画の再生の支援 |
 | [WS122](ws122/ws.md) | ベータ2 | MG006 | 6 | 動画の player（libavcodec の段 → 独自 container の段） |
 | [WS123](ws123/ws.md) | キャンセル済み | MG006 | 0 | キャンセル済み |
-| [WS124](ws124/ws.md) | ベータ4 以降 | MG002 | 1.5 | Emacs の package |
-| [WS125](ws125/ws.md) | ベータ4 以降 | MG002 | 0.5 | vim の package |
-| [WS126](ws126/ws.md) | ベータ4 以降 | MG002 | 2 | Python 3 の package |
+| [WS124](ws124/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 1.5 | Emacs の package |
+| [WS125](ws125/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 0.5 | vim の package |
+| [WS126](ws126/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 2 | Python 3 の package |
 | [WS127](ws127/ws.md) | ベータ1 | MG006 | 3 | Files（p003 以降、p010〜p012） |
 | [WS128](ws128/ws.md) | ベータ1 | MG006 | 2 | 標準 app の仕上げ |
 | [WS129](ws129/ws.md) | ベータ1 | MG007 | 1 | ベータ1 の release 作業 |
-| [WS130](ws130/ws.md) | ベータ3 | MG005 | 8 | IPv6 |
+| [WS130](ws130/ws.md) | ベータ2（2026-10-05 移動） | MG005 | 8 | IPv6 |
 | [WS131](ws131/ws.md) | ベータ1 | MG006 | 3 | libkeiland-backend の残り（p015〜p022） |
 | [WS132](ws132/ws.md) | ベータ1 | MG006 | 3 | /dev/system の電源・PnP の通知・自動 mount・eject |
 | [WS134](ws134/ws.md) | ベータ1 | MG006 | 1 | System Monitor の実機の残り |
 | [WS138](ws138/ws.md) | ベータ2 | MG006 | 0.5 | 背景の PNG |
 | [WS139](ws139/ws.md) | ベータ2 | MG006 | 2 | desktop の速さ |
 | [WS140](ws140/ws.md) | ベータ2 | MG002 | 0.5 | ld.so の上限の動的化 |
-| [WS141](ws141/ws.md) | ベータ4 以降 | MG006 | 10 | Raspberry Pi 4 の GPU（N0 から V8・TFU まで） |
+| [WS141](ws141/ws.md) | 要検討（ブロック） | MG006 | 10 | Raspberry Pi 4 の GPU（N0 から V8・TFU まで） |
 | [WS142](ws142/ws.md) | ベータ2 | MG006 | 3 | アプリの切り替え（bar・Alt+Tab・gesture） |
-| [WS143](ws143/ws.md) | ベータ4 以降 | MG006 | 8 | Bluetooth |
-| [WS144](ws144/ws.md) | ベータ4 以降 | MG005 | 8 | VPN |
-| [WS145](ws145/ws.md) | ベータ3 | MG006 | 4 | 印刷 |
-| [WS146](ws146/ws.md) | ベータ4 以降 | MG006 | 6 | SSH の独自のオンラインストレージ（WS150 の後） |
-| [WS147](ws147/ws.md) | ベータ4 以降 | MG006 | 4 | OneDrive（WS150 の後） |
+| [WS143](ws143/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 8 | Bluetooth |
+| [WS144](ws144/ws.md) | アイディアの Phase（議論の後） | MG005 | 8 | VPN |
+| [WS145](ws145/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 4 | 印刷 |
+| [WS146](ws146/ws.md) | アイディアの Phase（議論の後） | MG006 | 6 | SSH の独自のオンラインストレージ（WS150 の後） |
+| [WS147](ws147/ws.md) | アイディアの Phase（議論の後） | MG006 | 4 | OneDrive（WS150 の後） |
 | [WS148](ws148/ws.md) | ベータ2 | MG006 | 0.3 | Privacy の頁の検討（実装は結論次第） |
 | [WS149](ws149/ws.md) | ベータ2 | MG006 | 0.3 | Security の頁の検討（実装は結論次第） |
-| [WS150](ws150/ws.md) | ベータ3 | MG004 | 3 | FUSE に当たる枠組み |
+| [WS150](ws150/ws.md) | 要検討（ブロック） | MG004 | 3 | FUSE に当たる枠組み |
 | [WS151](ws151/ws.md) | ベータ2 | MG006 | 0.5 | Accessibility の頁の検討（実装は結論次第） |
-| [WS152](ws152/ws.md) | ベータ4 以降 | MG007 | 4 | system の更新 |
-| [WS153](ws153/ws.md) | ベータ3 | MG007 | 6 | app の repository と Apps の頁 |
+| [WS152](ws152/ws.md) | ベータ2（2026-10-05 移動） | MG007 | 4 | system の更新 |
+| [WS153](ws153/ws.md) | ベータ2（2026-10-05 移動） | MG007 | 6 | app の repository と Apps の頁 |
 | [WS154](ws154/ws.md) | ベータ2 | MG006 | 3 | Languages の頁と SKK の IME |
 | [WS155](ws155/ws.md) | ベータ2 | MG006 | 2.5 | カレンダー（外観の画像の後） |
 | [WS156](ws156/ws.md) | ベータ2 | MG006 | 2 | app の通知 |
-| [WS157](ws157/ws.md) | ベータ3 | MG006 | 4 | 写真の管理 |
+| [WS157](ws157/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 4 | 写真の管理 |
 | [WS158](ws158/ws.md) | ベータ2 | MG006 | 3 | 翻訳（日本語はベータ2） |
 | [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、**ベータ1**） | WS049 |
 | [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |

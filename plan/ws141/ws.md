@@ -3,7 +3,7 @@
 # WS141: Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI の display と V3D 4.2）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
@@ -61,3 +61,7 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | p005 | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | planning | p003・p004 | 4h〜 |
 | p006 | 実行器（Vulkan・compiler）の方針の決定（別 WS にするか） | planning | p004 | 2h |
 | p007 | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | planning | 全て | 3〜4h |
+
+## 要検討・ブロック（2026-10-05）
+
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。

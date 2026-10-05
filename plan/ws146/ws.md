@@ -3,7 +3,7 @@
 # WS146: SSH を使う独自のオンラインストレージ（差分の同期と on-the-fly のアクセス、OneDrive のような機能）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: planning
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)
@@ -33,3 +33,7 @@ SSH で接続できる server を利用者のオンラインストレージと�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws146-p001 | 調査と設計（agent と protocol、database と差分、衝突、on-the-fly のアクセスの kernel の口、Files・Settings、試験の方法） | planning | 時期の決定、WS150 |
+
+## アイディアの Phase（2026-10-05 ユーザーの指示）
+
+最初にアイディアだけを描く Phase（ws146-p000、code も詳細な設計も書かない、選択肢と論点を並べる）を実行し、ユーザーと議論してから先へ進む。

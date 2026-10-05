@@ -3,7 +3,7 @@
 # WS038: Intel Arc dGPU対応
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
@@ -31,3 +31,7 @@ Intel Arcの単体GPU（dGPU）のドライバを実装する。
 ## Phase一覧
 
 未作成。
+
+## 要検討・ブロック（2026-10-05）
+
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。

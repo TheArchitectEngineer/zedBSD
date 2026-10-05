@@ -3,7 +3,7 @@
 # WS082: Linux の `/dev/kvm` の移植の検討
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: incomplete
 Primary Milestone: MG002
 Related Milestones: —
 Objectives: O1
@@ -56,3 +56,7 @@ Resume point: p001 cleared（2026-09-28、[study.md](study.md)）。次は study
 - unix socket の通知: `struct kvm_notify`（32 byte）、登録ごとに packet を 1 つ予約して合体。`poll_notify` が全 poller を起こす設計が懸念。
 - 到達点の案: M0 HAL の VMX self test → M1 自作の `kvm-smoke` で real mode の "Hello" → M2 patch した QEMU（userspace irqchip）で Linux の shell → M3 QEMU 既定で ping → M4 firecracker 等の cap の集合。
 - 未実施: build・QEMU・実機（検討だけ）。
+
+## アイディアの Phase（2026-10-05 ユーザーの指示）
+
+最初にアイディアだけを描く Phase（ws082-p000、code も詳細な設計も書かない、選択肢と論点を並べる）を実行し、ユーザーと議論してから先へ進む。

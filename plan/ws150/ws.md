@@ -3,7 +3,7 @@
 # WS150: userland の file system の kernel の枠組み（FUSE に当たる物、クラウドストレージの前提）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning
 Primary Milestone: MG004
 Related Milestones: MG002、MG006
 Parent: [Master](../master.md)
@@ -32,3 +32,7 @@ kernel の VFS に、userland の daemon が file system を実装できる枠�
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws150-p001 | 調査と設計（VFS の口、要求と応答の protocol、FUSE との互換の判断、daemon の library、cache と一貫性、失敗の扱い、試験の方法） | planning | 時期の決定 |
+
+## 要検討・ブロック（2026-10-05）
+
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。
