@@ -8,13 +8,13 @@
 # sessiond and the greeter are stopped afterwards and the autologin file put back.
 #
 #   plan/ws035/tests/zdesktop-guest.sh start BUILD/hdd-image.img     (the criteria image: login=graphical, a greeter)
-#   plan/ws138/tests/greeter-wallpaper.sh [OUTDIR]                    (default build/ws138-p002/greeter)
+#   plan/tools/wallpaper/greeter-wallpaper.sh [OUTDIR]                    (default build/wallpaper/greeter)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
 GUEST_RUNTIME="${GUEST_RUNTIME:-$(pwd)/build/ws035-sq-run}"
 export GUEST_RUNTIME
-out=${1:-build/ws138-p002/greeter}
+out=${1:-build/wallpaper/greeter}
 mkdir -p "$out"
 status=0
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
@@ -24,7 +24,7 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 # Nothing of the desktop running, a clean greeter log, no autologin.
 guest "$stop_all
 rm -f /var/log/greeter.log
-[ -f /tmp/ws138-autologin.saved ] || cp /etc/keiland/autologin /tmp/ws138-autologin.saved 2>/dev/null; : > /etc/keiland/autologin; echo ready" >/dev/null
+[ -f /tmp/wallpaper-autologin.saved ] || cp /etc/keiland/autologin /tmp/wallpaper-autologin.saved 2>/dev/null; : > /etc/keiland/autologin; echo ready" >/dev/null
 
 # The greeter.
 guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
@@ -49,7 +49,7 @@ echo "picture: $out/greeter.png (the login card over the birch-and-lake picture)
 
 # Back as it was.
 guest "$stop_all
-[ -f /tmp/ws138-autologin.saved ] && cat /tmp/ws138-autologin.saved > /etc/keiland/autologin; echo restored" >/dev/null
+[ -f /tmp/wallpaper-autologin.saved ] && cat /tmp/wallpaper-autologin.saved > /etc/keiland/autologin; echo restored" >/dev/null
 
 if [ $status = 0 ]; then
 	echo "greeter-wallpaper: PASS (look at the picture)"
