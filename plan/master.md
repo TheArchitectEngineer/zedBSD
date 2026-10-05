@@ -198,10 +198,10 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | インストーラ | [WS119](ws119/ws.md) | Wayland、disk 全体のみ、UEFI のみ。WS118 の後 |
 | packages | [WS124](ws124/ws.md) Emacs（端末版）、[WS125](ws125/ws.md) vim、[WS126](ws126/ws.md) Python 3（core） | release の image に入れる |
 | GTK4 | [WS115](ws115/ws.md) | 素の GTK4 の移植は後回し（p010 の ld.so の上限から再開） |
-| 動画（drop 可、別セッションでユーザーと） | [WS083](ws083/ws.md)・[WS122](ws122/ws.md)・[WS121](ws121/ws.md) | このセッションは割り当てない |
+| 動画（drop 可、別セッションでユーザーと） | [WS083](ws083/ws.md) | WS122（P2 が 2026-10-05 に実装）・WS121（2026-10-05 Q1 の担当）は Q1 |
 | リリース作業 | [WS129](ws129/ws.md) | — |
 | 最後 | [WS112](ws112/ws.md) Linux の package | 優先度最下位 |
-| 対象外 | [WS074](ws074/ws.md) ブラウザ | Codex が担当 |
+| ブラウザ（Q1、2026-10-05 ユーザー） | [WS074](ws074/ws.md)（レンダリングの改善はユーザーの指示まで停止、専任の B1 を設計済み）・[WS121](ws121/ws.md) 動画 | WS107 completed |
 
 ### 達成した Focused Goal
 
@@ -227,7 +227,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 5. **GTK/Qt**: WS115（p010 から）→ WS097 独自 GTK4 → WS117 Linux Qt6 → WS116 Qt6 移植 → WS096。
 6. **packages**: WS125（image に多数の file を入れる共通の仕組み）→ WS124 → WS126。
 7. **リリース**: WS129、最後に WS112。
-8. 動画（WS083・WS122・WS121）は別セッション、WS074 は Codex。WS130（IPv6）は計画だけ、実装はベータ2 以降。
+8. 動画（WS083）は別セッション。WS122・WS121・WS074 は Q1（2026-10-05、WS074 のレンダリングの改善はユーザーの指示まで止める）。WS130（IPv6）は計画だけ、実装はベータ2 以降。
 9. 上に無い未完了の WS（WS001・004・007・009・014・017・026〜029・031・034・036〜039・044〜052・061・066・068・075・077〜088・090・096〜098・100〜102・106・110 ほか）は順位を定めていない。WS095 以外のデモの頃の WS（WS079・WS090・WS100・WS102 など）は標準 app の組み直しで扱う。
 
 ## 工数の見積もり（残り、LW）
@@ -235,8 +235,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 2026-10-05 Q1（ユーザー「各WSの工数見積もりをしてほしいです。あなたの1週間かかるという見積もりは、1LW (logical weeks)と表現してほしいです。master.mdに見積もりを書き込んでおいてほしいです。」）。
 
 - **LW（logical week）**: Q1（Claude）が「1 週間かかる」と見積もる作業の量を 1 LW とする。人の暦の週とは違う。実際には **1 LW ≈ 実時間 1〜2 時間**（2026-10-05 ユーザーの観察、担当 1 人あたり）。各 WS の**残り**の量（完了した Phase を除く）。completed の WS は 0 で表に載せない。
-- 粗い見積もり（±50%）。判断待ち・実機・外部の service に依る物は、その待ちを含まない。検討だけの WS（WS148・149・151）は検討の分だけで、実装は結論の後に見積もる。WS074 は Codex の担当。WS013・WS015 は Future Work に保留中。
-- 合計 **394.7 LW**（100 WS）。Milestone ごと: MG001 8.5、MG002 90.3、MG003 17.3、MG004 3、MG005 19、MG006 219.1、MG007 26.5、MG008 11。
+- 粗い見積もり（±50%）。判断待ち・実機・外部の service に依る物は、その待ちを含まない。検討だけの WS（WS148・149・151）は検討の分だけで、実装は結論の後に見積もる。WS074 は 2026-10-05 から Q1（12 LW、レンダリングの改善は停止中）。WS013・WS015 は Future Work に保留中。
+- 合計 **394.7 LW**（100 WS）。Milestone ごと: MG001 8.5、MG002 90.3、MG003 17.3、MG004 3、MG005 19、MG006 219.1、MG007 26.5、MG008 11。（2026-10-05 Q1 の注: この合計と段の表は 2026-10-05 の段の移動・WS の追加の前の値で古い。WS ごとの表の「段」の列が正。WS ごとの表の合計は 430.4 LW（112 行）。段の表は次の見積もりの見直しで作り直す）
 
 | WS | 段 | Milestone | 残り（LW） | 見積もりの中身 |
 | --- | --- | --- | --- | --- |
@@ -461,7 +461,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS071](ws071/ws.md) | MG006 | zedBSD File Manager: Finder 風で zedBSD らしいファイルマネージャ（ホームのダッシュボード、サイドバー、タグ、Quick Look、System Menu）（2026-09-27 ユーザー指示、仕様案は ws071/spec.md） | completed | completed（2026-09-27）: zdesktop-files の最初の版（すりガラスの付箋の pane、タブ、titlebar の CONTROLS、context menu、PNG の thumbnail、DnD、configure_bounds）。残りは Future Work（F-032〜F-041・F-044）、i915 実機は WS075、窓の外への DnD は WS035 |
 | [WS072](ws072/ws.md) | MG004 | write cached の UFS の format の lease（BUG-060）と、NVMe の timeout の後の回復で root の mount が ETIMEDOUT になる（BUG-059）（2026-09-27、サブエージェント） | completed | 2026-09-27 完了（p001 BUG-060: write cached の format の lease、p002 BUG-059: NVMe の timeout の後の再発行） |
 | [WS073](ws073/ws.md) | MG002 | Bug Board のbug解消（2026-09-27の対象境界を保持）。2026-10-02のP8はWS073に限らず、mainが各bugの既存handling WS/Phaseを照合して配属 | incomplete | p045（BUG-135、UFS の namespace_lock と journal の commit の待ち）を修正（停止 10→2 回）。残りは WS131 p005・p006 の後 |
-| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | p099 cleared（q507、Acid2 100%）。p172/q579はbranch統合済みだが最終review残でuncleared。A1でp172再開後、p100→p174→p175→p173→p176。p101 CSS2も保持 |
+| [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete | p099 cleared（Acid2 100%）。p172 whole cleared（2026-10-03、Codex の browser3 の b-q598）。2026-10-05 Q1 に戻した。レンダリングの改善（p100 Acid3 の pixel 37.04%→100%、p101・p173〜p176）はユーザーの指示まで停止。B1 の試行 p178 を計画。次の候補 BUG-182 |
 | [WS075](ws075/ws.md) | MG006 | i915 の高度化: 今日のデスクトップ（zdesktop の glass・backdrop のぼかし・タブ）とグラフィックス（GLES 2/3、GL 3.0〜3.2）を Latitude 5330 の i915 のネイティブ実行器で動かす（compiler の inlining・F-022・F-023 の不足、性能と安定）（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | incomplete | 2026-09-30: L1（C6 91.3 ms）と L2（p029: blur は窓ごと、既定は無効・Settings だけ有効、C6 67.3 ms）を満たした。L3 は p030 で計測（文字の draw 約 400 で約 10 ms）。ユーザーの指示で描画の高速化を止め、p031（文字の draw をまとめる）は build まで済んだ patch（`phase031/exp/text-batch.patch`）で保留。再開はユーザーが描画の高速化の再開を言うとき |
 | [WS076](ws076/ws.md) | MG002 | libc の libm を自前で正しく書き直す（src/libc、誤差 1 ulp 以内、fmod 等は正確）（2026-09-28 ユーザー「libmは独自に書いてください。libcのツリーに入れてください。」） | completed | 2026-09-28 完了（`src/libc/math/`、群 B は全件で正しく丸め、BUG-078 解決）。F-046・F-047 へ移管 |
 | [WS077](ws077/ws.md) | MG001 | PC-98 の PCI を有効にする（BUG-024、2026-09-28 ユーザー「Bug024は、PCIを有効にします。」） | canceled（2026-10-05 ユーザー） | **優先度を下げた（2026-09-28 ユーザー「Bug024は優先度を下げます。」）**。p001（調査と設計）。HAL の差分は承認が要る。PC-98 の試験が要るので着手の前に確認 |
@@ -494,7 +494,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS104](ws104/ws.md) | MG006 | Keiland の OS の境界の整理: desktop の公開の header を `userland/desktop/keiland/` へ、libkeiland と compositor の OS の部分を `zedbsd/` の module へ、install の path を macro に。zedBSD の振る舞いは変えない（2026-10-01 ユーザー「Linux移植を進めます」、WS105 の準備） | completed | q515〜q522 / A1〜A6 verified。全文規約と全必須回帰 PASS、Linux は WS105 へ |
 | [WS105](ws105/ws.md) | MG006 | Keiland を Linux で動かす（`/opt/keiland`）: `make keiland-linux`、libvulkan-compat（独自の WSI から system の libvulkan へ chain）、compositor の Linux の module（KMS・evdev・linux-dmabuf・logind）、主な app、gdm、wpa_supplicant・ALSA（2026-10-01 ユーザー、F-065 の Linux の分） | completed | L1〜L9/最終source conformance verified、q538 finished。Linux host/ownDebian13guest・zedBSD回帰、BUG-125/127は未修正trackingのユーザー許可。GitHub publication pending、次の実装なし |
 | [WS106](ws106/ws.md) | MG001 | base/desktop の test/probe/demo 30件を userland/tests/ へ移し、package/config/install と既存の動作を維持 | incomplete | q540 partial cleared、p002 uncleared（ime-probe回答待ち）、p003未実行。 |
-| [WS107](ws107/ws.md) | MG006 | engine の source を libbrowser に所属させ、Wayland無し・標準Vulkan/抽象入力の component と browser shell を整備 | completed | B1〜B5 verified / q544、API v2/public Vulkan client/最終boot。GitHub deferred |
+| [WS107](ws107/ws.md) | MG006 | engine の source を libbrowser に所属させ、Wayland無し・標準Vulkan/抽象入力の component と browser shell を整備 | completed | B1〜B5 verified / q544、API v2/public Vulkan client/最終boot。GitHub deferred（2026-10-05 Q1 の担当。p172 で browser2 を取り込み済み） |
 | [WS108](ws108/ws.md) | MG007 | CI で Debian13/Ubuntu26.04 の Linux Keiland .deb を別々に作成/検証/artifact保存 | completed | P1〜P5 / q549、2OS native deb＋QEMU runtime、CI/release定義。remote未実施 |
 | [WS109](ws109/ws.md) | MG006 | Linux版の共通描画を利用した native FreeBSD15 Keiland、audio/network/WiFi backend | completed | q574 native実機build/install+全文規約、p008 user「完璧に動作しました」でF6受け入れ合格 |
 | [WS110](ws110/ws.md) | MG006 | 通常compositor起動を既定にし--testingで試験用有限modeを明示 | completed | 2026-10-05 完了（引数なしで通常の session、試験は --testing、試験の script 233 file を置き換え、試験は plan/tools/compositor） |
@@ -507,7 +507,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS118](ws118/ws.md) | MG003 | Latitude 5320 で Kei を動かす（LCD の制御の不具合、sshd の遠隔 log 用 image、ユーザーと実機） | planning | p001（遠隔 log の image A は QEMU で SSH・collect まで）。実機は RTL8156 の USB の LAN でユーザーと |
 | [WS119](ws119/ws.md) | MG003 | インストーラの作り直し | planning | p001 planned（要件の案） |
 | [WS120](ws120/ws.md) | MG006 | 音楽アプリ（fg019） | planning | p001（設計、m4a だけ・AAC を独自実装）。標準 app の開発は WS131 の後 |
-| [WS121](ws121/ws.md) | MG006 | Web ブラウザでのアクセラレーションつきのビデオ再生（fg019） | planning | p001 |
+| [WS121](ws121/ws.md) | MG006 | Web ブラウザでのアクセラレーションつきのビデオ再生（fg019） | planning | p001（2026-10-05 Q1 の担当、P2 が q775 で設計中、ベータ2） |
 | [WS122](ws122/ws.md) | MG006 | 動画プレーヤアプリ（fg019） | planning | p001 |
 | [WS123](ws123/ws.md) | MG006 | VA-API のライブラリ | canceled（2026-10-02 user、アプリが Vulkan Video を直接使う） | — |
 | [WS124](ws124/ws.md) | MG002 | GNU Emacs の package（fg019） | planning | p001・p002 planned |
@@ -559,7 +559,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | P2（流れ B・D） | q683 BUG-170 → q684 BUG-158 → q685 → q686 → q687 → q688 → q689（q677 の後）、合間に q682 WS132 の設計 → q692 WS037 |
 | T1（T2） | Q1 が集めた依頼をまとめて流す。最初は TQ-1 の残り（[test-queue.md](test-queue.md)） |
 | 次の候補 | WS129 p003〜p005、ws131-p014 の残り、WS138・WS139・WS140、WS080 p004 |
-| 別セッション（ユーザー） | WS083 → WS122 → WS121 |
+| 別セッション（ユーザー） | WS083 |
 
 ---
 

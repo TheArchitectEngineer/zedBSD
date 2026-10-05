@@ -246,7 +246,7 @@ user「P4のみを実行するqueue.mdを書いてください。22時の5時間
 
 | Queue | Phase | 結果 | 残り |
 | --- | --- | --- | --- |
-| [q584](history/queue-q584.md) | [WS074 p172](ws074/phase172/phase.md) | uncleared | browser 全文 review 97/209、残 112。p172 が後続 browser Phase の前提 |
+| [q584](history/queue-q584.md) | [WS074 p172](ws074/phase172/phase.md) | uncleared（2026-10-05 Q1: p172 は Codex の browser3（b-q590・b-q594〜b-q598、main の同じ番号とは別）で 2026-10-03 whole cleared。残り無し） |
 | [q585](history/queue-q585.md) | [WS112 p001](ws112/phase001/phase.md) | uncleared | D1（Fedora/Arch の boot 適用）のユーザー回答待ち |
 | [q586](history/queue-q586.md) | [WS113 p001](ws113/phase001/phase.md) | uncleared | D-ATOMIC 未決 |
 | [q587](history/queue-q587.md) | [WS114 p007](ws114/phase007/phase.md) | uncleared | CSD/SSD 実装済み、最終 runtime・clipboard・Textedit・boot 等 |
@@ -266,6 +266,10 @@ user「P4のみを実行するqueue.mdを書いてください。22時の5時間
 継続の dispatch（2026-10-02 user「N=4で週次利用制限に達するまで作業してください」「作業を開始しましょう。」）: Q1 は Master の Outlook の fg019 の planned Phase を各担当の線に順に投入する。ユーザーの判断が要る Phase（planning）は投入しない。
 
 担当の線は Master の [Upcoming Work Outlook](master.md#upcoming-work-outlook)。予約（承認は投入時に確認）: P1 → デモの image を CI 設定の土台へ → ws005-p018 → ws033-p001 → ws118-p001。P2 → ws099-p021 → ws094-p014。P3 → ws115-p001（素の GTK4 移植の契約）→ ws115-p004〜。P4 → ws127-p001 → ws089-p010 → ws095-p005。
+
+## 2026-10-05 WS074 の Queue の番号の注
+
+WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ番号の Queue とは別。WS074 の中では b-q590 などと読む（[ws074/ws.md](ws074/ws.md) の「記録の照合」）。BUG-181 の直しは q758（P2、f9b54ab6、T1-189c PASS、実機は UAT）。
 
 ## 2026-10-05 優先度の規則（ユーザー）
 

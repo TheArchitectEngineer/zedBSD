@@ -128,3 +128,5 @@ Event three-dedicated-lanes-and-browser-goals-20261002: userが[P8バグ修正�
 2026-10-02 / initial-A-checkpoints: q584 checkpoint06/main c2743455c、q585 survey/main 5acb47a9c、q586 source-audit/main 8021bc210をレビュー統合・各ACK。全3Queueは実行中、clearanceなし。B next q587をuser依頼で予約し、q581〜q583の現行scopeは保持。
 
 2026-10-02 / B-checkpoint-df66db5e: [q581](queue-q581.md)調査cleared、[q583](queue-q583.md)部分診断cleared/whole p017 unclearedをA435a62126へ統合。q587/p007装飾の開始を投影。B次ID q588/q589予約、same-session連続投入のuser指示をprotocolへ保存。GitHub publication保留、pushなし。
+
+2026-10-05 follow-up（Q1）: q584 の後、ws074-p172 は Codex の browser3 の局所の Queue（b-q590・b-q594〜b-q598、branch の archive は main に無い）で 2026-10-03 whole cleared。main の q590〜q598 は別の作業（queue.md）。WS074 は 2026-10-05 Q1 に戻った。
