@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **WS161 の判断（2026-10-05、P1 の p001 の設計、plan/ws161/phase001/phase.md §7）**: H1 新しい UAPI include/uapi/fido.h（FIDO だけの raw の node /dev/fidoN）[足す]、H2 外部 package libfido2（BSD-2）＋ libcbor（MIT）を OpenSSL の上に [案 A]、H3 root の sessiond が package の libfido2 を link してよいか [WS162 の設計で]、H4 試験用の kernel だけの loopback の FIDO device [足す]、H5 NFC の reader [5330 を先に調べる]、H6 /dev/fidoN を seat の user に渡す [可]。
 - **WS163 の判断（2026-10-05、P1 の p001 の設計、plan/ws163/phase001/phase.md §7。H3 は root の daemon の口なので p002 は判断まで止める）**: H1 PIN が効く所 [greeter の login と lock の解除だけ。sudo・su・passwd・SSH・console は password だけ]、H2 試行の上限 [連続 5 回の失敗で PIN を無効、password の login まで。再起動でも保つ]、H3 sessiond（root）に `PIN SET`・`PIN REMOVE`・`PIN?` を足す [足す。新しい setuid の道具は作らない]、H4 保存 [/etc/keiland/pins、0600 root、SHA-512 crypt]、H5 6 桁の数字の入力を PIN の試行として扱い AUTH・UNLOCK は変えない（password は WS160 で 8 文字以上）[可]。
 - **WS164 の判断（2026-10-05、P1 の p001 の設計、plan/ws164/phase001/phase.md §6）**: H1 各 account の最初の login だけ（`welcome.done`、Settings の About から再表示）[可]、H2 新しい app でなく Settings の mode で、終わりに Files の Today を開く [可]、H3 5 段（Welcome・Network・Look・Keys・Done、Back・Next・Skip、Languages は WS154 の後に入れる）[可]。H4（Settings の hook を WS164 が書く）は Q1 が調整として承認（P2 の WS089 の file に触れる時は Q1 が順を決める）。
 - **WS154 の判断（2026-10-05、P2 の p001 の設計、plan/ws154/phase001/phase.md）**: SKK の範囲から 接頭・接尾辞（>）・abbrev（/）・数値の変換（#）・補完（Tab）・注釈 を後回し（Future Work）にしてよいか [後回し]。Q1 が技術の裁量で決めた物: 設定の変更で IME を起動し直す（数百 ms IME が無い、protocol は変えない）、SKK の mode を言語の ID（skk・skk-katakana・skk-latin・skk-wide）にする。
