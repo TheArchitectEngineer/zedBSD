@@ -33,7 +33,7 @@ Primary Milestone: MG006
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| p000 | **UI の mock（夕方の UAT にあると嬉しい・必須でない）**: メーラの app の外側だけ。account・folder の一覧、メールの一覧、読む画面、書く画面（送信は「backend が無い」）。data は固定の試験 data。API・backend は作らない | planning（q744、P2、WS170 の mock の後） | — |
+| p000 | **UI の mock（夕方の UAT にあると嬉しい・必須でない）**: メーラの app の外側だけ。account・folder の一覧、メールの一覧、読む画面、書く画面（送信は「backend が無い」）。data は固定の試験 data。API・backend は作らない | in-progress（q744、P2。実装・host の PNG・build 済み、QEMU は T1 待ち。[phase](phase000/phase.md)） | — |
 | p001 | 要件と設計（API・許可・backend・app、Gmail・Outlook への道） | planning | — |
 | p002 | compositor のメールの API と許可（host の試験） | planning | p001 |
 | p003 | IMAP4・SMTP の backend | planning | p001 |
