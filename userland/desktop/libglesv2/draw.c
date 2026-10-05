@@ -287,8 +287,7 @@ gles_read_pixels(
 	}
 
 	/* Everything recorded before is done: the frame's resources are free again. */
-	state->frame++;
-	gles_collect(state);
+	gles_frame_finished(state, 1);
 
 	/* Succeeded: the rows. */
 	return 0;
@@ -3243,7 +3242,7 @@ gles_draw_descriptors(
 	if (same)
 		return cache->set;
 
-	/* A set from the first pool with room, else from a new pool. */
+	/* A set from the first pool with room that no frame in flight uses (ws068-p009), else from a new pool. */
 	set = VK_NULL_HANDLE;
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -3251,6 +3250,8 @@ gles_draw_descriptors(
 	allocate.pSetLayouts = &program->set_layout;
 	result = VK_ERROR_OUT_OF_POOL_MEMORY;
 	for (pool = state->pools; pool != NULL; pool = pool->next) {
+		if (pool->frame != state->frame && pool->frame > state->done)
+			continue;
 		allocate.descriptorPool = pool->pool;
 		result = vkAllocateDescriptorSets(state->device, &allocate, &set);
 		if (result == VK_SUCCESS)
@@ -3291,6 +3292,9 @@ gles_draw_descriptors(
 		if (result != VK_SUCCESS)
 			return VK_NULL_HANDLE;
 	}
+
+	/* The pool serves the frame being recorded. */
+	pool->frame = state->frame;
 
 	/* The uniform block (its offset is the draw's dynamic offset). */
 	count = 0U;

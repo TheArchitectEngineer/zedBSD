@@ -17,7 +17,12 @@
  * zegl_current_context(), opens its draw surface's frame with
  * zegl_frame_begin() and records into it inside zegl_frame_pass();
  * eglSwapBuffers submits and presents the frame and then tells libGLESv2
- * that its per-frame resources are free again.
+ * which frames' resources are free again.
+ *
+ * A window surface's frame is not waited for when it is presented
+ * (ws068-p009): it runs on the GPU while the next one is recorded, in the
+ * other slot, and the present waits for the frame before it instead.  A
+ * flush (glReadPixels) and a pbuffer's frame are waited for at once.
  */
 
 #ifndef ZEGL_H
@@ -43,6 +48,13 @@
 /* How many configs a display offers, and the images a swapchain may have. */
 #define ZEGL_CONFIGS		8U
 #define ZEGL_IMAGES		8U
+
+/*
+ * How many frames of a window surface may be in flight (ws068-p009): the
+ * next frame is recorded while the GPU still runs the one presented
+ * before it, each frame in a slot of its own.
+ */
+#define ZEGL_SLOTS		2U
 
 /*
  * One framebuffer configuration an application may choose.
@@ -155,8 +167,19 @@ struct zegl_surface {
 	VkFramebuffer framebuffers[ZEGL_IMAGES];
 	uint32_t image_count;
 
-	/* The frame's command buffer, the fence of its submission, and the acquire and render semaphores. */
+	/*
+	 * Each slot's command buffer, the fence of its last submission and
+	 * whether that one was not waited for yet, and its acquire and render
+	 * semaphores; the slot the frame records in, and its objects (copies of
+	 * the slot's, which libGLESv2 records into).
+	 */
 	VkCommandPool pool;
+	VkCommandBuffer commands[ZEGL_SLOTS];
+	VkFence fences[ZEGL_SLOTS];
+	int pending[ZEGL_SLOTS];
+	VkSemaphore acquires[ZEGL_SLOTS];
+	VkSemaphore renders[ZEGL_SLOTS];
+	unsigned slot;
 	VkCommandBuffer command;
 	VkFence fence;
 	VkSemaphore acquired;
@@ -205,8 +228,13 @@ struct zegl_gles {
 	/* libGLESv2's state, NULL until its first call. */
 	void *state;
 
-	/* Called by eglSwapBuffers once a frame is done, and by eglDestroyContext; NULL until libGLESv2 sets them. */
-	void (*frame_done)(struct zegl_context *context);
+	/*
+	 * Called by eglSwapBuffers once a frame is submitted (finished nonzero
+	 * when that frame is done too, zero when it may still run and only the
+	 * ones before it are done), and by eglDestroyContext; NULL until
+	 * libGLESv2 sets them.
+	 */
+	void (*frame_done)(struct zegl_context *context, int finished);
 	void (*release)(struct zegl_context *context);
 
 	/* Called before the draw surface's frame is submitted by eglSwapBuffers, and by eglMakeCurrent for the context current so far; NULL until libGLESv2 sets it. */
@@ -247,6 +275,14 @@ EGLint zegl_frame_begin(struct zegl_surface *surface);
 void zegl_frame_pass(struct zegl_surface *surface, const VkClearValue *clear);
 void zegl_frame_leave_pass(struct zegl_surface *surface);
 EGLint zegl_frame_flush(struct zegl_surface *surface);
+
+/*
+ * Waits until everything submitted to the display's queue is done, the
+ * frames in flight too (glFinish, and a wait for an earlier frame); and
+ * reports, without waiting, whether a surface has no frame in flight.
+ */
+EGLint zegl_retire(struct zegl_display *display);
+int zegl_surface_settled(struct zegl_surface *surface);
 
 /* The depth and stencil format window surfaces and renderbuffers use, and its aspects (vulkan.c). */
 VkFormat zegl_depth_format(struct zegl_display *display, VkImageAspectFlags *aspects);
