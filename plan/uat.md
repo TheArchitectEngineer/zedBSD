@@ -209,6 +209,7 @@ S1（2026-10-03、[WS133](ws133/ws.md) の s1-procedure.md・s1-results.md）の
 | --- | --- | --- |
 | 1 | 起動の logo の animation が最初は速く、その後に通常に戻る。実時間で進める必要 | [BUG-193](bugs/BUG-193.md) |
 | 2 | Terminal を全画面にすると戻れない、F11 で全画面にも戻すこともできない。全画面はゲーム用で scanout を占有する物、戻る key は compositor が持つ | [BUG-194](bugs/BUG-194.md) |
+| 3 | タッチパッドでスクロールなどができない。Q1 が dmesg を読み、DSDT が読めず（AML の stack の予算）native の touchpad が付いていないと分かった（image は ee2f8c7 = uat-0505c を確認） | [BUG-195](bugs/BUG-195.md) |
 
 ## 次の UAT で採る記録（2026-10-05 Q1）
 
