@@ -3,7 +3,7 @@
 # ws099-p019: 白樺・湖の背景を共通ソースと3 OSの成果物に収録する
 
 Parent: [WS099](../ws.md)
-Status: planned（2026-10-02 ベータ1の計画: user の決定は済み、再開資料あり。exact scope と 3h の上限は Queue の投入で確定）
+Status: in-progress（2026-10-06 P1 実装済み・T1 の試験待ち。下の「2026-10-06 P1」）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: q593予約（Agent A、未実行。最新user wrap-up指示により後続投入を停止し、再開待ち）
@@ -44,3 +44,22 @@ mainが旧v2-soft-b.pngを目視確認。既存wallpaper.ppm（1280x800、SHA256
 ## 2026-10-05 夜 ユーザーの追加
 
 「壁紙が1枚しか入っていない。前に生成した抽象的な壁紙も、とりあえず収録しましょう。」→ 範囲に、前に生成した抽象の壁紙（v2-soft-b ほか、この phase の「Current evidence」）を release の image に入れることを足す。今の image は Birch-Lake だけが入っている（Lakeside は tree にあるが image に入っていない見込み、確かめる）。
+
+## 2026-10-06 P1（Q1 の依頼: UAT のコメントの最優先の 5 件の 5 件目）
+
+調べた事実:
+- zedBSD の image には build が入れる壁紙が無かった。`/usr/share/keiland/wallpaper.png`（Birch-Lake）は試験・UAT の image を作る script の `--file` だけが入れ（例 `plan/ws035/tests/build-login-image.sh`）、release の config（`config/release/config-amd64-beta1.mk`）では 1 枚も入らない。
+  生成の抽象の 5 枚（Aurora・Dawn・Lagoon・Meadow・Twilight、`userland/desktop/wallpapers/generate.py`、ws089-p009）は `ZEDBSD_KEILAND_WALLPAPERS := y` の試験の config だけ。`Lakeside.png` は tree にあるがどの image にも入らない。
+- 「前に生成した抽象的な壁紙」はこの生成の 5 枚と解釈した（旧記録の「直線的な抽象版」は今回も見つからない: main の `build/ws035-wallpaper/` は `wallpaper.ppm`・`wallpaper-1080.ppm` だけ）。
+- Settings（`userland/desktop/settings/look.c`）は既定（`wallpaper.png`、tile「Kei」）と `wallpapers/` の PNG・JPEG を名前順に最大 7 枚。
+
+変更（`userland/desktop/wallpapers/Makefile`・`userland/desktop/keiland-linux.mk`・`keiland-freebsd.mk`）:
+- zedBSD: desktop（`wayland`）の入る image では既定で `ZEDBSD_KEILAND_WALLPAPERS=y` とし、build が `/usr/share/keiland/wallpaper.png`（= `Birch-Lake.png`、既定）と `/usr/share/keiland/wallpapers/` に `Lakeside.png` と生成の 5 枚を入れる（mode 0644）。試験の `ZEDBSD_TEST_EXTRA_FILES` が同じ宛先を持つ時はそちらが勝つ（apps.conf と同じ型）。`:= n` で全部を外せる。
+  Settings の一覧は Kei（Birch-Lake）・Aurora・Dawn・Lagoon・Lakeside・Meadow・Twilight の 7 枚（上限 8 の内）。
+- Linux・FreeBSD: 既に Birch-Lake を既定に 5 枚を入れていたので、catalogue に `Lakeside.png` を足した（3 OS で同じ一覧）。
+- 確認: `make --eval print-…` で CI・release・ws099 criteria の config は 7 件、`ZEDBSD_TEST_EXTRA_FILES` に `wallpaper.png` がある時は 6 件、pc98（desktop 無し）は 0 件。生成の target を BUILD で作り（約 17 s、5 枚 約 5.3 MB）、2 回の生成が byte で一致。image の build は未実施（T1）。C の変更は無い。
+
+T1 への依頼（未実行）:
+- image: agent/p1 の commit（merge 後の main）で `plan/tools/guest/test-image.sh plan/ws170/tests/config-amd64-phone.mk BUILD`（CI の config 系、extra files 無しでも入ること）。
+- 試験と合否: (1) guest の `ls -l /usr/share/keiland/wallpaper.png /usr/share/keiland/wallpapers/` に wallpaper.png と Aurora・Dawn・Lagoon・Lakeside・Meadow・Twilight の 6 枚（0644）。(2) desktop の起動で Birch-Lake が既定の壁紙（PNG）。(3) Settings > Wallpaper に 7 枚の tile（PNG）、Lakeside と Aurora を選ぶとそれぞれ壁紙が変わる（PNG）、Kei の tile で既定に戻る。
+- 結果の返し先: Q1。
