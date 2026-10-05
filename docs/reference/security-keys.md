@@ -50,7 +50,10 @@ same bytes go through on both systems:
 
 Each open has its own queue of `HIDRAW_QUEUE` (64) input reports, so two
 programs each see every report; when a queue is full its oldest report is
-dropped. Output reports from several opens go out one at a time, in the order
+dropped. A program that must be alone with the key, such as the login's
+security key check, grabs it with `HIDRAW_GRAB`: no other program can then
+send the key a request that the user's touch would answer, nor read the
+answers. Output reports from several opens go out one at a time, in the order
 they were written. A CTAPHID program tells its own traffic apart by its
 channel ID.
 
@@ -60,6 +63,7 @@ channel ID.
 | `HIDRAW_GET_DESCRIPTOR` | `struct hidraw_descriptor` | The report descriptor as the device gave it (at most 4096 bytes) |
 | `HIDRAW_GET_NAME` | `struct hidraw_text` | The product's name, ended by a NUL (at most 63 bytes) |
 | `HIDRAW_GET_PHYS` | `struct hidraw_text` | The device's place, `usbB/portP/deviceD/interfaceI` |
+| `HIDRAW_GRAB` | `int` | Nonzero takes the device for this open alone; 0 gives it back. While an open holds it, the other opens receive no input report and their writes fail with `EBUSY`; a second grab fails with `EBUSY`. The last close of the holding file gives it back |
 
 Any other request fails with `ENOTTY`. The node's arrival and removal are
 posted to `/dev/system` as an input event (`KERN_SYSTEM_EVENT_INPUT`) whose

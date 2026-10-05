@@ -62,6 +62,8 @@ struct drv_hidraw {
 	struct wait_queue waitq;
 	struct hidraw_reader *readers;
 	unsigned registered;
+	/* The open that holds the device alone (HIDRAW_GRAB), or NULL. */
+	struct hidraw_reader *grabber;
 
 	/*
 	 * Serializes the outputs with each other and with the withdrawal,
@@ -101,6 +103,7 @@ static void hidraw_slot_release(struct drv_hidraw *hidraw);
 static void hidraw_finalize(void *data);
 static void hidraw_post(const struct drv_hidraw *hidraw, uint32_t action);
 static void hidraw_copy_text(char *target, const char *source);
+static int hidraw_grab(struct drv_hidraw *hidraw, struct hidraw_reader *reader, int grab);
 
 /* The operations of every raw device. */
 static const struct cdev_ops hidraw_cdev_ops = {
@@ -245,6 +248,10 @@ drv_hidraw_input(
 	irq = spin_lock_irqsave(&hidraw->lock);
 
 	for (reader = hidraw->readers; reader != NULL; reader = reader->next) {
+		/* While one open holds the device, only it hears the reports. */
+		if (hidraw->grabber != NULL && reader != hidraw->grabber)
+			continue;
+
 		/* A full ring gives up its oldest report. */
 		if (reader->count == HIDRAW_QUEUE) {
 			reader->head = (reader->head + 1U) % HIDRAW_QUEUE;
@@ -391,9 +398,11 @@ hidraw_close(
 	if (hidraw == NULL || reader == NULL)
 		return 0;
 
-	/* Takes the reader off the device's list. */
+	/* Takes the reader off the device's list, and the grab with it. */
 	irq = spin_lock_irqsave(&hidraw->lock);
 
+	if (hidraw->grabber == reader)
+		hidraw->grabber = NULL;
 	for (link = &hidraw->readers; *link != NULL; link = &(*link)->next) {
 		if (*link == reader) {
 			*link = reader->next;
@@ -485,6 +494,8 @@ hidraw_write(
 	size_t size)
 {
 	struct drv_hidraw *hidraw;
+	unsigned long irq;
+	int held;
 	int error;
 
 	/* The device, and a report that fits: the ID's byte and at most the largest output report. */
@@ -493,6 +504,15 @@ hidraw_write(
 		return -ENODEV;
 	if (size < 2U || size > (size_t)hidraw->info.output_size + 1U)
 		return -EINVAL;
+
+	/* Another open holds the device. */
+	irq = spin_lock_irqsave(&hidraw->lock);
+
+	held = hidraw->grabber != NULL && hidraw->grabber != file->f_data;
+
+	spin_unlock_irqrestore(&hidraw->lock, irq);
+	if (held)
+		return -EBUSY;
 
 	/* The transport sends it, one output at a time. */
 	error = mutex_lock_interruptible(&hidraw->output_lock);
@@ -524,6 +544,7 @@ hidraw_ioctl(
 	struct hidraw_descriptor *descriptor;
 	struct hidraw_text text;
 	struct drv_hidraw *hidraw;
+	int grab;
 	int error;
 
 	/* The device the node was opened on. */
@@ -559,6 +580,12 @@ hidraw_ioctl(
 		kern_memset(&text, 0, sizeof(text));
 		kern_memcpy(text.value, hidraw->physical_path, sizeof(text.value));
 		error = copyout(&text, argument, sizeof(text));
+		break;
+	case HIDRAW_GRAB:
+		/* Takes the device for this open, or gives it back. */
+		error = copyin(argument, &grab, sizeof(grab));
+		if (error == 0)
+			error = hidraw_grab(hidraw, file->f_data, grab);
 		break;
 	default:
 		/* Anything else is not a raw device's request. */
@@ -726,4 +753,38 @@ hidraw_copy_text(
 		length = HIDRAW_TEXT_MAX - 1U;
 	kern_memcpy(target, source, length);
 	target[length] = '\0';
+}
+
+/*
+ * Takes the device for one open (grab nonzero) or gives it back (0).
+ * Returns 0, or EBUSY when another open holds it.
+ */
+static int
+hidraw_grab(
+	struct drv_hidraw *hidraw,
+	struct hidraw_reader *reader,
+	int grab)
+{
+	unsigned long irq;
+	int error;
+
+	/* The grab changes only for its holder, or a free device. */
+	error = 0;
+	irq = spin_lock_irqsave(&hidraw->lock);
+
+	if (hidraw->grabber != NULL && hidraw->grabber != reader)
+		error = EBUSY;
+	else if (grab)
+		hidraw->grabber = reader;
+	else
+		hidraw->grabber = NULL;
+
+	spin_unlock_irqrestore(&hidraw->lock, irq);
+
+	/* Reports a device another open holds. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device is this open's alone, or free. */
+	return 0;
 }

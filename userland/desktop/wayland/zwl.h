@@ -1325,6 +1325,13 @@ int zwl_compose_output_open(struct zwl_server *server);
 void zwl_compose_output_close(struct zwl_server *server);
 int zwl_compose_draw(struct zwl_server *server);
 int zwl_compose_complete(struct zwl_server *server);
+
+/* The test images' screen capture (shot.c, or shot-none.c elsewhere; ws173-p002). */
+int zwl_shot_enabled(void);
+void zwl_shot_open(struct zwl_server *server);
+void zwl_shot_close(struct zwl_server *server);
+void zwl_shot_tick(struct zwl_server *server);
+void zwl_shot_complete(struct zwl_server *server);
 void zwl_compose_quiesce(struct zwl_server *server);
 void zwl_compose_close(struct zwl_server *server);
 VkResult zwl_import_adopt(struct zwl_object *buffer, VkImage image, VkDeviceMemory memory, uint32_t width, uint32_t height, VkFormat format);

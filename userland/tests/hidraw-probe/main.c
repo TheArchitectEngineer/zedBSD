@@ -89,6 +89,7 @@ main(
 	int first;
 	int second;
 	int same;
+	int grab;
 	int error;
 
 	/* The node: -f names one, else the first FIDO one. */
@@ -192,6 +193,34 @@ main(
 	if (count >= 0 || errno != EINVAL)
 		return probe_fail("short-write", count >= 0 ? EEXIST : errno);
 	printf("HIDRAW short-write refused ok\n");
+
+	/* The grab: the first open alone; the second cannot write and hears nothing. */
+	grab = 1;
+	error = ioctl(first, HIDRAW_GRAB, &grab);
+	if (error != 0)
+		return probe_fail("grab", errno);
+	error = ioctl(second, HIDRAW_GRAB, &grab);
+	if (error == 0 || errno != EBUSY)
+		return probe_fail("grab-second", error == 0 ? EEXIST : errno);
+	memset(report, 0, sizeof(report));
+	count = write(second, report, sizeof(report));
+	if (count >= 0 || errno != EBUSY)
+		return probe_fail("grabbed-write", count >= 0 ? EEXIST : errno);
+	error = probe_send(first, channel, PROBE_CMD_WINK, NULL, 0U);
+	if (error == 0)
+		error = probe_receive(first, channel, &command, message, sizeof(message), &length);
+	if (error != 0 || command != PROBE_CMD_WINK)
+		return probe_fail("grabbed-wink", error != 0 ? error : EPROTO);
+	(void)fcntl(second, F_SETFL, O_NONBLOCK);
+	count = read(second, report, sizeof(report));
+	if (count >= 0 || errno != EAGAIN)
+		return probe_fail("grabbed-read", count >= 0 ? EEXIST : errno);
+	(void)fcntl(second, F_SETFL, 0);
+	grab = 0;
+	error = ioctl(first, HIDRAW_GRAB, &grab);
+	if (error != 0)
+		return probe_fail("ungrab", errno);
+	printf("HIDRAW grab ok\n");
 
 	/* An unknown command answers ERROR with ERR_INVALID_CMD. */
 	error = probe_send(first, channel, PROBE_CMD_UNKNOWN, NULL, 0U);

@@ -37,7 +37,11 @@ p001 §9.2（承認 U1・U3・U4）と §9.10 の見直しの B1・M1・M2・m6�
 - QEMU（T1）: **未実施**。依頼: 試験の config の image で `hidraw-p002.sh`。
 - 実機: **未実施**（YubiKey の interrupt OUT は p006 の UAT）。
 
+## HIDRAW_GRAB（判断 V1 の (a)、2026-10-05 ユーザーの承認）
+
+`HIDRAW_GRAB`（`_IOW('H', 4, int)`）: 掴んだ open だけが入力の report を受け、他の open の write は `EBUSY`、2 つ目の grab も `EBUSY`、掴んだ file の最後の close で放す。docs（`docs/reference/security-keys.md`）を先に直し、`hidraw.c` と `hidraw-probe`（grab の確かめ）を足した。build warning 0。T1 の `hidraw-p002.sh` が grab も確かめる（probe の "HIDRAW grab ok"）。
+
 ## 残り
 
 - T1 の結果。
-- 判断 V1（touch hijack、排他の grab の UAPI）・V2（OTP の keyboard の interface）。
+- 判断 V1 は (a) に決まり実装した。V2 は今のまま（ユーザー）。

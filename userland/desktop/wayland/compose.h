@@ -145,6 +145,8 @@ struct zwl_compose {
 	VkFence fence;
 	VkSemaphore acquired;
 	struct vkdemo_display output;
+	/* The swapchain images can be a copy's source (a test image's capture, ws173-p002). */
+	unsigned readback;
 	unsigned output_prepared;
 	unsigned output_open;
 	VkFormat format;
@@ -238,5 +240,8 @@ const struct zwl_import *zwl_compose_surface_image(const struct zwl_object *surf
 /* The display's acquisition and release through libkeiland-backend (os.c, ws131-p008). */
 VkResult zwl_os_display_acquire(struct zwl_server *server, VkPhysicalDevice physical, VkDisplayKHR display);
 void zwl_os_display_release(struct zwl_server *server, VkPhysicalDevice physical, VkDisplayKHR display);
+
+/* The capture's copy of a frame's swapchain image (shot.c, ws173-p002). */
+void zwl_shot_record(struct zwl_server *server, VkCommandBuffer command, VkImage image);
 
 #endif

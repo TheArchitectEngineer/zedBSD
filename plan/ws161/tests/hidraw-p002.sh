@@ -2,7 +2,8 @@
 # ws161-p002: the raw HID node on a running zedBSD guest of plan/ws161/tests/config-amd64-hidraw.mk (the test kernel's
 # loopback security key).
 #  1. /dev/input/hidraw0 is there, mode 0600 root (devfs's own, no seat given), and not in the root of /dev.
-#  2. hidraw-probe: the requests, two opens, a read that does not wait, CTAPHID INIT, a PING over 6 packets, WINK, a
+#  2. hidraw-probe: the requests, two opens, a read that does not wait, CTAPHID INIT, a PING over 6 packets, WINK, the
+#     grab (the other open cannot write, EBUSY, and hears nothing), a
 #     write of the wrong length refused, an unknown command answered ERROR ("HIDRAW PASS").
 #  3. The probe as a user that is not root (kei, else nobody) cannot open it (EACCES).
 #  4. The system's events: the kernel's log names the node (hidraw: /dev/input/hidraw0 ... usage=f1d0:0001).
