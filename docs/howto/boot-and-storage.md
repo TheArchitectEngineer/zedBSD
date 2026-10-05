@@ -265,6 +265,13 @@ registry.
 ## Failure diagnosis
 
 - No loader under SeaBIOS: check whether the image is UEFI-only.
+- A graphical boot (logo, quiet kernel messages) that stops before the login:
+  on amd64 UEFI, power on and hold Ctrl and Shift while tapping Space until
+  kernel messages scroll.  That one boot shows the kernel's messages on the
+  console and logs in on the console, so the last message before the stop
+  stays on the screen.  Ctrl alone keeps the graphical login, Shift alone keeps
+  the logo.  `zedbsd.cfg` is not changed.  See
+  [kernel boot parameters](../reference/kernel-boot-parameters.md) Section 7c.
 - Configuration/kernel error before the kernel banner: inspect the selected
   FAT file, exact path, required directive and firmware path.
 - Root-selection failure: check the complete parameter record, unique selectors,

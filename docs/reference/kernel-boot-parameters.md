@@ -310,6 +310,9 @@ kmsg=quiet       messages go to the log buffer (dmesg, sysctl kern.msgbuf)
 - The UEFI loader also reads `kmsg=quiet`: it draws no progress blocks.
 - For kernel development leave `kmsg=` out or write `kmsg=console`, and use
   `login=console` (Section 7b).
+- On amd64 UEFI, holding Ctrl while the loader runs gives the kernel
+  `kmsg=console` and no `logo=` for that one boot, whatever `zedbsd.cfg` says
+  (Section 7c).
 
 ## 7b. The login: login=
 
@@ -329,6 +332,8 @@ login=console    the console's getty (also what no login= means)
   (`/dev/gpu0`), no `/bin/wayland`, or the greeter fails three times in a
   row, `sessiond` ends and init starts `getty_console` (the console is then
   revealed by its read, Section 7a).  Serial and SSH logins are unchanged.
+- On amd64 UEFI, holding Shift while the loader runs gives the kernel
+  `login=console` for that one boot, whatever `zedbsd.cfg` says (Section 7c).
 
 ### The default and kernel development
 
@@ -338,6 +343,56 @@ default; the build menu's "Graphical boot").  For kernel development set it to
 `n` (the messages on the console and the console login), or edit the lines on
 a machine's ESP (`/zedbsd.cfg`): remove the three tokens or write
 `kmsg=console login=console`.
+
+## 7c. Boot keys (amd64 UEFI)
+
+The amd64 UEFI loader (`BOOTX64.EFI`) reads two keys while it runs and
+rewrites the parameter record it hands the kernel for that one boot.  The file
+`zedbsd.cfg` and its format do not change; the keys are the way to get a
+readable boot from a machine whose configuration is graphical and quiet.
+
+| Key held | Record handed to the kernel | Screen |
+| --- | --- | --- |
+| Ctrl (left or right) | every `kmsg=` and `logo=` token removed, `kmsg=console` appended | no logo; the loader asks the firmware for 640x480 when `video=` names no mode (a wish: the current mode stays when the firmware has none) |
+| Shift (left or right) | every `login=` token removed, `login=console` appended | the logo as configured |
+| Both | both rewrites | no logo |
+| Neither | unchanged, byte for byte | unchanged |
+
+- **How to press them.** Turn the machine on, then hold Ctrl (or Shift, or
+  both) and tap Space repeatedly until the logo appears or kernel messages
+  start to scroll.  The loader never waits for a key; it reads the firmware's
+  key queue when it starts and again right after reading `zedbsd.cfg`.  A
+  modifier held together with Space is always reported by the firmware; a
+  modifier held alone is reported only by firmware that supports exposed
+  modifier keys, and holding it from power-on is not reliable.  Shift with a
+  letter or digit may not be reported as Shift, which is why Space is used.
+- **What it means.** Ctrl shows the kernel's messages on the console from the
+  start, so the last message before a stop stays on the screen.  Shift makes
+  `sessiond` end at once and init start the console's getty, so no graphical
+  session starts (Section 7b).  Holding both gives a fully textual boot.  Ctrl
+  alone keeps `login=graphical`, so the display driver and the greeter may
+  still take the screen over later.
+- **Rewrite rules.** Tokens are matched by their whole name (the text before
+  the first `=`), never by a value: `rootpart=PARTLABEL=kmsg=quiet` is kept.
+  Dropping comes before appending because the kernel refuses a known name
+  given twice.  When an appended token would make the record longer than 3071
+  bytes it is left out; the kernel's default for an absent `kmsg=` or
+  `login=` is the console, so the meaning is the same.
+- **Messages.** When a key is seen the loader writes
+  `Boot: kernel messages (Ctrl)` and/or `Boot: console login (Shift)` and the
+  line `A64 PARAMS OVERRIDE <record>` to the firmware console and the debug
+  port.  On screen these lines are best effort: a mode change, the logo or the
+  kernel's console may cover them at once.  `dmesg` keeps the record the
+  kernel received (`boot: parameters: ...`), and `sysctl kern.boot.login`
+  reports the login.
+- **Firmware notes.** The keys need the firmware's extended console input
+  (UEFI 2.1 and later); without it the boot goes on as if no key were held.
+  Asking for exposed modifier keys also resets the keyboard's lock-key state
+  (NumLock, CapsLock, ScrollLock) to off.  Some firmware skips the USB
+  keyboard's initialization in its fastest boot setting, so the keys are not
+  seen; and some warns of a stuck key during POST when a key is held from
+  power-on.  Tapping Space with the modifier after POST avoids both.
+- The BIOS loaders (i386 PC/AT, PC-98, amd64 BIOS) do not read these keys.
 
 ## 8. Valid and invalid examples
 
@@ -391,7 +446,8 @@ zero candidates is fatal, while multiple candidates warn and use the first.
 The three loader implementations use the same bounded configuration parser.
 Exactly one `kernel=` directive selects a safe path relative to the selected
 FAT and is consumed by the loader. Every other nonempty line contributes one
-kernel-parameter token. The parser synthesizes `boot0=UUID=XXXX-XXXX` when
+kernel-parameter token; on amd64 UEFI the boot keys may then drop and append
+tokens of the assembled record (Section 7c). The parser synthesizes `boot0=UUID=XXXX-XXXX` when
 `boot0=` is absent and qualifies bare `overlay-root`, `overlay-data`, and
 file-form `swapN` values with `boot0:`. Explicit boot references and raw swap
 selectors beginning with `/dev/`, `UUID=`, `LABEL=`, `PARTUUID=`, or
@@ -404,8 +460,11 @@ direct-kernel production fallback.
 UEFI `EFI_LOADED_IMAGE_PROTOCOL.LoadOptions` is ignored unconditionally. It
 does not replace, prepend, append, or repair `/zedbsd.cfg`, and descriptor or
 opaque firmware data cannot prevent discovery of the required configuration.
+The only change the UEFI loader makes to the record after parsing comes from
+the boot keys (Section 7c).
 
-All four x86 paths use the same common parser and observable semantics:
+All four x86 paths use the same common parser and observable semantics; the
+boot keys of Section 7c are the one amd64 UEFI addition:
 
 | Platform | Required transport and runtime result |
 | --- | --- |

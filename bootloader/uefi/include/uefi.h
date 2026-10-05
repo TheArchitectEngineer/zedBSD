@@ -26,6 +26,7 @@ typedef uint64_t UINT64;
 #define EFI_UNSUPPORTED (0x8000000000000003ULL)
 #define EFI_BAD_BUFFER_SIZE (0x8000000000000004ULL)
 #define EFI_BUFFER_TOO_SMALL (0x8000000000000005ULL)
+#define EFI_NOT_READY (0x8000000000000006ULL)
 #define EFI_DEVICE_ERROR (0x8000000000000007ULL)
 #define EFI_OUT_OF_RESOURCES (0x8000000000000009ULL)
 #define EFI_NO_MEDIA (0x800000000000000cULL)
@@ -152,6 +153,50 @@ typedef struct efi_simple_text_output_protocol {
 	void *EnableCursor;
 	void *Mode;
 } EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
+
+/* One key event as the console input reports it: a scan code or a character. */
+typedef struct {
+	uint16_t ScanCode;
+	CHAR16 UnicodeChar;
+} EFI_INPUT_KEY;
+
+/* The modifier and toggle keys' state that came with one key event. */
+typedef struct {
+	UINT32 KeyShiftState;
+	uint8_t KeyToggleState;
+} EFI_KEY_STATE;
+
+/* One key event with the modifier state (the extended console input). */
+typedef struct {
+	EFI_INPUT_KEY Key;
+	EFI_KEY_STATE KeyState;
+} EFI_KEY_DATA;
+
+/* KeyShiftState: the other bits are meaningful only with this one. */
+#define EFI_SHIFT_STATE_VALID 0x80000000U
+#define EFI_RIGHT_SHIFT_PRESSED 0x00000001U
+#define EFI_LEFT_SHIFT_PRESSED 0x00000002U
+#define EFI_RIGHT_CONTROL_PRESSED 0x00000004U
+#define EFI_LEFT_CONTROL_PRESSED 0x00000008U
+
+/* KeyToggleState: valid, and modifier keys alone reported as events. */
+#define EFI_TOGGLE_STATE_VALID 0x80U
+#define EFI_KEY_STATE_EXPOSED 0x40U
+
+struct efi_simple_text_input_ex_protocol;
+
+/* The extended console input: key events with the modifier keys' state. */
+typedef struct efi_simple_text_input_ex_protocol {
+	EFI_STATUS (EFIAPI *Reset)(struct efi_simple_text_input_ex_protocol *,
+	    BOOLEAN);
+	EFI_STATUS (EFIAPI *ReadKeyStrokeEx)(
+	    struct efi_simple_text_input_ex_protocol *, EFI_KEY_DATA *);
+	EFI_EVENT WaitForKeyEx;
+	EFI_STATUS (EFIAPI *SetState)(struct efi_simple_text_input_ex_protocol *,
+	    uint8_t *);
+	void *RegisterKeyNotify;
+	void *UnregisterKeyNotify;
+} EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL;
 
 typedef EFI_STATUS(EFIAPI *EFI_ALLOCATE_PAGES)(int, int, UINTN,
 					       EFI_PHYSICAL_ADDRESS *);
@@ -388,5 +433,10 @@ static const EFI_GUID EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID = {
     0x23dc,
     0x4a38,
     {0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}};
+static const EFI_GUID EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID = {
+    0xdd9e7534,
+    0x7762,
+    0x4698,
+    {0x8c, 0x14, 0xf5, 0x85, 0x17, 0xa6, 0x25, 0xaa}};
 
 #endif

@@ -11,6 +11,10 @@ retaining machine-specific firmware I/O:
    PC-98 it reads `/BOOTZBSD.CFG`.  It loads the configured kernel, constructs
    the architecture handoff, changes CPU mode, and enters the kernel.
 
+The BIOS loaders do not read the boot keys (Ctrl for the kernel messages on
+the console, Shift for the console login) that the amd64 UEFI loader reads;
+see `docs/reference/kernel-boot-parameters.md` Section 7c.
+
 On non-GPT PC/AT images, Stage 2 begins at LBA 1; the amd64 hybrid GPT image
 places it in the BIOS boot partition beginning at LBA 34.  On PC-98, LBA 1
 remains the native NEC partition table and the 14-sector Stage 2 area occupies
