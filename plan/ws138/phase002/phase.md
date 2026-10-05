@@ -2,10 +2,10 @@
 
 # ws138-p002: 1 回の commit で PNG に切り替え、QEMU の試験を依頼する
 
-Status: planned
+Status: in-progress（2026-10-05 P1 generation17。切り替えを commit。他の WS の file は Q1 が `apply-q1.sh` で掛ける。T1 の結果まで cleared にしない）
 Disposition: normal
 Parent: [WS138](../ws.md)
-Queue: none
+Queue: Q1 の 2026-10-05 の割り当て（ベータ2、p001 → p002）
 設計: [ws.md](../ws.md) の D3・D8、U3・U5・U6・U7
 依存: p001 の commit が main に統合済み（PNG を読む code と tree の PNG の 2 枚。p001 の clearance は要らない）。ws.md の U2・U3・U5・U6 の決め
 時限の目安: 切り替え 3 h、試験の依頼の用意 1 h
@@ -212,4 +212,55 @@ image は 2 つ。同じ T が 1 つずつ順に QEMU で流す。合わせて 3
 
 ## 結果
 
-（未実施）
+2026-10-05 P1 generation17。切り替えの commit と、Q1 が main で掛ける script（U2）まで。QEMU・FreeBSD の build は T1 に依頼する（未実施）。
+
+### 自分の commit に入れた物
+
+| 項目 | 内容 |
+| --- | --- |
+| 既定の path | `sessiond.h`・`session.sh`・`look.c`（`LOOK_DEFAULT_PICTURE`）・`files.h`（`FM_WALLPAPER`）・`keiland-desktop.in`・`data/keiland.desktop`・`keiland-linux-deb/run.py` を `wallpaper.png` に。`main.c` の usage を `--wallpaper=/path.png` または `.jpg` に |
+| PPM の削除（U4） | `wallpaper.c` の P6 の道を消した（PPM は EINVAL）。Settings の一覧から `.ppm` を外した。tree の `Birch-Lake.ppm`・`Lakeside.ppm` を `git rm`（README の表は PNG の 2 行だけにし、元の PPM は git の履歴と書いた） |
+| generate.py（U5） | `ppm-to-png.py` の `write_png(…, 'best')` で `<名前>.png` を書く。5 枚を別々の process で作る（作れなければ順に）。画素は旧 generate.py の PPM と 5 枚とも同じ（`read_png` と `read_ppm` の比較） |
+| `ppm-to-png.py` | best の filter の計算を速くした（5 形の filter を `zip` でまとめて作る `filter_rows`、符号付きの絶対値の和を `bytes.translate` で）。出力の bytes は変えていない: tree の 2 枚を元の PPM から作り直して `cmp` で同じ、generate.py の 5 枚も最適化の前後で `cmp` で同じ |
+| make の data | `wallpapers/Makefile`・`keiland-linux.mk`・`keiland-freebsd.mk` を `.png` に。Linux・FreeBSD の既定は tree の `Birch-Lake.png`（U3）、`build/ws035-wallpaper` を見る道は消した。古い `.ppm` を消す install の規則は書かない（U6） |
+| 文書 | `LINUX.md`・`README.freebsd.md`・`keiland/wallpapers/README.md` |
+| 試験 | host 試験を PPM との比較から、Python の `read_png` の参照（`.rgb`）との比較に変え、PPM が EINVAL になることを足した。`plan/ws138/tests/wallpaper-time.sh`（新、手順 7 を下の形に変えた） |
+| look.c の直し | ws089 の host build（gcc の `-Wformat-truncation`）で `snprintf` が警告になったので、名前を `%.63s` で区切った（p001 の code。main の ws089 の host build は p001 の統合から壊れていた。下の script の 3 と合わせて直る） |
+
+手順 7 の改訂: U4 で PPM が読めなくなるので、「PNG と PPM の時間を比べる」は「PNG と JPEG の起動の時間（中央値）、PPM が errno 22 で拒まれること、session 中に thread の道で PNG・JPEG を選び既定に戻す時間」にした。
+
+### Q1 が main で掛ける script（U2）
+
+`plan/ws138/phase002/apply-q1.sh`。中身:
+
+1. 手順 4 の 5 つの sed の規則を、`userland/`・`tools/`・`plan/history`・evidence・`plan/ws138` の外で背景の `.ppm` を指す file（2026-10-05 の main で 196 file。ws.md の 194 との差は 10-04 の後に増えた試験）に掛ける。
+2. 規則で届かない所: `plan/ws075/demo/build-demo-image.sh`（loop）、`plan/ws099/tests/c7-contrast.sh`（一覧と basename）、`plan/ws089/tests/host-wallpaper.sh`（`$data` の既定と `Broken.png`）、
+   `plan/tools/settings/settings-p003.sh`（`wallpapers/*.ppm` の 1 枚目）、`plan/tools/showcase/showcase.sh`（tree の `*.ppm` の loop）、`plan/ws089/tests/settings-p004.sh`（comment）、
+   `plan/tools/keiland-launcher/check.py`・`plan/tools/files/host-render.c`（規則で済む。念のため）。
+3. `plan/ws089/tests/host-build.sh` に compat の header の link と、`wallpaper.c`・libz/libpng/libjpeg-compat の compile を足す（`shared-*.o` の名前で、host-wallpaper.sh の link にも入る）。
+
+自分の worktree で試しに掛けて確かめ、戻した（2026-10-05、main `dc78b6bd` の上）:
+
+- 196 file が変わる。`.sh` の `sh -n`、`.py` の `py_compile` が全て通る。`git diff --check` が空。
+- 残りの grep は手順 6 の (c) だけ: `check.py:37`（引数の試験）、`host-store.c:183`（key の形の試験）、`zdesktop-p108.sh:55・91`・`zdesktop-p109.sh:61・97`（一時の名前 `/tmp/wallpaper.ppm.saved`）、
+  `host-wallpaper.sh:10・34`（画面の撮影の `page.ppm`）、`ppm-to-png.py:4`（変換の道具の入力）。
+- `plan/ws089/tests/host-build.sh` と `host-wallpaper.sh`: PASS（4 枚の tile、`Broken.png` は error=22、縮小は PNG から。`build/ws089-host/wallpaper/page.png` を目で見た）。
+- `plan/tools/keiland-launcher/check.py`: ALL PASS。`plan/tools/files/host-build.sh`: build できる。
+
+### 確かめ（host だけ。QEMU・実機は未実施）
+
+- `plan/ws138/tests/run-host-wallpaper-decode.sh`: 10 項目すべて ok（PPM は error 22）。
+- zedBSD `make build/amd64/bin/wayland build/amd64/bin/settings build/amd64/bin/files`: rc 0、warning 0。`make ZEDBSD_KEILAND_WALLPAPERS=y build/amd64/wallpapers/Aurora.png`: 5 枚の `.png`。
+- Linux `make -f userland/desktop/keiland-linux.mk all`: rc 0、warning 0。`share/keiland/wallpaper.png` は tree の `Birch-Lake.png` と同じ bytes、`wallpapers/` に 5 枚の `.png`
+  （同じ build directory に以前の `.ppm` が残っているのは古い build の物。U6 で消さない）。FreeBSD は build していない（T1 の 3）。
+- generate.py の時間（U5 の記録）: 旧（PPM）14.5 s。PNG（best・zlib 9）を順に作ると 106 s、filter の計算の最適化で 73 s、5 process で 15.9 s（64 core の host）。
+  時間の大半は zlib の level 9（1 枚 8.5 s。level 6 なら 0.5 s で 10% 大きい）。process が作れない環境で順に作ると約 75 s。
+- 5 枚の preview（`build/ws138-gen/preview.png`）を目で見た: Aurora・Dawn・Lagoon・Meadow・Twilight。
+- `keiland-os-boundary`: PASS。style-check: 変えた C の file は base と同じ数（`wallpaper.c` は `setjmp` の 1 件だけ）。
+
+### T1 への依頼（Q1 経由）
+
+上の「試験の依頼」の 3 つ（Settings の image で settings-p009・p004・p007・`plan/ws138/tests/wallpaper-time.sh`、criteria の image で c7 と greeter の背景と boot-test、FreeBSD の backend-test）。
+`apply-q1.sh` を掛けた main の上で流す（掛けないと試験の script が `.ppm` を探す）。
+
+残り: T1 の結果の判定、画面の確認（Settings の tile、greeter、Files の hero）、背景の読み込みの時間の表、p003（全文規約の見直し）。

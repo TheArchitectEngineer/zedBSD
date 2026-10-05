@@ -10,9 +10,8 @@
  * (userland/desktop/wayland/glass.c) and Settings' Wallpaper page
  * (userland/desktop/settings/look.c): a PNG (libpng-compat; its transparent
  * parts over black) or a JPEG (libjpeg-compat) into RGB pixels, three
- * bytes each, the rows packed.  Until the default wallpaper becomes a PNG
- * (ws138-p002), a binary PPM (P6, maximum 255) is read as well.  The source
- * is compiled into each program; it keeps no state, so any thread may call
+ * bytes each, the rows packed (since ws138-p002 nothing else: a PPM is
+ * refused like any other file).  The source is compiled into each program; it keeps no state, so any thread may call
  * it.
  */
 

@@ -31,13 +31,9 @@
 /* Marks a parameter a callback has but does not use. */
 #define UNUSED_PARAMETER(name) ((void)(name))
 
-/* The first bytes of a PNG, of a JPEG (its SOI and the next marker's FF), and of a binary PPM. */
+/* The first bytes of a PNG and of a JPEG (its SOI and the next marker's FF). */
 #define WALLPAPER_PNG_MAGIC_SIZE	8U
 #define WALLPAPER_JPEG_MAGIC_SIZE	3U
-#define WALLPAPER_PPM_MAGIC_SIZE	2U
-
-/* How many digits a PPM header's number may have. */
-#define WALLPAPER_PPM_DIGITS_MAX	6U
 
 /*
  * The error manager of one JPEG decoding: libjpeg's own, and where its
@@ -60,8 +56,6 @@ static const unsigned char wallpaper_jpeg_magic[WALLPAPER_JPEG_MAGIC_SIZE] = {
 
 static int wallpaper_png(const unsigned char *data, size_t size, struct kl_wallpaper_image *image);
 static int wallpaper_jpeg(const unsigned char *data, size_t size, struct kl_wallpaper_image *image);
-static int wallpaper_ppm(const unsigned char *data, size_t size, struct kl_wallpaper_image *image);
-static int wallpaper_ppm_number(const unsigned char *data, size_t size, size_t *at, uint32_t *number);
 static int wallpaper_size_allowed(unsigned long width, unsigned long height);
 static void wallpaper_jpeg_exit(j_common_ptr info);
 static void wallpaper_jpeg_quiet(j_common_ptr info, int level);
@@ -103,25 +97,15 @@ kl_wallpaper_decode(
 	compared = 1;
 	if (size >= WALLPAPER_JPEG_MAGIC_SIZE)
 		compared = memcmp(data, wallpaper_jpeg_magic, WALLPAPER_JPEG_MAGIC_SIZE);
-	if (compared == 0) {
-		error = wallpaper_jpeg(data, size, image);
-		if (error != 0)
-			return error;
-
-		/* Succeeded: the JPEG is decoded. */
-		return 0;
-	}
-
-	/* Refuses anything but a binary PPM, which is read until ws138-p002. */
-	if (size < WALLPAPER_PPM_MAGIC_SIZE || data[0] != 'P' || data[1] != '6')
+	if (compared != 0)
 		return EINVAL;
 
-	/* Decodes the PPM. */
-	error = wallpaper_ppm(data, size, image);
+	/* Decodes the JPEG. */
+	error = wallpaper_jpeg(data, size, image);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the PPM is decoded. */
+	/* Succeeded: the JPEG is decoded. */
 	return 0;
 }
 
@@ -256,106 +240,6 @@ wallpaper_jpeg(
 	image->rgb = rgb;
 	image->width = info.output_width;
 	image->height = info.output_height;
-	return 0;
-}
-
-/* Copies a binary PPM's pixels (P6, maximum 255), read until ws138-p002. */
-static int
-wallpaper_ppm(
-	const unsigned char *data,
-	size_t size,
-	struct kl_wallpaper_image *image)
-{
-	uint32_t width;
-	uint32_t height;
-	uint32_t maximum;
-	size_t at;
-	size_t bytes;
-	int allowed;
-	int error;
-
-	/* The width, the height and the maximum value. */
-	at = WALLPAPER_PPM_MAGIC_SIZE;
-	error = wallpaper_ppm_number(data, size, &at, &width);
-	if (error == 0)
-		error = wallpaper_ppm_number(data, size, &at, &height);
-	if (error == 0)
-		error = wallpaper_ppm_number(data, size, &at, &maximum);
-	if (error != 0 || maximum != 255U)
-		return EINVAL;
-
-	/* Refuses a picture beyond the sizes. */
-	allowed = wallpaper_size_allowed(width, height);
-	if (!allowed)
-		return EFBIG;
-
-	/* One whitespace byte, then three bytes a pixel, all of them there. */
-	at++;
-	bytes = (size_t)width * height * 3U;
-	if (at > size || size - at < bytes)
-		return EINVAL;
-
-	/* Copies the pixels. */
-	image->rgb = malloc(bytes);
-	if (image->rgb == NULL)
-		return ENOMEM;
-
-	/* The rows are packed already. */
-	memcpy(image->rgb, data + at, bytes);
-
-	/* Succeeded: the image holds the pixels. */
-	image->width = width;
-	image->height = height;
-	return 0;
-}
-
-/* Reads one decimal number of a PPM header, after whitespace and comments. */
-static int
-wallpaper_ppm_number(
-	const unsigned char *data,
-	size_t size,
-	size_t *at,
-	uint32_t *number)
-{
-	uint32_t value;
-	unsigned digits;
-
-	/* Whitespace, and comments to the end of their line. */
-	while (*at < size) {
-		/* A comment runs to the end of its line. */
-		if (data[*at] == '#') {
-			while (*at < size && data[*at] != '\n')
-				(*at)++;
-			continue;
-		}
-
-		/* The first byte that is not whitespace starts the number. */
-		if (data[*at] != ' ' &&
-		    data[*at] != '\t' &&
-		    data[*at] != '\r' &&
-		    data[*at] != '\n')
-			break;
-		(*at)++;
-	}
-
-	/* The digits, within a bound. */
-	value = 0;
-	digits = 0;
-	while (*at < size &&
-	    data[*at] >= '0' &&
-	    data[*at] <= '9' &&
-	    digits < WALLPAPER_PPM_DIGITS_MAX) {
-		value = value * 10U + (uint32_t)(data[*at] - '0');
-		(*at)++;
-		digits++;
-	}
-
-	/* A number has at least one digit. */
-	if (digits == 0U)
-		return EINVAL;
-
-	/* Succeeded: number holds it. */
-	*number = value;
 	return 0;
 }
 

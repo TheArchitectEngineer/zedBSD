@@ -1,16 +1,17 @@
 #!/bin/sh
-# ws138-p001: the host test of the wallpaper decoding (userland/desktop/picture/wallpaper.c), under ASan/UBSan.
+# ws138-p001/p002: the host test of the wallpaper decoding (userland/desktop/picture/wallpaper.c), under ASan/UBSan.
 #
 #   plan/ws138/tests/run-host-wallpaper-decode.sh
 #
 # It builds the decoder with libpng-compat, libz-compat and libjpeg-compat from their sources, makes the pictures
 # (python3, and ImageMagick's convert for the JPEGs) and checks:
-#   1. the tree's Lakeside.png and Birch-Lake.png decode to exactly the pixels of their PPMs;
+#   1. the tree's Lakeside.png and Birch-Lake.png decode to exactly the pixels Python's own PNG reading gives
+#      (ppm-to-png.py's read_png; in ws138-p001 those were checked to be the PPMs' pixels);
 #   2. a PNG with alpha: transparent is black, opaque keeps its colour, half transparent is half the colour (U8);
 #   3. a JPEG of Lakeside decodes to its size within a small mean difference; a grey JPEG decodes grey; a CMYK JPEG
 #      is refused (EINVAL 22);
 #   4. a PNG wider than 8192 is refused (EFBIG 27); a text file and a cut PNG are refused (EINVAL 22);
-#   5. a PPM still decodes (until ws138-p002).
+#   5. a PPM is refused (EINVAL 22) since ws138-p002 (U4: PNG and JPEG only).
 # Exits 0 on success.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -43,9 +44,25 @@ check() {
 	fi
 }
 
-# 1. The tree's PNGs hold their PPMs' pixels.
-check lakeside "$($run same $tree/Lakeside.png $tree/Lakeside.ppm)" same
-check birch-lake "$($run same $tree/Birch-Lake.png $tree/Birch-Lake.ppm)" same
+# The references: the tree's PNGs as Python reads them, and Lakeside as a PPM (for step 5).
+python3 - "$tree" "$data" <<'EOF'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('p2p', 'userland/desktop/wallpapers/ppm-to-png.py')
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+tree, data = sys.argv[1], sys.argv[2]
+for name in ('Lakeside', 'Birch-Lake'):
+    width, height, rgb = m.read_png('%s/%s.png' % (tree, name))
+    with open('%s/%s.rgb' % (data, name), 'wb') as out:
+        out.write(b'%d %d\n' % (width, height) + rgb)
+    if name == 'Lakeside':
+        with open('%s/lakeside.ppm' % data, 'wb') as out:
+            out.write(b'P6\n%d %d\n255\n' % (width, height) + rgb)
+EOF
+
+# 1. The tree's PNGs hold the pixels Python reads from them.
+check lakeside "$($run same $tree/Lakeside.png $data/Lakeside.rgb)" same
+check birch-lake "$($run same $tree/Birch-Lake.png $data/Birch-Lake.rgb)" same
 
 # 2. Alpha over black: a 3x1 PNG of (255,0,0,0) (0,255,0,255) (100,200,50,128).
 python3 - "$data/alpha.png" <<'PY'
@@ -60,11 +77,11 @@ PY
 check alpha-black "$($run $data/alpha.png)" "ok 3x1 0,0,0 0,255,0"
 
 # 3. JPEGs: Lakeside at quality 95, grey, CMYK.
-convert $tree/Lakeside.ppm -quality 95 "$data/lakeside.jpg"
-check jpeg-near "$($run near $data/lakeside.jpg $tree/Lakeside.ppm 3)" near
-convert $tree/Lakeside.ppm -colorspace Gray -quality 90 "$data/grey.jpg"
+convert $tree/Lakeside.png -quality 95 "$data/lakeside.jpg"
+check jpeg-near "$($run near $data/lakeside.jpg $data/Lakeside.rgb 3)" near
+convert $tree/Lakeside.png -colorspace Gray -quality 90 "$data/grey.jpg"
 check jpeg-grey "$($run grey $data/grey.jpg)" grey
-convert $tree/Lakeside.ppm -colorspace CMYK -quality 90 "$data/cmyk.jpg"
+convert $tree/Lakeside.png -colorspace CMYK -quality 90 "$data/cmyk.jpg"
 check jpeg-cmyk "$($run $data/cmyk.jpg)" "error 22"
 
 # 4. Sizes and damage.
@@ -81,7 +98,7 @@ check not-picture "$($run $data/text.png)" "error 22"
 head -c 2000 $tree/Lakeside.png > "$data/cut.png"
 check cut-png "$($run $data/cut.png)" "error 22"
 
-# 5. A PPM (read until p002).
-check ppm "$($run $tree/Lakeside.ppm | cut -d' ' -f1-2)" "ok 1920x1080"
+# 5. A PPM is refused.
+check ppm-refused "$($run $data/lakeside.ppm)" "error 22"
 
 exit $failed

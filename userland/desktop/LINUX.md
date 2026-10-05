@@ -30,7 +30,7 @@ make keiland-linux-clean
 ```
 
 `bin/` は app と compositor、`lib/` は共有 library、`libexec/` は IME、`share/` は font・辞書・wallpaper、`etc/keiland/apps.conf` は App Home の一覧。
-wallpaper は `KEILAND_LINUX_WALLPAPER=/absolute/path/picture.ppm` で build 時に指定できる。既定は既存のユーザー画像 cache、無ければ生成した Aurora。ユーザー画像は git に入れない。
+wallpaper は `KEILAND_LINUX_WALLPAPER=/absolute/path/picture.png`（PNG か JPEG。`share/keiland/wallpaper.png` に入る）で build 時に指定できる。既定は tree の `userland/desktop/keiland/wallpapers/Birch-Lake.png`。ユーザー画像は git に入れない。
 
 ## Text console からの起動
 
@@ -39,7 +39,7 @@ system の Vulkan loader と対応する ICD が必要。検証環境は Mesa la
 
 ```sh
 sudo env KEILAND_SEAT=direct /opt/keiland/bin/wayland \
-  --session --glass --wallpaper=/opt/keiland/share/keiland/wallpaper.ppm
+  --session --glass --wallpaper=/opt/keiland/share/keiland/wallpaper.png
 ```
 
 `direct` は DRM / evdev device を直接開く。`--socket=/absolute/path` で socket を指定できる。

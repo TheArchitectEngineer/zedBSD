@@ -105,9 +105,32 @@ def unfilter_row(kind, data, previous):
     return bytes(row)
 
 
+# Each byte's absolute value read as signed (0..128, so it fits a byte again), for signed_sum.
+SIGNED_ABS = bytes(value if value < 128 else 256 - value for value in range(256))
+
+
 def signed_sum(data):
     """The sum of the bytes' absolute values read as signed, libpng's measure of a filtered row."""
-    return sum(value if value < 128 else 256 - value for value in data)
+    return sum(data.translate(SIGNED_ABS))
+
+
+def filter_rows(row, previous):
+    """The five filtered forms of a row (None, Sub, Up, Average, Paeth), the same bytes filter_row makes.
+
+    zip over the row and its shifted neighbours keeps the loops in C as far as Python allows; write_png's best choice
+    calls this for every row.
+    """
+    left = bytes(3) + row[:-3]
+    corner = bytes(3) + previous[:-3]
+    sub = bytes((value - before) & 255 for value, before in zip(row, left))
+    up = bytes((value - above) & 255 for value, above in zip(row, previous))
+    average = bytes((value - ((before + above) >> 1)) & 255 for value, before, above in zip(row, left, previous))
+    # paeth() written out: p - a = b - c, p - b = a - c, p - c = a + b - 2c (a call per byte would double the time).
+    paeth_row = bytes((value - (before if (near_a := abs(above - diagonal)) <= (near_b := abs(before - diagonal)) and
+                                near_a <= abs(before + above - diagonal - diagonal)
+                                else (above if near_b <= abs(before + above - diagonal - diagonal) else diagonal))) & 255
+                      for value, before, above, diagonal in zip(row, left, previous, corner))
+    return (bytes(row), sub, up, average, paeth_row)
 
 
 def chunk(kind, data):
@@ -128,7 +151,7 @@ def write_png(path, width, height, rgb, filter='best'):
             kind, data = 2, filter_row(2, row, previous)
         else:
             candidates = [(signed_sum(filtered), kind, filtered)
-                          for kind, filtered in ((k, filter_row(k, row, previous)) for k in range(5))]
+                          for kind, filtered in enumerate(filter_rows(row, previous))]
             candidates.sort(key=lambda entry: (entry[0], entry[1]))
             _, kind, data = candidates[0]
         raw.append(kind)

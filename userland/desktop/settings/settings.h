@@ -671,7 +671,7 @@ struct se_search {
 
 /*
  * One picture the Wallpaper page offers: its file, the name shown (the
- * file's name without .ppm), and a small copy for its tile (empty until
+ * file's name without its ending), and a small copy for its tile (empty until
  * the page is first shown, or when the file cannot be read).
  *
  * pending is 1 from the moment the page lists the picture until the

@@ -61,7 +61,7 @@
 #define LOOK_DELAY_DEFAULT	400
 
 /* The pictures: the default (the session's --wallpaper) and the folder of the others. */
-#define LOOK_DEFAULT_PICTURE	KEILAND_DATADIR "/keiland/wallpaper.ppm"
+#define LOOK_DEFAULT_PICTURE	KEILAND_DATADIR "/keiland/wallpaper.png"
 #define LOOK_PICTURES		KEILAND_DATADIR "/keiland/wallpapers"
 
 /* A picture's small copy, in pixels. */
@@ -87,9 +87,9 @@ struct look_found {
 
 /*
  * The endings of the pictures the page lists, in the order kept when two
- * files differ only in it (ws138-p001: PNG and JPEG; PPM until ws138-p002).
+ * files differ only in it (ws138: PNG and JPEG).
  */
-static const char *const look_endings[] = { ".png", ".jpg", ".jpeg", ".ppm" };
+static const char *const look_endings[] = { ".png", ".jpg", ".jpeg" };
 
 /* The places the Storage page looks at (a place on the same file system as one before it is not shown again). */
 static const char *const look_places[] = { "/", "/home", "/usr", "/var", "/tmp", "/boot" };
@@ -365,9 +365,9 @@ se_look_scan(
 	look->has_default = 1;
 
 	/*
-	 * The folder's pictures (PNG and JPEG files, ws138-p001; PPM until
-	 * ws138-p002), at most as many as fit after the default; of two files
-	 * with the same name but the ending, one is listed.
+	 * The folder's pictures (PNG and JPEG files, ws138), at most as many as
+	 * fit after the default; of two files with the same name but the
+	 * ending, one is listed.
 	 */
 	count = 0;
 	folder = opendir(LOOK_PICTURES);
@@ -387,7 +387,7 @@ se_look_scan(
 	/* By name, each with its small copy; the tile shows the name without its ending. */
 	qsort(found, count, sizeof(found[0]), look_compare_names);
 	for (index = 0; index < count; index++) {
-		(void)snprintf(path, sizeof(path), "%s/%s", LOOK_PICTURES, found[index].name);
+		(void)snprintf(path, sizeof(path), "%s/%.63s", LOOK_PICTURES, found[index].name);
 		(void)snprintf(name, sizeof(name), "%.*s", (int)found[index].stem, found[index].name);
 		look_add_picture(app, path, name);
 	}

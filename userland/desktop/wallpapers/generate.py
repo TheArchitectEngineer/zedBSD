@@ -4,14 +4,17 @@
     userland/desktop/wallpapers/generate.py OUTDIR [--width=1920] [--height=1080] [--preview=PNG]
 
 Each picture is a quiet gradient with a few soft, blurred shapes in the Kei look (pale sky blues, young greens,
-warm light), written as a binary PPM (P6) named after it, e.g. OUTDIR/Aurora.ppm; the Wallpaper page of Settings
-shows the file's name without .ppm.  The pictures are not kept in git: the image builds make them.
+warm light), written as a PNG named after it, e.g. OUTDIR/Aurora.png (ws138-p002: 8-bit RGB, each row filtered by
+the best of the five filters, zlib level 9, through ppm-to-png.py's write_png); the Wallpaper page of Settings shows
+the file's name without .png.  The pictures are not kept in git: the image builds make them.
 
 Only the Python standard library is used.  A picture is drawn at a quarter of its size, where the shapes are
 smooth anyway, then enlarged bilinearly, with a faint fixed dither against banding, so the same command always
 writes the same bytes.  --preview also writes a PNG sheet of all the pictures side by side (for looking at them).
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 """
+import concurrent.futures
+import importlib.util
 import math
 import os
 import random
@@ -171,13 +174,39 @@ def enlarge(rows, width, height):
     return bytes(out)
 
 
-def write_ppm(path, width, height, pixels):
-    """Writes a binary PPM, through a new file renamed over the old."""
+def load_converter():
+    """Loads ppm-to-png.py (its name has dashes, so it is loaded by path), which writes the PNG."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ppm-to-png.py')
+    spec = importlib.util.spec_from_file_location('ppm_to_png', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_picture(converter, path, width, height, pixels):
+    """Writes a picture as a PNG with the best filter of each row, through a new file renamed over the old."""
     temporary = path + '.new'
-    with open(temporary, 'wb') as file:
-        file.write(b'P6\n%d %d\n255\n' % (width, height))
-        file.write(pixels)
+    converter.write_png(temporary, width, height, bytes(pixels), 'best')
     os.replace(temporary, path)
+
+
+def make_picture(job):
+    """Draws one picture and writes its PNG (a job of its own, so the five run in parallel); returns its pixels."""
+    picture, out, width, height = job
+    rows = draw_small(picture, width // SCALE, height // SCALE)
+    pixels = enlarge(rows, width, height)
+    write_picture(load_converter(), os.path.join(out, picture['name'] + '.png'), width, height, pixels)
+    return pixels
+
+
+def make_pictures(out, width, height):
+    """Makes every picture: in parallel processes (zlib's level 9 takes most of the time), else one by one."""
+    jobs = [(picture, out, width, height) for picture in PICTURES]
+    try:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=len(jobs)) as pool:
+            return list(pool.map(make_picture, jobs))
+    except (OSError, NotImplementedError, concurrent.futures.process.BrokenProcessPool):
+        return [make_picture(job) for job in jobs]
 
 
 def write_preview(path, pictures, width, height):
@@ -230,12 +259,9 @@ def main():
             return 2
     os.makedirs(out, exist_ok=True)
     made = []
-    for picture in PICTURES:
-        rows = draw_small(picture, width // SCALE, height // SCALE)
-        pixels = enlarge(rows, width, height)
-        write_ppm(os.path.join(out, picture['name'] + '.ppm'), width, height, pixels)
+    for picture, pixels in zip(PICTURES, make_pictures(out, width, height)):
         made.append((picture['name'], pixels))
-        print('wallpaper: %s/%s.ppm %dx%d' % (out, picture['name'], width, height))
+        print('wallpaper: %s/%s.png %dx%d' % (out, picture['name'], width, height))
     if preview is not None:
         write_preview(preview, made, width, height)
         print('wallpaper preview: %s' % preview)
