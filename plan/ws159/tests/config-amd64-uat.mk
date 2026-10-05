@@ -7,4 +7,4 @@
 # and write build/uat-0505/hdd-image.img to the USB stick; the procedure is plan/ws159/phase005/phase.md.
 include config/release/config-amd64-beta1.mk
 ZEDBSD_RELEASE_BUILD := n
-ZEDBSD_USER_PROGRAMS += systemevents sleepctl phone calendar mailer
+ZEDBSD_USER_PROGRAMS += systemevents sleepctl phone calendar mailer account-admin keiland-settings
