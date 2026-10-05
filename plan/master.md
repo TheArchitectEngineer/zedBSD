@@ -71,6 +71,7 @@
 <!-- master:blocked:end -->
 
 <!-- master:pending-decisions:start -->
+- **2026-10-05 夕 ユーザーの決定（passkey）**: /sbin/passkey と /etc/passkey の形（[WS172](ws172/ws.md)）。passkey は base、暗号は当面 OpenSSL でリリースまでに独自の実装へ（Guardrail の例外）。PIN の失敗の回数は sessiond の memory。WS162・WS163 の ~/.config の mock はこれで置き換える（WS162 の K1〜K3、WS163 の G1 は不要に）。
 - **WS162 の判断（2026-10-05、P1 の mock の設計 第 2 版 1845e3fc、§9.7。ユーザーが /etc/passkey と /sbin/passkey の形を考え中で、その形になれば置き換わる）**: K1 greeter で key の login: (a) mock は lock だけ、(b) 登録の時に利用者の password を key の CTAP2 hmac-secret で AES-256-GCM に包み greeter が読める file（~ を 0711 に）[P1 の推奨]、(c) sessiond の request（BSD Auth・passkey の形の後）。K2 key と key の PIN（UV）[可]、K3 kl_system_account_v1 に add_passkey・remove_passkey（manager version 11）。
 - **WS161 の決定（2026-10-05 夕 ユーザー）**: U1「UAPI の include/uapi/hidraw.h を承認します。」U2「UAPI の include/uapi/ccid.h と、ノードの名前を承認します。名前は `/dev/smartcardN` がいいです。」U3「sessiond の座席のデバイスの一覧に `/dev/input/hidraw*` と `/dev/ccid*` を足し、ログイン中の利用者に渡してよいです。」（node の名前は U2 の `/dev/smartcard*` に合わせる）U4「試験用の kernel だけに、模擬の装置を入れてよいです。」U5「…それでもベータ2 に入れます。」→ P1 が p002 以降（hidraw・usb-ccid の /dev/smartcardN・seat の一覧・loopback）を実装してよい。
 - **BUG-171 の実装の判断（2026-10-05、P2）**: window.opacity の既定は 100 なので「100%（Opaque）で app の glass の panel も不透明」をそのまま作ると、既定の状態で Settings・Files などの frosted glass が消える。A 文字通り（既定でも glass が無くなる）、B 利用者が明示に 100 を選んだ時だけ不透明（既定は今の frosted のまま、Settings は既定を「Default (glass)」と表示）[P2 の案]、C 既定を 100 未満（例 95）にして 100 = 全部不透明（既定で中身が少し透ける）。title bar の glass も同じ扱いにするか [P2 の案: app の panel だけ]。
@@ -349,6 +350,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS169](ws169/ws.md) | 未定 | MG006 | 6 | メーラの app と compositor のメールの API（2026-10-05 追加） |
 | [WS170](ws170/ws.md) | 未定 | MG006 | 4（最初の範囲） | Phone の app、連絡先からタイムラインまで（2026-10-05 追加） |
 | [WS171](ws171/ws.md) | 未定 | MG008 | 2 | hal.h の全ての関数に契約の comment（2026-10-05 追加、急がない） |
+| [WS172](ws172/ws.md) | ベータ2 | MG006 | 4 | passkey の認証の枠組み（/sbin/passkey・/etc/passkey、2026-10-05 追加） |
 | [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | planning（p001 から、**ベータ1**） | WS049 |
 | [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | planning（**ベータ1**、q721） | なし |
 | [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | planning（**ベータ2**、2026-10-05） | — |
@@ -362,6 +364,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS169](ws169/ws.md) | MG006 | メーラの app と compositor のメールの API（許可された app が受信の通知を受ける、browser の認証 code の自動入力、IMAP4・SMTP から Gmail・Outlook へ）（2026-10-05 ユーザーの追加） | planning（段は未定、2026-10-05） | — |
 | [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | planning（段は未定、2026-10-05） | — |
 | [WS171](ws171/ws.md) | MG008 | hal.h の全ての関数に HAL v2 と同じ水準の契約の comment を書く（comment の差分もユーザーの review の後に当てる）（2026-10-05 ユーザー「このコメント、すべての関数につけてほしいです。今でなくていいので」） | planning（急がない、2026-10-05） | — |
+| [WS172](ws172/ws.md) | MG006 | passkey の認証の枠組み: sessiond は外部の `/sbin/passkey`（base）で password・PIN・FIDO2（将来はセキュリティチップ）を確かめる、root だけの `/etc/passkey`、PIN の失敗の回数は sessiond の memory（2026-10-05 ユーザー） | planning（ベータ2、WS162・WS163 の mock を置き換える） | WS161 |
 
 ### リリースの段ごとの見積もり（2026-10-05）
 
