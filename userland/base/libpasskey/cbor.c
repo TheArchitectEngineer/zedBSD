@@ -142,6 +142,8 @@ pk_cbor_put_bool(
 		cbor_put_head(writer, CBOR_MAJOR_SIMPLE, CBOR_TRUE);
 		return;
 	}
+
+	/* False. */
 	cbor_put_head(writer, CBOR_MAJOR_SIMPLE, CBOR_FALSE);
 }
 
@@ -377,24 +379,22 @@ cbor_put_head(
 	size_t width;
 	size_t index;
 
-	/* The argument's width: in the initial byte, or 1, 2, 4 or 8 bytes after it. */
-	width = 0U;
-	head[0] = (uint8_t)((major << 5U) | (unsigned)value);
-	if (value >= CBOR_ONE_BYTE) {
+	/* The argument's width: in the initial byte, or the fewest of 1, 2, 4 or 8 bytes after it. */
+	if (value < CBOR_ONE_BYTE) {
+		width = 0U;
+		head[0] = (uint8_t)((major << 5U) | (unsigned)value);
+	} else if (value <= 0xffU) {
+		width = 1U;
+		head[0] = (uint8_t)((major << 5U) | CBOR_ONE_BYTE);
+	} else if (value <= 0xffffU) {
+		width = 2U;
+		head[0] = (uint8_t)((major << 5U) | CBOR_TWO_BYTES);
+	} else if (value <= 0xffffffffU) {
+		width = 4U;
+		head[0] = (uint8_t)((major << 5U) | CBOR_FOUR_BYTES);
+	} else {
 		width = 8U;
 		head[0] = (uint8_t)((major << 5U) | CBOR_EIGHT_BYTES);
-		if (value <= 0xffffffffU) {
-			width = 4U;
-			head[0] = (uint8_t)((major << 5U) | CBOR_FOUR_BYTES);
-		}
-		if (value <= 0xffffU) {
-			width = 2U;
-			head[0] = (uint8_t)((major << 5U) | CBOR_TWO_BYTES);
-		}
-		if (value <= 0xffU) {
-			width = 1U;
-			head[0] = (uint8_t)((major << 5U) | CBOR_ONE_BYTE);
-		}
 	}
 
 	/* The argument's bytes, most significant first. */
@@ -419,6 +419,8 @@ cbor_put_raw(
 		writer->error = ENOSPC;
 		return;
 	}
+
+	/* The bytes after those before them. */
 	if (length != 0U)
 		memcpy(writer->buffer + writer->length, bytes, length);
 	writer->length += length;
@@ -456,6 +458,8 @@ cbor_walk_item(
 			if (error != 0)
 				return error;
 		}
+
+		/* Succeeded: the whole array. */
 		return 0;
 	}
 
@@ -481,6 +485,8 @@ cbor_walk_item(
 				if (error != 0)
 					return error;
 			}
+
+			/* The next key is compared with this one. */
 			previous = walk->reader.data + key_start;
 			previous_length = walk->reader.offset - key_start;
 		}
