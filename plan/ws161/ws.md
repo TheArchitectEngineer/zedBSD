@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws161 -->
 # WS161: YubiKey のサポート
 
-Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 4 LW）
+Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 4 LW。p001 の設計の第 1 版あり）
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -19,4 +19,8 @@ Primary Milestone: MG006
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws161-p001 | 要件と設計 | planning | — |
+| [ws161-p001](phase001/phase.md) | 要件と設計 | planning（設計の第 1 版、2026-10-05 P1 q734。判断 H1〜H6（UAPI・外部 package）待ち） | — |
+| ws161-p002 | kernel の `usb-fido`・`/dev/fidoN`・試験の loopback・seat、T1 | planned | p001、H1・H4 |
+| ws161-p003 | libcbor・libfido2 の package と zedBSD の backend、道具 | planned | p002、H2 |
+| ws161-p004 | 実機の UAT（YubiKey）、Linux・FreeBSD | planned | p003 |
+| ws161-p005 | 全文規約の見直し | planned | p004 |
