@@ -4,7 +4,7 @@
 
 Phase ID: `ws052-p007`
 Parent: [WS052](../ws.md)
-Status: planning（2026-10-05 P1 generation17。設計の第 1 版、Q1 のレビュー待ち。code は p006 の口（`KERN_SYSTEM_SLEEP` の S0i3 の mode と事象）が決まってから）
+Status: planning（2026-10-05 P1 generation17。設計の第 1 版、§7 はユーザーが案のとおり決定（2026-10-05 朝）。code は p006 の口（`KERN_SYSTEM_SLEEP` の S0i3 の mode と事象）が決まってから）
 Phase disposition: normal
 Queue: Q1 の 2026-10-05 の指示（p006 が H1〜H4 の承認待ちの間に、承認に依らない p007 の準備）
 
@@ -109,7 +109,16 @@ Keiland
 - p006 の `KERN_SYSTEM_SLEEP_INFO`（design §7）で「S0 idle に対応」が返る時だけ契機で sleep する。Keiland は sessiond 経由で起動時に 1 度読み、
   `kl_backend_power_state.actions` の `KL_BACKEND_POWER_SUSPEND` の bit に載せる（今の power の state の形）。
 
-### 7. 人間の判断が要る点（Q1 経由）
+### 7. 人間の判断（2026-10-05 朝、ユーザーが案のとおり決定、Q1 の中継）
+
+1. 外部の monitor に出している時に蓋を閉じた: **sleep しない**（内蔵の panel だけ消し、外部に出し続ける）。**AC の有無に依らない**。
+2. 無操作の時間の既定値: **AC 30 分・電池 15 分**、画面はその**半分**で消す。0 は「しない」。Settings の Power の頁で変える。
+3. greeter で電源ボタン: **sleep**（lock は無い）。
+4. sessiond が **session からも suspend を受ける**（ws131 の D12 の改訂。poweroff・reboot は greeter だけのまま）。
+
+以下は決定の前に書いた案の記録。
+
+#### 7.0 判断の案（決定の前）
 
 1. **外部の monitor に出している時に蓋を閉じた**: 案は sleep しない（内蔵の panel だけ消し、外部に出し続ける clamshell）。AC の有無で変えるか。
 2. **無操作の時間の既定値**: 案は AC で 30 分、電池で 15 分（画面を消すのはその半分）。0 で「しない」。Settings の Power の頁で変える。

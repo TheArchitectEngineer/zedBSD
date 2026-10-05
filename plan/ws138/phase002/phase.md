@@ -10,6 +10,23 @@ Queue: none
 依存: p001 の commit が main に統合済み（PNG を読む code と tree の PNG の 2 枚。p001 の clearance は要らない）。ws.md の U2・U3・U5・U6 の決め
 時限の目安: 切り替え 3 h、試験の依頼の用意 1 h
 
+## 改訂（2026-10-05、ユーザーの決定 U1〜U8 の反映、P1 generation17）
+
+この節が下の本文の該当する手順に優先する（本文は判断の前に書いた）。
+
+- **U4 PNG と JPEG だけ**: この commit で PPM の読み込みを消す: `userland/desktop/picture/wallpaper.c` の移行の間の P6 の道と、Settings の一覧の
+  `.ppm`。手順 3 の 2（U6 の移行の code）は書かない。手順 6 の (b)「PPM を読めることの試験」は無くなる（`Small.ppm` の試験は PPM が拒まれる
+  ことの試験に変える）。試験に JPEG の背景を 1 枚足す（`plan/ws138/tests/` に置き、`--file` で入れる）。
+- **U3 Linux・FreeBSD の既定の背景は Birch-Lake.png**: 手順 2 の 3・4 の既定は `userland/desktop/keiland/wallpapers/Birch-Lake.png`。過去の build
+  （`build/ws035-wallpaper/`）を見る道は消す。
+- **U5 最大の圧縮**: generate.py も `write_png(…, filter='best')`（手順 2 の 1 の Up の固定をやめる）。build の時間の増え方を「結果」に記録する。
+- **U6 何もしない**: 古い `.ppm` を `.png` に読み替える code は書かない（既定の背景に戻る）。install で古い `.ppm` を消す規則も書かない。
+- **U7**: 同期の復号の道は p001 で消した（`zwl_glass_landscape` だけが残る）。手順 7 の 5 の「reset の同期の道を測る」は、thread の道
+  （`ZWL GLASS wallpaper path=… ms=` の poll の行）を測る形にする。
+- **U8 黒で合成**: p001 で実装済み。
+- **U2**: 手順 4・5 の他の WS の試験の置き換えと `vmunix.mk` の差分は、自分で直さず、command・一覧・確かめを Q1 に渡し、Q1 が merge の時に main で
+  掛ける。
+
 ## 範囲
 
 - **入る**: 次を全て、**1 つの commit（1 回の merge）**にする（D8: 途中で main の image や試験が壊れないように）。
@@ -196,16 +213,3 @@ image は 2 つ。同じ T が 1 つずつ順に QEMU で流す。合わせて 3
 ## 結果
 
 （未実施）
-
-## 着手前に直す点（2026-10-04 ユーザーの判断の反映、Q1。詳細は [ws.md](../ws.md) の「ユーザーの決定」）
-
-この Phase の本文は判断の前に書いた。着手する担当は、最初に次を本文（範囲・受け入れ・手順）へ反映してから実装する。
-
-- U3: Linux・FreeBSD の既定の背景は **Birch-Lake.png**（Aurora ではない）。`KEILAND_LINUX_WALLPAPER` の既定から過去の build（`build/ws035-wallpaper/`）を見る道を消す。
-- U4: 背景は **PNG と JPEG だけ**に対応する。PPM を読む code は消す（compositor・Settings・Files の背景の読み込み）。JPEG は既存の `libjpeg-compat` を使う。試験に JPEG の背景を 1 枚足す。
-- U5: PNG は**全部最大の圧縮**（tree の 2 枚も generate.py の生成も、行ごとに filter を選ぶ）。build の時間の増え方を phase.md に記録する。
-- U6: desktop.conf に残った古い system の `.ppm` には**何もしない**（既定の背景に戻る。`.png` に読み替える code は書かない）。
-- U7: Settings の reset の時の復号も **WS135 の thread の道（`zwl_glass_wallpaper_begin`）**に寄せる（同期の復号の道を消す）。
-- U8: alpha のある画像の透明な所は**黒で合成**する。
-- U2: 他の WS の試験の約 194 file と `platform/amd64/vmunix.mk` の Settings の link の規則は、担当が直さず、**Q1 が merge の時に main で sed を掛ける**。担当は command と確かめの一覧を phase.md に書いて渡す。
-- U1: 開始は 2026-10-04 の UAT の後（17 時の利用枠の回復の後）。

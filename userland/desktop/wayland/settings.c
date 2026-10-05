@@ -614,8 +614,17 @@ settings_apply_wallpaper(
 		return;
 	}
 
-	/* Afterwards the look draws it now. */
-	error = zwl_glass_wallpaper(server, path);
+	/*
+	 * Afterwards the landscape is drawn now; a picture is read on glass.c's
+	 * thread (ws138-p001 U7) and shown when zwl_glass_wallpaper_poll takes it.
+	 */
+	if (path == NULL) {
+		error = zwl_glass_landscape(server);
+	} else {
+		error = zwl_glass_wallpaper_begin(server, path);
+	}
+
+	/* A refusal leaves the wallpaper shown. */
 	if (error != 0) {
 		printf("ZWL PREFERENCES key=wallpaper failed errno=%d\n", error);
 		return;

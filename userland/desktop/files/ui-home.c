@@ -13,8 +13,8 @@
  * top of the sidebar, where Files starts.
  *
  * At the top a hero card shows the desktop's wallpaper (the picture the
- * system carries at /usr/share/keiland/wallpaper.ppm, or --wallpaper=;
- * without it a quiet landscape is drawn) with a greeting and a line about the files.  Below
+ * system carries under /usr/share/keiland, or --wallpaper=, read as any
+ * picture Files shows, ws138-p001; without it a quiet landscape is drawn) with a greeting and a line about the files.  Below
  * it the usual folders as cards with their item counts, the recent files
  * (the desktop's recent list, newest first) and the folders opened lately
  * (the file manager's own list).  Everything is gathered when the
@@ -28,7 +28,6 @@
 #include "files.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,9 +48,6 @@
 #define HOME_SECTION_GAP	28
 #define HOME_ROW_HEIGHT		44
 #define HOME_PILL_HEIGHT	32
-
-/* The largest wallpaper read, in bytes. */
-#define HOME_WALLPAPER_MAX	(64U * 1024U * 1024U)
 
 /* The largest Kei mark drawn, in pixels a side (its layers are kept rendered at the last size). */
 #define HOME_MARK_MAX		128U
@@ -90,8 +86,6 @@ static const struct home_folder home_folders[] = {
  */
 static struct keiland_recent_item home_recent_items[FM_HOME_RECENTS * 4];
 
-static int home_ppm_load(const char *path, struct fm_image *image);
-static int home_ppm_number(const unsigned char *data, size_t size, size_t *at);
 static void home_hero(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static void home_hero_art(struct fm_image *image);
 static void home_hero_brand(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
@@ -413,7 +407,7 @@ home_hero(
 	/* The picture, read the first time (the drawn landscape when there is no wallpaper). */
 	if (app->hero_source.pixels == NULL && app->hero_tried == 0) {
 		app->hero_tried = 1;
-		error = home_ppm_load(app->wallpaper, &app->hero_source);
+		error = fm_image_load(app->wallpaper, &app->hero_source);
 		if (error != 0) {
 			error = fm_image_create(&app->hero_source, 960, 360);
 			if (error == 0)
@@ -974,126 +968,4 @@ home_folders_file(
 	/* The folder itself. */
 	(void)mkdir(folder, 0700);
 	snprintf(path, size, "%s/recent-folders", folder);
-}
-
-/* Reads a binary PPM (P6, 8 bits) into an opaque picture; returns 0 or an errno value. */
-static int
-home_ppm_load(
-	const char *path,
-	struct fm_image *image)
-{
-	struct stat status;
-	unsigned char *data;
-	size_t size;
-	size_t at;
-	size_t done;
-	ssize_t count;
-	int descriptor;
-	int width;
-	int height;
-	int maximum;
-	int error;
-	int x;
-	int y;
-
-	/* The file, read whole. */
-	descriptor = open(path, O_RDONLY);
-	if (descriptor < 0)
-		return errno;
-	error = fstat(descriptor, &status);
-	if (error != 0 || status.st_size < 16 || (size_t)status.st_size > HOME_WALLPAPER_MAX) {
-		close(descriptor);
-		return EINVAL;
-	}
-
-	/* A buffer for all of it. */
-	size = (size_t)status.st_size;
-	data = malloc(size);
-	if (data == NULL) {
-		close(descriptor);
-		return ENOMEM;
-	}
-
-	/* Read whole. */
-	done = 0;
-	while (done < size) {
-		count = read(descriptor, data + done, size - done);
-		if (count <= 0)
-			break;
-		done += (size_t)count;
-	}
-
-	/* The file is read. */
-	close(descriptor);
-
-	/* The header: P6, the width, the height and the largest value. */
-	if (done != size || data[0] != 'P' || data[1] != '6') {
-		free(data);
-		return EINVAL;
-	}
-
-	/* The numbers of the header. */
-	at = 2;
-	width = home_ppm_number(data, size, &at);
-	height = home_ppm_number(data, size, &at);
-	maximum = home_ppm_number(data, size, &at);
-	at++;
-	if (width <= 0 || height <= 0 || maximum != 255 || at + (size_t)width * (size_t)height * 3U > size) {
-		free(data);
-		return EINVAL;
-	}
-
-	/* The pixels, opaque. */
-	error = fm_image_create(image, width, height);
-	if (error != 0) {
-		free(data);
-		return error;
-	}
-
-	/* Each pixel. */
-	for (y = 0; y < height; y++) {
-		for (x = 0; x < width; x++) {
-			image->pixels[(size_t)y * image->stride + (size_t)x] = 0xff000000U |
-			    ((uint32_t)data[at] << 16) | ((uint32_t)data[at + 1U] << 8) | (uint32_t)data[at + 2U];
-			at += 3U;
-		}
-	}
-
-	/* Succeeded: the picture. */
-	free(data);
-	return 0;
-}
-
-/* Reads a decimal number of a PPM header (after spaces and comments); -1 when there is none. */
-static int
-home_ppm_number(
-	const unsigned char *data,
-	size_t size,
-	size_t *at)
-{
-	int value;
-
-	/* Spaces and comment lines before it. */
-	while (*at < size) {
-		if (data[*at] == '#') {
-			while (*at < size && data[*at] != '\n')
-				(*at)++;
-		} else if (data[*at] == ' ' || data[*at] == '\n' || data[*at] == '\r' || data[*at] == '\t') {
-			(*at)++;
-		} else {
-			break;
-		}
-	}
-
-	/* The digits. */
-	if (*at >= size || data[*at] < '0' || data[*at] > '9')
-		return -1;
-	value = 0;
-	while (*at < size && data[*at] >= '0' && data[*at] <= '9' && value < 100000) {
-		value = value * 10 + (data[*at] - '0');
-		(*at)++;
-	}
-
-	/* Reports the number. */
-	return value;
 }

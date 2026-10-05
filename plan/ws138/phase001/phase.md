@@ -1,198 +1,139 @@
 <!-- awesome-plan project=zedbsd record=ws138-p001 -->
 
-# ws138-p001: PNG の背景を読めるようにする（既定の path は変えない）
+# ws138-p001: PNG と JPEG の背景を読めるようにする（既定の path は変えない）
 
-Status: planned
+Status: in-progress（2026-10-05 P1 generation17。実装・host 試験・build は済み。QEMU は p002 とまとめて T1、その結果まで cleared にしない）
 Disposition: normal
 Parent: [WS138](../ws.md)
-Queue: none
-設計: [ws.md](../ws.md) の D1・D2・D4・D5・D6・D7・D8
-依存: なし（始める時期は ws.md の U1。`platform/amd64/vmunix.mk` を触るのは U2 の Q1 の許可の後）
-時限の目安: 実装 4 h
+Queue: Q1 の 2026-10-05 の割り当て（ベータ2）
+設計: [ws.md](../ws.md) の D2・D3・D5・D6・D7・D8 と、ユーザーの決定 U2〜U8（2026-10-04）
+依存: なし
+時限の目安: 実装 5 h
+
+## 改訂（2026-10-05、ユーザーの決定 U1〜U8 の反映）
+
+初版（判断の前に書いた）からの違い:
+
+- **U4 PNG と JPEG だけ**: 背景の読み込みは PNG と JPEG にする。JPEG は既存の `libjpeg-compat`。PPM を読む code は**消す**が、main の image と
+  試験は p002 まで既定の `wallpaper.ppm` を使うので、**PPM の読み込みは p002 の切り替えの commit で消す**（D8: main を途中で壊さない）。
+  p001 の共通の復号は、PPM を「移行の間だけ」の形で持ち、p002 で取り除く。
+- **U7 reset は thread の道**: 同期の復号の道（`zwl_glass_wallpaper`）を消す。file を読む変更はすべて `zwl_glass_wallpaper_begin`（WS135）を通し、
+  同期のまま残すのは file を読まない「風景に戻す」だけ（`zwl_glass_landscape`）。
+- **U8 黒で合成**: alpha のある PNG の透明な所は黒で合成する。
+- **U5 最大の圧縮**: 変換の道具は行ごとに filter を選び（best）、zlib の圧縮は 9。p002 の generate.py も同じ。
+- **U2**: 他の WS の file と `platform/amd64/vmunix.mk`（compositor と Settings の link の規則）は自分で直さず、Q1 が merge の時に main で掛ける差分を
+  この phase.md に書く。
+- **共通の復号**: 初版は compositor・Settings に別々に書く案だったが、PNG と JPEG の 2 形式になったので、1 つの source
+  `userland/desktop/picture/wallpaper.c`（`kl_wallpaper_decode`）にまとめ、compositor と Settings が compile して使う。host 試験もこの関数に掛ける
+  （`userland/desktop/picture/picture.c` は GIF の library に依るので使わない）。
 
 ## 範囲
 
 - **入る**:
-  - compositor・Settings・Files が PNG を読めるようにする（PPM も読む）。画素の上限。compositor の起動の復号を thread で行う。
-  - Settings の link（zedBSD・Linux・FreeBSD）。
-  - tree に `Birch-Lake.png`・`Lakeside.png` を**足す**（`.ppm` は残す）。変換の道具。
-  - host 試験（Settings の背景の page、Files の hero）。
-- **入らない**（p002 で 1 回の commit で行う。D8）:
-  - 既定の path（`wallpaper.ppm` → `.png`）、generate.py、make の data、`.ppm` の削除、試験の script の置き換え、移行（U6）。
-  - この Phase の後も main の image と試験は今のまま動く。
-- **所有する path**:
-  - `userland/desktop/wayland/glass.c`・`main.c`（comment と usage の文だけ）
-  - `userland/desktop/settings/look.c`・`settings.h`（comment）・`Makefile*`
-  - `userland/desktop/files/ui-home.c`
-  - `userland/desktop/wallpapers/ppm-to-png.py`（新）、`userland/desktop/keiland/wallpapers/`（PNG の 2 枚と README）
-  - `plan/ws138/`
-  - Q1 の許可の後: `platform/amd64/vmunix.mk`（Settings の link の規則）、`plan/ws089/tests/host-build.sh`・`host-wallpaper.sh`
+  - 共通の復号 `userland/desktop/picture/wallpaper.c`・`wallpaper.h`（新）: PNG（透明は黒で合成）・JPEG を RGB の 3 byte／画素に。画素の上限
+    （一辺 8192、画素 16M）。移行の間だけ PPM（P6、最大値 255）。
+  - compositor（`glass.c`）: 起動の prefetch の thread と、session 中の loader の thread で `kl_wallpaper_decode`。同期の復号の道を消す（U7）。
+  - Settings（`look.c`）: 一覧に `.png`・`.jpg`・`.jpeg`（と移行の間の `.ppm`）、縮小は `kl_wallpaper_decode` の全体の復号から。
+  - Files（`ui-home.c`）: hero を `fm_image_load` に（D5）。
+  - tree に `Birch-Lake.png`・`Lakeside.png` を足す（`.ppm` は p002 で消す）。変換の道具 `userland/desktop/wallpapers/ppm-to-png.py`。
+  - host 試験 `plan/ws138/tests/host-wallpaper-decode.c`（PNG・透明の黒・JPEG・上限・壊れた file）。
+- **入らない**（p002）: 既定の path、generate.py、make の data、`.ppm` と PPM の読み込みの削除、試験の script の置き換え。
 
-## 始める前に読む物
+## 実装
 
-1. `AGENTS.md`、`plan/guardrail.md` の「配置」の段落（compositor の OS の境界）、[ws.md](../ws.md)。
-2. `plan/coding-style.md` の §14 の checklist。特に次の 4 つ。
-   - 条件の中で関数を呼ばない。`memcmp` の結果も変数に受けてから比べる。
-   - 関数の呼び出しごとに comment を付ける。
-   - 意味のある関数の結果を、そのまま return しない（受けてから返す）。
-   - 成功の return を失敗の return と分ける。
-3. `include/libc/compat/png/png.h`（API）。手本は次の 2 つ。
-   - `userland/desktop/files/thumb.c` の `thumb_png`（483-550）
-   - `userland/desktop/picture/color-glyph.c:98-143`（compositor の binary の中の PNG の復号）
-4. 下の手順に出てくる関数の今の code。
+### 1. 変換の道具と tree の PNG（D6・U5）
 
-## 手順
+- `userland/desktop/wallpapers/ppm-to-png.py`: P6 を読み、8 bit RGB・非 interlace の PNG（行ごとに None・Sub・Up・Average・Paeth から「filter 後の byte を
+  符号付きで見た絶対値の和」が最小の物、zlib 9）を書き、書いた PNG を自分で復号して元の画素と byte で比べる（違えば exit 1）。`write_png` は
+  p002 の generate.py が import する。
+- `Birch-Lake.png`・`Lakeside.png` を作り、README に PNG の行を足す（出どころと ws099-p019 の link は保つ）。
 
-### 1. 変換の道具と tree の PNG（D6）
+### 2. 共通の復号（`userland/desktop/picture/wallpaper.c`）
 
-1. `userland/desktop/wallpapers/ppm-to-png.py`（新、Python の標準 library だけ）を作る。
-   - P6・最大値 255 の PPM を読み、8 bit・RGB（色の型 2）・非 interlace の PNG を書く。zlib の圧縮の程度は 9。
-   - 行ごとの filter: 引数 `--filter=best`（既定）なら、None・Sub・Up・Average・Paeth のうち、その行の「filter 後の byte を符号付きで見た絶対値の和」が最小の物を選ぶ（libpng の既定の考え方）。
-     `--filter=up` なら Up に固定する（p002 で generate.py が同じ関数を使う。U5）。
-   - PNG を書く関数（chunk・IHDR・IDAT・IEND）は、`generate.py` から import できる形（`def write_png(path, width, height, rgb, filter)`）にする。
-   - 書いた後に、自分で PNG を復号する（`zlib.decompress` と filter の逆）。RGB が元の PPM の画素と byte で同じことを確かめ、違えば exit 1。
-   - 使い方: `python3 userland/desktop/wallpapers/ppm-to-png.py IN.ppm OUT.png`。
-   - 置き場所の理由: README の出どころの link が切れないように、WS の終わりで消える `plan/ws138/tests` に置かない。
-2. 変換する。
-   ```sh
-   python3 userland/desktop/wallpapers/ppm-to-png.py userland/desktop/keiland/wallpapers/Birch-Lake.ppm userland/desktop/keiland/wallpapers/Birch-Lake.png
-   python3 userland/desktop/wallpapers/ppm-to-png.py userland/desktop/keiland/wallpapers/Lakeside.ppm userland/desktop/keiland/wallpapers/Lakeside.png
-   ```
-   - 大きさを記録する（見積もりは filter 0 で 2.1 MB と 0.2 MB）。
-   - 別の道具でも確かめる: host に ImageMagick があれば `compare -metric AE a.ppm a.png null:` が 0。無ければ「未実施」と書く。
-3. **`.ppm` はまだ消さない**（p002）。
-4. `userland/desktop/keiland/wallpapers/README.md`:
-   - 表に `.png` の 2 行を足す。Origin は「同じ名前の `.ppm` から PNG に可逆に変換（画素は同じ、`userland/desktop/wallpapers/ppm-to-png.py`）」。
-   - `.ppm` の行と、ws099-p019 の出どころの記述はそのまま保つ（p002 で `.ppm` の行を消す）。
+```c
+struct kl_wallpaper_image { unsigned char *rgb; uint32_t width; uint32_t height; };  /* 3 byte／画素、行は詰める */
+int kl_wallpaper_decode(const unsigned char *data, size_t size, struct kl_wallpaper_image *image);
+```
 
-### 2. compositor（`userland/desktop/wayland/glass.c`）
+- 先頭の bytes で形式を決める: PNG の signature、JPEG の `FF D8 FF`、（移行の間）`P6`。他は EINVAL。
+- PNG: `png_image_begin_read_from_memory` → 上限の確かめ → `PNG_FORMAT_RGB`、`background` は黒 → `png_image_finish_read`（finish の後は
+  `png_image_free` を呼ばない）。
+- JPEG: libjpeg-compat、`out_color_space = JCS_RGB`（灰色も RGB に）、CMYK は EINVAL、上限の確かめは `jpeg_start_decompress` の後。EXIF の向きは
+  見ない（背景の写真の向きは制限として記録）。
+- 上限: 一辺 8192、画素 16M（Files の `THUMB_PIXELS_MAX` と同じ）。越えたら EFBIG。
 
-1. `#include <compat/png/png.h>` を足す（`picture/color-glyph.c:18` と同じ書き方）。wayland の Makefile はすでに libpng-compat を依存に持つ。
-2. 定数を足す: `GLASS_WALLPAPER_SIDE_MAX 8192U` と `GLASS_WALLPAPER_PIXELS_MAX (16U * 1024U * 1024U)`。
-   comment に、Files の `THUMB_PIXELS_MAX` と同じ値であることを書く。
-3. `wallpaper_decode`（1356-）の始めで、形式を決める。
-   1. `size >= 8` の時、`signature = memcmp(data, png_signature, 8U);` で変数に受ける。`png_signature` は file-scope の const の 8 byte の配列。
-   2. `signature == 0` なら、`error = wallpaper_decode_png(data, size, picture);` で受けてから、成功と失敗を分けて返す。
-   3. それ以外は、今の P6 の道。
-4. 新しい static 関数 `wallpaper_decode_png(data, size, picture)` を作る。返り値は 0 か errno。流れは次のとおり。
-   1. `memset(&png, 0, sizeof(png)); png.version = PNG_IMAGE_VERSION;`
-   2. `ok = png_image_begin_read_from_memory(&png, data, size);` が 0 なら、`free(data)` して EINVAL。
-   3. 幅・高さが 0、一辺が `GLASS_WALLPAPER_SIDE_MAX` を越える、`(uint64_t)幅 × 高さ` が `GLASS_WALLPAPER_PIXELS_MAX` を越える、のどれかなら、
-      `png_image_free(&png)` と `free(data)` の両方をして EINVAL。
-   4. `png.format = PNG_FORMAT_RGB;`、`pixels = malloc(PNG_IMAGE_SIZE(png));`。NULL なら、`png_image_free(&png)` と `free(data)` をして ENOMEM。
-   5. alpha の背景（U8）: 決めが「空の色」なら、`png_color` にその色を入れて渡す。決まるまでは NULL。
-   6. `ok = png_image_finish_read(&png, background, pixels, 0, NULL);`。finish は成功でも失敗でも image を free するので、この後に `png_image_free` を呼ばない。
-   7. `free(data)`。memory から読む時は、data は finish の終わりまで要る。
-   8. 失敗なら、`free(pixels)` して EINVAL。
-   9. `picture->data = pixels; picture->pixels = 0; picture->width = png.width; picture->height = png.height;`
-5. **起動の復号を thread に移す（D7）**。
-   1. `struct glass_prefetch` の `data`・`size` を、`struct wallpaper_picture picture` と `int error` に変える。comment も直す。
-   2. `prefetch_run`（1495）: `file_read` の後に `wallpaper_decode` まで行い、結果を `picture`・`error` に置く。
-      読めなかった時は `error = errno`。
-   3. `prefetch_take`（1513）を、復号済みの picture を返す形にする。返り値は「受け取った（1）か、自分で読む必要がある（0）」。
-      path が違う時は、picture の data を free して 0 を返す。
-   4. `wallpaper_load`（1325）: まず `prefetch_take` で picture を受け取る。受け取れなければ、今のとおり `file_read` と `wallpaper_decode`。
-      prefetch の error は、受け取った時にそのまま返す。
-6. comment と文を直す。
-   - `struct wallpaper_picture` の comment（104 行）を、「A wallpaper read: a PPM file's bytes (pixels at an offset) or a PNG decoded to RGB (offset 0) …」の意味に。
-   - 「a binary PPM」の comment: `glass.c:354・574・1320・1350` 付近、`main.c:461`。
-   - `main.c:107` の usage の文（`--wallpaper=/path.…`）。
-7. reset の同期の道（`settings.c:555` の `zwl_glass_wallpaper`）は変えない。時間は p002 で測る（U7）。
+### 3. compositor（`userland/desktop/wayland/glass.c`）
 
-### 3. Settings（`userland/desktop/settings/look.c` と build）
+- `struct wallpaper_picture` は復号済みの RGB（`data`、offset の `pixels` は消す）。`wallpaper_row` はそのまま使える。
+- prefetch の thread（`prefetch_run`）は読んで復号まで行う（D7）。`wallpaper_load` は復号済みを受け取る。loader の thread（`loader_run`）も同じ復号。
+- 同期の `zwl_glass_wallpaper(server, path)` を `zwl_glass_landscape(server)`（file を読まない）にする。`settings.c` の `settings_apply_wallpaper` は、
+  path が無ければ風景、有れば `zwl_glass_wallpaper_begin`（U7）。
+- link: compositor は libpng-compat・libz-compat を既に持つ。libjpeg-compat を足す（`wayland/Makefile`・`Makefile.linux`・`Makefile.freebsd`、zedBSD の
+  `vmunix.mk` の規則は U2 で Q1）。
 
-1. `LOOK_DEFAULT_PICTURE` は**変えない**（p002）。
-2. 一覧（340-370）: 名前の末尾が `.png` か `.ppm` の物を取る（D4）。
-   - 末尾の比べ方は、今の `strcmp(entry->d_name + length - 4U, ".ppm")` に `.png` の比べを足す。どちらも結果を変数に受けてから比べる。
-   - 表示の名前は、今と同じく末尾の 4 文字を落とす。
-   - 同じ表示の名前が既にあれば足さない（D4）。`qsort` の後で隣同士を比べ、`.png` の方を残す。
-3. `look_thumbnail` を分ける。
-   1. 今の関数を `look_thumbnail_ppm` に改名する（中身は変えない）。
-   2. 共有の部分を、新しい static 関数 `look_thumbnail_row(sums, row, crop_left, crop_width)` に分ける。中身は、1 つの source の行の 3 つの sample を `sums` に足す loop（今の 3 重の loop の中の 2 つ）。
-      `look_thumbnail_ppm` もこれを使うように直す（画素は同じ）。
-   3. 新しい `look_thumbnail_png(path, image)` を作る。
-      - `png_image_begin_read_from_file` を呼ぶ。
-      - 一辺は `LOOK_WIDTH_MAX`、画素の数は 16M を上限とし、越えたら `png_image_free` して EFBIG。
-      - `PNG_FORMAT_RGB` で全体を復号する（finish の後は `png_image_free` を呼ばない）。
-      - 今の ppm の版と同じ crop と 3x3 の平均で、`fm_image` に詰める（`look_thumbnail_row` を使う）。
-   4. 新しい `look_thumbnail(path, image)` を作る。
-      - file の先頭 8 byte を読み、PNG なら `look_thumbnail_png`、`P6` なら `look_thumbnail_ppm` を呼ぶ。他は EINVAL。
-      - 呼んだ結果は変数に受けてから返す。
-4. `#include <compat/png/png.h>`。`settings.h:569` の comment（「without .ppm」）を「without the extension」の意味に直す。
-5. build の依存:
-   - `userland/desktop/settings/Makefile:19` の依存の並びに `base/libz-compat base/libpng-compat`（Files の `files/Makefile:33` と同じ書き方）。
-   - `Makefile.linux:29`・`Makefile.freebsd:29` の library の並びに `libpng-compat.so libz-compat.so`（Files の `Makefile.linux:55` と同じ）。
-   - **zedBSD の link の規則**（Q1 の許可の後）: `platform/amd64/vmunix.mk` の `$(BUILD)/bin/settings`（1400-1414）に、次の 3 つを足す。手本は `bin/files`（1377-1393）。
-     - 前提に `$(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so`。
-     - link に `-l:libpng-compat.so -l:libz-compat.so`。
-     - check に `--needed libpng-compat.so --needed libz-compat.so`。
-6. host 試験の build（Q1 の許可の後）:
-   - `plan/ws089/tests/host-build.sh` に、libz-compat の `inflate.c`・`checksum.c` と libpng-compat の `read.c` の compile を足す。
-     手本は `plan/tools/files/host-build.sh:22`（`include/compat` の symlink）と 38-46 行の loop。
-   - `host-wallpaper.sh` の link に、その object を足す。
-7. `plan/ws089/tests/host-wallpaper.sh` の data（21-25 行）を、数を変えない形にする（4 枚）。
-   - 既定（`wallpaper.ppm`）: 今のまま `Lakeside.ppm`。既定の path は p002 で変える。
-   - folder: `Lakeside.png`、`Small.ppm`（`python3` で作る 64x40 の P6。PPM を読めることの試験）、`Broken.png`（`not a picture` の text）。
-   - 確かめの行は次のとおり。
-     - 41・42・46 行の `count=4` は、そのまま。
-     - 44 行の `error=0` の 3 件も、そのまま（既定・Lakeside.png・Small.ppm）。
-     - 45 行は `Broken.png … error=22` にする。
-   - 冒頭の comment（4-9 行）を新しい中身に直す。
+### 4. Settings（`userland/desktop/settings/look.c`）
 
-### 4. Files（`userland/desktop/files/ui-home.c`）
+- 一覧: 末尾が `.png`・`.jpg`・`.jpeg`（と移行の間の `.ppm`）。同じ表示の名前が 2 つあれば `.png`、`.jpg`、`.jpeg`、`.ppm` の順で 1 つを残す。
+- 縮小: `look_thumbnail` は file を読み、`kl_wallpaper_decode` で全体を復号して、今の crop と 3x3 の平均で詰める。P6 の行を `pread` する今の code
+  （`look_ppm_number` など）は消す（PPM は共通の復号の移行の道が読む）。
+- link: libpng-compat・libz-compat・libjpeg-compat（`settings/Makefile*`、zedBSD の `vmunix.mk` は U2 で Q1）。
 
-1. `home_hero`（380-）の `home_ppm_load(app->wallpaper, &app->hero_source)` を、`fm_image_load(app->wallpaper, &app->hero_source)` にする。
-   `fm_image_load` は `files.h:1535` に宣言がある。
-2. `home_ppm_load`・`home_ppm_number` とその forward 宣言（87-88）を消す。使われなくなる `HOME_WALLPAPER_MAX`（51 行）も消す。
-3. 先頭の comment（13 行）の「a binary PPM」の意味の所を「a picture (PNG or PPM)」に直す。`FM_WALLPAPER`（`files.h:56`）は p002 で変える。
+### 5. Files（`userland/desktop/files/ui-home.c`）
+
+- `home_ppm_load` を `fm_image_load` に置き換え、`home_ppm_load`・`home_ppm_number`・`HOME_WALLPAPER_MAX` を消す。
+
+## Q1 が main で掛ける差分（U2）
+
+`platform/amd64/vmunix.mk` の compositor（`bin/wayland`）と Settings（`bin/settings`）の link に `libjpeg-compat.so`（Settings は加えて
+`libpng-compat.so`・`libz-compat.so`）を足す。差分は [vmunix.mk.diff](vmunix.mk.diff)（2026-10-05 の main の `fddf23fc` の vmunix.mk に対して作った）。
+
+```sh
+git apply plan/ws138/phase001/vmunix.mk.diff
+```
+
+この差分を自分の worktree にだけ当てて `bin/wayland`・`bin/settings`・`bin/files` を build し（warning 0）、commit の前に戻した。
+`bin/wayland` の NEEDED は libvulkan・libtruetype・libkeiland・libpng-compat・libjpeg-compat・libz-compat・libc。
+差分を当てずに merge すると、`wallpaper.o` の jpeg の記号が解決できず `bin/wayland`・`bin/settings` の link が失敗する。
 
 ## 確かめ（自分で行う。QEMU は起動しない）
 
-```sh
-B=build/ws138-p001
-make ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD=$B \
-    $B/bin/wayland $B/bin/settings $B/bin/files 2>&1 | tee $B.log
-grep -c 'warning:' $B.log                                   # 0
-build/llvm/bin/llvm-readelf -d $B/bin/settings | grep NEEDED # libpng-compat.so と libz-compat.so がある
-timeout 900 make -j16 keiland-linux KEILAND_LINUX_BUILD=build/ws138-linux 2>&1 | tee build/ws138-linux.log
-grep -c 'warning:' build/ws138-linux.log                    # 0（host の gcc。QEMU は要らない）
-readelf -d build/ws138-linux/bin/settings | grep NEEDED      # libpng-compat.so と libz-compat.so
-sh plan/tools/keiland-os-boundary/check.sh                   # PASS
-sh plan/ws089/tests/host-build.sh && sh plan/ws089/tests/host-wallpaper.sh   # host-wallpaper: PASS、page.png を目で見る（Small の tile も絵）
-sh plan/tools/files/host-build.sh
-sh plan/tools/files/host-run.sh --fresh --wallpaper=$PWD/userland/desktop/keiland/wallpapers/Birch-Lake.png draw=build/ws138-p001/hero-png.ppm
-sh plan/tools/files/host-run.sh --fresh --wallpaper=$PWD/userland/desktop/keiland/wallpapers/Birch-Lake.ppm draw=build/ws138-p001/hero-ppm.ppm
-#   どちらも dashboard（--start 無し）の hero が湖の絵。2 つの PNG を目で見て、同じであること
-python3 plan/tools/style-check.py --summary userland/desktop/wayland/glass.c userland/desktop/settings/look.c userland/desktop/files/ui-home.c
-git diff --check
-```
-
-- `make keiland-linux` は空の build の directory だと時間がかかる（上限 900 s は推測）。時間切れは記録して、もう一度流す。
-- `makefile-sync.sh` は source の一覧だけを比べ、library の一覧は比べない。だから library は `readelf -d` で確かめる。
-- style: 作業の前に同じ `--summary` を取っておき、関数ごとに増えていないこと。新しい関数と新しい行の違反は 0。
-- FreeBSD の build は p002 で T に依頼する（WS137 の guest）。
-- compositor の PNG の復号は、host 試験が無い。p002 の T の試験で確かめる。p001 だけでは T に依頼しない（p002 とまとめる）。
+- host 試験 `plan/ws138/tests/run-host-wallpaper-decode.sh`（ASan/UBSan）。
+- `make` で zedBSD の `bin/wayland`・`bin/settings`・`bin/files` を warning 0（vmunix.mk の差分を自分の worktree にだけ当てて試し、commit しない）。
+- `plan/tools/keiland-os-boundary/check.sh` が PASS。
+- 変換の道具の画素の一致。
+- QEMU は p002 でまとめて T1 に依頼する。
 
 ## 受け入れの条件
 
-1. 上の確かめが全て通る（warning 0、NEEDED、PASS、目で見た hero）。
-2. tree の PNG の 2 枚の画素が元と同じ（変換の道具の確かめ）。
-3. 既定の path・generate.py・make の data・試験の script は変わっていない（`git diff --stat` で確かめる）。main の image と試験は今のまま動く。
-4. QEMU の確かめは p002 でまとめて T に依頼する。p001 は T の結果まで cleared にしない。
+1. 上の確かめが通る。2. tree の PNG の画素が元と同じ。3. 既定の path・generate.py・make の data・試験の script は変えていない。
+4. p001 は T1 の結果（p002 の依頼）まで cleared にしない。
 
 ## 結果
 
-（未実施）
+2026-10-05 P1 generation17。実装・host 試験・build まで。QEMU の確認は p002 の切り替えとまとめて T1 に依頼する（未実施）。
 
-## 着手前に直す点（2026-10-04 ユーザーの判断の反映、Q1。詳細は [ws.md](../ws.md) の「ユーザーの決定」）
+| 項目 | 結果 |
+| --- | --- |
+| 変換の道具 `userland/desktop/wallpapers/ppm-to-png.py` | 行ごとに best の filter、zlib 9。書いた PNG を自分で復号して元の画素と比べる |
+| tree の PNG | `Birch-Lake.png`・`Lakeside.png`（1920x1080）。元の PPM と画素が同じ（道具の自己確認、ImageMagick の `compare -metric AE` が 0、host 試験の `same`） |
+| 共通の復号 | `userland/desktop/picture/wallpaper.c`・`wallpaper.h`（`kl_wallpaper_decode`）。PNG（透明は黒で合成）・JPEG（CMYK は EINVAL）・移行の PPM。一辺 8192・画素 16M を越えたら EFBIG |
+| compositor | `glass.c`: prefetch の thread と loader の thread が読んで復号まで行う。`wallpaper_picture` から offset の `pixels` を消した。`zwl_glass_wallpaper` を消して `zwl_glass_landscape`（file を読まない）に。`settings.c` の `settings_apply_wallpaper` は path が無ければ風景、有れば `zwl_glass_wallpaper_begin`（U7） |
+| Settings | `look.c`: 一覧は `.png`・`.jpg`・`.jpeg`・`.ppm`、同じ名前は png→jpg→jpeg→ppm の順で 1 つ。並びは拡張子を除いた名前。縮小は file を読んで（16 MiB まで、ordinary file だけ）全体を復号して作る。`look_ppm_number` と `pread` の code を消した |
+| Files | `ui-home.c`: hero を `fm_image_load` に。`home_ppm_load`・`home_ppm_number`・`HOME_WALLPAPER_MAX` を消した |
+| link | `wayland/Makefile*` に `wallpaper.c` と libjpeg-compat。`settings/Makefile*` に `wallpaper.c` と libpng・libz・libjpeg-compat。zedBSD の `vmunix.mk` は上の U2 の差分（Q1） |
 
-この Phase の本文は判断の前に書いた。着手する担当は、最初に次を本文（範囲・受け入れ・手順）へ反映してから実装する。
+確かめ（host だけ。QEMU・実機は未実施）:
 
-- U3: Linux・FreeBSD の既定の背景は **Birch-Lake.png**（Aurora ではない）。`KEILAND_LINUX_WALLPAPER` の既定から過去の build（`build/ws035-wallpaper/`）を見る道を消す。
-- U4: 背景は **PNG と JPEG だけ**に対応する。PPM を読む code は消す（compositor・Settings・Files の背景の読み込み）。JPEG は既存の `libjpeg-compat` を使う。試験に JPEG の背景を 1 枚足す。
-- U5: PNG は**全部最大の圧縮**（tree の 2 枚も generate.py の生成も、行ごとに filter を選ぶ）。build の時間の増え方を phase.md に記録する。
-- U6: desktop.conf に残った古い system の `.ppm` には**何もしない**（既定の背景に戻る。`.png` に読み替える code は書かない）。
-- U7: Settings の reset の時の復号も **WS135 の thread の道（`zwl_glass_wallpaper_begin`）**に寄せる（同期の復号の道を消す）。
-- U8: alpha のある画像の透明な所は**黒で合成**する。
-- U2: 他の WS の試験の約 194 file と `platform/amd64/vmunix.mk` の Settings の link の規則は、担当が直さず、**Q1 が merge の時に main で sed を掛ける**。担当は command と確かめの一覧を phase.md に書いて渡す。
-- U1: 開始は 2026-10-04 の UAT の後（17 時の利用枠の回復の後）。
+- `plan/ws138/tests/run-host-wallpaper-decode.sh`（ASan/UBSan、libz/libpng/libjpeg-compat を source から build）: 10 項目すべて ok
+  （tree の PNG 2 枚が PPM と同じ画素、透明が黒・不透明はそのまま、JPEG q95 の平均差 3 以内、灰色の JPEG が灰色、CMYK の JPEG が EINVAL、
+  幅 8193 が EFBIG、文字の file と切れた PNG が EINVAL、移行の PPM が 1920x1080）。
+- zedBSD の `make build/amd64/bin/wayland build/amd64/bin/settings build/amd64/bin/files`（vmunix.mk の差分を当てて）: rc 0、warning 0（`-Werror`）。
+- Linux の `make -f userland/desktop/keiland-linux.mk` の `bin/wayland`・`bin/settings`・`bin/files`: rc 0、warning 0。FreeBSD は build していない（Makefile の差分は Linux と同じ形）。
+- `plan/tools/keiland-os-boundary/check.sh`: PASS。
+- `plan/tools/style-check.py`: 新しい file は `wallpaper.c:203` の `setjmp` の条件だけ（C の規格が `setjmp` を条件の中に置くことを求める。`picture.c:294` と同じ）。
+  変えた file は base と同じ数（`glass.c` 4、`settings.c` 1、`look.c` 0、`ui-home.c` 0）。
+
+残り（p002）: 既定の path の切り替え、`.ppm` と PPM の読み込みの削除、generate.py、make の data、試験の script（U2 で Q1）、T1 の QEMU の確認。
+制限: JPEG の EXIF の向きは見ない。
+
+補足: prefetch が取られないまま look が閉じたとき（起動の失敗の道）は、`zwl_glass_close` が thread を join して復号済みの画素を解放する（`prefetch_drop`。従来は file の bytes が残っていた）。
