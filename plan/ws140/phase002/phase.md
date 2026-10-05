@@ -211,3 +211,11 @@ desktop の回帰（Files の PDF の縮小表示 `dlopen("libpdf.so")`、`plan/
 - U3: **他の固定の上限も入れる**。`tlsdesc_argument[64]`（object ごとの TLSDESC の再配置の数）・`phdr[64]`・`RTLD_NAME_MAX` 64 もこの WS で動的にする（または上限を十分に大きくし、越えたら dlerror で返す。決めは担当の設計で、phase.md に書いてから実装）。範囲・受け入れ・試験（rtld-many に TLSDESC 65 個以上・長い名前の dlopen を足す）へ反映してから着手する。
 - U2: memory が取れない時の `dlopen` は今と同じ fatal のまま。
 - U5: `dlpi_subs`（`rtld_object_removals`）を TLS を持たない object の unload でも増やす直しを、この WS で入れる。
+
+## T1-163 の後（2026-10-05、P2）
+
+- PASS: tls-check（動的・静的）、dyntest（`DL:05I:HANDLES-200`・`DL:06:PLUGIN-TLS`）、boot-test。
+- FAIL ×2: rtld-many。起動の時に `ld.so: cannot map shared object segment`、`exit=127` で止まった（`startup` の段より前）。
+- 原因（code を読んでの判断。ld.so は host では動かないので再現はしていない）: `load_object` は最初の load segment だけを場所を指定せずに map し、残りの segment を `MAP_FIXED_NOREPLACE` で base からの位置に置いていた。kernel は空いた範囲を下から first-fit で探す（`vmspace_find_free_range_locked`）。そのため、最初の segment が後の segment の入らない小さな隙間に置かれると、次の segment の場所が埋まっていて `EEXIST` になる。1 page ずつの小さな library が 40 個並ぶと、この隙間に当たる。WS140 の前からある欠陥で、上限が無くなって表に出た。
+- 直し: `object_reserve_span` で、load segment 全体の範囲を `PROT_NONE` の匿名 mapping として 1 度に取る（kernel は触れない mapping を commit しない、`vmspace_map_anon_locked`）。そこから base を決め、各 segment は `MAP_FIXED` でその中に置く（0 埋めの匿名の page も同じ）。object が記録する mapping は予約の 1 つだけで、unload はその 1 回の munmap で全部を外す。`map_one_segment` から `choose_base` を外した。
+- 確かめ（host）: amd64 の ld.so・libc.so・dyntest は warning 0。dynamic-userland-check は PASS。style は `map_one_segment` が 13 → 9 で、新しい `object_reserve_span` は 0。guest の rtld-many・dyntest・boot-test は T1 の再試験を待つ（startup と dlopen の両方の道が変わったため）。

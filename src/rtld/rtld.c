@@ -526,7 +526,8 @@ static intptr_t open_search_candidate(const char *directory, size_t directory_le
 static struct rtld_object *find_identity(const struct stat *status);
 static struct rtld_object *new_object(const char *path);
 static void copy_path(char destination[RTLD_PATH_MAX], const char *source);
-static void map_one_segment(struct rtld_object *object, int fd, const Elf_Phdr *program, int choose_base);
+static void map_one_segment(struct rtld_object *object, int fd, const Elf_Phdr *program);
+static void object_reserve_span(struct rtld_object *object, uintptr_t low);
 static int segment_prot(uint32_t flags);
 static void remember_mapping(struct rtld_object *object, uintptr_t start, size_t size);
 static void parse_dynamic(struct rtld_object *object);
@@ -2626,10 +2627,9 @@ load_object(
 	intptr_t fd, result;
 	size_t phdr_mapping;
 	size_t length;
-	unsigned i, first;
+	unsigned i;
 	uintptr_t minimum;
 
-	first = 0;
 	minimum = UINTPTR_MAX;
 
 	/* Handles the name availability. */
@@ -2705,17 +2705,22 @@ load_object(
 		    page_floor((uintptr_t)object->phdr[i].p_vaddr) < minimum) {
 			minimum =
 			    page_floor((uintptr_t)object->phdr[i].p_vaddr);
-			first = i;
 		}
 	}
-	map_one_segment(object, (int)fd, &object->phdr[first], 1);
+	/*
+	 * The whole span of the load segments, reserved at once (WS140,
+	 * T1-163): mapping the first segment alone let the kernel place it in
+	 * a hole too small for the segments after it, which then could not be
+	 * mapped.
+	 */
+	object_reserve_span(object, minimum);
 
-	/* Process each element required by the operation. */
+	/* Each load segment, into its place in the span. */
 	for (i = 0; i < object->phnum; i++) {
-		/* Checks the current index. */
-		if (i != first && object->phdr[i].p_type == PT_LOAD &&
+		/* A load segment with memory. */
+		if (object->phdr[i].p_type == PT_LOAD &&
 		    object->phdr[i].p_memsz != 0)
-			map_one_segment(object, (int)fd, &object->phdr[i], 0);
+			map_one_segment(object, (int)fd, &object->phdr[i]);
 	}
 	(void)syscall6(KERN_SYS_close, (uintptr_t)fd, 0, 0, 0, 0, 0);
 	parse_dynamic(object);
@@ -3319,13 +3324,59 @@ copy_path(
 	rtld_memcpy(destination, source, length + 1U);
 }
 
+/*
+ * Reserves the address range of an object's load segments, from the page
+ * of the lowest (low) to the end of the highest, as one inaccessible
+ * mapping, which costs no commit, and sets the object's base from where it
+ * landed.  The segments are then mapped over it; the reservation is the
+ * one mapping the object records, so unloading it unmaps them all.
+ */
+static void
+object_reserve_span(
+	struct rtld_object *object,
+	uintptr_t low)
+{
+	uintptr_t high;
+	uintptr_t end;
+	intptr_t mapped;
+	unsigned i;
+	int failed;
+
+	/* The end of the highest load segment (validate_file_programs checked the sums). */
+	high = low;
+	for (i = 0; i < object->phnum; i++) {
+		/* A load segment with memory. */
+		if (object->phdr[i].p_type != PT_LOAD || object->phdr[i].p_memsz == 0)
+			continue;
+
+		/* Its end, rounded to a page. */
+		end = page_ceil((uintptr_t)(object->phdr[i].p_vaddr + object->phdr[i].p_memsz));
+		if (end > high)
+			high = end;
+	}
+
+	/* The range, anywhere the kernel finds room. */
+	mapped = map_call(0, (size_t)(high - low), PROT_NONE,
+			  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	failed = raw_error(mapped);
+	if (failed)
+		rtld_fatal("cannot reserve shared object address range");
+
+	/* Refuses a place below the lowest segment's address, which no base reaches. */
+	if ((uintptr_t)mapped < low)
+		rtld_fatal("invalid shared object load bias");
+
+	/* The base, and the reservation as the object's one mapping. */
+	object->base = (uintptr_t)mapped - low;
+	remember_mapping(object, (uintptr_t)mapped, (size_t)(high - low));
+}
+
 /* Supports the map one segment operation. */
 static void
 map_one_segment(
 	struct rtld_object *object,
 	int fd,
-	const Elf_Phdr *program,
-	int choose_base)
+	const Elf_Phdr *program)
 {
 	uintptr_t anonymous;
 	size_t anonymous_size;
@@ -3355,8 +3406,8 @@ map_one_segment(
 		program->p_filesz != 0 ? (size_t)page_ceil(file_bytes) : 0;
 	memory_map_size = (size_t)page_ceil(memory_bytes);
 	file_offset = page_floor((uintptr_t)program->p_offset);
-	requested = choose_base ? 0 : object->base + virtual_page;
-	flags = MAP_PRIVATE | (choose_base ? 0 : MAP_FIXED_NOREPLACE);
+	requested = object->base + virtual_page;
+	flags = MAP_PRIVATE | MAP_FIXED;
 	final_prot = segment_prot(program->p_flags);
 	map_prot = final_prot;
 	need_zero = program->p_memsz > program->p_filesz;
@@ -3392,15 +3443,9 @@ map_one_segment(
 			rtld_fatal("cannot map shared object BSS");
 	}
 
-	/* Handles the choose base condition. */
-	if (choose_base) {
-		/* Handles the uintptr t condition. */
-		if ((uintptr_t)mapped < virtual_page)
-			rtld_fatal("invalid shared object load bias");
-		object->base = (uintptr_t)mapped - virtual_page;
-	}
-	remember_mapping(object, (uintptr_t)mapped,
-			 file_map_size != 0 ? file_map_size : memory_map_size);
+	/* The segment lands where the span has room for it (MAP_FIXED within the reservation). */
+	if ((uintptr_t)mapped != requested)
+		rtld_fatal("cannot map shared object segment");
 
 	/* File-backed segments may need additional anonymous BSS pages.
 	 * A pure BSS segment was already mapped in full above. */
@@ -3409,12 +3454,11 @@ map_one_segment(
 		anonymous_size = memory_map_size - file_map_size;
 		mapped = map_call(
 		    anonymous, anonymous_size, map_prot,
-		    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+		    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 
 		/* Handles an operation failure. */
 		if (raw_error(mapped) || (uintptr_t)mapped != anonymous)
 			rtld_fatal("cannot map shared object zero fill");
-		remember_mapping(object, anonymous, anonymous_size);
 	}
 
 	/* Handles the zero condition. */
